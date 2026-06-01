@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./build.sh *)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(echo \"user.name: $\\(git config user.name || echo '\\(unset\\)'\\)\")",
+      "Bash(echo \"user.email: $\\(git config user.email || echo '\\(unset\\)'\\)\")"
+    ]
+  }
+}

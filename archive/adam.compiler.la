@@ -1,0 +1,7 @@
+// adam.compiler.la – Self‑hosting Lingua Adamica Compiler (symbolic)
+glyph ID = λx.x
+glyph APPLY = λf.λx.f(x)
+glyph FIX = λf.f(f)
+compile = λg. g(g) ? g : ID
+self = compile(compile)
+write(self)

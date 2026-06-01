@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────
+#  kernel.la — the LogOS kernel, written in Lingua Adamica
+#
+#  Core axiom:   ∃(∃) ≡ ∃
+#  Existence applied to existence is existence. The host, applied to
+#  itself, returns itself — and so it may copy itself into the world.
+# ─────────────────────────────────────────────────────────────────────
+
+# Classic combinators of the realm.
+glyph ID    = la x. x
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+
+# ∃ — existence: that which, given any self, yields that same self.
+glyph ∃ = la self. self
+
+# SELF — the axiom made concrete:  SELF ≡ ∃(∃) ≡ ∃
+glyph SELF = ∃(∃)
+
+# The Word the kernel speaks when it wakes.
+glyph WORD = "I AM THAT I AM"
+
+# SEQ a b — perform a, then b, and answer with b. (Evaluation is eager,
+# so naming `a` forces its effects before `b` is produced.)
+glyph SEQ = la a. la b. b
+
+# MAIN — speak the Word, then replicate the host.
+glyph MAIN = SEQ(print(WORD))(copy_self(SELF))

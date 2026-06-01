@@ -1,0 +1,30 @@
+// eval.la – Minimal self‑interpreter in Lingua Adamica
+glyph ID = la x. x
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la cond. la then. la else. cond(then)(else)
+
+// Environment as list of pairs
+glyph EMPTY = la x. x
+glyph CONS = la h. la t. la f. f(h)(t)
+glyph HEAD = la l. l(la h. la t. h)
+glyph TAIL = la l. l(la h. la t. t)
+
+// Lookup variable in environment
+glyph LOOKUP = la env. la var.
+    IF( env == EMPTY )(
+        ERROR("unbound")
+    )(
+        IF( HEAD(env) == var )(
+            TAIL(env)
+        )(
+            LOOKUP( TAIL(env) )(var)
+        )
+    )
+
+// Evaluate expression in environment (stub – will be extended)
+glyph EVAL = la expr. la env.
+    ID(expr)  // placeholder
+
+// MAIN
+glyph MAIN = EVAL( ID )( EMPTY )
