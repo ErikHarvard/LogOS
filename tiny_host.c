@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -154,9 +155,16 @@ static void lex(void) {
      * rather than an identifier. Numbers are Form (g_8, tau_Q), generated from
      * Void (zero) by iterated Becoming (succession). */
     if (isdigit((unsigned char)*P)) {
-        long v = 0;
-        while (isdigit((unsigned char)*P)) { v = v * 10 + (*P - '0'); P++; }
-        curint = v;
+        /* Accumulate in unsigned to detect overflow without signed-overflow UB. */
+        unsigned long long v = 0;
+        int overflow = 0;
+        while (isdigit((unsigned char)*P)) {
+            v = v * 10u + (unsigned)(*P - '0');
+            if (v > (unsigned long long)LONG_MAX) overflow = 1;
+            P++;
+        }
+        if (overflow) { fprintf(stderr, "lex error: integer literal exceeds LONG_MAX\n"); exit(1); }
+        curint = (long)v;
         curtok = T_INT;
         return;
     }
@@ -332,7 +340,10 @@ static int is_builtin(const char *name) {
         /* typeof: recognize a value's Form (g_8) as a string tag. The one
          * host primitive the type system needs; all type predicates derive
          * from it in Lingua Adamica. */
-        || strcmp(name, "typeof") == 0;
+        || strcmp(name, "typeof") == 0
+        /* error(msg): print msg to stderr and halt. Lets a .la program (e.g.
+         * the self-hosted evaluator) fail loudly instead of degrading. */
+        || strcmp(name, "error") == 0;
 }
 
 /* The seven binary integer operations are curried like concat/str_eq: the
@@ -466,10 +477,12 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         if (strcmp(name, "mul") == 0) return mkint(x * y);
         if (strcmp(name, "div") == 0) {
             if (y == 0) { fprintf(stderr, "div: division by zero\n"); exit(1); }
+            if (x == LONG_MIN && y == -1) { fprintf(stderr, "div: overflow (LONG_MIN / -1)\n"); exit(1); }
             return mkint(x / y);
         }
         if (strcmp(name, "mod") == 0) {
             if (y == 0) { fprintf(stderr, "mod: modulo by zero\n"); exit(1); }
+            if (x == LONG_MIN && y == -1) return mkint(0);  /* mathematically 0; avoids the SIGFPE */
             return mkint(x % y);
         }
         /* lt / int_eq return Church booleans (like str_eq), so branch
@@ -582,6 +595,14 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
                         : v->t == N_STR ? "str"
                         : "fun";
         return mkstr(tag);
+    }
+    if (strcmp(name, "error") == 0) {
+        Node *v = eval(argexpr);
+        if      (v->t == N_STR) fwrite(v->s, 1, v->len, stderr);
+        else if (v->t == N_INT) fprintf(stderr, "%ld", v->i);
+        else                    fputs("(non-string error message)", stderr);
+        fputc('\n', stderr);
+        exit(1);
     }
     fprintf(stderr, "unknown builtin: %s\n", name);
     exit(1);

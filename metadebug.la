@@ -148,7 +148,15 @@ glyph SPEC_TABLE =
     CONS(PAIR("IS_STR")(SPEC_ISSTR))(
     CONS(PAIR("IS_FUN")(SPEC_ISFUN))(
     CONS(PAIR("HAS_TYPE")(SPEC_HASTYPE))(
-    NIL))))))))))))))))))))))
+    CONS(PAIR("PROD")(SPEC_PROD))(
+    CONS(PAIR("SUM")(SPEC_SUM))(
+    CONS(PAIR("ARROW")(SPEC_ARROW))(
+    CONS(PAIR("REFINE")(SPEC_REFINE))(
+    CONS(PAIR("REC")(SPEC_REC))(
+    CONS(PAIR("FIN")(SPEC_FIN))(
+    CONS(PAIR("VEC")(SPEC_VEC))(
+    CONS(PAIR("PI_SUCC")(SPEC_PISUCC))(
+    NIL))))))))))))))))))))))))))))))
 
 glyph GET_SPEC = la name. LIST_FIND(name)(SPEC_TABLE)
 
@@ -209,7 +217,15 @@ glyph GLYPH_REGISTRY =
     CONS(PAIR("IS_STR")(IS_STR))(
     CONS(PAIR("IS_FUN")(IS_FUN))(
     CONS(PAIR("HAS_TYPE")(HAS_TYPE))(
-    NIL))))))))))))))))))))))
+    CONS(PAIR("PROD")(PROD))(
+    CONS(PAIR("SUM")(SUM))(
+    CONS(PAIR("ARROW")(ARROW))(
+    CONS(PAIR("REFINE")(REFINE))(
+    CONS(PAIR("REC")(REC))(
+    CONS(PAIR("FIN")(FIN))(
+    CONS(PAIR("VEC")(VEC))(
+    CONS(PAIR("PI_SUCC")(PI_SUCC))(
+    NIL))))))))))))))))))))))))))))))
 
 # ── Phase 4: META_DEBUG — DEBUG applied to the debugging glyphs ───────
 # The "meta" level collapses into the object level by self-application.
@@ -235,6 +251,51 @@ glyph SPEC_ISSTR   = CONS(TC(la g. BOOL_STR(g("x")))("T"))(CONS(TC(la g. BOOL_ST
 glyph SPEC_ISFUN   = CONS(TC(la g. BOOL_STR(g(ID)))("T"))(CONS(TC(la g. BOOL_STR(g(42)))("F"))(NIL))
 glyph SPEC_HASTYPE = CONS(TC(la g. BOOL_STR(g(IS_INT)(42)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)("x")))("F"))(NIL))
 
+# ── Type System Phase T2: the five type constructors = the five modes ─
+# Each constructor takes types (predicates) and builds a new predicate.
+#   PROD A B   (Ontosynthesis ⊗) — a value is in A *and* B (a PAIR)
+#   SUM A B    (Ontoconjunction ⊕) — a value is in A *or* B (LEFT/RIGHT)
+#   ARROW A B  (Ontodirection ▷) — f maps A to B, checked on a witness x:A
+#   REFINE A P (Ontocontainment ⊂) — {x : A | P(x)}
+#   REC F      (Metacursion ↻) — the self-referential (fixed-point) type
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph LEFT  = la a. la l. la r. l(a)
+glyph RIGHT = la b. la l. la r. r(b)
+glyph POS   = la n. lt(0)(n)
+
+glyph PROD   = la A. la B. la p. AND(A(FST(p)))(B(SND(p)))
+glyph SUM    = la A. la B. la v. v(la a. A(a))(la b. B(b))
+glyph ARROW  = la A. la B. la x. la f. AND(A(x))(B(f(x)))
+glyph REFINE = la A. la P. la x. AND(A(x))(P(x))
+glyph REC    = la F. Z(F)
+
+# ILF: the int-list type former (its fixed point INTLIST is a recursive type).
+glyph ILF     = la self. la v. IF(IS_NIL(v))(la _. TRUE)(la _. AND(IS_INT(HEAD(v)))(self(TAIL(v))))
+glyph INTLIST = REC(ILF)
+
+glyph SPEC_PROD   = CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(PAIR(42)("hi"))))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(PAIR("x")("hi"))))("F"))(NIL))
+glyph SPEC_SUM    = CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(LEFT(42))))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(LEFT("x"))))("F"))(NIL))
+glyph SPEC_ARROW  = CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(42)(int_to_str)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_INT)(42)(int_to_str)))("F"))(NIL))
+glyph SPEC_REFINE = CONS(TC(la g. BOOL_STR(g(IS_INT)(POS)(5)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(POS)(0)))("F"))(NIL))
+glyph SPEC_REC    = CONS(TC(la g. BOOL_STR(g(ILF)(CONS(1)(NIL))))("T"))(CONS(TC(la g. BOOL_STR(g(ILF)(CONS("x")(NIL))))("F"))(NIL))
+
+# ── Type System Phase T3: dependent types (indexed by native integers) ─
+# FIN n = {x : Int | 0 <= x < n}; VEC n A = lists of exactly n elements of
+# type A. Both depend on the VALUE n — dependency made concrete by the
+# native integers. PI_SUCC is a sampled Pi-type: f : Vec n Int -> Vec (n+1)
+# Int, checked on a witness xs (the codomain type mentions the argument).
+glyph LEN     = Z(la self. la lst. IF(IS_NIL(lst))(la _. 0)(la _. add(1)(self(TAIL(lst)))))
+glyph FIN     = la n. la x. AND(NOT(lt(x)(0)))(lt(x)(n))
+glyph VEC     = la n. la A. la xs. AND(int_eq(LEN(xs))(n))(ALL(A)(xs))
+glyph PI_SUCC = la n. la f. la xs. AND(VEC(n)(IS_INT)(xs))(VEC(add(n)(1))(IS_INT)(f(xs)))
+
+glyph V3    = CONS(1)(CONS(2)(CONS(3)(NIL)))
+glyph PREP0 = la xs. CONS(0)(xs)
+
+glyph SPEC_FIN    = CONS(TC(la g. BOOL_STR(g(5)(3)))("T"))(CONS(TC(la g. BOOL_STR(g(5)(7)))("F"))(NIL))
+glyph SPEC_VEC    = CONS(TC(la g. BOOL_STR(g(3)(IS_INT)(V3)))("T"))(CONS(TC(la g. BOOL_STR(g(2)(IS_INT)(V3)))("F"))(NIL))
+glyph SPEC_PISUCC = CONS(TC(la g. BOOL_STR(g(3)(PREP0)(V3)))("T"))(NIL)
+
 # ── Deliberately broken glyphs (DEBUG must catch these) ───────────────
 glyph BAD_ID         = la x. "WRONG"
 glyph BAD_VERIFY_ONE = la name. la fn. la tc. "WRONG"
@@ -259,4 +320,14 @@ glyph MAIN =
     SEQ(print(concat("T1_int_pos: ")(BOOL_STR(HAS_TYPE(IS_INT)(42)))))(
     SEQ(print(concat("T1_int_neg: ")(BOOL_STR(HAS_TYPE(IS_INT)("x")))))(
     SEQ(print(concat("T1_str: ")(BOOL_STR(HAS_TYPE(IS_STR)("hi")))))(
-        print(concat("T1_fun: ")(BOOL_STR(HAS_TYPE(IS_FUN)(ID))))))))))))))))))))))
+    SEQ(print(concat("T1_fun: ")(BOOL_STR(HAS_TYPE(IS_FUN)(ID)))))(
+    SEQ(print(concat("T2_prod: ")(BOOL_STR(PROD(IS_INT)(IS_STR)(PAIR(42)("hi"))))))(
+    SEQ(print(concat("T2_sum: ")(BOOL_STR(SUM(IS_INT)(IS_STR)(RIGHT("hi"))))))(
+    SEQ(print(concat("T2_arrow: ")(BOOL_STR(ARROW(IS_INT)(IS_STR)(42)(int_to_str)))))(
+    SEQ(print(concat("T2_refine: ")(BOOL_STR(REFINE(IS_INT)(POS)(5)))))(
+    SEQ(print(concat("T2_rec: ")(BOOL_STR(HAS_TYPE(INTLIST)(CONS(1)(CONS(2)(NIL)))))))(
+    SEQ(print(concat("T3_fin_in: ")(BOOL_STR(HAS_TYPE(FIN(5))(3)))))(
+    SEQ(print(concat("T3_fin_out: ")(BOOL_STR(HAS_TYPE(FIN(5))(7)))))(
+    SEQ(print(concat("T3_vec_ok: ")(BOOL_STR(VEC(3)(IS_INT)(V3)))))(
+    SEQ(print(concat("T3_vec_bad: ")(BOOL_STR(VEC(2)(IS_INT)(V3)))))(
+        print(concat("T3_pi: ")(BOOL_STR(PI_SUCC(3)(PREP0)(V3))))))))))))))))))))))))))))))))

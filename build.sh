@@ -244,6 +244,21 @@ check_line "T1_int_pos: T"
 check_line "T1_int_neg: F"
 check_line "T1_str: T"
 check_line "T1_fun: T"
+# Type System T2: the five type constructors = the five modes of combination
+# (PROD ⊗, SUM ⊕, ARROW ▷, REFINE ⊂, REC ↻). Each is in GLYPH_REGISTRY with
+# accept+reject specs, so ALL_SPECCED: T certifies they are autological too.
+check_line "T2_prod: T"
+check_line "T2_sum: T"
+check_line "T2_arrow: T"
+check_line "T2_refine: T"
+check_line "T2_rec: T"
+# Type System T3: dependent types indexed by native integers. FIN n / VEC n A
+# / a sampled Pi-type; all in GLYPH_REGISTRY (ALL_SPECCED: T certifies them).
+check_line "T3_fin_in: T"
+check_line "T3_fin_out: F"
+check_line "T3_vec_ok: T"
+check_line "T3_vec_bad: F"
+check_line "T3_pi: T"
 if [ "$ok" -eq 1 ]; then
     echo "PASS  Phase 1: MAP/FILTER/ALL/ANY/LIST_FIND/LENGTH over Church lists"
     echo "PASS  Phase 2: SPEC_TABLE / GET_SPEC resolve specs (hit + miss)"
@@ -251,6 +266,8 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  Phase 4: META_DEBUG verifies the debugger itself; broken VERIFY_ONE caught"
     echo "PASS  Native integers are autological: add/mul/lt/int_to_str pass their specs under DEBUG"
     echo "PASS  Type System T1: HAS_TYPE accepts inhabitants, rejects non-inhabitants (types as predicates)"
+    echo "PASS  Type System T2: PROD/SUM/ARROW/REFINE/REC build correct types (the five modes); all autological"
+    echo "PASS  Type System T3: dependent types FIN n / VEC n A / Pi-type check against integer indices; all autological"
 else
     printf '%s\n' "$OUT"
     exit 1
@@ -507,9 +524,24 @@ printf '%s\n' "$EVAL_OUT" | grep -qxF "round-trip: stable"           || { echo "
 case "$EVAL_CHILD" in new_logos_gen1_pid*.bin) : ;; *) echo "FAIL  meta-eval: no replicant ('$EVAL_CHILD')"; ok=0 ;; esac
 [ -n "$EVAL_CHILD" ] && [ -f "$EVAL_CHILD" ] && cmp -s tiny_host "$EVAL_CHILD" \
     || { echo "FAIL  meta-eval: replicant not byte-identical"; ok=0; }
+# Cross-engine native integers: the SAME integer program must produce the
+# SAME output on the C host (direct) and the self-hosted meta-evaluator
+# (eval.la test 6). Confirms integers were propagated coherently, not just
+# added to the host. (eval.la lexes digits, desugars n -> str_to_int("n"),
+# and bridges the int builtins; codegen.la compiles the same desugaring.)
+echo 'glyph MAIN = print(int_to_str(add(mul(6)(7))(sub(10)(8))))' > /tmp/xeng.la
+HOST_INT="$(./tiny_host /tmp/xeng.la 2>/dev/null)"
+# test 6's result is the only standalone "44" line (the reconstructed-source
+# dump from test 5 has no bare "44"); take it directly.
+META_INT="$(printf '%s\n' "$EVAL_OUT" | grep -xF "44" | tail -1)"
+[ "$HOST_INT" = "44" ]                       || { echo "FAIL  native int: C host computed '$HOST_INT' != 44"; ok=0; }
+[ "$META_INT" = "44" ]                        || { echo "FAIL  native int: meta-evaluator computed '$META_INT' != 44"; ok=0; }
+[ "$HOST_INT" = "$META_INT" ]                 || { echo "FAIL  native int: host and meta-evaluator disagree"; ok=0; }
+rm -f /tmp/xeng.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  the language interpreted itself: kernel spoke and bred $EVAL_CHILD"
     echo "PASS  INNER reconstructed the whole of eval.la ($RECON_GLYPHS glyphs, round-trip stable)"
+    echo "PASS  native integers agree cross-engine: C host == eval.la meta-evaluator (= 44)"
 else
     printf '%s\n' "$EVAL_OUT"
     exit 1
