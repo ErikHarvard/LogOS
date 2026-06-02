@@ -53,11 +53,13 @@ phdr:
     dq 0x400000
     dq 0x400000
     dq filesize
-    dq progbuf - $$ + 0x500000   ; p_memsz: cover up to progbuf + 5 MiB program
-                                 ; capacity (lazy). Derived from progbuf so the
-                                 ; segment always reaches it when the layout
-                                 ; below changes — a fixed constant silently
-                                 ; left progbuf unmapped once the stacks grew.
+    dq progbuf - $$ + 0x500000   ; p_memsz: map through progbuf + 5 MiB (progbuf
+                                 ; is the program-stream buffer; the rest is lazy).
+                                 ; Tied to progbuf, not a fixed constant, so the
+                                 ; segment tracks progbuf when the layout below
+                                 ; shifts — a hardcoded size once left progbuf
+                                 ; unmapped after the stacks grew, faulting every
+                                 ; program at load.
     dq 0x1000
 
 ; ── strcmp(rsi, rdi) → eax 0 if equal ──
