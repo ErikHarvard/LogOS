@@ -330,12 +330,26 @@ printf '%s\n' "$OUT" | grep -qxF "kernel ran on the stack machine" || { echo "FA
 case "$BYTE_CHILD" in new_logos_gen1_pid*.bin) : ;; *) echo "FAIL  byte-vm: kernel did not replicate ('$BYTE_CHILD')"; ok=0 ;; esac
 [ -n "$BYTE_CHILD" ] && [ -f "$BYTE_CHILD" ] && cmp -s tiny_host "$BYTE_CHILD" \
     || { echo "FAIL  byte-vm: replicant not byte-identical"; ok=0; }
+# Native integers on BOTH byte engines (RUN_BYTES and RUN_SM): they lex digits,
+# desugar n -> str_to_int("n"), and dispatch the int builtins. Must match the C
+# host — this closes the last cross-engine integer gap (all five engines agree).
+printf 'glyph SEQ = la a. la b. b\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph MAIN = SEQ(print(int_to_str(add(mul(6)(7))(sub(10)(8)))))(SEQ(print(int_to_str(div(17)(5))))(print(IF(lt(3)(5))(la _. "yes")(la _. "no"))))\n' > /tmp/bcint.la
+BCM=$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)
+head -$((BCM-1)) bytecode.la > /tmp/bc_rb.la
+printf 'glyph MAIN = RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("/tmp/bcint.la")))\n' >> /tmp/bc_rb.la
+head -$((BCM-1)) bytecode.la > /tmp/bc_sm.la
+printf 'glyph MAIN = RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/bcint.la")))\n' >> /tmp/bc_sm.la
+EXPECT_INT="$(printf '44\n3\nyes')"
+[ "$(./tiny_host /tmp/bc_rb.la 2>/dev/null)" = "$EXPECT_INT" ] || { echo "FAIL  RUN_BYTES integers"; ok=0; }
+[ "$(./tiny_host /tmp/bc_sm.la 2>/dev/null)" = "$EXPECT_INT" ] || { echo "FAIL  RUN_SM integers"; ok=0; }
+rm -f /tmp/bcint.la /tmp/bc_rb.la /tmp/bc_sm.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  EMIT/PARSE_BYTES round-trip an AST through byte instructions"
     echo "PASS  every glyph of kernel.la survives AST -> bytes -> AST"
     echo "PASS  RUN_BYTES executes byte instructions directly (no AST rebuilt)"
     echo "PASS  the stack machine (S/E/C/D) runs the compiled program and kernel"
     echo "PASS  the kernel ran from bytes and on the stack machine: spoke and bred $BYTE_CHILD"
+    echo "PASS  RUN_BYTES and RUN_SM execute integers, matching the C host (all five engines agree)"
 else
     printf '%s\n' "$OUT"
     exit 1

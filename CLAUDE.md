@@ -414,17 +414,22 @@ runnable and checked by `build.sh`.
   the auditable source of the VM's bytes.
 
   *Known cross-engine divergences (audit, `b_τ ≡ f_τ`):*
-  - **Native integers run on the C host, on `eval.la`, and on the SECD VM —
-    but not yet on `RUN_SM`.** `tiny_host.c` has `N_INT` + `add/sub/mul/div/
-    mod/lt/int_eq/int_to_str/str_to_int`; `eval.la` evaluates integer programs;
-    `codegen.la` compiles them (an integer literal `n` desugars to
-    `str_to_int("n")`, so no new AST node); and `secd.asm` executes them
-    natively (value tag 4 `INT`, payload = the signed integer directly;
-    builtins 19–27, reusing `desc_atoi`/`push_dec`). `build.sh` verifies the
-    native VM and the C host agree on arithmetic. The one remaining gap is
-    `bytecode.la`'s `RUN_SM`, whose 4-branch AST and `str_eq`-only lexer have no
-    integer support — so an integer program runs on host/`eval.la`/VM but not
-    on `RUN_SM`.
+  - **Native integers run on all five execution engines.** An integer literal
+    `n` desugars at parse time to `str_to_int("n")` (so no new AST node is
+    needed anywhere), and the int builtins (`add/sub/mul/div/mod/lt/int_eq/
+    int_to_str/str_to_int`) are implemented on each engine:
+    - **C host** (`tiny_host.c`): native `N_INT` value + the builtins;
+    - **`eval.la`** (meta-evaluator): `VAL_INT` + the builtins;
+    - **`codegen.la` → SECD VM** (`secd.asm`): value tag 4 `INT` (payload =
+      the signed integer directly), builtins 19–27, reusing `desc_atoi`/
+      `push_dec`;
+    - **`bytecode.la`** `RUN_BYTES` and `RUN_SM`: `VAL_INT` + the builtins,
+      factored into helper glyphs so the existing dispatch chains keep their
+      shape.
+
+    `build.sh` verifies all engines agree on the same arithmetic program
+    (`44 / 3 / yes`). The lexers use a `str_eq`-only `IS_DIGIT` so the same
+    digit-lexing rule holds everywhere, including under the native VM.
   - **`codegen.la` / `bytecode.la` / `parser.la` `PARSE_PROGRAM` silently
     truncate malformed input** (a `NONE` from `PARSE_GLYPH` is treated as
     end-of-program). `eval.la`'s `PARSE_PROGRAM` was fixed to halt via the host

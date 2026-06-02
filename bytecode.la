@@ -74,6 +74,9 @@ glyph SKIP_LINE = Z(la self. la s. IF(str_eq(s)(""))(la _. s)(la _. IF(str_eq(st
 glyph SKIP_SPACES = Z(la self. la s. IF(str_eq(s)(""))(la _. s)(la _. IF(IS_SPACE(str_head(s)))(la _. self(str_tail(s)))(la _. IF(str_eq(str_head(s))("#"))(la _. self(SKIP_LINE(s)))(la _. s))))
 
 glyph READ_IDENT = Z(la self. la acc. la s. IF(IS_IDENT_CHAR(str_head(s)))(la _. self(concat(acc)(str_head(s)))(str_tail(s)))(la _. PAIR(acc)(s)))
+# str_eq only (no int builtins) so the lexer is uniform across all engines.
+glyph IS_DIGIT = la c. IF(str_eq(c)("0"))(la _. TRUE)(la _. IF(str_eq(c)("1"))(la _. TRUE)(la _. IF(str_eq(c)("2"))(la _. TRUE)(la _. IF(str_eq(c)("3"))(la _. TRUE)(la _. IF(str_eq(c)("4"))(la _. TRUE)(la _. IF(str_eq(c)("5"))(la _. TRUE)(la _. IF(str_eq(c)("6"))(la _. TRUE)(la _. IF(str_eq(c)("7"))(la _. TRUE)(la _. IF(str_eq(c)("8"))(la _. TRUE)(la _. IF(str_eq(c)("9"))(la _. TRUE)(la _. FALSE))))))))))
+glyph READ_INT = Z(la self. la acc. la s. IF(IS_DIGIT(str_head(s)))(la _. self(concat(acc)(str_head(s)))(str_tail(s)))(la _. PAIR(acc)(s)))
 
 glyph UNESCAPE = la c. IF(str_eq(c)("n"))(la _. "\n")(la _. IF(str_eq(c)("t"))(la _. "\t")(la _. c))
 
@@ -83,13 +86,13 @@ glyph TOK_TYPE = la tok. FST(tok)
 glyph TOK_VAL  = la tok. SND(tok)
 glyph MKTOK    = la ty. la val. PAIR(ty)(val)
 
-glyph LEX_ONE = la s. IF(str_eq(s)(""))(la _. PAIR(MKTOK("eof")(""))(s))(la _. IF(str_eq(str_head(s))("("))(la _. PAIR(MKTOK("lp")("("))(str_tail(s)))(la _. IF(str_eq(str_head(s))(")"))(la _. PAIR(MKTOK("rp")(")"))(str_tail(s)))(la _. IF(str_eq(str_head(s))("."))(la _. PAIR(MKTOK("dot")("."))(str_tail(s)))(la _. IF(str_eq(str_head(s))("="))(la _. PAIR(MKTOK("eq")("="))(str_tail(s)))(la _. IF(str_eq(str_head(s))("\""))(la _. (la r. PAIR(MKTOK("str")(FST(r)))(SND(r)))(READ_STRING("")(str_tail(s))))(la _. IF(IS_IDENT_CHAR(str_head(s)))(la _. (la r. (la name. (la rest. IF(str_eq(name)("glyph"))(la _. PAIR(MKTOK("glyph")("glyph"))(rest))(la _. IF(str_eq(name)("la"))(la _. PAIR(MKTOK("la")("la"))(rest))(la _. PAIR(MKTOK("ident")(name))(rest))))(SND(r)))(FST(r)))(READ_IDENT("")(s)))(la _. PAIR(MKTOK("eof")(""))(s))))))))
+glyph LEX_ONE = la s. IF(str_eq(s)(""))(la _. PAIR(MKTOK("eof")(""))(s))(la _. IF(str_eq(str_head(s))("("))(la _. PAIR(MKTOK("lp")("("))(str_tail(s)))(la _. IF(str_eq(str_head(s))(")"))(la _. PAIR(MKTOK("rp")(")"))(str_tail(s)))(la _. IF(str_eq(str_head(s))("."))(la _. PAIR(MKTOK("dot")("."))(str_tail(s)))(la _. IF(str_eq(str_head(s))("="))(la _. PAIR(MKTOK("eq")("="))(str_tail(s)))(la _. IF(str_eq(str_head(s))("\""))(la _. (la r. PAIR(MKTOK("str")(FST(r)))(SND(r)))(READ_STRING("")(str_tail(s))))(la _. IF(IS_DIGIT(str_head(s)))(la _. (la r. PAIR(MKTOK("int")(FST(r)))(SND(r)))(READ_INT("")(s)))(la _. IF(IS_IDENT_CHAR(str_head(s)))(la _. (la r. (la name. (la rest. IF(str_eq(name)("glyph"))(la _. PAIR(MKTOK("glyph")("glyph"))(rest))(la _. IF(str_eq(name)("la"))(la _. PAIR(MKTOK("la")("la"))(rest))(la _. PAIR(MKTOK("ident")(name))(rest))))(SND(r)))(FST(r)))(READ_IDENT("")(s)))(la _. PAIR(MKTOK("eof")(""))(s)))))))))
 
 glyph NEXT_TOKEN = la s. LEX_ONE(SKIP_SPACES(s))
 
 # ── Parser (text -> AST) ────────────────────────────────────────────
 
-glyph PARSE_PRIMARY = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("ident"))(la _. SOME(AST_VAR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("str"))(la _. SOME(AST_STR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la inner. IF(IS_SOME(inner))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. SOME(R_VAL(inner))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(inner))))(la _. NONE))(PARSE_EXPR(rest)))(la _. NONE))))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+glyph PARSE_PRIMARY = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("ident"))(la _. SOME(AST_VAR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("str"))(la _. SOME(AST_STR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("int"))(la _. SOME(AST_APP(AST_VAR("str_to_int"))(AST_STR(TOK_VAL(tok))))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la inner. IF(IS_SOME(inner))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. SOME(R_VAL(inner))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(inner))))(la _. NONE))(PARSE_EXPR(rest)))(la _. NONE)))))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
 
 glyph PARSE_APP_TAIL = Z(la self. la acc. la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la arg. IF(IS_SOME(arg))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. self(AST_APP(acc)(R_VAL(arg)))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(arg))))(la _. NONE))(PARSE_EXPR(rest)))(la _. SOME(acc)(s)))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
 
@@ -234,12 +237,14 @@ glyph LIST_FIND = Z(la self. la name. la lst.
 
 # Values: val(on_str)(on_clo)(on_bi)(on_pa).  Same shape as eval.la's,
 # but VAL_CLO's body is a byte stream, not an AST.
-glyph VAL_STR = la s.    la os. la oc. la ob. la op. os(s)
-glyph VAL_CLO = la p. la body. la env. la os. la oc. la ob. la op. oc(p)(body)(env)
-glyph VAL_BI  = la name. la os. la oc. la ob. la op. ob(name)
-glyph VAL_PA  = la name. la v.  la os. la oc. la ob. la op. op(name)(v)
+glyph VAL_STR = la s.    la os. la oc. la ob. la op. la oi. os(s)
+glyph VAL_CLO = la p. la body. la env. la os. la oc. la ob. la op. la oi. oc(p)(body)(env)
+glyph VAL_BI  = la name. la os. la oc. la ob. la op. la oi. ob(name)
+glyph VAL_PA  = la name. la v.  la os. la oc. la ob. la op. la oi. op(name)(v)
+glyph VAL_INT = la n.    la os. la oc. la ob. la op. la oi. oi(n)
 
-glyph UNWRAP_STR = la val. val (la s. s) (la p. la b. la e. "") (la n. "") (la n. la v. "")
+glyph UNWRAP_STR = la val. val (la s. s) (la p. la b. la e. "") (la n. "") (la n. la v. "") (la n. int_to_str(n))
+glyph UNWRAP_INT = la val. val (la s. 0) (la p. la b. la e. 0) (la n. 0) (la n. la v. 0) (la n. n)
 
 glyph IS_BI_NAME = la name.
     IF(str_eq(name)("print"))(la _. TRUE)(la _.
@@ -250,12 +255,51 @@ glyph IS_BI_NAME = la name.
     IF(str_eq(name)("str_head"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_tail"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_eq"))(la _. TRUE)(la _.
-    FALSE))))))))
+    IS_BI_NAME_INT(name)))))))))
 
 # str_eq yields Church booleans; in the VM those must be closures whose
 # bodies are BYTE instructions, so applying them runs under RUN_BYTES.
 glyph BYTE_TRUE  = VAL_CLO("t")(EMIT(AST_LAM("f")(AST_VAR("t"))))(NIL)
 glyph BYTE_FALSE = VAL_CLO("t")(EMIT(AST_LAM("f")(AST_VAR("f"))))(NIL)
+
+# ── Native integers, factored into helpers so the existing dispatch chains
+# keep their exact shape (each just falls through to one of these). VAL_INT
+# carries the host integer; a literal n is parsed as str_to_int("n"). The
+# bool result (lt/int_eq) is passed in as t/f so the same arithmetic serves
+# both the byte VM (BYTE_TRUE/FALSE) and the stack machine (SM_TRUE/FALSE).
+glyph IS_BI_NAME_INT = la name.
+    IF(str_eq(name)("add"))(la _. TRUE)(la _.
+    IF(str_eq(name)("sub"))(la _. TRUE)(la _.
+    IF(str_eq(name)("mul"))(la _. TRUE)(la _.
+    IF(str_eq(name)("div"))(la _. TRUE)(la _.
+    IF(str_eq(name)("mod"))(la _. TRUE)(la _.
+    IF(str_eq(name)("lt"))(la _. TRUE)(la _.
+    IF(str_eq(name)("int_eq"))(la _. TRUE)(la _.
+    IF(str_eq(name)("int_to_str"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_to_int"))(la _. TRUE)(la _.
+    FALSE)))))))))
+
+glyph APPLY_BI_INT = la name. la val.
+    IF(str_eq(name)("int_to_str"))(la _. VAL_STR(int_to_str(UNWRAP_INT(val))))(la _.
+    IF(str_eq(name)("str_to_int"))(la _. VAL_INT(str_to_int(UNWRAP_STR(val))))(la _.
+    IF(str_eq(name)("add"))(la _. VAL_PA("add")(val))(la _.
+    IF(str_eq(name)("sub"))(la _. VAL_PA("sub")(val))(la _.
+    IF(str_eq(name)("mul"))(la _. VAL_PA("mul")(val))(la _.
+    IF(str_eq(name)("div"))(la _. VAL_PA("div")(val))(la _.
+    IF(str_eq(name)("mod"))(la _. VAL_PA("mod")(val))(la _.
+    IF(str_eq(name)("lt"))(la _. VAL_PA("lt")(val))(la _.
+    IF(str_eq(name)("int_eq"))(la _. VAL_PA("int_eq")(val))(la _.
+    VAL_STR(concat("ERROR: unknown builtin ")(name)))))))))))
+
+glyph APPLY_BI2_INT = la t. la f. la name. la v1. la v2.
+    IF(str_eq(name)("add"))(la _. VAL_INT(add(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("sub"))(la _. VAL_INT(sub(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("mul"))(la _. VAL_INT(mul(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("div"))(la _. VAL_INT(div(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("mod"))(la _. VAL_INT(mod(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("lt"))(la _. IF(lt(UNWRAP_INT(v1))(UNWRAP_INT(v2)))(la _. t)(la _. f))(la _.
+    IF(str_eq(name)("int_eq"))(la _. IF(int_eq(UNWRAP_INT(v1))(UNWRAP_INT(v2)))(la _. t)(la _. f))(la _.
+    VAL_STR(concat("ERROR: unknown builtin2 ")(name)))))))))
 
 # First-argument builtin dispatch (effects pass through to the host).
 glyph APPLY_BI = la name. la val.
@@ -267,14 +311,14 @@ glyph APPLY_BI = la name. la val.
     IF(str_eq(name)("str_head"))(la _. VAL_STR(str_head(UNWRAP_STR(val))))(la _.
     IF(str_eq(name)("str_tail"))(la _. VAL_STR(str_tail(UNWRAP_STR(val))))(la _.
     IF(str_eq(name)("str_eq"))(la _. VAL_PA("str_eq")(val))(la _.
-    VAL_STR(concat("ERROR: unknown builtin ")(name))))))))))
+    APPLY_BI_INT(name)(val)))))))))
 
 # Second-argument builtin dispatch.
 glyph APPLY_BI2 = la name. la v1. la v2.
     IF(str_eq(name)("write_file"))(la _. (la _. v2)(write_file(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
     IF(str_eq(name)("concat"))(la _. VAL_STR(concat(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
     IF(str_eq(name)("str_eq"))(la _. IF(str_eq(UNWRAP_STR(v1))(UNWRAP_STR(v2)))(la _. BYTE_TRUE)(la _. BYTE_FALSE))(la _.
-    VAL_STR(concat("ERROR: unknown builtin2 ")(name)))))
+    APPLY_BI2_INT(BYTE_TRUE)(BYTE_FALSE)(name)(v1)(v2))))
 
 # SKIP_FIELD / SKIP_BYTES — advance past one field / one expression
 # without evaluating, so a lambda can find where its body ends.
@@ -331,6 +375,7 @@ glyph RUN_BYTES = Z(la self. la s. la env. la gl.
                             (la p. la b. la e. FST(self(b)(CONS(PAIR(p)(aval))(e))(gl)))
                             (la bn. APPLY_BI(bn)(aval))
                             (la pn. la pv. APPLY_BI2(pn)(pv)(aval))
+                            (la n. VAL_STR("vm: cannot apply integer"))
                     )(SND(arg_r))
                 )(FST(arg_r)))(FST(fn_r))
             )(self(SND(fn_r))(env)(gl)))(self(rest0)(env)(gl))
@@ -404,7 +449,7 @@ glyph APPLY_BI2_SM = la name. la v1. la v2.
     IF(str_eq(name)("write_file"))(la _. (la _. v2)(write_file(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
     IF(str_eq(name)("concat"))(la _. VAL_STR(concat(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
     IF(str_eq(name)("str_eq"))(la _. IF(str_eq(UNWRAP_STR(v1))(UNWRAP_STR(v2)))(la _. SM_TRUE)(la _. SM_FALSE))(la _.
-    VAL_STR(concat("ERROR: unknown builtin2 ")(name)))))
+    APPLY_BI2_INT(SM_TRUE)(SM_FALSE)(name)(v1)(v2))))
 
 # RUN_SM(gl0)(code0) — execute a compiled instruction list. The state is
 # (S, E, C, D); STEP transitions it; the trampoline iterates to a halt
@@ -434,6 +479,7 @@ glyph RUN_SM = la gl0. la code0.
                             (la p. la body. la e. self(S2)(CONS(PAIR(p)(arg))(e))(body)(CONS(PAIR(C1)(E))(D)))
                             (la bn. self(CONS(APPLY_BI(bn)(arg))(S2))(E)(C1)(D))
                             (la pn. la pv. self(CONS(APPLY_BI2_SM(pn)(pv)(arg))(S2))(E)(C1)(D))
+                            (la n. self(CONS(VAL_STR("sm: cannot apply integer"))(S2))(E)(C1)(D))
                     )(LIST_TL(LIST_TL(S))))(LIST_HD(LIST_TL(S))))(LIST_HD(S)))
             )(LIST_TL(C)))(LIST_HD(C))
         )(la _.
