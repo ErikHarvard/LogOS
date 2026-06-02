@@ -13,12 +13,18 @@
  *         | "string literal"
  *         | ( EXPR )                grouping
  *
+ * Strings are binary-safe: each carries an explicit byte length, so they may
+ * contain NULs and hold arbitrary binary (e.g. an ELF image).
+ *
  * Built-ins:
  *   print(s)         — prints the string s (followed by a newline)
  *   copy_self(x)     — copies /proc/self/exe to ./new_logos.bin
  *   read_file(path)  — reads a file and returns its contents as a string
  *   write_file(p)(c) — writes string c to file p, returns c
+ *   write_exec(p)(c) — writes c to file p, marks it executable (0755)
  *   concat(a)(b)     — concatenates two strings, returns the result
+ *   chr(n)           — decimal-string n (0..255) -> one byte
+ *   ord(s)           — first byte of s -> decimal string
  *
  * Evaluation finds the MAIN glyph and reduces it, using capture-avoiding
  * substitution for beta reduction. The core axiom of LogOS is  ∃(∃) ≡ ∃:
@@ -39,7 +45,8 @@ typedef enum { N_VAR, N_LAM, N_APP, N_STR, N_PARTIAL } NType;
 
 typedef struct Node {
     NType         t;
-    char         *s;   /* VAR name | STR value | LAM parameter */
+    char         *s;   /* VAR name | STR bytes | LAM parameter */
+    size_t        len;  /* STR byte length (strings are binary-safe, not NUL-terminated) */
     struct Node  *a;   /* LAM body  | APP function */
     struct Node  *b;   /* APP argument */
 } Node;
@@ -52,7 +59,19 @@ static Node *new_node(NType t) {
 }
 
 static Node *mkvar(const char *name)            { Node *n = new_node(N_VAR); n->s = strdup(name); return n; }
-static Node *mkstr(const char *val)             { Node *n = new_node(N_STR); n->s = strdup(val);  return n; }
+/* mkstrn: a binary-safe string of exactly `len` bytes (may contain NULs).
+ * A trailing '\0' is kept past the end so the buffer is still printable as a
+ * C string for the text-only paths, but `len` is the authority. */
+static Node *mkstrn(const char *bytes, size_t len) {
+    Node *n = new_node(N_STR);
+    char *buf = malloc(len + 1);
+    if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
+    if (len) memcpy(buf, bytes, len);
+    buf[len] = '\0';
+    n->s = buf; n->len = len;
+    return n;
+}
+static Node *mkstr(const char *val)             { return mkstrn(val, strlen(val)); }
 static Node *mklam(const char *param, Node *bd) { Node *n = new_node(N_LAM); n->s = strdup(param); n->a = bd; return n; }
 static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->a = f; n->b = x; return n; }
 static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL); n->s = strdup(nm); n->a = a; return n; }
@@ -60,7 +79,7 @@ static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL)
 static Node *copy_node(Node *e) {
     switch (e->t) {
         case N_VAR: return mkvar(e->s);
-        case N_STR: return mkstr(e->s);
+        case N_STR: return mkstrn(e->s, e->len);
         case N_LAM: return mklam(e->s, copy_node(e->a));
         case N_APP:     return mkapp(copy_node(e->a), copy_node(e->b));
         case N_PARTIAL: return mkpartial(e->s, copy_node(e->a));
@@ -75,6 +94,7 @@ typedef enum { T_GLYPH, T_LA, T_DOT, T_EQ, T_LP, T_RP, T_IDENT, T_STR, T_EOF } T
 static const char *P;        /* current position in source */
 static Tok         curtok;   /* current token kind */
 static char       *curstr;   /* text for T_IDENT / T_STR */
+static size_t      curlen;   /* byte length of T_STR */
 
 /* Identifier characters: ASCII alnum, underscore, and any UTF-8 byte (so
  * Lingua Adamica glyphs like ∃ are first-class names). */
@@ -119,6 +139,7 @@ static void lex(void) {
             else { fprintf(stderr, "lex error: unterminated string\n"); exit(1); }
             buf[i] = '\0';
             curstr = buf;
+            curlen = i;
             curtok = T_STR;
             return;
         }
@@ -155,7 +176,7 @@ static Node *parse_expr(void);
 /* primary := IDENT | STRING | '(' expr ')' */
 static Node *parse_primary(void) {
     if (curtok == T_IDENT) { Node *n = mkvar(curstr); advance(); return n; }
-    if (curtok == T_STR)   { Node *n = mkstr(curstr); advance(); return n; }
+    if (curtok == T_STR)   { Node *n = mkstrn(curstr, curlen); advance(); return n; }
     if (curtok == T_LP)    { advance(); Node *e = parse_expr(); expect(T_RP, "')'"); advance(); return e; }
     fprintf(stderr, "parse error: expected a variable, string, or '('\n");
     exit(1);
@@ -279,7 +300,9 @@ static int is_builtin(const char *name) {
     return strcmp(name, "print") == 0 || strcmp(name, "copy_self") == 0
         || strcmp(name, "read_file") == 0 || strcmp(name, "write_file") == 0
         || strcmp(name, "concat") == 0 || strcmp(name, "str_head") == 0
-        || strcmp(name, "str_tail") == 0 || strcmp(name, "str_eq") == 0;
+        || strcmp(name, "str_tail") == 0 || strcmp(name, "str_eq") == 0
+        || strcmp(name, "chr") == 0 || strcmp(name, "ord") == 0
+        || strcmp(name, "write_exec") == 0;
 }
 
 /* The generation of the currently running host, read from its own filename.
@@ -330,7 +353,10 @@ static char *do_copy_self(void) {
 
 static Node *eval(Node *e);
 
-static char *slurp_file(const char *path) {
+/* Read a whole file into a fresh buffer (NUL-terminated for convenience). If
+ * out_len is non-NULL it receives the exact byte count, so binary files with
+ * embedded NULs round-trip faithfully. */
+static char *slurp_file(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "read_file: cannot open '%s': ", path); perror(NULL); exit(1); }
     fseek(f, 0, SEEK_END);
@@ -341,6 +367,7 @@ static char *slurp_file(const char *path) {
     size_t got = fread(buf, 1, (size_t)len, f);
     buf[got] = '\0';
     fclose(f);
+    if (out_len) *out_len = got;
     return buf;
 }
 
@@ -350,20 +377,33 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         if (arg2->t != N_STR) { fprintf(stderr, "write_file: content is not a string\n"); exit(1); }
         FILE *f = fopen(arg1->s, "wb");
         if (!f) { fprintf(stderr, "write_file: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
-        fwrite(arg2->s, 1, strlen(arg2->s), f);
+        fwrite(arg2->s, 1, arg2->len, f);
         fclose(f);
+        return arg2;
+    }
+    if (strcmp(name, "write_exec") == 0) {
+        /* write_file's sibling, but mark the result executable (0755). This is
+         * the primitive that lets a .la program emit a runnable native binary:
+         * arg2 is binary-safe content (ELF bytes, NULs and all). */
+        if (arg1->t != N_STR) { fprintf(stderr, "write_exec: filename is not a string\n"); exit(1); }
+        if (arg2->t != N_STR) { fprintf(stderr, "write_exec: content is not a string\n"); exit(1); }
+        FILE *f = fopen(arg1->s, "wb");
+        if (!f) { fprintf(stderr, "write_exec: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
+        fwrite(arg2->s, 1, arg2->len, f);
+        fclose(f);
+        chmod(arg1->s, 0755);
         return arg2;
     }
     if (strcmp(name, "concat") == 0) {
         if (arg1->t != N_STR || arg2->t != N_STR) {
             fprintf(stderr, "concat: arguments must be strings\n"); exit(1);
         }
-        size_t l1 = strlen(arg1->s), l2 = strlen(arg2->s);
+        size_t l1 = arg1->len, l2 = arg2->len;
         char *buf = malloc(l1 + l2 + 1);
-        memcpy(buf, arg1->s, l1);
-        memcpy(buf + l1, arg2->s, l2);
+        if (l1) memcpy(buf, arg1->s, l1);
+        if (l2) memcpy(buf + l1, arg2->s, l2);
         buf[l1 + l2] = '\0';
-        Node *r = mkstr(buf);
+        Node *r = mkstrn(buf, l1 + l2);
         free(buf);
         return r;
     }
@@ -371,7 +411,7 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         if (arg1->t != N_STR || arg2->t != N_STR) {
             fprintf(stderr, "str_eq: arguments must be strings\n"); exit(1);
         }
-        if (strcmp(arg1->s, arg2->s) == 0)
+        if (arg1->len == arg2->len && memcmp(arg1->s, arg2->s, arg1->len) == 0)
             return mklam("t", mklam("f", mkvar("t")));  /* TRUE */
         else
             return mklam("t", mklam("f", mkvar("f")));  /* FALSE */
@@ -383,7 +423,7 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
 static Node *apply_builtin(const char *name, Node *argexpr) {
     if (strcmp(name, "print") == 0) {
         Node *v = eval(argexpr);
-        if (v->t == N_STR) printf("%s\n", v->s);
+        if (v->t == N_STR) { fwrite(v->s, 1, v->len, stdout); putchar('\n'); }
         else               fprintf(stderr, "print: argument is not a string\n");
         return v;
     }
@@ -397,8 +437,9 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
     if (strcmp(name, "read_file") == 0) {
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "read_file: argument is not a string\n"); exit(1); }
-        char *contents = slurp_file(v->s);
-        Node *r = mkstr(contents);
+        size_t flen;
+        char *contents = slurp_file(v->s, &flen);
+        Node *r = mkstrn(contents, flen);
         free(contents);
         return r;
     }
@@ -406,6 +447,11 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "write_file: filename is not a string\n"); exit(1); }
         return mkpartial("write_file", v);
+    }
+    if (strcmp(name, "write_exec") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "write_exec: filename is not a string\n"); exit(1); }
+        return mkpartial("write_exec", v);
     }
     if (strcmp(name, "concat") == 0) {
         Node *v = eval(argexpr);
@@ -415,20 +461,36 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
     if (strcmp(name, "str_head") == 0) {
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "str_head: argument is not a string\n"); exit(1); }
-        if (v->s[0] == '\0') return mkstr("");
-        char buf[2] = { v->s[0], '\0' };
-        return mkstr(buf);
+        return mkstrn(v->s, v->len ? 1 : 0);   /* first byte, or "" if empty */
     }
     if (strcmp(name, "str_tail") == 0) {
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "str_tail: argument is not a string\n"); exit(1); }
-        if (v->s[0] == '\0') return mkstr("");
-        return mkstr(v->s + 1);
+        return v->len ? mkstrn(v->s + 1, v->len - 1) : mkstrn("", 0);
     }
     if (strcmp(name, "str_eq") == 0) {
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "str_eq: first argument is not a string\n"); exit(1); }
         return mkpartial("str_eq", v);
+    }
+    if (strcmp(name, "chr") == 0) {
+        /* decimal-string -> one byte. The way a .la program spells an arbitrary
+         * byte (0..255), including NUL, so it can assemble binary like ELF. */
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "chr: argument is not a string\n"); exit(1); }
+        long n = strtol(v->s, NULL, 10);
+        if (n < 0 || n > 255) { fprintf(stderr, "chr: value %ld out of byte range 0..255\n", n); exit(1); }
+        char b = (char)(unsigned char)n;
+        return mkstrn(&b, 1);
+    }
+    if (strcmp(name, "ord") == 0) {
+        /* first byte -> decimal string (inverse of chr). */
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "ord: argument is not a string\n"); exit(1); }
+        int b = v->len ? (unsigned char)v->s[0] : 0;
+        char buf[16];
+        snprintf(buf, sizeof buf, "%d", b);
+        return mkstr(buf);
     }
     fprintf(stderr, "unknown builtin: %s\n", name);
     exit(1);
@@ -475,7 +537,7 @@ static Node *eval(Node *e) {
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "kernel.la";
 
-    char *src = slurp_file(path);
+    char *src = slurp_file(path, NULL);   /* source is text; NUL-terminated walk is fine */
     P = src;
     advance();
     parse_program();

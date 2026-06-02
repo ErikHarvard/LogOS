@@ -1,0 +1,43 @@
+# ═══════════════════════════════════════════════════════════════════
+#  elf.la — emit a native x86-64 ELF executable from Lingua Adamica
+#
+#  Stage 1 of Albedo: the system produces a runnable native binary with
+#  no compiler but the host's binary primitives (chr / write_exec). This
+#  is pure GENERATION — assembling machine bytes — with no evaluation.
+#  The CPU and OS perform RECOGNITION when the emitted file is run.
+#
+#  The binary is a minimal static ELF64 (one PT_LOAD segment, R+X) whose
+#  entry point makes two raw syscalls:
+#      write(1, "I AM THAT I AM\n", 15)
+#      exit(0)
+#  171 bytes total: 64 (ELF header) + 56 (program header) + 36 (code)
+#  + 15 (message). Verified byte-for-byte against an independently
+#  assembled reference.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la cond. la t. la f. cond(t)(f)("!")
+
+# BYTES(s) — turn a string of space-separated decimal byte values into
+# the binary string they denote: tokenize digits, chr each token, concat.
+# Empty tokens (from the spaces) are skipped so chr is never handed "".
+glyph BYTES = la s.
+    Z(la self. la rest. la tok. la out.
+        IF(str_eq(rest)(""))(la _.
+            IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok)))
+        )(la _.
+        IF(str_eq(str_head(rest))(" "))(la _.
+            self(str_tail(rest))("")(IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok))))
+        )(la _.
+            self(str_tail(rest))(concat(tok)(str_head(rest)))(out)
+        ))
+    )(s)("")("")
+
+# The ELF image, as decimal byte values.
+#   ELF header (64) | program header (56) | code (36) | message (15)
+# entry = 0x400078, message vaddr = 0x40009c, filesz = memsz = 171.
+glyph ELF = BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0 120 0 64 0 0 0 0 0 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 56 0 1 0 0 0 0 0 0 0 1 0 0 0 5 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 0 0 0 0 0 0 64 0 0 0 0 0 171 0 0 0 0 0 0 0 171 0 0 0 0 0 0 0 0 16 0 0 0 0 0 0 184 1 0 0 0 191 1 0 0 0 72 190 156 0 64 0 0 0 0 0 186 15 0 0 0 15 5 184 60 0 0 0 49 255 15 5 73 32 65 77 32 84 72 65 84 32 73 32 65 77 10")
+
+# Emit the executable and announce it.
+glyph MAIN = SEQ(write_exec("logos_native")(ELF))(print("emitted logos_native"))

@@ -93,6 +93,31 @@ else
     exit 1
 fi
 
+say "Testing binary-safe primitives (chr / ord / write_exec)"
+cat > /tmp/test_chr.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph MAIN = SEQ(print(ord(chr("65"))))(SEQ(print(chr("73")))(print(ord("A"))))
+LAEOF
+OUT="$(./tiny_host /tmp/test_chr.la 2>/dev/null)"
+if [ "$OUT" = "$(printf '65\nI\n65')" ]; then
+    echo "PASS  chr/ord round-trip (ord(chr 65)=65, chr 73='I', ord 'A'=65)"
+else
+    echo "FAIL  chr/ord: got '$OUT'"
+    exit 1
+fi
+# A NUL byte must survive concat and write_file: A \0 B == 41 00 42.
+cat > /tmp/test_nul.la <<'LAEOF'
+glyph MAIN = write_file("/tmp/test_nul.bin")(concat(chr("65"))(concat(chr("0"))(chr("66"))))
+LAEOF
+./tiny_host /tmp/test_nul.la >/dev/null 2>&1
+if [ "$(stat -c%s /tmp/test_nul.bin 2>/dev/null)" = "3" ] && [ "$(od -An -tx1 /tmp/test_nul.bin | tr -d ' \n')" = "410042" ]; then
+    echo "PASS  embedded NUL survives concat + write_file (41 00 42)"
+else
+    echo "FAIL  binary string not NUL-safe: $(od -An -tx1 /tmp/test_nul.bin)"
+    exit 1
+fi
+rm -f /tmp/test_nul.bin
+
 say "Testing read_file built-in"
 printf 'test content' > /tmp/test_rf_input.txt
 cat > /tmp/test_read_file.la <<'LAEOF'
@@ -210,6 +235,26 @@ else
     exit 1
 fi
 rm -f new_logos_gen*.bin
+
+say "Emitting native x86-64 code (Albedo Stage 1 — elf.la)"
+# elf.la assembles a minimal static ELF64 from Lingua Adamica (chr + concat
+# + write_exec) and emits a runnable native binary. The host plays no part in
+# running it: the OS loads it and it makes its own write/exit syscalls.
+rm -f logos_native
+./tiny_host elf.la >/dev/null 2>&1
+ok=1
+[ -f logos_native ]                              || { echo "FAIL  native: logos_native not emitted"; ok=0; }
+[ "$(stat -c%s logos_native 2>/dev/null)" = "171" ] || { echo "FAIL  native: wrong size ($(stat -c%s logos_native 2>/dev/null) != 171)"; ok=0; }
+NATIVE_OUT="$(./logos_native 2>/dev/null)"; NATIVE_RC=$?
+[ "$NATIVE_OUT" = "I AM THAT I AM" ]             || { echo "FAIL  native: emitted binary said '$NATIVE_OUT'"; ok=0; }
+[ "$NATIVE_RC" = "0" ]                           || { echo "FAIL  native: emitted binary exited $NATIVE_RC"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  elf.la emitted a 171-byte native ELF executable"
+    echo "PASS  the emitted binary ran on the bare OS and spoke: I AM THAT I AM"
+else
+    exit 1
+fi
+rm -f logos_native
 
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"
 # eval.la is a lexer + parser + evaluator written entirely in Lingua

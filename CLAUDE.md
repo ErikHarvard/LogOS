@@ -15,6 +15,7 @@ host program, applied to itself, reproduces itself.
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
 | `bytecode.la`        | Byte instructions and execution engines: `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), `RUN_BYTES` (a VM that executes the bytes directly), and `RUN_SM` (a real SECD-style stack machine over a compiled instruction list), all in Lingua Adamica. |
+| `elf.la`             | Albedo Stage 1: assembles a minimal static x86-64 ELF executable from Lingua Adamica (`chr` + `concat` + `write_exec`) and emits a runnable native binary that speaks the Word with no host in the loop. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -63,6 +64,16 @@ Expressions:
   if `s` is empty.
 - `str_eq(a)(b)` — returns Church `TRUE` (`la t. la f. t`) if `a` and `b` are
   identical strings, Church `FALSE` (`la t. la f. f`) otherwise. Curried.
+- `chr(n)` — decimal-string `n` (0..255) → a one-byte string; how a program
+  spells an arbitrary byte (including NUL) to assemble binary.
+- `ord(s)` — first byte of `s` → its decimal string (inverse of `chr`).
+- `write_exec(p)(c)` — like `write_file`, but marks the file executable
+  (`0755`); curried. The primitive that lets a program emit a runnable binary.
+
+Strings are **binary-safe**: each carries an explicit byte length, so they may
+contain NULs and hold arbitrary binary such as an ELF image. (`str_head` /
+`str_tail` operate on bytes; `concat` / `str_eq` / `read_file` / `write_file`
+are length-aware, not NUL-terminated.)
 
 ### Recursion (Z combinator)
 
@@ -296,6 +307,38 @@ it as a philosophical thesis, a separate matter from any formal
 complexity-theory result.) `build.sh` exercises both booleans through the
 machine (`str_eq` match → `T`, mismatch → `F`, concatenated to `TF`) so the
 hand-written literals cannot silently drift.
+
+### Native code emission — Albedo
+
+The goal of Albedo is for LogOS to emit native x86-64 and ultimately compile
+itself without the C host. The path is staged; each stage is independently
+runnable and checked by `build.sh`.
+
+- **Stage 0 — binary substrate (host).** Strings became binary-safe
+  (length-carrying), and the host gained `chr` / `ord` / `write_exec` (see
+  Built-ins). This is the only stage that touches C: everything above it is
+  written in Lingua Adamica. To free the language *from* the host you first
+  deepen the host's primitives — the host is the physics.
+- **Stage 1 — ELF emitter (`elf.la`), done.** A `BYTES` helper turns a string
+  of space-separated decimals into the binary they denote (`chr` each token,
+  `concat`), and `elf.la` assembles a minimal static ELF64 (64-byte header +
+  one R+X `PT_LOAD` + 36 bytes of code + the 15-byte message) and `write_exec`s
+  it. The 36-byte entry makes two raw syscalls — `write(1, msg, 15)` then
+  `exit(0)`. `build.sh` runs the emitted `logos_native` on the bare OS and
+  checks it prints `I AM THAT I AM`; it is byte-identical to an independently
+  assembled reference. The host plays no part in running it.
+- **Stage 2 — codegen (planned): threaded SECD.** Hand-write the S/E/C/D
+  runtime once as machine code (the `PUSHS`/`PUSHV`/`CLOSE`/`APPLY` routines,
+  a bump allocator, and the builtins lowered to syscalls); "compilation" emits
+  the program's instruction list as data plus an entry that drives the runtime.
+  This maps `RUN_SM` directly onto native code — verifiable by diffing native
+  output against `RUN_SM`. Stages 3–4 (native runtime, then self-application so
+  the compiler compiles itself) follow.
+
+This extends the **generation** side of the Γ/Ρ split: codegen and ELF assembly
+are pure generation (no evaluation); running the emitted binary is recognition
+performed by the CPU and OS. `copy_self` already generates a vessel; `elf.la`
+lets the system generate a *native* vessel from source.
 
 ### Evaluation
 
