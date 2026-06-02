@@ -179,6 +179,75 @@ else
     exit 1
 fi
 
+say "Native integers + arithmetic (built-in type, like strings)"
+# Integers are Form (g_8, tau_Q): bare-digit literals, arithmetic as
+# Ontodirection (add/sub/mul/div/mod), comparison returning Church booleans
+# (lt/int_eq), and int<->string conversion. Recursion (factorial) confirms
+# they compose with the Z combinator.
+cat > /tmp/test_int.la <<'LAEOF'
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph FACT = Z(la self. la n. IF(int_eq(n)(0))(la _. 1)(la _. mul(n)(self(sub(n)(1)))))
+glyph MAIN =
+    SEQ(print(int_to_str(add(2)(3))))(
+    SEQ(print(int_to_str(div(17)(5))))(
+    SEQ(print(int_to_str(mod(17)(5))))(
+    SEQ(print(IF(lt(3)(5))(la _. "less")(la _. "no")))(
+        print(concat("fact5=")(int_to_str(FACT(5))))))))
+LAEOF
+OUT="$(./tiny_host /tmp/test_int.la 2>/dev/null)"
+expected=$'5\n3\n2\nless\nfact5=120'
+if [ "$OUT" = "$expected" ]; then
+    echo "PASS  native ints: add/div/mod, lt boolean, int_to_str, and FACT(5)=120 via Z"
+else
+    echo "FAIL  native ints: got [$OUT]"
+    exit 1
+fi
+rm -f /tmp/test_int.la
+
+say "Self-verifying LogOS (metadebug.la — META_DEBUG_SPEC phases 1-4)"
+# One run of metadebug.la emits a labelled line per check; the spec table,
+# DEBUG, and META_DEBUG share one glyph table so the debugger sees every
+# glyph it verifies. Debug(Debug) = Debug.
+OUT="$(./tiny_host metadebug.la 2>/dev/null)"
+ok=1
+check_line () {   # $1 = exact expected line
+    printf '%s\n' "$OUT" | grep -qxF "$1" || { echo "FAIL  metadebug: missing '$1'"; ok=0; }
+}
+# Phase 1 — standard library
+check_line "MAP: aabbcc"
+check_line "FILTER: b"
+check_line "ALL: T"
+check_line "ANY_b: T"
+check_line "ANY_z: F"
+check_line "LENGTH: |||"
+check_line "FIND: Y"
+# Phase 2 — spec table (GET_SPEC resolves a hit and reports a miss)
+check_line "SPEC_ID: F"
+check_line "SPEC_MISSING: T"
+# Phase 3 — DEBUG (good glyph passes, broken glyph caught, every specced glyph autological)
+check_line "DEBUG_GOOD: PASS"
+check_line "DEBUG_BAD: FAIL"
+check_line "ALL_SPECCED: T"
+# Phase 4 — META_DEBUG (the debugger debugging itself; a broken debug glyph is caught)
+check_line "META_DEBUG: T"
+check_line "META_CATCH: FAIL"
+# Native integers survive self-application: add/mul/lt/int_to_str are specced
+# and included in GLYPH_REGISTRY, so ALL_SPECCED: T above already proves they
+# are autological. ARITH demonstrates a live computation.
+check_line "ARITH: 42"
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  Phase 1: MAP/FILTER/ALL/ANY/LIST_FIND/LENGTH over Church lists"
+    echo "PASS  Phase 2: SPEC_TABLE / GET_SPEC resolve specs (hit + miss)"
+    echo "PASS  Phase 3: DEBUG passes good glyphs, catches broken ones; all specced glyphs autological"
+    echo "PASS  Phase 4: META_DEBUG verifies the debugger itself; broken VERIFY_ONE caught"
+    echo "PASS  Native integers are autological: add/mul/lt/int_to_str pass their specs under DEBUG"
+else
+    printf '%s\n' "$OUT"
+    exit 1
+fi
+
 say "Testing self-hosted parser (parser.la parses kernel.la)"
 OUT="$(./tiny_host parser.la 2>/dev/null)"
 if printf '%s\n' "$OUT" | grep -qF "Kernel parse: IIIIIIIII glyph(s)"; then

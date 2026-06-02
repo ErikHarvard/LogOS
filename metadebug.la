@@ -1,0 +1,235 @@
+# ═════════════════════════════════════════════════════════════════════
+#  metadebug.la — Self-Verifying LogOS (META_DEBUG_SPEC.md)
+#
+#  The meta-debugging architecture, built one phase at a time. Lingua
+#  Adamica has no module system yet, so the whole system lives in this
+#  single file: the standard library, the spec table, and the DEBUG /
+#  META_DEBUG machinery share one glyph table, so the debugger can see
+#  every glyph it verifies.
+#
+#  Adaptations from the spec (forced by the language):
+#   * Eager eval — branches are thunked (la _. e) and forced by IF;
+#     a bare cond(then)(else) would evaluate both and never terminate.
+#   * Probe-based test cases — a case is PAIR(probe)(expected) where
+#     probe takes the glyph and returns a string, so glyphs of ANY arity
+#     (TRUE, MAP, …) are verifiable, not just unary string->string ones.
+#   * Church numerals for LENGTH; NUM_BARS renders them for tests.
+#
+#  Phases implemented: 1 (stdlib), 2 (spec table), 3 (DEBUG), 4 (META_DEBUG).
+# ═════════════════════════════════════════════════════════════════════
+
+# ── Foundation (same Church encodings as the rest of LogOS) ───────────
+glyph ID    = la x. x
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. la t. la f. b(f)(t)
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF    = la cond. la t. la f. cond(t)(f)("!")
+glyph SEQ   = la a. la b. b
+
+glyph PAIR  = la a. la b. la f. f(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la lst. FST(lst)
+glyph IS_NIL  = la lst. NOT(FST(lst))
+glyph HEAD    = la lst. FST(SND(lst))
+glyph TAIL    = la lst. SND(SND(lst))
+
+glyph ZERO = la f. la x. x
+glyph SUCC = la n. la f. la x. f(n(f)(x))
+
+# Triples (DEBUG result rows: name, status, detail).
+glyph TRIPLE     = la a. la b. la c. la f. f(a)(b)(c)
+glyph TRI_NAME   = la t. t(la a. la b. la c. a)
+glyph TRI_STATUS = la t. t(la a. la b. la c. b)
+glyph TRI_DETAIL = la t. t(la a. la b. la c. c)
+
+# ── Phase 1: standard library primitives ─────────────────────────────
+glyph MAP = Z(la self. la f. la lst.
+    IF(IS_NIL(lst))(la _. NIL)(la _.
+        CONS(f(HEAD(lst)))(self(f)(TAIL(lst)))))
+
+glyph FILTER = Z(la self. la pred. la lst.
+    IF(IS_NIL(lst))(la _. NIL)(la _.
+        IF(pred(HEAD(lst)))(la _.
+            CONS(HEAD(lst))(self(pred)(TAIL(lst))))(la _.
+            self(pred)(TAIL(lst)))))
+
+glyph ALL = Z(la self. la pred. la lst.
+    IF(IS_NIL(lst))(la _. TRUE)(la _.
+        IF(pred(HEAD(lst)))(la _.
+            self(pred)(TAIL(lst)))(la _.
+            FALSE)))
+
+glyph ANY = Z(la self. la pred. la lst.
+    IF(IS_NIL(lst))(la _. FALSE)(la _.
+        IF(pred(HEAD(lst)))(la _.
+            TRUE)(la _.
+            self(pred)(TAIL(lst)))))
+
+# LIST_FIND(key)(assoc) — assoc is a list of PAIR(key)(value).
+# Returns the matched value, or NIL if absent (per META_DEBUG_SPEC.md).
+glyph LIST_FIND = Z(la self. la key. la lst.
+    IF(IS_NIL(lst))(la _. NIL)(la _.
+        IF(str_eq(FST(HEAD(lst)))(key))(la _.
+            SND(HEAD(lst)))(la _.
+            self(key)(TAIL(lst)))))
+
+glyph LENGTH = Z(la self. la lst.
+    IF(IS_NIL(lst))(la _. ZERO)(la _.
+        SUCC(self(TAIL(lst)))))
+
+# ── Observability helpers (render Church values as strings) ───────────
+glyph LIST_STR = Z(la self. la lst.
+    IF(IS_NIL(lst))(la _. "")(la _.
+        concat(HEAD(lst))(self(TAIL(lst)))))
+glyph BOOL_STR = la b. IF(b)(la _. "T")(la _. "F")
+glyph NUM_BARS = la n. n(la s. concat(s)("|"))("")
+
+# ── Test fixtures (used by MAIN and by the spec-table probes) ─────────
+glyph L3    = CONS("a")(CONS("b")(CONS("c")(NIL)))
+glyph DUP   = la s. concat(s)(s)
+glyph IS_B  = la s. str_eq(s)("b")
+glyph IS_Z  = la s. str_eq(s)("z")
+glyph NOT_Z = la s. NOT(str_eq(s)("z"))
+glyph ASSOC = CONS(PAIR("x")("X"))(CONS(PAIR("y")("Y"))(CONS(PAIR("z")("Z"))(NIL)))
+
+# ── Phase 2: glyph spec table ─────────────────────────────────────────
+# A test case is PAIR(probe)(expected): probe takes the glyph, returns a
+# string; expected is the string it must equal. One spec is a list of
+# test cases. SPEC_TABLE is a list of PAIR(name)(spec).
+glyph TC = la probe. la expected. PAIR(probe)(expected)
+
+glyph SPEC_ID        = CONS(TC(la g. g("hi"))("hi"))(NIL)
+glyph SPEC_TRUE      = CONS(TC(la g. g("a")("b"))("a"))(NIL)
+glyph SPEC_FALSE     = CONS(TC(la g. g("a")("b"))("b"))(NIL)
+glyph SPEC_NOT       = CONS(TC(la g. g(TRUE)("a")("b"))("b"))(CONS(TC(la g. g(FALSE)("a")("b"))("a"))(NIL))
+glyph SPEC_MAP       = CONS(TC(la g. LIST_STR(g(DUP)(L3)))("aabbcc"))(NIL)
+glyph SPEC_FILTER    = CONS(TC(la g. LIST_STR(g(IS_B)(L3)))("b"))(NIL)
+glyph SPEC_ALL       = CONS(TC(la g. BOOL_STR(g(NOT_Z)(L3)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_B)(L3)))("F"))(NIL))
+glyph SPEC_ANY       = CONS(TC(la g. BOOL_STR(g(IS_B)(L3)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_Z)(L3)))("F"))(NIL))
+glyph SPEC_FIND      = CONS(TC(la g. g("y")(ASSOC))("Y"))(NIL)
+glyph SPEC_LENGTH    = CONS(TC(la g. NUM_BARS(g(L3)))("|||"))(NIL)
+glyph SPEC_VONE      = CONS(TC(la g. g("d")(ID)(PAIR(la f. f("ok"))("ok")))("PASS"))(CONS(TC(la g. g("d")(ID)(PAIR(la f. f("x"))("y")))("FAIL: d expected y got x"))(NIL))
+glyph SPEC_VALL      = CONS(TC(la g. LIST_STR(MAP(SND)(g("d")(ID)(CONS(PAIR(la f. f("ok"))("ok"))(NIL)))))("PASS"))(NIL)
+glyph SPEC_ISAUTO    = CONS(TC(la g. BOOL_STR(g("ID")(ID)))("T"))(NIL)
+glyph SPEC_DEBUG     = CONS(TC(la g. TRI_STATUS(HEAD(g(CONS(PAIR("ID")(ID))(NIL)))))("PASS"))(NIL)
+
+# Native-integer builtins (Form g_8, tau_Q; arithmetic is Ontodirection >).
+# Probes render the integer result via int_to_str so str_eq can compare it.
+glyph SPEC_ADD       = CONS(TC(la g. int_to_str(g(2)(3)))("5"))(NIL)
+glyph SPEC_MUL       = CONS(TC(la g. int_to_str(g(6)(7)))("42"))(NIL)
+glyph SPEC_LT        = CONS(TC(la g. BOOL_STR(g(3)(5)))("T"))(CONS(TC(la g. BOOL_STR(g(5)(3)))("F"))(NIL))
+glyph SPEC_I2S       = CONS(TC(la g. g(42))("42"))(NIL)
+
+glyph SPEC_TABLE =
+    CONS(PAIR("ID")(SPEC_ID))(
+    CONS(PAIR("TRUE")(SPEC_TRUE))(
+    CONS(PAIR("FALSE")(SPEC_FALSE))(
+    CONS(PAIR("NOT")(SPEC_NOT))(
+    CONS(PAIR("MAP")(SPEC_MAP))(
+    CONS(PAIR("FILTER")(SPEC_FILTER))(
+    CONS(PAIR("ALL")(SPEC_ALL))(
+    CONS(PAIR("ANY")(SPEC_ANY))(
+    CONS(PAIR("LIST_FIND")(SPEC_FIND))(
+    CONS(PAIR("LENGTH")(SPEC_LENGTH))(
+    CONS(PAIR("VERIFY_ONE")(SPEC_VONE))(
+    CONS(PAIR("VERIFY_ALL")(SPEC_VALL))(
+    CONS(PAIR("IS_AUTOLOGICAL")(SPEC_ISAUTO))(
+    CONS(PAIR("DEBUG")(SPEC_DEBUG))(
+    CONS(PAIR("add")(SPEC_ADD))(
+    CONS(PAIR("mul")(SPEC_MUL))(
+    CONS(PAIR("lt")(SPEC_LT))(
+    CONS(PAIR("int_to_str")(SPEC_I2S))(
+    NIL))))))))))))))))))
+
+glyph GET_SPEC = la name. LIST_FIND(name)(SPEC_TABLE)
+
+# ── Phase 3: VERIFY and DEBUG ─────────────────────────────────────────
+# Run one glyph against one test case; "PASS" or a FAIL message.
+glyph VERIFY_ONE = la name. la glyph_fn. la test_case.
+    (la probe. la expected.
+        (la actual.
+            IF(str_eq(actual)(expected))(la _. "PASS")(la _.
+                concat("FAIL: ")(concat(name)(concat(" expected ")(concat(expected)(concat(" got ")(actual))))))
+        )(probe(glyph_fn))
+    )(FST(test_case))(SND(test_case))
+
+# Run one glyph against all its cases; list of PAIR(case)(result).
+glyph VERIFY_ALL = la name. la glyph_fn. la specs.
+    MAP(la tc. PAIR(tc)(VERIFY_ONE(name)(glyph_fn)(tc)))(specs)
+
+# Does a glyph pass ALL of its specs? (No spec -> vacuously TRUE.)
+glyph IS_AUTOLOGICAL = la name. la glyph_fn.
+    ALL(la result. str_eq(SND(result))("PASS"))
+        (VERIFY_ALL(name)(glyph_fn)(GET_SPEC(name)))
+
+# Verify a list of PAIR(name)(glyph_fn); list of TRIPLE(name)(status)(detail).
+glyph DEBUG = la glyph_list.
+    MAP(la entry.
+        (la nm. la fn.
+            (la autological.
+                TRIPLE(nm)
+                    (autological("PASS")("FAIL"))
+                    (autological("autological")(concat("heterological: ")(nm)))
+            )(IS_AUTOLOGICAL(nm)(fn))
+        )(FST(entry))(SND(entry))
+    )(glyph_list)
+
+glyph DEBUG_ALL_PASS = la results. ALL(la tri. str_eq(TRI_STATUS(tri))("PASS"))(results)
+
+# The registry of every specced glyph (name -> the glyph itself).
+glyph GLYPH_REGISTRY =
+    CONS(PAIR("ID")(ID))(
+    CONS(PAIR("TRUE")(TRUE))(
+    CONS(PAIR("FALSE")(FALSE))(
+    CONS(PAIR("NOT")(NOT))(
+    CONS(PAIR("MAP")(MAP))(
+    CONS(PAIR("FILTER")(FILTER))(
+    CONS(PAIR("ALL")(ALL))(
+    CONS(PAIR("ANY")(ANY))(
+    CONS(PAIR("LIST_FIND")(LIST_FIND))(
+    CONS(PAIR("LENGTH")(LENGTH))(
+    CONS(PAIR("VERIFY_ONE")(VERIFY_ONE))(
+    CONS(PAIR("VERIFY_ALL")(VERIFY_ALL))(
+    CONS(PAIR("IS_AUTOLOGICAL")(IS_AUTOLOGICAL))(
+    CONS(PAIR("DEBUG")(DEBUG))(
+    CONS(PAIR("add")(add))(
+    CONS(PAIR("mul")(mul))(
+    CONS(PAIR("lt")(lt))(
+    CONS(PAIR("int_to_str")(int_to_str))(
+    NIL))))))))))))))))))
+
+# ── Phase 4: META_DEBUG — DEBUG applied to the debugging glyphs ───────
+# The "meta" level collapses into the object level by self-application.
+glyph META_DEBUG = DEBUG(
+    CONS(PAIR("VERIFY_ONE")(VERIFY_ONE))(
+    CONS(PAIR("VERIFY_ALL")(VERIFY_ALL))(
+    CONS(PAIR("IS_AUTOLOGICAL")(IS_AUTOLOGICAL))(
+    CONS(PAIR("DEBUG")(DEBUG))(
+    NIL)))))
+
+# ── Deliberately broken glyphs (DEBUG must catch these) ───────────────
+glyph BAD_ID         = la x. "WRONG"
+glyph BAD_VERIFY_ONE = la name. la fn. la tc. "WRONG"
+
+# ── MAIN: one labelled line per check (build.sh greps these) ──────────
+glyph MAIN =
+    SEQ(print(concat("MAP: ")(LIST_STR(MAP(DUP)(L3)))))(
+    SEQ(print(concat("FILTER: ")(LIST_STR(FILTER(IS_B)(L3)))))(
+    SEQ(print(concat("ALL: ")(BOOL_STR(ALL(NOT_Z)(L3)))))(
+    SEQ(print(concat("ANY_b: ")(BOOL_STR(ANY(IS_B)(L3)))))(
+    SEQ(print(concat("ANY_z: ")(BOOL_STR(ANY(IS_Z)(L3)))))(
+    SEQ(print(concat("LENGTH: ")(NUM_BARS(LENGTH(L3)))))(
+    SEQ(print(concat("FIND: ")(LIST_FIND("y")(ASSOC))))(
+    SEQ(print(concat("SPEC_ID: ")(BOOL_STR(IS_NIL(GET_SPEC("ID"))))))(
+    SEQ(print(concat("SPEC_MISSING: ")(BOOL_STR(IS_NIL(GET_SPEC("ZZZ"))))))(
+    SEQ(print(concat("DEBUG_GOOD: ")(TRI_STATUS(HEAD(DEBUG(CONS(PAIR("ID")(ID))(NIL)))))))(
+    SEQ(print(concat("DEBUG_BAD: ")(TRI_STATUS(HEAD(DEBUG(CONS(PAIR("ID")(BAD_ID))(NIL)))))))(
+    SEQ(print(concat("ALL_SPECCED: ")(BOOL_STR(DEBUG_ALL_PASS(DEBUG(GLYPH_REGISTRY))))))(
+    SEQ(print(concat("META_DEBUG: ")(BOOL_STR(DEBUG_ALL_PASS(META_DEBUG)))))(
+    SEQ(print(concat("META_CATCH: ")(TRI_STATUS(HEAD(DEBUG(CONS(PAIR("VERIFY_ONE")(BAD_VERIFY_ONE))(NIL)))))))(
+        print(concat("ARITH: ")(int_to_str(add(mul(6)(7))(0))))))))))))))))))

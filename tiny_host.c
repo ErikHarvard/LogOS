@@ -41,12 +41,13 @@
 
 /* ------------------------------------------------------------------ AST -- */
 
-typedef enum { N_VAR, N_LAM, N_APP, N_STR, N_PARTIAL } NType;
+typedef enum { N_VAR, N_LAM, N_APP, N_STR, N_INT, N_PARTIAL } NType;
 
 typedef struct Node {
     NType         t;
     char         *s;   /* VAR name | STR bytes | LAM parameter */
     size_t        len;  /* STR byte length (strings are binary-safe, not NUL-terminated) */
+    long          i;   /* INT value (native signed integer; Form g_8, type tau_Q) */
     struct Node  *a;   /* LAM body  | APP function */
     struct Node  *b;   /* APP argument */
 } Node;
@@ -72,6 +73,7 @@ static Node *mkstrn(const char *bytes, size_t len) {
     return n;
 }
 static Node *mkstr(const char *val)             { return mkstrn(val, strlen(val)); }
+static Node *mkint(long v)                      { Node *n = new_node(N_INT); n->i = v; return n; }
 static Node *mklam(const char *param, Node *bd) { Node *n = new_node(N_LAM); n->s = strdup(param); n->a = bd; return n; }
 static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->a = f; n->b = x; return n; }
 static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL); n->s = strdup(nm); n->a = a; return n; }
@@ -80,6 +82,7 @@ static Node *copy_node(Node *e) {
     switch (e->t) {
         case N_VAR: return mkvar(e->s);
         case N_STR: return mkstrn(e->s, e->len);
+        case N_INT: return mkint(e->i);
         case N_LAM: return mklam(e->s, copy_node(e->a));
         case N_APP:     return mkapp(copy_node(e->a), copy_node(e->b));
         case N_PARTIAL: return mkpartial(e->s, copy_node(e->a));
@@ -89,12 +92,13 @@ static Node *copy_node(Node *e) {
 
 /* -------------------------------------------------------------- lexer --- */
 
-typedef enum { T_GLYPH, T_LA, T_DOT, T_EQ, T_LP, T_RP, T_IDENT, T_STR, T_EOF } Tok;
+typedef enum { T_GLYPH, T_LA, T_DOT, T_EQ, T_LP, T_RP, T_IDENT, T_STR, T_INT, T_EOF } Tok;
 
 static const char *P;        /* current position in source */
 static Tok         curtok;   /* current token kind */
 static char       *curstr;   /* text for T_IDENT / T_STR */
 static size_t      curlen;   /* byte length of T_STR */
+static long        curint;   /* value for T_INT */
 
 /* Identifier characters: ASCII alnum, underscore, and any UTF-8 byte (so
  * Lingua Adamica glyphs like ∃ are first-class names). */
@@ -145,6 +149,18 @@ static void lex(void) {
         }
     }
 
+    /* Integer literal: a run of digits. Checked before is_ident_char (which
+     * also matches digits) so bare digits like 42 lex as a native integer
+     * rather than an identifier. Numbers are Form (g_8, tau_Q), generated from
+     * Void (zero) by iterated Becoming (succession). */
+    if (isdigit((unsigned char)*P)) {
+        long v = 0;
+        while (isdigit((unsigned char)*P)) { v = v * 10 + (*P - '0'); P++; }
+        curint = v;
+        curtok = T_INT;
+        return;
+    }
+
     if (is_ident_char((unsigned char)*P)) {
         const char *start = P;
         while (is_ident_char((unsigned char)*P)) P++;
@@ -177,6 +193,7 @@ static Node *parse_expr(void);
 static Node *parse_primary(void) {
     if (curtok == T_IDENT) { Node *n = mkvar(curstr); advance(); return n; }
     if (curtok == T_STR)   { Node *n = mkstrn(curstr, curlen); advance(); return n; }
+    if (curtok == T_INT)   { Node *n = mkint(curint); advance(); return n; }
     if (curtok == T_LP)    { advance(); Node *e = parse_expr(); expect(T_RP, "')'"); advance(); return e; }
     fprintf(stderr, "parse error: expected a variable, string, or '('\n");
     exit(1);
@@ -255,6 +272,7 @@ static void parse_program(void) {
 static int occurs_free(const char *var, Node *e) {
     switch (e->t) {
         case N_STR:     return 0;
+        case N_INT:     return 0;
         case N_PARTIAL: return 0;
         case N_VAR:     return strcmp(e->s, var) == 0;
         case N_LAM:     return strcmp(e->s, var) == 0 ? 0 : occurs_free(var, e->a);
@@ -275,6 +293,7 @@ static char *gensym(void) {
 static Node *subst(Node *e, const char *var, Node *val) {
     switch (e->t) {
         case N_STR:     return copy_node(e);
+        case N_INT:     return copy_node(e);
         case N_PARTIAL: return copy_node(e);
         case N_VAR:     return strcmp(e->s, var) == 0 ? copy_node(val) : copy_node(e);
         case N_APP:     return mkapp(subst(e->a, var, val), subst(e->b, var, val));
@@ -302,7 +321,24 @@ static int is_builtin(const char *name) {
         || strcmp(name, "concat") == 0 || strcmp(name, "str_head") == 0
         || strcmp(name, "str_tail") == 0 || strcmp(name, "str_eq") == 0
         || strcmp(name, "chr") == 0 || strcmp(name, "ord") == 0
-        || strcmp(name, "write_exec") == 0;
+        || strcmp(name, "write_exec") == 0
+        /* native integers (Form g_8, tau_Q): arithmetic is Ontodirection (>),
+         * an operator acting upon operands. */
+        || strcmp(name, "add") == 0 || strcmp(name, "sub") == 0
+        || strcmp(name, "mul") == 0 || strcmp(name, "div") == 0
+        || strcmp(name, "mod") == 0 || strcmp(name, "lt") == 0
+        || strcmp(name, "int_eq") == 0
+        || strcmp(name, "int_to_str") == 0 || strcmp(name, "str_to_int") == 0;
+}
+
+/* The seven binary integer operations are curried like concat/str_eq: the
+ * first application captures arg1 and returns a partial; the second performs
+ * the operation. This predicate marks them. */
+static int is_int_binop(const char *name) {
+    return strcmp(name, "add") == 0 || strcmp(name, "sub") == 0
+        || strcmp(name, "mul") == 0 || strcmp(name, "div") == 0
+        || strcmp(name, "mod") == 0 || strcmp(name, "lt") == 0
+        || strcmp(name, "int_eq") == 0;
 }
 
 /* The generation of the currently running host, read from its own filename.
@@ -416,6 +452,28 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         else
             return mklam("t", mklam("f", mkvar("f")));  /* FALSE */
     }
+    if (is_int_binop(name)) {
+        if (arg1->t != N_INT || arg2->t != N_INT) {
+            fprintf(stderr, "%s: arguments must be integers\n", name); exit(1);
+        }
+        long x = arg1->i, y = arg2->i;
+        if (strcmp(name, "add") == 0) return mkint(x + y);
+        if (strcmp(name, "sub") == 0) return mkint(x - y);
+        if (strcmp(name, "mul") == 0) return mkint(x * y);
+        if (strcmp(name, "div") == 0) {
+            if (y == 0) { fprintf(stderr, "div: division by zero\n"); exit(1); }
+            return mkint(x / y);
+        }
+        if (strcmp(name, "mod") == 0) {
+            if (y == 0) { fprintf(stderr, "mod: modulo by zero\n"); exit(1); }
+            return mkint(x % y);
+        }
+        /* lt / int_eq return Church booleans (like str_eq), so branch
+         * selection runs in the object language. */
+        int truth = (strcmp(name, "lt") == 0) ? (x < y) : (x == y);
+        return truth ? mklam("t", mklam("f", mkvar("t")))   /* TRUE  */
+                     : mklam("t", mklam("f", mkvar("f")));  /* FALSE */
+    }
     fprintf(stderr, "unknown builtin2: %s\n", name);
     exit(1);
 }
@@ -423,8 +481,9 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
 static Node *apply_builtin(const char *name, Node *argexpr) {
     if (strcmp(name, "print") == 0) {
         Node *v = eval(argexpr);
-        if (v->t == N_STR) { fwrite(v->s, 1, v->len, stdout); putchar('\n'); }
-        else               fprintf(stderr, "print: argument is not a string\n");
+        if (v->t == N_STR)      { fwrite(v->s, 1, v->len, stdout); putchar('\n'); }
+        else if (v->t == N_INT) { printf("%ld\n", v->i); }
+        else                    fprintf(stderr, "print: argument is not a string or integer\n");
         return v;
     }
     if (strcmp(name, "copy_self") == 0) {
@@ -492,6 +551,25 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         snprintf(buf, sizeof buf, "%d", b);
         return mkstr(buf);
     }
+    if (is_int_binop(name)) {
+        Node *v = eval(argexpr);
+        if (v->t != N_INT) { fprintf(stderr, "%s: first argument is not an integer\n", name); exit(1); }
+        return mkpartial(name, v);
+    }
+    if (strcmp(name, "int_to_str") == 0) {
+        /* native integer -> its decimal string (for printing / observability) */
+        Node *v = eval(argexpr);
+        if (v->t != N_INT) { fprintf(stderr, "int_to_str: argument is not an integer\n"); exit(1); }
+        char buf[32];
+        snprintf(buf, sizeof buf, "%ld", v->i);
+        return mkstr(buf);
+    }
+    if (strcmp(name, "str_to_int") == 0) {
+        /* decimal string -> native integer (inverse of int_to_str) */
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "str_to_int: argument is not a string\n"); exit(1); }
+        return mkint(strtol(v->s, NULL, 10));
+    }
     fprintf(stderr, "unknown builtin: %s\n", name);
     exit(1);
 }
@@ -501,6 +579,7 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
 static Node *eval(Node *e) {
     switch (e->t) {
         case N_STR:     return e;               /* values reduce to themselves */
+        case N_INT:     return e;
         case N_LAM:     return e;
         case N_PARTIAL: return e;
 
