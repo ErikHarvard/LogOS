@@ -23,6 +23,11 @@
 ;           03 CLOSE param 00 <body> 05 | 04 APPLY | 05 RET
 ;  Builtins: 0 print 1 concat 2 str_head 3 str_tail 4 str_eq
 ;            5 read_file 6 write_file 7 copy_self 8 chr 9 ord
+;            10 write_exec 11 write 12 open 13 close 14 mount 15 fork
+;            16 execve 17 waitpid 18 exit
+;            19 str_to_int 20 int_to_str 21 add 22 sub 23 mul 24 div
+;            25 mod 26 lt 27 int_eq   (native integers: value tag 4 INT,
+;            payload = the signed integer directly; no heap descriptor)
 ;
 ;  Build:  nasm -f bin secd.asm -o secd
 ; ═══════════════════════════════════════════════════════════════════
@@ -402,6 +407,51 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi18
+    mov     rsi, rbp
+    mov     rdi, str_strtoint
+    call    strcmp
+    test    eax, eax
+    je      .bi19
+    mov     rsi, rbp
+    mov     rdi, str_inttostr
+    call    strcmp
+    test    eax, eax
+    je      .bi20
+    mov     rsi, rbp
+    mov     rdi, str_add
+    call    strcmp
+    test    eax, eax
+    je      .bi21
+    mov     rsi, rbp
+    mov     rdi, str_sub
+    call    strcmp
+    test    eax, eax
+    je      .bi22
+    mov     rsi, rbp
+    mov     rdi, str_mul
+    call    strcmp
+    test    eax, eax
+    je      .bi23
+    mov     rsi, rbp
+    mov     rdi, str_div
+    call    strcmp
+    test    eax, eax
+    je      .bi24
+    mov     rsi, rbp
+    mov     rdi, str_mod
+    call    strcmp
+    test    eax, eax
+    je      .bi25
+    mov     rsi, rbp
+    mov     rdi, str_lt
+    call    strcmp
+    test    eax, eax
+    je      .bi26
+    mov     rsi, rbp
+    mov     rdi, str_inteq
+    call    strcmp
+    test    eax, eax
+    je      .bi27
     jmp     .halt
 .bi0:
     mov     r11, 0
@@ -459,6 +509,33 @@ _start:
     jmp     .pushbi
 .bi18:
     mov     r11, 18
+    jmp     .pushbi
+.bi19:
+    mov     r11, 19
+    jmp     .pushbi
+.bi20:
+    mov     r11, 20
+    jmp     .pushbi
+.bi21:
+    mov     r11, 21
+    jmp     .pushbi
+.bi22:
+    mov     r11, 22
+    jmp     .pushbi
+.bi23:
+    mov     r11, 23
+    jmp     .pushbi
+.bi24:
+    mov     r11, 24
+    jmp     .pushbi
+.bi25:
+    mov     r11, 25
+    jmp     .pushbi
+.bi26:
+    mov     r11, 26
+    jmp     .pushbi
+.bi27:
+    mov     r11, 27
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -551,6 +628,24 @@ _start:
     je      .bi_waitpid
     cmp     r11, 18
     je      .bi_exit
+    cmp     r11, 19
+    je      .bi_strtoint
+    cmp     r11, 20
+    je      .bi_inttostr
+    cmp     r11, 21
+    je      .mkpa
+    cmp     r11, 22
+    je      .mkpa
+    cmp     r11, 23
+    je      .mkpa
+    cmp     r11, 24
+    je      .mkpa
+    cmp     r11, 25
+    je      .mkpa
+    cmp     r11, 26
+    je      .mkpa
+    cmp     r11, 27
+    je      .mkpa
     jmp     .halt
 .mkpa:
     mov     [r15], r11
@@ -578,6 +673,20 @@ _start:
     je      .bi_open2
     cmp     r10, 14
     je      .bi_mount2
+    cmp     r10, 21
+    je      .bi_add2
+    cmp     r10, 22
+    je      .bi_sub2
+    cmp     r10, 23
+    je      .bi_mul2
+    cmp     r10, 24
+    je      .bi_div2
+    cmp     r10, 25
+    je      .bi_mod2
+    cmp     r10, 26
+    je      .bi_lt2
+    cmp     r10, 27
+    je      .bi_inteq2
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
@@ -1105,6 +1214,81 @@ _start:
     mov     rax, 60
     syscall
 
+; ── native integers (INT value = tag 4, payload = the signed integer) ──
+.bi_strtoint:                    ; r9 = decimal STR descriptor → INT
+    mov     rdi, r9
+    call    desc_atoi
+    mov     qword [r12], 4
+    mov     [r12+8], rax
+    add     r12, 16
+    jmp     .loop
+
+.bi_inttostr:                    ; r9 = INT payload → decimal STR (via push_dec)
+    mov     rax, r9
+    call    push_dec
+    jmp     .loop
+
+.bi_add2:                        ; rbp = a1 int, r9 = a2 int (Ontodirection ▷)
+    mov     rax, rbp
+    add     rax, r9
+    jmp     .push_int
+.bi_sub2:
+    mov     rax, rbp
+    sub     rax, r9
+    jmp     .push_int
+.bi_mul2:
+    mov     rax, rbp
+    imul    rax, r9
+    jmp     .push_int
+.bi_div2:
+    test    r9, r9
+    je      .int_divzero
+    mov     rax, rbp
+    cqo
+    idiv    r9
+    jmp     .push_int
+.bi_mod2:
+    test    r9, r9
+    je      .int_divzero
+    mov     rax, rbp
+    cqo
+    idiv    r9
+    mov     rax, rdx
+    jmp     .push_int
+.push_int:
+    mov     qword [r12], 4
+    mov     [r12+8], rax
+    add     r12, 16
+    jmp     .loop
+.int_divzero:
+    mov     rax, 60              ; div/mod by zero — halt (matches the C host)
+    mov     rdi, 1
+    syscall
+
+.bi_lt2:                         ; rbp < r9 (signed) → Church bool closure
+    cmp     rbp, r9
+    jl      .int_true
+    jmp     .int_false
+.bi_inteq2:
+    cmp     rbp, r9
+    je      .int_true
+    jmp     .int_false
+.int_true:
+    mov     rdi, TRUE_BODY
+    jmp     .int_bool
+.int_false:
+    mov     rdi, FALSE_BODY
+.int_bool:
+    mov     rax, str_t
+    mov     [r15], rax
+    mov     [r15+8], rdi
+    mov     qword [r15+16], 0
+    mov     qword [r12], 2
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 24
+    jmp     .loop
+
 .ret:
     sub     r14, 16
     mov     rbx, [r14]
@@ -1144,6 +1328,15 @@ str_fork:      db "fork", 0
 str_execve:    db "execve", 0
 str_waitpid:   db "waitpid", 0
 str_exit:      db "exit", 0
+str_strtoint:  db "str_to_int", 0
+str_inttostr:  db "int_to_str", 0
+str_add:       db "add", 0
+str_sub:       db "sub", 0
+str_mul:       db "mul", 0
+str_div:       db "div", 0
+str_mod:       db "mod", 0
+str_lt:        db "lt", 0
+str_inteq:     db "int_eq", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 

@@ -372,7 +372,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "3964" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 3964)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "4707" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 4707)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -401,9 +401,19 @@ printf 'glyph MAIN = print(concat(str_head("ABC"))(str_tail("XYZ")))\n' > logos_
 diff_native_runsm "str_head / str_tail / concat -> AYZ"
 cp kernel.la logos_source.la
 diff_native_runsm "kernel.la (glyph table, read_file, copy_self, closures)"
+# Native integers on the VM (tag-4 INT; str_to_int/int_to_str/add/sub/mul/div/
+# mod/lt/int_eq). RUN_SM has no integers, so compare the VM directly to the C
+# host — the cross-engine coherence check for arithmetic.
+printf 'glyph SEQ = la a. la b. b\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph MAIN = SEQ(print(int_to_str(add(mul(6)(7))(sub(10)(8)))))(SEQ(print(int_to_str(div(17)(5))))(print(IF(lt(3)(5))(la _. "yes")(la _. "no"))))\n' > logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+NAT_INT="$(./logos_secd 2>/dev/null)"
+HOST_INT="$(./tiny_host logos_source.la 2>/dev/null)"
+[ "$NAT_INT" = "$HOST_INT" ] && [ "$NAT_INT" = "$(printf '44\n3\nyes')" ] \
+    || { echo "FAIL  native ints: VM [$NAT_INT] != host [$HOST_INT]"; ok=0; }
 if [ "$ok" -eq 1 ]; then
     echo "PASS  codegen.la lowers arbitrary programs to native SECD streams"
     echo "PASS  the native VM ran kernel.la and matched the interpreter (and replicated itself)"
+    echo "PASS  the native VM executes integers and matches the C host (44 / 3 / yes)"
     command -v nasm >/dev/null 2>&1 && echo "PASS  VM bytes are byte-identical to nasm -f bin secd.asm"
 else
     exit 1

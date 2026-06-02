@@ -414,15 +414,17 @@ runnable and checked by `build.sh`.
   the auditable source of the VM's bytes.
 
   *Known cross-engine divergences (audit, `b_τ ≡ f_τ`):*
-  - **Native integers run on the C host and on `eval.la`, but not on the SECD
-    VM or `RUN_SM`.** `tiny_host.c` has `N_INT` + `add/sub/mul/div/mod/lt/
-    int_eq/int_to_str/str_to_int`; `eval.la` evaluates integer programs and
+  - **Native integers run on the C host, on `eval.la`, and on the SECD VM —
+    but not yet on `RUN_SM`.** `tiny_host.c` has `N_INT` + `add/sub/mul/div/
+    mod/lt/int_eq/int_to_str/str_to_int`; `eval.la` evaluates integer programs;
     `codegen.la` compiles them (an integer literal `n` desugars to
-    `str_to_int("n")`, so no new AST node), but `secd.asm` and `bytecode.la`'s
-    `RUN_SM` implement none of those builtins. An integer program therefore
-    compiles but will not execute natively. No program in `build.sh` compiled
-    to the VM uses integers, so the suite stays coherent; closing the gap needs
-    int builtins in `secd.asm` (hand-assembly) and `RUN_SM`.
+    `str_to_int("n")`, so no new AST node); and `secd.asm` executes them
+    natively (value tag 4 `INT`, payload = the signed integer directly;
+    builtins 19–27, reusing `desc_atoi`/`push_dec`). `build.sh` verifies the
+    native VM and the C host agree on arithmetic. The one remaining gap is
+    `bytecode.la`'s `RUN_SM`, whose 4-branch AST and `str_eq`-only lexer have no
+    integer support — so an integer program runs on host/`eval.la`/VM but not
+    on `RUN_SM`.
   - **`codegen.la` / `bytecode.la` / `parser.la` `PARSE_PROGRAM` silently
     truncate malformed input** (a `NONE` from `PARSE_GLYPH` is treated as
     end-of-program). `eval.la`'s `PARSE_PROGRAM` was fixed to halt via the host
