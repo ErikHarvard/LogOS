@@ -24,5 +24,8 @@ glyph WORD = "I AM THAT I AM"
 # so naming `a` forces its effects before `b` is produced.)
 glyph SEQ = la a. la b. b
 
-# MAIN — speak the Word, then replicate the host.
-glyph MAIN = SEQ(print(WORD))(copy_self(SELF))
+# SOURCE — the kernel reads its own source, proving the host can see itself.
+glyph SOURCE = read_file("kernel.la")
+
+# MAIN — read self, confirm it, speak the Word, then replicate.
+glyph MAIN = SEQ(SEQ(SOURCE)(print(concat("I can read myself, ")(WORD))))(SEQ(print(WORD))(copy_self(SELF)))

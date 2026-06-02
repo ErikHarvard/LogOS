@@ -14,8 +14,11 @@
  *         | ( EXPR )                grouping
  *
  * Built-ins:
- *   print(s)      — prints the string s (followed by a newline)
- *   copy_self(x)  — copies /proc/self/exe to ./new_logos.bin
+ *   print(s)         — prints the string s (followed by a newline)
+ *   copy_self(x)     — copies /proc/self/exe to ./new_logos.bin
+ *   read_file(path)  — reads a file and returns its contents as a string
+ *   write_file(p)(c) — writes string c to file p, returns c
+ *   concat(a)(b)     — concatenates two strings, returns the result
  *
  * Evaluation finds the MAIN glyph and reduces it, using capture-avoiding
  * substitution for beta reduction. The core axiom of LogOS is  ∃(∃) ≡ ∃:
@@ -32,7 +35,7 @@
 
 /* ------------------------------------------------------------------ AST -- */
 
-typedef enum { N_VAR, N_LAM, N_APP, N_STR } NType;
+typedef enum { N_VAR, N_LAM, N_APP, N_STR, N_PARTIAL } NType;
 
 typedef struct Node {
     NType         t;
@@ -52,13 +55,15 @@ static Node *mkvar(const char *name)            { Node *n = new_node(N_VAR); n->
 static Node *mkstr(const char *val)             { Node *n = new_node(N_STR); n->s = strdup(val);  return n; }
 static Node *mklam(const char *param, Node *bd) { Node *n = new_node(N_LAM); n->s = strdup(param); n->a = bd; return n; }
 static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->a = f; n->b = x; return n; }
+static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL); n->s = strdup(nm); n->a = a; return n; }
 
 static Node *copy_node(Node *e) {
     switch (e->t) {
         case N_VAR: return mkvar(e->s);
         case N_STR: return mkstr(e->s);
         case N_LAM: return mklam(e->s, copy_node(e->a));
-        case N_APP: return mkapp(copy_node(e->a), copy_node(e->b));
+        case N_APP:     return mkapp(copy_node(e->a), copy_node(e->b));
+        case N_PARTIAL: return mkpartial(e->s, copy_node(e->a));
     }
     return NULL;
 }
@@ -228,10 +233,11 @@ static void parse_program(void) {
 
 static int occurs_free(const char *var, Node *e) {
     switch (e->t) {
-        case N_STR: return 0;
-        case N_VAR: return strcmp(e->s, var) == 0;
-        case N_LAM: return strcmp(e->s, var) == 0 ? 0 : occurs_free(var, e->a);
-        case N_APP: return occurs_free(var, e->a) || occurs_free(var, e->b);
+        case N_STR:     return 0;
+        case N_PARTIAL: return 0;
+        case N_VAR:     return strcmp(e->s, var) == 0;
+        case N_LAM:     return strcmp(e->s, var) == 0 ? 0 : occurs_free(var, e->a);
+        case N_APP:     return occurs_free(var, e->a) || occurs_free(var, e->b);
     }
     return 0;
 }
@@ -247,9 +253,10 @@ static char *gensym(void) {
  * free variable of `val` is accidentally captured. */
 static Node *subst(Node *e, const char *var, Node *val) {
     switch (e->t) {
-        case N_STR: return copy_node(e);
-        case N_VAR: return strcmp(e->s, var) == 0 ? copy_node(val) : copy_node(e);
-        case N_APP: return mkapp(subst(e->a, var, val), subst(e->b, var, val));
+        case N_STR:     return copy_node(e);
+        case N_PARTIAL: return copy_node(e);
+        case N_VAR:     return strcmp(e->s, var) == 0 ? copy_node(val) : copy_node(e);
+        case N_APP:     return mkapp(subst(e->a, var, val), subst(e->b, var, val));
         case N_LAM:
             if (strcmp(e->s, var) == 0)         /* var is shadowed here */
                 return copy_node(e);
@@ -269,7 +276,9 @@ static Node *subst(Node *e, const char *var, Node *val) {
 /* ----------------------------------------------------------- builtins --- */
 
 static int is_builtin(const char *name) {
-    return strcmp(name, "print") == 0 || strcmp(name, "copy_self") == 0;
+    return strcmp(name, "print") == 0 || strcmp(name, "copy_self") == 0
+        || strcmp(name, "read_file") == 0 || strcmp(name, "write_file") == 0
+        || strcmp(name, "concat") == 0;
 }
 
 /* The generation of the currently running host, read from its own filename.
@@ -320,6 +329,47 @@ static char *do_copy_self(void) {
 
 static Node *eval(Node *e);
 
+static char *slurp_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "read_file: cannot open '%s': ", path); perror(NULL); exit(1); }
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = malloc((size_t)len + 1);
+    if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
+    size_t got = fread(buf, 1, (size_t)len, f);
+    buf[got] = '\0';
+    fclose(f);
+    return buf;
+}
+
+static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
+    if (strcmp(name, "write_file") == 0) {
+        if (arg1->t != N_STR) { fprintf(stderr, "write_file: filename is not a string\n"); exit(1); }
+        if (arg2->t != N_STR) { fprintf(stderr, "write_file: content is not a string\n"); exit(1); }
+        FILE *f = fopen(arg1->s, "wb");
+        if (!f) { fprintf(stderr, "write_file: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
+        fwrite(arg2->s, 1, strlen(arg2->s), f);
+        fclose(f);
+        return arg2;
+    }
+    if (strcmp(name, "concat") == 0) {
+        if (arg1->t != N_STR || arg2->t != N_STR) {
+            fprintf(stderr, "concat: arguments must be strings\n"); exit(1);
+        }
+        size_t l1 = strlen(arg1->s), l2 = strlen(arg2->s);
+        char *buf = malloc(l1 + l2 + 1);
+        memcpy(buf, arg1->s, l1);
+        memcpy(buf + l1, arg2->s, l2);
+        buf[l1 + l2] = '\0';
+        Node *r = mkstr(buf);
+        free(buf);
+        return r;
+    }
+    fprintf(stderr, "unknown builtin2: %s\n", name);
+    exit(1);
+}
+
 static Node *apply_builtin(const char *name, Node *argexpr) {
     if (strcmp(name, "print") == 0) {
         Node *v = eval(argexpr);
@@ -334,6 +384,24 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         free(target);
         return r;
     }
+    if (strcmp(name, "read_file") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "read_file: argument is not a string\n"); exit(1); }
+        char *contents = slurp_file(v->s);
+        Node *r = mkstr(contents);
+        free(contents);
+        return r;
+    }
+    if (strcmp(name, "write_file") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "write_file: filename is not a string\n"); exit(1); }
+        return mkpartial("write_file", v);
+    }
+    if (strcmp(name, "concat") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "concat: first argument is not a string\n"); exit(1); }
+        return mkpartial("concat", v);
+    }
     fprintf(stderr, "unknown builtin: %s\n", name);
     exit(1);
 }
@@ -342,8 +410,9 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
 
 static Node *eval(Node *e) {
     switch (e->t) {
-        case N_STR: return e;                   /* values reduce to themselves */
-        case N_LAM: return e;
+        case N_STR:     return e;               /* values reduce to themselves */
+        case N_LAM:     return e;
+        case N_PARTIAL: return e;
 
         case N_VAR: {
             Node *g = lookup_glyph(e->s);
@@ -360,6 +429,10 @@ static Node *eval(Node *e) {
                 Node *body2 = subst(f->a, f->s, arg);
                 return eval(body2);
             }
+            if (f->t == N_PARTIAL) {            /* curried builtin, second arg */
+                Node *arg2 = eval(e->b);
+                return apply_builtin2(f->s, f->a, arg2);
+            }
             if (f->t == N_VAR && is_builtin(f->s))
                 return apply_builtin(f->s, e->b);
             fprintf(stderr, "eval error: attempt to apply a non-function\n");
@@ -371,24 +444,10 @@ static Node *eval(Node *e) {
 
 /* --------------------------------------------------------------- main --- */
 
-static char *read_file(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) { fprintf(stderr, "cannot open '%s': ", path); perror(NULL); exit(1); }
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    char *buf = malloc((size_t)len + 1);
-    if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
-    size_t got = fread(buf, 1, (size_t)len, f);
-    buf[got] = '\0';
-    fclose(f);
-    return buf;
-}
-
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "kernel.la";
 
-    char *src = read_file(path);
+    char *src = slurp_file(path);
     P = src;
     advance();
     parse_program();

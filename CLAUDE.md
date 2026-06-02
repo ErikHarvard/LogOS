@@ -46,6 +46,14 @@ Expressions:
   from the parent's, so a host never tries to overwrite its own live executable
   (which the OS forbids with `ETXTBSY`) and can replicate even when run directly.
   The argument is evaluated for ordering but otherwise ignored.
+- `read_file(path)` — reads the file at `path` and returns its contents as a
+  string.
+- `write_file(path)(content)` — writes string `content` to file `path`; returns
+  `content`. Curried: the first application captures the path and returns a
+  partial; the second application performs the write.
+- `concat(a)(b)` — concatenates two strings and returns the result. Curried:
+  the first application captures `a` and returns a partial; the second appends
+  `b`.
 
 ### Evaluation
 

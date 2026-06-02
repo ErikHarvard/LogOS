@@ -25,6 +25,64 @@ say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
 echo "compiled -> tiny_host"
 
+say "Testing concat built-in"
+cat > /tmp/test_concat.la <<'LAEOF'
+glyph MAIN = print(concat("hello, ")("world"))
+LAEOF
+OUT="$(./tiny_host /tmp/test_concat.la 2>/dev/null)"
+if [ "$OUT" = "hello, world" ]; then
+    echo "PASS  concat(\"hello, \")(\"world\") = \"hello, world\""
+else
+    echo "FAIL  expected 'hello, world', got '$OUT'"
+    exit 1
+fi
+
+say "Testing read_file built-in"
+printf 'test content' > /tmp/test_rf_input.txt
+cat > /tmp/test_read_file.la <<'LAEOF'
+glyph MAIN = print(read_file("/tmp/test_rf_input.txt"))
+LAEOF
+OUT="$(./tiny_host /tmp/test_read_file.la 2>/dev/null)"
+if [ "$OUT" = "test content" ]; then
+    echo "PASS  read_file returned 'test content'"
+else
+    echo "FAIL  expected 'test content', got '$OUT'"
+    exit 1
+fi
+rm -f /tmp/test_rf_input.txt
+
+say "Testing write_file built-in"
+rm -f /tmp/test_wf_output.txt
+cat > /tmp/test_write_file.la <<'LAEOF'
+glyph MAIN = print(write_file("/tmp/test_wf_output.txt")("written by LogOS"))
+LAEOF
+OUT="$(./tiny_host /tmp/test_write_file.la 2>/dev/null)"
+WRITTEN="$(cat /tmp/test_wf_output.txt 2>/dev/null)"
+ok=1
+[ "$OUT" = "written by LogOS" ]     || { echo "FAIL  write_file did not return content: '$OUT'"; ok=0; }
+[ "$WRITTEN" = "written by LogOS" ] || { echo "FAIL  file contents wrong: '$WRITTEN'";           ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  write_file wrote and returned 'written by LogOS'"
+else
+    exit 1
+fi
+rm -f /tmp/test_wf_output.txt
+
+say "Testing read_file + write_file round-trip"
+printf 'round trip data' > /tmp/test_rt_src.txt
+cat > /tmp/test_roundtrip.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph MAIN = SEQ(write_file("/tmp/test_rt_dst.txt")(read_file("/tmp/test_rt_src.txt")))(print(read_file("/tmp/test_rt_dst.txt")))
+LAEOF
+OUT="$(./tiny_host /tmp/test_roundtrip.la 2>/dev/null)"
+if [ "$OUT" = "round trip data" ]; then
+    echo "PASS  read -> write -> read round-trip"
+else
+    echo "FAIL  expected 'round trip data', got '$OUT'"
+    exit 1
+fi
+rm -f /tmp/test_rt_src.txt /tmp/test_rt_dst.txt
+
 say "Clearing previous generations"
 rm -f new_logos_gen*.bin new_logos.bin logos_child.bin
 echo "clean"
@@ -39,6 +97,14 @@ if printf '%s\n' "$RUN_OUT" | grep -qx "I AM THAT I AM"; then
     echo "PASS  the kernel spoke: I AM THAT I AM"
 else
     echo "FAIL  expected the kernel to speak 'I AM THAT I AM'"
+    exit 1
+fi
+
+say "Verifying self-reading"
+if printf '%s\n' "$RUN_OUT" | grep -qF "I can read myself, I AM THAT I AM"; then
+    echo "PASS  the kernel can read itself"
+else
+    echo "FAIL  expected 'I can read myself, I AM THAT I AM'"
     exit 1
 fi
 
