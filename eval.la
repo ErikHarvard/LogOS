@@ -254,16 +254,32 @@ glyph EVAL = Z(la self. la ast. la env. la gl.
 
 # ── 9. Runner ───────────────────────────────────────────────────────
 #
-# RUN(glyph_list) — find MAIN and evaluate it.
+# RUN_GLYPH(name)(gl) — find a named glyph in the table and evaluate it.
+# RUN(gl)             — the common case: evaluate MAIN.
 
-glyph RUN = la gl.
+glyph RUN_GLYPH = la name. la gl.
     (la found.
         IF(IS_SOME(found))(la _.
             EVAL(R_VAL(found))(NIL)(gl)
         )(la _.
-            (la _. VAL_STR("no MAIN"))(print("eval: no MAIN glyph found"))
+            (la _. VAL_STR("none"))(print(concat("eval: no glyph ")(name)))
         )
-    )(LIST_FIND("MAIN")(gl))
+    )(LIST_FIND(name)(gl))
+
+glyph RUN = la gl. RUN_GLYPH("MAIN")(gl)
+
+# ── INNER — the finite entry point for self-evaluation ──────────────
+#
+# When eval.la evaluates its OWN source, running MAIN would recurse
+# forever (MAIN evaluates kernel.la and then re-evaluates eval.la). So
+# the self-evaluation targets INNER instead: a small, self-contained
+# program that bottoms out the tower. It still exercises the full
+# evaluator — a built-in (concat), currying, and a glyph reference (ID)
+# that the inner evaluator must resolve from the freshly self-parsed
+# glyph table — so a faithful self-parse and self-eval are required for
+# it to produce the right Word.
+
+glyph INNER = print(concat("∃(∃) ≡ ∃ — ")(ID("eval.la has evaluated its own source")))
 
 # ── 10. Tests ───────────────────────────────────────────────────────
 
@@ -276,7 +292,7 @@ glyph TEST2_SRC = "glyph ID = la x. x\nglyph MAIN = print(ID(\"identity works\")
 # Curried builtin test
 glyph TEST3_SRC = "glyph MAIN = print(concat(\"con\")(\"cat\"))\n"
 
-glyph MAIN = SEQ(SEQ(SEQ(
+glyph MAIN = SEQ(SEQ(SEQ(SEQ(
     # Test 1: trivial program
     SEQ(print("--- test 1: print ---"))(
     RUN(PARSE_PROGRAM(TEST1_SRC)))
@@ -292,4 +308,11 @@ glyph MAIN = SEQ(SEQ(SEQ(
     # Test 4: the real thing — parse and evaluate kernel.la
     SEQ(print("--- test 4: kernel.la ---"))(
     RUN(PARSE_PROGRAM(read_file("kernel.la"))))
+))(
+    # Test 5: the closed eye — eval.la evaluates its OWN source.
+    # Read eval.la, parse it with eval.la's own parser, then evaluate
+    # the INNER glyph drawn from that self-parsed table with eval.la's
+    # own evaluator. The evaluator runs itself.
+    SEQ(print("--- test 5: eval.la evaluates itself ---"))(
+    RUN_GLYPH("INNER")(PARSE_PROGRAM(read_file("eval.la"))))
 )

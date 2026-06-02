@@ -125,6 +125,24 @@ byte-identical to `tiny_host`).
   `TRUE`/`FALSE`; at the meta level these become `META_TRUE`/`META_FALSE`,
   closures whose bodies are the Church-boolean ASTs, so applying them selects
   a branch exactly as in the object language.
+- **`RUN_GLYPH(name)(gl)`** evaluates any named glyph from a parsed table;
+  `RUN(gl) = RUN_GLYPH("MAIN")(gl)`.
+
+#### The evaluator evaluates itself
+
+`eval.la`'s last act is to read, parse, and evaluate its **own source**
+(`RUN_GLYPH("INNER")(PARSE_PROGRAM(read_file("eval.la")))`). The evaluator
+runs itself: its parser parses its own glyphs, and its evaluator interprets a
+glyph drawn from that self-parsed table — resolving glyph references (`ID`),
+currying (`concat`), and built-in dispatch (`print`) against definitions it
+just parsed out of itself.
+
+The self-evaluation targets a dedicated finite entry point, **`INNER`**, not
+`MAIN`. Running `MAIN` under self-evaluation would not terminate — `MAIN`
+evaluates `kernel.la` and then re-evaluates `eval.la`, an infinite tower — so
+the inner level bottoms out at `INNER`, the way a meta-circular evaluator is
+demonstrated with a finite witness rather than by re-running its own driver.
+The host-level self-parse of `eval.la` takes a few seconds.
 
 ### Evaluation
 
