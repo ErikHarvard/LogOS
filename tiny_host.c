@@ -37,6 +37,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <limits.h>
+#include <setjmp.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -51,12 +53,75 @@ typedef struct Node {
     long          i;   /* INT value (native signed integer; Form g_8, type tau_Q) */
     struct Node  *a;   /* LAM body  | APP function */
     struct Node  *b;   /* APP argument */
+    unsigned char mark; /* GC reachability bit */
 } Node;
 
+/* -------------------------------------------------- conservative GC --- */
+/* A mark-sweep collector. Values are acyclic trees; the live roots are the
+ * glyph table plus whatever Node* the C call stack holds. GC runs only inside
+ * new_node — an ordinary function call — so the SysV x86-64 ABI guarantees the
+ * caller's live Node* are already spilled to the stack or callee-saved
+ * registers, both of which the scan below covers (the stack range plus a
+ * setjmp register dump). No live root is missed; a false positive (an int that
+ * happens to look like a pointer) only retains garbage, never frees a live
+ * node. This frees the host from leak-tolerance so long-running programs run
+ * in bounded memory. */
+static Node    **gc_all  = NULL;          /* registry of every allocated node */
+static size_t    gc_n    = 0, gc_cap = 0;
+static size_t    gc_next = 250000;        /* collect when the registry reaches this */
+#define GC_MIN_THRESHOLD 250000            /* floor for the adaptive threshold (memory/CPU knob;
+                                            * GC cost is negligible vs the workload, so a low
+                                            * floor just keeps the working set tight) */
+static uintptr_t gc_stack_base = 0;       /* highest stack address (set in main) */
+static Node    **gc_set  = NULL;          /* per-collection membership table (pow2) */
+static size_t    gc_set_cap = 0;
+static Node    **gc_work = NULL;          /* mark worklist */
+static size_t    gc_work_n = 0, gc_work_cap = 0;
+
+static void gc(void);                     /* defined after the glyph table */
+
+static void gc_register(Node *n) {
+    if (gc_n == gc_cap) {
+        gc_cap = gc_cap ? gc_cap * 2 : 4096;
+        gc_all = realloc(gc_all, gc_cap * sizeof *gc_all);
+        if (!gc_all) { fprintf(stderr, "gc: out of memory\n"); exit(1); }
+    }
+    gc_all[gc_n++] = n;
+}
+
+static size_t gc_hash(Node *p) { return (size_t)(((uintptr_t)p >> 4) * 11400714819323198485ULL); }
+
+static int gc_known(Node *p) {            /* is p a registered node? */
+    if (!gc_set_cap) return 0;
+    size_t mask = gc_set_cap - 1, i = gc_hash(p) & mask;
+    for (;;) { Node *e = gc_set[i]; if (!e) return 0; if (e == p) return 1; i = (i + 1) & mask; }
+}
+static void gc_known_put(Node *p) {
+    size_t mask = gc_set_cap - 1, i = gc_hash(p) & mask;
+    while (gc_set[i]) i = (i + 1) & mask;
+    gc_set[i] = p;
+}
+static void gc_mark(Node *n) {            /* mark + enqueue for tracing */
+    if (!n || n->mark) return;
+    n->mark = 1;
+    if (gc_work_n == gc_work_cap) {
+        gc_work_cap = gc_work_cap ? gc_work_cap * 2 : 4096;
+        gc_work = realloc(gc_work, gc_work_cap * sizeof *gc_work);
+        if (!gc_work) { fprintf(stderr, "gc: out of memory\n"); exit(1); }
+    }
+    gc_work[gc_work_n++] = n;
+}
+static void gc_scan(uintptr_t lo, uintptr_t hi) {   /* conservative root scan */
+    for (uintptr_t *p = (uintptr_t *)lo; p < (uintptr_t *)hi; p++)
+        if (gc_known((Node *)*p)) gc_mark((Node *)*p);
+}
+
 static Node *new_node(NType t) {
+    if (gc_n >= gc_next) gc();
     Node *n = calloc(1, sizeof *n);
     if (!n) { fprintf(stderr, "out of memory\n"); exit(1); }
     n->t = t;
+    gc_register(n);
     return n;
 }
 
@@ -257,6 +322,51 @@ static Node *lookup_glyph(const char *name) {
     for (size_t i = 0; i < nglyphs; i++)
         if (strcmp(glyphs[i].name, name) == 0) return glyphs[i].body;
     return NULL;
+}
+
+/* The collector (forward-declared up by new_node). Defined here, after the
+ * glyph table, because the glyph bodies are the persistent roots. */
+static void gc(void) {
+    jmp_buf regs;
+    setjmp(regs);                         /* spill callee-saved registers onto the stack */
+    uintptr_t sp = (uintptr_t)&regs;      /* near the current stack top */
+
+    /* (re)build the membership table from the registry */
+    size_t want = gc_n * 2 + 16, cap = 1024;
+    while (cap < want) cap <<= 1;
+    if (cap > gc_set_cap) {
+        free(gc_set);
+        gc_set = calloc(cap, sizeof *gc_set);
+        if (!gc_set) { fprintf(stderr, "gc: out of memory\n"); exit(1); }
+        gc_set_cap = cap;
+    } else {
+        memset(gc_set, 0, gc_set_cap * sizeof *gc_set);
+    }
+    for (size_t i = 0; i < gc_n; i++) gc_known_put(gc_all[i]);
+
+    /* roots: the glyph table (global) + the live C stack (caller frames and
+     * the setjmp register dump, which lives within the scanned range) */
+    gc_work_n = 0;
+    for (size_t i = 0; i < nglyphs; i++) gc_mark(glyphs[i].body);
+    gc_scan(sp, gc_stack_base);
+
+    /* trace: every reachable node's children */
+    while (gc_work_n) {
+        Node *n = gc_work[--gc_work_n];
+        gc_mark(n->a);
+        gc_mark(n->b);
+    }
+
+    /* sweep: free unmarked, compact the registry, clear survivors' marks */
+    size_t w = 0;
+    for (size_t i = 0; i < gc_n; i++) {
+        Node *n = gc_all[i];
+        if (n->mark) { n->mark = 0; gc_all[w++] = n; }
+        else { free(n->s); free(n); }
+    }
+    gc_n = w;
+    gc_next = gc_n * 2;
+    if (gc_next < GC_MIN_THRESHOLD) gc_next = GC_MIN_THRESHOLD;
 }
 
 /* program := ( 'glyph' IDENT '=' expr )* */
@@ -648,6 +758,7 @@ static Node *eval(Node *e) {
 /* --------------------------------------------------------------- main --- */
 
 int main(int argc, char **argv) {
+    gc_stack_base = (uintptr_t)&argc;   /* highest app-stack address; roots live below it */
     const char *path = argc > 1 ? argv[1] : "kernel.la";
 
     char *src = slurp_file(path, NULL);   /* source is text; NUL-terminated walk is fine */

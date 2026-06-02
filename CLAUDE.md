@@ -499,5 +499,13 @@ Practically:
 - New language forms: extend the lexer (`lex`), parser (`parse_*`), the `Node`
   AST, `eval`, and `subst` together — substitution and evaluation must agree on
   every node kind.
-- The host is intentionally leak-tolerant (a short-lived bootstrap process); if
-  LogOS grows long-running programs, add reference counting or an arena/GC.
+- The host has a **conservative mark-sweep GC** (`gc()` in `tiny_host.c`), so it
+  is no longer leak-tolerant: long-running programs run in bounded memory (a
+  multi-million-iteration loop holds steady at ~27 MB instead of growing without
+  bound). It collects inside `new_node` at an adaptive threshold
+  (`GC_MIN_THRESHOLD`), marking from the glyph table plus a conservative scan of
+  the C stack + a `setjmp` register dump; values are acyclic trees so nothing is
+  missed structurally, and GC-at-an-ordinary-call-boundary makes the scan
+  ABI-safe. GC overhead is negligible (raising the threshold 8× left `build.sh`
+  wall-time unchanged). The SECD VM's bump heap (`secd.asm`) still has no GC —
+  that remains a separate ceiling for long native runs.
