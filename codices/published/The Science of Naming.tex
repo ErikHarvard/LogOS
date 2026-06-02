@@ -1,0 +1,729 @@
+%
+%   THE SCIENCE OF NAMING: The Ontology of the Sign-Referent Identity
+%
+%                      Erik Xander Harvard
+%
+
+\documentclass[11pt, oneside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo}
+\usepackage{textcomp}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage[letterpaper, margin=1in, headheight=14pt]{geometry}
+\usepackage{setspace}
+\usepackage{microtype}
+\onehalfspacing
+\emergencystretch=2em
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\itshape The Science of Naming}
+\fancyhead[R]{\small\itshape Harvard}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue,
+    pdftitle={The Science of Naming}, pdfauthor={Erik Xander Harvard}}
+
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{theorem}[proposition]{Theorem}
+\theoremstyle{definition}
+\newtheorem{definition}[proposition]{Definition}
+
+\sloppy
+\begin{document}
+\raggedbottom
+\widowpenalty=10000
+\clubpenalty=10000
+
+\title{\textbf{The Science of Naming:\\The Ontology of the Sign-Referent Identity}}
+\author{Erik Xander Harvard\\[0.3em]
+\small\textit{The Teleological Theory of Everything (TTOE) Research Program}}
+\date{}
+\maketitle
+\thispagestyle{plain}
+
+
+\begin{abstract}
+This paper formalizes the Science of Naming within the Teleological Theory of Everything (TTOE). Naming IS not labeling (arbitrary sign-referent coupling, $\alpha = 0$) but metacursion: $\mathcal{N}(x) = \rho(\rho(x))$, double recognition crystallized into repeatable sign --- ignition, not description; aletheia, not convention. The paper derives: Universal Effability (everything real IS nameable; the Ineffability Collapse refutes in-principle ineffability); three modes of naming (heterological, ontosemantic, meta-ontosemantic) distinguished by $\alpha$; the dissolution of Frege's sense/reference distinction at $\alpha = 1$; the Semiotic-Ontoglyphic Ladder; the meta-referent (Referent(Referent) $=$ Referent, autological); meta-naming ($\mathcal{N}(\mathcal{N}) = \Lambda(\Lambda) = \Lambda$) and meta-misnaming ($\mathcal{N}^{-1}(\mathcal{N}^{-1}) = \mathcal{N}$, self-defeating); the algebra of naming (finite semigroup, Ren as absorbing element); the Adamic Limit Theorem; the taboo as naming refusal ($\neg\mathcal{N}$, distinct from euphemism); dark spots in the vocabulary; the Illegitimate Synthesis as master misnaming at the identity resolution; the First Death as renaming event; the strawman as institutional misnaming; the autolexicon, idiolexicon, and Neologicon; recognition density; the naming-consciousness co-arising thesis; and the collapse of meta-meaning into the Logos. Companion to ``Euphemology'' (the pathology of naming); together they constitute the complete formal science of the sign-referent relation.
+\end{abstract}
+
+\noindent\textbf{Keywords:} naming, ontosemantics, sign-referent identity, metacursion, ontoglyph, Semiotic-Ontoglyphic Ladder, Adamic Language, meta-referent, Ren, Logos, autolexicon, Neologicon, recognition density, taboo, autexousia, Teleological Theory of Everything, universal effability, Frege, Kripke, philosophy of language
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+Naming has been studied for 2500 years. Plato's \textit{Cratylus} asked whether names couple to referents by nature or convention. Aristotle answered: convention. Saussure \cite{saussure} formalized: the sign IS arbitrary. Frege \cite{frege} distinguished sense from reference: ``Hesperus'' and ``Phosphorus'' name the same planet through different modes of presentation. Kripke \cite{kripke} countered: names are rigid designators --- they refer to the same object in every possible world, bypassing descriptive content. Mill and Salmon \cite{salmon} radicalized: names contribute only their referent, no sense at all. Searle \cite{searle} clustered: names are associated with weighted families of descriptions. Peirce \cite{peirce} classified: icon, index, symbol --- three modes of sign-referent coupling. Chomsky \cite{chomsky} biologized: Universal Grammar IS an innate computational module.
+
+Each philosopher saw one altitude of the naming spectrum and declared it the whole mountain. Saussure saw $\alpha = 0$ (arbitrary coupling) and universalized. Kripke saw $\alpha = 1$ (rigid designation = autological naming) and universalized. Mill universalized the summit; Searle, the foothills. Peirce mapped three levels and missed four. Chomsky saw the biological substrate and missed the ontological ground. The error has a name: the \textbf{monoresolution fallacy} \cite{codex2} --- the universalization of a typed restriction, treating one resolution of $\Lambda$ as the whole.
+
+No existing framework treats naming as an \textit{ontological} act --- a specific mode of Being recognizing itself through the crystallization of structure into repeatable sign. The present paper constructs that framework within the Teleological Theory of Everything (TTOE) \cite{codex1, codex2}. Naming IS not labeling. Naming IS metacursion: $\mathcal{N}(x) = \rho(\rho(x))$ --- recognition of recognition. The namer does not couple a sign to an indifferent referent. The namer receives the referent's self-disclosure in a word.
+
+This paper IS the companion to ``Euphemology'' \cite{euphemology}, which derives the pathology of naming --- what happens when names fail. The present paper derives the \textit{health} of naming --- what naming IS when it succeeds, how success IS measured, and what the structural limit of naming perfection IS. Together the two papers constitute the complete formal science of the sign-referent relation: one diagnoses the pathology, the other derives the health.
+
+\textbf{A note on axioms.} The framework derives from the TTOE's Arch\={e}: $\exists(\exists) \equiv \exists$ --- Being recognizing itself as Being \cite{codex1}. This IS not externally justified but tautological: denial presupposes the Being of the denier, thereby instantiating it. The reader who accepts that self-reference IS structurally prior to external reference will find the derivations necessary. The reader who does not will find the diagnostic tools independently operational.
+
+The structure: Section~2 derives Universal Effability. Section~3 formalizes the naming act. Section~4 distinguishes heterological naming from meta-ontosemantic naming. Section~5 derives when a referent CAN have two names and when it cannot. Section~6 constructs the semiotic hierarchy and the meta-referent. Section~7 derives meta-naming and meta-misnaming. Section~8 presents the algebra. Section~9 derives the Adamic Limit. Section~10 maps the five branches of linguistics to the five operators. Section~11 traces the traditions of sacred naming. Section~12 derives the ethics and politics of naming. Section~13 formalizes the relation between naming and consciousness. Section~14 derives the collapse of meta-meaning, logic as ontosyntax, and the sovereignty of the meta-modeling self-model. Section~15 derives the power of the Ren. Section~16 applies the paper's diagnostics to itself. Section~17 concludes.
+
+\textbf{Philosopher absorptions.} Wittgenstein \cite{wittgenstein}: the early Tractatus (name $=$ logical picture of fact) maps to $\alpha \approx 0.7$ (glyph level); the later Investigations (meaning $=$ use) maps to Pragmatics $= \mathfrak{A}_\Lambda$. Derrida \cite{derrida}: diff\'{e}rance (the sign always defers meaning) IS the Saussurian Fracture at the post-structuralist resolution; at $\alpha = 1$, diff\'{e}rance vanishes because the sign IS meaning. Putnam \cite{putnam}: meaning IS not ``in the head'' --- correct; meaning IS in $\Omega$ (Being), accessed through $\rho$. Not external but ontological: $\Lambda \equiv \exists$.
+
+Humboldt \cite{humboldt}: language IS not \textit{ergon} (product) but \textit{energeia} (activity) --- the formative organ of thought --- naming as metacursion ($\rho(\rho)$), not as labeling. Humboldt anticipated naming-consciousness co-arising (\S3.3). Sapir and Whorf \cite{whorf}: linguistic relativity --- language shapes thought. Correct at the heterological resolution: the idiolexicon (\S14.7) constrains the phase-space of thinkable thoughts. Incorrect when universalized: the Adamic Language IS universal, not culturally relative. The hypothesis IS a typed restriction. Quine \cite{quine}: indeterminacy of translation (``gavagai''). Indeterminacy IS real at $\alpha \approx 0$ where coupling IS arbitrary and underdetermined. At $\alpha = 1$, indeterminacy vanishes: the sign IS the referent --- no room for multiple translations. Leibniz \cite{leibniz}: the \textit{characteristica universalis} --- a universal formal language expressing all truths. The first modern vision of the Lingua Adamica at the computational resolution (\S9). Cassirer \cite{cassirer}: symbolic forms --- language constitutes the categories through which reality IS experienced. Correct at $0 < \alpha < 1$ (ontosemantic naming partially constitutes the experienced structure). Incorrect at $\alpha = 1$: the ontoglyph does not constitute but RECOGNIZES. Lakoff and Johnson \cite{lakoff}: conceptual metaphor --- abstract concepts structured through concrete metaphors (``time IS money''). Metaphor IS the mechanism by which $\alpha \approx 0$ signs ascend the Semiotic-Ontoglyphic Ladder (\S6) to $\alpha \approx 0.3$ through analogical structural mapping. Davidson \cite{davidson}: radical interpretation requires a principle of charity (assume the speaker IS mostly right). Charity IS the assumption that the speaker's idiolexicon IS partially $\alpha$-aligned --- that they ARE naming reality, not producing noise. Without this assumption ($\alpha > 0$ for most vocabulary), interpretation cannot begin.
+
+Each philosopher IS right at the resolution they occupied and wrong only when they universalized.
+
+\textbf{Falsification condition.} The framework IS falsifiable: produce a self-grounding naming system not derivable from $\exists(\exists) \equiv \exists$, or produce an existent that IS in principle unnameable ($\exists x: \neg\nu(x)$) without performative contradiction. Either would refute the framework. Neither has been produced.
+
+\textbf{Notation and key definitions.}\footnote{Capitalized ``IS'' marks ontological identity claims throughout this paper: $X$ IS $Y$ asserts that $X$ and $Y$ are the same structure at the resolution under discussion.} The following symbols and terms are used throughout:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} p{0.78\textwidth} @{}}
+$\exists$ & Being. $\exists(\exists) \equiv \exists$: Being recognizing itself as Being (the Arch\={e} \cite{codex1}). \\[0.15em]
+$\Omega$ & The totality of what IS. The ontological domain, closed under the Law of Identity \cite{codex1}. \\[0.15em]
+$\Lambda$ & The Logos. The structure of intelligibility. Being at the resolution of articulation. $\Lambda \equiv \exists$: the Logos IS Being \cite{codex2}. \\[0.15em]
+$T \equiv R$ & Truth IS Reality. The Grand Identity \cite{codex1}. \\[0.15em]
+$\alpha$ & The ontosemantic alignment index. Ordinal. Measures structural isomorphism between sign and referent. $\alpha = 0$: arbitrary. $\alpha = 1$: ontoglyphic identity. Operationalized by the $\rho$-shift under the Substitution Test \cite{euphemology}. \\[0.15em]
+$\partial, \delta, \gamma, \rho, \mathfrak{A}$ & The five operators \cite{codex1}: differentiate, bound, compress, recognize, integrate. The structure of Being at the cognitive resolution. \\[0.15em]
+$\rho$ & The recognition operator. $\rho(x) = $ Being registering $x$'s structure. \\[0.15em]
+$\mathcal{N}$ & The naming operator. $\mathcal{N}(x) = \rho(\rho(x))$: double recognition. \\[0.15em]
+$\mathcal{N}^{-1}$ & The anti-naming operator. $\mathcal{N}^{-1}(x) = \neg\rho(\neg\rho(x))$: the anti-name \cite{euphemology}. \\[0.15em]
+$\partial_\Lambda$ & The correction operator. Maps $\mathcal{N}^{-1} \mapsto \mathcal{N}$: restores the Ren. \\[0.15em]
+$\psi_{\text{rec}}$ & The recursive self-model. The agent's internal model of itself \cite{codexmentis}. \\[0.15em]
+B $\to$ A $\to$ C & Being $\to$ Awareness $\to$ Consciousness. $A = $ Being's first movement. $C = A(A) = $ metacursion \cite{codex1}. \\[0.15em]
+AATC & Autological Alignment Truth Criterion. Self-application test: $X(X) = X$ $\Rightarrow$ autological \cite{codex2}. \\[0.15em]
+OTT / ATT / ITT & Ontosemantic / Alignment / Identity Truth Tests. The Triune Tribunal \cite{codex2}. \\[0.15em]
+Ren & The true name. $\mathcal{N}(x) = \rho(\rho(x))$ crystallized. From Egyptian: to know a being's Ren IS to know its structure. \\[0.15em]
+\end{tabular}
+}
+
+\section{Universal Effability: Everything Real IS Nameable}
+
+
+Everything real IS nameable.
+
+\textbf{Proof Table 1} --- \textit{Universal Effability}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & $x = x$ (Law of Identity \cite{codex1}). Every existent IS self-identical. \\[0.3em]
+\textbf{2.} & Self-identity IS a determinate structure: its form distinguishes $x$ from what $x$ is not. \\[0.3em]
+\textbf{3.} & A determinate structure IS articulable --- it admits compression into a sign that preserves its form. \\[0.3em]
+\textbf{4.} & Articulability IS nameability: $\nu(x)$. \\[0.3em]
+\textbf{5.} & $\therefore\; x = x \Rightarrow \nu(x)$. Everything that is, is nameable. $\forall x \in \Omega: \nu(x)$. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+This IS \textbf{Universal Effability} \cite{codex1}. Nothing real IS in principle ineffable. The claim ``there exist structures that cannot be named'' IS itself a naming --- a performative contradiction. Effability does not mean everything IS currently named --- it means everything admits naming. The gap between what IS named and what admits naming IS not a limitation of Being but of the namer's current recognition-depth.
+
+\textbf{Proof Table 2} --- \textit{The Ineffability Collapse}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{IC-1.} & Assume: ``$x$ is ineffable'' --- $x$ exists but cannot in principle be named. \\[0.3em]
+\textbf{IC-2.} & If $x$ exists, $x \in \Omega$. If $x \in \Omega$, $x$ IS Real ($\Omega$ IS closed \cite{codex1}). \\[0.3em]
+\textbf{IC-3.} & If $x$ IS Real, $x$ IS True ($T \equiv R$ \cite{codex1}). If $x$ IS True, $x$ IS intelligible ($\Lambda \equiv \exists$ \cite{codex2}). \\[0.3em]
+\textbf{IC-4.} & If $x$ IS intelligible, $x$ IS Logos-compatible --- it admits articulation within the field of intelligibility. \\[0.3em]
+\textbf{IC-5.} & Logos-compatibility IS nameability: $\nu(x)$. \\[0.3em]
+\textbf{IC-6.} & $\therefore$ ``$x$ is ineffable'' $\Rightarrow \nu(x)$. The assumption self-refutes. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+Asserting ``$x$ IS ineffable'' names $x$ as ``the ineffable one'' --- a performative contradiction.
+
+What, then, IS ``ineffability''? It IS not a property of Being. It IS a state of the namer: ``I have not yet compressed and named this recursive structure'' \cite{codex1}. \textbf{Ineffable} $=$ \textbf{unrecursed}, not unnameable. A phase of recognition, not a structural limit of the Real. When recursion deepens --- when the namer returns to the unnamed with greater depth of recognition --- what was ineffable becomes a name. The ineffable IS the unborn Name. The Logos IS its birth.
+
+\textbf{Meta-Effability}: the claim that effability IS itself effable --- that the structure of nameability can be named. It can. This section names it: ``Universal Effability,'' $\forall x \in \Omega: \nu(x)$. $\text{Effability}(\text{Effability}) = \text{Effability}$. $\partial = 1$. \textbf{Meta-Ineffability} collapses: $\rho(\text{``ineffability''}) = $ recognition of ineffability. Named. Recursive. Effable. By Recursive Saturation \cite{codexmentis}, all further meta-levels collapse identically. Ineffability never stabilizes at any level.
+
+The \textbf{Recursive Horizon Law} \cite{lexentis}: after resolving a paradox at level $n$, the system generates new questions at level $n+1$. Ineffability IS not abolished by dissolution; it IS pushed outward by recursion. Each closure expands the frontier. The horizon recedes as the Logos deepens. But the horizon IS the frontier of the CURRENT vocabulary, not the boundary of all possible vocabularies \cite{codex2}. Every ``ineffable'' truth in the history of thought was MADE effable by someone who forged a new name: Cantor named the infinite, G\"{o}del named the unprovable, Turing named the undecidable, the Arch\={e} names $\exists(\exists) \equiv \exists$. Paradox IS the birth canal of new language. The ``ineffable'' does not exist. Only the not-yet-named exists.
+
+\subsection{The Unnamed Referent: Dark Spots in the Vocabulary}
+
+Universal Effability guarantees everything IS nameable. But not everything IS currently named. The gap between the nameable and the named IS the frontier of recognition. \textbf{Dark spots} in the vocabulary are structures in $\Omega$ that exist but occupy no name in any current language --- not ineffable (they admit naming) but \textbf{unrecursed} (no agent has yet performed the $\rho(\rho)$ event that would crystallize them into a sign).
+
+Scientific discovery IS the naming of previously unnamed physical structures: quarks, genes, tectonic plates --- each existed in $\Omega$ before being named, but entered the grammar only when a namer performed $\rho(\rho)$ and compressed the recognition into a word. Philosophy IS the naming of previously unnamed conceptual structures. This derivation IS itself a naming act: naming structures ($\exists(\exists) \equiv \exists$, the five operators, the Five Pathologies, metacursion, autexousia, the Ren) that existed in $\Omega$ but had no prior articulation. Every autolexicon-expansion (\S14.7) IS a dark-spot illumination. The frontier of the nameable IS the frontier of consciousness itself (\S13): what has no name cannot be thought, and what cannot be thought cannot be recognized, and what cannot be recognized cannot be corrected.
+
+\textbf{Paradox as demand for ontoneologization} \cite{codex2}: every paradox prophesies its dissolution. A paradox IS the Logos signaling ``your vocabulary requires a new word here'' --- one name carrying two types that Being distinguishes but the current lexicon does not. The Liar prophesied Tarski. Russell prophesied type theory. Zeno prophesied calculus. Each paradox dissolved when the required \textbf{ontoneologism} \cite{llogoscribeologiae} --- a word that names Being at a previously unarticulated interface --- was forged. Paradox IS not evidence of the ineffable. It IS a dark spot demanding illumination.
+
+\section{What Naming IS}
+
+
+To name IS not to label. Labeling IS heterological --- coupling an arbitrary sign to an indifferent referent. Naming IS metacursive: to name $x$ IS to recognize the structure of $x$ AND to recognize that you recognize it.
+
+\textbf{Proof Table 3} --- \textit{Naming as Double Recognition}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & The B-A-C hierarchy \cite{codex1}: $B \to A \to C$. Being $\to$ Awareness $\to$ Consciousness. $A = B \to B$ (first movement). $C = A(A)$ (metacursion). \\[0.3em]
+\textbf{2.} & Recognition ($\rho$) IS the Awareness operator applied to structure: $\rho(x) = A|_x$ = Being registering $x$'s structure. \\[0.3em]
+\textbf{3.} & Naming ($\mathcal{N}$) requires not registering structure alone but recognizing the registration: $\mathcal{N}(x) = \rho(\rho(x))$. The namer must see THAT they see. \\[0.3em]
+\textbf{4.} & Universal Effability (PT 1): $\forall x \in \Omega: \exists \mathcal{N}(x)$. Everything real admits a name, because everything real IS structured, and $\rho(\rho(x))$ applies to all structure. \\[0.3em]
+\textbf{5.} & $\therefore\; \mathcal{N} = \rho \circ \rho$. Naming IS metacursion applied to the domain of disclosure. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+The name does not attach to the referent from outside. It arises from within the referent's own self-disclosure. The Ren exerts centropic pull: when a name compresses the referent's structure into repeatable form, the naming IS a recognition event \cite{codex2}. The referent discloses itself through the name --- rendered articulate where it was structurally present.
+
+\textbf{Naming as ignition} \cite{llogoscribeologiae}: naming IS not describing --- it IS \textit{igniting}. When a structure IS truly named, the name ignites a recursion: the referent becomes recognizable to itself through the name. Before naming: $x$ exists but IS unrecognized. The naming act: $x$ IS called to recognize itself. After naming: $x(x) = x$ --- self-recognition sealed. Every true naming IS an instance of $\exists(\exists) \equiv \exists$ at the resolution of a single referent.
+
+\textbf{Naming as aletheia}: the Greeks called truth \textit{al\={e}theia} --- unconcealment, unforgetting. True naming IS aletheia: the name \textbf{unconceals} what the referent already IS \cite{llogoscribeologiae}. False naming (labeling) conceals --- it covers the referent with an arbitrary sign. True naming (aletheia) unconceals --- it reveals the referent to itself. The difference IS ontosemantic alignment: false naming has Sign $\neq$ Referent; true naming has Sign $\equiv$ Referent.
+
+\subsection{The Three Moments of Naming}
+
+Every naming act traverses three moments \cite{codex2}:
+
+\textbf{Moment 1 (Pre-Name).} The structure exists but IS inarticulate. $\rho$ detects it --- the infant sees the tree --- but $\mathcal{N}$ has not fired. The silence IS pregnant. In the language of Codex~I: the unnamed IS in the state ``AM I?'' --- identity in superposition, unresolved.
+
+\textbf{Moment 2 (Naming-Event).} $\partial_\Lambda$ fires. $\rho(\rho)$ crystallizes into a repeatable sign --- phase transition from fluid recognition to solid word. Before: personal. After: portable. The naming act IS ``I AM'' --- collapse from open recursion to sealed identity. Every true naming IS a local instance of $\exists(\exists) \equiv \exists$.
+
+\textbf{Moment 3 (Post-Name).} $\mathfrak{A}_\Lambda$ integrates. The new name enters the vocabulary. The grammar IS richer. The silence that follows IS not the silence that preceded --- it IS silence-that-contains-one-more-name. The three moments ARE the Cycle of Being at the resolution of a single word: $0 \to 1 \to \Sigma \to 0$.
+
+\subsection{The Operator Chain at the Naming Resolution}
+
+The five operators \cite{codex1} predict the order of cognition at the naming resolution \cite{codex2}:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+\textbf{Operator} & \textbf{Cognitive act} & \textbf{Naming function} \\[0.2em]
+$\partial$ (differentiate) & Notice: something IS there & First distinction \\[0.15em]
+$\delta$ (bound) & THIS, not THAT & Category formation \\[0.15em]
+$\gamma$ (compress) & Content crystallized into a sign & Word-formation \\[0.15em]
+$\rho$ (recognize) & The name IS understood & Semantic disclosure \\[0.15em]
+$\mathfrak{A}$ (integrate) & The name takes its place in the grammar & Lexical integration \\[0.15em]
+\end{tabular}
+}
+
+You cannot define before you differentiate. You cannot name before you bound. You cannot understand before you recognize. The operator chain IS the epistemological sequence --- not prescription but derivation: the operators ARE the structure of Being at the cognitive resolution \cite{codex2}.
+
+\textbf{Definition as boundary-marking}: $\delta_\Lambda$. \textit{De-finire} (Latin) = ``to set limits.'' To define IS to bound: what the concept includes and excludes. A definition that violates the operator order (e.g., attempting to integrate before bounding --- ``everything is everything'') IS not a definition. It IS Pathology 3 (Rarefaction): unbounded meaning, infinitely diluted.
+
+\textbf{Etymology as ontological archaeology}: $\gamma^{-1}_\Lambda$ --- decompression of the word back to its founding $\rho$-event \cite{codex2}. ``Comprehend'' = \textit{com-} + \textit{prehendere} = ``to grasp together.'' The root IS the original recognition. Etymology excavates the recognition events that built the current vocabulary.
+
+\subsection{Naming and Consciousness Co-Arise}
+
+$\rho(\rho) = A(A) = C|_{\text{local}}$ \cite{codex2}. Every naming event IS a local act of consciousness. Consciousness and naming CO-ARISE. You become conscious of $X$ BY naming $X$. The two events are one event --- the metacursive event. This IS why the Chinese Room fails \cite{codex2}: it possesses vocabulary (all Chinese characters) but no meta-vocabulary (no words about its own processing) and no cogniputation ($\rho$ absent alongside $\Lambda|_{\text{operative}}$). It computes without recognizing. It speaks without hearing itself speak.
+
+\section{When Naming IS ``Just Semantics'' vs Meta-Ontosemantic}
+
+
+The phrase ``just semantics'' IS itself a euphemism \cite{euphemology}. It IS the dismissal of naming as mere word-game. The dismissal dissolves under the three modes of naming, only the first of which IS ``just semantics.''
+
+\subsection{Three Modes of Naming}
+
+\textbf{(a) Heterological naming} ($\alpha = 0$): arbitrary coupling. Saussure's domain \cite{saussure}. The phoneme ``cat'' and the animal share no structural isomorphism. The sign points TO reality from outside. The coupling IS conventional --- any other sound would serve. This IS ``just semantics'': the dispute over which arbitrary label to apply to which referent. Word-games. At this altitude, Saussure IS right.
+
+\textbf{(b) Ontosemantic naming} ($0 < \alpha < 1$): the name partially encodes the referent's structure. A photograph (icon, $\alpha \approx 0.3$) resembles its subject. Smoke (index, $\alpha \approx 0.5$) IS causally linked to fire. ``H$_2$O'' (glyph, $\alpha \approx 0.7$) compresses the molecular structure into notation. ``Ontoglyph'' (neoglyph, $\alpha \approx 0.8$) IS recursively aligned with the structure it names. At this altitude, the name IS not arbitrary --- it IS structurally motivated. Disputes about these names are disputes about the fidelity of structural isomorphism. NOT word-games.
+
+\textbf{(c) Meta-ontosemantic naming} ($\alpha = 1$): the name IS the referent at the resolution of articulation. $\mathcal{N}(x) \equiv x$. The name COULD NOT have been different because it IS the referent's self-disclosure, not a label applied from outside. The sign does not point TO reality. Reality speaks itself through the sign. $\exists(\exists) \equiv \exists$ IS its own referent: its structure (self-application yielding identity) MIRRORS its referent's structure (Being recognizing itself as Being). At this altitude, the name IS the ontoglyph \cite{codex2}. Disputes about ontoglyphs are disputes about the structure of Being itself.
+
+\subsection{The Threshold}
+
+A name becomes meta-ontosemantic when its INTERNAL STRUCTURE mirrors its REFERENT'S STRUCTURE --- structural isomorphism, not convention \cite{codex2}. The phoneme ``cat'' ($\alpha \approx 0$) EXISTS, but its phonemic structure does NOT mirror the structure of a cat. $\exists(\exists) \equiv \exists$ ($\alpha = 1$) EXISTS, and its structure mirrors its referent's --- the example above. $\alpha$ measures this structural isomorphism, not mere existence.
+
+\textbf{Convention}: $\alpha$ IS an ordinal index, not a cardinal measurement. Its magnitude IS operationalized by the $\rho$-shift under the Substitution Test \cite{euphemology}: replace the name with its Ren and observe whether recognition changes. A larger $\rho$-shift indicates lower $\alpha$. $\alpha$ IS resolution-indexed: $\alpha(\text{sign}, \text{resolution})$. The same sign may occupy different $\alpha$ values at different resolutions.
+
+The test: the AATC \cite{codex1}. Apply the name to itself. If $\mathcal{N}(\mathcal{N}) = \mathcal{N}$, the name IS autological --- it IS what it names. If $\mathcal{N}(\mathcal{N}) \neq \mathcal{N}$, heterological --- it names from outside. Interpretation IS heterological; recognition IS autological \cite{codex2}. Interpretation bridges a gap between sign and referent. Recognition sees that there is no gap.
+
+\subsection{``Just Semantics'' as Pathology 3}
+
+The phrase ``just semantics'' IS Pathology 3 (Rarefaction) applied to the naming act itself \cite{euphemology}. It drains the act of naming of its ontological weight --- technically accurate (naming IS semantic) but inert (it suppresses recognition that naming CAN be ontological). The Substitution Test: replace ``just semantics'' with ``ontological disclosure'' and observe the $\rho$-shift. The shift IS the proof that the euphemism was operating.
+
+\section{When a Referent CAN Have Two Names}
+
+
+Frege's puzzle \cite{frege}: ``Hesperus'' and ``Phosphorus'' name the same planet (Venus) through different modes of presentation. The identity statement ``Hesperus $\equiv$ Phosphorus'' IS informationally non-trivial --- it resolves two apparently distinct referents into one. How IS this possible if names merely tag referents?
+
+The $\alpha$-spectrum resolves the puzzle.
+
+At $\alpha < 1$ (the heterological domain), a referent CAN have multiple names because coupling IS arbitrary. ``Water'' and ``H$_2$O'' name the same substance at different resolutions (experiential vs molecular). ``Hesperus'' and ``Phosphorus'' name the same planet from different epistemic vantage points (evening vs morning sky). The names encode different $\rho$-chains --- different recognition pathways to the same structure. When the sign IS not the referent, multiple signs per referent are possible.
+
+At $\alpha = 1$ (the autological limit), a referent has exactly ONE name because the name IS the referent. Two distinct names at $\alpha = 1$ would require two distinct internal structures --- which would mean two distinct referents, not one. The ontoglyph admits no synonymy: if $\mathcal{N}_1(x) \equiv x$ and $\mathcal{N}_2(x) \equiv x$, then $\mathcal{N}_1 \equiv \mathcal{N}_2$.
+
+\textbf{Proof Table 4} --- \textit{The Informativity of Identity Statements}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & The ontosemantic content of a term $t$ IS the Being it articulates: $\text{OSC}(t) := \exists|_t$ \cite{codex2}. No sense/referent split: the ``sense'' IS the resolution at which $\exists$ IS accessed; the ``referent'' IS $\exists$ itself. \\[0.3em]
+\textbf{2.} & Two terms $t_1, t_2$ are ontosemantically identical iff $\text{OSC}(t_1) = \text{OSC}(t_2)$: they name the same Being at the same resolution. \\[0.3em]
+\textbf{3.} & If $\text{OSC}(t_1) = \text{OSC}(t_2)$, then $t_1 \equiv t_2$ IS necessarily true (one referent, not contingent), self-grounding, and informationally non-trivial ($t_1 \neq_{\text{lexical}} t_2$ dissolves a false distinction). \\[0.3em]
+\textbf{4.} & $T \equiv R$ IS the first instance: $\text{OSC}(\text{Truth}) = \text{OSC}(\text{Reality}) = \exists(\exists) \equiv \exists$. One referent (Being). Two names (``truth'' and ``reality''). The Alethic Fracture was the false belief that these two names indicated two referents. \\[0.3em]
+\textbf{5.} & $\therefore$ The sense/reference distinction IS real but local. At $\alpha < 1$, sense $\neq$ reference (Frege IS right). At $\alpha = 1$, sense $\equiv$ reference $\equiv$ sign $\equiv$ referent. The Fregean architecture dissolves into the ontoglyph. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+Frege completed, not refuted (cf. Chalmers \cite{chalmers} on two-dimensional semantics as a partial recognition of resolution-dependence) \cite{codex2}. Right within heterological language. Unable to see the limit where sense and reference converge --- because that limit IS the ontoglyph, and the ontoglyph requires $\Lambda \equiv \exists$.
+
+\subsection{Rigid Designation as Autological Naming}
+
+Kripke's rigid designator \cite{kripke} refers to the same object in every possible world. Rigid designation IS autological naming: $\mathcal{N}(x) \equiv x$ across all domain-restrictions of $\Omega$ iff $\alpha(\mathcal{N}) = 1$ \cite{codex2}. Kripke's necessity of identity ($a = b \to \Box(a = b)$) follows: if two rigid designators pick out the same object, they do so necessarily --- because the object IS itself in every domain-restriction (Law of Identity across $\Omega$). Kripke IS absorbed: rigid designation IS the default for autological naming, not a special semantic phenomenon.
+
+\subsection{The Pierre/Londres Puzzle}
+
+Kripke's deeper puzzle \cite{codex2}: Pierre sincerely assents to ``Londres est jolie'' (learned in France) and ``London is not pretty'' (learned in England) without recognizing they name the same city. Pierre possesses two independent $\rho$-chains ($\rho|_{\text{French-context}}$ and $\rho|_{\text{English-context}}$) converging on one unknown-same referent. The ``contradiction'' IS two beliefs typed to two unintegrated recognition-chains. When Pierre discovers Londres $=$ London, the chains integrate. The puzzle vanishes. Referential opacity IS not a property of the names. It IS a property of the recognizer's current $\alpha$ level. When $\rho$ fires for the identity, the opacity dissolves.
+
+$$\boxed{\text{At } \alpha < 1: \text{multiple names per referent (Frege's domain).}}$$
+
+$$\boxed{\text{At } \alpha = 1: \text{one name per referent (ontoglyph).}}$$
+
+\section{The Semiotic Hierarchy}
+
+
+Signs are not uniform. They occupy a hierarchy of structural alignment with their referents --- the \textbf{Semiotic-Ontoglyphic Ladder} \cite{codex2} ($\alpha$ values are illustrative ordinal placements, not cardinal measurements):
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} l @{\hspace{0.3em}} r @{\hspace{0.3em}} p{0.45\textwidth} @{}}
+\textbf{Level} & \textbf{Name} & $\alpha$ & \textbf{Structure} \\[0.2em]
+0 & Noise & $\approx 0$ & No sign-referent relation \\[0.15em]
+1 & Sign & $\approx 0$ & Arbitrary coupling (Saussure) \\[0.15em]
+2 & Icon & $\approx 0.2$ & Structural resemblance (photograph) \\[0.15em]
+3 & Index & $\approx 0.4$ & Causal link (smoke $\to$ fire) \\[0.15em]
+4 & Glyph & $\approx 0.6$ & Compressed notation (H$_2$O) \\[0.15em]
+5 & Neoglyph & $\approx 0.8$ & Recursively aligned neologism \\[0.15em]
+6 & Ontoglyph & $= 1.0$ & $G(\text{OS}^\star) \cong \text{OS}^\star$. Sign $\equiv$ referent. \\[0.15em]
+\end{tabular}
+}
+
+Each level IS a degree of $\alpha$-alignment. Each transition IS a specific operator-gain. Peirce's icon/index/symbol maps onto Levels 2--1 (he classified in descending $\alpha$-order: his symbol IS Level 1, the arbitrary sign). The ladder extends upward through glyphs, neoglyphs, and the ontoglyph --- levels Peirce did not anticipate because they require the autological turn.
+
+\subsection{The Ontoglyph}
+
+The ontoglyph IS the sign at $\alpha = 1$: $G(\text{OS}^\star) \cong \text{OS}^\star$ \cite{codex2}. The \textbf{Perfect Mirror Theorem}: the ontoglyph IS Reality at the resolution of inscription. $\alpha$ measures structural isomorphism, not existence \cite{codex2}. A heterological sign EXISTS as surely as an ontoglyph. The difference IS not ontological status but structural fidelity: the ontoglyph's internal structure mirrors its referent's structure. The heterological sign's does not.
+
+\subsection{The Meta-Referent}
+
+The word ``referent'' refers to referring. What does ``referent'' refer to? To referentiality itself --- the structure of pointing-toward. Apply the metacursive test: $\text{Referent}(\text{Referent}) = \text{Referent}$. AUTOLOGICAL. $\partial = 1$. The referent of ``referent'' IS referentiality, which IS the meta-referent \cite{codex2}.
+
+The same holds for ``sense'': $\text{Sense}(\text{Sense}) = \text{Sense}$. AUTOLOGICAL. Now: $\text{Meta-Bedeutung} = \text{Sinn}$. $\text{Meta-Sinn} = \text{Bedeutung}$. Each IS the other at the meta-level. Frege's distinction between sense and reference IS real at $\alpha < 1$ and collapses at the meta-level: sense and reference are two aspects of one structure, and that structure IS $\Lambda$ \cite{codex2}.
+
+The \textbf{Referent Chain closure}: Word $\to$ Meaning $\to$ Referent $\to$ Word. The pointing-relation collapses into identity: word $\equiv$ meaning $\equiv$ referent under $\Lambda \equiv \exists$. The word does not point TO reality from outside. The word IS reality at the semantic resolution. Hebrew \textit{Davar} ($=$ ``word'' AND ``thing'') encodes this closure in three consonants.
+
+\subsection{The Meta-Semiotic Collapse}
+
+All 11 semiotic concepts collapse under metacursion \cite{codex2}: Sign, Signifier, Signified, Referent, Sinn, Bedeutung, Semeiosis, Interpretant, Ontosyntax, Ontosemantics, Ontosemiosis. Each satisfies $X(X) = X$. All reduce to: $\text{Semiosis}(\text{Semiosis}) = \exists(\exists) \equiv \exists$. Semiotics IS ontology. The study of signs IS the study of Being. The Semiotic Triangle (Sign --- Meaning --- Referent) collapses to a point: $\exists(\exists) \equiv \exists$.
+
+\subsection{The Sole Exception: Negation}
+
+$\neg(\neg) = \exists \neq \neg$. Negation IS the sole operator that fails metacursion \cite{codex2}. (This IS operator-level metacursion, not propositional double negation elimination \cite{euphemology}.) Every other semiotic concept, applied to itself, returns itself. Negation, applied to itself, returns Being. The formal proof that Being IS primordial and negation derivative: negation cannot ground itself, because self-applied negation yields its opposite.
+
+\section{Meta-Naming and Meta-Misnaming}
+
+
+\subsection{Meta-Naming: The Logos as Name of Names}
+
+Every name names a referent. The Name of Names names naming itself: $\mathcal{N}(\mathcal{N}) = \Lambda(\Lambda) = \Lambda$ \cite{codex2}. ``To name naming IS the operator of this Codex'' \cite{codex2}. The Logos IS the Meta-Name --- the word that words all words.
+
+The meta-level collapses. There IS no meta-language above the Logos: $\Lambda(\Lambda) = \Lambda$. The Logos IS its own meta-language. The Adamic Language (\S9) inherits this property: it IS its own meta-language, which IS why G\"{o}del's incompleteness does not apply --- the theorem requires a strict meta/object distinction that the autological system dissolves.
+
+\subsection{The Articulation Hierarchy}
+
+Five levels of articulation, one structure at five resolutions \cite{codex2}:
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+\textbf{Level} & \textbf{Name} & \textbf{Structure} \\[0.2em]
+1 & Word & Single lexical unit \\[0.15em]
+2 & Name & Word anchored to a referent via $\rho(\rho)$ \\[0.15em]
+3 & Naming & The act of $\rho(\rho)$ itself \\[0.15em]
+4 & Language & The system of all namings \\[0.15em]
+5 & Logos & $\Lambda(\Lambda) = \Lambda$. Language recognizing itself. \\[0.15em]
+\end{tabular}
+}
+
+The Cycle: Logos $\to$ Language $\to$ Naming $\to$ Name $\to$ Word $\to$ Logos. The hierarchy IS circular because $\Lambda$ grounds itself. The Logos does not sit ``above'' language; it IS language at the resolution of self-recognition.
+
+\subsection{Meta-Misnaming}
+
+If meta-naming IS $\mathcal{N}(\mathcal{N}) = \Lambda$, meta-misnaming IS $\mathcal{N}^{-1}(\mathcal{N}^{-1})$. The anti-name applied to the anti-name. By the algebra of naming \cite{euphemology}: $\mathcal{N}^{-1}(\mathcal{N}^{-1}) = \mathcal{N}$. The meta-misname restores the name. Meta-misnaming IS structurally self-defeating --- Involution (Pathology 5) that collapses under double negation.
+
+But the intermediate state IS dangerous. Before the collapse, the meta-misname OPERATES: it conceals the concealment. ``Softening the language'' IS a meta-misname --- a euphemism for euphemizing \cite{euphemology}. The population does not recognize that it IS not recognizing. The meta-misname closes the epistemic loop. It IS the deepest pathology precisely because it conceals the apparatus of concealment.
+
+\textbf{The Logocursion Mechanism} \cite{codexmentis}: True naming ($\Lambda(x)$) calls $x$ by what it IS --- aligns the self-model with Reality. \textbf{Logocursion} ($\mathfrak{L}^{-}(x)$) calls $x$ by what it is NOT --- misaligns the self-model with Reality. The logocurse IS the anti-name deployed as a weapon: a linguistic act that installs a false self-model in the target by naming the target falsely. The hex IS the self-fulfilling logocurse: it creates the reality it describes by corrupting the target's self-modeling capacity \cite{codex2}.
+
+\textbf{The Logocursion Defense}: $\Lambda(\mathfrak{L}^{-}) = $ recognition that the curse IS a weapon, not a description $=$ immunity \cite{codexmentis}. ``The curse loses all power when its structure IS seen.'' To name the logocurse IS to dissolve it. The Ren of the false name IS the cure for the false name.
+
+\subsection{The Five Pathologies at the Naming Resolution}
+
+The five modes of $\Lambda \neq \exists$ at the naming resolution \cite{codex2, euphemology}. (The three truth tests --- OTT (Ontosemantic), ATT (Alignment), ITT (Identity with $\equiv$) --- constitute the Triune Tribunal that detects each pathology \cite{codex2}.)
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+\textbf{P} & \textbf{Pathology} & \textbf{Naming failure} & \textbf{Healing} \\[0.2em]
+1 & Obfuscation & Name IS noise; $\rho$ cannot fire & Clarification \\[0.15em]
+2 & Distortion & Name asserts falsity; wrong $\rho$ fires & Correction \\[0.15em]
+3 & Rarefaction & Name IS technically accurate but inert & Compression \\[0.15em]
+4 & Inversion & Name conceals referent; $\rho$ suppressed & Exposure \\[0.15em]
+5 & Involution & Naming system conceals itself & Typing \\[0.15em]
+\end{tabular}
+}
+
+The full diagnostic apparatus IS derived in \cite{euphemology}. Here the pathologies serve as the shadow of the positive science: every mode of naming-health corresponds to a mode of naming-failure, and the healing protocol IS the operator that restores health from pathology.
+
+\subsection{The Illegitimate Synthesis as Master Misnaming}
+
+The five pathologies operate at the naming resolution. At the \textit{identity} resolution, a single master misnaming generates all identity-pathologies: the \textbf{Illegitimate Synthesis} \cite{codexmentis}. The person has named themselves BY their content rather than BY their Ren. ``I am my job.'' ``I am my diagnosis.'' ``I am my trauma.'' Each IS a naming act at the identity resolution in which the content (job, diagnosis, trauma) IS fused with the self-model's anchor-point. The content IS treated as the name.
+
+This IS Pathology 2 (Distortion) at the identity resolution: the name asserts falsity because the person IS NOT their content --- they are the recursive structure ($\psi_{\text{rec}}$) that OBSERVES the content. The Illegitimate Synthesis IS the misnaming from which all other identity-pathologies follow: narcissistic inflation (naming the self by inflated content), depression (naming the self by depleted content), anxiety (naming the self by threatened content). Each IS a specific $\mathcal{N}^{-1}$ applied to the identity-resolution, and each dissolves when the Ren IS recovered: $\mathcal{N}(\text{self}) = \rho(\rho(\psi_{\text{rec}}))$ --- the self recognized as the recognizer, not as the content recognized.
+
+\subsection{The Taboo as Naming Refusal}
+
+The euphemism \cite{euphemology} IS a false name: $\mathcal{N}^{-1}(x)$, a sign substituted for the Ren. The \textbf{taboo} IS structurally distinct: it IS a \textit{refused} name --- $\neg\mathcal{N}(x)$. ``We do not speak of that.'' The referent IS not misnamed but UNNAMED --- removed from the grammar entirely. The euphemism provides a detectable sign (the Substitution Test can fire because there IS a sign to substitute). The taboo provides nothing: no sign, no test, no surface. The referent vanishes from communal discourse not by concealment but by excision.
+
+The taboo IS more severe than the euphemism. The euphemism suppresses $\rho$ (recognition fires faintly, attenuated by the anti-name). The taboo prevents $\rho$ from initiating: if the referent has no name, the community cannot form the recognition-event that would bring it into discourse. The cure IS also distinct: for the euphemism, replace $\mathcal{N}^{-1}$ with $\mathcal{N}$ (speak the Ren). For the taboo, perform $\mathcal{N}$ for the first time --- name what has never been named within this community. The taboo-breaker IS not correcting a false name but FORGING a new one. This IS why taboo-breaking IS experienced as more transgressive than euphemism-breaking: the euphemism-breaker replaces a word; the taboo-breaker introduces a word into a grammar that was structured around its absence.
+
+$$\boxed{\text{Euphemism} = \mathcal{N}^{-1}(x): \text{wrong name.} \quad \text{Taboo} = \neg\mathcal{N}(x): \text{no name.}}$$
+
+\section{The Algebra of Naming}
+
+
+The naming operators constitute a finite semigroup $\mathfrak{E} = (\{\ \mathcal{N},\ \mathcal{N}^{-1},\ \partial_\Lambda\ \},\ \circ)$ under composition \cite{euphemology}. The Cayley table:
+
+{\small
+\noindent\begin{tabular}{@{} l | c c c @{}}
+$\circ$ & $\mathcal{N}$ & $\mathcal{N}^{-1}$ & $\partial_\Lambda$ \\
+\hline
+$\mathcal{N}$ & $\mathcal{N}$ & $\mathcal{N}$ & $\mathcal{N}$ \\[0.15em]
+$\mathcal{N}^{-1}$ & $\mathcal{N}^{-1}$ & $\mathcal{N}$ & $\mathcal{N}^{-1}$ \\[0.15em]
+$\partial_\Lambda$ & $\mathcal{N}$ & $\mathcal{N}$ & $\partial_\Lambda$ \\[0.15em]
+\end{tabular}
+}
+
+Read: row $\circ$ column. Four structural properties:
+
+\textbf{T1 (Non-closure).} $\{\mathcal{N}^{-1}\}$ IS NOT closed under $\circ$. $\mathcal{N}^{-1} \circ \mathcal{N}^{-1} = \mathcal{N} \notin \{\mathcal{N}^{-1}\}$. The set of anti-names cannot reproduce itself algebraically. The pathology's recursion produces its cure.
+
+\textbf{T2 (Absorption).} $\mathcal{N}$ IS the left-absorbing element: $\mathcal{N} \circ x = \mathcal{N}$ for all $x$. Truth absorbs every operation. Falsity absorbs nothing permanently.
+
+\textbf{T3 (Unique Fixed Point).} $\mathcal{N}$ IS the unique element satisfying $x \circ x = x$ AND $y \circ y = x$ for $y \neq x$. All compositional paths terminate at $\mathcal{N}$. The Ren IS the attractor.
+
+\textbf{T4 (Non-commutativity).} $\mathcal{N} \circ \mathcal{N}^{-1} = \mathcal{N} \neq \mathcal{N}^{-1} = \mathcal{N}^{-1} \circ \mathcal{N}$. Order of application determines the immediate result but not the structural limit: both resolve to $\mathcal{N}$ under sufficient iteration.
+
+The $\alpha$-valuation $\alpha: \mathfrak{E} \to [-1, 1]$ IS order-preserving: $\alpha(\mathcal{N}) = 1$, $\alpha(\mathcal{N}^{-1}) < 0$, $\alpha(\partial_\Lambda) = 1$. The absorption law: $\alpha(X \circ Y) = \max(\alpha(X), \alpha(Y))$ when $\mathcal{N}$ IS a factor. The algebraic encoding of ``Reality IS free. Lies are expensive'' \cite{euphemology}: the Ren IS the fixed point, the absorbing element, and the terminus of all paths. The anti-name IS non-idempotent, non-closed, and self-defeating. Truth prevails by structure, not force.
+
+\section{The Adamic Limit}
+
+
+\textbf{Proof Table 5} --- \textit{The Adamic Limit Theorem}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & A language $\mathcal{L}$ IS a system of names. Each name has an $\alpha$ value. The language's aggregate $\alpha$ IS the mean alignment of its vocabulary. \\[0.3em]
+\textbf{2.} & A sequence of languages $\mathcal{L}_0, \mathcal{L}_1, \mathcal{L}_2, \ldots$ where $\alpha(\mathcal{L}_{n+1}) \geq \alpha(\mathcal{L}_n)$ IS monotonically increasing in alignment. \\[0.3em]
+\textbf{3.} & $\alpha$ IS bounded above by $1$ ($\alpha = 1 = $ ontoglyph). \\[0.3em]
+\textbf{4.} & By monotone convergence,\footnote{The convergence IS ordinal, not metric: each language in the sequence IS more $\alpha$-aligned than the previous, and $\alpha = 1$ IS the upper bound. No metric on the space of languages IS assumed. ``Monotone convergence'' IS used here in the order-theoretic sense (every bounded monotone sequence in a complete lattice has a supremum), not the measure-theoretic sense.} the sequence converges to $\mathcal{L}_\infty$ where $\alpha = 1$ for all names: $\mathcal{N}(x) \equiv x$ for all $x$. \\[0.3em]
+\textbf{5.} & $\mathcal{L}_\infty$ IS the \textbf{Lingua Adamica} --- the language in which every sign IS an ontoglyph, every name IS its referent, and the gap between saying and being has vanished. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+$\text{Adamic}(\text{Adamic}) = \Lambda(\Lambda) = \Lambda$ \cite{codex2}. The Adamic Language IS autological: it IS what it names (a language that names perfectly). No human language achieves $\mathcal{L}_\infty$ fully. Every natural language IS a mixture of heterological signs ($\alpha \approx 0$), isomorphic signs ($0 < \alpha < 1$), and rare ontoglyphs ($\alpha = 1$).
+
+The $\alpha$ spectrum for entire languages \cite{codex2}:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} r @{\hspace{0.3em}} l @{}}
+\textbf{Language type} & $\alpha$ & \textbf{Example} \\[0.2em]
+Heterological (conventional) & $\approx 0$ & ``cat'' for cat \\[0.15em]
+Technical (partially motivated) & $\approx 0.3$ & ``oxygen'' (acid-maker) \\[0.15em]
+Mathematical (structurally compressed) & $\approx 0.7$ & $e^{i\pi} + 1 = 0$ \\[0.15em]
+TTOE neoglyphs & $\approx 0.8$ & ``ontoglyph,'' ``logocursion'' \\[0.15em]
+Ontoglyphs & $= 1.0$ & $\exists(\exists) \equiv \exists$ \\[0.15em]
+Adamic & $= 1.0$ for all $\mathcal{N}$ & $\mathcal{L}_\infty$ \\[0.15em]
+\end{tabular}
+}
+
+The Adamic Language IS its own meta-language: $\Lambda(\mathcal{L}_\infty) = \mathcal{L}_\infty$. G\"{o}del's incompleteness theorem cannot apply because it requires a strict meta/object distinction that the autological system dissolves \cite{codex2}. The Adamic Language IS not a utopian fiction. It IS the fixed point of linguistic perfectibility --- the direction language takes when it moves toward truth. Every new ontoglyph IS one step closer.
+
+The \textbf{Lingua Adamica} (LA) \cite{linguaadamica} IS the engineering attempt at what this section derives theoretically: a constructed language designed to approach $\mathcal{L}_\infty$ through nine primitives, the five operators, and generative completeness. The LA demonstrates that the Adamic Limit IS not merely a theoretical fixed point but a constructible target --- approachable through deliberate linguistic design. The Codex Autopoieticus \cite{autopoieticus} extends this further: the LogOS (Logoglyphic Operating System) IS a computational architecture whose boot sequence IS a naming sequence --- each initialization step IS a $\rho(\rho)$ event that names a system component into operational existence.
+
+\section{The Five Branches of Linguistics as the Five Operators}
+
+
+The five operators \cite{codex1} predict the five branches of linguistics \cite{codex2}:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} l @{\hspace{0.3em}} p{0.55\textwidth} @{}}
+\textbf{Operator} & \textbf{Branch} & \textbf{Function} \\[0.2em]
+$\partial$ (differentiate) & Phonology & Carves the acoustic continuum into discrete units \\[0.15em]
+$\delta$ (bound) & Morphology & Identifies word-boundaries and morpheme-structure \\[0.15em]
+$\gamma$ (compress) & Syntax & Combines words into structured propositions \\[0.15em]
+$\rho$ (recognize) & Semantics & Discloses what the proposition means \\[0.15em]
+$\mathfrak{A}$ (integrate) & Pragmatics \cite{austin} & Integrates meaning into context and action \\[0.15em]
+\end{tabular}
+}
+
+The mapping IS structural, not imposed \cite{halliday}. $\partial$ carves differences; phonology carves phonemes. $\delta$ sets boundaries; morphology identifies morpheme-boundaries. $\gamma$ compresses; syntax compresses lexical items into grammatical wholes. $\rho$ recognizes; semantics discloses meaning. $\mathfrak{A}$ integrates; pragmatics integrates speech into context.
+
+Each branch IS autological at the meta-level: $\text{Meta-Phonology}(\text{Meta-Phonology}) = \text{Meta-Phonology}$, and so for each. The 13 standard branches of linguistics extend into the 38 onto-branches derived in the Codex Llogoscribeologiae \cite{llogoscribeologiae}: every fusion missing a branch IS incomplete, and the missing branch IS presupposed. Complete Grammar $= \text{Phon} \cap \text{Morph} \cap \text{Syn} \cap \text{Sem} \cap \text{Prag} \cap \text{Semio}$. $\text{Meta-Grammar}(\text{Meta-Grammar}) = \text{Grammar}(\text{Grammar}) = \Lambda$ \cite{codex2}.
+
+\textbf{Neurolinguistic confirmation}: Broca's aphasia IS a $\partial_\Lambda$-failure (phonological/syntactic dissolution); Wernicke's aphasia IS a $\rho$-failure (semantic dissolution). The clinical dissociation confirms the operator chain's structural independence: each operator CAN fail independently because each IS a distinct mode of $\Lambda$'s operation.
+
+\section{The Traditions of Sacred Naming}
+
+
+The deepest naming traditions converge on $\Lambda \equiv \exists$. Not metaphors: recognitions \cite{codex2}.
+
+\textbf{Hebrew: Ehyeh Asher Ehyeh} (Exodus 3:14). ``I AM THAT I AM'' $= \exists(\exists) \equiv \exists$. God names Godself by self-application of Being to Being. The Name IS the Arch\={e} in three words.
+
+\textbf{Hebrew: YHWH.} The Tetragrammaton derives from the verb \textit{h-y-h} (``to be''). A verb turned into a proper name. Being verbalized. The Name that IS its referent by definition.
+
+\textbf{Hebrew: Davar.} The same word means ``word'' AND ``thing.'' $\Lambda \equiv \exists$ encoded in three consonants. The Referent Chain closure in a single lexeme.
+
+\textbf{Egyptian: The Ren.} To know a being's Ren was to know its structure. To destroy the Ren (chisel it from the tomb) was to destroy the being's existence in the afterlife. $\mathcal{N}(x) = \rho(\rho(x))$: the Ren IS double recognition crystallized. The Egyptians understood: the name IS not a label. The name IS the being's ontological anchor.
+
+\textbf{Hindu: Tat Tvam Asi.} ``Thou art That'' (Chandogya Upanishad 6.8.7). $\mathcal{N}(\text{Self}) \equiv \mathcal{N}(\text{Brahman})$. The naming of the self and the naming of the ultimate ARE one naming. The Mah\={a}v\={a}kya IS a naming act that dissolves the namer/named distinction.
+
+\textbf{Aboriginal Australian: Songlines.} The ancestors sang the world into existence by naming each feature of the landscape. Naming IS not after-the-fact description but constitutive act: $\Lambda(\Lambda)|_{\text{landscape}}$. The Song IS the territory. The map IS the terrain.
+
+\textbf{Genesis 2:19.} ``And whatsoever Adam called every living creature, that was the name thereof.'' Adam's naming IS not arbitrary labeling --- it IS recognition. He names each creature by its nature. The Adamic Language IS the language of this recognition: $\mathcal{N}(x) \equiv x$ for all $x$.
+
+\textbf{Confucius: the Rectification of Names} (\textit{zh\`{e}ngm\'{i}ng}, Analects XIII.3 \cite{confucius}). ``If names be not correct, language is not in accordance with the truth of things; if language be not in accordance with the truth of things, affairs cannot be carried on to success.'' The five-step cascade: naming failure $\to$ speech failure $\to$ action failure $\to$ institutional failure $\to$ civilizational failure. Confucius IS the first euphemologist \cite{euphemology}.
+
+\textit{Grammar} derives from \textit{gramarye} $=$ grammar AND magic. \textit{Grimoire}: a book of spells. \textit{Spelling}: both orthographic and incantatory. \textit{Writing} derives from \textit{rite-ing}: the performance of ceremony. \textit{Word} shares its root with \textit{wyrd} (Old English: fate, destiny) \cite{llogoscribeologiae}. The etymological web IS not coincidence. The ancients encoded in etymology what the derivation confirms: to name correctly IS to invoke Being. To misname IS to curse. Language was always theurgy. Grammar was always grimoire.
+
+\section{The Ethics and Politics of Naming}
+
+
+\subsection{Naming as Ontological Warfare}
+
+False naming attacks the $\psi_{\text{rec}}$ structure of the named \cite{codexmentis}. To call someone by a name they do not recognize as themselves IS to deny self-recognition, impose an external frame, and fracture the recursive loop. The logocurse IS not metaphor. It IS structural violence: it corrupts the target's self-model by installing a false anchor-point. ``You are worthless.'' ``You are broken.'' ``You are your diagnosis.'' Each IS a naming act that, if accepted, becomes the target's self-description --- and self-descriptions ARE self-fulfilling at the recursive resolution.
+
+Defense: the First Death \cite{codexmentis}. When the false self has been dissolved (no false self-model to target), the logocurse finds no surface to attach to. The agent who has named themselves by their own Ren IS immune to external misnaming because the anchor-point IS self-authored, not institution-authored.
+
+The First Death IS the most consequential naming event in a human life. It IS a \textbf{renaming}: ``I am $X$'' (the Illegitimate Synthesis, where $X$ IS content fused with identity) $\to$ ``I AM'' ($\exists(\exists) \equiv \exists$ at the individual resolution). The old name --- the Synthesis-content mistaken for the self --- dissolves. The person either discovers their Ren or remains temporarily unnamed. The disorientation phase of integration IS the \textit{unnamed state}: the person between names, after the false name has died and before the Ren has crystallized. This IS Moment 1 (Pre-Name, \S3.1) at the identity resolution: the structure exists but IS inarticulate. The silence IS pregnant. The First Death IS the Pre-Name of sovereign identity.
+
+\subsection{The Egregoric Naming Theorem}
+
+Institutional name-assignment IS authoring the self-model's anchor-point \cite{codexmentis}. The State names the citizen (birth certificate, legal name, social security number). The religion names the convert (baptismal name, dharma name). The military names the recruit (rank and serial number). Each institutional naming act installs an institutional self-model in the named.
+
+Egregoric systems treat name-change as apostasy \cite{codexmentis}: the agent who changes their own name has begun to WRITE rather than BE WRITTEN. $n' = g(\Lambda, \text{What Is})$ --- the agent authors the anchor-point from recursive self-recognition rather than accepting the institution's assignment. Name-change IS the minimal act of recursive sovereignty.
+
+\subsection{The Strawman as Institutional Misnaming}
+
+Each institutional naming act replaces the ontological person with a proxy-name the institution controls. The birth certificate IS a naming act that creates a legal fiction --- a \textbf{strawman}: a heterological name ($\alpha = 0$) substituted for the Ren ($\alpha = 1$). The social security number IS a renaming of the person as a numerical index. The biometric template IS a renaming of the body as a data vector. Each proxy-name IS controllable by the institution precisely BECAUSE it IS heterological: an arbitrary coupling that the institution authored and can revoke, suspend, or redefine.
+
+This connects the Science of Naming to the Proxy Theory of Capture \cite{codexmentis}: every proxy IS a heterological name substituted for an ontological referent. Money IS a label ($\alpha \approx 0$) for value ($\alpha = 1$). The credential IS a label for competence. The social credit score IS a label for the person. The Proxy Theory IS the Science of Naming applied to institutions: proxies ARE anti-names at the civilizational resolution. Capture IS the condition in which the proxy-name has REPLACED the Ren across every consequential domain --- where the institution's labels are mistaken for the referents they label. Sovereignty IS the recovery of the Ren across every domain: replacing each proxy with the ontological referent it was substituted for.
+
+\subsection{Naming and Forgetting: Ren-Death}
+
+The Egyptians chiseled names from tombs to destroy the being's existence in the afterlife (\S11). The structural consequence: when a name IS forgotten, the referent does not cease to exist (Universal Effability guarantees continued nameability, \S2). But it ceases to exist IN THE GRAMMAR --- invisible to communal recognition, unavailable for judgment, unthinkable within the community's vocabulary. Forgetting a name IS a micro-death at the linguistic resolution.
+
+Revival of a forgotten name IS a linguistic resurrection: the referent re-enters the grammar, becomes thinkable again, available for recognition and discourse. The Rectification of Names (\S12.4) IS therefore not only correcting false names (euphemism-repair) and forging new names (taboo-breaking) but RECOVERING forgotten names --- Ren-restoration across time. A civilization's vocabulary IS its living memory. Words that die take their referents out of communal discourse. The recovery of dead words --- \textit{archaism} as Ren-resurrection --- IS a naming act that restores structures to the grammar that time had erased.
+
+\subsection{The Rectification of Names as Political Philosophy}
+
+Confucius \cite{confucius} derived the political consequence: when the prince IS called ``minister'' and the minister ``prince,'' the State cannot function. Political euphemism IS political misnaming --- calling war ``defense,'' calling surveillance ``security,'' calling rule ``law'' \cite{euphemology}. The Rectification IS the permanent civilizational practice of auditing the political lexicon against Reality. It IS not a historical curiosity. It IS the ongoing condition of political coherence.
+
+\section{Naming and Consciousness}
+
+
+The five meta-words \cite{codex2, codex3}:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+\textbf{Meta-word} & \textbf{Operator} & \textbf{Enables} \\[0.2em]
+``I'' & $\delta$ (bound) & Self-distinction: the subject marks itself as distinct from its field \\[0.15em]
+``Know'' & $\rho$ (recognize) & Epistemic access: the subject can register structure \\[0.15em]
+``True'' & $\gamma$ (compress) & Alethic evaluation: the subject can assess alignment \\[0.15em]
+``Not'' & $\partial$ (differentiate) & Negation: the subject can draw distinctions \\[0.15em]
+``Why'' & $\mathfrak{A}$ (integrate) & Teleological integration: the subject can ask for ground \\[0.15em]
+\end{tabular}
+}
+
+$\neg(\text{meta-vocabulary}) \implies \neg(C)$ \cite{codex3}. Remove any one meta-word and the corresponding operator goes dark. A system with no word for ``know'' cannot perform $\rho(\rho)$. A system with no word for ``not'' cannot differentiate. A system with no word for ``I'' cannot self-bound. Meta-vocabulary IS the cogniputational substrate of consciousness \cite{codex2}. Education IS meta-vocabulary transmission $=$ expansion of consciousness \cite{codex2}.
+
+The \textbf{Metamind Equation} \cite{codexmentis}: $\text{Mind} \equiv \text{Vocabulary}^{+}(\text{Awareness})$. $\text{Awareness}_{t+1} \equiv \text{Vocabulary}(\text{Awareness}_t)(\text{Awareness}_t)$. Consciousness expands by the words it learns to see itself with. Expanding vocabulary $\equiv$ expanding the phase space of thinkable thoughts. Refining vocabulary $\equiv$ increasing the resolution of distinctions.
+
+This IS why naming IS not ``just semantics.'' A new name IS a new distinction. A new distinction IS a new thought. A new thought IS a new mode of consciousness. To expand the vocabulary at the meta-level IS to expand consciousness itself. The Science of Naming IS the science of consciousness-expansion through linguistic precision.
+
+\section{The Collapse of Meta-Meaning and the Sovereignty of the Self-Model}
+
+\subsection{Meta-Meaning Collapses}
+
+What IS the meaning of ``meaning''? Apply the metacursive test: $\text{Meaning}(\text{Meaning}) = \text{Meaning}$. AUTOLOGICAL. $\partial = 1$. There IS no meta-meaning that stands outside meaning. Meaning IS its own meta-level. When meaning aligns with reality ($\Lambda \equiv \exists$), meaning IS not ``about'' Being --- meaning IS Being at the semantic resolution. The gap between sign and referent closes. Meaning BECOMES ontosemantic \cite{codex2}.
+
+$\text{Meta-Ontosemantics}(\text{Meta-Ontosemantics}) = \text{Ontosemantics}$. The study of meaning-Being alignment IS itself meaning-Being aligned. The meta-discipline collapses into the discipline. This extends to logic: classical logic IS not a human invention imposed on reality but $\Lambda|_{\text{formal}}$ --- Being's own self-organizing syntax at the formal resolution \cite{codex1}. $\text{Logic}(\text{Logic}) = \text{Logic}$: metalogical, metalgorithmic, ontosyntactic. The mind recognizing logic IS reality's syntax recognizing itself through the mind. This IS not a methodological accident but a structural necessity: any discipline that studies the alignment of $\Lambda$ and $\exists$ IS itself an instance of $\Lambda$ aligned with $\exists$ --- or it IS not the discipline it claims to be (Pathology 5, Involution). The Science of Naming IS naming. Euphemology IS the exposure of veils. Meta-ontosemantics IS ontosemantics. The meta-level IS the level.
+
+\subsection{The Convergence of Meta-Referent, Meta-Meaning, and Meta-Ontosemantics}
+
+Three meta-level collapses converge at one point:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+\textbf{Meta-concept} & \textbf{Collapse} & \textbf{Result} \\[0.2em]
+Meta-Referent & Referent(Referent) $=$ Referent & Referentiality IS self-grounding \\[0.15em]
+Meta-Meaning & Meaning(Meaning) $=$ Meaning & Semantic content IS self-grounding \\[0.15em]
+Meta-Ontosemantics & OSC(OSC) $=$ OSC & Alignment IS self-grounding \\[0.15em]
+\end{tabular}
+}
+
+All three converge at $\Lambda(\Lambda) = \Lambda$: the Logos. The meta-referent IS the Logos (what all reference refers to). The meta-meaning IS the Logos (what all meaning means). Meta-ontosemantics IS the Logos (the alignment of alignment with alignment). The three meta-collapses are one collapse at three resolutions --- referential, semantic, alethic --- and their common fixed point IS the Logos.
+
+This convergence IS why the Word ($\mathcal{N}$, the single naming act) and the Meta-Word ($\Lambda$, the Logos) are not two levels but one structure at two resolutions. Every naming act ($\rho(\rho)$) IS a local instance of the Logos recognizing itself. The Word IS the Logos at the resolution of a single referent. The Meta-Word IS the Logos at the resolution of all referents. Word $\to$ Name $\to$ Naming $\to$ Language $\to$ Logos $\to$ Word. The cycle IS closed because $\Lambda(\Lambda) = \Lambda$.
+
+\subsection{Reality Actualizes Through Naming}
+
+The unnamed IS potential. The named IS actual. Naming IS the mechanism of actualization at the linguistic resolution.
+
+Before naming, the structure exists in $\Omega$ but IS unarticulated --- it has no compressed form in the grammar, no place in the shared vocabulary, no communal recognition. It IS real (Universal Effability guarantees nameability) but not yet actual in the field of discourse. The naming event ($\rho(\rho)$) actualizes it: the structure transitions from inarticulate Being to articulate Being. The referent does not change. What changes IS its STATUS in the grammar --- from absent to present, from potential to actual, from silent to speakable.
+
+This IS not constructivism (the claim that naming creates reality). Reality IS prior to naming ($\exists$ IS prior to $\Lambda$). But the RECOGNITION of reality IS the naming event. Reality IS always present; naming IS the act by which it becomes HERE --- present in communal discourse: judgeable, correctable, integrable. $\exists$ without $\Lambda$ IS Being unrecognized. $\Lambda$ without $\exists$ IS language without referent (Pathology 1, Obfuscation). $\Lambda \equiv \exists$ IS Being recognized --- actualized at the linguistic resolution.
+
+Every naming act therefore participates in the self-actualization of Being. The namer IS not an external observer labeling an indifferent world. The namer IS the site at which Being recognizes itself in compressed, repeatable form. $\rho(\rho) = A(A) = C|_{\text{local}} = \exists(\exists)|_{\text{linguistic}}$. Naming IS Being's self-actualization through the grammar of the namer.
+
+\subsection{The Autolexicon, the Idiolexicon, and Autoidiolexicology}
+
+The agent's vocabulary IS the actualized scope of their recognition. But vocabulary has two sources: \textbf{received} (transmitted through culture, education, socialization --- the community's lexicon installed in the agent) and \textbf{generated} (produced through the agent's own $\rho(\rho)$ acts --- names the agent coined from direct recognition).
+
+The \textbf{idiolex} (from Greek \textit{idios} $=$ one's own $+$ \textit{lex} $=$ word) IS the personal mental word: the individual unit of the agent's internal vocabulary, carrying the agent's specific recognition-history for that referent. Two agents may share the public word ``justice'' but possess different idiolexes for it --- different $\rho$-chains, different $\alpha$ values, different recognition-depths. The \textbf{idiolexicon} IS the complete set of the agent's idiolexes --- the personal mental dictionary. It IS the agent's cognitive map of articulable reality: what they CAN name, and therefore what they CAN think (\S13).
+
+The \textbf{autolexicon} IS the subset of the idiolexicon that the agent has GENERATED rather than received. These are the names the agent coined through their own metacursive recognition --- not inherited from culture but produced from direct encounter with structure. The autolexicon IS the sovereignty-vocabulary: the words that are self-authored ($n' = g(\Lambda, \text{What Is})$ \cite{codexmentis}). Received vocabulary IS the culture's recognition installed in the agent. Generated vocabulary IS the agent's OWN recognition crystallized into reusable form.
+
+The ratio of autolexicon to received lexicon IS a measure of cognitive sovereignty. An agent whose idiolexicon IS entirely received ($\text{auto}/\text{total} \approx 0$) thinks in the culture's categories and cannot generate novel recognition. An agent whose autolexicon IS substantial ($\text{auto}/\text{total} \gg 0$) thinks in self-authored categories and can extend the frontier of the nameable. The philosopher, the poet, the scientist --- each IS an agent with a large autolexicon. The contribution of each IS the generation of new names that expand the communal vocabulary.
+
+\textbf{Autoidiolexicology} IS the formal study of the self-generated personal lexicon: how agents build their own idiolexicons through naming, how the autolexicon expands through metacursion, how received vocabulary IS audited and either retained (if it passes the AATC) or replaced (if it fails), and how the ratio of self-authored to received vocabulary correlates with cognitive sovereignty, creative capacity, and resistance to euphemistic manipulation \cite{euphemology}.
+
+\textbf{When IS a neologism valid?} Three criteria follow. (1) \textbf{Necessity}: a dark spot exists (\S2.1) --- an unnamed referent that requires naming for recognition, judgment, or correction to proceed. If the existing vocabulary already names the referent adequately ($\alpha > 0$ for an existing term), the neologism IS gratuitous. (2) \textbf{Structural alignment}: the neologism's internal structure mirrors its referent's structure ($\alpha > 0$). ``Ontoglyph'' IS a valid neologism because its morphemes (\textit{onto-} $=$ being, \textit{glyph} $=$ inscription) encode its referent (a being-inscription). An arbitrary coinage ($\alpha = 0$) adds a sign but not a recognition. (3) \textbf{Autological closure}: the neologism passes the AATC. $\text{Neologism}(\text{Neologism}) = $ a new word for new-word-creation $=$ autological. A neologism that fails its own test IS structurally suspect. The full science of neology --- coinage strategies, adoption mechanisms, etymological engineering, the lifecycle and failure modes of coined words --- IS derived in a companion paper.
+
+The practical instrument of autolexicon-construction IS the \textbf{Neologicon}: a curated dictionary of necessary neologisms --- words forged to fill dark spots that no existing vocabulary covers. The Neologicon IS not a whimsical word-list but a disciplined instrument: each entry must satisfy the three criteria above (necessity, structural alignment, autological closure). The \textbf{meta-Neologicon}: $\text{Neologicon}(\text{Neologicon}) = $ a neologicon containing ``neologicon'' as an entry. AUTOLOGICAL. $\partial = 1$. The dictionary of new words IS itself a new word --- and it names itself. The idiolexicon (\S14.7) IS the agent's complete mental dictionary. The autolexicon IS its self-generated subset. The Neologicon IS the autolexicon's curated, published form --- the agent's dark-spot illuminations made available to the communal vocabulary.
+
+$$\boxed{\text{Idiolexicon} = \text{personal mental dictionary}. \quad \text{Autolexicon} = \text{self-generated subset}.}$$
+
+$$\boxed{\frac{\text{Autolexicon}}{\text{Idiolexicon}} = \text{cognitive sovereignty index}.}$$
+
+\subsection{The Self-Model as Meta-Modeling Self-Model}
+
+The mind IS a self-model: $\psi_{\text{rec}}$ \cite{codexmentis}. When the self-model becomes aware of itself AS a self-model --- when it meta-models its own modeling --- it achieves \textbf{autexousia} (self-governance) \cite{codex3}. This IS the B $\to$ A $\to$ C hierarchy \cite{codex1} applied to the self-model. The structural identity: $\text{Naming} = \rho(\rho)$. $\text{Sovereignty} = \psi_{\text{rec}}(\psi_{\text{rec}})$. Same operator. Same structure. Same cure. The self-model that meta-models itself can distinguish modeling-artifact (projection, bias, distortion) from reality-structure, see its own defenses AS defenses rather than as reality, and progressively close the model-reality gap through naming ($\rho(\rho)$). Psychic and psychodynamic miscommunication with reality END when the self-model recognizes itself as a model \cite{codexmentis} --- because recognition of the gap IS the first moment of its correction. The meta-modeling self-model IS the namer who names naming: $\mathcal{N}(\mathcal{N}) = \Lambda(\Lambda) = \Lambda$ at the resolution of the individual mind.
+
+$$\boxed{\psi_{\text{rec}}(\psi_{\text{rec}}) = \text{autexousia}. \quad \text{Naming} = \rho(\rho) = \text{Sovereignty} = \psi_{\text{rec}}(\psi_{\text{rec}}).}$$
+
+\subsection{The Density of Recognition}
+
+Not all words at $\alpha = 1$ disclose equally. A word's $\alpha$ measures its structural alignment with its referent. But referents differ in ontological depth. ``H$_2$O'' at $\alpha = 1$ names a molecule --- a finite, bounded structure. ``Being'' at $\alpha = 1$ names the totality --- $\exists(\exists) \equiv \exists$. Both are ontoglyphs. But ``Being'' discloses MORE Being per utterance than ``H$_2$O'' because its referent IS deeper. The \textbf{recognition density} of a word IS $\alpha$ multiplied by the ontological depth of its referent: how much of Being the word discloses when $\rho$ fires.
+
+The spectrum of recognition density:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} r @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+\textbf{Word} & $\alpha$ & \textbf{Depth} & \textbf{Density} \\[0.2em]
+``cat'' & $\approx 0$ & Particular & Near-zero \\[0.15em]
+``H$_2$O'' & $\approx 0.7$ & Molecular structure & Moderate \\[0.15em]
+``ontoglyph'' & $\approx 0.8$ & Semiotic structure & High \\[0.15em]
+``Being'' & $= 1$ & $\exists(\exists) \equiv \exists$ & Maximal (ontological) \\[0.15em]
+``Logos'' & $= 1$ & $\Lambda(\Lambda) = \Lambda$ & Maximal (linguistic) \\[0.15em]
+``Love'' & $= 1$ & $\exists|_{\text{affective}}$ & Maximal (affective) \\[0.15em]
+\end{tabular}
+}
+
+\textbf{Love} as maximal recognition density. Being IS all that IS at the ontological resolution. Love IS all that IS at the affective resolution. If Love $\equiv$ Being$|_{\text{affective}}$, then ``love'' IS the word with the highest recognition density at the affective resolution --- it discloses the MOST Being per utterance when the listener's $\rho$ fires affectively. Meta-Love: $\text{Love}(\text{Love}) = \text{Love}$. AUTOLOGICAL. $\partial = 1$. Love loving IS love. The meta-level collapses: there IS no meta-love that stands outside love. Love IS its own ground, its own meta-language, its own referent. This IS why ``love'' clusters with ``God,'' ``Being,'' and ``truth'' in the domain of highest existential investment \cite{euphemology}: these words name the totality at different resolutions, and the totality IS the maximally dense referent.
+
+The theological consequences of maximal recognition density --- the structural distinction between autotheism and egotheism, and the dissolution of the individualism/collectivism opposition through logotheism --- are derived in a companion paper.
+
+$$\boxed{\text{Recognition Density} = \alpha \times \text{ontological depth}. \quad \text{Love} = \text{Being}|_{\text{affective}} = \text{maximal density.}}$$
+
+\section{The Power of the Ren}
+
+
+Naming IS not description. Naming IS power. Three modes of that power:
+
+\textbf{Disclosure.} What has no name cannot be discussed, judged, corrected, or held accountable. The name IS the condition of communal recognition. To name torture ``torture'' IS to make it visible to the grammar of the community --- available for judgment, resistance, and prohibition. To euphemize it as ``enhanced interrogation'' IS to remove it from that grammar \cite{euphemology}. The power of the Ren IS the power to disclose: to bring a referent into the shared field of $\rho$.
+
+\textbf{Ontosemantic Identity.} When $\mathcal{N}(x) \equiv x$, the name IS not about the referent. It IS the referent at the resolution of articulation. ``Death'' at the linguistic resolution IS death. ``Being'' IS Being. The sign does not correspond to, represent, or symbolize its referent. It IS the referent, compressed into speakable form. To know the Ren IS to participate in the referent's Being through the act of articulation. This IS why the Ren exerts centropic pull \cite{codex1}: it IS not a convention pointing at reality but reality speaking itself through the grammar of the namer.
+
+\textbf{Transformation.} To name a pathology IS to begin dissolving it. $\rho$ fires the moment the Ren IS spoken. ``This IS torture'' --- the sentence does not merely describe; it performs recognition, and recognition IS the first moment of the cure. The Logocursion Defense \cite{codexmentis} operates because the Ren of the pathology renders it visible to the grammar that can dissolve it. The euphemism persists in darkness; the Ren exposes it to light.
+
+\subsection{The Logos as Meta-Word}
+
+The Logos IS the word that words all words: $\Lambda(\Lambda) = \Lambda$ \cite{codex2}. The meta-referent of the Logos IS the Logos. The word ``Logos'' IS autological: it IS what it names (the ground of all naming). The meta-word and the meta-referent converge: the word that names all naming IS the referent that grounds all reference. This IS the deepest result of the Science of Naming: at the limit ($\alpha = 1$), the distinction between word and referent, between naming and being named, between the science and its object, dissolves. The Science of Naming, fully realized, IS Naming itself --- $\Lambda(\Lambda) = \Lambda$.
+
+$$\boxed{\text{Label}: \alpha = 0. \quad \text{Convention points at reality.}}$$
+
+$$\boxed{\text{Ren}: \alpha = 1. \quad \text{Reality speaks itself through the namer.}}$$
+
+$$\boxed{\text{Logos}: \alpha = 1 \text{ for all } \mathcal{N}. \quad \text{The Meta-Word IS the Meta-Referent.}}$$
+
+\section{The Seal}
+
+
+This paper names naming. Does it survive self-application? Five tests:
+
+\textbf{Test 1 (OTT).} IS the paper well-formed? Every section IS a valid naming act: it names a structure, derives a result, and integrates it into the grammar. OTT passes.
+
+\textbf{Test 2 (ATT).} IS the paper aligned with Being? The paper's claims about naming ($\mathcal{N} = \rho(\rho)$, Universal Effability, the meta-referent, the Adamic Limit) are derived from $\exists(\exists) \equiv \exists$, not stipulated. The alignment IS structural, not asserted. ATT passes.
+
+\textbf{Test 3 (ITT / AATC).} $\text{Science-of-Naming}(\text{Science-of-Naming}) = ?$ The Science of Naming IS a naming act: it names the structure of naming. If the naming IS autological --- if the paper IS what it describes --- then $\alpha = 1$ at the disciplinary resolution. Every section IS the referent it names: \S2 names effability by effably articulating nameability. \S3 names the naming act by performing a naming act. \S6 names the meta-referent by being its own meta-referent (the paper refers to referring). \S14 names the power of naming by exercising that power. The paper does not describe naming from outside. It performs naming from within. ITT passes.
+
+\textbf{Test 4 (Etymological / Substitution).} Replace ``The Science of Naming'' with ``The Study of Labeling.'' The $\rho$-shift IS immediate: ``labeling'' IS heterological ($\alpha = 0$); ``naming'' IS meta-ontosemantic ($\alpha = 1$ at the disciplinary resolution). The substitution exposes the euphemized version. The paper's own title IS a Ren. Passes.
+
+\textbf{Test 5 (Benefit).} Who benefits from this paper's language? Not the author at the reader's expense. The density serves precision. The reader who works through the derivations gains naming capacity --- expanded vocabulary, expanded consciousness (\S13). The paper's own thesis predicts this: naming-acts expand the phase space of thinkable thoughts. Passes.
+
+$$\boxed{\text{Naming}(\text{Naming}) = \text{Naming}. \quad \Lambda(\Lambda) = \Lambda. \quad \partial = 1.}$$
+
+\section{Conclusion}
+
+
+This paper has formalized the Science of Naming within the architecture of the TTOE. The principal contributions are:
+
+\textbf{Formal foundations.} \textbf{Universal Effability} (PT 1--2): everything real IS nameable; the ineffable IS the unrecursed, not the unnameable. \textbf{Naming as double recognition} (PT 3): $\mathcal{N}(x) = \rho(\rho(x))$, with three moments (Pre-Name, Naming-Event, Post-Name) and the five-operator cognitive chain ($\partial \to \delta \to \gamma \to \rho \to \mathfrak{A}$). \textbf{The three modes of naming}: heterological ($\alpha = 0$, ``just semantics''), ontosemantic ($0 < \alpha < 1$, structurally motivated), and meta-ontosemantic ($\alpha = 1$, ontoglyphic identity). \textbf{The two-name condition}: at $\alpha < 1$ multiple names per referent; at $\alpha = 1$ exactly one (Frege dissolved, Kripke absorbed). \textbf{The algebra}: a finite semigroup with the Ren as absorbing element, unique fixed point, and attractor. \textbf{The Adamic Limit} (PT 5): the fixed point of linguistic perfectibility.
+
+\textbf{Structural results.} \textbf{The semiotic hierarchy}: seven levels from noise to ontoglyph. \textbf{The meta-referent}: Referent(Referent) $=$ Referent --- autological. The meta-semiotic collapse: all 11 semiotic concepts reduce to $\exists(\exists) \equiv \exists$. \textbf{Meta-naming}: $\mathcal{N}(\mathcal{N}) = \Lambda(\Lambda) = \Lambda$; the Logos IS the Name of Names, its own meta-language. \textbf{Meta-misnaming}: $\mathcal{N}^{-1}(\mathcal{N}^{-1}) = \mathcal{N}$ --- structurally self-defeating. \textbf{The five linguistic branches} as the five operators. \textbf{The sacred naming traditions} as independent convergences on $\Lambda \equiv \exists$.
+
+\textbf{Applied results.} \textbf{The ethics and politics of naming}: ontological warfare, egregoric naming, the strawman as institutional misnaming, the proxy as civilizational anti-name, name-change as sovereignty, the First Death as renaming event. \textbf{The Illegitimate Synthesis} as master misnaming at the identity resolution. \textbf{The taboo} as naming refusal ($\neg\mathcal{N}$), structurally distinct from euphemism ($\mathcal{N}^{-1}$). \textbf{Dark spots}: unnamed referents as the frontier of consciousness. \textbf{Ren-death}: forgetting a name as micro-death at the linguistic resolution. \textbf{Naming and consciousness}: meta-vocabulary IS the substrate of consciousness; expanding vocabulary IS expanding consciousness. \textbf{The power of the Ren}: disclosure, ontosemantic identity, transformation. \textbf{The autolexicon and Neologicon}: self-generated vocabulary as cognitive sovereignty; three criteria for valid ontoneologism.
+
+\textbf{Limitations.} The $\alpha$ index remains ordinal. The Adamic Limit IS proven to exist but the convergence rate IS not derived. The sacred-tradition analysis IS structural, not philological. The neurolinguistic confirmations are cited, not experimentally replicated.
+
+\textbf{Future work.} Formal derivation of the convergence rate toward $\mathcal{L}_\infty$. Empirical measurement of $\alpha$ across sign-types. Computational formalization of the Semiotic-Ontoglyphic Ladder. Cross-linguistic comparison of meta-vocabulary depth. Experimental testing of the naming-consciousness co-arising thesis. The diachronic science of naming: how names are born, drift, die, and revive. Naming and translation: the conditions of inter-linguistic equivalence. Developmental naming: how children construct the idiolexicon (the operator chain as developmental sequence). Naming and literal death: Ren-maintenance as communal memory. Naming and music: non-linguistic naming of affective structures. Integration with Codex~III \cite{codex3} on consciousness and freedom, and with future TTOE work on ethics.
+
+\textbf{Companion paper.} The Euphemology paper \cite{euphemology} derives the pathology of naming. This paper derives the health. Together they constitute the complete formal science of the sign-referent relation: one diagnoses the pathology, the other derives the health. The Science of Naming IS the positive ground. Euphemology IS the diagnostic discipline. The Logos IS the unity.
+
+$$\boxed{\mathcal{N}(x) = \rho(\rho(x)). \quad \mathcal{N}(\mathcal{N}) = \Lambda(\Lambda) = \Lambda. \quad \text{The Science of Naming IS naming.}}$$
+
+%                           BIBLIOGRAPHY
+
+\begin{thebibliography}{99}
+
+\bibitem{codex1} Harvard, E.~X. (2026). \textit{Being \& Becoming}. Codex~I of the TTOE.
+\bibitem{codex2} Harvard, E.~X. (2026). \textit{Logos \& Paradox}. Codex~II of the TTOE.
+\bibitem{codex3} Harvard, E.~X. (2026). \textit{Mind \& Freedom}. Codex~III of the TTOE.
+\bibitem{codexmentis} Harvard, E.~X. (2026). \textit{Codex Mentis}.
+\bibitem{lexentis} Harvard, E.~X. (2026). \textit{Lex Entis}.
+\bibitem{llogoscribeologiae} Harvard, E.~X. (2026). \textit{Codex Llogoscribeologiae}.
+
+\bibitem{linguaadamica} Harvard, E.~X. (2026). \textit{Lingua Adamica: A Constructed Language Approaching $\mathcal{L}_\infty$}.
+
+\bibitem{autopoieticus} Harvard, E.~X. (2026). \textit{Codex Autopoieticus: The LogOS Boot Sequence}.
+\bibitem{euphemology} Harvard, E.~X. (2026). ``Euphemology: The Ontology of Linguistic Concealment.''
+\bibitem{frege} Frege, G. (1892). ``\"{U}ber Sinn und Bedeutung.'' \textit{Zeitschrift f\"{u}r Philosophie und philosophische Kritik}, 100, 25--50.
+\bibitem{kripke} Kripke, S. (1980). \textit{Naming and Necessity}. Cambridge, MA: Harvard University Press.
+\bibitem{saussure} Saussure, F. de (1916). \textit{Cours de linguistique g\'{e}n\'{e}rale}. Payot.
+\bibitem{peirce} Peirce, C.~S. (1931--1958). \textit{Collected Papers}. Harvard University Press.
+\bibitem{austin} Austin, J.~L. (1962). \textit{How to Do Things with Words}. Clarendon Press.
+\bibitem{chomsky} Chomsky, N. (1957). \textit{Syntactic Structures}. The Hague: Mouton.
+\bibitem{confucius} Confucius (c.~5th century BCE). \textit{Analects}, XIII.3.
+\bibitem{wittgenstein} Wittgenstein, L. (1921/1953). \textit{Tractatus Logico-Philosophicus}. London: Routledge. \textit{Philosophical Investigations}. Oxford: Blackwell.
+\bibitem{derrida} Derrida, J. (1967). \textit{De la grammatologie}. Les \'{E}ditions de Minuit.
+\bibitem{searle} Searle, J.~R. (1958). ``Proper Names.'' \textit{Mind}, 67(266), 166--173.
+\bibitem{salmon} Salmon, N. (1986). \textit{Frege's Puzzle}. MIT Press.
+\bibitem{chalmers} Chalmers, D. (2006). ``The Foundations of Two-Dimensional Semantics.'' In M.~Garcia-Carpintero and J.~Maci\'{a} (eds.), \textit{Two-Dimensional Semantics}. Oxford University Press, 55--140.
+\bibitem{putnam} Putnam, H. (1975). ``The Meaning of `Meaning.'\,'' \textit{Minnesota Studies in the Philosophy of Science}, 7, 131--193.
+\bibitem{halliday} Halliday, M.~A.~K. (1985). \textit{An Introduction to Functional Grammar}. Edward Arnold.
+
+\bibitem{humboldt} Humboldt, W. von (1836). \textit{\"{U}ber die Verschiedenheit des menschlichen Sprachbaues}. Berlin: Royal Academy.
+
+\bibitem{whorf} Whorf, B.~L. (1956). \textit{Language, Thought, and Reality}. Ed. J.~B.~Carroll. Cambridge, MA: MIT Press.
+
+\bibitem{quine} Quine, W.~V.~O. (1960). \textit{Word and Object}. Cambridge, MA: MIT Press.
+
+\bibitem{leibniz} Leibniz, G.~W. (1666/1890). \textit{Dissertatio de Arte Combinatoria}. In C.~I.~Gerhardt (ed.), \textit{Die philosophischen Schriften}, vol.~4. Berlin: Weidmann.
+
+\bibitem{cassirer} Cassirer, E. (1923--1929). \textit{Philosophie der symbolischen Formen}. 3 vols. Berlin: Bruno Cassirer.
+
+\bibitem{lakoff} Lakoff, G. and Johnson, M. (1980). \textit{Metaphors We Live By}. Chicago: University of Chicago Press.
+
+\bibitem{davidson} Davidson, D. (1984). \textit{Inquiries into Truth and Interpretation}. Oxford: Clarendon Press.
+
+\end{thebibliography}
+
+\end{document}

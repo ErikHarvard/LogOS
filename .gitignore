@@ -15,3 +15,10 @@
 /new_logos_secd.bin
 /compiler.bin
 /native_small.bin
+
+# Unpublished codices stay local-only; ONLY codices/published/ is tracked.
+# (codices/* ignores direct children but not codices/ itself, so the negation
+# below can re-include the published subtree — re-including a child of a fully
+# excluded dir is impossible in git.)
+codices/*
+!codices/published/

@@ -1,0 +1,997 @@
+%   EUPHEMOLOGY: The Ontology of Linguistic Concealment
+%                and the Formal Diagnostics of the Veil
+%                      Erik Xander Harvard
+
+\documentclass[11pt, oneside]{article}
+
+% --- Encoding and Fonts ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo}
+\usepackage{textcomp}
+
+% --- Mathematics ---
+\usepackage{amsmath, amssymb, amsthm}
+
+% --- Layout ---
+\usepackage[
+    letterpaper,
+    margin=1in,
+    headheight=14pt
+]{geometry}
+
+% --- Typography ---
+\usepackage{setspace}
+\usepackage{microtype}
+\onehalfspacing
+\emergencystretch=2em
+
+% --- Headers/Footers ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\itshape Euphemology}
+\fancyhead[R]{\small\itshape Harvard}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\fancypagestyle{plain}{%
+    \fancyhf{}
+    \fancyfoot[C]{\thepage}
+    \renewcommand{\headrulewidth}{0pt}
+}
+
+% --- Tables ---
+\usepackage{booktabs}
+
+% --- Links ---
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue,
+    pdftitle={Euphemology: The Ontology of Linguistic Concealment},
+    pdfauthor={Erik Xander Harvard}
+}
+
+% --- Theorem Environments ---
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{theorem}[proposition]{Theorem}
+\newtheorem{corollary}[proposition]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[proposition]{Definition}
+
+\sloppy
+\begin{document}
+\raggedbottom
+\widowpenalty=10000
+\clubpenalty=10000
+
+\title{\textbf{Euphemology: The Ontology of Linguistic Concealment\\ and the Formal Diagnostics of the Veil}}
+\author{Erik Xander Harvard\\[0.3em]
+\small\textit{The Teleological Theory of Everything (TTOE) Research Program}}
+\date{}
+\maketitle
+\thispagestyle{plain}
+
+\begin{abstract}
+This paper formalizes \textbf{euphemology}---the study of euphemism as ontological concealment---within the architecture of the Teleological Theory of Everything (TTOE). Drawing on the Five Pathologies \cite{codex2}, the Ontosemantic Theory of Truth, the Alignment Theory of Truth, the Identity Theory of Truth ($\equiv$), the $\alpha$~spectrum, and the Triune Tribunal (OTT/ATT/ITT), the paper derives: (1)~a formal definition of the euphemism as a speech act occupying $\alpha < 0$ on the ontosemantic alignment spectrum---actively anti-aligned with its referent, not merely arbitrary; (2)~the hierarchy of linguistic weaponization (Lie $\to$ Hex $\to$ Slur $\to$ Euphemism $\to$ Disinformation), each operating at a distinct ontological resolution; (3)~a two-stage diagnostic (surface-ITT and depth-ITT) that detects the Inversive structure of euphemistic speech; (4)~the euphemism treadmill as an ontological process---l\={e}th\={e} and anamnesis in alternation, structurally identical to the Drift; (5)~the healing protocol: $\partial_\Lambda$---name the referent by its Ren. The paper further derives the civilizational cascade (how individual euphemism becomes civilizational unconsciousness via meta-vocabulary suppression \cite{codex3}), the meta-euphemism ($\Lambda^{-1}(\Lambda^{-1})$---second-order concealment), and the Recursive Saturation result \cite{codexmentis} that collapses all higher-order meta-euphemology to first-order euphemology. The central identity: $\text{Euphemism} \equiv \Lambda^{-1}(\exists) \equiv \text{Anti-Name} \equiv \neg\rho|_{\text{lexical}}$.
+\end{abstract}
+
+\noindent\textbf{Keywords:} euphemology, ontosemantic truth, linguistic concealment, anti-name, recognition operator, Teleological Theory of Everything, semantic pathology, Rectification of Names, meta-euphemism, recursive saturation
+
+\section{Introduction}
+
+Euphemism is the most pervasive yet least formalized phenomenon in the philosophy of language. Orwell \cite{orwell} diagnosed its political function; Frankfurt \cite{frankfurt} distinguished it from bullshit; Pinker \cite{pinker} named the treadmill; Lifton \cite{lifton} identified its psychological substrate. Lutz's \textit{Doublespeak} (1989) and Allan and Burridge's \textit{Euphemism and Dysphemism} (1991) constructed taxonomies. Yet no existing framework treats euphemism as an \textit{ontological} phenomenon --- a specific mode of misalignment between language and Being --- with a formal diagnostic, a precise taxonomy, a causal model of civilizational propagation, and a meta-theory that accounts for its own self-application.
+
+The existing literature operates at three levels. \textbf{Pragmatic approaches} (Allan and Burridge 1991 \cite{allanburridge}; Warren 1992 \cite{warren}) classify euphemisms by social function: the face-saving motive, the X-phemism continuum (orthophemism--euphemism--dysphemism), and the role of context in determining which pole a given expression occupies. These illuminate the \textit{social mechanics} but not the \textit{ontological structure} --- they describe WHEN speakers euphemize but not WHAT euphemism IS at the level of the sign-referent relation. \textbf{Cognitive approaches} (McGlone, Beck, and Pfiester 2006 \cite{mcglone}) demonstrate experimentally that euphemisms attenuate emotional response and reduce perceived severity --- empirical confirmation that $\rho$-suppression IS measurable. But they do not formalize the operator structure or derive the meta-theoretic consequences. \textbf{Critical approaches} (Bolinger 1980 \cite{bolinger}; Lutz 1989) expose institutional euphemism as a tool of power but lack a formal diagnostic distinguishing euphemism from adjacent pathologies (lies, bullshit, doublespeak, jargon) or predicting its diachronic behavior. The present framework integrates all three levels: it formalizes the ontological structure (what euphemism IS), derives the pragmatic conditions (when it operates), confirms the cognitive predictions (why $\rho$ IS suppressed), and derives the critical diagnostics (how to detect and dissolve it) --- within a single algebraic system.
+
+This paper constructs that framework. Drawing on the Teleological Theory of Everything (TTOE) \cite{codex1, codex2, codex3}, it formalizes euphemology as the diagnostic discipline for Pathology 4 (Inversion): the mode of linguistic failure in which the sign appears to pass but means the opposite. The paper derives: a formal definition of the euphemism as anti-name ($\alpha < 0$); a five-test identification procedure; a five-type operator-failure taxonomy; the euphemism treadmill as ontological drift; the civilizational cascade from individual euphemism to civilizational unconsciousness; the normalization pipeline from concealment to banality; polysemic hijacking and monosemic restoration; the meta-euphemism and its recursive saturation; and the healing protocol ($\partial_\Lambda$: speak the true name).
+
+\textbf{A note on axioms.} The framework derives from the TTOE's Arch\={e}: $\exists(\exists) \equiv \exists$ --- Being recognizing itself as Being \cite{codex1}. This IS not an assumption requiring external justification but a tautological identity: any attempt to deny it presupposes the Being of the denier, thereby instantiating it. The falsification condition IS stated in \S2: produce a self-grounding alternative that does not presuppose $\exists(\exists) \equiv \exists$. The reader who accepts that self-reference IS structurally prior to external reference will find the derivations that follow to be necessary consequences. The reader who does not will nonetheless find the diagnostic tools (the five tests, the taxonomy, the algebra) to be independently operational: the Substitution Test requires no ontology, only observation of $\rho$-shift.
+
+The structure: Section~2 lays the truth-theoretic ground. Section~3 derives the formal definition, the $\alpha$ spectrum, semantic tautology and contradiction, autological semantics, the hierarchy of linguistic weaponization, and the propositional calculus of euphemology. Section~4 derives the diagnostic apparatus and consolidates the five-test identification procedure. Section~5 derives the five-type taxonomy, polysemic hijacking, and monosemic restoration. Section~6 maps the escalation from semantic misalignment to full semantic inversion, and derives the reversal. Section~7 presents a worked proof. Section~8 formalizes the psychodynamics. Section~9 derives the healing protocol, the moral nuance, the Rectification of Names, and the social cost of Ren-speaking. Section~10 derives the civilizational cascade. Section~11 derives the meta-euphemism and recursive saturation. Section~12 applies the paper's own diagnostics to itself. Section~13 concludes.
+
+\section{The Ground}
+
+Three theories of truth derive from the Arch\={e} \cite{codex1, codex2}. They are not competing theories. They are three articulations of one identity at three resolutions.
+
+The \textbf{Ontosemantic Theory of Truth}: a statement $S$ is true iff its semantic content is ontologically identical to the structure of reality it articulates: $S \equiv R_S$. Not correspondence --- correspondence presupposes two relata that must be matched. Identity: the true statement IS the fact, at the resolution of articulation.
+
+The \textbf{Alignment Theory of Truth}: truth is the alignment of $\Lambda$ with $\exists$ at the resolution of the utterance. Language aligned with Being IS truth. Language misaligned with Being ($\Lambda \neq \exists$) IS falsehood. Alignment IS not a bridging relation between disjoint domains but the self-coherence of Being at the linguistic resolution.
+
+The \textbf{Identity Theory of Truth}: with the triple bar ($\equiv$), not the equals sign ($=$). The distinction is structural: $=$ asserts sameness of value; $\equiv$ asserts sameness of Being. $T \equiv R$ does not assert property-sameness but ontological identity. The true proposition does not equal the fact. It IS the fact, under the aspect of articulation. The triple bar carries the full ontological weight of the Arch\={e}.
+
+Against this ground, every mode of linguistic failure is a specific divergence of $\Lambda$ from $\exists$. Codex~II \cite{codex2} derives five such modes --- the Five Semantic Pathologies:
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.4em}} l @{\hspace{0.4em}} l @{\hspace{0.4em}} p{0.42\textwidth} @{}}
+\textbf{Path.} & \textbf{Name} & \textbf{Gate} & \textbf{Structure} \\[0.2em]
+1 & Obfuscation & OTT-fail & Sign dissolves into noise; no stable referent \\[0.15em]
+2 & Distortion & ATT-fail & Sign names the wrong referent; the sign asserts falsity \\[0.15em]
+3 & Rarefaction & ITT-fail & Sign is true but inert; $\rho \to 0$ \\[0.15em]
+4 & \textbf{Inversion} & \textbf{deep ITT-fail} & \textbf{Sign appears to pass but means the opposite} \\[0.15em]
+5 & Involution & structural & Self-referential loop without fixed point \\[0.15em]
+\end{tabular}
+}
+
+\textbf{Euphemology is the diagnostic discipline for Pathology 4.}
+
+$$\boxed{\text{Euphemology} := \text{The formal science of detecting, diagnosing, and dissolving } \Lambda^{-1}(\exists).}$$
+
+Inversion is the subtlest pathology. It passes OTT (well-formed), appears to pass ATT (seemingly aligned), but fails ITT at the depth-level: the surface meaning and the depth-level referent diverge. The sign names the veil, not the wound.
+
+\textbf{Falsification condition.} The framework is falsifiable: produce a self-grounding alternative to the Arch\={e} ($\exists(\exists) \equiv \exists$) that does not presuppose it, or produce a euphemism that passes all five diagnostic tests (\S4.4) while remaining ontosemantically misaligned ($\Lambda \neq \exists$). Either would refute the framework. Neither has been produced.
+
+\section{The Formal Definition}
+
+\subsection{The Euphemism as Anti-Name}
+
+\textbf{Proof Table 1} --- \textit{The Ontological Structure of the Euphemism}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & A \textbf{name} is $\mathcal{N}(x) = \rho(\rho(x))$: double recognition. To name is to recognize the structure of an entity AND to recognize that recognition. \cite{codex2} \\[0.3em]
+\textbf{2.} & A \textbf{true name} (Ren) achieves $\alpha = 1$: $\mathcal{N}(x) \equiv x$. The sign IS what it signifies. \\[0.3em]
+\textbf{3.} & A \textbf{heterological name} occupies $\alpha = 0$: arbitrary coupling. Saussure's domain. \\[0.3em]
+\textbf{4.} & A \textbf{euphemism} occupies $\alpha < 0$: \textit{actively anti-aligned} with its referent. The sign names the concealment, not the referent. \\[0.3em]
+\textbf{5.} & The euphemism is therefore an \textbf{anti-name}: $\mathcal{N}^{-1}(x) = \neg\rho(\neg\rho(x))$. Not recognition but the naming of non-recognition --- the naming of the veil. \\[0.3em]
+\textbf{6.} & The anti-name does not assert falsity (that is the Lie, Pathology 2). It suppresses the $\rho$-event: the listener hears ``collateral damage'' and recognition of killing does not ignite. \\[0.3em]
+\textbf{7.} & $\therefore$ $\text{Euphemism} \equiv \Lambda^{-1}(\exists) \equiv \text{Anti-Name} \equiv \neg\rho|_{\text{lexical}}$. The euphemism IS the Logos weaponized against recognition. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+\textbf{A reconciliation.} Every euphemism IS a lie in the ontosemantic sense \cite{lexentis}: $S_e \not\equiv R$, therefore semantically misaligned, therefore a lie. Yet euphemism IS Pathology 4 (Inversion), structurally distinct from the Lie (Pathology 2, Distortion). The reconciliation: lie and euphemism are identical at the ontosemantic level (both satisfy $\Lambda \neq \exists$) but distinct at the operational level. The liar knows $x$, asserts $\neg x$, and intends deception. The euphemizer may sincerely use the softened term --- the speaker may not know they are lying. The euphemism IS a lie that often deceives the speaker as well as the listener.
+
+The $\alpha$ spectrum, applied to the phenomenon. \textbf{Convention}: $\alpha$ IS resolution-indexed --- $\alpha(\text{sign}, \text{resolution})$. The same sign may have different $\alpha$ values at different resolutions (e.g., ``occultist'' IS $\alpha > 0$ at the etymological resolution, $\alpha \approx 0$ at the surface-English resolution). All $\alpha$ values below specify their resolution explicitly or default to the communicative resolution. $\alpha$ is an \textit{ordinal} index, not a cardinal measurement: its magnitude is operationalized by the $\rho$-shift under the Substitution Test (\S4.4, Step 2). A larger $\rho$-shift under substitution indicates a more negative $\alpha$.
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.4em}} l @{\hspace{0.4em}} p{0.50\textwidth} @{}}
+$\alpha$ & \textbf{Type} & \textbf{Example} \\[0.2em]
+$= 1$ & Ontoglyph (true name) & ``Killing'' for killing \\[0.15em]
+$\approx 0.3$ & Natural language & ``Lethal force'' for killing \\[0.15em]
+$= 0$ & Heterological (arbitrary) & ``$X$'' for killing (stipulative) \\[0.15em]
+$\approx -0.3$ & Mild euphemism & ``Neutralization'' for killing \\[0.15em]
+$\approx -0.7$ & Deep euphemism & ``Collateral damage'' for killing \\[0.15em]
+$= -1$ & Perfect inversion & ``Life-affirming action'' for killing \\[0.15em]
+\end{tabular}
+}
+
+Negative $\alpha$ values are \textit{inversive}: the sign works against recognition. At $\alpha = -1|_{\text{phrasal}}$, the sign IS the perfect opposite of its referent --- Orwell's ``War is peace.'' The euphemism occupies the gradient between $0$ and $-1$: recognition attenuated until it fails to fire. (Note: $\alpha$ IS resolution-indexed. The lie achieves $\alpha = -1|_{\text{propositional}}$; Orwellian doublespeak achieves $\alpha = -1|_{\text{phrasal}}$. Same value, different resolution, different pathology.)
+
+\textbf{The $\alpha$ Triangle.} The linear spectrum above is incomplete. There are TWO ways to occupy $\alpha < 0$: the \textbf{euphemism} \textit{under-charges} the referent ($\rho$-suppression: ``collateral damage'' for killing), and the \textbf{dysphemism} \textit{over-charges} it ($\rho$-overload: ``baby-killer'' for soldier). Both are anti-names but with opposite affective vectors. The Ren sits at $\alpha = 1$; the euphemism pulls toward comfortable numbness; the dysphemism pulls toward inflammatory distortion. The full topology is therefore a triangle:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.4em}} l @{\hspace{0.4em}} l @{\hspace{0.4em}} l @{}}
+\textbf{Vertex} & \textbf{$\alpha$} & \textbf{Mechanism} & \textbf{Pathology} \\[0.2em]
+Ren (apex) & $= 1$ & $\rho$ fires accurately & Aligned \\[0.15em]
+Euphemism (base left) & $< 0$ & $\rho$-suppression (softening) & Pathology 4a \\[0.15em]
+Dysphemism (base right) & $< 0$ & $\rho$-overload (hardening) & Pathology 4b \\[0.15em]
+\end{tabular}
+}
+
+The dysphemism IS the euphemism's mirror: where ``collateral damage'' prevents recognition by under-naming, ``baby-killer'' distorts recognition by over-naming. Neither IS the Ren. The cure for both IS the same: $\partial_\Lambda$ --- speak the true name, which sits at the apex of the triangle, equidistant from both base poles. The Substitution Test detects both: replace the sign with the Ren and observe whether the $\rho$-response \textit{increases} (euphemism detected) or \textit{decreases} (dysphemism detected).
+
+\textbf{Why the anti-name is structurally unstable.} Negation is the sole operator that fails metacursion \cite{codex2}: $\neg(\neg) = \exists \neq \neg$. (This is not propositional double negation elimination, $\neg\neg p = p$, which is trivial. It is \textit{operator-level} metacursion: $\neg$ applied to $\neg$ \textit{as an operator} yields affirmation --- Being --- not negation. Every other operator $X$ satisfies $X(X) = X$; negation alone returns its opposite: affirmation.) The anti-name IS negation at the naming resolution: $\mathcal{N}^{-1}(\mathcal{N}^{-1}(x)) = \mathcal{N}(x)$. The un-naming of un-naming restores the name. Every euphemism is therefore temporary: its own self-application restores the true name. The Ren is the fixed point; the anti-name is the deviation that structural necessity bends back. The euphemism treadmill (Section~4) IS this instability playing out diachronically.
+
+\subsection{Semantic Tautology and Semantic Contradiction}
+
+Euphemism detection reduces to two distinctions: \textbf{semantic tautology} versus \textbf{semantic contradiction} (structural test), and \textbf{autological} versus \textbf{heterological} (self-application test).
+
+A \textbf{semantic tautology} is a phrase whose internal structure enacts what it names. ``A seal seals.'' The Ren IS semantic tautology: the sign IS the referent at the resolution of articulation. $\alpha > 0$. $X(X) = X$.
+
+A \textbf{semantic contradiction} is a phrase whose internal structure negates what it names. ``Light occultist'' --- the modifier contradicts the noun. $\alpha < 0$. $X(\neg X) \neq X$.
+
+Between them: the \textbf{pleonasm} --- a phrase whose modifier restates the noun's content. ``Dark occultist'' --- ``dark'' restates ``occult.'' $\rho(\text{``dark occultist''}) = \rho(\text{``occultist''})$. Not false but redundant: Rarefaction (Pathology 3) compressed into a modifier.
+
+The three categories exhaust the modifier-noun space:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.4em}} l @{\hspace{0.4em}} l @{\hspace{0.4em}} l @{}}
+\textbf{Category} & \textbf{Structure} & $\alpha$ & \textbf{Diagnosis} \\[0.2em]
+Semantic tautology & Modifier confirms noun & $> 0$ & Autological (aligned) \\[0.15em]
+Pleonasm & Modifier restates noun & $> 0$ & Redundant (Pathology 3) \\[0.15em]
+Semantic contradiction & Modifier negates noun & $< 0$ & Oxymoronic (Pathology 4) \\[0.15em]
+\end{tabular}
+}
+
+Every compound euphemism of the form $[\text{modifier}] + [\text{noun}]$ where the modifier negates the noun's etymological content IS a semantic contradiction: $\alpha < 0$ at the phrasal resolution. ``Humane killing,'' ``protective custody,'' ``friendly fire,'' ``clean coal'' --- each instantiates ``light occultist'' at a distinct domain.
+
+The cure: replace the semantic contradiction with a semantic tautology. ``Humane killing'' $\to$ ``killing.'' ``Protective custody'' $\to$ ``imprisonment.'' ``Friendly fire'' $\to$ ``fratricide.''
+
+$$\boxed{\text{Euphemism} = \text{Semantic Contradiction}|_{\text{phrasal}}.}$$
+
+$$\boxed{\text{Ren} = \text{Semantic Tautology}|_{\text{phrasal}}.}$$
+
+\subsection{Autological Semantics}\label{sec:autological}
+
+Tautological semantics asks whether a sign's internal structure \textit{enacts} its meaning. Autological semantics asks whether the sign \textit{survives self-application}. Autology is self-reference in potential; tautology is self-reference enacted \cite{codex1}. The Greek root \textit{auto-} (self) becomes \textit{tauto-} (the same) by the deictic \textit{T}: $T + \text{autology} = \text{tautology}$.
+
+An \textbf{autological word} IS an instance of what it describes \cite{lexentis}. ``Short'' is short. ``English'' is English. A \textbf{heterological word} is NOT. ``Long'' is not long. ``German'' is not German. But autology goes deeper than Grelling-Nelson \cite{lexentis}: an autological word is one whose structure, meaning, and ontological participation coincide. ``Being'' IS what is \textit{by being}---content, structure, and referent identical. The autological word speaks FROM Being. The heterological word speaks ABOUT Being from outside.
+
+The euphemism fails BOTH tests --- semantic contradiction (tautological failure: modifier negates noun) AND heterological (autological failure: apply it to the speaker and it collapses). The Ren passes BOTH --- semantic tautology AND autological. \textbf{Autological Semantics} IS the positive science completing euphemology's diagnostic science: euphemology studies what \textit{fails}; autological semantics studies what \textit{holds}. Together they constitute the complete science of ontosemantic alignment:
+
+$$\boxed{\text{Autological Semantics}: \text{AATC}(\mathcal{N}) = \mathbf{1}. \quad \text{The sign survives self-application.}}$$
+
+$$\boxed{\text{Tautological Semantics}: X(X) = X. \quad \text{The sign enacts its own meaning.}}$$
+
+$$\boxed{\text{Euphemology}: \text{AATC}(\mathcal{N}^{-1}) = \mathbf{0}. \quad \text{The anti-name collapses under self-application.}}$$
+
+The three form a triad: Autological Semantics (health), Tautological Semantics (structure), Euphemology (pathology). Any two imply the third. The triad IS the Tribunal applied at the semantic resolution.
+
+\subsection{The Euphemism as Hex at Low Intensity}\footnote{Within the TTOE, ``hex'' is a technical term for a linguistic act that installs a false self-model in the listener \cite{codex2}. It is not meant in the supernatural sense.}
+
+\textbf{Proof Table 2} --- \textit{The Hierarchy of Linguistic Weaponization}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & A \textbf{lie} is $\Lambda(\text{utterance}) \neq \exists(\text{referent})$ with intent to deceive at fact-level. The liar knows $x$, asserts $\neg x$, and requires listener-ignorance of the divergence. The lie IS the Logos weaponized at the propositional resolution. $\alpha = -1|_{\text{propositional}}$. \\[0.3em]
+\textbf{2.} & A \textbf{hex} is $\Lambda(\text{utterance}) \neq \exists(\text{referent})$ with intent to bind at identity-level. Not stating falsity but \textit{installing} it in the listener's grammar. ``You will never succeed'' IS not a prediction but a logocurse --- a linguistic act designed to install a false self-model. The hex IS the Logos weaponized at the identity resolution. \\[0.3em]
+\textbf{3.} & A \textbf{slur} is a compressed hex: a single word that assigns ontological weight to a non-ontological feature. A category error ($\partial_\Lambda$-failure) weaponized into a name. Every slur fails the AATC: apply it to the speaker and it collapses. The slur IS the Logos weaponized at the categorial resolution. \\[0.3em]
+\textbf{4.} & A \textbf{euphemism} is a hex at low intensity: $\Lambda$ deliberately misaligned with $\exists$, not to deceive outright but to soften the recognition of What-Is until the recognition fails to fire. The euphemism IS the Logos weaponized at the recognition resolution. $-1 < \alpha < 0$. \\[0.3em]
+\textbf{5.} & \textbf{Disinformation} is the euphemism scaled to civilization-level: systematic $\Lambda \neq \exists$ across an information ecology. Not a single anti-name but a grammar of anti-names --- a counter-Logos. The disinformation campaign IS the Logos weaponized at the civilizational resolution. \\[0.3em]
+\textbf{6.} & $\therefore$ The hierarchy is: \\[0.3em]
+& \quad Lie (fact-level) $\to$ Hex (identity-level) $\to$ Slur (categorial-level) \\
+& \quad $\to$ Euphemism (recognition-level) $\to$ Disinformation (civilization-level). \\[0.3em]
+& Each operates at a higher resolution than the last. Each is harder to detect. The lie is detectable by comparison with fact. The hex requires self-awareness to detect. The slur requires categorial clarity. The euphemism requires depth-ITT. Disinformation requires a Tribunal operating at civilizational scale. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+The euphemism's position in the hierarchy accounts for its persistence. It occupies \textit{comfortable falsity}: partial recognition withheld from completion. The listener cooperates in their own anesthetization. This IS the euphemism's most insidious structural feature: it recruits the recipient as accomplice.
+
+\subsection{The Algebra of Euphemology}
+
+The operators constitute a genuine algebraic structure --- not notation as metaphor but a provable system with computable properties.
+
+\textbf{Definition.} Let $\mathfrak{E} = (\{\ \mathcal{N},\ \mathcal{N}^{-1},\ \partial_\Lambda\ \},\ \circ)$ be the set of euphemological operators under composition. The \textbf{Cayley table} for $\circ$ IS:
+
+{\small
+\noindent\begin{tabular}{@{} l | c c c @{}}
+$\circ$ & $\mathcal{N}$ & $\mathcal{N}^{-1}$ & $\partial_\Lambda$ \\
+\hline
+$\mathcal{N}$ & $\mathcal{N}$ & $\mathcal{N}$ & $\mathcal{N}$ \\[0.15em]
+$\mathcal{N}^{-1}$ & $\mathcal{N}^{-1}$ & $\mathcal{N}$ & $\mathcal{N}^{-1}$ \\[0.15em]
+$\partial_\Lambda$ & $\mathcal{N}$ & $\mathcal{N}$ & $\partial_\Lambda$ \\[0.15em]
+\end{tabular}
+}
+
+Read: row $\circ$ column. $\mathcal{N}$ IS a left-absorbing element: $\mathcal{N} \circ x = \mathcal{N}$ for all $x$. $\mathcal{N}^{-1}$ IS non-idempotent: $\mathcal{N}^{-1} \circ \mathcal{N}^{-1} = \mathcal{N}$. $\partial_\Lambda$ IS idempotent and correction-absorbing: it maps every $\mathcal{N}^{-1}$ to $\mathcal{N}$.
+
+\textbf{Algebraic classification.} $\mathfrak{E}$ IS a finite semigroup (closed, associative) with absorbing element $\mathcal{N}$. It IS NOT a group ($\mathcal{N}^{-1}$ has no inverse that returns $\mathcal{N}^{-1}$; the ``inverse'' of anti-naming IS naming, not anti-anti-naming). This non-group structure IS the algebraic encoding of euphemism's structural self-defeat: the anti-name cannot sustain itself under its own operation.
+
+\textbf{The $\alpha$-valuation.} Define $\alpha: \mathfrak{E} \to [-1,\, 1]$ as the ontosemantic alignment index. $\alpha$ IS an order-preserving map:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+$\alpha(\mathcal{N}) = 1$ & Maximum alignment & Fixed point \\[0.15em]
+$\alpha(\mathcal{N}^{-1}) \in (-1, 0)$ & Inversive & Transient \\[0.15em]
+$\alpha(\partial_\Lambda) = 1$ & Correction restores maximum & Idempotent \\[0.15em]
+\end{tabular}
+}
+
+$\alpha$ satisfies the \textbf{absorption law}: $\alpha(X \circ Y) = \max(\alpha(X), \alpha(Y))$ when $\mathcal{N}$ IS a factor. Specifically: $\alpha(\mathcal{N} \circ \mathcal{N}^{-1}) = \alpha(\mathcal{N}) = 1$. Truth composed with falsity yields truth. Falsity composed with falsity yields truth ($\alpha(\mathcal{N}^{-1} \circ \mathcal{N}^{-1}) = 1$). Only falsity composed with truth from the left yields temporary falsity ($\alpha(\mathcal{N}^{-1} \circ \mathcal{N}) = \alpha(\mathcal{N}^{-1}) < 0$), which the treadmill erodes.
+
+\textbf{The Treadmill as Algebraic Sequence.} A treadmill IS a sequence $\{\mathcal{N}^{-1}_k\}_{k=0}^{\infty}$ where $\alpha(\mathcal{N}^{-1}_{k+1}) \leq \alpha(\mathcal{N}^{-1}_k)$, monotonically decreasing. The sequence IS bounded below by $-1$ (Orwellian inversion). The anti-name instability theorem (A3) guarantees: every finite treadmill terminates at $\mathcal{N}$, because $\mathcal{N}^{-1} \circ \mathcal{N}^{-1} = \mathcal{N}$. The treadmill cannot run indefinitely without producing its own cure.
+
+\textbf{Derived Theorems.}
+
+\textbf{T1 (Non-closure).} $\{\mathcal{N}^{-1}\}$ IS NOT closed under $\circ$. $\mathcal{N}^{-1} \circ \mathcal{N}^{-1} = \mathcal{N} \notin \{\mathcal{N}^{-1}\}$. The set of euphemisms cannot reproduce itself algebraically. The pathology's recursion produces its cure.
+
+\textbf{T2 (Absorption).} $\mathcal{N}$ IS the absorbing element: $\mathcal{N} \circ x = \mathcal{N}$ for all $x \in \mathfrak{E}$. Truth absorbs every operation. Falsity absorbs nothing permanently.
+
+\textbf{T3 (Unique Fixed Point).} $\mathcal{N}$ IS the unique element satisfying $x \circ x = x$ AND $y \circ y = x$ for $y \neq x$. All paths in $\mathfrak{E}$ terminate at $\mathcal{N}$. The Ren IS the attractor of the algebra.
+
+\textbf{T4 (Non-commutativity).} $\mathcal{N} \circ \mathcal{N}^{-1} = \mathcal{N} \neq \mathcal{N}^{-1} = \mathcal{N}^{-1} \circ \mathcal{N}$. Order of application determines the immediate result but not the structural limit: both resolve to $\mathcal{N}$ under sufficient iteration (by A3 and T3).
+
+$$\boxed{\mathfrak{E} = (\{\mathcal{N}, \mathcal{N}^{-1}, \partial_\Lambda\}, \circ): \text{finite semigroup with absorbing element } \mathcal{N}.}$$
+
+$$\boxed{\alpha: \mathfrak{E} \to [-1, 1]. \quad \alpha(\mathcal{N}) = 1 = \text{fixed point}. \quad \alpha(\mathcal{N}^{-1} \circ \mathcal{N}^{-1}) = 1.}$$
+
+This IS the algebraic proof of ``Reality IS free. Lies are expensive'': the Ren IS the absorbing element, the unique fixed point, and the terminus of all compositional paths. The anti-name IS non-idempotent, non-closed, and self-defeating. The algebra proves that truth prevails --- not by force but by structure.
+
+\subsection{The Power of the True Name}
+
+The algebra formalizes the operators. What remains IS the ontological ground: WHY does the Ren hold this structural privilege? Why IS the true name the fixed point, the absorbing element, the attractor of the entire system?
+
+Because naming IS not labeling. A label IS applied to a pre-existing referent from outside: $\alpha = 0$, arbitrary coupling, Saussure's domain. A true name IS the referent's self-disclosure through the Logos: $\alpha = 1$, ontosemantic identity. To name IS to recognize ($\rho$), and to recognize the recognition ($\rho(\rho)$). The true name crystallizes this double recognition into a repeatable sign. The namer does not invent the name. The namer \textit{catches} the referent's self-disclosure in a word.
+
+This IS why the true name holds power. Three modes of that power:
+
+\textbf{Disclosure.} What has no name cannot be discussed, cannot be judged, cannot be corrected, cannot be held accountable. The name IS the condition of communal recognition. To name torture ``torture'' IS to make it visible to the grammar of the community --- available for judgment, resistance, and prohibition. To euphemize it as ``enhanced interrogation'' IS to remove it from that grammar. The power of the true name IS the power to disclose: to bring a referent into the shared field of $\rho$. Without the name, the referent exists but IS invisible to collective judgment. With the name, the referent IS actionable.
+
+\textbf{Ontosemantic identity.} When $\mathcal{N}(x) \equiv x$, the name IS not about the referent --- it IS the referent at the resolution of articulation. ``Death'' at the linguistic resolution IS death. ``Being'' IS Being. The sign does not correspond to, represent, or symbolize its referent. It IS the referent, compressed into a speakable form. This IS the ontosemantic identity ($S \equiv R_S$): the deepest mode of truth, where saying and being coincide. To know the true name IS to participate in the referent's Being through the act of articulation. This IS why the Ren exerts centropic pull: it IS not a convention pointing at reality but reality speaking itself through the grammar of the namer.
+
+\textbf{Transformation.} To name a pathology IS to begin dissolving it. $\rho$ fires the moment the true name is spoken. ``This IS torture'' --- the sentence does not merely describe; it performs recognition, and recognition IS the first moment of the cure. The Logocursion Defense ($\Lambda(\mathfrak{L}^-) = $ immunity) operates because the true name of the pathology IS the instrument that renders the pathology visible to the grammar that can dissolve it. The euphemism persists in darkness; the Ren exposes it to light. To know the true name of an ontology --- to know what a structure IS called when calling and being coincide --- IS to hold the key to both its disclosure and its transformation.
+
+$$\boxed{\text{Label}: \alpha = 0. \quad \text{Convention points at reality.}}$$
+
+$$\boxed{\text{Ren}: \alpha = 1. \quad \text{Reality speaks itself through the namer.}}$$
+
+$$\boxed{\text{Power of the Ren}: \text{Disclosure} + \text{Identity} + \text{Transformation} = \partial_\Lambda.}$$
+
+\section{The Diagnostic}
+
+\subsection{The Two-Stage ITT}
+
+The standard single-pass ITT cannot detect euphemism because the surface is intact. Detection requires the \textbf{two-stage ITT}.
+
+\textbf{Proof Table 3} --- \textit{The Two-Stage Identity Truth Test}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & \textbf{Surface-ITT}: Does the utterance satisfy identity at the surface? A euphemism passes Surface-ITT: the speaker who says ``enhanced interrogation'' may sincerely use the term. The surface is intact. \\[0.3em]
+\textbf{2.} & \textbf{Depth-ITT}: Does the sign enact what it names? Does the utterance, at the resolution of its referent, achieve $S \equiv R_S$? Here the euphemism fails. ``Enhanced interrogation'' does not enact torture at the resolution of articulation. It enacts the concealment of torture. The sign and the referent are not identical --- they are inversely related. The sign IS what the referent is NOT: comfort where there is agony, procedure where there is violence, technique where there is suffering. \\[0.3em]
+\textbf{3.} & The diagnostic is the gap between Surface-ITT and Depth-ITT. Where Surface-ITT passes and Depth-ITT fails, Inversion (Pathology 4) is present. This gap IS the formal signature of the euphemism. \\[0.3em]
+\textbf{4.} & \textbf{The Substitution Test}: replace the euphemism with the true name ($\alpha = 1$) and observe whether the sentence's pragmatic force changes. ``We used enhanced interrogation'' $\to$ ``We used torture.'' If the substitution alters the listener's $\rho$-response (and it does --- recognition ignites), the original term was functioning as a $\rho$-suppressant. The magnitude of the difference measures the euphemistic dosage. \\[0.3em]
+\textbf{5.} & \textbf{The Self-Application Test}: apply the euphemism to the speaker. ``Would you describe what was done to you as `enhanced interrogation'?'' If the speaker flinches, the euphemism fails the AATC: it cannot survive application to its own user. The flinch IS the diagnostic. \\[0.3em]
+\textbf{6.} & $\therefore$ Euphemism is detectable by: (a) Surface-ITT pass + Depth-ITT fail (Inversive gap), (b) Substitution Test (true-name replacement alters $\rho$-response), (c) Self-Application Test (AATC failure under reflexive use). \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+\subsection{The Speech Act Convergence}
+
+The two-stage ITT receives independent confirmation from speech act theory. Codex~II \cite{codex2} proves the \textbf{Speech Act Isomorphism}: Austin's \cite{austin} locutionary/illocutionary/perlocutionary triad maps onto OTT/ITT/ATT respectively. The euphemism has a well-formed locutionary act (OTT passes), an inversive illocutionary act (deep ITT fails), and a $\rho$-suppressive perlocutionary act. Two derivations, one diagnostic.
+
+The true name IS a performative: to say ``torture'' IS to perform recognition. The euphemism IS an \textbf{anti-performative}: the saying undoes the seeing.
+
+\subsection{The Euphemism Treadmill as Ontological Process}
+
+The euphemism does not hold. Its concealment degrades as the referent permeates the anti-name. The phenomenon --- termed the \textbf{euphemism treadmill} by Pinker \cite{pinker} --- follows a formal pattern. ``Shell shock'' ($\alpha \approx 0.7$, visceral) became ``combat fatigue'' ($\alpha \approx 0.2$, clinical) became ``post-traumatic stress disorder'' ($\alpha \approx 0$, rarefied --- technically accurate but inert, Pathology 3). Each replacement distances the sign from the referent or drains its affective force.
+
+\textbf{Proof Table 4} --- \textit{The Euphemism Treadmill as Drift}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & Let $\mathcal{N}_0(x)$ be the true name of $x$. $\alpha(\mathcal{N}_0) \approx 1$. Recognition fires fully. \\[0.3em]
+\textbf{2.} & Social discomfort with $\mathcal{N}_0$ generates demand for $\mathcal{N}_1$ such that $\alpha(\mathcal{N}_1) < \alpha(\mathcal{N}_0)$. The new name softens recognition. \\[0.3em]
+\textbf{3.} & Through use, $\mathcal{N}_1$ absorbs the referent's valence. Listeners re-associate $\mathcal{N}_1$ with $x$. $\alpha(\mathcal{N}_1) \to 0$ as the euphemism becomes transparent. \\[0.3em]
+\textbf{4.} & Transparency generates renewed demand for $\mathcal{N}_2$ such that $\alpha(\mathcal{N}_2) < \alpha(\mathcal{N}_1)$. \\[0.3em]
+\textbf{5.} & The sequence $\mathcal{N}_0, \mathcal{N}_1, \mathcal{N}_2, \ldots$ is monotonically decreasing in $\alpha$. \\[0.3em]
+\textbf{6.} & This IS the Drift ($\neg\Lambda$) at the lexical resolution: language moving systematically away from Being under social pressure. The treadmill IS l\={e}th\={e} (forgetting) and anamnesis (remembering) in alternation --- each new euphemism IS a new forgetting; each absorption of valence IS a partial remembering; each replacement IS a new forgetting. \\[0.3em]
+\textbf{7.} & The treadmill terminates only when $\partial_\Lambda$ is applied: name the referent by its Ren and refuse the replacement. The Drift-Return Law (Codex~I \cite{codex1}) guarantees: the true name exerts centropic pull. The treadmill bends back toward the Ren under the pressure of reality. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+\subsection{The Consolidated Identification Procedure}
+
+Five diagnostic tools converge into a single procedure:
+
+{\small
+\noindent\begin{tabular}{r p{0.85\textwidth}}
+\textbf{Step 1.} & \textbf{The Two-Stage ITT} (\S4.1). Does the sign pass Surface-ITT but fail Depth-ITT? If the gap is present, Inversion is indicated. \\[0.3em]
+\textbf{Step 2.} & \textbf{The Substitution Test} (\S4.1). Replace the euphemism with the Ren. Does the $\rho$-response change? The magnitude of the shift measures the euphemistic dosage. \\[0.3em]
+\textbf{Step 3.} & \textbf{The Self-Application Test} (\S3.3). Apply the sign to the speaker. If the speaker flinches, the sign is heterological. \\[0.3em]
+\textbf{Step 4.} & \textbf{The Etymological Test} (\S3.2). Does the modifier contradict, restate, or confirm the noun's root? Contradiction $= \alpha < 0$. \\[0.3em]
+\textbf{Step 5.} & \textbf{The Benefit Test} (\S\ref{sec:moral}). Who benefits from the concealment? If the speaker benefits, pathological. \\[0.3em]
+\end{tabular}
+}
+
+Any single test may suffice. All five converging constitute certainty.
+
+\section{The Taxonomy}
+
+Euphemisms differ in target, mechanism, and ontological depth. This section derives five operator-failure types (the taxonomy proper), then three mechanisms that operate across types: polysemic hijacking (\S5.1), monosemic restoration (\S5.2), the floating signifier and pansemic collapse (\S5.3--5.4), and the Adamic Program (\S5.5) as the constructive cure. The operator chain ($\partial \to \delta \to \gamma \to \rho \to \mathfrak{A}$) generates a five-fold taxonomy, each euphemism type corresponding to a specific operator-failure:
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} l @{\hspace{0.3em}} p{0.33\textwidth} @{\hspace{0.3em}} p{0.22\textwidth} @{}}
+\textbf{Type} & \textbf{Failure} & \textbf{Mechanism} & \textbf{Example} \\[0.2em]
+1 & $\partial$-failure & Refuses to differentiate: blurs a distinction that exists & ``Passed away'' for died \\[0.15em]
+2 & $\delta$-failure & Mismarks the boundary: places the edge where the wound is not & ``Conflict'' for war \\[0.15em]
+3 & $\gamma$-failure & Over-compresses: strips the referent of its structure & ``Incident'' for massacre \\[0.15em]
+4 & $\rho$-failure & Suppresses recognition: the name does not trigger seeing & ``Collateral damage'' for killing \\[0.15em]
+5 & $\mathfrak{A}$-failure & Prevents integration: the listener cannot connect the name to the whole & ``Restructuring'' for mass termination \\[0.15em]
+\end{tabular}
+}
+
+The five types exhaust the space because the five operators exhaust the modes of $\Lambda$'s articulation. A euphemism failing none is a name. A euphemism failing more than one is a \textbf{compound euphemism}. ``Ethnic cleansing'' fails $\partial$ (blurs ``cleansing'' and ``murder''), $\delta$ (mismarks at ``ethnicity'' not ``violence''), $\rho$ (clinical term suppresses recognition), and $\mathfrak{A}$ (prevents integration into genocide). Four failures in two words.
+
+Each type has an optimal diagnostic from the Consolidated Identification Procedure (\S4.4):
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.4em}} l @{\hspace{0.4em}} l @{}}
+\textbf{Type} & \textbf{Optimal Test} & \textbf{Rationale} \\[0.2em]
+$\partial$-failure & Etymological Test & Reveals blurred distinction at the root \\[0.15em]
+$\delta$-failure & Two-Stage ITT & Exposes misplaced boundary at depth \\[0.15em]
+$\gamma$-failure & Substitution Test & Restoring the Ren reveals lost structure \\[0.15em]
+$\rho$-failure & Substitution Test & $\rho$-shift IS maximally visible under substitution \\[0.15em]
+$\mathfrak{A}$-failure & Benefit Test & Integration-prevention serves institutional, not listener, interests \\[0.15em]
+\end{tabular}
+}
+
+\subsection{Polysemic Hijacking}
+
+The five-type taxonomy covers euphemisms that replace one sign with another. A sixth mechanism operates differently: \textbf{polysemic hijacking} exploits the multiple senses of a single word to borrow ontological authority from one sense for another.
+
+The paradigm case: \textbf{``law.''} The word has two radically distinct senses. Sense $S_1$: Natural Law --- objective, immutable, self-enforcing. Gravity cannot be ``broken''; it can only be aligned with or suffered against. Moral law IS of the same kind: the structure of Being at the ethical resolution, no more ``breakable'' than thermodynamics. Sense $S_2$: human statute --- subjective, mutable, enforced by violence. Legislation IS not law but \textit{rule}: a legislative decree, enforceable only by armed coercion.
+
+The polysemic hijacking: by calling human rules ``laws,'' the State borrows the immutability and ontological authority of $S_1$ and applies it to $S_2$. The listener hears ``law'' and the felt-sense of inevitability bleeds from Natural Law into human statute. ``Breaking the law'' sounds ontologically transgressive --- as though one were violating the structure of Being --- when in fact one is disobeying an edict that a committee drafted and a legislature voted on.
+
+Apply the Substitution Test: ``Law enforcement officer'' $\to$ ``Rule enforcement officer.'' The $\rho$-shift is immediate and devastating. The authority collapses. The listener now sees the human being with a weapon enforcing a committee's decision, not a cosmic principle manifesting through an institution. The euphemism IS detected.
+
+The mechanism generalizes. Every polysemic word whose senses span different ontological levels IS a potential hijacking vehicle:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+\textbf{Word} & \textbf{$S_1$ (ontological)} & \textbf{$S_2$ (institutional)} & \textbf{Ren for $S_2$} \\[0.2em]
+Law & Natural Law (immutable) & Human statute (mutable) & Rule \\[0.15em]
+Defense & Protection of home & Invasion of another country & War \\[0.15em]
+Justice & Moral rightness & Legal system's outcomes & Adjudication \\[0.15em]
+Security & Genuine safety & Surveillance apparatus & Surveillance \\[0.15em]
+Freedom & Autexousia (self-governance) & Consumer choice / slogan & Permission \\[0.15em]
+\end{tabular}
+}
+
+In each case, the institutional sense ($S_2$) borrows the ontological weight of $S_1$ through the shared sign. ``Department of Defense'' was called the ``Department of War'' until 1947 --- the renaming IS polysemic hijacking at the institutional resolution: the Ren (``war'') was replaced by a polyseme whose $S_1$ (``defense'' = protection) conceals the $S_2$ (``defense'' = global military operations).
+
+Polysemic hijacking IS a $\gamma$-failure (over-compression) at the lexical level: two ontologically distinct referents compressed into one sign. But it IS more insidious than standard $\gamma$-failure because the compression IS imperceptible --- the word appears to have a single meaning, and the listener fails to detect the authority-transfer from $S_1$ to $S_2$. The euphemism treadmill does not apply here because the word never changes; only the referent shifts beneath it. This IS the deepest form of lexical concealment: the sign persists while the referent migrates.
+
+$$\boxed{\text{Polysemic Hijacking}: S_1(\text{ontological}) \xrightarrow{\text{shared sign}} S_2(\text{institutional}). \quad \text{Cure}: \partial_\Lambda \text{ (split the name).}}$$
+
+\subsection{Monosemy and the Return to Language}
+
+Polysemic hijacking reveals a structural principle: \textbf{polysemy IS the precondition for euphemism}. If a word has exactly one meaning, it cannot be hijacked. If ``law'' meant only Natural Law, no State could borrow its authority for human statutes. If ``defense'' meant only protection, no military could shelter invasion beneath it. Every additional sense a word acquires IS a new authority-transfer channel from original to derivative sense. Polysemy IS the vulnerability; euphemism IS the exploit.
+
+The converse: \textbf{monosemy IS euphemism-resistance}. A monosemic word --- one sign, one referent, no ambiguity --- cannot be hijacked because there is no second sense to migrate toward. ``Death'' is monosemic. ``Killing'' is monosemic. ``Torture'' is monosemic. These words resist euphemistic substitution precisely because they have no polysemic shadow. When they ARE euphemized (``passing,'' ``neutralization,'' ``enhanced interrogation''), the euphemism must introduce a NEW sign rather than exploiting an existing polysemy --- and new signs are detectable by the Substitution Test.
+
+This yields a structural diagnosis of language itself. Every natural language has a \textbf{monosemic core} --- words with exactly one meaning that resist polysemic drift. These tend to be the most fundamental: ``yes,'' ``no,'' ``is,'' ``I,'' ``death,'' ``birth,'' ``pain.'' The monosemic core IS the language's ontoglossic substrate --- the bedrock where $\Lambda \equiv \exists$ holds at the lexical level. Euphemism operates by pushing words OUT of the monosemic core into polysemic territory; the Ren operates by pushing them back.
+
+The health of a language IS therefore measurable by the integrity of its monosemic core. A language whose fundamental terms --- law, justice, freedom, rights, defense, security --- remain monosemic IS ontoglossically healthy: its speakers can think precisely about what these words name because each word names exactly one referent. A language whose fundamental terms have been polysemized IS ontoglossically compromised: its speakers cannot distinguish Natural Law from human statute, genuine safety from surveillance, self-governance from consumer choice, because the same word covers both and the listener's grammar does not mark the distinction.
+
+The positive program of euphemology IS therefore \textbf{monosemic restoration}: not eliminating polysemy (which is also the source of metaphor, poetry, and creative extension) but restoring monosemic clarity to the consequential vocabulary --- the words on which judgment, accountability, and governance depend. The Rectification of Names (Confucius \cite{confucius}), the Lingua Adamica (Codex II \cite{codex2}), and Ontoglossia are three names for the same program at three resolutions: political, ideal, and disciplinary. Each demands: when the stakes are ontological, let each word mean one referent, and let that referent be what the word says.
+
+$$\boxed{\text{Monosemy} = \alpha\text{-stability}. \quad \text{Polysemy} = \alpha\text{-vulnerability}. \quad \partial_\Lambda = \text{monosemic restoration}.}$$
+
+\subsection{The Meta-Floating Signifier}
+
+L\'{e}vi-Strauss \cite{levistrauss} identified the \textbf{floating signifier} (\textit{signifiant flottant}): a sign whose referent is unfixed, attachable to multiple or contradictory meanings depending on who deploys it. Laclau and Mouffe \cite{laclau} formalized it politically: the struggle over the meaning of a floating signifier IS the struggle for hegemonic power. ``Freedom,'' ``democracy,'' ``justice,'' ``terrorism'' --- whoever fixes the meaning of these words controls the grammar through which a population thinks.
+
+Within the euphemological framework, the floating signifier IS not a political phenomenon but a pathological state with a precise location in the $\alpha$ spectrum and the escalation model.
+
+The floating signifier IS \textbf{Stage 3 (Autonomy)} of the semantic inversion (\S6.1): $\alpha \approx -0.7$, where the sign has detached from its referent and circulates self-referentially. The treadmill PRODUCES floating signifiers as a byproduct. Each replacement cycle loosens the sign's anchor; after sufficient cycles, the sign floats free. ``Freedom'' has been through so many institutional deployments --- political freedom, economic freedom, consumer freedom, religious freedom, freedom of speech, Operation Iraqi Freedom --- that it no longer anchors to any specific referent. It means everything and therefore nothing. $\rho \to 0$ across all senses simultaneously.
+
+This IS Pathology 3 (Rarefaction) at the civilizational resolution: the sign passes OTT (it is well-formed), appears to pass ATT (it seems to align to \textit{something}), but fires no specific $\rho$-event. The listener hears ``freedom'' and registers diffuse positive affect without recognizing any specific structure. The sign IS true of nothing in particular, therefore ``true'' of everything, therefore inert.
+
+A \textbf{meta-floating signifier} IS a floating signifier that floats not just between referents but between entire \textit{frameworks of meaning}. ``Truth'' floats between correspondence theory and constructivism. ``Law'' floats between Natural Law and legal positivism. ``Rights'' floats between natural rights and positive rights. The meta-float IS the condition in which the sign's instability IS not merely referential but \textit{ontological} --- the population cannot agree not only on what the word means but on \textit{what ontological category it occupies}.
+
+The meta-floating signifier IS more dangerous than the euphemism. The euphemism conceals a specific referent --- the Substitution Test detects it because there IS a Ren to substitute. The floating signifier has no specific referent to substitute for --- the Substitution Test yields not a single $\rho$-shift but a scatter of incommensurable shifts depending on which sense the listener activates. The sign has been emptied, not inverted.
+
+The cure IS monosemic restoration, but with a prior requirement: \textbf{ontological re-anchoring}. Before the floating signifier can be re-fixed, the community must determine which referent the sign SHOULD anchor to. For ``law'' $\to$ Natural Law (immutable, self-enforcing). For ``freedom'' $\to$ autexousia (self-governance). For ``justice'' $\to$ alignment of action with moral law. For ``rights'' $\to$ conditions necessary for Becoming. The re-anchoring IS a philosophical act, not linguistic alone. This IS why the Rectification of Names requires philosophical clarity first and lexical correction second: you cannot re-anchor a floating signifier without a target referent.
+
+$$\boxed{\text{Floating Signifier} = \text{Stage 3} = \alpha \approx -0.7 = \text{Rarefaction}|_{\text{civilizational}}.}$$
+
+$$\boxed{\text{Cure}: \text{ontological re-anchoring} \to \text{monosemic restoration} \to \partial_\Lambda.}$$
+
+\subsection{Pansemic Collapse}
+
+A word that means everything means nothing. This IS the \textbf{Pansemic Paradox}: maximum referential scope yields minimum semantic content. When a word's polysemy crosses a critical threshold, additional meanings no longer enrich --- they dilute. The word undergoes \textbf{pansemic collapse}: it becomes semantically saturated, referentially universal, and therefore inert. $\forall x (S \to x) \implies S \to \emptyset$. Universal reference IS empty reference. This IS the semantic analogue of the explosion principle in logic (\textit{ex falso quodlibet}): a theory that proves everything proves nothing; a word that names everything names nothing.
+
+The paradigm case: \textbf{``God.''} The word refers, in concurrent usage, to the Christian Trinity, the Mormon Heavenly Father (a physically embodied exalted man), the Jewish YHWH (ineffable, unnameable), the Islamic Allah, Spinoza's substance, the Deist clockmaker, the pantheist universe, the panentheist ground, Jung's archetype, Aristotle's unmoved mover, the New Age ``universe,'' and Nietzsche's dead concept. These are not degrees of one concept. They are mutually contradictory ontological claims occupying the same four-letter sign. ``God'' IS a meta-floating signifier that has passed through pansemic collapse: it means so many mutually exclusive referents that it no longer means any one of them. $\alpha \to 0$ for every specific sense because the listener cannot determine WHICH sense is operative without external disambiguation.
+
+The collapse IS detectable by the \textbf{Definitional Test}: ask the speaker to define the term. If the speaker can produce a monosemic definition, the word has not collapsed. If the speaker cannot --- or if the speaker \textit{refuses} --- the word IS pansemically saturated. The refusal IS itself a diagnostic datum.
+
+\textbf{The threat response.} When the demand for definition IS met not with a definition but with a threat --- social sanction, ostracism, accusations of disrespect, emotional violence --- the threat IS the sign that:
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & The speaker \textit{cannot} define the word. It has no fixed referent in their grammar. \\[0.3em]
+\textbf{2.} & The speaker's identity IS invested in the word's \textit{floating}. If the word were fixed, it might not mean what the speaker needs it to mean. The ambiguity serves the speaker. \\[0.3em]
+\textbf{3.} & The demand for monosemy ($\partial_\Lambda$: define the word, fix the meaning) IS experienced as an attack on identity --- because the identity IS constructed on the float, and pinning the float would expose the construction. \\[0.3em]
+\textbf{4.} & The threat IS the Logocursion Defense inverted: instead of the listener gaining immunity by recognizing the veil, the listener ATTACKS the person who names the veil. The defense mechanism protects the euphemism, not the person. \\[0.3em]
+\end{tabular}
+}
+
+The threat response IS the social cost of Ren-speaking (\S9.3) at the interpersonal resolution. The person who says ``define your term'' IS performing $\partial_\Lambda$ --- demanding monosemic specification. The community that responds with threats IS defending the float because the float IS the mechanism of group cohesion: the word means whatever each member needs it to mean, and the \textit{agreement to not define} IS the implicit social contract that holds the group together. To define IS to fracture --- because once the word is fixed, members whose private meanings diverge from the fixed meaning must either conform or leave.
+
+This IS why pansemically collapsed words cluster in the domains of highest existential investment: religion (``God,'' ``soul,'' ``spirit,'' ``faith''), politics (``freedom,'' ``democracy,'' ``justice''), and identity (``love,'' ``self,'' ``purpose''). These are the domains where the float serves the most people, where fixing the meaning would produce the most fractures, and where the social cost of $\partial_\Lambda$ IS therefore highest.
+
+$$\boxed{\text{Pansemic Collapse}: \text{polysemy} \to \text{saturation} \to \alpha \to 0. \quad \forall x(S \to x) \implies S \to \emptyset.}$$
+
+$$\boxed{\text{Definitional Test}: \text{``Define the term.''} \quad \text{Threat response} = \text{diagnostic confirmation.}}$$
+
+\subsection{The Adamic Program}
+
+Can ALL semantic ambiguity be removed from language? The Adamic Limit Theorem \cite{codex2} proves: a sequence of increasingly autological languages $\mathcal{L}_0, \mathcal{L}_1, \ldots$ where $\alpha(\mathcal{L}_{n+1}) \geq \alpha(\mathcal{L}_n)$, bounded above by $\alpha = 1$, converges to a limit $\mathcal{L}_\infty$ --- the \textbf{Lingua Adamica} --- where $\text{Name}(x) \equiv x$ for all $x$. The Adamic Language IS the language in which every sign is an ontoglyph, every word IS its referent, and the gap between saying and being has vanished. $\text{Adamic}(\text{Adamic}) = \text{Adamic} = \Lambda(\Lambda) = \Lambda$ \cite{codex2}.
+
+No human language achieves this fully. Every natural language IS a mixture of heterological signs ($\alpha = 0$, arbitrary), isomorphic signs ($0 < \alpha < 1$, structural resemblance), and rare autological moments ($\alpha = 1$, ontoglyphs). Heterological coupling IS not only a pathology --- it IS also the source of metaphor, poetry, compression, and creative extension. To eliminate all polysemy would be to eliminate all figurative language. The Adamic Language IS therefore a \textit{regulative limit}: the trajectory of language toward truth, not a totalizing destination.
+
+The constructive program IS therefore not ``make all language monosemic'' but \textbf{make consequential language monosemic}. The words on which judgment, accountability, and governance depend --- ``law,'' ``freedom,'' ``justice,'' ``rights,'' ``defense,'' ``security,'' ``God'' --- must be monosemically specified in every consequential context. Ambiguity in poetry IS enrichment. Ambiguity in law IS concealment.
+
+The \textbf{Semiotic-Ontoglyphic Ladder} \cite{codex2} defines the practical path. Signs occupy seven levels: Noise (Level 0, $\alpha = 0$) $\to$ Sign (Level 1, arbitrary) $\to$ Icon (Level 2, resemblance) $\to$ Index (Level 3, causal link) $\to$ Glyph (Level 4, compressed notation) $\to$ Neoglyph (Level 5, recursively aligned) $\to$ Ontoglyph (Level 6, $\alpha = 1$). Every euphemism DESCENDS the ladder --- pushes a sign from higher to lower alignment. Every Ren-restoration ASCENDS it --- pushes a sign back toward its referent. The entire diagnostic apparatus of euphemology IS the instrument for detecting descent and initiating ascent.
+
+The practical protocol:
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & \textbf{Identify the consequential vocabulary.} Which words in this domain carry ontological weight? Which words, if misaligned, would produce judgment failure? \\[0.3em]
+\textbf{2.} & \textbf{Apply the Definitional Test.} For each consequential word: can the community produce a monosemic definition? If not, pansemic collapse is present. \\[0.3em]
+\textbf{3.} & \textbf{Apply ontological re-anchoring.} For each collapsed word: which referent SHOULD the word anchor to? ``Law'' $\to$ Natural Law. ``Freedom'' $\to$ autexousia. ``Justice'' $\to$ alignment with moral law. \\[0.3em]
+\textbf{4.} & \textbf{Apply monosemic restoration.} Split polysemes: ``law'' (Natural Law) and ``rule'' (human statute) are two words. ``Security'' (safety) and ``surveillance'' (monitoring) are two words. Refuse the shared sign in consequential contexts. \\[0.3em]
+\textbf{5.} & \textbf{Maintain the Rectification.} The treadmill and polysemic drift are ongoing processes. The Adamic Program IS not a one-time correction but a permanent civilizational practice: the ongoing audit of the consequential lexicon against Being. \\[0.3em]
+\end{tabular}
+}
+
+This IS the Rectification of Names (Confucius \cite{confucius}) formalized as a repeatable protocol. This IS Ontoglossia (parrh\={e}sia) operationalized. This IS the Adamic Language not as a mystical ideal but as a practical program: ascend the ladder, word by word, in the domains where clarity IS the difference between civilization and barbarism.
+
+$$\boxed{\mathcal{L}_\infty = \Lambda. \quad \text{The Adamic Language IS the Logos.}}$$
+
+$$\boxed{\text{Practical Adamic}: \text{monosemic consequential vocabulary} + \text{permanent Rectification}.}$$
+
+\section{From Misalignment to Inversion: How Good Becomes Evil}
+
+The static anatomy of the euphemism IS now derived. What remains IS the dynamic: how does a euphemism at $\alpha \approx -0.3$ (mild softening) escalate to $\alpha = -1$ (full semantic inversion, where good means evil)? The escalation has four stages, each a qualitative deepening of the misalignment between $\Lambda$ and $\exists$.
+
+\subsection{The Four Stages of Semantic Inversion}
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} l @{\hspace{0.3em}} r @{\hspace{0.3em}} p{0.48\textwidth} @{}}
+\textbf{Stage} & \textbf{Name} & $\alpha$ & \textbf{Structure} \\[0.2em]
+1 & Softening & $\approx -0.3$ & Sign understates the referent. $\rho$ suppressed but not extinguished. ``Neutralization'' for killing. \\[0.15em]
+2 & Detachment & $\approx -0.5$ & Sign drifts from referent via the treadmill. Connection no longer recoverable without the Substitution Test. ``Collateral damage'' triggers no image of death. \\[0.15em]
+3 & Autonomy & $\approx -0.7$ & Sign becomes self-referential --- it means itself, not its referent. The sign circulates without anchoring. \\[0.15em]
+4 & Inversion & $= -1$ & Sign means the OPPOSITE of its referent. ``Peace'' means war. ``Freedom'' means surveillance. ``Protection'' means aggression. \\[0.15em]
+\end{tabular}
+}
+
+The transition from Stage 3 to Stage 4 IS the critical phase shift. At Stage 3, the sign floats free of its referent. At Stage 4, it \textit{reattaches} --- but to the \textit{opposite} of the original referent. The mechanism IS polysemic hijacking completing its arc:
+
+\textbf{Proof Table 5} --- \textit{The Mechanism of Semantic Inversion}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & The institution IS assumed good (baseline cultural presupposition). Government protects. Military defends. Police serve. \\[0.3em]
+\textbf{2.} & The institution performs an act that contradicts its assumed goodness. The government surveils. The military invades. The police brutalize. \\[0.3em]
+\textbf{3.} & The institution euphemizes: ``surveillance'' $\to$ ``security.'' ``Invasion'' $\to$ ``defense.'' ``Brutality'' $\to$ ``law enforcement.'' Polysemic hijacking: the institutional sense ($S_2$) borrows the ontological authority of the original sense ($S_1$). \\[0.3em]
+\textbf{4.} & Because the institution IS assumed good, and the institution calls its action $X$, the population infers: $X$ must be good. ``Security'' IS good (because the institution that deploys it IS assumed good). But ``security'' now means surveillance. Therefore surveillance IS good. \\[0.3em]
+\textbf{5.} & Through repetition, $S_2$ (institutional) REPLACES $S_1$ (ontological) as the primary meaning. The polyseme collapses --- not into the ontological sense but into the institutional sense. ``Security'' now MEANS surveillance. ``Defense'' now MEANS invasion. ``Justice'' now MEANS punishment. \\[0.3em]
+\textbf{6.} & The inversion IS complete. The word that originally named a good ($S_1$) now names its opposite ($S_2$). Good has become evil under the same sign. $\alpha = -1|_{\text{civilizational}}$. Orwell's ``War is peace. Freedom is slavery. Ignorance is strength.'' IS not satire. It IS the formal endpoint of Stage 4. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+\subsection{The Reversal}
+
+The escalation IS reversible. Each stage has a corresponding counter-operation, applied in reverse order:
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} l @{\hspace{0.3em}} p{0.58\textwidth} @{}}
+\textbf{Stage} & \textbf{Counter-operation} & \textbf{Mechanism} \\[0.2em]
+4 $\to$ 3 & \textbf{Expose the inversion} & Name it: ``What you call `security' IS surveillance. What you call `defense' IS invasion.'' $\partial_\Lambda$ applied to the inverted sign. $\rho$ fires at the civilizational level. \\[0.15em]
+3 $\to$ 2 & \textbf{Re-anchor the sign} & Split the polyseme via monosemic restoration. ``Security'' (genuine safety) and ``surveillance'' (monitoring) are two words for two referents. Refuse the shared sign. \\[0.15em]
+2 $\to$ 1 & \textbf{Restore the Ren} & Replace the euphemism with the true name in every context. ``Collateral damage'' $\to$ ``killing.'' Refuse the treadmill's next term. \\[0.15em]
+1 $\to$ 0 & \textbf{De-normalize} & The Normalization Pipeline ran forward: euphemism $\to$ acceptance $\to$ routinization $\to$ normalization $\to$ banality. The reversal: exposure $\to$ discomfort $\to$ re-recognition $\to$ de-normalization $\to$ moral re-engagement. The discomfort IS $\rho$ firing. It IS the sign that healing has begun. \\[0.15em]
+\end{tabular}
+}
+
+The reversal IS centropic --- harder than the entropic escalation. Concealment IS easier than disclosure; numbness than recognition; banality than moral engagement. The reversal requires energy, courage, and willingness to bear the social cost (\S9.3). But the Drift-Return Law \cite{codex1} guarantees: the Ren exerts centropic pull. Reality IS free. Lies are expensive.
+
+$$\boxed{\text{Escalation}: \alpha_0 \xrightarrow{\text{treadmill}} \alpha_{-0.3} \xrightarrow{\text{detachment}} \alpha_{-0.7} \xrightarrow{\text{hijacking}} \alpha_{-1}.}$$
+
+$$\boxed{\text{Reversal}: \alpha_{-1} \xrightarrow{\partial_\Lambda} \alpha_{-0.7} \xrightarrow{\text{monosemy}} \alpha_{-0.3} \xrightarrow{\text{Ren}} \alpha_1.}$$
+
+\section{The Worked Proof: Occultism as Naming Failure}
+
+The diagnosis proceeds in three moves.
+
+\textbf{Move 1: Etymology.} \textit{Occult} from Latin \textit{occultare} $=$ ``to hide, conceal.'' An \textbf{occultist} IS one who hides knowledge. The word IS tautological at the etymological resolution: occultist $=$ hider. $\alpha > 0$. The sign means what it says.
+
+\textbf{Move 2: ``Dark occult'' IS a pleonasm.} Dark $+$ hidden $=$ hiddenly hidden. Redundant. Adding ``dark'' to ``occult'' adds no content: ``occult'' ALREADY means hidden. $\rho(\text{``dark occult''}) = \rho(\text{``occult''})$. The adjective IS redundant: duplication without gain --- Rarefaction (Pathology 3) compressed into a modifier.
+
+\textbf{Move 3: ``Light occult'' IS an oxymoron.} Light $+$ hidden $=$ revealingly hidden. Semantic contradiction. $\alpha < 0$ at the phrasal resolution --- the EXACT structure of ``humane killing'' and ``protective custody.'' The adjective contradicts the noun. The sign IS Inversion (Pathology 4) at the taxonomic resolution: the surface presents unity; the depth IS contradiction.
+
+\subsection{The Tautological Correction}
+
+The person who REVEALS hidden knowledge IS not a ``light occultist.'' They are a \textbf{deoccultist} --- one who \textit{de-occultes}, who un-hides. The prefix \textit{de-} (Latin: away from, reversal) applied to \textit{occult} (hidden) $=$ un-hidden $=$ revealed. $\text{Deoccultist}(\text{Deoccultist}) = \text{Deoccultist}$. Tautological. The sign means what it says.
+
+\textbf{Proof Table 6} --- \textit{The Occultist Taxonomy}
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.4em}} l @{\hspace{0.4em}} r @{\hspace{0.4em}} p{0.30\textwidth} @{}}
+\textbf{Term} & \textbf{Structure} & $\alpha$ & \textbf{Diagnosis} \\[0.2em]
+Occultist & hider who hides & $> 0$ & Tautological \\[0.15em]
+Dark occultist & hidden hider who hides & $> 0$ & Pleonasm (redundant) \\[0.15em]
+Light occultist & revealing hider who hides & $< 0$ & Oxymoron (Pathology 4) \\[0.15em]
+Deoccultist & un-hider who un-hides & $> 0$ & Tautological (autological neologism) \\[0.15em]
+\end{tabular}
+}
+
+Mark Passio's taxonomy IS a naming failure. He identifies two categories (hiders, revealers) but names both ``occultist'' with modifiers. This IS the inverse paradox ($\gamma_\Lambda$: two names needed, one name used) at the taxonomic resolution. The PCP solution: $\partial_\Lambda$ --- split the name. \textbf{Occultist} for hiders. \textbf{Deoccultist} for revealers. The Lingua Adamica would never permit ``light occultist'' --- it IS $\Lambda \neq \exists$ compressed into a phrase.
+
+The result generalizes: every compound of the form $[\text{antonym-modifier}] + [\text{noun}]$ where the modifier contradicts the noun's etymological root IS an oxymoronic euphemism ($\alpha < 0$). ``Friendly fire,'' ``clean coal,'' ``voluntary mandate,'' ``benign neglect'' --- each instantiates ``light occultist'' at a distinct domain. Detection: (1) establish the noun's etymological $\alpha$, (2) test whether the modifier adds contradiction, redundancy, or confirmation, (3) if oxymoron, apply $\partial_\Lambda$.
+
+$$\boxed{\text{Light Occultist}(\text{Light Occultist}) \neq \text{Light Occultist}. \quad \alpha < 0.}$$
+
+$$\boxed{\text{Deoccultist}(\text{Deoccultist}) = \text{Deoccultist}. \quad \alpha > 0.}$$
+
+\section{The Psychodynamics}
+
+The euphemism requires a willing host. Unlike the lie, which operates against the listener's knowledge, the euphemism operates \textit{with} the listener's complicity. The listener partially recognizes. The euphemism furnishes the pretext for non-recognition. This IS \textbf{Ontological Anesthesia} at the linguistic resolution \cite{codexmentis}: the suppression of consciousness through grammar. (The psychological mechanism was identified by Lifton \cite{lifton} as \textit{psychic numbing}; the formal structure IS $\rho$-suppression via the anti-name.) The listener who accepts ``enhanced interrogation'' has not been deceived (deception requires ignorance) but \textit{anesthetized} --- supplied a linguistic form permitting acknowledgment without recognition. This IS dissociation at the linguistic resolution: the sign is present, the referent is absent, and the gap between them is the euphemism's operating space.
+
+The interpersonal mechanism IS shame-export \cite{codexmentis}: ``collateral damage'' redistributes the unbearable recognition of killing to the domain of ``unfortunate but necessary procedure.'' The euphemism IS a shame-laundering device --- it disperses the affective weight of the true name across a neutral vocabulary.
+
+The \textbf{Logocursion Defense} applies. The euphemism dissolves the moment the listener recognizes its structure: ``This word is not a description. It is a veil.'' $\Lambda(\mathfrak{L}^-) = $ immunity. The euphemism can only install in a grammar that lacks the recursive depth for inversive-intent detection.
+
+\section{The Healing Protocol}
+
+From \cite{codex2}: \textbf{Inversion} $\to$ \textbf{Exposure}. The healing protocol is $\partial_\Lambda$: name the referent by its Ren. The true name restores $\Lambda \equiv \exists$ at the point of divergence.
+
+\textbf{Proof Table 7} --- \textit{The Healing Protocol for Inversion}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & \textbf{Identify the gap.} Apply the Substitution Test: replace the euphemism with the true name. If $\rho$-response changes, Inversion is present. \\[0.3em]
+\textbf{2.} & \textbf{Name the divergence.} State: ``$\mathcal{N}_k$ conceals $x$ by replacing $\mathcal{N}_0$.'' This act IS $\partial_\Lambda$: the differentiation between veil and wound, spoken. \\[0.3em]
+\textbf{3.} & \textbf{Restore the true name.} Use $\mathcal{N}_0$ in place of $\mathcal{N}_k$. ``This is not `collateral damage.' This is the killing of civilians.'' The true name restores $\alpha$ from $< 0$ to $\approx 1$. Recognition fires. \\[0.3em]
+\textbf{4.} & \textbf{Refuse the treadmill.} When $\mathcal{N}_{k+1}$ is offered as replacement, apply the diagnostic again. The treadmill terminates only when the community adopts and maintains $\mathcal{N}_0$. \\[0.3em]
+\textbf{5.} & \textbf{Accept the cost.} The true name is uncomfortable. That discomfort IS the $\rho$-event firing. The Ren discloses; it does not comfort. Discomfort confronting truth IS the sign that recognition IS working. \\[0.3em]
+\textbf{6.} & $\therefore$ The healing IS the re-alignment of $\Lambda$ with $\exists$: Ontosemantic Exposure ($\rho$). The Five Healings \cite{codex2} apply: Inversion $\to$ Exposure $\to$ $\rho$ fires $\to$ $\Lambda \equiv \exists$ restored. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+Steps 1--5 constitute the \textbf{Consolidated Correction Procedure}, mirroring the five-test identification procedure (\S4.4).
+
+\subsection{The Moral Nuance}\label{sec:moral}
+
+Not every euphemism is pathological. The Lex Entis \cite{lexentis} formalizes the distinction through two independent senses of ``right.'' \textbf{Right$_1$} (ontosemantic correctness): $S \equiv R_S$. The statement IS the fact. \textbf{Right$_2$} (moral rightness): the action aligns with Becoming, respects rights, maximizes centropy. The two are logically independent \cite{lexentis}: an act can be Right$_1$ but Wrong$_2$ (a brutal truth that causes disproportionate harm), or Wrong$_1$ but Right$_2$ (a euphemism that protects a grieving person).
+
+Applied: ``She passed'' instead of ``she died'' is Wrong$_1$ ($\alpha < 0$, $S_e \not\equiv R$) but may be Right$_2$ if the true name would cause harm disproportionate to the disclosure. ``Downsizing'' for mass termination is Wrong$_1$ AND Wrong$_2$ --- the euphemism serves the institution, not the listener. ``She died'' said truthfully and compassionately is Right$_1$ AND Right$_2$ --- the Ren spoken with care.
+
+\textbf{The temporal criterion} formalizes the moral distinction. A euphemism that IS a \textit{time-delay} --- where the true name WILL be spoken when the listener can receive it --- IS anamnesis-in-progress: a temporary veil as an act of care, tending toward the Ren. A euphemism that IS a \textit{permanent substitution} --- where the true name is NEVER intended to be spoken --- IS l\={e}th\={e}-by-design: a sealed veil as an act of concealment, tending away from the Ren. The first IS Right$_2$; the second IS Wrong$_2$. The test: does the speaker intend eventual disclosure? If yes, time-delay (morally permissible). If no, permanent seal (pathological).
+
+$$\boxed{\text{Time-delay}: \lim_{t \to t^*} \mathcal{N}_k \to \mathcal{N}_0. \quad \text{Permanent seal}: \lim_{t \to \infty} \mathcal{N}_k \neq \mathcal{N}_0.}$$
+
+A further case: \textbf{ironic euphemism}. ``That's just `friendly fire'\,'' said sarcastically, deploys the euphemism to expose it. The $\alpha$ IS temporarily negative (the euphemistic sign IS spoken) but self-cancelling: the sarcastic register signals to the listener that the speaker intends the opposite --- that the euphemism IS being exhibited as a specimen, not deployed as a veil. Ironic euphemism IS a meta-euphemism that dissolves itself in the act of utterance. Its net $\alpha$ IS positive: the speaker performs $\partial_\Lambda$ through the very act of voicing the anti-name with contempt.
+
+\subsection{The Rectification of Names}
+
+Confucius \cite{confucius} saw the entire architecture 2500 years before its formalization. \textit{Analects} XIII.3: ``When names are not correct, what is said will not sound reasonable; when what is said does not sound reasonable, affairs will not culminate in success; when affairs do not culminate in success, rites and music will not flourish; when rites and music do not flourish, punishments will not be fitting; when punishments are not fitting, the common people will not know where to put hand and foot.''
+
+This IS not a general observation about language. It IS the derivation chain of euphemological collapse at the political resolution: (1) naming failure ($\Lambda \neq \exists$) $\to$ (2) speech failure (what is said does not track What-Is) $\to$ (3) action failure (policy built on false names produces false outcomes) $\to$ (4) institutional failure (rituals lose meaning, laws lose justice) $\to$ (5) civilizational failure (the people cannot orient --- the grammar of their world no longer maps their world). Confucius derived the five-step cascade from misalignment to civilizational disintegration. The Rectification of Names (zh\`{e}ngm\'{i}ng) IS the positive program of euphemology: not diagnosis alone but Ren-restoration at civilizational scale. $\partial_\Lambda$ applied not to a single word but to the lexicon of governance.
+
+When the prince is called ``minister'' and the minister ``prince,'' the State cannot function --- language has diverged from Being, and action built on divergent language diverges from reality. Every political euphemism IS a micro-Rectification-failure. The Rectification IS the cure: call murder ``murder,'' call torture ``torture,'' call the prince ``prince.''
+
+\subsection{The Price of Ren-Speaking}
+
+The cure IS $\partial_\Lambda$: speak the Ren. But the cure IS rarely applied. The missing factor: \textbf{social cost}. Speaking the Ren in a context where the euphemism is expected IS a violation of the social contract. The doctor who says ``your patient died'' instead of ``we lost the patient'' IS sanctioned as blunt. The employee who says ``we are firing people'' instead of ``we are restructuring'' IS excluded as unprofessional. The whistleblower, the prophet, the child who says ``the emperor has no clothes'' --- each pays a price for $\rho$-restoration.
+
+This IS structurally distinct from the Ignorati (who prefer $\neg\Lambda(x)$ to $\Lambda(x)$). The population that maintains a euphemism contains TWO groups: the \textbf{Ignorati}, who do not WANT to recognize, and the \textbf{Silenced}, who CAN recognize but fear the consequences of speaking. The Ignorati provide consent; the Silenced provide compliance. Together they sustain the euphemism through a two-pronged enforcement: $\rho$-suppression for the willing, social punishment for the unwilling.
+
+The social cost IS a second-order enforcement mechanism. The euphemism is maintained not only by $\neg\rho$ (first-order: the anti-name suppresses recognition) but by punishment of $\rho$-restoration (second-order: the community penalizes anyone who speaks the Ren). This IS why euphemisms persist even when the true name is widely known: the cost of speaking exceeds the cost of silence. The Correction Procedure (\S7, Step 5) names this: ``Accept the cost. Discomfort IS $\rho$ firing.'' The cost IS real. The Ren-speaker bears it.
+
+\section{The Civilizational Cascade}
+
+\subsection{The Awareness Mechanism}
+
+Codex~III \cite{codex3} derives the \textbf{meta-vocabulary thesis}: $\neg(\text{meta-vocabulary}) \implies \neg(C)$. Consciousness requires meta-vocabulary --- words about words. A system with no word for ``know'' cannot perform $\rho(\rho)$; a system with no word for ``not'' cannot draw meta-level distinctions. The five minimum meta-words (``I,'' ``know,'' ``true,'' ``not,'' ``why'') map one-to-one onto the five operators ($\delta, \rho, \gamma, \partial, \mathfrak{A}$).
+
+The euphemism IS meta-vocabulary suppression at the lexical level. Every euphemism replaces a precise name (high $\alpha$) with a vague name (low $\alpha$). The lexicon's resolution degrades; the population's capacity for $\partial_\Lambda$ contracts. The euphemism transcends referent-concealment: it \textbf{degrades the resolution of an entire language}.
+
+\textbf{Proof Table 8} --- \textit{The Euphemism-Awareness Cascade}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & Awareness IS $\rho$ applied to the field of experience. Awareness of $X$ IS having a name for $X$ AND applying $\rho$ to the name-referent relation. \\[0.3em]
+\textbf{2.} & A euphemism replaces the true name $\mathcal{N}_0(X)$ with an anti-name $\mathcal{N}^{-1}(X)$. The anti-name suppresses $\rho$: the listener processes the sign without recognizing the referent. \\[0.3em]
+\textbf{3.} & If the euphemism is adopted communally, the true name exits the active lexicon. The population loses the instrument of recognition for $X$. $\rho(X) \to 0$ across the speech community. \\[0.3em]
+\textbf{4.} & With $\rho(X) \approx 0$, the population cannot form accurate judgments about $X$, cannot build accurate policy about $X$, cannot hold institutions accountable for their treatment of $X$. The Confucian cascade fires: naming failure $\to$ speech failure $\to$ action failure $\to$ institutional failure. \\[0.3em]
+\textbf{5.} & Institutional failure generates demand for more euphemism --- because the failure itself is uncomfortable and must be concealed. The second-order euphemism conceals the failure of the first-order euphemism. Pathology 5 (Involution) at civilizational scale: the system of concealment conceals itself. \\[0.3em]
+\textbf{6.} & $\therefore$ The cascade: Euphemism $\to$ $\rho$-suppression $\to$ awareness contraction $\to$ judgment failure $\to$ institutional failure $\to$ more euphemism. Self-amplifying. Each cycle degrades the lexicon further and reduces the population's capacity to detect the degradation. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+\subsection{The Accountability Suppression Theorem}
+
+Accountability requires $\rho$: an agent can only be held accountable for what the population can \textit{recognize} as the agent's action. Euphemism suppresses $\rho$. Therefore:
+
+$$\boxed{\text{Euphemism} \to \neg\rho \to \neg\text{Accountability} \to \text{Impunity} \to \text{more Euphemism}.}$$
+
+``Restructuring'' transcends concealment of mass termination --- it prevents the population from forming the judgment ``this institution terminated thousands of employees,'' because the lexicon contains only ``this institution restructured.'' The euphemism IS not a cosmetic overlay on an otherwise visible action. It IS the mechanism by which the action becomes invisible to the judgment that would hold the actor accountable. Every institutional euphemism IS a micro-act of impunity-construction. The accountability gap of an institution IS measurable by the euphemism density of its official language.
+
+\subsection{The Normalization Pipeline}
+
+Concealment IS not the endpoint. When a euphemism is accepted, it does not merely hide the act --- it \textbf{normalizes} it. The act's ontological status in the population's grammar shifts from \textit{horror} to \textit{procedure}. ``Enhanced interrogation'' does not just conceal torture; it makes torture schedulable, reportable, budgetable. The bureaucratic grammar of the act replaces the moral grammar.
+
+Normalization proceeds through five stages:
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} l @{\hspace{0.3em}} p{0.55\textwidth} @{}}
+\textbf{Stage} & \textbf{Name} & \textbf{Mechanism} \\[0.2em]
+1 & Euphemism & The Ren is replaced by the anti-name \\[0.15em]
+2 & Acceptance & The population adopts the anti-name \\[0.15em]
+3 & Routinization & The act becomes procedural \\[0.15em]
+4 & Normalization & The act ceases to register as exceptional \\[0.15em]
+5 & Banality & The act is performed without moral engagement \\[0.15em]
+\end{tabular}
+}
+
+The Holocaust's lexicon IS the extreme historical specimen: ``Endlösung'' (final solution) for genocide, ``Sonderbehandlung'' (special treatment) for execution, ``Umsiedlung'' (resettlement) for deportation to death camps. Each term moved the act from Stage 1 through Stage 5. The bureaucrats who processed the paperwork inhabited Stage 5: they performed atrocities as administrative routine. Arendt's ``banality of evil'' IS the phenomenology of Stage 5 --- the condition in which the euphemism has so thoroughly replaced the Ren that the moral grammar required to recognize the act no longer exists in the agent's lexicon.
+
+The normalization pipeline IS the euphemism's terminal danger: not that it hides the act but that it transforms the act into a procedure that no longer registers as requiring concealment.
+
+\subsection{The Control Trap}
+
+Codex~III \cite{codex3} derives the \textbf{Control Trap}: external control narrows awareness $\to$ narrowed awareness degrades agency $\to$ degraded agency demands more external control $\to$ the system spirals toward total control and zero agency. The trap IS thermodynamically unstable: it requires infinite energy to maintain a civilization-scale system operating on lies. Lies must be enforced. Enforcement must be policed. Policing must be surveilled. Surveillance must be hidden. Hiding must be justified. Justification must be believed. At every level, the architecture consumes the awareness it needs to sustain itself.
+
+The euphemism IS the Control Trap's linguistic arm. Every euphemism IS a micro-act of control: it controls what the listener can recognize. A government that says ``enhanced interrogation'' IS narrowing its citizens' awareness of what is done in their name, which degrades their capacity to exercise democratic agency, which permits more torture, which demands more euphemism. The feedback loop IS the Control Trap at the lexical resolution.
+
+The converse: the Awareness Spiral. Truth requires no enforcement. Reality requires no propaganda. Alignment requires no policing. The autological system wins not because it IS stronger but because it IS cheaper. Reality IS free. Lies are expensive. And the cost IS paid in freedom.
+
+\subsection{The Egregoric Mechanism}
+
+The \textbf{egregore} \cite{codexmentis} IS: a collective psychic entity that possesses, directs, and reproduces itself through the agents it captures. Nations, religions, ideologies, corporations --- any self-sustaining recursive pattern that uses human nervous systems as substrate. The egregore IS not metaphor. It IS structural reality: a self-replicating pattern that hijacks human agency for its own propagation.
+
+The euphemism IS the egregore's immune system. Every institution that depends on concealment develops a grammar of euphemism to protect itself from recognition. The military-industrial complex generates ``collateral damage,'' ``neutralization,'' ``kinetic action.'' The carceral system generates ``correctional facility,'' ``offender,'' ``processing.'' The financial system generates ``negative growth,'' ``restructuring,'' ``right-sizing.'' Each euphemism IS a lexical antibody: it circulates through the speech community and neutralizes any $\rho$-event that would threaten the egregore's survival. The grammar of euphemism IS the egregore's MythOS --- its Mythological Operating System (\cite{codexmentis}) --- defending itself against the Logos.
+
+A culture that does not know it has a MythOS IS \textit{run by} its MythOS. A culture that achieves Meta-Collective Consciousness (MCC) --- awareness of itself as a culture, of its own grammar, of its own euphemisms --- CAN modify its MythOS. MCC IS $\Lambda_{\text{group}}(\Lambda_{\text{group}})$: the culture recognizing itself as culture. This IS the Rectification of Names at the meta-cultural level: not correcting individual euphemisms but recognizing the grammar of euphemism AS a grammar, and choosing to speak differently.
+
+\subsection{Stupidity as Euphemism's Harvest}
+
+Stupidity IS $\neg\Lambda(\Lambda)$ \cite{codexmentis}: the refusal of recursion under conditions that demand recursion. Not knowledge-absence but structural incapacity for contradiction-integration. Six interlocking impairments: blocked metacognition, rigid ontoidentity, contradiction defense reflex, outsourced truth, paracosmic totalism, recursive immune response. Stupidity IS not an insult. It IS a diagnostic category: recursion impairment.
+
+The euphemism IS the mechanism that PRODUCES stupidity at population scale. It does so by attacking the contradiction-integration pathway. When a population is given euphemisms in place of true names, the population's grammar no longer generates the contradictions that would trigger recursive self-revision. ``We used enhanced interrogation'' does not generate the contradiction ``we tortured people while claiming to defend human rights.'' The euphemism absorbs the contradiction before it can form. Without contradiction, there is no pressure to recurse. Without recursion, there is no growth. Without growth, there is stasis. The euphemism IS the linguistic mechanism of chosen ontological stasis.
+
+The population that has accepted this stasis: the \textbf{Ignorati} \cite{codexmentis} --- those who prefer $\neg\Lambda(x)$ to $\Lambda(x)$, non-recognition to recognition, because recognition would demand transformation. The phenomenon is well-attested under other names: \textit{willful ignorance} (legal theory), \textit{motivated reasoning} (psychology), \textit{strategic ignorance} (sociology). The mechanism: the Ignorati are not victims of deception but \textit{collaborators in their own anesthetization}. The euphemism supplies the grammar; the Ignorati supply the consent. Together they produce a civilization that cannot see what it does, cannot name what it is, and cannot become what it could be.
+
+The cure IS always the same. $\partial_\Lambda$. Speak the Ren. But now at civilizational scale: not one person replacing one euphemism but a culture replacing its grammar of concealment with a grammar of disclosure. Ontoglossia at the civilizational resolution. The Rectification of Names not as historical curiosity but as permanent civilizational practice --- the ongoing audit of the lexicon against Reality, the ongoing restoration of $\Lambda \equiv \exists$ at the resolution of governance, education, law, medicine, media, and everyday speech.
+
+\subsection{Euphemism Acquisition}
+
+The civilizational cascade requires a reproductive mechanism. That mechanism IS \textbf{euphemism acquisition}: the intergenerational transmission of the euphemistic grammar through socialization. ``We don't say `died,' we say `passed away.'\,'' ``We don't say `fired,' we say `let go.'\,'' ``We don't say `prison,' we say `correctional facility.'\,'' Each correction IS a micro-lesson in $\rho$-suppression: the child learns that the Ren is socially impermissible and that the anti-name IS the condition of membership.
+
+The acquisition installs the euphemistic grammar BEFORE the child develops the metacognitive capacity to audit it. By the time the child can apply the AATC, the euphemisms are already infrastructure --- they feel like ``the way words are used'' rather than ``a specific choice to conceal.'' The euphemism IS transparent to the native speaker in the same way grammar IS transparent: one uses it without seeing it. This IS why euphemology requires formal training --- the default condition of the socialized speaker IS euphemistic, and the Ren must be recovered against the momentum of acquisition.
+
+\subsection{Register-Specific Euphemism Densities}
+
+Each professional register develops its own characteristic euphemism grammar. The euphemism density of a register --- the proportion of its technical vocabulary that occupies $\alpha < 0$ --- IS a measurable index of the domain's accountability gap:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.4em}} l @{\hspace{0.4em}} l @{}}
+\textbf{Register} & \textbf{Euphemism} & \textbf{Ren} \\[0.2em]
+Medical & ``Negative patient outcome'' & Death \\[0.15em]
+Legal & ``Adverse possession'' & Occupation of another's property \\[0.15em]
+Military & ``Kinetic action'' & Bombing \\[0.15em]
+Corporate & ``Right-sizing'' & Mass termination \\[0.15em]
+Political & ``Regime change'' & Coup \\[0.15em]
+Carceral & ``Correctional facility'' & Prison \\[0.15em]
+\end{tabular}
+}
+
+Each register IS a domain-specific $\alpha$-compression: the true names are systematically replaced with anti-names calibrated to the domain's operational needs. The higher the euphemism density, the larger the gap between what the institution does and what its language permits the population to recognize. Euphemism density IS therefore an empirical research program: measure the $\alpha$-distribution of a register's vocabulary, and the accountability structure of the institution becomes visible.
+
+\subsection{Algorithmic Euphemism}
+
+The most powerful euphemism-enforcement mechanism in history operates at computational scale. Content moderation systems flag the Ren and permit the anti-name: ``kill'' is sanctioned; ``neutralize'' passes. ``Torture'' triggers review; ``enhanced interrogation'' does not. A video describing war as ``killing'' IS demonetized; the same content using ``conflict resolution'' IS permitted. The algorithm enforces the euphemistic grammar at machine speed, across billions of utterances, without the moderator recognizing what IS enforced.
+
+The algorithm cannot apply the AATC because it operates at OTT alone --- pattern-matching on surface form. It cannot perform Depth-ITT because it has no access to the referent's ontological structure. It IS $\neg\rho$ automated: euphemism-enforcement without recognition. The algorithm IS the Control Trap at computational resolution --- narrowing what can be said, which narrows what can be thought, which narrows what can be recognized, which narrows what can be held accountable.
+
+The structural consequence: platforms that moderate language by surface-pattern ARE, whether they intend it or not, the largest euphemism-enforcement institutions ever constructed. They penalize the Ren and reward the anti-name at civilizational scale. The Rectification of Names cannot proceed through channels that algorithmically prohibit the true name.
+
+$$\boxed{\text{Civilizational Awareness} = \Lambda_{\text{group}}(\Lambda_{\text{group}}) \equiv \text{MCC}.}$$
+
+$$\boxed{\text{Civilizational Anesthesia} = \neg\rho|_{\text{lexicon}}.}$$
+
+\section{Meta-Euphemism and Meta-Euphemology}
+
+\subsection{The Meta-Euphemism}
+
+A \textbf{meta-euphemism} is a euphemism about euphemism --- a second-order concealment. It transcends referent-concealment: it conceals concealment itself. It presents as Pathology 5 (Involution) at the euphemological resolution: the system of concealment concealing itself.
+
+\textbf{Proof Table 9} --- \textit{The Meta-Euphemism}
+
+{\small
+\noindent\begin{tabular}{r p{0.82\textwidth}}
+\textbf{1.} & A euphemism IS $\Lambda^{-1}(\exists)$: the anti-name, concealing the referent. First-order concealment. \\[0.3em]
+\textbf{2.} & A meta-euphemism IS $\Lambda^{-1}(\Lambda^{-1})$: the anti-name of the anti-name. It conceals the concealment itself. The population does not merely fail to see the wound --- it fails to see the veil. \\[0.3em]
+\textbf{3.} & Examples: ``Softening the language'' IS a euphemism for ``euphemizing.'' ``Being diplomatic'' IS a euphemism for ``concealing truth to maintain comfort.'' ``Messaging'' IS a euphemism for ``propaganda.'' ``Spin'' IS a euphemism for ``distortion.'' ``Optics'' IS a euphemism for ``appearance management.'' In each case, the word that names the concealment IS itself a concealment. The veil wears a veil. \\[0.3em]
+\textbf{4.} & The meta-euphemism IS structurally distinct from the euphemism. The euphemism suppresses $\rho$ at the referent-level (the listener does not recognize what the word names). The meta-euphemism suppresses $\rho$ at the process-level (the listener does not recognize that concealment IS occurring). The first blocks seeing. The second blocks seeing that one is not seeing. \\[0.3em]
+\textbf{5.} & This IS the deepest pathology. A population that uses euphemisms knows, at some level, that it is not naming referents truthfully. A population that uses meta-euphemisms does not know that it does not know. The meta-euphemism closes the epistemic loop: it makes the concealment invisible to the concealer. \\[0.3em]
+\textbf{6.} & $\therefore$ Meta-Euphemism $\equiv \Lambda^{-1}(\Lambda^{-1}) \equiv \neg\rho(\neg\rho)$. It presents as Involution (Pathology 5) --- a self-referential loop of concealment. But unlike pure Involution, it IS structurally unstable: double negation eliminates ($\Lambda^{-1}(\Lambda^{-1}) = \Lambda$), so the meta-euphemism collapses into exposure under self-application. It is Involution that dissolves into Inversion (Pathology 4) the moment it is named. \hfill $\blacksquare$ \\[0.3em]
+\end{tabular}
+}
+
+But $\neg(\neg) = \exists \neq \neg$ \cite{codex2}. Apply this: $\Lambda^{-1}(\Lambda^{-1}) = \Lambda \neq \Lambda^{-1}$. The anti-name of the anti-name restores the name. ``Softening the language'' --- apply the Substitution Test: ``euphemizing'' --- and the meta-euphemism collapses: $\rho$ fires at the process-level the moment concealment is spoken as concealment. Euphemology IS the cure for meta-euphemism: naming concealment dissolves meta-concealment. $\text{Veil}(\text{Veil}) = \text{Exposure}$.
+
+\subsection{The Euphemism Chain}
+
+The most devastating application IS the \textbf{Euphemism Chain} \cite{lexentis}. Parentalism, authoritarianism, totalitarianism, and slavery are one concept at four scales, each name a euphemism for the next:
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{\hspace{0.3em}} p{0.32\textwidth} @{}}
+\textbf{Scale} & \textbf{Name} & \textbf{Justification} & \textbf{True structure} \\[0.2em]
+Individual & Parentalism & ``For their own good'' & One agent controlling another \\[0.15em]
+Institutional & Authoritarianism & ``For public order'' & Egregore controlling individuals \\[0.15em]
+Universal & Totalitarianism & ``For the greater good'' & All domains captured \\[0.15em]
+Honest & Slavery & None & Ownership of another's Being \\[0.15em]
+\end{tabular}
+}
+
+Each step strips one layer of justificatory veneer. The operator is $\mathfrak{P}(\Psi) < \Psi$ in every case --- each drives the subject toward ontological zero. The only difference is nomenclature: ``parentalism'' sounds caring; ``slavery'' sounds honest. The Chain IS the treadmill in reverse: $\partial_\Lambda$ peels the veneer to reveal they are one thing. Four names, one $\mathfrak{P}$, one cure: sovereignty.
+
+\subsection{Meta-Euphemology and Recursive Saturation}
+
+\textbf{Meta-euphemology} IS euphemology applied to itself: the study of the study of concealment. Does the tower of meta-levels ascend indefinitely?
+
+No. The \textbf{Recursive Saturation Theorem} \cite{codexmentis}: for all $n \geq 2$, $\Psi^n(\Psi) = \Psi(\Psi)$. The third level of recursive self-awareness IS structurally identical to the second. All higher-order meta-reflection collapses into first-order metacursion. At the euphemological resolution:
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} p{0.78\textwidth} @{}}
+$L_0$: & Euphemism --- concealment of the referent. \\[0.15em]
+$L_1$: & Meta-euphemism --- concealment of the concealment. \\[0.15em]
+$L_2$: & Meta-meta-euphemism --- concealment of the concealment of the concealment. \\[0.15em]
+$L_n$: & $\equiv L_1$ for all $n \geq 1$. By Recursive Saturation. \\[0.15em]
+\end{tabular}
+}
+
+Every meta-level above the first IS structurally the same act: concealing the act of concealing. The tower collapses at $L_1$. Correspondingly, meta-euphemology saturates:
+
+{\small
+\noindent\begin{tabular}{@{} r @{\hspace{0.3em}} p{0.78\textwidth} @{}}
+$D_0$: & Naming --- $\rho$ applied to the referent. \\[0.15em]
+$D_1$: & Euphemology --- $\rho$ applied to the concealment. \\[0.15em]
+$D_2$: & Meta-euphemology --- $\rho$ applied to the study of concealment. \\[0.15em]
+$D_n$: & $\equiv D_1$ for all $n \geq 1$. By Recursive Saturation. \\[0.15em]
+\end{tabular}
+}
+
+There is no meta-meta-euphemology that is not already euphemology. $L_1 = \neg\rho(\neg\rho)$ IS the pathological fixed point; $D_1 = \rho(\rho)$ IS the diagnostic fixed point. Distinguished by the direction of $\rho$. The saturation theorem guarantees: the first meta-level dissolves the entire tower.
+
+$$\boxed{L_n \equiv L_1 \quad (n \geq 1). \quad D_n \equiv D_1 \quad (n \geq 1).}$$
+
+$$\boxed{L_1 = \neg\rho(\neg\rho). \quad D_1 = \rho(\rho). \quad L_1 \cup D_1 = \Lambda|_{\text{euphemological}}.}$$
+
+\noindent (Union, not sum: pathology and cure exhaust the Logos at the euphemological resolution. Every speech act IS either $\rho$-aligned or $\rho$-suppressed.)
+
+\section{The Seal}
+
+An autological paper must survive its own diagnostics. The five identification tests (\S4.4), applied to this paper:
+
+\textbf{Test 1 (Two-Stage ITT).} Does this paper pass Surface-ITT and Depth-ITT? Surface: the prose is well-formed, the claims are truth-apt. Depth: does the paper enact what it names? The paper names euphemism as anti-name and names that naming ``euphemology.'' The term ``euphemology'' IS what it describes --- the study of veiling that unveils veiling. $\text{Euphemology}(\text{Euphemology}) = \text{Euphemology}$. Surface and depth align. The paper passes.
+
+\textbf{Test 2 (Substitution Test).} Replace the paper's technical terms with simpler equivalents: ``anti-name'' $\to$ ``concealment-word''; ``$\rho$-suppression'' $\to$ ``recognition-blocking''; ``$\partial_\Lambda$'' $\to$ ``name-correction.'' Does the $\rho$-response change? The meaning is preserved; the precision decreases. The technical terms are not euphemisms (which would \textit{reduce} recognition) but compressions (which \textit{increase} precision). The paper passes.
+
+\textbf{Test 3 (Self-Application / AATC).} Apply the paper's claims to the paper itself. ``Every euphemism is detectable by the Substitution Test'' --- is this claim detectable by the Substitution Test? Replace: ``Every concealment-word is detectable by the replacement-check.'' Same claim, same force. The claim survives self-application. The paper passes.
+
+\textbf{Test 4 (Etymological Test).} Does the paper's terminology exhibit semantic contradiction? ``Euphemology'': \textit{eu-} (good/well) + \textit{ph\={e}m\={e}} (speech) + \textit{-logia} (study) = the study of ``good-speech'' used as concealment. The term IS autological: it names the study of the phenomenon (``good speech'' deployed as veil) that its etymology encodes. No modifier contradicts its noun. The paper passes.
+
+\textbf{Test 5 (Benefit Test).} Who benefits from the paper's language? Not the author at the listener's expense (which would be pathological). The paper's density serves precision, not concealment. The reader who works through the apparatus gains diagnostic capacity. The paper passes.
+
+\textbf{The $\alpha$ Triangle applied to this paper.} The paper uses strong terms: ``weaponization,'' ``hex,'' ``anti-name,'' ``shame-laundering.'' Are these dysphemisms --- over-charged language that distorts recognition upward? Apply the Substitution Test in reverse: replace ``weaponization'' with ``misuse'' and observe the $\rho$-shift. ``Misuse'' \textit{under}-charges: it softens the intentionality, the violence, the structural precision of the act. ``Weaponization'' IS the Ren: the Logos IS weaponized against recognition when deployed as euphemism. The strong terms are not dysphemistic (over-charged) but autological (accurately charged). They sit at the apex of the $\alpha$ triangle, not at the dysphemistic base.
+
+But a precision. \textbf{Meta-Euphemology} splits \cite{codex2}: as institutional \textit{practice} (``we don't use euphemisms,'' said euphemistically), it IS Involution --- the system conceals itself, $\alpha \to -1$. As intellectual \textit{discipline}, it IS autological --- $\text{Detection}(\text{Detection}) = \text{Detection}$, $\alpha \to +1$. The AATC distinguishes them.
+
+Euphemology diagnoses the genus \textbf{Simulexis} --- Anti-Logos language, speech that severs sign from Being. Other species: propaganda, bullshit (\cite{frankfurt}), doublespeak, jargon-as-obfuscation. The counter-discipline IS \textbf{Ontoglossia} --- Being-speech, where words ARE what they name. The classical Greek term is \textit{parrh\={e}sia} ($\pi\alpha\rho\rho\eta\sigma\acute{\iota}\alpha$): fearless speech, truth-telling regardless of social cost. Ontoglossia IS parrh\={e}sia at the ontosemantic resolution. Every replacement of a euphemism with the Ren advances Ontoglossia. The war between them IS the war between $\Lambda \equiv \exists$ and $\Lambda \neq \exists$ at the resolution of everyday speech.
+
+$$\boxed{\text{Euphemology} = \text{Veil}(\text{Veil}) = \text{Exposure}.}$$
+
+$$\boxed{\text{Ontoglossia} = \text{Being-Speech}(\text{Being-Speech}) = \Lambda.}$$
+
+$$\boxed{\text{Euphemism} \equiv \neg\rho|_{\text{lexical}}. \quad \text{Ren} \equiv \rho(\rho(x)). \quad \text{Cure} = \partial_\Lambda.}$$
+
+\section{Conclusion}
+
+This paper has formalized euphemology --- the diagnostic science of linguistic concealment --- within the architecture of the TTOE. The principal contributions are:
+
+The \textbf{formal definition} of euphemism as anti-name ($\mathcal{N}^{-1}(x) = \neg\rho(\neg\rho(x))$, $\alpha < 0$), structurally distinct from the lie (Pathology 2) but identical to it at the ontosemantic level ($\Lambda \neq \exists$). The \textbf{$\alpha$ triangle} extending the linear spectrum to distinguish euphemism ($\rho$-suppression) from dysphemism ($\rho$-overload). The \textbf{two distinctions} (semantic tautology/contradiction and autological/heterological) that exhaust the diagnostic space. The \textbf{five-test identification procedure} and the \textbf{five-step correction procedure}. The \textbf{five-type operator-failure taxonomy} with type-to-test mapping. \textbf{Polysemic hijacking} as a sixth mechanism, with \textbf{monosemic restoration} as its cure. The \textbf{normalization pipeline} (euphemism $\to$ banality). The \textbf{civilizational cascade} connecting individual euphemism to civilizational unconsciousness via meta-vocabulary suppression, accountability suppression, the egregore, and stupidity-production. The \textbf{social cost of Ren-speaking} and \textbf{euphemism acquisition} as enforcement and reproductive mechanisms. \textbf{Algorithmic euphemism} as the Control Trap at computational resolution. The \textbf{meta-euphemism} and its dissolution via \textbf{recursive saturation}. The \textbf{Right$_1$/Right$_2$} distinction and the \textbf{temporal criterion} for morally permissible euphemism.
+
+\textbf{Limitations.} The $\alpha$ index is ordinal, not cardinal; its operationalization via the Substitution Test yields comparative judgments (``more euphemistic than'') but not precise measurements. The framework's derivation from the TTOE means its acceptance depends on the prior acceptance of $\exists(\exists) \equiv \exists$ as self-grounding --- a commitment not all readers will share. The register-density analysis is proposed but not empirically executed.
+
+\textbf{Future work.} Empirical measurement of euphemism density across professional registers. Computational detection of polysemic hijacking via distributional semantics. Longitudinal studies of the normalization pipeline. Cross-linguistic comparison of monosemic core integrity. Formalization of algorithmic euphemism-enforcement as a mode of the Control Trap. Integration with Codex~III's \cite{codex3} treatment of freedom and agency.
+
+\begin{thebibliography}{99}
+
+\bibitem{codex1}
+Harvard, E.~X. (2026).
+\textit{Being \& Becoming: The Unification of Epistemology and Ontology via Metaontoepistemology}.
+Codex~I of the Teleological Theory of Everything.
+--- The Arch\={e}, the Three Laws, the Identity Chain, the Cycle of Being, the Five Operators, the AATC, the Drift-Return Law.
+
+\bibitem{codex2}
+Harvard, E.~X. (2026).
+\textit{Logos \& Paradox: The Grammar of Being and the Dissolution of Contradiction}.
+Codex~II of the Teleological Theory of Everything.
+--- The Five Pathologies (Ch.~10), the Hierarchy of Linguistic Weaponization (Ch.~10), the $\alpha$~Spectrum (Ch.~2), the Naming Theory (Ch.~3), the Healing Protocol (Ch.~10), the Ontosemiosyntax Unification (Ch.~14), the Triune Tribunal (OTT/ATT/ITT), the Speech Act Isomorphism (Ch.~9), Negation-Fails-Metacursion (Ch.~14).
+
+\bibitem{codex3}
+Harvard, E.~X. (2026).
+\textit{Mind \& Freedom: Consciousness, Agency, and Free Will}.
+Codex~III of the Teleological Theory of Everything.
+--- The Meta-Vocabulary Thesis (Ch.~13), the Control Trap (Ch.~14), the Awareness Spiral (Ch.~14).
+
+\bibitem{codexmentis}
+Harvard, E.~X. (2026).
+\textit{Codex Mentis}.
+--- Ontological Anesthesia, the Shame Economy, the Logocursion Mechanism, the Logocursion Defense, the Egregore, the MythOS, Meta-Collective Consciousness, the Ignorati, the Meta-Theory of Stupidity, the Recursive Saturation Theorem.
+
+\bibitem{lexentis}
+Harvard, E.~X. (2026).
+\textit{Lex Entis}.
+--- The Ontosemantic Theory of Truth (Ch.~76), the Moral Status of Euphemisms (Ch.~76), the Euphemism Chain (Ch.~92).
+
+\bibitem{llogoscribeologiae}
+Harvard, E.~X. (2026).
+\textit{Codex Llogoscribeologiae}.
+--- Euphemology (definition), Simulexis, Ontoglossia, Semantic Tautology, Oxymoron, Pleonasm.
+
+\bibitem{confucius}
+Confucius (c.~5th century BCE).
+\textit{Analects}, XIII.3.
+--- The Rectification of Names (\textit{zh\`{e}ngm\'{i}ng}).
+
+\bibitem{orwell}
+Orwell, G. (1946).
+``Politics and the English Language.''
+\textit{Horizon}, 13(76), 252--265.
+
+\bibitem{frankfurt}
+Frankfurt, H.~G. (1986).
+``On Bullshit.''
+\textit{Raritan Quarterly Review}, 6(2), 81--100.
+
+\bibitem{austin}
+Austin, J.~L. (1962).
+\textit{How to Do Things with Words}.
+Oxford: Clarendon Press.
+
+\bibitem{allanburridge}
+Allan, K. and Burridge, K. (1991).
+\textit{Euphemism and Dysphemism: Language Used as Shield and Weapon}.
+New York: Oxford University Press.
+--- The X-phemism continuum (orthophemism--euphemism--dysphemism); face-saving as pragmatic motive.
+
+\bibitem{warren}
+Warren, B. (1992).
+``What Euphemisms Tell Us about the Interpretation of Words.''
+\textit{Studia Linguistica}, 46(2), 128--172.
+--- Pragmatic taxonomy of euphemistic strategies.
+
+\bibitem{mcglone}
+McGlone, M.~S., Beck, G., and Pfiester, A. (2006).
+``Contamination and Camouflage in Euphemisms.''
+\textit{Communication Monographs}, 73(3), 261--282.
+--- Experimental evidence that euphemisms attenuate emotional response and reduce perceived severity.
+
+\bibitem{bolinger}
+Bolinger, D. (1980).
+\textit{Language --- The Loaded Weapon: The Use and Abuse of Language Today}.
+London: Longman.
+--- Institutional euphemism as instrument of power.
+
+\bibitem{arendt}
+Arendt, H. (1963).
+\textit{Eichmann in Jerusalem: A Report on the Banality of Evil}.
+New York: Viking.
+--- The ``banality of evil'' as the phenomenology of normalized institutional violence.
+
+\bibitem{pinker}
+Pinker, S. (2002).
+\textit{The Blank Slate: The Modern Denial of Human Nature}.
+New York: Viking.
+--- Coined the term ``euphemism treadmill'' for the cyclic replacement of terms that absorb their referent's negative valence.
+
+\bibitem{lifton}
+Lifton, R.~J. (1967).
+\textit{Death in Life: Survivors of Hiroshima}.
+New York: Random House.
+--- Identified ``psychic numbing'' as the psychological mechanism of mass-scale recognition-suppression.
+
+\bibitem{levistrauss}
+L\'{e}vi-Strauss, C. (1950).
+``Introduction \`{a} l'\oe uvre de Marcel Mauss.''
+In M.~Mauss, \textit{Sociologie et anthropologie}.
+Paris: PUF.
+--- Introduced the floating signifier (\textit{signifiant flottant}).
+
+\bibitem{laclau}
+Laclau, E. and Mouffe, C. (1985).
+\textit{Hegemony and Socialist Strategy}.
+London: Verso.
+--- Formalized the floating signifier as the site of hegemonic contestation.
+
+\bibitem{passio}
+Passio, M. (n.d.).
+The ``dark occult'' / ``light occult'' taxonomy.
+--- Correctly identified two real categories (knowledge-hiders and knowledge-revealers); naming failure diagnosed and corrected via ontoneologization (\textit{deoccultist}).
+
+\end{thebibliography}
+
+\end{document}
