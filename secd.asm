@@ -223,6 +223,15 @@ _start:
     syscall
 
 .loop:
+    ; heap-exhaustion guard: halt cleanly before the bump heap overruns the
+    ; program stream. The margin (heaplimit = progbuf - 64 MiB) exceeds the
+    ; largest fixed-size or single-read (read_file, 64 MiB) allocation, so once
+    ; r15 < heaplimit here the next instruction cannot reach progbuf. concat,
+    ; which can allocate an arbitrarily large buffer in one step, is guarded
+    ; separately below.
+    mov     rax, heaplimit
+    cmp     r15, rax
+    jae     .heapfull
     movzx   rax, byte [rbx]
     inc     rbx
     cmp     al, 0
@@ -925,6 +934,15 @@ _start:
     jmp     .loop
 
 .bi_concat2:                     ; rbp = a1 desc, r9 = a2 desc
+    ; guard: result is len1+len2 bytes + a 16-byte descriptor; halt if it would
+    ; overrun the heap (concat is the one builtin with an unbounded single alloc)
+    mov     rax, [rbp]
+    add     rax, [r9]
+    add     rax, r15
+    add     rax, 16
+    mov     rcx, progbuf
+    cmp     rax, rcx
+    jae     .heapfull
     mov     rsi, [rbp+8]
     mov     rcx, [rbp]
     mov     rdi, [r9+8]
@@ -1300,7 +1318,19 @@ _start:
     xor     rdi, rdi
     syscall
 
+.heapfull:                       ; bump heap would overrun progbuf — halt loudly
+    mov     rax, 1
+    mov     rdi, 2               ; stderr
+    mov     rsi, heapmsg
+    mov     rdx, heapmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 ; ── read-only data ──
+heapmsg:       db "secd: heap exhausted", 10
+heapmsg_len    equ $ - heapmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0
@@ -1350,4 +1380,8 @@ dstack   equ ostack  + 0x1000000
 pathbuf  equ dstack  + 0x1000000
 fsbuf    equ pathbuf + 0x1000
 heap     equ fsbuf   + 0x1000
-progbuf  equ heap     + 0x30000000
+progbuf  equ heap     + 0x30000000   ; ~768 MiB bump heap [heap, progbuf)
+heaplimit equ progbuf - 0x4100000    ; dispatch-loop guard fires ~65 MiB early,
+                                     ; covering the largest single allocation
+                                     ; (read_file's 64 MiB read + descriptor)
+                                     ; with slack before progbuf

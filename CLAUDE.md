@@ -507,5 +507,11 @@ Practically:
   the C stack + a `setjmp` register dump; values are acyclic trees so nothing is
   missed structurally, and GC-at-an-ordinary-call-boundary makes the scan
   ABI-safe. GC overhead is negligible (raising the threshold 8× left `build.sh`
-  wall-time unchanged). The SECD VM's bump heap (`secd.asm`) still has no GC —
-  that remains a separate ceiling for long native runs.
+  wall-time unchanged). The SECD VM's bump heap (`secd.asm`) has no GC, but it
+  now has a **heap-exhaustion guard**: the dispatch loop halts with
+  `secd: heap exhausted` once `r15` reaches `heaplimit` (`progbuf − 65 MiB`, a
+  margin covering the largest single allocation, `read_file`'s 64 MiB read), and
+  `concat` (the one builtin with an unbounded single allocation) checks before
+  copying. So a long or runaway native program fails loudly instead of running
+  off the end and corrupting the program stream — a clean failure, not bounded
+  memory (no reclamation; full VM GC remains the larger open item).
