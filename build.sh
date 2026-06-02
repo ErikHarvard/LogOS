@@ -237,12 +237,20 @@ check_line "META_CATCH: FAIL"
 # and included in GLYPH_REGISTRY, so ALL_SPECCED: T above already proves they
 # are autological. ARITH demonstrates a live computation.
 check_line "ARITH: 42"
+# Type System T1: types as predicates. HAS_TYPE(A)(x) = A(x); a type is a
+# predicate (its spec). The predicates IS_INT/IS_STR/IS_FUN/HAS_TYPE are in
+# GLYPH_REGISTRY, so ALL_SPECCED: T also certifies they are autological.
+check_line "T1_int_pos: T"
+check_line "T1_int_neg: F"
+check_line "T1_str: T"
+check_line "T1_fun: T"
 if [ "$ok" -eq 1 ]; then
     echo "PASS  Phase 1: MAP/FILTER/ALL/ANY/LIST_FIND/LENGTH over Church lists"
     echo "PASS  Phase 2: SPEC_TABLE / GET_SPEC resolve specs (hit + miss)"
     echo "PASS  Phase 3: DEBUG passes good glyphs, catches broken ones; all specced glyphs autological"
     echo "PASS  Phase 4: META_DEBUG verifies the debugger itself; broken VERIFY_ONE caught"
     echo "PASS  Native integers are autological: add/mul/lt/int_to_str pass their specs under DEBUG"
+    echo "PASS  Type System T1: HAS_TYPE accepts inhabitants, rejects non-inhabitants (types as predicates)"
 else
     printf '%s\n' "$OUT"
     exit 1

@@ -144,7 +144,11 @@ glyph SPEC_TABLE =
     CONS(PAIR("mul")(SPEC_MUL))(
     CONS(PAIR("lt")(SPEC_LT))(
     CONS(PAIR("int_to_str")(SPEC_I2S))(
-    NIL))))))))))))))))))
+    CONS(PAIR("IS_INT")(SPEC_ISINT))(
+    CONS(PAIR("IS_STR")(SPEC_ISSTR))(
+    CONS(PAIR("IS_FUN")(SPEC_ISFUN))(
+    CONS(PAIR("HAS_TYPE")(SPEC_HASTYPE))(
+    NIL))))))))))))))))))))))
 
 glyph GET_SPEC = la name. LIST_FIND(name)(SPEC_TABLE)
 
@@ -201,7 +205,11 @@ glyph GLYPH_REGISTRY =
     CONS(PAIR("mul")(mul))(
     CONS(PAIR("lt")(lt))(
     CONS(PAIR("int_to_str")(int_to_str))(
-    NIL))))))))))))))))))
+    CONS(PAIR("IS_INT")(IS_INT))(
+    CONS(PAIR("IS_STR")(IS_STR))(
+    CONS(PAIR("IS_FUN")(IS_FUN))(
+    CONS(PAIR("HAS_TYPE")(HAS_TYPE))(
+    NIL))))))))))))))))))))))
 
 # ── Phase 4: META_DEBUG — DEBUG applied to the debugging glyphs ───────
 # The "meta" level collapses into the object level by self-application.
@@ -211,6 +219,21 @@ glyph META_DEBUG = DEBUG(
     CONS(PAIR("IS_AUTOLOGICAL")(IS_AUTOLOGICAL))(
     CONS(PAIR("DEBUG")(DEBUG))(
     NIL)))))
+
+# ── Type System Phase T1: types as predicates (TYPE_SYSTEM_SPEC.md) ───
+# A type is a predicate value -> Church bool; typeof recognizes a value's
+# Form (g_8). Inhabitation  x : A  is HAS_TYPE(A)(x) = A(x) — the membership
+# judgement, Ontocontainment (⊂). A type IS a specification: HAS_TYPE is
+# IS_AUTOLOGICAL specialised to a one-point predicate.
+glyph IS_INT   = la x. str_eq(typeof(x))("int")
+glyph IS_STR   = la x. str_eq(typeof(x))("str")
+glyph IS_FUN   = la x. str_eq(typeof(x))("fun")
+glyph HAS_TYPE = la A. la x. A(x)
+
+glyph SPEC_ISINT   = CONS(TC(la g. BOOL_STR(g(42)))("T"))(CONS(TC(la g. BOOL_STR(g("x")))("F"))(NIL))
+glyph SPEC_ISSTR   = CONS(TC(la g. BOOL_STR(g("x")))("T"))(CONS(TC(la g. BOOL_STR(g(42)))("F"))(NIL))
+glyph SPEC_ISFUN   = CONS(TC(la g. BOOL_STR(g(ID)))("T"))(CONS(TC(la g. BOOL_STR(g(42)))("F"))(NIL))
+glyph SPEC_HASTYPE = CONS(TC(la g. BOOL_STR(g(IS_INT)(42)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)("x")))("F"))(NIL))
 
 # ── Deliberately broken glyphs (DEBUG must catch these) ───────────────
 glyph BAD_ID         = la x. "WRONG"
@@ -232,4 +255,8 @@ glyph MAIN =
     SEQ(print(concat("ALL_SPECCED: ")(BOOL_STR(DEBUG_ALL_PASS(DEBUG(GLYPH_REGISTRY))))))(
     SEQ(print(concat("META_DEBUG: ")(BOOL_STR(DEBUG_ALL_PASS(META_DEBUG)))))(
     SEQ(print(concat("META_CATCH: ")(TRI_STATUS(HEAD(DEBUG(CONS(PAIR("VERIFY_ONE")(BAD_VERIFY_ONE))(NIL)))))))(
-        print(concat("ARITH: ")(int_to_str(add(mul(6)(7))(0))))))))))))))))))
+    SEQ(print(concat("ARITH: ")(int_to_str(add(mul(6)(7))(0)))))(
+    SEQ(print(concat("T1_int_pos: ")(BOOL_STR(HAS_TYPE(IS_INT)(42)))))(
+    SEQ(print(concat("T1_int_neg: ")(BOOL_STR(HAS_TYPE(IS_INT)("x")))))(
+    SEQ(print(concat("T1_str: ")(BOOL_STR(HAS_TYPE(IS_STR)("hi")))))(
+        print(concat("T1_fun: ")(BOOL_STR(HAS_TYPE(IS_FUN)(ID))))))))))))))))))))))

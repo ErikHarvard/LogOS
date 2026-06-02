@@ -328,7 +328,11 @@ static int is_builtin(const char *name) {
         || strcmp(name, "mul") == 0 || strcmp(name, "div") == 0
         || strcmp(name, "mod") == 0 || strcmp(name, "lt") == 0
         || strcmp(name, "int_eq") == 0
-        || strcmp(name, "int_to_str") == 0 || strcmp(name, "str_to_int") == 0;
+        || strcmp(name, "int_to_str") == 0 || strcmp(name, "str_to_int") == 0
+        /* typeof: recognize a value's Form (g_8) as a string tag. The one
+         * host primitive the type system needs; all type predicates derive
+         * from it in Lingua Adamica. */
+        || strcmp(name, "typeof") == 0;
 }
 
 /* The seven binary integer operations are curried like concat/str_eq: the
@@ -569,6 +573,15 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "str_to_int: argument is not a string\n"); exit(1); }
         return mkint(strtol(v->s, NULL, 10));
+    }
+    if (strcmp(name, "typeof") == 0) {
+        /* a value's Form as a tag: "int" | "str" | "fun". Functions (lambdas),
+         * builtins-as-values, and partials are all applicable, so all "fun". */
+        Node *v = eval(argexpr);
+        const char *tag = v->t == N_INT ? "int"
+                        : v->t == N_STR ? "str"
+                        : "fun";
+        return mkstr(tag);
     }
     fprintf(stderr, "unknown builtin: %s\n", name);
     exit(1);
