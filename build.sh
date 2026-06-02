@@ -256,6 +256,34 @@ else
 fi
 rm -f logos_native
 
+say "Emitting the native SECD runtime (Albedo Stage 2 v0 — secd.la)"
+# secd.la emits a native binary whose code is a real SECD dispatch loop
+# (operand stack + control pointer over a compiled instruction stream).
+# The baked stream is print("I AM THAT I AM"); the emitted binary runs that
+# program on the bare OS. The bytes are the output of `nasm -f bin secd.asm`.
+rm -f logos_secd
+./tiny_host secd.la >/dev/null 2>&1
+ok=1
+[ -f logos_secd ]                                || { echo "FAIL  secd: logos_secd not emitted"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "354" ] || { echo "FAIL  secd: wrong size ($(stat -c%s logos_secd 2>/dev/null) != 354)"; ok=0; }
+SECD_OUT="$(./logos_secd 2>/dev/null)"; SECD_RC=$?
+[ "$SECD_OUT" = "I AM THAT I AM" ]               || { echo "FAIL  secd: runtime said '$SECD_OUT'"; ok=0; }
+[ "$SECD_RC" = "0" ]                             || { echo "FAIL  secd: runtime exited $SECD_RC"; ok=0; }
+# Drift guard: the embedded bytes must match their documented source.
+if command -v nasm >/dev/null 2>&1; then
+    nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
+    cmp -s logos_secd /tmp/secd_ref || { echo "FAIL  secd: emitted bytes differ from nasm -f bin secd.asm"; ok=0; }
+    rm -f /tmp/secd_ref
+fi
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  secd.la emitted the 354-byte native SECD runtime"
+    echo "PASS  the SECD dispatch loop ran a compiled instruction stream and spoke the Word"
+    command -v nasm >/dev/null 2>&1 && echo "PASS  emitted bytes are byte-identical to nasm -f bin secd.asm"
+else
+    exit 1
+fi
+rm -f logos_secd
+
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"
 # eval.la is a lexer + parser + evaluator written entirely in Lingua
 # Adamica. It reads kernel.la, parses it, evaluates it — and the

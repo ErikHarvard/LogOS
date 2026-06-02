@@ -8,3 +8,4 @@
 
 # native binaries emitted by elf.la / the codegen (regenerated each run)
 /logos_native
+/logos_secd

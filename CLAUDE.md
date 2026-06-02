@@ -16,6 +16,7 @@ host program, applied to itself, reproduces itself.
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
 | `bytecode.la`        | Byte instructions and execution engines: `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), `RUN_BYTES` (a VM that executes the bytes directly), and `RUN_SM` (a real SECD-style stack machine over a compiled instruction list), all in Lingua Adamica. |
 | `elf.la`             | Albedo Stage 1: assembles a minimal static x86-64 ELF executable from Lingua Adamica (`chr` + `concat` + `write_exec`) and emits a runnable native binary that speaks the Word with no host in the loop. |
+| `secd.asm` / `secd.la` | Albedo Stage 2 v0: the SECD runtime hand-written in x86-64 (`secd.asm`, a self-contained `nasm -f bin` ELF image), and `secd.la` which emits that 354-byte binary. Its code is a real dispatch loop over a compiled instruction stream. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -327,13 +328,26 @@ runnable and checked by `build.sh`.
   `exit(0)`. `build.sh` runs the emitted `logos_native` on the bare OS and
   checks it prints `I AM THAT I AM`; it is byte-identical to an independently
   assembled reference. The host plays no part in running it.
-- **Stage 2 — codegen (planned): threaded SECD.** Hand-write the S/E/C/D
-  runtime once as machine code (the `PUSHS`/`PUSHV`/`CLOSE`/`APPLY` routines,
-  a bump allocator, and the builtins lowered to syscalls); "compilation" emits
-  the program's instruction list as data plus an entry that drives the runtime.
-  This maps `RUN_SM` directly onto native code — verifiable by diffing native
-  output against `RUN_SM`. Stages 3–4 (native runtime, then self-application so
-  the compiler compiles itself) follow.
+- **Stage 2 — threaded SECD runtime, v0 done.** The runtime is hand-written
+  x86-64 in `secd.asm` — a self-contained `nasm -f bin` ELF image (hand-built
+  header + one RWX `PT_LOAD`; the operand stack is the zero-filled tail of the
+  segment, `memsz > filesz`). Its code is a **data-driven dispatch loop**: a
+  control pointer `C` walks a compiled instruction stream and an operand stack
+  `S` holds tagged values (`STR` / builtin). v0 implements `PUSHS`, `PUSHV`
+  (`print`), `APPLY`-of-builtin, and `HALT`, with `print` lowered to `write`
+  syscalls — enough to run `print("I AM THAT I AM")` through a real interpreter
+  loop (not the straight-line code of Stage 1). `secd.la` emits the 354-byte
+  binary; `build.sh` runs it on the bare OS and checks the Word, and — when
+  `nasm` is present — that the emitted bytes are byte-identical to
+  `nasm -f bin secd.asm` (the `.asm` is the auditable source of the bytes).
+
+  Still ahead in Stage 2: the environment `E`, dump `D`, and `CLOSE` /
+  `APPLY`-of-closure with a bump-allocated heap (closures, `cons`, strings);
+  the remaining builtins lowered to syscalls; and the **codegen** that
+  generates the instruction stream from an arbitrary program (v0 bakes one
+  fixed stream into the image). The end state, verifiable by diffing native
+  output against `RUN_SM`, then Stages 3–4 (full native runtime, then
+  self-application so the compiler compiles itself).
 
 This extends the **generation** side of the Γ/Ρ split: codegen and ELF assembly
 are pure generation (no evaluation); running the emitted binary is recognition
