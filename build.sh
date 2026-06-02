@@ -170,11 +170,12 @@ else
     exit 1
 fi
 
-say "Testing byte instructions (EMIT / PARSE_BYTES / RUN_BYTES in bytecode.la)"
+say "Testing byte instructions + stack machine (bytecode.la)"
 # bytecode.la is a third representation of a program: a flat byte-
 # instruction stream. EMIT compiles an AST to byte instructions,
-# PARSE_BYTES decodes them back to an AST, and RUN_BYTES *executes* them
-# directly — no AST rebuilt — so the kernel runs straight from its bytes.
+# PARSE_BYTES decodes them back, RUN_BYTES executes them directly (no AST
+# rebuilt), and RUN_SM is a real stack machine (S/E/C/D) over a compiled
+# instruction list. Both engines run the kernel straight to replication.
 rm -f new_logos_gen*.bin
 ERR_B="$(mktemp)"
 OUT="$(./tiny_host bytecode.la 2>"$ERR_B")"
@@ -191,14 +192,18 @@ printf '%s\n' "$OUT" | grep -qxF "kernel round-trip: stable" || { echo "FAIL  by
 printf '%s\n' "$OUT" | grep -qxF "byte vm"                   || { echo "FAIL  byte-vm: literal byte stream did not execute"; ok=0; }
 printf '%s\n' "$OUT" | grep -qxF "yes kept"                  || { echo "FAIL  byte-vm: closures/booleans/lookup"; ok=0; }
 printf '%s\n' "$OUT" | grep -qxF "I AM THAT I AM"            || { echo "FAIL  byte-vm: kernel did not speak from bytes"; ok=0; }
-case "$BYTE_CHILD" in new_logos_gen1_pid*.bin) : ;; *) echo "FAIL  byte-vm: kernel did not replicate from bytes ('$BYTE_CHILD')"; ok=0 ;; esac
+# The stack machine (S/E/C/D) executes the compiled program and the kernel.
+printf '%s\n' "$OUT" | grep -qxF "kernel ran on the stack machine" || { echo "FAIL  stack-machine: kernel did not run"; ok=0; }
+# Both engines replicated; the last child (from the stack machine) must match.
+case "$BYTE_CHILD" in new_logos_gen1_pid*.bin) : ;; *) echo "FAIL  byte-vm: kernel did not replicate ('$BYTE_CHILD')"; ok=0 ;; esac
 [ -n "$BYTE_CHILD" ] && [ -f "$BYTE_CHILD" ] && cmp -s tiny_host "$BYTE_CHILD" \
     || { echo "FAIL  byte-vm: replicant not byte-identical"; ok=0; }
 if [ "$ok" -eq 1 ]; then
     echo "PASS  EMIT/PARSE_BYTES round-trip an AST through byte instructions"
     echo "PASS  every glyph of kernel.la survives AST -> bytes -> AST"
     echo "PASS  RUN_BYTES executes byte instructions directly (no AST rebuilt)"
-    echo "PASS  the kernel ran from its bytes: spoke and bred $BYTE_CHILD"
+    echo "PASS  the stack machine (S/E/C/D) runs the compiled program and kernel"
+    echo "PASS  the kernel ran from bytes and on the stack machine: spoke and bred $BYTE_CHILD"
 else
     printf '%s\n' "$OUT"
     exit 1

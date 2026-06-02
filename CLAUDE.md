@@ -14,7 +14,7 @@ host program, applied to itself, reproduces itself.
 | `kernel.la`          | The kernel, written in Lingua Adamica. Defines `MAIN`.              |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
-| `bytecode.la`        | Byte instructions: a flat linear encoding of an AST, with `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), and `RUN_BYTES` (a VM that executes the bytes directly, no AST rebuilt), all in Lingua Adamica. |
+| `bytecode.la`        | Byte instructions and execution engines: `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), `RUN_BYTES` (a VM that executes the bytes directly), and `RUN_SM` (a real SECD-style stack machine over a compiled instruction list), all in Lingua Adamica. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -232,6 +232,63 @@ lowered one level — where that walks AST nodes, this walks bytes:
 involved), that closures/booleans/glyph-lookup work, and — the headline — that
 the kernel, executed straight from its byte instructions, speaks the Word and
 produces a **byte-identical replicant** with no AST ever reconstructed.
+
+#### `RUN_SM` — a real stack machine (S, E, C, D)
+
+`RUN_BYTES` still walks the program's tree shape with host recursion (and
+rescans with `SKIP_BYTES`). `RUN_SM` does not: it **compiles** each expression
+to a flat, postfix instruction list and runs an explicit state transition.
+
+- **Compilation** (`COMPILE_EXPR`): `VAR n → [PUSHV n]`, `STR s → [PUSHS s]`,
+  `LAM p b → [CLOSE p ⟨code b⟩]`, `APP f x → ⟨code f⟩ ++ ⟨code x⟩ ++ [APPLY]`.
+  `COMPILE_PROGRAM` compiles a whole glyph table to name → code. The emitted
+  list is **linear in the AST node count** (one instruction per leaf, one
+  `APPLY` per application).
+- **The machine** is SECD: operand **S**tack, local **E**nvironment, **C**ontrol
+  (instructions left to run), **D**ump (saved `(C,E)` return frames). One step
+  transition, trampolined to a halt:
+  - `PUSHS` / `PUSHV` push a value; a glyph reference *enters* the glyph's
+    already-compiled code by pushing a dump frame (like a call), not by host
+    recursion and not by recompiling.
+  - `CLOSE` pushes a `VAL_CLO` capturing the body **code** and the current env.
+  - `APPLY` pops arg and fn: a closure pushes a dump frame and sets control to
+    the body in an extended env; a builtin runs via `APPLY_BI`/`APPLY_BI2_SM`.
+  - When control empties, a dump frame is popped (return) — or, if the dump is
+    empty too, the machine halts with the top of the stack.
+- The only recursion is the trampoline driving step→step; **control flow lives
+  on the explicit stacks**, not the host call stack. (The C host's
+  `return eval(…)` is a tail call `gcc -O2` turns into a jump, so the trampoline
+  runs in bounded host-stack depth — the kernel's whole run, speech and
+  replication included, completes without growing the C stack per step.)
+- An eager-evaluation subtlety: the four instruction branch-handlers are all
+  evaluated before the opcode selects one, so each must be a lambda (the
+  payload-free `APPLY` handler is a thunk forced with a dummy argument).
+  Otherwise the `APPLY` handler would run on every instruction.
+
+`build.sh` runs the same program on both engines (`yes kept` from each) and
+executes the kernel on the stack machine — it speaks the Word and produces a
+byte-identical replicant, driven entirely by the explicit stacks.
+
+#### Generation and recognition are kept distinct
+
+The pipeline divides cleanly into two roles that are never conflated, mirroring
+the generation/recognition (Γ/Ρ) distinction in
+`codices/P vs NP COMPLETE.md`:
+
+- **Generation** — producing structure: `PARSE_PROGRAM` (text → AST), `EMIT`
+  (AST → bytes), `COMPILE_EXPR` / `COMPILE_PROGRAM` (AST → instructions),
+  `SHOW_SRC` (AST → text), and at the host level `copy_self` (the binary
+  producing its successor).
+- **Recognition** — validating/executing given structure: `EVAL`, `RUN_BYTES`,
+  and `RUN_SM`, plus the round-trip/decode checks.
+
+The boundary is enforced in code: `RUN_SM` consumes a pre-compiled instruction
+table and never calls `COMPILE_*` during execution, and `COMPILE_*` never
+evaluates. A glyph reference at run time enters already-generated code rather
+than regenerating it. (This is an architectural discipline — compile-time vs
+run-time separation — adopted on its own engineering merits; the cited document
+develops it as a philosophical thesis, which is a separate matter from any
+formal complexity-theory result.)
 
 ### Evaluation
 

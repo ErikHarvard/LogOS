@@ -345,6 +345,105 @@ glyph COMPILE = la gl. MAP_GLYPHS(EMIT)(gl)
 glyph EXEC    = la bytes. la glb. FST(RUN_BYTES(bytes)(NIL)(glb))
 glyph RUN_BYTES_PROGRAM = la gl_ast. (la glb. EXEC(R_VAL(LIST_FIND("MAIN")(glb)))(glb))(COMPILE(gl_ast))
 
+# ═══════════════════════════════════════════════════════════════════
+#  A real stack machine (S, E, C, D)
+#
+#  RUN_BYTES walks the tree shape with host recursion. The stack machine
+#  does not: it compiles each expression to a FLAT, postfix instruction
+#  list and runs an explicit state transition — operand Stack, local
+#  Environment, Control (instructions left to do), Dump (saved C/E return
+#  frames). The only recursion is the trampoline driving STEP to STEP;
+#  control flow lives entirely on the explicit stacks.
+#
+#  Instructions:
+#    PUSHS s        — push the string value s
+#    PUSHV name     — push the value of a variable (env, glyph, builtin)
+#    CLOSE p code   — push a closure capturing p, the body code, and env
+#    APPLY          — pop arg, pop fn, apply (enter body / run builtin)
+#
+#  Compilation:
+#    VAR n      -> [PUSHV n]
+#    STR s      -> [PUSHS s]
+#    LAM p b    -> [CLOSE p <code b>]
+#    APP f x    -> <code f> ++ <code x> ++ [APPLY]
+# ═══════════════════════════════════════════════════════════════════
+
+glyph APPEND = Z(la self. la xs. la ys.
+    IF(IS_CONS(xs))(la _. CONS(LIST_HD(xs))(self(LIST_TL(xs))(ys)))(la _. ys))
+
+# Instructions: instr(on_pushs)(on_pushv)(on_close)(on_apply)
+# Each handler is a lambda, so eager evaluation only runs the branch the
+# instruction selects. APPLY carries no data, so it is forced with a
+# dummy argument (the handler is a thunk `la _. ...`).
+glyph I_PUSHS = la s.            la ps. la pv. la cl. la ap. ps(s)
+glyph I_PUSHV = la name.         la ps. la pv. la cl. la ap. pv(name)
+glyph I_CLOSE = la p. la code.   la ps. la pv. la cl. la ap. cl(p)(code)
+glyph I_APPLY =                  la ps. la pv. la cl. la ap. ap(NIL)
+
+# COMPILE_EXPR(ast) — linearise an AST into a postfix instruction list.
+glyph COMPILE_EXPR = Z(la self. la node.
+    node
+        (la name. CONS(I_PUSHV(name))(NIL))
+        (la p. la b. CONS(I_CLOSE(p)(self(b)))(NIL))
+        (la f. la a. APPEND(self(f))(APPEND(self(a))(CONS(I_APPLY)(NIL))))
+        (la val. CONS(I_PUSHS(val))(NIL))
+)
+
+# Church booleans for the machine: closures whose bodies are COMPILED
+# instruction lists, so applying them runs under the same machine.
+glyph SM_TRUE  = VAL_CLO("t")(COMPILE_EXPR(AST_LAM("f")(AST_VAR("t"))))(NIL)
+glyph SM_FALSE = VAL_CLO("t")(COMPILE_EXPR(AST_LAM("f")(AST_VAR("f"))))(NIL)
+
+# Second-argument builtin dispatch, str_eq yielding machine booleans.
+glyph APPLY_BI2_SM = la name. la v1. la v2.
+    IF(str_eq(name)("write_file"))(la _. (la _. v2)(write_file(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
+    IF(str_eq(name)("concat"))(la _. VAL_STR(concat(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
+    IF(str_eq(name)("str_eq"))(la _. IF(str_eq(UNWRAP_STR(v1))(UNWRAP_STR(v2)))(la _. SM_TRUE)(la _. SM_FALSE))(la _.
+    VAL_STR(concat("ERROR: unknown builtin2 ")(name)))))
+
+# RUN_SM(gl0)(code0) — execute a compiled instruction list. The state is
+# (S, E, C, D); STEP transitions it; the trampoline iterates to a halt
+# (C and D both empty), whereupon the result is the top of the stack.
+glyph RUN_SM = la gl0. la code0.
+    (Z(la self. la S. la E. la C. la D.
+        IF(IS_CONS(C))(la _.
+            (la instr. (la C1.
+                instr
+                    (la str. self(CONS(VAL_STR(str))(S))(E)(C1)(D))
+                    (la name.
+                        (la local. IF(IS_SOME(local))(la _.
+                            self(CONS(R_VAL(local))(S))(E)(C1)(D)
+                        )(la _.
+                            (la found. IF(IS_SOME(found))(la _.
+                                self(S)(NIL)(R_VAL(found))(CONS(PAIR(C1)(E))(D))
+                            )(la _. IF(IS_BI_NAME(name))(la _.
+                                self(CONS(VAL_BI(name))(S))(E)(C1)(D)
+                            )(la _.
+                                (la _. self(CONS(VAL_STR(name))(S))(E)(C1)(D))(print(concat("sm: unbound ")(name)))
+                            )))(LIST_FIND(name)(gl0)))
+                        )(LIST_FIND(name)(E)))
+                    (la p. la body. self(CONS(VAL_CLO(p)(body)(E))(S))(E)(C1)(D))
+                    (la _. (la arg. (la fn. (la S2.
+                        fn
+                            (la str. self(CONS(VAL_STR(concat("sm: cannot apply string: ")(str)))(S2))(E)(C1)(D))
+                            (la p. la body. la e. self(S2)(CONS(PAIR(p)(arg))(e))(body)(CONS(PAIR(C1)(E))(D)))
+                            (la bn. self(CONS(APPLY_BI(bn)(arg))(S2))(E)(C1)(D))
+                            (la pn. la pv. self(CONS(APPLY_BI2_SM(pn)(pv)(arg))(S2))(E)(C1)(D))
+                    )(LIST_TL(LIST_TL(S))))(LIST_HD(LIST_TL(S))))(LIST_HD(S)))
+            )(LIST_TL(C)))(LIST_HD(C))
+        )(la _.
+            IF(IS_CONS(D))(la _.
+                (la frame. self(S)(SND(frame))(FST(frame))(LIST_TL(D)))(LIST_HD(D))
+            )(la _.
+                LIST_HD(S)
+            )
+        )
+    ))(NIL)(NIL)(code0)(NIL)
+
+# COMPILE_PROGRAM — compile a parsed program (name->AST) to name->code.
+glyph COMPILE_PROGRAM = la gl. MAP_GLYPHS(COMPILE_EXPR)(gl)
+glyph RUN_SM_PROGRAM = la gl_ast. (la glc. RUN_SM(glc)(R_VAL(LIST_FIND("MAIN")(glc))))(COMPILE_PROGRAM(gl_ast))
+
 # ── Tests ───────────────────────────────────────────────────────────
 
 # A small AST built by hand, exercising every node kind, nesting, and a
@@ -357,7 +456,7 @@ glyph TEST_AST = AST_LAM("x")(AST_APP(AST_APP(AST_VAR("f"))(AST_VAR("x")))(AST_S
 # applied to select a branch — all run from bytes, no AST rebuilt.
 glyph VM_SRC = "glyph K = la x. la y. x\nglyph MAIN = concat(str_eq(\"p\")(\"p\")(\"yes \")(\"no \"))(K(\"kept\")(\"dropped\"))\n"
 
-glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(
+glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
     # Show the byte instructions for the hand-built AST.
     SEQ(print("--- byte instructions for  la x. f(x)(\"a;b\\c\") ---"))(
     print(EMIT(TEST_AST)))
@@ -388,4 +487,15 @@ glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(
     # the Word and replicates, with no AST ever reconstructed.
     SEQ(print("--- executing kernel.la from bytes (speaks + replicates) ---"))(
     (la _. print("kernel executed from bytes"))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("kernel.la")))))
+))(
+    # The stack machine (S/E/C/D) executes a compiled program with no host
+    # recursion over the program shape — control lives on the explicit
+    # stacks. Same program as above, same result.
+    SEQ(print("--- stack machine: compiled program ---"))(
+    print(UNWRAP_STR(RUN_SM_PROGRAM(PARSE_PROGRAM(VM_SRC)))))
+))(
+    # The kernel on the stack machine: it speaks the Word and replicates,
+    # driven entirely by the explicit operand/control/dump stacks.
+    SEQ(print("--- kernel.la on the stack machine (speaks + replicates) ---"))(
+    (la _. print("kernel ran on the stack machine"))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("kernel.la")))))
 )
