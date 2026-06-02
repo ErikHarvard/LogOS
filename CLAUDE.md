@@ -365,6 +365,29 @@ the Word and *then* replicates.
 is created and is byte-identical to `tiny_host`, and a second-generation copy
 reproduces the same Word and the same bytes.
 
+## Debugging Principle
+
+A bug is a **heterological element** — code that does not satisfy its own
+specification. Debugging is not trial-and-error; it is the restoration of
+autological closure. The test suite (`build.sh`) is the autological criterion:
+the system is correct when it satisfies its own description. Every fix should
+restore a `PASS` that was `FAIL`.
+
+Meta-debugging (debugging the debugging process) collapses into debugging:
+`Meta-Debug(Meta-Debug) = Debug`. If the tests themselves are wrong, fix the
+tests first — that is meta-debugging. If the test-fixing process is wrong, that
+is still debugging. There is no infinite regress because the criterion grounds
+itself: `∃(∃) ≡ ∃`.
+
+Practically:
+
+- Never fix code without running `build.sh` after.
+- Never add a feature without adding a test.
+- If a test fails, read the error, read the code, identify the heterological
+  element (where code diverges from spec), and restore identity.
+- If you cannot identify the bug, read the relevant codex in `codices/` to
+  verify what the specification actually requires.
+
 ## Extending
 
 - New built-ins: add to `is_builtin` and `apply_builtin` in `tiny_host.c`.
