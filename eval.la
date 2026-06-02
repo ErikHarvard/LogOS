@@ -109,7 +109,10 @@ glyph VAL_BI  = la name. la os. la oc. la ob. la op. la oi. ob(name)
 glyph VAL_PA  = la name. la v.  la os. la oc. la ob. la op. la oi. op(name)(v)
 glyph VAL_INT = la n.    la os. la oc. la ob. la op. la oi. oi(n)
 
-glyph UNWRAP_STR = la val. val (la s. s) (la p. la b. la e. "") (la n. "") (la n. la v. "") (la n. int_to_str(n))
+# Strict: a string is itself; an integer coerces to its decimal (so print
+# works); a closure / builtin / partial is a type error and halts, instead
+# of silently degrading to "".
+glyph UNWRAP_STR = la val. val (la s. s) (la p. la b. la e. error("eval: expected a string, got a closure")) (la n. error("eval: expected a string, got a builtin")) (la n. la v. error("eval: expected a string, got a partial")) (la n. int_to_str(n))
 glyph UNWRAP_INT = la val. val (la s. 0) (la p. la b. la e. 0) (la n. 0) (la n. la v. 0) (la n. n)
 
 # Church booleans as meta-level closures: when the object program's
@@ -164,7 +167,10 @@ glyph APPLY_BI = la name. la val.
         (la s. (la _. val)(print(s)))(UNWRAP_STR(val))
     )(la _.
     IF(str_eq(name)("copy_self"))(la _.
-        (la path. VAL_STR(path))(copy_self(UNWRAP_STR(val)))
+        # val is already forced (for effect ordering); the host copy_self
+        # ignores its argument, so pass a literal rather than UNWRAP_STR(val)
+        # — val is typically a closure (SELF = ∃(∃)), not a string.
+        (la path. VAL_STR(path))(copy_self("self"))
     )(la _.
     IF(str_eq(name)("read_file"))(la _.
         VAL_STR(read_file(UNWRAP_STR(val)))

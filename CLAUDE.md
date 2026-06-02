@@ -413,6 +413,26 @@ runnable and checked by `build.sh`.
   `build.sh` checks byte-identity when `nasm` is present, so `secd.asm` stays
   the auditable source of the VM's bytes.
 
+  *Known cross-engine divergences (audit, `b_τ ≡ f_τ`):*
+  - **Native integers run on the C host and on `eval.la`, but not on the SECD
+    VM or `RUN_SM`.** `tiny_host.c` has `N_INT` + `add/sub/mul/div/mod/lt/
+    int_eq/int_to_str/str_to_int`; `eval.la` evaluates integer programs and
+    `codegen.la` compiles them (an integer literal `n` desugars to
+    `str_to_int("n")`, so no new AST node), but `secd.asm` and `bytecode.la`'s
+    `RUN_SM` implement none of those builtins. An integer program therefore
+    compiles but will not execute natively. No program in `build.sh` compiled
+    to the VM uses integers, so the suite stays coherent; closing the gap needs
+    int builtins in `secd.asm` (hand-assembly) and `RUN_SM`.
+  - **`codegen.la` / `bytecode.la` / `parser.la` `PARSE_PROGRAM` silently
+    truncate malformed input** (a `NONE` from `PARSE_GLYPH` is treated as
+    end-of-program). `eval.la`'s `PARSE_PROGRAM` was fixed to halt via the host
+    `error` builtin, but `codegen.la` runs on the VM, which has no `error`
+    builtin — so it cannot halt the same way. Closing this needs an `error`/
+    abort opcode in `secd.asm`.
+
+  These are documented, not yet fixed, because each fix is a VM (assembly)
+  change, deferred under the audit's no-new-features rule.
+
 This extends the **generation** side of the Γ/Ρ split: codegen and ELF assembly
 are pure generation (no evaluation); running the emitted binary is recognition
 performed by the CPU and OS. `copy_self` already generates a vessel; `elf.la`
