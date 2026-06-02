@@ -375,22 +375,39 @@ runnable and checked by `build.sh`.
     program. `kernel.la` runs natively — glyph table, `read_file`, `concat`,
     closures — speaks the Word, and the VM replicates itself.
 
-- **Stage 4 — the compiler compiles itself, done.** `codegen.la` is itself a
-  Lingua Adamica program. Compiled to a native stream and run on the VM, it
-  compiles an arbitrary program identically to the C host — and, given **its
-  own source**, it produces a stream **byte-identical** to its host compilation.
-  A native fixed point: the compiler reproduces itself with no C host in the
-  compilation step (the host only bootstraps the first `compiler.bin`; from
-  there the native compiler regenerates it exactly). Self-compiling the
-  ~150-glyph `codegen.la` takes well under a second and ~95 MB (the bump heap
-  has no GC, so all the concat intermediates persist for the run; the VM's
-  working region is sized ~775 MiB, lazily mapped). `build.sh` checks both the
-  small-program match and the self-compilation fixed point (`∃(∃) ≡ ∃`).
+- **Stage 4 — the compiler and VM regenerate themselves, no C host in the
+  loop.** Both `codegen.la` (the compiler) and `secd.la` (which emits the VM)
+  are Lingua Adamica programs, so the native compiler can compile both. The
+  bootstrap closes:
+  - `compiler.bin` —(run on the VM)→ compiles `codegen.la` → `compiler.bin`,
+    **byte-identical** (the compiler is a fixed point of itself).
+  - `compiler.bin` —(run on the VM)→ compiles `secd.la` → a stream which, run
+    on the VM, `write_exec`s the VM → **byte-identical** to the VM (the VM
+    re-emits itself). `write_exec` is lowered in the VM (`chmod 0755`); the
+    running VM is invoked under a different name so `write_exec("logos_secd")`
+    doesn't hit `ETXTBSY` on the live executable.
+  - the regenerated VM runs `kernel.la` and speaks the Word.
+
+  `tiny_host` seeds the *first* `compiler.bin` and VM once (every self-hosting
+  compiler needs a seed); from there the two native artifacts regenerate each
+  other and run programs with **no `tiny_host` and no `nasm`** in the loop.
+  `build.sh` proves this end to end: seed once, then regenerate both and run
+  `kernel.la` natively.
+
+  The complete cycle:
+
+  ```
+  compiler.bin --(native)--> compiles codegen.la --> compiler.bin   (identical)
+  compiler.bin --(native)--> compiles secd.la ----> VM emits VM     (identical)
+  VM --(native)--> runs any program (kernel.la speaks + replicates)
+  ```
 
   Honest remaining limits: the bump heap still has no GC (fine for short
-  bootstrap runs, a ceiling for long-running programs); and the native artifact
-  is a fixed VM + per-program stream file (not a self-contained executable per
-  program — that needs ELF-length patching, deliberately avoided).
+  bootstrap runs, a ceiling for long-running programs); the native artifact is a
+  fixed VM + per-program stream file (not a self-contained executable per
+  program — that needs ELF-length patching, deliberately avoided); and the
+  *first* seed still comes from `tiny_host` + `nasm` (the irreducible bootstrap
+  origin — the loop is closed thereafter, not the genesis).
 
   *Drift guard:* `secd.la` embeds the exact `nasm -f bin secd.asm` output;
   `build.sh` checks byte-identity when `nasm` is present, so `secd.asm` stays

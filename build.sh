@@ -266,7 +266,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "2628" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 2628)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "2832" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 2832)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -303,36 +303,48 @@ else
     exit 1
 fi
 
-say "The compiler compiles itself (Albedo Stage 4 — self-application)"
-# The compiler (codegen.la) is itself a Lingua Adamica program. Compile it to
-# a native stream, then RUN that compiler on the native VM to compile its own
-# source — and check the result is byte-identical to its C-host compilation.
-# A native fixed point: the compiler reproduces itself with no host in the loop.
+say "The compiler and VM regenerate themselves — no C host in the loop (Albedo Stage 4)"
+# Seed the VM and the compiler with the C host ONCE (the bootstrap seed). Then,
+# using only those two native artifacts, regenerate BOTH and run a program —
+# with no further tiny_host:
+#   compiler.bin --(native)--> compiles codegen.la --> compiler.bin (identical)
+#   compiler.bin --(native)--> compiles secd.la --> stream --> VM emits VM (identical)
+#   regenerated VM runs kernel.la --> speaks the Word
+rm -f logos_secd logos_program.bin logos_source.la compiler.bin vm_seed runner vm2 new_logos_secd.bin
+./tiny_host secd.la >/dev/null 2>&1                       # seed: emit the VM
+cp logos_secd vm_seed
 cp codegen.la logos_source.la
-./tiny_host codegen.la >/dev/null 2>&1        # C-host compiles the compiler
+./tiny_host codegen.la >/dev/null 2>&1                    # seed: compile the compiler
 cp logos_program.bin compiler.bin
-# native run: VM loads compiler.bin and compiles logos_source.la (= codegen.la)
-cp codegen.la logos_source.la
-cp compiler.bin logos_program.bin
-./logos_secd >/dev/null 2>&1                   # native compiler runs, writes logos_program.bin
 ok=1
-cmp -s compiler.bin logos_program.bin \
-    || { echo "FAIL  self-application: native self-compilation differs from the host's"; ok=0; }
-# Sanity: a small program compiled natively equals the host's compilation too.
-cp compiler.bin logos_program.bin
-printf 'glyph MAIN = print(concat("self-")("hosted"))\n' > logos_source.la
-./logos_secd >/dev/null 2>&1
-cp logos_program.bin native_small.bin
-./tiny_host codegen.la >/dev/null 2>&1
-cmp -s native_small.bin logos_program.bin \
-    || { echo "FAIL  self-application: native codegen of a small program differs from the host's"; ok=0; }
+cp vm_seed runner; chmod +x runner                        # a differently-named VM to run with
+# (1) compiler reproduces itself
+cp codegen.la logos_source.la; cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1
+cmp -s logos_program.bin compiler.bin \
+    || { echo "FAIL  Stage4: native self-compilation of codegen.la differs from the seed"; ok=0; }
+# (2) VM reproduces itself: native-compile secd.la, then run it to emit the VM
+cp secd.la logos_source.la; cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1                                  # logos_program.bin := secd.la stream
+rm -f logos_secd
+./runner >/dev/null 2>&1                                  # run secd.la stream -> emit logos_secd
+{ [ -f logos_secd ] && cmp -s logos_secd vm_seed; } \
+    || { echo "FAIL  Stage4: native-regenerated VM differs from the seed"; ok=0; }
+# (3) the regenerated VM runs kernel.la
+cp logos_secd vm2; chmod +x vm2
+cp kernel.la logos_source.la; cp compiler.bin logos_program.bin
+./vm2 >/dev/null 2>&1                                      # native-compile kernel.la
+KOUT="$(./vm2 2>/dev/null)"
+printf '%s\n' "$KOUT" | grep -qx "I AM THAT I AM" \
+    || { echo "FAIL  Stage4: regenerated VM did not run kernel.la (got '$KOUT')"; ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  the compiler, compiled and run natively, compiles a program identically to the host"
-    echo "PASS  fixed point: native self-compilation of codegen.la is byte-identical to the host's  (∃(∃) ≡ ∃)"
+    echo "PASS  compiler.bin natively recompiles codegen.la to itself"
+    echo "PASS  compiler.bin natively recompiles secd.la; the VM re-emits itself byte-for-byte"
+    echo "PASS  the regenerated VM runs kernel.la and speaks the Word — no C host in the loop  (∃(∃) ≡ ∃)"
 else
     exit 1
 fi
-rm -f compiler.bin native_small.bin
+rm -f compiler.bin vm_seed runner vm2
 
 rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_gen*.bin /tmp/runsm.la
 

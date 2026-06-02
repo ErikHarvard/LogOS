@@ -276,6 +276,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi9
+    mov     rsi, rbp
+    mov     rdi, str_writeexec
+    call    strcmp
+    test    eax, eax
+    je      .bi10
     jmp     .halt
 .bi0:
     mov     r11, 0
@@ -306,6 +311,9 @@ _start:
     jmp     .pushbi
 .bi9:
     mov     r11, 9
+    jmp     .pushbi
+.bi10:
+    mov     r11, 10
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -366,6 +374,8 @@ _start:
     je      .mkpa
     cmp     r11, 6
     je      .mkpa
+    cmp     r11, 10
+    je      .mkpa
     cmp     r11, 0
     je      .bi_print
     cmp     r11, 2
@@ -399,6 +409,8 @@ _start:
     je      .bi_streq2
     cmp     r10, 6
     je      .bi_writefile2
+    cmp     r10, 10
+    je      .bi_writeexec2
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
@@ -742,6 +754,47 @@ _start:
     add     r12, 16
     jmp     .loop
 
+.bi_writeexec2:                  ; rbp = path desc, r9 = content desc; chmod 0755
+    mov     rcx, [rbp]
+    mov     rsi, [rbp+8]
+    mov     rdi, pathbuf
+.we_cp:
+    test    rcx, rcx
+    je      .we_cpd
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .we_cp
+.we_cpd:
+    mov     byte [rdi], 0
+    mov     rax, 2
+    mov     rdi, pathbuf
+    mov     rsi, 577
+    mov     rdx, 493             ; 0755
+    syscall
+    test    rax, rax
+    js      .we_done
+    mov     r10, rax
+    mov     rsi, [r9+8]
+    mov     rdx, [r9]
+    mov     rax, 1
+    mov     rdi, r10
+    syscall
+    mov     rax, 3
+    mov     rdi, r10
+    syscall
+    mov     rax, 90              ; chmod 0755
+    mov     rdi, pathbuf
+    mov     rsi, 493
+    syscall
+.we_done:
+    mov     [r12], r8
+    mov     [r12+8], r9
+    add     r12, 16
+    jmp     .loop
+
 .ret:
     sub     r14, 16
     mov     rbx, [r14]
@@ -772,6 +825,7 @@ str_writefile: db "write_file", 0
 str_copyself:  db "copy_self", 0
 str_chr:       db "chr", 0
 str_ord:       db "ord", 0
+str_writeexec: db "write_exec", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 
