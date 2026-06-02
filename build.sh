@@ -170,25 +170,40 @@ else
     exit 1
 fi
 
-say "Testing byte instructions (EMIT / PARSE_BYTES in bytecode.la)"
+say "Testing byte instructions (EMIT / PARSE_BYTES / RUN_BYTES in bytecode.la)"
 # bytecode.la is a third representation of a program: a flat byte-
-# instruction stream. EMIT compiles an AST to byte instructions and
-# PARSE_BYTES — the parser for them — decodes them back to an AST.
-OUT="$(./tiny_host bytecode.la 2>/dev/null)"
+# instruction stream. EMIT compiles an AST to byte instructions,
+# PARSE_BYTES decodes them back to an AST, and RUN_BYTES *executes* them
+# directly — no AST rebuilt — so the kernel runs straight from its bytes.
+rm -f new_logos_gen*.bin
+ERR_B="$(mktemp)"
+OUT="$(./tiny_host bytecode.la 2>"$ERR_B")"
+BYTE_CHILD="$(sed -n 's/^copy_self: replicated -> //p' "$ERR_B" | tail -1)"
+rm -f "$ERR_B"
 ok=1
 # The hand-built AST  la x. f(x)("a;b\c")  must emit this exact stream.
 # (The string payload exercises field escaping: ';' -> '\;', '\' -> '\\'.)
-printf '%s\n' "$OUT" | grep -qxF 'Lx;AAVf;Vx;Sa\;b\\c;'    || { echo "FAIL  byte-instr: unexpected encoding"; ok=0; }
-printf '%s\n' "$OUT" | grep -qxF 'la x. f(x)("a;b\\c")'    || { echo "FAIL  byte-instr: decode+unparse mismatch"; ok=0; }
-printf '%s\n' "$OUT" | grep -qxF "bytes round-trip: stable"   || { echo "FAIL  byte-instr: expression round trip"; ok=0; }
-printf '%s\n' "$OUT" | grep -qxF "kernel round-trip: stable"  || { echo "FAIL  byte-instr: kernel.la round trip"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF 'Lx;AAVf;Vx;Sa\;b\\c;'      || { echo "FAIL  byte-instr: unexpected encoding"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF 'la x. f(x)("a;b\\c")'      || { echo "FAIL  byte-instr: decode+unparse mismatch"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "bytes round-trip: stable"  || { echo "FAIL  byte-instr: expression round trip"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "kernel round-trip: stable" || { echo "FAIL  byte-instr: kernel.la round trip"; ok=0; }
+# RUN_BYTES executes byte instructions directly.
+printf '%s\n' "$OUT" | grep -qxF "byte vm"                   || { echo "FAIL  byte-vm: literal byte stream did not execute"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "yes kept"                  || { echo "FAIL  byte-vm: closures/booleans/lookup"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "I AM THAT I AM"            || { echo "FAIL  byte-vm: kernel did not speak from bytes"; ok=0; }
+case "$BYTE_CHILD" in new_logos_gen1_pid*.bin) : ;; *) echo "FAIL  byte-vm: kernel did not replicate from bytes ('$BYTE_CHILD')"; ok=0 ;; esac
+[ -n "$BYTE_CHILD" ] && [ -f "$BYTE_CHILD" ] && cmp -s tiny_host "$BYTE_CHILD" \
+    || { echo "FAIL  byte-vm: replicant not byte-identical"; ok=0; }
 if [ "$ok" -eq 1 ]; then
     echo "PASS  EMIT/PARSE_BYTES round-trip an AST through byte instructions"
     echo "PASS  every glyph of kernel.la survives AST -> bytes -> AST"
+    echo "PASS  RUN_BYTES executes byte instructions directly (no AST rebuilt)"
+    echo "PASS  the kernel ran from its bytes: spoke and bred $BYTE_CHILD"
 else
     printf '%s\n' "$OUT"
     exit 1
 fi
+rm -f new_logos_gen*.bin
 
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"
 # eval.la is a lexer + parser + evaluator written entirely in Lingua

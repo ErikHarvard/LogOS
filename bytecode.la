@@ -217,6 +217,134 @@ glyph MAP_GLYPHS = la f. Z(la self. la gl.
         (la entry. CONS(PAIR(FST(entry))(f(SND(entry))))(self(LIST_TL(gl))))(LIST_HD(gl))
     )(la _. NIL))
 
+# ═══════════════════════════════════════════════════════════════════
+#  A virtual machine: execute byte instructions DIRECTLY
+#
+#  RUN_BYTES walks the byte stream and produces a value, without ever
+#  calling PARSE_BYTES or rebuilding an AST. It is the closure-based
+#  evaluator of eval.la, lowered one level: where that walks AST nodes,
+#  this walks bytes; where a closure there captured a body AST, here it
+#  captures the body's byte-slice and re-enters RUN_BYTES to run it.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph LIST_FIND = Z(la self. la name. la lst.
+    IF(IS_CONS(lst))(la _.
+        (la entry. IF(str_eq(name)(FST(entry)))(la _. SOME(SND(entry))(""))(la _. self(name)(LIST_TL(lst))))(LIST_HD(lst))
+    )(la _. NONE))
+
+# Values: val(on_str)(on_clo)(on_bi)(on_pa).  Same shape as eval.la's,
+# but VAL_CLO's body is a byte stream, not an AST.
+glyph VAL_STR = la s.    la os. la oc. la ob. la op. os(s)
+glyph VAL_CLO = la p. la body. la env. la os. la oc. la ob. la op. oc(p)(body)(env)
+glyph VAL_BI  = la name. la os. la oc. la ob. la op. ob(name)
+glyph VAL_PA  = la name. la v.  la os. la oc. la ob. la op. op(name)(v)
+
+glyph UNWRAP_STR = la val. val (la s. s) (la p. la b. la e. "") (la n. "") (la n. la v. "")
+
+glyph IS_BI_NAME = la name.
+    IF(str_eq(name)("print"))(la _. TRUE)(la _.
+    IF(str_eq(name)("copy_self"))(la _. TRUE)(la _.
+    IF(str_eq(name)("read_file"))(la _. TRUE)(la _.
+    IF(str_eq(name)("write_file"))(la _. TRUE)(la _.
+    IF(str_eq(name)("concat"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_head"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_tail"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_eq"))(la _. TRUE)(la _.
+    FALSE))))))))
+
+# str_eq yields Church booleans; in the VM those must be closures whose
+# bodies are BYTE instructions, so applying them runs under RUN_BYTES.
+glyph BYTE_TRUE  = VAL_CLO("t")(EMIT(AST_LAM("f")(AST_VAR("t"))))(NIL)
+glyph BYTE_FALSE = VAL_CLO("t")(EMIT(AST_LAM("f")(AST_VAR("f"))))(NIL)
+
+# First-argument builtin dispatch (effects pass through to the host).
+glyph APPLY_BI = la name. la val.
+    IF(str_eq(name)("print"))(la _. (la s. (la _. val)(print(s)))(UNWRAP_STR(val)))(la _.
+    IF(str_eq(name)("copy_self"))(la _. (la path. VAL_STR(path))(copy_self(UNWRAP_STR(val))))(la _.
+    IF(str_eq(name)("read_file"))(la _. VAL_STR(read_file(UNWRAP_STR(val))))(la _.
+    IF(str_eq(name)("write_file"))(la _. VAL_PA("write_file")(val))(la _.
+    IF(str_eq(name)("concat"))(la _. VAL_PA("concat")(val))(la _.
+    IF(str_eq(name)("str_head"))(la _. VAL_STR(str_head(UNWRAP_STR(val))))(la _.
+    IF(str_eq(name)("str_tail"))(la _. VAL_STR(str_tail(UNWRAP_STR(val))))(la _.
+    IF(str_eq(name)("str_eq"))(la _. VAL_PA("str_eq")(val))(la _.
+    VAL_STR(concat("ERROR: unknown builtin ")(name))))))))))
+
+# Second-argument builtin dispatch.
+glyph APPLY_BI2 = la name. la v1. la v2.
+    IF(str_eq(name)("write_file"))(la _. (la _. v2)(write_file(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
+    IF(str_eq(name)("concat"))(la _. VAL_STR(concat(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
+    IF(str_eq(name)("str_eq"))(la _. IF(str_eq(UNWRAP_STR(v1))(UNWRAP_STR(v2)))(la _. BYTE_TRUE)(la _. BYTE_FALSE))(la _.
+    VAL_STR(concat("ERROR: unknown builtin2 ")(name)))))
+
+# SKIP_FIELD / SKIP_BYTES — advance past one field / one expression
+# without evaluating, so a lambda can find where its body ends.
+glyph SKIP_FIELD = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. s)(la _.
+    IF(str_eq(str_head(s))("\\"))(la _. self(str_tail(str_tail(s))))(la _.
+    IF(str_eq(str_head(s))(";"))(la _. str_tail(s))(la _.
+    self(str_tail(s))))))
+
+glyph SKIP_BYTES = Z(la self. la s.
+    (la op. (la rest0.
+        IF(str_eq(op)("V"))(la _. SKIP_FIELD(rest0))(la _.
+        IF(str_eq(op)("S"))(la _. SKIP_FIELD(rest0))(la _.
+        IF(str_eq(op)("L"))(la _. self(SKIP_FIELD(rest0)))(la _.
+        IF(str_eq(op)("A"))(la _. self(self(rest0)))(la _.
+        rest0))))
+    )(str_tail(s)))(str_head(s)))
+
+# RUN_BYTES(stream)(env)(gl) -> PAIR(value)(rest_of_stream).
+#   env : list of PAIR(name)(value)      — local bindings
+#   gl  : list of PAIR(name)(body_bytes) — the compiled glyph table
+glyph RUN_BYTES = Z(la self. la s. la env. la gl.
+    (la op. (la rest0.
+        # ── V: variable — env, then glyph table, then builtin ──
+        IF(str_eq(op)("V"))(la _.
+            (la fr. (la name. (la rest1.
+                (la local.
+                    IF(IS_SOME(local))(la _. PAIR(R_VAL(local))(rest1))(la _.
+                    (la found.
+                        IF(IS_SOME(found))(la _. PAIR(FST(self(R_VAL(found))(NIL)(gl)))(rest1))(la _.
+                        IF(IS_BI_NAME(name))(la _. PAIR(VAL_BI(name))(rest1))(la _.
+                        (la _. PAIR(VAL_STR(name))(rest1))(print(concat("vm: unbound ")(name)))))
+                    )(LIST_FIND(name)(gl)))
+                )(LIST_FIND(name)(env))
+            )(SND(fr)))(FST(fr)))(READ_FIELD("")(rest0))
+        )(la _.
+        # ── S: string literal ──
+        IF(str_eq(op)("S"))(la _.
+            (la fr. PAIR(VAL_STR(FST(fr)))(SND(fr)))(READ_FIELD("")(rest0))
+        )(la _.
+        # ── L: lambda — capture param, body byte-slice, and env ──
+        IF(str_eq(op)("L"))(la _.
+            (la fr. (la param. (la body.
+                PAIR(VAL_CLO(param)(body)(env))(SKIP_BYTES(body))
+            )(SND(fr)))(FST(fr)))(READ_FIELD("")(rest0))
+        )(la _.
+        # ── A: application — run func, run arg, dispatch on the value ──
+        IF(str_eq(op)("A"))(la _.
+            (la fn_r. (la arg_r.
+                (la fval. (la aval.
+                    PAIR(
+                        fval
+                            (la str. VAL_STR(concat("vm: cannot apply string: ")(str)))
+                            (la p. la b. la e. FST(self(b)(CONS(PAIR(p)(aval))(e))(gl)))
+                            (la bn. APPLY_BI(bn)(aval))
+                            (la pn. la pv. APPLY_BI2(pn)(pv)(aval))
+                    )(SND(arg_r))
+                )(FST(arg_r)))(FST(fn_r))
+            )(self(SND(fn_r))(env)(gl)))(self(rest0)(env)(gl))
+        )(la _.
+            PAIR(VAL_STR("vm: bad opcode"))(rest0)
+        ))))
+    )(str_tail(s)))(str_head(s)))
+
+# COMPILE(gl_ast) — compile a parsed program (name->AST) into a byte
+# glyph table (name->bytes). EXEC runs MAIN's bytes against it.
+glyph COMPILE = la gl. MAP_GLYPHS(EMIT)(gl)
+glyph EXEC    = la bytes. la glb. FST(RUN_BYTES(bytes)(NIL)(glb))
+glyph RUN_BYTES_PROGRAM = la gl_ast. (la glb. EXEC(R_VAL(LIST_FIND("MAIN")(glb)))(glb))(COMPILE(gl_ast))
+
 # ── Tests ───────────────────────────────────────────────────────────
 
 # A small AST built by hand, exercising every node kind, nesting, and a
@@ -224,7 +352,12 @@ glyph MAP_GLYPHS = la f. Z(la self. la gl.
 # backslash — so the field escaping is genuinely tested.
 glyph TEST_AST = AST_LAM("x")(AST_APP(AST_APP(AST_VAR("f"))(AST_VAR("x")))(AST_STR("a;b\\c")))
 
-glyph MAIN = SEQ(SEQ(SEQ(
+# A program exercised by the VM directly: a glyph reference (K), a
+# curried builtin (concat), and a str_eq whose Church-boolean result is
+# applied to select a branch — all run from bytes, no AST rebuilt.
+glyph VM_SRC = "glyph K = la x. la y. x\nglyph MAIN = concat(str_eq(\"p\")(\"p\")(\"yes \")(\"no \"))(K(\"kept\")(\"dropped\"))\n"
+
+glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(
     # Show the byte instructions for the hand-built AST.
     SEQ(print("--- byte instructions for  la x. f(x)(\"a;b\\c\") ---"))(
     print(EMIT(TEST_AST)))
@@ -243,4 +376,16 @@ glyph MAIN = SEQ(SEQ(SEQ(
     (la gl.
         print(str_eq(SHOW_PROGRAM(gl))(SHOW_PROGRAM(MAP_GLYPHS(ROUNDTRIP_AST)(gl)))("kernel round-trip: stable")("kernel round-trip: DIVERGED"))
     )(PARSE_PROGRAM(read_file("kernel.la"))))
+))(
+    # Execute byte instructions DIRECTLY — RUN_BYTES, no PARSE_BYTES.
+    # First a literal hand-written byte stream (no parser, no EMIT): the
+    # instructions for  concat("byte ")("vm")  run straight to a value.
+    SEQ(print("--- executing byte instructions directly ---"))(
+    SEQ(print(UNWRAP_STR(EXEC("AAVconcat;Sbyte ;Svm;")(NIL))))(
+    print(UNWRAP_STR(RUN_BYTES_PROGRAM(PARSE_PROGRAM(VM_SRC))))))
+))(
+    # The kernel, executed straight from its byte instructions: it speaks
+    # the Word and replicates, with no AST ever reconstructed.
+    SEQ(print("--- executing kernel.la from bytes (speaks + replicates) ---"))(
+    (la _. print("kernel executed from bytes"))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("kernel.la")))))
 )

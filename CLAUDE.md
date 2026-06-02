@@ -14,7 +14,7 @@ host program, applied to itself, reproduces itself.
 | `kernel.la`          | The kernel, written in Lingua Adamica. Defines `MAIN`.              |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
-| `bytecode.la`        | Byte instructions: a flat linear encoding of an AST, with `EMIT` (AST → bytes) and `PARSE_BYTES` (the parser for byte instructions, bytes → AST), all in Lingua Adamica. |
+| `bytecode.la`        | Byte instructions: a flat linear encoding of an AST, with `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), and `RUN_BYTES` (a VM that executes the bytes directly, no AST rebuilt), all in Lingua Adamica. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -206,6 +206,32 @@ how many sub-expressions follow, so `PARSE_BYTES` needs no look-ahead.
 The round trip is `text → AST → bytes → AST → text`; `build.sh` checks an
 expression with a terminator-and-backslash string survives it, and that every
 glyph of `kernel.la` is identical after `DECODE(EMIT(·))`.
+
+#### `RUN_BYTES` — executing byte instructions directly
+
+`PARSE_BYTES` decodes to an AST; **`RUN_BYTES` executes the byte stream
+directly, never rebuilding an AST.** It is `eval.la`'s closure-based evaluator
+lowered one level — where that walks AST nodes, this walks bytes:
+
+- `RUN_BYTES(stream)(env)(gl)` → `PAIR(value)(rest_of_stream)`. `env` is the
+  local environment; `gl` is the **compiled** glyph table (name → *bytes*,
+  produced by `COMPILE = MAP_GLYPHS(EMIT)`).
+- Values reuse the `VAL_*` shape, but a `VAL_CLO` captures the **byte-slice of
+  its body**, not an AST. Applying it re-enters `RUN_BYTES` on that slice.
+- A lambda must capture its body without running it, yet an enclosing
+  application still needs to find where the body ends. `SKIP_BYTES` (with
+  `SKIP_FIELD`) advances past one expression's bytes without evaluating, so the
+  closure captures the body tail and the lambda returns the correct `rest`.
+- Effects pass through to the host exactly as in `eval.la` (`APPLY_BI` /
+  `APPLY_BI2`); `str_eq`'s Church booleans become `BYTE_TRUE` / `BYTE_FALSE` —
+  closures whose bodies are *byte instructions*, so branch selection runs under
+  the VM.
+
+`build.sh` checks a literal hand-written byte stream executes
+(`EXEC("AAVconcat;Sbyte ;Svm;")(NIL)` → `byte vm`, no parser or `EMIT`
+involved), that closures/booleans/glyph-lookup work, and — the headline — that
+the kernel, executed straight from its byte instructions, speaks the Word and
+produces a **byte-identical replicant** with no AST ever reconstructed.
 
 ### Evaluation
 
