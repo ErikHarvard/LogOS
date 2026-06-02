@@ -7,6 +7,7 @@
 /eval_reconstructed.la
 
 # native binaries / artifacts emitted by elf.la, secd.la, codegen.la (regenerated each run)
+/secd
 /logos_native
 /logos_secd
 /logos_program.bin
