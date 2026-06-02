@@ -170,6 +170,31 @@ else
     exit 1
 fi
 
+say "Closing the self-hosting loop (eval.la interprets kernel.la)"
+# eval.la is a lexer + parser + evaluator written entirely in Lingua
+# Adamica. It reads kernel.la, parses it, evaluates it — and the
+# self-interpreted kernel speaks the Word and replicates, one meta-level up.
+rm -f new_logos_gen*.bin
+ERR_E="$(mktemp)"
+EVAL_OUT="$(./tiny_host eval.la 2>"$ERR_E")"
+EVAL_CHILD="$(sed -n 's/^copy_self: replicated -> //p' "$ERR_E" | tail -1)"
+rm -f "$ERR_E"
+ok=1
+printf '%s\n' "$EVAL_OUT" | grep -qF "hello from the meta-evaluator" || { echo "FAIL  meta-eval: trivial print";   ok=0; }
+printf '%s\n' "$EVAL_OUT" | grep -qF "identity works"                || { echo "FAIL  meta-eval: lambda apply";    ok=0; }
+printf '%s\n' "$EVAL_OUT" | grep -qxF "concat"                       || { echo "FAIL  meta-eval: curried concat";  ok=0; }
+printf '%s\n' "$EVAL_OUT" | grep -qF "I can read myself, I AM THAT I AM" || { echo "FAIL  meta-eval: kernel self-read"; ok=0; }
+printf '%s\n' "$EVAL_OUT" | grep -qxF "I AM THAT I AM"                || { echo "FAIL  meta-eval: kernel Word";     ok=0; }
+case "$EVAL_CHILD" in new_logos_gen1_pid*.bin) : ;; *) echo "FAIL  meta-eval: no replicant ('$EVAL_CHILD')"; ok=0 ;; esac
+[ -n "$EVAL_CHILD" ] && [ -f "$EVAL_CHILD" ] && cmp -s tiny_host "$EVAL_CHILD" \
+    || { echo "FAIL  meta-eval: replicant not byte-identical"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  the language interpreted itself: kernel spoke and bred $EVAL_CHILD"
+else
+    printf '%s\n' "$EVAL_OUT"
+    exit 1
+fi
+
 say "Clearing previous generations"
 rm -f new_logos_gen*.bin new_logos.bin logos_child.bin
 echo "clean"

@@ -1,0 +1,295 @@
+# ═══════════════════════════════════════════════════════════════════
+#  eval.la — self-hosted evaluator for Lingua Adamica
+#
+#  The self-hosting loop, closed:
+#    1. read a .la program from disk          (host built-in)
+#    2. parse it with a parser written in LA   (parser glyphs below)
+#    3. evaluate it with an evaluator in LA    (EVAL glyph below)
+#
+#  The language interprets itself.  When it evaluates kernel.la, it
+#  speaks the Word and replicates — same as the C host, but one meta-
+#  level up: the evaluator calls the host's print and copy_self to
+#  produce real effects.
+#
+#  Value encoding (Scott, 4-branch):
+#    VAL_STR(s)            — a string
+#    VAL_CLO(p)(body)(env) — a closure  (param name, AST body, captured env)
+#    VAL_BI(name)          — a builtin waiting for its first argument
+#    VAL_PA(name)(v)       — a curried builtin with its first argument captured
+# ═══════════════════════════════════════════════════════════════════
+
+# ── 1. Foundations ──────────────────────────────────────────────────
+
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph ID    = la x. x
+glyph SEQ   = la a. la b. b
+
+glyph Z  = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF = la cond. la t. la f. cond(t)(f)("!")
+
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+glyph NONE    = PAIR(FALSE)("")
+glyph SOME    = la val. la rest. PAIR(TRUE)(PAIR(val)(rest))
+glyph IS_SOME = la r. FST(r)
+glyph R_VAL   = la r. FST(SND(r))
+glyph R_REST  = la r. SND(SND(r))
+
+glyph NIL      = PAIR(FALSE)("")
+glyph CONS     = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS  = la lst. FST(lst)
+glyph LIST_HD  = la lst. FST(SND(lst))
+glyph LIST_TL  = la lst. SND(SND(lst))
+
+# ── 2. AST constructors ────────────────────────────────────────────
+#  node(on_var)(on_lam)(on_app)(on_str)
+
+glyph AST_VAR = la name. la v. la l. la a. la s. v(name)
+glyph AST_LAM = la param. la body. la v. la l. la a. la s. l(param)(body)
+glyph AST_APP = la func. la arg. la v. la l. la a. la s. a(func)(arg)
+glyph AST_STR = la val. la v. la l. la a. la s. s(val)
+
+# ── 3. Lexer ────────────────────────────────────────────────────────
+
+glyph IS_SPACE = la c. IF(str_eq(c)(" "))(la _. TRUE)(la _. IF(str_eq(c)("\n"))(la _. TRUE)(la _. IF(str_eq(c)("\t"))(la _. TRUE)(la _. FALSE)))
+
+glyph IS_SPECIAL = la c. IF(str_eq(c)("("))(la _. TRUE)(la _. IF(str_eq(c)(")"))(la _. TRUE)(la _. IF(str_eq(c)("."))(la _. TRUE)(la _. IF(str_eq(c)("="))(la _. TRUE)(la _. FALSE))))
+
+glyph IS_QUOTE_OR_HASH = la c. IF(str_eq(c)("\""))(la _. TRUE)(la _. IF(str_eq(c)("#"))(la _. TRUE)(la _. FALSE))
+
+glyph IS_IDENT_CHAR = la c. IF(str_eq(c)(""))(la _. FALSE)(la _. IF(IS_SPACE(c))(la _. FALSE)(la _. IF(IS_SPECIAL(c))(la _. FALSE)(la _. IF(IS_QUOTE_OR_HASH(c))(la _. FALSE)(la _. TRUE))))
+
+glyph SKIP_LINE = Z(la self. la s. IF(str_eq(s)(""))(la _. s)(la _. IF(str_eq(str_head(s))("\n"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+
+glyph SKIP_SPACES = Z(la self. la s. IF(str_eq(s)(""))(la _. s)(la _. IF(IS_SPACE(str_head(s)))(la _. self(str_tail(s)))(la _. IF(str_eq(str_head(s))("#"))(la _. self(SKIP_LINE(s)))(la _. s))))
+
+glyph READ_IDENT = Z(la self. la acc. la s. IF(IS_IDENT_CHAR(str_head(s)))(la _. self(concat(acc)(str_head(s)))(str_tail(s)))(la _. PAIR(acc)(s)))
+
+glyph UNESCAPE = la c. IF(str_eq(c)("n"))(la _. "\n")(la _. IF(str_eq(c)("t"))(la _. "\t")(la _. c))
+
+glyph READ_STRING = Z(la self. la acc. la s. IF(str_eq(s)(""))(la _. PAIR(acc)(s))(la _. IF(str_eq(str_head(s))("\""))(la _. PAIR(acc)(str_tail(s)))(la _. IF(str_eq(str_head(s))("\\"))(la _. self(concat(acc)(UNESCAPE(str_head(str_tail(s)))))(str_tail(str_tail(s))))(la _. self(concat(acc)(str_head(s)))(str_tail(s))))))
+
+glyph TOK_TYPE = la tok. FST(tok)
+glyph TOK_VAL  = la tok. SND(tok)
+glyph MKTOK    = la ty. la val. PAIR(ty)(val)
+
+glyph LEX_ONE = la s. IF(str_eq(s)(""))(la _. PAIR(MKTOK("eof")(""))(s))(la _. IF(str_eq(str_head(s))("("))(la _. PAIR(MKTOK("lp")("("))(str_tail(s)))(la _. IF(str_eq(str_head(s))(")"))(la _. PAIR(MKTOK("rp")(")"))(str_tail(s)))(la _. IF(str_eq(str_head(s))("."))(la _. PAIR(MKTOK("dot")("."))(str_tail(s)))(la _. IF(str_eq(str_head(s))("="))(la _. PAIR(MKTOK("eq")("="))(str_tail(s)))(la _. IF(str_eq(str_head(s))("\""))(la _. (la r. PAIR(MKTOK("str")(FST(r)))(SND(r)))(READ_STRING("")(str_tail(s))))(la _. IF(IS_IDENT_CHAR(str_head(s)))(la _. (la r. (la name. (la rest. IF(str_eq(name)("glyph"))(la _. PAIR(MKTOK("glyph")("glyph"))(rest))(la _. IF(str_eq(name)("la"))(la _. PAIR(MKTOK("la")("la"))(rest))(la _. PAIR(MKTOK("ident")(name))(rest))))(SND(r)))(FST(r)))(READ_IDENT("")(s)))(la _. PAIR(MKTOK("eof")(""))(s))))))))
+
+glyph NEXT_TOKEN = la s. LEX_ONE(SKIP_SPACES(s))
+
+# ── 4. Parser ───────────────────────────────────────────────────────
+
+glyph PARSE_PRIMARY = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("ident"))(la _. SOME(AST_VAR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("str"))(la _. SOME(AST_STR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la inner. IF(IS_SOME(inner))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. SOME(R_VAL(inner))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(inner))))(la _. NONE))(PARSE_EXPR(rest)))(la _. NONE))))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+
+glyph PARSE_APP_TAIL = Z(la self. la acc. la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la arg. IF(IS_SOME(arg))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. self(AST_APP(acc)(R_VAL(arg)))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(arg))))(la _. NONE))(PARSE_EXPR(rest)))(la _. SOME(acc)(s)))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+
+glyph PARSE_APP = la s. (la base. IF(IS_SOME(base))(la _. PARSE_APP_TAIL(R_VAL(base))(R_REST(base)))(la _. NONE))(PARSE_PRIMARY(s))
+
+glyph PARSE_EXPR = Z(la self_expr. la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("la"))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("ident"))(la _. (la tr3. (la tok3. (la rest3. IF(str_eq(TOK_TYPE(tok3))("dot"))(la _. (la body. IF(IS_SOME(body))(la _. SOME(AST_LAM(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body)))(la _. NONE))(self_expr(rest3)))(la _. NONE))(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2)))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest)))(la _. PARSE_APP(s)))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+
+glyph PARSE_GLYPH = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("glyph"))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("ident"))(la _. (la tr3. (la tok3. (la rest3. IF(str_eq(TOK_TYPE(tok3))("eq"))(la _. (la body. IF(IS_SOME(body))(la _. SOME(PAIR(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body)))(la _. NONE))(PARSE_EXPR(rest3)))(la _. NONE))(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2)))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest)))(la _. NONE))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+
+glyph PARSE_PROGRAM = Z(la self. la s. (la s2. (la g. IF(IS_SOME(g))(la _. (la rest_parsed. CONS(R_VAL(g))(rest_parsed))(self(R_REST(g))))(la _. NIL))(PARSE_GLYPH(s2)))(SKIP_SPACES(s)))
+
+# ── 5. Value types ──────────────────────────────────────────────────
+#  val(on_str)(on_clo)(on_bi)(on_pa)
+
+glyph VAL_STR = la s.    la os. la oc. la ob. la op. os(s)
+glyph VAL_CLO = la p. la body. la env. la os. la oc. la ob. la op. oc(p)(body)(env)
+glyph VAL_BI  = la name. la os. la oc. la ob. la op. ob(name)
+glyph VAL_PA  = la name. la v.  la os. la oc. la ob. la op. op(name)(v)
+
+glyph UNWRAP_STR = la val. val (la s. s) (la p. la b. la e. "") (la n. "") (la n. la v. "")
+
+# Church booleans as meta-level closures: when the object program's
+# str_eq returns TRUE/FALSE, these ARE the values — closures whose
+# bodies are the Church boolean ASTs, so applying them selects a branch.
+glyph META_TRUE  = VAL_CLO("t")(AST_LAM("f")(AST_VAR("t")))(NIL)
+glyph META_FALSE = VAL_CLO("t")(AST_LAM("f")(AST_VAR("f")))(NIL)
+
+# ── 6. Lookup ───────────────────────────────────────────────────────
+
+# Search a list of PAIR(name)(value) entries by name.
+# Returns SOME(value)("") or NONE.
+glyph LIST_FIND = Z(la self. la name. la lst.
+    IF(IS_CONS(lst))(la _.
+        (la entry.
+            IF(str_eq(name)(FST(entry)))(la _.
+                SOME(SND(entry))("")
+            )(la _.
+                self(name)(LIST_TL(lst))
+            )
+        )(LIST_HD(lst))
+    )(la _. NONE))
+
+glyph IS_BI_NAME = la name.
+    IF(str_eq(name)("print"))(la _. TRUE)(la _.
+    IF(str_eq(name)("copy_self"))(la _. TRUE)(la _.
+    IF(str_eq(name)("read_file"))(la _. TRUE)(la _.
+    IF(str_eq(name)("write_file"))(la _. TRUE)(la _.
+    IF(str_eq(name)("concat"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_head"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_tail"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_eq"))(la _. TRUE)(la _.
+    FALSE))))))))
+
+# ── 7. Built-in dispatch ───────────────────────────────────────────
+#
+# These bridge the meta-level and the host: when the object program
+# calls print("hello"), the evaluator calls the HOST's print, which
+# actually writes to stdout.  The language's effects pass through.
+
+glyph APPLY_BI = la name. la val.
+    IF(str_eq(name)("print"))(la _.
+        (la s. (la _. val)(print(s)))(UNWRAP_STR(val))
+    )(la _.
+    IF(str_eq(name)("copy_self"))(la _.
+        (la path. VAL_STR(path))(copy_self(UNWRAP_STR(val)))
+    )(la _.
+    IF(str_eq(name)("read_file"))(la _.
+        VAL_STR(read_file(UNWRAP_STR(val)))
+    )(la _.
+    IF(str_eq(name)("write_file"))(la _.
+        VAL_PA("write_file")(val)
+    )(la _.
+    IF(str_eq(name)("concat"))(la _.
+        VAL_PA("concat")(val)
+    )(la _.
+    IF(str_eq(name)("str_head"))(la _.
+        VAL_STR(str_head(UNWRAP_STR(val)))
+    )(la _.
+    IF(str_eq(name)("str_tail"))(la _.
+        VAL_STR(str_tail(UNWRAP_STR(val)))
+    )(la _.
+    IF(str_eq(name)("str_eq"))(la _.
+        VAL_PA("str_eq")(val)
+    )(la _.
+        VAL_STR(concat("ERROR: unknown builtin ")(name))
+    ))))))))
+
+glyph APPLY_BI2 = la name. la v1. la v2.
+    IF(str_eq(name)("write_file"))(la _.
+        (la _. v2)(write_file(UNWRAP_STR(v1))(UNWRAP_STR(v2)))
+    )(la _.
+    IF(str_eq(name)("concat"))(la _.
+        VAL_STR(concat(UNWRAP_STR(v1))(UNWRAP_STR(v2)))
+    )(la _.
+    IF(str_eq(name)("str_eq"))(la _.
+        IF(str_eq(UNWRAP_STR(v1))(UNWRAP_STR(v2)))(la _. META_TRUE)(la _. META_FALSE)
+    )(la _.
+        VAL_STR(concat("ERROR: unknown builtin2 ")(name))
+    )))
+
+# ── 8. The evaluator ───────────────────────────────────────────────
+#
+# EVAL(ast)(env)(gl) → value
+#
+#   ast  : a Scott-encoded AST node from the parser
+#   env  : a list of PAIR(name)(value) — the local environment
+#   gl   : a list of PAIR(name)(ast)   — the parsed glyph table
+#
+# The evaluator is closure-based: lambdas capture their defining
+# environment, and application extends the closure's environment.
+# This is semantically equivalent to the C host's substitution-based
+# evaluator, but avoids the complexity of capture-avoiding substitution.
+
+glyph EVAL = Z(la self. la ast. la env. la gl.
+    ast
+        # ── VAR(name) ──
+        # Look up in local env first, then glyph table, then builtins.
+        (la name.
+            (la local.
+                IF(IS_SOME(local))(la _.
+                    R_VAL(local)
+                )(la _.
+                (la found.
+                    IF(IS_SOME(found))(la _.
+                        self(R_VAL(found))(NIL)(gl)
+                    )(la _.
+                    IF(IS_BI_NAME(name))(la _.
+                        VAL_BI(name)
+                    )(la _.
+                        (la _. VAL_STR(name))(print(concat("eval: unbound ")(name)))
+                    ))
+                )(LIST_FIND(name)(gl)))
+            )(LIST_FIND(name)(env))
+        )
+        # ── LAM(param, body) ──
+        # Capture the current environment in a closure.
+        (la param. la body.
+            VAL_CLO(param)(body)(env)
+        )
+        # ── APP(func, arg) ──
+        # Evaluate the function, then dispatch on the value type.
+        (la func. la arg.
+            (la fval.
+                fval
+                    # VAL_STR — cannot apply a string
+                    (la s.
+                        (la _. VAL_STR(s))(print(concat("eval: cannot apply string: ")(s)))
+                    )
+                    # VAL_CLO — beta reduction via environment extension
+                    (la p. la b. la e.
+                        (la aval.
+                            self(b)(CONS(PAIR(p)(aval))(e))(gl)
+                        )(self(arg)(env)(gl))
+                    )
+                    # VAL_BI — first application of a builtin
+                    (la biname.
+                        APPLY_BI(biname)(self(arg)(env)(gl))
+                    )
+                    # VAL_PA — second application of a curried builtin
+                    (la paname. la pv.
+                        APPLY_BI2(paname)(pv)(self(arg)(env)(gl))
+                    )
+            )(self(func)(env)(gl))
+        )
+        # ── STR(val) ──
+        # Strings are values.
+        (la val. VAL_STR(val))
+)
+
+# ── 9. Runner ───────────────────────────────────────────────────────
+#
+# RUN(glyph_list) — find MAIN and evaluate it.
+
+glyph RUN = la gl.
+    (la found.
+        IF(IS_SOME(found))(la _.
+            EVAL(R_VAL(found))(NIL)(gl)
+        )(la _.
+            (la _. VAL_STR("no MAIN"))(print("eval: no MAIN glyph found"))
+        )
+    )(LIST_FIND("MAIN")(gl))
+
+# ── 10. Tests ───────────────────────────────────────────────────────
+
+# Smoke test: a trivial program
+glyph TEST1_SRC = "glyph MAIN = print(\"hello from the meta-evaluator\")\n"
+
+# Lambda + application test
+glyph TEST2_SRC = "glyph ID = la x. x\nglyph MAIN = print(ID(\"identity works\"))\n"
+
+# Curried builtin test
+glyph TEST3_SRC = "glyph MAIN = print(concat(\"con\")(\"cat\"))\n"
+
+glyph MAIN = SEQ(SEQ(SEQ(
+    # Test 1: trivial program
+    SEQ(print("--- test 1: print ---"))(
+    RUN(PARSE_PROGRAM(TEST1_SRC)))
+)(
+    # Test 2: lambda + application
+    SEQ(print("--- test 2: lambda ---"))(
+    RUN(PARSE_PROGRAM(TEST2_SRC)))
+))(
+    # Test 3: curried builtin
+    SEQ(print("--- test 3: concat ---"))(
+    RUN(PARSE_PROGRAM(TEST3_SRC)))
+))(
+    # Test 4: the real thing — parse and evaluate kernel.la
+    SEQ(print("--- test 4: kernel.la ---"))(
+    RUN(PARSE_PROGRAM(read_file("kernel.la"))))
+)

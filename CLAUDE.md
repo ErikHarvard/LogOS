@@ -13,6 +13,7 @@ host program, applied to itself, reproduces itself.
 | `tiny_host.c`        | The host: a minimal C interpreter for `.la` files.                  |
 | `kernel.la`          | The kernel, written in Lingua Adamica. Defines `MAIN`.              |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
+| `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -95,6 +96,35 @@ produces Church-encoded ASTs:
 - **Parse results**: `SOME(value)(rest)` or `NONE` (Church-option with remaining input)
 - **Lists**: `CONS(head)(tail)` / `NIL` (Church-encoded)
 - **Pairs**: `PAIR(a)(b) = la f. f(a)(b)`
+
+### Self-hosted evaluator (`eval.la`) — the closed loop
+
+`eval.la` contains the lexer and parser (same glyphs as `parser.la`) plus an
+**`EVAL`** that interprets the parsed ASTs. The whole pipeline — read, parse,
+evaluate — runs in Lingua Adamica: **the language interprets itself.** When
+`eval.la` evaluates `kernel.la`, the self-interpreted kernel speaks the Word
+and replicates, one meta-level up (`./build.sh` verifies the replicant is
+byte-identical to `tiny_host`).
+
+- **`EVAL(ast)(env)(gl)`** — `env` is a local environment (list of
+  `PAIR(name)(value)`), `gl` is the parsed glyph table (list of
+  `PAIR(name)(ast)`). Evaluation is **closure-based**: `AST_LAM` captures the
+  current `env` into a `VAL_CLO`, and `AST_APP` extends the closure's
+  environment with the bound argument. This sidesteps the C host's
+  capture-avoiding substitution entirely — α-capture can't happen because
+  free variables are resolved against captured environments, not re-substituted.
+- **Value types** (Scott-encoded, 4-branch):
+  - `VAL_STR(s)` — a string
+  - `VAL_CLO(param)(body)(env)` — a closure
+  - `VAL_BI(name)` — a built-in awaiting its first argument
+  - `VAL_PA(name)(v)` — a curried built-in with its first argument captured
+- **Effects pass through to the host.** `APPLY_BI`/`APPLY_BI2` bridge the meta
+  level to the host: the object program's `print`, `copy_self`, `read_file`,
+  etc. call the host's real built-ins, so meta-evaluated effects are genuine.
+- **Church booleans from `str_eq`.** `str_eq` returns the host's Church
+  `TRUE`/`FALSE`; at the meta level these become `META_TRUE`/`META_FALSE`,
+  closures whose bodies are the Church-boolean ASTs, so applying them selects
+  a branch exactly as in the object language.
 
 ### Evaluation
 
