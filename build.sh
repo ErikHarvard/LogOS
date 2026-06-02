@@ -256,19 +256,29 @@ else
 fi
 rm -f logos_native
 
-say "Emitting the native SECD runtime (Albedo Stage 2 v0 — secd.la)"
-# secd.la emits a native binary whose code is a real SECD dispatch loop
-# (operand stack + control pointer over a compiled instruction stream).
-# The baked stream is print("I AM THAT I AM"); the emitted binary runs that
-# program on the bare OS. The bytes are the output of `nasm -f bin secd.asm`.
+say "Emitting the native SECD runtime (Albedo Stage 2 v1 — secd.la)"
+# secd.la emits a native binary whose code is a full call-by-value SECD
+# machine: operand stack (S), environment (E), control (C), dump (D), and a
+# bump heap for closures and env cells. The baked stream is
+# print((la x. x)("I AM THAT I AM")) — it builds a closure, applies it, looks
+# the bound variable up in E, returns via D, and runs print, on the bare OS.
+# The bytes are the output of `nasm -f bin secd.asm`.
 rm -f logos_secd
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                || { echo "FAIL  secd: logos_secd not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "354" ] || { echo "FAIL  secd: wrong size ($(stat -c%s logos_secd 2>/dev/null) != 354)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "694" ] || { echo "FAIL  secd: wrong size ($(stat -c%s logos_secd 2>/dev/null) != 694)"; ok=0; }
 SECD_OUT="$(./logos_secd 2>/dev/null)"; SECD_RC=$?
 [ "$SECD_OUT" = "I AM THAT I AM" ]               || { echo "FAIL  secd: runtime said '$SECD_OUT'"; ok=0; }
 [ "$SECD_RC" = "0" ]                             || { echo "FAIL  secd: runtime exited $SECD_RC"; ok=0; }
+# The native machine must agree with the interpreter on the same program
+# (generation lowered to native, recognition unchanged).
+cat > /tmp/secd_prog.la <<'LAEOF'
+glyph MAIN = print((la x. x)("I AM THAT I AM"))
+LAEOF
+RUNSM_OUT="$(./tiny_host /tmp/secd_prog.la 2>/dev/null)"
+rm -f /tmp/secd_prog.la
+[ "$SECD_OUT" = "$RUNSM_OUT" ]                    || { echo "FAIL  secd: native ('$SECD_OUT') != interpreter ('$RUNSM_OUT')"; ok=0; }
 # Drift guard: the embedded bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -276,8 +286,9 @@ if command -v nasm >/dev/null 2>&1; then
     rm -f /tmp/secd_ref
 fi
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  secd.la emitted the 354-byte native SECD runtime"
-    echo "PASS  the SECD dispatch loop ran a compiled instruction stream and spoke the Word"
+    echo "PASS  secd.la emitted the 694-byte native SECD machine (S/E/C/D + heap)"
+    echo "PASS  it ran a lambda natively: closure, env lookup, dump return, print"
+    echo "PASS  native output agrees with the interpreter on the same program"
     command -v nasm >/dev/null 2>&1 && echo "PASS  emitted bytes are byte-identical to nasm -f bin secd.asm"
 else
     exit 1

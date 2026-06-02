@@ -1,16 +1,19 @@
 # ═══════════════════════════════════════════════════════════════════
-#  secd.la — emit the native SECD runtime (Albedo Stage 2, v0)
+#  secd.la — emit the native SECD runtime (Albedo Stage 2, v1)
 #
-#  The system writes out a 354-byte native ELF whose code is a real SECD
-#  dispatch loop (operand stack + control pointer over a compiled
-#  instruction stream). The baked stream is  print("I AM THAT I AM") ; the
-#  emitted binary runs that program on the bare OS, with no host present.
+#  The system writes out a 694-byte native ELF whose code is a full
+#  call-by-value SECD machine: operand stack (S), environment (E), control
+#  pointer (C), dump (D), and a bump-allocated heap for closures and
+#  environment cells. The baked stream is  print((la x. x)("I AM THAT I
+#  AM")) — so the emitted binary builds a closure, applies it, looks the
+#  bound variable up in E, returns through D, and runs the print builtin,
+#  all on the bare OS with no host present.
 #
 #  The bytes below are the exact output of  nasm -f bin secd.asm  — the
 #  hand-written runtime is the auditable source; this file is its vessel.
-#  (v0 bakes the instruction stream into the image. The next increment
-#  generates the stream from an arbitrary program — the actual codegen —
-#  and adds E / D / CLOSE / closures + a heap to the runtime.)
+#  (v1 still bakes the instruction stream into the image. The remaining
+#  increment generates the stream from an arbitrary program — the actual
+#  codegen — and lowers the remaining builtins to syscalls.)
 #
 #  This is GENERATION: assembling and writing machine code, no evaluation.
 #  Running the emitted binary is RECOGNITION performed by the CPU and OS.
@@ -34,6 +37,6 @@ glyph BYTES = la s.
     )(s)("")("")
 
 # The SECD runtime image (nasm -f bin secd.asm), as decimal byte values.
-glyph SECD = BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0 120 0 64 0 0 0 0 0 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 56 0 1 0 0 0 0 0 0 0 1 0 0 0 7 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 0 0 0 0 0 0 64 0 0 0 0 0 98 1 0 0 0 0 0 0 98 17 0 0 0 0 0 0 0 16 0 0 0 0 0 0 72 187 79 1 64 0 0 0 0 0 73 188 98 1 64 0 0 0 0 0 72 15 182 3 72 255 195 60 0 15 132 169 0 0 0 60 1 116 13 60 2 116 37 60 3 116 56 233 152 0 0 0 73 199 4 36 0 0 0 0 73 137 92 36 8 73 131 196 16 138 3 72 255 195 132 192 117 247 235 196 73 199 4 36 1 0 0 0 73 199 68 36 8 0 0 0 0 73 131 196 16 235 173 73 131 236 16 77 139 84 36 8 73 131 236 16 77 137 208 77 137 209 65 138 1 132 192 116 5 73 255 193 235 244 77 41 193 184 1 0 0 0 191 1 0 0 0 76 137 198 76 137 202 15 5 184 1 0 0 0 191 1 0 0 0 72 190 78 1 64 0 0 0 0 0 186 1 0 0 0 15 5 73 199 4 36 0 0 0 0 77 137 68 36 8 73 131 196 16 233 72 255 255 255 184 60 0 0 0 72 49 255 15 5 10 2 1 73 32 65 77 32 84 72 65 84 32 73 32 65 77 0 3 0")
+glyph SECD = BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0 149 0 64 0 0 0 0 0 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 56 0 1 0 0 0 0 0 0 0 1 0 0 0 7 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 0 0 0 0 0 0 64 0 0 0 0 0 182 2 0 0 0 0 0 0 182 34 8 0 0 0 0 0 0 16 0 0 0 0 0 0 138 6 138 15 56 200 117 15 132 192 116 8 72 255 198 72 255 199 235 236 49 192 195 184 1 0 0 0 195 72 187 145 2 64 0 0 0 0 0 73 188 182 2 64 0 0 0 0 0 77 49 237 73 190 182 18 64 0 0 0 0 0 73 191 182 34 64 0 0 0 0 0 72 15 182 3 72 255 195 60 0 15 132 177 1 0 0 60 1 116 33 60 2 116 57 60 3 15 132 168 0 0 0 60 4 15 132 221 0 0 0 60 5 15 132 129 1 0 0 233 140 1 0 0 73 199 4 36 0 0 0 0 73 137 92 36 8 73 131 196 16 138 3 72 255 195 132 192 117 247 235 176 72 137 221 138 3 72 255 195 132 192 117 247 77 137 234 77 133 210 116 47 72 137 238 73 139 58 232 73 255 255 255 133 192 116 6 77 139 82 24 235 230 73 139 66 8 73 137 4 36 73 139 66 16 73 137 68 36 8 73 131 196 16 233 109 255 255 255 72 137 238 72 191 139 2 64 0 0 0 0 0 232 19 255 255 255 133 192 15 133 19 1 0 0 73 199 4 36 1 0 0 0 73 199 68 36 8 0 0 0 0 73 131 196 16 233 57 255 255 255 72 137 221 138 3 72 255 195 132 192 117 247 139 3 72 131 195 4 73 137 219 73 137 47 77 137 95 8 77 137 111 16 73 199 4 36 2 0 0 0 77 137 124 36 8 73 131 196 16 73 131 199 24 72 1 195 233 252 254 255 255 73 131 236 16 77 139 4 36 77 139 76 36 8 73 131 236 16 77 139 20 36 77 139 92 36 8 73 131 250 2 116 11 73 131 250 1 116 54 233 145 0 0 0 73 137 30 77 137 110 8 73 131 198 16 73 139 3 73 137 7 77 137 71 8 77 137 79 16 73 139 67 16 73 137 71 24 77 137 253 73 131 199 32 73 139 91 8 233 160 254 255 255 76 137 206 76 137 201 72 49 210 138 1 132 192 116 8 72 255 193 72 255 194 235 242 184 1 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 1 0 0 0 72 190 138 2 64 0 0 0 0 0 186 1 0 0 0 15 5 77 137 4 36 77 137 76 36 8 73 131 196 16 233 80 254 255 255 73 131 238 16 73 139 30 77 139 110 8 233 64 254 255 255 184 60 0 0 0 72 49 255 15 5 10 112 114 105 110 116 0 2 112 114 105 110 116 0 3 120 0 4 0 0 0 2 120 0 5 1 73 32 65 77 32 84 72 65 84 32 73 32 65 77 0 4 4 0")
 
 glyph MAIN = SEQ(write_exec("logos_secd")(SECD))(print("emitted logos_secd"))
