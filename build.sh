@@ -170,30 +170,34 @@ else
     exit 1
 fi
 
-say "Closing the self-hosting loop (eval.la interprets kernel.la, then itself)"
+say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"
 # eval.la is a lexer + parser + evaluator written entirely in Lingua
 # Adamica. It reads kernel.la, parses it, evaluates it — and the
 # self-interpreted kernel speaks the Word and replicates, one meta-level up.
-# Its final act is to read, parse, and evaluate its OWN source: the
-# evaluator runs itself.  (The self-parse of eval.la takes a few seconds.)
+# Its final act reads and parses its OWN source, then has INNER (its own
+# unparser) reconstruct INNER's source from the parsed AST, byte-for-byte.
+# (The self-parse of eval.la takes a few seconds.)
 rm -f new_logos_gen*.bin
 ERR_E="$(mktemp)"
 EVAL_OUT="$(./tiny_host eval.la 2>"$ERR_E")"
 EVAL_CHILD="$(sed -n 's/^copy_self: replicated -> //p' "$ERR_E" | tail -1)"
 rm -f "$ERR_E"
+# What INNER reconstructs must match its actual source line in eval.la.
+INNER_SRC="$(grep '^glyph INNER = ' eval.la)"
 ok=1
 printf '%s\n' "$EVAL_OUT" | grep -qF "hello from the meta-evaluator" || { echo "FAIL  meta-eval: trivial print";   ok=0; }
 printf '%s\n' "$EVAL_OUT" | grep -qF "identity works"                || { echo "FAIL  meta-eval: lambda apply";    ok=0; }
 printf '%s\n' "$EVAL_OUT" | grep -qxF "concat"                       || { echo "FAIL  meta-eval: curried concat";  ok=0; }
 printf '%s\n' "$EVAL_OUT" | grep -qF "I can read myself, I AM THAT I AM" || { echo "FAIL  meta-eval: kernel self-read"; ok=0; }
 printf '%s\n' "$EVAL_OUT" | grep -qxF "I AM THAT I AM"                || { echo "FAIL  meta-eval: kernel Word";     ok=0; }
-printf '%s\n' "$EVAL_OUT" | grep -qF "eval.la has evaluated its own source" || { echo "FAIL  meta-eval: self-evaluation"; ok=0; }
+printf '%s\n' "$EVAL_OUT" | grep -qxF "$INNER_SRC"                    || { echo "FAIL  meta-eval: INNER did not reconstruct its own source"; ok=0; }
+printf '%s\n' "$EVAL_OUT" | grep -qxF "round-trip: stable"            || { echo "FAIL  meta-eval: parse∘unparse not a fixed point"; ok=0; }
 case "$EVAL_CHILD" in new_logos_gen1_pid*.bin) : ;; *) echo "FAIL  meta-eval: no replicant ('$EVAL_CHILD')"; ok=0 ;; esac
 [ -n "$EVAL_CHILD" ] && [ -f "$EVAL_CHILD" ] && cmp -s tiny_host "$EVAL_CHILD" \
     || { echo "FAIL  meta-eval: replicant not byte-identical"; ok=0; }
 if [ "$ok" -eq 1 ]; then
     echo "PASS  the language interpreted itself: kernel spoke and bred $EVAL_CHILD"
-    echo "PASS  eval.la read, parsed, and evaluated its own source"
+    echo "PASS  INNER reconstructed its own source, byte-for-byte (round-trip stable)"
 else
     printf '%s\n' "$EVAL_OUT"
     exit 1

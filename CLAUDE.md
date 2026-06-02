@@ -128,21 +128,42 @@ byte-identical to `tiny_host`).
 - **`RUN_GLYPH(name)(gl)`** evaluates any named glyph from a parsed table;
   `RUN(gl) = RUN_GLYPH("MAIN")(gl)`.
 
-#### The evaluator evaluates itself
+#### `SHOW_SRC` — the unparser (dual of the parser)
 
-`eval.la`'s last act is to read, parse, and evaluate its **own source**
-(`RUN_GLYPH("INNER")(PARSE_PROGRAM(read_file("eval.la")))`). The evaluator
-runs itself: its parser parses its own glyphs, and its evaluator interprets a
-glyph drawn from that self-parsed table — resolving glyph references (`ID`),
-currying (`concat`), and built-in dispatch (`print`) against definitions it
-just parsed out of itself.
+`SHOW_SRC(node)` turns an AST back into Lingua Adamica source text, the exact
+inverse of `PARSE_PROGRAM`. Composed, they round-trip: parse-then-unparse
+reproduces the original definition byte-for-byte. It parenthesises a lambda
+only where the grammar needs it (a lambda in function position,
+`(la x. …)(arg)`), and `ESCAPE` re-escapes string literals (`\`, `"`, newline,
+tab) so the printed source re-lexes faithfully.
 
-The self-evaluation targets a dedicated finite entry point, **`INNER`**, not
-`MAIN`. Running `MAIN` under self-evaluation would not terminate — `MAIN`
-evaluates `kernel.la` and then re-evaluates `eval.la`, an infinite tower — so
-the inner level bottoms out at `INNER`, the way a meta-circular evaluator is
-demonstrated with a finite witness rather than by re-running its own driver.
-The host-level self-parse of `eval.la` takes a few seconds.
+`SHOW_SRC` runs at the **host level**, not under `EVAL`. It must: it
+destructures raw Scott-encoded AST nodes by applying them to continuations,
+and AST nodes and `VAL_*` values share the same arity but different meaning —
+feeding an AST to the meta-evaluator as if it were a value would silently
+misinterpret it. So the round-trip lives one level down from `EVAL`, on the
+real AST data the host-level parser produces.
+
+#### `INNER` reconstructs its own source
+
+`eval.la`'s last act reads and parses its **own source**
+(`PARSE_PROGRAM(read_file("eval.la"))`), pulls out `INNER`'s own AST, and hands
+it to `INNER` — whose job is now to unparse a glyph's AST back into source:
+
+```
+glyph INNER = la node. concat("glyph INNER = ")(SHOW_SRC(node))
+```
+
+Given its own parsed AST, `INNER` reconstructs its own definition verbatim — a
+**reconstruction quine**: `eval.la`'s parser parses `INNER` out of `eval.la`,
+and `eval.la`'s unparser writes it back exactly as it appears on disk. To prove
+the reconstruction is faithful, the harness re-parses that output and
+reconstructs again; `build.sh` checks the result equals the actual source line
+and that `parse ∘ unparse` is a fixed point on `INNER` (`round-trip: stable`).
+
+The reconstruction targets `INNER` rather than `MAIN`: `MAIN` evaluates
+`kernel.la` and reads `eval.la`, so feeding it through the same machinery would
+not bottom out. The host-level self-parse of `eval.la` takes a few seconds.
 
 ### Evaluation
 

@@ -268,18 +268,56 @@ glyph RUN_GLYPH = la name. la gl.
 
 glyph RUN = la gl. RUN_GLYPH("MAIN")(gl)
 
-# ── INNER — the finite entry point for self-evaluation ──────────────
+# ── 9b. Unparser — the dual of the parser ──────────────────────────
 #
-# When eval.la evaluates its OWN source, running MAIN would recurse
-# forever (MAIN evaluates kernel.la and then re-evaluates eval.la). So
-# the self-evaluation targets INNER instead: a small, self-contained
-# program that bottoms out the tower. It still exercises the full
-# evaluator — a built-in (concat), currying, and a glyph reference (ID)
-# that the inner evaluator must resolve from the freshly self-parsed
-# glyph table — so a faithful self-parse and self-eval are required for
-# it to produce the right Word.
+# SHOW_SRC(node) turns an AST back into Lingua Adamica source text.
+# It is the exact inverse of the parser: PARSE_PROGRAM reads source
+# into ASTs, SHOW_SRC writes ASTs back into source. Composed, they
+# round-trip — parse then unparse reproduces the original definition.
+#
+# Re-escape string literals so the printed source re-lexes faithfully.
+# Each source string below denotes a *value*: "\\\\" is one backslash
+# turned into two, "\\\"" is the two characters \ and " , and so on.
 
-glyph INNER = print(concat("∃(∃) ≡ ∃ — ")(ID("eval.la has evaluated its own source")))
+glyph ESC_CHAR = la c.
+    IF(str_eq(c)("\\"))(la _. "\\\\")(la _.
+    IF(str_eq(c)("\""))(la _. "\\\"")(la _.
+    IF(str_eq(c)("\n"))(la _. "\\n")(la _.
+    IF(str_eq(c)("\t"))(la _. "\\t")(la _.
+    c))))
+
+glyph ESCAPE = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+        concat(ESC_CHAR(str_head(s)))(self(str_tail(s)))))
+
+# SHOW_FUN_POS(rec)(f) — render f for the function side of an
+# application. A lambda there must be parenthesised, `(la x. ...)`;
+# variables, applications, and strings need no extra parentheses.
+glyph SHOW_FUN_POS = la rec. la f.
+    f
+        (la name. rec(f))
+        (la p. la b. concat("(")(concat(rec(f))(")")))
+        (la g. la a. rec(f))
+        (la val. rec(f))
+
+# SHOW_SRC(node) — unparse an AST node to source.
+glyph SHOW_SRC = Z(la self. la node.
+    node
+        (la name. name)
+        (la p. la b. concat("la ")(concat(p)(concat(". ")(self(b)))))
+        (la f. la arg. concat(SHOW_FUN_POS(self)(f))(concat("(")(concat(self(arg))(")"))))
+        (la val. concat("\"")(concat(ESCAPE(val))("\"")))
+)
+
+# ── INNER — reconstructs the source of the glyph it is given ────────
+#
+# INNER takes the AST of a glyph and rebuilds its source definition,
+# prefixed with `glyph INNER = `.  In the self-test it is handed its
+# OWN parsed AST, so it reconstructs its own definition verbatim: a
+# reconstruction quine.  eval.la's parser parses INNER out of eval.la,
+# and eval.la's unparser writes it back — exactly the source on disk.
+
+glyph INNER = la node. concat("glyph INNER = ")(SHOW_SRC(node))
 
 # ── 10. Tests ───────────────────────────────────────────────────────
 
@@ -309,10 +347,21 @@ glyph MAIN = SEQ(SEQ(SEQ(SEQ(
     SEQ(print("--- test 4: kernel.la ---"))(
     RUN(PARSE_PROGRAM(read_file("kernel.la"))))
 ))(
-    # Test 5: the closed eye — eval.la evaluates its OWN source.
-    # Read eval.la, parse it with eval.la's own parser, then evaluate
-    # the INNER glyph drawn from that self-parsed table with eval.la's
-    # own evaluator. The evaluator runs itself.
-    SEQ(print("--- test 5: eval.la evaluates itself ---"))(
-    RUN_GLYPH("INNER")(PARSE_PROGRAM(read_file("eval.la"))))
+    # Test 5: the closed eye — INNER reconstructs its own source.
+    # Read eval.la, parse it with eval.la's own parser, pull out INNER's
+    # own AST, and hand it to INNER, whose job is to unparse a glyph's
+    # AST back into source. INNER reconstructs its own definition — and
+    # to prove the reconstruction is faithful, we re-parse that output
+    # and reconstruct again: parse ∘ unparse is a fixed point on INNER.
+    SEQ(print("--- test 5: INNER reconstructs its own source ---"))(
+    (la gl.
+        (la node.
+            (la src1.
+                SEQ(print(src1))(
+                (la src2.
+                    SEQ(print(str_eq(src1)(src2)("round-trip: stable")("round-trip: DIVERGED")))(src1)
+                )(INNER(R_VAL(LIST_FIND("INNER")(PARSE_PROGRAM(src1))))))
+            )(INNER(node))
+        )(R_VAL(LIST_FIND("INNER")(gl)))
+    )(PARSE_PROGRAM(read_file("eval.la"))))
 )
