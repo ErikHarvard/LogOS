@@ -309,15 +309,29 @@ glyph SHOW_SRC = Z(la self. la node.
         (la val. concat("\"")(concat(ESCAPE(val))("\"")))
 )
 
-# ── INNER — reconstructs the source of the glyph it is given ────────
-#
-# INNER takes the AST of a glyph and rebuilds its source definition,
-# prefixed with `glyph INNER = `.  In the self-test it is handed its
-# OWN parsed AST, so it reconstructs its own definition verbatim: a
-# reconstruction quine.  eval.la's parser parses INNER out of eval.la,
-# and eval.la's unparser writes it back — exactly the source on disk.
+# SHOW_PROGRAM(gl) — unparse a whole glyph table back into a program.
+# Each entry is PAIR(name)(ast); emit `glyph NAME = EXPR` per line, in
+# order. This is the inverse of PARSE_PROGRAM at the program level.
+glyph SHOW_PROGRAM = Z(la self. la gl.
+    IF(IS_CONS(gl))(la _.
+        (la entry.
+            concat("glyph ")(concat(FST(entry))(concat(" = ")(concat(SHOW_SRC(SND(entry)))(concat("\n")(self(LIST_TL(gl)))))))
+        )(LIST_HD(gl))
+    )(la _. ""))
 
-glyph INNER = la node. concat("glyph INNER = ")(SHOW_SRC(node))
+# ── INNER — reconstructs the whole of eval.la ──────────────────────
+#
+# INNER takes a parsed glyph table and rebuilds the entire program
+# source from it.  In the self-test it is handed the table parsed from
+# eval.la's own source, so it reconstructs the whole of eval.la — every
+# glyph, in order, in canonical (comment-free, one-line) form.  eval.la's
+# parser parses all of eval.la, and eval.la's unparser writes it all back.
+# Comments and original spacing are not source data, so the reconstruction
+# is a normalised form rather than a byte copy; its faithfulness is shown
+# by a fixed point: re-parsing the reconstruction and reconstructing again
+# reproduces it exactly (parse ∘ unparse is idempotent on the program).
+
+glyph INNER = la gl. SHOW_PROGRAM(gl)
 
 # ── 10. Tests ───────────────────────────────────────────────────────
 
@@ -347,21 +361,19 @@ glyph MAIN = SEQ(SEQ(SEQ(SEQ(
     SEQ(print("--- test 4: kernel.la ---"))(
     RUN(PARSE_PROGRAM(read_file("kernel.la"))))
 ))(
-    # Test 5: the closed eye — INNER reconstructs its own source.
-    # Read eval.la, parse it with eval.la's own parser, pull out INNER's
-    # own AST, and hand it to INNER, whose job is to unparse a glyph's
-    # AST back into source. INNER reconstructs its own definition — and
-    # to prove the reconstruction is faithful, we re-parse that output
-    # and reconstruct again: parse ∘ unparse is a fixed point on INNER.
-    SEQ(print("--- test 5: INNER reconstructs its own source ---"))(
-    (la gl.
-        (la node.
-            (la src1.
-                SEQ(print(src1))(
-                (la src2.
-                    SEQ(print(str_eq(src1)(src2)("round-trip: stable")("round-trip: DIVERGED")))(src1)
-                )(INNER(R_VAL(LIST_FIND("INNER")(PARSE_PROGRAM(src1))))))
-            )(INNER(node))
-        )(R_VAL(LIST_FIND("INNER")(gl)))
-    )(PARSE_PROGRAM(read_file("eval.la"))))
+    # Test 5: the closed eye — INNER reconstructs the WHOLE of eval.la.
+    # Read eval.la, parse it with eval.la's own parser into a glyph table,
+    # and hand the whole table to INNER, which unparses every glyph back
+    # into source. The result is eval.la rebuilt from its own AST. We
+    # write it to eval_reconstructed.la, then prove it faithful by a fixed
+    # point: re-parse the reconstruction and reconstruct again — parse ∘
+    # unparse is idempotent on the whole program (comments aside).
+    SEQ(print("--- test 5: INNER reconstructs the whole of eval.la ---"))(
+    (la recon1.
+        SEQ(write_file("eval_reconstructed.la")(recon1))(
+        SEQ(print(recon1))(
+        (la recon2.
+            print(str_eq(recon1)(recon2)("round-trip: stable")("round-trip: DIVERGED"))
+        )(INNER(PARSE_PROGRAM(recon1)))))
+    )(INNER(PARSE_PROGRAM(read_file("eval.la")))))
 )

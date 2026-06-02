@@ -128,14 +128,15 @@ byte-identical to `tiny_host`).
 - **`RUN_GLYPH(name)(gl)`** evaluates any named glyph from a parsed table;
   `RUN(gl) = RUN_GLYPH("MAIN")(gl)`.
 
-#### `SHOW_SRC` — the unparser (dual of the parser)
+#### `SHOW_SRC` / `SHOW_PROGRAM` — the unparser (dual of the parser)
 
 `SHOW_SRC(node)` turns an AST back into Lingua Adamica source text, the exact
-inverse of `PARSE_PROGRAM`. Composed, they round-trip: parse-then-unparse
-reproduces the original definition byte-for-byte. It parenthesises a lambda
-only where the grammar needs it (a lambda in function position,
-`(la x. …)(arg)`), and `ESCAPE` re-escapes string literals (`\`, `"`, newline,
-tab) so the printed source re-lexes faithfully.
+inverse of an expression parse. It parenthesises a lambda only where the
+grammar needs it (a lambda in function position, `(la x. …)(arg)`), and
+`ESCAPE` re-escapes string literals (`\`, `"`, newline, tab) so the printed
+source re-lexes faithfully. `SHOW_PROGRAM(gl)` walks a whole glyph table and
+emits `glyph NAME = EXPR` per line, in order — the inverse of `PARSE_PROGRAM`
+at the program level.
 
 `SHOW_SRC` runs at the **host level**, not under `EVAL`. It must: it
 destructures raw Scott-encoded AST nodes by applying them to continuations,
@@ -144,26 +145,35 @@ feeding an AST to the meta-evaluator as if it were a value would silently
 misinterpret it. So the round-trip lives one level down from `EVAL`, on the
 real AST data the host-level parser produces.
 
-#### `INNER` reconstructs its own source
+#### `INNER` reconstructs the whole of `eval.la`
 
-`eval.la`'s last act reads and parses its **own source**
-(`PARSE_PROGRAM(read_file("eval.la"))`), pulls out `INNER`'s own AST, and hands
-it to `INNER` — whose job is now to unparse a glyph's AST back into source:
+`eval.la`'s last act reads and parses its **own source** into a glyph table
+(`PARSE_PROGRAM(read_file("eval.la"))`) and hands the whole table to `INNER`,
+whose job is to unparse an entire program back into source:
 
 ```
-glyph INNER = la node. concat("glyph INNER = ")(SHOW_SRC(node))
+glyph INNER = la gl. SHOW_PROGRAM(gl)
 ```
 
-Given its own parsed AST, `INNER` reconstructs its own definition verbatim — a
-**reconstruction quine**: `eval.la`'s parser parses `INNER` out of `eval.la`,
-and `eval.la`'s unparser writes it back exactly as it appears on disk. To prove
-the reconstruction is faithful, the harness re-parses that output and
-reconstructs again; `build.sh` checks the result equals the actual source line
-and that `parse ∘ unparse` is a fixed point on `INNER` (`round-trip: stable`).
+The result is `eval.la` rebuilt from its own AST — every glyph, in order. It is
+written to `eval_reconstructed.la` (git-ignored, regenerated each run). Because
+comments and original spacing are not source *data*, the reconstruction is a
+**normalised** form (comment-free, one `glyph` per line), not a byte copy of
+the file. Its faithfulness is shown by a **fixed point**: re-parsing the
+reconstruction and reconstructing again reproduces it exactly — `parse ∘
+unparse` is idempotent on the whole program (`round-trip: stable`).
 
-The reconstruction targets `INNER` rather than `MAIN`: `MAIN` evaluates
-`kernel.la` and reads `eval.la`, so feeding it through the same machinery would
-not bottom out. The host-level self-parse of `eval.la` takes a few seconds.
+Stronger still, `eval_reconstructed.la` is **behaviourally** identical: run it
+and it performs all five tests, makes the kernel speak and replicate
+byte-identically, and reconstructs `eval.la` again. The reconstruction is not
+merely valid syntax but a working evaluator — a source-level fixed point of the
+whole system. `build.sh` checks the round-trip is stable and that the
+reconstruction has the same glyph count as the source; the two self-parses take
+roughly 25 seconds.
+
+The reconstruction reads `eval.la` rather than re-running `MAIN`: `MAIN`
+evaluates `kernel.la` and reads `eval.la`, so feeding it through the same
+machinery as a value would not bottom out.
 
 ### Evaluation
 

@@ -2,3 +2,6 @@
 /tiny_host
 *.bin
 *.o
+
+# eval.la's self-reconstruction (regenerated each run)
+/eval_reconstructed.la
