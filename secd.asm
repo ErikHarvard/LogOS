@@ -53,7 +53,11 @@ phdr:
     dq 0x400000
     dq 0x400000
     dq filesize
-    dq filesize + 0x30700000     ; p_memsz: ~775 MiB working memory (lazy)
+    dq progbuf - $$ + 0x500000   ; p_memsz: cover up to progbuf + 5 MiB program
+                                 ; capacity (lazy). Derived from progbuf so the
+                                 ; segment always reaches it when the layout
+                                 ; below changes — a fixed constant silently
+                                 ; left progbuf unmapped once the stacks grew.
     dq 0x1000
 
 ; ── strcmp(rsi, rdi) → eax 0 if equal ──
@@ -106,6 +110,81 @@ skipbody:
     dec     rcx
     test    rcx, rcx
     jnz     .sb
+    ret
+
+; ── desc_atoi(rdi = STR descriptor) → rax (signed integer) ──
+; Syscall args/results (fd, flags, pid, status, errno) cross the LA boundary
+; as decimal strings, since the VM has no integer value.
+desc_atoi:
+    mov     rcx, [rdi]
+    mov     rsi, [rdi+8]
+    xor     rax, rax
+    xor     r10, r10
+    test    rcx, rcx
+    je      .da_done
+    cmp     byte [rsi], 45               ; '-'
+    jne     .da_loop
+    mov     r10, 1
+    inc     rsi
+    dec     rcx
+.da_loop:
+    test    rcx, rcx
+    je      .da_sign
+    movzx   rdx, byte [rsi]
+    sub     rdx, 48
+    imul    rax, rax, 10
+    add     rax, rdx
+    inc     rsi
+    dec     rcx
+    jmp     .da_loop
+.da_sign:
+    test    r10, r10
+    je      .da_done
+    neg     rax
+.da_done:
+    ret
+
+; ── push_dec(rax = signed integer): push its decimal STR and bump r12/r15 ──
+push_dec:
+    xor     r10, r10
+    test    rax, rax
+    jns     .pd_abs
+    mov     r10, 1
+    neg     rax
+.pd_abs:
+    mov     rcx, 10
+    xor     r8, r8                       ; digit count
+.pd_div:
+    xor     rdx, rdx
+    div     rcx
+    add     dl, 48
+    movzx   rdx, dl
+    push    rdx
+    inc     r8
+    test    rax, rax
+    jnz     .pd_div
+    mov     rsi, r15                     ; result start
+    test    r10, r10
+    je      .pd_pop
+    mov     byte [r15], 45               ; '-'
+    inc     r15
+.pd_pop:
+    test    r8, r8
+    je      .pd_done
+    pop     rdx
+    mov     [r15], dl
+    inc     r15
+    dec     r8
+    jmp     .pd_pop
+.pd_done:
+    mov     rdx, r15
+    sub     rdx, rsi                     ; length
+    mov     [r15], rdx
+    mov     [r15+8], rsi
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
     ret
 
 _start:
@@ -281,6 +360,46 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi10
+    mov     rsi, rbp
+    mov     rdi, str_write
+    call    strcmp
+    test    eax, eax
+    je      .bi11
+    mov     rsi, rbp
+    mov     rdi, str_open
+    call    strcmp
+    test    eax, eax
+    je      .bi12
+    mov     rsi, rbp
+    mov     rdi, str_close
+    call    strcmp
+    test    eax, eax
+    je      .bi13
+    mov     rsi, rbp
+    mov     rdi, str_mount
+    call    strcmp
+    test    eax, eax
+    je      .bi14
+    mov     rsi, rbp
+    mov     rdi, str_fork
+    call    strcmp
+    test    eax, eax
+    je      .bi15
+    mov     rsi, rbp
+    mov     rdi, str_execve
+    call    strcmp
+    test    eax, eax
+    je      .bi16
+    mov     rsi, rbp
+    mov     rdi, str_waitpid
+    call    strcmp
+    test    eax, eax
+    je      .bi17
+    mov     rsi, rbp
+    mov     rdi, str_exit
+    call    strcmp
+    test    eax, eax
+    je      .bi18
     jmp     .halt
 .bi0:
     mov     r11, 0
@@ -314,6 +433,30 @@ _start:
     jmp     .pushbi
 .bi10:
     mov     r11, 10
+    jmp     .pushbi
+.bi11:
+    mov     r11, 11
+    jmp     .pushbi
+.bi12:
+    mov     r11, 12
+    jmp     .pushbi
+.bi13:
+    mov     r11, 13
+    jmp     .pushbi
+.bi14:
+    mov     r11, 14
+    jmp     .pushbi
+.bi15:
+    mov     r11, 15
+    jmp     .pushbi
+.bi16:
+    mov     r11, 16
+    jmp     .pushbi
+.bi17:
+    mov     r11, 17
+    jmp     .pushbi
+.bi18:
+    mov     r11, 18
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -376,6 +519,12 @@ _start:
     je      .mkpa
     cmp     r11, 10
     je      .mkpa
+    cmp     r11, 11
+    je      .mkpa
+    cmp     r11, 12
+    je      .mkpa
+    cmp     r11, 14
+    je      .mkpa
     cmp     r11, 0
     je      .bi_print
     cmp     r11, 2
@@ -390,6 +539,16 @@ _start:
     je      .bi_chr
     cmp     r11, 9
     je      .bi_ord
+    cmp     r11, 13
+    je      .bi_close
+    cmp     r11, 15
+    je      .bi_fork
+    cmp     r11, 16
+    je      .bi_execve
+    cmp     r11, 17
+    je      .bi_waitpid
+    cmp     r11, 18
+    je      .bi_exit
     jmp     .halt
 .mkpa:
     mov     [r15], r11
@@ -411,6 +570,12 @@ _start:
     je      .bi_writefile2
     cmp     r10, 10
     je      .bi_writeexec2
+    cmp     r10, 11
+    je      .bi_write2
+    cmp     r10, 12
+    je      .bi_open2
+    cmp     r10, 14
+    je      .bi_mount2
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
@@ -795,6 +960,149 @@ _start:
     add     r12, 16
     jmp     .loop
 
+; ── Linux syscalls exposed to Lingua Adamica (ints cross as decimal STRs) ──
+.bi_write2:                      ; write(fd)(s) ; rbp = fd desc, r9 = content desc
+    mov     rdi, rbp
+    call    desc_atoi
+    mov     rdi, rax             ; fd
+    mov     rsi, [r9+8]
+    mov     rdx, [r9]
+    mov     rax, 1
+    syscall
+    call    push_dec             ; bytes written
+    jmp     .loop
+
+.bi_open2:                       ; open(path)(flags) ; rbp = path, r9 = flags
+    mov     rcx, [rbp]
+    mov     rsi, [rbp+8]
+    mov     rdi, pathbuf
+.op_cp:
+    test    rcx, rcx
+    je      .op_d
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .op_cp
+.op_d:
+    mov     byte [rdi], 0
+    mov     rdi, r9
+    call    desc_atoi
+    mov     rsi, rax             ; flags
+    mov     rdi, pathbuf
+    mov     rdx, 420             ; mode 0644 (when O_CREAT)
+    mov     rax, 2
+    syscall
+    call    push_dec             ; fd
+    jmp     .loop
+
+.bi_close:                       ; close(fd) ; r9 = fd desc
+    mov     rdi, r9
+    call    desc_atoi
+    mov     rdi, rax
+    mov     rax, 3
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_mount2:                      ; mount(target)(fstype) ; rbp = target, r9 = fstype
+    mov     rcx, [rbp]
+    mov     rsi, [rbp+8]
+    mov     rdi, pathbuf
+.mt_t:
+    test    rcx, rcx
+    je      .mt_td
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .mt_t
+.mt_td:
+    mov     byte [rdi], 0
+    mov     rcx, [r9]
+    mov     rsi, [r9+8]
+    mov     rdi, fsbuf
+.mt_f:
+    test    rcx, rcx
+    je      .mt_fd
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .mt_f
+.mt_fd:
+    mov     byte [rdi], 0
+    mov     rdi, fsbuf           ; source (ignored for virtual fs, = fstype)
+    mov     rsi, pathbuf         ; target
+    mov     rdx, fsbuf           ; fstype
+    xor     r10, r10             ; flags
+    xor     r8, r8               ; data
+    mov     rax, 165             ; mount
+    syscall
+    call    push_dec             ; 0 ok, -errno on failure (EPERM if unprivileged)
+    jmp     .loop
+
+.bi_fork:                        ; fork() ; arg ignored. both processes continue.
+    mov     rax, 57
+    syscall
+    call    push_dec             ; child: 0, parent: child pid
+    jmp     .loop
+
+.bi_execve:                      ; execve(path) with argv=[path], envp=[] ; r9 = path
+    mov     rcx, [r9]
+    mov     rsi, [r9+8]
+    mov     rdi, pathbuf
+.ex_cp:
+    test    rcx, rcx
+    je      .ex_d
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .ex_cp
+.ex_d:
+    mov     byte [rdi], 0
+    mov     rax, pathbuf         ; argv = [pathbuf, NULL]
+    mov     [r15], rax
+    mov     qword [r15+8], 0
+    mov     rsi, r15
+    add     r15, 16
+    mov     qword [r15], 0       ; envp = [NULL]
+    mov     rdx, r15
+    add     r15, 8
+    mov     rdi, pathbuf
+    mov     rax, 59
+    syscall
+    call    push_dec             ; only returns on failure: -errno
+    jmp     .loop
+
+.bi_waitpid:                     ; waitpid(pid) → child exit status ; r9 = pid desc
+    mov     rdi, r9
+    call    desc_atoi
+    mov     rdi, rax             ; pid
+    mov     qword [r15], 0       ; &status
+    mov     rsi, r15
+    xor     rdx, rdx
+    xor     r10, r10
+    mov     rax, 61              ; wait4
+    syscall
+    mov     rax, [r15]           ; status word
+    shr     rax, 8               ; WEXITSTATUS
+    and     rax, 255
+    call    push_dec
+    jmp     .loop
+
+.bi_exit:                        ; exit(code) ; r9 = code desc
+    mov     rdi, r9
+    call    desc_atoi
+    mov     rdi, rax
+    mov     rax, 60
+    syscall
+
 .ret:
     sub     r14, 16
     mov     rbx, [r14]
@@ -826,12 +1134,25 @@ str_copyself:  db "copy_self", 0
 str_chr:       db "chr", 0
 str_ord:       db "ord", 0
 str_writeexec: db "write_exec", 0
+str_write:     db "write", 0
+str_open:      db "open", 0
+str_close:     db "close", 0
+str_mount:     db "mount", 0
+str_fork:      db "fork", 0
+str_execve:    db "execve", 0
+str_waitpid:   db "waitpid", 0
+str_exit:      db "exit", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 
+; The operand and dump stacks scale with recursion depth — this SECD machine
+; does no tail-call optimisation, so a deep (even tail-) recursion such as
+; BYTES walking the VM's own ~14 KB image consumes one frame per step. 16 MiB
+; each (~1M frames) gives generous headroom; all regions are lazily mapped.
 filesize equ $ - $$
 ostack   equ $$ + filesize
-dstack   equ ostack  + 0x100000
-pathbuf  equ dstack  + 0x100000
-heap     equ pathbuf + 0x1000
+dstack   equ ostack  + 0x1000000
+pathbuf  equ dstack  + 0x1000000
+fsbuf    equ pathbuf + 0x1000
+heap     equ fsbuf   + 0x1000
 progbuf  equ heap     + 0x30000000

@@ -266,7 +266,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "2832" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 2832)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "3964" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 3964)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -347,6 +347,61 @@ fi
 rm -f compiler.bin vm_seed runner vm2
 
 rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_gen*.bin /tmp/runsm.la
+
+say "Linux syscalls + LogosInit (native sovereign session)"
+# The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
+# Linux syscalls (integers cross the LA boundary as decimal strings). Compile
+# each .la program with the native compiler and run it on the VM.
+rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin
+./tiny_host secd.la >/dev/null 2>&1
+cp codegen.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+cp logos_program.bin compiler.bin
+cp logos_secd runner; chmod +x runner
+ok=1
+nrun () {   # $1 = .la source file → native stdout
+    cp "$1" logos_source.la
+    cp compiler.bin logos_program.bin
+    ./runner >/dev/null 2>&1
+    ./runner 2>/dev/null
+}
+# LogosInit: mount /proc, /sys; announce.
+OUT="$(nrun logosinit.la)"
+printf '%s\n' "$OUT" | grep -qxF "LogOS sovereign session initialized." \
+    || { echo "FAIL  syscalls: LogosInit did not announce the session"; ok=0; }
+# fork / exit / waitpid: child exits 42, parent reaps it.
+cat > /tmp/t_proc.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph MAIN = (la pid. IF(str_eq(pid)("0"))(la _. exit("42"))(la _. SEQ(print(concat("child exit code: ")(waitpid(pid))))(print("init done"))))(fork("!"))
+LAEOF
+OUT="$(nrun /tmp/t_proc.la)"
+printf '%s\n' "$OUT" | grep -qxF "child exit code: 42" || { echo "FAIL  syscalls: fork/exit/waitpid"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "init done"           || { echo "FAIL  syscalls: parent continuation"; ok=0; }
+# execve: child becomes /bin/true (exit 0), parent reaps.
+cat > /tmp/t_exec.la <<'LAEOF'
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph MAIN = (la pid. IF(str_eq(pid)("0"))(la _. execve("/bin/true"))(la _. print(concat("exec child status: ")(waitpid(pid)))))(fork("!"))
+LAEOF
+OUT="$(nrun /tmp/t_exec.la)"
+printf '%s\n' "$OUT" | grep -qxF "exec child status: 0" || { echo "FAIL  syscalls: execve/waitpid"; ok=0; }
+# open / write / close: write a file via raw fds, then read it back.
+rm -f /tmp/logos_io.txt
+cat > /tmp/t_io.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph MAIN = (la fd. SEQ(write(fd)("io syscalls work\n"))(close(fd)))(open("/tmp/logos_io.txt")("577"))
+LAEOF
+nrun /tmp/t_io.la >/dev/null
+[ "$(cat /tmp/logos_io.txt 2>/dev/null)" = "io syscalls work" ] || { echo "FAIL  syscalls: open/write/close"; ok=0; }
+rm -f /tmp/t_proc.la /tmp/t_exec.la /tmp/t_io.la /tmp/logos_io.txt
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  write/open/close/fork/execve/waitpid/exit work as native syscalls"
+    echo "PASS  LogosInit ran natively and announced: LogOS sovereign session initialized."
+    echo "      (mount of /proc,/sys returns -EPERM when unprivileged; the syscall path is exercised)"
+else
+    exit 1
+fi
+rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin
 
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"
 # eval.la is a lexer + parser + evaluator written entirely in Lingua

@@ -1,0 +1,20 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logosinit.la — a minimal LogOS init, in Lingua Adamica
+#
+#  Mounts the virtual filesystems /proc and /sys, then announces the
+#  session. Compiled to a native SECD stream (codegen.la) and run on the
+#  native VM (secd), it speaks to the kernel directly via the mount /
+#  print syscalls the runtime lowers — no C host involved.
+#
+#  mount(target)(fstype) = mount(fstype, target, fstype, 0, NULL); it
+#  returns "0" on success or a negative -errno string. An unprivileged
+#  process gets -EPERM (only PID 1 / root may mount); the announcement is
+#  made regardless, the way an init proceeds through its boot steps.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph SEQ = la a. la b. b
+
+glyph MAIN =
+    SEQ(mount("/proc")("proc"))(
+    SEQ(mount("/sys")("sysfs"))(
+    print("LogOS sovereign session initialized.")))
