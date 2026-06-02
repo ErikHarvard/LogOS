@@ -16,7 +16,8 @@ host program, applied to itself, reproduces itself.
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
 | `bytecode.la`        | Byte instructions and execution engines: `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), `RUN_BYTES` (a VM that executes the bytes directly), and `RUN_SM` (a real SECD-style stack machine over a compiled instruction list), all in Lingua Adamica. |
 | `elf.la`             | Albedo Stage 1: assembles a minimal static x86-64 ELF executable from Lingua Adamica (`chr` + `concat` + `write_exec`) and emits a runnable native binary that speaks the Word with no host in the loop. |
-| `secd.asm` / `secd.la` | Albedo Stage 2: the SECD machine hand-written in x86-64 (`secd.asm`, a self-contained `nasm -f bin` ELF image) — operand stack, environment, dump, and a bump heap for closures/env cells — and `secd.la` which emits that 694-byte binary. It runs a real lambda natively. |
+| `secd.asm` / `secd.la` | Albedo Stage 2: the native SECD machine hand-written in x86-64 (`secd.asm`, a self-contained `nasm -f bin` ELF) — S/E/C/D, a bump heap, a glyph table, and all builtins lowered to syscalls. It loads a compiled stream from `logos_program.bin` and runs it. `secd.la` emits the VM. |
+| `codegen.la`         | Albedo Stage 2 codegen: parses a program and lowers each glyph to the native SECD instruction encoding, writing `logos_program.bin`. Arbitrary programs compile and run natively, matching `RUN_SM`. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -347,19 +348,36 @@ runnable and checked by `build.sh`.
     build closure, apply, look the bound variable up in `E`, return through
     `D`, run `print` (lowered to `write` syscalls).
 
-  `secd.la` emits the 694-byte binary. `build.sh` runs it on the bare OS,
-  checks the Word, **diffs the native output against the interpreter** on the
-  same program, and — when `nasm` is present — checks the emitted bytes are
-  byte-identical to `nasm -f bin secd.asm` (the `.asm` is the auditable source).
+  **Stage 2 is now a working native compiler**, not a baked blob:
 
-  Still ahead in Stage 2: the remaining builtins lowered to syscalls
-  (`concat`, `str_*`, `read_file`, `write_file`, `copy_self`); and the
-  **codegen** that generates the instruction stream from an arbitrary program
-  — `COMPILE_EXPR` output translated to the native stream encoding — so it
-  stops being a fixed baked blob and becomes real compilation, verifiable by
-  diffing native output against `RUN_SM` across many programs. Then Stages 3–4
-  (the full native runtime, then self-application so the compiler compiles
-  itself).
+  - The VM (`secd.asm`, 2150 bytes) is a fixed binary. At startup it reads a
+    compiled instruction stream from `logos_program.bin` and executes it, so
+    arbitrary programs run on it natively (threaded SECD). It carries a **glyph
+    table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
+    glyph's code via the dump — then the builtins), and all builtins are lowered
+    to syscalls: `print`/`read_file`/`write_file`/`copy_self` to file I/O,
+    `concat`/`str_head`/`str_tail` to heap string ops, `str_eq` returning
+    Church-boolean closures (`TRUE_BODY`/`FALSE_BODY` compiled into the VM).
+    `copy_self` replicates `/proc/self/exe` — so the VM self-replicates.
+  - **`codegen.la`** parses a program and lowers each glyph to the native
+    encoding (`VAR→02 n 00`, `STR→01 s 00`, `LAM→03 p 00 <body> 05`,
+    `APP→<f><a> 04`; a glyph entry is `NAME 00 <body> 05`, table ends with `00`).
+    Closure/glyph bodies are **RET-terminated and skipped by a paren-matching
+    scan in the VM**, so the codegen needs no length fields and no arithmetic.
+  - **Verified by diffing native output against `RUN_SM`** (`build.sh`): for
+    `kernel.la` and two other programs, `codegen.la` compiles to a stream, the
+    VM runs it, and the native stdout equals the `.la` stack machine on the same
+    program. `kernel.la` runs natively — glyph table, `read_file`, `concat`,
+    closures — speaks the Word, and the VM replicates itself.
+
+  Still ahead: lifting limitations (the VM uses NUL-terminated strings, so it is
+  not binary-safe like the host, and the bump heap has no GC); and Stages 3–4 —
+  self-application, compiling `codegen.la`/`eval.la` themselves to native so the
+  compiler compiles itself with no C host.
+
+  *Drift guard:* `secd.la` embeds the exact `nasm -f bin secd.asm` output;
+  `build.sh` checks byte-identity when `nasm` is present, so `secd.asm` stays
+  the auditable source of the VM's bytes.
 
 This extends the **generation** side of the Γ/Ρ split: codegen and ELF assembly
 are pure generation (no evaluation); running the emitted binary is recognition

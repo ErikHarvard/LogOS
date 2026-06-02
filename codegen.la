@@ -1,0 +1,92 @@
+# ═══════════════════════════════════════════════════════════════════
+#  codegen.la — compile a Lingua Adamica program to a native SECD stream
+#
+#  Reads logos_source.la, parses it, and lowers each glyph to the native
+#  instruction encoding the SECD runtime (secd.asm) executes, writing the
+#  result to logos_program.bin. Running ./secd then runs the program
+#  natively. This is the codegen: AST → native byte instructions.
+#
+#  Native encoding (mirrors COMPILE_EXPR, serialised to bytes):
+#    VAR n      -> 02 n 00
+#    STR s      -> 01 s 00
+#    LAM p b    -> 03 p 00 <body> 05            (body ends with RET = 05)
+#    APP f a    -> <f> <a> 04
+#  A glyph entry is  NAME 00 <body> 05 ; the table ends with a 00 sentinel.
+#  RET-terminated bodies are skipped by the runtime's paren scan, so no
+#  length fields are needed and the codegen requires no arithmetic.
+#
+#  Pure GENERATION: source → instruction bytes, no evaluation.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Foundations ─────────────────────────────────────────────────────
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph SEQ   = la a. la b. b
+glyph Z  = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF = la cond. la t. la f. cond(t)(f)("!")
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NONE    = PAIR(FALSE)("")
+glyph SOME    = la val. la rest. PAIR(TRUE)(PAIR(val)(rest))
+glyph IS_SOME = la r. FST(r)
+glyph R_VAL   = la r. FST(SND(r))
+glyph R_REST  = la r. SND(SND(r))
+glyph NIL      = PAIR(FALSE)("")
+glyph CONS     = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS  = la lst. FST(lst)
+glyph LIST_HD  = la lst. FST(SND(lst))
+glyph LIST_TL  = la lst. SND(SND(lst))
+
+# ── AST constructors ────────────────────────────────────────────────
+glyph AST_VAR = la name. la v. la l. la a. la s. v(name)
+glyph AST_LAM = la param. la body. la v. la l. la a. la s. l(param)(body)
+glyph AST_APP = la func. la arg. la v. la l. la a. la s. a(func)(arg)
+glyph AST_STR = la val. la v. la l. la a. la s. s(val)
+
+# ── Lexer ───────────────────────────────────────────────────────────
+glyph IS_SPACE = la c. IF(str_eq(c)(" "))(la _. TRUE)(la _. IF(str_eq(c)("\n"))(la _. TRUE)(la _. IF(str_eq(c)("\t"))(la _. TRUE)(la _. FALSE)))
+glyph IS_SPECIAL = la c. IF(str_eq(c)("("))(la _. TRUE)(la _. IF(str_eq(c)(")"))(la _. TRUE)(la _. IF(str_eq(c)("."))(la _. TRUE)(la _. IF(str_eq(c)("="))(la _. TRUE)(la _. FALSE))))
+glyph IS_QUOTE_OR_HASH = la c. IF(str_eq(c)("\""))(la _. TRUE)(la _. IF(str_eq(c)("#"))(la _. TRUE)(la _. FALSE))
+glyph IS_IDENT_CHAR = la c. IF(str_eq(c)(""))(la _. FALSE)(la _. IF(IS_SPACE(c))(la _. FALSE)(la _. IF(IS_SPECIAL(c))(la _. FALSE)(la _. IF(IS_QUOTE_OR_HASH(c))(la _. FALSE)(la _. TRUE))))
+glyph SKIP_LINE = Z(la self. la s. IF(str_eq(s)(""))(la _. s)(la _. IF(str_eq(str_head(s))("\n"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+glyph SKIP_SPACES = Z(la self. la s. IF(str_eq(s)(""))(la _. s)(la _. IF(IS_SPACE(str_head(s)))(la _. self(str_tail(s)))(la _. IF(str_eq(str_head(s))("#"))(la _. self(SKIP_LINE(s)))(la _. s))))
+glyph READ_IDENT = Z(la self. la acc. la s. IF(IS_IDENT_CHAR(str_head(s)))(la _. self(concat(acc)(str_head(s)))(str_tail(s)))(la _. PAIR(acc)(s)))
+glyph UNESCAPE = la c. IF(str_eq(c)("n"))(la _. "\n")(la _. IF(str_eq(c)("t"))(la _. "\t")(la _. c))
+glyph READ_STRING = Z(la self. la acc. la s. IF(str_eq(s)(""))(la _. PAIR(acc)(s))(la _. IF(str_eq(str_head(s))("\""))(la _. PAIR(acc)(str_tail(s)))(la _. IF(str_eq(str_head(s))("\\"))(la _. self(concat(acc)(UNESCAPE(str_head(str_tail(s)))))(str_tail(str_tail(s))))(la _. self(concat(acc)(str_head(s)))(str_tail(s))))))
+glyph TOK_TYPE = la tok. FST(tok)
+glyph TOK_VAL  = la tok. SND(tok)
+glyph MKTOK    = la ty. la val. PAIR(ty)(val)
+glyph LEX_ONE = la s. IF(str_eq(s)(""))(la _. PAIR(MKTOK("eof")(""))(s))(la _. IF(str_eq(str_head(s))("("))(la _. PAIR(MKTOK("lp")("("))(str_tail(s)))(la _. IF(str_eq(str_head(s))(")"))(la _. PAIR(MKTOK("rp")(")"))(str_tail(s)))(la _. IF(str_eq(str_head(s))("."))(la _. PAIR(MKTOK("dot")("."))(str_tail(s)))(la _. IF(str_eq(str_head(s))("="))(la _. PAIR(MKTOK("eq")("="))(str_tail(s)))(la _. IF(str_eq(str_head(s))("\""))(la _. (la r. PAIR(MKTOK("str")(FST(r)))(SND(r)))(READ_STRING("")(str_tail(s))))(la _. IF(IS_IDENT_CHAR(str_head(s)))(la _. (la r. (la name. (la rest. IF(str_eq(name)("glyph"))(la _. PAIR(MKTOK("glyph")("glyph"))(rest))(la _. IF(str_eq(name)("la"))(la _. PAIR(MKTOK("la")("la"))(rest))(la _. PAIR(MKTOK("ident")(name))(rest))))(SND(r)))(FST(r)))(READ_IDENT("")(s)))(la _. PAIR(MKTOK("eof")(""))(s))))))))
+glyph NEXT_TOKEN = la s. LEX_ONE(SKIP_SPACES(s))
+
+# ── Parser ──────────────────────────────────────────────────────────
+glyph PARSE_PRIMARY = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("ident"))(la _. SOME(AST_VAR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("str"))(la _. SOME(AST_STR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la inner. IF(IS_SOME(inner))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. SOME(R_VAL(inner))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(inner))))(la _. NONE))(PARSE_EXPR(rest)))(la _. NONE))))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+glyph PARSE_APP_TAIL = Z(la self. la acc. la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la arg. IF(IS_SOME(arg))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. self(AST_APP(acc)(R_VAL(arg)))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(arg))))(la _. NONE))(PARSE_EXPR(rest)))(la _. SOME(acc)(s)))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+glyph PARSE_APP = la s. (la base. IF(IS_SOME(base))(la _. PARSE_APP_TAIL(R_VAL(base))(R_REST(base)))(la _. NONE))(PARSE_PRIMARY(s))
+glyph PARSE_EXPR = Z(la self_expr. la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("la"))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("ident"))(la _. (la tr3. (la tok3. (la rest3. IF(str_eq(TOK_TYPE(tok3))("dot"))(la _. (la body. IF(IS_SOME(body))(la _. SOME(AST_LAM(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body)))(la _. NONE))(self_expr(rest3)))(la _. NONE))(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2)))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest)))(la _. PARSE_APP(s)))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+glyph PARSE_GLYPH = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("glyph"))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("ident"))(la _. (la tr3. (la tok3. (la rest3. IF(str_eq(TOK_TYPE(tok3))("eq"))(la _. (la body. IF(IS_SOME(body))(la _. SOME(PAIR(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body)))(la _. NONE))(PARSE_EXPR(rest3)))(la _. NONE))(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2)))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest)))(la _. NONE))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+glyph PARSE_PROGRAM = Z(la self. la s. (la s2. (la g. IF(IS_SOME(g))(la _. (la rest_parsed. CONS(R_VAL(g))(rest_parsed))(self(R_REST(g))))(la _. NIL))(PARSE_GLYPH(s2)))(SKIP_SPACES(s)))
+
+# ── Native codegen ──────────────────────────────────────────────────
+# Opcode bytes via chr: 1 PUSHS, 2 PUSHV, 3 CLOSE, 4 APPLY, 5 RET, 0 NUL.
+
+glyph NCOMPILE = Z(la self. la node.
+    node
+        (la name. concat(chr("2"))(concat(name)(chr("0"))))
+        (la p. la b. concat(chr("3"))(concat(p)(concat(chr("0"))(concat(self(b))(chr("5"))))))
+        (la f. la a. concat(self(f))(concat(self(a))(chr("4"))))
+        (la val. concat(chr("1"))(concat(val)(chr("0"))))
+)
+
+# GTABLE(gl): for each glyph  NAME 00 <body> 05 ; then a 00 end sentinel.
+glyph GTABLE = Z(la self. la gl.
+    IF(IS_CONS(gl))(la _.
+        (la entry.
+            concat(concat(FST(entry))(concat(chr("0"))(concat(NCOMPILE(SND(entry)))(chr("5")))))(self(LIST_TL(gl)))
+        )(LIST_HD(gl))
+    )(la _. chr("0")))
+
+glyph MAIN = SEQ(
+    write_file("logos_program.bin")(GTABLE(PARSE_PROGRAM(read_file("logos_source.la"))))
+)(print("compiled logos_source.la -> logos_program.bin"))

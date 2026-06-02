@@ -6,6 +6,9 @@
 # eval.la's self-reconstruction (regenerated each run)
 /eval_reconstructed.la
 
-# native binaries emitted by elf.la / the codegen (regenerated each run)
+# native binaries / artifacts emitted by elf.la, secd.la, codegen.la (regenerated each run)
 /logos_native
 /logos_secd
+/logos_program.bin
+/logos_source.la
+/new_logos_secd.bin

@@ -256,44 +256,53 @@ else
 fi
 rm -f logos_native
 
-say "Emitting the native SECD runtime (Albedo Stage 2 v1 — secd.la)"
-# secd.la emits a native binary whose code is a full call-by-value SECD
-# machine: operand stack (S), environment (E), control (C), dump (D), and a
-# bump heap for closures and env cells. The baked stream is
-# print((la x. x)("I AM THAT I AM")) — it builds a closure, applies it, looks
-# the bound variable up in E, returns via D, and runs print, on the bare OS.
-# The bytes are the output of `nasm -f bin secd.asm`.
-rm -f logos_secd
+say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
+# secd.la emits the native SECD VM once; codegen.la compiles a source program
+# (logos_source.la) to a native instruction stream (logos_program.bin); the VM
+# runs it. For kernel.la and two other programs we check the native stdout
+# equals the .la stack machine RUN_SM on the same program — generation lowered
+# to native, recognition unchanged.
+rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_gen*.bin
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
-[ -f logos_secd ]                                || { echo "FAIL  secd: logos_secd not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "694" ] || { echo "FAIL  secd: wrong size ($(stat -c%s logos_secd 2>/dev/null) != 694)"; ok=0; }
-SECD_OUT="$(./logos_secd 2>/dev/null)"; SECD_RC=$?
-[ "$SECD_OUT" = "I AM THAT I AM" ]               || { echo "FAIL  secd: runtime said '$SECD_OUT'"; ok=0; }
-[ "$SECD_RC" = "0" ]                             || { echo "FAIL  secd: runtime exited $SECD_RC"; ok=0; }
-# The native machine must agree with the interpreter on the same program
-# (generation lowered to native, recognition unchanged).
-cat > /tmp/secd_prog.la <<'LAEOF'
-glyph MAIN = print((la x. x)("I AM THAT I AM"))
-LAEOF
-RUNSM_OUT="$(./tiny_host /tmp/secd_prog.la 2>/dev/null)"
-rm -f /tmp/secd_prog.la
-[ "$SECD_OUT" = "$RUNSM_OUT" ]                    || { echo "FAIL  secd: native ('$SECD_OUT') != interpreter ('$RUNSM_OUT')"; ok=0; }
-# Drift guard: the embedded bytes must match their documented source.
+[ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "2150" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 2150)"; ok=0; }
+# Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
-    cmp -s logos_secd /tmp/secd_ref || { echo "FAIL  secd: emitted bytes differ from nasm -f bin secd.asm"; ok=0; }
+    cmp -s logos_secd /tmp/secd_ref || { echo "FAIL  codegen: VM bytes differ from nasm -f bin secd.asm"; ok=0; }
     rm -f /tmp/secd_ref
 fi
+# RUN_SM harness: bytecode.la's machinery, running logos_source.la and
+# discarding the result so only the program's own output shows.
+RUNSM_MAIN="$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)"
+head -$((RUNSM_MAIN-1)) bytecode.la > /tmp/runsm.la
+printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("logos_source.la"))))\n' >> /tmp/runsm.la
+diff_native_runsm () {   # $1 = label
+    ./tiny_host codegen.la >/dev/null 2>&1
+    local native runsm
+    native="$(./logos_secd 2>/dev/null)"
+    runsm="$(./tiny_host /tmp/runsm.la 2>/dev/null | sed '${/^$/d;}')"
+    if [ "$native" = "$runsm" ]; then
+        echo "PASS  native == RUN_SM — $1"
+    else
+        echo "FAIL  $1: native [$native] != RUN_SM [$runsm]"; ok=0
+    fi
+}
+printf 'glyph MAIN = print(concat("Hello, ")("native world"))\n' > logos_source.la
+diff_native_runsm "concat + print"
+printf 'glyph MAIN = print(concat(str_head("ABC"))(str_tail("XYZ")))\n' > logos_source.la
+diff_native_runsm "str_head / str_tail / concat -> AYZ"
+cp kernel.la logos_source.la
+diff_native_runsm "kernel.la (glyph table, read_file, copy_self, closures)"
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  secd.la emitted the 694-byte native SECD machine (S/E/C/D + heap)"
-    echo "PASS  it ran a lambda natively: closure, env lookup, dump return, print"
-    echo "PASS  native output agrees with the interpreter on the same program"
-    command -v nasm >/dev/null 2>&1 && echo "PASS  emitted bytes are byte-identical to nasm -f bin secd.asm"
+    echo "PASS  codegen.la lowers arbitrary programs to native SECD streams"
+    echo "PASS  the native VM ran kernel.la and matched the interpreter (and replicated itself)"
+    command -v nasm >/dev/null 2>&1 && echo "PASS  VM bytes are byte-identical to nasm -f bin secd.asm"
 else
     exit 1
 fi
-rm -f logos_secd
+rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_gen*.bin /tmp/runsm.la
 
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"
 # eval.la is a lexer + parser + evaluator written entirely in Lingua
