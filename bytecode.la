@@ -389,10 +389,15 @@ glyph COMPILE_EXPR = Z(la self. la node.
         (la val. CONS(I_PUSHS(val))(NIL))
 )
 
-# Church booleans for the machine: closures whose bodies are COMPILED
-# instruction lists, so applying them runs under the same machine.
-glyph SM_TRUE  = VAL_CLO("t")(COMPILE_EXPR(AST_LAM("f")(AST_VAR("t"))))(NIL)
-glyph SM_FALSE = VAL_CLO("t")(COMPILE_EXPR(AST_LAM("f")(AST_VAR("f"))))(NIL)
+# Church booleans for the machine: closures whose bodies are PRE-COMPILED
+# instruction lists, written out as literals. These are exactly what
+# COMPILE_EXPR(la f. t) and COMPILE_EXPR(la f. f) produce — [CLOSE f [PUSHV t]]
+# and [CLOSE f [PUSHV f]] — but hoisted to constants so that COMPILE_EXPR is
+# never reachable from RUN_SM: generation does not happen at recognition time.
+glyph SM_TRUE_CODE  = CONS(I_CLOSE("f")(CONS(I_PUSHV("t"))(NIL)))(NIL)
+glyph SM_FALSE_CODE = CONS(I_CLOSE("f")(CONS(I_PUSHV("f"))(NIL)))(NIL)
+glyph SM_TRUE  = VAL_CLO("t")(SM_TRUE_CODE)(NIL)
+glyph SM_FALSE = VAL_CLO("t")(SM_FALSE_CODE)(NIL)
 
 # Second-argument builtin dispatch, str_eq yielding machine booleans.
 glyph APPLY_BI2_SM = la name. la v1. la v2.
@@ -456,6 +461,11 @@ glyph TEST_AST = AST_LAM("x")(AST_APP(AST_APP(AST_VAR("f"))(AST_VAR("x")))(AST_S
 # applied to select a branch — all run from bytes, no AST rebuilt.
 glyph VM_SRC = "glyph K = la x. la y. x\nglyph MAIN = concat(str_eq(\"p\")(\"p\")(\"yes \")(\"no \"))(K(\"kept\")(\"dropped\"))\n"
 
+# Exercises BOTH machine booleans: str_eq match -> SM_TRUE picks the first
+# branch ("T"), str_eq mismatch -> SM_FALSE picks the second ("F"); concat
+# -> "TF". Guards the precompiled SM_TRUE_CODE / SM_FALSE_CODE constants.
+glyph BOOL_SRC = "glyph MAIN = concat(str_eq(\"a\")(\"a\")(\"T\")(\"-\"))(str_eq(\"a\")(\"b\")(\"-\")(\"F\"))\n"
+
 glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
     # Show the byte instructions for the hand-built AST.
     SEQ(print("--- byte instructions for  la x. f(x)(\"a;b\\c\") ---"))(
@@ -490,9 +500,11 @@ glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
 ))(
     # The stack machine (S/E/C/D) executes a compiled program with no host
     # recursion over the program shape — control lives on the explicit
-    # stacks. Same program as above, same result.
+    # stacks. Same program as above, same result; then a program that
+    # exercises both precompiled machine booleans (-> "TF").
     SEQ(print("--- stack machine: compiled program ---"))(
-    print(UNWRAP_STR(RUN_SM_PROGRAM(PARSE_PROGRAM(VM_SRC)))))
+    SEQ(print(UNWRAP_STR(RUN_SM_PROGRAM(PARSE_PROGRAM(VM_SRC)))))(
+    print(UNWRAP_STR(RUN_SM_PROGRAM(PARSE_PROGRAM(BOOL_SRC))))))
 ))(
     # The kernel on the stack machine: it speaks the Word and replicates,
     # driven entirely by the explicit operand/control/dump stacks.

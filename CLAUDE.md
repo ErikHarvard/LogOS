@@ -285,10 +285,17 @@ the generation/recognition (Γ/Ρ) distinction in
 The boundary is enforced in code: `RUN_SM` consumes a pre-compiled instruction
 table and never calls `COMPILE_*` during execution, and `COMPILE_*` never
 evaluates. A glyph reference at run time enters already-generated code rather
-than regenerating it. (This is an architectural discipline — compile-time vs
-run-time separation — adopted on its own engineering merits; the cited document
-develops it as a philosophical thesis, which is a separate matter from any
-formal complexity-theory result.)
+than regenerating it. The machine's Church booleans are hoisted to the
+constants `SM_TRUE_CODE` / `SM_FALSE_CODE` — the `[CLOSE f [PUSHV t]]` /
+`[CLOSE f [PUSHV f]]` instruction lists written out as literals — so that even
+`str_eq`'s result on the recognition path enters precompiled code; the whole
+`RUN_SM` call-closure bottoms out at data constructors, with no `COMPILE_*`
+reachable. (This is an architectural discipline — compile-time vs run-time
+separation — adopted on its own engineering merits; the cited document develops
+it as a philosophical thesis, a separate matter from any formal
+complexity-theory result.) `build.sh` exercises both booleans through the
+machine (`str_eq` match → `T`, mismatch → `F`, concatenated to `TF`) so the
+hand-written literals cannot silently drift.
 
 ### Evaluation
 
