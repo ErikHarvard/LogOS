@@ -156,7 +156,8 @@ glyph SPEC_TABLE =
     CONS(PAIR("FIN")(SPEC_FIN))(
     CONS(PAIR("VEC")(SPEC_VEC))(
     CONS(PAIR("PI_SUCC")(SPEC_PISUCC))(
-    NIL))))))))))))))))))))))))))))))
+    CONS(PAIR("TYPECHECK")(SPEC_TYPECHECK))(
+    NIL)))))))))))))))))))))))))))))))
 
 glyph GET_SPEC = la name. LIST_FIND(name)(SPEC_TABLE)
 
@@ -225,7 +226,8 @@ glyph GLYPH_REGISTRY =
     CONS(PAIR("FIN")(FIN))(
     CONS(PAIR("VEC")(VEC))(
     CONS(PAIR("PI_SUCC")(PI_SUCC))(
-    NIL))))))))))))))))))))))))))))))
+    CONS(PAIR("TYPECHECK")(TYPECHECK))(
+    NIL)))))))))))))))))))))))))))))))
 
 # ── Phase 4: META_DEBUG — DEBUG applied to the debugging glyphs ───────
 # The "meta" level collapses into the object level by self-application.
@@ -296,6 +298,16 @@ glyph SPEC_FIN    = CONS(TC(la g. BOOL_STR(g(5)(3)))("T"))(CONS(TC(la g. BOOL_ST
 glyph SPEC_VEC    = CONS(TC(la g. BOOL_STR(g(3)(IS_INT)(V3)))("T"))(CONS(TC(la g. BOOL_STR(g(2)(IS_INT)(V3)))("F"))(NIL))
 glyph SPEC_PISUCC = CONS(TC(la g. BOOL_STR(g(3)(PREP0)(V3)))("T"))(NIL)
 
+# ── Type System Phase T4: TYPECHECK = the autological check ───────────
+# TYPECHECK(A)(x) judges whether x inhabits type A — "well-typed" or
+# "type error". A type is a spec, so this is IS_AUTOLOGICAL specialised to
+# one value: type-checking IS verifying b_τ ≡ f_τ. TYPECHECK is itself a
+# value with a type (it is a function), so it type-checks itself —
+# TYPECHECK(IS_FUN)(TYPECHECK) = "well-typed" (Metacursion ↻, the T5 seed).
+glyph TYPECHECK = la A. la x. IF(A(x))(la _. "well-typed")(la _. "type error")
+
+glyph SPEC_TYPECHECK = CONS(TC(la g. g(IS_INT)(42))("well-typed"))(CONS(TC(la g. g(IS_INT)("x"))("type error"))(NIL))
+
 # ── Deliberately broken glyphs (DEBUG must catch these) ───────────────
 glyph BAD_ID         = la x. "WRONG"
 glyph BAD_VERIFY_ONE = la name. la fn. la tc. "WRONG"
@@ -330,4 +342,7 @@ glyph MAIN =
     SEQ(print(concat("T3_fin_out: ")(BOOL_STR(HAS_TYPE(FIN(5))(7)))))(
     SEQ(print(concat("T3_vec_ok: ")(BOOL_STR(VEC(3)(IS_INT)(V3)))))(
     SEQ(print(concat("T3_vec_bad: ")(BOOL_STR(VEC(2)(IS_INT)(V3)))))(
-        print(concat("T3_pi: ")(BOOL_STR(PI_SUCC(3)(PREP0)(V3))))))))))))))))))))))))))))))))
+    SEQ(print(concat("T3_pi: ")(BOOL_STR(PI_SUCC(3)(PREP0)(V3)))))(
+    SEQ(print(concat("T4_ok: ")(TYPECHECK(IS_INT)(42))))(
+    SEQ(print(concat("T4_bad: ")(TYPECHECK(IS_INT)("x"))))(
+        print(concat("T4_self: ")(TYPECHECK(IS_FUN)(TYPECHECK))))))))))))))))))))))))))))))))))

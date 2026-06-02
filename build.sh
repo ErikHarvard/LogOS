@@ -259,6 +259,11 @@ check_line "T3_fin_out: F"
 check_line "T3_vec_ok: T"
 check_line "T3_vec_bad: F"
 check_line "T3_pi: T"
+# Type System T4: TYPECHECK = the autological check (type-checking IS verifying
+# b_τ ≡ f_τ). It type-checks itself: TYPECHECK(IS_FUN)(TYPECHECK) = well-typed.
+check_line "T4_ok: well-typed"
+check_line "T4_bad: type error"
+check_line "T4_self: well-typed"
 if [ "$ok" -eq 1 ]; then
     echo "PASS  Phase 1: MAP/FILTER/ALL/ANY/LIST_FIND/LENGTH over Church lists"
     echo "PASS  Phase 2: SPEC_TABLE / GET_SPEC resolve specs (hit + miss)"
@@ -268,6 +273,7 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  Type System T1: HAS_TYPE accepts inhabitants, rejects non-inhabitants (types as predicates)"
     echo "PASS  Type System T2: PROD/SUM/ARROW/REFINE/REC build correct types (the five modes); all autological"
     echo "PASS  Type System T3: dependent types FIN n / VEC n A / Pi-type check against integer indices; all autological"
+    echo "PASS  Type System T4: TYPECHECK is the autological check and type-checks itself (well-typed)"
 else
     printf '%s\n' "$OUT"
     exit 1
