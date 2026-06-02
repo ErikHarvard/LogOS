@@ -264,6 +264,11 @@ check_line "T3_pi: T"
 check_line "T4_ok: well-typed"
 check_line "T4_bad: type error"
 check_line "T4_self: well-typed"
+# Type System T5: the type-of-types. IS_TYPE(A) holds iff A is a type; the
+# closure IS_TYPE(IS_TYPE) = T is C(C)=C for the type system (analogue of
+# META_DEBUG), on the well-founded fragment.
+check_line "T5_int: T"
+check_line "T5_self: T"
 if [ "$ok" -eq 1 ]; then
     echo "PASS  Phase 1: MAP/FILTER/ALL/ANY/LIST_FIND/LENGTH over Church lists"
     echo "PASS  Phase 2: SPEC_TABLE / GET_SPEC resolve specs (hit + miss)"
@@ -274,6 +279,7 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  Type System T2: PROD/SUM/ARROW/REFINE/REC build correct types (the five modes); all autological"
     echo "PASS  Type System T3: dependent types FIN n / VEC n A / Pi-type check against integer indices; all autological"
     echo "PASS  Type System T4: TYPECHECK is the autological check and type-checks itself (well-typed)"
+    echo "PASS  Type System T5: IS_TYPE is the type-of-types; IS_TYPE(IS_TYPE)=T closes C(C)=C (well-founded fragment)"
 else
     printf '%s\n' "$OUT"
     exit 1
