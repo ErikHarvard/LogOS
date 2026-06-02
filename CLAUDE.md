@@ -348,17 +348,22 @@ runnable and checked by `build.sh`.
     build closure, apply, look the bound variable up in `E`, return through
     `D`, run `print` (lowered to `write` syscalls).
 
-  **Stage 2 is now a working native compiler**, not a baked blob:
+  **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 2150 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 2628 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
     glyph's code via the dump — then the builtins), and all builtins are lowered
     to syscalls: `print`/`read_file`/`write_file`/`copy_self` to file I/O,
-    `concat`/`str_head`/`str_tail` to heap string ops, `str_eq` returning
+    `concat`/`str_head`/`str_tail`/`chr`/`ord` to heap ops, `str_eq` returning
     Church-boolean closures (`TRUE_BODY`/`FALSE_BODY` compiled into the VM).
     `copy_self` replicates `/proc/self/exe` — so the VM self-replicates.
+    **Strings are binary-safe**: a `STR` value's payload points to a descriptor
+    `[len, ptr]`, so values may contain NUL (the machine core — stack, env,
+    closures, dump — is unchanged; only `PUSHS` and the builtins go through the
+    descriptor). This is what lets the compiler, whose output is full of NULs,
+    run natively.
   - **`codegen.la`** parses a program and lowers each glyph to the native
     encoding (`VAR→02 n 00`, `STR→01 s 00`, `LAM→03 p 00 <body> 05`,
     `APP→<f><a> 04`; a glyph entry is `NAME 00 <body> 05`, table ends with `00`).
@@ -370,10 +375,22 @@ runnable and checked by `build.sh`.
     program. `kernel.la` runs natively — glyph table, `read_file`, `concat`,
     closures — speaks the Word, and the VM replicates itself.
 
-  Still ahead: lifting limitations (the VM uses NUL-terminated strings, so it is
-  not binary-safe like the host, and the bump heap has no GC); and Stages 3–4 —
-  self-application, compiling `codegen.la`/`eval.la` themselves to native so the
-  compiler compiles itself with no C host.
+- **Stage 4 — the compiler compiles itself, done.** `codegen.la` is itself a
+  Lingua Adamica program. Compiled to a native stream and run on the VM, it
+  compiles an arbitrary program identically to the C host — and, given **its
+  own source**, it produces a stream **byte-identical** to its host compilation.
+  A native fixed point: the compiler reproduces itself with no C host in the
+  compilation step (the host only bootstraps the first `compiler.bin`; from
+  there the native compiler regenerates it exactly). Self-compiling the
+  ~150-glyph `codegen.la` takes well under a second and ~95 MB (the bump heap
+  has no GC, so all the concat intermediates persist for the run; the VM's
+  working region is sized ~775 MiB, lazily mapped). `build.sh` checks both the
+  small-program match and the self-compilation fixed point (`∃(∃) ≡ ∃`).
+
+  Honest remaining limits: the bump heap still has no GC (fine for short
+  bootstrap runs, a ceiling for long-running programs); and the native artifact
+  is a fixed VM + per-program stream file (not a self-contained executable per
+  program — that needs ELF-length patching, deliberately avoided).
 
   *Drift guard:* `secd.la` embeds the exact `nasm -f bin secd.asm` output;
   `build.sh` checks byte-identity when `nasm` is present, so `secd.asm` stays

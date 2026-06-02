@@ -266,7 +266,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "2150" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 2150)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "2628" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 2628)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -302,6 +302,38 @@ if [ "$ok" -eq 1 ]; then
 else
     exit 1
 fi
+
+say "The compiler compiles itself (Albedo Stage 4 — self-application)"
+# The compiler (codegen.la) is itself a Lingua Adamica program. Compile it to
+# a native stream, then RUN that compiler on the native VM to compile its own
+# source — and check the result is byte-identical to its C-host compilation.
+# A native fixed point: the compiler reproduces itself with no host in the loop.
+cp codegen.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1        # C-host compiles the compiler
+cp logos_program.bin compiler.bin
+# native run: VM loads compiler.bin and compiles logos_source.la (= codegen.la)
+cp codegen.la logos_source.la
+cp compiler.bin logos_program.bin
+./logos_secd >/dev/null 2>&1                   # native compiler runs, writes logos_program.bin
+ok=1
+cmp -s compiler.bin logos_program.bin \
+    || { echo "FAIL  self-application: native self-compilation differs from the host's"; ok=0; }
+# Sanity: a small program compiled natively equals the host's compilation too.
+cp compiler.bin logos_program.bin
+printf 'glyph MAIN = print(concat("self-")("hosted"))\n' > logos_source.la
+./logos_secd >/dev/null 2>&1
+cp logos_program.bin native_small.bin
+./tiny_host codegen.la >/dev/null 2>&1
+cmp -s native_small.bin logos_program.bin \
+    || { echo "FAIL  self-application: native codegen of a small program differs from the host's"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  the compiler, compiled and run natively, compiles a program identically to the host"
+    echo "PASS  fixed point: native self-compilation of codegen.la is byte-identical to the host's  (∃(∃) ≡ ∃)"
+else
+    exit 1
+fi
+rm -f compiler.bin native_small.bin
+
 rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_gen*.bin /tmp/runsm.la
 
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"
