@@ -37,6 +37,62 @@ else
     exit 1
 fi
 
+say "Testing str_head built-in"
+cat > /tmp/test_str_head.la <<'LAEOF'
+glyph MAIN = print(str_head("hello"))
+LAEOF
+OUT="$(./tiny_host /tmp/test_str_head.la 2>/dev/null)"
+if [ "$OUT" = "h" ]; then
+    echo "PASS  str_head(\"hello\") = \"h\""
+else
+    echo "FAIL  expected 'h', got '$OUT'"
+    exit 1
+fi
+cat > /tmp/test_str_head_empty.la <<'LAEOF'
+glyph MAIN = print(concat("[")(concat(str_head(""))("]")))
+LAEOF
+OUT="$(./tiny_host /tmp/test_str_head_empty.la 2>/dev/null)"
+if [ "$OUT" = "[]" ]; then
+    echo "PASS  str_head(\"\") = \"\""
+else
+    echo "FAIL  expected '[]', got '$OUT'"
+    exit 1
+fi
+
+say "Testing str_tail built-in"
+cat > /tmp/test_str_tail.la <<'LAEOF'
+glyph MAIN = print(str_tail("hello"))
+LAEOF
+OUT="$(./tiny_host /tmp/test_str_tail.la 2>/dev/null)"
+if [ "$OUT" = "ello" ]; then
+    echo "PASS  str_tail(\"hello\") = \"ello\""
+else
+    echo "FAIL  expected 'ello', got '$OUT'"
+    exit 1
+fi
+
+say "Testing str_eq built-in"
+cat > /tmp/test_str_eq.la <<'LAEOF'
+glyph MAIN = print(str_eq("abc")("abc")("equal")("not equal"))
+LAEOF
+OUT="$(./tiny_host /tmp/test_str_eq.la 2>/dev/null)"
+if [ "$OUT" = "equal" ]; then
+    echo "PASS  str_eq(\"abc\")(\"abc\") = TRUE"
+else
+    echo "FAIL  expected 'equal', got '$OUT'"
+    exit 1
+fi
+cat > /tmp/test_str_eq2.la <<'LAEOF'
+glyph MAIN = print(str_eq("abc")("xyz")("equal")("not equal"))
+LAEOF
+OUT="$(./tiny_host /tmp/test_str_eq2.la 2>/dev/null)"
+if [ "$OUT" = "not equal" ]; then
+    echo "PASS  str_eq(\"abc\")(\"xyz\") = FALSE"
+else
+    echo "FAIL  expected 'not equal', got '$OUT'"
+    exit 1
+fi
+
 say "Testing read_file built-in"
 printf 'test content' > /tmp/test_rf_input.txt
 cat > /tmp/test_read_file.la <<'LAEOF'
@@ -82,6 +138,37 @@ else
     exit 1
 fi
 rm -f /tmp/test_rt_src.txt /tmp/test_rt_dst.txt
+
+say "Testing Z combinator (fixed-point recursion)"
+cat > /tmp/test_z.la <<'LAEOF'
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF = la cond. la t. la f. cond(t)(f)("!")
+glyph REVERSE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat(self(str_tail(s)))(str_head(s))))
+glyph MAIN = print(REVERSE("abcde"))
+LAEOF
+OUT="$(./tiny_host /tmp/test_z.la 2>/dev/null)"
+if [ "$OUT" = "edcba" ]; then
+    echo "PASS  Z combinator: REVERSE(\"abcde\") = \"edcba\""
+else
+    echo "FAIL  expected 'edcba', got '$OUT'"
+    exit 1
+fi
+
+say "Testing self-hosted parser (parser.la parses kernel.la)"
+OUT="$(./tiny_host parser.la 2>/dev/null)"
+if printf '%s\n' "$OUT" | grep -qF "Kernel parse: IIIIIIIII glyph(s)"; then
+    echo "PASS  parser.la parsed kernel.la (9 glyphs)"
+else
+    echo "FAIL  parser did not produce expected output"
+    printf '%s\n' "$OUT"
+    exit 1
+fi
+if printf '%s\n' "$OUT" | grep -qF "glyph ∃ = LAM[self, VAR[self]]"; then
+    echo "PASS  parser correctly parsed ∃ (existence glyph)"
+else
+    echo "FAIL  ∃ glyph not correctly parsed"
+    exit 1
+fi
 
 say "Clearing previous generations"
 rm -f new_logos_gen*.bin new_logos.bin logos_child.bin

@@ -1,0 +1,319 @@
+# ─────────────────────────────────────────────────────────────────────
+#  parser.la — a Lingua Adamica parser, written in Lingua Adamica
+#
+#  This file defines a recursive-descent lexer + parser that can read
+#  the glyph-definition syntax of .la files and produce a Church-encoded
+#  AST.  It is the first step toward a self-hosting LogOS: a language
+#  that can read its own source.
+#
+#  Encoding conventions:
+#    PAIR(a)(b)   = la f. f(a)(b)          — Church pair
+#    FST(p)       = p(TRUE)                — first element
+#    SND(p)       = p(FALSE)               — second element
+#    TRUE         = la t. la f. t
+#    FALSE        = la t. la f. f
+#    NONE         = PAIR(FALSE)("")         — parse failure
+#    SOME(v, rest)= PAIR(TRUE)(PAIR(v)(rest)) — parse success
+#
+#  AST nodes (Scott-encoded, 4-branch):
+#    VAR(name)          = la v. la l. la a. la s. v(name)
+#    LAM(param)(body)   = la v. la l. la a. la s. l(param)(body)
+#    APP(func)(arg)     = la v. la l. la a. la s. a(func)(arg)
+#    STR_NODE(val)      = la v. la l. la a. la s. s(val)
+# ─────────────────────────────────────────────────────────────────────
+
+# ── Foundations ──────────────────────────────────────────────────────
+
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph ID    = la x. x
+
+glyph Z  = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF = la cond. la t. la f. cond(t)(f)("!")
+
+# Church pairs
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+# Parse result: NONE = failure, SOME(value, rest_of_input)
+glyph NONE    = PAIR(FALSE)("")
+glyph SOME    = la val. la rest. PAIR(TRUE)(PAIR(val)(rest))
+glyph IS_SOME = la r. FST(r)
+glyph R_VAL   = la r. FST(SND(r))
+glyph R_REST  = la r. SND(SND(r))
+
+# AST constructors
+glyph AST_VAR = la name. la v. la l. la a. la s. v(name)
+glyph AST_LAM = la param. la body. la v. la l. la a. la s. l(param)(body)
+glyph AST_APP = la func. la arg. la v. la l. la a. la s. a(func)(arg)
+glyph AST_STR = la val. la v. la l. la a. la s. s(val)
+
+# ── Character classification ────────────────────────────────────────
+
+# OR of many str_eq checks — ugly but works without arrays
+glyph IS_SPACE = la c. IF(str_eq(c)(" "))(la _. TRUE)(la _. IF(str_eq(c)("\n"))(la _. TRUE)(la _. IF(str_eq(c)("\t"))(la _. TRUE)(la _. FALSE)))
+
+# is_alpha_or_under: a-z, A-Z, _, and high bytes (UTF-8 glyphs)
+# We check by exclusion: not a space, not a paren, not a dot, not '=', not '"', not '#', not empty
+glyph IS_SPECIAL = la c. IF(str_eq(c)("("))(la _. TRUE)(la _. IF(str_eq(c)(")"))(la _. TRUE)(la _. IF(str_eq(c)("."))(la _. TRUE)(la _. IF(str_eq(c)("="))(la _. TRUE)(la _. FALSE))))
+
+glyph IS_QUOTE_OR_HASH = la c. IF(str_eq(c)("\""))(la _. TRUE)(la _. IF(str_eq(c)("#"))(la _. TRUE)(la _. FALSE))
+
+glyph IS_IDENT_CHAR = la c. IF(str_eq(c)(""))(la _. FALSE)(la _. IF(IS_SPACE(c))(la _. FALSE)(la _. IF(IS_SPECIAL(c))(la _. FALSE)(la _. IF(IS_QUOTE_OR_HASH(c))(la _. FALSE)(la _. TRUE))))
+
+# ── Lexer primitives ────────────────────────────────────────────────
+
+# SKIP_SPACES: consume whitespace and #-comments from the front of a string
+glyph SKIP_SPACES = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. s)(la _.
+    IF(IS_SPACE(str_head(s)))(la _. self(str_tail(s)))(la _.
+    IF(str_eq(str_head(s))("#"))(la _. self(SKIP_LINE(s)))(la _.
+    s))))
+
+# SKIP_LINE: skip to end of line (for #-comments)
+glyph SKIP_LINE = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. s)(la _.
+    IF(str_eq(str_head(s))("\n"))(la _. str_tail(s))(la _.
+    self(str_tail(s)))))
+
+# READ_IDENT: collect identifier characters into a string
+# returns PAIR(ident_string)(rest_of_input)
+glyph READ_IDENT = Z(la self. la acc. la s.
+    IF(IS_IDENT_CHAR(str_head(s)))(la _.
+        self(concat(acc)(str_head(s)))(str_tail(s))
+    )(la _.
+        PAIR(acc)(s)
+    ))
+
+# READ_STRING: collect chars inside "...", handling escapes
+# Assumes the opening " has been consumed; reads until closing "
+glyph READ_STRING = Z(la self. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))(la _.
+    IF(str_eq(str_head(s))("\""))(la _.
+        PAIR(acc)(str_tail(s))
+    )(la _.
+    IF(str_eq(str_head(s))("\\"))(la _.
+        self(concat(acc)(UNESCAPE(str_head(str_tail(s)))))(str_tail(str_tail(s)))
+    )(la _.
+        self(concat(acc)(str_head(s)))(str_tail(s))
+    ))))
+
+# UNESCAPE: map escape character after backslash
+glyph UNESCAPE = la c. IF(str_eq(c)("n"))(la _. "\n")(la _. IF(str_eq(c)("t"))(la _. "\t")(la _. c))
+
+# ── Token types ─────────────────────────────────────────────────────
+# We represent tokens as PAIR(type_tag)(value)
+# Types: "glyph", "la", "dot", "eq", "lp", "rp", "ident", "str", "eof"
+
+glyph TOK_TYPE = la tok. FST(tok)
+glyph TOK_VAL  = la tok. SND(tok)
+glyph MKTOK    = la ty. la val. PAIR(ty)(val)
+
+# LEX_ONE: from a string (already whitespace-skipped), produce PAIR(token)(rest)
+glyph LEX_ONE = la s.
+    IF(str_eq(s)(""))(la _.
+        PAIR(MKTOK("eof")(""))(s)
+    )(la _.
+    IF(str_eq(str_head(s))("("))(la _.
+        PAIR(MKTOK("lp")("("))(str_tail(s))
+    )(la _.
+    IF(str_eq(str_head(s))(")"))(la _.
+        PAIR(MKTOK("rp")(")"))(str_tail(s))
+    )(la _.
+    IF(str_eq(str_head(s))("."))(la _.
+        PAIR(MKTOK("dot")("."))(str_tail(s))
+    )(la _.
+    IF(str_eq(str_head(s))("="))(la _.
+        PAIR(MKTOK("eq")("="))(str_tail(s))
+    )(la _.
+    IF(str_eq(str_head(s))("\""))(la _.
+        (la r. PAIR(MKTOK("str")(FST(r)))(SND(r)))(READ_STRING("")(str_tail(s)))
+    )(la _.
+    IF(IS_IDENT_CHAR(str_head(s)))(la _.
+        (la r.
+            (la name. (la rest.
+                IF(str_eq(name)("glyph"))(la _.
+                    PAIR(MKTOK("glyph")("glyph"))(rest)
+                )(la _.
+                IF(str_eq(name)("la"))(la _.
+                    PAIR(MKTOK("la")("la"))(rest)
+                )(la _.
+                    PAIR(MKTOK("ident")(name))(rest)
+                ))
+            )(SND(r))
+        )(FST(r)))(READ_IDENT("")(s))
+    )(la _.
+        PAIR(MKTOK("eof")(""))(s)
+    )))))))
+
+# NEXT_TOKEN: skip whitespace then lex one token
+# Returns PAIR(token)(rest_of_source)
+glyph NEXT_TOKEN = la s. LEX_ONE(SKIP_SPACES(s))
+
+# ── Recursive-descent parser ───────────────────────────────────────
+#
+# Each parse function takes a source string (position) and returns
+# SOME(ast_node)(remaining_source) or NONE.
+#
+# Grammar:
+#   program  := (glyph_def)*
+#   glyph_def:= 'glyph' IDENT '=' expr
+#   expr     := 'la' IDENT '.' expr  |  app
+#   app      := primary ( '(' expr ')' )*
+#   primary  := IDENT | STRING | '(' expr ')'
+
+# PARSE_PRIMARY: parse a primary expression
+glyph PARSE_PRIMARY = la s.
+    (la tr. (la tok. (la rest.
+        IF(str_eq(TOK_TYPE(tok))("ident"))(la _.
+            SOME(AST_VAR(TOK_VAL(tok)))(rest)
+        )(la _.
+        IF(str_eq(TOK_TYPE(tok))("str"))(la _.
+            SOME(AST_STR(TOK_VAL(tok)))(rest)
+        )(la _.
+        IF(str_eq(TOK_TYPE(tok))("lp"))(la _.
+            (la inner.
+                IF(IS_SOME(inner))(la _.
+                    (la tr2. (la tok2. (la rest2.
+                        IF(str_eq(TOK_TYPE(tok2))("rp"))(la _.
+                            SOME(R_VAL(inner))(rest2)
+                        )(la _. NONE)
+                    )(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(inner)))
+                )(la _. NONE)
+            )(PARSE_EXPR(rest))
+        )(la _. NONE)))
+    )(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+
+# PARSE_APP: parse left-associative application  primary ( '(' expr ')' )*
+glyph PARSE_APP = la s.
+    (la base.
+        IF(IS_SOME(base))(la _.
+            PARSE_APP_TAIL(R_VAL(base))(R_REST(base))
+        )(la _. NONE)
+    )(PARSE_PRIMARY(s))
+
+glyph PARSE_APP_TAIL = Z(la self. la acc. la s.
+    (la tr. (la tok. (la rest.
+        IF(str_eq(TOK_TYPE(tok))("lp"))(la _.
+            (la arg.
+                IF(IS_SOME(arg))(la _.
+                    (la tr2. (la tok2. (la rest2.
+                        IF(str_eq(TOK_TYPE(tok2))("rp"))(la _.
+                            self(AST_APP(acc)(R_VAL(arg)))(rest2)
+                        )(la _. NONE)
+                    )(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(arg)))
+                )(la _. NONE)
+            )(PARSE_EXPR(rest))
+        )(la _.
+            SOME(acc)(s)
+        )
+    )(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+
+# PARSE_EXPR: parse an expression (lambda or application)
+glyph PARSE_EXPR = Z(la self_expr. la s.
+    (la tr. (la tok. (la rest.
+        IF(str_eq(TOK_TYPE(tok))("la"))(la _.
+            (la tr2. (la tok2. (la rest2.
+                IF(str_eq(TOK_TYPE(tok2))("ident"))(la _.
+                    (la tr3. (la tok3. (la rest3.
+                        IF(str_eq(TOK_TYPE(tok3))("dot"))(la _.
+                            (la body.
+                                IF(IS_SOME(body))(la _.
+                                    SOME(AST_LAM(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body))
+                                )(la _. NONE)
+                            )(self_expr(rest3))
+                        )(la _. NONE)
+                    )(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2))
+                )(la _. NONE)
+            )(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest))
+        )(la _.
+            PARSE_APP(s)
+        )
+    )(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+
+# PARSE_GLYPH: parse one glyph definition: 'glyph' IDENT '=' expr
+# Returns SOME(PAIR(name)(ast))(rest) or NONE
+glyph PARSE_GLYPH = la s.
+    (la tr. (la tok. (la rest.
+        IF(str_eq(TOK_TYPE(tok))("glyph"))(la _.
+            (la tr2. (la tok2. (la rest2.
+                IF(str_eq(TOK_TYPE(tok2))("ident"))(la _.
+                    (la tr3. (la tok3. (la rest3.
+                        IF(str_eq(TOK_TYPE(tok3))("eq"))(la _.
+                            (la body.
+                                IF(IS_SOME(body))(la _.
+                                    SOME(PAIR(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body))
+                                )(la _. NONE)
+                            )(PARSE_EXPR(rest3))
+                        )(la _. NONE)
+                    )(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2))
+                )(la _. NONE)
+            )(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest))
+        )(la _. NONE)
+    )(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+
+# PARSE_PROGRAM: parse all glyph definitions into a list
+# List = PAIR(TRUE)(PAIR(head)(tail)) | PAIR(FALSE)("")  (Church-list as nested pairs)
+glyph NIL      = PAIR(FALSE)("")
+glyph CONS     = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS  = la lst. FST(lst)
+glyph LIST_HD  = la lst. FST(SND(lst))
+glyph LIST_TL  = la lst. SND(SND(lst))
+
+glyph PARSE_PROGRAM = Z(la self. la s.
+    (la s2.
+        (la g.
+            IF(IS_SOME(g))(la _.
+                (la rest_parsed.
+                    CONS(R_VAL(g))(rest_parsed)
+                )(self(R_REST(g)))
+            )(la _. NIL)
+        )(PARSE_GLYPH(s2))
+    )(SKIP_SPACES(s)))
+
+# ── AST pretty-printer (for verification) ──────────────────────────
+
+glyph SHOW_AST = Z(la self. la node.
+    node
+        (la name. concat("VAR[")(concat(name)("]")))
+        (la param. la body. concat("LAM[")(concat(param)(concat(", ")(concat(self(body))("]")))))
+        (la func. la arg. concat("APP[")(concat(self(func))(concat(", ")(concat(self(arg))("]")))))
+        (la val. concat("STR[")(concat(val)("]")))
+)
+
+# ── Glyph-list printer ─────────────────────────────────────────────
+
+glyph SHOW_GLYPHS = Z(la self. la lst.
+    IF(IS_CONS(lst))(la _.
+        (la entry. (la name. (la ast.
+            concat("glyph ")(concat(name)(concat(" = ")(concat(SHOW_AST(ast))(concat("\n")(self(LIST_TL(lst)))))))
+        )(SND(entry)))(FST(entry)))(LIST_HD(lst))
+    )(la _. ""))
+
+# ── Test: parse a tiny program and show the AST ────────────────────
+
+glyph SEQ = la a. la b. b
+
+# COUNT: count list elements as a digit string
+glyph COUNT = la lst. Z(la self. la l. la n.
+    IF(IS_CONS(l))(la _.
+        self(LIST_TL(l))(concat(n)("I"))
+    )(la _. n)
+)(lst)("")
+
+# ── Self-test: parse a string literal ──────────────────────────────
+glyph TEST_SRC = "glyph ID = la x. x\nglyph APP = ID(ID)\nglyph HI = \"hello\"\n"
+
+glyph MAIN = SEQ(
+    (la parsed.
+        SEQ(print(concat("String test: ")(concat(COUNT(parsed))(" glyph(s)"))))(
+        print(SHOW_GLYPHS(parsed)))
+    )(PARSE_PROGRAM(TEST_SRC))
+)(
+    # Self-referential test: parse kernel.la from disk
+    (la kernel_src. (la parsed.
+        SEQ(print(concat("Kernel parse: ")(concat(COUNT(parsed))(" glyph(s)"))))(
+        print(SHOW_GLYPHS(parsed)))
+    )(PARSE_PROGRAM(kernel_src)))(read_file("kernel.la"))
+)

@@ -278,7 +278,8 @@ static Node *subst(Node *e, const char *var, Node *val) {
 static int is_builtin(const char *name) {
     return strcmp(name, "print") == 0 || strcmp(name, "copy_self") == 0
         || strcmp(name, "read_file") == 0 || strcmp(name, "write_file") == 0
-        || strcmp(name, "concat") == 0;
+        || strcmp(name, "concat") == 0 || strcmp(name, "str_head") == 0
+        || strcmp(name, "str_tail") == 0 || strcmp(name, "str_eq") == 0;
 }
 
 /* The generation of the currently running host, read from its own filename.
@@ -366,6 +367,15 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         free(buf);
         return r;
     }
+    if (strcmp(name, "str_eq") == 0) {
+        if (arg1->t != N_STR || arg2->t != N_STR) {
+            fprintf(stderr, "str_eq: arguments must be strings\n"); exit(1);
+        }
+        if (strcmp(arg1->s, arg2->s) == 0)
+            return mklam("t", mklam("f", mkvar("t")));  /* TRUE */
+        else
+            return mklam("t", mklam("f", mkvar("f")));  /* FALSE */
+    }
     fprintf(stderr, "unknown builtin2: %s\n", name);
     exit(1);
 }
@@ -401,6 +411,24 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "concat: first argument is not a string\n"); exit(1); }
         return mkpartial("concat", v);
+    }
+    if (strcmp(name, "str_head") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "str_head: argument is not a string\n"); exit(1); }
+        if (v->s[0] == '\0') return mkstr("");
+        char buf[2] = { v->s[0], '\0' };
+        return mkstr(buf);
+    }
+    if (strcmp(name, "str_tail") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "str_tail: argument is not a string\n"); exit(1); }
+        if (v->s[0] == '\0') return mkstr("");
+        return mkstr(v->s + 1);
+    }
+    if (strcmp(name, "str_eq") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "str_eq: first argument is not a string\n"); exit(1); }
+        return mkpartial("str_eq", v);
     }
     fprintf(stderr, "unknown builtin: %s\n", name);
     exit(1);

@@ -12,6 +12,7 @@ host program, applied to itself, reproduces itself.
 | -------------------- | ------------------------------------------------------------------- |
 | `tiny_host.c`        | The host: a minimal C interpreter for `.la` files.                  |
 | `kernel.la`          | The kernel, written in Lingua Adamica. Defines `MAIN`.              |
+| `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -54,6 +55,46 @@ Expressions:
 - `concat(a)(b)` — concatenates two strings and returns the result. Curried:
   the first application captures `a` and returns a partial; the second appends
   `b`.
+- `str_head(s)` — returns the first character of string `s` as a one-character
+  string, or `""` if `s` is empty.
+- `str_tail(s)` — returns everything after the first character of `s`, or `""`
+  if `s` is empty.
+- `str_eq(a)(b)` — returns Church `TRUE` (`la t. la f. t`) if `a` and `b` are
+  identical strings, Church `FALSE` (`la t. la f. f`) otherwise. Curried.
+
+### Recursion (Z combinator)
+
+The language is call-by-value (eager), so the Y combinator diverges. Use the
+Z combinator for recursion:
+
+```
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+```
+
+Church booleans (`TRUE = la t. la f. t`, `FALSE = la t. la f. f`) evaluate
+both branches eagerly, which causes infinite recursion in base cases. Thunk
+the branches and force the selected one:
+
+```
+glyph IF = la cond. la t. la f. cond(t)(f)("!")
+# Usage: IF(condition)(la _. then_expr)(la _. else_expr)
+```
+
+### Self-hosted parser (`parser.la`)
+
+`parser.la` is a recursive-descent lexer+parser written entirely in Lingua
+Adamica. It reads `.la` source (from strings or files via `read_file`) and
+produces Church-encoded ASTs:
+
+- **AST nodes** (Scott-encoded, 4-branch pattern match):
+  - `AST_VAR(name)` — variable reference
+  - `AST_LAM(param)(body)` — lambda abstraction
+  - `AST_APP(func)(arg)` — application
+  - `AST_STR(val)` — string literal
+
+- **Parse results**: `SOME(value)(rest)` or `NONE` (Church-option with remaining input)
+- **Lists**: `CONS(head)(tail)` / `NIL` (Church-encoded)
+- **Pairs**: `PAIR(a)(b) = la f. f(a)(b)`
 
 ### Evaluation
 
