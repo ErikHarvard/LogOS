@@ -1,0 +1,246 @@
+# ═══════════════════════════════════════════════════════════════════
+#  bytecode.la — byte instructions for Lingua Adamica, and their parser
+#
+#  We already have two representations of a program:
+#    • source text   — what you write; PARSE_PROGRAM reads it, SHOW_SRC
+#                       writes it
+#    • the AST        — the parsed tree the evaluator walks
+#  This file adds a third: a flat **byte-instruction** stream, the kind
+#  of compact linear encoding a VM would load. EMIT compiles an AST into
+#  byte instructions; PARSE_BYTES — the parser for byte instructions —
+#  decodes them back into an AST.
+#
+#  Instruction format (prefix / Polish notation, one opcode per node):
+#    V <field>            — variable        (name)
+#    S <field>            — string literal  (value)
+#    L <field> <expr>     — lambda          (param, then body)
+#    A <expr> <expr>      — application     (function, then argument)
+#  A <field> is escaped content terminated by ';' :  ';' -> '\;' and
+#  '\' -> '\\', so a field never contains an unescaped terminator. The
+#  opcode fixes how many sub-expressions follow, so decoding is a plain
+#  recursive descent — exactly like the text parser, over bytes.
+#
+#  Round trip:   text --PARSE_PROGRAM--> AST --EMIT--> bytes
+#                     --PARSE_BYTES--> AST --SHOW_SRC--> text
+#  and the two texts agree.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Foundations ─────────────────────────────────────────────────────
+
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph ID    = la x. x
+glyph SEQ   = la a. la b. b
+
+glyph Z  = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF = la cond. la t. la f. cond(t)(f)("!")
+
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+glyph NONE    = PAIR(FALSE)("")
+glyph SOME    = la val. la rest. PAIR(TRUE)(PAIR(val)(rest))
+glyph IS_SOME = la r. FST(r)
+glyph R_VAL   = la r. FST(SND(r))
+glyph R_REST  = la r. SND(SND(r))
+
+glyph NIL      = PAIR(FALSE)("")
+glyph CONS     = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS  = la lst. FST(lst)
+glyph LIST_HD  = la lst. FST(SND(lst))
+glyph LIST_TL  = la lst. SND(SND(lst))
+
+# ── AST constructors ────────────────────────────────────────────────
+#  node(on_var)(on_lam)(on_app)(on_str)
+
+glyph AST_VAR = la name. la v. la l. la a. la s. v(name)
+glyph AST_LAM = la param. la body. la v. la l. la a. la s. l(param)(body)
+glyph AST_APP = la func. la arg. la v. la l. la a. la s. a(func)(arg)
+glyph AST_STR = la val. la v. la l. la a. la s. s(val)
+
+# ── Lexer ───────────────────────────────────────────────────────────
+
+glyph IS_SPACE = la c. IF(str_eq(c)(" "))(la _. TRUE)(la _. IF(str_eq(c)("\n"))(la _. TRUE)(la _. IF(str_eq(c)("\t"))(la _. TRUE)(la _. FALSE)))
+
+glyph IS_SPECIAL = la c. IF(str_eq(c)("("))(la _. TRUE)(la _. IF(str_eq(c)(")"))(la _. TRUE)(la _. IF(str_eq(c)("."))(la _. TRUE)(la _. IF(str_eq(c)("="))(la _. TRUE)(la _. FALSE))))
+
+glyph IS_QUOTE_OR_HASH = la c. IF(str_eq(c)("\""))(la _. TRUE)(la _. IF(str_eq(c)("#"))(la _. TRUE)(la _. FALSE))
+
+glyph IS_IDENT_CHAR = la c. IF(str_eq(c)(""))(la _. FALSE)(la _. IF(IS_SPACE(c))(la _. FALSE)(la _. IF(IS_SPECIAL(c))(la _. FALSE)(la _. IF(IS_QUOTE_OR_HASH(c))(la _. FALSE)(la _. TRUE))))
+
+glyph SKIP_LINE = Z(la self. la s. IF(str_eq(s)(""))(la _. s)(la _. IF(str_eq(str_head(s))("\n"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+
+glyph SKIP_SPACES = Z(la self. la s. IF(str_eq(s)(""))(la _. s)(la _. IF(IS_SPACE(str_head(s)))(la _. self(str_tail(s)))(la _. IF(str_eq(str_head(s))("#"))(la _. self(SKIP_LINE(s)))(la _. s))))
+
+glyph READ_IDENT = Z(la self. la acc. la s. IF(IS_IDENT_CHAR(str_head(s)))(la _. self(concat(acc)(str_head(s)))(str_tail(s)))(la _. PAIR(acc)(s)))
+
+glyph UNESCAPE = la c. IF(str_eq(c)("n"))(la _. "\n")(la _. IF(str_eq(c)("t"))(la _. "\t")(la _. c))
+
+glyph READ_STRING = Z(la self. la acc. la s. IF(str_eq(s)(""))(la _. PAIR(acc)(s))(la _. IF(str_eq(str_head(s))("\""))(la _. PAIR(acc)(str_tail(s)))(la _. IF(str_eq(str_head(s))("\\"))(la _. self(concat(acc)(UNESCAPE(str_head(str_tail(s)))))(str_tail(str_tail(s))))(la _. self(concat(acc)(str_head(s)))(str_tail(s))))))
+
+glyph TOK_TYPE = la tok. FST(tok)
+glyph TOK_VAL  = la tok. SND(tok)
+glyph MKTOK    = la ty. la val. PAIR(ty)(val)
+
+glyph LEX_ONE = la s. IF(str_eq(s)(""))(la _. PAIR(MKTOK("eof")(""))(s))(la _. IF(str_eq(str_head(s))("("))(la _. PAIR(MKTOK("lp")("("))(str_tail(s)))(la _. IF(str_eq(str_head(s))(")"))(la _. PAIR(MKTOK("rp")(")"))(str_tail(s)))(la _. IF(str_eq(str_head(s))("."))(la _. PAIR(MKTOK("dot")("."))(str_tail(s)))(la _. IF(str_eq(str_head(s))("="))(la _. PAIR(MKTOK("eq")("="))(str_tail(s)))(la _. IF(str_eq(str_head(s))("\""))(la _. (la r. PAIR(MKTOK("str")(FST(r)))(SND(r)))(READ_STRING("")(str_tail(s))))(la _. IF(IS_IDENT_CHAR(str_head(s)))(la _. (la r. (la name. (la rest. IF(str_eq(name)("glyph"))(la _. PAIR(MKTOK("glyph")("glyph"))(rest))(la _. IF(str_eq(name)("la"))(la _. PAIR(MKTOK("la")("la"))(rest))(la _. PAIR(MKTOK("ident")(name))(rest))))(SND(r)))(FST(r)))(READ_IDENT("")(s)))(la _. PAIR(MKTOK("eof")(""))(s))))))))
+
+glyph NEXT_TOKEN = la s. LEX_ONE(SKIP_SPACES(s))
+
+# ── Parser (text -> AST) ────────────────────────────────────────────
+
+glyph PARSE_PRIMARY = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("ident"))(la _. SOME(AST_VAR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("str"))(la _. SOME(AST_STR(TOK_VAL(tok)))(rest))(la _. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la inner. IF(IS_SOME(inner))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. SOME(R_VAL(inner))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(inner))))(la _. NONE))(PARSE_EXPR(rest)))(la _. NONE))))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+
+glyph PARSE_APP_TAIL = Z(la self. la acc. la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("lp"))(la _. (la arg. IF(IS_SOME(arg))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("rp"))(la _. self(AST_APP(acc)(R_VAL(arg)))(rest2))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(R_REST(arg))))(la _. NONE))(PARSE_EXPR(rest)))(la _. SOME(acc)(s)))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+
+glyph PARSE_APP = la s. (la base. IF(IS_SOME(base))(la _. PARSE_APP_TAIL(R_VAL(base))(R_REST(base)))(la _. NONE))(PARSE_PRIMARY(s))
+
+glyph PARSE_EXPR = Z(la self_expr. la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("la"))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("ident"))(la _. (la tr3. (la tok3. (la rest3. IF(str_eq(TOK_TYPE(tok3))("dot"))(la _. (la body. IF(IS_SOME(body))(la _. SOME(AST_LAM(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body)))(la _. NONE))(self_expr(rest3)))(la _. NONE))(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2)))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest)))(la _. PARSE_APP(s)))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+
+glyph PARSE_GLYPH = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("glyph"))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("ident"))(la _. (la tr3. (la tok3. (la rest3. IF(str_eq(TOK_TYPE(tok3))("eq"))(la _. (la body. IF(IS_SOME(body))(la _. SOME(PAIR(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body)))(la _. NONE))(PARSE_EXPR(rest3)))(la _. NONE))(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2)))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest)))(la _. NONE))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+
+glyph PARSE_PROGRAM = Z(la self. la s. (la s2. (la g. IF(IS_SOME(g))(la _. (la rest_parsed. CONS(R_VAL(g))(rest_parsed))(self(R_REST(g))))(la _. NIL))(PARSE_GLYPH(s2)))(SKIP_SPACES(s)))
+
+# ── Unparser (AST -> text) ──────────────────────────────────────────
+
+glyph ESC_CHAR = la c.
+    IF(str_eq(c)("\\"))(la _. "\\\\")(la _.
+    IF(str_eq(c)("\""))(la _. "\\\"")(la _.
+    IF(str_eq(c)("\n"))(la _. "\\n")(la _.
+    IF(str_eq(c)("\t"))(la _. "\\t")(la _.
+    c))))
+
+glyph ESCAPE = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+        concat(ESC_CHAR(str_head(s)))(self(str_tail(s)))))
+
+glyph SHOW_FUN_POS = la rec. la f.
+    f
+        (la name. rec(f))
+        (la p. la b. concat("(")(concat(rec(f))(")")))
+        (la g. la a. rec(f))
+        (la val. rec(f))
+
+glyph SHOW_SRC = Z(la self. la node.
+    node
+        (la name. name)
+        (la p. la b. concat("la ")(concat(p)(concat(". ")(self(b)))))
+        (la f. la arg. concat(SHOW_FUN_POS(self)(f))(concat("(")(concat(self(arg))(")"))))
+        (la val. concat("\"")(concat(ESCAPE(val))("\"")))
+)
+
+glyph SHOW_PROGRAM = Z(la self. la gl.
+    IF(IS_CONS(gl))(la _.
+        (la entry.
+            concat("glyph ")(concat(FST(entry))(concat(" = ")(concat(SHOW_SRC(SND(entry)))(concat("\n")(self(LIST_TL(gl)))))))
+        )(LIST_HD(gl))
+    )(la _. ""))
+
+# ═══════════════════════════════════════════════════════════════════
+#  Byte instructions
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Field encoding: escaped content terminated by ';' ───────────────
+# In source, "\\;" is the two-char value \ ; and "\\\\" is the two-char
+# value \ \ — so ESC_FIELD_CHAR turns one byte into its escaped form.
+
+glyph ESC_FIELD_CHAR = la c.
+    IF(str_eq(c)(";"))(la _. "\\;")(la _.
+    IF(str_eq(c)("\\"))(la _. "\\\\")(la _.
+    c))
+
+glyph ESCAPE_FIELD = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+        concat(ESC_FIELD_CHAR(str_head(s)))(self(str_tail(s)))))
+
+# ENCODE_FIELD(s) — escaped content plus the ';' terminator.
+glyph ENCODE_FIELD = la s. concat(ESCAPE_FIELD(s))(";")
+
+# READ_FIELD(stream) -> PAIR(content)(rest) : read up to an unescaped
+# ';', unescaping '\X' to X along the way and consuming the terminator.
+glyph READ_FIELD = Z(la self. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))(la _.
+    IF(str_eq(str_head(s))("\\"))(la _.
+        self(concat(acc)(str_head(str_tail(s))))(str_tail(str_tail(s)))
+    )(la _.
+    IF(str_eq(str_head(s))(";"))(la _.
+        PAIR(acc)(str_tail(s))
+    )(la _.
+        self(concat(acc)(str_head(s)))(str_tail(s))
+    ))))
+
+# ── EMIT: AST -> byte instructions ──────────────────────────────────
+
+glyph EMIT = Z(la self. la node.
+    node
+        (la name. concat("V")(ENCODE_FIELD(name)))
+        (la p. la b. concat("L")(concat(ENCODE_FIELD(p))(self(b))))
+        (la f. la a. concat("A")(concat(self(f))(self(a))))
+        (la val. concat("S")(ENCODE_FIELD(val)))
+)
+
+# ── PARSE_BYTES: the parser for byte instructions ───────────────────
+# byte stream -> PAIR(ast)(rest_of_stream).  Recursive descent on the
+# leading opcode, exactly mirroring the text parser one level lower.
+
+glyph PARSE_BYTES = Z(la self. la s.
+    (la op. (la rest0.
+        IF(str_eq(op)("V"))(la _.
+            (la fr. PAIR(AST_VAR(FST(fr)))(SND(fr)))(READ_FIELD("")(rest0))
+        )(la _.
+        IF(str_eq(op)("S"))(la _.
+            (la fr. PAIR(AST_STR(FST(fr)))(SND(fr)))(READ_FIELD("")(rest0))
+        )(la _.
+        IF(str_eq(op)("L"))(la _.
+            (la fr. (la body_r.
+                PAIR(AST_LAM(FST(fr))(FST(body_r)))(SND(body_r))
+            )(self(SND(fr))))(READ_FIELD("")(rest0))
+        )(la _.
+        IF(str_eq(op)("A"))(la _.
+            (la fn_r. (la arg_r.
+                PAIR(AST_APP(FST(fn_r))(FST(arg_r)))(SND(arg_r))
+            )(self(SND(fn_r))))(self(rest0))
+        )(la _.
+            PAIR(AST_STR("?bad-opcode"))(rest0)
+        ))))
+    )(str_tail(s)))(str_head(s)))
+
+# DECODE(stream) — parse one expression and return its AST.
+glyph DECODE = la s. FST(PARSE_BYTES(s))
+
+# ROUNDTRIP_AST(ast) = DECODE(EMIT(ast)) — through bytes and back.
+glyph ROUNDTRIP_AST = la ast. DECODE(EMIT(ast))
+
+# MAP_GLYPHS(f)(gl) — apply f to every glyph's AST in a table.
+glyph MAP_GLYPHS = la f. Z(la self. la gl.
+    IF(IS_CONS(gl))(la _.
+        (la entry. CONS(PAIR(FST(entry))(f(SND(entry))))(self(LIST_TL(gl))))(LIST_HD(gl))
+    )(la _. NIL))
+
+# ── Tests ───────────────────────────────────────────────────────────
+
+# A small AST built by hand, exercising every node kind, nesting, and a
+# string literal that itself contains the field terminator ';' and a
+# backslash — so the field escaping is genuinely tested.
+glyph TEST_AST = AST_LAM("x")(AST_APP(AST_APP(AST_VAR("f"))(AST_VAR("x")))(AST_STR("a;b\\c")))
+
+glyph MAIN = SEQ(SEQ(SEQ(
+    # Show the byte instructions for the hand-built AST.
+    SEQ(print("--- byte instructions for  la x. f(x)(\"a;b\\c\") ---"))(
+    print(EMIT(TEST_AST)))
+)(
+    # Decode them back and unparse — should match the original source.
+    SEQ(print("--- decoded and unparsed ---"))(
+    print(SHOW_SRC(DECODE(EMIT(TEST_AST)))))
+))(
+    # Single-expression round trip check.
+    SEQ(print("--- expression round trip ---"))(
+    print(str_eq(SHOW_SRC(TEST_AST))(SHOW_SRC(ROUNDTRIP_AST(TEST_AST)))("bytes round-trip: stable")("bytes round-trip: DIVERGED")))
+))(
+    # Whole-program round trip: parse kernel.la to ASTs, send every glyph
+    # through bytes and back, and confirm the reconstructed source agrees.
+    SEQ(print("--- kernel.la through byte instructions ---"))(
+    (la gl.
+        print(str_eq(SHOW_PROGRAM(gl))(SHOW_PROGRAM(MAP_GLYPHS(ROUNDTRIP_AST)(gl)))("kernel round-trip: stable")("kernel round-trip: DIVERGED"))
+    )(PARSE_PROGRAM(read_file("kernel.la"))))
+)

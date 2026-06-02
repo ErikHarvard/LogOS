@@ -170,6 +170,26 @@ else
     exit 1
 fi
 
+say "Testing byte instructions (EMIT / PARSE_BYTES in bytecode.la)"
+# bytecode.la is a third representation of a program: a flat byte-
+# instruction stream. EMIT compiles an AST to byte instructions and
+# PARSE_BYTES — the parser for them — decodes them back to an AST.
+OUT="$(./tiny_host bytecode.la 2>/dev/null)"
+ok=1
+# The hand-built AST  la x. f(x)("a;b\c")  must emit this exact stream.
+# (The string payload exercises field escaping: ';' -> '\;', '\' -> '\\'.)
+printf '%s\n' "$OUT" | grep -qxF 'Lx;AAVf;Vx;Sa\;b\\c;'    || { echo "FAIL  byte-instr: unexpected encoding"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF 'la x. f(x)("a;b\\c")'    || { echo "FAIL  byte-instr: decode+unparse mismatch"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "bytes round-trip: stable"   || { echo "FAIL  byte-instr: expression round trip"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "kernel round-trip: stable"  || { echo "FAIL  byte-instr: kernel.la round trip"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  EMIT/PARSE_BYTES round-trip an AST through byte instructions"
+    echo "PASS  every glyph of kernel.la survives AST -> bytes -> AST"
+else
+    printf '%s\n' "$OUT"
+    exit 1
+fi
+
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"
 # eval.la is a lexer + parser + evaluator written entirely in Lingua
 # Adamica. It reads kernel.la, parses it, evaluates it — and the

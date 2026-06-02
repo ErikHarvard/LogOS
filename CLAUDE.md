@@ -14,6 +14,7 @@ host program, applied to itself, reproduces itself.
 | `kernel.la`          | The kernel, written in Lingua Adamica. Defines `MAIN`.              |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
+| `bytecode.la`        | Byte instructions: a flat linear encoding of an AST, with `EMIT` (AST → bytes) and `PARSE_BYTES` (the parser for byte instructions, bytes → AST), all in Lingua Adamica. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -174,6 +175,37 @@ roughly 25 seconds.
 The reconstruction reads `eval.la` rather than re-running `MAIN`: `MAIN`
 evaluates `kernel.la` and reads `eval.la`, so feeding it through the same
 machinery as a value would not bottom out.
+
+### Byte instructions (`bytecode.la`)
+
+A program now has three representations: **source text** (parser ↔ unparser),
+the **AST** (what the evaluator walks), and a flat **byte-instruction** stream
+— the compact linear encoding a VM would load. `bytecode.la` bridges the AST
+and the bytes:
+
+- **`EMIT(ast)`** — compiles an AST into byte instructions.
+- **`PARSE_BYTES(stream)`** — the parser for byte instructions: decodes a byte
+  stream into `PAIR(ast)(rest)`. `DECODE(stream)` returns just the AST.
+
+The format is prefix (Polish) notation, one opcode byte per node, so decoding
+is a recursive descent on the leading opcode — the text parser's shape, one
+level lower:
+
+| Opcode | Form              | Node                       |
+| ------ | ----------------- | -------------------------- |
+| `V`    | `V` field         | variable (name)            |
+| `S`    | `S` field         | string literal (value)     |
+| `L`    | `L` field ⟨expr⟩  | lambda (param, then body)  |
+| `A`    | `A` ⟨expr⟩ ⟨expr⟩ | application (func, arg)    |
+
+A *field* is escaped content terminated by `;` — within it `;` becomes `\;`
+and `\` becomes `\\`, so a field never holds an unescaped terminator. For
+example `la x. f(x)("a;b\c")` emits `Lx;AAVf;Vx;Sa\;b\\c;`. The opcode fixes
+how many sub-expressions follow, so `PARSE_BYTES` needs no look-ahead.
+
+The round trip is `text → AST → bytes → AST → text`; `build.sh` checks an
+expression with a terminator-and-backslash string survives it, and that every
+glyph of `kernel.la` is identical after `DECODE(EMIT(·))`.
 
 ### Evaluation
 
