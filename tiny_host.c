@@ -40,6 +40,7 @@
 #include <setjmp.h>
 #include <stdint.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 /* ------------------------------------------------------------------ AST -- */
@@ -73,6 +74,23 @@ static size_t    gc_next = 250000;        /* collect when the registry reaches t
                                             * GC cost is negligible vs the workload, so a low
                                             * floor just keeps the working set tight) */
 static uintptr_t gc_stack_base = 0;       /* highest stack address (set in main) */
+static uintptr_t stack_floor = 0;         /* recursion guard: bail below this address */
+
+/* The parser, eval, subst, occurs_free and copy_node recurse on expression
+ * depth; a pathologically nested program would otherwise overrun the C stack
+ * and SIGSEGV. check_stack() compares the current frame against a floor set
+ * 512 KB below the real RLIMIT_STACK, so deep nesting halts loudly instead of
+ * faulting. It only fires within that last 512 KB — anything that fits in the
+ * stack today still runs, so legitimate (incl. self-hosting) recursion is
+ * unaffected; only input that would have crashed is rejected. */
+static void check_stack(void) {
+    char probe;
+    if (stack_floor && (uintptr_t)&probe < stack_floor) {
+        fprintf(stderr, "error: expression nesting too deep (C stack guard)\n");
+        exit(1);
+    }
+}
+
 static Node    **gc_set  = NULL;          /* per-collection membership table (pow2) */
 static size_t    gc_set_cap = 0;
 static Node    **gc_work = NULL;          /* mark worklist */
@@ -145,6 +163,7 @@ static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->
 static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL); n->s = strdup(nm); n->a = a; return n; }
 
 static Node *copy_node(Node *e) {
+    check_stack();
     switch (e->t) {
         case N_VAR: return mkvar(e->s);
         case N_STR: return mkstrn(e->s, e->len);
@@ -267,6 +286,7 @@ static Node *parse_expr(void);
 
 /* primary := IDENT | STRING | '(' expr ')' */
 static Node *parse_primary(void) {
+    check_stack();
     if (curtok == T_IDENT) { Node *n = mkvar(curstr); advance(); return n; }
     if (curtok == T_STR)   { Node *n = mkstrn(curstr, curlen); advance(); return n; }
     if (curtok == T_INT)   { Node *n = mkint(curint); advance(); return n; }
@@ -423,6 +443,7 @@ static void parse_program(void) {
 /* --------------------------------------------- capture-avoiding subst --- */
 
 static int occurs_free(const char *var, Node *e) {
+    check_stack();
     switch (e->t) {
         case N_STR:     return 0;
         case N_INT:     return 0;
@@ -444,6 +465,7 @@ static char *gensym(void) {
 /* subst(e, var, val) = e[var := val], renaming bound names as needed so no
  * free variable of `val` is accidentally captured. */
 static Node *subst(Node *e, const char *var, Node *val) {
+    check_stack();
     switch (e->t) {
         case N_STR:     return copy_node(e);
         case N_INT:     return copy_node(e);
@@ -766,6 +788,7 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
 /* ----------------------------------------------------------- evaluator -- */
 
 static Node *eval(Node *e) {
+    check_stack();
     switch (e->t) {
         case N_STR:     return e;               /* values reduce to themselves */
         case N_INT:     return e;
@@ -872,6 +895,14 @@ static void do_import(const char *path) {
 
 int main(int argc, char **argv) {
     gc_stack_base = (uintptr_t)&argc;   /* highest app-stack address; roots live below it */
+    {                                   /* arm the recursion guard 512 KB below RLIMIT_STACK */
+        struct rlimit rl;
+        size_t usable = 8u * 1024 * 1024;   /* default-stack fallback */
+        if (getrlimit(RLIMIT_STACK, &rl) == 0 &&
+            rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur >= 1024u * 1024)
+            usable = (size_t)rl.rlim_cur;
+        stack_floor = gc_stack_base - (usable - 512u * 1024);
+    }
     const char *path = argc > 1 ? argv[1] : "kernel.la";
 
     char *src = slurp_file(path, NULL);   /* source is text; NUL-terminated walk is fine */

@@ -114,9 +114,9 @@ glyph SPEC_ANY       = CONS(TC(la g. BOOL_STR(g(IS_B)(L3)))("T"))(CONS(TC(la g. 
 glyph SPEC_FIND      = CONS(TC(la g. g("y")(ASSOC))("Y"))(NIL)
 glyph SPEC_LENGTH    = CONS(TC(la g. NUM_BARS(g(L3)))("|||"))(NIL)
 glyph SPEC_VONE      = CONS(TC(la g. g("d")(ID)(PAIR(la f. f("ok"))("ok")))("PASS"))(CONS(TC(la g. g("d")(ID)(PAIR(la f. f("x"))("y")))("FAIL: d expected y got x"))(NIL))
-glyph SPEC_VALL      = CONS(TC(la g. LIST_STR(MAP(SND)(g("d")(ID)(CONS(PAIR(la f. f("ok"))("ok"))(NIL)))))("PASS"))(NIL)
-glyph SPEC_ISAUTO    = CONS(TC(la g. BOOL_STR(g("ID")(ID)))("T"))(NIL)
-glyph SPEC_DEBUG     = CONS(TC(la g. TRI_STATUS(HEAD(g(CONS(PAIR("ID")(ID))(NIL)))))("PASS"))(NIL)
+glyph SPEC_VALL      = CONS(TC(la g. LIST_STR(MAP(SND)(g("d")(ID)(CONS(PAIR(la f. f("ok"))("ok"))(NIL)))))("PASS"))(CONS(TC(la g. LIST_STR(MAP(SND)(g("d")(ID)(CONS(PAIR(la f. f("ok"))("y"))(NIL)))))("FAIL: d expected y got ok"))(NIL))
+glyph SPEC_ISAUTO    = CONS(TC(la g. BOOL_STR(g("ID")(ID)))("T"))(CONS(TC(la g. BOOL_STR(g("ID")(BAD_ID)))("F"))(NIL))
+glyph SPEC_DEBUG     = CONS(TC(la g. TRI_STATUS(HEAD(g(CONS(PAIR("ID")(ID))(NIL)))))("PASS"))(CONS(TC(la g. TRI_STATUS(HEAD(g(CONS(PAIR("ID")(BAD_ID))(NIL)))))("FAIL"))(NIL))
 
 # Native-integer builtins (Form g_8, tau_Q; arithmetic is Ontodirection >).
 # Probes render the integer result via int_to_str so str_eq can compare it.
@@ -320,7 +320,7 @@ glyph SPEC_TYPECHECK = CONS(TC(la g. g(IS_INT)(42))("well-typed"))(CONS(TC(la g.
 glyph OR      = la a. la b. a(TRUE)(b)
 glyph IS_TYPE = la A. (la s. OR(str_eq(s)("T"))(str_eq(s)("F")))(BOOL_STR(A(IS_INT)))
 
-glyph SPEC_ISTYPE = CONS(TC(la g. BOOL_STR(g(IS_INT)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_TYPE)))("T"))(NIL))
+glyph SPEC_ISTYPE = CONS(TC(la g. BOOL_STR(g(IS_INT)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_TYPE)))("T"))(CONS(TC(la g. BOOL_STR(g(ID)))("F"))(NIL)))
 
 # ── Deliberately broken glyphs (DEBUG must catch these) ───────────────
 glyph BAD_ID         = la x. "WRONG"
