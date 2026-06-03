@@ -454,7 +454,10 @@ no meaning under the C host, which runs the other engines): `mount(target)(fstyp
 (replaces the image; `argv=[path]`, empty env; returns `-errno` only on
 failure), `waitpid(pid)` (→ that child's exit *status*), `exit(code)`,
 `write(fd)(s)`, `open(path)(flags)`, `close(fd)`. Integers cross the LA boundary
-as decimal strings.
+as decimal strings. Each path/fstype argument is copied into a fixed 4 KiB
+buffer (`pathbuf`/`fsbuf`); the copy is **bounds-checked** — a path ≥ 4096 bytes
+halts loudly with `secd: path too long` rather than overrunning the buffer into
+`fsbuf` and the GC worklist.
 
 `reap("!")` is the **orphan-reaping primitive** for an init: it is
 `wait4(-1, &status, 0, NULL)` — block until *any* child terminates and return

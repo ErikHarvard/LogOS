@@ -851,6 +851,8 @@ _start:
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     mov     rdi, pathbuf
+    cmp     rcx, 4095            ; path longer than the 4 KiB buffer (− NUL)?
+    ja      .pathlong            ; yes → halt; never overrun pathbuf into fsbuf/gcwork
 .rf_cp:
     test    rcx, rcx
     je      .rf_cpd
@@ -1129,6 +1131,8 @@ _start:
     mov     rcx, [rbp]
     mov     rsi, [rbp+8]
     mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
 .wf_cp:
     test    rcx, rcx
     je      .wf_cpd
@@ -1166,6 +1170,8 @@ _start:
     mov     rcx, [rbp]
     mov     rsi, [rbp+8]
     mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
 .we_cp:
     test    rcx, rcx
     je      .we_cpd
@@ -1219,6 +1225,8 @@ _start:
     mov     rcx, [rbp]
     mov     rsi, [rbp+8]
     mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
 .op_cp:
     test    rcx, rcx
     je      .op_d
@@ -1253,6 +1261,8 @@ _start:
     mov     rcx, [rbp]
     mov     rsi, [rbp+8]
     mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
 .mt_t:
     test    rcx, rcx
     je      .mt_td
@@ -1267,6 +1277,8 @@ _start:
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     mov     rdi, fsbuf
+    cmp     rcx, 4095
+    ja      .pathlong
 .mt_f:
     test    rcx, rcx
     je      .mt_fd
@@ -1298,6 +1310,8 @@ _start:
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
 .ex_cp:
     test    rcx, rcx
     je      .ex_d
@@ -1482,6 +1496,16 @@ _start:
     mov     rdi, 2               ; stderr
     mov     rsi, stackmsg
     mov     rdx, stackmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
+.pathlong:                       ; a path/fstype arg ≥ 4 KiB would overrun the buffer
+    mov     rax, 1
+    mov     rdi, 2               ; stderr
+    mov     rsi, pathmsg
+    mov     rdx, pathmsg_len
     syscall
     mov     rax, 60
     mov     rdi, 1
@@ -1703,6 +1727,8 @@ heapmsg:       db "secd: heap exhausted", 10
 heapmsg_len    equ $ - heapmsg
 stackmsg:      db "secd: stack overflow", 10
 stackmsg_len   equ $ - stackmsg
+pathmsg:       db "secd: path too long", 10
+pathmsg_len    equ $ - pathmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0

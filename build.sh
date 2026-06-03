@@ -386,7 +386,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "6060" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6060)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "6210" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6210)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -705,6 +705,20 @@ if [ "$TCOUT" = "supervised" ]; then
     echo "PASS  TCO: 5M-deep tail recursion (supervision-loop shape) runs in bounded dump"
 else
     echo "FAIL  TCO: tail loop did not complete (got '$TCOUT')"; exit 1
+fi
+
+# ── Path-length guard: a path longer than the 4 KiB buffer halts loudly ──
+# read_file/write_file/write_exec/open/mount/execve copy the path into a fixed
+# 4096-byte buffer; an over-long path must halt with "secd: path too long"
+# rather than overrunning the buffer into fsbuf / the GC worklist.
+python3 -c "open('/tmp/t_path.la','w').write('glyph MAIN = read_file(\"/'+('a'*5000)+'\")\n')"
+cp /tmp/t_path.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+prc=0; PERR="$(./runner 2>&1 1>/dev/null)" || prc=$?
+rm -f /tmp/t_path.la
+if [ "$prc" -ne 0 ] && printf '%s\n' "$PERR" | grep -qF "secd: path too long"; then
+    echo "PASS  path-length guard: a >4 KiB path halts loudly (rc $prc, 'secd: path too long')"
+else
+    echo "FAIL  path guard: rc=$prc stderr='$PERR' (want non-zero + 'secd: path too long')"; exit 1
 fi
 
 rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin
