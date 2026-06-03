@@ -1,20 +1,66 @@
 # ═══════════════════════════════════════════════════════════════════
-#  logosinit.la — a minimal LogOS init, in Lingua Adamica
+#  logosinit.la — a real LogOS init, in Lingua Adamica
 #
-#  Mounts the virtual filesystems /proc and /sys, then announces the
-#  session. Compiled to a native SECD stream (codegen.la) and run on the
-#  native VM (secd), it speaks to the kernel directly via the mount /
-#  print syscalls the runtime lowers — no C host involved.
+#  Compiled to a native SECD stream (codegen.la) and run on the native VM
+#  (secd), this is a genuine PID-1 init. It speaks to the kernel directly
+#  through the syscalls the runtime lowers — no C host in the loop.
 #
-#  mount(target)(fstype) = mount(fstype, target, fstype, 0, NULL); it
-#  returns "0" on success or a negative -errno string. An unprivileged
-#  process gets -EPERM (only PID 1 / root may mount); the announcement is
-#  made regardless, the way an init proceeds through its boot steps.
+#  An init does three things, and this one does all three:
+#
+#    1. Boot setup. Mount the virtual filesystems /proc and /sys, then
+#       announce the session. (mount returns -EPERM when unprivileged —
+#       only PID 1 / root may mount — but the syscall path is exercised
+#       and the boot proceeds, the way an init walks its boot steps.)
+#
+#    2. Spawn a session. fork(), and in the child execve("/bin/sh") so the
+#       child *becomes* the shell. If execve fails the child exits 127
+#       rather than continuing as a duplicate init (which would fork-bomb).
+#       The parent keeps the shell's pid.
+#
+#    3. Supervise forever. The reap(-1) primitive blocks until ANY child
+#       terminates and returns its pid (or a negative -errno when no
+#       children remain). As PID 1, a process orphaned by an exiting
+#       parent is reparented here, so the same -1 wait reaps orphans too —
+#       this is what stops the system filling with zombies. When the dead
+#       child is the session shell (or no children are left) the shell is
+#       respawned; any other reaped pid was an orphan and is simply
+#       collected. The loop has no exit branch: init runs until the
+#       machine is powered down.
+#
+#  (Honest limit: the SECD VM does no tail-call optimisation, so each
+#  supervision iteration consumes one dump-stack frame — the loop runs for
+#  ~1M reap events before the 16 MiB dump is exhausted. Truly unbounded
+#  supervision waits on TCO or a loop opcode in the VM.)
 # ═══════════════════════════════════════════════════════════════════
 
 glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+
+# IS_NEG(s) — true when decimal string s begins with '-' (reap's -errno,
+# e.g. -ECHILD: no children left to wait on).
+glyph IS_NEG = la s. str_eq(str_head(s))("-")
+
+# SPAWN — fork the session shell; the parent returns the shell's pid.
+glyph SPAWN = la _.
+    (la pid. IF(str_eq(pid)("0"))
+        (la _. SEQ(execve("/bin/sh"))(exit("127")))
+        (la _. pid))
+    (fork("!"))
+
+# SUPERVISE(shell) — never returns. Reap a terminated child; respawn the
+# shell when it (or nothing) is what died, otherwise keep the same shell.
+glyph SUPERVISE = Z(la self. la shell.
+    (la dead.
+        IF(IS_NEG(dead))
+            (la _. self(SPAWN("!")))
+            (la _. IF(str_eq(dead)(shell))
+                       (la _. self(SPAWN("!")))
+                       (la _. self(shell))))
+    (reap("!")))
 
 glyph MAIN =
     SEQ(mount("/proc")("proc"))(
     SEQ(mount("/sys")("sysfs"))(
-    print("LogOS sovereign session initialized.")))
+    SEQ(print("LogOS sovereign session initialized."))(
+    SUPERVISE(SPAWN("!")))))

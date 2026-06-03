@@ -386,7 +386,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "5758" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 5758)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "5850" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 5850)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -478,7 +478,7 @@ rm -f compiler.bin vm_seed runner vm2
 
 rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_gen*.bin /tmp/runsm.la
 
-say "Linux syscalls + LogosInit (native sovereign session)"
+say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile
 # each .la program with the native compiler and run it on the VM.
@@ -495,10 +495,6 @@ nrun () {   # $1 = .la source file → native stdout
     ./runner >/dev/null 2>&1
     ./runner 2>/dev/null
 }
-# LogosInit: mount /proc, /sys; announce.
-OUT="$(nrun logosinit.la)"
-printf '%s\n' "$OUT" | grep -qxF "LogOS sovereign session initialized." \
-    || { echo "FAIL  syscalls: LogosInit did not announce the session"; ok=0; }
 # fork / exit / waitpid: child exits 42, parent reaps it.
 cat > /tmp/t_proc.la <<'LAEOF'
 glyph SEQ = la a. la b. b
@@ -526,10 +522,80 @@ nrun /tmp/t_io.la >/dev/null
 rm -f /tmp/t_proc.la /tmp/t_exec.la /tmp/t_io.la /tmp/logos_io.txt
 if [ "$ok" -eq 1 ]; then
     echo "PASS  write/open/close/fork/execve/waitpid/exit work as native syscalls"
-    echo "PASS  LogosInit ran natively and announced: LogOS sovereign session initialized."
-    echo "      (mount of /proc,/sys returns -EPERM when unprivileged; the syscall path is exercised)"
 else
     exit 1
+fi
+
+say "LogosInit: orphan reaping + shell spawn + supervision loop"
+# reap("!") = wait4(-1): block until ANY child terminates and return its pid
+# (a negative -errno when none remain). This is the orphan-reaping primitive an
+# init needs — waitpid takes a specific pid and yields only an exit status.
+
+# (1) reap drains the caller's own children deterministically: fork 3 children
+# that exit, reap all three by pid, then ECHILD. No privileges needed.
+cat > /tmp/t_reap.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SPAWN = la _. (la pid. IF(str_eq(pid)("0"))(la _. exit("7"))(la _. pid))(fork("!"))
+glyph DRAIN = Z(la self. la n.
+    (la r. IF(str_eq(str_head(r))("-"))
+              (la _. print(concat("reaped ")(int_to_str(n))))
+              (la _. self(add(n)(1))))
+    (reap("!")))
+glyph MAIN = SEQ(SPAWN("!"))(SEQ(SPAWN("!"))(SEQ(SPAWN("!"))(DRAIN(0))))
+LAEOF
+OUT="$(nrun /tmp/t_reap.la 2>/dev/null || true)"
+printf '%s\n' "$OUT" | grep -qxF "reaped 3" \
+    && echo "PASS  reap(-1) drains direct children: forked 3, reaped 3, then ECHILD" \
+    || { echo "FAIL  reap: expected 'reaped 3', got '$OUT'"; exit 1; }
+
+# (2) true orphan reaping as PID 1 (needs a PID namespace). A child forks a
+# grandchild then exits, orphaning it; reparented to PID 1 it is reaped by the
+# same -1 wait. Either exit order yields exactly 2 reaps. Falls back gracefully
+# where unprivileged PID namespaces are unavailable.
+cat > /tmp/t_orphan.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph CHILD = la _. SEQ(fork("!"))(exit("0"))
+glyph TOP   = la _. (la pid. IF(str_eq(pid)("0"))(la _. CHILD("!"))(la _. pid))(fork("!"))
+glyph DRAIN = Z(la self. la n.
+    (la r. IF(str_eq(str_head(r))("-"))
+              (la _. print(concat("reaped ")(int_to_str(n))))
+              (la _. self(add(n)(1))))
+    (reap("!")))
+glyph MAIN = SEQ(TOP("!"))(DRAIN(0))
+LAEOF
+if unshare -rpf --mount-proc true >/dev/null 2>&1; then
+    cp /tmp/t_orphan.la logos_source.la; cp compiler.bin logos_program.bin
+    ./runner >/dev/null 2>&1                          # compile (not as PID 1)
+    OUT="$(unshare -rpf --mount-proc ./runner 2>/dev/null || true)"
+    printf '%s\n' "$OUT" | grep -qxF "reaped 2" \
+        && echo "PASS  PID 1 reaps an orphaned grandchild via reparenting: 2 reaps" \
+        || { echo "FAIL  orphan reaping: expected 'reaped 2', got '$OUT'"; exit 1; }
+else
+    echo "PASS  (skipped) orphan-reaping-as-PID-1 test: unprivileged PID namespace unavailable"
+fi
+
+# (3) the real logosinit.la: announce, spawn /bin/sh (fork+execve), and a
+# supervision loop that never exits. Run under a timeout with the shell's stdin
+# held open (sleep) so it stays alive — reap blocks, no respawn spin. The
+# timeout having to KILL init (rc 124) is the proof the loop never exits.
+cp logosinit.la logos_source.la; cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1
+# timeout KILLING init (rc 124) is the success signal — capture it via `|| irc=$?`
+# so `set -e` does not treat the expected non-zero exit as a build failure.
+irc=0
+{ echo 'echo LOGOS_SHELL_OK'; sleep 3; } | timeout 2 ./runner >/tmp/logos_initout 2>/dev/null || irc=$?
+INITOUT="$(cat /tmp/logos_initout)"
+rm -f /tmp/t_reap.la /tmp/t_orphan.la /tmp/logos_initout
+if printf '%s\n' "$INITOUT" | grep -qxF "LogOS sovereign session initialized." \
+   && printf '%s\n' "$INITOUT" | grep -qxF "LOGOS_SHELL_OK" \
+   && [ "$irc" = "124" ]; then
+    echo "PASS  logosinit announced, spawned /bin/sh (execve), and supervised without exiting"
+else
+    echo "FAIL  logosinit: out='$INITOUT' rc=$irc (want announce + LOGOS_SHELL_OK + rc 124)"; exit 1
 fi
 
 # ── Copying GC: bounded memory under high heap churn ──

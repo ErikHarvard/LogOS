@@ -445,6 +445,42 @@ are pure generation (no evaluation); running the emitted binary is recognition
 performed by the CPU and OS. `copy_self` already generates a vessel; `elf.la`
 lets the system generate a *native* vessel from source.
 
+### LogosInit & process supervision (`logosinit.la`)
+
+The native VM lowers a set of **process/syscall builtins** (VM-only — they have
+no meaning under the C host, which runs the other engines): `mount(target)(fstype)`,
+`fork("!")` (→ child pid in the parent, `"0"` in the child), `execve(path)`
+(replaces the image; `argv=[path]`, empty env; returns `-errno` only on
+failure), `waitpid(pid)` (→ that child's exit *status*), `exit(code)`,
+`write(fd)(s)`, `open(path)(flags)`, `close(fd)`. Integers cross the LA boundary
+as decimal strings.
+
+`reap("!")` is the **orphan-reaping primitive** for an init: it is
+`wait4(-1, &status, 0, NULL)` — block until *any* child terminates and return
+its **pid** (a negative `-errno`, e.g. `-10 = -ECHILD`, when no children
+remain). It differs from `waitpid` deliberately: a supervisor needs the
+*identity* of the dead child, not its exit code, and must wait on the whole
+child set, not one pid. As PID 1 a process orphaned by an exiting parent is
+reparented to the init, so the same `-1` wait reaps orphans too.
+
+`logosinit.la` is a genuine init built from these: it mounts `/proc` and `/sys`
+and announces the session, `fork`s + `execve`s `/bin/sh` to spawn a session
+shell (exiting `127` in the child if `execve` fails, so a failed exec never
+continues as a duplicate init), then runs a **supervision loop that never
+exits** — `reap(-1)` in a `Z`-combinator loop, respawning the shell when it (or
+nothing) is what died and silently collecting any other reaped orphan. `build.sh`
+checks all three: `reap` drains three forked children deterministically then
+hits `ECHILD`; under an unprivileged PID namespace (`unshare -rpf`) the init as
+PID 1 reaps an orphaned *grandchild* via reparenting (exactly 2 reaps); and the
+real `logosinit.la`, run under a `timeout` with the shell's stdin held open,
+announces, spawns `/bin/sh` (proving `execve`), and has to be *killed* by the
+timeout (rc 124) — proof the supervision loop does not exit on its own.
+
+*Honest limit:* the supervision loop recurses through `Z` with no tail-call
+optimisation, so each reaped event consumes one dump-stack frame; the loop runs
+for ~1M reap events before the 16 MiB dump is exhausted. A truly unbounded init
+waits on TCO or a loop opcode in the VM (a tracked future item).
+
 ### Evaluation
 
 The host parses the file into an AST, finds the `MAIN` glyph, and reduces it.

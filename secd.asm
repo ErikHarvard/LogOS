@@ -478,6 +478,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi27
+    mov     rsi, rbp
+    mov     rdi, str_reap
+    call    strcmp
+    test    eax, eax
+    je      .bi28
     jmp     .halt
 .bi0:
     mov     r11, 0
@@ -562,6 +567,9 @@ _start:
     jmp     .pushbi
 .bi27:
     mov     r11, 27
+    jmp     .pushbi
+.bi28:
+    mov     r11, 28
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -676,6 +684,8 @@ _start:
     je      .mkpa
     cmp     r11, 27
     je      .mkpa
+    cmp     r11, 28
+    je      .bi_reap
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -1292,6 +1302,23 @@ _start:
     call    push_dec
     jmp     .loop
 
+.bi_reap:                        ; reap("!") → pid of any reaped child, or -errno
+    ; wait4(-1, &status, 0, NULL): block until ANY child terminates, reap it,
+    ; and return its pid. The status word is discarded — a supervisor needs the
+    ; *identity* of the dead child, not its exit code. With no children left the
+    ; kernel returns -ECHILD, which push_dec renders as a negative string. This
+    ; is the orphan-reaping primitive for an init: as PID 1, children orphaned by
+    ; an exiting parent are reparented here and reaped by the same -1 wait.
+    mov     rdi, -1              ; pid = -1: any child
+    mov     qword [r15], 0       ; &status (result discarded)
+    mov     rsi, r15
+    xor     rdx, rdx             ; options = 0 → block
+    xor     r10, r10             ; rusage = NULL
+    mov     rax, 61              ; wait4
+    syscall
+    call    push_dec             ; reaped pid, or -errno (e.g. -10 = -ECHILD)
+    jmp     .loop
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     mov     rdi, r9
     call    desc_atoi
@@ -1647,6 +1674,7 @@ str_div:       db "div", 0
 str_mod:       db "mod", 0
 str_lt:        db "lt", 0
 str_inteq:     db "int_eq", 0
+str_reap:      db "reap", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect
