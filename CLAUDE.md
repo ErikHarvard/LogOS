@@ -687,3 +687,30 @@ Practically:
   *non*-tail recursion still grows the dump (and pins every intermediate env
   live, so the GC cannot shrink it) — it now halts cleanly at the guard instead
   of corrupting.
+
+**Loud failure on bad input (June 2026 audit).** Beyond the GC / stack / path
+guards above, the native VM and the C host were driven to halt *loudly* — a
+diagnostic on stderr and a nonzero exit — on every malformed-input path, rather
+than silently corrupting state or exiting `0` with a wrong result. The VM now
+emits:
+
+- `secd: unbound variable` — a name resolving to neither an environment entry, a
+  glyph, nor a builtin (it used to fall through to the normal `exit(0)`, so a
+  typo'd name *silently succeeded* with empty output);
+- `secd: program too large` / `secd: read error` — the loader drains the whole
+  instruction stream into the 5 MiB mapped region (`progcap`, tied to the phdr
+  `p_memsz`) and bounds-checks it, instead of the old single 1 MiB `read` whose
+  return value was discarded (a `>1 MiB` stream silently truncated → exit 0);
+- `secd: malformed program` — the control pointer `rbx`, or a `skipbody` scan,
+  ran past the mapped program (a truncated or unbalanced body); it used to walk
+  the zero-fill tail into unmapped memory and SIGSEGV;
+- `secd: chr out of range` — a `chr` argument outside `0..255`, matching the C
+  host's loud reject instead of silently truncating mod 256.
+
+The C host gained the matching guard for its own recursion: deeply-nested input
+halts with `error: expression nesting too deep (C stack guard)`, armed 512 KB
+below `RLIMIT_STACK` so it fires only where the C stack (parser / `eval` /
+`subst` / `occurs_free` / `copy_node`) would otherwise overflow — every
+legitimate program, including the deep self-hosting recursion, is untouched.
+These join the pre-existing `secd: heap exhausted` / `secd: stack overflow` /
+`secd: path too long` guards, so no engine now fails silently on bad input.
