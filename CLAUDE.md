@@ -182,8 +182,9 @@ and it performs all five tests, makes the kernel speak and replicate
 byte-identically, and reconstructs `eval.la` again. The reconstruction is not
 merely valid syntax but a working evaluator — a source-level fixed point of the
 whole system. `build.sh` checks the round-trip is stable and that the
-reconstruction has the same glyph count as the source; the two self-parses take
-roughly 25 seconds.
+reconstruction has the same glyph count as the source — **72 glyphs** (it was
+67 before native integers added `VAL_INT` and the int builtins to `eval.la`);
+the two self-parses take roughly 25 seconds.
 
 The reconstruction reads `eval.la` rather than re-running `MAIN`: `MAIN`
 evaluates `kernel.la` and reads `eval.la`, so feeding it through the same

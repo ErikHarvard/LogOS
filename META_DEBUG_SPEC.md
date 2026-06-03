@@ -30,7 +30,7 @@ The system currently has:
 - Built-ins: print, copy_self, read_file, write_file, concat, str_head, str_tail, str_eq
 - Self-hosting compiler: codegen.la compiles itself (byte-exact fixed point)
 - Self-interpreting evaluator: eval.la evaluates eval.la
-- Source reconstruction: eval.la reconstructs itself from AST (67 glyphs, round-trip stable)
+- Source reconstruction: eval.la reconstructs itself from AST (72 glyphs, round-trip stable)
 - Test suite: build.sh with 39 tests (the SECD VM segfault is fixed)
 - Church-encoded data: TRUE/FALSE, PAIR/FST/SND, CONS/NIL lists, Z combinator
 
@@ -214,8 +214,40 @@ glyph META_DEBUG = DEBUG(
 
 ### Verification:
 - META_DEBUG returns all PASS
-- If you deliberately break VERIFY_ONE, META_DEBUG catches it
+- If you deliberately break VERIFY_ONE *so that it no longer always returns
+  "PASS"* (e.g. make it always return "WRONG", or break a verified *candidate*
+  passed to DEBUG), META_DEBUG catches it. **But see the blind spot below: a
+  VERIFY_ONE broken to always return "PASS" is NOT caught.**
 - Add "test_meta_debug" to build.sh
+
+### The always-affirm blind spot (a real limit of self-verification)
+
+META_DEBUG is `DEBUG` applied to the debugging glyphs, and `DEBUG` decides
+PASS/FAIL via `IS_AUTOLOGICAL`, which runs each glyph's spec through
+**`VERIFY_ONE` itself**. So `VERIFY_ONE` is both the thing under test and the
+instrument doing the testing. If `VERIFY_ONE` is corrupted to **always return
+`"PASS"` regardless of input**, then:
+
+- every spec check it runs returns `"PASS"`, so `IS_AUTOLOGICAL` returns TRUE
+  for *every* glyph — including the broken `VERIFY_ONE`;
+- `DEBUG` therefore reports the broken `VERIFY_ONE` as autological;
+- **`META_DEBUG` stays all-PASS — the corruption is not caught**, and the whole
+  framework goes blind (`DEBUG_BAD` and `META_CATCH` flip to PASS too).
+
+This is verified empirically: editing `glyph VERIFY_ONE` to `la name. la fn.
+la tc. "PASS"` leaves `META_DEBUG: T`. A verifier broken to always affirm is a
+fixed point that certifies itself — the autological criterion (`∃(∃) ≡ ∃`)
+cannot ground a verifier that lies in its own favor, because it grades its own
+lie with the same lie. (This is the self-reference analogue of "a consistency
+proof of T from within T proves nothing if T is inconsistent.")
+
+The mitigation is an **independent, external check** the framework cannot
+rewrite: `build.sh` asserts that specific known-FAIL probes actually emit FAIL
+strings (`DEBUG_BAD`, `META_CATCH`). Those catch a broken *candidate*, but note
+they too are blinded by an always-`"PASS"` `VERIFY_ONE` — so the *ground* check
+must ultimately live outside Lingua Adamica (the shell asserting on exact output
+bytes). Self-verification narrows the space of undetected faults; it cannot
+close it against a verifier that affirms everything, itself included.
 
 ## Phase 5: UPDATE and META_UPDATE (implement when runtime glyph replacement exists)
 
@@ -288,6 +320,9 @@ What this architecture does NOT handle:
 - Performance regressions (specs check correctness, not speed)
 - Emergent behavior from component interaction (each glyph passes its
   own spec, but the composition might still misbehave)
+- Self-affirming corruption of the verifier itself (a `VERIFY_ONE` broken to
+  always return "PASS" certifies its own brokenness — see "The always-affirm
+  blind spot" under Phase 4; the ground check must live outside the framework)
 
 The system maintains itself WITHIN the space of formally specified
 behavior. Outside that space, the sovereign extends the specs.
