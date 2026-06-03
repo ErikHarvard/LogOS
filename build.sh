@@ -386,7 +386,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "6210" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6210)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "6321" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6321)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -719,6 +719,23 @@ if [ "$prc" -ne 0 ] && printf '%s\n' "$PERR" | grep -qF "secd: path too long"; t
     echo "PASS  path-length guard: a >4 KiB path halts loudly (rc $prc, 'secd: path too long')"
 else
     echo "FAIL  path guard: rc=$prc stderr='$PERR' (want non-zero + 'secd: path too long')"; exit 1
+fi
+
+# ── Malformed-input halt: codegen aborts via `error`, no silent truncation ──
+# codegen.la's PARSE_PROGRAM used to treat a parse failure as end-of-input and
+# emit a truncated stream. It now halts loudly through the `error` builtin (a
+# host builtin and now a VM opcode too), so a syntax error compiled on the
+# native VM aborts with "parse error" instead of silently producing corrupt
+# output. A valid file with trailing whitespace/comments still ends cleanly
+# (every other program in this suite compiles, proving the clean-end path).
+printf 'glyph FOO = la x. x\n@#$ not a glyph\n' > /tmp/t_bad.la
+cp /tmp/t_bad.la logos_source.la; cp compiler.bin logos_program.bin
+erc=0; EERR="$(./runner 2>&1 1>/dev/null)" || erc=$?
+rm -f /tmp/t_bad.la
+if [ "$erc" -ne 0 ] && printf '%s\n' "$EERR" | grep -qiF "parse error"; then
+    echo "PASS  codegen halts on malformed input via error (rc $erc) — no silent truncation"
+else
+    echo "FAIL  malformed-input halt: rc=$erc stderr='$EERR' (want non-zero + 'parse error')"; exit 1
 fi
 
 rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin

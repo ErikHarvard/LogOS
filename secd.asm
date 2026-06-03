@@ -503,6 +503,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi29
+    mov     rsi, rbp
+    mov     rdi, str_error
+    call    strcmp
+    test    eax, eax
+    je      .bi30
     jmp     .halt
 .bi0:
     mov     r11, 0
@@ -593,6 +598,9 @@ _start:
     jmp     .pushbi
 .bi29:
     mov     r11, 29
+    jmp     .pushbi
+.bi30:
+    mov     r11, 30
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -723,6 +731,8 @@ _start:
     je      .bi_reap
     cmp     r11, 29
     je      .bi_sleep
+    cmp     r11, 30
+    je      .bi_error
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -1386,6 +1396,25 @@ _start:
     call    push_dec             ; 0 on full sleep, -errno (e.g. -EINTR) otherwise
     jmp     .loop
 
+.bi_error:                       ; error(msg) ; r9 = STR descriptor — print, exit 1
+    ; The abort opcode: a .la program (codegen's PARSE_PROGRAM on malformed
+    ; input) fails loudly instead of degrading. Prints msg + newline to stderr
+    ; and exits non-zero — the VM analogue of the host's `error` builtin, so the
+    ; same Lingua Adamica source halts the same way on the native engine.
+    mov     rsi, [r9+8]          ; msg bytes
+    mov     rdx, [r9]            ; msg length
+    mov     rax, 1
+    mov     rdi, 2               ; stderr
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, newline
+    mov     rdx, 1
+    syscall
+    mov     rax, 60
+    mov     rdi, 1               ; exit 1
+    syscall
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     mov     rdi, r9
     call    desc_atoi
@@ -1767,6 +1796,7 @@ str_lt:        db "lt", 0
 str_inteq:     db "int_eq", 0
 str_reap:      db "reap", 0
 str_sleep:     db "sleep", 0
+str_error:     db "error", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect

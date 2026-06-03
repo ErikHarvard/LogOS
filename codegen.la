@@ -69,7 +69,12 @@ glyph PARSE_APP_TAIL = Z(la self. la acc. la s. (la tr. (la tok. (la rest. IF(st
 glyph PARSE_APP = la s. (la base. IF(IS_SOME(base))(la _. PARSE_APP_TAIL(R_VAL(base))(R_REST(base)))(la _. NONE))(PARSE_PRIMARY(s))
 glyph PARSE_EXPR = Z(la self_expr. la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("la"))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("ident"))(la _. (la tr3. (la tok3. (la rest3. IF(str_eq(TOK_TYPE(tok3))("dot"))(la _. (la body. IF(IS_SOME(body))(la _. SOME(AST_LAM(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body)))(la _. NONE))(self_expr(rest3)))(la _. NONE))(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2)))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest)))(la _. PARSE_APP(s)))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
 glyph PARSE_GLYPH = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("glyph"))(la _. (la tr2. (la tok2. (la rest2. IF(str_eq(TOK_TYPE(tok2))("ident"))(la _. (la tr3. (la tok3. (la rest3. IF(str_eq(TOK_TYPE(tok3))("eq"))(la _. (la body. IF(IS_SOME(body))(la _. SOME(PAIR(TOK_VAL(tok2))(R_VAL(body)))(R_REST(body)))(la _. NONE))(PARSE_EXPR(rest3)))(la _. NONE))(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2)))(la _. NONE))(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest)))(la _. NONE))(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
-glyph PARSE_PROGRAM = Z(la self. la s. (la s2. (la g. IF(IS_SOME(g))(la _. (la rest_parsed. CONS(R_VAL(g))(rest_parsed))(self(R_REST(g))))(la _. NIL))(PARSE_GLYPH(s2)))(SKIP_SPACES(s)))
+# On a NONE from PARSE_GLYPH, end cleanly only if the remaining input is
+# empty; otherwise the source is malformed — halt loudly via `error` rather
+# than silently truncating the program (and emitting a corrupt stream). This
+# mirrors eval.la's PARSE_PROGRAM; `error` is a host builtin and (now) a VM
+# builtin, so codegen halts the same way on tiny_host and on the native VM.
+glyph PARSE_PROGRAM = Z(la self. la s. (la s2. (la g. IF(IS_SOME(g))(la _. (la rest_parsed. CONS(R_VAL(g))(rest_parsed))(self(R_REST(g))))(la _. IF(str_eq(s2)(""))(la _. NIL)(la _. error(concat("codegen: parse error near: ")(s2)))))(PARSE_GLYPH(s2)))(SKIP_SPACES(s)))
 
 # ── Native codegen ──────────────────────────────────────────────────
 # Opcode bytes via chr: 1 PUSHS, 2 PUSHV, 3 CLOSE, 4 APPLY, 5 RET, 0 NUL.

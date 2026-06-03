@@ -431,15 +431,15 @@ runnable and checked by `build.sh`.
     `build.sh` verifies all engines agree on the same arithmetic program
     (`44 / 3 / yes`). The lexers use a `str_eq`-only `IS_DIGIT` so the same
     digit-lexing rule holds everywhere, including under the native VM.
-  - **`codegen.la` / `bytecode.la` / `parser.la` `PARSE_PROGRAM` silently
-    truncate malformed input** (a `NONE` from `PARSE_GLYPH` is treated as
-    end-of-program). `eval.la`'s `PARSE_PROGRAM` was fixed to halt via the host
-    `error` builtin, but `codegen.la` runs on the VM, which has no `error`
-    builtin — so it cannot halt the same way. Closing this needs an `error`/
-    abort opcode in `secd.asm`.
-
-  These are documented, not yet fixed, because each fix is a VM (assembly)
-  change, deferred under the audit's no-new-features rule.
+  - **`codegen.la` `PARSE_PROGRAM` now halts on malformed input** (fixed). It
+    used to treat a `NONE` from `PARSE_GLYPH` as end-of-program — silently
+    truncating the source and emitting a corrupt stream. It now ends cleanly
+    only when the remaining input is empty; otherwise it calls `error` (now a VM
+    builtin, id 30, as well as a host builtin), so a syntax error aborts loudly
+    with `codegen: parse error near: …` on both `tiny_host` and the native VM
+    rather than producing wrong output. (`bytecode.la` / `parser.la` run only on
+    the C host and still truncate — a lower-priority remainder.) `build.sh`
+    compiles a malformed file on the VM and checks it halts non-zero.
 
 This extends the **generation** side of the Γ/Ρ split: codegen and ELF assembly
 are pure generation (no evaluation); running the emitted binary is recognition
