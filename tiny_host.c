@@ -455,6 +455,13 @@ static Node *subst(Node *e, const char *var, Node *val) {
                 return copy_node(e);
             if (occurs_free(e->s, val)) {        /* would capture — alpha-rename */
                 char *fresh   = gensym();
+                /* the fresh name must occur free in neither the body nor the
+                 * argument, else the rename would conflate it with an existing
+                 * free variable (a program may legitimately use `_gN` names). */
+                while (occurs_free(fresh, e->a) || occurs_free(fresh, val)) {
+                    free(fresh);
+                    fresh = gensym();
+                }
                 Node *renamed = subst(e->a, e->s, mkvar(fresh));
                 Node *body2   = subst(renamed, var, val);
                 Node *lam     = mklam(fresh, body2);
@@ -617,9 +624,12 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
             fprintf(stderr, "%s: arguments must be integers\n", name); exit(1);
         }
         long x = arg1->i, y = arg2->i;
-        if (strcmp(name, "add") == 0) return mkint(x + y);
-        if (strcmp(name, "sub") == 0) return mkint(x - y);
-        if (strcmp(name, "mul") == 0) return mkint(x * y);
+        /* defined two's-complement wrap (via unsigned) — signed overflow is UB,
+         * and the native SECD VM wraps, so wrapping here keeps all engines in
+         * agreement (b_tau = f_tau) instead of diverging on overflow. */
+        if (strcmp(name, "add") == 0) return mkint((long)((unsigned long)x + (unsigned long)y));
+        if (strcmp(name, "sub") == 0) return mkint((long)((unsigned long)x - (unsigned long)y));
+        if (strcmp(name, "mul") == 0) return mkint((long)((unsigned long)x * (unsigned long)y));
         if (strcmp(name, "div") == 0) {
             if (y == 0) { fprintf(stderr, "div: division by zero\n"); exit(1); }
             if (x == LONG_MIN && y == -1) { fprintf(stderr, "div: overflow (LONG_MIN / -1)\n"); exit(1); }
