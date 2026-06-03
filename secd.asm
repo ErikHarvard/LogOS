@@ -89,6 +89,8 @@ strcmp:
 skipbody:
     mov     rcx, 1
 .sb:
+    cmp     r10, progend         ; scanned past the mapped program (unbalanced/
+    jae     _start.badstream     ; truncated body) → halt loudly, never fault
     movzx   rax, byte [r10]
     inc     r10
     cmp     al, 1
@@ -101,12 +103,16 @@ skipbody:
     je      .ret
     jmp     .sb
 .skipstr:
+    cmp     r10, progend
+    jae     _start.badstream
     mov     al, [r10]
     inc     r10
     test    al, al
     jnz     .skipstr
     jmp     .sb
 .close:
+    cmp     r10, progend
+    jae     _start.badstream
     mov     al, [r10]
     inc     r10
     test    al, al
@@ -305,6 +311,8 @@ _start:
     sub     rax, stackmargin
     cmp     r14, rax
     jae     .stackfull
+    cmp     rbx, progend         ; control pointer past the mapped program → halt loudly
+    jae     .badstream
     movzx   rax, byte [rbx]
     inc     rbx
     cmp     al, 0
@@ -1074,6 +1082,8 @@ _start:
     dec     rcx
     jmp     .chr_loop
 .chr_done:
+    cmp     rax, 255             ; chr expects 0..255 — halt loudly out of range,
+    ja      .chrrange            ; like the C host (was: silent low-byte truncation)
     mov     [r15], al            ; DATA blob: 1 raw byte (no header)
     mov     rbp, r15
     inc     r15
@@ -1724,6 +1734,26 @@ _start:
     mov     rdi, 1
     syscall
 
+.badstream:                      ; control pointer / skipbody scan ran off the program
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, badstrmsg
+    mov     rdx, badstrmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
+.chrrange:                       ; chr argument outside 0..255
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, chrmsg
+    mov     rdx, chrmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 ; ═══════════════════════════════════════════════════════════════════
 ;  Copying garbage collector — two semispaces over [heap, progbuf):
 ;  low [heap, semimid), high [semimid, progbuf). Triggered from .loop
@@ -1948,6 +1978,10 @@ progmsg:       db "secd: program too large", 10
 progmsg_len    equ $ - progmsg
 readmsg:       db "secd: read error", 10
 readmsg_len    equ $ - readmsg
+badstrmsg:     db "secd: malformed program", 10
+badstrmsg_len  equ $ - badstrmsg
+chrmsg:        db "secd: chr out of range", 10
+chrmsg_len     equ $ - chrmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0
@@ -2022,6 +2056,9 @@ semimid  equ heap    + 0x30000000    ; 768 MiB: boundary between the two semispa
 progbuf  equ heap    + 0x60000000    ; 1536 MiB total; program stream loads at progbuf
 progcap  equ 0x500000                ; 5 MiB mapped for the program stream (matches the
                                      ; phdr p_memsz tail); the loader fills up to here
+progend  equ progbuf + progcap       ; mapped end of the program region; bounds the
+                                     ; control pointer rbx and skipbody's scans so a
+                                     ; truncated/malformed stream halts loudly, not SIGSEGV
 margin   equ 0x4100000               ; 65 MiB: covers the largest single allocation
                                      ; (read_file's 64 MiB read + descriptor); the
                                      ; dispatch loop collects this far before a
