@@ -484,10 +484,13 @@ under a `timeout` (shell stdin held open) announces, spawns `/bin/sh` (proving
 `execve`), and has to be *killed* by the timeout (rc 124); and a flapping
 `tick.sh` shell respawns only a handful of times in 4 s (the throttle holding).
 
-*Honest limit:* the supervision loop recurses through `Z` with no tail-call
-optimisation, so each reaped event consumes one dump-stack frame; the loop runs
-for ~1M reap events before the 16 MiB dump is exhausted. A truly unbounded init
-waits on TCO or a loop opcode in the VM (a tracked future item).
+The supervision loop's `self(…)` calls are in **tail position**, and the VM does
+**tail-call optimisation** (an `APPLY` immediately followed by `RET` reuses the
+current dump frame instead of pushing a new one), so the loop runs in **bounded
+dump depth — indefinitely**, not the old ~1M-reap ceiling. `build.sh` confirms a
+5M-iteration loop of the supervision loop's exact shape (nested `IF`, a
+`(la x. …)(arg)` binder, tail self-calls) completes; a *non*-tail deep recursion
+still halts loudly via the stack guard (it is never optimised away).
 
 ### Evaluation
 
@@ -575,15 +578,18 @@ Practically:
   fit after a collection, or the worklist overflows, the dispatch loop halts
   loudly with `secd: heap exhausted` rather than corrupting the program stream.
   The **operand stack and dump are guarded the same way**: they are not
-  collected and (currently) not tail-call optimised, so each dispatch checks
-  that `r12`/`r14` stay `stackmargin` below their region ends and halts loudly
-  with `secd: stack overflow` if a recursion grows too deep — otherwise the
-  stacks would overrun the adjacent path buffers, the GC worklist and the heap,
-  silently corrupting state (a too-deep program would exit 0 with the wrong
-  result). `build.sh` checks a recursion past the ~1M-frame dump triggers the
-  guard.
-  *Honest remaining limit:* the VM does no tail-call optimisation, so deep
-  object-level recursion grows the dump (capped at 16 MiB ≈ 1 Mi frames) and
-  pins every intermediate env live — the GC reclaims true garbage but cannot
-  shrink a genuinely-retained recursion chain; past the cap the program now
-  halts cleanly instead of corrupting.
+  collected, so each dispatch checks that `r12`/`r14` stay `stackmargin` below
+  their region ends and halts loudly with `secd: stack overflow` if a recursion
+  grows too deep — otherwise the stacks would overrun the adjacent path buffers,
+  the GC worklist and the heap, silently corrupting state (a too-deep program
+  would exit 0 with the wrong result). `build.sh` checks a non-tail recursion
+  past the ~1M-frame dump triggers the guard.
+  The VM does **tail-call optimisation**: an `APPLY` immediately followed by
+  `RET` is a tail call, and instead of pushing a return frame (which the
+  closure's own `RET` would only pop back to *our* `RET`, which then pops the
+  caller's frame anyway) the VM reuses the current frame — so a tail-recursive
+  loop runs in bounded dump *indefinitely* (`build.sh`: a 5M-iteration tail loop
+  completes). *Honest remaining limit:* TCO bounds tail recursion, but a deep
+  *non*-tail recursion still grows the dump (and pins every intermediate env
+  live, so the GC cannot shrink it) — it now halts cleanly at the guard instead
+  of corrupting.

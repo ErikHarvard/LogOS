@@ -386,7 +386,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "6055" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6055)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "6060" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6060)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -656,16 +656,17 @@ else
 fi
 
 # ── Stack-overflow guard: deep non-tail recursion halts loudly, not silently ──
-# The operand stack and dump are not GC'd and (yet) not tail-call optimised, so
-# a recursion deeper than the ~1M-frame dump would overrun into adjacent memory.
-# The VM must halt with "secd: stack overflow" (non-zero exit) rather than
-# silently corrupting state and exiting 0 with the wrong result.
+# The operand stack and dump are not GC'd, so a recursion deeper than the
+# ~1M-frame dump would overrun into adjacent memory. The VM must halt with
+# "secd: stack overflow" (non-zero exit) rather than silently corrupting state
+# and exiting 0 with the wrong result. The recursive call is wrapped by str_tail
+# so it is NEVER in tail position — it grows the dump even with TCO on (a tail
+# call would instead run forever in bounded dump; see the TCO test below).
 cat > /tmp/t_stack.la <<'LAEOF'
-glyph SEQ = la a. la b. b
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF  = la c. la t. la f. c(t)(f)("!")
 glyph LOOP = Z(la self. la n.
-    IF(int_eq(n)(0))(la _. "done")(la _. SEQ(self(sub(n)(1)))("x")))
+    IF(int_eq(n)(0))(la _. "done")(la _. str_tail(self(sub(n)(1)))))
 glyph MAIN = print(LOOP(3000000))
 LAEOF
 cp /tmp/t_stack.la logos_source.la; cp compiler.bin logos_program.bin
@@ -675,9 +676,35 @@ SOUT="$(./runner 2>/tmp/t_stack.err)" || src=$?
 SERR="$(cat /tmp/t_stack.err)"
 rm -f /tmp/t_stack.la /tmp/t_stack.err
 if [ "$src" -ne 0 ] && printf '%s\n' "$SERR" | grep -qF "secd: stack overflow"; then
-    echo "PASS  stack-overflow guard: deep recursion halts loudly (rc $src, 'secd: stack overflow')"
+    echo "PASS  stack-overflow guard: deep non-tail recursion halts loudly (rc $src, 'secd: stack overflow')"
 else
     echo "FAIL  stack guard: rc=$src stdout='$SOUT' stderr='$SERR' (want non-zero + 'secd: stack overflow')"; exit 1
+fi
+
+# ── Tail-call optimisation: a tail-recursive loop runs in bounded dump ──
+# Under TCO an APPLY immediately followed by RET reuses the dump frame instead
+# of pushing a new one, so a tail-recursive loop runs indefinitely rather than
+# overflowing the dump at ~1M frames. This loop has the LogosInit supervision
+# loop's exact shape — nested IF, a (la x. …)(arg) binder, tail self-calls — and
+# 5M iterations (5x the old dump ceiling) complete with the right result.
+cat > /tmp/t_tco.la <<'LAEOF'
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LOOP = Z(la self. la n.
+    (la m. IF(int_eq(m)(0))
+              (la _. "supervised")
+              (la _. IF(lt(m)(0))(la _. self(sub(m)(1)))(la _. self(sub(m)(1)))))
+    (n))
+glyph MAIN = print(LOOP(5000000))
+LAEOF
+cp /tmp/t_tco.la logos_source.la; cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1                       # compile
+TCOUT="$(./runner 2>/dev/null)"
+rm -f /tmp/t_tco.la
+if [ "$TCOUT" = "supervised" ]; then
+    echo "PASS  TCO: 5M-deep tail recursion (supervision-loop shape) runs in bounded dump"
+else
+    echo "FAIL  TCO: tail loop did not complete (got '$TCOUT')"; exit 1
 fi
 
 rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin

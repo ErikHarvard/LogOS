@@ -635,9 +635,21 @@ _start:
     je      .apply_pa
     jmp     .halt
 .apply_clo:
-    mov     [r14], rbx
-    mov     [r14+8], r13
-    add     r14, 16
+    ; Tail-call optimisation. An APPLY immediately followed by RET (the
+    ; closure's result IS the enclosing body's result) is a tail call: instead
+    ; of pushing a return frame that the closure's own RET would only pop back
+    ; to *our* RET — which then pops the caller's frame anyway — we skip our
+    ; push and let the closure's RET return straight to the caller. The discarded
+    ; rbx pointed only at that RET, and nothing touches the operand stack between
+    ; the two RETs, so the result is identical with one fewer frame. This keeps a
+    ; tail-recursive loop (the LogosInit supervision loop, any Z-combinator
+    ; iteration) running in BOUNDED dump depth — indefinitely, not ~1M frames.
+    cmp     byte [rbx], 5        ; next opcode RET? → tail position
+    je      .apply_clo_env       ; yes: reuse the current frame, no push
+    mov     [r14], rbx           ; non-tail: save C (return = the byte after APPLY)
+    mov     [r14+8], r13         ; save E
+    add     r14, 16              ; push the return frame
+.apply_clo_env:
     mov     qword [r15], 0       ; GC fwd header (env cell)
     add     r15, 8
     mov     rax, [r11]

@@ -28,10 +28,10 @@
 #       was an orphan and is simply collected with no delay. The loop has no
 #       exit branch: init runs until the machine is powered down.
 #
-#  (Honest limit: the SECD VM does no tail-call optimisation, so each
-#  supervision iteration consumes one dump-stack frame — the loop runs for
-#  ~1M reap events before the 16 MiB dump is exhausted. Truly unbounded
-#  supervision waits on TCO or a loop opcode in the VM.)
+#  The supervision loop's self(...) calls are in tail position and the VM
+#  does tail-call optimisation (an APPLY followed by RET reuses the dump
+#  frame), so the loop runs in bounded dump depth — indefinitely, with no
+#  ~1M-reap ceiling.
 # ═══════════════════════════════════════════════════════════════════
 
 glyph SEQ = la a. la b. b
