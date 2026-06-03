@@ -386,7 +386,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "5850" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 5850)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "5960" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 5960)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -621,6 +621,31 @@ if printf '%s\n' "$GCOUT" | grep -qxF "gc loop survived"; then
     echo "PASS  copying GC reclaims ~1 GiB of churn — bounded memory, no exhaustion"
 else
     echo "FAIL  GC: high-churn loop did not survive (got '$GCOUT')"; exit 1
+fi
+
+# ── Stack-overflow guard: deep non-tail recursion halts loudly, not silently ──
+# The operand stack and dump are not GC'd and (yet) not tail-call optimised, so
+# a recursion deeper than the ~1M-frame dump would overrun into adjacent memory.
+# The VM must halt with "secd: stack overflow" (non-zero exit) rather than
+# silently corrupting state and exiting 0 with the wrong result.
+cat > /tmp/t_stack.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph LOOP = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "done")(la _. SEQ(self(sub(n)(1)))("x")))
+glyph MAIN = print(LOOP(3000000))
+LAEOF
+cp /tmp/t_stack.la logos_source.la; cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1                       # compile
+src=0
+SOUT="$(./runner 2>/tmp/t_stack.err)" || src=$?
+SERR="$(cat /tmp/t_stack.err)"
+rm -f /tmp/t_stack.la /tmp/t_stack.err
+if [ "$src" -ne 0 ] && printf '%s\n' "$SERR" | grep -qF "secd: stack overflow"; then
+    echo "PASS  stack-overflow guard: deep recursion halts loudly (rc $src, 'secd: stack overflow')"
+else
+    echo "FAIL  stack guard: rc=$src stdout='$SOUT' stderr='$SERR' (want non-zero + 'secd: stack overflow')"; exit 1
 fi
 
 rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin

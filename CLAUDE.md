@@ -566,7 +566,16 @@ Practically:
   retained by the VM's non-tail recursion). If the live set itself still doesn't
   fit after a collection, or the worklist overflows, the dispatch loop halts
   loudly with `secd: heap exhausted` rather than corrupting the program stream.
-  *Honest remaining limits:* the VM does no tail-call optimisation, so deep
-  object-level recursion grows the dump stack (capped at 16 MiB ≈ 1 Mi frames)
-  and pins every intermediate env live — the GC reclaims true garbage but cannot
-  shrink a genuinely-retained recursion chain.
+  The **operand stack and dump are guarded the same way**: they are not
+  collected and (currently) not tail-call optimised, so each dispatch checks
+  that `r12`/`r14` stay `stackmargin` below their region ends and halts loudly
+  with `secd: stack overflow` if a recursion grows too deep — otherwise the
+  stacks would overrun the adjacent path buffers, the GC worklist and the heap,
+  silently corrupting state (a too-deep program would exit 0 with the wrong
+  result). `build.sh` checks a recursion past the ~1M-frame dump triggers the
+  guard.
+  *Honest remaining limit:* the VM does no tail-call optimisation, so deep
+  object-level recursion grows the dump (capped at 16 MiB ≈ 1 Mi frames) and
+  pins every intermediate env live — the GC reclaims true garbage but cannot
+  shrink a genuinely-retained recursion chain; past the cap the program now
+  halts cleanly instead of corrupting.

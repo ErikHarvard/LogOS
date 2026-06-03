@@ -247,6 +247,21 @@ _start:
     cmp     r15, rax
     jae     .heapfull
 .nogc:
+    ; Stack-overflow guard. The operand stack S [ostack, dstack) and the dump
+    ; D [dstack, pathbuf) each grow at most one 16-byte frame per dispatched
+    ; instruction and are NOT garbage-collected. Without tail-call optimisation
+    ; a deep recursion would otherwise overrun them into the adjacent buffers,
+    ; the GC worklist and the heap — silent corruption (a too-deep program would
+    ; exit 0 with the wrong result). So halt loudly the moment either pointer
+    ; comes within stackmargin of its region end, exactly as the heap does.
+    mov     rax, dstack          ; operand stack S ends where the dump begins
+    sub     rax, stackmargin
+    cmp     r12, rax
+    jae     .stackfull
+    mov     rax, pathbuf         ; dump D ends where pathbuf begins
+    sub     rax, stackmargin
+    cmp     r14, rax
+    jae     .stackfull
     movzx   rax, byte [rbx]
     inc     rbx
     cmp     al, 0
@@ -1424,6 +1439,16 @@ _start:
     mov     rdi, 1
     syscall
 
+.stackfull:                      ; operand stack or dump near its end — halt loudly
+    mov     rax, 1
+    mov     rdi, 2               ; stderr
+    mov     rsi, stackmsg
+    mov     rdx, stackmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 ; ═══════════════════════════════════════════════════════════════════
 ;  Copying garbage collector — two semispaces over [heap, progbuf):
 ;  low [heap, semimid), high [semimid, progbuf). Triggered from .loop
@@ -1638,6 +1663,8 @@ gc_scan:
 ; ── read-only data ──
 heapmsg:       db "secd: heap exhausted", 10
 heapmsg_len    equ $ - heapmsg
+stackmsg:      db "secd: stack overflow", 10
+stackmsg_len   equ $ - stackmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0
@@ -1688,6 +1715,9 @@ filesize equ $ - $$
 ostack   equ $$ + filesize
 dstack   equ ostack  + 0x1000000
 pathbuf  equ dstack  + 0x1000000
+stackmargin equ 0x1000               ; halt this many bytes (256 frames) before
+                                     ; the operand-stack / dump region end; one
+                                     ; dispatch grows either by at most one frame
 fsbuf    equ pathbuf + 0x1000
 gcwork   equ fsbuf   + 0x1000        ; GC worklist: 16 MiB = 1 Mi (kind,ptr) entries
 gcwork_end equ gcwork + 0x1000000
