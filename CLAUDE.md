@@ -464,18 +464,25 @@ remain). It differs from `waitpid` deliberately: a supervisor needs the
 child set, not one pid. As PID 1 a process orphaned by an exiting parent is
 reparented to the init, so the same `-1` wait reaps orphans too.
 
+`sleep(n)` is `nanosleep({n, 0}, NULL)` — block for `n` seconds (decimal
+string) — the delay primitive an init needs to throttle a flapping service.
+
 `logosinit.la` is a genuine init built from these: it mounts `/proc` and `/sys`
 and announces the session, `fork`s + `execve`s `/bin/sh` to spawn a session
 shell (exiting `127` in the child if `execve` fails, so a failed exec never
 continues as a duplicate init), then runs a **supervision loop that never
 exits** — `reap(-1)` in a `Z`-combinator loop, respawning the shell when it (or
-nothing) is what died and silently collecting any other reaped orphan. `build.sh`
-checks all three: `reap` drains three forked children deterministically then
-hits `ECHILD`; under an unprivileged PID namespace (`unshare -rpf`) the init as
-PID 1 reaps an orphaned *grandchild* via reparenting (exactly 2 reaps); and the
-real `logosinit.la`, run under a `timeout` with the shell's stdin held open,
-announces, spawns `/bin/sh` (proving `execve`), and has to be *killed* by the
-timeout (rc 124) — proof the supervision loop does not exit on its own.
+nothing) is what died and silently collecting any other reaped orphan. A shell
+that keeps dying (missing `/bin/sh`, instant crash) is **respawn-throttled**: a
+`BACKOFF` (default 1 s) `sleep` precedes each restart, so a broken shell is
+rate-limited to one fork per `BACKOFF` instead of a CPU-pegging fork-storm;
+orphan reaps take the fast path with no delay. `build.sh` checks all of it:
+`reap` drains three forked children deterministically then hits `ECHILD`; under
+an unprivileged PID namespace (`unshare -rpf`) the init as PID 1 reaps an
+orphaned *grandchild* via reparenting (exactly 2 reaps); the real `logosinit.la`
+under a `timeout` (shell stdin held open) announces, spawns `/bin/sh` (proving
+`execve`), and has to be *killed* by the timeout (rc 124); and a flapping
+`tick.sh` shell respawns only a handful of times in 4 s (the throttle holding).
 
 *Honest limit:* the supervision loop recurses through `Z` with no tail-call
 optimisation, so each reaped event consumes one dump-stack frame; the loop runs

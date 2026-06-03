@@ -498,6 +498,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi28
+    mov     rsi, rbp
+    mov     rdi, str_sleep
+    call    strcmp
+    test    eax, eax
+    je      .bi29
     jmp     .halt
 .bi0:
     mov     r11, 0
@@ -585,6 +590,9 @@ _start:
     jmp     .pushbi
 .bi28:
     mov     r11, 28
+    jmp     .pushbi
+.bi29:
+    mov     r11, 29
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -701,6 +709,8 @@ _start:
     je      .mkpa
     cmp     r11, 28
     je      .bi_reap
+    cmp     r11, 29
+    je      .bi_sleep
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -1334,6 +1344,22 @@ _start:
     call    push_dec             ; reaped pid, or -errno (e.g. -10 = -ECHILD)
     jmp     .loop
 
+.bi_sleep:                       ; sleep(seconds) → 0, or -errno if interrupted
+    ; nanosleep({tv_sec = seconds, tv_nsec = 0}, NULL). The timespec is built as
+    ; scratch at r15 (not bump-allocated): the syscall consumes it before
+    ; push_dec reuses r15 for the result. Gives an init a real backoff so a
+    ; flapping shell is rate-limited instead of respawned in a tight loop.
+    mov     rdi, r9              ; decimal-seconds descriptor
+    call    desc_atoi
+    mov     [r15], rax           ; tv_sec
+    mov     qword [r15+8], 0     ; tv_nsec
+    mov     rdi, r15             ; req timespec
+    xor     rsi, rsi             ; rem = NULL
+    mov     rax, 35              ; nanosleep
+    syscall
+    call    push_dec             ; 0 on full sleep, -errno (e.g. -EINTR) otherwise
+    jmp     .loop
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     mov     rdi, r9
     call    desc_atoi
@@ -1702,6 +1728,7 @@ str_mod:       db "mod", 0
 str_lt:        db "lt", 0
 str_inteq:     db "int_eq", 0
 str_reap:      db "reap", 0
+str_sleep:     db "sleep", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect

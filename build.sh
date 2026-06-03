@@ -386,7 +386,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "5960" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 5960)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "6055" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6055)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -596,6 +596,38 @@ if printf '%s\n' "$INITOUT" | grep -qxF "LogOS sovereign session initialized." \
     echo "PASS  logosinit announced, spawned /bin/sh (execve), and supervised without exiting"
 else
     echo "FAIL  logosinit: out='$INITOUT' rc=$irc (want announce + LOGOS_SHELL_OK + rc 124)"; exit 1
+fi
+
+# sleep builtin: nanosleep for N seconds. A program that sleeps 1s takes ≥1s.
+cat > /tmp/t_sleep.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph MAIN = SEQ(sleep("1"))(print("awake"))
+LAEOF
+cp /tmp/t_sleep.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+t0=$(date +%s); SLP="$(./runner 2>/dev/null)"; t1=$(date +%s)
+rm -f /tmp/t_sleep.la
+if [ "$SLP" = "awake" ] && [ "$((t1 - t0))" -ge 1 ]; then
+    echo "PASS  sleep(\"1\") blocked ~1s then continued (nanosleep)"
+else
+    echo "FAIL  sleep: out='$SLP' elapsed=$((t1 - t0))s"; exit 1
+fi
+
+# Respawn throttle: a shell that dies instantly is rate-limited by BACKOFF, not
+# re-forked in a tight loop. tick.sh appends one byte per spawn; over a 4s
+# window with BACKOFF=1 the init respawns only a handful of times (an
+# unthrottled loop would fork thousands). The init reaps its own dying shell
+# children, so no PID namespace is needed here.
+printf '#!/bin/sh\nprintf t >> /tmp/logos_ticks\n' > /tmp/tick.sh; chmod +x /tmp/tick.sh
+rm -f /tmp/logos_ticks
+sed 's#/bin/sh#/tmp/tick.sh#' logosinit.la > /tmp/t_flap.la
+cp /tmp/t_flap.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+timeout 4 ./runner >/dev/null 2>&1 || true
+TICKS=$(wc -c </tmp/logos_ticks 2>/dev/null || echo 0)
+rm -f /tmp/tick.sh /tmp/logos_ticks /tmp/t_flap.la
+if [ "$TICKS" -ge 2 ] && [ "$TICKS" -le 12 ]; then
+    echo "PASS  respawn throttle: flapping shell rate-limited to $TICKS respawns in 4s (BACKOFF=1)"
+else
+    echo "FAIL  respawn throttle: $TICKS respawns in 4s (want a small bounded handful, not a fork-storm)"; exit 1
 fi
 
 # ── Copying GC: bounded memory under high heap churn ──

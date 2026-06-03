@@ -23,9 +23,10 @@
 #       parent is reparented here, so the same -1 wait reaps orphans too —
 #       this is what stops the system filling with zombies. When the dead
 #       child is the session shell (or no children are left) the shell is
-#       respawned; any other reaped pid was an orphan and is simply
-#       collected. The loop has no exit branch: init runs until the
-#       machine is powered down.
+#       respawned after a BACKOFF sleep (so a shell that keeps dying is
+#       rate-limited, not re-forked in a tight loop); any other reaped pid
+#       was an orphan and is simply collected with no delay. The loop has no
+#       exit branch: init runs until the machine is powered down.
 #
 #  (Honest limit: the SECD VM does no tail-call optimisation, so each
 #  supervision iteration consumes one dump-stack frame — the loop runs for
@@ -48,14 +49,26 @@ glyph SPAWN = la _.
         (la _. pid))
     (fork("!"))
 
+# Respawn throttle. A shell that dies immediately (missing /bin/sh, EOF on a
+# dead console, instant crash) would otherwise be re-forked in a tight loop —
+# a fork-storm that pegs a CPU and, without bound, would eventually exhaust the
+# dump. BACKOFF seconds of sleep before each respawn rate-limits the flapping
+# to at most one shell per BACKOFF, the way a real init holds a respawning
+# service. (This is a fixed rate limit, not flap-detection: it needs only a
+# delay primitive, not a clock.)
+glyph BACKOFF = "1"
+glyph RESPAWN = la _. SEQ(sleep(BACKOFF))(SPAWN("!"))
+
 # SUPERVISE(shell) — never returns. Reap a terminated child; respawn the
-# shell when it (or nothing) is what died, otherwise keep the same shell.
+# shell (after a backoff) when it (or nothing) is what died, otherwise keep the
+# same shell. Orphan reaps take the fast path — no backoff — so collecting
+# zombies is never throttled, only shell restarts are.
 glyph SUPERVISE = Z(la self. la shell.
     (la dead.
         IF(IS_NEG(dead))
-            (la _. self(SPAWN("!")))
+            (la _. self(RESPAWN("!")))
             (la _. IF(str_eq(dead)(shell))
-                       (la _. self(SPAWN("!")))
+                       (la _. self(RESPAWN("!")))
                        (la _. self(shell))))
     (reap("!")))
 
