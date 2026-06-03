@@ -355,6 +355,40 @@ else
     exit 1
 fi
 
+say "Spec pipeline: a string-utilities module via import(\"specpipe.la\")"
+# strutil_spec.la imports the pipeline and writes a SPEC for STARTS_WITH /
+# ENDS_WITH / CONTAINS / SPLIT / JOIN / REPLACE (type signatures + test cases),
+# plus the support glyphs they need. GENERATE + DEPLOY produce and verify a
+# self-contained module; then we run that module stand-alone on the host.
+rm -f strutil_generated.la
+SU="$(./tiny_host strutil_spec.la 2>/dev/null)"
+ok=1
+for G in STARTS_WITH ENDS_WITH CONTAINS SPLIT JOIN REPLACE; do
+    printf '%s\n' "$SU" | grep -qx "  $G: PASS" || { echo "FAIL  strutil: $G not verified"; ok=0; }
+done
+printf '%s\n' "$SU" | grep -q "module VERIFIED" || { echo "FAIL  strutil: module not verified"; ok=0; }
+[ -f strutil_generated.la ] || { echo "FAIL  strutil: strutil_generated.la was not written"; ok=0; }
+# Run the GENERATED module stand-alone (it is self-contained .la); exercise each
+# utility. STARTS_WITH/ENDS_WITH/CONTAINS -> TTT; REPLACE(a->X)(banana)=bXnXnX;
+# JOIN(/)(SPLIT(.)(a.b.c))=a/b/c  =>  TTTbXnXnXa/b/c
+cp strutil_generated.la /tmp/sumod.la 2>/dev/null
+cat >> /tmp/sumod.la <<'LA'
+glyph SEQ = la a. la b. b
+glyph BOOL_STR = la b. b(la _. "T")(la _. "F")("!")
+glyph MAIN = print(concat(BOOL_STR(STARTS_WITH("ab")("abc")))(concat(BOOL_STR(ENDS_WITH("c")("abc")))(concat(BOOL_STR(CONTAINS("b")("abc")))(concat(REPLACE("a")("X")("banana"))(JOIN("/")(SPLIT(".")("a.b.c")))))))
+LA
+SUOUT="$(./tiny_host /tmp/sumod.la 2>/dev/null)"
+[ "$SUOUT" = "TTTbXnXnXa/b/c" ] || { echo "FAIL  strutil: generated module ran wrong ($SUOUT)"; ok=0; }
+rm -f /tmp/sumod.la strutil_generated.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  strutil: import(\"specpipe.la\") + SPEC GENERATEs/DEPLOYs the string module"
+    echo "PASS  strutil: META_DEBUG verifies STARTS_WITH/ENDS_WITH/CONTAINS/SPLIT/JOIN/REPLACE"
+    echo "PASS  strutil: the generated string module runs stand-alone on the host"
+else
+    printf '%s\n' "$SU"
+    exit 1
+fi
+
 say "Testing self-hosted parser (parser.la parses kernel.la)"
 OUT="$(./tiny_host parser.la 2>/dev/null)"
 if printf '%s\n' "$OUT" | grep -qF "Kernel parse: IIIIIIIII glyph(s)"; then

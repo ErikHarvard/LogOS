@@ -19,6 +19,10 @@
 #                             verified module in one call.
 # ═══════════════════════════════════════════════════════════════════════
 
+# The pipeline API + the constructors a spec author needs, exported so other
+# modules can `import("specpipe.la")` and build their own specs against it.
+export GENERATE DEPLOY META_DEBUG DEF TRIPLE PAIR FST SND CONS NIL Z IF TRUE FALSE AND BOOL_STR SEQ
+
 # ── Church / list prelude ──────────────────────────────────────────────
 glyph SEQ    = la a. la b. b
 glyph Z      = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))

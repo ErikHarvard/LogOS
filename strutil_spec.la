@@ -1,0 +1,103 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  strutil_spec.la — a string-utilities module, written as a SPEC and produced
+#  by the spec→implementation pipeline (import("specpipe.la")).
+#
+#  Public API: STARTS_WITH, ENDS_WITH, CONTAINS, SPLIT, JOIN, REPLACE.
+#  The SPEC also carries the support glyphs (Z / IF / TRUE / FALSE / CONS / NIL
+#  / IS_NIL / DROP) the implementations need, so the GENERATEd module is
+#  self-contained and runs stand-alone. Each entry is TRIPLE(name)(DEF(sig)(src)
+#  (value))(tests): `src` is what GENERATE writes, `value` is what META_DEBUG
+#  runs, and the test cases are the executable contract.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + constructors + Z/IF/…
+
+# ── implementation VALUES (what META_DEBUG runs; Z/IF/TRUE/FALSE/CONS/NIL imported) ──
+glyph IS_NIL = la lst. lst(TRUE)(la h. la t. FALSE)
+glyph DROP   = Z(la self. la p. la s. IF(str_eq(p)(""))(la _. s)(la _. self(str_tail(p))(str_tail(s))))
+glyph STARTS_WITH = Z(la self. la pre. la s.
+    IF(str_eq(pre)(""))(la _. TRUE)(la _.
+    IF(str_eq(s)(""))(la _. FALSE)(la _.
+    IF(str_eq(str_head(pre))(str_head(s)))(la _. self(str_tail(pre))(str_tail(s)))(la _. FALSE))))
+glyph ENDS_WITH = la suf. Z(la self. la s.
+    IF(str_eq(s)(suf))(la _. TRUE)(la _.
+    IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s)))))
+glyph CONTAINS = la needle. Z(la self. la s.
+    IF(STARTS_WITH(needle)(s))(la _. TRUE)(la _.
+    IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s)))))
+glyph SPLIT = la sep. la s. (Z(la self. la acc. la rest.
+    IF(str_eq(rest)(""))(la _. CONS(acc)(NIL))(la _.
+    IF(STARTS_WITH(sep)(rest))(la _. CONS(acc)(self("")(DROP(sep)(rest))))(la _.
+        self(concat(acc)(str_head(rest)))(str_tail(rest))))))("")(s)
+glyph JOIN = la sep. Z(la self. la lst.
+    lst("")(la h. la t. IF(IS_NIL(t))(la _. h)(la _. concat(h)(concat(sep)(self(t))))))
+glyph REPLACE = la from. la to. la s. (Z(la self. la rest.
+    IF(str_eq(rest)(""))(la _. "")(la _.
+    IF(STARTS_WITH(from)(rest))(la _. concat(to)(self(DROP(from)(rest))))(la _.
+        concat(str_head(rest))(self(str_tail(rest)))))))(s)
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_IF    = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_TRUE  = "la t. la f. t"
+glyph SRC_FALSE = "la t. la f. f"
+glyph SRC_CONS  = "la h. la t. la n. la c. c(h)(t)"
+glyph SRC_NIL   = "la n. la c. n"
+glyph SRC_ISNIL = "la lst. lst(TRUE)(la h. la t. FALSE)"
+glyph SRC_DROP  = "Z(la self. la p. la s. IF(str_eq(p)(\"\"))(la _. s)(la _. self(str_tail(p))(str_tail(s))))"
+glyph SRC_SW    = "Z(la self. la pre. la s. IF(str_eq(pre)(\"\"))(la _. TRUE)(la _. IF(str_eq(s)(\"\"))(la _. FALSE)(la _. IF(str_eq(str_head(pre))(str_head(s)))(la _. self(str_tail(pre))(str_tail(s)))(la _. FALSE))))"
+glyph SRC_EW    = "la suf. Z(la self. la s. IF(str_eq(s)(suf))(la _. TRUE)(la _. IF(str_eq(s)(\"\"))(la _. FALSE)(la _. self(str_tail(s)))))"
+glyph SRC_CONT  = "la needle. Z(la self. la s. IF(STARTS_WITH(needle)(s))(la _. TRUE)(la _. IF(str_eq(s)(\"\"))(la _. FALSE)(la _. self(str_tail(s)))))"
+glyph SRC_SPLIT = "la sep. la s. (Z(la self. la acc. la rest. IF(str_eq(rest)(\"\"))(la _. CONS(acc)(NIL))(la _. IF(STARTS_WITH(sep)(rest))(la _. CONS(acc)(self(\"\")(DROP(sep)(rest))))(la _. self(concat(acc)(str_head(rest)))(str_tail(rest))))))(\"\")(s)"
+glyph SRC_JOIN  = "la sep. Z(la self. la lst. lst(\"\")(la h. la t. IF(IS_NIL(t))(la _. h)(la _. concat(h)(concat(sep)(self(t))))))"
+glyph SRC_REPL  = "la from. la to. la s. (Z(la self. la rest. IF(str_eq(rest)(\"\"))(la _. \"\")(la _. IF(STARTS_WITH(from)(rest))(la _. concat(to)(self(DROP(from)(rest))))(la _. concat(str_head(rest))(self(str_tail(rest)))))))(s)"
+
+# ── test-case helpers ────────────────────────────────────────────────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+
+# ── the SPEC: six public string utilities + their support glyphs ──────
+glyph STRING_SPEC =
+  CONS(E("STARTS_WITH")("Str -> Str -> Bool")(SRC_SW)(STARTS_WITH)(
+        T2L(TC(la g. BOOL_STR(g("foo")("foobar")))("T"))
+           (TC(la g. BOOL_STR(g("bar")("foobar")))("F"))))(
+  CONS(E("ENDS_WITH")("Str -> Str -> Bool")(SRC_EW)(ENDS_WITH)(
+        T2L(TC(la g. BOOL_STR(g("bar")("foobar")))("T"))
+           (TC(la g. BOOL_STR(g("foo")("foobar")))("F"))))(
+  CONS(E("CONTAINS")("Str -> Str -> Bool")(SRC_CONT)(CONTAINS)(
+        T2L(TC(la g. BOOL_STR(g("oba")("foobar")))("T"))
+           (TC(la g. BOOL_STR(g("xyz")("foobar")))("F"))))(
+  CONS(E("SPLIT")("Str -> Str -> List Str")(SRC_SPLIT)(SPLIT)(
+        T2L(TC(la g. JOIN("|")(g(",")("a,b,c")))("a|b|c"))
+           (TC(la g. JOIN("|")(g(",")("solo")))("solo"))))(
+  CONS(E("JOIN")("Str -> List Str -> Str")(SRC_JOIN)(JOIN)(
+        T2L(TC(la g. g("-")(CONS("a")(CONS("b")(CONS("c")(NIL)))))("a-b-c"))
+           (TC(la g. g(",")(NIL))("")))) (
+  CONS(E("REPLACE")("Str -> Str -> Str -> Str")(SRC_REPL)(REPLACE)(
+        T2L(TC(la g. g("an")("X")("banana"))("bXXa"))
+           (TC(la g. g("o")("0")("foo"))("f00"))))(
+  # ── support glyphs (kept so the generated module is self-contained) ──
+  CONS(E("Z")("(a -> a) -> a")(SRC_Z)(Z)(
+        T1L(TC(la g. (g(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat("|")(self(str_tail(s))))))("abc"))("|||"))))(
+  CONS(E("IF")("Bool -> a -> a -> a")(SRC_IF)(IF)(
+        T2L(TC(la g. g(TRUE)(la _. "yes")(la _. "no"))("yes"))
+           (TC(la g. g(FALSE)(la _. "yes")(la _. "no"))("no"))))(
+  CONS(E("TRUE")("Bool")(SRC_TRUE)(TRUE)(T1L(TC(la g. BOOL_STR(g))("T"))))(
+  CONS(E("FALSE")("Bool")(SRC_FALSE)(FALSE)(T1L(TC(la g. BOOL_STR(g))("F"))))(
+  CONS(E("CONS")("a -> List a -> List a")(SRC_CONS)(CONS)(
+        T1L(TC(la g. g("h")(NIL)("EMPTY")(la hd. la tl. hd))("h"))))(
+  CONS(E("NIL")("List a")(SRC_NIL)(NIL)(
+        T1L(TC(la g. g("EMPTY")(la hd. la tl. "NO"))("EMPTY"))))(
+  CONS(E("IS_NIL")("List a -> Bool")(SRC_ISNIL)(IS_NIL)(
+        T2L(TC(la g. BOOL_STR(g(NIL)))("T"))
+           (TC(la g. BOOL_STR(g(CONS("x")(NIL))))("F"))))(
+  CONS(E("DROP")("Str -> Str -> Str")(SRC_DROP)(DROP)(
+        T2L(TC(la g. g("ab")("abcde"))("cde"))
+           (TC(la g. g("")("xyz"))("xyz"))))(
+  NIL))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(STRING_SPEC) ===\n")(GENERATE(STRING_SPEC))))
+       (print(DEPLOY(STRING_SPEC)("strutil_generated.la")))

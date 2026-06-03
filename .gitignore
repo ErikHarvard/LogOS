@@ -9,6 +9,9 @@
 # specpipe.la's generated math module (regenerated each run)
 /math_generated.la
 
+# strutil_spec.la's generated string-utilities module (regenerated each run)
+/strutil_generated.la
+
 # native binaries / artifacts emitted by elf.la, secd.la, codegen.la (regenerated each run)
 /secd
 /logos_native
