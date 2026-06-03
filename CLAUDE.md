@@ -12,6 +12,8 @@ host program, applied to itself, reproduces itself.
 | -------------------- | ------------------------------------------------------------------- |
 | `tiny_host.c`        | The host: a minimal C interpreter for `.la` files.                  |
 | `kernel.la`          | The kernel, written in Lingua Adamica. Defines `MAIN`.              |
+| `stdlib.la`          | A library module: `export`s `MAP`/`FILTER`/`ALL`/`LIST_FIND`, helpers private. |
+| `app.la`             | Demo program: `import("stdlib.la")`, uses the exports, proves namespace isolation. |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
 | `bytecode.la`        | Byte instructions and execution engines: `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), `RUN_BYTES` (a VM that executes the bytes directly), and `RUN_SM` (a real SECD-style stack machine over a compiled instruction list), all in Lingua Adamica. |
@@ -94,6 +96,47 @@ the branches and force the selected one:
 glyph IF = la cond. la t. la f. cond(t)(f)("!")
 # Usage: IF(condition)(la _. then_expr)(la _. else_expr)
 ```
+
+### Module system (`import` / `export`)
+
+A `.la` file may pull glyphs from another file, with namespace isolation. Two
+top-level forms (host-level, in `tiny_host.c`):
+
+```
+export NAME1 NAME2 ...        # names this file makes visible to importers
+import("other.la")            # merge other.la's EXPORTED glyphs into this file
+```
+
+`import("m.la")` parses `m.la` (recursively — nested imports work, each with its
+own export set and saved/restored lexer state) and merges its **exported**
+glyphs into the importing table under their plain names. The module's
+**private** glyphs (everything not in its `export` list) are still needed — the
+exports depend on them — so they come along too, but each is **alpha-renamed to
+a fresh unique name** (`__mod<N>_<name>`) and every reference to it *within the
+module* is rewritten to match (`subst`). The effect is real namespace
+isolation:
+
+- the importer sees **only** the exported names;
+- a module private **cannot leak into** the importer or shadow an importer glyph
+  of the same name (the private was renamed away);
+- the importer's glyphs **cannot leak into** the module either — the module is
+  self-contained, its exports resolve their dependencies against its own
+  (renamed) privates, not the importer's same-named glyphs.
+
+`stdlib.la` is a small library module: it `export`s `MAP`, `FILTER`, `ALL`,
+`LIST_FIND` and keeps its Church-encoding helpers (`Z`, `IF`, `CONS`, `NIL`, …)
+private. `app.la` `import("stdlib.la")`s it, builds its own lists, and uses the
+four combinators — while deliberately defining `IF` and `SECRET` with the same
+names as stdlib privates: `app` sees its own `SECRET` (privates don't leak) and
+the imported `MAP`/`FILTER`/`ALL` keep working despite app's broken decoy `IF`
+(they use stdlib's private `IF`). `build.sh` checks both facts.
+
+Scope: this is implemented in the **C host** (the reference interpreter).
+`kernel.la` deliberately stays flat and import-free, because it is the universal
+cross-engine artifact — it is parsed and run identically by the host, `eval.la`,
+`bytecode.la`, `codegen.la`, and the native VM. Teaching `import` to those
+self-hosted parsers (so any `.la`, including the kernel, can import on every
+engine) is the natural next step.
 
 ### Self-hosted parser (`parser.la`)
 

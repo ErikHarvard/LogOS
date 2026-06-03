@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════════════════════
+#  stdlib.la — a small standard library module for Lingua Adamica.
+#
+#  `export` names the glyphs this module makes visible to an importer:
+#  the four list combinators. Everything else (the Church encodings, the
+#  Z combinator, IF, the list constructors/accessors) is PRIVATE — it
+#  exists only to implement the exports. At import time the host gives
+#  each private glyph a fresh, unique name, so importing stdlib pours
+#  MAP/FILTER/ALL/LIST_FIND into the importer's namespace and nothing
+#  else: the privates can neither be referenced by the importer nor
+#  collide with the importer's own glyphs of the same name.
+# ═══════════════════════════════════════════════════════════════════
+
+export MAP FILTER ALL LIST_FIND
+
+# ── private helpers ──────────────────────────────────────────────────
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. la t. la f. b(f)(t)
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph PAIR  = la a. la b. la f. f(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_NIL  = la lst. NOT(FST(lst))
+glyph HEAD    = la lst. FST(SND(lst))
+glyph TAIL    = la lst. SND(SND(lst))
+
+# A private datum, deliberately named SECRET. If the module system leaks
+# privates, an importer that also defines SECRET would see THIS value.
+glyph SECRET = "stdlib-private"
+
+# ── exported combinators ─────────────────────────────────────────────
+glyph MAP = Z(la self. la f. la lst.
+    IF(IS_NIL(lst))(la _. NIL)(la _.
+        CONS(f(HEAD(lst)))(self(f)(TAIL(lst)))))
+
+glyph FILTER = Z(la self. la pred. la lst.
+    IF(IS_NIL(lst))(la _. NIL)(la _.
+        IF(pred(HEAD(lst)))(la _.
+            CONS(HEAD(lst))(self(pred)(TAIL(lst))))(la _.
+            self(pred)(TAIL(lst)))))
+
+glyph ALL = Z(la self. la pred. la lst.
+    IF(IS_NIL(lst))(la _. TRUE)(la _.
+        IF(pred(HEAD(lst)))(la _.
+            self(pred)(TAIL(lst)))(la _.
+            FALSE)))
+
+# LIST_FIND(key)(assoc): assoc is a list of PAIR(key)(value); returns the
+# matched value, or NIL if absent.
+glyph LIST_FIND = Z(la self. la key. la lst.
+    IF(IS_NIL(lst))(la _. NIL)(la _.
+        IF(str_eq(FST(HEAD(lst)))(key))(la _.
+            SND(HEAD(lst)))(la _.
+            self(key)(TAIL(lst)))))

@@ -206,6 +206,28 @@ else
 fi
 rm -f /tmp/test_int.la
 
+say "Module system (import / export with namespace isolation)"
+# app.la imports stdlib.la, which `export`s MAP/FILTER/ALL/LIST_FIND and keeps
+# its Church-encoding helpers private. app uses the four exports on its own
+# lists, and deliberately defines IF and SECRET with the SAME NAMES as stdlib
+# privates. Isolation requires two things at once:
+#   • app sees its OWN SECRET ("app-value"), not stdlib's private one — the
+#     module's privates are alpha-renamed at import, so they do not leak in;
+#   • the imported MAP/FILTER/ALL still work even though app's IF is a broken
+#     "DECOY" — they use stdlib's own private IF, not app's.
+OUT="$(./tiny_host app.la 2>/dev/null)"
+ok=1
+printf '%s\n' "$OUT" | grep -qxF "MAP head:    aa"          || { echo "FAIL  module: MAP export";           ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "FILTER head: b"           || { echo "FAIL  module: FILTER export";        ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "ALL no-z:    T"           || { echo "FAIL  module: ALL (app's decoy IF leaked into stdlib?)"; ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "FIND y:      Y"           || { echo "FAIL  module: LIST_FIND export";     ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "SECRET:      app-value"   || { echo "FAIL  module: isolation (stdlib private SECRET leaked and shadowed app's)"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  import(\"stdlib.la\"): MAP/FILTER/ALL/LIST_FIND imported; privates isolated (SECRET stays app's)"
+else
+    exit 1
+fi
+
 say "Self-verifying LogOS (metadebug.la — META_DEBUG_SPEC phases 1-4)"
 # One run of metadebug.la emits a labelled line per check; the spec table,
 # DEBUG, and META_DEBUG share one glyph table so the debugger sees every

@@ -158,7 +158,8 @@ static Node *copy_node(Node *e) {
 
 /* -------------------------------------------------------------- lexer --- */
 
-typedef enum { T_GLYPH, T_LA, T_DOT, T_EQ, T_LP, T_RP, T_IDENT, T_STR, T_INT, T_EOF } Tok;
+typedef enum { T_GLYPH, T_LA, T_DOT, T_EQ, T_LP, T_RP, T_IDENT, T_STR, T_INT,
+               T_IMPORT, T_EXPORT, T_EOF } Tok;
 
 static const char *P;        /* current position in source */
 static Tok         curtok;   /* current token kind */
@@ -241,9 +242,11 @@ static void lex(void) {
         char  *txt = malloc(len + 1);
         memcpy(txt, start, len);
         txt[len] = '\0';
-        if      (strcmp(txt, "glyph") == 0) { curtok = T_GLYPH; free(txt); }
-        else if (strcmp(txt, "la")    == 0) { curtok = T_LA;    free(txt); }
-        else                                { curtok = T_IDENT; curstr = txt; }
+        if      (strcmp(txt, "glyph")  == 0) { curtok = T_GLYPH;  free(txt); }
+        else if (strcmp(txt, "la")     == 0) { curtok = T_LA;     free(txt); }
+        else if (strcmp(txt, "import") == 0) { curtok = T_IMPORT; free(txt); }
+        else if (strcmp(txt, "export") == 0) { curtok = T_EXPORT; free(txt); }
+        else                                 { curtok = T_IDENT;  curstr = txt; }
         return;
     }
 
@@ -369,19 +372,51 @@ static void gc(void) {
     if (gc_next < GC_MIN_THRESHOLD) gc_next = GC_MIN_THRESHOLD;
 }
 
-/* program := ( 'glyph' IDENT '=' expr )* */
+/* ------------------------------------------------------- module system -- */
+/* Export set of the file currently being parsed. `export NAME...` records the
+ * glyphs a module makes visible to importers; everything else is private and,
+ * at import time, alpha-renamed to a unique name so it neither leaks into the
+ * importer's namespace nor collides with the importer's own glyphs. */
+static char  *cur_exports[256];
+static size_t cur_nexports = 0;
+
+static void add_export(const char *name) {
+    if (cur_nexports >= sizeof cur_exports / sizeof cur_exports[0]) {
+        fprintf(stderr, "too many exports\n"); exit(1);
+    }
+    cur_exports[cur_nexports++] = strdup(name);
+}
+
+static void do_import(const char *path);   /* defined after slurp_file/subst */
+
+/* program := ( 'glyph' IDENT '=' expr | 'import' '(' STRING ')' | 'export' IDENT* )* */
 static void parse_program(void) {
     while (curtok != T_EOF) {
-        expect(T_GLYPH, "'glyph'");
-        advance();
-        expect(T_IDENT, "glyph name");
-        char *name = strdup(curstr);
-        advance();
-        expect(T_EQ, "'='");
-        advance();
-        Node *body = parse_expr();
-        add_glyph(name, body);
-        free(name);
+        if (curtok == T_IMPORT) {
+            advance();
+            expect(T_LP, "'(' after import"); advance();
+            expect(T_STR, "an import path string");
+            char *path = malloc(curlen + 1);
+            memcpy(path, curstr, curlen); path[curlen] = '\0';
+            advance();
+            expect(T_RP, "')'"); advance();
+            do_import(path);
+            free(path);
+        } else if (curtok == T_EXPORT) {
+            advance();
+            while (curtok == T_IDENT) { add_export(curstr); advance(); }
+        } else {
+            expect(T_GLYPH, "'glyph', 'import', or 'export'");
+            advance();
+            expect(T_IDENT, "glyph name");
+            char *name = strdup(curstr);
+            advance();
+            expect(T_EQ, "'='");
+            advance();
+            Node *body = parse_expr();
+            add_glyph(name, body);
+            free(name);
+        }
     }
 }
 
@@ -753,6 +788,74 @@ static Node *eval(Node *e) {
         }
     }
     return NULL;
+}
+
+/* ------------------------------------------------ module import / merge -- */
+
+static int name_in(char **set, size_t n, const char *name) {
+    for (size_t i = 0; i < n; i++) if (strcmp(set[i], name) == 0) return 1;
+    return 0;
+}
+
+/* After a module's glyphs have been appended to the table as the range
+ * [start, end), give every PRIVATE glyph (one not named in the module's export
+ * list) a fresh unique name and rewrite all references to it *within the
+ * module's own glyphs* to that new name. Exported glyphs keep their plain
+ * names, so the importer sees only those. Private glyphs survive (the exports
+ * still depend on them) but under names the importer can neither see nor
+ * collide with — that is the namespace isolation. */
+static void mangle_privates(size_t start, size_t end,
+                            char **exports, size_t nexports) {
+    static unsigned long mctr = 0;
+    /* Each export must actually be defined by the module. */
+    for (size_t e = 0; e < nexports; e++) {
+        int found = 0;
+        for (size_t i = start; i < end; i++)
+            if (strcmp(glyphs[i].name, exports[e]) == 0) { found = 1; break; }
+        if (!found) {
+            fprintf(stderr, "import: module exports '%s' but does not define it\n",
+                    exports[e]);
+            exit(1);
+        }
+    }
+    for (size_t i = start; i < end; i++) {
+        if (name_in(exports, nexports, glyphs[i].name)) continue;   /* exported */
+        char mangled[300];
+        snprintf(mangled, sizeof mangled, "__mod%lu_%s", mctr++, glyphs[i].name);
+        Node *ref = mkvar(mangled);
+        for (size_t j = start; j < end; j++)                        /* rewrite refs */
+            glyphs[j].body = subst(glyphs[j].body, glyphs[i].name, ref);
+        free(glyphs[i].name);
+        glyphs[i].name = strdup(mangled);
+    }
+}
+
+/* import("path"): parse the module at `path` and merge its EXPORTED glyphs into
+ * the current table. The module is parsed with its own export set and its own
+ * (saved/restored) lexer state, so nested imports work; its private glyphs are
+ * then isolated by mangle_privates. */
+static void do_import(const char *path) {
+    /* save the importer's lexer state — we re-point the lexer at the module */
+    const char *sP = P; Tok st = curtok; char *ss = curstr;
+    size_t sl = curlen; long si = curint;
+    /* save the importer's export set; the module collects its own */
+    char  *saved_exp[256]; size_t saved_n = cur_nexports;
+    memcpy(saved_exp, cur_exports, saved_n * sizeof *cur_exports);
+    cur_nexports = 0;
+
+    size_t start = nglyphs;
+    char *modsrc = slurp_file(path, NULL);
+    P = modsrc;
+    advance();
+    parse_program();                       /* appends module glyphs; fills cur_exports */
+    mangle_privates(start, nglyphs, cur_exports, cur_nexports);
+
+    for (size_t i = 0; i < cur_nexports; i++) free(cur_exports[i]);
+    free(modsrc);
+    /* restore importer state */
+    cur_nexports = saved_n;
+    memcpy(cur_exports, saved_exp, saved_n * sizeof *cur_exports);
+    P = sP; curtok = st; curstr = ss; curlen = sl; curint = si;
 }
 
 /* --------------------------------------------------------------- main --- */

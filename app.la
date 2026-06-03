@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════════════════════
+#  app.la — a program that imports the stdlib module.
+#
+#  `import("stdlib.la")` brings stdlib's four EXPORTED combinators
+#  (MAP/FILTER/ALL/LIST_FIND) into scope — and nothing else. app then
+#  defines its OWN list primitives (the same Church encoding, so its
+#  lists interoperate with the imported combinators) and uses them.
+#
+#  Two namespace-isolation facts are demonstrated:
+#   • app defines `IF` and `SECRET` with the SAME NAMES as stdlib's
+#     private glyphs. app gets app's versions — stdlib's privates do not
+#     leak in and shadow them. (Without isolation, stdlib's `SECRET`
+#     would win and `IF` would silently become stdlib's.)
+#   • The imported MAP/FILTER/ALL keep working even though app's `IF` is
+#     a broken decoy — because they use stdlib's OWN private `IF`, not
+#     app's. (Without isolation, app's `IF` would leak into stdlib and
+#     they would all return "DECOY".)
+# ═══════════════════════════════════════════════════════════════════
+
+import("stdlib.la")
+
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. la t. la f. b(f)(t)
+glyph PAIR  = la a. la b. la f. f(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph HEAD    = la lst. FST(SND(lst))
+glyph TAIL    = la lst. SND(SND(lst))
+
+# Same-named decoys. app never calls IF (it reads results via HEAD and
+# Church-boolean application), so this broken IF only matters if the
+# module system fails to isolate it from stdlib's exports.
+glyph IF     = la c. la t. la f. "DECOY"
+glyph SECRET = "app-value"
+
+glyph L3    = CONS("a")(CONS("b")(CONS("c")(NIL)))
+glyph DUP   = la s. concat(s)(s)
+glyph IS_B  = la s. str_eq(s)("b")
+glyph NOT_Z = la s. NOT(str_eq(s)("z"))
+glyph ASSOC = CONS(PAIR("x")("X"))(CONS(PAIR("y")("Y"))(CONS(PAIR("z")("Z"))(NIL)))
+
+glyph MAIN =
+    SEQ(print(concat("MAP head:    ")(HEAD(MAP(DUP)(L3)))))(
+    SEQ(print(concat("FILTER head: ")(HEAD(FILTER(IS_B)(L3)))))(
+    SEQ(print(concat("ALL no-z:    ")(ALL(NOT_Z)(L3)("T")("F"))))(
+    SEQ(print(concat("FIND y:      ")(LIST_FIND("y")(ASSOC))))(
+        print(concat("SECRET:      ")(SECRET))))))
