@@ -58,7 +58,7 @@ phdr:
     dq 0x400000
     dq 0x400000
     dq filesize
-    dq progbuf - $$ + 0x500000   ; p_memsz: map through progbuf + 5 MiB (progbuf
+    dq progbuf - $$ + progcap    ; p_memsz: map through progbuf + 5 MiB (progbuf
                                  ; is the program-stream buffer; the rest is lazy).
                                  ; Tied to progbuf, not a fixed constant, so the
                                  ; segment tracks progbuf when the layout below
@@ -232,13 +232,28 @@ _start:
     syscall
     test    rax, rax
     js      .openfail
-    mov     rbp, rax
-    mov     rax, 0
-    mov     rdi, rbp
-    mov     rsi, progbuf
-    mov     rdx, 0x100000
+    mov     rbp, rax             ; fd
+    ; Drain the whole stream into [progbuf, progbuf+progcap) — loop until EOF, so a
+    ; >1 MiB stream or a short read is no longer silently truncated. If the buffer
+    ; fills before EOF the stream is too large → halt loudly (was: one 1 MiB read,
+    ; return value discarded, leftover BSS = 0 = HALT → exit 0 with wrong output).
+    mov     r8, progbuf          ; write cursor
+.rd_loop:
+    mov     rdx, progbuf
+    add     rdx, progcap
+    sub     rdx, r8              ; remaining capacity
+    jz      .progbig             ; buffer full and not yet at EOF → stream too large
+    mov     rax, 0               ; sys_read
+    mov     rdi, rbp             ; fd
+    mov     rsi, r8              ; into the cursor
     syscall
-    mov     rax, 3
+    test    rax, rax
+    js      .readfail            ; read error
+    jz      .rd_done             ; EOF
+    add     r8, rax              ; advance by bytes read
+    jmp     .rd_loop
+.rd_done:
+    mov     rax, 3               ; close(fd)
     mov     rdi, rbp
     syscall
     mov     rbx, bootstrap
@@ -1689,6 +1704,26 @@ _start:
     mov     rdi, 1
     syscall
 
+.progbig:                        ; program stream larger than the mapped buffer
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, progmsg
+    mov     rdx, progmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
+.readfail:                       ; read(2) on the program stream returned an error
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, readmsg
+    mov     rdx, readmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 ; ═══════════════════════════════════════════════════════════════════
 ;  Copying garbage collector — two semispaces over [heap, progbuf):
 ;  low [heap, semimid), high [semimid, progbuf). Triggered from .loop
@@ -1909,6 +1944,10 @@ pathmsg:       db "secd: path too long", 10
 pathmsg_len    equ $ - pathmsg
 unboundmsg:    db "secd: unbound variable", 10
 unboundmsg_len equ $ - unboundmsg
+progmsg:       db "secd: program too large", 10
+progmsg_len    equ $ - progmsg
+readmsg:       db "secd: read error", 10
+readmsg_len    equ $ - readmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0
@@ -1981,6 +2020,8 @@ gcwork_end equ gcwork + 0x1000000
 heap     equ gcwork_end              ; semispaces: low [heap, semimid), high [semimid, progbuf)
 semimid  equ heap    + 0x30000000    ; 768 MiB: boundary between the two semispaces
 progbuf  equ heap    + 0x60000000    ; 1536 MiB total; program stream loads at progbuf
+progcap  equ 0x500000                ; 5 MiB mapped for the program stream (matches the
+                                     ; phdr p_memsz tail); the loader fills up to here
 margin   equ 0x4100000               ; 65 MiB: covers the largest single allocation
                                      ; (read_file's 64 MiB read + descriptor); the
                                      ; dispatch loop collects this far before a
