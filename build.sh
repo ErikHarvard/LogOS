@@ -228,6 +228,24 @@ else
     exit 1
 fi
 
+say "LogosIPC: typed message bus (import + round-trip)"
+# ipc_demo.la imports the logosipc module and round-trips a typed message
+# through a named channel: SEND a (type,body), RECV it, decode the type and
+# body, and MSG_OK-dispatch on the type. (The two-process LogosInit version
+# runs on the native VM — see the LogosInit section below.)
+rm -f /tmp/logos_ipc_demo
+OUT="$(./tiny_host ipc_demo.la 2>/dev/null)"
+ok=1
+printf '%s\n' "$OUT" | grep -qxF "type:     greeting"   || { echo "FAIL  ipc: MSG_TYPE";        ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "body:     hello, bus" || { echo "FAIL  ipc: MSG_BODY";        ok=0; }
+printf '%s\n' "$OUT" | grep -qxF "typed-ok: yes"        || { echo "FAIL  ipc: MSG_OK dispatch"; ok=0; }
+rm -f /tmp/logos_ipc_demo
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  import(\"logosipc.la\"): SEND/RECV a typed message; MSG_TYPE/MSG_BODY/MSG_OK decode it"
+else
+    exit 1
+fi
+
 say "Self-verifying LogOS (metadebug.la — META_DEBUG_SPEC phases 1-4)"
 # One run of metadebug.la emits a labelled line per check; the spec table,
 # DEBUG, and META_DEBUG share one glyph table so the debugger sees every
@@ -650,6 +668,40 @@ if [ "$TICKS" -ge 2 ] && [ "$TICKS" -le 12 ]; then
     echo "PASS  respawn throttle: flapping shell rate-limited to $TICKS respawns in 4s (BACKOFF=1)"
 else
     echo "FAIL  respawn throttle: $TICKS respawns in 4s (want a small bounded handful, not a fork-storm)"; exit 1
+fi
+
+# ── LogosIPC on the native VM: init forks a worker that messages back ──
+# The real (VM-native) LogosInit pattern: fork a child worker, the worker SENDs
+# a typed message on a named channel and exits, init reaps it then RECVs and
+# decodes the message. logosipc.la is inlined here (its `export` line stripped)
+# because the native VM has no `import` yet; the module's glyphs are reused
+# verbatim. Uses only existing syscalls (fork/waitpid/exit + read_file/write_file).
+grep -v '^export' logosipc.la > /tmp/t_ipc.la
+cat >> /tmp/t_ipc.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph CH  = CHANNEL("init")
+glyph WORKER = la _. SEQ(SEND(CH)("status")("worker-ready"))(exit("0"))
+glyph MAIN =
+    (la pid. IF(str_eq(pid)("0"))
+        (la _. WORKER("!"))
+        (la _. SEQ(waitpid(pid))(
+            (la msg. SEQ(print(concat("init recv type: ")(MSG_TYPE(msg))))(
+                         print(concat("init recv body: ")(MSG_BODY(msg)))))
+            (RECV(CH)))))
+    (fork("!"))
+LAEOF
+rm -f /tmp/logos_ipc_init
+cp /tmp/t_ipc.la logos_source.la; cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1                 # native-compile the inlined program
+IPCOUT="$(./runner 2>/dev/null)"
+rm -f /tmp/t_ipc.la /tmp/logos_ipc_init
+ok=1
+printf '%s\n' "$IPCOUT" | grep -qxF "init recv type: status"       || { echo "FAIL  ipc(VM): init did not receive the typed message"; ok=0; }
+printf '%s\n' "$IPCOUT" | grep -qxF "init recv body: worker-ready" || { echo "FAIL  ipc(VM): message body wrong";                  ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  LogosIPC on the VM: init forked a worker that sent a typed message back through the bus"
+else
+    echo "  (got: $IPCOUT)"; exit 1
 fi
 
 # ── Copying GC: bounded memory under high heap churn ──

@@ -14,6 +14,8 @@ host program, applied to itself, reproduces itself.
 | `kernel.la`          | The kernel, written in Lingua Adamica. Defines `MAIN`.              |
 | `stdlib.la`          | A library module: `export`s `MAP`/`FILTER`/`ALL`/`LIST_FIND`, helpers private. |
 | `app.la`             | Demo program: `import("stdlib.la")`, uses the exports, proves namespace isolation. |
+| `logosipc.la`        | LogosIPC module: a typed message bus (`SEND`/`RECV`/`MSG_TYPE`/…) over a named channel. |
+| `ipc_demo.la`        | Demo: `import("logosipc.la")`, round-trips a typed message through the bus. |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
 | `bytecode.la`        | Byte instructions and execution engines: `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), `RUN_BYTES` (a VM that executes the bytes directly), and `RUN_SM` (a real SECD-style stack machine over a compiled instruction list), all in Lingua Adamica. |
@@ -537,6 +539,34 @@ dump depth — indefinitely**, not the old ~1M-reap ceiling. `build.sh` confirms
 5M-iteration loop of the supervision loop's exact shape (nested `IF`, a
 `(la x. …)(arg)` binder, tail self-calls) completes; a *non*-tail deep recursion
 still halts loudly via the stack guard (it is never optimised away).
+
+### LogosIPC — a typed message bus (`logosipc.la`)
+
+The Codex's Layer 4 (`LogosIPC`, the OS's "nervous system" — a sovereign
+replacement for D-Bus: typed, Γ-seal-encrypted, capability-gated) begins here as
+a minimal seed: **typed point-to-point messages on a named channel**, using only
+existing syscalls. `logosipc.la` is a module (`export CHANNEL SEND RECV MSG_TYPE
+MSG_BODY MSG_OK`) with the Church/`Z`/`IF` helpers private:
+
+- a **message** is `TYPE <NUL> BODY` (binary-safe; the tag carries no NUL);
+- `SEND(chan)(type)(body)` places a typed message on a channel, `RECV(chan)`
+  takes it off; `MSG_TYPE` / `MSG_BODY` decode it and `MSG_OK(msg)(type)` is the
+  minimal schema check (a receiver accepts only the types it expects);
+- the **typing layer is independent of the transport.** `CHANNEL`/`SEND`/`RECV`
+  are the only three lines that name the transport — here a file under `/tmp`
+  via `read_file`/`write_file`, because the VM has no `socket`/`pipe`/`read(fd)`
+  syscalls yet. Swapping in a pipe or Unix-domain socket later touches only
+  those lines, not the message format or the dispatch helpers.
+
+`build.sh` exercises it twice: (1) on the **host**, `ipc_demo.la`
+`import`s the module and round-trips a typed message (`SEND` then `RECV`,
+decoding type/body and `MSG_OK`-dispatching); (2) on the **native VM**, the
+real LogosInit pattern — `fork` a worker child that `SEND`s a typed message and
+exits, then init `waitpid`s and `RECV`s it. (The VM has no `import` yet, so the
+VM test inlines the module's glyphs minus the `export` line — see the module
+system's cross-engine note.) Deferred to later layers, per the Codex: Γ-seal
+encryption, runtime schema validation, capability gating, and socket
+multiplexing (point-to-point / broadcast / stream routing).
 
 ### Evaluation
 

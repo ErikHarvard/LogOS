@@ -1,0 +1,22 @@
+# ═══════════════════════════════════════════════════════════════════
+#  ipc_demo.la — import the LogosIPC module and round-trip a typed
+#  message through the bus (single process, on the host).
+#
+#  Proves: import("logosipc.la") brings in the six exported glyphs (its
+#  helpers stay private), and SEND/RECV/MSG_TYPE/MSG_BODY/MSG_OK form a
+#  working typed channel. The two-process version (LogosInit forking a
+#  child that messages back) runs on the native VM — see build.sh.
+# ═══════════════════════════════════════════════════════════════════
+
+import("logosipc.la")
+
+glyph SEQ = la a. la b. b
+glyph CH  = CHANNEL("demo")
+
+glyph MAIN =
+    SEQ(SEND(CH)("greeting")("hello, bus"))(
+    (la msg.
+        SEQ(print(concat("type:     ")(MSG_TYPE(msg))))(
+        SEQ(print(concat("body:     ")(MSG_BODY(msg))))(
+            print(concat("typed-ok: ")(MSG_OK(msg)("greeting")("yes")("no")))))
+    )(RECV(CH)))
