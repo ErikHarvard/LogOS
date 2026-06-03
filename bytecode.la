@@ -350,7 +350,7 @@ glyph RUN_BYTES = Z(la self. la s. la env. la gl.
                     (la found.
                         IF(IS_SOME(found))(la _. PAIR(FST(self(R_VAL(found))(NIL)(gl)))(rest1))(la _.
                         IF(IS_BI_NAME(name))(la _. PAIR(VAL_BI(name))(rest1))(la _.
-                        (la _. PAIR(VAL_STR(name))(rest1))(print(concat("vm: unbound ")(name)))))
+                        error(concat("vm: unbound variable: ")(name))))
                     )(LIST_FIND(name)(gl)))
                 )(LIST_FIND(name)(env))
             )(SND(fr)))(FST(fr)))(READ_FIELD("")(rest0))
@@ -469,7 +469,7 @@ glyph RUN_SM = la gl0. la code0.
                             )(la _. IF(IS_BI_NAME(name))(la _.
                                 self(CONS(VAL_BI(name))(S))(E)(C1)(D)
                             )(la _.
-                                (la _. self(CONS(VAL_STR(name))(S))(E)(C1)(D))(print(concat("sm: unbound ")(name)))
+                                error(concat("sm: unbound variable: ")(name))
                             )))(LIST_FIND(name)(gl0)))
                         )(LIST_FIND(name)(E)))
                     (la p. la body. self(CONS(VAL_CLO(p)(body)(E))(S))(E)(C1)(D))
