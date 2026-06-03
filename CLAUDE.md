@@ -180,6 +180,14 @@ byte-identical to `tiny_host`).
 - **Effects pass through to the host.** `APPLY_BI`/`APPLY_BI2` bridge the meta
   level to the host: the object program's `print`, `copy_self`, `read_file`,
   etc. call the host's real built-ins, so meta-evaluated effects are genuine.
+  *Known limitation:* `eval.la`'s builtin tables cover the set `kernel.la` (and
+  `eval.la` itself) needs — `print`, `copy_self`, `read_file`, `write_file`,
+  `concat`, `str_head`, `str_tail`, `str_eq`, and the native integers — but
+  **not** `chr` / `ord` / `write_exec` / `error` (which the C host does
+  implement). Meta-evaluating a program that calls one of those yields an
+  `eval: unbound variable` error rather than performing the operation — a
+  divergence from the C host, harmless for the kernel and the self-reconstruction
+  but a real gap for binary-emitting programs (`elf.la`) under `eval.la`.
 - **Church booleans from `str_eq`.** `str_eq` returns the host's Church
   `TRUE`/`FALSE`; at the meta level these become `META_TRUE`/`META_FALSE`,
   closures whose bodies are the Church-boolean ASTs, so applying them selects
@@ -396,7 +404,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 2628 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 6807 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -448,12 +456,13 @@ runnable and checked by `build.sh`.
   VM --(native)--> runs any program (kernel.la speaks + replicates)
   ```
 
-  Honest remaining limits: the bump heap still has no GC (fine for short
-  bootstrap runs, a ceiling for long-running programs); the native artifact is a
-  fixed VM + per-program stream file (not a self-contained executable per
-  program — that needs ELF-length patching, deliberately avoided); and the
-  *first* seed still comes from `tiny_host` + `nasm` (the irreducible bootstrap
-  origin — the loop is closed thereafter, not the genesis).
+  Honest remaining limits: the native artifact is a fixed VM + per-program
+  stream file (not a self-contained executable per program — that needs
+  ELF-length patching, deliberately avoided); and the *first* seed still comes
+  from `tiny_host` + `nasm` (the irreducible bootstrap origin — the loop is
+  closed thereafter, not the genesis). (The heap is no longer a limit: the VM
+  gained a two-semispace copying GC — see the GC section below — so long-running
+  programs run in bounded memory.)
 
   *Drift guard:* `secd.la` embeds the exact `nasm -f bin secd.asm` output;
   `build.sh` checks byte-identity when `nasm` is present, so `secd.asm` stays
