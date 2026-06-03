@@ -507,11 +507,30 @@ Practically:
   the C stack + a `setjmp` register dump; values are acyclic trees so nothing is
   missed structurally, and GC-at-an-ordinary-call-boundary makes the scan
   ABI-safe. GC overhead is negligible (raising the threshold 8× left `build.sh`
-  wall-time unchanged). The SECD VM's bump heap (`secd.asm`) has no GC, but it
-  now has a **heap-exhaustion guard**: the dispatch loop halts with
-  `secd: heap exhausted` once `r15` reaches `heaplimit` (`progbuf − 65 MiB`, a
-  margin covering the largest single allocation, `read_file`'s 64 MiB read), and
-  `concat` (the one builtin with an unbounded single allocation) checks before
-  copying. So a long or runaway native program fails loudly instead of running
-  off the end and corrupting the program stream — a clean failure, not bounded
-  memory (no reclamation; full VM GC remains the larger open item).
+  wall-time unchanged). The SECD VM (`secd.asm`) now has its own **copying
+  garbage collector**, so it too gives bounded memory: the heap is two equal
+  semispaces, allocation bumps `r15` inside the active half, and when `r15`
+  comes within `margin` (65 MiB, covering `read_file`'s 64 MiB single read) of
+  that half's end the collector copies the live set into the other half and
+  resumes there. Roots are the operand stack `S`, the environment `E`, and each
+  dump frame's saved env; boxed objects (STRDESC/CLO/PA/ENVCELL) carry an
+  8-byte forwarding header so sharing is preserved and the DAG is not
+  duplicated, while raw DATA byte-buffers carry no header and are copied inline
+  by their owning STRDESC (it owns its bytes 1:1, since `str_head`/`str_tail`/
+  `chr` copy rather than alias). The collector is type-directed — an object's
+  shape is known from the value tag (or kind) that reaches it, so the heap needs
+  no per-object size word — and an explicit worklist (`gcwork`, 16 MiB) stands
+  in for host recursion, so a deep env chain is traced iteratively without
+  overflowing the CPU stack. `build.sh` exercises it with a high-churn loop that
+  allocates ~1 GiB of immediately-dead strings and completes in bounded memory
+  (the pre-GC bump heap exhausts on the same program). Each semispace is sized
+  at 768 MiB (1.5 GiB total, lazily mapped) — equal to the old single bump
+  heap — so any workload that fit before the GC still fits in one half even with
+  zero reclamation (compiling `secd.la` peaks at ~320 MiB genuinely-live data,
+  retained by the VM's non-tail recursion). If the live set itself still doesn't
+  fit after a collection, or the worklist overflows, the dispatch loop halts
+  loudly with `secd: heap exhausted` rather than corrupting the program stream.
+  *Honest remaining limits:* the VM does no tail-call optimisation, so deep
+  object-level recursion grows the dump stack (capped at 16 MiB ≈ 1 Mi frames)
+  and pins every intermediate env live — the GC reclaims true garbage but cannot
+  shrink a genuinely-retained recursion chain.

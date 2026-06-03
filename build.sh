@@ -386,7 +386,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "4819" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 4819)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "5758" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 5758)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -531,6 +531,32 @@ if [ "$ok" -eq 1 ]; then
 else
     exit 1
 fi
+
+# ── Copying GC: bounded memory under high heap churn ──
+# Each iteration builds a 6 KiB string and immediately discards it: str_head
+# copies out one byte, so the concat becomes garbage. ~1 GiB of total churn far
+# exceeds one 768 MiB semispace, so the program completes ONLY if the collector
+# reclaims the dead intermediates — the pre-GC bump heap exhausts on the same
+# program. Recursion depth (180k) stays within the dump stack.
+GCBIG="$(printf 'x%.0s' $(seq 1 3000))"
+cat > /tmp/t_gc.la <<LAEOF
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph S   = "$GCBIG"
+glyph LOOP = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. n)(la _.
+        SEQ(str_head(concat(S)(S)))(self(sub(n)(1)))))
+glyph MAIN = SEQ(LOOP(180000))(print("gc loop survived"))
+LAEOF
+GCOUT="$(nrun /tmp/t_gc.la 2>/dev/null || true)"
+rm -f /tmp/t_gc.la
+if printf '%s\n' "$GCOUT" | grep -qxF "gc loop survived"; then
+    echo "PASS  copying GC reclaims ~1 GiB of churn — bounded memory, no exhaustion"
+else
+    echo "FAIL  GC: high-churn loop did not survive (got '$GCOUT')"; exit 1
+fi
+
 rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin
 
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"

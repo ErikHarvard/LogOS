@@ -186,6 +186,8 @@ push_dec:
 .pd_done:
     mov     rdx, r15
     sub     rdx, rsi                     ; length
+    mov     qword [r15], 0               ; STRDESC GC fwd header
+    add     r15, 8
     mov     [r15], rdx
     mov     [r15+8], rsi
     mov     qword [r12], 0
@@ -223,15 +225,28 @@ _start:
     syscall
 
 .loop:
-    ; heap-exhaustion guard: halt cleanly before the bump heap overruns the
-    ; program stream. The margin (heaplimit = progbuf - 64 MiB) exceeds the
-    ; largest fixed-size or single-read (read_file, 64 MiB) allocation, so once
-    ; r15 < heaplimit here the next instruction cannot reach progbuf. concat,
-    ; which can allocate an arbitrarily large buffer in one step, is guarded
-    ; separately below.
-    mov     rax, heaplimit
+    ; GC trigger + heap-exhaustion guard. The bump heap is two semispaces:
+    ; low [heap, semimid), high [semimid, progbuf). `space_end` is the end of
+    ; the one r15 is in. When r15 comes within `margin` of it (margin covers
+    ; the largest single allocation — read_file's 64 MiB), run a copying GC.
+    ; If r15 is STILL within margin after collecting, the live set itself
+    ; doesn't fit: the heap is genuinely exhausted → halt loudly.
+    mov     rax, progbuf
+    mov     rcx, semimid
+    cmp     r15, rcx
+    cmovb   rax, rcx
+    sub     rax, margin
+    cmp     r15, rax
+    jb      .nogc
+    call    gc
+    mov     rax, progbuf
+    mov     rcx, semimid
+    cmp     r15, rcx
+    cmovb   rax, rcx
+    sub     rax, margin
     cmp     r15, rax
     jae     .heapfull
+.nogc:
     movzx   rax, byte [rbx]
     inc     rbx
     cmp     al, 0
@@ -259,6 +274,8 @@ _start:
     jmp     .ps_scan
 .ps_done:
     inc     rbx                  ; skip the terminator
+    mov     qword [r15], 0       ; GC fwd header (not forwarded)
+    add     r15, 8
     mov     [r15], rdx           ; descriptor [len][ptr]
     mov     [r15+8], rsi
     mov     qword [r12], 0
@@ -558,6 +575,8 @@ _start:
     inc     rbx
     test    al, al
     jnz     .cl_scan
+    mov     qword [r15], 0       ; GC fwd header
+    add     r15, 8
     mov     [r15], rbp
     mov     [r15+8], rbx
     mov     [r15+16], r13
@@ -588,6 +607,8 @@ _start:
     mov     [r14], rbx
     mov     [r14+8], r13
     add     r14, 16
+    mov     qword [r15], 0       ; GC fwd header (env cell)
+    add     r15, 8
     mov     rax, [r11]
     mov     [r15], rax
     mov     [r15+8], r8
@@ -657,6 +678,8 @@ _start:
     je      .mkpa
     jmp     .halt
 .mkpa:
+    mov     qword [r15], 0       ; GC fwd header
+    add     r15, 8
     mov     [r15], r11
     mov     [r15+8], r8
     mov     [r15+16], r9
@@ -715,36 +738,62 @@ _start:
     add     r12, 16
     jmp     .loop
 
-.bi_strhead:                     ; first byte, shares storage
+.bi_strhead:                     ; first byte, copied into a fresh DATA blob
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     test    rcx, rcx
     je      .sh_zero
-    mov     qword [r15], 1
-    jmp     .sh_mk
+    mov     al, [rsi]            ; DATA blob: 1 raw byte (no header)
+    mov     [r15], al
+    mov     rbp, r15
+    inc     r15
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 1       ; len 1
+    mov     [r15+8], rbp         ; ptr -> the fresh byte
+    jmp     .sh_push
 .sh_zero:
-    mov     qword [r15], 0
-.sh_mk:
-    mov     [r15+8], rsi
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 0       ; len 0
+    mov     [r15+8], r15         ; ptr (unused for empty)
+.sh_push:
     mov     qword [r12], 0
     mov     [r12+8], r15
     add     r12, 16
     add     r15, 16
     jmp     .loop
 
-.bi_strtail:                     ; drop first byte, shares storage
+.bi_strtail:                     ; drop first byte, copied into a fresh DATA blob
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     test    rcx, rcx
     je      .st_zero
-    dec     rcx
+    dec     rcx                  ; new length
+    inc     rsi                  ; source after first byte
+    mov     rbp, r15             ; DATA blob start
+    mov     rdx, rcx             ; remember length
+.st_cp:
+    test    rcx, rcx
+    je      .st_cpd
+    mov     al, [rsi]
+    mov     [r15], al
     inc     rsi
-    mov     [r15], rcx
-    jmp     .st_mk
+    inc     r15
+    dec     rcx
+    jmp     .st_cp
+.st_cpd:
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx           ; len
+    mov     [r15+8], rbp         ; ptr -> fresh copy
+    jmp     .st_push
 .st_zero:
-    mov     qword [r15], 0
-.st_mk:
-    mov     [r15+8], rsi
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 0       ; len 0
+    mov     [r15+8], r15
+.st_push:
     mov     qword [r12], 0
     mov     [r12+8], r15
     add     r12, 16
@@ -785,6 +834,8 @@ _start:
     mov     rax, 3
     mov     rdi, rbp
     syscall
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
     mov     [r15], rdx           ; descriptor [len][content]
     mov     [r15+8], r10
     mov     qword [r12], 0
@@ -793,7 +844,9 @@ _start:
     add     r15, 16
     jmp     .loop
 .rf_empty:
-    mov     qword [r15], 0
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 0       ; len 0
     mov     [r15+8], r15
     mov     qword [r12], 0
     mov     [r12+8], r15
@@ -859,6 +912,8 @@ _start:
     inc     rdx
     jmp     .cs_len
 .cs_mk:
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
     mov     [r15], rdx
     mov     rax, cs_target
     mov     [r15+8], rax
@@ -883,14 +938,17 @@ _start:
     dec     rcx
     jmp     .chr_loop
 .chr_done:
-    mov     [r15], al            ; the byte
-    mov     qword [r15+8], 1     ; descriptor [len=1][ptr=r15]
-    mov     [r15+16], r15
-    lea     rax, [r15+8]
+    mov     [r15], al            ; DATA blob: 1 raw byte (no header)
+    mov     rbp, r15
+    inc     r15
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 1       ; len 1
+    mov     [r15+8], rbp         ; ptr -> the byte
     mov     qword [r12], 0
-    mov     [r12+8], rax
+    mov     [r12+8], r15
     add     r12, 16
-    add     r15, 24
+    add     r15, 16
     jmp     .loop
 
 .bi_ord:                         ; r9 = string descriptor → decimal of first byte
@@ -925,6 +983,8 @@ _start:
     dec     r10
     jmp     .ord_pop
 .ord_dn:
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
     mov     [r15], r11           ; descriptor [len][ptr]
     mov     [r15+8], rsi
     mov     qword [r12], 0
@@ -939,8 +999,11 @@ _start:
     mov     rax, [rbp]
     add     rax, [r9]
     add     rax, r15
-    add     rax, 16
-    mov     rcx, progbuf
+    add     rax, 24              ; bytes + STRDESC (8 header + 16 fields)
+    mov     rcx, progbuf         ; space_end = semimid (low) or progbuf (high)
+    mov     rdx, semimid
+    cmp     r15, rdx
+    cmovb   rcx, rdx
     cmp     rax, rcx
     jae     .heapfull
     mov     rsi, [rbp+8]
@@ -969,6 +1032,8 @@ _start:
 .cc_d:
     mov     rdx, r15
     sub     rdx, rbp             ; total length
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
     mov     [r15], rdx
     mov     [r15+8], rbp
     mov     qword [r12], 0
@@ -1001,6 +1066,8 @@ _start:
 .se_false:
     mov     rdi, FALSE_BODY
 .se_make:
+    mov     qword [r15], 0       ; GC fwd header (bool closure)
+    add     r15, 8
     mov     rax, str_t
     mov     [r15], rax
     mov     [r15+8], rdi
@@ -1297,6 +1364,8 @@ _start:
 .int_false:
     mov     rdi, FALSE_BODY
 .int_bool:
+    mov     qword [r15], 0       ; GC fwd header (bool closure)
+    add     r15, 8
     mov     rax, str_t
     mov     [r15], rax
     mov     [r15+8], rdi
@@ -1327,6 +1396,217 @@ _start:
     mov     rax, 60
     mov     rdi, 1
     syscall
+
+; ═══════════════════════════════════════════════════════════════════
+;  Copying garbage collector — two semispaces over [heap, progbuf):
+;  low [heap, semimid), high [semimid, progbuf). Triggered from .loop
+;  when r15 nears the active semispace's end; live data is copied into
+;  the other space and r15 resumes bump-allocating there.
+;
+;  Roots: operand stack S [ostack, r12), env E (r13), dump D
+;  [dstack, r14) (each frame's saved E). Boxed objects
+;  (STRDESC/CLO/PA/ENVCELL) carry an 8-byte forwarding header (init 0);
+;  raw DATA byte-buffers carry none and are copied inline (length from
+;  the owning STRDESC, which owns its bytes 1:1 since str_head/str_tail/
+;  chr copy rather than alias). The collector is type-directed: an
+;  object's shape is known from the value tag (or kind) that reaches it,
+;  so the heap needs no per-object size/type word. An explicit worklist
+;  (gcwork) stands in for host recursion, so a 100k-deep env chain is
+;  copied iteratively without overflowing the CPU stack.
+;
+;  Forwarding: once copied, an object's *fromspace* header holds
+;  (newptr | 1); newptr is 8-aligned so bit 0 is an unambiguous
+;  "already copied" flag, and a second reference resolves to the same
+;  copy (sharing preserved, no duplication, no divergence on the DAG).
+; ═══════════════════════════════════════════════════════════════════
+gc:
+    mov     rax, semimid         ; tospace = the semispace r15 is NOT in
+    cmp     r15, rax
+    jb      .to_high
+    mov     rax, heap            ; r15 in high → tospace = low
+    jmp     .to_set
+.to_high:
+    mov     rax, semimid         ; r15 in low  → tospace = high
+.to_set:
+    mov     [gc_tofree], rax
+    mov     rax, gcwork
+    mov     [gc_wktop], rax
+    mov     r10, ostack          ; root: operand stack S [ostack, r12)
+    ; r10 is the cursor: the forward helpers clobber rax/rcx/rdx/rsi/rdi/r8/r9
+    ; but never r10, so it survives the calls without a save/restore.
+.s_loop:
+    cmp     r10, r12
+    jae     .s_done
+    mov     rdi, [r10]           ; value tag
+    mov     rdx, [r10+8]         ; value payload
+    call    gc_forward_value
+    mov     [r10+8], rdx
+    add     r10, 16
+    jmp     .s_loop
+.s_done:
+    test    r13, r13             ; root: env E
+    je      .e_done
+    mov     rdi, r13
+    call    gc_forward_env
+    mov     r13, rax
+.e_done:
+    mov     r10, dstack          ; roots: dump D [dstack, r14)
+.d_loop:
+    cmp     r10, r14
+    jae     .d_done
+    mov     rdi, [r10+8]         ; saved E (saved C is a progbuf ptr — skip)
+    test    rdi, rdi
+    je      .d_next
+    call    gc_forward_env
+    mov     [r10+8], rax
+.d_next:
+    add     r10, 16
+    jmp     .d_loop
+.d_done:
+.w_loop:                         ; drain worklist: [kind][tospace fields ptr]
+    mov     rax, [gc_wktop]
+    mov     rcx, gcwork
+    cmp     rax, rcx
+    jbe     .w_done
+    sub     rax, 16
+    mov     [gc_wktop], rax
+    mov     rdi, [rax]           ; kind
+    mov     rsi, [rax+8]         ; fields ptr (in tospace)
+    call    gc_scan
+    jmp     .w_loop
+.w_done:
+    mov     r15, [gc_tofree]     ; resume bump allocation in tospace
+    ret
+
+; gc_forward_value(rdi=tag, rdx=payload) → rdx = updated payload (tag kept)
+gc_forward_value:
+    cmp     rdi, 0
+    je      .fv_str
+    cmp     rdi, 2
+    je      .fv_clo
+    cmp     rdi, 3
+    je      .fv_pa
+    ret                          ; tag 1 BI / tag 4 INT: payload is not a pointer
+.fv_str:
+    mov     rsi, rdx
+    mov     rcx, 16
+    mov     r8, 0
+    jmp     gc_copy_box          ; tail: returns rdx to our caller
+.fv_clo:
+    mov     rsi, rdx
+    mov     rcx, 24
+    mov     r8, 2
+    jmp     gc_copy_box
+.fv_pa:
+    mov     rsi, rdx
+    mov     rcx, 24
+    mov     r8, 3
+    jmp     gc_copy_box
+
+; gc_forward_env(rdi=env fields ptr) → rax = new fields ptr
+gc_forward_env:
+    mov     rsi, rdi
+    mov     rcx, 32
+    mov     r8, 5
+    call    gc_copy_box
+    mov     rax, rdx
+    ret
+
+; gc_copy_box(rsi=fromspace fields ptr, rcx=size, r8=kind) → rdx = new fields ptr
+gc_copy_box:
+    mov     rax, [rsi-8]         ; forwarding header
+    test    rax, 1
+    jz      .cb_fresh
+    and     rax, -8              ; already copied → recover newptr
+    mov     rdx, rax
+    ret
+.cb_fresh:
+    mov     rax, [gc_tofree]
+    add     rax, 7
+    and     rax, -8              ; align dst base to 8
+    mov     qword [rax], 0       ; fresh (not-forwarded) header
+    lea     rdx, [rax+8]         ; dst fields ptr (return value)
+    mov     r9, rdx
+    or      r9, 1
+    mov     [rsi-8], r9          ; install forwarding in fromspace header
+    mov     r9, [gc_wktop]
+    mov     rax, gcwork_end
+    cmp     r9, rax
+    jae     _start.heapfull      ; worklist overflow → halt loudly
+    mov     [r9], r8             ; enqueue (kind, dst fields)
+    mov     [r9+8], rdx
+    add     r9, 16
+    mov     [gc_wktop], r9
+    push    rdx
+    mov     rdi, rdx
+    rep     movsb                ; copy `rcx` bytes fromspace → tospace
+    mov     [gc_tofree], rdi
+    pop     rdx
+    ret
+
+; gc_scan(rdi=kind, rsi=tospace fields ptr): forward this object's pointers
+gc_scan:
+    cmp     rdi, 0
+    je      .sc_str
+    cmp     rdi, 2
+    je      .sc_clo
+    cmp     rdi, 3
+    je      .sc_pa
+    cmp     rdi, 5
+    je      .sc_env
+    ret
+.sc_str:                         ; [len][ptr]: copy the owned DATA blob, fix ptr
+    mov     rcx, [rsi]
+    test    rcx, rcx
+    je      .sc_ret              ; empty string: ptr unused
+    mov     rdx, [rsi+8]
+    mov     rax, heap
+    cmp     rdx, rax
+    jb      .sc_ret              ; below heap → static, leave
+    mov     rax, progbuf
+    cmp     rdx, rax
+    jae     .sc_ret              ; in progbuf → leave (PUSHS literal)
+    push    rsi
+    mov     rdi, [gc_tofree]
+    mov     [rsi+8], rdi         ; STRDESC.ptr := new data location
+    mov     rsi, rdx
+    rep     movsb
+    mov     [gc_tofree], rdi
+    pop     rsi
+    ret
+.sc_clo:                         ; [param][body][env]: param/body → progbuf
+    mov     rdi, [rsi+16]
+    test    rdi, rdi
+    je      .sc_ret
+    push    rsi
+    call    gc_forward_env
+    pop     rsi
+    mov     [rsi+16], rax
+    ret
+.sc_pa:                          ; [id][a1tag][a1payload]
+    mov     rdi, [rsi+8]
+    mov     rdx, [rsi+16]
+    push    rsi
+    call    gc_forward_value
+    pop     rsi
+    mov     [rsi+16], rdx
+    ret
+.sc_env:                         ; [name][valtag][valpayload][next]
+    mov     rdi, [rsi+8]
+    mov     rdx, [rsi+16]
+    push    rsi
+    call    gc_forward_value
+    pop     rsi
+    mov     [rsi+16], rdx
+    mov     rdi, [rsi+24]
+    test    rdi, rdi
+    je      .sc_ret
+    push    rsi
+    call    gc_forward_env
+    pop     rsi
+    mov     [rsi+24], rax
+.sc_ret:
+    ret
 
 ; ── read-only data ──
 heapmsg:       db "secd: heap exhausted", 10
@@ -1369,6 +1649,8 @@ str_lt:        db "lt", 0
 str_inteq:     db "int_eq", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
+gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect
+gc_wktop:      dq 0              ; GC: worklist stack top (into gcwork)
 
 ; The operand and dump stacks scale with recursion depth — this SECD machine
 ; does no tail-call optimisation, so a deep (even tail-) recursion such as
@@ -1379,9 +1661,21 @@ ostack   equ $$ + filesize
 dstack   equ ostack  + 0x1000000
 pathbuf  equ dstack  + 0x1000000
 fsbuf    equ pathbuf + 0x1000
-heap     equ fsbuf   + 0x1000
-progbuf  equ heap     + 0x30000000   ; ~768 MiB bump heap [heap, progbuf)
-heaplimit equ progbuf - 0x4100000    ; dispatch-loop guard fires ~65 MiB early,
-                                     ; covering the largest single allocation
-                                     ; (read_file's 64 MiB read + descriptor)
-                                     ; with slack before progbuf
+gcwork   equ fsbuf   + 0x1000        ; GC worklist: 16 MiB = 1 Mi (kind,ptr) entries
+gcwork_end equ gcwork + 0x1000000
+; The bump heap is split into two equal semispaces for a copying collector.
+; Allocation bumps r15 inside the active half; at a collect the live set is
+; copied into the other half (see gc). 768 MiB each — ~703 MiB usable before
+; the GC/exhaustion margin: a single semispace matches the old non-GC bump
+; heap's capacity, so any workload that fit before GC still fits in one half
+; even with zero reclamation (compiling secd.la peaks at ~320 MiB live; the
+; earlier 384 MiB split left only ~319 MiB usable and exhausted at that peak).
+; All regions are lazily mapped, so the larger reservation costs nothing until
+; touched.
+heap     equ gcwork_end              ; semispaces: low [heap, semimid), high [semimid, progbuf)
+semimid  equ heap    + 0x30000000    ; 768 MiB: boundary between the two semispaces
+progbuf  equ heap    + 0x60000000    ; 1536 MiB total; program stream loads at progbuf
+margin   equ 0x4100000               ; 65 MiB: covers the largest single allocation
+                                     ; (read_file's 64 MiB read + descriptor); the
+                                     ; dispatch loop collects this far before a
+                                     ; semispace end, and halts if still short after
