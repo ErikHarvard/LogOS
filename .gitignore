@@ -6,6 +6,9 @@
 # eval.la's self-reconstruction (regenerated each run)
 /eval_reconstructed.la
 
+# specpipe.la's generated math module (regenerated each run)
+/math_generated.la
+
 # native binaries / artifacts emitted by elf.la, secd.la, codegen.la (regenerated each run)
 /secd
 /logos_native

@@ -324,6 +324,37 @@ else
     exit 1
 fi
 
+say "Spec → implementation pipeline (specpipe.la: GENERATE / META_DEBUG / DEPLOY)"
+# specpipe.la holds a SPEC — a list of (name, definition, test-cases) triples —
+# GENERATEs .la source from it, DEPLOYs it (write_file + re-read + verify), and
+# runs META_DEBUG (each glyph's test cases) on every generated glyph. We check
+# the in-process verification AND independently run the written module on the
+# host: spec → a written, verified, working module in one call.
+rm -f math_generated.la
+PIPE="$(./tiny_host specpipe.la 2>/dev/null)"
+ok=1
+printf '%s\n' "$PIPE" | grep -qx "  ADD: PASS"      || { echo "FAIL  pipeline: ADD not verified"; ok=0; }
+printf '%s\n' "$PIPE" | grep -qx "  SUBTRACT: PASS" || { echo "FAIL  pipeline: SUBTRACT not verified"; ok=0; }
+printf '%s\n' "$PIPE" | grep -qx "  MULTIPLY: PASS" || { echo "FAIL  pipeline: MULTIPLY not verified"; ok=0; }
+printf '%s\n' "$PIPE" | grep -q "on-disk file == generated source: T" || { echo "FAIL  pipeline: written file != generated source"; ok=0; }
+printf '%s\n' "$PIPE" | grep -q "module VERIFIED"   || { echo "FAIL  pipeline: module not verified"; ok=0; }
+[ -f math_generated.la ] || { echo "FAIL  pipeline: math_generated.la was not written"; ok=0; }
+# Independently run the GENERATED module on the host (it is real .la source):
+# ADD(MULTIPLY(6)(7))(SUBTRACT(10)(8)) = 42 + 2 = 44.
+cp math_generated.la /tmp/mathmod.la 2>/dev/null
+printf 'glyph MAIN = print(int_to_str(ADD(MULTIPLY(6)(7))(SUBTRACT(10)(8))))\n' >> /tmp/mathmod.la
+GENOUT="$(./tiny_host /tmp/mathmod.la 2>/dev/null)"
+[ "$GENOUT" = "44" ] || { echo "FAIL  pipeline: generated module ran wrong ($GENOUT != 44)"; ok=0; }
+rm -f /tmp/mathmod.la math_generated.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  pipeline: GENERATE emits .la source from a SPEC"
+    echo "PASS  pipeline: DEPLOY writes the module + META_DEBUG verifies every generated glyph (ADD/SUBTRACT/MULTIPLY PASS)"
+    echo "PASS  pipeline: the generated module runs on the host (ADD(MUL(6)(7))(SUB(10)(8)) = 44)"
+else
+    printf '%s\n' "$PIPE"
+    exit 1
+fi
+
 say "Testing self-hosted parser (parser.la parses kernel.la)"
 OUT="$(./tiny_host parser.la 2>/dev/null)"
 if printf '%s\n' "$OUT" | grep -qF "Kernel parse: IIIIIIIII glyph(s)"; then
