@@ -298,7 +298,7 @@ glyph PREP0 = la xs. CONS(0)(xs)
 
 glyph SPEC_FIN    = CONS(TC(la g. BOOL_STR(g(5)(3)))("T"))(CONS(TC(la g. BOOL_STR(g(5)(7)))("F"))(NIL))
 glyph SPEC_VEC    = CONS(TC(la g. BOOL_STR(g(3)(IS_INT)(V3)))("T"))(CONS(TC(la g. BOOL_STR(g(2)(IS_INT)(V3)))("F"))(NIL))
-glyph SPEC_PISUCC = CONS(TC(la g. BOOL_STR(g(3)(PREP0)(V3)))("T"))(NIL)
+glyph SPEC_PISUCC = CONS(TC(la g. BOOL_STR(g(3)(PREP0)(V3)))("T"))(CONS(TC(la g. BOOL_STR(g(3)(ID)(V3)))("F"))(NIL))
 
 # ── Type System Phase T4: TYPECHECK = the autological check ───────────
 # TYPECHECK(A)(x) judges whether x inhabits type A — "well-typed" or
