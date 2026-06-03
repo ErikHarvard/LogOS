@@ -878,6 +878,18 @@ _start:
     je      .st_zero
     dec     rcx                  ; new length
     inc     rsi                  ; source after first byte
+    ; guard: rcx data bytes + 24-byte STRDESC must fit in the active semispace
+    ; (str_tail's copy is input-proportional and otherwise unbounded — mirror
+    ; concat's check so a large tail can't overrun the heap into the next region)
+    mov     rax, rcx
+    add     rax, r15
+    add     rax, 24
+    mov     r10, progbuf         ; space_end = semimid (low half) or progbuf (high)
+    mov     r11, semimid
+    cmp     r15, r11
+    cmovb   r10, r11
+    cmp     rax, r10
+    jae     .heapfull
     mov     rbp, r15             ; DATA blob start
     mov     rdx, rcx             ; remember length
 .st_cp:
