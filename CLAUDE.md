@@ -404,7 +404,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 6807 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 6869 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the

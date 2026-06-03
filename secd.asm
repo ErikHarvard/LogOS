@@ -546,7 +546,7 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi32
-    jmp     .halt
+    jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
     jmp     .pushbi
@@ -1679,6 +1679,16 @@ _start:
     mov     rdi, 1
     syscall
 
+.unbound:                        ; a name resolved as neither env, glyph, nor builtin
+    mov     rax, 1               ; — halt loudly (exit 1), like the C host / eval.la /
+    mov     rdi, 2               ;   RUN_BYTES / RUN_SM, instead of silently exit(0)
+    mov     rsi, unboundmsg
+    mov     rdx, unboundmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 ; ═══════════════════════════════════════════════════════════════════
 ;  Copying garbage collector — two semispaces over [heap, progbuf):
 ;  low [heap, semimid), high [semimid, progbuf). Triggered from .loop
@@ -1897,6 +1907,8 @@ stackmsg:      db "secd: stack overflow", 10
 stackmsg_len   equ $ - stackmsg
 pathmsg:       db "secd: path too long", 10
 pathmsg_len    equ $ - pathmsg
+unboundmsg:    db "secd: unbound variable", 10
+unboundmsg_len equ $ - unboundmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0
