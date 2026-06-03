@@ -196,6 +196,34 @@ push_dec:
     add     r15, 16
     ret
 
+; fmt_u_heap: rax = value ≥ 0 → its decimal digits written at [r15], r15
+; advanced past them. Clobbers rax/rcx/rdx/r8; preserves rbp/r9/r11. Used by
+; .bi_pipe to format the two fds into "<rfd> <wfd>".
+fmt_u_heap:
+    test    rax, rax
+    jnz     .fuh_nz
+    mov     byte [r15], 48       ; '0'
+    inc     r15
+    ret
+.fuh_nz:
+    mov     rcx, 10
+    xor     r8, r8               ; digit count
+.fuh_div:
+    xor     rdx, rdx
+    div     rcx
+    add     dl, 48
+    push    rdx
+    inc     r8
+    test    rax, rax
+    jnz     .fuh_div
+.fuh_pop:
+    pop     rdx
+    mov     [r15], dl
+    inc     r15
+    dec     r8
+    jnz     .fuh_pop
+    ret
+
 _start:
     mov     rax, 2
     mov     rdi, fname
@@ -508,6 +536,16 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi30
+    mov     rsi, rbp
+    mov     rdi, str_pipe
+    call    strcmp
+    test    eax, eax
+    je      .bi31
+    mov     rsi, rbp
+    mov     rdi, str_read
+    call    strcmp
+    test    eax, eax
+    je      .bi32
     jmp     .halt
 .bi0:
     mov     r11, 0
@@ -601,6 +639,12 @@ _start:
     jmp     .pushbi
 .bi30:
     mov     r11, 30
+    jmp     .pushbi
+.bi31:
+    mov     r11, 31
+    jmp     .pushbi
+.bi32:
+    mov     r11, 32
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -733,6 +777,10 @@ _start:
     je      .bi_sleep
     cmp     r11, 30
     je      .bi_error
+    cmp     r11, 31
+    je      .bi_pipe
+    cmp     r11, 32
+    je      .mkpa                ; read is curried: read(fd)(maxbytes)
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -776,6 +824,8 @@ _start:
     je      .bi_lt2
     cmp     r10, 27
     je      .bi_inteq2
+    cmp     r10, 32
+    je      .bi_read2
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
@@ -1415,6 +1465,83 @@ _start:
     mov     rdi, 1               ; exit 1
     syscall
 
+.bi_pipe:                        ; pipe("!") → "<rfd> <wfd>" (two decimal fds)
+    ; pipe(fds): fds[0]=read end, fds[1]=write end. Both inherited across fork,
+    ; so a parent creates the channel once, forks, and the child writes the end
+    ; the parent reads. The two fds are returned as one space-separated string;
+    ; the IPC layer splits it. fds land in pathbuf (scratch), then are formatted
+    ; into a heap string.
+    mov     rdi, pathbuf
+    mov     rax, 22              ; pipe(fds)
+    syscall
+    test    rax, rax
+    js      .pipe_fail
+    mov     rbp, r15             ; result bytes start
+    movsxd  rax, dword [pathbuf]      ; read fd
+    call    fmt_u_heap
+    mov     byte [r15], 32       ; ' '
+    inc     r15
+    movsxd  rax, dword [pathbuf+4]    ; write fd
+    call    fmt_u_heap
+    mov     rdx, r15
+    sub     rdx, rbp             ; length
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx
+    mov     [r15+8], rbp
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+.pipe_fail:
+    mov     rax, -1              ; "-1" on failure
+    call    push_dec
+    jmp     .loop
+
+.bi_read2:                       ; read(fd)(maxbytes) → up to maxbytes from fd
+    ; raw read(2) on a fd — the streaming counterpart of write. Blocks until
+    ; data is available (a pipe RECV waits for its SEND), returns the bytes read
+    ; as a binary-safe string. maxbytes is clamped to 64 MiB so the read stays
+    ; within the heap margin, exactly like read_file.
+    mov     rdi, rbp             ; fd descriptor
+    call    desc_atoi
+    mov     r11, rax             ; fd (desc_atoi clobbers r10 but not r11)
+    mov     rdi, r9              ; maxbytes descriptor
+    call    desc_atoi
+    mov     rdx, rax             ; count
+    mov     rax, 0x4000000       ; clamp to 64 MiB
+    cmp     rdx, rax
+    cmova   rdx, rax
+    mov     rdi, r11             ; fd
+    mov     rsi, r15             ; buffer = heap
+    mov     rax, 0               ; read
+    syscall
+    test    rax, rax
+    js      .read_empty          ; error/-errno → empty string
+    mov     rdx, rax             ; bytes read = length
+    mov     r10, r15             ; content start
+    add     r15, rax             ; advance past the data
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx
+    mov     [r15+8], r10
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+.read_empty:
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 0       ; len 0
+    mov     [r15+8], r15
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     mov     rdi, r9
     call    desc_atoi
@@ -1797,6 +1924,8 @@ str_inteq:     db "int_eq", 0
 str_reap:      db "reap", 0
 str_sleep:     db "sleep", 0
 str_error:     db "error", 0
+str_pipe:      db "pipe", 0
+str_read:      db "read", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect

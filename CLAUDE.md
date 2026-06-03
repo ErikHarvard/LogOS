@@ -498,8 +498,11 @@ no meaning under the C host, which runs the other engines): `mount(target)(fstyp
 `fork("!")` (→ child pid in the parent, `"0"` in the child), `execve(path)`
 (replaces the image; `argv=[path]`, empty env; returns `-errno` only on
 failure), `waitpid(pid)` (→ that child's exit *status*), `exit(code)`,
-`write(fd)(s)`, `open(path)(flags)`, `close(fd)`. Integers cross the LA boundary
-as decimal strings. Each path/fstype argument is copied into a fixed 4 KiB
+`write(fd)(s)`, `read(fd)(maxbytes)` (raw `read(2)`, blocks for data, returns
+the bytes as a binary-safe string; `maxbytes` clamped to 64 MiB), `open(path)(flags)`,
+`close(fd)`, and `pipe("!")` (→ `"<rfd> <wfd>"`, the read and write fds of a fresh
+pipe as a space-separated string — both inherited across `fork`). Integers cross
+the LA boundary as decimal strings. Each path/fstype argument is copied into a fixed 4 KiB
 buffer (`pathbuf`/`fsbuf`); the copy is **bounds-checked** — a path ≥ 4096 bytes
 halts loudly with `secd: path too long` rather than overrunning the buffer into
 `fsbuf` and the GC worklist.
@@ -544,29 +547,35 @@ still halts loudly via the stack guard (it is never optimised away).
 
 The Codex's Layer 4 (`LogosIPC`, the OS's "nervous system" — a sovereign
 replacement for D-Bus: typed, Γ-seal-encrypted, capability-gated) begins here as
-a minimal seed: **typed point-to-point messages on a named channel**, using only
-existing syscalls. `logosipc.la` is a module (`export CHANNEL SEND RECV MSG_TYPE
-MSG_BODY MSG_OK`) with the Church/`Z`/`IF` helpers private:
+a minimal seed: **typed point-to-point messages on a channel**. `logosipc.la` is
+a module (`export CHANNEL SEND RECV MSG_TYPE MSG_BODY MSG_OK`) with the
+Church/`Z`/`IF` helpers private:
 
 - a **message** is `TYPE <NUL> BODY` (binary-safe; the tag carries no NUL);
 - `SEND(chan)(type)(body)` places a typed message on a channel, `RECV(chan)`
   takes it off; `MSG_TYPE` / `MSG_BODY` decode it and `MSG_OK(msg)(type)` is the
   minimal schema check (a receiver accepts only the types it expects);
 - the **typing layer is independent of the transport.** `CHANNEL`/`SEND`/`RECV`
-  are the only three lines that name the transport — here a file under `/tmp`
-  via `read_file`/`write_file`, because the VM has no `socket`/`pipe`/`read(fd)`
-  syscalls yet. Swapping in a pipe or Unix-domain socket later touches only
-  those lines, not the message format or the dispatch helpers.
+  are the only lines that name the transport. The channel is now a **pipe**:
+  `CHANNEL` is `pipe("!")` (`"<rfd> <wfd>"`), `SEND` writes the encoded message
+  to the write fd, `RECV` `read`s the read fd (blocking until the `SEND`
+  arrives). The fd split is inlined into those three lines, so the swap from the
+  earlier file-backed transport (`read_file`/`write_file`) touched *only* them —
+  the `ENCODE` / `MSG_*` typed layer is byte-for-byte unchanged, which is the
+  point of the transport-agnostic design. (Because a pipe must be created once
+  and shared across `fork`, a program binds the channel once — `(la chan. …)
+  (CHANNEL(…))` — before forking.)
 
-`build.sh` exercises it twice: (1) on the **host**, `ipc_demo.la`
-`import`s the module and round-trips a typed message (`SEND` then `RECV`,
-decoding type/body and `MSG_OK`-dispatching); (2) on the **native VM**, the
-real LogosInit pattern — `fork` a worker child that `SEND`s a typed message and
-exits, then init `waitpid`s and `RECV`s it. (The VM has no `import` yet, so the
-VM test inlines the module's glyphs minus the `export` line — see the module
-system's cross-engine note.) Deferred to later layers, per the Codex: Γ-seal
-encryption, runtime schema validation, capability gating, and socket
-multiplexing (point-to-point / broadcast / stream routing).
+`build.sh` exercises it two ways: (1) on the **host**, `ipc_demo.la` `import`s
+the module and decodes a wire message with `MSG_TYPE`/`MSG_BODY`/`MSG_OK` (the
+engine-independent typed layer — `SEND`/`RECV` themselves are now VM-only, since
+`pipe`/`read` are VM builtins); (2) on the **native VM**, the real LogosInit
+pattern — init creates the pipe, `fork`s a worker that `SEND`s a typed message
+and exits, then init `RECV`s it (read blocks for the message), decodes it, and
+reaps. (The VM has no `import` yet, so the VM test inlines the module minus its
+`export` line — see the module system's cross-engine note.) Deferred to later
+layers, per the Codex: Γ-seal encryption, runtime schema validation, capability
+gating, and socket multiplexing (point-to-point / broadcast / stream routing).
 
 ### Evaluation
 

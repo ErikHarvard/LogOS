@@ -34,11 +34,16 @@ glyph NUL = chr("0")          # the field separator (messages are binary-safe)
 glyph ENCODE = la type. la body. concat(type)(concat(NUL)(body))
 
 # ── transport (the only part that changes for a pipe/socket) ──────────
-# A channel is a named endpoint. Here it is a file under /tmp; later it
-# becomes a socket/pipe fd. The TYPED layer below never sees the change.
-glyph CHANNEL = la name. concat("/tmp/logos_ipc_")(name)
-glyph SEND    = la chan. la type. la body. write_file(chan)(ENCODE(type)(body))
-glyph RECV    = la chan. read_file(chan)
+# A channel is now a PIPE: `pipe("!")` returns "<rfd> <wfd>". Create the
+# channel ONCE before forking so both processes inherit the fds; the child
+# writes the end the parent reads. SEND extracts the write fd (after the
+# space) and writes the encoded message; RECV extracts the read fd (before
+# the space) and reads it back (read blocks until the SEND arrives). The fd
+# split is inlined here so ONLY these three lines change from the
+# file-backed version — the ENCODE / MSG_* typed layer below is untouched.
+glyph CHANNEL = la name. pipe("!")
+glyph SEND    = la chan. la type. la body. write((Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. IF(str_eq(str_head(s))(" "))(la _. str_tail(s))(la _. self(str_tail(s))))))(chan))(ENCODE(type)(body))
+glyph RECV    = la chan. read((Z(la self. la acc. la s. IF(str_eq(s)(""))(la _. acc)(la _. IF(str_eq(str_head(s))(" "))(la _. acc)(la _. self(concat(acc)(str_head(s)))(str_tail(s))))))("")(chan))("4096")
 
 # ── typed message layer (transport-independent) ──────────────────────
 # MSG_TYPE(msg): the type tag — the bytes before the first NUL.

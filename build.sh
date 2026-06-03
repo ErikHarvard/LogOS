@@ -228,20 +228,19 @@ else
     exit 1
 fi
 
-say "LogosIPC: typed message bus (import + round-trip)"
-# ipc_demo.la imports the logosipc module and round-trips a typed message
-# through a named channel: SEND a (type,body), RECV it, decode the type and
-# body, and MSG_OK-dispatch on the type. (The two-process LogosInit version
-# runs on the native VM — see the LogosInit section below.)
-rm -f /tmp/logos_ipc_demo
+say "LogosIPC: typed message layer (import + decode)"
+# The transport is now pipe-based (SEND/RECV use the VM-only pipe/read/write
+# syscalls — the live channel runs on the native VM, see the LogosInit section).
+# This host demo exercises the engine-independent part: ipc_demo.la imports the
+# module and decodes a wire message (TYPE <NUL> BODY) with MSG_TYPE/MSG_BODY,
+# then MSG_OK-dispatches on the type.
 OUT="$(./tiny_host ipc_demo.la 2>/dev/null)"
 ok=1
 printf '%s\n' "$OUT" | grep -qxF "type:     greeting"   || { echo "FAIL  ipc: MSG_TYPE";        ok=0; }
 printf '%s\n' "$OUT" | grep -qxF "body:     hello, bus" || { echo "FAIL  ipc: MSG_BODY";        ok=0; }
 printf '%s\n' "$OUT" | grep -qxF "typed-ok: yes"        || { echo "FAIL  ipc: MSG_OK dispatch"; ok=0; }
-rm -f /tmp/logos_ipc_demo
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  import(\"logosipc.la\"): SEND/RECV a typed message; MSG_TYPE/MSG_BODY/MSG_OK decode it"
+    echo "PASS  import(\"logosipc.la\"): MSG_TYPE/MSG_BODY/MSG_OK decode a typed message"
 else
     exit 1
 fi
@@ -426,7 +425,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "6321" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6321)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "6761" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 6761)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -670,36 +669,38 @@ else
     echo "FAIL  respawn throttle: $TICKS respawns in 4s (want a small bounded handful, not a fork-storm)"; exit 1
 fi
 
-# ── LogosIPC on the native VM: init forks a worker that messages back ──
-# The real (VM-native) LogosInit pattern: fork a child worker, the worker SENDs
-# a typed message on a named channel and exits, init reaps it then RECVs and
-# decodes the message. logosipc.la is inlined here (its `export` line stripped)
-# because the native VM has no `import` yet; the module's glyphs are reused
-# verbatim. Uses only existing syscalls (fork/waitpid/exit + read_file/write_file).
+# ── LogosIPC over a pipe on the native VM: init forks a worker that messages back ──
+# The real (VM-native) LogosInit pattern, now over a PIPE: init creates the
+# channel ONCE (pipe → "<rfd> <wfd>"), forks; the worker SENDs a typed message
+# through the pipe and exits; init RECVs it (read blocks until the SEND arrives),
+# decodes type/body, then reaps. The channel must be bound once before the fork
+# so both processes share the same pipe fds — hence (la chan. … )(CHANNEL(…)).
+# logosipc.la is inlined (its `export` line stripped) because the VM has no
+# `import` yet; the module's glyphs are reused verbatim.
 grep -v '^export' logosipc.la > /tmp/t_ipc.la
 cat >> /tmp/t_ipc.la <<'LAEOF'
 glyph SEQ = la a. la b. b
-glyph CH  = CHANNEL("init")
-glyph WORKER = la _. SEQ(SEND(CH)("status")("worker-ready"))(exit("0"))
-glyph MAIN =
+glyph WORKER = la chan. SEQ(SEND(chan)("status")("worker-ready"))(exit("0"))
+glyph MAIN = (la chan.
     (la pid. IF(str_eq(pid)("0"))
-        (la _. WORKER("!"))
-        (la _. SEQ(waitpid(pid))(
-            (la msg. SEQ(print(concat("init recv type: ")(MSG_TYPE(msg))))(
-                         print(concat("init recv body: ")(MSG_BODY(msg)))))
-            (RECV(CH)))))
-    (fork("!"))
+        (la _. WORKER(chan))
+        (la _. (la msg.
+            SEQ(print(concat("init recv type: ")(MSG_TYPE(msg))))(
+            SEQ(print(concat("init recv body: ")(MSG_BODY(msg))))(
+                waitpid(pid))))
+          (RECV(chan))))
+    (fork("!")))
+    (CHANNEL("init"))
 LAEOF
-rm -f /tmp/logos_ipc_init
 cp /tmp/t_ipc.la logos_source.la; cp compiler.bin logos_program.bin
 ./runner >/dev/null 2>&1                 # native-compile the inlined program
 IPCOUT="$(./runner 2>/dev/null)"
-rm -f /tmp/t_ipc.la /tmp/logos_ipc_init
+rm -f /tmp/t_ipc.la
 ok=1
 printf '%s\n' "$IPCOUT" | grep -qxF "init recv type: status"       || { echo "FAIL  ipc(VM): init did not receive the typed message"; ok=0; }
 printf '%s\n' "$IPCOUT" | grep -qxF "init recv body: worker-ready" || { echo "FAIL  ipc(VM): message body wrong";                  ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  LogosIPC on the VM: init forked a worker that sent a typed message back through the bus"
+    echo "PASS  LogosIPC over a pipe: init forked a worker that sent a typed message back through the channel"
 else
     echo "  (got: $IPCOUT)"; exit 1
 fi
