@@ -503,7 +503,7 @@ static int is_builtin(const char *name) {
         || strcmp(name, "concat") == 0 || strcmp(name, "str_head") == 0
         || strcmp(name, "str_tail") == 0 || strcmp(name, "str_eq") == 0
         || strcmp(name, "chr") == 0 || strcmp(name, "ord") == 0
-        || strcmp(name, "write_exec") == 0
+        || strcmp(name, "write_exec") == 0 || strcmp(name, "str_len") == 0
         /* native integers (Form g_8, tau_Q): arithmetic is Ontodirection (>),
          * an operator acting upon operands. */
         || strcmp(name, "add") == 0 || strcmp(name, "sub") == 0
@@ -743,6 +743,16 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         int b = v->len ? (unsigned char)v->s[0] : 0;
         char buf[16];
         snprintf(buf, sizeof buf, "%d", b);
+        return mkstr(buf);
+    }
+    if (strcmp(name, "str_len") == 0) {
+        /* byte length of a (binary-safe) string -> decimal string. Strings
+         * carry their length, so this is O(1); computing it in Lingua Adamica
+         * would be O(n) str_tail walks. The bundler needs it to patch p_filesz. */
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "str_len: argument is not a string\n"); exit(1); }
+        char buf[32];
+        snprintf(buf, sizeof buf, "%zu", v->len);
         return mkstr(buf);
     }
     if (is_int_binop(name)) {

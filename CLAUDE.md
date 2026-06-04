@@ -24,6 +24,7 @@ host program, applied to itself, reproduces itself.
 | `elf.la`             | Albedo Stage 1: assembles a minimal static x86-64 ELF executable from Lingua Adamica (`chr` + `concat` + `write_exec`) and emits a runnable native binary that speaks the Word with no host in the loop. |
 | `secd.asm` / `secd.la` | Albedo Stage 2: the native SECD machine hand-written in x86-64 (`secd.asm`, a self-contained `nasm -f bin` ELF) — S/E/C/D, a bump heap, a glyph table, and all builtins lowered to syscalls. It loads a compiled stream from `logos_program.bin` and runs it. `secd.la` emits the VM. |
 | `codegen.la`         | Albedo Stage 2 codegen: parses a program and lowers each glyph to the native SECD instruction encoding, writing `logos_program.bin`. Arbitrary programs compile and run natively, matching `RUN_SM`. |
+| `bundle.la`          | Albedo Stage 5: fuses the VM image and a compiled program stream into ONE self-contained native ELF (appends the stream, patches `p_filesz`), in Lingua Adamica. Output runs on the bare OS with no host and no separate stream file; a bundled `kernel.la` self-replicates. |
 | `metadebug.la`       | Self-verifying LogOS (seed Autological Proof System): a spec table plus `DEBUG`/`META_DEBUG` machinery sharing one glyph table, so the debugger can verify every glyph against its executable test cases. |
 | `specpipe.la`        | A specification → implementation pipeline: a `SPEC` of `(name, DEF(sig)(src)(impl), tests)` entries; `GENERATE` emits `.la` source, `META_DEBUG` runs each glyph's tests, `DEPLOY` writes, re-reads, and verifies a module in one call. |
 | `strutil_spec.la`    | A string-utilities module (`STARTS_WITH`/`ENDS_WITH`/`CONTAINS`/`SPLIT`/`JOIN`/`REPLACE`) written as a `SPEC` and produced by `import("specpipe.la")` — a self-contained, verified module from a spec. |
@@ -78,6 +79,9 @@ Expressions:
 - `chr(n)` — decimal-string `n` (0..255) → a one-byte string; how a program
   spells an arbitrary byte (including NUL) to assemble binary.
 - `ord(s)` — first byte of `s` → its decimal string (inverse of `chr`).
+- `str_len(s)` — byte length of `s` as a decimal string. O(1) (strings carry
+  their length), so it is cheap on multi-MiB binaries where an LA `str_tail`
+  count would be O(n); `bundle.la` uses it to patch the ELF `p_filesz`.
 - `write_exec(p)(c)` — like `write_file`, but marks the file executable
   (`0755`); curried. The primitive that lets a program emit a runnable binary.
 
@@ -445,7 +449,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 7217 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 7411 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -497,13 +501,37 @@ runnable and checked by `build.sh`.
   VM --(native)--> runs any program (kernel.la speaks + replicates)
   ```
 
-  Honest remaining limits: the native artifact is a fixed VM + per-program
-  stream file (not a self-contained executable per program — that needs
-  ELF-length patching, deliberately avoided); and the *first* seed still comes
-  from `tiny_host` + `nasm` (the irreducible bootstrap origin — the loop is
-  closed thereafter, not the genesis). (The heap is no longer a limit: the VM
-  gained a two-semispace copying GC — see the GC section below — so long-running
-  programs run in bounded memory.)
+  Honest remaining limits: the *first* seed still comes from `tiny_host` +
+  `nasm` (the irreducible bootstrap origin — the loop is closed thereafter, not
+  the genesis). (The heap is no longer a limit: the VM gained a two-semispace
+  copying GC — see the GC section below — so long-running programs run in
+  bounded memory. And the program no longer has to ship as a separate stream
+  file — see Stage 5.)
+
+- **Stage 5 — self-contained per-program executables (`bundle.la`), done.**
+  A program need no longer ship as a VM plus a separate `logos_program.bin`:
+  `bundle.la` fuses the two into **one** native binary. The VM's `_start`
+  checks the first byte at `progembed` (the file offset equal to the VM's own
+  length, which aliases the operand-stack base): if a stream was appended there
+  it is copied up into `progbuf` and run directly; otherwise the VM falls back
+  to opening `logos_program.bin`, so the **same** VM image serves both the
+  generic loader and every bundle. Bundling is therefore: append the compiled
+  stream to the VM file and patch the single ELF program header's `p_filesz`
+  (8 little-endian bytes at file offset 96) to `len(VM)+len(stream)` so the
+  kernel maps the appended bytes — `p_memsz` (already ≈1.5 GiB) is untouched,
+  and `progbuf`/heap/GC are unchanged (the program region stays at the top of
+  the address space, so no GC invariant moves). `bundle.la` does this byte
+  surgery in Lingua Adamica (`TAKE`/`DROP`/`LE` over binary-safe strings, using
+  the new `str_len` builtin for the lengths) and `write_exec`s the 0755 result.
+  Because `copy_self` replicates `/proc/self/exe` — the *whole* bundle — a
+  bundled `kernel.la` is a **self-contained, self-replicating** binary: it
+  speaks the Word and breeds a byte-identical child. `build.sh` runs bundled
+  `kernel.la` and `greetapp.la` standalone on the bare OS (with no stream file
+  present), and — Stage B — produces a bundle by running `bundle.la` **on the
+  VM** (compiled by `codegen.la`), so even *making* a self-contained binary
+  needs no `tiny_host` in the loop. Honest limit: the embedded stream is capped
+  at `progcap` (5 MiB, as for the file loader) and lives twice in memory at
+  runtime (the file-mapped copy + the `progbuf` copy — negligible).
 
   *Drift guard:* `secd.la` embeds the exact `nasm -f bin secd.asm` output;
   `build.sh` checks byte-identity when `nasm` is present, so `secd.asm` stays

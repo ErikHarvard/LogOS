@@ -1,0 +1,64 @@
+# ═══════════════════════════════════════════════════════════════════
+#  bundle.la — Albedo: bundle the VM + a program stream into ONE
+#  self-contained native executable.
+#
+#  The SECD VM (`logos_secd`) is a fixed flat ELF that, at startup, copies
+#  an embedded program stream up into its working buffer IF one is present
+#  (see secd.asm `_start`: it tests the first byte at `progembed`, the file
+#  offset == the VM's own length). A program is "embedded" simply by
+#  appending its compiled stream to the VM file — and patching the ELF
+#  program header's `p_filesz` so the kernel maps the appended bytes.
+#
+#  So bundling is: take the VM bytes, overwrite the 8-byte `p_filesz` field
+#  (at file offset 96 — past the 64-byte ELF header + the p_type/p_flags/
+#  p_offset/p_vaddr/p_paddr fields of the single program header) with
+#  len(VM)+len(stream), then concatenate the stream. write_exec marks the
+#  result 0755. The output runs on the bare OS with no host and no separate
+#  stream file — copy_self replicates the whole bundle, so the app is also
+#  self-replicating.
+#
+#  Inputs  (fixed names):
+#    logos_secd          — the VM image (emitted by secd.la)
+#    logos_embed.bin     — the compiled program stream to embed (codegen.la
+#                          writes logos_program.bin; copy it to logos_embed.bin).
+#                          A distinct name so that when bundle.la itself runs ON
+#                          the VM (Stage B), the VM's own code (logos_program.bin)
+#                          and the stream-to-embed do not collide.
+#  Output:
+#    logos_app           — the self-contained executable
+#
+#  Lengths come from the str_len builtin (strings are length-carrying, so
+#  it is O(1)); computing them by str_tail recursion would be O(n) on a
+#  multi-MiB image. All byte surgery is binary-safe (the VM image is full
+#  of NULs), which is exactly what length-carrying strings are for.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la cond. la t. la f. cond(t)(f)("!")
+
+# TAKE(n)(s) — the first n bytes of s.  DROP(n)(s) — s without its first n.
+glyph TAKE = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _.
+        concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph DROP = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _.
+        self(sub(n)(1))(str_tail(s))))
+
+# LE(k)(n) — n as k little-endian bytes (low byte first).
+glyph LE = Z(la self. la k. la n.
+    IF(int_eq(k)(0))(la _. "")(la _.
+        concat(chr(int_to_str(mod(n)(256))))(self(sub(k)(1))(div(n)(256)))))
+
+# Splice the new p_filesz (8 LE bytes) over offset 96..103 of the VM image.
+glyph PATCH_FILESZ = la vm. la newsz.
+    concat(TAKE(96)(vm))(concat(LE(8)(newsz))(DROP(104)(vm)))
+
+glyph MAIN =
+    (la vm. (la stream.
+        (la newsz.
+            SEQ(write_exec("logos_app")(concat(PATCH_FILESZ(vm)(newsz))(stream)))
+               (print("bundled VM + stream -> logos_app"))
+        )(add(str_to_int(str_len(vm)))(str_to_int(str_len(stream))))
+    )(read_file("logos_embed.bin")))
+    (read_file("logos_secd"))

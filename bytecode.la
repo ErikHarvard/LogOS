@@ -341,7 +341,8 @@ glyph IS_BI_NAME = la name.
     IF(str_eq(name)("str_head"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_tail"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_eq"))(la _. TRUE)(la _.
-    IS_BI_NAME_INT(name)))))))))
+    IF(str_eq(name)("str_len"))(la _. TRUE)(la _.
+    IS_BI_NAME_INT(name))))))))))
 
 # str_eq yields Church booleans; in the VM those must be closures whose
 # bodies are BYTE instructions, so applying them runs under RUN_BYTES.
@@ -397,7 +398,8 @@ glyph APPLY_BI = la name. la val.
     IF(str_eq(name)("str_head"))(la _. VAL_STR(str_head(UNWRAP_STR(val))))(la _.
     IF(str_eq(name)("str_tail"))(la _. VAL_STR(str_tail(UNWRAP_STR(val))))(la _.
     IF(str_eq(name)("str_eq"))(la _. VAL_PA("str_eq")(val))(la _.
-    APPLY_BI_INT(name)(val)))))))))
+    IF(str_eq(name)("str_len"))(la _. VAL_STR(str_len(UNWRAP_STR(val))))(la _.
+    APPLY_BI_INT(name)(val))))))))))
 
 # Second-argument builtin dispatch.
 glyph APPLY_BI2 = la name. la v1. la v2.

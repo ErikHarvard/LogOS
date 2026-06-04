@@ -275,6 +275,38 @@ else
 fi
 rm -f /tmp/xi_eval.la /tmp/xi_bc.la /tmp/xi_sm.la
 
+say "str_len builtin coherent across all engines"
+# str_len(s) -> decimal byte length. Strings are length-carrying, so it is O(1)
+# on every engine; the bundler (below) needs it to patch the ELF p_filesz. Like
+# the integer builtins, every engine must agree on the same program. "Lingua
+# Adamica" is 14 bytes (exercises the multi-digit decimal path).
+echo 'glyph MAIN = print(str_len("Lingua Adamica"))' > /tmp/sl.la
+ok=1
+sl () { [ "$2" = "14" ] || { echo "FAIL  str_len $1: [$2] != 14"; ok=0; }; }
+sl "C host"    "$(./tiny_host /tmp/sl.la 2>/dev/null)"
+EVM="$(grep -n '^glyph MAIN' eval.la | tail -1 | cut -d: -f1)"
+head -$((EVM-1)) eval.la > /tmp/sl_eval.la
+printf 'glyph MAIN = RUN(PARSE_PROGRAM(read_file("/tmp/sl.la")))\n' >> /tmp/sl_eval.la
+sl "eval.la"   "$(./tiny_host /tmp/sl_eval.la 2>/dev/null)"
+BCM="$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)"
+head -$((BCM-1)) bytecode.la > /tmp/sl_bc.la
+printf 'glyph MAIN = (la _. print(""))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("/tmp/sl.la"))))\n' >> /tmp/sl_bc.la
+sl "RUN_BYTES" "$(./tiny_host /tmp/sl_bc.la 2>/dev/null | sed '${/^$/d;}')"
+head -$((BCM-1)) bytecode.la > /tmp/sl_sm.la
+printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/sl.la"))))\n' >> /tmp/sl_sm.la
+sl "RUN_SM"    "$(./tiny_host /tmp/sl_sm.la 2>/dev/null | sed '${/^$/d;}')"
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/sl.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+sl "native VM" "$(./logos_secd 2>/dev/null)"
+rm -f logos_secd logos_program.bin logos_source.la /tmp/sl.la /tmp/sl_eval.la /tmp/sl_bc.la /tmp/sl_sm.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  str_len = 14 on all 5 engines (C host, eval.la, RUN_BYTES, RUN_SM, native VM)"
+else
+    exit 1
+fi
+
 say "LogosIPC: typed message layer (import + decode)"
 # The transport is now pipe-based (SEND/RECV use the VM-only pipe/read/write
 # syscalls — the live channel runs on the native VM, see the LogosInit section).
@@ -537,7 +569,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "7217" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 7217)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "7411" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 7411)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -628,6 +660,93 @@ fi
 rm -f compiler.bin vm_seed runner vm2
 
 rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_gen*.bin /tmp/runsm.la
+
+say "Self-contained per-program ELF: bundle VM + stream into ONE binary (Albedo Stage 5)"
+# bundle.la appends a compiled program stream to the VM image and patches the
+# ELF p_filesz (offset 96) so the kernel maps it; the VM's _start detects the
+# embedded stream (nonzero first byte at progembed) and runs it with no external
+# file. The result is a single executable that needs no host and no .bin stream.
+rm -f logos_secd logos_program.bin logos_embed.bin logos_source.la logos_app \
+      logos_kernel_app new_logos_secd.bin compiler.bin runner
+./tiny_host secd.la >/dev/null 2>&1            # emit the VM
+ok=1
+printf 'glyph MAIN = print(concat("bundled and ")("standalone"))\n' > /tmp/b_simple.la
+
+# Host-side bundler: compile $1, hand its stream to bundle.la -> logos_app, and
+# delete every external input so the run below can only succeed if the program
+# is genuinely embedded in the single file.
+host_bundle () {
+    cp "$1" logos_source.la
+    ./tiny_host codegen.la >/dev/null 2>&1
+    cp logos_program.bin logos_embed.bin
+    ./tiny_host bundle.la  >/dev/null 2>&1
+    rm -f logos_program.bin logos_embed.bin logos_source.la
+}
+
+# (1) a simple program runs standalone on the bare OS
+host_bundle /tmp/b_simple.la
+SOUT="$(./logos_app 2>/dev/null)"
+[ "$SOUT" = "bundled and standalone" ] || { echo "FAIL  bundle: simple standalone [$SOUT]"; ok=0; }
+rm -f logos_app
+
+# (2) greetapp.la — cross-engine import, now from ONE bundled file
+host_bundle greetapp.la
+GOUT="$(./logos_app 2>/dev/null)"
+[ "$GOUT" = "module-importer / mine:-importer" ] || { echo "FAIL  bundle: import standalone [$GOUT]"; ok=0; }
+rm -f logos_app
+
+# (3) kernel.la — the bundle speaks the Word AND self-replicates; copy_self
+#     replicates /proc/self/exe = the whole bundle, so the replicant is
+#     byte-identical: a self-contained, self-replicating native binary.
+host_bundle kernel.la
+mv logos_app logos_kernel_app; rm -f new_logos_secd.bin
+KOUT="$(./logos_kernel_app 2>/dev/null)"
+printf '%s\n' "$KOUT" | grep -qx "I AM THAT I AM" || { echo "FAIL  bundle: kernel Word [$KOUT]"; ok=0; }
+{ [ -f new_logos_secd.bin ] && cmp -s logos_kernel_app new_logos_secd.bin; } \
+    || { echo "FAIL  bundle: kernel replicant not byte-identical to the bundle"; ok=0; }
+rm -f logos_kernel_app new_logos_secd.bin
+
+# (4) cross-check: the bundled output equals the VM + external-stream path
+cp /tmp/b_simple.la logos_source.la; ./tiny_host codegen.la >/dev/null 2>&1
+VS="$(./logos_secd 2>/dev/null)"
+[ "$VS" = "bundled and standalone" ] || { echo "FAIL  bundle: VM+stream cross-check [$VS]"; ok=0; }
+rm -f logos_program.bin logos_source.la
+
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  bundle.la (host): kernel.la is ONE self-contained ELF that speaks + self-replicates byte-identically; greetapp.la imports cross-engine from a single file"
+else
+    exit 1
+fi
+
+# Stage B — the bundler itself runs ON THE VM (no tiny_host in the bundling).
+# Seed the VM and the native compiler once (the irreducible bootstrap seed),
+# then: native-compile a target program, native-compile bundle.la, and RUN
+# bundle.la on the VM to splice the two into a self-contained binary.
+rm -f logos_secd logos_program.bin logos_embed.bin logos_source.la logos_app compiler.bin runner
+./tiny_host secd.la >/dev/null 2>&1            # seed: the VM
+cp logos_secd runner; chmod +x runner
+cp codegen.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1          # seed: the compiler
+cp logos_program.bin compiler.bin
+ok=1
+# native-compile the target program -> its stream -> logos_embed.bin
+printf 'glyph MAIN = print(concat("native ")("bundler"))\n' > logos_source.la
+cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1
+cp logos_program.bin logos_embed.bin
+# native-compile bundle.la, then run it on the VM to perform the bundling
+cp bundle.la logos_source.la; cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1                         # logos_program.bin := bundle.la stream
+./runner >/dev/null 2>&1                          # RUN bundle.la on the VM -> logos_app
+rm -f logos_program.bin logos_embed.bin logos_source.la
+NOUT="$(./logos_app 2>/dev/null)"
+[ "$NOUT" = "native bundler" ] || { echo "FAIL  Stage5(native): bundled output [$NOUT]"; ok=0; }
+rm -f logos_secd logos_app compiler.bin runner /tmp/b_simple.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  bundle.la on the VM: a self-contained binary produced with no C host in the bundling  (∃(∃) ≡ ∃)"
+else
+    exit 1
+fi
 
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real

@@ -251,6 +251,7 @@ glyph IS_BI_NAME = la name.
     IF(str_eq(name)("str_head"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_tail"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_eq"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_len"))(la _. TRUE)(la _.
     IF(str_eq(name)("add"))(la _. TRUE)(la _.
     IF(str_eq(name)("sub"))(la _. TRUE)(la _.
     IF(str_eq(name)("mul"))(la _. TRUE)(la _.
@@ -260,7 +261,7 @@ glyph IS_BI_NAME = la name.
     IF(str_eq(name)("int_eq"))(la _. TRUE)(la _.
     IF(str_eq(name)("int_to_str"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_to_int"))(la _. TRUE)(la _.
-    FALSE)))))))))))))))))
+    FALSE))))))))))))))))))
 
 # ── 7. Built-in dispatch ───────────────────────────────────────────
 #
@@ -293,6 +294,9 @@ glyph APPLY_BI = la name. la val.
     IF(str_eq(name)("str_tail"))(la _.
         VAL_STR(str_tail(UNWRAP_STR(val)))
     )(la _.
+    IF(str_eq(name)("str_len"))(la _.
+        VAL_STR(str_len(UNWRAP_STR(val)))
+    )(la _.
     IF(str_eq(name)("str_eq"))(la _.
         VAL_PA("str_eq")(val)
     )(la _.
@@ -306,7 +310,7 @@ glyph APPLY_BI = la name. la val.
     IF(str_eq(name)("lt"))(la _. VAL_PA("lt")(val))(la _.
     IF(str_eq(name)("int_eq"))(la _. VAL_PA("int_eq")(val))(la _.
         error(concat("eval: unknown builtin: ")(name))
-    )))))))))))))))))
+    ))))))))))))))))))
 
 glyph APPLY_BI2 = la name. la v1. la v2.
     IF(str_eq(name)("write_file"))(la _.

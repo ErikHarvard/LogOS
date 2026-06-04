@@ -231,6 +231,22 @@ fmt_u_heap:
     ret
 
 _start:
+    ; Self-contained binary? The bundler (bundle.la) appends the program stream
+    ; at file offset `filesize` — virtual address `progembed` — and patches
+    ; p_filesz so it is mapped. Its first byte is a glyph name (nonzero). When
+    ; present, copy the embedded stream up into progbuf and skip the file load:
+    ; this binary IS the program. An un-bundled VM has zero-fill there → fall
+    ; through and open logos_program.bin exactly as before. (progembed aliases
+    ; ostack's base; the copy happens before the operand stack is ever used.)
+    mov     al, [progembed]
+    test    al, al
+    jz      .loadfile
+    mov     rsi, progembed       ; embedded stream (file-backed, then zero-fill)
+    mov     rdi, progbuf
+    mov     rcx, progcap         ; fixed 5 MiB copy; the table-end 00 sentinel
+    rep     movsb                ; bounds traversal, so no length field is needed
+    jmp     .booted
+.loadfile:
     mov     rax, 2
     mov     rdi, fname
     xor     rsi, rsi
@@ -262,6 +278,7 @@ _start:
     mov     rax, 3               ; close(fd)
     mov     rdi, rbp
     syscall
+.booted:
     mov     rbx, bootstrap
     mov     r12, ostack
     xor     r13, r13
@@ -569,6 +586,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi32
+    mov     rsi, rbp
+    mov     rdi, str_strlen
+    call    strcmp
+    test    eax, eax
+    je      .bi33
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -668,6 +690,9 @@ _start:
     jmp     .pushbi
 .bi32:
     mov     r11, 32
+    jmp     .pushbi
+.bi33:
+    mov     r11, 33
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -804,6 +829,8 @@ _start:
     je      .bi_pipe
     cmp     r11, 32
     je      .mkpa                ; read is curried: read(fd)(maxbytes)
+    cmp     r11, 33
+    je      .bi_strlen
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -1129,6 +1156,40 @@ _start:
     dec     r10
     jmp     .ord_pop
 .ord_dn:
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], r11           ; descriptor [len][ptr]
+    mov     [r15+8], rsi
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+
+.bi_strlen:                      ; r9 = string descriptor → decimal of its length
+    mov     rax, [r9]            ; byte length (64-bit; up to read_file's 64 MiB)
+    mov     rcx, 10
+    xor     r10, r10             ; digit count
+.strlen_div:
+    xor     edx, edx
+    div     rcx                  ; rax = rax/10, rdx = rax%10
+    add     dl, 48
+    movzx   rdx, dl
+    push    rdx
+    inc     r10
+    test    rax, rax
+    jnz     .strlen_div          ; at least one digit (len 0 → "0")
+    mov     rsi, r15             ; digits start (DATA blob, no header)
+    mov     r11, r10             ; count
+.strlen_pop:
+    test    r10, r10
+    je      .strlen_dn
+    pop     rdx
+    mov     [r15], dl
+    inc     r15
+    dec     r10
+    jmp     .strlen_pop
+.strlen_dn:
     mov     qword [r15], 0       ; STRDESC GC fwd header
     add     r15, 8
     mov     [r15], r11           ; descriptor [len][ptr]
@@ -2023,6 +2084,7 @@ str_sleep:     db "sleep", 0
 str_error:     db "error", 0
 str_pipe:      db "pipe", 0
 str_read:      db "read", 0
+str_strlen:    db "str_len", 0
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect
@@ -2034,6 +2096,10 @@ gc_wktop:      dq 0              ; GC: worklist stack top (into gcwork)
 ; each (~1M frames) gives generous headroom; all regions are lazily mapped.
 filesize equ $ - $$
 ostack   equ $$ + filesize
+; progembed: where bundle.la appends the program stream (file offset filesize).
+; Aliases ostack's base — safe because _start copies the embedded stream out to
+; progbuf BEFORE the operand stack is touched, then ostack reuses the space.
+progembed equ ostack
 dstack   equ ostack  + 0x1000000
 pathbuf  equ dstack  + 0x1000000
 stackmargin equ 0x1000               ; halt this many bytes (256 frames) before
