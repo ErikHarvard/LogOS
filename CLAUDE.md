@@ -16,12 +16,16 @@ host program, applied to itself, reproduces itself.
 | `app.la`             | Demo program: `import("stdlib.la")`, uses the exports, proves namespace isolation. |
 | `logosipc.la`        | LogosIPC module: a typed message bus (`SEND`/`RECV`/`MSG_TYPE`/…) over a named channel. |
 | `ipc_demo.la`        | Demo: `import("logosipc.la")`, round-trips a typed message through the bus. |
+| `logosinit.la`       | A real PID-1 init in Lingua Adamica (native VM): mounts `/proc` & `/sys`, `fork`+`execve`s `/bin/sh`, then supervises forever with a `reap(-1)` loop (respawn-throttled, bounded dump via TCO). |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
 | `bytecode.la`        | Byte instructions and execution engines: `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), `RUN_BYTES` (a VM that executes the bytes directly), and `RUN_SM` (a real SECD-style stack machine over a compiled instruction list), all in Lingua Adamica. |
 | `elf.la`             | Albedo Stage 1: assembles a minimal static x86-64 ELF executable from Lingua Adamica (`chr` + `concat` + `write_exec`) and emits a runnable native binary that speaks the Word with no host in the loop. |
 | `secd.asm` / `secd.la` | Albedo Stage 2: the native SECD machine hand-written in x86-64 (`secd.asm`, a self-contained `nasm -f bin` ELF) — S/E/C/D, a bump heap, a glyph table, and all builtins lowered to syscalls. It loads a compiled stream from `logos_program.bin` and runs it. `secd.la` emits the VM. |
 | `codegen.la`         | Albedo Stage 2 codegen: parses a program and lowers each glyph to the native SECD instruction encoding, writing `logos_program.bin`. Arbitrary programs compile and run natively, matching `RUN_SM`. |
+| `metadebug.la`       | Self-verifying LogOS (seed Autological Proof System): a spec table plus `DEBUG`/`META_DEBUG` machinery sharing one glyph table, so the debugger can verify every glyph against its executable test cases. |
+| `specpipe.la`        | A specification → implementation pipeline: a `SPEC` of `(name, DEF(sig)(src)(impl), tests)` entries; `GENERATE` emits `.la` source, `META_DEBUG` runs each glyph's tests, `DEPLOY` writes, re-reads, and verifies a module in one call. |
+| `strutil_spec.la`    | A string-utilities module (`STARTS_WITH`/`ENDS_WITH`/`CONTAINS`/`SPLIT`/`JOIN`/`REPLACE`) written as a `SPEC` and produced by `import("specpipe.la")` — a self-contained, verified module from a spec. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
