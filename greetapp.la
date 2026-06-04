@@ -1,0 +1,25 @@
+# ═══════════════════════════════════════════════════════════════════
+#  greetapp.la — imports greetmod.la and proves namespace isolation in a
+#  form light enough to run on every engine, so the C host, eval.la,
+#  RUN_BYTES, RUN_SM and the native SECD VM all produce the SAME output.
+#
+#  The importer defines its OWN SECRET, with the SAME NAME as the module's
+#  private one. Both isolation directions are proven in one line:
+#
+#    GREET(SECRET) = concat(module's SECRET)(importer's SECRET)
+#                  = "module" ++ "-importer"
+#         the module's private SECRET won inside GREET — the importer's
+#         SECRET did NOT leak into the module.
+#
+#    mine:SECRET   = "-importer"
+#         MAIN sees the importer's OWN SECRET — the module's private SECRET
+#         did NOT leak out into the importer.
+#
+#  Expected output (identical on all engines):
+#    module-importer / mine:-importer
+# ═══════════════════════════════════════════════════════════════════
+
+import("greetmod.la")
+
+glyph SECRET = "-importer"
+glyph MAIN   = print(concat(GREET(SECRET))(concat(" / mine:")(SECRET)))

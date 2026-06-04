@@ -139,8 +139,14 @@ glyph LEX_ONE = la s.
                 IF(str_eq(name)("la"))(la _.
                     PAIR(MKTOK("la")("la"))(rest)
                 )(la _.
+                IF(str_eq(name)("import"))(la _.
+                    PAIR(MKTOK("import")("import"))(rest)
+                )(la _.
+                IF(str_eq(name)("export"))(la _.
+                    PAIR(MKTOK("export")("export"))(rest)
+                )(la _.
                     PAIR(MKTOK("ident")(name))(rest)
-                ))
+                ))))
             )(SND(r))
         )(FST(r)))(READ_IDENT("")(s))
     )(la _.
@@ -261,16 +267,92 @@ glyph IS_CONS  = la lst. FST(lst)
 glyph LIST_HD  = la lst. FST(SND(lst))
 glyph LIST_TL  = la lst. SND(SND(lst))
 
-glyph PARSE_PROGRAM = Z(la self. la s.
-    (la s2.
-        (la g.
-            IF(IS_SOME(g))(la _.
-                (la rest_parsed.
-                    CONS(R_VAL(g))(rest_parsed)
-                )(self(R_REST(g)))
-            )(la _. NIL)
-        )(PARSE_GLYPH(s2))
-    )(SKIP_SPACES(s)))
+# ── Module system (import / export) — resolved at PARSE time ─────────
+#
+# import/export are discharged during parsing (same design as the C host
+# and the other engines), leaving a single flat glyph table with the
+# module's PRIVATE glyphs alpha-renamed away (path-derived, deterministic).
+
+glyph APPEND     = Z(la self. la a. la b. IF(IS_CONS(a))(la _. CONS(LIST_HD(a))(self(LIST_TL(a))(b)))(la _. b))
+glyph STR_MEMBER = Z(la self. la x. la lst. IF(IS_CONS(lst))(la _. IF(str_eq(x)(LIST_HD(lst)))(la _. TRUE)(la _. self(x)(LIST_TL(lst))))(la _. FALSE))
+
+# RENAME_FREE(ast)(old)(new): rewrite FREE occurrences of `old` to `new`,
+# stopping under a lambda that rebinds `old` (the fresh __mod_ `new` can
+# never be captured, so only shadowing of `old` needs the LAM check).
+glyph RENAME_FREE = Z(la self. la node. la old. la new.
+    node
+        (la name. IF(str_eq(name)(old))(la _. AST_VAR(new))(la _. AST_VAR(name)))
+        (la p. la b. IF(str_eq(p)(old))(la _. AST_LAM(p)(b))(la _. AST_LAM(p)(self(b)(old)(new))))
+        (la f. la a. AST_APP(self(f)(old)(new))(self(a)(old)(new)))
+        (la val. AST_STR(val)))
+
+glyph SANITIZE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _.
+    concat(IF(IS_IDENT_CHAR(str_head(s)))(la _. str_head(s))(la _. "_"))(self(str_tail(s)))))
+
+glyph MANGLE = la path. la name. concat("__mod_")(concat(SANITIZE(path))(concat("__")(name)))
+
+glyph PRIVATE_NAMES = Z(la self. la table. la exports.
+    IF(IS_CONS(table))(la _.
+        (la nm. IF(STR_MEMBER(nm)(exports))(la _. self(LIST_TL(table))(exports))(la _. CONS(nm)(self(LIST_TL(table))(exports))))(FST(LIST_HD(table)))
+    )(la _. NIL))
+
+glyph MANGLE_BODY = Z(la self. la ast. la privs. la path.
+    IF(IS_CONS(privs))(la _.
+        (la p. self(RENAME_FREE(ast)(p)(MANGLE(path)(p)))(LIST_TL(privs))(path))(LIST_HD(privs))
+    )(la _. ast))
+
+glyph MANGLE_MAP = Z(la self. la table. la exports. la privs. la path.
+    IF(IS_CONS(table))(la _.
+        (la entry. (la nm. (la ast.
+            CONS(PAIR(IF(STR_MEMBER(nm)(exports))(la _. nm)(la _. MANGLE(path)(nm)))(MANGLE_BODY(ast)(privs)(path)))(self(LIST_TL(table))(exports)(privs)(path))
+        )(SND(entry)))(FST(entry)))(LIST_HD(table))
+    )(la _. NIL))
+
+glyph MANGLE_MODULE = la table. la exports. la path.
+    MANGLE_MAP(table)(exports)(PRIVATE_NAMES(table)(exports))(path)
+
+glyph PARSE_IMPORT = la s. (la tr. (la tok. (la rest.
+    IF(str_eq(TOK_TYPE(tok))("lp"))(la _.
+        (la tr2. (la tok2. (la rest2.
+            IF(str_eq(TOK_TYPE(tok2))("str"))(la _.
+                (la tr3. (la tok3. (la rest3.
+                    IF(str_eq(TOK_TYPE(tok3))("rp"))(la _. PAIR(TOK_VAL(tok2))(rest3))(la _. error(concat("parser: import: expected ) near: ")(rest2)))
+                )(SND(tr3)))(FST(tr3)))(NEXT_TOKEN(rest2))
+            )(la _. error(concat("parser: import: expected path string near: ")(rest)))
+        )(SND(tr2)))(FST(tr2)))(NEXT_TOKEN(rest))
+    )(la _. error(concat("parser: import: expected ( near: ")(s)))
+)(SND(tr)))(FST(tr)))(NEXT_TOKEN(s))
+
+glyph PARSE_EXPORT_NAMES = Z(la self. la s. (la tr. (la tok. (la rest.
+    IF(str_eq(TOK_TYPE(tok))("ident"))(la _.
+        (la recpair. PAIR(CONS(TOK_VAL(tok))(FST(recpair)))(SND(recpair)))(self(rest))
+    )(la _. PAIR(NIL)(s))
+)(SND(tr)))(FST(tr)))(NEXT_TOKEN(s)))
+
+glyph PARSE_MOD_LOOP = Z(la self. la s.
+    (la s2. IF(str_eq(s2)(""))(la _. PAIR(NIL)(NIL))(la _.
+        (la tr. (la tok. (la rest.
+            IF(str_eq(TOK_TYPE(tok))("glyph"))(la _.
+                (la g. IF(IS_SOME(g))(la _.
+                    (la recpair. PAIR(CONS(R_VAL(g))(FST(recpair)))(SND(recpair)))(self(R_REST(g)))
+                )(la _. error(concat("parser: parse error near: ")(s2))))(PARSE_GLYPH(s2))
+            )(la _.
+            IF(str_eq(TOK_TYPE(tok))("import"))(la _.
+                (la ip. (la modpair. (la mangled. (la recpair.
+                    PAIR(APPEND(mangled)(FST(recpair)))(SND(recpair))
+                )(self(SND(ip))))(MANGLE_MODULE(FST(modpair))(SND(modpair))(FST(ip))))(PARSE_MODULE(read_file(FST(ip)))))(PARSE_IMPORT(rest))
+            )(la _.
+            IF(str_eq(TOK_TYPE(tok))("export"))(la _.
+                (la ep. (la recpair. PAIR(FST(recpair))(APPEND(FST(ep))(SND(recpair))))(self(SND(ep))))(PARSE_EXPORT_NAMES(rest))
+            )(la _.
+                error(concat("parser: parse error near: ")(s2))
+            )))
+        )(SND(tr)))(FST(tr)))(NEXT_TOKEN(s2))
+    ))(SKIP_SPACES(s)))
+
+glyph PARSE_MODULE = la s. PARSE_MOD_LOOP(s)
+
+glyph PARSE_PROGRAM = la s. FST(PARSE_MODULE(s))
 
 # ── AST pretty-printer (for verification) ──────────────────────────
 

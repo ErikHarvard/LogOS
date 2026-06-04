@@ -1,0 +1,18 @@
+# ═══════════════════════════════════════════════════════════════════
+#  greetmod.la — a tiny module for the CROSS-ENGINE import test.
+#
+#  Exports GREET; keeps SECRET private. GREET embeds the module's OWN
+#  private SECRET, so a correct import must (a) make GREET visible to the
+#  importer, and (b) resolve GREET's reference to SECRET to the module's
+#  private value — never to a same-named glyph in the importer.
+#
+#  Deliberately light (no list recursion), so it runs fast on EVERY engine
+#  — the C host, eval.la, RUN_BYTES, RUN_SM, and the native SECD VM — which
+#  is what makes it a cross-engine coherence check rather than a host-only
+#  one. (app.la / stdlib.la cover the heavier combinator case on the host.)
+# ═══════════════════════════════════════════════════════════════════
+
+export GREET
+
+glyph SECRET = "module"
+glyph GREET  = la name. concat(SECRET)(name)

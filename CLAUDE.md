@@ -13,7 +13,8 @@ host program, applied to itself, reproduces itself.
 | `tiny_host.c`        | The host: a minimal C interpreter for `.la` files.                  |
 | `kernel.la`          | The kernel, written in Lingua Adamica. Defines `MAIN`.              |
 | `stdlib.la`          | A library module: `export`s `MAP`/`FILTER`/`ALL`/`LIST_FIND`, helpers private. |
-| `app.la`             | Demo program: `import("stdlib.la")`, uses the exports, proves namespace isolation. |
+| `app.la`             | Demo program: `import("stdlib.la")`, uses the exports, proves namespace isolation (host). |
+| `greetmod.la` / `greetapp.la` | Lightweight cross-engine import demo: `greetapp.la` `import("greetmod.la")` and proves both isolation directions in one line, light enough to run identically on **all five engines** (host, `eval.la`, `RUN_BYTES`, `RUN_SM`, native VM). |
 | `logosipc.la`        | LogosIPC module: a typed message bus (`SEND`/`RECV`/`MSG_TYPE`/…) over a named channel. |
 | `ipc_demo.la`        | Demo: `import("logosipc.la")`, round-trips a typed message through the bus. |
 | `logosinit.la`       | A real PID-1 init in Lingua Adamica (native VM): mounts `/proc` & `/sys`, `fork`+`execve`s `/bin/sh`, then supervises forever with a `reap(-1)` loop (respawn-throttled, bounded dump via TCO). |
@@ -137,12 +138,47 @@ names as stdlib privates: `app` sees its own `SECRET` (privates don't leak) and
 the imported `MAP`/`FILTER`/`ALL` keep working despite app's broken decoy `IF`
 (they use stdlib's private `IF`). `build.sh` checks both facts.
 
-Scope: this is implemented in the **C host** (the reference interpreter).
-`kernel.la` deliberately stays flat and import-free, because it is the universal
-cross-engine artifact — it is parsed and run identically by the host, `eval.la`,
-`bytecode.la`, `codegen.la`, and the native VM. Teaching `import` to those
-self-hosted parsers (so any `.la`, including the kernel, can import on every
-engine) is the natural next step.
+Scope: `import`/`export` is now implemented on **every engine** — the C host
+(the reference interpreter) *and* all four self-hosted parsers (`eval.la`,
+`bytecode.la`, `parser.la`, `codegen.la`, the last feeding the native SECD VM).
+`kernel.la` still deliberately stays flat and import-free, because it is the
+universal cross-engine artifact — parsed and run identically by every engine —
+but any *other* `.la` can now import on any engine.
+
+**The mechanism is identical to the C host's, and lives entirely at parse time
+(pure generation — see the Γ/Ρ split below).** `import("p")` and `export N…`
+are resolved while parsing, producing a single flat glyph table with the
+module's PRIVATE glyphs alpha-renamed away; `EVAL` / `RUN_BYTES` / `RUN_SM` /
+the native VM never see `import` — they consume the merged table unchanged, so
+the VM needs no new opcodes. In the self-hosted parsers this is four added
+glyphs over the shared parser shape: `PARSE_MODULE` (returns
+`PAIR(glyph_table)(export_list)`, dispatching `glyph`/`import`/`export` in
+source order), `RENAME_FREE` (rewrites free references, stopping under a binder
+that shadows the name — capture-free because the new name is always fresh), and
+`MANGLE_MODULE`/`PRIVATE_NAMES` (rename every private and rewrite all
+references to it). The `import` arm reads the module with the `read_file`
+builtin (present on the host *and* the VM) and recurses.
+
+Mangling is **path-derived and deterministic**: a private `g` of module `p`
+becomes `__mod_<sanitize p>__g` (every non-identifier char of the path → `_`).
+Unlike the C host's mutable per-import counter, the name depends only on
+`(path, glyph)`, so it is **reproducible across engines** and across runs.
+(Mangled names are private and never observed, so byte-identity with the C
+host's `__modN_` names is neither required nor attempted — only the isolation
+*behaviour* must agree, and it does.) `build.sh` proves coherence:
+`greetapp.la` imports `greetmod.la` (which exports `GREET`, keeps `SECRET`
+private) and defines its own same-named `SECRET`; the C host, `eval.la`,
+`RUN_BYTES`, `RUN_SM`, and the native VM all emit the identical line, proving
+both isolation directions on every engine. The LogosIPC VM test now
+`import`s `logosipc.la` for real (resolved by `codegen.la` running *as*
+`compiler.bin` on the VM), retiring the old inline-the-module workaround.
+
+*Honest remaining limits:* no import-cycle detection (a circular import loops,
+as it does on the C host); a module imported twice (diamond) is mangled to the
+same names and merged twice (harmless — the duplicates are identical), rather
+than as distinct sibling sets; and this teaches each engine's *own* top-level
+parser to import — it does not make `import` work for a program *meta-evaluated
+under* `eval.la` (whose builtin table still lacks `error` etc.).
 
 ### Self-hosted parser (`parser.la`)
 
@@ -239,9 +275,10 @@ and it performs all five tests, makes the kernel speak and replicate
 byte-identically, and reconstructs `eval.la` again. The reconstruction is not
 merely valid syntax but a working evaluator — a source-level fixed point of the
 whole system. `build.sh` checks the round-trip is stable and that the
-reconstruction has the same glyph count as the source — **72 glyphs** (it was
-67 before native integers added `VAL_INT` and the int builtins to `eval.la`);
-the two self-parses take roughly 25 seconds.
+reconstruction has the same glyph count as the source — **85 glyphs** (was 72
+before the module system added the `import`/`export` parser glyphs, and 67
+before that, when native integers added `VAL_INT` and the int builtins to
+`eval.la`); the two self-parses take roughly 25 seconds.
 
 The reconstruction reads `eval.la` rather than re-running `MAIN`: `MAIN`
 evaluates `kernel.la` and reads `eval.la`, so feeding it through the same
@@ -495,9 +532,11 @@ runnable and checked by `build.sh`.
     only when the remaining input is empty; otherwise it calls `error` (now a VM
     builtin, id 30, as well as a host builtin), so a syntax error aborts loudly
     with `codegen: parse error near: …` on both `tiny_host` and the native VM
-    rather than producing wrong output. (`bytecode.la` / `parser.la` run only on
-    the C host and still truncate — a lower-priority remainder.) `build.sh`
-    compiles a malformed file on the VM and checks it halts non-zero.
+    rather than producing wrong output. (`bytecode.la` / `parser.la` now halt
+    loudly too: their `PARSE_PROGRAM` was replaced by the module-system loop
+    `PARSE_MOD_LOOP`, which `error`s on a malformed top-level form instead of
+    truncating — closing the old lower-priority remainder.) `build.sh` compiles
+    a malformed file on the VM and checks it halts non-zero.
 
 This extends the **generation** side of the Γ/Ρ split: codegen and ELF assembly
 are pure generation (no evaluation); running the emitted binary is recognition
@@ -585,8 +624,11 @@ engine-independent typed layer — `SEND`/`RECV` themselves are now VM-only, sin
 `pipe`/`read` are VM builtins); (2) on the **native VM**, the real LogosInit
 pattern — init creates the pipe, `fork`s a worker that `SEND`s a typed message
 and exits, then init `RECV`s it (read blocks for the message), decodes it, and
-reaps. (The VM has no `import` yet, so the VM test inlines the module minus its
-`export` line — see the module system's cross-engine note.) Deferred to later
+reaps. (The VM now has cross-engine `import`, so this test `import`s
+`logosipc.la` for real — `codegen.la`, running as `compiler.bin` on the VM,
+resolves the import at compile time; the importer supplies its own `IF`/`SEQ`
+since the module keeps those private. See the module system's cross-engine
+note.) Deferred to later
 layers, per the Codex: Γ-seal encryption, runtime schema validation, capability
 gating, and socket multiplexing (point-to-point / broadcast / stream routing).
 

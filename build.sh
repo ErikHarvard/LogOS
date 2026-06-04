@@ -228,6 +228,53 @@ else
     exit 1
 fi
 
+say "Cross-engine import (import/export resolved by EVERY engine)"
+# The host test above proves import on the C host. This proves the SAME
+# import/export semantics now hold on every self-hosted engine: import is
+# resolved at PARSE time (pure generation), producing one flat, path-mangled
+# glyph table that EVAL / RUN_BYTES / RUN_SM / the native SECD VM all consume
+# unchanged — so the output is byte-identical across engines. greetapp.la
+# imports greetmod.la (exports GREET, keeps SECRET private) and defines its
+# OWN same-named SECRET; the single output line proves both isolation ways:
+#   module-importer -> GREET used the MODULE's private SECRET (importer's didn't leak in)
+#   mine:-importer  -> MAIN saw the IMPORTER's own SECRET    (module's didn't leak out)
+XEXP="module-importer / mine:-importer"
+ok=1
+cxi () { [ "$2" = "$XEXP" ] || { echo "FAIL  cross-import $1: [$2] != [$XEXP]"; ok=0; }; }
+
+cxi "C host"    "$(./tiny_host greetapp.la 2>/dev/null)"
+
+# eval.la — the self-hosted meta-evaluator.
+EVM="$(grep -n '^glyph MAIN' eval.la | tail -1 | cut -d: -f1)"
+head -$((EVM-1)) eval.la > /tmp/xi_eval.la
+printf 'glyph MAIN = RUN(PARSE_PROGRAM(read_file("greetapp.la")))\n' >> /tmp/xi_eval.la
+cxi "eval.la"   "$(./tiny_host /tmp/xi_eval.la 2>/dev/null)"
+
+# bytecode.la — RUN_BYTES (direct byte VM) and RUN_SM (SECD stack machine).
+BCM="$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)"
+head -$((BCM-1)) bytecode.la > /tmp/xi_bc.la
+printf 'glyph MAIN = (la _. print(""))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("greetapp.la"))))\n' >> /tmp/xi_bc.la
+cxi "RUN_BYTES" "$(./tiny_host /tmp/xi_bc.la 2>/dev/null | sed '${/^$/d;}')"
+head -$((BCM-1)) bytecode.la > /tmp/xi_sm.la
+printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("greetapp.la"))))\n' >> /tmp/xi_sm.la
+cxi "RUN_SM"    "$(./tiny_host /tmp/xi_sm.la 2>/dev/null | sed '${/^$/d;}')"
+
+# native SECD VM — codegen.la resolves the import at COMPILE time and lowers
+# the merged table to a stream; the VM (which has no notion of import) runs it.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp greetapp.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+cxi "native VM" "$(./logos_secd 2>/dev/null)"
+rm -f logos_secd logos_program.bin logos_source.la
+
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  import/export coherent across all 5 engines (C host, eval.la, RUN_BYTES, RUN_SM, native VM)"
+else
+    exit 1
+fi
+rm -f /tmp/xi_eval.la /tmp/xi_bc.la /tmp/xi_sm.la
+
 say "LogosIPC: typed message layer (import + decode)"
 # The transport is now pipe-based (SEND/RECV use the VM-only pipe/read/write
 # syscalls — the live channel runs on the native VM, see the LogosInit section).
@@ -740,11 +787,17 @@ fi
 # through the pipe and exits; init RECVs it (read blocks until the SEND arrives),
 # decodes type/body, then reaps. The channel must be bound once before the fork
 # so both processes share the same pipe fds — hence (la chan. … )(CHANNEL(…)).
-# logosipc.la is inlined (its `export` line stripped) because the VM has no
-# `import` yet; the module's glyphs are reused verbatim.
-grep -v '^export' logosipc.la > /tmp/t_ipc.la
-cat >> /tmp/t_ipc.la <<'LAEOF'
+# logosipc.la is now IMPORTED for real: the native VM gained cross-engine
+# `import`, so codegen.la (running here as compiler.bin ON THE VM) resolves
+# import("logosipc.la") at compile time — read_file is a VM builtin. The
+# module exports CHANNEL/SEND/RECV/MSG_TYPE/MSG_BODY/MSG_OK and keeps its
+# Church/IF helpers private (mangled away), so the importer supplies its OWN
+# IF/SEQ. This exercises a real multi-export module through the fully-native
+# import path (no inlining, no `export`-stripping).
+cat > /tmp/t_ipc.la <<'LAEOF'
+import("logosipc.la")
 glyph SEQ = la a. la b. b
+glyph IF  = la c. la t. la f. c(t)(f)("!")
 glyph WORKER = la chan. SEQ(SEND(chan)("status")("worker-ready"))(exit("0"))
 glyph MAIN = (la chan.
     (la pid. IF(str_eq(pid)("0"))
@@ -765,7 +818,7 @@ ok=1
 printf '%s\n' "$IPCOUT" | grep -qxF "init recv type: status"       || { echo "FAIL  ipc(VM): init did not receive the typed message"; ok=0; }
 printf '%s\n' "$IPCOUT" | grep -qxF "init recv body: worker-ready" || { echo "FAIL  ipc(VM): message body wrong";                  ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  LogosIPC over a pipe: init forked a worker that sent a typed message back through the channel"
+    echo "PASS  LogosIPC over a pipe (real import(\"logosipc.la\") on the native VM): init forked a worker that sent a typed message back through the channel"
 else
     echo "  (got: $IPCOUT)"; exit 1
 fi
