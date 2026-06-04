@@ -275,6 +275,44 @@ else
 fi
 rm -f /tmp/xi_eval.la /tmp/xi_bc.la /tmp/xi_sm.la
 
+# ── Export-of-undefined is rejected loudly at parse time on EVERY engine ──
+# A module declaring `export FOO` with no `glyph FOO` must be rejected, not
+# silently accepted (a typo that would otherwise surface as a runtime unbound
+# variable, or not at all). The C host checks this; CHECK_EXPORTS (folded into
+# MANGLE_MODULE) gives the four self-hosted parsers the same parse-time guard, so
+# b_τ ≡ f_τ: all five engines reject identically.
+cat > /tmp/f3mod.la <<'LAEOF'
+export GREET PHANTOM
+glyph GREET = la x. x
+LAEOF
+cat > /tmp/f3imp.la <<'LAEOF'
+import("/tmp/f3mod.la")
+glyph MAIN = print(GREET("ok"))
+LAEOF
+f3ok=1
+f3check() {  # $1 = engine label, $2 = combined output, $3 = rc
+    if [ "$3" -ne 0 ] && printf '%s\n' "$2" | grep -qiE "exports.*does not define|module exports undefined glyph"; then :; else
+        echo "FAIL  bad-export ($1): rc=$3 msg='$2' (want non-zero + export-undefined diagnostic)"; f3ok=0; fi
+}
+rc=0; M="$(./tiny_host /tmp/f3imp.la 2>&1)" || rc=$?; f3check "C host" "$M" "$rc"
+EVM="$(grep -n '^glyph MAIN' eval.la | tail -1 | cut -d: -f1)"; head -$((EVM-1)) eval.la > /tmp/f3_eval.la
+printf 'glyph MAIN = RUN(PARSE_PROGRAM(read_file("/tmp/f3imp.la")))\n' >> /tmp/f3_eval.la
+rc=0; M="$(./tiny_host /tmp/f3_eval.la 2>&1)" || rc=$?; f3check "eval.la" "$M" "$rc"
+BCM="$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)"; head -$((BCM-1)) bytecode.la > /tmp/f3_bc.la
+printf 'glyph MAIN = (la _. print(""))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("/tmp/f3imp.la"))))\n' >> /tmp/f3_bc.la
+rc=0; M="$(./tiny_host /tmp/f3_bc.la 2>&1)" || rc=$?; f3check "RUN_BYTES" "$M" "$rc"
+head -$((BCM-1)) bytecode.la > /tmp/f3_sm.la
+printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/f3imp.la"))))\n' >> /tmp/f3_sm.la
+rc=0; M="$(./tiny_host /tmp/f3_sm.la 2>&1)" || rc=$?; f3check "RUN_SM" "$M" "$rc"
+cp /tmp/f3imp.la logos_source.la; rm -f logos_program.bin
+rc=0; M="$(./tiny_host codegen.la 2>&1)" || rc=$?; f3check "codegen→VM" "$M" "$rc"
+rm -f /tmp/f3mod.la /tmp/f3imp.la /tmp/f3_eval.la /tmp/f3_bc.la /tmp/f3_sm.la logos_source.la logos_program.bin
+if [ "$f3ok" -eq 1 ]; then
+    echo "PASS  export of an undefined glyph rejected loudly at parse time on all 5 engines"
+else
+    exit 1
+fi
+
 say "str_len builtin coherent across all engines"
 # str_len(s) -> decimal byte length. Strings are length-carrying, so it is O(1)
 # on every engine; the bundler (below) needs it to patch the ELF p_filesz. Like

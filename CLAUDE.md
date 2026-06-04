@@ -285,7 +285,7 @@ and it performs all five tests, makes the kernel speak and replicate
 byte-identically, and reconstructs `eval.la` again. The reconstruction is not
 merely valid syntax but a working evaluator — a source-level fixed point of the
 whole system. `build.sh` checks the round-trip is stable and that the
-reconstruction has the same glyph count as the source — **85 glyphs** (was 72
+reconstruction has the same glyph count as the source — **87 glyphs** (was 85 before the export-defined check, 72
 before the module system added the `import`/`export` parser glyphs, and 67
 before that, when native integers added `VAL_INT` and the int builtins to
 `eval.la`); the two self-parses take roughly 25 seconds.

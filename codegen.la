@@ -85,6 +85,12 @@ glyph PARSE_GLYPH = la s. (la tr. (la tok. (la rest. IF(str_eq(TOK_TYPE(tok))("g
 
 glyph APPEND     = Z(la self. la a. la b. IF(IS_CONS(a))(la _. CONS(LIST_HD(a))(self(LIST_TL(a))(b)))(la _. b))
 glyph STR_MEMBER = Z(la self. la x. la lst. IF(IS_CONS(lst))(la _. IF(str_eq(x)(LIST_HD(lst)))(la _. TRUE)(la _. self(x)(LIST_TL(lst))))(la _. FALSE))
+# TABLE_HAS(nm)(table) — is nm a key (glyph name) in the parsed table?
+glyph TABLE_HAS = Z(la self. la nm. la table. IF(IS_CONS(table))(la _. IF(str_eq(nm)(FST(LIST_HD(table))))(la _. TRUE)(la _. self(nm)(LIST_TL(table))))(la _. FALSE))
+# CHECK_EXPORTS — every exported name must be defined by the module, else halt
+# loudly at parse time (matching the C host's "module exports X but does not
+# define it"); returns the export list unchanged when all are defined.
+glyph CHECK_EXPORTS = Z(la self. la exports. la table. IF(IS_CONS(exports))(la _. IF(TABLE_HAS(LIST_HD(exports))(table))(la _. self(LIST_TL(exports))(table))(la _. error(concat("codegen: module exports undefined glyph: ")(LIST_HD(exports)))))(la _. exports))
 
 glyph RENAME_FREE = Z(la self. la node. la old. la new.
     node
@@ -116,7 +122,7 @@ glyph MANGLE_MAP = Z(la self. la table. la exports. la privs. la path.
     )(la _. NIL))
 
 glyph MANGLE_MODULE = la table. la exports. la path.
-    MANGLE_MAP(table)(exports)(PRIVATE_NAMES(table)(exports))(path)
+    (la _. MANGLE_MAP(table)(exports)(PRIVATE_NAMES(table)(exports))(path))(CHECK_EXPORTS(exports)(table))
 
 glyph PARSE_IMPORT = la s. (la tr. (la tok. (la rest.
     IF(str_eq(TOK_TYPE(tok))("lp"))(la _.
