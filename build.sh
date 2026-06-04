@@ -748,6 +748,43 @@ else
     exit 1
 fi
 
+say "Theourgia: the compositor's software surface core (Stage 1)"
+# theourgia.la builds SURFACES and COMPOSES them (z-ordered blits) entirely in
+# Lingua Adamica, then serialises the final buffer to a PPM (P6) raster — the
+# byte array a framebuffer wants, written to a file until a scanout backend
+# (DRM/KMS, needs VM mmap/ioctl) lands. It uses only existing builtins, so the
+# same composition runs byte-identically on the C host and the native VM.
+# The scene: a 32x24 blue desktop with a red window at (4,4) and a green one
+# at (18,12). We check the PPM header, size, and that the composited pixels
+# land at the right places with the right colours.
+ok=1
+px () { od -An -tu1 -j "$1" -N3 canvas.ppm | tr -s ' ' | sed 's/^ //;s/ $//'; }
+check_canvas () {  # $1 = engine label
+    [ "$(head -c 13 canvas.ppm)" = "$(printf 'P6\n32 24\n255\n')" ] || { echo "FAIL  theourgia($1): PPM header"; ok=0; }
+    [ "$(stat -c%s canvas.ppm)" = "2317" ] || { echo "FAIL  theourgia($1): size $(stat -c%s canvas.ppm) != 2317"; ok=0; }
+    [ "$(px 13)"   = "0 0 128" ]   || { echo "FAIL  theourgia($1): bg pixel [$(px 13)]";    ok=0; }
+    [ "$(px 508)"  = "200 30 30" ] || { echo "FAIL  theourgia($1): win1 pixel [$(px 508)]"; ok=0; }
+    [ "$(px 1417)" = "30 200 30" ] || { echo "FAIL  theourgia($1): win2 pixel [$(px 1417)]"; ok=0; }
+}
+rm -f canvas.ppm
+./tiny_host theourgia.la >/dev/null 2>&1
+check_canvas "C host"
+cp canvas.ppm /tmp/canvas_host.ppm; rm -f canvas.ppm
+# Sovereign: the same composition on the native VM must be byte-identical.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp theourgia.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd >/dev/null 2>&1
+check_canvas "native VM"
+cmp -s canvas.ppm /tmp/canvas_host.ppm || { echo "FAIL  theourgia: native raster != C host raster"; ok=0; }
+rm -f canvas.ppm /tmp/canvas_host.ppm logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  theourgia: surfaces compose to a correct 32x24 raster, byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile

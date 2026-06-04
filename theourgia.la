@@ -1,0 +1,100 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia.la — the LogOS compositor, Stage 1: the software surface core.
+#
+#  A compositor is, at heart, three things: SURFACES (rectangular pixel
+#  buffers), COMPOSITION (blitting one surface onto another with a position
+#  and z-order), and SCANOUT (handing the final buffer to a display). This
+#  file builds the first two — entirely in Lingua Adamica, using only the
+#  existing builtins (concat / chr / write_file / native integers), so it
+#  runs identically on every engine (C host, RUN_BYTES, RUN_SM, native VM).
+#
+#  Scanout is deferred to a later stage: getting pixels onto a real screen
+#  needs either /dev/fb0 (not the live scanout under Wayland) or DRM/KMS
+#  (which needs new VM syscalls — mmap / ioctl). Until then the final buffer
+#  is serialised to a PPM (P6) image — a viewable, diffable raster — which
+#  is exactly the byte array a framebuffer wants, just written to a file
+#  instead of mapped memory. The composition core proved here is what every
+#  backend will consume unchanged (generation; the screen is recognition).
+#
+#  Representation:
+#    color   — 3 raw bytes (R,G,B), built with PX(r)(g)(b)
+#    surface — PAIR(PAIR(w)(h))(rows), rows = a list of row strings, each
+#              row exactly w*3 bytes. Immutable: every op returns a new
+#              surface, composed from row slices (binary-safe strings).
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Foundations (flat, kernel-style: the universal cross-engine artifact) ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. la t. la f. b(f)(t)
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph PAIR  = la a. la b. la f. f(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph NIL      = PAIR(FALSE)("")
+glyph CONS     = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS  = la lst. FST(lst)
+glyph LIST_HD  = la lst. FST(SND(lst))
+glyph LIST_TL  = la lst. SND(SND(lst))
+
+# ── Byte helpers (binary-safe substring) ──
+glyph TAKE = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+    concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
+    self(sub(n)(1))(str_tail(s))))
+glyph REPEAT = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+    concat(s)(self(sub(n)(1))(s))))
+
+# ── Colors & surfaces ──
+glyph PX = la r. la g. la b. concat(chr(int_to_str(r)))(concat(chr(int_to_str(g)))(chr(int_to_str(b))))
+
+glyph SURF   = la w. la h. la rows. PAIR(PAIR(w)(h))(rows)
+glyph S_W    = la s. FST(FST(s))
+glyph S_H    = la s. SND(FST(s))
+glyph S_ROWS = la s. SND(s)
+
+# MK_ROWS(n)(row) — a list of n identical rows.
+glyph MK_ROWS = Z(la self. la n. la row. IF(int_eq(n)(0))(la _. NIL)(la _.
+    CONS(row)(self(sub(n)(1))(row))))
+# SOLID(w)(h)(px) — a w*h surface flooded with one colour.
+glyph SOLID = la w. la h. la px. SURF(w)(h)(MK_ROWS(h)(REPEAT(w)(px)))
+
+# ── Composition (the compositor's core operation) ──
+# SPLICE(drow)(ox3)(srow)(sw3) — overwrite sw3 bytes of dst row at byte
+# offset ox3 with the src row (clipping is assumed within bounds for now).
+glyph SPLICE = la drow. la ox3. la srow. la sw3.
+    concat(TAKE(ox3)(drow))(concat(srow)(DROP(add(ox3)(sw3))(drow)))
+
+# COMPOSE(dst)(src)(ox)(oy) — blit src onto dst with its top-left at (ox,oy).
+# Walks dst rows; for the oy..oy+src.h band, splices the matching src row in.
+glyph COMPOSE_ROWS = Z(la self. la drows. la srows. la i. la oy. la ox3. la sw3.
+    IF(IS_CONS(drows))(la _.
+        (la drow.
+            IF(AND(NOT(lt(i)(oy)))(IS_CONS(srows)))(la _.
+                CONS(SPLICE(drow)(ox3)(LIST_HD(srows))(sw3))
+                    (self(LIST_TL(drows))(LIST_TL(srows))(add(i)(1))(oy)(ox3)(sw3)))
+            (la _.
+                CONS(drow)(self(LIST_TL(drows))(srows)(add(i)(1))(oy)(ox3)(sw3))))
+        (LIST_HD(drows)))
+    (la _. NIL))
+glyph COMPOSE = la dst. la src. la ox. la oy.
+    SURF(S_W(dst))(S_H(dst))(COMPOSE_ROWS(S_ROWS(dst))(S_ROWS(src))(0)(oy)(mul(ox)(3))(mul(S_W(src))(3)))
+
+# ── Scanout (Stage 1: to a PPM P6 raster) ──
+glyph FLATTEN = Z(la self. la rows. IF(IS_CONS(rows))(la _.
+    concat(LIST_HD(rows))(self(LIST_TL(rows))))(la _. ""))
+glyph PPM = la s.
+    concat(concat("P6\n")(concat(int_to_str(S_W(s)))(concat(" ")(concat(int_to_str(S_H(s)))("\n255\n")))))
+          (FLATTEN(S_ROWS(s)))
+
+# ── A first scene: a desktop with two overlaid "windows" ──
+glyph BG    = SOLID(32)(24)(PX(0)(0)(128))      # deep-blue desktop
+glyph WIN1  = SOLID(10)(8)(PX(200)(30)(30))      # red window
+glyph WIN2  = SOLID(6)(6)(PX(30)(200)(30))       # green window, overlapping
+glyph SCENE = COMPOSE(COMPOSE(BG)(WIN1)(4)(4))(WIN2)(18)(12)
+
+glyph MAIN = SEQ(write_file("canvas.ppm")(PPM(SCENE)))
+    (print("theourgia: composed 32x24 desktop -> canvas.ppm"))
