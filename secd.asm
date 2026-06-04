@@ -233,6 +233,43 @@ fmt_u_heap:
     jnz     .fuh_pop
     ret
 
+; fmt_int_buf(rax = signed value, rdi = buffer) → rsi = buffer start, rdx = length.
+; Formats decimal (leading '-' for negatives) into the caller's buffer. Used by
+; print to coerce an INT argument, matching the C host's print("%ld"). Preserves
+; r8/r9 (the value tag/payload print still needs) and all machine-state regs.
+fmt_int_buf:
+    mov     rsi, rdi             ; buffer start
+    xor     r10, r10             ; sign flag
+    test    rax, rax
+    jns     .fib_abs
+    mov     r10, 1
+    neg     rax
+.fib_abs:
+    mov     rcx, 10
+    xor     r11, r11             ; digit count (NOT r8 — that holds the value tag)
+.fib_div:
+    xor     rdx, rdx
+    div     rcx
+    add     dl, 48
+    movzx   rdx, dl
+    push    rdx
+    inc     r11
+    test    rax, rax
+    jnz     .fib_div
+    test    r10, r10
+    je      .fib_pop
+    mov     byte [rdi], 45       ; '-'
+    inc     rdi
+.fib_pop:
+    pop     rdx
+    mov     [rdi], dl
+    inc     rdi
+    dec     r11
+    jnz     .fib_pop
+    mov     rdx, rdi
+    sub     rdx, rsi             ; total byte length
+    ret
+
 _start:
     ; Self-contained binary? The bundler (bundle.la) appends the program stream
     ; at file offset `filesize` — virtual address `progembed` — and patches
@@ -902,12 +939,25 @@ _start:
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
-.bi_print:                       ; r9 = STR descriptor
+.bi_print:                       ; r9 = STR descriptor; or an INT → its decimal
+    test    r8, r8               ; STR (tag 0)?
+    jz      .pr_str
+    cmp     r8, 4                ; INT (tag 4)? → coerce, like the C host's print
+    jne     .strtype             ; CLO/BI/PA are not printable → halt loudly
+    mov     rax, r9              ; the signed integer (payload is the value itself)
+    mov     rdi, pathbuf         ; scratch (unused during print)
+    call    fmt_int_buf          ; → rsi = digits, rdx = length
+    mov     rax, 1
+    mov     rdi, 1
+    syscall                      ; write(1, digits, length)
+    jmp     .pr_nl
+.pr_str:
     mov     rsi, [r9+8]
     mov     rdx, [r9]
     mov     rax, 1
     mov     rdi, 1
     syscall
+.pr_nl:
     mov     rax, 1
     mov     rdi, 1
     mov     rsi, newline
@@ -919,6 +969,8 @@ _start:
     jmp     .loop
 
 .bi_strhead:                     ; first byte, copied into a fresh DATA blob
+    test    r8, r8               ; STR only; non-string deref crashes (see .strtype)
+    jnz     .strtype
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     test    rcx, rcx
@@ -945,6 +997,8 @@ _start:
     jmp     .loop
 
 .bi_strtail:                     ; drop first byte, copied into a fresh DATA blob
+    test    r8, r8               ; STR only (see .strtype)
+    jnz     .strtype
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     test    rcx, rcx
@@ -993,6 +1047,8 @@ _start:
     jmp     .loop
 
 .bi_readfile:                    ; path = r9 descriptor → NUL-term in pathbuf
+    test    r8, r8               ; STR only (see .strtype)
+    jnz     .strtype
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     mov     rdi, pathbuf
@@ -1196,6 +1252,8 @@ _start:
     jmp     .loop
 
 .bi_strlen:                      ; r9 = string descriptor → decimal of its length
+    test    r8, r8               ; STR only; an INT would deref its payload (see .strtype)
+    jnz     .strtype
     mov     rax, [r9]            ; byte length (64-bit; up to read_file's 64 MiB)
     mov     rcx, 10
     xor     r10, r10             ; digit count
@@ -1485,6 +1543,10 @@ _start:
     syscall
 
 .bi_concat2:                     ; rbp = a1 desc, r9 = a2 desc
+    test    r8, r8               ; both args must be STR (a1 tag in the PA record,
+    jnz     .strtype             ; a2 tag in r8); a non-string deref crashes
+    cmp     qword [r11+8], 0
+    jne     .strtype
     ; guard: result is len1+len2 bytes + a 16-byte descriptor; halt if it would
     ; overrun the heap (concat is the one builtin with an unbounded single alloc)
     mov     rax, [rbp]
@@ -1534,6 +1596,10 @@ _start:
     jmp     .loop
 
 .bi_streq2:                      ; rbp = a1 desc, r9 = a2 desc → Church bool
+    test    r8, r8               ; both args must be STR (see .bi_concat2)
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
     mov     rcx, [rbp]
     mov     rax, [r9]
     cmp     rcx, rax
@@ -1570,6 +1636,10 @@ _start:
     jmp     .loop
 
 .bi_writefile2:                  ; rbp = path desc, r9 = content desc
+    test    r8, r8               ; path + content must both be STR (see .bi_concat2)
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
     mov     rcx, [rbp]
     mov     rsi, [rbp+8]
     mov     rdi, pathbuf
@@ -1609,6 +1679,10 @@ _start:
     jmp     .loop
 
 .bi_writeexec2:                  ; rbp = path desc, r9 = content desc; chmod 0755
+    test    r8, r8               ; path + content must both be STR (see .bi_concat2)
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
     mov     rcx, [rbp]
     mov     rsi, [rbp+8]
     mov     rdi, pathbuf
@@ -1933,6 +2007,8 @@ _start:
 
 ; ── native integers (INT value = tag 4, payload = the signed integer) ──
 .bi_strtoint:                    ; r9 = decimal STR descriptor → INT
+    test    r8, r8               ; STR only; desc_atoi would deref a non-pointer (see .strtype)
+    jnz     .strtype
     mov     rdi, r9
     call    desc_atoi
     mov     qword [r12], 4
@@ -2337,7 +2413,7 @@ badstrmsg:     db "secd: malformed program", 10
 badstrmsg_len  equ $ - badstrmsg
 chrmsg:        db "secd: chr out of range", 10
 chrmsg_len     equ $ - chrmsg
-strtypemsg:    db "secd: chr/ord expects a string", 10
+strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0

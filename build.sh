@@ -569,7 +569,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "8993" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 8993)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "9244" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9244)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1123,23 +1123,54 @@ else
     echo "FAIL  malformed-input halt: rc=$erc stderr='$EERR' (want non-zero + 'parse error')"; exit 1
 fi
 
-# ── chr/ord type guard: a non-string argument halts loudly, not SIGSEGV ──
-# chr/ord read their argument as a string descriptor ([len][ptr]). Since native
-# integers, an int literal `n` desugars to str_to_int("n"), so `chr(65)` passes
-# an INT value whose payload IS the integer, not a pointer — dereferencing it as
-# a descriptor would SIGSEGV. The VM must halt with "secd: chr/ord expects a
-# string" (non-zero exit), matching the C host's "chr: argument is not a string".
-# Correct use wraps an int: chr(int_to_str(n)) (as theourgia.la/bundle.la do).
-printf 'glyph MAIN = print(chr(65))\n' > /tmp/t_chrtype.la
-cp /tmp/t_chrtype.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1                        # compile
-crc=0
-CERR="$(./runner 2>&1 1>/dev/null)" || crc=$?
-rm -f /tmp/t_chrtype.la
-if [ "$crc" -ne 0 ] && printf '%s\n' "$CERR" | grep -qF "secd: chr/ord expects a string"; then
-    echo "PASS  chr/ord type guard: chr on a non-string (INT) halts loudly (rc $crc) instead of SIGSEGV"
+# ── String-builtin type guards: a non-string argument halts loudly, not SIGSEGV ──
+# Every string builtin reads its argument as a descriptor ([len][ptr]). Since
+# native integers, an int literal `n` desugars to str_to_int("n"), so e.g.
+# `str_len(5)` passes an INT value whose payload IS the integer, not a pointer —
+# dereferencing it as a descriptor would SIGSEGV. The VM must halt with "secd:
+# argument is not a string" (non-zero exit), matching the C host's loud
+# "<builtin>: argument is not a string". chr/ord were hardened first; this
+# verifies the whole set (str_head/str_tail/str_len/str_to_int/concat/str_eq/
+# write_file/write_exec, both curried positions) and that valid use is intact.
+guard_compile() {                                # $1 = MAIN body → compile to stream
+    printf 'glyph MAIN = %s\n' "$1" > logos_source.la
+    cp compiler.bin logos_program.bin
+    ./runner >/dev/null 2>&1
+}
+gok=1
+guard_loud() {                                   # $1 = label, $2 = MAIN body
+    guard_compile "$2"
+    grc=0; gerr="$(./runner 2>&1 1>/dev/null)" || grc=$?
+    if [ "$grc" -eq 1 ] && printf '%s\n' "$gerr" | grep -qF "secd: argument is not a string"; then
+        : # loud halt as required
+    else
+        echo "FAIL  type guard ($1): rc=$grc stderr='$gerr' (want rc 1 + 'argument is not a string'; rc 139 = SIGSEGV regression)"; gok=0
+    fi
+}
+guard_loud "chr(65)"          'print(chr(65))'
+guard_loud "ord(65)"          'print(ord(65))'
+guard_loud "str_len(5)"       'print(str_len(5))'
+guard_loud "str_head(5)"      'print(str_head(5))'
+guard_loud "str_tail(5)"      'print(str_tail(5))'
+guard_loud "str_to_int(5)"    'print(str_to_int(5))'
+guard_loud "concat(5)(x)"     'print(concat(5)("x"))'
+guard_loud "concat(x)(5)"     'print(concat("x")(5))'
+guard_loud "str_eq(5)(x)"     'print(str_eq(5)("x"))'
+guard_loud "str_eq(x)(5)"     'print(str_eq("x")(5))'
+guard_loud "write_file(5)(x)" 'print(write_file(5)("x"))'
+# valid string use must still work (regression guard for the new tag checks)
+guard_compile 'print(concat(str_head("hi"))(str_tail("abc")))'
+gv="$(./runner 2>/dev/null)"
+[ "$gv" = "hbc" ] || { echo "FAIL  type guard: valid concat/str_head/str_tail broke (got '$gv', want 'hbc')"; gok=0; }
+# print(INT) must COERCE to its decimal, matching the C host's print("%ld") —
+# b_τ ≡ f_τ: print(5) works on the host, so it must work (not crash) on the VM.
+guard_compile 'print(sub(0)(42))'
+gp="$(./runner 2>/dev/null)"
+[ "$gp" = "-42" ] || { echo "FAIL  print(INT) coercion: got '$gp', want '-42' (C host prints the integer)"; gok=0; }
+if [ "$gok" -eq 1 ]; then
+    echo "PASS  string-builtin type guards: non-string args halt loudly (no SIGSEGV); print(INT) coerces like the host"
 else
-    echo "FAIL  chr type guard: rc=$crc stderr='$CERR' (want non-zero + 'secd: chr/ord expects a string')"; exit 1
+    exit 1
 fi
 
 rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin

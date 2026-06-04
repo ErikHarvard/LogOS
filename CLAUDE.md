@@ -52,7 +52,9 @@ Expressions:
 
 ### Built-ins
 
-- `print(s)` — prints string `s` followed by a newline; returns `s`.
+- `print(s)` — prints string `s` followed by a newline; returns `s`. An integer
+  argument is coerced to its decimal (`print(5)` → `5`) on every engine; any
+  other non-string halts loudly.
 - `copy_self(x)` — copies `/proc/self/exe` to `new_logos_gen{N+1}_pid{P}.bin`,
   where `N` is the running host's own generation and `P` is its PID (mode 0755);
   writes the chosen path to stderr and returns it as a string. The host reads
@@ -453,7 +455,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 8993 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 9244 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -835,14 +837,23 @@ emits:
   the zero-fill tail into unmapped memory and SIGSEGV;
 - `secd: chr out of range` — a `chr` argument outside `0..255`, matching the C
   host's loud reject instead of silently truncating mod 256.
-- `secd: chr/ord expects a string` — `chr`/`ord` given a non-string argument.
-  Both read their argument as a string descriptor `[len][ptr]`; since native
-  integers, an int literal `n` desugars to `str_to_int("n")`, so `chr(65)` would
-  pass an `INT` value whose payload is the integer itself, not a pointer —
-  dereferencing it as a descriptor *segfaulted*. The VM now checks the value tag
-  and halts loudly, matching the C host's `chr: argument is not a string`.
-  (Correct use wraps the int: `chr(int_to_str(n))`, as `theourgia.la`/`bundle.la`
-  do.)
+- `secd: argument is not a string` — a string builtin given a non-string
+  argument. Every string builtin reads its argument as a descriptor `[len][ptr]`;
+  since native integers, an int literal `n` desugars to `str_to_int("n")`, so e.g.
+  `str_len(5)` would pass an `INT` value whose payload is the integer itself, not
+  a pointer — dereferencing it as a descriptor *segfaulted*. The VM now checks
+  the value tag (`STR` = 0) at the top of every string builtin —
+  `chr`/`ord`/`str_head`/`str_tail`/`str_len`/`str_to_int`/`read_file` and both
+  positions of the curried `concat`/`str_eq`/`write_file`/`write_exec` — and halts
+  loudly, matching the C host's `<builtin>: argument is not a string`. The one
+  exception is `print`, which **coerces** an `INT` to its decimal and prints it
+  (so `print(5)` → `5`), exactly as the C host's `print` does — preserving
+  `b_τ ≡ f_τ` rather than rejecting. (Correct use of the rest still wraps an int
+  in a string: `chr(int_to_str(n))`, as `theourgia.la`/`bundle.la` do.) *Residual
+  (separate concern):* the syscall builtins (`write`/`open`/`mount`/`read`/…)
+  take their integer arguments as **decimal strings** via `desc_atoi`, a distinct
+  int-as-string convention; passing a native `INT` to one of those still derefs a
+  non-pointer and is not yet guarded.
 
 The C host gained the matching guard for its own recursion: deeply-nested input
 halts with `error: expression nesting too deep (C stack guard)`, armed 512 KB
