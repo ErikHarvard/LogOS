@@ -28,6 +28,8 @@
 ;            19 str_to_int 20 int_to_str 21 add 22 sub 23 mul 24 div
 ;            25 mod 26 lt 27 int_eq   (native integers: value tag 4 INT,
 ;            payload = the signed integer directly; no heap descriptor)
+;            28 reap 29 sleep 30 error 31 pipe 32 read 33 str_len
+;            34 drm_mode 35 present   (DRM/KMS dumb-buffer scanout; VM-only)
 ;
 ;  Build:  nasm -f bin secd.asm -o secd
 ; ═══════════════════════════════════════════════════════════════════
@@ -58,8 +60,9 @@ phdr:
     dq 0x400000
     dq 0x400000
     dq filesize
-    dq progbuf - $$ + progcap    ; p_memsz: map through progbuf + 5 MiB (progbuf
-                                 ; is the program-stream buffer; the rest is lazy).
+    dq drmbuf - $$ + drmsize     ; p_memsz: map through progbuf + 5 MiB (progbuf
+                                 ; is the program-stream buffer) plus the 64 KiB
+                                 ; DRM scratch above it; the rest is lazy.
                                  ; Tied to progbuf, not a fixed constant, so the
                                  ; segment tracks progbuf when the layout below
                                  ; shifts — a hardcoded size once left progbuf
@@ -591,6 +594,16 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi33
+    mov     rsi, rbp
+    mov     rdi, str_drmmode
+    call    strcmp
+    test    eax, eax
+    je      .bi34
+    mov     rsi, rbp
+    mov     rdi, str_present
+    call    strcmp
+    test    eax, eax
+    je      .bi35
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -693,6 +706,12 @@ _start:
     jmp     .pushbi
 .bi33:
     mov     r11, 33
+    jmp     .pushbi
+.bi34:
+    mov     r11, 34
+    jmp     .pushbi
+.bi35:
+    mov     r11, 35
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -831,6 +850,10 @@ _start:
     je      .mkpa                ; read is curried: read(fd)(maxbytes)
     cmp     r11, 33
     je      .bi_strlen
+    cmp     r11, 34
+    je      .bi_drmmode
+    cmp     r11, 35
+    je      .bi_present
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -1095,6 +1118,10 @@ _start:
     jmp     .loop
 
 .bi_chr:                         ; r9 = decimal string descriptor → 1 byte
+    test    r8, r8               ; arg must be a STR (tag 0). A non-string — e.g. an
+    jnz     .strtype             ; INT (tag 4), whose payload IS the value, not a
+                                 ; pointer — would deref it as a descriptor →
+                                 ; SIGSEGV. Halt loudly like the C host instead.
     mov     rsi, [r9+8]
     mov     rcx, [r9]
     xor     rax, rax
@@ -1125,6 +1152,8 @@ _start:
     jmp     .loop
 
 .bi_ord:                         ; r9 = string descriptor → decimal of first byte
+    test    r8, r8               ; STR only — a non-string deref crashes (see .bi_chr)
+    jnz     .strtype
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     test    rcx, rcx
@@ -1199,6 +1228,261 @@ _start:
     add     r12, 16
     add     r15, 16
     jmp     .loop
+
+; ── DRM/KMS scanout (Theourgia Stage 2, native-VM only) ──────────────
+; drm_mode("!") sets up a dumb-buffer scanout on /dev/dri/card0 and returns
+; "<width> <height> <pitch>" (decimal, space-separated). It opens the primary
+; node, enumerates the connected connector + its preferred mode, allocates and
+; maps a 32-bpp (XRGB8888, depth 24) dumb framebuffer, and points the CRTC at
+; it (SETCRTC). The fd, mapped pointer, buffer size, pitch and dimensions are
+; held in globals for present(). Becoming DRM master needs an unobstructed VT;
+; under a running compositor the kernel refuses CREATE_DUMB/SETCRTC and we halt
+; loudly via .drm_fail (no display is touched). All scratch lives in drmbuf, a
+; 64 KiB zero-fill region above the program buffer.
+.bi_drmmode:
+    mov     rax, 2                    ; open("/dev/dri/card0", O_RDWR)
+    mov     rdi, drm_card
+    mov     rsi, 2
+    xor     rdx, rdx
+    syscall
+    test    rax, rax
+    js      .drm_fail
+    mov     [drm_fd], rax
+    mov     rdi, rax                  ; best-effort SET_MASTER (ignore result)
+    mov     rax, 16
+    mov     rsi, 0x641e
+    xor     rdx, rdx
+    syscall
+    ; --- GETRESOURCES: connector/crtc/encoder/fb id arrays + counts ---
+    mov     rdi, drm_res
+    xor     eax, eax
+    mov     ecx, 8
+    rep     stosq                     ; zero 64-byte card_res
+    mov     rax, drm_fbs
+    mov     [drm_res + 0], rax        ; fb_id_ptr
+    mov     rax, drm_crtcs
+    mov     [drm_res + 8], rax        ; crtc_id_ptr
+    mov     rax, drm_conns
+    mov     [drm_res + 16], rax       ; connector_id_ptr
+    mov     rax, drm_encs
+    mov     [drm_res + 24], rax       ; encoder_id_ptr
+    mov     dword [drm_res + 32], 32  ; count_fbs cap
+    mov     dword [drm_res + 36], 32  ; count_crtcs cap
+    mov     dword [drm_res + 40], 32  ; count_connectors cap
+    mov     dword [drm_res + 44], 32  ; count_encoders cap
+    mov     rdi, [drm_fd]
+    mov     rax, 16
+    mov     rsi, 0xc04064a0           ; DRM_IOCTL_MODE_GETRESOURCES
+    mov     rdx, drm_res
+    syscall
+    test    rax, rax
+    js      .drm_fail
+    mov     r9d, [drm_res + 40]       ; actual connector count
+    cmp     r9d, 32
+    jbe     .dm_cnt_ok
+    mov     r9d, 32
+.dm_cnt_ok:
+    xor     r8, r8                    ; connector index
+.dm_conn_loop:
+    cmp     r8d, r9d
+    jae     .drm_fail                 ; no connected connector with a mode → fail
+    mov     rdi, drm_conn
+    xor     eax, eax
+    mov     ecx, 10
+    rep     stosq                     ; zero 80-byte get_connector
+    mov     eax, [drm_conns + r8*4]
+    mov     [drm_conn + 48], eax      ; connector_id
+    mov     rax, drm_modes
+    mov     [drm_conn + 8], rax       ; modes_ptr
+    mov     dword [drm_conn + 32], 64 ; count_modes cap (props/encoders left 0)
+    mov     rdi, [drm_fd]
+    mov     rax, 16
+    mov     rsi, 0xc05064a7           ; DRM_IOCTL_MODE_GETCONNECTOR
+    mov     rdx, drm_conn
+    syscall
+    test    rax, rax
+    js      .dm_conn_next
+    cmp     dword [drm_conn + 60], 1  ; connection == DRM_MODE_CONNECTED
+    jne     .dm_conn_next
+    cmp     dword [drm_conn + 32], 0  ; count_modes > 0
+    jne     .dm_found
+.dm_conn_next:
+    inc     r8
+    jmp     .dm_conn_loop
+.dm_found:
+    movzx   eax, word [drm_modes + 4] ; mode.hdisplay
+    mov     [drm_w], rax
+    movzx   eax, word [drm_modes + 14]; mode.vdisplay
+    mov     [drm_h], rax
+    mov     eax, [drm_conn + 48]      ; connector_id (for SETCRTC)
+    mov     [drm_connid], eax
+    ; --- GETENCODER → crtc_id (fall back to crtcs[0]) ---
+    mov     rdi, drm_enc
+    xor     eax, eax
+    mov     ecx, 3
+    rep     stosq                     ; zero 24 (≥20) byte get_encoder
+    mov     eax, [drm_conn + 44]      ; encoder_id
+    mov     [drm_enc + 0], eax
+    mov     rdi, [drm_fd]
+    mov     rax, 16
+    mov     rsi, 0xc01464a6           ; DRM_IOCTL_MODE_GETENCODER
+    mov     rdx, drm_enc
+    syscall
+    test    rax, rax
+    js      .dm_crtc_fallback
+    mov     eax, [drm_enc + 8]        ; crtc_id
+    test    eax, eax
+    jnz     .dm_have_crtc
+.dm_crtc_fallback:
+    mov     eax, [drm_crtcs + 0]      ; first crtc from resources
+.dm_have_crtc:
+    mov     [drm_crtcid], eax
+    ; --- CREATE_DUMB (32 bpp) ---
+    mov     rdi, drm_dumb
+    xor     eax, eax
+    mov     ecx, 4
+    rep     stosq                     ; zero 32-byte create_dumb
+    mov     eax, [drm_h]
+    mov     [drm_dumb + 0], eax       ; height
+    mov     eax, [drm_w]
+    mov     [drm_dumb + 4], eax       ; width
+    mov     dword [drm_dumb + 8], 32  ; bpp
+    mov     rdi, [drm_fd]
+    mov     rax, 16
+    mov     rsi, 0xc02064b2           ; DRM_IOCTL_MODE_CREATE_DUMB
+    mov     rdx, drm_dumb
+    syscall
+    test    rax, rax
+    js      .drm_fail
+    mov     eax, [drm_dumb + 20]      ; pitch
+    mov     [drm_pitch], rax
+    mov     rax, [drm_dumb + 24]      ; size
+    mov     [drm_maps], rax
+    ; --- ADDFB (depth 24, bpp 32) ---
+    mov     rdi, drm_fbcmd
+    xor     eax, eax
+    mov     ecx, 4
+    rep     stosq                     ; zero 32 (≥28) byte fb_cmd
+    mov     eax, [drm_w]
+    mov     [drm_fbcmd + 4], eax      ; width
+    mov     eax, [drm_h]
+    mov     [drm_fbcmd + 8], eax      ; height
+    mov     eax, [drm_dumb + 20]
+    mov     [drm_fbcmd + 12], eax     ; pitch
+    mov     dword [drm_fbcmd + 16], 32; bpp
+    mov     dword [drm_fbcmd + 20], 24; depth
+    mov     eax, [drm_dumb + 16]
+    mov     [drm_fbcmd + 24], eax     ; handle
+    mov     rdi, [drm_fd]
+    mov     rax, 16
+    mov     rsi, 0xc01c64ae           ; DRM_IOCTL_MODE_ADDFB
+    mov     rdx, drm_fbcmd
+    syscall
+    test    rax, rax
+    js      .drm_fail
+    ; --- MAP_DUMB → mmap the buffer ---
+    mov     rdi, drm_map
+    xor     eax, eax
+    mov     ecx, 2
+    rep     stosq                     ; zero 16-byte map_dumb
+    mov     eax, [drm_dumb + 16]
+    mov     [drm_map + 0], eax        ; handle
+    mov     rdi, [drm_fd]
+    mov     rax, 16
+    mov     rsi, 0xc01064b3           ; DRM_IOCTL_MODE_MAP_DUMB
+    mov     rdx, drm_map
+    syscall
+    test    rax, rax
+    js      .drm_fail
+    mov     r9, [drm_map + 8]         ; mmap offset (6th arg)
+    xor     rdi, rdi                  ; addr = NULL
+    mov     rsi, [drm_maps]           ; length = size
+    mov     rdx, 3                    ; PROT_READ|PROT_WRITE
+    mov     r10, 1                    ; MAP_SHARED
+    mov     r8, [drm_fd]
+    mov     rax, 9                    ; mmap
+    syscall
+    cmp     rax, -4096                ; mmap error (-errno) ?
+    ja      .drm_fail
+    mov     [drm_mapp], rax
+    ; --- SETCRTC: point the CRTC at our fb with the chosen mode ---
+    mov     rdi, drm_crtc
+    xor     eax, eax
+    mov     ecx, 13
+    rep     stosq                     ; zero 104-byte crtc
+    mov     rax, drm_connid
+    mov     [drm_crtc + 0], rax       ; set_connectors_ptr
+    mov     dword [drm_crtc + 8], 1   ; count_connectors
+    mov     eax, [drm_crtcid]
+    mov     [drm_crtc + 12], eax      ; crtc_id
+    mov     eax, [drm_fbcmd + 0]
+    mov     [drm_crtc + 16], eax      ; fb_id
+    mov     dword [drm_crtc + 32], 1  ; mode_valid
+    mov     rsi, drm_modes            ; copy chosen mode (68 bytes) into crtc.mode
+    mov     rdi, drm_crtc + 36
+    mov     ecx, 68
+    rep     movsb
+    mov     rdi, [drm_fd]
+    mov     rax, 16
+    mov     rsi, 0xc06864a2           ; DRM_IOCTL_MODE_SETCRTC
+    mov     rdx, drm_crtc
+    syscall
+    test    rax, rax
+    js      .drm_fail
+    ; --- build the "<w> <h> <pitch>" result string on the heap ---
+    mov     rbp, r15                  ; bytes start
+    mov     rax, [drm_w]
+    call    fmt_u_heap
+    mov     byte [r15], 32
+    inc     r15
+    mov     rax, [drm_h]
+    call    fmt_u_heap
+    mov     byte [r15], 32
+    inc     r15
+    mov     rax, [drm_pitch]
+    call    fmt_u_heap
+    mov     rdx, r15
+    sub     rdx, rbp                  ; length
+    mov     qword [r15], 0            ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx
+    mov     [r15+8], rbp
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+
+; present(pixels): blit a binary-safe string of framebuffer bytes into the
+; mapped dumb buffer (clamped to its size); the scanned-out CRTC shows it. The
+; pixels are expected to be height*pitch bytes of XRGB8888 (little-endian: the
+; bytes of each pixel are B,G,R,X). Returns the pixel string unchanged.
+.bi_present:
+    mov     rax, [drm_mapp]
+    test    rax, rax
+    jz      .drm_fail                 ; present() before a successful drm_mode()
+    mov     rcx, [r9]                 ; source length
+    mov     rdx, [drm_maps]
+    cmp     rcx, rdx
+    jbe     .pr_len
+    mov     rcx, rdx                  ; clamp to buffer size
+.pr_len:
+    mov     rsi, [r9+8]               ; source bytes
+    mov     rdi, rax                  ; dst = mapped buffer
+    rep     movsb
+    mov     [r12], r8                 ; return the pixel value
+    mov     [r12+8], r9
+    add     r12, 16
+    jmp     .loop
+.drm_fail:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, drmmsg
+    mov     rdx, drmmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
 
 .bi_concat2:                     ; rbp = a1 desc, r9 = a2 desc
     ; guard: result is len1+len2 bytes + a 16-byte descriptor; halt if it would
@@ -1815,6 +2099,16 @@ _start:
     mov     rdi, 1
     syscall
 
+.strtype:                        ; chr/ord given a non-string (would deref a non-ptr)
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, strtypemsg
+    mov     rdx, strtypemsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 ; ═══════════════════════════════════════════════════════════════════
 ;  Copying garbage collector — two semispaces over [heap, progbuf):
 ;  low [heap, semimid), high [semimid, progbuf). Triggered from .loop
@@ -2043,6 +2337,8 @@ badstrmsg:     db "secd: malformed program", 10
 badstrmsg_len  equ $ - badstrmsg
 chrmsg:        db "secd: chr out of range", 10
 chrmsg_len     equ $ - chrmsg
+strtypemsg:    db "secd: chr/ord expects a string", 10
+strtypemsg_len equ $ - strtypemsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0
@@ -2085,10 +2381,23 @@ str_error:     db "error", 0
 str_pipe:      db "pipe", 0
 str_read:      db "read", 0
 str_strlen:    db "str_len", 0
+str_drmmode:   db "drm_mode", 0
+str_present:   db "present", 0
+drm_card:      db "/dev/dri/card0", 0
+drmmsg:        db "secd: drm error", 10
+drmmsg_len     equ $ - drmmsg
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect
 gc_wktop:      dq 0              ; GC: worklist stack top (into gcwork)
+; DRM/KMS scanout state, shared between drm_mode() and present().
+drm_fd:        dq 0              ; /dev/dri/card0 fd
+drm_mapp:      dq 0              ; mmap'd dumb-buffer pointer (0 until drm_mode succeeds)
+drm_maps:      dq 0              ; dumb-buffer size in bytes
+drm_pitch:     dq 0             ; bytes per row
+drm_w:         dq 0              ; mode width  (pixels)
+drm_h:         dq 0              ; mode height (pixels)
+drm_crtcid:    dq 0             ; chosen CRTC id
 
 ; The operand and dump stacks scale with recursion depth — this SECD machine
 ; does no tail-call optimisation, so a deep (even tail-) recursion such as
@@ -2125,6 +2434,23 @@ progcap  equ 0x500000                ; 5 MiB mapped for the program stream (matc
 progend  equ progbuf + progcap       ; mapped end of the program region; bounds the
                                      ; control pointer rbx and skipbody's scans so a
                                      ; truncated/malformed stream halts loudly, not SIGSEGV
+; DRM modeset scratch: ioctl structs + id/mode arrays. 64 KiB above the program
+; buffer (zero-fill, lazily mapped); p_memsz below is extended to cover it.
+drmbuf   equ progend
+drm_res      equ drmbuf + 0          ; drm_mode_card_res (64)
+drm_conns    equ drmbuf + 64         ; connector id array (32 × u32)
+drm_crtcs    equ drmbuf + 192        ; crtc id array
+drm_encs     equ drmbuf + 320        ; encoder id array
+drm_fbs      equ drmbuf + 448        ; fb id array
+drm_conn     equ drmbuf + 576        ; drm_mode_get_connector (80)
+drm_modes    equ drmbuf + 656        ; drm_mode_modeinfo array (64 × 68)
+drm_enc      equ drmbuf + 5008       ; drm_mode_get_encoder (20)
+drm_dumb     equ drmbuf + 5040       ; drm_mode_create_dumb (32)
+drm_map      equ drmbuf + 5072       ; drm_mode_map_dumb (16)
+drm_fbcmd    equ drmbuf + 5088       ; drm_mode_fb_cmd (28)
+drm_crtc     equ drmbuf + 5120       ; drm_mode_crtc (104, embeds the modeinfo)
+drm_connid   equ drmbuf + 5224       ; the single connector id passed to SETCRTC (u32)
+drmsize  equ 0x10000                 ; 64 KiB
 margin   equ 0x4100000               ; 65 MiB: covers the largest single allocation
                                      ; (read_file's 64 MiB read + descriptor); the
                                      ; dispatch loop collects this far before a

@@ -28,6 +28,8 @@ host program, applied to itself, reproduces itself.
 | `metadebug.la`       | Self-verifying LogOS (seed Autological Proof System): a spec table plus `DEBUG`/`META_DEBUG` machinery sharing one glyph table, so the debugger can verify every glyph against its executable test cases. |
 | `specpipe.la`        | A specification → implementation pipeline: a `SPEC` of `(name, DEF(sig)(src)(impl), tests)` entries; `GENERATE` emits `.la` source, `META_DEBUG` runs each glyph's tests, `DEPLOY` writes, re-reads, and verifies a module in one call. |
 | `strutil_spec.la`    | A string-utilities module (`STARTS_WITH`/`ENDS_WITH`/`CONTAINS`/`SPLIT`/`JOIN`/`REPLACE`) written as a `SPEC` and produced by `import("specpipe.la")` — a self-contained, verified module from a spec. |
+| `theourgia.la`       | Theourgia Stage 1: the compositor's software surface core — SURFACES (pixel buffers), z-ordered COMPOSITION (blits), and serialisation to a PPM raster, all in Lingua Adamica, byte-identical on the C host and the native VM. |
+| `theourgia_drm.la`   | Theourgia Stage 2: real scanout via the `drm_mode`/`present` VM builtins (DRM/KMS dumb buffer). Paints the whole screen one colour. Runs as DRM master from a bare VT; under a compositor it halts loudly without touching the display. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -76,8 +78,10 @@ Expressions:
   if `s` is empty.
 - `str_eq(a)(b)` — returns Church `TRUE` (`la t. la f. t`) if `a` and `b` are
   identical strings, Church `FALSE` (`la t. la f. f`) otherwise. Curried.
-- `chr(n)` — decimal-string `n` (0..255) → a one-byte string; how a program
-  spells an arbitrary byte (including NUL) to assemble binary.
+- `chr(n)` — decimal-*string* `n` (0..255) → a one-byte string; how a program
+  spells an arbitrary byte (including NUL) to assemble binary. The argument must
+  be a string: an int literal (e.g. `chr(65)`) desugars to an `INT` value and is
+  rejected loudly on every engine — wrap it as `chr(int_to_str(n))`.
 - `ord(s)` — first byte of `s` → its decimal string (inverse of `chr`).
 - `str_len(s)` — byte length of `s` as a decimal string. O(1) (strings carry
   their length), so it is cheap on multi-MiB binaries where an LA `str_tail`
@@ -449,7 +453,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 7411 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 8993 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -660,6 +664,57 @@ note.) Deferred to later
 layers, per the Codex: Γ-seal encryption, runtime schema validation, capability
 gating, and socket multiplexing (point-to-point / broadcast / stream routing).
 
+### Theourgia — the compositor (`theourgia.la`, `theourgia_drm.la`)
+
+The compositor is built in stages, each independently runnable and checked by
+`build.sh`.
+
+- **Stage 1 — software surfaces (`theourgia.la`).** A SURFACE is a rectangular
+  pixel buffer (`PAIR(PAIR(w)(h))(rows)`, rows a list of binary-safe row
+  strings); `COMPOSE(dst)(src)(ox)(oy)` blits one surface onto another at a
+  z-ordered offset by splicing row slices. The final buffer serialises to a PPM
+  (P6) raster — the byte array a framebuffer wants, written to a file. It uses
+  only existing builtins (`concat`/`chr`/`write_file`/native ints), so the same
+  composition runs **byte-identically on the C host and the native VM**.
+  `build.sh` composes a 32×24 desktop (blue background, a red and a green
+  "window") and checks the PPM header, size, and overlaid pixels on both
+  engines.
+
+- **Stage 2 — DRM/KMS scanout (`theourgia_drm.la`), native-VM only.** Two new
+  VM builtins put real pixels on a real screen with no host and no userspace
+  graphics stack:
+
+  - `drm_mode("!")` — opens `/dev/dri/card0`, enumerates the connected
+    connector and its preferred mode (`GETRESOURCES` → `GETCONNECTOR` →
+    `GETENCODER`), allocates and maps a 32-bpp (XRGB8888, depth 24) dumb
+    framebuffer (`CREATE_DUMB` → `ADDFB` → `MAP_DUMB` → `mmap`), and points the
+    CRTC at it (`SETCRTC`). Returns `"<width> <height> <pitch>"` (decimal,
+    space-separated); the fd, mapped pointer, size, pitch and dimensions are
+    held in VM globals for `present`.
+  - `present(pixels)` — copies a framebuffer image (height·pitch bytes of
+    XRGB8888, little-endian, so a pixel's bytes are B,G,R,X) into the
+    scanned-out buffer (clamped to its size); the screen shows it. Returns the
+    pixel string unchanged.
+
+  Both are VM-only (like the process/syscall builtins) — under the C host they
+  are unbound. The ioctl scratch lives in `drmbuf`, a 64 KiB zero-fill region
+  above the program buffer (`p_memsz` extended to cover it; `progbuf`/heap/GC
+  invariants untouched).
+
+  Real scanout requires **DRM master**, which only an unobstructed VT grants. On
+  a bare VT (Ctrl+Alt+F-key) `theourgia_drm.la` paints the whole screen blue and
+  self-replicates the proof. **Under a running Wayland/X compositor the kernel
+  owns the CRTC**, so `SETCRTC` is refused and `drm_mode` halts **loudly**
+  (`secd: drm error`, exit 1) **without touching the display** — the loud-failure
+  discipline. `build.sh` exercises exactly that safe path: when a graphical
+  session is active (a compositor holds master) it compiles `theourgia_drm.la`
+  on the VM, runs it, and asserts the builtins are wired (no `unbound variable`)
+  and that the full DRM sequence runs and fails cleanly (`secd: drm error`,
+  rc 1). It **skips** the test when no graphical session is present, so it can
+  never seize a bare VT's display; actual painting is verified manually from a
+  VT. (Scanout extends the **generation** side of the Γ/Ρ split — codegen-style
+  buffer assembly; the screen is recognition performed by the GPU and KMS.)
+
 ### Evaluation
 
 The host parses the file into an AST, finds the `MAIN` glyph, and reduces it.
@@ -780,6 +835,14 @@ emits:
   the zero-fill tail into unmapped memory and SIGSEGV;
 - `secd: chr out of range` — a `chr` argument outside `0..255`, matching the C
   host's loud reject instead of silently truncating mod 256.
+- `secd: chr/ord expects a string` — `chr`/`ord` given a non-string argument.
+  Both read their argument as a string descriptor `[len][ptr]`; since native
+  integers, an int literal `n` desugars to `str_to_int("n")`, so `chr(65)` would
+  pass an `INT` value whose payload is the integer itself, not a pointer —
+  dereferencing it as a descriptor *segfaulted*. The VM now checks the value tag
+  and halts loudly, matching the C host's `chr: argument is not a string`.
+  (Correct use wraps the int: `chr(int_to_str(n))`, as `theourgia.la`/`bundle.la`
+  do.)
 
 The C host gained the matching guard for its own recursion: deeply-nested input
 halts with `error: expression nesting too deep (C stack guard)`, armed 512 KB

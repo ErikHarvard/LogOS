@@ -569,7 +569,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "7411" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 7411)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "8993" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 8993)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -783,6 +783,42 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  theourgia: surfaces compose to a correct 32x24 raster, byte-identical on host and native VM"
 else
     exit 1
+fi
+
+say "Theourgia: DRM/KMS scanout builtins (Stage 2, native VM)"
+# Stage 2 adds two VM-only builtins — drm_mode() (open card0, find the connected
+# mode, allocate+map a 32-bpp dumb framebuffer, SETCRTC) and present() (blit a
+# framebuffer image into the scanned-out buffer). Real scanout needs DRM master,
+# which only a bare VT grants; under a running compositor the kernel refuses
+# SETCRTC and the builtin halts LOUDLY ("secd: drm error", exit 1) without
+# touching the display. That loud, safe failure is what we assert here: the
+# builtins are wired (no "unbound variable") and the full DRM sequence runs and
+# fails cleanly. Actual painting is verified manually from a VT (see
+# theourgia_drm.la). We only run this when a graphical session is active — i.e.
+# a compositor holds master, so the test cannot seize a bare VT's display.
+if [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ]; then
+    if [ -e /dev/dri/card0 ]; then
+        rm -f logos_secd logos_program.bin logos_source.la
+        ./tiny_host secd.la >/dev/null 2>&1
+        cp theourgia_drm.la logos_source.la
+        ./tiny_host codegen.la >/dev/null 2>&1
+        drm_rc=0
+        ./logos_secd >/tmp/drm_out.txt 2>/tmp/drm_err.txt || drm_rc=$?
+        ok=1
+        grep -q "unbound" /tmp/drm_err.txt && { echo "FAIL  theourgia drm: drm_mode/present unbound (not wired)"; ok=0; }
+        grep -q "secd: drm error" /tmp/drm_err.txt || { echo "FAIL  theourgia drm: expected loud 'secd: drm error' under a compositor, got [$(cat /tmp/drm_err.txt)] rc=$drm_rc"; ok=0; }
+        [ "$drm_rc" -eq 1 ] || { echo "FAIL  theourgia drm: expected exit 1 (loud fail), got rc=$drm_rc"; ok=0; }
+        rm -f logos_secd logos_program.bin logos_source.la /tmp/drm_out.txt /tmp/drm_err.txt
+        if [ "$ok" -eq 1 ]; then
+            echo "PASS  theourgia: drm_mode/present wired; full DRM sequence runs and fails loudly without master (no display touched)"
+        else
+            exit 1
+        fi
+    else
+        echo "SKIP  theourgia drm: no /dev/dri/card0"
+    fi
+else
+    echo "SKIP  theourgia drm: no graphical session (won't seize a bare VT's display)"
 fi
 
 say "Linux syscalls (native sovereign session)"
@@ -1085,6 +1121,25 @@ if [ "$erc" -ne 0 ] && printf '%s\n' "$EERR" | grep -qiF "parse error"; then
     echo "PASS  codegen halts on malformed input via error (rc $erc) — no silent truncation"
 else
     echo "FAIL  malformed-input halt: rc=$erc stderr='$EERR' (want non-zero + 'parse error')"; exit 1
+fi
+
+# ── chr/ord type guard: a non-string argument halts loudly, not SIGSEGV ──
+# chr/ord read their argument as a string descriptor ([len][ptr]). Since native
+# integers, an int literal `n` desugars to str_to_int("n"), so `chr(65)` passes
+# an INT value whose payload IS the integer, not a pointer — dereferencing it as
+# a descriptor would SIGSEGV. The VM must halt with "secd: chr/ord expects a
+# string" (non-zero exit), matching the C host's "chr: argument is not a string".
+# Correct use wraps an int: chr(int_to_str(n)) (as theourgia.la/bundle.la do).
+printf 'glyph MAIN = print(chr(65))\n' > /tmp/t_chrtype.la
+cp /tmp/t_chrtype.la logos_source.la; cp compiler.bin logos_program.bin
+./runner >/dev/null 2>&1                        # compile
+crc=0
+CERR="$(./runner 2>&1 1>/dev/null)" || crc=$?
+rm -f /tmp/t_chrtype.la
+if [ "$crc" -ne 0 ] && printf '%s\n' "$CERR" | grep -qF "secd: chr/ord expects a string"; then
+    echo "PASS  chr/ord type guard: chr on a non-string (INT) halts loudly (rc $crc) instead of SIGSEGV"
+else
+    echo "FAIL  chr type guard: rc=$crc stderr='$CERR' (want non-zero + 'secd: chr/ord expects a string')"; exit 1
 fi
 
 rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin

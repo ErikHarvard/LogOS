@@ -1,0 +1,70 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_drm.la — the compositor's Stage 2 scanout: real pixels on a
+#  real screen via DRM/KMS, on the native SECD VM only.
+#
+#  Stage 1 (theourgia.la) composed surfaces and serialised them to a PPM
+#  file — a framebuffer's byte array written to disk because nothing yet
+#  drove a display. Stage 2 closes that gap with two VM builtins:
+#
+#    drm_mode("!") — opens /dev/dri/card0, finds the connected output and
+#        its preferred mode, allocates a 32-bpp dumb framebuffer, maps it,
+#        and points the CRTC at it (SETCRTC). Returns "<w> <h> <pitch>".
+#    present(bytes) — copies a framebuffer image (height*pitch bytes of
+#        XRGB8888, little-endian B,G,R,X per pixel) into the scanned-out
+#        buffer; the screen shows it.
+#
+#  This paints the whole screen one colour — the minimal proof that LogOS
+#  drives the display itself, with no host and no userspace graphics stack.
+#  It MUST run as DRM master: from a bare VT (Ctrl+Alt+F-key), not under a
+#  running Wayland/X compositor (which owns the CRTC — there drm_mode halts
+#  loudly with `secd: drm error`, touching nothing).
+#
+#  Pixel order is XRGB8888 little-endian, so a pixel's bytes are B,G,R,X.
+#  BLUE below is the deep-blue scanout of the bring-up test.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+
+# ── Parse "<w> <h> <pitch>" (str_to_int consumes every byte, so each field
+#    must be sliced clean of the space separators first) ──
+glyph IS_SPACE = la c. str_eq(c)(" ")
+glyph NUM_PREFIX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(IS_SPACE(str_head(s)))(la _. "")(la _.
+        concat(str_head(s))(self(str_tail(s))))))
+glyph AFTER_SPACE = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(IS_SPACE(str_head(s)))(la _. str_tail(s))(la _.
+        self(str_tail(s)))))
+glyph FIELD0 = la s. str_to_int(NUM_PREFIX(s))
+
+# ── REPLICATE(n)(s) — n copies of s, by binary doubling: O(log n) concats
+#    instead of n, so an 8 MiB framebuffer is assembled without an O(n^2)
+#    left-fold (each concat still copies, so it is O(n log n) bytes total) ──
+glyph DOUBLE = la s. concat(s)(s)
+glyph REPLICATE = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(int_eq(mod(n)(2))(0))
+        (la _. DOUBLE(self(div(n)(2))(s)))
+        (la _. concat(s)(DOUBLE(self(div(n)(2))(s))))))
+
+# ── A solid-colour fullscreen image: H rows of PITCH bytes each ──
+# chr takes a decimal *string* (an int literal would desugar to an INT value and
+# crash chr); int_to_str bridges, as in theourgia.la's PX.
+glyph BYTE = la n. chr(int_to_str(n))
+glyph BLUE = concat(BYTE(255))(concat(BYTE(0))(concat(BYTE(0))(BYTE(0))))  # B G R X
+glyph ROW  = la pitch. REPLICATE(div(pitch)(4))(BLUE)   # pitch bytes of blue pixels
+glyph FRAME = la h. la pitch. REPLICATE(h)(ROW(pitch))
+
+# drm_mode runs first (binding `dims`); on a compositor it halts here, so the
+# framebuffer below is never built. As master it returns the geometry and we
+# paint the whole screen blue.
+glyph MAIN = (la dims.
+    (la h. (la pitch.
+        SEQ(present(FRAME(h)(pitch)))
+           (print(concat("theourgia: painted ")(dims)))
+    )(FIELD0(AFTER_SPACE(AFTER_SPACE(dims)))))
+     (FIELD0(AFTER_SPACE(dims))))
+  (drm_mode("!"))
