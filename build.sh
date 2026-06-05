@@ -607,7 +607,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "9253" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9253)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "9378" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9378)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1199,6 +1199,24 @@ guard_loud "write_file(5)(x)" 'print(write_file(5)("x"))'
 # present(pixels) is a DRM builtin but its arg is a string; its tag guard fires
 # before the drm-state check, so a non-string is rejected regardless of DRM state.
 guard_loud "present(5)"       'present(5)'
+# Syscall builtins take their int args as decimal STRINGS via desc_atoi; a native
+# INT would deref its payload (the integer itself) as a [len][ptr] descriptor and
+# SIGSEGV. Same tag guard, one-arg (r8) and two-arg curried (PA record [r11+8])
+# positions; it fires before any syscall, so the bad-typed call has no fd/process
+# effect. (fork/reap/pipe take an ignored "!" and never deref it.)
+guard_loud "close(5)"         'close(5)'
+guard_loud "exit(5)"          'exit(5)'
+guard_loud "waitpid(5)"       'waitpid(5)'
+guard_loud "sleep(5)"         'sleep(5)'
+guard_loud "execve(5)"        'execve(5)'
+guard_loud "write(5)(x)"      'write(5)("x")'
+guard_loud "write(1)(5)"      'write("1")(5)'
+guard_loud "open(5)(0)"       'open(5)("0")'
+guard_loud "open(x)(5)"       'open("/x")(5)'
+guard_loud "mount(5)(x)"      'mount(5)("x")'
+guard_loud "mount(x)(5)"      'mount("x")(5)'
+guard_loud "read(5)(1)"       'read(5)("1")'
+guard_loud "read(0)(5)"       'read("0")(5)'
 # valid string use must still work (regression guard for the new tag checks)
 guard_compile 'print(concat(str_head("hi"))(str_tail("abc")))'
 gv="$(./runner 2>/dev/null)"
@@ -1209,7 +1227,7 @@ guard_compile 'print(sub(0)(42))'
 gp="$(./runner 2>/dev/null)"
 [ "$gp" = "-42" ] || { echo "FAIL  print(INT) coercion: got '$gp', want '-42' (C host prints the integer)"; gok=0; }
 if [ "$gok" -eq 1 ]; then
-    echo "PASS  string-builtin type guards: non-string args halt loudly (no SIGSEGV); print(INT) coerces like the host"
+    echo "PASS  string + syscall builtin type guards: non-string args halt loudly (no SIGSEGV); print(INT) coerces like the host"
 else
     exit 1
 fi

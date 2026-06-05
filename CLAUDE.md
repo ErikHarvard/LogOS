@@ -455,7 +455,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 9253 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 9378 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -850,11 +850,17 @@ emits:
   exception is `print`, which **coerces** an `INT` to its decimal and prints it
   (so `print(5)` → `5`), exactly as the C host's `print` does — preserving
   `b_τ ≡ f_τ` rather than rejecting. (Correct use of the rest still wraps an int
-  in a string: `chr(int_to_str(n))`, as `theourgia.la`/`bundle.la` do.) *Residual
-  (separate concern):* the syscall builtins (`write`/`open`/`mount`/`read`/…)
-  take their integer arguments as **decimal strings** via `desc_atoi`, a distinct
-  int-as-string convention; passing a native `INT` to one of those still derefs a
-  non-pointer and is not yet guarded.
+  in a string: `chr(int_to_str(n))`, as `theourgia.la`/`bundle.la` do.) The
+  **syscall builtins are now guarded the same way** (audit follow-up): `write`/
+  `open`/`mount`/`read` (two-arg) and `close`/`execve`/`waitpid`/`sleep`/`exit`
+  (one-arg) take their integer arguments as **decimal strings** via `desc_atoi`,
+  a distinct int-as-string convention — passing a native `INT` to one would have
+  derefed its payload (the integer itself) as a `[len][ptr]` descriptor and
+  SIGSEGV'd. Each now checks the value tag at entry (`r8` for the last arg, the
+  PA record's `[r11+8]` for the first arg of a curried builtin) and halts loudly
+  with `secd: argument is not a string`, closing the last unguarded
+  non-string-deref path. (`fork`/`reap`/`pipe` take an ignored `"!"` and never
+  deref it; `present`/the string builtins were already guarded.)
 
 The C host gained the matching guard for its own recursion: deeply-nested input
 halts with `error: expression nesting too deep (C stack guard)`, armed 512 KB

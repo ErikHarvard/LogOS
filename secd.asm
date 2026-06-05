@@ -1731,6 +1731,10 @@ _start:
 
 ; ── Linux syscalls exposed to Lingua Adamica (ints cross as decimal STRs) ──
 .bi_write2:                      ; write(fd)(s) ; rbp = fd desc, r9 = content desc
+    test    r8, r8               ; both args must be STR (a1 tag at [r11+8], a2 in
+    jnz     .strtype             ; r8); an INT would deref its payload (see .strtype)
+    cmp     qword [r11+8], 0
+    jne     .strtype
     mov     rdi, rbp
     call    desc_atoi
     mov     rdi, rax             ; fd
@@ -1742,6 +1746,10 @@ _start:
     jmp     .loop
 
 .bi_open2:                       ; open(path)(flags) ; rbp = path, r9 = flags
+    test    r8, r8               ; both args must be STR (a1 tag at [r11+8], a2 in
+    jnz     .strtype             ; r8); an INT would deref its payload (see .strtype)
+    cmp     qword [r11+8], 0
+    jne     .strtype
     mov     rcx, [rbp]
     mov     rsi, [rbp+8]
     mov     rdi, pathbuf
@@ -1769,6 +1777,8 @@ _start:
     jmp     .loop
 
 .bi_close:                       ; close(fd) ; r9 = fd desc
+    test    r8, r8               ; fd must be a decimal STR; an INT would deref its
+    jnz     .strtype             ; payload as a [len][ptr] descriptor (see .strtype)
     mov     rdi, r9
     call    desc_atoi
     mov     rdi, rax
@@ -1778,6 +1788,10 @@ _start:
     jmp     .loop
 
 .bi_mount2:                      ; mount(target)(fstype) ; rbp = target, r9 = fstype
+    test    r8, r8               ; both args must be STR (a1 tag at [r11+8], a2 in
+    jnz     .strtype             ; r8); an INT would deref its payload (see .strtype)
+    cmp     qword [r11+8], 0
+    jne     .strtype
     mov     rcx, [rbp]
     mov     rsi, [rbp+8]
     mov     rdi, pathbuf
@@ -1827,6 +1841,8 @@ _start:
     jmp     .loop
 
 .bi_execve:                      ; execve(path) with argv=[path], envp=[] ; r9 = path
+    test    r8, r8               ; path must be a STR; an INT would deref its payload
+    jnz     .strtype             ; as a [len][ptr] descriptor (see .strtype)
     mov     rcx, [r9]
     mov     rsi, [r9+8]
     mov     rdi, pathbuf
@@ -1858,6 +1874,8 @@ _start:
     jmp     .loop
 
 .bi_waitpid:                     ; waitpid(pid) → child exit status ; r9 = pid desc
+    test    r8, r8               ; pid must be a decimal STR; an INT would deref its
+    jnz     .strtype             ; payload as a [len][ptr] descriptor (see .strtype)
     mov     rdi, r9
     call    desc_atoi
     mov     rdi, rax             ; pid
@@ -1895,6 +1913,8 @@ _start:
     ; scratch at r15 (not bump-allocated): the syscall consumes it before
     ; push_dec reuses r15 for the result. Gives an init a real backoff so a
     ; flapping shell is rate-limited instead of respawned in a tight loop.
+    test    r8, r8               ; seconds must be a decimal STR; an INT would deref
+    jnz     .strtype             ; its payload as a [len][ptr] descriptor (.strtype)
     mov     rdi, r9              ; decimal-seconds descriptor
     call    desc_atoi
     mov     [r15], rax           ; tv_sec
@@ -1964,6 +1984,10 @@ _start:
     ; data is available (a pipe RECV waits for its SEND), returns the bytes read
     ; as a binary-safe string. maxbytes is clamped to 64 MiB so the read stays
     ; within the heap margin, exactly like read_file.
+    test    r8, r8               ; both args must be STR (a1 tag at [r11+8], a2 in
+    jnz     .strtype             ; r8); an INT would deref its payload (see .strtype)
+    cmp     qword [r11+8], 0
+    jne     .strtype
     mov     rdi, rbp             ; fd descriptor
     call    desc_atoi
     mov     r11, rax             ; fd (desc_atoi clobbers r10 but not r11)
@@ -2003,6 +2027,8 @@ _start:
     jmp     .loop
 
 .bi_exit:                        ; exit(code) ; r9 = code desc
+    test    r8, r8               ; code must be a decimal STR; an INT would deref its
+    jnz     .strtype             ; payload as a [len][ptr] descriptor (see .strtype)
     mov     rdi, r9
     call    desc_atoi
     mov     rdi, rax
