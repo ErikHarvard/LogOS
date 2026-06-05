@@ -1516,6 +1516,10 @@ _start:
 ; pixels are expected to be height*pitch bytes of XRGB8888 (little-endian: the
 ; bytes of each pixel are B,G,R,X). Returns the pixel string unchanged.
 .bi_present:
+    test    r8, r8                    ; pixels must be a STR; a non-string (e.g. an
+    jnz     .strtype                  ; INT) would deref its payload as a descriptor
+                                      ; → SIGSEGV (checked before the drm-state test,
+                                      ; so the type error reports regardless of state)
     mov     rax, [drm_mapp]
     test    rax, rax
     jz      .drm_fail                 ; present() before a successful drm_mode()

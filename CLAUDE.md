@@ -455,7 +455,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 9244 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 9253 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -696,7 +696,8 @@ The compositor is built in stages, each independently runnable and checked by
   - `present(pixels)` — copies a framebuffer image (height·pitch bytes of
     XRGB8888, little-endian, so a pixel's bytes are B,G,R,X) into the
     scanned-out buffer (clamped to its size); the screen shows it. Returns the
-    pixel string unchanged.
+    pixel string unchanged. A non-string argument is rejected loudly (the tag
+    check runs before the drm-state test), like the other string builtins.
 
   Both are VM-only (like the process/syscall builtins) — under the C host they
   are unbound. The ioctl scratch lives in `drmbuf`, a 64 KiB zero-fill region

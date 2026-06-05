@@ -607,7 +607,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "9244" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9244)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "9253" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9253)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1196,6 +1196,9 @@ guard_loud "concat(x)(5)"     'print(concat("x")(5))'
 guard_loud "str_eq(5)(x)"     'print(str_eq(5)("x"))'
 guard_loud "str_eq(x)(5)"     'print(str_eq("x")(5))'
 guard_loud "write_file(5)(x)" 'print(write_file(5)("x"))'
+# present(pixels) is a DRM builtin but its arg is a string; its tag guard fires
+# before the drm-state check, so a non-string is rejected regardless of DRM state.
+guard_loud "present(5)"       'present(5)'
 # valid string use must still work (regression guard for the new tag checks)
 guard_compile 'print(concat(str_head("hi"))(str_tail("abc")))'
 gv="$(./runner 2>/dev/null)"
