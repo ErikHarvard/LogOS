@@ -25,6 +25,11 @@
 #      WATCH(open("/dev/input/event0")("0"))("10")   # decode 10 events, then close
 # ═══════════════════════════════════════════════════════════════════
 
+# As a module, the decoder exports its field accessors and key predicates; an
+# importer (theourgia_session.la, Stage 5) reduces over decoded events without
+# seeing the byte-twiddling privates (B/U16/U32/S32/DROP), which are isolated.
+export EV_TYPE EV_CODE EV_VALUE EV_SYN EV_KEY EV_REL IS_KEY_PRESS IS_KEY_RELEASE
+
 glyph SEQ   = la a. la b. b
 glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF    = la c. la t. la f. c(t)(f)("!")

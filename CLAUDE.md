@@ -33,6 +33,7 @@ host program, applied to itself, reproduces itself.
 | `theourgia_drm.la`   | Theourgia Stage 2: real scanout via the `drm_mode`/`present` VM builtins (DRM/KMS dumb buffer). Paints the whole screen one colour. Runs as DRM master from a bare VT; under a compositor it halts loudly without touching the display. |
 | `theourgia_fb.la`    | Theourgia Stage 3: the framebuffer bridge. `import`s the Stage 1 surface core and adds `TO_FB`, converting a composed RGB scene into the XRGB8888 framebuffer image `present` scans out (R,G,B→B,G,R,0; pitch/height zero-pad). Pure generation — byte-identical on the C host and native VM. |
 | `theourgia_input.la` | Theourgia Stage 4: the input layer. Decodes Linux `evdev` records (24-byte `struct input_event`: type/code/value, little-endian incl. signed deltas) with `ord` + arithmetic — pure recognition, byte-identical on the C host and native VM. A VM-only live reader (`WATCH`) opens a real `/dev/input` device via the existing `open`/`read`/`close` builtins. |
+| `theourgia_session.la` | Theourgia Stage 5: the interactive session. `import`s the Stage 1 surface core and the Stage 4 decoder; `STEP` is a pure reducer folding a decoded event into scene state (a movable window's x,y), then `RENDER` recomposes and rasters. Deterministic — byte-identical on the C host and native VM. The live device→screen loop is the VM-only capstone. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -816,6 +817,27 @@ The compositor is built in stages, each independently runnable and checked by
   VM-only and verified manually from a session that can read `/dev/input` (root
   or the `input` group), exactly as DRM scanout is (the safe-path discipline:
   `build.sh` never needs a privileged device or real keystrokes).
+
+- **Stage 5 — the interactive session (`theourgia_session.la`).** Stages 1-4 are
+  the organs; Stage 5 is the loop that joins them — a compositor *reacts*: read
+  input, update scene state, recompose, present. It `import`s two prior stages
+  (the surface core `theourgia.la` and the evdev decoder `theourgia_input.la` —
+  the module system composing the compositor) and adds a pure reducer **`STEP(state)(event)`**: it decodes the event and, on an arrow-key press, moves a
+  window's `(x, y)` one cell (`APPLY_KEY` is a flat 4-way keycode dispatch;
+  `MOVE` shifts the coordinates); any other event leaves the state unchanged.
+  **`RENDER(state)`** recomposes — blits the window onto the desktop at `(x, y)`
+  and rasters to a PPM (Stage 1's output). Because `STEP` is a pure function of
+  `(state, event)`, folding it over an event sequence is deterministic and runs
+  **byte-identically on the C host and the native VM**, verifiable with no
+  device and no screen. `build.sh` folds three synthetic key presses (RIGHT,
+  RIGHT, DOWN) from `(4,4)`, checks the window ends at `(6,5)`, and checks the
+  recomposed raster shows the window's red at its new position and blue where it
+  used to be — on both engines, byte-identical. The **live session** is the
+  VM-only capstone that wires every stage together — `drm_mode` once, then a loop
+  of `read`+decode (Stage 4) → `STEP` (Stage 5) → `COMPOSE` (Stage 1) → `TO_FB`
+  (Stage 3) → `present` (Stage 2) — run manually from a bare VT, exactly as DRM
+  scanout and the input reader are; the pure reducer is the part `build.sh`
+  verifies on every engine.
 
 ### Evaluation
 

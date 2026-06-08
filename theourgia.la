@@ -28,7 +28,7 @@
 # and byte-slice combinators, the demo scene) stays private and is alpha-renamed
 # away on import. Running theourgia.la directly is unaffected — export is a
 # parse-time annotation, resolved identically on every engine.
-export PX SURF S_W S_H S_ROWS SOLID COMPOSE
+export PX SURF S_W S_H S_ROWS SOLID COMPOSE PPM
 
 # ── Foundations (flat, kernel-style: the universal cross-engine artifact) ──
 glyph SEQ   = la a. la b. b

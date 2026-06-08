@@ -1,0 +1,103 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_session.la — the compositor, Stage 5: the interactive session.
+#
+#  Stages 1-4 are the organs: SURFACES + COMPOSITION (1), SCANOUT (2), the
+#  framebuffer BRIDGE (3), and INPUT decoding (4). Stage 5 is the loop that
+#  joins them — a compositor *reacts*: it reads input, updates scene state,
+#  recomposes, and presents. This file holds the heart of that loop as a pure
+#  reducer, so it is verifiable with no device and no screen.
+#
+#  It `import`s two prior stages — the surface core (theourgia.la) and the
+#  evdev decoder (theourgia_input.la) — and adds:
+#
+#    STATE        — the scene's mutable part: a movable window's (x, y).
+#    STEP(st)(e)  — the reducer: decode event e; on an arrow-key PRESS move the
+#                   window one cell; otherwise leave the state unchanged.
+#    RENDER(st)   — recompose: blit the window onto the desktop at (x, y) and
+#                   serialise to a PPM raster (Stage 1's output).
+#
+#  STEP is a pure function of (state, event), so folding it over an event
+#  sequence is deterministic and runs BYTE-IDENTICALLY on the C host and the
+#  native VM. build.sh folds three synthetic key presses (RIGHT, RIGHT, DOWN)
+#  from (4,4), checks the window ends at (6,5), and checks the recomposed raster
+#  has the window's red at its new position and blue where it used to be — on
+#  both engines.
+#
+#  The LIVE session is the VM-only capstone that wires every stage together:
+#      drm_mode → loop { e := read(input_fd, 24); st := STEP(st)(e);
+#                        present(TO_FB(RENDER_SURFACE(st))(h)(pitch)) }
+#  i.e. Stage 4 (read+decode) → Stage 5 (STEP) → Stage 1 (compose) → Stage 3
+#  (TO_FB) → Stage 2 (present). That needs a real device + DRM master, so — like
+#  DRM scanout and the input reader — it is run manually from a bare VT; the pure
+#  reducer proved here is the part build.sh can verify on every engine.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia.la")          # PX SURF S_* SOLID COMPOSE PPM
+import("theourgia_input.la")    # EV_TYPE EV_CODE EV_VALUE EV_* IS_KEY_PRESS/RELEASE
+
+# ── Local foundations (kept separate from both modules' isolated privates) ──
+glyph SEQ    = la a. la b. b
+glyph TRUE   = la t. la f. t
+glyph FALSE  = la t. la f. f
+glyph Z      = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF     = la c. la t. la f. c(t)(f)("!")
+glyph PAIR   = la a. la b. la f. f(a)(b)
+glyph FST    = la p. p(la a. la b. a)
+glyph SND    = la p. p(la a. la b. b)
+glyph NIL    = PAIR(FALSE)("")
+glyph CONS   = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+glyph REPEAT = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+    concat(s)(self(sub(n)(1))(s))))
+glyph FOLD   = Z(la self. la f. la acc. la l.
+    IF(IS_CONS(l))(la _. self(f)(f(acc)(LIST_HD(l)))(LIST_TL(l)))(la _. acc))
+
+# ── Linux input-event-codes for the arrow keys ──
+glyph KEY_UP    = 103
+glyph KEY_LEFT  = 105
+glyph KEY_RIGHT = 106
+glyph KEY_DOWN  = 108
+
+# ── STATE = PAIR(x)(y); STEP folds one decoded event into the next state ──
+# On an arrow-key PRESS (via the imported IS_KEY_PRESS / EV_CODE), move the
+# window one cell; any other event leaves the state untouched. MOVE shifts the
+# coordinates (st is PAIR(x)(y), so st(la x. la y. …) binds them); APPLY_KEY is
+# the flat 4-way dispatch on the keycode.
+glyph NEG1 = sub(0)(1)
+glyph MOVE = la st. la dx. la dy. st(la x. la y. PAIR(add(x)(dx))(add(y)(dy)))
+glyph APPLY_KEY = la st. la c.
+    IF(int_eq(c)(KEY_RIGHT))(la _. MOVE(st)(1)(0))(la _.
+    IF(int_eq(c)(KEY_LEFT)) (la _. MOVE(st)(NEG1)(0))(la _.
+    IF(int_eq(c)(KEY_DOWN)) (la _. MOVE(st)(0)(1))(la _.
+    IF(int_eq(c)(KEY_UP))   (la _. MOVE(st)(0)(NEG1))(la _.
+    st))))
+glyph STEP = la st. la e.
+    IF(IS_KEY_PRESS(e))(la _. APPLY_KEY(st)(EV_CODE(e)))(la _. st)
+
+# ── The desktop and the window, then recomposition ──
+glyph BG  = SOLID(32)(24)(PX(0)(0)(128))     # deep-blue desktop
+glyph WIN = SOLID(10)(8)(PX(200)(30)(30))    # the movable red window
+glyph RENDER_SURFACE = la st. st(la x. la y. COMPOSE(BG)(WIN)(x)(y))
+glyph RENDER = la st. PPM(RENDER_SURFACE(st))
+
+# ── Synthetic key-press events (build the 24-byte struct input_event) ──
+# BYTE(n)=one byte; LE16/LE32_ONE lay out the little-endian fields after the
+# 16-byte zero timeval: type EV_KEY(=1), code, value 1 (press).
+glyph BYTE = la n. chr(int_to_str(n))
+glyph LE16 = la n. concat(BYTE(mod(n)(256)))(BYTE(div(n)(256)))
+glyph ZEROS16 = REPEAT(16)(BYTE(0))
+glyph LE32_ONE = concat(BYTE(1))(REPEAT(3)(BYTE(0)))
+glyph KEY_PRESS_EVENT = la code.
+    concat(ZEROS16)(concat(LE16(1))(concat(LE16(code))(LE32_ONE)))
+
+# ── The demo: fold RIGHT, RIGHT, DOWN from (4,4); expect (6,5) ──
+glyph EVENTS = CONS(KEY_PRESS_EVENT(KEY_RIGHT))
+                  (CONS(KEY_PRESS_EVENT(KEY_RIGHT))
+                       (CONS(KEY_PRESS_EVENT(KEY_DOWN))(NIL)))
+glyph FINAL = FOLD(STEP)(PAIR(4)(4))(EVENTS)
+
+glyph MAIN = SEQ(write_file("session.ppm")(RENDER(FINAL)))
+    (FINAL(la x. la y.
+        print(concat(concat("session: window at ")(int_to_str(x)))(concat(" ")(int_to_str(y))))))

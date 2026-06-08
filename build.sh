@@ -976,6 +976,47 @@ else
     exit 1
 fi
 
+say "Theourgia: interactive session — input -> state -> recompose (Stage 5)"
+# Stage 5 (theourgia_session.la) is the compositor loop: it imports the surface
+# core (Stage 1) and the evdev decoder (Stage 4) and adds STEP, a pure reducer
+# that folds a decoded event into scene state — here a movable window's (x,y),
+# nudged one cell per arrow-key PRESS — then RENDER recomposes the desktop and
+# rasters it (Stage 1's PPM). Because STEP is a pure function of (state, event),
+# folding a fixed event sequence is deterministic and byte-identical on the C
+# host and native VM. We fold RIGHT, RIGHT, DOWN from (4,4): the window must end
+# at (6,5), the recomposed raster must show the window's red at its new position
+# (pixel 6,5) and blue where it used to be (pixel 4,4), on both engines, and the
+# two rasters must be byte-identical. (The LIVE device->screen loop — read+decode
+# -> STEP -> compose -> TO_FB -> present — is the VM-only capstone, run manually
+# from a VT, as DRM scanout and the input reader are.)
+ok=1
+# pixel(px,py) on a 32-wide P6 raster: byte offset 13 + (py*32 + px)*3
+ssp () { od -An -tu1 -j "$1" -N3 session.ppm | tr -s ' ' | sed 's/^ //;s/ $//'; }
+check_session () {  # $1 = engine label, $2 = captured stdout
+    printf '%s\n' "$2" | grep -qx "session: window at 6 5" \
+        || { echo "FAIL  session($1): window not at (6,5) after RIGHT,RIGHT,DOWN [$2]"; ok=0; }
+    [ "$(stat -c%s session.ppm 2>/dev/null)" = "2317" ] || { echo "FAIL  session($1): raster size $(stat -c%s session.ppm 2>/dev/null) != 2317"; ok=0; }
+    [ "$(ssp 511)" = "200 30 30" ] || { echo "FAIL  session($1): window not at new pos (6,5) [$(ssp 511)]"; ok=0; }
+    [ "$(ssp 409)" = "0 0 128" ]   || { echo "FAIL  session($1): old pos (4,4) not vacated [$(ssp 409)]"; ok=0; }
+}
+rm -f session.ppm
+HS="$(./tiny_host theourgia_session.la 2>/dev/null)"
+check_session "C host" "$HS"
+cp session.ppm /tmp/session_host.ppm; rm -f session.ppm
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp theourgia_session.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+VS="$(./logos_secd 2>/dev/null)"
+check_session "native VM" "$VS"
+cmp -s session.ppm /tmp/session_host.ppm || { echo "FAIL  session: native raster != C host raster"; ok=0; }
+rm -f session.ppm /tmp/session_host.ppm logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  theourgia: interactive session folds input into state and recomposes, byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile

@@ -26,6 +26,9 @@
 # autopoiesis.la's medium (generation counter, regenerated each run)
 /autopoiesis.gen
 
+# Theourgia rasters (composed/recomposed each run by theourgia*.la)
+*.ppm
+
 # Unpublished codices stay local-only; ONLY codices/published/ is tracked.
 # (codices/* ignores direct children but not codices/ itself, so the negation
 # below can re-include the published subtree — re-including a child of a fully
