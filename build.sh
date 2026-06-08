@@ -823,6 +823,46 @@ else
     exit 1
 fi
 
+say "Theourgia: framebuffer bridge — composed scene -> XRGB8888 (Stage 3)"
+# Stage 3 (theourgia_fb.la) imports Stage 1's surface core and adds TO_FB, which
+# converts a composed RGB surface into the XRGB8888 framebuffer image present()
+# scans out: each pixel R,G,B -> B,G,R,0, each row zero-padded to the screen
+# PITCH, the image zero-padded to the screen HEIGHT. This is the missing link
+# between Stage 1 (RGB composition) and Stage 2 (which only knew flat blue). It
+# uses only existing builtins, so — like Stage 1 — it runs byte-identically on
+# the C host and native VM, verifiable with no screen: we write the framebuffer
+# to a file and check the converted pixels land with the right BGRX bytes, then
+# diff the two engines. (cross-engine import is resolved by codegen.la on the VM)
+# The scene is the 32x24 desktop laid into a 26-row x 160-byte-pitch buffer.
+ok=1
+fbpx () { od -An -tu1 -j "$1" -N4 framebuffer.bin | tr -s ' ' | sed 's/^ //;s/ $//'; }
+check_fb () {  # $1 = engine label
+    [ "$(stat -c%s framebuffer.bin)" = "4160" ] || { echo "FAIL  theourgia_fb($1): size $(stat -c%s framebuffer.bin) != 4160 (26*160)"; ok=0; }
+    [ "$(fbpx 0)"    = "128 0 0 0" ]   || { echo "FAIL  theourgia_fb($1): bg pixel BGRX [$(fbpx 0)] != 128 0 0 0";    ok=0; }
+    [ "$(fbpx 656)"  = "30 30 200 0" ] || { echo "FAIL  theourgia_fb($1): win1 pixel BGRX [$(fbpx 656)] != 30 30 200 0"; ok=0; }
+    [ "$(fbpx 1992)" = "30 200 30 0" ] || { echo "FAIL  theourgia_fb($1): win2 pixel BGRX [$(fbpx 1992)] != 30 200 30 0"; ok=0; }
+    [ "$(fbpx 128)"  = "0 0 0 0" ]     || { echo "FAIL  theourgia_fb($1): row pad [$(fbpx 128)] not zero";  ok=0; }
+    [ "$(fbpx 3840)" = "0 0 0 0" ]     || { echo "FAIL  theourgia_fb($1): blank row [$(fbpx 3840)] not zero"; ok=0; }
+}
+rm -f framebuffer.bin
+./tiny_host theourgia_fb.la >/dev/null 2>&1
+check_fb "C host"
+cp framebuffer.bin /tmp/fb_host.bin; rm -f framebuffer.bin
+# Sovereign: the same conversion on the native VM must be byte-identical.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp theourgia_fb.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd >/dev/null 2>&1
+check_fb "native VM"
+cmp -s framebuffer.bin /tmp/fb_host.bin || { echo "FAIL  theourgia_fb: native framebuffer != C host framebuffer"; ok=0; }
+rm -f framebuffer.bin /tmp/fb_host.bin logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  theourgia: composed scene -> XRGB8888 framebuffer (R,G,B->B,G,R,0, pitch/height pad), byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Theourgia: DRM/KMS scanout builtins (Stage 2, native VM)"
 # Stage 2 adds two VM-only builtins — drm_mode() (open card0, find the connected
 # mode, allocate+map a 32-bpp dumb framebuffer, SETCRTC) and present() (blit a

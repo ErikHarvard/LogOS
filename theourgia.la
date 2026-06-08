@@ -23,6 +23,13 @@
 #              surface, composed from row slices (binary-safe strings).
 # ═══════════════════════════════════════════════════════════════════
 
+# The surface core is a module: an importer (theourgia_fb.la, Stage 3) sees only
+# these constructors/accessors/operations; every helper below (Z, IF, the list
+# and byte-slice combinators, the demo scene) stays private and is alpha-renamed
+# away on import. Running theourgia.la directly is unaffected — export is a
+# parse-time annotation, resolved identically on every engine.
+export PX SURF S_W S_H S_ROWS SOLID COMPOSE
+
 # ── Foundations (flat, kernel-style: the universal cross-engine artifact) ──
 glyph SEQ   = la a. la b. b
 glyph TRUE  = la t. la f. t

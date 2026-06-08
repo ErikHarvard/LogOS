@@ -30,6 +30,7 @@ host program, applied to itself, reproduces itself.
 | `strutil_spec.la`    | A string-utilities module (`STARTS_WITH`/`ENDS_WITH`/`CONTAINS`/`SPLIT`/`JOIN`/`REPLACE`) written as a `SPEC` and produced by `import("specpipe.la")` — a self-contained, verified module from a spec. |
 | `theourgia.la`       | Theourgia Stage 1: the compositor's software surface core — SURFACES (pixel buffers), z-ordered COMPOSITION (blits), and serialisation to a PPM raster, all in Lingua Adamica, byte-identical on the C host and the native VM. |
 | `theourgia_drm.la`   | Theourgia Stage 2: real scanout via the `drm_mode`/`present` VM builtins (DRM/KMS dumb buffer). Paints the whole screen one colour. Runs as DRM master from a bare VT; under a compositor it halts loudly without touching the display. |
+| `theourgia_fb.la`    | Theourgia Stage 3: the framebuffer bridge. `import`s the Stage 1 surface core and adds `TO_FB`, converting a composed RGB scene into the XRGB8888 framebuffer image `present` scans out (R,G,B→B,G,R,0; pitch/height zero-pad). Pure generation — byte-identical on the C host and native VM. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -729,6 +730,31 @@ The compositor is built in stages, each independently runnable and checked by
   never seize a bare VT's display; actual painting is verified manually from a
   VT. (Scanout extends the **generation** side of the Γ/Ρ split — codegen-style
   buffer assembly; the screen is recognition performed by the GPU and KMS.)
+
+- **Stage 3 — the framebuffer bridge (`theourgia_fb.la`).** Stage 1 composes
+  surfaces whose pixels are 3 bytes (R,G,B); Stage 2's `present` wants XRGB8888
+  pixels (4 bytes, little-endian B,G,R,X) laid out at the screen's `pitch` — so
+  Stage 2 only ever knew how to paint one flat colour. Nothing turned a
+  *composed* RGB scene into the byte-array a real screen scans out. Stage 3 is
+  that missing link: it **`import`s the Stage 1 surface core** (`PX`/`SURF`/
+  `SOLID`/`COMPOSE`/the accessors — Stage 1's helpers stay private and are
+  alpha-renamed away, the first use of the module system *inside* the
+  compositor) and adds one new generation step, `TO_FB(surface)(screen_h)(pitch)`:
+  each pixel R,G,B → B,G,R,0, each row zero-padded from `w*4` bytes up to
+  `pitch`, the image zero-padded with blank rows up to `screen_h` (so a small
+  scene sits letterboxed at the top of a larger screen). The result is exactly
+  the buffer `present(IMG)` copies onto the CRTC. Because it uses only existing
+  builtins (`concat`/`chr`/`str_head`/`DROP`/native ints), the conversion is
+  pure generation and runs **byte-identically on the C host and the native VM**,
+  like Stage 1 — so it is verifiable with **no screen in the loop**. `build.sh`
+  writes the 32×24 desktop into a 26-row × 160-byte-pitch framebuffer on both
+  engines, checks the converted pixels land with the right BGRX bytes (bg blue
+  `128 0 0 0`, the red/green windows, the row-pad and blank-row zeros), and
+  diffs the two engines for byte-identity (the cross-engine `import` is resolved
+  by `codegen.la` on the VM). Live scanout of the converted image is the one
+  extra VM-only step — `present(TO_FB(SCENE)(h)(pitch))` after `drm_mode("!")` —
+  and stays in `theourgia_drm.la`'s territory; Stage 3 owns the generation, the
+  conversion every scanout backend now consumes unchanged.
 
 ### Evaluation
 

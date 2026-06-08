@@ -1,0 +1,104 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_fb.la — the compositor, Stage 3: the framebuffer bridge.
+#
+#  Stage 1 (theourgia.la) composes SURFACES whose pixels are 3 raw bytes
+#  (R,G,B) and serialises them to a PPM. Stage 2 (theourgia_drm.la) drives a
+#  real screen with `present`, but its framebuffer wanted XRGB8888 pixels
+#  (4 bytes, little-endian B,G,R,X) laid out at the screen's PITCH — and so
+#  Stage 2 only ever knew how to paint ONE flat colour. The two never met:
+#  nothing turned a *composed* RGB scene into the byte-array a real screen
+#  scans out.
+#
+#  This file is that missing bridge. It `import`s Stage 1's surface core
+#  (PX/SURF/SOLID/COMPOSE/accessors — its helpers stay private, isolated) and
+#  adds the only new generation step: TO_FB, which converts a composed surface
+#  into a screen-shaped XRGB8888 framebuffer image —
+#
+#    • each pixel R,G,B → B,G,R,0   (XRGB8888 little-endian byte order)
+#    • each row padded with zeros from w*4 bytes up to the screen PITCH
+#    • the image padded with blank (zero) rows up to the screen HEIGHT
+#
+#  — exactly the buffer `present(IMG)` copies onto the CRTC. Because it uses
+#  only existing builtins (concat / chr / str_head / DROP / native ints), the
+#  conversion is pure generation and runs BYTE-IDENTICALLY on the C host and
+#  the native VM, just like Stage 1 — so it is verifiable with no screen in
+#  the loop (build.sh writes the framebuffer to a file and diffs the engines).
+#
+#  MAIN writes the framebuffer bytes to framebuffer.bin. To scan the same
+#  image out from a bare VT, the one extra step is Stage 2's builtins:
+#      (la dims. present(TO_FB(SCENE)(SCREEN_H(dims))(PITCH(dims))))(drm_mode("!"))
+#  which is VM-only (drm_mode is unbound on the host); the test exercises the
+#  cross-engine generation here, scanout proper stays in theourgia_drm.la.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia.la")          # PX SURF S_W S_H S_ROWS SOLID COMPOSE (privates isolated)
+
+# ── Local foundations (theourgia.la's same-named glyphs are private to it,
+#    alpha-renamed on import, so these neither clash with nor leak into it).
+#    The list helpers replicate Stage 1's exact CONS/NIL shape, so they
+#    destructure the imported surface's row list structurally. ──
+glyph SEQ     = la a. la b. b
+glyph TRUE    = la t. la f. t
+glyph FALSE   = la t. la f. f
+glyph Z       = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF      = la c. la t. la f. c(t)(f)("!")
+glyph PAIR    = la a. la b. la f. f(a)(b)
+glyph FST     = la p. p(la a. la b. a)
+glyph SND     = la p. p(la a. la b. b)
+glyph IS_CONS = la l. FST(l)
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── Byte helpers ──
+glyph DROP   = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
+    self(sub(n)(1))(str_tail(s))))
+glyph REPEAT = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+    concat(s)(self(sub(n)(1))(s))))
+glyph BYTE   = la n. chr(int_to_str(n))
+glyph NUL    = BYTE(0)
+glyph ZEROS  = la n. REPEAT(n)(NUL)
+
+# ── RGB row → XRGB8888 row ──
+# A surface row is w*3 bytes, R,G,B per pixel. XRGB8888 little-endian wants the
+# bytes B,G,R,X (X = 0) per pixel, so each triple R,G,B is re-emitted reversed
+# with a trailing NUL: 3 bytes in, 4 bytes out.
+glyph RGB_TO_BGRX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+        concat
+          (concat(str_head(DROP(2)(s)))
+                 (concat(str_head(DROP(1)(s)))
+                        (concat(str_head(s))(NUL))))
+          (self(DROP(3)(s)))))
+
+# ── One framebuffer row: the converted pixels, then zero padding to PITCH ──
+# sw = surface width in pixels; the converted row is sw*4 bytes, padded up to
+# pitch (pitch >= sw*4, the slack a real scanline carries beyond the visible
+# pixels).
+glyph FB_ROW = la srow. la pitch. la sw.
+    concat(RGB_TO_BGRX(srow))(ZEROS(sub(pitch)(mul(sw)(4))))
+
+# ── TO_FB(surface)(screen_h)(pitch) → a screen_h*pitch XRGB8888 image ──
+# Walk screen rows 0..screen_h-1: each surface row becomes an FB_ROW; rows
+# beyond the surface (screen_h > surface height) are blank (pitch zero bytes),
+# so a small scene sits letterboxed at the top of a larger screen.
+glyph BUILD = Z(la self. la rows. la r. la screen_h. la pitch. la sw.
+    IF(lt(r)(screen_h))(la _.
+        concat
+          (IF(IS_CONS(rows))(la _. FB_ROW(LIST_HD(rows))(pitch)(sw))
+                            (la _. ZEROS(pitch)))
+          (self(IF(IS_CONS(rows))(la _. LIST_TL(rows))(la _. rows))
+                (add(r)(1))(screen_h)(pitch)(sw)))
+    (la _. ""))
+glyph TO_FB = la surf. la screen_h. la pitch.
+    BUILD(S_ROWS(surf))(0)(screen_h)(pitch)(S_W(surf))
+
+# ── The scene (rebuilt from the imported surface core) and the bridge demo ──
+# A 32x24 desktop: blue background, red window at (4,4), green window at
+# (18,12) — the same composition Stage 1 rasters to PPM, here converted to a
+# 26-row x 160-byte-pitch XRGB8888 framebuffer (two blank rows below the scene,
+# 32 bytes of pad beyond the 128 visible bytes per row) and written out.
+glyph SCENE = COMPOSE(COMPOSE(SOLID(32)(24)(PX(0)(0)(128)))(SOLID(10)(8)(PX(200)(30)(30)))(4)(4))
+                     (SOLID(6)(6)(PX(30)(200)(30)))(18)(12)
+
+glyph MAIN = SEQ(write_file("framebuffer.bin")(TO_FB(SCENE)(26)(160)))
+    (print("theourgia: composited scene -> framebuffer.bin (XRGB8888, 26 rows x 160 pitch)"))
