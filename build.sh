@@ -948,6 +948,34 @@ else
     echo "SKIP  theourgia drm: no graphical session (won't seize a bare VT's display)"
 fi
 
+say "Theourgia: input layer — evdev event decoder (Stage 4)"
+# Stage 4 (theourgia_input.la) gives the compositor ears: it decodes Linux evdev
+# records (24-byte struct input_event: type u16 @16, code u16 @18, value s32 @20,
+# little-endian) out of an event string with ord + integer arithmetic. The live
+# reader (open/read/close on /dev/input) is VM-only and needs a real device +
+# privilege, so — like DRM scanout — it is verified manually; here we exercise
+# the DECODER, which is pure LA and must agree byte-for-byte on the C host and
+# the native VM. The demo decodes a synthetic KEY_A press (type 1, code 30,
+# value 1) and a REL_X motion of -3 (type 2, code 0, value -3 — exercising the
+# signed-32 path), and we assert both engines print the identical decode.
+ok=1
+EXPECT="$(printf 'press A: type=1 code=30 value=1\nrel x: type=2 code=0 value=-3')"
+HIN="$(./tiny_host theourgia_input.la 2>/dev/null)"
+[ "$HIN" = "$EXPECT" ] || { echo "FAIL  theourgia_input (C host): decode mismatch"; printf '%s\n' "$HIN"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp theourgia_input.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+VIN="$(./logos_secd 2>/dev/null)"
+[ "$VIN" = "$EXPECT" ] || { echo "FAIL  theourgia_input (native VM): decode mismatch"; printf '%s\n' "$VIN"; ok=0; }
+[ "$HIN" = "$VIN" ] || { echo "FAIL  theourgia_input: host and VM decodes differ"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  theourgia: evdev decoder reads type/code/value (incl. signed deltas), byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile

@@ -32,6 +32,7 @@ host program, applied to itself, reproduces itself.
 | `theourgia.la`       | Theourgia Stage 1: the compositor's software surface core — SURFACES (pixel buffers), z-ordered COMPOSITION (blits), and serialisation to a PPM raster, all in Lingua Adamica, byte-identical on the C host and the native VM. |
 | `theourgia_drm.la`   | Theourgia Stage 2: real scanout via the `drm_mode`/`present` VM builtins (DRM/KMS dumb buffer). Paints the whole screen one colour. Runs as DRM master from a bare VT; under a compositor it halts loudly without touching the display. |
 | `theourgia_fb.la`    | Theourgia Stage 3: the framebuffer bridge. `import`s the Stage 1 surface core and adds `TO_FB`, converting a composed RGB scene into the XRGB8888 framebuffer image `present` scans out (R,G,B→B,G,R,0; pitch/height zero-pad). Pure generation — byte-identical on the C host and native VM. |
+| `theourgia_input.la` | Theourgia Stage 4: the input layer. Decodes Linux `evdev` records (24-byte `struct input_event`: type/code/value, little-endian incl. signed deltas) with `ord` + arithmetic — pure recognition, byte-identical on the C host and native VM. A VM-only live reader (`WATCH`) opens a real `/dev/input` device via the existing `open`/`read`/`close` builtins. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -794,6 +795,27 @@ The compositor is built in stages, each independently runnable and checked by
   extra VM-only step — `present(TO_FB(SCENE)(h)(pitch))` after `drm_mode("!")` —
   and stays in `theourgia_drm.la`'s territory; Stage 3 owns the generation, the
   conversion every scanout backend now consumes unchanged.
+
+- **Stage 4 — the input layer (`theourgia_input.la`).** Stages 1-3 gave the
+  compositor a voice (compose → convert → scan out); Stage 4 gives it ears. On
+  Linux, input is **evdev**: each `/dev/input/eventN` device delivers a stream
+  of fixed 24-byte `struct input_event` records — a 16-byte timeval, then three
+  little-endian fields `type` (u16 @ 16), `code` (u16 @ 18), `value` (s32 @ 20).
+  Reading them needs **no new VM builtins** — the existing `open`/`read`/`close`
+  syscall builtins suffice. The file is the **decoder** (recognition, the Ρ
+  side): it pulls the fields out of an event string with `ord` + integer
+  arithmetic (`U16`/`U32`, and an `S32` that folds the top half of the u32 range
+  past zero so a negative relative-motion delta decodes correctly), exposing
+  `EV_TYPE`/`EV_CODE`/`EV_VALUE` plus `IS_KEY_PRESS`/`IS_KEY_RELEASE`. Because it
+  is pure Lingua Adamica, the decode runs **byte-identically on the C host and
+  the native VM** — verifiable with no device in the loop. `build.sh` decodes a
+  synthetic `KEY_A` press (type 1, code 30, value 1) and a `REL_X` motion of −3
+  (exercising the signed path) and asserts both engines print the identical
+  decode. The **live reader** `WATCH(fd)(n)` opens a real device, blocks for
+  each 24-byte record (`read(fd)("24")`), decodes and shows it, then closes —
+  VM-only and verified manually from a session that can read `/dev/input` (root
+  or the `input` group), exactly as DRM scanout is (the safe-path discipline:
+  `build.sh` never needs a privileged device or real keystrokes).
 
 ### Evaluation
 
