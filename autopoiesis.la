@@ -1,0 +1,67 @@
+# ═══════════════════════════════════════════════════════════════════
+#  autopoiesis.la — the self-running organism (native VM).
+#
+#  Autopoiesis (Maturana & Varela): a system is autopoietic when it is the
+#  network of processes that *produces the very components that regenerate the
+#  network* — it continuously brings itself forth. LogOS already replicates its
+#  bytes (copy_self), regenerates its own compiler and VM, and interprets
+#  itself. What it had never done is **run itself**: every generation so far was
+#  launched by an outside hand (build.sh, a shell). Here the system closes that
+#  last gap — it begets AND launches its own successor, which begets and
+#  launches its own, with no external driver in the loop.
+#
+#  The mechanism, on the native VM (these are VM-only syscall builtins):
+#    1. read this generation's number from the medium (a file, autopoiesis.gen);
+#    2. SPEAK the Word, stamped with the generation;
+#    3. until a cap: bequeath the next generation to the medium, copy_self into a
+#       byte-identical self-contained successor vessel, then fork — and in the
+#       child execve that vessel, so the child *becomes* the next generation;
+#       the parent awaits the whole descendant lineage, then rests.
+#
+#  There is NO recursion combinator here. The "loop" is the process lineage
+#  itself: each generation is a live process that the previous one begat and
+#  ran. ∃(∃) ≡ ∃ — existence applied to itself is existence — now running as a
+#  self-perpetuating succession of processes.
+#
+#  It must run as a BUNDLE (bundle.la): copy_self replicates /proc/self/exe, so
+#  only a self-contained vessel (VM + embedded program) reproduces something its
+#  child can execve with no external stream file. The VM's copy_self always
+#  writes "new_logos_secd.bin" and returns that path; when the running vessel is
+#  already that file the re-copy is an ETXTBSY no-op (a live executable cannot
+#  be overwritten) but the returned path is still the valid, identical successor
+#  — so every generation runs the same uniform act and the lineage is faithful.
+#
+#  The generation cap makes the lineage terminate (so build.sh can observe it
+#  end); a true unbounded organism simply raises or removes the cap.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph SEQ  = la a. la b. b
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph WORD = "I AM THAT I AM"
+glyph CAP  = "3"                 # last generation that begets; the lineage runs 0..CAP
+
+# SPEAK(g) — this generation announces itself speaking the Word.
+glyph SPEAK = la g.
+    print(concat(concat("LogOS autopoiesis — generation ")(g))(concat(": ")(WORD)))
+
+# BEGET(succ) — run the successor vessel as a fresh process: fork, and in the
+# child become it (execve); the parent waits out the descendant lineage, then
+# exits. A failed execve exits 127 rather than continuing as a duplicate (which
+# would fork-bomb), exactly as logosinit.la guards its session spawn.
+glyph BEGET = la succ.
+    (la pid. IF(str_eq(pid)("0"))
+        (la _. SEQ(execve(succ))(exit("127")))
+        (la _. SEQ(waitpid(pid))(exit("0"))))
+    (fork("!"))
+
+# MAIN — the autopoietic act. Read my generation from the medium, speak, and
+# (until the cap) bequeath the next generation and run my own successor.
+glyph MAIN = (la g.
+    SEQ(SPEAK(g))
+       (IF(lt(str_to_int(g))(str_to_int(CAP)))
+           (la _.
+               SEQ(write_file("autopoiesis.gen")(int_to_str(add(str_to_int(g))(1))))
+                  (BEGET(copy_self("!"))))
+           (la _.
+               print("LogOS autopoiesis — lineage complete (generation cap reached)"))))
+  (read_file("autopoiesis.gen"))

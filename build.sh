@@ -786,6 +786,55 @@ else
     exit 1
 fi
 
+say "Autopoiesis: the system runs its own successor (self-perpetuating lineage)"
+# Every prior generation of LogOS was launched by an outside hand. autopoiesis.la
+# closes that gap: bundled into ONE self-contained vessel, each generation reads
+# its number from the medium (autopoiesis.gen), speaks the Word, copy_self's a
+# byte-identical successor vessel, then fork+execve's it — the parent *runs its
+# own child*, which runs its own child, with no external driver. There is no
+# recursion combinator; the loop IS the process lineage. A generation cap (3)
+# makes it terminate so we can observe the whole succession; an unbounded
+# organism just raises the cap. We bundle it (copy_self replicates the whole
+# vessel, so only a bundle reproduces something its child can execve standalone),
+# seed the medium at 0, run it, and assert: generations 0..3 each spoke in order,
+# the lineage reported completion, exit 0, and the begotten successor is
+# byte-identical to the bundle (a faithful self-contained copy).
+rm -f logos_secd logos_program.bin logos_embed.bin logos_source.la logos_app \
+      new_logos_secd.bin autopoiesis.gen
+./tiny_host secd.la >/dev/null 2>&1                       # emit the VM
+cp autopoiesis.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1                    # compile -> logos_program.bin
+cp logos_program.bin logos_embed.bin
+./tiny_host bundle.la >/dev/null 2>&1                     # fuse -> logos_app (self-contained)
+rm -f logos_program.bin logos_embed.bin logos_source.la
+ok=1
+[ -f logos_app ] || { echo "FAIL  autopoiesis: bundle not produced"; ok=0; }
+printf '0' > autopoiesis.gen                              # seed the medium at generation 0
+ap_rc=0
+APOUT="$(./logos_app 2>/dev/null)" || ap_rc=$?
+[ "$ap_rc" -eq 0 ] || { echo "FAIL  autopoiesis: lineage exited nonzero (rc=$ap_rc)"; ok=0; }
+# Each generation 0..3 spoke the Word, in order.
+gen=0
+while [ "$gen" -le 3 ]; do
+    printf '%s\n' "$APOUT" | grep -qx "LogOS autopoiesis — generation $gen: I AM THAT I AM" \
+        || { echo "FAIL  autopoiesis: generation $gen did not speak"; ok=0; }
+    gen=$((gen + 1))
+done
+# The lineage ran exactly the four generations (no runaway), then completed.
+spoke="$(printf '%s\n' "$APOUT" | grep -c 'I AM THAT I AM')"
+[ "$spoke" = "4" ] || { echo "FAIL  autopoiesis: expected 4 speaking generations, got $spoke"; ok=0; }
+printf '%s\n' "$APOUT" | grep -q "lineage complete" \
+    || { echo "FAIL  autopoiesis: lineage did not report completion"; ok=0; }
+# The successor the organism begat is a byte-identical self-contained vessel.
+{ [ -f new_logos_secd.bin ] && cmp -s logos_app new_logos_secd.bin; } \
+    || { echo "FAIL  autopoiesis: begotten successor not byte-identical to the bundle"; ok=0; }
+rm -f logos_secd logos_app new_logos_secd.bin autopoiesis.gen
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  autopoiesis: the bundle ran its own successor across 4 process generations — self-perpetuating, no external driver  (∃(∃) ≡ ∃)"
+else
+    exit 1
+fi
+
 say "Theourgia: the compositor's software surface core (Stage 1)"
 # theourgia.la builds SURFACES and COMPOSES them (z-ordered blits) entirely in
 # Lingua Adamica, then serialises the final buffer to a PPM (P6) raster — the

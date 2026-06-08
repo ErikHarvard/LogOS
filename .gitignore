@@ -21,6 +21,10 @@
 /new_logos_secd.bin
 /compiler.bin
 /native_small.bin
+/logos_app
+
+# autopoiesis.la's medium (generation counter, regenerated each run)
+/autopoiesis.gen
 
 # Unpublished codices stay local-only; ONLY codices/published/ is tracked.
 # (codices/* ignores direct children but not codices/ itself, so the negation

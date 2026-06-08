@@ -18,6 +18,7 @@ host program, applied to itself, reproduces itself.
 | `logosipc.la`        | LogosIPC module: a typed message bus (`SEND`/`RECV`/`MSG_TYPE`/…) over a named channel. |
 | `ipc_demo.la`        | Demo: `import("logosipc.la")`, round-trips a typed message through the bus. |
 | `logosinit.la`       | A real PID-1 init in Lingua Adamica (native VM): mounts `/proc` & `/sys`, `fork`+`execve`s `/bin/sh`, then supervises forever with a `reap(-1)` loop (respawn-throttled, bounded dump via TCO). |
+| `autopoiesis.la`     | The self-running organism (native VM): bundled into one vessel, each generation reads its number from a medium, speaks the Word, `copy_self`s a byte-identical successor, then `fork`+`execve`s it — the parent *runs its own child*, which runs its own, with no external driver. The loop is the process lineage itself; ∃(∃) ≡ ∃ running. |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
 | `eval.la`            | Self-hosted evaluator: lexer + parser + closure-based evaluator, all in Lingua Adamica. Reads, parses, and evaluates `kernel.la` — the language interprets itself. |
 | `bytecode.la`        | Byte instructions and execution engines: `EMIT` (AST → bytes), `PARSE_BYTES` (bytes → AST), `RUN_BYTES` (a VM that executes the bytes directly), and `RUN_SM` (a real SECD-style stack machine over a compiled instruction list), all in Lingua Adamica. |
@@ -641,6 +642,44 @@ dump depth — indefinitely**, not the old ~1M-reap ceiling. `build.sh` confirms
 5M-iteration loop of the supervision loop's exact shape (nested `IF`, a
 `(la x. …)(arg)` binder, tail self-calls) completes; a *non*-tail deep recursion
 still halts loudly via the stack guard (it is never optimised away).
+
+### Autopoiesis — the system runs its own successor (`autopoiesis.la`)
+
+LogOS already replicates its bytes (`copy_self`), regenerates its own compiler
+and VM (Albedo Stage 4), and interprets itself (`eval.la`). The one thing it had
+never done is **run itself**: every generation was launched by an outside hand —
+`build.sh`, a shell, the user. `autopoiesis.la` closes that last gap. Bundled
+(`bundle.la`) into one self-contained vessel, each generation:
+
+1. reads its generation number from a **medium** — a file, `autopoiesis.gen`
+   (the environment the organism reads and writes, as a cell does its medium);
+2. **speaks the Word**, stamped with the generation;
+3. until a cap: writes the next generation back to the medium, `copy_self`s a
+   byte-identical successor vessel, then `fork`s — and in the child `execve`s
+   that vessel, so the child **becomes** the next generation; the parent
+   `waitpid`s the whole descendant lineage, then exits (a failed `execve` exits
+   127 rather than continuing as a duplicate, like `logosinit.la`'s spawn guard).
+
+There is **no recursion combinator** — no `Z`, no `SUPERVISE`-style loop. The
+loop *is* the process lineage itself: each generation is a live process that the
+previous one begat and ran. `∃(∃) ≡ ∃` — existence applied to itself is
+existence — now running as a self-perpetuating succession of processes, no
+external driver in the loop.
+
+It must run as a **bundle**: `copy_self` replicates `/proc/self/exe`, so only a
+self-contained vessel (VM + embedded program) reproduces something its child can
+`execve` with no external stream. The VM's `copy_self` always writes
+`new_logos_secd.bin` and returns that path; when the running vessel is already
+that file the re-copy is an `ETXTBSY` no-op (the kernel forbids overwriting a
+live executable) but the returned path is still the valid, byte-identical
+successor — so every generation performs the same uniform act and the lineage
+stays faithful. The generation cap (3) only makes the lineage terminate so
+`build.sh` can observe the whole succession; a truly unbounded organism just
+raises or removes it. `build.sh` bundles `autopoiesis.la`, seeds the medium at
+0, runs the single vessel, and checks that generations 0..3 each spoke in order,
+that exactly four generations ran (no runaway), that the lineage reported
+completion and exited 0, and that the begotten `new_logos_secd.bin` is
+byte-identical to the bundle.
 
 ### LogosIPC — a typed message bus (`logosipc.la`)
 
