@@ -2039,6 +2039,28 @@ _start:
 .bi_strtoint:                    ; r9 = decimal STR descriptor → INT
     test    r8, r8               ; STR only; desc_atoi would deref a non-pointer (see .strtype)
     jnz     .strtype
+    ; strict parse: optional leading '-' then ≥1 digits, nothing else — else halt
+    ; loudly (b_τ ≡ f_τ with the C host's str_to_int). desc_atoi never validates
+    ; (it also serves syscall args the VM formats itself), so str_to_int checks
+    ; here before trusting user input: a non-digit used to be processed as (c-'0')
+    ; and silently yield a wrong number that disagreed with the host.
+    mov     rcx, [r9]            ; len
+    mov     rsi, [r9+8]          ; bytes
+    test    rcx, rcx
+    jz      .notint              ; empty → malformed
+    cmp     byte [rsi], 45       ; leading '-'?
+    jne     .sti_dig
+    inc     rsi
+    dec     rcx
+    jz      .notint              ; lone "-" → malformed
+.sti_dig:
+    movzx   rax, byte [rsi]
+    sub     rax, 48
+    cmp     rax, 9
+    ja      .notint              ; byte not '0'..'9' → malformed
+    inc     rsi
+    dec     rcx
+    jnz     .sti_dig
     mov     rdi, r9
     call    desc_atoi
     mov     qword [r12], 4
@@ -2210,6 +2232,16 @@ _start:
     mov     rdi, 2
     mov     rsi, strtypemsg
     mov     rdx, strtypemsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
+.notint:                         ; str_to_int given a non-decimal string
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, notintmsg
+    mov     rdx, notintmsg_len
     syscall
     mov     rax, 60
     mov     rdi, 1
@@ -2445,6 +2477,8 @@ chrmsg:        db "secd: chr out of range", 10
 chrmsg_len     equ $ - chrmsg
 strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
+notintmsg:     db "secd: not a decimal integer", 10
+notintmsg_len  equ $ - notintmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0

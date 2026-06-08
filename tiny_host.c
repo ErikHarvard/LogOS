@@ -769,9 +769,17 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         return mkstr(buf);
     }
     if (strcmp(name, "str_to_int") == 0) {
-        /* decimal string -> native integer (inverse of int_to_str) */
+        /* decimal string -> native integer (inverse of int_to_str). Strict:
+         * optional leading '-' then one or more digits, nothing else. Malformed
+         * input (non-digit, lone "-", empty, leading '+'/whitespace) halts loudly,
+         * matching the VM's .bi_strtoint — b_τ ≡ f_τ on bad input, instead of
+         * strtol silently parsing a prefix ("12x"->12) or yielding 0 ("abc"). */
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "str_to_int: argument is not a string\n"); exit(1); }
+        size_t i = (v->len && v->s[0] == '-') ? 1 : 0;
+        if (i >= v->len) { fprintf(stderr, "str_to_int: not a decimal integer\n"); exit(1); }
+        for (size_t k = i; k < v->len; k++)
+            if (v->s[k] < '0' || v->s[k] > '9') { fprintf(stderr, "str_to_int: not a decimal integer\n"); exit(1); }
         return mkint(strtol(v->s, NULL, 10));
     }
     if (strcmp(name, "typeof") == 0) {

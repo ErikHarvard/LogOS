@@ -607,7 +607,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "9378" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9378)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "9504" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9504)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1226,8 +1226,36 @@ gv="$(./runner 2>/dev/null)"
 guard_compile 'print(sub(0)(42))'
 gp="$(./runner 2>/dev/null)"
 [ "$gp" = "-42" ] || { echo "FAIL  print(INT) coercion: got '$gp', want '-42' (C host prints the integer)"; gok=0; }
+# str_to_int: malformed input (non-digit, lone '-', empty, leading '+') must halt
+# LOUDLY on BOTH the C host and the VM — b_τ ≡ f_τ. Previously the host parsed a
+# lenient strtol prefix ("12x"->12, "abc"->0) while the VM ran every byte through
+# (c-'0') and silently produced a DIFFERENT wrong number ("12x"->1923). Now both
+# reject: host "str_to_int: not a decimal integer", VM "secd: not a decimal integer".
+sti_reject() {                                   # $1 = the string passed to str_to_int
+    sbody="print(int_to_str(str_to_int(\"$1\")))"
+    printf 'glyph MAIN = %s\n' "$sbody" > /tmp/sti.la
+    hrc=0; herr="$(./tiny_host /tmp/sti.la 2>&1 1>/dev/null)" || hrc=$?
+    { [ "$hrc" -eq 1 ] && printf '%s' "$herr" | grep -qF "str_to_int: not a decimal integer"; } \
+        || { echo "FAIL  str_to_int reject ('$1') on C host: rc=$hrc err='$herr'"; gok=0; }
+    guard_compile "$sbody"
+    vrc=0; verr="$(./runner 2>&1 1>/dev/null)" || vrc=$?
+    { [ "$vrc" -eq 1 ] && printf '%s' "$verr" | grep -qF "secd: not a decimal integer"; } \
+        || { echo "FAIL  str_to_int reject ('$1') on VM: rc=$vrc err='$verr'"; gok=0; }
+}
+sti_accept() {                                   # $1 = string, $2 = expected decimal
+    sbody="print(int_to_str(str_to_int(\"$1\")))"
+    printf 'glyph MAIN = %s\n' "$sbody" > /tmp/sti.la
+    hv="$(./tiny_host /tmp/sti.la 2>/dev/null)"
+    [ "$hv" = "$2" ] || { echo "FAIL  str_to_int accept ('$1') on C host: got '$hv' want '$2'"; gok=0; }
+    guard_compile "$sbody"
+    vv="$(./runner 2>/dev/null)"
+    [ "$vv" = "$2" ] || { echo "FAIL  str_to_int accept ('$1') on VM: got '$vv' want '$2'"; gok=0; }
+}
+sti_reject "12x3"; sti_reject "abc"; sti_reject "+5"; sti_reject "1 2"; sti_reject ""
+sti_accept "42" "42"; sti_accept "-5" "-5"; sti_accept "0" "0"
+rm -f /tmp/sti.la
 if [ "$gok" -eq 1 ]; then
-    echo "PASS  string + syscall builtin type guards: non-string args halt loudly (no SIGSEGV); print(INT) coerces like the host"
+    echo "PASS  string + syscall builtin type guards + str_to_int strictness: bad input halts loudly cross-engine (no SIGSEGV); print(INT) coerces like the host"
 else
     exit 1
 fi

@@ -455,7 +455,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 9378 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 9504 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -560,6 +560,18 @@ runnable and checked by `build.sh`.
     `build.sh` verifies all engines agree on the same arithmetic program
     (`44 / 3 / yes`). The lexers use a `str_eq`-only `IS_DIGIT` so the same
     digit-lexing rule holds everywhere, including under the native VM.
+    `str_to_int` is **strict on every engine** (audit follow-up): it accepts an
+    optional leading `-` then one or more digits and **halts loudly** on anything
+    else — non-digit, lone `-`, empty, leading `+`/whitespace. This closed a
+    silent `b_τ ≡ f_τ` divergence: the C host's `strtol` parsed a lenient prefix
+    (`str_to_int("12x")` → `12`, `"abc"` → `0`) while the VM's `desc_atoi` ran
+    *every* byte through `(c-'0')` and produced a different wrong number
+    (`"12x"` → `1923`). Now the host halts with `str_to_int: not a decimal
+    integer` and the VM with `secd: not a decimal integer`; `build.sh` checks both
+    engines reject the same malformed inputs and accept `42`/`-5`/`0`. (Integer
+    literals always desugar to clean digit strings, so this only ever fires on an
+    explicit malformed `str_to_int` call. `desc_atoi` itself stays lenient — it
+    also parses syscall-arg decimals the VM formats itself, always well-formed.)
   - **`codegen.la` `PARSE_PROGRAM` now halts on malformed input** (fixed). It
     used to treat a `NONE` from `PARSE_GLYPH` as end-of-program — silently
     truncating the source and emitting a corrupt stream. It now ends cleanly
