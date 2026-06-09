@@ -1,0 +1,69 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  typed_spec.la — a module written with FORMAL TYPE SIGNATURES, demonstrating
+#  the spec pipeline's COMPILE-TIME TYPE CHECKER (import("specpipe.la")).
+#
+#  A signature marked `:: <type>` is a checkable arrow type. During DEPLOY —
+#  after GENERATE produces the .la source, before it is accepted — the checker
+#  reads the generated source, parses each glyph's body, and verifies its
+#  ABSTRACTION ARITY equals the ARROW ARITY of its declared type (the decidable
+#  type property for untyped λ: a term declared to take n arguments must be an
+#  n-ary abstraction). A mismatch REJECTS the module — the .la is never written.
+#
+#  TYPED_OK is a well-typed module: every body's arity matches its type, so it
+#  deploys (accepted, VERIFIED). TYPED_BAD contains one ill-typed glyph
+#  (BADCONST declared `a -> b -> a` but defined `la x. x`, arity 1 ≠ 2) — DEPLOY
+#  rejects it and writes no file. This is the runtime→compile-time shift: the
+#  arity bug that would surface as `("x")("y")` applying a string at run time is
+#  caught before the module exists.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY (now type-checking) / META_DEBUG + constructors
+
+# ── implementation VALUES (META_DEBUG runs these) ──────────────────────────────
+glyph IDT     = la x. x
+glyph KESTREL = la x. la y. x
+glyph COMPOSE = la f. la g. la x. f(g(x))
+glyph FLIP    = la f. la x. la y. f(y)(x)
+glyph PAIRT   = la a. la b. la f. f(a)(b)
+glyph BADCONST = la x. x
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_IDT     = "la x. x"
+glyph SRC_KESTREL = "la x. la y. x"
+glyph SRC_COMPOSE = "la f. la g. la x. f(g(x))"
+glyph SRC_FLIP    = "la f. la x. la y. f(y)(x)"
+glyph SRC_PAIRT   = "la a. la b. la f. f(a)(b)"
+glyph SRC_BADCONST = "la x. x"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+
+# ── TYPED_OK: a well-typed module — every body's arity matches its arrow type ──
+glyph TYPED_OK =
+  CONS(E("IDT")(":: a -> a")(SRC_IDT)(IDT)(
+        T1L(TC(la g. g("x"))("x"))))(
+  CONS(E("KESTREL")(":: a -> b -> a")(SRC_KESTREL)(KESTREL)(
+        T2L(TC(la g. g("a")("b"))("a"))
+           (TC(la g. g("p")("q"))("p"))))(
+  CONS(E("COMPOSE")(":: (b -> c) -> (a -> b) -> a -> c")(SRC_COMPOSE)(COMPOSE)(
+        T1L(TC(la g. g(la s. concat(s)("!"))(la s. concat("<")(s))("hi"))("<hi!"))))(
+  CONS(E("FLIP")(":: (a -> b -> c) -> b -> a -> c")(SRC_FLIP)(FLIP)(
+        T1L(TC(la g. g(la a. la b. concat(a)(b))("X")("Y"))("YX"))))(
+  CONS(E("PAIRT")(":: a -> b -> (a -> b -> c) -> c")(SRC_PAIRT)(PAIRT)(
+        T1L(TC(la g. g("a")("b")(la x. la y. x))("a"))))(
+  NIL)))))
+
+# ── TYPED_BAD: one ill-typed glyph — declared a -> b -> a (arity 2) but the body
+#    `la x. x` is arity 1. The checker must reject the whole module. ─────────────
+glyph TYPED_BAD =
+  CONS(E("IDT")(":: a -> a")(SRC_IDT)(IDT)(
+        T1L(TC(la g. g("x"))("x"))))(
+  CONS(E("BADCONST")(":: a -> b -> a")(SRC_BADCONST)(BADCONST)(NIL))(
+  NIL))
+
+glyph MAIN =
+    SEQ(print(concat("=== DEPLOY(TYPED_OK) -> typed_module.la ===\n")(DEPLOY(TYPED_OK)("typed_module.la"))))
+       (print(concat("\n=== DEPLOY(TYPED_BAD) -> typed_bad.la (must be REJECTED) ===\n")(DEPLOY(TYPED_BAD)("typed_bad.la"))))

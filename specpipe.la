@@ -21,7 +21,7 @@
 
 # The pipeline API + the constructors a spec author needs, exported so other
 # modules can `import("specpipe.la")` and build their own specs against it.
-export GENERATE DEPLOY META_DEBUG DEF TRIPLE PAIR FST SND CONS NIL Z IF TRUE FALSE AND BOOL_STR SEQ
+export GENERATE DEPLOY META_DEBUG TYPECHECK TYPES_OK TARITY BARITY DEF TRIPLE PAIR FST SND CONS NIL Z IF TRUE FALSE AND BOOL_STR SEQ
 
 # ── Church / list prelude ──────────────────────────────────────────────
 glyph SEQ    = la a. la b. b
@@ -73,19 +73,111 @@ glyph ENTRY_LINE = la e.
 glyph META_DEBUG = la spec. CAT(MAP(ENTRY_LINE)(spec))
 glyph ALL_OK     = la spec. ALL(ENTRY_OK)(spec)
 
-# ── DEPLOY: write, re-read, verify — spec → verified module in one call ─
+# ── COMPILE-TIME TYPE CHECKER ──────────────────────────────────────────
+#  Lingua Adamica is untyped, so full type inference is undecidable here. The
+#  decidable, meaningful compile-time property is ARROW ARITY: a glyph declared
+#  `T1 -> T2 -> ... -> Tn -> R` (R not an arrow) must be an n-ary abstraction —
+#  its body must have exactly n leading binders. A base (non-arrow) type means
+#  arity 0 (the body is not a leading lambda). This catches the real bug class:
+#  a term declared to take n arguments whose body takes m ≠ n.
+#
+#  Typing is GRADUAL / opt-in: a glyph is checked iff its signature is marked
+#  `:: <type>`; any other signature (prose contract) is `untyped (trusted)` and
+#  passes vacuously — so existing specs are unaffected. The checker reads the
+#  GENERATED source (the bytes about to be written), extracts each glyph's body
+#  by parsing `glyph NAME = …`, and compares arities. DEPLOY runs it after
+#  GENERATE and BEFORE accepting: on any type error the module is REJECTED and
+#  the .la file is never written.
+
+# tiny string-parsing prelude (over the generated source)
+glyph EMPTY    = la s. str_eq(s)("")
+glyph STARTS   = Z(la self. la pre. la s.
+    IF(EMPTY(pre))(la _. TRUE)
+       (la _. IF(EMPTY(s))(la _. FALSE)
+       (la _. IF(str_eq(str_head(pre))(str_head(s)))
+                 (la _. self(str_tail(pre))(str_tail(s)))
+                 (la _. FALSE))))
+glyph DROP_PRE = Z(la self. la pre. la s.
+    IF(EMPTY(pre))(la _. s)(la _. self(str_tail(pre))(str_tail(s))))
+glyph AFTER    = Z(la self. la m. la s.
+    IF(STARTS(m)(s))(la _. DROP_PRE(m)(s))
+       (la _. IF(EMPTY(s))(la _. "")(la _. self(m)(str_tail(s)))))
+glyph UPTO     = Z(la self. la d. la s.
+    IF(EMPTY(s))(la _. "")
+       (la _. IF(str_eq(str_head(s))(d))(la _. "")
+       (la _. concat(str_head(s))(self(d)(str_tail(s))))))
+glyph TRIM     = Z(la self. la s.
+    IF(EMPTY(s))(la _. "")
+       (la _. IF(str_eq(str_head(s))(" "))(la _. self(str_tail(s)))(la _. s)))
+
+# TARITY — top-level arrows in a type (arrows inside parens don't count)
+glyph IS_ARROW = la s. AND(str_eq(str_head(s))("-"))(str_eq(str_head(str_tail(s)))(">"))
+glyph IS_LP    = la s. str_eq(str_head(s))("(")
+glyph IS_RP    = la s. str_eq(str_head(s))(")")
+glyph TARITY = la t.
+    Z(la self. la depth. la cnt. la s.
+        IF(EMPTY(s))
+          (la _. cnt)
+          (la _. IF(AND(int_eq(depth)(0))(IS_ARROW(s)))
+            (la _. self(depth)(add(cnt)(1))(str_tail(str_tail(s))))
+            (la _. IF(IS_LP(s))
+              (la _. self(add(depth)(1))(cnt)(str_tail(s)))
+              (la _. IF(IS_RP(s))
+                (la _. self(sub(depth)(1))(cnt)(str_tail(s)))
+                (la _. self(depth)(cnt)(str_tail(s)))))))
+     (0)(0)(t)
+
+# BARITY — leading `la ` binders in a body (its abstraction arity)
+glyph BARITY = Z(la self. la b.
+    (la s. IF(STARTS("la ")(s))(la _. add(1)(self(AFTER(".")(s))))(la _. 0))(TRIM(b)))
+
+# signature marker, type extraction, and body extraction from generated source
+glyph IS_TYPED = la sig. STARTS("::")(sig)
+glyph TYPE_OF  = la sig. TRIM(AFTER("::")(sig))
+glyph BODY_OF  = la src. la name. UPTO("\n")(AFTER(concat("glyph ")(concat(name)(" = ")))(src))
+
+# per-glyph type judgement (TRUE = ok or untyped)
+glyph TYPE_CHECK_OK = la src. la e.
+    (la sig. IF(IS_TYPED(sig))
+        (la _. int_eq(TARITY(TYPE_OF(sig)))(BARITY(BODY_OF(src)(ENAME(e)))))
+        (la _. TRUE))(ESIG(e))
+glyph TYPE_LINE = la src. la e.
+    (la sig.
+      IF(IS_TYPED(sig))
+        (la _.
+          (la ta. la ba.
+            CAT(CONS("  ")(CONS(ENAME(e))(CONS(" : ")(CONS(TYPE_OF(sig))(CONS("  (type arity ")(CONS(int_to_str(ta))(CONS(", body arity ")(CONS(int_to_str(ba))(CONS(")  ")(CONS(IF(int_eq(ta)(ba))(la _. "OK")(la _. "TYPE ERROR"))(CONS("\n")(NIL)))))))))))))
+          (TARITY(TYPE_OF(sig)))
+          (BARITY(BODY_OF(src)(ENAME(e)))))
+        (la _. concat("  ")(concat(ENAME(e))(": untyped (trusted)\n"))))
+    (ESIG(e))
+glyph TYPECHECK = la spec. la src. CAT(MAP(TYPE_LINE(src))(spec))
+glyph TYPES_OK  = la spec. la src. ALL(TYPE_CHECK_OK(src))(spec)
+
+# ── DEPLOY: generate, TYPE-CHECK, then (only if well-typed) write, re-read,
+#    verify — spec → verified module in one call. A type error rejects the
+#    module: the .la file is never written. ───────────────────────────────
 glyph DEPLOY = la spec. la path.
     (la src.
-        SEQ(write_file(path)(src))
-        ((la ondisk.
-            CAT(CONS(concat("deployed -> ")(concat(path)("\n")))
-               (CONS(concat("META_DEBUG (test cases run on each generated glyph):\n")(META_DEBUG(spec)))
-               (CONS(concat("on-disk file == generated source: ")(concat(BOOL_STR(str_eq(ondisk)(src)))("\n")))
-               (CONS(IF(ALL_OK(spec))(la _. "RESULT: module VERIFIED — every glyph passed its spec\n")
-                                      (la _. "RESULT: module FAILED verification\n"))
-               (NIL))))))
-         (read_file(path)))
-    )(GENERATE(spec))
+      (la tcreport.
+        IF(TYPES_OK(spec)(src))
+          (la _.
+            SEQ(write_file(path)(src))
+              ((la ondisk.
+                CAT(CONS(concat("TYPECHECK (compile-time, on the generated source):\n")(tcreport))
+                   (CONS(concat("deployed -> ")(concat(path)("\n")))
+                   (CONS(concat("META_DEBUG (test cases run on each generated glyph):\n")(META_DEBUG(spec)))
+                   (CONS(concat("on-disk file == generated source: ")(concat(BOOL_STR(str_eq(ondisk)(src)))("\n")))
+                   (CONS(IF(ALL_OK(spec))(la _. "RESULT: module VERIFIED — every glyph passed its spec\n")
+                                         (la _. "RESULT: module FAILED verification\n"))
+                   (NIL)))))))
+               (read_file(path))))
+          (la _.
+            CAT(CONS(concat("TYPECHECK (compile-time, on the generated source):\n")(tcreport))
+               (CONS(concat("RESULT: module REJECTED — type error(s); ")(concat(path)(" not written\n")))
+               (NIL)))))
+      (TYPECHECK(spec)(src)))
+    (GENERATE(spec))
 
 # ── The example: a small native-integer math module ────────────────────
 glyph MATH_SPEC =
