@@ -683,7 +683,7 @@ say "Spec pipeline: COMPILE-TIME type checking inside DEPLOY"
 # new phase is backward-compatible). typed_spec.la deploys a WELL-TYPED module
 # (accepted) and an ILL-TYPED one (BADCONST: declared a->b->a, arity 2, but body
 # `la x. x`, arity 1) which must be REJECTED with no file written.
-rm -f typed_module.la typed_bad.la
+rm -f typed_module.la typed_bad.la typed_badtype.la
 TY="$(./tiny_host typed_spec.la 2>/dev/null)"
 ok=1
 # (1) the well-typed module: every checked glyph reports OK, and it is VERIFIED
@@ -696,15 +696,18 @@ printf '%s\n' "$TY" | grep -q "module VERIFIED" || { echo "FAIL  typecheck: well
 printf '%s\n' "$TY" | grep -qE "^  BADCONST : .*  TYPE ERROR$" || { echo "FAIL  typecheck: BADCONST not flagged as TYPE ERROR"; ok=0; }
 printf '%s\n' "$TY" | grep -q "module REJECTED" || { echo "FAIL  typecheck: ill-typed module not REJECTED"; ok=0; }
 [ -f typed_bad.la ] && { echo "FAIL  typecheck: typed_bad.la was written despite type error (must be rejected)"; ok=0; }
-# (3) the ACCEPTED artifact is valid runnable LA (compose two string ops)
+# (3) malformed type signature (dangling arrow) flagged MALFORMED TYPE, rejected, no file
+printf '%s\n' "$TY" | grep -qE "^  DANGLE : .*  MALFORMED TYPE$" || { echo "FAIL  typecheck: DANGLE (dangling-arrow type) not flagged MALFORMED TYPE"; ok=0; }
+[ -f typed_badtype.la ] && { echo "FAIL  typecheck: typed_badtype.la was written despite malformed type"; ok=0; }
+# (4) the ACCEPTED artifact is valid runnable LA (compose two string ops)
 cp typed_module.la /tmp/tymod.la 2>/dev/null
 printf 'glyph SEQ = la a. la b. b\nglyph MAIN = print(COMPOSE(la s. concat(s)("!"))(la s. concat(">")(s))("ok"))\n' >> /tmp/tymod.la
 TYRUN="$(./tiny_host /tmp/tymod.la 2>/dev/null)"
 [ "$TYRUN" = ">ok!" ] || { echo "FAIL  typecheck: accepted module ran wrong (got '$TYRUN', want '>ok!')"; ok=0; }
-rm -f /tmp/tymod.la typed_module.la typed_bad.la
+rm -f /tmp/tymod.la typed_module.la typed_bad.la typed_badtype.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  typecheck: DEPLOY type-checks the generated source; well-typed module accepted (arities match) + VERIFIED"
-    echo "PASS  typecheck: ill-typed glyph (arity mismatch) REJECTED at compile time, no file written; accepted artifact runs"
+    echo "PASS  typecheck: ill-typed glyph (arity mismatch) + malformed type signature both REJECTED at compile time, no file written"
 else
     printf '%s\n' "$TY"
     exit 1

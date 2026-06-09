@@ -21,7 +21,7 @@
 
 # The pipeline API + the constructors a spec author needs, exported so other
 # modules can `import("specpipe.la")` and build their own specs against it.
-export GENERATE DEPLOY META_DEBUG TYPECHECK TYPES_OK TARITY BARITY DEF TRIPLE PAIR FST SND CONS NIL Z IF TRUE FALSE AND BOOL_STR SEQ
+export GENERATE DEPLOY META_DEBUG TYPECHECK TYPES_OK TARITY BARITY WF_TYPE DEF TRIPLE PAIR FST SND CONS NIL Z IF TRUE FALSE AND BOOL_STR SEQ
 
 # ── Church / list prelude ──────────────────────────────────────────────
 glyph SEQ    = la a. la b. b
@@ -131,6 +131,37 @@ glyph TARITY = la t.
 glyph BARITY = Z(la self. la b.
     (la s. IF(STARTS("la ")(s))(la _. add(1)(self(AFTER(".")(s))))(la _. 0))(TRIM(b)))
 
+# WF_TYPE — is a type signature WELL-FORMED? A recursive-descent parser for the
+#   type grammar  T := F ('->' F)* ,  F := ATOM | '(' T ')' ,  ATOM = a non-empty
+#   run of non-delimiter chars. A malformed type (`a ->`, `-> a`, `a -> -> b`,
+#   `(a -> b`, empty) is rejected — otherwise TARITY would silently mis-count it.
+#   Each parser returns PAIR(ok)(rest); WF_TYPE holds iff the parse consumes all.
+glyph OR       = la a. la b. a(TRUE)(b)
+glyph ISDELIM  = la c. OR(str_eq(c)(" "))(OR(str_eq(c)("("))(OR(str_eq(c)(")"))(str_eq(c)("-"))))
+glyph EAT_ATOM = Z(la self. la s.
+    IF(EMPTY(s))(la _. s)(la _. IF(ISDELIM(str_head(s)))(la _. s)(la _. self(str_tail(s)))))
+# FACTOR(pt)(s): parse one factor (atom or parenthesised type), s left-trimmed
+glyph FACTOR = la pt. la s.
+    IF(EMPTY(s))(la _. PAIR(FALSE)(s))
+    (la _. IF(IS_LP(s))
+       (la _. (la r.
+                 IF(FST(r))
+                   (la _. (la rest. IF(IS_RP(rest))(la _. PAIR(TRUE)(str_tail(rest)))(la _. PAIR(FALSE)(rest)))(TRIM(SND(r))))
+                   (la _. r))
+              (pt(str_tail(s))))
+       (la _. (la rest. IF(str_eq(rest)(s))(la _. PAIR(FALSE)(s))(la _. PAIR(TRUE)(rest)))(EAT_ATOM(s))))
+# ARROW_LOOP(pt)(s): after a factor, consume (-> factor)* to a clean end
+glyph ARROW_LOOP = la pt. Z(la self. la s0.
+    (la s. IF(EMPTY(s))(la _. PAIR(TRUE)(s))
+       (la _. IF(IS_ARROW(s))
+          (la _. (la r. IF(FST(r))(la _. self(SND(r)))(la _. r))(FACTOR(pt)(TRIM(str_tail(str_tail(s))))))
+          (la _. PAIR(TRUE)(s))))
+    (TRIM(s0)))
+# PT(s): parse a whole type -> PAIR(ok)(rest)
+glyph PT = Z(la self. la s.
+    (la fr. IF(FST(fr))(la _. ARROW_LOOP(self)(SND(fr)))(la _. fr))(FACTOR(self)(TRIM(s))))
+glyph WF_TYPE = la t. (la r. AND(FST(r))(EMPTY(TRIM(SND(r)))))(PT(t))
+
 # signature marker, type extraction, and body extraction from generated source
 glyph IS_TYPED = la sig. STARTS("::")(sig)
 glyph TYPE_OF  = la sig. TRIM(AFTER("::")(sig))
@@ -139,16 +170,21 @@ glyph BODY_OF  = la src. la name. UPTO("\n")(AFTER(concat("glyph ")(concat(name)
 # per-glyph type judgement (TRUE = ok or untyped)
 glyph TYPE_CHECK_OK = la src. la e.
     (la sig. IF(IS_TYPED(sig))
-        (la _. int_eq(TARITY(TYPE_OF(sig)))(BARITY(BODY_OF(src)(ENAME(e)))))
+        (la _. (la ty. AND(WF_TYPE(ty))(int_eq(TARITY(ty))(BARITY(BODY_OF(src)(ENAME(e))))))(TYPE_OF(sig)))
         (la _. TRUE))(ESIG(e))
 glyph TYPE_LINE = la src. la e.
     (la sig.
       IF(IS_TYPED(sig))
         (la _.
-          (la ta. la ba.
-            CAT(CONS("  ")(CONS(ENAME(e))(CONS(" : ")(CONS(TYPE_OF(sig))(CONS("  (type arity ")(CONS(int_to_str(ta))(CONS(", body arity ")(CONS(int_to_str(ba))(CONS(")  ")(CONS(IF(int_eq(ta)(ba))(la _. "OK")(la _. "TYPE ERROR"))(CONS("\n")(NIL)))))))))))))
-          (TARITY(TYPE_OF(sig)))
-          (BARITY(BODY_OF(src)(ENAME(e)))))
+          (la ty.
+            IF(WF_TYPE(ty))
+              (la _.
+                (la ta. la ba.
+                  CAT(CONS("  ")(CONS(ENAME(e))(CONS(" : ")(CONS(ty)(CONS("  (type arity ")(CONS(int_to_str(ta))(CONS(", body arity ")(CONS(int_to_str(ba))(CONS(")  ")(CONS(IF(int_eq(ta)(ba))(la _. "OK")(la _. "TYPE ERROR"))(CONS("\n")(NIL)))))))))))))
+                (TARITY(ty))
+                (BARITY(BODY_OF(src)(ENAME(e)))))
+              (la _. concat("  ")(concat(ENAME(e))(concat(" : ")(concat(ty)("  MALFORMED TYPE\n"))))))
+          (TYPE_OF(sig)))
         (la _. concat("  ")(concat(ENAME(e))(": untyped (trusted)\n"))))
     (ESIG(e))
 glyph TYPECHECK = la spec. la src. CAT(MAP(TYPE_LINE(src))(spec))

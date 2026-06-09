@@ -64,6 +64,16 @@ glyph TYPED_BAD =
   CONS(E("BADCONST")(":: a -> b -> a")(SRC_BADCONST)(BADCONST)(NIL))(
   NIL))
 
+# ── TYPED_BADTYPE: a well-defined body but a MALFORMED type signature
+#    (`:: a ->`, a dangling arrow). The checker rejects it before TARITY could
+#    silently mis-count the type. ────────────────────────────────────────────
+glyph TYPED_BADTYPE =
+  CONS(E("IDT")(":: a -> a")(SRC_IDT)(IDT)(
+        T1L(TC(la g. g("x"))("x"))))(
+  CONS(E("DANGLE")(":: a ->")(SRC_IDT)(IDT)(NIL))(
+  NIL))
+
 glyph MAIN =
     SEQ(print(concat("=== DEPLOY(TYPED_OK) -> typed_module.la ===\n")(DEPLOY(TYPED_OK)("typed_module.la"))))
-       (print(concat("\n=== DEPLOY(TYPED_BAD) -> typed_bad.la (must be REJECTED) ===\n")(DEPLOY(TYPED_BAD)("typed_bad.la"))))
+    (SEQ(print(concat("\n=== DEPLOY(TYPED_BAD) -> typed_bad.la (must be REJECTED) ===\n")(DEPLOY(TYPED_BAD)("typed_bad.la"))))
+        (print(concat("\n=== DEPLOY(TYPED_BADTYPE) -> typed_badtype.la (must be REJECTED) ===\n")(DEPLOY(TYPED_BADTYPE)("typed_badtype.la")))))

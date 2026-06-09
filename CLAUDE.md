@@ -913,6 +913,11 @@ n-ary abstraction; a base type means arity 0. A mismatch is a **TYPE ERROR** and
 the module is **REJECTED — the `.la` file is never written**. This moves typing
 from run time to compile time: the arity bug that would otherwise surface as
 `("x")("y")` (a string applied at run time) is caught before the module exists.
+The declared type is itself parsed by a recursive-descent **well-formedness**
+checker (`WF_TYPE`, grammar `T := F ('->' F)*`, `F := ATOM | '(' T ')'`); a
+malformed signature (a dangling `->`, an empty factor, unbalanced parens) is a
+**MALFORMED TYPE** error and likewise rejects the module, rather than letting the
+arity count silently mis-read it.
 
 Typing is **gradual / opt-in**: a signature marked `:: <type>` is checked; any
 other (prose) signature is reported `untyped (trusted)` and passes vacuously — so
