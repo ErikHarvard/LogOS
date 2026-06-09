@@ -23,7 +23,7 @@
 #  glyphs into scope; the helpers below stay private to the module.
 # ═══════════════════════════════════════════════════════════════════
 
-export CHANNEL SEND RECV MSG_TYPE MSG_BODY MSG_OK
+export CHANNEL SEND RECV MSG_TYPE MSG_BODY MSG_OK ENCODE
 
 # ── private helpers ──────────────────────────────────────────────────
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))

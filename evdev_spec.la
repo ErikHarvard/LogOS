@@ -1,0 +1,138 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  evdev_spec.la — an evdev input module written as a SPEC and produced by the
+#  spec→implementation pipeline (import("specpipe.la")).
+#
+#  This is NOT hand-written module source: it is a specification — for each
+#  glyph, a type signature, the body SOURCE (what GENERATE writes), the live
+#  IMPLEMENTATION (what META_DEBUG runs), and executable TEST CASES. DEPLOY
+#  writes evdev.la and verifies every glyph against its tests; the module is
+#  committed only if META_DEBUG passes.
+#
+#  Public API of the generated module (evdev.la):
+#    OPEN_INPUT(path)  open a /dev/input device (O_RDONLY)            [VM-only I/O]
+#    READ_EVENT(fd)    read one 24-byte struct input_event           [VM-only I/O]
+#    CLOSE_INPUT(fd)   close the device fd                           [VM-only I/O]
+#    EV_TYPE/EV_CODE/EV_VALUE(e)   decode the three little-endian fields
+#    IS_KEY_PRESS/IS_KEY_RELEASE/IS_MOUSE_MOVE(e)  classify an event
+#  plus the support glyphs (Z/IF/TRUE/FALSE/AND) and byte helpers (DROP/B/U16/
+#  U32/S32) the decoders need, so the GENERATEd module is self-contained.
+#
+#  struct input_event (x86-64): 16-byte timeval, then type (u16 @16), code
+#  (u16 @18), value (s32 @20), little-endian. EV_KEY=1, EV_REL=2; a key value
+#  of 1=press, 0=release. The three I/O bindings wrap VM-only syscalls (open/
+#  read/close) and carry no host-runnable test — they are verified live on the
+#  native VM, as the DRM scanout and input readers are.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + constructors + Z/IF/TRUE/FALSE/AND
+
+# ── implementation VALUES (what META_DEBUG runs; Z/IF/TRUE/FALSE/AND imported) ──
+glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph B = la e. la n. str_to_int(ord(str_head(DROP(n)(e))))
+glyph U16 = la e. la off. add(B(e)(off))(mul(B(e)(add(off)(1)))(256))
+glyph U32 = la e. la off. add(add(B(e)(off))(mul(B(e)(add(off)(1)))(256)))(add(mul(B(e)(add(off)(2)))(65536))(mul(B(e)(add(off)(3)))(16777216)))
+glyph S32 = la e. la off. (la u. IF(lt(u)(2147483648))(la _. u)(la _. sub(u)(4294967296)))(U32(e)(off))
+glyph EV_TYPE = la e. U16(e)(16)
+glyph EV_CODE = la e. U16(e)(18)
+glyph EV_VALUE = la e. S32(e)(20)
+glyph IS_KEY_PRESS = la e. AND(int_eq(EV_TYPE(e))(1))(int_eq(EV_VALUE(e))(1))
+glyph IS_KEY_RELEASE = la e. AND(int_eq(EV_TYPE(e))(1))(int_eq(EV_VALUE(e))(0))
+glyph IS_MOUSE_MOVE = la e. int_eq(EV_TYPE(e))(2)
+glyph OPEN_INPUT = la path. open(path)("0")
+glyph READ_EVENT = la fd. read(fd)("24")
+glyph CLOSE_INPUT = la fd. close(fd)
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_IF    = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_TRUE  = "la t. la f. t"
+glyph SRC_FALSE = "la t. la f. f"
+glyph SRC_AND   = "la a. la b. a(b)(FALSE)"
+glyph SRC_DROP  = "Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))"
+glyph SRC_B     = "la e. la n. str_to_int(ord(str_head(DROP(n)(e))))"
+glyph SRC_U16   = "la e. la off. add(B(e)(off))(mul(B(e)(add(off)(1)))(256))"
+glyph SRC_U32   = "la e. la off. add(add(B(e)(off))(mul(B(e)(add(off)(1)))(256)))(add(mul(B(e)(add(off)(2)))(65536))(mul(B(e)(add(off)(3)))(16777216)))"
+glyph SRC_S32   = "la e. la off. (la u. IF(lt(u)(2147483648))(la _. u)(la _. sub(u)(4294967296)))(U32(e)(off))"
+glyph SRC_EVT   = "la e. U16(e)(16)"
+glyph SRC_EVC   = "la e. U16(e)(18)"
+glyph SRC_EVV   = "la e. S32(e)(20)"
+glyph SRC_ISKP  = "la e. AND(int_eq(EV_TYPE(e))(1))(int_eq(EV_VALUE(e))(1))"
+glyph SRC_ISKR  = "la e. AND(int_eq(EV_TYPE(e))(1))(int_eq(EV_VALUE(e))(0))"
+glyph SRC_ISMM  = "la e. int_eq(EV_TYPE(e))(2)"
+glyph SRC_OPEN  = "la path. open(path)(\"0\")"
+glyph SRC_READ  = "la fd. read(fd)(\"24\")"
+glyph SRC_CLOSE = "la fd. close(fd)"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph BYTE   = la n. chr(int_to_str(n))
+glyph REPEAT = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _. concat(s)(self(sub(n)(1))(s))))
+glyph LE16   = la n. concat(BYTE(mod(n)(256)))(BYTE(div(n)(256)))
+glyph ZEROS16 = REPEAT(16)(BYTE(0))
+# MKEV(type)(code)(v0)(v1)(v2)(v3) — a synthetic 24-byte input_event.
+glyph MKEV = la type. la code. la v0. la v1. la v2. la v3.
+    concat(ZEROS16)(concat(LE16(type))(concat(LE16(code))(
+        concat(BYTE(v0))(concat(BYTE(v1))(concat(BYTE(v2))(BYTE(v3)))))))
+glyph EV_PRESS_A   = MKEV(1)(30)(1)(0)(0)(0)          # KEY_A press   (type 1, code 30, value 1)
+glyph EV_RELEASE_A = MKEV(1)(30)(0)(0)(0)(0)          # KEY_A release (value 0)
+glyph EV_REL_X     = MKEV(2)(0)(5)(0)(0)(0)           # REL_X +5      (type 2, code 0, value 5)
+glyph EV_REL_NEG   = MKEV(2)(0)(253)(255)(255)(255)   # REL_X -3      (signed value)
+glyph V_NEG = concat(BYTE(253))(concat(BYTE(255))(concat(BYTE(255))(BYTE(255))))   # 0xFFFFFFFD
+glyph V_POS = concat(BYTE(5))(concat(BYTE(0))(concat(BYTE(0))(BYTE(0))))           # 5
+
+# ── the SPEC: the evdev module, each glyph with its tests ─────────────────────
+glyph EVDEV_SPEC =
+  CONS(E("Z")("(a -> a) -> a")(SRC_Z)(Z)(
+        T1L(TC(la g. (g(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat("|")(self(str_tail(s))))))("abc"))("|||"))))(
+  CONS(E("IF")("Bool -> a -> a -> a")(SRC_IF)(IF)(
+        T2L(TC(la g. g(TRUE)(la _. "y")(la _. "n"))("y"))
+           (TC(la g. g(FALSE)(la _. "y")(la _. "n"))("n"))))(
+  CONS(E("TRUE")("Bool")(SRC_TRUE)(TRUE)(T1L(TC(la g. BOOL_STR(g))("T"))))(
+  CONS(E("FALSE")("Bool")(SRC_FALSE)(FALSE)(T1L(TC(la g. BOOL_STR(g))("F"))))(
+  CONS(E("AND")("Bool -> Bool -> Bool")(SRC_AND)(AND)(
+        T2L(TC(la g. BOOL_STR(g(TRUE)(TRUE)))("T"))
+           (TC(la g. BOOL_STR(g(TRUE)(FALSE)))("F"))))(
+  CONS(E("DROP")("Int -> Str -> Str")(SRC_DROP)(DROP)(
+        T2L(TC(la g. g(2)("abcde"))("cde"))
+           (TC(la g. g(0)("xyz"))("xyz"))))(
+  CONS(E("B")("Str -> Int -> Int")(SRC_B)(B)(
+        T2L(TC(la g. int_to_str(g("ABC")(0)))("65"))
+           (TC(la g. int_to_str(g("ABC")(1)))("66"))))(
+  CONS(E("U16")("Str -> Int -> Int")(SRC_U16)(U16)(
+        T1L(TC(la g. int_to_str(g(MKEV(513)(0)(0)(0)(0)(0))(16)))("513"))))(
+  CONS(E("U32")("Str -> Int -> Int")(SRC_U32)(U32)(
+        T1L(TC(la g. int_to_str(g(V_NEG)(0)))("4294967293"))))(
+  CONS(E("S32")("Str -> Int -> Int")(SRC_S32)(S32)(
+        T2L(TC(la g. int_to_str(g(V_NEG)(0)))("-3"))
+           (TC(la g. int_to_str(g(V_POS)(0)))("5"))))(
+  CONS(E("EV_TYPE")("Event -> Int")(SRC_EVT)(EV_TYPE)(
+        T2L(TC(la g. int_to_str(g(EV_PRESS_A)))("1"))
+           (TC(la g. int_to_str(g(EV_REL_X)))("2"))))(
+  CONS(E("EV_CODE")("Event -> Int")(SRC_EVC)(EV_CODE)(
+        T2L(TC(la g. int_to_str(g(EV_PRESS_A)))("30"))
+           (TC(la g. int_to_str(g(EV_REL_X)))("0"))))(
+  CONS(E("EV_VALUE")("Event -> Int")(SRC_EVV)(EV_VALUE)(
+        T2L(TC(la g. int_to_str(g(EV_PRESS_A)))("1"))
+           (TC(la g. int_to_str(g(EV_REL_NEG)))("-3"))))(
+  CONS(E("IS_KEY_PRESS")("Event -> Bool")(SRC_ISKP)(IS_KEY_PRESS)(
+        T2L(TC(la g. BOOL_STR(g(EV_PRESS_A)))("T"))
+           (TC(la g. BOOL_STR(g(EV_RELEASE_A)))("F"))))(
+  CONS(E("IS_KEY_RELEASE")("Event -> Bool")(SRC_ISKR)(IS_KEY_RELEASE)(
+        T2L(TC(la g. BOOL_STR(g(EV_RELEASE_A)))("T"))
+           (TC(la g. BOOL_STR(g(EV_PRESS_A)))("F"))))(
+  CONS(E("IS_MOUSE_MOVE")("Event -> Bool")(SRC_ISMM)(IS_MOUSE_MOVE)(
+        T2L(TC(la g. BOOL_STR(g(EV_REL_X)))("T"))
+           (TC(la g. BOOL_STR(g(EV_PRESS_A)))("F"))))(
+  # ── VM-only I/O bindings (open/read/close are VM syscalls): no host-runnable
+  #    test, so an empty test list — verified live on the native VM. ──
+  CONS(E("OPEN_INPUT")("Str -> Fd  [VM-only: open /dev/input device O_RDONLY]")(SRC_OPEN)(OPEN_INPUT)(NIL))(
+  CONS(E("READ_EVENT")("Fd -> Event  [VM-only: read one 24-byte input_event]")(SRC_READ)(READ_EVENT)(NIL))(
+  CONS(E("CLOSE_INPUT")("Fd -> Int  [VM-only: close the device fd]")(SRC_CLOSE)(CLOSE_INPUT)(NIL))(
+  NIL)))))))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(EVDEV_SPEC) ===\n")(GENERATE(EVDEV_SPEC))))
+       (print(DEPLOY(EVDEV_SPEC)("evdev.la")))

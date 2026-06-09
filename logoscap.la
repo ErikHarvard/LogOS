@@ -1,0 +1,92 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logoscap.la — LogosIPC Layer 4: capability gating (object-capabilities).
+#
+#  Spec: CODEX AUTOPOIETICUS, Layer 4 — LogosIPC is "Capability-gated: organ A
+#  can message organ B only if the capability is granted." logosipc.la seeded
+#  the TYPED bus (TYPE/BODY, MSG_TYPE/MSG_BODY); this layer adds the gate.
+#
+#  The mechanism is the Morris sealer/unsealer — the canonical object-capability
+#  primitive, and exact in λ-calculus. A BRAND is a fresh authority (a unique
+#  secret); from it derive two capabilities:
+#
+#    a SEALER   (the WRITE/grant capability) — mints sealed messages;
+#    an UNSEALER (the READ capability)        — opens them.
+#
+#  A sealed box is OPAQUE: it is a probe-guarded closure that yields its payload
+#  only to a probe equal to the brand's secret. The secret is captured in the
+#  closure, never exposed — so a holder of neither capability can read a box or
+#  forge one. Possessing a capability *is* the authority: object-capability
+#  security, with no ambient permission. Capabilities also ATTENUATE — hand
+#  someone the UNSEALER alone and they may read a realm's messages but not mint
+#  them; hand the SEALER alone and they may send but never read back.
+#
+#  This composes with the typed bus: a capability-gated message is SEAL(secret)
+#  applied to an ENCODE(type)(body) wire message, recovered only via the realm's
+#  UNSEALER and then decoded with MSG_TYPE/MSG_BODY. Pure Lingua Adamica (only
+#  str_eq/concat + the typed layer), so it runs byte-identically on the C host
+#  and the native VM — verifiable with no transport in the loop.
+#
+#  Honest limits: the secret is a string compared by str_eq, so unforgeability
+#  rests on it being unguessable — a real realm mints a large random nonce (LogOS
+#  has no randomness source yet). This gates ACCESS to message contents (the
+#  authority/confidentiality model); ciphertext-on-the-wire Γ-seal encryption and
+#  capability REVOCATION remain deferred (see logosipc.la's Layer-4 note).
+# ═══════════════════════════════════════════════════════════════════
+
+import("logosipc.la")           # ENCODE MSG_TYPE MSG_BODY (the typed bus) + (VM-only) CHANNEL/SEND/RECV
+
+glyph SEQ  = la a. la b. b
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+# Church-option: the result of opening a box. SOME(x) hands x to the success
+# continuation; NONE selects the failure branch — a reader that lacks the
+# capability gets NONE, indistinguishable from an absent message.
+glyph SOME = la x. la s. la n. s(x)
+glyph NONE = la s. la n. n
+
+# ── The sealer/unsealer primitive ──
+# SEAL(secret)(payload) — an opaque box: a closure that reveals SOME(payload)
+# only when probed with the matching secret, NONE otherwise. The secret lives in
+# the closure; the box never exposes it.
+glyph SEAL   = la secret. la x. la probe.
+    IF(str_eq(probe)(secret))(la _. SOME(x))(la _. NONE)
+# UNSEAL(secret)(box) — probe the box with the secret: SOME(payload) | NONE.
+glyph UNSEAL = la secret. la box. box(secret)
+
+# ── A brand and its two derived capabilities ──
+# BRAND(secret) -> PAIR(sealer)(unsealer). GRANT_SEND hands out the write
+# capability, GRANT_RECV the read capability — attenuate by granting only one.
+glyph BRAND      = la secret. PAIR(SEAL(secret))(UNSEAL(secret))
+glyph GRANT_SEND = la realm. FST(realm)
+glyph GRANT_RECV = la realm. SND(realm)
+
+# ── Capability-gated typed messaging ──
+# CAP_SEND: only a holder of the send capability can mint a sealed typed message.
+# CAP_RECV: only a holder of the read capability recovers it (SOME(wire) | NONE).
+glyph CAP_SEND = la sendcap. la type. la body. sendcap(ENCODE(type)(body))
+glyph CAP_RECV = la recvcap. la box. recvcap(box)
+
+# ── Demonstration (pure, cross-engine) ──
+# Two independent realms. A sends a typed message on its own authority; A's read
+# capability opens it (authorized), B's does not (capability isolation), and a
+# bare box probed without any capability stays opaque (unforgeable).
+glyph SHOW_OPEN = la label. la opt. la render.
+    print(concat(label)(opt(render)("denied")))
+
+glyph MAIN =
+  (la realmA. (la realmB.
+    (la box.
+      SEQ(SHOW_OPEN("logoscap: authorized read = ")
+            (CAP_RECV(GRANT_RECV(realmA))(box))
+            (la wire. concat(MSG_TYPE(wire))(concat("/")(MSG_BODY(wire)))))
+      (SEQ(SHOW_OPEN("logoscap: foreign capability = ")
+            (CAP_RECV(GRANT_RECV(realmB))(box))
+            (la wire. concat("LEAKED ")(MSG_TYPE(wire))))
+          (SHOW_OPEN("logoscap: forged probe = ")
+            (box("guess-the-secret"))
+            (la wire. concat("FORGED ")(MSG_TYPE(wire)))))
+    )(CAP_SEND(GRANT_SEND(realmA))("ping")("hello"))
+  )(BRAND("realm-B-secret")))(BRAND("realm-A-secret"))

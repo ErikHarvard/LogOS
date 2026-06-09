@@ -362,6 +362,36 @@ else
     exit 1
 fi
 
+say "LogosIPC: capability gating (object-capabilities, Layer 4)"
+# logoscap.la adds the Codex's "capability-gated" property to the typed bus via
+# the Morris sealer/unsealer — the canonical object-capability primitive, exact
+# in lambda calculus. A BRAND mints a write capability (sealer) and a read
+# capability (unsealer); a sealed box is an opaque probe-guarded closure that
+# reveals its payload only to the brand's secret. It imports logosipc.la (ENCODE/
+# MSG_TYPE/MSG_BODY) so a gated message is a SEALed typed message, and is pure
+# Lingua Adamica, so it runs byte-identically on the C host and native VM. The
+# demo: realm A sends a typed message on its own authority; A's read capability
+# opens it (authorized = ping/hello), B's foreign capability cannot (isolation =
+# denied), and probing the bare box with no capability stays opaque (forged =
+# denied). We assert all three on both engines, byte-identical.
+ok=1
+CAP_EXPECT="$(printf 'logoscap: authorized read = ping/hello\nlogoscap: foreign capability = denied\nlogoscap: forged probe = denied')"
+HCAP="$(./tiny_host logoscap.la 2>/dev/null)"
+[ "$HCAP" = "$CAP_EXPECT" ] || { echo "FAIL  logoscap (C host): capability gating mismatch"; printf '%s\n' "$HCAP"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp logoscap.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+VCAP="$(./logos_secd 2>/dev/null)"
+[ "$VCAP" = "$CAP_EXPECT" ] || { echo "FAIL  logoscap (native VM): capability gating mismatch"; printf '%s\n' "$VCAP"; ok=0; }
+[ "$HCAP" = "$VCAP" ] || { echo "FAIL  logoscap: host and VM differ"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  import(\"logosipc.la\") + capabilities: sealed typed messages — authorized opens, foreign cap and forged probe denied, byte-identical on host and VM"
+else
+    exit 1
+fi
+
 say "Self-verifying LogOS (metadebug.la — META_DEBUG_SPEC phases 1-4)"
 # One run of metadebug.la emits a labelled line per check; the spec table,
 # DEBUG, and META_DEBUG share one glyph table so the debugger sees every
@@ -503,6 +533,63 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  strutil: the generated string module runs stand-alone on the host"
 else
     printf '%s\n' "$SU"
+    exit 1
+fi
+
+say "Spec pipeline: an evdev input module via import(\"specpipe.la\")"
+# evdev_spec.la is the evdev module written as a SPEC (NOT hand-written source):
+# for each glyph a type signature, body source, live implementation, and test
+# cases. GENERATE + DEPLOY produce and verify evdev.la — the committed module is
+# REGENERATED from the spec here, so this also guards that evdev.la never drifts
+# from its spec. We assert every decode/support glyph passes its tests and the
+# module is VERIFIED, then run the generated module stand-alone on both engines.
+# (The 3 I/O bindings OPEN_INPUT/READ_EVENT/CLOSE_INPUT wrap VM-only syscalls and
+# carry no host-runnable test — verified live on the VM, like the input reader.)
+EV="$(./tiny_host evdev_spec.la 2>/dev/null)"
+ok=1
+for G in DROP B U16 U32 S32 EV_TYPE EV_CODE EV_VALUE IS_KEY_PRESS IS_KEY_RELEASE IS_MOUSE_MOVE; do
+    printf '%s\n' "$EV" | grep -qx "  $G: PASS" || { echo "FAIL  evdev: $G not verified"; ok=0; }
+done
+printf '%s\n' "$EV" | grep -q "module VERIFIED" || { echo "FAIL  evdev: module not verified"; ok=0; }
+[ -f evdev.la ] || { echo "FAIL  evdev: evdev.la was not written"; ok=0; }
+# Run the GENERATED module stand-alone: build a KEY_A press and a REL_X -3 event,
+# decode + classify. Same program on host and VM must give the identical line.
+make_evtest () {
+    cp evdev.la /tmp/evtest.la
+    cat >> /tmp/evtest.la <<'LA'
+glyph SEQ = la a. la b. b
+glyph BYTE = la n. chr(int_to_str(n))
+glyph REP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _. concat(s)(self(sub(n)(1))(s))))
+glyph LE16 = la n. concat(BYTE(mod(n)(256)))(BYTE(div(n)(256)))
+glyph MKEV = la t. la c. la v0. la v1. la v2. la v3. concat(REP(16)(BYTE(0)))(concat(LE16(t))(concat(LE16(c))(concat(BYTE(v0))(concat(BYTE(v1))(concat(BYTE(v2))(BYTE(v3)))))))
+glyph PRESS = MKEV(1)(30)(1)(0)(0)(0)
+glyph REL = MKEV(2)(0)(253)(255)(255)(255)
+glyph BS = la b. b(la _. "T")(la _. "F")("!")
+glyph MAIN =
+  SEQ(print(concat("type=")(int_to_str(EV_TYPE(PRESS)))))(
+  SEQ(print(concat("code=")(int_to_str(EV_CODE(PRESS)))))(
+  SEQ(print(concat("press=")(BS(IS_KEY_PRESS(PRESS)))))(
+  SEQ(print(concat("release=")(BS(IS_KEY_RELEASE(PRESS)))))(
+  SEQ(print(concat("relval=")(int_to_str(EV_VALUE(REL)))))(
+      print(concat("mouse=")(BS(IS_MOUSE_MOVE(REL)))))))))
+LA
+}
+EV_EXPECT="$(printf 'type=1\ncode=30\npress=T\nrelease=F\nrelval=-3\nmouse=T')"
+make_evtest
+EVH="$(./tiny_host /tmp/evtest.la 2>/dev/null)"
+[ "$EVH" = "$EV_EXPECT" ] || { echo "FAIL  evdev: generated module ran wrong on host"; printf '%s\n' "$EVH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/evtest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+EVV="$(./logos_secd 2>/dev/null)"
+[ "$EVV" = "$EV_EXPECT" ] || { echo "FAIL  evdev: generated module ran wrong on native VM"; printf '%s\n' "$EVV"; ok=0; }
+rm -f /tmp/evtest.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  evdev: SPEC GENERATEs/DEPLOYs evdev.la, META_DEBUG verifies every decode glyph"
+    echo "PASS  evdev: the generated module decodes/classifies events stand-alone, byte-identical on host and VM"
+else
+    printf '%s\n' "$EV"
     exit 1
 fi
 

@@ -17,6 +17,7 @@ host program, applied to itself, reproduces itself.
 | `greetmod.la` / `greetapp.la` | Lightweight cross-engine import demo: `greetapp.la` `import("greetmod.la")` and proves both isolation directions in one line, light enough to run identically on **all five engines** (host, `eval.la`, `RUN_BYTES`, `RUN_SM`, native VM). |
 | `logosipc.la`        | LogosIPC module: a typed message bus (`SEND`/`RECV`/`MSG_TYPE`/…) over a named channel. |
 | `ipc_demo.la`        | Demo: `import("logosipc.la")`, round-trips a typed message through the bus. |
+| `logoscap.la`        | LogosIPC Layer 4: capability gating via a Morris sealer/unsealer (object-capabilities, exact in λ). A `BRAND` mints a write capability (sealer) and read capability (unsealer); a sealed box is opaque. `import`s `logosipc.la` so a gated message is a sealed typed message. Pure LA — byte-identical on host and VM. |
 | `logosinit.la`       | A real PID-1 init in Lingua Adamica (native VM): mounts `/proc` & `/sys`, `fork`+`execve`s `/bin/sh`, then supervises forever with a `reap(-1)` loop (respawn-throttled, bounded dump via TCO). |
 | `autopoiesis.la`     | The self-running organism (native VM): bundled into one vessel, each generation reads its number from a medium, speaks the Word, `copy_self`s a byte-identical successor, then `fork`+`execve`s it — the parent *runs its own child*, which runs its own, with no external driver. The loop is the process lineage itself; ∃(∃) ≡ ∃ running. |
 | `parser.la`          | Self-hosted lexer + parser: parses `.la` source into Church-encoded ASTs, written entirely in Lingua Adamica. |
@@ -29,6 +30,7 @@ host program, applied to itself, reproduces itself.
 | `metadebug.la`       | Self-verifying LogOS (seed Autological Proof System): a spec table plus `DEBUG`/`META_DEBUG` machinery sharing one glyph table, so the debugger can verify every glyph against its executable test cases. |
 | `specpipe.la`        | A specification → implementation pipeline: a `SPEC` of `(name, DEF(sig)(src)(impl), tests)` entries; `GENERATE` emits `.la` source, `META_DEBUG` runs each glyph's tests, `DEPLOY` writes, re-reads, and verifies a module in one call. |
 | `strutil_spec.la`    | A string-utilities module (`STARTS_WITH`/`ENDS_WITH`/`CONTAINS`/`SPLIT`/`JOIN`/`REPLACE`) written as a `SPEC` and produced by `import("specpipe.la")` — a self-contained, verified module from a spec. |
+| `evdev_spec.la` / `evdev.la` | An evdev input module written as a `SPEC` (`import("specpipe.la")`) and the module `GENERATE`d from it. `evdev.la` is regenerated from the spec by `build.sh` (so it never drifts) and `META_DEBUG`-verified: `OPEN_INPUT`/`READ_EVENT`/`CLOSE_INPUT` (VM-only I/O), `EV_TYPE`/`EV_CODE`/`EV_VALUE` decoders, `IS_KEY_PRESS`/`IS_KEY_RELEASE`/`IS_MOUSE_MOVE` classifiers. New modules are built this way — spec first, never hand-written. |
 | `theourgia.la`       | Theourgia Stage 1: the compositor's software surface core — SURFACES (pixel buffers), z-ordered COMPOSITION (blits), and serialisation to a PPM raster, all in Lingua Adamica, byte-identical on the C host and the native VM. |
 | `theourgia_drm.la`   | Theourgia Stage 2: real scanout via the `drm_mode`/`present` VM builtins (DRM/KMS dumb buffer). Paints the whole screen one colour. Runs as DRM master from a bare VT; under a compositor it halts loudly without touching the display. |
 | `theourgia_fb.la`    | Theourgia Stage 3: the framebuffer bridge. `import`s the Stage 1 surface core and adds `TO_FB`, converting a composed RGB scene into the XRGB8888 framebuffer image `present` scans out (R,G,B→B,G,R,0; pitch/height zero-pad). Pure generation — byte-identical on the C host and native VM. |
@@ -683,7 +685,7 @@ that exactly four generations ran (no runaway), that the lineage reported
 completion and exited 0, and that the begotten `new_logos_secd.bin` is
 byte-identical to the bundle.
 
-### LogosIPC — a typed message bus (`logosipc.la`)
+### LogosIPC — a typed message bus (`logosipc.la`, `logoscap.la`)
 
 The Codex's Layer 4 (`LogosIPC`, the OS's "nervous system" — a sovereign
 replacement for D-Bus: typed, Γ-seal-encrypted, capability-gated) begins here as
@@ -716,9 +718,37 @@ reaps. (The VM now has cross-engine `import`, so this test `import`s
 `logosipc.la` for real — `codegen.la`, running as `compiler.bin` on the VM,
 resolves the import at compile time; the importer supplies its own `IF`/`SEQ`
 since the module keeps those private. See the module system's cross-engine
-note.) Deferred to later
-layers, per the Codex: Γ-seal encryption, runtime schema validation, capability
-gating, and socket multiplexing (point-to-point / broadcast / stream routing).
+note.)
+
+**Capability gating (`logoscap.la`).** The Codex requires LogosIPC be
+"capability-gated: organ A can message organ B only if the capability is
+granted." `logoscap.la` adds exactly that, via the **Morris sealer/unsealer** —
+the canonical object-capability primitive, and exact in λ-calculus. A `BRAND`
+is a fresh authority (a unique secret); from it derive two capabilities: a
+**sealer** (the WRITE/grant capability — mints sealed messages) and an
+**unsealer** (the READ capability — opens them). `SEAL(secret)(payload)` returns
+an **opaque box**: a probe-guarded closure (`la probe. IF(str_eq(probe)(secret))
+…`) that yields `SOME(payload)` only to the matching secret and `NONE`
+otherwise. The secret is captured in the closure and never exposed, so a holder
+of neither capability can read a box or forge one — possessing a capability *is*
+the authority (no ambient permission). Capabilities **attenuate**: grant the
+unsealer alone and a peer may read a realm's messages but not mint them; grant
+the sealer alone and it may send but never read back. It composes with the typed
+bus — a gated message is `SEAL(secret)` applied to an `ENCODE(type)(body)` wire
+message, recovered only via the realm's unsealer and then decoded with
+`MSG_TYPE`/`MSG_BODY` (so `logosipc.la` now also exports `ENCODE`). Pure Lingua
+Adamica (only `str_eq`/`concat` + the typed layer), so it runs byte-identically
+on the C host and the native VM; `build.sh` checks that realm A's read
+capability opens A's sealed message (`ping/hello`), realm B's foreign capability
+cannot (isolation → denied), and probing the bare box with no capability stays
+opaque (forged → denied), on both engines. *Honest limits:* the secret is a
+string compared by `str_eq`, so unforgeability rests on it being unguessable — a
+real realm mints a large random nonce (LogOS has no randomness source yet); this
+gates *access* to message contents (the authority/confidentiality model), while
+ciphertext-on-the-wire Γ-seal encryption and capability *revocation* remain
+deferred. Still deferred to later layers, per the Codex: Γ-seal encryption,
+runtime schema validation, and socket multiplexing (point-to-point / broadcast /
+stream routing).
 
 ### Theourgia — the compositor (`theourgia.la`, `theourgia_drm.la`)
 
