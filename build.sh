@@ -611,6 +611,16 @@ for G in BEING Z RELATION RECOGNITION LOVE SELF VOID BECOMING FORM DEPTH DEPTH_Z
 done
 printf '%s\n' "$PR" | grep -q "module VERIFIED" || { echo "FAIL  primitives: module not verified"; ok=0; }
 [ -f primitives.la ] || { echo "FAIL  primitives: primitives.la was not written"; ok=0; }
+# The shipped module is also compile-time typed: nine primitives carry formal
+# `:: <type>` signatures the type checker verifies (incl. the higher-order
+# RELATION, parenthesised RECOGNITION/LOVE, and the expanded Church-Nat BECOMING);
+# the two point-free glyphs (SELF, DEPTH_Z) stay untyped/trusted.
+for G in BEING Z RELATION RECOGNITION LOVE VOID BECOMING FORM DEPTH; do
+    printf '%s\n' "$PR" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  primitives: $G not type-checked OK"; ok=0; }
+done
+for G in SELF DEPTH_Z; do
+    printf '%s\n' "$PR" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  primitives: $G not reported untyped/trusted"; ok=0; }
+done
 # Run the GENERATED module stand-alone: one char per primitive's autology witness
 # (each char is the sentinel echoed back through the self-applied primitive, so
 # "abcdefghi" appears only if every autology holds). Host and VM must agree.
@@ -656,6 +666,7 @@ drc=0; timeout 4 ./logos_secd >/dev/null 2>&1 || drc=$?
 rm -f /tmp/depthdiv.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  primitives: SPEC GENERATEs/DEPLOYs primitives.la, META_DEBUG verifies every primitive's autology"
+    echo "PASS  primitives: nine glyphs compile-time type-checked (arrow arity), SELF/DEPTH_Z trusted (point-free)"
     echo "PASS  primitives: autology witnesses (abcdefghi) byte-identical on host and VM; DEPTH(DEPTH) diverges (timeout) on both"
 else
     printf '%s\n' "$PR"

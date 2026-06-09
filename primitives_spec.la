@@ -80,43 +80,43 @@ glyph CHURCH_INT = la m. m(INC)(0)
 #  Each entry proves (1) the glyph behaves as specified and (2) its
 #  self-application (autology) terminates and yields the meaningful value.
 glyph PRIM_SPEC =
-  CONS(E("BEING")("a -> a   (identity; ∃, the axiom ∃(∃) ≡ ∃)")(SRC_BEING)(BEING)(
+  CONS(E("BEING")(":: a -> a")(SRC_BEING)(BEING)(
         T2L(TC(la g. g("am"))("am"))
            (TC(la g. g(g)("am"))("am"))))(                          # autology: ∃(∃) ≡ ∃
-  CONS(E("Z")("(a -> a) -> a   (fixpoint combinator, support)")(SRC_Z)(Z)(
+  CONS(E("Z")(":: (a -> a) -> a")(SRC_Z)(Z)(
         T1L(TC(la g. (g(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat("|")(self(str_tail(s))))))("abc"))("|||"))))(
-  CONS(E("RELATION")("a -> b -> (a -> b -> c) -> c   (the bare two-place link)")(SRC_REL)(RELATION)(
+  CONS(E("RELATION")(":: a -> b -> (a -> b -> c) -> c")(SRC_REL)(RELATION)(
         T3L(TC(la g. FST(g("A")("B")))("A"))
            (TC(la g. SND(g("A")("B")))("B"))
            (TC(la g. SND(g(g)("X")))("X"))))(                        # autology: REL(REL)("X") = pair(REL,"X")
-  CONS(E("RECOGNITION")("a -> (a paired with itself)   (reflexive relation, T ≡ R)")(SRC_REC)(RECOGNITION)(
+  CONS(E("RECOGNITION")(":: a -> ((a -> a -> c) -> c)")(SRC_REC)(RECOGNITION)(
         T3L(TC(la g. FST(g("A")))("A"))
            (TC(la g. SND(g("A")))("A"))                             # recognizer ≡ recognized
            (TC(la g. FST(FST(g(g))("M")))("M"))))(                  # autology: ρ(ρ) = pair(ρ,ρ); left is ρ
-  CONS(E("LOVE")("a -> b -> reciprocal pairs   (symmetric union / reciprocity)")(SRC_LOVE)(LOVE)(
+  CONS(E("LOVE")(":: a -> b -> ((p -> q -> r) -> r)")(SRC_LOVE)(LOVE)(
         T3L(TC(la g. FST(FST(g("A")("B"))))("A"))
            (TC(la g. FST(SND(g("A")("B"))))("B"))                   # reciprocity: second pairing is (B,A)
            (TC(la g. FST(FST(FST(FST(g(g)(g)))("A")("B"))))("A"))))(  # autology: LOVE(LOVE)(LOVE) terminates
-  CONS(E("SELF")("a -> a   (∃(∃) ≡ ∃ — Being's own self-application)")(SRC_SELF)(SELF)(
+  CONS(E("SELF")("a -> a   (∃(∃) ≡ ∃ — point-free BEING(BEING), so untyped/trusted)")(SRC_SELF)(SELF)(
         T2L(TC(la g. g("only"))("only"))
            (TC(la g. g(g)("only"))("only"))))(                      # autology: SELF(SELF) ≡ SELF
-  CONS(E("VOID")("a -> b -> b   (the empty selector: NIL / FALSE / ZERO)")(SRC_VOID)(VOID)(
+  CONS(E("VOID")(":: a -> b -> b")(SRC_VOID)(VOID)(
         T2L(TC(la g. g("A")("B"))("B"))
            (TC(la g. g(g)("seed"))("seed"))))(                      # autology: VOID(VOID) = ID (Being's seed, ex nihilo)
-  CONS(E("BECOMING")("Nat -> Nat   (successor — the engine of becoming)")(SRC_BEC)(BECOMING)(
+  CONS(E("BECOMING")(":: ((a -> a) -> a -> a) -> (a -> a) -> a -> a")(SRC_BEC)(BECOMING)(
         T3L(TC(la g. int_to_str(CHURCH_INT(g(VOID))))("1"))         # BECOMING(VOID) = ONE: number from Void
            (TC(la g. int_to_str(CHURCH_INT(g(g(VOID)))))("2"))      # becoming twice = TWO
            (TC(la g. g(g)(la _. "next")("seed"))("next"))))(        # autology: BECOMING(BECOMING) terminates (becoming of becoming)
-  CONS(E("FORM")("a -> (a -> b) -> b   (the seal — determinate, key-accessed structure)")(SRC_FORM)(FORM)(
+  CONS(E("FORM")(":: a -> (a -> b) -> b")(SRC_FORM)(FORM)(
         T3L(TC(la g. g("A")(la x. x))("A"))                          # seal then unseal with ID
            (TC(la g. g("A")(la _. "B"))("B"))                        # the key controls access
            (TC(la g. g(g)(la x. x)("Q")(la x. x))("Q"))))(          # autology: FORM(FORM) unseals to FORM
-  CONS(E("DEPTH")("(a -> a) -> a   (metacursion ↻ = g(g); DEPTH(DEPTH) diverges)")(SRC_DEPTH)(DEPTH)(
+  CONS(E("DEPTH")(":: (a -> a) -> a")(SRC_DEPTH)(DEPTH)(
         T2L(TC(la g. g(BEING)("deep"))("deep"))                     # DEPTH(BEING) = BEING(BEING) = ID
            (TC(la g. g(VOID)("x"))("x"))))(                          # DEPTH(VOID) = VOID(VOID) = ID
         # NOTE: no DEPTH(DEPTH) test — that is the infinite descent Ω, asserted
         # by build.sh via timeout, not here (it would never return).
-  CONS(E("DEPTH_Z")("(a -> a) -> a   (guarded metacursion = Z, productive fixed point)")(SRC_DEPTHZ)(DEPTH_Z)(
+  CONS(E("DEPTH_Z")("(a -> a) -> a   (guarded metacursion = Z; point-free body, so untyped/trusted)")(SRC_DEPTHZ)(DEPTH_Z)(
         T2L(TC(la g. (g(la self. la n. IF(int_eq(n)(0))(la _. "ok")(la _. self(sub(n)(1)))))(5))("ok"))
            (TC(la g. (g(la self. la n. IF(int_eq(n)(0))(la _. "base")(la _. self(sub(n)(1)))))(0))("base"))))(
   NIL)))))))))))

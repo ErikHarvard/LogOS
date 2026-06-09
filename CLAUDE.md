@@ -916,10 +916,16 @@ from run time to compile time: the arity bug that would otherwise surface as
 
 Typing is **gradual / opt-in**: a signature marked `:: <type>` is checked; any
 other (prose) signature is reported `untyped (trusted)` and passes vacuously — so
-the existing specs (`math`/`strutil`/`evdev`/`primitives`) are unaffected, and the
+specs written before the checker (`math`/`strutil`/`evdev`) are unaffected, and the
 fact they still deploy `VERIFIED` through the new phase proves it is
-backward-compatible. `typed_spec.la` demonstrates both paths: a well-typed module
-is accepted, and `BADCONST` (declared `a -> b -> a`, arity 2, but defined
+backward-compatible. `primitives.la` is **gradually typed for real**: nine of its
+eleven glyphs carry formal `:: <type>` signatures the checker verifies at
+deploy time (including the higher-order `RELATION`, the parenthesised
+`RECOGNITION`/`LOVE`, and `BECOMING` typed as the expanded Church-`Nat`
+`((a -> a) -> a -> a) -> (a -> a) -> a -> a`), while the two point-free glyphs
+(`SELF = BEING(BEING)`, `DEPTH_Z = Z`, both arity-0 bodies) stay trusted.
+`typed_spec.la` demonstrates both paths in isolation: a well-typed module is
+accepted, and `BADCONST` (declared `a -> b -> a`, arity 2, but defined
 `la x. x`, arity 1) is rejected with no file written. *Honest scope:* this checks
 the function/argument *skeleton* (arity), not a full type system — point-free or
 Church-encoded bodies (e.g. `add`, `SELF = BEING(BEING)`, a Church `Nat`) keep an
