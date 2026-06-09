@@ -593,6 +593,75 @@ else
     exit 1
 fi
 
+say "Spec pipeline: the nine LA primitives via import(\"specpipe.la\")"
+# primitives_spec.la writes the nine typed primitives of M₀ (Being, Recognition,
+# Love, Self, Relation, Void, Becoming, Form, Depth — plus Z and the guarded
+# DEPTH_Z) as a SPEC, GENERATEs + DEPLOYs primitives.la (REGENERATED here, so it
+# never drifts from its spec), and META_DEBUG-verifies each glyph against its
+# AUTOLOGY test cases: the primitive applied to itself reduces to the meaningful
+# value (the template being ∃(∃) ≡ ∃). Seven autologies terminate to a fixed
+# point / value; BECOMING(BECOMING) terminates to a higher-order process. DEPTH
+# is the deliberate exception — DEPTH(DEPTH) is the infinite descent Ω — so its
+# META_DEBUG tests metacursion on halting args, and its divergence is asserted
+# below via timeout, on both engines.
+PR="$(./tiny_host primitives_spec.la 2>/dev/null)"
+ok=1
+for G in BEING Z RELATION RECOGNITION LOVE SELF VOID BECOMING FORM DEPTH DEPTH_Z; do
+    printf '%s\n' "$PR" | grep -qx "  $G: PASS" || { echo "FAIL  primitives: $G autology not verified"; ok=0; }
+done
+printf '%s\n' "$PR" | grep -q "module VERIFIED" || { echo "FAIL  primitives: module not verified"; ok=0; }
+[ -f primitives.la ] || { echo "FAIL  primitives: primitives.la was not written"; ok=0; }
+# Run the GENERATED module stand-alone: one char per primitive's autology witness
+# (each char is the sentinel echoed back through the self-applied primitive, so
+# "abcdefghi" appears only if every autology holds). Host and VM must agree.
+cp primitives.la /tmp/primtest.la
+cat >> /tmp/primtest.la <<'LA'
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph MAIN =
+  print(concat(SND(RELATION(RELATION)("a")))(
+        concat(FST(FST(RECOGNITION(RECOGNITION))("b")))(
+        concat(FST(FST(FST(FST(LOVE(LOVE)(LOVE)))("c")("z"))))(
+        concat(SELF(SELF)("d"))(
+        concat(VOID(VOID)("e"))(
+        concat(BECOMING(BECOMING)(la _. "f")("z"))(
+        concat(FORM(FORM)(la x. x)("g")(la x. x))(
+        concat(DEPTH(BEING)("h"))(
+        DEPTH_Z(la self. la n. IF(int_eq(n)(0))(la _. "i")(la _. self(sub(n)(1))))(3))))))))))
+LA
+PRIM_EXPECT="abcdefghi"
+PRH="$(./tiny_host /tmp/primtest.la 2>/dev/null)"
+[ "$PRH" = "$PRIM_EXPECT" ] || { echo "FAIL  primitives: autology witnesses wrong on host"; printf '%s\n' "$PRH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/primtest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+PRV="$(./logos_secd 2>/dev/null)"
+[ "$PRV" = "$PRIM_EXPECT" ] || { echo "FAIL  primitives: autology witnesses wrong on native VM"; printf '%s\n' "$PRV"; ok=0; }
+rm -f /tmp/primtest.la logos_secd logos_program.bin logos_source.la
+# DEPTH autology is non-termination (Ω). Assert DEPTH(DEPTH) never returns on
+# either engine: under `timeout` it must be killed (exit 124), not complete.
+printf 'glyph DEPTH = la g. g(g)\nglyph MAIN = DEPTH(DEPTH)\n' > /tmp/depthdiv.la
+# timeout KILLING the divergence (rc 124) is the success signal — capture it via
+# `|| drc=$?` so `set -e` does not treat the expected non-zero exit as a failure.
+drc=0; timeout 4 ./tiny_host /tmp/depthdiv.la >/dev/null 2>&1 || drc=$?
+[ "$drc" -eq 124 ] || { echo "FAIL  primitives: DEPTH(DEPTH) did not diverge on host (rc=$drc, expected timeout 124)"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/depthdiv.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+drc=0; timeout 4 ./logos_secd >/dev/null 2>&1 || drc=$?
+[ "$drc" -eq 124 ] || { echo "FAIL  primitives: DEPTH(DEPTH) did not diverge on native VM (rc=$drc, expected timeout 124)"; ok=0; }
+rm -f /tmp/depthdiv.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  primitives: SPEC GENERATEs/DEPLOYs primitives.la, META_DEBUG verifies every primitive's autology"
+    echo "PASS  primitives: autology witnesses (abcdefghi) byte-identical on host and VM; DEPTH(DEPTH) diverges (timeout) on both"
+else
+    printf '%s\n' "$PR"
+    exit 1
+fi
+
 say "Testing self-hosted parser (parser.la parses kernel.la)"
 OUT="$(./tiny_host parser.la 2>/dev/null)"
 if printf '%s\n' "$OUT" | grep -qF "Kernel parse: IIIIIIIII glyph(s)"; then

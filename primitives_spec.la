@@ -1,0 +1,126 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  primitives_spec.la — the nine primitive concept-glyphs of Lingua Adamica,
+#  written as a SPEC and produced by the spec→implementation pipeline
+#  (import("specpipe.la")).
+#
+#  GRAMMAR_DIVERGENCE.md records that of the nine typed primitives of M₀
+#  — Being, Recognition, Love, Self, Relation, Void, Becoming, Form, Depth —
+#  only Being (∃ = la self. self, with ∃(∃) ≡ ∃) had a computational
+#  definition; the other eight existed only in prose. This module gives all of
+#  them a glyph definition that satisfies the AUTOLOGICAL CRITERION: the
+#  primitive applied to itself must reduce to something meaningful — ideally a
+#  fixed point (∃(∃) ≡ ∃ is the template).
+#
+#  This is NOT hand-written module source: it is a specification — for each
+#  glyph, a type signature, the body SOURCE (what GENERATE writes), the live
+#  IMPLEMENTATION (what META_DEBUG runs), and executable autology TEST CASES.
+#  DEPLOY writes primitives.la and verifies every glyph; the module is
+#  committed only if META_DEBUG passes.
+#
+#  Public API of the generated module (primitives.la):
+#    BEING        ∃ — identity; ∃(∃) ≡ ∃                       (foundation)
+#    Z            fixpoint combinator                          (support)
+#    RELATION     the bare two-place link (a stands to b)
+#    RECOGNITION  the reflexive relation, T ≡ R
+#    LOVE         reciprocity (symmetric union)
+#    SELF         ∃(∃) — Being's own self-application
+#    VOID         the empty selector (NIL / FALSE / ZERO)
+#    BECOMING     the successor — engine of becoming
+#    FORM         the seal — a determinate, key-accessed structure
+#    DEPTH        metacursion ↻ = g(g); DEPTH(DEPTH) diverges (infinite descent)
+#    DEPTH_Z      guarded metacursion = Z (productive fixed point)
+#
+#  The set is a closed algebra: SELF = DEPTH(BEING); RECOGNITION = the diagonal
+#  of RELATION; LOVE = RELATION symmetrised; FORM∘BECOMING∘VOID generates number.
+#
+#  AUTOLOGY, summarised: seven of the eight terminate on self-application and are
+#  checked here by META_DEBUG. BECOMING(BECOMING) terminates to a higher-order
+#  "becoming of becoming" (a process, not a numeral). DEPTH(DEPTH) is the
+#  deliberate exception — it is the literal infinite descent (Ω) and so is NOT
+#  tested here (it would hang); build.sh asserts its non-termination via timeout.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + PAIR/FST/SND/CONS/NIL/Z/IF/...
+
+# ── implementation VALUES (what META_DEBUG runs) ──────────────────────────────
+glyph BEING       = la self. self
+glyph RELATION    = la a. la b. la f. f(a)(b)
+glyph RECOGNITION = la x. RELATION(x)(x)
+glyph LOVE        = la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))
+glyph SELF        = BEING(BEING)
+glyph VOID        = la a. la b. b
+glyph BECOMING    = la n. la f. la x. f(n(f)(x))
+glyph FORM        = la x. la k. k(x)
+glyph DEPTH       = la g. g(g)
+glyph DEPTH_Z     = Z
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_BEING = "la self. self"
+glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_REL   = "la a. la b. la f. f(a)(b)"
+glyph SRC_REC   = "la x. RELATION(x)(x)"
+glyph SRC_LOVE  = "la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))"
+glyph SRC_SELF  = "BEING(BEING)"
+glyph SRC_VOID  = "la a. la b. b"
+glyph SRC_BEC   = "la n. la f. la x. f(n(f)(x))"
+glyph SRC_FORM  = "la x. la k. k(x)"
+glyph SRC_DEPTH = "la g. g(g)"
+glyph SRC_DEPTHZ = "Z"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph T3L = la a. la b. la c. CONS(a)(CONS(b)(CONS(c)(NIL)))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph INC       = la k. add(k)(1)
+glyph CHURCH_INT = la m. m(INC)(0)
+
+# ── the SPEC: the nine primitives, each glyph with its autology tests ──────────
+#  Each entry proves (1) the glyph behaves as specified and (2) its
+#  self-application (autology) terminates and yields the meaningful value.
+glyph PRIM_SPEC =
+  CONS(E("BEING")("a -> a   (identity; ∃, the axiom ∃(∃) ≡ ∃)")(SRC_BEING)(BEING)(
+        T2L(TC(la g. g("am"))("am"))
+           (TC(la g. g(g)("am"))("am"))))(                          # autology: ∃(∃) ≡ ∃
+  CONS(E("Z")("(a -> a) -> a   (fixpoint combinator, support)")(SRC_Z)(Z)(
+        T1L(TC(la g. (g(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat("|")(self(str_tail(s))))))("abc"))("|||"))))(
+  CONS(E("RELATION")("a -> b -> (a -> b -> c) -> c   (the bare two-place link)")(SRC_REL)(RELATION)(
+        T3L(TC(la g. FST(g("A")("B")))("A"))
+           (TC(la g. SND(g("A")("B")))("B"))
+           (TC(la g. SND(g(g)("X")))("X"))))(                        # autology: REL(REL)("X") = pair(REL,"X")
+  CONS(E("RECOGNITION")("a -> (a paired with itself)   (reflexive relation, T ≡ R)")(SRC_REC)(RECOGNITION)(
+        T3L(TC(la g. FST(g("A")))("A"))
+           (TC(la g. SND(g("A")))("A"))                             # recognizer ≡ recognized
+           (TC(la g. FST(FST(g(g))("M")))("M"))))(                  # autology: ρ(ρ) = pair(ρ,ρ); left is ρ
+  CONS(E("LOVE")("a -> b -> reciprocal pairs   (symmetric union / reciprocity)")(SRC_LOVE)(LOVE)(
+        T3L(TC(la g. FST(FST(g("A")("B"))))("A"))
+           (TC(la g. FST(SND(g("A")("B"))))("B"))                   # reciprocity: second pairing is (B,A)
+           (TC(la g. FST(FST(FST(FST(g(g)(g)))("A")("B"))))("A"))))(  # autology: LOVE(LOVE)(LOVE) terminates
+  CONS(E("SELF")("a -> a   (∃(∃) ≡ ∃ — Being's own self-application)")(SRC_SELF)(SELF)(
+        T2L(TC(la g. g("only"))("only"))
+           (TC(la g. g(g)("only"))("only"))))(                      # autology: SELF(SELF) ≡ SELF
+  CONS(E("VOID")("a -> b -> b   (the empty selector: NIL / FALSE / ZERO)")(SRC_VOID)(VOID)(
+        T2L(TC(la g. g("A")("B"))("B"))
+           (TC(la g. g(g)("seed"))("seed"))))(                      # autology: VOID(VOID) = ID (Being's seed, ex nihilo)
+  CONS(E("BECOMING")("Nat -> Nat   (successor — the engine of becoming)")(SRC_BEC)(BECOMING)(
+        T3L(TC(la g. int_to_str(CHURCH_INT(g(VOID))))("1"))         # BECOMING(VOID) = ONE: number from Void
+           (TC(la g. int_to_str(CHURCH_INT(g(g(VOID)))))("2"))      # becoming twice = TWO
+           (TC(la g. g(g)(la _. "next")("seed"))("next"))))(        # autology: BECOMING(BECOMING) terminates (becoming of becoming)
+  CONS(E("FORM")("a -> (a -> b) -> b   (the seal — determinate, key-accessed structure)")(SRC_FORM)(FORM)(
+        T3L(TC(la g. g("A")(la x. x))("A"))                          # seal then unseal with ID
+           (TC(la g. g("A")(la _. "B"))("B"))                        # the key controls access
+           (TC(la g. g(g)(la x. x)("Q")(la x. x))("Q"))))(          # autology: FORM(FORM) unseals to FORM
+  CONS(E("DEPTH")("(a -> a) -> a   (metacursion ↻ = g(g); DEPTH(DEPTH) diverges)")(SRC_DEPTH)(DEPTH)(
+        T2L(TC(la g. g(BEING)("deep"))("deep"))                     # DEPTH(BEING) = BEING(BEING) = ID
+           (TC(la g. g(VOID)("x"))("x"))))(                          # DEPTH(VOID) = VOID(VOID) = ID
+        # NOTE: no DEPTH(DEPTH) test — that is the infinite descent Ω, asserted
+        # by build.sh via timeout, not here (it would never return).
+  CONS(E("DEPTH_Z")("(a -> a) -> a   (guarded metacursion = Z, productive fixed point)")(SRC_DEPTHZ)(DEPTH_Z)(
+        T2L(TC(la g. (g(la self. la n. IF(int_eq(n)(0))(la _. "ok")(la _. self(sub(n)(1)))))(5))("ok"))
+           (TC(la g. (g(la self. la n. IF(int_eq(n)(0))(la _. "base")(la _. self(sub(n)(1)))))(0))("base"))))(
+  NIL)))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(PRIM_SPEC) ===\n")(GENERATE(PRIM_SPEC))))
+       (print(DEPLOY(PRIM_SPEC)("primitives.la")))
