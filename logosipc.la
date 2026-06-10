@@ -11,13 +11,16 @@
 #  carries a TYPE tag and a BODY; the receiver dispatches on the type
 #  (MSG_TYPE / MSG_OK) — the kernel of "typed, schema-checked" IPC.
 #
-#  Transport is a file-backed channel (read_file / write_file), because
-#  the VM has no socket/pipe syscalls yet. SEND/RECV are written so the
-#  TYPING layer is independent of the TRANSPORT: when pipe/socket
-#  syscalls exist, only CHANNEL/SEND/RECV's three lines change — the
-#  message format and the typed-dispatch helpers stay put. Deferred to
-#  later layers: Γ-seal encryption, runtime schema validation, capability
-#  gating, and socket multiplexing (point-to-point / broadcast / stream).
+#  Transport is a PIPE: CHANNEL is pipe("!") ("<rfd> <wfd>"), SEND writes
+#  the encoded message to the write fd, RECV reads it from the read fd
+#  (blocking until the SEND arrives). SEND/RECV are written so the TYPING
+#  layer is independent of the TRANSPORT: swapping the earlier file-backed
+#  channel for the pipe touched only CHANNEL/SEND/RECV's three lines — the
+#  message format and the typed-dispatch helpers below are byte-for-byte
+#  unchanged. (When socket syscalls exist, only those three lines change
+#  again.) Deferred to later layers: Γ-seal encryption, runtime schema
+#  validation, socket multiplexing, and — importantly — failure handling
+#  (broken pipe / dead peer / partial read are NOT yet handled).
 #
 #  Used as a module: `import("logosipc.la")` brings the six exported
 #  glyphs into scope; the helpers below stay private to the module.

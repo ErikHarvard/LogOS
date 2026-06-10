@@ -641,6 +641,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi35
+    mov     rsi, rbp
+    mov     rdi, str_clockgettime
+    call    strcmp
+    test    eax, eax
+    je      .bi36
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -749,6 +754,9 @@ _start:
     jmp     .pushbi
 .bi35:
     mov     r11, 35
+    jmp     .pushbi
+.bi36:
+    mov     r11, 36
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -891,6 +899,8 @@ _start:
     je      .bi_drmmode
     cmp     r11, 35
     je      .bi_present
+    cmp     r11, 36
+    je      .bi_clockgettime
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -1979,6 +1989,46 @@ _start:
     call    push_dec
     jmp     .loop
 
+.bi_clockgettime:                ; clock_gettime(clockid) → "<sec> <nsec>"
+    ; clock_gettime(clockid, &timespec). clockid is a decimal STR (0=REALTIME
+    ; wall clock, 1=MONOTONIC intervals). The kernel writes {tv_sec, tv_nsec}
+    ; into a 16-byte scratch at pathbuf; we read both out (push_dec/fmt_u_heap
+    ; would reuse r15, but the result is built on the heap, not pathbuf), then
+    ; format "<sec> <nsec>" into one heap string — the same two-decimal shape as
+    ; pipe's "<rfd> <wfd>". A time source: logging, scheduling, version chains.
+    test    r8, r8               ; clockid must be a decimal STR (see .bi_sleep)
+    jnz     .strtype             ; an INT would deref its payload as a descriptor
+    mov     rdi, r9              ; clockid descriptor
+    call    desc_atoi
+    mov     rdi, rax             ; clockid
+    mov     rsi, pathbuf         ; &timespec scratch (16 bytes, free here)
+    mov     rax, 228             ; clock_gettime
+    syscall
+    test    rax, rax
+    js      .clockgettime_fail
+    mov     rbp, r15             ; result bytes start (heap)
+    mov     rax, [pathbuf]       ; tv_sec
+    call    fmt_u_heap
+    mov     byte [r15], 32       ; ' '
+    inc     r15
+    mov     rax, [pathbuf+8]     ; tv_nsec (pathbuf survives fmt_u_heap)
+    call    fmt_u_heap
+    mov     rdx, r15
+    sub     rdx, rbp             ; length
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx
+    mov     [r15+8], rbp
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+.clockgettime_fail:
+    mov     rax, -1              ; "-1" on failure (e.g. bad clockid)
+    call    push_dec
+    jmp     .loop
+
 .bi_read2:                       ; read(fd)(maxbytes) → up to maxbytes from fd
     ; raw read(2) on a fd — the streaming counterpart of write. Blocks until
     ; data is available (a pipe RECV waits for its SEND), returns the bytes read
@@ -2523,6 +2573,7 @@ str_read:      db "read", 0
 str_strlen:    db "str_len", 0
 str_drmmode:   db "drm_mode", 0
 str_present:   db "present", 0
+str_clockgettime: db "clock_gettime", 0
 drm_card:      db "/dev/dri/card0", 0
 drmmsg:        db "secd: drm error", 10
 drmmsg_len     equ $ - drmmsg

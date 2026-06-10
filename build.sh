@@ -814,7 +814,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "9504" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9504)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "9714" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9714)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1268,6 +1268,28 @@ nrun /tmp/t_io.la >/dev/null
 rm -f /tmp/t_proc.la /tmp/t_exec.la /tmp/t_io.la /tmp/logos_io.txt
 if [ "$ok" -eq 1 ]; then
     echo "PASS  write/open/close/fork/execve/waitpid/exit work as native syscalls"
+else
+    exit 1
+fi
+
+say "Clock: clock_gettime VM builtin (a time source for logging/scheduling)"
+# clock_gettime(clockid) → "<sec> <nsec>": 0=CLOCK_REALTIME (wall clock),
+# 1=CLOCK_MONOTONIC. Closes the "no time source" Tier-0 gap. Non-deterministic,
+# so we assert SHAPE + magnitude (epoch seconds after 2023) rather than a fixed
+# value, plus that a bad clockid fails loudly as -1 (not a SIGSEGV).
+cat > /tmp/t_clock.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph MAIN = SEQ(print(clock_gettime("0")))(print(clock_gettime("99")))
+LAEOF
+CK="$(nrun /tmp/t_clock.la)"
+ok=1
+printf '%s\n' "$CK" | sed -n 1p | grep -qE '^[0-9]+ [0-9]+$' || { echo "FAIL  clock: realtime not '<sec> <nsec>' ($CK)"; ok=0; }
+CKSEC="$(printf '%s\n' "$CK" | sed -n 1p | cut -d' ' -f1)"
+{ [ "${CKSEC:-0}" -gt 1700000000 ] 2>/dev/null; } || { echo "FAIL  clock: epoch seconds implausible ($CKSEC)"; ok=0; }
+[ "$(printf '%s\n' "$CK" | sed -n 2p)" = "-1" ] || { echo "FAIL  clock: bad clockid did not return -1"; ok=0; }
+rm -f /tmp/t_clock.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  clock_gettime: realtime '<sec> <nsec>' (epoch > 2023); bad clockid -> -1, loud (native VM)"
 else
     exit 1
 fi
