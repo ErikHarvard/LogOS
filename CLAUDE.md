@@ -463,7 +463,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 10721 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 10864 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -606,8 +606,11 @@ no meaning under the C host, which runs the other engines): `mount(target)(fstyp
 failure), `waitpid(pid)` (→ that child's exit *status*), `exit(code)`,
 `write(fd)(s)`, `read(fd)(maxbytes)` (raw `read(2)`, blocks for data, returns
 the bytes as a binary-safe string; `maxbytes` clamped to 64 MiB), `open(path)(flags)`,
-`close(fd)`, and `pipe("!")` (→ `"<rfd> <wfd>"`, the read and write fds of a fresh
-pipe as a space-separated string — both inherited across `fork`). Integers cross
+`close(fd)`, `pipe("!")` (→ `"<rfd> <wfd>"`, the read and write fds of a fresh
+pipe as a space-separated string — both inherited across `fork`), and
+`unlink(path)` (remove a filesystem name → `0`, or `-errno` such as `-2` =
+`-ENOENT` when absent — the companion to `bind`, letting an AF_UNIX server
+self-clean its stale rendezvous path via the canonical `unlink; bind`). Integers cross
 the LA boundary as decimal strings. Each path/fstype argument is copied into a fixed 4 KiB
 buffer (`pathbuf`/`fsbuf`); the copy is **bounds-checked** — a path ≥ 4096 bytes
 halts loudly with `secd: path too long` rather than overrunning the buffer into
@@ -732,10 +735,12 @@ ENCODE`) with the Church/`Z`/`IF`/`SEQ` helpers private:
   a pipe (one fd pair shared across `fork`), a socket reaches **unrelated
   processes by name** — what the Codex's "organ A messages organ B" actually
   needs. A server must `bind`+`listen` **before** `fork`ing so a client's
-  `connect` can't race ahead of `accept`. *Honest limit:* pathname sockets only
-  and the VM has no `unlink` builtin yet, so a **stale socket file** from a prior
-  run must be removed before `CHANNEL` can re-`bind` (`build.sh` cleans the path
-  first).
+  `connect` can't race ahead of `accept`. `CHANNEL` is **self-cleaning**: it
+  `unlink`s the rendezvous path before `bind` (the canonical `unlink; bind`
+  idiom), so a **stale socket file** from a prior run no longer blocks a re-`bind`
+  — `build.sh` proves it by seeding a stale file at the path and still passing
+  the message through. *Honest limit:* pathname sockets only (no abstract
+  namespace).
 
 `build.sh` exercises it two ways: (1) on the **host**, `ipc_demo.la` `import`s
 the module and decodes a wire message with `MSG_TYPE`/`MSG_BODY`/`MSG_OK` (the

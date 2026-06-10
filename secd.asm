@@ -681,6 +681,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi43
+    mov     rsi, rbp
+    mov     rdi, str_unlink
+    call    strcmp
+    test    eax, eax
+    je      .bi44
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -813,6 +818,9 @@ _start:
     jmp     .pushbi
 .bi43:
     mov     r11, 43
+    jmp     .pushbi
+.bi44:
+    mov     r11, 44
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -971,6 +979,8 @@ _start:
     je      .mkpa                ; send is curried: send(fd)(data)
     cmp     r11, 43
     je      .mkpa                ; recv is curried: recv(fd)(maxbytes)
+    cmp     r11, 44
+    je      .bi_unlink
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -2329,6 +2339,37 @@ _start:
     add     r15, 16
     jmp     .loop
 
+.bi_unlink:                      ; unlink(path) → 0/-errno ; r9 = path desc
+    ; remove a filesystem name — the missing companion to bind: an AF_UNIX
+    ; server's rendezvous path persists after the socket closes, so re-binding
+    ; the same name needs the stale entry gone first (the canonical
+    ; `unlink(path); bind(path)` idiom). Returns -errno (e.g. -2 = -ENOENT when
+    ; the path is already absent), which CHANNEL ignores — a missing path is the
+    ; desired state. Path copied into pathbuf, bounds-checked like execve/open.
+    test    r8, r8               ; path must be a STR (a non-string would deref
+    jnz     .strtype             ; its payload as a [len][ptr] descriptor)
+    mov     rcx, [r9]
+    mov     rsi, [r9+8]
+    mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
+.ul_cp:
+    test    rcx, rcx
+    je      .ul_d
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .ul_cp
+.ul_d:
+    mov     byte [rdi], 0
+    mov     rdi, pathbuf
+    mov     rax, 87              ; unlink
+    syscall
+    call    push_dec             ; 0, or -errno
+    jmp     .loop
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     test    r8, r8               ; code must be a decimal STR; an INT would deref its
     jnz     .strtype             ; payload as a [len][ptr] descriptor (see .strtype)
@@ -2834,6 +2875,7 @@ str_accept:    db "accept", 0
 str_connect:   db "connect", 0
 str_send:      db "send", 0
 str_recv:      db "recv", 0
+str_unlink:    db "unlink", 0
 drm_card:      db "/dev/dri/card0", 0
 drmmsg:        db "secd: drm error", 10
 drmmsg_len     equ $ - drmmsg

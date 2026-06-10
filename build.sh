@@ -814,7 +814,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "10721" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 10721)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "10864" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 10864)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1351,6 +1351,29 @@ else
     exit 1
 fi
 
+say "unlink: remove a filesystem name (VM builtin; the unlink+bind idiom)"
+# unlink(path) → 0 when the name existed (gone afterwards), -errno when absent
+# (e.g. -2 = -ENOENT). The companion to bind: a server self-cleans its stale
+# rendezvous path. Tested directly here; exercised in the IPC test below, where
+# CHANNEL unlinks before bind so a stale socket file can't block a re-bind.
+UTGT="/tmp/t_unlink.$$"
+echo marker > "$UTGT"
+cat > /tmp/t_unlink.la <<LAEOF
+glyph SEQ = la a. la b. b
+glyph MAIN = SEQ(print(unlink("$UTGT")))(print(unlink("$UTGT")))
+LAEOF
+ULOUT="$(nrun /tmp/t_unlink.la)"
+ok=1
+[ "$(printf '%s\n' "$ULOUT" | sed -n 1p)" = "0" ] || { echo "FAIL  unlink: existing file did not return 0 ($ULOUT)"; ok=0; }
+case "$(printf '%s\n' "$ULOUT" | sed -n 2p)" in -[0-9]*) : ;; *) echo "FAIL  unlink: absent path not negative errno ($ULOUT)"; ok=0 ;; esac
+[ ! -e "$UTGT" ] || { echo "FAIL  unlink: file still present after unlink"; ok=0; }
+rm -f /tmp/t_unlink.la "$UTGT"
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  unlink: existing name -> 0 (removed); absent -> -errno (native VM)"
+else
+    exit 1
+fi
+
 say "LogosInit: orphan reaping + shell spawn + supervision loop"
 # reap("!") = wait4(-1): block until ANY child terminates and return its pid
 # (a negative -errno when none remain). This is the orphan-reaping primitive an
@@ -1466,9 +1489,10 @@ fi
 # (read_file is a VM builtin). The module exports CHANNEL/CONNECT/ACCEPT/SEND/
 # RECV/MSG_*/ENCODE and keeps its Church/SEQ helpers private (mangled away), so
 # the importer supplies its OWN IF/SEQ — a real multi-export module through the
-# fully-native import path. The rendezvous path is cleaned first (the VM has no
-# unlink builtin, so a stale socket file would make bind fail).
-rm -f /tmp/logosipc-init
+# fully-native import path. A STALE file is seeded at the rendezvous path first:
+# CHANNEL unlinks it before bind, so the message still gets through — proving the
+# self-clean (with no unlink, bind would fail and nothing would arrive).
+printf 'stale\n' > /tmp/logosipc-init
 cat > /tmp/t_ipc.la <<'LAEOF'
 import("logosipc.la")
 glyph SEQ = la a. la b. b
@@ -1493,7 +1517,7 @@ ok=1
 printf '%s\n' "$IPCOUT" | grep -qxF "init recv type: status"       || { echo "FAIL  ipc(VM): init did not receive the typed message"; ok=0; }
 printf '%s\n' "$IPCOUT" | grep -qxF "init recv body: worker-ready" || { echo "FAIL  ipc(VM): message body wrong";                  ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  LogosIPC over a socket (real import(\"logosipc.la\") on the native VM): server bound+listened, forked a worker that connected and sent a typed message back"
+    echo "PASS  LogosIPC over a socket (real import(\"logosipc.la\") on the native VM): CHANNEL self-unlinked a stale rendezvous path, bound+listened, forked a worker that connected and sent a typed message back"
 else
     echo "  (got: $IPCOUT)"; exit 1
 fi

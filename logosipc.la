@@ -24,12 +24,13 @@
 #  the transport-agnostic design — it survived file → pipe → socket
 #  untouched). Unlike a pipe, a socket reaches UNRELATED processes by
 #  name, which is what the Codex's "organ A messages organ B" needs.
-#  Deferred to later layers: Γ-seal encryption, runtime schema validation,
-#  socket multiplexing, capability revocation, and failure handling
-#  (a dead peer surfaces as a negative-errno send/recv, but partial-send
-#  retry and reconnection are NOT yet handled). Honest limit: pathname
-#  sockets only, and the VM has no `unlink` builtin yet, so a stale socket
-#  file from a prior run must be removed before CHANNEL can re-bind it.
+#  CHANNEL is self-cleaning: it `unlink`s the rendezvous path before `bind`,
+#  so a stale socket file from a prior run is removed automatically (no
+#  external `rm` needed). Deferred to later layers: Γ-seal encryption,
+#  runtime schema validation, socket multiplexing, capability revocation,
+#  and failure handling (a dead peer surfaces as a negative-errno send/recv,
+#  but partial-send retry and reconnection are NOT yet handled). Honest
+#  limit: pathname sockets only (no abstract namespace).
 #
 #  Used as a module: `import("logosipc.la")` brings the six exported
 #  glyphs into scope; the helpers below stay private to the module.
@@ -55,7 +56,15 @@ glyph ENCODE = la type. la body. concat(type)(concat(NUL)(body))
 # (bidirectional — no <rfd> <wfd> split), so ONLY these lines name the
 # transport; the ENCODE / MSG_* layer below is untouched.
 glyph SOCKPATH = la name. concat("/tmp/logosipc-")(name)
-glyph CHANNEL  = la name. (la s. SEQ(bind(s)(SOCKPATH(name)))(SEQ(listen(s))(s)))(socket("!"))
+# CHANNEL unlinks the rendezvous path FIRST (the canonical `unlink; bind`
+# idiom): an AF_UNIX name persists after its socket closes, so a stale entry
+# from a prior server would make bind fail — unlink clears it (a missing path
+# is the goal, so its -ENOENT is ignored). The server is then self-cleaning;
+# no external `rm` needed.
+glyph CHANNEL  = la name. (la path.
+    SEQ(unlink(path))(
+    (la s. SEQ(bind(s)(path))(SEQ(listen(s))(s)))(socket("!")))
+  )(SOCKPATH(name))
 glyph ACCEPT   = la chan. accept(chan)
 glyph CONNECT  = la name. (la s. SEQ(connect(s)(SOCKPATH(name)))(s))(socket("!"))
 glyph SEND     = la conn. la type. la body. send(conn)(ENCODE(type)(body))
