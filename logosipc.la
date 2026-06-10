@@ -11,42 +11,55 @@
 #  carries a TYPE tag and a BODY; the receiver dispatches on the type
 #  (MSG_TYPE / MSG_OK) — the kernel of "typed, schema-checked" IPC.
 #
-#  Transport is a PIPE: CHANNEL is pipe("!") ("<rfd> <wfd>"), SEND writes
-#  the encoded message to the write fd, RECV reads it from the read fd
-#  (blocking until the SEND arrives). SEND/RECV are written so the TYPING
-#  layer is independent of the TRANSPORT: swapping the earlier file-backed
-#  channel for the pipe touched only CHANNEL/SEND/RECV's three lines — the
-#  message format and the typed-dispatch helpers below are byte-for-byte
-#  unchanged. (When socket syscalls exist, only those three lines change
-#  again.) Deferred to later layers: Γ-seal encryption, runtime schema
-#  validation, socket multiplexing, and — importantly — failure handling
-#  (broken pipe / dead peer / partial read are NOT yet handled).
+#  Transport is now a named local SOCKET (AF_UNIX). A socket is
+#  connection-oriented — unlike a pipe's single inherited fd pair, it has
+#  two roles — so the transport is four lines, not three: CHANNEL is the
+#  SERVER setup (socket + bind + listen on the name's rendezvous path →
+#  the listening fd), ACCEPT blocks for a client and yields a per-
+#  connection fd, and CONNECT is the CLIENT (socket + connect → its own
+#  per-connection fd). SEND/RECV then act on that one *bidirectional*
+#  connection fd — actually SIMPLER than the pipe, which needed an
+#  <rfd> <wfd> split. Only these lines name the transport: the ENCODE /
+#  MSG_* typed layer below is byte-for-byte unchanged (the whole point of
+#  the transport-agnostic design — it survived file → pipe → socket
+#  untouched). Unlike a pipe, a socket reaches UNRELATED processes by
+#  name, which is what the Codex's "organ A messages organ B" needs.
+#  Deferred to later layers: Γ-seal encryption, runtime schema validation,
+#  socket multiplexing, capability revocation, and failure handling
+#  (a dead peer surfaces as a negative-errno send/recv, but partial-send
+#  retry and reconnection are NOT yet handled). Honest limit: pathname
+#  sockets only, and the VM has no `unlink` builtin yet, so a stale socket
+#  file from a prior run must be removed before CHANNEL can re-bind it.
 #
 #  Used as a module: `import("logosipc.la")` brings the six exported
 #  glyphs into scope; the helpers below stay private to the module.
 # ═══════════════════════════════════════════════════════════════════
 
-export CHANNEL SEND RECV MSG_TYPE MSG_BODY MSG_OK ENCODE
+export CHANNEL CONNECT ACCEPT SEND RECV MSG_TYPE MSG_BODY MSG_OK ENCODE
 
 # ── private helpers ──────────────────────────────────────────────────
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SEQ = la a. la b. b      # force a's effects (bind/connect), then yield b
 glyph NUL = chr("0")          # the field separator (messages are binary-safe)
 
 # wire format:   TYPE <NUL> BODY      (a TYPE tag carries no NUL)
 glyph ENCODE = la type. la body. concat(type)(concat(NUL)(body))
 
-# ── transport (the only part that changes for a pipe/socket) ──────────
-# A channel is now a PIPE: `pipe("!")` returns "<rfd> <wfd>". Create the
-# channel ONCE before forking so both processes inherit the fds; the child
-# writes the end the parent reads. SEND extracts the write fd (after the
-# space) and writes the encoded message; RECV extracts the read fd (before
-# the space) and reads it back (read blocks until the SEND arrives). The fd
-# split is inlined here so ONLY these three lines change from the
-# file-backed version — the ENCODE / MSG_* typed layer below is untouched.
-glyph CHANNEL = la name. pipe("!")
-glyph SEND    = la chan. la type. la body. write((Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. IF(str_eq(str_head(s))(" "))(la _. str_tail(s))(la _. self(str_tail(s))))))(chan))(ENCODE(type)(body))
-glyph RECV    = la chan. read((Z(la self. la acc. la s. IF(str_eq(s)(""))(la _. acc)(la _. IF(str_eq(str_head(s))(" "))(la _. acc)(la _. self(concat(acc)(str_head(s)))(str_tail(s))))))("")(chan))("4096")
+# ── transport: a named local SOCKET (AF_UNIX) ────────────────────────
+# A channel name maps to a rendezvous path (SOCKPATH). CHANNEL is the server:
+# socket + bind + listen → the LISTENING fd; bind+listen must run BEFORE any
+# fork so a client's connect can't race ahead of accept. ACCEPT blocks for a
+# client and returns a per-connection fd. CONNECT is the client: socket +
+# connect → its own per-connection fd. SEND/RECV operate on a CONNECTION fd
+# (bidirectional — no <rfd> <wfd> split), so ONLY these lines name the
+# transport; the ENCODE / MSG_* layer below is untouched.
+glyph SOCKPATH = la name. concat("/tmp/logosipc-")(name)
+glyph CHANNEL  = la name. (la s. SEQ(bind(s)(SOCKPATH(name)))(SEQ(listen(s))(s)))(socket("!"))
+glyph ACCEPT   = la chan. accept(chan)
+glyph CONNECT  = la name. (la s. SEQ(connect(s)(SOCKPATH(name)))(s))(socket("!"))
+glyph SEND     = la conn. la type. la body. send(conn)(ENCODE(type)(body))
+glyph RECV     = la conn. recv(conn)("4096")
 
 # ── typed message layer (transport-independent) ──────────────────────
 # MSG_TYPE(msg): the type tag — the bytes before the first NUL.

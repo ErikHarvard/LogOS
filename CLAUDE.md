@@ -15,7 +15,7 @@ host program, applied to itself, reproduces itself.
 | `stdlib.la`          | A library module: `export`s `MAP`/`FILTER`/`ALL`/`LIST_FIND`, helpers private. |
 | `app.la`             | Demo program: `import("stdlib.la")`, uses the exports, proves namespace isolation (host). |
 | `greetmod.la` / `greetapp.la` | Lightweight cross-engine import demo: `greetapp.la` `import("greetmod.la")` and proves both isolation directions in one line, light enough to run identically on **all five engines** (host, `eval.la`, `RUN_BYTES`, `RUN_SM`, native VM). |
-| `logosipc.la`        | LogosIPC module: a typed message bus (`SEND`/`RECV`/`MSG_TYPE`/…) over a named channel. |
+| `logosipc.la`        | LogosIPC module: a typed message bus (`SEND`/`RECV`/`MSG_TYPE`/…) over a named AF_UNIX socket (`CHANNEL`/`ACCEPT` server, `CONNECT` client); the typed layer is transport-agnostic. |
 | `ipc_demo.la`        | Demo: `import("logosipc.la")`, round-trips a typed message through the bus. |
 | `logoscap.la`        | LogosIPC Layer 4: capability gating via a Morris sealer/unsealer (object-capabilities, exact in λ). A `BRAND` mints a write capability (sealer) and read capability (unsealer); a sealed box is opaque. `import`s `logosipc.la` so a gated message is a sealed typed message. Pure LA — byte-identical on host and VM. |
 | `logosinit.la`       | A real PID-1 init in Lingua Adamica (native VM): mounts `/proc` & `/sys`, `fork`+`execve`s `/bin/sh`, then supervises forever with a `reap(-1)` loop (respawn-throttled, bounded dump via TCO). |
@@ -711,35 +711,44 @@ byte-identical to the bundle.
 The Codex's Layer 4 (`LogosIPC`, the OS's "nervous system" — a sovereign
 replacement for D-Bus: typed, Γ-seal-encrypted, capability-gated) begins here as
 a minimal seed: **typed point-to-point messages on a channel**. `logosipc.la` is
-a module (`export CHANNEL SEND RECV MSG_TYPE MSG_BODY MSG_OK`) with the
-Church/`Z`/`IF` helpers private:
+a module (`export CHANNEL CONNECT ACCEPT SEND RECV MSG_TYPE MSG_BODY MSG_OK
+ENCODE`) with the Church/`Z`/`IF`/`SEQ` helpers private:
 
 - a **message** is `TYPE <NUL> BODY` (binary-safe; the tag carries no NUL);
-- `SEND(chan)(type)(body)` places a typed message on a channel, `RECV(chan)`
+- `SEND(conn)(type)(body)` places a typed message on a connection, `RECV(conn)`
   takes it off; `MSG_TYPE` / `MSG_BODY` decode it and `MSG_OK(msg)(type)` is the
   minimal schema check (a receiver accepts only the types it expects);
-- the **typing layer is independent of the transport.** `CHANNEL`/`SEND`/`RECV`
-  are the only lines that name the transport. The channel is now a **pipe**:
-  `CHANNEL` is `pipe("!")` (`"<rfd> <wfd>"`), `SEND` writes the encoded message
-  to the write fd, `RECV` `read`s the read fd (blocking until the `SEND`
-  arrives). The fd split is inlined into those three lines, so the swap from the
-  earlier file-backed transport (`read_file`/`write_file`) touched *only* them —
-  the `ENCODE` / `MSG_*` typed layer is byte-for-byte unchanged, which is the
-  point of the transport-agnostic design. (Because a pipe must be created once
-  and shared across `fork`, a program binds the channel once — `(la chan. …)
-  (CHANNEL(…))` — before forking.)
+- the **typing layer is independent of the transport.** Only the transport
+  glyphs name the transport. The channel is now a **named AF_UNIX socket**: a
+  channel name maps to a rendezvous path, `CHANNEL(name)` is the **server**
+  (`socket` + `bind` + `listen` → the listening fd), `ACCEPT(srv)` blocks for a
+  client and yields a per-connection fd, and `CONNECT(name)` is the **client**
+  (`socket` + `connect` → its own per-connection fd). `SEND`/`RECV` then act on
+  that one **bidirectional** connection fd — *simpler* than the pipe, which
+  needed an `<rfd> <wfd>` split. The swap from the earlier pipe transport
+  (itself from a file-backed one) touched *only* the transport lines — the
+  `ENCODE` / `MSG_*` typed layer is byte-for-byte unchanged across **all three**
+  transports, which is the whole point of the transport-agnostic design. Unlike
+  a pipe (one fd pair shared across `fork`), a socket reaches **unrelated
+  processes by name** — what the Codex's "organ A messages organ B" actually
+  needs. A server must `bind`+`listen` **before** `fork`ing so a client's
+  `connect` can't race ahead of `accept`. *Honest limit:* pathname sockets only
+  and the VM has no `unlink` builtin yet, so a **stale socket file** from a prior
+  run must be removed before `CHANNEL` can re-`bind` (`build.sh` cleans the path
+  first).
 
 `build.sh` exercises it two ways: (1) on the **host**, `ipc_demo.la` `import`s
 the module and decodes a wire message with `MSG_TYPE`/`MSG_BODY`/`MSG_OK` (the
-engine-independent typed layer — `SEND`/`RECV` themselves are now VM-only, since
-`pipe`/`read` are VM builtins); (2) on the **native VM**, the real LogosInit
-pattern — init creates the pipe, `fork`s a worker that `SEND`s a typed message
-and exits, then init `RECV`s it (read blocks for the message), decodes it, and
-reaps. (The VM now has cross-engine `import`, so this test `import`s
-`logosipc.la` for real — `codegen.la`, running as `compiler.bin` on the VM,
-resolves the import at compile time; the importer supplies its own `IF`/`SEQ`
-since the module keeps those private. See the module system's cross-engine
-note.)
+engine-independent typed layer — the transport glyphs come in but are never
+called, so the VM-only socket builtins are never resolved on the host); (2) on
+the **native VM**, the real LogosInit pattern — init (server) `CHANNEL`s
+(`bind`+`listen`) **before** forking a worker (client) that `CONNECT`s and
+`SEND`s a typed message and exits; init `ACCEPT`s and `RECV`s it (blocking for
+the connection + message), decodes it, and reaps. (The VM has cross-engine
+`import`, so this test `import`s `logosipc.la` for real — `codegen.la`, running
+as `compiler.bin` on the VM, resolves the import at compile time; the importer
+supplies its own `IF`/`SEQ` since the module keeps those private. See the module
+system's cross-engine note.)
 
 **Capability gating (`logoscap.la`).** The Codex requires LogosIPC be
 "capability-gated: organ A can message organ B only if the capability is

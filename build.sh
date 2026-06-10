@@ -1455,44 +1455,45 @@ else
     echo "FAIL  respawn throttle: $TICKS respawns in 4s (want a small bounded handful, not a fork-storm)"; exit 1
 fi
 
-# ── LogosIPC over a pipe on the native VM: init forks a worker that messages back ──
-# The real (VM-native) LogosInit pattern, now over a PIPE: init creates the
-# channel ONCE (pipe → "<rfd> <wfd>"), forks; the worker SENDs a typed message
-# through the pipe and exits; init RECVs it (read blocks until the SEND arrives),
-# decodes type/body, then reaps. The channel must be bound once before the fork
-# so both processes share the same pipe fds — hence (la chan. … )(CHANNEL(…)).
-# logosipc.la is now IMPORTED for real: the native VM gained cross-engine
-# `import`, so codegen.la (running here as compiler.bin ON THE VM) resolves
-# import("logosipc.la") at compile time — read_file is a VM builtin. The
-# module exports CHANNEL/SEND/RECV/MSG_TYPE/MSG_BODY/MSG_OK and keeps its
-# Church/IF helpers private (mangled away), so the importer supplies its OWN
-# IF/SEQ. This exercises a real multi-export module through the fully-native
-# import path (no inlining, no `export`-stripping).
+# ── LogosIPC over a SOCKET on the native VM: init forks a worker that messages back ──
+# The real (VM-native) LogosInit pattern, now over an AF_UNIX SOCKET: init is the
+# SERVER — CHANNEL("init") does socket + bind + listen on the rendezvous path
+# BEFORE forking, so the worker's connect can't race ahead of accept; it then
+# ACCEPTs (blocks for the worker) and RECVs the typed message. The worker is the
+# CLIENT — CONNECT("init") then SEND — and exits; init decodes type/body, then
+# reaps. logosipc.la is IMPORTED for real: codegen.la (running here as
+# compiler.bin ON THE VM) resolves import("logosipc.la") at compile time
+# (read_file is a VM builtin). The module exports CHANNEL/CONNECT/ACCEPT/SEND/
+# RECV/MSG_*/ENCODE and keeps its Church/SEQ helpers private (mangled away), so
+# the importer supplies its OWN IF/SEQ — a real multi-export module through the
+# fully-native import path. The rendezvous path is cleaned first (the VM has no
+# unlink builtin, so a stale socket file would make bind fail).
+rm -f /tmp/logosipc-init
 cat > /tmp/t_ipc.la <<'LAEOF'
 import("logosipc.la")
 glyph SEQ = la a. la b. b
 glyph IF  = la c. la t. la f. c(t)(f)("!")
-glyph WORKER = la chan. SEQ(SEND(chan)("status")("worker-ready"))(exit("0"))
-glyph MAIN = (la chan.
+glyph WORKER = la conn. SEQ(SEND(conn)("status")("worker-ready"))(exit("0"))
+glyph MAIN = (la srv.
     (la pid. IF(str_eq(pid)("0"))
-        (la _. WORKER(chan))
+        (la _. WORKER(CONNECT("init")))
         (la _. (la msg.
             SEQ(print(concat("init recv type: ")(MSG_TYPE(msg))))(
             SEQ(print(concat("init recv body: ")(MSG_BODY(msg))))(
                 waitpid(pid))))
-          (RECV(chan))))
+          (RECV(ACCEPT(srv)))))
     (fork("!")))
     (CHANNEL("init"))
 LAEOF
 cp /tmp/t_ipc.la logos_source.la; cp compiler.bin logos_program.bin
 ./runner >/dev/null 2>&1                 # native-compile the inlined program
 IPCOUT="$(./runner 2>/dev/null)"
-rm -f /tmp/t_ipc.la
+rm -f /tmp/t_ipc.la /tmp/logosipc-init
 ok=1
 printf '%s\n' "$IPCOUT" | grep -qxF "init recv type: status"       || { echo "FAIL  ipc(VM): init did not receive the typed message"; ok=0; }
 printf '%s\n' "$IPCOUT" | grep -qxF "init recv body: worker-ready" || { echo "FAIL  ipc(VM): message body wrong";                  ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  LogosIPC over a pipe (real import(\"logosipc.la\") on the native VM): init forked a worker that sent a typed message back through the channel"
+    echo "PASS  LogosIPC over a socket (real import(\"logosipc.la\") on the native VM): server bound+listened, forked a worker that connected and sent a typed message back"
 else
     echo "  (got: $IPCOUT)"; exit 1
 fi

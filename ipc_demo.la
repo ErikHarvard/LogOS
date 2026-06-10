@@ -2,13 +2,16 @@
 #  ipc_demo.la — import the LogosIPC module and decode a typed message
 #  (on the host).
 #
-#  Now that the transport is pipe-based, SEND/RECV use the VM-only
-#  `pipe`/`read`/`write` syscalls, so the live channel runs on the native
-#  VM (see build.sh — LogosInit forks a worker that messages back through
-#  the pipe). This host demo exercises the part that is engine-independent:
+#  The transport is now an AF_UNIX socket, so CHANNEL/CONNECT/ACCEPT/SEND/
+#  RECV use the VM-only `socket`/`bind`/`listen`/`accept`/`connect`/`send`/
+#  `recv` syscalls, and the live channel runs on the native VM (see build.sh
+#  — LogosInit binds+listens, forks a worker that connects and messages
+#  back). This host demo exercises the part that is engine-independent:
 #  `import("logosipc.la")` brings in the exported glyphs, and the TYPED
 #  layer (MSG_TYPE / MSG_BODY / MSG_OK) decodes a wire message — the same
 #  bytes SEND would put on the wire (TYPE <NUL> BODY), built here by hand.
+#  (The transport glyphs come in but are never called here, so the VM-only
+#  socket builtins are never resolved on the host.)
 # ═══════════════════════════════════════════════════════════════════
 
 import("logosipc.la")
