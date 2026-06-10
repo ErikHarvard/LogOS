@@ -1,0 +1,191 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  glyphdag_spec.la — the canonical glyph as a STRUCTURALLY-ENCODED, COMPRESSING
+#  single form (a flat hash-consed DAG), written as a SPEC and produced by the
+#  spec→implementation pipeline (import("specpipe.la")).
+#
+#  In canon.la a glyph carried its etymology as a SEALED PAIR MONO(ren)(etym),
+#  and the Ren string CONCATENATED (grew linearly with the tree). This module
+#  fixes both: a glyph's canonical FORM is a SINGLE collapsed string
+#  "def0;def1;...;defk" — a flat hash-consed DAG. Each def is a primitive NAME,
+#  a binary mode "<sigil><i>.<j>", or "↻<i>"; nodes are DEDUPLICATED and the root
+#  is the last def. The derivation tree is encoded STRUCTURALLY in the one form,
+#  recoverable by DECOMP (decomposition). Neologization (DCOLLAPSE) combines two
+#  forms into ONE new form, re-interning with structure SHARING — so combining a
+#  glyph with itself does NOT duplicate it. Deep concepts therefore COMPRESS:
+#  self-combining n times grows the form LINEARLY (n+base nodes) while the
+#  unfolded tree grows EXPONENTIALLY (2^n) — deeper, not larger.
+#
+#  Verified (the author's three criteria):
+#   (1) DCOLLAPSE of two forms is structurally ONE form (one DAG, root = last),
+#       not a pair of parents.
+#   (2) the full etymological tree is recoverable by decomposing the one form:
+#       DAG(DECOMP(form)) = form, and TSIZE(DECOMP(form)) gives the full tree.
+#   (3) combining does not grow the representation linearly: NODES(self-combine^n)
+#       is linear in n while TSIZE is exponential — compression, not concatenation.
+#
+#  All glyphs carry prose signatures (trusted) — they are recursive/encoded; the
+#  compile-time arrow-arity checker is demonstrated on canon.la. Byte-identical on
+#  the C host and the native VM.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")
+
+# ── implementation VALUES (what META_DEBUG runs) ──────────────────────────────
+glyph Zc   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRc  = la t. la f. t
+glyph FAc  = la t. la f. f
+glyph IFc  = la c. la t. la f. c(t)(f)("!")
+glyph NILc = la n. la c. n
+glyph CONSc = la h. la t. la n. la c. c(h)(t)
+glyph PAIRc = la a. la b. la f. f(a)(b)
+glyph FSTc = la p. p(la a. la b. a)
+glyph SNDc = la p. p(la a. la b. b)
+glyph ORc  = la a. la b. a(TRc)(b)
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+glyph LEN = Zc(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph APPEND = Zc(la self. la l. la x. l(CONSc(x)(NILc))(la h. la t. CONSc(h)(self(t)(x))))
+glyph NTH = Zc(la self. la l. la i. l("")(la h. la t. IFc(int_eq(i)(0))(la _. h)(la _. self(t)(sub(i)(1)))))
+glyph LAST = la l. NTH(l)(sub(LEN(l))(1))
+glyph IDXOF = la lst. la x. Zc(la self. la l. la i. l(i)(la h. la t. IFc(str_eq(h)(x))(la _. i)(la _. self(t)(add(i)(1)))))(lst)(0)
+glyph JOIN = la sep. Zc(la self. la l. l("")(la h. la t. t(h)(la _. la _. concat(h)(concat(sep)(self(t))))))
+glyph SPLIT = la sep. la s. Zc(la self. la cur. la rest. IFc(str_eq(rest)(""))(la _. CONSc(cur)(NILc))(la _. IFc(str_eq(str_head(rest))(sep))(la _. CONSc(cur)(self("")(str_tail(rest))))(la _. self(concat(cur)(str_head(rest)))(str_tail(rest)))))("")(s)
+glyph HEAD3 = la s. concat(str_head(s))(concat(str_head(str_tail(s)))(str_head(str_tail(str_tail(s)))))
+glyph DROP3 = la s. str_tail(str_tail(str_tail(s)))
+glyph UPTO = la d. Zc(la self. la s. IFc(str_eq(s)(""))(la _. "")(la _. IFc(str_eq(str_head(s))(d))(la _. "")(la _. concat(str_head(s))(self(str_tail(s))))))
+glyph AFTERC = la d. Zc(la self. la s. IFc(str_eq(s)(""))(la _. "")(la _. IFc(str_eq(str_head(s))(d))(la _. str_tail(s))(la _. self(str_tail(s)))))
+glyph SYN_S = "⊗"
+glyph CON_S = "⊕"
+glyph DIR_S = "▷"
+glyph CONT_S = "⊂"
+glyph MC_S  = "↻"
+glyph IS_BIN = la h3. ORc(str_eq(h3)(SYN_S))(ORc(str_eq(h3)(CON_S))(ORc(str_eq(h3)(DIR_S))(str_eq(h3)(CONT_S))))
+glyph MKDEF2 = la sym. la i. la j. concat(sym)(concat(int_to_str(i))(concat(".")(int_to_str(j))))
+glyph MKDEF1 = la sym. la i. concat(sym)(int_to_str(i))
+glyph ADDNODE = la tbl. la def. (la i. IFc(int_eq(i)(LEN(tbl)))(la _. PAIRc(APPEND(tbl)(def))(i))(la _. PAIRc(tbl)(i)))(IDXOF(tbl)(def))
+glyph INTERNB = la self. la sym. la a. la b. la tbl. (la ra. (la rb. ADDNODE(FSTc(rb))(MKDEF2(sym)(SNDc(ra))(SNDc(rb))))(self(b)(FSTc(ra))))(self(a)(tbl))
+glyph INTERNU = la self. la sym. la a. la tbl. (la ra. ADDNODE(FSTc(ra))(MKDEF1(sym)(SNDc(ra))))(self(a)(tbl))
+glyph INTERN = Zc(la self. la tree. la tbl. tree (la nm. ADDNODE(tbl)(nm)) (la a. la b. INTERNB(self)(SYN_S)(a)(b)(tbl)) (la a. la b. INTERNB(self)(CON_S)(a)(b)(tbl)) (la a. la b. INTERNB(self)(DIR_S)(a)(b)(tbl)) (la a. la b. INTERNB(self)(CONT_S)(a)(b)(tbl)) (la a. INTERNU(self)(MC_S)(a)(tbl)))
+glyph DAG = la tree. JOIN(";")(FSTc(INTERN(tree)(NILc)))
+glyph NODES = la form. LEN(SPLIT(";")(form))
+glyph MKMODE = la sym. la l. la r. IFc(str_eq(sym)(SYN_S))(la _. SYN(l)(r))(la _. IFc(str_eq(sym)(CON_S))(la _. CON(l)(r))(la _. IFc(str_eq(sym)(DIR_S))(la _. DIR(l)(r))(la _. CONT(l)(r))))
+glyph DEFTOTREE = la def. la built. (la h3. IFc(IS_BIN(h3))(la _. (la body. MKMODE(h3)(NTH(built)(str_to_int(UPTO(".")(body))))(NTH(built)(str_to_int(AFTERC(".")(body)))))(DROP3(def)))(la _. IFc(str_eq(h3)(MC_S))(la _. MC(NTH(built)(str_to_int(DROP3(def)))))(la _. PRIM(def))))(HEAD3(def))
+glyph BUILD = Zc(la self. la ds. la built. ds(LAST(built))(la h. la t. self(t)(APPEND(built)(DEFTOTREE(h)(built)))))
+glyph DECOMP = la form. BUILD(SPLIT(";")(form))(NILc)
+glyph DCOLLAPSE = la sym. la fa. la fb. DAG(MKMODE(sym)(DECOMP(fa))(DECOMP(fb)))
+glyph TSIZE = Zc(la self. la tree. tree (la nm. 1) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. add(1)(self(a))))
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_Z   = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_TR  = "la t. la f. t"
+glyph SRC_FA  = "la t. la f. f"
+glyph SRC_IF  = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_NIL = "la n. la c. n"
+glyph SRC_CONS = "la h. la t. la n. la c. c(h)(t)"
+glyph SRC_PAIR = "la a. la b. la f. f(a)(b)"
+glyph SRC_FST = "la p. p(la a. la b. a)"
+glyph SRC_SND = "la p. p(la a. la b. b)"
+glyph SRC_OR  = "la a. la b. a(TRc)(b)"
+glyph SRC_PRIM = "la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)"
+glyph SRC_SYN  = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)"
+glyph SRC_CON  = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)"
+glyph SRC_DIR  = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)"
+glyph SRC_CONT = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)"
+glyph SRC_MC   = "la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)"
+glyph SRC_LEN = "Zc(la self. la l. l(0)(la h. la t. add(1)(self(t))))"
+glyph SRC_APPEND = "Zc(la self. la l. la x. l(CONSc(x)(NILc))(la h. la t. CONSc(h)(self(t)(x))))"
+glyph SRC_NTH = "Zc(la self. la l. la i. l(\"\")(la h. la t. IFc(int_eq(i)(0))(la _. h)(la _. self(t)(sub(i)(1)))))"
+glyph SRC_LAST = "la l. NTH(l)(sub(LEN(l))(1))"
+glyph SRC_IDXOF = "la lst. la x. Zc(la self. la l. la i. l(i)(la h. la t. IFc(str_eq(h)(x))(la _. i)(la _. self(t)(add(i)(1)))))(lst)(0)"
+glyph SRC_JOIN = "la sep. Zc(la self. la l. l(\"\")(la h. la t. t(h)(la _. la _. concat(h)(concat(sep)(self(t))))))"
+glyph SRC_SPLIT = "la sep. la s. Zc(la self. la cur. la rest. IFc(str_eq(rest)(\"\"))(la _. CONSc(cur)(NILc))(la _. IFc(str_eq(str_head(rest))(sep))(la _. CONSc(cur)(self(\"\")(str_tail(rest))))(la _. self(concat(cur)(str_head(rest)))(str_tail(rest)))))(\"\")(s)"
+glyph SRC_HEAD3 = "la s. concat(str_head(s))(concat(str_head(str_tail(s)))(str_head(str_tail(str_tail(s)))))"
+glyph SRC_DROP3 = "la s. str_tail(str_tail(str_tail(s)))"
+glyph SRC_UPTO = "la d. Zc(la self. la s. IFc(str_eq(s)(\"\"))(la _. \"\")(la _. IFc(str_eq(str_head(s))(d))(la _. \"\")(la _. concat(str_head(s))(self(str_tail(s))))))"
+glyph SRC_AFTERC = "la d. Zc(la self. la s. IFc(str_eq(s)(\"\"))(la _. \"\")(la _. IFc(str_eq(str_head(s))(d))(la _. str_tail(s))(la _. self(str_tail(s)))))"
+glyph SRC_SYNS = "\"⊗\""
+glyph SRC_CONS_S = "\"⊕\""
+glyph SRC_DIRS = "\"▷\""
+glyph SRC_CONTS = "\"⊂\""
+glyph SRC_MCS = "\"↻\""
+glyph SRC_ISBIN = "la h3. ORc(str_eq(h3)(SYN_S))(ORc(str_eq(h3)(CON_S))(ORc(str_eq(h3)(DIR_S))(str_eq(h3)(CONT_S))))"
+glyph SRC_MKDEF2 = "la sym. la i. la j. concat(sym)(concat(int_to_str(i))(concat(\".\")(int_to_str(j))))"
+glyph SRC_MKDEF1 = "la sym. la i. concat(sym)(int_to_str(i))"
+glyph SRC_ADDNODE = "la tbl. la def. (la i. IFc(int_eq(i)(LEN(tbl)))(la _. PAIRc(APPEND(tbl)(def))(i))(la _. PAIRc(tbl)(i)))(IDXOF(tbl)(def))"
+glyph SRC_INTERNB = "la self. la sym. la a. la b. la tbl. (la ra. (la rb. ADDNODE(FSTc(rb))(MKDEF2(sym)(SNDc(ra))(SNDc(rb))))(self(b)(FSTc(ra))))(self(a)(tbl))"
+glyph SRC_INTERNU = "la self. la sym. la a. la tbl. (la ra. ADDNODE(FSTc(ra))(MKDEF1(sym)(SNDc(ra))))(self(a)(tbl))"
+glyph SRC_INTERN = "Zc(la self. la tree. la tbl. tree (la nm. ADDNODE(tbl)(nm)) (la a. la b. INTERNB(self)(SYN_S)(a)(b)(tbl)) (la a. la b. INTERNB(self)(CON_S)(a)(b)(tbl)) (la a. la b. INTERNB(self)(DIR_S)(a)(b)(tbl)) (la a. la b. INTERNB(self)(CONT_S)(a)(b)(tbl)) (la a. INTERNU(self)(MC_S)(a)(tbl)))"
+glyph SRC_DAG = "la tree. JOIN(\";\")(FSTc(INTERN(tree)(NILc)))"
+glyph SRC_NODES = "la form. LEN(SPLIT(\";\")(form))"
+glyph SRC_MKMODE = "la sym. la l. la r. IFc(str_eq(sym)(SYN_S))(la _. SYN(l)(r))(la _. IFc(str_eq(sym)(CON_S))(la _. CON(l)(r))(la _. IFc(str_eq(sym)(DIR_S))(la _. DIR(l)(r))(la _. CONT(l)(r))))"
+glyph SRC_DEFTOTREE = "la def. la built. (la h3. IFc(IS_BIN(h3))(la _. (la body. MKMODE(h3)(NTH(built)(str_to_int(UPTO(\".\")(body))))(NTH(built)(str_to_int(AFTERC(\".\")(body)))))(DROP3(def)))(la _. IFc(str_eq(h3)(MC_S))(la _. MC(NTH(built)(str_to_int(DROP3(def)))))(la _. PRIM(def))))(HEAD3(def))"
+glyph SRC_BUILD = "Zc(la self. la ds. la built. ds(LAST(built))(la h. la t. self(t)(APPEND(built)(DEFTOTREE(h)(built)))))"
+glyph SRC_DECOMP = "la form. BUILD(SPLIT(\";\")(form))(NILc)"
+glyph SRC_DCOLLAPSE = "la sym. la fa. la fb. DAG(MKMODE(sym)(DECOMP(fa))(DECOMP(fb)))"
+glyph SRC_TSIZE = "Zc(la self. la tree. tree (la nm. 1) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. add(1)(self(a))))"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph GBV = SYN(PRIM("BEING"))(PRIM("VOID"))   # the test tree ⊗(BEING,VOID)
+
+# ── the SPEC ───────────────────────────────────────────────────────────────────
+glyph DAG_SPEC =
+  CONS(E("Zc")("fixpoint combinator (trusted)")(SRC_Z)(Zc)(T1L(TC(la g. (g(la s. la n. IFc(int_eq(n)(0))(la _. "ok")(la _. s(sub(n)(1)))))(2))("ok"))))(
+  CONS(E("TRc")("Church true (trusted)")(SRC_TR)(TRc)(T1L(TC(la g. g("y")("n"))("y"))))(
+  CONS(E("FAc")("Church false (trusted)")(SRC_FA)(FAc)(T1L(TC(la g. g("y")("n"))("n"))))(
+  CONS(E("IFc")("conditional (trusted)")(SRC_IF)(IFc)(T1L(TC(la g. g(TRc)(la _. "t")(la _. "f"))("t"))))(
+  CONS(E("NILc")("empty list (trusted)")(SRC_NIL)(NILc)(T1L(TC(la g. g("e")(la h. la t. "c"))("e"))))(
+  CONS(E("CONSc")("list cons (trusted)")(SRC_CONS)(CONSc)(T1L(TC(la g. g("h")(NILc)("e")(la x. la t. x))("h"))))(
+  CONS(E("PAIRc")("pair (trusted)")(SRC_PAIR)(PAIRc)(T1L(TC(la g. g("a")("b")(la x. la y. x))("a"))))(
+  CONS(E("FSTc")("pair first (trusted)")(SRC_FST)(FSTc)(T1L(TC(la g. g(PAIRc("a")("b")))("a"))))(
+  CONS(E("SNDc")("pair second (trusted)")(SRC_SND)(SNDc)(T1L(TC(la g. g(PAIRc("a")("b")))("b"))))(
+  CONS(E("ORc")("Church or (trusted)")(SRC_OR)(ORc)(T2L(TC(la g. g(FAc)(TRc)("y")("n"))("y"))(TC(la g. g(FAc)(FAc)("y")("n"))("n"))))(
+  CONS(E("PRIM")("primitive leaf (trusted)")(SRC_PRIM)(PRIM)(T1L(TC(la g. DAG(g("BEING")))("BEING"))))(
+  CONS(E("SYN")("⊗ ontosynthesis node (trusted)")(SRC_SYN)(SYN)(T1L(TC(la g. DAG(g(PRIM("A"))(PRIM("B"))))("A;B;⊗0.1"))))(
+  CONS(E("CON")("⊕ ontoconjunction node (trusted)")(SRC_CON)(CON)(T1L(TC(la g. DAG(g(PRIM("A"))(PRIM("B"))))("A;B;⊕0.1"))))(
+  CONS(E("DIR")("▷ ontodirection node (trusted)")(SRC_DIR)(DIR)(T1L(TC(la g. DAG(g(PRIM("A"))(PRIM("B"))))("A;B;▷0.1"))))(
+  CONS(E("CONT")("⊂ ontocontainment node (trusted)")(SRC_CONT)(CONT)(T1L(TC(la g. DAG(g(PRIM("A"))(PRIM("B"))))("A;B;⊂0.1"))))(
+  CONS(E("MC")("↻ metacursion node (trusted)")(SRC_MC)(MC)(T1L(TC(la g. DAG(g(PRIM("A"))))("A;↻0"))))(
+  CONS(E("LEN")("list length (trusted)")(SRC_LEN)(LEN)(T1L(TC(la g. int_to_str(g(CONS("a")(CONS("b")(NIL)))))("2"))))(
+  CONS(E("APPEND")("append to end (trusted)")(SRC_APPEND)(APPEND)(T1L(TC(la g. JOIN(",")(g(CONS("a")(NIL))("b")))("a,b"))))(
+  CONS(E("NTH")("nth element (trusted)")(SRC_NTH)(NTH)(T1L(TC(la g. g(CONS("a")(CONS("b")(NIL)))(1))("b"))))(
+  CONS(E("LAST")("last element (trusted)")(SRC_LAST)(LAST)(T1L(TC(la g. g(CONS("a")(CONS("z")(NIL))))("z"))))(
+  CONS(E("IDXOF")("index of (trusted)")(SRC_IDXOF)(IDXOF)(T2L(TC(la g. int_to_str(g(CONS("a")(CONS("b")(NIL)))("b")))("1"))(TC(la g. int_to_str(g(CONS("a")(NIL))("z")))("1"))))(
+  CONS(E("JOIN")("join with separator (trusted)")(SRC_JOIN)(JOIN)(T1L(TC(la g. g("-")(CONS("a")(CONS("b")(CONS("c")(NIL)))))("a-b-c"))))(
+  CONS(E("SPLIT")("split on separator (trusted)")(SRC_SPLIT)(SPLIT)(T1L(TC(la g. JOIN("-")(g(";")("a;b;c")))("a-b-c"))))(
+  CONS(E("HEAD3")("first three bytes (trusted)")(SRC_HEAD3)(HEAD3)(T1L(TC(la g. g("BEING"))("BEI"))))(
+  CONS(E("DROP3")("drop three bytes (trusted)")(SRC_DROP3)(DROP3)(T1L(TC(la g. g("⊗12"))("12"))))(
+  CONS(E("UPTO")("prefix up to delimiter (trusted)")(SRC_UPTO)(UPTO)(T1L(TC(la g. g(".")("12.34"))("12"))))(
+  CONS(E("AFTERC")("suffix after delimiter (trusted)")(SRC_AFTERC)(AFTERC)(T1L(TC(la g. g(".")("12.34"))("34"))))(
+  CONS(E("SYN_S")("⊗ sigil (trusted)")(SRC_SYNS)(SYN_S)(T1L(TC(la g. g)("⊗"))))(
+  CONS(E("CON_S")("⊕ sigil (trusted)")(SRC_CONS_S)(CON_S)(T1L(TC(la g. g)("⊕"))))(
+  CONS(E("DIR_S")("▷ sigil (trusted)")(SRC_DIRS)(DIR_S)(T1L(TC(la g. g)("▷"))))(
+  CONS(E("CONT_S")("⊂ sigil (trusted)")(SRC_CONTS)(CONT_S)(T1L(TC(la g. g)("⊂"))))(
+  CONS(E("MC_S")("↻ sigil (trusted)")(SRC_MCS)(MC_S)(T1L(TC(la g. g)("↻"))))(
+  CONS(E("IS_BIN")("is a binary sigil (trusted)")(SRC_ISBIN)(IS_BIN)(T2L(TC(la g. g("⊗")("y")("n"))("y"))(TC(la g. g("BEI")("y")("n"))("n"))))(
+  CONS(E("MKDEF2")("binary def string (trusted)")(SRC_MKDEF2)(MKDEF2)(T1L(TC(la g. g("⊗")(2)(5))("⊗2.5"))))(
+  CONS(E("MKDEF1")("unary def string (trusted)")(SRC_MKDEF1)(MKDEF1)(T1L(TC(la g. g("↻")(3))("↻3"))))(
+  CONS(E("ADDNODE")("hash-cons a node (trusted)")(SRC_ADDNODE)(ADDNODE)(T2L(TC(la g. int_to_str(SNDc(g(CONS("a")(NIL))("a"))))("0"))(TC(la g. int_to_str(SNDc(g(CONS("a")(NIL))("b"))))("1"))))(
+  CONS(E("INTERNB")("intern a binary node (trusted)")(SRC_INTERNB)(INTERNB)(T1L(TC(la g. "ib")("ib"))))(
+  CONS(E("INTERNU")("intern a unary node (trusted)")(SRC_INTERNU)(INTERNU)(T1L(TC(la g. "iu")("iu"))))(
+  CONS(E("INTERN")("hash-consing interner (trusted)")(SRC_INTERN)(INTERN)(T1L(TC(la g. JOIN(";")(FSTc(g(GBV)(NILc))))("BEING;VOID;⊗0.1"))))(
+  CONS(E("DAG")("tree -> single flat-DAG canonical form (trusted)")(SRC_DAG)(DAG)(T1L(TC(la g. g(GBV))("BEING;VOID;⊗0.1"))))(
+  CONS(E("NODES")("node count of a form = representation size (trusted)")(SRC_NODES)(NODES)(T2L(TC(la g. int_to_str(g("BEING;VOID;⊗0.1")))("3"))(TC(la g. int_to_str(g("BEING;VOID;⊗0.1;⊗2.2")))("4"))))(
+  CONS(E("MKMODE")("rebuild a mode node from a sigil (trusted)")(SRC_MKMODE)(MKMODE)(T1L(TC(la g. DAG(g("⊗")(PRIM("A"))(PRIM("B"))))("A;B;⊗0.1"))))(
+  CONS(E("DEFTOTREE")("one def -> tree node (trusted)")(SRC_DEFTOTREE)(DEFTOTREE)(T1L(TC(la g. DAG(g("BEING")(NIL)))("BEING"))))(
+  CONS(E("BUILD")("rebuild tree from def list (trusted)")(SRC_BUILD)(BUILD)(T1L(TC(la g. DAG(g(SPLIT(";")("A;B;⊗0.1"))(NIL)))("A;B;⊗0.1"))))(
+  CONS(E("DECOMP")("recover full etymology tree from one form (trusted)")(SRC_DECOMP)(DECOMP)(T2L(TC(la g. DAG(g("BEING;VOID;⊗0.1;⊗2.2")))("BEING;VOID;⊗0.1;⊗2.2"))(TC(la g. int_to_str(TSIZE(g("BEING;VOID;⊗0.1;⊗2.2"))))("7"))))(
+  CONS(E("DCOLLAPSE")("neologize: combine two forms into ONE (sharing) (trusted)")(SRC_DCOLLAPSE)(DCOLLAPSE)(T2L(TC(la g. g("⊗")("BEING;VOID;⊗0.1")("BEING;VOID;⊗0.1"))("BEING;VOID;⊗0.1;⊗2.2"))(TC(la g. int_to_str(NODES(g("⊗")("BEING;VOID;⊗0.1;⊗2.2")("BEING;VOID;⊗0.1;⊗2.2"))))("5"))))(
+  CONS(E("TSIZE")("unfolded tree node count (trusted)")(SRC_TSIZE)(TSIZE)(T2L(TC(la g. int_to_str(g(GBV)))("3"))(TC(la g. int_to_str(g(DECOMP("BEING;VOID;⊗0.1;⊗2.2;⊗3.3"))))("15"))))(
+  NIL)))))))))))))))))))))))))))))))))))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(DAG_SPEC) ===\n")(GENERATE(DAG_SPEC))))
+       (print(DEPLOY(DAG_SPEC)("glyphdag.la")))

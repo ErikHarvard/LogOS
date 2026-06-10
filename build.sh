@@ -736,6 +736,50 @@ else
     exit 1
 fi
 
+say "Spec pipeline: structurally-encoded compressing glyph form (glyphdag_spec.la)"
+# glyphdag_spec.la writes the canonical glyph as a SINGLE flat hash-consed DAG
+# string "def0;def1;...;defk" (root = last def), and GENERATEs + DEPLOYs
+# glyphdag.la (REGENERATED here, no drift). DECOMP recovers the full etymology
+# tree from the one form; DCOLLAPSE neologizes two forms into ONE, re-interning
+# with structure SHARING. META_DEBUG verifies all 47 glyphs; then the GENERATED
+# module proves the author's three criteria stand-alone, byte-identical on host
+# and VM: (1) combining two forms yields ONE form (not a pair); (2)
+# DAG(DECOMP(form))==form (the full tree is recoverable by decomposing the one
+# form); (3) self-combining grows the node count LINEARLY (3 4 5 6) while the
+# unfolded tree grows EXPONENTIALLY (3 7 15 31) — deep concepts COMPRESS.
+DG="$(./tiny_host glyphdag_spec.la 2>/dev/null)"
+ok=1
+printf '%s\n' "$DG" | grep -q "module VERIFIED" || { echo "FAIL  glyphdag: module not verified"; ok=0; }
+[ -f glyphdag.la ] || { echo "FAIL  glyphdag: glyphdag.la was not written"; ok=0; }
+for G in Zc PRIM SYN INTERN DAG NODES DECOMP DCOLLAPSE TSIZE; do
+    printf '%s\n' "$DG" | grep -qx "  $G: PASS" || { echo "FAIL  glyphdag: $G not verified"; ok=0; }
+done
+cp glyphdag.la /tmp/dagtest.la
+cat >> /tmp/dagtest.la <<'LA'
+glyph G  = DAG(SYN(PRIM("BEING"))(PRIM("VOID")))
+glyph G2 = DCOLLAPSE(SYN_S)(G)(G)
+glyph G3 = DCOLLAPSE(SYN_S)(G2)(G2)
+glyph G4 = DCOLLAPSE(SYN_S)(G3)(G3)
+glyph MAIN = print(concat(G2)(concat("|rt=")(concat(str_eq(DAG(DECOMP(G2)))(G2)("ok")("no"))(concat("|n=")(concat(int_to_str(NODES(G4)))(concat("|t=")(int_to_str(TSIZE(DECOMP(G4))))))))))
+LA
+DAG_EXPECT="BEING;VOID;⊗0.1;⊗2.2|rt=ok|n=6|t=31"
+DGH="$(./tiny_host /tmp/dagtest.la 2>/dev/null)"
+[ "$DGH" = "$DAG_EXPECT" ] || { echo "FAIL  glyphdag: witness wrong on host"; printf 'got: %s\n' "$DGH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/dagtest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+DGV="$(./logos_secd 2>/dev/null)"
+[ "$DGV" = "$DAG_EXPECT" ] || { echo "FAIL  glyphdag: witness wrong on native VM"; printf 'got: %s\n' "$DGV"; ok=0; }
+rm -f /tmp/dagtest.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  glyphdag: SPEC GENERATEs/DEPLOYs glyphdag.la (47 glyphs), META_DEBUG verifies the hash-consed DAG"
+    echo "PASS  glyphdag: combine→ONE form; tree recoverable (DECOMP); self-combine compresses (nodes 3..6 vs tree 3..31); byte-identical host/VM"
+else
+    printf '%s\n' "$DG"
+    exit 1
+fi
+
 say "Spec pipeline: COMPILE-TIME type checking inside DEPLOY"
 # specpipe.la's DEPLOY now runs a compile-time TYPE CHECKER after GENERATE and
 # before accepting: it reads the GENERATED source, parses each glyph's body, and
