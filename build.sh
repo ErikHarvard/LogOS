@@ -687,7 +687,7 @@ CK="$(./tiny_host canon_spec.la 2>/dev/null)"
 ok=1
 for G in Z TRUE FALSE NOT AND OR PRIM SYN CON DIR CONT MC CANON IS LAW_ID LAW_NC LAW_EM KAPPA \
          IF MAX TDEPTH MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK \
-         BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS; do
+         BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
     printf '%s\n' "$CK" | grep -qx "  $G: PASS" || { echo "FAIL  canon: $G not verified"; ok=0; }
 done
 printf '%s\n' "$CK" | grep -q "module VERIFIED" || { echo "FAIL  canon: module not verified"; ok=0; }
@@ -698,7 +698,7 @@ printf '%s\n' "$CK" | grep -q "module VERIFIED" || { echo "FAIL  canon: module n
 for G in TRUE FALSE NOT AND OR IS LAW_ID LAW_NC LAW_EM IF MAX MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK; do
     printf '%s\n' "$CK" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  canon: $G not type-checked OK"; ok=0; }
 done
-for G in PRIM SYN CON DIR CONT MC CANON KAPPA TDEPTH BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS; do
+for G in PRIM SYN CON DIR CONT MC CANON KAPPA TDEPTH BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
     printf '%s\n' "$CK" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  canon: $G not reported untyped/trusted"; ok=0; }
 done
 # Run the GENERATED canon.la stand-alone. The witness has three parts joined by
@@ -719,10 +719,13 @@ glyph W6 = AUTO_OK(G3)("A")("h")
 # W7: monosemic normalization — ⊕(A,B)≡⊕(B,A) (commutative) and ↻(BEING)≡SELF
 # (algebraic) collapse to one canonical glyph; ▷ stays directional → distinct.
 glyph W7 = concat(NORMK(CON(PRIM("B"))(PRIM("A"))))(concat(NIS(CON(PRIM("A"))(PRIM("B")))(CON(PRIM("B"))(PRIM("A")))("m")("x"))(concat(NORMK(MC(PRIM("BEING"))))(NIS(DIR(PRIM("A"))(PRIM("B")))(DIR(PRIM("B"))(PRIM("A")))("x")("d"))))
+# W8: α=1 alignment — ⊕(A,B) is the ontoglyph (α=1, sign IS referent), ⊕(B,A) is a
+# synonym (α<1) that collapses to the same α=1 representative.
+glyph W8 = concat(IS_ALPHA1(CON(PRIM("A"))(PRIM("B")))("1")("<"))(concat(IS_ALPHA1(CON(PRIM("B"))(PRIM("A")))("1")("<"))(ALPHA1(CON(PRIM("B"))(PRIM("A")))))
 glyph BAR = "|"
-glyph MAIN = print(concat(W1)(concat(BAR)(concat(W2)(concat(BAR)(concat(W3)(concat(BAR)(concat(W4)(concat(BAR)(concat(W5)(concat(BAR)(concat(W6)(concat(BAR)(W7)))))))))))))
+glyph MAIN = print(concat(W1)(concat(BAR)(concat(W2)(concat(BAR)(concat(W3)(concat(BAR)(concat(W4)(concat(BAR)(concat(W5)(concat(BAR)(concat(W6)(concat(BAR)(concat(W7)(concat(BAR)(W8)))))))))))))))
 LA
-CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|A|⊕(A,B)mSELFd"
+CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|A|⊕(A,B)mSELFd|1<⊕(A,B)"
 CKH="$(./tiny_host /tmp/canontest.la 2>/dev/null)"
 [ "$CKH" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ/etymology witness wrong on host"; printf 'got: %s\n' "$CKH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -734,7 +737,7 @@ CKV="$(./logos_secd 2>/dev/null)"
 rm -f /tmp/canontest.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  canon: SPEC GENERATEs/DEPLOYs canon.la, META_DEBUG verifies κ, IS (≡), the three laws, the etymology layer, and NORMK"
-    echo "PASS  canon: κ(κ) well-defined; etymology contained (REN ≡ κ(ETYM)); NORMK collapses synonyms (⊕(A,B)≡⊕(B,A), ↻(BEING)≡SELF) → monosemic; byte-identical host/VM"
+    echo "PASS  canon: κ(κ) well-defined; etymology contained; NORMK collapses synonyms → monosemic; α=1 ontoglyph (sign IS referent), synonyms collapse to it; byte-identical host/VM"
 else
     printf '%s\n' "$CK"
     exit 1
@@ -784,32 +787,43 @@ else
     exit 1
 fi
 
-say "Spec pipeline: static SWC well-foundedness checker (swc_spec.la)"
-# swc_spec.la writes a CONSERVATIVE static Semantic Well-Foundedness checker over
-# lambda ASTs and GENERATEs + DEPLOYs swc.la (REGENERATED here). It classifies a
-# term BEFORE evaluation: WF (0, no bound-variable self-application → accept), ILL
-# (2, an EAGER self-application like la g. g(g) / the liar la x. f(x(x)) / Ω →
-# refuse), or UNKNOWN (1, GUARDED self-application as in Z → the undecidable
-# halting-problem residue, let through to the resource guards). META_DEBUG verifies
-# the classifier; then the GENERATED module runs stand-alone, byte-identical on
-# host and VM: DEPTH/liar/Ω → ILL, a safe term → WF, Z → UNKNOWN.
+say "Spec pipeline: static SWC checker — ill-foundedness + operator-order (swc_spec.la)"
+# swc_spec.la writes a CONSERVATIVE static checker and GENERATEs + DEPLOYs swc.la
+# (REGENERATED here). It enforces two constraints BEFORE evaluation:
+#  (a) ill-foundedness over lambda ASTs: WF (0, no bound-var self-application →
+#      accept), ILL (2, an EAGER self-application — la g. g(g) / liar la x. f(x(x))
+#      / Ω → refuse), UNKNOWN (1, GUARDED self-application as in Z → undecidable
+#      halting residue, let through to the resource guards);
+#  (b) operator-order (Grammar of Composition): the five operators chain
+#      ∂→δ→γ→ρ→𝔄 (ranks 1..5), so a later operator must nest OUTSIDE an earlier
+#      one. A descendant of higher rank = out of order; the canonical violation is
+#      𝔄(integrate,5) inside δ(bound,2) = integrate-before-bound = unbounded
+#      meaning (Pathology 3). META_DEBUG verifies both; then the GENERATED module
+#      runs stand-alone, byte-identical on host and VM.
 SW="$(./tiny_host swc_spec.la 2>/dev/null)"
 ok=1
 printf '%s\n' "$SW" | grep -q "module VERIFIED" || { echo "FAIL  swc: module not verified"; ok=0; }
 [ -f swc.la ] || { echo "FAIL  swc: swc.la was not written"; ok=0; }
-for G in Z AST_VAR AST_LAM AST_APP IS_VAR FIND_SA SWC VERDICT; do
+for G in Z AST_VAR AST_LAM AST_APP IS_VAR FIND_SA SWC VERDICT OATOM OOP MAXRANK ORD ORDER; do
     printf '%s\n' "$SW" | grep -qx "  $G: PASS" || { echo "FAIL  swc: $G not verified"; ok=0; }
 done
 cp swc.la /tmp/swctest.la
 cat >> /tmp/swctest.la <<'LA'
 glyph TD = AST_LAM("g")(AST_APP(AST_VAR("g"))(AST_VAR("g")))
 glyph TS = AST_LAM("x")(AST_APP(AST_VAR("f"))(AST_VAR("x")))
-glyph TL = AST_LAM("x")(AST_APP(AST_VAR("h"))(AST_APP(AST_VAR("x"))(AST_VAR("x"))))
 glyph TZ = AST_LAM("f")(AST_APP(AST_LAM("x")(AST_APP(AST_VAR("f"))(AST_LAM("v")(AST_APP(AST_APP(AST_VAR("x"))(AST_VAR("x")))(AST_VAR("v"))))))(AST_STR("z")))
 glyph WW = AST_LAM("x")(AST_APP(AST_VAR("x"))(AST_VAR("x")))
-glyph MAIN = print(concat(VERDICT(TD))(concat("|")(concat(VERDICT(TS))(concat("|")(concat(VERDICT(TZ))(concat("|")(VERDICT(AST_APP(WW)(WW)))))))))
+glyph BAD = OOP(2)(OATOM("x"))(OOP(5)(OATOM("a"))(OATOM("b")))
+glyph GOOD = OOP(5)(OOP(2)(OATOM("a"))(OATOM("b")))(OATOM("c"))
+glyph V1 = VERDICT(TD)
+glyph V2 = VERDICT(TS)
+glyph V3 = VERDICT(TZ)
+glyph V4 = VERDICT(AST_APP(WW)(WW))
+glyph V5 = ORDER(BAD)
+glyph V6 = ORDER(GOOD)
+glyph MAIN = print(concat(V1)(concat("|")(concat(V2)(concat("|")(concat(V3)(concat("|")(concat(V4)(concat("|")(concat(V5)(concat("|")(V6)))))))))))
 LA
-SWC_EXPECT="ILL|WF|UNKNOWN|ILL"
+SWC_EXPECT="ILL|WF|UNKNOWN|ILL|ORDER-VIOLATION|WELL-ORDERED"
 SWH="$(./tiny_host /tmp/swctest.la 2>/dev/null)"
 [ "$SWH" = "$SWC_EXPECT" ] || { echo "FAIL  swc: witness wrong on host"; printf 'got: %s\n' "$SWH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -820,8 +834,8 @@ SWV="$(./logos_secd 2>/dev/null)"
 [ "$SWV" = "$SWC_EXPECT" ] || { echo "FAIL  swc: witness wrong on native VM"; printf 'got: %s\n' "$SWV"; ok=0; }
 rm -f /tmp/swctest.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  swc: SPEC GENERATEs/DEPLOYs swc.la, META_DEBUG verifies the classifier"
-    echo "PASS  swc: refuses ILL (la g.g(g)/liar/Ω), accepts WF, marks Z UNKNOWN (halting residue); byte-identical host/VM"
+    echo "PASS  swc: SPEC GENERATEs/DEPLOYs swc.la, META_DEBUG verifies ill-foundedness + operator-order checks"
+    echo "PASS  swc: refuses ILL (la g.g(g)/liar/Ω) + integrate-before-bound (Pathology 3); accepts WF/well-ordered; Z UNKNOWN; byte-identical host/VM"
 else
     printf '%s\n' "$SW"
     exit 1

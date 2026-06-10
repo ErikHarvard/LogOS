@@ -41,6 +41,21 @@ glyph FIND_SA = Z(la self. la p. la eager. la node. node (la n. 0) (la q. la b. 
 glyph SWC = Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. MAXn(self(f))(self(a))) (la s. 0))
 glyph VERDICT = la node. (la s. IFc(int_eq(s)(2))(la _. "ILL")(la _. IFc(int_eq(s)(1))(la _. "UNKNOWN")(la _. "WF")))(SWC(node))
 
+# ── operator-order checker (Grammar of Composition): the five operators form a
+# strict dependency chain ∂(1)→δ(2)→γ(3)→ρ(4)→𝔄(5) (differentiate, bound,
+# compose, recognize, integrate) — each needs the previous as input, so a later
+# operator must nest OUTSIDE an earlier one (ranks non-increasing root→leaf). A
+# descendant whose rank EXCEEDS its ancestor's = an out-of-order composition: an
+# operator applied before its prerequisite. The canonical case is 𝔄 (integrate,
+# 5) nested inside δ (bound, 2) — integrate-before-bound = unbounded meaning,
+# Pathology 3 (Rarefaction). A composition is OATOM(name) | OOP(rank)(left)(right).
+glyph ORc = la a. la b. a(TRUE)(b)
+glyph OATOM = la n. la fa. la fo. fa(n)
+glyph OOP = la r. la l. la rr. la fa. la fo. fo(r)(l)(rr)
+glyph MAXRANK = Z(la self. la c. c (la n. 0) (la r. la l. la rr. MAXn(r)(MAXn(self(l))(self(rr)))))
+glyph ORD = Z(la self. la c. c (la n. 0) (la r. la l. la rr. MAXn(IFc(ORc(lt(r)(MAXRANK(l)))(lt(r)(MAXRANK(rr))))(la _. 2)(la _. 0))(MAXn(self(l))(self(rr)))))
+glyph ORDER = la c. IFc(int_eq(ORD(c))(0))(la _. "WELL-ORDERED")(la _. "ORDER-VIOLATION")
+
 # ── source strings ────────────────────────────────────────────────────────────
 glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
 glyph SRC_TRUE  = "la t. la f. t"
@@ -56,6 +71,12 @@ glyph SRC_ISVAR = "la p. la node. node (la n. str_eq(n)(p)) (la _. la _. FALSE) 
 glyph SRC_FINDSA = "Z(la self. la p. la eager. la node. node (la n. 0) (la q. la b. IFc(str_eq(q)(p))(la _. 0)(la _. self(p)(FALSE)(b))) (la f. la a. MAXn(IFc(AND(IS_VAR(p)(f))(IS_VAR(p)(a)))(la _. eager(2)(1))(la _. 0))(MAXn(self(p)(eager)(f))(self(p)(eager)(a)))) (la s. 0))"
 glyph SRC_SWC = "Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. MAXn(self(f))(self(a))) (la s. 0))"
 glyph SRC_VERDICT = "la node. (la s. IFc(int_eq(s)(2))(la _. \"ILL\")(la _. IFc(int_eq(s)(1))(la _. \"UNKNOWN\")(la _. \"WF\")))(SWC(node))"
+glyph SRC_ORc = "la a. la b. a(TRUE)(b)"
+glyph SRC_OATOM = "la n. la fa. la fo. fa(n)"
+glyph SRC_OOP = "la r. la l. la rr. la fa. la fo. fo(r)(l)(rr)"
+glyph SRC_MAXRANK = "Z(la self. la c. c (la n. 0) (la r. la l. la rr. MAXn(r)(MAXn(self(l))(self(rr)))))"
+glyph SRC_ORD = "Z(la self. la c. c (la n. 0) (la r. la l. la rr. MAXn(IFc(ORc(lt(r)(MAXRANK(l)))(lt(r)(MAXRANK(rr))))(la _. 2)(la _. 0))(MAXn(self(l))(self(rr)))))"
+glyph SRC_ORDER = "la c. IFc(int_eq(ORD(c))(0))(la _. \"WELL-ORDERED\")(la _. \"ORDER-VIOLATION\")"
 
 # ── test scaffolding (spec-file-local) ────────────────────────────────────────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -92,7 +113,17 @@ glyph SWC_SPEC =
         T3L(TC(la g. g(T_LIAR))("ILL"))                                             # the liar → refuse
            (TC(la g. g(T_OMEGA))("ILL"))                                            # Ω applied → refuse
            (TC(la g. g(T_SAFE))("WF"))))(                                           # safe → accept
-  NIL))))))))))))))
+  CONS(E("ORc")("Church or (trusted)")(SRC_ORc)(ORc)(T1L(TC(la g. g(FALSE)(TRUE)("y")("n"))("y"))))(
+  CONS(E("OATOM")("operator-composition atom (trusted)")(SRC_OATOM)(OATOM)(T1L(TC(la g. g("x")(la n. n)(la _. la _. la _. "o"))("x"))))(
+  CONS(E("OOP")("operator-composition node, ranked (trusted)")(SRC_OOP)(OOP)(T1L(TC(la g. g(5)("l")("r")(la _. "a")(la r. la l. la rr. int_to_str(r)))("5"))))(
+  CONS(E("MAXRANK")("max operator rank in a composition (trusted)")(SRC_MAXRANK)(MAXRANK)(T1L(TC(la g. int_to_str(g(OOP(2)(OATOM("a"))(OOP(5)(OATOM("b"))(OATOM("c"))))))("5"))))(
+  CONS(E("ORD")("order-violation severity: 0 ok, 2 violation (trusted)")(SRC_ORD)(ORD)(
+        T2L(TC(la g. int_to_str(g(OOP(2)(OATOM("x"))(OOP(5)(OATOM("a"))(OATOM("b"))))))("2"))                        # 𝔄(5) inside δ(2) → integrate-before-bound → 2
+           (TC(la g. int_to_str(g(OOP(5)(OOP(2)(OATOM("a"))(OATOM("b")))(OATOM("c")))))("0"))))(                     # δ(2) inside 𝔄(5) → correct → 0
+  CONS(E("ORDER")("operator-order verdict (trusted)")(SRC_ORDER)(ORDER)(
+        T2L(TC(la g. g(OOP(2)(OATOM("x"))(OOP(5)(OATOM("a"))(OATOM("b")))))("ORDER-VIOLATION"))                      # integrate before bound → refuse
+           (TC(la g. g(OOP(5)(OOP(4)(OOP(3)(OOP(2)(OOP(1)(OATOM("a"))(OATOM("b")))(OATOM("c")))(OATOM("d")))(OATOM("e")))(OATOM("f"))))("WELL-ORDERED"))))(  # full ∂→δ→γ→ρ→𝔄 chain → accept
+  NIL))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(SWC_SPEC) ===\n")(GENERATE(SWC_SPEC))))

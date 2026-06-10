@@ -71,3 +71,7 @@ glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. concat("↻(
 glyph NORMK = Z(la self. la node. node (la nm. nm) (la a. la b. SORT2("⊗")(self(a))(self(b))) (la a. la b. SORT2("⊕")(self(a))(self(b))) (la a. la b. WRAP2("▷")(self(a))(self(b))) (la a. la b. WRAP2("⊂")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))
 # NIS : normalized identity — monosemic ≡ (trusted)
 glyph NIS = la a. la b. str_eq(NORMK(a))(NORMK(b))
+# IS_ALPHA1 : α=1 test — is the form the ontoglyph (sign IS referent)? (trusted)
+glyph IS_ALPHA1 = la d. str_eq(CANON(d))(NORMK(d))
+# ALPHA1 : the α=1 ontoglyph: synonyms collapse to this one name (trusted)
+glyph ALPHA1 = la d. NORMK(d)

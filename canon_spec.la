@@ -115,6 +115,16 @@ glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. concat("↻(
 glyph NORMK = Z(la self. la node. node (la nm. nm) (la a. la b. SORT2("⊗")(self(a))(self(b))) (la a. la b. SORT2("⊕")(self(a))(self(b))) (la a. la b. WRAP2("▷")(self(a))(self(b))) (la a. la b. WRAP2("⊂")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))
 glyph NIS = la a. la b. str_eq(NORMK(a))(NORMK(b))
 
+# ── α alignment (Science of Naming): α=1 ⇔ sign IS referent (the ontoglyph) ────
+# A decomposition's plain form is at α=1 (meta-ontosemantic: the name IS the
+# referent's self-disclosure) iff it already equals its NORMALIZED form — no
+# synonym-collapse changes it. Synonyms sit at α<1 (CANON ≠ NORMK) and collapse
+# to the single α=1 representative ALPHA1 = NORMK. This enforces the monosemic
+# bijection: at α=1 a referent has exactly ONE name (Science of Naming §5.2 —
+# "the ontoglyph admits no synonymy: if N₁(x)≡x and N₂(x)≡x then N₁≡N₂").
+glyph IS_ALPHA1 = la d. str_eq(CANON(d))(NORMK(d))
+glyph ALPHA1 = la d. NORMK(d)
+
 # ── source strings (what GENERATE writes; behaviourally equal to the values) ──
 glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
 glyph SRC_TRUE  = "la t. la f. t"
@@ -152,6 +162,8 @@ glyph SRC_SORT2 = "la sym. la a. la b. IF(LE(a)(b))(la _. WRAP2(sym)(a)(b))(la _
 glyph SRC_REWMC = "la x. IF(str_eq(x)(\"BEING\"))(la _. \"SELF\")(la _. concat(\"↻(\")(concat(x)(\")\")))"
 glyph SRC_NORMK = "Z(la self. la node. node (la nm. nm) (la a. la b. SORT2(\"⊗\")(self(a))(self(b))) (la a. la b. SORT2(\"⊕\")(self(a))(self(b))) (la a. la b. WRAP2(\"▷\")(self(a))(self(b))) (la a. la b. WRAP2(\"⊂\")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))"
 glyph SRC_NIS = "la a. la b. str_eq(NORMK(a))(NORMK(b))"
+glyph SRC_ISA1 = "la d. str_eq(CANON(d))(NORMK(d))"
+glyph SRC_A1 = "la d. NORMK(d)"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -258,7 +270,13 @@ glyph CANON_SPEC =
         T3L(TC(la g. g(CON(PRIM("A"))(PRIM("B")))(CON(PRIM("B"))(PRIM("A")))("T")("F"))("T"))             # commutative synonym → one glyph
            (TC(la g. g(MC(PRIM("BEING")))(PRIM("SELF"))("T")("F"))("T"))                                  # algebraic synonym → one glyph
            (TC(la g. g(DIR(PRIM("A"))(PRIM("B")))(DIR(PRIM("B"))(PRIM("A")))("T")("F"))("F"))))(           # directional → stays distinct
-  NIL))))))))))))))))))))))))))))))))))))
+  CONS(E("IS_ALPHA1")("α=1 test — is the form the ontoglyph (sign IS referent)? (trusted)")(SRC_ISA1)(IS_ALPHA1)(
+        T2L(TC(la g. g(CON(PRIM("A"))(PRIM("B")))("y")("n"))("y"))                                        # ⊕(A,B) already canonical → α=1
+           (TC(la g. g(CON(PRIM("B"))(PRIM("A")))("y")("n"))("n"))))(                                     # ⊕(B,A) is a synonym → α<1
+  CONS(E("ALPHA1")("the α=1 ontoglyph: synonyms collapse to this one name (trusted)")(SRC_A1)(ALPHA1)(
+        T2L(TC(la g. g(CON(PRIM("B"))(PRIM("A"))))("⊕(A,B)"))                                             # the α=1 representative of ⊕(B,A)
+           (TC(la g. str_eq(g(CON(PRIM("A"))(PRIM("B"))))(g(CON(PRIM("B"))(PRIM("A"))))("one")("two"))("one"))))(  # bijection: both synonyms → one name
+  NIL))))))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(CANON_SPEC) ===\n")(GENERATE(CANON_SPEC))))
