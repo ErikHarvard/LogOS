@@ -982,7 +982,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "10864" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 10864)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "11025" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 11025)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1538,6 +1538,39 @@ case "$(printf '%s\n' "$ULOUT" | sed -n 2p)" in -[0-9]*) : ;; *) echo "FAIL  unl
 rm -f /tmp/t_unlink.la "$UTGT"
 if [ "$ok" -eq 1 ]; then
     echo "PASS  unlink: existing name -> 0 (removed); absent -> -errno (native VM)"
+else
+    exit 1
+fi
+
+say "random: getrandom entropy source (VM builtin; unblocks unforgeable nonces)"
+# random(n) → min(n,256) cryptographically-random bytes via getrandom(2). A real
+# entropy source — what an unforgeable capability nonce needs. Non-deterministic,
+# so we assert SHAPE (str_len = requested, clamped to 256), ENTROPY (two calls
+# differ — equality would be the bug), the empty edge (random(0) = ""), and the
+# loud non-string guard.
+cat > /tmp/t_rand.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph L1 = str_len(random("16"))
+glyph L2 = str_len(random("300"))
+glyph L3 = str_eq(random("24"))(random("24"))("SAME")("DIFF")
+glyph L4 = str_eq(random("0"))("")("EMPTY")("nonempty")
+glyph MAIN = SEQ(print(L1))(SEQ(print(L2))(SEQ(print(L3))(print(L4))))
+LAEOF
+RND="$(nrun /tmp/t_rand.la)"
+ok=1
+[ "$(printf '%s\n' "$RND" | sed -n 1p)" = "16" ]   || { echo "FAIL  random: random(16) not 16 bytes ($RND)"; ok=0; }
+[ "$(printf '%s\n' "$RND" | sed -n 2p)" = "256" ]  || { echo "FAIL  random: random(300) not clamped to 256 ($RND)"; ok=0; }
+[ "$(printf '%s\n' "$RND" | sed -n 3p)" = "DIFF" ] || { echo "FAIL  random: two calls equal (no entropy) ($RND)"; ok=0; }
+[ "$(printf '%s\n' "$RND" | sed -n 4p)" = "EMPTY" ] || { echo "FAIL  random: random(0) not empty ($RND)"; ok=0; }
+# non-string arg → loud halt
+printf 'glyph MAIN = random(5)\n' > /tmp/t_randbad.la
+cp /tmp/t_randbad.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+brc=0; BERR="$(./runner 2>&1 1>/dev/null)" || brc=$?
+[ "$brc" -ne 0 ] || { echo "FAIL  random: non-string arg did not halt nonzero"; ok=0; }
+printf '%s' "$BERR" | grep -q 'argument is not a string' || { echo "FAIL  random: non-string arg not loud ($BERR)"; ok=0; }
+rm -f /tmp/t_rand.la /tmp/t_randbad.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  random: getrandom shape (16; 300→256 clamp), entropy (calls differ), empty edge, non-string halts loud (native VM)"
 else
     exit 1
 fi

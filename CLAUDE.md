@@ -466,7 +466,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 10864 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 11025 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -613,7 +613,13 @@ the bytes as a binary-safe string; `maxbytes` clamped to 64 MiB), `open(path)(fl
 pipe as a space-separated string — both inherited across `fork`), and
 `unlink(path)` (remove a filesystem name → `0`, or `-errno` such as `-2` =
 `-ENOENT` when absent — the companion to `bind`, letting an AF_UNIX server
-self-clean its stale rendezvous path via the canonical `unlink; bind`). Integers cross
+self-clean its stale rendezvous path via the canonical `unlink; bind`), and
+`random(n)` (→ `min(n, 256)` cryptographically-random bytes via `getrandom(2)`,
+flags 0 / urandom source, as a binary-safe string — a real **entropy source**,
+clamped to 256 because `getrandom` fills a request that size atomically. This is
+the substrate primitive an **unforgeable capability nonce** needs: `logoscap.la`'s
+`BRAND` can mint `random("32")` instead of a fixed `str_eq`'d secret, closing the
+"no randomness source yet" gap). Integers cross
 the LA boundary as decimal strings. Each path/fstype argument is copied into a fixed 4 KiB
 buffer (`pathbuf`/`fsbuf`); the copy is **bounds-checked** — a path ≥ 4096 bytes
 halts loudly with `secd: path too long` rather than overrunning the buffer into

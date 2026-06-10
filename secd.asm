@@ -686,6 +686,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi44
+    mov     rsi, rbp
+    mov     rdi, str_random
+    call    strcmp
+    test    eax, eax
+    je      .bi45
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -821,6 +826,9 @@ _start:
     jmp     .pushbi
 .bi44:
     mov     r11, 44
+    jmp     .pushbi
+.bi45:
+    mov     r11, 45
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -981,6 +989,8 @@ _start:
     je      .mkpa                ; recv is curried: recv(fd)(maxbytes)
     cmp     r11, 44
     je      .bi_unlink
+    cmp     r11, 45
+    je      .bi_random
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -2370,6 +2380,40 @@ _start:
     call    push_dec             ; 0, or -errno
     jmp     .loop
 
+.bi_random:                      ; random(n) → min(n,256) random bytes ; r9 = n desc
+    ; a real entropy source via getrandom(2) — the substrate primitive an
+    ; unforgeable capability nonce needs (logoscap's BRAND can mint random("32")
+    ; instead of a fixed str_eq'd secret). Bytes land on the heap as a binary-safe
+    ; STR. Clamped to 256: getrandom from the urandom source returns the full
+    ; request atomically below that, so no partial-read loop is needed. A negative
+    ; return (e.g. the pool not yet initialised) yields the empty string.
+    test    r8, r8               ; n must be a decimal STR (see .strtype)
+    jnz     .strtype
+    mov     rdi, r9              ; byte-count descriptor
+    call    desc_atoi
+    mov     rsi, rax             ; buflen = count
+    mov     rax, 256             ; clamp to 256 (atomic getrandom from urandom)
+    cmp     rsi, rax
+    cmova   rsi, rax
+    mov     rdi, r15             ; buf = heap
+    xor     rdx, rdx             ; flags = 0 (urandom source)
+    mov     rax, 318             ; getrandom(buf, buflen, flags)
+    syscall
+    test    rax, rax
+    js      .read_empty          ; error/-errno → empty string (reuse read2's tail)
+    mov     rdx, rax             ; bytes written = length
+    mov     r10, r15             ; content start
+    add     r15, rax             ; advance past the random bytes
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx
+    mov     [r15+8], r10
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     test    r8, r8               ; code must be a decimal STR; an INT would deref its
     jnz     .strtype             ; payload as a [len][ptr] descriptor (see .strtype)
@@ -2876,6 +2920,7 @@ str_connect:   db "connect", 0
 str_send:      db "send", 0
 str_recv:      db "recv", 0
 str_unlink:    db "unlink", 0
+str_random:    db "random", 0
 drm_card:      db "/dev/dri/card0", 0
 drmmsg:        db "secd: drm error", 10
 drmmsg_len     equ $ - drmmsg
