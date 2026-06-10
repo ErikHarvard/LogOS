@@ -1,0 +1,157 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  canon_spec.la — κ, the canonicalization function of Lingua Adamica,
+#  written as a SPEC and produced by the spec→implementation pipeline
+#  (import("specpipe.la")).
+#
+#  GRAMMAR_DIVERGENCE.md defines the formal language as the closure of the
+#  nine primitives M₀ under the five combination modes:
+#      M̄ = Cl(M₀, {⊗ ⊕ ▷ ⊂ ↻})
+#  ⊗ Ontosynthesis, ⊕ Ontoconjunction, ▷ Ontodirection, ⊂ Ontocontainment,
+#  ↻ Metacursion. A DECOMPOSITION is a term of this algebra: a primitive
+#  leaf (one of the nine) or a mode applied to sub-decompositions.
+#
+#  κ (CANON) is the CANONICALIZATION function: decomposition → a canonical
+#  glyph SPECIFICATION — a deterministic, unique data structure (here a
+#  normalized prefix-notation string) describing that glyph's composition.
+#  It does NOT render visually — that awaits Theourgia, which will parse
+#  this spec into a sigil. κ produces the formal description rendering
+#  consumes.
+#
+#  The Law of Identity is operationalized here as the TRIPLE BAR (≡), NOT
+#  equality: IS(a)(b) ≡ str_eq(κ(a))(κ(b)). A IS B iff they canonicalize to
+#  the SAME glyph — two distinct decompositions denoting one glyph are
+#  IDENTICAL, not merely equal. A ≡ A because κ(A) = κ(A). The three laws of
+#  thought are the metalogical ontosyntax, each a THEOREM over IS that
+#  reduces to TRUE for all inputs:
+#      Identity         LAW_ID(a)     ≡ TRUE            (A ≡ A)
+#      Non-contradiction LAW_NC(a)(b) ≡ TRUE   ¬(A≡B ∧ ¬(A≡B))
+#      Excluded middle  LAW_EM(a)(b)  ≡ TRUE    (A≡B) ∨ ¬(A≡B)
+#  Excluded middle GENUINELY holds: κ is total, so canonical identity is
+#  DECIDABLE — there is no third truth value.
+#
+#  κ(κ) is well-defined: κ has a canonical self-decomposition KAPPA (κ is
+#  RECOGNITION acting on FORM, ▷); κ(KAPPA) yields a definite spec, the
+#  metacursion ↻(KAPPA) = κ(κ) canonicalizes to a definite spec, and
+#  KAPPA ≡ KAPPA. ∃(∃) ≡ ∃ for κ.
+#
+#  v1 scope (locked with the author): canonical form is ORDER-PRESERVING
+#  (no mode-equivalences assumed — declaring ⊗/⊕ commutative is a v2 once
+#  LINGUA ADAMICA.tex is in the repo); primitives render by glyph NAME, not
+#  phonym (the nine phonyms in 3-D phonetic space await that same file).
+#
+#  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY
+#  writes canon.la, type-checks the generated source, and META_DEBUG
+#  verifies every glyph; the module is accepted only if all pass.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + PAIR/FST/SND/CONS/NIL/Z/IF/TRUE/FALSE/AND/...
+
+# ── implementation VALUES (what META_DEBUG runs) ──────────────────────────────
+# Logical core (Church booleans; Z/TRUE/FALSE/AND come from specpipe).
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph OR   = la a. la b. a(TRUE)(b)
+
+# The decomposition algebra — Scott-encoded, six-way (one prim leaf + five modes).
+# A node applied to six handlers (fp fs fc fd fo fm) selects its case.
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+
+# κ — canonicalize a decomposition to its prefix-notation glyph spec.
+glyph CANON = Z(la self. la node. node (la nm. nm) (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("▷(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊂(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. concat("↻(")(concat(self(a))(")"))))
+
+# Identity as the triple bar: A IS B iff they canonicalize to the same glyph.
+glyph IS   = la a. la b. str_eq(CANON(a))(CANON(b))
+
+# The three laws of thought, as theorems over IS (each ≡ TRUE for all inputs).
+glyph LAW_ID = la a. IS(a)(a)
+glyph LAW_NC = la a. la b. NOT(AND(IS(a)(b))(NOT(IS(a)(b))))
+glyph LAW_EM = la a. la b. OR(IS(a)(b))(NOT(IS(a)(b)))
+
+# κ's canonical self-decomposition: recognition acting on form.
+glyph KAPPA  = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_TRUE  = "la t. la f. t"
+glyph SRC_FALSE = "la t. la f. f"
+glyph SRC_NOT   = "la b. b(FALSE)(TRUE)"
+glyph SRC_AND   = "la a. la b. a(b)(FALSE)"
+glyph SRC_OR    = "la a. la b. a(TRUE)(b)"
+glyph SRC_PRIM  = "la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)"
+glyph SRC_SYN   = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)"
+glyph SRC_CON   = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)"
+glyph SRC_DIR   = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)"
+glyph SRC_CONT  = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)"
+glyph SRC_MC    = "la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)"
+glyph SRC_CANON = "Z(la self. la node. node (la nm. nm) (la a. la b. concat(\"⊗(\")(concat(self(a))(concat(\",\")(concat(self(b))(\")\"))))) (la a. la b. concat(\"⊕(\")(concat(self(a))(concat(\",\")(concat(self(b))(\")\"))))) (la a. la b. concat(\"▷(\")(concat(self(a))(concat(\",\")(concat(self(b))(\")\"))))) (la a. la b. concat(\"⊂(\")(concat(self(a))(concat(\",\")(concat(self(b))(\")\"))))) (la a. concat(\"↻(\")(concat(self(a))(\")\"))))"
+glyph SRC_IS    = "la a. la b. str_eq(CANON(a))(CANON(b))"
+glyph SRC_LAWID = "la a. IS(a)(a)"
+glyph SRC_LAWNC = "la a. la b. NOT(AND(IS(a)(b))(NOT(IS(a)(b))))"
+glyph SRC_LAWEM = "la a. la b. OR(IS(a)(b))(NOT(IS(a)(b)))"
+glyph SRC_KAPPA = "DIR(PRIM(\"RECOGNITION\"))(PRIM(\"FORM\"))"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph T3L = la a. la b. la c. CONS(a)(CONS(b)(CONS(c)(NIL)))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+
+# ── the SPEC: the logical core, the five modes, κ, identity, the three laws ────
+glyph CANON_SPEC =
+  CONS(E("Z")(":: (a -> a) -> a")(SRC_Z)(Z)(
+        T1L(TC(la g. (g(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat("|")(self(str_tail(s))))))("abc"))("|||"))))(
+  CONS(E("TRUE")(":: a -> b -> a")(SRC_TRUE)(TRUE)(
+        T1L(TC(la g. g("yes")("no"))("yes"))))(
+  CONS(E("FALSE")(":: a -> b -> b")(SRC_FALSE)(FALSE)(
+        T1L(TC(la g. g("yes")("no"))("no"))))(
+  CONS(E("NOT")(":: a -> a")(SRC_NOT)(NOT)(
+        T2L(TC(la g. g(TRUE)("yes")("no"))("no"))
+           (TC(la g. g(FALSE)("yes")("no"))("yes"))))(
+  CONS(E("AND")(":: a -> b -> c")(SRC_AND)(AND)(
+        T2L(TC(la g. g(TRUE)(TRUE)("y")("n"))("y"))
+           (TC(la g. g(TRUE)(FALSE)("y")("n"))("n"))))(
+  CONS(E("OR")(":: a -> b -> c")(SRC_OR)(OR)(
+        T2L(TC(la g. g(FALSE)(TRUE)("y")("n"))("y"))
+           (TC(la g. g(FALSE)(FALSE)("y")("n"))("n"))))(
+  CONS(E("PRIM")("primitive leaf glyph (Scott-encoded, trusted)")(SRC_PRIM)(PRIM)(
+        T1L(TC(la g. CANON(g("BEING")))("BEING"))))(
+  CONS(E("SYN")("⊗ Ontosynthesis — fusion into a new unity (trusted)")(SRC_SYN)(SYN)(
+        T1L(TC(la g. CANON(g(PRIM("BEING"))(PRIM("VOID"))))("⊗(BEING,VOID)"))))(
+  CONS(E("CON")("⊕ Ontoconjunction — co-presence (trusted)")(SRC_CON)(CON)(
+        T1L(TC(la g. CANON(g(PRIM("BEING"))(PRIM("VOID"))))("⊕(BEING,VOID)"))))(
+  CONS(E("DIR")("▷ Ontodirection — a acts on b (trusted)")(SRC_DIR)(DIR)(
+        T1L(TC(la g. CANON(g(PRIM("BEING"))(PRIM("VOID"))))("▷(BEING,VOID)"))))(
+  CONS(E("CONT")("⊂ Ontocontainment — instance in category (trusted)")(SRC_CONT)(CONT)(
+        T1L(TC(la g. CANON(g(PRIM("BEING"))(PRIM("VOID"))))("⊂(BEING,VOID)"))))(
+  CONS(E("MC")("↻ Metacursion — g applied to itself (trusted)")(SRC_MC)(MC)(
+        T1L(TC(la g. CANON(g(PRIM("DEPTH"))))("↻(DEPTH)"))))(
+  CONS(E("CANON")("κ — canonicalize a decomposition to its glyph spec (Z-recursive, trusted)")(SRC_CANON)(CANON)(
+        T2L(TC(la g. g(PRIM("BEING")))("BEING"))
+           (TC(la g. g(CONT(MC(PRIM("DEPTH")))(SYN(PRIM("BEING"))(PRIM("FORM")))))("⊂(↻(DEPTH),⊗(BEING,FORM))"))))(
+  CONS(E("IS")(":: a -> b -> c")(SRC_IS)(IS)(
+        T3L(TC(la g. g(PRIM("BEING"))(PRIM("BEING"))("T")("F"))("T"))             # A ≡ A
+           (TC(la g. g(PRIM("BEING"))(PRIM("VOID"))("T")("F"))("F"))              # distinct glyphs not identical
+           (TC(la g. g(DIR(PRIM("BEING"))(PRIM("VOID")))(DIR(PRIM("BEING"))(PRIM("VOID")))("T")("F"))("T"))))(  # two builds, one glyph: IDENTICAL not merely equal
+  CONS(E("LAW_ID")(":: a -> b")(SRC_LAWID)(LAW_ID)(
+        T2L(TC(la g. g(PRIM("LOVE"))("T")("F"))("T"))
+           (TC(la g. g(CONT(MC(PRIM("DEPTH")))(PRIM("FORM")))("T")("F"))("T"))))(
+  CONS(E("LAW_NC")(":: a -> b -> c")(SRC_LAWNC)(LAW_NC)(
+        T2L(TC(la g. g(PRIM("BEING"))(PRIM("VOID"))("T")("F"))("T"))
+           (TC(la g. g(PRIM("BEING"))(PRIM("BEING"))("T")("F"))("T"))))(
+  CONS(E("LAW_EM")(":: a -> b -> c")(SRC_LAWEM)(LAW_EM)(
+        T2L(TC(la g. g(PRIM("BEING"))(PRIM("VOID"))("T")("F"))("T"))
+           (TC(la g. g(PRIM("BEING"))(PRIM("BEING"))("T")("F"))("T"))))(
+  CONS(E("KAPPA")("κ's canonical self-decomposition = ▷(RECOGNITION,FORM) (trusted)")(SRC_KAPPA)(KAPPA)(
+        T3L(TC(la g. CANON(g))("▷(RECOGNITION,FORM)"))                            # κ applied to its own glyph
+           (TC(la g. CANON(MC(g)))("↻(▷(RECOGNITION,FORM))"))                     # κ(κ) = ↻(κ) well-defined
+           (TC(la g. IS(g)(g)("T")("F"))("T"))))(                                 # κ ≡ κ
+  NIL))))))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(CANON_SPEC) ===\n")(GENERATE(CANON_SPEC))))
+       (print(DEPLOY(CANON_SPEC)("canon.la")))

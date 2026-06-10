@@ -673,6 +673,63 @@ else
     exit 1
 fi
 
+say "Spec pipeline: κ — canonicalization of glyph decompositions (canon_spec.la)"
+# canon_spec.la writes κ (CANON) as a SPEC and GENERATEs + DEPLOYs canon.la
+# (REGENERATED here, so it never drifts). κ takes a DECOMPOSITION — a primitive
+# leaf or a combination via the five modes ⊗ ⊕ ▷ ⊂ ↻ — and produces a canonical
+# glyph SPECIFICATION (a deterministic prefix-notation string Theourgia will
+# later render). The Law of Identity is the triple bar: IS(a)(b) ≡ str_eq(κa)(κb)
+# — A IS B iff they canonicalize to the same glyph (identity, NOT equality). The
+# three laws of thought are theorems over IS (each ≡ TRUE). META_DEBUG verifies
+# all of it; then the GENERATED module is run stand-alone, byte-identical on host
+# and VM.
+CK="$(./tiny_host canon_spec.la 2>/dev/null)"
+ok=1
+for G in Z TRUE FALSE NOT AND OR PRIM SYN CON DIR CONT MC CANON IS LAW_ID LAW_NC LAW_EM KAPPA; do
+    printf '%s\n' "$CK" | grep -qx "  $G: PASS" || { echo "FAIL  canon: $G not verified"; ok=0; }
+done
+printf '%s\n' "$CK" | grep -q "module VERIFIED" || { echo "FAIL  canon: module not verified"; ok=0; }
+[ -f canon.la ] || { echo "FAIL  canon: canon.la was not written"; ok=0; }
+# the logical core carries formal `:: <type>` signatures (incl. the three laws);
+# the Scott-encoded modes, κ, and KAPPA are point-free/Z-recursive → trusted.
+for G in TRUE FALSE NOT AND OR IS LAW_ID LAW_NC LAW_EM; do
+    printf '%s\n' "$CK" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  canon: $G not type-checked OK"; ok=0; }
+done
+for G in PRIM SYN CON DIR CONT MC CANON KAPPA; do
+    printf '%s\n' "$CK" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  canon: $G not reported untyped/trusted"; ok=0; }
+done
+# Run the GENERATED canon.la stand-alone. The witness exercises κ on a nested
+# decomposition, κ(κ) = ↻(KAPPA), and all three laws + identity (each emits its
+# TRUE-branch sentinel — I N E = — so the tail reads "INE=" only if every law and
+# the identity hold). Host and VM must agree byte-for-byte.
+cp canon.la /tmp/canontest.la
+cat >> /tmp/canontest.la <<'LA'
+glyph MAIN =
+  print(concat(CANON(CONT(MC(PRIM("DEPTH")))(SYN(PRIM("BEING"))(PRIM("FORM")))))(
+        concat("|")(concat(CANON(MC(KAPPA)))(
+        concat("|")(concat(LAW_ID(PRIM("LOVE"))("I")("x"))(
+        concat(LAW_NC(PRIM("BEING"))(PRIM("VOID"))("N")("x"))(
+        concat(LAW_EM(PRIM("BEING"))(PRIM("VOID"))("E")("x"))(
+        IS(PRIM("BEING"))(PRIM("BEING"))("=")("x")))))))))
+LA
+CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE="
+CKH="$(./tiny_host /tmp/canontest.la 2>/dev/null)"
+[ "$CKH" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ witness wrong on host"; printf 'got: %s\n' "$CKH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/canontest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+CKV="$(./logos_secd 2>/dev/null)"
+[ "$CKV" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ witness wrong on native VM"; printf 'got: %s\n' "$CKV"; ok=0; }
+rm -f /tmp/canontest.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  canon: SPEC GENERATEs/DEPLOYs canon.la, META_DEBUG verifies κ, IS (≡), and the three laws of thought"
+    echo "PASS  canon: κ deterministic + κ(κ) well-defined; canonical specs byte-identical on host and VM (UTF-8 sigils round-trip)"
+else
+    printf '%s\n' "$CK"
+    exit 1
+fi
+
 say "Spec pipeline: COMPILE-TIME type checking inside DEPLOY"
 # specpipe.la's DEPLOY now runs a compile-time TYPE CHECKER after GENERATE and
 # before accepting: it reads the GENERATED source, parses each glyph's body, and
