@@ -20,6 +20,7 @@
 /logos_source.la
 /new_logos_secd.bin
 /compiler.bin
+/runner
 /native_small.bin
 /logos_app
 
