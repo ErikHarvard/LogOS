@@ -35,3 +35,25 @@ glyph LAW_NC = la a. la b. NOT(AND(IS(a)(b))(NOT(IS(a)(b))))
 glyph LAW_EM = la a. la b. OR(IS(a)(b))(NOT(IS(a)(b)))
 # KAPPA : κ's canonical self-decomposition = ▷(RECOGNITION,FORM) (trusted)
 glyph KAPPA = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))
+# IF : :: a -> b -> c -> d
+glyph IF = la c. la t. la f. c(t)(f)("!")
+# MAX : :: a -> b -> c
+glyph MAX = la m. la n. IF(lt(m)(n))(la _. n)(la _. m)
+# TDEPTH : depth of an etymology tree (Z-recursive, trusted)
+glyph TDEPTH = Z(la self. la node. node (la nm. 0) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. add(1)(self(a))))
+# MONO : :: a -> b -> c -> d
+glyph MONO = la ren. la etym. la f. f(ren)(etym)
+# REN : :: a -> b
+glyph REN = la g. g(la r. la e. r)
+# ETYM : :: a -> b
+glyph ETYM = la g. g(la r. la e. e)
+# GLYPH : :: a -> b
+glyph GLYPH = la name. MONO(name)(PRIM(name))
+# COLLAPSE : :: a -> b -> c -> d
+glyph COLLAPSE = la mode. la a. la b. (la et. MONO(CANON(et))(et))(mode(ETYM(a))(ETYM(b)))
+# MCOLLAPSE : :: a -> b
+glyph MCOLLAPSE = la a. (la et. MONO(CANON(et))(et))(MC(ETYM(a)))
+# DEPTH : :: a -> b
+glyph DEPTH = la g. TDEPTH(ETYM(g))
+# AUTO_OK : :: a -> b
+glyph AUTO_OK = la g. str_eq(REN(g))(CANON(ETYM(g)))

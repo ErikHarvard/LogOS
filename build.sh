@@ -673,7 +673,7 @@ else
     exit 1
 fi
 
-say "Spec pipeline: κ — canonicalization of glyph decompositions (canon_spec.la)"
+say "Spec pipeline: κ + etymology-bearing glyphs (canon_spec.la — autological Ren)"
 # canon_spec.la writes κ (CANON) as a SPEC and GENERATEs + DEPLOYs canon.la
 # (REGENERATED here, so it never drifts). κ takes a DECOMPOSITION — a primitive
 # leaf or a combination via the five modes ⊗ ⊕ ▷ ⊂ ↻ — and produces a canonical
@@ -685,46 +685,52 @@ say "Spec pipeline: κ — canonicalization of glyph decompositions (canon_spec.
 # and VM.
 CK="$(./tiny_host canon_spec.la 2>/dev/null)"
 ok=1
-for G in Z TRUE FALSE NOT AND OR PRIM SYN CON DIR CONT MC CANON IS LAW_ID LAW_NC LAW_EM KAPPA; do
+for G in Z TRUE FALSE NOT AND OR PRIM SYN CON DIR CONT MC CANON IS LAW_ID LAW_NC LAW_EM KAPPA \
+         IF MAX TDEPTH MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK; do
     printf '%s\n' "$CK" | grep -qx "  $G: PASS" || { echo "FAIL  canon: $G not verified"; ok=0; }
 done
 printf '%s\n' "$CK" | grep -q "module VERIFIED" || { echo "FAIL  canon: module not verified"; ok=0; }
 [ -f canon.la ] || { echo "FAIL  canon: canon.la was not written"; ok=0; }
-# the logical core carries formal `:: <type>` signatures (incl. the three laws);
-# the Scott-encoded modes, κ, and KAPPA are point-free/Z-recursive → trusted.
-for G in TRUE FALSE NOT AND OR IS LAW_ID LAW_NC LAW_EM; do
+# the logical core + etymology layer carry formal `:: <type>` signatures (incl. the
+# three laws); the Scott-encoded modes, κ, KAPPA, and the Z-recursive TDEPTH are
+# point-free/Z-recursive → trusted.
+for G in TRUE FALSE NOT AND OR IS LAW_ID LAW_NC LAW_EM IF MAX MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK; do
     printf '%s\n' "$CK" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  canon: $G not type-checked OK"; ok=0; }
 done
-for G in PRIM SYN CON DIR CONT MC CANON KAPPA; do
+for G in PRIM SYN CON DIR CONT MC CANON KAPPA TDEPTH; do
     printf '%s\n' "$CK" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  canon: $G not reported untyped/trusted"; ok=0; }
 done
-# Run the GENERATED canon.la stand-alone. The witness exercises κ on a nested
-# decomposition, κ(κ) = ↻(KAPPA), and all three laws + identity (each emits its
-# TRUE-branch sentinel — I N E = — so the tail reads "INE=" only if every law and
-# the identity hold). Host and VM must agree byte-for-byte.
+# Run the GENERATED canon.la stand-alone. The witness has three parts joined by
+# '|': (1) κ on a nested decomposition + κ(κ)=↻(KAPPA), and the three laws +
+# identity (sentinels I N E = → "INE=" only if every law and identity hold); (2)
+# the ETYMOLOGY layer — two monoglyphs COLLAPSE (not couple) into ONE deeper
+# monoglyph G3 whose Ren = ▷(⊗(BEING,VOID),FORM), depth = 2 (deeper, not larger),
+# and AUTO_OK = TRUE (the name IS its etymology — autological). Host and VM agree.
 cp canon.la /tmp/canontest.la
 cat >> /tmp/canontest.la <<'LA'
-glyph MAIN =
-  print(concat(CANON(CONT(MC(PRIM("DEPTH")))(SYN(PRIM("BEING"))(PRIM("FORM")))))(
-        concat("|")(concat(CANON(MC(KAPPA)))(
-        concat("|")(concat(LAW_ID(PRIM("LOVE"))("I")("x"))(
-        concat(LAW_NC(PRIM("BEING"))(PRIM("VOID"))("N")("x"))(
-        concat(LAW_EM(PRIM("BEING"))(PRIM("VOID"))("E")("x"))(
-        IS(PRIM("BEING"))(PRIM("BEING"))("=")("x")))))))))
+glyph G3 = COLLAPSE(DIR)(COLLAPSE(SYN)(GLYPH("BEING"))(GLYPH("VOID")))(GLYPH("FORM"))
+glyph W1 = CANON(CONT(MC(PRIM("DEPTH")))(SYN(PRIM("BEING"))(PRIM("FORM"))))
+glyph W2 = CANON(MC(KAPPA))
+glyph W3 = concat(LAW_ID(PRIM("LOVE"))("I")("x"))(concat(LAW_NC(PRIM("BEING"))(PRIM("VOID"))("N")("x"))(concat(LAW_EM(PRIM("BEING"))(PRIM("VOID"))("E")("x"))(IS(PRIM("BEING"))(PRIM("BEING"))("=")("x"))))
+glyph W4 = REN(G3)
+glyph W5 = concat("d=")(int_to_str(DEPTH(G3)))
+glyph W6 = AUTO_OK(G3)("A")("h")
+glyph BAR = "|"
+glyph MAIN = print(concat(W1)(concat(BAR)(concat(W2)(concat(BAR)(concat(W3)(concat(BAR)(concat(W4)(concat(BAR)(concat(W5)(concat(BAR)(W6)))))))))))
 LA
-CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE="
+CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|A"
 CKH="$(./tiny_host /tmp/canontest.la 2>/dev/null)"
-[ "$CKH" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ witness wrong on host"; printf 'got: %s\n' "$CKH"; ok=0; }
+[ "$CKH" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ/etymology witness wrong on host"; printf 'got: %s\n' "$CKH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp /tmp/canontest.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 CKV="$(./logos_secd 2>/dev/null)"
-[ "$CKV" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ witness wrong on native VM"; printf 'got: %s\n' "$CKV"; ok=0; }
+[ "$CKV" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ/etymology witness wrong on native VM"; printf 'got: %s\n' "$CKV"; ok=0; }
 rm -f /tmp/canontest.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  canon: SPEC GENERATEs/DEPLOYs canon.la, META_DEBUG verifies κ, IS (≡), and the three laws of thought"
-    echo "PASS  canon: κ deterministic + κ(κ) well-defined; canonical specs byte-identical on host and VM (UTF-8 sigils round-trip)"
+    echo "PASS  canon: SPEC GENERATEs/DEPLOYs canon.la, META_DEBUG verifies κ, IS (≡), the three laws, and the etymology layer"
+    echo "PASS  canon: κ(κ) well-defined; glyphs CONTAIN their etymology (REN ≡ κ(ETYM)); COLLAPSE deepens one monoglyph; byte-identical host/VM"
 else
     printf '%s\n' "$CK"
     exit 1

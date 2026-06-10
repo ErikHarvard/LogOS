@@ -74,6 +74,27 @@ glyph LAW_EM = la a. la b. OR(IS(a)(b))(NOT(IS(a)(b)))
 # κ's canonical self-decomposition: recognition acting on form.
 glyph KAPPA  = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))
 
+# ── etymology layer: the glyph CONTAINS its own etymology (autological) ────────
+# A glyph is a SEALED MONOGLYPH MONO(ren)(etym): its name (the Ren) and its
+# etymological tree, locked so REN(g) = CANON(ETYM(g)) BY CONSTRUCTION — the name
+# IS what it names etymologically (a heterological glyph, whose name floats free
+# of its derivation, is unconstructible). The etymology is CONTAINED in the glyph
+# (ETYM recovers the whole family tree). Neologization is COLLAPSE, not coupling:
+# two monoglyphs collapse into ONE new monoglyph whose etymology DEEPENS — depth
+# grows by one, breadth at the root stays a single sigil. Closed under collapse,
+# so a glyph compresses into depth indefinitely while remaining one monoglyph.
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph MAX  = la m. la n. IF(lt(m)(n))(la _. n)(la _. m)
+glyph TDEPTH = Z(la self. la node. node (la nm. 0) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. add(1)(self(a))))
+glyph MONO = la ren. la etym. la f. f(ren)(etym)
+glyph REN  = la g. g(la r. la e. r)
+glyph ETYM = la g. g(la r. la e. e)
+glyph GLYPH = la name. MONO(name)(PRIM(name))
+glyph COLLAPSE = la mode. la a. la b. (la et. MONO(CANON(et))(et))(mode(ETYM(a))(ETYM(b)))
+glyph MCOLLAPSE = la a. (la et. MONO(CANON(et))(et))(MC(ETYM(a)))
+glyph DEPTH = la g. TDEPTH(ETYM(g))
+glyph AUTO_OK = la g. str_eq(REN(g))(CANON(ETYM(g)))
+
 # ── source strings (what GENERATE writes; behaviourally equal to the values) ──
 glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
 glyph SRC_TRUE  = "la t. la f. t"
@@ -93,6 +114,17 @@ glyph SRC_LAWID = "la a. IS(a)(a)"
 glyph SRC_LAWNC = "la a. la b. NOT(AND(IS(a)(b))(NOT(IS(a)(b))))"
 glyph SRC_LAWEM = "la a. la b. OR(IS(a)(b))(NOT(IS(a)(b)))"
 glyph SRC_KAPPA = "DIR(PRIM(\"RECOGNITION\"))(PRIM(\"FORM\"))"
+glyph SRC_IF    = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_MAX   = "la m. la n. IF(lt(m)(n))(la _. n)(la _. m)"
+glyph SRC_TDEPTH = "Z(la self. la node. node (la nm. 0) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. add(1)(self(a))))"
+glyph SRC_MONO  = "la ren. la etym. la f. f(ren)(etym)"
+glyph SRC_REN   = "la g. g(la r. la e. r)"
+glyph SRC_ETYM  = "la g. g(la r. la e. e)"
+glyph SRC_GLYPH = "la name. MONO(name)(PRIM(name))"
+glyph SRC_COLLAPSE = "la mode. la a. la b. (la et. MONO(CANON(et))(et))(mode(ETYM(a))(ETYM(b)))"
+glyph SRC_MCOLLAPSE = "la a. (la et. MONO(CANON(et))(et))(MC(ETYM(a)))"
+glyph SRC_DEPTH = "la g. TDEPTH(ETYM(g))"
+glyph SRC_AUTO  = "la g. str_eq(REN(g))(CANON(ETYM(g)))"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -150,7 +182,38 @@ glyph CANON_SPEC =
         T3L(TC(la g. CANON(g))("▷(RECOGNITION,FORM)"))                            # κ applied to its own glyph
            (TC(la g. CANON(MC(g)))("↻(▷(RECOGNITION,FORM))"))                     # κ(κ) = ↻(κ) well-defined
            (TC(la g. IS(g)(g)("T")("F"))("T"))))(                                 # κ ≡ κ
-  NIL))))))))))))))))))
+  CONS(E("IF")(":: a -> b -> c -> d")(SRC_IF)(IF)(
+        T2L(TC(la g. g(TRUE)(la _. "y")(la _. "n"))("y"))
+           (TC(la g. g(FALSE)(la _. "y")(la _. "n"))("n"))))(
+  CONS(E("MAX")(":: a -> b -> c")(SRC_MAX)(MAX)(
+        T2L(TC(la g. int_to_str(g(3)(7)))("7"))
+           (TC(la g. int_to_str(g(9)(2)))("9"))))(
+  CONS(E("TDEPTH")("depth of an etymology tree (Z-recursive, trusted)")(SRC_TDEPTH)(TDEPTH)(
+        T2L(TC(la g. int_to_str(g(PRIM("BEING"))))("0"))
+           (TC(la g. int_to_str(g(SYN(PRIM("BEING"))(PRIM("VOID")))))("1"))))(
+  CONS(E("MONO")(":: a -> b -> c -> d")(SRC_MONO)(MONO)(
+        T1L(TC(la g. g("nm")("ety")(la r. la e. concat(r)(e)))("nmety"))))(
+  CONS(E("REN")(":: a -> b")(SRC_REN)(REN)(
+        T1L(TC(la g. g(MONO("nm")("ety")))("nm"))))(
+  CONS(E("ETYM")(":: a -> b")(SRC_ETYM)(ETYM)(
+        T1L(TC(la g. g(MONO("nm")("ety")))("ety"))))(
+  CONS(E("GLYPH")(":: a -> b")(SRC_GLYPH)(GLYPH)(
+        T2L(TC(la g. REN(g("BEING")))("BEING"))                                   # Ren of a primitive monoglyph = its name
+           (TC(la g. CANON(ETYM(g("VOID"))))("VOID"))))(                          # its etymology is contained (= PRIM VOID)
+  CONS(E("COLLAPSE")(":: a -> b -> c -> d")(SRC_COLLAPSE)(COLLAPSE)(
+        T3L(TC(la g. REN(g(DIR)(GLYPH("BEING"))(GLYPH("VOID"))))("▷(BEING,VOID)"))            # collapse → ONE new Ren (not a coupling)
+           (TC(la g. CANON(ETYM(g(SYN)(GLYPH("BEING"))(GLYPH("FORM")))))("⊗(BEING,FORM)"))    # the family tree is maintained inside
+           (TC(la g. AUTO_OK(g(CONT)(GLYPH("DEPTH"))(GLYPH("FORM")))("T")("F"))("T"))))(       # the collapsed glyph stays autological
+  CONS(E("MCOLLAPSE")(":: a -> b")(SRC_MCOLLAPSE)(MCOLLAPSE)(
+        T1L(TC(la g. REN(g(GLYPH("DEPTH"))))("↻(DEPTH)"))))(
+  CONS(E("DEPTH")(":: a -> b")(SRC_DEPTH)(DEPTH)(
+        T3L(TC(la g. int_to_str(g(GLYPH("BEING"))))("0"))                                                                      # primitive monoglyph: depth 0
+           (TC(la g. int_to_str(g(COLLAPSE(SYN)(GLYPH("BEING"))(GLYPH("VOID")))))("1"))                                         # one collapse: depth 1
+           (TC(la g. int_to_str(g(COLLAPSE(DIR)(COLLAPSE(SYN)(GLYPH("BEING"))(GLYPH("VOID")))(GLYPH("FORM")))))("2"))))(        # collapse of a collapse: DEEPER, still one monoglyph
+  CONS(E("AUTO_OK")(":: a -> b")(SRC_AUTO)(AUTO_OK)(
+        T2L(TC(la g. g(GLYPH("LOVE"))("T")("F"))("T"))                                                                          # the name IS the etymology (primitive)
+           (TC(la g. g(COLLAPSE(DIR)(COLLAPSE(SYN)(GLYPH("BEING"))(GLYPH("VOID")))(GLYPH("FORM")))("T")("F"))("T"))))(          # ...and after a deep collapse (autological, not heterological)
+  NIL)))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(CANON_SPEC) ===\n")(GENERATE(CANON_SPEC))))
