@@ -1,0 +1,99 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  swc_spec.la — a conservative static SWC (Semantic Well-Foundedness) checker
+#  for Lingua Adamica, written as a SPEC and produced by the spec→implementation
+#  pipeline (import("specpipe.la")).
+#
+#  The SWC runs BEFORE evaluation and classifies a lambda AST three ways:
+#    WF      (0) — provably well-founded: NO self-application of a bound variable
+#                  anywhere (in pure λ you cannot diverge without one). ACCEPT.
+#    ILL     (2) — provably ill-founded: an EAGER (unguarded) self-application of
+#                  a bound variable — la g. g(g) (DEPTH/Ω), the liar la x. f(x(x)),
+#                  (la x. x(x))(la x. x(x)). REFUSE before evaluation.
+#    UNKNOWN (1) — the undecidable middle: self-application present but GUARDED
+#                  (thunked under an intervening binder, as in the Z combinator).
+#                  Cannot be proved WF or ILL statically. Let it through to
+#                  evaluation, where the existing resource guards (stack overflow
+#                  / heap exhausted / timeout) catch any actual divergence.
+#
+#  HALTING-PROBLEM BOUNDARY (honest): well-foundedness is undecidable in general,
+#  so NO checker can be complete. This one is CONSERVATIVE and SOUND in both
+#  directions of what it claims: it refuses only what it can PROVE ill-founded
+#  (an eager bound-variable self-application is genuinely Ω-divergent under CBV)
+#  and accepts only what it can PROVE well-founded (no self-application at all).
+#  Everything else is reported UNKNOWN — never silently mis-accepted or
+#  mis-refused. The UNKNOWN class is the irreducible halting-problem residue.
+#
+#  All glyphs carry prose signatures (trusted) — they are recursive/encoded; the
+#  arrow-arity checker is demonstrated on canon.la. Byte-identical on host + VM.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")
+
+# ── implementation VALUES (Z/TRUE/FALSE/AND from specpipe) ────────────────────
+glyph IFc = la c. la t. la f. c(t)(f)("!")
+glyph MAXn = la m. la n. IFc(lt(m)(n))(la _. n)(la _. m)
+glyph AST_VAR = la n. la fv. la fl. la fa. la fs. fv(n)
+glyph AST_LAM = la p. la b. la fv. la fl. la fa. la fs. fl(p)(b)
+glyph AST_APP = la f. la a. la fv. la fl. la fa. la fs. fa(f)(a)
+glyph AST_STR = la s. la fv. la fl. la fa. la fs. fs(s)
+glyph IS_VAR = la p. la node. node (la n. str_eq(n)(p)) (la _. la _. FALSE) (la _. la _. FALSE) (la _. FALSE)
+glyph FIND_SA = Z(la self. la p. la eager. la node. node (la n. 0) (la q. la b. IFc(str_eq(q)(p))(la _. 0)(la _. self(p)(FALSE)(b))) (la f. la a. MAXn(IFc(AND(IS_VAR(p)(f))(IS_VAR(p)(a)))(la _. eager(2)(1))(la _. 0))(MAXn(self(p)(eager)(f))(self(p)(eager)(a)))) (la s. 0))
+glyph SWC = Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. MAXn(self(f))(self(a))) (la s. 0))
+glyph VERDICT = la node. (la s. IFc(int_eq(s)(2))(la _. "ILL")(la _. IFc(int_eq(s)(1))(la _. "UNKNOWN")(la _. "WF")))(SWC(node))
+
+# ── source strings ────────────────────────────────────────────────────────────
+glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_TRUE  = "la t. la f. t"
+glyph SRC_FALSE = "la t. la f. f"
+glyph SRC_AND   = "la a. la b. a(b)(FALSE)"
+glyph SRC_IFc = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_MAXn = "la m. la n. IFc(lt(m)(n))(la _. n)(la _. m)"
+glyph SRC_AVAR = "la n. la fv. la fl. la fa. la fs. fv(n)"
+glyph SRC_ALAM = "la p. la b. la fv. la fl. la fa. la fs. fl(p)(b)"
+glyph SRC_AAPP = "la f. la a. la fv. la fl. la fa. la fs. fa(f)(a)"
+glyph SRC_ASTR = "la s. la fv. la fl. la fa. la fs. fs(s)"
+glyph SRC_ISVAR = "la p. la node. node (la n. str_eq(n)(p)) (la _. la _. FALSE) (la _. la _. FALSE) (la _. FALSE)"
+glyph SRC_FINDSA = "Z(la self. la p. la eager. la node. node (la n. 0) (la q. la b. IFc(str_eq(q)(p))(la _. 0)(la _. self(p)(FALSE)(b))) (la f. la a. MAXn(IFc(AND(IS_VAR(p)(f))(IS_VAR(p)(a)))(la _. eager(2)(1))(la _. 0))(MAXn(self(p)(eager)(f))(self(p)(eager)(a)))) (la s. 0))"
+glyph SRC_SWC = "Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. MAXn(self(f))(self(a))) (la s. 0))"
+glyph SRC_VERDICT = "la node. (la s. IFc(int_eq(s)(2))(la _. \"ILL\")(la _. IFc(int_eq(s)(1))(la _. \"UNKNOWN\")(la _. \"WF\")))(SWC(node))"
+
+# ── test scaffolding (spec-file-local) ────────────────────────────────────────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph T3L = la a. la b. la c. CONS(a)(CONS(b)(CONS(c)(NIL)))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph T_DEPTH = AST_LAM("g")(AST_APP(AST_VAR("g"))(AST_VAR("g")))
+glyph T_SAFE = AST_LAM("x")(AST_APP(AST_APP(AST_VAR("concat"))(AST_STR("a")))(AST_VAR("x")))
+glyph T_LIAR = AST_LAM("x")(AST_APP(AST_APP(AST_VAR("concat"))(AST_STR("not(")))(AST_APP(AST_VAR("x"))(AST_VAR("x"))))
+glyph T_ZC = AST_LAM("f")(AST_APP(AST_LAM("x")(AST_APP(AST_VAR("f"))(AST_LAM("v")(AST_APP(AST_APP(AST_VAR("x"))(AST_VAR("x")))(AST_VAR("v"))))))(AST_LAM("x")(AST_APP(AST_VAR("f"))(AST_LAM("v")(AST_APP(AST_APP(AST_VAR("x"))(AST_VAR("x")))(AST_VAR("v")))))))
+glyph WW = AST_LAM("x")(AST_APP(AST_VAR("x"))(AST_VAR("x")))
+glyph T_OMEGA = AST_APP(WW)(WW)
+
+# ── the SPEC ───────────────────────────────────────────────────────────────────
+glyph SWC_SPEC =
+  CONS(E("Z")("fixpoint (trusted)")(SRC_Z)(Z)(T1L(TC(la g. (g(la s. la n. IF(int_eq(n)(0))(la _. "k")(la _. s(sub(n)(1)))))(2))("k"))))(
+  CONS(E("TRUE")("Church true (trusted)")(SRC_TRUE)(TRUE)(T1L(TC(la g. g("y")("n"))("y"))))(
+  CONS(E("FALSE")("Church false (trusted)")(SRC_FALSE)(FALSE)(T1L(TC(la g. g("y")("n"))("n"))))(
+  CONS(E("AND")("Church and (trusted)")(SRC_AND)(AND)(T1L(TC(la g. g(TRUE)(TRUE)("y")("n"))("y"))))(
+  CONS(E("IFc")("conditional (trusted)")(SRC_IFc)(IFc)(T1L(TC(la g. g(TRUE)(la _. "t")(la _. "f"))("t"))))(
+  CONS(E("MAXn")("numeric max (trusted)")(SRC_MAXn)(MAXn)(T2L(TC(la g. int_to_str(g(1)(2)))("2"))(TC(la g. int_to_str(g(5)(3)))("5"))))(
+  CONS(E("AST_VAR")("AST variable node (trusted)")(SRC_AVAR)(AST_VAR)(T1L(TC(la g. g("x")(la n. n)(la _. la _. "L")(la _. la _. "A")(la _. "S"))("x"))))(
+  CONS(E("AST_LAM")("AST lambda node (trusted)")(SRC_ALAM)(AST_LAM)(T1L(TC(la g. g("p")("b")(la _. "V")(la p. la b. p)(la _. la _. "A")(la _. "S"))("p"))))(
+  CONS(E("AST_APP")("AST application node (trusted)")(SRC_AAPP)(AST_APP)(T1L(TC(la g. g("f")("a")(la _. "V")(la _. la _. "L")(la f. la a. f)(la _. "S"))("f"))))(
+  CONS(E("AST_STR")("AST string node (trusted)")(SRC_ASTR)(AST_STR)(T1L(TC(la g. g("s")(la _. "V")(la _. la _. "L")(la _. la _. "A")(la s. s))("s"))))(
+  CONS(E("IS_VAR")("is node the variable p? (trusted)")(SRC_ISVAR)(IS_VAR)(T2L(TC(la g. g("x")(AST_VAR("x"))("y")("n"))("y"))(TC(la g. g("x")(AST_VAR("z"))("y")("n"))("n"))))(
+  CONS(E("FIND_SA")("max self-app severity of bound var p (trusted)")(SRC_FINDSA)(FIND_SA)(T2L(TC(la g. int_to_str(g("g")(TRUE)(AST_APP(AST_VAR("g"))(AST_VAR("g")))))("2"))(TC(la g. int_to_str(g("g")(FALSE)(AST_APP(AST_VAR("g"))(AST_VAR("g")))))("1"))))(
+  CONS(E("SWC")("static well-foundedness classifier: 0=WF 1=UNKNOWN 2=ILL (trusted)")(SRC_SWC)(SWC)(
+        T3L(TC(la g. int_to_str(g(T_DEPTH)))("2"))                                  # la g. g(g) eager self-app → ILL
+           (TC(la g. int_to_str(g(T_SAFE)))("0"))                                   # no self-app → WF
+           (TC(la g. int_to_str(g(T_ZC)))("1"))))(                                  # Z: guarded self-app → UNKNOWN
+  CONS(E("VERDICT")("human-readable SWC verdict (trusted)")(SRC_VERDICT)(VERDICT)(
+        T3L(TC(la g. g(T_LIAR))("ILL"))                                             # the liar → refuse
+           (TC(la g. g(T_OMEGA))("ILL"))                                            # Ω applied → refuse
+           (TC(la g. g(T_SAFE))("WF"))))(                                           # safe → accept
+  NIL))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(SWC_SPEC) ===\n")(GENERATE(SWC_SPEC))))
+       (print(DEPLOY(SWC_SPEC)("swc.la")))

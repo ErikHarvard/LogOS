@@ -95,6 +95,26 @@ glyph MCOLLAPSE = la a. (la et. MONO(CANON(et))(et))(MC(ETYM(a)))
 glyph DEPTH = la g. TDEPTH(ETYM(g))
 glyph AUTO_OK = la g. str_eq(REN(g))(CANON(ETYM(g)))
 
+# ── monosemic normalization: collapse SYNONYMS to one canonical glyph ─────────
+# NORMK is κ with two equivalence theories applied so synonymous decompositions
+# share ONE form (enforcing the monosemic bijection up to the KNOWN algebra):
+#  • commutative-mode normalization — ⊗ (Ontosynthesis) and ⊕ (Ontoconjunction)
+#    are symmetric, so their operands are SORTED (byte-lexicographic) → ⊕(A,B) ≡
+#    ⊕(B,A); ▷ (Ontodirection) and ⊂ (Ontocontainment) are directional, order kept;
+#  • algebraic rewrite — ↻(BEING) ≡ SELF (∃(∃) ≡ SELF), one documented identity
+#    demonstrating the rewrite mechanism. NIS(a)(b) is normalized identity:
+#    a ≡ b iff NORMK(a) = NORMK(b). HONEST BOUND: full semantic equivalence is
+#    undecidable, so this collapses only the DECLARED equivalences (commutativity
+#    + the rewrite set); two decompositions equal under an unlisted identity stay
+#    distinct. Monosemy is enforced up to this theory, extensibly, not absolutely.
+glyph BYTE_LT = la a. la b. lt(str_to_int(ord(a)))(str_to_int(ord(b)))
+glyph LE = Z(la self. la x. la y. IF(str_eq(x)(""))(la _. TRUE)(la _. IF(str_eq(y)(""))(la _. FALSE)(la _. (la hx. la hy. IF(BYTE_LT(hx)(hy))(la _. TRUE)(la _. IF(str_eq(hx)(hy))(la _. self(str_tail(x))(str_tail(y)))(la _. FALSE)))(str_head(x))(str_head(y)))))
+glyph WRAP2 = la sym. la a. la b. concat(sym)(concat("(")(concat(a)(concat(",")(concat(b)(")")))))
+glyph SORT2 = la sym. la a. la b. IF(LE(a)(b))(la _. WRAP2(sym)(a)(b))(la _. WRAP2(sym)(b)(a))
+glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. concat("↻(")(concat(x)(")")))
+glyph NORMK = Z(la self. la node. node (la nm. nm) (la a. la b. SORT2("⊗")(self(a))(self(b))) (la a. la b. SORT2("⊕")(self(a))(self(b))) (la a. la b. WRAP2("▷")(self(a))(self(b))) (la a. la b. WRAP2("⊂")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))
+glyph NIS = la a. la b. str_eq(NORMK(a))(NORMK(b))
+
 # ── source strings (what GENERATE writes; behaviourally equal to the values) ──
 glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
 glyph SRC_TRUE  = "la t. la f. t"
@@ -125,6 +145,13 @@ glyph SRC_COLLAPSE = "la mode. la a. la b. (la et. MONO(CANON(et))(et))(mode(ETY
 glyph SRC_MCOLLAPSE = "la a. (la et. MONO(CANON(et))(et))(MC(ETYM(a)))"
 glyph SRC_DEPTH = "la g. TDEPTH(ETYM(g))"
 glyph SRC_AUTO  = "la g. str_eq(REN(g))(CANON(ETYM(g)))"
+glyph SRC_BYTELT = "la a. la b. lt(str_to_int(ord(a)))(str_to_int(ord(b)))"
+glyph SRC_LE = "Z(la self. la x. la y. IF(str_eq(x)(\"\"))(la _. TRUE)(la _. IF(str_eq(y)(\"\"))(la _. FALSE)(la _. (la hx. la hy. IF(BYTE_LT(hx)(hy))(la _. TRUE)(la _. IF(str_eq(hx)(hy))(la _. self(str_tail(x))(str_tail(y)))(la _. FALSE)))(str_head(x))(str_head(y)))))"
+glyph SRC_WRAP2 = "la sym. la a. la b. concat(sym)(concat(\"(\")(concat(a)(concat(\",\")(concat(b)(\")\")))))"
+glyph SRC_SORT2 = "la sym. la a. la b. IF(LE(a)(b))(la _. WRAP2(sym)(a)(b))(la _. WRAP2(sym)(b)(a))"
+glyph SRC_REWMC = "la x. IF(str_eq(x)(\"BEING\"))(la _. \"SELF\")(la _. concat(\"↻(\")(concat(x)(\")\")))"
+glyph SRC_NORMK = "Z(la self. la node. node (la nm. nm) (la a. la b. SORT2(\"⊗\")(self(a))(self(b))) (la a. la b. SORT2(\"⊕\")(self(a))(self(b))) (la a. la b. WRAP2(\"▷\")(self(a))(self(b))) (la a. la b. WRAP2(\"⊂\")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))"
+glyph SRC_NIS = "la a. la b. str_eq(NORMK(a))(NORMK(b))"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -213,7 +240,25 @@ glyph CANON_SPEC =
   CONS(E("AUTO_OK")(":: a -> b")(SRC_AUTO)(AUTO_OK)(
         T2L(TC(la g. g(GLYPH("LOVE"))("T")("F"))("T"))                                                                          # the name IS the etymology (primitive)
            (TC(la g. g(COLLAPSE(DIR)(COLLAPSE(SYN)(GLYPH("BEING"))(GLYPH("VOID")))(GLYPH("FORM")))("T")("F"))("T"))))(          # ...and after a deep collapse (autological, not heterological)
-  NIL)))))))))))))))))))))))))))))
+  CONS(E("BYTE_LT")("byte order on 1-char strings (trusted)")(SRC_BYTELT)(BYTE_LT)(
+        T1L(TC(la g. g("A")("B")("y")("n"))("y"))))(
+  CONS(E("LE")("byte-lexicographic ≤ on strings (trusted)")(SRC_LE)(LE)(
+        T2L(TC(la g. g("A")("AB")("y")("n"))("y"))(TC(la g. g("B")("A")("y")("n"))("n"))))(
+  CONS(E("WRAP2")("render a binary mode node (trusted)")(SRC_WRAP2)(WRAP2)(
+        T1L(TC(la g. g("⊗")("A")("B"))("⊗(A,B)"))))(
+  CONS(E("SORT2")("render a COMMUTATIVE mode, operands sorted (trusted)")(SRC_SORT2)(SORT2)(
+        T1L(TC(la g. g("⊕")("B")("A"))("⊕(A,B)"))))(                                # B,A sorts to A,B
+  CONS(E("REWRITE_MC")("algebraic rewrite ↻(BEING)→SELF (trusted)")(SRC_REWMC)(REWRITE_MC)(
+        T2L(TC(la g. g("BEING"))("SELF"))(TC(la g. g("X"))("↻(X)"))))(
+  CONS(E("NORMK")("κ with commutative + algebraic normalization (trusted)")(SRC_NORMK)(NORMK)(
+        T3L(TC(la g. g(CON(PRIM("A"))(PRIM("B"))))("⊕(A,B)"))
+           (TC(la g. g(CON(PRIM("B"))(PRIM("A"))))("⊕(A,B)"))                        # ⊕(B,A) normalises to ⊕(A,B)
+           (TC(la g. g(MC(PRIM("BEING"))))("SELF"))))(                               # ↻(BEING) rewrites to SELF
+  CONS(E("NIS")("normalized identity — monosemic ≡ (trusted)")(SRC_NIS)(NIS)(
+        T3L(TC(la g. g(CON(PRIM("A"))(PRIM("B")))(CON(PRIM("B"))(PRIM("A")))("T")("F"))("T"))             # commutative synonym → one glyph
+           (TC(la g. g(MC(PRIM("BEING")))(PRIM("SELF"))("T")("F"))("T"))                                  # algebraic synonym → one glyph
+           (TC(la g. g(DIR(PRIM("A"))(PRIM("B")))(DIR(PRIM("B"))(PRIM("A")))("T")("F"))("F"))))(           # directional → stays distinct
+  NIL))))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(CANON_SPEC) ===\n")(GENERATE(CANON_SPEC))))
