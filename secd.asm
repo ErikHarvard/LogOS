@@ -646,6 +646,41 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi36
+    mov     rsi, rbp
+    mov     rdi, str_socket
+    call    strcmp
+    test    eax, eax
+    je      .bi37
+    mov     rsi, rbp
+    mov     rdi, str_bind
+    call    strcmp
+    test    eax, eax
+    je      .bi38
+    mov     rsi, rbp
+    mov     rdi, str_listen
+    call    strcmp
+    test    eax, eax
+    je      .bi39
+    mov     rsi, rbp
+    mov     rdi, str_accept
+    call    strcmp
+    test    eax, eax
+    je      .bi40
+    mov     rsi, rbp
+    mov     rdi, str_connect
+    call    strcmp
+    test    eax, eax
+    je      .bi41
+    mov     rsi, rbp
+    mov     rdi, str_send
+    call    strcmp
+    test    eax, eax
+    je      .bi42
+    mov     rsi, rbp
+    mov     rdi, str_recv
+    call    strcmp
+    test    eax, eax
+    je      .bi43
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -757,6 +792,27 @@ _start:
     jmp     .pushbi
 .bi36:
     mov     r11, 36
+    jmp     .pushbi
+.bi37:
+    mov     r11, 37
+    jmp     .pushbi
+.bi38:
+    mov     r11, 38
+    jmp     .pushbi
+.bi39:
+    mov     r11, 39
+    jmp     .pushbi
+.bi40:
+    mov     r11, 40
+    jmp     .pushbi
+.bi41:
+    mov     r11, 41
+    jmp     .pushbi
+.bi42:
+    mov     r11, 42
+    jmp     .pushbi
+.bi43:
+    mov     r11, 43
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -901,6 +957,20 @@ _start:
     je      .bi_present
     cmp     r11, 36
     je      .bi_clockgettime
+    cmp     r11, 37
+    je      .bi_socket
+    cmp     r11, 38
+    je      .mkpa                ; bind is curried: bind(fd)(path)
+    cmp     r11, 39
+    je      .bi_listen
+    cmp     r11, 40
+    je      .bi_accept
+    cmp     r11, 41
+    je      .mkpa                ; connect is curried: connect(fd)(path)
+    cmp     r11, 42
+    je      .mkpa                ; send is curried: send(fd)(data)
+    cmp     r11, 43
+    je      .mkpa                ; recv is curried: recv(fd)(maxbytes)
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -946,6 +1016,14 @@ _start:
     je      .bi_inteq2
     cmp     r10, 32
     je      .bi_read2
+    cmp     r10, 38
+    je      .bi_bind2
+    cmp     r10, 41
+    je      .bi_connect2
+    cmp     r10, 42
+    je      .bi_send2
+    cmp     r10, 43
+    je      .bi_recv2
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
@@ -2076,6 +2154,181 @@ _start:
     add     r15, 16
     jmp     .loop
 
+; ── Local (AF_UNIX) sockets — the Tier-0 transport primitives ─────────
+; A minimal, transport-agnostic socket layer: socket/bind/listen/accept on the
+; server side, socket/connect on the client side, send/recv to pass bytes. The
+; address family is fixed to AF_UNIX (1) + SOCK_STREAM (1): a filesystem path
+; names the rendezvous point, so no IP stack or port allocation is needed — the
+; LogosIPC bus can route over a real socket instead of a single pipe. Integers
+; (fds) cross the LA boundary as decimal STRs (desc_atoi/push_dec), and a
+; bind/connect path is a binary-safe STR copied into a sockaddr_un built in
+; pathbuf. All return -errno (as a decimal STR) on failure rather than halting,
+; so a program can recognise and handle a dead peer.
+.bi_socket:                      ; socket("!") → fd of a fresh AF_UNIX stream socket
+    mov     rax, 41              ; socket
+    mov     rdi, 1               ; AF_UNIX
+    mov     rsi, 1               ; SOCK_STREAM
+    xor     rdx, rdx             ; protocol 0
+    syscall
+    call    push_dec             ; fd, or -errno
+    jmp     .loop
+
+.bi_listen:                      ; listen(fd) → 0, or -errno ; r9 = fd desc
+    test    r8, r8               ; fd must be a decimal STR (see .strtype)
+    jnz     .strtype
+    mov     rdi, r9
+    call    desc_atoi
+    mov     rdi, rax             ; fd
+    mov     rsi, 16              ; backlog
+    mov     rax, 50              ; listen
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_accept:                      ; accept(fd) → connected fd, or -errno ; r9 = fd desc
+    test    r8, r8               ; fd must be a decimal STR (see .strtype)
+    jnz     .strtype
+    mov     rdi, r9
+    call    desc_atoi
+    mov     rdi, rax             ; listening fd
+    xor     rsi, rsi             ; addr = NULL (caller's identity not needed)
+    xor     rdx, rdx             ; addrlen = NULL
+    mov     rax, 43              ; accept
+    syscall
+    call    push_dec             ; new per-connection fd, or -errno
+    jmp     .loop
+
+.bi_bind2:                       ; bind(fd)(path) → 0/-errno ; rbp = fd desc, r9 = path
+    test    r8, r8               ; path (a2) must be STR
+    jnz     .strtype
+    cmp     qword [r11+8], 0     ; fd (a1) must be STR
+    jne     .strtype
+    mov     rdi, pathbuf         ; build sockaddr_un: [family u16][sun_path NUL-term]
+    mov     word [rdi], 1        ; sun_family = AF_UNIX (1)
+    add     rdi, 2               ; -> sun_path
+    mov     rcx, [r9]            ; path length
+    mov     rsi, [r9+8]          ; path bytes
+    cmp     rcx, 107             ; sun_path is 108 incl. NUL → path ≤ 107
+    ja      .pathlong
+.bind_cp:
+    test    rcx, rcx
+    je      .bind_cpd
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .bind_cp
+.bind_cpd:
+    mov     byte [rdi], 0        ; NUL-terminate sun_path
+    inc     rdi
+    mov     r11, rdi
+    sub     r11, pathbuf         ; addrlen = 2 + pathlen + 1 (desc_atoi preserves r11)
+    mov     rdi, rbp             ; fd descriptor
+    call    desc_atoi
+    mov     rdi, rax             ; fd
+    mov     rsi, pathbuf         ; &sockaddr_un
+    mov     rdx, r11             ; addrlen
+    mov     rax, 49              ; bind
+    syscall
+    call    push_dec             ; 0, or -errno
+    jmp     .loop
+
+.bi_connect2:                    ; connect(fd)(path) → 0/-errno ; rbp = fd desc, r9 = path
+    test    r8, r8               ; path (a2) must be STR
+    jnz     .strtype
+    cmp     qword [r11+8], 0     ; fd (a1) must be STR
+    jne     .strtype
+    mov     rdi, pathbuf         ; same sockaddr_un build as .bi_bind2
+    mov     word [rdi], 1        ; sun_family = AF_UNIX (1)
+    add     rdi, 2
+    mov     rcx, [r9]
+    mov     rsi, [r9+8]
+    cmp     rcx, 107
+    ja      .pathlong
+.conn_cp:
+    test    rcx, rcx
+    je      .conn_cpd
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .conn_cp
+.conn_cpd:
+    mov     byte [rdi], 0
+    inc     rdi
+    mov     r11, rdi
+    sub     r11, pathbuf         ; addrlen
+    mov     rdi, rbp
+    call    desc_atoi
+    mov     rdi, rax             ; fd
+    mov     rsi, pathbuf
+    mov     rdx, r11             ; addrlen
+    mov     rax, 42              ; connect
+    syscall
+    call    push_dec             ; 0, or -errno (e.g. -ECONNREFUSED)
+    jmp     .loop
+
+.bi_send2:                       ; send(fd)(data) → bytes sent/-errno ; rbp = fd, r9 = data
+    test    r8, r8               ; data (a2) must be STR
+    jnz     .strtype
+    cmp     qword [r11+8], 0     ; fd (a1) must be STR
+    jne     .strtype
+    mov     rdi, rbp             ; fd descriptor
+    call    desc_atoi
+    mov     r11, rax             ; fd
+    mov     rdi, r11             ; sendto(fd, buf, len, 0, NULL, 0)
+    mov     rsi, [r9+8]          ; data ptr
+    mov     rdx, [r9]            ; data len
+    xor     r10, r10             ; flags = 0
+    xor     r8, r8               ; dest_addr = NULL (connected socket)
+    xor     r9, r9               ; addrlen = 0
+    mov     rax, 44              ; sendto
+    syscall
+    call    push_dec             ; bytes sent, or -errno (e.g. -EPIPE)
+    jmp     .loop
+
+.bi_recv2:                       ; recv(fd)(maxbytes) → bytes as a STR ; rbp = fd, r9 = max
+    ; the streaming read of the socket layer — mirrors .bi_read2 (recvfrom with a
+    ; NULL source, since a connected stream socket already knows its peer). Blocks
+    ; until data arrives; maxbytes clamped to 64 MiB to stay within the heap
+    ; margin; -errno/EOF yields the empty string (reusing .read_empty).
+    test    r8, r8               ; both args must be STR (a1 tag at [r11+8], a2 in r8)
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rdi, rbp             ; fd descriptor
+    call    desc_atoi
+    mov     r11, rax             ; fd (desc_atoi preserves r11)
+    mov     rdi, r9              ; maxbytes descriptor
+    call    desc_atoi
+    mov     rdx, rax             ; count
+    mov     rax, 0x4000000       ; clamp to 64 MiB
+    cmp     rdx, rax
+    cmova   rdx, rax
+    mov     rdi, r11             ; fd
+    mov     rsi, r15             ; buffer = heap
+    xor     r10, r10             ; flags = 0
+    xor     r8, r8               ; src_addr = NULL
+    xor     r9, r9               ; addrlen = NULL
+    mov     rax, 45              ; recvfrom
+    syscall
+    test    rax, rax
+    js      .read_empty          ; error/EOF → empty string
+    mov     rdx, rax             ; bytes read = length
+    mov     r10, r15             ; content start
+    add     r15, rax             ; advance past the data
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx
+    mov     [r15+8], r10
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     test    r8, r8               ; code must be a decimal STR; an INT would deref its
     jnz     .strtype             ; payload as a [len][ptr] descriptor (see .strtype)
@@ -2574,6 +2827,13 @@ str_strlen:    db "str_len", 0
 str_drmmode:   db "drm_mode", 0
 str_present:   db "present", 0
 str_clockgettime: db "clock_gettime", 0
+str_socket:    db "socket", 0
+str_bind:      db "bind", 0
+str_listen:    db "listen", 0
+str_accept:    db "accept", 0
+str_connect:   db "connect", 0
+str_send:      db "send", 0
+str_recv:      db "recv", 0
 drm_card:      db "/dev/dri/card0", 0
 drmmsg:        db "secd: drm error", 10
 drmmsg_len     equ $ - drmmsg

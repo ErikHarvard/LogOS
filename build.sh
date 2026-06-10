@@ -814,7 +814,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "9714" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 9714)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "10721" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 10721)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1290,6 +1290,63 @@ CKSEC="$(printf '%s\n' "$CK" | sed -n 1p | cut -d' ' -f1)"
 rm -f /tmp/t_clock.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  clock_gettime: realtime '<sec> <nsec>' (epoch > 2023); bad clockid -> -1, loud (native VM)"
+else
+    exit 1
+fi
+
+say "Sockets: socket/bind/listen/accept/connect/send/recv (AF_UNIX, native VM)"
+# A minimal client-server over a real local socket — the Tier-0 transport the
+# IPC bus can route over instead of a single pipe. The server binds+listens
+# BEFORE forking so the child's connect can't race ahead of accept; the child
+# (client) connects and sends one message, the parent (server) accepts, recvs,
+# and reaps. Then two failure paths: a connect to a path with no listener must
+# return a negative errno (not crash), and a non-string fd must halt loudly
+# (secd: argument is not a string), matching the loud-on-bad-input discipline.
+SOCKP="/tmp/logos_sock_test.$$"
+rm -f "$SOCKP"
+cat > /tmp/t_socket.la <<LAEOF
+glyph SEQ = la a. la b. b
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph PATH = "$SOCKP"
+glyph MAIN =
+  (la srv.
+    SEQ(bind(srv)(PATH))(
+    SEQ(listen(srv))(
+    (la pid.
+      IF(str_eq(pid)("0"))
+        (la _. (la cli.
+            SEQ(connect(cli)(PATH))(
+            SEQ(send(cli)("hello over a real socket"))(
+            exit("0"))))(socket("!")))
+        (la _. (la conn.
+            SEQ(print(concat("server received: ")(recv(conn)("100"))))(
+            SEQ(waitpid(pid))(
+            print("server done")))) (accept(srv)))
+    )(fork("!"))
+    )))(socket("!"))
+LAEOF
+SOUT="$(nrun /tmp/t_socket.la)"
+ok=1
+printf '%s\n' "$SOUT" | grep -qxF "server received: hello over a real socket" || { echo "FAIL  sockets: message not received over socket ($SOUT)"; ok=0; }
+printf '%s\n' "$SOUT" | grep -qxF "server done" || { echo "FAIL  sockets: server did not complete/reap"; ok=0; }
+# connect with no listener -> negative errno, no crash
+rm -f "$SOCKP"
+cat > /tmp/t_connfail.la <<LAEOF
+glyph MAIN = (la c. print(connect(c)("$SOCKP")))(socket("!"))
+LAEOF
+CF="$(nrun /tmp/t_connfail.la)"
+case "$CF" in -[0-9]*) : ;; *) echo "FAIL  sockets: connect to dead path not negative errno ($CF)"; ok=0 ;; esac
+# non-string fd -> loud halt, nonzero exit
+cat > /tmp/t_sockbad.la <<'LAEOF'
+glyph MAIN = send(5)("data")
+LAEOF
+cp /tmp/t_sockbad.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+brc=0; BERR="$(./runner 2>&1 1>/dev/null)" || brc=$?
+[ "$brc" -ne 0 ] || { echo "FAIL  sockets: non-string fd did not halt nonzero"; ok=0; }
+printf '%s' "$BERR" | grep -q 'argument is not a string' || { echo "FAIL  sockets: non-string fd not loud ($BERR)"; ok=0; }
+rm -f /tmp/t_socket.la /tmp/t_connfail.la /tmp/t_sockbad.la "$SOCKP"
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  sockets: client→server message over AF_UNIX; dead-path connect = -errno; non-string fd halts loud"
 else
     exit 1
 fi

@@ -463,7 +463,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 9714 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 10721 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -612,6 +612,25 @@ the LA boundary as decimal strings. Each path/fstype argument is copied into a f
 buffer (`pathbuf`/`fsbuf`); the copy is **bounds-checked** — a path ≥ 4096 bytes
 halts loudly with `secd: path too long` rather than overrunning the buffer into
 `fsbuf` and the GC worklist.
+
+It also lowers a **local-socket layer** (AF_UNIX, `SOCK_STREAM`) — the Tier-0
+transport the LogosIPC bus can route over instead of a single `pipe`:
+`socket("!")` (→ a fresh socket fd), `bind(fd)(path)` and `connect(fd)(path)`
+(a filesystem `path` becomes the rendezvous — a `sockaddr_un` is built in
+`pathbuf`, `sun_path` bounds-checked ≤ 107 bytes), `listen(fd)` (backlog 16),
+`accept(fd)` (→ a fresh per-connection fd), `send(fd)(data)` (`sendto`, → bytes
+sent) and `recv(fd)(maxbytes)` (`recvfrom`, → the bytes as a binary-safe string,
+clamped to 64 MiB like `read`). fds cross as decimal strings; every call returns
+`-errno` as a decimal string on failure (e.g. `connect` to a dead path → `-2`)
+rather than halting, so a program can **recognise** a dead peer — but a
+non-string fd/path/data argument halts loudly with `secd: argument is not a
+string`, like the other guarded builtins. A minimal server binds + listens
+**before** `fork`ing so the child's `connect` can't race ahead of `accept`;
+`build.sh` runs exactly that client→server message pass on the native VM,
+plus the two failure paths. *Honest limits:* AF_UNIX only (no IP/TCP yet),
+pathname sockets only (no abstract namespace, so a stale socket file must be
+unlinked before re-`bind` — the VM has no `unlink` builtin yet), and no
+partial-send/EINTR retry loop.
 
 `reap("!")` is the **orphan-reaping primitive** for an init: it is
 `wait4(-1, &status, 0, NULL)` — block until *any* child terminates and return
