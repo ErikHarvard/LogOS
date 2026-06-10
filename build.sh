@@ -1781,5 +1781,28 @@ for f in new_logos_gen*.bin; do
     printf '  %s  %s\n' "$(md5sum "$f" | cut -d' ' -f1)" "$f"
 done
 
+say "Auto-checkpoint   (tag this commit when the full audit is green)"
+# Reached only when every check above passed (each failure exits 1 earlier),
+# so the audit is clean here. Tag the CURRENT COMMIT as a verified rollback
+# point — but only on a clean working tree, because a dirty tree means the
+# audit tested uncommitted changes the commit would NOT capture (a false
+# checkpoint, exactly the trap we hit by hand). Skip if a verified-* tag
+# already marks this commit. A tagging hiccup must never fail a green build,
+# so every fallible step degrades to a NOTE.
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    echo "NOTE  auto-tag skipped: not a git repository"
+elif [ -n "$(git status --porcelain)" ]; then
+    echo "NOTE  auto-tag skipped: working tree dirty — commit, then re-run to checkpoint"
+elif existing="$(git tag --points-at HEAD | grep '^verified-' || true)"; [ -n "$existing" ]; then
+    echo "NOTE  auto-tag skipped: this commit is already checkpointed ($existing)"
+else
+    tag="verified-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)"
+    if git tag -a "$tag" -m "Full audit (build.sh) passed clean." 2>/dev/null; then
+        echo "TAG   auto-checkpoint: $tag"
+    else
+        echo "NOTE  auto-tag skipped: could not create $tag"
+    fi
+fi
+
 say "LogOS bootstrap complete"
 echo "∃(∃) ≡ ∃"

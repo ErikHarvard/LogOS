@@ -961,6 +961,17 @@ the Word and *then* replicates.
 is created and is byte-identical to `tiny_host`, and a second-generation copy
 reproduces the same Word and the same bytes.
 
+**Auto-checkpoint tags.** When the full audit reaches the end green, `build.sh`
+tags the **current commit** `verified-<date>-<shortsha>` (an annotated tag) as a
+guaranteed rollback point — but **only on a clean working tree** (a dirty tree
+means the audit tested uncommitted changes the commit wouldn't capture, a false
+checkpoint), and it skips if a `verified-*` tag already marks the commit. A
+tagging hiccup degrades to a `NOTE` and never fails an otherwise-green build. So
+every clean-audit state in history is a labelled checkpoint; roll back with
+`git checkout verified-<date>-<shortsha>`. (Hand-named milestone tags like
+`foundation-verified-day5` are separate and not matched by the `verified-*`
+skip.)
+
 ## Debugging Principle
 
 A bug is a **heterological element** — code that does not satisfy its own
