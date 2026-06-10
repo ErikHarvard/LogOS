@@ -785,9 +785,15 @@ Adamica (only `str_eq`/`concat` + the typed layer), so it runs byte-identically
 on the C host and the native VM; `build.sh` checks that realm A's read
 capability opens A's sealed message (`ping/hello`), realm B's foreign capability
 cannot (isolation → denied), and probing the bare box with no capability stays
-opaque (forged → denied), on both engines. *Honest limits:* the secret is a
-string compared by `str_eq`, so unforgeability rests on it being unguessable — a
-real realm mints a large random nonce (LogOS has no randomness source yet); this
+opaque (forged → denied), on both engines. The secret is a string compared by
+`str_eq`, so unforgeability rests on it being unguessable: `BRAND(secret)` takes
+an explicit secret (pure, cross-engine), and **`MINT("!")` brands a realm with a
+fresh 32-byte random nonce** from the `random` entropy builtin — closing the
+former "no randomness source" gap (two `MINT`s give independent nonces 2^256
+apart, so distinct realms cannot read each other's boxes; `build.sh` runs the
+random-nonce demo on the VM, where the foreign-realm `denied` *proves* the two
+nonces differ). `MINT` is VM-only (`random` is a VM syscall builtin); the
+sealer/unsealer mechanism stays pure and cross-engine. *Honest limits:* this
 gates *access* to message contents (the authority/confidentiality model), while
 ciphertext-on-the-wire Γ-seal encryption and capability *revocation* remain
 deferred. Still deferred to later layers, per the Codex: Γ-seal encryption,

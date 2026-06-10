@@ -26,11 +26,13 @@
 #  str_eq/concat + the typed layer), so it runs byte-identically on the C host
 #  and the native VM — verifiable with no transport in the loop.
 #
-#  Honest limits: the secret is a string compared by str_eq, so unforgeability
-#  rests on it being unguessable — a real realm mints a large random nonce (LogOS
-#  has no randomness source yet). This gates ACCESS to message contents (the
-#  authority/confidentiality model); ciphertext-on-the-wire Γ-seal encryption and
-#  capability REVOCATION remain deferred (see logosipc.la's Layer-4 note).
+#  The secret is a string compared by str_eq, so unforgeability rests on it being
+#  unguessable. BRAND(secret) takes an explicit secret (pure, cross-engine);
+#  MINT("!") brands with a fresh 32-byte RANDOM nonce from the `random` entropy
+#  builtin (VM-only) — so a real realm mints an unguessable authority, closing the
+#  former "no randomness source yet" gap. This gates ACCESS to message contents
+#  (the authority/confidentiality model); ciphertext-on-the-wire Γ-seal encryption
+#  and capability REVOCATION remain deferred (see logosipc.la's Layer-4 note).
 # ═══════════════════════════════════════════════════════════════════
 
 import("logosipc.la")           # ENCODE MSG_TYPE MSG_BODY (the typed bus) + (VM-only) CHANNEL/SEND/RECV
@@ -62,6 +64,14 @@ glyph UNSEAL = la secret. la box. box(secret)
 glyph BRAND      = la secret. PAIR(SEAL(secret))(UNSEAL(secret))
 glyph GRANT_SEND = la realm. FST(realm)
 glyph GRANT_RECV = la realm. SND(realm)
+
+# MINT("!") — brand a realm with a fresh RANDOM nonce (32 bytes from the `random`
+# entropy builtin) instead of a fixed string, so the secret is genuinely
+# unguessable. The sealer/unsealer mechanism above is pure and cross-engine;
+# MINT is VM-only (`random` is a VM syscall builtin), so a real realm mints its
+# authority with MINT on the native VM. Two MINTs yield independent nonces (2^256
+# apart), so distinct realms cannot read each other's boxes.
+glyph MINT = la _. BRAND(random("32"))
 
 # ── Capability-gated typed messaging ──
 # CAP_SEND: only a holder of the send capability can mint a sealed typed message.

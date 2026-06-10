@@ -391,6 +391,34 @@ if [ "$ok" -eq 1 ]; then
 else
     exit 1
 fi
+# Random-nonce branding (VM-only): MINT("!") brands a realm with a fresh 32-byte
+# nonce from the `random` builtin instead of a fixed string. Two MINTs give
+# independent nonces, so realm A's box opens for A (authorized) but not for B
+# (foreign = denied) — and that "denied" PROVES the two nonces differ (no entropy
+# → identical nonce → B would leak A's message). VM-only since `random` is a VM
+# builtin; the pure sealer mechanism above already proved cross-engine.
+sed '/^glyph MAIN/,$d' logoscap.la > /tmp/capmint.la
+cat >> /tmp/capmint.la <<'LA'
+glyph MAIN =
+  (la realmA. (la realmB.
+    (la box.
+      SEQ(SHOW_OPEN("authorized = ")(CAP_RECV(GRANT_RECV(realmA))(box))(la w. concat(MSG_TYPE(w))(concat("/")(MSG_BODY(w)))))
+          (SHOW_OPEN("foreign = ")(CAP_RECV(GRANT_RECV(realmB))(box))(la w. concat("LEAKED ")(MSG_TYPE(w)))))
+    (CAP_SEND(GRANT_SEND(realmA))("ping")("hello"))
+  )(MINT("!")))(MINT("!"))
+LA
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/capmint.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+MCAP="$(./logos_secd 2>/dev/null)"
+MCAP_EXPECT="$(printf 'authorized = ping/hello\nforeign = denied')"
+rm -f /tmp/capmint.la logos_secd logos_program.bin logos_source.la
+if [ "$MCAP" = "$MCAP_EXPECT" ]; then
+    echo "PASS  logoscap MINT: random-nonce brands via random(\"32\") — A opens, B (distinct nonce) denied; entropy makes the secret unforgeable (native VM)"
+else
+    echo "FAIL  logoscap MINT: random-nonce branding ($MCAP)"; exit 1
+fi
 
 say "Self-verifying LogOS (metadebug.la — META_DEBUG_SPEC phases 1-4)"
 # One run of metadebug.la emits a labelled line per check; the spec table,
