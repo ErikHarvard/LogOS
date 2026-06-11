@@ -1,0 +1,99 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_poll_live.la — Stage 6, the LIVE multiplexed input loop.
+#
+#  This is the VM-only capstone of Stage 6: the real multi-device event loop,
+#  run manually from a session that can read /dev/input — exactly as DRM scanout
+#  (theourgia_drm.la) and the Stage 4/5 readers are. It is NOT in build.sh (it
+#  needs real devices + a human pressing keys, and it loops forever); the pure
+#  marshalling + dispatch it exercises live is what theourgia_poll.la proves on
+#  every engine.
+#
+#  It opens TWO real input devices, hands their fds to MULTIPLEX, and loops:
+#  poll waits on BOTH at once, and whichever is ready is drained and decoded —
+#  so a keystroke and a mouse move are serviced from one loop, neither blocking
+#  the other. That is the whole point of poll: one thread, many devices.
+#
+#  ── HOW TO RUN ──────────────────────────────────────────────────────
+#  1. Find your keyboard and mouse event numbers:
+#         grep -E 'Name=|Handlers=' /proc/bus/input/devices
+#     (look for the "kbd" handler for the keyboard, "mouse"/"event" for the
+#     pointer) and edit the two open(...) lines below to match.
+#  2. Build the VM toolchain (if not already present from build.sh):
+#         ./tiny_host secd.la            # emits logos_secd (the VM)
+#         cp theourgia_poll_live.la logos_source.la
+#         ./tiny_host codegen.la         # compiles -> logos_program.bin
+#  3. Run it with read access to /dev/input (root or the `input` group):
+#         sudo ./logos_secd
+#     Then press keys and move the mouse — each event prints, labelled by the
+#     fd it came from. Ctrl+C to stop (the loop is endless by design).
+#
+#  No DRM / VT is needed: Stage 6 is the INPUT half (it prints decoded events),
+#  not scanout — a normal terminal with device-read permission suffices. To see
+#  it drive a real screen, wire MULTIPLEX's per-event body into the Stage 5
+#  STEP → compose → TO_FB → present pipeline from a bare VT (the full live
+#  session); here we isolate the multiplexing so it is observable on its own.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia_input.la")    # EV_TYPE EV_CODE EV_VALUE EV_* IS_KEY_PRESS/RELEASE
+
+# ── Church-list + control foundations (as in theourgia_poll.la) ──
+glyph SEQ    = la a. la b. b
+glyph TRUE   = la t. la f. t
+glyph FALSE  = la t. la f. f
+glyph Z      = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF     = la c. la t. la f. c(t)(f)("!")
+glyph PAIR   = la a. la b. la f. f(a)(b)
+glyph FST    = la p. p(la a. la b. a)
+glyph SND    = la p. p(la a. la b. b)
+glyph NIL    = PAIR(FALSE)("")
+glyph CONS   = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── poll marshalling (generation) + recognition, identical to Stage 6's core ──
+glyph JOIN = Z(la self. la l.
+    IF(IS_CONS(l))(la _.
+        (la rest. IF(IS_CONS(rest))
+            (la _. concat(concat(LIST_HD(l))(" "))(self(rest)))
+            (la _. LIST_HD(l)))(LIST_TL(l)))
+    (la _. ""))
+glyph SPLIT_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. NIL)(la _. CONS(tok)(NIL)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. CONS(tok)(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph SPLIT = la s. SPLIT_GO(s)("")
+
+glyph SHOW = la label. la e.
+    print(concat(label)(concat(": type=")(concat(int_to_str(EV_TYPE(e)))
+        (concat(" code=")(concat(int_to_str(EV_CODE(e)))
+        (concat(" value=")(int_to_str(EV_VALUE(e)))))))))
+
+# ── The live machinery: read a ready fd, drain the ready set, loop forever ──
+# LIVE_READ blocks for one 24-byte record; DRAIN services each ready fd in the
+# order poll reported; POLL_READY recognises poll's answer as a list; MULTIPLEX
+# is the endless loop — its self(fds) call is in tail position, and the VM does
+# TCO, so it runs in bounded dump depth indefinitely.
+glyph LIVE_READ = la fd. read(fd)("24")
+glyph DRAIN = Z(la self. la ready.
+    IF(IS_CONS(ready))(la _.
+        (la fd. SEQ(SHOW(concat("fd ")(fd))(LIVE_READ(fd)))
+                    (self(LIST_TL(ready))))(LIST_HD(ready)))
+    (la _. "drained"))
+glyph POLL_READY = la fds. SPLIT(poll(JOIN(fds))("-1"))
+glyph MULTIPLEX = Z(la self. la fds.
+    SEQ(DRAIN(POLL_READY(fds)))(self(fds)))
+
+# ── The two devices to watch — EDIT THESE to your keyboard / mouse event Ns ──
+# (see HOW TO RUN, step 1). They are opened read-only (flags "0" = O_RDONLY);
+# open returns the fd as a decimal string, which JOIN hands straight to poll.
+glyph KBD   = open("/dev/input/event0")("0")
+glyph MOUSE = open("/dev/input/event1")("0")
+
+glyph MAIN =
+    SEQ(print("multiplex: watching event0 + event1 — press keys / move the mouse (Ctrl+C to stop)"))(
+        MULTIPLEX(CONS(KBD)(CONS(MOUSE)(NIL))))

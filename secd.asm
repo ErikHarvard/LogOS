@@ -746,6 +746,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi56
+    mov     rsi, rbp
+    mov     rdi, str_poll
+    call    strcmp
+    test    eax, eax
+    je      .bi57
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -917,6 +922,9 @@ _start:
     jmp     .pushbi
 .bi56:
     mov     r11, 56
+    jmp     .pushbi
+.bi57:
+    mov     r11, 57
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -1101,6 +1109,8 @@ _start:
     je      .bi_getpid
     cmp     r11, 56
     je      .bi_reapnb
+    cmp     r11, 57
+    je      .mkpa                ; poll is curried: poll(fds)(timeout)
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -1166,6 +1176,8 @@ _start:
     je      .bi_kill2
     cmp     r10, 53
     je      .bi_sigprocmask2
+    cmp     r10, 57
+    je      .bi_poll2
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
@@ -2817,6 +2829,114 @@ _start:
     call    push_dec
     jmp     .loop
 
+.bi_poll2:                       ; poll(fds)(timeout) → space-separated ready fds
+    ; General fd multiplexing — the event-loop primitive an interactive session
+    ; needs. fds is a space-separated decimal list of file descriptors to watch
+    ; for readability (POLLIN); timeout is milliseconds (-1 = block forever).
+    ; Builds a struct pollfd array in pathbuf (8 bytes each: int fd, short events,
+    ; short revents), polls(2), and returns the space-separated decimals of the
+    ; fds that became ready (revents != 0 — POLLIN, or POLLERR/POLLHUP on a closed
+    ; peer); the empty string on a timeout with none ready, or "-errno" on error.
+    ; Stateless — unlike epoll's kernel-side registered set — which fits the
+    ; functional LA model: one call waits on signalfd, /dev/input, and sockets at
+    ; once, the whole point of a compositor's input loop. Capped at 512 fds
+    ; (pathbuf is 4 KiB / 8) — more halts loudly rather than overrunning pathbuf.
+    test    r8, r8               ; timeout (a2) must be a decimal STR (see .strtype)
+    jnz     .strtype
+    cmp     qword [r11+8], 0     ; fds (a1) must be STR
+    jne     .strtype
+    mov     rdi, r9              ; timeout descriptor
+    call    desc_atoi
+    mov     [fsbuf], rax         ; stash timeout ms (signed) across the parse + syscall
+    mov     rsi, [rbp+8]         ; fds bytes
+    mov     rcx, [rbp]           ; fds length
+    mov     rdi, pathbuf         ; pollfd write pointer
+    xor     r10, r10             ; current fd accumulator
+    xor     r8, r8               ; have-a-digit flag for the current number
+.poll_parse:
+    test    rcx, rcx
+    jz      .poll_last
+    movzx   rax, byte [rsi]
+    inc     rsi
+    dec     rcx
+    cmp     al, 32               ; space → field separator
+    je      .poll_sep
+    sub     al, 48               ; '0'..'9' → digit
+    cmp     al, 9
+    ja      .poll_parse          ; any stray non-digit byte → skip
+    movzx   rax, al
+    imul    r10, r10, 10
+    add     r10, rax
+    mov     r8, 1
+    jmp     .poll_parse
+.poll_sep:
+    test    r8, r8               ; flush the accumulated fd (skip empty/leading runs)
+    jz      .poll_parse
+    cmp     rdi, pathbuf+4088    ; room for one more 8-byte pollfd?
+    ja      .poll_toomany
+    mov     [rdi], r10d          ; fd
+    mov     word [rdi+4], 1      ; events = POLLIN
+    mov     word [rdi+6], 0      ; revents = 0
+    add     rdi, 8
+    xor     r10, r10
+    xor     r8, r8
+    jmp     .poll_parse
+.poll_last:
+    test    r8, r8               ; flush a trailing fd (no terminating space)
+    jz      .poll_call
+    cmp     rdi, pathbuf+4088
+    ja      .poll_toomany
+    mov     [rdi], r10d
+    mov     word [rdi+4], 1
+    mov     word [rdi+6], 0
+    add     rdi, 8
+.poll_call:
+    mov     rsi, rdi
+    sub     rsi, pathbuf
+    shr     rsi, 3               ; nfds = bytes / 8
+    mov     rdi, pathbuf         ; &pollfds
+    mov     rdx, [fsbuf]         ; timeout ms
+    mov     rax, 7               ; poll
+    syscall                      ; preserves rsi/rdi/rdx (only rax/rcx/r11 clobbered)
+    test    rax, rax
+    js      .poll_fail           ; -errno → "-errno"
+    mov     r10, rsi             ; nfds
+    shl     r10, 3
+    add     r10, rdi             ; r10 = end of the pollfd array
+    mov     rsi, rdi             ; scan pointer = pathbuf
+    mov     rbp, r15             ; result bytes start (heap)
+.poll_scan:
+    cmp     rsi, r10
+    jae     .poll_build
+    movzx   eax, word [rsi+6]    ; revents
+    test    eax, eax
+    jz      .poll_next
+    cmp     r15, rbp             ; not the first ready fd → separate with a space
+    je      .poll_fd
+    mov     byte [r15], 32
+    inc     r15
+.poll_fd:
+    mov     eax, [rsi]           ; fd (non-negative)
+    call    fmt_u_heap           ; preserves rsi/rdi/r10/rbp; clobbers rax/rcx/rdx/r8
+.poll_next:
+    add     rsi, 8
+    jmp     .poll_scan
+.poll_build:
+    mov     rdx, r15
+    sub     rdx, rbp             ; length (0 → empty string when none ready)
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx
+    mov     [r15+8], rbp
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+.poll_fail:
+    call    push_dec             ; rax = -errno
+    jmp     .loop
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     test    r8, r8               ; code must be a decimal STR; an INT would deref its
     jnz     .strtype             ; payload as a [len][ptr] descriptor (see .strtype)
@@ -2963,6 +3083,16 @@ _start:
     mov     rdi, 2               ; stderr
     mov     rsi, pathmsg
     mov     rdx, pathmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
+.poll_toomany:                   ; more poll fds than the pollfd buffer (pathbuf) holds
+    mov     rax, 1
+    mov     rdi, 2               ; stderr
+    mov     rsi, pollmsg
+    mov     rdx, pollmsg_len
     syscall
     mov     rax, 60
     mov     rdi, 1
@@ -3270,6 +3400,8 @@ strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "secd: not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+pollmsg:       db "secd: too many poll fds", 10
+pollmsg_len    equ $ - pollmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
 proc_self_exe: db "/proc/self/exe", 0
@@ -3335,6 +3467,7 @@ str_sigprocmask: db "sigprocmask", 0
 str_signalfd:  db "signalfd", 0
 str_getpid:    db "getpid", 0
 str_reapnb:    db "reapnb", 0
+str_poll:      db "poll", 0
 drm_card:      db "/dev/dri/card0", 0
 drmmsg:        db "secd: drm error", 10
 drmmsg_len     equ $ - drmmsg

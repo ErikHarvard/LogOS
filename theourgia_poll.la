@@ -1,0 +1,137 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_poll.la — the compositor, Stage 6: the multiplexed input loop.
+#
+#  Stage 4 decodes ONE device's events; Stage 5's live session reads ONE fd with
+#  one blocking read. A real compositor has MANY input devices (a keyboard, a
+#  mouse, a touchpad, …) plus a signalfd — and it must service whichever becomes
+#  ready, never blocking on one while another has input waiting. That is exactly
+#  fd multiplexing, and the `poll` VM builtin is the primitive for it:
+#
+#      poll(fds)(timeout)  →  the space-separated decimals of the fds that are
+#                             ready to read ("" on timeout, "-errno" on error)
+#
+#  poll speaks a SPACE-SEPARATED DECIMAL STRING in both directions, so the
+#  marshalling between an fd LIST and poll's wire form is the pure, testable core
+#  of this stage — generation (JOIN: the request) and recognition (SPLIT: the
+#  ready-set), byte-identical on the C host and the native VM with no devices:
+#
+#      JOIN([5,7,9])  = "5 7 9"            (the request handed to poll)
+#      SPLIT("7 5")   = [7,5]              (the ready-set poll handed back)
+#      DRAIN(read)(ready) — service each ready fd in turn (the dispatch reducer)
+#
+#  DRAIN is parameterised by its READER, so the SAME loop body is exercised two
+#  ways: build.sh drives it with a pure SIMREAD lookup (fd → a synthetic event),
+#  proving the multiplex ROUTING — a poll result of several fds reads+decodes each
+#  through the right device, byte-identically; the LIVE loop (MULTIPLEX, VM-only)
+#  drives it with the real `read(fd, 24)` over real /dev/input fds.
+#
+#  The live multi-device loop is the VM-only capstone (it needs poll + real
+#  devices, like DRM scanout and the Stage 4/5 readers), run manually:
+#
+#      MULTIPLEX(CONS(kbd_fd)(CONS(mouse_fd)(NIL)))
+#        = loop forever { ready := SPLIT(poll(JOIN(fds))(-1));
+#                         DRAIN(read_event)(ready) }      # service every ready fd
+#
+#  It `import`s the Stage 4 decoder (theourgia_input.la) so each multiplexed fd's
+#  bytes decode through the same recognition layer — the module system composing
+#  the compositor, as Stage 5 does.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia_input.la")    # EV_TYPE EV_CODE EV_VALUE EV_* IS_KEY_PRESS/RELEASE
+
+# ── Local foundations (Church lists; kept clear of the decoder's isolated privates) ──
+glyph SEQ    = la a. la b. b
+glyph TRUE   = la t. la f. t
+glyph FALSE  = la t. la f. f
+glyph Z      = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF     = la c. la t. la f. c(t)(f)("!")
+glyph PAIR   = la a. la b. la f. f(a)(b)
+glyph FST    = la p. p(la a. la b. a)
+glyph SND    = la p. p(la a. la b. b)
+glyph NIL    = PAIR(FALSE)("")
+glyph CONS   = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── JOIN — an fd list → poll's request string (GENERATION, the Γ side) ──
+# Space-separated, no trailing space: [5,7,9] → "5 7 9". Each element is already
+# a decimal STR (poll, like the rest of the syscall layer, takes ints as strings).
+glyph JOIN = Z(la self. la l.
+    IF(IS_CONS(l))(la _.
+        (la rest. IF(IS_CONS(rest))
+            (la _. concat(concat(LIST_HD(l))(" "))(self(rest)))
+            (la _. LIST_HD(l)))(LIST_TL(l)))
+    (la _. ""))
+
+# ── SPLIT — poll's ready-set string → an fd list (RECOGNITION, the Ρ side) ──
+# The inverse of JOIN over a space-separated string. "" (a poll timeout with none
+# ready) → NIL; runs of spaces collapse (no empty tokens). Tokens come out in the
+# order poll reported them, so DRAIN services them in that order.
+glyph SPLIT_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. NIL)(la _. CONS(tok)(NIL)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. CONS(tok)(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph SPLIT = la s. SPLIT_GO(s)("")
+
+# ── SHOW — render one decoded event (via the imported EV_* accessors) ──
+glyph SHOW = la label. la e.
+    print(concat(label)(concat(": type=")(concat(int_to_str(EV_TYPE(e)))
+        (concat(" code=")(concat(int_to_str(EV_CODE(e)))
+        (concat(" value=")(int_to_str(EV_VALUE(e)))))))))
+
+# ── DRAIN — service each ready fd in turn (the dispatch reducer) ──
+# Parameterised by READER (fd → a 24-byte event string), so the loop body is the
+# same whether READER is the live `read(fd,24)` or the pure SIMREAD below. For
+# each ready fd it reads one event and SHOWs it labelled by fd, then continues —
+# this is the multiplexing: from N watched fds, only the ready ones are read, each
+# routed through the decoder.
+glyph DRAIN = Z(la self. la reader. la ready.
+    IF(IS_CONS(ready))(la _.
+        (la fd. SEQ(SHOW(concat("fd ")(fd))(reader(fd)))
+                    (self(reader)(LIST_TL(ready))))(LIST_HD(ready)))
+    (la _. "drained"))
+
+# ── Live multi-device loop (VM-only: poll + read are VM syscall builtins) ──
+# POLL_READY asks poll which of `fds` are readable and recognises the answer as a
+# list; LIVE_READ pulls one 24-byte record off a ready fd; MULTIPLEX loops them
+# forever. Never reached by MAIN (so `poll`/`read` stay unresolved on the C host,
+# exactly as Stage 4's WATCH leaves `read` unresolved) — exercised manually on the
+# VM from a session that can read /dev/input.
+glyph POLL_READY = la fds. la timeout. SPLIT(poll(JOIN(fds))(timeout))
+glyph LIVE_READ  = la fd. read(fd)("24")
+glyph MULTIPLEX  = Z(la self. la fds.
+    SEQ(DRAIN(LIVE_READ)(POLL_READY(fds)("-1")))(self(fds)))
+
+# ── BYTES: space-separated decimals → the binary they denote (as in elf.la) ──
+glyph BYTES = la s.
+    Z(la self. la rest. la tok. la out.
+        IF(str_eq(rest)(""))(la _.
+            IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok)))
+        )(la _.
+        IF(str_eq(str_head(rest))(" "))(la _.
+            self(str_tail(rest))("")(IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok))))
+        )(la _.
+            self(str_tail(rest))(concat(tok)(str_head(rest)))(out)
+        ))
+    )(s)("")("")
+
+# ── The testable demo: a two-device multiplex, simulated purely ──
+# SIMREAD stands in for a real device read: fd "5" is the keyboard (a KEY_A
+# press), any other fd is the mouse (a REL_X motion of -3). A poll result of
+# "7 5" (both ready) thus drains the mouse then the keyboard — proving the
+# multiplexed dispatch routes each fd through the decoder, byte-identically.
+glyph EVENT_KEY_A = BYTES("0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 30 0 1 0 0 0")
+glyph EVENT_REL_X = BYTES("0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2 0 0 0 253 255 255 255")
+glyph SIMREAD = la fd. IF(str_eq(fd)("5"))(la _. EVENT_KEY_A)(la _. EVENT_REL_X)
+
+glyph DEV_LIST = CONS("5")(CONS("7")(CONS("9")(NIL)))
+glyph MAIN =
+    SEQ(print(concat("join=")(JOIN(DEV_LIST))))(
+    SEQ(print(concat("rt=")(JOIN(SPLIT("5 7 9")))))(
+    SEQ(print(concat("empty=")(JOIN(SPLIT("")))))(
+    DRAIN(SIMREAD)(SPLIT("7 5")))))

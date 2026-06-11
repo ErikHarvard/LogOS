@@ -1010,7 +1010,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "12667" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 12667)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "13136" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 13136)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1420,6 +1420,40 @@ else
     exit 1
 fi
 
+say "Theourgia: multiplexed input loop — poll(fds) marshalling + dispatch (Stage 6)"
+# Stage 6 (theourgia_poll.la) is the multi-device input loop. A real compositor
+# has many input devices + a signalfd and must service whichever is ready, never
+# blocking on one while another waits — that is fd multiplexing, and the `poll`
+# VM builtin (added alongside this stage) is the primitive. poll speaks a
+# space-separated decimal fd string both ways, so the pure, testable core is the
+# marshalling — JOIN (fd list -> poll's request, generation) and SPLIT (poll's
+# ready-set -> fd list, recognition) — plus DRAIN, the dispatch reducer, which is
+# parameterised by its reader so build.sh drives it with a pure SIMREAD (the live
+# loop, theourgia_poll_live.la, uses the real read()). We check JOIN, the
+# SPLIT∘JOIN round-trip, the empty (timeout) ready-set, and the headline: a poll
+# result of "7 5" drains BOTH devices — fd 7 (mouse, REL_X -3) then fd 5
+# (keyboard, KEY_A press) — each routed through the imported Stage 4 decoder,
+# byte-identical on the C host and the native VM. (The live poll+read multi-device
+# loop is the VM-only capstone, run manually like DRM scanout and the Stage 4/5
+# readers; see theourgia_poll_live.la.)
+ok=1
+EXPECT="$(printf 'join=5 7 9\nrt=5 7 9\nempty=\nfd 7: type=2 code=0 value=-3\nfd 5: type=1 code=30 value=1')"
+HP="$(./tiny_host theourgia_poll.la 2>/dev/null)"
+[ "$HP" = "$EXPECT" ] || { echo "FAIL  theourgia_poll (C host): mismatch"; printf '%s\n' "$HP"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp theourgia_poll.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+VP="$(./logos_secd 2>/dev/null)"
+[ "$VP" = "$EXPECT" ] || { echo "FAIL  theourgia_poll (native VM): mismatch"; printf '%s\n' "$VP"; ok=0; }
+[ "$HP" = "$VP" ] || { echo "FAIL  theourgia_poll: host and VM differ"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  theourgia: multiplexed input loop — JOIN/SPLIT poll marshalling + DRAIN dispatch routes a ready-set through the decoder, byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile
@@ -1677,6 +1711,58 @@ printf '%s' "$BERR" | grep -q 'argument is not a string' || { echo "FAIL  random
 rm -f /tmp/t_rand.la /tmp/t_randbad.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  random: getrandom shape (16; 300→256 clamp), entropy (calls differ), empty edge, non-string halts loud (native VM)"
+else
+    exit 1
+fi
+
+say "poll: general fd multiplexing (VM builtin; the event-loop primitive)"
+# poll(fds)(timeout) → space-separated ready fds, "" on timeout, "-errno" on error.
+# fds is a space-separated decimal list; timeout is ms (-1 = block). The whole
+# point is waiting on MANY fds at once (signalfd, /dev/input, sockets) in one
+# loop — what the Theourgia session needs. We exercise it with two signalfds
+# (each a single decimal fd, no split needed): block SIGUSR1 (sigset bit 1<<9 =
+# 512) + SIGUSR2 (1<<11 = 2048; SIGUSR2 = signo 12), make a signalfd for each,
+# and check three things —
+#   (a) idle: poll one signalfd for 100ms with nothing pending → "" (timeout);
+#   (b) multiplex+select: raise SIGUSR1, poll BOTH fds (-1, block) → returns
+#       exactly s1 (the ready one), not s2 — so the call waits on the set and
+#       returns only what's ready;
+#   (c) the returned value is exactly s1's fd (str_eq), proving it's the real fd.
+cat > /tmp/t_poll.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph MAIN =
+  SEQ(print(concat("block=")(sigprocmask("0")("2560"))))(
+  (la s1.
+  (la s2.
+    SEQ(print(concat("idle=")(poll(s1)("100"))))(
+    SEQ(kill(getpid("!"))("10"))(
+    (la ready.
+      SEQ(print(concat("ready=")(ready)))(
+      SEQ(print(concat("isS1=")(str_eq(ready)(s1)("YES")("NO"))))(
+      print(concat("eqS2=")(str_eq(ready)(s2)("YES")("NO")))))
+    )(poll(concat(concat(s1)(" "))(s2))("-1"))))
+  )(signalfd("2048"))
+  )(signalfd("512")))
+LAEOF
+PL="$(nrun /tmp/t_poll.la)"
+ok=1
+printf '%s\n' "$PL" | grep -qxF "block=0"  || { echo "FAIL  poll: sigprocmask block ($PL)"; ok=0; }
+printf '%s\n' "$PL" | grep -qxF "idle="    || { echo "FAIL  poll: idle fd not empty on timeout ($PL)"; ok=0; }
+printf '%s\n' "$PL" | grep -qxF "isS1=YES" || { echo "FAIL  poll: ready fd is not the signalled fd s1 ($PL)"; ok=0; }
+printf '%s\n' "$PL" | grep -qxF "eqS2=NO"  || { echo "FAIL  poll: unsignalled fd s2 was wrongly returned ($PL)"; ok=0; }
+# the ready= line must carry exactly one fd (no space) — multiplexing returned
+# only the ready descriptor, not the whole watched set.
+RLINE="$(printf '%s\n' "$PL" | sed -n 's/^ready=//p')"
+case "$RLINE" in *" "*) echo "FAIL  poll: ready set has >1 fd ($PL)"; ok=0 ;; "") echo "FAIL  poll: ready set empty after signal ($PL)"; ok=0 ;; esac
+# loud-on-bad-input: a non-string fds list halts loudly, nonzero exit.
+printf 'glyph MAIN = poll(5)("0")\n' > /tmp/t_pollbad.la
+cp /tmp/t_pollbad.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+prc=0; PERR="$(./runner 2>&1 1>/dev/null)" || prc=$?
+[ "$prc" -ne 0 ] || { echo "FAIL  poll: non-string fds arg did not halt nonzero"; ok=0; }
+printf '%s' "$PERR" | grep -q 'argument is not a string' || { echo "FAIL  poll: non-string fds arg not loud ($PERR)"; ok=0; }
+rm -f /tmp/t_poll.la /tmp/t_pollbad.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  poll: idle→timeout(\"\"), multiplex two signalfds→returns only the ready one, non-string halts loud (native VM)"
 else
     exit 1
 fi

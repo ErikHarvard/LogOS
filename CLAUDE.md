@@ -41,6 +41,8 @@ host program, applied to itself, reproduces itself.
 | `theourgia_fb.la`    | Theourgia Stage 3: the framebuffer bridge. `import`s the Stage 1 surface core and adds `TO_FB`, converting a composed RGB scene into the XRGB8888 framebuffer image `present` scans out (R,G,B→B,G,R,0; pitch/height zero-pad). Pure generation — byte-identical on the C host and native VM. |
 | `theourgia_input.la` | Theourgia Stage 4: the input layer. Decodes Linux `evdev` records (24-byte `struct input_event`: type/code/value, little-endian incl. signed deltas) with `ord` + arithmetic — pure recognition, byte-identical on the C host and native VM. A VM-only live reader (`WATCH`) opens a real `/dev/input` device via the existing `open`/`read`/`close` builtins. |
 | `theourgia_session.la` | Theourgia Stage 5: the interactive session. `import`s the Stage 1 surface core and the Stage 4 decoder; `STEP` is a pure reducer folding a decoded event into scene state (a movable window's x,y), then `RENDER` recomposes and rasters. Deterministic — byte-identical on the C host and native VM. The live device→screen loop is the VM-only capstone. |
+| `theourgia_poll.la` | Theourgia Stage 6: the multiplexed input loop. `import`s the Stage 4 decoder and adds the `poll`-based event loop a real compositor needs — one loop waiting on MANY input devices + a signalfd at once. `poll` speaks a space-separated decimal fd string both ways, so the testable core is the marshalling: `JOIN` (fd list → poll's request, generation) and `SPLIT` (poll's ready-set → fd list, recognition), plus `DRAIN`, a dispatch reducer parameterised by its reader. build.sh drives `DRAIN` with a pure `SIMREAD` — a poll result of two ready fds reads+decodes each through the decoder — byte-identical on host and VM. See the Stage 6 section. |
+| `theourgia_poll_live.la` | Theourgia Stage 6 capstone (VM-only, run manually): the real multi-device loop. `import`s the Stage 4 decoder; `MULTIPLEX(fds)` loops `SPLIT(poll(JOIN(fds))("-1"))` then `DRAIN`s each ready fd with a real `read(fd, 24)`, so a keystroke and a mouse move are serviced from one loop, neither blocking the other. Opens two real `/dev/input` devices; run with device-read permission (`sudo`), Ctrl+C to stop. Not in build.sh (needs real devices + a human + loops forever), like DRM scanout. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -466,7 +468,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 12667 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 13136 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -675,6 +677,28 @@ plus the two failure paths. *Honest limits:* AF_UNIX only (no IP/TCP yet),
 pathname sockets only (no abstract namespace, so a stale socket file must be
 unlinked before re-`bind` — the VM has no `unlink` builtin yet), and no
 partial-send/EINTR retry loop.
+
+It also lowers **`poll(fds)(timeout)`** (poll, 7) — the **fd-multiplexing**
+primitive that ties the signal, socket, and input layers into ONE event loop. A
+real event-driven process (a compositor, a supervisor) waits on MANY fds at once
+— a signalfd, several `/dev/input` devices, sockets — and services whichever
+becomes readable, never blocking on one while another has data. `poll` is the
+syscall for that, and it is kept **stateless** to fit the functional LA model
+(unlike `epoll`, whose kernel-side registered set needs a persistent epoll fd +
+`epoll_ctl` registration calls): it speaks a **space-separated decimal string**
+both ways. `fds` is the watched set (each watched for `POLLIN`); `timeout` is
+milliseconds (`-1` blocks forever). It returns the space-separated decimals of
+the fds that became ready (`revents != 0`, so a `POLLHUP`/`POLLERR` closed peer
+also surfaces — the loop reads it and sees EOF), the **empty string** on a
+timeout with none ready, or `-errno` on error. The pollfd array is built in
+`pathbuf` (8 bytes each), **capped at 512 fds** — more halts loudly with `secd:
+too many poll fds` rather than overrunning the buffer; a non-string `fds`/`timeout`
+argument halts loudly with `secd: argument is not a string`, like the other
+guarded builtins. `build.sh` exercises it on the native VM with two signalfds:
+an idle poll times out to `""`, then after raising SIGUSR1, polling BOTH fds
+returns *only* the ready one (multiplex + selectivity), plus the non-string
+loud-halt path. This is what `theourgia_poll.la` (Stage 6) marshals over: `JOIN`
+builds the request, `SPLIT` recognises the ready-set, `DRAIN` dispatches each.
 
 `reap("!")` is the **orphan-reaping primitive** for an init: it is
 `wait4(-1, &status, 0, NULL)` — block until *any* child terminates and return
@@ -968,6 +992,35 @@ The compositor is built in stages, each independently runnable and checked by
   (Stage 3) → `present` (Stage 2) — run manually from a bare VT, exactly as DRM
   scanout and the input reader are; the pure reducer is the part `build.sh`
   verifies on every engine.
+
+- **Stage 6 — the multiplexed input loop (`theourgia_poll.la`).** Stages 4-5
+  read a *single* input device with one blocking `read`. A real compositor has
+  MANY input devices — a keyboard, a mouse, a touchpad — plus a signalfd, and it
+  must service whichever is ready, never blocking on one while another has input
+  waiting. That is **fd multiplexing**, and the `poll` VM builtin (added with
+  this stage — see the syscall section) is the primitive. `poll` speaks a
+  **space-separated decimal fd string** both ways, so the pure, testable core of
+  the stage is the marshalling between an fd *list* and poll's wire form — a
+  clean **Γ/Ρ split**: **`JOIN`** (fd list → poll's request, *generation*) and
+  **`SPLIT`** (poll's ready-set → fd list, *recognition*), plus **`DRAIN`**, the
+  dispatch reducer that services each ready fd in turn. `DRAIN` is
+  **parameterised by its reader**, so the *same* loop body runs two ways: a pure
+  `SIMREAD` (fd → a synthetic event) under `build.sh`, and the real
+  `read(fd, 24)` in the live loop. It `import`s the Stage 4 decoder so each
+  multiplexed fd's bytes decode through the same recognition layer (the module
+  system composing the compositor, as Stage 5 does). Because the core is pure
+  Lingua Adamica, it runs **byte-identically on the C host and the native VM**:
+  `build.sh` checks `JOIN`, the `SPLIT∘JOIN` round-trip, the empty (timeout)
+  ready-set, and the headline — a poll result of `"7 5"` drains BOTH devices,
+  fd 7 (mouse, REL_X −3) then fd 5 (keyboard, KEY_A press), each routed through
+  the decoder. The **live multi-device loop** (`theourgia_poll_live.la`,
+  VM-only) is the capstone: `MULTIPLEX(fds)` loops `SPLIT(poll(JOIN(fds))("-1"))`
+  then `DRAIN`s every ready fd with a real `read` — its `self(fds)` is in tail
+  position and the VM does TCO, so it runs forever in bounded dump depth. It
+  opens two real `/dev/input` devices and is run manually with device-read
+  permission (`sudo`), exactly as DRM scanout and the Stage 4/5 readers are; the
+  marshalling + dispatch it drives live is the part `build.sh` verifies on every
+  engine.
 
 ### The nine primitives (`primitives.la`) and compile-time typing (`specpipe.la`)
 
