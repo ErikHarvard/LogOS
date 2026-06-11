@@ -466,7 +466,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 11025 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 12571 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -624,6 +624,38 @@ the LA boundary as decimal strings. Each path/fstype argument is copied into a f
 buffer (`pathbuf`/`fsbuf`); the copy is **bounds-checked** — a path ≥ 4096 bytes
 halts loudly with `secd: path too long` rather than overrunning the buffer into
 `fsbuf` and the GC worklist.
+
+It lowers a **Tier-0 filesystem layer** (VM-only) over the same conventions —
+paths as binary-safe strings (copied into `pathbuf`/`fsbuf`, bounds-checked like
+the rest), integer args as decimal strings, every call returning `0`/the result
+value or `-errno` as a decimal string, and a non-string argument halting loudly
+with `secd: argument is not a string`: `mkdir(path)(mode)` (syscall 83),
+`rmdir(path)` (84), `rename(old)(new)` (82, old in `pathbuf`, new in `fsbuf` like
+`mount`'s two paths), `chmod(path)(mode)` (90), `lseek(fd)(offset)` (8, whence
+fixed to `SEEK_SET` — the common case; returns the new offset), and
+`stat(path)` (4), which returns `"<st_mode> <st_size>"` (two decimals, e.g.
+`16895 4096` = `S_IFDIR|0777` and the size) or `-errno` (`-2` = `-ENOENT`). The
+`struct stat` lands in `fsbuf`; `st_mode` is the u32 at offset 24, `st_size` the
+s64 at offset 48. With them LogOS can create/remove/move/inspect/permission-set
+and seek within files natively — the substrate a real filesystem-using program
+(or a self-hosting build) needs.
+
+It also lowers a **Tier-0 signal layer** (VM-only). A pure call-by-value closure
+machine cannot host an *asynchronous* handler, so signals use the **synchronous,
+fd-based** model: `sigprocmask(how)(mask)` (rt_sigprocmask, 14) blocks/unblocks a
+signal set (`how` 0/1/2 = BLOCK/UNBLOCK/SETMASK; `mask` a 64-bit sigset as a
+decimal — bit `signo-1` selects a signal, built in `pathbuf`), then
+`signalfd(mask)` (signalfd4, 289, fd −1 / flags 0) returns an fd from which the
+existing `read(fd)("128")` drains one 128-byte `signalfd_siginfo` per pending
+signal (`ssi_signo` is the first u32, little-endian, so `ord(str_head(·))` is the
+signal number for `signo < 256`). `kill(pid)(sig)` (62) sends, and `getpid("!")`
+(39, arg ignored) lets a process address itself — so a process can block a
+signal, arm a signalfd, signal itself, and read it back, all without an async
+trampoline. This is what an init or supervisor wants: block `SIGCHLD`/`SIGTERM`,
+then handle them off an fd in the normal `read` loop. `build.sh` runs exactly
+this round-trip on the native VM (mkdir→…→rmdir, open/lseek/read, then block
+SIGUSR1 / signalfd / kill self / read back `signo=10`), plus the loud-halt path
+for a non-string argument.
 
 It also lowers a **local-socket layer** (AF_UNIX, `SOCK_STREAM`) — the Tier-0
 transport the LogosIPC bus can route over instead of a single `pipe`:

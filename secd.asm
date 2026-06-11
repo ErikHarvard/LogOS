@@ -691,6 +691,56 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi45
+    mov     rsi, rbp
+    mov     rdi, str_mkdir
+    call    strcmp
+    test    eax, eax
+    je      .bi46
+    mov     rsi, rbp
+    mov     rdi, str_rmdir
+    call    strcmp
+    test    eax, eax
+    je      .bi47
+    mov     rsi, rbp
+    mov     rdi, str_rename
+    call    strcmp
+    test    eax, eax
+    je      .bi48
+    mov     rsi, rbp
+    mov     rdi, str_stat
+    call    strcmp
+    test    eax, eax
+    je      .bi49
+    mov     rsi, rbp
+    mov     rdi, str_chmod
+    call    strcmp
+    test    eax, eax
+    je      .bi50
+    mov     rsi, rbp
+    mov     rdi, str_lseek
+    call    strcmp
+    test    eax, eax
+    je      .bi51
+    mov     rsi, rbp
+    mov     rdi, str_kill
+    call    strcmp
+    test    eax, eax
+    je      .bi52
+    mov     rsi, rbp
+    mov     rdi, str_sigprocmask
+    call    strcmp
+    test    eax, eax
+    je      .bi53
+    mov     rsi, rbp
+    mov     rdi, str_signalfd
+    call    strcmp
+    test    eax, eax
+    je      .bi54
+    mov     rsi, rbp
+    mov     rdi, str_getpid
+    call    strcmp
+    test    eax, eax
+    je      .bi55
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -829,6 +879,36 @@ _start:
     jmp     .pushbi
 .bi45:
     mov     r11, 45
+    jmp     .pushbi
+.bi46:
+    mov     r11, 46
+    jmp     .pushbi
+.bi47:
+    mov     r11, 47
+    jmp     .pushbi
+.bi48:
+    mov     r11, 48
+    jmp     .pushbi
+.bi49:
+    mov     r11, 49
+    jmp     .pushbi
+.bi50:
+    mov     r11, 50
+    jmp     .pushbi
+.bi51:
+    mov     r11, 51
+    jmp     .pushbi
+.bi52:
+    mov     r11, 52
+    jmp     .pushbi
+.bi53:
+    mov     r11, 53
+    jmp     .pushbi
+.bi54:
+    mov     r11, 54
+    jmp     .pushbi
+.bi55:
+    mov     r11, 55
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -991,6 +1071,26 @@ _start:
     je      .bi_unlink
     cmp     r11, 45
     je      .bi_random
+    cmp     r11, 46
+    je      .mkpa                ; mkdir is curried: mkdir(path)(mode)
+    cmp     r11, 47
+    je      .bi_rmdir
+    cmp     r11, 48
+    je      .mkpa                ; rename is curried: rename(old)(new)
+    cmp     r11, 49
+    je      .bi_stat
+    cmp     r11, 50
+    je      .mkpa                ; chmod is curried: chmod(path)(mode)
+    cmp     r11, 51
+    je      .mkpa                ; lseek is curried: lseek(fd)(offset)
+    cmp     r11, 52
+    je      .mkpa                ; kill is curried: kill(pid)(sig)
+    cmp     r11, 53
+    je      .mkpa                ; sigprocmask is curried: sigprocmask(how)(mask)
+    cmp     r11, 54
+    je      .bi_signalfd
+    cmp     r11, 55
+    je      .bi_getpid
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -1044,6 +1144,18 @@ _start:
     je      .bi_send2
     cmp     r10, 43
     je      .bi_recv2
+    cmp     r10, 46
+    je      .bi_mkdir2
+    cmp     r10, 48
+    je      .bi_rename2
+    cmp     r10, 50
+    je      .bi_chmod2
+    cmp     r10, 51
+    je      .bi_lseek2
+    cmp     r10, 52
+    je      .bi_kill2
+    cmp     r10, 53
+    je      .bi_sigprocmask2
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
@@ -2414,6 +2526,269 @@ _start:
     add     r15, 16
     jmp     .loop
 
+; ── Tier 0: filesystem operations (VM-only). Each takes its path as a STR and
+;    its integer args as decimal STRs; returns 0/-errno (or the result value)
+;    as a decimal STR via push_dec. A non-string arg halts loudly (.strtype),
+;    a path ≥ 4096 bytes with .pathlong — like the other syscall builtins. ──
+.bi_mkdir2:                      ; mkdir(path)(mode) ; rbp = path, r9 = mode
+    test    r8, r8               ; both args STR (a1 tag at [r11+8], a2 in r8)
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rcx, [rbp]
+    mov     rsi, [rbp+8]
+    mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
+.mk_cp:
+    test    rcx, rcx
+    je      .mk_d
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .mk_cp
+.mk_d:
+    mov     byte [rdi], 0
+    mov     rdi, r9
+    call    desc_atoi            ; mode
+    mov     rsi, rax
+    mov     rdi, pathbuf
+    mov     rax, 83              ; mkdir(path, mode)
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_rmdir:                       ; rmdir(path) ; r9 = path
+    test    r8, r8
+    jnz     .strtype
+    mov     rcx, [r9]
+    mov     rsi, [r9+8]
+    mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
+.rd_cp:
+    test    rcx, rcx
+    je      .rd_d
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .rd_cp
+.rd_d:
+    mov     byte [rdi], 0
+    mov     rdi, pathbuf
+    mov     rax, 84              ; rmdir
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_rename2:                     ; rename(old)(new) ; rbp = old, r9 = new
+    test    r8, r8               ; both paths STR
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rcx, [rbp]           ; old → pathbuf
+    mov     rsi, [rbp+8]
+    mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
+.rn_o:
+    test    rcx, rcx
+    je      .rn_od
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .rn_o
+.rn_od:
+    mov     byte [rdi], 0
+    mov     rcx, [r9]            ; new → fsbuf (second path, like mount's fstype)
+    mov     rsi, [r9+8]
+    mov     rdi, fsbuf
+    cmp     rcx, 4095
+    ja      .pathlong
+.rn_n:
+    test    rcx, rcx
+    je      .rn_nd
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .rn_n
+.rn_nd:
+    mov     byte [rdi], 0
+    mov     rdi, pathbuf         ; oldpath
+    mov     rsi, fsbuf           ; newpath
+    mov     rax, 82              ; rename
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_stat:                        ; stat(path) → "<st_mode> <st_size>" or -errno ; r9 = path
+    test    r8, r8
+    jnz     .strtype
+    mov     rcx, [r9]
+    mov     rsi, [r9+8]
+    mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
+.sf_cp:
+    test    rcx, rcx
+    je      .sf_d
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .sf_cp
+.sf_d:
+    mov     byte [rdi], 0
+    mov     rdi, pathbuf
+    mov     rsi, fsbuf           ; struct stat (144 bytes) fits in fsbuf's 4 KiB
+    mov     rax, 4               ; stat(path, statbuf)
+    syscall
+    test    rax, rax
+    js      .sf_err              ; -errno → decimal string (e.g. -2 = ENOENT)
+    mov     r10, r15             ; content start on the heap
+    mov     eax, [fsbuf + 24]    ; st_mode (u32 @ 24): type bits | permission bits
+    call    fmt_u_heap
+    mov     byte [r15], 32       ; ' ' separator
+    inc     r15
+    mov     rax, [fsbuf + 48]    ; st_size (s64 @ 48, ≥ 0 for real files)
+    call    fmt_u_heap
+    mov     rdx, r15             ; length = r15 - content start
+    sub     rdx, r10
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     [r15], rdx
+    mov     [r15+8], r10
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+.sf_err:
+    call    push_dec             ; rax = -errno
+    jmp     .loop
+
+.bi_chmod2:                      ; chmod(path)(mode) ; rbp = path, r9 = mode
+    test    r8, r8
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rcx, [rbp]
+    mov     rsi, [rbp+8]
+    mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
+.ch_cp:
+    test    rcx, rcx
+    je      .ch_d
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .ch_cp
+.ch_d:
+    mov     byte [rdi], 0
+    mov     rdi, r9
+    call    desc_atoi            ; mode
+    mov     rsi, rax
+    mov     rdi, pathbuf
+    mov     rax, 90              ; chmod(path, mode)
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_lseek2:                      ; lseek(fd)(offset) → new offset ; whence=SEEK_SET(0)
+    test    r8, r8               ; rbp = fd, r9 = offset (both decimal STR)
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rdi, rbp
+    call    desc_atoi            ; fd
+    mov     r11, rax             ; stash fd (desc_atoi preserves r11; syscall not yet)
+    mov     rdi, r9
+    call    desc_atoi            ; offset
+    mov     rsi, rax
+    mov     rdi, r11             ; fd
+    xor     rdx, rdx             ; whence = SEEK_SET (0)
+    mov     rax, 8               ; lseek
+    syscall
+    call    push_dec             ; new offset, or -errno
+    jmp     .loop
+
+; ── Tier 0: signals (VM-only). The synchronous, fd-based model: block signals
+;    with sigprocmask, drain them off a signalfd via the existing read(). kill
+;    sends; getpid lets a process address itself. ──
+.bi_kill2:                       ; kill(pid)(sig) ; rbp = pid, r9 = sig
+    test    r8, r8
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rdi, rbp
+    call    desc_atoi            ; pid
+    mov     r11, rax             ; stash pid
+    mov     rdi, r9
+    call    desc_atoi            ; sig
+    mov     rsi, rax
+    mov     rdi, r11             ; pid
+    mov     rax, 62              ; kill(pid, sig)
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_sigprocmask2:                ; sigprocmask(how)(mask) ; rbp = how, r9 = mask
+    ; how: 0=SIG_BLOCK 1=SIG_UNBLOCK 2=SIG_SETMASK. mask: a 64-bit sigset
+    ; (bit (signo-1) set selects that signal), passed as a decimal integer.
+    test    r8, r8
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rdi, rbp
+    call    desc_atoi            ; how
+    mov     r11, rax             ; stash how
+    mov     rdi, r9
+    call    desc_atoi            ; mask (64-bit sigset)
+    mov     [pathbuf], rax       ; sigset scratch lives in pathbuf
+    mov     rdi, r11             ; how
+    mov     rsi, pathbuf         ; &set
+    xor     rdx, rdx             ; oldset = NULL
+    mov     r10, 8               ; sigsetsize
+    mov     rax, 14              ; rt_sigprocmask
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_signalfd:                    ; signalfd(mask) → fd ; r9 = mask (decimal sigset)
+    ; create a new signalfd for the given mask; read(fd)("128") then yields one
+    ; 128-byte signalfd_siginfo per pending signal (ssi_signo = first u32, LE).
+    test    r8, r8
+    jnz     .strtype
+    mov     rdi, r9
+    call    desc_atoi            ; mask
+    mov     [pathbuf], rax       ; sigset scratch
+    mov     rdi, -1              ; fd = -1 → create a new signalfd
+    mov     rsi, pathbuf         ; &mask
+    mov     rdx, 8               ; sizemask
+    xor     r10, r10             ; flags = 0
+    mov     rax, 289             ; signalfd4
+    syscall
+    call    push_dec             ; fd, or -errno
+    jmp     .loop
+
+.bi_getpid:                      ; getpid("!") → own pid ; arg ignored (not deref'd)
+    mov     rax, 39              ; getpid
+    syscall
+    call    push_dec
+    jmp     .loop
+
 .bi_exit:                        ; exit(code) ; r9 = code desc
     test    r8, r8               ; code must be a decimal STR; an INT would deref its
     jnz     .strtype             ; payload as a [len][ptr] descriptor (see .strtype)
@@ -2921,6 +3296,16 @@ str_send:      db "send", 0
 str_recv:      db "recv", 0
 str_unlink:    db "unlink", 0
 str_random:    db "random", 0
+str_mkdir:     db "mkdir", 0
+str_rmdir:     db "rmdir", 0
+str_rename:    db "rename", 0
+str_stat:      db "stat", 0
+str_chmod:     db "chmod", 0
+str_lseek:     db "lseek", 0
+str_kill:      db "kill", 0
+str_sigprocmask: db "sigprocmask", 0
+str_signalfd:  db "signalfd", 0
+str_getpid:    db "getpid", 0
 drm_card:      db "/dev/dri/card0", 0
 drmmsg:        db "secd: drm error", 10
 drmmsg_len     equ $ - drmmsg

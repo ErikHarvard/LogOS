@@ -1010,7 +1010,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "11025" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 11025)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "12571" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 12571)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1543,6 +1543,84 @@ printf '%s' "$BERR" | grep -q 'argument is not a string' || { echo "FAIL  socket
 rm -f /tmp/t_socket.la /tmp/t_connfail.la /tmp/t_sockbad.la "$SOCKP"
 if [ "$ok" -eq 1 ]; then
     echo "PASS  sockets: client→server message over AF_UNIX; dead-path connect = -errno; non-string fd halts loud"
+else
+    exit 1
+fi
+
+say "Tier 0: filesystem ops (mkdir/rmdir/rename/stat/chmod/lseek) + signals (sigprocmask/signalfd/kill/getpid), native VM"
+# VM-only syscall builtins, decimal-string ints, -errno on failure. The .la
+# exercises the whole filesystem surface then the synchronous signal path:
+#  - mkdir 0755, chmod to 0777, stat -> "<mode> <size>" (S_IFDIR|0777 = 16895,
+#    deterministic regardless of umask/fs), rename, stat the gone name (-2 =
+#    -ENOENT), rmdir; write a file, open it, lseek to offset 6, read "world";
+#  - block SIGUSR1 (sigset bit 1<<9 = 512), make a signalfd, kill our own pid
+#    (getpid) with signal 10, then read the 128-byte signalfd_siginfo back and
+#    decode ssi_signo (first byte, LE) -> "10". This is signals the VM's way:
+#    no async handler (which a synchronous closure machine can't host) — block,
+#    then drain off an fd via the existing read().
+T0D="/tmp/logos_t0_$$"
+rm -rf "${T0D}_dir" "${T0D}_dir2" "${T0D}_file"
+cat > /tmp/t_tier0.la <<LAEOF
+glyph SEQ  = la a. la b. b
+glyph DIR  = "${T0D}_dir"
+glyph DIR2 = "${T0D}_dir2"
+glyph FILE = "${T0D}_file"
+glyph MAIN =
+  SEQ(print(concat("mkdir=")(mkdir(DIR)("493"))))(
+  SEQ(print(concat("chmod=")(chmod(DIR)("511"))))(
+  SEQ(print(concat("stat=")(stat(DIR))))(
+  SEQ(print(concat("rename=")(rename(DIR)(DIR2))))(
+  SEQ(print(concat("statgone=")(stat(DIR))))(
+  SEQ(print(concat("rmdir=")(rmdir(DIR2))))(
+  SEQ(write_file(FILE)("hello world"))(
+  (la fd.
+    SEQ(print(concat("lseek=")(lseek(fd)("6"))))(
+    SEQ(print(concat("seekread=")(read(fd)("5"))))(
+    SEQ(close(fd))(
+    SEQ(print(concat("block=")(sigprocmask("0")("512"))))(
+    (la sfd.
+      SEQ(kill(getpid("!"))("10"))(
+      (la si.
+        print(concat("signo=")(ord(str_head(si))))
+      )(read(sfd)("128"))
+      )
+    )(signalfd("512"))
+    )
+    )
+    )
+    )
+  )(open(FILE)("0"))
+  )
+  )
+  )
+  )
+  )
+  )
+  )
+LAEOF
+T0="$(nrun /tmp/t_tier0.la)"
+ok=1
+printf '%s\n' "$T0" | grep -qxF "mkdir=0"        || { echo "FAIL  tier0: mkdir ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -qxF "chmod=0"        || { echo "FAIL  tier0: chmod ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -q  "^stat=16895 "    || { echo "FAIL  tier0: stat mode S_IFDIR|0777 ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -qxF "rename=0"       || { echo "FAIL  tier0: rename ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -qxF "statgone=-2"    || { echo "FAIL  tier0: stat of removed name not -ENOENT ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -qxF "rmdir=0"        || { echo "FAIL  tier0: rmdir ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -qxF "lseek=6"        || { echo "FAIL  tier0: lseek offset ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -qxF "seekread=world" || { echo "FAIL  tier0: read after seek ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -qxF "block=0"        || { echo "FAIL  tier0: sigprocmask block ($T0)"; ok=0; }
+printf '%s\n' "$T0" | grep -qxF "signo=10"       || { echo "FAIL  tier0: signalfd did not deliver SIGUSR1 ($T0)"; ok=0; }
+# loud-on-bad-input: a non-string path to a fs builtin halts loudly, nonzero exit
+cat > /tmp/t_tier0bad.la <<'LAEOF'
+glyph MAIN = stat(5)
+LAEOF
+cp /tmp/t_tier0bad.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+trc=0; TERR="$(./runner 2>&1 1>/dev/null)" || trc=$?
+[ "$trc" -ne 0 ] || { echo "FAIL  tier0: non-string path to stat did not halt nonzero"; ok=0; }
+printf '%s' "$TERR" | grep -q 'argument is not a string' || { echo "FAIL  tier0: non-string path not loud ($TERR)"; ok=0; }
+rm -rf "${T0D}_dir" "${T0D}_dir2" "${T0D}_file" /tmp/t_tier0.la /tmp/t_tier0bad.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  tier0: mkdir/chmod/stat/rename/rmdir + open/lseek/read; sigprocmask+signalfd+kill+getpid deliver SIGUSR1 synchronously; non-string path halts loud (native VM)"
 else
     exit 1
 fi
