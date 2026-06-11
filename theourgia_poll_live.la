@@ -88,11 +88,24 @@ glyph POLL_READY = la fds. SPLIT(poll(JOIN(fds))("-1"))
 glyph MULTIPLEX = Z(la self. la fds.
     SEQ(DRAIN(POLL_READY(fds)))(self(fds)))
 
+# ── Open-or-die: a failed open returns -errno (a STR starting with "-"), and a
+# negative fd handed to poll would be reported POLLNVAL — read off it forever,
+# busy-looping silently. So OPEN_OR_DIE checks the fd and halts LOUDLY (the
+# `error` builtin: message to stderr, exit 1) on failure, rather than spinning —
+# the loud-failure discipline. The common cause is no read permission on
+# /dev/input (run with sudo or join the `input` group).
+glyph IS_NEG = la s. str_eq(str_head(s))("-")
+glyph OPEN_OR_DIE = la path.
+    (la fd. IF(IS_NEG(fd))(la _.
+        error(concat(concat("multiplex: cannot open ")(path))
+            (concat(" (open -> ")(concat(fd)("): need read permission on /dev/input — run with sudo")))))
+    (la _. fd))(open(path)("0"))
+
 # ── The two devices to watch — EDIT THESE to your keyboard / mouse event Ns ──
-# (see HOW TO RUN, step 1). They are opened read-only (flags "0" = O_RDONLY);
-# open returns the fd as a decimal string, which JOIN hands straight to poll.
-glyph KBD   = open("/dev/input/event0")("0")
-glyph MOUSE = open("/dev/input/event1")("0")
+# (see HOW TO RUN, step 1). Opened read-only (flags "0" = O_RDONLY); open returns
+# the fd as a decimal string, which JOIN hands straight to poll.
+glyph KBD   = OPEN_OR_DIE("/dev/input/event0")
+glyph MOUSE = OPEN_OR_DIE("/dev/input/event1")
 
 glyph MAIN =
     SEQ(print("multiplex: watching event0 + event1 — press keys / move the mouse (Ctrl+C to stop)"))(
