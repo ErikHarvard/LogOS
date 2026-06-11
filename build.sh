@@ -1454,6 +1454,47 @@ else
     exit 1
 fi
 
+say "Theourgia: multiplexed session — poll-drained input folds into one scene (Stage 7)"
+# Stage 7 (theourgia_mux_session.la) wires Stage 6's poll multiplexing into Stage
+# 5's session: a real compositor polls every input device and folds EVERY ready
+# event from EVERY device into the ONE shared scene state per frame, then
+# recomposes. The new heart is DRAIN_STEP, the multiplexed fold — it threads the
+# state through STEP over the ready fds, so a single poll cycle that reports two
+# ready devices applies BOTH their events before rendering. Pure function of
+# (state, events) like Stage 5's STEP, so build.sh drives it with a pure SIMREAD
+# (fd -> a synthetic key event): a poll cycle reporting fds "5 7" (fd 5 = a RIGHT
+# press, fd 7 = a DOWN press) folds both, moving the window (4,4) -> (5,5) in one
+# cycle, and the recomposed raster shows the window's red at (5,5) and blue at
+# (4,4) — byte-identical on the C host and native VM, no device/screen. (The LIVE
+# drm_mode -> poll/drain/STEP/compose/TO_FB/present loop is the VM-only capstone,
+# run manually from a bare VT, as DRM scanout and the Stage 4-6 readers are.)
+ok=1
+sp7 () { od -An -tu1 -j "$1" -N3 mux_session.ppm | tr -s ' ' | sed 's/^ //;s/ $//'; }
+check_mux () {  # $1 = engine label, $2 = captured stdout
+    printf '%s\n' "$2" | grep -qx "mux-session: window at 5 5" \
+        || { echo "FAIL  mux($1): window not at (5,5) after RIGHT+DOWN in one poll cycle [$2]"; ok=0; }
+    [ "$(stat -c%s mux_session.ppm 2>/dev/null)" = "2317" ] || { echo "FAIL  mux($1): raster size $(stat -c%s mux_session.ppm 2>/dev/null) != 2317"; ok=0; }
+    [ "$(sp7 508)" = "200 30 30" ] || { echo "FAIL  mux($1): window not at new pos (5,5) [$(sp7 508)]"; ok=0; }
+    [ "$(sp7 409)" = "0 0 128" ]   || { echo "FAIL  mux($1): (4,4) not background blue [$(sp7 409)]"; ok=0; }
+}
+rm -f mux_session.ppm
+HM="$(./tiny_host theourgia_mux_session.la 2>/dev/null)"
+check_mux "C host" "$HM"
+cp mux_session.ppm /tmp/mux_host.ppm; rm -f mux_session.ppm
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp theourgia_mux_session.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+VMUX="$(./logos_secd 2>/dev/null)"
+check_mux "native VM" "$VMUX"
+cmp -s mux_session.ppm /tmp/mux_host.ppm || { echo "FAIL  mux: native raster != C host raster"; ok=0; }
+rm -f mux_session.ppm /tmp/mux_host.ppm logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  theourgia: multiplexed session — one poll cycle's two device events (RIGHT+DOWN) fold into one scene → window (5,5), recomposed byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile

@@ -42,7 +42,8 @@ host program, applied to itself, reproduces itself.
 | `theourgia_input.la` | Theourgia Stage 4: the input layer. Decodes Linux `evdev` records (24-byte `struct input_event`: type/code/value, little-endian incl. signed deltas) with `ord` + arithmetic — pure recognition, byte-identical on the C host and native VM. A VM-only live reader (`WATCH`) opens a real `/dev/input` device via the existing `open`/`read`/`close` builtins. |
 | `theourgia_session.la` | Theourgia Stage 5: the interactive session. `import`s the Stage 1 surface core and the Stage 4 decoder; `STEP` is a pure reducer folding a decoded event into scene state (a movable window's x,y), then `RENDER` recomposes and rasters. Deterministic — byte-identical on the C host and native VM. The live device→screen loop is the VM-only capstone. |
 | `theourgia_poll.la` | Theourgia Stage 6: the multiplexed input loop. `import`s the Stage 4 decoder and adds the `poll`-based event loop a real compositor needs — one loop waiting on MANY input devices + a signalfd at once. `poll` speaks a space-separated decimal fd string both ways, so the testable core is the marshalling: `JOIN` (fd list → poll's request, generation) and `SPLIT` (poll's ready-set → fd list, recognition), plus `DRAIN`, a dispatch reducer parameterised by its reader. build.sh drives `DRAIN` with a pure `SIMREAD` — a poll result of two ready fds reads+decodes each through the decoder — byte-identical on host and VM. See the Stage 6 section. |
-| `theourgia_poll_live.la` | Theourgia Stage 6 capstone (VM-only, run manually): the real multi-device loop. `import`s the Stage 4 decoder; `MULTIPLEX(fds)` loops `SPLIT(poll(JOIN(fds))("-1"))` then `DRAIN`s each ready fd with a real `read(fd, 24)`, so a keystroke and a mouse move are serviced from one loop, neither blocking the other. Opens two real `/dev/input` devices; run with device-read permission (`sudo`), Ctrl+C to stop. Not in build.sh (needs real devices + a human + loops forever), like DRM scanout. |
+| `theourgia_poll_live.la` | Theourgia Stage 6 capstone (VM-only, run manually): the real multi-device loop. `import`s the Stage 4 decoder; `MULTIPLEX(fds)` loops `SPLIT(poll(JOIN(fds))("-1"))` then `DRAIN`s each ready fd with a real `read(fd, 24)`, so a keystroke and a mouse move are serviced from one loop, neither blocking the other. Opens two real `/dev/input` devices; run with device-read permission (`sudo`), Ctrl+C to stop. `OPEN_OR_DIE` halts loudly if `open` fails (negative fd) instead of busy-looping. Not in build.sh (needs real devices + a human + loops forever), like DRM scanout. |
+| `theourgia_mux_session.la` | Theourgia Stage 7: the multiplexed live session — Stage 6's poll multiplexing wired into Stage 5's session. `import`s the Stage 1 surface core + Stage 4 decoder; the new heart is **`DRAIN_STEP`**, which folds `STEP` over every ready fd in one poll cycle, threading the scene state — so a single cycle reporting two ready devices applies BOTH their events before rendering. build.sh drives it with a pure `SIMREAD`: a poll cycle reporting fds `"5 7"` (RIGHT press + DOWN press) moves the window (4,4)→(5,5), recomposed byte-identical on host and VM. The `LIVE` loop (VM-only, manual VT) is `drm_mode` → poll/drain/`STEP`/compose/`TO_FB`/`present` forever. See the Stage 7 section. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -1020,7 +1021,37 @@ The compositor is built in stages, each independently runnable and checked by
   opens two real `/dev/input` devices and is run manually with device-read
   permission (`sudo`), exactly as DRM scanout and the Stage 4/5 readers are; the
   marshalling + dispatch it drives live is the part `build.sh` verifies on every
-  engine.
+  engine. `OPEN_OR_DIE` halts loudly (the `error` builtin) when `open` returns a
+  negative fd, so a no-permission run fails clean rather than busy-looping on the
+  invalid descriptor.
+
+- **Stage 7 — the multiplexed live session (`theourgia_mux_session.la`).** Stage
+  5 reacts to *one* input device; Stage 6 made one loop wait on *many*. Stage 7
+  **wires the two together**: a real compositor polls every input device, and
+  **every ready event from every device folds into the ONE shared scene state
+  per frame**, then the frame is recomposed and presented — keyboard and mouse
+  driving the same window, neither blocking the other. It `import`s the Stage 1
+  surface core and the Stage 4 decoder (Stage 5's two imports) and restates the
+  small Stage 5 reducer (`STEP`/`APPLY_KEY`/`MOVE`) and Stage 3 `TO_FB` locally
+  (kept self-contained — `theourgia_fb.la` does not export `TO_FB` — and avoiding
+  a 2-level diamond import; pure generation, so still byte-identical). The new,
+  engine-checkable heart is **`DRAIN_STEP(reader)(state)(ready)`**: it folds
+  `STEP` over the ready fds, threading the state, so a single poll cycle that
+  reports several ready devices applies *all* their events before rendering. Like
+  `STEP` it is a pure function of `(state, events)`, so `build.sh` drives it with
+  a pure `SIMREAD` (fd → a synthetic key event) with no device or screen: a poll
+  cycle reporting fds `"5 7"` (fd 5 = a RIGHT press, fd 7 = a DOWN press) folds
+  **both** — `(4,4) → RIGHT → (5,4) → DOWN → (5,5)` in one cycle — and the
+  recomposed raster shows the window's red at `(5,5)` and blue at `(4,4)`,
+  byte-identical on the C host and the native VM. The **live loop** (`LIVE`,
+  VM-only) is the capstone: `drm_mode` once, then forever
+  `ready := SPLIT(poll(JOIN(fds))("-1")); st := DRAIN_STEP(read)(st)(ready);
+  present(TO_FB(RENDER_SURFACE(st))(h)(pitch))` — Stage 6 (poll+drain) → Stage 5
+  (`STEP`) → Stage 1 (compose) → Stage 3 (`TO_FB`) → Stage 2 (`present`), every
+  ready device folded each frame; its self-call is in tail position so the VM's
+  TCO runs it forever in bounded dump. Run manually from a bare VT (DRM master +
+  device-read permission), as DRM scanout is; the pure reducer is the part
+  `build.sh` verifies on every engine.
 
 ### The nine primitives (`primitives.la`) and compile-time typing (`specpipe.la`)
 

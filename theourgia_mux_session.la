@@ -1,0 +1,166 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_mux_session.la — Stage 7: the MULTIPLEXED live session.
+#
+#  Stage 5 (theourgia_session.la) reacts to ONE input device: read 24 bytes,
+#  STEP the scene state, recompose, present. Stage 6 (theourgia_poll.la) added
+#  `poll`, so one loop can wait on MANY devices at once. Stage 7 wires the two
+#  together: a real compositor polls every input device, and **every ready event
+#  from every device folds into the ONE shared scene state per frame**, then the
+#  frame is recomposed and presented. Keyboard and mouse drive the same window,
+#  neither blocking the other.
+#
+#  The new, engine-checkable heart is **`DRAIN_STEP(reader)(state)(ready)`**: it
+#  folds `STEP` over the ready fds, threading the state — so a single poll cycle
+#  that reports two ready devices applies BOTH their events to the scene before
+#  rendering. Like Stage 5's `STEP` it is a pure function of (state, events), so
+#  build.sh drives it with a pure `SIMREAD` (fd → a synthetic key event) and
+#  checks the fold + recomposition byte-identically on the C host and native VM,
+#  with no device and no screen: a ready set "5 7" (fd 5 = a RIGHT press, fd 7 =
+#  a DOWN press) moves the window from (4,4) to (5,5) in one cycle, and the
+#  raster shows its red at the new spot.
+#
+#  The LIVE loop (`LIVE`, VM-only) is the capstone: `drm_mode` once, then forever
+#  { ready := SPLIT(poll(JOIN(fds))("-1")); st := DRAIN_STEP(read)(st)(ready);
+#    present(TO_FB(RENDER_SURFACE(st))(h)(pitch)) } — Stage 6 (poll+drain) →
+#  Stage 5 (STEP) → Stage 1 (compose) → Stage 3 (TO_FB) → Stage 2 (present),
+#  every ready device folded each frame. Its self-call is in tail position and
+#  the VM does TCO, so it runs forever in bounded dump. Run manually from a bare
+#  VT (DRM master + device-read permission), exactly as DRM scanout is; the pure
+#  reducer is the part build.sh verifies on every engine.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia.la")          # PX SURF S_W S_H S_ROWS SOLID COMPOSE PPM
+import("theourgia_input.la")    # EV_TYPE EV_CODE EV_VALUE EV_* IS_KEY_PRESS/RELEASE
+
+# ── Foundations (Church lists; the imports' same-named privates are isolated) ──
+glyph SEQ     = la a. la b. b
+glyph TRUE    = la t. la f. t
+glyph FALSE   = la t. la f. f
+glyph Z       = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF      = la c. la t. la f. c(t)(f)("!")
+glyph PAIR    = la a. la b. la f. f(a)(b)
+glyph FST     = la p. p(la a. la b. a)
+glyph SND     = la p. p(la a. la b. b)
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── poll marshalling (Stage 6): fd list ↔ poll's space-separated wire string ──
+glyph JOIN = Z(la self. la l.
+    IF(IS_CONS(l))(la _.
+        (la rest. IF(IS_CONS(rest))
+            (la _. concat(concat(LIST_HD(l))(" "))(self(rest)))
+            (la _. LIST_HD(l)))(LIST_TL(l)))
+    (la _. ""))
+glyph SPLIT_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. NIL)(la _. CONS(tok)(NIL)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. CONS(tok)(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph SPLIT = la s. SPLIT_GO(s)("")
+
+# ── The reducer (Stage 5): fold one decoded event into the scene state ──
+# STATE = PAIR(x)(y), the movable window's position. On an arrow-key PRESS move
+# one cell (APPLY_KEY is a flat 4-way keycode dispatch; MOVE shifts the coords);
+# any other event leaves the state unchanged.
+glyph KEY_UP    = 103
+glyph KEY_LEFT  = 105
+glyph KEY_RIGHT = 106
+glyph KEY_DOWN  = 108
+glyph NEG1 = sub(0)(1)
+glyph MOVE = la st. la dx. la dy. st(la x. la y. PAIR(add(x)(dx))(add(y)(dy)))
+glyph APPLY_KEY = la st. la c.
+    IF(int_eq(c)(KEY_RIGHT))(la _. MOVE(st)(1)(0))(la _.
+    IF(int_eq(c)(KEY_LEFT)) (la _. MOVE(st)(NEG1)(0))(la _.
+    IF(int_eq(c)(KEY_DOWN)) (la _. MOVE(st)(0)(1))(la _.
+    IF(int_eq(c)(KEY_UP))   (la _. MOVE(st)(0)(NEG1))(la _.
+    st))))
+glyph STEP = la st. la e.
+    IF(IS_KEY_PRESS(e))(la _. APPLY_KEY(st)(EV_CODE(e)))(la _. st)
+
+# ── DRAIN_STEP — the multiplexed fold (NEW): apply EVERY ready device's event ──
+# Fold STEP over the ready fds in one cycle, threading the state, so a poll
+# result of several ready devices folds all their events into the one scene
+# before it is rendered. Parameterised by READER, so build.sh drives it with a
+# pure SIMREAD and the live loop drives it with the real read(fd, 24).
+glyph DRAIN_STEP = Z(la self. la reader. la st. la ready.
+    IF(IS_CONS(ready))(la _.
+        self(reader)(STEP(st)(reader(LIST_HD(ready))))(LIST_TL(ready)))
+    (la _. st))
+
+# ── Recomposition (Stage 5): blit the window at (x,y), raster to a PPM ──
+glyph BG  = SOLID(32)(24)(PX(0)(0)(128))     # deep-blue desktop
+glyph WIN = SOLID(10)(8)(PX(200)(30)(30))    # the movable red window
+glyph RENDER_SURFACE = la st. st(la x. la y. COMPOSE(BG)(WIN)(x)(y))
+glyph RENDER = la st. PPM(RENDER_SURFACE(st))
+
+# ── Synthetic key events for the test (the 24-byte struct input_event) ──
+glyph BYTE = la n. chr(int_to_str(n))
+glyph LE16 = la n. concat(BYTE(mod(n)(256)))(BYTE(div(n)(256)))
+glyph REPEAT = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+    concat(s)(self(sub(n)(1))(s))))
+glyph ZEROS16 = REPEAT(16)(BYTE(0))
+glyph LE32_ONE = concat(BYTE(1))(REPEAT(3)(BYTE(0)))
+glyph KEY_PRESS_EVENT = la code.
+    concat(ZEROS16)(concat(LE16(1))(concat(LE16(code))(LE32_ONE)))
+
+# ── Framebuffer bridge (Stage 3): composed RGB surface → XRGB8888 image ──
+# (restated locally — theourgia_fb.la does not export TO_FB; pure generation, so
+# it stays byte-identical host/VM. Used only by the VM-only LIVE loop.)
+glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
+    self(sub(n)(1))(str_tail(s))))
+glyph NUL   = BYTE(0)
+glyph ZEROS = la n. REPEAT(n)(NUL)
+glyph RGB_TO_BGRX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+        concat
+          (concat(str_head(DROP(2)(s)))
+                 (concat(str_head(DROP(1)(s)))
+                        (concat(str_head(s))(NUL))))
+          (self(DROP(3)(s)))))
+glyph FB_ROW = la srow. la pitch. la sw.
+    concat(RGB_TO_BGRX(srow))(ZEROS(sub(pitch)(mul(sw)(4))))
+glyph BUILD = Z(la self. la rows. la r. la screen_h. la pitch. la sw.
+    IF(lt(r)(screen_h))(la _.
+        concat
+          (IF(IS_CONS(rows))(la _. FB_ROW(LIST_HD(rows))(pitch)(sw))
+                            (la _. ZEROS(pitch)))
+          (self(IF(IS_CONS(rows))(la _. LIST_TL(rows))(la _. rows))
+                (add(r)(1))(screen_h)(pitch)(sw)))
+    (la _. ""))
+glyph TO_FB = la surf. la screen_h. la pitch.
+    BUILD(S_ROWS(surf))(0)(screen_h)(pitch)(S_W(surf))
+
+# ── The LIVE multiplexed session (VM-only: drm_mode/present/poll/read) ──
+# drm_mode returns "<w> <h> <pitch>" (SPLIT it for the height + pitch TO_FB and
+# present need). LIVE polls every device, folds all ready events into st via
+# DRAIN_STEP, recomposes, and scans the frame out — then recurses (tail position
+# → bounded dump under TCO). Open the devices and start it, e.g.:
+#     (la d. LIVE(PAIR(4)(4))(SPLIT(d))(CONS(kbd)(CONS(mouse)(NIL))))(drm_mode("!"))
+# Never reached by MAIN, so the VM-only builtins stay unresolved on the C host.
+glyph LIVE_READ = la fd. read(fd)("24")
+glyph LIVE = Z(la self. la st. la dims. la fds.
+    (la st2.
+        SEQ(present(TO_FB(RENDER_SURFACE(st2))
+                (str_to_int(LIST_HD(LIST_TL(dims))))
+                (str_to_int(LIST_HD(LIST_TL(LIST_TL(dims)))))))
+            (self(st2)(dims)(fds)))
+    (DRAIN_STEP(LIVE_READ)(st)(SPLIT(poll(JOIN(fds))("-1")))))
+
+# ── The testable demo: ONE multiplexed cycle folds two devices into the scene ──
+# SIMREAD: fd "5" is a keyboard sending a RIGHT press, fd "7" a second device
+# sending a DOWN press. A poll cycle reporting BOTH ("5 7") folds both events
+# into the one state: (4,4) → RIGHT → (5,4) → DOWN → (5,5), then RENDER rasters
+# the window at its new position.
+glyph SIMREAD = la fd.
+    IF(str_eq(fd)("5"))(la _. KEY_PRESS_EVENT(KEY_RIGHT))
+                       (la _. KEY_PRESS_EVENT(KEY_DOWN))
+glyph FINAL = DRAIN_STEP(SIMREAD)(PAIR(4)(4))(SPLIT("5 7"))
+glyph MAIN = SEQ(write_file("mux_session.ppm")(RENDER(FINAL)))
+    (FINAL(la x. la y.
+        print(concat(concat("mux-session: window at ")(int_to_str(x)))(concat(" ")(int_to_str(y))))))
