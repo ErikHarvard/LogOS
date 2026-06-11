@@ -1010,7 +1010,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "12571" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 12571)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "12667" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 12667)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1705,6 +1705,32 @@ printf '%s\n' "$OUT" | grep -qxF "reaped 3" \
     && echo "PASS  reap(-1) drains direct children: forked 3, reaped 3, then ECHILD" \
     || { echo "FAIL  reap: expected 'reaped 3', got '$OUT'"; exit 1; }
 
+# (1b) reapnb = the non-blocking reap (wait4 WNOHANG) the signalfd init needs:
+# with no children it is -ECHILD (negative); after a child has exited it returns
+# that child's pid (positive), then -ECHILD again once drained. (sleep ensures
+# the child has terminated, so this is timing-robust, not flaky.)
+cat > /tmp/t_reapnb.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph NEG = la s. str_eq(str_head(s))("-")
+glyph SPAWN = la _. (la pid. IF(str_eq(pid)("0"))(la _. exit("0"))(la _. pid))(fork("!"))
+glyph MAIN =
+  SEQ(print(IF(NEG(reapnb("!")))(la _. "none=neg")(la _. "none=pos")))(
+  SEQ(SPAWN("!"))(
+  SEQ(sleep("1"))(
+  (la a.
+    SEQ(print(IF(NEG(a))(la _. "first=neg")(la _. "first=pos")))(
+    print(IF(NEG(reapnb("!")))(la _. "second=neg")(la _. "second=pos"))))
+  (reapnb("!")))))
+LAEOF
+RNB="$(nrun /tmp/t_reapnb.la 2>/dev/null || true)"
+ok=1
+printf '%s\n' "$RNB" | grep -qxF "none=neg"   || { echo "FAIL  reapnb: no children not -ECHILD ($RNB)"; ok=0; }
+printf '%s\n' "$RNB" | grep -qxF "first=pos"  || { echo "FAIL  reapnb: ready child not reaped to a pid ($RNB)"; ok=0; }
+printf '%s\n' "$RNB" | grep -qxF "second=neg" || { echo "FAIL  reapnb: drained set not -ECHILD ($RNB)"; ok=0; }
+rm -f /tmp/t_reapnb.la
+[ "$ok" -eq 1 ] && echo "PASS  reapnb (WNOHANG): -ECHILD with no children; reaps a ready child's pid; -ECHILD once drained" || exit 1
+
 # (2) true orphan reaping as PID 1 (needs a PID namespace). A child forks a
 # grandchild then exits, orphaning it; reparented to PID 1 it is reaped by the
 # same -1 wait. Either exit order yields exactly 2 reaps. Falls back gracefully
@@ -1733,24 +1759,41 @@ else
     echo "PASS  (skipped) orphan-reaping-as-PID-1 test: unprivileged PID namespace unavailable"
 fi
 
-# (3) the real logosinit.la: announce, spawn /bin/sh (fork+execve), and a
-# supervision loop that never exits. Run under a timeout with the shell's stdin
-# held open (sleep) so it stays alive — reap blocks, no respawn spin. The
-# timeout having to KILL init (rc 124) is the proof the loop never exits.
+# (3) the real logosinit.la: announce, spawn /bin/sh (fork+execve), supervise via
+# the signalfd, and — the new part — shut down cleanly on SIGTERM. Two checks:
+#   (3a) graceful SIGTERM: send the running init a SIGTERM; its signalfd loop
+#        catches it, announces, TERMs the shell, and exits 0 (NOT killed). The
+#        shell's stdin is held open (sleep) so it stays up until the signal.
+#   (3b) never exits on its own: with no signal the loop blocks on read(sigfd) —
+#        still alive after a beat. (timeout's default signal is SIGTERM, which
+#        the init now catches, so aliveness is checked directly with kill -0
+#        rather than inferred from a timeout return code.)
+ok=1
 cp logosinit.la logos_source.la; cp compiler.bin logos_program.bin
 ./runner >/dev/null 2>&1
-# timeout KILLING init (rc 124) is the success signal — capture it via `|| irc=$?`
-# so `set -e` does not treat the expected non-zero exit as a build failure.
-irc=0
-{ echo 'echo LOGOS_SHELL_OK'; sleep 3; } | timeout 2 ./runner >/tmp/logos_initout 2>/dev/null || irc=$?
+# 3a — explicit SIGTERM -> clean exit 0 + shutdown announce
+{ echo 'echo LOGOS_SHELL_OK'; sleep 3; } | ./runner >/tmp/logos_initout 2>/dev/null &
+rpid=$!
+sleep 1
+kill -TERM "$rpid" 2>/dev/null
+trc=0; wait "$rpid" 2>/dev/null || trc=$?
 INITOUT="$(cat /tmp/logos_initout)"
+printf '%s\n' "$INITOUT" | grep -qxF "LogOS sovereign session initialized."          || { echo "FAIL  logosinit: no announce ($INITOUT)"; ok=0; }
+printf '%s\n' "$INITOUT" | grep -qxF "LOGOS_SHELL_OK"                                 || { echo "FAIL  logosinit: shell (execve) did not run ($INITOUT)"; ok=0; }
+printf '%s\n' "$INITOUT" | grep -qxF "LogOS received SIGTERM — terminating session." || { echo "FAIL  logosinit: no clean-shutdown message ($INITOUT)"; ok=0; }
+[ "$trc" = "0" ] || { echo "FAIL  logosinit: SIGTERM not a clean exit 0 (rc=$trc)"; ok=0; }
+# 3b — without a signal, the loop keeps supervising (still alive after ~2s)
+{ echo 'echo X'; sleep 5; } | ./runner >/dev/null 2>&1 &
+bpid=$!
+sleep 2
+kill -0 "$bpid" 2>/dev/null && alive=1 || alive=0
+kill -KILL "$bpid" 2>/dev/null; wait "$bpid" 2>/dev/null || true
+[ "$alive" = "1" ] || { echo "FAIL  logosinit: supervision loop exited on its own (not alive after 2s)"; ok=0; }
 rm -f /tmp/t_reap.la /tmp/t_orphan.la /tmp/logos_initout
-if printf '%s\n' "$INITOUT" | grep -qxF "LogOS sovereign session initialized." \
-   && printf '%s\n' "$INITOUT" | grep -qxF "LOGOS_SHELL_OK" \
-   && [ "$irc" = "124" ]; then
-    echo "PASS  logosinit announced, spawned /bin/sh (execve), and supervised without exiting"
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  logosinit announced, spawned /bin/sh (execve), supervised without exiting, and shut down cleanly on SIGTERM (exit 0)"
 else
-    echo "FAIL  logosinit: out='$INITOUT' rc=$irc (want announce + LOGOS_SHELL_OK + rc 124)"; exit 1
+    exit 1
 fi
 
 # sleep builtin: nanosleep for N seconds. A program that sleeps 1s takes ≥1s.

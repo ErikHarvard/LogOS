@@ -741,6 +741,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi55
+    mov     rsi, rbp
+    mov     rdi, str_reapnb
+    call    strcmp
+    test    eax, eax
+    je      .bi56
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -909,6 +914,9 @@ _start:
     jmp     .pushbi
 .bi55:
     mov     r11, 55
+    jmp     .pushbi
+.bi56:
+    mov     r11, 56
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -1091,6 +1099,8 @@ _start:
     je      .bi_signalfd
     cmp     r11, 55
     je      .bi_getpid
+    cmp     r11, 56
+    je      .bi_reapnb
     jmp     .halt
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
@@ -2126,6 +2136,24 @@ _start:
     mov     rax, 61              ; wait4
     syscall
     call    push_dec             ; reaped pid, or -errno (e.g. -10 = -ECHILD)
+    jmp     .loop
+
+.bi_reapnb:                      ; reapnb("!") → pid of a ready child, "0" if none
+    ; wait4(-1, &status, WNOHANG, NULL): the NON-blocking reap. Returns a child's
+    ; pid if one is ready to be collected, "0" when children exist but none have
+    ; terminated yet, or -ECHILD when there are no children. The signalfd-driven
+    ; init needs this: once SIGCHLD is blocked (so it can be read off a signalfd
+    ; instead of interrupting a blocking wait4), and because pending SIGCHLDs
+    ; COALESCE, on each SIGCHLD the init must drain ALL ready children in a loop —
+    ; which only a non-blocking reap allows. arg ignored (not dereferenced).
+    mov     rdi, -1              ; pid = -1: any child
+    mov     qword [r15], 0       ; &status (result discarded)
+    mov     rsi, r15
+    mov     rdx, 1               ; options = WNOHANG → return immediately
+    xor     r10, r10             ; rusage = NULL
+    mov     rax, 61              ; wait4
+    syscall
+    call    push_dec             ; pid, 0 (none ready), or -errno (-10 = -ECHILD)
     jmp     .loop
 
 .bi_sleep:                       ; sleep(seconds) → 0, or -errno if interrupted
@@ -3306,6 +3334,7 @@ str_kill:      db "kill", 0
 str_sigprocmask: db "sigprocmask", 0
 str_signalfd:  db "signalfd", 0
 str_getpid:    db "getpid", 0
+str_reapnb:    db "reapnb", 0
 drm_card:      db "/dev/dri/card0", 0
 drmmsg:        db "secd: drm error", 10
 drmmsg_len     equ $ - drmmsg

@@ -466,7 +466,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 12571 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 12667 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -684,24 +684,42 @@ remain). It differs from `waitpid` deliberately: a supervisor needs the
 child set, not one pid. As PID 1 a process orphaned by an exiting parent is
 reparented to the init, so the same `-1` wait reaps orphans too.
 
+`reapnb("!")` is `reap`'s **non-blocking** twin — `wait4(-1, &status, WNOHANG,
+NULL)` — returning a ready child's **pid**, `"0"` when children exist but none
+have terminated yet, or `-ECHILD` when there are none. It is what the
+**signalfd-driven** init needs: once `SIGCHLD` is *blocked* (so it can be read
+off a signalfd rather than interrupting a blocking `wait4`), and because pending
+`SIGCHLD`s **coalesce** (several deaths can fold into one signal), each `SIGCHLD`
+must **drain every ready child** in a `reapnb` loop — which only a non-blocking
+reap allows.
+
 `sleep(n)` is `nanosleep({n, 0}, NULL)` — block for `n` seconds (decimal
 string) — the delay primitive an init needs to throttle a flapping service.
 
-`logosinit.la` is a genuine init built from these: it mounts `/proc` and `/sys`
-and announces the session, `fork`s + `execve`s `/bin/sh` to spawn a session
-shell (exiting `127` in the child if `execve` fails, so a failed exec never
-continues as a duplicate init), then runs a **supervision loop that never
-exits** — `reap(-1)` in a `Z`-combinator loop, respawning the shell when it (or
-nothing) is what died and silently collecting any other reaped orphan. A shell
-that keeps dying (missing `/bin/sh`, instant crash) is **respawn-throttled**: a
-`BACKOFF` (default 1 s) `sleep` precedes each restart, so a broken shell is
-rate-limited to one fork per `BACKOFF` instead of a CPU-pegging fork-storm;
-orphan reaps take the fast path with no delay. `build.sh` checks all of it:
-`reap` drains three forked children deterministically then hits `ECHILD`; under
-an unprivileged PID namespace (`unshare -rpf`) the init as PID 1 reaps an
-orphaned *grandchild* via reparenting (exactly 2 reaps); the real `logosinit.la`
-under a `timeout` (shell stdin held open) announces, spawns `/bin/sh` (proving
-`execve`), and has to be *killed* by the timeout (rc 124); and a flapping
+`logosinit.la` is a genuine init built from these: it mounts `/proc` and `/sys`,
+**`sigprocmask`-blocks `SIGTERM`+`SIGCHLD` and opens a `signalfd` for them
+*before* any fork** (so a child dying the instant it spawns can't lose its
+`SIGCHLD`, and so init becomes killable by `SIGTERM` at all — the kernel
+discards a signal to PID 1 with no installed handler, and the signalfd *is* the
+handler), announces the session, then `fork`s + `execve`s `/bin/sh` (the child
+first **un**blocks the signals so the shell gets a clean mask, and exits `127`
+if `execve` fails so a failed exec never continues as a duplicate init). It then
+runs a **signalfd supervision loop**: it blocks on `read(sigfd)("128")` — one
+`signalfd_siginfo` per signal — and dispatches on `ssi_signo` (the first byte).
+On **`SIGCHLD`** it drains *every* ready child with `reapnb` (coalesced deaths),
+respawns the shell if it was among them, and silently collects reparented
+orphans; a shell that keeps dying is **respawn-throttled** by a `BACKOFF`
+(default 1 s) `sleep` before each restart, so a broken shell is rate-limited to
+one fork per `BACKOFF` instead of a CPU-pegging fork-storm. On **`SIGTERM`** it
+shuts the session down **cleanly** — announces, sends the shell `SIGTERM`, and
+**exits 0**; this is the one path out of the loop. Absent a `SIGTERM` the loop
+never exits. `build.sh` checks all of it: `reap` drains three forked children
+deterministically then hits `ECHILD`; `reapnb` is `-ECHILD`/pid/`-ECHILD` across
+an empty→ready→drained child set; under an unprivileged PID namespace
+(`unshare -rpf`) the init as PID 1 reaps an orphaned *grandchild* via
+reparenting (exactly 2 reaps); the real `logosinit.la` announces, spawns
+`/bin/sh` (proving `execve`), stays alive supervising with no signal, and on an
+explicit `SIGTERM` prints its shutdown line and **exits 0**; and a flapping
 `tick.sh` shell respawns only a handful of times in 4 s (the throttle holding).
 
 The supervision loop's `self(…)` calls are in **tail position**, and the VM does

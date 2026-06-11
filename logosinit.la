@@ -5,75 +5,115 @@
 #  (secd), this is a genuine PID-1 init. It speaks to the kernel directly
 #  through the syscalls the runtime lowers — no C host in the loop.
 #
-#  An init does three things, and this one does all three:
+#  An init does these things, and this one does all of them:
 #
 #    1. Boot setup. Mount the virtual filesystems /proc and /sys, then
 #       announce the session. (mount returns -EPERM when unprivileged —
 #       only PID 1 / root may mount — but the syscall path is exercised
 #       and the boot proceeds, the way an init walks its boot steps.)
 #
-#    2. Spawn a session. fork(), and in the child execve("/bin/sh") so the
-#       child *becomes* the shell. If execve fails the child exits 127
-#       rather than continuing as a duplicate init (which would fork-bomb).
-#       The parent keeps the shell's pid.
+#    2. Arm signal handling BEFORE anything forks. A pure call-by-value
+#       closure machine cannot host an asynchronous signal handler, so
+#       signals are taken the synchronous way: sigprocmask BLOCKS SIGTERM
+#       and SIGCHLD, and signalfd turns them into bytes readable off an fd.
+#       Blocking before the fork means a child that dies the instant it is
+#       spawned cannot lose its SIGCHLD — it stays pending and is read off
+#       the fd. (A blocked signal can't be delivered to PID 1 the ordinary
+#       way either, so the signalfd IS how init becomes killable by SIGTERM:
+#       without an installed handler the kernel discards a signal sent to
+#       PID 1.)
 #
-#    3. Supervise forever. The reap(-1) primitive blocks until ANY child
-#       terminates and returns its pid (or a negative -errno when no
-#       children remain). As PID 1, a process orphaned by an exiting
-#       parent is reparented here, so the same -1 wait reaps orphans too —
-#       this is what stops the system filling with zombies. When the dead
-#       child is the session shell (or no children are left) the shell is
-#       respawned after a BACKOFF sleep (so a shell that keeps dying is
-#       rate-limited, not re-forked in a tight loop); any other reaped pid
-#       was an orphan and is simply collected with no delay. The loop has no
-#       exit branch: init runs until the machine is powered down.
+#    3. Spawn a session. fork(), and in the child UNBLOCK the signals again
+#       (so the shell starts with a clean mask, not init's) and
+#       execve("/bin/sh") so the child *becomes* the shell. If execve fails
+#       the child exits 127 rather than continuing as a duplicate init.
 #
-#  The supervision loop's self(...) calls are in tail position and the VM
-#  does tail-call optimisation (an APPLY followed by RET reuses the dump
-#  frame), so the loop runs in bounded dump depth — indefinitely, with no
-#  ~1M-reap ceiling.
+#    4. Supervise via the signalfd. The loop blocks on read(sigfd) — one
+#       128-byte signalfd_siginfo per signal — and dispatches on the signal
+#       number (ssi_signo, the first byte):
+#         · SIGCHLD (17): drain EVERY ready child with the non-blocking
+#           reapnb (pending SIGCHLDs coalesce, so one signal may stand for
+#           several deaths); if the session shell was among them, respawn it
+#           after a BACKOFF sleep (a flapping shell is rate-limited, not
+#           re-forked in a tight loop); orphans reparented to PID 1 are just
+#           collected.
+#         · SIGTERM (15): shut the session down CLEANLY — announce, send the
+#           shell SIGTERM, and exit 0. This is the one path that leaves the
+#           loop; absent a SIGTERM, init runs until the machine is powered
+#           down.
+#
+#  The loop's self(...) calls are in tail position and the VM does tail-call
+#  optimisation (an APPLY followed by RET reuses the dump frame), so it runs
+#  in bounded dump depth — indefinitely.
 # ═══════════════════════════════════════════════════════════════════
 
 glyph SEQ = la a. la b. b
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF  = la c. la t. la f. c(t)(f)("!")
 
-# IS_NEG(s) — true when decimal string s begins with '-' (reap's -errno,
-# e.g. -ECHILD: no children left to wait on).
+# Signal numbers and the blocked set. SIGMASK is the 64-bit sigset with the
+# bits for SIGTERM (15 → bit 14) and SIGCHLD (17 → bit 16) set:
+# (1<<14) | (1<<16) = 16384 + 65536 = 81920.
+glyph SIGTERM = "15"
+glyph SIGMASK = "81920"
+
+# IS_NEG(s) — true when decimal string s begins with '-' (a -errno such as
+# -ECHILD: no children left to wait on).
 glyph IS_NEG = la s. str_eq(str_head(s))("-")
 
-# SPAWN — fork the session shell; the parent returns the shell's pid.
+# STOP_DRAIN(pid) — reapnb has nothing more to collect right now: it returned
+# "0" (children exist, none ready) or a negative -errno (no children at all).
+glyph STOP_DRAIN = la pid. IF(str_eq(pid)("0"))(la _. "Y")(la _. IF(IS_NEG(pid))(la _. "Y")(la _. "N"))
+
+# SPAWN — fork the session shell; the parent returns the shell's pid. The
+# child unblocks the signals init blocked, so the shell does not inherit a
+# masked SIGTERM/SIGCHLD, then becomes /bin/sh.
 glyph SPAWN = la _.
     (la pid. IF(str_eq(pid)("0"))
-        (la _. SEQ(execve("/bin/sh"))(exit("127")))
+        (la _. SEQ(sigprocmask("1")(SIGMASK))(SEQ(execve("/bin/sh"))(exit("127"))))
         (la _. pid))
     (fork("!"))
 
-# Respawn throttle. A shell that dies immediately (missing /bin/sh, EOF on a
-# dead console, instant crash) would otherwise be re-forked in a tight loop —
-# a fork-storm that pegs a CPU and, without bound, would eventually exhaust the
-# dump. BACKOFF seconds of sleep before each respawn rate-limits the flapping
-# to at most one shell per BACKOFF, the way a real init holds a respawning
-# service. (This is a fixed rate limit, not flap-detection: it needs only a
-# delay primitive, not a clock.)
+# Respawn throttle. A shell that dies immediately would otherwise be re-forked
+# in a tight loop — a fork-storm. BACKOFF seconds of sleep before each respawn
+# rate-limits the flapping to at most one shell per BACKOFF.
 glyph BACKOFF = "1"
 glyph RESPAWN = la _. SEQ(sleep(BACKOFF))(SPAWN("!"))
 
-# SUPERVISE(shell) — never returns. Reap a terminated child; respawn the
-# shell (after a backoff) when it (or nothing) is what died, otherwise keep the
-# same shell. Orphan reaps take the fast path — no backoff — so collecting
-# zombies is never throttled, only shell restarts are.
-glyph SUPERVISE = Z(la self. la shell.
-    (la dead.
-        IF(IS_NEG(dead))
-            (la _. self(RESPAWN("!")))
-            (la _. IF(str_eq(dead)(shell))
-                       (la _. self(RESPAWN("!")))
-                       (la _. self(shell))))
-    (reap("!")))
+# DRAIN(shell) — collect every child that is ready right now (SIGCHLDs coalesce,
+# so a single signal may cover several deaths). Returns "1" if the session shell
+# was one of the reaped pids, "0" otherwise, so the caller knows to respawn.
+glyph DRAIN = la shell.
+    Z(la self. la found.
+        (la pid.
+            IF(str_eq(STOP_DRAIN(pid))("Y"))
+                (la _. found)
+                (la _. self(IF(str_eq(pid)(shell))(la _. "1")(la _. found))))
+        (reapnb("!")))("0")
+
+# SHUTDOWN(shell) — the clean SIGTERM path: announce, terminate the session
+# shell, and exit 0. The one way out of the supervision loop.
+glyph SHUTDOWN = la shell.
+    SEQ(print("LogOS received SIGTERM — terminating session."))(
+    SEQ(kill(shell)(SIGTERM))(
+    exit("0")))
+
+# SUPERVISE(sigfd)(shell) — never returns except through SHUTDOWN. Block on the
+# signalfd; on SIGTERM shut down, otherwise (SIGCHLD) drain ready children and
+# respawn the shell if it died.
+glyph SUPERVISE = la sigfd. Z(la self. la shell.
+    (la si.
+        IF(str_eq(ord(str_head(si)))(SIGTERM))
+            (la _. SHUTDOWN(shell))
+            (la _.
+                (la wasshell.
+                    self(IF(str_eq(wasshell)("1"))(la _. RESPAWN("!"))(la _. shell)))
+                (DRAIN(shell))))
+    (read(sigfd)("128")))
 
 glyph MAIN =
     SEQ(mount("/proc")("proc"))(
     SEQ(mount("/sys")("sysfs"))(
+    SEQ(sigprocmask("0")(SIGMASK))(
     SEQ(print("LogOS sovereign session initialized."))(
-    SUPERVISE(SPAWN("!")))))
+    (la sigfd. SUPERVISE(sigfd)(SPAWN("!")))(signalfd(SIGMASK))))))
