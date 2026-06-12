@@ -3,33 +3,42 @@
 #  the LIVE multiplexed device→screen session.
 #
 #  This is the runnable companion to theourgia_mux_session.la (whose pure
-#  DRAIN_STEP fold build.sh verifies on every engine). It carries the same
-#  verified machinery — the Stage 1 surface core + Stage 4 decoder (imported),
-#  the Stage 5 reducer (STEP/APPLY_KEY/MOVE), Stage 6 marshalling (JOIN/SPLIT),
-#  DRAIN_STEP (the multiplexed fold), Stage 3 TO_FB, and the LIVE loop — and adds
-#  a live MAIN that opens two real /dev/input devices, takes the screen with
-#  drm_mode, and runs LIVE forever: poll every device → fold every ready event
-#  into the scene via STEP → recompose → present. Keyboard and mouse drive the
-#  one window, neither blocking the other.
+#  DRAIN_STEP fold build.sh verifies on every engine). It keeps that verified
+#  reducer (STEP/APPLY_KEY/MOVE/DRAIN_STEP) UNCHANGED, and adds a live MAIN that
+#  AUTO-DETECTS the keyboard (and a mouse, if present) from
+#  /proc/bus/input/devices, takes the screen with drm_mode, draws an
+#  unconditional startup TEST PATTERN to prove the scanout path independent of
+#  input, then runs LIVE forever: poll every device → fold every ready event into
+#  the scene via STEP → recompose → present.
+#
+#  ── WHAT CHANGED (June 2026) vs the surface/TO_FB render ──────────────
+#  The old render composed a 32×24 surface and TO_FB-letterboxed it at the
+#  top-left of the real screen — a near-invisible speck on a 1080p panel (hence
+#  "black screen, arrow keys do nothing": the window WAS moving, by 1px in the
+#  corner). The surface path (SOLID / RGB_TO_BGRX) is O(n²) per row, so it cannot
+#  scale to a real display. This file now builds the XRGB8888 framebuffer
+#  DIRECTLY and in O(screen) via a doubling fill (REPEAT2): a full-screen desktop
+#  with a large, clearly-movable window. The pure reducer the verified twin
+#  checks is identical; only the on-screen rasteriser changed.
 #
 #  ── HOW TO RUN ──────────────────────────────────────────────────────
 #  Needs a BARE VT (Ctrl+Alt+F3..F6) for DRM master — under a compositor
 #  drm_mode halts loudly (secd: drm error) WITHOUT touching the display — and
-#  read access to /dev/input (sudo). Edit event4/event7 below to your keyboard /
-#  mouse if they differ (grep -E 'Name=|Handlers=' /proc/bus/input/devices).
+#  read access to /dev/input (sudo). No device numbers to edit: the keyboard and
+#  mouse are auto-detected by name from /proc/bus/input/devices.
 #      ./tiny_host secd.la                        # emit the VM (logos_secd)
 #      cp theourgia_mux_session_live.la logos_source.la
 #      ./tiny_host codegen.la                     # compile -> logos_program.bin
 #      sudo ./logos_secd                          # from a bare VT
-#  A small blue desktop with a red window appears top-left; arrow keys move it.
-#  Ctrl+C to stop, then Ctrl+Alt+F1/F2 back to your desktop. Without sudo it
-#  halts clean at the open guard (OPEN_OR_DIE) instead of touching anything.
+#  A 2-second green test pattern with a magenta box appears first (render path
+#  proof), then a blue desktop with a red window; arrow keys move it in 40px
+#  steps. Ctrl+C to stop, then Ctrl+Alt+F1/F2 back to your desktop. Without sudo
+#  it halts clean at the open guard (OPEN_OR_DIE) instead of touching anything.
 # ═══════════════════════════════════════════════════════════════════
 
-import("theourgia.la")          # PX SURF S_W S_H S_ROWS SOLID COMPOSE PPM
 import("theourgia_input.la")    # EV_TYPE EV_CODE EV_VALUE EV_* IS_KEY_PRESS/RELEASE
 
-# ── Foundations (Church lists; the imports' same-named privates are isolated) ──
+# ── Foundations (Church lists; the import's same-named privates are isolated) ──
 glyph SEQ     = la a. la b. b
 glyph TRUE    = la t. la f. t
 glyph FALSE   = la t. la f. f
@@ -61,109 +70,176 @@ glyph SPLIT_GO = Z(la self. la rest. la tok.
     (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
 glyph SPLIT = la s. SPLIT_GO(s)("")
 
-# ── The reducer (Stage 5): fold one decoded event into the scene state ──
-# STATE = PAIR(x)(y), the movable window's position. On an arrow-key PRESS move
-# one cell (APPLY_KEY is a flat 4-way keycode dispatch; MOVE shifts the coords);
-# any other event leaves the state unchanged.
+# ── The reducer (Stage 5, UNCHANGED shape): fold one event into the scene ──
+# STATE = PAIR(x)(y), the movable window's TOP-LEFT pixel position. On an arrow-
+# key PRESS move STEP_PX pixels (APPLY_KEY is a flat 4-way keycode dispatch; MOVE
+# shifts the coords); any other event leaves the state unchanged. Coordinates are
+# clamped to the screen only at render time (FRAME), so STEP stays pure.
 glyph KEY_UP    = 103
 glyph KEY_LEFT  = 105
 glyph KEY_RIGHT = 106
 glyph KEY_DOWN  = 108
-glyph NEG1 = sub(0)(1)
+glyph STEP_PX  = 40
+glyph NEGSTEP  = sub(0)(STEP_PX)
 glyph MOVE = la st. la dx. la dy. st(la x. la y. PAIR(add(x)(dx))(add(y)(dy)))
 glyph APPLY_KEY = la st. la c.
-    IF(int_eq(c)(KEY_RIGHT))(la _. MOVE(st)(1)(0))(la _.
-    IF(int_eq(c)(KEY_LEFT)) (la _. MOVE(st)(NEG1)(0))(la _.
-    IF(int_eq(c)(KEY_DOWN)) (la _. MOVE(st)(0)(1))(la _.
-    IF(int_eq(c)(KEY_UP))   (la _. MOVE(st)(0)(NEG1))(la _.
+    IF(int_eq(c)(KEY_RIGHT))(la _. MOVE(st)(STEP_PX)(0))(la _.
+    IF(int_eq(c)(KEY_LEFT)) (la _. MOVE(st)(NEGSTEP)(0))(la _.
+    IF(int_eq(c)(KEY_DOWN)) (la _. MOVE(st)(0)(STEP_PX))(la _.
+    IF(int_eq(c)(KEY_UP))   (la _. MOVE(st)(0)(NEGSTEP))(la _.
     st))))
 glyph STEP = la st. la e.
     IF(IS_KEY_PRESS(e))(la _. APPLY_KEY(st)(EV_CODE(e)))(la _. st)
 
-# ── DRAIN_STEP — the multiplexed fold (NEW): apply EVERY ready device's event ──
-# Fold STEP over the ready fds in one cycle, threading the state, so a poll
-# result of several ready devices folds all their events into the one scene
-# before it is rendered. Parameterised by READER, so build.sh drives it with a
-# pure SIMREAD and the live loop drives it with the real read(fd, 24).
+# ── DRAIN_STEP — the multiplexed fold (UNCHANGED): apply EVERY ready event ──
 glyph DRAIN_STEP = Z(la self. la reader. la st. la ready.
     IF(IS_CONS(ready))(la _.
         self(reader)(STEP(st)(reader(LIST_HD(ready))))(LIST_TL(ready)))
     (la _. st))
 
-# ── Recomposition (Stage 5): blit the window at (x,y), raster to a PPM ──
-glyph BG  = SOLID(32)(24)(PX(0)(0)(128))     # deep-blue desktop
-glyph WIN = SOLID(10)(8)(PX(200)(30)(30))    # the movable red window
-glyph RENDER_SURFACE = la st. st(la x. la y. COMPOSE(BG)(WIN)(x)(y))
-glyph RENDER = la st. PPM(RENDER_SURFACE(st))
-
-# ── Synthetic key events for the test (the 24-byte struct input_event) ──
+# ── Efficient framebuffer builder (NEW): build the XRGB8888 image DIRECTLY ──
+# A pixel scanned out is 4 bytes little-endian: B, G, R, 0 (BGRX). REPEAT2 makes
+# n copies of a string in O(n) via doubling (not O(n) concats each copying the
+# growing tail), so a full-screen frame is O(screen) — the surface/TO_FB path it
+# replaces was O(n²) per row and could not scale past a toy resolution.
 glyph BYTE = la n. chr(int_to_str(n))
-glyph LE16 = la n. concat(BYTE(mod(n)(256)))(BYTE(div(n)(256)))
-glyph REPEAT = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
-    concat(s)(self(sub(n)(1))(s))))
-glyph ZEROS16 = REPEAT(16)(BYTE(0))
-glyph LE32_ONE = concat(BYTE(1))(REPEAT(3)(BYTE(0)))
-glyph KEY_PRESS_EVENT = la code.
-    concat(ZEROS16)(concat(LE16(1))(concat(LE16(code))(LE32_ONE)))
-
-# ── Framebuffer bridge (Stage 3): composed RGB surface → XRGB8888 image ──
-# (restated locally — theourgia_fb.la does not export TO_FB; pure generation, so
-# it stays byte-identical host/VM. Used only by the VM-only LIVE loop.)
-glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
-    self(sub(n)(1))(str_tail(s))))
-glyph NUL   = BYTE(0)
+glyph NUL  = BYTE(0)
+glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
+glyph REPEAT = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(s)(self(sub(n)(1))(s))))
+glyph REPEAT2 = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(int_eq(mod(n)(2))(0))
+        (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
+        (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
 glyph ZEROS = la n. REPEAT(n)(NUL)
-glyph RGB_TO_BGRX = Z(la self. la s.
-    IF(str_eq(s)(""))(la _. "")(la _.
-        concat
-          (concat(str_head(DROP(2)(s)))
-                 (concat(str_head(DROP(1)(s)))
-                        (concat(str_head(s))(NUL))))
-          (self(DROP(3)(s)))))
-glyph FB_ROW = la srow. la pitch. la sw.
-    concat(RGB_TO_BGRX(srow))(ZEROS(sub(pitch)(mul(sw)(4))))
-glyph BUILD = Z(la self. la rows. la r. la screen_h. la pitch. la sw.
-    IF(lt(r)(screen_h))(la _.
-        concat
-          (IF(IS_CONS(rows))(la _. FB_ROW(LIST_HD(rows))(pitch)(sw))
-                            (la _. ZEROS(pitch)))
-          (self(IF(IS_CONS(rows))(la _. LIST_TL(rows))(la _. rows))
-                (add(r)(1))(screen_h)(pitch)(sw)))
-    (la _. ""))
-glyph TO_FB = la surf. la screen_h. la pitch.
-    BUILD(S_ROWS(surf))(0)(screen_h)(pitch)(S_W(surf))
+glyph PAD   = la w. la pitch. ZEROS(sub(pitch)(mul(w)(4)))   # row tail up to pitch
+glyph SOLID_ROW = la w. la pitch. la px.
+    concat(REPEAT2(w)(px))(PAD(w)(pitch))
+glyph RECT_ROW = la w. la pitch. la x0. la rw. la bg. la fg.
+    concat(REPEAT2(x0)(bg))
+    (concat(REPEAT2(rw)(fg))
+    (concat(REPEAT2(sub(w)(add(x0)(rw)))(bg))
+           (PAD(w)(pitch))))
+
+# clamp the window onto the screen so REPEAT2 never sees a negative count
+glyph MAXI  = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph MINI  = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
+glyph CLAMP = la lo. la hi. la v. MAXI(lo)(MINI(hi)(v))
+
+# FRAME w h pitch rx ry rw rh bg fg → a full-screen XRGB8888 image (height·pitch
+# bytes) of background bg with an rw×rh rectangle of fg at (rx,ry), clamped on.
+glyph FRAME = la w. la h. la pitch. la rx. la ry. la rw. la rh. la bg. la fg.
+    (la x0. (la y0.
+        concat(REPEAT2(y0)(SOLID_ROW(w)(pitch)(bg)))
+        (concat(REPEAT2(rh)(RECT_ROW(w)(pitch)(x0)(rw)(bg)(fg)))
+               (REPEAT2(sub(h)(add(y0)(rh)))(SOLID_ROW(w)(pitch)(bg)))))
+     (CLAMP(0)(sub(h)(rh))(ry)))
+     (CLAMP(0)(sub(w)(rw))(rx))
+
+# ── Scene constants ──
+glyph BG_BLUE = BGRX(140)(40)(20)    # blue-ish desktop
+glyph WIN_RED = BGRX(40)(40)(210)    # red window
+glyph WINW = 240
+glyph WINH = 160
+glyph START_POS = PAIR(200)(200)
+
+# ── drm_mode returns "<w> <h> <pitch>"; pull each as an int ──
+glyph D_W = la dims. str_to_int(LIST_HD(dims))
+glyph D_H = la dims. str_to_int(LIST_HD(LIST_TL(dims)))
+glyph D_P = la dims. str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))
+
+# ── Startup TEST PATTERN: drawn unconditionally to prove the render path ──
+# A green field with a centred magenta box, held 2s, BEFORE any input. If this
+# shows, scanout (drm_mode + present + the framebuffer builder) works and any
+# remaining "nothing happens" is in input, not rendering.
+glyph TP_BG = BGRX(20)(170)(20)      # green field
+glyph TP_FG = BGRX(200)(20)(200)     # magenta box
+glyph TPW = 400
+glyph TPH = 300
+glyph SHOW_TEST_PATTERN = la dims.
+    (la w. (la h. (la pitch.
+        SEQ(print("mux-session: startup test pattern (green field + magenta box), 2s"))(
+        SEQ(present(FRAME(w)(h)(pitch)
+                (sub(div(w)(2))(div(TPW)(2)))
+                (sub(div(h)(2))(div(TPH)(2)))
+                (TPW)(TPH)(TP_BG)(TP_FG)))
+            (sleep("2"))))
+      (D_P(dims)))(D_H(dims)))(D_W(dims))
 
 # ── The LIVE multiplexed session (VM-only: drm_mode/present/poll/read) ──
-# drm_mode returns "<w> <h> <pitch>" (SPLIT it for the height + pitch TO_FB and
-# present need). LIVE polls every device, folds all ready events into st via
-# DRAIN_STEP, recomposes, and scans the frame out — then recurses (tail position
-# → bounded dump under TCO). Open the devices and start it, e.g.:
-#     (la d. LIVE(PAIR(4)(4))(SPLIT(d))(CONS(kbd)(CONS(mouse)(NIL))))(drm_mode("!"))
-# Never reached by MAIN, so the VM-only builtins stay unresolved on the C host.
+# poll every device, fold all ready events into st via DRAIN_STEP, build the
+# full-screen frame from st's (x,y), scan it out — then recurse (tail position →
+# bounded dump under TCO).
 glyph LIVE_READ = la fd. read(fd)("24")
 glyph LIVE = Z(la self. la st. la dims. la fds.
     (la st2.
-        SEQ(present(TO_FB(RENDER_SURFACE(st2))
-                (str_to_int(LIST_HD(LIST_TL(dims))))
-                (str_to_int(LIST_HD(LIST_TL(LIST_TL(dims)))))))
+        SEQ(present(st2(la x. la y.
+                FRAME(D_W(dims))(D_H(dims))(D_P(dims))
+                     (x)(y)(WINW)(WINH)(BG_BLUE)(WIN_RED))))
             (self(st2)(dims)(fds)))
     (DRAIN_STEP(LIVE_READ)(st)(SPLIT(poll(JOIN(fds))("-1")))))
 
-# ── Live session MAIN: open the input devices, take the screen, multiplex ──
+# ── Auto-detection: find a device's eventN by name in /proc/bus/input/devices ──
+# STARTSW: does s begin with p?  AFTER: the suffix of hay just past the first
+# occurrence of needle, or "" if absent.  DETECT1(name) finds the device block
+# whose Name contains `name`, then the eventN handler that follows it, and
+# returns just the digits ("" if not found). DETECT tries two spellings.
+glyph STARTSW = Z(la self. la s. la p.
+    IF(str_eq(p)(""))(la _. TRUE)(la _.
+    IF(str_eq(s)(""))(la _. FALSE)(la _.
+    IF(str_eq(str_head(s))(str_head(p)))
+        (la _. self(str_tail(s))(str_tail(p)))
+        (la _. FALSE))))
+glyph DROP = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph LENI = la s. str_to_int(str_len(s))
+glyph AFTER = Z(la self. la hay. la needle.
+    IF(str_eq(hay)(""))(la _. "")(la _.
+    IF(STARTSW(hay)(needle))(la _. DROP(LENI(needle))(hay))(la _.
+    self(str_tail(hay))(needle))))
+glyph IS_DIGIT = la c. (la o.
+    IF(lt(o)(48))(la _. FALSE)(la _.
+    IF(lt(57)(o))(la _. FALSE)(la _. TRUE)))(str_to_int(ord(c)))
+glyph TAKE_DIGITS = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(IS_DIGIT(str_head(s)))(la _. concat(str_head(s))(self(str_tail(s))))(la _. "")))
+glyph PROCDEV = read_file("/proc/bus/input/devices")
+glyph DETECT1 = la nm.
+    (la aft. IF(str_eq(aft)(""))(la _. "")
+        (la _. TAKE_DIGITS(AFTER(aft)("event"))))(AFTER(PROCDEV)(nm))
+glyph DETECT = la a. la b.
+    (la x. IF(str_eq(x)(""))(la _. DETECT1(b))(la _. x))(DETECT1(a))
+glyph KBD_DIGITS = DETECT("keyboard")("Keyboard")
+glyph MOU_DIGITS = DETECT("Mouse")("mouse")
+glyph DEVPATH = la d. concat("/dev/input/event")(d)
+
+# ── Live session MAIN: detect + open devices, take the screen, multiplex ──
 # OPEN_OR_DIE halts loudly if a device can't be opened (run with sudo), BEFORE
 # drm_mode takes the screen. drm_mode itself halts loudly ("secd: drm error") if
-# not DRM master — i.e. run under a compositor instead of a bare VT — without
-# touching the display. Edit event4/event7 to your keyboard/mouse if they differ.
+# not DRM master (run under a compositor instead of a bare VT) without touching
+# the display. The mouse is included only if one was detected (STEP ignores its
+# events today, but it keeps the loop genuinely multiplexed).
 glyph IS_NEG = la s. str_eq(str_head(s))("-")
 glyph OPEN_OR_DIE = la path.
     (la fd. IF(IS_NEG(fd))(la _.
         error(concat(concat("mux-session: cannot open ")(path))
             (concat(" (open -> ")(concat(fd)("): need read permission on /dev/input — run with sudo")))))
     (la _. fd))(open(path)("0"))
+glyph BUILD_FDS = la kbd.
+    IF(str_eq(MOU_DIGITS)(""))
+        (la _. CONS(kbd)(NIL))
+        (la _. CONS(kbd)(CONS(OPEN_OR_DIE(DEVPATH(MOU_DIGITS)))(NIL)))
 glyph MAIN =
-    SEQ(print("mux-session: taking the screen (bare VT, DRM master) — arrow keys move the window, Ctrl+C to stop"))(
-    (la kbd. (la mouse. (la dims.
-        LIVE(PAIR(4)(4))(SPLIT(dims))(CONS(kbd)(CONS(mouse)(NIL))))
-      (drm_mode("!")))
-     (OPEN_OR_DIE("/dev/input/event7")))
-    (OPEN_OR_DIE("/dev/input/event4")))
+    SEQ(print("mux-session: auto-detecting input from /proc/bus/input/devices"))(
+    IF(str_eq(KBD_DIGITS)(""))
+        (la _. error("mux-session: no keyboard found (no Name with 'keyboard'/'Keyboard' in /proc/bus/input/devices)"))
+        (la _.
+            SEQ(print(concat("mux-session: keyboard = ")(DEVPATH(KBD_DIGITS))))(
+            (la kbd. (la fds. (la dims.
+                SEQ(SHOW_TEST_PATTERN(dims))(
+                SEQ(print("mux-session: live — arrow keys move the window (40px), Ctrl+C to stop"))(
+                LIVE(START_POS)(SPLIT(dims))(fds))))
+              (SEQ(print("mux-session: reached DRM step — devices open, calling drm_mode to take the screen"))(drm_mode("!"))))
+             (BUILD_FDS(kbd)))
+            (OPEN_OR_DIE(DEVPATH(KBD_DIGITS))))))

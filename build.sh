@@ -1010,7 +1010,7 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "13200" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 13200)"; ok=0; }
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "13698" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 13698)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -1320,7 +1320,7 @@ say "Theourgia: DRM/KMS scanout builtins (Stage 2, native VM)"
 # mode, allocate+map a 32-bpp dumb framebuffer, SETCRTC) and present() (blit a
 # framebuffer image into the scanned-out buffer). Real scanout needs DRM master,
 # which only a bare VT grants; under a running compositor the kernel refuses
-# SETCRTC and the builtin halts LOUDLY ("secd: drm error", exit 1) without
+# SETCRTC and the builtin halts LOUDLY (e.g. "secd: drm SETCRTC failed: -13", exit 1) without
 # touching the display. That loud, safe failure is what we assert here: the
 # builtins are wired (no "unbound variable") and the full DRM sequence runs and
 # fails cleanly. Actual painting is verified manually from a VT (see
@@ -1336,7 +1336,12 @@ if [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ]; then
         ./logos_secd >/tmp/drm_out.txt 2>/tmp/drm_err.txt || drm_rc=$?
         ok=1
         grep -q "unbound" /tmp/drm_err.txt && { echo "FAIL  theourgia drm: drm_mode/present unbound (not wired)"; ok=0; }
-        grep -q "secd: drm error" /tmp/drm_err.txt || { echo "FAIL  theourgia drm: expected loud 'secd: drm error' under a compositor, got [$(cat /tmp/drm_err.txt)] rc=$drm_rc"; ok=0; }
+        # Under a running compositor every DRM ioctl up to SETCRTC succeeds (they
+        # need only an open fd, not master); only SETCRTC is master-gated, so it
+        # fails loudly naming itself and its -errno (e.g. -13 EACCES). Asserting
+        # the SETCRTC line proves the whole prior sequence ran AND that .drm_fail
+        # reports the specific failing call, not a generic message.
+        grep -qE "secd: drm SETCRTC failed: -[0-9]+" /tmp/drm_err.txt || { echo "FAIL  theourgia drm: expected loud 'secd: drm SETCRTC failed: -<errno>' under a compositor, got [$(cat /tmp/drm_err.txt)] rc=$drm_rc"; ok=0; }
         [ "$drm_rc" -eq 1 ] || { echo "FAIL  theourgia drm: expected exit 1 (loud fail), got rc=$drm_rc"; ok=0; }
         rm -f logos_secd logos_program.bin logos_source.la /tmp/drm_out.txt /tmp/drm_err.txt
         if [ "$ok" -eq 1 ]; then

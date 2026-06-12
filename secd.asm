@@ -1546,7 +1546,7 @@ _start:
     xor     rdx, rdx
     syscall
     test    rax, rax
-    js      .drm_fail
+    js      .fail_open
     mov     [drm_fd], rax
     mov     rdi, rax                  ; best-effort SET_MASTER (ignore result)
     mov     rax, 16
@@ -1576,7 +1576,7 @@ _start:
     mov     rdx, drm_res
     syscall
     test    rax, rax
-    js      .drm_fail
+    js      .fail_getres
     mov     r9d, [drm_res + 40]       ; actual connector count
     cmp     r9d, 32
     jbe     .dm_cnt_ok
@@ -1585,7 +1585,7 @@ _start:
     xor     r8, r8                    ; connector index
 .dm_conn_loop:
     cmp     r8d, r9d
-    jae     .drm_fail                 ; no connected connector with a mode → fail
+    jae     .drm_fail_noconn          ; no connected connector with a mode → fail
     mov     rdi, drm_conn
     xor     eax, eax
     mov     ecx, 10
@@ -1653,7 +1653,7 @@ _start:
     mov     rdx, drm_dumb
     syscall
     test    rax, rax
-    js      .drm_fail
+    js      .fail_createdumb
     mov     eax, [drm_dumb + 20]      ; pitch
     mov     [drm_pitch], rax
     mov     rax, [drm_dumb + 24]      ; size
@@ -1679,7 +1679,7 @@ _start:
     mov     rdx, drm_fbcmd
     syscall
     test    rax, rax
-    js      .drm_fail
+    js      .fail_addfb
     ; --- MAP_DUMB → mmap the buffer ---
     mov     rdi, drm_map
     xor     eax, eax
@@ -1693,7 +1693,7 @@ _start:
     mov     rdx, drm_map
     syscall
     test    rax, rax
-    js      .drm_fail
+    js      .fail_mapdumb
     mov     r9, [drm_map + 8]         ; mmap offset (6th arg)
     xor     rdi, rdi                  ; addr = NULL
     mov     rsi, [drm_maps]           ; length = size
@@ -1703,7 +1703,7 @@ _start:
     mov     rax, 9                    ; mmap
     syscall
     cmp     rax, -4096                ; mmap error (-errno) ?
-    ja      .drm_fail
+    ja      .fail_mmap
     mov     [drm_mapp], rax
     ; --- SETCRTC: point the CRTC at our fb with the chosen mode ---
     mov     rdi, drm_crtc
@@ -1728,7 +1728,7 @@ _start:
     mov     rdx, drm_crtc
     syscall
     test    rax, rax
-    js      .drm_fail
+    js      .fail_setcrtc
     ; --- build the "<w> <h> <pitch>" result string on the heap ---
     mov     rbp, r15                  ; bytes start
     mov     rax, [drm_w]
@@ -1769,7 +1769,7 @@ _start:
                                       ; so the type error reports regardless of state)
     mov     rax, [drm_mapp]
     test    rax, rax
-    jz      .drm_fail                 ; present() before a successful drm_mode()
+    jz      .drm_fail_nomode          ; present() before a successful drm_mode()
     mov     rcx, [r9]                 ; source length
     mov     rdx, [drm_maps]
     cmp     rcx, rdx
@@ -1802,11 +1802,124 @@ _start:
     mov     [r12+8], r9
     add     r12, 16
     jmp     .loop
+; ── DRM loud-failure: name the failing ioctl and its return code ──────────
+; Each call site jumps to a per-call stub that loads the call name (rsi=ptr,
+; edx=len) and falls through to .drm_fail with rax still holding the syscall's
+; return value (the negative -errno). .drm_fail prints
+; "secd: drm <CALL> failed: <rc>\n" and exit(1). Two non-ioctl conditions (no
+; connected display; present before drm_mode) take their own plain messages.
+; All registers are fair game here — this path always exits.
+.fail_open:
+    mov     rsi, dn_open
+    mov     edx, dn_open_len
+    jmp     .drm_fail
+.fail_getres:
+    mov     rsi, dn_getres
+    mov     edx, dn_getres_len
+    jmp     .drm_fail
+.fail_createdumb:
+    mov     rsi, dn_createdumb
+    mov     edx, dn_createdumb_len
+    jmp     .drm_fail
+.fail_addfb:
+    mov     rsi, dn_addfb
+    mov     edx, dn_addfb_len
+    jmp     .drm_fail
+.fail_mapdumb:
+    mov     rsi, dn_mapdumb
+    mov     edx, dn_mapdumb_len
+    jmp     .drm_fail
+.fail_mmap:
+    mov     rsi, dn_mmap
+    mov     edx, dn_mmap_len
+    jmp     .drm_fail
+.fail_setcrtc:
+    mov     rsi, dn_setcrtc
+    mov     edx, dn_setcrtc_len
+    jmp     .drm_fail
 .drm_fail:
+    ; rsi = call-name ptr, edx = name len, rax = rc (signed -errno)
+    mov     r12, rax                  ; save rc (operand stack is dead on exit)
+    mov     r13, rsi                  ; save name ptr
+    mov     r14, rdx                  ; save name len
+    mov     rdi, pathbuf              ; assemble the whole line in pathbuf
+    mov     rsi, drm_pfx              ; "secd: drm "
+    mov     rdx, drm_pfx_len
+    call    .drm_cpy
+    mov     rsi, r13                  ; the call name
+    mov     rdx, r14
+    call    .drm_cpy
+    mov     rsi, drm_failed           ; " failed: "
+    mov     rdx, drm_failed_len
+    call    .drm_cpy
+    mov     rax, r12                  ; format the signed rc
+    call    .drm_fmt_signed
+    mov     byte [rdi], 10            ; newline
+    inc     rdi
+    mov     rdx, rdi                  ; length = rdi - pathbuf
+    mov     rsi, pathbuf
+    sub     rdx, rsi
+    mov     rax, 1                    ; write(2, pathbuf, len)
+    mov     rdi, 2
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+.drm_cpy:                             ; rsi=src rdx=len rdi=dst → rdi advanced
+    test    rdx, rdx
+    je      .drm_cpy_done
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rdx
+    jmp     .drm_cpy
+.drm_cpy_done:
+    ret
+.drm_fmt_signed:                      ; rax=signed value, rdi=dst → rdi advanced
+    test    rax, rax
+    jns     .dfs_pos
+    mov     byte [rdi], 0x2d          ; '-'
+    inc     rdi
+    neg     rax
+.dfs_pos:
+    mov     r10, rdi                  ; first digit position
+    mov     r11, 10
+.dfs_loop:
+    xor     rdx, rdx
+    div     r11                       ; rax /= 10, rdx = digit
+    add     dl, 0x30                  ; '0'
+    mov     [rdi], dl
+    inc     rdi
+    test    rax, rax
+    jnz     .dfs_loop
+    lea     rcx, [rdi-1]              ; reverse [r10, rdi)
+.dfs_rev:
+    cmp     r10, rcx
+    jae     .dfs_rev_done
+    mov     al, [r10]
+    mov     dl, [rcx]
+    mov     [r10], dl
+    mov     [rcx], al
+    inc     r10
+    dec     rcx
+    jmp     .dfs_rev
+.dfs_rev_done:
+    ret
+.drm_fail_noconn:                     ; no connected connector with a usable mode
     mov     rax, 1
     mov     rdi, 2
-    mov     rsi, drmmsg
-    mov     rdx, drmmsg_len
+    mov     rsi, drm_noconnmsg
+    mov     rdx, drm_noconnmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+.drm_fail_nomode:                     ; present() before a successful drm_mode()
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, drm_nomodemsg
+    mov     rdx, drm_nomodemsg_len
     syscall
     mov     rax, 60
     mov     rdi, 1
@@ -3493,8 +3606,28 @@ str_getpid:    db "getpid", 0
 str_reapnb:    db "reapnb", 0
 str_poll:      db "poll", 0
 drm_card:      db "/dev/dri/card0", 0
-drmmsg:        db "secd: drm error", 10
-drmmsg_len     equ $ - drmmsg
+drm_pfx:           db "secd: drm "
+drm_pfx_len        equ $ - drm_pfx
+drm_failed:        db " failed: "
+drm_failed_len     equ $ - drm_failed
+dn_open:           db "open card0"
+dn_open_len        equ $ - dn_open
+dn_getres:         db "GETRESOURCES"
+dn_getres_len      equ $ - dn_getres
+dn_createdumb:     db "CREATE_DUMB"
+dn_createdumb_len  equ $ - dn_createdumb
+dn_addfb:          db "ADDFB"
+dn_addfb_len       equ $ - dn_addfb
+dn_mapdumb:        db "MAP_DUMB"
+dn_mapdumb_len     equ $ - dn_mapdumb
+dn_mmap:           db "mmap"
+dn_mmap_len        equ $ - dn_mmap
+dn_setcrtc:        db "SETCRTC"
+dn_setcrtc_len     equ $ - dn_setcrtc
+drm_noconnmsg:     db "secd: drm no connected display", 10
+drm_noconnmsg_len  equ $ - drm_noconnmsg
+drm_nomodemsg:     db "secd: present before drm_mode", 10
+drm_nomodemsg_len  equ $ - drm_nomodemsg
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect
