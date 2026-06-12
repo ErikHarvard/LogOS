@@ -965,7 +965,7 @@ _start:
     je      .apply_bi
     cmp     r10, 3
     je      .apply_pa
-    jmp     .halt
+    jmp     .notfunc             ; applied value is not CLO/BI/PA → halt loudly
 .apply_clo:
     ; Tail-call optimisation. An APPLY immediately followed by RET (the
     ; closure's result IS the enclosing body's result) is a tail call: instead
@@ -3245,6 +3245,16 @@ _start:
     mov     rdi, 1
     syscall
 
+.notfunc:                        ; APPLY of a non-function (STR/INT) — halt loudly
+    mov     rax, 1               ;   (exit 1). Was: jmp .halt → silent exit(0) with no
+    mov     rdi, 2               ;   output, which hid a two-day Theourgia bug. Now the
+    mov     rsi, notfuncmsg      ;   wrong arity surfaces instead of vanishing.
+    mov     rdx, notfuncmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 .progbig:                        ; program stream larger than the mapped buffer
     mov     rax, 1
     mov     rdi, 2
@@ -3525,6 +3535,8 @@ pathmsg:       db "secd: path too long", 10
 pathmsg_len    equ $ - pathmsg
 unboundmsg:    db "secd: unbound variable", 10
 unboundmsg_len equ $ - unboundmsg
+notfuncmsg:    db "secd: attempt to apply a non-function", 10
+notfuncmsg_len equ $ - notfuncmsg
 progmsg:       db "secd: program too large", 10
 progmsg_len    equ $ - progmsg
 readmsg:       db "secd: read error", 10
