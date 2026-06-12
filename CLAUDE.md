@@ -934,6 +934,16 @@ The compositor is built in stages, each independently runnable and checked by
   VT. (Scanout extends the **generation** side of the Γ/Ρ split — codegen-style
   buffer assembly; the screen is recognition performed by the GPU and KMS.)
 
+  **Verified end-to-end on real hardware (2026-06-12).** Run from a bare VT via
+  `drm_bringup.sh` (stops `cosmic-greeter` to free the GPU, restores it on any
+  exit via a trap), both the C reference and the clean LogOS VM painted the full
+  screen blue, then the greeter came back cleanly — two blue flashes, scanout
+  path confirmed. The earlier black screen was **not a code bug**: it was GPU
+  contention from the live desktop session (cosmic-comp holding DRM master). The
+  fix is operational, not a patch — run from a free VT so the VM can become DRM
+  master. `drm_bringup.sh` encodes that discipline (it refuses to run from inside
+  the graphical session, where stopping the greeter would strand you).
+
 - **Stage 3 — the framebuffer bridge (`theourgia_fb.la`).** Stage 1 composes
   surfaces whose pixels are 3 bytes (R,G,B); Stage 2's `present` wants XRGB8888
   pixels (4 bytes, little-endian B,G,R,X) laid out at the screen's `pitch` — so
