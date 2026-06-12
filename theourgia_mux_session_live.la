@@ -239,7 +239,7 @@ glyph MAIN =
             (la kbd. (la fds. (la dims.
                 SEQ(SHOW_TEST_PATTERN(dims))(
                 SEQ(print("mux-session: live — arrow keys move the window (40px), Ctrl+C to stop"))(
-                LIVE(START_POS)(SPLIT(dims))(fds))))
-              (SEQ(print("mux-session: reached DRM step — devices open, calling drm_mode to take the screen"))(drm_mode("!"))))
+                LIVE(START_POS)(dims)(fds))))
+              (SPLIT(SEQ(print("mux-session: reached DRM step — devices open, calling drm_mode to take the screen"))(drm_mode("!")))))
              (BUILD_FDS(kbd)))
             (OPEN_OR_DIE(DEVPATH(KBD_DIGITS))))))
