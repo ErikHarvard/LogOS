@@ -1754,9 +1754,14 @@ _start:
     jmp     .loop
 
 ; present(pixels): blit a binary-safe string of framebuffer bytes into the
-; mapped dumb buffer (clamped to its size); the scanned-out CRTC shows it. The
-; pixels are expected to be height*pitch bytes of XRGB8888 (little-endian: the
-; bytes of each pixel are B,G,R,X). Returns the pixel string unchanged.
+; mapped dumb buffer (clamped to its size), then DRM_IOCTL_MODE_DIRTYFB to flush
+; the write to the scanned-out CRTC. The dirty is essential: present writes AFTER
+; drm_mode's SETCRTC, and a shadow-fb driver (simpledrm/EFI-GOP, virtio, …) only
+; re-fetches the mapped buffer on a modeset or an explicit dirty — without it the
+; pixels never reach the panel (the screen stays black though every ioctl
+; succeeds). The pixels are expected to be height*pitch bytes of XRGB8888
+; (little-endian: the bytes of each pixel are B,G,R,X). Returns the pixel string
+; unchanged.
 .bi_present:
     test    r8, r8                    ; pixels must be a STR; a non-string (e.g. an
     jnz     .strtype                  ; INT) would deref its payload as a descriptor
@@ -1772,8 +1777,27 @@ _start:
     mov     rcx, rdx                  ; clamp to buffer size
 .pr_len:
     mov     rsi, [r9+8]               ; source bytes
-    mov     rdi, rax                  ; dst = mapped buffer
+    mov     rdi, rax                  ; dst = mapped buffer (rax = drm_mapp)
     rep     movsb
+    ; --- DRM_IOCTL_MODE_DIRTYFB: flush the CPU write to the scanned-out buffer.
+    ;     Shadow-fb drivers (simpledrm / EFI-GOP, virtio, …) keep a separate
+    ;     scanout copy and only re-fetch the mapped buffer on a modeset/flip or an
+    ;     explicit dirty — so a write AFTER SETCRTC (as present does) otherwise
+    ;     never reaches the panel (the reference dodged this by writing BEFORE
+    ;     SETCRTC). Whole-fb dirty (num_clips=0); harmless (-ENOSYS/-EINVAL,
+    ;     ignored) on direct-scanout drivers. r8/r9 (the return value) survive the
+    ;     syscall — it clobbers only rax/rcx/r11.
+    mov     rdi, drm_dirty
+    xor     eax, eax
+    mov     ecx, 3
+    rep     stosq                     ; zero 24-byte drm_mode_fb_dirty_cmd
+    mov     eax, [drm_fbcmd + 0]      ; fb_id
+    mov     [drm_dirty + 0], eax
+    mov     rdi, [drm_fd]
+    mov     rax, 16
+    mov     rsi, 0xc01864b1           ; DRM_IOCTL_MODE_DIRTYFB
+    mov     rdx, drm_dirty
+    syscall
     mov     [r12], r8                 ; return the pixel value
     mov     [r12+8], r9
     add     r12, 16
@@ -3535,6 +3559,7 @@ drm_map      equ drmbuf + 5072       ; drm_mode_map_dumb (16)
 drm_fbcmd    equ drmbuf + 5088       ; drm_mode_fb_cmd (28)
 drm_crtc     equ drmbuf + 5120       ; drm_mode_crtc (104, embeds the modeinfo)
 drm_connid   equ drmbuf + 5224       ; the single connector id passed to SETCRTC (u32)
+drm_dirty    equ drmbuf + 5232       ; drm_mode_fb_dirty_cmd (24) for DIRTYFB flush
 drmsize  equ 0x10000                 ; 64 KiB
 margin   equ 0x4100000               ; 65 MiB: covers the largest single allocation
                                      ; (read_file's 64 MiB read + descriptor); the

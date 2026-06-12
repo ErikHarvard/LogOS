@@ -905,7 +905,13 @@ The compositor is built in stages, each independently runnable and checked by
     held in VM globals for `present`.
   - `present(pixels)` — copies a framebuffer image (height·pitch bytes of
     XRGB8888, little-endian, so a pixel's bytes are B,G,R,X) into the
-    scanned-out buffer (clamped to its size); the screen shows it. Returns the
+    scanned-out buffer (clamped to its size), then issues `DRM_IOCTL_MODE_DIRTYFB`
+    to flush the write to the panel; the screen shows it. The dirty is essential
+    because `present` writes *after* `drm_mode`'s `SETCRTC`, and a shadow-fb
+    driver (simpledrm/EFI-GOP, virtio, …) only re-fetches the mapped buffer on a
+    modeset or an explicit dirty — without it the pixels never reach the panel
+    and the screen stays black though every ioctl succeeds (a direct-scanout
+    driver returns `-ENOSYS`, harmlessly ignored). Returns the
     pixel string unchanged. A non-string argument is rejected loudly (the tag
     check runs before the drm-state test), like the other string builtins.
 

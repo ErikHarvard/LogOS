@@ -60,11 +60,18 @@ glyph FRAME = la h. la pitch. REPLICATE(h)(ROW(pitch))
 
 # drm_mode runs first (binding `dims`); on a compositor it halts here, so the
 # framebuffer below is never built. As master it returns the geometry and we
-# paint the whole screen blue.
+# paint the whole screen blue, then HOLD the fd open with sleep("4") before
+# exiting. The hold matters: on process exit the DRM fd closes, and the kernel's
+# lastclose frees the dumb buffer and restores fbcon/the prior CRTC — so without
+# it the painted blue is torn down before it is perceptible (the bug that made a
+# successful scanout look black). The standalone theourgia_drmref.c does the same
+# sleep(4) for the same reason. (sleep is a VM syscall builtin; under a compositor
+# drm_mode halts before this line, so the loud-fail path is unchanged.)
 glyph MAIN = (la dims.
     (la h. (la pitch.
         SEQ(present(FRAME(h)(pitch)))
-           (print(concat("theourgia: painted ")(dims)))
+       (SEQ(print(concat("theourgia: painted ")(dims)))
+           (sleep("4")))
     )(FIELD0(AFTER_SPACE(AFTER_SPACE(dims)))))
      (FIELD0(AFTER_SPACE(dims))))
   (drm_mode("!"))
