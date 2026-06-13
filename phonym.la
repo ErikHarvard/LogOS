@@ -1,0 +1,301 @@
+# ═══════════════════════════════════════════════════════════════════
+#  phonym.la — the PHONOLOGICAL modality of Lingua Adamica (LINGUA_ADAMICA.tex).
+#
+#  The third mode of the trimodal language (visual=sigil.la, computational=
+#  primitives.la, phonological=here). A PHONYM is the sonic analogue of the
+#  sigil: one vocal gesture, one concept (Ch. "The Phonym"). This file SYNTHESISES
+#  the nine primitive phonyms as actual sound — pure integer DSP, so the PCM is
+#  byte-identical on the C host and the native VM (the audio analogue of
+#  theourgia.la's PPM/framebuffer generation), written out as a 16-bit mono WAV.
+#  (PSC* — a phonym GENERATED from a glyph's κ-structure, the audio twin of
+#  TopoEmbed — is the next layer.)
+#
+#  ── THE NINE PRIMITIVE PHONYMS (§"The Nine Primitive Phonyms", line ~5057) ──
+#    g1 Being /ɑ/   g2 Recognition /ʃi/  g3 Love /lu/   g4 Self /mɑ/
+#    g5 Relation /ʀa/  g6 Void /hɑ/  g7 Becoming /vu/  g8 Form /tɑ/  g9 Depth /dɔ/
+#  Each is rendered from its phonetic parameters (Def. phon-params): formant
+#  spectrum (F1/F2/F3), a glottal pitch (f0), an ADSR temporal contour, and —
+#  for the onsets — fricative noise (/ʃ h v/), a nasal murmur (/m/), a uvular
+#  trill (/ʀ/), or a plosive burst (/t d/). All synthesis is fixed-point integer
+#  (64-bit-safe), so host and VM produce the identical waveform.
+#
+#  ── REPRESENTATION ──────────────────────────────────────────────────
+#  Sound is generated, not recorded: a sample is a pure function of its index i
+#  (phase = i·inc, so no per-sample state — the divide-and-conquer PCM builder
+#  can split the range freely and stay O(n log n)). Samples are 16-bit signed,
+#  little-endian, assembled into a binary-safe string via chr/concat, prefixed
+#  with a 44-byte RIFF/WAVE header → a playable .wav.
+# ═══════════════════════════════════════════════════════════════════
+
+export PHONYM PSC_STAR SPEC RENDER PCM SR PRIM SYN CON DIR CONT MC PHON_PRIM WAVE
+
+# ── Foundations ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph OR    = la a. la b. a(TRUE)(b)
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph PAIR  = la a. la b. la f. f(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+
+# ── Integer helpers ──
+glyph GE  = la a. la b. NOT(lt(a)(b))
+glyph LE  = la a. la b. NOT(lt(b)(a))
+glyph MIN = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
+glyph MAX = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+
+# ── Decomposition algebra — the SAME Scott-encoded nodes sigil.la/canon.la walk
+#    (PSC* will walk these; here only PRIM leaves are sounded). ──
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+
+# ═══ SYNTHESIS SUBSTRATE (fixed-point integer DSP) ══════════════════
+glyph SR  = 16000      # sample rate (Hz); Nyquist 8 kHz carries the fricatives
+
+# Phase: one period = 256·65536 = 2^24 phase units. inc per sample = f·2^24/SR
+# = f·1048576/1000 (16777216/16000). PHASEIDX maps sample i at freq f to a table
+# index 0..255 — exact, stateless (phase = i·inc, no accumulation/drift).
+glyph PHASEIDX = la i. la f. mod(div(div(mul(mul(i)(f))(1048576))(1000))(65536))(256)
+
+# SINEK(k): a parabolic sine over one period (k 0..255) → amplitude ±10000.
+# Two half-lobes: 40000·k·(128−k)/16384 peaks at 10000; the second lobe negated.
+# (Spectrally verified to place formants on target, like a true sine table.)
+glyph SINEK = la k.
+    IF(lt(k)(128))
+        (la _. div(mul(mul(40000)(k))(sub(128)(k)))(16384))
+        (la _. (la k2. sub(0)(div(mul(mul(40000)(k2))(sub(128)(k2)))(16384)))(sub(k)(128)))
+glyph PSIN = la i. la f. SINEK(PHASEIDX(i)(f))
+
+# ENV(n)(i): ADSR ramp 0..1000 — attack n/6, release n/5, sustain between.
+glyph ENV = la n. la i.
+    (la a. la r.
+      IF(lt(i)(a))      (la _. div(mul(1000)(i))(a))
+     (la _. IF(lt(sub(n)(r))(i))(la _. div(mul(1000)(sub(n)(i)))(r))
+                                (la _. 1000)))
+    (div(n)(6))
+    (div(n)(5))
+
+# Apply amplitude (amp = peak) and the envelope to a ±10000 base sample.
+glyph SHAPE = la base. la amp. la n. la i.
+    div(mul(div(mul(base)(amp))(10000))(ENV(n)(i)))(1000)
+
+# VOICED — three formant resonances (F1 strongest) modulated by a glottal pulse
+# at f0 (the modulation imposes pitch / voiced harmonics). Base is ±10000.
+glyph VMIX = la i. la F1. la F2. la F3.
+    div(add(add(mul(5)(PSIN(i)(F1)))(mul(3)(PSIN(i)(F2))))(mul(2)(PSIN(i)(F3))))(10)
+glyph VSAMP = la F1. la F2. la F3. la f0. la amp. la n. la i.
+    SHAPE(div(mul(VMIX(i)(F1)(F2)(F3))(add(PSIN(i)(f0))(10000)))(20000))(amp)(n)(i)
+
+# NOISE(seed)(i): a deterministic stateless pseudo-random sample ±10000 (a
+# multiplicative hash of i — reproducible identically on host and VM).
+glyph NOISE = la seed. la i.
+    sub(mod(mod(add(mul(add(i)(seed))(1103515245))(12345))(2147483648))(20001))(10000)
+# NSAMP — fricative: hp=1 brightens (difference of adjacent noise, for /ʃ/),
+# hp=0 darkens (running average, for /h v/).
+glyph NSAMP = la hp. la amp. la seed. la n. la i.
+    (la w0. la w1.
+      SHAPE(IF(int_eq(hp)(1))(la _. div(sub(w0)(w1))(2))(la _. div(add(w0)(w1))(2)))(amp)(n)(i))
+    (NOISE(seed)(i))
+    (NOISE(seed)(sub(i)(1)))
+
+# BSAMP — plosive burst: noise that decays linearly across the segment.
+glyph BSAMP = la amp. la seed. la n. la i.
+    div(mul(div(mul(NOISE(seed)(i))(amp))(10000))(sub(n)(i)))(n)
+
+# MSAMP — nasal murmur: a low buzz (~110 Hz) with a low resonance (~250 Hz).
+glyph MSAMP = la amp. la n. la i.
+    SHAPE(div(add(mul(7)(PSIN(i)(110)))(mul(3)(PSIN(i)(250))))(10))(amp)(n)(i)
+
+# TSAMP — uvular trill: a voiced buzz amplitude-modulated at a flutter rate.
+glyph TSAMP = la F1. la F2. la f0. la modr. la amp. la n. la i.
+    SHAPE(div(mul(div(mul(div(add(mul(6)(PSIN(i)(F1)))(mul(4)(PSIN(i)(F2))))(10))
+                        (add(PSIN(i)(f0))(10000)))(20000))
+                (add(PSIN(i)(modr))(10000)))(20000))(amp)(n)(i)
+
+# ═══ THE NINE PRIMITIVE PHONYMS (each: sample index i → ±sample) ═════
+# Segment lengths in samples (16/ms). Onset, then vowel nucleus (local index).
+# g1 BEING /ɑ/ — open back vowel (F1 700, F2 1100, F3 2540), the most open gesture.
+glyph PH_BEING = la i. VSAMP(700)(1100)(2540)(120)(2600)(6080)(i)
+# g2 RECOGNITION /ʃi/ — bright fricative (0..1920) then close front /i/.
+glyph PH_RECOGNITION = la i.
+    IF(lt(i)(1920))(la _. NSAMP(1)(2200)(12345)(1920)(i))
+                   (la _. VSAMP(270)(2300)(3000)(140)(2600)(4800)(sub(i)(1920)))
+# g3 LOVE /lu/ — lateral onset (0..1440) gliding into rounded /u/.
+glyph PH_LOVE = la i.
+    IF(lt(i)(1440))(la _. VSAMP(360)(1300)(2500)(130)(2600)(1440)(i))
+                   (la _. VSAMP(300)(870)(2240)(130)(2600)(5120)(sub(i)(1440)))
+# g4 SELF /mɑ/ — bilabial nasal murmur (0..1760), closure then opening into /ɑ/.
+glyph PH_SELF = la i.
+    IF(lt(i)(1760))(la _. MSAMP(1800)(1760)(i))
+                   (la _. VSAMP(700)(1100)(2540)(120)(2600)(4800)(sub(i)(1760)))
+# g5 RELATION /ʀa/ — uvular trill (0..2240) into open /a/.
+glyph PH_RELATION = la i.
+    IF(lt(i)(2240))(la _. TSAMP(520)(1200)(120)(28)(2400)(2240)(i))
+                   (la _. VSAMP(750)(1150)(2500)(120)(2600)(4480)(sub(i)(2240)))
+# g6 VOID /hɑ/ — breath (low-pass glottal noise, 0..2080) into open back /ɑ/.
+glyph PH_VOID = la i.
+    IF(lt(i)(2080))(la _. NSAMP(0)(1500)(54321)(2080)(i))
+                   (la _. VSAMP(650)(1000)(2500)(110)(2600)(4800)(sub(i)(2080)))
+# g7 BECOMING /vu/ — voiced labiodental fricative (0..1440) forward into /u/.
+glyph PH_BECOMING = la i.
+    IF(lt(i)(1440))(la _. NSAMP(0)(1200)(999)(1440)(i))
+                   (la _. VSAMP(300)(870)(2240)(135)(2600)(4960)(sub(i)(1440)))
+# g8 FORM /tɑ/ — voiceless plosive: silence (0..960), sharp burst (960..1520), /ɑ/.
+glyph PH_FORM = la i.
+    IF(lt(i)(960))(la _. 0)
+   (la _. IF(lt(i)(1520))(la _. BSAMP(9000)(777)(560)(sub(i)(960)))
+                         (la _. VSAMP(700)(1100)(2540)(120)(2600)(4640)(sub(i)(1520))))
+# g9 DEPTH /dɔ/ — voiced plosive: brief voiced closure (0..720), burst (720..1200),
+# then open-mid back /ɔ/ — the descent.
+glyph PH_DEPTH = la i.
+    IF(lt(i)(720))(la _. VSAMP(200)(900)(2200)(90)(1400)(720)(i))
+   (la _. IF(lt(i)(1200))(la _. BSAMP(7000)(888)(480)(sub(i)(720)))
+                         (la _. VSAMP(500)(800)(2830)(95)(2600)(4800)(sub(i)(1200))))
+
+# ═══ PCM / WAV ASSEMBLY ═════════════════════════════════════════════
+glyph BYTE  = la n. chr(int_to_str(n))
+glyph CLAMP = la s. MAX(sub(0)(32767))(MIN(32767)(s))
+# 16-bit signed little-endian (two's complement) of one sample.
+glyph ENC16 = la s.
+    (la u. concat(BYTE(mod(u)(256)))(BYTE(div(u)(256))))
+    (mod(add(mod(s)(65536))(65536))(65536))
+
+# BUILD(gen)(lo)(hi) — the PCM of samples gen(lo..hi-1), assembled by halving the
+# range (balanced concat ⇒ O(n log n), not the O(n²) of a left fold).
+glyph BUILD = Z(la self. la gen. la lo. la hi.
+    IF(int_eq(sub(hi)(lo))(1))
+        (la _. ENC16(CLAMP(gen(lo))))
+        (la _. (la mid. concat(self(gen)(lo)(mid))(self(gen)(mid)(hi)))
+               (div(add(lo)(hi))(2))))
+glyph PCM = la gen. la n. BUILD(gen)(0)(n)
+
+# REPEAT2 — O(log n) builder for identical bytes (used for the silence gaps).
+glyph REPEAT2 = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(int_eq(mod(n)(2))(0))
+        (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
+        (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
+glyph GAP = REPEAT2(2400)(ENC16(0))          # 150 ms of silence between phonyms
+
+# ── 44-byte RIFF/WAVE/PCM header for mono 16-bit at SR. ──
+glyph LE16 = la n. concat(BYTE(mod(n)(256)))(BYTE(mod(div(n)(256))(256)))
+glyph LE32 = la n.
+    concat(BYTE(mod(n)(256)))(concat(BYTE(mod(div(n)(256))(256)))
+    (concat(BYTE(mod(div(n)(65536))(256)))(BYTE(mod(div(n)(16777216))(256)))))
+glyph HEADER = la datasize.
+    concat("RIFF")(concat(LE32(add(36)(datasize)))(concat("WAVE")
+    (concat("fmt ")(concat(LE32(16))(concat(LE16(1))(concat(LE16(1))
+    (concat(LE32(SR))(concat(LE32(mul(SR)(2)))(concat(LE16(2))(concat(LE16(16))
+    (concat("data")(LE32(datasize)))))))))))))
+# WAVE(pcm) — prepend the header sized to the PCM body.
+glyph WAVE = la pcm. concat(HEADER(str_to_int(str_len(pcm))))(pcm)
+
+# ═══ PSC* — the phonym GENERATED from a glyph's κ-structure ══════════
+# The audio twin of TopoEmbed. A PHON is PAIR(length)(gen) — a sample count and
+# a pure sample function i->±sample (parallel to a SIGIL being an r->c->bool
+# predicate). PHONYM walks the SAME κ-decomposition nodes SIGIL walks; the five
+# blend modes realise the Operator Phonology (§"Operator Phonology", line ~5102):
+#   ⊗ SYN  smooth fusion (one prosodic unit, AB)
+#   ⊕ CON  glottal pause /ʔ/ between the two (A·B)
+#   ▷ DIR  stress-link: first full, second light (ÁB)
+#   ⊂ CONT containment: second frames first (B[A]B)
+#   ↻ MC   metacursion: reduplication (AA)
+# Lineage encoding (Def. meta-syllable): the child's gen embeds each parent's
+# gen, so a parent phonym is audibly present within the compound.
+
+# PHON_PRIM(name) → PAIR(length)(gen) for a primitive phonym.
+glyph PHON_PRIM = la nm.
+    IF(str_eq(nm)("BEING"))      (la _. PAIR(6080)(PH_BEING))(la _.
+    IF(str_eq(nm)("RECOGNITION"))(la _. PAIR(6720)(PH_RECOGNITION))(la _.
+    IF(str_eq(nm)("LOVE"))       (la _. PAIR(6560)(PH_LOVE))(la _.
+    IF(str_eq(nm)("SELF"))       (la _. PAIR(6560)(PH_SELF))(la _.
+    IF(str_eq(nm)("RELATION"))   (la _. PAIR(6720)(PH_RELATION))(la _.
+    IF(str_eq(nm)("VOID"))       (la _. PAIR(6880)(PH_VOID))(la _.
+    IF(str_eq(nm)("BECOMING"))   (la _. PAIR(6400)(PH_BECOMING))(la _.
+    IF(str_eq(nm)("FORM"))       (la _. PAIR(6160)(PH_FORM))(la _.
+    IF(str_eq(nm)("DEPTH"))      (la _. PAIR(6000)(PH_DEPTH))(la _.
+    PAIR(0)(la i. 0))))))))))
+
+# ⊗ smooth fusion: A then B, one breath (lengths add; gen dispatches).
+glyph SYNP  = la p. la q. (la np. la gp. la nq. la gq.
+    PAIR(add(np)(nq))(la i. IF(lt(i)(np))(la _. gp(i))(la _. gq(sub(i)(np)))))
+    (FST(p))(SND(p))(FST(q))(SND(q))
+# ⊕ glottal pause: A, 960-sample /ʔ/ closure (silence), B.
+glyph CONP  = la p. la q. (la np. la gp. la nq. la gq.
+    PAIR(add(add(np)(960))(nq))(la i.
+      IF(lt(i)(np))(la _. gp(i))
+     (la _. IF(lt(i)(add(np)(960)))(la _. 0)(la _. gq(sub(i)(add(np)(960)))))))
+    (FST(p))(SND(p))(FST(q))(SND(q))
+# ▷ stress-link: A at full strength, B reduced to 3/5 (the light second beat).
+glyph DIRP  = la p. la q. (la np. la gp. la nq. la gq.
+    PAIR(add(np)(nq))(la i.
+      IF(lt(i)(np))(la _. gp(i))(la _. div(mul(gq(sub(i)(np)))(3))(5))))
+    (FST(p))(SND(p))(FST(q))(SND(q))
+# ⊂ containment: q frames p — B[A]B (second around first).
+glyph CONTP = la p. la q. (la np. la gp. la nq. la gq.
+    PAIR(add(add(nq)(np))(nq))(la i.
+      IF(lt(i)(nq))(la _. gq(i))
+     (la _. IF(lt(i)(add(nq)(np)))(la _. gp(sub(i)(nq)))(la _. gq(sub(i)(add(nq)(np)))))))
+    (FST(p))(SND(p))(FST(q))(SND(q))
+# ↻ metacursion: reduplication AA.
+glyph MCP   = la p. (la np. la gp.
+    PAIR(mul(np)(2))(la i. gp(mod(i)(np))))
+    (FST(p))(SND(p))
+
+# PHONYM — the phonological κ: a decomposition node → its PHON (mirrors SIGIL).
+glyph PHONYM = Z(la self. la node.
+    node
+        (la nm. PHON_PRIM(nm))
+        (la a. la b. SYNP (self(a))(self(b)))
+        (la a. la b. CONP (self(a))(self(b)))
+        (la a. la b. DIRP (self(a))(self(b)))
+        (la a. la b. CONTP(self(a))(self(b)))
+        (la a. MCP(self(a))))
+
+# SPEC — the witness: prefix-notation of the structure the phonym was built from
+# (the same shape canon.la's CANON emits), so the rendering carries its own proof
+# that it was GENERATED from this ONF — PSC* "the runtime proving itself".
+glyph SPEC = Z(la self. la node.
+    node
+        (la nm. nm)
+        (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. la b. concat("▷(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. la b. concat("⊂(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. concat("↻(")(concat(self(a))(")"))))
+
+# RENDER(phon) → PCM bytes;  PSC_STAR(node) → PAIR(WAV bytes)(witness) = (e, w).
+glyph RENDER   = la phon. BUILD(SND(phon))(0)(FST(phon))
+glyph PSC_STAR = la node. PAIR(WAVE(RENDER(PHONYM(node))))(SPEC(node))
+
+# ── MAIN: speak the nine primitives, then phonyms GENERATED from structure ──
+# Audio: nine primitives + three derived (fusion, reduplication, framing). The
+# witnesses for all five operator modes are printed (the structural certificate).
+glyph SAY = la node. concat(RENDER(PHONYM(node)))(GAP)
+glyph CORPUS =
+    concat(SAY(PRIM("BEING")))(concat(SAY(PRIM("RECOGNITION")))(
+    concat(SAY(PRIM("LOVE")))(concat(SAY(PRIM("SELF")))(
+    concat(SAY(PRIM("RELATION")))(concat(SAY(PRIM("VOID")))(
+    concat(SAY(PRIM("BECOMING")))(concat(SAY(PRIM("FORM")))(
+    concat(SAY(PRIM("DEPTH")))(
+    concat(SAY(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))(     # Compassion  /luʃi/
+    concat(SAY(MC(PRIM("RECOGNITION"))))(                    # Truth       /ʃiʃi/
+           SAY(CONT(PRIM("RECOGNITION"))(PRIM("BEING")))     # Rec ⊂ Being /ɑʃiɑ/
+    )))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("PSC* Compassion        = ")(SPEC(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))))(
+    SEQ(print(concat("PSC* Love and Recog    = ")(SPEC(CON(PRIM("LOVE"))(PRIM("RECOGNITION"))))))(
+    SEQ(print(concat("PSC* Love toward Recog = ")(SPEC(DIR(PRIM("LOVE"))(PRIM("RECOGNITION"))))))(
+    SEQ(print(concat("PSC* Recog within Being= ")(SPEC(CONT(PRIM("RECOGNITION"))(PRIM("BEING"))))))(
+    SEQ(print(concat("PSC* Truth             = ")(SPEC(MC(PRIM("RECOGNITION"))))))(
+    SEQ(write_file("phonyms.wav")(WAVE(CORPUS)))(
+        print("phonym: wrote phonyms.wav — nine primitives + three GENERATED phonyms")))))))

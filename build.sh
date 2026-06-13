@@ -1699,6 +1699,51 @@ else
     exit 1
 fi
 
+say "Phonym: the phonological modality — the nine phonyms synthesised + PSC* (LINGUA_ADAMICA.tex)"
+# phonym.la is the THIRD mode of the trimodal language (visual=sigil, computational
+# =primitives, phonological=here). It SYNTHESISES the nine primitive phonyms as
+# actual sound via pure fixed-point integer DSP (formant synthesis + fricative
+# noise + plosive bursts + a glottal pitch), assembled into a 16-bit mono WAV.
+# PSC* (the audio twin of TopoEmbed) GENERATES a compound's phonym from its
+# κ-structure: PHONYM walks the SAME nodes SIGIL walks, blending phonyms via the
+# Operator Phonology (⊗ fusion, ⊕ glottal-pause, ▷ stress-link, ⊂ B[A]B framing,
+# ↻ reduplication), and carries a witness (the structural certificate). Because
+# all synthesis is integer, the waveform is byte-identical on the C host and the
+# native VM (the audio analogue of theourgia's PPM/framebuffer generation),
+# verifiable with no audio hardware. MAIN writes nine primitives + three generated
+# phonyms and prints the five operator-mode witnesses.
+ok=1
+check_phonym () {  # $1 = engine label, $2 = stdout file
+    [ "$(head -c 4 phonyms.wav)" = "RIFF" ]                     || { echo "FAIL  phonym($1): not a RIFF WAV"; ok=0; }
+    [ "$(dd if=phonyms.wav bs=1 skip=8 count=4 2>/dev/null)" = "WAVE" ] || { echo "FAIL  phonym($1): no WAVE tag"; ok=0; }
+    [ "$(stat -c%s phonyms.wav)" = "265004" ]                   || { echo "FAIL  phonym($1): size $(stat -c%s phonyms.wav) != 265004 (9 primitives + 3 generated)"; ok=0; }
+    [ "$(tr -d '\000' < phonyms.wav | wc -c)" -gt 100000 ]      || { echo "FAIL  phonym($1): waveform is (near) silent"; ok=0; }
+    # PSC* generated the phonym from structure — the printed witness IS the κ-spec:
+    [ "$(grep -c 'PSC\*' "$2")" = "5" ]                         || { echo "FAIL  phonym($1): expected 5 PSC* witnesses, got $(grep -c 'PSC\*' "$2")"; ok=0; }
+    grep -q '⊗(LOVE,RECOGNITION)' "$2"                          || { echo "FAIL  phonym($1): ⊗ fusion witness missing (Compassion)"; ok=0; }
+    grep -q '↻(RECOGNITION)' "$2"                               || { echo "FAIL  phonym($1): ↻ reduplication witness missing (Truth)"; ok=0; }
+    grep -q '⊂(RECOGNITION,BEING)' "$2"                         || { echo "FAIL  phonym($1): ⊂ containment witness missing (Recognition within Being)"; ok=0; }
+}
+rm -f phonyms.wav phonym_host.out phonym_vm.out
+./tiny_host phonym.la > phonym_host.out 2>/dev/null
+check_phonym "C host" phonym_host.out
+cp phonyms.wav /tmp/phonyms_host.wav 2>/dev/null
+# Sovereign: the same synthesis on the native VM must be byte-identical.
+rm -f logos_secd logos_program.bin logos_source.la phonyms.wav
+./tiny_host secd.la >/dev/null 2>&1
+cp phonym.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd > phonym_vm.out 2>/dev/null
+check_phonym "native VM" phonym_vm.out
+cmp -s phonyms.wav /tmp/phonyms_host.wav || { echo "FAIL  phonym: native waveform != C host waveform"; ok=0; }
+cmp -s phonym_host.out phonym_vm.out     || { echo "FAIL  phonym: native PSC* witnesses != C host witnesses"; ok=0; }
+rm -f phonyms.wav /tmp/phonyms_host.wav phonym_host.out phonym_vm.out logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  phonym: the nine primitive phonyms synthesised as sound (formant + noise + burst) + PSC* GENERATES compound phonyms from κ-structure via the operator phonology, byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile
