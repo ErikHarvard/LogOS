@@ -4,11 +4,11 @@
 #  build-verifies the sigil shapes on every engine).
 #
 #  It `import`s sigil.la (the sigil model — SIGIL/PRIM/SIG_AT/SZ), takes the
-#  screen with drm_mode, and rasters ∃ (Being) DIRECTLY into the XRGB8888
-#  framebuffer — each of the SZ×SZ logical cells blown up to a SCALE×SCALE
-#  block, the whole sigil centred on a dark field — then presents it and HOLDS
-#  until Ctrl+C. The frame is built with REPEAT2 runs, so it stays O(screen),
-#  exactly like theourgia_text_live.la.
+#  screen with drm_mode, and rasters g1 Being (the catalogue's circle + central
+#  point + ouroboric curl) DIRECTLY into the XRGB8888 framebuffer — each of the
+#  SZ×SZ (32×32) logical cells blown up to a SCALE×SCALE block, the whole sigil
+#  centred on a dark field — then presents it and HOLDS until Ctrl+C. The frame
+#  is built with REPEAT2 runs, so it stays O(screen), like theourgia_text_live.la.
 #
 #  ── HOW TO RUN ──────────────────────────────────────────────────────
 #  Needs a BARE VT (Ctrl+Alt+F3..F6) for DRM master — under a compositor
@@ -19,8 +19,8 @@
 #      cp sigil_live.la logos_source.la
 #      ./tiny_host codegen.la                     # compile -> logos_program.bin
 #      sudo ./logos_secd                          # from a bare VT
-#  A large gold ∃ on a dark field appears; Ctrl+C to stop, then Ctrl+Alt+F1/F2
-#  back to your desktop.
+#  A large gold Being sigil (circle + point + curl) on a dark field appears;
+#  Ctrl+C to stop, then Ctrl+Alt+F1/F2 back to your desktop.
 # ═══════════════════════════════════════════════════════════════════
 
 import("sigil.la")    # SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL BEING
@@ -68,10 +68,10 @@ glyph PAD   = la w. la pitch. ZEROS(sub(pitch)(mul(w)(4)))   # row tail up to pi
 glyph SOLID_ROW = la w. la pitch. la px. concat(REPEAT2(w)(px))(PAD(w)(pitch))
 
 # ── Scene: the sigil to draw, colours, and the on-screen size ──
-glyph SIG    = SIGIL(PRIM("BEING"))      # ∃ — the first defined sigil
+glyph SIG    = SIGIL(PRIM("BEING"))      # g1 Being — circle + central point + ouroboric curl
 glyph BG     = BGRX(30)(15)(25)          # dark indigo field
 glyph FG     = BGRX(60)(210)(255)        # warm gold ink
-glyph SCALE  = 28                        # framebuffer pixels per sigil cell
+glyph SCALE  = 22                        # framebuffer pixels per sigil cell (32*22 = 704, fits 768p+)
 glyph DSZ    = mul(SZ)(SCALE)            # drawn sigil side in pixels (SZ imported)
 
 # ── Raster one sigil row: its SZ cells, each cell a SCALE-wide run of FG/BG ──
@@ -104,10 +104,10 @@ glyph FRAME = la w. la h. la pitch.
 # ── Hold the image on screen (tail loop → bounded dump under TCO); Ctrl+C ends it ──
 glyph HOLD = Z(la self. la _. SEQ(sleep("1"))(self("!")))
 
-# ── MAIN: take the screen, present ∃, hold ──
+# ── MAIN: take the screen, present the Being sigil, hold ──
 glyph MAIN =
     (la dims. (la w. (la h. (la pitch.
-        SEQ(print("sigil: presenting ∃ (Being) — the first sigil of the visual modality. Ctrl+C to stop"))(
+        SEQ(print("sigil: presenting g1 Being — the first of the nine catalogue sigils. Ctrl+C to stop"))(
         SEQ(present(FRAME(w)(h)(pitch)))(
         HOLD("!"))))
       (D_P(dims)))(D_H(dims)))(D_W(dims)))

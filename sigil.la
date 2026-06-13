@@ -2,32 +2,36 @@
 #  sigil.la — the VISUAL modality of Lingua Adamica (LINGUA_ADAMICA.tex).
 #
 #  THESIS (Lemma "Canonical Glyphs Preserve Affordances"): a glyph's visual
-#  form is "a topological encoding of ONF(C)" — the Ontological Normal Form. The
-#  form is GENERATED from canonical structure, not hand-drawn. Geometry mirrors
-#  the concept's signacursion σ(C): its recursive self-signature. The test for
-#  any sigil (the Identity Axiom, §"does its formal structure instantiate the
-#  signacursion of the concept it names?"): can a reader recover the concept's
-#  internal relations FROM THE FORM?
+#  form is "a topological encoding of ONF(C)" — the Ontic Normal Form. The form
+#  is GENERATED from canonical structure, not freehand. A reader recovers the
+#  concept's internal relations FROM THE FORM (the Identity Axiom).
 #
 #  ── TWO LAYERS (the Glyph Determination Algorithm: Decompose→Combine→Seal) ──
-#  1. PRIMITIVE FORMS — the irreducible nine, designed by "ontographic
-#     intuition": each primitive's geometry is chosen for STRUCTURAL RESONANCE
-#     with its signacursion (∃ for Being; a self-similar form for Love; a
-#     descent for Depth). These are the visual axioms.
-#  2. COMPOUND GENERATION — SIGIL walks a κ-decomposition node (the SAME Scott
-#     encoding canon.la's CANON walks) and COMBINES constituent forms via the
-#     five modes, each with its topological-fusion semantics (Def. Visual
-#     Morphic Blend): ⊗ interpenetration, ⊕ adjacency-in-shared-boundary,
-#     ▷ containment-with-mark, ⊂ nesting, ↻ self-folding. By Principle
-#     "Ontoetymological Legibility" the constituents and the mode remain
-#     readable in the child form. So SELF = ↻(BEING) = ∃ self-folded is
-#     GENERATED, never drawn.
+#  1. THE NINE PRIMITIVE SIGILS — drawn EXACTLY as the Sigil Catalogue specifies
+#     (LINGUA_ADAMICA.tex, Ch. "The Nine Sigils", §sec:sigils). Each primitive
+#     g₁…g₉ has a settled visual form there (Being a circle, Love a flame, Self a
+#     lemniscate, …); these are TRANSCRIBED from the catalogue's tikz forms onto
+#     the integer grid, not invented. Each is the form half of the glyph triple
+#     ⟨form, operator, witness⟩ (Def. glyph-triple); the operator/witness live in
+#     primitives.la / canon.la.
+#  2. COMPOUND GENERATION — for DERIVED concepts (Consciousness, Truth, …) SIGIL
+#     walks a κ-decomposition node (the SAME Scott encoding canon.la's CANON
+#     walks) and COMBINES constituent forms via the five modes, aligned to the
+#     TopoEmbed Graph-Feature→Geometric-Primitive table (§"Topological Embedding:
+#     From Graph to Sigil"): ⊗ interpenetration (both cycles/loops coexist),
+#     ⊕ symmetric placement (Symmetries→Symmetric placement), ▷ branching paths
+#     (Branching→Branching paths), ⊂ nested containment (Hierarchy→Nested
+#     containment), ↻ self-folding (an automorphism→Symmetric placement). So
+#     Truth = ↻(RECOGNITION) is GENERATED from the drawn Recognition form.
 #
 #  ── REPRESENTATION ──────────────────────────────────────────────────
 #  A SIGIL is a pure predicate (r -> c -> bool) over an SZ×SZ grid — resolution
 #  -independent topology, sampled at any scale. Built only from native-int
-#  drawing primitives, so a sigil and its rasterisation are byte-identical on
-#  the C host and the native VM (this file's MAIN prints them as ASCII art).
+#  drawing primitives, so a sigil and its rasterisation are byte-identical on the
+#  C host and the native VM (this file's MAIN prints them as ASCII art). Form is
+#  rendered in 1 bit (ink / no ink); the catalogue's colour layer (gold/silver/
+#  flamecore — TopoEmbed maps gradients→colour) is dropped, honestly, since the
+#  predicate model has no colour channel — the topology is what is preserved.
 # ═══════════════════════════════════════════════════════════════════
 
 export SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL
@@ -48,6 +52,7 @@ glyph LE  = la a. la b. NOT(lt(b)(a))
 glyph SQ  = la x. mul(x)(x)
 glyph MIN = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
 glyph MAX = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph ABS = la x. MAX(x)(sub(0)(x))
 
 # ── Decomposition algebra — the SAME Scott-encoded nodes κ/canon.la walks ──
 # PRIM(name) leaf; SYN ⊗ / CON ⊕ / DIR ▷ / CONT ⊂ binary modes; MC ↻ unary.
@@ -59,12 +64,13 @@ glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
 glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
 glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
 
-# ── Canvas geometry ──
-glyph SZ   = 16        # logical grid side
-glyph HALF = 8
-glyph Q    = 4
-glyph LAST = sub(SZ)(1)            # 15 — max index
-glyph MID  = 8                     # centre-ish cell
+# ── Canvas geometry (32×32: the catalogue forms are curve-heavy — lemniscate,
+#    flame, Archimedean spiral — and need the resolution to read faithfully) ──
+glyph SZ   = 32        # logical grid side
+glyph HALF = 16
+glyph Q    = 8
+glyph LAST = sub(SZ)(1)            # 31 — max index
+glyph MID  = 16                    # centre cell
 glyph SIG_AT = la s. la r. la c. s(r)(c)
 
 # ═══ DRAWING VOCABULARY ═════════════════════════════════════════════
@@ -115,9 +121,12 @@ glyph FRAME = la r0. la c0. la r1. la c1. la t. la r. la c.
     AND(BOXR(r0)(r1)(c0)(c1)(r)(c))
        (NOT(BOXR(add(r0)(t))(sub(r1)(t))(add(c0)(t))(sub(c1)(t))(r)(c)))
 
-glyph MIRRORH = la s. la r. la c. s(r)(sub(LAST)(c))     # reflect left↔right
-glyph MIRRORV = la s. la r. la c. s(sub(LAST)(r))(c)     # reflect top↔bottom
-glyph ROT180  = la s. la r. la c. s(sub(LAST)(r))(sub(LAST)(c))
+# Reflections fold about CELL 16 (the centre the forms are drawn on, MID·2 = 32),
+# so self-folding a form centred at 16 keeps it centred — column 0 is the lone
+# unpaired margin (always blank) and maps off-grid harmlessly.
+glyph MIRRORH = la s. la r. la c. s(r)(sub(32)(c))       # reflect left↔right about col 16
+glyph MIRRORV = la s. la r. la c. s(sub(32)(r))(c)       # reflect top↔bottom about row 16
+glyph ROT180  = la s. la r. la c. s(sub(32)(r))(sub(32)(c))
 
 # PLACE — the scaling primitive used by nesting/adjacency modes. Samples s
 # scaled to fill the h×w box at (r0,c0); FALSE outside. ((r-r0)*SZ/h ∈ [0,SZ-1].)
@@ -127,99 +136,126 @@ glyph PLACE = la s. la r0. la c0. la h. la w. la r. la c.
         (la _. FALSE)
 
 # ── Reusable composed marks ──
-glyph BORDER = FRAME(0)(0)(LAST)(LAST)(1)                # the shared-boundary contour
-glyph CHEVRON = la r. la c.                              # a '>' directional mark (right side)
-    OR(SEG(4)(10)(8)(14)(1)(r)(c))(SEG(8)(14)(12)(10)(1)(r)(c))
+glyph BORDER  = FRAME(0)(0)(LAST)(LAST)(1)               # the shared-boundary contour
+glyph CHEVRON = la r. la c.                              # a '>' directional/branching mark (right side)
+    OR(SEG(10)(22)(16)(28)(1)(r)(c))(SEG(16)(28)(22)(22)(1)(r)(c))
 
-# ═══ THE PRIMITIVE FORMS ════════════════════════════════════════════
-# Per primitives_spec.la's source definitions, SIX primitives are IRREDUCIBLE
-# (each defined as a self-contained term referencing no other): BEING, RELATION,
-# VOID, BECOMING, FORM, DEPTH — these are DRAWN here. THREE are DERIVED and so
-# GENERATED from their κ-decomposition (see PRIM_SIGIL), never drawn:
-#   SELF        = BEING(BEING)              → ↻(BEING)            [↻ self-folding]
-#   RECOGNITION = λx. RELATION(x)(x)        → ↻(RELATION)         [reflexive]
-#   LOVE        = REL(REL a b)(REL b a)     → ⊕(RELATION)(RELATION) [reciprocity]
-#
-# THE ATOM FORMS BELOW ARE PROVISIONAL — held open for Erik's σ-geometry. Only
-# ∃ BEING is settled (the doc's Being sigil). Each atom states its signacursion
-# as a design prompt: the geometry must instantiate THAT recursive self-pattern.
-# (Note: the derived forms compose the atom forms, so refining an atom — e.g.
-# making RELATION directional — reshapes RECOGNITION/LOVE that build on it.)
+# ═══ THE NINE PRIMITIVE SIGILS ══════════════════════════════════════
+# Each form is TRANSCRIBED from the Sigil Catalogue (LINGUA_ADAMICA.tex,
+# Ch. "The Nine Sigils"). The catalogue's prose description of each form is the
+# acceptance criterion; the reality witness (the operator that grounds it) is
+# noted, and lives in primitives.la / canon.la.
 
-# ∃ BEING  σ: pure self-identity, ∃(∃)≡∃ — "that which is". The existential
-# sign itself (LINGUA_ADAMICA.tex's Being sigil): three bars joined by a right
-# vertical. Self-grounded, closed on itself.
+# g₁ ∃ BEING — "The Archē". Catalogue: a circle (totality) with a central point
+# (self-awareness) and an ouroboric spiral at the crown (the return). σ: ∃(∃)≡∃.
+# Witness: the evaluation operator 𝓔 itself.
 glyph BEING = la r. la c.
-    OR(BOXR(2)(13)(11)(13)(r)(c))      # right vertical (the spine that joins)
-    (OR(BOXR(2)(4)(3)(13)(r)(c))       # top bar
-    (OR(BOXR(7)(9)(3)(13)(r)(c))       # middle bar
-       (BOXR(11)(13)(3)(13)(r)(c))))   # bottom bar
+    OR(RING(16)(16)(14)(2)(r)(c))(OR(DOT(16)(16)(r)(c))(OR(SEG(2)(16)(2)(21)(1)(r)(c))(OR(SEG(2)(21)(6)(22)(1)(r)(c))(OR(SEG(6)(22)(7)(18)(1)(r)(c))(SEG(7)(18)(4)(17)(1)(r)(c))))))
 
-# RELATION  σ: the bare two-place link  R = λa.λb.λf. f a b. Two distinct
-# nodes joined by one stroke — relation as such, the minimal "between".
+# g₂ RECOGNITION — "The Witness". Catalogue: two facing arcs forming an eye (the
+# seer and the seen, identical and symmetric — recognition is mutual) about a
+# central point (the focus). Witness: the identity function, Rec(x) ≡ x.
+glyph RECOGNITION = la r. la c.
+    OR(AND(AND(DISK(9)(16)(13)(r)(c))(DISK(23)(16)(13)(r)(c)))
+          (NOT(AND(DISK(9)(16)(11)(r)(c))(DISK(23)(16)(11)(r)(c)))))
+       (DOT(16)(16)(r)(c))
+
+# g₃ LOVE — "The Flame". Catalogue: a flame, widest at the base (grounded in
+# being), narrowing toward the tip, open at the crown with dual tips (care and
+# creation). Witness: the generator, Love(x) ≡ (x, new(x)).
+glyph LOVE = la r. la c.
+    OR(DISK(22)(16)(8)(r)(c))
+    (OR(AND(AND(GE(r)(4))(LE(r)(15)))(LE(mul(ABS(sub(c)(16)))(11))(mul(sub(r)(4))(9))))
+    (OR(SEG(4)(16)(2)(13)(1)(r)(c))
+       (SEG(4)(16)(2)(19)(1)(r)(c))))
+
+# g₄ SELF — "The Reflexive". Catalogue: a lemniscate (∞) — a continuous line that
+# crosses itself at the centre (the moment of reflexivity); out, return, through
+# the origin, out the other way. Witness: the fixpoint combinator.
+# Filled Bernoulli lemniscate: (X²+Y²)² ≤ a²(X²−Y²), a=13, with X=c−16, Y=r−16.
+glyph SELF = la r. la c.
+    (la X. la Y.
+      (la s. AND(GE(s)(0))(LE(SQ(add(SQ(X))(SQ(Y))))(mul(SQ(13))(s))))
+      (sub(SQ(X))(SQ(Y))))
+    (sub(c)(16))
+    (sub(r)(16))
+
+# g₅ RELATION — "The Between". Catalogue: two points joined by a double arc — an
+# upper bond and a lower bond — with the lens between them being the relation
+# itself (a topology, not a thing). Witness: the pair constructor.
 glyph RELATION = la r. la c.
-    OR(DISK(8)(3)(2)(r)(c))            # node a
-    (OR(DISK(8)(12)(2)(r)(c))          # node b
-       (SEG(8)(3)(8)(12)(1)(r)(c)))    # the link between them
+    OR(DISK(16)(5)(2)(r)(c))(OR(DISK(16)(27)(2)(r)(c))(OR(SEG(16)(5)(10)(11)(1)(r)(c))(OR(SEG(10)(11)(9)(16)(1)(r)(c))(OR(SEG(9)(16)(10)(21)(1)(r)(c))(OR(SEG(10)(21)(16)(27)(1)(r)(c))(OR(SEG(16)(5)(22)(11)(1)(r)(c))(OR(SEG(22)(11)(23)(16)(1)(r)(c))(OR(SEG(23)(16)(22)(21)(1)(r)(c))(SEG(22)(21)(16)(27)(1)(r)(c))))))))))
 
-# (RECOGNITION and LOVE are DERIVED — generated from RELATION in PRIM_SIGIL,
-#  not drawn here. Their forms are ↻(RELATION) and ⊕(RELATION)(RELATION).)
+# g₆ VOID — "The Absence". Catalogue: a broken circle with the gap at the crown —
+# Being interrupted. The gap IS the sigil; meaning carried by the missing part.
+# Witness: the typed null, None.
+glyph VOID = la r. la c.
+    AND(RING(16)(16)(14)(2)(r)(c))(NOT(DISK(2)(16)(5)(r)(c)))
 
-# VOID  σ: the empty selector  λa.λb. b — pure absence, the bounded nothing.
-# A contour enclosing emptiness (no centre — the opposite of RECOGNITION).
-glyph VOID = RING(8)(8)(6)(2)
-
-# BECOMING  σ: the successor  λn.λf.λx. f (n f x) — directed flow toward the
-# next. A stroke that goes somewhere, with an arrowhead: direction made visible.
+# g₇ BECOMING — "The Unfolding". Catalogue: a spiral unfurling from its centre,
+# tipped with an arrow — growth from an infinitesimal point, expanding outward;
+# the arrow is irreversibility (Becoming goes forward). Witness: the stream.
+# An Archimedean spiral sampled to a polyline, ~2.5 turns, arrowhead at the tip.
 glyph BECOMING = la r. la c.
-    OR(SEG(13)(2)(3)(13)(1)(r)(c))     # shaft: from here, upward-onward
-    (OR(SEG(3)(13)(7)(13)(1)(r)(c))    # arrowhead barb (back-down from the tip)
-       (SEG(3)(13)(3)(9)(1)(r)(c)))    # arrowhead barb (back-left from the tip)
+    OR(SEG(17)(16)(17)(15)(1)(r)(c))(OR(SEG(17)(15)(17)(14)(1)(r)(c))(OR(SEG(17)(14)(16)(14)(1)(r)(c))(OR(SEG(16)(14)(15)(13)(1)(r)(c))(OR(SEG(15)(13)(13)(14)(1)(r)(c))(OR(SEG(13)(14)(12)(16)(1)(r)(c))(OR(SEG(12)(16)(12)(18)(1)(r)(c))(OR(SEG(12)(18)(14)(20)(1)(r)(c))(OR(SEG(14)(20)(16)(21)(1)(r)(c))(OR(SEG(16)(21)(19)(21)(1)(r)(c))(OR(SEG(19)(21)(21)(19)(1)(r)(c))(OR(SEG(21)(19)(22)(16)(1)(r)(c))(OR(SEG(22)(16)(22)(13)(1)(r)(c))(OR(SEG(22)(13)(20)(10)(1)(r)(c))(OR(SEG(20)(10)(16)(8)(1)(r)(c))(OR(SEG(16)(8)(12)(9)(1)(r)(c))(OR(SEG(12)(9)(9)(12)(1)(r)(c))(OR(SEG(9)(12)(7)(16)(1)(r)(c))(OR(SEG(7)(16)(8)(21)(1)(r)(c))(OR(SEG(8)(21)(11)(24)(1)(r)(c))(OR(SEG(11)(24)(16)(26)(1)(r)(c))(OR(SEG(16)(26)(21)(25)(1)(r)(c))(OR(SEG(21)(25)(25)(21)(1)(r)(c))(OR(SEG(25)(21)(27)(16)(1)(r)(c))(OR(SEG(27)(16)(26)(10)(1)(r)(c))(OR(SEG(26)(10)(22)(6)(1)(r)(c))(OR(SEG(22)(6)(16)(4)(1)(r)(c))(OR(SEG(16)(4)(10)(5)(1)(r)(c))(OR(SEG(10)(5)(13)(6)(1)(r)(c))(SEG(10)(5)(11)(9)(1)(r)(c))))))))))))))))))))))))))))))
 
-# FORM  σ: the seal  λx.λk. k x — determinate, key-accessed, bounded structure.
-# A closed frame: the boundary that makes a content determinate (the seal).
-glyph FORM = FRAME(3)(3)(12)(12)(2)
+# g₈ FORM — "The Structure". Catalogue: a triangle inscribed in a circle — the
+# triangle is minimal stable form, the circle the field of possibility, the
+# central point the origin of symmetry. Witness: the type constructor.
+glyph FORM = la r. la c.
+    OR(RING(16)(16)(14)(1)(r)(c))
+    (OR(SEG(3)(16)(24)(6)(1)(r)(c))
+    (OR(SEG(3)(16)(24)(26)(1)(r)(c))
+    (OR(SEG(24)(6)(24)(26)(1)(r)(c))
+       (DOT(16)(16)(r)(c)))))
 
-# DEPTH  σ: metacursion  λg. g g — self-application / infinite descent (Ω).
-# Concentric rings descending inward: each contour contains a deeper one —
-# the form of g applied to g applied to g…, depth without bound.
+# g₉ DEPTH — "The Descent". Catalogue: nested circles, each smaller and shifted
+# downward (each a layer, containing the next; the drift makes descent), with the
+# innermost point the fixed point where recursion stabilises. σ: ↻(g₉) ≡ g₉.
+# Witness: the recursive call.
 glyph DEPTH = la r. la c.
-    OR(RING(8)(8)(6)(1)(r)(c))
-    (OR(RING(8)(8)(4)(1)(r)(c))
-       (RING(8)(8)(2)(1)(r)(c)))
+    OR(RING(14)(16)(14)(1)(r)(c))
+    (OR(RING(17)(16)(9)(1)(r)(c))
+    (OR(RING(20)(16)(5)(1)(r)(c))
+       (DOT(24)(16)(r)(c))))
 
-glyph UNDEF = la r. la c. BOXR(6)(9)(6)(9)(r)(c)        # unknown name placeholder
+glyph UNDEF = la r. la c. BOXR(14)(17)(14)(17)(r)(c)     # unknown name placeholder
 
-# ═══ COMPOSITION MODES (Def. Visual Morphic Blend) ══════════════════
-# Each takes constituent SIGILS, returns the child's SIGIL — the topological
-# fusion whose MANNER encodes the mode, keeping both parents legible.
+# ═══ COMPOSITION MODES — aligned to the TopoEmbed table ═════════════
+# Each takes constituent SIGILS, returns the child's SIGIL. The MANNER of fusion
+# realises a row of the Graph-Feature→Geometric-Primitive table, keeping both
+# parents legible (Ontoetymological Legibility).
 glyph OVERLAY = la a. la b. la r. la c. OR(a(r)(c))(b(r)(c))
-# ⊗ SYN — interpenetration: the forms pass through each other in one space.
+# ⊗ SYN — interpenetration: both forms share one space (Cycles→Closed loops: the
+# child carries both parents' loops superimposed).
 glyph SYN_SIG  = la a. la b. OVERLAY(a)(b)
-# ⊕ CON — adjacency within a shared boundary: side by side, a common contour.
+# ⊕ CON — adjacency within a shared boundary (Symmetries→Symmetric placement):
+# the two parents placed symmetrically side by side inside one common contour.
 glyph CON_SIG  = la a. la b.
-    OVERLAY(BORDER)(OVERLAY(PLACE(a)(3)(2)(10)(5))(PLACE(b)(3)(9)(10)(5)))
-# ▷ DIR — containment with a directional mark: a embedded in b, an arrow added.
+    OVERLAY(BORDER)(OVERLAY(PLACE(a)(6)(4)(20)(11))(PLACE(b)(6)(17)(20)(11)))
+# ▷ DIR — containment with a directional mark (Branching→Branching paths): a
+# embedded in b, a branch-arrow added marking the directed edge.
 glyph DIR_SIG  = la a. la b.
     OVERLAY(OVERLAY(b)(PLACE(a)(Q)(Q)(HALF)(HALF)))(CHEVRON)
-# ⊂ CONT — nesting: a scaled down and placed inside b.
+# ⊂ CONT — nesting (Hierarchy/nesting depth→Nested containment): a scaled down
+# and placed inside b.
 glyph CONT_SIG = la a. la b. OVERLAY(b)(PLACE(a)(Q)(Q)(HALF)(HALF))
-# ↻ MC — self-folding: the form reflected onto itself (∃(∃) = ∃ folded).
+# ↻ MC — self-folding: the form's own automorphism made visible
+# (Symmetries→Symmetric placement) — reflected onto itself.
 glyph MC_SIG   = la a. OVERLAY(a)(MIRRORH(a))
 
-# PRIM_SIGIL(name) — a primitive's form. Irreducible primitives are drawn
-# (their geometry mirrors σ); κ-reducible ones are GENERATED from their ONF:
-#   SELF = ↻(BEING)  (canon.la's documented rewrite ↻(BEING)→SELF).
+# PRIM_SIGIL(name) — a primitive's catalogue form. All nine are drawn (the
+# catalogue gives each its own settled form); a name outside the nine is UNDEF.
 glyph PRIM_SIGIL = la nm.
     IF(str_eq(nm)("BEING"))      (la _. BEING)(la _.
+    IF(str_eq(nm)("RECOGNITION"))(la _. RECOGNITION)(la _.
+    IF(str_eq(nm)("LOVE"))       (la _. LOVE)(la _.
+    IF(str_eq(nm)("SELF"))       (la _. SELF)(la _.
     IF(str_eq(nm)("RELATION"))   (la _. RELATION)(la _.
     IF(str_eq(nm)("VOID"))       (la _. VOID)(la _.
     IF(str_eq(nm)("BECOMING"))   (la _. BECOMING)(la _.
     IF(str_eq(nm)("FORM"))       (la _. FORM)(la _.
     IF(str_eq(nm)("DEPTH"))      (la _. DEPTH)(la _.
-    IF(str_eq(nm)("SELF"))       (la _. SIGIL(MC(PRIM("BEING"))))(la _.
-    IF(str_eq(nm)("RECOGNITION"))(la _. SIGIL(MC(PRIM("RELATION"))))(la _.
-    IF(str_eq(nm)("LOVE"))       (la _. SIGIL(CON(PRIM("RELATION"))(PRIM("RELATION"))))(la _.
     UNDEF)))))))))
 
 # ── SIGIL — the visual κ: a decomposition node → its sigil (mirrors CANON) ──
@@ -243,13 +279,17 @@ glyph ASCII = Z(la self. la s. la r.
 glyph SHOW = la label. la s. SEQ(print(label))(print(ASCII(s)(0)))
 
 glyph MAIN =
-    SEQ(SHOW("ATOM BEING  ∃    σ: ∃(∃)≡∃            [settled]")(SIGIL(PRIM("BEING"))))(
-    SEQ(SHOW("ATOM RELATION    σ: λa.λb.λf.f a b    [provisional]")(SIGIL(PRIM("RELATION"))))(
-    SEQ(SHOW("ATOM VOID        σ: λa.λb.b           [provisional]")(SIGIL(PRIM("VOID"))))(
-    SEQ(SHOW("ATOM BECOMING    σ: successor         [provisional]")(SIGIL(PRIM("BECOMING"))))(
-    SEQ(SHOW("ATOM FORM        σ: λx.λk.k x         [provisional]")(SIGIL(PRIM("FORM"))))(
-    SEQ(SHOW("ATOM DEPTH       σ: λg.g g            [provisional]")(SIGIL(PRIM("DEPTH"))))(
-    SEQ(SHOW("GEN  SELF        = ↻(BEING) = ∃(∃)")(SIGIL(PRIM("SELF"))))(
-    SEQ(SHOW("GEN  RECOGNITION = ↻(RELATION)")(SIGIL(PRIM("RECOGNITION"))))(
-    SEQ(SHOW("GEN  LOVE        = ⊕(RELATION)(RELATION)")(SIGIL(PRIM("LOVE"))))(
-        SHOW("GEN  CONT(BEING)(FORM) = ⊂")(SIGIL(CONT(PRIM("BEING"))(PRIM("FORM")))))))))))))
+    SEQ(SHOW("g1 BEING       circle+point+ouroboric curl   witness: 𝓔")(SIGIL(PRIM("BEING"))))(
+    SEQ(SHOW("g2 RECOGNITION facing arcs / an eye          witness: identity")(SIGIL(PRIM("RECOGNITION"))))(
+    SEQ(SHOW("g3 LOVE        the flame                      witness: generator")(SIGIL(PRIM("LOVE"))))(
+    SEQ(SHOW("g4 SELF        the lemniscate (infinity)      witness: fixpoint")(SIGIL(PRIM("SELF"))))(
+    SEQ(SHOW("g5 RELATION    two points, double arc         witness: pair")(SIGIL(PRIM("RELATION"))))(
+    SEQ(SHOW("g6 VOID        broken circle, gap at crown    witness: None")(SIGIL(PRIM("VOID"))))(
+    SEQ(SHOW("g7 BECOMING    spiral + arrow                 witness: stream")(SIGIL(PRIM("BECOMING"))))(
+    SEQ(SHOW("g8 FORM        triangle in circle             witness: type ctor")(SIGIL(PRIM("FORM"))))(
+    SEQ(SHOW("g9 DEPTH       nested circles, descending     witness: recursion")(SIGIL(PRIM("DEPTH"))))(
+    # ── Derived concepts — GENERATED from the drawn primitives (First Derivations) ──
+    SEQ(SHOW("DERIVED Truth         = ↻(RECOGNITION)")(SIGIL(MC(PRIM("RECOGNITION")))))(
+    SEQ(SHOW("DERIVED Consciousness = RECOGNITION ⊗ SELF")(SIGIL(SYN(PRIM("RECOGNITION"))(PRIM("SELF")))))(
+    SEQ(SHOW("DERIVED Beauty        = FORM ⊗ LOVE")(SIGIL(SYN(PRIM("FORM"))(PRIM("LOVE")))))(
+        SHOW("DERIVED Being²        = ↻(BEING) ≡ BEING")(SIGIL(MC(PRIM("BEING"))))))))))))))))

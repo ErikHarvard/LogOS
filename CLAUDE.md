@@ -50,8 +50,8 @@ host program, applied to itself, reproduces itself.
 | `theourgia_text.la`  | Theourgia Stage 8: text rendering onto surfaces. `import`s the font + the Stage 1 surface core and adds `DRAW_TEXT(dst)(text)(x)(y)(fg)(bg)` — builds an FH-tall ribbon (`TEXT_SURFACE`: set→fg, unset→bg) and `COMPOSE`s it onto a Stage 1 surface. Pure generation (concat / native ints), so it rasters byte-identically on the C host and native VM, verifiable with no screen. `build.sh` draws "HI" onto a 24×12 surface and checks the glyph shape (row-dependent) and the second char's advance, byte-identical on both engines. |
 | `theourgia_text_live.la` | Theourgia Stage 8 capstone (VM-only, run manually): draw text to a real screen. `import`s JUST the font (`GLYPH_ROW`/`BIT` — not Stage 1, so it stays lean to compile), takes the screen with `drm_mode`, builds a full-screen XRGB8888 framebuffer DIRECTLY (a blue desktop + a red window) — only the 8 text rows are special-cased, so the frame stays O(screen), like the Stage 7 live renderer — rasters "I AM THAT I AM" into the window in white, `present`s it, and HOLDS until Ctrl+C. Run from a bare VT (`drm_bringup_text.sh`), like the other live capstones. |
 | `theourgia_text_session_live.la` | Theourgia Stage 9 capstone (VM-only, run manually): a **movable text window** — the foundation for a terminal. Fuses the Stage 7 live multiplexed session and the Stage 8 font into one program: `import`s the Stage 4 decoder + the font (`GLYPH_ROW`/`BIT`), draws "I AM THAT I AM" in a red window on a blue desktop, and moves the WHOLE window (text included) 40px per arrow-key press via the verified `STEP`/`APPLY_KEY`/`DRAIN_STEP` reducer + `poll` loop. The window self-sizes to the string with a symmetric inset; the frame stays O(screen) (only the `FH` text rows are special-cased), clamped on at render time. Launch from a bare VT with `drm_bringup_term.sh` (same greeter-stop/restore trap as the other live capstones). Not in `build.sh` (needs a bare VT + real devices + loops forever); the pure render geometry (frame = `h×pitch`, desktop/window/text pixels) is verifiable host-side with no screen. |
-| `sigil.la`           | **The visual modality of Lingua Adamica** (`LINGUA_ADAMICA.tex`) — the rendering layer `canon.la` deferred to "Theourgia". A glyph's visual form is a *topological encoding of its `ONF`* and is **GENERATED from its κ-decomposition** (the SAME Scott-encoded nodes `canon.la`'s `CANON` walks — `PRIM`/`SYN`/`CON`/`DIR`/`CONT`/`MC`), not hand-drawn. A `SIGIL` is a pure `r->c->bool` predicate over an `SZ×SZ` (16×16) grid built only from integer drawing primitives (`BOXR`/`DOT`/`SEG`/`DISK`/`RING`/`ARC`/`FRAME`/`PLACE` + reflections), so a sigil and its rasterisation are byte-identical on the C host and native VM. **Six primitives are DRAWN** (geometry chosen for structural resonance with each one's signacursion σ — only ∃ `BEING` is settled, the other five provisional, held open for Erik's σ-geometry); the **three derived primitives are GENERATED** (`SELF = ↻(BEING)`, `RECOGNITION = ↻(RELATION)`, `LOVE = ⊕(RELATION)(RELATION)`), as is every compound, via the **five blend modes** (Def. Visual Morphic Blend): ⊗ interpenetration, ⊕ adjacency-in-shared-boundary, ▷ containment-with-mark, ⊂ nesting, ↻ self-folding. `MAIN` is a screen-free self-test rendering each sigil as ASCII art. `build.sh` runs that on both engines and checks the headline autological property — `SELF = MC(BEING) = OVERLAY(BEING)(MIRRORH(BEING))` is horizontally **symmetric** while `BEING` is **not**, proving the fold is real generation (a transform of the parent), not a redraw — byte-identical on host and native VM. |
-| `sigil_live.la`      | The sigil visual-modality capstone (VM-only, run manually): draw a `SIGIL` to a real screen. `import`s `sigil.la` (`SIGIL`/`SIG_AT`/`SZ`/`PRIM`/…), takes the screen with `drm_mode`, and rasters ∃ (`BEING`) DIRECTLY into the XRGB8888 framebuffer — each `SZ×SZ` logical cell blown up to a `SCALE×SCALE` block, the sigil centred on a dark indigo field in warm gold — then `present`s it and HOLDS until Ctrl+C. The frame is built with `REPEAT2` runs so it stays O(screen), like `theourgia_text_live.la`. Launch from a bare VT with `drm_bringup_sigil.sh` (same greeter-stop/restore trap as the other live capstones). Not in `build.sh` (needs a bare VT + DRM master + loops forever); the sigil shapes it draws are the part `sigil.la` build-verifies on every engine. |
+| `sigil.la`           | **The visual modality of Lingua Adamica** (`LINGUA_ADAMICA.tex`) — the rendering layer `canon.la` deferred to "Theourgia". The **nine primitive sigils** are **DRAWN exactly as the Sigil Catalogue specifies** (Ch. "The Nine Sigils"): Being=circle+point+ouroboric curl, Recognition=the eye, Love=the flame, Self=the lemniscate (∞), Relation=two points+double arc, Void=broken circle (gap at the crown), Becoming=spiral+arrow, Form=triangle-in-circle, Depth=nested descending circles — transcribed, not invented. **DERIVED concepts are GENERATED** from them: `SIGIL` walks a κ-decomposition (the SAME Scott-encoded `PRIM`/`SYN`/`CON`/`DIR`/`CONT`/`MC` nodes `canon.la`'s `CANON` walks) and combines forms via the **five blend modes aligned to the TopoEmbed Graph-Feature→Geometric-Primitive table**: ⊗ interpenetration (cycles→closed loops), ⊕ symmetric placement, ▷ branching paths, ⊂ nested containment, ↻ self-folding. A `SIGIL` is a pure `r->c->bool` predicate over a **32×32** grid built only from integer drawing primitives (`BOXR`/`DOT`/`SEG`/`DISK`/`RING`/`ARC`/`FRAME`/`PLACE`, the lemniscate/flame as integer formulae, the spiral as a polyline), so a sigil and its ASCII rasterisation are byte-identical on the C host and native VM (form is 1-bit; the catalogue's colour layer is honestly dropped). `MAIN` renders the nine + four derived concepts (Truth/Consciousness/Beauty/Being²). `build.sh` verifies each primitive against its catalogue description by its distinctive **symmetry signature** (Self/Recognition/Relation H+V; Void/Love/Form H-only — gap/tip up; Becoming neither — chiral; Truth=↻(Recognition) H — self-fold generated), byte-identical on host and native VM. |
+| `sigil_live.la`      | The sigil visual-modality capstone (VM-only, run manually): draw a `SIGIL` to a real screen. `import`s `sigil.la` (`SIGIL`/`SIG_AT`/`SZ`/`PRIM`/…), takes the screen with `drm_mode`, and rasters g1 Being (the catalogue's circle+point+curl) DIRECTLY into the XRGB8888 framebuffer — each `SZ×SZ` (32×32) cell blown up to a `SCALE×SCALE` block, the sigil centred on a dark indigo field in warm gold — then `present`s it and HOLDS until Ctrl+C. The frame is built with `REPEAT2` runs so it stays O(screen), like `theourgia_text_live.la`. Launch from a bare VT with `drm_bringup_sigil.sh` (same greeter-stop/restore trap as the other live capstones). Not in `build.sh` (needs a bare VT + DRM master + loops forever); the sigil shapes it draws are the part `sigil.la` build-verifies on every engine. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -1269,63 +1269,74 @@ representative `ALPHA1(d) ≡ NORMK(d)` — `⊕(A,B)`. So the monosemic bijecti
 ontoglyph. `build.sh` checks `⊕(A,B)` is `α = 1`, `⊕(B,A)` is `α < 1`, and both map
 to the one `α = 1` name, on both engines.
 
-### The visual modality — generated sigils (`sigil.la`, `sigil_live.la`)
+### The visual modality — the nine catalogue sigils (`sigil.la`, `sigil_live.la`)
 
 `canon.la` produces a glyph's canonical *spec* but explicitly does **not** render
 it: "that awaits Theourgia, which will parse this spec into a sigil." `sigil.la`
 is that missing rendering layer — the **visual modality of Lingua Adamica**
 (`LINGUA_ADAMICA.tex`). Its thesis (Lemma "Canonical Glyphs Preserve
-Affordances"): a glyph's visual form is *a topological encoding of its `ONF`*, so
-the form is **GENERATED from canonical structure, not hand-drawn**, and a reader
-can recover a concept's internal relations from the form (the Identity Axiom).
+Affordances"): a glyph's visual form is *a topological encoding of its `ONF`*, and
+a reader can recover the concept's internal relations from the form (the Identity
+Axiom). The forms are **not invented here** — the primitives are transcribed from
+the spec's Sigil Catalogue, and compounds follow the spec's TopoEmbed map.
 
-- **A `SIGIL` is a pure predicate** `r -> c -> bool` over an `SZ×SZ` (16×16)
-  grid — resolution-independent topology, sampled at any scale. It is built only
-  from integer drawing primitives (`BOXR`/`DOT`/`SEG`/`DISK`/`RING`/`ARC`/`FRAME`/
-  `PLACE`, plus the `MIRRORH`/`MIRRORV`/`ROT180` reflections), so a sigil and its
-  rasterisation are **byte-identical on the C host and the native VM** — exactly
-  the pure-generation discipline of the Theourgia surface layer.
-- **Two layers (the Glyph Determination Algorithm: Decompose→Combine→Seal).**
-  **(1) Primitive forms** — of the nine primitives, the **six irreducible** ones
-  (`BEING`/`RELATION`/`VOID`/`BECOMING`/`FORM`/`DEPTH`) are **DRAWN**, each one's
-  geometry chosen for structural resonance with its signacursion σ. Only ∃
-  `BEING` is **settled** (the doc's existential sign — three bars on a right
-  spine, self-grounded); the other five are **provisional**, each stating its σ
-  as a design prompt, held open for Erik's σ-geometry. **(2) Compound generation**
-  — `SIGIL` walks a κ-decomposition node (the **same** Scott-encoded
-  `PRIM`/`SYN`/`CON`/`DIR`/`CONT`/`MC` shape `canon.la`'s `CANON` walks) and
-  **combines** constituent forms via the **five blend modes** (Def. Visual Morphic
-  Blend), each with its own topological-fusion semantics: ⊗ interpenetration
-  (overlay), ⊕ adjacency in a shared boundary, ▷ containment with a directional
-  mark, ⊂ nesting, ↻ self-folding (a form OR-ed with its own mirror). The three
-  **derived** primitives are therefore **generated, never drawn** —
-  `SELF = ↻(BEING)`, `RECOGNITION = ↻(RELATION)`, `LOVE = ⊕(RELATION)(RELATION)`
-  — mirroring `primitives.la`'s `SELF = BEING(BEING)` etc. Refining a drawn atom
-  reshapes every derived/compound form that builds on it (ontoetymological
-  legibility: the constituents and the mode stay readable in the child).
+- **A `SIGIL` is a pure predicate** `r -> c -> bool` over a **32×32** grid —
+  resolution-independent topology, sampled at any scale. It is built only from
+  integer drawing primitives (`BOXR`/`DOT`/`SEG`/`DISK`/`RING`/`ARC`/`FRAME`/
+  `PLACE` + the `MIRRORH`/`MIRRORV`/`ROT180` reflections, which fold about cell 16;
+  the lemniscate/flame are integer formulae, the Archimedean spiral a polyline),
+  so a sigil and its rasterisation are **byte-identical on the C host and the
+  native VM** — the pure-generation discipline of the Theourgia surface layer.
+  (32×32 because the catalogue forms are curve-heavy; 16×16 was too coarse.) Form
+  is rendered in **1 bit**; the catalogue's colour layer (gold/silver/flamecore —
+  TopoEmbed maps gradients→colour) is honestly **dropped**, since the predicate
+  model has no colour channel — the topology is what is preserved.
+- **The nine primitive sigils are DRAWN per the Catalogue** (Ch. "The Nine
+  Sigils"), each the *form* half of the glyph triple ⟨form, operator, witness⟩
+  (the operator/witness live in `primitives.la`/`canon.la`): **g₁ Being** a circle
+  + central point + ouroboric curl at the crown; **g₂ Recognition** two facing
+  arcs forming an eye (mutual, symmetric) about a focus point; **g₃ Love** the
+  flame (wide base, tip up, dual crown tips); **g₄ Self** the lemniscate ∞
+  (crosses itself at the centre); **g₅ Relation** two points joined by a double
+  arc with the lens between; **g₆ Void** a broken circle with the gap at the crown
+  (the gap *is* the sigil); **g₇ Becoming** a spiral unfurling outward, arrow-tipped
+  (irreversible); **g₈ Form** a triangle inscribed in a circle + centre point;
+  **g₉ Depth** nested circles each smaller and shifted downward + the innermost
+  fixed point. These replace the earlier provisional placeholders — they are
+  transcriptions of the catalogue's tikz forms, not freehand.
+- **Derived concepts are GENERATED**, aligned to the **TopoEmbed Graph-Feature→
+  Geometric-Primitive table**: `SIGIL` walks a κ-decomposition node (the *same*
+  Scott-encoded `PRIM`/`SYN`/`CON`/`DIR`/`CONT`/`MC` shape `canon.la`'s `CANON`
+  walks) and combines forms via the five blend modes — ⊗ interpenetration
+  (Cycles→Closed loops), ⊕ symmetric placement (Symmetries→Symmetric placement),
+  ▷ branching paths (Branching), ⊂ nested containment (Hierarchy→Nested
+  containment), ↻ self-folding (an automorphism→Symmetric placement). So
+  `Truth = ↻(RECOGNITION)`, `Consciousness = RECOGNITION ⊗ SELF`,
+  `Beauty = FORM ⊗ LOVE`, `Being² = ↻(BEING) ≡ BEING` are generated from the drawn
+  primitives (First Derivations table), the constituents and mode staying readable
+  in the child (Ontoetymological Legibility).
 
-`MAIN` is a **screen-free self-test**: it renders each primitive, the three
-generated forms, and a sample compound (`⊂(BEING)(FORM)`) as ASCII art (set→`#`,
-unset→`.`). `build.sh` runs that self-test on both engines and checks the
-**headline autological property** without a screen: `SELF = MC(BEING) =
-OVERLAY(BEING)(MIRRORH(BEING))` must be **horizontally symmetric** (every grid row
-equals its mirror — guaranteed because cell `(r,c)` is lit iff `BEING(r,c)` or
-`BEING(r,15-c)`), while `BEING` itself is **not** symmetric — proving the ↻ fold
-is a **real generation step**, a transform of the parent, not a hand-drawn glyph.
-The full ASCII render is then diffed for **byte-identity between the C host and
-the native VM** (the UTF-8 mode sigils ⊗⊕▷⊂↻ in the labels round-trip through
-codegen → SECD too).
+`MAIN` is a **screen-free self-test** rendering the nine primitives + four derived
+concepts as ASCII art. `build.sh` runs it on both engines and **verifies each
+primitive against its catalogue description by its distinctive symmetry signature**
+(forms centre on cell 16, so the mirror axis runs through column/row 16; the lone
+unpaired margin 0 is dropped before the palindrome test): Self/Recognition/Relation
+are **H and V symmetric** (the lemniscate crosses at centre; the eye is mutual);
+Void/Love/Form are **H but not V** (the gap is at the crown, the flame/apex point
+up); Becoming is **neither** (a chiral spiral); and `Truth = MC(RECOGNITION)` is
+**H-symmetric** (the self-fold genuinely generates the symmetry). The full ASCII
+render is then diffed for **byte-identity between the C host and the native VM**
+(the UTF-8 mode sigils ⊗⊕▷⊂↻ in the labels round-trip through codegen → SECD too).
 
 `sigil_live.la` is the VM-only capstone (run manually, like the Theourgia live
 renderers): it `import`s `sigil.la`, takes the screen with `drm_mode`, and rasters
-∃ (`BEING`) directly into the XRGB8888 framebuffer — each logical cell blown up to
-a `SCALE×SCALE` block, the sigil centred on a dark indigo field in warm gold,
-built with `REPEAT2` runs so the frame stays O(screen) — then `present`s it and
-holds until Ctrl+C. Launch from a bare VT with `drm_bringup_sigil.sh` (the same
-greeter-stop/restore trap as the other live capstones). *Honest scope:* this is
-the rendering layer over `canon.la`'s decomposition algebra (generation); the
-five provisional primitive forms await Erik's σ-geometry, and the true phonyms /
-3-D phonetic space of `LINGUA_ADAMICA.tex` remain a separate matter.
+g₁ Being directly into the XRGB8888 framebuffer — each logical cell blown up to a
+`SCALE×SCALE` block, the sigil centred on a dark indigo field in warm gold, built
+with `REPEAT2` runs so the frame stays O(screen) — then `present`s it and holds
+until Ctrl+C. Launch from a bare VT with `drm_bringup_sigil.sh` (the same
+greeter-stop/restore trap as the other live capstones). *Honest scope:* the form
+layer is faithful to the catalogue; colour and the phonyms / 3-D phonetic space of
+`LINGUA_ADAMICA.tex` (the auditory modality) remain a separate matter.
 
 ### The three laws of thought — metalogical ontosyntax (`metalogic.la`)
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Draw a SIGIL to a real screen with the LogOS native VM. On a FREE GPU it takes
-# DRM master, rasters ∃ (Being) — the first settled sigil of the visual modality
-# — as a large gold form on a dark indigo field, and holds it until Ctrl+C. The
+# DRM master, rasters g1 Being (the catalogue's circle + central point + ouroboric
+# curl) — the first of the nine sigils — as a large gold form on a dark indigo
+# field, and holds it until Ctrl+C. The
 # sigil_live.la capstone, the visual companion to sigil.la (whose ASCII self-test
 # build-verifies the same sigil shapes on every engine).
 #
@@ -13,7 +14,8 @@
 #     1. Ctrl+Alt+F3   (a getty login that survives stopping the greeter)
 #     2. log in as your user
 #     3. cd ~/logos && ./drm_bringup_sigil.sh
-#     4. watch the monitor: a dark field with a large gold ∃ (Being) centred.
+#     4. watch the monitor: a dark field with a large gold Being sigil (a circle
+#        with a central point and a small ouroboric curl at the crown) centred.
 #     5. Ctrl+C to stop. The desktop login (greeter) comes back automatically.
 #
 # Reading the result:
@@ -22,7 +24,7 @@
 #                            against the working blue-flash path (drm_bringup.sh).
 #   - Wrong/garbled form   -> the sigil raster mis-built; check sigil.la against
 #                            build.sh's PASS (it verifies the glyph shapes).
-#   - A clean gold ∃       -> the visual modality is confirmed on hardware.
+#   - A clean gold circle  -> the visual modality is confirmed on hardware.
 set -u
 cd "$(dirname "$0")" || exit 1
 GREETER=cosmic-greeter
@@ -67,7 +69,7 @@ sleep 2                    # let cosmic-comp drop DRM master
 
 echo
 echo "== SIGIL ON SCREEN =="
-echo "   expect: a dark indigo field with a large gold ∃ (Being) centred."
+echo "   expect: a dark indigo field with a large gold Being sigil (circle+point+curl) centred."
 echo "   Ctrl+C to stop. (running as root so the VM can take DRM master)"
 echo
 # Needs DRM master for scanout; the VM's own per-call DRM error reporting names
