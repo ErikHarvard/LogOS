@@ -1357,7 +1357,14 @@ the sonic analogue of the sigil: one indivisible vocal gesture, one concept
   pairs, no two confusable. Each is rendered from its **phonetic parameters**
   (Def. phon-params): formant spectrum (F1/F2/F3), a glottal pitch f0, an ADSR
   temporal contour — plus, for the onsets, fricative noise (/ʃ h v/), a nasal
-  murmur (/m/), a uvular trill (/ʀ/), or a plosive burst (/t d/).
+  murmur (/m/), a uvular trill (/ʀ/), or a plosive burst (/t d/). All three axes
+  of the feature space are realised, not just the spectral two: **Openness** ≈ F1
+  and **Frontness** ≈ F2 (the vowel formants sit correctly in the space), and the
+  **Energy** descriptor is rendered as an actual pitch/amplitude *trajectory* via
+  `VDYN` (a glottal phase that integrates a time-varying f0): Depth **descends**
+  (f0 100→80 Hz), Becoming goes **forward** (rising 123→161 Hz), Void **fades**
+  (amplitude decay), Relation **oscillates** (28 Hz trill), Form is **sharp** (the
+  burst), Being is **sustained** — each matching its §5089 Energy value.
 - **Pure integer DSP, byte-identical host==VM.** All synthesis is fixed-point
   integer (64-bit-safe). Formants come from a **parabolic-sine oscillator** (no
   table — a stateless integer parabola per half-period, spectrally verified to
