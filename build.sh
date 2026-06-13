@@ -771,6 +771,105 @@ else
     exit 1
 fi
 
+say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
+# metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
+# GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes
+# the distinction canon.la's IS only gestured at EXPLICIT: two relations, never
+# conflated (Codex I's category error). ≡ TRIBAR — ONTOLOGICAL IDENTITY over a
+# being's self-grounded FORM (∃(∃) ≡ ∃ via the GROUND rewrite); = YIELDS —
+# COMPUTATIONAL equality over evaluated VALUE. They GENUINELY disagree: add(2,3) = 5
+# (same value) yet add(2,3) ≢ 5 (different beings); identity entails equality but
+# equality does NOT entail identity. The three laws are glyphs over ≡:
+# LAW_IDENTITY (A≡A, self-grounding), LAW_NONCONTRADICTION (wired to the type
+# checker — INHABITS is the arity judgement, and DEPLOY rejects a type-contradiction),
+# LAW_EXCLUDED_MIDDLE (wired to loud failure — VERDICT is total: ≡ or ≢, never a
+# silent third; VERDICT_OR_DIE halts loudly on an ill-formed term). Each law is
+# AUTOLOGICAL (holds of its own term). META_DEBUG verifies all of it; then the
+# GENERATED module is run stand-alone, byte-identical on host and VM.
+ML="$(./tiny_host metalogic_spec.la 2>/dev/null)"
+ok=1
+for G in TRUE FALSE NOT AND OR IF IMPLIES TERM FORM VAL GROUND YIELDS TRIBAR \
+         LAW_IDENTITY LAW_NONCONTRADICTION LAW_EXCLUDED_MIDDLE INHABITS NC_TYPECHECK \
+         VERDICT WELLFORMED VERDICT_OR_DIE T_LAW_IDENTITY T_LAW_NONCONTRADICTION \
+         T_LAW_EXCLUDED_MIDDLE LAWS_AUTOLOGICAL; do
+    printf '%s\n' "$ML" | grep -qx "  $G: PASS" || { echo "FAIL  metalogic: $G not verified"; ok=0; }
+done
+printf '%s\n' "$ML" | grep -q "module VERIFIED" || { echo "FAIL  metalogic: module not verified"; ok=0; }
+[ -f metalogic.la ] || { echo "FAIL  metalogic: metalogic.la was not written"; ok=0; }
+# the logical core, the two relations, the three laws and their wirings carry formal
+# `:: <type>` signatures (the laws OBEY the laws — NC type-checks the law glyphs);
+# the three law term-witnesses are TERM data → trusted.
+for G in TRUE FALSE NOT AND OR IF IMPLIES TERM FORM VAL GROUND YIELDS TRIBAR \
+         LAW_IDENTITY LAW_NONCONTRADICTION LAW_EXCLUDED_MIDDLE INHABITS NC_TYPECHECK \
+         VERDICT WELLFORMED VERDICT_OR_DIE LAWS_AUTOLOGICAL; do
+    printf '%s\n' "$ML" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  metalogic: $G not type-checked OK"; ok=0; }
+done
+for G in T_LAW_IDENTITY T_LAW_NONCONTRADICTION T_LAW_EXCLUDED_MIDDLE; do
+    printf '%s\n' "$ML" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  metalogic: $G not reported untyped/trusted"; ok=0; }
+done
+# Run the GENERATED metalogic.la stand-alone. The witness is six parts joined by '|':
+# (1) ∃(∃) ≡ ∃ — the Archē as ONTOLOGICAL identity (VERDICT → "≡"); (2) "=≢" — the
+# category distinction: add(2,3) = 5 (yields) yet ≢ 5 (being); (3) "INE" — the three
+# laws hold; (4) "ineY" — AUTOLOGY: each law of its own term + LAWS_AUTOLOGICAL; (5)
+# "TFy" — NC wired to the type checker: INHABITS match (T), mismatch caught (F), NC
+# holds (y); (6) "du" — = does NOT entail ≡ (d), but ≡ DOES entail = (u). Host == VM.
+cp metalogic.la /tmp/mltest.la
+cat >> /tmp/mltest.la <<'LA'
+glyph ADD23     = TERM("add(2,3)")(int_to_str(add(2)(3)))
+glyph FIVE      = TERM("5")(int_to_str(5))
+glyph EXIST     = TERM("∃")("∃")
+glyph EXIST_SELF = TERM("∃(∃)")("∃")
+glyph W1 = VERDICT(EXIST_SELF)(EXIST)
+glyph W2 = concat(YIELDS(ADD23)(FIVE)("=")("x"))(VERDICT(ADD23)(FIVE))
+glyph W3 = concat(LAW_IDENTITY(ADD23)("I")("x"))(concat(LAW_NONCONTRADICTION(ADD23)(FIVE)("N")("x"))(LAW_EXCLUDED_MIDDLE(ADD23)(FIVE)("E")("x")))
+glyph W4 = concat(LAW_IDENTITY(T_LAW_IDENTITY)("i")("x"))(concat(LAW_NONCONTRADICTION(T_LAW_NONCONTRADICTION)(T_LAW_NONCONTRADICTION)("n")("x"))(concat(LAW_EXCLUDED_MIDDLE(T_LAW_EXCLUDED_MIDDLE)(T_LAW_EXCLUDED_MIDDLE)("e")("x"))(LAWS_AUTOLOGICAL("!")("Y")("x"))))
+glyph W5 = concat(INHABITS(2)(2)("T")("F"))(concat(INHABITS(2)(1)("T")("F"))(NC_TYPECHECK(2)(1)("y")("x")))
+glyph W6 = concat(IMPLIES(YIELDS(ADD23)(FIVE))(TRIBAR(ADD23)(FIVE))("x")("d"))(IMPLIES(TRIBAR(ADD23)(ADD23))(YIELDS(ADD23)(ADD23))("u")("x"))
+glyph J = la a. la b. concat(a)(concat("|")(b))
+glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(W6))))))
+LA
+ML_EXPECT="≡|=≢|INE|ineY|TFy|du"
+MLH="$(./tiny_host /tmp/mltest.la 2>/dev/null)"
+[ "$MLH" = "$ML_EXPECT" ] || { echo "FAIL  metalogic: laws/≡-vs-= witness wrong on host"; printf 'got: %s\n' "$MLH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/mltest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+MLV="$(./logos_secd 2>/dev/null)"
+[ "$MLV" = "$ML_EXPECT" ] || { echo "FAIL  metalogic: laws/≡-vs-= witness wrong on native VM"; printf 'got: %s\n' "$MLV"; ok=0; }
+# EXCLUDED MIDDLE wired to LOUD FAILURE: VERDICT_OR_DIE on an ill-formed term must
+# HALT LOUDLY (non-zero), not return a silent third value — on host AND VM.
+cp metalogic.la /tmp/mlloud.la
+cat >> /tmp/mlloud.la <<'LA'
+glyph MAIN = print(VERDICT_OR_DIE(TERM("")("x"))(TERM("∃")("∃")))
+LA
+./tiny_host /tmp/mlloud.la >/dev/null 2>&1 && { echo "FAIL  metalogic: ill-formed term did NOT halt on host (no excluded middle)"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/mlloud.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd >/dev/null 2>&1 && { echo "FAIL  metalogic: ill-formed term did NOT halt on VM (no excluded middle)"; ok=0; }
+# NON-CONTRADICTION wired to the TYPE CHECKER: a type-contradiction (declared arity
+# ≠ body arity) is REJECTED at the DEPLOY gate and the module is never written.
+cat > /tmp/nc_reject_spec.la <<'LA'
+import("specpipe.la")
+glyph E = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph BAD_SPEC = CONS(E("CONTRADICT")(":: a -> b -> c")("la x. x")(la x. x)(CONS(PAIR(la g. g("y")("z"))("y"))(NIL)))(NIL)
+glyph MAIN = print(DEPLOY(BAD_SPEC)("/tmp/should_not_exist.la"))
+LA
+rm -f /tmp/should_not_exist.la
+NCR="$(./tiny_host /tmp/nc_reject_spec.la 2>/dev/null)"
+printf '%s\n' "$NCR" | grep -q "module REJECTED" || { echo "FAIL  metalogic: type-contradiction NOT rejected by the checker"; ok=0; }
+[ -f /tmp/should_not_exist.la ] && { echo "FAIL  metalogic: rejected module was written anyway"; ok=0; }
+rm -f /tmp/mltest.la /tmp/mlloud.la /tmp/nc_reject_spec.la /tmp/should_not_exist.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  metalogic: SPEC GENERATEs/DEPLOYs metalogic.la, META_DEBUG verifies the two relations (≡ vs =), the three laws, and their autology"
+    echo "PASS  metalogic: ≡ (ontological identity) and = (computational yields) genuinely disagree (add(2,3)=5 yet ≢5); NC→type checker rejects contradictions; EM→loud halt; byte-identical host/VM"
+else
+    printf '%s\n' "$ML"
+    exit 1
+fi
+
 say "Spec pipeline: structurally-encoded compressing glyph form (glyphdag_spec.la)"
 # glyphdag_spec.la writes the canonical glyph as a SINGLE flat hash-consed DAG
 # string "def0;def1;...;defk" (root = last def), and GENERATEs + DEPLOYs

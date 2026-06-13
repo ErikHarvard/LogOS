@@ -1,0 +1,244 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  metalogic_spec.la — the THREE LAWS OF THOUGHT as first-class glyphs,
+#  instantiating the TTOE's metalogical ontosyntax, written as a SPEC and
+#  produced by the spec→implementation pipeline (import("specpipe.la")).
+#
+#  Sources: Codex I (Being & Becoming) and Logos & Paradox.
+#
+#  ── THE TWO RELATIONS, NEVER CONFLATED ─────────────────────────────────
+#  Conflating identity with equality is the category error the TTOE names
+#  (Codex I: "The correct symbol is ≡ (ontological identity), not = (quan-
+#  titative equality)… T = R still permits a conceptual gap… T ≡ R closes
+#  the gap: there is no relation, because there are no two relata.").
+#
+#  ≡  TRIBAR — ONTOLOGICAL IDENTITY, the Law of Identity proper. A ≡ A holds
+#     because A is self-grounded AS ITSELF (∃(∃) ≡ ∃, the Archē). It ranges
+#     over a being's FORM (its intension / self-disclosure), normalized by
+#     the one self-grounding rewrite GROUND (∃(∃) → ∃). It is the metalogical
+#     GROUND — reflexive in the strong sense — not a yields-computation over
+#     two relata. In this host both relations are realized as comparisons,
+#     but over DIFFERENT ontological projections; ≡ is finer than =, and the
+#     two genuinely disagree (see the witness below), which is the whole
+#     point — same value ≠ same being.
+#
+#  =  YIELDS — COMPUTATIONAL EQUALITY, the operational "yields" relation.
+#     A = B asserts sameness of EVALUATED VALUE (extension) between things
+#     that need not be the same entity. add(2,3) genuinely yields 5, so
+#     add(2,3) = 5 — yet add(2,3) ≢ 5: a synthesis is not the primitive it
+#     evaluates to. Real and useful, but DISTINCT from identity.
+#
+#  THE DISAGREEMENT (genuinely distinct semantics):
+#     YIELDS(⟨add(2,3)⟩)(⟨5⟩) = TRUE     (same value)
+#     TRIBAR(⟨add(2,3)⟩)(⟨5⟩) = FALSE    (different beings)
+#  and directionally: TRIBAR ⟹ YIELDS (identity entails equality) but
+#  YIELDS ⇏ TRIBAR (equality does NOT entail identity — the category error).
+#
+#  ── THE THREE LAWS (each a first-class glyph the engine is structured by) ─
+#     LAW_IDENTITY          A ≡ A             via the triple bar, self-grounding
+#     LAW_NONCONTRADICTION  ¬(A ∧ ¬A)         wired to the type checker
+#     LAW_EXCLUDED_MIDDLE   A ∨ ¬A            wired to the loud-failure discipline
+#  Non-contradiction at the computational resolution IS the type checker
+#  ("CE(p) ⟺ ¬TypeLock(p)" — a term cannot both inhabit and not-inhabit a
+#  type; INHABITS is the checker's arity judgement, and specpipe's DEPLOY
+#  rejects a type-contradiction before it is written). Excluded middle IS
+#  the loud-failure discipline: a verdict is TOTAL — ≡ or ≢, no silent third
+#  value; where a term is ill-formed VERDICT_OR_DIE HALTS LOUDLY rather than
+#  inventing a middle.
+#
+#  ── AUTOLOGY (∃(∃) ≡ ∃ for the laws themselves) ─────────────────────────
+#  Each law holds OF ITSELF: LAW_IDENTITY(LAW_IDENTITY), LAW_NONCONTRADICTION
+#  of itself, LAW_EXCLUDED_MIDDLE of itself — verified via each law's own
+#  term-witness. LAWS_AUTOLOGICAL conjoins them: the law system is a fixed
+#  point of self-application.
+#
+#  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY
+#  writes metalogic.la, type-checks the generated source, and META_DEBUG
+#  verifies every glyph; the module is accepted only if all pass.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + PAIR/FST/SND/CONS/NIL/Z/IF/TRUE/FALSE/AND/...
+
+# ── implementation VALUES (what META_DEBUG runs) ──────────────────────────────
+# Logical core (Church booleans; TRUE/FALSE/AND/IF come from specpipe at authoring
+# time, and are SHIPPED into the generated module so it is self-contained).
+glyph NOT     = la b. b(FALSE)(TRUE)
+glyph OR      = la a. la b. a(TRUE)(b)
+glyph IMPLIES = la a. la b. OR(NOT(a))(b)
+
+# A TERM carries both projections of a being: its FORM (intension — the being's
+# self-disclosure) and its VAL (extension — what it evaluates to).
+glyph TERM = la form. la val. la f. f(form)(val)
+glyph FORM = la t. t(la form. la val. form)
+glyph VAL  = la t. t(la form. la val. val)
+
+# GROUND — the one self-grounding rewrite (the Archē): existence applied to
+# itself IS existence, so the form ∃(∃) normalizes to ∃. (Honest bound: like
+# canon.la's single ↻(BEING)→SELF rewrite, this is the ONE documented identity,
+# extensibly — not a general decision of form-equivalence.)
+glyph GROUND = la s. IF(str_eq(s)("∃(∃)"))(la _. "∃")(la _. s)
+
+# THE TWO RELATIONS — never conflated.
+# = (YIELDS): extensional. Same evaluated VALUE; the relata need not be one being.
+glyph YIELDS = la a. la b. str_eq(VAL(a))(VAL(b))
+# ≡ (TRIBAR): ontological identity. Same BEING — same self-grounded FORM. The
+# metalogical ground; A ≡ A by self-grounding (only one relatum on the diagonal).
+glyph TRIBAR = la a. la b. str_eq(GROUND(FORM(a)))(GROUND(FORM(b)))
+
+# ── THE THREE LAWS OF THOUGHT, as first-class glyphs over ≡ ────────────────────
+glyph LAW_IDENTITY         = la a. TRIBAR(a)(a)
+glyph LAW_NONCONTRADICTION = la a. la b. NOT(AND(TRIBAR(a)(b))(NOT(TRIBAR(a)(b))))
+glyph LAW_EXCLUDED_MIDDLE  = la a. la b. OR(TRIBAR(a)(b))(NOT(TRIBAR(a)(b)))
+
+# ── LAW_NONCONTRADICTION wired to the TYPE CHECKER ─────────────────────────────
+# INHABITS is the checker's core judgement: a body of arity `bod` inhabits a type
+# of arrow-arity `dec` iff they match (specpipe's int_eq(TARITY)(BARITY)). A term
+# cannot both inhabit and not-inhabit a type — that contradiction is exactly what
+# the type checker routes (and DEPLOY rejects) before execution.
+glyph INHABITS     = la dec. la bod. int_eq(dec)(bod)
+glyph NC_TYPECHECK = la dec. la bod. NOT(AND(INHABITS(dec)(bod))(NOT(INHABITS(dec)(bod))))
+
+# ── LAW_EXCLUDED_MIDDLE wired to the LOUD-FAILURE discipline ───────────────────
+# VERDICT is TOTAL: ≡ or ≢, no silent third value (TRIBAR is decidable). A term is
+# WELLFORMED iff it has a being (non-empty form). VERDICT_OR_DIE renders the
+# verdict, but on an ill-formed term it HALTS LOUDLY (error) rather than returning
+# a silent middle — excluded middle as a discipline, not a hope.
+glyph VERDICT       = la a. la b. IF(TRIBAR(a)(b))(la _. "≡")(la _. "≢")
+glyph WELLFORMED    = la a. NOT(str_eq(FORM(a))(""))
+glyph VERDICT_OR_DIE = la a. la b.
+    IF(WELLFORMED(a))(la _. VERDICT(a)(b))
+        (la _. error("metalogic: ill-formed term — excluded middle admits no silent third value; halting"))
+
+# ── term-witnesses for the laws (so each law can be applied to ITSELF) ─────────
+glyph T_LAW_IDENTITY         = TERM("LAW_IDENTITY")("LAW_IDENTITY")
+glyph T_LAW_NONCONTRADICTION = TERM("LAW_NONCONTRADICTION")("LAW_NONCONTRADICTION")
+glyph T_LAW_EXCLUDED_MIDDLE  = TERM("LAW_EXCLUDED_MIDDLE")("LAW_EXCLUDED_MIDDLE")
+
+# AUTOLOGY: each law holds of its own term; the system is a self-application fixed
+# point. ∃(∃) ≡ ∃ at the level of the laws. (Thunked; force with any argument.)
+glyph LAWS_AUTOLOGICAL = la _.
+    AND(LAW_IDENTITY(T_LAW_IDENTITY))
+       (AND(LAW_NONCONTRADICTION(T_LAW_NONCONTRADICTION)(T_LAW_NONCONTRADICTION))
+            (LAW_EXCLUDED_MIDDLE(T_LAW_EXCLUDED_MIDDLE)(T_LAW_EXCLUDED_MIDDLE)))
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_TRUE   = "la t. la f. t"
+glyph SRC_FALSE  = "la t. la f. f"
+glyph SRC_NOT    = "la b. b(FALSE)(TRUE)"
+glyph SRC_AND    = "la a. la b. a(b)(FALSE)"
+glyph SRC_OR     = "la a. la b. a(TRUE)(b)"
+glyph SRC_IF     = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_IMPL   = "la a. la b. OR(NOT(a))(b)"
+glyph SRC_TERM   = "la form. la val. la f. f(form)(val)"
+glyph SRC_FORM   = "la t. t(la form. la val. form)"
+glyph SRC_VAL    = "la t. t(la form. la val. val)"
+glyph SRC_GROUND = "la s. IF(str_eq(s)(\"∃(∃)\"))(la _. \"∃\")(la _. s)"
+glyph SRC_YIELDS = "la a. la b. str_eq(VAL(a))(VAL(b))"
+glyph SRC_TRIBAR = "la a. la b. str_eq(GROUND(FORM(a)))(GROUND(FORM(b)))"
+glyph SRC_LAWID  = "la a. TRIBAR(a)(a)"
+glyph SRC_LAWNC  = "la a. la b. NOT(AND(TRIBAR(a)(b))(NOT(TRIBAR(a)(b))))"
+glyph SRC_LAWEM  = "la a. la b. OR(TRIBAR(a)(b))(NOT(TRIBAR(a)(b)))"
+glyph SRC_INHAB  = "la dec. la bod. int_eq(dec)(bod)"
+glyph SRC_NCTC   = "la dec. la bod. NOT(AND(INHABITS(dec)(bod))(NOT(INHABITS(dec)(bod))))"
+glyph SRC_VERD   = "la a. la b. IF(TRIBAR(a)(b))(la _. \"≡\")(la _. \"≢\")"
+glyph SRC_WF     = "la a. NOT(str_eq(FORM(a))(\"\"))"
+glyph SRC_VOD    = "la a. la b. IF(WELLFORMED(a))(la _. VERDICT(a)(b))(la _. error(\"metalogic: ill-formed term — excluded middle admits no silent third value; halting\"))"
+glyph SRC_TLI    = "TERM(\"LAW_IDENTITY\")(\"LAW_IDENTITY\")"
+glyph SRC_TNC    = "TERM(\"LAW_NONCONTRADICTION\")(\"LAW_NONCONTRADICTION\")"
+glyph SRC_TEM    = "TERM(\"LAW_EXCLUDED_MIDDLE\")(\"LAW_EXCLUDED_MIDDLE\")"
+glyph SRC_AUTO   = "la _. AND(LAW_IDENTITY(T_LAW_IDENTITY))(AND(LAW_NONCONTRADICTION(T_LAW_NONCONTRADICTION)(T_LAW_NONCONTRADICTION))(LAW_EXCLUDED_MIDDLE(T_LAW_EXCLUDED_MIDDLE)(T_LAW_EXCLUDED_MIDDLE)))"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph T3L = la a. la b. la c. CONS(a)(CONS(b)(CONS(c)(NIL)))
+glyph T4L = la a. la b. la c. la d. CONS(a)(CONS(b)(CONS(c)(CONS(d)(NIL))))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+
+# witness terms (spec-local): the category-error pair + the Archē + a non-ground.
+glyph ADD23     = TERM("add(2,3)")(int_to_str(add(2)(3)))   # form is the synthesis; value genuinely evaluates to 5
+glyph FIVE      = TERM("5")(int_to_str(5))                  # the primitive 5
+glyph EXIST     = TERM("∃")("∃")                            # existence
+glyph EXIST_SELF = TERM("∃(∃)")("∃")                        # existence applied to itself — yields ∃, grounds to ∃
+glyph B0        = TERM("B")("B")                            # an arbitrary (non-self-grounded) being
+glyph BSELF     = TERM("B(B)")("B")                         # B applied to itself — yields B, but is NOT ground
+
+# ── the SPEC: logical core, the two relations, the three laws, the wirings ─────
+glyph METALOGIC_SPEC =
+  CONS(E("TRUE")(":: a -> b -> a")(SRC_TRUE)(TRUE)(
+        T1L(TC(la g. g("yes")("no"))("yes"))))(
+  CONS(E("FALSE")(":: a -> b -> b")(SRC_FALSE)(FALSE)(
+        T1L(TC(la g. g("yes")("no"))("no"))))(
+  CONS(E("NOT")(":: a -> a")(SRC_NOT)(NOT)(
+        T2L(TC(la g. g(TRUE)("y")("n"))("n"))
+           (TC(la g. g(FALSE)("y")("n"))("y"))))(
+  CONS(E("AND")(":: a -> b -> c")(SRC_AND)(AND)(
+        T2L(TC(la g. g(TRUE)(TRUE)("y")("n"))("y"))
+           (TC(la g. g(TRUE)(FALSE)("y")("n"))("n"))))(
+  CONS(E("OR")(":: a -> b -> c")(SRC_OR)(OR)(
+        T2L(TC(la g. g(FALSE)(TRUE)("y")("n"))("y"))
+           (TC(la g. g(FALSE)(FALSE)("y")("n"))("n"))))(
+  CONS(E("IF")(":: a -> b -> c -> d")(SRC_IF)(IF)(
+        T2L(TC(la g. g(TRUE)(la _. "y")(la _. "n"))("y"))
+           (TC(la g. g(FALSE)(la _. "y")(la _. "n"))("n"))))(
+  CONS(E("IMPLIES")(":: a -> b -> c")(SRC_IMPL)(IMPLIES)(
+        T2L(TC(la g. g(FALSE)(FALSE)("T")("F"))("T"))                                  # F → F is true
+           (TC(la g. g(TRUE)(FALSE)("T")("F"))("F"))))(                                # T → F is false
+  CONS(E("TERM")(":: a -> b -> c -> d")(SRC_TERM)(TERM)(
+        T1L(TC(la g. g("fo")("va")(la f. la v. concat(f)(v)))("fova"))))(
+  CONS(E("FORM")(":: a -> b")(SRC_FORM)(FORM)(
+        T1L(TC(la g. g(TERM("fo")("va")))("fo"))))(
+  CONS(E("VAL")(":: a -> b")(SRC_VAL)(VAL)(
+        T1L(TC(la g. g(TERM("fo")("va")))("va"))))(
+  CONS(E("GROUND")(":: a -> b")(SRC_GROUND)(GROUND)(
+        T2L(TC(la g. g("∃(∃)"))("∃"))                                                 # the Archē rewrite: ∃(∃) grounds to ∃
+           (TC(la g. g("B"))("B"))))(                                                  # everything else is left as itself
+  CONS(E("YIELDS")(":: a -> b -> c")(SRC_YIELDS)(YIELDS)(
+        T3L(TC(la g. g(ADD23)(FIVE)("=")("x"))("="))                                   # add(2,3) = 5  (same value)
+           (TC(la g. g(ADD23)(ADD23)("=")("x"))("="))                                  # reflexive
+           (TC(la g. g(EXIST_SELF)(EXIST)("=")("x"))("="))))(                          # ∃(∃) = ∃
+  CONS(E("TRIBAR")(":: a -> b -> c")(SRC_TRIBAR)(TRIBAR)(
+        T4L(TC(la g. g(ADD23)(ADD23)("≡")("≢"))("≡"))                                  # A ≡ A
+           (TC(la g. g(ADD23)(FIVE)("≡")("≢"))("≢"))                                   # add(2,3) ≢ 5  — DISTINCT from = above
+           (TC(la g. g(EXIST_SELF)(EXIST)("≡")("≢"))("≡"))                             # ∃(∃) ≡ ∃  (self-grounding, via GROUND)
+           (TC(la g. g(BSELF)(B0)("≡")("≢"))("≢"))))(                                  # B(B) ≢ B  — only the Archē is self-grounded
+  CONS(E("LAW_IDENTITY")(":: a -> b")(SRC_LAWID)(LAW_IDENTITY)(
+        T3L(TC(la g. g(ADD23)("T")("F"))("T"))                                         # A ≡ A
+           (TC(la g. g(EXIST)("T")("F"))("T"))                                         # ∃ ≡ ∃
+           (TC(la g. g(T_LAW_IDENTITY)("T")("F"))("T"))))(                             # AUTOLOGY: LAW_IDENTITY(LAW_IDENTITY)
+  CONS(E("LAW_NONCONTRADICTION")(":: a -> b -> c")(SRC_LAWNC)(LAW_NONCONTRADICTION)(
+        T3L(TC(la g. g(ADD23)(FIVE)("T")("F"))("T"))                                   # ¬(A≡B ∧ ¬(A≡B)) on distinct beings
+           (TC(la g. g(ADD23)(ADD23)("T")("F"))("T"))                                  # …and on one being
+           (TC(la g. g(T_LAW_NONCONTRADICTION)(T_LAW_NONCONTRADICTION)("T")("F"))("T"))))(  # AUTOLOGY
+  CONS(E("LAW_EXCLUDED_MIDDLE")(":: a -> b -> c")(SRC_LAWEM)(LAW_EXCLUDED_MIDDLE)(
+        T3L(TC(la g. g(ADD23)(FIVE)("T")("F"))("T"))                                   # (A≡B) ∨ ¬(A≡B)
+           (TC(la g. g(ADD23)(ADD23)("T")("F"))("T"))
+           (TC(la g. g(T_LAW_EXCLUDED_MIDDLE)(T_LAW_EXCLUDED_MIDDLE)("T")("F"))("T"))))(  # AUTOLOGY
+  CONS(E("INHABITS")(":: a -> b -> c")(SRC_INHAB)(INHABITS)(
+        T2L(TC(la g. g(2)(2)("T")("F"))("T"))                                          # arity-2 body inhabits arity-2 type
+           (TC(la g. g(2)(1)("T")("F"))("F"))))(                                       # mismatch detected (the contradiction is caught)
+  CONS(E("NC_TYPECHECK")(":: a -> b -> c")(SRC_NCTC)(NC_TYPECHECK)(
+        T2L(TC(la g. g(2)(2)("T")("F"))("T"))                                          # ¬(inhabits ∧ ¬inhabits)
+           (TC(la g. g(2)(1)("T")("F"))("T"))))(                                       # holds whether or not it inhabits
+  CONS(E("VERDICT")(":: a -> b -> c")(SRC_VERD)(VERDICT)(
+        T2L(TC(la g. g(ADD23)(ADD23))("≡"))
+           (TC(la g. g(ADD23)(FIVE))("≢"))))(                                          # total: ≡ or ≢, never a third
+  CONS(E("WELLFORMED")(":: a -> b")(SRC_WF)(WELLFORMED)(
+        T2L(TC(la g. g(ADD23)("T")("F"))("T"))
+           (TC(la g. g(TERM("")("x"))("T")("F"))("F"))))(
+  CONS(E("VERDICT_OR_DIE")(":: a -> b -> c")(SRC_VOD)(VERDICT_OR_DIE)(
+        T2L(TC(la g. g(ADD23)(ADD23))("≡"))                                            # safe branch only — the loud branch is exercised in build.sh
+           (TC(la g. g(ADD23)(FIVE))("≢"))))(
+  CONS(E("T_LAW_IDENTITY")("term-witness for LAW_IDENTITY (trusted data)")(SRC_TLI)(T_LAW_IDENTITY)(
+        T1L(TC(la g. FORM(g))("LAW_IDENTITY"))))(
+  CONS(E("T_LAW_NONCONTRADICTION")("term-witness for LAW_NONCONTRADICTION (trusted data)")(SRC_TNC)(T_LAW_NONCONTRADICTION)(
+        T1L(TC(la g. FORM(g))("LAW_NONCONTRADICTION"))))(
+  CONS(E("T_LAW_EXCLUDED_MIDDLE")("term-witness for LAW_EXCLUDED_MIDDLE (trusted data)")(SRC_TEM)(T_LAW_EXCLUDED_MIDDLE)(
+        T1L(TC(la g. FORM(g))("LAW_EXCLUDED_MIDDLE"))))(
+  CONS(E("LAWS_AUTOLOGICAL")(":: a -> b")(SRC_AUTO)(LAWS_AUTOLOGICAL)(
+        T1L(TC(la g. g("!")("T")("F"))("T"))))(                                        # the law system holds of itself
+  NIL)))))))))))))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(METALOGIC_SPEC) ===\n")(GENERATE(METALOGIC_SPEC))))
+       (print(DEPLOY(METALOGIC_SPEC)("metalogic.la")))
