@@ -1,0 +1,114 @@
+# ═══════════════════════════════════════════════════════════════════
+#  sigil_live.la — VM-only capstone (run manually): draw a SIGIL to a real
+#  screen. The visual-modality companion to sigil.la (whose ASCII self-test
+#  build-verifies the sigil shapes on every engine).
+#
+#  It `import`s sigil.la (the sigil model — SIGIL/PRIM/SIG_AT/SZ), takes the
+#  screen with drm_mode, and rasters ∃ (Being) DIRECTLY into the XRGB8888
+#  framebuffer — each of the SZ×SZ logical cells blown up to a SCALE×SCALE
+#  block, the whole sigil centred on a dark field — then presents it and HOLDS
+#  until Ctrl+C. The frame is built with REPEAT2 runs, so it stays O(screen),
+#  exactly like theourgia_text_live.la.
+#
+#  ── HOW TO RUN ──────────────────────────────────────────────────────
+#  Needs a BARE VT (Ctrl+Alt+F3..F6) for DRM master — under a compositor
+#  drm_mode halts loudly (secd: drm error) WITHOUT touching the display.
+#      ./drm_bringup_sigil.sh           # frees the GPU, runs this, restores it
+#  or by hand:
+#      ./tiny_host secd.la                        # emit the VM (logos_secd)
+#      cp sigil_live.la logos_source.la
+#      ./tiny_host codegen.la                     # compile -> logos_program.bin
+#      sudo ./logos_secd                          # from a bare VT
+#  A large gold ∃ on a dark field appears; Ctrl+C to stop, then Ctrl+Alt+F1/F2
+#  back to your desktop.
+# ═══════════════════════════════════════════════════════════════════
+
+import("sigil.la")    # SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL BEING
+
+# ── Foundations (Church lists; the import's same-named privates are isolated) ──
+glyph SEQ     = la a. la b. b
+glyph TRUE    = la t. la f. t
+glyph FALSE   = la t. la f. f
+glyph Z       = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF      = la c. la t. la f. c(t)(f)("!")
+glyph PAIR    = la a. la b. la f. f(a)(b)
+glyph FST     = la p. p(la a. la b. a)
+glyph SND     = la p. p(la a. la b. b)
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── drm_mode returns "<w> <h> <pitch>"; split it and pull each as an int ──
+glyph SPLIT_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. NIL)(la _. CONS(tok)(NIL)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. CONS(tok)(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph SPLIT = la s. SPLIT_GO(s)("")
+glyph D_W = la dims. str_to_int(LIST_HD(dims))
+glyph D_H = la dims. str_to_int(LIST_HD(LIST_TL(dims)))
+glyph D_P = la dims. str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))
+
+# ── Direct XRGB8888 framebuffer builder (a pixel is 4 bytes LE: B,G,R,0) ──
+glyph BYTE = la n. chr(int_to_str(n))
+glyph NUL  = BYTE(0)
+glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
+glyph REPEAT2 = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(int_eq(mod(n)(2))(0))
+        (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
+        (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
+glyph ZEROS = la n. REPEAT2(n)(NUL)
+glyph PAD   = la w. la pitch. ZEROS(sub(pitch)(mul(w)(4)))   # row tail up to pitch
+glyph SOLID_ROW = la w. la pitch. la px. concat(REPEAT2(w)(px))(PAD(w)(pitch))
+
+# ── Scene: the sigil to draw, colours, and the on-screen size ──
+glyph SIG    = SIGIL(PRIM("BEING"))      # ∃ — the first defined sigil
+glyph BG     = BGRX(30)(15)(25)          # dark indigo field
+glyph FG     = BGRX(60)(210)(255)        # warm gold ink
+glyph SCALE  = 28                        # framebuffer pixels per sigil cell
+glyph DSZ    = mul(SZ)(SCALE)            # drawn sigil side in pixels (SZ imported)
+
+# ── Raster one sigil row: its SZ cells, each cell a SCALE-wide run of FG/BG ──
+glyph CELLS = Z(la self. la r. la c.
+    IF(int_eq(c)(SZ))(la _. "")(la _.
+        concat(REPEAT2(SCALE)(IF(SIG_AT(SIG)(r)(c))(la _. FG)(la _. BG)))
+              (self(r)(add(c)(1)))))
+# One full framebuffer row carrying sigil-row r: left field | cells | right field | pad.
+glyph SIGROW = la w. la pitch. la ox. la r.
+    concat(REPEAT2(ox)(BG))
+    (concat(CELLS(r)(0))
+    (concat(REPEAT2(sub(w)(add(ox)(DSZ)))(BG))
+           (PAD(w)(pitch))))
+# The SZ sigil rows, each repeated SCALE times (vertical scale) → the sigil band.
+glyph SIGBAND = Z(la self. la w. la pitch. la ox. la r.
+    IF(int_eq(r)(SZ))(la _. "")(la _.
+        concat(REPEAT2(SCALE)(SIGROW(w)(pitch)(ox)(r)))
+              (self(w)(pitch)(ox)(add(r)(1)))))
+
+# FRAME w h pitch → the full-screen image: top field, the sigil band centred,
+# bottom field. ox/oy centre the DSZ×DSZ sigil on the panel.
+glyph FRAME = la w. la h. la pitch.
+    (la ox. (la oy.
+        concat(REPEAT2(oy)(SOLID_ROW(w)(pitch)(BG)))
+        (concat(SIGBAND(w)(pitch)(ox)(0))
+               (REPEAT2(sub(h)(add(oy)(DSZ)))(SOLID_ROW(w)(pitch)(BG)))))
+     (div(sub(h)(DSZ))(2)))
+     (div(sub(w)(DSZ))(2))
+
+# ── Hold the image on screen (tail loop → bounded dump under TCO); Ctrl+C ends it ──
+glyph HOLD = Z(la self. la _. SEQ(sleep("1"))(self("!")))
+
+# ── MAIN: take the screen, present ∃, hold ──
+glyph MAIN =
+    (la dims. (la w. (la h. (la pitch.
+        SEQ(print("sigil: presenting ∃ (Being) — the first sigil of the visual modality. Ctrl+C to stop"))(
+        SEQ(present(FRAME(w)(h)(pitch)))(
+        HOLD("!"))))
+      (D_P(dims)))(D_H(dims)))(D_W(dims)))
+    (SPLIT(SEQ(print("sigil: taking the screen via drm_mode"))(drm_mode("!"))))
