@@ -1500,6 +1500,49 @@ else
     exit 1
 fi
 
+say "Theourgia: text rendering — embedded 8x8 bitmap font (Stage 8)"
+# Stage 8 (theourgia_text.la) adds the last UI primitive: TEXT. An EMBEDDED 8x8
+# bitmap font (A-Z 0-9 space, one bit per pixel, bit 0 = leftmost; theourgia_
+# font.la, packed as a flat decimal string) plus DRAW_TEXT(dst)(text)(x)(y)(fg)
+# (bg), which builds an 8-tall ribbon (set->fg, unset->bg) and COMPOSEs it onto a
+# Stage 1 surface. Pure generation (concat / native ints, importing the font +
+# Stage 1), so it runs byte-identically on the C
+# host and native VM, verifiable with no screen: we draw "HI" in white onto a
+# 24x12 blue surface and check the rastered pixels. 'H' row 0 lights columns
+# 0,1,4,5 (the two verticals) but NOT column 2; row 3 is the full crossbar, so
+# column 2 there IS lit — that row-dependent difference proves real glyph shape,
+# not a block. 'I' is the second character (x += 8), proving advance. (The live
+# device->screen demo is theourgia_text_live.la, run from a bare VT.)
+ok=1
+tp () { od -An -tu1 -j "$1" -N3 text.ppm | tr -s ' ' | sed 's/^ //;s/ $//'; }
+check_text () {  # $1 = engine label
+    [ "$(head -c 13 text.ppm)" = "$(printf 'P6\n24 12\n255\n')" ] || { echo "FAIL  theourgia_text($1): PPM header"; ok=0; }
+    [ "$(stat -c%s text.ppm)" = "877" ] || { echo "FAIL  theourgia_text($1): size $(stat -c%s text.ppm) != 877"; ok=0; }
+    [ "$(tp 13)"  = "0 0 128" ]       || { echo "FAIL  theourgia_text($1): bg pixel [$(tp 13)] != 0 0 128"; ok=0; }
+    [ "$(tp 160)" = "255 255 255" ]   || { echo "FAIL  theourgia_text($1): H r0 c0 [$(tp 160)] != white"; ok=0; }
+    [ "$(tp 166)" = "0 0 128" ]       || { echo "FAIL  theourgia_text($1): H r0 c2 gap [$(tp 166)] != bg"; ok=0; }
+    [ "$(tp 382)" = "255 255 255" ]   || { echo "FAIL  theourgia_text($1): H r3 c2 crossbar [$(tp 382)] != white"; ok=0; }
+    [ "$(tp 187)" = "255 255 255" ]   || { echo "FAIL  theourgia_text($1): I top bar [$(tp 187)] != white (2nd char advance)"; ok=0; }
+}
+rm -f text.ppm
+./tiny_host theourgia_text.la >/dev/null 2>&1
+check_text "C host"
+cp text.ppm /tmp/text_host.ppm; rm -f text.ppm
+# Sovereign: the same render on the native VM must be byte-identical.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp theourgia_text.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd >/dev/null 2>&1
+check_text "native VM"
+cmp -s text.ppm /tmp/text_host.ppm || { echo "FAIL  theourgia_text: native raster != C host raster"; ok=0; }
+rm -f text.ppm /tmp/text_host.ppm logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  theourgia: DRAW_TEXT rasters an 8x8 bitmap font (\"HI\": glyph shape + char advance) onto a surface, byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile

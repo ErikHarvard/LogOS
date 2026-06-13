@@ -1,0 +1,71 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_text.la — the LogOS compositor, Stage 8: text rendering.
+#
+#  Stages 1-7 gave the compositor rectangles, a movable window, and a live
+#  device→screen loop. A usable UI needs one more primitive: TEXT. This file is
+#  the SURFACE renderer: it `import`s the embedded 8×8 bitmap font
+#  (theourgia_font.la — GLYPH_ROW/BIT/FW/FH) and the Stage 1 surface core, and
+#  adds DRAW_TEXT.
+#
+#  DRAW_TEXT(dst)(text)(x)(y)(fg)(bg) renders a string into a Stage 1 surface:
+#  it builds an FH-tall ribbon (TEXT_SURFACE) — each glyph's set pixels become
+#  `fg`, its unset pixels `bg` — and COMPOSEs it onto `dst` at (x,y). Pass the
+#  surface's own colour as `bg` and the characters sit cleanly on it.
+#
+#  Uses only existing builtins (concat / native ints) over the font + surface
+#  cores, so the rendering is PURE GENERATION — byte-identical on the C host and
+#  the native VM, verifiable with no screen (build.sh draws "HI" onto a surface
+#  and checks the rastered pixels on both engines). The live device→screen demo
+#  is theourgia_text_live.la, which imports the SAME font but rasters straight to
+#  the framebuffer (it imports only the font, not Stage 1, so it stays lean).
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia_font.la")    # GLYPH_ROW BIT FW FH
+import("theourgia.la")         # PX SURF S_W S_H S_ROWS SOLID COMPOSE PPM
+
+# The surface-text API an importer sees; helpers below stay private (the imports'
+# privates are isolated too — alpha-renamed away).
+export DRAW_TEXT TEXT_SURFACE
+
+# ── Foundations (flat; isolated from the imports' same-named privates) ──
+glyph SEQ     = la a. la b. b
+glyph TRUE    = la t. la f. t
+glyph FALSE   = la t. la f. f
+glyph Z       = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF      = la c. la t. la f. c(t)(f)("!")
+glyph PAIR    = la a. la b. la f. f(a)(b)
+glyph FST     = la p. p(la a. la b. a)
+glyph SND     = la p. p(la a. la b. b)
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── Rasterise (onto a Stage 1 RGB surface) ──
+glyph LEN = Z(la self. la s. IF(str_eq(s)(""))(la _. 0)(la _. add(1)(self(str_tail(s)))))
+# GROW_PX(rowbyte)(fg)(bg) — the FW pixels of one glyph row: set→fg, unset→bg.
+glyph GROW_PX = la rowbyte. la fg. la bg.
+    (Z(la self. la col. IF(int_eq(col)(FW))(la _. "")(la _.
+        concat(IF(BIT(rowbyte)(col))(la _. fg)(la _. bg))(self(add(col)(1))))))(0)
+# TROW(text)(r)(fg)(bg) — one surface row: glyph-row r of every character, in order.
+glyph TROW = Z(la self. la s. la r. la fg. la bg.
+    IF(str_eq(s)(""))(la _. "")(la _.
+        concat(GROW_PX(GLYPH_ROW(str_head(s))(r))(fg)(bg))(self(str_tail(s))(r)(fg)(bg))))
+# TROWS(text)(r)(fg)(bg) — the list of FH surface rows (r = 0 … FH-1).
+glyph TROWS = Z(la self. la s. la r. la fg. la bg.
+    IF(int_eq(r)(FH))(la _. NIL)(la _.
+        CONS(TROW(s)(r)(fg)(bg))(self(s)(add(r)(1))(fg)(bg))))
+
+# TEXT_SURFACE(text)(fg)(bg) — an FH-tall, (FW·len)-wide surface of the rendered text.
+glyph TEXT_SURFACE = la s. la fg. la bg. SURF(mul(LEN(s))(FW))(FH)(TROWS(s)(0)(fg)(bg))
+# DRAW_TEXT(dst)(text)(x)(y)(fg)(bg) — composite the text onto dst at (x,y).
+glyph DRAW_TEXT = la dst. la text. la x. la y. la fg. la bg.
+    COMPOSE(dst)(TEXT_SURFACE(text)(fg)(bg))(x)(y)
+
+# ── Screen-free self-test (like Stage 1): draw "HI" on a surface → text.ppm ──
+glyph BG_C   = PX(0)(0)(128)            # blue surface
+glyph FG_C   = PX(255)(255)(255)        # white text
+glyph CANVAS = SOLID(24)(12)(BG_C)
+glyph SCENE  = DRAW_TEXT(CANVAS)("HI")(1)(2)(FG_C)(BG_C)
+glyph MAIN = SEQ(write_file("text.ppm")(PPM(SCENE)))
+    (print("theourgia_text: drew \"HI\" onto a 24x12 surface -> text.ppm"))

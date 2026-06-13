@@ -45,6 +45,9 @@ host program, applied to itself, reproduces itself.
 | `theourgia_poll_live.la` | Theourgia Stage 6 capstone (VM-only, run manually): the real multi-device loop. `import`s the Stage 4 decoder; `MULTIPLEX(fds)` loops `SPLIT(poll(JOIN(fds))("-1"))` then `DRAIN`s each ready fd with a real `read(fd, 24)`, so a keystroke and a mouse move are serviced from one loop, neither blocking the other. Opens two real `/dev/input` devices; run with device-read permission (`sudo`), Ctrl+C to stop. `OPEN_OR_DIE` halts loudly if `open` fails (negative fd) instead of busy-looping. Not in build.sh (needs real devices + a human + loops forever), like DRM scanout. |
 | `theourgia_mux_session.la` | Theourgia Stage 7: the multiplexed live session — Stage 6's poll multiplexing wired into Stage 5's session. `import`s the Stage 1 surface core + Stage 4 decoder; the new heart is **`DRAIN_STEP`**, which folds `STEP` over every ready fd in one poll cycle, threading the scene state — so a single cycle reporting two ready devices applies BOTH their events before rendering. build.sh drives it with a pure `SIMREAD`: a poll cycle reporting fds `"5 7"` (RIGHT press + DOWN press) moves the window (4,4)→(5,5), recomposed byte-identical on host and VM. The `LIVE` loop (VM-only, manual VT) is `drm_mode` → poll/drain/`STEP`/compose/`TO_FB`/`present` forever. See the Stage 7 section. |
 | `theourgia_mux_session_live.la` | Theourgia Stage 7 capstone (VM-only, run manually): the runnable live device→screen session. Carries the same verified Stage 7 machinery (`DRAIN_STEP`/`STEP`/`TO_FB`/`LIVE`) and adds a live MAIN that opens two real `/dev/input` devices (`OPEN_OR_DIE` halts loudly on a permission failure *before* taking the screen), `drm_mode`s as DRM master, and runs `LIVE` forever — poll every device → fold every ready event into the scene → recompose → `present`. Arrow keys move the window; run from a bare VT with `sudo`, Ctrl+C to stop. Not in build.sh (needs a bare VT + real devices + loops forever), like `theourgia_drm.la`. |
+| `theourgia_font.la`  | Theourgia Stage 8 font: an EMBEDDED 8×8 bitmap font as pure data + lookup (no font-file parsing yet). A–Z, 0–9, space; one bit per pixel (bit 0 = leftmost); unknown chars blank. Packed as ONE flat decimal string (`FONTDATA`, 37×8 = 296 bytes) decoded by `BYTES` — the `secd.la` flat-literal form, so it compiles fast and costs nothing to drag through the import-mangler (a deeply-nested assoc-list font made codegen of any importer pathologically slow). `import`s NOTHING, so a glyphs-only consumer (the live renderer) imports just this, not Stage 1. Exports `GLYPH_ROW(c)(r)` (row-byte r of char c), `BIT(rowbyte)(col)`, `FW`/`FH`. Pure LA — byte-identical host/VM. |
+| `theourgia_text.la`  | Theourgia Stage 8: text rendering onto surfaces. `import`s the font + the Stage 1 surface core and adds `DRAW_TEXT(dst)(text)(x)(y)(fg)(bg)` — builds an FH-tall ribbon (`TEXT_SURFACE`: set→fg, unset→bg) and `COMPOSE`s it onto a Stage 1 surface. Pure generation (concat / native ints), so it rasters byte-identically on the C host and native VM, verifiable with no screen. `build.sh` draws "HI" onto a 24×12 surface and checks the glyph shape (row-dependent) and the second char's advance, byte-identical on both engines. |
+| `theourgia_text_live.la` | Theourgia Stage 8 capstone (VM-only, run manually): draw text to a real screen. `import`s JUST the font (`GLYPH_ROW`/`BIT` — not Stage 1, so it stays lean to compile), takes the screen with `drm_mode`, builds a full-screen XRGB8888 framebuffer DIRECTLY (a blue desktop + a red window) — only the 8 text rows are special-cased, so the frame stays O(screen), like the Stage 7 live renderer — rasters "I AM THAT I AM" into the window in white, `present`s it, and HOLDS until Ctrl+C. Run from a bare VT (`drm_bringup_text.sh`), like the other live capstones. |
 | `build.sh`           | Compiles the host, runs the kernel, verifies generational replication. |
 | `new_logos_genN_pidP.bin` | Output of `copy_self` — generation `N`, replicated by PID `P`; a byte-identical copy of the running host. |
 
@@ -1069,6 +1072,41 @@ The compositor is built in stages, each independently runnable and checked by
   TCO runs it forever in bounded dump. Run manually from a bare VT (DRM master +
   device-read permission), as DRM scanout is; the pure reducer is the part
   `build.sh` verifies on every engine.
+
+- **Stage 8 — text rendering (`theourgia_font.la` + `theourgia_text.la`).**
+  Stages 1-7 gave the compositor rectangles, a movable window, and a live
+  device→screen loop; a usable UI needs one more primitive — TEXT. Stage 8 adds
+  it the simplest honest way: an **embedded 8×8 bitmap font** (no font-file
+  parsing yet). Each character is a fixed 8×8 grid stored as eight row-bytes, one
+  bit per pixel (**bit 0 = leftmost column**); the font covers **A–Z, 0–9 and
+  space**, and an unknown character renders blank. The font is its own module,
+  **`theourgia_font.la`** — `GLYPH_ROW(c)(r)` is row `r` of character `c` and
+  `BIT(rowbyte)(col)` tests a column. It is packed as **one flat decimal string**
+  (`FONTDATA`, 296 bytes, decoded by `BYTES`, the `secd.la` flat-literal form)
+  and `import`s nothing, both for a real reason: a string literal lowers to a
+  single instruction and costs nothing to drag through the **import-mangler**,
+  whereas an earlier deeply-nested assoc-list font made `codegen` of any importer
+  pathologically slow (>10 min); and a glyphs-only consumer imports just the font
+  without transitively pulling in Stage 1. **`theourgia_text.la`** is the surface
+  renderer: it `import`s the font + the Stage 1 surface core and adds
+  **`DRAW_TEXT(dst)(text)(x)(y)(fg)(bg)`** — it builds an FH-tall ribbon
+  (`TEXT_SURFACE` — each glyph's set pixels become `fg`, its unset pixels `bg`)
+  and `COMPOSE`s it onto a Stage 1 surface at `(x,y)`; pass the surface's own
+  colour as `bg` and the text sits cleanly on it. It uses only existing builtins
+  (concat / native ints), so the render is **pure generation — byte-identical on
+  the C host and native VM**, verifiable with no screen: `build.sh` draws "HI"
+  onto a 24×12 surface and checks that 'H' row 0 lights its two verticals but not
+  the centre while row 3 (the crossbar) does light the centre (row-dependent
+  glyph shape, not a block), and that 'I' lands one cell to the right (`x += 8`,
+  character advance), byte-identical on both engines. The **live device→screen
+  demo** is `theourgia_text_live.la` (VM-only): it `import`s JUST the font
+  (`GLYPH_ROW`/`BIT`), takes the screen with `drm_mode`, and rasters "I AM THAT I
+  AM" into a red window in white — building the full-screen XRGB8888 framebuffer
+  **directly** (the Stage 1 surface path is O(n²) per row and cannot scale to a
+  real panel, so only the 8 rows that carry text are special-cased; the frame
+  stays O(screen), exactly as the Stage 7 live renderer does), then `present`s it
+  and holds until Ctrl+C. Run from a bare VT via `drm_bringup_text.sh` (frees the
+  GPU, restores the greeter on exit), like the other live capstones.
 
 ### The nine primitives (`primitives.la`) and compile-time typing (`specpipe.la`)
 

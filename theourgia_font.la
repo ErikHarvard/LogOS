@@ -1,0 +1,76 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_font.la — the LogOS compositor, Stage 8 font: an embedded 8×8
+#  bitmap font, as pure data + a lookup. NO font-file parsing yet.
+#
+#  Each character is a fixed 8×8 grid stored as eight row-bytes, one bit per
+#  pixel (bit 0 = leftmost column). The font covers A–Z, 0–9 and space; an
+#  unknown character renders as blank. It is packed as ONE flat decimal string
+#  (FONTDATA — 37 glyphs × 8 rows = 296 bytes) decoded by BYTES, the same
+#  flat-literal form secd.la uses for the VM image: a string literal lowers to a
+#  single instruction, so it compiles fast and — crucially — costs nothing to
+#  drag through the import-mangler (an earlier deeply-nested assoc-list font made
+#  codegen of any file importing it pathologically slow).
+#
+#  This module imports NOTHING, so a consumer that only needs glyphs (the live
+#  framebuffer renderer, theourgia_text_live.la) imports JUST this — it does not
+#  transitively pull in the Stage 1 surface core. theourgia_text.la imports both
+#  this and Stage 1 to raster text onto surfaces. Exports the minimal font API:
+#  GLYPH_ROW(c)(r) → row-byte r of character c; BIT(rowbyte)(col) → is column
+#  set?; FW/FH → the cell dimensions. Pure Lingua Adamica — byte-identical on the
+#  C host and the native VM.
+# ═══════════════════════════════════════════════════════════════════
+
+export GLYPH_ROW BIT FW FH
+
+# ── Foundations ──
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+
+# ── Font geometry ──
+glyph FW = 8        # glyph cell width  (pixels)
+glyph FH = 8        # glyph cell height (rows)
+
+# ── Byte helpers ──
+glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
+    self(sub(n)(1))(str_tail(s))))
+glyph BYTE_AT = la s. la i. str_head(DROP(i)(s))      # the i-th byte (1-char string)
+glyph ORDI    = la c. str_to_int(ord(c))              # a 1-char string → its byte value
+
+# BYTES(s) — a space-separated decimal string → the bytes it denotes (each token
+# is already a decimal, so chr(token) directly; the secd.la / elf.la convention).
+glyph BYTES_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. "")(la _. chr(tok)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. concat(chr(tok))(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph BYTES = la s. BYTES_GO(s)("")
+
+# ── The font: 37 glyphs × 8 rows, packed in INDEX order (space, A–Z, 0–9) ──
+glyph INDEX = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+glyph FONTDATA = BYTES("0 0 0 0 0 0 0 0 12 30 51 51 63 51 51 0 63 102 102 62 102 102 63 0 60 102 3 3 3 102 60 0 31 54 102 102 102 54 31 0 127 70 22 30 22 70 127 0 127 70 22 30 22 6 15 0 60 102 3 3 115 102 124 0 51 51 51 63 51 51 51 0 30 12 12 12 12 12 30 0 120 48 48 48 51 51 30 0 103 102 54 30 54 102 103 0 15 6 6 6 70 102 127 0 99 119 127 127 107 99 99 0 99 103 111 123 115 99 99 0 28 54 99 99 99 54 28 0 63 102 102 62 6 6 15 0 30 51 51 51 59 30 56 0 63 102 102 62 54 102 103 0 30 51 7 14 56 51 30 0 63 12 12 12 12 12 12 0 51 51 51 51 51 51 63 0 51 51 51 51 51 30 12 0 99 99 99 107 127 119 99 0 99 99 54 28 28 54 99 0 51 51 51 30 12 12 30 0 127 99 49 24 76 102 127 0 62 99 115 123 111 103 62 0 12 14 12 12 12 12 63 0 30 51 48 28 6 51 63 0 30 51 48 28 48 51 30 0 56 60 54 51 127 48 120 0 63 3 31 48 48 51 30 0 28 6 3 31 51 51 30 0 127 51 48 24 12 12 12 0 30 51 51 30 51 51 30 0 30 51 51 62 48 24 14 0")
+
+# GLYPH_INDEX(c) — c's position in INDEX (0 = space), or 0 (blank) if unknown.
+glyph INDEXOF = Z(la self. la s. la c. la i.
+    IF(str_eq(s)(""))(la _. 0)(la _.
+    IF(str_eq(str_head(s))(c))(la _. i)(la _. self(str_tail(s))(c)(add(i)(1)))))
+glyph GLYPH_INDEX = la c. INDEXOF(INDEX)(c)(0)
+# GLYPH_ROW(c)(r) — row-byte r of character c, pulled out of the packed font.
+glyph GLYPH_ROW = la c. la r. ORDI(BYTE_AT(FONTDATA)(add(mul(GLYPH_INDEX(c))(8))(r)))
+
+# ── Bit test ──
+glyph POW2 = Z(la self. la k. IF(int_eq(k)(0))(la _. 1)(la _. mul(2)(self(sub(k)(1)))))
+# BIT(rowbyte)(col) → is column `col` (0 = leftmost) of this row set?
+glyph BIT = la b. la col. int_eq(mod(div(b)(POW2(col)))(2))(1)
+
+# ── Screen-free self-test: print 'H' row bytes (proves the packed lookup) ──
+glyph SHOW_ROWS = Z(la self. la c. la r.
+    IF(int_eq(r)(FH))(la _. "")(la _.
+        concat(concat(int_to_str(GLYPH_ROW(c)(r)))
+            (IF(int_eq(r)(sub(FH)(1)))(la _. "")(la _. " ")))
+            (self(c)(add(r)(1)))))
+glyph MAIN = print(concat("font: H rows = ")(SHOW_ROWS("H")(0)))

@@ -1,0 +1,133 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_text_live.la — Stage 8 capstone (VM-only, run manually):
+#  draw TEXT to a real screen.
+#
+#  The runnable companion to theourgia_text.la (whose surface-based DRAW_TEXT
+#  build.sh verifies on every engine). It takes the screen with drm_mode, builds
+#  a full-screen XRGB8888 framebuffer DIRECTLY — a blue desktop with a red
+#  window — rasters "I AM THAT I AM" into the window in white using the SAME
+#  embedded font (GLYPH_ROW / BIT, imported), presents it, and HOLDS the image
+#  until Ctrl+C. Like the live session it builds the framebuffer directly (the
+#  Stage 1 surface path is O(n²) per row and cannot scale to a real panel); only
+#  the FH rows that carry text are special-cased, so the frame stays O(screen).
+#
+#  ── HOW TO RUN ──────────────────────────────────────────────────────
+#  Needs a BARE VT (Ctrl+Alt+F3..F6) for DRM master — under a compositor
+#  drm_mode halts loudly (secd: drm error) WITHOUT touching the display.
+#      ./drm_bringup_text.sh            # frees the GPU, runs this, restores it
+#  or by hand:
+#      ./tiny_host secd.la                        # emit the VM (logos_secd)
+#      cp theourgia_text_live.la logos_source.la
+#      ./tiny_host codegen.la                     # compile -> logos_program.bin
+#      sudo ./logos_secd                          # from a bare VT
+#  A blue desktop with a red window holding white "I AM THAT I AM" appears;
+#  Ctrl+C to stop, then Ctrl+Alt+F1/F2 back to your desktop.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia_font.la")    # GLYPH_ROW BIT FW FH — just the font, not Stage 1
+
+# ── Foundations (Church lists; the import's same-named privates are isolated) ──
+glyph SEQ     = la a. la b. b
+glyph TRUE    = la t. la f. t
+glyph FALSE   = la t. la f. f
+glyph Z       = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF      = la c. la t. la f. c(t)(f)("!")
+glyph PAIR    = la a. la b. la f. f(a)(b)
+glyph FST     = la p. p(la a. la b. a)
+glyph SND     = la p. p(la a. la b. b)
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── drm_mode returns "<w> <h> <pitch>"; split it and pull each as an int ──
+glyph SPLIT_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. NIL)(la _. CONS(tok)(NIL)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. CONS(tok)(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph SPLIT = la s. SPLIT_GO(s)("")
+glyph D_W = la dims. str_to_int(LIST_HD(dims))
+glyph D_H = la dims. str_to_int(LIST_HD(LIST_TL(dims)))
+glyph D_P = la dims. str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))
+
+# ── Direct XRGB8888 framebuffer builder (a pixel is 4 bytes LE: B,G,R,0) ──
+# REPEAT2 makes n copies of a string in O(n) via doubling, so a full-screen
+# frame is O(screen). (Same approach the live session uses.)
+glyph BYTE = la n. chr(int_to_str(n))
+glyph NUL  = BYTE(0)
+glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
+glyph REPEAT2 = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(int_eq(mod(n)(2))(0))
+        (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
+        (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
+glyph ZEROS = la n. REPEAT2(n)(NUL)
+glyph PAD   = la w. la pitch. ZEROS(sub(pitch)(mul(w)(4)))   # row tail up to pitch
+glyph SOLID_ROW = la w. la pitch. la px. concat(REPEAT2(w)(px))(PAD(w)(pitch))
+glyph RECT_ROW = la w. la pitch. la x0. la rw. la bg. la fg.
+    concat(REPEAT2(x0)(bg))
+    (concat(REPEAT2(rw)(fg))
+    (concat(REPEAT2(sub(w)(add(x0)(rw)))(bg))
+           (PAD(w)(pitch))))
+
+# ── Scene geometry & colours ──
+glyph BG_BLUE = BGRX(140)(40)(20)        # blue desktop
+glyph WIN_RED = BGRX(40)(40)(210)        # red window
+glyph FG_WHT  = BGRX(255)(255)(255)      # white text
+glyph WX = 80
+glyph WY = 80
+glyph WW = 144
+glyph WH = 40
+glyph TX = 96                            # text top-left, inside the window
+glyph TY = 96
+glyph TXT  = "I AM THAT I AM"
+glyph LEN  = Z(la self. la s. IF(str_eq(s)(""))(la _. 0)(la _. add(1)(self(str_tail(s)))))
+glyph TLEN = LEN(TXT)
+glyph TPXW = mul(FW)(TLEN)               # text block width in pixels
+
+# ── Text pixels: glyph-row `gr` of one char / the whole string, set→FG unset→WIN ──
+glyph CPX = Z(la self. la col. la rb.
+    IF(int_eq(col)(FW))(la _. "")(la _.
+        concat(IF(BIT(rb)(col))(la _. FG_WHT)(la _. WIN_RED))(self(add(col)(1))(rb))))
+glyph GLYPH_PIXELS = la c. la gr. CPX(0)(GLYPH_ROW(c)(gr))
+glyph TEXT_PIXELS = Z(la self. la s. la gr.
+    IF(str_eq(s)(""))(la _. "")(la _.
+        concat(GLYPH_PIXELS(str_head(s))(gr))(self(str_tail(s))(gr))))
+
+# ── A window row carrying glyph-row `gr`: desktop | window | text | window | desktop ──
+glyph TBROW = la w. la pitch. la gr.
+    concat(REPEAT2(WX)(BG_BLUE))
+    (concat(REPEAT2(sub(TX)(WX))(WIN_RED))
+    (concat(TEXT_PIXELS(TXT)(gr))
+    (concat(REPEAT2(sub(add(WX)(WW))(add(TX)(TPXW)))(WIN_RED))
+    (concat(REPEAT2(sub(w)(add(WX)(WW)))(BG_BLUE))
+           (PAD(w)(pitch))))))
+glyph TEXT_BAND = Z(la self. la w. la pitch. la gr.
+    IF(int_eq(gr)(FH))(la _. "")(la _.
+        concat(TBROW(w)(pitch)(gr))(self(w)(pitch)(add(gr)(1)))))
+
+# FRAME_TEXT w h pitch → the full-screen image: top desktop, upper window band,
+# the FH text rows, lower window band, bottom desktop.
+glyph FRAME_TEXT = la w. la h. la pitch.
+    concat(REPEAT2(WY)(SOLID_ROW(w)(pitch)(BG_BLUE)))
+    (concat(REPEAT2(sub(TY)(WY))(RECT_ROW(w)(pitch)(WX)(WW)(BG_BLUE)(WIN_RED)))
+    (concat(TEXT_BAND(w)(pitch)(0))
+    (concat(REPEAT2(sub(add(WY)(WH))(add(TY)(FH)))(RECT_ROW(w)(pitch)(WX)(WW)(BG_BLUE)(WIN_RED)))
+           (REPEAT2(sub(h)(add(WY)(WH)))(SOLID_ROW(w)(pitch)(BG_BLUE))))))
+
+# ── Hold the image on screen (tail loop → bounded dump under TCO); Ctrl+C ends it ──
+glyph HOLD = Z(la self. la _. SEQ(sleep("1"))(self("!")))
+
+# ── MAIN: take the screen, present the frame, hold ──
+glyph MAIN =
+    (la dims. (la w. (la h. (la pitch.
+        SEQ(print("text: presenting \"I AM THAT I AM\" in a window — Ctrl+C to stop"))(
+        SEQ(present(FRAME_TEXT(w)(h)(pitch)))(
+        HOLD("!"))))
+      (D_P(dims)))(D_H(dims)))(D_W(dims)))
+    (SPLIT(SEQ(print("text: taking the screen via drm_mode"))(drm_mode("!"))))
