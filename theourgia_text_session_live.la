@@ -1,0 +1,289 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_text_session_live.la — Stage 9 capstone (VM-only, run manually):
+#  a MOVABLE TEXT WINDOW — the foundation for a terminal.
+#
+#  This fuses the two Stage-7/8 live capstones into ONE program:
+#    • theourgia_mux_session_live.la — the live multiplexed event loop: auto-
+#      detect the keyboard, poll it, fold every ready arrow-key press into a
+#      window position via the verified STEP/APPLY_KEY/MOVE/DRAIN_STEP reducer,
+#      and scan the frame out with drm_mode/present.
+#    • theourgia_text_live.la — the embedded 8×8 bitmap font (GLYPH_ROW/BIT,
+#      imported) rastered into the window with TEXT_PIXELS.
+#  The result: a red window on a blue desktop holding the white words
+#  "I AM THAT I AM", and the WHOLE window — text included — moves 40px per
+#  arrow-key press. That is the seed of a terminal: text living inside a
+#  movable, redrawn-every-frame window.
+#
+#  ── WHAT IS REUSED UNCHANGED ─────────────────────────────────────────
+#  The pure reducer that theourgia_mux_session.la's twin verifies on every
+#  engine (STEP/APPLY_KEY/MOVE/DRAIN_STEP) is carried verbatim, as is the
+#  O(screen) REPEAT2 framebuffer discipline and the auto-detection. The only
+#  new machinery is the render: the window band is split into three vertical
+#  zones — window above the text, the FH text rows, window below the text —
+#  and the text rows interleave glyph pixels (set→white, unset→window-red), so
+#  the frame stays O(screen): only FH rows are special-cased.
+#
+#  ── HOW TO RUN ──────────────────────────────────────────────────────
+#  Needs a BARE VT (Ctrl+Alt+F3..F6) for DRM master — under a compositor
+#  drm_mode halts loudly (secd: drm error) WITHOUT touching the display — and
+#  read access to /dev/input (sudo). The keyboard is auto-detected by name.
+#      ./drm_bringup_term.sh            # frees the GPU, runs this, restores it
+#  or by hand:
+#      ./tiny_host secd.la                        # emit the VM (logos_secd)
+#      cp theourgia_text_session_live.la logos_source.la
+#      ./tiny_host codegen.la                     # compile -> logos_program.bin
+#      sudo ./logos_secd                          # from a bare VT
+#  A 2-second green/magenta test pattern (render-path proof) appears first,
+#  then a blue desktop with a red window holding "I AM THAT I AM"; arrow keys
+#  move it in 40px steps. Ctrl+C to stop, then Ctrl+Alt+F1/F2 back to the
+#  desktop. Without sudo it halts clean at the open guard (OPEN_OR_DIE).
+#  Not in build.sh (needs a bare VT + real devices + loops forever), like the
+#  other live capstones.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia_input.la")    # EV_TYPE EV_CODE EV_VALUE EV_* IS_KEY_PRESS/RELEASE
+import("theourgia_font.la")     # GLYPH_ROW BIT FW FH — just the font, not Stage 1
+
+# ── Foundations (Church lists; the imports' same-named privates are isolated) ──
+glyph SEQ     = la a. la b. b
+glyph TRUE    = la t. la f. t
+glyph FALSE   = la t. la f. f
+glyph Z       = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF      = la c. la t. la f. c(t)(f)("!")
+glyph PAIR    = la a. la b. la f. f(a)(b)
+glyph FST     = la p. p(la a. la b. a)
+glyph SND     = la p. p(la a. la b. b)
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── poll marshalling (Stage 6): fd list ↔ poll's space-separated wire string ──
+glyph JOIN = Z(la self. la l.
+    IF(IS_CONS(l))(la _.
+        (la rest. IF(IS_CONS(rest))
+            (la _. concat(concat(LIST_HD(l))(" "))(self(rest)))
+            (la _. LIST_HD(l)))(LIST_TL(l)))
+    (la _. ""))
+glyph SPLIT_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. NIL)(la _. CONS(tok)(NIL)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. CONS(tok)(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph SPLIT = la s. SPLIT_GO(s)("")
+
+# ── The reducer (Stage 5, UNCHANGED shape): fold one event into the scene ──
+# STATE = PAIR(x)(y), the movable window's TOP-LEFT pixel position. On an arrow-
+# key PRESS move STEP_PX pixels; any other event leaves the state unchanged.
+# Coordinates are clamped to the screen only at render time, so STEP stays pure.
+glyph KEY_UP    = 103
+glyph KEY_LEFT  = 105
+glyph KEY_RIGHT = 106
+glyph KEY_DOWN  = 108
+glyph STEP_PX  = 40
+glyph NEGSTEP  = sub(0)(STEP_PX)
+glyph MOVE = la st. la dx. la dy. st(la x. la y. PAIR(add(x)(dx))(add(y)(dy)))
+glyph APPLY_KEY = la st. la c.
+    IF(int_eq(c)(KEY_RIGHT))(la _. MOVE(st)(STEP_PX)(0))(la _.
+    IF(int_eq(c)(KEY_LEFT)) (la _. MOVE(st)(NEGSTEP)(0))(la _.
+    IF(int_eq(c)(KEY_DOWN)) (la _. MOVE(st)(0)(STEP_PX))(la _.
+    IF(int_eq(c)(KEY_UP))   (la _. MOVE(st)(0)(NEGSTEP))(la _.
+    st))))
+glyph STEP = la st. la e.
+    IF(IS_KEY_PRESS(e))(la _. APPLY_KEY(st)(EV_CODE(e)))(la _. st)
+
+# ── DRAIN_STEP — the multiplexed fold (UNCHANGED): apply EVERY ready event ──
+glyph DRAIN_STEP = Z(la self. la reader. la st. la ready.
+    IF(IS_CONS(ready))(la _.
+        self(reader)(STEP(st)(reader(LIST_HD(ready))))(LIST_TL(ready)))
+    (la _. st))
+
+# ── Efficient framebuffer builder: build the XRGB8888 image DIRECTLY ──
+# A scanned-out pixel is 4 bytes little-endian: B, G, R, 0 (BGRX). REPEAT2 makes
+# n copies of a string in O(n) via doubling, so a full-screen frame is O(screen).
+glyph BYTE = la n. chr(int_to_str(n))
+glyph NUL  = BYTE(0)
+glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
+glyph REPEAT = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(s)(self(sub(n)(1))(s))))
+glyph REPEAT2 = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(int_eq(mod(n)(2))(0))
+        (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
+        (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
+glyph ZEROS = la n. REPEAT(n)(NUL)
+glyph PAD   = la w. la pitch. ZEROS(sub(pitch)(mul(w)(4)))   # row tail up to pitch
+glyph SOLID_ROW = la w. la pitch. la px.
+    concat(REPEAT2(w)(px))(PAD(w)(pitch))
+glyph RECT_ROW = la w. la pitch. la x0. la rw. la bg. la fg.
+    concat(REPEAT2(x0)(bg))
+    (concat(REPEAT2(rw)(fg))
+    (concat(REPEAT2(sub(w)(add(x0)(rw)))(bg))
+           (PAD(w)(pitch))))
+
+# clamp the window onto the screen so REPEAT2 never sees a negative count
+glyph MAXI  = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph MINI  = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
+glyph CLAMP = la lo. la hi. la v. MAXI(lo)(MINI(hi)(v))
+
+# ── Scene constants ──
+glyph BG_BLUE = BGRX(140)(40)(20)    # blue-ish desktop
+glyph WIN_RED = BGRX(40)(40)(210)    # red window
+glyph FG_WHT  = BGRX(255)(255)(255)  # white text
+glyph TXT  = "I AM THAT I AM"
+glyph LEN  = Z(la self. la s. IF(str_eq(s)(""))(la _. 0)(la _. add(1)(self(str_tail(s)))))
+glyph TLEN = LEN(TXT)
+glyph TPXW = mul(FW)(TLEN)              # text block width in pixels (FW from font)
+# The window is the text block plus a symmetric inset of padding on every side,
+# so it self-sizes to the string and the text sits centred inside it.
+glyph INSET_X = 24
+glyph INSET_Y = 20
+glyph WINW = add(TPXW)(mul(INSET_X)(2))
+glyph WINH = add(FH)(mul(INSET_Y)(2))
+glyph START_POS = PAIR(200)(200)
+
+# ── Text pixels: glyph-row `gr` of one char / the whole string, set→FG unset→WIN ──
+glyph CPX = Z(la self. la col. la rb.
+    IF(int_eq(col)(FW))(la _. "")(la _.
+        concat(IF(BIT(rb)(col))(la _. FG_WHT)(la _. WIN_RED))(self(add(col)(1))(rb))))
+glyph GLYPH_PIXELS = la c. la gr. CPX(0)(GLYPH_ROW(c)(gr))
+glyph TEXT_PIXELS = Z(la self. la s. la gr.
+    IF(str_eq(s)(""))(la _. "")(la _.
+        concat(GLYPH_PIXELS(str_head(s))(gr))(self(str_tail(s))(gr))))
+
+# ── drm_mode returns "<w> <h> <pitch>"; pull each as an int ──
+glyph D_W = la dims. str_to_int(LIST_HD(dims))
+glyph D_H = la dims. str_to_int(LIST_HD(LIST_TL(dims)))
+glyph D_P = la dims. str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))
+
+# ── The movable text window's frame (NEW) ──
+# A window pinned at top-left (x0,y0), size WINW×WINH, with the text block inset
+# (INSET_X,INSET_Y) inside it. The vertical extent is three zones: window above
+# the text (INSET_Y rows), the FH text rows, window below (INSET_Y rows). A text
+# row is: desktop-left | window-left-pad | glyph pixels | window-right-pad |
+# desktop-right. All counts but the two desktop margins are independent of x0,
+# so the clamp on (x0,y0) keeps every REPEAT2 count non-negative.
+glyph TBROW = la w. la pitch. la x0. la gr.
+    concat(REPEAT2(x0)(BG_BLUE))
+    (concat(REPEAT2(INSET_X)(WIN_RED))
+    (concat(TEXT_PIXELS(TXT)(gr))
+    (concat(REPEAT2(sub(WINW)(add(INSET_X)(TPXW)))(WIN_RED))
+    (concat(REPEAT2(sub(w)(add(x0)(WINW)))(BG_BLUE))
+           (PAD(w)(pitch))))))
+glyph TEXT_BAND = Z(la self. la w. la pitch. la x0. la gr.
+    IF(int_eq(gr)(FH))(la _. "")(la _.
+        concat(TBROW(w)(pitch)(x0)(gr))(self(w)(pitch)(x0)(add(gr)(1)))))
+
+# FRAME_TW w h pitch x0 y0 → the full-screen XRGB8888 image: a blue desktop with
+# the red window (and its white text) at (x0,y0). x0,y0 must already be clamped
+# to [0,w-WINW]×[0,h-WINH].
+glyph FRAME_TW = la w. la h. la pitch. la x0. la y0.
+    concat(REPEAT2(y0)(SOLID_ROW(w)(pitch)(BG_BLUE)))
+    (concat(REPEAT2(INSET_Y)(RECT_ROW(w)(pitch)(x0)(WINW)(BG_BLUE)(WIN_RED)))
+    (concat(TEXT_BAND(w)(pitch)(x0)(0))
+    (concat(REPEAT2(sub(WINH)(add(INSET_Y)(FH)))(RECT_ROW(w)(pitch)(x0)(WINW)(BG_BLUE)(WIN_RED)))
+           (REPEAT2(sub(h)(add(y0)(WINH)))(SOLID_ROW(w)(pitch)(BG_BLUE))))))
+
+# RENDER w/h/pitch from dims, clamp the scene (x,y), build the frame.
+glyph RENDER_FRAME = la dims. la x. la y.
+    (la w. (la h. (la pitch.
+        FRAME_TW(w)(h)(pitch)
+            (CLAMP(0)(sub(w)(WINW))(x))
+            (CLAMP(0)(sub(h)(WINH))(y)))
+      (D_P(dims)))(D_H(dims)))(D_W(dims))
+
+# ── A generic rectangle frame, used ONLY for the startup test pattern ──
+glyph FRAME = la w. la h. la pitch. la rx. la ry. la rw. la rh. la bg. la fg.
+    (la x0. (la y0.
+        concat(REPEAT2(y0)(SOLID_ROW(w)(pitch)(bg)))
+        (concat(REPEAT2(rh)(RECT_ROW(w)(pitch)(x0)(rw)(bg)(fg)))
+               (REPEAT2(sub(h)(add(y0)(rh)))(SOLID_ROW(w)(pitch)(bg)))))
+     (CLAMP(0)(sub(h)(rh))(ry)))
+     (CLAMP(0)(sub(w)(rw))(rx))
+
+# ── Startup TEST PATTERN: drawn unconditionally to prove the render path ──
+# A green field with a centred magenta box, held 2s, BEFORE any input. If this
+# shows, scanout works and any "nothing happens" is in input, not rendering.
+glyph TP_BG = BGRX(20)(170)(20)      # green field
+glyph TP_FG = BGRX(200)(20)(200)     # magenta box
+glyph TPW = 400
+glyph TPH = 300
+glyph SHOW_TEST_PATTERN = la dims.
+    (la w. (la h. (la pitch.
+        SEQ(print("text-session: startup test pattern (green field + magenta box), 2s"))(
+        SEQ(present(FRAME(w)(h)(pitch)
+                (sub(div(w)(2))(div(TPW)(2)))
+                (sub(div(h)(2))(div(TPH)(2)))
+                (TPW)(TPH)(TP_BG)(TP_FG)))
+            (sleep("2"))))
+      (D_P(dims)))(D_H(dims)))(D_W(dims))
+
+# ── The LIVE multiplexed session (VM-only: drm_mode/present/poll/read) ──
+# poll every device, fold all ready events into st via DRAIN_STEP, render the
+# movable text window from st's (x,y), scan it out — then recurse (tail position
+# → bounded dump under TCO).
+glyph LIVE_READ = la fd. read(fd)("24")
+glyph LIVE = Z(la self. la st. la dims. la fds.
+    (la st2.
+        SEQ(present(st2(la x. la y. RENDER_FRAME(dims)(x)(y))))
+            (self(st2)(dims)(fds)))
+    (DRAIN_STEP(LIVE_READ)(st)(SPLIT(poll(JOIN(fds))("-1")))))
+
+# ── Auto-detection: find a device's eventN by name in /proc/bus/input/devices ──
+glyph STARTSW = Z(la self. la s. la p.
+    IF(str_eq(p)(""))(la _. TRUE)(la _.
+    IF(str_eq(s)(""))(la _. FALSE)(la _.
+    IF(str_eq(str_head(s))(str_head(p)))
+        (la _. self(str_tail(s))(str_tail(p)))
+        (la _. FALSE))))
+glyph DROP = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph LENI = la s. str_to_int(str_len(s))
+glyph AFTER = Z(la self. la hay. la needle.
+    IF(str_eq(hay)(""))(la _. "")(la _.
+    IF(STARTSW(hay)(needle))(la _. DROP(LENI(needle))(hay))(la _.
+    self(str_tail(hay))(needle))))
+glyph IS_DIGIT = la c. (la o.
+    IF(lt(o)(48))(la _. FALSE)(la _.
+    IF(lt(57)(o))(la _. FALSE)(la _. TRUE)))(str_to_int(ord(c)))
+glyph TAKE_DIGITS = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(IS_DIGIT(str_head(s)))(la _. concat(str_head(s))(self(str_tail(s))))(la _. "")))
+glyph PROCDEV = read_file("/proc/bus/input/devices")
+glyph DETECT1 = la nm.
+    (la aft. IF(str_eq(aft)(""))(la _. "")
+        (la _. TAKE_DIGITS(AFTER(aft)("event"))))(AFTER(PROCDEV)(nm))
+glyph DETECT = la a. la b.
+    (la x. IF(str_eq(x)(""))(la _. DETECT1(b))(la _. x))(DETECT1(a))
+glyph KBD_DIGITS = DETECT("keyboard")("Keyboard")
+glyph MOU_DIGITS = DETECT("Mouse")("mouse")
+glyph DEVPATH = la d. concat("/dev/input/event")(d)
+
+# ── Live session MAIN: detect + open devices, take the screen, multiplex ──
+glyph IS_NEG = la s. str_eq(str_head(s))("-")
+glyph OPEN_OR_DIE = la path.
+    (la fd. IF(IS_NEG(fd))(la _.
+        error(concat(concat("text-session: cannot open ")(path))
+            (concat(" (open -> ")(concat(fd)("): need read permission on /dev/input — run with sudo")))))
+    (la _. fd))(open(path)("0"))
+glyph BUILD_FDS = la kbd.
+    IF(str_eq(MOU_DIGITS)(""))
+        (la _. CONS(kbd)(NIL))
+        (la _. CONS(kbd)(CONS(OPEN_OR_DIE(DEVPATH(MOU_DIGITS)))(NIL)))
+glyph MAIN =
+    SEQ(print("text-session: auto-detecting input from /proc/bus/input/devices"))(
+    IF(str_eq(KBD_DIGITS)(""))
+        (la _. error("text-session: no keyboard found (no Name with 'keyboard'/'Keyboard' in /proc/bus/input/devices)"))
+        (la _.
+            SEQ(print(concat("text-session: keyboard = ")(DEVPATH(KBD_DIGITS))))(
+            (la kbd. (la fds. (la dims.
+                SEQ(SHOW_TEST_PATTERN(dims))(
+                SEQ(print("text-session: live — arrow keys move the text window (40px), Ctrl+C to stop"))(
+                LIVE(START_POS)(dims)(fds))))
+              (SPLIT(SEQ(print("text-session: reached DRM step — devices open, calling drm_mode to take the screen"))(drm_mode("!")))))
+             (BUILD_FDS(kbd)))
+            (OPEN_OR_DIE(DEVPATH(KBD_DIGITS))))))
