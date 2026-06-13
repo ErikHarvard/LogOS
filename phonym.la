@@ -154,11 +154,11 @@ glyph PH_RELATION = la i.
 # g6 VOID /hɑ/ — breath (low-pass glottal noise, 0..2080) into open back /ɑ/.
 glyph PH_VOID = la i.
     IF(lt(i)(2080))(la _. NSAMP(0)(1500)(54321)(2080)(i))
-                   (la _. VDYN(650)(1000)(2500)(110)(110)(2600)(400)(4800)(sub(i)(2080)))
+                   (la _. VDYN(650)(1000)(2500)(120)(85)(2600)(120)(4800)(sub(i)(2080)))
 # g7 BECOMING /vu/ — voiced labiodental fricative (0..1440) forward into /u/.
 glyph PH_BECOMING = la i.
     IF(lt(i)(1440))(la _. NSAMP(0)(1200)(999)(1440)(i))
-                   (la _. VDYN(300)(870)(2240)(110)(175)(2600)(2600)(4960)(sub(i)(1440)))
+                   (la _. VDYN(300)(870)(2240)(95)(220)(2600)(2600)(4960)(sub(i)(1440)))
 # g8 FORM /tɑ/ — voiceless plosive: silence (0..960), sharp burst (960..1520), /ɑ/.
 glyph PH_FORM = la i.
     IF(lt(i)(960))(la _. 0)
@@ -169,7 +169,7 @@ glyph PH_FORM = la i.
 glyph PH_DEPTH = la i.
     IF(lt(i)(720))(la _. VSAMP(200)(900)(2200)(90)(1400)(720)(i))
    (la _. IF(lt(i)(1200))(la _. BSAMP(7000)(888)(480)(sub(i)(720)))
-                         (la _. VDYN(500)(800)(2830)(115)(70)(2600)(2600)(4800)(sub(i)(1200))))
+                         (la _. VDYN(500)(800)(2830)(135)(50)(2600)(2600)(4800)(sub(i)(1200))))
 
 # ═══ PCM / WAV ASSEMBLY ═════════════════════════════════════════════
 glyph BYTE  = la n. chr(int_to_str(n))
