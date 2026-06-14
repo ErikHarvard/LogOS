@@ -126,6 +126,33 @@ spiral / Being curl; add Love's inner flame.
 
 ---
 
+## 4. Refinement 3 of 3 — phonym fidelity vs the Topological Phonetic Space (fidelity pass)
+
+**Goal:** verify each of the nine phonyms hits the **formant / contour values the
+Topological Phonetic Space specifies** in `LINGUA_ADAMICA.tex` (the phonetic-
+parameter definitions, the Openness/Frontness/Energy axes, the meta-syllable blend
+params) — i.e. each phonym is the spec's actual specified sound, not an approximate
+tone. A fidelity pass, **closely related to / overlapping the α=1 audit (#3 above,
+already mapped).**
+
+**Honest framing carried over from the α=1 map:** the `.tex` specifies parameter
+*categories* (frequency, amplitude, duration, spectral shape, temporal envelope)
+and *qualitative* axes (Openness ≈ F1, Frontness ≈ F2, Energy = contour) + the IPA
+symbols — it gives **no numeric Hz formant tables**. So this pass checks the phonyms
+against what the spec *does* fix: the IPA targets (vowel nuclei already FFT-verified
+α≈1), the three feature-space axes, and the meta-syllable blend (spectral
+interpolation, articulatory geodesic, pitch fusion). The already-mapped α<1 drift to
+re-examine/close: crude consonant onsets (articulatory gesture not encoded),
+parabolic-sine timbre, linear Energy contours, and the **un-instantiated phonetic–
+semantic isomorphism** (acoustic proximity ↔ ontological proximity — verified
+point-by-point, not as a structure-preserving map).
+
+**Status:** the α=1 audit already MAPPED the phonym drift (see #3). Refinement 3 is
+the focused **fix/tighten** pass on the phonyms specifically. Related to #3; do
+together or right after.
+
+---
+
 ## Design principle (governs the autonomous loop, task #2's For-itself, and any extension)
 
 **Γ ≠ Ρ (the P≠NP distinction): generation and recognition are irreducibly
