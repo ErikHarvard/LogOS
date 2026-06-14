@@ -821,6 +821,50 @@ else
     exit 1
 fi
 
+say "Spec pipeline: TopoEmbed invariant preservation (topoembed_spec.la — visual ⊗ recoverable)"
+# The VISUAL parallel of psc (Refinement 2). topoembed_spec.la GENERATEs+DEPLOYs
+# topoembed.la: Θ_V (VINV) is a glyph's visual invariant signature = its mode
+# symbol + its ONF leaf-set (constituent primitives); PRESERVES_V is set-
+# containment; MODE_REC checks distinct modes over the same operands give distinct
+# invariants (⊗ ≠ ⊕). The theorem: a neologistically-compressed sigil preserves
+# the topological invariants of BOTH constituents AND its combining mode is
+# recoverable from the form — Love's and Recognition's primitives both survive in
+# Compassion (⊗) while a non-constituent (Being) does not, and ⊗ is distinguishable
+# from ⊕. sigil.la realises this: the ⊗ render places both parents in distinct
+# legible registers + a ⊗ mark (recoverable), not the old lossy pixel-union.
+# META_DEBUG verifies; then the GENERATED topoembed.la runs stand-alone host/VM.
+TK="$(./tiny_host topoembed_spec.la 2>/dev/null)"
+ok=1
+for G in Z TRUE FALSE NOT AND IF PRIM SYN CON DIR CONT MC STARTSW CONTAINS LEAVES MODESYM VINV PRESERVES_V MODE_REC; do
+    printf '%s\n' "$TK" | grep -qx "  $G: PASS" || { echo "FAIL  topoembed: $G not verified"; ok=0; }
+done
+printf '%s\n' "$TK" | grep -q "module VERIFIED" || { echo "FAIL  topoembed: module not verified"; ok=0; }
+[ -f topoembed.la ] || { echo "FAIL  topoembed: topoembed.la was not written"; ok=0; }
+# Run the GENERATED topoembed.la stand-alone: the recoverability witness.
+#   L = Love's form ⊆ Compassion; R = Recognition's ⊆; b = Being NOT ⊆; then the
+#   visual invariant signature (mode + leaves); m = mode recoverable (⊗ ≠ ⊕).
+cp topoembed.la /tmp/tetest.la
+cat >> /tmp/tetest.la <<'LA'
+glyph COMPASSION = SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))
+glyph MAIN = print(concat(PRESERVES_V("LOVE")(COMPASSION)("L")("x"))(concat(PRESERVES_V("RECOGNITION")(COMPASSION)("R")("x"))(concat(PRESERVES_V("BEING")(COMPASSION)("x")("b"))(concat("|")(concat(VINV(COMPASSION))(concat("|")(MODE_REC(PRIM("LOVE"))(PRIM("RECOGNITION"))("m")("x"))))))))
+LA
+TE_EXPECT="LRb|⊗:LOVE,RECOGNITION,|m"
+TKH="$(./tiny_host /tmp/tetest.la 2>/dev/null)"
+[ "$TKH" = "$TE_EXPECT" ] || { echo "FAIL  topoembed: recoverability witness wrong on host"; printf 'got: %s\n' "$TKH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/tetest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+TKV="$(./logos_secd 2>/dev/null)"
+[ "$TKV" = "$TE_EXPECT" ] || { echo "FAIL  topoembed: recoverability witness wrong on native VM"; printf 'got: %s\n' "$TKV"; ok=0; }
+rm -f /tmp/tetest.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  topoembed: SPEC GENERATEs/DEPLOYs topoembed.la; Θ_V invariant, ⊗ preserves BOTH parents' forms (Love+Recognition→Compassion), non-constituent not preserved, MODE recoverable (⊗≠⊕) — byte-identical host/VM"
+else
+    printf '%s\n' "$TK"
+    exit 1
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes

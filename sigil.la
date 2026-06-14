@@ -226,9 +226,21 @@ glyph UNDEF = la r. la c. BOXR(14)(17)(14)(17)(r)(c)     # unknown name placehol
 # realises a row of the Graph-Feature→Geometric-Primitive table, keeping both
 # parents legible (Ontoetymological Legibility).
 glyph OVERLAY = la a. la b. la r. la c. OR(a(r)(c))(b(r)(c))
-# ⊗ SYN — interpenetration: both forms share one space (Cycles→Closed loops: the
-# child carries both parents' loops superimposed).
-glyph SYN_SIG  = la a. la b. OVERLAY(a)(b)
+# ⊗ MARK — a small X in the bottom-right corner (rows 26-31, cols 26-31, a region
+# the centred forms leave empty): the recoverable MODE signal + the synthesis
+# SURPLUS (a stroke in neither parent).
+glyph MARK_SYN = la r. la c. OR(SEG(26)(26)(31)(31)(1)(r)(c))(SEG(26)(31)(31)(26)(1)(r)(c))
+# ⊗ SYN — neologistic compression with RECOVERABLE etymology (Refinement 2). NOT
+# the lossy pixel-union (both parents collapsed into one ambiguous blob, mode
+# unmarked): in 1-bit raster two forms cannot superimpose losslessly, so — the
+# visual analogue of phonym.la's spectral superposition (where formants separate
+# by frequency) — the constituents are placed in distinct legible registers (both
+# recoverable: left half = a, right half = b) within ONE bounded SZ×SZ frame
+# (compression, not larger), and the ⊗ MARK is OR-ed in (surplus + recoverable
+# mode). So a reader recovers (a, b, ⊗) from the form. topoembed.la verifies the
+# invariant-preservation + mode-recoverability theorem this realises.
+glyph SYN_SIG  = la a. la b.
+    OVERLAY(OVERLAY(PLACE(a)(1)(1)(23)(13))(PLACE(b)(1)(15)(23)(13)))(MARK_SYN)
 # ⊕ CON — adjacency within a shared boundary (Symmetries→Symmetric placement):
 # the two parents placed symmetrically side by side inside one common contour.
 glyph CON_SIG  = la a. la b.

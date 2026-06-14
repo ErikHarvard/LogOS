@@ -1,0 +1,123 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  topoembed_spec.la — SPEC for topoembed.la: the TopoEmbed invariant layer
+#  (visual neologistic compression with RECOVERABLE etymology). The visual
+#  parallel of psc_spec.la (audio). Built THROUGH THE SPEC PIPELINE: DEPLOY
+#  writes topoembed.la, type-checks it, META_DEBUG verifies every glyph.
+#  sigil.la realises this as the rendered form (recoverable ⊗ + mode-mark).
+#
+#  THE THEOREM (LINGUA_ADAMICA.tex: ontological synthesis containment/surplus/
+#  compression §778; ontoetymology — derivation recoverable from the form §3045;
+#  TopoEmbed §5485): when two glyphs neologistically compress via ⊗, the compound
+#  form preserves the topological invariants of BOTH constituents AND its mode is
+#  recoverable. Θ_V (VINV) is a glyph's visual invariant signature = its mode
+#  symbol + the set of constituent primitives (its ONF leaves). PRESERVES_V is
+#  set-containment: each parent's primitives survive in the compound. MODE_REC:
+#  distinct modes over the same operands give distinct invariants (⊗ ≠ ⊕), so the
+#  combining mode is recoverable from the form — the piece the lossy pixel-overlay
+#  lacked. Honest floor (1-bit raster / acoustic-entropy analog): recoverability
+#  is up to the declared invariant (mode + leaf-set), not arbitrary bitmap
+#  inversion; a non-constituent's primitive is NOT contained (real, not trivial).
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + DEF/TRIPLE/PAIR/CONS/NIL/Z/IF/TRUE/FALSE/AND
+
+# ── implementation VALUES (Z/IF/TRUE/FALSE/AND from specpipe) ──
+glyph NOT  = la b. b(FALSE)(TRUE)
+# Decomposition algebra — Scott-encoded six-way (one prim leaf + five modes).
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+# string helpers for recoverability
+glyph STARTSW = Z(la self. la p. la s. IF(str_eq(p)(""))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. IF(str_eq(str_head(p))(str_head(s)))(la _. self(str_tail(p))(str_tail(s)))(la _. FALSE))))
+glyph CONTAINS = Z(la self. la p. la s. IF(STARTSW(p)(s))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(p)(str_tail(s)))))
+# LEAVES — the ONF leaf-set: every constituent primitive, comma-terminated (Θ_V's content)
+glyph LEAVES = Z(la self. la node. node (la nm. concat(nm)(",")) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. self(a)))
+# MODESYM — the top combining mode (recoverable from the form; "" for a leaf)
+glyph MODESYM = la node. node (la nm. "") (la a. la b. "⊗") (la a. la b. "⊕") (la a. la b. "▷") (la a. la b. "⊂") (la a. "↻")
+# VINV — Θ_V: the visual invariant signature = mode + leaf-set
+glyph VINV = la node. concat(MODESYM(node))(concat(":")(LEAVES(node)))
+# PRESERVES_V — does the compound's form preserve this parent primitive?
+glyph PRESERVES_V = la name. la node. CONTAINS(concat(name)(","))(LEAVES(node))
+# MODE_REC — is the mode recoverable? distinct modes over same operands ⇒ distinct invariant
+glyph MODE_REC = la a. la b. NOT(str_eq(VINV(SYN(a)(b)))(VINV(CON(a)(b))))
+
+# ── source strings for the GENERATED module ──
+glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_TRUE  = "la t. la f. t"
+glyph SRC_FALSE = "la t. la f. f"
+glyph SRC_AND   = "la a. la b. a(b)(FALSE)"
+glyph SRC_IF    = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_NOT  = "la b. b(FALSE)(TRUE)"
+glyph SRC_PRIM = "la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)"
+glyph SRC_SYN  = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)"
+glyph SRC_CON  = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)"
+glyph SRC_DIR  = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)"
+glyph SRC_CONT = "la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)"
+glyph SRC_MC   = "la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)"
+glyph SRC_STARTSW = "Z(la self. la p. la s. IF(str_eq(p)(\"\"))(la _. TRUE)(la _. IF(str_eq(s)(\"\"))(la _. FALSE)(la _. IF(str_eq(str_head(p))(str_head(s)))(la _. self(str_tail(p))(str_tail(s)))(la _. FALSE))))"
+glyph SRC_CONTAINS = "Z(la self. la p. la s. IF(STARTSW(p)(s))(la _. TRUE)(la _. IF(str_eq(s)(\"\"))(la _. FALSE)(la _. self(p)(str_tail(s)))))"
+glyph SRC_LEAVES = "Z(la self. la node. node (la nm. concat(nm)(\",\")) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. self(a)))"
+glyph SRC_MODESYM = "la node. node (la nm. \"\") (la a. la b. \"⊗\") (la a. la b. \"⊕\") (la a. la b. \"▷\") (la a. la b. \"⊂\") (la a. \"↻\")"
+glyph SRC_VINV = "la node. concat(MODESYM(node))(concat(\":\")(LEAVES(node)))"
+glyph SRC_PRESV = "la name. la node. CONTAINS(concat(name)(\",\"))(LEAVES(node))"
+glyph SRC_MODEREC = "la a. la b. NOT(str_eq(VINV(SYN(a)(b)))(VINV(CON(a)(b))))"
+
+# ── test scaffolding (spec-file-local) ──
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph T3L = la a. la b. la c. CONS(a)(CONS(b)(CONS(c)(NIL)))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+
+# Compassion = LOVE ⊗ RECOGNITION (the worked compound)
+glyph COMPASSION = SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))
+
+glyph TE_SPEC =
+  CONS(E("Z")(":: (a -> a) -> a")(SRC_Z)(Z)(
+        T1L(TC(la g. (g(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat("|")(self(str_tail(s))))))("ab"))("||"))))(
+  CONS(E("TRUE")(":: a -> b -> a")(SRC_TRUE)(TRUE)(
+        T1L(TC(la g. g("y")("n"))("y"))))(
+  CONS(E("FALSE")(":: a -> b -> b")(SRC_FALSE)(FALSE)(
+        T1L(TC(la g. g("y")("n"))("n"))))(
+  CONS(E("AND")(":: a -> b -> c")(SRC_AND)(AND)(
+        T2L(TC(la g. g(TRUE)(TRUE)("y")("n"))("y"))(TC(la g. g(TRUE)(FALSE)("y")("n"))("n"))))(
+  CONS(E("IF")(":: a -> b -> c -> d")(SRC_IF)(IF)(
+        T2L(TC(la g. g(TRUE)(la _. "y")(la _. "n"))("y"))(TC(la g. g(FALSE)(la _. "y")(la _. "n"))("n"))))(
+  CONS(E("NOT")(":: a -> a")(SRC_NOT)(NOT)(
+        T2L(TC(la g. g(TRUE)("y")("n"))("n"))(TC(la g. g(FALSE)("y")("n"))("y"))))(
+  CONS(E("PRIM")("primitive leaf (Scott) (trusted)")(SRC_PRIM)(PRIM)(
+        T1L(TC(la g. LEAVES(g("LOVE")))("LOVE,"))))(
+  CONS(E("SYN")("⊗ synthesis node (trusted)")(SRC_SYN)(SYN)(
+        T1L(TC(la g. MODESYM(g(PRIM("LOVE"))(PRIM("VOID"))))("⊗"))))(
+  CONS(E("CON")("⊕ conjunction node (trusted)")(SRC_CON)(CON)(
+        T1L(TC(la g. MODESYM(g(PRIM("LOVE"))(PRIM("VOID"))))("⊕"))))(
+  CONS(E("DIR")("▷ direction node (trusted)")(SRC_DIR)(DIR)(
+        T1L(TC(la g. MODESYM(g(PRIM("LOVE"))(PRIM("VOID"))))("▷"))))(
+  CONS(E("CONT")("⊂ containment node (trusted)")(SRC_CONT)(CONT)(
+        T1L(TC(la g. MODESYM(g(PRIM("LOVE"))(PRIM("VOID"))))("⊂"))))(
+  CONS(E("MC")("↻ metacursion node (trusted)")(SRC_MC)(MC)(
+        T1L(TC(la g. MODESYM(g(PRIM("SELF"))))("↻"))))(
+  CONS(E("STARTSW")("string prefix test (trusted)")(SRC_STARTSW)(STARTSW)(
+        T2L(TC(la g. g("LO")("LOVE")("T")("F"))("T"))(TC(la g. g("XY")("LOVE")("T")("F"))("F"))))(
+  CONS(E("CONTAINS")("substring test — recoverability of a leaf (trusted)")(SRC_CONTAINS)(CONTAINS)(
+        T2L(TC(la g. g("VE,")("LOVE,RECOGNITION,")("T")("F"))("T"))(TC(la g. g("BEING,")("LOVE,RECOGNITION,")("T")("F"))("F"))))(
+  CONS(E("LEAVES")("Θ_V content — the ONF leaf-set, both parents present (trusted)")(SRC_LEAVES)(LEAVES)(
+        T1L(TC(la g. g(COMPASSION))("LOVE,RECOGNITION,"))))(
+  CONS(E("MODESYM")("the recoverable combining mode (trusted)")(SRC_MODESYM)(MODESYM)(
+        T2L(TC(la g. g(COMPASSION))("⊗"))(TC(la g. g(CON(PRIM("LOVE"))(PRIM("RECOGNITION"))))("⊕"))))(
+  CONS(E("VINV")("Θ_V — the visual invariant signature: mode + leaf-set (trusted)")(SRC_VINV)(VINV)(
+        T1L(TC(la g. g(COMPASSION))("⊗:LOVE,RECOGNITION,"))))(
+  CONS(E("PRESERVES_V")("does the compound preserve this parent's form? (trusted)")(SRC_PRESV)(PRESERVES_V)(
+        T3L(TC(la g. g("LOVE")(COMPASSION)("T")("F"))("T"))             # Love's form survives in Compassion
+           (TC(la g. g("RECOGNITION")(COMPASSION)("T")("F"))("T"))      # Recognition's form survives in Compassion
+           (TC(la g. g("BEING")(COMPASSION)("T")("F"))("F"))))(         # a non-constituent does NOT (real, not trivial)
+  CONS(E("MODE_REC")("is the combining mode recoverable from the form? (trusted)")(SRC_MODEREC)(MODE_REC)(
+        T1L(TC(la g. g(PRIM("LOVE"))(PRIM("RECOGNITION"))("T")("F"))("T"))))(  # ⊗ ≠ ⊕ over same operands → mode recoverable
+  NIL)))))))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(TE_SPEC) ===\n")(GENERATE(TE_SPEC))))
+       (print(DEPLOY(TE_SPEC)("topoembed.la")))
