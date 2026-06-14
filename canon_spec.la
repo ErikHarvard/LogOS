@@ -82,6 +82,28 @@ glyph KAPPA  = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))
 # evaluating eval.la — realised by the fixed-point rewrite ↻(𝓡)→𝓡 (see REWRITE_MC).
 glyph REVAL  = DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))
 
+# ── The eight self-relations of the Logos (Being & Becoming): the Logos to / about
+# / as / for / by / through / with / from itself. Each is a MODE OF SELF-RELATION,
+# the reflexive turn ↻ of the concept that anchors its computational capability,
+# and a metacursive FIXED POINT — SELFREL(SELFREL) ≡ SELFREL (Criterion 7: the
+# self-addressing address yields the address) — realised by the ↻(SR)→SR rewrite in
+# REWRITE_MC, exactly as the evaluator 𝓡 is. Six have settled computational meaning
+# and are instantiated here (the capability each names is built elsewhere):
+#   TO      self-application / evaluation   = ↻(DEPTH)        ← REVAL / eval.la
+#   ABOUT   self-description (𝓜 ⊂ 𝒜)         = ↻(RECOGNITION)  ← metaglyph.la
+#   AS      sign IS referent (α=1)          = ↻(FORM)         ← IS_ALPHA1
+#   BY      self-hosting fixed point        = ↻(BECOMING)     ← eval.la / Albedo 4
+#   FROM    generation / neologization      = ↻(VOID)         ← COLLAPSE / 𝔑
+#   THROUGH self-mediation / self-compilation = ↻(RELATION)   ← codegen.la → VM
+# (FOR = teleology and WITH = co-presence are deferred — their computational
+# meaning needs the author's judgment, so they are not instantiated here.)
+glyph SR_TO      = MC(PRIM("DEPTH"))
+glyph SR_ABOUT   = MC(PRIM("RECOGNITION"))
+glyph SR_AS      = MC(PRIM("FORM"))
+glyph SR_BY      = MC(PRIM("BECOMING"))
+glyph SR_FROM    = MC(PRIM("VOID"))
+glyph SR_THROUGH = MC(PRIM("RELATION"))
+
 # ── etymology layer: the glyph CONTAINS its own etymology (autological) ────────
 # A glyph is a SEALED MONOGLYPH MONO(ren)(etym): its name (the Ren) and its
 # etymological tree, locked so REN(g) = CANON(ETYM(g)) BY CONSTRUCTION — the name
@@ -120,7 +142,7 @@ glyph BYTE_LT = la a. la b. lt(str_to_int(ord(a)))(str_to_int(ord(b)))
 glyph LE = Z(la self. la x. la y. IF(str_eq(x)(""))(la _. TRUE)(la _. IF(str_eq(y)(""))(la _. FALSE)(la _. (la hx. la hy. IF(BYTE_LT(hx)(hy))(la _. TRUE)(la _. IF(str_eq(hx)(hy))(la _. self(str_tail(x))(str_tail(y)))(la _. FALSE)))(str_head(x))(str_head(y)))))
 glyph WRAP2 = la sym. la a. la b. concat(sym)(concat("(")(concat(a)(concat(",")(concat(b)(")")))))
 glyph SORT2 = la sym. la a. la b. IF(LE(a)(b))(la _. WRAP2(sym)(a)(b))(la _. WRAP2(sym)(b)(a))
-glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. IF(str_eq(x)("▷(DEPTH,RECOGNITION)"))(la _. x)(la _. concat("↻(")(concat(x)(")"))))
+glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. IF(OR(str_eq(x)("▷(DEPTH,RECOGNITION)"))(OR(str_eq(x)("↻(DEPTH)"))(OR(str_eq(x)("↻(RECOGNITION)"))(OR(str_eq(x)("↻(FORM)"))(OR(str_eq(x)("↻(BECOMING)"))(OR(str_eq(x)("↻(VOID)"))(str_eq(x)("↻(RELATION)"))))))))(la _. x)(la _. concat("↻(")(concat(x)(")"))))
 glyph NORMK = Z(la self. la node. node (la nm. nm) (la a. la b. SORT2("⊗")(self(a))(self(b))) (la a. la b. SORT2("⊕")(self(a))(self(b))) (la a. la b. WRAP2("▷")(self(a))(self(b))) (la a. la b. WRAP2("⊂")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))
 glyph NIS = la a. la b. str_eq(NORMK(a))(NORMK(b))
 
@@ -154,6 +176,12 @@ glyph SRC_LAWNC = "la a. la b. NOT(AND(IS(a)(b))(NOT(IS(a)(b))))"
 glyph SRC_LAWEM = "la a. la b. OR(IS(a)(b))(NOT(IS(a)(b)))"
 glyph SRC_KAPPA = "DIR(PRIM(\"RECOGNITION\"))(PRIM(\"FORM\"))"
 glyph SRC_REVAL = "DIR(PRIM(\"DEPTH\"))(PRIM(\"RECOGNITION\"))"
+glyph SRC_SR_TO      = "MC(PRIM(\"DEPTH\"))"
+glyph SRC_SR_ABOUT   = "MC(PRIM(\"RECOGNITION\"))"
+glyph SRC_SR_AS      = "MC(PRIM(\"FORM\"))"
+glyph SRC_SR_BY      = "MC(PRIM(\"BECOMING\"))"
+glyph SRC_SR_FROM    = "MC(PRIM(\"VOID\"))"
+glyph SRC_SR_THROUGH = "MC(PRIM(\"RELATION\"))"
 glyph SRC_IF    = "la c. la t. la f. c(t)(f)(\"!\")"
 glyph SRC_MAX   = "la m. la n. IF(lt(m)(n))(la _. n)(la _. m)"
 glyph SRC_TDEPTH = "Z(la self. la node. node (la nm. 0) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. add(1)(self(a))))"
@@ -169,7 +197,7 @@ glyph SRC_BYTELT = "la a. la b. lt(str_to_int(ord(a)))(str_to_int(ord(b)))"
 glyph SRC_LE = "Z(la self. la x. la y. IF(str_eq(x)(\"\"))(la _. TRUE)(la _. IF(str_eq(y)(\"\"))(la _. FALSE)(la _. (la hx. la hy. IF(BYTE_LT(hx)(hy))(la _. TRUE)(la _. IF(str_eq(hx)(hy))(la _. self(str_tail(x))(str_tail(y)))(la _. FALSE)))(str_head(x))(str_head(y)))))"
 glyph SRC_WRAP2 = "la sym. la a. la b. concat(sym)(concat(\"(\")(concat(a)(concat(\",\")(concat(b)(\")\")))))"
 glyph SRC_SORT2 = "la sym. la a. la b. IF(LE(a)(b))(la _. WRAP2(sym)(a)(b))(la _. WRAP2(sym)(b)(a))"
-glyph SRC_REWMC = "la x. IF(str_eq(x)(\"BEING\"))(la _. \"SELF\")(la _. IF(str_eq(x)(\"▷(DEPTH,RECOGNITION)\"))(la _. x)(la _. concat(\"↻(\")(concat(x)(\")\"))))"
+glyph SRC_REWMC = "la x. IF(str_eq(x)(\"BEING\"))(la _. \"SELF\")(la _. IF(OR(str_eq(x)(\"▷(DEPTH,RECOGNITION)\"))(OR(str_eq(x)(\"↻(DEPTH)\"))(OR(str_eq(x)(\"↻(RECOGNITION)\"))(OR(str_eq(x)(\"↻(FORM)\"))(OR(str_eq(x)(\"↻(BECOMING)\"))(OR(str_eq(x)(\"↻(VOID)\"))(str_eq(x)(\"↻(RELATION)\"))))))))(la _. x)(la _. concat(\"↻(\")(concat(x)(\")\"))))"
 glyph SRC_NORMK = "Z(la self. la node. node (la nm. nm) (la a. la b. SORT2(\"⊗\")(self(a))(self(b))) (la a. la b. SORT2(\"⊕\")(self(a))(self(b))) (la a. la b. WRAP2(\"▷\")(self(a))(self(b))) (la a. la b. WRAP2(\"⊂\")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))"
 glyph SRC_NIS = "la a. la b. str_eq(NORMK(a))(NORMK(b))"
 glyph SRC_ISA1 = "la d. str_eq(CANON(d))(NORMK(d))"
@@ -235,6 +263,24 @@ glyph CANON_SPEC =
         T3L(TC(la g. CANON(g))("▷(DEPTH,RECOGNITION)"))                           # 𝓡's one glyph-identity (monosemic)
            (TC(la g. NIS(MC(g))(g)("T")("F"))("T"))                               # 𝓡(𝓡) ≡ 𝓡 — idempotent self-application (eval evaluates eval)
            (TC(la g. IS(g)(KAPPA)("T")("F"))("F"))))(                             # 𝓡 ≢ κ — distinct operation, distinct glyph (no meta-polysemy)
+  CONS(E("SR_TO")("Logos TO itself — self-application/evaluation = ↻(DEPTH) (trusted)")(SRC_SR_TO)(SR_TO)(
+        T2L(TC(la g. CANON(g))("↻(DEPTH)"))                                       # the named self-relation's glyph
+           (TC(la g. NIS(MC(g))(g)("T")("F"))("T"))))(                            # SR(SR) ≡ SR — self-addressing yields self
+  CONS(E("SR_ABOUT")("Logos ABOUT itself — self-description 𝓜⊂𝒜 = ↻(RECOGNITION) (trusted)")(SRC_SR_ABOUT)(SR_ABOUT)(
+        T2L(TC(la g. CANON(g))("↻(RECOGNITION)"))
+           (TC(la g. NIS(MC(g))(g)("T")("F"))("T"))))(
+  CONS(E("SR_AS")("Logos AS itself — sign IS referent (α=1) = ↻(FORM) (trusted)")(SRC_SR_AS)(SR_AS)(
+        T2L(TC(la g. CANON(g))("↻(FORM)"))
+           (TC(la g. NIS(MC(g))(g)("T")("F"))("T"))))(
+  CONS(E("SR_BY")("Logos BY itself — self-hosting fixed point = ↻(BECOMING) (trusted)")(SRC_SR_BY)(SR_BY)(
+        T2L(TC(la g. CANON(g))("↻(BECOMING)"))
+           (TC(la g. NIS(MC(g))(g)("T")("F"))("T"))))(
+  CONS(E("SR_FROM")("Logos FROM itself — generation/neologization = ↻(VOID) (trusted)")(SRC_SR_FROM)(SR_FROM)(
+        T2L(TC(la g. CANON(g))("↻(VOID)"))
+           (TC(la g. NIS(MC(g))(g)("T")("F"))("T"))))(
+  CONS(E("SR_THROUGH")("Logos THROUGH itself — self-compilation/mediation = ↻(RELATION) (trusted)")(SRC_SR_THROUGH)(SR_THROUGH)(
+        T2L(TC(la g. CANON(g))("↻(RELATION)"))
+           (TC(la g. NIS(MC(g))(g)("T")("F"))("T"))))(
   CONS(E("IF")(":: a -> b -> c -> d")(SRC_IF)(IF)(
         T2L(TC(la g. g(TRUE)(la _. "y")(la _. "n"))("y"))
            (TC(la g. g(FALSE)(la _. "y")(la _. "n"))("n"))))(
@@ -290,7 +336,7 @@ glyph CANON_SPEC =
   CONS(E("ALPHA1")("the α=1 ontoglyph: synonyms collapse to this one name (trusted)")(SRC_A1)(ALPHA1)(
         T2L(TC(la g. g(CON(PRIM("B"))(PRIM("A"))))("⊕(A,B)"))                                             # the α=1 representative of ⊕(B,A)
            (TC(la g. str_eq(g(CON(PRIM("A"))(PRIM("B"))))(g(CON(PRIM("B"))(PRIM("A"))))("one")("two"))("one"))))(  # bijection: both synonyms → one name
-  NIL)))))))))))))))))))))))))))))))))))))))
+  NIL)))))))))))))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(CANON_SPEC) ===\n")(GENERATE(CANON_SPEC))))

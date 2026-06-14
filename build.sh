@@ -714,6 +714,7 @@ say "Spec pipeline: κ + etymology-bearing glyphs (canon_spec.la — autological
 CK="$(./tiny_host canon_spec.la 2>/dev/null)"
 ok=1
 for G in Z TRUE FALSE NOT AND OR PRIM SYN CON DIR CONT MC CANON IS LAW_ID LAW_NC LAW_EM KAPPA \
+         REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH \
          IF MAX TDEPTH MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK \
          BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
     printf '%s\n' "$CK" | grep -qx "  $G: PASS" || { echo "FAIL  canon: $G not verified"; ok=0; }
@@ -726,7 +727,7 @@ printf '%s\n' "$CK" | grep -q "module VERIFIED" || { echo "FAIL  canon: module n
 for G in TRUE FALSE NOT AND OR IS LAW_ID LAW_NC LAW_EM IF MAX MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK; do
     printf '%s\n' "$CK" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  canon: $G not type-checked OK"; ok=0; }
 done
-for G in PRIM SYN CON DIR CONT MC CANON KAPPA TDEPTH BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
+for G in PRIM SYN CON DIR CONT MC CANON KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH TDEPTH BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
     printf '%s\n' "$CK" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  canon: $G not reported untyped/trusted"; ok=0; }
 done
 # Run the GENERATED canon.la stand-alone. The witness has three parts joined by
@@ -750,10 +751,14 @@ glyph W7 = concat(NORMK(CON(PRIM("B"))(PRIM("A"))))(concat(NIS(CON(PRIM("A"))(PR
 # W8: α=1 alignment — ⊕(A,B) is the ontoglyph (α=1, sign IS referent), ⊕(B,A) is a
 # synonym (α<1) that collapses to the same α=1 representative.
 glyph W8 = concat(IS_ALPHA1(CON(PRIM("A"))(PRIM("B")))("1")("<"))(concat(IS_ALPHA1(CON(PRIM("B"))(PRIM("A")))("1")("<"))(ALPHA1(CON(PRIM("B"))(PRIM("A")))))
+# W9: the eight self-relations (six instantiated). SR_TO = Logos-to-itself = ↻(DEPTH);
+# each is a metacursive fixed point SR(SR) ≡ SR; distinct self-relations are distinct
+# glyphs (SR_AS ≢ SR_FROM). "↻(DEPTH)" then "=" (SR_TO autological) "=" (SR_BY) "d" (SR_AS≠SR_FROM).
+glyph W9 = concat(CANON(SR_TO))(concat("/")(concat(NIS(MC(SR_TO))(SR_TO)("=")("x"))(concat(NIS(MC(SR_BY))(SR_BY)("=")("x"))(IS(SR_AS)(SR_FROM)("x")("d")))))
 glyph BAR = "|"
-glyph MAIN = print(concat(W1)(concat(BAR)(concat(W2)(concat(BAR)(concat(W3)(concat(BAR)(concat(W4)(concat(BAR)(concat(W5)(concat(BAR)(concat(W6)(concat(BAR)(concat(W7)(concat(BAR)(W8)))))))))))))))
+glyph MAIN = print(concat(W1)(concat(BAR)(concat(W2)(concat(BAR)(concat(W3)(concat(BAR)(concat(W4)(concat(BAR)(concat(W5)(concat(BAR)(concat(W6)(concat(BAR)(concat(W7)(concat(BAR)(concat(W8)(concat(BAR)(W9)))))))))))))))))
 LA
-CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|A|⊕(A,B)mSELFd|1<⊕(A,B)"
+CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|A|⊕(A,B)mSELFd|1<⊕(A,B)|↻(DEPTH)/==d"
 CKH="$(./tiny_host /tmp/canontest.la 2>/dev/null)"
 [ "$CKH" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ/etymology witness wrong on host"; printf 'got: %s\n' "$CKH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
