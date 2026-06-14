@@ -38,3 +38,4 @@
 # excluded dir is impossible in git.)
 codices/*
 !codices/published/
+phonyms.wav
