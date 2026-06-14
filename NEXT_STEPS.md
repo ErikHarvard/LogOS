@@ -157,6 +157,53 @@ together or right after.
 
 ---
 
+## 5. Objective topological encoding — ONF-derivation gaps (completeness audit, 2026-06-14)
+
+The TopoEmbed / objective-topology claim (`LINGUA ADAMICA.tex` def:topoembed ~4911,
+ONF ~4857/5676, the Graph-Feature→Geometric-Primitive table ~5492) requires a sigil's
+geometry to be a **deterministic, injective, structure-preserving function of the
+concept's canonical ONF** — *same concept → same form, computed from structure, not
+assigned*. Verified against `sigil.la`: determinism per-expression holds (pure
+function, byte-identical host==VM) and compounds ARE computed from structure, but two
+real gaps remain. Both are genuine completeness gaps, not honest-floors.
+
+- **(a) Order-dependent rendering breaks canonical injectivity — same concept yields
+  different forms.** `SIGIL` walks the RAW κ-decomposition, not the canonicalized form,
+  so a commutative concept renders differently by operand order: `SIGIL(⊗(Love,Recognition))
+  ≠ SIGIL(⊗(Recognition,Love))` even though `NORMK` collapses both to the one concept
+  `⊗(LOVE,RECOGNITION)`. The spec demands order-independence ("the same composition
+  always yields the same ONF regardless of the order", ~5693). **The canonicalizer
+  already exists (`NORMK`, commutative-operand sort) — it is simply not wired into the
+  renderer.** Cheap fix: `NORMK`-normalize the decomposition before `SIGIL` walks it, so
+  one concept → one form. Without it the visual map is not injective-per-concept (α<1 at
+  the geometry level, though the Ren/κ level is canonical).
+
+- **(b) No true ONF-graph / Weisfeiler–Lehman pipeline — it is a mode-tree walk.** The
+  spec's ONF is a WL-canonicalized directed graph and TopoEmbed maps its *graph features*
+  (cycles, hierarchy, symmetry, branching, gradients) to geometric primitives. The
+  implementation has no graph, no WL canonicalization, and no feature-detection: `SIGIL`
+  dispatches on the *declared combining mode* (⊗/⊕/▷/⊂/↻) to a fixed blend, a faithful
+  but narrower realization (4/5 table rows; the gradients row is dropped for 1-bit). A
+  full realization would build the concept graph, WL-canonicalize it, detect its
+  features, and emit geometry from THOSE — making the encoding objective per the table.
+
+- **(c) (related, lower priority) The recursive structure is not in the proportions.**
+  Conjecture test (2026-06-14): if the geometry were derived from recursive self-relation,
+  the golden ratio φ (or a metallic mean) would emerge in the recursive sigils. It does
+  not — φ matches 0/15 measured ratios; the organizing proportion is **binary 2:1** (grid
+  32/16/8; the recursive-nesting blend scales by 1/2, not 1/φ), with √2 only as the
+  lemniscate's intrinsic curve property. DEPTH's nested radii 14:9:5 bracket φ
+  inconsistently (1.556, 1.800) — ad hoc integers, not a φ-scaled self-similar nest. This
+  is corroborating evidence for (b): the geometry is hand-designed on a binary grid (the
+  nine primitives are stipulated atoms — spec-faithful per ~3234/4610), not computed from
+  recursive ontological structure. A real ONF→geometry derivation (b) is where genuine
+  self-similar proportion would have to come from.
+
+**Status:** MAPPED, not fixed. (a) is a small, high-value fix (wire `NORMK` into `SIGIL`);
+(b) is a large rebuild (a real ONF/WL/feature pipeline) overlapping #3's α=1 standard.
+
+---
+
 ## Design principle (governs the autonomous loop, task #2's For-itself, and any extension)
 
 **Γ ≠ Ρ (the P≠NP distinction): generation and recognition are irreducibly
