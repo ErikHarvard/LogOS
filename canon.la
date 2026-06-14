@@ -35,6 +35,8 @@ glyph LAW_NC = la a. la b. NOT(AND(IS(a)(b))(NOT(IS(a)(b))))
 glyph LAW_EM = la a. la b. OR(IS(a)(b))(NOT(IS(a)(b)))
 # KAPPA : κ's canonical self-decomposition = ▷(RECOGNITION,FORM) (trusted)
 glyph KAPPA = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))
+# REVAL : the evaluator/runtime 𝓡 = ▷(DEPTH,RECOGNITION) — recursive recognition, the Ρ-dual of κ (trusted)
+glyph REVAL = DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))
 # IF : :: a -> b -> c -> d
 glyph IF = la c. la t. la f. c(t)(f)("!")
 # MAX : :: a -> b -> c
@@ -66,7 +68,7 @@ glyph WRAP2 = la sym. la a. la b. concat(sym)(concat("(")(concat(a)(concat(",")(
 # SORT2 : render a COMMUTATIVE mode, operands sorted (trusted)
 glyph SORT2 = la sym. la a. la b. IF(LE(a)(b))(la _. WRAP2(sym)(a)(b))(la _. WRAP2(sym)(b)(a))
 # REWRITE_MC : algebraic rewrite ↻(BEING)→SELF (trusted)
-glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. concat("↻(")(concat(x)(")")))
+glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. IF(str_eq(x)("▷(DEPTH,RECOGNITION)"))(la _. x)(la _. concat("↻(")(concat(x)(")"))))
 # NORMK : κ with commutative + algebraic normalization (trusted)
 glyph NORMK = Z(la self. la node. node (la nm. nm) (la a. la b. SORT2("⊗")(self(a))(self(b))) (la a. la b. SORT2("⊕")(self(a))(self(b))) (la a. la b. WRAP2("▷")(self(a))(self(b))) (la a. la b. WRAP2("⊂")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))
 # NIS : normalized identity — monosemic ≡ (trusted)
