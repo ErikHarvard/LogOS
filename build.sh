@@ -771,6 +771,56 @@ else
     exit 1
 fi
 
+say "Spec pipeline: PSC* invariant preservation (psc_spec.la — Θ_P, ⊗ preserves parent formants)"
+# psc_spec.la writes the Phonosemantic Compiler's invariant layer as a SPEC and
+# GENERATEs+DEPLOYs psc.la (regenerated here, so it never drifts). Θ_P is a phonym's
+# topological invariant signature (its distinct formant peaks; idempotent, Θ(Θx)=Θx
+# §6282); the ⊗ compound invariant is the SUPERPOSITION (union) of the parents'
+# spectra; PRESERVES is set-containment. The theorem: a neologistically-compressed
+# phonym preserves the topological invariants of BOTH constituents — Love's /u/ and
+# Recognition's /i/ formants both survive in Compassion (⊗) — while a non-constituent
+# (Depth /ɔ/) does NOT (real preservation, not trivial), and the duration is max of
+# the parents, not the sum (compression, §4233). phonym.la realises this in audio
+# (SYNP superposition; FFT recovers 6/6 of each parent's formants). META_DEBUG
+# verifies; then the GENERATED psc.la runs stand-alone, byte-identical host and VM.
+PK="$(./tiny_host psc_spec.la 2>/dev/null)"
+ok=1
+for G in Z TRUE FALSE AND IF LNIL LCONS LMEM LSUB LAPP LDEDUP LREN THETA_P SYN_INV PRESERVES SYN_DUR LOVE_F REC_F DEPTH_F; do
+    printf '%s\n' "$PK" | grep -qx "  $G: PASS" || { echo "FAIL  psc: $G not verified"; ok=0; }
+done
+printf '%s\n' "$PK" | grep -q "module VERIFIED" || { echo "FAIL  psc: module not verified"; ok=0; }
+[ -f psc.la ] || { echo "FAIL  psc: psc.la was not written"; ok=0; }
+# Run the GENERATED psc.la stand-alone: the preservation witness.
+#   L = Love's formants ⊆ Compassion; R = Recognition's ⊆ Compassion; d = Depth NOT
+#   ⊆ (non-constituent); then the superposed union spectrum; dur=max(parents); i = Θ_P
+#   idempotent.
+cp psc.la /tmp/psctest.la
+cat >> /tmp/psctest.la <<'LA'
+glyph W1 = PRESERVES(LOVE_F)(SYN_INV(LOVE_F)(REC_F))("L")("x")
+glyph W2 = PRESERVES(REC_F)(SYN_INV(LOVE_F)(REC_F))("R")("x")
+glyph W3 = PRESERVES(DEPTH_F)(SYN_INV(LOVE_F)(REC_F))("x")("d")
+glyph W4 = LREN(SYN_INV(LOVE_F)(REC_F))
+glyph W5 = concat("dur=")(int_to_str(SYN_DUR(6560)(6720)))
+glyph W6 = str_eq(LREN(THETA_P(THETA_P(LAPP(LOVE_F)(REC_F)))))(LREN(THETA_P(LAPP(LOVE_F)(REC_F))))("i")("x")
+glyph MAIN = print(concat(W1)(concat(W2)(concat(W3)(concat("|")(concat(W4)(concat("|")(concat(W5)(concat("|")(W6)))))))))
+LA
+PSC_EXPECT="LRd|300,870,2240,270,2300,3000,|dur=6720|i"
+PKH="$(./tiny_host /tmp/psctest.la 2>/dev/null)"
+[ "$PKH" = "$PSC_EXPECT" ] || { echo "FAIL  psc: preservation witness wrong on host"; printf 'got: %s\n' "$PKH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/psctest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+PKV="$(./logos_secd 2>/dev/null)"
+[ "$PKV" = "$PSC_EXPECT" ] || { echo "FAIL  psc: preservation witness wrong on native VM"; printf 'got: %s\n' "$PKV"; ok=0; }
+rm -f /tmp/psctest.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  psc: SPEC GENERATEs/DEPLOYs psc.la; Θ_P invariant signature, ⊗ preserves BOTH parents' formants (Love+Recognition→Compassion) under compression (dur=max not sum), non-constituent not preserved, byte-identical host/VM"
+else
+    printf '%s\n' "$PK"
+    exit 1
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes

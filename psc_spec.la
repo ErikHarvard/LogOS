@@ -1,0 +1,126 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  psc_spec.la — SPEC for psc.la: the Phonosemantic Compiler PSC*'s invariant
+#  layer (meta-phonosemantic topology under compression). Built THROUGH THE SPEC
+#  PIPELINE: DEPLOY writes psc.la, type-checks it, and META_DEBUG verifies every
+#  glyph; accepted only if all pass. Companion to phonym.la, which realises this
+#  in actual audio (the ⊗ blend SYNP renders both parents over one max-length
+#  window and SUMS them — superposition, not averaging).
+#
+#  THE THEOREM (LINGUA_ADAMICA.tex: Θ idempotent invariant operator §6282; the
+#  Topological Phonetic Space §2567; PSC* I(e)≅I(Ω) §4365): when two phonyms
+#  neologistically compress via ⊗, the compound preserves the TOPOLOGICAL
+#  INVARIANTS — the formant peak-sets — of BOTH constituents. Θ_P extracts a
+#  phonym's invariant signature (its distinct formant peaks); the ⊗ compound's
+#  signature is the (deduped) UNION of the parents' (superposition keeps both
+#  spectra, unlike averaging which smears them to a midpoint), so each parent's
+#  signature is a SUBSET of the compound's — recoverable, audible. Duration is
+#  COMPRESSED: |πC| = max(|πA|,|πB|), not the sum. Honest floor (the acoustic
+#  entropy floor): preservation is set-containment of the declared invariants —
+#  a non-constituent's signature is NOT contained, so this is real preservation,
+#  not "everything matches". Formant values are phonym.la's actual /u/, /i/, /ɔ/.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + DEF/TRIPLE/PAIR/CONS/NIL/Z/IF/TRUE/FALSE/AND
+
+# ── implementation VALUES (what META_DEBUG runs; Z/IF/TRUE/FALSE/AND from specpipe) ──
+# Formant peak-sets as Scott-encoded integer lists: a list applied to (nilcase)(conscase).
+glyph LNIL  = la n. la c. n
+glyph LCONS = la h. la t. la n. la c. c(h)(t)
+glyph LMEM  = Z(la self. la x. la l. l(FALSE)(la h. la t. IF(int_eq(x)(h))(la _. TRUE)(la _. self(x)(t))))
+glyph LSUB  = Z(la self. la a. la b. a(TRUE)(la h. la t. AND(LMEM(h)(b))(self(t)(b))))
+glyph LAPP  = Z(la self. la a. la b. a(b)(la h. la t. LCONS(h)(self(t)(b))))
+glyph LDEDUP = Z(la self. la l. l(LNIL)(la h. la t. IF(LMEM(h)(t))(la _. self(t))(la _. LCONS(h)(self(t)))))
+glyph LREN  = Z(la self. la l. l("")(la h. la t. concat(int_to_str(h))(concat(",")(self(t)))))
+# Θ_P — the phonetic topological-invariant operator: a phonym's distinct formant
+# peaks (its spectral signature). IDEMPOTENT (Θ(Θx)=Θx, §6286): dedup of a deduped
+# set is itself.
+glyph THETA_P = la l. LDEDUP(l)
+# ⊗ neologistic compression at the invariant level: the compound's signature is
+# the superposition (union) of the parents' formant sets — both spectra present.
+glyph SYN_INV = la a. la b. THETA_P(LAPP(a)(b))
+# preservation: every formant of the parent survives in the compound.
+glyph PRESERVES = la parent. la comp. LSUB(parent)(comp)
+# duration under ⊗: compressed to the max of the parents (spec §4233), not the sum.
+glyph SYN_DUR = la da. la db. IF(lt(da)(db))(la _. db)(la _. da)
+# the nine primitives' formant signatures (phonym.la's actual vowel formants).
+glyph LOVE_F  = LCONS(300)(LCONS(870)(LCONS(2240)(LNIL)))    # /u/
+glyph REC_F   = LCONS(270)(LCONS(2300)(LCONS(3000)(LNIL)))   # /i/
+glyph DEPTH_F = LCONS(500)(LCONS(800)(LCONS(2830)(LNIL)))    # /ɔ/ (a non-constituent control)
+
+# ── source strings for the GENERATED module (self-contained) ──────────────────
+glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_TRUE  = "la t. la f. t"
+glyph SRC_FALSE = "la t. la f. f"
+glyph SRC_AND   = "la a. la b. a(b)(FALSE)"
+glyph SRC_IF    = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_LNIL  = "la n. la c. n"
+glyph SRC_LCONS = "la h. la t. la n. la c. c(h)(t)"
+glyph SRC_LMEM  = "Z(la self. la x. la l. l(FALSE)(la h. la t. IF(int_eq(x)(h))(la _. TRUE)(la _. self(x)(t))))"
+glyph SRC_LSUB  = "Z(la self. la a. la b. a(TRUE)(la h. la t. AND(LMEM(h)(b))(self(t)(b))))"
+glyph SRC_LAPP  = "Z(la self. la a. la b. a(b)(la h. la t. LCONS(h)(self(t)(b))))"
+glyph SRC_LDEDUP = "Z(la self. la l. l(LNIL)(la h. la t. IF(LMEM(h)(t))(la _. self(t))(la _. LCONS(h)(self(t)))))"
+glyph SRC_LREN  = "Z(la self. la l. l(\"\")(la h. la t. concat(int_to_str(h))(concat(\",\")(self(t)))))"
+glyph SRC_THETA = "la l. LDEDUP(l)"
+glyph SRC_SYNINV = "la a. la b. THETA_P(LAPP(a)(b))"
+glyph SRC_PRES  = "la parent. la comp. LSUB(parent)(comp)"
+glyph SRC_SYNDUR = "la da. la db. IF(lt(da)(db))(la _. db)(la _. da)"
+glyph SRC_LOVEF  = "LCONS(300)(LCONS(870)(LCONS(2240)(LNIL)))"
+glyph SRC_RECF   = "LCONS(270)(LCONS(2300)(LCONS(3000)(LNIL)))"
+glyph SRC_DEPTHF = "LCONS(500)(LCONS(800)(LCONS(2830)(LNIL)))"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph T3L = la a. la b. la c. CONS(a)(CONS(b)(CONS(c)(NIL)))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+
+# ── THE SPEC ──────────────────────────────────────────────────────────────────
+glyph PSC_SPEC =
+  CONS(E("Z")(":: (a -> a) -> a")(SRC_Z)(Z)(
+        T1L(TC(la g. (g(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat("|")(self(str_tail(s))))))("ab"))("||"))))(
+  CONS(E("TRUE")(":: a -> b -> a")(SRC_TRUE)(TRUE)(
+        T1L(TC(la g. g("y")("n"))("y"))))(
+  CONS(E("FALSE")(":: a -> b -> b")(SRC_FALSE)(FALSE)(
+        T1L(TC(la g. g("y")("n"))("n"))))(
+  CONS(E("AND")(":: a -> b -> c")(SRC_AND)(AND)(
+        T2L(TC(la g. g(TRUE)(TRUE)("y")("n"))("y"))(TC(la g. g(TRUE)(FALSE)("y")("n"))("n"))))(
+  CONS(E("IF")(":: a -> b -> c -> d")(SRC_IF)(IF)(
+        T2L(TC(la g. g(TRUE)(la _. "y")(la _. "n"))("y"))(TC(la g. g(FALSE)(la _. "y")(la _. "n"))("n"))))(
+  CONS(E("LNIL")("empty formant-set (Scott nil) (trusted)")(SRC_LNIL)(LNIL)(
+        T1L(TC(la g. g("e")(la h. la t. "c"))("e"))))(
+  CONS(E("LCONS")("formant-set cons (trusted)")(SRC_LCONS)(LCONS)(
+        T1L(TC(la g. g(300)(LNIL)("e")(la h. la t. int_to_str(h)))("300"))))(
+  CONS(E("LMEM")("formant ∈ set? (trusted)")(SRC_LMEM)(LMEM)(
+        T2L(TC(la g. g(870)(LOVE_F)("T")("F"))("T"))(TC(la g. g(999)(LOVE_F)("T")("F"))("F"))))(
+  CONS(E("LSUB")("set ⊆ set? — invariant containment (trusted)")(SRC_LSUB)(LSUB)(
+        T2L(TC(la g. g(LOVE_F)(LAPP(LOVE_F)(REC_F))("T")("F"))("T"))
+           (TC(la g. g(DEPTH_F)(LOVE_F)("T")("F"))("F"))))(
+  CONS(E("LAPP")("superpose two spectra (append) (trusted)")(SRC_LAPP)(LAPP)(
+        T1L(TC(la g. LREN(g(LOVE_F)(REC_F)))("300,870,2240,270,2300,3000,"))))(
+  CONS(E("LDEDUP")("distinct peaks (trusted)")(SRC_LDEDUP)(LDEDUP)(
+        T1L(TC(la g. LREN(g(LAPP(LOVE_F)(LOVE_F))))("300,870,2240,"))))(  # superposing a spectrum with itself adds no new peak
+  CONS(E("LREN")("render a formant set to text (trusted)")(SRC_LREN)(LREN)(
+        T1L(TC(la g. g(LOVE_F))("300,870,2240,"))))(
+  CONS(E("THETA_P")("Θ_P — a phonym's invariant signature (distinct formant peaks); idempotent (trusted)")(SRC_THETA)(THETA_P)(
+        T1L(TC(la g. str_eq(LREN(g(g(LAPP(LOVE_F)(REC_F)))))(LREN(g(LAPP(LOVE_F)(REC_F))))("T")("F"))("T"))))(  # Θ(Θx) = Θx (§6286)
+  CONS(E("SYN_INV")("⊗ compound invariant = superposition of both spectra (trusted)")(SRC_SYNINV)(SYN_INV)(
+        T1L(TC(la g. LREN(g(LOVE_F)(REC_F)))("300,870,2240,270,2300,3000,"))))(  # both parents' peaks, deduped
+  CONS(E("PRESERVES")("does the compound preserve the parent's invariants? (trusted)")(SRC_PRES)(PRESERVES)(
+        T3L(TC(la g. g(LOVE_F)(SYN_INV(LOVE_F)(REC_F))("T")("F"))("T"))            # Love's /u/ formants survive in Compassion
+           (TC(la g. g(REC_F)(SYN_INV(LOVE_F)(REC_F))("T")("F"))("T"))             # Recognition's /i/ formants survive in Compassion
+           (TC(la g. g(DEPTH_F)(SYN_INV(LOVE_F)(REC_F))("T")("F"))("F"))))(        # a non-constituent is NOT preserved (real, not trivial)
+  CONS(E("SYN_DUR")("⊗ duration: compressed to max(parents), not sum (trusted)")(SRC_SYNDUR)(SYN_DUR)(
+        T2L(TC(la g. int_to_str(g(6560)(6720)))("6720"))                          # |Compassion| = max(|Love|,|Recognition|)
+           (TC(la g. lt(g(6560)(6720))(add(6560)(6720))("compressed")("no"))("compressed"))))(  # max < sum: genuine compression
+  CONS(E("LOVE_F")("Love /u/ formant signature 300,870,2240 (trusted)")(SRC_LOVEF)(LOVE_F)(
+        T1L(TC(la g. LREN(g))("300,870,2240,"))))(
+  CONS(E("REC_F")("Recognition /i/ formant signature 270,2300,3000 (trusted)")(SRC_RECF)(REC_F)(
+        T1L(TC(la g. LREN(g))("270,2300,3000,"))))(
+  CONS(E("DEPTH_F")("Depth /ɔ/ formant signature 500,800,2830 — non-constituent control (trusted)")(SRC_DEPTHF)(DEPTH_F)(
+        T1L(TC(la g. LREN(g))("500,800,2830,"))))(
+  NIL)))))))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(PSC_SPEC) ===\n")(GENERATE(PSC_SPEC))))
+       (print(DEPLOY(PSC_SPEC)("psc.la")))
