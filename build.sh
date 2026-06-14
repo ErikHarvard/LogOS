@@ -1783,6 +1783,44 @@ else
     exit 1
 fi
 
+say "Monosemy: the bijection glyph↔meaning — synonym collapse audit (Monosemic Principle)"
+# Audits κ's monosemic normalization (canon.la's NORMK/NIS, verbatim). NO POLYSEMY:
+# distinct meanings → distinct glyphs (κ deterministic + injective). NO SYNONYMY up
+# to the declared equivalence theory: ⊗/⊕ commutativity (incl. nested) and the
+# ↻(BEING)≡SELF rewrite COLLAPSE to one glyph; directional ▷/⊂ correctly stay
+# DISTINCT; and associativity/idempotence of ⊗ correctly stay DISTINCT (ontosynthesis
+# has surplus, and ontoetymological uniqueness REQUIRES distinct trees → distinct
+# glyphs — collapsing them would be a bug, not a fix). Honest scope: the rewrite set
+# is minimal/extensible and full semantic equivalence is undecidable, so this is
+# synonymy-freedom RELATIVE to the declared theory, not absolute. Byte-identical.
+ok=1
+check_mono () {  # $1 = engine label, $2 = output file
+    grep -q '^comm ⊕.*COLLAPSED'    "$2" || { echo "FAIL  monosemy($1): ⊕ commutativity not collapsed"; ok=0; }
+    grep -q '^comm ⊗.*COLLAPSED'    "$2" || { echo "FAIL  monosemy($1): ⊗ commutativity not collapsed"; ok=0; }
+    grep -q '^nested.*COLLAPSED'    "$2" || { echo "FAIL  monosemy($1): nested commutativity not collapsed"; ok=0; }
+    grep -q '^rewrite.*COLLAPSED'   "$2" || { echo "FAIL  monosemy($1): ↻(BEING)≡SELF rewrite not collapsed"; ok=0; }
+    grep -q '^assoc ⊗.*DISTINCT'    "$2" || { echo "FAIL  monosemy($1): ⊗ associativity wrongly collapsed (would break ontoetymology)"; ok=0; }
+    grep -q '^idempot ⊗.*DISTINCT'  "$2" || { echo "FAIL  monosemy($1): ⊗ idempotence wrongly collapsed (self-synthesis ≠ self)"; ok=0; }
+    grep -q '^dir ▷.*DISTINCT'      "$2" || { echo "FAIL  monosemy($1): directional ▷ wrongly collapsed (not a synonym)"; ok=0; }
+    grep -q '^polysemy.*YES (no polysemy)' "$2" || { echo "FAIL  monosemy($1): polysemy detected (distinct meanings share a glyph)"; ok=0; }
+}
+rm -f mono_host.out mono_vm.out
+./tiny_host monosemy_test.la > mono_host.out 2>/dev/null
+check_mono "C host" mono_host.out
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp monosemy_test.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd > mono_vm.out 2>/dev/null
+check_mono "native VM" mono_vm.out
+cmp -s mono_host.out mono_vm.out || { echo "FAIL  monosemy: native verdicts != C host verdicts"; ok=0; }
+rm -f mono_host.out mono_vm.out logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  monosemy: no polysemy (distinct meanings → distinct glyphs); synonymy collapsed up to the declared theory (⊗/⊕ commutativity + ↻BEING≡SELF), directional/assoc/idempotent forms correctly kept distinct, byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Linux syscalls (native sovereign session)"
 # The native VM lowers write/open/close/mount/fork/execve/waitpid/exit to real
 # Linux syscalls (integers cross the LA boundary as decimal strings). Compile

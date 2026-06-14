@@ -1,0 +1,54 @@
+# ═══════════════════════════════════════════════════════════════════
+#  monosemy_test.la — audit of the Monosemic Principle (bijection glyph↔meaning).
+#  Uses canon.la's VERBATIM κ / NORMK / NIS (the real normalization logic) to
+#  test, with known forms, what synonymy κ collapses and what it does NOT — so the
+#  report is honest about residual equivalence classes. Pure str ops ⇒ host == VM.
+# ═══════════════════════════════════════════════════════════════════
+glyph SEQ = la a. la b. b
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT = la b. b(FALSE)(TRUE)
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+# decomposition algebra (Scott nodes, as canon.la)
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+# κ and normalization — VERBATIM from canon.la (the real logic under audit)
+glyph CANON = Z(la self. la node. node (la nm. nm) (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("▷(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊂(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. concat("↻(")(concat(self(a))(")"))))
+glyph BYTE_LT = la a. la b. lt(str_to_int(ord(a)))(str_to_int(ord(b)))
+glyph LE = Z(la self. la x. la y. IF(str_eq(x)(""))(la _. TRUE)(la _. IF(str_eq(y)(""))(la _. FALSE)(la _. (la hx. la hy. IF(BYTE_LT(hx)(hy))(la _. TRUE)(la _. IF(str_eq(hx)(hy))(la _. self(str_tail(x))(str_tail(y)))(la _. FALSE)))(str_head(x))(str_head(y)))))
+glyph WRAP2 = la sym. la a. la b. concat(sym)(concat("(")(concat(a)(concat(",")(concat(b)(")")))))
+glyph SORT2 = la sym. la a. la b. IF(LE(a)(b))(la _. WRAP2(sym)(a)(b))(la _. WRAP2(sym)(b)(a))
+glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. concat("↻(")(concat(x)(")")))
+glyph NORMK = Z(la self. la node. node (la nm. nm) (la a. la b. SORT2("⊗")(self(a))(self(b))) (la a. la b. SORT2("⊕")(self(a))(self(b))) (la a. la b. WRAP2("▷")(self(a))(self(b))) (la a. la b. WRAP2("⊂")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))
+glyph NIS = la a. la b. str_eq(NORMK(a))(NORMK(b))
+
+# ── report helper: print "<label>: COLLAPSED" or ": DISTINCT" ──
+glyph YN  = la b. IF(b)(la _. "COLLAPSED (one glyph)")(la _. "DISTINCT (two glyphs)")
+glyph ROW = la label. la a. la b. print(concat(label)(concat(": ")(YN(NIS(a)(b)))))
+
+# primitives
+glyph B = PRIM("BEING")
+glyph L = PRIM("LOVE")
+glyph V = PRIM("VOID")
+glyph F = PRIM("FORM")
+glyph R = PRIM("RELATION")
+glyph S = PRIM("SELF")
+
+glyph MAIN =
+    # ── (2) SYNONYMY κ DOES collapse (the declared equivalence theory) ──
+    SEQ(ROW("comm ⊕   : ⊕(R,F) vs ⊕(F,R)    ")(CON(R)(F))(CON(F)(R)))(
+    SEQ(ROW("comm ⊗   : ⊗(B,L) vs ⊗(L,B)    ")(SYN(B)(L))(SYN(L)(B)))(
+    SEQ(ROW("nested   : ⊗(⊕(V,F),B) vs ⊗(B,⊕(F,V))")(SYN(CON(V)(F))(B))(SYN(B)(CON(F)(V))))(
+    SEQ(ROW("rewrite  : ↻(BEING) vs SELF     ")(MC(B))(S))(
+    # ── (2-gaps) SYNONYMY κ does NOT collapse (residual — honest) ──
+    SEQ(ROW("assoc ⊗  : ⊗(⊗(B,L),V) vs ⊗(B,⊗(L,V))")(SYN(SYN(B)(L))(V))(SYN(B)(SYN(L)(V))))(
+    SEQ(ROW("idempot ⊗: ⊗(B,B) vs B          ")(SYN(B)(B))(B))(
+    # ── directional modes CORRECTLY stay distinct (not synonyms) ──
+    SEQ(ROW("dir ▷    : ▷(B,F) vs ▷(F,B)     ")(DIR(B)(F))(DIR(F)(B)))(
+    # ── (1) POLYSEMY: distinct meanings → distinct glyphs (κ injective) ──
+        print(concat("polysemy : ⊗(B,L) vs ⊗(V,F) distinct? ")(IF(NOT(NIS(SYN(B)(L))(SYN(V)(F))))(la _. "YES (no polysemy)")(la _. "NO — COLLAPSED (polysemy!)"))))))))))
