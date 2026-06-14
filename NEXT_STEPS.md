@@ -5,6 +5,84 @@ Captured for later; not yet done. Each is grounded in `LINGUA_ADAMICA.tex` /
 
 ---
 
+# THE COMPLETENESS MAP — eight requirements for declaring the language complete
+
+The telos of the whole system, made into eight specific, verifiable/buildable items.
+"Complete" is reached by working this list to the bottom — each item **verified built**,
+or **built then verified** — not by feeling. Status tags: `built` / `partial` / `open` /
+`needs-verification`. (These eight are the completeness telos; the numbered backlog tasks
+below are the work items — cross-referenced where they overlap.)
+
+**DISCIPLINE FOR ITEMS 6 & 7 (read before touching them):** these are **TESTS, not
+targets.** Derive the geometry from ontological structure and *check* whether φ / the
+Flower-of-Life structure emerge. **"They do not emerge" is a fully legitimate, allowed
+outcome — record it as a real result.** Do **NOT** impose φ or the Flower of Life on the
+geometry: an imposed form is *assigned, not derived*, which **breaks α=1** (item 1) — the
+sign would no longer BE the referent. The test only ever observes; it never stipulates.
+
+1. **Sign and referent are one via the triple bar (≡) — the α=1 claim.** Sign IS referent.
+   *Status:* **partial** — real, but the audit found the **rendering is order-dependent**
+   (`SIGIL(⊗(Love,Recognition)) ≠ SIGIL(⊗(Recognition,Love))` though they are one concept):
+   an **α<1 injectivity leak**. Fix is known and small: **canonicalize (`NORMK`) before
+   render**. Closes when injectivity holds. (See backlog item 5a.)
+
+2. **Ontosemantics is tautological via the laws of thought as reality's metalogical
+   ontosyntax — the ontological algorithm of the language.** *Status:* **needs-verification.**
+   The three laws are built as first-class glyphs (`metalogic.la`). The open question:
+   are they **operative as the algorithm** — does the language's *evaluation* genuinely
+   run governed by the three laws — or are they **present but inert**? Checkable.
+
+3. **Ontomonoglyphs compress into one new glyph inheriting etymological structure via
+   meta-neologization.** *Status:* **partial — half built, half open.** (a) Single-sigil
+   compression with inherited/recoverable etymology — **BUILT** (the Sealing, committed
+   `278cdaf`, tag `verified-2026-06-14-278cdaf`). (b) **Meta-neologization 𝔑(𝔑) generating
+   new OPERATIONS** — **OPEN** (audit: a minted ν* is a name, not a usable combinator;
+   applying it throws "non-function").
+
+4. **The Word / Logos is the Meta-Word of the system and needs its own dedicated sigil.**
+   *Status:* **open — buildable, needs the author's spec.** The Logos as the meta-glyph
+   the whole system expresses; giving it a dedicated sigil is a faithful, finite task.
+
+5. **The complete, correct meta-vocabulary and meta-sigils — the sigils all others derive
+   from, the eight "itselfs."** *Status:* **partial — needs completion + verification.**
+   The meta-vocabulary exists (the five modes, 𝔑, κ, the evaluator glyph 𝓡). **UPDATE vs
+   the original framing: all EIGHT self-relations are now built** (For + With completed
+   this session, commit `8481bf7`) — so the eightfold is 8/8, not 6/8. Remaining: verify
+   the meta-vocabulary is **complete and correct** and **aligns with the eight "itselfs."**
+   (Connected to backlog item 2.)
+
+6. **Naturally ground the golden ratio as the ontoglyphic geometric fixed-point
+   meta-autofoundation.** *Status:* **TESTED — NEGATIVE.** φ matched **0/15** measured
+   geometric ratios (likewise no metallic mean); the geometry's organizing proportion is
+   **binary 2:1** (grid 32/16/8; the recursive-nesting blend scales by 1/2, not 1/φ), with
+   √2 only as the lemniscate's intrinsic curve property (backlog item 5c). **Open
+   sub-question:** does building the true ONF / topological pipeline (item 7) change this?
+   Re-run the φ test on the *deep* geometry once 7 exists. **If φ still does not emerge
+   from the deep geometry, then 2:1 binary IS the honest geometry and we accept it.** Do
+   **NOT** force φ — an imposed φ is assigned, not derived, and breaks α=1 (item 1).
+
+7. **Build the true deep geometric pipeline — autopoietically unfold the ontoglyphic
+   geometry via the metacursive collapse of meta-topology — and test the Flower of Life /
+   Monad (Meta-Monad) foundation.** *Status:* **OPEN — the real gap.** The current geometry
+   is a **mode-tree walk**, NOT a true ONF-graph / Weisfeiler–Lehman topological pipeline
+   (backlog item 5b). **Build this regardless of φ** — the deep pipeline is needed on its
+   own merits (objective ONF→geometry derivation, item 1's α=1, the table's feature
+   analysis). The **Flower of Life / Monad geometry is NOT yet tested**: once the pipeline
+   exists, unfold the geometry from concept and *observe* whether the Flower-of-Life
+   structure emerges — **same discipline as φ: test, do not impose; "does not emerge" is a
+   legitimate accepted outcome.** Genuine self-similar geometry (item 6), if it exists at
+   all, would have to arise HERE — from the derivation, never stipulated.
+
+8. **Meta-topological meta-phonosemantics — Lingua Adamica derives the topology of
+   meta-phonosemantics.** *Status:* **needs-verification.** Seeded in spec as PSC\*
+   invariant preservation (`psc.la` — Θ_P formant-topology preserved under ⊗ compression).
+   The claim to check: is the **topology of meta-phonosemantics genuinely derived**, or
+   only the per-phonym formant preservation we already verified? Checkable.
+
+**Working order is the author's call; each item ends only when verified.**
+
+---
+
 ## 1. Autological native compilation — an LA-native x86-64 backend (PLAN FIRST)
 
 **Goal:** move native code generation fully into Lingua Adamica. Today `codegen.la`
