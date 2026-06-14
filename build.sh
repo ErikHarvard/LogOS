@@ -2688,6 +2688,60 @@ else
     exit 1
 fi
 
+# ── VM loud-failure guards: the remaining secd: halts, so no malformed input is a
+# SILENT path on the sovereign engine the OS is built on. The stack / path /
+# codegen / string-type / str_to_int guards are checked above; this closes the
+# rest, so a regression that disarmed a guard (a silent exit 0, or a SIGSEGV from
+# walking unmapped memory) fails the build here. Each feeds a deliberately broken
+# program and asserts a non-zero exit AND the specific diagnostic on stderr.
+# (Two guards are NOT auto-tested: `secd: read error` needs a loader syscall
+# fault, and `secd: heap exhausted` needs a >768 MiB live set — both
+# resource/fault-injection cases unsafe to force in a build; the GC-churn test
+# above exercises the heap path's happy side, and both fire under a live-VM probe.)
+vmguard () {   # $1 = label   $2 = MAIN expr   $3 = expected 'secd:' string
+    printf 'glyph MAIN = %s\n' "$2" > logos_source.la
+    cp compiler.bin logos_program.bin
+    ./runner >/dev/null 2>&1                        # native-compile the broken program
+    grc=0; GERR="$(./runner 2>&1 1>/dev/null)" || grc=$?
+    if [ "$grc" -ne 0 ] && printf '%s\n' "$GERR" | grep -qF "$3"; then
+        echo "PASS  guard: $1 halts loudly (rc $grc, '$3')"
+    else
+        echo "FAIL  guard: $1 — rc=$grc stderr='$GERR' (want non-zero + '$3')"; exit 1
+    fi
+}
+# unbound variable: a name resolving to neither env, glyph, nor builtin — it used
+# to fall through to exit(0) with empty output (a typo silently "succeeded").
+vmguard "unbound variable"     'undefined_glyph_xyz' "secd: unbound variable"
+# apply a non-function: a STR/INT value in function position.
+vmguard "apply a non-function" '"hello"("world")'    "secd: attempt to apply a non-function"
+# chr out of range: an argument outside 0..255 (VM side; the C host rejects too).
+vmguard "chr out of range"     'chr("300")'          "secd: chr out of range"
+# too many poll fds: more than the 512-fd pollfd cap (built in pathbuf) must halt,
+# not overrun the buffer into fsbuf / the GC worklist.
+POLLFDS="$(printf '0 %.0s' $(seq 1 513))"
+vmguard "too many poll fds"    "poll(\"$POLLFDS\")(\"0\")" "secd: too many poll fds"
+# program too large: a stream past progcap (5 MiB) is bounds-checked at LOAD, not
+# truncated. Fed as a raw oversized stream (the generic VM loads it directly).
+head -c 6291456 /dev/zero > logos_program.bin
+grc=0; GERR="$(./runner 2>&1 1>/dev/null)" || grc=$?
+if [ "$grc" -ne 0 ] && printf '%s\n' "$GERR" | grep -qF "secd: program too large"; then
+    echo "PASS  guard: program too large halts loudly (rc $grc, 'secd: program too large')"
+else
+    echo "FAIL  guard: program too large — rc=$grc stderr='$GERR' (want non-zero + 'secd: program too large')"; exit 1
+fi
+# malformed program: a truncated/unbalanced stream is caught during execution, not
+# walked into the zero-fill tail / unmapped memory (which would SIGSEGV).
+printf 'glyph MAIN = print("hi")\n' > logos_source.la
+cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1          # compile → valid stream
+gsz=$(wc -c < logos_program.bin); head -c $((gsz-3)) logos_program.bin > /tmp/t_guard.bin
+cp /tmp/t_guard.bin logos_program.bin; rm -f /tmp/t_guard.bin
+grc=0; GERR="$(./runner 2>&1 1>/dev/null)" || grc=$?
+if [ "$grc" -ne 0 ] && printf '%s\n' "$GERR" | grep -qF "secd: malformed program"; then
+    echo "PASS  guard: malformed program halts loudly (rc $grc, 'secd: malformed program')"
+else
+    echo "FAIL  guard: malformed program — rc=$grc stderr='$GERR' (want non-zero + 'secd: malformed program')"; exit 1
+fi
+
 rm -f logos_secd logos_program.bin logos_source.la compiler.bin runner new_logos_secd.bin
 
 say "Closing the self-hosting loop (eval.la interprets kernel.la, reconstructs itself)"

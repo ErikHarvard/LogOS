@@ -1800,3 +1800,14 @@ below `RLIMIT_STACK` so it fires only where the C stack (parser / `eval` /
 legitimate program, including the deep self-hosting recursion, is untouched.
 These join the pre-existing `secd: heap exhausted` / `secd: stack overflow` /
 `secd: path too long` guards, so no engine now fails silently on bad input.
+`build.sh` **regression-tests the VM guard set directly** (each feeds a broken
+program and asserts non-zero exit + the specific `secd:` diagnostic): `unbound
+variable`, `attempt to apply a non-function`, `chr out of range`, `too many poll
+fds`, `program too large` (oversized stream rejected at load), and `malformed
+program` (a truncated stream caught mid-execution, not walked into unmapped
+memory), alongside the existing `stack overflow` / `path too long` / `argument
+is not a string` / `str_to_int` / codegen-`parse error` checks — so a future
+`secd.asm` edit that disarmed a guard (a silent `exit 0`, or a SIGSEGV) fails the
+build. The two exceptions are `secd: read error` (needs a loader syscall fault)
+and `secd: heap exhausted` (needs a >768 MiB live set) — resource/fault-injection
+cases not forced in the build; the GC-churn test exercises the heap happy path.
