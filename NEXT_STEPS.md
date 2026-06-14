@@ -1,0 +1,130 @@
+# LogOS — Next Steps (backlog)
+
+Captured for later; not yet done. Each is grounded in `LINGUA_ADAMICA.tex` /
+*Being & Becoming* and the existing build. Pick up when there's time.
+
+---
+
+## 1. Autological native compilation — an LA-native x86-64 backend (PLAN FIRST)
+
+**Goal:** move native code generation fully into Lingua Adamica. Today `codegen.la`
+emits SECD bytecode that the VM (`secd.asm`) *interprets* — that interpretation
+layer is heterological (external machinery between the language and the CPU) and is
+the main performance cost. Build a **native-code backend, written in LA itself,
+that emits x86-64 machine code directly**, so an LA program compiles to native
+instructions with **no VM interpreting in between** — the language compiling itself
+to native code, in itself.
+
+**Honest seam (mark clearly, keep thin):** the one irreducible boundary is that the
+emitted code targets the **x86-64 instruction set** — the CPU's physical language,
+which we cannot rewrite in LA (the Nigredo hardware boundary / silicon is physical
+fact). The backend itself must be **pure LA**; only what it *emits* conforms to
+x86-64. This is not eliminating the foreign substrate (impossible) — it's moving
+everything *above* the silicon into the language and minimizing the seam to just
+code emission. (`elf.la` already shows LA emitting a runnable ELF via
+`chr`/`write_exec`; the new backend is the general code generator above that.)
+
+**Start minimal:** an LA-written backend that compiles a simple LA program (the
+kernel, or an arithmetic function) to a native x86-64 executable directly (no VM
+interpretation) and runs it; verify correct output and that the path is LA-native.
+
+**Status:** LARGE. **Scope the approach and show the plan BEFORE building** (user's
+explicit instruction). Do not start emitting code until the plan is reviewed.
+
+---
+
+## 2. The eight self-relations of the Logos (from *Being & Becoming*)
+
+**Goal:** instantiate the eight self-relations — Logos **to / about / as / for / by
+/ through / with** itself, and **from** itself — as first-class **named glyphs in 𝓜**,
+each a mode of the language's self-relation (the way the three laws and five modes
+are glyphs). The eightfold completeness criterion — finite, testable, grounded.
+
+**Two requirements per self-relation:**
+- Passes the autological test under the actual evaluator: **`SELFREL(SELFREL) ≡
+  SELFREL`** (Criterion 7 — the same `X(X)≡X` test the modes / κ / evaluator satisfy).
+- Instantiated as the genuine computational self-relation it names.
+
+**The six clear ones (build these as named glyphs, verify host==VM):**
+| Self-relation | Computational meaning | Already realised in |
+|---|---|---|
+| **About** | self-description | `𝓜 ⊂ 𝒜` (metaglyph.la) |
+| **As** | sign IS referent | `α=1` ontoglyph (`IS_ALPHA1`, canon.la) |
+| **By** | self-hosting fixed point | eval.la / Albedo Stage 4 |
+| **From** | generation / neologization | `COLLAPSE` / `ν` / `𝔑` (canon.la, metaglyph.la) |
+| **Through** | self-mediation / self-compilation | codegen.la → VM (the compile path) |
+| **To** | self-application / evaluation | the evaluator glyph `REVAL = ▷(DEPTH,RECOGNITION)` (canon.la) |
+
+These mostly *wrap existing capabilities* as named `SELFREL_*` glyphs that pass
+`X(X)≡X`. Moderate, well-scoped (≈ a metaglyph-sized module, likely spec-pipeline).
+
+**Two need the user's judgment BEFORE building (computational meaning unsettled):**
+- **For itself** (purpose / teleology) — touches the self-origination boundary. The
+  honest instantiation is probably the **bounded autonomous loop acting toward a
+  goal** (`autoloop.la`), NOT genuine purpose-origination (no system has that). Flag
+  and decide together.
+- **With itself** (co-presence) — possibly the **trimodal simultaneity**: the same
+  glyph as computation + sigil + phonym at once. Confirm the intended computational
+  meaning before building.
+
+**Status:** READY to build the six + flag For/With. Good next pickup.
+
+---
+
+## 3. α=1 fidelity audit — sigil & phonym vs the ontoglyph standard (MAP, don't fix)
+
+**Goal:** audit the nine primitives' sigils and phonyms against Codex II's
+**ontoglyph standard** (α=1: the form/sound IS the referent's structure) and the
+Sigil Catalogue / phonetic specs. For each of the nine: does the rendered sigil's
+geometry actually encode the **signacursion** of its concept per the catalogue, or
+is any of it **placeholder geometry**? Does each phonym hit the **acoustic
+parameters the spec defines**, or is it an approximate tone? **Report every place a
+form or sound is α<1** — where it doesn't genuinely encode its referent (that's
+drift from the ontoglyph standard).
+
+**Status:** AUDIT ONLY — **don't fix yet; map the drift first.** (Note: an earlier
+pass already replaced the five provisional sigil forms with catalogue transcriptions
+and grounded the phonym formants in the IPA targets — this audit re-checks fidelity
+rigorously against α=1 and flags any residual α<1, e.g. the Becoming spiral / Being
+curl polylines, fricative/trill approximations, the 1-bit raster floor.)
+
+---
+
+## Design principle (governs the autonomous loop, task #2's For-itself, and any extension)
+
+**Γ ≠ Ρ (the P≠NP distinction): generation and recognition are irreducibly
+distinct operations — never collapse them.** The loop must ALWAYS *generate* (via
+the spec pipeline, Γ) and then *separately* *recognize/verify* (via `META_DEBUG`
+with the spec's test cases as witness, Ρ). Never a single "generate correct code
+directly" step. Recognition-given-a-witness is structurally cheaper and more
+reliable than generation, and that asymmetry is what makes **verified
+self-extension** possible — the witness (the spec's test cases) is what makes
+recognition cheap. Keep generation and verification as distinct phases, always.
+
+*Status:* **already honored** in `autoloop.la` — `GENERATE`/`DEPLOY` is Γ;
+`STEP_OK` (= `META_DEBUG` over the entry's test cases) is a separate Ρ gate; a step
+is accepted only after Ρ passes. **Any future extension** (esp. the dynamic
+next-step synthesiser, and task #2's "For itself") must preserve this split — the
+synthesiser may *propose* (Γ) but acceptance always routes through the witness-based
+verifier (Ρ). This mirrors the codebase-wide Γ/Ρ discipline (codices' *P vs NP
+COMPLETE.md*; `bytecode.la`'s generation/recognition separation).
+
+**Self-reference must be by RECOGNITION, never by self-copying (Anchored Polynomial
+Fixed Point Theorem).** All the self-referential machinery — the self-hosting fixed
+point, the metacursive glyphs (`𝓡(𝓡)≡𝓡`, `κ(κ)`, `𝔑(𝔑)`), the etymology DAG,
+neologistic compression — is **bounded (polynomial in the size of the referring
+structure)** precisely *because* it is implemented by recognition (shared reference,
+hash-consing) rather than by copying. *"The structure that names itself need not
+copy itself — only recognize."* This is why neologization **deepens without
+widening** (`glyphdag.la`: self-combining grows nodes linearly while the unfolded
+tree grows exponentially — shared subterms are interned, not duplicated) and why
+self-hosting doesn't spiral. **Any future self-referential machinery must use
+recognition/reference, never self-copying, to stay bounded.** *Status:* already
+embodied — `glyphdag.la`'s hash-consed DAG is exactly recognition-not-copying;
+preserve it in every new self-referential construct.
+
+---
+
+*(House style: every generated module passes META_DEBUG before acceptance; host==VM
+byte-identity; build through the spec pipeline where it fits; loud failure on bad
+input; honest scope notes for every bound.)*

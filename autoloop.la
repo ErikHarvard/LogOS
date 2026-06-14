@@ -1,0 +1,83 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  autoloop.la — an AUTONOMOUS SELF-IMPROVING LOOP as a glyph (the achievable
+#  form of "the language running itself"). Given a GOAL (a spec of modules to
+#  build, from outside) it runs the generate→verify→iterate cycle: for each step
+#  it asks the spec pipeline (specpipe.la) to verify the step's glyph via
+#  META_DEBUG, and accepts it ONLY if every test passes; the accepted result is
+#  carried forward so later steps build on the verified set. On goal completion it
+#  GENERATEs+DEPLOYs the whole verified module — a module produced with no hand in
+#  the loop. Bounded and self-limiting:
+#
+#    • VERIFY-OR-REJECT: a step is accepted only if META_DEBUG passes — no
+#      unverified glyph ever enters. Autonomy never bypasses verification.
+#    • LOUD HALT: a step that fails verification calls `error` → the loop stops
+#      with a clear message and a nonzero exit. No garbage, no silent drift.
+#    • CLEAR TERMINATION: goal met (no steps left), OR step budget exhausted, OR
+#      a step fails (loud halt). The budget bounds it — no infinite loop.
+#    • The goal and the existing pieces come from OUTSIDE (the goal argument);
+#      the loop only composes/verifies/generates within those bounds.
+#
+#  Honest scope: the steps are a finite ordered goal-spec (the decomposition is
+#  supplied); "feed the result forward" = each accepted step joins the verified
+#  module the next step extends. Because `remaining` strictly shrinks, progress is
+#  structural; a fully dynamic next-step synthesiser (with state-equality
+#  no-progress detection) is the next layer.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + DEF/TRIPLE/PAIR/CONS/NIL/Z/IF/TRUE/FALSE/AND/SEQ
+export AUTOLOOP RUN ENT TC SING STEP_OK
+
+glyph NOT   = la b. b(FALSE)(TRUE)
+# entry = TRIPLE(name)(DEF(sig)(src)(val))(tests); accessors / builders
+glyph ENT   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph ENAME = la e. e(la a. la b. la c. a)
+glyph TC    = la probe. la expected. PAIR(probe)(expected)
+glyph SING  = la x. CONS(x)(NIL)
+# Scott-list guards (avoid eager double-eval; force the right branch via IF)
+glyph IS_CONS = la l. l(FALSE)(la h. la t. TRUE)
+glyph HD    = la l. l("")(la h. la t. h)
+glyph TL    = la l. l(NIL)(la h. la t. t)
+# substring search (over META_DEBUG's report)
+glyph EMPTY2  = la s. str_eq(s)("")
+glyph STARTS2 = Z(la self. la p. la s. IF(EMPTY2(p))(la _. TRUE)(la _. IF(EMPTY2(s))(la _. FALSE)(la _. IF(str_eq(str_head(p))(str_head(s)))(la _. self(str_tail(p))(str_tail(s)))(la _. FALSE))))
+glyph HAS     = Z(la self. la p. la s. IF(STARTS2(p)(s))(la _. TRUE)(la _. IF(EMPTY2(s))(la _. FALSE)(la _. self(p)(str_tail(s)))))
+
+# STEP_OK — the verification gate: run META_DEBUG on the single step; accept iff
+# its report contains no FAIL (every test passed). No unverified glyph passes.
+glyph STEP_OK = la e. NOT(HAS("FAIL")(META_DEBUG(SING(e))))
+
+# AUTOLOOP(budget)(done)(remaining) → status string. The autonomous cycle.
+glyph AUTOLOOP = Z(la self. la budget. la done. la rem.
+    IF(IS_CONS(rem))
+      (la _. IF(int_eq(budget)(0))
+         (la _. SEQ(print(concat("■ AUTOLOOP halt: step budget exhausted after ")
+                          (concat(int_to_str(done))(" verified step(s), goal NOT met"))))
+                    ("BUDGET"))
+         (la _. IF(STEP_OK(HD(rem)))
+            (la _. SEQ(print(concat("  step ")(concat(int_to_str(add(done)(1)))
+                             (concat(": ")(concat(ENAME(HD(rem)))(" — META_DEBUG PASS, accepted"))))))
+                       (self(sub(budget)(1))(add(done)(1))(TL(rem))))
+            (la _. error(concat("✗ AUTOLOOP loud halt: step ")
+                         (concat(ENAME(HD(rem)))(" FAILED META_DEBUG — refusing to accept unverified code"))))))
+      (la _. SEQ(print(concat("✓ AUTOLOOP goal met: ")(concat(int_to_str(done))(" step(s), all verified"))))
+                 ("DONE")))
+
+# RUN(goal)(budget)(path) — drive the loop, then on success GENERATE+DEPLOY the
+# whole verified module (the pipeline writing the module the loop drove it to).
+glyph RUN = la goal. la budget. la path.
+    (la status. IF(str_eq(status)("DONE"))
+        (la _. SEQ(print(DEPLOY(goal)(path)))(print(concat("autoloop: wrote verified module -> ")(path))))
+        (la _. print(concat("autoloop: stopped without deploying (status ")(concat(status)(")")))))
+    (AUTOLOOP(budget)(0)(goal))
+
+# ── A real goal from outside: a small math-utilities module ──
+glyph GOAL_MATH =
+  CONS(ENT("DOUBLE")(":: a -> a")("la x. add(x)(x)")(la x. add(x)(x))(SING(TC(la g. int_to_str(g(5)))("10"))))(
+  CONS(ENT("SQUARE")(":: a -> a")("la x. mul(x)(x)")(la x. mul(x)(x))(SING(TC(la g. int_to_str(g(4)))("16"))))(
+  CONS(ENT("INC")(":: a -> a")("la x. add(x)(1)")(la x. add(x)(1))(SING(TC(la g. int_to_str(g(7)))("8"))))(
+  CONS(ENT("SUMSQ")(":: a -> a -> a")("la x. la y. add(mul(x)(x))(mul(y)(y))")(la x. la y. add(mul(x)(x))(mul(y)(y)))(SING(TC(la g. int_to_str(g(3)(4)))("25"))))(
+  NIL))))
+
+glyph MAIN =
+    SEQ(print("autoloop: GOAL = math-utilities module (DOUBLE, SQUARE, INC, SUMSQ); budget 10"))(
+        RUN(GOAL_MATH)(10)("mathutil.la"))

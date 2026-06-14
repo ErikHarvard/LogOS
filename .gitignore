@@ -39,3 +39,4 @@
 codices/*
 !codices/published/
 phonyms.wav
+mathutil.la

@@ -865,6 +865,60 @@ else
     exit 1
 fi
 
+say "Autonomous self-improving loop (autoloop.la — generate→verify→iterate, bounded)"
+# autoloop.la imports specpipe.la and runs the autonomous cycle: for each step of a
+# GOAL (a spec supplied from outside) it verifies the glyph via META_DEBUG and
+# accepts it ONLY if every test passes (verify-or-reject — no unverified code
+# enters), carrying the verified set forward; on completion it GENERATEs+DEPLOYs the
+# whole module. Bounded, with three clear terminations: goal met, step budget
+# exhausted, or a verification failure (LOUD HALT via `error`, nonzero exit). We
+# assert all three on the host. (host==VM was verified byte-identical — both the
+# loop trace AND the generated mathutil.la — but isn't re-run each build: codegen of
+# a specpipe-importer is ~160s; like the DRM/live capstones, it is host-checked here
+# with manual VM confirmation.)
+ok=1
+# (1) SUCCESS — a 4-step math-utilities goal runs autonomously to completion + deploy.
+rm -f mathutil.la
+AL="$(./tiny_host autoloop.la 2>/dev/null)"
+printf '%s\n' "$AL" | grep -q "step 1: DOUBLE — META_DEBUG PASS, accepted" || { echo "FAIL  autoloop: step 1 not autonomously accepted"; ok=0; }
+printf '%s\n' "$AL" | grep -q "step 4: SUMSQ — META_DEBUG PASS, accepted"  || { echo "FAIL  autoloop: step 4 not reached/accepted"; ok=0; }
+printf '%s\n' "$AL" | grep -q "✓ AUTOLOOP goal met: 4 step(s), all verified" || { echo "FAIL  autoloop: goal not met"; ok=0; }
+printf '%s\n' "$AL" | grep -q "module VERIFIED"                              || { echo "FAIL  autoloop: deployed module not verified"; ok=0; }
+[ -f mathutil.la ]                                                          || { echo "FAIL  autoloop: mathutil.la not generated"; ok=0; }
+grep -q "glyph SUMSQ = la x. la y. add(mul(x)(x))(mul(y)(y))" mathutil.la   || { echo "FAIL  autoloop: generated module body wrong"; ok=0; }
+# (2) LOUD HALT — a step whose impl fails its test must stop nonzero, refusing it.
+cat > /tmp/al_loud.la <<'LA'
+import("specpipe.la")
+import("autoloop.la")
+glyph BAD = CONS(ENT("DOUBLE")(":: a -> a")("la x. add(x)(x)")(la x. add(x)(x))(SING(TC(la g. int_to_str(g(5)))("10"))))(CONS(ENT("SQUARE")(":: a -> a")("la x. add(x)(x)")(la x. add(x)(x))(SING(TC(la g. int_to_str(g(4)))("16"))))(NIL))
+glyph MAIN = AUTOLOOP(10)(0)(BAD)
+LA
+# `|| LRC=$?` so `set -e` does not treat the EXPECTED loud-halt exit as a build failure.
+LRC=0; ./tiny_host /tmp/al_loud.la >/tmp/al_loud.out 2>&1 || LRC=$?
+[ "$LRC" -ne 0 ]                          || { echo "FAIL  autoloop: broken step did not loud-halt (rc=$LRC)"; ok=0; }
+grep -q "loud halt" /tmp/al_loud.out      || { echo "FAIL  autoloop: no loud-halt message"; ok=0; }
+grep -q "step 1: DOUBLE" /tmp/al_loud.out || { echo "FAIL  autoloop: did not accept the valid step before halting"; ok=0; }
+# (3) BUDGET — a 3-step goal with budget 2 stops cleanly, goal NOT met.
+cat > /tmp/al_bud.la <<'LA'
+import("specpipe.la")
+import("autoloop.la")
+glyph G =
+  CONS(ENT("DOUBLE")(":: a -> a")("la x. add(x)(x)")(la x. add(x)(x))(SING(TC(la g. int_to_str(g(5)))("10"))))(
+  CONS(ENT("SQUARE")(":: a -> a")("la x. mul(x)(x)")(la x. mul(x)(x))(SING(TC(la g. int_to_str(g(4)))("16"))))(
+  CONS(ENT("INC")(":: a -> a")("la x. add(x)(1)")(la x. add(x)(1))(SING(TC(la g. int_to_str(g(7)))("8"))))(
+  NIL)))
+glyph MAIN = AUTOLOOP(2)(0)(G)
+LA
+BUD="$(./tiny_host /tmp/al_bud.la 2>/dev/null)"; BRC=$?
+[ "$BRC" -eq 0 ]                                              || { echo "FAIL  autoloop: budget stop should be clean (rc=$BRC)"; ok=0; }
+printf '%s\n' "$BUD" | grep -q "budget exhausted after 2"     || { echo "FAIL  autoloop: budget bound not reported"; ok=0; }
+rm -f mathutil.la /tmp/al_loud.la /tmp/al_loud.out /tmp/al_bud.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  autoloop: autonomous generate→verify→iterate — 4-step goal verified+deployed with no intervention; LOUD HALT on a step that fails META_DEBUG (rc≠0, unverified code refused); clean stop at the step budget (goal not met). Bounded; host==VM verified byte-identical (manual)"
+else
+    exit 1
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes
