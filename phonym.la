@@ -299,8 +299,11 @@ glyph CORPUS =
     concat(SAY(PRIM("DEPTH")))(
     concat(SAY(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))(     # Compassion  /luʃi/
     concat(SAY(MC(PRIM("RECOGNITION"))))(                    # Truth       /ʃiʃi/
-           SAY(CONT(PRIM("RECOGNITION"))(PRIM("BEING")))     # Rec ⊂ Being /ɑʃiɑ/
-    )))))))))))
+    concat(SAY(CONT(PRIM("RECOGNITION"))(PRIM("BEING"))))(   # Rec ⊂ Being /ɑʃiɑ/
+    # ── 𝓜 ⊂ 𝒜 — the combination MODES themselves SPOKEN, from their decompositions ──
+    concat(SAY(DIR(PRIM("LOVE"))(PRIM("RELATION"))))(        # ⊗ SYN = ▷(LOVE,RELATION)
+           SAY(MC(PRIM("SELF")))                             # ↻ MC  = ↻(SELF)
+    )))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("PSC* Compassion        = ")(SPEC(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))))(
@@ -308,5 +311,7 @@ glyph MAIN =
     SEQ(print(concat("PSC* Love toward Recog = ")(SPEC(DIR(PRIM("LOVE"))(PRIM("RECOGNITION"))))))(
     SEQ(print(concat("PSC* Recog within Being= ")(SPEC(CONT(PRIM("RECOGNITION"))(PRIM("BEING"))))))(
     SEQ(print(concat("PSC* Truth             = ")(SPEC(MC(PRIM("RECOGNITION"))))))(
+    SEQ(print(concat("𝓜 ⊗ SYN (spoken)       = ")(SPEC(DIR(PRIM("LOVE"))(PRIM("RELATION"))))))(
+    SEQ(print(concat("𝓜 ↻ MC  (spoken)       = ")(SPEC(MC(PRIM("SELF"))))))(
     SEQ(write_file("phonyms.wav")(WAVE(CORPUS)))(
-        print("phonym: wrote phonyms.wav — nine primitives + three GENERATED phonyms")))))))
+        print("phonym: wrote phonyms.wav — nine primitives + three GENERATED + two MODE phonyms")))))))))

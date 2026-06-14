@@ -1680,6 +1680,8 @@ check_sigil () {  # $1 = engine label, $2 = output file
     HSYM "g8 FORM" "$2"        && ! VSYM "g8 FORM" "$2"        || { echo "FAIL  sigil($1): FORM apex not up (expect H symmetric, NOT V)"; ok=0; }
     ! HSYM "g7 BECOMING" "$2"  && ! VSYM "g7 BECOMING" "$2"    || { echo "FAIL  sigil($1): BECOMING spiral not chiral (expect neither H nor V symmetric)"; ok=0; }
     HSYM "DERIVED Truth" "$2"                                 || { echo "FAIL  sigil($1): Truth=MC(RECOGNITION) not H-symmetric (self-fold not generated)"; ok=0; }
+    # 𝓜 ⊂ 𝒜: the five combination modes render as sigils from their decompositions:
+    [ "$(grep -c '^META ' "$2")" = "5" ]                      || { echo "FAIL  sigil($1): expected 5 mode sigils (𝓜), got $(grep -c '^META ' "$2")"; ok=0; }
 }
 rm -f sigil_host.txt sigil_vm.txt
 ./tiny_host sigil.la > sigil_host.txt 2>/dev/null
@@ -1716,13 +1718,16 @@ ok=1
 check_phonym () {  # $1 = engine label, $2 = stdout file
     [ "$(head -c 4 phonyms.wav)" = "RIFF" ]                     || { echo "FAIL  phonym($1): not a RIFF WAV"; ok=0; }
     [ "$(dd if=phonyms.wav bs=1 skip=8 count=4 2>/dev/null)" = "WAVE" ] || { echo "FAIL  phonym($1): no WAVE tag"; ok=0; }
-    [ "$(stat -c%s phonyms.wav)" = "265004" ]                   || { echo "FAIL  phonym($1): size $(stat -c%s phonyms.wav) != 265004 (9 primitives + 3 generated)"; ok=0; }
+    [ "$(stat -c%s phonyms.wav)" = "327404" ]                   || { echo "FAIL  phonym($1): size $(stat -c%s phonyms.wav) != 327404 (9 primitives + 3 generated + 2 modes)"; ok=0; }
     [ "$(tr -d '\000' < phonyms.wav | wc -c)" -gt 100000 ]      || { echo "FAIL  phonym($1): waveform is (near) silent"; ok=0; }
     # PSC* generated the phonym from structure — the printed witness IS the κ-spec:
     [ "$(grep -c 'PSC\*' "$2")" = "5" ]                         || { echo "FAIL  phonym($1): expected 5 PSC* witnesses, got $(grep -c 'PSC\*' "$2")"; ok=0; }
     grep -q '⊗(LOVE,RECOGNITION)' "$2"                          || { echo "FAIL  phonym($1): ⊗ fusion witness missing (Compassion)"; ok=0; }
     grep -q '↻(RECOGNITION)' "$2"                               || { echo "FAIL  phonym($1): ↻ reduplication witness missing (Truth)"; ok=0; }
     grep -q '⊂(RECOGNITION,BEING)' "$2"                         || { echo "FAIL  phonym($1): ⊂ containment witness missing (Recognition within Being)"; ok=0; }
+    # 𝓜 ⊂ 𝒜: the combination modes are themselves spoken (phonological cascade):
+    grep -q '𝓜 ⊗ SYN (spoken)       = ▷(LOVE,RELATION)' "$2"     || { echo "FAIL  phonym($1): ⊗ mode not spoken as a phonym"; ok=0; }
+    grep -q '𝓜 ↻ MC  (spoken)       = ↻(SELF)' "$2"              || { echo "FAIL  phonym($1): ↻ mode not spoken as a phonym"; ok=0; }
 }
 rm -f phonyms.wav phonym_host.out phonym_vm.out
 ./tiny_host phonym.la > phonym_host.out 2>/dev/null
@@ -1739,7 +1744,41 @@ cmp -s phonyms.wav /tmp/phonyms_host.wav || { echo "FAIL  phonym: native wavefor
 cmp -s phonym_host.out phonym_vm.out     || { echo "FAIL  phonym: native PSC* witnesses != C host witnesses"; ok=0; }
 rm -f phonyms.wav /tmp/phonyms_host.wav phonym_host.out phonym_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  phonym: the nine primitive phonyms synthesised as sound (formant + noise + burst) + PSC* GENERATES compound phonyms from κ-structure via the operator phonology, byte-identical on host and native VM"
+    echo "PASS  phonym: nine primitive phonyms synthesised (formant + noise + burst) + PSC* GENERATES compound phonyms + the combination MODES spoken (𝓜 ⊂ 𝒜), byte-identical on host and native VM"
+else
+    exit 1
+fi
+
+say "Metaglyph: 𝓜 ⊂ 𝒜 — the language's operations as glyphs (LINGUA_ADAMICA.tex, ch:meta)"
+# The meta-autontomonoglyphabet 𝓜: the language's own OPERATIONS are themselves
+# glyphs (𝓜 ⊂ 𝒜, 𝓜(𝒜) ≡ 𝒜). metaglyph.la gives each of the five combination modes
+# an explicit DECOMPOSITION (a κ-spec / glyph-identity), so 𝔑 ≡ ⊗ becomes a sealed
+# monoglyph COLLAPSE can apply to ITSELF (𝔑(𝔑)), meta-ontoneologization ν* (new
+# operations from operations) becomes expressible, and κ(κ) is well-defined. The
+# cascade — each mode rendered as a sigil (sigil.la) and spoken as a phonym
+# (phonym.la) — is checked in those stages. Pure (str_eq/concat), byte-identical.
+ok=1
+check_meta () {  # $1 = engine label, $2 = output file
+    [ "$(grep -c '^𝓜  ' "$2")" = "5" ]                              || { echo "FAIL  metaglyph($1): expected 5 mode glyph-identities (𝓜⊂𝒜), got $(grep -c '^𝓜  ' "$2")"; ok=0; }
+    grep -q '𝔑 ≡ ⊗     = ▷(LOVE,RELATION)' "$2"                     || { echo "FAIL  metaglyph($1): 𝔑 ≡ ⊗ not carried as a glyph"; ok=0; }
+    grep -q '𝔑(𝔑)      = ⊗(▷(LOVE,RELATION),▷(LOVE,RELATION))' "$2" || { echo "FAIL  metaglyph($1): 𝔑(𝔑) self-application missing"; ok=0; }
+    grep -q '𝔑(𝔑,Being)= ⊗(⊗(▷(LOVE,RELATION),▷(LOVE,RELATION)),BEING)' "$2" || { echo "FAIL  metaglyph($1): 𝔑(𝔑,Being)=G_{⊗⊗Being} missing"; ok=0; }
+    grep -q 'ν\* (⊗⊗↻)  = ⊗(▷(LOVE,RELATION),↻(SELF))' "$2"          || { echo "FAIL  metaglyph($1): ν* (new operation from operations) missing"; ok=0; }
+    grep -q 'κ(κ)      = ↻(▷(RECOGNITION,FORM))' "$2"               || { echo "FAIL  metaglyph($1): κ(κ) missing"; ok=0; }
+}
+rm -f meta_host.out meta_vm.out
+./tiny_host metaglyph.la > meta_host.out 2>/dev/null
+check_meta "C host" meta_host.out
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp metaglyph.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd > meta_vm.out 2>/dev/null
+check_meta "native VM" meta_vm.out
+cmp -s meta_host.out meta_vm.out || { echo "FAIL  metaglyph: native witnesses != C host witnesses"; ok=0; }
+rm -f meta_host.out meta_vm.out logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  metaglyph: the five modes + 𝔑 + κ carry glyph-identities (𝓜 ⊂ 𝒜); 𝔑(𝔑) self-applies, ν* mints new operations, κ(κ) well-defined, byte-identical on host and native VM"
 else
     exit 1
 fi

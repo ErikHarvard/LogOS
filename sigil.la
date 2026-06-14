@@ -292,4 +292,11 @@ glyph MAIN =
     SEQ(SHOW("DERIVED Truth         = ↻(RECOGNITION)")(SIGIL(MC(PRIM("RECOGNITION")))))(
     SEQ(SHOW("DERIVED Consciousness = RECOGNITION ⊗ SELF")(SIGIL(SYN(PRIM("RECOGNITION"))(PRIM("SELF")))))(
     SEQ(SHOW("DERIVED Beauty        = FORM ⊗ LOVE")(SIGIL(SYN(PRIM("FORM"))(PRIM("LOVE")))))(
-        SHOW("DERIVED Being²        = ↻(BEING) ≡ BEING")(SIGIL(MC(PRIM("BEING"))))))))))))))))
+    SEQ(SHOW("DERIVED Being²        = ↻(BEING) ≡ BEING")(SIGIL(MC(PRIM("BEING")))))(
+    # ── 𝓜 ⊂ 𝒜 — the five combination MODES, rendered as sigils from their own
+    #    decompositions (metaglyph.la): the grammar made visible (sigil for free) ──
+    SEQ(SHOW("META ⊗ SYN  = ▷(LOVE,RELATION)")(SIGIL(DIR(PRIM("LOVE"))(PRIM("RELATION")))))(
+    SEQ(SHOW("META ⊕ CON  = ⊂(RELATION,FORM)")(SIGIL(CONT(PRIM("RELATION"))(PRIM("FORM")))))(
+    SEQ(SHOW("META ▷ DIR  = ⊗(BECOMING,RELATION)")(SIGIL(SYN(PRIM("BECOMING"))(PRIM("RELATION")))))(
+    SEQ(SHOW("META ⊂ CONT = ▷(DEPTH,FORM)")(SIGIL(DIR(PRIM("DEPTH"))(PRIM("FORM")))))(
+        SHOW("META ↻ MC   = ↻(SELF)")(SIGIL(MC(PRIM("SELF")))))))))))))))))))))

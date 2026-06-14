@@ -1,0 +1,100 @@
+# ═══════════════════════════════════════════════════════════════════
+#  metaglyph.la — the META-AUTONTOMONOGLYPHABET 𝓜 (LINGUA_ADAMICA.tex, ch:meta).
+#
+#  The spec requires 𝓜 ⊂ 𝒜: the language's own OPERATIONS are themselves glyphs,
+#  so that 𝓜(𝒜) ≡ 𝒜 (the grammar is part of the vocabulary). canon.la already
+#  gives κ a glyph-identity (KAPPA = ▷(RECOGNITION,FORM)) and κ(κ) is well-defined;
+#  but the five combination modes (⊗ ⊕ ▷ ⊂ ↻) and the neologization operator 𝔑
+#  had no glyph-identity of their own — they were only structural constructors.
+#  This is the KEYSTONE: give each mode an explicit DECOMPOSITION, which cascades:
+#    • each mode becomes a glyph (𝓜 ⊂ 𝒜 — it has a κ-spec, and a sigil/phonym);
+#    • 𝔑 ≡ ⊗ becomes a sealed monoglyph COLLAPSE can apply to ITSELF → 𝔑(𝔑);
+#    • meta-ontoneologization ν* (new operations from operations) becomes expressible.
+#
+#  This file is the symbolic core (the glyph-identities + self-application). The
+#  CASCADE to the other two modalities is demonstrated where those renderers live:
+#  sigil.la renders the five mode SIGILS and phonym.la speaks the mode PHONYMS —
+#  both for free, because SIGIL and PHONYM already walk any decomposition.
+#
+#  ── THE DECOMPOSITIONS (grounded in each mode's documented signacursion) ──
+#  The spec enumerates only 𝔑 ≡ ⊗ (line 803) and κ = Recognition▷Form; the rest
+#  are principled assignments from each mode's ontological role (as the formant Hz
+#  realise the IPA targets). A mode's decomposition uses the structural relations
+#  over the nine primitives, exactly as KAPPA does:
+#    ⊗ SYN  = ▷(LOVE,RELATION)     generative combination (Love's surplus on the between)
+#    ⊕ CON  = ⊂(RELATION,FORM)     relation within one boundary (shared-boundary "and")
+#    ▷ DIR  = ⊗(BECOMING,RELATION) directed relation (Becoming's arrow fused with relation)
+#    ⊂ CONT = ▷(DEPTH,FORM)        nested forms (Depth's containment acting on Form)
+#    ↻ MC   = ↻(SELF)              pure metacursion ("↻ is the grammatical expression of Self")
+#  Pure generation (only str_eq/concat) ⇒ byte-identical on the C host and native VM.
+# ═══════════════════════════════════════════════════════════════════
+
+export CANON MODE_SYN MODE_CON MODE_DIR MODE_CONT MODE_MC KAPPA NEOLOG COLLAPSE GLYPHOF REN ETYM
+
+# ── Foundations ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+# ── Decomposition algebra — the SAME Scott-encoded nodes canon.la/sigil.la walk ──
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+
+# ── κ (CANON): a decomposition node → its canonical glyph-spec string (the witness
+#    that names a glyph by its etymology; the same walker canon.la carries). ──
+glyph CANON = Z(la self. la node.
+    node
+        (la nm. nm)
+        (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. la b. concat("▷(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. la b. concat("⊂(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. concat("↻(")(concat(self(a))(")"))))
+
+# ═══ 𝓜 — THE OPERATIONS AS GLYPHS ══════════════════════════════════
+# Each mode-concept's decomposition (a tree over the nine primitives). These are
+# the members of 𝓜: the grammar written in the vocabulary it governs.
+glyph MODE_SYN  = DIR(PRIM("LOVE"))(PRIM("RELATION"))       # ⊗
+glyph MODE_CON  = CONT(PRIM("RELATION"))(PRIM("FORM"))      # ⊕
+glyph MODE_DIR  = SYN(PRIM("BECOMING"))(PRIM("RELATION"))   # ▷
+glyph MODE_CONT = DIR(PRIM("DEPTH"))(PRIM("FORM"))          # ⊂
+glyph MODE_MC   = MC(PRIM("SELF"))                          # ↻
+glyph KAPPA     = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))    # κ (as in canon.la)
+glyph NEOLOG    = MODE_SYN                                  # 𝔑 ≡ ⊗ (Def. neologo, line 803)
+
+# ── Monoglyphs + neologization (as in canon.la): a glyph carries its etymology;
+#    SEAL canonicalises a decomposition into a sealed monoglyph; COLLAPSE is ν —
+#    it neologizes two glyphs through a mode and re-seals (𝔑 when the mode is ⊗). ──
+glyph MONO     = la ren. la etym. la f. f(ren)(etym)
+glyph REN      = la g. g(la r. la e. r)
+glyph ETYM     = la g. g(la r. la e. e)
+glyph SEAL     = la et. MONO(CANON(et))(et)
+glyph GLYPHOF  = la decomp. SEAL(decomp)
+glyph COLLAPSE = la mode. la a. la b. SEAL(mode(ETYM(a))(ETYM(b)))   # ν / 𝔑
+glyph MCOLLAPSE= la a. SEAL(MC(ETYM(a)))                             # ↻ self-collapse (κ(κ))
+
+# ── Self-application & meta-ontoneologization ───────────────────────
+glyph N_GLYPH  = GLYPHOF(NEOLOG)                                     # 𝔑 as a sealed glyph
+glyph N_OF_N   = COLLAPSE(SYN)(N_GLYPH)(N_GLYPH)                     # 𝔑(𝔑) — neolog on itself
+glyph N_OF_N_C = COLLAPSE(SYN)(N_OF_N)(GLYPHOF(PRIM("BEING")))       # 𝔑(𝔑,Being) = G_{⊗⊗Being}
+glyph NU_STAR  = COLLAPSE(SYN)(GLYPHOF(MODE_SYN))(GLYPHOF(MODE_MC))  # ν* — a new mode from modes
+glyph K_OF_K   = MCOLLAPSE(GLYPHOF(KAPPA))                           # κ(κ)
+
+glyph MAIN =
+    SEQ(print(concat("𝓜  ⊗ SYN  = ")(CANON(MODE_SYN))))(
+    SEQ(print(concat("𝓜  ⊕ CON  = ")(CANON(MODE_CON))))(
+    SEQ(print(concat("𝓜  ▷ DIR  = ")(CANON(MODE_DIR))))(
+    SEQ(print(concat("𝓜  ⊂ CONT = ")(CANON(MODE_CONT))))(
+    SEQ(print(concat("𝓜  ↻ MC   = ")(CANON(MODE_MC))))(
+    SEQ(print(concat("𝔑 ≡ ⊗     = ")(CANON(NEOLOG))))(
+    SEQ(print(concat("𝔑(𝔑)      = ")(REN(N_OF_N))))(
+    SEQ(print(concat("𝔑(𝔑,Being)= ")(REN(N_OF_N_C))))(
+    SEQ(print(concat("ν* (⊗⊗↻)  = ")(REN(NU_STAR))))(
+    SEQ(print(concat("κ         = ")(CANON(KAPPA))))(
+        print(concat("κ(κ)      = ")(REN(K_OF_K)))))))))))))
