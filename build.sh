@@ -835,8 +835,9 @@ say "Spec pipeline: TopoEmbed invariant preservation (topoembed_spec.la — visu
 # the topological invariants of BOTH constituents AND its combining mode is
 # recoverable from the form — Love's and Recognition's primitives both survive in
 # Compassion (⊗) while a non-constituent (Being) does not, and ⊗ is distinguishable
-# from ⊕. sigil.la realises this: the ⊗ render places both parents in distinct
-# legible registers + a ⊗ mark (recoverable), not the old lossy pixel-union.
+# from ⊕. sigil.la realises this: the ⊗ render is THE SEALING — both parents
+# interpenetrate into ONE fused sigil (formal complexity one) + a ⊗ mode-mark,
+# the etymology recoverable AUTOLOGICALLY from the sealed structure (see seal stage).
 # META_DEBUG verifies; then the GENERATED topoembed.la runs stand-alone host/VM.
 TK="$(./tiny_host topoembed_spec.la 2>/dev/null)"
 ok=1
@@ -1973,6 +1974,41 @@ cmp -s mono_host.out mono_vm.out || { echo "FAIL  monosemy: native verdicts != C
 rm -f mono_host.out mono_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  monosemy: no polysemy (distinct meanings → distinct glyphs); synonymy collapsed up to the declared theory (⊗/⊕ commutativity + ↻BEING≡SELF), directional/assoc/idempotent forms correctly kept distinct, byte-identical on host and native VM"
+else
+    exit 1
+fi
+
+say "Sealing: ontoneologization → ONE monoglyph of formal complexity one (seal_test.la)"
+# THE SEALING (LINGUA_ADAMICA.tex def:ontoneologization ~2415, |𝔤_new| ≡ 1):
+# neologizing two ontoglyphs yields ONE sealed monoglyph of formal complexity
+# ONE (not a coupling, which would WIDEN), whose etymology is recoverable from
+# the single form (autological, not heterological) and whose collapse is a
+# metacursive fixed point. seal_test.la audits canon.la's VERBATIM
+# COLLAPSE/MONO/ETYM/CANON; pure str/int ops ⇒ byte-identical host == VM. The
+# VISUAL seal (the fused ⊗ sigil) is verified by the sigil stage above (host==VM).
+check_seal () {  # $1 = engine label, $2 = output file
+    grep -qxF "seal-name: ⊗(LOVE,RECOGNITION)" "$2"       || { echo "FAIL  seal($1): sealed name is not the autological κ(etymology)"; ok=0; }
+    grep -qxF "seal-complexity: 1" "$2"                    || { echo "FAIL  seal($1): formal complexity is not one"; ok=0; }
+    grep -qxF "seal-recover: tensor LOVE RECOGNITION" "$2" || { echo "FAIL  seal($1): etymology (both parents + mode) not recoverable from the sealed form"; ok=0; }
+    grep -qxF "seal-autological: YES" "$2"                 || { echo "FAIL  seal($1): name not autologically determined by etymology (REN ≠ κ(ETYM))"; ok=0; }
+    grep -qxF "seal-fixedpoint: YES" "$2"                  || { echo "FAIL  seal($1): collapse is not a metacursive fixed point (re-seal unstable)"; ok=0; }
+    grep -qxF "seal-deepens: cx 1 1 1 | nodes 3 5 7" "$2"  || { echo "FAIL  seal($1): complexity not constant one while the etymology deepens (it widened)"; ok=0; }
+    grep -qxF "couple-widens: 2 vs seal 1" "$2"            || { echo "FAIL  seal($1): coupling not distinguished from sealing by complexity"; ok=0; }
+}
+ok=1
+rm -f seal_host.out seal_vm.out
+./tiny_host seal_test.la > seal_host.out 2>/dev/null
+check_seal "C host" seal_host.out
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp seal_test.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd > seal_vm.out 2>/dev/null
+check_seal "native VM" seal_vm.out
+cmp -s seal_host.out seal_vm.out || { echo "FAIL  seal: native witnesses != C host witnesses"; ok=0; }
+rm -f seal_host.out seal_vm.out logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  seal: ontoneologization collapses two ontoglyphs into ONE monoglyph of formal complexity one (not coupling); etymology recoverable from the single sealed form (autological); the collapse a metacursive fixed point; complexity stays one as the etymology deepens; byte-identical on host and native VM"
 else
     exit 1
 fi

@@ -1,0 +1,118 @@
+# ═══════════════════════════════════════════════════════════════════
+#  sigil_seal_live.la — VM-only capstone (run manually): draw THE SEALING to a
+#  real screen. Cycles the two parent ontoglyphs and their sealed compound:
+#       Love (the flame)  →  Recognition (the eye)  →  Compassion
+#  where Compassion = Love ⊗ Recognition is ONE fused sigil (the flame
+#  interpenetrating the eye as its iris — "an eye whose pupil is a flame",
+#  LINGUA_ADAMICA.tex ~3200), NOT a side-by-side juxtaposition. So you can see on
+#  real hardware that the seal fuses (complexity one), the visual companion to
+#  seal_test.la (whose host==VM audit verifies complexity-one + recoverability).
+#
+#  It `import`s sigil.la (SIGIL/PRIM/SYN/SIG_AT/SZ), takes the screen with
+#  drm_mode, rasters each sigil DIRECTLY into the XRGB8888 framebuffer (each of
+#  the SZ×SZ cells blown up to a SCALE×SCALE block, gold on a dark field),
+#  presents it, sleeps 2s, and tail-loops (bounded dump under TCO). Ctrl+C ends it.
+#
+#  ── HOW TO RUN ──────────────────────────────────────────────────────
+#  Needs a BARE VT (Ctrl+Alt+F3..F6) for DRM master — under a compositor
+#  drm_mode halts loudly (secd: drm error) WITHOUT touching the display.
+#      ./drm_bringup_seal.sh            # frees the GPU, runs this, restores it
+# ═══════════════════════════════════════════════════════════════════
+
+import("sigil.la")    # SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL
+
+# ── Foundations (Church lists; the import's same-named privates are isolated) ──
+glyph SEQ     = la a. la b. b
+glyph TRUE    = la t. la f. t
+glyph FALSE   = la t. la f. f
+glyph Z       = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF      = la c. la t. la f. c(t)(f)("!")
+glyph PAIR    = la a. la b. la f. f(a)(b)
+glyph FST     = la p. p(la a. la b. a)
+glyph SND     = la p. p(la a. la b. b)
+glyph NIL     = PAIR(FALSE)("")
+glyph CONS    = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph LIST_HD = la l. FST(SND(l))
+glyph LIST_TL = la l. SND(SND(l))
+
+# ── drm_mode returns "<w> <h> <pitch>"; split it and pull each as an int ──
+glyph SPLIT_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. NIL)(la _. CONS(tok)(NIL)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. CONS(tok)(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph SPLIT = la s. SPLIT_GO(s)("")
+glyph D_W = la dims. str_to_int(LIST_HD(dims))
+glyph D_H = la dims. str_to_int(LIST_HD(LIST_TL(dims)))
+glyph D_P = la dims. str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))
+
+# ── Direct XRGB8888 framebuffer builder (a pixel is 4 bytes LE: B,G,R,0) ──
+glyph BYTE = la n. chr(int_to_str(n))
+glyph NUL  = BYTE(0)
+glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
+glyph REPEAT2 = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(int_eq(mod(n)(2))(0))
+        (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
+        (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
+glyph ZEROS = la n. REPEAT2(n)(NUL)
+glyph PAD   = la w. la pitch. ZEROS(sub(pitch)(mul(w)(4)))   # row tail up to pitch
+glyph SOLID_ROW = la w. la pitch. la px. concat(REPEAT2(w)(px))(PAD(w)(pitch))
+
+# ── Colours and on-screen size ──
+glyph BG     = BGRX(30)(15)(25)          # dark indigo field
+glyph FG     = BGRX(60)(210)(255)        # warm gold ink
+glyph SCALE  = 22                        # framebuffer pixels per sigil cell (32*22 = 704)
+glyph DSZ    = mul(SZ)(SCALE)            # drawn sigil side in pixels (SZ imported)
+
+# ── Raster one sigil row: its SZ cells, each cell a SCALE-wide run of FG/BG.
+#    Parameterised by `sig` so we can cycle different sigils through one builder. ──
+glyph CELLS = Z(la self. la sig. la r. la c.
+    IF(int_eq(c)(SZ))(la _. "")(la _.
+        concat(REPEAT2(SCALE)(IF(SIG_AT(sig)(r)(c))(la _. FG)(la _. BG)))
+              (self(sig)(r)(add(c)(1)))))
+glyph SIGROW = la sig. la w. la pitch. la ox. la r.
+    concat(REPEAT2(ox)(BG))
+    (concat(CELLS(sig)(r)(0))
+    (concat(REPEAT2(sub(w)(add(ox)(DSZ)))(BG))
+           (PAD(w)(pitch))))
+glyph SIGBAND = Z(la self. la sig. la w. la pitch. la ox. la r.
+    IF(int_eq(r)(SZ))(la _. "")(la _.
+        concat(REPEAT2(SCALE)(SIGROW(sig)(w)(pitch)(ox)(r)))
+              (self(sig)(w)(pitch)(ox)(add(r)(1)))))
+glyph FRAME = la sig. la w. la h. la pitch.
+    (la ox. (la oy.
+        concat(REPEAT2(oy)(SOLID_ROW(w)(pitch)(BG)))
+        (concat(SIGBAND(sig)(w)(pitch)(ox)(0))
+               (REPEAT2(sub(h)(add(oy)(DSZ)))(SOLID_ROW(w)(pitch)(BG)))))
+     (div(sub(h)(DSZ))(2)))
+     (div(sub(w)(DSZ))(2))
+
+# ── The three sigils: two parents, then the sealed compound ──
+glyph S_LOVE  = SIGIL(PRIM("LOVE"))
+glyph S_RECOG = SIGIL(PRIM("RECOGNITION"))
+glyph S_COMP  = SIGIL(SYN(PRIM("LOVE"))(PRIM("RECOGNITION")))   # Love ⊗ Recognition, sealed
+
+# ── Present one sigil: announce it, scan it out, hold 2s ──
+glyph SHOWSIG = la w. la h. la pitch. la name. la sig.
+    SEQ(print(concat("seal: ")(name)))(
+    SEQ(present(FRAME(sig)(w)(h)(pitch)))(
+        sleep("2")))
+
+# ── Cycle the three forever (tail self-call → bounded dump under TCO) ──
+glyph CYCLE = Z(la self. la w. la h. la pitch.
+    SEQ(SHOWSIG(w)(h)(pitch)("Love  (the flame)")(S_LOVE))(
+    SEQ(SHOWSIG(w)(h)(pitch)("Recognition  (the eye)")(S_RECOG))(
+    SEQ(SHOWSIG(w)(h)(pitch)("Compassion = Love (X) Recognition  [ONE fused sigil]")(S_COMP))(
+        self(w)(h)(pitch)))))
+
+# ── MAIN: take the screen, then cycle ──
+glyph MAIN =
+    (la dims. (la w. (la h. (la pitch.
+        SEQ(print("seal: cycling Love -> Recognition -> Compassion (2s each). Ctrl+C to stop"))(
+            CYCLE(w)(h)(pitch)))
+      (D_P(dims)))(D_H(dims)))(D_W(dims)))
+    (SPLIT(SEQ(print("seal: taking the screen via drm_mode"))(drm_mode("!"))))
