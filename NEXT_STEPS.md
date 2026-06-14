@@ -82,11 +82,47 @@ parameters the spec defines**, or is it an approximate tone? **Report every plac
 form or sound is α<1** — where it doesn't genuinely encode its referent (that's
 drift from the ontoglyph standard).
 
-**Status:** AUDIT ONLY — **don't fix yet; map the drift first.** (Note: an earlier
-pass already replaced the five provisional sigil forms with catalogue transcriptions
-and grounded the phonym formants in the IPA targets — this audit re-checks fidelity
-rigorously against α=1 and flags any residual α<1, e.g. the Becoming spiral / Being
-curl polylines, fricative/trill approximations, the 1-bit raster floor.)
+**Status:** AUDIT DONE (mapped 2026-06-14, below); **fixes not yet applied.**
+
+### The drift map (α=1 = form/sound IS the referent's structure)
+
+**Sigils — fidelity to the Sigil Catalogue's signacursion:**
+- **α≈1 (faithful):** Void (gap-at-crown IS the sigil), Form (triangle-in-circle+point),
+  Depth (nested descending circles+point), Self (filled Bernoulli ∞, H+V symmetric).
+- **α<1 (drift):**
+  - **Being** — the ouroboric curl is a blobby 4-segment polyline, not a recognizable spiral.
+  - **Love** — the catalogue's **inner flame (care within love) is missing**; outer flame
+    only, filled teardrop not the bezier outline.
+  - **Becoming** — the Archimedean spiral is a coarse sampled polyline; inner turns muddy/overlap.
+  - **Relation** — the **gold (explicit) vs silver (latent) arc distinction is lost** (1-bit);
+    arcs are polyline approximations.
+  - **Recognition** — rendered as a vesica (disk-intersection); catalogue tikz is two arcs of
+    one circle (legibility-driven interpretation drift; minor).
+- **Global sigil α<1:** the renderer is **1-bit — ALL colour is dropped** (logosink/goldenseal/
+  flamecore/mirrorsilver; TopoEmbed maps gradients→colour). Largest single drift. Also the ⊗
+  compound renders by spatial separation, not the catalogue's interpenetration (1-bit floor).
+
+**Phonyms — fidelity to the phonetic spec:**
+- **α≈1:** the vowel spectral nuclei — F1/F2/F3 are the standard realization of /ɑ i u ɔ a/ and
+  FFT-land on target (the .tex gives no Hz tables, only IPA + qualitative axes, so this is the
+  faithful realization).
+- **α<1 (drift):**
+  - **Consonant onsets** /ʃ h v m ʀ t d/ — the most drift: crude (fricatives share one
+    filtered-noise model, trill = AM buzz, plosives = noise bursts). Articulatory signacursion
+    not encoded — sound-effects approximating place/manner, not the gesture.
+  - **Parabolic-sine oscillator** (not true sine) — extra harmonics; formants still land.
+  - **Energy contours** (descending/rising/fading) — linear ramps, approximate.
+  - **Phonetic–semantic isomorphism (Axiom phon-sem) NOT instantiated** — we hit each
+    phoneme's formants point-by-point but never enforce acoustic-proximity ↔ ontological-
+    proximity (the topology isn't realized as a structure-preserving map). Structural α<1.
+
+**Pattern:** α≈1 on the primary geometric/spectral structure; α<1 on (a) the second channel the
+spec encodes but 1-bit/integer-DSP can't carry (colour, articulatory detail), and (b) the
+relational/topological layer (the isomorphism), realized point-by-point not as a map.
+
+**If/when fixing (the honest big gaps):** a colour channel for sigils; articulatory synthesis
+for the consonants; explicitly instantiate the phon-sem isomorphism; clean up the Becoming
+spiral / Being curl; add Love's inner flame.
 
 ---
 
