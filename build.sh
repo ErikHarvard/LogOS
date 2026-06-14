@@ -1681,7 +1681,7 @@ check_sigil () {  # $1 = engine label, $2 = output file
     ! HSYM "g7 BECOMING" "$2"  && ! VSYM "g7 BECOMING" "$2"    || { echo "FAIL  sigil($1): BECOMING spiral not chiral (expect neither H nor V symmetric)"; ok=0; }
     HSYM "DERIVED Truth" "$2"                                 || { echo "FAIL  sigil($1): Truth=MC(RECOGNITION) not H-symmetric (self-fold not generated)"; ok=0; }
     # 𝓜 ⊂ 𝒜: the five combination modes render as sigils from their decompositions:
-    [ "$(grep -c '^META ' "$2")" = "5" ]                      || { echo "FAIL  sigil($1): expected 5 mode sigils (𝓜), got $(grep -c '^META ' "$2")"; ok=0; }
+    [ "$(grep -c '^META ' "$2")" = "6" ]                      || { echo "FAIL  sigil($1): expected 6 𝓜 sigils (5 modes + evaluator), got $(grep -c '^META ' "$2")"; ok=0; }
 }
 rm -f sigil_host.txt sigil_vm.txt
 ./tiny_host sigil.la > sigil_host.txt 2>/dev/null
@@ -1718,7 +1718,7 @@ ok=1
 check_phonym () {  # $1 = engine label, $2 = stdout file
     [ "$(head -c 4 phonyms.wav)" = "RIFF" ]                     || { echo "FAIL  phonym($1): not a RIFF WAV"; ok=0; }
     [ "$(dd if=phonyms.wav bs=1 skip=8 count=4 2>/dev/null)" = "WAVE" ] || { echo "FAIL  phonym($1): no WAVE tag"; ok=0; }
-    [ "$(stat -c%s phonyms.wav)" = "314284" ]                   || { echo "FAIL  phonym($1): size $(stat -c%s phonyms.wav) != 314284 (Compassion now ⊗-compressed: max not sum)"; ok=0; }
+    [ "$(stat -c%s phonyms.wav)" = "344524" ]                   || { echo "FAIL  phonym($1): size $(stat -c%s phonyms.wav) != 344524 (+ evaluator phonym 𝓡)"; ok=0; }
     [ "$(tr -d '\000' < phonyms.wav | wc -c)" -gt 100000 ]      || { echo "FAIL  phonym($1): waveform is (near) silent"; ok=0; }
     # PSC* generated the phonym from structure — the printed witness IS the κ-spec:
     [ "$(grep -c 'PSC\*' "$2")" = "5" ]                         || { echo "FAIL  phonym($1): expected 5 PSC* witnesses, got $(grep -c 'PSC\*' "$2")"; ok=0; }
@@ -1765,6 +1765,9 @@ check_meta () {  # $1 = engine label, $2 = output file
     grep -q '𝔑(𝔑,Being)= ⊗(⊗(▷(LOVE,RELATION),▷(LOVE,RELATION)),BEING)' "$2" || { echo "FAIL  metaglyph($1): 𝔑(𝔑,Being)=G_{⊗⊗Being} missing"; ok=0; }
     grep -q 'ν\* (⊗⊗↻)  = ⊗(▷(LOVE,RELATION),↻(SELF))' "$2"          || { echo "FAIL  metaglyph($1): ν* (new operation from operations) missing"; ok=0; }
     grep -q 'κ(κ)      = ↻(▷(RECOGNITION,FORM))' "$2"               || { echo "FAIL  metaglyph($1): κ(κ) missing"; ok=0; }
+    grep -q '𝓡 EVAL    = ▷(DEPTH,RECOGNITION)' "$2"                 || { echo "FAIL  metaglyph($1): evaluator 𝓡 has no glyph-identity"; ok=0; }
+    grep -q '𝓡(𝓡) ≡ 𝓡 ? YES' "$2"                                  || { echo "FAIL  metaglyph($1): 𝓡(𝓡) ≡ 𝓡 idempotence not exhibited"; ok=0; }
+    grep -q '𝓡 distinct from κ and ⊂ ? YES' "$2"                    || { echo "FAIL  metaglyph($1): 𝓡 shares a glyph with another operation (meta-polysemy)"; ok=0; }
 }
 rm -f meta_host.out meta_vm.out
 ./tiny_host metaglyph.la > meta_host.out 2>/dev/null
@@ -1778,7 +1781,7 @@ check_meta "native VM" meta_vm.out
 cmp -s meta_host.out meta_vm.out || { echo "FAIL  metaglyph: native witnesses != C host witnesses"; ok=0; }
 rm -f meta_host.out meta_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  metaglyph: the five modes + 𝔑 + κ carry glyph-identities (𝓜 ⊂ 𝒜); 𝔑(𝔑) self-applies, ν* mints new operations, κ(κ) well-defined, byte-identical on host and native VM"
+    echo "PASS  metaglyph: the five modes + 𝔑 + κ + the evaluator 𝓡 carry glyph-identities (𝓜 ⊂ 𝒜 closed); 𝔑(𝔑) self-applies, ν* mints new operations, κ(κ) defined, 𝓡(𝓡)≡𝓡 idempotent + distinct (meta-monosemy), byte-identical on host and native VM"
 else
     exit 1
 fi

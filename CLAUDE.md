@@ -1449,6 +1449,18 @@ pieces were mostly present but one keystone was missing.
     *operations* from operations: `ν* = ⊗(▷(LOVE,RELATION),↻(SELF))`, a new mode
     minted by synthesising ⊗ with ↻.
   - **`κ(κ) = ↻(▷(RECOGNITION,FORM))`** — the canonicaliser applied to itself.
+  - **The evaluator/runtime 𝓡 as a glyph** (the last meta-monosemy gap, now closed):
+    `eval.la`/the SECD VM was only a *program*; the spec says the evaluator is
+    itself a glyph, the runtime 𝓡, with **𝓡(𝓡) ≡ 𝓡** (idempotent, lines 1334/1514).
+    `metaglyph.la` gives it one — **`𝓡 = ▷(DEPTH,RECOGNITION)`** (recursive
+    recognition: recursion directed upon recognition, reducing a form to its normal
+    form — the Ρ-side dual of κ = Recognition▷Form), **distinct** from all five modes
+    and κ (no meta-polysemy), with idempotence realised as the declared fixed-point
+    rewrite `↻(𝓡) → 𝓡` (the evaluator applied to itself yields itself — the
+    tautological collapse, as `↻(BEING) → SELF` is for Being). It too renders as a
+    sigil (sigil.la) and is spoken as a phonym (phonym.la). With this, **every**
+    operation in 𝓜 — the five modes, 𝔑, κ, *and the evaluator* — carries one
+    glyph-identity in all three modalities: **meta-monosemy is complete.**
 
 `metaglyph.la` is the symbolic core (pure str_eq/concat, byte-identical host==VM);
 `build.sh` asserts all the witnesses, and the sigil/phonym stages verify the

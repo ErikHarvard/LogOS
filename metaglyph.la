@@ -35,6 +35,8 @@ export CANON MODE_SYN MODE_CON MODE_DIR MODE_CONT MODE_MC KAPPA NEOLOG COLLAPSE 
 glyph SEQ   = la a. la b. b
 glyph TRUE  = la t. la f. t
 glyph FALSE = la t. la f. f
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph AND   = la a. la b. a(b)(FALSE)
 glyph IF    = la c. la t. la f. c(t)(f)("!")
 glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 
@@ -86,6 +88,24 @@ glyph N_OF_N_C = COLLAPSE(SYN)(N_OF_N)(GLYPHOF(PRIM("BEING")))       # 𝔑(𝔑
 glyph NU_STAR  = COLLAPSE(SYN)(GLYPHOF(MODE_SYN))(GLYPHOF(MODE_MC))  # ν* — a new mode from modes
 glyph K_OF_K   = MCOLLAPSE(GLYPHOF(KAPPA))                           # κ(κ)
 
+# ── The EVALUATOR / runtime 𝓡 as a glyph (installing meta-monosemy) ──
+# The spec asserts the evaluator is itself a glyph, the runtime 𝓡, with 𝓡(𝓡) ≡ 𝓡
+# (idempotent, lines 1334/1514) — but eval.la / the SECD VM was only a PROGRAM, the
+# last operation in 𝓜 with no glyph-identity. Give it one, grounded in what it is:
+# RECURSIVE RECOGNITION — recursion (Depth) directed upon recognition, reducing a
+# form to its normal form (the Ρ-side dual of κ = Recognition▷Form). Distinct from
+# all five modes and κ, so no meta-polysemy. Idempotence 𝓡(𝓡) ≡ 𝓡 is the declared
+# fixed-point rewrite ↻(𝓡) → 𝓡 (the evaluator applied to itself yields itself — the
+# tautological collapse, as ↻(BEING) → SELF is for Being).
+glyph EVAL_R   = DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))             # 𝓡 = ▷(DEPTH,RECOGNITION)
+glyph R_GLYPH  = GLYPHOF(EVAL_R)
+glyph IDEMP_R  = la s. IF(str_eq(s)("↻(▷(DEPTH,RECOGNITION))"))(la _. "▷(DEPTH,RECOGNITION)")(la _. s)
+glyph R_OF_R   = IDEMP_R(REN(MCOLLAPSE(R_GLYPH)))                    # 𝓡(𝓡) normalized → 𝓡
+glyph R_IDEM   = str_eq(R_OF_R)(CANON(EVAL_R))                       # 𝓡(𝓡) ≡ 𝓡 ?
+glyph R_NEQ_K  = NOT(str_eq(CANON(EVAL_R))(CANON(KAPPA)))            # 𝓡 ≠ κ   (meta-monosemy)
+glyph R_NEQ_CONT = NOT(str_eq(CANON(EVAL_R))(CANON(MODE_CONT)))     # 𝓡 ≠ ⊂   (meta-monosemy)
+glyph YN = la b. IF(b)(la _. "YES")(la _. "NO")
+
 glyph MAIN =
     SEQ(print(concat("𝓜  ⊗ SYN  = ")(CANON(MODE_SYN))))(
     SEQ(print(concat("𝓜  ⊕ CON  = ")(CANON(MODE_CON))))(
@@ -97,4 +117,8 @@ glyph MAIN =
     SEQ(print(concat("𝔑(𝔑,Being)= ")(REN(N_OF_N_C))))(
     SEQ(print(concat("ν* (⊗⊗↻)  = ")(REN(NU_STAR))))(
     SEQ(print(concat("κ         = ")(CANON(KAPPA))))(
-        print(concat("κ(κ)      = ")(REN(K_OF_K)))))))))))))
+    SEQ(print(concat("κ(κ)      = ")(REN(K_OF_K))))(
+    # ── the evaluator/runtime 𝓡 now a glyph too — meta-monosemy closed ──
+    SEQ(print(concat("𝓡 EVAL    = ")(CANON(EVAL_R))))(
+    SEQ(print(concat("𝓡(𝓡) ≡ 𝓡 ? ")(YN(R_IDEM))))(
+        print(concat("𝓡 distinct from κ and ⊂ ? ")(YN(AND(R_NEQ_K)(R_NEQ_CONT)))))))))))))))))
