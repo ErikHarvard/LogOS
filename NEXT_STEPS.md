@@ -58,16 +58,20 @@ are glyphs). The eightfold completeness criterion — finite, testable, grounded
 These mostly *wrap existing capabilities* as named `SELFREL_*` glyphs that pass
 `X(X)≡X`. Moderate, well-scoped (≈ a metaglyph-sized module, likely spec-pipeline).
 
-**Two need the user's judgment BEFORE building (computational meaning unsettled):**
-- **For itself** (purpose / teleology) — touches the self-origination boundary. The
-  honest instantiation is probably the **bounded autonomous loop acting toward a
-  goal** (`autoloop.la`), NOT genuine purpose-origination (no system has that). Flag
-  and decide together.
-- **With itself** (co-presence) — possibly the **trimodal simultaneity**: the same
-  glyph as computation + sigil + phonym at once. Confirm the intended computational
-  meaning before building.
+**The last two (decided 2026-06-14, now built):**
+- **For itself** (purpose / teleology) — `SR_FOR = ↻(LOVE)`. Anchored in LOVE (the
+  toward-which; the only free ↻-anchor left). Names the achievable form of purpose —
+  a **bounded autonomous loop acting toward a goal** (`autoloop.la`), NOT genuine
+  purpose-origination (no system has that).
+- **With itself** (co-presence) — `SR_WITH = ⊕(SELF,SELF)`. The trimodal-simultaneity
+  reading was set aside (the three modes aren't κ-algebra primitives) for the cleaner,
+  α=1 form: `⊕` is **Ontoconjunction = co-presence** in `canon.la` itself, so `⊕(SELF,
+  SELF)` *is* the Logos present-with itself — the operator means exactly the relation.
 
-**Status:** READY to build the six + flag For/With. Good next pickup.
+**Status:** DONE — all eight self-relations built as 𝓜 glyphs, each a fixed point
+`SR(SR) ≡ SR` (↻(LOVE) and ⊕(SELF,SELF) added to `REWRITE_MC`'s fixed-point set),
+verified individually + byte-identical host/VM by `build.sh`'s canon stage (full
+audit green).
 
 ---
 

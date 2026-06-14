@@ -714,7 +714,7 @@ say "Spec pipeline: κ + etymology-bearing glyphs (canon_spec.la — autological
 CK="$(./tiny_host canon_spec.la 2>/dev/null)"
 ok=1
 for G in Z TRUE FALSE NOT AND OR PRIM SYN CON DIR CONT MC CANON IS LAW_ID LAW_NC LAW_EM KAPPA \
-         REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH \
+         REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH SR_FOR SR_WITH \
          IF MAX TDEPTH MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK \
          BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
     printf '%s\n' "$CK" | grep -qx "  $G: PASS" || { echo "FAIL  canon: $G not verified"; ok=0; }
@@ -727,7 +727,7 @@ printf '%s\n' "$CK" | grep -q "module VERIFIED" || { echo "FAIL  canon: module n
 for G in TRUE FALSE NOT AND OR IS LAW_ID LAW_NC LAW_EM IF MAX MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK; do
     printf '%s\n' "$CK" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  canon: $G not type-checked OK"; ok=0; }
 done
-for G in PRIM SYN CON DIR CONT MC CANON KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH TDEPTH BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
+for G in PRIM SYN CON DIR CONT MC CANON KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH SR_FOR SR_WITH TDEPTH BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
     printf '%s\n' "$CK" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  canon: $G not reported untyped/trusted"; ok=0; }
 done
 # Run the GENERATED canon.la stand-alone. The witness has three parts joined by
