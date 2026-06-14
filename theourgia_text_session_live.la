@@ -93,13 +93,30 @@ glyph APPLY_KEY = la st. la c.
     IF(int_eq(c)(KEY_DOWN)) (la _. MOVE(st)(0)(STEP_PX))(la _.
     IF(int_eq(c)(KEY_UP))   (la _. MOVE(st)(0)(NEGSTEP))(la _.
     st))))
+# POSSTR renders the window's top-left "x,y" for the move log.
+glyph POSSTR = la st. st(la x. la y. concat(int_to_str(x))(concat(",")(int_to_str(y))))
+# STEP, instrumented: on a key PRESS, log code + the (old -> new) position so a
+# non-arrow press shows up as an unchanged move and a phantom press is visible.
 glyph STEP = la st. la e.
-    IF(IS_KEY_PRESS(e))(la _. APPLY_KEY(st)(EV_CODE(e)))(la _. st)
+    IF(IS_KEY_PRESS(e))(la _.
+        (la st2.
+            SEQ(print(concat("  key-press code=")(concat(int_to_str(EV_CODE(e)))
+                (concat(" pos ")(concat(POSSTR(st))(concat(" -> ")(POSSTR(st2))))))))
+                (st2))
+        (APPLY_KEY(st)(EV_CODE(e))))
+    (la _. st)
 
 # ── DRAIN_STEP — the multiplexed fold (UNCHANGED): apply EVERY ready event ──
+# EVLINE renders a decoded event as one log line.
+glyph EVLINE = la e. concat("evt type=")(concat(int_to_str(EV_TYPE(e)))
+    (concat(" code=")(concat(int_to_str(EV_CODE(e)))
+    (concat(" value=")(int_to_str(EV_VALUE(e)))))))
 glyph DRAIN_STEP = Z(la self. la reader. la st. la ready.
     IF(IS_CONS(ready))(la _.
-        self(reader)(STEP(st)(reader(LIST_HD(ready))))(LIST_TL(ready)))
+        (la e.
+            SEQ(print(EVLINE(e)))(
+            self(reader)(STEP(st)(e))(LIST_TL(ready))))
+        (reader(LIST_HD(ready))))
     (la _. st))
 
 # ── Efficient framebuffer builder: build the XRGB8888 image DIRECTLY ──
@@ -228,10 +245,13 @@ glyph SHOW_TEST_PATTERN = la dims.
 # → bounded dump under TCO).
 glyph LIVE_READ = la fd. read(fd)("24")
 glyph LIVE = Z(la self. la st. la dims. la fds.
-    (la st2.
-        SEQ(present(st2(la x. la y. RENDER_FRAME(dims)(x)(y))))
-            (self(st2)(dims)(fds)))
-    (DRAIN_STEP(LIVE_READ)(st)(SPLIT(poll(JOIN(fds))("-1")))))
+    (la ready_str.
+        SEQ(print(concat("poll-wake ready=[")(concat(ready_str)("]"))))(
+        (la st2.
+            SEQ(present(st2(la x. la y. RENDER_FRAME(dims)(x)(y))))
+                (self(st2)(dims)(fds)))
+        (DRAIN_STEP(LIVE_READ)(st)(SPLIT(ready_str)))))
+    (poll(JOIN(fds))("-1")))
 
 # ── Auto-detection: find a device's eventN by name in /proc/bus/input/devices ──
 glyph STARTSW = Z(la self. la s. la p.
@@ -282,7 +302,7 @@ glyph MAIN =
             SEQ(print(concat("text-session: keyboard = ")(DEVPATH(KBD_DIGITS))))(
             (la kbd. (la fds. (la dims.
                 SEQ(SHOW_TEST_PATTERN(dims))(
-                SEQ(print("text-session: live — arrow keys move the text window (40px), Ctrl+C to stop"))(
+                SEQ(print(concat("text-session: live at pos ")(concat(POSSTR(START_POS))(" — arrow keys move 40px, Ctrl+C to stop"))))(
                 LIVE(START_POS)(dims)(fds))))
               (SPLIT(SEQ(print("text-session: reached DRM step — devices open, calling drm_mode to take the screen"))(drm_mode("!")))))
              (BUILD_FDS(kbd)))

@@ -89,8 +89,16 @@ echo
 # Run as root: needs device-read for /dev/input AND DRM master for scanout.
 # No strace here — the session loops forever; the VM's own per-call DRM error
 # reporting names any failing ioctl on stderr if scanout breaks.
-sudo ./logos_secd
+# Event log: the console is hidden behind DRM scanout during the session, so the
+# VM's stdout/stderr (startup lines, per-event 'evt ...' / 'key-press ...' /
+# 'poll-wake ...' lines, and any 'secd: ...' error) go to a file we cat after.
+LOGF="/tmp/logos_term_$(date +%s).log"
+echo "   event log -> $LOGF  (cat it after the session)"
+sudo ./logos_secd >"$LOGF" 2>&1
 echo "   VM exit=$?"
+echo
+echo "== event log tail ($LOGF) =="
+tail -n 40 "$LOGF" 2>/dev/null
 
 echo
 echo "== session ended; restoring desktop =="
