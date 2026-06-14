@@ -1718,7 +1718,7 @@ ok=1
 check_phonym () {  # $1 = engine label, $2 = stdout file
     [ "$(head -c 4 phonyms.wav)" = "RIFF" ]                     || { echo "FAIL  phonym($1): not a RIFF WAV"; ok=0; }
     [ "$(dd if=phonyms.wav bs=1 skip=8 count=4 2>/dev/null)" = "WAVE" ] || { echo "FAIL  phonym($1): no WAVE tag"; ok=0; }
-    [ "$(stat -c%s phonyms.wav)" = "327404" ]                   || { echo "FAIL  phonym($1): size $(stat -c%s phonyms.wav) != 327404 (9 primitives + 3 generated + 2 modes)"; ok=0; }
+    [ "$(stat -c%s phonyms.wav)" = "314284" ]                   || { echo "FAIL  phonym($1): size $(stat -c%s phonyms.wav) != 314284 (Compassion now ⊗-compressed: max not sum)"; ok=0; }
     [ "$(tr -d '\000' < phonyms.wav | wc -c)" -gt 100000 ]      || { echo "FAIL  phonym($1): waveform is (near) silent"; ok=0; }
     # PSC* generated the phonym from structure — the printed witness IS the κ-spec:
     [ "$(grep -c 'PSC\*' "$2")" = "5" ]                         || { echo "FAIL  phonym($1): expected 5 PSC* witnesses, got $(grep -c 'PSC\*' "$2")"; ok=0; }

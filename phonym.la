@@ -235,9 +235,20 @@ glyph PHON_PRIM = la nm.
     IF(str_eq(nm)("DEPTH"))      (la _. PAIR(6000)(PH_DEPTH))(la _.
     PAIR(0)(la i. 0))))))))))
 
-# ⊗ smooth fusion: A then B, one breath (lengths add; gen dispatches).
+# ⊗ TOPOLOGICAL SYNTHESIS (𝔑 — neologistic compression). Not concatenation (which
+# would be the sum of durations, both parents in full but uncompressed) and not the
+# spec's spectral averaging (which smears both formant structures into an
+# un-invertible midpoint). Instead: both parents are rendered over ONE time-
+# compressed window of length max(np,nq) (spec 4233: |πC| ≤ max of parents) and
+# SUMMED. Superposition (not interpolation) keeps BOTH parents' spectra present —
+# both formant peak-sets and both glottal periodicities survive — so a listener
+# hears Love's and Recognition's signatures inside the compressed Compassion, and
+# Θ_P (the spectral/pitch invariants) of each parent is recoverable from the
+# compound. This is the audio parallel of preserving etymology in the visual form.
 glyph SYNP  = la p. la q. (la np. la gp. la nq. la gq.
-    PAIR(add(np)(nq))(la i. IF(lt(i)(np))(la _. gp(i))(la _. gq(sub(i)(np)))))
+    (la n. PAIR(n)(la i.
+        div(add(gp(div(mul(i)(np))(n)))(gq(div(mul(i)(nq))(n))))(2)))
+     (MAX(np)(nq)))
     (FST(p))(SND(p))(FST(q))(SND(q))
 # ⊕ glottal pause: A, 960-sample /ʔ/ closure (silence), B.
 glyph CONP  = la p. la q. (la np. la gp. la nq. la gq.
