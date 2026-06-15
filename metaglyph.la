@@ -29,7 +29,7 @@
 #  Pure generation (only str_eq/concat) ⇒ byte-identical on the C host and native VM.
 # ═══════════════════════════════════════════════════════════════════
 
-export CANON MODE_SYN MODE_CON MODE_DIR MODE_CONT MODE_MC KAPPA NEOLOG COLLAPSE GLYPHOF REN ETYM
+export CANON MODE_SYN MODE_CON MODE_DIR MODE_CONT MODE_MC KAPPA NEOLOG COLLAPSE GLYPHOF REN ETYM MKOP APPLYOP SHAPE
 
 # ── Foundations ──
 glyph SEQ   = la a. la b. b
@@ -88,6 +88,46 @@ glyph N_OF_N_C = COLLAPSE(SYN)(N_OF_N)(GLYPHOF(PRIM("BEING")))       # 𝔑(𝔑
 glyph NU_STAR  = COLLAPSE(SYN)(GLYPHOF(MODE_SYN))(GLYPHOF(MODE_MC))  # ν* — a new mode from modes
 glyph K_OF_K   = MCOLLAPSE(GLYPHOF(KAPPA))                           # κ(κ)
 
+# ── ITEM 3b — a minted operation is a USABLE COMBINATOR, not just a name ─────
+# The audit found 𝔑(𝔑) / ν* produced a sealed MONO (a ren+etym pair) — a NAME you
+# could read but not APPLY (applying a MONO to operands throws "non-function").
+# Meta-ontoneologization must mint OPERATIONS you can compute with. So: read the
+# minted operator's ETYMOLOGY as a TEMPLATE. Its base-mode structure (⊗⊕▷⊂↻) is
+# scaffolding; its primitive slots are OPERAND-HOLES. SHAPE pours one operand into
+# every primitive slot of a sub-template, preserving the mode skeleton; APPLYOP
+# pours operand a down the left sub-template and b down the right (unary top ↻ takes
+# only a). MKOP lifts any sealed operator-glyph into the binary combinator it names.
+# The result is an ordinary decomposition node — CANON / SIGIL / PHONYM all walk it —
+# whose action is fixed by the operator's name (α=1: the whole etymology, not just
+# the top symbol, determines what the operator does). Pure node-building ⇒ host==VM.
+glyph SHAPE = Z(la self. la sub. la x.
+    sub
+        (la nm. x)
+        (la a. la b. SYN(self(a)(x))(self(b)(x)))
+        (la a. la b. CON(self(a)(x))(self(b)(x)))
+        (la a. la b. DIR(self(a)(x))(self(b)(x)))
+        (la a. la b. CONT(self(a)(x))(self(b)(x)))
+        (la a. MC(self(a)(x))))
+glyph APPLYOP = la etym. la a. la b.
+    etym
+        (la nm. PRIM(nm))
+        (la l. la r. SYN(SHAPE(l)(a))(SHAPE(r)(b)))
+        (la l. la r. CON(SHAPE(l)(a))(SHAPE(r)(b)))
+        (la l. la r. DIR(SHAPE(l)(a))(SHAPE(r)(b)))
+        (la l. la r. CONT(SHAPE(l)(a))(SHAPE(r)(b)))
+        (la l. MC(SHAPE(l)(a)))
+glyph MKOP    = la g. APPLYOP(ETYM(g))                               # operator-glyph → combinator
+
+glyph OPA     = PRIM("A")
+glyph OPB     = PRIM("B")
+glyph NU_OP   = MKOP(NU_STAR)                                        # ν* as a usable mode
+glyph NN_OP   = MKOP(N_OF_N)                                         # 𝔑(𝔑) as a usable mode
+glyph NU_APP  = CANON(NU_OP(OPA)(OPB))                               # ⊗(▷(A,A),↻(B))
+glyph NN_APP  = CANON(NN_OP(OPA)(OPB))                               # ⊗(▷(A,A),▷(B,B))
+glyph PLAIN_S = CANON(SYN(OPA)(OPB))                                 # ⊗(A,B) — plain ⊗
+glyph NU_NEW  = NOT(str_eq(NU_APP)(PLAIN_S))                         # ν* ≢ plain ⊗ (a genuinely new mode)
+glyph OP_DET  = NOT(str_eq(NU_APP)(NN_APP))                          # ν* action ≠ 𝔑(𝔑) action (name fixes action)
+
 # ── The EVALUATOR / runtime 𝓡 as a glyph (installing meta-monosemy) ──
 # The spec asserts the evaluator is itself a glyph, the runtime 𝓡, with 𝓡(𝓡) ≡ 𝓡
 # (idempotent, lines 1334/1514) — but eval.la / the SECD VM was only a PROGRAM, the
@@ -118,7 +158,12 @@ glyph MAIN =
     SEQ(print(concat("ν* (⊗⊗↻)  = ")(REN(NU_STAR))))(
     SEQ(print(concat("κ         = ")(CANON(KAPPA))))(
     SEQ(print(concat("κ(κ)      = ")(REN(K_OF_K))))(
+    # ── item 3b: a minted operation is a USABLE combinator (apply it to operands) ──
+    SEQ(print(concat("ν*·apply(A,B)   = ")(NU_APP)))(
+    SEQ(print(concat("𝔑(𝔑)·apply(A,B) = ")(NN_APP)))(
+    SEQ(print(concat("ν* is a NEW mode (≢ plain ⊗) ? ")(YN(NU_NEW))))(
+    SEQ(print(concat("minted op's action fixed by its name ? ")(YN(OP_DET))))(
     # ── the evaluator/runtime 𝓡 now a glyph too — meta-monosemy closed ──
     SEQ(print(concat("𝓡 EVAL    = ")(CANON(EVAL_R))))(
     SEQ(print(concat("𝓡(𝓡) ≡ 𝓡 ? ")(YN(R_IDEM))))(
-        print(concat("𝓡 distinct from κ and ⊂ ? ")(YN(AND(R_NEQ_K)(R_NEQ_CONT)))))))))))))))))
+        print(concat("𝓡 distinct from κ and ⊂ ? ")(YN(AND(R_NEQ_K)(R_NEQ_CONT)))))))))))))))))))))

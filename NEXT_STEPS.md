@@ -50,8 +50,16 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    meta-neologization.** *Status:* **partial — half built, half open.** (a) Single-sigil
    compression with inherited/recoverable etymology — **BUILT** (the Sealing, committed
    `278cdaf`, tag `verified-2026-06-14-278cdaf`). (b) **Meta-neologization 𝔑(𝔑) generating
-   new OPERATIONS** — **OPEN** (audit: a minted ν* is a name, not a usable combinator;
-   applying it throws "non-function").
+   new OPERATIONS** — **BUILT** (`metaglyph.la` `MKOP`/`APPLYOP`/`SHAPE`; `PASS metaglyph`).
+   A minted operator is no longer a bare name: `MKOP` lifts a sealed operator-glyph into a
+   **usable binary combinator** by reading its etymology as a TEMPLATE — base-mode structure
+   (⊗⊕▷⊂↻) is scaffolding, primitive slots are operand-holes (`SHAPE` pours an operand into
+   every slot; `APPLYOP` sends operand a down the left sub-template, b down the right; a unary
+   ↻ top takes only a). So `ν* = ⊗(▷(LOVE,RELATION),↻(SELF))` applied to `(A,B)` builds the
+   real node `⊗(▷(A,A),↻(B))` — CANON/SIGIL/PHONYM all walk it — and `𝔑(𝔑)` applied to `(A,B)`
+   builds `⊗(▷(A,A),▷(B,B))`. Verified: the minted mode is genuinely NEW (≢ plain ⊗) and its
+   action is fixed by its NAME (distinct operators act distinctly — α=1 for operations).
+   Byte-identical host==VM. The whole of item 3 is now built.
 
 4. **The Word / Logos is the Meta-Word of the system and needs its own dedicated sigil.**
    *Status:* **built.** The Logos Λ (the self-structuring principle the whole language

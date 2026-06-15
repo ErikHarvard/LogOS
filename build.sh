@@ -2003,6 +2003,10 @@ check_meta () {  # $1 = engine label, $2 = output file
     grep -q '𝔑(𝔑,Being)= ⊗(⊗(▷(LOVE,RELATION),▷(LOVE,RELATION)),BEING)' "$2" || { echo "FAIL  metaglyph($1): 𝔑(𝔑,Being)=G_{⊗⊗Being} missing"; ok=0; }
     grep -q 'ν\* (⊗⊗↻)  = ⊗(▷(LOVE,RELATION),↻(SELF))' "$2"          || { echo "FAIL  metaglyph($1): ν* (new operation from operations) missing"; ok=0; }
     grep -q 'κ(κ)      = ↻(▷(RECOGNITION,FORM))' "$2"               || { echo "FAIL  metaglyph($1): κ(κ) missing"; ok=0; }
+    grep -q 'ν\*·apply(A,B)   = ⊗(▷(A,A),↻(B))' "$2"                || { echo "FAIL  metaglyph($1): item 3b — minted ν* not a usable combinator (applying it should yield ⊗(▷(A,A),↻(B)), not throw)"; ok=0; }
+    grep -q '𝔑(𝔑)·apply(A,B) = ⊗(▷(A,A),▷(B,B))' "$2"              || { echo "FAIL  metaglyph($1): item 3b — 𝔑(𝔑) does not apply as an operation"; ok=0; }
+    grep -q 'ν\* is a NEW mode (≢ plain ⊗) ? YES' "$2"              || { echo "FAIL  metaglyph($1): item 3b — minted ν* collapses to plain ⊗ (not a new mode)"; ok=0; }
+    grep -q 'minted op'\''s action fixed by its name ? YES' "$2"    || { echo "FAIL  metaglyph($1): item 3b — distinct minted ops act identically (α=1 violated: name must fix action)"; ok=0; }
     grep -q '𝓡 EVAL    = ▷(DEPTH,RECOGNITION)' "$2"                 || { echo "FAIL  metaglyph($1): evaluator 𝓡 has no glyph-identity"; ok=0; }
     grep -q '𝓡(𝓡) ≡ 𝓡 ? YES' "$2"                                  || { echo "FAIL  metaglyph($1): 𝓡(𝓡) ≡ 𝓡 idempotence not exhibited"; ok=0; }
     grep -q '𝓡 distinct from κ and ⊂ ? YES' "$2"                    || { echo "FAIL  metaglyph($1): 𝓡 shares a glyph with another operation (meta-polysemy)"; ok=0; }
@@ -2019,7 +2023,7 @@ check_meta "native VM" meta_vm.out
 cmp -s meta_host.out meta_vm.out || { echo "FAIL  metaglyph: native witnesses != C host witnesses"; ok=0; }
 rm -f meta_host.out meta_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  metaglyph: the five modes + 𝔑 + κ + the evaluator 𝓡 carry glyph-identities (𝓜 ⊂ 𝒜 closed); 𝔑(𝔑) self-applies, ν* mints new operations, κ(κ) defined, 𝓡(𝓡)≡𝓡 idempotent + distinct (meta-monosemy), byte-identical on host and native VM"
+    echo "PASS  metaglyph: the five modes + 𝔑 + κ + the evaluator 𝓡 carry glyph-identities (𝓜 ⊂ 𝒜 closed); 𝔑(𝔑) self-applies, ν* mints new operations — now USABLE combinators (MKOP lifts a minted operator-glyph into a binary mode; ν*(A,B)=⊗(▷(A,A),↻(B)), a new mode whose action its name fixes — item 3b), κ(κ) defined, 𝓡(𝓡)≡𝓡 idempotent + distinct (meta-monosemy), byte-identical on host and native VM"
 else
     exit 1
 fi
