@@ -1882,6 +1882,63 @@ else
     exit 1
 fi
 
+say "Deep geometry (item 7): a sigil's form DERIVED from ONF graph features (onf.la + topoderive.la)"
+# The spec's TopoEmbed (LINGUA_ADAMICA.tex :5485): a sigil's geometry is COMPUTED
+# from the concept's ONF GRAPH FEATURES (cycles/hierarchy/branching/automorphism),
+# not from the declared combining mode (which is what sigil.la's mode-walk does).
+# onf.la extracts the features by folding over the WHOLE canonicalized graph;
+# topoderive.la's DSIGIL composes geometry from them per the table. COEXISTS with
+# sigil.la (does not replace SIGIL). HONEST SCOPE: a 32×32 1-bit realization —
+# feature counts + the leaf-set, NOT WL colour classes / force-layout / colour.
+ok=1
+# (a) onf.la feature extraction — correct values + canonicality + host==VM byte-identical
+rm -f onf_host.out onf_vm.out logos_secd logos_program.bin logos_source.la
+./tiny_host onf.la > onf_host.out 2>/dev/null
+grep -qxF "onf Truth  = 1/1/0/0/N/RECOGNITION," onf_host.out         || { echo "FAIL  onf: ↻ cycle feature wrong"; ok=0; }
+grep -qxF "onf Nest3  = 0/2/2/2/N/VOID,FORM,DEPTH," onf_host.out      || { echo "FAIL  onf: ⊂ hierarchy feature (depth/containment) wrong"; ok=0; }
+grep -qxF "onf Auto   = 0/1/0/1/Y/SELF,SELF," onf_host.out           || { echo "FAIL  onf: automorphism (F_SYM, commutative equal operands) wrong"; ok=0; }
+ONFLR="$(sed -n 's/^onf LR     = //p' onf_host.out)"; ONFRL="$(sed -n 's/^onf RL     = //p' onf_host.out)"
+{ [ -n "$ONFLR" ] && [ "$ONFLR" = "$ONFRL" ]; }                       || { echo "FAIL  onf: feature extraction not canonical (⊗LR ≠ ⊗RL)"; ok=0; }
+./tiny_host secd.la >/dev/null 2>&1
+cp onf.la logos_source.la; ./tiny_host codegen.la >/dev/null 2>&1; ./logos_secd > onf_vm.out 2>/dev/null
+cmp -s onf_host.out onf_vm.out                                       || { echo "FAIL  onf: native feature extraction != host"; ok=0; }
+# (b) topoderive.la DSIGIL render — host==VM byte-identical (imports sigil.la + onf.la)
+rm -f td_host.out td_vm.out logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+./tiny_host topoderive.la > td_host.out 2>/dev/null
+cp topoderive.la logos_source.la; ./tiny_host codegen.la >/dev/null 2>&1; ./logos_secd > td_vm.out 2>/dev/null
+cmp -s td_host.out td_vm.out                                         || { echo "FAIL  topoderive: native DSIGIL render != host"; ok=0; }
+# (c) DSIGIL injectivity + canonicality + directionality (host-only render compare)
+cat > /tmp/t_dsig.la <<'LAEOF'
+import("topoderive.la")
+import("sigil.la")
+glyph SEQ = la a. la b. b
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph CELL = la s. la r. la c. IF(SIG_AT(s)(r)(c))(la _. "#")(la _. ".")
+glyph ROW = Z(la self. la s. la r. la c. IF(int_eq(c)(SZ))(la _. "")(la _. concat(CELL(s)(r)(c))(self(s)(r)(add(c)(1)))))
+glyph ASCII = Z(la self. la s. la r. IF(int_eq(r)(SZ))(la _. "")(la _. concat(concat(ROW(s)(r)(0))("|"))(self(s)(add(r)(1)))))
+glyph P = la lbl. la s. print(concat(lbl)(ASCII(s)(0)))
+glyph MAIN =
+  SEQ(P("injA=")(DSIGIL(SYN(PRIM("LOVE"))(PRIM("RECOGNITION")))))(
+  SEQ(P("injB=")(DSIGIL(SYN(PRIM("BEING"))(PRIM("VOID")))))(
+  SEQ(P("canA=")(DSIGIL(CON(PRIM("LOVE"))(PRIM("RECOGNITION")))))(
+  SEQ(P("canB=")(DSIGIL(CON(PRIM("RECOGNITION"))(PRIM("LOVE")))))(
+  SEQ(P("dirA=")(DSIGIL(DIR(PRIM("LOVE"))(PRIM("RECOGNITION")))))(
+      P("dirB=")(DSIGIL(DIR(PRIM("RECOGNITION"))(PRIM("LOVE")))))))))
+LAEOF
+DOUT="$(./tiny_host /tmp/t_dsig.la 2>/dev/null || true)"
+dg(){ printf '%s\n' "$DOUT" | sed -n "s/^$1=//p"; }
+{ [ -n "$(dg injA)" ] && [ "$(dg injA)" != "$(dg injB)" ]; }          || { echo "FAIL  topoderive: not injective (distinct ONF → same form)"; ok=0; }
+{ [ "$(dg canA)" = "$(dg canB)" ] && [ -n "$(dg canA)" ]; }           || { echo "FAIL  topoderive: not canonical (commutative ⊕ order changes form)"; ok=0; }
+[ "$(dg dirA)" != "$(dg dirB)" ]                                      || { echo "FAIL  topoderive: directional ▷ wrongly order-independent"; ok=0; }
+rm -f /tmp/t_dsig.la onf_host.out onf_vm.out td_host.out td_vm.out logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  deep geometry (item 7): onf.la extracts ONF graph features (cycles/hierarchy/branching/automorphism, canonical) + topoderive.la's DSIGIL derives geometry from them per the TopoEmbed table — injective (distinct ONF→distinct form via leaf-marks), order-independent for commutative modes, directional for ▷; byte-identical host==VM. (32×32 1-bit: feature counts + leaf-set, not WL/force-layout/colour.)"
+else
+    exit 1
+fi
+
 say "Phonym: the phonological modality — the nine phonyms synthesised + PSC* (LINGUA_ADAMICA.tex)"
 # phonym.la is the THIRD mode of the trimodal language (visual=sigil, computational
 # =primitives, phonological=here). It SYNTHESISES the nine primitive phonyms as

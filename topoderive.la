@@ -1,0 +1,101 @@
+# ═══════════════════════════════════════════════════════════════════
+#  topoderive.la — DEEP GEOMETRIC PIPELINE (item 7, Stage 2): derive a sigil's
+#  geometry from the concept's ONF GRAPH FEATURES, per the spec's
+#  Graph-Feature→Geometric-Primitive table (LINGUA_ADAMICA.tex :5485) — NOT from
+#  the declared combining mode (which is what sigil.la's mode-walk does).
+#
+#  DSIGIL(node) = DERIVE(ONF_FEAT(node)). ONF_FEAT (onf.la) canonicalizes then
+#  folds the WHOLE graph into a feature record; DERIVE composes geometry from it:
+#    hierarchy depth (FT_DEP)  → that many NESTED RINGS      (Nested containment)
+#    cycles ↻      (FT_CYC)    → that many central LOOPS      (Closed loops)
+#    branching     (FT_BR)     → that many radial ARMS        (Branching paths)
+#    automorphism  (FT_SYM)    → MIRROR the composite         (Symmetric placement)
+#    leaf-set      (FT_LV)     → each constituent's drawn sigil PLACEd at a slot
+#                                (the injectivity payload — distinct ONF ⇒ distinct form)
+#  PRIMITIVES stay DRAWN (a leaf has no interior to derive — spec-sanctioned atoms).
+#
+#  COEXISTS with sigil.la (does not replace SIGIL). Hand-written (imports sigil.la's
+#  drawing vocab + onf.la's features), byte-identical host == VM.
+#  HONEST SCOPE: a 32×32 1-bit realization — feature COUNTS + leaf-set, deterministic
+#  position formulae (NOT Weisfeiler–Lehman colour classes / force-directed layout /
+#  colour); gradients→colour dropped, as sigil.la drops it.
+# ═══════════════════════════════════════════════════════════════════
+
+import("sigil.la")    # OVERLAY RING SEG DOT DISK PLACE MIRRORH PRIM_SIGIL SZ SIG_AT PRIM SYN CON DIR CONT MC
+import("onf.la")      # ONF_FEAT FT_CYC FT_DEP FT_CONT FT_BR FT_SYM FT_LV
+
+export DSIGIL DERIVE
+
+# ── Foundations (privates of the imports are isolated; define our own) ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph OR    = la a. la b. a(TRUE)(b)
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph MAX1  = la d. IF(lt(d)(1))(la _. 1)(la _. d)
+glyph BLANK = la r. la c. FALSE
+
+# ── geometry layers (each maps one feature to one table row) ──
+# hierarchy depth → nested rings (radii 14,11,8,5)
+glyph RINGS_GO = Z(la self. la n. la rad.
+    IF(OR(int_eq(n)(0))(lt(rad)(3)))(la _. BLANK)(la _.
+        OVERLAY(RING(16)(16)(rad)(1))(self(sub(n)(1))(sub(rad)(3)))))
+glyph RINGS_N = la n. RINGS_GO(n)(14)
+# cycles (↻) → central closed loops (radii 5,3)
+glyph LOOPS_GO = Z(la self. la n. la rad.
+    IF(OR(int_eq(n)(0))(lt(rad)(2)))(la _. BLANK)(la _.
+        OVERLAY(RING(16)(16)(rad)(1))(self(sub(n)(1))(sub(rad)(2)))))
+glyph LOOPS_N = la c. LOOPS_GO(c)(5)
+# branching → radial arms at fixed directions (up/down/left/right/diagonals)
+glyph ARM = la i.
+    IF(int_eq(i)(0))(la _. SEG(16)(16)(3)(16)(1))(la _.
+    IF(int_eq(i)(1))(la _. SEG(16)(16)(29)(16)(1))(la _.
+    IF(int_eq(i)(2))(la _. SEG(16)(16)(16)(3)(1))(la _.
+    IF(int_eq(i)(3))(la _. SEG(16)(16)(16)(29)(1))(la _.
+    IF(int_eq(i)(4))(la _. SEG(16)(16)(5)(27)(1))(la _.
+    SEG(16)(16)(27)(5)(1))))))
+glyph ARMS_GO = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. BLANK)(la _.
+        OVERLAY(ARM(sub(n)(1)))(self(sub(n)(1)))))
+glyph ARMS_N = la b. ARMS_GO(b)
+# leaf-set → each constituent's drawn sigil placed at a corner slot (injectivity payload)
+glyph SLOT = la i. la sig.
+    IF(int_eq(i)(0))(la _. PLACE(sig)(2)(2)(10)(10))(la _.
+    IF(int_eq(i)(1))(la _. PLACE(sig)(2)(20)(10)(10))(la _.
+    IF(int_eq(i)(2))(la _. PLACE(sig)(20)(2)(10)(10))(la _.
+    PLACE(sig)(20)(20)(10)(10))))
+glyph LM_GO = Z(la self. la rest. la tok. la i.
+    IF(str_eq(rest)(""))(la _. BLANK)(la _.
+    IF(str_eq(str_head(rest))(","))(la _.
+        OVERLAY(SLOT(i)(PRIM_SIGIL(tok)))(self(str_tail(rest))("")(add(i)(1))))(la _.
+        self(str_tail(rest))(concat(tok)(str_head(rest)))(i))))
+glyph LEAFMARKS = la leaves. LM_GO(leaves)("")(0)
+# automorphism → mirror the composite (symmetric placement)
+glyph SYMFOLD = la s. la flag. IF(flag)(la _. OVERLAY(s)(MIRRORH(s)))(la _. s)
+
+# ── DERIVE — the composed geometry from the feature record ──
+glyph DERIVE = la feat.
+    SYMFOLD(
+        OVERLAY(RINGS_N(MAX1(FT_DEP(feat))))
+       (OVERLAY(LOOPS_N(FT_CYC(feat)))
+       (OVERLAY(ARMS_N(FT_BR(feat)))
+               (LEAFMARKS(FT_LV(feat))))))
+    (FT_SYM(feat))
+
+# ── DSIGIL — the deep renderer. Primitives stay drawn; compounds feature-derived. ──
+glyph IS_PRIM = la node. node (la nm. TRUE) (la a. la b. FALSE) (la a. la b. FALSE) (la a. la b. FALSE) (la a. la b. FALSE) (la a. FALSE)
+glyph NAMEOF  = la node. node (la nm. nm) (la a. la b. "") (la a. la b. "") (la a. la b. "") (la a. la b. "") (la a. "")
+glyph DSIGIL  = la node. IF(IS_PRIM(node))(la _. PRIM_SIGIL(NAMEOF(node)))(la _. DERIVE(ONF_FEAT(node)))
+
+# ── ASCII render for the self-test (host == VM) ──
+glyph CELL = la s. la r. la c. IF(SIG_AT(s)(r)(c))(la _. "#")(la _. ".")
+glyph ROW = Z(la self. la s. la r. la c. IF(int_eq(c)(SZ))(la _. "")(la _. concat(CELL(s)(r)(c))(self(s)(r)(add(c)(1)))))
+glyph ASCII = Z(la self. la s. la r. IF(int_eq(r)(SZ))(la _. "")(la _. concat(concat(ROW(s)(r)(0))("\n"))(self(s)(add(r)(1)))))
+glyph SHOW = la label. la s. SEQ(print(label))(print(ASCII(s)(0)))
+
+glyph MAIN =
+    SEQ(SHOW("@@@ Truth ↻(RECOGNITION)")(DSIGIL(MC(PRIM("RECOGNITION")))))(
+    SEQ(SHOW("@@@ Consc ⊗(RECOGNITION,SELF)")(DSIGIL(SYN(PRIM("RECOGNITION"))(PRIM("SELF")))))(
+    SEQ(SHOW("@@@ Nest3 ⊂(VOID,⊂(FORM,DEPTH))")(DSIGIL(CONT(PRIM("VOID"))(CONT(PRIM("FORM"))(PRIM("DEPTH"))))))(
+        SHOW("@@@ Auto ⊕(SELF,SELF)")(DSIGIL(CON(PRIM("SELF"))(PRIM("SELF")))))))

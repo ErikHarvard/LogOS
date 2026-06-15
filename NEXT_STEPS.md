@@ -93,23 +93,35 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    meta-autofoundation.** *Status:* **TESTED — NEGATIVE.** φ matched **0/15** measured
    geometric ratios (likewise no metallic mean); the geometry's organizing proportion is
    **binary 2:1** (grid 32/16/8; the recursive-nesting blend scales by 1/2, not 1/φ), with
-   √2 only as the lemniscate's intrinsic curve property (backlog item 5c). **Open
-   sub-question:** does building the true ONF / topological pipeline (item 7) change this?
-   Re-run the φ test on the *deep* geometry once 7 exists. **If φ still does not emerge
-   from the deep geometry, then 2:1 binary IS the honest geometry and we accept it.** Do
-   **NOT** force φ — an imposed φ is assigned, not derived, and breaks α=1 (item 1).
+   √2 only as the lemniscate's intrinsic curve property (backlog item 5c). **RESOLVED — the
+   open sub-question is answered:** the true deep pipeline (item 7, now built) was tested, and
+   **φ still does NOT emerge** from the derived geometry (ratios 1.27/1.38/1.6, arithmetic,
+   inconsistent). Structural reason confirmed: there is **no two-term additive recurrence**
+   anywhere — metacursion is `X(X)≡X` (`x²=x`, root 1), not `x²=x+1` (root φ). **Decision:
+   2:1 binary / arithmetic IS the honest geometry; accepted.** φ is never forced (an imposed φ
+   is assigned, not derived, and breaks α=1). Closed.
 
 7. **Build the true deep geometric pipeline — autopoietically unfold the ontoglyphic
-   geometry via the metacursive collapse of meta-topology — and test the Flower of Life /
-   Monad (Meta-Monad) foundation.** *Status:* **OPEN — the real gap.** The current geometry
-   is a **mode-tree walk**, NOT a true ONF-graph / Weisfeiler–Lehman topological pipeline
-   (backlog item 5b). **Build this regardless of φ** — the deep pipeline is needed on its
-   own merits (objective ONF→geometry derivation, item 1's α=1, the table's feature
-   analysis). The **Flower of Life / Monad geometry is NOT yet tested**: once the pipeline
-   exists, unfold the geometry from concept and *observe* whether the Flower-of-Life
-   structure emerges — **same discipline as φ: test, do not impose; "does not emerge" is a
-   legitimate accepted outcome.** Genuine self-similar geometry (item 6), if it exists at
-   all, would have to arise HERE — from the derivation, never stipulated.
+   geometry — and test the Flower of Life / Monad foundation.** *Status:* **BUILT** (`onf.la`
+   + `topoderive.la`; `PASS deep geometry`). The geometry is no longer a mode-tree walk:
+   `onf.la` extracts the concept's ONF **graph features** by folding over the whole
+   canonicalized graph — cycles (↻), hierarchy (depth + ⊂), branching (fan-out), automorphism
+   (commutative node with `IS`-equal operands), leaf-set — and `topoderive.la`'s **`DSIGIL`**
+   composes geometry from those features per the spec's table (depth→nested rings, cycles→
+   central loops, branching→radial arms, automorphism→mirror, leaves→placed constituent
+   sigils). It is **deterministic, canonical** (commutative order-independent, directional ▷
+   order-sensitive), and **injective** (distinct ONF → distinct form via the leaf-marks);
+   byte-identical host==VM; coexists with `sigil.la` (does not replace `SIGIL`). *Honest
+   scope:* a 32×32 1-bit realization — feature COUNTS + leaf-set, **not** the spec's iterated
+   WL colour classes / force-directed layout / colour.
+   **Stage-4 emergence tests (observed, not imposed):** (a) **φ does NOT emerge** on the
+   derived geometry (ring radii 14/11/8/5, arithmetic step-3 → ratios 1.27/1.38/1.6,
+   inconsistent; no two-term recurrence — metacursion is x²=x; accepted, see #6). (b)
+   **Flower of Life does NOT emerge** (concentric rings + arms + corner-marks, not a hexagonal
+   packing lattice; not imposed). (c) **`d_𝒪↔d_𝒫` proximity DOES emerge** — feature-distance
+   vs rendered-form Hamming-distance correlate at **0.863**: ontologically-close concepts
+   render to close forms. A real structure-preserving proximity in the geometric space (the
+   item-8 isomorphism *direction*).
 
 8. **Meta-topological meta-phonosemantics — Lingua Adamica derives the topology of
    meta-phonosemantics.** *Status:* **partial.** VERIFIED: the **invariant-preservation**
@@ -123,7 +135,13 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    (`:4402`). It verifies WHICH peaks survive a union, never HOW distances map. Closing it
    is a real build: **compute `φ` / the `d_𝒪↔d_𝒫` correspondence FROM ontological structure
    and VERIFY it — not stipulate it** (same don't-impose discipline as φ-the-ratio). Confirms
-   and extends the α=1 audit's already-noted phon-sem gap (item 3 / #3 below).
+   and extends the α=1 audit's already-noted phon-sem gap (item 3 / #3 below). **NOTE — the
+   proximity-isomorphism *direction* is now demonstrated in the VISUAL modality** (item 7:
+   feature-distance ↔ rendered-form distance correlate at 0.863), so the structure-preserving
+   `d_𝒪↔d_geometry` map is realized for sigils; the **phonetic** `d_𝒪↔d_𝒫` (acoustic) remains
+   the open build here — the same feature-distance approach could be ported to `psc.la`'s
+   formant space (compute acoustic distance from ontological structure and verify the
+   correlation), reusing `onf.la`'s feature extractor.
 
 **Working order is the author's call; each item ends only when verified.**
 

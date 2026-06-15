@@ -1,0 +1,98 @@
+# ═══════════════════════════════════════════════════════════════════
+#  onf.la — ONF graph FEATURE EXTRACTION (deep geometric pipeline, item 7,
+#  Stage 1). The spec's TopoEmbed (LINGUA_ADAMICA.tex) derives a sigil's
+#  geometry from the concept's ONF GRAPH FEATURES, not from the declared
+#  combining mode. This module computes those features by folding over the
+#  WHOLE decomposition (canonicalized first, for α=1), so it is genuinely a
+#  graph analysis — not the per-node mode dispatch sigil.la does.
+#
+#  Features (the spec's Graph-Feature→Geometric-Primitive table, :5485):
+#    F_CYCLES  — count of ↻ (metacursion) nodes = the system's cyclic structure
+#    F_DEPTH   — max nesting depth (= TDEPTH)        → Hierarchy
+#    F_CONT    — count of ⊂ (containment) nodes      → Hierarchy (semantic)
+#    F_BRANCH  — count of binary nodes (fan-out)     → Branching
+#    F_SYM     — any commutative ⊗/⊕ with IS-equal operands (an AUTOMORPHISM)
+#    F_LEAVES  — the constituent-primitive set (the injectivity payload)
+#  ONF_FEAT canonicalizes (CANONIQ — commutative sort + ↻(BEING)→SELF) BEFORE
+#  folding, so one concept ⇒ one feature record regardless of operand order.
+#
+#  Hand-written (like sigil.la — it shares the Scott algebra and is imported by
+#  topoderive.la). Pure str/int ops ⇒ byte-identical host == VM.
+#  HONEST SCOPE: features are structural COUNTS + the leaf-set, not the spec's
+#  iterated Weisfeiler–Lehman colour classes — sound but coarser.
+# ═══════════════════════════════════════════════════════════════════
+
+export F_CYCLES F_DEPTH F_CONT F_BRANCH F_SYM F_LEAVES ONF_FEAT FEAT_STR CANONIQ CANON IS FT_CYC FT_DEP FT_CONT FT_BR FT_SYM FT_LV
+
+# ── Foundations ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph OR    = la a. la b. a(TRUE)(b)
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph MAX   = la m. la n. IF(lt(m)(n))(la _. n)(la _. m)
+
+# ── Decomposition algebra — the SAME Scott six-way nodes canon.la/sigil.la walk ──
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+
+# ── κ + canonicalization (verbatim parity with canon.la NORMK / sigil.la CANONIQ) ──
+glyph CANON = Z(la self. la node. node (la nm. nm) (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("▷(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊂(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. concat("↻(")(concat(self(a))(")"))))
+glyph BYTE_LT = la a. la b. lt(str_to_int(ord(a)))(str_to_int(ord(b)))
+glyph STR_LE = Z(la self. la x. la y. IF(str_eq(x)(""))(la _. TRUE)(la _. IF(str_eq(y)(""))(la _. FALSE)(la _. (la hx. la hy. IF(BYTE_LT(hx)(hy))(la _. TRUE)(la _. IF(str_eq(hx)(hy))(la _. self(str_tail(x))(str_tail(y)))(la _. FALSE)))(str_head(x))(str_head(y)))))
+glyph IS = la a. la b. str_eq(CANON(a))(CANON(b))
+glyph SORTC = la mk. la a. la b. IF(STR_LE(CANON(a))(CANON(b)))(la _. mk(a)(b))(la _. mk(b)(a))
+glyph CANONIQ = Z(la self. la node.
+    node
+        (la nm. PRIM(nm))
+        (la a. la b. SORTC(SYN)(self(a))(self(b)))
+        (la a. la b. SORTC(CON)(self(a))(self(b)))
+        (la a. la b. DIR(self(a))(self(b)))
+        (la a. la b. CONT(self(a))(self(b)))
+        (la a. (la ca. IF(str_eq(CANON(ca))("BEING"))(la _. PRIM("SELF"))(la _. MC(ca)))(self(a))))
+
+# ── THE FEATURES — whole-graph folds (the genuine ONF analysis) ──
+# F_CYCLES: number of ↻ (metacursion) nodes — the only cyclic structure
+glyph F_CYCLES = Z(la self. la node. node (la nm. 0) (la a. la b. add(self(a))(self(b))) (la a. la b. add(self(a))(self(b))) (la a. la b. add(self(a))(self(b))) (la a. la b. add(self(a))(self(b))) (la a. add(1)(self(a))))
+# F_DEPTH: max nesting depth
+glyph F_DEPTH = Z(la self. la node. node (la nm. 0) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. la b. add(1)(MAX(self(a))(self(b)))) (la a. add(1)(self(a))))
+# F_CONT: number of ⊂ (containment) nodes
+glyph F_CONT = Z(la self. la node. node (la nm. 0) (la a. la b. add(self(a))(self(b))) (la a. la b. add(self(a))(self(b))) (la a. la b. add(self(a))(self(b))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. self(a)))
+# F_BRANCH: number of binary nodes (fan-out)
+glyph F_BRANCH = Z(la self. la node. node (la nm. 0) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. self(a)))
+# F_SYM: an automorphism present? (a commutative ⊗/⊕ node with IS-equal operands)
+glyph F_SYM = Z(la self. la node. node (la nm. FALSE) (la a. la b. OR(IS(a)(b))(OR(self(a))(self(b)))) (la a. la b. OR(IS(a)(b))(OR(self(a))(self(b)))) (la a. la b. OR(self(a))(self(b))) (la a. la b. OR(self(a))(self(b))) (la a. self(a)))
+# F_LEAVES: the ONF leaf-set, comma-terminated (the injectivity payload)
+glyph F_LEAVES = Z(la self. la node. node (la nm. concat(nm)(",")) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. la b. concat(self(a))(self(b))) (la a. self(a)))
+
+# ── the feature RECORD (a 6-field tuple) + accessors ──
+glyph MKFEAT = la c. la d. la o. la b. la s. la l. la f. f(c)(d)(o)(b)(s)(l)
+glyph FT_CYC  = la r. r(la c. la d. la o. la b. la s. la l. c)
+glyph FT_DEP  = la r. r(la c. la d. la o. la b. la s. la l. d)
+glyph FT_CONT = la r. r(la c. la d. la o. la b. la s. la l. o)
+glyph FT_BR   = la r. r(la c. la d. la o. la b. la s. la l. b)
+glyph FT_SYM  = la r. r(la c. la d. la o. la b. la s. la l. s)
+glyph FT_LV   = la r. r(la c. la d. la o. la b. la s. la l. l)
+# ONF_FEAT — canonicalize, THEN extract every feature (one concept ⇒ one record)
+glyph ONF_FEAT = la node. (la cn. MKFEAT(F_CYCLES(cn))(F_DEPTH(cn))(F_CONT(cn))(F_BRANCH(cn))(F_SYM(cn))(F_LEAVES(cn)))(CANONIQ(node))
+# render a record to text (for tests / inspection): cyc/dep/cont/br/sym/leaves
+glyph SLASH = la a. la b. concat(a)(concat("/")(b))
+glyph YN = la b. b("Y")("N")
+glyph FEAT_STR = la r. SLASH(int_to_str(FT_CYC(r)))(SLASH(int_to_str(FT_DEP(r)))(SLASH(int_to_str(FT_CONT(r)))(SLASH(int_to_str(FT_BR(r)))(SLASH(YN(FT_SYM(r)))(FT_LV(r))))))
+
+# ── self-test (host == VM): feature records for sample concepts ──
+glyph SH = la name. la node. print(concat(name)(FEAT_STR(ONF_FEAT(node))))
+glyph T1 = SH("onf Truth  = ")(MC(PRIM("RECOGNITION")))
+glyph T2 = SH("onf Consc  = ")(SYN(PRIM("RECOGNITION"))(PRIM("SELF")))
+glyph T3 = SH("onf Nest3  = ")(CONT(PRIM("VOID"))(CONT(PRIM("FORM"))(PRIM("DEPTH"))))
+glyph T4 = SH("onf Auto   = ")(CON(PRIM("SELF"))(PRIM("SELF")))
+glyph T5 = SH("onf LR     = ")(SYN(PRIM("LOVE"))(PRIM("RECOGNITION")))
+glyph T6 = SH("onf RL     = ")(SYN(PRIM("RECOGNITION"))(PRIM("LOVE")))
+glyph MAIN = SEQ(T1)(SEQ(T2)(SEQ(T3)(SEQ(T4)(SEQ(T5)(T6)))))

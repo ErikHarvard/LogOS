@@ -34,7 +34,7 @@
 #  predicate model has no colour channel — the topology is what is preserved.
 # ═══════════════════════════════════════════════════════════════════
 
-export SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL LOGOS
+export SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL LOGOS OVERLAY RING SEG DOT DISK PLACE MIRRORH
 
 # ── Foundations ──
 glyph SEQ   = la a. la b. b
