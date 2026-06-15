@@ -201,3 +201,56 @@ synthesises), `/v/` its voiced-labiodental low resonance — so `Θ_P(LOVE) ≠ 
 real acoustic feature, not a synthetic tag.
 
 **Before / after:** *(to be measured: distinction 27/28 → ?, concordance 0.73 → ?)*
+
+---
+
+## 5. Complexity-one under deep composition — measured, and the bounding meta-pattern
+
+**Stress test** (`tiny_host`, host): seal a depth-N chain `g(0)=BEING; g(n)=▷(LOVE,g(n-1))`
+and measure the rendered 32×32 `DSIGIL`.
+
+| depth | FT_DEP | FT_BR | ink (set px) | Hamming to prev render |
+|------:|-------:|------:|-------------:|-----------------------:|
+| 1  | 1  | 1  | 145 | — |
+| 5  | 5  | 5  | 380 | — |
+| 10 | 10 | 10 | 393 | `h(5,10) = 13` |
+| 20 | 20 | 20 | 393 | `h(10,20) = 0` |
+
+**Finding 1 — visual complexity SATURATES; it does not blow up.** Ink rises 145 → 380 → 393
+then plateaus; the form stays simple and renderable at any depth. Structural, not accidental:
+the feature→mark maps are hard-capped (`topoderive.la`: `RINGS_N` radii 14/11/8/5 → ≤4 rings;
+`LOOPS_N` ≤2; `ARM` 6 distinct directions; `SLOT` 4 corners). "Complexity-one" holds in the
+renderable sense — the glyph never collapses into an unrenderable dense blob.
+
+**Finding 2 — distinguishability COLLAPSES past saturation.** `Hamming(10,20) = 0`: depth-10
+and depth-20 — structurally distinct (FT_DEP/FT_BR 10 vs 20) — render to the **byte-identical**
+sigil. The flat render is **not injective at depth**: beyond ~depth 10 the etymology is **not
+recoverable from the rendered marks**. This is the projection bound (§2) at the visual leaf,
+exactly where §2a places it (the composites). Etymology stays recoverable *structurally* (ONF
+features keep growing; `glyphdag.la`'s DAG node-count is linear and `DECOMP` rebuilds the full
+tree) — but NOT from the planar render. The two findings are one bound from two sides: planar
+marks saturate (bounded — good) and saturation erases distinctions (lossy at depth). Flat
+rendering trades injectivity for renderability.
+
+**The bounding meta-pattern — the FRACTAL MONOGLYPH (scale-recursive sealing).** The fix is
+*not* more marks (that saturates → entropy) but moving depth off the **planar** axis onto the
+**scale / zoom** axis:
+
+> A sealed glyph renders as ONE bounded mark at its own scale; its constituents are recovered
+> by **zooming in** — each leaf-mark is itself a sealed sub-glyph rendered at the next scale,
+> recursively, to a chosen zoom depth. `SIGIL(seal(a,b))` = a bounded top-level composition of
+> *scaled-down* `SIGIL(a)`, `SIGIL(b)` placed within it. Visible complexity **per scale** stays
+> primitive-bounded; the recoverable depth lives in the (free) zoom dimension; etymology is
+> recovered by recursive **decomposition** (`DECOMP`), never by accumulating marks at one scale.
+
+This is **self-similar / fractal**: "deeper not larger" = deeper *in scale*, not *denser in
+marks* — the visual realization of `glyphdag.la`'s linear-node "deeper not larger," and of the
+corpus's own ◎ (a form containing a smaller form). It keeps deep compression from collapsing
+into unrenderable entropy because planar density is held constant at every zoom level while the
+etymology accumulates in the unbounded-but-cheap zoom axis (as the DAG grows linearly). The
+current `DSIGIL` already implements exactly ONE level of it — leaf-marks place each constituent's
+`PRIM_SIGIL` at a slot — then stops; that single flat level is *why* it saturates. The principle
+makes the placement **recursive** (`DSIGIL(constituent)` scaled into the slot, bounded slot-budget
+per scale). **Honest limit (the asymptote, unrepealed):** a finite raster bottoms out at a minimum
+legible scale, so zoom depth is unbounded in principle but bounded by pixel size on any one
+physical rendering. Recognized, not collapsed.
