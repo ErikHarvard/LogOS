@@ -64,6 +64,30 @@ glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
 glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
 glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
 
+# ── α=1 CANONICALIZATION — render the canonical CONCEPT, not the raw expression ──
+# The audit found the render was order-dependent: ⊗(Love,Recognition) and
+# ⊗(Recognition,Love) are ONE commutative concept (κ/NORMK collapse them) yet drew
+# two different sigils — an α<1 injectivity leak (the sign no longer uniquely IS the
+# referent). CANONIQ normalizes a decomposition to canon.la's NORMK equivalence
+# theory BEFORE it is drawn: commutative ⊗/⊕ operands sorted byte-lexicographically
+# by their canonical key, plus the one declared algebraic rewrite ↻(BEING)→SELF
+# (∃(∃)≡SELF). So one concept ⇒ one form, regardless of how it was written.
+# CANON = the prefix-notation canonical key (the SAME shape canon.la's CANON emits).
+glyph CANON = Z(la self. la node. node (la nm. nm) (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("▷(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊂(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. concat("↻(")(concat(self(a))(")"))))
+glyph BYTE_LT = la a. la b. lt(str_to_int(ord(a)))(str_to_int(ord(b)))
+glyph STR_LE = Z(la self. la x. la y. IF(str_eq(x)(""))(la _. TRUE)(la _. IF(str_eq(y)(""))(la _. FALSE)(la _. (la hx. la hy. IF(BYTE_LT(hx)(hy))(la _. TRUE)(la _. IF(str_eq(hx)(hy))(la _. self(str_tail(x))(str_tail(y)))(la _. FALSE)))(str_head(x))(str_head(y)))))
+# sort a commutative node's two already-canonical children into byte-lex order
+glyph SORTC = la mk. la a. la b. IF(STR_LE(CANON(a))(CANON(b)))(la _. mk(a)(b))(la _. mk(b)(a))
+glyph CANONIQ = Z(la self. la node.
+    node
+        (la nm. PRIM(nm))
+        (la a. la b. SORTC(SYN)(self(a))(self(b)))           # ⊗ commutative → sort
+        (la a. la b. SORTC(CON)(self(a))(self(b)))           # ⊕ commutative → sort
+        (la a. la b. DIR(self(a))(self(b)))                  # ▷ directional → keep
+        (la a. la b. CONT(self(a))(self(b)))                 # ⊂ directional → keep
+        (la a. (la ca. IF(str_eq(CANON(ca))("BEING"))         # ↻(BEING) → SELF (∃(∃))
+                          (la _. PRIM("SELF"))(la _. MC(ca)))(self(a))))
+
 # ── Canvas geometry (32×32: the catalogue forms are curve-heavy — lemniscate,
 #    flame, Archimedean spiral — and need the resolution to read faithfully) ──
 glyph SZ   = 32        # logical grid side
@@ -273,8 +297,10 @@ glyph PRIM_SIGIL = la nm.
     IF(str_eq(nm)("DEPTH"))      (la _. DEPTH)(la _.
     UNDEF)))))))))
 
-# ── SIGIL — the visual κ: a decomposition node → its sigil (mirrors CANON) ──
-glyph SIGIL = Z(la self. la node.
+# ── SIGIL — the visual κ: a decomposition node → its sigil (mirrors CANON).
+#    SIGIL_RAW draws a node directly; SIGIL first CANONIQ-normalizes so one CONCEPT
+#    yields one form (α=1 — the order-independence fix). ──
+glyph SIGIL_RAW = Z(la self. la node.
     node
         (la nm. PRIM_SIGIL(nm))
         (la a. la b. SYN_SIG (self(a))(self(b)))
@@ -282,6 +308,7 @@ glyph SIGIL = Z(la self. la node.
         (la a. la b. DIR_SIG (self(a))(self(b)))
         (la a. la b. CONT_SIG(self(a))(self(b)))
         (la a. MC_SIG(self(a))))
+glyph SIGIL = la node. SIGIL_RAW(CANONIQ(node))
 
 # ── Screen-free self-test: render each sigil as ASCII art (host == VM) ──
 glyph CELL = la s. la r. la c. IF(s(r)(c))(la _. "#")(la _. ".")
@@ -307,7 +334,7 @@ glyph MAIN =
     SEQ(SHOW("DERIVED Truth         = ↻(RECOGNITION)")(SIGIL(MC(PRIM("RECOGNITION")))))(
     SEQ(SHOW("DERIVED Consciousness = RECOGNITION ⊗ SELF")(SIGIL(SYN(PRIM("RECOGNITION"))(PRIM("SELF")))))(
     SEQ(SHOW("DERIVED Beauty        = FORM ⊗ LOVE")(SIGIL(SYN(PRIM("FORM"))(PRIM("LOVE")))))(
-    SEQ(SHOW("DERIVED Being²        = ↻(BEING) ≡ BEING")(SIGIL(MC(PRIM("BEING")))))(
+    SEQ(SHOW("DERIVED ↻(BEING) ≡ SELF = ∃(∃) — canonicalized to the SELF sigil")(SIGIL(MC(PRIM("BEING")))))(
     # ── 𝓜 ⊂ 𝒜 — the five combination MODES, rendered as sigils from their own
     #    decompositions (metaglyph.la): the grammar made visible (sigil for free) ──
     SEQ(SHOW("META ⊗ SYN  = ▷(LOVE,RELATION)")(SIGIL(DIR(PRIM("LOVE"))(PRIM("RELATION")))))(

@@ -1849,8 +1849,30 @@ cp sigil.la logos_source.la
 check_sigil "native VM" sigil_vm.txt
 cmp -s sigil_host.txt sigil_vm.txt || { echo "FAIL  sigil: native render != C host render"; ok=0; }
 rm -f sigil_host.txt sigil_vm.txt logos_secd logos_program.bin logos_source.la
+# ── α=1 canonical injectivity (completeness item 1): one CONCEPT → one form,
+#    regardless of operand order. The audit found ⊗(Love,Recognition) and
+#    ⊗(Recognition,Love) — one commutative concept — drew two different sigils (an
+#    α<1 leak). SIGIL now CANONIQ-normalizes (NORMK parity) before drawing, so the
+#    two orders must render identically. Host-only ASCII render + compare (fast). ──
+cat > /tmp/t_sigcanon.la <<'LAEOF'
+import("sigil.la")
+glyph SEQ = la a. la b. b
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph CELL = la s. la r. la c. IF(SIG_AT(s)(r)(c))(la _. "#")(la _. ".")
+glyph ROW = Z(la self. la s. la r. la c. IF(int_eq(c)(SZ))(la _. "")(la _. concat(CELL(s)(r)(c))(self(s)(r)(add(c)(1)))))
+glyph ASCII = Z(la self. la s. la r. IF(int_eq(r)(SZ))(la _. "")(la _. concat(concat(ROW(s)(r)(0))("|"))(self(s)(add(r)(1)))))
+glyph A = SIGIL(SYN(PRIM("LOVE"))(PRIM("RECOGNITION")))
+glyph BB = SIGIL(SYN(PRIM("RECOGNITION"))(PRIM("LOVE")))
+glyph MAIN = SEQ(print(concat("A=")(ASCII(A)(0))))(print(concat("B=")(ASCII(BB)(0))))
+LAEOF
+SCOUT="$(./tiny_host /tmp/t_sigcanon.la 2>/dev/null || true)"
+rm -f /tmp/t_sigcanon.la
+SCA="$(printf '%s\n' "$SCOUT" | sed -n 's/^A=//p')"
+SCB="$(printf '%s\n' "$SCOUT" | sed -n 's/^B=//p')"
+{ [ -n "$SCA" ] && [ "$SCA" = "$SCB" ]; } || { echo "FAIL  sigil: render not canonical — ⊗ operand order changes the form (α<1 injectivity leak)"; ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  sigil: the nine catalogue sigils render to their described forms (per-primitive symmetry signatures) + derived concepts GENERATED via the blend modes, byte-identical on host and native VM"
+    echo "PASS  sigil: the nine catalogue sigils render to their described forms (per-primitive symmetry signatures) + derived concepts GENERATED via the blend modes; α=1 canonical injectivity (one concept → one form, order-independent); byte-identical on host and native VM"
 else
     exit 1
 fi
