@@ -31,10 +31,20 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    canonical ONF graph) still rides on **item 7** — but the specific leak is closed.
 
 2. **Ontosemantics is tautological via the laws of thought as reality's metalogical
-   ontosyntax — the ontological algorithm of the language.** *Status:* **needs-verification.**
-   The three laws are built as first-class glyphs (`metalogic.la`). The open question:
-   are they **operative as the algorithm** — does the language's *evaluation* genuinely
-   run governed by the three laws — or are they **present but inert**? Checkable.
+   ontosyntax — the ontological algorithm of the language.** *Status:* **built (operative).**
+   VERIFIED: the three laws genuinely govern evaluation as the runtime's own mechanisms —
+   **identity** = κ-injectivity (glyph identity IS κ-equality; `PASS monosemy`, no polysemy);
+   **non-contradiction** = deterministic reduction + the type checker rejecting
+   arity-contradictions (`PASS typecheck`, ill-typed REJECTED, no file written); **excluded
+   middle** = totality/SWC + loud-failure (`PASS swc` refuses ill-founded terms; the loud
+   guards halt, no silent third value). Not inert. *Honest qualification:* the operative
+   enforcement is **distributed** across the real engines (`canon`/`specpipe`/`tiny_host`/
+   `swc`); `metalogic.la` (the laws as first-class glyphs + the ≡-vs-= category distinction)
+   is a **standalone witness** — nothing imports it, and its internal wiring
+   (`INHABITS`/`NC_TYPECHECK`/`VERDICT_OR_DIE`) are simplified MODELS that mirror the real
+   mechanisms. So `Runtime ≡ Metalogic` holds by **correspondence** (two agreeing, verified
+   artifacts), not literal unification. Tightening to literal unification (the real
+   checker/loud-failure invoking the law glyphs) is an enhancement, not a gap.
 
 3. **Ontomonoglyphs compress into one new glyph inheriting etymological structure via
    meta-neologization.** *Status:* **partial — half built, half open.** (a) Single-sigil
