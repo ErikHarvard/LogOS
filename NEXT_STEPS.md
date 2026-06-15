@@ -66,12 +66,28 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    renders byte-identical host==VM, with a check asserting it integrates the central crossing.
 
 5. **The complete, correct meta-vocabulary and meta-sigils — the sigils all others derive
-   from, the eight "itselfs."** *Status:* **partial — needs completion + verification.**
-   The meta-vocabulary exists (the five modes, 𝔑, κ, the evaluator glyph 𝓡). **UPDATE vs
-   the original framing: all EIGHT self-relations are now built** (For + With completed
-   this session, commit `8481bf7`) — so the eightfold is 8/8, not 6/8. Remaining: verify
-   the meta-vocabulary is **complete and correct** and **aligns with the eight "itselfs."**
-   (Connected to backlog item 2.)
+   from, the eight "itselfs."** *Status:* **built (verified), with documented qualifications.**
+   VERIFIED: the meta-vocabulary is **complete** (every operation carried as a glyph — the five
+   modes, 𝔑≡⊗, κ, 𝓡, ν*; `PASS metaglyph` — 𝓜⊂𝒜 closed) and **correct** (monosemic, no
+   polysemy; `PASS monosemy`); the **eightfold is 8/8** (`SR_TO…SR_WITH`, each a fixed point
+   `SR(SR)≡SR`) and **aligned** to the operations (the grounding table). Four honest
+   qualifications: (a) the foundational generating set is the **9 primitives + 5 modes**, NOT
+   the eight — the eight are a *derived* octad layered in 𝓜; (b) the octad is a
+   **Logoscribeologiae** construct (`codex_logoscribeologiae.tex:2965`), NOT in the primary
+   `LINGUA ADAMICA.tex`, and its eight-ness is asserted on symbolic grounds (octave, ∞=8), not
+   proved — so "possibly eight" stands; (c) the mode/SR **decompositions** are principled
+   implementation assignments (only 𝔑≡⊗ and κ are spec-fixed); (d) `𝓜` is **open** by design
+   (meta-ontoneologization mints new operations) — "complete" means complete-up-to-the-basis +
+   named operators, which is what meta-monosemy requires.
+
+   **KNOWN, RESOLVED DISCREPANCY — `SR_FROM` ("From" governs; do not re-open):** the origin/
+   source self-relation is named **`SR_FROM` = ↻(VOID)** ("from itself"). The Logoscribeologiae
+   octad *table* (`codex_logoscribeologiae.tex:2965`) labels relation #1 **"Of itself"**, but
+   **all prose in every codex says "from itself"** — *Being & Becoming* (the cited origin of the
+   eight: "boots from itself", "differentiates from itself", with no octad and no "of itself"
+   anywhere) and Logoscribeologiae's own prose ("Being come from itself", `:3482`). The lone
+   "Of" is a single formal table in a codex *not* named as the source. **Decision (author):
+   "From" governs** — `SR_FROM` stays. Documented so it does not resurface as a question.
 
 6. **Naturally ground the golden ratio as the ontoglyphic geometric fixed-point
    meta-autofoundation.** *Status:* **TESTED — NEGATIVE.** φ matched **0/15** measured
