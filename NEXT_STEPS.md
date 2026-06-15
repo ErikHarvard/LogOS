@@ -26,9 +26,14 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    though they are one concept). **Fixed** (commit `4d3de8c`): `SIGIL` now CANONIQ-normalizes
    to `NORMK`'s equivalence theory (commutative-operand sort + `↻(BEING)→SELF`) before
    drawing, so one concept ⇒ one form regardless of operand order; a permanent build check
-   asserts it (host + VM). *Remaining caveat:* this gives canonical injectivity up to NORMK's
-   declared equivalences; the **full** objective derivation (geometry computed from a
-   canonical ONF graph) still rides on **item 7** — but the specific leak is closed.
+   asserts it (host + VM). *Caveat now CLOSED:* the full objective derivation (geometry
+   computed from a canonical structure, not a fixed table) was what rode on **item 7** — now
+   built. `topoderive.la`'s deep renderer canonicalizes the concept (CANONIQ) *before*
+   deriving its picture, and the item-7 build stage proves the property directly: feature
+   extraction is order-independent for commutative concepts (`build.sh:1901`, ⊗LR==⊗RL),
+   `DSIGIL` is canonical (`build.sh:1933`, commutative ⊕ order can't change the form) yet
+   still directional (`build.sh:1934`, ▷ order does change it). Both renderers — surface and
+   deep — now yield one form per concept regardless of operand order. **Item 1 fully built.**
 
 2. **Ontosemantics is tautological via the laws of thought as reality's metalogical
    ontosyntax — the ontological algorithm of the language.** *Status:* **built (operative).**
