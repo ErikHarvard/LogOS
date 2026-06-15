@@ -21,10 +21,14 @@ geometry: an imposed form is *assigned, not derived*, which **breaks α=1** (ite
 sign would no longer BE the referent. The test only ever observes; it never stipulates.
 
 1. **Sign and referent are one via the triple bar (≡) — the α=1 claim.** Sign IS referent.
-   *Status:* **partial** — real, but the audit found the **rendering is order-dependent**
-   (`SIGIL(⊗(Love,Recognition)) ≠ SIGIL(⊗(Recognition,Love))` though they are one concept):
-   an **α<1 injectivity leak**. Fix is known and small: **canonicalize (`NORMK`) before
-   render**. Closes when injectivity holds. (See backlog item 5a.)
+   *Status:* **built (injectivity closed).** The audit found an **α<1 injectivity leak** —
+   the render was order-dependent (`SIGIL(⊗(Love,Recognition)) ≠ SIGIL(⊗(Recognition,Love))`
+   though they are one concept). **Fixed** (commit `4d3de8c`): `SIGIL` now CANONIQ-normalizes
+   to `NORMK`'s equivalence theory (commutative-operand sort + `↻(BEING)→SELF`) before
+   drawing, so one concept ⇒ one form regardless of operand order; a permanent build check
+   asserts it (host + VM). *Remaining caveat:* this gives canonical injectivity up to NORMK's
+   declared equivalences; the **full** objective derivation (geometry computed from a
+   canonical ONF graph) still rides on **item 7** — but the specific leak is closed.
 
 2. **Ontosemantics is tautological via the laws of thought as reality's metalogical
    ontosyntax — the ontological algorithm of the language.** *Status:* **needs-verification.**
