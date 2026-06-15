@@ -34,7 +34,7 @@
 #  predicate model has no colour channel — the topology is what is preserved.
 # ═══════════════════════════════════════════════════════════════════
 
-export SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL
+export SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL LOGOS
 
 # ── Foundations ──
 glyph SEQ   = la a. la b. b
@@ -245,6 +245,25 @@ glyph DEPTH = la r. la c.
 
 glyph UNDEF = la r. la c. BOXR(14)(17)(14)(17)(r)(c)     # unknown name placeholder
 
+# ── THE LOGOS / META-WORD (Λ) — the self-structuring principle the whole language
+#    expresses: Λ(Λ) ≡ Λ = ∃(∃) ≡ ∃ (LINGUA_ADAMICA.tex §"The Logos Names Itself",
+#    :6320–6356). The spec asserts a glyph 𝔤_Λ but draws no figure — only the letter
+#    Λ and the seal ∃(∃)≡∃ — and requires the form be (a) a SELF-REFERENTIAL FIXED
+#    POINT, (b) the WHOLE as one mark, (c) meta collapsing INTO an ordinary sigil
+#    (not a tenth glyph above the nine; "meta is inside, not above", :1321). This is
+#    "the Archē naming itself": the totality circle of Being CONTAINING the
+#    self-crossing lemniscate (∃(∃)≡∃, the self-application fixed point) about the
+#    central point (the Name), closed by Being's ouroboric return at the crown. Not
+#    a tenth primitive — it is the Totality glyph (:6914) the nine differentiate.
+glyph LEMN_L = la r. la c.
+    (la X. la Y. (la s. AND(GE(s)(0))(LE(SQ(add(SQ(X))(SQ(Y))))(mul(SQ(9))(s))))(sub(SQ(X))(SQ(Y))))
+    (sub(c)(16))(sub(r)(16))
+glyph LOGOS = la r. la c.
+    OR(RING(16)(16)(14)(1)(r)(c))
+    (OR(LEMN_L(r)(c))
+    (OR(DOT(16)(16)(r)(c))
+       (OR(SEG(2)(16)(2)(21)(1)(r)(c))(OR(SEG(2)(21)(6)(22)(1)(r)(c))(SEG(6)(22)(7)(18)(1)(r)(c))))))
+
 # ═══ COMPOSITION MODES — aligned to the TopoEmbed table ═════════════
 # Each takes constituent SIGILS, returns the child's SIGIL. The MANNER of fusion
 # realises a row of the Graph-Feature→Geometric-Primitive table, keeping both
@@ -295,7 +314,8 @@ glyph PRIM_SIGIL = la nm.
     IF(str_eq(nm)("BECOMING"))   (la _. BECOMING)(la _.
     IF(str_eq(nm)("FORM"))       (la _. FORM)(la _.
     IF(str_eq(nm)("DEPTH"))      (la _. DEPTH)(la _.
-    UNDEF)))))))))
+    IF(str_eq(nm)("LOGOS"))      (la _. LOGOS)(la _.   # the Meta-Word Λ (not a primitive)
+    UNDEF))))))))))
 
 # ── SIGIL — the visual κ: a decomposition node → its sigil (mirrors CANON).
 #    SIGIL_RAW draws a node directly; SIGIL first CANONIQ-normalizes so one CONCEPT
@@ -330,6 +350,8 @@ glyph MAIN =
     SEQ(SHOW("g7 BECOMING    spiral + arrow                 witness: stream")(SIGIL(PRIM("BECOMING"))))(
     SEQ(SHOW("g8 FORM        triangle in circle             witness: type ctor")(SIGIL(PRIM("FORM"))))(
     SEQ(SHOW("g9 DEPTH       nested circles, descending     witness: recursion")(SIGIL(PRIM("DEPTH"))))(
+    # ── The Logos / Meta-Word Λ — the whole naming itself (Totality, not a 10th primitive) ──
+    SEQ(SHOW("Λ  LOGOS       Λ(Λ)≡Λ = ∃(∃)≡∃ — Being's circle holding the ∞ + the Name")(SIGIL(PRIM("LOGOS"))))(
     # ── Derived concepts — GENERATED from the drawn primitives (First Derivations) ──
     SEQ(SHOW("DERIVED Truth         = ↻(RECOGNITION)")(SIGIL(MC(PRIM("RECOGNITION")))))(
     SEQ(SHOW("DERIVED Consciousness = RECOGNITION ⊗ SELF")(SIGIL(SYN(PRIM("RECOGNITION"))(PRIM("SELF")))))(
@@ -342,4 +364,4 @@ glyph MAIN =
     SEQ(SHOW("META ▷ DIR  = ⊗(BECOMING,RELATION)")(SIGIL(SYN(PRIM("BECOMING"))(PRIM("RELATION")))))(
     SEQ(SHOW("META ⊂ CONT = ▷(DEPTH,FORM)")(SIGIL(DIR(PRIM("DEPTH"))(PRIM("FORM")))))(
     SEQ(SHOW("META ↻ MC   = ↻(SELF)")(SIGIL(MC(PRIM("SELF")))))(
-        SHOW("META 𝓡 EVAL = ▷(DEPTH,RECOGNITION)")(SIGIL(DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))))))))))))))))))))))
+        SHOW("META 𝓡 EVAL = ▷(DEPTH,RECOGNITION)")(SIGIL(DIR(PRIM("DEPTH"))(PRIM("RECOGNITION")))))))))))))))))))))))

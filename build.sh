@@ -1836,6 +1836,11 @@ check_sigil () {  # $1 = engine label, $2 = output file
     HSYM "DERIVED Truth" "$2"                                 || { echo "FAIL  sigil($1): Truth=MC(RECOGNITION) not H-symmetric (self-fold not generated)"; ok=0; }
     # 𝓜 ⊂ 𝒜: the five combination modes render as sigils from their decompositions:
     [ "$(grep -c '^META ' "$2")" = "6" ]                      || { echo "FAIL  sigil($1): expected 6 𝓜 sigils (5 modes + evaluator), got $(grep -c '^META ' "$2")"; ok=0; }
+    # The Logos / Meta-Word Λ: present, and its form INTEGRATES the totality (the
+    # central ∃(∃)≡∃ lemniscate-crossing, a wide ink run at the midline — distinct
+    # from a bare circle), so it is "the whole naming itself", not an empty mark.
+    grep -q '^Λ  LOGOS' "$2"                                  || { echo "FAIL  sigil($1): Logos/Meta-Word (Λ) sigil missing"; ok=0; }
+    block "Λ  LOGOS" "$2" | awk 'NR==17 && index($0,"############")>0{ok=1} END{exit ok?0:1}' || { echo "FAIL  sigil($1): Logos lacks the central ∃(∃)≡∃ crossing (not the whole-naming-itself form)"; ok=0; }
 }
 rm -f sigil_host.txt sigil_vm.txt
 ./tiny_host sigil.la > sigil_host.txt 2>/dev/null

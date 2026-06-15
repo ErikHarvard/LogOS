@@ -54,8 +54,16 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    applying it throws "non-function").
 
 4. **The Word / Logos is the Meta-Word of the system and needs its own dedicated sigil.**
-   *Status:* **open — buildable, needs the author's spec.** The Logos as the meta-glyph
-   the whole system expresses; giving it a dedicated sigil is a faithful, finite task.
+   *Status:* **built.** The Logos Λ (the self-structuring principle the whole language
+   expresses, `Λ(Λ)≡Λ = ∃(∃)≡∃`, `LINGUA ADAMICA.tex §"The Logos Names Itself"`) now has a
+   dedicated sigil in `sigil.la` (`LOGOS`, also `SIGIL(PRIM("LOGOS"))`): **"the Archē naming
+   itself"** — the totality circle of Being CONTAINING the self-crossing lemniscate
+   (`∃(∃)≡∃`, the self-application fixed point) about the central point (the Name), closed by
+   Being's ouroboric return at the crown. Honors the spec constraints: a self-referential
+   fixed point, the whole as one mark, meta collapsing INTO an ordinary nameable sigil (not a
+   tenth glyph above the nine — it is the Totality glyph the nine differentiate). Author chose
+   the drawn form over the derived `↻(BEING)` / bare-lemniscate alternatives. Build-verified:
+   renders byte-identical host==VM, with a check asserting it integrates the central crossing.
 
 5. **The complete, correct meta-vocabulary and meta-sigils — the sigils all others derive
    from, the eight "itselfs."** *Status:* **partial — needs completion + verification.**
