@@ -21,9 +21,10 @@
 #  Pure (node-building + str/int + pixel reads) ⇒ byte-identical host == VM.
 # ═══════════════════════════════════════════════════════════════════
 
-import("onf.la")        # ONF_FEAT FEAT_STR CANON CANONIQ FT_CYC FT_BR FT_LV IS
-import("sigil.la")      # PRIM SYN CON DIR CONT MC SIG_AT SZ
-import("topoderive.la") # DSIGIL
+# import ONLY topoderive — it re-exports the onf + sigil symbols we need. Importing
+# onf + sigil + topoderive directly expanded sigil TWICE (the importer does not dedup),
+# making codegen pathological; this single import expands sigil once.
+import("topoderive.la") # DSIGIL DERIVE + re-exported: ONF_FEAT FEAT_STR CANON CANONIQ FT_* IS SIG_AT SZ PRIM SYN CON DIR CONT MC
 
 export COB SIB DEG VERDICT
 

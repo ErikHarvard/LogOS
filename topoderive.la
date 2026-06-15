@@ -24,7 +24,12 @@
 import("sigil.la")    # OVERLAY RING SEG DOT DISK PLACE MIRRORH PRIM_SIGIL SZ SIG_AT PRIM SYN CON DIR CONT MC
 import("onf.la")      # ONF_FEAT FT_CYC FT_DEP FT_CONT FT_BR FT_SYM FT_LV
 
-export DSIGIL DERIVE
+# re-export the onf + sigil symbols a consumer needs, so it can import("topoderive.la")
+# ALONE rather than importing onf + sigil + topoderive (which expands sigil TWICE — the
+# importer does NOT dedup — and made cob.la's codegen pathological). These names sit in
+# this module's glyph range with plain names (imported exports), so listing them keeps
+# them unmangled and visible downstream.
+export DSIGIL DERIVE ONF_FEAT FEAT_STR CANON CANONIQ FT_CYC FT_DEP FT_CONT FT_BR FT_SYM FT_LV IS SIG_AT SZ PRIM SYN CON DIR CONT MC
 
 # ── Foundations (privates of the imports are isolated; define our own) ──
 glyph SEQ   = la a. la b. b
