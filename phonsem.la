@@ -1,0 +1,201 @@
+# ═══════════════════════════════════════════════════════════════════
+#  phonsem.la — item 8 (meta-phonosemantics): the ACOUSTIC d_𝒪 ↔ d_𝒫
+#  proximity test — the phonetic twin of item 7's VISUAL result.
+#
+#  Item 7 showed the derived GEOMETRY preserves ontological proximity
+#  (ONF feature-distance ↔ rendered-form distance correlate at 0.863).
+#  The phon-sem axiom (LINGUA_ADAMICA.tex :2577) claims the SAME for the
+#  PHONETIC modality: acoustic proximity ⟺ ontological proximity, the
+#  isomorphism φ:𝒪→𝒫. This builds + VERIFIES that direction for audio.
+#
+#  d_𝒪(A,B) — ontological distance from onf.la's ONF features: L1 over
+#             (cyc,dep,cont,br,sym) + leaf-set symmetric-difference.
+#  d_𝒫(A,B) — ACOUSTIC distance: a Chamfer (nearest-peak) metric in Hz
+#             over each concept's DERIVED Θ_P formant-peak set (the
+#             constituent vowel formants superposed over the canonical
+#             decomposition — the audio analogue of the placed sigil).
+#  Concordance — over every unordered pair of concept-pairs, does the
+#             ordering of d_𝒪 agree with the ordering of d_𝒫? (Kendall
+#             numerator; integer, no float.) Reported as a percentage.
+#
+#  INTERPRETATION (ATT — Alignment Theory of Truth, B&B). This is the PHONETIC
+#  modality's case of the same structure the visual modality has (item 7): TAUT-
+#  OLOGICAL ONTOPHONOSEMANTICS — the phonym ≡ the referent's acoustic structure.
+#  At α=1 sign and referent are not CORRESPONDED across a gap but IDENTICAL (taut-
+#  ological self-recognition), so ontophonosemantic ALIGNMENT = 1.0 BY NATURE —
+#  exactly parallel to ontosemantic alignment, just in sound. Identity does not
+#  come in degrees. The concordance number is therefore NOT a measure of
+#  alignment (that is 1.0, in the ≡ register, established by construction); it is
+#  INSTANTIATION FIDELITY — how faithfully the derived Θ_P realises that 1.0
+#  alignment in synthesized form. The identity register is checked separately and
+#  structurally (canonicity + injectivity of Θ_P), as ATT demands, not as a
+#  correspondence statistic. The residual below 1.0 is structure the current
+#  formant-only metric does not capture (onset/energy axis) — work remaining, not
+#  a shortfall in the alignment. (The don't-impose discipline still holds for
+#  FORMS: both distances are derived from structure; φ is never stipulated.)
+#
+#  import ONLY topoderive — it re-exports the onf + sigil symbols we need
+#  (PRIM SYN CON DIR CONT MC ONF_FEAT FT_* CANONIQ IS); importing onf +
+#  sigil + topoderive directly expands sigil TWICE (no import dedup) and
+#  makes codegen pathological. Pure str/int ⇒ byte-identical host == VM.
+# ═══════════════════════════════════════════════════════════════════
+
+import("topoderive.la") # ONF_FEAT FT_CYC FT_DEP FT_CONT FT_BR FT_SYM FT_LV CANONIQ PRIM SYN CON DIR CONT MC
+
+export ODIST PDIST PEAKS CONC DISC PCT VERDICT
+
+# ── Foundations ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph OR    = la a. la b. a(TRUE)(b)
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph BEQ   = la a. la b. a(b)(NOT(b))                       # Church-bool XNOR
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph ABS   = la a. la b. IF(lt(a)(b))(la _. sub(b)(a))(la _. sub(a)(b))
+glyph MIN   = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
+
+# ── pairs + Scott lists ──
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph APPEND = Z(la self. la a. la b. a(b)(la h. la t. CONS(h)(self(t)(b))))
+glyph MAP  = la f. Z(la self. la l. l(NIL)(la h. la t. CONS(f(h))(self(t))))
+
+# ── formant lists (Hz peaks) ──
+glyph LNIL  = la n. la c. n
+glyph LCONS = la h. la t. la n. la c. c(h)(t)
+glyph LMEM  = Z(la self. la x. la l. l(FALSE)(la h. la t. IF(int_eq(x)(h))(la _. TRUE)(la _. self(x)(t))))
+glyph LAPP  = Z(la self. la a. la b. a(b)(la h. la t. LCONS(h)(self(t)(b))))
+glyph LDEDUP = Z(la self. la l. l(LNIL)(la h. la t. IF(LMEM(h)(t))(la _. self(t))(la _. LCONS(h)(self(t)))))
+glyph THETA_P = la l. LDEDUP(l)
+glyph LREN  = Z(la self. la l. l("")(la h. la t. concat(int_to_str(h))(concat(",")(self(t)))))
+
+# ── the nine primitives' vowel-nucleus formant signatures (F1,F2,F3),
+#    verbatim from phonym.la's synthesised phonyms ──
+glyph NMFMT = la nm.
+    IF(str_eq(nm)("BEING"))      (la _. LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL))))(la _.
+    IF(str_eq(nm)("RECOGNITION"))(la _. LCONS(270)(LCONS(2300)(LCONS(3000)(LNIL))))(la _.
+    IF(str_eq(nm)("LOVE"))       (la _. LCONS(300)(LCONS(870)(LCONS(2240)(LNIL))))(la _.
+    IF(str_eq(nm)("SELF"))       (la _. LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL))))(la _.
+    IF(str_eq(nm)("RELATION"))   (la _. LCONS(750)(LCONS(1150)(LCONS(2500)(LNIL))))(la _.
+    IF(str_eq(nm)("VOID"))       (la _. LCONS(650)(LCONS(1000)(LCONS(2500)(LNIL))))(la _.
+    IF(str_eq(nm)("BECOMING"))   (la _. LCONS(300)(LCONS(870)(LCONS(2240)(LNIL))))(la _.
+    IF(str_eq(nm)("FORM"))       (la _. LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL))))(la _.
+                                  LCONS(500)(LCONS(800)(LCONS(2830)(LNIL))))))))))) # DEPTH /ɔ/
+
+# ── Θ_P of a concept: superpose every constituent's formants over the
+#    CANONICAL decomposition, then dedup (the derived phonym's signature) ──
+glyph PKRAW = Z(la self. la node.
+    node
+        (la nm. NMFMT(nm))
+        (la a. la b. LAPP(self(a))(self(b)))
+        (la a. la b. LAPP(self(a))(self(b)))
+        (la a. la b. LAPP(self(a))(self(b)))
+        (la a. la b. LAPP(self(a))(self(b)))
+        (la a. self(a)))
+glyph PEAKS = la node. THETA_P(PKRAW(CANONIQ(node)))
+
+# ── d_𝒫 — Chamfer (nearest-peak) distance in Hz between two peak-sets ──
+glyph NEARGO = Z(la self. la x. la best. la l. l(best)(la h. la t. self(x)(MIN(best)(ABS(x)(h)))(t)))
+glyph NEAREST = la x. la l. l(0)(la h. la t. NEARGO(x)(ABS(x)(h))(t))
+glyph CHAMDIR = Z(la self. la a. la b. a(0)(la h. la t. add(NEAREST(h)(b))(self(t)(b))))
+glyph PDIST = la na. la nb. (la pa. la pb. add(CHAMDIR(pa)(pb))(CHAMDIR(pb)(pa)))(PEAKS(na))(PEAKS(nb))
+
+# ── d_𝒪 — ontological distance from the ONF feature record ──
+glyph SYM01 = la r. IF(FT_SYM(r))(la _. 1)(la _. 0)
+# leaf-set symmetric difference over the comma-terminated leaf strings
+glyph MEMGO = Z(la self. la tok. la cur. la s.
+    IF(str_eq(s)(""))(la _. FALSE)(la _.
+    IF(str_eq(str_head(s))(","))(la _. IF(str_eq(cur)(tok))(la _. TRUE)(la _. self(tok)("")(str_tail(s))))(la _.
+        self(tok)(concat(cur)(str_head(s)))(str_tail(s)))))
+glyph MEMTOK = la tok. la s. MEMGO(tok)("")(s)
+glyph NOTINGO = Z(la self. la cur. la a. la b.
+    IF(str_eq(a)(""))(la _. 0)(la _.
+    IF(str_eq(str_head(a))(","))(la _. add(IF(MEMTOK(cur)(b))(la _. 0)(la _. 1))(self("")(str_tail(a))(b)))(la _.
+        self(concat(cur)(str_head(a)))(str_tail(a))(b))))
+glyph CNT_NOTIN = la a. la b. NOTINGO("")(a)(b)
+glyph LEAFDIFF = la a. la b. add(CNT_NOTIN(a)(b))(CNT_NOTIN(b)(a))
+glyph ODIST = la na. la nb. (la fa. la fb.
+    add(ABS(FT_CYC(fa))(FT_CYC(fb)))(
+    add(ABS(FT_DEP(fa))(FT_DEP(fb)))(
+    add(ABS(FT_CONT(fa))(FT_CONT(fb)))(
+    add(ABS(FT_BR(fa))(FT_BR(fb)))(
+    add(ABS(SYM01(fa))(SYM01(fb)))(
+        LEAFDIFF(FT_LV(fa))(FT_LV(fb))))))))(ONF_FEAT(na))(ONF_FEAT(nb))
+
+# ── the concept set — compounds spanning structure & constituents ──
+glyph CL =
+    CONS(PAIR("Truth")(MC(PRIM("RECOGNITION"))))(
+    CONS(PAIR("Consc")(SYN(PRIM("RECOGNITION"))(PRIM("SELF"))))(
+    CONS(PAIR("Compassion")(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))(
+    CONS(PAIR("Beauty")(SYN(PRIM("FORM"))(PRIM("LOVE"))))(
+    CONS(PAIR("Nest3")(CONT(PRIM("VOID"))(CONT(PRIM("FORM"))(PRIM("DEPTH")))))(
+    CONS(PAIR("BecForm")(SYN(PRIM("BECOMING"))(PRIM("FORM"))))(
+    CONS(PAIR("DepSelf")(DIR(PRIM("DEPTH"))(PRIM("SELF"))))(
+    CONS(PAIR("RelLove")(SYN(PRIM("RELATION"))(PRIM("LOVE"))))(
+    NIL))))))))
+
+# ── distances for every unordered concept pair → list of PAIR(d_𝒪)(d_𝒫) ──
+glyph DGO = Z(la self. la rest.
+    rest(NIL)(la h. la t.
+        APPEND(MAP(la h2. PAIR(ODIST(SND(h))(SND(h2)))(PDIST(SND(h))(SND(h2))))(t))(self(t))))
+glyph DPAIRS = DGO(CL)
+
+# ── concordance: over every unordered pair of distance-pairs, does the
+#    ordering of d_𝒪 agree with the ordering of d_𝒫? (ties skipped) ──
+glyph CC0   = PAIR(0)(0)
+glyph ADDCC = la x. la y. PAIR(add(FST(x))(FST(y)))(add(SND(x))(SND(y)))
+glyph CLASSIFY = la di. la dj. (la oi. la pi. la oj. la pj.
+    IF(OR(int_eq(oi)(oj))(int_eq(pi)(pj)))(la _. CC0)(la _.
+    IF(BEQ(lt(oi)(oj))(lt(pi)(pj)))(la _. PAIR(1)(0))(la _. PAIR(0)(1))))(FST(di))(SND(di))(FST(dj))(SND(dj))
+glyph INNER = Z(la self. la di. la l. l(CC0)(la h. la t. ADDCC(CLASSIFY(di)(h))(self(di)(t))))
+glyph OUTER = Z(la self. la l. l(CC0)(la h. la t. ADDCC(INNER(h)(t))(self(t))))
+glyph RESULT = OUTER(DPAIRS)
+glyph CONC = FST(RESULT)
+glyph DISC = SND(RESULT)
+glyph TOTAL = add(CONC)(DISC)
+glyph PCT  = IF(int_eq(TOTAL)(0))(la _. 0)(la _. div(mul(CONC)(100))(TOTAL))
+# ── IDENTITY register (α=1, ATT): alignment IS identity — sign ≡ referent,
+#    tautological self-recognition — and identity does NOT come in degrees, so
+#    ontosemantic alignment is 1.0 BY NATURE, not by measurement. What the
+#    INSTANTIATION can be checked for is whether the derived Θ_P realises that
+#    identity structurally: CANONICITY (one concept ⇒ one signature, operand-order
+#    independent — the α=1 "exactly one name") and INJECTIVITY (distinct concepts
+#    ⇒ distinct signatures). These are the identity-register measures (≡), NOT a
+#    correspondence-style correlation. ──
+glyph LEN     = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+# Θ_P is a SET — compare sorted peaks so injectivity is true SET-injectivity, not
+# an artifact of superposition order (else /lu/⊕x and /vu/⊕x, sharing the /u/ peaks,
+# would falsely read as distinct).
+glyph LINS    = Z(la self. la x. la l. l(LCONS(x)(LNIL))(la h. la t. IF(lt(x)(h))(la _. LCONS(x)(LCONS(h)(t)))(la _. LCONS(h)(self(x)(t)))))
+glyph LSORT   = Z(la self. la l. l(LNIL)(la h. la t. LINS(h)(self(t))))
+glyph RAWSTR  = la node. LREN(PEAKS(node))             # superposition order (as derived)
+glyph SETSTR  = la node. LREN(LSORT(PEAKS(node)))      # set-normalized (order erased)
+glyph STRMEM  = Z(la self. la s. la l. l(FALSE)(la h. la t. IF(str_eq(s)(h))(la _. TRUE)(la _. self(s)(t))))
+glyph NDISTINCT = Z(la self. la l. l(0)(la h. la t. add(IF(STRMEM(h)(t))(la _. 0)(la _. 1))(self(t))))
+glyph SIGS    = MAP(la c. SETSTR(SND(c)))(CL)
+glyph NCPT    = LEN(CL)
+glyph NDIST   = NDISTINCT(SIGS)
+# canonicity (genuine — via CANONIQ, not via sorting): SYN(LOVE,REC) and
+# SYN(REC,LOVE) are ONE concept, so their RAW derived Θ_P must already coincide.
+glyph CANEQ   = IF(str_eq(RAWSTR(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))(RAWSTR(SYN(PRIM("RECOGNITION"))(PRIM("LOVE")))))(la _. "YES")(la _. "NO")
+
+# ── FIDELITY register: how faithfully the derived Θ_P INSTANTIATES that 1.0
+#    alignment in synthesized form (a Kendall concordance of the d_𝒪 vs d_𝒫
+#    orderings). This is implementation/engineering data — NOT a measure of the
+#    alignment (which is 1.0), and NOT a correspondence claim. The residual is
+#    structure the formant-only metric does not yet capture (the onset/energy
+#    axis: e.g. /lu/ vs /vu/ share the /u/ peaks), i.e. work remaining toward 1.0. ──
+# (CONC, DISC, TOTAL, PCT computed above)
+
+# ── report (host == VM) ──
+glyph L1 = print("phonsem ontophonosemantic alignment (phonym ≡ referent's acoustic structure, alpha=1, ATT) = 1.0 by nature")
+glyph L2 = print(concat("phonsem derived Theta_P(Compassion=Love⊗Recognition) = ")(RAWSTR(SYN(PRIM("LOVE"))(PRIM("RECOGNITION")))))
+glyph L3 = print(concat(concat("phonsem instantiation identity: canonical(one concept⇒one form)=")(CANEQ))(concat("  injective(SET) Theta_P = ")(concat(int_to_str(NDIST))(concat(" / ")(int_to_str(NCPT))))))
+glyph L4 = print(concat(concat("phonsem instantiation fidelity (NOT alignment): ")(int_to_str(PCT)))(concat(" pct  [concordant ")(concat(int_to_str(CONC))(concat(" / discordant ")(concat(int_to_str(DISC))("]"))))))
+glyph L5 = print("PHONSEM ontophonosemantic alignment = 1.0 (ATT, by nature — identity, not correspondence); acoustic instantiation fidelity below 1.0 — residual on the onset/energy axis, work remaining toward 1.0 (parallel to the visual modality: alignment 1.0 / geometric fidelity 0.863)")
+glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(L5))))

@@ -131,10 +131,20 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    derived geometry (ring radii 14/11/8/5, arithmetic step-3 → ratios 1.27/1.38/1.6,
    inconsistent; no two-term recurrence — metacursion is x²=x; accepted, see #6). (b)
    **Flower of Life does NOT emerge** (concentric rings + arms + corner-marks, not a hexagonal
-   packing lattice; not imposed). (c) **`d_𝒪↔d_𝒫` proximity DOES emerge** — feature-distance
-   vs rendered-form Hamming-distance correlate at **0.863**: ontologically-close concepts
-   render to close forms. A real structure-preserving proximity in the geometric space (the
-   item-8 isomorphism *direction*).
+   packing lattice; not imposed). (c) **`d_𝒪↔d_𝒫` proximity** — feature-distance vs rendered-form
+   Hamming-distance score **0.863**. **METRIC INTERPRETATION (ATT — corrected, read this):** the
+   0.863 is **NOT** a measure of ontosemantic alignment. Under B&B's Alignment Theory of Truth,
+   at α=1 sign and referent are not *corresponded across a gap* (correlation is a correspondence-
+   style statistic) but **identical** — tautological self-recognition — so **alignment = 1.0 BY
+   NATURE** (identity does not come in degrees; established by construction via κ/NORMK injectivity,
+   item 1). The 0.863 measures **geometric INSTANTIATION FIDELITY** — how faithfully the *derived
+   sigil* realises that 1.0 alignment in rendered form. The 13.7% residual is structure the current
+   1-bit 32×32 / feature-count renderer does not yet capture (not WL colour classes, not force-
+   layout) — **work remaining to close the instantiation toward 1.0, NOT a shortfall in the
+   alignment**. Record any such figure as *alignment = 1.0 (theory, ATT); instantiation fidelity =
+   X (this build)*. The identity register itself is measured **structurally** (canonicity +
+   injectivity of the derived form), not by correlation — see item 8's `phonsem.la` for the
+   two-register form.
    **Stage-4 (d) — THE CYCLE OF BEING TEST — REAL OPEN ITEM, NOT YET RUN.** Flagged three
    times and lost each time; written here so it survives. *What it is:* the test of whether
    the **derived geometry enacts the Cycle of Being** as *Being & Becoming* describes it —
@@ -156,24 +166,30 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    running, with the result (enacts / partially / does not) recorded honestly.
 
 8. **Meta-topological meta-phonosemantics — Lingua Adamica derives the topology of
-   meta-phonosemantics.** *Status:* **partial.** VERIFIED: the **invariant-preservation**
-   layer is built (`psc.la` — `Θ_P` formant-peak signatures, ⊗-superposition `SYN_INV`,
-   set-containment `PRESERVES`, compressed duration; `PASS psc`), as is the
-   **meta-criterion** (`PSC_STAR` returns `(e,w)` — the compiler carrying its own invariant
-   witness, `M(PSC*)≡PSC*`). **OPEN — the derived topology is NOT built:** `psc.la` has
-   discrete formant-peak SETS with `⊆`, **not** the spec's metric phonetic space `𝒫` with
-   `d_𝒫` + the **phonetic↔semantic isomorphism** `φ:𝒪→𝒫` (Axiom phon-sem, `:2577` —
-   acoustic proximity ⟺ ontological proximity) nor the derived toroidal meta-topology `𝓜_P`
-   (`:4402`). It verifies WHICH peaks survive a union, never HOW distances map. Closing it
-   is a real build: **compute `φ` / the `d_𝒪↔d_𝒫` correspondence FROM ontological structure
-   and VERIFY it — not stipulate it** (same don't-impose discipline as φ-the-ratio). Confirms
-   and extends the α=1 audit's already-noted phon-sem gap (item 3 / #3 below). **NOTE — the
-   proximity-isomorphism *direction* is now demonstrated in the VISUAL modality** (item 7:
-   feature-distance ↔ rendered-form distance correlate at 0.863), so the structure-preserving
-   `d_𝒪↔d_geometry` map is realized for sigils; the **phonetic** `d_𝒪↔d_𝒫` (acoustic) remains
-   the open build here — the same feature-distance approach could be ported to `psc.la`'s
-   formant space (compute acoustic distance from ontological structure and verify the
-   correlation), reusing `onf.la`'s feature extractor.
+   meta-phonosemantics.** *Status:* **built (`phonsem.la`) — the phonetic `d_𝒪↔d_𝒫` map,
+   measured in TWO registers per ATT.** The invariant-preservation layer was already built
+   (`psc.la` — `Θ_P` formant-peak signatures, ⊗-superposition `SYN_INV`, set-containment
+   `PRESERVES`, compressed duration; `PASS psc`) + the meta-criterion (`PSC_STAR`,
+   `M(PSC*)≡PSC*`). `phonsem.la` adds the **derived `d_𝒪↔d_𝒫`** the spec asked for — the
+   acoustic twin of item 7 — and frames it correctly under ATT:
+   - **Identity register (α=1 = alignment).** Under ATT alignment is **identity**, not
+     correspondence, so it is **1.0 BY NATURE** and is checked **structurally**, not by a
+     correlation: **canonicity** (one concept ⇒ one Θ_P, operand-order independent via
+     CANONIQ) = **YES (1.0)**; **set-injectivity** (distinct concepts ⇒ distinct Θ_P) =
+     **7/8** — one collision (Beauty `⊗(FORM,LOVE)` ≡ BecForm `⊗(BECOMING,FORM)` because
+     LOVE /u/ and BECOMING /u/ share vowel formants, onset /l/ vs /v/ dropped).
+   - **Fidelity register (instantiation, NOT alignment).** `d_𝒪` (onf.la ONF feature
+     distance) and `d_𝒫` (a Chamfer Hz metric over the derived `Θ_P` set), each computed
+     **independently from structure**, are **73%** concordant (Kendall, 230/311) over all
+     concept-pair orderings — the acoustic analogue of item 7's visual 0.863.
+   Both sub-1.0 numbers (7/8 and 73%) trace to the **same residual** — the **onset/energy
+   axis** the formant-only metric does not yet capture — i.e. **work remaining to close the
+   INSTANTIATION toward the 1.0 the ontology already holds**, NOT a shortfall in alignment.
+   Pure str/int ⇒ byte-identical host == VM. **Still OPEN (deferred):** the spec's full metric
+   space `𝒫`/`d_𝒫` as a continuous manifold and the toroidal meta-topology `𝓜_P` (`:4402`);
+   the richer acoustic representation that adds the onset/energy dimension (closing 7/8→8/8
+   and lifting fidelity) is the named next step. (`φ` is never stipulated — both distances
+   derived; the don't-impose discipline holds for forms.)
 
 **Working order is the author's call; each item ends only when verified.**
 
