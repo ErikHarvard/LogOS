@@ -135,6 +135,25 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    vs rendered-form Hamming-distance correlate at **0.863**: ontologically-close concepts
    render to close forms. A real structure-preserving proximity in the geometric space (the
    item-8 isomorphism *direction*).
+   **Stage-4 (d) — THE CYCLE OF BEING TEST — REAL OPEN ITEM, NOT YET RUN.** Flagged three
+   times and lost each time; written here so it survives. *What it is:* the test of whether
+   the **derived geometry enacts the Cycle of Being** as *Being & Becoming* describes it —
+   the three-beat structure **(i) bifurcation from the Void** (Being boots/differentiates
+   from ∅ — a branch out of `VOID`), **(ii) recognition-collapse** (the metacursive return:
+   recognition folds the distinction back on itself — `↻`/κ collapsing toward `SELF`, the
+   `↻(BEING)→SELF` canonical rewrite), **(iii) preserved distinction** (the collapse does
+   NOT erase — the distinction survives, i.e. α=1 injectivity holds *through* the collapse).
+   *What running it means:* take a concept whose ONF graph encodes that three-beat (e.g. a
+   bifurcation rooted in `VOID`, a `↻`/recognition node, distinct leaves), push it through
+   `onf.la`/`topoderive.la`, and CHECK whether the rendered geometry exhibits the cycle:
+   a Void-rooted branch that closes through a recognition-loop yet keeps its leaves
+   distinguishable. *Discipline (same as φ / Flower-of-Life):* this is a **TEST, not a
+   target** — **"the geometry does not enact the Cycle of Being" is a fully legitimate,
+   recorded outcome.** Do NOT shape the geometry to manufacture the cycle (that would assign,
+   not derive — breaking α=1). *Status:* **OPEN.** No such test exists in `build.sh` or any
+   `.la` module yet (the phrase "Cycle of Being" lives only in the philosophy codices —
+   *Being & Becoming* / *Être et Devenir*, as prose, never as a check). Needs building, then
+   running, with the result (enacts / partially / does not) recorded honestly.
 
 8. **Meta-topological meta-phonosemantics — Lingua Adamica derives the topology of
    meta-phonosemantics.** *Status:* **partial.** VERIFIED: the **invariant-preservation**
