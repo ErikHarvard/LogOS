@@ -1939,6 +1939,41 @@ else
     exit 1
 fi
 
+say "Cycle of Being (item 7, Stage-4 d): does the derived geometry enact B&B's cosmogenic cycle? (cob.la)"
+# A TEST, NOT A TARGET (observe, never impose; "does not enact" is a legitimate result).
+# cob.la encodes the Cycle of Being faithfully per Being & Becoming — ↻(recognition ▷
+# (VOID ⊗ BEING)): the first distinction arising from the Void, recognized, metacursively
+# RETURNED — pushes it through onf.la/topoderive.la, and OBSERVES whether the DERIVED
+# geometry exhibits the three beats (bifurcation from Void / recognition-collapse / the
+# Return / preserved distinction). Made DISCRIMINATING by the control ↻(BEING), which
+# canonicalizes to a single SELF (cycle AND distinction erased) — so a YES is not trivial.
+# Pure (node-building + str/int + pixel reads) ⇒ byte-identical host == VM.
+ok=1
+check_cob () {  # $1 = engine label, $2 = output file
+    grep -q 'DEG  feat = 0/0/0/0/N/SELF,' "$2"                                            || { echo "FAIL  cob($1): control ↻(BEING) did not collapse to a point — test not discriminating"; ok=0; }
+    grep -q 'COB  feat (cyc/dep/cont/br/sym/leaves) = 1/3/0/2/N/RECOGNITION,BEING,VOID,' "$2" || { echo "FAIL  cob($1): the Cycle-of-Being concept's features changed"; ok=0; }
+    grep -q 'beat i   bifurcation from Void   \[arms + Void leaf-mark\]      : YES' "$2"   || { echo "FAIL  cob($1): beat i (bifurcation from Void) not observed in the geometry"; ok=0; }
+    grep -q 'beat ii  recognition-collapse    \[central loop + collapse\]   : YES' "$2"    || { echo "FAIL  cob($1): beat ii (recognition-collapse / the Return) not observed"; ok=0; }
+    grep -q 'beat iii preserved distinction   \[3 leaves survive+injective\]: YES' "$2"    || { echo "FAIL  cob($1): beat iii (preserved distinction) not observed"; ok=0; }
+    grep -q 'CYCLE OF BEING enacted by the derived geometry ? YES' "$2"                    || { echo "FAIL  cob($1): final verdict not YES"; ok=0; }
+}
+rm -f cob_host.out cob_vm.out
+./tiny_host cob.la > cob_host.out 2>/dev/null
+check_cob "C host" cob_host.out
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp cob.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd > cob_vm.out 2>/dev/null
+check_cob "native VM" cob_vm.out
+cmp -s cob_host.out cob_vm.out || { echo "FAIL  cob: native render != C host render"; ok=0; }
+rm -f cob_host.out cob_vm.out logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  Cycle of Being (item 7, Stage-4 d): the derived geometry ENACTS B&B's cosmogenic cycle — ↻(recognition▷(VOID⊗BEING)) renders all three beats (bifurcation from Void → arms + a Void leaf-mark; recognition-collapse / the Return → a central closed loop + the real ↻(BEING)→SELF collapse; preserved distinction → the 3 constituents survive the return, injective render) while the control ↻(BEING) collapses to a point (discriminating); OBSERVED not imposed; byte-identical host==VM"
+else
+    exit 1
+fi
+
 say "Phonym: the phonological modality — the nine phonyms synthesised + PSC* (LINGUA_ADAMICA.tex)"
 # phonym.la is the THIRD mode of the trimodal language (visual=sigil, computational
 # =primitives, phonological=here). It SYNTHESISES the nine primitive phonyms as

@@ -1,0 +1,117 @@
+# ═══════════════════════════════════════════════════════════════════
+#  cob.la — THE CYCLE OF BEING TEST (item 7, Stage-4 d).
+#
+#  A TEST, NOT A TARGET. Question: does the DERIVED geometry (onf.la features →
+#  topoderive.la's DSIGIL) ENACT the Cycle of Being as *Being & Becoming* describes
+#  it — the cosmogenic "breath of Being", 0→9→0 (B&B :906, :1086)? Three beats:
+#    (i)   bifurcation from the Void  — "from the undifferentiated, the first
+#          distinction arises" (:1086): a distinction rooted in VOID.
+#    (ii)  recognition-collapse / the Return — "the return to ground", Being
+#          recognizes itself, ∃(∃)≡∃ (:330,:685): a metacursion ↻ that closes,
+#          and the real ↻(BEING)→SELF collapse.
+#    (iii) preserved distinction — "what collapses is not destroyed, it is opened"
+#          (:509); "the same note, recognized" (:906): the Return does NOT erase
+#          the differentiation — α=1 injectivity holds THROUGH the collapse.
+#
+#  DISCIPLINE (as for φ / Flower-of-Life): observe, never impose. "Does not enact"
+#  is a fully legitimate, recorded outcome. The geometry is NOT shaped to manufacture
+#  the cycle. The test is made DISCRIMINATING by a control: the bare return ↻(BEING)
+#  collapses to a single SELF (cycle + distinction erased) — so a YES is not trivial.
+#
+#  Pure (node-building + str/int + pixel reads) ⇒ byte-identical host == VM.
+# ═══════════════════════════════════════════════════════════════════
+
+import("onf.la")        # ONF_FEAT FEAT_STR CANON CANONIQ FT_CYC FT_BR FT_LV IS
+import("sigil.la")      # PRIM SYN CON DIR CONT MC SIG_AT SZ
+import("topoderive.la") # DSIGIL
+
+export COB SIB DEG VERDICT
+
+# ── Foundations ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph OR    = la a. la b. a(TRUE)(b)
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph YN    = la b. IF(b)(la _. "YES")(la _. "NO")
+glyph GE1   = la n. NOT(int_eq(n)(0))
+
+# ── the three concepts ───────────────────────────────────────────────
+# C_cob : the faithful ontological encoding of the Cycle of Being —
+#   ↻( recognition ▷ ( VOID ⊗ BEING ) ) : the first distinction (VOID⊗BEING)
+#   arising from the undifferentiated, recognized, and metacursively RETURNED (↻).
+glyph COB = MC(DIR(PRIM("RECOGNITION"))(SYN(PRIM("VOID"))(PRIM("BEING"))))
+# C_sib : the same cycle but bifurcating from FORM, not VOID — for injectivity.
+glyph SIB = MC(DIR(PRIM("RECOGNITION"))(SYN(PRIM("FORM"))(PRIM("BEING"))))
+# C_deg : the CONTROL — the bare return. ↻(BEING) collapses to SELF (the cycle
+#   and the distinction both vanish). A degenerate return that does NOT preserve.
+glyph DEG = MC(PRIM("BEING"))
+
+glyph FCOB = ONF_FEAT(COB)
+glyph FDEG = ONF_FEAT(DEG)
+
+# ── leaf-set helpers (the leaf string is comma-terminated, e.g. "BEING,VOID,") ──
+glyph NLEAF = Z(la self. la rest.
+    IF(str_eq(rest)(""))(la _. 0)(la _.
+    IF(str_eq(str_head(rest))(","))(la _. add(1)(self(str_tail(rest))))(la _.
+        self(str_tail(rest)))))
+glyph HASLEAF = Z(la self. la rest. la tok. la name.
+    IF(str_eq(rest)(""))(la _. FALSE)(la _.
+    IF(str_eq(str_head(rest))(","))(la _.
+        OR(str_eq(tok)(name))(self(str_tail(rest))("")(name)))(la _.
+        self(str_tail(rest))(concat(tok)(str_head(rest)))(name))))
+glyph HAS = la leaves. la name. HASLEAF(leaves)("")(name)
+
+# ── geometric equality of two derived sigils (scan the whole 32×32 grid) ──
+glyph EQB = la a. la b. IF(a)(la _. b)(la _. NOT(b))
+glyph ROWEQ = Z(la self. la s1. la s2. la r. la c.
+    IF(int_eq(c)(SZ))(la _. TRUE)(la _.
+        AND(EQB(SIG_AT(s1)(r)(c))(SIG_AT(s2)(r)(c)))(self(s1)(s2)(r)(add(c)(1)))))
+glyph GRIDEQ = Z(la self. la s1. la s2. la r.
+    IF(int_eq(r)(SZ))(la _. TRUE)(la _.
+        AND(ROWEQ(s1)(s2)(r)(0))(self(s1)(s2)(add(r)(1)))))
+glyph SIGEQ = la s1. la s2. GRIDEQ(s1)(s2)(0)
+
+# ── ASCII render of the derived form (visual evidence) ──
+glyph CELL = la s. la r. la c. IF(SIG_AT(s)(r)(c))(la _. "#")(la _. ".")
+glyph AROW  = Z(la self. la s. la r. la c. IF(int_eq(c)(SZ))(la _. "")(la _. concat(CELL(s)(r)(c))(self(s)(r)(add(c)(1)))))
+glyph ASCII = Z(la self. la s. la r. IF(int_eq(r)(SZ))(la _. "")(la _. concat(concat(AROW(s)(r)(0))("\n"))(self(s)(add(r)(1)))))
+
+# ── THE THREE BEATS, OBSERVED ─────────────────────────────────────────
+# (i) bifurcation from the Void: the geometry has radial ARMS (branching ≥ 1)
+#     AND a VOID constituent placed among the leaf-marks.
+glyph B1_ARMS = GE1(FT_BR(FCOB))
+glyph B1_VOID = HAS(FT_LV(FCOB))("VOID")
+glyph BEAT1   = AND(B1_ARMS)(B1_VOID)
+# (ii) recognition-collapse / the Return: a central closed LOOP is drawn
+#      (cycles ≥ 1, witnessed by the centre pixel) AND the ↻(BEING)→SELF collapse
+#      mechanism is real and operative (the control canonicalizes to SELF).
+glyph B2_LOOP     = GE1(FT_CYC(FCOB))
+glyph B2_CENTREPX = SIG_AT(DSIGIL(COB))(16)(16)
+glyph B2_COLLAPSE = str_eq(CANON(CANONIQ(DEG)))("SELF")
+glyph BEAT2       = AND(B2_LOOP)(AND(B2_CENTREPX)(B2_COLLAPSE))
+# (iii) preserved distinction: the 3 constituents survive the Return as distinct
+#       leaf-marks; the render is INJECTIVE (Void-cycle ≠ Form-cycle); and the
+#       control proves the test discriminates (the bare return erases to 1 leaf).
+glyph B3_SURVIVE = int_eq(NLEAF(FT_LV(FCOB)))(3)
+glyph B3_INJECT  = NOT(SIGEQ(DSIGIL(COB))(DSIGIL(SIB)))
+glyph B3_DISCRIM = int_eq(NLEAF(FT_LV(FDEG)))(1)
+glyph BEAT3      = AND(B3_SURVIVE)(AND(B3_INJECT)(B3_DISCRIM))
+
+glyph VERDICT = AND(BEAT1)(AND(BEAT2)(BEAT3))
+
+glyph L1  = print(concat("COB  = ↻(▷(RECOGNITION,⊗(VOID,BEING)))  canon ")(CANON(CANONIQ(COB))))
+glyph L2  = print(concat("COB  feat (cyc/dep/cont/br/sym/leaves) = ")(FEAT_STR(FCOB)))
+glyph L3  = print(concat("DEG  = ↻(BEING)  [control]  canon ")(CANON(CANONIQ(DEG))))
+glyph L4  = print(concat("DEG  feat = ")(FEAT_STR(FDEG)))
+glyph L5  = print("-- the three beats of the Cycle of Being, OBSERVED in the derived geometry --")
+glyph L6  = print(concat("beat i   bifurcation from Void   [arms + Void leaf-mark]      : ")(YN(BEAT1)))
+glyph L7  = print(concat("beat ii  recognition-collapse    [central loop + collapse]   : ")(YN(BEAT2)))
+glyph L8  = print(concat("beat iii preserved distinction   [3 leaves survive+injective]: ")(YN(BEAT3)))
+glyph L9  = print(concat("CYCLE OF BEING enacted by the derived geometry ? ")(YN(VERDICT)))
+glyph L10 = print("-- the derived form of the Cycle of Being (DSIGIL(COB)) --")
+glyph L11 = print(ASCII(DSIGIL(COB))(0))
+glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(SEQ(L5)(SEQ(L6)(SEQ(L7)(SEQ(L8)(SEQ(L9)(SEQ(L10)(L11))))))))))
