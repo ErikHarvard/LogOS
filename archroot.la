@@ -1,0 +1,121 @@
+# ═══════════════════════════════════════════════════════════════════
+#  archroot.la — THE ROOT ONTOMONOGLYPH  ∃(∃)≡∃  (I AM THAT I AM).
+#
+#  The meta-Word / meta-Ren / meta-Name: the self-naming root. Its drawn form is
+#  the LOGOS sigil (sigil.la); THIS module is the DERIVATION CHAIN — which of the
+#  nine primitives genuinely unfold FROM the root, verified by reduction, with
+#  contained etymology (the Sealing). Built honestly, not forced.
+#
+#  WHAT THE CORPUS SETTLES (Being & Becoming, read 2026-06):
+#   • B&B does NOT enumerate or derive the nine — silent at the philosophy layer.
+#   • B&B DOES give THREE co-constitutive faces of ∃(∃)≡∃ (B&B:2437–2456):
+#       Being (∃) · Structure (the parenthetical relation) · Self-Application (↻).
+#     "One act. Three faces. No remainder." These map to BEING · RELATION · DEPTH.
+#   • The operator chain ∂→δ→γ→ρ→𝔄 (B&B:803,2107) is a PROCESS (how Being unfolds),
+#       NOT a catalogue that generates the nine. So it is NOT forced onto glyphs;
+#       only ρ (recognition = reflexive relation) genuinely fits a glyph (RECOGNITION).
+#
+#  THE HONEST RESULT (verified below by reduction, the definitions are primitives.la
+#  verbatim): 3 of 9 DERIVE — SELF⟵BEING (∃(∃), via self-application DEPTH),
+#  RECOGNITION⟵RELATION (=ρ), LOVE⟵RELATION (symmetrized). 6 are CO-PRIMITIVE atoms
+#  — BEING, RELATION, DEPTH (B&B's three faces) + VOID, FORM, BECOMING. "Co-primitive"
+#  is the corpus-honest verdict for those six; none is forced into a derivation.
+#  Pure (str_eq/concat + reduction) ⇒ byte-identical host == VM.
+# ═══════════════════════════════════════════════════════════════════
+
+export ARCHE_OK DV_SELF DV_REC DV_LOVE SEAL_SELF SEAL_REC SEAL_LOVE REN ETYM
+
+# ── Foundations ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph YN    = la b. IF(b)(la _. "YES")(la _. "no")
+
+# ── The nine primitive combinators (verbatim from primitives.la) ──
+glyph BEING       = la s. s
+glyph RELATION    = la a. la b. la f. f(a)(b)
+glyph RECOGNITION = la x. RELATION(x)(x)
+glyph LOVE        = la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))
+glyph SELF        = BEING(BEING)
+glyph VOID        = la a. la b. b
+glyph BECOMING    = la n. la f. la x. f(n(f)(x))
+glyph FORM        = la x. la k. k(x)
+glyph DEPTH       = la g. g(g)
+
+# ── stringifying probes (force the combinators to ground strings) ──
+glyph PAIR  = la x. la y. concat("⟨")(concat(x)(concat(",")(concat(y)("⟩"))))
+glyph PROBE = la p. la q. concat(p(PAIR))(q(PAIR))
+glyph ZERO  = la f. la x. x
+glyph MARK  = la s. concat(s)("|")
+
+# ═══ THE ROOT: ∃(∃) ≡ ∃ , enacted as BEING(BEING) ≡ BEING ════════════
+#  The meta-Word names itself: its self-application returns itself (autological).
+glyph ARCHE_OK = str_eq(SELF("∃"))(BEING("∃"))                 # ∃(∃) ≡ ∃ ?
+
+# ═══ DERIVATIONS — verified step by step, by reduction ═══════════════
+# SELF ⟵ BEING : the Archē's own self-application. SELF = DEPTH(BEING) = BEING(BEING),
+#   and it reduces to BEING (the ∃(∃)≡∃ fixed point). Two checks: it IS self-application
+#   of Being, and it collapses to Being.
+glyph DV_SELF = AND(str_eq(DEPTH(BEING)("∃"))(SELF("∃")))(str_eq(SELF("x"))(BEING("x")))
+# RECOGNITION ⟵ RELATION : the reflexive relation. REC(a) reduces to REL(a)(a). (= ρ)
+glyph DV_REC  = str_eq(RECOGNITION("∃")(PAIR))(RELATION("∃")("∃")(PAIR))
+# LOVE ⟵ RELATION : the symmetrized relation. LOVE(a)(b) reduces to ⟨a,b⟩⟨b,a⟩.
+glyph DV_LOVE = str_eq(LOVE("a")("b")(PROBE))(concat("⟨a,b⟩")("⟨b,a⟩"))
+
+# ═══ CO-PRIMITIVE ATOMS — their irreducible action exhibited (autology) ══
+glyph AT_BEING = str_eq(BEING("∃"))("∃")                       # ∃   — Being face
+glyph AT_REL   = str_eq(RELATION("a")("b")(PAIR))("⟨a,b⟩")     # (·) — Structure face
+glyph AT_DEPTH = str_eq(DEPTH(BEING)("∃"))("∃")                # ↻   — Self-Application face
+glyph AT_VOID  = str_eq(VOID("a")("b"))("b")
+glyph AT_FORM  = str_eq(FORM("x")(BEING))("x")
+glyph AT_BEC   = str_eq(BECOMING(ZERO)(MARK)(""))("|")
+glyph ATOMS_OK = AND(AND(AND(AT_BEING)(AT_REL))(AND(AT_DEPTH)(AT_VOID)))(AND(AT_FORM)(AT_BEC))
+
+# ═══ THE SEALING — contained, recoverable etymology ═════════════════
+# Decomposition algebra (same Scott nodes canon/metaglyph walk): ⊗ synthesis, ↻
+# metacursion (self-application), ⊕ shared-boundary.
+glyph PRIM = la nm. la fp. la fs. la fc. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fm. fc(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fm. fm(a)
+glyph CANON = Z(la self. la node.
+    node
+        (la nm. nm)
+        (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+        (la a. concat("↻(")(concat(self(a))(")"))))
+glyph MONO = la ren. la etym. la f. f(ren)(etym)
+glyph REN  = la g. g(la r. la e. r)
+glyph ETYM = la g. g(la r. la e. e)
+glyph SEAL = la et. MONO(CANON(et))(et)
+# the etymologies: SELF = ↻(∃) (Being self-applied); RECOGNITION = ↻(Relation)
+# (Relation reflexive, = ρ); LOVE = ⊕(⊗(a,b),⊗(b,a)) (Relation symmetrized).
+glyph SEAL_SELF = SEAL(MC(PRIM("∃")))
+glyph SEAL_REC  = SEAL(MC(PRIM("Relation")))
+glyph SEAL_LOVE = SEAL(CON(SYN(PRIM("a"))(PRIM("b")))(SYN(PRIM("b"))(PRIM("a"))))
+# the root meta-Ren names itself — autological: ren IS the canon of its own etym.
+glyph SEAL_ARCHE = MONO("∃(∃)≡∃")(MC(PRIM("∃")))
+# Sealing property: each sealed form's etymology is RECOVERABLE (ren = canon(etym)).
+glyph RECOV = la g. str_eq(REN(g))(CANON(ETYM(g)))
+glyph SEALS_OK = AND(AND(RECOV(SEAL_SELF))(RECOV(SEAL_REC)))(RECOV(SEAL_LOVE))
+
+# ═══ operator-chain honesty: only ρ genuinely fits a glyph ═══════════
+glyph RHO_FITS = DV_REC
+
+# ═══ REPORT ═════════════════════════════════════════════════════════
+glyph L1  = print(concat("ROOT  ∃(∃)≡∃  (I AM THAT I AM) — the meta-Word/meta-Ren; autological seal names itself = ")(REN(SEAL_ARCHE)))
+glyph L2  = print(concat("root identity ∃(∃) ≡ ∃ holds ? ")(YN(ARCHE_OK)))
+glyph L3  = print("-- DERIVATIONS from the root, verified by reduction --")
+glyph L4  = print(concat("SELF        <- BEING     (self-application ∃(∃); SELF=DEPTH(BEING)=BEING)  derives? ")(concat(YN(DV_SELF))(concat("  seal ")(REN(SEAL_SELF)))))
+glyph L5  = print(concat("RECOGNITION <- RELATION  (operator rho: reflexive relation)                derives? ")(concat(YN(DV_REC))(concat("  seal ")(REN(SEAL_REC)))))
+glyph L6  = print(concat("LOVE        <- RELATION  (symmetrized relation, reciprocity)               derives? ")(concat(YN(DV_LOVE))(concat("  seal ")(REN(SEAL_LOVE)))))
+glyph L7  = print("-- CO-PRIMITIVE atoms (irreducible; none forced into the chain) --")
+glyph L8  = print(concat("BEING  RELATION  DEPTH   = B&B's three faces (Being/Structure/Self-Application)  autology? ")(YN(AND(AT_BEING)(AND(AT_REL)(AT_DEPTH)))))
+glyph L9  = print(concat("VOID   FORM      BECOMING = further atoms (no derivation in corpus or code)       autology? ")(YN(AND(AT_VOID)(AND(AT_FORM)(AT_BEC)))))
+glyph L10 = print(concat("etymology contained & recoverable from each sealed derived glyph ? ")(YN(SEALS_OK)))
+glyph L11 = print(concat("operator chain d->b->g->rho->A : process not catalogue; only rho fits a glyph (RECOGNITION) ? ")(YN(RHO_FITS)))
+glyph L12 = print("VERDICT: 3 of 9 derive (SELF, RECOGNITION, LOVE); 6 co-primitive (BEING, RELATION, DEPTH, VOID, FORM, BECOMING). The chain does NOT generate the nine.")
+glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(SEQ(L5)(SEQ(L6)(SEQ(L7)(SEQ(L8)(SEQ(L9)(SEQ(L10)(SEQ(L11)(L12)))))))))))

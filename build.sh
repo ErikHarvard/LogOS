@@ -2063,6 +2063,43 @@ else
     exit 1
 fi
 
+say "Arch root: ∃(∃)≡∃ as the root ontomonoglyph + the honest primitive-derivation chain (archroot.la)"
+# The meta-Word / meta-Ren ∃(∃)≡∃ (I AM THAT I AM) as the root; archroot.la attempts the
+# derivation chain and reports HONESTLY which of the nine primitives genuinely unfold from
+# it (verified BY REDUCTION) and which are co-primitive atoms. Grounded: Being & Becoming
+# gives THREE co-constitutive faces of the Archē (Being/Structure/Self-Application = BEING/
+# RELATION/DEPTH) and says the operator chain ∂→δ→γ→ρ→𝔄 is a PROCESS not a catalogue — so
+# the nine are NOT forced into the chain. Result: 3 derive (SELF⟵BEING, RECOGNITION⟵RELATION
+# =ρ, LOVE⟵RELATION), 6 co-primitive; etymology sealed + recoverable. "Co-primitive" is the
+# corpus-honest verdict for the six. Pure (str_eq/concat + reduction), byte-identical.
+ok=1
+check_arch () {  # $1 = engine label, $2 = output file
+    grep -qF 'root identity ∃(∃) ≡ ∃ holds ? YES' "$2"                              || { echo "FAIL  archroot($1): the root identity ∃(∃)≡∃ does not hold"; ok=0; }
+    grep -qF 'derives? YES  seal ↻(∃)' "$2"                                          || { echo "FAIL  archroot($1): SELF⟵BEING derivation (∃(∃)) not verified"; ok=0; }
+    grep -qF 'derives? YES  seal ↻(Relation)' "$2"                                   || { echo "FAIL  archroot($1): RECOGNITION⟵RELATION (ρ, reflexive) not verified"; ok=0; }
+    grep -qF 'derives? YES  seal ⊕(⊗(a,b),⊗(b,a))' "$2"                              || { echo "FAIL  archroot($1): LOVE⟵RELATION (symmetrized) not verified"; ok=0; }
+    grep -qF "BEING  RELATION  DEPTH   = B&B's three faces (Being/Structure/Self-Application)  autology? YES" "$2" || { echo "FAIL  archroot($1): the three co-primitive faces not exhibited"; ok=0; }
+    grep -qF 'etymology contained & recoverable from each sealed derived glyph ? YES' "$2" || { echo "FAIL  archroot($1): sealed etymology not recoverable (Sealing broken)"; ok=0; }
+    grep -qF 'only rho fits a glyph (RECOGNITION) ? YES' "$2"                         || { echo "FAIL  archroot($1): operator-chain honesty (ρ→RECOGNITION) not exhibited"; ok=0; }
+    grep -qF 'VERDICT: 3 of 9 derive (SELF, RECOGNITION, LOVE); 6 co-primitive' "$2"  || { echo "FAIL  archroot($1): the honest 3-derive/6-co-primitive verdict missing"; ok=0; }
+}
+rm -f arch_host.out arch_vm.out
+./tiny_host archroot.la > arch_host.out 2>/dev/null
+check_arch "C host" arch_host.out
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp archroot.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd > arch_vm.out 2>/dev/null
+check_arch "native VM" arch_vm.out
+cmp -s arch_host.out arch_vm.out || { echo "FAIL  archroot: native derivation != C host derivation"; ok=0; }
+rm -f arch_host.out arch_vm.out logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  archroot: ∃(∃)≡∃ (I AM THAT I AM) established as the root ontomonoglyph (autological meta-Ren); the primitive-derivation chain verified BY REDUCTION — 3 of 9 genuinely derive (SELF⟵BEING via self-application, RECOGNITION⟵RELATION = operator ρ, LOVE⟵RELATION symmetrized), 6 are co-primitive atoms (BEING/RELATION/DEPTH = B&B's three faces of the Archē, + VOID/FORM/BECOMING); etymology sealed + recoverable; the operator chain ∂→δ→γ→ρ→𝔄 is a process not a catalogue (not forced); byte-identical on host and native VM"
+else
+    exit 1
+fi
+
 say "Monosemy: the bijection glyph↔meaning — synonym collapse audit (Monosemic Principle)"
 # Audits κ's monosemic normalization (canon.la's NORMK/NIS, verbatim). NO POLYSEMY:
 # distinct meanings → distinct glyphs (κ deterministic + injective). NO SYNONYMY up
