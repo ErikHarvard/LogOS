@@ -96,10 +96,18 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    all, would have to arise HERE — from the derivation, never stipulated.
 
 8. **Meta-topological meta-phonosemantics — Lingua Adamica derives the topology of
-   meta-phonosemantics.** *Status:* **needs-verification.** Seeded in spec as PSC\*
-   invariant preservation (`psc.la` — Θ_P formant-topology preserved under ⊗ compression).
-   The claim to check: is the **topology of meta-phonosemantics genuinely derived**, or
-   only the per-phonym formant preservation we already verified? Checkable.
+   meta-phonosemantics.** *Status:* **partial.** VERIFIED: the **invariant-preservation**
+   layer is built (`psc.la` — `Θ_P` formant-peak signatures, ⊗-superposition `SYN_INV`,
+   set-containment `PRESERVES`, compressed duration; `PASS psc`), as is the
+   **meta-criterion** (`PSC_STAR` returns `(e,w)` — the compiler carrying its own invariant
+   witness, `M(PSC*)≡PSC*`). **OPEN — the derived topology is NOT built:** `psc.la` has
+   discrete formant-peak SETS with `⊆`, **not** the spec's metric phonetic space `𝒫` with
+   `d_𝒫` + the **phonetic↔semantic isomorphism** `φ:𝒪→𝒫` (Axiom phon-sem, `:2577` —
+   acoustic proximity ⟺ ontological proximity) nor the derived toroidal meta-topology `𝓜_P`
+   (`:4402`). It verifies WHICH peaks survive a union, never HOW distances map. Closing it
+   is a real build: **compute `φ` / the `d_𝒪↔d_𝒫` correspondence FROM ontological structure
+   and VERIFY it — not stipulate it** (same don't-impose discipline as φ-the-ratio). Confirms
+   and extends the α=1 audit's already-noted phon-sem gap (item 3 / #3 below).
 
 **Working order is the author's call; each item ends only when verified.**
 
