@@ -1286,6 +1286,59 @@ else
 fi
 rm -f logos_nativert
 
+say "Native backend Stage 1: minimal native execution — literals + builtins + int arithmetic (native_codegen.la)"
+# Stage 1 of the native x86-64 backend. native_codegen.la compiles a single-
+# expression program (integer/string literals, add/sub/mul/div/mod, concat,
+# int_to_str, print) DIRECTLY to an x86-64 ELF that runs on the carved runtime
+# (native_codegen_rt.asm) — NO SECD interpreter, NO per-instruction dispatch.
+# Types are inferred statically (no runtime tags). The gate is native==host: the
+# emitted binary's stdout must byte-match the same program run on tiny_host,
+# across arithmetic / string / print programs. Pure generation; secd.asm and
+# nativert.asm are UNTOUCHED (additive), so the existing engines cannot regress.
+rm -f native_codegen_out native_input.la
+ok=1
+# Drift guard: the LA-embedded runtime bytes equal nasm -f bin native_codegen_rt.asm
+# (the accepted "physics" seed — only the runtime is asm), as secd.la is to secd.asm.
+if command -v nasm >/dev/null 2>&1; then
+    printf 'glyph MAIN = print(42)\n' > native_input.la
+    ./tiny_host native_codegen.la >/dev/null 2>&1
+    nasm -f bin native_codegen_rt.asm -o /tmp/ncrt_ref 2>/dev/null
+    # the runtime sits at file offset 120 (after the 64-byte ELF header + 56-byte phdr), 1313 bytes
+    dd if=native_codegen_out of=/tmp/ncrt_emb bs=1 skip=120 count=1313 2>/dev/null
+    cmp -s /tmp/ncrt_emb /tmp/ncrt_ref || { echo "FAIL  native_codegen: embedded runtime differs from nasm -f bin native_codegen_rt.asm"; ok=0; }
+    rm -f /tmp/ncrt_ref /tmp/ncrt_emb
+fi
+# native==host across a spread of Stage-1 programs (the b_τ ≡ f_τ gate)
+ncheck () {
+    printf 'glyph MAIN = %s\n' "$1" > native_input.la
+    ./tiny_host native_codegen.la >/dev/null 2>/tmp/nc_err || { echo "FAIL  native_codegen: compile error on [$1]: $(head -1 /tmp/nc_err)"; ok=0; return; }
+    ./native_codegen_out > /tmp/nc_native.out 2>/dev/null; nrc=$?
+    ./tiny_host native_input.la > /tmp/nc_host.out 2>/dev/null
+    cmp -s /tmp/nc_native.out /tmp/nc_host.out || { echo "FAIL  native_codegen: native != host on [$1] (native='$(cat /tmp/nc_native.out)' host='$(cat /tmp/nc_host.out)')"; ok=0; }
+    [ "$nrc" = "0" ] || { echo "FAIL  native_codegen: emitted binary for [$1] exited $nrc"; ok=0; }
+}
+ncheck 'print(42)'
+ncheck 'print(add(2)(3))'
+ncheck 'print(sub(2)(5))'
+ncheck 'print(mul(6)(7))'
+ncheck 'print(div(100)(7))'
+ncheck 'print(mod(17)(5))'
+ncheck 'print(add(mul(3)(4))(div(20)(5)))'
+ncheck 'print("I AM THAT I AM")'
+ncheck 'print(concat("hello, ")("world"))'
+ncheck 'print(concat(concat("a")("b"))("c"))'
+ncheck 'print(int_to_str(add(40)(2)))'
+ncheck 'print(concat("n=")(int_to_str(mod(17)(5))))'
+# Loud failure: an unsupported builtin must halt the compiler non-zero (no silent wrong binary).
+printf 'glyph MAIN = print(lt(1)(2))\n' > native_input.la
+./tiny_host native_codegen.la >/dev/null 2>&1 && { echo "FAIL  native_codegen: unsupported builtin did not halt the compiler"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  native backend Stage 1: native_codegen.la compiles literals + print + int arithmetic (add/sub/mul/div/mod) + string concat/int_to_str DIRECTLY to x86-64 ELF on the carved runtime (embedded bytes == nasm native_codegen_rt.asm); 12 programs run native==host byte-identical, unsupported forms halt loudly, secd.asm/nativert.asm untouched"
+else
+    exit 1
+fi
+rm -f native_codegen_out native_input.la /tmp/nc_native.out /tmp/nc_host.out /tmp/nc_err
+
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
 # (logos_source.la) to a native instruction stream (logos_program.bin); the VM

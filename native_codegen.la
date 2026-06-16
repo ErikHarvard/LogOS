@@ -1,0 +1,309 @@
+# ═══════════════════════════════════════════════════════════════════
+#  native_codegen.la — Native x86-64 backend, STAGE 1: minimal native
+#  execution. Compiles a single-expression program (literals + builtin
+#  application + integer arithmetic, NO closures) DIRECTLY to an x86-64
+#  ELF that runs on the carved runtime (native_codegen_rt.asm), with no
+#  SECD interpreter and no per-instruction dispatch.
+#
+#  Pure GENERATION (assembling machine bytes) — no evaluation of the
+#  object program; the CPU/OS perform RECOGNITION when the binary runs.
+#  This is the Γ-side dual of running the program on the host; build.sh
+#  gates `native == host` byte-identical stdout on every Stage-1 program.
+#
+#  SUPPORTED SUBSET (Stage 1, honest scope):
+#    - integer literals (desugared str_to_int("n"))      -> INT in rax
+#    - string literals "..."                             -> STR descriptor in rax
+#    - add/sub/mul/div/mod (a)(b)   integer arithmetic   -> INT
+#    - concat(a)(b)                 string concatenation -> STR
+#    - int_to_str(a)                                     -> STR
+#    - print(a)                     int or string + newline
+#  Types are inferred statically at compile time (no runtime tags); an
+#  unsupported form (lambda, user glyph, closure builtin) halts LOUDLY.
+#
+#  INPUT  : native_input.la  (a `glyph MAIN = <expr>` program)
+#  OUTPUT : native_codegen_out  (a 0755 static ELF64)
+#
+#  The runtime is the accepted "physics" seed (the only asm); a build.sh
+#  drift guard checks the embedded RT bytes equal `nasm -f bin
+#  native_codegen_rt.asm`. secd.asm / nativert.asm are UNTOUCHED — this
+#  stage is purely additive, so the existing engines cannot regress.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Church / list / pair core ──────────────────────────────────────
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph OR    = la a. la b. a(TRUE)(b)
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph SEQ   = la a. la b. b
+glyph PAIR  = la a. la b. la f. f(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph NIL   = PAIR(FALSE)("")
+glyph CONS  = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph HD    = la l. FST(SND(l))
+glyph TL    = la l. SND(SND(l))
+
+# ── AST nodes (Scott-encoded, 4-branch: onVar onLam onApp onStr) ────
+glyph AST_VAR = la name. la v. la l. la a. la s. v(name)
+glyph AST_LAM = la p. la b. la v. la l. la a. la s. l(p)(b)
+glyph AST_APP = la f. la a. la v. la l. la ap. la s. ap(f)(a)
+glyph AST_STR = la val. la v. la l. la a. la s. s(val)
+
+# ── byte / integer encoding helpers ────────────────────────────────
+# B(n): single byte from int 0..255 (chr takes a decimal string).
+glyph B = la n. chr(int_to_str(n))
+# LEBYTES(n)(k): k little-endian bytes of non-negative int n.
+glyph LEBYTES = Z(la self. la n. la k.
+    IF(int_eq(k)(0))(la _. "")(la _.
+        concat(B(mod(n)(256)))(self(div(n)(256))(sub(k)(1)))))
+glyph LE8 = la n. LEBYTES(n)(8)
+
+# BYTES(s): decimal-byte string -> the binary it denotes (the elf.la form).
+glyph BYTES = la s.
+    Z(la self. la rest. la tok. la out.
+        IF(str_eq(rest)(""))(la _.
+            IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok)))
+        )(la _.
+        IF(str_eq(str_head(rest))(" "))(la _.
+            self(str_tail(rest))("")(IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok))))
+        )(la _.
+            self(str_tail(rest))(concat(tok)(str_head(rest)))(out)
+        ))
+    )(s)("")("")
+
+# ── lexer ──────────────────────────────────────────────────────────
+glyph STR_HAS = Z(la self. la c. la s.
+    IF(str_eq(s)(""))(la _. FALSE)(la _.
+    IF(str_eq(c)(str_head(s)))(la _. TRUE)(la _. self(c)(str_tail(s)))))
+glyph IS_DIGIT = la c. STR_HAS(c)("0123456789")
+glyph IS_DELIM = la c. STR_HAS(c)(" \n\t()=#\"")
+glyph IS_SPACE = la c. OR(str_eq(c)(" "))(OR(str_eq(c)("\n"))(str_eq(c)("\t")))
+
+glyph MKTOK  = la ty. la v. PAIR(ty)(v)
+glyph T_TYPE = FST
+glyph T_VAL  = SND
+
+glyph UNESCAPE = la c.
+    IF(str_eq(c)("n"))(la _. "\n")(la _.
+    IF(str_eq(c)("t"))(la _. "\t")(la _. c))
+
+glyph READ_STR = Z(la self. la acc. la s.
+    IF(str_eq(s)(""))(la _. error("native_codegen: unterminated string literal"))(la _.
+    IF(str_eq(str_head(s))("\""))(la _. PAIR(acc)(str_tail(s)))(la _.
+    IF(str_eq(str_head(s))("\\"))(la _.
+        self(concat(acc)(UNESCAPE(str_head(str_tail(s)))))(str_tail(str_tail(s))))(la _.
+        self(concat(acc)(str_head(s)))(str_tail(s))))))
+
+glyph READ_WHILE = Z(la self. la pred. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))(la _.
+    IF(pred(str_head(s)))(la _. self(pred)(concat(acc)(str_head(s)))(str_tail(s)))(la _. PAIR(acc)(s))))
+glyph READ_INT  = READ_WHILE(IS_DIGIT)("")
+glyph READ_NAME = READ_WHILE(la c. NOT(IS_DELIM(c)))("")
+
+glyph DROP_LINE = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. s)(la _.
+    IF(str_eq(str_head(s))("\n"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+
+glyph TOKENIZE = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. CONS(MKTOK("eof")(""))(NIL))(la _.
+    (la c.
+        IF(IS_SPACE(c))(la _. self(str_tail(s)))(la _.
+        IF(str_eq(c)("#"))(la _. self(DROP_LINE(str_tail(s))))(la _.
+        IF(str_eq(c)("("))(la _. CONS(MKTOK("lp")("("))(self(str_tail(s))))(la _.
+        IF(str_eq(c)(")"))(la _. CONS(MKTOK("rp")(")"))(self(str_tail(s))))(la _.
+        IF(str_eq(c)("="))(la _. CONS(MKTOK("eq")("="))(self(str_tail(s))))(la _.
+        IF(str_eq(c)("\""))(la _.
+            (la r. CONS(MKTOK("str")(FST(r)))(self(SND(r))))(READ_STR("")(str_tail(s))))(la _.
+        IF(IS_DIGIT(c))(la _.
+            (la r. CONS(MKTOK("int")(FST(r)))(self(SND(r))))(READ_INT(s)))(la _.
+            (la r. CONS(MKTOK("name")(FST(r)))(self(SND(r))))(READ_NAME(s))
+        )))))))
+    )(str_head(s))))
+
+# ── parser (expression: primary, left-assoc application) ───────────
+glyph P_PRIMARY = la toks.
+    (la tok.
+    (la ty.
+    (la v.
+    (la rest.
+        IF(str_eq(ty)("lp"))(la _.
+            (la inner.
+                IF(str_eq(T_TYPE(HD(SND(inner))))("rp"))
+                  (la _. PAIR(FST(inner))(TL(SND(inner))))
+                  (la _. error("native_codegen: expected close-paren after group"))
+            )(P_EXPR(rest))
+        )(la _.
+        IF(str_eq(ty)("str"))(la _. PAIR(AST_STR(v))(rest))(la _.
+        IF(str_eq(ty)("int"))(la _. PAIR(AST_APP(AST_VAR("str_to_int"))(AST_STR(v)))(rest))(la _.
+        IF(str_eq(ty)("name"))(la _. PAIR(AST_VAR(v))(rest))(la _.
+        error(concat("native_codegen: unexpected token: ")(ty))
+        ))))
+    )(TL(toks))
+    )(T_VAL(tok))
+    )(T_TYPE(tok))
+    )(HD(toks))
+
+glyph APP_TAIL = la acc. la toks.
+    IF(str_eq(T_TYPE(HD(toks)))("lp"))(la _.
+        (la inner.
+            IF(str_eq(T_TYPE(HD(SND(inner))))("rp"))(la _. APP_TAIL(AST_APP(acc)(FST(inner)))(TL(SND(inner))))(la _. error("native_codegen: expected ) after argument")))
+        (P_EXPR(TL(toks))))
+    (la _. PAIR(acc)(toks))
+
+glyph P_APP  = la toks. (la base. APP_TAIL(FST(base))(SND(base)))(P_PRIMARY(toks))
+glyph P_EXPR = la toks. P_APP(toks)
+
+# GET_MAIN: scan for `glyph MAIN = <expr>`, return MAIN's expression AST.
+glyph GET_MAIN = Z(la self. la toks.
+    (la t0.
+        IF(str_eq(T_TYPE(t0))("eof"))(la _. error("native_codegen: no glyph MAIN found"))(la _.
+        IF(AND(str_eq(T_TYPE(t0))("name"))(str_eq(T_VAL(t0))("glyph")))(la _.
+            (la t1. (la t2.
+                IF(AND(str_eq(T_TYPE(t1))("name"))(str_eq(T_VAL(t1))("MAIN")))(la _.
+                    IF(str_eq(T_TYPE(t2))("eq"))(la _. FST(P_EXPR(TL(TL(TL(toks))))))(la _. error("native_codegen: expected = after glyph MAIN")))
+                (la _. self(TL(toks))))
+            (HD(TL(TL(toks)))))(HD(TL(toks))))
+        (la _. self(TL(toks)))))
+    (HD(toks)))
+
+# ── AST predicates / accessors ─────────────────────────────────────
+# IS_INT_LIT: node == AST_APP(AST_VAR "str_to_int")(AST_STR _)
+glyph IS_INT_LIT = la node. node
+    (la nm. FALSE)
+    (la p. la b. FALSE)
+    (la f. la a. AND( f (la nm. str_eq(nm)("str_to_int"))(la p. la b. FALSE)(la f2. la a2. FALSE)(la v. FALSE) )
+                    ( a (la nm. FALSE)(la p. la b. FALSE)(la f2. la a2. FALSE)(la v. TRUE) ))
+    (la v. FALSE)
+glyph STR_OF = la node. node (la nm. "")(la p. la b. "")(la f. la a. "")(la v. v)
+
+# ── string-literal collection + pool layout ────────────────────────
+glyph APPEND = Z(la self. la xs. la ys. IF(IS_CONS(xs))(la _. CONS(HD(xs))(self(TL(xs))(ys)))(la _. ys))
+glyph COLLECT = Z(la self. la node. node
+    (la nm. NIL)
+    (la p. la b. NIL)
+    (la f. la a. IF(IS_INT_LIT(node))(la _. NIL)(la _. APPEND(self(f))(self(a))))
+    (la v. CONS(v)(NIL)))
+
+glyph FOLDL = Z(la self. la f. la acc. la lst.
+    IF(IS_CONS(lst))(la _. self(f)(f(acc)(HD(lst)))(TL(lst)))(la _. acc))
+glyph HAS_KEY = Z(la self. la k. la map.
+    IF(IS_CONS(map))(la _. IF(str_eq(k)(FST(HD(map))))(la _. TRUE)(la _. self(k)(TL(map))))(la _. FALSE))
+glyph LOOKUP = Z(la self. la k. la map.
+    IF(IS_CONS(map))(la _. IF(str_eq(k)(FST(HD(map))))(la _. SND(HD(map)))(la _. self(k)(TL(map))))(la _. error(concat("native_codegen: literal not in pool: ")(k))))
+glyph STRLEN_INT = la s. str_to_int(str_len(s))
+
+# The string-literal pool sits immediately after the runtime blob:
+#   LITERAL_BASE = 0x400000 + 120 (header) + 1313 (runtime) = 4195737
+glyph LITERAL_BASE = 4195737
+glyph ADD_LIT = la acc. la v.
+    (la pool. (la map.
+        IF(HAS_KEY(v)(map))(la _. acc)(la _.
+            PAIR(concat(pool)(v))(CONS(PAIR(v)(add(LITERAL_BASE)(STRLEN_INT(pool))))(map))))
+    (SND(acc)))(FST(acc))
+glyph BUILD_POOL = la values. FOLDL(ADD_LIT)(PAIR("")(NIL))(values)
+
+# ── x86-64 instruction emitters ────────────────────────────────────
+glyph PUSH_RAX    = chr("80")
+glyph POP_RAX     = chr("88")
+glyph POP_RSI     = chr("94")
+glyph MOV_RBX_RAX = BYTES("72 137 195")
+glyph MOV_RAX_R9  = BYTES("76 137 200")
+glyph MOV_R9_RAX  = BYTES("73 137 193")
+glyph MOV_RDI_RAX = BYTES("72 137 199")
+glyph CALL_R11    = BYTES("65 255 211")
+glyph I_ADD  = BYTES("72 1 216")
+glyph I_SUB  = BYTES("72 41 216")
+glyph I_IMUL = BYTES("72 15 175 195")
+glyph I_DIV  = BYTES("72 153 72 247 251")
+glyph I_MOD  = BYTES("72 153 72 247 251 72 137 208")
+
+glyph MOV_RAX_IMM = la n. concat(BYTES("72 184"))(LE8(n))
+glyph MOV_RSI_IMM = la n. concat(BYTES("72 190"))(LE8(n))
+glyph MOV_RDX_IMM = la n. concat(BYTES("72 186"))(LE8(n))
+glyph MOV_R11_IMM = la n. concat(BYTES("73 187"))(LE8(n))
+glyph MOV_R15_IMM = la n. concat(BYTES("73 191"))(LE8(n))
+glyph CALL_ABS    = la addr. concat(MOV_R11_IMM(addr))(CALL_R11)
+
+# runtime routine absolute addresses (fixed 256-byte slots from 0x400078)
+glyph RT_MAKE_STR   = 4194424
+glyph RT_PRINT_STR  = 4194680
+glyph RT_CONCAT     = 4194936
+glyph RT_PRINT_INT  = 4195192
+glyph RT_INT_TO_STR = 4195448
+
+# ── codegen ────────────────────────────────────────────────────────
+# CG(litmap)(node) -> PAIR(type)(code); type is "INT" or "STR".
+glyph CG_BINARY = la rec. la litmap. la nm. la op1. la op2.
+    (la c1. (la c2.
+        (la arith.
+            IF(str_eq(nm)("add"))(la _. arith(I_ADD))
+           (la _. IF(str_eq(nm)("sub"))(la _. arith(I_SUB))
+           (la _. IF(str_eq(nm)("mul"))(la _. arith(I_IMUL))
+           (la _. IF(str_eq(nm)("div"))(la _. arith(I_DIV))
+           (la _. IF(str_eq(nm)("mod"))(la _. arith(I_MOD))
+           (la _. IF(str_eq(nm)("concat"))(la _.
+               PAIR("STR")(concat(c1)(concat(PUSH_RAX)(concat(c2)(concat(MOV_RDI_RAX)(concat(POP_RSI)(concat(CALL_ABS(RT_CONCAT))(MOV_RAX_R9))))))))
+           (la _. error(concat("native_codegen: unsupported binary builtin: ")(nm)))))))))
+        (la opbytes. PAIR("INT")(concat(c1)(concat(PUSH_RAX)(concat(c2)(concat(MOV_RBX_RAX)(concat(POP_RAX)(opbytes))))))))
+    (SND(rec(litmap)(op2))))(SND(rec(litmap)(op1)))
+
+glyph CG = Z(la self. la litmap. la node. node
+    (la nm. error(concat("native_codegen: bare name unsupported: ")(nm)))
+    (la p. la b. error("native_codegen: lambda unsupported in Stage 1"))
+    (la f. la a.
+        IF(IS_INT_LIT(node))(la _. PAIR("INT")(MOV_RAX_IMM(str_to_int(STR_OF(a)))))(la _.
+            f
+                (la nm.
+                    IF(str_eq(nm)("print"))(la _.
+                        (la ra.
+                            IF(str_eq(FST(ra))("INT"))(la _. PAIR("INT")(concat(SND(ra))(CALL_ABS(RT_PRINT_INT))))(la _. PAIR("STR")(concat(SND(ra))(concat(MOV_R9_RAX)(CALL_ABS(RT_PRINT_STR))))))
+                        (self(litmap)(a)))
+                   (la _. IF(str_eq(nm)("int_to_str"))(la _.
+                        (la ra. PAIR("STR")(concat(SND(ra))(concat(CALL_ABS(RT_INT_TO_STR))(MOV_RAX_R9))))(self(litmap)(a)))
+                   (la _. error(concat("native_codegen: unsupported unary builtin: ")(nm)))))
+                (la p. la b. error("native_codegen: lambda in function position"))
+                (la f2. la a2. f2
+                    (la nm. CG_BINARY(self)(litmap)(nm)(a2)(a))
+                    (la pp. la bb. error("native_codegen: unsupported nested lambda application"))
+                    (la ff. la aa. error("native_codegen: too many arguments (Stage 1 = unary/binary builtins)"))
+                    (la vv. error("native_codegen: unsupported application head")))
+                (la v. error("native_codegen: string applied as function"))))
+    (la v. PAIR("STR")(concat(MOV_RSI_IMM(LOOKUP(v)(litmap)))(concat(MOV_RDX_IMM(STRLEN_INT(v)))(concat(CALL_ABS(RT_MAKE_STR))(MOV_RAX_R9))))))
+
+# ── assemble the ELF image ─────────────────────────────────────────
+glyph SRC      = read_file("native_input.la")
+glyph TOKS     = TOKENIZE(SRC)
+glyph MAIN_AST = GET_MAIN(TOKS)
+glyph POOLPAIR = BUILD_POOL(COLLECT(MAIN_AST))
+glyph POOL     = FST(POOLPAIR)
+glyph LITMAP   = SND(POOLPAIR)
+glyph BODY     = SND(CG(LITMAP)(MAIN_AST))
+
+# the embedded carved runtime (nasm -f bin native_codegen_rt.asm), 1313 bytes
+glyph RT = BYTES("76 137 248 77 49 210 73 57 210 115 13 70 138 28 22 71 136 28 23 73 255 194 235 238 73 1 215 73 199 7 0 0 0 0 73 131 199 8 77 137 249 73 137 23 73 137 71 8 73 131 199 16 195 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 80 72 139 112 8 72 139 16 184 1 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 1 0 0 0 72 190 120 5 64 0 0 0 0 0 186 1 0 0 0 15 5 88 195 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 76 137 248 72 139 14 76 139 86 8 77 49 192 73 57 200 115 13 71 138 28 2 71 136 28 7 73 255 192 235 238 73 1 207 72 139 23 76 139 87 8 77 49 192 73 57 208 115 13 71 138 28 2 71 136 28 7 73 255 192 235 238 73 1 215 72 139 14 72 3 15 73 199 7 0 0 0 0 73 131 199 8 77 137 249 73 137 15 73 137 71 8 73 131 199 16 195 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 80 72 190 153 5 64 0 0 0 0 0 187 10 0 0 0 77 49 192 72 133 192 121 9 65 184 1 0 0 0 72 247 216 72 133 192 117 8 72 255 206 198 6 48 235 21 72 133 192 116 16 72 49 210 72 247 243 128 194 48 72 255 206 136 22 235 235 77 133 192 116 6 72 255 206 198 6 45 72 186 153 5 64 0 0 0 0 0 72 41 242 184 1 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 1 0 0 0 72 190 120 5 64 0 0 0 0 0 186 1 0 0 0 15 5 88 195 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 72 190 153 5 64 0 0 0 0 0 187 10 0 0 0 77 49 192 72 133 192 121 9 65 184 1 0 0 0 72 247 216 72 133 192 117 8 72 255 206 198 6 48 235 21 72 133 192 116 16 72 49 210 72 247 243 128 194 48 72 255 206 136 22 235 235 77 133 192 116 6 72 255 206 198 6 45 72 186 153 5 64 0 0 0 0 0 72 41 242 232 161 251 255 255 195 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+glyph RTLEN = 1313
+glyph VADDR = 4194304
+
+glyph PLEN      = STRLEN_INT(POOL)
+glyph BLEN      = STRLEN_INT(BODY)
+glyph CODE_BASE = add(LITERAL_BASE)(PLEN)
+# filesize = header(120) + runtime + pool + prologue(10) + body + epilogue(10)
+glyph FILESIZE  = add(add(120)(add(RTLEN)(PLEN)))(add(add(10)(BLEN))(10))
+glyph RAWEND    = add(VADDR)(FILESIZE)
+glyph HEAP_ADDR = add(RAWEND)(mod(sub(16)(mod(RAWEND)(16)))(16))
+glyph MEMSZ     = add(sub(HEAP_ADDR)(VADDR))(65536)
+glyph ENTRY     = CODE_BASE
+
+glyph PROLOGUE = MOV_R15_IMM(HEAP_ADDR)
+glyph EPILOGUE = concat(BYTES("184 60 0 0 0"))(concat(BYTES("72 49 255"))(BYTES("15 5")))
+
+glyph EHDR = concat(BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0"))(concat(LE8(ENTRY))(BYTES("64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 56 0 1 0 0 0 0 0 0 0")))
+glyph PHDR = concat(BYTES("1 0 0 0 7 0 0 0"))(concat(LE8(0))(concat(LE8(VADDR))(concat(LE8(VADDR))(concat(LE8(FILESIZE))(concat(LE8(MEMSZ))(LE8(4096)))))))
+
+glyph IMAGE = concat(EHDR)(concat(PHDR)(concat(RT)(concat(POOL)(concat(PROLOGUE)(concat(BODY)(EPILOGUE))))))
+
+glyph MAIN = SEQ(write_exec("native_codegen_out")(IMAGE))(print("emitted native_codegen_out"))
