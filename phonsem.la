@@ -74,18 +74,23 @@ glyph LDEDUP = Z(la self. la l. l(LNIL)(la h. la t. IF(LMEM(h)(t))(la _. self(t)
 glyph THETA_P = la l. LDEDUP(l)
 glyph LREN  = Z(la self. la l. l("")(la h. la t. concat(int_to_str(h))(concat(",")(self(t)))))
 
-# ── the nine primitives' vowel-nucleus formant signatures (F1,F2,F3),
-#    verbatim from phonym.la's synthesised phonyms ──
+# ── the nine primitives' formant signatures: {onset-cue, F1, F2, F3} (Hz). The
+#    onset cue is the discriminating CONSONANTAL feature (lever L1) that the bare
+#    vowel nucleus dropped — restoring root-injectivity (BEING/SELF/FORM no longer
+#    collide on /ɑ/, LOVE/BECOMING no longer on /u/). Grounded in phonym.la where it
+#    gives a formant (/l/≈1300 from VSAMP(360,1300,2500); /ʀ/≈520 from TSAMP(520,..));
+#    standard phonetic centroids for the noise/burst onsets. BEING is vowel-initial
+#    (/ɑ/, no consonant) → it keeps the bare 3-peak nucleus, as it should.
 glyph NMFMT = la nm.
     IF(str_eq(nm)("BEING"))      (la _. LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL))))(la _.
-    IF(str_eq(nm)("RECOGNITION"))(la _. LCONS(270)(LCONS(2300)(LCONS(3000)(LNIL))))(la _.
-    IF(str_eq(nm)("LOVE"))       (la _. LCONS(300)(LCONS(870)(LCONS(2240)(LNIL))))(la _.
-    IF(str_eq(nm)("SELF"))       (la _. LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL))))(la _.
-    IF(str_eq(nm)("RELATION"))   (la _. LCONS(750)(LCONS(1150)(LCONS(2500)(LNIL))))(la _.
-    IF(str_eq(nm)("VOID"))       (la _. LCONS(650)(LCONS(1000)(LCONS(2500)(LNIL))))(la _.
-    IF(str_eq(nm)("BECOMING"))   (la _. LCONS(300)(LCONS(870)(LCONS(2240)(LNIL))))(la _.
-    IF(str_eq(nm)("FORM"))       (la _. LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL))))(la _.
-                                  LCONS(500)(LCONS(800)(LCONS(2830)(LNIL))))))))))) # DEPTH /ɔ/
+    IF(str_eq(nm)("RECOGNITION"))(la _. LCONS(2800)(LCONS(270)(LCONS(2300)(LCONS(3000)(LNIL)))))(la _.
+    IF(str_eq(nm)("LOVE"))       (la _. LCONS(1300)(LCONS(300)(LCONS(870)(LCONS(2240)(LNIL)))))(la _.
+    IF(str_eq(nm)("SELF"))       (la _. LCONS(250)(LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL)))))(la _.
+    IF(str_eq(nm)("RELATION"))   (la _. LCONS(520)(LCONS(750)(LCONS(1150)(LCONS(2500)(LNIL)))))(la _.
+    IF(str_eq(nm)("VOID"))       (la _. LCONS(400)(LCONS(650)(LCONS(1000)(LCONS(2500)(LNIL)))))(la _.
+    IF(str_eq(nm)("BECOMING"))   (la _. LCONS(580)(LCONS(300)(LCONS(870)(LCONS(2240)(LNIL)))))(la _.
+    IF(str_eq(nm)("FORM"))       (la _. LCONS(3500)(LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL)))))(la _.
+                                  LCONS(2200)(LCONS(500)(LCONS(800)(LCONS(2830)(LNIL)))))))))))) # DEPTH /dɔ/: /d/ onset 2200
 
 # ── Θ_P of a concept: superpose every constituent's formants over the
 #    CANONICAL decomposition, then dedup (the derived phonym's signature) ──

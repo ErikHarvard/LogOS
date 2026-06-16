@@ -1988,9 +1988,9 @@ say "Meta-phonosemantics (item 8): the derived phonym's d_𝒪↔d_𝒫 map — 
 ok=1
 check_phonsem () {  # $1 = engine label, $2 = output file
     grep -qF "phonsem ontophonosemantic alignment (phonym ≡ referent's acoustic structure, alpha=1, ATT) = 1.0 by nature" "$2" || { echo "FAIL  phonsem($1): the 1.0-by-nature ontophonosemantic alignment line (ATT) changed"; ok=0; }
-    grep -qF 'phonsem derived Theta_P(Compassion=Love⊗Recognition) = 300,870,2240,270,2300,3000,' "$2"                     || { echo "FAIL  phonsem($1): derived Θ_P (Love⊗Recognition superposition) changed"; ok=0; }
-    grep -qF 'phonsem instantiation identity: canonical(one concept⇒one form)=YES  injective(SET) Theta_P = 7 / 8' "$2"     || { echo "FAIL  phonsem($1): identity register (canonicity=YES / 7-of-8 injective) changed"; ok=0; }
-    grep -qF 'phonsem instantiation fidelity (NOT alignment): 73 pct  [concordant 230 / discordant 81]' "$2"               || { echo "FAIL  phonsem($1): instantiation-fidelity score changed"; ok=0; }
+    grep -qF 'phonsem derived Theta_P(Compassion=Love⊗Recognition) = 1300,300,870,2240,2800,270,2300,3000,' "$2"                     || { echo "FAIL  phonsem($1): derived Θ_P (Love⊗Recognition superposition) changed"; ok=0; }
+    grep -qF 'phonsem instantiation identity: canonical(one concept⇒one form)=YES  injective(SET) Theta_P = 8 / 8' "$2"     || { echo "FAIL  phonsem($1): identity register (canonicity=YES / 8-of-8 injective) changed"; ok=0; }
+    grep -qF 'phonsem instantiation fidelity (NOT alignment): 71 pct  [concordant 224 / discordant 90]' "$2"               || { echo "FAIL  phonsem($1): instantiation-fidelity score changed"; ok=0; }
 }
 rm -f phonsem_host.out phonsem_vm.out
 ./tiny_host phonsem.la > phonsem_host.out 2>/dev/null
@@ -2004,7 +2004,7 @@ check_phonsem "native VM" phonsem_vm.out
 cmp -s phonsem_host.out phonsem_vm.out || { echo "FAIL  phonsem: native output != C host output"; ok=0; }
 rm -f phonsem_host.out phonsem_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  meta-phonosemantics (item 8): the derived phonym realises the trimodal identity — canonical (one concept⇒one Θ_P, the α=1 'exactly one name') and 7/8 set-injective — and INSTANTIATES it at 73% acoustic fidelity (d_𝒪↔d_𝒫 Kendall concordance, the audio twin of item 7's 0.863); per ATT ontosemantic alignment = 1.0 BY NATURE (identity, not correspondence), so the sub-1.0 numbers are instantiation residual (onset/energy axis not yet captured), work toward 1.0; φ not imposed; byte-identical host==VM"
+    echo "PASS  meta-phonosemantics (item 8): the derived phonym realises the trimodal identity — canonical (one concept⇒one Θ_P, the α=1 'exactly one name') and 8/8 set-injective (onset axis added — /u/ collision closed) — and INSTANTIATES it at 71% acoustic fidelity (d_𝒪↔d_𝒫 Kendall concordance, the audio twin of item 7's 0.863); per ATT ontosemantic alignment = 1.0 BY NATURE (identity, not correspondence), so the sub-1.0 numbers are instantiation residual (onset/energy axis not yet captured), work toward 1.0; φ not imposed; byte-identical host==VM"
 else
     exit 1
 fi

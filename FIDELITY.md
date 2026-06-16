@@ -9,7 +9,7 @@ ATT note in `NEXT_STEPS.md` items 7–8):
 - **Instantiation fidelity**: how faithfully the *derived* form realises that 1.0
   alignment. **Measured, sub-1.0, bounded.** This document characterises it.
 
-Current figures: **visual ≈ 0.863**, **phonetic = 0.73** (this build, `phonsem.la`).
+Current figures: **visual ≈ 0.863**, **phonetic = 0.71** (this build, `phonsem.la`, onset axis on — §4; was 0.73 vowel-only, but that had a collision: §1d/§4).
 
 ---
 
@@ -63,15 +63,16 @@ distance-pairs. Over every unordered pair of distance-pairs `{i,j} ⊆ P`:
 ```
 fidelity = #concordant / (#concordant + #discordant)          (non-tied comparisons)
 ```
-This build (`|C| = 8`): `230 / (230 + 81) = 0.73`. (The remaining 67 of the C(28,2)=378
-pair-of-pairs are ties.) φ is never imposed; "does it correlate" is asked, not stipulated.
+This build (`|C| = 8`, onset axis on): `224 / (224 + 90) = 0.71` (the remaining 64 of
+C(28,2)=378 pair-of-pairs are ties; vowel-only was 0.73 but non-injective — §4). φ is never imposed; "does it correlate" is asked, not stipulated.
 
 ### 1d. Distinction preservation (injectivity) — the complementary view
 A **collapsed distinction** is two distinct concepts with the same form: `Θ_P(A) = Θ_P(B)`
-(set equality) for `A ≠ B`. Over concept-pairs this build preserves **27/28 ≈ 0.96**; the
-one collapse is **Beauty `⊗(FORM,LOVE)` ≡ BecForm `⊗(BECOMING,FORM)`** (§4). A collapse is a
-*forced* concordance loss (`d_𝒫 = 0` where `d_𝒪 > 0`), so it depresses 1c as well — the two
-views measure the same loss from two sides.
+(set equality) for `A ≠ B`. With the onset axis on (§4) this build preserves **28/28 = 1.0**
+(the one prior collapse, Beauty `⊗(FORM,LOVE)` ≡ BecForm `⊗(BECOMING,FORM)`, is closed). A collapse
+is a *forced* concordance loss (`d_𝒫 = 0` where `d_𝒪 > 0`); closing it removed that forced loss,
+yet aggregate concordance still dipped (§4) because the onset cues are not ontologically ordered —
+the two views genuinely diverge here.
 
 ### 1e. Visual analogue (item 7, 0.863)
 Identical construction with `d_form` = Hamming distance between the 32×32 1-bit rendered
@@ -114,8 +115,8 @@ a finite `B` is exactly what makes the form a *compression* and exactly what cap
 are the same fact seen from two sides. `F → 1` is bought only by `B → ∞` (losslessness),
 which is the negation of complexity-one. Hence the asymptote is **lawful, not a defect.**
 
-**Honest scope of the climb (§3–4).** The *current* 0.73 / 0.96 sit **far below** this
-ceiling — `|C| = 8 ≪ 2^B`, so no pigeonhole collision is forced. The collisions we see are
+**Honest scope of the climb (§3–4).** The *current* 0.71 concordance / 1.0 injectivity sit **far
+below** this ceiling — `|C| = 8 ≪ 2^B`, so no pigeonhole collision is forced. The collisions we see are
 **encoding-inadequacy** collisions (the metric drops a real distinguishing axis), not the
 fundamental bound. So fidelity can be **legitimately raised toward 1.0** on the working
 vocabulary by spending the form's budget better — without ever claiming to reach or "collapse"
@@ -200,7 +201,32 @@ to each primitive's signature — `/l/` ≈ {360,1300,2500} (the lateral glide `
 synthesises), `/v/` its voiced-labiodental low resonance — so `Θ_P(LOVE) ≠ Θ_P(BECOMING)` by a
 real acoustic feature, not a synthetic tag.
 
-**Before / after:** *(to be measured: distinction 27/28 → ?, concordance 0.73 → ?)*
+**Implementation.** Each consonant-initial primitive's `NMFMT` signature gains its onset cue as
+a leading peak (grounded in `phonym.la` where it gives a formant — /l/≈1300, /ʀ/≈520 — standard
+phonetic centroids for the noise/burst onsets: /ʃ/≈2800, /m/≈250, /h/≈400, /v/≈580, /t/≈3500,
+/d/≈2200). BEING is vowel-initial (/ɑ/, no consonant) → keeps its bare 3-peak nucleus.
+
+**Before / after (measured, host==VM):**
+
+| metric | before (vowel only) | after (onset added) |
+|---|---|---|
+| set-injectivity (distinction preservation, §1d) | 7/8 (Beauty≡BecForm) | **8/8 — collision closed** |
+| Kendall concordance (proximity fidelity, §1c) | 0.73 (230/81) | **0.71 (224/90)** |
+
+**Honest reading — the two fidelity notions diverge, and that is the finding.** The onset fix
+**closes the collision** (the clean defect: two distinct concepts no longer share one phonym —
+8/8 injective, root-distinct in sound). But the aggregate **concordance dips 2 points** (0.73 →
+0.71): real onset frequencies discriminate *strongly* but are **not ontologically ordered** (a
+/t/-burst at 3500 Hz is acoustically far from a /m/-murmur at 250 Hz in ways that don't track
+`d_𝒪`), so they add distance that degrades the rank-ordering even as they restore distinctness.
+This **contradicts the naive prediction** that the fix would raise the headline number — and the
+honest result is reported, not the prediction. The fix is **kept** because distinction-preservation
+is the more foundational property (a language where Beauty and Becoming-Form are literally the same
+sound is defective regardless of concordance). The 2-point cost is **located, not gamed**: it is
+lever **L3** (budget reallocation — weight the vowel-nucleus axis above the onset axis in the
+Chamfer so onsets disambiguate without dominating the ordering), deferred and *not* tuned here, per
+the guardrail (no metric redefinition to recover the number). Net: **distinction fidelity 1.0;
+proximity fidelity 0.71**, both honest, the residual now located on the weighting/onset axis.
 
 ---
 
