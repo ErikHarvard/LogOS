@@ -1253,6 +1253,39 @@ else
 fi
 rm -f logos_native
 
+say "Native backend Stage 0: the carved runtime, usable outside the SECD dispatch (nativert.la)"
+# Stage 0 of the native x86-64 backend. nativert.asm carves secd.asm's str/print runtime
+# — rt_make_str / rt_print = the .bi_print STR path + the STRDESC [gc-hdr][len][ptr]
+# allocation, lifted verbatim into CALLABLE (ret-terminated) routines. nativert.la emits
+# that ELF from Lingua Adamica (the elf.la pattern). The binary builds a STR value on the
+# heap via the runtime and prints the Word — proving the runtime runs natively with NO
+# per-instruction dispatch loop. secd.asm is UNTOUCHED (the existing engine cannot regress);
+# this is purely additive. ABI byte-identical to secd.asm, so the runtime is mergeable later.
+rm -f logos_nativert
+./tiny_host nativert.la >/dev/null 2>&1
+ok=1
+[ -f logos_nativert ] || { echo "FAIL  nativert: logos_nativert not emitted"; ok=0; }
+# drift guard: the LA-emitted bytes equal the nasm source of truth (as secd.la is to secd.asm)
+if command -v nasm >/dev/null 2>&1; then
+    nasm -f bin nativert.asm -o /tmp/nativert_ref 2>/dev/null
+    cmp -s logos_nativert /tmp/nativert_ref || { echo "FAIL  nativert: LA-emitted bytes differ from nasm -f bin nativert.asm"; ok=0; }
+    rm -f /tmp/nativert_ref
+fi
+# native == host: the carved runtime's output is byte-identical to print("I AM THAT I AM")
+chmod +x logos_nativert 2>/dev/null
+printf 'glyph MAIN = print("I AM THAT I AM")\n' > /tmp/nativert_word.la
+./logos_nativert > /tmp/nativert_native.out 2>/dev/null; NRC=$?
+./tiny_host /tmp/nativert_word.la > /tmp/nativert_host.out 2>/dev/null
+cmp -s /tmp/nativert_native.out /tmp/nativert_host.out || { echo "FAIL  nativert: native runtime output != host print"; ok=0; }
+[ "$NRC" = "0" ] || { echo "FAIL  nativert: emitted binary exited $NRC"; ok=0; }
+rm -f /tmp/nativert_word.la /tmp/nativert_native.out /tmp/nativert_host.out
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  native backend Stage 0: nativert.la emits the carved runtime (byte-identical to nasm nativert.asm); the binary builds a heap STR value via rt_make_str + prints via rt_print — native==host byte-identical, no SECD dispatch loop, secd.asm untouched"
+else
+    exit 1
+fi
+rm -f logos_nativert
+
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
 # (logos_source.la) to a native instruction stream (logos_program.bin); the VM

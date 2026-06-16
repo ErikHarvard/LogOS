@@ -1,0 +1,36 @@
+# ═══════════════════════════════════════════════════════════════════
+#  nativert.la — Native x86-64 backend, STAGE 0: emit the carved runtime
+#  as a native ELF, FROM Lingua Adamica (the elf.la pattern). Autological:
+#  the language produces the native binary that runs on the carved runtime
+#  (rt_make_str / rt_print, the secd.asm str/print path in call/ret form).
+#
+#  The emitted binary builds a STR value on the heap via the runtime and
+#  prints the Word — proving the runtime is usable OUTSIDE the SECD dispatch
+#  loop. The bytes below are byte-identical to `nasm -f bin nativert.asm`
+#  (the reference), checked in build.sh.
+#
+#  Pure GENERATION (assembling machine bytes via chr/write_exec) — no
+#  evaluation; the CPU/OS perform RECOGNITION when the binary runs.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la cond. la t. la f. cond(t)(f)("!")
+
+# BYTES(s) — decimal-byte string → the binary it denotes (verbatim from elf.la).
+glyph BYTES = la s.
+    Z(la self. la rest. la tok. la out.
+        IF(str_eq(rest)(""))(la _.
+            IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok)))
+        )(la _.
+        IF(str_eq(str_head(rest))(" "))(la _.
+            self(str_tail(rest))("")(IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok))))
+        )(la _.
+            self(str_tail(rest))(concat(tok)(str_head(rest)))(out)
+        ))
+    )(s)("")("")
+
+# The native runtime ELF (nativert.asm), as decimal byte values.
+glyph NATIVERT = BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0 238 0 64 0 0 0 0 0 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 56 0 1 0 0 0 0 0 0 0 1 0 0 0 7 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 0 0 0 0 0 0 64 0 0 0 0 0 27 1 0 0 0 0 0 0 32 1 1 0 0 0 0 0 0 16 0 0 0 0 0 0 76 137 248 77 49 210 73 57 210 115 13 70 138 28 22 71 136 28 23 73 255 194 235 238 73 1 215 73 199 7 0 0 0 0 73 131 199 8 77 137 249 73 137 23 73 137 71 8 73 131 199 16 77 49 192 195 73 139 113 8 73 139 17 184 1 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 1 0 0 0 72 190 237 0 64 0 0 0 0 0 186 1 0 0 0 15 5 195 73 32 65 77 32 84 72 65 84 32 73 32 65 77 10 73 191 32 1 64 0 0 0 0 0 72 190 223 0 64 0 0 0 0 0 186 14 0 0 0 232 108 255 255 255 232 159 255 255 255 184 60 0 0 0 72 49 255 15 5 144 144 144 144 144")
+
+glyph MAIN = SEQ(write_exec("logos_nativert")(NATIVERT))(print("emitted logos_nativert"))
