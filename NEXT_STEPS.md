@@ -3,6 +3,16 @@
 Captured for later; not yet done. Each is grounded in `LINGUA_ADAMICA.tex` /
 *Being & Becoming* and the existing build. Pick up when there's time.
 
+> **See also `FUTURE_WORK.md`** — Rubedo-phase **sovereignty-hardening** ideas, captured so
+> they resurface (and get *sequenced* into the roadmap) when that phase arrives: **(Priority 1)
+> transport undetectability** (traffic mimicry / pluggable transports — unclassifiable, not just
+> unbreakable), (2) threshold/social key recovery (Shamir k-of-n), (3) deniable storage at rest,
+> (4) friction-minimized node-joining (live-boot + one-action USB cloning), (5) incentive-aligned
+> seeding, (6) onboarding bridges (discoverable entry / undiscoverable operation), (7) the minimal
+> regenerable seed (smallest seed from which LogOS + the Codices fully regenerate). All not-yet-
+> designed; honest ceiling is *antifragile*, not "invincible"; residual limit is the hardware
+> firmware seam.
+
 ---
 
 # THE COMPLETENESS MAP — eight requirements for declaring the language complete
@@ -432,3 +442,81 @@ preserve it in every new self-referential construct.
 *(House style: every generated module passes META_DEBUG before acceptance; host==VM
 byte-identity; build through the spec pipeline where it fits; loud failure on bad
 input; honest scope notes for every bound.)*
+
+---
+
+## Global heterology / autology certification (queued — framework-native correctness)
+
+Make explicit, as ONE global pass, what the Debugging Principle already asserts piecewise:
+the whole language is **autological** (every element satisfies its own description — no
+heterology) and **autopoietic** (it produces itself, no external remainder).
+
+WHAT'S ALREADY TRUE (by construction / verified in pieces):
+- **Identity-autology is unconstructible-otherwise:** `canon.la`'s sealed monoglyph fixes
+  `REN(g) ≡ CANON(ETYM(g))` by construction; a heterological glyph (name floating free of
+  its derivation) cannot be built. `AUTO_OK(g) ≡ str_eq(REN g)(CANON(ETYM g))` is the criterion.
+- **Behavioural-autology:** `build.sh` green = the system satisfies its own description; every
+  spec-generated module passes `META_DEBUG` (each glyph against its own tests) before acceptance.
+- **Autopoiesis:** `autopoiesis.la` (the system runs its own successor), the self-hosting loop
+  (`eval.la` interprets `kernel.la`), Albedo Stage 4 (compiler+VM regenerate themselves
+  byte-identically), `copy_self`.
+
+WHAT THE CERTIFICATION ADDS (a dedicated `heterology_audit.la` / build stage):
+- Enumerate the full CONCEPT inventory (9 primitives, 5 modes, 𝔑, κ, 𝓡, the 8 self-relations,
+  all derived concepts in every module) and assert `AUTO_OK` for EACH — one global sweep, no
+  exceptions, so "no heterology anywhere" is certified, not just per-module.
+- Assert no glyph's behaviour diverges from its name/spec (build-green covers it; make it explicit).
+
+HONEST CAVEAT (the substrate seam, same wall as physical entropy): autology closes ABOVE the
+seed. `tiny_host.c` + `nasm secd.asm` are the irreducible C/asm origin — the "physics," not
+autological in the LA sense. The loop is closed thereafter (Albedo Stage 4), but the genesis is
+the heterological-at-substrate seed. State it as the boundary, don't pretend it away.
+
+---
+
+## Language spec gaps — from LINGUA ADAMICA.tex (read-through 2026-06-15)
+
+Cross-referenced the spec's 14-Gap *Practical Implementation Blueprint* (ch, :5867) + the
+*Operative Grammar / Lexicon* (:5049), *Type Theory* (:4123), and *Meta-Learning* (ch:learning,
+:6162) chapters against the build. The self-hosting CORE + ontological primitives + OS substrate
+are built; these are spec'd-but-unbuilt. (LogOS built natively in LA, not the doc's Python ref.)
+
+REAL LANGUAGE-COMPLETENESS GAPS (the spec requires them; worth building):
+- **Full Ontic Type System (OTS)** — Gap 5 + ch Type Theory: HM-style inference + the extended
+  ontic types (Process/Object/Relation/Value/Constraint). Built: arity-only checker (specpipe
+  `TARITY` vs `BARITY`) + `TYPE_OF` string-extraction. Missing: real inference/unification over
+  ontic types. (CLAUDE.md already flags arity-only as honest scope.)
+- **Seed-based persistent memory + Anamnesis** — Gap 6 + ch:learning: a persistent glyph-SEED
+  store (recall by hash, regrow the full glyph from its seed = "memory as regrowth," bounded
+  storage). Built: in-memory GC + `glyphdag` hash-consing + `DECOMP` (recovers tree from form, in
+  memory). Missing: disk persistence / recall / anamnesis. Substrate for LogosMentor's "learning
+  as recognition, not accumulation."
+- **The Core Lexicon + sentence grammar** — ch Operative Grammar: the actual NAMED vocabulary
+  (the Core Lexicon, :5223) + sentence-formation rules + grammatical system. Built: the COMBINATION
+  machinery (9 primitives + 5 modes + κ) — the language can *express* any concept by combination.
+  Missing: the built-out dictionary of common concepts as sealed glyphs + the sentence layer. This
+  is "the language in actual use" (the biggest item).
+- **Toroidal closure of the phonetic manifold 𝓜_P** — ch Universal Phonosemantics (:4398) +
+  completeness item 8: metric phonetic space 𝒫 + d_𝒫 + the toroidal meta-topology. Already noted
+  OPEN under item 8 (orthogonal refinement, not OS-blocking).
+
+DEVELOPER-ERGONOMICS / ROBUSTNESS GAPS (spec'd as Gaps, lower priority):
+- **REPL + unified `glyphc` toolchain** (Gap 12) — no interactive read-eval-print loop; `build.sh`
+  + `tiny_host <file>` instead of a single `glyphc` CLI.
+- **Property-based / fuzz testing** (Gap 13) — fixed tests + `META_DEBUG`; no randomized
+  invariant-preservation testing (the spec wants hypothesis-style κ-injectivity fuzzing).
+- **General data-structure stdlib** (Gap 3) — vector/map/dict + while/for as first-class. Built:
+  Church lists only (`stdlib.la` MAP/FILTER/ALL/LIST_FIND).
+- **Centropic self-tuning cache** (Gap 7) — not built (pure optimization).
+
+DELIBERATE DIVERGENCES (record as DECISIONS, not gaps — but revisit for the OS):
+- **Error model: loud-halt vs recoverable error-value** (Gap 10) — LogOS chose loud-failure-halt
+  (no silent corruption) over the spec's `ErrorConcept`/`safe_eval` recoverable model. **An OS will
+  likely need a recoverable Result/error-value layer ALONGSIDE loud halts** (a kernel can't halt on
+  every error) — a real design decision to make before/early in the OS.
+- **FFI** (Gap 11) — not built; by design. LogOS is sovereign — the syscall builtins ARE its FFI to
+  the kernel; a general foreign-C FFI trades sovereignty for ecosystem-leverage. Recorded as a
+  deliberate divergence (sovereignty wins unless a concrete need forces it).
+- **Concurrency** (Gap 9) — LogOS has PROCESS concurrency (fork/execve/waitpid/pipe/sockets/poll),
+  not the spec's THREAD/spawn/future model. Process-based is arguably right for an OS; partial by
+  intent.
