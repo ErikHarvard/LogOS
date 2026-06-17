@@ -207,6 +207,85 @@ sign would no longer BE the referent. The test only ever observes; it never stip
 
 ## 1. Autological native compilation — an LA-native x86-64 backend (PLAN FIRST)
 
+> ### ⟶ LIVE: Stage 3 sub-step plan (drafted 2026-06-16, Stages 0/1/2 DONE)
+>
+> The 5-stage plan below is underway. **Stage 0 (runtime carving), Stage 1 (minimal native
+> execution), Stage 2 (closures & environments) are DONE + verified + tagged.** Current head:
+> `native-backend-stage2` @ `07c3b8b`, tag `verified-2026-06-16-07c3b8b`, full audit **131/0**.
+> Stage 3 (compile the kernel natively) is **the big lift** — the pieces deferred in Stages 1–2
+> (TCO, GC, module system, missing builtins) become *required*. It is decomposed into **gated
+> sub-steps 3a–3e**, each verified against the checkpoint before the next; Erik approves each
+> before code. **Show the full-green `./build.sh` PASS count BEFORE every stage commit** (the gate;
+> it slipped once at Stage 2 — caught + restored at 131/0).
+>
+> **Sub-steps:** `3a` TCO → `3b` GC (heaviest, likely multi-step) → `3c` missing builtins
+> (`chr`/`ord`/`str_len`/`write_exec`/`error`) → `3d` module system at compile time → `3e` the
+> kernel compile (capstone: `kernel.la` → native ELF, speaks + replicates byte-identical).
+>
+> #### Stage 3a — TCO (NEXT, fully planned, decisions locked)
+>
+> **Key finding — codegen-only, NO asm change.** `native_codegen2_rt.asm:63-74` `rt_apply` already
+> enters the body via `jmp [rcx]` ("tail-jumps body; its ret returns to OUR caller"). The native
+> CPU stack grows today purely because the *call site* (`CG_GENAPP`) emits `call rt_apply` followed
+> by the body's `pop rbx ; ret` — each `call` pushes a return address that doesn't unwind until the
+> base case. So 3a touches only the codegen; the runtime bytes (and the drift guard) are unchanged.
+> Additive, low-risk.
+>
+> **Mechanism.** Thread a `tail` flag through the compiler (`CG(node)(cenv)(tail)(pool)`):
+> - *Non-tail* (MAIN's top expr; every `f`/`a` sub-expr; builtin operands): byte-for-byte as today
+>   — value in `rax`, fall through.
+> - *Tail* (a lambda body): the node owns its teardown + return:
+>   - STR / VAR / LAM / builtin-app → `<value→rax> ; pop rbx ; ret` (same bytes as today's epilogue)
+>   - **general apply → `<eval f→push><eval a→r11><pop r10> ; pop rbx ; jmp rt_apply`** (`jmp`, not
+>     `call` — no return address pushed; callee's `ret` returns straight to our caller). ← the TCO.
+> - `CG_LAM` compiles its body in tail mode and emits `push rbx ; mov rbx,rdi ; <tail-body>` with no
+>   trailing epilogue (the body provides it).
+> - New emitter: `JMP_RCX = BYTES("255 225")` (0xFF /4), `JMPR(addr) = MOV_RCX_IMM(addr) ++ JMP_RCX`
+>   (mirrors `CALLR`); `POP_RBX` already exists.
+> - Stack invariant verified: `push rbx` at entry sits directly above the caller's return address;
+>   the tail prefix is balanced; `pop rbx ; jmp` restores the caller env and reuses its return slot.
+>   Fires through the `IF`/thunk/`Z` chain (`c(t)(f)("!")` is IF's tail expr; each thunk's `self(...)`
+>   is its tail expr). Only programs with a general-apply in tail position get new bytes; everything
+>   else emits identical bytes, so the existing 9 stay native==host.
+>
+> **The wrinkle (why the gate is non-obvious).** TCO bounds the STACK, but this runtime has NO GC
+> yet (3b) and a fixed bump heap — every tail iteration still allocates ~200 B (env frames + boxed
+> ints + IF-thunk closures) that is never reclaimed. With codegen2's 1 MB heap, the HEAP exhausts
+> at ~5–20K iters, long before the ~500K-frame CPU-stack ceiling, so TCO would show no observable
+> effect. **To demonstrate TCO, isolate stack from heap:** (1) emit a larger lazily-mapped heap in
+> codegen3 (memsz only, ~512 MB, costs nothing untouched, like secd.asm's 1.5 GB) so the stack
+> becomes the binding constraint; (2) prove via a **tail-vs-non-tail differential at the same depth,
+> same compiler, same heap** — tail loop `Z(la self. la n. la acc. IF(n=0)(acc)(self(n-1)(acc+1)))`
+> at N=1,000,000 COMPLETES (exit 0, prints 1000000); matched non-tail `Z(la self. la n.
+> IF(n=0)(0)(add(1)(self(n-1))))` at the same N CRASHES (nonzero/SIGSEGV). Only difference is tail
+> position → the contrast is the proof, and doubles as the non-tail honest-limit demo.
+>
+> **DECISION 1 (locked): new `native_codegen3.la`, do NOT modify codegen2 in place.** Per-stage
+> isolation: `07c3b8b` keeps meaning "closures, no TCO"; codegen3 becomes the kernel compiler that
+> grows through 3b–3e. Cost: ~380 lines copied for a ~50-line change — worth it. At 3a, codegen3
+> reuses `native_codegen2_rt.asm` UNCHANGED (drift-guarded against it); the runtime forks to
+> `native_codegen3_rt.asm` only at 3b, when GC actually changes the asm.
+>
+> **DECISION 2 (locked): defer the native stack guard to 3b.** Keep 3a codegen-only/no-asm-change
+> (low risk); add the clean stack-overflow diagnostic when the runtime is already reworked for GC.
+> Honest limit documented meanwhile.
+>
+> **3a gate (build.sh must show before commit):**
+> - **3a.1 semantics/no-regression:** the 9 Stage-2-style programs + a moderate tail-recursion
+>   (N=10000) all native==host byte-identical through codegen3 (codegen2's section stays).
+> - **3a.2 TCO headline (differential, native-only at depth):** tail loop N=1,000,000 completes
+>   (exit 0, correct result); matched non-tail at N=1,000,000 crashes; a shallow non-tail
+>   native==host (non-tail still correct when it fits).
+> - **3a.3 honest limits (header + ROADMAP):** heap still un-GC'd bump → tail loop ultimately
+>   heap-bounded (true unboundedness awaits 3b GC); non-tail deep recursion faults via raw CPU-stack
+>   overflow (SIGSEGV, nonzero exit), not a clean `secd:`-style diagnostic — native stack guard
+>   deferred to 3b.
+> - **Regression:** full `./build.sh` = 131 + new 3a tests, 0 FAIL, monotone green, shown BEFORE
+>   commit.
+>
+> **Footprint:** ~50 lines of codegen change + a build.sh section. 3a is *contained* — the hard,
+> multi-step piece is 3b (GC). Start 3a fresh next session with this plan ready.
+
 **Goal:** move native code generation fully into Lingua Adamica. Today `codegen.la`
 emits SECD bytecode that the VM (`secd.asm`) *interprets* — that interpretation
 layer is heterological (external machinery between the language and the CPU) and is
