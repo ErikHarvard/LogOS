@@ -222,7 +222,25 @@ sign would no longer BE the referent. The test only ever observes; it never stip
 > (`chr`/`ord`/`str_len`/`write_exec`/`error`) → `3d` module system at compile time → `3e` the
 > kernel compile (capstone: `kernel.la` → native ELF, speaks + replicates byte-identical).
 >
-> #### Stage 3a — TCO (NEXT, fully planned, decisions locked)
+> #### Stage 3a — TCO (CODED + LOCALLY VERIFIED, UNCOMMITTED — resume here)
+>
+> **STATUS 2026-06-17: implemented and locally green; NOT yet committed (full-build confirm
+> pending).** `native_codegen3.la` is written (codegen2 + TCO + 768 MB heap), the build.sh Stage-3a
+> section + `.gitignore` entry are in place — all **uncommitted in the working tree on branch
+> `native-backend-stage3a`**. Verified by hand this session: drift guard passes (embedded rt == nasm
+> `native_codegen2_rt.asm`), all existing programs native==host, and the **headline differential
+> went green** — tail loop N=1,000,000 COMPLETES (rc 0 → 1000000) while the matched non-tail at the
+> same depth FAULTS (rc 139). The full `./build.sh` was launched but the run was stopped before
+> completion (the unrelated `cob.la` SECD-codegen tail step is pathologically slow — ~40+ min, but
+> already green in the Stage-2 audit, so not a 3a issue).
+>
+> **RESUME NEXT SESSION (in order):** (1) `cd ~/logos` (already on branch `native-backend-stage3a`,
+> 3a changes present, uncommitted); (2) run the **full `./build.sh`** and CONFIRM **132 PASS / 0 FAIL,
+> EXIT=0, the Stage-3a line present** (the gate — show the number BEFORE committing, no partial); be
+> patient with the slow `cob.la` codegen near PASS≈91; (3) flip `ROADMAP.md` (Stage 3 `[ ]`→`[~]`,
+> add `3a [x]`); (4) commit `native_codegen3.la` + build.sh + `.gitignore` + ROADMAP together; (5) tag
+> `verified-2026-06-17-<sha>`; (6) push branch + tag to origin. THEN stop — 3b (GC) is the heavy
+> sub-step, start it fresh after 3a is durable.
 >
 > **Key finding — codegen-only, NO asm change.** `native_codegen2_rt.asm:63-74` `rt_apply` already
 > enters the body via `jmp [rcx]` ("tail-jumps body; its ret returns to OUR caller"). The native

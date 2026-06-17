@@ -1408,6 +1408,92 @@ else
 fi
 rm -f native_codegen2_out native_input.la /tmp/n2_native.out /tmp/n2_host.out /tmp/n2.err
 
+say "Native backend Stage 3a: TCO — tail recursion runs in bounded native stack (native_codegen3.la)"
+# Stage 3a = native_codegen2.la + TAIL-CALL OPTIMISATION. A general application in
+# TAIL position emits `pop rbx; jmp rt_apply` instead of `call rt_apply`, so the
+# callee's ret returns straight to OUR caller and a tail-recursive loop runs in
+# BOUNDED native stack. CODEGEN-ONLY change: rt_apply already tail-jumps, so the
+# runtime native_codegen2_rt.asm is REUSED UNCHANGED (drift-guarded below); only the
+# emitted call site differs. The emitted heap is enlarged (memsz only, lazily mapped)
+# so the CPU stack — not the un-GC'd bump heap — is the binding constraint, making TCO
+# observable. Additive: native_codegen2.la + all asm runtimes UNTOUCHED.
+rm -f native_codegen3_out native_input.la
+ok=1
+# Drift guard: the embedded runtime equals nasm -f bin native_codegen2_rt.asm (reused verbatim).
+if command -v nasm >/dev/null 2>&1; then
+    printf 'glyph MAIN = print(42)\n' > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    nasm -f bin native_codegen2_rt.asm -o /tmp/c3rt_ref 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=1111 2>/dev/null
+    cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen2_rt.asm"; ok=0; }
+    rm -f /tmp/c3rt_ref /tmp/c3rt_emb
+fi
+# native==host (b_τ ≡ f_τ): TCO must PRESERVE semantics on every program shape.
+c3check () {  # $1 = whole program ; $2 = label ; expects native==host, rc 0
+    printf '%s\n' "$1" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>/tmp/c3.err || { echo "FAIL  native_codegen3: compile error on [$2]: $(head -1 /tmp/c3.err)"; ok=0; return; }
+    rc=0; ./native_codegen3_out > /tmp/c3_native.out 2>/dev/null || rc=$?
+    ./tiny_host native_input.la > /tmp/c3_host.out 2>/dev/null
+    cmp -s /tmp/c3_native.out /tmp/c3_host.out || { echo "FAIL  native_codegen3: native != host on [$2]"; ok=0; }
+    [ "$rc" = "0" ] || { echo "FAIL  native_codegen3: emitted binary for [$2] exited $rc"; ok=0; }
+}
+c3check 'glyph MAIN = print((la x. x)(42))' 'identity lambda'
+c3check 'glyph ADDER = la x. la y. add(x)(y)
+glyph MAIN = print(ADDER(10)(32))' 'closure capture'
+c3check 'glyph K = la a. la b. a
+glyph MAIN = print(K(7)(9))' 'K combinator'
+c3check 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph FACT = Z(la self. la n. IF(int_eq(n)(0))(la _. 1)(la _. mul(n)(self(sub(n)(1)))))
+glyph MAIN = print(FACT(5))' 'FACT(5)=120 (non-tail recursion, shallow)'
+c3check 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph REVERSE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat(self(str_tail(s)))(str_head(s))))
+glyph MAIN = print(REVERSE("abcde"))' 'REVERSE=edcba'
+c3check 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))
+glyph MAIN = print(COUNT(1000)(0))' 'tail recursion N=1000 (semantics preserved)'
+c3check 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph NT = Z(la self. la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(self(sub(n)(1)))))
+glyph MAIN = print(NT(100))' 'non-tail recursion N=100 (semantics preserved)'
+# HEADLINE differential — SAME compiler, SAME 768 MB heap, SAME depth N=1,000,000;
+# only tail-position differs. The TAIL loop completes in bounded native stack (TCO);
+# the matched NON-TAIL recursion grows the native stack and FAULTS.
+printf 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))
+glyph MAIN = print(COUNT(1000000)(0))\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3: compile tail-1M"; ok=0; }
+rc=0; timeout 120 ./native_codegen3_out > /tmp/c3_tail.out 2>/dev/null || rc=$?
+{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3_tail.out)" = "1000000" ]; } || { echo "FAIL  native_codegen3: tail N=1,000,000 did not complete (rc=$rc out=$(cat /tmp/c3_tail.out))"; ok=0; }
+printf 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph NT = Z(la self. la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(self(sub(n)(1)))))
+glyph MAIN = print(NT(1000000))\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3: compile nontail-1M"; ok=0; }
+rc=0; timeout 120 ./native_codegen3_out > /tmp/c3_nt.out 2>/dev/null || rc=$?
+[ "$rc" != "0" ] || { echo "FAIL  native_codegen3: non-tail N=1,000,000 unexpectedly completed (native stack did not grow?)"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  native backend Stage 3a: native_codegen3.la adds TCO (tail-position general apply -> pop rbx; jmp rt_apply; runtime native_codegen2_rt.asm REUSED unchanged, drift-guarded); semantics preserved native==host on lambdas/closures/currying + non-tail (FACT(5)=120, REVERSE=edcba) + moderate tail recursion; HEADLINE differential at N=1,000,000 (same compiler/heap/depth) — the TAIL loop COMPLETES in bounded native stack while the matched NON-TAIL recursion FAULTS (raw CPU-stack overflow); honest limits: heap still un-GC'd bump (tail loop ultimately heap-bounded until 3b GC), non-tail overflow faults via SIGSEGV not a clean diagnostic (native stack guard deferred to 3b); native_codegen2.la + all asm runtimes UNTOUCHED"
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la /tmp/c3_native.out /tmp/c3_host.out /tmp/c3.err /tmp/c3_tail.out /tmp/c3_nt.out
+
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
 # (logos_source.la) to a native instruction stream (logos_program.bin); the VM
