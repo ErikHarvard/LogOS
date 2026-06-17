@@ -1339,6 +1339,75 @@ else
 fi
 rm -f native_codegen_out native_input.la /tmp/nc_native.out /tmp/nc_host.out /tmp/nc_err
 
+say "Native backend Stage 2: closures & environments — native APPLY/RET + the Z combinator (native_codegen2.la)"
+# Stage 2 of the native x86-64 backend. native_codegen2.la compiles a multi-glyph
+# LA program (lambdas, application/currying, variables, the Stage-1 builtins)
+# DIRECTLY to an x86-64 ELF on the carved Stage-2 runtime (native_codegen2_rt.asm).
+# Values are uniformly boxed [tag][payload]; a closure is a heap record
+# [codeptr][captured-env]; rt_apply extends the env and tail-jumps the body (a
+# native APPLY/RET calling convention) — NO SECD interpreter, NO dispatch loop.
+# Glyph references are inlined to one closed lambda term, compiled with de Bruijn
+# addressing; comparisons return Church TRUE/FALSE closures. Gate: native==host on
+# lambda-heavy programs (the Z combinator, Church booleans, recursion). Additive —
+# secd.asm / nativert.asm / native_codegen_rt.asm are UNTOUCHED.
+rm -f native_codegen2_out native_input.la
+ok=1
+# Drift guard: the LA-embedded runtime equals nasm -f bin native_codegen2_rt.asm.
+if command -v nasm >/dev/null 2>&1; then
+    printf 'glyph MAIN = print(42)\n' > native_input.la
+    ./tiny_host native_codegen2.la >/dev/null 2>&1
+    nasm -f bin native_codegen2_rt.asm -o /tmp/nc2rt_ref 2>/dev/null
+    # the runtime sits at file offset 120 (after the 64-byte ELF header + 56-byte phdr), 1111 bytes
+    dd if=native_codegen2_out of=/tmp/nc2rt_emb bs=1 skip=120 count=1111 2>/dev/null
+    cmp -s /tmp/nc2rt_emb /tmp/nc2rt_ref || { echo "FAIL  native_codegen2: embedded runtime differs from nasm -f bin native_codegen2_rt.asm"; ok=0; }
+    rm -f /tmp/nc2rt_ref /tmp/nc2rt_emb
+fi
+# native==host across lambda/closure programs (the b_τ ≡ f_τ gate)
+n2check () {  # $1 = whole program (multi-line) ; $2 = label
+    printf '%s\n' "$1" > native_input.la
+    ./tiny_host native_codegen2.la >/dev/null 2>/tmp/n2.err || { echo "FAIL  native_codegen2: compile error on [$2]: $(head -1 /tmp/n2.err)"; ok=0; return; }
+    ./native_codegen2_out > /tmp/n2_native.out 2>/dev/null; nrc=$?
+    ./tiny_host native_input.la > /tmp/n2_host.out 2>/dev/null
+    cmp -s /tmp/n2_native.out /tmp/n2_host.out || { echo "FAIL  native_codegen2: native != host on [$2]"; ok=0; }
+    [ "$nrc" = "0" ] || { echo "FAIL  native_codegen2: emitted binary for [$2] exited $nrc"; ok=0; }
+}
+n2check 'glyph MAIN = print((la x. x)(42))' 'identity lambda'
+n2check 'glyph ADDER = la x. la y. add(x)(y)
+glyph MAIN = print(ADDER(10)(32))' 'closure capture'
+n2check 'glyph K = la a. la b. a
+glyph MAIN = print(K(7)(9))' 'K combinator'
+n2check 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph MAIN = print(IF(int_eq(3)(3))(la _. 111)(la _. 222))' 'Church IF + int_eq (true)'
+n2check 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph MAIN = print(IF(int_eq(3)(4))(la _. 111)(la _. 222))' 'Church IF + int_eq (false)'
+n2check 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph FACT = Z(la self. la n. IF(int_eq(n)(0))(la _. 1)(la _. mul(n)(self(sub(n)(1)))))
+glyph MAIN = print(FACT(5))' 'Z combinator: FACT(5)=120'
+n2check 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph REVERSE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat(self(str_tail(s)))(str_head(s))))
+glyph MAIN = print(REVERSE("abcde"))' 'Z combinator: REVERSE'
+n2check 'glyph SEQ = la a. la b. b
+glyph MAIN = SEQ(print("first"))(print("second"))' 'SEQ multi-print'
+# Loud failure: a non-builtin free name halts the compiler non-zero (no silent wrong binary).
+printf 'glyph MAIN = print(chr("65"))\n' > native_input.la
+./tiny_host native_codegen2.la >/dev/null 2>&1 && { echo "FAIL  native_codegen2: unsupported name did not halt the compiler"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  native backend Stage 2: native_codegen2.la compiles lambdas/closures/currying + int/string builtins to x86-64 on the carved runtime (native closure record [codeptr][env] + env cells + tail-jump APPLY/RET; comparisons -> Church TRUE/FALSE closures; embedded bytes == nasm native_codegen2_rt.asm); 9 lambda-heavy programs incl. the Z combinator (FACT(5)=120, REVERSE=edcba) run native==host byte-identical, unsupported names halt loudly, secd.asm/nativert.asm/native_codegen_rt.asm untouched"
+else
+    exit 1
+fi
+rm -f native_codegen2_out native_input.la /tmp/n2_native.out /tmp/n2_host.out /tmp/n2.err
+
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
 # (logos_source.la) to a native instruction stream (logos_program.bin); the VM

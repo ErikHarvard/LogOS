@@ -45,8 +45,8 @@ honestly in the distance.
 ### Performance — in progress
 - [~] Native x86-64 backend (compile to machine code, off the SECD interpreter)
   - [x] Stage 0 — runtime carving
-  - [~] Stage 1 — minimal native execution
-  - [ ] Stage 2 — closures & environments
+  - [x] Stage 1 — minimal native execution
+  - [x] Stage 2 — closures & environments
   - [ ] Stage 3 — compile the kernel natively
   - [ ] Stage 4 — full native self-hosting
 - [ ] Standard optimizations (inlining, dead-code elimination, constant folding)

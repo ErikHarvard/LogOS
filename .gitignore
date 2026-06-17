@@ -27,6 +27,7 @@
 /logos_app
 /logos_nativert
 /native_codegen_out
+/native_codegen2_out
 /native_input.la
 
 # autopoiesis.la's medium (generation counter, regenerated each run)
