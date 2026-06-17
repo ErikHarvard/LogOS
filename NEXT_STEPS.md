@@ -207,7 +207,7 @@ sign would no longer BE the referent. The test only ever observes; it never stip
 
 ## 1. Autological native compilation — an LA-native x86-64 backend (PLAN FIRST)
 
-> ### ⟶ LIVE: Stage 3 sub-step plan (drafted 2026-06-16, Stages 0/1/2 DONE)
+> ### ⟶ LIVE: Stage 3 sub-step plan (drafted 2026-06-16; Stages 0/1/2/3a DONE+PUSHED, 3b is LIVE)
 >
 > The 5-stage plan below is underway. **Stage 0 (runtime carving), Stage 1 (minimal native
 > execution), Stage 2 (closures & environments) are DONE + verified + tagged.** Current head:
@@ -222,25 +222,15 @@ sign would no longer BE the referent. The test only ever observes; it never stip
 > (`chr`/`ord`/`str_len`/`write_exec`/`error`) → `3d` module system at compile time → `3e` the
 > kernel compile (capstone: `kernel.la` → native ELF, speaks + replicates byte-identical).
 >
-> #### Stage 3a — TCO (CODED + LOCALLY VERIFIED, UNCOMMITTED — resume here)
+> #### Stage 3a — TCO (DONE + PUSHED 2026-06-17)
 >
-> **STATUS 2026-06-17: implemented and locally green; NOT yet committed (full-build confirm
-> pending).** `native_codegen3.la` is written (codegen2 + TCO + 768 MB heap), the build.sh Stage-3a
-> section + `.gitignore` entry are in place — all **uncommitted in the working tree on branch
-> `native-backend-stage3a`**. Verified by hand this session: drift guard passes (embedded rt == nasm
-> `native_codegen2_rt.asm`), all existing programs native==host, and the **headline differential
-> went green** — tail loop N=1,000,000 COMPLETES (rc 0 → 1000000) while the matched non-tail at the
-> same depth FAULTS (rc 139). The full `./build.sh` was launched but the run was stopped before
-> completion (the unrelated `cob.la` SECD-codegen tail step is pathologically slow — ~40+ min, but
-> already green in the Stage-2 audit, so not a 3a issue).
->
-> **RESUME NEXT SESSION (in order):** (1) `cd ~/logos` (already on branch `native-backend-stage3a`,
-> 3a changes present, uncommitted); (2) run the **full `./build.sh`** and CONFIRM **132 PASS / 0 FAIL,
-> EXIT=0, the Stage-3a line present** (the gate — show the number BEFORE committing, no partial); be
-> patient with the slow `cob.la` codegen near PASS≈91; (3) flip `ROADMAP.md` (Stage 3 `[ ]`→`[~]`,
-> add `3a [x]`); (4) commit `native_codegen3.la` + build.sh + `.gitignore` + ROADMAP together; (5) tag
-> `verified-2026-06-17-<sha>`; (6) push branch + tag to origin. THEN stop — 3b (GC) is the heavy
-> sub-step, start it fresh after 3a is durable.
+> **STATUS: DONE.** Committed `3baf018`, tagged `verified-2026-06-17-3baf018`, branch
+> `native-backend-stage3a` pushed to origin. Full audit **132 PASS / 0 FAIL, EXIT=0**, Stage-3a line
+> present & passing. ROADMAP flipped (Stage 3 `[~]`, `3a [x]`, `3b [ ]`). The commit holds
+> `native_codegen3.la` (= codegen2 + TCO + 768 MB heap) + build.sh Stage-3a section + `.gitignore` +
+> ROADMAP + NEXT_STEPS. (Build note: the deep-geometry/`cob.la` codegen was the slow step — ~13 min on
+> a single 100%-CPU compile, healthy not hung; full build ~40+ min. Be patient there.)
+> The mechanism + gate detail below is retained as the historical record.
 >
 > **Key finding — codegen-only, NO asm change.** `native_codegen2_rt.asm:63-74` `rt_apply` already
 > enters the body via `jmp [rcx]` ("tail-jumps body; its ret returns to OUR caller"). The native
@@ -303,6 +293,80 @@ sign would no longer BE the referent. The test only ever observes; it never stip
 >
 > **Footprint:** ~50 lines of codegen change + a build.sh section. 3a is *contained* — the hard,
 > multi-step piece is 3b (GC). Start 3a fresh next session with this plan ready.
+>
+> #### Stage 3b — GC (LIVE: NEXT, plan of record — drafted 2026-06-17, Erik approved Road 1)
+>
+> **Goal:** reclaim the native heap so a long-running native program runs in **bounded memory** —
+> closing the 3a honest-limit (tail loops are TCO-bounded on the stack but still leak the un-GC'd
+> bump heap). Branch off `native-backend-stage3a` (`3baf018`), plan-first, gated like every stage.
+>
+> **The core obstacle (why 3b is the heaviest sub-step).** The native heap (`native_codegen2_rt.asm`)
+> is a pure `r15` bump, heterogeneous and **header-less**: boxes `[tag][payload]`, closure records
+> `[codeptr][env]`, env frames `[value][parent]`, STR descriptors, raw blobs — only STR descriptors
+> carry the 8-byte GC-fwd word; boxes/clorecs/env-frames carry nothing. And the **roots live on the
+> native CPU stack** — `CG_LAM` does `push rbx` (saved env) and the apply sequence `push`/`pop r10/r11`s
+> in-flight values across nested allocations. That stack IS the "dump," and its roots are **ambiguous**
+> (untyped machine words). A moving collector cannot safely update ambiguous native-stack roots without
+> precise stack maps — which is why the collector choice was the gating decision.
+>
+> **DECISION 3b.0 (LOCKED — Erik approved 2026-06-17): conservative MARK-SWEEP (Road 1), mirroring
+> `tiny_host.c`'s GC.** Non-moving → ambiguous CPU-stack roots are SAFE (we mark, never relocate/rewrite
+> a pointer). Rejected Road 2 (precise copying, mirror `secd.asm`): `secd.asm`'s copying GC only works
+> because its S/E/D roots are *explicit VM registers*; ours are the raw CPU stack, so copying would
+> require re-architecting the calling convention (move every live temporary + saved-env onto an explicit
+> GC-visible stack) — high risk, mid-bootstrap. Road 1 is simpler, no pointer-rewriting, far less
+> corruption risk, and is the proven in-repo pattern for "roots on the C stack." Accepted honest costs:
+> slight over-retention (false roots) and fragmentation (non-moving) — both bounded, fine for the
+> kernel's allocation profile.
+>
+> **Soundness invariant (verify FIRST).** A "value" in this ABI is *always* a box pointer, and `rbx`
+> is *always* an env-frame pointer; descriptors/blobs are reached only *through* a box, never held
+> directly on the stack. So every ambiguous stack root points at a **header-bearing** object (once
+> 3b.1 adds headers to boxes + env frames); blobs/descriptors are traced *precisely* from their owning
+> box. That is what makes the conservative scan sound — confirm it holds before relying on it (esp. the
+> apply-sequence temporaries r10/r11 and every `push` site).
+>
+> **Sub-steps (all under one 3b gate; each builds on the last):**
+> - **3b.1 — uniform object header + runtime fork.** Fork `native_codegen2_rt.asm` →
+>   `native_codegen3_rt.asm`. Add a header word (kind + mark bit; size derivable from kind, explicit
+>   length for blobs) to every allocation site: `rt_box_int`, `rt_box_str`, `rt_mkclo`, the `rt_apply`
+>   env frame, `rt_make_str`, `rt_concat`. Recompute every `RT_*` absolute address constant in
+>   `native_codegen3.la` (the runtime shifts) and repoint the drift guard at `native_codegen3_rt.asm`.
+>   *Gate: header is execution-transparent → all existing programs still native==host.*
+> - **3b.2 — root capture + conservative mark.** `_start` stub records `stack_base` (rsp at entry). GC
+>   routine (entered from the allocator when `r15` nears heap end): mark from `rbx` + a conservative
+>   scan of `[rsp, stack_base)` + a saved-GP-register dump; a word is a root iff it is an in-heap,
+>   aligned pointer to a valid object header. Trace children by kind (STR box→desc→blob; CLO
+>   box→clorec→env, skip the non-heap codeptr; env frame→value+parent) via an **explicit worklist** in
+>   a reserved region — NO native recursion (a deep env chain must not overflow the very stack we are
+>   collecting under), exactly as `secd.asm` uses `gcwork`.
+> - **3b.3 — sweep + free-list allocator.** Sweep unmarked objects to a free list; allocator pulls
+>   free-list-first, falls back to bump, triggers GC when both are dry, and halts loudly
+>   `native: heap exhausted` if the live set still doesn't fit. Start first-fit (correctness first);
+>   add size-class segregation (16/32/variable) only if the churn test needs it.
+> - **3b.4 — native stack-overflow guard** (the item deferred from 3a Decision 2). `CG_LAM` prologue
+>   emits `cmp rsp,[stack_limit]; jb rt_stack_overflow`; `rt_stack_overflow` halts loudly
+>   `native: stack overflow`, nonzero. `stack_limit = stack_base − N MB`, set at startup. Upgrades the
+>   3a honest-limit: non-tail deep recursion now fails CLEAN instead of raw SIGSEGV.
+>
+> **3b gate (`./build.sh` must show before commit — monotone green ≥ 132/0, EXIT=0):**
+> - **3b.1 no-regression:** the 9 Stage-2 programs + FACT(5)=120 + REVERSE=edcba all native==host
+>   (header transparent).
+> - **3b.2/3 GC headline (the proof):** a high-churn loop allocating ≫ heap (~2–4 GB of immediately-
+>   dead strings/ints) on a deliberately SMALL heap (~64–128 MB) **completes in bounded memory**, while
+>   the same program on a pure bump exhausts — mirrors `secd.asm`'s GC-churn test. AND the 3a
+>   N=1,000,000 tail loop now runs in bounded **heap** too (closing the 3a "ultimately heap-bounded"
+>   honest-limit).
+> - **3b.4 stack guard:** matched non-tail deep recursion halts with `native: stack overflow`, nonzero
+>   — clean diagnostic replacing the SIGSEGV.
+> - **Drift guard:** embedded runtime bytes == `nasm -f bin native_codegen3_rt.asm`.
+>
+> **Locked decisions carried in:** fork to `native_codegen3_rt.asm` (GC changes the asm); single heap
+> region (no semispaces — non-moving); stack guard lands here. **Honest limits 3b will document:**
+> conservative over-retention (bounded, as `tiny_host.c`); fragmentation (non-moving); branch off
+> `3baf018`, per-stage isolation. After 3b: `3c` missing builtins → `3d` module system at compile time
+> → `3e` the kernel compile (capstone). Erik approves each before code; show full-green PASS BEFORE
+> every commit.
 
 **Goal:** move native code generation fully into Lingua Adamica. Today `codegen.la`
 emits SECD bytecode that the VM (`secd.asm`) *interprets* — that interpretation
