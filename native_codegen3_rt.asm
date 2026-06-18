@@ -44,6 +44,10 @@ org 0x400078
 %define H_ENV    (3 | (16 << 16))
 %define H_DESC   (4 | (16 << 16))
 %define K_BLOB   5
+; 3b.2 dry-run GC: fires each GC_INTERVAL bytes of allocation (rt_apply trigger).
+%define GC_INTERVAL 0x4000000   ; 64 MB
+%define WL_SIZE     0x4000000   ; 64 MB worklist, carved from the front of the heap region
+%define MARKBIT     0x100       ; header bit 8 (= byte 1) is the mark
 
 ; ── slot 0: rt_box_int(rax=int) -> rax = boxed INT ──
 rt_box_int:
@@ -84,6 +88,13 @@ rt_mkclo:
 
 ; ── slot 3: rt_apply(r10=func value, r11=arg value) -> rax (tail-jumps body) ──
 rt_apply:
+    cmp     r15, [NEXT_GC]      ; 3b.2 dry-run GC trigger (periodic)
+    jb      .nogc
+    call    rt_gc
+    mov     rax, [NEXT_GC]
+    add     rax, GC_INTERVAL
+    mov     [NEXT_GC], rax
+.nogc:
     cmp     qword [r10], 2
     jne     .bad
     mov     rcx, [r10+8]        ; clorec body
@@ -467,9 +478,223 @@ rt_init:
     mov     [FALSEVAL], rax
     ret
 
+; ── rt_gc: 3b.2b DRY-RUN collection — conservative MARK + heap-walk (no reclaim).
+;   Roots (the verified set): every GP register (saved to REGDUMP), TRUEVAL/
+;   FALSEVAL, and the stack [rsp, STACK_BASE). A candidate counts as a root iff
+;   it points into [HEAP_BASE+8, r15) at a valid object header (kind 1..5, body
+;   within the frontier). .consider marks (header bit 8) + pushes to the
+;   worklist; the drain loop traces children PRECISELY by kind (no native
+;   recursion). Then a heap-walk counts the live (marked) set, clears the marks,
+;   and verifies the frontier. Register-transparent (REGDUMP save/restore), so
+;   the rt_apply trigger leaves func/arg (r10/r11) and env (rbx) intact.
+rt_gc:
+    mov     [REGDUMP+0],   rax
+    mov     [REGDUMP+8],   rbx
+    mov     [REGDUMP+16],  rcx
+    mov     [REGDUMP+24],  rdx
+    mov     [REGDUMP+32],  rsi
+    mov     [REGDUMP+40],  rdi
+    mov     [REGDUMP+48],  rbp
+    mov     [REGDUMP+56],  r8
+    mov     [REGDUMP+64],  r9
+    mov     [REGDUMP+72],  r10
+    mov     [REGDUMP+80],  r11
+    mov     [REGDUMP+88],  r12
+    mov     [REGDUMP+96],  r13
+    mov     [REGDUMP+104], r14
+    mov     [REGDUMP+112], r15
+    mov     rbp, rsp                ; stack-scan lower bound (entry rsp)
+    mov     r12, [WORKLIST_BASE]    ; wp
+    ; --- root: GP registers (REGDUMP[0..14]) ---
+    xor     r9, r9
+.rgl:
+    cmp     r9, 15
+    jae     .rgd
+    mov     rax, [REGDUMP + r9*8]
+    call    .consider
+    inc     r9
+    jmp     .rgl
+.rgd:
+    ; --- root: canonical TRUE/FALSE ---
+    mov     rax, [TRUEVAL]
+    call    .consider
+    mov     rax, [FALSEVAL]
+    call    .consider
+    ; --- root: stack [rbp, STACK_BASE) ---
+.skl:
+    cmp     rbp, [STACK_BASE]
+    jae     .skd
+    mov     rax, [rbp]
+    call    .consider
+    add     rbp, 8
+    jmp     .skl
+.skd:
+    ; --- drain worklist: trace children by kind ---
+.drain:
+    cmp     r12, [WORKLIST_BASE]
+    jbe     .drained
+    sub     r12, 8
+    mov     rdi, [r12]              ; popped body ptr
+    mov     rdx, [rdi-8]
+    and     rdx, 0xff              ; kind
+    cmp     rdx, 1
+    je      .tbox
+    cmp     rdx, 2
+    je      .tclo
+    cmp     rdx, 3
+    je      .tenv
+    cmp     rdx, 4
+    je      .tdesc
+    jmp     .drain                 ; kind 5 BLOB: no children
+.tbox:
+    mov     rcx, [rdi]            ; box tag
+    cmp     rcx, 4
+    je      .drain                ; INT: payload is data, no children
+    mov     rax, [rdi+8]          ; STR->desc / CLO->clorec
+    call    .consider
+    jmp     .drain
+.tclo:
+    mov     rax, [rdi+8]          ; env (codeptr at [rdi] is non-heap, skip)
+    call    .consider
+    jmp     .drain
+.tenv:
+    mov     rax, [rdi]            ; value
+    call    .consider
+    mov     rax, [rdi+8]          ; parent env
+    call    .consider
+    jmp     .drain
+.tdesc:
+    mov     rax, [rdi+8]          ; dataptr -> blob
+    call    .consider
+    jmp     .drain
+.drained:
+    ; --- heap-walk: count live (marked), clear marks, verify frontier ---
+    mov     rsi, [HEAP_BASE]
+    xor     r13, r13              ; live count
+.walk:
+    cmp     rsi, r15
+    jae     .walked
+    mov     rax, [rsi]            ; header
+    test    rax, MARKBIT
+    jz      .wsz
+    inc     r13
+    mov     byte [rsi+1], 0       ; clear mark
+.wsz:
+    shr     rax, 16               ; body size
+    test    rax, rax
+    jz      .desync
+    lea     rsi, [rsi+rax+8]
+    jmp     .walk
+.walked:
+    cmp     rsi, r15
+    jne     .desync
+    ; --- print live count + newline to stderr (fd 2) ---
+    mov     rax, r13
+    mov     rsi, numend
+    dec     rsi
+    mov     byte [rsi], 10
+    test    rax, rax
+    jnz     .lp
+    dec     rsi
+    mov     byte [rsi], '0'
+    jmp     .pr
+.lp:
+    test    rax, rax
+    jz      .pr
+    xor     rdx, rdx
+    mov     rcx, 10
+    div     rcx
+    add     dl, '0'
+    dec     rsi
+    mov     [rsi], dl
+    jmp     .lp
+.pr:
+    mov     rdx, numend
+    sub     rdx, rsi
+    mov     rax, 1
+    mov     rdi, 2
+    syscall
+    ; --- restore registers (transparent: no object moved, r15 unchanged) ---
+    mov     rax, [REGDUMP+0]
+    mov     rbx, [REGDUMP+8]
+    mov     rcx, [REGDUMP+16]
+    mov     rdx, [REGDUMP+24]
+    mov     rsi, [REGDUMP+32]
+    mov     rdi, [REGDUMP+40]
+    mov     rbp, [REGDUMP+48]
+    mov     r8,  [REGDUMP+56]
+    mov     r9,  [REGDUMP+64]
+    mov     r10, [REGDUMP+72]
+    mov     r11, [REGDUMP+80]
+    mov     r12, [REGDUMP+88]
+    mov     r13, [REGDUMP+96]
+    mov     r14, [REGDUMP+104]
+    mov     r15, [REGDUMP+112]
+    ret
+; .consider(rax=candidate) -> mark+push if a valid unmarked object; clobbers rcx,rdx,r8,r12
+.consider:
+    mov     rcx, [HEAP_BASE]
+    add     rcx, 8
+    cmp     rax, rcx
+    jb      .cret                 ; below HEAP_BASE+8
+    cmp     rax, r15
+    jae     .cret                 ; at/after the frontier
+    mov     rdx, [rax-8]          ; header
+    mov     rcx, rdx
+    and     rcx, 0xff             ; kind
+    test    rcx, rcx
+    jz      .cret
+    cmp     rcx, 5
+    ja      .cret                 ; kind not in 1..5
+    test    rdx, MARKBIT
+    jnz     .cret                 ; already marked
+    mov     rcx, rdx
+    shr     rcx, 16               ; body size
+    mov     r8, rax
+    add     r8, rcx
+    cmp     r8, r15
+    ja      .cret                 ; body would exceed the frontier
+    or      rdx, MARKBIT
+    mov     [rax-8], rdx          ; set mark
+    mov     rcx, [WORKLIST_BASE]
+    add     rcx, WL_SIZE
+    cmp     r12, rcx
+    jae     .wlof                 ; worklist full
+    mov     [r12], rax
+    add     r12, 8
+.cret:
+    ret
+.wlof:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, gcwl
+    mov     rdx, gcwllen
+    syscall
+    mov     rax, 60
+    mov     rdi, 72
+    syscall
+.desync:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, gcdesync
+    mov     rdx, gcdesynclen
+    syscall
+    mov     rax, 60
+    mov     rdi, 71
+    syscall
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
+HEAP_BASE: dq 0
+NEXT_GC:   dq 0
+STACK_BASE: dq 0
+WORKLIST_BASE: dq 0
+REGDUMP:  times 16 dq 0
 nl:       db 10
+gcdesync: db "native: heap walk desync", 10
+gcdesynclen: equ $ - gcdesync
+gcwl:     db "native: gc worklist overflow", 10
+gcwllen:  equ $ - gcwl
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
