@@ -1419,13 +1419,14 @@ say "Native backend Stage 3a: TCO — tail recursion runs in bounded native stac
 # observable. Additive: native_codegen2.la + all asm runtimes UNTOUCHED.
 rm -f native_codegen3_out native_input.la
 ok=1
-# Drift guard: the embedded runtime equals nasm -f bin native_codegen2_rt.asm (reused verbatim).
+# Drift guard: the embedded runtime equals nasm -f bin native_codegen3_rt.asm
+# (Stage 3b forked the runtime to add object headers; codegen3 no longer reuses codegen2's).
 if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
-    nasm -f bin native_codegen2_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=1111 2>/dev/null
-    cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen2_rt.asm"; ok=0; }
+    nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=1230 2>/dev/null
+    cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
 # native==host (b_τ ≡ f_τ): TCO must PRESERVE semantics on every program shape.

@@ -326,6 +326,20 @@ sign would no longer BE the referent. The test only ever observes; it never stip
 > box. That is what makes the conservative scan sound — confirm it holds before relying on it (esp. the
 > apply-sequence temporaries r10/r11 and every `push` site).
 >
+> **VERIFIED 2026-06-17 (traced every allocation safepoint in native_codegen3.la / _rt.asm).** Invariant
+> CONFIRMED (Road 1 holds), with three MANDATORY refinements — a stack+`rbx`-only scan is UNSOUND:
+> (1) **Full GP-register dump is REQUIRED.** At the `rt_apply` env-frame alloc the func/arg boxes live
+>     ONLY in r10/r11; at the `rt_bin`→`rt_box_int` alloc the operands live ONLY in rsi/rax — neither on
+>     the stack nor in rbx. Must dump all GP registers into the root set (à la tiny_host.c's setjmp), or
+>     the collector frees live objects. THE corruption risk.
+> (2) **`TRUEVAL`/`FALSEVAL` data-area globals are roots** (rt_init builds the Church booleans there;
+>     rt_int_eq/rt_lt/rt_str_eq return them) — scan them too.
+> (3) **GC fires ONLY at allocator ENTRY (check-then-build), never mid-construction.** rt_concat/
+>     rt_make_str build incrementally with transient raw descriptor/blob ptrs in registers; each
+>     allocator must compute total size → ensure_heap(size) [maybe GC] → build without re-checking, so
+>     no partially-built object / interior ptr is ever live across a collection.
+> Net root set: `rbx` + conservative `[rsp, stack_base)` + full GP-register dump + TRUEVAL/FALSEVAL.
+>
 > **Sub-steps (all under one 3b gate; each builds on the last):**
 > - **3b.1 — uniform object header + runtime fork.** Fork `native_codegen2_rt.asm` →
 >   `native_codegen3_rt.asm`. Add a header word (kind + mark bit; size derivable from kind, explicit
