@@ -45,67 +45,89 @@ org 0x400078
 %define H_DESC   (4 | (16 << 16))
 %define K_BLOB   5
 ; 3b.2 dry-run GC: fires each GC_INTERVAL bytes of allocation (rt_apply trigger).
-%define GC_INTERVAL 0x4000000   ; 64 MB
+%define GC_INTERVAL 0x4000000   ; 64 MB (3b.2 dry-run; unused once 3b.3 GC-on-exhaustion lands)
 %define WL_SIZE     0x4000000   ; 64 MB worklist, carved from the front of the heap region
 %define MARKBIT     0x100       ; header bit 8 (= byte 1) is the mark
+%define H_FREE      (6 | (16 << 16))  ; 3b.3 free-list cell (24B); link stored in body word 0
+
+; ── alloc24: get a 24-byte slot (header at [rax], body at [rax+8]) ──
+;   free-list first, then bump; on exhaustion run rt_gc (mark + sweep) and retry;
+;   if still none -> loud 'native: heap exhausted'. Clobbers rax, rcx only on the
+;   non-GC path (rt_gc restores all regs), so callers keep inputs in other regs.
+alloc24:
+    mov     rax, [FREE24]
+    test    rax, rax
+    jnz     .pop
+.bump:
+    lea     rcx, [r15+24]
+    cmp     rcx, [HEAP_END]
+    ja      .gc
+    mov     rax, r15
+    mov     r15, rcx
+    ret
+.pop:
+    mov     rcx, [rax+8]        ; next link (free cell body word 0)
+    mov     [FREE24], rcx
+    ret
+.gc:
+    call    rt_gc
+    mov     rax, [FREE24]
+    test    rax, rax
+    jnz     .pop
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, gcexh
+    mov     rdx, gcexhlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 73
+    syscall
 
 ; ── slot 0: rt_box_int(rax=int) -> rax = boxed INT ──
 rt_box_int:
-    mov     qword [r15], H_BOX  ; object header
-    add     r15, 8
-    mov     rdx, r15            ; body (the value)
-    mov     qword [r15], 4
-    mov     [r15+8], rax
-    add     r15, 16
-    mov     rax, rdx
+    mov     rdx, rax            ; save int across alloc24
+    call    alloc24             ; rax = 24B slot
+    mov     qword [rax], H_BOX
+    mov     qword [rax+8], 4
+    mov     [rax+16], rdx
+    add     rax, 8              ; -> body (value ptr)
     ret
 
 ; ── slot 1: rt_box_str(rsi=descriptor) -> rax = boxed STR ──
 rt_box_str:
-    mov     qword [r15], H_BOX
-    add     r15, 8
-    mov     rax, r15
-    mov     qword [r15], 0
-    mov     [r15+8], rsi
-    add     r15, 16
+    mov     rdx, rsi            ; save desc across alloc24
+    call    alloc24
+    mov     qword [rax], H_BOX
+    mov     qword [rax+8], 0
+    mov     [rax+16], rdx
+    add     rax, 8
     ret
 
 ; ── slot 2: rt_mkclo(r10=codeaddr) -> rax = boxed CLO capturing rbx as env ──
 rt_mkclo:
-    mov     qword [r15], H_CLOREC
-    add     r15, 8
-    mov     rdx, r15            ; clorec body
-    mov     [r15], r10          ; codeptr
-    mov     [r15+8], rbx        ; captured env
-    add     r15, 16
-    mov     qword [r15], H_BOX
-    add     r15, 8
-    mov     rax, r15            ; box body
-    mov     qword [r15], 2
-    mov     [r15+8], rdx
-    add     r15, 16
+    call    alloc24             ; clorec slot
+    mov     qword [rax], H_CLOREC
+    mov     [rax+8], r10        ; codeptr
+    mov     [rax+16], rbx       ; captured env
+    lea     rdx, [rax+8]        ; clorec body ptr (survives 2nd alloc24)
+    call    alloc24             ; box slot
+    mov     qword [rax], H_BOX
+    mov     qword [rax+8], 2
+    mov     [rax+16], rdx       ; -> clorec body
+    add     rax, 8              ; box body
     ret
 
 ; ── slot 3: rt_apply(r10=func value, r11=arg value) -> rax (tail-jumps body) ──
 rt_apply:
-    cmp     r15, [NEXT_GC]      ; 3b.2 dry-run GC trigger (periodic)
-    jb      .nogc
-    call    rt_gc
-    mov     rax, [NEXT_GC]
-    add     rax, GC_INTERVAL
-    mov     [NEXT_GC], rax
-.nogc:
     cmp     qword [r10], 2
     jne     .bad
+    call    alloc24             ; env slot (preserves r10/r11/rbx across any GC)
+    mov     qword [rax], H_ENV  ; env-frame header
     mov     rcx, [r10+8]        ; clorec body
-    mov     qword [r15], H_ENV  ; env-frame header
-    add     r15, 8
-    mov     rax, r15            ; env body [arg][cloenv]
-    mov     [r15], r11
-    mov     rdx, [rcx+8]
-    mov     [r15+8], rdx
-    add     r15, 16
-    mov     rdi, rax
+    mov     [rax+8], r11        ; arg
+    mov     rdx, [rcx+8]        ; cloenv
+    mov     [rax+16], rdx       ; parent
+    lea     rdi, [rax+8]        ; env body
     jmp     [rcx]               ; tail into body; its ret returns to our caller
 .bad:
     mov     rax, 60
@@ -568,7 +590,8 @@ rt_gc:
     call    .consider
     jmp     .drain
 .drained:
-    ; --- heap-walk: count live (marked), clear marks, verify frontier ---
+    ; --- heap-walk: SWEEP (unmarked 24B -> FREE24), count live, clear marks, verify frontier ---
+    mov     qword [FREE24], 0     ; rebuild the free-list from scratch each GC
     mov     rsi, [HEAP_BASE]
     xor     r13, r13              ; live count
 .walk:
@@ -576,11 +599,29 @@ rt_gc:
     jae     .walked
     mov     rax, [rsi]            ; header
     test    rax, MARKBIT
-    jz      .wsz
-    inc     r13
+    jnz     .live
+    mov     rcx, rax
+    and     rcx, 0xff             ; kind
+    cmp     rcx, 5
+    je      .stepblob             ; kind 5 BLOB: leaked in 3a (no blob reclaim yet)
+    ; kind 1..4 (dead 24B) or 6 (already free): (re)link into FREE24
+    mov     rcx, [FREE24]
+    mov     [rsi+8], rcx          ; link (free-cell body word 0)
+    mov     [FREE24], rsi
+    mov     qword [rsi], H_FREE
+    add     rsi, 24               ; every 24B object/free cell is 24 bytes
+    jmp     .walk
+.live:
     mov     byte [rsi+1], 0       ; clear mark
-.wsz:
-    shr     rax, 16               ; body size
+    inc     r13
+    mov     rax, [rsi]
+    shr     rax, 16
+    test    rax, rax
+    jz      .desync
+    lea     rsi, [rsi+rax+8]
+    jmp     .walk
+.stepblob:
+    shr     rax, 16
     test    rax, rax
     jz      .desync
     lea     rsi, [rsi+rax+8]
@@ -690,11 +731,15 @@ HEAP_BASE: dq 0
 NEXT_GC:   dq 0
 STACK_BASE: dq 0
 WORKLIST_BASE: dq 0
+FREE24:   dq 0
+HEAP_END: dq 0
 REGDUMP:  times 16 dq 0
 nl:       db 10
 gcdesync: db "native: heap walk desync", 10
 gcdesynclen: equ $ - gcdesync
 gcwl:     db "native: gc worklist overflow", 10
 gcwllen:  equ $ - gcwl
+gcexh:    db "native: heap exhausted", 10
+gcexhlen: equ $ - gcexh
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
