@@ -83,6 +83,65 @@ alloc24:
     mov     rdi, 73
     syscall
 
+; ── classidx(rdi=blob body len) -> r8=classidx(>=5), r9=classsize(=1<<r8) ──
+;   T=8+len rounded UP to a power of 2 >= 32. Clobbers rax,rcx,rdx.
+classidx:
+    lea     rax, [rdi+8]        ; T = 8 + len
+    cmp     rax, 32
+    jae     .ge
+    mov     rax, 32
+.ge:
+    bsr     rcx, rax            ; floor(log2 T)
+    mov     rdx, 1
+    shl     rdx, cl
+    cmp     rdx, rax
+    je      .exact
+    inc     rcx                 ; round up to next power of 2
+.exact:
+    cmp     rcx, 5
+    jae     .ok
+    mov     rcx, 5
+.ok:
+    mov     r8, rcx             ; classidx
+    mov     r9, 1
+    shl     r9, cl              ; classsize = 1<<classidx
+    ret
+
+; ── alloc_blob(rdi=blob body len) -> rax=cell slot; r8=classidx, r9=classsize ──
+;   pop FREEBLOB[idx] else bump by classsize; GC-on-exhaustion (blobs are not
+;   reclaimed into a contiguous frontier, so a full heap halts loudly).
+;   Clobbers rax,rcx,rdx,r8,r9.
+alloc_blob:
+    call    classidx
+    mov     rax, [FREEBLOB + r8*8]
+    test    rax, rax
+    jnz     .pop
+.bump:
+    mov     rcx, r15
+    add     rcx, r9
+    cmp     rcx, [HEAP_END]
+    ja      .gc
+    mov     rax, r15
+    mov     r15, rcx
+    ret
+.pop:
+    mov     rcx, [rax+8]        ; next link
+    mov     [FREEBLOB + r8*8], rcx
+    ret
+.gc:
+    call    rt_gc
+    mov     rax, [FREEBLOB + r8*8]
+    test    rax, rax
+    jnz     .pop
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, gcexh
+    mov     rdx, gcexhlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 73
+    syscall
+
 ; ── slot 0: rt_box_int(rax=int) -> rax = boxed INT ──
 rt_box_int:
     mov     rdx, rax            ; save int across alloc24
@@ -277,55 +336,64 @@ rt_str_eq:
     ret
 
 ; ── slot 13: rt_concat(A,B) -> boxed STR A++B ──
+;   blob via alloc_blob (size-class bucket) + desc/box via alloc24. Sources A/B
+;   kept live in r14/r13 as GC roots across allocs (non-moving, so their bytes
+;   stay put); lens re-read from the boxes after any GC.
 rt_concat:
-    mov     r8, [rsi+8]         ; descA
-    mov     r9, [rax+8]         ; descB
-    mov     rcx, [r8]           ; lenA
-    add     rcx, [r9]           ; total len = lenA+lenB
-    mov     rdx, rcx            ; blob header = K_BLOB | len<<16
-    shl     rdx, 16
-    or      rdx, K_BLOB
-    mov     [r15], rdx
-    add     r15, 8
-    mov     rax, r15            ; blob body ptr
-    mov     rcx, [r8]           ; lenA
-    mov     r10, [r8+8]         ; ptrA
-    xor     rdx, rdx
+    mov     r14, rsi            ; A box -> GC root
+    mov     r13, rax            ; B box -> GC root
+    mov     rcx, [rsi+8]        ; descA body
+    mov     rdi, [rcx]          ; lenA
+    mov     rcx, [rax+8]        ; descB body
+    add     rdi, [rcx]          ; total = lenA+lenB
+    call    alloc_blob          ; rax=blob cell, r9=classsize
+    mov     rcx, r9
+    sub     rcx, 8
+    shl     rcx, 16
+    or      rcx, K_BLOB
+    mov     [rax], rcx          ; blob header (class body size)
+    lea     r12, [rax+8]        ; blob body (dest + GC root)
+    mov     rcx, [r14+8]        ; descA body
+    mov     r8, [rcx]           ; lenA
+    mov     rsi, [rcx+8]        ; ptrA
+    xor     rcx, rcx
 .ca:
-    cmp     rdx, rcx
+    cmp     rcx, r8
     jae     .ad
-    mov     r11b, [r10+rdx]
-    mov     [r15+rdx], r11b
-    inc     rdx
+    mov     dl, [rsi+rcx]
+    mov     [r12+rcx], dl
+    inc     rcx
     jmp     .ca
 .ad:
-    add     r15, rcx
-    mov     rsi, [r9]           ; lenB
-    mov     r10, [r9+8]         ; ptrB
-    xor     rdx, rdx
+    mov     r8, [r14+8]
+    mov     r8, [r8]            ; lenA
+    lea     r11, [r12+r8]       ; B dest base = blobbody + lenA
+    mov     rcx, [r13+8]        ; descB body
+    mov     r9, [rcx]           ; lenB
+    mov     rsi, [rcx+8]        ; ptrB
+    xor     rcx, rcx
 .cb:
-    cmp     rdx, rsi
+    cmp     rcx, r9
     jae     .bd
-    mov     r11b, [r10+rdx]
-    mov     [r15+rdx], r11b
-    inc     rdx
+    mov     dl, [rsi+rcx]
+    mov     [r11+rcx], dl
+    inc     rcx
     jmp     .cb
 .bd:
-    add     r15, rsi
-    mov     rcx, [r8]
-    add     rcx, [r9]           ; total len
-    mov     qword [r15], H_DESC ; descriptor header
-    add     r15, 8
-    mov     rdx, r15            ; descriptor body
-    mov     [r15], rcx
-    mov     [r15+8], rax        ; -> blob body
-    add     r15, 16
-    mov     qword [r15], H_BOX  ; box header
-    add     r15, 8
-    mov     rax, r15            ; box body
-    mov     qword [r15], 0
-    mov     [r15+8], rdx
-    add     r15, 16
+    mov     r8, [r14+8]
+    mov     r8, [r8]            ; lenA
+    mov     rcx, [r13+8]
+    add     r8, [rcx]           ; total len
+    call    alloc24             ; descriptor cell
+    mov     qword [rax], H_DESC
+    mov     [rax+8], r8         ; len
+    mov     [rax+16], r12       ; -> blob body
+    lea     r12, [rax+8]        ; desc body (GC root)
+    call    alloc24             ; box cell
+    mov     qword [rax], H_BOX
+    mov     qword [rax+8], 0
+    mov     [rax+16], r12       ; -> desc body
+    add     rax, 8              ; box body (value)
     ret
 
 ; ── slot 14: rt_str_head(rax=STR) -> boxed STR (first byte or empty) ──
@@ -423,35 +491,39 @@ rt_str_to_int:
     jmp     rt_box_int
 
 ; ── slot 18: rt_make_str(rsi=src, rdx=len) -> rax = boxed STR ──
+;   blob via alloc_blob + desc/box via alloc24. The source box (rax at entry,
+;   from str_head/str_tail) is kept live in r14 as a GC root so the source blob
+;   survives any GC during the allocs (non-moving -> source bytes stay put).
 rt_make_str:
-    mov     r8, rdx             ; blob header = K_BLOB | len<<16
-    shl     r8, 16
-    or      r8, K_BLOB
-    mov     [r15], r8
-    add     r15, 8
-    mov     rax, r15            ; blob body
-    xor     r10, r10
+    mov     r14, rax            ; source box (or junk) -> GC root
+    mov     r13, rdx            ; len
+    mov     rdi, rdx            ; alloc_blob arg
+    call    alloc_blob          ; rax=blob cell, r9=classsize
+    mov     rcx, r9
+    sub     rcx, 8
+    shl     rcx, 16
+    or      rcx, K_BLOB
+    mov     [rax], rcx          ; blob header
+    lea     r12, [rax+8]        ; blob body (dest + GC root)
+    xor     rcx, rcx
 .cp:
-    cmp     r10, rdx
+    cmp     rcx, r13
     jae     .d
-    mov     r11b, [rsi+r10]
-    mov     [r15+r10], r11b
-    inc     r10
+    mov     dl, [rsi+rcx]
+    mov     [r12+rcx], dl
+    inc     rcx
     jmp     .cp
 .d:
-    add     r15, rdx
-    mov     qword [r15], H_DESC ; descriptor header
-    add     r15, 8
-    mov     r8, r15             ; descriptor body
-    mov     [r15], rdx
-    mov     [r15+8], rax
-    add     r15, 16
-    mov     qword [r15], H_BOX  ; box header
-    add     r15, 8
-    mov     rax, r15            ; box body
-    mov     qword [r15], 0
-    mov     [r15+8], r8
-    add     r15, 16
+    call    alloc24             ; descriptor cell
+    mov     qword [rax], H_DESC
+    mov     [rax+8], r13        ; len
+    mov     [rax+16], r12       ; -> blob body
+    lea     r12, [rax+8]        ; desc body (GC root)
+    call    alloc24             ; box cell
+    mov     qword [rax], H_BOX
+    mov     qword [rax+8], 0
+    mov     [rax+16], r12       ; -> desc body
+    add     rax, 8              ; box body (value)
     ret
 
 ; ── slot 19: true_outer = la t. (la f. t) ──
@@ -590,8 +662,14 @@ rt_gc:
     call    .consider
     jmp     .drain
 .drained:
-    ; --- heap-walk: SWEEP (unmarked 24B -> FREE24), count live, clear marks, verify frontier ---
-    mov     qword [FREE24], 0     ; rebuild the free-list from scratch each GC
+    ; --- heap-walk: SWEEP (re-bucket unmarked by size), count live, clear marks, verify frontier ---
+    mov     qword [FREE24], 0     ; rebuild every free-list from scratch each GC
+    xor     rcx, rcx
+.clrfb:
+    mov     qword [FREEBLOB + rcx*8], 0
+    inc     rcx
+    cmp     rcx, 22
+    jb      .clrfb
     mov     rsi, [HEAP_BASE]
     xor     r13, r13              ; live count
 .walk:
@@ -600,27 +678,37 @@ rt_gc:
     mov     rax, [rsi]            ; header
     test    rax, MARKBIT
     jnz     .live
-    mov     rcx, rax
-    and     rcx, 0xff             ; kind
-    cmp     rcx, 5
-    je      .stepblob             ; kind 5 BLOB: leaked in 3a (no blob reclaim yet)
-    ; kind 1..4 (dead 24B) or 6 (already free): (re)link into FREE24
+    ; unmarked -> reclaim, bucketed by body size
+    mov     rdx, rax
+    shr     rdx, 16               ; bodysize
+    test    rdx, rdx
+    jz      .desync
+    cmp     rdx, 16
+    jne     .freeblob
+    ; 24-byte cell -> FREE24
     mov     rcx, [FREE24]
-    mov     [rsi+8], rcx          ; link (free-cell body word 0)
+    mov     [rsi+8], rcx
     mov     [FREE24], rsi
-    mov     qword [rsi], H_FREE
-    add     rsi, 24               ; every 24B object/free cell is 24 bytes
+    mov     qword [rsi], H_FREE   ; kind 6, size 16
+    add     rsi, 24
+    jmp     .walk
+.freeblob:
+    ; blob cell (bodysize >= 24) -> FREEBLOB[ bsr(bodysize+8) ]
+    lea     rcx, [rdx+8]          ; classsize (exact power of 2)
+    bsr     rcx, rcx              ; classidx
+    mov     rax, [FREEBLOB + rcx*8]
+    mov     [rsi+8], rax          ; link
+    mov     [FREEBLOB + rcx*8], rsi
+    mov     rax, rdx
+    shl     rax, 16
+    or      rax, 6                ; kind 6 FREE, keep the class body size
+    mov     [rsi], rax
+    lea     rsi, [rsi+rdx+8]      ; step header(8)+bodysize
     jmp     .walk
 .live:
     mov     byte [rsi+1], 0       ; clear mark
     inc     r13
     mov     rax, [rsi]
-    shr     rax, 16
-    test    rax, rax
-    jz      .desync
-    lea     rsi, [rsi+rax+8]
-    jmp     .walk
-.stepblob:
     shr     rax, 16
     test    rax, rax
     jz      .desync
@@ -733,6 +821,7 @@ STACK_BASE: dq 0
 WORKLIST_BASE: dq 0
 FREE24:   dq 0
 HEAP_END: dq 0
+FREEBLOB: times 22 dq 0        ; blob free-lists by size class (classidx 5..21 used)
 REGDUMP:  times 16 dq 0
 nl:       db 10
 gcdesync: db "native: heap walk desync", 10

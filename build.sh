@@ -1304,7 +1304,7 @@ if command -v nasm >/dev/null 2>&1; then
     ./tiny_host native_codegen.la >/dev/null 2>&1
     nasm -f bin native_codegen_rt.asm -o /tmp/ncrt_ref 2>/dev/null
     # the runtime sits at file offset 120 (after the 64-byte ELF header + 56-byte phdr), 1313 bytes
-    dd if=native_codegen_out of=/tmp/ncrt_emb bs=1 skip=120 count=1313 2>/dev/null
+    dd if=native_codegen_out of=/tmp/ncrt_emb bs=1 skip=120 count=2900 2>/dev/null
     cmp -s /tmp/ncrt_emb /tmp/ncrt_ref || { echo "FAIL  native_codegen: embedded runtime differs from nasm -f bin native_codegen_rt.asm"; ok=0; }
     rm -f /tmp/ncrt_ref /tmp/ncrt_emb
 fi
@@ -1358,7 +1358,7 @@ if command -v nasm >/dev/null 2>&1; then
     ./tiny_host native_codegen2.la >/dev/null 2>&1
     nasm -f bin native_codegen2_rt.asm -o /tmp/nc2rt_ref 2>/dev/null
     # the runtime sits at file offset 120 (after the 64-byte ELF header + 56-byte phdr), 1111 bytes
-    dd if=native_codegen2_out of=/tmp/nc2rt_emb bs=1 skip=120 count=1111 2>/dev/null
+    dd if=native_codegen2_out of=/tmp/nc2rt_emb bs=1 skip=120 count=2900 2>/dev/null
     cmp -s /tmp/nc2rt_emb /tmp/nc2rt_ref || { echo "FAIL  native_codegen2: embedded runtime differs from nasm -f bin native_codegen2_rt.asm"; ok=0; }
     rm -f /tmp/nc2rt_ref /tmp/nc2rt_emb
 fi
@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=2450 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=2900 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1503,26 +1503,41 @@ say "Native backend Stage 3b: conservative mark-sweep GC — bounded memory (nat
 # free-list that the allocators reuse. HEADLINE: an int-forced tail loop at
 # N=10,000,000 allocates ~8 GB of mostly-dead 24-byte objects but COMPLETES in the
 # 1.5 GB heap — impossible without reclamation (the same workload un-GC'd runs the
-# bump frontier off the end). Honest 3b scope: blobs are not yet reclaimed (3b.3b,
-# size-class buckets) and a deep NON-tail recursion still faults via the raw CPU
+# bump frontier off the end). 3b.3b adds blob reclamation: blobs round up to
+# power-of-2 size-class free-lists (FREEBLOB), so a blob-churn loop is bounded too.
+# Honest remaining 3b scope: a deep NON-tail recursion still faults via the raw CPU
 # stack (3b.4 native stack guard) rather than a clean diagnostic.
 rm -f native_codegen3_out native_input.la
 ok=1
+# (a) 24-byte reclamation: int-forced tail loop, ~8 GB of dead 24B objects in 1.5 GB.
 printf 'glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
 glyph IF = la c. la t. la f. c(t)(f)(0)
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))
 glyph MAIN = print(COUNT(10000000)(0))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 Stage 3b: compile GC-churn"; ok=0; }
+./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 Stage 3b: compile 24B GC-churn"; ok=0; }
 rc=0; timeout 300 ./native_codegen3_out > /tmp/c3gc.out 2>/dev/null || rc=$?
-{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3gc.out)" = "10000000" ]; } || { echo "FAIL  native_codegen3 Stage 3b: tail N=10,000,000 did not complete in bounded memory (rc=$rc out=$(cat /tmp/c3gc.out))"; ok=0; }
+{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3gc.out)" = "10000000" ]; } || { echo "FAIL  native_codegen3 Stage 3b: 24B tail N=10,000,000 not bounded (rc=$rc out=$(cat /tmp/c3gc.out))"; ok=0; }
+# (b) blob reclamation: a tail loop that builds + discards strings each iter; a
+#     256-char literal materialised + concatenated is ~2 KB of blobs/iter, so
+#     N=2,000,000 churns ~4 GB of blobs that must run in the 1.5 GB heap.
+LIT=$(printf 'x%.0s' $(seq 1 256))
+printf 'glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)(0)
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph CHURN = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la s. self(sub(n)(1)))(concat("%s")("%s"))))
+glyph MAIN = print(CHURN(2000000))\n' "$LIT" "$LIT" > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
+rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
+{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 not bounded (rc=$rc out=$(cat /tmp/c3bc.out))"; ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — an int-forced tail loop at N=10,000,000 (~8 GB of mostly-dead 24-byte objects) COMPLETES in the 1.5 GB heap (rc 0, result 10000000); the 24-byte free-list reclaims and reuses the dead set each GC (live set stays ~25 across passes), so the workload runs in BOUNDED memory — impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept objects re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk; honest scope: blobs not yet reclaimed (3b.3b) and non-tail overflow still faults via the CPU stack (3b.4)"
+    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~8 GB of dead 24B objects) COMPLETES in the 1.5 GB heap (live set ~25/pass via the FREE24 free-list). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~4 GB of blobs via power-of-2 FREEBLOB size-class lists) COMPLETES in the 1.5 GB heap (result 'done'). Both impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk; honest remaining scope: non-tail overflow still faults via the CPU stack (3b.4 native stack guard)"
 else
     exit 1
 fi
-rm -f native_codegen3_out native_input.la /tmp/c3gc.out
+rm -f native_codegen3_out native_input.la /tmp/c3gc.out /tmp/c3bc.out
 
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
