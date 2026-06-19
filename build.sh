@@ -1304,7 +1304,7 @@ if command -v nasm >/dev/null 2>&1; then
     ./tiny_host native_codegen.la >/dev/null 2>&1
     nasm -f bin native_codegen_rt.asm -o /tmp/ncrt_ref 2>/dev/null
     # the runtime sits at file offset 120 (after the 64-byte ELF header + 56-byte phdr), 1313 bytes
-    dd if=native_codegen_out of=/tmp/ncrt_emb bs=1 skip=120 count=2900 2>/dev/null
+    dd if=native_codegen_out of=/tmp/ncrt_emb bs=1 skip=120 count=1313 2>/dev/null
     cmp -s /tmp/ncrt_emb /tmp/ncrt_ref || { echo "FAIL  native_codegen: embedded runtime differs from nasm -f bin native_codegen_rt.asm"; ok=0; }
     rm -f /tmp/ncrt_ref /tmp/ncrt_emb
 fi
@@ -1358,7 +1358,7 @@ if command -v nasm >/dev/null 2>&1; then
     ./tiny_host native_codegen2.la >/dev/null 2>&1
     nasm -f bin native_codegen2_rt.asm -o /tmp/nc2rt_ref 2>/dev/null
     # the runtime sits at file offset 120 (after the 64-byte ELF header + 56-byte phdr), 1111 bytes
-    dd if=native_codegen2_out of=/tmp/nc2rt_emb bs=1 skip=120 count=2900 2>/dev/null
+    dd if=native_codegen2_out of=/tmp/nc2rt_emb bs=1 skip=120 count=1111 2>/dev/null
     cmp -s /tmp/nc2rt_emb /tmp/nc2rt_ref || { echo "FAIL  native_codegen2: embedded runtime differs from nasm -f bin native_codegen2_rt.asm"; ok=0; }
     rm -f /tmp/nc2rt_ref /tmp/nc2rt_emb
 fi
