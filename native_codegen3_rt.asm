@@ -428,6 +428,9 @@ rt_str_tail:
 ; ── slot 16: rt_int_to_str(rax=INT) -> boxed STR decimal ──
 rt_int_to_str:
     mov     rax, [rax+8]
+; 3c.1: zero-byte entry for callers that already hold a RAW int in rax
+;   (rt_str_len / rt_ord feed a raw length/byte here, skipping the unbox).
+rt_int_to_str_raw:
     mov     rsi, numend
     xor     r8, r8
     test    rax, rax
@@ -833,6 +836,56 @@ rt_stack_overflow:
     mov     rax, 60
     mov     rdi, 134
     syscall
+
+; ── 3c.1 missing builtins: chr / ord / str_len (unary value builtins) ──
+;   Appended AFTER rt_stack_overflow and BEFORE the data area so every existing
+;   RT_* entry address (and RT_STACK_OVERFLOW) stays UNCHANGED; only the data
+;   globals shift by these routines' byte size. All three take a boxed STR in
+;   rax and return a boxed STR (ord/str_len return the DECIMAL string of an int,
+;   via rt_int_to_str_raw — faithful to the host, which returns strings).
+;
+; ── str_len(STR) -> decimal STR of byte length ──
+rt_str_len:
+    mov     rcx, [rax+8]        ; descriptor body
+    mov     rax, [rcx]          ; len (raw int)
+    jmp     rt_int_to_str_raw
+;
+; ── ord(STR) -> decimal STR of the first byte (empty -> "0") ──
+rt_ord:
+    mov     rcx, [rax+8]        ; descriptor body
+    mov     rdx, [rcx]          ; len
+    xor     rax, rax            ; default 0 (empty string)
+    test    rdx, rdx
+    jz      .z
+    mov     rsi, [rcx+8]        ; blob ptr
+    movzx   rax, byte [rsi]     ; first byte (raw int)
+.z:
+    jmp     rt_int_to_str_raw
+;
+; ── chr(decimal STR) -> one-byte STR ──
+;   minimal unsigned base-10 atoi (chr codes are 0..255, no sign), then make a
+;   1-byte string from the static numbuf (make_str copies it out immediately).
+rt_chr:
+    mov     rcx, [rax+8]        ; descriptor body
+    mov     rsi, [rcx+8]        ; blob ptr
+    mov     rdx, [rcx]          ; len
+    xor     rax, rax            ; acc
+    xor     r8, r8              ; i
+.d:
+    cmp     r8, rdx
+    jae     .e
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    imul    rax, rax, 10
+    add     rax, r10
+    inc     r8
+    jmp     .d
+.e:
+    mov     [numbuf], al        ; the one byte
+    mov     rsi, numbuf
+    mov     rdx, 1
+    xor     rax, rax            ; r14 GC root = 0 (source is static numbuf)
+    jmp     rt_make_str
 
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0

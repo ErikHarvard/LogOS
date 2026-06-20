@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=2992 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=3105 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1467,6 +1467,13 @@ glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph NT = Z(la self. la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(self(sub(n)(1)))))
 glyph MAIN = print(NT(100))' 'non-tail recursion N=100 (semantics preserved)'
+# Stage 3c.1: the missing unary value builtins chr / ord / str_len, native==host.
+# ord/str_len return the DECIMAL string of an int (via rt_int_to_str_raw), faithful
+# to the host; chr maps a decimal string 0..255 to its one-byte string.
+c3check 'glyph MAIN = print(str_len("Lingua Adamica"))' 'str_len native (=14)'
+c3check 'glyph MAIN = print(ord("A"))' 'ord native (=65)'
+c3check 'glyph MAIN = print(chr("73"))' 'chr native (=I)'
+c3check 'glyph MAIN = print(ord(chr("65")))' 'chr/ord round-trip native (=65)'
 # HEADLINE differential — SAME compiler, SAME 768 MB heap, SAME depth N=1,000,000;
 # only tail-position differs. The TAIL loop completes in bounded native stack (TCO);
 # the matched NON-TAIL recursion grows the native stack and FAULTS.
