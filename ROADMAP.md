@@ -49,7 +49,7 @@ honestly in the distance.
   - [x] Stage 2 — closures & environments
   - [~] Stage 3 — compile the kernel natively
     - [x] Stage 3a — TCO (tail recursion in bounded native stack)
-    - [ ] Stage 3b — GC (heap reclamation for the native backend)
+    - [x] Stage 3b — GC (heap reclamation for the native backend) + native stack guard
   - [ ] Stage 4 — full native self-hosting
 - [ ] Standard optimizations (inlining, dead-code elimination, constant folding)
 - [ ] GC tuning (generational allocation, reduced pause time)
