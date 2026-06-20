@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=2900 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=2992 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1486,10 +1486,13 @@ glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph NT = Z(la self. la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(self(sub(n)(1)))))
 glyph MAIN = print(NT(1000000))\n' > native_input.la
 ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3: compile nontail-1M"; ok=0; }
-rc=0; timeout 120 ./native_codegen3_out > /tmp/c3_nt.out 2>/dev/null || rc=$?
-[ "$rc" != "0" ] || { echo "FAIL  native_codegen3: non-tail N=1,000,000 unexpectedly completed (native stack did not grow?)"; ok=0; }
+rc=0; NTERR=$(timeout 120 ./native_codegen3_out 2>&1 >/dev/null) || rc=$?
+# 3b.4: the deep non-tail recursion must halt LOUDLY via the native stack guard
+# (clean `native: stack overflow`, exit 134) — NOT complete (rc 0) and NOT a raw
+# SIGSEGV (rc 139, the pre-3b.4 behaviour).
+{ [ "$rc" != "0" ] && [ "$rc" != "139" ] && printf '%s' "$NTERR" | grep -qF "native: stack overflow"; } || { echo "FAIL  native_codegen3: non-tail N=1,000,000 did not halt cleanly via the stack guard (rc=$rc err='$NTERR'; want non-zero, not 139/SIGSEGV, + 'native: stack overflow')"; ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3a: native_codegen3.la adds TCO (tail-position general apply -> pop rbx; jmp rt_apply; runtime native_codegen2_rt.asm REUSED unchanged, drift-guarded); semantics preserved native==host on lambdas/closures/currying + non-tail (FACT(5)=120, REVERSE=edcba) + moderate tail recursion; HEADLINE differential at N=1,000,000 (same compiler/heap/depth) — the TAIL loop COMPLETES in bounded native stack while the matched NON-TAIL recursion FAULTS (raw CPU-stack overflow); honest limits: heap still un-GC'd bump (tail loop ultimately heap-bounded until 3b GC), non-tail overflow faults via SIGSEGV not a clean diagnostic (native stack guard deferred to 3b); native_codegen2.la + all asm runtimes UNTOUCHED"
+    echo "PASS  native backend Stage 3a: native_codegen3.la adds TCO (tail-position general apply -> pop rbx; jmp rt_apply; runtime native_codegen2_rt.asm REUSED unchanged, drift-guarded); semantics preserved native==host on lambdas/closures/currying + non-tail (FACT(5)=120, REVERSE=edcba) + moderate tail recursion; HEADLINE differential at N=1,000,000 (same compiler/heap/depth) — the TAIL loop COMPLETES in bounded native stack while the matched NON-TAIL recursion halts LOUDLY via the 3b.4 native stack guard (each lambda body checks rsp vs STACK_LIMIT=STACK_BASE-7MiB; below it jumps to rt_stack_overflow -> 'native: stack overflow', exit 134 — a clean diagnostic, NOT a raw SIGSEGV); honest limits: heap still un-GC'd bump (tail loop ultimately heap-bounded until 3b GC); native_codegen2.la + all asm runtimes UNTOUCHED"
 else
     exit 1
 fi
@@ -1505,8 +1508,11 @@ say "Native backend Stage 3b: conservative mark-sweep GC — bounded memory (nat
 # 1.5 GB heap — impossible without reclamation (the same workload un-GC'd runs the
 # bump frontier off the end). 3b.3b adds blob reclamation: blobs round up to
 # power-of-2 size-class free-lists (FREEBLOB), so a blob-churn loop is bounded too.
-# Honest remaining 3b scope: a deep NON-tail recursion still faults via the raw CPU
-# stack (3b.4 native stack guard) rather than a clean diagnostic.
+# 3b.4 native stack guard (the last Stage-3b piece): every compiled lambda body
+# checks rsp against STACK_LIMIT (= STACK_BASE - 7 MiB), so a deep NON-tail
+# recursion now halts loudly ('native: stack overflow', exit 134) before the 8 MiB
+# OS stack is exhausted, instead of a raw SIGSEGV. Exercised in the Stage-3a block
+# above (the non-tail N=1,000,000 differential).
 rm -f native_codegen3_out native_input.la
 ok=1
 # (a) 24-byte reclamation: int-forced tail loop, ~8 GB of dead 24B objects in 1.5 GB.
@@ -1533,7 +1539,7 @@ glyph MAIN = print(CHURN(2000000))\n' "$LIT" "$LIT" > native_input.la
 rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 not bounded (rc=$rc out=$(cat /tmp/c3bc.out))"; ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~8 GB of dead 24B objects) COMPLETES in the 1.5 GB heap (live set ~25/pass via the FREE24 free-list). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~4 GB of blobs via power-of-2 FREEBLOB size-class lists) COMPLETES in the 1.5 GB heap (result 'done'). Both impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk; honest remaining scope: non-tail overflow still faults via the CPU stack (3b.4 native stack guard)"
+    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~8 GB of dead 24B objects) COMPLETES in the 1.5 GB heap (live set ~25/pass via the FREE24 free-list). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~4 GB of blobs via power-of-2 FREEBLOB size-class lists) COMPLETES in the 1.5 GB heap (result 'done'). Both impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). Stage 3b (GC) is now complete"
 else
     exit 1
 fi

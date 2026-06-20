@@ -570,6 +570,13 @@ rt_init:
     mov     r10, false_outer
     call    rt_mkclo
     mov     [FALSEVAL], rax
+    ; 3b.4 native stack guard: STACK_LIMIT = STACK_BASE - 7 MiB. PROL stores rsp
+    ; into STACK_BASE *before* CALLR(RT_INIT), so [STACK_BASE] is valid here. The
+    ; 8 MiB OS stack grows down from STACK_BASE; firing 7 MiB down leaves ~1 MiB
+    ; headroom so a deep non-tail recursion halts loudly before the real SIGSEGV.
+    mov     rax, [STACK_BASE]
+    sub     rax, 0x700000
+    mov     [STACK_LIMIT], rax
     ret
 
 ; ── rt_gc: 3b.2b DRY-RUN collection — conservative MARK + heap-walk (no reclaim).
@@ -812,6 +819,21 @@ rt_gc:
     mov     rdi, 71
     syscall
 
+; ── 3b.4 native stack guard target: deep non-tail recursion lands here (loud
+;   diagnostic + exit 134) instead of a raw SIGSEGV (rc139). CG_LAM emits
+;   `cmp rsp,[STACK_LIMIT]; jae .ok; jmp rt_stack_overflow` at every lambda-body
+;   entry, and STACK_LIMIT = STACK_BASE - 7 MiB (set in rt_init). Reached only by
+;   absolute jump from emitted code, so it carries no rel32 callers of its own. ──
+rt_stack_overflow:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, stkovf
+    mov     rdx, stkovflen
+    syscall
+    mov     rax, 60
+    mov     rdi, 134
+    syscall
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
@@ -821,6 +843,7 @@ STACK_BASE: dq 0
 WORKLIST_BASE: dq 0
 FREE24:   dq 0
 HEAP_END: dq 0
+STACK_LIMIT: dq 0              ; 3b.4 native stack guard: STACK_BASE - 7 MiB (set in rt_init)
 FREEBLOB: times 22 dq 0        ; blob free-lists by size class (classidx 5..21 used)
 REGDUMP:  times 16 dq 0
 nl:       db 10
@@ -830,5 +853,7 @@ gcwl:     db "native: gc worklist overflow", 10
 gcwllen:  equ $ - gcwl
 gcexh:    db "native: heap exhausted", 10
 gcexhlen: equ $ - gcexh
+stkovf:   db "native: stack overflow", 10
+stkovflen: equ $ - stkovf
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
