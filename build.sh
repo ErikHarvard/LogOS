@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=3167 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=7564 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1484,6 +1484,20 @@ nrc=0; nerr=$(./native_codegen3_out 2>&1 >/dev/null) || nrc=$?
 hrc=0; herr=$(./tiny_host native_input.la 2>&1 >/dev/null) || hrc=$?
 { [ "$nrc" != "0" ] && [ "$nerr" = "native: boom" ] && [ "$nerr" = "$herr" ] && [ "$nrc" = "$hrc" ]; } \
   || { echo "FAIL  native_codegen3: error builtin not faithful (native rc=$nrc err='$nerr' ; host rc=$hrc err='$herr'; want non-zero rc, stderr 'native: boom', native==host)"; ok=0; }
+# Stage 3c.3: write_exec(path)(content) — the first BINARY builtin: write content
+# to path, mark it 0755, return content. The 3e kernel self-replication capstone
+# needs it. The content is binary-safe (NUL embedded below). native and host write
+# the SAME path SEQUENTIALLY (host first, then native — no shared-file race), and
+# must agree on stdout (the returned content) AND on the bytes + 0755 mode written.
+printf 'glyph MAIN = print(write_exec("/tmp/c3_we_out")(concat("A")(concat(chr("0"))("B\nC"))))\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>/tmp/c3.err || { echo "FAIL  native_codegen3: compile error on [write_exec]: $(head -1 /tmp/c3.err)"; ok=0; }
+rm -f /tmp/c3_we_out /tmp/c3_we_host /tmp/c3_we_native
+./tiny_host native_input.la > /tmp/c3_we_hstdout 2>/dev/null; cp /tmp/c3_we_out /tmp/c3_we_host; hmode=$(stat -c '%a' /tmp/c3_we_out)
+./native_codegen3_out  > /tmp/c3_we_nstdout 2>/dev/null; cp /tmp/c3_we_out /tmp/c3_we_native; nmode=$(stat -c '%a' /tmp/c3_we_out)
+{ cmp -s /tmp/c3_we_nstdout /tmp/c3_we_hstdout && cmp -s /tmp/c3_we_native /tmp/c3_we_host \
+  && [ "$nmode" = "755" ] && [ "$hmode" = "755" ] && [ "$(wc -c < /tmp/c3_we_native)" = "5" ]; } \
+  || { echo "FAIL  native_codegen3: write_exec not faithful (stdout/file/mode native vs host; nmode=$nmode hmode=$hmode size=$(wc -c < /tmp/c3_we_native))"; ok=0; }
+rm -f /tmp/c3_we_out /tmp/c3_we_host /tmp/c3_we_native /tmp/c3_we_hstdout /tmp/c3_we_nstdout
 # HEADLINE differential — SAME compiler, SAME 768 MB heap, SAME depth N=1,000,000;
 # only tail-position differs. The TAIL loop completes in bounded native stack (TCO);
 # the matched NON-TAIL recursion grows the native stack and FAULTS.

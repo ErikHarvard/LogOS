@@ -909,6 +909,90 @@ rt_error:
     mov     rdi, 1              ; exit 1
     syscall
 
+; ── 3c.3 write_exec(path)(content): write content to path, chmod 0755, return content ──
+;   The first BINARY builtin in the native backend (the 3e kernel self-replication
+;   capstone needs it). CG_BIN convention: rsi = arg1 (path STR), rax = arg2
+;   (content STR); returns the content value (the host returns arg2). The path is
+;   copied NUL-terminated into pathbuf (binary-safe STRs are NOT NUL-terminated);
+;   content is written with a LOOP so a large ELF image survives a short write.
+;   syscall clobbers rcx/r11, so the loop state lives in r12(fd)/r13(remaining)/
+;   r14(cursor), none of which a syscall touches; rbx (env) and r15 (heap) are
+;   preserved (rt_concat already clobbers r12-r14, so the ABI tolerates it). Loud
+;   halt on open/write failure (exit 1), matching the host; chmod runs AFTER close
+;   so an existing non-exec file still becomes 0755 (the host does an explicit
+;   chmod). Appended after rt_error / before the data area: all RT_* + 3c.1/3c.2
+;   routine addresses stay UNCHANGED; only the data globals shift.
+rt_write_exec:
+    push    rax                 ; content value saved (survives syscalls; returned)
+    mov     rcx, [rsi+8]        ; path descriptor body
+    mov     rdx, [rcx]          ; path length
+    mov     rsi, [rcx+8]        ; path blob ptr
+    cmp     rdx, 4095
+    jae     .toolong
+    xor     rcx, rcx
+.cp:
+    cmp     rcx, rdx
+    jae     .cpd
+    mov     r8b, [rsi+rcx]
+    mov     [pathbuf+rcx], r8b
+    inc     rcx
+    jmp     .cp
+.cpd:
+    mov     byte [pathbuf+rcx], 0
+    mov     rax, 2              ; open
+    mov     rdi, pathbuf
+    mov     rsi, 577            ; O_WRONLY|O_CREAT|O_TRUNC
+    mov     rdx, 493            ; 0755
+    syscall
+    test    rax, rax
+    js      .openfail
+    mov     r12, rax            ; fd
+    mov     rax, [rsp]          ; content value (peek)
+    mov     rcx, [rax+8]        ; content descriptor body
+    mov     r13, [rcx]          ; remaining length
+    mov     r14, [rcx+8]        ; cursor (blob ptr)
+.wr:
+    test    r13, r13
+    jz      .wrd
+    mov     rax, 1              ; write
+    mov     rdi, r12
+    mov     rsi, r14
+    mov     rdx, r13
+    syscall
+    test    rax, rax
+    js      .writefail
+    add     r14, rax
+    sub     r13, rax
+    jmp     .wr
+.wrd:
+    mov     rax, 3              ; close
+    mov     rdi, r12
+    syscall
+    mov     rax, 90             ; chmod 0755
+    mov     rdi, pathbuf
+    mov     rsi, 493
+    syscall
+    pop     rax                 ; return content value
+    ret
+.toolong:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, welong
+    mov     rdx, welonglen
+    syscall
+    jmp     .die
+.openfail:
+.writefail:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, wefail
+    mov     rdx, wefaillen
+    syscall
+.die:
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
@@ -930,5 +1014,10 @@ gcexh:    db "native: heap exhausted", 10
 gcexhlen: equ $ - gcexh
 stkovf:   db "native: stack overflow", 10
 stkovflen: equ $ - stkovf
+welong:   db "native: write_exec path too long", 10
+welonglen: equ $ - welong
+wefail:   db "native: write_exec failed", 10
+wefaillen: equ $ - wefail
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
+pathbuf:  times 4096 db 0       ; 3c.3 write_exec: NUL-terminated path scratch
