@@ -887,6 +887,28 @@ rt_chr:
     xor     rax, rax            ; r14 GC root = 0 (source is static numbuf)
     jmp     rt_make_str
 
+; ── 3c.2 error(STR): loud halt — print msg + newline to stderr, exit 1 ──
+;   The native analogue of the host/VM `error` builtin: a compiled program that
+;   calls error(msg) fails loudly (never returns) instead of degrading — b_τ ≡
+;   f_τ with both other engines (msg bytes + newline to fd 2, exit code 1).
+;   Appended after rt_chr / before the data area, so the 3c.1 routine addresses
+;   and every RT_* entry stay UNCHANGED; only the data globals shift.
+rt_error:
+    mov     rcx, [rax+8]        ; descriptor body
+    mov     rsi, [rcx+8]        ; msg bytes
+    mov     rdx, [rcx]          ; msg length
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, nl
+    mov     rdx, 1
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1
+    syscall
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0

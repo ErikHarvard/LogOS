@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=3105 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=3167 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1474,6 +1474,16 @@ c3check 'glyph MAIN = print(str_len("Lingua Adamica"))' 'str_len native (=14)'
 c3check 'glyph MAIN = print(ord("A"))' 'ord native (=65)'
 c3check 'glyph MAIN = print(chr("73"))' 'chr native (=I)'
 c3check 'glyph MAIN = print(ord(chr("65")))' 'chr/ord round-trip native (=65)'
+# Stage 3c.2: the `error` builtin — a loud halt. A compiled program that calls
+# error(msg) must print msg + newline to stderr and exit non-zero, NOT degrade —
+# b_τ ≡ f_τ with the host (same diagnostic, same exit code). c3check expects rc 0,
+# so this is a dedicated check: native and host must agree on BOTH stderr and rc.
+printf 'glyph MAIN = error("native: boom")\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>/tmp/c3.err || { echo "FAIL  native_codegen3: compile error on [error builtin]: $(head -1 /tmp/c3.err)"; ok=0; }
+nrc=0; nerr=$(./native_codegen3_out 2>&1 >/dev/null) || nrc=$?
+hrc=0; herr=$(./tiny_host native_input.la 2>&1 >/dev/null) || hrc=$?
+{ [ "$nrc" != "0" ] && [ "$nerr" = "native: boom" ] && [ "$nerr" = "$herr" ] && [ "$nrc" = "$hrc" ]; } \
+  || { echo "FAIL  native_codegen3: error builtin not faithful (native rc=$nrc err='$nerr' ; host rc=$hrc err='$herr'; want non-zero rc, stderr 'native: boom', native==host)"; ok=0; }
 # HEADLINE differential — SAME compiler, SAME 768 MB heap, SAME depth N=1,000,000;
 # only tail-position differs. The TAIL loop completes in bounded native stack (TCO);
 # the matched NON-TAIL recursion grows the native stack and FAULTS.
