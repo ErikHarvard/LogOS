@@ -178,16 +178,95 @@ glyph APP_TAIL = la acc. la toks.
 glyph P_APP  = la toks. (la base. APP_TAIL(FST(base))(SND(base)))(P_PRIMARY(toks))
 glyph P_EXPR = la toks. P_APP(toks)
 
-# PARSE_PROGRAM: token list -> glyph table (list of PAIR(name)(ast)).
-glyph PARSE_PROGRAM = Z(la self. la toks.
-    IF(str_eq(T_TYPE(HD(toks)))("eof"))(la _. NIL)(la _.
-    IF(AND(str_eq(T_TYPE(HD(toks)))("name"))(str_eq(T_VAL(HD(toks)))("glyph")))(la _.
-        (la nm. (la aftername.
-            IF(str_eq(T_TYPE(HD(aftername)))("eq"))(la _.
-                (la r. CONS(PAIR(nm)(FST(r)))(self(SND(r))))(P_EXPR(TL(aftername))))
-            (la _. error("native_codegen3: expected = in glyph definition")))
-        (TL(TL(toks))))(T_VAL(HD(TL(toks)))))
+# ── Module system (import / export) — resolved at PARSE time (Stage 3d) ──
+# Ported from codegen.la, adapted to codegen3's TOKEN-LIST parser (codegen.la
+# re-lexes a string; here we dispatch over an already-tokenized list). import /
+# export are discharged here, producing ONE flat glyph table with the module's
+# PRIVATE glyphs alpha-renamed (path-derived, deterministic). INLINE + codegen
+# consume the merged table unchanged, so the backend needs no new machinery and
+# the runtime is untouched (pure parse-time generation). read_file + error are
+# host builtins; mangled names are private and never observed (isolation only).
+glyph IS_KEYWORD = la v. OR(str_eq(v)("glyph"))(OR(str_eq(v)("import"))(str_eq(v)("export")))
+glyph IS_ALPHA = la c. STR_HAS(c)("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+glyph IS_IDENT_CHAR = la c. OR(IS_DIGIT(c))(OR(IS_ALPHA(c))(str_eq(c)("_")))
+glyph SANITIZE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _.
+    concat(IF(IS_IDENT_CHAR(str_head(s)))(la _. str_head(s))(la _. "_"))(self(str_tail(s)))))
+glyph MANGLE = la path. la name. concat("__mod_")(concat(SANITIZE(path))(concat("__")(name)))
+glyph TABLE_HAS = la nm. la table. IS_SOME(LOOKUP_GLYPH(nm)(table))
+glyph CHECK_EXPORTS = Z(la self. la exports. la table.
+    IF(IS_CONS(exports))(la _.
+        IF(TABLE_HAS(HD(exports))(table))(la _. self(TL(exports))(table))(la _.
+            error(concat("native_codegen3: module exports undefined glyph: ")(HD(exports)))))
+    (la _. exports))
+# rewrite every FREE reference to `old` -> `new`, stopping under a binder of `old`
+glyph RENAME_FREE = Z(la self. la node. la old. la new.
+    node
+        (la name. IF(str_eq(name)(old))(la _. AST_VAR(new))(la _. AST_VAR(name)))
+        (la p. la b. IF(str_eq(p)(old))(la _. AST_LAM(p)(b))(la _. AST_LAM(p)(self(b)(old)(new))))
+        (la f. la a. AST_APP(self(f)(old)(new))(self(a)(old)(new)))
+        (la val. AST_STR(val)))
+glyph PRIVATE_NAMES = Z(la self. la table. la exports.
+    IF(IS_CONS(table))(la _.
+        (la nm. IF(STR_MEM(nm)(exports))(la _. self(TL(table))(exports))(la _. CONS(nm)(self(TL(table))(exports))))(FST(HD(table)))
+    )(la _. NIL))
+glyph MANGLE_BODY = Z(la self. la ast. la privs. la path.
+    IF(IS_CONS(privs))(la _.
+        (la p. self(RENAME_FREE(ast)(p)(MANGLE(path)(p)))(TL(privs))(path))(HD(privs))
+    )(la _. ast))
+glyph MANGLE_MAP = Z(la self. la table. la exports. la privs. la path.
+    IF(IS_CONS(table))(la _.
+        (la entry. (la nm. (la ast.
+            CONS(PAIR(IF(STR_MEM(nm)(exports))(la _. nm)(la _. MANGLE(path)(nm)))(MANGLE_BODY(ast)(privs)(path)))(self(TL(table))(exports)(privs)(path))
+        )(SND(entry)))(FST(entry)))(HD(table))
+    )(la _. NIL))
+glyph MANGLE_MODULE = la table. la exports. la path.
+    (la _. MANGLE_MAP(table)(exports)(PRIVATE_NAMES(table)(exports))(path))(CHECK_EXPORTS(exports)(table))
+# PARSE_IMPORT: tokens AFTER `import` -> PAIR(path string)(remaining tokens)
+glyph PARSE_IMPORT = la toks.
+    IF(str_eq(T_TYPE(HD(toks)))("lp"))(la _.
+        (la t1.
+            IF(str_eq(T_TYPE(HD(t1)))("str"))(la _.
+                (la path. (la t2.
+                    IF(str_eq(T_TYPE(HD(t2)))("rp"))(la _. PAIR(path)(TL(t2)))(la _.
+                        error("native_codegen3: import: expected ) after path")))
+                (TL(t1)))(T_VAL(HD(t1))))
+            (la _. error("native_codegen3: import: expected path string")))
+        (TL(toks)))
+    (la _. error("native_codegen3: import: expected ( after import"))
+# PARSE_EXPORT_NAMES: tokens AFTER `export` -> PAIR(name list)(remaining tokens),
+# collecting consecutive non-keyword name tokens (codegen3 lexes keywords as plain
+# names, so stop at the next glyph/import/export or any non-name token).
+glyph PARSE_EXPORT_NAMES = Z(la self. la toks.
+    IF(AND(str_eq(T_TYPE(HD(toks)))("name"))(NOT(IS_KEYWORD(T_VAL(HD(toks))))))(la _.
+        (la recp. PAIR(CONS(T_VAL(HD(toks)))(FST(recp)))(SND(recp)))(self(TL(toks))))
+    (la _. PAIR(NIL)(toks)))
+# PARSE_MOD_LOOP: token list -> PAIR(glyph table)(export list). A glyph def parses
+# exactly as before; import splices the mangled module table in; export accumulates.
+glyph PARSE_MOD_LOOP = Z(la self. la toks.
+    IF(str_eq(T_TYPE(HD(toks)))("eof"))(la _. PAIR(NIL)(NIL))(la _.
+    IF(str_eq(T_TYPE(HD(toks)))("name"))(la _.
+        (la kw.
+        IF(str_eq(kw)("glyph"))(la _.
+            (la nm. (la aftername.
+                IF(str_eq(T_TYPE(HD(aftername)))("eq"))(la _.
+                    (la r. (la recp. PAIR(CONS(PAIR(nm)(FST(r)))(FST(recp)))(SND(recp)))(self(SND(r))))(P_EXPR(TL(aftername))))
+                (la _. error("native_codegen3: expected = in glyph definition")))
+            (TL(TL(toks))))(T_VAL(HD(TL(toks)))))
+        (la _.
+        IF(str_eq(kw)("import"))(la _.
+            (la ip. (la modp. (la mangled. (la recp.
+                PAIR(APPEND(mangled)(FST(recp)))(SND(recp))
+            )(self(SND(ip))))(MANGLE_MODULE(FST(modp))(SND(modp))(FST(ip))))(PARSE_MODULE(TOKENIZE(read_file(FST(ip))))))(PARSE_IMPORT(TL(toks)))
+        )(la _.
+        IF(str_eq(kw)("export"))(la _.
+            (la ep. (la recp. PAIR(FST(recp))(APPEND(FST(ep))(SND(recp))))(self(SND(ep))))(PARSE_EXPORT_NAMES(TL(toks)))
+        )(la _.
+            error("native_codegen3: expected glyph / import / export")
+        ))))(T_VAL(HD(toks))))
     (la _. error("native_codegen3: expected a glyph definition"))))
+glyph PARSE_MODULE = la toks. PARSE_MOD_LOOP(toks)
+# PARSE_PROGRAM: top-level entry — the root file's own exports are discarded.
+glyph PARSE_PROGRAM = la toks. FST(PARSE_MOD_LOOP(toks))
 
 glyph LOOKUP_GLYPH = Z(la self. la nm. la table.
     IF(IS_CONS(table))(la _. IF(str_eq(nm)(FST(HD(table))))(la _. SOME(SND(HD(table))))(la _. self(nm)(TL(table))))(la _. NONE))

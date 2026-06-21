@@ -1498,6 +1498,24 @@ rm -f /tmp/c3_we_out /tmp/c3_we_host /tmp/c3_we_native
   && [ "$nmode" = "755" ] && [ "$hmode" = "755" ] && [ "$(wc -c < /tmp/c3_we_native)" = "5" ]; } \
   || { echo "FAIL  native_codegen3: write_exec not faithful (stdout/file/mode native vs host; nmode=$nmode hmode=$hmode size=$(wc -c < /tmp/c3_we_native))"; ok=0; }
 rm -f /tmp/c3_we_out /tmp/c3_we_host /tmp/c3_we_native /tmp/c3_we_hstdout /tmp/c3_we_nstdout
+# Stage 3d: the module system (import / export) resolved at PARSE time in codegen3.
+# greetapp.la import("greetmod.la")s, redefines the module's private SECRET name,
+# and both isolation directions must hold (module private wins inside GREET; the
+# importer's SECRET does not leak in). Compiling it with codegen3 and running the
+# native binary must match the host — adding the native x86-64 backend as another
+# engine to the cross-engine import demo. Also: a module exporting an undefined
+# glyph is rejected loudly at compile time (CHECK_EXPORTS, matching the host).
+cp greetapp.la native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>/tmp/c3.err || { echo "FAIL  native_codegen3: compile error on [greetapp import]: $(head -1 /tmp/c3.err)"; ok=0; }
+nimp=$(./native_codegen3_out 2>/dev/null); himp=$(./tiny_host greetapp.la 2>/dev/null)
+{ [ "$nimp" = "$himp" ] && [ "$nimp" = "module-importer / mine:-importer" ]; } \
+  || { echo "FAIL  native_codegen3: module import not faithful (native='$nimp' host='$himp')"; ok=0; }
+printf 'export NOPE\nglyph FOO = "x"\n' > /tmp/c3_badmod.la
+printf 'import("/tmp/c3_badmod.la")\nglyph MAIN = print(FOO)\n' > native_input.la
+brc=0; berr=$(./tiny_host native_codegen3.la 2>&1 >/dev/null) || brc=$?
+{ [ "$brc" != "0" ] && printf '%s' "$berr" | grep -qF "exports undefined glyph"; } \
+  || { echo "FAIL  native_codegen3: undefined export not rejected at compile (rc=$brc err='$berr')"; ok=0; }
+rm -f /tmp/c3_badmod.la
 # HEADLINE differential — SAME compiler, SAME 768 MB heap, SAME depth N=1,000,000;
 # only tail-position differs. The TAIL loop completes in bounded native stack (TCO);
 # the matched NON-TAIL recursion grows the native stack and FAULTS.
