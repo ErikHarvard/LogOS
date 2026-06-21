@@ -511,12 +511,16 @@ rt_make_str:
     xor     rcx, rcx
 .cp:
     cmp     rcx, r13
-    jae     .d
+    jae     rt_make_str_wrap
     mov     dl, [rsi+rcx]
     mov     [r12+rcx], dl
     inc     rcx
     jmp     .cp
-.d:
+; 3e: zero-byte entry — build descriptor + box around a blob ALREADY filled by
+;   the caller. Contract: r12 = blob body, r13 = len. read_file fills a blob via
+;   read(2) then jumps here instead of re-copying. (Global so the internal jae
+;   above and read_file's jmp share the target.)
+rt_make_str_wrap:
     call    alloc24             ; descriptor cell
     mov     qword [rax], H_DESC
     mov     [rax+8], r13        ; len
@@ -993,6 +997,160 @@ rt_write_exec:
     mov     rdi, 1
     syscall
 
+; ── 3e read_file(path) -> STR of the file's contents (the kernel's SOURCE) ──
+;   open RDONLY, get size via lseek, alloc a blob of that size, read directly into
+;   it, then build the descriptor+box by jumping into rt_make_str_wrap (no second
+;   copy). Path is copied NUL-terminated into the shared pathbuf (bound 4095).
+;   r12=fd, r13=size(=len), r14=blob body (GC root across the read). Loud halt on
+;   open failure, matching the host (the SECD VM returns "" instead — we follow the
+;   host so native==host on the c3 gate). The capstone kernel's SOURCE needs this.
+rt_read_file:
+    mov     rcx, [rax+8]        ; path descriptor body
+    mov     rdx, [rcx]          ; path length
+    mov     rsi, [rcx+8]        ; path blob ptr
+    cmp     rdx, 4095
+    jae     .toolong
+    xor     rcx, rcx
+.cp:
+    cmp     rcx, rdx
+    jae     .cpd
+    mov     r8b, [rsi+rcx]
+    mov     [pathbuf+rcx], r8b
+    inc     rcx
+    jmp     .cp
+.cpd:
+    mov     byte [pathbuf+rcx], 0
+    mov     rax, 2              ; open
+    mov     rdi, pathbuf
+    xor     rsi, rsi            ; O_RDONLY
+    xor     rdx, rdx
+    syscall
+    test    rax, rax
+    js      .openfail
+    mov     r12, rax            ; fd
+    mov     rax, 8              ; lseek(fd, 0, SEEK_END) -> size
+    mov     rdi, r12
+    xor     rsi, rsi
+    mov     rdx, 2
+    syscall
+    mov     r13, rax            ; size (= len)
+    mov     rax, 8              ; lseek(fd, 0, SEEK_SET)
+    mov     rdi, r12
+    xor     rsi, rsi
+    xor     rdx, rdx
+    syscall
+    mov     rdi, r13            ; alloc_blob(size)
+    call    alloc_blob          ; rax=cell, r9=classsize
+    mov     rcx, r9
+    sub     rcx, 8
+    shl     rcx, 16
+    or      rcx, K_BLOB
+    mov     [rax], rcx          ; blob header
+    lea     r14, [rax+8]        ; blob body (dest + GC root)
+    mov     r10, r14            ; read cursor
+    mov     r8, r13             ; bytes remaining
+.rd:
+    test    r8, r8
+    jz      .rdd
+    mov     rax, 0              ; read(fd, cursor, remaining)
+    mov     rdi, r12
+    mov     rsi, r10
+    mov     rdx, r8
+    syscall
+    test    rax, rax
+    jle     .rdd                ; EOF/error -> stop (len already = file size)
+    add     r10, rax
+    sub     r8, rax
+    jmp     .rd
+.rdd:
+    mov     rax, 3              ; close(fd)
+    mov     rdi, r12
+    syscall
+    mov     r12, r14            ; wrap contract: r12 = blob body, r13 = len
+    xor     r14, r14            ; clear GC root (blob now rooted via r12)
+    jmp     rt_make_str_wrap
+.toolong:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, welong         ; reuse the "path too long" message
+    mov     rdx, welonglen
+    syscall
+    jmp     .die
+.openfail:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rferr
+    mov     rdx, rferrlen
+    syscall
+.die:
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
+; ── 3e copy_self(_) -> replicate /proc/self/exe -> target, return target STR ──
+;   The native binary breeds a byte-identical child: copy /proc/self/exe to a
+;   fixed target (0755) in 64 KiB chunks, using r15 (the heap bump top) as
+;   TRANSIENT scratch like the SECD VM — no static buffer, so the embedded blob
+;   stays small. r15 is NOT bumped (the bytes are flushed to the file each chunk),
+;   so allocation resumes there afterwards. Returns the target path as a STR via
+;   rt_make_str. The argument (in rax) is ignored (the caller evaluated it for
+;   ordering). This is what makes a compiled kernel.la self-replicate.
+rt_copy_self:
+    mov     rax, 2              ; open /proc/self/exe RDONLY
+    mov     rdi, proc_self_exe
+    xor     rsi, rsi
+    xor     rdx, rdx
+    syscall
+    test    rax, rax
+    js      .done
+    mov     r12, rax            ; fd_in
+    mov     rax, 2              ; open target WRONLY|CREAT|TRUNC 0755
+    mov     rdi, cs_target
+    mov     rsi, 577
+    mov     rdx, 493
+    syscall
+    test    rax, rax
+    js      .closein
+    mov     r13, rax            ; fd_out
+.loop:
+    mov     rax, 0              ; read(fd_in, r15, 65536)
+    mov     rdi, r12
+    mov     rsi, r15
+    mov     rdx, 65536
+    syscall
+    test    rax, rax
+    jle     .eof
+    mov     rdx, rax            ; bytes read -> write count
+    mov     rax, 1              ; write(fd_out, r15, n)
+    mov     rdi, r13
+    mov     rsi, r15
+    syscall
+    jmp     .loop
+.eof:
+    mov     rax, 3              ; close(fd_out)
+    mov     rdi, r13
+    syscall
+.closein:
+    mov     rax, 3              ; close(fd_in)
+    mov     rdi, r12
+    syscall
+    mov     rax, 90             ; chmod(target, 0755)
+    mov     rdi, cs_target
+    mov     rsi, 493
+    syscall
+.done:
+    mov     rsi, cs_target      ; return STR(cs_target): strlen then rt_make_str
+    xor     rdx, rdx
+.slen:
+    cmp     byte [rsi+rdx], 0
+    je      .mk
+    inc     rdx
+    jmp     .slen
+.mk:
+    mov     rsi, cs_target
+    xor     rax, rax            ; r14 GC root = 0 (source is the static cs_target)
+    jmp     rt_make_str
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
@@ -1018,6 +1176,10 @@ welong:   db "native: write_exec path too long", 10
 welonglen: equ $ - welong
 wefail:   db "native: write_exec failed", 10
 wefaillen: equ $ - wefail
+rferr:    db "native: read_file: cannot open file", 10
+rferrlen: equ $ - rferr
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
-pathbuf:  times 4096 db 0       ; 3c.3 write_exec: NUL-terminated path scratch
+pathbuf:  times 4096 db 0       ; 3c.3 write_exec / 3e read_file: NUL-term path scratch
+proc_self_exe: db "/proc/self/exe", 0   ; 3e copy_self source
+cs_target:     db "new_logos_native.bin", 0  ; 3e copy_self target (native lineage)

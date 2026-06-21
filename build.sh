@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=7564 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8113 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1516,6 +1516,24 @@ brc=0; berr=$(./tiny_host native_codegen3.la 2>&1 >/dev/null) || brc=$?
 { [ "$brc" != "0" ] && printf '%s' "$berr" | grep -qF "exports undefined glyph"; } \
   || { echo "FAIL  native_codegen3: undefined export not rejected at compile (rc=$brc err='$berr')"; ok=0; }
 rm -f /tmp/c3_badmod.la
+# Stage 3e — the CAPSTONE: compile kernel.la to a native x86-64 ELF that speaks the
+# Word and self-replicates BYTE-IDENTICALLY, with no C host and no SECD interpreter
+# in the loop. Needs the two builtins kernel.la uses that 3a-3d lacked: read_file
+# (SOURCE = read_file("kernel.la")) and copy_self (replicate /proc/self/exe). The
+# native binary must (a) print the same two lines as the host, and (b) copy_self a
+# child that is byte-identical to itself — the native backend joining every other
+# engine on the kernel self-replication gate (∃(∃) ≡ ∃).
+cp kernel.la native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>/tmp/c3.err || { echo "FAIL  native_codegen3: kernel.la compile error: $(head -1 /tmp/c3.err)"; ok=0; }
+cp native_codegen3_out /tmp/c3_kernel_elf
+rm -f new_logos_native.bin
+knrc=0; ./native_codegen3_out > /tmp/c3_kn_out 2>/dev/null || knrc=$?
+./tiny_host kernel.la > /tmp/c3_kn_host 2>/dev/null
+{ [ "$knrc" = "0" ] && cmp -s /tmp/c3_kn_out /tmp/c3_kn_host \
+  && [ -f new_logos_native.bin ] && cmp -s new_logos_native.bin /tmp/c3_kernel_elf \
+  && [ "$(stat -c '%a' new_logos_native.bin)" = "755" ]; } \
+  || { echo "FAIL  native_codegen3: kernel capstone (rc=$knrc; stdout native==host? $(cmp -s /tmp/c3_kn_out /tmp/c3_kn_host && echo y || echo n); replicant byte-identical? $([ -f new_logos_native.bin ] && cmp -s new_logos_native.bin /tmp/c3_kernel_elf && echo y || echo n))"; ok=0; }
+rm -f new_logos_native.bin /tmp/c3_kernel_elf /tmp/c3_kn_out /tmp/c3_kn_host
 # HEADLINE differential — SAME compiler, SAME 768 MB heap, SAME depth N=1,000,000;
 # only tail-position differs. The TAIL loop completes in bounded native stack (TCO);
 # the matched NON-TAIL recursion grows the native stack and FAULTS.
