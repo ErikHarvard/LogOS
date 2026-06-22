@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8113 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8193 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1605,8 +1605,27 @@ glyph MAIN = print(CHURN(2000000))\n' "$LIT" "$LIT" > native_input.la
 ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
 rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 not bounded (rc=$rc out=$(cat /tmp/c3bc.out))"; ok=0; }
+# (c) FREEZE-DAY FIX #1 — large-blob GC sweep must not corrupt REGDUMP. A >4 MB
+#     read_file/concat blob has classidx >= 22; the sweep re-buckets it via
+#     FREEBLOB[classidx]. FREEBLOB was sized 22 (idx 0..21), so a >4 MB dead blob
+#     overflowed the array into the adjacent REGDUMP and clobbered the registers
+#     rt_gc restores -> corrupt output then SIGSEGV (a pre-existing memory-corruption
+#     bug since 3b). FREEBLOB is now 32 entries (idx 5..30 cover every blob the 1.5 GB
+#     heap can hold). This tail-discards a 5 MB file (classidx 23) in a loop so the GC
+#     repeatedly sweeps a large DEAD blob; it must complete 'done' and match the host
+#     byte-for-byte (no corruption, no crash).
+head -c 5242880 < /dev/zero | tr '\0' a > c3_big.txt
+printf 'glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LOOP = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la _. self(sub(n)(1)))(read_file("c3_big.txt"))))
+glyph MAIN = print(LOOP(400))\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
+rc=0; timeout 200 ./native_codegen3_out > /tmp/c3big.out 2>/dev/null || rc=$?
+./tiny_host native_input.la > /tmp/c3big.host 2>/dev/null
+{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3big.out)" = "done" ] && cmp -s /tmp/c3big.out /tmp/c3big.host; } || { echo "FAIL  native_codegen3 freeze-day #1: >4 MB blob GC sweep corrupts/diverges (rc=$rc native='$(cat /tmp/c3big.out)' host='$(cat /tmp/c3big.host)')"; ok=0; }
+rm -f c3_big.txt /tmp/c3big.out /tmp/c3big.host
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~8 GB of dead 24B objects) COMPLETES in the 1.5 GB heap (live set ~25/pass via the FREE24 free-list). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~4 GB of blobs via power-of-2 FREEBLOB size-class lists) COMPLETES in the 1.5 GB heap (result 'done'). Both impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). Stage 3b (GC) is now complete"
+    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~8 GB of dead 24B objects) COMPLETES in the 1.5 GB heap (live set ~25/pass via the FREE24 free-list). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~4 GB of blobs via power-of-2 FREEBLOB size-class lists) COMPLETES in the 1.5 GB heap (result 'done'). Both impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, dead blob swept every GC) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
 else
     exit 1
 fi

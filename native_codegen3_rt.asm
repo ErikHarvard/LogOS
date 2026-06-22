@@ -682,7 +682,7 @@ rt_gc:
 .clrfb:
     mov     qword [FREEBLOB + rcx*8], 0
     inc     rcx
-    cmp     rcx, 22
+    cmp     rcx, 32               ; FIX #1: clear all 32 FREEBLOB entries (was 22)
     jb      .clrfb
     mov     rsi, [HEAP_BASE]
     xor     r13, r13              ; live count
@@ -1161,7 +1161,12 @@ WORKLIST_BASE: dq 0
 FREE24:   dq 0
 HEAP_END: dq 0
 STACK_LIMIT: dq 0              ; 3b.4 native stack guard: STACK_BASE - 7 MiB (set in rt_init)
-FREEBLOB: times 22 dq 0        ; blob free-lists by size class (classidx 5..21 used)
+FREEBLOB: times 32 dq 0        ; blob free-lists by size class (classidx 5..30 used; 32 entries
+                               ; cover every blob the 1.5 GB heap can hold — 2^30=1 GiB; a >1 GiB
+                               ; blob fails to bump-allocate before it could ever be swept, so the
+                               ; sweep re-bucket can never index past the array. FIX #1: was 22,
+                               ; which a >4 MB read_file/concat blob (classidx >=22) overflowed into
+                               ; the adjacent REGDUMP, corrupting the registers rt_gc restores.)
 REGDUMP:  times 16 dq 0
 nl:       db 10
 gcdesync: db "native: heap walk desync", 10
