@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8395 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8489 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1658,6 +1658,35 @@ printf 'glyph MAIN = print(str_len("Lingua Adamica"))\n' > native_input.la
   || { echo "FAIL  native_codegen3 #2: guard broke a valid str_len"; c2ok=0; }
 if [ "$c2ok" -eq 1 ]; then
     echo "PASS  native backend freeze-day fix #2: a non-STR argument to a string builtin (str_len/ord/chr/str_to_int/str_head/str_tail/read_file + both positions of concat/str_eq/write_exec) now HALTS LOUDLY (rt_not_string, exit 1, 'native: argument is not a string') instead of dereferencing the value as a [len][ptr] descriptor and SIGSEGV'ing — native exit matches the host's clean rc 1 (was rc 139) on 9 non-STR repros across unary + both binary arg positions; valid string ops unaffected (str_len(\"Lingua Adamica\")=14 native==host). The C host and SECD VM already guarded this; the native codegen3 runtime now does too."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la
+
+# ── FREEZE-DAY FIX #3 — chr(decimal STR) must denote a byte 0..255. rt_chr stored
+#    only the low byte of the accumulated value (mov [numbuf],al), so chr("256")
+#    silently became chr(0) and the program exited 0 with wrong output. The C host
+#    rejects it loudly ("chr: value N out of byte range 0..255", exit 1) and so does
+#    the SECD VM; rt_chr now range-checks (> 255 -> rt_chr_range, exit 1).
+say "Native backend freeze-day fix #3: chr out-of-range loud-halt"
+c3ok=1
+for c3v in 256 300 999; do
+    printf 'glyph MAIN = print(chr("%s"))\n' "$c3v" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #3: compile chr($c3v)"; c3ok=0; }
+    nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
+    hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
+    { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
+      || { echo "FAIL  native_codegen3 #3: chr($c3v) (native_rc=$nrc out='$nout' host_rc=$hrc; want both rc1, native empty)"; c3ok=0; }
+done
+# in-range chr is UNAFFECTED (boundary 0 and 255, plus a mid value) native==host
+for c3v in 0 65 255; do
+    printf 'glyph MAIN = print(ord(chr("%s")))\n' "$c3v" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    { [ "$(./native_codegen3_out)" = "$c3v" ] && [ "$(./tiny_host native_input.la)" = "$c3v" ]; } \
+      || { echo "FAIL  native_codegen3 #3: in-range chr($c3v) broke"; c3ok=0; }
+done
+if [ "$c3ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #3: chr(decimal STR) > 255 now HALTS LOUDLY (rt_chr_range, exit 1, 'native: chr value out of byte range 0..255') instead of silently storing the low byte (chr(\"256\") -> 0) and exiting 0 — native exit matches the host's clean rc 1 on 256/300/999; in-range chr (0/65/255 boundary) unaffected native==host. The C host and SECD VM already range-check; the native codegen3 runtime now does too."
 else
     exit 1
 fi

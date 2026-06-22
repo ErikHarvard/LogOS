@@ -905,6 +905,8 @@ rt_chr:
     inc     r8
     jmp     .d
 .e:
+    cmp     rax, 255            ; freeze-day #3: chr code must be 0..255 (digit loop is
+    ja      rt_chr_range        ;   unsigned, so a negative is impossible) -> loud halt
     mov     [numbuf], al        ; the one byte
     mov     rsi, numbuf
     mov     rdx, 1
@@ -1194,6 +1196,22 @@ rt_not_string:
     mov     rdi, 1              ; exit 1 (match the host)
     syscall
 
+; ── freeze-day #3: chr argument out of byte range ──
+;   chr(decimal STR) must denote a byte 0..255. rt_chr's atoi stored only the low
+;   byte (mov [numbuf],al), so chr("256") silently became chr(0) and the program
+;   exited 0 with wrong output. The C host rejects it loudly ("chr: value N out of
+;   byte range 0..255", exit 1) and so does the SECD VM; rt_chr now range-checks and
+;   jumps here on > 255, so the native exit matches the host's clean rc 1.
+rt_chr_range:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, chrrange
+    mov     rdx, chrrangelen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (match the host)
+    syscall
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
@@ -1228,6 +1246,8 @@ rferr:    db "native: read_file: cannot open file", 10
 rferrlen: equ $ - rferr
 argnstr:  db "native: argument is not a string", 10
 argnstrlen: equ $ - argnstr
+chrrange: db "native: chr value out of byte range 0..255", 10
+chrrangelen: equ $ - chrrange
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
 pathbuf:  times 4096 db 0       ; 3c.3 write_exec / 3e read_file: NUL-term path scratch
