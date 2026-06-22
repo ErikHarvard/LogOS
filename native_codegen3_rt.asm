@@ -486,15 +486,21 @@ rt_str_to_int:
     xor     r8, r8              ; i
     xor     r9, r9              ; neg flag
     test    rdx, rdx
-    jz      .done
+    jz      .bad                ; freeze-day #4: empty string is not a decimal integer
     cmp     byte [rsi], '-'
     jne     .digits
     mov     r9, 1
     inc     r8
+    cmp     r8, rdx
+    jae     .bad                ; freeze-day #4: a lone '-' is not a decimal integer
 .digits:
     cmp     r8, rdx
     jae     .done
     movzx   r10, byte [rsi+r8]
+    cmp     r10, '0'            ; freeze-day #4: every remaining byte must be a digit
+    jb      .bad
+    cmp     r10, '9'
+    ja      .bad
     sub     r10, '0'
     imul    rax, rax, 10
     add     rax, r10
@@ -506,6 +512,8 @@ rt_str_to_int:
     neg     rax
 .pos:
     jmp     rt_box_int
+.bad:
+    jmp     rt_not_decimal
 
 ; ── slot 18: rt_make_str(rsi=src, rdx=len) -> rax = boxed STR ──
 ;   blob via alloc_blob + desc/box via alloc24. The source box (rax at entry,
@@ -1212,6 +1220,22 @@ rt_chr_range:
     mov     rdi, 1              ; exit 1 (match the host)
     syscall
 
+; ── freeze-day #4: str_to_int given a non-decimal string ──
+;   The native rt_str_to_int folded every byte through (c-'0'), so "12x" became a
+;   garbage number and "" became 0 — diverging from the C host, which is STRICT
+;   (optional leading '-' then one or more digits, else "str_to_int: not a decimal
+;   integer", exit 1). rt_str_to_int now validates and jumps here on any malformed
+;   input, so the native exit matches the host's clean rc 1.
+rt_not_decimal:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, notdec
+    mov     rdx, notdeclen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (match the host)
+    syscall
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
@@ -1248,6 +1272,8 @@ argnstr:  db "native: argument is not a string", 10
 argnstrlen: equ $ - argnstr
 chrrange: db "native: chr value out of byte range 0..255", 10
 chrrangelen: equ $ - chrrange
+notdec:   db "native: str_to_int: not a decimal integer", 10
+notdeclen: equ $ - notdec
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
 pathbuf:  times 4096 db 0       ; 3c.3 write_exec / 3e read_file: NUL-term path scratch

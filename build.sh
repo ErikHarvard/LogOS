@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8489 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8592 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1687,6 +1687,43 @@ for c3v in 0 65 255; do
 done
 if [ "$c3ok" -eq 1 ]; then
     echo "PASS  native backend freeze-day fix #3: chr(decimal STR) > 255 now HALTS LOUDLY (rt_chr_range, exit 1, 'native: chr value out of byte range 0..255') instead of silently storing the low byte (chr(\"256\") -> 0) and exiting 0 — native exit matches the host's clean rc 1 on 256/300/999; in-range chr (0/65/255 boundary) unaffected native==host. The C host and SECD VM already range-check; the native codegen3 runtime now does too."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la
+
+# ── FREEZE-DAY FIX #4 — str_to_int(decimal STR) must be STRICT. The native
+#    rt_str_to_int folded every byte through (c-'0'), so "12x" yielded a garbage
+#    number and "" yielded 0 — diverging from the C host, which accepts an optional
+#    leading '-' then one or more digits and otherwise halts loudly ("str_to_int:
+#    not a decimal integer", exit 1). rt_str_to_int now validates (empty -> .bad,
+#    lone '-' -> .bad, any non-digit -> .bad) and jumps to rt_not_decimal.
+#    NOTE: the codegen FOLDS a literal str_to_int("…") at compile time (its own
+#    strict host str_to_int), so a malformed *literal* aborts the COMPILE, not the
+#    runtime — to exercise the runtime guard the argument must be COMPUTED, so each
+#    case wraps the digits past a one-char prefix in str_tail (e.g. str_tail("x12x")
+#    -> "12x"), defeating the literal fold.
+say "Native backend freeze-day fix #4: str_to_int strictness loud-halt"
+c4ok=1
+for c4s in x12x x x-; do   # str_tail -> "12x" (non-digit) / "" (empty) / "-" (lone minus)
+    printf 'glyph MAIN = print(int_to_str(str_to_int(str_tail("%s"))))\n' "$c4s" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #4: compile str_to_int(str_tail($c4s))"; c4ok=0; }
+    nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
+    hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
+    { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
+      || { echo "FAIL  native_codegen3 #4: str_to_int(str_tail(\"$c4s\")) (native_rc=$nrc out='$nout' host_rc=$hrc; want both rc1, native empty)"; c4ok=0; }
+done
+# valid decimals are UNAFFECTED (optional '-', a zero) computed past a prefix, native==host
+set -- "x42:42" "x-5:-5" "x0:0"
+for pair in "$@"; do
+    inp=${pair%%:*}; exp=${pair##*:}
+    printf 'glyph MAIN = print(int_to_str(str_to_int(str_tail("%s"))))\n' "$inp" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
+      || { echo "FAIL  native_codegen3 #4: valid str_to_int(str_tail(\"$inp\"))=$exp broke (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c4ok=0; }
+done
+if [ "$c4ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #4: str_to_int(decimal STR) is now STRICT (rt_not_decimal, exit 1, 'native: str_to_int: not a decimal integer') — a non-digit byte, a lone '-', or an empty string HALTS LOUDLY instead of folding garbage (\"12x\" -> wrong number, \"\" -> 0) and exiting 0; native exit matches the host's clean rc 1 on computed \"12x\"/\"\"/\"-\" (wrapped past str_tail to defeat the compile-time literal fold); valid \"42\"/\"-5\"/\"0\" unaffected native==host. The C host and SECD VM are already strict; the native codegen3 runtime now is too."
 else
     exit 1
 fi
