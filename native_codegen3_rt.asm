@@ -273,16 +273,34 @@ rt_mul:
 
 ; ── slot 8: rt_div -> A/B (signed) ──
 rt_div:
-    mov     rcx, [rax+8]        ; B
-    mov     rax, [rsi+8]        ; A
+    mov     rcx, [rax+8]        ; B (divisor)
+    mov     rax, [rsi+8]        ; A (dividend)
+    test    rcx, rcx            ; freeze-day #5: B==0 -> idiv SIGFPE; halt loudly (host exit 1)
+    jz      rt_div_zero
+    cmp     rcx, -1             ; freeze-day #5: LONG_MIN / -1 also SIGFPEs (quotient overflows);
+    jne     .ok                 ;   the host halts loudly on it too -> route to the same loud exit
+    mov     rdx, 0x8000000000000000
+    cmp     rax, rdx
+    je      rt_div_zero
+.ok:
     cqo
     idiv    rcx
     jmp     rt_box_int
 
 ; ── slot 9: rt_mod -> A%B (signed) ──
 rt_mod:
-    mov     rcx, [rax+8]
-    mov     rax, [rsi+8]
+    mov     rcx, [rax+8]        ; B
+    mov     rax, [rsi+8]        ; A
+    test    rcx, rcx            ; freeze-day #5: B==0 -> idiv SIGFPE; halt loudly (host exit 1)
+    jz      rt_mod_zero
+    cmp     rcx, -1             ; freeze-day #5: LONG_MIN % -1 is mathematically 0 but idiv SIGFPEs;
+    jne     .ok                 ;   the host returns 0 here, so do the same (no halt) to keep b_τ≡f_τ
+    mov     rdx, 0x8000000000000000
+    cmp     rax, rdx
+    jne     .ok
+    xor     rax, rax
+    jmp     rt_box_int
+.ok:
     cqo
     idiv    rcx
     mov     rax, rdx
@@ -1236,6 +1254,30 @@ rt_not_decimal:
     mov     rdi, 1              ; exit 1 (match the host)
     syscall
 
+; ── freeze-day #5: integer division / modulo by zero (or LONG_MIN/-1 overflow) ──
+;   A bare idiv with a 0 divisor (or LONG_MIN/-1) raises SIGFPE, so div(x,0) crashed
+;   with rc 136 and wrong-or-no output. The C host rejects it loudly ("div: division
+;   by zero" / "mod: modulo by zero", exit 1); rt_div/rt_mod now check the divisor
+;   first and jump here, so the native exit matches the host's clean rc 1.
+rt_div_zero:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, divzero
+    mov     rdx, divzerolen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (match the host)
+    syscall
+rt_mod_zero:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, modzero
+    mov     rdx, modzerolen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (match the host)
+    syscall
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
@@ -1274,6 +1316,10 @@ chrrange: db "native: chr value out of byte range 0..255", 10
 chrrangelen: equ $ - chrrange
 notdec:   db "native: str_to_int: not a decimal integer", 10
 notdeclen: equ $ - notdec
+divzero:  db "native: div: division by zero", 10
+divzerolen: equ $ - divzero
+modzero:  db "native: mod: modulo by zero", 10
+modzerolen: equ $ - modzero
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
 pathbuf:  times 4096 db 0       ; 3c.3 write_exec / 3e read_file: NUL-term path scratch

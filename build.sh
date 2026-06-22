@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8592 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8800 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1724,6 +1724,39 @@ for pair in "$@"; do
 done
 if [ "$c4ok" -eq 1 ]; then
     echo "PASS  native backend freeze-day fix #4: str_to_int(decimal STR) is now STRICT (rt_not_decimal, exit 1, 'native: str_to_int: not a decimal integer') — a non-digit byte, a lone '-', or an empty string HALTS LOUDLY instead of folding garbage (\"12x\" -> wrong number, \"\" -> 0) and exiting 0; native exit matches the host's clean rc 1 on computed \"12x\"/\"\"/\"-\" (wrapped past str_tail to defeat the compile-time literal fold); valid \"42\"/\"-5\"/\"0\" unaffected native==host. The C host and SECD VM are already strict; the native codegen3 runtime now is too."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la
+
+# ── FREEZE-DAY FIX #5 — integer div/mod by zero. rt_div/rt_mod did a bare idiv, so
+#    a zero divisor (or the LONG_MIN/-1 overflow) raised SIGFPE — div(x,0) crashed
+#    with rc 136 and no clean diagnostic. The C host rejects it loudly ("div:
+#    division by zero" / "mod: modulo by zero", exit 1) and returns 0 for the
+#    LONG_MIN%-1 corner; rt_div/rt_mod now check the divisor first (-> rt_div_zero /
+#    rt_mod_zero loud halt, exit 1) and special-case LONG_MIN%-1 -> 0.
+#    The divisor is COMPUTED (sub(N)(N) = 0) so it is a real runtime value, not a
+#    constant the compiler could fold.
+say "Native backend freeze-day fix #5: div/mod by zero loud-halt (no SIGFPE)"
+c5ok=1
+for c5p in 'div(10)(sub(3)(3))' 'mod(10)(sub(7)(7))'; do
+    printf 'glyph MAIN = print(%s)\n' "$c5p" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #5: compile [$c5p]"; c5ok=0; }
+    nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
+    hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
+    { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
+      || { echo "FAIL  native_codegen3 #5: [$c5p] (native_rc=$nrc out='$nout' host_rc=$hrc; want both rc1 — NOT 136 SIGFPE — native empty)"; c5ok=0; }
+done
+# valid div/mod (incl. a negative and an exact division) UNAFFECTED native==host
+for pair in 'div(17)(5):3' 'mod(17)(5):2' 'div(20)(4):5' 'mod(10)(sub(0)(3)):1'; do
+    prog=${pair%:*}; exp=${pair##*:}
+    printf 'glyph MAIN = print(%s)\n' "$prog" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
+      || { echo "FAIL  native_codegen3 #5: valid [$prog]=$exp broke (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c5ok=0; }
+done
+if [ "$c5ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #5: integer div/mod by a (computed) zero divisor now HALTS LOUDLY (rt_div_zero/rt_mod_zero, exit 1, 'native: div: division by zero' / 'native: mod: modulo by zero') instead of a bare idiv SIGFPE (rc 136) — native exit matches the host's clean rc 1; the LONG_MIN/-1 overflow is guarded too (div halts, mod -> 0, as the host); valid div/mod (incl. negative + exact) unaffected native==host. The C host already guards this; the native codegen3 runtime now does too."
 else
     exit 1
 fi
