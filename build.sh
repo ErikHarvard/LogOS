@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8193 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8395 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1630,6 +1630,38 @@ else
     exit 1
 fi
 rm -f native_codegen3_out native_input.la /tmp/c3gc.out /tmp/c3bc.out
+
+# ── FREEZE-DAY FIX #2 — a string builtin given a non-STR argument must HALT LOUDLY,
+#    not SIGSEGV. Every native string builtin (str_len/ord/chr/str_to_int/str_head/
+#    str_tail/read_file + both args of concat/str_eq/write_exec) now checks the value
+#    tag ([value+0]==0 = STR) at entry and jumps to rt_not_string (exit 1, "native:
+#    argument is not a string") on mismatch, matching the C host and the SECD VM.
+#    Before this, e.g. str_len(add(1)(2)) derefed the boxed INT as a [len][ptr]
+#    descriptor -> wild read -> SIGSEGV (rc 139) — a unique native divergence (the
+#    host halts cleanly rc 1). Checks 9 non-STR repros (unary + both binary arg
+#    positions): native must halt non-zero, NOT 139, with empty stdout, and the host
+#    must also halt non-zero. Valid string use must be unaffected.
+say "Native backend freeze-day fix #2: non-STR argument loud-halt (no SIGSEGV)"
+c2ok=1
+for c2p in 'str_len(add(1)(2))' 'ord(add(1)(2))' 'chr(add(1)(2))' 'str_to_int(add(1)(2))' 'str_head(add(1)(2))' 'str_tail(add(1)(2))' 'concat(add(1)(2))("x")' 'concat("x")(add(1)(2))' 'read_file(add(1)(2))'; do
+    printf 'glyph MAIN = print(%s)\n' "$c2p" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #2: compile '$c2p'"; c2ok=0; }
+    nrc=0; nout=$(timeout 30 ./native_codegen3_out 2>/dev/null) || nrc=$?
+    hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
+    { [ "$nrc" != "0" ] && [ "$nrc" != "139" ] && [ -z "$nout" ] && [ "$hrc" != "0" ]; } \
+      || { echo "FAIL  native_codegen3 #2: '$c2p' (native_rc=$nrc out='$nout' host_rc=$hrc; want native non-zero non-139 empty, host non-zero)"; c2ok=0; }
+done
+# valid string use is UNAFFECTED (the guard rejects only non-STR values)
+printf 'glyph MAIN = print(str_len("Lingua Adamica"))\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>&1
+{ [ "$(./native_codegen3_out)" = "14" ] && [ "$(./tiny_host native_input.la)" = "14" ]; } \
+  || { echo "FAIL  native_codegen3 #2: guard broke a valid str_len"; c2ok=0; }
+if [ "$c2ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #2: a non-STR argument to a string builtin (str_len/ord/chr/str_to_int/str_head/str_tail/read_file + both positions of concat/str_eq/write_exec) now HALTS LOUDLY (rt_not_string, exit 1, 'native: argument is not a string') instead of dereferencing the value as a [len][ptr] descriptor and SIGSEGV'ing — native exit matches the host's clean rc 1 (was rc 139) on 9 non-STR repros across unary + both binary arg positions; valid string ops unaffected (str_len(\"Lingua Adamica\")=14 native==host). The C host and SECD VM already guarded this; the native codegen3 runtime now does too."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la
 
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program

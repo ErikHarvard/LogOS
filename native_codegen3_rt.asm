@@ -312,6 +312,10 @@ rt_lt:
 
 ; ── slot 12: rt_str_eq(A,B) -> TRUE/FALSE value ──
 rt_str_eq:
+    cmp     qword [rsi], 0      ; freeze-day #2: arg A must be STR (tag 0), else loud halt
+    jne     rt_not_string
+    cmp     qword [rax], 0      ; arg B must be STR
+    jne     rt_not_string
     mov     r8, [rsi+8]         ; descA
     mov     r9, [rax+8]         ; descB
     mov     rcx, [r8]           ; lenA
@@ -340,6 +344,10 @@ rt_str_eq:
 ;   kept live in r14/r13 as GC roots across allocs (non-moving, so their bytes
 ;   stay put); lens re-read from the boxes after any GC.
 rt_concat:
+    cmp     qword [rsi], 0      ; freeze-day #2: arg A must be STR (tag 0), else loud halt
+    jne     rt_not_string
+    cmp     qword [rax], 0      ; arg B must be STR
+    jne     rt_not_string
     mov     r14, rsi            ; A box -> GC root
     mov     r13, rax            ; B box -> GC root
     mov     rcx, [rsi+8]        ; descA body
@@ -398,6 +406,8 @@ rt_concat:
 
 ; ── slot 14: rt_str_head(rax=STR) -> boxed STR (first byte or empty) ──
 rt_str_head:
+    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
+    jne     rt_not_string
     mov     rcx, [rax+8]        ; desc
     mov     rdx, [rcx]          ; len
     test    rdx, rdx
@@ -412,6 +422,8 @@ rt_str_head:
 
 ; ── slot 15: rt_str_tail(rax=STR) -> boxed STR (rest or empty) ──
 rt_str_tail:
+    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
+    jne     rt_not_string
     mov     rcx, [rax+8]
     mov     rdx, [rcx]
     test    rdx, rdx
@@ -465,6 +477,8 @@ rt_int_to_str_raw:
 
 ; ── slot 17: rt_str_to_int(rax=STR) -> boxed INT (decimal, optional '-') ──
 rt_str_to_int:
+    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
+    jne     rt_not_string
     mov     rcx, [rax+8]        ; desc
     mov     rsi, [rcx+8]        ; ptr
     mov     rdx, [rcx]          ; len
@@ -850,12 +864,16 @@ rt_stack_overflow:
 ;
 ; ── str_len(STR) -> decimal STR of byte length ──
 rt_str_len:
+    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
+    jne     rt_not_string
     mov     rcx, [rax+8]        ; descriptor body
     mov     rax, [rcx]          ; len (raw int)
     jmp     rt_int_to_str_raw
 ;
 ; ── ord(STR) -> decimal STR of the first byte (empty -> "0") ──
 rt_ord:
+    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
+    jne     rt_not_string
     mov     rcx, [rax+8]        ; descriptor body
     mov     rdx, [rcx]          ; len
     xor     rax, rax            ; default 0 (empty string)
@@ -870,6 +888,8 @@ rt_ord:
 ;   minimal unsigned base-10 atoi (chr codes are 0..255, no sign), then make a
 ;   1-byte string from the static numbuf (make_str copies it out immediately).
 rt_chr:
+    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
+    jne     rt_not_string
     mov     rcx, [rax+8]        ; descriptor body
     mov     rsi, [rcx+8]        ; blob ptr
     mov     rdx, [rcx]          ; len
@@ -927,6 +947,10 @@ rt_error:
 ;   chmod). Appended after rt_error / before the data area: all RT_* + 3c.1/3c.2
 ;   routine addresses stay UNCHANGED; only the data globals shift.
 rt_write_exec:
+    cmp     qword [rax], 0      ; freeze-day #2: content arg must be STR (tag 0), else loud halt
+    jne     rt_not_string
+    cmp     qword [rsi], 0      ; path arg must be STR
+    jne     rt_not_string
     push    rax                 ; content value saved (survives syscalls; returned)
     mov     rcx, [rsi+8]        ; path descriptor body
     mov     rdx, [rcx]          ; path length
@@ -1005,6 +1029,8 @@ rt_write_exec:
 ;   open failure, matching the host (the SECD VM returns "" instead — we follow the
 ;   host so native==host on the c3 gate). The capstone kernel's SOURCE needs this.
 rt_read_file:
+    cmp     qword [rax], 0      ; freeze-day #2: path arg must be STR (tag 0), else loud halt
+    jne     rt_not_string
     mov     rcx, [rax+8]        ; path descriptor body
     mov     rdx, [rcx]          ; path length
     mov     rsi, [rcx+8]        ; path blob ptr
@@ -1151,6 +1177,23 @@ rt_copy_self:
     xor     rax, rax            ; r14 GC root = 0 (source is the static cs_target)
     jmp     rt_make_str
 
+; ── freeze-day #2: non-STR argument loud-halt ──
+;   A string builtin given a non-STR value (e.g. str_len(add(1)(2)) — a boxed INT)
+;   used to deref the integer payload as a [len][ptr] descriptor -> wild read ->
+;   SIGSEGV. Every string builtin now checks the value tag ([value+0]==0 = STR) at
+;   entry and jumps here on mismatch, halting LOUDLY (exit 1, "argument is not a
+;   string" to stderr) like the C host and the SECD VM, rather than crashing. The
+;   cardinal invariant: native exit code matches the host's clean rc 1, not rc 139.
+rt_not_string:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, argnstr
+    mov     rdx, argnstrlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (match the host)
+    syscall
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
@@ -1183,6 +1226,8 @@ wefail:   db "native: write_exec failed", 10
 wefaillen: equ $ - wefail
 rferr:    db "native: read_file: cannot open file", 10
 rferrlen: equ $ - rferr
+argnstr:  db "native: argument is not a string", 10
+argnstrlen: equ $ - argnstr
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
 pathbuf:  times 4096 db 0       ; 3c.3 write_exec / 3e read_file: NUL-term path scratch
