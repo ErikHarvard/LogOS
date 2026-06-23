@@ -1856,6 +1856,39 @@ else
 fi
 rm -f native_codegen3_out native_input.la
 
+# ── FREEZE-DAY FIX #9 — "la" was not in IS_KEYWORD. codegen3 lexes every keyword as a
+#    plain "name" token, and PARSE_EXPORT_NAMES collects consecutive non-keyword names
+#    after `export`; so a `la` token following an export-name list was wrongly collected
+#    as a bogus export ("exports undefined glyph: la"), where the host treats `la` as a
+#    binder keyword and stops the export list there. "la" is now in IS_KEYWORD, so the
+#    export list terminates at the binder and native agrees with the host.
+say "Native backend freeze-day fix #9: 'la' is a keyword (export list stops at a binder)"
+c9ok=1
+# (a) a normal export still works native==host (no regression)
+printf 'export EX\nglyph EX = "ok"\n' > fdm9.la
+printf 'import("fdm9.la")\nglyph MAIN = print(EX)\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>/tmp/c9.err || { echo "FAIL  native_codegen3 #9: normal export failed to compile: $(head -1 /tmp/c9.err)"; c9ok=0; }
+{ [ "$(./native_codegen3_out)" = "ok" ] && [ "$(./tiny_host native_input.la)" = "ok" ]; } \
+  || { echo "FAIL  native_codegen3 #9: normal export native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)' (want 'ok')"; c9ok=0; }
+rm -f native_codegen3_out
+# (b) a stray `la` after an export name is a KEYWORD boundary, not a collected export:
+#     pre-fix native collected it -> "exports undefined glyph: la"; the host stops at the
+#     `la` binder and rejects the malformed form (rc!=0). Native now AGREES: rejects (rc!=0)
+#     WITHOUT the bogus-export error.
+printf 'export EX la\nglyph EX = "ok"\n' > fdm9.la
+printf 'import("fdm9.la")\nglyph MAIN = print(EX)\n' > native_input.la
+nrc=0; ./tiny_host native_codegen3.la >/dev/null 2>/tmp/c9n.err || nrc=$?
+hrc=0; ./tiny_host native_input.la >/dev/null 2>/tmp/c9h.err || hrc=$?
+{ [ "$nrc" != "0" ] && [ "$hrc" != "0" ] && ! grep -q "exports undefined glyph: la" /tmp/c9n.err; } \
+  || { echo "FAIL  native_codegen3 #9: stray 'la' after export (native rc=$nrc host rc=$hrc; native must reject WITHOUT mis-collecting 'la' as an export — err='$(head -1 /tmp/c9n.err)')"; c9ok=0; }
+rm -f fdm9.la /tmp/c9n.err /tmp/c9h.err /tmp/c9.err
+if [ "$c9ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #9: 'la' is now a keyword in IS_KEYWORD, so PARSE_EXPORT_NAMES stops the export-name list at a lambda binder instead of collecting 'la' as a bogus export — a normal 'export EX' still resolves native==host ('ok'), and a stray 'la' after an export name is now rejected exactly as the host rejects it (rc!=0, NO 'exports undefined glyph: la' mis-collection). Latent hardening: the host and other engines already treat 'la' as a keyword; the native codegen3 parser now does too."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la
+
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
 # (logos_source.la) to a native instruction stream (logos_program.bin); the VM

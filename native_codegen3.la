@@ -195,7 +195,13 @@ glyph P_EXPR = la toks. P_APP(toks)
 # consume the merged table unchanged, so the backend needs no new machinery and
 # the runtime is untouched (pure parse-time generation). read_file + error are
 # host builtins; mangled names are private and never observed (isolation only).
-glyph IS_KEYWORD = la v. OR(str_eq(v)("glyph"))(OR(str_eq(v)("import"))(str_eq(v)("export")))
+# freeze-day #9: "la" must be a keyword so PARSE_EXPORT_NAMES stops at a lambda
+# binder. codegen3 lexes every keyword (glyph/import/export/la) as a plain "name"
+# token, and PARSE_EXPORT_NAMES collects consecutive non-keyword names after `export`;
+# without "la" here a `la` token following an export-name list would be wrongly
+# collected as a bogus export name (then CHECK_EXPORTS errors "exports undefined
+# glyph: la"). Adding it makes the export list terminate cleanly at a binder.
+glyph IS_KEYWORD = la v. OR(str_eq(v)("glyph"))(OR(str_eq(v)("import"))(OR(str_eq(v)("export"))(str_eq(v)("la"))))
 glyph IS_ALPHA = la c. STR_HAS(c)("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 glyph IS_IDENT_CHAR = la c. OR(IS_DIGIT(c))(OR(IS_ALPHA(c))(str_eq(c)("_")))
 # freeze-day #7: SANITIZE must be INJECTIVE so two distinct import paths never
