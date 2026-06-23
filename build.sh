@@ -1762,6 +1762,37 @@ else
 fi
 rm -f native_codegen3_out native_input.la
 
+# ── FREEZE-DAY FIX #6 — a negative integer aborts the COMPILER. str_to_int("-5")
+#    folds at compile time to MOV_RAX_IMM(-5) -> LE8(-5); LEBYTES used signed C `mod`
+#    (mod(-5)(256) = -5), so B(mod(n)(256)) = chr("-5") tripped chr's 0..255 range
+#    check and the compile ABORTED on a host-valid program. LEBYTES now extracts the
+#    low byte unsigned (((n mod 256)+256) mod 256) and floor-shifts via div(sub(n)(b))
+#    (256) — byte-identical for positives, so all emitted addresses are unchanged.
+say "Native backend freeze-day fix #6: negative literal compiles (LEBYTES unsigned)"
+c6ok=1
+for pair in '-5:-5' '-1:-1' '-256:-256' '-65536:-65536' '-2147483648:-2147483648'; do
+    inp=${pair%:*}; exp=${pair##*:}
+    printf 'glyph MAIN = print(int_to_str(str_to_int("%s")))\n' "$inp" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>/tmp/c6.err \
+      || { echo "FAIL  native_codegen3 #6: str_to_int(\"$inp\") still aborts the compile: $(head -1 /tmp/c6.err)"; c6ok=0; continue; }
+    { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
+      || { echo "FAIL  native_codegen3 #6: str_to_int(\"$inp\")=$exp (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c6ok=0; }
+done
+# positives + arithmetic UNCHANGED (LEBYTES byte-identical for n>=0; addresses intact)
+for pair in 'print(42):42' 'print(str_to_int("0")):0' 'print(add(17)(5)):22' 'print((la x. x)(255)):255'; do
+    prog=${pair%:*}; exp=${pair##*:}
+    printf 'glyph MAIN = %s\n' "$prog" > native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
+      || { echo "FAIL  native_codegen3 #6: positive [$prog]=$exp regressed (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c6ok=0; }
+done
+if [ "$c6ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #6: a negative integer (str_to_int(\"-5\") folding to MOV_RAX_IMM(-5) -> LE8(-5)) now COMPILES and runs native==host instead of aborting the compiler — LEBYTES extracts the low byte unsigned (((n mod 256)+256) mod 256) so the two's-complement bytes encode, with a floor-shift div(sub(n)(b))(256) correct for both signs; verified on -5/-1/-256/-65536/-2147483648 native==host, and byte-identical for positives (42/0/add/255) so no address moved. The C host runs negatives fine; the native codegen3 compiler now emits them too."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la
+
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
 # (logos_source.la) to a native instruction stream (logos_program.bin); the VM

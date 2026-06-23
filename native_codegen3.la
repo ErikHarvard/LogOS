@@ -81,9 +81,18 @@ glyph STR_V  = la nd. nd(la nm. "")(la p. la b. "")(la f. la a. "")(la v. v)
 
 # ── byte / integer encoding helpers ────────────────────────────────
 glyph B = la n. chr(int_to_str(n))
+# freeze-day #6: extract the low byte UNSIGNED (0..255) so a negative n encodes as
+# its two's-complement bytes instead of aborting the compile. C `mod` is signed
+# (mod(-5)(256) = -5), so the old B(mod(n)(256)) = chr("-5") tripped chr's 0..255
+# range check — e.g. str_to_int("-5") folds to MOV_RAX_IMM(-5) -> LE8(-5) and failed
+# to compile a host-valid program. b = ((n mod 256)+256) mod 256 is the real low
+# byte; n - b is then divisible by 256, so div(sub(n)(b))(256) is the exact FLOOR
+# shift (correct for both signs). Byte-identical for every positive n (b = n mod
+# 256, next = floor(n/256)), so all emitted addresses are unchanged.
 glyph LEBYTES = Z(la self. la n. la k.
     IF(int_eq(k)(0))(la _. "")(la _.
-        concat(B(mod(n)(256)))(self(div(n)(256))(sub(k)(1)))))
+        (la b. concat(B(b))(self(div(sub(n)(b))(256))(sub(k)(1))))
+            (mod(add(mod(n)(256))(256))(256))))
 glyph LE8 = la n. LEBYTES(n)(8)
 glyph BYTES = la s.
     Z(la self. la rest. la tok. la out.
