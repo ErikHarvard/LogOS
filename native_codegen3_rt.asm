@@ -1049,6 +1049,83 @@ rt_write_exec:
     mov     rdi, 1
     syscall
 
+; ── freeze-day #8: rt_write_file(rsi=path, rax=content) -> content ──
+;   write_file is the host's normal (non-exec) file write. Identical to rt_write_exec
+;   EXCEPT it opens with mode 0644 and does NOT chmod 0755 — the file is left a plain
+;   data file, matching the host's fopen(path,"wb"). IS_BUILTIN2 + RT_BIN now route
+;   "write_file" here (its OWN RT_BIN case, BEFORE the rt_write_exec fall-through, so
+;   it is never silently chmod'd executable). Local labels are scoped to this routine.
+rt_write_file:
+    cmp     qword [rax], 0      ; content arg must be STR (tag 0)
+    jne     rt_not_string
+    cmp     qword [rsi], 0      ; path arg must be STR
+    jne     rt_not_string
+    push    rax                 ; content value saved (survives syscalls; returned)
+    mov     rcx, [rsi+8]        ; path descriptor body
+    mov     rdx, [rcx]          ; path length
+    mov     rsi, [rcx+8]        ; path blob ptr
+    cmp     rdx, 4095
+    jae     .toolong
+    xor     rcx, rcx
+.cp:
+    cmp     rcx, rdx
+    jae     .cpd
+    mov     r8b, [rsi+rcx]
+    mov     [pathbuf+rcx], r8b
+    inc     rcx
+    jmp     .cp
+.cpd:
+    mov     byte [pathbuf+rcx], 0
+    mov     rax, 2              ; open
+    mov     rdi, pathbuf
+    mov     rsi, 577            ; O_WRONLY|O_CREAT|O_TRUNC
+    mov     rdx, 420            ; 0644 (plain file — NOT 0755)
+    syscall
+    test    rax, rax
+    js      .openfail
+    mov     r12, rax            ; fd
+    mov     rax, [rsp]          ; content value (peek)
+    mov     rcx, [rax+8]        ; content descriptor body
+    mov     r13, [rcx]          ; remaining length
+    mov     r14, [rcx+8]        ; cursor (blob ptr)
+.wr:
+    test    r13, r13
+    jz      .wrd
+    mov     rax, 1              ; write
+    mov     rdi, r12
+    mov     rsi, r14
+    mov     rdx, r13
+    syscall
+    test    rax, rax
+    js      .writefail
+    add     r14, rax
+    sub     r13, rax
+    jmp     .wr
+.wrd:
+    mov     rax, 3              ; close (NO chmod — leave 0644)
+    mov     rdi, r12
+    syscall
+    pop     rax                 ; return content value
+    ret
+.toolong:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, wflong
+    mov     rdx, wflonglen
+    syscall
+    jmp     .die
+.openfail:
+.writefail:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, wffail
+    mov     rdx, wffaillen
+    syscall
+.die:
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 ; ── 3e read_file(path) -> STR of the file's contents (the kernel's SOURCE) ──
 ;   open RDONLY, get size via lseek, alloc a blob of that size, read directly into
 ;   it, then build the descriptor+box by jumping into rt_make_str_wrap (no second
@@ -1308,6 +1385,10 @@ welong:   db "native: write_exec path too long", 10
 welonglen: equ $ - welong
 wefail:   db "native: write_exec failed", 10
 wefaillen: equ $ - wefail
+wflong:   db "native: write_file path too long", 10
+wflonglen: equ $ - wflong
+wffail:   db "native: write_file failed", 10
+wffaillen: equ $ - wffail
 rferr:    db "native: read_file: cannot open file", 10
 rferrlen: equ $ - rferr
 argnstr:  db "native: argument is not a string", 10

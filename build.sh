@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=8800 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9099 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1816,6 +1816,41 @@ fi
 rm -f fdmA.la fdmA_la
 if [ "$c7ok" -eq 1 ]; then
     echo "PASS  native backend freeze-day fix #7: two imports whose DISTINCT paths ('fdmA.la' / 'fdmA_la') collided under the old lossy SANITIZE (both -> 'fdmA_la') no longer cross-resolve a same-named PRIVATE glyph — SANITIZE is now injective (alnum passthrough, every other char incl. '_' escaped to '_<ord>_', e.g. '.'->'_46_', '_'->'_95_'), so each module's private mangles distinctly and the importer gets concat(EA)(EB)='AB' native==host (was 'AA'/'BB' from first-match leakage). Path-derived + deterministic (cross-engine design), not the C host's counter."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la
+
+# ── FREEZE-DAY FIX #8 — write_file missing from the native backend. The C host has
+#    write_file (a normal non-VM builtin: fopen(path,"wb")), but native IS_BUILTIN2
+#    lacked it, so a program calling write_file failed to COMPILE ("unbound name")
+#    where the host runs it. Added rt_write_file (= rt_write_exec with open mode 0644
+#    and NO chmod 0755 — a plain data file) + wired IS_BUILTIN2 and RT_BIN with its OWN
+#    case BEFORE the rt_write_exec fall-through (SAFETY: else it would be chmod'd 0755).
+#    typeof remains an honest limit (documented), not implemented here.
+say "Native backend freeze-day fix #8: write_file in the native backend (non-exec)"
+c8ok=1
+rm -f /tmp/c8_nat.txt /tmp/c8_host.txt
+printf 'glyph MAIN = print(write_file("/tmp/c8_nat.txt")("hello write_file"))\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>/tmp/c8.err || { echo "FAIL  native_codegen3 #8: write_file failed to compile (still unbound?): $(head -1 /tmp/c8.err)"; c8ok=0; }
+nout=$(./native_codegen3_out 2>/dev/null)
+printf 'glyph MAIN = print(write_file("/tmp/c8_host.txt")("hello write_file"))\n' > native_input.la
+hout=$(./tiny_host native_input.la 2>/dev/null)
+# return value (the content) matches, file content matches, NOT executable (the safety property)
+{ [ "$nout" = "hello write_file" ] && [ "$hout" = "hello write_file" ]; } \
+  || { echo "FAIL  native_codegen3 #8: write_file return value (native='$nout' host='$hout'; want 'hello write_file')"; c8ok=0; }
+{ [ "$(cat /tmp/c8_nat.txt 2>/dev/null)" = "hello write_file" ] && [ "$(cat /tmp/c8_host.txt 2>/dev/null)" = "hello write_file" ]; } \
+  || { echo "FAIL  native_codegen3 #8: file contents (native='$(cat /tmp/c8_nat.txt 2>/dev/null)' host='$(cat /tmp/c8_host.txt 2>/dev/null)')"; c8ok=0; }
+{ [ ! -x /tmp/c8_nat.txt ] && [ ! -x /tmp/c8_host.txt ]; } \
+  || { echo "FAIL  native_codegen3 #8: write_file produced an EXECUTABLE file (must be a plain data file, unlike write_exec)"; c8ok=0; }
+# read_file round-trips the native-written file (the moved rt_read_file/rt_copy_self addrs still resolve)
+printf 'glyph MAIN = print(read_file("/tmp/c8_nat.txt"))\n' > native_input.la
+./tiny_host native_codegen3.la >/dev/null 2>&1
+{ [ "$(./native_codegen3_out)" = "hello write_file" ] && [ "$(./tiny_host native_input.la)" = "hello write_file" ]; } \
+  || { echo "FAIL  native_codegen3 #8: read_file of the native-written file (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c8ok=0; }
+rm -f /tmp/c8_nat.txt /tmp/c8_host.txt
+if [ "$c8ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #8: write_file now COMPILES and runs in the native backend (was 'unbound name', a compile failure on a host-valid program) — rt_write_file mirrors rt_write_exec but opens 0644 and never chmods 0755, so it writes a PLAIN data file (verified non-executable, content + return value native==host = 'hello write_file', and read_file round-trips it). Wired with its OWN RT_BIN case before the rt_write_exec fall-through so it is never silently made executable. (typeof stays an honest limit, not in the native backend.)"
 else
     exit 1
 fi
