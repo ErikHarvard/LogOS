@@ -198,8 +198,19 @@ glyph P_EXPR = la toks. P_APP(toks)
 glyph IS_KEYWORD = la v. OR(str_eq(v)("glyph"))(OR(str_eq(v)("import"))(str_eq(v)("export")))
 glyph IS_ALPHA = la c. STR_HAS(c)("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 glyph IS_IDENT_CHAR = la c. OR(IS_DIGIT(c))(OR(IS_ALPHA(c))(str_eq(c)("_")))
+# freeze-day #7: SANITIZE must be INJECTIVE so two distinct import paths never
+# mangle to the same private name. The old version mapped EVERY non-ident char to a
+# single "_", so "sub/m.la", "sub.m.la", "sub_m.la" all collapsed to "sub_m_la" — two
+# such modules with a same-named PRIVATE glyph mangled identically and first-match
+# lookup cross-resolved one module's export against the other's private. Now an
+# alnum char passes through and every OTHER char (including "_") escapes to
+# "_<ord>_" (e.g. "."->"_46_", "/"->"_47_", "_"->"_95_"). An output "_" appears only
+# bracketing an escape, so the encoding is decodable -> injective: distinct paths give
+# distinct names. (Path-derived + deterministic, per the cross-engine design — not the
+# C host's mutable counter.)
 glyph SANITIZE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _.
-    concat(IF(IS_IDENT_CHAR(str_head(s)))(la _. str_head(s))(la _. "_"))(self(str_tail(s)))))
+    concat(IF(OR(IS_ALPHA(str_head(s)))(IS_DIGIT(str_head(s))))(la _. str_head(s))(la _.
+        concat("_")(concat(ord(str_head(s)))("_"))))(self(str_tail(s)))))
 glyph MANGLE = la path. la name. concat("__mod_")(concat(SANITIZE(path))(concat("__")(name)))
 glyph TABLE_HAS = la nm. la table. IS_SOME(LOOKUP_GLYPH(nm)(table))
 glyph CHECK_EXPORTS = Z(la self. la exports. la table.

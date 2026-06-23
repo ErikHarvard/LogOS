@@ -1793,6 +1793,34 @@ else
 fi
 rm -f native_codegen3_out native_input.la
 
+# ── FREEZE-DAY FIX #7 — module mangle collision. MANGLE = "__mod_"+SANITIZE(path)+
+#    "__"+name, and the old SANITIZE mapped every non-ident char to one "_", so the
+#    DISTINCT import paths "fdmA.la" and "fdmA_la" both sanitized to "fdmA_la"; two
+#    modules with a same-named PRIVATE glyph then mangled identically and first-match
+#    lookup resolved one module's export against the OTHER's private. SANITIZE is now
+#    injective (non-alnum -> "_<ord>_"), so distinct paths give distinct names.
+#    CONSTRUCTED repro: two modules at colliding paths, each a private SECRET its
+#    export returns; the importer concats both exports and must get "AB" (not "AA"/"BB").
+say "Native backend freeze-day fix #7: import-path mangle collision (injective SANITIZE)"
+c7ok=1
+printf 'export EA\nglyph SECRET = "A"\nglyph EA = SECRET\n' > fdmA.la       # path -> old "fdmA_la"
+printf 'export EB\nglyph SECRET = "B"\nglyph EB = SECRET\n' > fdmA_la       # path -> old "fdmA_la" (collision)
+printf 'import("fdmA.la")\nimport("fdmA_la")\nglyph MAIN = print(concat(EA)(EB))\n' > native_input.la
+if ./tiny_host native_codegen3.la >/dev/null 2>/tmp/c7.err; then
+    nout=$(./native_codegen3_out 2>/dev/null); hout=$(./tiny_host native_input.la 2>/dev/null)
+    { [ "$nout" = "AB" ] && [ "$hout" = "AB" ]; } \
+      || { echo "FAIL  native_codegen3 #7: colliding-path imports mis-resolved (native='$nout' host='$hout'; want 'AB' — a same-named private leaked across modules)"; c7ok=0; }
+else
+    echo "FAIL  native_codegen3 #7: compile error on colliding-path imports: $(head -1 /tmp/c7.err)"; c7ok=0
+fi
+rm -f fdmA.la fdmA_la
+if [ "$c7ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #7: two imports whose DISTINCT paths ('fdmA.la' / 'fdmA_la') collided under the old lossy SANITIZE (both -> 'fdmA_la') no longer cross-resolve a same-named PRIVATE glyph — SANITIZE is now injective (alnum passthrough, every other char incl. '_' escaped to '_<ord>_', e.g. '.'->'_46_', '_'->'_95_'), so each module's private mangles distinctly and the importer gets concat(EA)(EB)='AB' native==host (was 'AA'/'BB' from first-match leakage). Path-derived + deterministic (cross-engine design), not the C host's counter."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la
+
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
 # (logos_source.la) to a native instruction stream (logos_program.bin); the VM
