@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9099 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9283 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1888,6 +1888,36 @@ else
     exit 1
 fi
 rm -f native_codegen3_out native_input.la
+
+# ── FREEZE-DAY FIX #10/#11 — rt_copy_self robustness (short-write loop + heap-end bound) ──
+#   #10: copy_self issued ONE write() per 64 KiB chunk and IGNORED its return, so a short
+#        write (fewer bytes than requested) would silently truncate the child. It now loops
+#        the write exactly as rt_write_exec's .wr does — flushing the whole chunk and halting
+#        loudly ("copy_self: write failed", exit 1) on a write error.
+#   #11: the 64 KiB read scratch is [r15, r15+65536) with r15 the heap bump top; a near-full
+#        heap would overrun the mapping. copy_self now bound-checks r15+65536 against HEAP_END
+#        and halts loudly ("copy_self: heap too full to replicate", exit 1) instead of overrunning.
+#   Both triggers are LATENT (regular-file writes don't short-write; copy_self runs with a
+#   near-empty heap), so the deterministic regression is happy-path NON-REGRESSION: the
+#   refactored loop must still breed a byte-identical, FULL-SIZE, 0755 child — a truncating
+#   write loop would change the child's size/bytes; a broken bound check would crash.
+say "Native backend freeze-day fix #10/#11: copy_self short-write loop + heap-end bound (latent hardening)"
+printf 'glyph MAIN = copy_self(print("native replicate"))\n' > native_input.la
+rm -f new_logos_native.bin
+c1011ok=1
+./tiny_host native_codegen3.la >/dev/null 2>/tmp/c1011.err || { echo "FAIL  native_codegen3 #10/#11: codegen failed: $(head -1 /tmp/c1011.err)"; c1011ok=0; }
+csrc="$(./native_codegen3_out 2>/dev/null)"; csrc_rc=$?
+{ [ "$csrc" = "native replicate" ] && [ "$csrc_rc" = "0" ] && [ -f new_logos_native.bin ] \
+  && cmp -s new_logos_native.bin native_codegen3_out \
+  && [ "$(stat -c%s new_logos_native.bin)" = "$(stat -c%s native_codegen3_out)" ] \
+  && [ "$(stat -c '%a' new_logos_native.bin)" = "755" ]; } \
+  || { echo "FAIL  native_codegen3 #10/#11: copy_self did not breed a byte-identical full-size 0755 child (stdout='$csrc' rc=$csrc_rc; child? $([ -f new_logos_native.bin ] && echo y || echo n); identical? $([ -f new_logos_native.bin ] && cmp -s new_logos_native.bin native_codegen3_out && echo y || echo n); size $([ -f new_logos_native.bin ] && stat -c%s new_logos_native.bin) vs $(stat -c%s native_codegen3_out))"; c1011ok=0; }
+if [ "$c1011ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #10/#11: rt_copy_self now flushes each 64 KiB chunk with a short-write loop (mirroring rt_write_exec — looping until the whole chunk lands, halting loudly on a write error) and bound-checks the r15 read scratch against HEAP_END (halting loudly rather than overrunning a near-full heap). Both triggers are latent (regular-file writes don't short-write; copy_self runs heap-near-empty), so verified by happy-path non-regression: copy_self still breeds a byte-identical, full-size, 0755 child — a truncating write loop would change the size/bytes. The latent short-write/overrun paths now end in a clean diagnostic + exit 1 instead of a truncated child or SIGSEGV."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la new_logos_native.bin /tmp/c1011.err
 
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program

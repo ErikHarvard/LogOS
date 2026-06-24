@@ -1244,6 +1244,10 @@ rt_copy_self:
     js      .closein
     mov     r13, rax            ; fd_out
 .loop:
+    lea     rcx, [r15+65536]    ; freeze-day #11: the 64 KiB read scratch is [r15, r15+65536);
+    cmp     rcx, [HEAP_END]     ;   r15 is the heap bump top, so a near-full heap would let the
+    ja      .overrun            ;   read overrun the mapping -> loud halt (latent: copy_self runs
+                                ;   heap-near-empty, so this never fires in the real lineage)
     mov     rax, 0              ; read(fd_in, r15, 65536)
     mov     rdi, r12
     mov     rsi, r15
@@ -1251,11 +1255,17 @@ rt_copy_self:
     syscall
     test    rax, rax
     jle     .eof
-    mov     rdx, rax            ; bytes read -> write count
-    mov     rax, 1              ; write(fd_out, r15, n)
+    mov     rdx, rax            ; freeze-day #10: rdx = bytes still to flush this chunk
+    mov     rsi, r15            ;   rsi = write cursor (rt_write_exec's .wr loop, mirrored here)
+.wr:
+    mov     rax, 1              ; write(fd_out, rsi, rdx)
     mov     rdi, r13
-    mov     rsi, r15
     syscall
+    test    rax, rax
+    js      .writefail          ;   write error -> loud halt (was: return ignored)
+    add     rsi, rax            ;   advance past the bytes actually written
+    sub     rdx, rax            ;   a short write leaves rdx > 0 -> loop until the whole chunk lands
+    jnz     .wr
     jmp     .loop
 .eof:
     mov     rax, 3              ; close(fd_out)
@@ -1281,6 +1291,23 @@ rt_copy_self:
     mov     rsi, cs_target
     xor     rax, rax            ; r14 GC root = 0 (source is the static cs_target)
     jmp     rt_make_str
+.writefail:                     ; freeze-day #10: a write syscall returned <0
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, csfail
+    mov     rdx, csfaillen
+    syscall
+    jmp     .csdie
+.overrun:                       ; freeze-day #11: read scratch would overrun HEAP_END
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, csover
+    mov     rdx, csoverlen
+    syscall
+.csdie:
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (loud halt, never a silent truncated child)
+    syscall
 
 ; ── freeze-day #2: non-STR argument loud-halt ──
 ;   A string builtin given a non-STR value (e.g. str_len(add(1)(2)) — a boxed INT)
@@ -1401,6 +1428,10 @@ divzero:  db "native: div: division by zero", 10
 divzerolen: equ $ - divzero
 modzero:  db "native: mod: modulo by zero", 10
 modzerolen: equ $ - modzero
+csfail:   db "native: copy_self: write failed", 10
+csfaillen: equ $ - csfail
+csover:   db "native: copy_self: heap too full to replicate", 10
+csoverlen: equ $ - csover
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
 pathbuf:  times 4096 db 0       ; 3c.3 write_exec / 3e read_file: NUL-term path scratch
