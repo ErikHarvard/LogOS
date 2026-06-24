@@ -1164,6 +1164,9 @@ rt_read_file:
     xor     rsi, rsi
     mov     rdx, 2
     syscall
+    test    rax, rax            ; freeze-day #12: lseek fails (-errno, e.g. -ESPIPE) on a
+    js      .seekfail           ;   non-seekable fd (pipe/FIFO/char dev); r13 would become -1,
+                                ;   making alloc_blob(-1) misalloc + the read unbounded -> halt
     mov     r13, rax            ; size (= len)
     mov     rax, 8              ; lseek(fd, 0, SEEK_SET)
     mov     rdi, r12
@@ -1212,6 +1215,13 @@ rt_read_file:
     mov     rdi, 2
     mov     rsi, rferr
     mov     rdx, rferrlen
+    syscall
+    jmp     .die
+.seekfail:                      ; freeze-day #12: lseek on a non-seekable fd failed
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rfseek
+    mov     rdx, rfseeklen
     syscall
 .die:
     mov     rax, 60
@@ -1418,6 +1428,8 @@ wffail:   db "native: write_file failed", 10
 wffaillen: equ $ - wffail
 rferr:    db "native: read_file: cannot open file", 10
 rferrlen: equ $ - rferr
+rfseek:   db "native: read_file: not a seekable file", 10
+rfseeklen: equ $ - rfseek
 argnstr:  db "native: argument is not a string", 10
 argnstrlen: equ $ - argnstr
 chrrange: db "native: chr value out of byte range 0..255", 10

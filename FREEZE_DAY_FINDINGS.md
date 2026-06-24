@@ -2,10 +2,19 @@
 
 Source: multi-agent static find workflow (6 lenses) over `native_codegen3.la`,
 `native_codegen3_rt.asm`, `build.sh`, `kernel.la` vs `tiny_host.c` (the b_τ≡f_τ
-reference). 22 raw findings → deduped + triaged below. **NOT yet empirically
-verified** — the planned next step is a verify workflow (reproduce each in a git
-worktree, native vs host) then fix. This file is the durable record (the workflow
-output lived in /tmp).
+reference). 22 raw findings → deduped + triaged below. This file is the durable
+record (the workflow output lived in /tmp).
+
+**STATUS (2026-06-23) — FIND + VERIFY + FIX all COMPLETE.** Verify workflow
+adjudicated each empirically (native ELF vs `./tiny_host`, record in
+`FREEZE_DAY_VERIFY.md`): 9 confirmed divergences + 3 latent code-confirmed
+(#9/#10/#11). **All 12 actionable items #1–#12 are now FIXED, each with a
+`build.sh` regression test, committed + pushed on `native-backend-stage3b`** (per-fix
+commits a527c79 #1 · 10e3607 #2 · 7f499ae #3 · 272fb8b #4 · 0a4885a #5 · c17cd45 #6 ·
+9765162 #7 · f4f08de #8 · 3792cdc #9 · d7186ac #10/#11 · #12 landing). #13 is
+**accepted/documented** (not a bug — matches the SECD VM's fixed copy name); `typeof`
+in the native backend is a **documented honest limit**. See `ROADMAP.md` (Stage 3 →
+Freeze-day audit) for the consolidated fix list + honest limits.
 
 Cardinal invariant: a compiled program's native stdout/exit must be **byte-identical
 to `./tiny_host prog.la`**. Each item below is a suspected divergence or bug.

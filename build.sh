@@ -1425,7 +1425,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9283 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9360 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -1918,6 +1918,37 @@ else
     exit 1
 fi
 rm -f native_codegen3_out native_input.la new_logos_native.bin /tmp/c1011.err
+
+# ── FREEZE-DAY FIX #12 — read_file on a non-seekable fd (lseek/ftell fails) ──
+#   read_file sizes the file with lseek(SEEK_END)/ftell; on a non-seekable fd (pipe,
+#   FIFO, char device) that returns -1, after which the NATIVE backend did
+#   alloc_blob(-1) (misalloc + unbounded read -> SIGSEGV) and the C HOST did
+#   malloc(0)+fread(SIZE_MAX) (heap overflow). BOTH engines now guard the failed seek
+#   and halt loudly (exit 1), so a non-seekable read_file is rejected IDENTICALLY
+#   instead of corrupting memory — b_tau == f_tau restored. Triggered deterministically
+#   via read_file("/dev/stdin") with stdin from a pipe (lseek -> ESPIPE).
+say "Native backend freeze-day fix #12: read_file on a non-seekable fd halts loudly (host + native)"
+c12ok=1
+printf 'glyph MAIN = print(read_file("/dev/stdin"))\n' > native_input.la
+h12rc=0; echo data | ./tiny_host native_input.la >/dev/null 2>/tmp/h12.err || h12rc=$?
+./tiny_host native_codegen3.la >/dev/null 2>/tmp/c12.err || { echo "FAIL  native_codegen3 #12: codegen failed: $(head -1 /tmp/c12.err)"; c12ok=0; }
+n12rc=0; echo data | ./native_codegen3_out >/dev/null 2>/tmp/n12.err || n12rc=$?
+{ [ "$h12rc" = "1" ] && [ "$n12rc" = "1" ] \
+  && grep -q "not a seekable file" /tmp/h12.err && grep -q "not a seekable file" /tmp/n12.err; } \
+  || { echo "FAIL  native_codegen3 #12: non-seekable read_file not rejected cleanly (host rc=$h12rc '$(head -1 /tmp/h12.err)'; native rc=$n12rc '$(head -1 /tmp/n12.err)')"; c12ok=0; }
+# happy path: a regular (seekable) file still reads byte-identically native==host
+printf 'seekable regular file\n' > /tmp/c12_reg.txt
+printf 'glyph MAIN = print(read_file("/tmp/c12_reg.txt"))\n' > native_input.la
+h12v="$(./tiny_host native_input.la 2>/dev/null)"
+./tiny_host native_codegen3.la >/dev/null 2>&1; n12v="$(./native_codegen3_out 2>/dev/null)"
+{ [ "$h12v" = "seekable regular file" ] && [ "$n12v" = "seekable regular file" ]; } \
+  || { echo "FAIL  native_codegen3 #12: regular-file read_file regressed (host='$h12v' native='$n12v')"; c12ok=0; }
+if [ "$c12ok" -eq 1 ]; then
+    echo "PASS  native backend freeze-day fix #12: read_file on a NON-SEEKABLE fd (lseek(SEEK_END)/ftell -> -1) now halts loudly on BOTH engines instead of corrupting memory — the native backend guarded the failed lseek (was alloc_blob(-1): misalloc + unbounded read -> SIGSEGV) and the C host guarded the failed ftell (was malloc(0)+fread(SIZE_MAX): heap overflow). read_file('/dev/stdin') from a pipe is rejected identically (exit 1, each engine's own 'not a seekable file' diagnostic, NEITHER crashes), and a regular seekable file still reads byte-identically native==host. b_tau == f_tau restored on the non-seekable path."
+else
+    exit 1
+fi
+rm -f native_codegen3_out native_input.la /tmp/c12_reg.txt /tmp/h12.err /tmp/n12.err /tmp/c12.err
 
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program

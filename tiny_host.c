@@ -586,6 +586,12 @@ static char *slurp_file(const char *path, size_t *out_len) {
     if (!f) { fprintf(stderr, "read_file: cannot open '%s': ", path); perror(NULL); exit(1); }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
+    /* freeze-day #12: a non-seekable file (pipe/FIFO/char device) makes fseek/ftell
+       fail with len = -1, after which malloc((size_t)-1 + 1) = malloc(0) and
+       fread(SIZE_MAX) overflows the buffer. Halt loudly instead — and the native
+       backend's rt_read_file guards the same lseek failure, so both engines reject
+       a non-seekable read_file identically (exit 1) rather than corrupting memory. */
+    if (len < 0) { fprintf(stderr, "read_file: '%s' is not a seekable file\n", path); exit(1); }
     fseek(f, 0, SEEK_SET);
     char *buf = malloc((size_t)len + 1);
     if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
