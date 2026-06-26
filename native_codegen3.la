@@ -152,12 +152,12 @@ glyph TOKENIZE = Z(la self. la s.
     )(str_head(s))))
 
 # ── parser (lambda, primary, left-assoc application) ───────────────
-glyph P_LAMBDA = la rest.
+glyph P_LAMBDA = la pexpr. la rest.
     (la param. (la afterdot.
-        (la bd. PAIR(AST_LAM(param)(FST(bd)))(SND(bd)))(P_EXPR(afterdot))
+        (la bd. PAIR(AST_LAM(param)(FST(bd)))(SND(bd)))(pexpr(afterdot))
     )(TL(TL(rest))))(T_VAL(HD(rest)))
 
-glyph P_PRIMARY = la toks.
+glyph P_PRIMARY = la pexpr. la toks.
     (la tok.
     (la ty.
     (la v.
@@ -165,12 +165,12 @@ glyph P_PRIMARY = la toks.
         IF(str_eq(ty)("lp"))(la _.
             (la inner.
                 IF(str_eq(T_TYPE(HD(SND(inner))))("rp"))(la _. PAIR(FST(inner))(TL(SND(inner))))(la _. error("native_codegen3: expected close-paren"))
-            )(P_EXPR(rest))
+            )(pexpr(rest))
         )(la _.
         IF(str_eq(ty)("str"))(la _. PAIR(AST_STR(v))(rest))(la _.
         IF(str_eq(ty)("int"))(la _. PAIR(AST_APP(AST_VAR("str_to_int"))(AST_STR(v)))(rest))(la _.
         IF(str_eq(ty)("name"))(la _.
-            IF(str_eq(v)("la"))(la _. P_LAMBDA(rest))(la _. PAIR(AST_VAR(v))(rest)))(la _.
+            IF(str_eq(v)("la"))(la _. P_LAMBDA(pexpr)(rest))(la _. PAIR(AST_VAR(v))(rest)))(la _.
         error(concat("native_codegen3: unexpected token: ")(ty))
         ))))
     )(TL(toks))
@@ -178,14 +178,14 @@ glyph P_PRIMARY = la toks.
     )(T_TYPE(tok))
     )(HD(toks))
 
-glyph APP_TAIL = la acc. la toks.
+glyph APP_TAIL = la pexpr. Z(la self. la acc. la toks.
     IF(str_eq(T_TYPE(HD(toks)))("lp"))(la _.
         (la inner.
-            IF(str_eq(T_TYPE(HD(SND(inner))))("rp"))(la _. APP_TAIL(AST_APP(acc)(FST(inner)))(TL(SND(inner))))(la _. error("native_codegen3: expected close-paren after arg")))
-        (P_EXPR(TL(toks))))
-    (la _. PAIR(acc)(toks))
-glyph P_APP  = la toks. (la base. APP_TAIL(FST(base))(SND(base)))(P_PRIMARY(toks))
-glyph P_EXPR = la toks. P_APP(toks)
+            IF(str_eq(T_TYPE(HD(SND(inner))))("rp"))(la _. self(AST_APP(acc)(FST(inner)))(TL(SND(inner))))(la _. error("native_codegen3: expected close-paren after arg")))
+        (pexpr(TL(toks))))
+    (la _. PAIR(acc)(toks)))
+glyph P_APP  = la pexpr. la toks. (la base. APP_TAIL(pexpr)(FST(base))(SND(base)))(P_PRIMARY(pexpr)(toks))
+glyph P_EXPR = Z(la self. la toks. P_APP(self)(toks))
 
 # ── Module system (import / export) — resolved at PARSE time (Stage 3d) ──
 # Ported from codegen.la, adapted to codegen3's TOKEN-LIST parser (codegen.la
@@ -282,7 +282,7 @@ glyph PARSE_MOD_LOOP = Z(la self. la toks.
         IF(str_eq(kw)("import"))(la _.
             (la ip. (la modp. (la mangled. (la recp.
                 PAIR(APPEND(mangled)(FST(recp)))(SND(recp))
-            )(self(SND(ip))))(MANGLE_MODULE(FST(modp))(SND(modp))(FST(ip))))(PARSE_MODULE(TOKENIZE(read_file(FST(ip))))))(PARSE_IMPORT(TL(toks)))
+            )(self(SND(ip))))(MANGLE_MODULE(FST(modp))(SND(modp))(FST(ip))))(self(TOKENIZE(read_file(FST(ip))))))(PARSE_IMPORT(TL(toks)))
         )(la _.
         IF(str_eq(kw)("export"))(la _.
             (la ep. (la recp. PAIR(FST(recp))(APPEND(FST(ep))(SND(recp))))(self(SND(ep))))(PARSE_EXPORT_NAMES(TL(toks)))
