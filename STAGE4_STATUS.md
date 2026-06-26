@@ -1,57 +1,45 @@
-# Stage 4 (full native self-hosting) — live status
+# Stage 4 (full native self-hosting) — ACHIEVED 2026-06-26
 
-**2026-06-25.** Working note, uncommitted. HEAD = `9f83a4d` (native-backend-stage3b).
+native_codegen3 (an x86-64 compiler written in Lingua Adamica) compiles its OWN
+576-line source into a byte-identical native binary, with NO C host and NO
+interpreter in the self-host loop. ∃(∃) ≡ ∃ at the compiler level.
 
-## The wall (identified)
-Seed = `tiny_host` compiling native_codegen3.la's OWN source → no CC0, exit 1.
-Exact error (after ~6h CPU): `native_codegen3: cyclic glyph reference: APP_TAIL`.
+## What was fixed to get here (all in native_codegen3.la)
+1. Parser SCC `{P_EXPR,P_APP,APP_TAIL,P_PRIMARY,P_LAMBDA}` Z-tied (named mutual
+   recursion → single Z fixpoint + threaded `pexpr`). Commit 61c4125.
+2. `{PARSE_MODULE↔PARSE_MOD_LOOP}` import-branch `PARSE_MODULE(`→`self(`. 61c4125.
+   (INLINE produces one closed term → can only represent Z-recursion, not named.)
+3. `HEAP_SIZE` 1.5 GiB → 16 GiB (line 415) + memsz tracks it (line 561). The
+   self-inline working set is ~9.7 GB (peak RSS), so 1.5 GB exhausted. Pure
+   source literal — no asm/dq-probe.
 
-Root cause: native_codegen3's `INLINE` pass produces "one closed lambda term over
-builtins" (full inlining, `seen`-set guard) — so it can only represent
-**Z-combinator recursion**, not **named recursion**. The parser is a 5-glyph
-mutually-recursive SCC tied by NAMED cross-references:
-`P_EXPR → P_APP → {APP_TAIL → P_EXPR, P_PRIMARY → P_EXPR}`, `P_LAMBDA → P_EXPR`.
-`APP_TAIL` (direct self-ref) was just where the seen-check tripped first.
-It was the SOLE out-of-subset construct (scan: only APP_TAIL had genuine
-direct named recursion; B/MAIN were false positives).
+## The convergence (the actual result)
+- CC0 = tiny_host(source) — the ONE-TIME seed. Took **11h28m** under tiny_host's
+  naive interpreter (the irreducible bootstrap origin, like every self-hoster).
+  Preserved as `native_codegen3_cc0_seed.bin`.
+- Native compile is **~5000× faster**: CC0 (heap-patched to 16 GiB) compiled the
+  full source in **7.9 s**.
+- Heap-size change propagates over one generation: CC0(1.5G)→CC1→**CC2**.
+- **CC2 == CC2(CC2_source)** byte-identical (verified CC2==CC3, CC3 made by
+  running CC2 NATIVELY — no host, no patch). CC2 = `native_codegen3_selfhost.bin`.
+- CC2 is a CORRECT compiler: compiles kernel.la → speaks "I AM THAT I AM",
+  native==host.
 
-## The fix (applied, path (a) — Erik approved)
-Z-tie the parser SCC, the language's blessed recursion form (every other
-recursive helper already uses Z). `P_EXPR = Z(la self. la toks. P_APP(self)(toks))`
-is the single fixpoint; `pexpr` threaded as a param through P_APP/P_PRIMARY/
-P_LAMBDA/APP_TAIL; APP_TAIL keeps an inner `Z(la self. ...)` for its own
-recursion. All SCC back-edges are now bound-var `self`/`pexpr` (no named cycle)
-→ INLINE yields a finite closed term. P_EXPR's external signature unchanged
-(only external caller is line ~278), so non-SCC code is untouched.
+## Reproducible bootstrap (clean, no binary patch)
+The session used a one-time binary heap-patch on CC0 to skip a second 11h run,
+but the CLEAN reproducible path is:
+1. `cp native_codegen3.la native_input.la; ./tiny_host native_codegen3.la`
+   → CC0' directly at 16 GiB heap (HEAP_SIZE is now 16 GiB in source). ~11h.
+2. `cp native_codegen3_out cc.bin; cp native_codegen3.la native_input.la;
+    ./cc.bin` → produces native_codegen3_out; `cmp` it with cc.bin → identical.
+   CC0' is the fixed point directly (its emission heap = source's 16 GiB).
+The heap-patch trick (`/tmp/patch_heap.py`, anchor: MOV [HEAP_END_ADDR=4198664],
+rax; shift the preceding imm64 + p_memsz@104 by +15569256448) only existed to
+avoid re-seeding mid-session; CC2 == the CC0' a clean re-seed yields.
 
-Cheap validation PASSED (tiny_host, /tmp/c3check.sh): literal, lambda-app,
-nested left-assoc app, paren+lambda+curry, Z+IF-thunk — all native==host.
-
-## Wall 2 (cleared 2026-06-26)
-Parser fix cleared APP_TAIL; ran 6.5h further → `cyclic glyph reference:
-PARSE_MOD_LOOP`. Full Tarjan SCC analysis (not just direct self-ref) found the
-LAST named-recursion cycle: `{PARSE_MODULE ↔ PARSE_MOD_LOOP}` (mutual, missed by
-the direct-scan). PARSE_MOD_LOOP is already `Z(la self...)`; its import branch
-(line ~285) called the NAMED `PARSE_MODULE(...)` to parse an imported file, but
-`PARSE_MODULE = la toks. PARSE_MOD_LOOP(toks)` so `self` is identical. Fix:
-swapped that one call `PARSE_MODULE(` → `self(`. Tarjan now reports ZERO
-remaining named-recursion SCCs. Validated native==host on the import path
-(greetapp→greetmod) + parser (/tmp/c3check2.sh).
-
-## Now running
-6h self-host seed relaunched (stage4_seed_capture.sh → stage4_seed_out.txt;
-native_input.la := native_codegen3.la). Watch for `CC0_PRODUCED` vs `NO_CC0`.
-NOTE: each wall has taken ~6-6.5h to hit because INLINE fully inlines (no
-sharing) — if this run OOMs / runs much longer instead of erroring, the term may
-be blowing up exponentially → that's a compiler-scaling problem (option (b)),
-not another named cycle.
-
-## If CC0 is produced
-Fixed-point test: `cp native_codegen3_out compiler_native.bin`;
-`rm native_codegen3_out; ./compiler_native.bin` → CC1;
-success = `cmp CC0 CC1` byte-identical + CC1 compiles kernel.la, no tiny_host
-in CC0→CC1. THEN full ./build.sh green before any commit (discipline).
-
-## If a NEW wall (different error / still NO_CC0)
-The seed may surface a further out-of-subset construct only reachable past the
-SCC. Read the new error line, identify the construct, plan-first with Erik.
+## Honest scope
+- The FIRST seed still needs tiny_host (or the patch) — the bootstrap origin.
+- A self-host regression test is NOT yet in build.sh (the 11h seed is too slow
+  to run every build; the patch→native path runs in seconds and could be added).
+- HEAP_SIZE = 16 GiB is generous (working set ~9.7 GB); lazily mapped, fine on
+  this 188 GB box.

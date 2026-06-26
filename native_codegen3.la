@@ -412,7 +412,7 @@ glyph WORKLIST_BASE_ADDR       = 4198648
 glyph WL_SIZE            = 67108864
 # 3b.3 heap end (hard limit; GC-on-exhaustion). HEAP_SIZE = heap region after the worklist.
 glyph HEAP_END_ADDR       = 4198664
-glyph HEAP_SIZE          = 1610612736
+glyph HEAP_SIZE          = 17179869184
 # 3b.4 native stack guard: limit global + loud-halt routine (data/code addrs in native_codegen3_rt.asm)
 glyph STACK_LIMIT_ADDR   = 4198672
 glyph RT_STACK_OVERFLOW  = 4197024
@@ -558,7 +558,7 @@ glyph MAIN =
     )(concat(BYTES("1 0 0 0 7 0 0 0"))(concat(LE8(0))(concat(LE8(VADDR))(concat(LE8(VADDR))(concat(LE8(filesize))(concat(LE8(memsz))(LE8(4096))))))))
     )(concat(BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0"))(concat(LE8(entry))(BYTES("64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 56 0 1 0 0 0 0 0 0 0"))))
     )(add(textbase)(textlen))
-    )(add(sub(heap_addr)(VADDR))(1677721600))
+    )(add(sub(heap_addr)(VADDR))(add(HEAP_SIZE)(WL_SIZE)))
     )(add(add(VADDR)(filesize))(mod(sub(16)(mod(add(VADDR)(filesize))(16)))(16)))
     )(add(add(120)(add(RTLEN)(plen)))(add(textlen)(codelen)))
     )(add(add(STRLEN_INT(PROL(0)))(STRLEN_INT(EPILOGUE)))(maincodelen))
