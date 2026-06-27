@@ -199,6 +199,8 @@ rt_print:
     mov     rcx, [rax]
     test    rcx, rcx            ; tag 0 = STR
     jz      .str
+    cmp     rcx, 4              ; FIX #4: tag 4 = INT; anything else (e.g. a closure) is not printable
+    jne     .badprint           ;   host writes the error to stderr and RETURNS (exit 0) — never a pointer
     mov     rax, [rax+8]        ; INT payload
     mov     rsi, numend
     xor     r8, r8
@@ -249,9 +251,18 @@ rt_print:
     syscall
     pop     rax
     ret
+.badprint:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, printbad
+    mov     rdx, printbadlen
+    syscall
+    pop     rax                 ; FIX #4: return the arg unchanged; exit code stays 0 (match host)
+    ret
 
 ; ── slot 5: rt_add(rsi=A, rax=B) -> boxed INT A+B ──
 rt_add:
+    call    chk_int2            ; FIX #3: both operands must be boxed INT (tag 4), else loud halt rc1
     mov     rcx, [rsi+8]
     add     rcx, [rax+8]
     mov     rax, rcx
@@ -259,6 +270,7 @@ rt_add:
 
 ; ── slot 6: rt_sub -> A-B ──
 rt_sub:
+    call    chk_int2            ; FIX #3
     mov     rcx, [rsi+8]
     sub     rcx, [rax+8]
     mov     rax, rcx
@@ -266,6 +278,7 @@ rt_sub:
 
 ; ── slot 7: rt_mul -> A*B ──
 rt_mul:
+    call    chk_int2            ; FIX #3
     mov     rcx, [rsi+8]
     imul    rcx, [rax+8]
     mov     rax, rcx
@@ -273,6 +286,7 @@ rt_mul:
 
 ; ── slot 8: rt_div -> A/B (signed) ──
 rt_div:
+    call    chk_int2            ; FIX #3
     mov     rcx, [rax+8]        ; B (divisor)
     mov     rax, [rsi+8]        ; A (dividend)
     test    rcx, rcx            ; freeze-day #5: B==0 -> idiv SIGFPE; halt loudly (host exit 1)
@@ -289,6 +303,7 @@ rt_div:
 
 ; ── slot 9: rt_mod -> A%B (signed) ──
 rt_mod:
+    call    chk_int2            ; FIX #3
     mov     rcx, [rax+8]        ; B
     mov     rax, [rsi+8]        ; A
     test    rcx, rcx            ; freeze-day #5: B==0 -> idiv SIGFPE; halt loudly (host exit 1)
@@ -308,6 +323,7 @@ rt_mod:
 
 ; ── slot 10: rt_int_eq(A,B) -> TRUE/FALSE value ──
 rt_int_eq:
+    call    chk_int2            ; FIX #3
     mov     rcx, [rsi+8]
     cmp     rcx, [rax+8]
     jne     .f
@@ -319,6 +335,7 @@ rt_int_eq:
 
 ; ── slot 11: rt_lt(A,B) -> TRUE if A<B ──
 rt_lt:
+    call    chk_int2            ; FIX #3
     mov     rcx, [rsi+8]
     cmp     rcx, [rax+8]
     jl      .t
@@ -457,6 +474,8 @@ rt_str_tail:
 
 ; ── slot 16: rt_int_to_str(rax=INT) -> boxed STR decimal ──
 rt_int_to_str:
+    cmp     qword [rax], 4      ; FIX #3: arg must be boxed INT (tag 4), else loud halt rc1
+    jne     rt_not_int
     mov     rax, [rax+8]
 ; 3c.1: zero-byte entry for callers that already hold a RAW int in rax
 ;   (rt_str_len / rt_ord feed a raw length/byte here, skipping the unbox).
@@ -722,7 +741,7 @@ rt_gc:
 .clrfb:
     mov     qword [FREEBLOB + rcx*8], 0
     inc     rcx
-    cmp     rcx, 32               ; FIX #1: clear all 32 FREEBLOB entries (was 22)
+    cmp     rcx, 48               ; FIX #1b: clear all 48 FREEBLOB entries (16 GiB heap needs up to ~35)
     jb      .clrfb
     mov     rsi, [HEAP_BASE]
     xor     r13, r13              ; live count
@@ -771,32 +790,9 @@ rt_gc:
 .walked:
     cmp     rsi, r15
     jne     .desync
-    ; --- print live count + newline to stderr (fd 2) ---
-    mov     rax, r13
-    mov     rsi, numend
-    dec     rsi
-    mov     byte [rsi], 10
-    test    rax, rax
-    jnz     .lp
-    dec     rsi
-    mov     byte [rsi], '0'
-    jmp     .pr
-.lp:
-    test    rax, rax
-    jz      .pr
-    xor     rdx, rdx
-    mov     rcx, 10
-    div     rcx
-    add     dl, '0'
-    dec     rsi
-    mov     [rsi], dl
-    jmp     .lp
-.pr:
-    mov     rdx, numend
-    sub     rdx, rsi
-    mov     rax, 1
-    mov     rdi, 2
-    syscall
+    ; FIX #5: removed the GC live-count debug write to stderr. The host emits nothing,
+    ;   and with the 16 GiB heap the GC now actually fires on ordinary programs, so this
+    ;   debug line was a real b_τ≢f_τ stderr divergence on any GC-triggering program.
     ; --- restore registers (transparent: no object moved, r15 unchanged) ---
     mov     rax, [REGDUMP+0]
     mov     rbx, [REGDUMP+8]
@@ -1392,6 +1388,28 @@ rt_mod_zero:
     mov     rdi, 1              ; exit 1 (match the host)
     syscall
 
+; ── freeze-day Stage-4 #3/#6/#7: an integer builtin given a non-integer argument ──
+;   rt_add/sub/mul/div/mod/int_eq/lt and rt_int_to_str unboxed [v+8] without checking
+;   the value tag, so a STR/closure arg was read as a raw int and printed as a garbage
+;   pointer (exit 0). The host halts loudly (exit 1); these guards match that behavior.
+rt_not_int:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, argnint
+    mov     rdx, argnintlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (match the host)
+    syscall
+; chk_int2: both operands (rsi=A, rax=B) must be boxed INT (tag 4); else rt_not_int.
+;   Reads only [rsi]/[rax] and flags, so the caller's rsi/rax survive. Used by the binops.
+chk_int2:
+    cmp     qword [rsi], 4
+    jne     rt_not_int
+    cmp     qword [rax], 4
+    jne     rt_not_int
+    ret
+
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
 FALSEVAL: dq 0
@@ -1402,12 +1420,13 @@ WORKLIST_BASE: dq 0
 FREE24:   dq 0
 HEAP_END: dq 0
 STACK_LIMIT: dq 0              ; 3b.4 native stack guard: STACK_BASE - 7 MiB (set in rt_init)
-FREEBLOB: times 32 dq 0        ; blob free-lists by size class (classidx 5..30 used; 32 entries
-                               ; cover every blob the 1.5 GB heap can hold — 2^30=1 GiB; a >1 GiB
-                               ; blob fails to bump-allocate before it could ever be swept, so the
-                               ; sweep re-bucket can never index past the array. FIX #1: was 22,
-                               ; which a >4 MB read_file/concat blob (classidx >=22) overflowed into
-                               ; the adjacent REGDUMP, corrupting the registers rt_gc restores.)
+FREEBLOB: times 48 dq 0        ; blob free-lists by size class. FIX #1b (Stage-4 freeze day): the
+                               ; HEAP_SIZE 1.5->16 GiB bump made >2 GiB blobs allocatable, so a blob
+                               ; of classidx >=32 overflowed this array into the adjacent REGDUMP
+                               ; (SIGSEGV where the host succeeds — freeze-day #1 reopened). 16 GiB =
+                               ; 2^34, so the largest blob is classidx ~35; 48 entries (up to 2^47)
+                               ; cover it with headroom, so the sweep re-bucket can never index past.
+                               ; (Was 32 for the 1.5 GiB heap; originally 22.)
 REGDUMP:  times 16 dq 0
 nl:       db 10
 gcdesync: db "native: heap walk desync", 10
@@ -1444,6 +1463,10 @@ csfail:   db "native: copy_self: write failed", 10
 csfaillen: equ $ - csfail
 csover:   db "native: copy_self: heap too full to replicate", 10
 csoverlen: equ $ - csover
+argnint:  db "native: argument is not an integer", 10
+argnintlen: equ $ - argnint
+printbad: db "print: argument is not a string or integer", 10
+printbadlen: equ $ - printbad
 numbuf:   times 40 db 0
 numend:   equ numbuf + 40
 pathbuf:  times 4096 db 0       ; 3c.3 write_exec / 3e read_file: NUL-term path scratch
