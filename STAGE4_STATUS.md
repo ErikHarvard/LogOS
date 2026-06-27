@@ -37,9 +37,20 @@ The heap-patch trick (`/tmp/patch_heap.py`, anchor: MOV [HEAP_END_ADDR=4198664],
 rax; shift the preceding imm64 + p_memsz@104 by +15569256448) only existed to
 avoid re-seeding mid-session; CC2 == the CC0' a clean re-seed yields.
 
+## Consolidation (done)
+- **build.sh Stage 4 guard:** the committed reference image
+  `native_codegen3_selfhost.bin` (un-gitignored) must, compiling native_codegen3.la,
+  reproduce ITSELF byte-identically (the fixed point) and compile kernel.la
+  native==host. Runs in seconds (gated on ~12 GiB free; skips with a NOTE otherwise).
+  It doubles as a drift guard: a source change without regenerating the image fails it.
+- **Regenerating the image after a native_codegen3.la / native_codegen3_rt.asm change:**
+  `./regen_selfhost.sh` then `git add native_codegen3_selfhost.bin`. Fast — the
+  current image (16 GiB heap) bootstraps its successor; the ~11h tiny_host seed is
+  only the one-time genesis. (Heap/RT changes propagate over one generation, so the
+  script iterates to convergence.)
+
 ## Honest scope
-- The FIRST seed still needs tiny_host (or the patch) — the bootstrap origin.
-- A self-host regression test is NOT yet in build.sh (the 11h seed is too slow
-  to run every build; the patch→native path runs in seconds and could be added).
+- The FIRST seed still needs tiny_host (or patch_heap.py) — the bootstrap origin.
+  Thereafter the committed image regenerates itself in seconds.
 - HEAP_SIZE = 16 GiB is generous (working set ~9.7 GB); lazily mapped, fine on
-  this 188 GB box.
+  this 188 GB box. A blob exceeding the heap loud-halts (rc73), not a crash.

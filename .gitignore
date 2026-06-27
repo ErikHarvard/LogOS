@@ -3,6 +3,12 @@
 *.bin
 *.o
 
+# EXCEPTION: the self-hosted compiler reference image is COMMITTED (the bootstrap
+# seed). build.sh Stage 4 checks it is a byte-identical fixed point of the current
+# native_codegen3.la, so it must track the source — regenerate it after any
+# native_codegen3.la / native_codegen3_rt.asm change (recipe in STAGE4_STATUS.md).
+!/native_codegen3_selfhost.bin
+
 # eval.la's self-reconstruction (regenerated each run)
 /eval_reconstructed.la
 

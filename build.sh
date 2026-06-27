@@ -1565,6 +1565,38 @@ else
 fi
 rm -f native_codegen3_out native_input.la /tmp/c3_native.out /tmp/c3_host.out /tmp/c3.err /tmp/c3_tail.out /tmp/c3_nt.out
 
+# ── Stage 4: native self-hosting fixed point ──────────────────────────────────
+# The self-hosted compiler image (native_codegen3_selfhost.bin, committed as the
+# reference) compiling native_codegen3.la's OWN 576-line source must reproduce
+# ITSELF byte-for-byte — the fixed point ∃(∃) ≡ ∃ at the compiler level — and must
+# compile kernel.la native==host. This runs in seconds: the reference image (16 GiB
+# heap) bootstraps the next image natively; the ~11h tiny_host seed is the one-time
+# genesis, not run here. The reference image is regenerated after any
+# native_codegen3.la / native_codegen3_rt.asm change (recipe in STAGE4_STATUS.md), so
+# a stale image fails this check — it doubles as a drift guard binding image to source.
+say "Native backend Stage 4: self-hosting fixed point (native_codegen3 reproduces itself, native==host)"
+SH_REF=native_codegen3_selfhost.bin
+SH_AVAIL=$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')
+if [ ! -x "$SH_REF" ]; then
+    echo "NOTE  Stage 4 self-host check skipped: $SH_REF not present (regenerate it — STAGE4_STATUS.md)"
+elif [ -z "$SH_AVAIL" ] || [ "$SH_AVAIL" -lt 12000 ]; then
+    echo "NOTE  Stage 4 self-host check skipped: needs ~10 GiB free for the self-compile; available=${SH_AVAIL:-?} MiB"
+else
+    cp "$SH_REF" /tmp/sh_cc; chmod +x /tmp/sh_cc
+    cp native_codegen3.la native_input.la; rm -f native_codegen3_out
+    /tmp/sh_cc >/dev/null 2>&1
+    if [ ! -f native_codegen3_out ] || ! cmp -s native_codegen3_out "$SH_REF"; then
+        echo "FAIL  native_codegen3 Stage 4: $SH_REF is NOT a fixed point of native_codegen3.la — stale reference image; regenerate it after the source change (STAGE4_STATUS.md)"; exit 1
+    fi
+    cp kernel.la native_input.la; rm -f native_codegen3_out
+    /tmp/sh_cc >/dev/null 2>&1
+    ./native_codegen3_out >/tmp/sh_kn 2>/dev/null
+    ./tiny_host kernel.la >/tmp/sh_kh 2>/dev/null
+    cmp -s /tmp/sh_kn /tmp/sh_kh || { echo "FAIL  native_codegen3 Stage 4: reference image's kernel.la output != host"; exit 1; }
+    echo "PASS  native backend Stage 4: self-hosting fixed point — $SH_REF compiling native_codegen3.la reproduces ITSELF byte-identically (∃(∃)≡∃, no C host / no SECD interp in the loop), and compiles kernel.la native==host"
+    rm -f /tmp/sh_cc /tmp/sh_kn /tmp/sh_kh native_codegen3_out native_input.la
+fi
+
 say "Native backend Stage 3b: conservative mark-sweep GC — bounded memory (native_codegen3_rt.asm)"
 # Stage 3b adds a conservative mark-sweep collector to the native runtime: every
 # heap object carries an 8-byte header (kind/mark/size), and rt_gc (triggered at
