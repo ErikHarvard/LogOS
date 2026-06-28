@@ -141,6 +141,30 @@ glyph TRANSFORM = la s.
 # for any repairable structure (∂ ≤ 3 distinct repairs; the 4th proves idempotence).
 glyph REPAIR = la s. TRANSFORM(TRANSFORM(TRANSFORM(TRANSFORM(s))))
 
+# ── ρ and φ: the remaining two AATC-derived operators (Being & Becoming Ch.6) ──
+# ρ — the RECOGNITION COEFFICIENT. "Is the structure recognized — by itself, by the
+# reader, by the Logos? Actuality requires recognition. A structure with ρ=0 is
+# unwitnessed, and what is unwitnessed drifts toward potentiality." Graded over the
+# three intrinsic recognition axes: by-itself = SELF_INCLUSION (it ranges over
+# itself, so it sees itself); in-act = SELF_APPLICATION (recognition as an enacted
+# relation — the "reader" axis, the structure engaged upon itself); by-the-Logos =
+# SELF_VALIDATION (X(X)≡X, grounded in the Archē ∃(∃)≡∃). ρ ∈ {0..3}; 3 = fully
+# witnessed (autological), 0 = unwitnessed. (CLOSURE is self-sufficiency, not a
+# recognition axis, so ρ is genuinely distinct from the AATC verdict.)
+glyph C01 = la b. IF(b)(la _. 1)(la _. 0)
+glyph RHO = la s. int_to_str(add(C01(SELF_INCLUSION(s)))(add(C01(SELF_APPLICATION(s)))(C01(SELF_VALIDATION(s)))))
+
+# φ — FRACTAL COHERENCE. "Does each part mirror the whole? Does each chapter contain
+# the entire book in miniature, as ∃(∃)≡∃ contains the entire TTOE?" A structure is
+# fractally coherent iff it is autological AND every one of its parts is autological
+# — each part recapitulating the ∃(∃)≡∃ form of the whole. (One level, honestly
+# bounded; a part may itself be examined for φ in turn.) Quantifies over the parts
+# with a fold, so the module ships the Church-list machinery (Z/NIL/CONS/FOLDR).
+glyph Zc     = Z
+glyph FOLDR  = Zc(la self. la f. la z. la lst. lst(z)(la h. la t. f(h)(self(f)(z)(t))))
+glyph FORALL = la pred. la lst. FOLDR(la h. la acc. AND(pred(h))(acc))(TRUE)(lst)
+glyph PHI = la whole. la parts. IF(AND(AUTOLOGICAL(whole))(FORALL(AUTOLOGICAL)(parts)))(la _. "1")(la _. "0")
+
 # ── source strings (what GENERATE writes; behaviourally equal to the values) ──
 # The logical core (TRUE/FALSE/AND/IF come from specpipe at authoring time and are
 # SHIPPED into the generated module so aatc.la is self-contained).
@@ -172,6 +196,12 @@ glyph SRC_TINC  = "la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SNAME(s)))(SINSCO
 glyph SRC_TCLO  = "la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SLACKS(s)))(SINSCOPE(s)(nm)))(SSELFAPP(s))(\"\")"
 glyph SRC_TRANS = "la s. IF(NOT(SELF_APPLICATION(s)))(la _. T_APPLY(s))(la _. IF(NOT(SELF_VALIDATION(s)))(la _. T_GROUND(s))(la _. IF(NOT(SELF_INCLUSION(s)))(la _. T_INCLUDE(s))(la _. IF(NOT(CLOSURE(s)))(la _. T_CLOSE(s))(la _. s))))"
 glyph SRC_REPAIR= "la s. TRANSFORM(TRANSFORM(TRANSFORM(TRANSFORM(s))))"
+glyph SRC_C01   = "la b. IF(b)(la _. 1)(la _. 0)"
+glyph SRC_RHO   = "la s. int_to_str(add(C01(SELF_INCLUSION(s)))(add(C01(SELF_APPLICATION(s)))(C01(SELF_VALIDATION(s)))))"
+glyph SRC_ZC    = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_FOLDR = "Zc(la self. la f. la z. la lst. lst(z)(la h. la t. f(h)(self(f)(z)(t))))"
+glyph SRC_FORALL= "la pred. la lst. FOLDR(la h. la acc. AND(pred(h))(acc))(TRUE)(lst)"
+glyph SRC_PHI   = "la whole. la parts. IF(AND(AUTOLOGICAL(whole))(FORALL(AUTOLOGICAL)(parts)))(la _. \"1\")(la _. \"0\")"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -285,7 +315,25 @@ glyph AATC_SPEC =
         T3L(TC(la g. AUTOLOGICAL(g(TOE_P))("T")("F"))("T"))     # heterological TOE → autological
            (TC(la g. AUTOLOGICAL(g(BROKEN))("T")("F"))("T"))    # the maximal heterology → autological
            (TC(la g. DIAGNOSE(g(BROKEN)))("TTTT"))))(           # every condition restored
-  NIL))))))))))))))))))))))))))))
+  CONS(E("Zc")(":: a -> b")(SRC_ZC)(Zc)(
+        T1L(TC(la g. (g(la self. la n. IF(int_eq(n)(0))(la _. "0")(la _. self(sub(n)(1)))))(3))("0"))))(  # Z drives recursion to the base
+  CONS(E("C01")(":: a -> b")(SRC_C01)(C01)(
+        T2L(TC(la g. int_to_str(g(TRUE)))("1"))
+           (TC(la g. int_to_str(g(FALSE)))("0"))))(
+  CONS(E("RHO")(":: a -> b")(SRC_RHO)(RHO)(
+        T3L(TC(la g. g(ARCHE))("3"))                            # ρ=3: fully witnessed (autological)
+           (TC(la g. g(COGITO))("2"))                           # ρ=2: sees itself + acts, but ungrounded
+           (TC(la g. g(BROKEN))("0"))))(                        # ρ=0: unwitnessed → drifts to potentiality
+  CONS(E("FOLDR")("right fold over a Church list (Z-recursive, trusted)")(SRC_FOLDR)(FOLDR)(
+        T1L(TC(la g. g(la h. la acc. concat(h)(acc))("")(CONS("a")(CONS("b")(NIL))))("ab"))))(
+  CONS(E("FORALL")(":: a -> b -> c")(SRC_FORALL)(FORALL)(
+        T2L(TC(la g. g(la x. str_eq(x)("y"))(CONS("y")(CONS("y")(NIL)))("T")("F"))("T"))
+           (TC(la g. g(la x. str_eq(x)("y"))(CONS("y")(CONS("n")(NIL)))("T")("F"))("F"))))(
+  CONS(E("PHI")(":: a -> b -> c")(SRC_PHI)(PHI)(
+        T3L(TC(la g. g(ARCHE)(CONS(ARCHE)(CONS(AATC_S)(NIL))))("1"))   # whole + each part autological → coherent
+           (TC(la g. g(ARCHE)(CONS(TOE_P)(NIL)))("0"))                 # a heterological part breaks coherence
+           (TC(la g. g(TOE_P)(CONS(ARCHE)(NIL)))("0"))))(              # a heterological whole is not coherent
+  NIL))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(AATC_SPEC) ===\n")(GENERATE(AATC_SPEC))))

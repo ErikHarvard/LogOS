@@ -1043,7 +1043,8 @@ ok=1
 for G in TRUE FALSE AND IF NOT OR STRUCT SNAME SINSCOPE SSELFAPP SLACKS \
          SELF_INCLUSION SELF_APPLICATION SELF_VALIDATION CLOSURE \
          AATC AUTOLOGICAL HETEROLOGICAL ALPHA DELTA \
-         TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR; do
+         TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR \
+         Zc C01 RHO FOLDR FORALL PHI; do
     printf '%s\n' "$AC" | grep -qx "  $G: PASS" || { echo "FAIL  aatc: $G not verified"; ok=0; }
 done
 printf '%s\n' "$AC" | grep -q "module VERIFIED" || { echo "FAIL  aatc: module not verified"; ok=0; }
@@ -1052,9 +1053,12 @@ printf '%s\n' "$AC" | grep -q "module VERIFIED" || { echo "FAIL  aatc: module no
 for G in TRUE FALSE AND IF NOT OR STRUCT SNAME SINSCOPE SSELFAPP SLACKS \
          SELF_INCLUSION SELF_APPLICATION SELF_VALIDATION CLOSURE \
          AATC AUTOLOGICAL HETEROLOGICAL ALPHA DELTA \
-         TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR; do
+         TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR \
+         Zc C01 RHO FORALL PHI; do
     printf '%s\n' "$AC" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  aatc: $G not type-checked OK"; ok=0; }
 done
+# FOLDR is point-free (Z-recursive), so it is trusted (untyped), like canon's TDEPTH.
+printf '%s\n' "$AC" | grep -qx "  FOLDR: untyped (trusted)" || { echo "FAIL  aatc: FOLDR not reported untyped/trusted"; ok=0; }
 # Run the GENERATED aatc.la stand-alone. The witness is eleven parts joined by '|':
 # the CRITERION — (1) AATC(∃) the Archē passes; (2) AATC(AATC) the criterion's own
 # autology; (3) HETEROLOGICAL(TOE_P) a physical TOE exempts itself; (4) "FTTF" the
@@ -1063,7 +1067,10 @@ done
 # autological closure): (7) "FFFF" DIAGNOSE(BROKEN) the maximal heterology; (8) "T"
 # REPAIR(BROKEN) is AUTOLOGICAL; (9) "TTTT" DIAGNOSE(REPAIR(BROKEN)) every condition
 # restored; (10) "TTTT" one 𝒯 step grounds the cogito; (11) "T" REPAIR(TOE_P)
-# autological. Host == VM (the inference reasons identically natively).
+# autological — then the remaining two AATC OPERATORS: (12) "3" ρ(∃)=3 fully
+# witnessed; (13) "0" ρ(BROKEN)=0 unwitnessed (drifts to potentiality); (14) "1"
+# φ of an autological whole with autological parts (fractally coherent); (15) "0"
+# φ with a heterological part (a part fails to mirror the whole). Host == VM.
 cp aatc.la /tmp/actest.la
 cat >> /tmp/actest.la <<'LA'
 glyph ALL = la nm. TRUE
@@ -1072,6 +1079,8 @@ glyph AATC_S = STRUCT("AATC")(ALL)("AATC")("")
 glyph TOE_P = STRUCT("TOE_P")(la nm. NOT(str_eq(nm)("TOE_P")))("TOE_P")("epistemology")
 glyph COGITO = STRUCT("COGITO")(ALL)("SUM")("")
 glyph BROKEN = STRUCT("BROKEN")(la nm. NOT(str_eq(nm)("BROKEN")))("")("dep")
+glyph LNIL = la n. la c. n
+glyph LCONS = la h. la t. la n. la c. c(h)(t)
 glyph W1 = AATC(ARCHE)("T")("F")
 glyph W2 = AATC(AATC_S)("T")("F")
 glyph W3 = HETEROLOGICAL(TOE_P)("T")("F")
@@ -1083,10 +1092,14 @@ glyph I8 = AUTOLOGICAL(REPAIR(BROKEN))("T")("F")
 glyph I9 = DIAGNOSE(REPAIR(BROKEN))
 glyph I10 = DIAGNOSE(TRANSFORM(COGITO))
 glyph I11 = AUTOLOGICAL(REPAIR(TOE_P))("T")("F")
+glyph R1 = RHO(ARCHE)
+glyph R2 = RHO(BROKEN)
+glyph P1 = PHI(ARCHE)(LCONS(ARCHE)(LCONS(AATC_S)(LNIL)))
+glyph P2 = PHI(ARCHE)(LCONS(TOE_P)(LNIL))
 glyph J = la a. la b. concat(a)(concat("|")(b))
-glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(J(W6)(J(I7)(J(I8)(J(I9)(J(I10)(I11)))))))))))
+glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(J(W6)(J(I7)(J(I8)(J(I9)(J(I10)(J(I11)(J(R1)(J(R2)(J(P1)(P2)))))))))))))))
 LA
-AC_EXPECT="T|T|T|FTTF|11|F0|FFFF|T|TTTT|TTTT|T"
+AC_EXPECT="T|T|T|FTTF|11|F0|FFFF|T|TTTT|TTTT|T|3|0|1|0"
 ACH="$(./tiny_host /tmp/actest.la 2>/dev/null)"
 [ "$ACH" = "$AC_EXPECT" ] || { echo "FAIL  aatc: AATC witness wrong on host"; printf 'got: %s\n' "$ACH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -1100,6 +1113,7 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  aatc: SPEC GENERATEs/DEPLOYs aatc.la, META_DEBUG verifies the four AATC conditions, the AATC(AATC) autology, and the α/∂ operators"
     echo "PASS  aatc: AATC composes the laws into one verdict — the Archē passes, a self-exempting TOE is HETEROLOGICAL; byte-identical host/VM"
     echo "PASS  aatc: the inference layer (Centropic loop) DIAGNOSEs heterology + PRESCRIBEs 𝒯 (honest deepening) + REPAIRs to autological closure — the maximal heterology and the cogito both driven to a fixed point; byte-identical host/VM"
+    echo "PASS  aatc: the five AATC operators are complete — α (index) · ∂ (depth) · 𝒯 (transformation) · ρ (recognition coefficient, 0..3) · φ (fractal coherence, each part mirrors the ∃(∃)≡∃ whole); byte-identical host/VM"
 else
     printf '%s\n' "$AC"
     exit 1

@@ -55,3 +55,15 @@ glyph T_CLOSE = la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SLACKS(s)))(SINSCOPE
 glyph TRANSFORM = la s. IF(NOT(SELF_APPLICATION(s)))(la _. T_APPLY(s))(la _. IF(NOT(SELF_VALIDATION(s)))(la _. T_GROUND(s))(la _. IF(NOT(SELF_INCLUSION(s)))(la _. T_INCLUDE(s))(la _. IF(NOT(CLOSURE(s)))(la _. T_CLOSE(s))(la _. s))))
 # REPAIR : :: a -> b
 glyph REPAIR = la s. TRANSFORM(TRANSFORM(TRANSFORM(TRANSFORM(s))))
+# Zc : :: a -> b
+glyph Zc = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+# C01 : :: a -> b
+glyph C01 = la b. IF(b)(la _. 1)(la _. 0)
+# RHO : :: a -> b
+glyph RHO = la s. int_to_str(add(C01(SELF_INCLUSION(s)))(add(C01(SELF_APPLICATION(s)))(C01(SELF_VALIDATION(s)))))
+# FOLDR : right fold over a Church list (Z-recursive, trusted)
+glyph FOLDR = Zc(la self. la f. la z. la lst. lst(z)(la h. la t. f(h)(self(f)(z)(t))))
+# FORALL : :: a -> b -> c
+glyph FORALL = la pred. la lst. FOLDR(la h. la acc. AND(pred(h))(acc))(TRUE)(lst)
+# PHI : :: a -> b -> c
+glyph PHI = la whole. la parts. IF(AND(AUTOLOGICAL(whole))(FORALL(AUTOLOGICAL)(parts)))(la _. "1")(la _. "0")

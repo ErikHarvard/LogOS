@@ -251,8 +251,11 @@ LogOS's reasoning layer — the seed of **LogosMentor**, its local reasoning eng
   | `CLOSURE`          | nothing external supplies what it lacks  |
 
   `AATC` is their conjunction; `AUTOLOGICAL` / `HETEROLOGICAL` split structures by
-  whether they exempt themselves; `ALPHA` (α) and `DELTA` (∂, depth to the fixed
-  point) are the derived operators. The criterion is itself autological:
+  whether they exempt themselves; and the five derived operators of Ch. 6 are all
+  realised — `ALPHA` (α, the autological index), `DELTA` (∂, depth to the fixed
+  point), `RHO` (ρ, the recognition coefficient — is the structure witnessed?),
+  `PHI` (φ, fractal coherence — does each part mirror the whole?), and `TRANSFORM`
+  (𝒯, below). The criterion is itself autological:
   **`AATC(AATC) ≡ TRUE`.** The build verifies, byte-identically on host and native
   VM, that the Archē `∃` passes, a self-exempting physical "theory of everything"
   comes back *heterological*, and Descartes' cogito — which derives being from

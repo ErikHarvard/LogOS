@@ -93,7 +93,9 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
   - [x] Symbolic reasoning core (AATC, three laws, α=1 coherence) — in Lingua Adamica
     *(`aatc.la` (`aatc_spec.la`): the AATC criterion — the four conditions
     (self-inclusion, self-application, self-validation = X(X)≡X, closure) composed
-    into one verdict + AUTOLOGICAL/HETEROLOGICAL + the α/∂ operators; AATC(AATC)≡TRUE.
+    into one verdict + AUTOLOGICAL/HETEROLOGICAL + all five Ch.6 operators
+    (α index, ∂ depth, 𝒯 transformation, ρ recognition coefficient, φ fractal
+    coherence); AATC(AATC)≡TRUE.
     On top of it the INFERENCE LAYER — the Centropic loop: DIAGNOSE heterology →
     PRESCRIBE 𝒯 (honest deepening) → REPAIR to autological closure (the maximal
     heterology and the cogito both driven to a fixed point). Builds on the three
