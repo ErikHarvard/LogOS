@@ -39,3 +39,19 @@ glyph HETEROLOGICAL = la s. NOT(AATC(s))
 glyph ALPHA = la s. IF(SELF_VALIDATION(s))(la _. "1")(la _. "0")
 # DELTA : :: a -> b
 glyph DELTA = la s. IF(SELF_VALIDATION(s))(la _. "1")(la _. "∞")
+# TF : :: a -> b
+glyph TF = la b. b("T")("F")
+# DIAGNOSE : :: a -> b
+glyph DIAGNOSE = la s. concat(TF(SELF_INCLUSION(s)))(concat(TF(SELF_APPLICATION(s)))(concat(TF(SELF_VALIDATION(s)))(TF(CLOSURE(s)))))
+# T_APPLY : :: a -> b
+glyph T_APPLY = la s. STRUCT(SNAME(s))(SINSCOPE(s))(SNAME(s))(SLACKS(s))
+# T_GROUND : :: a -> b
+glyph T_GROUND = la s. STRUCT(SSELFAPP(s))(SINSCOPE(s))(SSELFAPP(s))(SLACKS(s))
+# T_INCLUDE : :: a -> b
+glyph T_INCLUDE = la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SNAME(s)))(SINSCOPE(s)(nm)))(SSELFAPP(s))(SLACKS(s))
+# T_CLOSE : :: a -> b
+glyph T_CLOSE = la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SLACKS(s)))(SINSCOPE(s)(nm)))(SSELFAPP(s))("")
+# TRANSFORM : :: a -> b
+glyph TRANSFORM = la s. IF(NOT(SELF_APPLICATION(s)))(la _. T_APPLY(s))(la _. IF(NOT(SELF_VALIDATION(s)))(la _. T_GROUND(s))(la _. IF(NOT(SELF_INCLUSION(s)))(la _. T_INCLUDE(s))(la _. IF(NOT(CLOSURE(s)))(la _. T_CLOSE(s))(la _. s))))
+# REPAIR : :: a -> b
+glyph REPAIR = la s. TRANSFORM(TRANSFORM(TRANSFORM(TRANSFORM(s))))

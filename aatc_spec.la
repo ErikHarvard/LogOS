@@ -91,6 +91,56 @@ glyph ALPHA = la s. IF(SELF_VALIDATION(s))(la _. "1")(la _. "0")
 # no infinite regress); one that does not regresses unboundedly (∞).
 glyph DELTA = la s. IF(SELF_VALIDATION(s))(la _. "1")(la _. "∞")
 
+# ── THE INFERENCE LAYER: the Centropic loop, AATC-driven ──────────────────────
+# LogosMentor reasons over a structure by DIAGNOSING its heterology, PRESCRIBING
+# a transformation 𝒯 (= recognition applied to revision — the structure deepening
+# ITSELF, never external imposition), and RE-VERIFYING with AATC, to a fixed point.
+# (Centropic loop, LINGUA ADAMICA.tex; 𝒯, Being & Becoming Ch.6.) This is where
+# the criterion stops judging and starts REASONING — using its own verdict to
+# drive a heterological structure toward autological closure.
+
+# TF — render a condition's verdict as one char (for the diagnosis signature).
+glyph TF = la b. b("T")("F")
+
+# DIAGNOSE — the four conditions as a 4-char T/F signature: WHICH heterology a
+# structure carries (the Diagnose phase — it names the gap, per condition).
+glyph DIAGNOSE = la s.
+    concat(TF(SELF_INCLUSION(s)))
+          (concat(TF(SELF_APPLICATION(s)))
+                 (concat(TF(SELF_VALIDATION(s)))(TF(CLOSURE(s)))))
+
+# 𝒯 — one HONEST deepening per failing condition. Each is a real structural change
+# that EARNS the verdict, never a flag-flip that games it (gaming the criterion
+# would itself be heterological — the project forbids it):
+# T_APPLY — give a structure that cannot apply to itself a genuine self-application,
+#   X(X) := X (the ∃(∃)≡∃ template); it thereby also comes to survive.
+glyph T_APPLY  = la s. STRUCT(SNAME(s))(SINSCOPE(s))(SNAME(s))(SLACKS(s))
+# T_GROUND — a structure that applies to itself but yields something ELSE (cogito
+#   → "SUM") BECOMES what it generates: name := selfapp. Sum ergo sum — it deepens
+#   to its actual ground (the fixed point of self-application), not a faked equality.
+glyph T_GROUND = la s. STRUCT(SSELFAPP(s))(SINSCOPE(s))(SSELFAPP(s))(SLACKS(s))
+# T_INCLUDE — the structure recognizes it must range over itself: its scope comes
+#   to admit its own name (in addition to whatever it already admitted).
+glyph T_INCLUDE = la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SNAME(s)))(SINSCOPE(s)(nm)))(SSELFAPP(s))(SLACKS(s))
+# T_CLOSE — internalize the lacked domain (the TOE-P → TOE-C move): scope ABSORBS
+#   what was lacked, so the lack is discharged because it is now covered — a genuine
+#   expansion of what the structure ranges over, not merely clearing the flag.
+glyph T_CLOSE  = la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SLACKS(s)))(SINSCOPE(s)(nm)))(SSELFAPP(s))("")
+
+# TRANSFORM (𝒯) — PRESCRIBE: deepen the first (most fundamental) failing condition.
+# On an already-autological structure 𝒯 is the IDENTITY — its own fixed point
+# (𝒯(autological) ≡ autological), the autological signature of the operator itself.
+glyph TRANSFORM = la s.
+    IF(NOT(SELF_APPLICATION(s)))(la _. T_APPLY(s))(la _.
+    IF(NOT(SELF_VALIDATION(s)))(la _. T_GROUND(s))(la _.
+    IF(NOT(SELF_INCLUSION(s)))(la _. T_INCLUDE(s))(la _.
+    IF(NOT(CLOSURE(s)))(la _. T_CLOSE(s))(la _. s))))
+
+# REPAIR — the bounded loop (autoloop.la's shape): iterate 𝒯 to the fixed point.
+# Four conditions, and 𝒯 is the identity once autological, so 𝒯⁴ reaches closure
+# for any repairable structure (∂ ≤ 3 distinct repairs; the 4th proves idempotence).
+glyph REPAIR = la s. TRANSFORM(TRANSFORM(TRANSFORM(TRANSFORM(s))))
+
 # ── source strings (what GENERATE writes; behaviourally equal to the values) ──
 # The logical core (TRUE/FALSE/AND/IF come from specpipe at authoring time and are
 # SHIPPED into the generated module so aatc.la is self-contained).
@@ -114,6 +164,14 @@ glyph SRC_AUTO = "la s. AATC(s)"
 glyph SRC_HET  = "la s. NOT(AATC(s))"
 glyph SRC_ALPHA= "la s. IF(SELF_VALIDATION(s))(la _. \"1\")(la _. \"0\")"
 glyph SRC_DELTA= "la s. IF(SELF_VALIDATION(s))(la _. \"1\")(la _. \"∞\")"
+glyph SRC_TF    = "la b. b(\"T\")(\"F\")"
+glyph SRC_DIAG  = "la s. concat(TF(SELF_INCLUSION(s)))(concat(TF(SELF_APPLICATION(s)))(concat(TF(SELF_VALIDATION(s)))(TF(CLOSURE(s)))))"
+glyph SRC_TAPP  = "la s. STRUCT(SNAME(s))(SINSCOPE(s))(SNAME(s))(SLACKS(s))"
+glyph SRC_TGRD  = "la s. STRUCT(SSELFAPP(s))(SINSCOPE(s))(SSELFAPP(s))(SLACKS(s))"
+glyph SRC_TINC  = "la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SNAME(s)))(SINSCOPE(s)(nm)))(SSELFAPP(s))(SLACKS(s))"
+glyph SRC_TCLO  = "la s. STRUCT(SNAME(s))(la nm. OR(str_eq(nm)(SLACKS(s)))(SINSCOPE(s)(nm)))(SSELFAPP(s))(\"\")"
+glyph SRC_TRANS = "la s. IF(NOT(SELF_APPLICATION(s)))(la _. T_APPLY(s))(la _. IF(NOT(SELF_VALIDATION(s)))(la _. T_GROUND(s))(la _. IF(NOT(SELF_INCLUSION(s)))(la _. T_INCLUDE(s))(la _. IF(NOT(CLOSURE(s)))(la _. T_CLOSE(s))(la _. s))))"
+glyph SRC_REPAIR= "la s. TRANSFORM(TRANSFORM(TRANSFORM(TRANSFORM(s))))"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -139,6 +197,11 @@ glyph TOE_P = STRUCT("TOE_P")(la nm. NOT(str_eq(nm)("TOE_P")))("TOE_P")("epistem
 # itself, applies, self-contained, but does NOT survive — sum, not cogito, is
 # the ground, so selfapp ("SUM") ≠ name. Fails self-validation → not AATC.
 glyph COGITO = STRUCT("COGITO")(ALL)("SUM")("")
+# VOID_S — cannot apply to itself at all (selfapp ""): fails self-application.
+glyph VOID_S = STRUCT("VOID_S")(ALL)("")("")
+# BROKEN — fails ALL four: exempts itself from scope, no self-application, needs an
+# external dependency. The maximal heterology — REPAIR must drive it to closure.
+glyph BROKEN = STRUCT("BROKEN")(la nm. NOT(str_eq(nm)("BROKEN")))("")("dep")
 
 # ── the SPEC: the structure projections, the four conditions, the criterion ──
 glyph AATC_SPEC =
@@ -200,7 +263,29 @@ glyph AATC_SPEC =
   CONS(E("DELTA")(":: a -> b")(SRC_DELTA)(DELTA)(
         T2L(TC(la g. g(AATC_S))("1"))                           # ∂=1: collapses at one pass
            (TC(la g. g(COGITO))("∞"))))(                        # unbounded regress
-  NIL))))))))))))))))))))
+  CONS(E("TF")(":: a -> b")(SRC_TF)(TF)(
+        T2L(TC(la g. g(TRUE))("T"))
+           (TC(la g. g(FALSE))("F"))))(
+  CONS(E("DIAGNOSE")(":: a -> b")(SRC_DIAG)(DIAGNOSE)(
+        T3L(TC(la g. g(ARCHE))("TTTT"))                         # autological: all four hold
+           (TC(la g. g(TOE_P))("FTTF"))                         # exempts itself + needs external
+           (TC(la g. g(BROKEN))("FFFF"))))(                     # the maximal heterology
+  CONS(E("T_APPLY")(":: a -> b")(SRC_TAPP)(T_APPLY)(
+        T1L(TC(la g. SSELFAPP(g(VOID_S)))("VOID_S"))))(         # gains a self-application X(X):=X
+  CONS(E("T_GROUND")(":: a -> b")(SRC_TGRD)(T_GROUND)(
+        T1L(TC(la g. SNAME(g(COGITO)))("SUM"))))(               # becomes its ground (sum ergo sum)
+  CONS(E("T_INCLUDE")(":: a -> b")(SRC_TINC)(T_INCLUDE)(
+        T1L(TC(la g. SELF_INCLUSION(g(TOE_P))("T")("F"))("T"))))(  # now ranges over itself
+  CONS(E("T_CLOSE")(":: a -> b")(SRC_TCLO)(T_CLOSE)(
+        T1L(TC(la g. CLOSURE(g(TOE_P))("T")("F"))("T"))))(      # the lacked domain internalized
+  CONS(E("TRANSFORM")(":: a -> b")(SRC_TRANS)(TRANSFORM)(
+        T2L(TC(la g. AUTOLOGICAL(g(ARCHE))("T")("F"))("T"))     # 𝒯 is the identity on the autological
+           (TC(la g. DIAGNOSE(g(COGITO)))("TTTT"))))(           # one 𝒯 step grounds the cogito
+  CONS(E("REPAIR")(":: a -> b")(SRC_REPAIR)(REPAIR)(
+        T3L(TC(la g. AUTOLOGICAL(g(TOE_P))("T")("F"))("T"))     # heterological TOE → autological
+           (TC(la g. AUTOLOGICAL(g(BROKEN))("T")("F"))("T"))    # the maximal heterology → autological
+           (TC(la g. DIAGNOSE(g(BROKEN)))("TTTT"))))(           # every condition restored
+  NIL))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(AATC_SPEC) ===\n")(GENERATE(AATC_SPEC))))

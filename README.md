@@ -258,6 +258,20 @@ LogOS's reasoning layer — the seed of **LogosMentor**, its local reasoning eng
   comes back *heterological*, and Descartes' cogito — which derives being from
   thinking, the wrong direction — fails self-validation.
 
+- **The inference layer (the Centropic loop).** On top of the criterion, the
+  reasoning engine stops *judging* and starts *reasoning* — it uses its own
+  verdict to drive a heterological structure toward autological closure
+  (LogosMentor's Sense→Diagnose→Prescribe→Learn loop). `DIAGNOSE` names a
+  structure's heterology (which conditions fail); `TRANSFORM` (the operator `𝒯` —
+  *recognition applied to revision*) prescribes one **honest deepening** for the
+  most fundamental failing condition — give a void structure a genuine
+  self-application, let a structure *become* what it generates (*sum ergo sum*),
+  bring its own name into scope, or internalize a lacked domain — each a real
+  structural change that *earns* the verdict, never a flag-flip that games it
+  (gaming the criterion would itself be heterological). `REPAIR` iterates `𝒯` to
+  the fixed point. The build proves, host and VM identically, that the maximal
+  heterology and the cogito are both repaired to autological closure.
+
 Every one of these modules is produced by a **specification pipeline**
 (`SPEC → GENERATE → DEPLOY → META_DEBUG`): the module is written as a spec with
 type signatures and tests, the source is *generated* from it, type-checked at
@@ -363,12 +377,14 @@ the entire system.
 
 The language, the five engines, self-hosting (including the native x86-64 backend
 through native self-hosting), and the core OS layers are **built and verified**.
-The reasoning core's criterion layer (three laws, α = 1, AATC) is in place.
+The reasoning core — the three laws, α = 1, the AATC criterion, **and the
+inference layer that uses it to reason over structures (the Centropic loop)** — is
+in place.
 
 Selected directions ahead (see `ROADMAP.md`):
 
-- **LogosMentor** — an inference layer that *uses* the AATC to reason over
-  structures, and an honest statistical-model interface (interfaced, not
+- **LogosMentor** — extend the Centropic loop's Sense/Learn phases to live system
+  state, and add an honest statistical-model interface (interfaced, not
   rewritten).
 - A **sovereign kernel** to replace the inherited Linux kernel.
 - Network sovereignty, encryption/meta-encryption layers, and ARM / RISC-V ports

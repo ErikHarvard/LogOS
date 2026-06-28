@@ -1032,13 +1032,18 @@ say "Spec pipeline: the Autological Adequacy Tautological Criterion — LogosMen
 # composed into one verdict AATC; AUTOLOGICAL/HETEROLOGICAL split structures by
 # whether they exempt themselves (the property they ascribe to others); ALPHA
 # (α=1 ⟺ X(X)=X, the autological index) and DELTA (∂, depth to the fixed point).
-# The criterion is itself autological: AATC(AATC) ≡ TRUE. META_DEBUG verifies all
-# of it; then the GENERATED module runs stand-alone, byte-identical host and VM.
+# The criterion is itself autological: AATC(AATC) ≡ TRUE. On top of the criterion
+# sits the INFERENCE LAYER — the Centropic loop (LINGUA ADAMICA.tex): DIAGNOSE a
+# structure's heterology, PRESCRIBE a transformation 𝒯 (= recognition applied to
+# revision, an honest deepening — never a flag-flip that games the verdict), and
+# RE-VERIFY with AATC, iterating to autological closure (REPAIR). META_DEBUG
+# verifies all of it; then the GENERATED module runs stand-alone, host == VM.
 AC="$(./tiny_host aatc_spec.la 2>/dev/null)"
 ok=1
 for G in TRUE FALSE AND IF NOT OR STRUCT SNAME SINSCOPE SSELFAPP SLACKS \
          SELF_INCLUSION SELF_APPLICATION SELF_VALIDATION CLOSURE \
-         AATC AUTOLOGICAL HETEROLOGICAL ALPHA DELTA; do
+         AATC AUTOLOGICAL HETEROLOGICAL ALPHA DELTA \
+         TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR; do
     printf '%s\n' "$AC" | grep -qx "  $G: PASS" || { echo "FAIL  aatc: $G not verified"; ok=0; }
 done
 printf '%s\n' "$AC" | grep -q "module VERIFIED" || { echo "FAIL  aatc: module not verified"; ok=0; }
@@ -1046,14 +1051,19 @@ printf '%s\n' "$AC" | grep -q "module VERIFIED" || { echo "FAIL  aatc: module no
 # every glyph carries a formal :: <type> signature → all type-checked OK at deploy
 for G in TRUE FALSE AND IF NOT OR STRUCT SNAME SINSCOPE SSELFAPP SLACKS \
          SELF_INCLUSION SELF_APPLICATION SELF_VALIDATION CLOSURE \
-         AATC AUTOLOGICAL HETEROLOGICAL ALPHA DELTA; do
+         AATC AUTOLOGICAL HETEROLOGICAL ALPHA DELTA \
+         TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR; do
     printf '%s\n' "$AC" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  aatc: $G not type-checked OK"; ok=0; }
 done
-# Run the GENERATED aatc.la stand-alone. The witness is six parts joined by '|':
-# (1) AATC(∃) — the Archē passes; (2) AATC(AATC) — the criterion's own autology;
-# (3) HETEROLOGICAL(TOE_P) — a physical TOE exempts itself; (4) "FTTF" — the four
-# conditions on TOE_P (fails self-inclusion + closure, passes the middle two);
-# (5) "11" — α(∃)=1 and ∂(AATC)=1; (6) "F0" — COGITO fails AATC, α=0. Host == VM.
+# Run the GENERATED aatc.la stand-alone. The witness is eleven parts joined by '|':
+# the CRITERION — (1) AATC(∃) the Archē passes; (2) AATC(AATC) the criterion's own
+# autology; (3) HETEROLOGICAL(TOE_P) a physical TOE exempts itself; (4) "FTTF" the
+# four conditions on TOE_P; (5) "11" α(∃)=1 and ∂(AATC)=1; (6) "F0" COGITO fails
+# AATC, α=0 — then the INFERENCE LAYER (the Centropic loop driving structures to
+# autological closure): (7) "FFFF" DIAGNOSE(BROKEN) the maximal heterology; (8) "T"
+# REPAIR(BROKEN) is AUTOLOGICAL; (9) "TTTT" DIAGNOSE(REPAIR(BROKEN)) every condition
+# restored; (10) "TTTT" one 𝒯 step grounds the cogito; (11) "T" REPAIR(TOE_P)
+# autological. Host == VM (the inference reasons identically natively).
 cp aatc.la /tmp/actest.la
 cat >> /tmp/actest.la <<'LA'
 glyph ALL = la nm. TRUE
@@ -1061,16 +1071,22 @@ glyph ARCHE = STRUCT("∃")(ALL)("∃")("")
 glyph AATC_S = STRUCT("AATC")(ALL)("AATC")("")
 glyph TOE_P = STRUCT("TOE_P")(la nm. NOT(str_eq(nm)("TOE_P")))("TOE_P")("epistemology")
 glyph COGITO = STRUCT("COGITO")(ALL)("SUM")("")
+glyph BROKEN = STRUCT("BROKEN")(la nm. NOT(str_eq(nm)("BROKEN")))("")("dep")
 glyph W1 = AATC(ARCHE)("T")("F")
 glyph W2 = AATC(AATC_S)("T")("F")
 glyph W3 = HETEROLOGICAL(TOE_P)("T")("F")
 glyph W4 = concat(SELF_INCLUSION(TOE_P)("T")("F"))(concat(SELF_APPLICATION(TOE_P)("T")("F"))(concat(SELF_VALIDATION(TOE_P)("T")("F"))(CLOSURE(TOE_P)("T")("F"))))
 glyph W5 = concat(ALPHA(ARCHE))(DELTA(AATC_S))
 glyph W6 = concat(AATC(COGITO)("T")("F"))(ALPHA(COGITO))
+glyph I7 = DIAGNOSE(BROKEN)
+glyph I8 = AUTOLOGICAL(REPAIR(BROKEN))("T")("F")
+glyph I9 = DIAGNOSE(REPAIR(BROKEN))
+glyph I10 = DIAGNOSE(TRANSFORM(COGITO))
+glyph I11 = AUTOLOGICAL(REPAIR(TOE_P))("T")("F")
 glyph J = la a. la b. concat(a)(concat("|")(b))
-glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(W6))))))
+glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(J(W6)(J(I7)(J(I8)(J(I9)(J(I10)(I11)))))))))))
 LA
-AC_EXPECT="T|T|T|FTTF|11|F0"
+AC_EXPECT="T|T|T|FTTF|11|F0|FFFF|T|TTTT|TTTT|T"
 ACH="$(./tiny_host /tmp/actest.la 2>/dev/null)"
 [ "$ACH" = "$AC_EXPECT" ] || { echo "FAIL  aatc: AATC witness wrong on host"; printf 'got: %s\n' "$ACH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -1083,6 +1099,7 @@ rm -f /tmp/actest.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  aatc: SPEC GENERATEs/DEPLOYs aatc.la, META_DEBUG verifies the four AATC conditions, the AATC(AATC) autology, and the α/∂ operators"
     echo "PASS  aatc: AATC composes the laws into one verdict — the Archē passes, a self-exempting TOE is HETEROLOGICAL; byte-identical host/VM"
+    echo "PASS  aatc: the inference layer (Centropic loop) DIAGNOSEs heterology + PRESCRIBEs 𝒯 (honest deepening) + REPAIRs to autological closure — the maximal heterology and the cogito both driven to a fixed point; byte-identical host/VM"
 else
     printf '%s\n' "$AC"
     exit 1

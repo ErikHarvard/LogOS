@@ -90,12 +90,16 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
 - [ ] 12. Package & update system
 - [ ] 13. System services
 - [ ] LogosMentor — local reasoning engine
-  - [~] Symbolic reasoning core (AATC, three laws, α=1 coherence) — in Lingua Adamica
-    *(AATC built — `aatc.la` (`aatc_spec.la`): the four conditions (self-inclusion,
-    self-application, self-validation = X(X)≡X, closure) composed into one verdict +
-    the AUTOLOGICAL/HETEROLOGICAL split + the α/∂ operators; AATC(AATC)≡TRUE; host==VM.
-    Builds on the already-landed three laws (`metalogic.la`) and α=1 (`canon.la`).
-    Remaining: an inference layer that USES the criterion to reason over structures.)*
+  - [x] Symbolic reasoning core (AATC, three laws, α=1 coherence) — in Lingua Adamica
+    *(`aatc.la` (`aatc_spec.la`): the AATC criterion — the four conditions
+    (self-inclusion, self-application, self-validation = X(X)≡X, closure) composed
+    into one verdict + AUTOLOGICAL/HETEROLOGICAL + the α/∂ operators; AATC(AATC)≡TRUE.
+    On top of it the INFERENCE LAYER — the Centropic loop: DIAGNOSE heterology →
+    PRESCRIBE 𝒯 (honest deepening) → REPAIR to autological closure (the maximal
+    heterology and the cogito both driven to a fixed point). Builds on the three
+    laws (`metalogic.la`) and α=1 (`canon.la`). All host==VM byte-identical.
+    Further LogosMentor work — the Sense/Learn phases of the full Centropic loop over
+    live system state — lives under this parent item, alongside the statistical seam.)*
   - [ ] Statistical model interface — local model, interfaced not rewritten *(honest substrate seam)*
 
 ---
