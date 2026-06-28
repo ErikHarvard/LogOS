@@ -90,7 +90,12 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
 - [ ] 12. Package & update system
 - [ ] 13. System services
 - [ ] LogosMentor — local reasoning engine
-  - [ ] Symbolic reasoning core (AATC, three laws, α=1 coherence) — in Lingua Adamica
+  - [~] Symbolic reasoning core (AATC, three laws, α=1 coherence) — in Lingua Adamica
+    *(AATC built — `aatc.la` (`aatc_spec.la`): the four conditions (self-inclusion,
+    self-application, self-validation = X(X)≡X, closure) composed into one verdict +
+    the AUTOLOGICAL/HETEROLOGICAL split + the α/∂ operators; AATC(AATC)≡TRUE; host==VM.
+    Builds on the already-landed three laws (`metalogic.la`) and α=1 (`canon.la`).
+    Remaining: an inference layer that USES the criterion to reason over structures.)*
   - [ ] Statistical model interface — local model, interfaced not rewritten *(honest substrate seam)*
 
 ---
