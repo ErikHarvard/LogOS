@@ -75,3 +75,11 @@ glyph SENSE = la m. m(la mname. la selfinc. la selfok. la dep. STRUCT(mname)(la 
 glyph ORGAN_OK = la m. AUTOLOGICAL(SENSE(m))
 # ORGAN_DIAGNOSE : :: a -> b
 glyph ORGAN_DIAGNOSE = la m. DIAGNOSE(SENSE(m))
+# CENTROPY : :: a -> b
+glyph CENTROPY = la s. add(C01(SELF_INCLUSION(s)))(add(C01(SELF_APPLICATION(s)))(add(C01(SELF_VALIDATION(s)))(C01(CLOSURE(s)))))
+# GAIN : :: a -> b
+glyph GAIN = la m. sub(CENTROPY(REPAIR(SENSE(m))))(CENTROPY(SENSE(m)))
+# LEARN : :: a -> b -> c
+glyph LEARN = la model. la m. add(model)(GAIN(m))
+# LEARN_ALL : :: a -> b
+glyph LEARN_ALL = la organs. FOLDR(la m. la acc. add(GAIN(m))(acc))(0)(organs)

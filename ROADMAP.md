@@ -96,14 +96,16 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
     into one verdict + AUTOLOGICAL/HETEROLOGICAL + all five Ch.6 operators
     (α index, ∂ depth, 𝒯 transformation, ρ recognition coefficient, φ fractal
     coherence); AATC(AATC)≡TRUE.
-    On top of it the INFERENCE LAYER — the Centropic loop: SENSE (proprioception —
-    map a LogOS organ/module to a STRUCT) → DIAGNOSE heterology → PRESCRIBE 𝒯
-    (honest deepening) → REPAIR to autological closure. The reasoning core runs on
-    its OWN body: a healthy organ is autological, a spec-failing one is diagnosed and
-    REPAIRed back to closure. Builds on the three laws (`metalogic.la`) and α=1
-    (`canon.la`). All host==VM byte-identical.
-    Remaining LogosMentor work under this parent: a self-monitoring daemon feeding
-    SENSE from live build state + the loop's LEARN phase; and the statistical seam.)*
+    On top of it the full CENTROPIC LOOP — Sense→Diagnose→Prescribe→Learn: SENSE
+    (proprioception — map a LogOS organ/module to a STRUCT) → DIAGNOSE heterology →
+    PRESCRIBE 𝒯 (honest deepening) → REPAIR to autological closure → LEARN (a
+    centropy ledger accumulating the closure restored, meta-telesis). The reasoning
+    core runs the whole loop on its OWN body: a healthy organ is autological, a sick
+    one is diagnosed and REPAIRed back to closure, and the loop tracks the centropy
+    it restores. Builds on the three laws (`metalogic.la`) and α=1 (`canon.la`); all
+    host==VM byte-identical. Remaining LogosMentor work under this parent: a live
+    self-monitoring daemon feeding SENSE from real build state + a richer learned
+    model; and the statistical seam.)*
   - [ ] Statistical model interface — local model, interfaced not rewritten *(honest substrate seam)*
 
 ---

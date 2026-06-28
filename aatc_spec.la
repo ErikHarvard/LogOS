@@ -192,6 +192,26 @@ glyph SENSE = la m. m(la mname. la selfinc. la selfok. la dep.
 glyph ORGAN_OK       = la m. AUTOLOGICAL(SENSE(m))
 glyph ORGAN_DIAGNOSE = la m. DIAGNOSE(SENSE(m))
 
+# ── LEARN: the Centropic loop's fourth phase — meta-telesis ───────────────────
+# "After each intervention, M observes the result and updates its internal model.
+# This is meta-telesis: the intelligent direction of effort toward improving the
+# capacity to direct effort. Each iteration increases centropy." The internal
+# model, functionally, is a CENTROPY LEDGER — the accumulated negentropy-of-meaning
+# the loop has restored.
+# CENTROPY — meaning-negentropy of a structure: how many of the four conditions it
+# satisfies (0..4). An autological structure is at maximum centropy (4).
+glyph CENTROPY = la s. add(C01(SELF_INCLUSION(s)))(add(C01(SELF_APPLICATION(s)))(add(C01(SELF_VALIDATION(s)))(C01(CLOSURE(s)))))
+# GAIN — the centropy a single Sense→Diagnose→Prescribe cycle restores to an organ:
+# centropy(REPAIR(SENSE m)) − centropy(SENSE m). Always ≥ 0 (𝒯 only adds closure);
+# 0 for an already-healthy organ, larger for a sicker one.
+glyph GAIN = la m. sub(CENTROPY(REPAIR(SENSE(m))))(CENTROPY(SENSE(m)))
+# LEARN — observe one intervention and update the model: fold the gain into the
+# ledger. The model grows by exactly the centropy the loop produced.
+glyph LEARN = la model. la m. add(model)(GAIN(m))
+# LEARN_ALL — run the whole loop over all organs, accumulating total centropy
+# restored: the meta-telesis measure of the loop's effect on the system.
+glyph LEARN_ALL = la organs. FOLDR(la m. la acc. add(GAIN(m))(acc))(0)(organs)
+
 # ── source strings (what GENERATE writes; behaviourally equal to the values) ──
 # The logical core (TRUE/FALSE/AND/IF come from specpipe at authoring time and are
 # SHIPPED into the generated module so aatc.la is self-contained).
@@ -233,6 +253,10 @@ glyph SRC_MODULE = "la mname. la selfinc. la selfok. la dep. la f. f(mname)(self
 glyph SRC_SENSE  = "la m. m(la mname. la selfinc. la selfok. la dep. STRUCT(mname)(la nm. IF(selfinc)(la _. str_eq(nm)(mname))(la _. FALSE))(IF(selfok)(la _. mname)(la _. \"FAIL\"))(dep))"
 glyph SRC_OOK    = "la m. AUTOLOGICAL(SENSE(m))"
 glyph SRC_ODIAG  = "la m. DIAGNOSE(SENSE(m))"
+glyph SRC_CENT  = "la s. add(C01(SELF_INCLUSION(s)))(add(C01(SELF_APPLICATION(s)))(add(C01(SELF_VALIDATION(s)))(C01(CLOSURE(s)))))"
+glyph SRC_GAIN  = "la m. sub(CENTROPY(REPAIR(SENSE(m))))(CENTROPY(SENSE(m)))"
+glyph SRC_LEARN = "la model. la m. add(model)(GAIN(m))"
+glyph SRC_LALL  = "la organs. FOLDR(la m. la acc. add(GAIN(m))(acc))(0)(organs)"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -268,6 +292,7 @@ glyph M_AATC = MODULE("aatc")(TRUE)(TRUE)("")        # a healthy organ: owns its
 glyph M_FAIL = MODULE("badmod")(TRUE)(FALSE)("")     # fails its own spec → heterological (self-validation)
 glyph M_AMNESIC = MODULE("amnesic")(FALSE)(TRUE)("") # does not range over itself → heterological (self-inclusion)
 glyph M_DEP  = MODULE("needy")(TRUE)(TRUE)("libc")   # unmet external dependency → heterological (closure)
+glyph M_SICK3 = MODULE("sick")(FALSE)(FALSE)("dep")  # fails self-inclusion + self-validation + closure (centropy 1)
 
 # ── the SPEC: the structure projections, the four conditions, the criterion ──
 glyph AATC_SPEC =
@@ -382,7 +407,20 @@ glyph AATC_SPEC =
         T3L(TC(la g. g(M_AATC))("TTTT"))                               # healthy: all four hold
            (TC(la g. g(M_FAIL))("TTFT"))                               # fails self-validation (ran its self-test, didn't survive)
            (TC(la g. g(M_AMNESIC))("FTTT"))))(                         # fails self-inclusion (does not range over itself)
-  NIL))))))))))))))))))))))))))))))))))))))
+  CONS(E("CENTROPY")(":: a -> b")(SRC_CENT)(CENTROPY)(
+        T3L(TC(la g. int_to_str(g(SENSE(M_AATC))))("4"))              # healthy organ at maximum centropy
+           (TC(la g. int_to_str(g(SENSE(M_FAIL))))("3"))              # one failed condition
+           (TC(la g. int_to_str(g(SENSE(M_SICK3))))("1"))))(          # only self-application survives
+  CONS(E("GAIN")(":: a -> b")(SRC_GAIN)(GAIN)(
+        T3L(TC(la g. int_to_str(g(M_AATC)))("0"))                     # already healthy → nothing to restore
+           (TC(la g. int_to_str(g(M_FAIL)))("1"))                     # one cycle restores one condition
+           (TC(la g. int_to_str(g(M_SICK3)))("3"))))(                 # restores three
+  CONS(E("LEARN")(":: a -> b -> c")(SRC_LEARN)(LEARN)(
+        T2L(TC(la g. int_to_str(g(0)(M_FAIL)))("1"))                  # model 0 + gain 1
+           (TC(la g. int_to_str(g(10)(M_AATC)))("10"))))(             # healthy organ adds nothing
+  CONS(E("LEARN_ALL")(":: a -> b")(SRC_LALL)(LEARN_ALL)(
+        T1L(TC(la g. int_to_str(g(CONS(M_AATC)(CONS(M_FAIL)(CONS(M_SICK3)(NIL))))))("4"))))(  # total centropy restored: 0+1+3
+  NIL))))))))))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(AATC_SPEC) ===\n")(GENERATE(AATC_SPEC))))
