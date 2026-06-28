@@ -103,9 +103,14 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
     core runs the whole loop on its OWN body: a healthy organ is autological, a sick
     one is diagnosed and REPAIRed back to closure, and the loop tracks the centropy
     it restores. Builds on the three laws (`metalogic.la`) and α=1 (`canon.la`); all
-    host==VM byte-identical. Remaining LogosMentor work under this parent: a live
-    self-monitoring daemon feeding SENSE from real build state + a richer learned
-    model; and the statistical seam.)*
+    host==VM byte-identical. SENSE also reads REAL module state from disk: SENSE_FILE
+    (= SENSE_SRC ∘ read_file, with STARTS_WITH/CONTAINS substring search) derives an
+    organ's structural facts from its actual source (defines its namesake glyph /
+    non-empty / imports), and AUDIT_FILE("kernel.la")("MAIN") audits the real
+    kernel.la as autological (host==VM). Remaining LogosMentor work under this parent:
+    a live daemon running each module's META_DEBUG to feed full pass/fail verdicts
+    (SENSE_FILE reads structure, not spec-verification) + a richer learned model; and
+    the statistical seam.)*
   - [ ] Statistical model interface — local model, interfaced not rewritten *(honest substrate seam)*
 
 ---

@@ -83,3 +83,13 @@ glyph GAIN = la m. sub(CENTROPY(REPAIR(SENSE(m))))(CENTROPY(SENSE(m)))
 glyph LEARN = la model. la m. add(model)(GAIN(m))
 # LEARN_ALL : :: a -> b
 glyph LEARN_ALL = la organs. FOLDR(la m. la acc. add(GAIN(m))(acc))(0)(organs)
+# STARTS_WITH : byte-prefix test over strings (Zc-recursive, trusted)
+glyph STARTS_WITH = Zc(la self. la s. la p. IF(str_eq(p)(""))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. IF(str_eq(str_head(s))(str_head(p)))(la _. self(str_tail(s))(str_tail(p)))(la _. FALSE))))
+# CONTAINS : byte-substring test over strings (Zc-recursive, trusted)
+glyph CONTAINS = Zc(la self. la s. la p. IF(STARTS_WITH(s)(p))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(p))))
+# SENSE_SRC : :: a -> b -> c
+glyph SENSE_SRC = la src. la concept. MODULE(concept)(CONTAINS(src)(concat("glyph ")(concept)))(NOT(str_eq(src)("")))(IF(CONTAINS(src)("import("))(la _. "import")(la _. ""))
+# SENSE_FILE : :: a -> b -> c
+glyph SENSE_FILE = la path. la concept. SENSE_SRC(read_file(path))(concept)
+# AUDIT_FILE : :: a -> b -> c
+glyph AUDIT_FILE = la path. la concept. ORGAN_DIAGNOSE(SENSE_FILE(path)(concept))

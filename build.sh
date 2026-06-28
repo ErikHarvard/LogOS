@@ -1046,7 +1046,8 @@ for G in TRUE FALSE AND IF NOT OR STRUCT SNAME SINSCOPE SSELFAPP SLACKS \
          TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR \
          Zc C01 RHO FOLDR FORALL PHI \
          MODULE SENSE ORGAN_OK ORGAN_DIAGNOSE \
-         CENTROPY GAIN LEARN LEARN_ALL; do
+         CENTROPY GAIN LEARN LEARN_ALL \
+         STARTS_WITH CONTAINS SENSE_SRC SENSE_FILE AUDIT_FILE; do
     printf '%s\n' "$AC" | grep -qx "  $G: PASS" || { echo "FAIL  aatc: $G not verified"; ok=0; }
 done
 printf '%s\n' "$AC" | grep -q "module VERIFIED" || { echo "FAIL  aatc: module not verified"; ok=0; }
@@ -1058,11 +1059,14 @@ for G in TRUE FALSE AND IF NOT OR STRUCT SNAME SINSCOPE SSELFAPP SLACKS \
          TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR \
          Zc C01 RHO FORALL PHI \
          MODULE SENSE ORGAN_OK ORGAN_DIAGNOSE \
-         CENTROPY GAIN LEARN LEARN_ALL; do
+         CENTROPY GAIN LEARN LEARN_ALL \
+         SENSE_SRC SENSE_FILE AUDIT_FILE; do
     printf '%s\n' "$AC" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  aatc: $G not type-checked OK"; ok=0; }
 done
-# FOLDR is point-free (Z-recursive), so it is trusted (untyped), like canon's TDEPTH.
-printf '%s\n' "$AC" | grep -qx "  FOLDR: untyped (trusted)" || { echo "FAIL  aatc: FOLDR not reported untyped/trusted"; ok=0; }
+# Point-free Z-recursive glyphs are trusted (untyped), like canon's TDEPTH.
+for G in FOLDR STARTS_WITH CONTAINS; do
+    printf '%s\n' "$AC" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  aatc: $G not reported untyped/trusted"; ok=0; }
+done
 # Run the GENERATED aatc.la stand-alone. Every glyph is already verified individually
 # by META_DEBUG above; this witness only confirms cross-engine byte-identity across
 # the layers, so it is a LEAN representative subset (one program — kept small because
@@ -1074,8 +1078,10 @@ printf '%s\n' "$AC" | grep -qx "  FOLDR: untyped (trusted)" || { echo "FAIL  aat
 # (3) "131"  OPERATORS — α(∃)=1, ρ(∃)=3, φ(∃ over [∃])=1;
 # (4) "TTFT" SENSE/proprioception — ORGAN_DIAGNOSE of a spec-failing organ;
 # (5) "T"    SENSE+REPAIR — a sick organ REPAIRed to autological closure;
-# (6) "4"    LEARN — LEARN_ALL total centropy restored across healthy/failing/sick.
-# Host == VM (the whole loop reasons identically natively).
+# (6) "4"    LEARN — LEARN_ALL total centropy restored across healthy/failing/sick;
+# (7) "TTTT" SENSE READS REAL STATE — AUDIT_FILE reads the actual kernel.la from disk
+#            and audits it autological (defines MAIN, non-empty, imports nothing).
+# Host == VM (the whole loop, incl. reading a real module file, reasons identically).
 cp aatc.la /tmp/actest.la
 cat >> /tmp/actest.la <<'LA'
 glyph ALL = la nm. TRUE
@@ -1087,9 +1093,9 @@ glyph M_AATC = MODULE("aatc")(TRUE)(TRUE)("")
 glyph M_FAIL = MODULE("badmod")(TRUE)(FALSE)("")
 glyph M_SICK3 = MODULE("sick")(FALSE)(FALSE)("dep")
 glyph J = la a. la b. concat(a)(concat("|")(b))
-glyph MAIN = print(J(AATC(ARCHE)("T")("F"))(J(DIAGNOSE(REPAIR(BROKEN)))(J(concat(ALPHA(ARCHE))(concat(RHO(ARCHE))(PHI(ARCHE)(LCONS(ARCHE)(LNIL)))))(J(ORGAN_DIAGNOSE(M_FAIL))(J(AUTOLOGICAL(REPAIR(SENSE(M_FAIL)))("T")("F"))(int_to_str(LEARN_ALL(LCONS(M_AATC)(LCONS(M_FAIL)(LCONS(M_SICK3)(LNIL)))))))))))
+glyph MAIN = print(J(AATC(ARCHE)("T")("F"))(J(DIAGNOSE(REPAIR(BROKEN)))(J(concat(ALPHA(ARCHE))(concat(RHO(ARCHE))(PHI(ARCHE)(LCONS(ARCHE)(LNIL)))))(J(ORGAN_DIAGNOSE(M_FAIL))(J(AUTOLOGICAL(REPAIR(SENSE(M_FAIL)))("T")("F"))(J(int_to_str(LEARN_ALL(LCONS(M_AATC)(LCONS(M_FAIL)(LCONS(M_SICK3)(LNIL))))))(AUDIT_FILE("kernel.la")("MAIN"))))))))
 LA
-AC_EXPECT="T|TTTT|131|TTFT|T|4"
+AC_EXPECT="T|TTTT|131|TTFT|T|4|TTTT"
 ACH="$(./tiny_host /tmp/actest.la 2>/dev/null)"
 [ "$ACH" = "$AC_EXPECT" ] || { echo "FAIL  aatc: AATC witness wrong on host"; printf 'got: %s\n' "$ACH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -1106,6 +1112,7 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  aatc: the five AATC operators are complete — α (index) · ∂ (depth) · 𝒯 (transformation) · ρ (recognition coefficient, 0..3) · φ (fractal coherence, each part mirrors the ∃(∃)≡∃ whole); byte-identical host/VM"
     echo "PASS  aatc: proprioception (Centropic loop Sense phase) — SENSE maps a LogOS organ (module) to a STRUCT; the reasoning core judges its OWN body: a healthy organ is autological, a spec-failing organ diagnoses TTFT, an amnesic one FTTT, a needy one TTTF, and a sick organ is REPAIRed to closure; byte-identical host/VM"
     echo "PASS  aatc: the Centropic loop is CLOSED (Sense→Diagnose→Prescribe→Learn) — CENTROPY (conditions satisfied, 0..4) + GAIN (centropy a repair restores) + LEARN/LEARN_ALL (the centropy ledger, meta-telesis): the loop restores 0/1/3 centropy to healthy/failing/sick organs, total 4 across the system; byte-identical host/VM"
+    echo "PASS  aatc: SENSE reads REAL module state — STARTS_WITH/CONTAINS + SENSE_SRC derive an organ's facts from its source TEXT (defines its namesake glyph / non-empty / imports), and SENSE_FILE/AUDIT_FILE read an actual .la from disk: kernel.la audits autological (TTTT) on host AND native VM (structural facts, not full spec-verification)"
 else
     printf '%s\n' "$AC"
     exit 1

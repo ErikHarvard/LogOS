@@ -278,7 +278,10 @@ LogOS's reasoning layer — the seed of **LogosMentor**, its local reasoning eng
   module) to a structure, so the reasoning core judges its own body — a healthy
   organ is autological, a spec-failing one is diagnosed and repaired back to
   closure. `LEARN` closes the loop (Sense→Diagnose→Prescribe→Learn), accumulating
-  a *centropy ledger* of how much closure the loop has restored to the system.
+  a *centropy ledger* of how much closure the loop has restored to the system. And
+  `SENSE` reads real modules from disk — `AUDIT_FILE` reads an actual `.la` source
+  and derives an organ's structural facts (does it define its namesake glyph? is it
+  self-contained?), so the audit runs on the real files, not stand-ins.
 
 Every one of these modules is produced by a **specification pipeline**
 (`SPEC → GENERATE → DEPLOY → META_DEBUG`): the module is written as a spec with

@@ -212,6 +212,26 @@ glyph LEARN = la model. la m. add(model)(GAIN(m))
 # restored: the meta-telesis measure of the loop's effect on the system.
 glyph LEARN_ALL = la organs. FOLDR(la m. la acc. add(GAIN(m))(acc))(0)(organs)
 
+# ── SENSE reads REAL module state: derive organ facts from a module's source ──
+# The Sense phase above runs on hand-encoded MODULE descriptors. SENSE_FILE reads a
+# module's ACTUAL source (read_file) and derives the organ facts from it — the
+# reasoning core auditing the real files on disk, host and VM alike. *Honest scope:*
+# these are STRUCTURAL facts read from the source text (does it define its namesake
+# glyph; is it non-empty; does it import dependencies) — NOT full spec-verification
+# (that would require running the module). Needs substring search, so it ships
+# STARTS_WITH / CONTAINS (Zc-recursive over bytes).
+glyph STARTS_WITH = Zc(la self. la s. la p. IF(str_eq(p)(""))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. IF(str_eq(str_head(s))(str_head(p)))(la _. self(str_tail(s))(str_tail(p)))(la _. FALSE))))
+glyph CONTAINS = Zc(la self. la s. la p. IF(STARTS_WITH(s)(p))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(p))))
+# SENSE_SRC — derive a MODULE descriptor from source TEXT (pure): it defines its
+# namesake (CONTAINS "glyph <concept>"); it is non-empty; its lack is an import.
+glyph SENSE_SRC = la src. la concept. MODULE(concept)(CONTAINS(src)(concat("glyph ")(concept)))(NOT(str_eq(src)("")))(IF(CONTAINS(src)("import("))(la _. "import")(la _. ""))
+# SENSE_FILE — the I/O wrapper: read the real file, then SENSE_SRC its contents.
+glyph SENSE_FILE = la path. la concept. SENSE_SRC(read_file(path))(concept)
+# AUDIT_FILE — sense a real module file from disk and DIAGNOSE it (the headline:
+# audit a real organ). AUDIT_FILE("kernel.la")("MAIN") = "TTTT" — kernel.la defines
+# MAIN, is non-empty, and imports nothing, so it is an autological organ.
+glyph AUDIT_FILE = la path. la concept. ORGAN_DIAGNOSE(SENSE_FILE(path)(concept))
+
 # ── source strings (what GENERATE writes; behaviourally equal to the values) ──
 # The logical core (TRUE/FALSE/AND/IF come from specpipe at authoring time and are
 # SHIPPED into the generated module so aatc.la is self-contained).
@@ -257,6 +277,11 @@ glyph SRC_CENT  = "la s. add(C01(SELF_INCLUSION(s)))(add(C01(SELF_APPLICATION(s)
 glyph SRC_GAIN  = "la m. sub(CENTROPY(REPAIR(SENSE(m))))(CENTROPY(SENSE(m)))"
 glyph SRC_LEARN = "la model. la m. add(model)(GAIN(m))"
 glyph SRC_LALL  = "la organs. FOLDR(la m. la acc. add(GAIN(m))(acc))(0)(organs)"
+glyph SRC_SW    = "Zc(la self. la s. la p. IF(str_eq(p)(\"\"))(la _. TRUE)(la _. IF(str_eq(s)(\"\"))(la _. FALSE)(la _. IF(str_eq(str_head(s))(str_head(p)))(la _. self(str_tail(s))(str_tail(p)))(la _. FALSE))))"
+glyph SRC_CONT  = "Zc(la self. la s. la p. IF(STARTS_WITH(s)(p))(la _. TRUE)(la _. IF(str_eq(s)(\"\"))(la _. FALSE)(la _. self(str_tail(s))(p))))"
+glyph SRC_SSRC  = "la src. la concept. MODULE(concept)(CONTAINS(src)(concat(\"glyph \")(concept)))(NOT(str_eq(src)(\"\")))(IF(CONTAINS(src)(\"import(\"))(la _. \"import\")(la _. \"\"))"
+glyph SRC_SFILE = "la path. la concept. SENSE_SRC(read_file(path))(concept)"
+glyph SRC_AUDIT = "la path. la concept. ORGAN_DIAGNOSE(SENSE_FILE(path)(concept))"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -420,7 +445,22 @@ glyph AATC_SPEC =
            (TC(la g. int_to_str(g(10)(M_AATC)))("10"))))(             # healthy organ adds nothing
   CONS(E("LEARN_ALL")(":: a -> b")(SRC_LALL)(LEARN_ALL)(
         T1L(TC(la g. int_to_str(g(CONS(M_AATC)(CONS(M_FAIL)(CONS(M_SICK3)(NIL))))))("4"))))(  # total centropy restored: 0+1+3
-  NIL))))))))))))))))))))))))))))))))))))))))))
+  CONS(E("STARTS_WITH")("byte-prefix test over strings (Zc-recursive, trusted)")(SRC_SW)(STARTS_WITH)(
+        T3L(TC(la g. g("hello")("he")("y")("n"))("y"))
+           (TC(la g. g("hello")("xe")("y")("n"))("n"))
+           (TC(la g. g("hi")("")("y")("n"))("y"))))(                  # empty prefix always matches
+  CONS(E("CONTAINS")("byte-substring test over strings (Zc-recursive, trusted)")(SRC_CONT)(CONTAINS)(
+        T3L(TC(la g. g("a glyph AATC here")("glyph AATC")("y")("n"))("y"))
+           (TC(la g. g("nope")("glyph AATC")("y")("n"))("n"))
+           (TC(la g. g("x import(y)")("import(")("y")("n"))("y"))))(  # detects a dependency
+  CONS(E("SENSE_SRC")(":: a -> b -> c")(SRC_SSRC)(SENSE_SRC)(
+        T2L(TC(la g. ORGAN_DIAGNOSE(g("glyph AATC = x")("AATC")))("TTTT"))              # defines namesake, non-empty, no import
+           (TC(la g. ORGAN_DIAGNOSE(g("glyph AATC = x import(\"y\")")("AATC")))("TTTF"))))(  # has an import → closure fails
+  CONS(E("SENSE_FILE")(":: a -> b -> c")(SRC_SFILE)(SENSE_FILE)(
+        T1L(TC(la g. ORGAN_DIAGNOSE(g("kernel.la")("MAIN")))("TTTT"))))(  # reads the REAL kernel.la → autological
+  CONS(E("AUDIT_FILE")(":: a -> b -> c")(SRC_AUDIT)(AUDIT_FILE)(
+        T1L(TC(la g. g("kernel.la")("MAIN"))("TTTT"))))(                  # audit a real module from disk
+  NIL)))))))))))))))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(AATC_SPEC) ===\n")(GENERATE(AATC_SPEC))))
