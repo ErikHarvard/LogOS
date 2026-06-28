@@ -273,7 +273,11 @@ LogOS's reasoning layer — the seed of **LogosMentor**, its local reasoning eng
   structural change that *earns* the verdict, never a flag-flip that games it
   (gaming the criterion would itself be heterological). `REPAIR` iterates `𝒯` to
   the fixed point. The build proves, host and VM identically, that the maximal
-  heterology and the cogito are both repaired to autological closure.
+  heterology and the cogito are both repaired to autological closure. And the loop
+  turns on the system itself — *proprioception:* `SENSE` maps a LogOS organ (a
+  module) to a structure, so the reasoning core judges its own body — a healthy
+  organ is autological, a spec-failing one is diagnosed and repaired back to
+  closure.
 
 Every one of these modules is produced by a **specification pipeline**
 (`SPEC → GENERATE → DEPLOY → META_DEBUG`): the module is written as a spec with

@@ -1044,7 +1044,8 @@ for G in TRUE FALSE AND IF NOT OR STRUCT SNAME SINSCOPE SSELFAPP SLACKS \
          SELF_INCLUSION SELF_APPLICATION SELF_VALIDATION CLOSURE \
          AATC AUTOLOGICAL HETEROLOGICAL ALPHA DELTA \
          TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR \
-         Zc C01 RHO FOLDR FORALL PHI; do
+         Zc C01 RHO FOLDR FORALL PHI \
+         MODULE SENSE ORGAN_OK ORGAN_DIAGNOSE; do
     printf '%s\n' "$AC" | grep -qx "  $G: PASS" || { echo "FAIL  aatc: $G not verified"; ok=0; }
 done
 printf '%s\n' "$AC" | grep -q "module VERIFIED" || { echo "FAIL  aatc: module not verified"; ok=0; }
@@ -1054,7 +1055,8 @@ for G in TRUE FALSE AND IF NOT OR STRUCT SNAME SINSCOPE SSELFAPP SLACKS \
          SELF_INCLUSION SELF_APPLICATION SELF_VALIDATION CLOSURE \
          AATC AUTOLOGICAL HETEROLOGICAL ALPHA DELTA \
          TF DIAGNOSE T_APPLY T_GROUND T_INCLUDE T_CLOSE TRANSFORM REPAIR \
-         Zc C01 RHO FORALL PHI; do
+         Zc C01 RHO FORALL PHI \
+         MODULE SENSE ORGAN_OK ORGAN_DIAGNOSE; do
     printf '%s\n' "$AC" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  aatc: $G not type-checked OK"; ok=0; }
 done
 # FOLDR is point-free (Z-recursive), so it is trusted (untyped), like canon's TDEPTH.
@@ -1070,7 +1072,11 @@ printf '%s\n' "$AC" | grep -qx "  FOLDR: untyped (trusted)" || { echo "FAIL  aat
 # autological — then the remaining two AATC OPERATORS: (12) "3" ρ(∃)=3 fully
 # witnessed; (13) "0" ρ(BROKEN)=0 unwitnessed (drifts to potentiality); (14) "1"
 # φ of an autological whole with autological parts (fractally coherent); (15) "0"
-# φ with a heterological part (a part fails to mirror the whole). Host == VM.
+# φ with a heterological part (a part fails to mirror the whole) — then PROPRIOCEPTION
+# (the Sense phase, the reasoning core on its own organs): (16) "T" ORGAN_OK(healthy
+# module); (17) "TTFT" a spec-failing organ (fails self-validation); (18) "FTTT" an
+# organ that doesn't range over itself; (19) "TTTF" an organ with an unmet dep; (20)
+# "T" a sick organ REPAIRed to autological closure. Host == VM.
 cp aatc.la /tmp/actest.la
 cat >> /tmp/actest.la <<'LA'
 glyph ALL = la nm. TRUE
@@ -1096,10 +1102,19 @@ glyph R1 = RHO(ARCHE)
 glyph R2 = RHO(BROKEN)
 glyph P1 = PHI(ARCHE)(LCONS(ARCHE)(LCONS(AATC_S)(LNIL)))
 glyph P2 = PHI(ARCHE)(LCONS(TOE_P)(LNIL))
+glyph M_AATC = MODULE("aatc")(TRUE)(TRUE)("")
+glyph M_FAIL = MODULE("badmod")(TRUE)(FALSE)("")
+glyph M_AMNESIC = MODULE("amnesic")(FALSE)(TRUE)("")
+glyph M_DEP = MODULE("needy")(TRUE)(TRUE)("libc")
+glyph O1 = ORGAN_OK(M_AATC)("T")("F")
+glyph O2 = ORGAN_DIAGNOSE(M_FAIL)
+glyph O3 = ORGAN_DIAGNOSE(M_AMNESIC)
+glyph O4 = ORGAN_DIAGNOSE(M_DEP)
+glyph O5 = AUTOLOGICAL(REPAIR(SENSE(M_FAIL)))("T")("F")
 glyph J = la a. la b. concat(a)(concat("|")(b))
-glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(J(W6)(J(I7)(J(I8)(J(I9)(J(I10)(J(I11)(J(R1)(J(R2)(J(P1)(P2)))))))))))))))
+glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(J(W6)(J(I7)(J(I8)(J(I9)(J(I10)(J(I11)(J(R1)(J(R2)(J(P1)(J(P2)(J(O1)(J(O2)(J(O3)(J(O4)(O5)))))))))))))))))))))
 LA
-AC_EXPECT="T|T|T|FTTF|11|F0|FFFF|T|TTTT|TTTT|T|3|0|1|0"
+AC_EXPECT="T|T|T|FTTF|11|F0|FFFF|T|TTTT|TTTT|T|3|0|1|0|T|TTFT|FTTT|TTTF|T"
 ACH="$(./tiny_host /tmp/actest.la 2>/dev/null)"
 [ "$ACH" = "$AC_EXPECT" ] || { echo "FAIL  aatc: AATC witness wrong on host"; printf 'got: %s\n' "$ACH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -1114,6 +1129,7 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  aatc: AATC composes the laws into one verdict — the Archē passes, a self-exempting TOE is HETEROLOGICAL; byte-identical host/VM"
     echo "PASS  aatc: the inference layer (Centropic loop) DIAGNOSEs heterology + PRESCRIBEs 𝒯 (honest deepening) + REPAIRs to autological closure — the maximal heterology and the cogito both driven to a fixed point; byte-identical host/VM"
     echo "PASS  aatc: the five AATC operators are complete — α (index) · ∂ (depth) · 𝒯 (transformation) · ρ (recognition coefficient, 0..3) · φ (fractal coherence, each part mirrors the ∃(∃)≡∃ whole); byte-identical host/VM"
+    echo "PASS  aatc: proprioception (Centropic loop Sense phase) — SENSE maps a LogOS organ (module) to a STRUCT; the reasoning core judges its OWN body: a healthy organ is autological, a spec-failing organ diagnoses TTFT, an amnesic one FTTT, a needy one TTTF, and a sick organ is REPAIRed to closure; byte-identical host/VM"
 else
     printf '%s\n' "$AC"
     exit 1

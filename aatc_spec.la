@@ -165,6 +165,33 @@ glyph FOLDR  = Zc(la self. la f. la z. la lst. lst(z)(la h. la t. f(h)(self(f)(z
 glyph FORALL = la pred. la lst. FOLDR(la h. la acc. AND(pred(h))(acc))(TRUE)(lst)
 glyph PHI = la whole. la parts. IF(AND(AUTOLOGICAL(whole))(FORALL(AUTOLOGICAL)(parts)))(la _. "1")(la _. "0")
 
+# ── SENSE: proprioception — the reasoning core turned on its own body ──────────
+# The Centropic loop's first phase (LINGUA ADAMICA.tex: Sense→Diagnose→Prescribe→
+# Learn): "M receives system state … organ compliance … this is proprioception —
+# the system sensing its own body." LogOS's organs are its modules; SENSE maps an
+# organ's observable state to a STRUCT the criterion can judge, so AATC/DIAGNOSE/
+# REPAIR run on the actual system. A MODULE descriptor carries the four facts a
+# self-monitoring daemon would report about an organ:
+#   mname   — the organ's name
+#   selfinc — does it range over itself (define/own its own concept)?    (a bool)
+#   selfok  — does it satisfy its OWN spec (its META_DEBUG passes)?       (a bool)
+#   dep     — an unmet external dependency ("" if self-contained)
+glyph MODULE = la mname. la selfinc. la selfok. la dep. la f. f(mname)(selfinc)(selfok)(dep)
+# SENSE — translate the observed organ into a STRUCT: it ranges over its own name
+# iff selfinc; it self-validates (selfapp := mname, X(X)≡X) iff it passes its own
+# spec, else it self-applies but FAILS (selfapp := "FAIL", it ran its self-test and
+# did not survive); its lack is its unmet dependency. So a sensed organ is
+# AUTOLOGICAL iff it owns itself, passes its own criterion, and needs nothing
+# external — the organ is healthy exactly when it is what it declares itself to be.
+glyph SENSE = la m. m(la mname. la selfinc. la selfok. la dep.
+    STRUCT(mname)
+          (la nm. IF(selfinc)(la _. str_eq(nm)(mname))(la _. FALSE))
+          (IF(selfok)(la _. mname)(la _. "FAIL"))
+          (dep))
+# ORGAN_OK / ORGAN_DIAGNOSE — run the criterion on a sensed organ directly.
+glyph ORGAN_OK       = la m. AUTOLOGICAL(SENSE(m))
+glyph ORGAN_DIAGNOSE = la m. DIAGNOSE(SENSE(m))
+
 # ── source strings (what GENERATE writes; behaviourally equal to the values) ──
 # The logical core (TRUE/FALSE/AND/IF come from specpipe at authoring time and are
 # SHIPPED into the generated module so aatc.la is self-contained).
@@ -202,6 +229,10 @@ glyph SRC_ZC    = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
 glyph SRC_FOLDR = "Zc(la self. la f. la z. la lst. lst(z)(la h. la t. f(h)(self(f)(z)(t))))"
 glyph SRC_FORALL= "la pred. la lst. FOLDR(la h. la acc. AND(pred(h))(acc))(TRUE)(lst)"
 glyph SRC_PHI   = "la whole. la parts. IF(AND(AUTOLOGICAL(whole))(FORALL(AUTOLOGICAL)(parts)))(la _. \"1\")(la _. \"0\")"
+glyph SRC_MODULE = "la mname. la selfinc. la selfok. la dep. la f. f(mname)(selfinc)(selfok)(dep)"
+glyph SRC_SENSE  = "la m. m(la mname. la selfinc. la selfok. la dep. STRUCT(mname)(la nm. IF(selfinc)(la _. str_eq(nm)(mname))(la _. FALSE))(IF(selfok)(la _. mname)(la _. \"FAIL\"))(dep))"
+glyph SRC_OOK    = "la m. AUTOLOGICAL(SENSE(m))"
+glyph SRC_ODIAG  = "la m. DIAGNOSE(SENSE(m))"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
@@ -232,6 +263,11 @@ glyph VOID_S = STRUCT("VOID_S")(ALL)("")("")
 # BROKEN — fails ALL four: exempts itself from scope, no self-application, needs an
 # external dependency. The maximal heterology — REPAIR must drive it to closure.
 glyph BROKEN = STRUCT("BROKEN")(la nm. NOT(str_eq(nm)("BROKEN")))("")("dep")
+# Organ descriptors (spec-local) — sensed states of LogOS modules:
+glyph M_AATC = MODULE("aatc")(TRUE)(TRUE)("")        # a healthy organ: owns itself, passes its spec, no dep
+glyph M_FAIL = MODULE("badmod")(TRUE)(FALSE)("")     # fails its own spec → heterological (self-validation)
+glyph M_AMNESIC = MODULE("amnesic")(FALSE)(TRUE)("") # does not range over itself → heterological (self-inclusion)
+glyph M_DEP  = MODULE("needy")(TRUE)(TRUE)("libc")   # unmet external dependency → heterological (closure)
 
 # ── the SPEC: the structure projections, the four conditions, the criterion ──
 glyph AATC_SPEC =
@@ -333,7 +369,20 @@ glyph AATC_SPEC =
         T3L(TC(la g. g(ARCHE)(CONS(ARCHE)(CONS(AATC_S)(NIL))))("1"))   # whole + each part autological → coherent
            (TC(la g. g(ARCHE)(CONS(TOE_P)(NIL)))("0"))                 # a heterological part breaks coherence
            (TC(la g. g(TOE_P)(CONS(ARCHE)(NIL)))("0"))))(              # a heterological whole is not coherent
-  NIL))))))))))))))))))))))))))))))))))
+  CONS(E("MODULE")(":: a -> b -> c -> d -> e -> f")(SRC_MODULE)(MODULE)(
+        T1L(TC(la g. g("m")(TRUE)(TRUE)("")(la a. la b. la c. la d. a))("m"))))(  # carries the organ's name
+  CONS(E("SENSE")(":: a -> b")(SRC_SENSE)(SENSE)(
+        T2L(TC(la g. SNAME(g(M_AATC)))("aatc"))                        # senses the organ's name into a STRUCT
+           (TC(la g. SSELFAPP(g(M_FAIL)))("FAIL"))))(                  # an organ that fails its spec self-applies but FAILs
+  CONS(E("ORGAN_OK")(":: a -> b")(SRC_OOK)(ORGAN_OK)(
+        T3L(TC(la g. g(M_AATC)("T")("F"))("T"))                        # a healthy organ is autological
+           (TC(la g. g(M_FAIL)("T")("F"))("F"))                        # one that fails its own spec is not
+           (TC(la g. g(M_DEP)("T")("F"))("F"))))(                      # one with an unmet dependency is not
+  CONS(E("ORGAN_DIAGNOSE")(":: a -> b")(SRC_ODIAG)(ORGAN_DIAGNOSE)(
+        T3L(TC(la g. g(M_AATC))("TTTT"))                               # healthy: all four hold
+           (TC(la g. g(M_FAIL))("TTFT"))                               # fails self-validation (ran its self-test, didn't survive)
+           (TC(la g. g(M_AMNESIC))("FTTT"))))(                         # fails self-inclusion (does not range over itself)
+  NIL))))))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(AATC_SPEC) ===\n")(GENERATE(AATC_SPEC))))

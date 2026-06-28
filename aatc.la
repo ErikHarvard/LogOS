@@ -67,3 +67,11 @@ glyph FOLDR = Zc(la self. la f. la z. la lst. lst(z)(la h. la t. f(h)(self(f)(z)
 glyph FORALL = la pred. la lst. FOLDR(la h. la acc. AND(pred(h))(acc))(TRUE)(lst)
 # PHI : :: a -> b -> c
 glyph PHI = la whole. la parts. IF(AND(AUTOLOGICAL(whole))(FORALL(AUTOLOGICAL)(parts)))(la _. "1")(la _. "0")
+# MODULE : :: a -> b -> c -> d -> e -> f
+glyph MODULE = la mname. la selfinc. la selfok. la dep. la f. f(mname)(selfinc)(selfok)(dep)
+# SENSE : :: a -> b
+glyph SENSE = la m. m(la mname. la selfinc. la selfok. la dep. STRUCT(mname)(la nm. IF(selfinc)(la _. str_eq(nm)(mname))(la _. FALSE))(IF(selfok)(la _. mname)(la _. "FAIL"))(dep))
+# ORGAN_OK : :: a -> b
+glyph ORGAN_OK = la m. AUTOLOGICAL(SENSE(m))
+# ORGAN_DIAGNOSE : :: a -> b
+glyph ORGAN_DIAGNOSE = la m. DIAGNOSE(SENSE(m))
