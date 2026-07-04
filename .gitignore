@@ -36,6 +36,7 @@
 /native_codegen2_out
 /native_codegen3_out
 /native_input.la
+/stage4_seed_out.txt
 
 # autopoiesis.la's medium (generation counter, regenerated each run)
 /autopoiesis.gen
