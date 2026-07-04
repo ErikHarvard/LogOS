@@ -52,3 +52,9 @@ codices/*
 !codices/published/
 phonyms.wav
 mathutil.la
+
+# LogOS kernel build products (K1+): generated per-build, sources tracked
+/kernel/entry.inc
+/kernel/*.o
+/kernel/kernel.elf
+/kernel/kernel64.elf
