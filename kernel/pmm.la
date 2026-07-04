@@ -1,0 +1,101 @@
+# ===================================================================
+#  LogOS kernel — K3a: physical memory manager (PMM), pure-logic core.
+#
+#  The PMM *policy* is pure logic, so it is written in Lingua Adamica and
+#  verified host==native (compile with native_codegen3, run under tiny_host,
+#  assert byte-identical) BEFORE it touches hardware. K3b feeds it the real
+#  multiboot memory map via a peek() primitive; here MAIN drives it on a
+#  SYNTHETIC map so the algorithm is proven with no metal.
+#
+#  Design: parse the multiboot1 mmap (LE fields) -> usable (type==1) regions
+#  -> take the largest as the arena -> bump pointer + free-stack allocator
+#  (alloc pops the free-stack or bumps; free pushes). Frame = 4 KiB.
+# ===================================================================
+
+# ── Church/Scott plumbing (native_codegen3 is import-free) ──
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph NIL = la c. la n. n
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+glyph IS_CONS = la l. l(la h. la t. TRUE)(FALSE)
+glyph HD = la l. l(la h. la t. h)(NIL)
+glyph TL = la l. l(la h. la t. t)(NIL)
+glyph FRAME = 4096
+
+# ── little-endian readers over a byte string ──
+# DROPN(s)(n): drop the first n bytes (n applications of str_tail).
+glyph DROPN = Z(la self. la s. la n. IF(int_eq(n)(0))(la _. s)(la _. self(str_tail(s))(sub(n)(1))))
+glyph BYTE  = la s. la off. str_to_int(ord(str_head(DROPN(s)(off))))
+# RD(s)(off)(k): read a k-byte little-endian unsigned int at offset off.
+glyph RD = Z(la self. la s. la off. la k.
+    IF(int_eq(k)(0))(la _. 0)(la _.
+        add(BYTE(s)(off))(mul(256)(self(s)(add(off)(1))(sub(k)(1))))))
+
+# ── parse the multiboot1 memory map ──
+# Each entry: size:u32 @0 (excludes itself, so stride = size+4), base:u64 @4,
+# length:u64 @12, type:u32 @20. type==1 is available RAM. Walk to total_len.
+# Returns a list of PAIR(base)(length) for the usable regions.
+glyph PARSE_MMAP = Z(la self. la s. la off. la total.
+    IF(NOT(lt(off)(total)))(la _. NIL)(la _.
+        (la size. (la stride. (la base. (la len. (la typ. (la rest.
+            IF(int_eq(typ)(1))(la _. CONS(PAIR(base)(len))(rest))(la _. rest)
+        )(self(s)(add(off)(stride))(total)) )(RD(s)(add(off)(20))(4)) )(RD(s)(add(off)(12))(8)) )(RD(s)(add(off)(4))(8)) )(add(RD(s)(off)(4))(4)) )(RD(s)(off)(4)) ))
+
+# ── pick the largest usable region as the arena ──
+glyph MAX_REGION = Z(la self. la regs. la best.
+    IF(IS_CONS(regs))(la _.
+        (la r. self(TL(regs))(IF(lt(SND(best))(SND(r)))(la _. r)(la _. best)))(HD(regs))
+    )(la _. best))
+glyph ARENA = la regs. MAX_REGION(TL(regs))(HD(regs))   # base+length of largest
+
+# ── allocator state = PAIR(next)(free_stack); next bumps, stack reused first ──
+# Frame-align the arena base up to a 4 KiB boundary.
+glyph ALIGN_UP = la n. mul(div(add(n)(sub(FRAME)(1)))(FRAME))(FRAME)
+glyph PMM_INIT = la arena. PAIR(ALIGN_UP(FST(arena)))(NIL)
+# PMM_ALLOC(state) -> PAIR(frame_addr)(state'). Pop the free-stack else bump.
+glyph PMM_ALLOC = la st.
+    (la next. (la stk.
+        IF(IS_CONS(stk))(la _. PAIR(HD(stk))(PAIR(next)(TL(stk))))(la _.
+            PAIR(next)(PAIR(add(next)(FRAME))(stk))))
+    (SND(st)))(FST(st))
+# PMM_FREE(state)(addr) -> state'. Push addr onto the free-stack.
+glyph PMM_FREE = la st. la addr. PAIR(FST(st))(CONS(addr)(SND(st)))
+
+# ── self-test: a synthetic mmap, parse, then alloc/free/realloc ──
+# Two entries: [0x0, 0x9fc00) reserved-ish type 2, and [0x100000, +0x8000000)
+# type 1 (128 MiB usable from 1 MiB). We expect the arena base 0x100000.
+glyph U32 = la n.
+    concat(chr(int_to_str(mod(n)(256))))(concat(chr(int_to_str(mod(div(n)(256))(256))))(
+    concat(chr(int_to_str(mod(div(n)(65536))(256))))(chr(int_to_str(mod(div(n)(16777216))(256))))))
+glyph U64 = la n. concat(U32(n))(U32(div(n)(4294967296)))
+glyph ENTRY = la base. la len. la typ. concat(U32(20))(concat(U64(base))(concat(U64(len))(U32(typ))))
+glyph MMAP =
+    concat(ENTRY(0)(654336)(2))(ENTRY(1048576)(134217728)(1))
+
+glyph SHOW = la n. print(int_to_str(n))
+# Linear driver: alloc x3 (bump), free the 2nd, alloc once (must REUSE it).
+# Each step names r = PAIR(addr)(state'); state threads via SND(r). print is
+# eager and returns its arg, so the nested-lambda force fixes the print order.
+# Expected: 1048576, 1052672, 1056768, 1052672  (0x100000, 0x101000, 0x102000,
+# then the freed 0x101000 reused).
+glyph MAIN =
+    (la r1.
+    (la r2.
+    (la r3.
+    (la stf.
+    (la r4.
+        (la _. (la _. (la _.
+            SHOW(FST(r4))
+        )(SHOW(FST(r3))))(SHOW(FST(r2))))(SHOW(FST(r1)))
+    )(PMM_ALLOC(stf))
+    )(PMM_FREE(SND(r3))(FST(r2)))
+    )(PMM_ALLOC(SND(r2)))
+    )(PMM_ALLOC(SND(r1)))
+    )(PMM_ALLOC(PMM_INIT(ARENA(PARSE_MMAP(MMAP)(0)(str_to_int(str_len(MMAP)))))))
