@@ -3930,6 +3930,18 @@ for f in new_logos_gen*.bin; do
     printf '  %s  %s\n' "$(md5sum "$f" | cut -d' ' -f1)" "$f"
 done
 
+say "LogOS kernel — K1/K2: first bare-metal boot + loud fault handling (ring 0)"
+# Build the kernel (compile kernel.la -> LA image, wrap with the boot stub +
+# syscall substrate + IDT) in both the normal and fault-injection variants, then
+# boot them in QEMU. K1: "I AM THAT I AM" on COM1 + clean exit 33 (the kernel
+# services the LA image's own write/exit syscalls, so the SAME binary runs on
+# host and metal, b_τ ≡ f_τ). K2: a #UD faults into the IDT -> "EXCEPTION 06" on
+# serial + exit 35, a diagnosed halt not a triple-fault (loud failure at ring 0).
+# Skips cleanly when QEMU is not installed, like the DRM scanout test.
+bash kernel/build_k2.sh >/dev/null 2>&1 || { echo "FAIL  kernel: kernel/build_k2.sh failed"; exit 1; }
+bash kernel/gate_k1.sh || exit 1
+bash kernel/gate_k2.sh || exit 1
+
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),
 # so the audit is clean here. Tag the CURRENT COMMIT as a verified rollback

@@ -136,6 +136,14 @@ long_start:
     wrmsr
 
     call    serial_init
+    call    idt_install             ; K2: exceptions -> diagnosed serial halt
+
+%ifdef K2_FAULT
+    ; K2 gate fault-injection: raise #UD (vector 6) to prove the IDT catches
+    ; it loudly (serial "EXCEPTION 06", isa-debug-exit 35) instead of a
+    ; triple-fault. Only assembled with `nasm -dK2_FAULT` (kernel_fault.elf).
+    ud2
+%endif
 
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -260,5 +268,8 @@ boot_stack_top:
 ;  The Lingua-Adamica kernel image, placed by kernel.ld at 0x400000.
 ;  native_codegen3 emitted it; we run it unmodified.
 ; ---------------------------------------------------------------------
+; K2: IDT + exception handlers (its own .boot32/.rodata/.bss sections).
+%include "idt.asm"
+
 section .la_image
 incbin "native_codegen3_out"

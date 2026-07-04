@@ -58,3 +58,5 @@ mathutil.la
 /kernel/*.o
 /kernel/kernel.elf
 /kernel/kernel64.elf
+/kernel/kernel_fault.elf
+/kernel/kernel_fault64.elf
