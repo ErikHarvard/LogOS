@@ -92,11 +92,27 @@ glyph TABLE_HAS = Z(la self. la nm. la table. IF(IS_CONS(table))(la _. IF(str_eq
 # define it"); returns the export list unchanged when all are defined.
 glyph CHECK_EXPORTS = Z(la self. la exports. la table. IF(IS_CONS(exports))(la _. IF(TABLE_HAS(LIST_HD(exports))(table))(la _. self(LIST_TL(exports))(table))(la _. error(concat("codegen: module exports undefined glyph: ")(LIST_HD(exports)))))(la _. exports))
 
-glyph RENAME_FREE = Z(la self. la node. la old. la new.
+# RENAME_ALL(ast)(privs)(path): rewrite EVERY free private reference inside a
+# body in ONE traversal. The old RENAME_FREE renamed a single name per full
+# walk, so MANGLE_BODY re-walked AND re-allocated the whole AST once per
+# private. This walks the spine once, renaming each AST_VAR by set membership.
+# NOT an asymptotic fix: each var now does an O(privs) membership scan, so the
+# worst case is still O(privs × nodes) — the same ORDER as before. The win is a
+# constant factor — one traversal + one round of node allocation instead of
+# `privs` of each — which SOFTENS, does not erase, the import-mangle cost on
+# sigil-heavy chains (the sigil/onf/topoderive importers cob.la and phonsem.la
+# still take tens of minutes to codegen under tiny_host). Shadowing: a binder
+# whose param is a private removes it from the active set for its body
+# (LIST_REMOVE), matching RENAME_FREE's stop-under-shadowing-binder semantics.
+# Simultaneous rename is equivalent to the old sequential fold because every
+# mangled name is fresh (__mod_…), so no rename can manufacture another
+# private's occurrence.
+glyph LIST_REMOVE = Z(la self. la x. la lst. IF(IS_CONS(lst))(la _. IF(str_eq(x)(LIST_HD(lst)))(la _. self(x)(LIST_TL(lst)))(la _. CONS(LIST_HD(lst))(self(x)(LIST_TL(lst)))))(la _. NIL))
+glyph RENAME_ALL = Z(la self. la node. la privs. la path.
     node
-        (la name. IF(str_eq(name)(old))(la _. AST_VAR(new))(la _. AST_VAR(name)))
-        (la p. la b. IF(str_eq(p)(old))(la _. AST_LAM(p)(b))(la _. AST_LAM(p)(self(b)(old)(new))))
-        (la f. la a. AST_APP(self(f)(old)(new))(self(a)(old)(new)))
+        (la name. IF(STR_MEMBER(name)(privs))(la _. AST_VAR(MANGLE(path)(name)))(la _. AST_VAR(name)))
+        (la p. la b. AST_LAM(p)(self(b)(IF(STR_MEMBER(p)(privs))(la _. LIST_REMOVE(p)(privs))(la _. privs))(path)))
+        (la f. la a. AST_APP(self(f)(privs)(path))(self(a)(privs)(path)))
         (la val. AST_STR(val)))
 
 glyph SANITIZE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _.
@@ -109,15 +125,10 @@ glyph PRIVATE_NAMES = Z(la self. la table. la exports.
         (la nm. IF(STR_MEMBER(nm)(exports))(la _. self(LIST_TL(table))(exports))(la _. CONS(nm)(self(LIST_TL(table))(exports))))(FST(LIST_HD(table)))
     )(la _. NIL))
 
-glyph MANGLE_BODY = Z(la self. la ast. la privs. la path.
-    IF(IS_CONS(privs))(la _.
-        (la p. self(RENAME_FREE(ast)(p)(MANGLE(path)(p)))(LIST_TL(privs))(path))(LIST_HD(privs))
-    )(la _. ast))
-
 glyph MANGLE_MAP = Z(la self. la table. la exports. la privs. la path.
     IF(IS_CONS(table))(la _.
         (la entry. (la nm. (la ast.
-            CONS(PAIR(IF(STR_MEMBER(nm)(exports))(la _. nm)(la _. MANGLE(path)(nm)))(MANGLE_BODY(ast)(privs)(path)))(self(LIST_TL(table))(exports)(privs)(path))
+            CONS(PAIR(IF(STR_MEMBER(nm)(exports))(la _. nm)(la _. MANGLE(path)(nm)))(RENAME_ALL(ast)(privs)(path)))(self(LIST_TL(table))(exports)(privs)(path))
         )(SND(entry)))(FST(entry)))(LIST_HD(table))
     )(la _. NIL))
 
