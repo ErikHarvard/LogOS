@@ -75,10 +75,34 @@ honestly in the distance.
 *The thirteen-layer strong-definition OS, built in and as Lingua Adamica.
 Status: barely begun — this is the larger road ahead (a year-plus of work).*
 
-- [~] 1. Bootloader
-- [ ] 2. Kernel *(inherits Linux during this phase; sovereign kernel is Rubedo)*
-- [x] 3. Init system (`logosinit.la`, PID-1)
-- [~] 4. Hardware abstraction layer *(DRM/KMS path proven on hardware)*
+- [~] 1. Bootloader *(GRUB/multiboot1 during bring-up; sovereign bootloader is K7)*
+- [~] 2. Kernel — **sovereign bare-metal kernel STARTED 2026-07-04** (branch
+      `kernel-k1`). This IS the Phase-III LogosKernel, begun early — no longer
+      inheriting Linux. The kernel is Lingua Adamica compiled by native_codegen3
+      on a thin asm HAL; it implements the `syscall` instruction itself, so the
+      SAME LA binary runs on host and metal (b_τ ≡ f_τ to the metal). Staged
+      K1–K7, each brick verified green before the next:
+  - [x] K1 — boot: multiboot1 + 32→64-bit trampoline → the LA image runs on bare
+        metal and speaks the Word over serial, no host OS. QEMU-gated. (`3fee4a0`)
+  - [x] K2 — IDT + 32 exception handlers: a CPU fault is a diagnosed serial halt
+        (`EXCEPTION <vec>`), not a triple-fault — loud failure at ring 0. (`479e03c`)
+  - [x] K3a — physical memory manager, pure-logic core (parse the multiboot mmap →
+        largest arena → bump + free-stack frame allocator); verified **host==native**
+        (the strong oracle — the PMM policy is pure logic). (`8ad0007`)
+  - [ ] K3b — wire the REAL memory map on the metal: `MB_FLAGS|=0x2` + thread the
+        mbi pointer + a new `peek(addr)` runtime builtin (first native_codegen3
+        extension for the kernel)
+  - [ ] K4 — virtual memory: 4-level paging, map/unmap, W^X + NX, higher-half
+        kernel, the LA heap backed by real PMM frames
+  - [ ] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
+  - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
+        over in-kernel channels; native process model vs fork/execve)
+  - [ ] K7 — sovereign bootloader (replaces GRUB) — last
+- [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
+      native process model is re-homed onto the kernel at K5/K6)*
+- [~] 4. Hardware abstraction layer *(DRM/KMS path proven on hardware as a
+      Linux-userspace VM program; the kernel's own HAL begins at K1's boot.asm —
+      real bare-metal drivers, display, disk, PCI are the largest remaining chunk)*
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*
@@ -120,7 +144,10 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
 *Full autological and privacy closure. Status: distant — these depend on
 hardware-level work and a mature network. Honestly years out.*
 
-- [ ] Sovereign kernel (LogosKernel) — replace the inherited Linux kernel
+- [~] Sovereign kernel (LogosKernel) — **BEGUN 2026-07-04** (branch `kernel-k1`):
+      bare-metal bring-up K1–K7 (see Phase II · Kernel). No longer inherits Linux;
+      K1/K2/K3a green. Pulled forward from the far horizon — the sovereign kernel
+      is now under active construction, not deferred.
 - [ ] Network sovereignty / AegisNet — torrent-native, self-distributing,
       layered-encryption mix network
 - [ ] Encryption & meta-encryption layers (nested/onion routing, metadata privacy)
