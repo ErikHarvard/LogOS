@@ -2993,6 +2993,7 @@ check_meta "native VM" meta_vm.out
 cmp -s meta_host.out meta_vm.out || { echo "FAIL  metaglyph: native witnesses != C host witnesses"; ok=0; }
 rm -f meta_host.out meta_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
+    echo "NOTE  metaglyph: 4 of the 5 mode decompositions (⊗=▷(LOVE,RELATION), ⊕, ▷, ⊂) are ASSERTED principled assignments from each mode's ontological role — NOT derived; only 𝔑≡⊗ and κ=Recognition▷Form are spec-fixed (this check confirms the assignments are carried consistently, it does not derive them)"
     echo "PASS  metaglyph: the five modes + 𝔑 + κ + the evaluator 𝓡 carry glyph-identities (𝓜 ⊂ 𝒜 closed); 𝔑(𝔑) self-applies, ν* mints new operations — now USABLE combinators (MKOP lifts a minted operator-glyph into a binary mode; ν*(A,B)=⊗(▷(A,A),↻(B)), a new mode whose action its name fixes — item 3b), κ(κ) defined, 𝓡(𝓡)≡𝓡 idempotent + distinct (meta-monosemy), byte-identical on host and native VM"
 else
     exit 1
