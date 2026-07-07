@@ -761,7 +761,11 @@ glyph W2 = CANON(MC(KAPPA))
 glyph W3 = concat(LAW_ID(PRIM("LOVE"))("I")("x"))(concat(LAW_NC(PRIM("BEING"))(PRIM("VOID"))("N")("x"))(concat(LAW_EM(PRIM("BEING"))(PRIM("VOID"))("E")("x"))(IS(PRIM("BEING"))(PRIM("BEING"))("=")("x"))))
 glyph W4 = REN(G3)
 glyph W5 = concat("d=")(int_to_str(DEPTH(G3)))
-glyph W6 = AUTO_OK(G3)("A")("h")
+# W6: AUTO_OK is sound in BOTH directions — the autological glyph G3 is accepted (A),
+# and a HETEROLOGICAL monoglyph (name "FLOATING" ≠ its etymology κ = "BEING") is
+# REJECTED (h). The FALSE branch of the discriminator, never witnessed before.
+glyph HET = MONO("FLOATING")(PRIM("BEING"))
+glyph W6 = concat(AUTO_OK(G3)("A")("h"))(AUTO_OK(HET)("A")("h"))
 # W7: monosemic normalization — ⊕(A,B)≡⊕(B,A) (commutative) and ↻(BEING)≡SELF
 # (algebraic) collapse to one canonical glyph; ▷ stays directional → distinct.
 glyph W7 = concat(NORMK(CON(PRIM("B"))(PRIM("A"))))(concat(NIS(CON(PRIM("A"))(PRIM("B")))(CON(PRIM("B"))(PRIM("A")))("m")("x"))(concat(NORMK(MC(PRIM("BEING"))))(NIS(DIR(PRIM("A"))(PRIM("B")))(DIR(PRIM("B"))(PRIM("A")))("x")("d"))))
@@ -775,7 +779,7 @@ glyph W9 = concat(CANON(SR_TO))(concat("/")(concat(NIS(MC(SR_TO))(SR_TO)("=")("x
 glyph BAR = "|"
 glyph MAIN = print(concat(W1)(concat(BAR)(concat(W2)(concat(BAR)(concat(W3)(concat(BAR)(concat(W4)(concat(BAR)(concat(W5)(concat(BAR)(concat(W6)(concat(BAR)(concat(W7)(concat(BAR)(concat(W8)(concat(BAR)(W9)))))))))))))))))
 LA
-CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|A|⊕(A,B)mSELFd|1<⊕(A,B)|↻(DEPTH)/==d"
+CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|Ah|⊕(A,B)mSELFd|1<⊕(A,B)|↻(DEPTH)/==d"
 CKH="$(./tiny_host /tmp/canontest.la 2>/dev/null)"
 [ "$CKH" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ/etymology witness wrong on host"; printf 'got: %s\n' "$CKH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -787,7 +791,7 @@ CKV="$(./logos_secd 2>/dev/null)"
 rm -f /tmp/canontest.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  canon: SPEC GENERATEs/DEPLOYs canon.la, META_DEBUG verifies κ, IS (≡), the three laws, the etymology layer, and NORMK"
-    echo "PASS  canon: κ(κ) well-defined; etymology contained; NORMK collapses synonyms → monosemic; α=1 ontoglyph (sign IS referent), synonyms collapse to it; byte-identical host/VM"
+    echo "PASS  canon: κ(κ) well-defined; etymology contained; AUTO_OK sound BOTH ways — autological glyph accepted (A) AND heterological glyph (name ≠ its κ-etymology) REJECTED (h); NORMK collapses synonyms → monosemic; α=1 ontoglyph (sign IS referent), synonyms collapse to it; byte-identical host/VM"
 else
     printf '%s\n' "$CK"
     exit 1
