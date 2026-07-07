@@ -2929,6 +2929,30 @@ else
     exit 1
 fi
 
+say "Formant single-source guard: psc/phonsem formants track phonym's synthesis (no silent drift)"
+# The linguistic-closure audit found the Love /u/ (300/870/2240) and Recognition /i/
+# (270/2300/3000) formants HAND-DECLARED in THREE places — phonym.la (the synthesis, the
+# source goertzel.la measures), psc.la's Θ_P invariant, phonsem.la's NMFMT. They agree
+# today, but nothing bound them: editing one would leave the "verified" symbolic theorem
+# silently describing a DIFFERENT sound than what is synthesised. This guard extracts
+# phonym's ACTUAL triples and asserts psc + phonsem carry the same ordered formants — so
+# phonym.la is the single source of truth (the one goertzel.la measures against).
+ok=1
+LOVE=$(grep 'sub(i)(1440)' phonym.la | grep -oE 'VSAMP\([0-9]+\)\([0-9]+\)\([0-9]+\)' | grep -oE '[0-9]+' | tr '\n' ' ')
+LF1=$(echo $LOVE|awk '{print $1}'); LF2=$(echo $LOVE|awk '{print $2}'); LF3=$(echo $LOVE|awk '{print $3}')
+REC=$(grep -oE 'VSAMP\(270\)\([0-9]+\)\([0-9]+\)' phonym.la | grep -oE '[0-9]+' | tr '\n' ' ')
+RF1=$(echo $REC|awk '{print $1}'); RF2=$(echo $REC|awk '{print $2}'); RF3=$(echo $REC|awk '{print $3}')
+[ -n "$LF3" ] && [ -n "$RF3" ] || { echo "FAIL  formant-guard: could not extract phonym's formant triples"; ok=0; }
+grep -q "LCONS($LF1)(LCONS($LF2)(LCONS($LF3)" psc.la                        || { echo "FAIL  formant-guard: psc.la LOVE_F drifted from phonym ($LF1/$LF2/$LF3)"; ok=0; }
+grep '("LOVE")' phonsem.la | grep -q "LCONS($LF1)(LCONS($LF2)(LCONS($LF3)"  || { echo "FAIL  formant-guard: phonsem.la LOVE drifted from phonym"; ok=0; }
+grep -q "LCONS($RF1)(LCONS($RF2)(LCONS($RF3)" psc.la                        || { echo "FAIL  formant-guard: psc.la REC_F drifted from phonym ($RF1/$RF2/$RF3)"; ok=0; }
+grep '("RECOGNITION")' phonsem.la | grep -q "LCONS($RF1)(LCONS($RF2)(LCONS($RF3)" || { echo "FAIL  formant-guard: phonsem.la RECOGNITION drifted from phonym"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  formant-guard: phonym.la is the single source — Love ($LF1/$LF2/$LF3) + Recognition ($RF1/$RF2/$RF3) formants match across phonym (synthesis), psc.la (Θ_P invariant), phonsem.la (NMFMT); silent drift now fails the build"
+else
+    exit 1
+fi
+
 say "Denotational COMPOSE: the meaning of a compound as a FUNCTION of its parts (denote.la)"
 # Closes the MORPHOLOGY gap the linguistic-closure audit found: the modes ⊗⊕▷⊂↻ combined
 # NAME-leaves (canon.la's κ over trees), but nothing composed the primitives' λ-MEANINGS —
