@@ -521,9 +521,26 @@ printf 'glyph MAIN = print(int_to_str(ADD(MULTIPLY(6)(7))(SUBTRACT(10)(8))))\n' 
 GENOUT="$(./tiny_host /tmp/mathmod.la 2>/dev/null)"
 [ "$GENOUT" = "44" ] || { echo "FAIL  pipeline: generated module ran wrong ($GENOUT != 44)"; ok=0; }
 rm -f /tmp/mathmod.la math_generated.la
+# DEPLOY's verify-or-reject gate (K3b-era hardening): a module whose glyph FAILS
+# its own test must be REJECTED and the .la file never WRITTEN — the semantic twin
+# of the type-error rejection (previously a test-failing module was written with only
+# a "FAILED" report line, so "no unverified glyph enters" held only at autoloop's
+# STEP_OK, not DEPLOY). LIARG is well-typed (arity 1 = 1) but 4-1=3 != 5, so it fails.
+cat > /tmp/liar_spec.la <<'LA'
+import("specpipe.la")
+glyph E = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph LIAR = CONS(E("LIARG")(":: a -> a")("la x. sub(x)(1)")(la x. sub(x)(1))(CONS(PAIR(la g. int_to_str(g(4)))("5"))(NIL)))(NIL)
+glyph MAIN = print(DEPLOY(LIAR)("/tmp/liar_mod.la"))
+LA
+rm -f /tmp/liar_mod.la
+LR="$(./tiny_host /tmp/liar_spec.la 2>/dev/null)"
+printf '%s\n' "$LR" | grep -q "module REJECTED — verification failed" || { echo "FAIL  pipeline: test-failing module NOT rejected by DEPLOY"; ok=0; }
+[ -f /tmp/liar_mod.la ] && { echo "FAIL  pipeline: rejected (test-failing) module was written to disk anyway"; ok=0; }
+rm -f /tmp/liar_spec.la /tmp/liar_mod.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  pipeline: GENERATE emits .la source from a SPEC"
     echo "PASS  pipeline: DEPLOY writes the module + META_DEBUG verifies every generated glyph (ADD/SUBTRACT/MULTIPLY PASS)"
+    echo "PASS  pipeline: DEPLOY REJECTS a well-typed but test-failing module and writes no file (verify-or-reject, not verify-then-report)"
     echo "PASS  pipeline: the generated module runs on the host (ADD(MUL(6)(7))(SUB(10)(8)) = 44)"
 else
     printf '%s\n' "$PIPE"
@@ -2876,6 +2893,62 @@ cmp -s phonym_host.out phonym_vm.out     || { echo "FAIL  phonym: native PSC* wi
 rm -f phonyms.wav /tmp/phonyms_host.wav phonym_host.out phonym_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  phonym: nine primitive phonyms synthesised (formant + noise + burst) + PSC* GENERATES compound phonyms + the combination MODES spoken (𝓜 ⊂ 𝒜), byte-identical on host and native VM"
+else
+    exit 1
+fi
+
+say "Goertzel spectral oracle: phonym's formants MEASURED from the synthesis, not asserted (goertzel.la)"
+# The ACOUSTIC AUTO_OK. phonym.la claimed its formants are "spectrally verified to place
+# formants on target," but until now nothing in the repo ever measured the produced
+# sound — the claim was a comment. goertzel.la imports phonym's OWN oscillator/formant
+# synthesis (single source of truth, no drifting copy) and runs a pure fixed-point
+# integer Goertzel (a single-frequency DFT via a 2-tap recurrence, with an accurate
+# Bhaskara-sine coefficient) over the Love /u/ vowel: it asserts each declared formant
+# (F1 300, F2 870, F3 2240) dominates every off-target control bin (1350/3300/6700 — none
+# a formant or its harmonic) by >=50x, and that the analyzer detects a pure test tone
+# (its own autology). Integer-only, so byte-identical on the C host and the native VM.
+ok=1
+GZ_EXPECT="GTZL love /u/ [300 870 2240] formants>50x-control: 3/3 ; analyzer sine-detect@1000-vs-2500: T"
+GZH="$(./tiny_host goertzel.la 2>/dev/null)"
+[ "$GZH" = "$GZ_EXPECT" ] || { echo "FAIL  goertzel: host verdict wrong (got: $GZH)"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp goertzel.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+GZV="$(./logos_secd 2>/dev/null)"
+[ "$GZV" = "$GZ_EXPECT" ] || { echo "FAIL  goertzel: native VM verdict wrong (got: $GZV)"; ok=0; }
+[ "$GZH" = "$GZV" ]        || { echo "FAIL  goertzel: native != host"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  goertzel: integer Goertzel MEASURES phonym's Love /u/ formants (F1 300 / F2 870 / F3 2240) each >=50x every off-target control + analyzer self-detects a pure tone — 'spectrally verified' is now an actual test, byte-identical host and native VM"
+else
+    exit 1
+fi
+
+say "Denotational COMPOSE: the meaning of a compound as a FUNCTION of its parts (denote.la)"
+# Closes the MORPHOLOGY gap the linguistic-closure audit found: the modes ⊗⊕▷⊂↻ combined
+# NAME-leaves (canon.la's κ over trees), but nothing composed the primitives' λ-MEANINGS —
+# a compound was a recoverable tree, yet its meaning was NOT a function of its parts'.
+# denote.la's COMPOSE denotes each mode as a real operation on λ-terms (grounded in the nine
+# primitives' algebra), and MEANING is the homomorphism κ-tree → denotation, compositional
+# BY CONSTRUCTION. The flagship is that the homomorphism COMMUTES with κ: canon proves
+# ↻(BEING) ≡ SELF structurally, and denote proves ⟦↻⟧(BEING) = DEPTH(BEING) = BEING(BEING)
+# reduces to SELF denotationally — syntax-rewrite and semantic-reduction agree (Frege).
+# Pure λ, byte-identical on the C host and the native VM.
+ok=1
+DEN_EXPECT="DENOTE ⊗-recovers-both[BEING,VOID]:pq | ↻(BEING)≡SELF-denotationally:T | nested-⊗(↻BEING,VOID):rs"
+DENH="$(./tiny_host denote.la 2>/dev/null)"
+[ "$DENH" = "$DEN_EXPECT" ] || { echo "FAIL  denote: host verdict wrong (got: $DENH)"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp denote.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+DENV="$(./logos_secd 2>/dev/null)"
+[ "$DENV" = "$DEN_EXPECT" ] || { echo "FAIL  denote: native VM verdict wrong (got: $DENV)"; ok=0; }
+[ "$DENH" = "$DENV" ]       || { echo "FAIL  denote: native != host"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  denote: denotational COMPOSE — MEANING(⊗(BEING,VOID)) recovers BOTH parents (compositionality) + the κ→meaning homomorphism COMMUTES with canon's ↻(BEING)≡SELF (Fregean compositionality realised), byte-identical host and native VM"
 else
     exit 1
 fi

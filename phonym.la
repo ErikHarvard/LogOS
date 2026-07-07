@@ -67,7 +67,9 @@ glyph PHASEIDX = la i. la f. mod(div(div(mul(mul(i)(f))(1048576))(1000))(65536))
 
 # SINEK(k): a parabolic sine over one period (k 0..255) → amplitude ±10000.
 # Two half-lobes: 40000·k·(128−k)/16384 peaks at 10000; the second lobe negated.
-# (Spectrally verified to place formants on target, like a true sine table.)
+# Places the formants on target — now WITNESSED, not asserted: goertzel.la runs an
+# integer Goertzel over this synthesis and build.sh checks each declared formant
+# dominates the off-target bins ≥50× (the acoustic AUTO_OK), byte-identical host/VM.
 glyph SINEK = la k.
     IF(lt(k)(128))
         (la _. div(mul(mul(40000)(k))(sub(128)(k)))(16384))
@@ -104,6 +106,12 @@ glyph GLOTIDX = la i. la fA. la fB. la n.
 glyph VDYN = la F1. la F2. la F3. la fA. la fB. la ampA. la ampB. la n. la i.
     SHAPE(div(mul(VMIX(i)(F1)(F2)(F3))(add(SINEK(GLOTIDX(i)(fA)(fB)(n)))(10000)))(20000))
           (add(ampA)(div(mul(sub(ampB)(ampA))(i))(n)))(n)(i)
+
+# Export the synthesis substrate so goertzel.la (the spectral analyzer) reads the
+# SAME oscillator/formant synthesis this module renders — a single source of truth,
+# so the spectral test measures phonym's ACTUAL sound, not a drifting copy. Inert
+# for the standalone MAIN (export only affects importers).
+export SR PHASEIDX SINEK PSIN ENV SHAPE VMIX VSAMP VDYN NOISE NSAMP
 
 # NOISE(seed)(i): a deterministic stateless pseudo-random sample ±10000 (a
 # multiplicative hash of i — reproducible identically on host and VM).

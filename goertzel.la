@@ -1,0 +1,83 @@
+# ===================================================================
+#  goertzel.la — an integer Goertzel spectral analyzer for Lingua Adamica.
+#
+#  Closes the phonology honesty gap: phonym.la claims its formants are
+#  "spectrally verified to place formants on target," but nothing in the repo
+#  ever measured the produced sound — the claim was a comment. This module is
+#  the acoustic AUTO_OK: it reads the SAME oscillator/formant synthesis phonym.la
+#  renders (via import — single source of truth, no drifting copy) and MEASURES
+#  the energy at each declared formant frequency with a pure fixed-point integer
+#  Goertzel, so "spectrally verified" becomes an actual test, byte-identical on
+#  the C host and the SECD VM.
+#
+#  Goertzel: a single-frequency DFT via a 2-tap recurrence
+#    q0 = x[i] + 2cos(2πf/SR)·q1 − q2
+#  then power = q1² + q2² − 2cos(2πf/SR)·q1·q2. cos is taken from phonym's own
+#  SINEK table (a quarter period on), so the analyzer and the synthesizer share
+#  one notion of frequency.
+# ===================================================================
+
+import("phonym.la")          # SR, SINEK, PSIN, VMIX, VSAMP (the real synthesis)
+
+glyph Z  = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+
+# GIDX(f): the phase index (0..255, i.e. 0..2π) nearest to frequency f —
+# round(f·256/SR). SR/256 = 62.5 Hz resolution.
+glyph GIDX  = la f. div(add(mul(f)(256))(div(SR)(2)))(SR)
+# The Goertzel COEFFICIENT needs an ACCURATE cos (phonym's parabolic SINEK is ~7%
+# off at mid indices, which detunes the probe and kills the high-formant response).
+# Bhaskara's sine approximation (error <0.2%): sin(π·t/128) ≈ 16u/(81920−4u)·1e4,
+# u = t(128−t), t in 0..128; reflected for the negative half. Analysis-internal —
+# the SIGNAL analyzed is still phonym's own VMIX/VSAMP.
+glyph BSIN  = la t. (la u. div(mul(160000)(u))(sub(81920)(mul(4)(u))))(mul(t)(sub(128)(t)))
+glyph GSIN  = la k. IF(lt(k)(128))(la _. BSIN(k))(la _. sub(0)(BSIN(sub(k)(128))))
+glyph GCOS  = la f. GSIN(mod(add(GIDX(f))(64))(256))   # cos(2πf/SR)·10000, a quarter period on
+glyph GCOEFF = la f. mul(2)(GCOS(f))          # 2cos(2πf/SR), scale 1/10000, in ±20000
+
+# GFOLD: run the Goertzel recurrence over gen(0..n-1). State threads PAIR(q1)(q2).
+glyph GFOLD = Z(la self. la gen. la coeff. la n. la i. la st.
+    IF(int_eq(i)(n))(la _. st)(la _.
+        (la q1. (la q2.
+            self(gen)(coeff)(n)(add(i)(1))
+                (PAIR(sub(add(gen(i))(div(mul(coeff)(q1))(10000)))(q2))(q1)))
+         (SND(st)))(FST(st))))
+# GPOWER(gen)(n)(f): Goertzel power of gen over n samples at frequency f, scaled
+# down by 1e6 to keep the printed magnitudes small (relative comparison is what matters).
+glyph GPOWER = la gen. la n. la f.
+    (la coeff. (la st.
+        (la q1. (la q2.
+            div(sub(add(mul(q1)(q1))(mul(q2)(q2)))(mul(div(mul(coeff)(q1))(10000))(q2)))(1000000))
+         (SND(st)))(FST(st)))
+     (GFOLD(gen)(coeff)(n)(0)(PAIR(0)(0))))
+    (GCOEFF(f))
+
+glyph N = 512
+glyph SINEGEN = la ftest. la i. PSIN(i)(ftest)          # a pure test tone
+glyph LOVEGEN = la i. VMIX(i)(300)(870)(2240)           # Love /u/ : F1 300, F2 870, F3 2240
+
+# ── the acoustic AUTO_OK: measure phonym's OWN synthesis, report the count ──
+glyph K   = 50                                   # a formant must beat every control by ≥50×
+glyph MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph GT  = la a. la b. lt(b)(a)                  # a > b (Church bool)
+glyph B2I = la b. b(1)(0)                          # Church bool → 1/0
+glyph BSTR = la b. b("T")("F")
+# CMAX = the loudest off-target control bin (1350/3300/6700 — none a formant/harmonic).
+glyph CMAX = MAXI(MAXI(GPOWER(LOVEGEN)(N)(1350))(GPOWER(LOVEGEN)(N)(3300)))(GPOWER(LOVEGEN)(N)(6700))
+glyph DOM = la fpow. GT(fpow)(mul(K)(CMAX))       # does this formant dominate every control ≥K×?
+glyph MAIN =
+  (la cmax.
+   (la ndom.
+    (la sdetect.
+      print(concat("GTZL love /u/ [300 870 2240] formants>50x-control: ")
+           (concat(int_to_str(ndom))
+           (concat("/3 ; analyzer sine-detect@1000-vs-2500: ")
+                  (BSTR(sdetect)))))
+    )(GT(GPOWER(SINEGEN(1000))(N)(1000))(mul(100)(GPOWER(SINEGEN(1000))(N)(2500))))
+   )(add(add(B2I(DOM(GPOWER(LOVEGEN)(N)(300))))
+          (B2I(DOM(GPOWER(LOVEGEN)(N)(870)))))
+      (B2I(DOM(GPOWER(LOVEGEN)(N)(2240)))))
+  )(CMAX)

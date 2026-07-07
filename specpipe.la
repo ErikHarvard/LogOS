@@ -198,16 +198,22 @@ glyph DEPLOY = la spec. la path.
       (la tcreport.
         IF(TYPES_OK(spec)(src))
           (la _.
-            SEQ(write_file(path)(src))
-              ((la ondisk.
+            IF(ALL_OK(spec))
+              (la _.
+                SEQ(write_file(path)(src))
+                  ((la ondisk.
+                    CAT(CONS(concat("TYPECHECK (compile-time, on the generated source):\n")(tcreport))
+                       (CONS(concat("deployed -> ")(concat(path)("\n")))
+                       (CONS(concat("META_DEBUG (test cases run on each generated glyph):\n")(META_DEBUG(spec)))
+                       (CONS(concat("on-disk file == generated source: ")(concat(BOOL_STR(str_eq(ondisk)(src)))("\n")))
+                       (CONS("RESULT: module VERIFIED — every glyph passed its spec\n")
+                       (NIL)))))))
+                   (read_file(path))))
+              (la _.
                 CAT(CONS(concat("TYPECHECK (compile-time, on the generated source):\n")(tcreport))
-                   (CONS(concat("deployed -> ")(concat(path)("\n")))
                    (CONS(concat("META_DEBUG (test cases run on each generated glyph):\n")(META_DEBUG(spec)))
-                   (CONS(concat("on-disk file == generated source: ")(concat(BOOL_STR(str_eq(ondisk)(src)))("\n")))
-                   (CONS(IF(ALL_OK(spec))(la _. "RESULT: module VERIFIED — every glyph passed its spec\n")
-                                         (la _. "RESULT: module FAILED verification\n"))
-                   (NIL)))))))
-               (read_file(path))))
+                   (CONS(concat("RESULT: module REJECTED — verification failed (a glyph did not pass its spec); ")(concat(path)(" not written\n")))
+                   (NIL))))))
           (la _.
             CAT(CONS(concat("TYPECHECK (compile-time, on the generated source):\n")(tcreport))
                (CONS(concat("RESULT: module REJECTED — type error(s); ")(concat(path)(" not written\n")))

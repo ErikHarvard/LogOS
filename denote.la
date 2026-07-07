@@ -1,0 +1,96 @@
+# ===================================================================
+#  denote.la — the DENOTATIONAL semantics of the combination modes:
+#  the meaning of a compound glyph as a FUNCTION of its constituents'
+#  meanings (Fregean compositionality).
+#
+#  The morphology gap the linguistic-closure audit found: the five modes
+#  ⊗⊕▷⊂↻ combine primitive NAME-leaves (structure — canon.la's κ over trees),
+#  but nothing ever composed the primitives' λ-MEANINGS (denotation). A compound
+#  was a recoverable tree, yet its meaning was NOT a function of its parts'.
+#
+#  Here COMPOSE denotes each mode as a real operation on λ-terms, grounded in the
+#  nine primitives' own algebra, and MEANING is the homomorphism κ-tree → meaning,
+#  compositional BY CONSTRUCTION: MEANING(M(a,b)) = ⟦M⟧(MEANING a)(MEANING b).
+#
+#  The flagship: the homomorphism COMMUTES with κ on the documented rewrite.
+#  Structurally canon.la proves ↻(BEING) ≡ SELF (the ↻(BEING)→SELF rewrite);
+#  denotationally ⟦↻⟧(BEING) = DEPTH(BEING) = BEING(BEING) — which IS SELF by its
+#  definition. Syntax-rewrite and semantic-reduction agree: Frege realised.
+#  Pure λ, so byte-identical on the C host and the SECD VM.
+# ===================================================================
+
+glyph Z  = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph FST = la a. la b. a
+glyph SND = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+
+# ── the nine primitive MEANINGS (the closed algebra; canonical in primitives.la) ──
+glyph BEING       = la self. self
+glyph RELATION    = la a. la b. la f. f(a)(b)
+glyph RECOGNITION = la x. RELATION(x)(x)
+glyph LOVE        = la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))
+glyph SELF        = BEING(BEING)
+glyph VOID        = la a. la b. b
+glyph BECOMING    = la n. la f. la x. f(n(f)(x))
+glyph FORM        = la x. la k. k(x)
+glyph DEPTH       = la g. g(g)
+
+# ── COMPOSE: the five modes DENOTED as operations on meanings (grounded roles) ──
+#   ⊗ interpenetration  : the two-place link — both present, each recoverable (RELATION)
+#   ⊕ co-presence       : reciprocal — RELATION symmetrised (LOVE); distinct from ⊗
+#   ▷ directional       : a acts on b (application)
+#   ⊂ containment       : a sealed in a FORM, b the accessor  (FORM(a)(b) = b(a))
+#   ↻ metacursion       : self-fold a(a) (DEPTH)
+glyph D_SYN  = la a. la b. RELATION(a)(b)
+glyph D_CON  = la a. la b. LOVE(a)(b)
+glyph D_DIR  = la a. la b. a(b)
+glyph D_CONT = la a. la b. FORM(a)(b)
+glyph D_MC   = la a. DEPTH(a)
+
+# ── the Scott mode-nodes (the SAME shape canon.la walks), over primitive NAMES ──
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+
+# leaf: a primitive NAME → its MEANING
+glyph LOOKUP = la nm.
+    IF(str_eq(nm)("BEING"))(la _. BEING)(la _.
+    IF(str_eq(nm)("VOID"))(la _. VOID)(la _.
+    IF(str_eq(nm)("RELATION"))(la _. RELATION)(la _.
+    IF(str_eq(nm)("RECOGNITION"))(la _. RECOGNITION)(la _.
+    IF(str_eq(nm)("LOVE"))(la _. LOVE)(la _.
+    IF(str_eq(nm)("SELF"))(la _. SELF)(la _.
+    IF(str_eq(nm)("BECOMING"))(la _. BECOMING)(la _.
+    IF(str_eq(nm)("FORM"))(la _. FORM)(la _.
+    DEPTH))))))))
+
+# MEANING: the homomorphism κ-tree → denotation. The meaning of the whole is
+# COMPOSE applied to the meanings of the parts (Frege), recursing into sub-trees.
+glyph MEANING = Z(la self. la node.
+    node (la nm. LOOKUP(nm))
+         (la a. la b. D_SYN(self(a))(self(b)))
+         (la a. la b. D_CON(self(a))(self(b)))
+         (la a. la b. D_DIR(self(a))(self(b)))
+         (la a. la b. D_CONT(self(a))(self(b)))
+         (la a. D_MC(self(a))))
+
+# ── witnesses (observable behaviour, byte-identical host==VM) ──
+# W_SYN — ⊗ is COMPOSITIONAL: MEANING(⊗(BEING,VOID)) recovers BOTH parents.
+glyph C_SYN  = MEANING(SYN(PRIM("BEING"))(PRIM("VOID")))
+glyph W_SYN  = concat(C_SYN(FST)("p"))(C_SYN(SND)("x")("q"))       # BEING→"p", VOID→"q" ⇒ "pq"
+# W_MC — the homomorphism COMMUTES with κ: MEANING(↻(BEING)) behaves as SELF.
+glyph C_MC   = MEANING(MC(PRIM("BEING")))                          # = DEPTH(BEING) = BEING(BEING)
+glyph W_MC   = BSTR(str_eq(C_MC("z"))(SELF("z")))                  # both "z" ⇒ "T"
+# W_NEST — the homomorphism RECURSES: MEANING(⊗(↻(BEING),VOID)) denotes the ↻
+# subtree as SELF and still recovers both parts.
+glyph C_NEST = MEANING(SYN(MC(PRIM("BEING")))(PRIM("VOID")))
+glyph W_NEST = concat(C_NEST(FST)("r"))(C_NEST(SND)("x")("s"))     # SELF→"r", VOID→"s" ⇒ "rs"
+
+glyph MAIN = print(
+    concat("DENOTE ⊗-recovers-both[BEING,VOID]:")(concat(W_SYN)(
+    concat(" | ↻(BEING)≡SELF-denotationally:")(concat(W_MC)(
+    concat(" | nested-⊗(↻BEING,VOID):")(W_NEST))))))
