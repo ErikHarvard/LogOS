@@ -744,7 +744,7 @@ printf '%s\n' "$CK" | grep -q "module VERIFIED" || { echo "FAIL  canon: module n
 for G in TRUE FALSE NOT AND OR IS LAW_ID LAW_NC LAW_EM IF MAX MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE DEPTH AUTO_OK; do
     printf '%s\n' "$CK" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  canon: $G not type-checked OK"; ok=0; }
 done
-for G in PRIM SYN CON DIR CONT MC CANON KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH SR_FOR SR_WITH TDEPTH BYTE_LT LE WRAP2 SORT2 REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
+for G in PRIM SYN CON DIR CONT MC CANON KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH SR_FOR SR_WITH TDEPTH BYTE_LT LE WRAP2 SORT2 HAS_PREFIX REWRITE_MC NORMK NIS IS_ALPHA1 ALPHA1; do
     printf '%s\n' "$CK" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  canon: $G not reported untyped/trusted"; ok=0; }
 done
 # Run the GENERATED canon.la stand-alone. The witness has three parts joined by
@@ -776,10 +776,16 @@ glyph W8 = concat(IS_ALPHA1(CON(PRIM("A"))(PRIM("B")))("1")("<"))(concat(IS_ALPH
 # each is a metacursive fixed point SR(SR) ≡ SR; distinct self-relations are distinct
 # glyphs (SR_AS ≢ SR_FROM). "↻(DEPTH)" then "=" (SR_TO autological) "=" (SR_BY) "d" (SR_AS≠SR_FROM).
 glyph W9 = concat(CANON(SR_TO))(concat("/")(concat(NIS(MC(SR_TO))(SR_TO)("=")("x"))(concat(NIS(MC(SR_BY))(SR_BY)("=")("x"))(IS(SR_AS)(SR_FROM)("x")("d")))))
+# WGEN: the FALSIFIABLE structural witness for the shape-keyed idempotence fold —
+# ↻(↻Y)≡↻Y for a FRESH Y (⊗(BEING,FORM)) that is in NO rewrite table. The OLD
+# name-keyed REWRITE_MC would wrap it to ↻(↻(...)) (→ "no"); the SHAPE-keyed rule
+# (HAS_PREFIX(x)("↻(")) folds it (→ "FOLD"). So the fixed point lives in the FORM,
+# not an external lookup — de-heterologised, and the witness can FAIL, not tautologise.
+glyph WGEN = NIS(MC(MC(SYN(PRIM("BEING"))(PRIM("FORM")))))(MC(SYN(PRIM("BEING"))(PRIM("FORM"))))("FOLD")("no")
 glyph BAR = "|"
-glyph MAIN = print(concat(W1)(concat(BAR)(concat(W2)(concat(BAR)(concat(W3)(concat(BAR)(concat(W4)(concat(BAR)(concat(W5)(concat(BAR)(concat(W6)(concat(BAR)(concat(W7)(concat(BAR)(concat(W8)(concat(BAR)(W9)))))))))))))))))
+glyph MAIN = print(concat(W1)(concat(BAR)(concat(W2)(concat(BAR)(concat(W3)(concat(BAR)(concat(W4)(concat(BAR)(concat(W5)(concat(BAR)(concat(W6)(concat(BAR)(concat(W7)(concat(BAR)(concat(W8)(concat(BAR)(concat(W9)(concat(" ||gen:")(WGEN)))))))))))))))))))
 LA
-CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|Ah|⊕(A,B)mSELFd|1<⊕(A,B)|↻(DEPTH)/==d"
+CANON_EXPECT="⊂(↻(DEPTH),⊗(BEING,FORM))|↻(▷(RECOGNITION,FORM))|INE=|▷(⊗(BEING,VOID),FORM)|d=2|Ah|⊕(A,B)mSELFd|1<⊕(A,B)|↻(DEPTH)/==d ||gen:FOLD"
 CKH="$(./tiny_host /tmp/canontest.la 2>/dev/null)"
 [ "$CKH" = "$CANON_EXPECT" ] || { echo "FAIL  canon: κ/etymology witness wrong on host"; printf 'got: %s\n' "$CKH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -792,6 +798,7 @@ rm -f /tmp/canontest.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  canon: SPEC GENERATEs/DEPLOYs canon.la, META_DEBUG verifies κ, IS (≡), the three laws, the etymology layer, and NORMK"
     echo "PASS  canon: κ(κ) well-defined; etymology contained; AUTO_OK sound BOTH ways — autological glyph accepted (A) AND heterological glyph (name ≠ its κ-etymology) REJECTED (h); NORMK collapses synonyms → monosemic; α=1 ontoglyph (sign IS referent), synonyms collapse to it; byte-identical host/VM"
+    echo "PASS  canon: metacursion-idempotence ↻(↻Y)≡↻Y is now SHAPE-keyed (HAS_PREFIX), not a name table — folds a FRESH Y in no table (gen:FOLD, a falsifiable structural witness the old name-keyed rule would fail), so the fixed point lives in the FORM (de-heterologised, the etymology standard applied to the self-relations)"
 else
     printf '%s\n' "$CK"
     exit 1
