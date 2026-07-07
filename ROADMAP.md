@@ -89,9 +89,16 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
   - [x] K3a — physical memory manager, pure-logic core (parse the multiboot mmap →
         largest arena → bump + free-stack frame allocator); verified **host==native**
         (the strong oracle — the PMM policy is pure logic). (`8ad0007`)
-  - [ ] K3b — wire the REAL memory map on the metal: `MB_FLAGS|=0x2` + thread the
-        mbi pointer + a new `peek(addr)` runtime builtin (first native_codegen3
-        extension for the kernel)
+  - [x] K3b — wire the REAL memory map on the metal: `MB_FLAGS|=0x2` requests the
+        map, `boot.asm` threads the mbi pointer (EBX) to a fixed scratch (0x300000),
+        and the new `peek(addr)` runtime builtin (first native_codegen3 extension —
+        `rt_peek`, native-only) lets `pmm_metal.la` walk the loader's REAL mmap via
+        `peek`: largest arena 0x100000, first frame allocated. QEMU-gated
+        (`gate_k3b.sh`). Two substrate bugs fixed en route: the runtime stack guard
+        assumes a Linux-sized 8 MiB stack (underflowed on the metal → LA image now
+        gets a tall stack at 0x8000000); and `RTLEN` must track the runtime byte
+        length (a 23-byte skew silently truncated the Linux-ELF path, invisible to
+        the metal `incbin`).
   - [ ] K4 — virtual memory: 4-level paging, map/unmap, W^X + NX, higher-half
         kernel, the LA heap backed by real PMM frames
   - [ ] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler

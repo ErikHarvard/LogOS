@@ -30,10 +30,29 @@ COM1        equ 0x3F8
 DBG_EXIT    equ 0xF4          ; QEMU isa-debug-exit port
 DBG_OK      equ 0x10          ; -> QEMU exit code (0x10<<1)|1 = 33 = success
 
+; K3b: the LA image's stack top. The native_codegen3 runtime arms a soft stack
+; guard at STACK_LIMIT = STACK_BASE - 7 MiB (STACK_BASE = the rsp it starts
+; with), sized for the Linux 8 MiB stack. On the metal we must give it an
+; equally-tall stack whose base is > 7 MiB, or that subtraction underflows and
+; the guard misfires immediately. 0x8000000 (128 MiB) is identity-mapped RAM
+; above the LA image (4 MiB), its GC worklist (~4-68 MiB) and heap use, giving
+; a full 7 MiB stack with no underflow. (Requires QEMU -m >= 160 or so; the
+; gates use 256.) The 32-bit trampoline still uses the small boot_stack.
+LA_STACK_TOP equ 0x8000000
+
 ; ---- Multiboot1 header (must live in the first 8 KiB of the file) ----
+; K3b: flag bit 1 (0x2) = "the loader must pass memory information" (mem_* +
+; the full mmap) in the multiboot info structure. We then thread that mbi
+; pointer to the LA image so pmm_metal.la reads the REAL map via peek().
 MB_MAGIC    equ 0x1BADB002
-MB_FLAGS    equ 0x00000000
+MB_FLAGS    equ 0x00000002
 MB_CHECK    equ -(MB_MAGIC + MB_FLAGS)
+
+; K3b: fixed, reserved scratch word for the threaded mbi pointer. 0x300000
+; (3 MiB) is identity-mapped low RAM in the unused gap between the boot segment
+; (~1 MiB) and the LA image (4 MiB) — the loader never lands the mbi/mmap here.
+; boot.asm writes EBX here; the LA image peeks it (MBI_SAVE = 3145728).
+MBI_SAVE    equ 0x300000
 
 section .multiboot
 align 4
@@ -49,6 +68,11 @@ bits 32
 global _start
 _start:
     cli
+    ; K3b: the multiboot loader hands us EBX = physical addr of the multiboot
+    ; info structure. Save it to the fixed scratch BEFORE anything can clobber
+    ; it. Paging is off here, so this is a plain physical write to RAM; once the
+    ; identity map is live the LA image peeks the same physical byte.
+    mov     [MBI_SAVE], ebx
     mov     esp, boot_stack_top     ; a real stack for the 32-bit phase
 
     ; --- build 4-level page tables: identity-map the low 1 GiB ---
@@ -113,7 +137,7 @@ long_start:
     mov     es, ax
     mov     fs, ax
     mov     gs, ax
-    mov     rsp, boot_stack_top
+    mov     rsp, LA_STACK_TOP       ; K3b: tall stack for the LA image's guard
 
     ; --- SYSCALL substrate ---
     ; STAR[47:32] = kernel CS base for syscall: CS=sel, SS=sel+8.

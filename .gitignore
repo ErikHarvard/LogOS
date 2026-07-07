@@ -60,3 +60,5 @@ mathutil.la
 /kernel/kernel64.elf
 /kernel/kernel_fault.elf
 /kernel/kernel_fault64.elf
+/kernel/kernel_pmm.elf
+/kernel/kernel_pmm64.elf

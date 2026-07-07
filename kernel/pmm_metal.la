@@ -1,0 +1,97 @@
+# ===================================================================
+#  LogOS kernel — K3b: physical memory manager on the METAL.
+#
+#  K3a proved the PMM *policy* is pure logic (host==native on a SYNTHETIC
+#  mmap string). K3b wires that same policy to the REAL multiboot memory map:
+#    - boot.asm sets MB_FLAGS|=0x2 (loader must pass memory info) and threads
+#      the multiboot-info (mbi) pointer to the fixed scratch MBI_SAVE=0x300000.
+#    - the new `peek(addr)` runtime builtin reads one byte of identity-mapped
+#      physical RAM, so the SAME PARSE_MMAP -> largest arena -> allocator logic
+#      now walks the loader's real map instead of a string.
+#  MAIN prints the largest usable arena's base over serial; the QEMU gate
+#  asserts it is 0x100000 (1 MiB) — the standard start of usable PC RAM — read
+#  from the REAL map, then a clean exit. b_τ ≡ f_τ to the metal.
+#
+#  This is native-only (peek reads bare physical addresses): compiled by
+#  native_codegen3, run on bare metal under QEMU. Verified in QEMU, not
+#  host==native (that strong oracle is K3a's — the policy is unchanged here).
+# ===================================================================
+
+# ── Church/Scott plumbing (native_codegen3 is import-free) ──
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph NIL = la c. la n. n
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+glyph IS_CONS = la l. l(la h. la t. TRUE)(FALSE)
+glyph HD = la l. l(la h. la t. h)(NIL)
+glyph TL = la l. l(la h. la t. t)(NIL)
+glyph FRAME = 4096
+
+# The threaded multiboot-info pointer lives here (boot.asm: mov [0x300000], ebx).
+glyph MBI_SAVE = 3145728
+
+# ── little-endian reader over MEMORY (via peek) ──
+# RDMEM(addr)(k): read a k-byte little-endian unsigned int starting at addr.
+# This is the metal twin of pmm.la's RD-over-string: peek replaces BYTE.
+glyph RDMEM = Z(la self. la addr. la k.
+    IF(int_eq(k)(0))(la _. 0)(la _.
+        add(peek(addr))(mul(256)(self(add(addr)(1))(sub(k)(1))))))
+
+# ── parse the REAL multiboot1 memory map ──
+# base = mmap_addr; walk [base, base+total). Each entry (identical layout to
+# the K3a synthetic): size:u32 @0 (excludes itself, stride = size+4),
+# base_addr:u64 @4, length:u64 @12, type:u32 @20 (type==1 is available RAM).
+# Returns a list of PAIR(base)(length) for the usable regions.
+glyph PARSE_MMAP = Z(la self. la base. la off. la total.
+    IF(NOT(lt(off)(total)))(la _. NIL)(la _.
+        (la ea. (la size. (la stride. (la rbase. (la len. (la typ. (la rest.
+            IF(int_eq(typ)(1))(la _. CONS(PAIR(rbase)(len))(rest))(la _. rest)
+        )(self(base)(add(off)(stride))(total)) )(RDMEM(add(ea)(20))(4)) )(RDMEM(add(ea)(12))(8)) )(RDMEM(add(ea)(4))(8)) )(add(RDMEM(ea)(4))(4)) )(RDMEM(ea)(4)) )(add(base)(off)) ))
+
+# ── pick the largest usable region as the arena (K3a policy, unchanged) ──
+glyph MAX_REGION = Z(la self. la regs. la best.
+    IF(IS_CONS(regs))(la _.
+        (la r. self(TL(regs))(IF(lt(SND(best))(SND(r)))(la _. r)(la _. best)))(HD(regs))
+    )(la _. best))
+glyph ARENA = la regs. MAX_REGION(TL(regs))(HD(regs))   # base+length of largest
+
+# ── allocator state = PAIR(next)(free_stack); next bumps, stack reused first ──
+glyph ALIGN_UP = la n. mul(div(add(n)(sub(FRAME)(1)))(FRAME))(FRAME)
+glyph PMM_INIT = la arena. PAIR(ALIGN_UP(FST(arena)))(NIL)
+glyph PMM_ALLOC = la st.
+    (la next. (la stk.
+        IF(IS_CONS(stk))(la _. PAIR(HD(stk))(PAIR(next)(TL(stk))))(la _.
+            PAIR(next)(PAIR(add(next)(FRAME))(stk))))
+    (SND(st)))(FST(st))
+
+# ── drive it on the REAL map ──
+# Read the mbi pointer from the scratch (4-byte physical addr the loader gave),
+# then mmap_length @44 and mmap_addr @48, walk, pick the arena, allocate the
+# first frame. Print a serial-greppable line with the arena base and that frame.
+glyph SHOWN = la label. la n. print(concat(label)(int_to_str(n)))
+# Read the mbi pointer from the scratch (the loader gave us a 4-byte phys addr),
+# then mmap_length @44 and mmap_addr @48, walk the REAL map, pick the largest
+# usable arena, allocate its first frame, and print both over serial.
+glyph MAIN =
+    (la mbi.
+    (la mlen.
+    (la maddr.
+    (la regions.
+    (la arena.
+    (la r1.
+        (la _.
+            SHOWN("K3B FRAME ")(FST(r1))
+        )(SHOWN("K3B ARENA ")(FST(arena)))
+    )(PMM_ALLOC(PMM_INIT(arena)))
+    )(ARENA(regions))
+    )(PARSE_MMAP(maddr)(0)(mlen))
+    )(RDMEM(add(mbi)(48))(4))
+    )(RDMEM(add(mbi)(44))(4))
+    )(RDMEM(MBI_SAVE)(4))

@@ -1472,3 +1472,19 @@ numend:   equ numbuf + 40
 pathbuf:  times 4096 db 0       ; 3c.3 write_exec / 3e read_file: NUL-term path scratch
 proc_self_exe: db "/proc/self/exe", 0   ; 3e copy_self source
 cs_target:     db "new_logos_native.bin", 0  ; 3e copy_self target (native lineage)
+
+; ── K3b: rt_peek(INT addr) -> INT byte at that address ──────────────────────
+;   The first native_codegen3 extension for the kernel. peek reads ONE byte of
+;   physical/identity-mapped memory so the LA image can walk the REAL multiboot
+;   memory map (mbi -> mmap_addr -> entries) that boot.asm threaded in — the
+;   b_τ ≡ f_τ metal wiring of the K3a pure-logic PMM. Native-only, like the
+;   SECD VM's syscall builtins (unbound on the C host: the host never reads bare
+;   physical addresses; the metal path is verified in QEMU, not host==native).
+;   Appended AFTER the data area so only LITERAL_BASE shifts — no other fixed
+;   runtime/data address moves. Arg is an INT (tag 4); anything else halts loud.
+rt_peek:
+    cmp     qword [rax], 4      ; arg must be a boxed INT (an address), else loud halt
+    jne     rt_not_int
+    mov     rax, [rax+8]        ; the raw address integer
+    movzx   rax, byte [rax]     ; read the byte there (0..255)
+    jmp     rt_box_int          ; -> boxed INT, composes with add/mul in the LA map walk
