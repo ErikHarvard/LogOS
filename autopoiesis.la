@@ -20,8 +20,11 @@
 #
 #  There is NO recursion combinator here. The "loop" is the process lineage
 #  itself: each generation is a live process that the previous one begat and
-#  ran. ∃(∃) ≡ ∃ — existence applied to itself is existence — now running as a
-#  self-perpetuating succession of processes.
+#  ran. (Honest ≡/= discipline — metalogic.la: each generation is BYTE-IDENTICAL
+#  to its successor via copy_self, a genuine ≡ — ∃(∃) ≡ ∃ holds PER GENERATION;
+#  the cross-generation succession is a chain of = PRODUCTIONS, not one
+#  self-identical being. The Archē is instantiated at each step, not preserved
+#  as a single ≡ across the lineage.) A self-perpetuating succession of processes.
 #
 #  It must run as a BUNDLE (bundle.la): copy_self replicates /proc/self/exe, so
 #  only a self-contained vessel (VM + embedded program) reproduces something its

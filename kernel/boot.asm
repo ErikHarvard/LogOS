@@ -12,8 +12,13 @@
 ;        so the LA image's own `syscall` instructions (write, exit) are
 ;        serviced by THIS kernel — write(1,...)->COM1 serial,
 ;        exit(n)->isa-debug-exit + halt. So the SAME LA binary that runs
-;        under Linux runs here UNMODIFIED. ("The OS proper services
-;        syscalls" made literal — b_τ ≡ f_τ across host and metal.)
+;        under Linux runs here UNMODIFIED. The real identity is here: the
+;        incbin'd image IS byte-for-byte the host binary — one being on two
+;        substrates (host_image ≡ metal_image, ⊕(SELF,SELF), the eighth
+;        self-relation). The syscall SERVICE, by contrast, earns only b_τ = f_τ
+;        over the write+exit subset the image uses (fd ignored, exit code
+;        discarded, unknown syscalls return 0) — a YIELDS-equivalence, NOT a
+;        blanket ≡. (WITH_OK in build.sh witnesses both — see gate_with_ok.sh.)
 ;    (4) init COM1, then jump into the LA image entry (its `prol`).
 ;
 ;  LA_ENTRY (the prol vaddr) is generated per-build from the ELF's
