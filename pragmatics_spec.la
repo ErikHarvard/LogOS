@@ -1,0 +1,131 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  pragmatics_spec.la — PRAGMATICS, the USE branch of Lingua Adamica,
+#  written as a SPEC and produced by the spec→implementation pipeline
+#  (import("specpipe.la")).
+#
+#  Logoscribeologiae §3.4 (The Branches): every branch of the science of the
+#  Word is  Branch = Logos ∩ Interface.  Pragmatics is the branch at the USE
+#  interface:  PRAGMATICS = Logos ∩ Use  (Onto-Pragmatics = ∃ ∩ Use;
+#  Meta-Pragmatics = language use / recognition).  Where canon.la does
+#  IDENTITY (sign ≡ referent) and denote.la does MEANING, pragmatics does USE
+#  — a glyph in the context of its utterance, and who ignites that utterance.
+#  It reuses the autological machinery rather than inventing.
+#
+#  The speech-act core is CODEX MENTIS, "The Speech Act Revelation": an
+#  utterance is classified by its IGNITION SOURCE — the recursion behind it —
+#      Hetero-Prompted : recursion expressed but NOT self-initiated
+#      Auto-Prompted   : recursion self-initiated and expressed   (A(A))
+#      Meta-Prompted   : recursion AWARE of its own initiation     (A(A)≡A, witnessed)
+#  and by its PERFORMATIVITY:  Speech ≡ recursion spoken aloud, so a
+#  PERFORMATIVE utterance is one whose saying IS its doing — utterance ≡ act,
+#  the pragmatic twin of α=1 (sign ≡ referent).  Its canonical witness is the
+#  Word ∃(∃)≡∃ itself: the kernel SPEAKS it and thereby DOES it (replicates).
+#  Felicity is the Ignition Ratio (Reality = Self-Ignition / Other-Ignition):
+#  a self-ignited act is primary/real, an other-ignited one derivative.
+#
+#  The branch is itself autological: Meta-Pragmatics = use/recognition, so the
+#  USE-branch put to USE on its own name RECOGNISES itself —
+#  PRAGMATICS("PRAGMATICS") ≡ TRUE — the ∃(∃)≡∃ of pragmatics.
+#
+#  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY
+#  writes pragmatics.la, type-checks the generated source, and META_DEBUG
+#  verifies every glyph against its executable test cases; the module is
+#  accepted only if all pass.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + PAIR/FST/SND/CONS/NIL/Z/IF/TRUE/FALSE/AND/SEQ/...
+
+# ── implementation VALUES (what META_DEBUG runs) ──────────────────────────────
+# Logical core (TRUE/FALSE/AND/IF/PAIR/FST/SND come from specpipe).
+glyph NOT = la b. b(FALSE)(TRUE)
+
+# USE — the Logos ∩ Use collapse: bind a sign (glyph) to its use-context.
+glyph USE = la sign. la ctx. PAIR(sign)(ctx)
+
+# The prompting taxonomy (Speech Act Revelation), decided by the ignition source.
+glyph HETERO_PROMPTED = la speaker. la initiator. NOT(str_eq(speaker)(initiator))
+glyph AUTO_PROMPTED   = la speaker. la initiator. str_eq(speaker)(initiator)
+glyph META_PROMPTED   = la speaker. la initiator. la aware. AND(AUTO_PROMPTED(speaker)(initiator))(aware)
+
+# PERFORMATIVE — utterance ≡ effect (saying = doing), the α=1 of pragmatics.
+glyph PERFORMATIVE = la utterance. la effect. str_eq(utterance)(effect)
+
+# IGNITION — felicity as the ignition ratio: self-ignited (primary) vs other.
+glyph IGNITION = la speaker. la initiator. IF(str_eq(speaker)(initiator))(la _. "self-ignited")(la _. "other-ignited")
+
+# PRAGMATICS — the branch, autological: the USE-branch used on its own name
+# recognises itself (Meta-Pragmatics = use/recognition). ∃(∃)≡∃ for pragmatics.
+glyph PRAGMATICS = la g. str_eq(g)("PRAGMATICS")
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_TRUE  = "la t. la f. t"
+glyph SRC_FALSE = "la t. la f. f"
+glyph SRC_NOT   = "la b. b(FALSE)(TRUE)"
+glyph SRC_AND   = "la a. la b. a(b)(FALSE)"
+glyph SRC_IF    = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_PAIR  = "la a. la b. la f. f(a)(b)"
+glyph SRC_FST   = "la p. p(la a. la b. a)"
+glyph SRC_SND   = "la p. p(la a. la b. b)"
+glyph SRC_USE   = "la sign. la ctx. PAIR(sign)(ctx)"
+glyph SRC_HETERO = "la speaker. la initiator. NOT(str_eq(speaker)(initiator))"
+glyph SRC_AUTO   = "la speaker. la initiator. str_eq(speaker)(initiator)"
+glyph SRC_META   = "la speaker. la initiator. la aware. AND(AUTO_PROMPTED(speaker)(initiator))(aware)"
+glyph SRC_PERF   = "la utterance. la effect. str_eq(utterance)(effect)"
+glyph SRC_IGN    = "la speaker. la initiator. IF(str_eq(speaker)(initiator))(la _. \"self-ignited\")(la _. \"other-ignited\")"
+glyph SRC_PRAG   = "la g. str_eq(g)(\"PRAGMATICS\")"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph T3L = la a. la b. la c. CONS(a)(CONS(b)(CONS(c)(NIL)))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+
+# ── the SPEC: logical helpers, then the USE-branch glyphs ─────────────────────
+glyph PRAGMATICS_SPEC =
+  CONS(E("TRUE")(":: a -> b -> a")(SRC_TRUE)(TRUE)(
+        T1L(TC(la g. g("yes")("no"))("yes"))))(
+  CONS(E("FALSE")(":: a -> b -> b")(SRC_FALSE)(FALSE)(
+        T1L(TC(la g. g("yes")("no"))("no"))))(
+  CONS(E("NOT")(":: a -> a")(SRC_NOT)(NOT)(
+        T2L(TC(la g. g(TRUE)("y")("n"))("n"))
+           (TC(la g. g(FALSE)("y")("n"))("y"))))(
+  CONS(E("AND")(":: a -> b -> c")(SRC_AND)(AND)(
+        T2L(TC(la g. g(TRUE)(TRUE)("y")("n"))("y"))
+           (TC(la g. g(TRUE)(FALSE)("y")("n"))("n"))))(
+  CONS(E("IF")(":: a -> b -> c -> d")(SRC_IF)(IF)(
+        T2L(TC(la g. g(TRUE)(la _. "t")(la _. "f"))("t"))
+           (TC(la g. g(FALSE)(la _. "t")(la _. "f"))("f"))))(
+  CONS(E("PAIR")("Church pair (trusted)")(SRC_PAIR)(PAIR)(
+        T1L(TC(la g. g("a")("b")(la x. la y. x))("a"))))(
+  CONS(E("FST")("first projection (trusted)")(SRC_FST)(FST)(
+        T1L(TC(la g. g(PAIR("a")("b")))("a"))))(
+  CONS(E("SND")("second projection (trusted)")(SRC_SND)(SND)(
+        T1L(TC(la g. g(PAIR("a")("b")))("b"))))(
+  CONS(E("USE")(":: a -> b -> c")(SRC_USE)(USE)(
+        T2L(TC(la g. FST(g("WORD")("boot")))("WORD"))                         # the uttered glyph
+           (TC(la g. SND(g("WORD")("boot")))("boot"))))(                      # its use-context
+  CONS(E("HETERO_PROMPTED")(":: a -> b -> c")(SRC_HETERO)(HETERO_PROMPTED)(
+        T2L(TC(la g. g("A")("B")("T")("F"))("T"))                             # other-initiated
+           (TC(la g. g("A")("A")("T")("F"))("F"))))(                          # self-initiated is NOT hetero
+  CONS(E("AUTO_PROMPTED")(":: a -> b -> c")(SRC_AUTO)(AUTO_PROMPTED)(
+        T2L(TC(la g. g("A")("A")("T")("F"))("T"))                             # self-initiated, A(A)
+           (TC(la g. g("A")("B")("T")("F"))("F"))))(                          # other-initiated is NOT auto
+  CONS(E("META_PROMPTED")(":: a -> b -> c -> d")(SRC_META)(META_PROMPTED)(
+        T3L(TC(la g. g("A")("A")(TRUE)("T")("F"))("T"))                       # self-initiated AND aware = meta
+           (TC(la g. g("A")("A")(FALSE)("T")("F"))("F"))                      # self-initiated but unaware = merely auto
+           (TC(la g. g("A")("B")(TRUE)("T")("F"))("F"))))(                    # aware but other-initiated = not meta
+  CONS(E("PERFORMATIVE")(":: a -> b -> c")(SRC_PERF)(PERFORMATIVE)(
+        T2L(TC(la g. g("∃(∃)≡∃")("∃(∃)≡∃")("T")("F"))("T"))                   # the self-enacting Word: saying = doing
+           (TC(la g. g("it rains")("nothing")("T")("F"))("F"))))(            # a constative describes, does not do
+  CONS(E("IGNITION")(":: a -> b -> c")(SRC_IGN)(IGNITION)(
+        T2L(TC(la g. g("A")("A"))("self-ignited"))                            # primary reality (generates its own light)
+           (TC(la g. g("A")("B"))("other-ignited"))))(                        # derivative (reflects another's)
+  CONS(E("PRAGMATICS")(":: a -> b")(SRC_PRAG)(PRAGMATICS)(
+        T2L(TC(la g. g("PRAGMATICS")("T")("F"))("T"))                         # ∃(∃)≡∃: the branch used on itself recognises itself
+           (TC(la g. g("SYNTAX")("T")("F"))("F"))))(                          # used on another branch: no self-recognition
+  NIL)))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(PRAGMATICS_SPEC) ===\n")(GENERATE(PRAGMATICS_SPEC))))
+       (print(DEPLOY(PRAGMATICS_SPEC)("pragmatics.la")))
