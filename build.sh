@@ -3057,6 +3057,73 @@ else
     exit 1
 fi
 
+say "Spec pipeline: DEIXIS — context-dependent reference, the pragmatics→reference bridge (deixis_spec.la)"
+# deixis_spec.la builds the DEIXIS organ of the USE branch and GENERATEs + DEPLOYs
+# deixis.la (REGENERATED here, so it never drifts). The linguistic-closure audit
+# found seam G2: pragmatics.la's USE(sign)(ctx) binds a sign to a context, but
+# nothing lets the CONTEXT DETERMINE what a sign REFERS TO — exactly deixis
+# (indexicals: I / you / here / now), the bridge from the USE branch to reference.
+# The model is Kaplan's CHARACTER vs CONTENT: an indexical's CHARACTER is a FIXED
+# function ctx -> referent (its standing meaning), and DEIXIS(indexical)(ctx)
+# applies it to yield the CONTENT (the context-varying referent). A CONTEXT (the
+# deictic centre) carries SPEAKER·ADDRESSEE·PLACE·TIME; the indexicals select its
+# fields (I->SPEAKER, you->ADDRESSEE, here->PLACE, now->TIME); the SPEAKER is the
+# IGNITION SOURCE, so in a SELF-IGNITED context DEIXIS(I) resolves to the system
+# ITSELF (SELF_REF) — the referential mechanism under the pragmatics autology.
+# META_DEBUG verifies all of it; then the GENERATED module is run stand-alone,
+# byte-identical on host and VM.
+DX="$(./tiny_host deixis_spec.la 2>/dev/null)"
+ok=1
+for G in CTX SPEAKER ADDRESSEE PLACE TIME IX_I IX_YOU IX_HERE IX_NOW PAIR FST SND \
+         DEIXIS ORIGO SELF_REF; do
+    printf '%s\n' "$DX" | grep -qx "  $G: PASS" || { echo "FAIL  deixis: $G not verified"; ok=0; }
+done
+printf '%s\n' "$DX" | grep -q "module VERIFIED" || { echo "FAIL  deixis: module not verified"; ok=0; }
+[ -f deixis.la ] || { echo "FAIL  deixis: deixis.la was not written"; ok=0; }
+# the indexical characters + projections + DEIXIS carry formal `:: <type>` sigs;
+# the Church record CTX and the pair helpers PAIR/FST/SND stay trusted.
+for G in SPEAKER ADDRESSEE PLACE TIME IX_I IX_YOU IX_HERE IX_NOW DEIXIS ORIGO SELF_REF; do
+    printf '%s\n' "$DX" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  deixis: $G not type-checked OK"; ok=0; }
+done
+for G in CTX PAIR FST SND; do
+    printf '%s\n' "$DX" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  deixis: $G not reported untyped/trusted"; ok=0; }
+done
+# Run the GENERATED deixis.la stand-alone. The witness is four parts joined by '|':
+# (1) "me/you/rome/noon" — DEIXIS resolves all four indexicals from one context;
+# (2) "alice:bob" — CHARACTER FIXITY: the SAME character IX_I yields DIFFERENT
+# content in two contexts (Kaplan); (3) "TF" — SELF_REF: in a self-ignited context
+# (speaker ∃) "I" refers to the utterer ∃ (T), other-ignited it does not (F) — the
+# referential ∃(∃)≡∃; (4) "me,rome,noon" — the ORIGO deictic centre (I,here,now).
+# Host == VM.
+cp deixis.la /tmp/dxtest.la
+cat >> /tmp/dxtest.la <<'LA'
+glyph CTXA = CTX("me")("you")("rome")("noon")
+glyph W1 = concat(DEIXIS(IX_I)(CTXA))(concat("/")(concat(DEIXIS(IX_YOU)(CTXA))(concat("/")(concat(DEIXIS(IX_HERE)(CTXA))(concat("/")(DEIXIS(IX_NOW)(CTXA)))))))
+glyph W2 = concat(DEIXIS(IX_I)(CTX("alice")("x")("y")("z")))(concat(":")(DEIXIS(IX_I)(CTX("bob")("x")("y")("z"))))
+glyph W3 = concat(SELF_REF(CTX("∃")("o")("h")("n"))("∃")("T")("F"))(SELF_REF(CTX("alice")("o")("h")("n"))("∃")("T")("F"))
+glyph W4 = concat(FST(ORIGO(CTXA)))(concat(",")(concat(FST(SND(ORIGO(CTXA))))(concat(",")(SND(SND(ORIGO(CTXA)))))))
+glyph J = la a. la b. concat(a)(concat("|")(b))
+glyph MAIN = print(J(W1)(J(W2)(J(W3)(W4))))
+LA
+DX_EXPECT="me/you/rome/noon|alice:bob|TF|me,rome,noon"
+DXH="$(./tiny_host /tmp/dxtest.la 2>/dev/null)"
+[ "$DXH" = "$DX_EXPECT" ] || { echo "FAIL  deixis: indexical/character-fixity/self-reference witness wrong on host"; printf 'got: %s\n' "$DXH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/dxtest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+DXV="$(./logos_secd 2>/dev/null)"
+[ "$DXV" = "$DX_EXPECT" ] || { echo "FAIL  deixis: witness wrong on native VM"; printf 'got: %s\n' "$DXV"; ok=0; }
+[ "$DXH" = "$DXV" ]       || { echo "FAIL  deixis: native != host"; ok=0; }
+rm -f /tmp/dxtest.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  deixis: SPEC GENERATEs/DEPLOYs deixis.la, META_DEBUG verifies the indexicals (I/you/here/now as characters), DEIXIS resolution, character-fixity, and the ORIGO deictic centre"
+    echo "PASS  deixis: closes seam G2 — context now determines reference (USE→referent); SELF_REF grounds the pragmatics autology referentially (\"I\" ≡ the self-igniter, ∃(∃)≡∃), byte-identical host and native VM"
+else
+    printf '%s\n' "$DX"
+    exit 1
+fi
+
 say "Metaglyph: 𝓜 ⊂ 𝒜 — the language's operations as glyphs (LINGUA_ADAMICA.tex, ch:meta)"
 # The meta-autontomonoglyphabet 𝓜: the language's own OPERATIONS are themselves
 # glyphs (𝓜 ⊂ 𝒜, 𝓜(𝒜) ≡ 𝒜). metaglyph.la gives each of the five combination modes

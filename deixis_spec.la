@@ -1,0 +1,130 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  deixis_spec.la — DEIXIS, the context-dependent-reference organ of the
+#  PRAGMATICS branch, written as a SPEC and produced by the spec→implementation
+#  pipeline (import("specpipe.la")).
+#
+#  The linguistic-closure audit found the seam G2: pragmatics.la's USE(sign)(ctx)
+#  binds a sign to a context, but sign/ctx are opaque — nothing lets the CONTEXT
+#  DETERMINE what a sign REFERS TO. That is exactly deixis (indexicals: I / you /
+#  here / now), and it is the bridge from the USE branch (pragmatics) to the
+#  IDENTITY/reference branch (canon).
+#
+#  The model is Kaplan's CHARACTER vs CONTENT, which fits LA's Γ/Ρ discipline
+#  exactly:
+#    • an indexical's CHARACTER is a FIXED function ctx -> referent (its standing
+#      linguistic meaning — one function, never varying);
+#    • its CONTENT is the referent that FUNCTION yields in a given context (varies
+#      with the context).
+#  DEIXIS(indexical)(ctx) applies the character to the context — the character is
+#  the generation-side rule, the content is the recognition-side referent.
+#
+#  A CONTEXT (the deictic centre / origo) carries the utterance situation:
+#  SPEAKER · ADDRESSEE · PLACE · TIME. The indexicals select fields of it:
+#      I    -> SPEAKER      here -> PLACE
+#      you  -> ADDRESSEE    now  -> TIME
+#  and the SPEAKER is the IGNITION SOURCE (pragmatics.la): so in a SELF-IGNITED
+#  context, DEIXIS(I) resolves to the system itself — "I" refers to the utterer.
+#  SELF_REF witnesses this: it is the referential mechanism under the pragmatics
+#  autology PRAGMATICS("PRAGMATICS") ≡ TRUE — the branch that uses itself now
+#  RECOGNISES itself through the indexical "I".
+#
+#  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY writes
+#  deixis.la, type-checks the generated source, and META_DEBUG verifies every
+#  glyph against its executable test cases; accepted only if all pass.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + PAIR/FST/SND/CONS/NIL/Z/IF/TRUE/FALSE/AND/SEQ/TRIPLE/DEF/...
+
+# ── implementation VALUES (what META_DEBUG runs) ──────────────────────────────
+
+# CTX — the deictic centre: a four-field record (SPEAKER·ADDRESSEE·PLACE·TIME)
+# accessed by a selector (the Church-record form, like PAIR).
+glyph CTX = la spk. la adr. la plc. la tim. la sel. sel(spk)(adr)(plc)(tim)
+
+# field projections (recognition of the context's parts)
+glyph SPEAKER   = la c. c(la s. la a. la p. la t. s)
+glyph ADDRESSEE = la c. c(la s. la a. la p. la t. a)
+glyph PLACE     = la c. c(la s. la a. la p. la t. p)
+glyph TIME      = la c. c(la s. la a. la p. la t. t)
+
+# the indexical CHARACTERS — fixed functions ctx -> referent (standing meaning)
+glyph IX_I    = la c. SPEAKER(c)
+glyph IX_YOU  = la c. ADDRESSEE(c)
+glyph IX_HERE = la c. PLACE(c)
+glyph IX_NOW  = la c. TIME(c)
+
+# DEIXIS — resolve an indexical against a context: apply the character (the
+# fixed generation-rule) to the context, yielding the content (the referent).
+glyph DEIXIS = la ix. la c. ix(c)
+
+# ORIGO — the deictic centre resolved: the (I, here, now) triple of a context.
+glyph ORIGO = la c. PAIR(DEIXIS(IX_I)(c))(PAIR(DEIXIS(IX_HERE)(c))(DEIXIS(IX_NOW)(c)))
+
+# SELF_REF — the pragmatics bridge: does "I" in this context refer to `ego`
+# (the utterer)? In a self-ignited context the speaker IS the system, so
+# DEIXIS(I) ≡ ego — the ∃(∃)≡∃ of reference (the branch recognising itself).
+glyph SELF_REF = la c. la ego. str_eq(DEIXIS(IX_I)(c))(ego)
+
+# ── source strings (what GENERATE writes; behaviourally equal to the values) ──
+glyph SRC_CTX   = "la spk. la adr. la plc. la tim. la sel. sel(spk)(adr)(plc)(tim)"
+glyph SRC_SPK   = "la c. c(la s. la a. la p. la t. s)"
+glyph SRC_ADR   = "la c. c(la s. la a. la p. la t. a)"
+glyph SRC_PLC   = "la c. c(la s. la a. la p. la t. p)"
+glyph SRC_TIM   = "la c. c(la s. la a. la p. la t. t)"
+glyph SRC_I     = "la c. SPEAKER(c)"
+glyph SRC_YOU   = "la c. ADDRESSEE(c)"
+glyph SRC_HERE  = "la c. PLACE(c)"
+glyph SRC_NOW   = "la c. TIME(c)"
+glyph SRC_PAIR  = "la a. la b. la f. f(a)(b)"
+glyph SRC_FST   = "la p. p(la a. la b. a)"
+glyph SRC_SND   = "la p. p(la a. la b. b)"
+glyph SRC_DX    = "la ix. la c. ix(c)"
+glyph SRC_ORIGO = "la c. PAIR(DEIXIS(IX_I)(c))(PAIR(DEIXIS(IX_HERE)(c))(DEIXIS(IX_NOW)(c)))"
+glyph SRC_SELF  = "la c. la ego. str_eq(DEIXIS(IX_I)(c))(ego)"
+
+# ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+
+# ── the SPEC ──────────────────────────────────────────────────────────────────
+glyph DEIXIS_SPEC =
+  CONS(E("CTX")("deictic-centre record (trusted)")(SRC_CTX)(CTX)(
+        T1L(TC(la g. SPEAKER(g("me")("you")("rome")("noon")))("me"))))(          # a context is a 4-field record
+  CONS(E("SPEAKER")(":: a -> b")(SRC_SPK)(SPEAKER)(
+        T1L(TC(la g. g(CTX("me")("you")("rome")("noon")))("me"))))(              # projects the utterer
+  CONS(E("ADDRESSEE")(":: a -> b")(SRC_ADR)(ADDRESSEE)(
+        T1L(TC(la g. g(CTX("me")("you")("rome")("noon")))("you"))))(
+  CONS(E("PLACE")(":: a -> b")(SRC_PLC)(PLACE)(
+        T1L(TC(la g. g(CTX("me")("you")("rome")("noon")))("rome"))))(
+  CONS(E("TIME")(":: a -> b")(SRC_TIM)(TIME)(
+        T1L(TC(la g. g(CTX("me")("you")("rome")("noon")))("noon"))))(
+  CONS(E("IX_I")(":: a -> b")(SRC_I)(IX_I)(
+        T1L(TC(la g. g(CTX("me")("you")("rome")("noon")))("me"))))(              # "I" -> the speaker
+  CONS(E("IX_YOU")(":: a -> b")(SRC_YOU)(IX_YOU)(
+        T1L(TC(la g. g(CTX("me")("you")("rome")("noon")))("you"))))(            # "you" -> the addressee
+  CONS(E("IX_HERE")(":: a -> b")(SRC_HERE)(IX_HERE)(
+        T1L(TC(la g. g(CTX("me")("you")("rome")("noon")))("rome"))))(          # "here" -> the place
+  CONS(E("IX_NOW")(":: a -> b")(SRC_NOW)(IX_NOW)(
+        T1L(TC(la g. g(CTX("me")("you")("rome")("noon")))("noon"))))(          # "now" -> the time
+  CONS(E("PAIR")("Church pair (trusted)")(SRC_PAIR)(PAIR)(
+        T1L(TC(la g. g("a")("b")(la x. la y. x))("a"))))(
+  CONS(E("FST")("first projection (trusted)")(SRC_FST)(FST)(
+        T1L(TC(la g. g(PAIR("a")("b")))("a"))))(
+  CONS(E("SND")("second projection (trusted)")(SRC_SND)(SND)(
+        T1L(TC(la g. g(PAIR("a")("b")))("b"))))(
+  CONS(E("DEIXIS")(":: a -> b -> c")(SRC_DX)(DEIXIS)(
+        T2L(TC(la g. g(IX_I)(CTX("alice")("bob")("rome")("noon")))("alice"))     # resolve "I" in ctx A
+           (TC(la g. g(IX_I)(CTX("bob")("cara")("oslo")("dawn")))("bob"))))(    # SAME character, DIFFERENT content (character fixity)
+  CONS(E("ORIGO")(":: a -> b")(SRC_ORIGO)(ORIGO)(
+        T2L(TC(la g. FST(g(CTX("me")("you")("rome")("noon"))))("me"))            # the deictic centre: I ...
+           (TC(la g. FST(SND(g(CTX("me")("you")("rome")("noon")))))("rome"))))(  # ... here ...
+  CONS(E("SELF_REF")(":: a -> b -> c")(SRC_SELF)(SELF_REF)(
+        T2L(TC(la g. g(CTX("∃")("other")("h")("n"))("∃")("T")("F"))("T"))        # self-ignited: "I" refers to the utterer ∃
+           (TC(la g. g(CTX("alice")("other")("h")("n"))("∃")("T")("F"))("F"))))( # other-ignited: "I" is not ∃
+  NIL)))))))))))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(DEIXIS_SPEC) ===\n")(GENERATE(DEIXIS_SPEC))))
+       (print(DEPLOY(DEIXIS_SPEC)("deixis.la")))
