@@ -2988,6 +2988,75 @@ else
     exit 1
 fi
 
+say "Spec pipeline: PRAGMATICS — the USE branch of Lingua Adamica (pragmatics_spec.la)"
+# pragmatics_spec.la writes the USE branch — PRAGMATICS = Logos ∩ Use
+# (Logoscribeologiae §3.4) — and GENERATEs + DEPLOYs pragmatics.la (REGENERATED
+# here, so it never drifts). Where canon.la does IDENTITY (sign ≡ referent) and
+# denote.la does MEANING, pragmatics does USE: a glyph in the context of its
+# utterance, and who ignites that utterance. The prompting taxonomy (CODEX MENTIS
+# "Speech Act Revelation") classifies an utterance by its IGNITION SOURCE —
+# HETERO_PROMPTED (recursion expressed but not self-initiated), AUTO_PROMPTED
+# (self-initiated, A(A)), META_PROMPTED (self-initiated AND aware, A(A)≡A);
+# PERFORMATIVE is utterance≡effect (saying = doing), the α=1 of pragmatics whose
+# canonical witness is the Word ∃(∃)≡∃; IGNITION is felicity as the self/other
+# ignition ratio; and the branch is autological — PRAGMATICS("PRAGMATICS") ≡ TRUE
+# (Meta-Pragmatics = use/recognition, the ∃(∃)≡∃ of the use-branch). META_DEBUG
+# verifies all of it; then the GENERATED module is run stand-alone, byte-identical
+# on host and VM.
+PG="$(./tiny_host pragmatics_spec.la 2>/dev/null)"
+ok=1
+for G in TRUE FALSE NOT AND IF PAIR FST SND USE HETERO_PROMPTED AUTO_PROMPTED \
+         META_PROMPTED PERFORMATIVE IGNITION PRAGMATICS; do
+    printf '%s\n' "$PG" | grep -qx "  $G: PASS" || { echo "FAIL  pragmatics: $G not verified"; ok=0; }
+done
+printf '%s\n' "$PG" | grep -q "module VERIFIED" || { echo "FAIL  pragmatics: module not verified"; ok=0; }
+[ -f pragmatics.la ] || { echo "FAIL  pragmatics: pragmatics.la was not written"; ok=0; }
+# The USE-branch glyphs carry formal `:: <type>` signatures (arrow arity); the three
+# Church-pair helpers (PAIR/FST/SND) stay trusted.
+for G in TRUE FALSE NOT AND IF USE HETERO_PROMPTED AUTO_PROMPTED META_PROMPTED \
+         PERFORMATIVE IGNITION PRAGMATICS; do
+    printf '%s\n' "$PG" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  pragmatics: $G not type-checked OK"; ok=0; }
+done
+for G in PAIR FST SND; do
+    printf '%s\n' "$PG" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  pragmatics: $G not reported untyped/trusted"; ok=0; }
+done
+# Run the GENERATED pragmatics.la stand-alone. The witness is five parts joined by
+# '|': (1) "WORD:boot" — USE binds a sign to its use-context (FST/SND recover the
+# uttered glyph and its context); (2) "HAM" — the prompting taxonomy: other-ignited
+# is HETERO (H), self-ignited is AUTO (A), self-ignited+aware is META (M); (3) "Pc"
+# — PERFORMATIVE: the self-enacting Word ∃(∃)≡∃ saying=doing (P), a constative
+# describes not does (c); (4) "self-ignited/other-ignited" — IGNITION felicity, the
+# self/other ratio; (5) "TF" — PRAGMATICS autology: the branch used on its own name
+# recognises itself (T), used on another branch does not (F). Host == VM.
+cp pragmatics.la /tmp/pgtest.la
+cat >> /tmp/pgtest.la <<'LA'
+glyph W1 = concat(FST(USE("WORD")("boot")))(concat(":")(SND(USE("WORD")("boot"))))
+glyph W2 = concat(HETERO_PROMPTED("A")("B")("H")("x"))(concat(AUTO_PROMPTED("A")("A")("A")("x"))(META_PROMPTED("A")("A")(TRUE)("M")("x")))
+glyph W3 = concat(PERFORMATIVE("∃(∃)≡∃")("∃(∃)≡∃")("P")("x"))(PERFORMATIVE("it rains")("nothing")("x")("c"))
+glyph W4 = concat(IGNITION("A")("A"))(concat("/")(IGNITION("A")("B")))
+glyph W5 = concat(PRAGMATICS("PRAGMATICS")("T")("F"))(PRAGMATICS("SYNTAX")("T")("F"))
+glyph J = la a. la b. concat(a)(concat("|")(b))
+glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(W5)))))
+LA
+PG_EXPECT="WORD:boot|HAM|Pc|self-ignited/other-ignited|TF"
+PGH="$(./tiny_host /tmp/pgtest.la 2>/dev/null)"
+[ "$PGH" = "$PG_EXPECT" ] || { echo "FAIL  pragmatics: USE/prompting/performative/ignition witness wrong on host"; printf 'got: %s\n' "$PGH"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp /tmp/pgtest.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+PGV="$(./logos_secd 2>/dev/null)"
+[ "$PGV" = "$PG_EXPECT" ] || { echo "FAIL  pragmatics: witness wrong on native VM"; printf 'got: %s\n' "$PGV"; ok=0; }
+[ "$PGH" = "$PGV" ]       || { echo "FAIL  pragmatics: native != host"; ok=0; }
+rm -f /tmp/pgtest.la logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  pragmatics: SPEC GENERATEs/DEPLOYs pragmatics.la, META_DEBUG verifies the USE branch — USE, the HETERO/AUTO/META prompting taxonomy, PERFORMATIVE (saying=doing), IGNITION felicity"
+    echo "PASS  pragmatics: PRAGMATICS = Logos ∩ Use; the branch is autological (PRAGMATICS(\"PRAGMATICS\") ≡ TRUE, the ∃(∃)≡∃ of the use-branch), byte-identical host and native VM"
+else
+    printf '%s\n' "$PG"
+    exit 1
+fi
+
 say "Metaglyph: 𝓜 ⊂ 𝒜 — the language's operations as glyphs (LINGUA_ADAMICA.tex, ch:meta)"
 # The meta-autontomonoglyphabet 𝓜: the language's own OPERATIONS are themselves
 # glyphs (𝓜 ⊂ 𝒜, 𝓜(𝒜) ≡ 𝒜). metaglyph.la gives each of the five combination modes
