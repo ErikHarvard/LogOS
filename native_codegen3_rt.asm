@@ -1507,3 +1507,20 @@ rt_poke:
     mov     [rcx], dl           ; write the low byte to that physical address
     movzx   rax, dl             ; return the byte actually written (0..255)
     jmp     rt_box_int          ; -> boxed INT
+
+; ── K4b capstone: rt_set_cr3(INT pml4_phys) -> INT pml4_phys ─────────────────
+;   The CR3-switch HAL primitive — the load-twin of peek/poke, the THIRD
+;   native_codegen3 extension. Loads CR3 with the physical base of an LA-built
+;   PML4 so the CPU begins walking a page table this LA image assembled in real
+;   PMM frames (K4b built the entries; this makes them live). The mov cr3
+;   flushes the TLB; the LA image's own code (0x400000), stack (128 MiB) and
+;   heap stay identity-mapped in the new table (a superset of boot's low-1 GiB
+;   map) so the next fetch does not fault. Returns the base boxed (composes).
+;   Native-only, like peek/poke. Appended after rt_poke so only LITERAL_BASE
+;   shifts. Arg is an INT (tag 4); anything else halts loud (rt_not_int).
+rt_set_cr3:
+    cmp     qword [rax], 4      ; arg must be a boxed INT (the PML4 phys base)
+    jne     rt_not_int
+    mov     rax, [rax+8]        ; the raw PML4 physical base
+    mov     cr3, rax            ; load CR3 -> CPU walks this table; TLB flushed
+    jmp     rt_box_int          ; return the base boxed

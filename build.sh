@@ -4135,6 +4135,12 @@ bash kernel/gate_k3a.sh || exit 1
 bash kernel/gate_k3b.sh || exit 1
 bash kernel/gate_k4a.sh || exit 1
 bash kernel/gate_k4b.sh || exit 1
+# K4b CAPSTONE: the CR3 SWITCH. An LA-built 4-level page table (identity low 1 GiB
+# in real PMM frames + a distinguishing high test mapping) is loaded into CR3 via
+# the new set_cr3 builtin (the load-twin of peek/poke); the CPU then walks it,
+# reading a sentinel back through a HIGH vaddr only the LA table maps — proof the
+# CPU used our table, not boot.asm's. QEMU-gated; skips cleanly when QEMU absent.
+bash kernel/gate_k4b_cr3.sh || exit 1
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),

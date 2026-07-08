@@ -113,15 +113,20 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           byte-identical host==native, and the W^X violation halts loudly on
           BOTH engines (`gate_k4a.sh`: success oracle + `paging_wxfail.la`
           loud-refusal regression).
-    - [~] K4b — wire paging to the metal (QEMU-gated, like K3b). DONE (write
-          half): the new `poke(addr)(byte)` runtime builtin (write-twin of
-          `peek`, the second `native_codegen3` extension — a 24-byte `rt_poke`
-          appended after `rt_peek`, so only `RTLEN`/`LITERAL_BASE` shift);
-          `paging_metal.la` allocates a real frame from the K3 PMM, BUILDS a K4a
-          PTE in it via `poke` (8 bytes, LE), and reads it back byte-identical
-          via `peek` (`gate_k4b.sh`, QEMU). The CR3 switch that makes the CPU
-          walk an LA-built table (needs a `set_cr3` HAL primitive + a full
-          identity+test table) is the remaining half.
+    - [x] K4b — wire paging to the metal (QEMU-gated, like K3b). **DONE, both
+          halves.** *Write half:* the `poke(addr)(byte)` runtime builtin (write-twin
+          of `peek`, a 24-byte `rt_poke` appended after `rt_peek`); `paging_metal.la`
+          allocates a real frame from the K3 PMM, BUILDS a K4a PTE in it via `poke`,
+          and reads it back byte-identical via `peek` (`gate_k4b.sh`, QEMU).
+          *Capstone — the CR3 SWITCH:* the `set_cr3(pml4_phys)` builtin (the
+          load-twin of peek/poke — a 22-byte `rt_set_cr3`, `mov cr3, rax`, appended
+          after `rt_poke`, so again only `RTLEN` 9666→9688 / `LITERAL_BASE`
+          4204090→4204112 shift); `paging_cr3.la` builds a whole 4-level table in
+          real PMM frames (identity low 1 GiB, a SUPERSET of boot.asm's map, PLUS
+          `PDPT[1]→PD1→` a 2 MiB page boot does not map), loads its base into CR3,
+          and reads a sentinel back through the HIGH vaddr `0x40000000` — a vaddr
+          only the LA table maps — proving the CPU walked the LA-built table
+          (`gate_k4b_cr3.sh`, QEMU). Paging is live on the metal.
     - [ ] K4c — higher-half kernel, NX/W^X live, the LA heap backed by real PMM
           frames
   - [ ] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler

@@ -1,0 +1,156 @@
+# ===================================================================
+#  LogOS kernel — K4b capstone: the CR3 SWITCH.
+#
+#  K4a proved the paging math (host==native); K4b built a single PTE in a real
+#  PMM frame on the metal (poke). This capstone closes K4b: it BUILDS a whole
+#  4-level page table in real PMM frames and makes the CPU WALK it — the
+#  set_cr3 HAL primitive (the third native_codegen3 extension, the load-twin of
+#  peek/poke) loads CR3 with the physical base of the LA-built PML4.
+#
+#  The table is boot.asm's low-1 GiB identity map, REBUILT in LA-allocated
+#  frames, PLUS one distinguishing test mapping boot.asm does NOT have:
+#    PML4[0] -> PDPT ; PDPT[0] -> PD0 (identity 0..1 GiB, 512 * 2 MiB @ 0x83) ;
+#    PDPT[1] -> PD1 ; PD1[0] -> a 2 MiB page at SENT_BASE (phys 160 MiB).
+#  PDPT[1] covers vaddr [1 GiB, 2 GiB). boot.asm has only PDPT[0], so under
+#  boot's table vaddr 0x40000000 (exactly 1 GiB) is UNMAPPED (a #PF); under our
+#  table it aliases phys SENT_BASE. Because our table is a SUPERSET of boot's
+#  low-1 GiB identity map, the switch is transparent for the running code
+#  (0x400000), stack (128 MiB) and heap — only the high test mapping is new.
+#
+#  Proof of walk: before the switch we poke a sentinel byte (0xAB) at physical
+#  SENT_ADDR (identity-mapped, reachable under boot's table); after the switch
+#  we peek it back through the HIGH vaddr 0x40000100 — a vaddr ONLY our table
+#  maps. Reading 0xAB there proves the CPU walked the LA-built table.
+#
+#  Native-only (peek/poke/set_cr3 touch bare hardware): compiled by
+#  native_codegen3, run on bare metal under QEMU (gate_k4b_cr3.sh).
+# ===================================================================
+
+# ── Church/Scott plumbing (native_codegen3 is import-free) ──
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph NIL = la c. la n. n
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+glyph IS_CONS = la l. l(la h. la t. TRUE)(FALSE)
+glyph HD = la l. l(la h. la t. h)(NIL)
+glyph TL = la l. l(la h. la t. t)(NIL)
+glyph FRAME = 4096
+glyph MBI_SAVE = 3145728
+
+# ── little-endian reader over MEMORY (via peek) — the K3b RDMEM ──
+glyph RDMEM = Z(la self. la addr. la k.
+    IF(int_eq(k)(0))(la _. 0)(la _.
+        add(peek(addr))(mul(256)(self(add(addr)(1))(sub(k)(1))))))
+
+# ── the K3b PMM: parse the REAL multiboot map, pick the arena, allocate ──
+glyph PARSE_MMAP = Z(la self. la base. la off. la total.
+    IF(NOT(lt(off)(total)))(la _. NIL)(la _.
+        (la ea. (la size. (la stride. (la rbase. (la len. (la typ. (la rest.
+            IF(int_eq(typ)(1))(la _. CONS(PAIR(rbase)(len))(rest))(la _. rest)
+        )(self(base)(add(off)(stride))(total)) )(RDMEM(add(ea)(20))(4)) )(RDMEM(add(ea)(12))(8)) )(RDMEM(add(ea)(4))(8)) )(add(RDMEM(ea)(4))(4)) )(RDMEM(ea)(4)) )(add(base)(off)) ))
+glyph MAX_REGION = Z(la self. la regs. la best.
+    IF(IS_CONS(regs))(la _.
+        (la r. self(TL(regs))(IF(lt(SND(best))(SND(r)))(la _. r)(la _. best)))(HD(regs))
+    )(la _. best))
+glyph ARENA = la regs. MAX_REGION(TL(regs))(HD(regs))
+glyph ALIGN_UP = la n. mul(div(add(n)(sub(FRAME)(1)))(FRAME))(FRAME)
+glyph PMM_INIT = la arena. PAIR(ALIGN_UP(FST(arena)))(NIL)
+glyph PMM_ALLOC = la st.
+    (la next. (la stk.
+        IF(IS_CONS(stk))(la _. PAIR(HD(stk))(PAIR(next)(TL(stk))))(la _.
+            PAIR(next)(PAIR(add(next)(FRAME))(stk))))
+    (SND(st)))(FST(st))
+
+# ── POKE32(addr)(v): write a 32-bit value as 4 little-endian bytes via poke ──
+glyph POKE32 = la addr. la v.
+    (la _. (la _. (la _.
+        poke(add(addr)(3))(mod(div(v)(16777216))(256))
+    )(poke(add(addr)(2))(mod(div(v)(65536))(256))))
+    (poke(add(addr)(1))(mod(div(v)(256))(256))))
+    (poke(addr)(mod(v)(256)))
+
+# ── WENTRY(addr)(lo)(hi): write an 8-byte page-table entry (low32 then high32) ──
+# All our entries have high32 = 0 (identity < 4 GiB, tables < 4 GiB), but we
+# write both dwords so the entry is a full 64-bit PTE.  poke is eager; the outer
+# (la _. ...)(inner) forces low32 before high32.
+glyph WENTRY = la addr. la lo. la hi.
+    (la _. POKE32(add(addr)(4))(hi))(POKE32(addr)(lo))
+
+# ── page constants ──
+glyph P2MIB   = 2097152          # 2 MiB — a PD entry's stride / page size
+glyph PDE2M   = 131              # P(1)|W(2)|PS(128) — a 2 MiB leaf page (boot uses 0x83)
+glyph TBL     = 3                # P(1)|W(2) — a table pointer (points to next level)
+glyph SENT_BASE = 167772160      # 0x0A000000 = 160 MiB — 2 MiB-aligned, real RAM under -m 256,
+                                 #   above the 128 MiB stack, below 256 MiB; identity-mapped by boot.
+glyph SENT_OFF  = 256            # a byte offset into that page
+glyph SENT_VAL  = 171            # 0xAB — the sentinel
+glyph VHI       = 1073741824     # 0x40000000 = 1 GiB — PDPT[1], PD1[0]; UNMAPPED by boot.asm
+
+# ── fill PD0 with 512 identity 2 MiB pages (0 .. 1 GiB), like boot.asm ──
+glyph FILL_PD0 = Z(la self. la base. la i.
+    IF(int_eq(i)(512))(la _. "!")(la _.
+        (la _. self(base)(add(i)(1)))
+            (WENTRY(add(base)(mul(i)(8)))(add(mul(i)(P2MIB))(PDE2M))(0))))
+
+# ── build the whole table in four PMM frames, then SWITCH and read back ──
+# SHOWN prints "label<int>". The gate asserts K4C READ == 171 (the sentinel,
+# read through the high vaddr only our table maps -> the CPU walked our table).
+glyph SHOWN = la label. la n. print(concat(label)(int_to_str(n)))
+glyph MAIN =
+    (la mbi.
+    (la mlen.
+    (la maddr.
+    (la regions.
+    (la arena.
+    (la s0.
+    (la a1.
+    (la a2.
+    (la a3.
+    (la a4.
+    (la f_pml4.
+    (la f_pdpt.
+    (la f_pd0.
+    (la f_pd1.
+        # 1. PD0 = identity 0..1 GiB
+        (la _.
+        # 2. PDPT[0] -> PD0 ; PDPT[1] -> PD1
+        (la _. (la _.
+        # 3. PML4[0] -> PDPT
+        (la _.
+        # 4. PD1[0] -> a 2 MiB page at SENT_BASE
+        (la _.
+        # 5. poke the sentinel at physical SENT_ADDR (identity-mapped, pre-switch)
+        (la _.
+        # 6. announce the frame, then SWITCH CR3 to our LA-built PML4
+        (la _. (la _.
+        # 7. read the sentinel back THROUGH the high vaddr (only our table maps it)
+            (la _.
+                SHOWN("K4C IDENT ")(peek(add(SENT_BASE)(SENT_OFF)))
+            )(SHOWN("K4C READ ")(peek(add(VHI)(SENT_OFF))))
+        )(set_cr3(f_pml4)))(SHOWN("K4C FRAME ")(f_pml4))
+        )(poke(add(SENT_BASE)(SENT_OFF))(SENT_VAL))
+        )(WENTRY(f_pd1)(add(SENT_BASE)(PDE2M))(0))
+        )(WENTRY(f_pml4)(add(f_pdpt)(TBL))(0))
+        )(WENTRY(add(f_pdpt)(8))(add(f_pd1)(TBL))(0)))(WENTRY(f_pdpt)(add(f_pd0)(TBL))(0))
+        )(FILL_PD0(f_pd0)(0))
+    )(FST(a4))
+    )(FST(a3))
+    )(FST(a2))
+    )(FST(a1))
+    )(PMM_ALLOC(SND(a3)))
+    )(PMM_ALLOC(SND(a2)))
+    )(PMM_ALLOC(SND(a1)))
+    )(PMM_ALLOC(s0))
+    )(PMM_INIT(arena))
+    )(ARENA(regions))
+    )(PARSE_MMAP(maddr)(0)(mlen))
+    )(RDMEM(add(mbi)(48))(4))
+    )(RDMEM(add(mbi)(44))(4))
+    )(RDMEM(MBI_SAVE)(4))
