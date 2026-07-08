@@ -1,0 +1,112 @@
+# ===================================================================
+#  LogOS kernel — K4a: virtual memory, pure-logic core.
+#
+#  x86-64 4-level paging is, like the PMM policy (K3a), pure logic: the
+#  decomposition of a virtual address into its table indices and the
+#  assembly of a page-table entry (PTE) are arithmetic, not hardware. So we
+#  write them in Lingua Adamica and verify host==native (compile with
+#  native_codegen3, run under tiny_host, assert byte-identical) BEFORE any
+#  metal. K4b allocates real table frames from the K3 PMM and installs CR3
+#  via a poke() primitive; here MAIN drives the math on synthetic addresses.
+#
+#  What is proven here:
+#    (1) VA decomposition: a canonical 48-bit vaddr splits into
+#        PML4[47:39] · PDPT[38:30] · PD[29:21] · PT[20:12] · offset[11:0],
+#        each index a 9-bit field (0..511). No bitwise ops exist in LA, so
+#        the fields come from div/mod against the four page scales.
+#    (2) PTE assembly: entry = (paddr & ~0xFFF) | flags, with the NX bit at
+#        bit 63. We carry the 64-bit entry as PAIR(low32)(high32) — the same
+#        two-dword form boot.asm writes and K4b will poke — so the NX bit
+#        (high32 bit 31) never needs a >2^62 host literal.
+#    (3) W^X: a page may not be both Writable and eXecutable. MK_PTE is the
+#        SOLE constructor and it halts LOUDLY (error) on a W && !NX request —
+#        the same loud-failure discipline as the rest of the kernel. WX_OK is
+#        the non-halting predicate used to witness the policy.
+# ===================================================================
+
+# ── Church/Scott plumbing (native_codegen3 is import-free) ──
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph NIL = la c. la n. n
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+glyph IS_CONS = la l. l(la h. la t. TRUE)(FALSE)
+glyph HD = la l. l(la h. la t. h)(NIL)
+glyph TL = la l. l(la h. la t. t)(NIL)
+
+# ── the four page scales (2^12, 2^21, 2^30, 2^39) and the 32-bit modulus ──
+glyph PAGE   = 4096              # 2^12  — 4 KiB page / PT stride
+glyph PD_SC  = 2097152           # 2^21  — 2 MiB / PD stride
+glyph PDPT_SC = 1073741824       # 2^30  — 1 GiB / PDPT stride
+glyph PML4_SC = 549755813888     # 2^39  — 512 GiB / PML4 stride
+glyph LOW32  = 4294967296        # 2^32  — split point for the two dwords
+glyph NXHI   = 2147483648        # 2^31  — the NX bit within high32 (bit 63 overall)
+
+# ── virtual-address decomposition (pure arithmetic, no shifts/masks) ──
+glyph OFFSET = la v. mod(v)(PAGE)
+glyph IDX    = la v. la scale. mod(div(v)(scale))(512)   # the 9-bit field at a scale
+glyph PTI    = la v. IDX(v)(PAGE)
+glyph PDI    = la v. IDX(v)(PD_SC)
+glyph PDPTI  = la v. IDX(v)(PDPT_SC)
+glyph PML4I  = la v. IDX(v)(PML4_SC)
+
+# ── PTE assembly as PAIR(low32)(high32) ──
+# paddr is frame-aligned (low 12 bits cleared); flags occupy the low field
+# (P=1,W=2,U=4,PWT=8,PCD=16,A=32,D=64,PS=128,G=256), NX lives in high32 bit31.
+glyph FRAME_BASE = la paddr. mul(div(paddr)(PAGE))(PAGE)  # clear low 12 bits
+glyph PTE_LO = la paddr. la flags. add(mod(FRAME_BASE(paddr))(LOW32))(flags)
+glyph PTE_HI = la paddr. la nx.
+    add(div(FRAME_BASE(paddr))(LOW32))(IF(int_eq(nx)(1))(la _. NXHI)(la _. 0))
+
+# ── W^X policy ──
+glyph W_SET = la flags. int_eq(mod(div(flags)(2))(2))(1)          # bit 1 (Writable)
+glyph WX_OK = la flags. la nx. IF(W_SET(flags))(la _. int_eq(nx)(1))(la _. TRUE)
+glyph BOOL1 = la b. b(1)(0)                                       # Church-bool -> 1/0
+
+# ── the SOLE PTE constructor: enforce W^X, halt loudly on violation ──
+glyph MK_PTE = la paddr. la flags. la nx.
+    IF(AND(W_SET(flags))(NOT(int_eq(nx)(1))))
+        (la _. error("K4A W^X VIOLATION: writable+executable page"))
+        (la _. PAIR(PTE_LO(paddr)(flags))(PTE_HI(paddr)(nx)))
+
+# ── self-test driver ─────────────────────────────────────────────
+# A vaddr with all four indices distinct and non-zero:
+#   PML4=1, PDPT=2, PD=3, PT=4, offset=0x678 (1656)
+#   = 1*2^39 + 2*2^30 + 3*2^21 + 4*2^12 + 1656 = 551909607032
+# Two valid PTEs: a data page (P|W, NX) and a code page (P, executable, RO).
+# Then three W^X verdicts: (W,NX)->ok, (RO,exec)->ok, (W,exec)->refused.
+# Print a flat list of integers in order. print is eager and returns its arg,
+# so (la _. recurse)(print head) forces the head before the tail — a flat
+# Z-fold, far cheaper for native_codegen3 to inline than a deep lambda nest.
+glyph SHOWALL = Z(la self. la lst.
+    IF(IS_CONS(lst))
+        (la _. (la _. self(TL(lst)))(print(int_to_str(HD(lst)))))
+        (la _. "!"))
+glyph MAIN =
+    (la v.
+    (la p1.
+    (la p2.
+        SHOWALL(
+            CONS(PML4I(v))(
+            CONS(PDPTI(v))(
+            CONS(PDI(v))(
+            CONS(PTI(v))(
+            CONS(OFFSET(v))(
+            CONS(FST(p1))(
+            CONS(SND(p1))(
+            CONS(FST(p2))(
+            CONS(SND(p2))(
+            CONS(BOOL1(WX_OK(3)(1)))(
+            CONS(BOOL1(WX_OK(1)(0)))(
+            CONS(BOOL1(WX_OK(3)(0)))(
+            NIL ))))))))))))
+        )
+    )(MK_PTE(2097152)(1)(0))
+    )(MK_PTE(1048576)(3)(1))
+    )(551909607032)

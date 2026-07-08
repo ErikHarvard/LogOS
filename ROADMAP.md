@@ -99,8 +99,25 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
         gets a tall stack at 0x8000000); and `RTLEN` must track the runtime byte
         length (a 23-byte skew silently truncated the Linux-ELF path, invisible to
         the metal `incbin`).
-  - [ ] K4 — virtual memory: 4-level paging, map/unmap, W^X + NX, higher-half
+  - [~] K4 — virtual memory: 4-level paging, map/unmap, W^X + NX, higher-half
         kernel, the LA heap backed by real PMM frames
+    - [x] K4a — paging pure-logic core (the strong oracle, host==native, like
+          K3a): `paging.la` — x86-64 4-level paging as pure arithmetic (no
+          bitwise ops in LA): a canonical 48-bit vaddr decomposes into its
+          PML4/PDPT/PD/PT indices + offset via `div`/`mod` against the four page
+          scales; a PTE `(paddr & ~0xFFF) | flags` is assembled as
+          `PAIR(low32)(high32)` (the two-dword form `boot.asm` writes and K4b
+          will `poke`, so the NX bit at bit 63 needs no >2^62 host literal); and
+          **W^X** is enforced by `MK_PTE`, the sole PTE constructor, which halts
+          loudly (`error`) on a writable+executable request. Verified
+          byte-identical host==native, and the W^X violation halts loudly on
+          BOTH engines (`gate_k4a.sh`: success oracle + `paging_wxfail.la`
+          loud-refusal regression).
+    - [ ] K4b — wire paging to the metal (QEMU-gated, like K3b): a `poke(addr)`
+          builtin (write-twin of `peek`), table frames from the K3 PMM, install
+          a fresh CR3, prove a mapping resolves on real hardware
+    - [ ] K4c — higher-half kernel, NX/W^X live, the LA heap backed by real PMM
+          frames
   - [ ] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
         over in-kernel channels; native process model vs fork/execve)

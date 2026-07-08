@@ -1,0 +1,36 @@
+# ===================================================================
+#  LogOS kernel — K4a W^X-violation regression.
+#
+#  MK_PTE is the sole PTE constructor and it enforces W^X: a page that is
+#  both Writable (flags bit 1) and eXecutable (NX=0) is a security fault, so
+#  the constructor halts LOUDLY (error) rather than emit the entry. This
+#  program requests exactly that forbidden mapping — a writable code page —
+#  so BOTH engines (host tiny_host, native native_codegen3) must abort with a
+#  nonzero exit and never print a PTE. gate_k4a.sh asserts the loud halt on
+#  both. (Kept byte-for-byte in sync with paging.la's MK_PTE definition.)
+# ===================================================================
+
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+
+glyph PAGE   = 4096
+glyph LOW32  = 4294967296
+glyph NXHI   = 2147483648
+glyph FRAME_BASE = la paddr. mul(div(paddr)(PAGE))(PAGE)
+glyph PTE_LO = la paddr. la flags. add(mod(FRAME_BASE(paddr))(LOW32))(flags)
+glyph PTE_HI = la paddr. la nx.
+    add(div(FRAME_BASE(paddr))(LOW32))(IF(int_eq(nx)(1))(la _. NXHI)(la _. 0))
+glyph W_SET = la flags. int_eq(mod(div(flags)(2))(2))(1)
+glyph MK_PTE = la paddr. la flags. la nx.
+    IF(AND(W_SET(flags))(NOT(int_eq(nx)(1))))
+        (la _. error("K4A W^X VIOLATION: writable+executable page"))
+        (la _. PAIR(PTE_LO(paddr)(flags))(PTE_HI(paddr)(nx)))
+
+# Request a writable (flags=3: P|W) executable (nx=0) page -> must halt loudly.
+glyph MAIN = print(int_to_str(FST(MK_PTE(4096)(3)(0))))
