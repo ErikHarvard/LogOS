@@ -113,9 +113,15 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           byte-identical host==native, and the W^X violation halts loudly on
           BOTH engines (`gate_k4a.sh`: success oracle + `paging_wxfail.la`
           loud-refusal regression).
-    - [ ] K4b — wire paging to the metal (QEMU-gated, like K3b): a `poke(addr)`
-          builtin (write-twin of `peek`), table frames from the K3 PMM, install
-          a fresh CR3, prove a mapping resolves on real hardware
+    - [~] K4b — wire paging to the metal (QEMU-gated, like K3b). DONE (write
+          half): the new `poke(addr)(byte)` runtime builtin (write-twin of
+          `peek`, the second `native_codegen3` extension — a 24-byte `rt_poke`
+          appended after `rt_peek`, so only `RTLEN`/`LITERAL_BASE` shift);
+          `paging_metal.la` allocates a real frame from the K3 PMM, BUILDS a K4a
+          PTE in it via `poke` (8 bytes, LE), and reads it back byte-identical
+          via `peek` (`gate_k4b.sh`, QEMU). The CR3 switch that makes the CPU
+          walk an LA-built table (needs a `set_cr3` HAL primitive + a full
+          identity+test table) is the remaining half.
     - [ ] K4c — higher-half kernel, NX/W^X live, the LA heap backed by real PMM
           frames
   - [ ] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler

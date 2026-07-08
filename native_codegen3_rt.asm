@@ -1488,3 +1488,22 @@ rt_peek:
     mov     rax, [rax+8]        ; the raw address integer
     movzx   rax, byte [rax]     ; read the byte there (0..255)
     jmp     rt_box_int          ; -> boxed INT, composes with add/mul in the LA map walk
+
+; ── K4b: rt_poke(INT addr)(INT byte) -> INT byte written ─────────────────────
+;   The write-twin of rt_peek. Writes ONE byte (the low 8 bits of the second
+;   argument) to physical/identity-mapped memory at the first argument, so the
+;   LA image can BUILD page-table entries in real PMM frames on the metal (K4a
+;   assembles a PTE as low32/high32; poke lays those bytes into the frame). A
+;   binary builtin, so the codegen passes rsi = first arg (addr), rax = second
+;   arg (byte) — both boxed INT (tag 4), exactly as rt_add receives A,B; chk_int2
+;   halts loud (rc 1) on anything else. Returns the byte actually written
+;   (0..255) boxed, symmetric with peek so a poke;peek round-trip composes.
+;   Native-only, like peek. Appended after rt_peek so only LITERAL_BASE shifts —
+;   no other fixed runtime/data address moves.
+rt_poke:
+    call    chk_int2            ; both args boxed INT (tag 4), else loud halt rc1
+    mov     rcx, [rsi+8]        ; addr  (first arg)
+    mov     rdx, [rax+8]        ; byte  (second arg)
+    mov     [rcx], dl           ; write the low byte to that physical address
+    movzx   rax, dl             ; return the byte actually written (0..255)
+    jmp     rt_box_int          ; -> boxed INT

@@ -1,0 +1,13 @@
+# K4b poke smoke test (host-side). native_codegen3 emits ONE PT_LOAD with
+# p_flags=7 (RWX) whose memsz includes a 16 GiB zero-filled heap, so an unused
+# deep heap address (500 MiB in) is mapped and writable in the running process.
+# poke a distinctive byte there, peek it back (must match), and peek the
+# untouched neighbour (must be 0). This proves the poke primitive + the
+# poke;peek round-trip WITHOUT needing the metal — the QEMU page-table gate is
+# the separate K4b capstone. Prints: 173 then 0.
+glyph MAIN =
+    (la _.
+    (la _.
+        print(int_to_str(peek(528482305)))
+    )(print(int_to_str(peek(528482304))))
+    )(poke(528482304)(173))

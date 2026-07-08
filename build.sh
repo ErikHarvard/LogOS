@@ -1547,7 +1547,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9642 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9666 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -4050,6 +4050,22 @@ say "LogOS kernel — K1/K2: first bare-metal boot + loud fault handling (ring 0
 bash kernel/build_k2.sh >/dev/null 2>&1 || { echo "FAIL  kernel: kernel/build_k2.sh failed"; exit 1; }
 bash kernel/gate_k1.sh || exit 1
 bash kernel/gate_k2.sh || exit 1
+
+say "LogOS kernel — K3/K4: physical memory (PMM) + virtual memory (paging) on the metal"
+# K3a: the PMM policy is pure logic -> host==native (the strong oracle). K3b:
+# the PMM walks the REAL multiboot memory map on the metal via the peek() runtime
+# builtin (QEMU). K4a: the 4-level paging math (VA decomposition, PTE assembly,
+# W^X) is pure logic -> host==native, and a W^X violation halts loudly on both
+# engines. K4b: a K4a PTE is BUILT in a real PMM frame on the metal via the new
+# poke() builtin and read back via peek() (QEMU). The QEMU gates (K3b, K4b) skip
+# cleanly when QEMU is absent; the pure-logic gates (K3a, K4a) always run. Each
+# recompiles native_codegen3 under tiny_host (~5 min), so this block is the
+# slowest part of the audit when QEMU is present. Run sequentially — every gate
+# shares native_input.la / native_codegen3_out (the shared-file race).
+bash kernel/gate_k3a.sh || exit 1
+bash kernel/gate_k3b.sh || exit 1
+bash kernel/gate_k4a.sh || exit 1
+bash kernel/gate_k4b.sh || exit 1
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),

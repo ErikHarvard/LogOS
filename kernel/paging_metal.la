@@ -1,0 +1,110 @@
+# ===================================================================
+#  LogOS kernel — K4b: paging wired to the METAL.
+#
+#  K4a proved the paging math (VA decomposition, PTE assembly, W^X) is pure
+#  logic, host==native. K4b wires the WRITE path to real hardware: it allocates
+#  a real physical frame from the K3 PMM (walking the loader's REAL multiboot
+#  map via peek, exactly as K3b does), assembles a K4a page-table entry, and
+#  POKEs those 8 bytes (low32 then high32, little-endian) into that real frame
+#  via the new `poke(addr)(byte)` runtime builtin (the write-twin of peek, the
+#  second native_codegen3 extension). It then peeks the 8 bytes back and prints
+#  them: the QEMU gate asserts the PTE read back from the real frame equals the
+#  K4a-assembled value. So a page-table entry is BUILT in real RAM on bare metal
+#  — b_τ ≡ f_τ, the write half of paging on the metal. (The CR3 switch that makes
+#  the CPU walk this table is the K4b capstone follow-up; here we prove the
+#  frame allocation + PTE write + read-back round-trip on the metal.)
+#
+#  Native-only (peek/poke touch bare physical addresses): compiled by
+#  native_codegen3, run on bare metal under QEMU.
+# ===================================================================
+
+# ── Church/Scott plumbing (native_codegen3 is import-free) ──
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph NIL = la c. la n. n
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+glyph IS_CONS = la l. l(la h. la t. TRUE)(FALSE)
+glyph HD = la l. l(la h. la t. h)(NIL)
+glyph TL = la l. l(la h. la t. t)(NIL)
+glyph FRAME = 4096
+glyph MBI_SAVE = 3145728
+
+# ── little-endian reader over MEMORY (via peek) — the K3b RDMEM ──
+glyph RDMEM = Z(la self. la addr. la k.
+    IF(int_eq(k)(0))(la _. 0)(la _.
+        add(peek(addr))(mul(256)(self(add(addr)(1))(sub(k)(1))))))
+
+# ── the K3b PMM: parse the REAL multiboot map, pick the arena, allocate ──
+glyph PARSE_MMAP = Z(la self. la base. la off. la total.
+    IF(NOT(lt(off)(total)))(la _. NIL)(la _.
+        (la ea. (la size. (la stride. (la rbase. (la len. (la typ. (la rest.
+            IF(int_eq(typ)(1))(la _. CONS(PAIR(rbase)(len))(rest))(la _. rest)
+        )(self(base)(add(off)(stride))(total)) )(RDMEM(add(ea)(20))(4)) )(RDMEM(add(ea)(12))(8)) )(RDMEM(add(ea)(4))(8)) )(add(RDMEM(ea)(4))(4)) )(RDMEM(ea)(4)) )(add(base)(off)) ))
+glyph MAX_REGION = Z(la self. la regs. la best.
+    IF(IS_CONS(regs))(la _.
+        (la r. self(TL(regs))(IF(lt(SND(best))(SND(r)))(la _. r)(la _. best)))(HD(regs))
+    )(la _. best))
+glyph ARENA = la regs. MAX_REGION(TL(regs))(HD(regs))
+glyph ALIGN_UP = la n. mul(div(add(n)(sub(FRAME)(1)))(FRAME))(FRAME)
+glyph PMM_INIT = la arena. PAIR(ALIGN_UP(FST(arena)))(NIL)
+glyph PMM_ALLOC = la st.
+    (la next. (la stk.
+        IF(IS_CONS(stk))(la _. PAIR(HD(stk))(PAIR(next)(TL(stk))))(la _.
+            PAIR(next)(PAIR(add(next)(FRAME))(stk))))
+    (SND(st)))(FST(st))
+
+# ── the K4a PTE assembly (low32/high32; NX at high32 bit 31) ──
+glyph PAGE   = 4096
+glyph LOW32  = 4294967296
+glyph NXHI   = 2147483648
+glyph FRAME_BASE = la paddr. mul(div(paddr)(PAGE))(PAGE)
+glyph PTE_LO = la paddr. la flags. add(mod(FRAME_BASE(paddr))(LOW32))(flags)
+glyph PTE_HI = la paddr. la nx.
+    add(div(FRAME_BASE(paddr))(LOW32))(IF(int_eq(nx)(1))(la _. NXHI)(la _. 0))
+
+# ── POKE32(addr)(v): write a 32-bit value as 4 little-endian bytes via poke ──
+# poke is eager and returns the byte written, so (la _. next)(poke ...) forces
+# byte0 before byte1 ... — the write order is fixed.
+glyph POKE32 = la addr. la v.
+    (la _. (la _. (la _.
+        poke(add(addr)(3))(mod(div(v)(16777216))(256))
+    )(poke(add(addr)(2))(mod(div(v)(65536))(256))))
+    (poke(add(addr)(1))(mod(div(v)(256))(256))))
+    (poke(addr)(mod(v)(256)))
+
+# ── drive it on the METAL ─────────────────────────────────────────
+# Allocate the first real frame P from the arena. Assemble a PTE mapping paddr
+# 0x200000 (2 MiB) with flags P|W (=3) and NX=1 -> low32 = 2097155, high32 =
+# 2147483648. Poke low32 at P+0, high32 at P+4, then peek both back and print.
+# The gate asserts the read-back equals the assembled PTE (the write landed in
+# the real frame). SHOWN prints "label<int>".
+glyph SHOWN = la label. la n. print(concat(label)(int_to_str(n)))
+glyph MAIN =
+    (la mbi.
+    (la mlen.
+    (la maddr.
+    (la regions.
+    (la arena.
+    (la p.
+    (la lo.
+    (la hi.
+        (la _. (la _. (la _.
+            (la _.
+                SHOWN("K4B PTEHI ")(RDMEM(add(p)(4))(4))
+            )(SHOWN("K4B PTELO ")(RDMEM(p)(4)))
+        )(POKE32(add(p)(4))(hi)))(POKE32(p)(lo)))(SHOWN("K4B FRAME ")(p))
+    )(PTE_HI(2097152)(1))
+    )(PTE_LO(2097152)(3))
+    )(FST(PMM_ALLOC(PMM_INIT(arena))))
+    )(ARENA(regions))
+    )(PARSE_MMAP(maddr)(0)(mlen))
+    )(RDMEM(add(mbi)(48))(4))
+    )(RDMEM(add(mbi)(44))(4))
+    )(RDMEM(MBI_SAVE)(4))
