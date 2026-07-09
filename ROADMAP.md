@@ -284,9 +284,42 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             `GC_INTERVAL`) forcing the collector to fire mid-suspend; A's canary is
             byte-intact on resume → `SURVIVED`. `gate_k5b1b.sh` (Linux-hosted),
             wired into build.sh. **Cooperative tasks are now GC-safe across
-            suspension** (K5b.1 complete).
-      - [ ] K5b.2 — preemptive (K5a timer ISR sets a yield-flag; safe-point check
-            in the LA path forces the switch; QEMU-gated).
+            suspension** (K5b.1 complete). *(Test strengthened in K5b.1c — see
+            below: the ORIGINAL K5b.1b test was a trivial pass because the GC only
+            fired at 16 GiB exhaustion, so no GC actually ran; K5b.1c's periodic GC
+            makes it fire real collections while a task is suspended.)*
+      - [x] K5b.1c — **periodic GC** (the collector was firing ONLY at 16 GiB
+            exhaustion; the `NEXT_GC`/`GC_INTERVAL` interval trigger was dead code).
+            Found while building K5b.2: any sustained LA loop allocates (a boxed
+            int + an env frame per `rt_apply`), so with no periodic GC the heap
+            grows unboundedly until 16 GiB — fine on Linux (lazy 16 GiB bss) but on
+            metal it climbs past physical RAM and faults, AND it meant the K5b.1b
+            GC test never actually fired a GC (verified: 0 collections). Fix:
+            `alloc24`/`alloc_blob` now fire `rt_gc` when the bump top crosses
+            `NEXT_GC` (already inited by `rt_init` to `HEAP_BASE + 64 MB`), then
+            advance the threshold — the same non-moving, register-transparent
+            collector the exhaustion path calls. Edits early routines → uniform
+            constant shift (+70 B, 42 constants re-derived + regen). **Verified:**
+            a 2.4 GB string churn stays at 806 MB RSS (bounded; was unbounded), and
+            `task_gc` now fires several real collections (~320 MB churn → 263 MB
+            RSS) while a task is suspended → the canary genuinely survives.
+            **HONEST LIMIT:** the conservative collector reclaims *blob* garbage
+            well but RETAINS tight-loop 24-byte garbage (an 80 M-int loop → 2.75 GB
+            RSS) — a false-retention issue (conservative stack scan / Z-combinator
+            chain) that bounds how much a metal LA program can compute. Documented,
+            not yet fixed; it's what defers the K5b.2 metal demo.
+      - [~] K5b.2 — preemptive. **MECHANISM DONE + cooperatively verified;
+            metal demo DEFERRED.** The K5a timer ISR sets a `YIELD_PENDING` flag
+            (metal only); the runtime checks it at the `rt_apply` safe point (every
+            reduction) and yields — never inside `rt_gc`/`alloc`. On Linux the flag
+            stays 0, so both cooperative gates still pass (the safe point is inert),
+            proving the mechanism doesn't disturb scheduling. The **metal
+            demonstration is DEFERRED**: a preempt demo needs tasks that busy-loop
+            > 10 ms, which allocates tight-loop garbage the collector retains
+            (K5b.1c limit) → the heap climbs into the task stacks / past physical
+            RAM. Unblocking it needs the GC-retention fix. `task_preempt.la` +
+            `build_k5b2.sh` + `gate_k5b2.sh` exist (assert timer-driven interleave)
+            but are NOT wired into build.sh pending that fix.
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
         over in-kernel channels; native process model vs fork/execve)
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last

@@ -22,10 +22,17 @@ glyph IF  = la c. la t. la f. c(t)(f)("!")
 glyph SEQ = la a. la b. b
 glyph DUP = la s. concat(s)(s)
 
-# ~64-byte seed; DUP^6 -> ~4 KiB per iteration, discarded (pure garbage).
+# ~64-byte seed; DUP^6 -> ~8 KiB allocated per iteration, discarded (pure
+# garbage). 40000 iters ~= 320 MB, and with the K5b.1c PERIODIC GC (fires every
+# GC_INTERVAL = 64 MB of allocation, not only at 16 GiB exhaustion) that is
+# several REAL collections while task A is suspended — genuinely exercising the
+# K5b.1b root scan (before K5b.1c the GC only fired at 16 GiB, so this test was a
+# trivial pass: nothing was ever collected). The periodic GC also keeps the heap
+# bounded (~130 MB RSS for 320 MB of dead strings), so it never climbs into a
+# task stack.
 glyph SEED = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 glyph CHURN = Z(la self. la i.
-    IF(lt(i)(50000))
+    IF(lt(i)(40000))
         (la _. SEQ(str_len(DUP(DUP(DUP(DUP(DUP(DUP(SEED))))))))(self(add(i)(1))))
         (la _. 0))
 

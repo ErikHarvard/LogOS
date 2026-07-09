@@ -78,6 +78,8 @@ alloc24:
     lea     rcx, [r15+24]
     cmp     rcx, [HEAP_END]
     ja      .gc
+    cmp     r15, [NEXT_GC]      ; K5b.1c: periodic GC — bound memory instead of
+    jae     .periodic           ;   only collecting at 16 GiB exhaustion
     mov     rax, r15
     mov     r15, rcx
     ret
@@ -98,6 +100,14 @@ alloc24:
     mov     rax, 60
     mov     rdi, 73
     syscall
+.periodic:
+    ; r15 crossed NEXT_GC: reclaim garbage (non-moving, register-transparent),
+    ; advance the threshold past the (unchanged) bump top, and retry from the top
+    ; so a reclaimed FREE24 cell is reused before bumping — keeps r15 bounded.
+    call    rt_gc
+    lea     rcx, [r15 + GC_INTERVAL]
+    mov     [NEXT_GC], rcx
+    jmp     alloc24
 
 ; ── classidx(rdi=blob body len) -> r8=classidx(>=5), r9=classsize(=1<<r8) ──
 ;   T=8+len rounded UP to a power of 2 >= 32. Clobbers rax,rcx,rdx.
@@ -137,6 +147,8 @@ alloc_blob:
     add     rcx, r9
     cmp     rcx, [HEAP_END]
     ja      .gc
+    cmp     r15, [NEXT_GC]      ; K5b.1c: periodic GC (see alloc24)
+    jae     .periodic
     mov     rax, r15
     mov     r15, rcx
     ret
@@ -157,6 +169,13 @@ alloc_blob:
     mov     rax, 60
     mov     rdi, 73
     syscall
+.periodic:
+    ; rdi (blob len) is preserved across rt_gc (REGDUMP), so retry from the top
+    ; recomputes classidx and reuses a reclaimed FREEBLOB cell before bumping.
+    call    rt_gc
+    lea     rcx, [r15 + GC_INTERVAL]
+    mov     [NEXT_GC], rcx
+    jmp     alloc_blob
 
 ; ── slot 0: rt_box_int(rax=int) -> rax = boxed INT ──
 rt_box_int:

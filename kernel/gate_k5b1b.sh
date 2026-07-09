@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # LogOS kernel K5b.1b slice gate — a suspended task's heap roots survive a GC.
 # Compile task_gc.la and run it LINUX-HOSTED (no QEMU). Task A holds a canary
-# heap string live across a yield; task B then churns ~400 MB of garbage (>> the
-# 64 MB GC_INTERVAL), forcing the conservative mark-sweep collector to fire one
-# or more times WHILE A is suspended. When A resumes it checks the canary byte-
-# for-byte:
+# heap string live across a yield; task B then churns ~320 MB of garbage, which
+# with the K5b.1c PERIODIC GC (fires every 64 MB, not only at 16 GiB exhaustion)
+# triggers several REAL collections WHILE A is suspended. When A resumes it
+# checks the canary byte-for-byte:
 #   - "SURVIVED"  => rt_gc's K5b.1b per-task root scan marked A's suspended
 #                    regs + stack, so the canary was NOT swept (the whole point).
 #   - "CORRUPTED" (or a crash) => the canary was collected/reused -> the fix is
