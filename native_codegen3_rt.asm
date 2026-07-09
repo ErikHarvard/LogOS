@@ -49,6 +49,22 @@ org 0x400078
 %define WL_SIZE     0x4000000   ; 64 MB worklist, carved from the front of the heap region
 %define MARKBIT     0x100       ; header bit 8 (= byte 1) is the mark
 %define H_FREE      (6 | (16 << 16))  ; 3b.3 free-list cell (24B); link stored in body word 0
+; K5b.1 task control block layout + scheduler constants (used by rt_gc's K5b.1b
+; per-task root scan AND the K5b.1a spawn/yield routines below; %define is
+; order-sensitive, so it must precede rt_gc — it emits no bytes, no address moves).
+%define MAXTASK          8
+%define TASK_STACK_SIZE  0x800000        ; 8 MiB per spawned task (matches the 7 MiB guard)
+%define TCB_STATE    0                   ; 0 = free, 1 = runnable, 2 = dead
+%define TCB_RSP      8
+%define TCB_RBX      16
+%define TCB_RBP      24
+%define TCB_R12      32
+%define TCB_R13      40
+%define TCB_R14      48
+%define TCB_STKBASE  56
+%define TCB_STKLIMIT 64
+%define TCB_CLOSURE  72
+%define TCB_SIZE     80
 
 ; ── alloc24: get a 24-byte slot (header at [rax], body at [rax+8]) ──
 ;   free-list first, then bump; on exhaustion run rt_gc (mark + sweep) and retry;
@@ -696,6 +712,47 @@ rt_gc:
     add     rbp, 8
     jmp     .skl
 .skd:
+    ; --- roots: every OTHER runnable task's saved regs + its own stack (K5b.1b) ---
+    ; The current task's live context is already covered above (REGDUMP +
+    ; [rsp,STACK_BASE)). Each SUSPENDED runnable task's live LA values sit in its
+    ; TCB (rbx/rbp/r12-r14) and on its own saved stack [saved_rsp, stkbase); scan
+    ; both. The collector is NON-MOVING, so this is purely additive marking — the
+    ; suspended contexts stay byte-valid, nothing relocates. Uses only registers
+    ; .consider preserves (rbp, rdi, r9, r14); r12 = worklist ptr, threaded.
+    cmp     qword [CUR_TASK], 0
+    je      .drain                       ; no tasks spawned -> nothing extra
+    xor     r9, r9                       ; task index
+.tsk:
+    cmp     r9, MAXTASK
+    jae     .drain
+    imul    rdi, r9, TCB_SIZE
+    add     rdi, TASK_TABLE              ; &TCB[r9]
+    cmp     qword [rdi + TCB_STATE], 1   ; runnable only (skip free/dead)
+    jne     .tsknext
+    cmp     rdi, [CUR_TASK]              ; current task already scanned above
+    je      .tsknext
+    mov     rax, [rdi + TCB_RBX]
+    call    .consider
+    mov     rax, [rdi + TCB_RBP]
+    call    .consider
+    mov     rax, [rdi + TCB_R12]
+    call    .consider
+    mov     rax, [rdi + TCB_R13]
+    call    .consider
+    mov     rax, [rdi + TCB_R14]
+    call    .consider
+    mov     rbp, [rdi + TCB_RSP]         ; saved stack cursor (lower bound)
+    mov     r14, [rdi + TCB_STKBASE]     ; stack base (upper bound)
+.tstk:
+    cmp     rbp, r14
+    jae     .tsknext
+    mov     rax, [rbp]
+    call    .consider
+    add     rbp, 8
+    jmp     .tstk
+.tsknext:
+    inc     r9
+    jmp     .tsk
     ; --- drain worklist: trace children by kind ---
 .drain:
     cmp     r12, [WORKLIST_BASE]
@@ -1571,19 +1628,9 @@ rt_exec_at:
 ;  root generalization — scanning every suspended task's saved regs + stack — is
 ;  K5b.1b (it must edit rt_gc, an early routine, hence a separate slice).
 ; ═════════════════════════════════════════════════════════════════════════════
-%define MAXTASK          8
-%define TASK_STACK_SIZE  0x800000        ; 8 MiB per spawned task (matches the 7 MiB guard)
-%define TCB_STATE    0                   ; 0 = free, 1 = runnable, 2 = dead
-%define TCB_RSP      8
-%define TCB_RBX      16
-%define TCB_RBP      24
-%define TCB_R12      32
-%define TCB_R13      40
-%define TCB_R14      48
-%define TCB_STKBASE  56
-%define TCB_STKLIMIT 64
-%define TCB_CLOSURE  72
-%define TCB_SIZE     80
+; (The MAXTASK / TASK_STACK_SIZE / TCB_* %defines live above rt_gc — moved there
+;  for K5b.1b so the collector's per-task root scan can use them; %define is
+;  order-sensitive. They emit no bytes, so no runtime address shifted.)
 
 ; ── rt_spawn(rax = boxed closure value, tag 2) -> boxed value (ignored) ───────
 ;   Registers a new runnable task that will run the closure (applied to a dummy

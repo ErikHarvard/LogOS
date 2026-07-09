@@ -1547,7 +1547,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=11006 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=11131 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -4249,6 +4249,15 @@ bash kernel/gate_k5a.sh || exit 1
 # stack -> the probe is short so no GC fires while a task is suspended; the GC
 # root generalization across suspended stacks is K5b.1b.)
 bash kernel/gate_k5b1.sh || exit 1
+# K5b.1b: a suspended task's heap roots survive a GC. rt_gc's root phase now
+# also scans every OTHER runnable task's saved regs + [saved_rsp, stkbase) (the
+# collector is non-moving, so this is additive marking, no relocation). Task A
+# holds a canary across a yield while task B churns ~400 MB (>> the 64 MB
+# GC_INTERVAL), forcing the collector to fire while A is suspended; A's canary is
+# byte-intact on resume ("SURVIVED"). This edited rt_gc (an early routine),
+# shifting the post-rt_gc RT_* constants by a uniform +125 and requiring
+# regen_selfhost + the Stage-4 fixed-point re-commit + drift count 11006->11131.
+bash kernel/gate_k5b1b.sh || exit 1
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),

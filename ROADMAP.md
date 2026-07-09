@@ -249,7 +249,8 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           gated. Scheduler policy = **asm round-robin** over the task table for
           now (reachable from the ISR), an LA-expressed policy is a later
           refinement.
-      - [~] K5b.1 — cooperative tasks. **K5b.1a DONE** (append-only context switch):
+      - [x] K5b.1 — cooperative tasks **COMPLETE** (1a context switch + 1b GC-safe).
+            **K5b.1a** (append-only context switch):
             `spawn`/`yield` — the 5th/6th native_codegen3 extensions, APPENDED after
             `rt_exec_at` so ONLY `LITERAL_BASE` (4204136→4205430) + `RTLEN`
             (9712→11006) shifted (`rt_exec_at` ABS unchanged = 4204112, verified) —
@@ -266,10 +267,24 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             its own stack), gated LINUX-HOSTED (`gate_k5b1.sh`, no QEMU), wired into
             build.sh. HONEST LIMIT: `rt_gc` still scans only the current task's
             stack — the probe is short (<< GC_INTERVAL) so no GC fires mid-suspend.
-      - [ ] K5b.1b — GC root generalization: rt_gc scans every suspended task's
-            saved regs + `[saved_rsp, stkbase)` (the crown-jewel edit — shifts ~20
-            RT_* constants by a uniform delta + regen). Gate: two tasks survive a
-            FORCED GC holding live heap data.
+      - [x] K5b.1b — GC root generalization. **DONE.** `rt_gc`'s root phase now
+            iterates `TASK_TABLE` and, for each OTHER runnable task, scans its saved
+            regs (rbx/rbp/r12-r14) + its stack `[saved_rsp, stkbase)` — the
+            collector is NON-MOVING, so this is purely additive marking, no
+            relocation (the suspended contexts stay byte-valid). Written with only
+            registers `.consider` preserves (rbp/rdi/r9/r14; r12 = threaded
+            worklist ptr). The `TCB_*`/`MAXTASK` `%define`s moved above `rt_gc`
+            (order-sensitive; emit no bytes). Editing `rt_gc` (early) grew it by
+            **exactly 125 bytes**, shifting every post-`rt_gc` `RT_*`/`*_ADDR`
+            constant by a uniform **+125** (pre-`rt_gc` constants verified
+            unchanged) — 23 `.la` constants re-derived from the nasm listing,
+            `regen_selfhost` (2 iters, image 689956→690527 B), Stage-4 fixed point
+            re-verified, drift count 11006→11131. `task_gc.la`: task A holds a
+            canary across a yield while task B churns ~400 MB (>> 64 MB
+            `GC_INTERVAL`) forcing the collector to fire mid-suspend; A's canary is
+            byte-intact on resume → `SURVIVED`. `gate_k5b1b.sh` (Linux-hosted),
+            wired into build.sh. **Cooperative tasks are now GC-safe across
+            suspension** (K5b.1 complete).
       - [ ] K5b.2 — preemptive (K5a timer ISR sets a yield-flag; safe-point check
             in the LA path forces the switch; QEMU-gated).
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC

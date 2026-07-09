@@ -1,0 +1,51 @@
+# ===================================================================
+#  LogOS kernel — K5b.1b probe: a suspended task's heap roots survive a GC.
+#
+#  Task A builds a CANARY heap string, then yields — suspending while it still
+#  holds the canary (in its env + on its own saved stack). Task B then allocates
+#  hundreds of MB of garbage, forcing the conservative mark-sweep GC to fire
+#  (GC_INTERVAL = 64 MB) one or more times WHILE A is suspended. When A resumes,
+#  it checks the canary is byte-intact.
+#
+#  Without the K5b.1b rt_gc change, A's canary is unreachable from the GC roots
+#  (only the CURRENT task B's regs/stack + TRUE/FALSE are scanned), so it is
+#  swept and its cell reused by B's churn -> A reads a freed/corrupted object
+#  -> "CORRUPTED" (or a crash). With K5b.1b, rt_gc also scans every suspended
+#  task's saved regs + [saved_rsp, stkbase), so the canary is marked and survives
+#  -> "SURVIVED". Non-moving collector -> nothing relocates.
+#
+#  Native-only (spawn/yield); Linux-hosted (no ring 0), so the gate needs no QEMU.
+# ===================================================================
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SEQ = la a. la b. b
+glyph DUP = la s. concat(s)(s)
+
+# ~64-byte seed; DUP^6 -> ~4 KiB per iteration, discarded (pure garbage).
+glyph SEED = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+glyph CHURN = Z(la self. la i.
+    IF(lt(i)(50000))
+        (la _. SEQ(str_len(DUP(DUP(DUP(DUP(DUP(DUP(SEED))))))))(self(add(i)(1))))
+        (la _. 0))
+
+# Task A: hold a canary live across the yield, then verify it byte-for-byte.
+glyph TASKA = la _.
+    (la canary.
+        SEQ(yield("!"))
+        (print(IF(str_eq(canary)("CANARY-ALIVE"))
+                  (la _. "SURVIVED")
+                  (la _. "CORRUPTED"))))
+    (concat("CANARY-")("ALIVE"))
+
+# Task B: churn > 64 MB (forces GC while A is suspended), then announce.
+glyph TASKB = la _. SEQ(CHURN(0))(print("B-churned"))
+
+glyph MAIN =
+    SEQ(spawn(TASKA))
+   (SEQ(spawn(TASKB))
+   (SEQ((Z(la self. la i.
+            IF(lt(i)(6))
+                (la _. SEQ(yield("!"))(self(add(i)(1))))
+                (la _. "!")))(0))
+   (print("done"))))
