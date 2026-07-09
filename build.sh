@@ -1547,7 +1547,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9712 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=11006 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -4239,6 +4239,16 @@ bash kernel/gate_k4c_heap.sh || exit 1
 # and the LA code resumes intact -> "K5 TICKS n>=1" (preemption capability on
 # bare metal). QEMU-gated; skips cleanly when QEMU absent.
 bash kernel/gate_k5a.sh || exit 1
+# K5b.1a: cooperative tasks via spawn/yield (the 5th/6th native_codegen3
+# extensions, APPENDED to the runtime so Stage 4's fixed point is untouched — a
+# real per-task context switch: rsp + callee-saved regs saved to a TCB, round-
+# robin scheduling, per-task stacks carved from the top of the heap region).
+# Two worker tasks interleave "A B A B A B" through yields, each worker's loop
+# counter surviving on its own saved stack. Runs LINUX-HOSTED (green-thread
+# switches, no ring 0), so no QEMU. (rt_gc still scans only the current task's
+# stack -> the probe is short so no GC fires while a task is suspended; the GC
+# root generalization across suspended stacks is K5b.1b.)
+bash kernel/gate_k5b1.sh || exit 1
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),

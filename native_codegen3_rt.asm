@@ -1544,3 +1544,194 @@ rt_exec_at:
     call    rax                 ; FETCH there -> #PF if NX-mapped; else runs the ret
     xor     rax, rax            ; reached only if it did NOT fault -> return 0
     jmp     rt_box_int          ; -> boxed INT (the NX-disarmed witness)
+
+; ═════════════════════════════════════════════════════════════════════════════
+;  K5b.1a: cooperative tasks — spawn/yield + a real context switch.  The FIFTH
+;  and SIXTH native_codegen3 extensions (spawn, yield).  Appended AFTER
+;  rt_exec_at so only LITERAL_BASE/RTLEN shift; no earlier fixed address moves.
+;
+;  A task = a saved register context + its own stack.  The heap (r15) is SHARED
+;  across all tasks (one collector, one bump lineage), so the switch saves the
+;  callee-saved set that can hold live LA values — rbx (env), rbp, r12, r13, r14
+;  — and rsp, but NOT r15 (leaving it as the current shared heap top: the heap
+;  only grows, so a resumed task correctly continues from wherever the bump now
+;  is).  yield() also swaps the STACK_BASE/STACK_LIMIT globals (the GC scan bound
+;  + the stack guard) to the incoming task's.
+;
+;  Round-robin over TASK_TABLE (a fixed array of MAXTASK TCBs).  CUR_TASK/
+;  CUR_INDEX name the running task.  The bootstrap (main) task is lazily given
+;  TCB[0] on the first spawn.  A spawned task's stack is carved from the TOP of
+;  the heap region (HEAP_END downward, TASK_STACK_SIZE apart) — distinct from the
+;  main process stack and from each other; the short cooperative gate never grows
+;  the heap up to meet them.
+;
+;  HONEST LIMIT (K5b.1a): rt_gc still scans only the CURRENT task's stack, so a
+;  GC firing while another task is suspended would miss its roots.  The gate
+;  ping-pongs briefly (<< GC_INTERVAL of allocation), so no GC fires.  The GC
+;  root generalization — scanning every suspended task's saved regs + stack — is
+;  K5b.1b (it must edit rt_gc, an early routine, hence a separate slice).
+; ═════════════════════════════════════════════════════════════════════════════
+%define MAXTASK          8
+%define TASK_STACK_SIZE  0x800000        ; 8 MiB per spawned task (matches the 7 MiB guard)
+%define TCB_STATE    0                   ; 0 = free, 1 = runnable, 2 = dead
+%define TCB_RSP      8
+%define TCB_RBX      16
+%define TCB_RBP      24
+%define TCB_R12      32
+%define TCB_R13      40
+%define TCB_R14      48
+%define TCB_STKBASE  56
+%define TCB_STKLIMIT 64
+%define TCB_CLOSURE  72
+%define TCB_SIZE     80
+
+; ── rt_spawn(rax = boxed closure value, tag 2) -> boxed value (ignored) ───────
+;   Registers a new runnable task that will run the closure (applied to a dummy
+;   arg) when first scheduled.  Returns [TRUEVAL] (the LA scheduler ignores it).
+rt_spawn:
+    cmp     qword [rax], 2              ; arg must be a closure (value tag 2)
+    jne     .badarg
+    mov     r10, rax                    ; save the closure box across the setup
+    ; --- lazily adopt the main task as TCB[0] on the first spawn ---
+    cmp     qword [CUR_TASK], 0
+    jne     .have_main
+    mov     rax, TASK_TABLE             ; &TCB[0]
+    mov     qword [rax + TCB_STATE], 1  ; runnable
+    mov     rcx, [STACK_BASE]
+    mov     [rax + TCB_STKBASE], rcx    ; main keeps its own (process) stack
+    mov     rcx, [STACK_LIMIT]
+    mov     [rax + TCB_STKLIMIT], rcx
+    mov     [CUR_TASK], rax
+    mov     qword [CUR_INDEX], 0
+.have_main:
+    ; --- find a free TCB slot ---
+    xor     r8, r8                      ; index
+.findfree:
+    cmp     r8, MAXTASK
+    jae     .nofree
+    imul    rax, r8, TCB_SIZE
+    add     rax, TASK_TABLE             ; &TCB[r8]
+    cmp     qword [rax + TCB_STATE], 0
+    je      .gotslot
+    inc     r8
+    jmp     .findfree
+.gotslot:
+    ; --- carve this task's stack from the top of the heap region ---
+    ; stack_top = HEAP_END - index*TASK_STACK_SIZE (index>=1, so distinct from main)
+    mov     rdx, [HEAP_END]
+    imul    r9, r8, TASK_STACK_SIZE
+    sub     rdx, r9                     ; rdx = stack_top
+    mov     [rax + TCB_STKBASE], rdx
+    mov     r9, rdx
+    sub     r9, 0x700000                ; stack_limit = stack_top - 7 MiB
+    mov     [rax + TCB_STKLIMIT], r9
+    mov     [rax + TCB_CLOSURE], r10
+    mov     qword [rax + TCB_RBX], 0    ; fresh top-level env
+    mov     qword [rax + TCB_RBP], 0
+    mov     qword [rax + TCB_R12], 0
+    mov     qword [rax + TCB_R13], 0
+    mov     qword [rax + TCB_R14], 0
+    ; --- plant the initial frame: first `ret` into task_trampoline ---
+    sub     rdx, 8
+    mov     r9, task_trampoline
+    mov     [rdx], r9
+    mov     [rax + TCB_RSP], rdx
+    mov     qword [rax + TCB_STATE], 1  ; runnable (last, so it's fully built first)
+    mov     rax, [TRUEVAL]
+    ret
+.nofree:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, spawnfull
+    mov     rdx, spawnfulllen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+.badarg:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, spawnbad
+    mov     rdx, spawnbadlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
+; ── rt_yield(rax = arg, ignored) -> boxed value (ignored) ─────────────────────
+;   Save the current task, round-robin to the next runnable task, restore it.
+;   If no task remains runnable, the program is done -> clean exit(0).
+rt_yield:
+    mov     rax, [CUR_TASK]
+    test    rax, rax
+    jz      .noop                       ; yield before any spawn: a no-op
+    mov     [rax + TCB_RSP], rsp
+    mov     [rax + TCB_RBX], rbx
+    mov     [rax + TCB_RBP], rbp
+    mov     [rax + TCB_R12], r12
+    mov     [rax + TCB_R13], r13
+    mov     [rax + TCB_R14], r14
+    mov     r9, [CUR_INDEX]             ; scan for the next runnable task
+    xor     r8, r8                      ; steps taken
+.scan:
+    inc     r9
+    cmp     r9, MAXTASK
+    jb      .nowrap
+    xor     r9, r9
+.nowrap:
+    imul    rax, r9, TCB_SIZE
+    add     rax, TASK_TABLE             ; &TCB[r9]
+    cmp     qword [rax + TCB_STATE], 1  ; runnable?
+    je      .found
+    inc     r8
+    cmp     r8, MAXTASK
+    jb      .scan
+    ; nothing runnable left -> all tasks finished
+    mov     rax, 60
+    xor     rdi, rdi
+    syscall
+.found:
+    mov     [CUR_INDEX], r9
+    mov     [CUR_TASK], rax
+    mov     rbx, [rax + TCB_RBX]
+    mov     rbp, [rax + TCB_RBP]
+    mov     r12, [rax + TCB_R12]
+    mov     r13, [rax + TCB_R13]
+    mov     r14, [rax + TCB_R14]
+    mov     rcx, [rax + TCB_STKBASE]
+    mov     [STACK_BASE], rcx
+    mov     rcx, [rax + TCB_STKLIMIT]
+    mov     [STACK_LIMIT], rcx
+    mov     rsp, [rax + TCB_RSP]        ; THE context switch
+    mov     rax, [TRUEVAL]             ; yield's result (ignored by the LA scheduler)
+    ret
+.noop:
+    mov     rax, [TRUEVAL]
+    ret
+
+; ── task_trampoline: a spawned task's first-run entry (reached via yield's ret) ─
+;   Applies the task closure to a dummy arg, runs it to completion, then marks
+;   the task dead and yields away (never returns here).
+task_trampoline:
+    mov     rax, [CUR_TASK]
+    mov     r10, [rax + TCB_CLOSURE]    ; the closure (tag 2)
+    mov     r11, [TRUEVAL]             ; dummy arg (a thunk ignores it)
+    xor     rbx, rbx                    ; top-level env
+    call    rt_apply                    ; run the task body to completion
+    mov     rax, [CUR_TASK]
+    mov     qword [rax + TCB_STATE], 2  ; dead
+    xor     rax, rax
+    call    rt_yield                    ; hand off; does not return if others run
+    mov     rax, 60                     ; (reached only if this was the last task)
+    xor     rdi, rdi
+    syscall
+
+spawnbad:  db "native: spawn: argument is not a function", 10
+spawnbadlen: equ $ - spawnbad
+spawnfull: db "native: spawn: too many tasks (MAXTASK)", 10
+spawnfulllen: equ $ - spawnfull
+
+; ── task control blocks + scheduler state (zero-initialized) ─────────────────
+CUR_TASK:   dq 0
+CUR_INDEX:  dq 0
+TASK_TABLE: times (MAXTASK * TCB_SIZE / 8) dq 0

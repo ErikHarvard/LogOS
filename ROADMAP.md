@@ -249,8 +249,27 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           gated. Scheduler policy = **asm round-robin** over the task table for
           now (reachable from the ISR), an LA-expressed policy is a later
           refinement.
-      - [ ] K5b.1 — cooperative tasks (spawn/yield, GC root generalization, regen,
-            Linux-hosted gate: two tasks interleave + survive a forced GC).
+      - [~] K5b.1 — cooperative tasks. **K5b.1a DONE** (append-only context switch):
+            `spawn`/`yield` — the 5th/6th native_codegen3 extensions, APPENDED after
+            `rt_exec_at` so ONLY `LITERAL_BASE` (4204136→4205430) + `RTLEN`
+            (9712→11006) shifted (`rt_exec_at` ABS unchanged = 4204112, verified) —
+            no earlier `RT_*` moved. A task = a TCB `{state, rsp, rbx/rbp/r12-r14,
+            stkbase, stklimit, closure}`; `yield` saves the callee-saved set + rsp
+            (NOT r15 — the heap is SHARED, one bump lineage) and round-robins over
+            `TASK_TABLE`, swapping the `STACK_BASE`/`STACK_LIMIT` globals; `spawn`
+            plants an initial frame so `task_trampoline` runs the closure via
+            `rt_apply` on first schedule; per-task stacks carved from the top of the
+            heap region. `regen_selfhost.sh` reached the new fixed point in 2 iters
+            (image 682912→689956 B); Stage-4 fixed point re-verified; drift-guard
+            count 9712→11006. `task_pingpong.la` interleaves `A B A B A B done`
+            (each worker's loop counter preserved across a real context switch on
+            its own stack), gated LINUX-HOSTED (`gate_k5b1.sh`, no QEMU), wired into
+            build.sh. HONEST LIMIT: `rt_gc` still scans only the current task's
+            stack — the probe is short (<< GC_INTERVAL) so no GC fires mid-suspend.
+      - [ ] K5b.1b — GC root generalization: rt_gc scans every suspended task's
+            saved regs + `[saved_rsp, stkbase)` (the crown-jewel edit — shifts ~20
+            RT_* constants by a uniform delta + regen). Gate: two tasks survive a
+            FORCED GC holding live heap data.
       - [ ] K5b.2 — preemptive (K5a timer ISR sets a yield-flag; safe-point check
             in the LA path forces the switch; QEMU-gated).
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC

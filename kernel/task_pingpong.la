@@ -1,0 +1,48 @@
+# ===================================================================
+#  LogOS kernel — K5b.1a probe: cooperative tasks via spawn/yield.
+#
+#  Two worker tasks each print their label 3 times, yielding after each print.
+#  MAIN spawns both, then yields repeatedly (round-robin drains the workers),
+#  then prints "done" and returns (the epilogue exit(0)s).
+#
+#  spawn(closure) registers a task that runs `closure` (applied to a dummy arg)
+#  when first scheduled; yield("!") saves the running task's FULL native context
+#  (rsp + callee-saved regs) and round-robins to the next runnable task. Because
+#  each worker yields MID-loop, its loop counter and continuation live on its own
+#  saved stack across the switch — a real context switch, not CPS.
+#
+#  Expected interleaving (main=idx0, A=idx1, B=idx2, round-robin after current):
+#    A B A B A B done
+#
+#  HONEST LIMIT (K5b.1a): rt_gc still scans only the current task's stack, so this
+#  probe is deliberately SHORT (<< GC_INTERVAL of allocation) — no GC fires while
+#  a task is suspended. GC-safety across suspended task stacks is K5b.1b.
+#
+#  Native-only (spawn/yield touch the runtime's task table): compiled by
+#  native_codegen3, run Linux-hosted (green-thread switches, no ring 0) — the
+#  gate needs no QEMU.
+# ===================================================================
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SEQ = la a. la b. b
+
+# A worker: a THUNK (ignores the dummy arg spawn applies) that prints `lbl`
+# three times, yielding after each print. self(add(i)(1)) is evaluated only
+# AFTER yield returns (eager CBV), so the loop advances one step per resume.
+glyph WORKER = la lbl. la _.
+    (Z(la self. la i.
+        IF(lt(i)(3))
+            (la _. SEQ(print(lbl))(SEQ(yield("!"))(self(add(i)(1)))))
+            (la _. lbl)))(0)
+
+# MAIN: spawn both workers, yield 8 times to drain them (self-resumes once they
+# are dead), then print "done" and fall through to the epilogue exit(0).
+glyph MAIN =
+    SEQ(spawn(WORKER("A")))
+   (SEQ(spawn(WORKER("B")))
+   (SEQ((Z(la self. la i.
+            IF(lt(i)(8))
+                (la _. SEQ(yield("!"))(self(add(i)(1))))
+                (la _. "!")))(0))
+   (print("done"))))
