@@ -308,18 +308,29 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             RSS) — a false-retention issue (conservative stack scan / Z-combinator
             chain) that bounds how much a metal LA program can compute. Documented,
             not yet fixed; it's what defers the K5b.2 metal demo.
-      - [~] K5b.2 — preemptive. **MECHANISM DONE + cooperatively verified;
-            metal demo DEFERRED.** The K5a timer ISR sets a `YIELD_PENDING` flag
-            (metal only); the runtime checks it at the `rt_apply` safe point (every
-            reduction) and yields — never inside `rt_gc`/`alloc`. On Linux the flag
-            stays 0, so both cooperative gates still pass (the safe point is inert),
-            proving the mechanism doesn't disturb scheduling. The **metal
-            demonstration is DEFERRED**: a preempt demo needs tasks that busy-loop
-            > 10 ms, which allocates tight-loop garbage the collector retains
-            (K5b.1c limit) → the heap climbs into the task stacks / past physical
-            RAM. Unblocking it needs the GC-retention fix. `task_preempt.la` +
-            `build_k5b2.sh` + `gate_k5b2.sh` exist (assert timer-driven interleave)
-            but are NOT wired into build.sh pending that fix.
+      - [ ] K5b.2 — preemptive. **PROTOTYPED but NOT landed (reverted) — blocked
+            by TWO issues.** The design (Erik-chosen safe-point yield-flag): the K5a
+            timer ISR sets a `YIELD_PENDING` flag (metal only); the runtime checks it
+            at the `rt_apply` safe point (every reduction) and yields — never inside
+            `rt_gc`/`alloc`. It works *cooperatively* (with the flag inert under
+            Linux, both cooperative gates pass, so the safe point doesn't disturb
+            scheduling). But it could not be landed:
+            (1) **Self-hosting breakage** — with the safe-point + task-stack-base
+            edits on top of K5b.1c's periodic GC, `native_codegen3` no longer reaches
+            a Stage-4 fixed point: gen1 compiles fine but gen2 is corrupt (`expected
+            lambda parameter`), i.e. the change doesn't self-propagate. Likely the
+            periodic GC firing during the ~9.7 GB self-compile interacting with the
+            change; needs debugging. tiny_host-hosted compilation is fine, so it's
+            specifically the native self-host loop.
+            (2) **Metal demo blocked** (even ignoring #1) — a preempt demo needs
+            tasks that busy-loop > 10 ms, which allocates tight-loop garbage the
+            collector RETAINS (the K5b.1c honest-limit) → the heap climbs into the
+            task stacks / past physical RAM → faults.
+            Both trace back to the conservative-GC tight-loop **retention** issue,
+            which is the real next thing to solve before K5b.2. The prototype
+            (`rt_apply` safe point, `YIELD_PENDING`, `task_preempt.la`,
+            `build_k5b2.sh`, `gate_k5b2.sh`) was reverted; the design + findings are
+            recorded here and in [[logos-kernel]].
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
         over in-kernel channels; native process model vs fork/execve)
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last
