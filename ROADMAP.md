@@ -218,14 +218,41 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           (preemption *capability* proven, b_τ ≡ f_τ). `gate_k5a.sh` asserts
           `n ≥ 1` + exit 33; wired into `build.sh`. No new native_codegen3 builtin
           (reuses `peek`), so Stage 4's fixed point is untouched.
-    - [ ] K5b — tasks + context switch: a task = saved register context + its own
-          stack; cooperative `yield` first, then the timer ISR forces a switch
-          (preemptive). The DESIGN problem: (1) how an LA program expresses a task
-          — likely new `spawn`/`yield` HAL builtins (first native_codegen3
-          extension since `exec_at` → reopens the `regen_selfhost` Stage-4 dance);
-          (2) the copying GC scans ONE stack for roots, so multiple task stacks =
-          multiple root sets the collector doesn't know about (the hard fork to
-          resolve before building).
+    - [~] K5b — tasks + context switch. **SCOPED 2026-07-09.** Runtime ABI: `rbx` =
+          current env, `r15` = heap bump (a SHARED single heap across all tasks),
+          `rbp`/`r12`–`r14` callee-saved, `STACK_BASE`/`STACK_LIMIT` globals (GC
+          scan-bound + stack guard). **Pivot finding: `rt_gc` is conservative
+          mark-sweep, NON-MOVING** (roots = GP regs via `REGDUMP` + `TRUE`/`FALSE`
+          + a conservative scan of `[rsp, STACK_BASE)`). Non-moving ⇒ the
+          multi-stack problem is **additive marking, not pointer fixup**: a
+          suspended task's saved regs + stack stay valid across a GC in another
+          task; the collector just has to TRACE them. Three pieces: (1) **GC root
+          generalization** (foundational, ~20 lines in the root phase) — iterate a
+          task table, and for each SUSPENDED task scan its TCB-saved regs +
+          `[saved_rsp, stack_base)`, alongside the current task's existing path;
+          (2) **two new HAL builtins** `spawn(closure)` (alloc a task stack + TCB,
+          plant an initial frame entering `rt_apply(closure)` on first switch,
+          register it) and `yield()` (save ctx to current TCB → next runnable →
+          restore; also swap the `STACK_BASE`/`STACK_LIMIT` globals) — the FIRST
+          `native_codegen3` extension since `exec_at`, so it reopens the
+          `regen_selfhost` + Stage-4 fixed-point re-commit (the add-a-builtin
+          recipe); (3) **per-task stacks** carved from the heap/bss (Linux) or PMM/
+          identity RAM (metal); the current guard assumes 7 MiB headroom, so
+          per-task stack size/guard is a parameter. **DECIDED (Erik, 2026-07-09):**
+          (a) **cooperative FIRST** — K5b.1 = spawn + yield + the GC change +
+          regen, **gated Linux-hosted** (spawn/yield are userspace green-thread
+          switches, no ring 0 → seconds/iteration, not a QEMU boot); two LA tasks
+          ping-pong, a forced GC with both stacks live exercises the root change.
+          (b) **preemption = safe-point yield-flag** (K5b.2, later) — the K5a timer
+          ISR just sets a yield-pending flag; LA code yields at safe points
+          (`rt_apply` entry), so it NEVER preempts inside `rt_gc`/`alloc`; QEMU-
+          gated. Scheduler policy = **asm round-robin** over the task table for
+          now (reachable from the ISR), an LA-expressed policy is a later
+          refinement.
+      - [ ] K5b.1 — cooperative tasks (spawn/yield, GC root generalization, regen,
+            Linux-hosted gate: two tasks interleave + survive a forced GC).
+      - [ ] K5b.2 — preemptive (K5a timer ISR sets a yield-flag; safe-point check
+            in the LA path forces the switch; QEMU-gated).
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
         over in-kernel channels; native process model vs fork/execve)
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last
