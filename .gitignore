@@ -70,3 +70,6 @@ mathutil.la
 /kernel/kernel_wx_64.elf
 /kernel/kernel_nx.elf
 /kernel/kernel_nx_64.elf
+/kernel/kernel_paging_heap.elf
+/kernel/kernel_paging_heap_64.elf
+/phonsem_host.out

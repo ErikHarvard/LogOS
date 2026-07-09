@@ -157,8 +157,26 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           FETCH raises `#PF` (`EXCEPTION 0e`, exit 35); the `ret` never runs and
           `K4C NX RET` never prints (it would only if NXE were disarmed →
           gate fails). `gate_k4c_nx.sh` wired into `build.sh`. So **NX/W^X is live
-          on the metal**, both halves proven by a real CPU fault. ▶ Remaining K4c
-          slices: higher-half kernel, and the LA heap backed by real PMM frames.
+          on the metal**, both halves proven by a real CPU fault. **HEAP-on-PMM
+          slice DONE** (QEMU-gated, like K4b): `paging_heap.la` goes one level
+          DEEPER than any prior brick — every earlier slice mapped 2 MiB *leaf*
+          pages, but a real heap allocator wants 4 KiB granularity, so this builds
+          a full **PT (the 4th paging level)** and maps a contiguous heap window
+          (`HEAP_VBASE 0x40000000` + i·4 KiB, i∈0..3) onto **distinct PMM-allocated
+          frames** (`PT0[i] → frame i`, `TBL` = P|W, no PS). New folds `ALLOC_N`
+          (fold-allocate N frames → `PAIR(list)(state)`), `FILL_PT`, `WRITE_HEAP`.
+          After the CR3 switch it pokes `200+i` into each heap page **through the
+          high vaddrs** (the MMU walks `PT0[i]` to reach frame i), then reads back:
+          `K4C HEAP0 200`/`K4C HEAP3 203` (four independent 4 KiB mappings hold
+          distinct values) and `K4C HPHYS0 200`/`K4C HPHYS3 203` (those same values
+          at the frames' *identity* addresses → the high heap writes really landed
+          in distinct real PMM frames). high-read == phys-read == written value ⟹
+          the heap is genuinely backed by VMM-mapped PMM frames the CPU reaches by
+          walking the LA-built table. `boot.asm` UNCHANGED (plain translation, no
+          WP/NXE); reuses peek/poke/set_cr3 — **no new native_codegen3 builtin**, so
+          Stage 4's fixed point is untouched (no `regen_selfhost.sh`). `gate_k4c_heap.sh`
+          wired into `build.sh`. ▶ Remaining K4c slice: **higher-half kernel** (relink
+          the LA image off its baked-in `0x400000` absolute addrs to a high vbase).
   - [ ] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
         over in-kernel channels; native process model vs fork/execve)

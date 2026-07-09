@@ -1,0 +1,193 @@
+# ===================================================================
+#  LogOS kernel — K4c slice: the LA HEAP backed by real PMM frames.
+#
+#  K4b-cr3 built a whole 4-level table in PMM frames and switched CR3, but its
+#  one distinguishing high mapping was a single 2 MiB LEAF page (a PD entry with
+#  the PS bit). A real heap allocator wants 4 KiB granularity — so this slice
+#  goes one level DEEPER than any prior brick: it builds a full PT (page table,
+#  the 4th level) and maps a contiguous HEAP WINDOW of 4 KiB pages onto a set of
+#  distinct PMM-allocated frames, then proves the LA image can WRITE and READ
+#  heap memory through those high vaddrs after the CR3 switch.
+#
+#  The table is boot.asm's low-1 GiB identity map, REBUILT in LA-allocated frames
+#  (so the running code @0x400000, stack @128 MiB stay mapped — a SUPERSET of
+#  boot's map, transparent switch), PLUS a 4 KiB-granular heap window boot does
+#  NOT have:
+#    PML4[0] -> PDPT ; PDPT[0] -> PD0 (identity 0..1 GiB, 512 * 2 MiB @ 0x83) ;
+#    PDPT[1] -> PD1 ; PD1[0] -> PT0 ; PT0[i] -> HEAP frame i (P|W, 4 KiB).
+#  vaddr 0x40000000 (1 GiB) decodes to PML4[0]/PDPT[1]/PD1[0]/PT0[0]/off 0, so
+#  HEAP_VBASE + i*4096 lands in PT0[i] -> the i-th PMM heap frame. boot.asm has
+#  only PDPT[0], so this whole 1 GiB..(1 GiB+16 KiB) window is UNMAPPED under
+#  boot's table — only our table maps it.
+#
+#  Proof the heap is on real, DISTINCT PMM frames:
+#   1. after CR3 switch, poke value (200+i) into HEAP page i through the high
+#      vaddr (the MMU walks PT0[i] to reach frame i);
+#   2. read page 0 and page 3 back through the high vaddrs -> 200 and 203 (four
+#      independent 4 KiB mappings hold four distinct values);
+#   3. read frame 0 and frame 3 back through their IDENTITY (physical) addresses
+#      -> 200 and 203 (the high heap pages really landed in those PMM frames).
+#  High-read == phys-read == written value ==> the heap window is backed by real
+#  PMM frames the CPU reaches by walking the LA-built table.
+#
+#  Native-only (peek/poke/set_cr3 touch bare hardware): compiled by
+#  native_codegen3, run on bare metal under QEMU (gate_k4c_heap.sh).
+# ===================================================================
+
+# ── Church/Scott plumbing (native_codegen3 is import-free) ──
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph NIL = la c. la n. n
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+glyph IS_CONS = la l. l(la h. la t. TRUE)(FALSE)
+glyph HD = la l. l(la h. la t. h)(NIL)
+glyph TL = la l. l(la h. la t. t)(NIL)
+glyph FRAME = 4096
+glyph MBI_SAVE = 3145728
+
+# ── little-endian reader over MEMORY (via peek) — the K3b RDMEM ──
+glyph RDMEM = Z(la self. la addr. la k.
+    IF(int_eq(k)(0))(la _. 0)(la _.
+        add(peek(addr))(mul(256)(self(add(addr)(1))(sub(k)(1))))))
+
+# ── the K3b PMM: parse the REAL multiboot map, pick the arena, allocate ──
+glyph PARSE_MMAP = Z(la self. la base. la off. la total.
+    IF(NOT(lt(off)(total)))(la _. NIL)(la _.
+        (la ea. (la size. (la stride. (la rbase. (la len. (la typ. (la rest.
+            IF(int_eq(typ)(1))(la _. CONS(PAIR(rbase)(len))(rest))(la _. rest)
+        )(self(base)(add(off)(stride))(total)) )(RDMEM(add(ea)(20))(4)) )(RDMEM(add(ea)(12))(8)) )(RDMEM(add(ea)(4))(8)) )(add(RDMEM(ea)(4))(4)) )(RDMEM(ea)(4)) )(add(base)(off)) ))
+glyph MAX_REGION = Z(la self. la regs. la best.
+    IF(IS_CONS(regs))(la _.
+        (la r. self(TL(regs))(IF(lt(SND(best))(SND(r)))(la _. r)(la _. best)))(HD(regs))
+    )(la _. best))
+glyph ARENA = la regs. MAX_REGION(TL(regs))(HD(regs))
+glyph ALIGN_UP = la n. mul(div(add(n)(sub(FRAME)(1)))(FRAME))(FRAME)
+glyph PMM_INIT = la arena. PAIR(ALIGN_UP(FST(arena)))(NIL)
+glyph PMM_ALLOC = la st.
+    (la next. (la stk.
+        IF(IS_CONS(stk))(la _. PAIR(HD(stk))(PAIR(next)(TL(stk))))(la _.
+            PAIR(next)(PAIR(add(next)(FRAME))(stk))))
+    (SND(st)))(FST(st))
+
+# ── ALLOC_N(st)(n): allocate n frames, returning PAIR(list-of-addrs)(final-state).
+# First-allocated (lowest addr) is the list HEAD, so frames[i] rises with i. ──
+glyph ALLOC_N = Z(la self. la st. la n.
+    IF(int_eq(n)(0))(la _. PAIR(NIL)(st))(la _.
+        (la a. (la rest.
+            PAIR(CONS(FST(a))(FST(rest)))(SND(rest))
+        )(self(SND(a))(sub(n)(1))))(PMM_ALLOC(st))))
+
+# ── POKE32 / WENTRY (from K4b-cr3) ──
+glyph POKE32 = la addr. la v.
+    (la _. (la _. (la _.
+        poke(add(addr)(3))(mod(div(v)(16777216))(256))
+    )(poke(add(addr)(2))(mod(div(v)(65536))(256))))
+    (poke(add(addr)(1))(mod(div(v)(256))(256))))
+    (poke(addr)(mod(v)(256)))
+glyph WENTRY = la addr. la lo. la hi.
+    (la _. POKE32(add(addr)(4))(hi))(POKE32(addr)(lo))
+
+# ── page constants ──
+glyph P2MIB   = 2097152          # 2 MiB — a PD entry's stride / page size
+glyph PDE2M   = 131              # P(1)|W(2)|PS(128) — a 2 MiB leaf page (boot uses 0x83)
+glyph TBL     = 3                # P(1)|W(2) — a table pointer OR a 4 KiB leaf (no PS bit)
+glyph HEAP_VBASE = 1073741824    # 0x40000000 = 1 GiB — PDPT[1], PD1[0], PT0[0]; UNMAPPED by boot.asm
+glyph HEAPN   = 4                # number of 4 KiB heap pages/frames in the window
+glyph HOFF    = 256              # a byte offset into a heap page
+glyph HVAL0   = 200              # base sentinel; heap page i holds HVAL0 + i
+
+# ── fill PD0 with 512 identity 2 MiB pages (0 .. 1 GiB), like boot.asm ──
+glyph FILL_PD0 = Z(la self. la base. la i.
+    IF(int_eq(i)(512))(la _. "!")(la _.
+        (la _. self(base)(add(i)(1)))
+            (WENTRY(add(base)(mul(i)(8)))(add(mul(i)(P2MIB))(PDE2M))(0))))
+
+# ── FILL_PT(ptbase)(i)(frames): PT0[i] -> frames[i] as a 4 KiB leaf (P|W) ──
+glyph FILL_PT = Z(la self. la ptbase. la i. la frames.
+    IF(NOT(IS_CONS(frames)))(la _. "!")(la _.
+        (la _. self(ptbase)(add(i)(1))(TL(frames)))
+            (WENTRY(add(ptbase)(mul(i)(8)))(add(HD(frames))(TBL))(0))))
+
+# ── WRITE_HEAP: poke (HVAL0+i) into heap page i through the HIGH vaddr ──
+glyph WRITE_HEAP = Z(la self. la i.
+    IF(int_eq(i)(HEAPN))(la _. "!")(la _.
+        (la _. self(add(i)(1)))
+            (poke(add(add(HEAP_VBASE)(mul(i)(FRAME)))(HOFF))(add(HVAL0)(i)))))
+
+# ── HEAP address helpers ──
+glyph HPAGE = la i. add(add(HEAP_VBASE)(mul(i)(FRAME)))(HOFF)   # high vaddr of page i's HOFF byte
+glyph NTH   = Z(la self. la l. la i. IF(int_eq(i)(0))(la _. HD(l))(la _. self(TL(l))(sub(i)(1))))
+
+# ── build the table, map the heap window, SWITCH, write + read back ──
+glyph SHOWN = la label. la n. print(concat(label)(int_to_str(n)))
+glyph MAIN =
+    (la mbi.
+    (la mlen.
+    (la maddr.
+    (la regions.
+    (la arena.
+    (la s0.
+    (la a1.
+    (la a2.
+    (la a3.
+    (la a4.
+    (la a5.
+    (la ha.
+    (la f_pml4.
+    (la f_pdpt.
+    (la f_pd0.
+    (la f_pd1.
+    (la f_pt0.
+    (la frames.
+        # 1. PD0 = identity 0..1 GiB (2 MiB pages, like boot)
+        (la _.
+        # 2. PDPT[0] -> PD0 ; PDPT[1] -> PD1
+        (la _. (la _.
+        # 3. PML4[0] -> PDPT
+        (la _.
+        # 4. PD1[0] -> PT0  (a TABLE pointer — the 4 KiB path, not a 2 MiB leaf)
+        (la _.
+        # 5. PT0[i] -> HEAP frame i  (4 KiB leaves, P|W)
+        (la _.
+        # 6. announce the PML4 frame, then SWITCH CR3 to our LA-built PML4
+        (la _. (la _.
+        # 7. write the heap pattern through the HIGH vaddrs (MMU walks PT0)
+        (la _.
+        # 8. read it back: high pages 0 & 3, then the phys frames 0 & 3
+            (la _. (la _. (la _.
+                SHOWN("K4C HPHYS3 ")(peek(add(NTH(frames)(3))(HOFF)))
+            )(SHOWN("K4C HPHYS0 ")(peek(add(NTH(frames)(0))(HOFF)))))
+            (SHOWN("K4C HEAP3 ")(peek(HPAGE(3)))))
+            (SHOWN("K4C HEAP0 ")(peek(HPAGE(0))))
+        )(WRITE_HEAP(0))
+        )(set_cr3(f_pml4)))(SHOWN("K4C HFRAME ")(f_pml4))
+        )(FILL_PT(f_pt0)(0)(frames))
+        )(WENTRY(f_pd1)(add(f_pt0)(TBL))(0))
+        )(WENTRY(f_pml4)(add(f_pdpt)(TBL))(0))
+        )(WENTRY(add(f_pdpt)(8))(add(f_pd1)(TBL))(0)))(WENTRY(f_pdpt)(add(f_pd0)(TBL))(0))
+        )(FILL_PD0(f_pd0)(0))
+    )(FST(ha))
+    )(FST(a5))
+    )(FST(a4))
+    )(FST(a3))
+    )(FST(a2))
+    )(FST(a1))
+    )(ALLOC_N(SND(a5))(HEAPN))
+    )(PMM_ALLOC(SND(a4)))
+    )(PMM_ALLOC(SND(a3)))
+    )(PMM_ALLOC(SND(a2)))
+    )(PMM_ALLOC(SND(a1)))
+    )(PMM_ALLOC(s0))
+    )(PMM_INIT(arena))
+    )(ARENA(regions))
+    )(PARSE_MMAP(maddr)(0)(mlen))
+    )(RDMEM(add(mbi)(48))(4))
+    )(RDMEM(add(mbi)(44))(4))
+    )(RDMEM(MBI_SAVE)(4))

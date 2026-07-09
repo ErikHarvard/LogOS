@@ -4221,6 +4221,16 @@ bash kernel/gate_k4c_wx.sh || exit 1
 # (EXCEPTION 0e, exit 35) — the ret never runs. EFER.NXE armed (boot.asm %ifdef
 # K4C_WX). QEMU-gated; skips cleanly when QEMU absent.
 bash kernel/gate_k4c_nx.sh || exit 1
+# K4c (third slice): the LA HEAP on real PMM frames. An LA-built PT (the 4th
+# paging level — every prior slice mapped 2 MiB leaf pages; a heap wants 4 KiB
+# granularity) maps a contiguous heap window onto DISTINCT PMM-allocated frames
+# (PT0[i] -> frame i, P|W). After the CR3 switch the image writes 200+i into
+# each heap page through the HIGH vaddrs and reads it back — both through the
+# high vaddrs (four independent 4 KiB mappings) and through the frames' identity
+# addresses (the writes really landed in real PMM frames). Reuses peek/poke/
+# set_cr3 — no new native_codegen3 builtin, so Stage 4's fixed point is
+# untouched. QEMU-gated; skips cleanly when QEMU absent.
+bash kernel/gate_k4c_heap.sh || exit 1
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),
