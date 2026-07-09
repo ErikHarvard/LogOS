@@ -66,3 +66,7 @@ mathutil.la
 /kernel/kernel_paging64.elf
 /kernel/kernel_paging_cr3.elf
 /kernel/kernel_paging_cr3_64.elf
+/kernel/kernel_wx.elf
+/kernel/kernel_wx_64.elf
+/kernel/kernel_nx.elf
+/kernel/kernel_nx_64.elf

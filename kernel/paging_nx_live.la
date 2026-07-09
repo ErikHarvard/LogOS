@@ -1,0 +1,162 @@
+# ===================================================================
+#  LogOS kernel — K4c (second slice): NX ENFORCEMENT, live on the metal.
+#
+#  The execute-twin of the W^X-live slice (paging_wx_live.la). That one mapped a
+#  page READ-ONLY and proved a WRITE faults. This one maps a page NO-EXECUTE and
+#  proves an instruction FETCH faults — the other half of "NX/W^X live".
+#
+#  The table is the K4b-capstone table (boot.asm's low-1 GiB identity map rebuilt
+#  in LA-allocated frames), with ONE change: the distinguishing high test page
+#  (PDPT[1] -> PD1[0] -> phys SENT_BASE, at vaddr VHI = 1 GiB) sets the NX bit
+#  (PTE bit 63) in its HIGH dword. The low-1 GiB identity map is unchanged and
+#  executable, so the running code/stack/heap are untouched by the switch; only
+#  the high alias of SENT_BASE is no-execute.
+#
+#  Proof of enforcement (needs EFER.NXE=1, armed by boot.asm's %ifdef K4C_WX):
+#    1. pre-switch, poke a lone `ret` (0xC3 = 195) at PHYS SENT_BASE via the
+#       identity map (writable) — a valid, harmless instruction to try to run;
+#    2. switch CR3 to our table;
+#    3. peek the byte back through the identity map to confirm it is there and
+#       announce readiness ("K4C NX ARMED 195");
+#    4. exec_at(VHI) — FETCH+execute at the high NX vaddr. With EFER.NXE armed the
+#       instruction fetch raises a page-protection #PF (error-code bit 4 = I/D
+#       set): K2's IDT diagnoses it loudly ("EXCEPTION 0e ...", isa-debug-exit
+#       FAIL -> QEMU exit 35). The `ret` NEVER runs.
+#
+#  If NX were NOT enforced (NXE=0, or the pre-K4c kernel), the fetch would
+#  succeed, the `ret` would execute, exec_at would return 0, and "K4C NX RET 0"
+#  would print with a clean exit 33 — which the gate treats as FAILURE. So a
+#  regression that disarmed NXE fails the build.
+#
+#  Native-only (peek/poke/set_cr3/exec_at touch bare hardware): compiled by
+#  native_codegen3, run on bare metal under QEMU (gate_k4c_nx.sh).
+# ===================================================================
+
+# ── Church/Scott plumbing (native_codegen3 is import-free) ──
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph NIL = la c. la n. n
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+glyph IS_CONS = la l. l(la h. la t. TRUE)(FALSE)
+glyph HD = la l. l(la h. la t. h)(NIL)
+glyph TL = la l. l(la h. la t. t)(NIL)
+glyph FRAME = 4096
+glyph MBI_SAVE = 3145728
+
+# ── little-endian reader over MEMORY (via peek) — the K3b RDMEM ──
+glyph RDMEM = Z(la self. la addr. la k.
+    IF(int_eq(k)(0))(la _. 0)(la _.
+        add(peek(addr))(mul(256)(self(add(addr)(1))(sub(k)(1))))))
+
+# ── the K3b PMM: parse the REAL multiboot map, pick the arena, allocate ──
+glyph PARSE_MMAP = Z(la self. la base. la off. la total.
+    IF(NOT(lt(off)(total)))(la _. NIL)(la _.
+        (la ea. (la size. (la stride. (la rbase. (la len. (la typ. (la rest.
+            IF(int_eq(typ)(1))(la _. CONS(PAIR(rbase)(len))(rest))(la _. rest)
+        )(self(base)(add(off)(stride))(total)) )(RDMEM(add(ea)(20))(4)) )(RDMEM(add(ea)(12))(8)) )(RDMEM(add(ea)(4))(8)) )(add(RDMEM(ea)(4))(4)) )(RDMEM(ea)(4)) )(add(base)(off)) ))
+glyph MAX_REGION = Z(la self. la regs. la best.
+    IF(IS_CONS(regs))(la _.
+        (la r. self(TL(regs))(IF(lt(SND(best))(SND(r)))(la _. r)(la _. best)))(HD(regs))
+    )(la _. best))
+glyph ARENA = la regs. MAX_REGION(TL(regs))(HD(regs))
+glyph ALIGN_UP = la n. mul(div(add(n)(sub(FRAME)(1)))(FRAME))(FRAME)
+glyph PMM_INIT = la arena. PAIR(ALIGN_UP(FST(arena)))(NIL)
+glyph PMM_ALLOC = la st.
+    (la next. (la stk.
+        IF(IS_CONS(stk))(la _. PAIR(HD(stk))(PAIR(next)(TL(stk))))(la _.
+            PAIR(next)(PAIR(add(next)(FRAME))(stk))))
+    (SND(st)))(FST(st))
+
+# ── POKE32(addr)(v): write a 32-bit value as 4 little-endian bytes via poke ──
+glyph POKE32 = la addr. la v.
+    (la _. (la _. (la _.
+        poke(add(addr)(3))(mod(div(v)(16777216))(256))
+    )(poke(add(addr)(2))(mod(div(v)(65536))(256))))
+    (poke(add(addr)(1))(mod(div(v)(256))(256))))
+    (poke(addr)(mod(v)(256)))
+
+# ── WENTRY(addr)(lo)(hi): write an 8-byte page-table entry (low32 then high32) ──
+glyph WENTRY = la addr. la lo. la hi.
+    (la _. POKE32(add(addr)(4))(hi))(POKE32(addr)(lo))
+
+# ── page constants ──
+glyph P2MIB   = 2097152          # 2 MiB — a PD entry's stride / page size
+glyph PDE2M   = 131              # P(1)|W(2)|PS(128) — a WRITABLE 2 MiB leaf page
+glyph NX_HI   = 2147483648       # 0x80000000 — NX (bit 63 = bit 31 of the HIGH dword)
+glyph TBL     = 3                # P(1)|W(2) — a table pointer (points to next level)
+glyph SENT_BASE = 167772160      # 0x0A000000 = 160 MiB — 2 MiB-aligned, real RAM under -m 256,
+                                 #   above the 128 MiB stack, below 256 MiB; identity-mapped by boot.
+glyph RET_BYTE  = 195            # 0xC3 — a lone `ret`, the harmless instruction we try to run
+glyph VHI       = 1073741824     # 0x40000000 = 1 GiB — PDPT[1], PD1[0]; UNMAPPED by boot.asm
+
+# ── fill PD0 with 512 identity 2 MiB pages (0 .. 1 GiB), like boot.asm ──
+glyph FILL_PD0 = Z(la self. la base. la i.
+    IF(int_eq(i)(512))(la _. "!")(la _.
+        (la _. self(base)(add(i)(1)))
+            (WENTRY(add(base)(mul(i)(8)))(add(mul(i)(P2MIB))(PDE2M))(0))))
+
+# ── build the whole table in four PMM frames, then SWITCH and probe NX ──
+# SHOWN prints "label<int>". The gate asserts K4C NX ARMED == 195 (the ret byte,
+# mapping live) followed by a #PF ("EXCEPTION 0e") from the FETCH at the NX vaddr
+# (NX enforced) -> QEMU exit 35, and that "K4C NX RET" NEVER prints.
+glyph SHOWN = la label. la n. print(concat(label)(int_to_str(n)))
+glyph MAIN =
+    (la mbi.
+    (la mlen.
+    (la maddr.
+    (la regions.
+    (la arena.
+    (la s0.
+    (la a1.
+    (la a2.
+    (la a3.
+    (la a4.
+    (la f_pml4.
+    (la f_pdpt.
+    (la f_pd0.
+    (la f_pd1.
+        # 1. PD0 = identity 0..1 GiB (executable), like boot.asm
+        (la _.
+        # 2. PDPT[0] -> PD0 ; PDPT[1] -> PD1
+        (la _. (la _.
+        # 3. PML4[0] -> PDPT
+        (la _.
+        # 4. PD1[0] -> a NO-EXECUTE 2 MiB page at SENT_BASE (present+writable, NX@bit63)
+        (la _.
+        # 5. poke a lone `ret` (0xC3) at PHYS SENT_BASE via the identity map (pre-switch)
+        (la _.
+        # 6. announce the frame, then SWITCH CR3 to our LA-built PML4
+        (la _. (la _.
+        # 7. confirm the ret byte is live (identity peek), THEN try to EXECUTE it
+        #    through the high NX vaddr -> #PF (NX enforced; the ret never runs).
+        #    exec_at returns 0 ONLY if NX is NOT enforced -> "K4C NX RET 0" (gate fails).
+            (la _.
+                SHOWN("K4C NX RET ")(exec_at(VHI))
+            )(SHOWN("K4C NX ARMED ")(peek(SENT_BASE)))
+        )(set_cr3(f_pml4)))(SHOWN("K4C NX FRAME ")(f_pml4))
+        )(poke(SENT_BASE)(RET_BYTE))
+        )(WENTRY(f_pd1)(add(SENT_BASE)(PDE2M))(NX_HI))
+        )(WENTRY(f_pml4)(add(f_pdpt)(TBL))(0))
+        )(WENTRY(add(f_pdpt)(8))(add(f_pd1)(TBL))(0)))(WENTRY(f_pdpt)(add(f_pd0)(TBL))(0))
+        )(FILL_PD0(f_pd0)(0))
+    )(FST(a4))
+    )(FST(a3))
+    )(FST(a2))
+    )(FST(a1))
+    )(PMM_ALLOC(SND(a3)))
+    )(PMM_ALLOC(SND(a2)))
+    )(PMM_ALLOC(SND(a1)))
+    )(PMM_ALLOC(s0))
+    )(PMM_INIT(arena))
+    )(ARENA(regions))
+    )(PARSE_MMAP(maddr)(0)(mlen))
+    )(RDMEM(add(mbi)(48))(4))
+    )(RDMEM(add(mbi)(44))(4))
+    )(RDMEM(MBI_SAVE)(4))

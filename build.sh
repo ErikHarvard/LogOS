@@ -1547,7 +1547,7 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9688 2>/dev/null
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=9712 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -4208,6 +4208,19 @@ bash kernel/gate_k4b.sh || exit 1
 # reading a sentinel back through a HIGH vaddr only the LA table maps — proof the
 # CPU used our table, not boot.asm's. QEMU-gated; skips cleanly when QEMU absent.
 bash kernel/gate_k4b_cr3.sh || exit 1
+# K4c (first slice): W^X ENFORCEMENT live. An LA-built table maps a high page
+# READ-ONLY; after the CR3 switch the CPU serves reads through it but a ring-0
+# WRITE raises a page-protection #PF (EXCEPTION 0e, exit 35) — CR0.WP + EFER.NXE
+# armed (boot.asm %ifdef K4C_WX). Paging PROTECTION, not just K4b's translation,
+# enforced on the metal. QEMU-gated; skips cleanly when QEMU absent.
+bash kernel/gate_k4c_wx.sh || exit 1
+# K4c (second slice): NX ENFORCEMENT live — the execute-twin of the W^X-write
+# proof. An LA-built table maps a high page NO-EXECUTE (PTE bit 63) over a frame
+# holding a `ret`; after the CR3 switch a FETCH through it (the new exec_at
+# builtin, the fourth native_codegen3 HAL primitive) raises a page-protection #PF
+# (EXCEPTION 0e, exit 35) — the ret never runs. EFER.NXE armed (boot.asm %ifdef
+# K4C_WX). QEMU-gated; skips cleanly when QEMU absent.
+bash kernel/gate_k4c_nx.sh || exit 1
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),

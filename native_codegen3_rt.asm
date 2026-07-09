@@ -1524,3 +1524,23 @@ rt_set_cr3:
     mov     rax, [rax+8]        ; the raw PML4 physical base
     mov     cr3, rax            ; load CR3 -> CPU walks this table; TLB flushed
     jmp     rt_box_int          ; return the base boxed
+
+; ── K4c: rt_exec_at(INT vaddr) -> INT 0 (only if it did NOT fault) ────────────
+;   The EXECUTE-twin of peek/poke/set_cr3 — the FOURTH native_codegen3 extension.
+;   Makes the CPU FETCH+execute at a virtual address so the LA image can prove
+;   NX is enforced on the metal: map a page NO-EXECUTE (PTE bit 63) over a frame
+;   holding a lone `ret` (0xC3), then exec_at(that vaddr). With EFER.NXE armed
+;   the instruction FETCH raises a page-protection #PF (error-code bit 4 = I/D
+;   set, since NXE=1) — K2's IDT diagnoses it loudly, the callee never runs. If
+;   NX were NOT enforced the `ret` would execute and return here, so we box 0 —
+;   the "did NOT fault -> NX disarmed" signal the gate catches. `call` (not jmp)
+;   so a non-fault path returns cleanly through the poked ret. Native-only, like
+;   peek/poke/set_cr3. Appended after rt_set_cr3 so only LITERAL_BASE/RTLEN
+;   shift; no other fixed runtime/data address moves. Arg INT (tag 4) else loud.
+rt_exec_at:
+    cmp     qword [rax], 4      ; arg must be a boxed INT (the vaddr to execute)
+    jne     rt_not_int
+    mov     rax, [rax+8]        ; the raw virtual address
+    call    rax                 ; FETCH there -> #PF if NX-mapped; else runs the ret
+    xor     rax, rax            ; reached only if it did NOT fault -> return 0
+    jmp     rt_box_int          ; -> boxed INT (the NX-disarmed witness)

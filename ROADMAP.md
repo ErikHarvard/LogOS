@@ -127,8 +127,38 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           and reads a sentinel back through the HIGH vaddr `0x40000000` — a vaddr
           only the LA table maps — proving the CPU walked the LA-built table
           (`gate_k4b_cr3.sh`, QEMU). Paging is live on the metal.
-    - [ ] K4c — higher-half kernel, NX/W^X live, the LA heap backed by real PMM
-          frames
+    - [~] K4c — higher-half kernel, NX/W^X live, the LA heap backed by real PMM
+          frames. **W^X-live slice DONE** (QEMU-gated, like K4b): `paging_wx_live.la`
+          rebuilds the K4b-capstone table but maps the distinguishing high test
+          page (vaddr 0x40000000 → phys 160 MiB) **READ-ONLY** (`PDE2M_RO` =
+          P|PS, no W bit); it pokes a sentinel at that phys frame via the writable
+          identity alias, switches CR3, **reads** the sentinel back through the
+          high RO vaddr (`K4C WX READ 171` — the mapping is live + readable), then
+          **writes** through the same RO vaddr → the CPU raises a page-protection
+          `#PF` (K2's IDT diagnoses `EXCEPTION 0e`, isa-debug-exit FAIL → QEMU
+          exit 35). So paging PROTECTION (not just K4b's translation) is enforced
+          on the metal. The substrate is armed in `boot.asm` behind `%ifdef
+          K4C_WX` (like K2's fault-injection, so every other kernel ELF's boot
+          bytes stay byte-identical): **CR0.WP** (bit 16 — a ring-0 write to a W=0
+          page faults instead of silently succeeding) + **EFER.NXE** (bit 11 —
+          NX@bit63 honored, not a reserved-bit fault). `gate_k4c_wx.sh` asserts
+          the RO-read line AND the write-fault (a regression disarming WP would
+          let the write silently land → exit 33 → the gate fails); wired into
+          `build.sh`. **NX-live slice DONE** (the execute-twin): a FOURTH
+          native_codegen3 HAL primitive, **`exec_at(vaddr)`** (`rt_exec_at`, 24
+          bytes, the execute-twin of peek/poke/set_cr3 — `call rax` into the
+          vaddr; appended after `rt_set_cr3` so only `RTLEN` 9688→9712 /
+          `LITERAL_BASE` 4204112→4204136 shift, the embedded `RT` blob + drift
+          guard `count` + `native_codegen3_selfhost.bin` all regenerated to the
+          new fixed point via `regen_selfhost.sh`). `paging_nx_live.la` maps the
+          high test page **NO-EXECUTE** (`NX_HI` = bit 63) over a frame holding a
+          lone `ret` (0xC3), switches CR3, peeks the ret byte back (`K4C NX ARMED
+          195` — frame live), then `exec_at`s the high vaddr → the instruction
+          FETCH raises `#PF` (`EXCEPTION 0e`, exit 35); the `ret` never runs and
+          `K4C NX RET` never prints (it would only if NXE were disarmed →
+          gate fails). `gate_k4c_nx.sh` wired into `build.sh`. So **NX/W^X is live
+          on the metal**, both halves proven by a real CPU fault. ▶ Remaining K4c
+          slices: higher-half kernel, and the LA heap backed by real PMM frames.
   - [ ] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
         over in-kernel channels; native process model vs fork/execve)

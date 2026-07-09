@@ -120,6 +120,13 @@ _start:
     mov     ecx, 0xC0000080         ; IA32_EFER
     rdmsr
     or      eax, (1 << 8) | (1 << 0)
+%ifdef K4C_WX
+    ; K4c: NXE (no-execute enable, bit 11) — arm the NX half of the W^X
+    ; substrate, so a PTE's NX@bit63 is honored as no-execute instead of
+    ; triggering a reserved-bit page fault. Guarded like K2_FAULT so every
+    ; other kernel ELF's boot bytes stay identical.
+    or      eax, (1 << 11)
+%endif
     wrmsr
 
     ; --- enable paging (CR0.PG = bit 31); PE already set by loader ---
@@ -143,6 +150,16 @@ long_start:
     mov     fs, ax
     mov     gs, ax
     mov     rsp, LA_STACK_TOP       ; K3b: tall stack for the LA image's guard
+
+%ifdef K4C_WX
+    ; K4c: CR0.WP (write-protect, bit 16) — enforce W^X in ring 0. Without it a
+    ; supervisor (ring-0) write to a read-only (W=0) page silently SUCCEEDS; with
+    ; it, that write raises #PF. This is the switch that makes page-table write
+    ; permissions real for the kernel itself. Guarded like K2_FAULT / NXE above.
+    mov     rax, cr0
+    or      rax, (1 << 16)
+    mov     cr0, rax
+%endif
 
     ; --- SYSCALL substrate ---
     ; STAR[47:32] = kernel CS base for syscall: CS=sel, SS=sel+8.

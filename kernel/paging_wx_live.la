@@ -1,0 +1,166 @@
+# ===================================================================
+#  LogOS kernel — K4c (first slice): W^X ENFORCEMENT, live on the metal.
+#
+#  K4a proved the paging math (host==native, incl. the W^X-loud MK_PTE oracle);
+#  K4b built a single PTE in a real PMM frame (poke); the K4b capstone switched
+#  CR3 to a whole LA-built table and the CPU WALKED it. All of that proved
+#  paging TRANSLATION. This proves paging PROTECTION: the page-table permission
+#  bits are ENFORCED by the CPU — a write to a read-only page FAULTS.
+#
+#  The table is the K4b-capstone table (boot.asm's low-1 GiB identity map rebuilt
+#  in LA-allocated frames), with ONE change: the distinguishing high test page
+#  (PDPT[1] -> PD1[0] -> phys SENT_BASE, at vaddr VHI = 1 GiB) is mapped
+#  READ-ONLY (PDE2M_RO = P|PS, NO write bit) instead of writable. Because the
+#  low-1 GiB identity map is unchanged and writable, the running code/stack/heap
+#  are untouched by the switch; only the high alias of SENT_BASE is read-only.
+#
+#  Proof of enforcement (needs CR0.WP=1 + the identity alias writable):
+#    1. pre-switch, poke a sentinel (0xAB) at PHYS SENT_BASE via the identity
+#       map (writable) — so the byte is really there;
+#    2. switch CR3 to our table;
+#    3. READ the sentinel back through the high RO vaddr VHI -> 0xAB
+#       ("K4C WX READ 171"): the RO mapping is live and readable;
+#    4. WRITE through the SAME high RO vaddr -> the CPU raises #PF (page-protection
+#       violation, W^X honored): with CR0.WP=1 a ring-0 write to a W=0 page is
+#       NOT silently allowed. K2's IDT diagnoses it loudly ("EXCEPTION 0e ...",
+#       isa-debug-exit FAIL -> QEMU exit 35). The write NEVER lands.
+#
+#  If protection were NOT enforced (WP=0, the pre-K4c kernel), step 4 would
+#  silently succeed and there would be no fault — the gate asserts the fault, so
+#  a regression that disarmed WP would fail the build. The NX half of the
+#  substrate (EFER.NXE) is armed by the same %ifdef K4C_WX boot path; the
+#  execute-from-NX fault demo (needs a call-an-address primitive) + higher-half +
+#  the LA heap on PMM frames are the remaining K4c slices.
+#
+#  Native-only (peek/poke/set_cr3 touch bare hardware): compiled by
+#  native_codegen3, run on bare metal under QEMU (gate_k4c_wx.sh).
+# ===================================================================
+
+# ── Church/Scott plumbing (native_codegen3 is import-free) ──
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph TRUE  = la a. la b. a
+glyph FALSE = la a. la b. b
+glyph AND = la a. la b. a(b)(FALSE)
+glyph NOT = la a. a(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST = la p. p(la a. la b. a)
+glyph SND = la p. p(la a. la b. b)
+glyph NIL = la c. la n. n
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+glyph IS_CONS = la l. l(la h. la t. TRUE)(FALSE)
+glyph HD = la l. l(la h. la t. h)(NIL)
+glyph TL = la l. l(la h. la t. t)(NIL)
+glyph FRAME = 4096
+glyph MBI_SAVE = 3145728
+
+# ── little-endian reader over MEMORY (via peek) — the K3b RDMEM ──
+glyph RDMEM = Z(la self. la addr. la k.
+    IF(int_eq(k)(0))(la _. 0)(la _.
+        add(peek(addr))(mul(256)(self(add(addr)(1))(sub(k)(1))))))
+
+# ── the K3b PMM: parse the REAL multiboot map, pick the arena, allocate ──
+glyph PARSE_MMAP = Z(la self. la base. la off. la total.
+    IF(NOT(lt(off)(total)))(la _. NIL)(la _.
+        (la ea. (la size. (la stride. (la rbase. (la len. (la typ. (la rest.
+            IF(int_eq(typ)(1))(la _. CONS(PAIR(rbase)(len))(rest))(la _. rest)
+        )(self(base)(add(off)(stride))(total)) )(RDMEM(add(ea)(20))(4)) )(RDMEM(add(ea)(12))(8)) )(RDMEM(add(ea)(4))(8)) )(add(RDMEM(ea)(4))(4)) )(RDMEM(ea)(4)) )(add(base)(off)) ))
+glyph MAX_REGION = Z(la self. la regs. la best.
+    IF(IS_CONS(regs))(la _.
+        (la r. self(TL(regs))(IF(lt(SND(best))(SND(r)))(la _. r)(la _. best)))(HD(regs))
+    )(la _. best))
+glyph ARENA = la regs. MAX_REGION(TL(regs))(HD(regs))
+glyph ALIGN_UP = la n. mul(div(add(n)(sub(FRAME)(1)))(FRAME))(FRAME)
+glyph PMM_INIT = la arena. PAIR(ALIGN_UP(FST(arena)))(NIL)
+glyph PMM_ALLOC = la st.
+    (la next. (la stk.
+        IF(IS_CONS(stk))(la _. PAIR(HD(stk))(PAIR(next)(TL(stk))))(la _.
+            PAIR(next)(PAIR(add(next)(FRAME))(stk))))
+    (SND(st)))(FST(st))
+
+# ── POKE32(addr)(v): write a 32-bit value as 4 little-endian bytes via poke ──
+glyph POKE32 = la addr. la v.
+    (la _. (la _. (la _.
+        poke(add(addr)(3))(mod(div(v)(16777216))(256))
+    )(poke(add(addr)(2))(mod(div(v)(65536))(256))))
+    (poke(add(addr)(1))(mod(div(v)(256))(256))))
+    (poke(addr)(mod(v)(256)))
+
+# ── WENTRY(addr)(lo)(hi): write an 8-byte page-table entry (low32 then high32) ──
+glyph WENTRY = la addr. la lo. la hi.
+    (la _. POKE32(add(addr)(4))(hi))(POKE32(addr)(lo))
+
+# ── page constants ──
+glyph P2MIB   = 2097152          # 2 MiB — a PD entry's stride / page size
+glyph PDE2M   = 131              # P(1)|W(2)|PS(128) — a WRITABLE 2 MiB leaf page
+glyph PDE2M_RO = 129             # P(1)|PS(128) — a READ-ONLY 2 MiB leaf page (no W)
+glyph TBL     = 3                # P(1)|W(2) — a table pointer (points to next level)
+glyph SENT_BASE = 167772160      # 0x0A000000 = 160 MiB — 2 MiB-aligned, real RAM under -m 256,
+                                 #   above the 128 MiB stack, below 256 MiB; identity-mapped by boot.
+glyph SENT_OFF  = 256            # a byte offset into that page
+glyph SENT_VAL  = 171            # 0xAB — the sentinel
+glyph VHI       = 1073741824     # 0x40000000 = 1 GiB — PDPT[1], PD1[0]; UNMAPPED by boot.asm
+
+# ── fill PD0 with 512 identity 2 MiB pages (0 .. 1 GiB), like boot.asm ──
+glyph FILL_PD0 = Z(la self. la base. la i.
+    IF(int_eq(i)(512))(la _. "!")(la _.
+        (la _. self(base)(add(i)(1)))
+            (WENTRY(add(base)(mul(i)(8)))(add(mul(i)(P2MIB))(PDE2M))(0))))
+
+# ── build the whole table in four PMM frames, then SWITCH and probe W^X ──
+# SHOWN prints "label<int>". The gate asserts K4C WX READ == 171 (the mapping is
+# live+readable through the high vaddr) followed by a #PF ("EXCEPTION 0e") from
+# the write to the read-only page (W^X enforced) -> QEMU exit 35, not 33.
+glyph SHOWN = la label. la n. print(concat(label)(int_to_str(n)))
+glyph MAIN =
+    (la mbi.
+    (la mlen.
+    (la maddr.
+    (la regions.
+    (la arena.
+    (la s0.
+    (la a1.
+    (la a2.
+    (la a3.
+    (la a4.
+    (la f_pml4.
+    (la f_pdpt.
+    (la f_pd0.
+    (la f_pd1.
+        # 1. PD0 = identity 0..1 GiB (writable), like boot.asm
+        (la _.
+        # 2. PDPT[0] -> PD0 ; PDPT[1] -> PD1
+        (la _. (la _.
+        # 3. PML4[0] -> PDPT
+        (la _.
+        # 4. PD1[0] -> a READ-ONLY 2 MiB page at SENT_BASE (the W^X test page)
+        (la _.
+        # 5. poke the sentinel at PHYS SENT_BASE via the identity map (writable, pre-switch)
+        (la _.
+        # 6. announce the frame, then SWITCH CR3 to our LA-built PML4
+        (la _. (la _.
+        # 7. read the sentinel back through the high RO vaddr (live+readable),
+        #    THEN write through it -> #PF (W^X enforced; the write never lands)
+            (la _.
+                poke(add(VHI)(SENT_OFF))(SENT_VAL)
+            )(SHOWN("K4C WX READ ")(peek(add(VHI)(SENT_OFF))))
+        )(set_cr3(f_pml4)))(SHOWN("K4C FRAME ")(f_pml4))
+        )(poke(add(SENT_BASE)(SENT_OFF))(SENT_VAL))
+        )(WENTRY(f_pd1)(add(SENT_BASE)(PDE2M_RO))(0))
+        )(WENTRY(f_pml4)(add(f_pdpt)(TBL))(0))
+        )(WENTRY(add(f_pdpt)(8))(add(f_pd1)(TBL))(0)))(WENTRY(f_pdpt)(add(f_pd0)(TBL))(0))
+        )(FILL_PD0(f_pd0)(0))
+    )(FST(a4))
+    )(FST(a3))
+    )(FST(a2))
+    )(FST(a1))
+    )(PMM_ALLOC(SND(a3)))
+    )(PMM_ALLOC(SND(a2)))
+    )(PMM_ALLOC(SND(a1)))
+    )(PMM_ALLOC(s0))
+    )(PMM_INIT(arena))
+    )(ARENA(regions))
+    )(PARSE_MMAP(maddr)(0)(mlen))
+    )(RDMEM(add(mbi)(48))(4))
+    )(RDMEM(add(mbi)(44))(4))
+    )(RDMEM(MBI_SAVE)(4))
