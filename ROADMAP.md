@@ -177,7 +177,55 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           Stage 4's fixed point is untouched (no `regen_selfhost.sh`). `gate_k4c_heap.sh`
           wired into `build.sh`. ▶ Remaining K4c slice: **higher-half kernel** (relink
           the LA image off its baked-in `0x400000` absolute addrs to a high vbase).
-  - [ ] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
+          **SCOPED 2026-07-09, DEFERRED to just-before-K6** (its only payoff — freeing
+          the low canonical half for user processes — is a K6 concern; K5 needs none of
+          it). Approach: target the **-2 GiB half `0xFFFFFFFF80000000`** (image at
+          `+0x400000`), which is *exactly* the region a sign-extended `disp32` reaches —
+          so **no opcode-form changes**: all addr LOADS are already `mov r64,imm64`
+          (`MOV_RAX_IMM`/`CALLR`…), mem operands are `[disp32]` abs (sign-extend-safe),
+          RT-internal calls are `rel32` (move for free), and `LEBYTES` already emits
+          two's-complement so a high-half addr as a NEGATIVE int serializes correctly.
+          The trap: `native_codegen3` is the SHARED compiler (every Linux-hosted binary +
+          the Stage-4 self-host loop), so it must NOT change globally → a **kernel-only
+          HH compile variant** (`native_codegen3_hh.la` + `%ifdef HIGHHALF` re-`org` of
+          `native_codegen3_rt.asm` to `0xFFFFFFFF80400078`), leaving Stage 4's fixed point
+          + `native_codegen3_selfhost.bin` UNTOUCHED (no `regen_selfhost.sh`). Change-set:
+          (1) hh variant overrides ~8 base constants (`VADDR`/`LITERAL_BASE`/the `RT_*` +
+          GC-global `*_ADDR` slots) and **decouples heap/stack base from `VADDR`** (keep
+          them low-identity so only the ~few-MiB image maps high, not the 16 GiB heap);
+          (2) re-org'd RT blob; (3) `kernel.ld` `AT()` (LMA `0x400000` phys / VMA high);
+          (4) `boot.asm` adds a high-half mapping (`PML4[511]→PDPT[510]→PD`, a few 2 MiB
+          entries over the image frames), KEEPS the low identity map live (heap/stack/
+          syscall-handler stay low), `jmp` to the high `LA_ENTRY`; (5) gate: QEMU boot,
+          assert `entry.inc` ≥ `0xFFFFFFFF80000000`, high-mapped image speaks the Word →
+          exit 33 (K2 catches any stray low ref as `#PF`). Sharp edges to verify: nasm
+          64-bit `org` + `[abs]`→`disp32` truncation; the `LEBYTES` negative round-trip.
+  - [~] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
+    - [x] K5a — the timer IRQ live on the metal (QEMU-gated, like K4b/K4c).
+          `timer.asm` (entirely `%ifdef K5_TIMER`, so other kernel ELFs stay
+          byte-identical — verified: `boot.asm` without the flag is byte-for-byte
+          HEAD) remaps the 8259 PIC (IRQ0 → vector `0x20`, clear of the CPU
+          exceptions), programs PIT channel 0 to ~100 Hz (mode 3, divisor 11932),
+          installs `IDT[0x20]` → `timer_isr`, unmasks only IRQ0, and `boot.asm`
+          `sti`s before jumping to the LA image. `timer_isr` is transparent — it
+          touches only `rax` (saved) + `rflags` (restored by `iretq`): bump a
+          64-bit tick counter at `TICK_ADDR` (`0x310000`, the identity-mapped
+          scratch gap by `MBI_SAVE`), master-PIC EOI, `iretq`. `timer_probe.la`
+          spins reading the tick's low byte via `peek()` until nonzero
+          (tail-recursive → bounded stack, safety-capped so a broken timer can't
+          hang) and prints `K5 TICKS n` — an ASYNCHRONOUS IRQ0 landed mid-LA-spin,
+          the ISR ran, and the LA code resumed with every register intact
+          (preemption *capability* proven, b_τ ≡ f_τ). `gate_k5a.sh` asserts
+          `n ≥ 1` + exit 33; wired into `build.sh`. No new native_codegen3 builtin
+          (reuses `peek`), so Stage 4's fixed point is untouched.
+    - [ ] K5b — tasks + context switch: a task = saved register context + its own
+          stack; cooperative `yield` first, then the timer ISR forces a switch
+          (preemptive). The DESIGN problem: (1) how an LA program expresses a task
+          — likely new `spawn`/`yield` HAL builtins (first native_codegen3
+          extension since `exec_at` → reopens the `regen_selfhost` Stage-4 dance);
+          (2) the copying GC scans ONE stack for roots, so multiple task stacks =
+          multiple root sets the collector doesn't know about (the hard fork to
+          resolve before building).
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
         over in-kernel channels; native process model vs fork/execve)
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last

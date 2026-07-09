@@ -1,0 +1,39 @@
+# ===================================================================
+#  LogOS kernel — K5a probe: prove the timer IRQ fires during LA execution.
+#
+#  boot.asm (assembled -dK5_TIMER) remaps the PIC, programs the PIT to ~100 Hz,
+#  installs IDT[0x20] -> timer_isr, unmasks IRQ0 and `sti`s BEFORE jumping to
+#  this image. timer_isr increments a 64-bit tick counter at TICK_ADDR
+#  (0x310000 = 3211264, in the identity-mapped low-RAM scratch gap).
+#
+#  This probe SPINS, reading the tick counter's low byte through the existing
+#  peek() builtin, and exits as soon as it observes a nonzero tick — i.e. an
+#  ASYNCHRONOUS hardware interrupt landed in the middle of this LA computation,
+#  ran the ISR, and resumed this code with every register intact. It prints
+#  "K5 TICKS <n>" (n >= 1); the gate asserts n >= 1 and a clean exit (33).
+#
+#  The spin is tail-recursive (VM TCO -> bounded stack) and safety-capped, so a
+#  BROKEN timer (tick stays 0) runs to the cap / the gate's 30 s timeout and
+#  fails loudly, never silently passing.
+#
+#  Native-only (peek touches bare hardware): compiled by native_codegen3, run on
+#  bare metal under QEMU (gate_k5a.sh).
+# ===================================================================
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+
+glyph TICK_ADDR = 3211264        # 0x310000
+glyph CAP       = 2000000000     # safety ceiling: a broken timer can't hang forever
+
+# Spin until the timer has ticked (peek's low byte > 0) or the cap is reached.
+# Tail-recursive: self(...) is in tail position, so the VM's TCO keeps the stack
+# bounded across the (few hundred thousand) iterations before the first tick.
+glyph SPIN = Z(la self. la i.
+    IF(lt(0)(peek(TICK_ADDR)))
+        (la _. peek(TICK_ADDR))
+        (la _. IF(lt(i)(CAP))
+            (la _. self(add(i)(1)))
+            (la _. peek(TICK_ADDR))))
+
+glyph MAIN = print(concat("K5 TICKS ")(int_to_str(SPIN(0))))

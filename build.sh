@@ -4231,6 +4231,14 @@ bash kernel/gate_k4c_nx.sh || exit 1
 # set_cr3 — no new native_codegen3 builtin, so Stage 4's fixed point is
 # untouched. QEMU-gated; skips cleanly when QEMU absent.
 bash kernel/gate_k4c_heap.sh || exit 1
+# K5a: the TIMER IRQ live on the metal. boot.asm (-dK5_TIMER, guarded like
+# K4C_WX so other kernel ELFs stay byte-identical) remaps the 8259 PIC, programs
+# the PIT to ~100 Hz, installs IDT[0x20] -> timer_isr, unmasks IRQ0 and `sti`s
+# before jumping to the LA image. The image spins reading a tick counter via
+# peek(); an ASYNCHRONOUS IRQ0 fires during that spin, the ISR bumps the counter
+# and the LA code resumes intact -> "K5 TICKS n>=1" (preemption capability on
+# bare metal). QEMU-gated; skips cleanly when QEMU absent.
+bash kernel/gate_k5a.sh || exit 1
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),

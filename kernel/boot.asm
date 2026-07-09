@@ -184,6 +184,15 @@ long_start:
     call    serial_init
     call    idt_install             ; K2: exceptions -> diagnosed serial halt
 
+%ifdef K5_TIMER
+    ; K5a: remap the PIC, program the PIT (~100 Hz), install IDT[0x20] ->
+    ; timer_isr, unmask IRQ0, then enable external interrupts. Guarded (like
+    ; K2_FAULT / K4C_WX) so every other kernel ELF's boot bytes stay identical.
+    ; The timer then fires ASYNCHRONOUSLY during the LA image's execution.
+    call    timer_setup
+    sti
+%endif
+
 %ifdef K2_FAULT
     ; K2 gate fault-injection: raise #UD (vector 6) to prove the IDT catches
     ; it loudly (serial "EXCEPTION 06", isa-debug-exit 35) instead of a
@@ -316,6 +325,9 @@ boot_stack_top:
 ; ---------------------------------------------------------------------
 ; K2: IDT + exception handlers (its own .boot32/.rodata/.bss sections).
 %include "idt.asm"
+; K5a: timer IRQ substrate (PIC + PIT). Entirely %ifdef K5_TIMER — zero bytes
+; unless assembled with -dK5_TIMER, so other kernel ELFs stay byte-identical.
+%include "timer.asm"
 
 section .la_image
 incbin "native_codegen3_out"
