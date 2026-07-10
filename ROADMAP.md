@@ -308,8 +308,38 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             RSS) — a false-retention issue (conservative stack scan / Z-combinator
             chain) that bounds how much a metal LA program can compute. Documented,
             not yet fixed; it's what defers the K5b.2 metal demo.
-      - [ ] K5b.2 — preemptive. **PROTOTYPED but NOT landed (reverted) — blocked
-            by TWO issues.** The design (Erik-chosen safe-point yield-flag): the K5a
+      - [x] K5b.1d — **GC interior-pointer corruption fixed (object-start bitmap).**
+            The real cause of K5b.2's self-host breakage, isolated and fixed. The
+            conservative mark-sweep's `.consider` accepted any candidate whose
+            `[rax-8]` merely LOOKED like a header (kind 1..5, small size field) and
+            OR'd the mark bit INTO it — so a stale/derived INTERIOR pointer from the
+            register/stack scan, whose target bytes looked header-like, got bit-8
+            flipped in LIVE data. Frequency- AND payload-gated: the machine-code
+            self-compile (bytes `0x01`–`0x05` everywhere) corrupts under frequent GC
+            ("expected = in glyph definition" — NOT the periodic GC itself); ascii/int
+            workloads do not. Isolated with a fast reproducer (an 8-byte small-int-word
+            blob corrupts, an ascii blob does not; the changed byte is exactly the
+            `MARKBIT` flip). **Fix:** an object-start **bitmap** (1 bit / 8-byte
+            granule) — `alloc24`/`alloc_blob` record each object's start; `.consider`
+            marks only candidates whose `(rax-8)` start-bit is set, rejecting
+            interior/false pointers before the corrupting write (guarded on
+            `BITMAP_BASE != 0`). **Metal-safe via a CPL gate** in `rt_init`: ring 3
+            (Linux self-host) enables the bitmap, ring 0 (the metal kernel) leaves it
+            off (the 16 GiB-high bitmap window is unmapped on metal, and `kernel.la`
+            barely allocates) — no `boot.asm` change, no PROL branch, no new builtin.
+            Shipped the **4 MB** GC interval with it (tight-loop RSS 2.88 GB → 757 MB),
+            now safe. **Verified:** reproducer (off=corrupt / on=fixed), normal programs
+            native==host, drift guard (RTLEN → 11360), the **4 MB native self-host
+            reaches a byte-identical fixed point** where it previously corrupted, and
+            **all 13 kernel gates green on QEMU** (incl. K5b.1b's task-GC canary firing
+            real collection under the multi-task root scan). Commit `a9d46c3`.
+            **Honest limit unchanged:** this is a CORRECTNESS fix, NOT a retention fix
+            — it rejects INTERIOR false pointers but not stale pointers to REAL object
+            starts, so K5b.1c's tight-loop over-retention is untouched; retention stays
+            interval-driven (4 MB → 757 MB is the lever) + a residual O(N)-ish growth.
+      - [ ] K5b.2 — preemptive. **PROTOTYPED but NOT landed (reverted).** Blocker (1)
+            below is now RESOLVED by K5b.1d; (2) is reduced to a demo-design concern.
+            The design (Erik-chosen safe-point yield-flag): the K5a
             timer ISR sets a `YIELD_PENDING` flag (metal only); the runtime checks it
             at the `rt_apply` safe point (every reduction) and yields — never inside
             `rt_gc`/`alloc`. It works *cooperatively* (with the flag inert under
@@ -326,8 +356,13 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             tasks that busy-loop > 10 ms, which allocates tight-loop garbage the
             collector RETAINS (the K5b.1c honest-limit) → the heap climbs into the
             task stacks / past physical RAM → faults.
-            Both trace back to the conservative-GC tight-loop **retention** issue,
-            which is the real next thing to solve before K5b.2. The prototype
+            UPDATE (K5b.1d): blocker (1) was NOT retention — it was the interior-pointer
+            **mark-write corruption**, now fixed by the object-start bitmap; the 4 MB
+            self-host reaches a byte-identical fixed point. Blocker (2) is reduced to a
+            demo-design concern — a busy-loop that allocates unboundedly still climbs
+            (the retention residual), so the preempt demo should bound per-slice
+            allocation or accept the interval-tuned ceiling. K5b.2 is otherwise
+            unblocked. The prototype
             (`rt_apply` safe point, `YIELD_PENDING`, `task_preempt.la`,
             `build_k5b2.sh`, `gate_k5b2.sh`) was reverted; the design + findings are
             recorded here and in [[logos-kernel]].
