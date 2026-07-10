@@ -45,7 +45,7 @@ org 0x400078
 %define H_DESC   (4 | (16 << 16))
 %define K_BLOB   5
 ; 3b.2 dry-run GC: fires each GC_INTERVAL bytes of allocation (rt_apply trigger).
-%define GC_INTERVAL 0x4000000   ; 64 MB (3b.2 dry-run; unused once 3b.3 GC-on-exhaustion lands)
+%define GC_INTERVAL 0x400000   ; 4MB PRODUCTION (retention win; safe now bitmap fixes false-interior corruption)
 %define WL_SIZE     0x4000000   ; 64 MB worklist, carved from the front of the heap region
 %define MARKBIT     0x100       ; header bit 8 (= byte 1) is the mark
 %define H_FREE      (6 | (16 << 16))  ; 3b.3 free-list cell (24B); link stored in body word 0
@@ -82,6 +82,19 @@ alloc24:
     jae     .periodic           ;   only collecting at 16 GiB exhaustion
     mov     rax, r15
     mov     r15, rcx
+    ; GCfix: record rax as a real object START in the bitmap, so .consider can
+    ; reject interior/false pointers instead of corrupting live data. Guarded on
+    ; BITMAP_BASE (0 = disabled -> old behavior). rdx preserved (reg contract).
+    cmp     qword [BITMAP_BASE], 0
+    je      .bmdone
+    push    rdx
+    mov     rdx, [BITMAP_BASE]
+    mov     rcx, rax
+    sub     rcx, [HEAP_BASE]
+    shr     rcx, 3              ; granule index = (obj - HEAP_BASE) / 8
+    bts     [rdx], rcx          ; set the start bit
+    pop     rdx
+.bmdone:
     ret
 .pop:
     mov     rcx, [rax+8]        ; next link (free cell body word 0)
@@ -151,6 +164,15 @@ alloc_blob:
     jae     .periodic
     mov     rax, r15
     mov     r15, rcx
+    ; GCfix: record the start bit (see alloc24). rdx is in alloc_blob's clobber set.
+    cmp     qword [BITMAP_BASE], 0
+    je      .bmdone
+    mov     rdx, [BITMAP_BASE]
+    mov     rcx, rax
+    sub     rcx, [HEAP_BASE]
+    shr     rcx, 3
+    bts     [rdx], rcx
+.bmdone:
     ret
 .pop:
     mov     rcx, [rax+8]        ; next link
@@ -664,6 +686,19 @@ false_inner:
 
 ; ── slot 23: rt_init -> build canonical TRUE/FALSE values (empty env) ──
 rt_init:
+    ; GCfix metal-safety: enable the object-start bitmap ONLY at ring 3 (Linux
+    ; userspace self-host). At ring 0 (the metal kernel image) the 16 GiB-high
+    ; bitmap base is unmapped, so leave BITMAP_BASE=0 (bitmap disabled = old
+    ; behavior). This runs BEFORE the TRUE/FALSE allocations, so once enabled every
+    ; object (incl. TRUE/FALSE) gets a start-bit. HEAP_END/HEAP_BASE are already set
+    ; by PROL. (K6 caveat: when LA runs at ring 3 ON METAL, this enables there too and
+    ; the bitmap window must be mapped — revisit at K6.)
+    mov     ax, cs
+    and     ax, 3               ; CPL: 3 = Linux userspace, 0 = ring-0 kernel
+    jz      .nobitmap
+    mov     rax, [HEAP_END]
+    mov     [BITMAP_BASE], rax  ; bitmap base = heap end (= hb + HEAP_SIZE)
+.nobitmap:
     xor     rbx, rbx
     mov     r10, true_outer
     call    rt_mkclo
@@ -909,6 +944,21 @@ rt_gc:
     add     r8, rcx
     cmp     r8, r15
     ja      .cret                 ; body would exceed the frontier
+    ; GCfix: only mark if (rax-8) is a REAL object start (bitmap bit set). This
+    ; rejects conservative interior/false pointers whose [rax-8] merely LOOKS like
+    ; a header — the mark-write to such a pointer would corrupt live data. Guarded
+    ; on BITMAP_BASE (0 = disabled). Uses rcx/r8 (both in .consider's clobber set);
+    ; rdx (the header) is preserved for the mark below.
+    cmp     qword [BITMAP_BASE], 0
+    je      .bmok
+    mov     r8, [BITMAP_BASE]
+    mov     rcx, rax
+    sub     rcx, 8                ; obj = candidate - 8
+    sub     rcx, [HEAP_BASE]
+    shr     rcx, 3                ; granule of the object start
+    bt      [r8], rcx
+    jnc     .cret                 ; not a real start -> false pointer, do not mark
+.bmok:
     or      rdx, MARKBIT
     mov     [rax-8], rdx          ; set mark
     mov     rcx, [WORKLIST_BASE]
@@ -1495,6 +1545,8 @@ STACK_BASE: dq 0
 WORKLIST_BASE: dq 0
 FREE24:   dq 0
 HEAP_END: dq 0
+BITMAP_BASE: dq 0             ; GCfix: object-start bitmap base (0 = disabled). PROL sets it on
+                             ;   the Linux self-host image; left 0 on the metal kernel image.
 STACK_LIMIT: dq 0              ; 3b.4 native stack guard: STACK_BASE - 7 MiB (set in rt_init)
 FREEBLOB: times 48 dq 0        ; blob free-lists by size class. FIX #1b (Stage-4 freeze day): the
                                ; HEAP_SIZE 1.5->16 GiB bump made >2 GiB blobs allocatable, so a blob
