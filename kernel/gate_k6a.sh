@@ -20,7 +20,7 @@ fi
 ./kernel/build_k6a.sh >/dev/null 2>&1 || { echo "FAIL  K6a gate: build_k6a.sh failed"; exit 1; }
 
 OUT=$(timeout 20 qemu-system-x86_64 \
-        -kernel kernel/kernel_k6a.elf -m 256 \
+        -kernel kernel/kernel_k6a.elf -m 512 \
         -serial stdio -display none \
         -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
         -no-reboot -no-shutdown 2>/dev/null)

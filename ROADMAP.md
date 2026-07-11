@@ -397,12 +397,22 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             Gate: kernel speaks the Word from the high half.
       - [ ] **HH2** — per-process page tables (PML4[0] per proc, kernel PML4[511]
             shared into each). The process-model foundation.
-      - [ ] **K6a — ring-3 privilege drop (minimal, NO HH needed).** GDT += user
-            code 0x18|3 / data 0x20|3 + a TSS (RSP0); ltr. Map one user page U=1 at
-            a low addr clear of the kernel (~256 MiB) with a tiny payload; iretq/
-            sysret to ring 3; payload `syscall write("hi")` → kernel services it →
-            `syscall exit`. Gate: QEMU shows "hi" from CPL 3 (probe CS&3), exit 33.
-            Proves the privilege machinery WITHOUT the LA-at-ring-3 caveats.
+      - [x] **K6a — ring-3 privilege drop — DONE + gated (2026-07-11).** GDT += user
+            code 0x20|3 / data 0x18|3 + a TSS (RSP0); ltr. STAR[63:48]=0x10 so
+            sysretq lands in the ring-3 selectors. Maps ONE user 2 MiB page U=1
+            (PD[128], flags 0x87) at phys 0x10000000 = 256 MiB, with U=1 forced up
+            PML4[0]/PDPT[0] (U/S ANDs down the walk); copies a position-independent
+            payload there and `iretq`s to it at CPL 3. The payload reads its own CS
+            privilege into the message ("K6A CPL=3"), `syscall write`s it (a ring-3
+            task cannot touch COM1 — the bytes on serial ARE the proof the syscall
+            crossed ring3→ring0→ring3), then `syscall exit`. `gate_k6a.sh` (QEMU):
+            "K6A CPL=3" + exit 33. All in `%ifdef K6A` (`boot.asm` + `build_k6a.sh`
+            + `gate_k6a.sh`), other kernel ELFs byte-identical. **GOTCHA that ate a
+            session:** the user page at 256 MiB needs RAM to *exist* there — the gate
+            must boot QEMU `-m 512` (with `-m 256`, 0x10000000 is one byte past the
+            end of RAM → every user-page/user-stack access "rejected", `ret` pops 0 →
+            #UD at RIP=0 → QEMU BQL host-abort, NOT a guest fault). Proves the
+            privilege machinery WITHOUT the LA-at-ring-3 caveats.
       - [ ] **K6b — the real LA image at ring 3.** Run the native_codegen3 image at
             ring 3; implement the metal-flag discriminator (problem 1). Gate:
             kernel.la speaks the Word from ring 3.
@@ -412,7 +422,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             a typed message through a kernel channel. Effectively its own milestone.
         **Ordering (recommended):** K6a first (cheap, isolates ring-3 mechanics on
         the current identity map), THEN HH1 (big reorg, now with a ring-3 target to
-        validate against), then K6b/K6c. STARTED with K6a.
+        validate against), then K6b/K6c. **K6a DONE — next is K6b or HH1.**
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last
 - [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
       native process model is re-homed onto the kernel at K5/K6)*

@@ -224,7 +224,6 @@ long_start:
     ; so ONLY PD[128] becomes user-accessible.
     or      dword [pml4], 0x04          ; PML4[0] |= user
     or      dword [pdpt], 0x04          ; PDPT[0] |= user
-    or      dword [pd + 0*8], 0x04       ; DBG: PD[0] (0-2MiB) |= user — run payload in place
     mov     dword [pd + 128*8], 0x10000000 | 0x87
     mov     dword [pd + 128*8 + 4], 0
     mov     rax, cr3
@@ -235,20 +234,6 @@ long_start:
     mov     rsi, k6a_payload
     mov     edi, 0x10000000
     mov     ecx, k6a_blob_len
-    ; DBG: dump rsi[31:0] and rdi[31:0], preserving rsi/rdi/rcx (serial_putc trashes dil)
-    push    rsi
-    push    rdi
-    push    rcx
-    mov     rbx, rsi
-    mov     al, bh
-    call    dbg_hex
-    mov     al, bl
-    call    dbg_hex
-    mov     dil, '<'
-    call    serial_putc
-    pop     rcx
-    pop     rdi
-    pop     rsi
     rep     movsb
 
     ; Fill the TSS descriptor (gdt64.tss) with k6a_tss base/limit, then LTR.
@@ -273,31 +258,13 @@ long_start:
     mov     ax, gdt64.tss
     ltr     ax
 
-    ; DBG: source payload first 4 bytes (want 66 8c c8 .. = mov ax,cs) ...
-    mov     al, [k6a_payload + 0]
-    call    dbg_hex
-    mov     al, [k6a_payload + 1]
-    call    dbg_hex
-    mov     al, [k6a_payload + 2]
-    call    dbg_hex
-    mov     dil, '>'
-    call    serial_putc
-    ; ... and the DEST bytes at 0x10000000 (did the copy land?)
-    mov     al, [0x10000000 + 0]
-    call    dbg_hex
-    mov     al, [0x10000000 + 1]
-    call    dbg_hex
-    mov     al, [0x10000000 + 2]
-    call    dbg_hex
-    mov     dil, 10
-    call    serial_putc
-
-    ; iretq frame -> ring 3 at the payload. iretq pops RIP,CS,RFLAGS,RSP,SS.
+    ; iretq frame -> ring 3 at the copied payload on the user page. iretq pops
+    ; RIP, CS, RFLAGS, RSP, SS.
     push    qword 0x18 | 3              ; SS = user data, RPL 3
     push    qword 0x101F0000           ; user RSP (top of stack in the user page)
     push    qword 0x202                ; RFLAGS (IF set, reserved bit 1)
     push    qword 0x20 | 3             ; CS = user code, RPL 3
-    push    qword k6a_payload          ; DBG RIP = payload IN PLACE (bypass the copy)
+    push    qword 0x10000000           ; RIP = the copied payload on the U=1 page
     iretq
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
@@ -443,34 +410,6 @@ serial_putc:
 ;  SERVICE from ring 3 by writing that message (a ring-3 task cannot touch COM1
 ;  directly — the bytes only reach serial through the kernel's write syscall).
 ; ---------------------------------------------------------------------
-; dbg_hex(al) — print al as two hex chars + space on COM1 (clobbers nothing caller-visible)
-dbg_hex:
-    push    rax
-    push    rbx
-    movzx   ebx, al
-    shr     al, 4
-    call    .nib
-    mov     al, bl
-    and     al, 0x0F
-    call    .nib
-    mov     dil, ' '
-    call    serial_putc
-    pop     rbx
-    pop     rax
-    ret
-.nib:
-    and     al, 0x0F
-    cmp     al, 10
-    jb      .dig
-    add     al, 'a' - 10
-    jmp     .put
-.dig:
-    add     al, '0'
-.put:
-    mov     dil, al
-    call    serial_putc
-    ret
-
 k6a_payload:
     mov     ax, cs
     and     ax, 3                       ; CPL (3 = ring 3)
