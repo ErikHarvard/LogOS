@@ -372,8 +372,47 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             build.sh); `timer.asm`/`boot.asm` `%ifdef K5B2`. A `%ifdef K5B2_DBG`
             diagnostic (per-tick serial marker + real exit-code print) is kept, gated
             and byte-identical when off. Details in [[logos-kernel]].
-  - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
-        over in-kernel channels; native process model vs fork/execve)
+  - [~] K6 — user mode (ring 3) + a real syscall service layer. **SCOPED
+        2026-07-10.** Current baseline: GDT null/kcode0x08/kdata0x10 (no ring-3
+        selectors, no TSS); paging identity-maps low 1 GiB as 2 MiB supervisor
+        pages (flags 0x83, NO U/S bit); syscall_entry does write/exit only and
+        stays ring 0 (jmp rcx, not sysret); the LA image runs at ring 0.
+        **Three hard problems shaping the staging:** (1) the CPL-gate conflation —
+        rt_init keys the object-start bitmap + TASK_STACK_TOP on CPL (ring 3 =
+        "Linux"), so LA at ring 3 ON METAL wrongly enables the 16 GiB-high bitmap +
+        HEAP_END task stacks (unmapped → fault); fix = discriminate metal-ness by a
+        BOOT-SET memory flag, not CPL (Linux is never "metal", so self-host stays
+        untouched). (2) user pages need the U/S bit (current 0x83 is supervisor).
+        (3) ring transitions need a TSS (RSP0) + ring-3 GDT selectors + a real
+        sysret/iretq-to-ring-3 return.
+        **Bricks:**
+      - [~] **HH1 — higher-half** (roadmap's "just-before-K6" prereq). Relink boot +
+            kernel to the −2 GiB half 0xFFFFFFFF80000000 (sign-extended disp32
+            reaches it → NO opcode changes, only addresses move); map PML4[511]→…
+            to the kernel's phys pages, jump high, drop the low identity map to free
+            the low canonical half. The LA image's fixed RT_* move high → a
+            kernel-only HH rt variant (native_codegen3_hh, base 0xFFFFFFFF80000078)
+            via the derive_consts tooling with a new base; Stage-4/Linux self-host
+            keeps the low-based rt. BIGGEST/RISKIEST brick (dual RT address-sets).
+            Gate: kernel speaks the Word from the high half.
+      - [ ] **HH2** — per-process page tables (PML4[0] per proc, kernel PML4[511]
+            shared into each). The process-model foundation.
+      - [ ] **K6a — ring-3 privilege drop (minimal, NO HH needed).** GDT += user
+            code 0x18|3 / data 0x20|3 + a TSS (RSP0); ltr. Map one user page U=1 at
+            a low addr clear of the kernel (~256 MiB) with a tiny payload; iretq/
+            sysret to ring 3; payload `syscall write("hi")` → kernel services it →
+            `syscall exit`. Gate: QEMU shows "hi" from CPL 3 (probe CS&3), exit 33.
+            Proves the privilege machinery WITHOUT the LA-at-ring-3 caveats.
+      - [ ] **K6b — the real LA image at ring 3.** Run the native_codegen3 image at
+            ring 3; implement the metal-flag discriminator (problem 1). Gate:
+            kernel.la speaks the Word from ring 3.
+      - [ ] **K6c — real syscall service layer.** Grow syscall_entry past write/exit
+            into the process/IPC primitives; re-home LogosIPC over in-kernel
+            channels (the "nervous system"). Gate: two ring-3 LA processes exchange
+            a typed message through a kernel channel. Effectively its own milestone.
+        **Ordering (recommended):** K6a first (cheap, isolates ring-3 mechanics on
+        the current identity map), THEN HH1 (big reorg, now with a ring-3 target to
+        validate against), then K6b/K6c. STARTED with K6a.
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last
 - [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
       native process model is re-homed onto the kernel at K5/K6)*

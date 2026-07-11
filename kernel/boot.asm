@@ -209,9 +209,101 @@ long_start:
     ud2
 %endif
 
+%ifdef K6A
+    ; ===== K6a: drop to ring 3 and run a user payload that syscalls back =====
+    ; STAR[63:48] = 0x10 so sysretq returns to CS=0x20|3 / SS=0x18|3 (ring 3).
+    mov     ecx, 0xC0000081             ; IA32_STAR
+    xor     eax, eax
+    mov     edx, (0x10 << 16) | 0x08    ; [47:32]=0x08 (syscall), [63:48]=0x10 (sysret)
+    wrmsr
+
+    ; Map the 256 MiB 2 MiB-page (PD[128]) as USER: present|writable|user|PS = 0x87.
+    ; This one page holds the copied payload + its message + the user stack.
+    ; U/S is ANDed down the whole walk, so PML4[0] and PDPT[0] must ALSO carry U=1
+    ; (they were 0x03 = supervisor); the other PD entries stay 0x83 (supervisor),
+    ; so ONLY PD[128] becomes user-accessible.
+    or      dword [pml4], 0x04          ; PML4[0] |= user
+    or      dword [pdpt], 0x04          ; PDPT[0] |= user
+    or      dword [pd + 0*8], 0x04       ; DBG: PD[0] (0-2MiB) |= user — run payload in place
+    mov     dword [pd + 128*8], 0x10000000 | 0x87
+    mov     dword [pd + 128*8 + 4], 0
+    mov     rax, cr3
+    mov     cr3, rax                    ; flush TLB (PML4/PDPT/PD entries changed)
+
+    ; Copy the payload blob to the user page at 0x10000000.
+    cld                                 ; forward copy (DF is not guaranteed clear at boot)
+    mov     rsi, k6a_payload
+    mov     edi, 0x10000000
+    mov     ecx, k6a_blob_len
+    ; DBG: dump rsi[31:0] and rdi[31:0], preserving rsi/rdi/rcx (serial_putc trashes dil)
+    push    rsi
+    push    rdi
+    push    rcx
+    mov     rbx, rsi
+    mov     al, bh
+    call    dbg_hex
+    mov     al, bl
+    call    dbg_hex
+    mov     dil, '<'
+    call    serial_putc
+    pop     rcx
+    pop     rdi
+    pop     rsi
+    rep     movsb
+
+    ; Fill the TSS descriptor (gdt64.tss) with k6a_tss base/limit, then LTR.
+    ; .rodata is writable here (identity map W=1, no CR0.WP in the K6a build).
+    mov     rax, k6a_tss
+    mov     word [gdt64 + gdt64.tss], 103
+    mov     word [gdt64 + gdt64.tss + 2], ax
+    shr     rax, 16
+    mov     byte [gdt64 + gdt64.tss + 4], al
+    mov     byte [gdt64 + gdt64.tss + 5], 0x89   ; present, available 64-bit TSS
+    mov     byte [gdt64 + gdt64.tss + 6], 0
+    shr     rax, 8
+    mov     byte [gdt64 + gdt64.tss + 7], al
+    mov     rax, k6a_tss
+    shr     rax, 32
+    mov     dword [gdt64 + gdt64.tss + 8], eax
+    mov     dword [gdt64 + gdt64.tss + 12], 0
+    ; TSS.rsp0 (offset 4) = a ring-0 stack for ring-3 traps; iomap base (102) beyond limit.
+    mov     rax, k6a_kstack_top
+    mov     [k6a_tss + 4], rax
+    mov     word [k6a_tss + 102], 104
+    mov     ax, gdt64.tss
+    ltr     ax
+
+    ; DBG: source payload first 4 bytes (want 66 8c c8 .. = mov ax,cs) ...
+    mov     al, [k6a_payload + 0]
+    call    dbg_hex
+    mov     al, [k6a_payload + 1]
+    call    dbg_hex
+    mov     al, [k6a_payload + 2]
+    call    dbg_hex
+    mov     dil, '>'
+    call    serial_putc
+    ; ... and the DEST bytes at 0x10000000 (did the copy land?)
+    mov     al, [0x10000000 + 0]
+    call    dbg_hex
+    mov     al, [0x10000000 + 1]
+    call    dbg_hex
+    mov     al, [0x10000000 + 2]
+    call    dbg_hex
+    mov     dil, 10
+    call    serial_putc
+
+    ; iretq frame -> ring 3 at the payload. iretq pops RIP,CS,RFLAGS,RSP,SS.
+    push    qword 0x18 | 3              ; SS = user data, RPL 3
+    push    qword 0x101F0000           ; user RSP (top of stack in the user page)
+    push    qword 0x202                ; RFLAGS (IF set, reserved bit 1)
+    push    qword 0x20 | 3             ; CS = user code, RPL 3
+    push    qword k6a_payload          ; DBG RIP = payload IN PLACE (bypass the copy)
+    iretq
+%else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
     jmp     rax
+%endif
 
 ; ---------------------------------------------------------------------
 ;  syscall_entry — services the LA image's syscalls.
@@ -287,9 +379,16 @@ syscall_entry:
     hlt
     jmp     .hang
 .ret:
+%ifdef K6A
+    ; K6a: the caller is ring-3 user code reached via `syscall`; return with sysretq
+    ; (CS/SS from STAR[63:48] -> ring 3, RIP=rcx, RFLAGS=r11, both preserved by
+    ; .sys_write / serial_putc). RSP is unchanged (syscall never switched it).
+    o64 sysret
+%else
     push    r11
     popfq                           ; restore caller rflags
     jmp     rcx                      ; return to instruction after `syscall`
+%endif
 
 ; ---------------------------------------------------------------------
 ;  Serial (COM1, 8N1, 115200) — the K1 console / test oracle.
@@ -334,6 +433,65 @@ serial_putc:
     pop     rax
     ret
 
+%ifdef K6A
+; ---------------------------------------------------------------------
+;  K6a ring-3 user payload (in .boot32 = identity-mapped low RAM, so k6a_payload
+;  is a valid physical copy source). It is COPIED to the user page 0x10000000 and
+;  runs there at ring 3, so it must be position-independent: message references
+;  are RIP-relative (the rel offset is preserved by the copy). It proves ring 3 by
+;  reading its own CS privilege level into the message, and proves the syscall
+;  SERVICE from ring 3 by writing that message (a ring-3 task cannot touch COM1
+;  directly — the bytes only reach serial through the kernel's write syscall).
+; ---------------------------------------------------------------------
+; dbg_hex(al) — print al as two hex chars + space on COM1 (clobbers nothing caller-visible)
+dbg_hex:
+    push    rax
+    push    rbx
+    movzx   ebx, al
+    shr     al, 4
+    call    .nib
+    mov     al, bl
+    and     al, 0x0F
+    call    .nib
+    mov     dil, ' '
+    call    serial_putc
+    pop     rbx
+    pop     rax
+    ret
+.nib:
+    and     al, 0x0F
+    cmp     al, 10
+    jb      .dig
+    add     al, 'a' - 10
+    jmp     .put
+.dig:
+    add     al, '0'
+.put:
+    mov     dil, al
+    call    serial_putc
+    ret
+
+k6a_payload:
+    mov     ax, cs
+    and     ax, 3                       ; CPL (3 = ring 3)
+    add     al, '0'
+    lea     rbx, [rel k6a_cpldigit]
+    mov     [rbx], al                   ; patch the digit into the message
+    mov     eax, 1                      ; write(fd=1, buf, len)
+    mov     edi, 1
+    lea     rsi, [rel k6a_msg]
+    mov     edx, k6a_msg_len
+    syscall                             ; -> kernel (ring 0) -> COM1 -> sysret back
+    mov     eax, 60                     ; exit(0)
+    xor     edi, edi
+    syscall
+k6a_msg:      db "K6A CPL="
+k6a_cpldigit: db "0"
+              db 10
+k6a_msg_len   equ $ - k6a_msg
+k6a_blob_len  equ $ - k6a_payload
+%endif
+
 ; ---------------------------------------------------------------------
 ;  64-bit GDT: null, kernel code (0x08), kernel data (0x10)
 ; ---------------------------------------------------------------------
@@ -345,6 +503,17 @@ gdt64:
     dq (1<<43)|(1<<44)|(1<<47)|(1<<53)          ; code: type|S|present|long
 .data: equ $ - gdt64
     dq (1<<41)|(1<<44)|(1<<47)                  ; data: writable|S|present
+%ifdef K6A
+; K6a ring-3 selectors. Ordered for SYSRET: with STAR[63:48]=0x10, sysretq loads
+; CS = 0x10+16 = 0x20 (user code) and SS = 0x10+8 = 0x18 (user data), both RPL 3.
+.udata: equ $ - gdt64                           ; 0x18
+    dq (1<<41)|(1<<44)|(1<<47)|(3<<45)          ; user data: writable|S|present|DPL3
+.ucode: equ $ - gdt64                           ; 0x20
+    dq (1<<43)|(1<<44)|(1<<47)|(1<<53)|(3<<45)  ; user code: exec|S|present|long|DPL3
+.tss: equ $ - gdt64                             ; 0x28 (16-byte system desc, filled at runtime)
+    dq 0
+    dq 0
+%endif
 .ptr:
     dw $ - gdt64 - 1
     dq gdt64
@@ -361,6 +530,15 @@ align 16
 boot_stack:
         resb 16384
 boot_stack_top:
+%ifdef K6A
+align 16
+k6a_tss:                                ; 104-byte 64-bit TSS (rsp0 at +4, iomap base at +102)
+        resb 104
+align 16
+k6a_kstack:                             ; ring-0 stack the CPU switches to on a ring-3 trap (TSS.rsp0)
+        resb 16384
+k6a_kstack_top:
+%endif
 
 ; ---------------------------------------------------------------------
 ;  The Lingua-Adamica kernel image, placed by kernel.ld at 0x400000.
@@ -372,5 +550,7 @@ boot_stack_top:
 ; unless assembled with -dK5_TIMER, so other kernel ELFs stay byte-identical.
 %include "timer.asm"
 
+%ifndef K6A
 section .la_image
 incbin "native_codegen3_out"
+%endif
