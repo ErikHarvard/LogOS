@@ -413,9 +413,36 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             end of RAM → every user-page/user-stack access "rejected", `ret` pops 0 →
             #UD at RIP=0 → QEMU BQL host-abort, NOT a guest fault). Proves the
             privilege machinery WITHOUT the LA-at-ring-3 caveats.
-      - [ ] **K6b — the real LA image at ring 3.** Run the native_codegen3 image at
-            ring 3; implement the metal-flag discriminator (problem 1). Gate:
-            kernel.la speaks the Word from ring 3.
+      - [ ] **K6b — the real LA image at ring 3. FULLY SPEC'D + DE-RISKED
+            (2026-07-11), ready to execute.** Run the native_codegen3 kernel image at
+            ring 3 so `kernel.la` speaks the Word from CPL 3. The one hard problem is
+            the **metal-flag discriminator** (problem 1): `rt_init` currently keys the
+            GC object-start bitmap + `TASK_STACK_TOP` on **CPL** (`mov ax,cs; and
+            ax,3; jz .metal`, native_codegen3_rt.asm ~712) — ring 3 ⇒ "Linux" ⇒
+            bitmap ON at the 16 GiB-high `HEAP_END` + task stacks at `HEAP_END`, both
+            UNMAPPED on metal ⇒ fault. Discriminate metal-ness by a **boot-set memory
+            flag**, not CPL. **★ Reshuffle AVOIDED (verified 2026-07-11):** replace
+            the 9-byte `mov ax,cs / and ax,3 / jz .metal` with the **byte-identical
+            9-byte** `cmp byte [rel METAL_FLAG], 0 / jnz .metal` (`80 3d <rel32> 00 /
+            75 01`) ⇒ ZERO RT_*/*_ADDR constants shift. Append `METAL_FLAG: dq 0` at
+            EOF of the rt data (0 on Linux ⇒ Linux path unchanged; shifts nothing
+            before it). So the ONLY moving constants are `RTLEN += 8` and
+            `LITERAL_BASE += 8` — mechanical, NOT the 42-const derive_consts dance.
+            **Execution steps:** (1) rt.asm: the byte-neutral rt_init edit + append
+            METAL_FLAG; (2) regenerate the RT blob + bump RTLEN/LITERAL_BASE in
+            native_codegen3.la (patch_la.py); (3) `regen_selfhost.sh` → new
+            byte-identical fixed point (the ~5-min slow-but-mechanical step; RT bytes
+            changed so selfhost.bin is stale until then — MUST verify Stage-4 fixed
+            point, a regen can pass drift yet break self-host); (4) build.sh drift
+            guard `count=RTLEN`; (5) **boot.asm `%ifdef K6B`**: identity-map low 1 GiB
+            as USER 2 MiB pages (`0x87` not `0x83`), write `1` to METAL_FLAG's abs
+            addr (`0x400078 + <offset>`) BEFORE `jmp LA_ENTRY` (so rt_init sees it),
+            then iretq to LA_ENTRY at ring 3 (reuse K6a's GDT selectors + TSS). Heap
+            ~68 MiB + task stacks 0x38000000 (896 MiB) fit the low-1-GiB map under
+            **QEMU -m 1024**; the 16 GiB bitmap stays OFF via the flag. (6)
+            `gate_k6b.sh` (QEMU -m 1024): "I AM THAT I AM" from CPL 3 + exit 33.
+            NOTE: needs an attended run w/ CPU headroom (regen + full kernel LA build);
+            all `%ifdef K6B`, so other ELFs stay byte-identical.
       - [ ] **K6c — real syscall service layer.** Grow syscall_entry past write/exit
             into the process/IPC primitives; re-home LogosIPC over in-kernel
             channels (the "nervous system"). Gate: two ring-3 LA processes exchange
