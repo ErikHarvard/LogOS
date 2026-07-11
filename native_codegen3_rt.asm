@@ -234,7 +234,23 @@ rt_mkclo:
     ret
 
 ; ── slot 3: rt_apply(r10=func value, r11=arg value) -> rax (tail-jumps body) ──
+;   K5b.2 preemptive safe point: rt_apply is entered on every reduction, and it
+;   is a SAFE place to yield — we are between reductions, not inside rt_gc/alloc.
+;   The metal timer ISR (timer.asm, K5B2) sets YIELD_PENDING; here we honour it
+;   and hand off.  rt_yield saves only callee-saved regs + rsp, so r10/r11 (this
+;   apply's func/arg) must be preserved across it; the current stack is restored
+;   when this task is next scheduled.  YIELD_PENDING stays 0 under Linux (nothing
+;   sets it there), so the whole check is inert on the self-host path.
 rt_apply:
+    cmp     byte [YIELD_PENDING], 0
+    jz      .noyield
+    mov     byte [YIELD_PENDING], 0     ; consume the request
+    push    r10
+    push    r11
+    call    rt_yield                    ; context-switch away; returns here when rescheduled
+    pop     r11
+    pop     r10
+.noyield:
     cmp     qword [r10], 2
     jne     .bad
     call    alloc24             ; env slot (preserves r10/r11/rbx across any GC)
@@ -695,10 +711,19 @@ rt_init:
     ; the bitmap window must be mapped — revisit at K6.)
     mov     ax, cs
     and     ax, 3               ; CPL: 3 = Linux userspace, 0 = ring-0 kernel
-    jz      .nobitmap
+    jz      .metal
+    ; --- ring 3 (Linux self-host): bitmap ON; task stacks carved from the 16 GiB
+    ;     heap tail (HEAP_END), exactly as before this change (coop gates unchanged) ---
     mov     rax, [HEAP_END]
     mov     [BITMAP_BASE], rax  ; bitmap base = heap end (= hb + HEAP_SIZE)
-.nobitmap:
+    mov     [TASK_STACK_TOP], rax
+    jmp     .cpldone
+.metal:
+    ; --- ring 0 (metal kernel): bitmap OFF (16 GiB-high base unmapped); task
+    ;     stacks in identity-mapped low RAM. 0x38000000 = 896 MiB, mapped under
+    ;     QEMU -m 1024; K5b.2's high MAIN stack (0x3F000000) sits above it. ---
+    mov     qword [TASK_STACK_TOP], 0x38000000
+.cpldone:
     xor     rbx, rbx
     mov     r10, true_outer
     call    rt_mkclo
@@ -794,6 +819,14 @@ rt_gc:
     mov     rax, [rdi + TCB_R13]
     call    .consider
     mov     rax, [rdi + TCB_R14]
+    call    .consider
+    ; K5b.2 fix: a FRESH (spawned-but-not-yet-run) task holds its closure ONLY in
+    ; TCB_CLOSURE — its saved regs are zeroed and its stack is just the planted
+    ; trampoline frame, so without this the closure is unrooted and a GC (which a
+    ; preempting worker's allocations trigger) collects it, faulting the task on
+    ; first run (rt_apply "applied a non-function"). A running task's closure is
+    ; also reachable from its stack, so scanning it here is a harmless superset.
+    mov     rax, [rdi + TCB_CLOSURE]
     call    .consider
     mov     rbp, [rdi + TCB_RSP]         ; saved stack cursor (lower bound)
     mov     r14, [rdi + TCB_STKBASE]     ; stack base (upper bound)
@@ -1547,6 +1580,10 @@ FREE24:   dq 0
 HEAP_END: dq 0
 BITMAP_BASE: dq 0             ; GCfix: object-start bitmap base (0 = disabled). PROL sets it on
                              ;   the Linux self-host image; left 0 on the metal kernel image.
+YIELD_PENDING: dq 0           ; K5b.2 preemptive: metal timer ISR sets this (byte 1); rt_apply's
+                             ;   safe point reads+clears it and yields. Always 0 under Linux.
+TASK_STACK_TOP: dq 0          ; K5b.2: top of the per-task stack region. rt_init CPL-gates it —
+                             ;   HEAP_END (Linux/ring3) or 0x38000000 (metal/ring0). rt_spawn carves from it.
 STACK_LIMIT: dq 0              ; 3b.4 native stack guard: STACK_BASE - 7 MiB (set in rt_init)
 FREEBLOB: times 48 dq 0        ; blob free-lists by size class. FIX #1b (Stage-4 freeze day): the
                                ; HEAP_SIZE 1.5->16 GiB bump made >2 GiB blobs allocatable, so a blob
@@ -1734,9 +1771,11 @@ rt_spawn:
     inc     r8
     jmp     .findfree
 .gotslot:
-    ; --- carve this task's stack from the top of the heap region ---
-    ; stack_top = HEAP_END - index*TASK_STACK_SIZE (index>=1, so distinct from main)
-    mov     rdx, [HEAP_END]
+    ; --- carve this task's stack from the top of the task-stack region ---
+    ; stack_top = TASK_STACK_TOP - index*TASK_STACK_SIZE (index>=1, distinct from main).
+    ; TASK_STACK_TOP = HEAP_END on Linux (ring 3) / 0x38000000 on metal (ring 0),
+    ; chosen by rt_init's CPL gate so the metal stacks land in mapped low RAM.
+    mov     rdx, [TASK_STACK_TOP]
     imul    r9, r8, TASK_STACK_SIZE
     sub     rdx, r9                     ; rdx = stack_top
     mov     [rax + TCB_STKBASE], rdx

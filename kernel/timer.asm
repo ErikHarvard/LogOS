@@ -25,6 +25,15 @@
 
 TICK_ADDR   equ 0x310000        ; 3211264 — the LA probe peek()s its low byte
 
+%ifdef K5B2
+; K5b.2 preemptive: the absolute address of the LA runtime's YIELD_PENDING byte
+; (native_codegen3_rt.asm data slot). The timer ISR sets it; rt_apply's safe
+; point reads+clears it and yields. This MUST match the address derived from the
+; rt listing — build_k5b2.sh asserts it (a wrong address would set a random byte
+; in the LA image and never preempt). It lives in the identity-mapped LA image.
+YIELD_PENDING_ABS equ 0x4012e5  ; = 4199132 (derive_consts.py YIELD_PENDING_ADDR)
+%endif
+
 section .boot32
 bits 64
 
@@ -33,6 +42,21 @@ bits 64
 timer_isr:
     push    rax
     inc     qword [TICK_ADDR]   ; one tick (64-bit; the LA probe reads the low byte)
+%ifdef K5B2
+    ; K5b.2: request a safe-point yield in the LA runtime. Just a memory store —
+    ; no GP register touched beyond the saved rax — so the ISR stays transparent;
+    ; rt_apply consumes the flag at the next reduction (never mid-rt_gc/alloc).
+    mov     byte [YIELD_PENDING_ABS], 1
+%ifdef K5B2_DBG
+    ; DIAGNOSTIC: emit '.' on COM1 per tick so the serial log shows ticks
+    ; interleaved with the LA output. rax is saved (pushed at ISR entry); dx used.
+    push    rdx
+    mov     dx, 0x3F8
+    mov     al, '.'
+    out     dx, al
+    pop     rdx
+%endif
+%endif
     mov     al, 0x20            ; PIC EOI
     out     0x20, al            ; -> master PIC command port
     pop     rax

@@ -337,35 +337,41 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             — it rejects INTERIOR false pointers but not stale pointers to REAL object
             starts, so K5b.1c's tight-loop over-retention is untouched; retention stays
             interval-driven (4 MB → 757 MB is the lever) + a residual O(N)-ish growth.
-      - [ ] K5b.2 — preemptive. **PROTOTYPED but NOT landed (reverted).** Blocker (1)
-            below is now RESOLVED by K5b.1d; (2) is reduced to a demo-design concern.
-            The design (Erik-chosen safe-point yield-flag): the K5a
-            timer ISR sets a `YIELD_PENDING` flag (metal only); the runtime checks it
-            at the `rt_apply` safe point (every reduction) and yields — never inside
-            `rt_gc`/`alloc`. It works *cooperatively* (with the flag inert under
-            Linux, both cooperative gates pass, so the safe point doesn't disturb
-            scheduling). But it could not be landed:
-            (1) **Self-hosting breakage** — with the safe-point + task-stack-base
-            edits on top of K5b.1c's periodic GC, `native_codegen3` no longer reaches
-            a Stage-4 fixed point: gen1 compiles fine but gen2 is corrupt (`expected
-            lambda parameter`), i.e. the change doesn't self-propagate. Likely the
-            periodic GC firing during the ~9.7 GB self-compile interacting with the
-            change; needs debugging. tiny_host-hosted compilation is fine, so it's
-            specifically the native self-host loop.
-            (2) **Metal demo blocked** (even ignoring #1) — a preempt demo needs
-            tasks that busy-loop > 10 ms, which allocates tight-loop garbage the
-            collector RETAINS (the K5b.1c honest-limit) → the heap climbs into the
-            task stacks / past physical RAM → faults.
-            UPDATE (K5b.1d): blocker (1) was NOT retention — it was the interior-pointer
-            **mark-write corruption**, now fixed by the object-start bitmap; the 4 MB
-            self-host reaches a byte-identical fixed point. Blocker (2) is reduced to a
-            demo-design concern — a busy-loop that allocates unboundedly still climbs
-            (the retention residual), so the preempt demo should bound per-slice
-            allocation or accept the interval-tuned ceiling. K5b.2 is otherwise
-            unblocked. The prototype
-            (`rt_apply` safe point, `YIELD_PENDING`, `task_preempt.la`,
-            `build_k5b2.sh`, `gate_k5b2.sh`) was reverted; the design + findings are
-            recorded here and in [[logos-kernel]].
+      - [x] K5b.2 — **preemptive tasks on the metal — DONE + gated (safe-point
+            yield-flag).** Two workers that NEVER call `yield()` interleave purely
+            because the K5a timer preempts them. `gate_k5b2.sh` (QEMU, `-m 1024`):
+            the A/B print sequence has ≥3 runs (`ABABAB`), `done` prints, exit 33.
+            **The mechanism:** the timer ISR (assembled `-dK5B2`) sets a byte
+            `YIELD_PENDING` (in the LA runtime, addr drift-guarded against the rt
+            listing); `rt_apply`'s safe point checks it on every reduction and, if
+            set, preserves `r10`/`r11` across an `rt_yield` context switch — never
+            inside `rt_gc`/`alloc`. Inert under Linux (nothing sets the flag), so it
+            self-hosts. Task stacks are CPL-gated in `rt_init`: `HEAP_END` at ring 3
+            (Linux, cooperative gates unchanged) / `0x38000000` at ring 0 (metal,
+            mapped low RAM); MAIN gets a high stack `0x3F000000` (`%ifdef K5B2` in
+            boot.asm, byte-identical when off).
+            **Two real bugs found bringing it up (both now fixed):**
+            (i) **`rt_gc` didn't root a fresh task's closure.** The K5b.1b per-task
+            root scan covered saved regs + stack, but a spawned-but-not-yet-run task
+            holds its closure ONLY in `TCB_CLOSURE` (spawn zeroes the regs). A
+            preempting worker's allocations triggered a GC while the other worker was
+            still fresh → its closure was collected → it faulted on first run
+            (`rt_apply` "applied a non-function", exit 70 — which the kernel's
+            `.sys_exit` was silently mapping to success 33, masking it). Fix: scan
+            `TCB_CLOSURE` in the per-task roots. This also strengthens K5b.1b.
+            (ii) **demo-design race** — MAIN's fixed drain count was smaller than the
+            scheduler slices the long-SPIN workers needed, so MAIN reached `done` and
+            exited first, killing the workers. Fix: `DRAIN`(=200) ≫ worker slices, and
+            SPINCOUNT(=2500) tuned so a 10 ms tick reliably lands mid-worker.
+            Blocker (1) (self-host breakage) was already resolved by K5b.1d's
+            object-start bitmap; the safe-point + all metal edits reach a byte-identical
+            Stage-4 fixed point. Files: `rt_apply` safe point + `YIELD_PENDING`/
+            `TASK_STACK_TOP` slots + `rt_init` CPL gate + `rt_spawn` indirection +
+            `rt_gc` closure root (native_codegen3_rt.asm, 42-const reshuffle re-derived,
+            regen'd); `task_preempt.la`; `build_k5b2.sh`/`gate_k5b2.sh` (wired into
+            build.sh); `timer.asm`/`boot.asm` `%ifdef K5B2`. A `%ifdef K5B2_DBG`
+            diagnostic (per-tick serial marker + real exit-code print) is kept, gated
+            and byte-identical when off. Details in [[logos-kernel]].
   - [ ] K6 — user mode (ring 3) + a real syscall service layer (re-home LogosIPC
         over in-kernel channels; native process model vs fork/execve)
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last

@@ -1547,7 +1547,10 @@ if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
     ./tiny_host native_codegen3.la >/dev/null 2>&1
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
-    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=11201 2>/dev/null
+    # count = the actual assembled RT length (was a hardcoded 11201 that went stale
+    # against the 11360-byte RT — a too-small count silently truncates the cmp, the
+    # K3b skew bug; deriving it from the ref guards the WHOLE runtime, every RTLEN).
+    dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=$(stat -c%s /tmp/c3rt_ref) 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
 fi
@@ -4258,6 +4261,14 @@ bash kernel/gate_k5b1.sh || exit 1
 # shifting the post-rt_gc RT_* constants by a uniform +125 and requiring
 # regen_selfhost + the Stage-4 fixed-point re-commit + drift count 11006->11131.
 bash kernel/gate_k5b1b.sh || exit 1
+
+# K5b.2 — PREEMPTIVE tasks on the metal (safe-point yield-flag). rt_apply checks
+# YIELD_PENDING on every reduction and context-switches when the K5a timer ISR
+# (assembled -dK5B2) has set it, so two NON-yielding workers interleave — pure
+# preemption, no cooperative yield. QEMU-gated (-m 1024 for the high MAIN stack
+# 0x3F000000 + task stacks at 0x38000000); skips cleanly when QEMU is absent.
+# The safe-point reshuffle self-hosts (the GC interior-pointer fix unblocked it).
+bash kernel/gate_k5b2.sh || exit 1
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),

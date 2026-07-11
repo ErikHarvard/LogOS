@@ -1,0 +1,67 @@
+# ===================================================================
+#  LogOS kernel — K5b.2 probe: PREEMPTIVE tasks (safe-point yield-flag).
+#
+#  Two worker tasks each print their label REPS times, with a bounded compute
+#  SPIN between prints, and NEVER call yield(). On the metal the K5a timer
+#  (IRQ0 ~100 Hz) fires asynchronously; with -dK5B2 the timer ISR sets the
+#  runtime's YIELD_PENDING flag, and rt_apply's safe point (checked on every
+#  reduction, between reductions — never inside rt_gc/alloc) honours it and
+#  context-switches. So the two NON-yielding workers interleave purely because
+#  the timer preempts them — cooperative scheduling would keep A running to
+#  completion before B ever starts.
+#
+#  OBSERVABLE:
+#    - preemption working  -> A and B INTERLEAVE (e.g. A A B B A B ...): a B is
+#      printed before A has finished all REPS, and vice-versa.
+#    - preemption absent    -> strict blocks "A*REPS then B*REPS then done"
+#      (each bounded worker still terminates and yields at the end, so the demo
+#      never hangs — it just fails to interleave).
+#
+#  BOUNDED ALLOCATION (blocker-2 / the GC retention residual): the workers are
+#  bounded (REPS * SPINCOUNT reductions total), so the tight-loop garbage the
+#  conservative collector retains stays FAR below the 896 MiB task-stack floor
+#  (task stacks at TASK_STACK_TOP=0x38000000 on metal; MAIN stack at 0x3F000000;
+#  heap grows up from ~68 MiB). Tune SPINCOUNT so a worker spans >= one 10 ms
+#  tick (enough to be preempted) without climbing the heap into the stacks.
+#
+#  METAL-ONLY: on Linux YIELD_PENDING is never set (no timer), so a worker would
+#  run uninterrupted to completion — the interleave only appears on QEMU. Built
+#  with -dK5_TIMER -dK5B2, run under QEMU -m 1024 (needs 0x3F000000 mapped).
+# ===================================================================
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SEQ = la a. la b. b
+
+# A bounded busy loop (tail-recursive -> bounded stack via TCO; each iteration
+# allocates one boxed int the 4 MiB periodic GC reclaims). SPINCOUNT (=2500) is the
+# tuning knob: on the metal ~2500 iterations span ~30 ms — MORE than one 10 ms tick
+# — so a tick reliably lands mid-spin and the safe point preempts the worker there.
+# Small enough that REPS*SPINCOUNT garbage stays far below the 896 MiB task-stack
+# floor. Wrapped in `la _.` so each reference re-runs the loop.
+glyph SPIN = la _.
+    (Z(la self. la i. IF(lt(i)(2500)) (la _. self(add(i)(1))) (la _. i)))(0)
+
+# Worker: print lbl, spin, repeat REPS(=6) times. NO yield — preemption drives the
+# switch. Bounded (~6 spins), so it finishes in only a handful of scheduler slices
+# and terminates even with no timer (serial-block fallback).
+glyph WORKER = la lbl. la _.
+    (Z(la self. la i.
+        IF(lt(i)(6))
+            (la _. SEQ(print(lbl))(SEQ(SPIN("!"))(self(add(i)(1)))))
+            (la _. lbl)))(0)
+
+# MAIN: spawn both workers, then drain via a yield loop. DRAIN(=200) is MUCH larger
+# than the ~12 scheduler slices the two 6-rep workers need, so MAIN never races them
+# to "done": for the whole time the workers run, MAIN advances at most one drain step
+# per round-robin round (a plain yield, no spin), so it is nowhere near 200 when they
+# finish. Once both workers are dead MAIN alone burns the remaining (fast, no-spin)
+# steps to 200, prints "done", and falls through to exit(0).
+glyph MAIN =
+    SEQ(spawn(WORKER("A")))
+   (SEQ(spawn(WORKER("B")))
+   (SEQ((Z(la self. la i.
+            IF(lt(i)(200))
+                (la _. SEQ(yield("!"))(self(add(i)(1))))
+                (la _. "!")))(0))
+   (print("done"))))

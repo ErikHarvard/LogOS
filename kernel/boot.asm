@@ -149,7 +149,16 @@ long_start:
     mov     es, ax
     mov     fs, ax
     mov     gs, ax
+%ifdef K5B2
+    ; K5b.2: MAIN gets a HIGH stack (0x3F000000 = 1008 MiB) so it sits ABOVE the
+    ; preemptive task stacks (TASK_STACK_TOP=0x38000000=896 MiB, carved down by
+    ; rt_spawn) and leaves the LA heap room to grow up from ~68 MiB without either
+    ; the heap or a task stack colliding with MAIN's. Needs QEMU -m 1024 (1008 MiB
+    ; must be mapped). Byte-identical to the K3b path when K5B2 is not defined.
+    mov     rsp, 0x3F000000
+%else
     mov     rsp, LA_STACK_TOP       ; K3b: tall stack for the LA image's guard
+%endif
 
 %ifdef K4C_WX
     ; K4c: CR0.WP (write-protect, bit 16) — enforce W^X in ring 0. Without it a
@@ -235,6 +244,40 @@ syscall_entry:
     mov     rax, r10
     jmp     .ret
 .sys_exit:
+%ifdef K5B2_DBG
+    ; DEBUG: emit "=<code>;" on COM1 so an ERROR exit (70/71/72/73/134/1) is
+    ; visible instead of being masked as success. Saves the regs it uses.
+    push    rax
+    push    rbx
+    push    rcx
+    push    rdx
+    push    rdi
+    mov     dil, '='
+    call    serial_putc
+    pop     rax                     ; the exit code
+    xor     rcx, rcx
+    mov     rbx, 10
+.k5dbg_div:
+    xor     rdx, rdx
+    div     rbx
+    push    rdx
+    inc     rcx
+    test    rax, rax
+    jnz     .k5dbg_div
+.k5dbg_emit:
+    pop     rdx
+    mov     dil, dl
+    add     dil, '0'
+    call    serial_putc
+    dec     rcx
+    jnz     .k5dbg_emit
+    mov     dil, ';'
+    call    serial_putc
+    pop     rdx
+    pop     rcx
+    pop     rbx
+    pop     rax
+%endif
     ; exit(rdi=code) -> QEMU isa-debug-exit success, then hard halt.
     mov     al, DBG_OK
     mov     dx, DBG_EXIT
