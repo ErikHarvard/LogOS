@@ -413,43 +413,43 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             end of RAM → every user-page/user-stack access "rejected", `ret` pops 0 →
             #UD at RIP=0 → QEMU BQL host-abort, NOT a guest fault). Proves the
             privilege machinery WITHOUT the LA-at-ring-3 caveats.
-      - [ ] **K6b — the real LA image at ring 3. FULLY SPEC'D + DE-RISKED
-            (2026-07-11), ready to execute.** Run the native_codegen3 kernel image at
-            ring 3 so `kernel.la` speaks the Word from CPL 3. The one hard problem is
-            the **metal-flag discriminator** (problem 1): `rt_init` currently keys the
-            GC object-start bitmap + `TASK_STACK_TOP` on **CPL** (`mov ax,cs; and
-            ax,3; jz .metal`, native_codegen3_rt.asm ~712) — ring 3 ⇒ "Linux" ⇒
-            bitmap ON at the 16 GiB-high `HEAP_END` + task stacks at `HEAP_END`, both
-            UNMAPPED on metal ⇒ fault. Discriminate metal-ness by a **boot-set memory
-            flag**, not CPL. **★ Reshuffle AVOIDED (verified 2026-07-11):** replace
-            the 9-byte `mov ax,cs / and ax,3 / jz .metal` with the **byte-identical
-            9-byte** `cmp byte [rel METAL_FLAG], 0 / jnz .metal` (`80 3d <rel32> 00 /
-            75 01`) ⇒ ZERO RT_*/*_ADDR constants shift. Append `METAL_FLAG: dq 0` at
-            EOF of the rt data (0 on Linux ⇒ Linux path unchanged; shifts nothing
-            before it). So the ONLY moving constants are `RTLEN += 8` and
-            `LITERAL_BASE += 8` — mechanical, NOT the 42-const derive_consts dance.
-            **Execution steps:** (1) rt.asm: the byte-neutral rt_init edit + append
-            METAL_FLAG; (2) regenerate the RT blob + bump RTLEN/LITERAL_BASE in
-            native_codegen3.la (patch_la.py); (3) `regen_selfhost.sh` → new
-            byte-identical fixed point (the ~5-min slow-but-mechanical step; RT bytes
-            changed so selfhost.bin is stale until then — MUST verify Stage-4 fixed
-            point, a regen can pass drift yet break self-host); (4) build.sh drift
-            guard `count=RTLEN`; (5) **boot.asm `%ifdef K6B`**: identity-map low 1 GiB
-            as USER 2 MiB pages (`0x87` not `0x83`), write `1` to METAL_FLAG's abs
-            addr (`0x400078 + <offset>`) BEFORE `jmp LA_ENTRY` (so rt_init sees it),
-            then iretq to LA_ENTRY at ring 3 (reuse K6a's GDT selectors + TSS). Heap
-            ~68 MiB + task stacks 0x38000000 (896 MiB) fit the low-1-GiB map under
-            **QEMU -m 1024**; the 16 GiB bitmap stays OFF via the flag. (6)
-            `gate_k6b.sh` (QEMU -m 1024): "I AM THAT I AM" from CPL 3 + exit 33.
-            NOTE: needs an attended run w/ CPU headroom (regen + full kernel LA build);
-            all `%ifdef K6B`, so other ELFs stay byte-identical.
+      - [x] **K6b — the real LA image at ring 3 — DONE + gated (2026-07-11).**
+            `kernel.la`, compiled by native_codegen3, runs at **CPL 3 on the metal**: it
+            speaks the Word (`I AM THAT I AM`) through a `write` syscall serviced
+            ring3→ring0→ring3 and `exit`s (33) — `∃(∃)≡∃` from ring 3, the SAME image
+            that runs at ring 0 under K1..K5 (`b_τ ≡ f_τ`). **The metal-flag
+            discriminator (problem 1):** `rt_init` keyed the GC object-start bitmap +
+            `TASK_STACK_TOP` on **CPL**, but CPL can no longer tell the two ring-3 cases
+            apart — the LA image runs at ring 3 both under the Linux self-host AND on the
+            metal here (both would take the "Linux" path ⇒ bitmap/stacks at the 16 GiB-high
+            `HEAP_END`, UNMAPPED on metal ⇒ fault). Fixed by a **boot-set memory flag**.
+            **Design note — deviated from the pre-spec, safely:** rather than *replacing*
+            the CPL check (the planned "byte-identical 9-byte" swap), the edit *prepends*
+            `cmp byte [rel METAL_FLAG],0 / jnz .metal` and KEEPS the CPL test as a
+            fallback — so metal = (flag set) OR (CPL==0), and the ring-0 K1..K5 builds
+            still take the metal path for free with no flag set. Honest cost: rt_init grew
+            9 bytes, so every `RT_*` constant shifted +9 and `LITERAL_BASE` +17 (rt.asm's
+            appended `METAL_FLAG: dq 0` adds the other 8) — all updated consistently in
+            native_codegen3.la, and the **Stage-4 self-host fixed point was re-verified
+            byte-identical (`selfhost.bin` 691847 B) and compiles kernel.la native==host**
+            (build.sh Stage 4 + drift guard green), so the shift is sound. **boot.asm
+            `%ifdef K6B`:** identity-maps the low 1 GiB USER (`0x87`, U forced up the whole
+            walk), writes `1` to METAL_FLAG's absolute addr (derived per-build from the rt
+            listing → `entry.inc`; this run `0x402d2f`) BEFORE entering the image, sets up
+            the ring-3 GDT selectors + TSS (reuses K6a's), and `iretq`s to LA_ENTRY at
+            CPL 3; the write/exit syscalls sysret back to ring 3. Heap ~68 MiB + task
+            stacks at 0x38000000 (896 MiB) fit the low-1-GiB map; the 16 GiB bitmap stays
+            OFF via the flag. `gate_k6b.sh` (QEMU **-m 1024** so the heap + 128 MiB stack
+            is real RAM): `I AM THAT I AM` from CPL 3 + exit 33 — **PASS**. All in
+            `%ifdef K6B` / `%ifdef RING3` (`boot.asm` + `build_k6b.sh` + `gate_k6b.sh`),
+            other kernel ELFs byte-identical.
       - [ ] **K6c — real syscall service layer.** Grow syscall_entry past write/exit
             into the process/IPC primitives; re-home LogosIPC over in-kernel
             channels (the "nervous system"). Gate: two ring-3 LA processes exchange
             a typed message through a kernel channel. Effectively its own milestone.
         **Ordering (recommended):** K6a first (cheap, isolates ring-3 mechanics on
         the current identity map), THEN HH1 (big reorg, now with a ring-3 target to
-        validate against), then K6b/K6c. **K6a DONE — next is K6b or HH1.**
+        validate against), then K6b/K6c. **K6a + K6b DONE — next is HH1 or K6c.**
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last
 - [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
       native process model is re-homed onto the kernel at K5/K6)*

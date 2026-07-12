@@ -709,8 +709,19 @@ rt_init:
     ; object (incl. TRUE/FALSE) gets a start-bit. HEAP_END/HEAP_BASE are already set
     ; by PROL. (K6 caveat: when LA runs at ring 3 ON METAL, this enables there too and
     ; the bitmap window must be mapped — revisit at K6.)
+    ; K6b: metal-ness needs TWO signals, because CPL alone can no longer tell the
+    ; two ring-3 cases apart — the LA image runs at ring 3 both under Linux (the
+    ; self-host) AND on the metal (K6b). The complete discriminator:
+    ;   * METAL_FLAG != 0        -> metal   (K6b writes 1 before entering at ring 3)
+    ;   * else CPL == 0          -> metal   (K1..K5: the ring-0 kernel image)
+    ;   * else (CPL==3, flag==0) -> Linux   (the self-host image — the sole default)
+    ; So the ring-0 metal builds still take the metal path for free (they set no
+    ; flag), and only the genuine Linux self-host falls through. METAL_FLAG lives
+    ; at EOF of the rt data (0 by default = Linux, so that image is unchanged).
+    cmp     byte [rel METAL_FLAG], 0    ; explicit metal flag (K6b ring-3-on-metal)?
+    jnz     .metal
     mov     ax, cs
-    and     ax, 3               ; CPL: 3 = Linux userspace, 0 = ring-0 kernel
+    and     ax, 3                       ; CPL: 0 = ring-0 metal kernel (K1..K5)
     jz      .metal
     ; --- ring 3 (Linux self-host): bitmap ON; task stacks carved from the 16 GiB
     ;     heap tail (HEAP_END), exactly as before this change (coop gates unchanged) ---
@@ -1892,3 +1903,12 @@ spawnfulllen: equ $ - spawnfull
 CUR_TASK:   dq 0
 CUR_INDEX:  dq 0
 TASK_TABLE: times (MAXTASK * TCB_SIZE / 8) dq 0
+
+; ── K6b: metal discriminator flag (appended at EOF; rt_init also re-checks CPL) ──
+; rt_init reads this ALONGSIDE CPL. 0 (default) = Linux self-host (object-start
+; bitmap ON, task stacks from the 16 GiB heap tail); nonzero = metal (bitmap OFF,
+; task stacks in low RAM at 0x38000000). boot.asm's K6B path writes 1 here BEFORE
+; jmp LA_ENTRY, so kernel.la runs at ring 3 on the metal without the 16 GiB-high
+; bitmap/stack bases, which are unmapped there. Left 0 on the Linux self-host
+; image, so that path is byte-for-byte unchanged.
+METAL_FLAG: dq 0

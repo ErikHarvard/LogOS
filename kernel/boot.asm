@@ -29,7 +29,19 @@
 ;  the gate fail loudly). K2 adds the IDT + loud fault handlers.
 ; ===================================================================
 
-%include "entry.inc"          ; defines LA_ENTRY  (the LA image's e_entry)
+%include "entry.inc"          ; defines LA_ENTRY  (the LA image's e_entry);
+                              ; build_k6b.sh also defines METAL_FLAG_ABS here.
+
+; K6a (ring-3 payload) and K6b (ring-3 LA image) share the ring-3 machinery —
+; the user GDT selectors, the TSS(RSP0), and the sysret return path. RING3 is
+; defined for either, so those blocks assemble once. Non-ring-3 builds
+; (K1..K5) define neither, so their boot bytes stay byte-identical.
+%ifdef K6A
+  %define RING3
+%endif
+%ifdef K6B
+  %define RING3
+%endif
 
 COM1        equ 0x3F8
 DBG_EXIT    equ 0xF4          ; QEMU isa-debug-exit port
@@ -266,6 +278,69 @@ long_start:
     push    qword 0x20 | 3             ; CS = user code, RPL 3
     push    qword 0x10000000           ; RIP = the copied payload on the U=1 page
     iretq
+%elifdef K6B
+    ; ===== K6b: run the REAL LA image (kernel.la) at ring 3 on the metal =====
+    ; STAR[63:48]=0x10 so sysretq returns the LA image's write/exit syscalls to
+    ; CS=0x20|3 / SS=0x18|3 (ring 3), exactly as K6a.
+    mov     ecx, 0xC0000081             ; IA32_STAR
+    xor     eax, eax
+    mov     edx, (0x10 << 16) | 0x08    ; [47:32]=0x08 (syscall CS), [63:48]=0x10 (sysret)
+    wrmsr
+
+    ; Make the identity-mapped low 1 GiB USER-accessible (U=1) so the ring-3 LA
+    ; image can execute its code (@0x400000), grow its heap and use its stack.
+    ; U/S ANDs down the walk, so PML4[0] and PDPT[0] must carry U=1 too; EVERY PD
+    ; entry (all 512 2 MiB pages, 0..1 GiB) gets U=1 — unlike K6a's single page.
+    or      dword [pml4], 0x04
+    or      dword [pdpt], 0x04
+    mov     rdi, pd
+    mov     ecx, 512
+.k6b_user:
+    or      dword [rdi], 0x04
+    add     rdi, 8
+    dec     ecx
+    jnz     .k6b_user
+    mov     rax, cr3
+    mov     cr3, rax                    ; flush TLB (PML4/PDPT/PD entries changed)
+
+    ; Tell the LA runtime we are on the metal (rt_init: object-start bitmap OFF,
+    ; task stacks in low RAM) via the boot-set flag, BEFORE entering the image.
+    ; METAL_FLAG_ABS is the runtime data slot's absolute vaddr, derived by
+    ; build_k6b.sh into entry.inc (its file offset + 0x400078).
+    mov     rax, METAL_FLAG_ABS
+    mov     byte [rax], 1
+
+    ; Fill the TSS descriptor + rsp0 (ring-0 stack for any ring-3 trap) + LTR —
+    ; same as K6a; a ring-3 fault must land on a valid kernel stack.
+    mov     rax, k6a_tss
+    mov     word [gdt64 + gdt64.tss], 103
+    mov     word [gdt64 + gdt64.tss + 2], ax
+    shr     rax, 16
+    mov     byte [gdt64 + gdt64.tss + 4], al
+    mov     byte [gdt64 + gdt64.tss + 5], 0x89   ; present, available 64-bit TSS
+    mov     byte [gdt64 + gdt64.tss + 6], 0
+    shr     rax, 8
+    mov     byte [gdt64 + gdt64.tss + 7], al
+    mov     rax, k6a_tss
+    shr     rax, 32
+    mov     dword [gdt64 + gdt64.tss + 8], eax
+    mov     dword [gdt64 + gdt64.tss + 12], 0
+    mov     rax, k6a_kstack_top
+    mov     [k6a_tss + 4], rax
+    mov     word [k6a_tss + 102], 104
+    mov     ax, gdt64.tss
+    ltr     ax
+
+    ; iretq -> ring 3 at LA_ENTRY (the LA image's prol). IF clear (no timer in the
+    ; K6b gate; the image only prints + exits), reserved bit 1 set. The user RSP is
+    ; the same tall stack the ring-0 image uses (0x8000000 = 128 MiB, inside the
+    ; user-mapped low 1 GiB, above the 7 MiB stack-guard window).
+    push    qword 0x18 | 3              ; SS = user data, RPL 3
+    push    qword LA_STACK_TOP          ; user RSP
+    push    qword 0x002                ; RFLAGS (IF clear, reserved bit 1)
+    push    qword 0x20 | 3             ; CS = user code, RPL 3
+    push    qword LA_ENTRY             ; RIP = the LA image prol (now user-mapped)
+    iretq
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -346,10 +421,11 @@ syscall_entry:
     hlt
     jmp     .hang
 .ret:
-%ifdef K6A
-    ; K6a: the caller is ring-3 user code reached via `syscall`; return with sysretq
-    ; (CS/SS from STAR[63:48] -> ring 3, RIP=rcx, RFLAGS=r11, both preserved by
-    ; .sys_write / serial_putc). RSP is unchanged (syscall never switched it).
+%ifdef RING3
+    ; Ring-3 caller (K6a payload / K6b LA image) reached us via `syscall`; return
+    ; with sysretq (CS/SS from STAR[63:48] -> ring 3, RIP=rcx, RFLAGS=r11, both
+    ; preserved by .sys_write / serial_putc). RSP is unchanged (syscall never
+    ; switched it).
     o64 sysret
 %else
     push    r11
@@ -442,9 +518,10 @@ gdt64:
     dq (1<<43)|(1<<44)|(1<<47)|(1<<53)          ; code: type|S|present|long
 .data: equ $ - gdt64
     dq (1<<41)|(1<<44)|(1<<47)                  ; data: writable|S|present
-%ifdef K6A
-; K6a ring-3 selectors. Ordered for SYSRET: with STAR[63:48]=0x10, sysretq loads
-; CS = 0x10+16 = 0x20 (user code) and SS = 0x10+8 = 0x18 (user data), both RPL 3.
+%ifdef RING3
+; Ring-3 selectors (K6a payload + K6b LA image). Ordered for SYSRET: with
+; STAR[63:48]=0x10, sysretq loads CS = 0x10+16 = 0x20 (user code) and
+; SS = 0x10+8 = 0x18 (user data), both RPL 3.
 .udata: equ $ - gdt64                           ; 0x18
     dq (1<<41)|(1<<44)|(1<<47)|(3<<45)          ; user data: writable|S|present|DPL3
 .ucode: equ $ - gdt64                           ; 0x20
@@ -469,7 +546,7 @@ align 16
 boot_stack:
         resb 16384
 boot_stack_top:
-%ifdef K6A
+%ifdef RING3
 align 16
 k6a_tss:                                ; 104-byte 64-bit TSS (rsp0 at +4, iomap base at +102)
         resb 104
