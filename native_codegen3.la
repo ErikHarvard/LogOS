@@ -521,10 +521,35 @@ glyph CG_LAM = la rec. la textbase. la x. la body. la cenv. la tail. la pool.
         )(concat(STACK_CHECK)(concat(PUSH_RBX)(concat(MOV_RBX_RDI)(FST(r)))))
     )(rec(body)(CONS(x)(cenv))(TRUE)(pool))
 
+# Optimization pass #2 — arithmetic constant folding (pure codegen, no autology
+# cost). When BOTH operands of add/sub/mul are integer literals, compute the result
+# at compile time and emit the SAME shape CG_UN's int-literal path emits (`mov rax,
+# <result>; call rt_box_int`) instead of two boxes + push/pop + a runtime call.
+# Value-preserving and deterministic (str_to_int/add/sub/mul are byte-identical on
+# every engine), so the Stage-4 self-host still reaches a fixed point. Only add/sub/
+# mul fold: div/mod carry a divide-by-zero loud-halt, and lt/int_eq yield Church
+# booleans (a different emission). Int literals contribute nothing to the string
+# pool (COLLECT skips IS_INT_LIT), so the folded path threads `pool` unchanged.
+#
+# INT_LIT_SAFE, NOT the bare IS_INT_LIT: CG_BIN's operands a1/a2 can be ANY node
+# (VAR/STR/LAM/APP), but IS_INT_LIT's eager AND dereferences APP_F/APP_A, which are
+# only valid on an APP node — on a LAM operand that yields a non-function and faults
+# (`applied a non-function`). (The pre-existing IS_INT_LIT is safe only because its
+# sole caller, COLLECT, invokes it exclusively on already-known APP nodes.) The
+# leading NODE_TAG="APP" guard short-circuits before touching APP_F/APP_A.
+glyph FOLDABLE2 = la nm. OR(str_eq(nm)("add"))(OR(str_eq(nm)("sub"))(str_eq(nm)("mul")))
+glyph INT_LIT_SAFE = la node. IF(str_eq(NODE_TAG(node))("APP"))(la _. IS_INT_LIT(node))(la _. FALSE)
+glyph INT_LIT_VAL = la node. str_to_int(STR_V(APP_A(node)))
+glyph FOLD_BIN = la nm. la x. la y.
+    IF(str_eq(nm)("add"))(la _. add(x)(y))(la _.
+    IF(str_eq(nm)("sub"))(la _. sub(x)(y))(la _.
+    mul(x)(y)))
 glyph CG_BIN = la rec. la nm. la a1. la a2. la cenv. la tail. la pool.
+    IF(AND(FOLDABLE2(nm))(AND(INT_LIT_SAFE(a1))(INT_LIT_SAFE(a2))))(la _.
+        PAIR(TAILED(tail)(concat(MOV_RAX_IMM(FOLD_BIN(nm)(INT_LIT_VAL(a1))(INT_LIT_VAL(a2))))(CALLR(RT_BOX_INT))))(pool))(la _.
     (la r1. (la r2.
         PAIR(TAILED(tail)(concat(FST(r1))(concat(PUSH_RAX)(concat(FST(r2))(concat(POP_RSI)(CALLR(RT_BIN(nm))))))))(SND(r2))
-    )(rec(a2)(cenv)(FALSE)(SND(r1))))(rec(a1)(cenv)(FALSE)(pool))
+    )(rec(a2)(cenv)(FALSE)(SND(r1))))(rec(a1)(cenv)(FALSE)(pool)))
 
 glyph CG_UN = la rec. la nm. la a. la cenv. la tail. la pool.
     IF(AND(str_eq(nm)("str_to_int"))(str_eq(NODE_TAG(a))("STR")))(la _.
