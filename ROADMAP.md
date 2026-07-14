@@ -60,7 +60,28 @@ honestly in the distance.
         - **`copy_self` writes a FIXED target** `new_logos_native.bin` in the native backend (and returns that path), unlike the host's `new_logos_gen{N+1}_pid{P}.bin`. A program that **prints** copy_self's return value diverges native↔host. Accepted — it mirrors the SECD VM's own fixed-name `new_logos_secd.bin`; the kernel discards the return via `SEQ`, so the byte-identical lineage is unaffected (finding #13).
         - The **#11 heap-end guard** halts `copy_self` loudly if the heap bump top is within 64 KiB of `HEAP_END`. This is latent — `copy_self` runs with a near-empty heap, so it never fires in the real lineage — and the C host has no equivalent limit; a safe loud-halt-not-crash divergence, never reached in practice.
   - [x] Stage 4 — full native self-hosting: `native_codegen3` (an x86-64 compiler written in Lingua Adamica) compiles its OWN 576-line source into a **byte-identical** native binary, with **no C host and no interpreter in the self-host loop** (∃(∃) ≡ ∃ at the compiler level). Three fixes got there: the parser SCC `{P_EXPR,P_APP,APP_TAIL,P_PRIMARY,P_LAMBDA}` and `{PARSE_MODULE↔PARSE_MOD_LOOP}` were **Z-tied** (native_codegen3's `INLINE` produces one closed term, so it represents only Z-recursion, not named mutual recursion), and `HEAP_SIZE` was raised 1.5 GiB→16 GiB (the self-inline working set peaks ~9.7 GB). `tiny_host` seeds the first compiler (CC0, ~11h — the irreducible bootstrap origin); native compilation is ~5000× faster (full self-compile in 7.9 s). The heap-size change propagates over one generation (CC0→CC1→**CC2**); **CC2 == CC2(CC2_source)** byte-identical, and CC2 also compiles `kernel.la` correctly (native==host). Honest limits: the first seed still needs `tiny_host`; no build.sh self-host regression test yet (the 11h seed is too slow per build). See `STAGE4_STATUS.md`.
-- [ ] Standard optimizations (inlining, dead-code elimination, constant folding)
+- [~] Standard optimizations (inlining, dead-code elimination, constant folding) —
+      **codegen-quality audit done 2026-07-14** (register alloc: none / stack-machine
+      + universal heap-boxing; no const-fold beyond int-literal decode; glyph-level
+      reachability DCE only; no strength-reduction/peephole; `INLINE` is a total
+      whole-program linking device, not a speed pass; the dominant cost is the
+      **allocation rate** — one 24 B env frame per reduction, 48 B/closure, 24 B per
+      arithmetic result, feeding the mark-sweep). Prioritized passes (all pure codegen,
+      zero autology cost): **#1 compile-time β-reduction / static-redex inlining** (the
+      big win — drains the env-frame/closure garbage), #2 constant folding, #3 peephole,
+      #4 uncurrying (runtime change), #5 int unboxing (runtime change), #6 register alloc
+      (secondary, not the headline).
+  - [x] **#2 arithmetic constant folding — DONE + self-host-verified (2026-07-14,
+        `695e579`).** add/sub/mul of two int-literals fold at compile time to `mov rax,
+        <k>; call rt_box_int`. Fixed a subtle bug first (CG_BIN's operands can be any
+        node kind; `IS_INT_LIT`'s eager AND deref'd APP_F/APP_A on a LAM operand →
+        exit 70; guarded via `INT_LIT_SAFE` with a leading `NODE_TAG="APP"` check).
+        Regen'd the Stage-4 fixed point (selfhost.bin 691847→724318 B, byte-identical
+        2-gen convergence), drift guard green (RT untouched), cross-engine arithmetic
+        native==host, kernel.la output byte-identical (K6b unaffected).
+        **★ Finding: the self-host is NOT GC/scale-fragile** — the initial crash was
+        this bug, not a GC marking gap (ruled out: 64× fewer GCs crashed identically).
+        So there is no GC-scale wall gating the allocation-changing passes; #1 stays open.
 - [ ] GC tuning (generational allocation, reduced pause time)
 
 ### Polish (orthogonal to the OS — safe to improve in parallel)
