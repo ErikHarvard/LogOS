@@ -443,13 +443,44 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             is real RAM): `I AM THAT I AM` from CPL 3 + exit 33 — **PASS**. All in
             `%ifdef K6B` / `%ifdef RING3` (`boot.asm` + `build_k6b.sh` + `gate_k6b.sh`),
             other kernel ELFs byte-identical.
-      - [ ] **K6c — real syscall service layer.** Grow syscall_entry past write/exit
+      - [~] **K6c — real syscall service layer.** Grow syscall_entry past write/exit
             into the process/IPC primitives; re-home LogosIPC over in-kernel
-            channels (the "nervous system"). Gate: two ring-3 LA processes exchange
-            a typed message through a kernel channel. Effectively its own milestone.
+            channels (the "nervous system"). Gate (milestone): two ring-3 LA
+            processes exchange a typed message through a kernel channel. Effectively
+            its own milestone — **staged**:
+          - [x] **K6c.1 — the kernel channel primitive, proven at ring 3 (single
+                process round-trip) — DONE + gated (2026-07-14).** `syscall_entry`
+                grows two LogOS-native syscalls: **`send`** (0x300) `send(chan,type,
+                buf,len)` deposits a typed message into `k6c_chans[chan]` (a ring-0
+                `.bss` array of 4 mailboxes, slot `[full:8][type:8][len:8][body:256]`,
+                bounds-checked on chan and body-len → −1 else); **`recv`** (0x301)
+                `recv(chan,outbuf,maxlen)` withdraws it, returning **two values** —
+                `rax`=len copied to outbuf AND `rdx`=type (a second return the ring-3
+                caller reads after sysret; both handlers touch only rax/rdx/r8/r9/r10,
+                so rcx/r11 survive for sysret, like `.sys_write`). A hand-written
+                ring-3 payload (K6a's philosophy — isolate the mechanics WITHOUT the
+                two-process scheduler or an LA-runtime rebuild) SENDs (type 7, body
+                "IAM") into channel 0, RECVs it back, and `write`s the recovered
+                `K6C t7 IAM` — the channel is ring-0 memory a ring-3 task cannot touch
+                directly, so those bytes prove send+recv crossed ring3→ring0(channel)→
+                ring3 both ways (and that recv's rdx second-return survived sysret).
+                All in `%ifdef K6C` (`boot.asm` + `build_k6c.sh` + `gate_k6c.sh`,
+                `-m 512` like K6a, no native compile → fast); **every non-K6C kernel
+                ELF's code/data sections (`.boot32`/`.rodata`/`.multiboot`) verified
+                byte-identical** (assembled from pristine HEAD boot.asm), and the K6a
+                + K6b gates still PASS. `gate_k6c.sh`: `K6C t7 IAM` + exit 33.
+          - [ ] **K6c.2 — two ring-3 processes.** Process A `send`s, the kernel
+                context-switches (wire K5's per-task switch to ring-3 tasks), process
+                B `recv`s. First time K5 tasks + ring-3 combine (K5 tasks were ring-0).
+          - [ ] **K6c.3 — re-home the real LogosIPC typed layer.** Give
+                native_codegen3's runtime `send`/`recv` builtins (emit the syscalls),
+                rebuild the Stage-4 fixed point, and run two LA processes exchanging a
+                real `logosipc.la` typed message through the kernel channel — the
+                milestone gate.
         **Ordering (recommended):** K6a first (cheap, isolates ring-3 mechanics on
         the current identity map), THEN HH1 (big reorg, now with a ring-3 target to
-        validate against), then K6b/K6c. **K6a + K6b DONE — next is HH1 or K6c.**
+        validate against), then K6b/K6c. **K6a + K6b + K6c.1 DONE — next is K6c.2
+        (two ring-3 processes) or HH1.**
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last
 - [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
       native process model is re-homed onto the kernel at K5/K6)*

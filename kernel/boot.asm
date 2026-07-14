@@ -42,10 +42,26 @@
 %ifdef K6B
   %define RING3
 %endif
+%ifdef K6C
+  %define RING3
+%endif
 
 COM1        equ 0x3F8
 DBG_EXIT    equ 0xF4          ; QEMU isa-debug-exit port
 DBG_OK      equ 0x10          ; -> QEMU exit code (0x10<<1)|1 = 33 = success
+
+; K6c: LogOS-native IPC syscall numbers. Chosen well above the Linux write(1)/
+; exit(60) range the LA image uses, so a "native" IPC call is unambiguous. A
+; kernel CHANNEL is a typed mailbox held in ring-0 .bss: send(chan,type,buf,len)
+; deposits a typed message, recv(chan,buf,max) withdraws it — the OS servicing
+; IPC across the privilege boundary (the seed of the "nervous system", LogosIPC
+; re-homed onto the kernel). A slot is [full:8][type:8][len:8][body:256] = 280,
+; padded to 288 for 8-byte alignment of the next slot.
+SYS_SEND    equ 0x300
+SYS_RECV    equ 0x301
+K6C_NCHAN   equ 4
+K6C_BODYCAP equ 256
+K6C_SLOTSZ  equ 288
 
 ; K3b: the LA image's stack top. The native_codegen3 runtime arms a soft stack
 ; guard at STACK_LIMIT = STACK_BASE - 7 MiB (STACK_BASE = the rsp it starts
@@ -341,6 +357,62 @@ long_start:
     push    qword 0x20 | 3             ; CS = user code, RPL 3
     push    qword LA_ENTRY             ; RIP = the LA image prol (now user-mapped)
     iretq
+%elifdef K6C
+    ; ===== K6c: ring-3 payload that round-trips a typed message through a =====
+    ; ===== kernel channel (send -> recv) — the IPC syscall service layer.  =====
+    ; Same ring-3 machinery as K6a (one U=1 page at 256 MiB, TSS, iretq); the
+    ; payload additionally exercises the new send/recv syscalls, so the message
+    ; it prints came BACK OUT of a kernel-held channel it deposited it into — the
+    ; bytes on serial prove IPC crossed ring3->ring0(channel)->ring3 both ways.
+    ; STAR[63:48]=0x10 so sysretq returns to CS=0x20|3 / SS=0x18|3 (ring 3).
+    mov     ecx, 0xC0000081             ; IA32_STAR
+    xor     eax, eax
+    mov     edx, (0x10 << 16) | 0x08    ; [47:32]=0x08 (syscall), [63:48]=0x10 (sysret)
+    wrmsr
+
+    ; Map the 256 MiB 2 MiB-page (PD[128]) USER (0x87), U=1 down PML4[0]/PDPT[0]
+    ; too — exactly as K6a. The kernel channel lives in ring-0 .bss (supervisor),
+    ; touched only by the syscall handlers, so it needs no user mapping.
+    or      dword [pml4], 0x04
+    or      dword [pdpt], 0x04
+    mov     dword [pd + 128*8], 0x10000000 | 0x87
+    mov     dword [pd + 128*8 + 4], 0
+    mov     rax, cr3
+    mov     cr3, rax                    ; flush TLB
+
+    cld
+    mov     rsi, k6c_payload
+    mov     edi, 0x10000000
+    mov     ecx, k6c_blob_len
+    rep     movsb
+
+    ; Fill the TSS descriptor + rsp0 + LTR (identical to K6a).
+    mov     rax, k6a_tss
+    mov     word [gdt64 + gdt64.tss], 103
+    mov     word [gdt64 + gdt64.tss + 2], ax
+    shr     rax, 16
+    mov     byte [gdt64 + gdt64.tss + 4], al
+    mov     byte [gdt64 + gdt64.tss + 5], 0x89
+    mov     byte [gdt64 + gdt64.tss + 6], 0
+    shr     rax, 8
+    mov     byte [gdt64 + gdt64.tss + 7], al
+    mov     rax, k6a_tss
+    shr     rax, 32
+    mov     dword [gdt64 + gdt64.tss + 8], eax
+    mov     dword [gdt64 + gdt64.tss + 12], 0
+    mov     rax, k6a_kstack_top
+    mov     [k6a_tss + 4], rax
+    mov     word [k6a_tss + 102], 104
+    mov     ax, gdt64.tss
+    ltr     ax
+
+    ; iretq -> ring 3 at the copied payload on the user page.
+    push    qword 0x18 | 3              ; SS = user data, RPL 3
+    push    qword 0x101F0000           ; user RSP (top of stack in the user page)
+    push    qword 0x202                ; RFLAGS (IF set, reserved bit 1)
+    push    qword 0x20 | 3             ; CS = user code, RPL 3
+    push    qword 0x10000000           ; RIP = the copied payload
+    iretq
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -358,6 +430,12 @@ syscall_entry:
     je      .sys_write
     cmp     rax, 60
     je      .sys_exit
+%ifdef K6C
+    cmp     rax, SYS_SEND
+    je      .sys_send
+    cmp     rax, SYS_RECV
+    je      .sys_recv
+%endif
     ; unknown syscall: return 0, keep going
     xor     rax, rax
     jmp     .ret
@@ -377,6 +455,69 @@ syscall_entry:
 .w_done:
     mov     rax, r10
     jmp     .ret
+%ifdef K6C
+.sys_send:
+    ; send(rdi=chan, rsi=type, rdx=buf, r10=len) -> deposit a typed message into
+    ; kernel channel[chan]. Returns len, or -1 on a bad chan / oversized body.
+    ; Uses only rax/rdx/r8/r9/r10/al — preserves rcx (return rip) and r11 (rflags)
+    ; for sysret, exactly as .sys_write does. (r10 is the syscall ABI's 4th arg.)
+    cmp     rdi, K6C_NCHAN
+    jae     .ipc_err
+    cmp     r10, K6C_BODYCAP
+    ja      .ipc_err
+    mov     rax, rdi
+    imul    rax, rax, K6C_SLOTSZ
+    mov     r8, k6c_chans
+    add     r8, rax                     ; r8 = &channel[chan]
+    mov     [r8 + 8], rsi               ; type
+    mov     [r8 + 16], r10              ; len
+    xor     r9, r9
+.send_cp:
+    cmp     r9, r10
+    jae     .send_done
+    mov     al, [rdx + r9]              ; copy from the caller's (ring-3) buffer
+    mov     [r8 + 24 + r9], al
+    inc     r9
+    jmp     .send_cp
+.send_done:
+    mov     qword [r8], 1               ; full = 1 (message present)
+    mov     rax, r10                    ; return len
+    jmp     .ret
+.sys_recv:
+    ; recv(rdi=chan, rsi=outbuf, rdx=maxlen) -> withdraw the message. Returns
+    ; rax = len (bytes copied to outbuf) AND rdx = type (a SECOND return value the
+    ; ring-3 caller reads after sysret — sysret preserves rdx); -1 if the chan is
+    ; bad or empty. Marks the slot empty (consume-once).
+    cmp     rdi, K6C_NCHAN
+    jae     .ipc_err
+    mov     rax, rdi
+    imul    rax, rax, K6C_SLOTSZ
+    mov     r8, k6c_chans
+    add     r8, rax                     ; r8 = &channel[chan]
+    cmp     qword [r8], 0               ; full?
+    je      .ipc_err                    ; empty -> -1
+    mov     r10, [r8 + 16]              ; stored len
+    cmp     r10, rdx                    ; clamp to caller's maxlen
+    jbe     .recv_len_ok
+    mov     r10, rdx
+.recv_len_ok:
+    xor     r9, r9
+.recv_cp:
+    cmp     r9, r10
+    jae     .recv_done
+    mov     al, [r8 + 24 + r9]
+    mov     [rsi + r9], al              ; copy into the caller's (ring-3) buffer
+    inc     r9
+    jmp     .recv_cp
+.recv_done:
+    mov     qword [r8], 0               ; consumed -> empty
+    mov     rdx, [r8 + 8]               ; type -> second return value
+    mov     rax, r10                    ; len -> primary return value
+    jmp     .ret
+.ipc_err:
+    mov     rax, -1
+    jmp     .ret
+%endif
 .sys_exit:
 %ifdef K5B2_DBG
     ; DEBUG: emit "=<code>;" on COM1 so an ERROR exit (70/71/72/73/134/1) is
@@ -507,6 +648,53 @@ k6a_msg_len   equ $ - k6a_msg
 k6a_blob_len  equ $ - k6a_payload
 %endif
 
+%ifdef K6C
+; ---------------------------------------------------------------------
+;  K6c ring-3 user payload (in .boot32 = identity-mapped low RAM). Copied to the
+;  user page 0x10000000 and run at ring 3 (position-independent: all data refs
+;  are RIP-relative). It DEPOSITS a typed message ("IAM", type 7) into kernel
+;  channel 0 with the send syscall, then WITHDRAWS it with recv, then writes the
+;  recovered (type, body) to serial. The kernel channel is ring-0 memory a ring-3
+;  task cannot touch directly, so the bytes on serial prove the message crossed
+;  ring3->ring0(channel)->ring3 both ways — IPC serviced by the kernel.
+; ---------------------------------------------------------------------
+k6c_payload:
+    ; send(chan=0, type=7, buf="IAM", len=3)  (r10 = syscall ABI's 4th arg)
+    mov     eax, SYS_SEND
+    xor     edi, edi
+    mov     esi, 7
+    lea     rdx, [rel k6c_body]
+    mov     r10d, 3
+    syscall
+    ; recv(chan=0, outbuf=&k6c_bodyout, maxlen=3) -> rax=len, rdx=type
+    mov     eax, SYS_RECV
+    xor     edi, edi
+    lea     rsi, [rel k6c_bodyout]      ; recv writes the body straight into the line
+    mov     edx, 3
+    syscall
+    add     dl, '0'                     ; patch the recovered type digit
+    lea     rbx, [rel k6c_tdigit]
+    mov     [rbx], dl
+    ; write(1, k6c_line, k6c_line_len) — the round-tripped message
+    mov     eax, 1
+    mov     edi, 1
+    lea     rsi, [rel k6c_line]
+    mov     edx, k6c_line_len
+    syscall
+    ; exit(0)
+    mov     eax, 60
+    xor     edi, edi
+    syscall
+k6c_body:     db "IAM"                  ; body handed to send
+k6c_line:     db "K6C t"                ; printed after the round-trip
+k6c_tdigit:   db "0"                    ; <- recovered type
+              db " "
+k6c_bodyout:  db "___"                  ; <- recv writes the recovered body (3 bytes)
+              db 10
+k6c_line_len  equ $ - k6c_line
+k6c_blob_len  equ $ - k6c_payload
+%endif
+
 ; ---------------------------------------------------------------------
 ;  64-bit GDT: null, kernel code (0x08), kernel data (0x10)
 ; ---------------------------------------------------------------------
@@ -555,6 +743,11 @@ k6a_kstack:                             ; ring-0 stack the CPU switches to on a 
         resb 16384
 k6a_kstack_top:
 %endif
+%ifdef K6C
+align 16
+k6c_chans:                              ; K6C_NCHAN typed mailboxes, ring-0 only
+        resb K6C_NCHAN * K6C_SLOTSZ
+%endif
 
 ; ---------------------------------------------------------------------
 ;  The Lingua-Adamica kernel image, placed by kernel.ld at 0x400000.
@@ -566,7 +759,11 @@ k6a_kstack_top:
 ; unless assembled with -dK5_TIMER, so other kernel ELFs stay byte-identical.
 %include "timer.asm"
 
+; K6a and K6c are payload-based ring-3 probes — no LA image (they never jump to
+; 0x400000), so the incbin is skipped for both, keeping those builds self-contained.
 %ifndef K6A
+%ifndef K6C
 section .la_image
 incbin "native_codegen3_out"
+%endif
 %endif
