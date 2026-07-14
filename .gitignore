@@ -82,4 +82,6 @@ mathutil.la
 /kernel/kernel_k6b_64.elf
 /kernel/kernel_k6c.elf
 /kernel/kernel_k6c_64.elf
+/kernel/kernel_k6c2.elf
+/kernel/kernel_k6c2_64.elf
 /phonsem_host.out

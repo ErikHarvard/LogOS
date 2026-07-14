@@ -469,9 +469,32 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
                 ELF's code/data sections (`.boot32`/`.rodata`/`.multiboot`) verified
                 byte-identical** (assembled from pristine HEAD boot.asm), and the K6a
                 + K6b gates still PASS. `gate_k6c.sh`: `K6C t7 IAM` + exit 33.
-          - [ ] **K6c.2 — two ring-3 processes.** Process A `send`s, the kernel
-                context-switches (wire K5's per-task switch to ring-3 tasks), process
-                B `recv`s. First time K5 tasks + ring-3 combine (K5 tasks were ring-0).
+          - [x] **K6c.2 — two ring-3 tasks + a kernel context switch — DONE +
+                gated (2026-07-14).** First time K5-style tasks and ring-3 combine
+                (K5 tasks were ring-0). A cooperative **`yield`** syscall (0x302)
+                drives a real kernel context switch: `.sys_yield` saves the calling
+                task's FULL ring-3 context (16 GP regs, rcx=resume rip, r11=resume
+                rflags, rsp=user rsp) into a 128-byte PCB (`k6c2_pcb[cur]`, freeing
+                rax + a base reg via `k6c2_scratch`), flips `k6c2_cur`, and
+                **`k6c2_run`** loads the other PCB and drops to ring 3 via `sysret`
+                — one routine serving both the first launch (boot seeds each PCB
+                with entry/rflags/stack-top) and a resume-after-yield (a fresh task
+                and a suspended one are indistinguishable, the point of a context).
+                Two hand-written ring-3 payloads (K6a's philosophy) share one U=1
+                page (task A @0x10000000, B @0x10010000) with SEPARATE stacks: **A**
+                `send`s (chan 0, type 7, "IAM") + yields → **B** (resumed) `recv`s
+                chan 0, writes `K6C2 B got IAM`, `send`s the reply (chan 1, type 8,
+                "YOU") + yields → **A** (RESTORED) `recv`s chan 1, writes `K6C2 A got
+                YOU`, exits. A's line only appears if its context was saved AND
+                restored, so it proves a genuine bidirectional switch (not a one-shot
+                launch), with IPC crossing the privilege boundary both ways. All in
+                `%ifdef K6C2` / `%ifdef IPC` (the channel layer now shared with K6c.1)
+                (`boot.asm` + `build_k6c2.sh` + `gate_k6c2.sh`, `-m 512`, no native
+                compile); non-K6C2 kernel ELF sections verified byte-identical, K6a/
+                K6b/K6c gates still PASS. `gate_k6c2.sh`: both lines + exit 33.
+                *Honest scope:* two ring-3 tasks in ONE shared address space (per-
+                process page tables = HH2); cooperative yield (preemptive ring-3 =
+                later).
           - [ ] **K6c.3 — re-home the real LogosIPC typed layer.** Give
                 native_codegen3's runtime `send`/`recv` builtins (emit the syscalls),
                 rebuild the Stage-4 fixed point, and run two LA processes exchanging a
@@ -479,8 +502,9 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
                 milestone gate.
         **Ordering (recommended):** K6a first (cheap, isolates ring-3 mechanics on
         the current identity map), THEN HH1 (big reorg, now with a ring-3 target to
-        validate against), then K6b/K6c. **K6a + K6b + K6c.1 DONE — next is K6c.2
-        (two ring-3 processes) or HH1.**
+        validate against), then K6b/K6c. **K6a + K6b + K6c.1 + K6c.2 DONE — next is
+        K6c.3 (real logosipc.la typed message between two LA processes = the K6c
+        milestone gate) or HH1.**
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last
 - [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
       native process model is re-homed onto the kernel at K5/K6)*

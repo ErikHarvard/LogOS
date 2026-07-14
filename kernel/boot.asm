@@ -42,8 +42,17 @@
 %ifdef K6B
   %define RING3
 %endif
+; K6c (single-process IPC round-trip) and K6c2 (two ring-3 processes) both need
+; the RING3 machinery and the IPC channel layer (send/recv + the mailbox array).
+; IPC is defined for either, so the channel storage + send/recv dispatch assemble
+; once; K6c2 additionally pulls in the yield/context-switch scheduler.
 %ifdef K6C
   %define RING3
+  %define IPC
+%endif
+%ifdef K6C2
+  %define RING3
+  %define IPC
 %endif
 
 COM1        equ 0x3F8
@@ -62,6 +71,12 @@ SYS_RECV    equ 0x301
 K6C_NCHAN   equ 4
 K6C_BODYCAP equ 256
 K6C_SLOTSZ  equ 288
+; K6c2: cooperative yield -> a kernel-mediated context switch between two ring-3
+; tasks. Each task's full ring-3 register context (16 GP regs, with rcx=resume rip
+; and r11=resume rflags for the sysret resume) lives in a 128-byte PCB; k6c2_cur
+; selects the running one.
+SYS_YIELD   equ 0x302
+PCB_SIZE    equ 128
 
 ; K3b: the LA image's stack top. The native_codegen3 runtime arms a soft stack
 ; guard at STACK_LIMIT = STACK_BASE - 7 MiB (STACK_BASE = the rsp it starts
@@ -413,6 +428,74 @@ long_start:
     push    qword 0x20 | 3             ; CS = user code, RPL 3
     push    qword 0x10000000           ; RIP = the copied payload
     iretq
+%elifdef K6C2
+    ; ===== K6c2: TWO ring-3 tasks exchange a typed message through kernel  =====
+    ; ===== channels, with a real kernel context switch (cooperative yield). =====
+    ; Same ring-3 machinery as K6a/K6c (one U=1 page at 256 MiB, TSS). Both tasks
+    ; share that page but have SEPARATE stacks + SEPARATE saved contexts (PCBs), so
+    ; the kernel switching between them is a genuine ring-3 context switch. (True
+    ; per-process address spaces are HH2; this is two ring-3 tasks, shared page.)
+    mov     ecx, 0xC0000081             ; IA32_STAR
+    xor     eax, eax
+    mov     edx, (0x10 << 16) | 0x08    ; [47:32]=0x08 (syscall CS), [63:48]=0x10 (sysret)
+    wrmsr
+
+    ; Map the 256 MiB 2 MiB-page USER (0x87), U=1 down PML4[0]/PDPT[0] (as K6a).
+    or      dword [pml4], 0x04
+    or      dword [pdpt], 0x04
+    mov     dword [pd + 128*8], 0x10000000 | 0x87
+    mov     dword [pd + 128*8 + 4], 0
+    mov     rax, cr3
+    mov     cr3, rax                    ; flush TLB
+
+    ; Copy task A's payload to 0x10000000 and task B's to 0x10010000 (both inside
+    ; the one 2 MiB user page; 64 KiB apart is ample for A's code).
+    cld
+    mov     rsi, k6c2_pa
+    mov     edi, 0x10000000
+    mov     ecx, k6c2_pa_len
+    rep     movsb
+    mov     rsi, k6c2_pb
+    mov     edi, 0x10010000
+    mov     ecx, k6c2_pb_len
+    rep     movsb
+
+    ; Fill the TSS descriptor + rsp0 + LTR (identical to K6a).
+    mov     rax, k6a_tss
+    mov     word [gdt64 + gdt64.tss], 103
+    mov     word [gdt64 + gdt64.tss + 2], ax
+    shr     rax, 16
+    mov     byte [gdt64 + gdt64.tss + 4], al
+    mov     byte [gdt64 + gdt64.tss + 5], 0x89
+    mov     byte [gdt64 + gdt64.tss + 6], 0
+    shr     rax, 8
+    mov     byte [gdt64 + gdt64.tss + 7], al
+    mov     rax, k6a_tss
+    shr     rax, 32
+    mov     dword [gdt64 + gdt64.tss + 8], eax
+    mov     dword [gdt64 + gdt64.tss + 12], 0
+    mov     rax, k6a_kstack_top
+    mov     [k6a_tss + 4], rax
+    mov     word [k6a_tss + 102], 104
+    mov     ax, gdt64.tss
+    ltr     ax
+
+    ; Zero both PCBs (2 * 128 bytes = 32 qwords), then seed each with its entry
+    ; rip (rcx slot +16), rflags (r11 slot +88; IF clear — cooperative, no IRQs),
+    ; and stack top (rsp slot +56). k6c2_run then launches task 0 via sysret.
+    mov     rdi, k6c2_pcb
+    xor     rax, rax
+    mov     ecx, 2 * PCB_SIZE / 8
+    rep     stosq
+    mov     r8, k6c2_pcb
+    mov     qword [r8 + 16], 0x10000000     ; A: entry rip
+    mov     qword [r8 + 88], 0x002          ; A: rflags (IF clear)
+    mov     qword [r8 + 56], 0x10100000     ; A: stack top (grows down)
+    mov     qword [r8 + PCB_SIZE + 16], 0x10010000  ; B: entry rip
+    mov     qword [r8 + PCB_SIZE + 88], 0x002       ; B: rflags
+    mov     qword [r8 + PCB_SIZE + 56], 0x101F0000  ; B: stack top
+    mov     qword [k6c2_cur], 0             ; start with task A
+    jmp     k6c2_run
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -430,11 +513,15 @@ syscall_entry:
     je      .sys_write
     cmp     rax, 60
     je      .sys_exit
-%ifdef K6C
+%ifdef IPC
     cmp     rax, SYS_SEND
     je      .sys_send
     cmp     rax, SYS_RECV
     je      .sys_recv
+%endif
+%ifdef K6C2
+    cmp     rax, SYS_YIELD
+    je      .sys_yield
 %endif
     ; unknown syscall: return 0, keep going
     xor     rax, rax
@@ -455,7 +542,7 @@ syscall_entry:
 .w_done:
     mov     rax, r10
     jmp     .ret
-%ifdef K6C
+%ifdef IPC
 .sys_send:
     ; send(rdi=chan, rsi=type, rdx=buf, r10=len) -> deposit a typed message into
     ; kernel channel[chan]. Returns len, or -1 on a bad chan / oversized body.
@@ -518,6 +605,43 @@ syscall_entry:
     mov     rax, -1
     jmp     .ret
 %endif
+%ifdef K6C2
+.sys_yield:
+    ; yield() -> save the calling ring-3 task's FULL context into PCB[cur], flip
+    ; k6c2_cur, and resume the other task (k6c2_run). On entry (a ring-3 `syscall`):
+    ; rcx = resume rip, r11 = resume rflags, rsp = the task's user rsp (syscall does
+    ; NOT switch rsp), all other GP regs = the task's live values. We need rax + one
+    ; base register free to address the PCB, so we stash them in k6c2_scratch first
+    ; and copy them into the PCB from there — every register is saved exactly.
+    mov     [k6c2_scratch], r8          ; stash r8 (base scratch)
+    mov     [k6c2_scratch + 8], rax     ; stash rax (index math scratch)
+    mov     r8, k6c2_pcb
+    mov     rax, [k6c2_cur]
+    imul    rax, rax, PCB_SIZE
+    add     r8, rax                     ; r8 = &PCB[cur]
+    mov     rax, [k6c2_scratch + 8]     ; original rax
+    mov     [r8 + 0], rax
+    mov     rax, [k6c2_scratch]         ; original r8
+    mov     [r8 + 64], rax
+    mov     [r8 + 8], rbx
+    mov     [r8 + 16], rcx              ; resume rip (sysret target)
+    mov     [r8 + 24], rdx
+    mov     [r8 + 32], rsi
+    mov     [r8 + 40], rdi
+    mov     [r8 + 48], rbp
+    mov     [r8 + 56], rsp              ; user rsp (never disturbed above)
+    mov     [r8 + 72], r9
+    mov     [r8 + 80], r10
+    mov     [r8 + 88], r11              ; resume rflags (sysret restores)
+    mov     [r8 + 96], r12
+    mov     [r8 + 104], r13
+    mov     [r8 + 112], r14
+    mov     [r8 + 120], r15
+    mov     rax, [k6c2_cur]             ; flip current task 0<->1
+    xor     rax, 1
+    mov     [k6c2_cur], rax
+    jmp     k6c2_run
+%endif
 .sys_exit:
 %ifdef K5B2_DBG
     ; DEBUG: emit "=<code>;" on COM1 so an ERROR exit (70/71/72/73/134/1) is
@@ -572,6 +696,41 @@ syscall_entry:
     push    r11
     popfq                           ; restore caller rflags
     jmp     rcx                      ; return to instruction after `syscall`
+%endif
+
+%ifdef K6C2
+; ---------------------------------------------------------------------
+;  k6c2_run — resume (or first-launch) the task selected by k6c2_cur. Loads its
+;  full ring-3 context from PCB[cur] and drops to ring 3 via sysret (rip<-rcx,
+;  rflags<-r11, CS/SS<-ring 3 from STAR[63:48]=0x10, rsp already loaded). One
+;  routine serves BOTH the initial launch (the boot code seeds a PCB with
+;  rcx=entry, r11=rflags, rsp=stack-top) and a resume after yield (the .sys_yield
+;  handler saved the live context) — a fresh task and a suspended one are
+;  indistinguishable here, which is the whole point of a context. r8 is the base
+;  pointer throughout; its saved value is loaded LAST, right before sysret.
+; ---------------------------------------------------------------------
+k6c2_run:
+    mov     r8, k6c2_pcb
+    mov     rax, [k6c2_cur]
+    imul    rax, rax, PCB_SIZE
+    add     r8, rax                     ; r8 = &PCB[cur]
+    mov     rsp, [r8 + 56]              ; user rsp
+    mov     rcx, [r8 + 16]              ; resume rip -> sysret target
+    mov     rax, [r8 + 0]
+    mov     rbx, [r8 + 8]
+    mov     rdx, [r8 + 24]
+    mov     rsi, [r8 + 32]
+    mov     rdi, [r8 + 40]
+    mov     rbp, [r8 + 48]
+    mov     r9,  [r8 + 72]
+    mov     r10, [r8 + 80]
+    mov     r11, [r8 + 88]              ; resume rflags -> sysret restores
+    mov     r12, [r8 + 96]
+    mov     r13, [r8 + 104]
+    mov     r14, [r8 + 112]
+    mov     r15, [r8 + 120]
+    mov     r8,  [r8 + 64]              ; r8 last (base pointer overwritten)
+    o64     sysret
 %endif
 
 ; ---------------------------------------------------------------------
@@ -695,6 +854,85 @@ k6c_line_len  equ $ - k6c_line
 k6c_blob_len  equ $ - k6c_payload
 %endif
 
+%ifdef K6C2
+; ---------------------------------------------------------------------
+;  K6c2 ring-3 task payloads (in .boot32; copied to the user page and run at ring
+;  3, so position-independent — all data refs RIP-relative). Task A sends a typed
+;  message and yields; the kernel switches to task B, which receives it (proving
+;  the message survived the ring-0 channel across the switch), announces it, sends
+;  a reply, and yields BACK; the kernel restores A, which receives the reply and
+;  announces it. Two serial lines from two ring-3 contexts, IPC both ways, and
+;  A's line only appears if its context was correctly SAVED and RESTORED.
+; ---------------------------------------------------------------------
+k6c2_pa:                                ; task A
+    ; send(chan=0, type=7, "IAM", 3)
+    mov     eax, SYS_SEND
+    xor     edi, edi
+    mov     esi, 7
+    lea     rdx, [rel k6c2_a_body]
+    mov     r10d, 3
+    syscall
+    ; yield -> kernel saves A, switches to B
+    mov     eax, SYS_YIELD
+    syscall
+    ; (resumed here after B yields back) recv(chan=1, &k6c2_a_out, 3) -> the reply
+    mov     eax, SYS_RECV
+    mov     edi, 1
+    lea     rsi, [rel k6c2_a_out]        ; recv writes the reply body into the line
+    mov     edx, 3
+    syscall
+    ; write "K6C2 A got YOU\n"
+    mov     eax, 1
+    mov     edi, 1
+    lea     rsi, [rel k6c2_a_line]
+    mov     edx, k6c2_a_line_len
+    syscall
+    ; exit -> halts the machine (B's tail below is then unreached)
+    mov     eax, 60
+    xor     edi, edi
+    syscall
+k6c2_a_body:  db "IAM"
+k6c2_a_line:  db "K6C2 A got "
+k6c2_a_out:   db "___"
+              db 10
+k6c2_a_line_len equ $ - k6c2_a_line
+k6c2_pa_len   equ $ - k6c2_pa
+
+k6c2_pb:                                ; task B
+    ; recv(chan=0, &k6c2_b_out, 3) -> A's message
+    mov     eax, SYS_RECV
+    xor     edi, edi
+    lea     rsi, [rel k6c2_b_out]
+    mov     edx, 3
+    syscall
+    ; write "K6C2 B got IAM\n"
+    mov     eax, 1
+    mov     edi, 1
+    lea     rsi, [rel k6c2_b_line]
+    mov     edx, k6c2_b_line_len
+    syscall
+    ; send(chan=1, type=8, "YOU", 3) — the reply back to A
+    mov     eax, SYS_SEND
+    mov     edi, 1
+    mov     esi, 8
+    lea     rdx, [rel k6c2_b_reply]
+    mov     r10d, 3
+    syscall
+    ; yield -> kernel restores A
+    mov     eax, SYS_YIELD
+    syscall
+    ; (unreached: A exits the machine before yielding again)
+    mov     eax, 60
+    xor     edi, edi
+    syscall
+k6c2_b_line:  db "K6C2 B got "
+k6c2_b_out:   db "___"
+              db 10
+k6c2_b_reply: db "YOU"
+k6c2_b_line_len equ $ - k6c2_b_line
+k6c2_pb_len   equ $ - k6c2_pb
+%endif
+
 ; ---------------------------------------------------------------------
 ;  64-bit GDT: null, kernel code (0x08), kernel data (0x10)
 ; ---------------------------------------------------------------------
@@ -743,10 +981,19 @@ k6a_kstack:                             ; ring-0 stack the CPU switches to on a 
         resb 16384
 k6a_kstack_top:
 %endif
-%ifdef K6C
+%ifdef IPC
 align 16
 k6c_chans:                              ; K6C_NCHAN typed mailboxes, ring-0 only
         resb K6C_NCHAN * K6C_SLOTSZ
+%endif
+%ifdef K6C2
+align 16
+k6c2_pcb:                               ; two 128-byte task contexts (PCB[0], PCB[1])
+        resb 2 * PCB_SIZE
+k6c2_cur:                               ; index of the currently running task
+        resq 1
+k6c2_scratch:                           ; 2 qwords: frees rax + a base reg in .sys_yield
+        resq 2
 %endif
 
 ; ---------------------------------------------------------------------
@@ -759,11 +1006,14 @@ k6c_chans:                              ; K6C_NCHAN typed mailboxes, ring-0 only
 ; unless assembled with -dK5_TIMER, so other kernel ELFs stay byte-identical.
 %include "timer.asm"
 
-; K6a and K6c are payload-based ring-3 probes — no LA image (they never jump to
-; 0x400000), so the incbin is skipped for both, keeping those builds self-contained.
+; K6a/K6c/K6c2 are payload-based ring-3 probes — no LA image (they never jump to
+; 0x400000), so the incbin is skipped for all three, keeping those builds
+; self-contained.
 %ifndef K6A
 %ifndef K6C
+%ifndef K6C2
 section .la_image
 incbin "native_codegen3_out"
+%endif
 %endif
 %endif
