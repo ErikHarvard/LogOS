@@ -664,7 +664,22 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
         _(superseded ordering note below kept for history)_ **K6a + K6b + K6c.1 + K6c.2 DONE — next is
         K6c.3 (real logosipc.la typed message between two LA processes = the K6c
         milestone gate) or HH1.**
-  - [ ] K7 — sovereign bootloader (replaces GRUB) — last
+  - [~] K7 — sovereign bootloader (replaces GRUB) — last. **Staged:**
+      - [x] **K7a — the sovereign boot sector — DONE + gated (2026-07-14).** LogOS's
+            OWN 512-byte MBR (`boot7.asm`, `nasm -f bin`, 0x55AA signature) boots from a
+            raw disk image — no GRUB, no multiboot, no QEMU `-kernel`. The BIOS loads
+            sector 0 at 0x7C00; it inits COM1, announces `K7 real` in 16-bit real mode,
+            builds a GDT, enters 32-bit protected mode, announces `K7 pmode`, and
+            exit(33)s via isa-debug-exit. `build_k7a.sh` lays it into sector 0 of a
+            1 MiB raw disk; `gate_k7a.sh` boots `-drive file=k7disk.img,if=ide` (no
+            `-kernel`): `K7 real` + `K7 pmode` + exit 33. Proves the sovereign boot
+            chain + the real→protected transition, self-contained (no boot.asm change).
+      - [ ] **K7b — load the kernel image from disk + hand off.** The MBR (or a stage-2
+            it chains) reads the kernel image's sectors from disk (BIOS int 0x13 in real
+            mode, or ATA PIO in protected mode) into memory and jumps to boot.asm's
+            `_start` in the multiboot-compatible 32-bit state (a synthesized mbi, or
+            adapt `_start` to a leaner handoff). Then LogOS boots itself end-to-end with
+            no GRUB — the last piece of the Phase-II kernel bring-up (K1→K7).
 - [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
       native process model is re-homed onto the kernel at K5/K6)*
 - [~] 4. Hardware abstraction layer *(DRM/KMS path proven on hardware as a
