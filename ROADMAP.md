@@ -716,9 +716,19 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             host bridge 8086:1237 + PIIX3 ISA 8086:7000 + scan-complete + exit 33.
             The discovery foundation every later driver builds on. `in`/`out` are
             privileged → metal-only (like peek/poke), tested in QEMU not host==native.
-      - [ ] **HAL.2 — interrupt-driven input** (serial-RX or PS/2 keyboard on the
-            K5a PIC path): the kernel's first INPUT sense, an ISR capturing bytes
-            into a buffer the LA image reads. Reuses the port-I/O primitives.
+      - [x] **HAL.2 — PS/2 keyboard input — DONE + gated (2026-07-15).** The
+            kernel's first INPUT sense, the reciprocal of serial output. `kernel/kbd.la`
+            is a polling driver in pure LA on the HAL.1 `inb` primitive (NO new
+            builtin, NO regen, NO boot.asm change): at ring 0 it reads the i8042
+            (status 0x64 / data 0x60), and when the output-buffer bit is set (and not
+            the AUX/mouse bit — both read arithmetically, `st mod 2` / `(st div 32) mod
+            2`, since LA has no bitwise ops) reads a SET-1 scancode from 0x60, decodes
+            press codes (< 0x80) to ASCII via a keymap string, skips releases, and
+            echoes the collected line on ENTER (scancode 28). `gate_hal2.sh` injects
+            `l o g o s ⏎` via the QEMU monitor (`sendkey`), serial to a file, and
+            asserts `kbd:` + `logos` + `kbd done` + exit 33. *(Interrupt-driven input —
+            an IRQ1 ISR ring buffer on the K5a PIC path — remains a possible HAL.2b;
+            polling was the simpler, fully-autological first cut.)*
       - [ ] **HAL.3 — ATA disk driver in LA** (read/write sectors via the proven
             K7b ATA-PIO sequence, now as an LA driver on inb/outb/inl/outl).
       - [ ] Then PCI BAR/MMIO mapping → a real framebuffer (display), NIC (AegisNet).

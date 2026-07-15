@@ -1,0 +1,61 @@
+# =====================================================================
+#  LogOS HAL.2 — PS/2 keyboard input, written in Lingua Adamica.
+#
+#  The kernel's first INPUT sense — the reciprocal of serial output. On
+#  the thin asm "physics" of the HAL.1 port-I/O primitives (just `inb`),
+#  an LA program at ring 0 reads the PS/2 keyboard controller directly:
+#  no new builtin, no boot.asm change, no IRQ — a polling driver, pure LA.
+#
+#  The i8042 controller: status port 0x64 (=100), data port 0x60 (=96).
+#  Status bit 0 (OBF) set = a byte is waiting in the output buffer; bit 5
+#  set = that byte is from the AUX device (mouse), which we skip. A key
+#  read from 0x60 is a SET-1 scancode (the i8042's default translation is
+#  on): press = code < 0x80, release = code | 0x80 (>= 0x80, skipped).
+#  LA has no bitwise ops, so a bit is read arithmetically: bit0 = st mod 2,
+#  bit5 = (st div 32) mod 2.
+#
+#  Reads keys until ENTER (scancode 28), decoding each press to its ASCII
+#  char via a SET-1 keymap string, and echoes the collected line over the
+#  serial console. Flat + import-free, like kernel.la/pci.la.
+# =====================================================================
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph SEQ   = la a. la b. b
+glyph FALSE = la t. la f. f
+glyph AND   = la a. la b. a(b)(FALSE)
+
+# ── SET-1 scancode -> ASCII keymap (index = scancode, 0..57) ──
+#   '.' marks a non-letter/ignored slot; positions follow the PC/XT layout.
+glyph SCTAB = "..1234567890-=..qwertyuiop....asdfghjkl.....zxcvbnm...... "
+
+# drop the first n chars of a string (bounded by its length)
+glyph DROP = Z(la self. la s. la n.
+    IF(int_eq(n)(0))(la _. s)(la _.
+      IF(str_eq(s)(""))(la _. "")(la _.
+        self(str_tail(s))(sub(n)(1)))))
+
+# scancode -> its char ("" for releases / out-of-range / unmapped)
+glyph CHAR = la sc. str_head(DROP(SCTAB)(sc))
+
+# ── i8042 status decode ──
+glyph OBF     = la st. int_eq(mod(st)(2))(1)            # bit 0: output buffer full
+glyph NOTAUX  = la st. int_eq(mod(div(st)(32))(2))(0)   # bit 5 clear: not the mouse
+glyph READY   = la st. AND(OBF(st))(NOTAUX(st))
+
+# spin on the status port until a keyboard byte is ready, then read it
+glyph POLL = Z(la self. la _.
+    (la st. IF(READY(st))(la _. inb(96))(la _. self("!")))
+      (inb(100)))
+
+# ── read+echo loop: accumulate chars until ENTER (scancode 28) ──
+glyph RUN = Z(la self. la acc.
+    (la sc.
+      IF(int_eq(sc)(28))(la _. SEQ(print(acc))(print("kbd done")))(la _.
+        (la c.
+          IF(str_eq(c)(""))(la _. self(acc))(la _.
+            self(concat(acc)(c))))
+        (CHAR(sc))))
+    (POLL("!")))
+
+glyph MAIN = SEQ(print("kbd:"))(RUN(""))
