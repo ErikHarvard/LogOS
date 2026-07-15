@@ -36,7 +36,15 @@
 ; ═══════════════════════════════════════════════════════════════════
 
 BITS 64
-org 0x400078
+; The runtime's org. Default 0x400078 (low, the Stage-4 self-host base — byte-
+; identical). The HH1b kernel build overrides it to the higher-half base
+; 0xFFFFFFFF80400078 (-DRT_ORG=...) so the disp32-abs data refs sign-extend into
+; the −2 GiB half — no opcode changes, only addresses. All address operands here
+; are disp32-abs (sign-extendable) or rel, so the same source assembles at either.
+%ifndef RT_ORG
+  %define RT_ORG 0x400078
+%endif
+org RT_ORG
 
 ; header constants (kind | size<<16 ; mark bit 8 starts clear)
 %define H_BOX    (1 | (16 << 16))

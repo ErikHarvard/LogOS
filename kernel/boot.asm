@@ -51,6 +51,14 @@
   %define IPC
   %define LA_RING3_IMAGE
 %endif
+; HH1a (boot high, LA image low, low map kept) and HH1b (run wholly high, drop the
+; low map) both need the high map built in the 32-bit trampoline.
+%ifdef HH1
+  %define HH1_HIGHMAP
+%endif
+%ifdef HH1B
+  %define HH1_HIGHMAP
+%endif
 ; K6c (single-process IPC round-trip) and K6c2 (two ring-3 processes) both need
 ; the RING3 machinery and the IPC channel layer (send/recv + the mailbox array).
 ; IPC is defined for either, so the channel storage + send/recv dispatch assemble
@@ -169,7 +177,7 @@ _start:
     cmp     ecx, 512
     jne     .fill_pd
 
-%ifdef HH1
+%ifdef HH1_HIGHMAP
     ; HH1: ALSO map the higher half −2 GiB. PML4[511] -> pdpt_high; pdpt_high[510]
     ; -> the SAME low-1-GiB pd. So 0xFFFFFFFF80000000+P aliases physical page P,
     ; and the whole kernel (loaded low) becomes reachable at its high alias too.
@@ -571,6 +579,33 @@ hh_high:
     jmp     rax
 hh_msg:     db "HH1@"
 hh_msg_len  equ $ - hh_msg
+%elifdef HH1B
+    ; ===== HH1b: run WHOLLY in the higher half — drop the low identity map =====
+    ; Jump to the high alias of hh1b_high; there, re-point LSTAR at the HIGH
+    ; syscall_entry (so the LA image's write/exit work after the drop), set a HIGH
+    ; stack, drop the low map (PML4[0]=0 + TLB flush), and enter the HIGH LA image
+    ; (compiled by native_codegen3_hh — VADDR/RT_*/heap all at 0xFFFFFFFF80......).
+    ; From then on NOTHING low is mapped: the kernel runs entirely from the −2 GiB
+    ; half. (syscall takes CS/SS from the STAR MSR, not the GDT, so no GDT reload is
+    ; needed for kernel.la's print+exit; there are no interrupts to need the IDT.)
+    mov     rax, HIGH_BASE
+    lea     rbx, [rel hh1b_high]
+    add     rax, rbx
+    jmp     rax
+hh1b_high:
+    mov     ecx, 0xC0000082             ; IA32_LSTAR
+    lea     rax, [rel syscall_entry]    ; RIP-relative -> the HIGH syscall_entry now
+    mov     rdx, rax
+    shr     rdx, 32
+    wrmsr
+    mov     rax, HIGH_BASE              ; a HIGH stack for the LA image
+    add     rax, LA_STACK_TOP
+    mov     rsp, rax
+    mov     qword [pml4], 0            ; drop the low half (pml4 written via the
+    mov     rax, cr3                   ;   still-live low map), then flush the TLB —
+    mov     cr3, rax                   ;   RIP/rsp are high, so execution continues
+    mov     rax, LA_ENTRY              ; the HH image's HIGH e_entry
+    jmp     rax
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -1043,7 +1078,7 @@ align 4096
 pml4:   resb 4096
 pdpt:   resb 4096
 pd:     resb 4096
-%ifdef HH1
+%ifdef HH1_HIGHMAP
 align 4096
 pdpt_high: resb 4096                    ; HH1: PML4[511] -> here -> [510] -> pd
 %endif
