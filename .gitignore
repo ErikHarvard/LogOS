@@ -111,3 +111,6 @@ mathutil.la
 /kernel/k7bdisk.img
 /native_codegen3_hh.la
 /phonsem_host.out
+/kernel/kernel_hal3.elf
+/kernel/kernel_hal3_64.elf
+/kernel/hal3disk.img

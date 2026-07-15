@@ -1,0 +1,60 @@
+# =====================================================================
+#  LogOS HAL.3 — ATA (IDE) disk read, written in Lingua Adamica.
+#
+#  Persistent storage the kernel drives itself. On the thin asm "physics"
+#  of the HAL.1 port-I/O primitives (inb/outb/inl), an LA program at ring 0
+#  reads a sector off the primary IDE disk via ATA PIO — the same sequence
+#  K7b's bootloader proved, now as a driver in the language itself. No new
+#  builtin, no regen, no boot.asm change.
+#
+#  Primary ATA bus, ports (decimal): 0x1F0=496 data, 0x1F2=498 sector count,
+#  0x1F3=499/0x1F4=500/0x1F5=501 = LBA[7:0]/[15:8]/[23:16], 0x1F6=502 drive
+#  (0xE0=224 | LBA[27:24]), 0x1F7=503 status/command. READ SECTORS = 0x20=32.
+#  Status bits (read arithmetically — LA has no bitwise ops): BSY = bit 7 =
+#  (st div 128) mod 2, DRQ = bit 3 = (st div 8) mod 2.
+#
+#  The data register is 16-bit, but a 32-bit `inl` read pulls two consecutive
+#  words, so one sector (512 B) is 128 dword reads; each dword's 4 bytes come
+#  out low-first (disk order) and are recovered by div/mod. Reads LBA 1 and
+#  echoes the sector's bytes over serial. Flat + import-free, like pci/kbd.la.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# issue a single-sector READ (cmd 0x20) of a 28-bit LBA on the primary master
+glyph ISSUE = la lba.
+    SEQ(outb(502)(add(224)(mod(div(lba)(16777216))(16))))    # drive/head: 0xE0 | LBA[27:24]
+    (SEQ(outb(498)(1))                                        # sector count = 1
+    (SEQ(outb(499)(mod(lba)(256)))                            # LBA[7:0]
+    (SEQ(outb(500)(mod(div(lba)(256))(256)))                 # LBA[15:8]
+    (SEQ(outb(501)(mod(div(lba)(65536))(256)))               # LBA[23:16]
+    (outb(503)(32))))))                                       # command: READ SECTORS
+
+# spin on the status port until BSY clears and DRQ sets (data ready)
+glyph WAITDRQ = Z(la self. la _.
+    (la st.
+      IF(int_eq(mod(div(st)(128))(2))(1))(la _. self("!"))       # BSY set -> keep waiting
+      (la _. IF(int_eq(mod(div(st)(8))(2))(1))(la _. "!")        # DRQ set -> ready
+             (la _. self("!"))))                                  # neither -> keep waiting
+    (inb(503)))
+
+# a 32-bit data word -> its 4 bytes as a string, disk order (little-endian)
+glyph B4 = la v.
+    concat(chr(int_to_str(mod(v)(256))))
+    (concat(chr(int_to_str(mod(div(v)(256))(256))))
+    (concat(chr(int_to_str(mod(div(v)(65536))(256))))
+            (chr(int_to_str(mod(div(v)(16777216))(256))))))
+
+# drain 128 dwords (= 512 bytes = one sector) from the data port, accumulating
+glyph READSEC = Z(la self. la n. la acc.
+    IF(int_eq(n)(0))(la _. acc)(la _.
+      self(sub(n)(1))(concat(acc)(B4(inl(496))))))
+
+glyph MAIN =
+    SEQ(print("ata:"))
+    (SEQ(ISSUE(1))                       # read LBA 1
+    (SEQ(WAITDRQ("!"))                   # wait for the sector to be ready
+    (SEQ(print(READSEC(128)("")))        # read + reconstruct 512 bytes, echo
+    (print("ata done")))))

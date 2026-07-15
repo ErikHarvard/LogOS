@@ -729,8 +729,19 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             asserts `kbd:` + `logos` + `kbd done` + exit 33. *(Interrupt-driven input —
             an IRQ1 ISR ring buffer on the K5a PIC path — remains a possible HAL.2b;
             polling was the simpler, fully-autological first cut.)*
-      - [ ] **HAL.3 — ATA disk driver in LA** (read/write sectors via the proven
-            K7b ATA-PIO sequence, now as an LA driver on inb/outb/inl/outl).
+      - [x] **HAL.3 — ATA disk read in LA — DONE + gated (2026-07-15).** The kernel
+            drives real persistent storage itself. `kernel/ata.la` (pure LA on the HAL.1
+            port-I/O primitives — NO new builtin, NO regen): at ring 0 it issues READ
+            SECTORS (cmd 0x20) on the primary IDE bus (`outb` the LBA/count/drive to
+            0x1F2–0x1F6, 0x1F7), polls the status port for BSY-clear + DRQ-set (bits read
+            arithmetically), and drains the 512-byte sector as 128 **32-bit `inl` reads**
+            of the data port (the 16-bit register yields two words per dword; bytes
+            recovered low-first via div/mod) — the same ATA-PIO sequence K7b's bootloader
+            proved, now a driver in the language. `build_hal3.sh` seeds a data disk with a
+            signature at LBA 1; `gate_hal3.sh` attaches it (`-drive if=ide`), boots
+            `-kernel -m 256`, and asserts the driver echoed the on-disk signature back +
+            exit 33. *(Sector WRITE — cmd 0x30 + `outl` the data + cache-flush — is a
+            possible HAL.3b.)*
       - [ ] Then PCI BAR/MMIO mapping → a real framebuffer (display), NIC (AegisNet).
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
