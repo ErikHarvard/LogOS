@@ -59,6 +59,12 @@
 %ifdef HH1B
   %define HH1_HIGHMAP
 %endif
+; HH2: per-process page tables. Runs the kernel high (needs the high map), then
+; builds two process PML4s sharing the kernel PML4[511] and proves address-space
+; isolation with a CR3 switch. A ring-0 kernel demo (no LA image).
+%ifdef HH2
+  %define HH1_HIGHMAP
+%endif
 ; K6c (single-process IPC round-trip) and K6c2 (two ring-3 processes) both need
 ; the RING3 machinery and the IPC channel layer (send/recv + the mailbox array).
 ; IPC is defined for either, so the channel storage + send/recv dispatch assemble
@@ -606,6 +612,95 @@ hh1b_high:
     mov     cr3, rax                   ;   RIP/rsp are high, so execution continues
     mov     rax, LA_ENTRY              ; the HH image's HIGH e_entry
     jmp     rax
+%elifdef HH2
+    ; ===== HH2: per-process page tables — prove address-space ISOLATION =====
+    ; Jump high (kernel runs from the shared PML4[511]), build TWO process PML4s
+    ; that share the kernel high half but map the SAME low virtual page to DIFFERENT
+    ; physical frames, then switch CR3 between them: a write under one process is
+    ; invisible to the other. That is isolated address spaces — the process-model
+    ; foundation HH1 unlocked (kernel high, low half free per-process).
+    mov     rax, HIGH_BASE
+    lea     rbx, [rel hh2_high]
+    add     rax, rbx
+    jmp     rax
+hh2_high:
+    ; build PML4_A: [511]=kernel(pdpt_high) shared, [0]=pdpt_A->pd_A->pd_A[3]=FRAME_A
+    ; (written through the low identity map, still live before the first CR3 switch)
+    mov     eax, pdpt_high
+    or      eax, 0x03
+    mov     [pml4_A + 511*8], eax
+    mov     dword [pml4_A + 511*8 + 4], 0
+    mov     eax, pdpt_A
+    or      eax, 0x03
+    mov     [pml4_A], eax
+    mov     dword [pml4_A + 4], 0
+    mov     eax, pd_A
+    or      eax, 0x03
+    mov     [pdpt_A], eax
+    mov     dword [pdpt_A + 4], 0
+    mov     dword [pd_A + 3*8], 0x2000000 | 0x83    ; VA 6 MiB -> phys 32 MiB (A)
+    mov     dword [pd_A + 3*8 + 4], 0
+    ; build PML4_B: same shape, pd_B[3] = FRAME_B (34 MiB)
+    mov     eax, pdpt_high
+    or      eax, 0x03
+    mov     [pml4_B + 511*8], eax
+    mov     dword [pml4_B + 511*8 + 4], 0
+    mov     eax, pdpt_B
+    or      eax, 0x03
+    mov     [pml4_B], eax
+    mov     dword [pml4_B + 4], 0
+    mov     eax, pd_B
+    or      eax, 0x03
+    mov     [pdpt_B], eax
+    mov     dword [pdpt_B + 4], 0
+    mov     dword [pd_B + 3*8], 0x2200000 | 0x83    ; VA 6 MiB -> phys 34 MiB (B)
+    mov     dword [pd_B + 3*8 + 4], 0
+    ; a HIGH stack — mapped via the shared [511] under EITHER process PML4
+    mov     rax, HIGH_BASE
+    add     rax, LA_STACK_TOP
+    mov     rsp, rax
+    ; --- the isolation test (r10 = the shared test virtual address) ---
+    mov     r10, 0x600000
+    mov     eax, pml4_A
+    mov     cr3, rax                    ; enter process A's address space
+    mov     byte [r10], 0xAA           ; A writes ITS frame at VA 6 MiB
+    mov     eax, pml4_B
+    mov     cr3, rax                    ; enter process B — same VA, its OWN frame
+    mov     byte [r10], 0xBB
+    mov     bl, [r10]                   ; bl = B's value (0xBB)
+    mov     eax, pml4_A
+    mov     cr3, rax                    ; back to A
+    mov     al, [r10]                   ; al = A's value — 0xAA iff B could not touch it
+    cmp     al, 0xAA
+    jne     .hh2_fail
+    cmp     bl, 0xBB
+    jne     .hh2_fail
+    lea     r8, [rel hh2_ok]            ; RIP-relative -> HIGH addr (via shared [511])
+    mov     r9, hh2_ok_len
+    jmp     .hh2_emit
+.hh2_fail:
+    lea     r8, [rel hh2_bad]
+    mov     r9, hh2_bad_len
+.hh2_emit:
+    test    r9, r9
+    jz      .hh2_done
+    mov     dil, [r8]
+    call    serial_putc
+    inc     r8
+    dec     r9
+    jmp     .hh2_emit
+.hh2_done:
+    mov     al, DBG_OK
+    mov     dx, DBG_EXIT
+    out     dx, al                      ; QEMU exit 33
+    cli
+.hh2_hang:
+    hlt
+    jmp     .hh2_hang
+hh2_ok:      db "HH2 ISOLATED A=AA B=BB", 10
+hh2_ok_len   equ $ - hh2_ok
+hh2_bad:     db "HH2 LEAK (not isolated)", 10
+hh2_bad_len  equ $ - hh2_bad
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -1082,6 +1177,15 @@ pd:     resb 4096
 align 4096
 pdpt_high: resb 4096                    ; HH1: PML4[511] -> here -> [510] -> pd
 %endif
+%ifdef HH2
+align 4096
+pml4_A:  resb 4096                      ; HH2: process A's page tables (own low half)
+pdpt_A:  resb 4096
+pd_A:    resb 4096
+pml4_B:  resb 4096                      ; process B (same VA -> a different frame)
+pdpt_B:  resb 4096
+pd_B:    resb 4096
+%endif
 align 16
 boot_stack:
         resb 16384
@@ -1120,14 +1224,16 @@ k6c2_scratch:                           ; 2 qwords: frees rax + a base reg in .s
 ; unless assembled with -dK5_TIMER, so other kernel ELFs stay byte-identical.
 %include "timer.asm"
 
-; K6a/K6c/K6c2 are payload-based ring-3 probes — no LA image (they never jump to
-; 0x400000), so the incbin is skipped for all three, keeping those builds
-; self-contained.
+; K6a/K6c/K6c2 are payload-based ring-3 probes and HH2 is a ring-0 page-table demo
+; — none jump to the LA image, so the incbin is skipped for them, keeping those
+; builds self-contained.
 %ifndef K6A
 %ifndef K6C
 %ifndef K6C2
+%ifndef HH2
 section .la_image
 incbin "native_codegen3_out"
+%endif
 %endif
 %endif
 %endif

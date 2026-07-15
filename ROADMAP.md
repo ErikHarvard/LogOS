@@ -475,8 +475,21 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
                 low RT blob byte-identical; all K6a–K6c3b + HH1a gates still PASS.
                 `gate_hh1b.sh` (`-m 256`): `I AM THAT I AM` from the −2 GiB half + exit
                 33. **The low canonical half is now free for user processes (HH2).**
-      - [ ] **HH2** — per-process page tables (PML4[0] per proc, kernel PML4[511]
-            shared into each). The process-model foundation.
+      - [x] **HH2 — per-process page tables (isolation proven) — DONE + gated
+            (2026-07-14).** With the kernel wholly in PML4[511] (HH1), the low half is
+            free per-process. A ring-0 kernel demo (`%ifdef HH2`, no LA image) builds
+            TWO process PML4s that share the kernel `PML4[511]` (via `pdpt_high`) but
+            hold DISTINCT low halves: each maps the same virtual page (6 MiB) to a
+            different physical frame (32 MiB / 34 MiB). A CR3 round-trip proves
+            isolation — under A write 0xAA, switch CR3 to B and write 0xBB to the SAME
+            VA, switch back to A and read 0xAA (B's write never touched A's frame). A
+            high stack (via the shared `[511]`) survives the CR3 switches; the process
+            page tables are built through the still-live low identity map before the
+            first switch. `gate_hh2.sh` (`-m 256`): `HH2 ISOLATED A=AA B=BB` + exit 33;
+            all `%ifdef HH2`/`HH1_HIGHMAP`, other kernel ELFs byte-identical, HH1a/HH1b/
+            K6 gates still PASS. **The process-model foundation.** Next (HH2b/K6-redux):
+            give each ring-3 LA process its own PML4 so K6c.3b's shared-address-space
+            tasks become truly isolated processes.
       - [x] **K6a — ring-3 privilege drop — DONE + gated (2026-07-11).** GDT += user
             code 0x20|3 / data 0x18|3 + a TSS (RSP0); ltr. STAR[63:48]=0x10 so
             sysretq lands in the ring-3 selectors. Maps ONE user 2 MiB page U=1
