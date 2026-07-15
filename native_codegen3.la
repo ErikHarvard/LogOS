@@ -329,6 +329,51 @@ glyph INLINE = Z(la self. la node. la table. la bound. la seen.
         ))))
     (NODE_TAG(node)))
 
+# Optimization pass #1 — compile-time β-reduction (β-value; pure codegen, no
+# autology cost). After INLINE flattens the program to one closed term, immediately-
+# applied lambdas `(la x. body)(arg)` are rampant — every IF/AND/PAIR/FST/list
+# combinator becomes one. When `arg` is a syntactic VALUE, substitute it at compile
+# time instead of emitting mkclo + rt_apply, killing a closure alloc, an env-frame
+# alloc, and an indirect call per redex. SLICE 1: `arg` is a VAR or STR — capture-
+# free and zero code bloat (LAM args, the further win, need occurrence-bounding +
+# capture handling and come later). Soundness (CBV): a value has no side effects and
+# evaluates to itself, so substituting it preserves semantics regardless of how many
+# times x occurs. Capture-safety: a STR has no free vars; a VAR v is substituted only
+# when `body` binds no `la v` (NO_BINDER), so v cannot be captured. SUBST stops under
+# a binder of x (shadowing), like RENAME_FREE. Reducing terminates: a VAR/STR arg is
+# not a lambda, so substitution creates no new redex; each step removes one.
+glyph NO_BINDER = Z(la self. la v. la node.
+    (la t.
+        IF(str_eq(t)("LAM"))(la _. AND(NOT(str_eq(LAM_P(node))(v)))(self(v)(LAM_B(node))))(la _.
+        IF(str_eq(t)("APP"))(la _. AND(self(v)(APP_F(node)))(self(v)(APP_A(node))))(la _.
+        TRUE)))
+    (NODE_TAG(node)))
+glyph SUBST = Z(la self. la node. la x. la rep.
+    node
+        (la name. IF(str_eq(name)(x))(la _. rep)(la _. AST_VAR(name)))
+        (la p. la b. IF(str_eq(p)(x))(la _. AST_LAM(p)(b))(la _. AST_LAM(p)(self(b)(x)(rep))))
+        (la f. la a. AST_APP(self(f)(x)(rep))(self(a)(x)(rep)))
+        (la val. AST_STR(val)))
+glyph BETA_SAFE = la x. la body. la arg.
+    (la t.
+        IF(str_eq(t)("STR"))(la _. TRUE)(la _.
+        IF(str_eq(t)("VAR"))(la _. NO_BINDER(VAR_NM(arg))(body))(la _.
+        FALSE)))
+    (NODE_TAG(arg))
+glyph BETA = Z(la self. la node.
+    (la t.
+        IF(str_eq(t)("LAM"))(la _. AST_LAM(LAM_P(node))(self(LAM_B(node))))(la _.
+        IF(str_eq(t)("APP"))(la _.
+            (la f. (la a.
+                IF(str_eq(NODE_TAG(f))("LAM"))(la _.
+                    IF(BETA_SAFE(LAM_P(f))(LAM_B(f))(a))(la _.
+                        self(SUBST(LAM_B(f))(LAM_P(f))(a)))
+                    (la _. AST_APP(f)(a)))
+                (la _. AST_APP(f)(a)))
+            (self(APP_A(node))))(self(APP_F(node))))(la _.
+        node)))
+    (NODE_TAG(node)))
+
 # ── string-literal collection + pool (after runtime; LITERAL_BASE fixed) ──
 glyph IS_INT_LIT = la node. AND(str_eq(NODE_TAG(node))("APP"))(AND(str_eq(NODE_TAG(APP_F(node)))("VAR"))(AND(str_eq(VAR_NM(APP_F(node)))("str_to_int"))(str_eq(NODE_TAG(APP_A(node)))("STR"))))
 glyph APPEND = Z(la self. la xs. la ys. IF(IS_CONS(xs))(la _. CONS(HD(xs))(self(TL(xs))(ys)))(la _. ys))
@@ -628,5 +673,5 @@ glyph MAIN =
     )(SND(poolpair))
     )(FST(poolpair))
     )(BUILD_POOL(COLLECT(main_ast)))
-    )(INLINE((la opt. IF(IS_SOME(opt))(la _. OPT_VAL(opt))(la _. error("native_codegen3: no glyph MAIN")))(LOOKUP_GLYPH("MAIN")(table)))(table)(NIL)(CONS("MAIN")(NIL)))
+    )(BETA(INLINE((la opt. IF(IS_SOME(opt))(la _. OPT_VAL(opt))(la _. error("native_codegen3: no glyph MAIN")))(LOOKUP_GLYPH("MAIN")(table)))(table)(NIL)(CONS("MAIN")(NIL))))
     )(PARSE_PROGRAM(TOKENIZE(read_file("native_input.la"))))
