@@ -487,9 +487,22 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             page tables are built through the still-live low identity map before the
             first switch. `gate_hh2.sh` (`-m 256`): `HH2 ISOLATED A=AA B=BB` + exit 33;
             all `%ifdef HH2`/`HH1_HIGHMAP`, other kernel ELFs byte-identical, HH1a/HH1b/
-            K6 gates still PASS. **The process-model foundation.** Next (HH2b/K6-redux):
-            give each ring-3 LA process its own PML4 so K6c.3b's shared-address-space
-            tasks become truly isolated processes.
+            K6 gates still PASS. **The process-model foundation.**
+      - [x] **HH2b — a ring-3 LA PROCESS in its own address space — DONE + gated
+            (2026-07-14).** Composes HH1 (kernel high) + HH2 (per-process PML4) + K6b
+            (ring-3 LA). The kernel runs in the shared high half; a per-process PML4
+            (`pml4_proc`) maps the LA image + heap + stack in its OWN user low half
+            (`pd_proc[i]=i·2MiB|0x87`, U=1) and shares the kernel `[511]→pdpt_high` as
+            SUPERVISOR (so ring 3 can't reach the kernel via the high alias). Boot jumps
+            high, re-points LSTAR at the high `syscall_entry`, sets TSS `rsp0` to a HIGH
+            kernel stack, builds `pml4_proc` (via the still-live low identity map),
+            `CR3=pml4_proc`, sets METAL_FLAG, and iretq's to ring 3 at the low LA image
+            — which speaks the Word through a syscall that crosses ring3-low → ring0-HIGH
+            → ring3. `gate_hh2b.sh` (`-m 1024`): `I AM THAT I AM` + exit 33; all `%ifdef
+            HH2B`, other kernel ELFs byte-identical, HH2/HH1b/K6b gates PASS. **An
+            isolated address space per LA process — the process model, one process.**
+            Next: two such processes (own PML4 each) exchanging a typed message through
+            the shared kernel channel = the full process/IPC model.
       - [x] **K6a — ring-3 privilege drop — DONE + gated (2026-07-11).** GDT += user
             code 0x20|3 / data 0x18|3 + a TSS (RSP0); ltr. STAR[63:48]=0x10 so
             sysretq lands in the ring-3 selectors. Maps ONE user 2 MiB page U=1

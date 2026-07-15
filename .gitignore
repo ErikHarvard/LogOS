@@ -94,5 +94,7 @@ mathutil.la
 /kernel/kernel_hh1b_64.elf
 /kernel/kernel_hh2.elf
 /kernel/kernel_hh2_64.elf
+/kernel/kernel_hh2b.elf
+/kernel/kernel_hh2b_64.elf
 /native_codegen3_hh.la
 /phonsem_host.out

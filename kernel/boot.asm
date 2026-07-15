@@ -65,6 +65,14 @@
 %ifdef HH2
   %define HH1_HIGHMAP
 %endif
+; HH2b: a real ring-3 LA process in its OWN per-process PML4, kernel in the high
+; half. Composes HH1 (kernel high) + HH2 (per-process page tables) + K6b (ring-3 LA
+; image): needs the high map, the RING3 machinery (user selectors + TSS), and the
+; LA image.
+%ifdef HH2B
+  %define HH1_HIGHMAP
+  %define RING3
+%endif
 ; K6c (single-process IPC round-trip) and K6c2 (two ring-3 processes) both need
 ; the RING3 machinery and the IPC channel layer (send/recv + the mailbox array).
 ; IPC is defined for either, so the channel storage + send/recv dispatch assemble
@@ -701,6 +709,85 @@ hh2_ok:      db "HH2 ISOLATED A=AA B=BB", 10
 hh2_ok_len   equ $ - hh2_ok
 hh2_bad:     db "HH2 LEAK (not isolated)", 10
 hh2_bad_len  equ $ - hh2_bad
+%elifdef HH2B
+    ; ===== per-process LA PROCESS: a ring-3 LA image in its OWN PML4, kernel high ==
+    ; The real process model, one process: the kernel runs in the shared high half
+    ; (PML4[511]); the process has its OWN PML4 whose LOW half (U=1) holds the LA
+    ; image + heap + stack and whose HIGH half shares the kernel (supervisor). CR3 =
+    ; the process; the LA image runs at ring 3, its syscalls entering the HIGH kernel.
+    ; STAR[63:48]=0x10 so the LA image's write/exit sysret to ring 3 (as K6b).
+    mov     ecx, 0xC0000081
+    xor     eax, eax
+    mov     edx, (0x10 << 16) | 0x08
+    wrmsr
+    mov     rax, HIGH_BASE              ; run the kernel from the high half
+    lea     rbx, [rel hh2b_high]
+    add     rax, rbx
+    jmp     rax
+hh2b_high:
+    mov     ecx, 0xC0000082             ; LSTAR -> the HIGH syscall_entry
+    lea     rax, [rel syscall_entry]
+    mov     rdx, rax
+    shr     rdx, 32
+    wrmsr
+    ; build the PROCESS page tables via the still-live low identity map:
+    ;   PML4_proc[0]=pdpt_proc|7 (USER low half), PML4_proc[511]=pdpt_high|3 (kernel,
+    ;   SUPERVISOR — so ring 3 cannot reach the kernel via the high alias);
+    ;   pdpt_proc[0]=pd_proc|7 ; pd_proc[i]=i*2MiB|0x87 (low 1 GiB, U=1)
+    mov     eax, pdpt_proc
+    or      eax, 0x07
+    mov     [pml4_proc], eax
+    mov     dword [pml4_proc + 4], 0
+    mov     eax, pdpt_high
+    or      eax, 0x03
+    mov     [pml4_proc + 511*8], eax
+    mov     dword [pml4_proc + 511*8 + 4], 0
+    mov     eax, pd_proc
+    or      eax, 0x07
+    mov     [pdpt_proc], eax
+    mov     dword [pdpt_proc + 4], 0
+    xor     ecx, ecx
+    mov     edi, pd_proc
+.hh2b_fill:
+    mov     eax, ecx
+    shl     eax, 21
+    or      eax, 0x87                   ; present|writable|user|PS (2 MiB)
+    mov     [edi], eax
+    mov     dword [edi + 4], 0
+    add     edi, 8
+    inc     ecx
+    cmp     ecx, 512
+    jne     .hh2b_fill
+    ; TSS: rsp0 = a HIGH kernel stack (a ring-3 trap must land in the high kernel)
+    mov     rax, k6a_tss
+    mov     word [gdt64 + gdt64.tss], 103
+    mov     word [gdt64 + gdt64.tss + 2], ax
+    shr     rax, 16
+    mov     byte [gdt64 + gdt64.tss + 4], al
+    mov     byte [gdt64 + gdt64.tss + 5], 0x89
+    mov     byte [gdt64 + gdt64.tss + 6], 0
+    shr     rax, 8
+    mov     byte [gdt64 + gdt64.tss + 7], al
+    mov     rax, k6a_tss
+    shr     rax, 32
+    mov     dword [gdt64 + gdt64.tss + 8], eax
+    mov     dword [gdt64 + gdt64.tss + 12], 0
+    mov     rax, HIGH_BASE
+    add     rax, k6a_kstack_top
+    mov     [k6a_tss + 4], rax
+    mov     word [k6a_tss + 102], 104
+    mov     ax, gdt64.tss
+    ltr     ax
+    mov     eax, pml4_proc              ; enter the process address space
+    mov     cr3, rax
+    mov     rax, METAL_FLAG_ABS         ; LA runtime metal path (now mapped via [0])
+    mov     byte [rax], 1
+    push    qword 0x18 | 3              ; iretq -> ring 3 at the LA image (low, U=1)
+    push    qword LA_STACK_TOP
+    push    qword 0x002
+    push    qword 0x20 | 3
+    push    qword LA_ENTRY
+    iretq
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -1185,6 +1272,12 @@ pd_A:    resb 4096
 pml4_B:  resb 4096                      ; process B (same VA -> a different frame)
 pdpt_B:  resb 4096
 pd_B:    resb 4096
+%endif
+%ifdef HH2B
+align 4096
+pml4_proc: resb 4096                    ; HH2b: the process's own PML4 ([0]=user low,
+pdpt_proc: resb 4096                    ;   [511]=kernel high shared); low 1 GiB U=1
+pd_proc:   resb 4096
 %endif
 align 16
 boot_stack:
