@@ -71,7 +71,15 @@ honestly in the distance.
       big win — drains the env-frame/closure garbage), #2 constant folding, #3 peephole,
       #4 uncurrying (runtime change), #5 int unboxing (runtime change), #6 register alloc
       (secondary, not the headline).
-  - [~] **#1 compile-time β-reduction — slice 1 DONE + self-host-verified (2026-07-14,
+  - [x] **#1 compile-time β-reduction — DONE + self-host-verified (2026-07-14).**
+        Slice 2 (`523b5f6`) extends `BETA` to LAM/thunk args (the combinator-flattening
+        win: IF/AND/PAIR/FST pass thunks) — reduces when `OCCURS(x)(body) ≤ 1` (bounds
+        bloat + guarantees termination, blocking Ω) AND every FREE var of the arg has
+        NO_BINDER in body (capture-safe, no fresh names). Win: IF+PAIR/FST program
+        12625→11737 B (−7%, 5× slice 1). Self-host fixed point holds (707569 B, still
+        −17 KB net of pre-β); all V1–V5 PASS (fixed point / drift / arith / kernel /
+        β-suite incl. occ=0/1/≥2, capture, IF-flatten, Z-recursion). Slice 1 below:
+  - [~] **slice 1 (2026-07-14,
         `114254e`).** New pre-codegen AST pass `BETA` (zero runtime change) substitutes
         `(la x. body)(arg)` at compile time when `arg` is a syntactic VALUE, killing a
         closure alloc + env-frame alloc + indirect call per redex. **Slice 1** = VAR/STR
