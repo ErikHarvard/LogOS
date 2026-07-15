@@ -501,8 +501,25 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             → ring3. `gate_hh2b.sh` (`-m 1024`): `I AM THAT I AM` + exit 33; all `%ifdef
             HH2B`, other kernel ELFs byte-identical, HH2/HH1b/K6b gates PASS. **An
             isolated address space per LA process — the process model, one process.**
-            Next: two such processes (own PML4 each) exchanging a typed message through
-            the shared kernel channel = the full process/IPC model.
+      - [x] **HH2c — TWO isolated LA processes exchange a typed message — DONE +
+            gated (2026-07-14). ★ THE FULL PROCESS + IPC MODEL.** One image template
+            (`ipc_proc.la`) is copied into two offset-mapped per-process regions (A at
+            phys +128 MiB, B at +256 MiB), each with its OWN low half (U=1) and the
+            shared kernel `[511]` (supervisor); a role byte poked per copy makes the
+            SAME image `send` under A / `recv` under B. A `send`s `"HELLO-FROM-A"` into
+            the SHARED kernel channel and returns → `exit`; the kernel's `.sys_exit`
+            (HH2c) switches CR3 to B, which `recv`s it and prints `B got: HELLO-FROM-A`.
+            **Two metal bugs caught + fixed:** (1) the process offset-map made the GDT's
+            low virtual resolve to the wrong frame → `iretq` `#GP`; fixed by loading a
+            HIGH GDTR + HIGH TSS base (reachable via the shared `[511]` under any CR3).
+            (2) the syscall handler read `k6c_chans`/`hh2c_stage` via LOW absolute
+            addresses → the offset map sent each process's "channel" to its own region;
+            fixed by RIP-relative access (`lea [rel …]`) so the high kernel hits the
+            real SHARED data (works for the low-kernel K6c builds too). `gate_hh2c.sh`
+            (`-m 512`): `B got: HELLO-FROM-A` + exit 33; all `%ifdef HH2C` (+ the shared
+            `lea [rel k6c_chans]` — K6c/K6c2/K6c3 gates still PASS), non-IPC ELFs
+            byte-identical. **Isolated ring-3 LA processes talking through the kernel's
+            nervous system — the process/IPC model, realized.**
       - [x] **K6a — ring-3 privilege drop — DONE + gated (2026-07-11).** GDT += user
             code 0x20|3 / data 0x18|3 + a TSS (RSP0); ltr. STAR[63:48]=0x10 so
             sysretq lands in the ring-3 selectors. Maps ONE user 2 MiB page U=1

@@ -64,6 +64,7 @@
 ; isolation with a CR3 switch. A ring-0 kernel demo (no LA image).
 %ifdef HH2
   %define HH1_HIGHMAP
+  %define HH2_PTS
 %endif
 ; HH2b: a real ring-3 LA process in its OWN per-process PML4, kernel in the high
 ; half. Composes HH1 (kernel high) + HH2 (per-process page tables) + K6b (ring-3 LA
@@ -72,6 +73,16 @@
 %ifdef HH2B
   %define HH1_HIGHMAP
   %define RING3
+%endif
+; HH2c: TWO isolated ring-3 LA processes exchange a typed message. One image
+; template is copied into two offset-mapped per-process regions (own low half
+; each), the kernel pokes a role byte, and IPC flows through the SHARED kernel
+; channel. Needs the high map, RING3 machinery, IPC channel, and the LA image.
+%ifdef HH2C
+  %define HH1_HIGHMAP
+  %define RING3
+  %define IPC
+  %define HH2_PTS
 %endif
 ; K6c (single-process IPC round-trip) and K6c2 (two ring-3 processes) both need
 ; the RING3 machinery and the IPC channel layer (send/recv + the mailbox array).
@@ -788,6 +799,136 @@ hh2b_high:
     push    qword 0x20 | 3
     push    qword LA_ENTRY
     iretq
+%elifdef HH2C
+    ; ===== TWO isolated LA processes exchange a typed message via the channel =====
+    ; One image template (@0x400000) is copied into two offset-mapped per-process
+    ; regions: A at phys +128 MiB, B at phys +256 MiB. Each process's PML4 maps its
+    ; OWN region into the low half (U=1) and shares the kernel [511] (supervisor),
+    ; so A cannot see B's memory. A role byte (poked per copy) makes the SAME image
+    ; send under A / recv under B; the message crosses through the SHARED kernel
+    ; channel. A returns -> exit; the kernel's .sys_exit switches CR3 to B.
+    mov     ecx, 0xC0000081             ; STAR: sysret -> ring 3 (as K6b)
+    xor     eax, eax
+    mov     edx, (0x10 << 16) | 0x08
+    wrmsr
+    mov     rax, HIGH_BASE              ; run the kernel from the high half
+    lea     rbx, [rel hh2c_high]
+    add     rax, rbx
+    jmp     rax
+hh2c_high:
+    mov     ecx, 0xC0000082             ; LSTAR -> high syscall_entry
+    lea     rax, [rel syscall_entry]
+    mov     rdx, rax
+    shr     rdx, 32
+    wrmsr
+    ; build PML4_A: [0]=pdpt_A->pd_A (offset +128 MiB, U=1), [511]=kernel supervisor
+    mov     eax, pdpt_A
+    or      eax, 0x07
+    mov     [pml4_A], eax
+    mov     dword [pml4_A + 4], 0
+    mov     eax, pdpt_high
+    or      eax, 0x03
+    mov     [pml4_A + 511*8], eax
+    mov     dword [pml4_A + 511*8 + 4], 0
+    mov     eax, pd_A
+    or      eax, 0x07
+    mov     [pdpt_A], eax
+    mov     dword [pdpt_A + 4], 0
+    xor     ecx, ecx
+    mov     edi, pd_A
+.hh2c_pda:
+    mov     eax, ecx
+    shl     eax, 21
+    add     eax, 0x8000000              ; AOFF = 128 MiB
+    or      eax, 0x87
+    mov     [edi], eax
+    mov     dword [edi + 4], 0
+    add     edi, 8
+    inc     ecx
+    cmp     ecx, 64                     ; map virtual 0..128 MiB
+    jne     .hh2c_pda
+    ; build PML4_B: same, offset +256 MiB
+    mov     eax, pdpt_B
+    or      eax, 0x07
+    mov     [pml4_B], eax
+    mov     dword [pml4_B + 4], 0
+    mov     eax, pdpt_high
+    or      eax, 0x03
+    mov     [pml4_B + 511*8], eax
+    mov     dword [pml4_B + 511*8 + 4], 0
+    mov     eax, pd_B
+    or      eax, 0x07
+    mov     [pdpt_B], eax
+    mov     dword [pdpt_B + 4], 0
+    xor     ecx, ecx
+    mov     edi, pd_B
+.hh2c_pdb:
+    mov     eax, ecx
+    shl     eax, 21
+    add     eax, 0x10000000            ; BOFF = 256 MiB
+    or      eax, 0x87
+    mov     [edi], eax
+    mov     dword [edi + 4], 0
+    add     edi, 8
+    inc     ecx
+    cmp     ecx, 64
+    jne     .hh2c_pdb
+    ; copy the image template into A's and B's image slots (via the low identity map)
+    cld
+    mov     esi, 0x400000
+    mov     edi, 0x8400000             ; AOFF + 0x400000 = 132 MiB
+    mov     ecx, IMAGE_LEN
+    rep     movsb
+    mov     esi, 0x400000
+    mov     edi, 0x10400000           ; BOFF + 0x400000 = 260 MiB
+    mov     ecx, IMAGE_LEN
+    rep     movsb
+    mov     byte [0x8380000], 0       ; role: A = sender
+    mov     byte [0x10380000], 1      ; role: B = receiver
+    ; The per-process low half is OFFSET-mapped, so the GDT/TSS at their LOW virtual
+    ; addresses would resolve to the wrong frame under a process CR3. Put them in the
+    ; HIGH half instead (reachable via the shared [511] under EITHER process): build
+    ; the TSS descriptor with a HIGH base, and load a HIGH GDTR (persists across the
+    ; CR3 switches, so both A's and B's iretq read a valid GDT). Written into the low
+    ; GDT via the still-live low identity map; read back via the high alias.
+    mov     rax, HIGH_BASE
+    add     rax, k6a_tss                ; TSS base = high alias
+    mov     word [gdt64 + gdt64.tss], 103
+    mov     word [gdt64 + gdt64.tss + 2], ax
+    shr     rax, 16
+    mov     byte [gdt64 + gdt64.tss + 4], al
+    mov     byte [gdt64 + gdt64.tss + 5], 0x89
+    mov     byte [gdt64 + gdt64.tss + 6], 0
+    shr     rax, 8
+    mov     byte [gdt64 + gdt64.tss + 7], al
+    mov     rax, HIGH_BASE
+    add     rax, k6a_tss
+    shr     rax, 32
+    mov     dword [gdt64 + gdt64.tss + 8], eax
+    mov     dword [gdt64 + gdt64.tss + 12], 0
+    mov     rax, HIGH_BASE
+    add     rax, k6a_kstack_top
+    mov     [k6a_tss + 4], rax          ; rsp0 = high kernel stack
+    mov     word [k6a_tss + 102], 104
+    mov     ax, [gdt64.ptr]             ; GDT limit
+    mov     [hh2c_gdtr], ax
+    lea     rax, [rel gdt64]            ; RIP-relative -> HIGH gdt64
+    mov     [hh2c_gdtr + 2], rax
+    lgdt    [hh2c_gdtr]                 ; GDTR base now HIGH (survives CR3 switches)
+    mov     ax, gdt64.tss
+    ltr     ax
+    ; enter process A (its send()s land in the shared channel; on return -> exit,
+    ; and .sys_exit switches CR3 to process B — see the HH2C branch there)
+    mov     eax, pml4_A
+    mov     cr3, rax
+    mov     rax, METAL_FLAG_ABS
+    mov     byte [rax], 1
+    push    qword 0x18 | 3
+    push    qword LA_STACK_TOP
+    push    qword 0x002
+    push    qword 0x20 | 3
+    push    qword LA_ENTRY
+    iretq
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -846,7 +987,7 @@ syscall_entry:
     ja      .ipc_err
     mov     rax, rdi
     imul    rax, rax, K6C_SLOTSZ
-    mov     r8, k6c_chans
+    lea     r8, [rel k6c_chans]
     add     r8, rax                     ; r8 = &channel[chan]
     mov     [r8 + 8], rsi               ; type
     mov     [r8 + 16], r10              ; len
@@ -871,7 +1012,7 @@ syscall_entry:
     jae     .ipc_err
     mov     rax, rdi
     imul    rax, rax, K6C_SLOTSZ
-    mov     r8, k6c_chans
+    lea     r8, [rel k6c_chans]
     add     r8, rax                     ; r8 = &channel[chan]
     cmp     qword [r8], 0               ; full?
     je      .ipc_err                    ; empty -> -1
@@ -935,6 +1076,26 @@ syscall_entry:
     jmp     k6c2_run
 %endif
 .sys_exit:
+%ifdef HH2C
+    ; HH2c process scheduler: the FIRST exit is process A finishing (it has already
+    ; send()'d into the shared channel) -> switch CR3 to process B and enter it; the
+    ; SECOND exit is B finishing -> fall through to the real halt/QEMU-exit. B's
+    ; recv() withdraws A's message from the same shared kernel channel.
+    cmp     byte [rel hh2c_stage], 0
+    jne     .hh2c_halt
+    mov     byte [rel hh2c_stage], 1
+    mov     eax, pml4_B
+    mov     cr3, rax
+    mov     rax, METAL_FLAG_ABS
+    mov     byte [rax], 1
+    push    qword 0x18 | 3
+    push    qword LA_STACK_TOP
+    push    qword 0x002
+    push    qword 0x20 | 3
+    push    qword LA_ENTRY
+    iretq
+.hh2c_halt:
+%endif
 %ifdef K5B2_DBG
     ; DEBUG: emit "=<code>;" on COM1 so an ERROR exit (70/71/72/73/134/1) is
     ; visible instead of being masked as success. Saves the regs it uses.
@@ -1264,14 +1425,19 @@ pd:     resb 4096
 align 4096
 pdpt_high: resb 4096                    ; HH1: PML4[511] -> here -> [510] -> pd
 %endif
-%ifdef HH2
+%ifdef HH2_PTS
 align 4096
-pml4_A:  resb 4096                      ; HH2: process A's page tables (own low half)
+pml4_A:  resb 4096                      ; HH2/HH2c: process A's page tables (own low half)
 pdpt_A:  resb 4096
 pd_A:    resb 4096
-pml4_B:  resb 4096                      ; process B (same VA -> a different frame)
+pml4_B:  resb 4096                      ; process B (own low half)
 pdpt_B:  resb 4096
 pd_B:    resb 4096
+%endif
+%ifdef HH2C
+hh2c_stage: resb 1                      ; 0 = A running, 1 = B (the exit-driven switch)
+align 8
+hh2c_gdtr:  resb 10                     ; a HIGH-based GDTR (limit:2 + base:8)
 %endif
 %ifdef HH2B
 align 4096
@@ -1325,7 +1491,10 @@ k6c2_scratch:                           ; 2 qwords: frees rax + a base reg in .s
 %ifndef K6C2
 %ifndef HH2
 section .la_image
+la_image_start:
 incbin "native_codegen3_out"
+la_image_end:
+IMAGE_LEN equ la_image_end - la_image_start   ; HH2c copies this many bytes per process
 %endif
 %endif
 %endif

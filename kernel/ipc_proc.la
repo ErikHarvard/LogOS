@@ -1,0 +1,9 @@
+glyph SEQ = la a. la b. b
+glyph IF = la c. la t. la f. c(t)(f)("!")
+# One image, two roles. The kernel pokes a role byte at 0x380000 (3670016) in
+# each process's own copy: 0 = sender (A), 1 = receiver (B). A send()s a typed
+# message into the shared kernel channel and returns (-> epilogue exit; the
+# kernel switches to B); B recv()s it and prints it.
+glyph MAIN = IF(int_eq(peek(3670016))(0))(
+    la _. send(0)("HELLO-FROM-A"))(
+    la _. print(concat("B got: ")(recv(0))))
