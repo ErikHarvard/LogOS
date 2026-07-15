@@ -484,11 +484,11 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             is real RAM): `I AM THAT I AM` from CPL 3 + exit 33 — **PASS**. All in
             `%ifdef K6B` / `%ifdef RING3` (`boot.asm` + `build_k6b.sh` + `gate_k6b.sh`),
             other kernel ELFs byte-identical.
-      - [~] **K6c — real syscall service layer.** Grow syscall_entry past write/exit
-            into the process/IPC primitives; re-home LogosIPC over in-kernel
-            channels (the "nervous system"). Gate (milestone): two ring-3 LA
-            processes exchange a typed message through a kernel channel. Effectively
-            its own milestone — **staged**:
+      - [x] **K6c — real syscall service layer — COMPLETE (2026-07-14).** Grew
+            syscall_entry past write/exit into the process/IPC primitives; re-homed
+            LogosIPC over in-kernel channels (the "nervous system"). Milestone gate
+            (K6c.3b) GREEN: two ring-3 LA tasks exchange a typed message through a
+            kernel channel. Staged K6c.1→.2→.3a→.3b, each gated:
           - [x] **K6c.1 — the kernel channel primitive, proven at ring 3 (single
                 process round-trip) — DONE + gated (2026-07-14).** `syscall_entry`
                 grows two LogOS-native syscalls: **`send`** (0x300) `send(chan,type,
@@ -561,13 +561,25 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
                   channel 0 from compiled Lingua Adamica + exit 33. All K6a/b/c/c2 gates
                   still PASS (the K6b entry re-gate is byte-neutral — a preprocessor
                   rename). Proves LA `send`/`recv` drive the kernel IPC channel.
-            - [ ] **K6c.3b — TWO LA processes exchange a typed message = the milestone
-                  gate.** Wire K6c.2's yield scheduler to two ring-3 LA images (A `send`s
-                  a `logosipc.la` `ENCODE`d typed message, kernel switches, B `recv`s +
-                  `MSG_TYPE`/`MSG_BODY` decodes it). The remaining half of K6c.
+            - [x] **K6c.3b — TWO LA tasks exchange a typed message — DONE + gated
+                  (2026-07-14). ★ THE K6c MILESTONE.** `ipc2.la` (one LA image compiled
+                  by native_codegen3) `spawn`s two runtime tasks: **A** `ENCODE`s the
+                  logosipc wire message `"greet"<NUL>"HELLO"` and `send(0)`s it into
+                  kernel channel 0, then `yield`s; the scheduler runs **B**, which
+                  `recv(0)`s it and decodes `MSG_TYPE`/`MSG_BODY` (inlined BEFORE_NUL/
+                  AFTER_NUL scans), printing `B rx type=greet` / `B rx body=HELLO`.
+                  **No runtime change, no regen** — every ingredient was already proven:
+                  send/recv (K6c.3a), spawn/yield (K5b, now shown working at ring 3 on
+                  the metal for the first time), and the K6C3 ring-3 LA-image + channel
+                  boot. `gate_k6c3b.sh` (`-m 1024`): both decoded lines + exit 33. The
+                  typed layer travels A → kernel channel → B across a task switch, from
+                  Lingua Adamica at CPL 3 — LogosIPC re-homed onto the kernel as the
+                  "nervous system." **K6c COMPLETE.**
         **Ordering (recommended):** K6a first (cheap, isolates ring-3 mechanics on
         the current identity map), THEN HH1 (big reorg, now with a ring-3 target to
-        validate against), then K6b/K6c. **K6a + K6b + K6c.1 + K6c.2 DONE — next is
+        validate against), then K6b/K6c. **K6a + K6b + K6c COMPLETE (through the K6c.3b
+        milestone) — next is HH1 (higher-half) / HH2 (per-process page tables), then K7.**
+        _(superseded ordering note below kept for history)_ **K6a + K6b + K6c.1 + K6c.2 DONE — next is
         K6c.3 (real logosipc.la typed message between two LA processes = the K6c
         milestone gate) or HH1.**
   - [ ] K7 — sovereign bootloader (replaces GRUB) — last

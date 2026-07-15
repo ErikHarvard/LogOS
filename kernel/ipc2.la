@@ -1,0 +1,12 @@
+glyph SEQ = la a. la b. b
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph NUL = chr("0")
+glyph ENCODE = la type. la body. concat(type)(concat(NUL)(body))
+glyph BEFORE_NUL = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. IF(str_eq(str_head(s))(NUL))(la _. "")(la _. concat(str_head(s))(self(str_tail(s))))))
+glyph AFTER_NUL = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. IF(str_eq(str_head(s))(NUL))(la _. str_tail(s))(la _. self(str_tail(s)))))
+glyph MSG_TYPE = la m. BEFORE_NUL(m)
+glyph MSG_BODY = la m. AFTER_NUL(m)
+glyph WORKER_A = la _. SEQ(send(0)(ENCODE("greet")("HELLO")))(yield("!"))
+glyph WORKER_B = la _. (la msg. SEQ(print(concat("B rx type=")(MSG_TYPE(msg))))(print(concat("B rx body=")(MSG_BODY(msg)))))(recv(0))
+glyph MAIN = SEQ(spawn(WORKER_A))(SEQ(spawn(WORKER_B))(yield("!")))
