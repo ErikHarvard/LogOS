@@ -97,6 +97,16 @@ PCB_SIZE    equ 128
 ; gates use 256.) The 32-bit trampoline still uses the small boot_stack.
 LA_STACK_TOP equ 0x8000000
 
+; HH1: the higher-half kernel base — the top −2 GiB of the 64-bit canonical space,
+; 0xFFFFFFFF80000000. Its paging indices are PML4[511] / PDPT[510] / PD[0], so a
+; single high PDPT pointing PDPT[510] at the existing low-1-GiB PD aliases every
+; low physical page P at 0xFFFFFFFF80000000+P. A high address is reachable by a
+; sign-extended disp32 (0x80000000 → 0xFFFFFFFF80000000), so once the LA image is
+; rebased here (HH1b) no opcodes change — only addresses. HH1a proves the boot
+; executes from the high half; the low identity map is KEPT so the still-low LA
+; image and absolute data refs keep working.
+HIGH_BASE equ 0xFFFFFFFF80000000
+
 ; ---- Multiboot1 header (must live in the first 8 KiB of the file) ----
 ; K3b: flag bit 1 (0x2) = "the loader must pass memory information" (mem_* +
 ; the full mmap) in the multiboot info structure. We then thread that mbi
@@ -158,6 +168,21 @@ _start:
     inc     ecx
     cmp     ecx, 512
     jne     .fill_pd
+
+%ifdef HH1
+    ; HH1: ALSO map the higher half −2 GiB. PML4[511] -> pdpt_high; pdpt_high[510]
+    ; -> the SAME low-1-GiB pd. So 0xFFFFFFFF80000000+P aliases physical page P,
+    ; and the whole kernel (loaded low) becomes reachable at its high alias too.
+    ; The low identity map above is left in place (HH1a keeps the LA image low).
+    mov     eax, pdpt_high
+    or      eax, 0x03
+    mov     [pml4 + 511*8], eax
+    mov     dword [pml4 + 511*8 + 4], 0
+    mov     eax, pd
+    or      eax, 0x03
+    mov     [pdpt_high + 510*8], eax
+    mov     dword [pdpt_high + 510*8 + 4], 0
+%endif
 
     ; --- load CR3 ---
     mov     eax, pml4
@@ -507,6 +532,45 @@ long_start:
     mov     qword [r8 + PCB_SIZE + 56], 0x101F0000  ; B: stack top
     mov     qword [k6c2_cur], 0             ; start with task A
     jmp     k6c2_run
+%elifdef HH1
+    ; ===== HH1a: enter the higher half, prove we execute there, then hand off =====
+    ; Compute the high alias of hh_high (its low link addr + HIGH_BASE) and jmp
+    ; there. From hh_high on, RIP is in the −2 GiB half. Absolute data refs still
+    ; resolve LOW (the identity map is kept), so serial + the low LA image work.
+    mov     rax, HIGH_BASE
+    lea     rbx, [rel hh_high]
+    add     rax, rbx
+    jmp     rax
+hh_high:
+    ; emit "HH1@" then the top nibble of our own (now-high) RIP as a hex digit —
+    ; 'F' proves RIP is 0xFFFFFFFF8........, i.e. we really are running high.
+    mov     r8, hh_msg
+    mov     r9, hh_msg_len
+.hh_emit:
+    test    r9, r9
+    jz      .hh_nib
+    mov     dil, [r8]
+    call    serial_putc              ; preserves r8/r9 (as .sys_write relies on)
+    inc     r8
+    dec     r9
+    jmp     .hh_emit
+.hh_nib:
+    lea     rax, [rel hh_high]       ; RIP-relative -> the HIGH address now
+    shr     rax, 60                  ; top nibble
+    add     al, '0'
+    cmp     al, '9'
+    jbe     .hh_pr
+    add     al, 7                    ; 0xA..0xF -> 'A'..'F'
+.hh_pr:
+    mov     dil, al
+    call    serial_putc
+    mov     dil, 10                  ; newline
+    call    serial_putc
+    ; hand off to the (still-low, dual-mapped) LA image — it speaks the Word.
+    mov     rax, LA_ENTRY
+    jmp     rax
+hh_msg:     db "HH1@"
+hh_msg_len  equ $ - hh_msg
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -979,6 +1043,10 @@ align 4096
 pml4:   resb 4096
 pdpt:   resb 4096
 pd:     resb 4096
+%ifdef HH1
+align 4096
+pdpt_high: resb 4096                    ; HH1: PML4[511] -> here -> [510] -> pd
+%endif
 align 16
 boot_stack:
         resb 16384

@@ -435,7 +435,28 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             kernel-only HH rt variant (native_codegen3_hh, base 0xFFFFFFFF80000078)
             via the derive_consts tooling with a new base; Stage-4/Linux self-host
             keeps the low-based rt. BIGGEST/RISKIEST brick (dual RT address-sets).
-            Gate: kernel speaks the Word from the high half.
+            Gate: kernel speaks the Word from the high half. **Staged:**
+          - [x] **HH1a — the boot executes from the high half — DONE + gated
+                (2026-07-14).** The 32-bit trampoline builds, ALONGSIDE the low identity
+                map, a HIGH map (`PML4[511]→pdpt_high[510]→` the existing low-1-GiB `pd`),
+                aliasing every low physical page P at `0xFFFFFFFF80000000+P` (the −2 GiB
+                indices are 511/510/0). After long mode the boot computes the high alias
+                of `hh_high` (its low link addr + `HIGH_BASE`) and `jmp`s there; running
+                high, `lea [rel hh_high]` now resolves to `0xFFFFFFFF8........`, and it
+                prints `HH1@` + the top nibble of its own RIP (`F` = proof). The low
+                identity map is KEPT, so absolute data refs + the still-low LA image work
+                — it hands off and speaks the Word. All in `%ifdef HH1` (`boot.asm` +
+                `build_hh1.sh` + `gate_hh1.sh`, `-m 256`); K6C `.boot32`/`.rodata`
+                byte-identical to HEAD, all K6a–K6c3b gates still PASS. `gate_hh1.sh`:
+                `HH1@F` + `I AM THAT I AM` + exit 33. Proves the −2 GiB relink + high
+                mapping + high execution WITHOUT the risky compiler-variant work.
+          - [ ] **HH1b — rebase the LA image high + drop the low map.** A kernel-only
+                HH compiler variant (native_codegen3_hh, RT_*/heap/disp32 rebased to
+                `0xFFFFFFFF80000000` via derive_consts with a new base — sign-extended
+                disp32, so no opcode changes) emits a high LA image; boot drops the low
+                identity map. Gate: the kernel speaks the Word entirely from the high
+                half. The risky "dual RT address-sets" half; Stage-4/Linux self-host
+                keeps the low-based rt untouched.
       - [ ] **HH2** — per-process page tables (PML4[0] per proc, kernel PML4[511]
             shared into each). The process-model foundation.
       - [x] **K6a — ring-3 privilege drop — DONE + gated (2026-07-11).** GDT += user
