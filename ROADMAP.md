@@ -700,6 +700,28 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
 - [~] 4. Hardware abstraction layer *(DRM/KMS path proven on hardware as a
       Linux-userspace VM program; the kernel's own HAL begins at K1's boot.asm —
       real bare-metal drivers, display, disk, PCI are the largest remaining chunk)*
+      **The kernel's own HAL — drivers written in Lingua Adamica on thin asm
+      "physics", the pmm.la/paging.la pattern (pure LA logic + peek/poke). Staged:**
+      - [x] **HAL.1 — port-I/O primitives + PCI enumeration — DONE + gated
+            (2026-07-15).** Added `inb`/`inl`/`outb`/`outl` native_codegen3 builtins
+            (the port-space twin of peek/poke — the irreducible physics every driver
+            needs), appended at rt.asm EOF via the safe peek/poke recipe (existing
+            RT_* unchanged; RTLEN 11790→11882, LITERAL_BASE + the four new labels;
+            self-host regenerated to a fixed point). `kernel/pci.la` is the first
+            bare-metal DEVICE DRIVER written in the language itself: at ring 0 it
+            walks PCI config space (mechanism #1, 0xCF8/0xCFC — `outl` the address,
+            `inl` the register; `|` is `+` since the bit-fields are disjoint and LA
+            has no bitwise ops) and prints every device on bus 0 as vendor:device in
+            hex. `gate_hal1.sh` boots it (`-kernel -m 256`) and asserts the 440FX
+            host bridge 8086:1237 + PIIX3 ISA 8086:7000 + scan-complete + exit 33.
+            The discovery foundation every later driver builds on. `in`/`out` are
+            privileged → metal-only (like peek/poke), tested in QEMU not host==native.
+      - [ ] **HAL.2 — interrupt-driven input** (serial-RX or PS/2 keyboard on the
+            K5a PIC path): the kernel's first INPUT sense, an ISR capturing bytes
+            into a buffer the LA image reads. Reuses the port-I/O primitives.
+      - [ ] **HAL.3 — ATA disk driver in LA** (read/write sectors via the proven
+            K7b ATA-PIO sequence, now as an LA driver on inb/outb/inl/outl).
+      - [ ] Then PCI BAR/MMIO mapping → a real framebuffer (display), NIC (AegisNet).
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*

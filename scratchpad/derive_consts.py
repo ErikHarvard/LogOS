@@ -30,6 +30,8 @@ LABELS = {
     "RT_EXEC_AT": "rt_exec_at", "RT_SPAWN": "rt_spawn", "RT_YIELD": "rt_yield",
     "RT_MAKE_STR": "rt_make_str", "RT_INIT": "rt_init",
     "RT_SEND": "rt_send", "RT_RECV": "rt_recv",
+    "RT_INB": "rt_inb", "RT_INL": "rt_inl",
+    "RT_OUTB": "rt_outb", "RT_OUTL": "rt_outl",
     "RT_STACK_OVERFLOW": "rt_stack_overflow",
     "HEAP_BASE_ADDR": "HEAP_BASE", "NEXT_GC_ADDR": "NEXT_GC",
     "STACK_BASE_ADDR": "STACK_BASE", "WORKLIST_BASE_ADDR": "WORKLIST_BASE",

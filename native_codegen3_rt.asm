@@ -1959,3 +1959,59 @@ rt_recv:
     call    rt_make_str         ; -> rax = boxed STR
     ret
 recv_buf: times 256 db 0
+
+; ═════════════════════════════════════════════════════════════════════════════
+;  HAL.1: port-I/O primitives — the irreducible "physics" of a device driver.
+;  peek/poke read/write MEMORY; these read/write the x86 I/O PORT space, which
+;  every real driver needs (serial, PS/2, PCI config 0xCF8/0xCFC, ATA, NIC…).
+;  With them, drivers are written IN Lingua Adamica on a thin asm floor — the
+;  same pattern as pmm.la/paging.la (pure LA logic + peek/poke physics). The
+;  `in`/`out` instructions are privileged (CPL <= IOPL); the LA image runs at
+;  ring 0 on the K1 boot path, so they execute directly with no syscall.
+;
+;  Metal-only, like peek/poke/send/recv: appended at EOF so every existing RT_*
+;  address is UNCHANGED (only RTLEN/LITERAL_BASE shift + the four new labels).
+;  Under the Linux self-host these are never called (no compiled program on the
+;  host issues port I/O), so the self-host image stays byte-for-byte unaffected.
+;  Args are boxed INT (tag 4); anything else halts loud (rt_not_int/chk_int2),
+;  exactly as peek/poke do — and each returns a boxed INT so it composes.
+
+; ── rt_inb(INT port) -> INT byte read from that I/O port ──
+rt_inb:
+    cmp     qword [rax], 4      ; arg must be a boxed INT (the port number)
+    jne     rt_not_int
+    mov     rdx, [rax+8]        ; port -> DX (in uses DX for a variable port)
+    in      al, dx             ; read one byte
+    movzx   rax, al            ; zero-extend the byte (clears the stale high bits)
+    jmp     rt_box_int          ; -> boxed INT (0..255)
+
+; ── rt_inl(INT port) -> INT dword read from that I/O port ──
+;   32-bit read for PCI config data (0xCFC) and other dword registers.
+rt_inl:
+    cmp     qword [rax], 4
+    jne     rt_not_int
+    mov     rdx, [rax+8]        ; port -> DX
+    in      eax, dx            ; read 32 bits (writing EAX zero-extends into RAX)
+    jmp     rt_box_int          ; -> boxed INT (0..0xFFFFFFFF)
+
+; ── rt_outb(INT port)(INT byte) -> INT byte written ──
+;   Binary builtin: rsi = port (arg A), rax = value (arg B), both boxed INT.
+rt_outb:
+    call    chk_int2            ; both args boxed INT (tag 4), else loud halt rc1
+    mov     rdx, [rsi+8]        ; port -> DX
+    mov     rcx, [rax+8]        ; value
+    mov     al, cl
+    out     dx, al             ; write the low byte to the port
+    movzx   rax, cl            ; return the byte written (0..255)
+    jmp     rt_box_int
+
+; ── rt_outl(INT port)(INT dword) -> INT dword written ──
+;   32-bit write for PCI config address (0xCF8) and other dword registers.
+rt_outl:
+    call    chk_int2
+    mov     rdx, [rsi+8]        ; port -> DX
+    mov     rcx, [rax+8]        ; value
+    mov     eax, ecx
+    out     dx, eax            ; write 32 bits to the port
+    mov     eax, ecx            ; return the dword written (zero-extended)
+    jmp     rt_box_int

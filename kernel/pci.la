@@ -1,0 +1,60 @@
+# =====================================================================
+#  LogOS HAL.1 — PCI bus enumeration, written in Lingua Adamica.
+#
+#  The first bare-metal DEVICE DRIVER written in the language itself, on
+#  the thin asm "physics" of the new port-I/O primitives (inb/inl/outb/
+#  outl). It is the discovery foundation every later driver (disk, NIC,
+#  display) builds on: walk PCI configuration space via the 0xCF8/0xCFC
+#  mechanism and report every device present on bus 0.
+#
+#  PCI config mechanism #1: write a 32-bit address to CONFIG_ADDRESS
+#  (0xCF8), then read the 32-bit register from CONFIG_DATA (0xCFC). The
+#  address is  0x80000000 | (bus<<16) | (dev<<11) | (func<<8) | (off&0xFC).
+#  Lingua Adamica has no bitwise ops, but the bit-fields are disjoint, so
+#  `|` is `+`: 0x80000000 + dev*2048 + off  (bus 0, func 0, off aligned).
+#  Register 0 holds [31:16]=device id, [15:0]=vendor id; vendor 0xFFFF =
+#  no device in that slot.
+#
+#  Runs at ring 0 on the K1 boot path, so the privileged in/out execute
+#  directly (no syscall). Prints each device as vendor:device in hex over
+#  the serial console. Flat + import-free, like kernel.la — the universal
+#  cross-engine artifact shape.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# ── one hex nibble (0..15) -> its ascii char ('0'..'9','a'..'f') ──
+#   chr wants a decimal STRING, so wrap the codepoint via int_to_str.
+glyph HEXD = la d.
+    IF(lt(d)(10))(la _. chr(int_to_str(add(48)(d))))
+                 (la _. chr(int_to_str(add(87)(d))))
+
+# ── a 16-bit value as four hex digits, high nibble first ──
+glyph NIB  = la v. la sh. mod(div(v)(sh))(16)
+glyph HEX4 = la v.
+    concat(HEXD(NIB(v)(4096)))(
+    concat(HEXD(NIB(v)(256)))(
+    concat(HEXD(NIB(v)(16)))(
+           HEXD(NIB(v)(1)))))
+
+# ── read PCI config register 0 (vendor/device) of bus 0, dev, func 0 ──
+#   outl the config address to 0xCF8 (3320), then inl the data from
+#   0xCFC (3324). SEQ forces the write before the read.
+glyph CFG0 = la dev.
+    SEQ(outl(3320)(add(2147483648)(mul(dev)(2048))))
+       (inl(3324))
+
+# ── enumerate slots 0..31 on bus 0, printing every present device ──
+glyph SCAN = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. print("pci scan done"))(la _.
+      (la val.
+        (la vend.
+          IF(int_eq(vend)(65535))(la _. self(add(dev)(1)))(la _.
+            SEQ(print(concat(HEX4(vend))(concat(":")(HEX4(div(val)(65536))))))
+               (self(add(dev)(1)))))
+        (mod(val)(65536)))
+      (CFG0(dev))))
+
+glyph MAIN = SEQ(print("pci bus0:"))(SCAN(0))

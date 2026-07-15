@@ -100,6 +100,10 @@ mathutil.la
 /kernel/kernel_hh2c_64.elf
 /kernel/boot7.bin
 /kernel/k7disk.img
+/kernel/kernel_hal1.elf
+/kernel/kernel_hal1_64.elf
+/kernel/kernel_hal2.elf
+/kernel/kernel_hal2_64.elf
 /kernel/boot7b.bin
 /kernel/boot7b_s2.bin
 /kernel/boot_seg.bin
