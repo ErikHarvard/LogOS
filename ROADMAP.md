@@ -71,6 +71,18 @@ honestly in the distance.
       big win — drains the env-frame/closure garbage), #2 constant folding, #3 peephole,
       #4 uncurrying (runtime change), #5 int unboxing (runtime change), #6 register alloc
       (secondary, not the headline).
+  - [~] **#1 compile-time β-reduction — slice 1 DONE + self-host-verified (2026-07-14,
+        `114254e`).** New pre-codegen AST pass `BETA` (zero runtime change) substitutes
+        `(la x. body)(arg)` at compile time when `arg` is a syntactic VALUE, killing a
+        closure alloc + env-frame alloc + indirect call per redex. **Slice 1** = VAR/STR
+        args only (capture-free via NO_BINDER, bloat-free; β-value is sound under CBV —
+        a value has no effects and evaluates to itself). Self-referential win: selfhost.bin
+        **724318→696042 B (−28 KB / −3.9%)** net of the added glyphs. All PASS: fixed point
+        (byte-identical 2-gen), drift (RT untouched), arithmetic (folds intact), kernel.la
+        speaks the Word, β correctness via the new native compiler (value/var/shadow/
+        capture/effect/Z-recursion). Same #2 lesson applied: BETA_SAFE gated behind a lazy
+        `IF NODE_TAG=LAM`, not eager AND. **Slice 2 (LAM/thunk args = the bigger closure-
+        elimination win, needs occurrence-bound + capture handling) is the next step.**
   - [x] **#2 arithmetic constant folding — DONE + self-host-verified (2026-07-14,
         `695e579`).** add/sub/mul of two int-literals fold at compile time to `mov rax,
         <k>; call rt_box_int`. Fixed a subtle bug first (CG_BIN's operands can be any
