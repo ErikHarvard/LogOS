@@ -100,5 +100,10 @@ mathutil.la
 /kernel/kernel_hh2c_64.elf
 /kernel/boot7.bin
 /kernel/k7disk.img
+/kernel/boot7b.bin
+/kernel/boot7b_s2.bin
+/kernel/boot_seg.bin
+/kernel/la_seg.bin
+/kernel/k7bdisk.img
 /native_codegen3_hh.la
 /phonsem_host.out

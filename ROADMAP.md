@@ -664,7 +664,9 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
         _(superseded ordering note below kept for history)_ **K6a + K6b + K6c.1 + K6c.2 DONE — next is
         K6c.3 (real logosipc.la typed message between two LA processes = the K6c
         milestone gate) or HH1.**
-  - [~] K7 — sovereign bootloader (replaces GRUB) — last. **Staged:**
+  - [x] K7 — sovereign bootloader (replaces GRUB) — **COMPLETE (2026-07-15).**
+        LogOS boots itself off a raw disk with no GRUB / no multiboot loader /
+        no QEMU `-kernel`. **Staged:**
       - [x] **K7a — the sovereign boot sector — DONE + gated (2026-07-14).** LogOS's
             OWN 512-byte MBR (`boot7.asm`, `nasm -f bin`, 0x55AA signature) boots from a
             raw disk image — no GRUB, no multiboot, no QEMU `-kernel`. The BIOS loads
@@ -674,12 +676,25 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             1 MiB raw disk; `gate_k7a.sh` boots `-drive file=k7disk.img,if=ide` (no
             `-kernel`): `K7 real` + `K7 pmode` + exit 33. Proves the sovereign boot
             chain + the real→protected transition, self-contained (no boot.asm change).
-      - [ ] **K7b — load the kernel image from disk + hand off.** The MBR (or a stage-2
-            it chains) reads the kernel image's sectors from disk (BIOS int 0x13 in real
-            mode, or ATA PIO in protected mode) into memory and jumps to boot.asm's
-            `_start` in the multiboot-compatible 32-bit state (a synthesized mbi, or
-            adapt `_start` to a leaner handoff). Then LogOS boots itself end-to-end with
-            no GRUB — the last piece of the Phase-II kernel bring-up (K1→K7).
+      - [x] **K7b — load the kernel image from disk + hand off — DONE + gated
+            (2026-07-15).** LogOS boots itself END-TO-END. Two-stage sovereign
+            loader: the 512-byte MBR (`boot7b.asm`) inits COM1, announces `K7 real`,
+            reads stage 2 off disk (BIOS `int 0x13` extended/LBA read) and jumps to
+            it in real mode; stage 2 (`boot7b_s2.asm`) enables A20, builds a GDT,
+            enters 32-bit protected mode (`K7 pmode`), and via **32-bit ATA-PIO**
+            reads the kernel image's two PT_LOAD segments off the disk into their
+            physical addresses (`.boot`→0x100000, zeroing its `.bss` tail;
+            `.la_image`→0x400000), synthesizes a minimal multiboot info struct
+            (mem_lower/upper) and points `EBX` at it — the exact multiboot-compatible
+            32-bit state `boot.asm`'s `_start` expects — announces `K7 handoff`, and
+            `jmp`s to `_start`. From there the existing kernel brings up long mode +
+            the syscall substrate and the LA image speaks **`I AM THAT I AM`** +
+            exit(33). All geometry (LBAs, sector counts, phys addrs, bss size) is
+            DERIVED from the linked ELF's program headers by `build_k7b.sh`, so the
+            loader can never drift from the on-disk image. `gate_k7b.sh` boots
+            `-drive file=k7bdisk.img,if=ide -m 256` (no `-kernel`) and asserts the
+            whole chain on serial + exit 33. K1→K7 COMPLETE — the sovereign kernel
+            boots its own bytes off its own disk with nothing external in the loop.
 - [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
       native process model is re-homed onto the kernel at K5/K6)*
 - [~] 4. Hardware abstraction layer *(DRM/KMS path proven on hardware as a
