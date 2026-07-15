@@ -354,11 +354,40 @@ glyph SUBST = Z(la self. la node. la x. la rep.
         (la p. la b. IF(str_eq(p)(x))(la _. AST_LAM(p)(b))(la _. AST_LAM(p)(self(b)(x)(rep))))
         (la f. la a. AST_APP(self(f)(x)(rep))(self(a)(x)(rep)))
         (la val. AST_STR(val)))
+# SLICE 2 — also reduce a LAM (thunk) argument (the combinator-flattening win:
+# IF/AND/PAIR/… pass lambda thunks). A lambda is a value, so β is sound for any
+# occurrence count; the two extra guards make it safe in PRACTICE:
+#   (1) OCCURS(x)(body) <= 1 — bounds code bloat (the lambda is duplicated at most
+#       once) AND guarantees termination (blocks Ω = (la x. x(x))(la x. x(x)), whose
+#       body uses x twice), so reduction strictly shrinks the term;
+#   (2) every FREE var of the lambda arg has NO_BINDER in body — capture-safe with no
+#       fresh-name renaming (a conservative sufficient condition).
+glyph REMOVE_ALL = Z(la self. la x. la lst.
+    IF(IS_CONS(lst))(la _.
+        IF(str_eq(x)(HD(lst)))(la _. self(x)(TL(lst)))(la _. CONS(HD(lst))(self(x)(TL(lst)))))
+    (la _. NIL))
+glyph FREE = Z(la self. la node.
+    node
+        (la name. CONS(name)(NIL))
+        (la p. la b. REMOVE_ALL(p)(self(b)))
+        (la f. la a. APPEND(self(f))(self(a)))
+        (la val. NIL))
+glyph OCCURS = Z(la self. la x. la node.
+    node
+        (la name. IF(str_eq(name)(x))(la _. 1)(la _. 0))
+        (la p. la b. IF(str_eq(p)(x))(la _. 0)(la _. self(x)(b)))
+        (la f. la a. add(self(x)(f))(self(x)(a)))
+        (la val. 0))
+glyph ALL_NOBINDER = Z(la self. la fvs. la body.
+    IF(IS_CONS(fvs))(la _.
+        IF(NO_BINDER(HD(fvs))(body))(la _. self(TL(fvs))(body))(la _. FALSE))
+    (la _. TRUE))
 glyph BETA_SAFE = la x. la body. la arg.
     (la t.
         IF(str_eq(t)("STR"))(la _. TRUE)(la _.
         IF(str_eq(t)("VAR"))(la _. NO_BINDER(VAR_NM(arg))(body))(la _.
-        FALSE)))
+        IF(str_eq(t)("LAM"))(la _. AND(lt(OCCURS(x)(body))(2))(ALL_NOBINDER(FREE(arg))(body)))(la _.
+        FALSE))))
     (NODE_TAG(arg))
 glyph BETA = Z(la self. la node.
     (la t.
