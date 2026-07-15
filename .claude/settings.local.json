@@ -5,7 +5,38 @@
       "Bash(git init *)",
       "Bash(git config *)",
       "Bash(echo \"user.name: $\\(git config user.name || echo '\\(unset\\)'\\)\")",
-      "Bash(echo \"user.email: $\\(git config user.email || echo '\\(unset\\)'\\)\")"
+      "Bash(echo \"user.email: $\\(git config user.email || echo '\\(unset\\)'\\)\")",
+
+      "Read",
+      "Grep",
+      "Glob",
+
+      "Bash(nasm *)",
+      "Bash(ld *)",
+      "Bash(objcopy *)",
+      "Bash(readelf *)",
+      "Bash(nm *)",
+      "Bash(cmp *)",
+      "Bash(dd *)",
+      "Bash(stat *)",
+      "Bash(wc *)",
+      "Bash(chmod *)",
+
+      "Bash(./tiny_host *)",
+      "Bash(./kernel/*)",
+      "Bash(./regen_selfhost.sh*)",
+      "Bash(qemu-system-x86_64 *)",
+      "Bash(python3 scratchpad/*)",
+
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git rev-list *)",
+      "Bash(git rev-parse *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }
