@@ -1912,3 +1912,42 @@ TASK_TABLE: times (MAXTASK * TCB_SIZE / 8) dq 0
 ; bitmap/stack bases, which are unmapped there. Left 0 on the Linux self-host
 ; image, so that path is byte-for-byte unchanged.
 METAL_FLAG: dq 0
+
+; ── K6c.3: kernel IPC builtins (metal-only, appended at EOF so existing RT_*
+;   addresses are unchanged; only RTLEN/LITERAL_BASE shift). They issue the
+;   LogOS-native SYS_SEND(0x300)/SYS_RECV(0x301) syscalls the kernel services
+;   (boot.asm, %ifdef IPC). Like peek/poke/set_cr3, they are never called on the
+;   Linux self-host path (only a compiled IPC program on the metal calls them), so
+;   the self-host image is byte-for-byte unaffected. The kernel channel carries
+;   OPAQUE bytes; the TYPE lives in the LA wire message (logosipc.la ENCODE), so
+;   the typing layer stays independent of the transport.
+; rt_send(rsi=chan boxed INT, rax=msg boxed STR) -> returns msg. Copies the msg
+;   string's bytes into kernel channel[chan].
+rt_send:
+    mov     rdi, [rsi+8]        ; chan int (arg A)
+    mov     rcx, [rax+8]        ; msg descriptor (arg B)
+    push    rax                 ; save boxed msg (return value)
+    mov     r10, [rcx]          ; len  -> syscall arg 4
+    mov     rdx, [rcx+8]        ; data -> syscall arg 3 (buf)
+    xor     esi, esi            ; type = 0 (typing is in the wire message)
+    mov     eax, 0x300          ; SYS_SEND
+    syscall
+    pop     rax                 ; return the msg (like write_file returns content)
+    ret
+; rt_recv(rax=chan boxed INT) -> boxed STR withdrawn from kernel channel[chan]
+;   (empty string on -errno / empty channel).
+rt_recv:
+    mov     rdi, [rax+8]        ; chan int
+    mov     rsi, recv_buf       ; outbuf
+    mov     edx, 256            ; maxlen
+    mov     eax, 0x301          ; SYS_RECV -> rax = len (or -errno), rdx = type
+    syscall
+    test    rax, rax
+    jns     .ok
+    xor     eax, eax            ; error/empty -> length 0
+.ok:
+    mov     rdx, rax            ; len  -> rt_make_str arg
+    mov     rsi, recv_buf       ; src  -> rt_make_str arg
+    call    rt_make_str         ; -> rax = boxed STR
+    ret
+recv_buf: times 256 db 0

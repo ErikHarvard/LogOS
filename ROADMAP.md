@@ -536,11 +536,35 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
                 *Honest scope:* two ring-3 tasks in ONE shared address space (per-
                 process page tables = HH2); cooperative yield (preemptive ring-3 =
                 later).
-          - [ ] **K6c.3 — re-home the real LogosIPC typed layer.** Give
+          - [~] **K6c.3 — re-home the real LogosIPC typed layer.** Give
                 native_codegen3's runtime `send`/`recv` builtins (emit the syscalls),
                 rebuild the Stage-4 fixed point, and run two LA processes exchanging a
                 real `logosipc.la` typed message through the kernel channel — the
-                milestone gate.
+                milestone gate. **Staged:**
+            - [x] **K6c.3a — a single REAL LA process does IPC at ring 3 — DONE +
+                  gated (2026-07-14).** Added metal-only `send`/`recv` builtins to the
+                  LA runtime (`rt_send` binary `send(chan)(msg)` → `SYS_SEND`;
+                  `rt_recv` unary `recv(chan)` → `SYS_RECV` into `recv_buf`, then
+                  `rt_make_str` → boxed STR). Appended at EOF of
+                  `native_codegen3_rt.asm` (safe recipe: existing RT_* unchanged, RT
+                  blob 11455→11790 B, only RTLEN/LITERAL_BASE shift + new RT_SEND/
+                  RT_RECV; wired into IS_BUILTIN1/2 + RT_BIN/RT_UN; `derive_consts.py`
+                  labels added). The kernel channel stays byte-opaque (the TYPE lives
+                  in the LA wire message — logosipc.la's `ENCODE` — so the typing layer
+                  is transport-independent). Stage-4 self-host re-verified byte-identical
+                  (selfhost.bin 707569→711208 B; send/recv never called by the compiler,
+                  so transparent) + drift + arith/fold/β + kernel.la + IPC-compiles all
+                  PASS. `boot.asm` `%ifdef K6C3` reuses K6b's ring-3 LA-image entry (via
+                  a shared `LA_RING3_IMAGE` symbol) + the `%ifdef IPC` channel; the LA
+                  image is `ipc_kernel.la` (`send(0)(msg)` then `print(recv(0))`).
+                  `gate_k6c3.sh` (`-m 1024`): `K6C3 IPC OK` round-tripped through kernel
+                  channel 0 from compiled Lingua Adamica + exit 33. All K6a/b/c/c2 gates
+                  still PASS (the K6b entry re-gate is byte-neutral — a preprocessor
+                  rename). Proves LA `send`/`recv` drive the kernel IPC channel.
+            - [ ] **K6c.3b — TWO LA processes exchange a typed message = the milestone
+                  gate.** Wire K6c.2's yield scheduler to two ring-3 LA images (A `send`s
+                  a `logosipc.la` `ENCODE`d typed message, kernel switches, B `recv`s +
+                  `MSG_TYPE`/`MSG_BODY` decodes it). The remaining half of K6c.
         **Ordering (recommended):** K6a first (cheap, isolates ring-3 mechanics on
         the current identity map), THEN HH1 (big reorg, now with a ring-3 target to
         validate against), then K6b/K6c. **K6a + K6b + K6c.1 + K6c.2 DONE — next is

@@ -1,0 +1,2 @@
+glyph SEQ = la a. la b. b
+glyph MAIN = SEQ(send(0)("K6C3 IPC OK"))(print(recv(0)))

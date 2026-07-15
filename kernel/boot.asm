@@ -41,6 +41,15 @@
 %endif
 %ifdef K6B
   %define RING3
+  %define LA_RING3_IMAGE
+%endif
+; K6c3: a REAL LA image (compiled by native_codegen3 with send/recv builtins) runs
+; at ring 3 and round-trips a message through the kernel IPC channel — the same
+; ring-3 LA-image entry as K6b (LA_RING3_IMAGE) PLUS the IPC channel layer.
+%ifdef K6C3
+  %define RING3
+  %define IPC
+  %define LA_RING3_IMAGE
 %endif
 ; K6c (single-process IPC round-trip) and K6c2 (two ring-3 processes) both need
 ; the RING3 machinery and the IPC channel layer (send/recv + the mailbox array).
@@ -309,8 +318,10 @@ long_start:
     push    qword 0x20 | 3             ; CS = user code, RPL 3
     push    qword 0x10000000           ; RIP = the copied payload on the U=1 page
     iretq
-%elifdef K6B
-    ; ===== K6b: run the REAL LA image (kernel.la) at ring 3 on the metal =====
+%elifdef LA_RING3_IMAGE
+    ; ===== K6b / K6c3: run the REAL LA image at ring 3 on the metal =====
+    ; (K6b image = kernel.la speaks the Word; K6c3 image = an IPC program that
+    ;  send/recv's through the kernel channel. Same boot entry either way.)
     ; STAR[63:48]=0x10 so sysretq returns the LA image's write/exit syscalls to
     ; CS=0x20|3 / SS=0x18|3 (ring 3), exactly as K6a.
     mov     ecx, 0xC0000081             ; IA32_STAR
