@@ -26,9 +26,11 @@
 #  build.sh also invokes gcc, nasm (46x), ld, qemu and python3, and each is its
 #  OWN seam (assembler [~], linker [ ], emulator [!]). "the build is orchestrated
 #  by LA" must never come to mean "no foreign tools in the build".
-#  DOES NOT YET COVER: 3 of build.sh's 103 stages. This is the shape proven on
-#  real stages, not the whole audit — the rest is mechanical volume, and the
-#  ROADMAP keeps the item [~] until it is actually done.
+#  DOES NOT YET COVER: 10 of build.sh's 103 stages. Real ones — the whole
+#  autopoiesis stack and the toolchain — but not the whole audit. The rest is
+#  mechanical volume, and the ROADMAP keeps the item [~] until it actually is
+#  done. Steps needing more than `cmd args + a stdout marker` (byte-comparing
+#  artifacts, QEMU gates, unshare) will need more than a STEP entry.
 #
 #  VM-only (fork/dup2/execv/waitpid are VM builtins): compile with codegen.la and
 #  run on logos_secd. That is the bootstrap, not a cheat — build.sh seeds the VM
@@ -71,12 +73,27 @@ glyph SCMD  = la s. s(la a. la b. la c. la d. b)
 glyph SARGS = la s. s(la a. la b. la c. la d. c)
 glyph SMARK = la s. s(la a. la b. la c. la d. d)
 
-# ── REAL LogOS build stages — the same checks build.sh makes ──
+# ── STAGING: the orchestrator prepares its own inputs (build.sh's `cp`) ──
+#   asm.la reads asm_in.asm by convention, so the build must place it — that is
+#   orchestration too, not just running things.
+glyph STAGE = la src. la dst. write_file(dst)(read_file(src))
+
+# ── REAL LogOS build stages — the same checks build.sh makes, same markers ──
+#   Each is cmd + args + a marker the output must contain, i.e. build.sh's
+#   `X="$(./tiny_host foo.la)"; grep -q "marker"`. These are not toy steps: they
+#   are the autopoiesis stack and the toolchain, driven by LA.
 glyph STEPS =
   CONS(STEP("kernel speaks the Word")("./tiny_host")("kernel.la")("I AM THAT I AM"))(
-  CONS(STEP("assembler runs")("./tiny_host")("asm.la")("asm.la assembled"))(
   CONS(STEP("bounded self-repair (B3)")("./tiny_host")("selfrepair.la")("byte-identical-to-pre-corruption=T"))(
-  NIL)))
+  CONS(STEP("self-modification")("./tiny_host")("selfmod.la")("changed=T"))(
+  CONS(STEP("self-programming")("./tiny_host")("selfprog.la")("WROTE  TWELVE"))(
+  CONS(STEP("self-optimization")("./tiny_host")("selfopt.la")("gain 2"))(
+  CONS(STEP("runtime self-verification")("./tiny_host")("selfwatch.la")("ledger: ..R.."))(
+  CONS(STEP("self-documentation")("./tiny_host")("selfdoc.la")("glyphs, read from the form itself"))(
+  CONS(STEP("ELF emitter (Albedo Stage 1)")("./tiny_host")("elf.la")("emitted logos_native"))(
+  CONS(STEP("assembler runs")("./tiny_host")("asm.la")("asm.la assembled"))(
+  CONS(STEP("LA-native toolchain emits a binary")("./tiny_host")("asmelf.la")("no nasm, no ld"))(
+  NIL))))))))))
 
 glyph RUN1 = la s.
   (la got.
@@ -90,8 +107,9 @@ glyph ALL = Z(la self. la l.
 
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
+  (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
   ((la ok.
      IF(ok)
        (la _. print("  BUILD GREEN — every step ran and said what it must, driven by LA"))
        (la _. SEQ(print("  BUILD RED — a step failed"))(exit("1"))))
-   (ALL(STEPS)))
+   (ALL(STEPS))))
