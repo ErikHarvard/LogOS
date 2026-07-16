@@ -1012,10 +1012,37 @@ disk; GRUB/multiboot gone, the last foreign-toolchain seam at boot closed).
       it; a hand-written module has no etymology to regenerate FROM. That is the
       real boundary of B3 — the system can restore any component whose
       derivation it still holds.
-- [ ] **Self-programming via the language** — the system generating new LA
-      programs from within (the meta-programmable / democratized-coding goal).
-      `autoloop.la` + `specpipe.la` are the seed; the goal decomposition is still
-      supplied from outside, which is the gap to close.
+- [x] **Self-programming via the language — DONE + gated (2026-07-16),
+      `selfprog.la`.** The meta-programmable / democratized-coding goal: **you say
+      WHAT you want; the system writes the HOW.** The seam it closes is one
+      `autoloop.la` states about itself — its GOAL hands each step
+      `ENT(name)(sig)(SRC)(IMPL)(tests)`, *the implementation included*, so
+      autoloop verifies and assembles but **never writes anything**:
+      - `autoloop.la` : name + type + **source + impl** + tests → verify+assemble
+      - `selfprog.la` : name + type + **acceptance test** → **WRITE THE PROGRAM**
+
+      Only WHAT is wanted is supplied, never HOW. The system **searches its own
+      capability space** — every composition of the glyphs it already has —
+      which is the project's own **Γ/Ρ split**: `CANDIDATES` is pure GENERATION
+      (propose a program), `TESTOK` is pure RECOGNITION (does it satisfy the
+      want?). Told only *"a glyph `TWELVE` with `TWELVE(5) = 12`"*, it wrote
+      `glyph TWELVE = la x. TRIPLEN(DEC(x))` out of its own `TRIPLEN`/`DEC`, and
+      adopted it verified (the neologism carries its etymology into the artifact,
+      per `selfmod.la`). **The verification is honest** because the acceptance
+      test is INDEPENDENT of the implementation chosen — it came with the
+      requirement, not from the candidate; a system deriving its own test from
+      its own impl would pass trivially, and `aatc.la` already names that move
+      (gaming the criterion is itself heterological). **Refusal is a real
+      outcome**: told it wanted `HUNDRED(5) = 100` — unreachable by ANY pair it
+      can form (as `{x*3, x−1, x+1}` it reaches only 45,12,18,14,3,5,16,5,7) — it
+      REFUSED and wrote nothing rather than fabricate or approximate.
+      **The bound is the corpus's own, not an engineering shortfall:** `canon.la`
+      carries `SR_FOR = ↻(LOVE)` — *"teleology — the ACHIEVABLE form of purpose,
+      a BOUNDED GOAL-DIRECTED LOOP; NOT purpose-origination"*. The system does
+      not originate the want, by design. *Honest scope:* the search space is
+      pairwise composition of its own glyphs; deciding **which** want to pursue
+      autonomously is the open frontier (Tier 3 below), which the corpus names as
+      the wrong target rather than a gap.
 
 ### Tier 1 — genuine closure (each closes a real seam)
 
@@ -1053,6 +1080,76 @@ disk; GRUB/multiboot gone, the last foreign-toolchain seam at boot closed).
       its full self by streaming the rest (the honest version of the
       minimal-regenerable-seed idea). Late-stage.
 
+### The full seam map (added 2026-07-16)
+
+*The autopoietic move is always the same: every place the system depends on
+something outside itself is a seam — **bring the dependency inside, or name why
+you cannot**. Grouped by seam, exhaustively.*
+
+**Toolchain seams — bring every tool into LA.** *(The boot ASSEMBLY is
+irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
+
+- [ ] **LA assembler** — closes the NASM seam.
+- [ ] **LA linker** — closes the `ld` + linker-script seam.
+- [ ] **LA-native debugger** — the system inspecting its own execution. Deep
+      closure: the system observing itself (today: `qemu -d int` + foreign tools).
+- [ ] **LA build orchestrator** — `build.sh` is bash; the build driving its own
+      compilation, in LA.
+- [ ] **LA-native test/verification harness** — the system testing itself in its
+      own language (today: bash gates + QEMU).
+- [!] **The emulator** — testing runs in QEMU (foreign). Closing it needs our own
+      emulator, or testing only on real metal. Honest seam, **low priority**.
+
+**Self-knowledge seams — the system knowing itself.**
+
+- [ ] **Self-documentation** — accurate docs generated FROM its own structure
+      (philology-as-anamnesis: lineage readable from form). Autological *and*
+      autopoietic; connects to `canon.la`/`glyphdag.la`, where a form already
+      contains its derivation.
+- [ ] **Self-description / introspection** — the RUNNING system reporting its own
+      structure, state and capabilities from within: *"what am I made of?"*
+      answered by itself, not by external docs.
+- [ ] **Self-profiling** — measuring its own performance from within, and
+      (autopoietic extension) using that to optimise itself.
+- [~] **Self-metrics / self-history** — its own account of its own evolution. The
+      **centropy ledger** (`aatc.la`) is the seed; extend it system-wide. The
+      system that remembers its own becoming.
+
+**Semantic / language-level closure — the autological deepening.**
+
+- [x] **Denotational morphology — ALREADY DONE (`denote.la`).** *Recorded here
+      because it is easy to re-open by mistake:* the linguistic-closure audit's
+      #1 finding was that a compound's meaning was not a function of its parts'.
+      `denote.la` CLOSED it — `MEANING` is the homomorphism, **compositional by
+      construction** (`MEANING(M(a,b)) = ⟦M⟧(MEANING a)(MEANING b)`), and it
+      **commutes with κ** on the documented rewrite (syntax-rewrite and
+      semantic-reduction agree). Gated in `build.sh`, byte-identical host==VM.
+      Not a frontier — a settled result.
+- [ ] **Self-verifying grammar** — the grammar recoverable-as-data; it currently
+      fails its own `DECOMP` standard (audit finding). Make its own rules
+      expressible and checkable in itself.
+- [ ] **The operators as glyphs** — `∂δγρ𝔄` are hardcoded dispatch, not
+      first-class glyphs (audit finding). Full autological uniformity; the same
+      move `metaglyph.la` already made for the five modes, κ and the evaluator.
+- [ ] **Self-typing** — the type checker checking its own types, in itself.
+- [ ] **Runtime continuous self-verification** — AATC applied to the LIVE system,
+      perpetually, not only at build time. (Also listed in Tier 1 above.)
+
+**The reflexive maximum.**
+
+- [ ] **Self-optimization** — the system improving its OWN compiler/code from
+      within: self-profiling driving self-modification. Composes
+      `selfprog.la` + `selfmod.la` + profiling. **Highest-value remaining item.**
+- [ ] **Self-specification** — generating the SPEC for its own next version: not
+      just deciding a change, but authoring the requirements. The hardest and most
+      open; note it runs directly into the goal-origination wall below, so expect
+      a bounded form, not a total one.
+
+**Priority order (highest value first):** self-optimization → the LA-native
+toolchain (assembler/linker/debugger/build/test) → runtime continuous
+self-verification. *(Denotational morphology was #1 on the original list; it is
+already built — see above.)*
+
 ### Tier 3 — the honest LIMITS (named so they are never chased)
 
 *These are not TODOs. They are the floor to build **up to**, not through.
@@ -1076,6 +1173,31 @@ session from quietly chasing the impossible.*
       are learned, not authored. Honest limit; consistent with the
       intelligence-architecture split (metalogical reasoning core in LA; the
       statistical model as interface only).
+- [!] **GÖDEL — the limit on TOTAL self-verification.** *The deepest honest wall,
+      and a formal result rather than an engineering gap.* By Gödel's second
+      incompleteness theorem a consistent formal system of sufficient strength
+      **cannot prove its own consistency from within**. So *"the system fully
+      proves itself"* is impossible **in principle** — not merely unbuilt.
+      **Bounded self-verification is the real maximum**, and it is what the
+      project already builds: `build.sh` as the autological criterion, `AUTO_OK`,
+      the AATC, `INTACT`. Note this is the same shape as the bounds already
+      recorded elsewhere and honoured rather than papered over — `swc.la`'s
+      `UNKNOWN` class is the halting residue (Rice/Turing), and `NORMK` collapses
+      only its DECLARED equivalences because full semantic equivalence is
+      undecidable. Related formal floors: Shannon (the information-theoretic
+      floor `glyphdag.la` records for a fully-distinct derivation tree), Rice, and
+      the halting problem. **Do not attempt a total self-proof; deepen the bounded
+      one.**
+- [!] **Goal origination / what-to-change.** Deciding **which** change to make,
+      autonomously, is the genuinely open frontier — and the corpus already rules
+      on it: `canon.la`'s `SR_FOR = ↻(LOVE)` is *"teleology — the ACHIEVABLE form
+      of purpose, a BOUNDED GOAL-DIRECTED LOOP; NOT purpose-origination"*. The
+      **mechanism** of change is closed (`selfmod.la`), and **writing the program
+      for a given want** is closed (`selfprog.la`); originating the want is named
+      by the corpus as the wrong target, not as a gap to close. Expect bounded
+      forms (a want derived from a sensed LACK in its own structure — `aatc.la`'s
+      `T_CLOSE`, "internalize the lacked domain") rather than origination ex
+      nihilo.
 
 *Achieving Tiers 1 and 2 yields a system autopoietic in every sense a system
 running on physical hardware **can** be — the true, honest maximum.*

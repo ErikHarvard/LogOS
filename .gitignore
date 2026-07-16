@@ -132,3 +132,5 @@ scratchpad/__pycache__/
 /kernel/kernel_hal4c_64.elf
 organ.la
 grown.la
+prog.la
+prog2.la

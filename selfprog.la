@@ -1,0 +1,120 @@
+# =====================================================================
+#  SELF-PROGRAMMING — the system generates new LA programs from within.
+#  You say WHAT you want. It writes the HOW, out of its own capabilities.
+#
+#  ── WHAT THE CORPUS ALREADY SETTLES ─────────────────────────────────────────
+#  canon.la carries the limit as a first-class glyph, so it is not negotiable
+#  here: SR_FOR = ↻(LOVE) is "teleology — the ACHIEVABLE form of purpose, a
+#  BOUNDED GOAL-DIRECTED LOOP (autoloop.la); NOT purpose-origination". The
+#  system does not originate the want. That is not a shortfall to be engineered
+#  away — the corpus names it as the wrong target.
+#
+#  So the honest question is not "can it want something?" but "given a want, who
+#  writes the program?" — and there autoloop.la has a real gap it states itself:
+#  its GOAL hands each step ENT(name)(sig)(SRC)(IMPL)(tests) — the implementation
+#  INCLUDED. autoloop verifies and assembles; it never writes anything. That is
+#  the seam this closes:
+#
+#     autoloop.la      : given name + type + SOURCE + IMPL + tests -> verify+assemble
+#     selfprog.la      : given name + type + ACCEPTANCE TEST       -> WRITE THE PROGRAM
+#
+#  Only WHAT is wanted is supplied. Never HOW. The system SEARCHES ITS OWN
+#  CAPABILITY SPACE — every composition of the glyphs it already has — and keeps
+#  the first that satisfies the requirement. This is the Γ/Ρ split the project
+#  already draws: CANDIDATES is pure GENERATION (propose a program), TESTOK is
+#  pure RECOGNITION (does it satisfy the want?). The system generates and
+#  recognises; nothing else is needed to program.
+#
+#  ── WHY THE VERIFICATION IS HONEST ──────────────────────────────────────────
+#  The acceptance test is INDEPENDENT of the implementation the system chooses:
+#  it comes with the requirement, not from the candidate. A system that derived
+#  its own test from its own implementation would pass trivially and prove
+#  nothing — and aatc.la already names that move: gaming the criterion is itself
+#  heterological. Here a candidate is admitted only if it satisfies a demand that
+#  was fixed before it existed.
+#
+#  ── REFUSAL IS A REAL OUTCOME ───────────────────────────────────────────────
+#  If NO composition of its capabilities satisfies the want, the system says so
+#  and writes NOTHING. It does not fabricate, approximate, or half-satisfy. An
+#  honest "I cannot do that with what I am" is the correct answer, and is why the
+#  loop is bounded rather than open-ended.
+#
+#  ── THE TRUSTED BASE (ROADMAP Tier 3) ───────────────────────────────────────
+#  Bounded, deliberately: the search space is compositions of its OWN existing
+#  glyphs; specpipe, the compiler and this module are the trusted base and do not
+#  rewrite themselves in the act. What IS closed: the system is told only what is
+#  wanted, and the program that results is genuinely its own.
+# =====================================================================
+
+import("specpipe.la")
+import("autoloop.la")
+import("selfmod.la")
+
+export SYNTH SOLVE CAP_SPEC TESTOK CANDIDATES
+
+glyph SEQ2 = la a. la b. b
+
+# ── Church option ──
+glyph NONE2  = la s. la n. n
+glyph SOME2  = la x. la s. la n. s(x)
+glyph ISSOME = la o. o(la _. TRUE)(FALSE)
+glyph OPTVAL = la o. o(la x. x)("?")
+
+# ── list machinery (specpipe keeps FOLDR/MAP/ALL private; APPEND is selfmod's) ──
+glyph MAP2      = Z(la self. la f. la lst. lst(NIL)(la h. la t. CONS(f(h))(self(f)(t))))
+glyph CONCATMAP = Z(la self. la f. la lst. lst(NIL)(la h. la t. APPEND(f(h))(self(f)(t))))
+glyph ALL2      = Z(la self. la p. la lst. lst(TRUE)(la h. la t. AND(p(h))(self(p)(t))))
+glyph FIND1     = Z(la self. la p. la lst. lst(NONE2)(la h. la t. IF(p(h))(la _. SOME2(h))(la _. self(p)(t))))
+
+# ── entry accessors over specpipe's exported TRIPLE/DEF shape ──
+glyph EDEF3  = la e. e(la a. la b. la c. b)
+glyph ESRC3  = la e. (EDEF3(e))(la s. la c. la v. c)
+glyph EIMPL3 = la e. (EDEF3(e))(la s. la c. la v. v)
+
+# ── RECOGNITION (Ρ): does this program satisfy the want? ──
+#   The test came with the requirement; the candidate had no hand in it.
+glyph TESTOK = la impl. la tests. ALL2(la t. str_eq((FST(t))(impl))(SND(t)))(tests)
+
+# ── WHAT I AM: the capabilities the system currently has ──
+glyph CAP_SPEC =
+  CONS(ENT("TRIPLEN")(":: a -> a")("la x. mul(x)(3)")(la x. mul(x)(3))(SING(TC(la g. int_to_str(g(7)))("21"))))(
+  CONS(ENT("DEC")(":: a -> a")("la x. sub(x)(1)")(la x. sub(x)(1))(SING(TC(la g. int_to_str(g(9)))("8"))))(
+  CONS(ENT("INC")(":: a -> a")("la x. add(x)(1)")(la x. add(x)(1))(SING(TC(la g. int_to_str(g(1)))("2"))))(
+  NIL)))
+
+# ── GENERATION (Γ): every program I could write out of what I am ──
+#   Each candidate is a NEOLOGIZE of two of my own glyphs, so whatever is found
+#   carries its own etymology into the artifact (selfmod.la's discipline).
+glyph CANDIDATES = la spec. la nm. la sig. la tests.
+    CONCATMAP(la a. MAP2(la b. NEOLOGIZE(a)(b)(nm)(sig)(tests))(spec))(spec)
+
+# ── SYNTHESIS: generate, recognise, keep the first that satisfies the want ──
+glyph SYNTH = la spec. la nm. la sig. la tests.
+    FIND1(la e. TESTOK(EIMPL3(e))(tests))(CANDIDATES(spec)(nm)(sig)(tests))
+
+glyph WANT_SIG = ":: a -> a"
+
+# ── SOLVE: the whole act — told only what is wanted, write the program ──
+glyph SOLVE = la path. la nm. la tests.
+  (la opt.
+    IF(ISSOME(opt))
+      (la _. concat(concat(concat("WROTE  ")(concat(nm)(concat(" = ")(ESRC3(OPTVAL(opt))))))("  →  "))
+                   (ADOPT(path)(APPEND(CAP_SPEC)(SING(OPTVAL(opt))))))
+      (la _. concat("REFUSED — no composition of my own capabilities satisfies ")
+                   (concat(nm)("; nothing written (I will not fabricate)"))))
+  (SYNTH(CAP_SPEC)(nm)(WANT_SIG)(tests))
+
+# ── the two requirements: one satisfiable, one genuinely not ──
+#   I am {x*3, x-1, x+1}. Composed pairwise on 5 I can reach:
+#     45, 12, 18, 14, 3, 5, 16, 5, 7  — so 12 is reachable (TRIPLEN∘DEC) …
+glyph WANT_12  = SING(TC(la g. int_to_str(g(5)))("12"))
+#   … and 100 is not reachable by ANY pair I can form. The honest answer is no.
+glyph WANT_100 = SING(TC(la g. int_to_str(g(5)))("100"))
+
+glyph MAIN =
+  SEQ2(print("── self-programming: told only WHAT is wanted, the system writes the HOW ──"))
+  (SEQ2(print("   I am: TRIPLEN(x*3), DEC(x-1), INC(x+1). No implementation is supplied below."))
+  (SEQ2(print("1. want    : a glyph TWELVE :: a -> a  such that  TWELVE(5) = 12"))
+  (SEQ2(print(concat("   ")(SOLVE("prog.la")("TWELVE")(WANT_12))))
+  (SEQ2(print("2. want    : a glyph HUNDRED :: a -> a  such that  HUNDRED(5) = 100"))
+       (print(concat("   ")(SOLVE("prog2.la")("HUNDRED")(WANT_100))))))))

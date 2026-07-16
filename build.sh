@@ -1091,6 +1091,53 @@ else
     exit 1
 fi
 
+say "Self-programming (selfprog.la — told only WHAT is wanted, the system writes the HOW)"
+# The last of the core three, and the seam autoloop.la states about itself: its
+# GOAL hands each step ENT(name)(sig)(SRC)(IMPL)(tests) — the implementation
+# INCLUDED — so autoloop verifies and assembles but never WRITES anything.
+#   autoloop.la : name + type + SOURCE + IMPL + tests -> verify + assemble
+#   selfprog.la : name + type + ACCEPTANCE TEST       -> WRITE THE PROGRAM
+# Only WHAT is wanted is supplied, never HOW. The system searches its own
+# capability space (every composition of the glyphs it already has) — the Γ/Ρ
+# split the project already draws: CANDIDATES is pure GENERATION (propose),
+# TESTOK is pure RECOGNITION (does it satisfy the want?).
+# The verification is honest because the acceptance test is INDEPENDENT of the
+# implementation the system picks: it comes with the requirement, not from the
+# candidate. A system deriving its own test from its own impl would pass
+# trivially — and aatc.la already names that: gaming the criterion is itself
+# heterological.
+# The LIMIT is the corpus's own: canon.la carries SR_FOR = ↻(LOVE), "teleology —
+# the ACHIEVABLE form of purpose, a BOUNDED GOAL-DIRECTED LOOP; NOT
+# purpose-origination". The system does not originate the want, by design.
+ok=1
+rm -f prog.la prog2.la
+SP="$(./tiny_host selfprog.la 2>/dev/null)"; SP_RC=$?
+[ "$SP_RC" -eq 0 ] || { echo "FAIL  selfprog: run exited $SP_RC"; ok=0; }
+# (1) THE ACT — given only "TWELVE(5) = 12", it wrote the program itself.
+printf '%s\n' "$SP" | grep -q "WROTE  TWELVE = la x. TRIPLEN(DEC(x))" \
+  || { echo "FAIL  selfprog: the system did not synthesise a program from its own capabilities"; ok=0; }
+printf '%s\n' "$SP" | grep -q "adopted — the organ regrew around its own neologism, verified" \
+  || { echo "FAIL  selfprog: the synthesised program was not adopted+verified"; ok=0; }
+# (2) it reached the artifact, carrying its own etymology (selfmod's discipline).
+grep -q "glyph TWELVE = la x. TRIPLEN(DEC(x))" prog.la \
+  || { echo "FAIL  selfprog: synthesised program not in the artifact"; ok=0; }
+grep -q "glyph TRIPLEN = la x. mul(x)(3)" prog.la \
+  || { echo "FAIL  selfprog: capabilities it composed FROM were lost"; ok=0; }
+# (3) HONEST REFUSAL — a want no composition of its capabilities can satisfy is
+#     REFUSED, and NOTHING is written. It does not fabricate or approximate.
+#     (It is {x*3, x-1, x+1}: pairwise on 5 it reaches 45,12,18,14,3,5,16,5,7 —
+#     never 100. So the correct answer really is "I cannot, as I am".)
+printf '%s\n' "$SP" | grep -q "REFUSED — no composition of my own capabilities satisfies HUNDRED" \
+  || { echo "FAIL  selfprog: an unsatisfiable want was not refused (did it fabricate?)"; ok=0; }
+[ ! -f prog2.la ] \
+  || { echo "FAIL  selfprog: a REFUSED want still wrote a module to disk"; ok=0; }
+rm -f prog.la prog2.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  selfprog: self-programming — told ONLY that it wanted a glyph TWELVE with TWELVE(5)=12 (no source, no implementation), the system searched compositions of its OWN capabilities, WROTE 'glyph TWELVE = la x. TRIPLEN(DEC(x))', verified it against the independent acceptance test, and adopted it. Told it wanted HUNDRED(5)=100 — unreachable by any composition it can form — it REFUSED and wrote nothing rather than fabricate. Bounded by the corpus's own SR_FOR: the achievable form of purpose is a goal-directed loop, not purpose-origination"
+else
+    exit 1
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes
