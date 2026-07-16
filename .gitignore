@@ -1,4 +1,6 @@
 
+asm_in.asm
+asm_out.bin
 /autopoiesis.gen
 # autopoiesis.la's medium (generation counter, regenerated each run)
 # below can re-include the published subtree — re-including a child of a fully
@@ -97,6 +99,7 @@ grown.la
 /logos_source.la
 /math_generated.la
 mathutil.la
+nasm_ref.bin
 # native binaries / artifacts emitted by elf.la, secd.la, codegen.la (regenerated each run)
 /native_codegen2_out
 /native_codegen3_hh.la

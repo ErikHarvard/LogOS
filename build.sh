@@ -1187,6 +1187,64 @@ else
     exit 1
 fi
 
+say "LA-native assembler (asm.la — x86-64 assembled by Lingua Adamica, byte-identical to NASM)"
+# The first LA-native TOOLCHAIN component: it closes the NASM seam for the subset
+# it covers. The boot ASSEMBLY is irreducibly machine-level — but the TOOL that
+# assembles it need not be foreign, and that is the seam.
+# The verification is byte-identity against the tool it replaces: assemble the
+# same source with asm.la and with `nasm -f bin`, and diff. There is no room to
+# be approximately right. (Same drift-guard discipline secd.la already uses.)
+# Byte-identity demands matching NASM's ENCODING CHOICES, not merely emitting
+# something the CPU accepts — the sharp case being `mov rax, 1` -> b8 01 00 00 00
+# (that is `mov eax, 1`; a 32-bit write ZERO-EXTENDS, so NASM drops REX.W and the
+# 10-byte movabs entirely). An assembler emitting the "obvious" movabs would be
+# CORRECT and still fail the diff. Asserted explicitly below.
+# HONEST SCOPE: a real subset — mov/add/sub/xor (r64,r64), mov (r64,imm32),
+# push/pop (r64), syscall, ret, nop; enough to express a working program
+# (elf.la's whole write+exit entry is inside it). NOT yet a full assembler: no
+# memory operands, no labels/relocation, no jumps — so it CANNOT yet assemble
+# boot.asm or secd.asm. Closed for what is here, honestly open beyond it.
+ok=1
+if ! command -v nasm >/dev/null 2>&1; then
+    echo "SKIP  asm.la byte-identity gate: nasm not installed (nothing to diff against)"
+else
+    rm -f asm_out.bin /tmp/nasm_ref.bin asm_in.asm
+    cp asm_test.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm.out 2>&1 || { echo "FAIL  asm.la: run failed: $(tail -1 /tmp/asm.out)"; ok=0; }
+    nasm -f bin asm_test.asm -o /tmp/nasm_ref.bin 2>/dev/null || { echo "FAIL  asm.la: nasm reference failed"; ok=0; }
+    # (1) THE CLAIM — the same bytes as the tool it replaces. No partial credit.
+    cmp -s asm_out.bin /tmp/nasm_ref.bin \
+      || { echo "FAIL  asm.la: output DIFFERS from nasm"; ok=0;
+           python3 - <<'PY'
+a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_ref.bin','rb').read()
+print('      asm.la:', ' '.join(str(x) for x in a))
+print('      nasm  :', ' '.join(str(x) for x in b))
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x} nasm={y}'); break
+PY
+         }
+    # (2) THE SHARP CASE — we matched NASM's CHOICE, not merely a correct
+    #     encoding: byte 0 must be 0xB8 (mov eax,1), NOT 0x48 (REX.W movabs).
+    python3 - <<'PY' || { echo "FAIL  asm.la: did not reproduce NASM's mov-eax immediate optimisation"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+sys.exit(0 if d[0]==0xB8 else 1)
+PY
+    # (3) LOUD FAILURE — an instruction outside the subset must halt, not emit
+    #     silent garbage. An assembler that quietly skips what it cannot encode
+    #     is worse than one that refuses.
+    printf 'bits 64\nvmxon rax\n' > asm_in.asm
+    ARC=0; ./tiny_host asm.la >/tmp/asm_bad.out 2>&1 || ARC=$?
+    [ "$ARC" -ne 0 ] || { echo "FAIL  asm.la: an unsupported instruction did not halt loudly"; ok=0; }
+    grep -q "asm: unsupported instruction" /tmp/asm_bad.out \
+      || { echo "FAIL  asm.la: no 'unsupported instruction' diagnostic"; ok=0; }
+    rm -f asm_in.asm asm_out.bin /tmp/nasm_ref.bin /tmp/asm.out /tmp/asm_bad.out
+    if [ "$ok" -eq 1 ]; then
+        echo "PASS  asm.la: an x86-64 assembler written in Lingua Adamica — 61 bytes of a 20-instruction program (mov/add/sub/xor r64,r64; mov r64,imm32; push/pop; syscall/ret/nop; r8-r15 via REX) assembled BYTE-IDENTICAL to \`nasm -f bin\`, including NASM's own mov-eax immediate optimisation (b8, not the 10-byte REX.W movabs) — matching its encoding CHOICES, not merely emitting something the CPU accepts. An instruction outside the subset halts loudly rather than emitting silent garbage. The first LA-native toolchain component; the NASM seam is closed for this subset (labels/jumps/memory operands remain, and the byte-identity gate extends to each)"
+    fi
+fi
+[ "$ok" -eq 1 ] || exit 1
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes

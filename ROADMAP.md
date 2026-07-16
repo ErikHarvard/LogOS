@@ -1089,7 +1089,29 @@ you cannot**. Grouped by seam, exhaustively.*
 **Toolchain seams — bring every tool into LA.** *(The boot ASSEMBLY is
 irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
 
-- [ ] **LA assembler** — closes the NASM seam.
+- [~] **LA assembler (`asm.la`) — SUBSET DONE + gated (2026-07-16).** The first
+      LA-native toolchain component. The boot ASSEMBLY is irreducibly
+      machine-level — but the TOOL that assembles it need not be foreign, and
+      that is the seam. **Verified by byte-identity against the tool it
+      replaces:** assemble the same source with `asm.la` and `nasm -f bin`, and
+      diff — no room to be approximately right (the drift-guard discipline
+      `secd.la` already uses). 61 bytes of a 20-instruction program matched
+      exactly. **Byte-identity demands matching NASM's encoding CHOICES**, not
+      merely emitting something the CPU accepts — the sharp case is
+      `mov rax, 1` → `b8 01 00 00 00`, i.e. `mov eax, 1`: a 32-bit write
+      ZERO-EXTENDS, so NASM drops REX.W and the 10-byte `movabs` entirely. An
+      assembler emitting the "obvious" movabs would be **correct and still fail
+      the diff**; the gate asserts byte 0 is `0xB8` explicitly. An instruction
+      outside the subset **halts loudly** rather than emitting silent garbage.
+      *Honest scope — why this is `[~]` and not `[x]`:* a real subset —
+      `mov`/`add`/`sub`/`xor` (r64,r64), `mov` (r64,imm32), `push`/`pop` (r64),
+      `syscall`/`ret`/`nop`, `r8`–`r15` via REX — enough to express a working
+      program (`elf.la`'s whole write+exit entry is inside it), but **no memory
+      operands, no labels/relocation, no jumps**, so it **cannot yet assemble
+      `boot.asm` or `secd.asm`** and NASM remains in the kernel build. The seam is
+      closed for what is here and honestly open beyond it; labels + jumps +
+      memory operands are the next increments, and the byte-identity gate extends
+      to each.
 - [ ] **LA linker** — closes the `ld` + linker-script seam.
 - [ ] **LA-native debugger** — the system inspecting its own execution. Deep
       closure: the system observing itself (today: `qemu -d int` + foreign tools).

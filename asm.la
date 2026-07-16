@@ -1,0 +1,156 @@
+# =====================================================================
+#  asm.la — AN x86-64 ASSEMBLER IN LINGUA ADAMICA.
+#
+#  The first LA-native toolchain component: it closes the NASM seam for the
+#  subset it covers. The boot ASSEMBLY is irreducibly machine-level — but the
+#  TOOL THAT ASSEMBLES IT need not be foreign, and that is the seam.
+#
+#  ── WHY THIS IS NOT A TOY ───────────────────────────────────────────────────
+#  The verification is byte-identity against the tool it replaces: assemble the
+#  same source with asm.la and with `nasm -f bin`, and diff. There is no room to
+#  be approximately right — the bytes match or they do not. (This is the same
+#  drift-guard discipline secd.la already uses to keep secd.asm authoritative.)
+#
+#  ── WHAT BYTE-IDENTITY ACTUALLY DEMANDS ─────────────────────────────────────
+#  Matching NASM means matching its ENCODING CHOICES, not merely emitting
+#  something the CPU would accept. The sharp one:
+#
+#      mov rax, 1   ->   b8 01 00 00 00      (5 bytes)
+#
+#  That is `mov eax, 1`, NOT `movabs rax, 1` (48 b8 + 8-byte imm). A 32-bit
+#  write to a 64-bit register ZERO-EXTENDS, so when the immediate fits in
+#  unsigned 32 bits NASM takes the shorter form and drops REX.W entirely. An
+#  assembler that emitted the "obvious" 10-byte movabs would be CORRECT and
+#  still fail the diff. So this is encoded as NASM encodes it.
+#
+#  ── THE ENCODING RULES IMPLEMENTED ──────────────────────────────────────────
+#    reg numbering : rax0 rcx1 rdx2 rbx3 rsp4 rbp5 rsi6 rdi7, r8..r15 = 8..15
+#    REX (op r,r)  : 0x48 | (src>=8 ? 0x04 : 0) | (dst>=8 ? 0x01 : 0)
+#    ModRM (op r,r): 0xC0 | ((src&7)<<3) | (dst&7)        -- reg=src, rm=dst
+#    mov r,imm32   : [0x41 if r>=8] , 0xB8+(r&7) , imm32 little-endian
+#    push/pop r    : [0x41 if r>=8] , 0x50+(r&7) / 0x58+(r&7)
+#    syscall 0f 05 | ret c3 | nop 90
+#
+#  ── HONEST SCOPE ────────────────────────────────────────────────────────────
+#  This covers a REAL SUBSET — mov/add/sub/xor (r64,r64), mov (r64,imm32),
+#  push/pop (r64), syscall, ret, nop — enough to express a working program
+#  (elf.la's whole write+exit entry is inside it), and every one is verified
+#  byte-identical against NASM. It is NOT yet a full x86-64 assembler: no
+#  memory operands, no labels/relocation, no jumps, no paging/GDT/IDT forms, so
+#  it CANNOT yet assemble boot.asm or secd.asm. The seam is closed for what is
+#  here and honestly open beyond it. Labels + jumps + memory operands are the
+#  next increments, and the byte-identity gate extends to each of them.
+#
+#  Pure generation (chr/concat/int arithmetic), so it is byte-identical on the
+#  C host and the native VM, like elf.la.
+# =====================================================================
+
+export ASSEMBLE TOKS LINES REGNUM
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph OR   = la a. la b. a(TRUE)(b)
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph NIL  = la n. la c. n
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NONE = la s. la n. n
+glyph SOME = la x. la s. la n. s(x)
+glyph ISSOME = la o. o(la _. TRUE)(FALSE)
+glyph OPTV = la o. o(la x. x)(0)
+
+glyph B = la n. chr(int_to_str(n))
+glyph LE4 = la n.
+    concat(B(mod(n)(256)))
+   (concat(B(mod(div(n)(256))(256)))
+   (concat(B(mod(div(n)(65536))(256)))
+          (B(mod(div(n)(16777216))(256)))))
+
+# ── tokenizing: lines, then whitespace/comma-separated tokens ──
+glyph ISSEP = la c. OR(str_eq(c)(" "))(OR(str_eq(c)(","))(str_eq(c)("	")))
+glyph TOKS = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))
+      (la _. IF(str_eq(cur)(""))(la _. NIL)(la _. CONS(cur)(NIL)))
+      (la _. (la c.
+          IF(ISSEP(c))
+            (la _. IF(str_eq(cur)(""))(la _. self(str_tail(s))(""))
+                                      (la _. CONS(cur)(self(str_tail(s))(""))))
+            (la _. self(str_tail(s))(concat(cur)(c))))
+        (str_head(s))))
+glyph LINES = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))
+      (la _. CONS(cur)(NIL))
+      (la _. IF(str_eq(str_head(s))("\n"))
+               (la _. CONS(cur)(self(str_tail(s))("")))
+               (la _. self(str_tail(s))(concat(cur)(str_head(s))))))
+
+glyph HD = la l. l("")(la h. la t. h)
+glyph NTH = Z(la self. la n. la l. l("")(la h. la t. IF(int_eq(n)(0))(la _. h)(la _. self(sub(n)(1))(t))))
+glyph LEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+
+# ── the register file: name -> number ──
+glyph REGS =
+  CONS(PAIR("rax")(0))(CONS(PAIR("rcx")(1))(CONS(PAIR("rdx")(2))(CONS(PAIR("rbx")(3))(
+  CONS(PAIR("rsp")(4))(CONS(PAIR("rbp")(5))(CONS(PAIR("rsi")(6))(CONS(PAIR("rdi")(7))(
+  CONS(PAIR("r8")(8))(CONS(PAIR("r9")(9))(CONS(PAIR("r10")(10))(CONS(PAIR("r11")(11))(
+  CONS(PAIR("r12")(12))(CONS(PAIR("r13")(13))(CONS(PAIR("r14")(14))(CONS(PAIR("r15")(15))(
+  NIL))))))))))))))))
+glyph LOOKREG = Z(la self. la nm. la l.
+    l(NONE)(la h. la t. IF(str_eq(FST(h))(nm))(la _. SOME(SND(h)))(la _. self(nm)(t))))
+glyph ISREG  = la nm. ISSOME(LOOKREG(nm)(REGS))
+glyph REGNUM = la nm. OPTV(LOOKREG(nm)(REGS))
+
+# ── encodings ──
+#   REX.W with the two extension bits; ModRM in register-direct form.
+glyph REX   = la dst. la src.
+    B(add(72)(add(IF(lt(src)(8))(la _. 0)(la _. 4))(IF(lt(dst)(8))(la _. 0)(la _. 1))))
+glyph MODRM = la dst. la src. B(add(192)(add(mul(mod(src)(8))(8))(mod(dst)(8))))
+glyph ALU   = la op. la dst. la src. concat(REX(dst)(src))(concat(B(op))(MODRM(dst)(src)))
+
+#   NASM's choice: an immediate that fits in unsigned 32 bits uses the 32-bit
+#   form (which zero-extends), so no REX.W — only REX.B when the register is
+#   r8..r15. Matching this is what makes the diff pass.
+glyph MOVIMM = la dst. la n.
+    concat(IF(lt(dst)(8))(la _. "")(la _. B(65)))
+   (concat(B(add(184)(mod(dst)(8))))(LE4(n)))
+
+glyph PUSHPOP = la base. la r.
+    concat(IF(lt(r)(8))(la _. "")(la _. B(65)))(B(add(base)(mod(r)(8))))
+
+# ── one instruction -> its bytes ──
+glyph ENC1 = la ts.
+  (la op.
+    IF(str_eq(op)(""))(la _. "")(la _.
+    IF(str_eq(op)("bits"))(la _. "")(la _.
+    IF(str_eq(op)("syscall"))(la _. concat(B(15))(B(5)))(la _.
+    IF(str_eq(op)("ret"))(la _. B(195))(la _.
+    IF(str_eq(op)("nop"))(la _. B(144))(la _.
+    IF(str_eq(op)("push"))(la _. PUSHPOP(80)(REGNUM(NTH(1)(ts))))(la _.
+    IF(str_eq(op)("pop"))(la _. PUSHPOP(88)(REGNUM(NTH(1)(ts))))(la _.
+    IF(str_eq(op)("add"))(la _. ALU(1)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
+    IF(str_eq(op)("sub"))(la _. ALU(41)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
+    IF(str_eq(op)("xor"))(la _. ALU(49)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
+    IF(str_eq(op)("mov"))
+      (la _. IF(ISREG(NTH(2)(ts)))
+               (la _. ALU(137)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))
+               (la _. MOVIMM(REGNUM(NTH(1)(ts)))(str_to_int(NTH(2)(ts)))))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))
+  (HD(ts))
+
+glyph ASM_LINES = Z(la self. la ls.
+    ls("")(la h. la t. concat(ENC1(TOKS(h)("")))(self(t))))
+
+# ── ASSEMBLE(source text) -> machine code bytes ──
+glyph ASSEMBLE = la src. ASM_LINES(LINES(src)(""))
+
+glyph MAIN =
+  (la code.
+    (la _.
+      print(concat(concat("asm.la assembled ")(str_len(code)))(" bytes -> asm_out.bin")))
+    (write_file("asm_out.bin")(code)))
+  (ASSEMBLE(read_file("asm_in.asm")))
