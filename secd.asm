@@ -29,6 +29,12 @@
 ;            25 mod 26 lt 27 int_eq   (native integers: value tag 4 INT,
 ;            payload = the signed integer directly; no heap descriptor)
 ;            28 reap 29 sleep 30 error 31 pipe 32 read 33 str_len
+;            58 dup2 59 execv  (dup2(old)(new) redirects a fd — the piece an
+;            LA build orchestrator needs to CAPTURE a child's stdout; execv
+;            (path)(args) is execve WITH argv, args being a space-separated
+;            string like poll's fd list. Together they are what lets LA drive
+;            a real build: fork, dup2 stdout->a file, execv "./tiny_host"
+;            "kernel.la", waitpid, then read_file the captured output.)
 ;            34 drm_mode 35 present   (DRM/KMS dumb-buffer scanout; VM-only)
 ;
 ;  Build:  nasm -f bin secd.asm -o secd
@@ -751,6 +757,16 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi57
+    mov     rsi, rbp
+    mov     rdi, str_dup2
+    call    strcmp
+    test    eax, eax
+    je      .bi58
+    mov     rsi, rbp
+    mov     rdi, str_execv
+    call    strcmp
+    test    eax, eax
+    je      .bi59
     jmp     .unbound             ; unbound name → halt loudly (was: silent exit 0)
 .bi0:
     mov     r11, 0
@@ -925,6 +941,12 @@ _start:
     jmp     .pushbi
 .bi57:
     mov     r11, 57
+    jmp     .pushbi
+.bi58:
+    mov     r11, 58
+    jmp     .pushbi
+.bi59:
+    mov     r11, 59
 .pushbi:
     mov     qword [r12], 1
     mov     [r12+8], r11
@@ -1103,6 +1125,10 @@ _start:
     je      .mkpa                ; kill is curried: kill(pid)(sig)
     cmp     r11, 53
     je      .mkpa                ; sigprocmask is curried: sigprocmask(how)(mask)
+    cmp     r11, 58
+    je      .mkpa                ; dup2 is curried: dup2(oldfd)(newfd)
+    cmp     r11, 59
+    je      .mkpa                ; execv is curried: execv(path)(args)
     cmp     r11, 54
     je      .bi_signalfd
     cmp     r11, 55
@@ -1178,6 +1204,10 @@ _start:
     je      .bi_sigprocmask2
     cmp     r10, 57
     je      .bi_poll2
+    cmp     r10, 58
+    je      .bi_dup22
+    cmp     r10, 59
+    je      .bi_execv2
     jmp     .halt
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
@@ -2921,6 +2951,104 @@ _start:
     call    push_dec
     jmp     .loop
 
+.bi_dup22:                       ; dup2(oldfd)(newfd) ; rbp = old, r9 = new
+    ; The redirection primitive. Without it a forked child's stdout goes to the
+    ; parent's and an LA orchestrator cannot CAPTURE what a build step printed —
+    ; which is what build.sh's checks are (they grep stdout). Same shape as
+    ; kill2: two ints as decimal strings via desc_atoi, result pushed as decimal.
+    test    r8, r8               ; both args must be STR (int-as-decimal), else an
+    jnz     .strtype             ; INT would deref its payload as a descriptor
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rdi, rbp
+    call    desc_atoi            ; oldfd
+    mov     r11, rax
+    mov     rdi, r9
+    call    desc_atoi            ; newfd
+    mov     rsi, rax
+    mov     rdi, r11
+    mov     rax, 33              ; dup2(oldfd, newfd)
+    syscall
+    call    push_dec
+    jmp     .loop
+
+.bi_execv2:                      ; execv(path)(args) ; rbp = path, r9 = args
+    ; execve WITH argv — the piece bi_execve lacks (it passes argv=[path] only,
+    ; so LA could never run `./tiny_host kernel.la`). `args` is a SPACE-SEPARATED
+    ; string, the same convention poll already uses for its fd list; it is split
+    ; IN PLACE in fsbuf (each space overwritten with NUL) and the argv pointer
+    ; array is built above it. argv[0] is the path, as a shell would pass it.
+    ; Layout: fsbuf is exactly 4096 bytes (gcwork begins immediately after), so
+    ; args are bounds-checked to 2047 and the pointer array lives at fsbuf+2048
+    ; — 256 slots. No new buffer, no layout change, nothing else moves.
+    test    r8, r8
+    jnz     .strtype
+    cmp     qword [r11+8], 0
+    jne     .strtype
+    mov     rcx, [rbp]           ; path -> pathbuf, NUL-terminated
+    mov     rsi, [rbp+8]
+    mov     rdi, pathbuf
+    cmp     rcx, 4095
+    ja      .pathlong
+.ev_cp1:
+    test    rcx, rcx
+    je      .ev_d1
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .ev_cp1
+.ev_d1:
+    mov     byte [rdi], 0
+    mov     rcx, [r9]            ; args -> fsbuf, NUL-terminated
+    mov     rsi, [r9+8]
+    mov     rdi, fsbuf
+    cmp     rcx, 2047            ; leave fsbuf+2048.. for the pointer array
+    ja      .pathlong
+.ev_cp2:
+    test    rcx, rcx
+    je      .ev_d2
+    mov     al, [rsi]
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    dec     rcx
+    jmp     .ev_cp2
+.ev_d2:
+    mov     byte [rdi], 0
+    mov     r10, fsbuf + 2048    ; argv[0] = path
+    mov     qword [r10], pathbuf
+    add     r10, 8
+    mov     rsi, fsbuf
+.ev_tok:                         ; skip (and NUL out) run of spaces
+    cmp     byte [rsi], ' '
+    jne     .ev_tk2
+    mov     byte [rsi], 0
+    inc     rsi
+    jmp     .ev_tok
+.ev_tk2:
+    cmp     byte [rsi], 0
+    je      .ev_done
+    mov     [r10], rsi           ; record this token
+    add     r10, 8
+.ev_scan:                        ; advance to its end
+    cmp     byte [rsi], 0
+    je      .ev_done
+    cmp     byte [rsi], ' '
+    je      .ev_tok
+    inc     rsi
+    jmp     .ev_scan
+.ev_done:
+    mov     qword [r10], 0       ; argv NULL terminator
+    mov     rdi, pathbuf
+    mov     rsi, fsbuf + 2048
+    xor     rdx, rdx             ; envp = NULL
+    mov     rax, 59              ; execve(path, argv, envp)
+    syscall
+    call    push_dec             ; only reached on failure (-errno)
+    jmp     .loop
+
 .bi_sigprocmask2:                ; sigprocmask(how)(mask) ; rbp = how, r9 = mask
     ; how: 0=SIG_BLOCK 1=SIG_UNBLOCK 2=SIG_SETMASK. mask: a 64-bit sigset
     ; (bit (signo-1) set selects that signal), passed as a decimal integer.
@@ -3617,6 +3745,8 @@ str_signalfd:  db "signalfd", 0
 str_getpid:    db "getpid", 0
 str_reapnb:    db "reapnb", 0
 str_poll:      db "poll", 0
+str_dup2:      db "dup2", 0
+str_execv:     db "execv", 0
 drm_card:      db "/dev/dri/card0", 0
 drm_pfx:           db "secd: drm "
 drm_pfx_len        equ $ - drm_pfx
