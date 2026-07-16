@@ -190,6 +190,25 @@ glyph MOVIMM = la dst. la n.
     concat(IF(lt(dst)(8))(la _. "")(la _. B(65)))
    (concat(B(add(184)(mod(dst)(8))))(LE4(n)))
 
+#   A LABEL as an immediate is NOT the same encoding as a NUMBER. NASM emits
+#   `mov rsi, msg` (msg a label) as 48 be + imm64 — movabs, 10 bytes — while
+#   `mov rax, 1` takes the 5-byte b8+imm32 form. The address would FIT in 32
+#   bits, so this is a deliberate NASM choice about labels, not an arithmetic
+#   necessity: matching it means distinguishing the two SYNTACTICALLY (all
+#   digits -> number; otherwise -> label), which also lets SIZEL know the size
+#   before any label address is known.
+glyph LE8 = la n. concat(LE4(mod(n)(4294967296)))(LE4(div(n)(4294967296)))
+glyph INSTR = Z(la self. la c. la s.
+    IF(str_eq(s)(""))(la _. FALSE)
+      (la _. IF(str_eq(str_head(s))(c))(la _. TRUE)(la _. self(c)(str_tail(s)))))
+glyph ISDIGIT = la c. INSTR(c)("0123456789")
+glyph ALLDIG = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. TRUE)(la _. AND(ISDIGIT(str_head(s)))(self(str_tail(s)))))
+glyph ISNUM = la t. IF(str_eq(t)(""))(la _. FALSE)(la _. ALLDIG(t))
+glyph MOVABS = la r. la n.
+    concat(B(add(72)(IF(lt(r)(8))(la _. 0)(la _. 1))))
+   (concat(B(add(184)(mod(r)(8))))(LE8(n)))
+
 glyph PUSHPOP = la base. la r.
     concat(IF(lt(r)(8))(la _. "")(la _. B(65)))(B(add(base)(mod(r)(8))))
 
@@ -284,13 +303,15 @@ glyph MOVSIZE = la ts.
                (la _. MEMSIZE(MEMBASE(NTH(2)(ts)))(MEMDISP(NTH(2)(ts))))
                (la _. IF(ISREG(NTH(2)(ts)))
                         (la _. 3)
-                        (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 5)(la _. 6))))
+                        (la _. IF(ISNUM(NTH(2)(ts)))
+                                 (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 5)(la _. 6))
+                                 (la _. 10))))
 
 # ── SIZEL: bytes this line occupies, given what we currently know of labels ──
 glyph SIZEL = la labs. la off. la ts.
   (la op.
     IF(str_eq(op)(""))(la _. 0)(la _.
-    IF(str_eq(op)("bits"))(la _. 0)(la _.
+    IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. 0)(la _.
     IF(ISLABEL(op))(la _. 0)(la _.
     IF(str_eq(op)("syscall"))(la _. 2)(la _.
     IF(str_eq(op)("ret"))(la _. 1)(la _.
@@ -307,7 +328,7 @@ glyph SIZEL = la labs. la off. la ts.
 glyph ENC1 = la labs. la off. la ts.
   (la op.
     IF(str_eq(op)(""))(la _. "")(la _.
-    IF(str_eq(op)("bits"))(la _. "")(la _.
+    IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. "")(la _.
     IF(ISLABEL(op))(la _. "")(la _.
     IF(str_eq(op)("syscall"))(la _. concat(B(15))(B(5)))(la _.
     IF(str_eq(op)("ret"))(la _. B(195))(la _.
@@ -337,7 +358,9 @@ glyph ENC1 = la labs. la off. la ts.
                         (la _. MEMENC(139)(REGNUM(NTH(1)(ts)))(MEMBASE(NTH(2)(ts)))(MEMDISP(NTH(2)(ts))))
                         (la _. IF(ISREG(NTH(2)(ts)))
                                  (la _. ALU(137)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))
-                                 (la _. MOVIMM(REGNUM(NTH(1)(ts)))(str_to_int(NTH(2)(ts)))))))
+                                 (la _. IF(ISNUM(NTH(2)(ts)))
+                                          (la _. MOVIMM(REGNUM(NTH(1)(ts)))(str_to_int(NTH(2)(ts))))
+                                          (la _. MOVABS(REGNUM(NTH(1)(ts)))(LABADDR(NTH(2)(ts))(labs)))))))
       (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))
   (HD(ts))
 
@@ -355,13 +378,13 @@ glyph TOTLEN = Z(la self. la ls. la labs. la off.
       (la ts. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts))))(TOKS(h)(""))))
 
 # ── iterate to the fixed point: length unchanged <=> no promotion <=> stable ──
-glyph FIXLABS = Z(la self. la ls. la labs. la n.
+glyph FIXLABS = Z(la self. la ls. la labs. la n. la org.
     IF(int_eq(n)(0))
       (la _. labs)
-      (la _. (la l2. IF(int_eq(TOTLEN(ls)(labs)(0))(TOTLEN(ls)(l2)(0)))
+      (la _. (la l2. IF(int_eq(TOTLEN(ls)(labs)(org))(TOTLEN(ls)(l2)(org)))
                        (la _. l2)
-                       (la _. self(ls)(l2)(sub(n)(1))))
-             (MKLABS(ls)(labs)(0)(NIL))))
+                       (la _. self(ls)(l2)(sub(n)(1))(org)))
+             (MKLABS(ls)(labs)(org)(NIL))))
 
 glyph PASS2 = Z(la self. la labs. la ls. la off.
     ls("")(la h. la t.
@@ -369,8 +392,17 @@ glyph PASS2 = Z(la self. la labs. la ls. la off.
       (TOKS(h)(""))))
 
 # ── ASSEMBLE(source text) -> machine code bytes ──
+#   `org N` sets the base address, so labels are ABSOLUTE (what a -f bin image
+#   with a load address needs, and what makes `mov rsi, msg` meaningful). Every
+#   offset simply starts at N instead of 0; rel8/rel32 are DIFFERENCES, so they
+#   are unaffected. `bits`/`org` emit nothing.
+glyph ORGOF = Z(la self. la ls.
+    ls(0)(la h. la t.
+      (la ts. IF(str_eq(HD(ts))("org"))(la _. str_to_int(NTH(1)(ts)))(la _. self(t)))
+      (TOKS(h)(""))))
+
 glyph ASSEMBLE = la src.
-    (la ls. PASS2(FIXLABS(ls)(NIL)(12))(ls)(0))(LINES(src)(""))
+    (la ls. (la org. PASS2(FIXLABS(ls)(NIL)(12)(org))(ls)(org))(ORGOF(ls)))(LINES(src)(""))
 
 glyph MAIN =
   (la code.

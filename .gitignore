@@ -1,5 +1,6 @@
 
 asm_in.asm
+asm_native
 asm_out.bin
 /autopoiesis.gen
 # autopoiesis.la's medium (generation counter, regenerated each run)

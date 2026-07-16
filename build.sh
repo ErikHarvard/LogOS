@@ -1322,6 +1322,39 @@ PY
       || { echo "FAIL  asm.la: no 'undefined label' diagnostic"; ok=0; }
     rm -f /tmp/nasm_lab.bin /tmp/asm_lab.out /tmp/asm_lab_bad.out
     cp asm_test.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    # (2f) ORG + LABEL-AS-IMMEDIATE. A LABEL immediate is NOT the same encoding
+    #      as a NUMBER: NASM emits `mov rsi, msg` as 48 be + imm64 (movabs, 10
+    #      bytes) while `mov rax, 1` takes the 5-byte b8+imm32 form — the address
+    #      would FIT in 32 bits, so this is a deliberate NASM choice about labels,
+    #      not arithmetic necessity. asm.la distinguishes them syntactically
+    #      (all-digits -> number, else -> label), which also lets SIZEL know the
+    #      size before any label address is known.
+    rm -f asm_out.bin /tmp/nasm_org.bin; cp asm_test_org.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm_org.out 2>&1 || { echo "FAIL  asm.la: org program failed: $(tail -1 /tmp/asm_org.out)"; ok=0; }
+    nasm -f bin asm_test_org.asm -o /tmp/nasm_org.bin 2>/dev/null
+    cmp -s asm_out.bin /tmp/nasm_org.bin || { echo "FAIL  asm.la: org/label-immediate DIFFERS from nasm"; ok=0; }
+    python3 -c "import sys; d=open('asm_out.bin','rb').read(); sys.exit(0 if d[10:12]==bytes([0x48,0xbe]) and d[12:16]==bytes([0x9d,0x00,0x40,0x00]) else 1)" \
+      || { echo "FAIL  asm.la: a label immediate did not use movabs at its absolute address"; ok=0; }
+    rm -f /tmp/nasm_org.bin /tmp/asm_org.out
+
+    # (2g) THE CAPSTONE — A PROGRAM BUILT BY AN ENTIRELY LA-NATIVE TOOLCHAIN.
+    #      elf.la already emitted a runnable ELF from LA, but its 36 bytes of
+    #      machine code were HAND-assembled into a literal byte blob — a human
+    #      did the assembling and LA only carried the result. Here the code is
+    #      ASSEMBLED FROM TEXT by asm.la and asmelf.la lays the ELF around it:
+    #      from `mov rax, 1` as SOURCE to a running process there is no nasm and
+    #      no ld in the path. The proof is not a diff — it is that the OS runs it.
+    #      (This is the assembler + image-layout seam, NOT a linker: one source,
+    #      one segment, one load address, no objects and no relocation sections.)
+    rm -f asm_native; cp asm_test_org.asm asm_in.asm
+    ./tiny_host asmelf.la >/tmp/asmelf.out 2>&1 || { echo "FAIL  asmelf.la: emit failed: $(tail -1 /tmp/asmelf.out)"; ok=0; }
+    [ -x asm_native ] || { echo "FAIL  asmelf.la: asm_native not emitted executable"; ok=0; }
+    NATOUT="$(./asm_native 2>/dev/null)"; NATRC=$?
+    [ "$NATRC" -eq 0 ] || { echo "FAIL  asmelf.la: the LA-built binary exited $NATRC"; ok=0; }
+    [ "$NATOUT" = "I AM THAT I AM" ] \
+      || { echo "FAIL  asmelf.la: the LA-built binary printed '$NATOUT'"; ok=0; }
+    rm -f asm_native /tmp/asmelf.out
+
     # (3) LOUD FAILURE — an instruction outside the subset must halt, not emit
     #     silent garbage. An assembler that quietly skips what it cannot encode
     #     is worse than one that refuses.

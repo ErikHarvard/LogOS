@@ -1,0 +1,86 @@
+# =====================================================================
+#  asmelf.la — A PROGRAM BUILT BY AN ENTIRELY LA-NATIVE TOOLCHAIN.
+#
+#  elf.la (Albedo Stage 1) already emitted a runnable native ELF from Lingua
+#  Adamica — but its 36 bytes of machine code were HAND-ASSEMBLED into a literal
+#  byte blob. A human did the assembling; LA only carried the result.
+#
+#  This closes that: the code is ASSEMBLED FROM TEXT by asm.la, and the ELF is
+#  laid out around it here. From `mov rax, 1` as SOURCE to a running process,
+#  there is no NASM and no ld anywhere in the path — only Lingua Adamica.
+#
+#      asm_in.asm --(asm.la)--> machine code --(this)--> ELF --> the OS runs it
+#
+#  ── WHAT THIS IS AND IS NOT ─────────────────────────────────────────────────
+#  It IS the assembler + image-layout seam closed end to end for a static,
+#  single-segment executable: the tool that turns text into bytes, and the thing
+#  that makes those bytes loadable, are both LA now.
+#  It is NOT a linker. There are no objects, no symbol resolution across
+#  translation units, and no relocation sections — one source, one segment, one
+#  load address. `org` makes the labels absolute and that is all the "linking"
+#  a -f bin image needs. A real LA linker (ELF objects + relocations) remains
+#  open on the seam map; this does not quietly claim it.
+#
+#  ── THE IMAGE ───────────────────────────────────────────────────────────────
+#  A minimal static ELF64: 64-byte ELF header + one 56-byte PT_LOAD (R+X) + the
+#  assembled code + the message. The header template is elf.la's, with the two
+#  size fields patched to the real total — p_filesz at offset 96 and p_memsz at
+#  104 (the same byte surgery bundle.la performs on p_filesz). Entry is
+#  0x400078 = 4194424, which is where the code begins (64 + 56), so the .asm
+#  declares `org 4194424` and its labels come out absolute — which is what makes
+#  `mov rsi, msg` resolve to the message's real address.
+# =====================================================================
+
+import("asm.la")
+
+glyph SEQ = la a. la b. b
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+
+glyph TAKE = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph DROP = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph B8 = la n. chr(int_to_str(n))
+
+#  elf.la's BYTES, verbatim (it is that file's private helper, not an export):
+#  a string of space-separated decimals -> the binary they denote.
+glyph BYTES = la s.
+    Z(la self. la rest. la tok. la out.
+        IF(str_eq(rest)(""))(la _.
+            IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok)))
+        )(la _.
+        IF(str_eq(str_head(rest))(" "))(la _.
+            self(str_tail(rest))("")(IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok))))
+        )(la _.
+            self(str_tail(rest))(concat(tok)(str_head(rest)))(out)
+        ))
+    )(s)("")("")
+glyph LE4B = la n.
+    concat(B8(mod(n)(256)))
+   (concat(B8(mod(div(n)(256))(256)))
+   (concat(B8(mod(div(n)(65536))(256)))
+          (B8(mod(div(n)(16777216))(256)))))
+glyph LE8B = la n. concat(LE4B(mod(n)(4294967296)))(LE4B(div(n)(4294967296)))
+
+#  elf.la's 120-byte header+phdr, verbatim. The two size fields it carries are
+#  patched below rather than trusted, since our code length differs from
+#  elf.la's hand-assembled 36 bytes.
+glyph HDR = BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0 120 0 64 0 0 0 0 0 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 56 0 1 0 0 0 0 0 0 0 1 0 0 0 5 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 0 0 0 0 0 0 64 0 0 0 0 0 171 0 0 0 0 0 0 0 171 0 0 0 0 0 0 0 0 16 0 0 0 0 0 0")
+
+#  p_filesz @96 and p_memsz @104, each 8 bytes little-endian; p_align @112 kept.
+glyph PATCHED = la total.
+    concat(TAKE(96)(HDR))(concat(LE8B(total))(concat(LE8B(total))(DROP(112)(HDR))))
+
+glyph MSG = "I AM THAT I AM\n"
+
+glyph MAIN =
+  (la code.
+    (la total.
+      SEQ(write_exec("asm_native")(concat(PATCHED(total))(concat(code)(MSG))))
+         (print(concat(concat("asmelf: assembled ")(str_len(code)))
+                      (concat(concat(" bytes of code from asm_in.asm -> asm_native (")
+                                    (int_to_str(total)))
+                             (" bytes total) — no nasm, no ld")))))
+    (add(120)(add(str_to_int(str_len(code)))(str_to_int(str_len(MSG))))))
+  (ASSEMBLE(read_file("asm_in.asm")))

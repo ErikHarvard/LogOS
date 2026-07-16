@@ -1162,7 +1162,28 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       `boot.asm` or `secd.asm`** and NASM remains in the kernel build. Closed for
       what is here, honestly open beyond it; the byte-identity gate extends to
       each increment.
-- [ ] **LA linker** — closes the `ld` + linker-script seam.
+- [~] **LA image layout (`asmelf.la`) — the assembler+layout seam closed END TO
+      END, gated (2026-07-16).** `elf.la` already emitted a runnable native ELF
+      from LA — but its 36 bytes of machine code were **hand-assembled into a
+      literal byte blob**: a human did the assembling and LA only carried the
+      result. `asmelf.la` closes that: the code is **assembled from TEXT** by
+      `asm.la` and the ELF is laid out around it. **From `mov rax, 1` as source to
+      a running process there is no NASM and no `ld` anywhere in the path.** The
+      proof is not a diff — the OS runs it: a 172-byte static ELF64 that prints
+      `I AM THAT I AM` and exits 0, gated. Needed `org` + **label-as-immediate**,
+      which is the piece that makes `mov rsi, msg` resolve (and a real NASM
+      distinction: a LABEL immediate is `48 be`+imm64 *movabs*, while a NUMBER is
+      the 5-byte `b8`+imm32 — the address fits in 32 bits, so this is a choice
+      about labels, not arithmetic).
+      *Honest scope — why `[~]`, and it is NOT a linker:* one source, one segment,
+      one load address; **no objects, no symbol resolution across translation
+      units, no relocation sections**. `org` makes labels absolute and that is all
+      the "linking" a `-f bin` image needs. A real **LA linker (ELF objects +
+      relocations + linker script)** — which is what `ld -T kernel/kernel.ld`
+      actually does for the kernel — remains genuinely open below.
+- [ ] **LA linker** — closes the `ld` + linker-script seam. Real objects, symbol
+      resolution, relocation sections. `asmelf.la` above closes only the
+      single-source/single-segment image case and does not claim this.
 - [ ] **LA-native debugger** — the system inspecting its own execution. Deep
       closure: the system observing itself (today: `qemu -d int` + foreign tools).
 - [ ] **LA build orchestrator** — `build.sh` is bash; the build driving its own
