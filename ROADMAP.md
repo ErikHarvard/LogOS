@@ -1195,10 +1195,32 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
 
 **Self-knowledge seams — the system knowing itself.**
 
-- [ ] **Self-documentation** — accurate docs generated FROM its own structure
-      (philology-as-anamnesis: lineage readable from form). Autological *and*
-      autopoietic; connects to `canon.la`/`glyphdag.la`, where a form already
-      contains its derivation.
+- [~] **Self-documentation — STRUCTURAL INVENTORY DONE + gated (2026-07-16),
+      `selfdoc.la`.** Every description of this system lives OUTSIDE it
+      (CLAUDE.md, ROADMAP.md, the comments): hand-written, able to drift, none
+      derived from the thing described — *this session caught exactly that drift
+      once, a ROADMAP claiming "no memory operands" about an assembler that had
+      them.* A description that **cannot** drift is one read off the form itself.
+      The precedent is `aatc.la`'s `SENSE_SRC` (already derives an organ's facts
+      from its source text); this carries it to the module's whole shape: every
+      glyph, its arity, and the siblings it is built out of — **the dependency
+      graph IS the etymology, recovered by reading the form**, exactly as
+      `canon.la` requires of a monoglyph (`REN ≡ CANON(ETYM)`).
+      **Autological**: run on itself it describes `DOC`/`ARITY`/`DEPS` — the very
+      machinery that produced the account. A documenter that could not document
+      itself would be heterological, ascribing to every other module a property it
+      exempts itself from.
+      *(The gate asserts SPECIFIC arities because an earlier version reported
+      `arity 0` for everything — it sought the body at the first `.`, which lands
+      INSIDE `la path.`. Its own output exposed it: `DOC` plainly takes a binder.)*
+      *Honest scope — why `[~]`:* it reads **structure, not meaning**. It cannot
+      know what a glyph is FOR; the prose in these headers is not derivable from
+      the code and is not claimed to be. So it replaces the part of documentation
+      that **drifts** (the structural inventory) and leaves the part that cannot
+      be derived (intent) to a human. And it is textual, not a parse: `DEPS` is
+      substring containment, so a name inside a longer identifier or a string
+      literal is counted — a real over-approximation, named rather than hidden
+      (a full parse via `parser.la` is the honest upgrade).
 - [ ] **Self-description / introspection** — the RUNNING system reporting its own
       structure, state and capabilities from within: *"what am I made of?"*
       answered by itself, not by external docs.

@@ -1187,6 +1187,46 @@ else
     exit 1
 fi
 
+say "Self-documentation (selfdoc.la — the account is READ OFF the form, not written beside it)"
+# Every description of this system lives OUTSIDE it (CLAUDE.md, ROADMAP.md, the
+# comments): hand-written, able to drift, none derived from the thing described.
+# A description that CANNOT drift is one read off the form itself. The precedent
+# is aatc.la's SENSE_SRC, which already derives an organ's facts from its source
+# text; this carries that to the module's whole shape — every glyph, its arity,
+# and what it is built out of (its dependency graph = its etymology, recovered by
+# reading the form, exactly as canon.la requires of a monoglyph).
+# THE AUTOLOGICAL TEST: a documenter that cannot document ITSELF is heterological
+# — it would ascribe to every other module a property it exempts itself from. So
+# it is run on selfdoc.la, and must describe its own machinery.
+ok=1
+rm -f selfdoc_out.txt
+SD="$(./tiny_host selfdoc.la 2>/dev/null)"; SD_RC=$?
+[ "$SD_RC" -eq 0 ] || { echo "FAIL  selfdoc: run exited $SD_RC"; ok=0; }
+# (1) THE AUTOLOGY — the account contains the very machinery that produced it.
+for g in DOC ARITY DEPS GLYPHNAMES; do
+  printf '%s\n' "$SD" | grep -q "  $g (arity" || { echo "FAIL  selfdoc: did not describe its own $g"; ok=0; }
+done
+# (2) THE ARITIES ARE REAL, not zeros. (An earlier version skipped to the first
+#     "." to find the body — which lands INSIDE `la path.` — so EVERYTHING
+#     reported arity 0, including DOC, which plainly takes one binder. Asserting
+#     specific arities is what makes that class of bug loud instead of plausible.)
+printf '%s\n' "$SD" | grep -q "IF (arity 3)"  || { echo "FAIL  selfdoc: IF should be arity 3"; ok=0; }
+printf '%s\n' "$SD" | grep -q "DOC (arity 1)" || { echo "FAIL  selfdoc: DOC should be arity 1"; ok=0; }
+printf '%s\n' "$SD" | grep -q "AND (arity 2)" || { echo "FAIL  selfdoc: AND should be arity 2"; ok=0; }
+# (3) THE INVENTORY IS COMPLETE — count matches the file's actual glyph count.
+NG=$(grep -c '^glyph ' selfdoc.la)
+printf '%s\n' "$SD" | grep -q "$NG glyphs, read from the form itself" \
+  || { echo "FAIL  selfdoc: inventory count != the $NG glyphs actually in the file"; ok=0; }
+# (4) DEPENDENCIES are real: DOC is built out of the pieces it names.
+printf '%s\n' "$SD" | grep -qE "  DOC \(arity 1\) <- .*LINES.*GLYPHNAMES" \
+  || { echo "FAIL  selfdoc: DOC's dependencies not recovered from its form"; ok=0; }
+rm -f selfdoc_out.txt
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  selfdoc: self-documentation — the module's whole structural inventory (every glyph, its arity, and the siblings it is built out of) READ OFF its own source rather than written beside it, and it is AUTOLOGICAL: run on itself it describes DOC/ARITY/DEPS, the very machinery that produced the account. Honest scope: structure, not meaning — it cannot know what a glyph is FOR, and DEPS is substring containment (an over-approximation), so it replaces the part of documentation that drifts and leaves intent to a human"
+else
+    exit 1
+fi
+
 say "Runtime continuous self-verification (selfwatch.la — the system watches itself WHILE ALIVE)"
 # The seam: build.sh IS the autological criterion, but it runs at BUILD time,
 # once, and then the system runs with nothing watching it. selfrepair (B3) is

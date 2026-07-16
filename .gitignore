@@ -124,6 +124,7 @@ prog.la
 scratchpad/__pycache__/
 /secd
 # seed). build.sh Stage 4 checks it is a byte-identical fixed point of the current
+selfdoc_out.txt
 # specpipe.la's generated math module (regenerated each run)
 /stage4_seed_out.txt
 /strutil_generated.la

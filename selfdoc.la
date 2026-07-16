@@ -1,0 +1,147 @@
+# =====================================================================
+#  SELF-DOCUMENTATION — the system generates an accurate account of its own
+#  structure FROM its own structure. "What am I made of?", answered by itself.
+#
+#  ── THE SEAM ────────────────────────────────────────────────────────────────
+#  Every description of this system lives OUTSIDE it: CLAUDE.md, ROADMAP.md, the
+#  comments. All hand-written, all able to drift from the code, and none derived
+#  from the thing they describe. (This session already caught one such drift: a
+#  ROADMAP that claimed "no memory operands" about an assembler that had them.)
+#  A description that cannot drift is one READ OFF the form itself.
+#
+#  ── THE WRITTEN PRECEDENT (nothing new is invented) ─────────────────────────
+#  aatc.la already derives an organ's facts from its SOURCE TEXT — SENSE_SRC
+#  reads whether a module defines its namesake, is non-empty, has imports. This
+#  is that move carried to its conclusion: not three facts, but the module's
+#  whole shape — every glyph, its arity, and what it is built out of.
+#  And it is the project's own philology-as-anamnesis: LINEAGE READABLE FROM
+#  FORM. canon.la requires a monoglyph's etymology to live IN its structure
+#  (REN ≡ CANON(ETYM)); here a module's dependency graph is its etymology, and it
+#  is recovered the same way — by reading the form, not by consulting a register
+#  kept beside it.
+#
+#  ── THE AUTOLOGICAL TEST ────────────────────────────────────────────────────
+#  A documenter that cannot document ITSELF is heterological — it would ascribe
+#  to every other module a property (being describable from its own form) that it
+#  exempts itself from. So MAIN runs DOC on selfdoc.la: the account it produces
+#  must contain DOC, ARITY and DEPS — its own machinery, described by that
+#  machinery. ∃(∃) ≡ ∃, at the level of description.
+#
+#  ── HONEST SCOPE ────────────────────────────────────────────────────────────
+#  This reads STRUCTURE, not meaning: what each glyph is named, how many binders
+#  it takes, and which sibling glyphs its body mentions. It does NOT know what a
+#  glyph is FOR — the prose in these headers is not derivable from the code and
+#  is not claimed to be. So this REPLACES the part of documentation that drifts
+#  (the structural inventory) and leaves the part that cannot be derived (intent)
+#  where it belongs: written by a human, next to the code.
+#  It is also textual, not a parse: DEPS is substring containment, so a name
+#  appearing inside a longer identifier or a string literal is counted. That is
+#  a real over-approximation, named rather than hidden — a full parse (parser.la
+#  exists) is the honest upgrade.
+# =====================================================================
+
+export DOC GLYPHNAMES ARITY DEPS
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph NIL  = la n. la c. n
+glyph SEQ  = la a. la b. b
+
+# ── text helpers ──
+glyph SW = Z(la self. la s. la p.
+    IF(str_eq(p)(""))(la _. TRUE)
+      (la _. IF(str_eq(s)(""))(la _. FALSE)
+               (la _. IF(str_eq(str_head(s))(str_head(p)))
+                        (la _. self(str_tail(s))(str_tail(p)))
+                        (la _. FALSE))))
+glyph HASSUB = Z(la self. la s. la p.
+    IF(SW(s)(p))(la _. TRUE)
+      (la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(p))))
+glyph LTRIM = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")
+      (la _. IF(str_eq(str_head(s))(" "))(la _. self(str_tail(s)))(la _. s)))
+glyph SKIPDOT = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")
+      (la _. IF(str_eq(str_head(s))("."))(la _. str_tail(s))(la _. self(str_tail(s)))))
+glyph LINES = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))(la _. CONS(cur)(NIL))
+      (la _. IF(str_eq(str_head(s))("\n"))
+               (la _. CONS(cur)(self(str_tail(s))("")))
+               (la _. self(str_tail(s))(concat(cur)(str_head(s))))))
+#   the token after "glyph ", up to the next space
+glyph UPTOSP = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")
+      (la _. IF(str_eq(str_head(s))(" "))(la _. "")
+               (la _. concat(str_head(s))(self(str_tail(s))))))
+glyph DROPN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+
+#   the body starts after the FIRST "= ". (An earlier version skipped to the
+#   first "." instead, which lands INSIDE `la path.` — so every glyph reported
+#   arity 0, including DOC, which plainly takes one binder. The output caught it.)
+glyph AFTEREQ = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")
+      (la _. IF(SW(s)("= "))(la _. DROPN(2)(s))(la _. self(str_tail(s)))))
+
+glyph ISGL   = la l. SW(l)("glyph ")
+glyph GNAME  = la l. UPTOSP(DROPN(6)(l))
+
+# ── ARITY: how many binders this glyph takes (specpipe's BARITY shape) ──
+#   Count LEADING `la ` binders only — an inner lambda is not part of the
+#   glyph's own arity, so the scan stops at the first non-binder.
+glyph ARITY = Z(la self. la b.
+    (la t. IF(SW(t)("la "))(la _. add(1)(self(SKIPDOT(t))))(la _. 0))(LTRIM(b)))
+
+# ── the module's inventory, read off its own text ──
+glyph GLYPHNAMES = Z(la self. la ls.
+    ls(NIL)(la h. la t. IF(ISGL(h))(la _. CONS(GNAME(h))(self(t)))(la _. self(t))))
+
+#   a glyph's body: the rest of its `glyph X = ...` line plus every following
+#   line until the next `glyph` — so a multi-line definition is read whole.
+glyph BODYFROM = Z(la self. la ls.
+    ls("")(la h. la t. IF(ISGL(h))(la _. "")(la _. concat(concat(" ")(h))(self(t)))))
+glyph BODYOF = Z(la self. la nm. la ls.
+    ls("")(la h. la t.
+      IF(AND(ISGL(h))(str_eq(GNAME(h))(nm)))
+        (la _. concat(h)(BODYFROM(t)))
+        (la _. self(nm)(t))))
+
+# ── DEPS: which sibling glyphs this one is built out of — its etymology ──
+glyph DEPS = Z(la self. la body. la nm. la names.
+    names("")(la h. la t.
+      concat(IF(AND(NOT(str_eq(h)(nm)))(HASSUB(body)(h)))
+               (la _. concat(h)(" "))
+               (la _. ""))
+             (self(body)(nm)(t))))
+
+glyph ENTRY = la names. la ls. la nm.
+    (la body.
+      concat(concat(concat("  ")(nm))(concat(" (arity ")(concat(int_to_str(ARITY(AFTEREQ(body))))(") <- "))))
+            (concat(DEPS(body)(nm)(names))("\n")))
+    (BODYOF(nm)(ls))
+
+glyph EACH = Z(la self. la names. la ls. la rest.
+    rest("")(la h. la t. concat(ENTRY(names)(ls)(h))(self(names)(ls)(t))))
+glyph COUNT = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+
+# ── DOC(path) -> the module's own account of itself ──
+glyph DOC = la path.
+    (la ls.
+      (la names.
+        concat(concat(concat("# ")(path))(concat(" — ")(concat(int_to_str(COUNT(names)))(" glyphs, read from the form itself\n"))))
+              (EACH(names)(ls)(names)))
+      (GLYPHNAMES(ls)))
+    (LINES(read_file(path))(""))
+
+glyph MAIN =
+  SEQ(print("── self-documentation: the account is READ OFF the form, not written beside it ──"))
+  ((la d.
+     SEQ(write_file("selfdoc_out.txt")(d))
+     (SEQ(print(d))
+          (print("  (the above describes selfdoc.la — including DOC/ARITY/DEPS, the very machinery that produced it: the documenter documents itself)"))))
+   (DOC("selfdoc.la")))
