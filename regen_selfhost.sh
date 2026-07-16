@@ -1,8 +1,12 @@
 #!/bin/bash
 # Regenerate the self-hosted compiler reference image (native_codegen3_selfhost.bin)
 # after a native_codegen3.la / native_codegen3_rt.asm change. Uses the CURRENT
-# reference image (16 GiB heap) to iterate to the new byte-identical fixed point —
-# runs in seconds, no tiny_host seed. The ~11h tiny_host genesis (or patch_heap.py
+# reference image (16 GiB heap) to iterate to the new byte-identical fixed point,
+# with no tiny_host seed. BUDGET ~25-40 MIN (measured 2026-07-16: each self-compile
+# of native_codegen3.la is ~6 min, 2 per iteration, converging at iter 2). This
+# comment used to claim "runs in seconds" — it does not; don't wrap it in a short
+# `timeout`, which kills it at exit 143 and looks like a failure. The ~11h
+# tiny_host genesis (or patch_heap.py
 # on a tiny_host CC0) is only needed to create the FIRST image; thereafter the image
 # bootstraps its own successor. build.sh Stage 4 checks the committed image is a
 # fixed point of the source, so run this (and `git add` the image) after any change.

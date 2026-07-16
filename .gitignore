@@ -125,3 +125,6 @@ mathutil.la
 /kernel/hal3bdisk.img
 /kernel/kernel_hal2b.elf
 /kernel/kernel_hal2b_64.elf
+/kernel/kernel_hal4b.elf
+/kernel/kernel_hal4b_64.elf
+scratchpad/__pycache__/

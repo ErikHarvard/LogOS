@@ -33,6 +33,7 @@ LABELS = {
     "RT_INB": "rt_inb", "RT_INL": "rt_inl",
     "RT_OUTB": "rt_outb", "RT_OUTL": "rt_outl",
     "RT_INW": "rt_inw", "RT_OUTW": "rt_outw",
+    "RT_FILL": "rt_fill", "RT_MEMCPY": "rt_memcpy",
     "RT_STACK_OVERFLOW": "rt_stack_overflow",
     "HEAP_BASE_ADDR": "HEAP_BASE", "NEXT_GC_ADDR": "NEXT_GC",
     "STACK_BASE_ADDR": "STACK_BASE", "WORKLIST_BASE_ADDR": "WORKLIST_BASE",

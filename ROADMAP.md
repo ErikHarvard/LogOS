@@ -819,8 +819,35 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             QEMU monitor and asserts the echoed `logos` + `kbd done` + exit 33. So a
             real hardware interrupt path (PIC + IRQ1 + IDT gate) drives input, the LA
             program woken by the keyboard rather than polling it.
-      - [ ] Then a bulk framebuffer-fill/memcpy-to-MMIO primitive, and the
-            compositor on the metal.
+      - [x] **HAL.4b — bulk framebuffer fill + memcpy-to-MMIO, the language's
+            FIRST TERNARY builtins — DONE + gated (2026-07-16).** HAL.4 drew its
+            square with a poke (and a beta-reduction) per byte — 12288 for 64x64,
+            and a full 640x480 screen was never attempted. HAL.4b adds the two
+            bulk primitives a compositor's inner loop runs on, appended at
+            `native_codegen3_rt.asm` EOF so every existing `RT_*` address is
+            unchanged (verified: only `RTLEN`/`LITERAL_BASE` shift): `rt_fill`
+            (`rep stosd` — `count` dwords of `value`; a pixel IS one dword at
+            32bpp) and `rt_memcpy` (`rep movsb` — the backbuffer->LFB blit).
+            **Both are ternary, which the compiler could not emit at all**: this
+            grew `native_codegen3` a third arity — `IS_BUILTIN3`/`RT_TER`/`CG_TER`
+            plus a `CG_APP` arm recognising a ternary head one `APP` level deeper
+            than a binop's (guarded by `NODE_TAG(g)="APP"` BEFORE `APP_F(g)`, the
+            trap `INT_LIT_SAFE` documents). `CG_TER` extends `CG_BIN`'s shape by
+            one operand — push a1, push a2, evaluate a3 into rax, then `pop rsi`
+            (=a2) + `pop rdi` (=a1) — the pops AFTER a3's code, so a3 clobbering
+            rdi/rsi cannot corrupt the earlier operands. Safe across a collection
+            because the runtime GC is conservative mark-sweep (non-moving) and
+            scans the native stack from `STACK_BASE`. `kernel/fb4b.la` fills all
+            307200 pixels in ONE rep stosd, fills a 64x64 red backbuffer in plain
+            RAM at 0x340000 (proving fill works off-MMIO), and blits it to
+            (100,100) row-by-row (rows are contiguous in RAM but pitch-strided on
+            screen). `gate_hal4b.sh` asserts each primitive SEPARATELY and twice
+            over — the driver's own `peek` read-back on serial (`fb4b out=128,0`
+            proves fill painted where nothing else wrote; `fb4b in=0,255` proves
+            memcpy landed; either alone is passable by a broken primitive) AND an
+            independent screendump (4096/4096 red at (100,100), blue at 6/6
+            far-flung samples). The per-pixel poke loop is retired.
+      - [ ] Then the compositor on the metal.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*
@@ -882,6 +909,98 @@ undetectability (highest value), threshold/social key recovery, deniable storage
 friction-minimized node-joining, incentive-aligned seeding, onboarding bridges,
 and the minimal regenerable seed — are captured (not yet designed) in
 [`FUTURE_WORK.md`](FUTURE_WORK.md).*
+
+---
+
+## Autopoietic Closure — the map (added 2026-07-16)
+
+*The governing definition: **"truly autopoietic" = operational closure at every
+level ABOVE the hardware substrate.** Stopping there is not a failure — cells run
+on chemistry they did not author. The Bootstrap Theorem already frames it
+correctly: close the loop* above *the womb, and shrink the womb over time.*
+
+**Already closed:** self-compiling ✓ · self-hosting ✓ · self-verifying
+(build-time) ✓ · self-booting ✓ (K7, `5076806` — LogOS boots itself off a raw
+disk; GRUB/multiboot gone, the last foreign-toolchain seam at boot closed).
+
+### The core three (the remaining first-list items)
+
+- [ ] **Self-modification** — the system extending/rewriting its own code *from
+      within*: not merely compiling itself, but changing itself. Buildable
+      precisely *because* the system contains its own compiler, so it can
+      regenerate and extend its own components. The deeper Rubedo-horizon
+      capability. **Bounded by design** — see the trusted-base limit below.
+- [ ] **Bounded self-repair** — the system detecting a corrupted component and
+      regenerating it from its own verified source (ledger **B3**). The
+      `AUDIT_FILE`/`REPAIR` machinery in `aatc.la` is the seed of the criterion;
+      the missing half is regeneration of the real artifact.
+- [ ] **Self-programming via the language** — the system generating new LA
+      programs from within (the meta-programmable / democratized-coding goal).
+      `autoloop.la` + `specpipe.la` are the seed; the goal decomposition is still
+      supplied from outside, which is the gap to close.
+
+### Tier 1 — genuine closure (each closes a real seam)
+
+- [ ] **Self-hosting build system.** `build.sh` is **bash** — a live seam: an
+      external tool orchestrates the compilation of a self-hosting system. The
+      build pipeline written in LA, driving its own compilation, closes it.
+- [ ] **Runtime self-verification.** AATC verifies at **build time only**;
+      nothing watches the *running* system. The criterion applied continuously to
+      the live system — the system watching itself while alive — is a strictly
+      deeper closure than the compile-time audit. (Open, not partial.)
+- [ ] **Self-documentation / self-description** — the system generating an
+      accurate account of its own structure *from* its own structure
+      (philology-as-anamnesis: lineage readable from form). Connects directly to
+      the etymology/`canon.la`/`glyphdag.la` work, where a form already contains
+      its own derivation.
+- [ ] **Self-hosting toolchain beyond the compiler** — debugger, linker,
+      assembler. Each external tool is a seam. The boot-assembly linker/assembler
+      is the hard edge: some of it is irreducibly machine-level.
+- [ ] **Self-updating** — the system producing *and installing* a new version of
+      itself from within, with no external update mechanism. Self-modification's
+      shipping counterpart: not just changing its code in memory, but persisting
+      a new self. Pairs with self-modification above.
+
+### Tier 2 — autopoietic resilience (the system maintaining its own continuity)
+
+- [~] **Self-monitoring / homeostasis** — observing its own health (resource use,
+      errors, drift) and adjusting. **Begun** in LogosMentor's Sense/Learn
+      (`aatc.la`'s Centropic loop + centropy ledger); extending it to the whole
+      OS makes the system self-regulating.
+- [ ] **Self-distribution / self-replication onto new hardware** — copying itself
+      to new hardware and coming back up (the encrypted-P2P/torrent recovery,
+      ledger **B5**). Autopoiesis at the *survival* level. Needs networking →
+      late-stage; see AegisNet above.
+- [ ] **Self-bootstrapping from a minimal seed** — a small core reconstituting
+      its full self by streaming the rest (the honest version of the
+      minimal-regenerable-seed idea). Late-stage.
+
+### Tier 3 — the honest LIMITS (named so they are never chased)
+
+*These are not TODOs. They are the floor to build **up to**, not through.
+Recording them is what keeps the framework's integrity — and what stops a future
+session from quietly chasing the impossible.*
+
+- [!] **Hardware / firmware — the irreducible floor.** Cannot be closed in
+      software (the Bootstrap Theorem's womb). Open hardware is the *only* path
+      to shrinking it, and it is a separate, long-term, mostly-not-software
+      frontier. **Do not attempt to close it in LA — you cannot.** (See Open
+      silicon, Phase III.)
+- [!] **The trusted base for self-repair / self-modification.** Something must
+      remain un-self-modified in order to *do* the modifying and repairing.
+      Closure-from-nothing is exactly the pseudo-paradox the Codex dissolves.
+      Therefore self-modification and self-repair are **bounded** — always a
+      trusted core. Build the bounded version; never chase total.
+- [!] **The learned-model seam.** A statistical model's capability comes from
+      training and compute, not from LA. LogOS can **own, run, and orchestrate** a
+      model sovereignly (the orchestration *is* closable), but the model's
+      intelligence is not autopoietically generated by the language — the weights
+      are learned, not authored. Honest limit; consistent with the
+      intelligence-architecture split (metalogical reasoning core in LA; the
+      statistical model as interface only).
+
+*Achieving Tiers 1 and 2 yields a system autopoietic in every sense a system
+running on physical hardware **can** be — the true, honest maximum.*
 
 ---
 

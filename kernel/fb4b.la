@@ -1,0 +1,109 @@
+# =====================================================================
+#  LogOS HAL.4b — bulk framebuffer fill + memcpy-to-MMIO, in Lingua Adamica.
+#
+#  HAL.4 put the kernel's first pixels on the panel, but a poke per byte: three
+#  pokes and three beta-reductions per pixel, so a 64x64 square was 12288 of
+#  them and a FULL 640x480 screen was never attempted. HAL.4b adds the two bulk
+#  primitives a compositor actually runs on — the FIRST ternary builtins in the
+#  language (native_codegen3's CG_TER; rdi=arg1, rsi=arg2, rax=arg3):
+#
+#    fill(dst)(count)(value)  -> one `rep stosd`: count 32-bit dwords of value.
+#                               A pixel IS one dword at 32bpp, so this is the
+#                               framebuffer's native fill unit.
+#    memcpy(dst)(src)(len)    -> one `rep movsb`: len bytes, src -> dst. The
+#                               blit: a backbuffer composed in ordinary RAM and
+#                               moved to the LFB in one instruction.
+#
+#  This program does what HAL.4 could not, and proves each primitive separately:
+#    1. HAL.4's PCI scan / BAR0 / Bochs-VBE 640x480x32 bring-up (unchanged);
+#    2. fill()s the WHOLE screen blue -- 307200 pixels in one rep stosd;
+#    3. fill()s a 64x64 red BACKBUFFER in ordinary RAM at 0x340000 (proving fill
+#       works off-MMIO too), then memcpy()s it row-by-row onto the LFB at
+#       (100,100) -- a real backbuffer->screen blit, the compositor's inner loop;
+#    4. peek()s the result back and PRINTS it, so the gate asserts the pixels
+#       from the serial line and does not depend on a screendump: a pixel inside
+#       the square must read R=255,B=0 (memcpy landed) and a pixel outside must
+#       read R=0,B=128 (fill landed). Both must hold -- either alone is passable
+#       by a broken primitive.
+#
+#  XRGB8888 is little-endian, so a dword V lays bytes B,G,R,X = V&255, V>>8,
+#  V>>16: blue = 128, red = 255<<16 = 16711680.
+#  Scratch at 0x340000 is free low RAM -- above K3b's MBI_SAVE word (0x300000)
+#  and the HAL.2b keyboard ring (0x320000), below the LA image (0x400000), and
+#  identity-mapped by boot.asm's %ifdef HAL4 0..4 GiB map (which the high LFB
+#  BAR needs anyway). Flat + import-free, like pci/kbd/ata/fb.la.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+glyph BLUE  = 128                # B=128,G=0,R=0
+glyph RED   = 16711680           # B=0,G=0,R=255
+glyph BACK  = 3407872            # 0x340000 — backbuffer scratch (free low RAM)
+glyph SQ    = 64                 # square edge, in pixels
+glyph SQX   = 100                # square origin x
+glyph SQY   = 100                # square origin y
+
+# ── PCI config-space read: reg at (bus 0, dev, off) via 0xCF8/0xCFC ──
+glyph CFG = la dev. la off.
+    SEQ(outl(3320)(add(add(2147483648)(mul(dev)(2048)))(off)))
+       (inl(3324))
+
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 0)(la _.
+      IF(int_eq(CFG(dev)(0))(286331444))(la _. dev)(la _.
+        self(add(dev)(1)))))
+
+# ── Bochs VBE dispi (index 0x1CE=462, data 0x1CF=463) ──
+glyph DISPI  = la idx. la val. SEQ(outw(462)(idx))(outw(463)(val))
+glyph RDISPI = la idx. SEQ(outw(462)(idx))(inw(463))
+
+glyph SETMODE =
+    SEQ(DISPI(4)(0))          # disable while configuring
+    (SEQ(DISPI(1)(640))       # XRES
+    (SEQ(DISPI(2)(480))       # YRES
+    (SEQ(DISPI(3)(32))        # BPP
+    (DISPI(4)(65)))))         # ENABLE = enabled | LFB
+
+# ── the blit: memcpy the backbuffer onto the LFB, one row per call ──
+#   Each row is SQ pixels = SQ*4 bytes, contiguous in the backbuffer but
+#   pitch-strided on the screen — which is exactly why the copy is per-row and
+#   not one memcpy of the whole square.
+glyph BLIT = Z(la self. la base. la pitch. la y.
+    IF(int_eq(y)(SQ))(la _. "!")(la _.
+      SEQ(memcpy(add(base)(add(mul(add(SQY)(y))(pitch))(mul(SQX)(4))))
+                (add(BACK)(mul(y)(mul(SQ)(4))))
+                (mul(SQ)(4)))
+         (self(base)(pitch)(add(y)(1)))))
+
+# ── read one pixel's B and R back out of the LFB, as "B,R" ──
+glyph PIX = la base. la pitch. la x. la y.
+    (la p. concat(concat(int_to_str(peek(p)))(","))(int_to_str(peek(add(p)(2)))))
+    (add(base)(add(mul(y)(pitch))(mul(x)(4))))
+
+glyph SPIN = Z(la self. la _. self("!"))
+
+glyph MAIN =
+    (la dev.
+      (la bar.
+        (la base.
+          SEQ(SETMODE)
+          ((la pitch.
+              SEQ(print(concat(concat("fb4b lfb=")(int_to_str(base)))(concat(" pitch=")(int_to_str(pitch)))))
+              # 2. the whole screen blue, in ONE rep stosd
+              (SEQ(fill(base)(mul(480)(div(pitch)(4)))(BLUE))
+              (SEQ(print("fb4b filled"))
+              # 3. red backbuffer in plain RAM, then blit it to the LFB
+              (SEQ(fill(BACK)(mul(SQ)(SQ))(RED))
+              (SEQ(BLIT(base)(pitch)(0))
+              (SEQ(print("fb4b blitted"))
+              # 4. read both pixels back — the witness the gate asserts
+              (SEQ(print(concat("fb4b in=")(PIX(base)(pitch)(add(SQX)(8))(add(SQY)(8)))))
+              (SEQ(print(concat("fb4b out=")(PIX(base)(pitch)(10)(10))))
+              (SEQ(print("fb4b done"))
+              (SPIN("!")))))))))))
+           (mul(RDISPI(6))(4))))          # pitch = VIRT_WIDTH * 4 bytes
+        (sub(bar)(mod(bar)(16))))          # LFB base = BAR0 & ~0xF
+      (CFG(dev)(16)))                       # BAR0
+    (FIND(0))

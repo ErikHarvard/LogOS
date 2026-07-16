@@ -2039,3 +2039,62 @@ rt_outw:
     out     dx, ax             ; write 16 bits to the port
     movzx   rax, cx            ; return the word written (0..65535)
     jmp     rt_box_int
+
+; ── HAL.4b: chk_int3 — the ternary twin of chk_int2 ──────────────────────────
+;   Three operands (rdi=A, rsi=B, rax=C) must be boxed INT (tag 4), else the
+;   same loud halt the binops take. Reads only [rdi]/[rsi]/[rax] and flags, so
+;   every caller register survives. Used by the ternary builtins below.
+chk_int3:
+    cmp     qword [rdi], 4
+    jne     rt_not_int
+    cmp     qword [rsi], 4
+    jne     rt_not_int
+    cmp     qword [rax], 4
+    jne     rt_not_int
+    ret
+
+; ── HAL.4b: rt_fill(INT dst)(INT count)(INT value) -> INT count ──────────────
+;   The bulk write-twin of poke: lays `count` 32-bit dwords of `value` at `dst`.
+;   A pixel is one dword at 32bpp, so this is the framebuffer's native fill unit
+;   — one `rep stosd` where the LA loop cost 3 pokes (and 3 beta-reductions) per
+;   pixel. The FIRST ternary builtin: the codegen passes rdi = arg1 (dst),
+;   rsi = arg2 (count), rax = arg3 (value), all boxed INT (tag 4); chk_int3
+;   halts loud (rc 1) on anything else. Returns the dword count written, boxed,
+;   so a fill composes arithmetically like poke returns its byte.
+;   Writes raw identity-mapped/MMIO memory, never the heap — so no GC interplay.
+;   Native-only, like peek/poke. Appended at EOF so every existing RT_* address
+;   is unchanged; only LITERAL_BASE shifts.
+rt_fill:
+    call    chk_int3            ; all three args boxed INT (tag 4), else halt rc1
+    mov     r8,  [rdi+8]        ; dst   (arg1)
+    mov     rcx, [rsi+8]        ; count (arg2), in dwords
+    mov     r9,  [rax+8]        ; value (arg3)
+    mov     r10, rcx            ; save the count for the return value
+    mov     rdi, r8             ; rep stosd writes ES:[RDI] (ES base = 0 in long mode)
+    mov     eax, r9d            ; the dword to store
+    cld                         ; forward
+    rep     stosd               ; rcx dwords of eax at [rdi], rdi += 4 each
+    mov     rax, r10            ; -> the count actually written
+    jmp     rt_box_int          ; -> boxed INT
+
+; ── HAL.4b: rt_memcpy(INT dst)(INT src)(INT len) -> INT len ──────────────────
+;   The bulk copy the compositor runs on: blits `len` bytes from `src` to `dst`
+;   as one `rep movsb`. With rt_fill this is the whole point of HAL.4b — a
+;   backbuffer composed in ordinary RAM and blitted to the LFB in one primitive,
+;   instead of a poke per byte through beta-reduction. Ternary: rdi = arg1
+;   (dst), rsi = arg2 (src), rax = arg3 (len bytes). Byte-granular (movsb) so it
+;   composes with any pitch/alignment; forward-only, so it is a true copy, not
+;   an overlap-safe move — dst below src within one buffer would trail itself.
+;   Returns the byte count copied, boxed.
+rt_memcpy:
+    call    chk_int3            ; all three args boxed INT (tag 4), else halt rc1
+    mov     r8,  [rdi+8]        ; dst (arg1)
+    mov     r9,  [rsi+8]        ; src (arg2)
+    mov     rcx, [rax+8]        ; len (arg3), in bytes
+    mov     r10, rcx            ; save the length for the return value
+    mov     rdi, r8             ; rep movsb: ES:[RDI] <- DS:[RSI]
+    mov     rsi, r9
+    cld                         ; forward
+    rep     movsb
+    mov     rax, r10            ; -> the byte count actually copied
+    jmp     rt_box_int          ; -> boxed INT
