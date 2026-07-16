@@ -64,7 +64,8 @@
 #  A REAL SUBSET, every instruction of it verified byte-identical against NASM:
 #  mov/add/sub/xor (r64,r64), mov (r64,imm32), push/pop (r64), syscall, ret,
 #  nop, r8-r15 via REX, labels and control flow (jmp/call/jz/je/jnz/jne) with
-#  NASM's short/near selection reproduced via a fixed point,
+#  NASM's short/near selection reproduced via a fixed point, `org` + labels as
+#  immediates (movabs), `db` (strings and bytes) so a source carries its own data,
 #  and MEMORY OPERANDS for mov in both directions — [base], [base+disp],
 #  [base-disp], with the rbp/r13 and rsp/r12 quirks and disp8/disp32 promotion.
 #  elf.la's whole write+exit entry is inside it, as is any branching routine
@@ -74,8 +75,8 @@
 #    - memory operands cover a BASE + DISPLACEMENT only: no index/scale
 #      ([rax+rcx*4]), no RIP-relative, and only for `mov` — add/sub/xor stay
 #      register-to-register;
-#    - no directives beyond `bits`, no sections, no data definitions, no
-#      paging/GDT/IDT/segment forms, no immediates to memory;
+#    - directives are `bits`/`org`/`db` only — no sections, no dw/dd/dq, no
+#      resb, no equ, no paging/GDT/IDT/segment forms, no immediates to memory;
 #    - jcc covers jz/je/jnz/jne only — not the signed/unsigned comparison set
 #      (jl/jg/jle/jge/jb/ja/...), which is the same encoding + a condition
 #      nibble and is mechanical to extend.
@@ -115,14 +116,27 @@ glyph LE4 = la n.
 
 # ── tokenizing: lines, then whitespace/comma-separated tokens ──
 glyph ISSEP = la c. OR(str_eq(c)(" "))(OR(str_eq(c)(","))(str_eq(c)("	")))
+#   The tokenizer must be STRING-AWARE: `db "I AM THAT I AM", 10` splits on
+#   spaces like everything else, which would shred the string into words. So a
+#   quoted run is consumed whole into ONE token, kept with its opening quote so
+#   the db emitter can tell a string from a number by its first character.
+glyph SCANSTR = Z(la self. la s. la acc.
+    IF(str_eq(s)(""))
+      (la _. PAIR(acc)(""))
+      (la _. IF(str_eq(str_head(s))("\""))
+               (la _. PAIR(acc)(str_tail(s)))
+               (la _. self(str_tail(s))(concat(acc)(str_head(s))))))
 glyph TOKS = Z(la self. la s. la cur.
     IF(str_eq(s)(""))
       (la _. IF(str_eq(cur)(""))(la _. NIL)(la _. CONS(cur)(NIL)))
       (la _. (la c.
-          IF(ISSEP(c))
-            (la _. IF(str_eq(cur)(""))(la _. self(str_tail(s))(""))
-                                      (la _. CONS(cur)(self(str_tail(s))(""))))
-            (la _. self(str_tail(s))(concat(cur)(c))))
+          IF(str_eq(c)("\""))
+            (la _. (la p. CONS(concat("\"")(FST(p)))(self(SND(p))("")))
+                   (SCANSTR(str_tail(s))("")))
+            (la _. IF(ISSEP(c))
+                     (la _. IF(str_eq(cur)(""))(la _. self(str_tail(s))(""))
+                                               (la _. CONS(cur)(self(str_tail(s))(""))))
+                     (la _. self(str_tail(s))(concat(cur)(c)))))
         (str_head(s))))
 glyph LINES = Z(la self. la s. la cur.
     IF(str_eq(s)(""))
@@ -307,12 +321,23 @@ glyph MOVSIZE = la ts.
                                  (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 5)(la _. 6))
                                  (la _. 10))))
 
+# ── db: define bytes. Operands are quoted strings (emitted verbatim) or
+#    numbers (one byte each) — `db "I AM THAT I AM", 10`. This is what lets the
+#    .asm carry its OWN data instead of a wrapper appending it afterwards.
+glyph TL2 = la l. l(NIL)(la h. la t. t)
+glyph ISSTRTOK = la t. IF(str_eq(t)(""))(la _. FALSE)(la _. str_eq(str_head(t))("\""))
+glyph DBEMIT = Z(la self. la l.
+    l("")(la h. la t. concat(IF(ISSTRTOK(h))(la _. str_tail(h))(la _. B(str_to_int(h))))(self(t))))
+glyph DBSIZE = Z(la self. la l.
+    l(0)(la h. la t. add(IF(ISSTRTOK(h))(la _. str_to_int(str_len(str_tail(h))))(la _. 1))(self(t))))
+
 # ── SIZEL: bytes this line occupies, given what we currently know of labels ──
 glyph SIZEL = la labs. la off. la ts.
   (la op.
     IF(str_eq(op)(""))(la _. 0)(la _.
     IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. 0)(la _.
     IF(ISLABEL(op))(la _. 0)(la _.
+    IF(str_eq(op)("db"))(la _. DBSIZE(TL2(ts)))(la _.
     IF(str_eq(op)("syscall"))(la _. 2)(la _.
     IF(str_eq(op)("ret"))(la _. 1)(la _.
     IF(str_eq(op)("nop"))(la _. 1)(la _.
@@ -321,7 +346,7 @@ glyph SIZEL = la labs. la off. la ts.
     IF(str_eq(op)("call"))(la _. 5)(la _.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
     IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 6))(la _.
-    IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _. 3))))))))))))
+    IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _. 3)))))))))))))
   (HD(ts))
 
 # ── one instruction -> its bytes (off = this instruction's own address) ──
@@ -330,6 +355,7 @@ glyph ENC1 = la labs. la off. la ts.
     IF(str_eq(op)(""))(la _. "")(la _.
     IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. "")(la _.
     IF(ISLABEL(op))(la _. "")(la _.
+    IF(str_eq(op)("db"))(la _. DBEMIT(TL2(ts)))(la _.
     IF(str_eq(op)("syscall"))(la _. concat(B(15))(B(5)))(la _.
     IF(str_eq(op)("ret"))(la _. B(195))(la _.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
@@ -361,7 +387,7 @@ glyph ENC1 = la labs. la off. la ts.
                                  (la _. IF(ISNUM(NTH(2)(ts)))
                                           (la _. MOVIMM(REGNUM(NTH(1)(ts)))(str_to_int(NTH(2)(ts))))
                                           (la _. MOVABS(REGNUM(NTH(1)(ts)))(LABADDR(NTH(2)(ts))(labs)))))))
-      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))
   (HD(ts))
 
 # ── one pass: walk the lines, recording each label at its current offset ──

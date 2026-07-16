@@ -10,3 +10,4 @@ mov rax, 60
 xor rdi, rdi
 syscall
 msg:
+db "I AM THAT I AM", 10

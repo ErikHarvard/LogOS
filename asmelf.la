@@ -23,7 +23,8 @@
 #
 #  ── THE IMAGE ───────────────────────────────────────────────────────────────
 #  A minimal static ELF64: 64-byte ELF header + one 56-byte PT_LOAD (R+X) + the
-#  assembled code + the message. The header template is elf.la's, with the two
+#  assembled image (code AND its data — the .asm declares its own message with a
+#  `db` line, so nothing is appended here). The header template is elf.la's, with the two
 #  size fields patched to the real total — p_filesz at offset 96 and p_memsz at
 #  104 (the same byte surgery bundle.la performs on p_filesz). Entry is
 #  0x400078 = 4194424, which is where the code begins (64 + 56), so the .asm
@@ -72,15 +73,18 @@ glyph HDR = BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0 120 0 6
 glyph PATCHED = la total.
     concat(TAKE(96)(HDR))(concat(LE8B(total))(concat(LE8B(total))(DROP(112)(HDR))))
 
-glyph MSG = "I AM THAT I AM\n"
-
+#  The .asm carries its OWN data now (a `db` line), so nothing is appended here.
+#  Earlier this file concatenated the message itself, which meant the source's
+#  `msg:` label pointed at bytes the SOURCE never declared — the assembly was not
+#  really self-contained and the wrapper was quietly part of the program. It is
+#  not any more: everything in the image below came out of asm_in.asm.
 glyph MAIN =
   (la code.
     (la total.
-      SEQ(write_exec("asm_native")(concat(PATCHED(total))(concat(code)(MSG))))
+      SEQ(write_exec("asm_native")(concat(PATCHED(total))(code)))
          (print(concat(concat("asmelf: assembled ")(str_len(code)))
-                      (concat(concat(" bytes of code from asm_in.asm -> asm_native (")
+                      (concat(concat(" bytes from asm_in.asm (code+data) -> asm_native (")
                                     (int_to_str(total)))
                              (" bytes total) — no nasm, no ld")))))
-    (add(120)(add(str_to_int(str_len(code)))(str_to_int(str_len(MSG))))))
+    (add(120)(str_to_int(str_len(code)))))
   (ASSEMBLE(read_file("asm_in.asm")))
