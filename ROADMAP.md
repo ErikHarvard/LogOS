@@ -955,11 +955,34 @@ disk; GRUB/multiboot gone, the last foreign-toolchain seam at boot closed).
 
 ### The core three (the remaining first-list items)
 
-- [ ] **Self-modification** — the system extending/rewriting its own code *from
-      within*: not merely compiling itself, but changing itself. Buildable
-      precisely *because* the system contains its own compiler, so it can
-      regenerate and extend its own components. The deeper Rubedo-horizon
-      capability. **Bounded by design** — see the trusted-base limit below.
+- [x] **Self-modification — DONE + gated (2026-07-16), `selfmod.la`.** The step
+      beyond self-compilation: not merely compiling itself, but **changing**
+      itself. The distinction from B3 is exact and is the point — *self-repair
+      ends BYTE-IDENTICAL to what it was (restoration); self-modification ends
+      DIFFERENT and still verified (becoming).* Again the principle was already
+      written: `canon.la`'s neologization (*"two monoglyphs COLLAPSE into ONE new
+      monoglyph whose etymology deepens"*) and `SR_FROM = ↻(VOID)` (*"Logos FROM
+      itself: generation/neologization"*) — applied to its own **source**.
+      `NEOLOGIZE` therefore conjures nothing: it composes two glyphs the organ
+      **already has**, and the generated source **names its parents** —
+      `glyph TRIPLEDEC = la x. TRIPLEN(DEC(x))` — so the etymology is IN the
+      artifact, exactly as `canon.la` requires of a monoglyph (a glyph whose name
+      floats free of its derivation is unconstructible). The system becomes MORE
+      than it was, **made only of what it already had**. `ADOPT` re-derives the
+      WHOLE organ, type-checks, and runs EVERY glyph's tests before writing, then
+      **re-senses** and reports what actually happened. Gated on six properties:
+      adoption; **it genuinely changed** (`changed=T` — else it would be
+      self-repair); autological under its NEW derivation; the etymology is in the
+      artifact; **no regression** (the parents survive); and two refusals — an
+      extension failing its own test, and the stronger one, **an extension that
+      BREAKS AN EXISTING capability** — both REFUSED with the organ left exactly
+      as it was. A self-modification cannot regress the self it is modifying.
+      **Bounded, deliberately** (Tier 3): the organ changes; specpipe, the
+      compiler and this module do not change themselves in the same act. *Honest
+      scope:* this closes the **mechanism** of self-change — how a system may
+      alter its own verified code and adopt it soundly. **Which** extension to
+      make is chosen here; deciding that autonomously is self-programming's
+      problem (below), and naming that seam rather than blurring it.
 - [x] **Bounded self-repair (B3) — DONE + gated (2026-07-16), `selfrepair.la`.**
       The project's own **Debugging Principle mechanized**: *"a bug is a
       heterological element — code that does not satisfy its own specification;

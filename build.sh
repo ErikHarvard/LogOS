@@ -1017,6 +1017,80 @@ else
     exit 1
 fi
 
+say "Self-modification (selfmod.la — the organ extends itself from its own parts, and adopts it)"
+# The step beyond self-compilation: not merely compiling itself, but CHANGING
+# itself. The distinction from selfrepair (B3) above is the whole point:
+#   self-repair       -> the organ ends BYTE-IDENTICAL to what it was (restoration)
+#   self-modification -> the organ ends DIFFERENT, and is still verified (becoming)
+# The principle is canon.la's neologization ("two monoglyphs COLLAPSE into ONE new
+# monoglyph whose etymology deepens") + SR_FROM = ↻(VOID), "Logos FROM itself:
+# generation/neologization" — applied to its own SOURCE. NEOLOGIZE composes two
+# glyphs the organ ALREADY HAS, and the generated source NAMES ITS PARENTS
+# (glyph TRIPLEDEC = la x. TRIPLEN(DEC(x))), so the etymology is IN the artifact
+# exactly as canon.la requires of a monoglyph. The system becomes MORE than it
+# was, made ONLY of what it already had.
+# BOUNDED (ROADMAP Tier 3): the organ changes; specpipe/the compiler/this module
+# do not change themselves in the same act — something must remain
+# un-self-modified to DO the modifying. (host-only, like autoloop/selfrepair.)
+ok=1
+rm -f grown.la
+SM="$(./tiny_host selfmod.la 2>/dev/null)"; SM_RC=$?
+[ "$SM_RC" -eq 0 ] || { echo "FAIL  selfmod: run exited $SM_RC"; ok=0; }
+printf '%s\n' "$SM" | grep -q "3. adopting  : adopted — the organ regrew around its own neologism, verified" \
+  || { echo "FAIL  selfmod: the extension was not adopted"; ok=0; }
+# (1) IT ACTUALLY CHANGED — the difference from self-repair, which ends identical.
+printf '%s\n' "$SM" | grep -q "changed=T" \
+  || { echo "FAIL  selfmod: organ did NOT change (that is self-repair, not self-modification)"; ok=0; }
+# (2) and it is autological under its NEW derivation (the bytes are their own spec).
+printf '%s\n' "$SM" | grep -q "autological-under-new-derivation=T" \
+  || { echo "FAIL  selfmod: grown organ is not its own derivation"; ok=0; }
+# (3) THE ETYMOLOGY IS IN THE ARTIFACT — the new glyph names its parents.
+grep -q "glyph TRIPLEDEC = la x. TRIPLEN(DEC(x))" grown.la \
+  || { echo "FAIL  selfmod: the neologism does not name its own parents in the artifact"; ok=0; }
+# (4) NO REGRESSION — the capabilities it grew FROM are still intact.
+grep -q "glyph TRIPLEN = la x. mul(x)(3)" grown.la || { echo "FAIL  selfmod: parent TRIPLEN lost"; ok=0; }
+grep -q "glyph DEC = la x. sub(x)(1)" grown.la     || { echo "FAIL  selfmod: parent DEC lost"; ok=0; }
+# (5) REFUSAL — an extension that fails its OWN test is refused, and the organ is
+#     left EXACTLY as it was. Self-modification that cannot verify does not happen.
+cat > /tmp/sm_bad.la <<'LA'
+import("specpipe.la")
+import("autoloop.la")
+import("selfmod.la")
+glyph BAD = ENT("BADCOMP")(":: a -> a")("la x. TRIPLEN(DEC(x))")(la x. add(x)(0))(SING(TC(la g. int_to_str(g(5)))("999")))
+glyph BADGROW = APPEND(BASE_SPEC)(CONS(BAD)(NIL))
+glyph MAIN = print(ADOPT("/tmp/sm_organ.la")(BADGROW))
+LA
+printf 'ORGAN-AS-IT-WAS' > /tmp/sm_organ.la
+./tiny_host /tmp/sm_bad.la >/tmp/sm_bad.out 2>&1 || true
+grep -q "REFUSED" /tmp/sm_bad.out \
+  || { echo "FAIL  selfmod: an extension failing its own test was not REFUSED"; ok=0; }
+[ "$(cat /tmp/sm_organ.la)" = "ORGAN-AS-IT-WAS" ] \
+  || { echo "FAIL  selfmod: a REFUSED extension modified the organ anyway"; ok=0; }
+# (6) THE STRONGER REFUSAL — an extension that BREAKS AN OLD capability is caught
+#     as surely as one that fails its own. ADOPT re-derives the WHOLE organ and
+#     re-runs EVERY glyph's tests, so a self-modification cannot regress the self
+#     it is modifying. (Here the growth is fine, but TRIPLEN's impl is broken.)
+cat > /tmp/sm_reg.la <<'LA'
+import("specpipe.la")
+import("autoloop.la")
+import("selfmod.la")
+glyph BROKEN = CONS(ENT("TRIPLEN")(":: a -> a")("la x. mul(x)(3)")(la x. mul(x)(99))(SING(TC(la g. int_to_str(g(7)))("21"))))(CONS(ENT("DEC")(":: a -> a")("la x. sub(x)(1)")(la x. sub(x)(1))(SING(TC(la g. int_to_str(g(9)))("8"))))(NIL))
+glyph REGROW = APPEND(BROKEN)(CONS(ENT("OK")(":: a -> a")("la x. add(x)(1)")(la x. add(x)(1))(SING(TC(la g. int_to_str(g(1)))("2"))))(NIL))
+glyph MAIN = print(ADOPT("/tmp/sm_organ2.la")(REGROW))
+LA
+printf 'ORGAN-AS-IT-WAS' > /tmp/sm_organ2.la
+./tiny_host /tmp/sm_reg.la >/tmp/sm_reg.out 2>&1 || true
+grep -q "REFUSED" /tmp/sm_reg.out \
+  || { echo "FAIL  selfmod: an extension that BREAKS an existing capability was not REFUSED"; ok=0; }
+[ "$(cat /tmp/sm_organ2.la)" = "ORGAN-AS-IT-WAS" ] \
+  || { echo "FAIL  selfmod: a regressing extension modified the organ anyway"; ok=0; }
+rm -f grown.la /tmp/sm_bad.la /tmp/sm_bad.out /tmp/sm_organ.la /tmp/sm_reg.la /tmp/sm_reg.out /tmp/sm_organ2.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  selfmod: self-modification — the organ composed two of its OWN glyphs into a new one (TRIPLEDEC = TRIPLEN ∘ DEC), regrew itself around it, and adopted it VERIFIED; the artifact carries its own etymology (the neologism names its parents), the parents survive, and the organ genuinely CHANGED (not self-repair's byte-identical restoration) while staying autological under its new derivation. An extension that fails its own test — or that BREAKS AN EXISTING capability — is REFUSED and the organ left exactly as it was. Bounded: specpipe + the compiler are the trusted base"
+else
+    exit 1
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes

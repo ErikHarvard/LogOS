@@ -1,0 +1,134 @@
+# =====================================================================
+#  SELF-MODIFICATION — the system extends its own code from within, and adopts
+#  it. The step beyond self-compilation: not merely compiling itself, but
+#  CHANGING itself.
+#
+#  The distinction from self-repair (selfrepair.la, B3) is exact and is the
+#  whole point:
+#     self-repair        : the organ ends BYTE-IDENTICAL to what it was.
+#                          Restoration. No net change.
+#     self-modification  : the organ ends DIFFERENT from what it was — and is
+#                          still verified. Becoming.
+#
+#  Again the principle is not invented here; the corpus already carries it.
+#  canon.la's neologization: "two monoglyphs COLLAPSE into ONE new monoglyph
+#  whose etymology deepens... the result is itself collapsible" — and the
+#  self-relation SR_FROM = ↻(VOID), "Logos FROM itself: generation /
+#  neologization". So self-modification is NEOLOGIZATION APPLIED TO ITS OWN
+#  SOURCE: the system composes two of its OWN existing glyphs into a new one and
+#  regrows itself around it.
+#
+#  That is why NEOLOGIZE does not conjure a glyph out of nothing. The new glyph
+#  is built from two entries the organ ALREADY HAS, and its generated source
+#  NAMES ITS PARENTS:
+#
+#      glyph TRIPLEDEC = la x. TRIPLEN(DEC(x))
+#
+#  The etymology is IN the artifact, exactly as canon.la requires of a
+#  monoglyph (REN ≡ CANON(ETYM) — the name IS what it names etymologically; a
+#  glyph whose name floats free of its derivation is unconstructible). The
+#  system becomes MORE than it was, made ONLY of what it already had.
+#
+#  ADOPT is verify-or-refuse: DEPLOY re-derives the WHOLE organ, type-checks it,
+#  runs EVERY glyph's own tests — the new one AND the old ones, so an extension
+#  that breaks an existing capability is caught as surely as one that fails its
+#  own — and writes only if all pass. Like HEAL, ADOPT RE-SENSES afterwards and
+#  reports what actually happened rather than announcing success because it ran.
+#
+#  ── THE TRUSTED BASE (the honest bound; ROADMAP Tier 3) ──────────────────────
+#  This is BOUNDED self-modification and cannot be otherwise. The organ changes;
+#  specpipe, the compiler, and this module do not change themselves in the same
+#  act. Something must remain un-self-modified to DO the modifying —
+#  closure-from-nothing is the pseudo-paradox the Codex dissolves. What IS
+#  genuinely closed here: the system holds its own derivation, extends it using
+#  only its own parts, verifies the result against its own criterion, and adopts
+#  or refuses it — with no hand from outside at any step.
+#
+#  ── HONEST SCOPE ────────────────────────────────────────────────────────────
+#  The MECHANISM of self-change is what this closes: how a system may alter its
+#  own verified code and adopt it soundly. WHICH extension to make is chosen
+#  here (composition of two named parents) — deciding that autonomously is
+#  self-programming's problem, not this one, and autoloop.la's GOAL is still
+#  supplied from outside. Naming the seam rather than blurring it.
+# =====================================================================
+
+import("specpipe.la")
+import("autoloop.la")
+
+export NEOLOGIZE ADOPT GREW BASE_SPEC APPEND
+
+glyph SEQ2 = la a. la b. b
+glyph NOT2 = la b. b(FALSE)(TRUE)
+glyph SING2 = la x. CONS(x)(NIL)
+glyph BS = la b. IF(b)(la _. "T")(la _. "F")
+
+# ── entry accessors over specpipe's exported TRIPLE/DEF shape ──
+#   entry == TRIPLE(name)(DEF(sig)(src)(val))(tests); specpipe keeps its own
+#   ENAME/ESRC/EIMPL private, so recover them from the exported constructors.
+glyph ENAME2 = la e. e(la a. la b. la c. a)
+glyph EDEF2  = la e. e(la a. la b. la c. b)
+glyph EIMPL2 = la e. (EDEF2(e))(la s. la c. la v. v)
+
+glyph HD2 = la lst. lst("?")(la h. la t. h)
+glyph TL2 = la lst. lst(NIL)(la h. la t. t)
+glyph APPEND = Z(la self. la xs. la ys. xs(ys)(la h. la t. CONS(h)(self(t)(ys))))
+
+# ── THE ORGAN, before it grows: two capabilities and nothing else ──
+glyph BASE_SPEC =
+  CONS(ENT("TRIPLEN")(":: a -> a")("la x. mul(x)(3)")(la x. mul(x)(3))(SING2(TC(la g. int_to_str(g(7)))("21"))))(
+  CONS(ENT("DEC")(":: a -> a")("la x. sub(x)(1)")(la x. sub(x)(1))(SING2(TC(la g. int_to_str(g(9)))("8"))))(
+  NIL))
+
+# ── NEOLOGIZE: collapse two of the organ's OWN glyphs into one new glyph ──
+#   canon.la's COLLAPSE at the level of code. The child's SOURCE names both
+#   parents, so its etymology is recoverable from the artifact itself; its
+#   IMPLEMENTATION is the parents' actual composition, so META_DEBUG tests the
+#   real thing and not a restatement of it.
+glyph NEOLOGIZE = la a. la b. la nm. la sig. la tests.
+    ENT(nm)(sig)
+       (concat("la x. ")(concat(ENAME2(a))(concat("(")(concat(ENAME2(b))("(x))")))))
+       (la x. EIMPL2(a)(EIMPL2(b)(x)))
+       (tests)
+
+# ── ADOPT: regrow the whole organ around the extension, verify, adopt-or-refuse ──
+#   DEPLOY re-derives EVERY glyph and runs EVERY glyph's tests, so an extension
+#   that breaks an OLD capability is refused exactly as one that fails its own.
+#   Re-senses afterwards: closure is asserted only if the bytes on disk really
+#   are their own derivation.
+glyph ADOPT = la path. la spec.
+    SEQ2(DEPLOY(spec)(path))
+        (IF(str_eq(read_file(path))(GENERATE(spec)))
+           (la _. "adopted — the organ regrew around its own neologism, verified")
+           (la _. "REFUSED — the extension failed verification; organ left as it was"))
+
+# ── the growth this demo performs: TRIPLEDEC = TRIPLEN ∘ DEC ──
+#   from the organ's own first two glyphs: TRIPLEN(DEC(5)) = TRIPLEN(4) = 12
+glyph GREW = APPEND(BASE_SPEC)(SING2(
+    NEOLOGIZE(HD2(BASE_SPEC))(HD2(TL2(BASE_SPEC)))("TRIPLEDEC")(":: a -> a")
+             (SING2(TC(la g. int_to_str(g(5)))("12")))))
+
+# ── the report, as helper glyphs: MAIN stays shallow enough to READ ──
+#   (a deep SEQ tower is where the paren arithmetic goes wrong, and it also
+#   costs codegen time — tiny_host is super-linear in expression nesting depth.)
+glyph STEP12 = la before.
+  SEQ2(print(concat("1. before    : grown.la = ")(concat(str_len(before))(" bytes; capabilities TRIPLEN, DEC"))))
+  (print("2. neologism : TRIPLEDEC = TRIPLEN ∘ DEC — composed from its OWN two glyphs, nothing imported"))
+
+glyph STEP3 = print(concat("3. adopting  : ")(ADOPT("grown.la")(GREW)))
+
+glyph REPORT = la before. la after.
+  SEQ2(print(concat("4. after     : grown.la = ")(concat(str_len(after))(" bytes; capabilities TRIPLEN, DEC, TRIPLEDEC"))))
+  (print(concat("5. verdict   : changed=")
+       (concat(BS(NOT2(str_eq(after)(before))))
+       (concat(" autological-under-new-derivation=")
+       (concat(BS(str_eq(after)(GENERATE(GREW))))
+              (" — the system is MORE than it was, made only of what it had"))))))
+
+glyph MAIN =
+  SEQ2(print("── self-modification: the organ extends itself from its own parts, and adopts it ──"))
+  (SEQ2(DEPLOY(BASE_SPEC)("grown.la"))
+  ((la before.
+     SEQ2(STEP12(before))
+    (SEQ2(STEP3)
+    (REPORT(before)(read_file("grown.la")))))
+   (read_file("grown.la"))))
