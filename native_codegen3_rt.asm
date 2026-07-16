@@ -2015,3 +2015,27 @@ rt_outl:
     out     dx, eax            ; write 32 bits to the port
     mov     eax, ecx            ; return the dword written (zero-extended)
     jmp     rt_box_int
+
+; ── rt_inw(INT port) -> INT word read from that I/O port ──
+;   16-bit read (HAL.4: the Bochs VBE dispi data port 0x1CF, and other word
+;   registers legacy hardware exposes). Completes the port-I/O width set.
+rt_inw:
+    cmp     qword [rax], 4
+    jne     rt_not_int
+    mov     rdx, [rax+8]        ; port -> DX
+    in      ax, dx             ; read 16 bits
+    movzx   rax, ax            ; zero-extend the word (clears stale high bits)
+    jmp     rt_box_int          ; -> boxed INT (0..65535)
+
+; ── rt_outw(INT port)(INT word) -> INT word written ──
+;   16-bit write — the VBE dispi index/data ports (0x1CE/0x1CF) that a linear-
+;   framebuffer mode-set needs; the register is 16-bit, so byte or dword writes
+;   would not land it correctly. Binary builtin: rsi = port, rax = value.
+rt_outw:
+    call    chk_int2
+    mov     rdx, [rsi+8]        ; port -> DX
+    mov     rcx, [rax+8]        ; value
+    mov     ax, cx
+    out     dx, ax             ; write 16 bits to the port
+    movzx   rax, cx            ; return the word written (0..65535)
+    jmp     rt_box_int

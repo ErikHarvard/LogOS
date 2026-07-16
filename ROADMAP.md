@@ -742,7 +742,23 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             `-kernel -m 256`, and asserts the driver echoed the on-disk signature back +
             exit 33. *(Sector WRITE — cmd 0x30 + `outl` the data + cache-flush — is a
             possible HAL.3b.)*
-      - [ ] Then PCI BAR/MMIO mapping → a real framebuffer (display), NIC (AegisNet).
+      - [x] **HAL.4 — linear-framebuffer display via a PCI BAR — DONE + gated
+            (2026-07-15).** The kernel's first pixels on its own. Two new 16-bit port-I/O
+            builtins `outw`/`inw` complete the port-I/O width set (byte/word/dword),
+            appended at rt.asm EOF (RTLEN 11882→11934; self-host regenerated to a fixed
+            point), and `boot.asm` (`%ifdef HAL4`) identity-maps 0..4 GiB so the high VGA
+            LFB BAR is reachable by `poke` (others byte-identical). `kernel/fb.la` at ring
+            0: scans PCI for the std VGA (reg0 0x11111234), reads BAR0 (the linear
+            framebuffer base), sets 640×480×32 + LFB via the Bochs VBE dispi registers
+            (index 0x1CE / data 0x1CF, via `outw`; pitch read back via `inw`), and pokes a
+            64×64 red square into the framebuffer. `gate_hal4.sh` boots `-vga std -m 512`,
+            waits for the "fb drawn" marker, captures the guest display with QEMU
+            `screendump`, and asserts a 640×480 PPM with the top-left 64×64 region red
+            (4096/4096). *(Bulk blit / full-screen fill wants a memcpy-to-MMIO primitive;
+            byte-`poke` suffices for a rectangle. Compositor/Theourgia on the metal builds
+            on this.)*
+      - [ ] Then NIC (AegisNet), disk write (HAL.3b), IRQ-driven input (HAL.2b), a
+            bulk framebuffer-fill primitive, and the compositor on the metal.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*

@@ -202,6 +202,38 @@ _start:
     cmp     ecx, 512
     jne     .fill_pd
 
+%ifdef HAL4
+    ; HAL.4: also identity-map 1..4 GiB (PDPT[1..3] -> pd_hi1..3), so high MMIO
+    ; BARs (the VGA linear framebuffer ~0xFD000000) are reachable. Each PD entry
+    ; j of table k maps phys (k*1 GiB + j*2 MiB); pd_hi1..3 are contiguous, so
+    ; one loop fills all 1536 entries. All phys < 4 GiB -> high dword 0.
+    mov     eax, pd_hi1
+    or      eax, 0x03
+    mov     [pdpt + 1*8], eax
+    mov     dword [pdpt + 1*8 + 4], 0
+    mov     eax, pd_hi2
+    or      eax, 0x03
+    mov     [pdpt + 2*8], eax
+    mov     dword [pdpt + 2*8 + 4], 0
+    mov     eax, pd_hi3
+    or      eax, 0x03
+    mov     [pdpt + 3*8], eax
+    mov     dword [pdpt + 3*8 + 4], 0
+    mov     ecx, 0                  ; entry index 0..1535
+    mov     edi, pd_hi1
+    mov     eax, 0x40000000         ; phys base = 1 GiB
+.fill_hi:
+    mov     ebx, eax
+    or      ebx, 0x83               ; present | writable | PS (2 MiB page)
+    mov     [edi], ebx
+    mov     dword [edi+4], 0
+    add     edi, 8
+    add     eax, 0x200000           ; += 2 MiB
+    inc     ecx
+    cmp     ecx, 1536
+    jne     .fill_hi
+%endif
+
 %ifdef HH1_HIGHMAP
     ; HH1: ALSO map the higher half −2 GiB. PML4[511] -> pdpt_high; pdpt_high[510]
     ; -> the SAME low-1-GiB pd. So 0xFFFFFFFF80000000+P aliases physical page P,
@@ -1421,6 +1453,15 @@ align 4096
 pml4:   resb 4096
 pdpt:   resb 4096
 pd:     resb 4096
+%ifdef HAL4
+; HAL.4: three more PD tables to identity-map 1..4 GiB (PDPT[1..3]), so high
+; MMIO BARs — the VGA linear framebuffer QEMU maps near ~0xFD000000 — are
+; reachable by the LA image's poke. Contiguous so the fill loop treats them as
+; one 1536-entry array. Guarded, so non-HAL4 kernels are byte-identical.
+pd_hi1: resb 4096
+pd_hi2: resb 4096
+pd_hi3: resb 4096
+%endif
 %ifdef HH1_HIGHMAP
 align 4096
 pdpt_high: resb 4096                    ; HH1: PML4[511] -> here -> [510] -> pd

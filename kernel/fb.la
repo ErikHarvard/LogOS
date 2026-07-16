@@ -1,0 +1,77 @@
+# =====================================================================
+#  LogOS HAL.4 — linear-framebuffer display via a PCI BAR, in Lingua Adamica.
+#
+#  The kernel's first pixels on its own. On the HAL.1 port-I/O floor plus the
+#  HAL.4 16-bit primitives (outw/inw), an LA program at ring 0:
+#    1. scans PCI config space for the QEMU std VGA (vendor 0x1234 / device
+#       0x1111 -> reg0 = 0x11111234 = 286331444);
+#    2. reads its BAR0 (config offset 0x10) — the linear framebuffer's physical
+#       base — and masks off the low type bits;
+#    3. sets 640x480x32 with a linear framebuffer via the Bochs VBE "dispi"
+#       registers (index port 0x1CE=462, data port 0x1CF=463): XRES/YRES/BPP,
+#       then ENABLE = 0x41 (enabled | LFB). Reads back VIRT_WIDTH to get the
+#       true scanline pitch;
+#    4. pokes a 64x64 red square (B=0 G=0 R=255) into the top-left of the LFB;
+#    5. announces "fb drawn" and spins, so the framebuffer persists for the
+#       gate's screendump.
+#  The high BAR (~0xFD000000) is reachable because boot.asm (%ifdef HAL4)
+#  identity-maps 0..4 GiB. Flat + import-free, like pci/kbd/ata.la.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# ── PCI config-space read: reg at (bus 0, dev, off) via 0xCF8/0xCFC ──
+glyph CFG = la dev. la off.
+    SEQ(outl(3320)(add(add(2147483648)(mul(dev)(2048)))(off)))
+       (inl(3324))
+
+# find the std VGA on bus 0 (reg0 == 0x11111234)
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 0)(la _.
+      IF(int_eq(CFG(dev)(0))(286331444))(la _. dev)(la _.
+        self(add(dev)(1)))))
+
+# ── Bochs VBE dispi: write / read a register (index 0x1CE=462, data 0x1CF=463) ──
+glyph DISPI  = la idx. la val. SEQ(outw(462)(idx))(outw(463)(val))
+glyph RDISPI = la idx. SEQ(outw(462)(idx))(inw(463))
+
+# set 640x480x32 with a linear framebuffer (ENABLE bit 0 + LFB bit 6 = 0x41)
+glyph SETMODE =
+    SEQ(DISPI(4)(0))          # disable while configuring
+    (SEQ(DISPI(1)(640))       # XRES
+    (SEQ(DISPI(2)(480))       # YRES
+    (SEQ(DISPI(3)(32))        # BPP
+    (DISPI(4)(65)))))         # ENABLE = enabled | LFB
+
+# ── draw a 64x64 red square at the top-left; red pixel = bytes B,G,R = 0,0,255 ──
+glyph ROW = Z(la self. la base. la pitch. la y. la x.
+    IF(int_eq(x)(64))(la _. "!")(la _.
+      (la p.
+        SEQ(poke(p)(0))
+        (SEQ(poke(add(p)(1))(0))
+        (SEQ(poke(add(p)(2))(255))
+        (self(base)(pitch)(y)(add(x)(1))))))
+      (add(base)(add(mul(y)(pitch))(mul(x)(4))))))
+glyph SQUARE = Z(la self. la base. la pitch. la y.
+    IF(int_eq(y)(64))(la _. "!")(la _.
+      SEQ(ROW(base)(pitch)(y)(0))(self(base)(pitch)(add(y)(1)))))
+
+# hold the framebuffer up (no exit) so the gate can screendump it
+glyph SPIN = Z(la self. la _. self("!"))
+
+glyph MAIN =
+    (la dev.
+      (la bar.
+        (la base.
+          SEQ(SETMODE)
+          ((la pitch.
+              SEQ(print(concat(concat("fb lfb=")(int_to_str(base)))(concat(" pitch=")(int_to_str(pitch)))))
+              (SEQ(SQUARE(base)(pitch)(0))
+              (SEQ(print("fb drawn"))
+              (SPIN("!")))))
+           (mul(RDISPI(6))(4))))          # pitch = VIRT_WIDTH * 4 bytes
+        (sub(bar)(mod(bar)(16))))          # LFB base = BAR0 & ~0xF
+      (CFG(dev)(16)))                       # BAR0
+    (FIND(0))
