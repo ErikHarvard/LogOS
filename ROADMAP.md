@@ -1103,15 +1103,37 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       assembler emitting the "obvious" movabs would be **correct and still fail
       the diff**; the gate asserts byte 0 is `0xB8` explicitly. An instruction
       outside the subset **halts loudly** rather than emitting silent garbage.
-      *Honest scope — why this is `[~]` and not `[x]`:* a real subset —
-      `mov`/`add`/`sub`/`xor` (r64,r64), `mov` (r64,imm32), `push`/`pop` (r64),
-      `syscall`/`ret`/`nop`, `r8`–`r15` via REX — enough to express a working
-      program (`elf.la`'s whole write+exit entry is inside it), but **no memory
-      operands, no labels/relocation, no jumps**, so it **cannot yet assemble
-      `boot.asm` or `secd.asm`** and NASM remains in the kernel build. The seam is
-      closed for what is here and honestly open beyond it; labels + jumps +
-      memory operands are the next increments, and the byte-identity gate extends
-      to each.
+      **LABELS + NEAR CONTROL FLOW added, also byte-identical (41-byte program).**
+      Two passes: PASS1 records each label's address, PASS2 emits with `rel32`
+      measured from the NEXT instruction. The hard case is the **backward jump** —
+      `rel32` goes negative and must be two's complement (`jz start` @22 →
+      `0f 84 e4 ff ff ff` = −28); LA's div/mod on a negative is unreliable, so it
+      is folded into the unsigned 32-bit range **before** being split into bytes.
+      Asserted explicitly. One clean pass suffices *because* only NEAR forms are
+      emitted, so every size is fixed by mnemonic+registers, never by target
+      distance — which removes the chicken-and-egg that forces real assemblers
+      into multi-pass optimisation. An **undefined label halts loudly** rather
+      than silently resolving to 0. *(Building this surfaced the eager-evaluation
+      trap CLAUDE.md documents for Church booleans: a Scott list `l(nil)(cons)`
+      evaluates the NIL branch EAGERLY, so an `error(...)` written there fired on
+      every lookup, not just a miss — the failure is now raised through `IF`,
+      whose branches are thunks.)*
+      *Honest scope — why this is `[~]` and not `[x]`:* the covered subset is real
+      and every instruction of it is byte-verified — `mov`/`add`/`sub`/`xor`
+      (r64,r64), `mov` (r64,imm32), `push`/`pop` (r64), `syscall`/`ret`/`nop`,
+      `r8`–`r15` via REX, labels and NEAR `jmp`/`call`/`jz`/`je`/`jnz`/`jne`
+      (`elf.la`'s whole write+exit entry is inside it, as is any straight-line +
+      branching routine over registers). What it is **not**: **no memory operands**
+      (no `[rax+8]`, no ModRM mod≠11, no SIB — the biggest gap and the next
+      increment); **no short-jump optimisation** (a bare `jmp L` is emitted NEAR
+      `e9`, whereas NASM shortens to `eb rel8` when it fits, so the two would
+      DIFFER — write `jmp near L` to stay byte-identical; matching NASM here needs
+      the iterate-to-a-fixed-point pass real assemblers run, a deliberate later
+      increment rather than a thing quietly half-done); no sections, no data
+      definitions, no paging/GDT/IDT forms. So it **cannot yet assemble
+      `boot.asm` or `secd.asm`** and NASM remains in the kernel build. Closed for
+      what is here, honestly open beyond it; the byte-identity gate extends to
+      each increment.
 - [ ] **LA linker** — closes the `ld` + linker-script seam.
 - [ ] **LA-native debugger** — the system inspecting its own execution. Deep
       closure: the system observing itself (today: `qemu -d int` + foreign tools).

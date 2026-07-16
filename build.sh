@@ -1230,6 +1230,38 @@ import sys
 d=open('asm_out.bin','rb').read()
 sys.exit(0 if d[0]==0xB8 else 1)
 PY
+    # (2b) LABELS + NEAR CONTROL FLOW — two-pass resolution, byte-identical.
+    #      The hard case here is the BACKWARD jump: rel32 goes negative and must
+    #      be two's complement (jz start @22 -> 0f 84 e4 ff ff ff = -28). LA's
+    #      div/mod on a negative is unreliable, so it is folded into the unsigned
+    #      32-bit range before being split — asserted, not assumed.
+    rm -f asm_out.bin /tmp/nasm_lab.bin; cp asm_test_labels.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm_lab.out 2>&1 || { echo "FAIL  asm.la: label program failed: $(tail -1 /tmp/asm_lab.out)"; ok=0; }
+    nasm -f bin asm_test_labels.asm -o /tmp/nasm_lab.bin 2>/dev/null
+    cmp -s asm_out.bin /tmp/nasm_lab.bin \
+      || { echo "FAIL  asm.la: labels/jumps DIFFER from nasm"; ok=0;
+           python3 - <<'PY'
+a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_lab.bin','rb').read()
+print('      asm.la:', ' '.join(str(x) for x in a))
+print('      nasm  :', ' '.join(str(x) for x in b))
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x} nasm={y}'); break
+PY
+         }
+    python3 - <<'PY' || { echo "FAIL  asm.la: backward jump rel32 is not two's complement"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# jz start @22 -> 0f 84 then rel32 = -28 = e4 ff ff ff
+sys.exit(0 if d[22:28]==bytes([0x0f,0x84,0xe4,0xff,0xff,0xff]) else 1)
+PY
+    # (2c) AN UNDEFINED LABEL MUST HALT — not silently resolve to 0.
+    printf 'bits 64\njmp near nowhere\n' > asm_in.asm
+    URC=0; ./tiny_host asm.la >/tmp/asm_lab_bad.out 2>&1 || URC=$?
+    [ "$URC" -ne 0 ] || { echo "FAIL  asm.la: an undefined label did not halt"; ok=0; }
+    grep -q "asm: undefined label" /tmp/asm_lab_bad.out \
+      || { echo "FAIL  asm.la: no 'undefined label' diagnostic"; ok=0; }
+    rm -f /tmp/nasm_lab.bin /tmp/asm_lab.out /tmp/asm_lab_bad.out
+    cp asm_test.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
     # (3) LOUD FAILURE — an instruction outside the subset must halt, not emit
     #     silent garbage. An assembler that quietly skips what it cannot encode
     #     is worse than one that refuses.

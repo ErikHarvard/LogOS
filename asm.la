@@ -31,15 +31,41 @@
 #    push/pop r    : [0x41 if r>=8] , 0x50+(r&7) / 0x58+(r&7)
 #    syscall 0f 05 | ret c3 | nop 90
 #
+#  ── LABELS AND CONTROL FLOW (two passes) ────────────────────────────────────
+#  A label is a line whose token ends in ":". PASS1 walks the lines accumulating
+#  an offset and recording each label's address; PASS2 emits, now that every
+#  address is known. rel32 is measured from the address of the NEXT instruction,
+#  and a BACKWARD jump is negative — folded into the unsigned 32-bit range
+#  (d + 2^32) before being split into bytes, since LA's div/mod on a negative
+#  would be unreliable. `jz start` at offset 22 becomes 0f 84 e4 ff ff ff, which
+#  is exactly what NASM emits.
+#
+#  WHY ONE CLEAN PASS SUFFICES: only the NEAR forms are emitted, so every
+#  instruction's SIZE is fixed by its mnemonic and registers — never by how far
+#  away its target turns out to be. That removes the chicken-and-egg (size
+#  depends on distance depends on size) that forces real assemblers into
+#  multi-pass optimisation. The cost is the scope note below.
+#
 #  ── HONEST SCOPE ────────────────────────────────────────────────────────────
-#  This covers a REAL SUBSET — mov/add/sub/xor (r64,r64), mov (r64,imm32),
-#  push/pop (r64), syscall, ret, nop — enough to express a working program
-#  (elf.la's whole write+exit entry is inside it), and every one is verified
-#  byte-identical against NASM. It is NOT yet a full x86-64 assembler: no
-#  memory operands, no labels/relocation, no jumps, no paging/GDT/IDT forms, so
-#  it CANNOT yet assemble boot.asm or secd.asm. The seam is closed for what is
-#  here and honestly open beyond it. Labels + jumps + memory operands are the
-#  next increments, and the byte-identity gate extends to each of them.
+#  A REAL SUBSET, every instruction of it verified byte-identical against NASM:
+#  mov/add/sub/xor (r64,r64), mov (r64,imm32), push/pop (r64), syscall, ret,
+#  nop, r8-r15 via REX, plus labels and NEAR control flow (jmp/call/jz/je/jnz/
+#  jne). elf.la's whole write+exit entry is inside it, and so is any
+#  straight-line + branching routine over registers.
+#
+#  What it is NOT, stated plainly:
+#    - NO memory operands (no [rax+8], no ModRM mod!=11, no SIB) — this is the
+#      biggest gap and the next increment;
+#    - NO short-jump optimisation: a bare `jmp L` is emitted NEAR (e9), whereas
+#      NASM would shorten it to eb rel8 when it fits, so the two would DIFFER.
+#      Write `jmp near L` to stay byte-identical. Matching NASM's choice here
+#      needs the iterate-to-a-fixed-point pass real assemblers run, which is a
+#      deliberate later increment rather than a thing quietly half-done;
+#    - no directives beyond `bits`, no sections, no data definitions, no
+#      paging/GDT/IDT forms.
+#  So it CANNOT yet assemble boot.asm or secd.asm, and NASM remains in the
+#  kernel build. The seam is closed for what is here and honestly open beyond
+#  it; the byte-identity gate extends to each increment.
 #
 #  Pure generation (chr/concat/int arithmetic), so it is byte-identical on the
 #  C host and the native VM, like elf.la.
@@ -93,6 +119,35 @@ glyph HD = la l. l("")(la h. la t. h)
 glyph NTH = Z(la self. la n. la l. l("")(la h. la t. IF(int_eq(n)(0))(la _. h)(la _. self(sub(n)(1))(t))))
 glyph LEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
 
+# ── labels: a line whose first token ends in ":" ──
+glyph LASTCH  = Z(la self. la s. IF(str_eq(str_tail(s))(""))(la _. str_head(s))(la _. self(str_tail(s))))
+glyph DROPLAST = Z(la self. la s. IF(str_eq(str_tail(s))(""))(la _. "")(la _. concat(str_head(s))(self(str_tail(s)))))
+glyph ISLABEL = la t. IF(str_eq(t)(""))(la _. FALSE)(la _. str_eq(LASTCH(t))(":"))
+glyph LABNAME = la t. DROPLAST(t)
+#   NOTE (eager-evaluation trap): a Scott list `l(nil)(cons)` evaluates the NIL
+#   branch EAGERLY, so an `error(...)` written there fires on EVERY lookup, not
+#   just a miss — the same trap CLAUDE.md documents for Church booleans. So the
+#   lookup returns an option and the failure is raised through IF, whose
+#   branches are thunks and only the selected one is forced.
+glyph LOOKLAB = Z(la self. la nm. la l.
+    l(NONE)(la h. la t. IF(str_eq(FST(h))(nm))(la _. SOME(SND(h)))(la _. self(nm)(t))))
+glyph LABADDR = la nm. la labs.
+    (la o. IF(ISSOME(o))(la _. OPTV(o))
+                        (la _. error(concat("asm: undefined label: ")(nm))))
+    (LOOKLAB(nm)(labs))
+
+#   A jump's operand is NTH 1, or NTH 2 when an explicit `near` is written.
+glyph TARGET = la ts. IF(str_eq(NTH(1)(ts))("near"))(la _. NTH(2)(ts))(la _. NTH(1)(ts))
+
+#   rel32 is relative to the address of the NEXT instruction, and is two's
+#   complement when the target is behind us. LA's div/mod on a negative would be
+#   unreliable, so a backward jump is folded into the unsigned 32-bit range
+#   FIRST (d + 2^32) and only then split into bytes — e.g. -28 -> 4294967268
+#   -> e4 ff ff ff, exactly what NASM emits for `jz start` above.
+glyph REL32 = la labs. la nm. la next.
+    (la d. IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d))
+    (sub(LABADDR(nm)(labs))(next))
+
 # ── the register file: name -> number ──
 glyph REGS =
   CONS(PAIR("rax")(0))(CONS(PAIR("rcx")(1))(CONS(PAIR("rdx")(2))(CONS(PAIR("rbx")(3))(
@@ -122,11 +177,41 @@ glyph MOVIMM = la dst. la n.
 glyph PUSHPOP = la base. la r.
     concat(IF(lt(r)(8))(la _. "")(la _. B(65)))(B(add(base)(mod(r)(8))))
 
-# ── one instruction -> its bytes ──
-glyph ENC1 = la ts.
+# ── SIZEOF: how many bytes this line will occupy, WITHOUT emitting it ──
+#   Pass 1 needs sizes before any label is known. Because only the NEAR jump
+#   forms are emitted, every size is fixed by the mnemonic and its registers —
+#   never by how far away the target turns out to be. That is what removes the
+#   chicken-and-egg (size depends on distance depends on size) that forces real
+#   assemblers into multi-pass optimisation, and it is why one clean pass
+#   suffices here. See the honest-scope note in the header.
+glyph SIZEOF = la ts.
+  (la op.
+    IF(str_eq(op)(""))(la _. 0)(la _.
+    IF(str_eq(op)("bits"))(la _. 0)(la _.
+    IF(ISLABEL(op))(la _. 0)(la _.
+    IF(str_eq(op)("syscall"))(la _. 2)(la _.
+    IF(str_eq(op)("ret"))(la _. 1)(la _.
+    IF(str_eq(op)("nop"))(la _. 1)(la _.
+    IF(OR(str_eq(op)("push"))(str_eq(op)("pop")))
+      (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 1)(la _. 2))(la _.
+    IF(str_eq(op)("jmp"))(la _. 5)(la _.
+    IF(str_eq(op)("call"))(la _. 5)(la _.
+    IF(OR(str_eq(op)("jz"))(OR(str_eq(op)("je"))(OR(str_eq(op)("jnz"))(str_eq(op)("jne")))))
+      (la _. 6)(la _.
+    IF(str_eq(op)("mov"))
+      (la _. IF(ISREG(NTH(2)(ts)))
+               (la _. 3)
+               (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 5)(la _. 6)))
+      (la _. 3))))))))))))
+  (HD(ts))
+
+# ── one instruction -> its bytes (labs = label table, next = addr of the
+#    following instruction, which is what rel32 is measured from) ──
+glyph ENC1 = la labs. la next. la ts.
   (la op.
     IF(str_eq(op)(""))(la _. "")(la _.
     IF(str_eq(op)("bits"))(la _. "")(la _.
+    IF(ISLABEL(op))(la _. "")(la _.
     IF(str_eq(op)("syscall"))(la _. concat(B(15))(B(5)))(la _.
     IF(str_eq(op)("ret"))(la _. B(195))(la _.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
@@ -135,18 +220,39 @@ glyph ENC1 = la ts.
     IF(str_eq(op)("add"))(la _. ALU(1)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
     IF(str_eq(op)("sub"))(la _. ALU(41)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
     IF(str_eq(op)("xor"))(la _. ALU(49)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
+    IF(str_eq(op)("jmp"))(la _. concat(B(233))(LE4(REL32(labs)(TARGET(ts))(next))))(la _.
+    IF(str_eq(op)("call"))(la _. concat(B(232))(LE4(REL32(labs)(TARGET(ts))(next))))(la _.
+    IF(OR(str_eq(op)("jz"))(str_eq(op)("je")))
+      (la _. concat(B(15))(concat(B(132))(LE4(REL32(labs)(TARGET(ts))(next)))))(la _.
+    IF(OR(str_eq(op)("jnz"))(str_eq(op)("jne")))
+      (la _. concat(B(15))(concat(B(133))(LE4(REL32(labs)(TARGET(ts))(next)))))(la _.
     IF(str_eq(op)("mov"))
       (la _. IF(ISREG(NTH(2)(ts)))
                (la _. ALU(137)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))
                (la _. MOVIMM(REGNUM(NTH(1)(ts)))(str_to_int(NTH(2)(ts)))))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))
   (HD(ts))
 
-glyph ASM_LINES = Z(la self. la ls.
-    ls("")(la h. la t. concat(ENC1(TOKS(h)("")))(self(t))))
+# ── PASS 1: walk the lines accumulating the offset, recording each label ──
+glyph PASS1 = Z(la self. la ls. la off. la acc.
+    ls(acc)(la h. la t.
+      (la ts.
+        IF(ISLABEL(HD(ts)))
+          (la _. self(t)(off)(CONS(PAIR(LABNAME(HD(ts)))(off))(acc)))
+          (la _. self(t)(add(off)(SIZEOF(ts)))(acc)))
+      (TOKS(h)(""))))
 
-# ── ASSEMBLE(source text) -> machine code bytes ──
-glyph ASSEMBLE = la src. ASM_LINES(LINES(src)(""))
+# ── PASS 2: emit, now that every label's address is known ──
+glyph PASS2 = Z(la self. la labs. la ls. la off.
+    ls("")(la h. la t.
+      (la ts.
+        (la nxt. concat(ENC1(labs)(nxt)(ts))(self(labs)(t)(nxt)))
+        (add(off)(SIZEOF(ts))))
+      (TOKS(h)(""))))
+
+# ── ASSEMBLE(source text) -> machine code bytes (two passes) ──
+glyph ASSEMBLE = la src.
+    (la ls. PASS2(PASS1(ls)(0)(NIL))(ls)(0))(LINES(src)(""))
 
 glyph MAIN =
   (la code.
