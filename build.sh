@@ -1187,6 +1187,48 @@ else
     exit 1
 fi
 
+say "Runtime continuous self-verification (selfwatch.la — the system watches itself WHILE ALIVE)"
+# The seam: build.sh IS the autological criterion, but it runs at BUILD time,
+# once, and then the system runs with nothing watching it. selfrepair (B3) is
+# likewise a SINGLE act. Neither verifies a system that is RUNNING — everything
+# the project verifies, it verifies about a system that is not alive.
+# aatc.la already names why that matters: ρ (the recognition coefficient) is 0
+# for an UNWITNESSED structure, and an unwitnessed structure "drifts toward
+# potentiality". Build-time-only verification leaves the system unwitnessed for
+# its entire life.
+# This is B3's criterion on a LOOP — Sense(INTACT) -> Diagnose -> Prescribe(HEAL)
+# -> Learn(ledger), continuously. Tick 3 corrupts the organ underneath the
+# running loop (a labelled TEST INJECTION standing in for whatever would really
+# corrupt a component — not the system damaging itself, and not a discovery).
+# What is demonstrated is everything after: the loop was already running, noticed
+# on its next sense, and restored closure WITHOUT being restarted.
+ok=1
+rm -f watched.la
+SW="$(./tiny_host selfwatch.la 2>/dev/null)"; SW_RC=$?
+[ "$SW_RC" -eq 0 ] || { echo "FAIL  selfwatch: run exited $SW_RC"; ok=0; }
+# (1) closure held before the drift
+printf '%s\n' "$SW" | grep -q "tick 1: ok" || { echo "FAIL  selfwatch: tick 1 not ok"; ok=0; }
+printf '%s\n' "$SW" | grep -q "tick 2: ok" || { echo "FAIL  selfwatch: tick 2 not ok"; ok=0; }
+# (2) THE ACT — drift detected and repaired ON THE LIVE LOOP, same tick.
+printf '%s\n' "$SW" | grep -q "tick 3: REPAIRED" \
+  || { echo "FAIL  selfwatch: the live loop did not detect+repair the corruption"; ok=0; }
+# (3) THE REPAIR TOOK, and the loop KEPT RUNNING — ticks after the repair are ok.
+#     Without this, a repair that silently failed would still look like a pass.
+printf '%s\n' "$SW" | grep -q "tick 4: ok" || { echo "FAIL  selfwatch: repair did not hold at tick 4"; ok=0; }
+printf '%s\n' "$SW" | grep -q "tick 5: ok" || { echo "FAIL  selfwatch: loop did not continue past the repair"; ok=0; }
+# (4) the ledger records the whole life: held, restored, held.
+printf '%s\n' "$SW" | grep -q "ledger: ..R.." \
+  || { echo "FAIL  selfwatch: ledger is not ..R.. (drift not accounted)"; ok=0; }
+# (5) the organ really is its correct self afterwards.
+grep -q "glyph TRIPLEN = la x. mul(x)(3)" watched.la \
+  || { echo "FAIL  selfwatch: the watched organ was not actually restored on disk"; ok=0; }
+rm -f watched.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  selfwatch: runtime continuous self-verification — the autological criterion on a LOOP rather than once at build time. The organ was corrupted UNDERNEATH a running loop (a wrong constant that still parses); the loop noticed on its very next sense, restored closure from the verified source, and CARRIED ON — ticks 4-5 ok, ledger ..R.., organ correct on disk. Bounded (N ticks, one spec-generated organ) and bounded in the Gödel sense too: it verifies a NAMED INVARIANT continuously, which is the only kind of self-verification there is"
+else
+    exit 1
+fi
+
 say "LA-native assembler (asm.la — x86-64 assembled by Lingua Adamica, byte-identical to NASM)"
 # The first LA-native TOOLCHAIN component: it closes the NASM seam for the subset
 # it covers. The boot ASSEMBLY is irreducibly machine-level — but the TOOL that

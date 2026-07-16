@@ -1225,8 +1225,31 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       first-class glyphs (audit finding). Full autological uniformity; the same
       move `metaglyph.la` already made for the five modes, κ and the evaluator.
 - [ ] **Self-typing** — the type checker checking its own types, in itself.
-- [ ] **Runtime continuous self-verification** — AATC applied to the LIVE system,
-      perpetually, not only at build time. (Also listed in Tier 1 above.)
+- [x] **Runtime continuous self-verification — DONE + gated (2026-07-16),
+      `selfwatch.la`.** The criterion applied to the LIVE system, not once at
+      build time. `build.sh` **is** the autological criterion — but it runs at
+      build time and then the system runs with nothing watching it; `selfrepair`
+      (B3) is likewise a single act. Everything the project verified, it verified
+      about a system that was **not running**. `aatc.la` already names why that
+      matters: **ρ (the recognition coefficient) is 0 for an UNWITNESSED
+      structure, and an unwitnessed structure "drifts toward potentiality"** — so
+      build-time-only verification leaves the system unwitnessed for its entire
+      life. This is B3's criterion on a **loop**: Sense (`INTACT`) → Diagnose →
+      Prescribe (`HEAL`) → Learn (the ledger), continuously. **Nothing new was
+      invented — it is the same criterion, running.** Verified: the organ is
+      corrupted UNDERNEATH the running loop (a wrong constant that still parses,
+      so a structural sense would miss it); the loop noticed on its **very next
+      sense**, restored closure from the verified source, and **carried on** —
+      ticks 4-5 ok, ledger `..R..`, organ correct on disk. The post-repair ticks
+      are gated on purpose: without them a repair that silently failed would
+      still look like a pass. *Honest scope:* a BOUNDED loop (N ticks), not a
+      daemon — no scheduler, no timer, no signals, nothing else running alongside
+      to be watched; it senses ONE spec-generated organ (B3's boundary unchanged:
+      repairable == spec-generated). Watching the whole system on a real schedule
+      concurrently with real work is the extension. And bounded in the **Gödel**
+      sense too (Tier 3): it verifies a NAMED INVARIANT continuously, which is the
+      only kind of self-verification there is — "the system fully verifies itself
+      while alive" is neither the goal nor claimed.
 
 **The reflexive maximum.**
 

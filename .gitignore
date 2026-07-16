@@ -131,3 +131,4 @@ scratchpad/__pycache__/
 # Theourgia rasters (composed/recomposed each run by theourgia*.la)
 /tiny_host
 # Unpublished codices stay local-only; ONLY codices/published/ is tracked.
+watched.la
