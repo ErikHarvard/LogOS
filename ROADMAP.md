@@ -803,8 +803,24 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             independent proof — that the signature is on the disk FILE at LBA 2
             (offset 1024) though it was seeded all-zero, so the bytes came from the
             driver's write. (Sector WRITE was the last obvious HAL.3 follow-up.)
-      - [ ] Then IRQ-driven input (HAL.2b), a bulk framebuffer-fill primitive, and
-            the compositor on the metal.
+      - [x] **HAL.2b — IRQ-driven keyboard (PIC + IRQ1), the interrupt-driven twin
+            of HAL.2 — DONE + gated (2026-07-16).** The kernel's first real
+            interrupt-driven device. `kernel/kbdirq.asm` (`%ifdef HAL2B`, zero bytes
+            otherwise — the guard verified byte-identical) mirrors K5a's `timer.asm`:
+            `kbd_setup` remaps the 8259 PIC (master 0x20-0x27), installs
+            IDT[0x21]->`kbd_isr`, unmasks ONLY IRQ1; `boot.asm` calls it + `sti`.
+            `kbd_isr` is minimal/transparent (rax/rdx saved) — on each key event's
+            IRQ1 it reads the SET-1 scancode from 0x60 into a 256-byte ring at
+            0x320008, bumps a 1-byte head at 0x320000, EOIs the PIC. `kernel/kbd2.la`
+            never touches the i8042: it keeps its own tail and, whenever
+            `peek(0x320000)` (head) != tail, reads `peek(0x320008+tail)`, decodes via
+            HAL.2's proven SET-1 keymap (releases >=0x80 fall off the table -> ""),
+            until ENTER (sc 28). `gate_hal2b.sh` injects `l o g o s <enter>` via the
+            QEMU monitor and asserts the echoed `logos` + `kbd done` + exit 33. So a
+            real hardware interrupt path (PIC + IRQ1 + IDT gate) drives input, the LA
+            program woken by the keyboard rather than polling it.
+      - [ ] Then a bulk framebuffer-fill/memcpy-to-MMIO primitive, and the
+            compositor on the metal.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*

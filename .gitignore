@@ -123,3 +123,5 @@ mathutil.la
 /kernel/kernel_hal3b.elf
 /kernel/kernel_hal3b_64.elf
 /kernel/hal3bdisk.img
+/kernel/kernel_hal2b.elf
+/kernel/kernel_hal2b_64.elf

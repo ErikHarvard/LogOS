@@ -344,6 +344,16 @@ long_start:
     sti
 %endif
 
+%ifdef HAL2B
+    ; HAL.2b: remap the PIC, install IDT[0x21] -> kbd_isr, unmask IRQ1, then
+    ; enable external interrupts. Guarded (like K5_TIMER) so every other kernel
+    ; ELF's boot bytes stay identical. IRQ1 then fires ASYNCHRONOUSLY on each
+    ; key event during the LA image's execution; the ISR fills a ring the LA
+    ; driver (kbd2.la) consumes with peek — genuinely interrupt-driven input.
+    call    kbd_setup
+    sti
+%endif
+
 %ifdef K2_FAULT
     ; K2 gate fault-injection: raise #UD (vector 6) to prove the IDT catches
     ; it loudly (serial "EXCEPTION 06", isa-debug-exit 35) instead of a
@@ -1523,6 +1533,9 @@ k6c2_scratch:                           ; 2 qwords: frees rax + a base reg in .s
 ; K5a: timer IRQ substrate (PIC + PIT). Entirely %ifdef K5_TIMER — zero bytes
 ; unless assembled with -dK5_TIMER, so other kernel ELFs stay byte-identical.
 %include "timer.asm"
+; HAL.2b: IRQ-driven keyboard substrate (PIC + IRQ1). Entirely %ifdef HAL2B —
+; zero bytes unless assembled with -dHAL2B, so other kernel ELFs stay identical.
+%include "kbdirq.asm"
 
 ; K6a/K6c/K6c2 are payload-based ring-3 probes and HH2 is a ring-0 page-table demo
 ; — none jump to the LA image, so the incbin is skipped for them, keeping those

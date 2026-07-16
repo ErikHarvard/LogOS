@@ -1,0 +1,49 @@
+# =====================================================================
+#  LogOS HAL.2b — IRQ-driven PS/2 keyboard, written in Lingua Adamica.
+#
+#  The interrupt-driven twin of HAL.2 (kbd.la's polling loop). There the LA
+#  program spun on the i8042 status port (0x64) and read each byte itself;
+#  here it never touches the i8042 at all. A hardware IRQ1 (set up in
+#  boot.asm's %ifdef HAL2B kbd_setup) fires on every key event; the tiny asm
+#  kbd_isr reads the SET-1 scancode from 0x60 and appends it to a 256-byte
+#  ring, bumping a 1-byte head index. This LA driver only CONSUMES that ring:
+#    - head = peek(0x320000)  (ISR-written; advances asynchronously);
+#    - it keeps its own tail (0..255) and, whenever tail != head, reads the
+#      scancode at peek(0x320008 + tail), decodes it, and advances tail.
+#  So the port read is genuinely interrupt-driven — the CPU is woken by the
+#  keyboard, not busy-reading the controller. The scancode decode reuses
+#  HAL.2's proven SET-1 keymap (releases >= 0x80 fall off the table -> "").
+#  Reads until ENTER (scancode 28), echoes the line over serial. Flat +
+#  import-free, like kbd/ata.la. Built with boot.asm -D HAL2B.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# ── SET-1 scancode -> ASCII keymap (index = scancode, 0..57), verbatim HAL.2 ──
+glyph SCTAB = "..1234567890-=..qwertyuiop....asdfghjkl.....zxcvbnm...... "
+glyph DROP = Z(la self. la s. la n.
+    IF(int_eq(n)(0))(la _. s)(la _.
+      IF(str_eq(s)(""))(la _. "")(la _.
+        self(str_tail(s))(sub(n)(1)))))
+# scancode -> its char ("" for releases >= 0x80 / out-of-range / unmapped)
+glyph CHAR = la sc. str_head(DROP(SCTAB)(sc))
+
+# ── read+echo loop over the ISR-filled ring (head @0x320000, buf @0x320008) ──
+#   tail is this driver's consume index; peek(0x320000) is re-read each turn so
+#   the async ISR's advances are seen. ENTER (scancode 28) ends the loop.
+glyph RUN = Z(la self. la tail. la acc.
+    (la h.
+      IF(int_eq(tail)(h))(la _. self(tail)(acc))(la _.
+        (la sc.
+          (la nt.
+            IF(int_eq(sc)(28))(la _. SEQ(print(acc))(print("kbd done")))(la _.
+              (la c.
+                IF(str_eq(c)(""))(la _. self(nt)(acc))(la _. self(nt)(concat(acc)(c))))
+              (CHAR(sc))))
+          (mod(add(tail)(1))(256)))
+        (peek(add(3276808)(tail)))))
+    (peek(3276800)))
+
+glyph MAIN = SEQ(print("kbd2:"))(RUN(0)(""))
