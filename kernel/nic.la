@@ -1,0 +1,65 @@
+# =====================================================================
+#  LogOS HAL.5a — NIC discovery (RealTek RTL8139), written in Lingua Adamica.
+#
+#  The kernel's first look at a network card, on its own. On the HAL.1
+#  port-I/O primitives (inb/inl/outb/outl) an LA program at ring 0:
+#    1. scans PCI config space (0xCF8/0xCFC mechanism, as pci.la) for the
+#       RTL8139 — vendor 0x10EC (RealTek) / device 0x8139;
+#    2. reads its BAR0 (config offset 0x10) — the card's I/O-port base — and
+#       masks off the low 2 type bits (I/O BARs: bit0=1, bit1 reserved);
+#    3. reads the 6-byte station address (MAC) from the ID registers IDR0..5
+#       (I/O offset 0x00..0x05) via inb, and prints it as a MAC string.
+#  Pure port I/O like ata.la — no DMA yet (that is HAL.5b: RX ring + TX +
+#  a real ARP exchange over the SLIRP wire). No new builtin, no boot.asm
+#  change. SeaBIOS (the -kernel firmware) has already assigned the BAR and
+#  enabled I/O decode, exactly as HAL.4 relied on for the VGA BAR.
+#  Flat + import-free, the universal driver shape.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# ── one hex nibble (0..15) -> its ascii char ('0'..'9','a'..'f') ──
+glyph HEXD = la d.
+    IF(lt(d)(10))(la _. chr(int_to_str(add(48)(d))))
+                 (la _. chr(int_to_str(add(87)(d))))
+# ── a byte (0..255) as two hex digits, high nibble first ──
+glyph HEX2 = la b. concat(HEXD(div(b)(16)))(HEXD(mod(b)(16)))
+
+# ── PCI config-space read: reg at (bus 0, dev, off) via 0xCF8/0xCFC ──
+glyph CFG = la dev. la off.
+    SEQ(outl(3320)(add(add(2147483648)(mul(dev)(2048)))(off)))
+       (inl(3324))
+
+# ── find the RTL8139 on bus 0: reg0 low half = vendor 0x10EC (4332),
+#    high half = device 0x8139 (33081). Returns the slot, or 32 if absent. ──
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 32)(la _.
+      (la r.
+        IF(int_eq(mod(r)(65536))(4332))(la _.
+          IF(int_eq(div(r)(65536))(33081))(la _. dev)(la _. self(add(dev)(1))))
+        (la _. self(add(dev)(1))))
+      (CFG(dev)(0))))
+
+# ── read MAC byte i (IDR0..5 = I/O offset 0x00..0x05) from the I/O base ──
+glyph MACB = la base. la i. inb(add(base)(i))
+
+# ── the 6-byte station address as "aa:bb:cc:dd:ee:ff" ──
+glyph MACSTR = la base.
+    concat(HEX2(MACB(base)(0)))(
+    concat(":")(concat(HEX2(MACB(base)(1)))(
+    concat(":")(concat(HEX2(MACB(base)(2)))(
+    concat(":")(concat(HEX2(MACB(base)(3)))(
+    concat(":")(concat(HEX2(MACB(base)(4)))(
+    concat(":")(       HEX2(MACB(base)(5))))))))))))
+
+glyph MAIN =
+    SEQ(print("nic:"))
+    ((la dev.
+       IF(int_eq(dev)(32))(la _. print("nic not found"))(la _.
+         (la base.
+           SEQ(print(concat("nic mac=")(MACSTR(base))))
+              (print("nic done")))
+         (sub(CFG(dev)(16))(mod(CFG(dev)(16))(4)))))   # I/O base = BAR0 & ~0x3
+     (FIND(0)))

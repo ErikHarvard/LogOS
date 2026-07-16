@@ -757,8 +757,24 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             (4096/4096). *(Bulk blit / full-screen fill wants a memcpy-to-MMIO primitive;
             byte-`poke` suffices for a rectangle. Compositor/Theourgia on the metal builds
             on this.)*
-      - [ ] Then NIC (AegisNet), disk write (HAL.3b), IRQ-driven input (HAL.2b), a
-            bulk framebuffer-fill primitive, and the compositor on the metal.
+      - [x] **HAL.5a — NIC discovery (RealTek RTL8139) — DONE + gated
+            (2026-07-15).** The kernel's first sight of a network card. Pure port
+            I/O like ata.la — no new builtin, no `boot.asm` change. `kernel/nic.la`
+            at ring 0 scans PCI (0xCF8/0xCFC) for the RTL8139 (vendor 0x10EC /
+            device 0x8139), reads its BAR0 (I/O base, low 2 type bits masked), and
+            reads the 6-byte station address off the ID registers IDR0..5 via `inb`.
+            `gate_hal5.sh` boots `-device rtl8139` (with a SLIRP `user` netdev for
+            5b's wire), asserts the serial shows `nic mac=52:54:00:12:34:56` (QEMU's
+            default first-NIC MAC) + clean exit 33. RTL8139 chosen over the e1000
+            default because its port-I/O registers + single RX ring suit a
+            bitwise-op-free LA driver (e1000 needs high-MMIO + descriptor rings).
+      - [ ] **HAL.5b — NIC TX/RX (the DMA step).** Reset the card, program an RX
+            ring + a TX buffer (the first driver needing DMA — a physical buffer
+            handed to the card), send a broadcast ARP for the SLIRP gateway
+            10.0.2.2, receive its ARP reply, verify the sender MAC — real TX+RX over
+            QEMU's virtual wire. (AegisNet's crypto/onion layer sits far above this.)
+      - [ ] Then disk write (HAL.3b), IRQ-driven input (HAL.2b), a bulk
+            framebuffer-fill primitive, and the compositor on the metal.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*
