@@ -1138,6 +1138,55 @@ else
     exit 1
 fi
 
+say "Self-optimization (selfopt.la — the system measures its own cost and rewrites itself cheaper)"
+# Composes the three above rather than inventing anything: selfprog's SYNTH
+# (search my own capability space) + selfmod's ADOPT (regrow, verify EVERY glyph,
+# adopt-or-refuse) + the new part, SENSING MY OWN COST. It is aatc.la's Centropic
+# loop with SENSE finally pointed at cost rather than correctness:
+#   SENSE=count my own applications / DIAGNOSE=is something cheaper reachable? /
+#   PRESCRIBE=SYNTH it, ADOPT only if cheaper AND still correct / LEARN=the ledger.
+# HOW IT MEASURES ITSELF: LA has no step counter and there is no external profiler
+# here, so the system reads its cost off its own STRUCTURE — COST counts "(" in
+# its own source: one application, i.e. one β-reduction site, each. Intrinsic and
+# structural. Honest scope: right for programs from one composition family (as
+# these are); NOT a general performance model (it cannot know mul costs more than
+# add, and cannot see sharing) — named for what it is.
+# IT CANNOT BREAK ITSELF: the candidate must satisfy the SAME acceptance test (not
+# re-derived or re-fitted to the winner), and ADOPT re-runs EVERY glyph's tests,
+# so an optimisation that made one glyph cheaper by breaking another is refused.
+# Optimisation can trade cost, never correctness.
+ok=1
+rm -f opt.la
+SO="$(./tiny_host selfopt.la 2>/dev/null)"; SO_RC=$?
+[ "$SO_RC" -eq 0 ] || { echo "FAIL  selfopt: run exited $SO_RC"; ok=0; }
+# (1) SENSE — it reads its own cost off its own source, with nothing external.
+printf '%s\n' "$SO" | grep -q "TWELVE = la x. DEC(INC(TRIPLEN(DEC(x))))   \[4 applications\]" \
+  || { echo "FAIL  selfopt: the system did not sense its own cost"; ok=0; }
+# (2) THE ACT — it wrote a cheaper version of itself out of its own capabilities.
+printf '%s\n' "$SO" | grep -q "IMPROVED  TWELVE := la x. TRIPLEN(DEC(x))" \
+  || { echo "FAIL  selfopt: no cheaper program was synthesised"; ok=0; }
+# (3) THE LEDGER — aatc's CENTROPY/GAIN shape: cost before, after, gain.
+printf '%s\n' "$SO" | grep -q "cost 4 -> 2 applications, gain 2" \
+  || { echo "FAIL  selfopt: the improvement was not accounted"; ok=0; }
+# (4) IT REACHED THE ARTIFACT — the organ on disk is the cheaper one, and the
+#     capabilities it was composed FROM survive (no regression).
+grep -q "glyph TWELVE = la x. TRIPLEN(DEC(x))" opt.la \
+  || { echo "FAIL  selfopt: the optimised program did not reach the artifact"; ok=0; }
+grep -q "glyph TRIPLEN = la x. mul(x)(3)" opt.la || { echo "FAIL  selfopt: capability TRIPLEN lost"; ok=0; }
+grep -q "glyph DEC = la x. sub(x)(1)" opt.la     || { echo "FAIL  selfopt: capability DEC lost"; ok=0; }
+# (5) ITS OWN FIXED POINT — aatc states 𝒯 is "the identity on an already-
+#     autological structure". Run on an already-optimal organ the optimiser must
+#     change NOTHING and say so, or it would churn forever. OPTIMIZE(OPTIMIZE(x))
+#     = OPTIMIZE(x), asserted rather than assumed.
+printf '%s\n' "$SO" | grep -q "ALREADY OPTIMAL — no cheaper program exists in my capability space; nothing changed" \
+  || { echo "FAIL  selfopt: the optimiser is NOT its own fixed point (it would churn)"; ok=0; }
+rm -f opt.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  selfopt: self-optimization — the system SENSED ITS OWN COST from its own structure (4 applications; no external profiler), synthesised a cheaper program from its own capabilities, and adopted 'la x. TRIPLEN(DEC(x))' at 2 applications (gain 2) with correctness preserved — same acceptance test, whole organ re-verified. Run again on the organ it produced it reports ALREADY OPTIMAL and changes nothing: the optimiser is its own fixed point, as aatc.la requires of 𝒯. The system improves its own code, from within"
+else
+    exit 1
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes

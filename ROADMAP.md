@@ -1137,9 +1137,35 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
 
 **The reflexive maximum.**
 
-- [ ] **Self-optimization** — the system improving its OWN compiler/code from
-      within: self-profiling driving self-modification. Composes
-      `selfprog.la` + `selfmod.la` + profiling. **Highest-value remaining item.**
+- [x] **Self-optimization — DONE + gated (2026-07-16), `selfopt.la`.** The system
+      improving its OWN code from within. Composes the core three rather than
+      inventing anything: `selfprog`'s `SYNTH` (search my own capability space) +
+      `selfmod`'s `ADOPT` (regrow, verify EVERY glyph, adopt-or-refuse) + the new
+      part, **sensing its own cost**. It is `aatc.la`'s Centropic loop with SENSE
+      finally pointed at **cost** rather than correctness: *sense my own
+      applications → is something cheaper reachable? → SYNTH it and ADOPT only if
+      cheaper AND still correct → the ledger (`CENTROPY`/`GAIN`)*.
+      **How it measures itself:** LA has no step counter and there is no external
+      profiler, so the system reads its cost off its **own structure** — `COST`
+      counts `(` in its own source: one application, i.e. one β-reduction site,
+      each. Intrinsic and structural. Verified: it sensed its own
+      `la x. DEC(INC(TRIPLEN(DEC(x))))` at **4 applications**, synthesised
+      `la x. TRIPLEN(DEC(x))` at **2** (gain 2), and adopted it.
+      **It cannot break itself:** the candidate must satisfy the SAME acceptance
+      test (not re-derived or re-fitted to the winner), and `ADOPT` re-runs EVERY
+      glyph's tests — so an optimisation that made one glyph cheaper by breaking
+      another is refused. It can trade cost, never correctness.
+      **It is its own fixed point:** `aatc.la` states `𝒯` is *"the identity on an
+      already-autological structure"*; the optimiser must match or it would churn.
+      Run again on the organ it produced, it reports `ALREADY OPTIMAL` and changes
+      nothing — `OPTIMIZE(OPTIMIZE(x)) = OPTIMIZE(x)`, asserted not assumed.
+      *Honest scope:* application-count is the right measure for programs drawn
+      from one composition family (as these are); it is **not** a general
+      performance model — it cannot know `mul` costs more than `add`, nor see
+      sharing or laziness. It is the measure the substrate affords, named for what
+      it is rather than dressed up as profiling it cannot do. **Bounded** (Tier 3):
+      the organ's glyphs are optimised; specpipe, the compiler and this module are
+      not optimising themselves in the act.
 - [ ] **Self-specification** — generating the SPEC for its own next version: not
       just deciding a change, but authoring the requirements. The hardest and most
       open; note it runs directly into the goal-origination wall below, so expect

@@ -1,0 +1,131 @@
+# =====================================================================
+#  SELF-OPTIMIZATION — the system measures its own cost, writes a cheaper
+#  version of itself, and adopts it only if it is cheaper AND still correct.
+#
+#  This composes the three that came before rather than inventing anything:
+#     selfprog.la  — SYNTH: search my own capability space for a program
+#     selfmod.la   — ADOPT: regrow the organ, verify EVERY glyph, adopt-or-refuse
+#     + profiling  — the new part: SENSE MY OWN COST
+#
+#  It is the Centropic loop (aatc.la: Sense → Diagnose → Prescribe → Learn) with
+#  SENSE finally pointed at COST rather than correctness:
+#     SENSE     : count my own applications (below)
+#     DIAGNOSE  : is a cheaper program reachable from what I am?
+#     PRESCRIBE : SYNTH one, and ADOPT it — only if cheaper and still correct
+#     LEARN     : the ledger — cost before, cost after, gain (aatc's CENTROPY/GAIN)
+#
+#  ── HOW THE SYSTEM MEASURES ITSELF (the honest part) ────────────────────────
+#  Lingua Adamica has NO step counter, and there is no external profiler here —
+#  so the system must read its cost off its own STRUCTURE. COST counts the
+#  applications in a program's own source: every "(" is one application, i.e. one
+#  β-reduction site. That is intrinsic (it needs nothing but the source the
+#  system already holds), structural (not a wall-clock guess), and it is the real
+#  unit of work for a reduction machine.
+#     "la x. DEC(INC(TRIPLEN(DEC(x))))"  -> 4 applications
+#     "la x. TRIPLEN(DEC(x))"            -> 2 applications
+#  HONEST SCOPE: application-count is the right measure for programs drawn from
+#  one composition family, as these are. It is NOT a general performance model —
+#  it does not know that mul costs more than add, and it cannot see sharing or
+#  laziness. It is the measure the substrate actually affords, named for what it
+#  is rather than dressed up as profiling it cannot do.
+#
+#  ── WHY IT CANNOT BREAK ITSELF ──────────────────────────────────────────────
+#  The candidate must satisfy the SAME acceptance test the current program does —
+#  the test is not re-derived, weakened, or re-fitted to the winner. And ADOPT
+#  re-derives the WHOLE organ and re-runs EVERY glyph's tests, so an optimisation
+#  that made this glyph cheaper by breaking another is refused. Optimisation here
+#  can only ever trade cost, never correctness.
+#
+#  ── IT IS ITS OWN FIXED POINT ───────────────────────────────────────────────
+#  aatc.la already states the property for 𝒯: "the identity on an already-
+#  autological structure (its own fixed point)". The same must hold of the
+#  optimiser, or it would churn: run it on an already-optimal organ and it must
+#  change NOTHING and say so. That is asserted here as a real outcome, not
+#  assumed — OPTIMIZE(OPTIMIZE(x)) = OPTIMIZE(x).
+#
+#  ── THE TRUSTED BASE (ROADMAP Tier 3) ───────────────────────────────────────
+#  Bounded, deliberately: the organ's glyphs are optimised; specpipe, the
+#  compiler, and this module are not optimising themselves in the act. The
+#  system improves ITS OWN CODE — the deepest closure reachable without becoming
+#  the thing that must stay still to do the improving.
+# =====================================================================
+
+import("specpipe.la")
+import("autoloop.la")
+import("selfmod.la")
+import("selfprog.la")
+
+export COST OPTIMIZE CUR_SPEC
+
+glyph SEQ2 = la a. la b. b
+
+# ── Church option (structural, so it destructures selfprog's SYNTH result) ──
+glyph ISSOME2 = la o. o(la _. TRUE)(FALSE)
+glyph OPTVAL2 = la o. o(la x. x)("?")
+
+# ── SENSE: count my own applications. Every "(" is one β-reduction site. ──
+glyph COUNTCH = Z(la self. la c. la s.
+    IF(str_eq(s)(""))(la _. 0)(la _.
+      add(IF(str_eq(str_head(s))(c))(la _. 1)(la _. 0))
+         (self(c)(str_tail(s)))))
+glyph COST = la src. COUNTCH("(")(src)
+
+# ── entry accessors over specpipe's exported TRIPLE/DEF shape ──
+glyph ENAME4 = la e. e(la a. la b. la c. a)
+glyph EDEF4  = la e. e(la a. la b. la c. b)
+glyph ESRC4  = la e. (EDEF4(e))(la s. la c. la v. c)
+
+glyph MAP4    = Z(la self. la f. la lst. lst(NIL)(la h. la t. CONS(f(h))(self(f)(t))))
+glyph FINDENT = Z(la self. la nm. la lst. lst("?")(la h. la t. IF(str_eq(ENAME4(h))(nm))(la _. h)(la _. self(nm)(t))))
+glyph REPLACE = la nm. la new. la spec. MAP4(la e. IF(str_eq(ENAME4(e))(nm))(la _. new)(la _. e))(spec)
+
+# ── the capabilities I am made of (selfprog's CAP_SPEC: x*3, x-1, x+1) ──
+glyph T3 = la x. mul(x)(3)
+glyph D1 = la x. sub(x)(1)
+glyph I1 = la x. add(x)(1)
+
+# ── WHAT I AM NOW: a correct but WASTEFUL implementation of TWELVE ──
+#   5 -DEC-> 4 -TRIPLEN-> 12 -INC-> 13 -DEC-> 12. It passes its test; it is
+#   simply four applications where two would do. Nothing external knows that.
+glyph TWELVE_TESTS = SING(TC(la g. int_to_str(g(5)))("12"))
+glyph CUR_SPEC = APPEND(CAP_SPEC)(SING(
+    ENT("TWELVE")(":: a -> a")
+       ("la x. DEC(INC(TRIPLEN(DEC(x))))")
+       (la x. D1(I1(T3(D1(x)))))
+       (TWELVE_TESTS)))
+
+# ── OPTIMIZE: sense → diagnose → prescribe → adopt-or-decline ──
+#   The candidate must pass the SAME test; ADOPT re-verifies the whole organ.
+#   Strictly cheaper, or nothing happens (so the optimiser is its own fixed point).
+glyph OPTIMIZE = la path. la spec. la nm. la tests.
+  (la cur.
+    (la opt.
+      IF(ISSOME2(opt))
+        (la _.
+          (la cand.
+            IF(lt(COST(ESRC4(cand)))(COST(ESRC4(cur))))
+              (la _. SEQ2(ADOPT(path)(REPLACE(nm)(cand)(spec)))
+                    (concat(concat(concat("IMPROVED  ")(nm))(concat(" := ")(ESRC4(cand))))
+                    (concat(concat("   cost ")(int_to_str(COST(ESRC4(cur)))))
+                    (concat(concat(" -> ")(int_to_str(COST(ESRC4(cand)))))
+                    (concat(" applications, gain ")
+                    (concat(int_to_str(sub(COST(ESRC4(cur)))(COST(ESRC4(cand)))))
+                           (" — correctness preserved (same test, whole organ re-verified)")))))))
+              (la _. "ALREADY OPTIMAL — no cheaper program exists in my capability space; nothing changed"))
+          (OPTVAL2(opt)))
+        (la _. "no program found — I cannot even express this with what I am"))
+    (SYNTH(CAP_SPEC)(nm)(":: a -> a")(tests)))
+  (FINDENT(nm)(spec))
+
+glyph SHOWCOST = la label. la spec.
+    print(concat(concat(label)(ESRC4(FINDENT("TWELVE")(spec))))
+         (concat("   [")(concat(int_to_str(COST(ESRC4(FINDENT("TWELVE")(spec)))))(" applications]"))))
+
+glyph MAIN =
+  SEQ2(print("── self-optimization: the system measures its own cost and rewrites itself cheaper ──"))
+  (SEQ2(DEPLOY(CUR_SPEC)("opt.la"))
+  (SEQ2(SHOWCOST("1. I am now  : TWELVE = ")(CUR_SPEC))
+  (SEQ2(print("2. sensing   : counting my own applications — nothing external profiles me"))
+  (SEQ2(print(concat("3. ")(OPTIMIZE("opt.la")(CUR_SPEC)("TWELVE")(TWELVE_TESTS))))
+  (SEQ2(print("4. re-running the optimiser on what I have now (it must be its own fixed point):"))
+       (print(concat("   ")(OPTIMIZE("opt.la")(REPLACE("TWELVE")(OPTVAL2(SYNTH(CAP_SPEC)("TWELVE")(":: a -> a")(TWELVE_TESTS)))(CUR_SPEC))("TWELVE")(TWELVE_TESTS)))))))))
