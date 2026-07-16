@@ -1123,9 +1123,24 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       (r64,r64), `mov` (r64,imm32), `push`/`pop` (r64), `syscall`/`ret`/`nop`,
       `r8`–`r15` via REX, labels and NEAR `jmp`/`call`/`jz`/`je`/`jnz`/`jne`
       (`elf.la`'s whole write+exit entry is inside it, as is any straight-line +
-      branching routine over registers). What it is **not**: **no memory operands**
-      (no `[rax+8]`, no ModRM mod≠11, no SIB — the biggest gap and the next
-      increment); **no short-jump optimisation** (a bare `jmp L` is emitted NEAR
+      branching routine over registers).
+      **MEMORY OPERANDS added, also byte-identical (49-byte program over 12
+      forms)** — `mov` in both directions over `[base]`/`[base±disp]`. The three
+      quirks are HARDWARE facts, not NASM preferences (an encoder missing any
+      would produce something the CPU *misreads*, not merely something NASM
+      writes differently), and each is asserted **individually** so a regression
+      names itself instead of surfacing as an anonymous byte diff: **rbp/r13**
+      (`rm==5`) — `mod=00 rm=101` means RIP-relative, so `[rbp]` is FORCED to
+      `mod=01`+`disp8=0` (`48 8b 45 00`); **rsp/r12** (`rm==4`) — `rm=100` means
+      "a SIB byte follows", so `[rsp]` needs `SIB=0x24` (`48 8b 04 24`); **disp**
+      — 0 → `mod=00`, fits a signed byte → `mod=01`+disp8 in two's complement
+      (`[rbp-8]` → `f8`), else `mod=10`+disp32. Both quirks survive REX.B, which
+      is where a naive encoder breaks (`[r12]` → `4d 89 2c 24`; `[r13]` →
+      `49 8b 45 00`).
+      What it is **not**: memory operands are **base+displacement only** — no
+      index/scale (`[rax+rcx*4]`), no RIP-relative, and only for `mov`
+      (`add`/`sub`/`xor` stay register-to-register); **no short-jump
+      optimisation** (a bare `jmp L` is emitted NEAR
       `e9`, whereas NASM shortens to `eb rel8` when it fits, so the two would
       DIFFER — write `jmp near L` to stay byte-identical; matching NASM here needs
       the iterate-to-a-fixed-point pass real assemblers run, a deliberate later
