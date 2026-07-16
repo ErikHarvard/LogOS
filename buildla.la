@@ -1,0 +1,97 @@
+# =====================================================================
+#  buildla.la — A BUILD ORCHESTRATOR IN LINGUA ADAMICA.
+#
+#  build.sh is bash: a foreign shell script deciding what a sovereign,
+#  self-hosting OS builds and whether it passed. That is the orchestration seam.
+#  This is the first real slice of closing it — not a sketch: it drives ACTUAL
+#  LogOS build stages and fails the build when one fails.
+#
+#  It was IMPOSSIBLE until 05ed1fe. The VM's execve took no argv (so LA could not
+#  run `./tiny_host kernel.la`) and there was no dup2 (so a forked child's stdout
+#  went to the parent's and LA could not CAPTURE what a step printed — and
+#  build.sh's checks are 274 greps over captured stdout). With execv + dup2 the
+#  whole cycle is expressible:
+#
+#      fork -> dup2 the child's stdout into a file -> execv CMD ARGS
+#           -> waitpid -> read_file the output -> check it
+#
+#  ── WHAT A "STEP" IS ────────────────────────────────────────────────────────
+#  cmd, args, and a marker the output must contain — the same shape as build.sh's
+#  `X="$(./tiny_host foo.la)"; grep -q "marker"`. HASSUB is the grep.
+#
+#  ── WHAT THIS CLOSES, AND WHAT IT DOES NOT ──────────────────────────────────
+#  CLOSES: the ORCHESTRATION logic — deciding what to run, running it, capturing
+#  it, judging it, and failing the build. In LA, on the native VM, with no shell.
+#  DOES NOT CLOSE: the TOOLS. Driving `./tiny_host` still runs the C host;
+#  build.sh also invokes gcc, nasm (46x), ld, qemu and python3, and each is its
+#  OWN seam (assembler [~], linker [ ], emulator [!]). "the build is orchestrated
+#  by LA" must never come to mean "no foreign tools in the build".
+#  DOES NOT YET COVER: 3 of build.sh's 103 stages. This is the shape proven on
+#  real stages, not the whole audit — the rest is mechanical volume, and the
+#  ROADMAP keeps the item [~] until it is actually done.
+#
+#  VM-only (fork/dup2/execv/waitpid are VM builtins): compile with codegen.la and
+#  run on logos_secd. That is the bootstrap, not a cheat — build.sh seeds the VM
+#  once, exactly as tiny_host seeds the first compiler.
+# =====================================================================
+
+glyph SEQ  = la a. la b. b
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph NIL  = la n. la c. n
+
+# ── the grep: does the captured output contain the marker? ──
+glyph SW = Z(la self. la s. la p.
+    IF(str_eq(p)(""))(la _. TRUE)
+      (la _. IF(str_eq(s)(""))(la _. FALSE)
+               (la _. IF(str_eq(str_head(s))(str_head(p)))
+                        (la _. self(str_tail(s))(str_tail(p)))
+                        (la _. FALSE))))
+glyph HASSUB = Z(la self. la s. la p.
+    IF(SW(s)(p))(la _. TRUE)
+      (la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(p))))
+
+# ── RUN(cmd)(args)(out): the cycle execv+dup2 made expressible ──
+#   O_WRONLY|O_CREAT|O_TRUNC = 1|64|512 = 577.
+glyph RUN = la cmd. la args. la out.
+  (la pid.
+    IF(str_eq(pid)("0"))
+      (la _. SEQ(dup2(open(out)("577"))("1"))(execv(cmd)(args)))
+      (la _. SEQ(waitpid(pid))(read_file(out))))
+  (fork("!"))
+
+# ── a step: cmd, args, and the marker its output must contain ──
+glyph STEP = la nm. la cmd. la args. la mark. la f. f(nm)(cmd)(args)(mark)
+glyph SNAME = la s. s(la a. la b. la c. la d. a)
+glyph SCMD  = la s. s(la a. la b. la c. la d. b)
+glyph SARGS = la s. s(la a. la b. la c. la d. c)
+glyph SMARK = la s. s(la a. la b. la c. la d. d)
+
+# ── REAL LogOS build stages — the same checks build.sh makes ──
+glyph STEPS =
+  CONS(STEP("kernel speaks the Word")("./tiny_host")("kernel.la")("I AM THAT I AM"))(
+  CONS(STEP("assembler runs")("./tiny_host")("asm.la")("asm.la assembled"))(
+  CONS(STEP("bounded self-repair (B3)")("./tiny_host")("selfrepair.la")("byte-identical-to-pre-corruption=T"))(
+  NIL)))
+
+glyph RUN1 = la s.
+  (la got.
+    (la ok.
+      SEQ(print(concat(IF(ok)(la _. "  PASS  ")(la _. "  FAIL  "))(SNAME(s))))(ok))
+    (HASSUB(got)(SMARK(s))))
+  (RUN(SCMD(s))(SARGS(s))("/tmp/buildla_out.txt"))
+
+glyph ALL = Z(la self. la l.
+  l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(RUN1(h))))
+
+glyph MAIN =
+  SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
+  ((la ok.
+     IF(ok)
+       (la _. print("  BUILD GREEN — every step ran and said what it must, driven by LA"))
+       (la _. SEQ(print("  BUILD RED — a step failed"))(exit("1"))))
+   (ALL(STEPS)))

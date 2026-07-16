@@ -1186,8 +1186,28 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       single-source/single-segment image case and does not claim this.
 - [ ] **LA-native debugger** — the system inspecting its own execution. Deep
       closure: the system observing itself (today: `qemu -d int` + foreign tools).
-- [ ] **LA build orchestrator** — `build.sh` is bash; the build driving its own
-      compilation, in LA.
+- [~] **LA build orchestrator (`buildla.la`) — FIRST REAL SLICE DONE (2026-07-16).**
+      `build.sh` is bash: a foreign shell script deciding what a sovereign,
+      self-hosting OS builds and whether it passed. **It was IMPOSSIBLE until the
+      VM gained `execv`+`dup2` (`05ed1fe`)** — `execve` took no argv (so LA could
+      not run `./tiny_host kernel.la`) and without `dup2` a forked child's stdout
+      went to the parent's, so LA could not CAPTURE what a step printed, and
+      build.sh's checks are **274 greps over captured stdout**. Now the whole
+      cycle is expressible: *fork → `dup2` the child's stdout into a file → `execv`
+      CMD ARGS → `waitpid` → `read_file` → check*. `HASSUB` is the grep.
+      Verified on **3 real stages** (kernel speaks the Word · assembler runs ·
+      bounded self-repair) — **BUILD GREEN**, and the RED path is verified too: a
+      step whose marker never appears gives **BUILD RED, exit 1**, with the other
+      steps still running and reporting (a build tool that cannot fail is
+      worthless, and one failure must not mask the rest).
+      *What it closes:* the **ORCHESTRATION** logic — deciding what to run, running
+      it, capturing it, judging it, failing the build. In LA, on the VM, no shell.
+      *What it does NOT close:* the **TOOLS**. Driving `./tiny_host` still runs the
+      C host; build.sh also invokes gcc, **nasm (46×)**, ld, qemu, python3 — each
+      its OWN seam (assembler `[~]`, linker `[ ]`, emulator `[!]`). **"The build is
+      orchestrated by LA" must never come to mean "no foreign tools in the build."**
+      *Why `[~]`:* **3 of 103 stages.** The shape is proven on real stages; the rest
+      is mechanical volume (~2-3 sessions). Not `[x]` until it actually is.
 - [ ] **LA-native test/verification harness** — the system testing itself in its
       own language (today: bash gates + QEMU).
 - [!] **The emulator** — testing runs in QEMU (foreign). Closing it needs our own
