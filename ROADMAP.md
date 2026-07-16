@@ -788,8 +788,23 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             compile on tiny_host, the font flat-literal lesson: a 41-deep nest took
             >12 min and was killed; the flat form compiles in the normal ~5 min).
             (AegisNet's crypto/onion layer sits far above this bare TX/RX.)
-      - [ ] Then disk write (HAL.3b), IRQ-driven input (HAL.2b), a bulk
-            framebuffer-fill primitive, and the compositor on the metal.
+      - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
+            (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
+            HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
+            at ring 0 issues WRITE SECTORS (cmd 0x30) for a 28-bit LBA (same
+            LBA/count/drive setup as the read, only the command byte differs), waits
+            BSY-clear + DRQ-set, pushes one 512-byte sector as 128 little-endian
+            32-bit `outl` writes to the data register 0x1F0 (the write-mirror of the
+            read's 128 `inl`s), issues CACHE FLUSH (cmd 0xE7) + waits BSY, then reads
+            the sector back (the proven HAL.3 read path) and echoes it. The sector is
+            a printable signature + NUL padding to 512 (`ZEROS` a small Z-loop).
+            `gate_hal3b.sh` boots a BLANK `-drive if=ide` disk, asserts the serial
+            round-trip (`ata write done` + the echoed signature + exit 33) AND —
+            independent proof — that the signature is on the disk FILE at LBA 2
+            (offset 1024) though it was seeded all-zero, so the bytes came from the
+            driver's write. (Sector WRITE was the last obvious HAL.3 follow-up.)
+      - [ ] Then IRQ-driven input (HAL.2b), a bulk framebuffer-fill primitive, and
+            the compositor on the metal.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*

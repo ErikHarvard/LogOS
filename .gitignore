@@ -120,3 +120,6 @@ mathutil.la
 /kernel/kernel_hal5_64.elf
 /kernel/kernel_hal5b.elf
 /kernel/kernel_hal5b_64.elf
+/kernel/kernel_hal3b.elf
+/kernel/kernel_hal3b_64.elf
+/kernel/hal3bdisk.img
