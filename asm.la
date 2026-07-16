@@ -40,16 +40,31 @@
 #  would be unreliable. `jz start` at offset 22 becomes 0f 84 e4 ff ff ff, which
 #  is exactly what NASM emits.
 #
-#  WHY ONE CLEAN PASS SUFFICES: only the NEAR forms are emitted, so every
-#  instruction's SIZE is fixed by its mnemonic and registers — never by how far
-#  away its target turns out to be. That removes the chicken-and-egg (size
-#  depends on distance depends on size) that forces real assemblers into
-#  multi-pass optimisation. The cost is the scope note below.
+#  SHORT JUMPS NEED A FIXED POINT. NASM emits the shortest jump that reaches:
+#  `jmp a` -> eb rel8 (2 bytes) when the target is within a signed byte, else
+#  e9 rel32 (5); `jz` -> 74 rel8 (2) or 0f 84 rel32 (6); `call` has NO short form
+#  (always e8 rel32). Matching that is the last encoding-CHOICE mismatch, and it
+#  is what lets a bare `jmp L` — idiomatic asm — be byte-identical rather than
+#  requiring `near`.
+#
+#  It is the chicken-and-egg proper: a jump's SIZE depends on its target's
+#  DISTANCE, which depends on the SIZES of everything between. So: start
+#  OPTIMISTIC (every jump short; an unknown forward label is assumed reachable),
+#  build the label table, recompute. A jump that no longer reaches is PROMOTED to
+#  near — which GROWS the code, which can push another jump out of range — so
+#  iterate. Promotion only ever grows the image, so total length is monotonic and
+#  bounded: length unchanged <=> no promotion <=> the fixed point. That is the
+#  convergence test, with a pass cap as a backstop.
+#  The same shape as regen_selfhost.sh iterating the compiler image to ITS fixed
+#  point — the project's standing discipline, one level down.
+#  An explicit `near` still FORCES the long form (NASM honours it too), so
+#  existing `jmp near L` sources stay byte-identical.
 #
 #  ── HONEST SCOPE ────────────────────────────────────────────────────────────
 #  A REAL SUBSET, every instruction of it verified byte-identical against NASM:
 #  mov/add/sub/xor (r64,r64), mov (r64,imm32), push/pop (r64), syscall, ret,
-#  nop, r8-r15 via REX, labels and NEAR control flow (jmp/call/jz/je/jnz/jne),
+#  nop, r8-r15 via REX, labels and control flow (jmp/call/jz/je/jnz/jne) with
+#  NASM's short/near selection reproduced via a fixed point,
 #  and MEMORY OPERANDS for mov in both directions — [base], [base+disp],
 #  [base-disp], with the rbp/r13 and rsp/r12 quirks and disp8/disp32 promotion.
 #  elf.la's whole write+exit entry is inside it, as is any branching routine
@@ -59,13 +74,11 @@
 #    - memory operands cover a BASE + DISPLACEMENT only: no index/scale
 #      ([rax+rcx*4]), no RIP-relative, and only for `mov` — add/sub/xor stay
 #      register-to-register;
-#    - NO short-jump optimisation: a bare `jmp L` is emitted NEAR (e9), whereas
-#      NASM would shorten it to eb rel8 when it fits, so the two would DIFFER.
-#      Write `jmp near L` to stay byte-identical. Matching NASM's choice here
-#      needs the iterate-to-a-fixed-point pass real assemblers run, which is a
-#      deliberate later increment rather than a thing quietly half-done;
 #    - no directives beyond `bits`, no sections, no data definitions, no
-#      paging/GDT/IDT/segment forms, no immediates to memory.
+#      paging/GDT/IDT/segment forms, no immediates to memory;
+#    - jcc covers jz/je/jnz/jne only — not the signed/unsigned comparison set
+#      (jl/jg/jle/jge/jb/ja/...), which is the same encoding + a condition
+#      nibble and is mechanical to extend.
 #  So it CANNOT yet assemble boot.asm or secd.asm, and NASM remains in the
 #  kernel build. The seam is closed for what is here and honestly open beyond
 #  it; the byte-identity gate extends to each increment.
@@ -231,14 +244,50 @@ glyph MEMSIZE = la b. la d.
                     (IF(int_eq(m)(0))(la _. 0)(la _. IF(int_eq(m)(1))(la _. 1)(la _. 4)))))
     (MODOF(b)(d))
 
-# ── SIZEOF: how many bytes this line will occupy, WITHOUT emitting it ──
-#   Pass 1 needs sizes before any label is known. Because only the NEAR jump
-#   forms are emitted, every size is fixed by the mnemonic and its registers —
-#   never by how far away the target turns out to be. That is what removes the
-#   chicken-and-egg (size depends on distance depends on size) that forces real
-#   assemblers into multi-pass optimisation, and it is why one clean pass
-#   suffices here. See the honest-scope note in the header.
-glyph SIZEOF = la ts.
+# ── SHORT-JUMP OPTIMISATION: iterate to a fixed point ───────────────────────
+#   NASM emits the SHORTEST jump that reaches: `jmp a` -> eb rel8 (2 bytes) when
+#   the target is within a signed byte, else e9 rel32 (5). `jz` likewise: 74 rel8
+#   (2) or 0f 84 rel32 (6). `call` has NO short form — always e8 rel32 (5).
+#   Matching that is the last encoding-CHOICE mismatch, and it is what lets a
+#   bare `jmp L` (idiomatic asm) be byte-identical rather than requiring `near`.
+#
+#   It needs a FIXED POINT, and this is the chicken-and-egg the near-only version
+#   deliberately avoided: a jump's SIZE depends on its target's DISTANCE, which
+#   depends on the SIZES of everything between. So: start OPTIMISTIC (every jump
+#   short — an unknown forward label is assumed reachable), compute the label
+#   table, and recompute. A jump that no longer reaches is PROMOTED to near,
+#   which grows the code, which can push another jump out of range — so iterate.
+#   Promotion only ever GROWS the image, so total length is monotonic and
+#   bounded: length unchanged <=> no promotion happened <=> the fixed point. That
+#   is the convergence test, with a pass cap as a backstop.
+#   The same shape as regen_selfhost.sh iterating the compiler image to ITS fixed
+#   point — the project's standing discipline, one level down.
+#
+#   An explicit `near` still FORCES the long form (NASM honours it too), so the
+#   existing `jmp near L` sources stay byte-identical.
+glyph ISJCC   = la op. OR(str_eq(op)("jz"))(OR(str_eq(op)("je"))(OR(str_eq(op)("jnz"))(str_eq(op)("jne"))))
+glyph ISNEARK = la ts. str_eq(NTH(1)(ts))("near")
+glyph JSHORT  = la labs. la off. la ts.
+    IF(ISNEARK(ts))(la _. FALSE)
+      (la _. (la o. IF(ISSOME(o))
+                      (la _. FITS8(sub(OPTV(o))(add(off)(2))))
+                      (la _. TRUE))
+             (LOOKLAB(TARGET(ts))(labs)))
+glyph REL8 = la labs. la off. la nm.
+    (la d. IF(lt(d)(0))(la _. add(256)(d))(la _. d))
+    (sub(LABADDR(nm)(labs))(add(off)(2)))
+
+glyph MOVSIZE = la ts.
+    IF(ISMEM(NTH(1)(ts)))
+      (la _. MEMSIZE(MEMBASE(NTH(1)(ts)))(MEMDISP(NTH(1)(ts))))
+      (la _. IF(ISMEM(NTH(2)(ts)))
+               (la _. MEMSIZE(MEMBASE(NTH(2)(ts)))(MEMDISP(NTH(2)(ts))))
+               (la _. IF(ISREG(NTH(2)(ts)))
+                        (la _. 3)
+                        (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 5)(la _. 6))))
+
+# ── SIZEL: bytes this line occupies, given what we currently know of labels ──
+glyph SIZEL = la labs. la off. la ts.
   (la op.
     IF(str_eq(op)(""))(la _. 0)(la _.
     IF(str_eq(op)("bits"))(la _. 0)(la _.
@@ -248,24 +297,14 @@ glyph SIZEOF = la ts.
     IF(str_eq(op)("nop"))(la _. 1)(la _.
     IF(OR(str_eq(op)("push"))(str_eq(op)("pop")))
       (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 1)(la _. 2))(la _.
-    IF(str_eq(op)("jmp"))(la _. 5)(la _.
     IF(str_eq(op)("call"))(la _. 5)(la _.
-    IF(OR(str_eq(op)("jz"))(OR(str_eq(op)("je"))(OR(str_eq(op)("jnz"))(str_eq(op)("jne")))))
-      (la _. 6)(la _.
-    IF(str_eq(op)("mov"))
-      (la _. IF(ISMEM(NTH(1)(ts)))
-               (la _. MEMSIZE(MEMBASE(NTH(1)(ts)))(MEMDISP(NTH(1)(ts))))
-               (la _. IF(ISMEM(NTH(2)(ts)))
-                        (la _. MEMSIZE(MEMBASE(NTH(2)(ts)))(MEMDISP(NTH(2)(ts))))
-                        (la _. IF(ISREG(NTH(2)(ts)))
-                                 (la _. 3)
-                                 (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 5)(la _. 6)))))
-      (la _. 3))))))))))))
+    IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
+    IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 6))(la _.
+    IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _. 3))))))))))))
   (HD(ts))
 
-# ── one instruction -> its bytes (labs = label table, next = addr of the
-#    following instruction, which is what rel32 is measured from) ──
-glyph ENC1 = la labs. la next. la ts.
+# ── one instruction -> its bytes (off = this instruction's own address) ──
+glyph ENC1 = la labs. la off. la ts.
   (la op.
     IF(str_eq(op)(""))(la _. "")(la _.
     IF(str_eq(op)("bits"))(la _. "")(la _.
@@ -278,18 +317,23 @@ glyph ENC1 = la labs. la next. la ts.
     IF(str_eq(op)("add"))(la _. ALU(1)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
     IF(str_eq(op)("sub"))(la _. ALU(41)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
     IF(str_eq(op)("xor"))(la _. ALU(49)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))(la _.
-    IF(str_eq(op)("jmp"))(la _. concat(B(233))(LE4(REL32(labs)(TARGET(ts))(next))))(la _.
-    IF(str_eq(op)("call"))(la _. concat(B(232))(LE4(REL32(labs)(TARGET(ts))(next))))(la _.
+    IF(str_eq(op)("call"))(la _. concat(B(232))(LE4(REL32(labs)(TARGET(ts))(add(off)(5)))))(la _.
+    IF(str_eq(op)("jmp"))
+      (la _. IF(JSHORT(labs)(off)(ts))
+               (la _. concat(B(235))(B(REL8(labs)(off)(TARGET(ts)))))
+               (la _. concat(B(233))(LE4(REL32(labs)(TARGET(ts))(add(off)(5))))))(la _.
     IF(OR(str_eq(op)("jz"))(str_eq(op)("je")))
-      (la _. concat(B(15))(concat(B(132))(LE4(REL32(labs)(TARGET(ts))(next)))))(la _.
+      (la _. IF(JSHORT(labs)(off)(ts))
+               (la _. concat(B(116))(B(REL8(labs)(off)(TARGET(ts)))))
+               (la _. concat(B(15))(concat(B(132))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
     IF(OR(str_eq(op)("jnz"))(str_eq(op)("jne")))
-      (la _. concat(B(15))(concat(B(133))(LE4(REL32(labs)(TARGET(ts))(next)))))(la _.
+      (la _. IF(JSHORT(labs)(off)(ts))
+               (la _. concat(B(117))(B(REL8(labs)(off)(TARGET(ts)))))
+               (la _. concat(B(15))(concat(B(133))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
     IF(str_eq(op)("mov"))
       (la _. IF(ISMEM(NTH(1)(ts)))
-               #  mov [mem], reg  -> 89 /r
                (la _. MEMENC(137)(REGNUM(NTH(2)(ts)))(MEMBASE(NTH(1)(ts)))(MEMDISP(NTH(1)(ts))))
                (la _. IF(ISMEM(NTH(2)(ts)))
-                        #  mov reg, [mem]  -> 8B /r
                         (la _. MEMENC(139)(REGNUM(NTH(1)(ts)))(MEMBASE(NTH(2)(ts)))(MEMDISP(NTH(2)(ts))))
                         (la _. IF(ISREG(NTH(2)(ts)))
                                  (la _. ALU(137)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))
@@ -297,26 +341,36 @@ glyph ENC1 = la labs. la next. la ts.
       (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))
   (HD(ts))
 
-# ── PASS 1: walk the lines accumulating the offset, recording each label ──
-glyph PASS1 = Z(la self. la ls. la off. la acc.
+# ── one pass: walk the lines, recording each label at its current offset ──
+glyph MKLABS = Z(la self. la ls. la labs. la off. la acc.
     ls(acc)(la h. la t.
       (la ts.
         IF(ISLABEL(HD(ts)))
-          (la _. self(t)(off)(CONS(PAIR(LABNAME(HD(ts)))(off))(acc)))
-          (la _. self(t)(add(off)(SIZEOF(ts)))(acc)))
+          (la _. self(t)(labs)(off)(CONS(PAIR(LABNAME(HD(ts)))(off))(acc)))
+          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))(acc)))
       (TOKS(h)(""))))
 
-# ── PASS 2: emit, now that every label's address is known ──
+glyph TOTLEN = Z(la self. la ls. la labs. la off.
+    ls(off)(la h. la t.
+      (la ts. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts))))(TOKS(h)(""))))
+
+# ── iterate to the fixed point: length unchanged <=> no promotion <=> stable ──
+glyph FIXLABS = Z(la self. la ls. la labs. la n.
+    IF(int_eq(n)(0))
+      (la _. labs)
+      (la _. (la l2. IF(int_eq(TOTLEN(ls)(labs)(0))(TOTLEN(ls)(l2)(0)))
+                       (la _. l2)
+                       (la _. self(ls)(l2)(sub(n)(1))))
+             (MKLABS(ls)(labs)(0)(NIL))))
+
 glyph PASS2 = Z(la self. la labs. la ls. la off.
     ls("")(la h. la t.
-      (la ts.
-        (la nxt. concat(ENC1(labs)(nxt)(ts))(self(labs)(t)(nxt)))
-        (add(off)(SIZEOF(ts))))
+      (la ts. concat(ENC1(labs)(off)(ts))(self(labs)(t)(add(off)(SIZEL(labs)(off)(ts)))))
       (TOKS(h)(""))))
 
-# ── ASSEMBLE(source text) -> machine code bytes (two passes) ──
+# ── ASSEMBLE(source text) -> machine code bytes ──
 glyph ASSEMBLE = la src.
-    (la ls. PASS2(PASS1(ls)(0)(NIL))(ls)(0))(LINES(src)(""))
+    (la ls. PASS2(FIXLABS(ls)(NIL)(12))(ls)(0))(LINES(src)(""))
 
 glyph MAIN =
   (la code.

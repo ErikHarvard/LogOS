@@ -1139,13 +1139,26 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       `49 8b 45 00`).
       What it is **not**: memory operands are **base+displacement only** — no
       index/scale (`[rax+rcx*4]`), no RIP-relative, and only for `mov`
-      (`add`/`sub`/`xor` stay register-to-register); **no short-jump
-      optimisation** (a bare `jmp L` is emitted NEAR
-      `e9`, whereas NASM shortens to `eb rel8` when it fits, so the two would
-      DIFFER — write `jmp near L` to stay byte-identical; matching NASM here needs
-      the iterate-to-a-fixed-point pass real assemblers run, a deliberate later
-      increment rather than a thing quietly half-done); no sections, no data
-      definitions, no paging/GDT/IDT forms. So it **cannot yet assemble
+      (`add`/`sub`/`xor` stay register-to-register); **short/near jump selection via a
+      FIXED POINT** — the last encoding-CHOICE mismatch, now closed, which is
+      what lets a bare `jmp L` (idiomatic asm) be byte-identical rather than
+      requiring `near`. NASM emits the shortest jump that reaches (`eb`/`74`
+      rel8, 2 bytes) and promotes to near (`e9`/`0f 84`) only when it must;
+      `call` has **no** short form. A jump's size depends on its target's
+      distance, which depends on the sizes between — so `asm.la` starts
+      OPTIMISTIC (all short), recomputes, promotes what no longer reaches, and
+      iterates. Promotion only GROWS the image, so length is monotonic and
+      bounded: **length unchanged ⟺ no promotion ⟺ the fixed point** — the same
+      shape as `regen_selfhost.sh` iterating the compiler image to ITS fixed
+      point, one level down. Both halves gated by name: in-range targets
+      shortened (`eb fd`/`74 fb`/`75 f9`, `call` stays `e8`), and a target 200
+      bytes away PROMOTED (`e9`/`0f 84`, 211 bytes byte-identical).
+      *(superseded note: a bare `jmp L` was emitted NEAR
+      `e9` regardless — that is now fixed)*; **jcc covers `jz`/`je`/`jnz`/`jne`
+      only**, not the signed/unsigned comparison set (`jl`/`jg`/`jb`/`ja`…),
+      which is the same encoding plus a condition nibble and is mechanical to
+      extend; no sections, no data definitions, no immediates-to-memory, no
+      paging/GDT/IDT/segment forms. So it **cannot yet assemble
       `boot.asm` or `secd.asm`** and NASM remains in the kernel build. Closed for
       what is here, honestly open beyond it; the byte-identity gate extends to
       each increment.

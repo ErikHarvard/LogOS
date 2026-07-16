@@ -1291,6 +1291,29 @@ if bad: print("      regressed:", "; ".join(bad))
 sys.exit(1 if bad else 0)
 PY
     rm -f /tmp/nasm_mem.bin /tmp/asm_mem.out
+    # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
+    #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
+    #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`
+    #      has NO short form. A jump's size depends on its target's distance,
+    #      which depends on the sizes between — so asm.la starts optimistic (all
+    #      short), recomputes, promotes what no longer reaches, and iterates.
+    #      Promotion only GROWS the image, so length is monotonic: length
+    #      unchanged <=> no promotion <=> fixed point. Same shape as
+    #      regen_selfhost.sh iterating the compiler image to ITS fixed point.
+    for prog in asm_test_short asm_test_promote; do
+        rm -f asm_out.bin /tmp/nasm_j.bin; cp $prog.asm asm_in.asm
+        ./tiny_host asm.la >/tmp/asm_j.out 2>&1 || { echo "FAIL  asm.la: $prog failed: $(tail -1 /tmp/asm_j.out)"; ok=0; }
+        nasm -f bin $prog.asm -o /tmp/nasm_j.bin 2>/dev/null
+        cmp -s asm_out.bin /tmp/nasm_j.bin || { echo "FAIL  asm.la: $prog DIFFERS from nasm (short/near selection)"; ok=0; }
+    done
+    # The two halves of the choice, asserted by name so a regression says which:
+    rm -f asm_out.bin; cp asm_test_short.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys; d=open('asm_out.bin','rb').read(); sys.exit(0 if d[1:3]==bytes([0xeb,0xfd]) and d[3:5]==bytes([0x74,0xfb]) and d[5:7]==bytes([0x75,0xf9]) and d[7]==0xe8 else 1)" \
+      || { echo "FAIL  asm.la: in-range targets were not SHORTENED (expect eb/74/75 rel8; call stays e8)"; ok=0; }
+    rm -f asm_out.bin; cp asm_test_promote.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys; d=open('asm_out.bin','rb').read(); sys.exit(0 if d[200]==0xe9 and d[205:207]==bytes([0x0f,0x84]) and len(d)==211 else 1)" \
+      || { echo "FAIL  asm.la: an out-of-range jump was not PROMOTED to near (the fixed point did not converge)"; ok=0; }
+    rm -f /tmp/nasm_j.bin /tmp/asm_j.out
     # (2c) AN UNDEFINED LABEL MUST HALT — not silently resolve to 0.
     printf 'bits 64\njmp near nowhere\n' > asm_in.asm
     URC=0; ./tiny_host asm.la >/tmp/asm_lab_bad.out 2>&1 || URC=$?
