@@ -1254,6 +1254,43 @@ d=open('asm_out.bin','rb').read()
 # jz start @22 -> 0f 84 then rel32 = -28 = e4 ff ff ff
 sys.exit(0 if d[22:28]==bytes([0x0f,0x84,0xe4,0xff,0xff,0xff]) else 1)
 PY
+    # (2d) MEMORY OPERANDS — [base] / [base±disp], byte-identical. The three
+    #      encoding quirks below are HARDWARE facts, not NASM preferences, and
+    #      each is asserted individually so a regression names itself rather than
+    #      surfacing as an anonymous byte diff:
+    #        rbp/r13 (rm==5): mod=00 rm=101 means RIP-RELATIVE, so [rbp] is
+    #                         FORCED to mod=01 with disp8=0;
+    #        rsp/r12 (rm==4): rm=100 means "SIB byte follows", so [rsp] needs
+    #                         SIB=0x24;
+    #        disp:            0 -> mod=00; fits signed byte -> mod=01+disp8
+    #                         (negative in two's complement); else mod=10+disp32.
+    rm -f asm_out.bin /tmp/nasm_mem.bin; cp asm_test_mem.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm_mem.out 2>&1 || { echo "FAIL  asm.la: memory-operand program failed: $(tail -1 /tmp/asm_mem.out)"; ok=0; }
+    nasm -f bin asm_test_mem.asm -o /tmp/nasm_mem.bin 2>/dev/null
+    cmp -s asm_out.bin /tmp/nasm_mem.bin \
+      || { echo "FAIL  asm.la: memory operands DIFFER from nasm"; ok=0;
+           python3 - <<'PY'
+a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_mem.bin','rb').read()
+print('      asm.la:', ' '.join(str(x) for x in a))
+print('      nasm  :', ' '.join(str(x) for x in b))
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x} nasm={y}'); break
+PY
+         }
+    python3 - <<'PY' || { echo "FAIL  asm.la: a memory-operand encoding quirk regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+q=[("[rbp] forced mod=01 disp8=0", d[6:10]  == bytes([0x48,0x8b,0x45,0x00])),
+   ("[rsp] SIB 0x24",              d[10:14] == bytes([0x48,0x8b,0x04,0x24])),
+   ("[rbp-8] disp8 two's compl",   d[22:26] == bytes([0x48,0x8b,0x45,0xf8])),
+   ("[rcx+4096] mod=10 disp32",    d[31:38] == bytes([0x48,0x8b,0x81,0x00,0x10,0x00,0x00])),
+   ("[r12] SIB + REX.B",           d[41:45] == bytes([0x4d,0x89,0x2c,0x24])),
+   ("[r13] rm=101 under REX.B",    d[45:49] == bytes([0x49,0x8b,0x45,0x00]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PY
+    rm -f /tmp/nasm_mem.bin /tmp/asm_mem.out
     # (2c) AN UNDEFINED LABEL MUST HALT — not silently resolve to 0.
     printf 'bits 64\njmp near nowhere\n' > asm_in.asm
     URC=0; ./tiny_host asm.la >/tmp/asm_lab_bad.out 2>&1 || URC=$?

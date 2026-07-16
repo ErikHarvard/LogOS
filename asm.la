@@ -49,20 +49,23 @@
 #  ── HONEST SCOPE ────────────────────────────────────────────────────────────
 #  A REAL SUBSET, every instruction of it verified byte-identical against NASM:
 #  mov/add/sub/xor (r64,r64), mov (r64,imm32), push/pop (r64), syscall, ret,
-#  nop, r8-r15 via REX, plus labels and NEAR control flow (jmp/call/jz/je/jnz/
-#  jne). elf.la's whole write+exit entry is inside it, and so is any
-#  straight-line + branching routine over registers.
+#  nop, r8-r15 via REX, labels and NEAR control flow (jmp/call/jz/je/jnz/jne),
+#  and MEMORY OPERANDS for mov in both directions — [base], [base+disp],
+#  [base-disp], with the rbp/r13 and rsp/r12 quirks and disp8/disp32 promotion.
+#  elf.la's whole write+exit entry is inside it, as is any branching routine
+#  over registers and the stack.
 #
 #  What it is NOT, stated plainly:
-#    - NO memory operands (no [rax+8], no ModRM mod!=11, no SIB) — this is the
-#      biggest gap and the next increment;
+#    - memory operands cover a BASE + DISPLACEMENT only: no index/scale
+#      ([rax+rcx*4]), no RIP-relative, and only for `mov` — add/sub/xor stay
+#      register-to-register;
 #    - NO short-jump optimisation: a bare `jmp L` is emitted NEAR (e9), whereas
 #      NASM would shorten it to eb rel8 when it fits, so the two would DIFFER.
 #      Write `jmp near L` to stay byte-identical. Matching NASM's choice here
 #      needs the iterate-to-a-fixed-point pass real assemblers run, which is a
 #      deliberate later increment rather than a thing quietly half-done;
 #    - no directives beyond `bits`, no sections, no data definitions, no
-#      paging/GDT/IDT forms.
+#      paging/GDT/IDT/segment forms, no immediates to memory.
 #  So it CANNOT yet assemble boot.asm or secd.asm, and NASM remains in the
 #  kernel build. The seam is closed for what is here and honestly open beyond
 #  it; the byte-identity gate extends to each increment.
@@ -177,6 +180,57 @@ glyph MOVIMM = la dst. la n.
 glyph PUSHPOP = la base. la r.
     concat(IF(lt(r)(8))(la _. "")(la _. B(65)))(B(add(base)(mod(r)(8))))
 
+# ── MEMORY OPERANDS: [base] / [base+disp] / [base-disp] ─────────────────────
+#   Three cases in the x86-64 encoding must be matched exactly or NASM's bytes
+#   diverge, and each is a real hardware quirk rather than a NASM preference:
+#     rbp / r13  (rm==5): mod=00 rm=101 is RIP-RELATIVE, so [rbp] CANNOT be
+#                encoded with mod=00 — it is forced to mod=01 with disp8=0.
+#                NASM: mov rax,[rbp] -> 48 8b 45 00
+#     rsp / r12  (rm==4): mod=xx rm=100 means "a SIB byte follows", so [rsp]
+#                needs SIB=0x24 (scale=0, index=none(100), base=100).
+#                NASM: mov rax,[rsp] -> 48 8b 04 24
+#     disp size : 0 -> mod=00 (no displacement bytes); fits in a signed byte ->
+#                mod=01 + disp8; otherwise mod=10 + disp32.
+#   A negative displacement is folded into range before splitting (LA's div/mod
+#   on a negative is unreliable): -8 -> disp8 0xf8, matching NASM's [rbp-8].
+glyph ISMEM   = la t. IF(str_eq(t)(""))(la _. FALSE)(la _. str_eq(str_head(t))("["))
+glyph STRIPBRK = la t. DROPLAST(str_tail(t))
+glyph SPLITSIGN = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))
+      (la _. PAIR(cur)(0))
+      (la _. (la c.
+          IF(OR(str_eq(c)("+"))(str_eq(c)("-")))
+            (la _. PAIR(cur)(IF(str_eq(c)("+"))
+                               (la _. str_to_int(str_tail(s)))
+                               (la _. sub(0)(str_to_int(str_tail(s))))))
+            (la _. self(str_tail(s))(concat(cur)(c))))
+        (str_head(s))))
+glyph MEMPARTS = la t. SPLITSIGN(STRIPBRK(t))("")
+glyph MEMBASE  = la t. REGNUM(FST(MEMPARTS(t)))
+glyph MEMDISP  = la t. SND(MEMPARTS(t))
+
+glyph FITS8 = la d. AND(NOT(lt(d)(sub(0)(128))))(lt(d)(128))
+glyph MODOF = la b. la d.
+    IF(AND(int_eq(mod(b)(8))(5))(int_eq(d)(0)))(la _. 1)(la _.
+    IF(int_eq(d)(0))(la _. 0)(la _.
+    IF(FITS8(d))(la _. 1)(la _. 2)))
+glyph SIBOF  = la b. IF(int_eq(mod(b)(8))(4))(la _. B(36))(la _. "")
+glyph DISPOF = la m. la d.
+    IF(int_eq(m)(0))(la _. "")(la _.
+    IF(int_eq(m)(1))(la _. B(IF(lt(d)(0))(la _. add(256)(d))(la _. d)))
+                    (la _. LE4(IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d))))
+glyph MEMENC = la op. la reg. la b. la d.
+    (la m.
+      concat(REX(b)(reg))
+     (concat(B(op))
+     (concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
+     (concat(SIBOF(b))(DISPOF(m)(d))))))
+    (MODOF(b)(d))
+glyph MEMSIZE = la b. la d.
+    (la m. add(3)(add(IF(int_eq(mod(b)(8))(4))(la _. 1)(la _. 0))
+                    (IF(int_eq(m)(0))(la _. 0)(la _. IF(int_eq(m)(1))(la _. 1)(la _. 4)))))
+    (MODOF(b)(d))
+
 # ── SIZEOF: how many bytes this line will occupy, WITHOUT emitting it ──
 #   Pass 1 needs sizes before any label is known. Because only the NEAR jump
 #   forms are emitted, every size is fixed by the mnemonic and its registers —
@@ -199,9 +253,13 @@ glyph SIZEOF = la ts.
     IF(OR(str_eq(op)("jz"))(OR(str_eq(op)("je"))(OR(str_eq(op)("jnz"))(str_eq(op)("jne")))))
       (la _. 6)(la _.
     IF(str_eq(op)("mov"))
-      (la _. IF(ISREG(NTH(2)(ts)))
-               (la _. 3)
-               (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 5)(la _. 6)))
+      (la _. IF(ISMEM(NTH(1)(ts)))
+               (la _. MEMSIZE(MEMBASE(NTH(1)(ts)))(MEMDISP(NTH(1)(ts))))
+               (la _. IF(ISMEM(NTH(2)(ts)))
+                        (la _. MEMSIZE(MEMBASE(NTH(2)(ts)))(MEMDISP(NTH(2)(ts))))
+                        (la _. IF(ISREG(NTH(2)(ts)))
+                                 (la _. 3)
+                                 (la _. IF(lt(REGNUM(NTH(1)(ts)))(8))(la _. 5)(la _. 6)))))
       (la _. 3))))))))))))
   (HD(ts))
 
@@ -227,9 +285,15 @@ glyph ENC1 = la labs. la next. la ts.
     IF(OR(str_eq(op)("jnz"))(str_eq(op)("jne")))
       (la _. concat(B(15))(concat(B(133))(LE4(REL32(labs)(TARGET(ts))(next)))))(la _.
     IF(str_eq(op)("mov"))
-      (la _. IF(ISREG(NTH(2)(ts)))
-               (la _. ALU(137)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))
-               (la _. MOVIMM(REGNUM(NTH(1)(ts)))(str_to_int(NTH(2)(ts)))))
+      (la _. IF(ISMEM(NTH(1)(ts)))
+               #  mov [mem], reg  -> 89 /r
+               (la _. MEMENC(137)(REGNUM(NTH(2)(ts)))(MEMBASE(NTH(1)(ts)))(MEMDISP(NTH(1)(ts))))
+               (la _. IF(ISMEM(NTH(2)(ts)))
+                        #  mov reg, [mem]  -> 8B /r
+                        (la _. MEMENC(139)(REGNUM(NTH(1)(ts)))(MEMBASE(NTH(2)(ts)))(MEMDISP(NTH(2)(ts))))
+                        (la _. IF(ISREG(NTH(2)(ts)))
+                                 (la _. ALU(137)(REGNUM(NTH(1)(ts)))(REGNUM(NTH(2)(ts))))
+                                 (la _. MOVIMM(REGNUM(NTH(1)(ts)))(str_to_int(NTH(2)(ts)))))))
       (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))
   (HD(ts))
 
