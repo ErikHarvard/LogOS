@@ -953,6 +953,70 @@ else
     exit 1
 fi
 
+say "Bounded self-repair (selfrepair.la — an organ corrupted, detected, regenerated from its own derivation)"
+# selfrepair.la is the project's own Debugging Principle mechanized: "a bug is a
+# heterological element — code that does not satisfy its own specification;
+# debugging is the restoration of autological closure." The criterion is not a
+# checksum bolted on from outside, it is canon.la's AUTO_OK (REN == CANON(ETYM))
+# applied to an ARTIFACT: INTACT(path)(spec) == read_file(path) == GENERATE(spec).
+# A corrupted module IS a heterological element — its bytes have floated free of
+# their derivation — and HEAL is DEPLOY: regenerate, type-check, run every glyph's
+# own tests, write ONLY if all pass (so a repair can never install unverified code).
+# BOUNDED by design (ROADMAP Tier 3): the spec + specpipe + the compiler are the
+# TRUSTED BASE — something must remain un-self-modified to do the repairing.
+# The corruption is deliberately a WRONG CONSTANT (3 -> 4), not a truncation: the
+# file still parses and still defines its namesake, so aatc's structural
+# SENSE_FILE would call it healthy. Only the byte-exact criterion catches it.
+# (host-only here, like autoloop above: selfrepair.la imports specpipe.la and
+# codegen of a specpipe-importer is ~160s; host==VM is a manual confirmation.)
+ok=1
+rm -f organ.la
+SR="$(./tiny_host selfrepair.la 2>/dev/null)"; SRC_RC=$?
+[ "$SRC_RC" -eq 0 ]                                                  || { echo "FAIL  selfrepair: run exited $SRC_RC"; ok=0; }
+printf '%s\n' "$SR" | grep -q "1. born" \
+  || { echo "FAIL  selfrepair: organ was not deployed from its spec"; ok=0; }
+# (1) DETECTION — the corrupted organ is recognised as heterological.
+printf '%s\n' "$SR" | grep -q "detected  : heterological? T" \
+  || { echo "FAIL  selfrepair: corruption NOT detected (a wrong constant slipped through)"; ok=0; }
+printf '%s\n' "$SR" | grep -q "HETEROLOGICAL (bytes have floated free of their derivation)" \
+  || { echo "FAIL  selfrepair: corrupted organ not diagnosed heterological"; ok=0; }
+# (2) REPAIR — regenerated from the verified source, closure restored.
+printf '%s\n' "$SR" | grep -q "3. healing   : repaired — regenerated from the verified source" \
+  || { echo "FAIL  selfrepair: organ was not repaired"; ok=0; }
+# (3) THE PROOF — intact AND byte-identical to the organ before corruption.
+printf '%s\n' "$SR" | grep -q "intact=T byte-identical-to-pre-corruption=T" \
+  || { echo "FAIL  selfrepair: repaired organ is not byte-identical to its pre-corruption self"; ok=0; }
+[ -f organ.la ]                                                      || { echo "FAIL  selfrepair: organ.la missing after repair"; ok=0; }
+grep -q "glyph TRIPLEN = la x. mul(x)(3)" organ.la \
+  || { echo "FAIL  selfrepair: healed organ does not carry the correct constant"; ok=0; }
+# (4) HEAL must be able to say NO, and say it HONESTLY. Given a spec whose own
+#     implementation fails its own test, DEPLOY rejects and writes nothing — so
+#     the organ stays corrupted. HEAL must then report REFUSED (it re-senses
+#     after repairing rather than announcing success because it ran), and the
+#     corrupted file must be left EXACTLY as it was — a failed repair may never
+#     overwrite the disk with unverified code. (ENT/TC/SING come from autoloop,
+#     which exports them; they are private to selfrepair, so the module system
+#     correctly hides them — same import shape as al_loud.la above.)
+cat > /tmp/sr_bad.la <<'LA'
+import("specpipe.la")
+import("autoloop.la")
+import("selfrepair.la")
+glyph BADSPEC = CONS(ENT("TRIPLEN")(":: a -> a")("la x. mul(x)(3)")(la x. mul(x)(4))(SING(TC(la g. int_to_str(g(7)))("21"))))(NIL)
+glyph MAIN = print(HEAL("/tmp/sr_never.la")(BADSPEC))
+LA
+printf 'CORRUPTED-ORIGINAL' > /tmp/sr_never.la
+./tiny_host /tmp/sr_bad.la >/tmp/sr_bad.out 2>&1 || true
+grep -q "REFUSED" /tmp/sr_bad.out \
+  || { echo "FAIL  selfrepair: HEAL did not report REFUSED for a spec failing its own tests"; ok=0; }
+[ "$(cat /tmp/sr_never.la)" = "CORRUPTED-ORIGINAL" ] \
+  || { echo "FAIL  selfrepair: a REFUSED repair overwrote the file with unverified code"; ok=0; }
+rm -f organ.la /tmp/sr_bad.la /tmp/sr_bad.out /tmp/sr_never.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  selfrepair (B3): bounded self-repair — an organ deployed from its own derivation, corrupted with a wrong constant that still parses (a structural sense would miss it), DETECTED as heterological by the byte-exact autological criterion (file == GENERATE(spec)), and REGENERATED from its verified source byte-identically to its pre-corruption self. A repair whose module fails its own tests is REFUSED, never written. Bounded: the spec + specpipe + the compiler are the trusted base"
+else
+    exit 1
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes

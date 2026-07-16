@@ -960,10 +960,35 @@ disk; GRUB/multiboot gone, the last foreign-toolchain seam at boot closed).
       precisely *because* the system contains its own compiler, so it can
       regenerate and extend its own components. The deeper Rubedo-horizon
       capability. **Bounded by design** — see the trusted-base limit below.
-- [ ] **Bounded self-repair** — the system detecting a corrupted component and
-      regenerating it from its own verified source (ledger **B3**). The
-      `AUDIT_FILE`/`REPAIR` machinery in `aatc.la` is the seed of the criterion;
-      the missing half is regeneration of the real artifact.
+- [x] **Bounded self-repair (B3) — DONE + gated (2026-07-16), `selfrepair.la`.**
+      The project's own **Debugging Principle mechanized**: *"a bug is a
+      heterological element — code that does not satisfy its own specification;
+      debugging is the restoration of autological closure."* The criterion is not
+      a checksum bolted on from outside — it is `canon.la`'s `AUTO_OK`
+      (`REN ≡ CANON(ETYM)`: a thing IS its own etymology) applied to an
+      **artifact**: `INTACT(path)(spec) ≡ read_file(path) == GENERATE(spec)` —
+      a module's BYTES must be what its spec generates. A corrupted module is
+      then literally a heterological element (its bytes have floated free of
+      their derivation), and `HEAL` is the restoration of closure: `DEPLOY`
+      re-derives, type-checks, runs every glyph's own tests, and writes ONLY if
+      all pass. Gated on four properties: (1) **detection** — the corruption is a
+      WRONG CONSTANT (3→4) that still parses and still defines its namesake, so
+      `aatc.la`'s structural `SENSE_FILE` would call it healthy; only the
+      byte-exact criterion catches it; (2) **repair** — regenerated from the
+      verified source; (3) **the proof** — the healed organ is BYTE-IDENTICAL to
+      its pre-corruption self; (4) **honest refusal** — given a spec that fails
+      its own tests, `HEAL` re-senses after repairing and reports `REFUSED`
+      rather than announcing success because it ran, and the corrupted file is
+      left EXACTLY as it was (a failed repair never overwrites the disk with
+      unverified code). Host-gated in `build.sh` like `autoloop.la` (a
+      specpipe-importer costs ~160s to codegen; host==VM is a manual
+      confirmation). **Bounded, deliberately** (Tier 3): the spec + specpipe +
+      the compiler are the **trusted base** — something must remain
+      un-self-modified to do the repairing. *Honest scope:* repairable ==
+      spec-generated. An organ whose etymology is a spec can be regenerated from
+      it; a hand-written module has no etymology to regenerate FROM. That is the
+      real boundary of B3 — the system can restore any component whose
+      derivation it still holds.
 - [ ] **Self-programming via the language** — the system generating new LA
       programs from within (the meta-programmable / democratized-coding goal).
       `autoloop.la` + `specpipe.la` are the seed; the goal decomposition is still

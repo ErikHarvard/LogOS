@@ -1,0 +1,132 @@
+# =====================================================================
+#  BOUNDED SELF-REPAIR (ledger B3) — the system detects a corrupted component
+#  and regenerates it from its own verified source.
+#
+#  This is not a new principle; it is THIS REPO'S OWN Debugging Principle
+#  mechanized. CLAUDE.md states it:
+#
+#     "A bug is a heterological element — code that does not satisfy its own
+#      specification. Debugging is not trial-and-error; it is the restoration
+#      of autological closure."
+#
+#  So the criterion is not a checksum bolted on from outside — it is the
+#  autological criterion the project already carries, applied to an ARTIFACT.
+#  canon.la's AUTO_OK says a glyph is autological iff REN(g) == CANON(ETYM(g)):
+#  the name IS what it names etymologically, and a HETEROLOGICAL glyph is one
+#  whose name floats free of its derivation. A module on disk is the same shape:
+#
+#     INTACT(path)(spec)  ==  read_file(path) == GENERATE(spec)
+#
+#  The module's BYTES must be what its spec generates. A corrupted module is
+#  precisely a heterological element — its bytes have floated free of their
+#  derivation. HEAL is the restoration of autological closure, and it is exactly
+#  DEPLOY: regenerate from the spec, TYPE-CHECK it, run every glyph's own tests,
+#  and write ONLY if all pass (specpipe REJECTS a failing module and writes
+#  nothing — no unverified code ever reaches the disk, autoloop.la's discipline).
+#
+#  Detection is byte-exact, which makes it strictly stronger than aatc.la's
+#  SENSE_FILE (which reads STRUCTURAL facts — defines-namesake / non-empty /
+#  has-imports — and would happily call a subtly-wrong implementation healthy).
+#  A wrong constant, a flipped operator, a truncation, a tamper: all diverge
+#  from GENERATE(spec), so all are caught.
+#
+#  ── THE TRUSTED BASE (the honest bound; ROADMAP Tier 3) ──────────────────────
+#  This is BOUNDED self-repair and cannot be otherwise. Something must remain
+#  un-self-modified in order to DO the repairing: here that is the SPEC (the
+#  verified source of truth), specpipe's GENERATE/DEPLOY, and the compiler
+#  underneath. The organ is repairable; the thing repairing it is not repairing
+#  itself in the same act. Closure-from-nothing is the pseudo-paradox the Codex
+#  dissolves — so this builds the bounded version deliberately, and says so.
+#
+#  ── HONEST SCOPE ────────────────────────────────────────────────────────────
+#  Repairable == SPEC-GENERATED. An organ whose etymology is a spec can be
+#  regenerated from it; a hand-written module has no etymology to regenerate
+#  FROM, and this cannot heal it. That is the real boundary of B3, not a
+#  limitation to be papered over: the system can restore any component whose
+#  derivation it still holds.
+# =====================================================================
+
+import("specpipe.la")
+
+export INTACT HEAL DIAGNOSE ORGAN_SPEC
+
+# ── spec-entry constructors (autoloop.la's shape; kept private there) ──
+glyph ENT   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph TC    = la probe. la expected. PAIR(probe)(expected)
+glyph SING  = la x. CONS(x)(NIL)
+glyph SEQ2  = la a. la b. b
+glyph NOT   = la b. b(FALSE)(TRUE)
+
+# ── THE ORGAN: a small module that exists only as a derivation ──
+#   Each glyph carries its type, its source, its implementation, and its own
+#   test cases — so the module can be regenerated AND re-verified from this
+#   alone. This is the "verified source" B3 regenerates from.
+glyph ORGAN_SPEC =
+  CONS(ENT("TRIPLEN")(":: a -> a")("la x. mul(x)(3)")(la x. mul(x)(3))(SING(TC(la g. int_to_str(g(7)))("21"))))(
+  CONS(ENT("DEC")(":: a -> a")("la x. sub(x)(1)")(la x. sub(x)(1))(SING(TC(la g. int_to_str(g(9)))("8"))))(
+  CONS(ENT("AVG")(":: a -> a -> a")("la x. la y. div(add(x)(y))(2)")(la x. la y. div(add(x)(y))(2))(SING(TC(la g. int_to_str(g(4)(10)))("7"))))(
+  NIL)))
+
+# ── SENSE: is the artifact still identical to what its derivation generates? ──
+#   The autological criterion at the artifact level (canon.la's AUTO_OK shape).
+glyph INTACT = la path. la spec. str_eq(read_file(path))(GENERATE(spec))
+
+# ── DIAGNOSE: name the condition, in the project's own vocabulary ──
+glyph DIAGNOSE = la path. la spec.
+    IF(INTACT(path)(spec))
+      (la _. "AUTOLOGICAL (bytes are their own derivation)")
+      (la _. "HETEROLOGICAL (bytes have floated free of their derivation)")
+
+# ── HEAL: restore autological closure by regenerating from the verified source ──
+#   DEPLOY re-derives, type-checks, runs every glyph's tests, and writes ONLY on
+#   success — so a repair can never install unverified code. A repair that
+#   cannot verify is refused, not forced.
+#
+#   HEAL RE-SENSES AFTER REPAIRING and reports what actually happened, rather
+#   than announcing success because it ran. If the spec itself fails its own
+#   tests, DEPLOY rejects and writes nothing — the organ stays corrupted, and
+#   saying "repaired" would make the repair organ heterological in exactly the
+#   way it exists to detect (a report that does not satisfy its own claim). The
+#   criterion is the same one used to detect: closure is asserted only if the
+#   bytes on disk really are their own derivation.
+glyph HEAL = la path. la spec.
+    IF(INTACT(path)(spec))
+      (la _. "healthy — no repair needed")
+      (la _. SEQ2(DEPLOY(spec)(path))
+              (IF(INTACT(path)(spec))
+                 (la _. "repaired — regenerated from the verified source")
+                 (la _. "REFUSED — regenerated module failed its own tests; disk left untouched")))
+
+glyph BS = la b. IF(b)(la _. "T")(la _. "F")
+
+glyph MAIN =
+  SEQ2(print("── bounded self-repair (B3): an organ, corrupted, restored from its own derivation ──"))
+  # 1. BIRTH: the organ is written by its own derivation, verified.
+  (SEQ2(DEPLOY(ORGAN_SPEC)("organ.la"))
+  ((la good.
+    # str_len already returns a DECIMAL STRING (like ord), not an int — no int_to_str.
+    SEQ2(print(concat("1. born      : organ.la deployed + verified; ")
+              (concat(str_len(good))(" bytes"))))
+    (SEQ2(print(concat("   diagnosis : ")(DIAGNOSE("organ.la")(ORGAN_SPEC))))
+    # 2. CORRUPTION: a plausible one — a WRONG CONSTANT, not a truncation. The
+    #    file still parses, still defines its namesake, is still non-empty: a
+    #    structural sense (aatc's SENSE_FILE) would call it healthy. Only the
+    #    byte-exact criterion catches it.
+    (SEQ2(write_file("organ.la")
+        (concat("# generated by specpipe.la — regenerated from the spec, do not edit\n")
+               ("glyph TRIPLEN = la x. mul(x)(4)\nglyph DEC = la x. sub(x)(1)\nglyph AVG = la x. la y. div(add(x)(y))(2)\n")))
+    (SEQ2(print("2. corrupted : TRIPLEN's constant 3 -> 4 (still parses, still defines its namesake)"))
+    (SEQ2(print(concat("   detected  : heterological? ")(BS(NOT(INTACT("organ.la")(ORGAN_SPEC))))))
+    (SEQ2(print(concat("   diagnosis : ")(DIAGNOSE("organ.la")(ORGAN_SPEC))))
+    # 3. REPAIR: regenerate from the derivation.
+    (SEQ2(print(concat("3. healing   : ")(HEAL("organ.la")(ORGAN_SPEC))))
+    (SEQ2(print(concat("   diagnosis : ")(DIAGNOSE("organ.la")(ORGAN_SPEC))))
+    # 4. PROOF: restored, and BYTE-IDENTICAL to the organ before corruption.
+    ((la healed.
+       print(concat("4. verdict   : intact=")
+            (concat(BS(INTACT("organ.la")(ORGAN_SPEC)))
+            (concat(" byte-identical-to-pre-corruption=")
+            (concat(BS(str_eq(healed)(good)))
+                   (" — autological closure restored"))))))
+     (read_file("organ.la")))))))))))
+   (SEQ2(DEPLOY(ORGAN_SPEC)("organ.la"))(read_file("organ.la")))))
