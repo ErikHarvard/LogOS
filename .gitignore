@@ -118,3 +118,5 @@ mathutil.la
 /kernel/kernel_hal4_64.elf
 /kernel/kernel_hal5.elf
 /kernel/kernel_hal5_64.elf
+/kernel/kernel_hal5b.elf
+/kernel/kernel_hal5b_64.elf

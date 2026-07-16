@@ -1,0 +1,132 @@
+# =====================================================================
+#  LogOS HAL.5b — NIC send + receive (RTL8139), written in Lingua Adamica.
+#
+#  The kernel's first packet on the wire, both directions — and the first
+#  driver that DMAs. On the HAL.1/HAL.4 port-I/O primitives an LA program at
+#  ring 0:
+#    1. finds the RTL8139 on PCI (vendor 0x10EC / device 0x8139), reads its
+#       BAR0 I/O base, and enables PCI bus-mastering (config command reg 0x04
+#       <- 0x07: I/O + memory + master) so the card may DMA to guest RAM;
+#    2. powers on (CONFIG1 <- 0), software-resets (CR RST bit) and waits for it;
+#    3. programs an 8 KiB RX ring at physical 0x10000000 (RBSTART) and a TX
+#       buffer at 0x10003000 — both in identity-mapped RAM above the LA stack
+#       (128 MiB), so the card's DMA lands where poke/peek read; sets RCR
+#       (accept broadcast + physical-match + promiscuous), CAPR, then enables
+#       the receiver + transmitter (CR TE|RE);
+#    4. pokes a 42-byte broadcast ARP request ("who has 10.0.2.2, tell
+#       10.0.2.15") into the TX buffer, points TSAD0 at it, and starts the DMA
+#       by writing TSD0 (length 60, auto-padded); waits for TOK;
+#    5. polls the RX ring for the reply the QEMU SLIRP gateway sends, and reads
+#       the 4-byte RX header + the Ethernet/ARP frame straight out of the DMA
+#       buffer with peek: ethertype 0x0806, ARP opcode 2 (reply), and the
+#       gateway's station address (SLIRP's 52:55:0a:00:02:02).
+#  So a real network round-trip, driver in the language, DMA reached through
+#  the identity map. Flat + import-free, like nic/ata.la. Needs -m 512.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# ── hex helpers (as in nic.la) ──
+glyph HEXD = la d.
+    IF(lt(d)(10))(la _. chr(int_to_str(add(48)(d))))
+                 (la _. chr(int_to_str(add(87)(d))))
+glyph HEX2 = la b. concat(HEXD(div(b)(16)))(HEXD(mod(b)(16)))
+
+# ── PCI config read / write (0xCF8/0xCFC, bus 0, func 0) ──
+glyph ADDR = la dev. la off. add(add(2147483648)(mul(dev)(2048)))(off)
+glyph CFG  = la dev. la off. SEQ(outl(3320)(ADDR(dev)(off)))(inl(3324))
+glyph CFGW = la dev. la off. la val. SEQ(outl(3320)(ADDR(dev)(off)))(outl(3324)(val))
+
+# ── find the RTL8139: reg0 low = vendor 0x10EC (4332), high = device 0x8139 (33081) ──
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 32)(la _.
+      (la r.
+        IF(int_eq(mod(r)(65536))(4332))(la _.
+          IF(int_eq(div(r)(65536))(33081))(la _. dev)(la _. self(add(dev)(1))))
+        (la _. self(add(dev)(1))))
+      (CFG(dev)(0))))
+
+# ── register-port helpers: reg at (I/O base + off) ──
+glyph OB = la base. la off. la v. outb(add(base)(off))(v)
+glyph OW = la base. la off. la v. outw(add(base)(off))(v)
+glyph OL = la base. la off. la v. outl(add(base)(off))(v)
+glyph IB = la base. la off. inb(add(base)(off))
+glyph IL = la base. la off. inl(add(base)(off))
+
+# ── the two DMA buffers (physical == virtual under the identity map) ──
+glyph RXBUF = 268435456     # 0x10000000  (256 MiB) — 8 KiB RX ring
+glyph TXBUF = 268447744     # 0x10003000               — TX buffer
+
+# ── the 42-byte broadcast ARP request (who-has 10.0.2.2, tell 10.0.2.15) ──
+#   eth: dst ff*6 | src 52:54:00:12:34:56 | type 0806
+#   arp: htype 0001 | ptype 0800 | hlen 06 | plen 04 | oper 0001
+#        sha 52:54:00:12:34:56 | spa 10.0.2.15 | tha 00*6 | tpa 10.0.2.2
+#   Held as ONE flat space-separated decimal string (no deep concat nest — the
+#   nested form is pathologically slow to compile on tiny_host, cf. the font
+#   flat-literal lesson); PUTBYTES walks it and pokes each byte into RAM.
+glyph FRAMEDATA = "255 255 255 255 255 255 82 84 0 18 52 86 8 6 0 1 8 0 6 4 0 1 82 84 0 18 52 86 10 0 2 15 0 0 0 0 0 0 10 0 2 2"
+
+# digit char -> int 0..9 (ord returns a decimal STRING, so str_to_int it)
+glyph D2I = la c. sub(str_to_int(ord(c)))(48)
+# poke space-separated decimals from s into RAM at addr (acc = digits so far)
+glyph PUTBYTES = Z(la self. la addr. la s. la acc.
+    IF(str_eq(s)(""))(la _. SEQ(poke(addr)(acc))(add(addr)(1)))(la _.
+      (la c.
+        IF(str_eq(c)(" "))(la _. SEQ(poke(addr)(acc))(self(add(addr)(1))(str_tail(s))(0)))
+        (la _. self(addr)(str_tail(s))(add(mul(acc)(10))(D2I(c)))))
+      (str_head(s))))
+
+# ── waits (RST clear / TOK set / RX buffer non-empty, bounded) ──
+#   CR=0x37(55): RST=bit4, BUFE=bit0.  TSD0=0x10(16): TOK=bit15.
+glyph WAITRST = Z(la self. la base.
+    IF(int_eq(mod(div(IB(base)(55))(16))(2))(1))(la _. self(base))(la _. base))
+glyph WAITTX = Z(la self. la base.
+    IF(int_eq(mod(div(IL(base)(16))(32768))(2))(1))(la _. base)(la _. self(base)))
+glyph WAITRX = Z(la self. la base. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+      IF(int_eq(mod(IB(base)(55))(2))(0))(la _. 1)(la _. self(base)(sub(n)(1)))))
+
+# ── read RX byte at ring offset off, and the sender MAC (RX offsets 26..31) ──
+glyph RB = la off. peek(add(RXBUF)(off))
+glyph RXMAC =
+    concat(HEX2(RB(26)))(
+    concat(":")(concat(HEX2(RB(27)))(
+    concat(":")(concat(HEX2(RB(28)))(
+    concat(":")(concat(HEX2(RB(29)))(
+    concat(":")(concat(HEX2(RB(30)))(
+    concat(":")(       HEX2(RB(31))))))))))))
+
+# ── bring the card up, transmit, receive ──
+glyph SETUP = la dev. la base.
+    SEQ(CFGW(dev)(4)(7))                 # PCI: I/O + memory + bus master
+    (SEQ(OB(base)(82)(0))                # CONFIG1 = 0 (power on)
+    (SEQ(OB(base)(55)(16))               # CR = RST
+    (SEQ(WAITRST(base))                  # wait reset done
+    (SEQ(OL(base)(48)(RXBUF))            # RBSTART = RX ring phys addr
+    (SEQ(OW(base)(60)(0))                # IMR = 0 (we poll)
+    (SEQ(OW(base)(62)(65535))            # ISR = clear all
+    (SEQ(OL(base)(68)(59151))            # RCR = 0xE70F (AB|AM|APM|AAP, MXDMA, no thresh)
+    (SEQ(OW(base)(56)(65520))            # CAPR = 0xFFF0 (read ptr -> ring offset 0)
+    (OB(base)(55)(12))))))))))          # CR = TE|RE (enable tx+rx)
+
+glyph MAIN =
+    SEQ(print("nic5b:"))
+    ((la dev.
+       IF(int_eq(dev)(32))(la _. print("nic not found"))(la _.
+         (la base.
+           SEQ(SETUP(dev)(base))
+           (SEQ(PUTBYTES(TXBUF)(FRAMEDATA)(0))     # stage the ARP frame in the TX buffer
+           (SEQ(OL(base)(32)(TXBUF))               # TSAD0 = TX buffer phys addr
+           (SEQ(OL(base)(16)(60))                  # TSD0 = 60 -> start DMA (auto-pad)
+           (SEQ(WAITTX(base))                      # wait TOK
+           (SEQ(print("nic tx ok"))
+           (IF(int_eq(WAITRX(base)(20000000))(0))(la _. print("nic rx timeout"))(la _.
+             SEQ(print(concat("nic rx et=")
+                       (concat(HEX2(RB(16)))(concat(HEX2(RB(17)))
+                       (concat(" op=")(concat(HEX2(RB(25)))
+                       (concat(" sha=")(RXMAC))))))))
+                (print("nic done"))))))))))
+         (sub(CFG(dev)(16))(mod(CFG(dev)(16))(4)))))   # I/O base = BAR0 & ~0x3
+     (FIND(0)))

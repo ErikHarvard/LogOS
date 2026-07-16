@@ -768,11 +768,26 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             default first-NIC MAC) + clean exit 33. RTL8139 chosen over the e1000
             default because its port-I/O registers + single RX ring suit a
             bitwise-op-free LA driver (e1000 needs high-MMIO + descriptor rings).
-      - [ ] **HAL.5b — NIC TX/RX (the DMA step).** Reset the card, program an RX
-            ring + a TX buffer (the first driver needing DMA — a physical buffer
-            handed to the card), send a broadcast ARP for the SLIRP gateway
-            10.0.2.2, receive its ARP reply, verify the sender MAC — real TX+RX over
-            QEMU's virtual wire. (AegisNet's crypto/onion layer sits far above this.)
+      - [x] **HAL.5b — NIC send + receive (RTL8139), the first DMA driver — DONE
+            + gated (2026-07-16).** The kernel's first packet on the wire, both
+            directions. `kernel/nic5b.la` at ring 0 enables PCI bus-mastering
+            (config command reg 0x04 <- 0x07), powers on + software-resets the card,
+            programs an 8 KiB RX ring at physical 0x10000000 (RBSTART) and a TX
+            buffer at 0x10003000 — both in identity-mapped RAM above the LA stack
+            (128 MiB), so the card's DMA lands where poke/peek reach — sets RCR
+            (accept broadcast/physical/promiscuous) + CAPR and enables RX+TX (CR
+            TE|RE). It pokes a 42-byte broadcast ARP request (who-has 10.0.2.2),
+            points TSAD0 at the TX buffer, starts the DMA via TSD0 (len 60), waits
+            for TOK, then polls the RX ring and reads the reply straight out of the
+            DMA buffer with `peek`: ethertype 0x0806, ARP opcode 2, the SLIRP
+            gateway's sender MAC 52:55:0a:00:02:02. `gate_hal5b.sh` boots `-m 512
+            -device rtl8139` on a SLIRP `user` netdev and asserts `nic tx ok` +
+            `nic rx et=0806 op=02 sha=52:55...` + clean exit 33. The ARP frame is a
+            flat space-separated decimal string decoded by a small Z-recursive
+            `PUTBYTES` — NOT a deep nested `concat` (which is pathologically slow to
+            compile on tiny_host, the font flat-literal lesson: a 41-deep nest took
+            >12 min and was killed; the flat form compiles in the normal ~5 min).
+            (AegisNet's crypto/onion layer sits far above this bare TX/RX.)
       - [ ] Then disk write (HAL.3b), IRQ-driven input (HAL.2b), a bulk
             framebuffer-fill primitive, and the compositor on the metal.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
