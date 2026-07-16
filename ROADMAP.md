@@ -847,7 +847,37 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             memcpy landed; either alone is passable by a broken primitive) AND an
             independent screendump (4096/4096 red at (100,100), blue at 6/6
             far-flung samples). The per-pixel poke loop is retired.
-      - [ ] Then the compositor on the metal.
+      - [x] **HAL.4c — THE COMPOSITOR ON THE METAL — DONE + gated
+            (2026-07-16).** What HAL.4b's bulk primitives were built for, and the
+            last HAL step. A compositor is not "draw pixels" (HAL.4 did that): it
+            composes a whole frame OFF-SCREEN, z-ordered, then presents it
+            ATOMICALLY — the panel never sees a half-drawn scene. `kernel/comp.la`
+            at ring 0: a backbuffer at 0x10000000 (256 MiB of ordinary RAM, laid
+            out at the SCREEN'S OWN pitch so presenting needs no re-striding —
+            `-m 512`, like HAL.5b's DMA ring); ONE `fill()` clears the desktop
+            (307200 px, one rep stosd); `RECT` lays each window with one `fill()`
+            PER ROW (a row is contiguous, but consecutive rows are
+            pitch-strided); z-order IS paint order (the painter's algorithm), so
+            window B — laid last and overlapping A — occludes it; then `PRESENT`
+            moves the entire 1,228,800-byte frame to the LFB in ONE `memcpy()`.
+            **Deliberately NOT `import("theourgia.la")`:** Stage-1's surface core
+            has the right SEMANTICS (a z-ordered stack of rects) but its surfaces
+            are lists of row strings spliced per blit — this repo's own note
+            records it is "O(n²) per row and cannot scale to a real panel", which
+            is why even the Linux-side live renderers build their framebuffer
+            directly; and every kernel driver is flat/import-free (the
+            import-mangler makes codegen of an importer pathologically slow). So
+            HAL.4c keeps theourgia's semantics and drops its representation: the
+            backbuffer IS the framebuffer's layout, every surface a `fill()`.
+            `gate_hal4c.sh`'s load-bearing assertion is the **OVERLAP pixel** —
+            it must be B's green; **if z-order were inverted it would read red and
+            every other assertion would still pass** — checked on both paths: the
+            driver's own `peek` read-back (`comp ov=0,255,0`) and an independent
+            screendump (desktop 4/4 blue, A-only 4/4 red, B-only 4/4 green,
+            overlap 4/4 green). Item 6 (Display protocol & compositor) now has a
+            real metal realisation; the interactive/input-driven session on bare
+            metal (Theourgia Stages 5-9's live loop, minus Linux DRM/evdev) is
+            what remains.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*

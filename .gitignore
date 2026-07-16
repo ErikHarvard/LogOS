@@ -128,3 +128,5 @@ mathutil.la
 /kernel/kernel_hal4b.elf
 /kernel/kernel_hal4b_64.elf
 scratchpad/__pycache__/
+/kernel/kernel_hal4c.elf
+/kernel/kernel_hal4c_64.elf

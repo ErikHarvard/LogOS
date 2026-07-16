@@ -1,0 +1,129 @@
+# =====================================================================
+#  LogOS HAL.4c — THE COMPOSITOR ON THE METAL, in Lingua Adamica.
+#
+#  The last HAL step, and what HAL.4b's bulk primitives were built for. A
+#  compositor is not "draw pixels" — it is: compose a whole frame OFF-SCREEN in
+#  ordinary RAM (z-ordered, later surfaces occluding earlier ones), then move
+#  that finished frame to the scanned-out framebuffer in ONE operation. The
+#  single blit is what makes a frame atomic: the panel never shows a
+#  half-drawn scene (no tearing), because it never sees the composition.
+#
+#  Why this is NOT `import("theourgia.la")` — a real design decision, not a
+#  shortcut. theourgia.la's Stage-1 surface core is the compositor's LOGIC
+#  (SURF/SOLID/COMPOSE, z-ordered blits) and it is correct, but its surfaces are
+#  LISTS OF ROW STRINGS spliced per blit: the repo's own note records it is
+#  "O(n^2) per row and cannot scale to a real panel" (CLAUDE.md), which is why
+#  even the Linux-side live renderers build their framebuffer directly. On top
+#  of that, every kernel driver here (pci/kbd/ata/fb/fb4b) is deliberately flat
+#  and import-free — the import-mangler makes codegen of an importer
+#  pathologically slow. So the metal compositor keeps theourgia's SEMANTICS
+#  (a z-ordered stack of rectangular surfaces over a desktop) and drops its
+#  representation: the backbuffer IS the framebuffer's own layout, and every
+#  surface is laid down with fill(), never a string splice.
+#
+#  The frame:
+#    - backbuffer at 0x10000000 (256 MiB) — ordinary RAM, well above the LA
+#      image/heap/stack, identity-mapped by the -D HAL4 0..4 GiB map, laid out
+#      at the SCREEN'S OWN pitch so presenting is one flat copy with no
+#      re-striding. Needs -m 512, like HAL.5b's DMA ring at the same address.
+#    - CLEAR the desktop with ONE fill()  (307200 px, one rep stosd);
+#    - RECT lays each window with ONE fill() PER ROW — a row is contiguous, but
+#      consecutive rows are pitch-strided, so a rect is h fills, not one;
+#    - z-order is simply PAINT ORDER (the painter's algorithm): window B is laid
+#      after window A and overlaps it, so B occludes A;
+#    - PRESENT is ONE memcpy() of the entire 1,228,800-byte frame to the LFB.
+#
+#  The witness the gate asserts is the OVERLAP pixel: it must be B's colour.
+#  That single pixel is what distinguishes a compositor from a painter — it
+#  proves later surfaces occlude earlier ones, in RAM, before presentation.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# XRGB8888 is little-endian, so a dword lays bytes B,G,R,X = V&255, V>>8, V>>16
+glyph DESK = 128                 # desktop  B=128  (dim blue)
+glyph WINA = 16711680            # window A R=255  (red)
+glyph WINB = 65280               # window B G=255  (green)
+
+glyph BB   = 268435456           # 0x10000000 — backbuffer in plain RAM
+glyph SH   = 480                 # screen height
+
+# window A and window B geometry — B deliberately OVERLAPS A
+glyph AX = 80
+glyph AY = 60
+glyph BX = 180
+glyph BY = 120
+glyph WW = 200
+glyph WH = 150
+
+# ── PCI config-space read: reg at (bus 0, dev, off) via 0xCF8/0xCFC ──
+glyph CFG = la dev. la off.
+    SEQ(outl(3320)(add(add(2147483648)(mul(dev)(2048)))(off)))
+       (inl(3324))
+
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 0)(la _.
+      IF(int_eq(CFG(dev)(0))(286331444))(la _. dev)(la _.
+        self(add(dev)(1)))))
+
+# ── Bochs VBE dispi (index 0x1CE=462, data 0x1CF=463) ──
+glyph DISPI  = la idx. la val. SEQ(outw(462)(idx))(outw(463)(val))
+glyph RDISPI = la idx. SEQ(outw(462)(idx))(inw(463))
+
+glyph SETMODE =
+    SEQ(DISPI(4)(0))          # disable while configuring
+    (SEQ(DISPI(1)(640))       # XRES
+    (SEQ(DISPI(2)(480))       # YRES
+    (SEQ(DISPI(3)(32))        # BPP
+    (DISPI(4)(65)))))         # ENABLE = enabled | LFB
+
+# ── a surface: one fill() per row (rows are contiguous, but pitch-strided) ──
+glyph RECT = Z(la self. la pitch. la x. la y. la w. la h. la col.
+    IF(int_eq(h)(0))(la _. "!")(la _.
+      SEQ(fill(add(BB)(add(mul(y)(pitch))(mul(x)(4))))(w)(col))
+         (self(pitch)(x)(add(y)(1))(w)(sub(h)(1))(col))))
+
+# ── compose the whole frame off-screen: desktop, then A, then B ON TOP ──
+#   Paint order IS z-order (the painter's algorithm): B is laid last, so where
+#   B overlaps A, B's pixels are the ones that survive in the backbuffer.
+glyph SCENE = la pitch.
+    SEQ(fill(BB)(mul(SH)(div(pitch)(4)))(DESK))
+    (SEQ(RECT(pitch)(AX)(AY)(WW)(WH)(WINA))
+        (RECT(pitch)(BX)(BY)(WW)(WH)(WINB)))
+
+# ── present: the ENTIRE composed frame to the LFB in ONE memcpy ──
+glyph PRESENT = la base. la pitch. memcpy(base)(BB)(mul(SH)(pitch))
+
+# ── read a pixel back out of the LFB as "B,G,R" ──
+glyph PIX = la base. la pitch. la x. la y.
+    (la p. concat(concat(concat(concat(int_to_str(peek(p)))(","))
+                              (int_to_str(peek(add(p)(1)))))(","))
+                 (int_to_str(peek(add(p)(2)))))
+    (add(base)(add(mul(y)(pitch))(mul(x)(4))))
+
+glyph SPIN = Z(la self. la _. self("!"))
+
+glyph MAIN =
+    (la dev.
+      (la bar.
+        (la base.
+          SEQ(SETMODE)
+          ((la pitch.
+              SEQ(print(concat(concat("comp lfb=")(int_to_str(base)))(concat(" pitch=")(int_to_str(pitch)))))
+              (SEQ(SCENE(pitch))
+              (SEQ(print("comp composed"))
+              (SEQ(PRESENT(base)(pitch))
+              (SEQ(print("comp presented"))
+              # the witnesses: desktop, A-only, and THE overlap (z-order proof)
+              (SEQ(print(concat("comp bg=")(PIX(base)(pitch)(10)(10))))
+              (SEQ(print(concat("comp a=")(PIX(base)(pitch)(100)(80))))
+              (SEQ(print(concat("comp ov=")(PIX(base)(pitch)(200)(150))))
+              (SEQ(print(concat("comp b=")(PIX(base)(pitch)(350)(250))))
+              (SEQ(print("comp done"))
+              (SPIN("!"))))))))))))
+           (mul(RDISPI(6))(4))))          # pitch = VIRT_WIDTH * 4 bytes
+        (sub(bar)(mod(bar)(16))))          # LFB base = BAR0 & ~0xF
+      (CFG(dev)(16)))                       # BAR0
+    (FIND(0))
