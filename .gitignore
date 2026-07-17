@@ -131,5 +131,8 @@ selfdoc_out.txt
 # strutil_spec.la's generated string-utilities module (regenerated each run)
 # Theourgia rasters (composed/recomposed each run by theourgia*.la)
 /tiny_host
+# typed_spec.la's ACCEPTED module (regenerated each run; the ill-typed
+# typed_bad.la / typed_badtype.la are never written — being rejected IS the test)
+/typed_module.la
 # Unpublished codices stay local-only; ONLY codices/published/ is tracked.
 watched.la
