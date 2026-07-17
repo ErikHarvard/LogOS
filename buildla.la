@@ -85,6 +85,19 @@ glyph STAGE = la src. la dst. write_file(dst)(read_file(src))
 #   `X="$(./tiny_host foo.la)"; grep -q "marker"`. These are not toy steps: they
 #   are the autopoiesis stack and the toolchain, driven by LA.
 glyph STEPS =
+  # ── language core (Phase I): the built-in primitives — the SAME checks
+  #    build.sh makes at 28–215, fixtures GEN'd to /tmp before ALL(STEPS) runs.
+  #    Each marker is the FULL distinctive output; str_tail / str_head-of-empty
+  #    are BRACKETED ([ello] / []) so a no-op bug cannot satisfy a substring gate.
+  CONS(STEP("concat built-in")("./tiny_host")("/tmp/buildla_core_concat.la")("hello, world"))(
+  CONS(STEP("str_tail built-in")("./tiny_host")("/tmp/buildla_core_strtail.la")("[ello]"))(
+  CONS(STEP("str_head of the empty string")("./tiny_host")("/tmp/buildla_core_strheademp.la")("[]"))(
+  CONS(STEP("str_eq — the negative branch")("./tiny_host")("/tmp/buildla_core_streq2.la")("not equal"))(
+  CONS(STEP("Z combinator — REVERSE via fixed point")("./tiny_host")("/tmp/buildla_core_z.la")("edcba"))(
+  CONS(STEP("native integers — add/div/mod/lt + FACT(5) via Z")("./tiny_host")("/tmp/buildla_core_int.la")("fact5=120"))(
+  CONS(STEP("read_file built-in")("./tiny_host")("/tmp/buildla_core_rf.la")("test content"))(
+  CONS(STEP("write_file built-in")("./tiny_host")("/tmp/buildla_core_wf.la")("written by LogOS"))(
+  CONS(STEP("read -> write -> read round-trip")("./tiny_host")("/tmp/buildla_core_rt.la")("round trip data"))(
   CONS(STEP("kernel speaks the Word")("./tiny_host")("kernel.la")("I AM THAT I AM"))(
   CONS(STEP("bounded self-repair (B3)")("./tiny_host")("selfrepair.la")("byte-identical-to-pre-corruption=T"))(
   CONS(STEP("self-modification")("./tiny_host")("selfmod.la")("changed=T"))(
@@ -133,7 +146,7 @@ glyph STEPS =
   CONS(STEP("phonological modality — the nine phonyms")("./tiny_host")("phonym.la")("9 primitives + 3 GENERATED + 2 modes + the evaluator 𝓡"))(
   CONS(STEP("phonosemantics — alignment vs fidelity")("./tiny_host")("phonsem.la")("injective(SET) Theta_P = 8 / 8"))(
   CONS(STEP("derived geometry from ONF features")("./tiny_host")("topoderive.la")("@@@ Nest3 ⊂(VOID,⊂(FORM,DEPTH))"))(
-  NIL))))))))))))))))))))))))))))))))))))))))))))))))
+  NIL)))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 # ── a GUARD step: the build's THIRD kind of gate — the EXIT CODE ────────────
 #  A marker step asks "did it say the right thing?"; a cross-engine step asks
@@ -272,6 +285,29 @@ glyph RUN1 = la s.
 glyph ALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(RUN1(h))))
 
+# ── language-core fixtures: the .la programs (and two data files) that the
+#    first nine marker steps run. A fixture is (path, content); FIX(GEN) writes
+#    it. GENALL folds the list, forcing each write for effect (like ALL forces
+#    RUN1) before the marker steps read the files back. \n is a real newline in
+#    an .la string literal, exactly as the guard fixtures rely on.
+glyph FIX = la p. la c. la f. f(p)(c)
+glyph COREFIX =
+  CONS(FIX("/tmp/buildla_core_concat.la")("glyph MAIN = print(concat(\"hello, \")(\"world\"))\n"))(
+  CONS(FIX("/tmp/buildla_core_strtail.la")("glyph MAIN = print(concat(\"[\")(concat(str_tail(\"hello\"))(\"]\")))\n"))(
+  CONS(FIX("/tmp/buildla_core_strheademp.la")("glyph MAIN = print(concat(\"[\")(concat(str_head(\"\"))(\"]\")))\n"))(
+  CONS(FIX("/tmp/buildla_core_streq2.la")("glyph MAIN = print(str_eq(\"abc\")(\"xyz\")(\"equal\")(\"not equal\"))\n"))(
+  CONS(FIX("/tmp/buildla_core_z.la")("glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph IF = la cond. la t. la f. cond(t)(f)(\"!\")\nglyph REVERSE = Z(la self. la s. IF(str_eq(s)(\"\"))(la _. \"\")(la _. concat(self(str_tail(s)))(str_head(s))))\nglyph MAIN = print(REVERSE(\"abcde\"))\n"))(
+  CONS(FIX("/tmp/buildla_core_int.la")("glyph IF  = la c. la t. la f. c(t)(f)(\"!\")\nglyph SEQ = la a. la b. b\nglyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph FACT = Z(la self. la n. IF(int_eq(n)(0))(la _. 1)(la _. mul(n)(self(sub(n)(1)))))\nglyph MAIN = SEQ(print(int_to_str(add(2)(3))))(SEQ(print(int_to_str(div(17)(5))))(SEQ(print(int_to_str(mod(17)(5))))(SEQ(print(IF(lt(3)(5))(la _. \"less\")(la _. \"no\")))(print(concat(\"fact5=\")(int_to_str(FACT(5))))))))\n"))(
+  CONS(FIX("/tmp/buildla_rf_input.txt")("test content"))(
+  CONS(FIX("/tmp/buildla_core_rf.la")("glyph MAIN = print(read_file(\"/tmp/buildla_rf_input.txt\"))\n"))(
+  CONS(FIX("/tmp/buildla_core_wf.la")("glyph MAIN = print(write_file(\"/tmp/buildla_wf_output.txt\")(\"written by LogOS\"))\n"))(
+  CONS(FIX("/tmp/buildla_rt_src.txt")("round trip data"))(
+  CONS(FIX("/tmp/buildla_core_rt.la")("glyph SEQ = la a. la b. b\nglyph MAIN = SEQ(write_file(\"/tmp/buildla_rt_dst.txt\")(read_file(\"/tmp/buildla_rt_src.txt\")))(print(read_file(\"/tmp/buildla_rt_dst.txt\")))\n"))(
+  NIL)))))))))))
+
+glyph GENALL = Z(la self. la l.
+  l(TRUE)(la h. la t. (la _. self(t))(h(GEN))))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -293,4 +329,5 @@ glyph MAIN =
          (SEQ(GEN("/tmp/buildla_g_chr.la")("glyph MAIN = print(chr(\"300\"))\n"))
            (GALL(GSTEPS)))))))
      (SEQ(print("── cross-engine: the same program, the same bytes, on host and VM ──"))(XALL(XSTEPS))))
-    (ALL(STEPS)))))
+    (SEQ(print("── language core: the built-in primitives (fixtures GEN'd to /tmp) ──"))
+      (SEQ(GENALL(COREFIX))(ALL(STEPS)))))))

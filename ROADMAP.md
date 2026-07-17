@@ -1241,7 +1241,24 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       say the right thing*; cross-engine asks *do both engines say the same
       thing*; neither asks what the loud-failure discipline turns on: **did it
       FAIL, correctly, and say why?** `GSTEP` asserts an **exact exit code AND the
-      specific diagnostic** (**55 stages = 48 marker + 4 cross-engine + 3 guard**).
+      specific diagnostic** (then **55 stages = 48 marker + 4 cross-engine + 3 guard**).
+      **A FOURTH SLICE — the LANGUAGE CORE (`64 stages`).** The 48 marker stages
+      began at the autopoiesis stack; the built-in primitives `build.sh` verifies
+      *first* (28–215) — `concat`, `str_tail`, `str_head`, `str_eq`, the `Z`
+      combinator, native integers (`FACT(5)` via `Z`), `read_file`/`write_file`
+      and their round-trip — were not yet under the orchestrator. Nine of them are
+      now, as marker stages whose **fixtures buildla GENs to `/tmp` itself** (a
+      `FIX` list folded by `GENALL`, the marker-side twin of the guard block's
+      GEN preamble). Each marker is the **full distinctive output**; `str_tail` /
+      `str_head`-of-empty are **bracketed** (`[ello]` / `[]`) so a no-op bug
+      cannot satisfy a substring (`HASSUB`) gate — the four whose honest gate is
+      *exact* stdout or *byte* equality (`str_head`→"h", `str_eq`→"equal", the
+      `chr`/`ord` multiline, the NUL-byte survival) are deferred rather than
+      fudged into a weak marker; they want an exact-stdout gate kind, not a
+      marker. Verified **BUILD GREEN, 64 stages = 57 marker + 4 cross-engine + 3
+      guard**, run as its **own vessel under a distinct filename** (`logos_build`,
+      not `logos_app`) so the XSTEP stages, which bundle+run a fresh `logos_app`,
+      don't hit `ETXTBSY` writing the orchestrator's own live executable.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
@@ -1255,7 +1272,7 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       **exact code equality**, never vacuous. So the code is checked always, the
       marker only when given — which is what lets `DEPTH(DEPTH)`, whose output is
       empty by construction, be gated honestly rather than fudged.
-      *Why `[~]`:* **55 of 103 stages.** What remains is **design- and cost-bound**,
+      *Why `[~]`:* **64 of 103 stages.** What remains is **design- and cost-bound**,
       not typing: (a) **`unshare`** gates (the PID-namespace init test); (b) **QEMU**
       (`[!]` — a foreign emulator); (c) stages driving the toolchain itself
       (`codegen.la`/`secd.la`) — the artifacts the orchestrator IS. Cross-engine is
