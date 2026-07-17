@@ -135,12 +135,23 @@ glyph STEPS =
   CONS(STEP("derived geometry from ONF features")("./tiny_host")("topoderive.la")("@@@ Nest3 ⊂(VOID,⊂(FORM,DEPTH))"))(
   NIL))))))))))))))))))))))))))))))))))))))))))))))))
 
+# ── the guard: a step whose marker is EMPTY could never FAIL ──
+#   HASSUB is substring containment, so an empty marker is contained in EVERY
+#   output — the step would report PASS unconditionally, whatever the command
+#   printed or however it died. That is a step that cannot fail, inside a tool
+#   whose whole worth is that it can: BUILD GREEN would be a lie. An empty
+#   marker is a broken build DEFINITION, not a failing step, so it must halt
+#   loudly (as codegen.la does on a parse error) rather than report RED — and it
+#   fires BEFORE the command runs, so a typo costs nothing to catch.
 glyph RUN1 = la s.
-  (la got.
-    (la ok.
-      SEQ(print(concat(IF(ok)(la _. "  PASS  ")(la _. "  FAIL  "))(SNAME(s))))(ok))
-    (HASSUB(got)(SMARK(s))))
-  (RUN(SCMD(s))(SARGS(s))("/tmp/buildla_out.txt"))
+  IF(str_eq(SMARK(s))(""))
+    (la _. error(concat("buildla: step has an empty marker (it could never fail): ")(SNAME(s))))
+    (la _.
+      (la got.
+        (la ok.
+          SEQ(print(concat(IF(ok)(la _. "  PASS  ")(la _. "  FAIL  "))(SNAME(s))))(ok))
+        (HASSUB(got)(SMARK(s))))
+      (RUN(SCMD(s))(SARGS(s))("/tmp/buildla_out.txt")))
 
 glyph ALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(RUN1(h))))
