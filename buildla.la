@@ -308,6 +308,44 @@ glyph COREFIX =
 glyph GENALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la _. self(t))(h(GEN))))
 
+# ── the FOURTH kind of gate — a NAMESPACE stage (unshare, PID-namespace init) ──
+#  build.sh's init test runs a program AS PID 1 in an unprivileged PID namespace
+#  (`unshare -rpf --mount-proc`) and checks orphan reaping via reparenting: a
+#  child forks a grandchild then exits, orphaning it; reparented to PID 1 it is
+#  reaped by the same `reap` loop — exactly 2 reaps. Two wrinkles over a marker
+#  step:
+#   1. It needs a real PID namespace, which build.sh SKIPS gracefully where
+#      unprivileged userns is unavailable. So this PROBES first (`unshare …
+#      /bin/true`, rc 0?) and reports PASS(skipped) rather than turning a
+#      skippable environment into BUILD RED — the honest analogue of build.sh's
+#      `if unshare … true; then … else echo (skipped); fi`.
+#   2. The program must run as PID 1, so it is given its OWN VESSEL exactly as a
+#      cross-engine step is (codegen → logos_embed.bin → bundle.la → logos_app),
+#      never `./logos_secd` (the fork-bomb hazard) — then `unshare … ./logos_app`
+#      runs the bundle as init. Same two safety properties as XSTEP: codegen
+#      displaces the orchestrator's stream, and the bundle is checked before it
+#      is run.
+glyph ORPHAN_SRC = "glyph SEQ = la a. la b. b\nglyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph IF  = la c. la t. la f. c(t)(f)(\"!\")\nglyph CHILD = la _. SEQ(fork(\"!\"))(exit(\"0\"))\nglyph TOP   = la _. (la pid. IF(str_eq(pid)(\"0\"))(la _. CHILD(\"!\"))(la _. pid))(fork(\"!\"))\nglyph DRAIN = Z(la self. la n. (la r. IF(str_eq(str_head(r))(\"-\"))(la _. print(concat(\"reaped \")(int_to_str(n))))(la _. self(add(n)(1))))(reap(\"!\")))\nglyph MAIN = SEQ(TOP(\"!\"))(DRAIN(0))\n"
+
+glyph USTAGE = la _.
+  IF(str_eq(RUN2("/usr/bin/unshare")("-rpf --mount-proc /bin/true")("/tmp/buildla_uns_probe.txt"))("0"))
+    (la _.
+      SEQ(GEN("/tmp/buildla_orphan.la")(ORPHAN_SRC))
+      (SEQ(STAGE("/tmp/buildla_orphan.la")("logos_source.la"))
+      (SEQ(RUN("./tiny_host")("codegen.la")("/tmp/buildla_uns_cg.txt"))
+      (SEQ(STAGE("logos_program.bin")("logos_embed.bin"))
+      ((la bout.
+         IF(HASSUB(bout)("bundled VM + stream -> logos_app"))
+           (la _.
+             ((la uout.
+                (la ok.
+                  SEQ(print(concat(IF(ok)(la _. "  PASS  ns  ")(la _. "  FAIL  ns  "))("PID 1 reaps an orphaned grandchild via reparenting: 2 reaps")))(ok))
+                (HASSUB(uout)("reaped 2")))
+              (RUN("/usr/bin/unshare")("-rpf --mount-proc ./logos_app")("/tmp/buildla_uns_out.txt"))))
+           (la _. SEQ(print("  FAIL  ns  bundle failed, unshare not run"))(FALSE)))
+       (RUN("./tiny_host")("bundle.la")("/tmp/buildla_uns_bundle.txt")))))))
+    (la _. SEQ(print("  PASS  ns  (skipped) unprivileged PID namespace unavailable"))(TRUE))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -315,14 +353,16 @@ glyph MAIN =
      IF(ok)
        (la _. print("  BUILD GREEN — every step ran and said what it must, driven by LA"))
        (la _. SEQ(print("  BUILD RED — a step failed"))(exit("1"))))
-   # Three gate kinds, in order: marker (did it say the right thing?),
+   # Four gate kinds, in order: marker (did it say the right thing?),
    # cross-engine (do both engines say the SAME thing?), guard (did it FAIL,
-   # correctly, and say why?). AND is over ALL THREE, and none short-circuits
-   # another's reporting: every step runs and reports — one failure must not
-   # mask the rest.
+   # correctly, and say why?), namespace (does init reap as PID 1?). AND is over
+   # ALL FOUR, and none short-circuits another's reporting: every step runs and
+   # reports — one failure must not mask the rest.
    ((la a.
      (la b.
-       (la c. AND(a)(AND(b)(c)))
+       (la c.
+         (la d. AND(a)(AND(b)(AND(c)(d))))
+         (SEQ(print("── namespaces: PID-namespace init — orphan reaping as PID 1 (unshare) ──"))(USTAGE("!"))))
        (SEQ(print("── guards: the loud-failure discipline — it must FAIL, and say why ──"))
          (SEQ(GEN("/tmp/buildla_g_depth.la")("glyph D = la g. g(g)\nglyph MAIN = D(D)\n"))
          (SEQ(GEN("/tmp/buildla_g_int.la")("glyph MAIN = print(str_to_int(\"12x\"))\n"))

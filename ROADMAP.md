@@ -1259,6 +1259,22 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       guard**, run as its **own vessel under a distinct filename** (`logos_build`,
       not `logos_app`) so the XSTEP stages, which bundle+run a fresh `logos_app`,
       don't hit `ETXTBSY` writing the orchestrator's own live executable.
+      **A FIFTH SLICE — the NAMESPACE gate (`65 stages`, `USTAGE`).** build.sh's
+      init test runs a program **as PID 1 in an unprivileged PID namespace**
+      (`unshare -rpf --mount-proc`) and checks **orphan reaping via reparenting**:
+      a child forks a grandchild then exits, orphaning it; reparented to PID 1 it
+      is reaped by the same `reap` loop — exactly **2 reaps**. Two wrinkles beyond
+      a marker step, both handled: **(1)** it needs a real PID namespace, which
+      build.sh **skips gracefully** where unprivileged userns is unavailable — so
+      `USTAGE` **probes first** (`unshare … /bin/true`, `RUN2` rc 0?) and reports
+      `PASS (skipped)` rather than turning a skippable environment into BUILD RED;
+      **(2)** the program must run **as PID 1**, so it is given its **own vessel**
+      exactly as a cross-engine step is (`codegen → logos_embed.bin → bundle.la →
+      logos_app`), never `./logos_secd` (the fork-bomb hazard) — then `unshare …
+      ./logos_app` runs the bundle as init, gated on `reaped 2`. Same two safety
+      properties as XSTEP (codegen displaces the orchestrator's stream; the bundle
+      is checked before it is run). Verified **BUILD GREEN, 65 stages = 57 marker
+      + 4 cross-engine + 3 guard + 1 namespace**.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
@@ -1272,8 +1288,8 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       **exact code equality**, never vacuous. So the code is checked always, the
       marker only when given — which is what lets `DEPTH(DEPTH)`, whose output is
       empty by construction, be gated honestly rather than fudged.
-      *Why `[~]`:* **64 of 103 stages.** What remains is **design- and cost-bound**,
-      not typing: (a) **`unshare`** gates (the PID-namespace init test); (b) **QEMU**
+      *Why `[~]`:* **65 of 103 stages.** What remains is **design- and cost-bound**,
+      not typing: ~~(a) `unshare` gates~~ **DONE (`USTAGE`)**; (b) **QEMU**
       (`[!]` — a foreign emulator); (c) stages driving the toolchain itself
       (`codegen.la`/`secd.la`) — the artifacts the orchestrator IS. Cross-engine is
       **cost-bound**: each XSTEP is a host run + codegen + bundle + VM run, so the
