@@ -346,6 +346,40 @@ glyph USTAGE = la _.
        (RUN("./tiny_host")("bundle.la")("/tmp/buildla_uns_bundle.txt")))))))
     (la _. SEQ(print("  PASS  ns  (skipped) unprivileged PID namespace unavailable"))(TRUE))
 
+# ── the FIFTH kind of gate — a QEMU stage (the kernel on the metal) ──
+#  build.sh's kernel gates boot a real kernel ELF in QEMU and assert the Word on
+#  the serial line + a clean isa-debug-exit code. QEMU is FOREIGN (`[!]`) — like
+#  nasm / ld / gcc / tiny_host — so buildla ORCHESTRATES it (probe → build the
+#  ELF → boot → judge marker + exit code) without pretending to replace it.
+#  ★ The probe must be SAFE. USTAGE could execv `/usr/bin/unshare` because it is
+#  always present (util-linux) and only the CAPABILITY (userns) may be denied.
+#  qemu may be genuinely ABSENT, and execv-ing a missing binary in a FORKED child
+#  returns `-errno` and falls through — the child would continue AS the
+#  orchestrator (a fork bomb). So this probes with `stat()` (no fork, no execv):
+#  a `-errno` (str_head "-") means the binary isn't at its canonical path → skip.
+#  K1: the LA image, wrapped with the boot stub + IDT, boots on bare metal,
+#  speaks "I AM THAT I AM" over COM1, and exits 33 = (0x10<<1)|1 — the handler
+#  writes isa-debug-exit 0x10 on the image's own exit(0), so the SAME binary runs
+#  on host and metal (b_τ ≡ f_τ carried onto the hardware). `timeout 30` bounds a
+#  hang (a K1 CPU fault triple-faults; `-no-reboot` makes QEMU exit non-33 → FAIL).
+#  *Honest scope:* the kernel ELF is built by the foreign nasm/ld toolchain
+#  (`kernel/build_k2.sh`, the assembler/linker seam) — buildla drives it, as it
+#  drives tiny_host; the LA contribution is the gate. Only K1 here; K2–K7 (fault
+#  IDT, PMM/paging, W^X/NX, timer IRQ, preemption) are further QEMU stages.
+glyph QCMD = "30 qemu-system-x86_64 -kernel kernel/kernel.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
+glyph QSTAGE = la _.
+  IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _.
+      SEQ(RUN("/usr/bin/bash")("kernel/build_k2.sh")("/tmp/buildla_q_build.txt"))
+      ((la code.
+         (la out.
+           (la ok.
+             SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K1: kernel boots on bare metal (QEMU), speaks the Word over COM1, clean exit 33")))(ok))
+           (AND(str_eq(code)("33"))(HASSUB(out)("I AM THAT I AM"))))
+         (read_file("/tmp/buildla_q_out.txt")))
+       (RUN2("/usr/bin/timeout")(QCMD)("/tmp/buildla_q_out.txt"))))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -353,15 +387,18 @@ glyph MAIN =
      IF(ok)
        (la _. print("  BUILD GREEN — every step ran and said what it must, driven by LA"))
        (la _. SEQ(print("  BUILD RED — a step failed"))(exit("1"))))
-   # Four gate kinds, in order: marker (did it say the right thing?),
+   # Five gate kinds, in order: marker (did it say the right thing?),
    # cross-engine (do both engines say the SAME thing?), guard (did it FAIL,
-   # correctly, and say why?), namespace (does init reap as PID 1?). AND is over
-   # ALL FOUR, and none short-circuits another's reporting: every step runs and
-   # reports — one failure must not mask the rest.
+   # correctly, and say why?), namespace (does init reap as PID 1?), QEMU (does
+   # the kernel boot on the metal?). AND is over ALL FIVE, and none short-circuits
+   # another's reporting: every step runs and reports — one failure must not mask
+   # the rest.
    ((la a.
      (la b.
        (la c.
-         (la d. AND(a)(AND(b)(AND(c)(d))))
+         (la d.
+           (la e. AND(a)(AND(b)(AND(c)(AND(d)(e)))))
+           (SEQ(print("── QEMU: the sovereign kernel on bare metal (foreign emulator) ──"))(QSTAGE("!"))))
          (SEQ(print("── namespaces: PID-namespace init — orphan reaping as PID 1 (unshare) ──"))(USTAGE("!"))))
        (SEQ(print("── guards: the loud-failure discipline — it must FAIL, and say why ──"))
          (SEQ(GEN("/tmp/buildla_g_depth.la")("glyph D = la g. g(g)\nglyph MAIN = D(D)\n"))

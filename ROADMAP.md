@@ -1275,6 +1275,28 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       properties as XSTEP (codegen displaces the orchestrator's stream; the bundle
       is checked before it is run). Verified **BUILD GREEN, 65 stages = 57 marker
       + 4 cross-engine + 3 guard + 1 namespace**.
+      **A SIXTH SLICE — the QEMU gate (`66 stages`, `QSTAGE`).** build.sh's kernel
+      gates boot a real kernel ELF in QEMU and assert the Word on the serial line
+      + a clean `isa-debug-exit` code. **QEMU is foreign (`[!]`)** — like nasm / ld
+      / gcc / tiny_host — so buildla **orchestrates** it (probe → build the ELF →
+      boot → judge marker + exit code) without pretending to replace it. **K1**:
+      the LA image wrapped with the boot stub + IDT boots on bare metal, speaks
+      **"I AM THAT I AM" over COM1**, and exits **33** = `(0x10<<1)|1` (the handler
+      writes isa-debug-exit `0x10` on the image's own `exit(0)`, so the SAME binary
+      runs on host and metal — `b_τ ≡ f_τ` carried onto the hardware); `timeout 30`
+      bounds a hang (a K1 CPU fault triple-faults; `-no-reboot` → QEMU exits non-33
+      → FAIL). ★ The probe must be **safe**: USTAGE could `execv` `/usr/bin/unshare`
+      (always present, only the *capability* denied), but qemu may be genuinely
+      **absent**, and `execv`-ing a missing binary in a forked child returns
+      `-errno` and *falls through* — the child would continue AS the orchestrator (a
+      fork bomb). So `QSTAGE` probes with **`stat()`** (no fork, no execv): a
+      `-errno` means qemu isn't at its canonical path → `PASS (skipped)`. Verified
+      **BUILD GREEN, 66 stages = 57 marker + 4 cross-engine + 3 guard + 1 namespace
+      + 1 QEMU**. *Honest scope:* the kernel ELF is built by the foreign nasm/ld
+      toolchain (`kernel/build_k2.sh`, the assembler/linker seam) — buildla drives
+      it, as it drives tiny_host; the LA contribution is the gate. Only **K1**
+      here; **K2–K7** (fault IDT · PMM/paging · W^X/NX · timer IRQ · preemption)
+      are further QEMU stages, each its own kernel-ELF variant.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
@@ -1288,9 +1310,10 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       **exact code equality**, never vacuous. So the code is checked always, the
       marker only when given — which is what lets `DEPTH(DEPTH)`, whose output is
       empty by construction, be gated honestly rather than fudged.
-      *Why `[~]`:* **65 of 103 stages.** What remains is **design- and cost-bound**,
-      not typing: ~~(a) `unshare` gates~~ **DONE (`USTAGE`)**; (b) **QEMU**
-      (`[!]` — a foreign emulator); (c) stages driving the toolchain itself
+      *Why `[~]`:* **66 of 103 stages.** What remains is **design- and cost-bound**,
+      not typing: ~~(a) `unshare` gates~~ **DONE (`USTAGE`)**; ~~(b) QEMU~~ **K1
+      DONE (`QSTAGE`)**, K2–K7 remain (each a foreign-emulator boot of its own
+      kernel variant); (c) stages driving the toolchain itself
       (`codegen.la`/`secd.la`) — the artifacts the orchestrator IS. Cross-engine is
       **cost-bound**: each XSTEP is a host run + codegen + bundle + VM run, so the
       four are cheap only because they are fast pure modules; extending to
