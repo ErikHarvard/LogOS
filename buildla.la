@@ -45,6 +45,7 @@ glyph IF   = la c. la t. la f. c(t)(f)("!")
 glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
 glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
 glyph CONS = la h. la t. la n. la c. c(h)(t)
 glyph NIL  = la n. la c. n
 
@@ -469,6 +470,64 @@ glyph K4STAGE = la _.
             (read_file("/tmp/buildla_q4_out.txt")))
           (RUN2("/usr/bin/timeout")(QK4CMD)("/tmp/buildla_q4_out.txt"))))
 
+# ── QEMU K4c-wx — W^X ENFORCEMENT on the METAL (the guard-step, one level down) ──
+#  K4b proved paging TRANSLATES (build a PTE, read it back); K4c proves it
+#  PROTECTS — the guard-step discipline enforced by the CPU. `kernel_wx.elf`
+#  builds a 4-level page table in real frames with a READ-ONLY high test page
+#  (vaddr 0x40000000, W=0), loads CR3, reads a sentinel (0xAB) back through the
+#  high vaddr — the RO mapping is live: "K4C FRAME <n>" + "K4C WX READ 171" — then
+#  WRITES through that same read-only vaddr. With CR0.WP armed the CPU raises a
+#  page-protection #PF (vector 14); K2's IDT diagnoses it loudly — "EXCEPTION 0e"
+#  — and isa-debug-exit FAILs → QEMU exits **35** (NOT the clean 33). So a ring-0
+#  W^X violation NAMES itself and halts: the exit-35 fault gate carried to real
+#  protection hardware (the metal twin of the guard steps + K2's #UD). A regression
+#  that disarmed CR0.WP would let the write land silently → no fault, exit 33 → FAIL.
+#  Same FAST-BY-DESIGN + SAFE-stat() discipline as K3b/K4b: GATES the pre-built ELF
+#  (built out of band by kernel/build_k4c_wx.sh), never drives the build.
+glyph QK4WXCMD = "30 qemu-system-x86_64 -kernel kernel/kernel_wx.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
+glyph K4CWXSTAGE = la _.
+  IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _.
+      IF(str_eq(str_head(stat("kernel/kernel_wx.elf")))("-"))
+        (la _. SEQ(print("  PASS  vm  (skipped) kernel_wx.elf not pre-built (run kernel/build_k4c_wx.sh)"))(TRUE))
+        (la _.
+          (la code.
+            (la out.
+              (la ok.
+                SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K4c (W^X live): an LA-built page table maps a high page READ-ONLY; a ring-0 WRITE raises a page-protection #PF (EXCEPTION 0e, exit 35) — CR0.WP armed, paging PROTECTION enforced on the metal")))(ok))
+              (AND(str_eq(code)("35"))(AND(HASSUB(out)("K4C FRAME 1048576"))(AND(HASSUB(out)("K4C WX READ 171"))(HASSUB(out)("EXCEPTION 0e"))))))
+            (read_file("/tmp/buildla_q4wx_out.txt")))
+          (RUN2("/usr/bin/timeout")(QK4WXCMD)("/tmp/buildla_q4wx_out.txt"))))
+
+# ── QEMU K4c-nx — NX ENFORCEMENT on the METAL (the execute-twin of W^X) ──
+#  The execute-side of the same guard: `kernel_nx.elf` builds a page table with a
+#  NO-EXECUTE high test page over a frame holding a lone `ret` (0xC3), loads CR3,
+#  peeks the ret byte back through the identity map — the frame is live:
+#  "K4C NX FRAME <n>" + "K4C NX ARMED 195" — then EXECUTES through the high
+#  NO-EXECUTE vaddr. With EFER.NXE armed the instruction FETCH raises a
+#  page-protection #PF (vector 14, err bit4 = I/D) — the `ret` never runs. K2's IDT
+#  diagnoses it loudly ("EXCEPTION 0e") and QEMU exits **35**. ★ It also carries a
+#  NEGATIVE marker: "K4C NX RET" must **NOT** appear — it prints only if exec_at
+#  RETURNED, i.e. NX was NOT enforced. So the gate is `code=35 AND FRAME AND ARMED
+#  AND EXCEPTION 0e AND NOT(K4C NX RET)` — a regression that disarmed EFER.NXE
+#  would let the ret execute → "K4C NX RET 0", exit 33 → FAIL on two counts.
+glyph QK4NXCMD = "30 qemu-system-x86_64 -kernel kernel/kernel_nx.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
+glyph K4CNXSTAGE = la _.
+  IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _.
+      IF(str_eq(str_head(stat("kernel/kernel_nx.elf")))("-"))
+        (la _. SEQ(print("  PASS  vm  (skipped) kernel_nx.elf not pre-built (run kernel/build_k4c_nx.sh)"))(TRUE))
+        (la _.
+          (la code.
+            (la out.
+              (la ok.
+                SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K4c (NX live): a high page mapped NO-EXECUTE; a FETCH through it raises a page-protection #PF (EXCEPTION 0e, exit 35) — the poked ret never runs (no K4C NX RET), EFER.NXE armed, NX enforced on the metal")))(ok))
+              (AND(str_eq(code)("35"))(AND(HASSUB(out)("K4C NX FRAME 1048576"))(AND(HASSUB(out)("K4C NX ARMED 195"))(AND(HASSUB(out)("EXCEPTION 0e"))(NOT(HASSUB(out)("K4C NX RET"))))))))
+            (read_file("/tmp/buildla_q4nx_out.txt")))
+          (RUN2("/usr/bin/timeout")(QK4NXCMD)("/tmp/buildla_q4nx_out.txt"))))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -489,7 +548,11 @@ glyph MAIN =
            (la e.
              (la f.
                (la g.
-                 (la h. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(h))))))))
+                 (la h.
+                   (la i.
+                     (la j. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(j))))))))))
+                     (SEQ(print("── QEMU K4c-nx: NX ENFORCEMENT — a FETCH at a NO-EXECUTE page faults (EXCEPTION 0e, exit 35) ──"))(K4CNXSTAGE("!"))))
+                   (SEQ(print("── QEMU K4c-wx: W^X ENFORCEMENT — a WRITE to a READ-ONLY page faults (EXCEPTION 0e, exit 35) ──"))(K4CWXSTAGE("!"))))
                  (SEQ(print("── QEMU K4b: paging wired to the metal — a real page table BUILT via poke/peek ──"))(K4STAGE("!"))))
                (SEQ(print("── QEMU K3b: the PMM walks the REAL multiboot map on the metal (peek) ──"))(K3STAGE("!"))))
              (SEQ(print("── QEMU K2: the fault IDT — a #UD is a diagnosed serial halt (EXCEPTION 06) ──"))(K2STAGE("!"))))

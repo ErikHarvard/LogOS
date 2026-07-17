@@ -1346,10 +1346,34 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       K4STAGE **isolate-verified** (direct QEMU boot → all three markers + exit 33 →
       PASS) then full **BUILD GREEN, 69 stages = 57 marker + 4 cross-engine + 3
       guard + 1 namespace + 4 QEMU (K1 boots+speaks, K2 faults loudly, K3b PMM map,
-      K4b paging on the metal)**. **K4c/K5–K7** (W^X + NX *enforcement* — both ELFs
-      `kernel_wx.elf`/`kernel_nx.elf` pre-built, a #PF `EXCEPTION 0e`/exit-35
-      guard-on-the-metal pair · timer IRQ · preemption) remain, each its own
-      kernel-ELF variant.
+      K4b paging on the metal)**.
+      **A TENTH SLICE — QEMU K4c, W^X + NX ENFORCEMENT on the metal (`71 stages`,
+      `K4CWXSTAGE` + `K4CNXSTAGE`).** K4b proved paging *translates* (build a PTE,
+      read it back); K4c proves it *protects* — **the guard-step discipline enforced
+      by the CPU, one privilege level down**, the metal twin of the three guard
+      steps and K2's #UD. Both are exit-**35** fault gates (a page-protection #PF,
+      `EXCEPTION 0e`, diagnosed by K2's IDT), not the clean 33: **W^X**
+      (`kernel_wx.elf`) maps a high page READ-ONLY (`K4C FRAME 1048576` +
+      `K4C WX READ 171` = sentinel read back through it), then a ring-0 WRITE faults
+      because **CR0.WP** is armed; **NX** (`kernel_nx.elf`, the execute-twin) maps a
+      high page NO-EXECUTE over a frame holding a lone `ret`
+      (`K4C NX FRAME 1048576` + `K4C NX ARMED 195` = the ret byte read back live),
+      then a FETCH through it faults because **EFER.NXE** is armed — the `ret` never
+      runs. ★ The NX gate carries a **NEGATIVE marker**: `K4C NX RET` must **NOT**
+      appear (it prints only if `exec_at` RETURNED, i.e. NX was *not* enforced), so
+      the gate is `code=35 AND FRAME AND ARMED AND "EXCEPTION 0e" AND NOT("K4C NX
+      RET")` — a regression disarming EFER.NXE fails on two counts (RET printed,
+      exit 33). This added a **`NOT`** combinator (`la b. b(FALSE)(TRUE)`), the first
+      negated `HASSUB` in the orchestrator. Same fast-by-design + SAFE `stat()`
+      probe as K3b/K4b — both GATE pre-built ELFs (`kernel/build_k4c_wx.sh` /
+      `build_k4c_nx.sh`, out of band), never drive the build. Isolate-verified (a
+      scratch MAIN running just the two K4c stages → both PASS, codegen-clean, the
+      `NOT` gate correct) then full **BUILD GREEN, 71 stages = 57 marker + 4
+      cross-engine + 3 guard + 1 namespace + 6 QEMU (K1 boots+speaks · K2 #UD faults
+      · K3b PMM map · K4b paging built · K4c-wx W^X-write faults · K4c-nx NX-fetch
+      faults)**. So paging on the metal is now proven **both ways** — translation
+      (K4b) and protection (K4c). **K5–K7** (timer IRQ · preemption · the remaining
+      kernel milestones) remain, each its own kernel-ELF variant.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
