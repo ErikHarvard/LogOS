@@ -135,6 +135,66 @@ glyph STEPS =
   CONS(STEP("derived geometry from ONF features")("./tiny_host")("topoderive.la")("@@@ Nest3 ⊂(VOID,⊂(FORM,DEPTH))"))(
   NIL))))))))))))))))))))))))))))))))))))))))))))))))
 
+# ── a CROSS-ENGINE step: b_τ ≡ f_τ ──────────────────────────────────────────
+#  build.sh's other big check is not a grep but an EQUALITY: `[ "$H" = "$V" ]` —
+#  the same program must print the SAME BYTES on the C host and the native VM.
+#  The two engines are each other's oracle. Agreement ALONE is not enough (both
+#  could be identically wrong), so the marker still gates correctness: a step
+#  passes iff the host output carries the marker AND the two engines agree.
+#
+#  ★★ IT MUST NOT RUN `./logos_secd`. That VM loads its program from the single
+#  fixed path `logos_program.bin` — which DURING A BUILD IS THIS ORCHESTRATOR.
+#  Running it makes the build run the build, forking at every level: a real fork
+#  bomb (measured: 148,121 processes, load 27). The VM has no "run THIS program"
+#  argument, so the program must be given its OWN VESSEL instead:
+#      codegen -> logos_embed.bin -> bundle.la -> logos_app
+#  a self-contained VM+stream binary (Albedo Stage 5, the proven route) that
+#  carries its stream embedded and never reads logos_program.bin.
+#
+#  Two safety properties, both relied on deliberately:
+#   1. The codegen step DISPLACES the orchestrator's stream from
+#      logos_program.bin (it becomes the target program's), so even a bare VM
+#      could not re-enter the build.
+#   2. The bundle is CHECKED before it is run — if bundle.la did not report
+#      success the step FAILs and logos_app is never executed, so a failed
+#      bundle can never fall back into the orchestrator.
+#  (Writing logos_program.bin under the running VM is safe: it drains its stream
+#  into progbuf at startup. Verified — steps after a codegen step still judge.)
+glyph XSTEP = la nm. la file. la mark. la f. f(nm)(file)(mark)
+glyph XNAME = la s. s(la a. la b. la c. a)
+glyph XFILE = la s. s(la a. la b. la c. b)
+glyph XMARK = la s. s(la a. la b. la c. c)
+
+glyph XSTEPS =
+  CONS(XSTEP("meta-alphabet 𝓜")("metaglyph.la")("𝓡(𝓡) ≡ 𝓡 ? YES"))(
+  CONS(XSTEP("denotational semantics")("denote.la")("↻(BEING)≡SELF-denotationally:T"))(
+  CONS(XSTEP("monosemy — no polysemy")("monosemy_test.la")("distinct? YES (no polysemy)"))(
+  CONS(XSTEP("evdev decode (signed)")("theourgia_input.la")("rel x: type=2 code=0 value=-3"))(
+  NIL))))
+
+glyph XRUN1 = la s.
+  IF(str_eq(XMARK(s))(""))
+    (la _. error(concat("buildla: cross-engine step has an empty marker (it could never fail): ")(XNAME(s))))
+    (la _.
+      (la hostOut.
+        SEQ(STAGE(XFILE(s))("logos_source.la"))
+        (SEQ(RUN("./tiny_host")("codegen.la")("/tmp/buildla_cg.txt"))
+        (SEQ(STAGE("logos_program.bin")("logos_embed.bin"))
+        ((la bout.
+           IF(HASSUB(bout)("bundled VM + stream -> logos_app"))
+             (la _.
+               ((la vmOut.
+                  (la ok.
+                    SEQ(print(concat(IF(ok)(la _. "  PASS  host==VM  ")(la _. "  FAIL  host!=VM  "))(XNAME(s))))(ok))
+                  (AND(HASSUB(hostOut)(XMARK(s)))(str_eq(hostOut)(vmOut))))
+                (RUN("./logos_app")("")("/tmp/buildla_vm.txt"))))
+             (la _. SEQ(print(concat("  FAIL  bundle failed, VM not run: ")(XNAME(s))))(FALSE)))
+         (RUN("./tiny_host")("bundle.la")("/tmp/buildla_bundle.txt"))))))
+      (RUN("./tiny_host")(XFILE(s))("/tmp/buildla_hostout.txt")))
+
+glyph XALL = Z(la self. la l.
+  l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(XRUN1(h))))
+
 # ── the guard: a step whose marker is EMPTY could never FAIL ──
 #   HASSUB is substring containment, so an empty marker is contained in EVERY
 #   output — the step would report PASS unconditionally, whatever the command
@@ -163,4 +223,8 @@ glyph MAIN =
      IF(ok)
        (la _. print("  BUILD GREEN — every step ran and said what it must, driven by LA"))
        (la _. SEQ(print("  BUILD RED — a step failed"))(exit("1"))))
-   (ALL(STEPS))))
+   # marker steps first, then the cross-engine (b_τ ≡ f_τ) steps. AND is over
+   # BOTH, and neither short-circuits the other's reporting: every step runs and
+   # reports, one failure must not mask the rest.
+   ((la a. (la b. AND(a)(b))(SEQ(print("── cross-engine: the same program, the same bytes, on host and VM ──"))(XALL(XSTEPS))))
+    (ALL(STEPS)))))
