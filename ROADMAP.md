@@ -1237,16 +1237,32 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       safety properties: codegen **displaces** the orchestrator's stream from
       `logos_program.bin`, and the bundle is **checked before it is run**, so a
       failed bundle can never fall back into the build.
-      *Why `[~]`:* **52 of 103 stages.** The remaining ones still do **not** fit
-      either gate kind, so the rest stays a **design** question, not typing:
-      (a) **resource/negative gates** needing `timeout` rc-124 (`DEPTH(DEPTH)` must
-      NOT terminate) or `unshare` (the PID-namespace init test); (b) **QEMU** gates
+      **A THIRD KIND OF GATE — the EXIT CODE (`34c93b1`).** Marker asks *did it
+      say the right thing*; cross-engine asks *do both engines say the same
+      thing*; neither asks what the loud-failure discipline turns on: **did it
+      FAIL, correctly, and say why?** `GSTEP` asserts an **exact exit code AND the
+      specific diagnostic** (**55 stages = 48 marker + 4 cross-engine + 3 guard**).
+      It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
+      **not** terminate (`timeout`, rc 124), the deliberate exception in
+      `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
+      Needed `RUN2`: the old `RUN` captured only **stdout** (diagnostics go to
+      **stderr**) and **discarded** `waitpid`'s result (the code *is* the gate).
+      *Verified:* `waitpid` returns the code **already decoded** (timeout→124,
+      failing host→1, kernel→0), not a raw wait status.
+      *★ Empty markers are allowed on a guard step*, deliberately unlike a marker
+      step — the asymmetry is the point: a marker step's only discriminator is
+      `HASSUB` and `""` matches everything (vacuous), whereas a guard step's is
+      **exact code equality**, never vacuous. So the code is checked always, the
+      marker only when given — which is what lets `DEPTH(DEPTH)`, whose output is
+      empty by construction, be gated honestly rather than fudged.
+      *Why `[~]`:* **55 of 103 stages.** What remains is **design- and cost-bound**,
+      not typing: (a) **`unshare`** gates (the PID-namespace init test); (b) **QEMU**
       (`[!]` — a foreign emulator); (c) stages driving the toolchain itself
-      (`codegen.la`/`secd.la`) — the artifacts the orchestrator IS. Cross-engine
-      coverage is also **cost-bound**: each XSTEP is a host run + codegen + bundle
-      + VM run, so the four are cheap only because they are fast pure modules;
-      extending it to `sigil`/`phonym` would add serious wall-time. Not `[x]` until
-      it actually is.
+      (`codegen.la`/`secd.la`) — the artifacts the orchestrator IS. Cross-engine is
+      **cost-bound**: each XSTEP is a host run + codegen + bundle + VM run, so the
+      four are cheap only because they are fast pure modules; extending to
+      `sigil`/`phonym` would add serious wall-time to an ~11-minute build. Not `[x]`
+      until it actually is.
 - [ ] **LA-native test/verification harness** — the system testing itself in its
       own language (today: bash gates + QEMU).
 - [!] **The emulator** — testing runs in QEMU (foreign). Closing it needs our own
