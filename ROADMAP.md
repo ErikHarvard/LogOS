@@ -1326,8 +1326,30 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       boot + judge. K3STAGE **isolate-verified** on the VM (real boot → both markers
       + exit 33 → PASS) + codegen-clean; it is an independent leaf (no ordering
       dependency), so **68 stages = 57 marker + 4 cross-engine + 3 guard + 1
-      namespace + 3 QEMU**. **K4–K7** (paging · W^X/NX · timer IRQ · preemption)
-      remain, each its own kernel-ELF variant.
+      namespace + 3 QEMU**.
+      **A NINTH SLICE — QEMU K4b, paging wired to the metal (`69 stages`,
+      `K4STAGE`).** K3b proved the PMM reads the loader's **real** multiboot map;
+      K4b proves the language **BUILDS a real page table over that memory** — the
+      write-half of paging on the metal. `kernel_paging.elf` allocates a real
+      physical frame from the K3 PMM (**"K4B FRAME 1048576"** = `0x100000`, the
+      arena base), then BUILDS a K4a page-table entry *in that real frame* via the
+      `poke` runtime builtin and reads it back via `peek`, **byte-identical to the
+      K4a host==native-assembled value**: **"K4B PTELO 2097155"** (`PTE_LO(0x200000,
+      P|W) = 0x200000|3`) and **"K4B PTEHI 2147483648"** (the NX bit, high32 bit31),
+      then clean exit **33** — three value markers AND the exit code, so a wrong
+      poke/peek (right rc, wrong value) still FAILs. `b_τ ≡ f_τ` carried onto the
+      hardware: the poked-and-read PTE equals the one K4a assembles identically on
+      host and native VM. Same **fast-by-design + SAFE `stat()` probe** as K3STAGE —
+      it GATES the pre-built ELF (`kernel/build_k4b.sh`, out of band), never drives
+      the build; qemu absent → skip, ELF not pre-built → skip (naming the build
+      script), else boot + judge. An independent leaf, no ordering dependency.
+      K4STAGE **isolate-verified** (direct QEMU boot → all three markers + exit 33 →
+      PASS) then full **BUILD GREEN, 69 stages = 57 marker + 4 cross-engine + 3
+      guard + 1 namespace + 4 QEMU (K1 boots+speaks, K2 faults loudly, K3b PMM map,
+      K4b paging on the metal)**. **K4c/K5–K7** (W^X + NX *enforcement* — both ELFs
+      `kernel_wx.elf`/`kernel_nx.elf` pre-built, a #PF `EXCEPTION 0e`/exit-35
+      guard-on-the-metal pair · timer IRQ · preemption) remain, each its own
+      kernel-ELF variant.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.

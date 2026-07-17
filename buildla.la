@@ -437,6 +437,38 @@ glyph K3STAGE = la _.
             (read_file("/tmp/buildla_q3_out.txt")))
           (RUN2("/usr/bin/timeout")(QK3CMD)("/tmp/buildla_q3_out.txt"))))
 
+# ── QEMU K4b — paging wired to the METAL (the write-half of paging) ──
+#  K3b proved the PMM reads the loader's REAL multiboot map; K4b proves the
+#  language BUILDS a real page table over that memory. `kernel_paging.elf`:
+#    (1) allocates a real physical frame from the K3 PMM — "K4B FRAME 1048576"
+#        (0x100000, the usable-RAM arena base);
+#    (2) BUILDS a K4a page-table entry in that real frame via the `poke` runtime
+#        builtin and reads it back via `peek`, byte-identical to the K4a-assembled
+#        value: "K4B PTELO 2097155" (PTE_LO(0x200000, P|W) = 0x200000|3) and
+#        "K4B PTEHI 2147483648" (PTE_HI NX bit = high32 bit31);
+#    then a clean exit(0) → isa-debug-exit 0x10 → QEMU exits 33. Three value
+#    markers AND the exit code, so a wrong poke/peek (right rc, wrong value) FAILs.
+#    b_τ ≡ f_τ carried to the metal: the poked PTE equals the K4a host==native one.
+#  Same FAST-BY-DESIGN + SAFE-stat() discipline as K3STAGE: it GATES a pre-built
+#  ELF (built out of band by kernel/build_k4b.sh), never drives the build; qemu
+#  absent → skip; ELF not pre-built → skip (naming the build script); else boot
+#  + judge. An independent leaf — no ordering dependency on K1/K2/K3b.
+glyph QK4CMD = "30 qemu-system-x86_64 -kernel kernel/kernel_paging.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
+glyph K4STAGE = la _.
+  IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _.
+      IF(str_eq(str_head(stat("kernel/kernel_paging.elf")))("-"))
+        (la _. SEQ(print("  PASS  vm  (skipped) kernel_paging.elf not pre-built (run kernel/build_k4b.sh)"))(TRUE))
+        (la _.
+          (la code.
+            (la out.
+              (la ok.
+                SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K4b: paging on the metal — PMM allocates a real frame, a K4a PTE is BUILT in it via poke and read back byte-identical via peek, clean exit 33")))(ok))
+              (AND(str_eq(code)("33"))(AND(HASSUB(out)("K4B FRAME 1048576"))(AND(HASSUB(out)("K4B PTELO 2097155"))(HASSUB(out)("K4B PTEHI 2147483648"))))))
+            (read_file("/tmp/buildla_q4_out.txt")))
+          (RUN2("/usr/bin/timeout")(QK4CMD)("/tmp/buildla_q4_out.txt"))))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -456,7 +488,9 @@ glyph MAIN =
          (la d.
            (la e.
              (la f.
-               (la g. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(g)))))))
+               (la g.
+                 (la h. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(h))))))))
+                 (SEQ(print("── QEMU K4b: paging wired to the metal — a real page table BUILT via poke/peek ──"))(K4STAGE("!"))))
                (SEQ(print("── QEMU K3b: the PMM walks the REAL multiboot map on the metal (peek) ──"))(K3STAGE("!"))))
              (SEQ(print("── QEMU K2: the fault IDT — a #UD is a diagnosed serial halt (EXCEPTION 06) ──"))(K2STAGE("!"))))
            (SEQ(print("── QEMU K1: the sovereign kernel boots on bare metal (foreign emulator) ──"))(QSTAGE("!"))))
