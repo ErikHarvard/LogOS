@@ -135,6 +135,62 @@ glyph STEPS =
   CONS(STEP("derived geometry from ONF features")("./tiny_host")("topoderive.la")("@@@ Nest3 ⊂(VOID,⊂(FORM,DEPTH))"))(
   NIL))))))))))))))))))))))))))))))))))))))))))))))))
 
+# ── a GUARD step: the build's THIRD kind of gate — the EXIT CODE ────────────
+#  A marker step asks "did it say the right thing?"; a cross-engine step asks
+#  "do both engines say the same thing?". Neither can ask the question the
+#  loud-failure discipline turns on: "did it FAIL, correctly, and say why?"
+#  build.sh's guard set does exactly that — feed a broken program, assert a
+#  non-zero exit AND the specific diagnostic — and so does the DEPTH(DEPTH)
+#  gate, whose whole content is that it must NOT terminate (timeout, rc 124).
+#
+#  Two things RUN cannot do, so GRUN uses RUN2:
+#   1. RUN captures only stdout (dup2 ... "1") — but every diagnostic goes to
+#      STDERR. RUN2 redirects BOTH fds into the one capture file.
+#   2. RUN discards waitpid's result (SEQ) — the exit code IS the gate here.
+#      RUN2 returns it. (Verified: waitpid yields the CODE directly, already
+#      decoded — timeout->124, a failing host->1, kernel->0 — not a raw wait
+#      status needing WEXITSTATUS.)
+#
+#  ★ Why an empty marker is ALLOWED here, unlike a marker step: a marker step's
+#  only discriminator is HASSUB, and "" is contained in every output — vacuous,
+#  hence the guard. A guard step's discriminator is EXACT CODE EQUALITY, which
+#  is never vacuous: `str_eq(code)("124")` is a real gate on its own. So the
+#  code is checked ALWAYS and the marker only when given — which is what lets
+#  DEPTH(DEPTH), whose output is empty by construction, be gated honestly.
+glyph GEN = la path. la content. write_file(path)(content)
+
+glyph RUN2 = la cmd. la args. la out.
+  (la pid.
+    IF(str_eq(pid)("0"))
+      (la _. (la fd. SEQ(dup2(fd)("1"))(SEQ(dup2(fd)("2"))(execv(cmd)(args))))(open(out)("577")))
+      (la _. waitpid(pid)))
+  (fork("!"))
+
+glyph GSTEP = la nm. la cmd. la args. la code. la mark. la f. f(nm)(cmd)(args)(code)(mark)
+glyph GNAME = la s. s(la a. la b. la c. la d. la e. a)
+glyph GCMD  = la s. s(la a. la b. la c. la d. la e. b)
+glyph GARGS = la s. s(la a. la b. la c. la d. la e. c)
+glyph GCODE = la s. s(la a. la b. la c. la d. la e. d)
+glyph GMARK = la s. s(la a. la b. la c. la d. la e. e)
+
+glyph GSTEPS =
+  CONS(GSTEP("DEPTH(DEPTH) must NOT terminate (rc 124)")("/usr/bin/timeout")("4 ./tiny_host /tmp/buildla_g_depth.la")("124")(""))(
+  CONS(GSTEP("str_to_int REJECTS a non-decimal")("./tiny_host")("/tmp/buildla_g_int.la")("1")("str_to_int: not a decimal integer"))(
+  CONS(GSTEP("chr REJECTS a byte out of range")("./tiny_host")("/tmp/buildla_g_chr.la")("1")("chr: value 300 out of byte range 0..255"))(
+  NIL)))
+
+glyph GRUN1 = la s.
+  (la code.
+    (la out.
+      (la ok.
+        SEQ(print(concat(IF(ok)(la _. "  PASS  rc  ")(la _. "  FAIL  rc  "))(GNAME(s))))(ok))
+      (AND(str_eq(code)(GCODE(s)))(HASSUB(out)(GMARK(s)))))
+    (read_file("/tmp/buildla_gout.txt")))
+  (RUN2(GCMD(s))(GARGS(s))("/tmp/buildla_gout.txt"))
+
+glyph GALL = Z(la self. la l.
+  l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(GRUN1(h))))
+
 # ── a CROSS-ENGINE step: b_τ ≡ f_τ ──────────────────────────────────────────
 #  build.sh's other big check is not a grep but an EQUALITY: `[ "$H" = "$V" ]` —
 #  the same program must print the SAME BYTES on the C host and the native VM.
@@ -223,8 +279,18 @@ glyph MAIN =
      IF(ok)
        (la _. print("  BUILD GREEN — every step ran and said what it must, driven by LA"))
        (la _. SEQ(print("  BUILD RED — a step failed"))(exit("1"))))
-   # marker steps first, then the cross-engine (b_τ ≡ f_τ) steps. AND is over
-   # BOTH, and neither short-circuits the other's reporting: every step runs and
-   # reports, one failure must not mask the rest.
-   ((la a. (la b. AND(a)(b))(SEQ(print("── cross-engine: the same program, the same bytes, on host and VM ──"))(XALL(XSTEPS))))
+   # Three gate kinds, in order: marker (did it say the right thing?),
+   # cross-engine (do both engines say the SAME thing?), guard (did it FAIL,
+   # correctly, and say why?). AND is over ALL THREE, and none short-circuits
+   # another's reporting: every step runs and reports — one failure must not
+   # mask the rest.
+   ((la a.
+     (la b.
+       (la c. AND(a)(AND(b)(c)))
+       (SEQ(print("── guards: the loud-failure discipline — it must FAIL, and say why ──"))
+         (SEQ(GEN("/tmp/buildla_g_depth.la")("glyph D = la g. g(g)\nglyph MAIN = D(D)\n"))
+         (SEQ(GEN("/tmp/buildla_g_int.la")("glyph MAIN = print(str_to_int(\"12x\"))\n"))
+         (SEQ(GEN("/tmp/buildla_g_chr.la")("glyph MAIN = print(chr(\"300\"))\n"))
+           (GALL(GSTEPS)))))))
+     (SEQ(print("── cross-engine: the same program, the same bytes, on host and VM ──"))(XALL(XSTEPS))))
     (ALL(STEPS)))))
