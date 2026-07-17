@@ -1221,16 +1221,32 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       C host; build.sh also invokes gcc, **nasm (46×)**, ld, qemu, python3 — each
       its OWN seam (assembler `[~]`, linker `[ ]`, emulator `[!]`). **"The build is
       orchestrated by LA" must never come to mean "no foreign tools in the build."**
-      *Why `[~]`:* **48 of 103 stages.** The easy volume is now **spent**: every
-      remaining stage is one that does **not** fit `cmd + args + a stdout marker`,
-      so the rest is a **design** question, not typing. Four kinds: (a) **cross-engine
-      byte-identity** diffs (host vs VM artifacts — needs a compare-files STEP kind);
-      (b) **negative/resource gates** needing `timeout` rc-124 (`DEPTH(DEPTH)`
-      divergence) or `unshare` (the PID-namespace init test); (c) **QEMU** gates
-      (`[!]` — a foreign emulator); (d) stages driving the toolchain itself
-      (`codegen.la`/`secd.la`), which **cannot** be a naive STEP: they rewrite
-      `logos_program.bin`/`logos_secd` — the very artifacts the running orchestrator
-      IS. Not `[x]` until it actually is.
+      **A SECOND KIND OF GATE — cross-engine `b_τ ≡ f_τ` (`c7e1afd`).** build.sh's
+      other big check is not a grep but an **equality**: `[ "$H" = "$V" ]` — the
+      same program must print the **same bytes** on the C host and the native VM.
+      The two engines are **each other's oracle**. `XSTEP` adds it (**52 stages =
+      48 marker + 4 cross-engine**). Agreement alone is **not** a pass (two engines
+      can be identically wrong), so a step passes iff the host output carries the
+      marker **and** the engines agree.
+      *★ It must not run `./logos_secd`* — that VM loads its program from the one
+      fixed path `logos_program.bin`, which **during a build IS the orchestrator**:
+      running it forks the build into itself (a real fork bomb — measured at
+      148,121 processes). The program is given its **own vessel** instead —
+      `codegen → logos_embed.bin → bundle.la → logos_app` (Albedo Stage 5), which
+      carries its stream embedded and never reads `logos_program.bin`. Two verified
+      safety properties: codegen **displaces** the orchestrator's stream from
+      `logos_program.bin`, and the bundle is **checked before it is run**, so a
+      failed bundle can never fall back into the build.
+      *Why `[~]`:* **52 of 103 stages.** The remaining ones still do **not** fit
+      either gate kind, so the rest stays a **design** question, not typing:
+      (a) **resource/negative gates** needing `timeout` rc-124 (`DEPTH(DEPTH)` must
+      NOT terminate) or `unshare` (the PID-namespace init test); (b) **QEMU** gates
+      (`[!]` — a foreign emulator); (c) stages driving the toolchain itself
+      (`codegen.la`/`secd.la`) — the artifacts the orchestrator IS. Cross-engine
+      coverage is also **cost-bound**: each XSTEP is a host run + codegen + bundle
+      + VM run, so the four are cheap only because they are fast pure modules;
+      extending it to `sigil`/`phonym` would add serious wall-time. Not `[x]` until
+      it actually is.
 - [ ] **LA-native test/verification harness** — the system testing itself in its
       own language (today: bash gates + QEMU).
 - [!] **The emulator** — testing runs in QEMU (foreign). Closing it needs our own
