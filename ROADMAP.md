@@ -1372,8 +1372,40 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       cross-engine + 3 guard + 1 namespace + 6 QEMU (K1 boots+speaks · K2 #UD faults
       · K3b PMM map · K4b paging built · K4c-wx W^X-write faults · K4c-nx NX-fetch
       faults)**. So paging on the metal is now proven **both ways** — translation
-      (K4b) and protection (K4c). **K5–K7** (timer IRQ · preemption · the remaining
-      kernel milestones) remain, each its own kernel-ELF variant.
+      (K4b) and protection (K4c).
+      **AN ELEVENTH SLICE — QEMU K5, the timer IRQ + PREEMPTION on the metal
+      (`73 stages`, `K5STAGE` + `K5B2STAGE`).** K4 proved paging; K5 proves the
+      kernel can be **interrupted** and then **scheduled** — the substrate every
+      preemptive OS stands on. **K5a** (`kernel_timer.elf`): the boot stub remaps
+      the PIC, programs the PIT to ~100 Hz, points IDT[0x20] at `timer_isr` and
+      `sti`s; the LA image spins reading a tick counter via `peek()` until an
+      asynchronous IRQ0 fires — the ISR bumps it, the reduction resumes intact and
+      reads **"K5 TICKS <n>"** with n≥1, clean exit 33. ★ A **NEGATIVE gate**:
+      `HASSUB("K5 TICKS ") AND NOT("K5 TICKS 0")` — not merely that the line
+      printed, but that the timer *actually fired* (a dead PIC/PIT/IDT/sti leaves
+      it 0), so it refuses a dead timer. **K5b.2** (`kernel_preempt.elf`, boot
+      `-dK5_TIMER -dK5B2`): two workers that **never call `yield()`** are
+      nonetheless **INTERLEAVED** because IRQ0 sets the LA runtime's `YIELD_PENDING`
+      byte and `rt_apply`'s safe point context-switches between reductions — proof
+      of *preemption*, not just interrupt capability. The gate is the interleaving:
+      `HASSUB("A\nB") AND HASSUB("B\nA")` — **both** transition directions present ⇒
+      ≥3 runs (`ABABABAB`) ⇒ a worker was preempted mid-block; a non-preemptive
+      2-run block (`AAAABBBB`) has only one direction and **FAILs** — plus `"done"`
+      and clean exit 33 (needs `-m 1024` so the high MAIN + task stacks map).
+      ★ **A real source bug was found and fixed en route:** `kernel/timer.asm`'s
+      hard-coded `YIELD_PENDING_ABS` (the rt data slot the ISR pokes) had **drifted**
+      from `native_codegen3_rt.asm`'s actual layout (`0x4012e5` → the current
+      `0x4012ee`, off by 9 bytes); `build_k5b2.sh`'s drift guard **correctly refused
+      to build** a preempt ELF that would poke the wrong byte and never preempt.
+      Corrected the equ, rebuilt, and the ELF now interleaves 8 runs. Both K5 stages
+      GATE pre-built ELFs (`kernel/build_k5a.sh` / `build_k5b2.sh`, out of band),
+      never drive the build — same SAFE `stat()` discipline. Isolate-verified
+      (scratch MAIN → both PASS, codegen-clean) then full **BUILD GREEN, 73 stages =
+      57 marker + 4 cross-engine + 3 guard + 1 namespace + 8 QEMU (K1 boots · K2 #UD
+      faults · K3b PMM · K4b paging · K4c-wx/nx W^X+NX enforce · K5a timer fires ·
+      K5b.2 preempts)**. **K5b.1** (cooperative spawn/yield + GC-across-suspension —
+      Linux-hosted, *drives `native_codegen3`* so it needs the toolchain-STEP care,
+      not a naive gate) and **K6–K7** (the remaining kernel milestones) remain.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.

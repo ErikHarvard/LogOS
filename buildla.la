@@ -528,6 +528,73 @@ glyph K4CNXSTAGE = la _.
             (read_file("/tmp/buildla_q4nx_out.txt")))
           (RUN2("/usr/bin/timeout")(QK4NXCMD)("/tmp/buildla_q4nx_out.txt"))))
 
+# ── QEMU K5a — the timer IRQ live on the METAL (preemption capability) ──
+#  K4 proved paging (translate + protect); K5a proves the kernel can be
+#  INTERRUPTED — an asynchronous timer IRQ fires DURING the LA image's execution,
+#  the substrate every preemptive scheduler stands on. `kernel_timer.elf`: the
+#  boot stub remaps the PIC, programs the PIT to ~100 Hz, points IDT[0x20] at
+#  timer_isr, and `sti`s; the LA image spins reading a tick counter at TICK_ADDR
+#  via `peek()` until IRQ0 fires — the ISR bumps the counter, the LA code resumes
+#  intact and reads it back: **"K5 TICKS <n>"** with n≥1, then clean exit 33.
+#  ★ NEGATIVE gate: it is not enough that the LINE printed — the count must be
+#  NONZERO (a broken PIC/PIT/IDT/sti wiring leaves it 0). `HASSUB("K5 TICKS ")`
+#  proves the line, `NOT(HASSUB("K5 TICKS 0"))` proves the timer ACTUALLY fired
+#  (n="10" contains "K5 TICKS 1", never "K5 TICKS 0"; only n="0" does) — so the
+#  gate refuses a dead timer, not merely a missing print. b_τ ≡ f_τ on the metal:
+#  the LA reduction survives a real asynchronous interrupt. Same FAST-BY-DESIGN +
+#  SAFE-stat() discipline as K3b/K4b/K4c — GATES the pre-built ELF
+#  (kernel/build_k5a.sh, out of band), never drives the build.
+glyph QK5CMD = "30 qemu-system-x86_64 -kernel kernel/kernel_timer.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
+glyph K5STAGE = la _.
+  IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _.
+      IF(str_eq(str_head(stat("kernel/kernel_timer.elf")))("-"))
+        (la _. SEQ(print("  PASS  vm  (skipped) kernel_timer.elf not pre-built (run kernel/build_k5a.sh)"))(TRUE))
+        (la _.
+          (la code.
+            (la out.
+              (la ok.
+                SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K5a: the timer IRQ live on the metal — PIC+PIT ~100Hz+IDT[0x20], an async IRQ0 fired DURING LA execution (K5 TICKS n>=1 via peek), the reduction resumed intact, clean exit 33 (preemption capability)")))(ok))
+              (AND(str_eq(code)("33"))(AND(HASSUB(out)("K5 TICKS "))(NOT(HASSUB(out)("K5 TICKS 0"))))))
+            (read_file("/tmp/buildla_q5_out.txt")))
+          (RUN2("/usr/bin/timeout")(QK5CMD)("/tmp/buildla_q5_out.txt"))))
+
+# ── QEMU K5b.2 — PREEMPTIVE tasks on the METAL (preemption, not just capability) ──
+#  K5a proved the timer CAN interrupt; K5b.2 proves it SCHEDULES — two workers that
+#  NEVER call yield() are nonetheless INTERLEAVED, which is impossible without
+#  preemption. `kernel_preempt.elf` (boot -dK5_TIMER -dK5B2): IRQ0 sets the LA
+#  runtime's YIELD_PENDING byte, and rt_apply's safe point context-switches between
+#  reductions. Two non-yielding bounded workers print 'A'/'B'; the timer preempts a
+#  running worker mid-block, so the A/B sequence INTERLEAVES ('ABABABAB', ≥3 runs)
+#  rather than strict blocks ('AAAABBBB' = exactly 2 runs = NO preemption); MAIN
+#  drains and prints "done", clean exit 33.
+#  ★ The interleaving is the gate, expressed with newline markers: HASSUB("A\nB")
+#  AND HASSUB("B\nA") — BOTH transition directions present ⇒ ≥3 runs ⇒ a worker was
+#  preempted before finishing. A non-preemptive 2-run block has only ONE direction,
+#  so it FAILs (the negative case the gate must reject). Needs -m 1024 (the high
+#  MAIN stack 0x3F000000 + task stacks at 0x38000000 must be mapped) and timeout 45.
+#  ★ DRIFT NOTE: timer.asm hard-codes YIELD_PENDING_ABS = the rt data slot; a
+#  native_codegen3_rt.asm layout change moves it, and build_k5b2.sh's guard REFUSES
+#  to build a preempt ELF that would poke the wrong byte (fixed 2026-07-17:
+#  0x4012e5 → 0x4012ee). GATES the pre-built ELF (kernel/build_k5b2.sh, out of
+#  band), never drives the build — same SAFE-stat() discipline as the others.
+glyph QK5B2CMD = "45 qemu-system-x86_64 -kernel kernel/kernel_preempt.elf -m 1024 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
+glyph K5B2STAGE = la _.
+  IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _.
+      IF(str_eq(str_head(stat("kernel/kernel_preempt.elf")))("-"))
+        (la _. SEQ(print("  PASS  vm  (skipped) kernel_preempt.elf not pre-built (run kernel/build_k5b2.sh)"))(TRUE))
+        (la _.
+          (la code.
+            (la out.
+              (la ok.
+                SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K5b.2: PREEMPTIVE tasks on the metal — two NON-yielding workers INTERLEAVED (both A->B and B->A transitions => >=3 runs) because IRQ0 set YIELD_PENDING and rt_apply's safe point context-switched; MAIN drained, clean exit 33")))(ok))
+              (AND(str_eq(code)("33"))(AND(HASSUB(out)("A\nB"))(AND(HASSUB(out)("B\nA"))(HASSUB(out)("done"))))))
+            (read_file("/tmp/buildla_q5b2_out.txt")))
+          (RUN2("/usr/bin/timeout")(QK5B2CMD)("/tmp/buildla_q5b2_out.txt"))))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -550,7 +617,11 @@ glyph MAIN =
                (la g.
                  (la h.
                    (la i.
-                     (la j. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(j))))))))))
+                     (la j.
+                       (la k.
+                         (la l. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(l))))))))))))
+                         (SEQ(print("── QEMU K5b.2: PREEMPTIVE tasks — non-yielding workers interleaved by the timer ──"))(K5B2STAGE("!"))))
+                       (SEQ(print("── QEMU K5a: the timer IRQ live on the metal — an async IRQ0 preempts the LA spin ──"))(K5STAGE("!"))))
                      (SEQ(print("── QEMU K4c-nx: NX ENFORCEMENT — a FETCH at a NO-EXECUTE page faults (EXCEPTION 0e, exit 35) ──"))(K4CNXSTAGE("!"))))
                    (SEQ(print("── QEMU K4c-wx: W^X ENFORCEMENT — a WRITE to a READ-ONLY page faults (EXCEPTION 0e, exit 35) ──"))(K4CWXSTAGE("!"))))
                  (SEQ(print("── QEMU K4b: paging wired to the metal — a real page table BUILT via poke/peek ──"))(K4STAGE("!"))))
