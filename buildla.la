@@ -26,8 +26,9 @@
 #  build.sh also invokes gcc, nasm (46x), ld, qemu and python3, and each is its
 #  OWN seam (assembler [~], linker [ ], emulator [!]). "the build is orchestrated
 #  by LA" must never come to mean "no foreign tools in the build".
-#  DOES NOT YET COVER: 10 of build.sh's 103 stages. Real ones — the whole
-#  autopoiesis stack and the toolchain — but not the whole audit. The rest is
+#  DOES NOT YET COVER: 25 of build.sh's 103 stages. Real ones — the whole
+#  autopoiesis stack, the toolchain, and the spec pipeline that builds every
+#  module spec-first — but not the whole audit. The rest is
 #  mechanical volume, and the ROADMAP keeps the item [~] until it actually is
 #  done. Steps needing more than `cmd args + a stdout marker` (byte-comparing
 #  artifacts, QEMU gates, unshare) will need more than a STEP entry.
@@ -93,7 +94,22 @@ glyph STEPS =
   CONS(STEP("ELF emitter (Albedo Stage 1)")("./tiny_host")("elf.la")("emitted logos_native"))(
   CONS(STEP("assembler runs")("./tiny_host")("asm.la")("asm.la assembled"))(
   CONS(STEP("LA-native toolchain emits a binary")("./tiny_host")("asmelf.la")("no nasm, no ld"))(
-  NIL))))))))))
+  CONS(STEP("self-verifying spec table")("./tiny_host")("metadebug.la")("T5_self: T"))(
+  CONS(STEP("spec pipeline deploys a module")("./tiny_host")("specpipe.la")("module VERIFIED"))(
+  CONS(STEP("type checker REJECTS an ill-typed module")("./tiny_host")("typed_spec.la")("module REJECTED"))(
+  CONS(STEP("nine primitives (autology)")("./tiny_host")("primitives_spec.la")("module VERIFIED"))(
+  CONS(STEP("kappa — canonicalization")("./tiny_host")("canon_spec.la")("module VERIFIED"))(
+  CONS(STEP("three laws of thought")("./tiny_host")("metalogic_spec.la")("module VERIFIED"))(
+  CONS(STEP("AATC — autological adequacy")("./tiny_host")("aatc_spec.la")("module VERIFIED"))(
+  CONS(STEP("SWC well-foundedness checker")("./tiny_host")("swc_spec.la")("module VERIFIED"))(
+  CONS(STEP("glyph-DAG — the compressing form")("./tiny_host")("glyphdag_spec.la")("module VERIFIED"))(
+  CONS(STEP("PSC* — phonosemantic invariants")("./tiny_host")("psc_spec.la")("module VERIFIED"))(
+  CONS(STEP("TopoEmbed — visual invariants")("./tiny_host")("topoembed_spec.la")("module VERIFIED"))(
+  CONS(STEP("pragmatics — the USE branch")("./tiny_host")("pragmatics_spec.la")("module VERIFIED"))(
+  CONS(STEP("deixis — context-dependent reference")("./tiny_host")("deixis_spec.la")("module VERIFIED"))(
+  CONS(STEP("string utilities from a spec")("./tiny_host")("strutil_spec.la")("module VERIFIED"))(
+  CONS(STEP("evdev input module from a spec")("./tiny_host")("evdev_spec.la")("module VERIFIED"))(
+  NIL)))))))))))))))))))))))))
 
 glyph RUN1 = la s.
   (la got.

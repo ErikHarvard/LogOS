@@ -1195,19 +1195,29 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       build.sh's checks are **274 greps over captured stdout**. Now the whole
       cycle is expressible: *fork → `dup2` the child's stdout into a file → `execv`
       CMD ARGS → `waitpid` → `read_file` → check*. `HASSUB` is the grep.
-      Verified on **3 real stages** (kernel speaks the Word · assembler runs ·
-      bounded self-repair) — **BUILD GREEN**, and the RED path is verified too: a
-      step whose marker never appears gives **BUILD RED, exit 1**, with the other
-      steps still running and reporting (a build tool that cannot fail is
-      worthless, and one failure must not mask the rest).
+      Verified on **25 real stages** — the whole **autopoiesis stack** (kernel
+      speaks the Word · self-repair · self-modification · self-programming ·
+      self-optimization · runtime self-verification · self-documentation), the
+      **toolchain** (ELF emitter · assembler · the LA-native toolchain emitting a
+      binary), and the **spec pipeline** that builds every module spec-first
+      (metadebug · specpipe · primitives · κ · the three laws · AATC · SWC ·
+      glyph-DAG · PSC\* · TopoEmbed · pragmatics · deixis · strutil · evdev, plus
+      the **type checker REJECTING** an ill-typed module — a negative gate, not
+      just a happy path) — **BUILD GREEN**. The RED path is verified too: a step
+      whose marker never appears gives **BUILD RED, exit 1**, with the other steps
+      still running and reporting (a build tool that cannot fail is worthless, and
+      one failure must not mask the rest).
       *What it closes:* the **ORCHESTRATION** logic — deciding what to run, running
       it, capturing it, judging it, failing the build. In LA, on the VM, no shell.
       *What it does NOT close:* the **TOOLS**. Driving `./tiny_host` still runs the
       C host; build.sh also invokes gcc, **nasm (46×)**, ld, qemu, python3 — each
       its OWN seam (assembler `[~]`, linker `[ ]`, emulator `[!]`). **"The build is
       orchestrated by LA" must never come to mean "no foreign tools in the build."**
-      *Why `[~]`:* **3 of 103 stages.** The shape is proven on real stages; the rest
-      is mechanical volume (~2-3 sessions). Not `[x]` until it actually is.
+      *Why `[~]`:* **25 of 103 stages.** The shape is proven on real stages; the
+      rest is mechanical volume (~1-2 sessions). The remainder is also where the
+      stages stop fitting the `cmd + args + a stdout marker` shape — byte-comparing
+      artifacts, QEMU gates, `unshare`, `timeout` — and will need more than a STEP
+      entry. Not `[x]` until it actually is.
 - [ ] **LA-native test/verification harness** — the system testing itself in its
       own language (today: bash gates + QEMU).
 - [!] **The emulator** — testing runs in QEMU (foreign). Closing it needs our own
