@@ -26,9 +26,10 @@
 #  build.sh also invokes gcc, nasm (46x), ld, qemu and python3, and each is its
 #  OWN seam (assembler [~], linker [ ], emulator [!]). "the build is orchestrated
 #  by LA" must never come to mean "no foreign tools in the build".
-#  DOES NOT YET COVER: 25 of build.sh's 103 stages. Real ones — the whole
-#  autopoiesis stack, the toolchain, and the spec pipeline that builds every
-#  module spec-first — but not the whole audit. The rest is
+#  DOES NOT YET COVER: 48 of build.sh's 103 stages. Real ones — the whole
+#  autopoiesis stack, the toolchain, the spec pipeline that builds every module
+#  spec-first, the compositor, and the trimodal language layer (visual+acoustic+
+#  computational) — but not the whole audit. The rest is
 #  mechanical volume, and the ROADMAP keeps the item [~] until it actually is
 #  done. Steps needing more than `cmd args + a stdout marker` (byte-comparing
 #  artifacts, QEMU gates, unshare) will need more than a STEP entry.
@@ -109,7 +110,30 @@ glyph STEPS =
   CONS(STEP("deixis — context-dependent reference")("./tiny_host")("deixis_spec.la")("module VERIFIED"))(
   CONS(STEP("string utilities from a spec")("./tiny_host")("strutil_spec.la")("module VERIFIED"))(
   CONS(STEP("evdev input module from a spec")("./tiny_host")("evdev_spec.la")("module VERIFIED"))(
-  NIL)))))))))))))))))))))))))
+  CONS(STEP("module isolation (privates don't leak)")("./tiny_host")("app.la")("app-value"))(
+  CONS(STEP("cross-engine import isolation")("./tiny_host")("greetapp.la")("module-importer / mine:-importer"))(
+  CONS(STEP("LogosIPC typed message bus")("./tiny_host")("ipc_demo.la")("typed-ok: yes"))(
+  CONS(STEP("capability gating DENIES a foreign realm")("./tiny_host")("logoscap.la")("foreign capability = denied"))(
+  CONS(STEP("sealed monoglyph (autological)")("./tiny_host")("seal_test.la")("seal-autological: YES"))(
+  CONS(STEP("Theourgia 1 — surface composition")("./tiny_host")("theourgia.la")("composed 32x24 desktop -> canvas.ppm"))(
+  CONS(STEP("Theourgia 3 — framebuffer bridge")("./tiny_host")("theourgia_fb.la")("(XRGB8888, 26 rows x 160 pitch)"))(
+  CONS(STEP("Theourgia 4 — evdev decode (signed)")("./tiny_host")("theourgia_input.la")("rel x: type=2 code=0 value=-3"))(
+  CONS(STEP("Theourgia 5 — session reducer")("./tiny_host")("theourgia_session.la")("session: window at 6 5"))(
+  CONS(STEP("Theourgia 6 — poll multiplexing")("./tiny_host")("theourgia_poll.la")("fd 7: type=2 code=0 value=-3"))(
+  CONS(STEP("Theourgia 7 — multiplexed session")("./tiny_host")("theourgia_mux_session.la")("mux-session: window at 5 5"))(
+  CONS(STEP("Theourgia 8 — text rendering")("./tiny_host")("theourgia_text.la")("onto a 24x12 surface -> text.ppm"))(
+  CONS(STEP("visual modality — the nine sigils")("./tiny_host")("sigil.la")("the lemniscate (infinity)"))(
+  CONS(STEP("acoustic oracle — formants measured")("./tiny_host")("goertzel.la")("formants>50x-control: 3/3"))(
+  CONS(STEP("meta-alphabet — the evaluator is a glyph")("./tiny_host")("metaglyph.la")("𝓡(𝓡) ≡ 𝓡 ? YES"))(
+  CONS(STEP("denotational semantics (compositional)")("./tiny_host")("denote.la")("↻(BEING)≡SELF-denotationally:T"))(
+  CONS(STEP("monosemy — no polysemy")("./tiny_host")("monosemy_test.la")("distinct? YES (no polysemy)"))(
+  CONS(STEP("ONF graph features (automorphism)")("./tiny_host")("onf.la")("0/1/0/1/Y/SELF,SELF,"))(
+  CONS(STEP("Cycle of Being — 3 beats observed")("./tiny_host")("cob.la")("[3 leaves survive+injective]: YES"))(
+  CONS(STEP("archroot — the chain does NOT generate the nine")("./tiny_host")("archroot.la")("The chain does NOT generate the nine."))(
+  CONS(STEP("phonological modality — the nine phonyms")("./tiny_host")("phonym.la")("9 primitives + 3 GENERATED + 2 modes + the evaluator 𝓡"))(
+  CONS(STEP("phonosemantics — alignment vs fidelity")("./tiny_host")("phonsem.la")("injective(SET) Theta_P = 8 / 8"))(
+  CONS(STEP("derived geometry from ONF features")("./tiny_host")("topoderive.la")("@@@ Nest3 ⊂(VOID,⊂(FORM,DEPTH))"))(
+  NIL))))))))))))))))))))))))))))))))))))))))))))))))
 
 glyph RUN1 = la s.
   (la got.

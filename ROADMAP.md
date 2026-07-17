@@ -1195,15 +1195,23 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       build.sh's checks are **274 greps over captured stdout**. Now the whole
       cycle is expressible: *fork → `dup2` the child's stdout into a file → `execv`
       CMD ARGS → `waitpid` → `read_file` → check*. `HASSUB` is the grep.
-      Verified on **25 real stages** — the whole **autopoiesis stack** (kernel
+      Verified on **48 real stages** — the whole **autopoiesis stack** (kernel
       speaks the Word · self-repair · self-modification · self-programming ·
       self-optimization · runtime self-verification · self-documentation), the
       **toolchain** (ELF emitter · assembler · the LA-native toolchain emitting a
-      binary), and the **spec pipeline** that builds every module spec-first
+      binary), the **spec pipeline** that builds every module spec-first
       (metadebug · specpipe · primitives · κ · the three laws · AATC · SWC ·
-      glyph-DAG · PSC\* · TopoEmbed · pragmatics · deixis · strutil · evdev, plus
-      the **type checker REJECTING** an ill-typed module — a negative gate, not
-      just a happy path) — **BUILD GREEN**. The RED path is verified too: a step
+      glyph-DAG · PSC\* · TopoEmbed · pragmatics · deixis · strutil · evdev), the
+      **module system + IPC** (import isolation · the typed bus · capability
+      gating · the sealed monoglyph), the **compositor** (Theourgia 1·3·4·5·6·7·8
+      — surfaces, framebuffer bridge, evdev decode, session reducer, poll
+      multiplexing, multiplexed session, text), and the **trimodal language layer**
+      (visual: sigil · acoustic: phonym, goertzel, phonsem · computational:
+      metaglyph, denote, monosemy, onf, topoderive, cob, archroot) — **BUILD
+      GREEN**. Three of them are **negative gates**, not happy paths: the type
+      checker **REJECTING** an ill-typed module, capability gating **DENYING** a
+      foreign realm, and archroot's **"the chain does NOT generate the nine."**
+      The RED path is verified too: a step
       whose marker never appears gives **BUILD RED, exit 1**, with the other steps
       still running and reporting (a build tool that cannot fail is worthless, and
       one failure must not mask the rest).
@@ -1213,11 +1221,16 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       C host; build.sh also invokes gcc, **nasm (46×)**, ld, qemu, python3 — each
       its OWN seam (assembler `[~]`, linker `[ ]`, emulator `[!]`). **"The build is
       orchestrated by LA" must never come to mean "no foreign tools in the build."**
-      *Why `[~]`:* **25 of 103 stages.** The shape is proven on real stages; the
-      rest is mechanical volume (~1-2 sessions). The remainder is also where the
-      stages stop fitting the `cmd + args + a stdout marker` shape — byte-comparing
-      artifacts, QEMU gates, `unshare`, `timeout` — and will need more than a STEP
-      entry. Not `[x]` until it actually is.
+      *Why `[~]`:* **48 of 103 stages.** The easy volume is now **spent**: every
+      remaining stage is one that does **not** fit `cmd + args + a stdout marker`,
+      so the rest is a **design** question, not typing. Four kinds: (a) **cross-engine
+      byte-identity** diffs (host vs VM artifacts — needs a compare-files STEP kind);
+      (b) **negative/resource gates** needing `timeout` rc-124 (`DEPTH(DEPTH)`
+      divergence) or `unshare` (the PID-namespace init test); (c) **QEMU** gates
+      (`[!]` — a foreign emulator); (d) stages driving the toolchain itself
+      (`codegen.la`/`secd.la`), which **cannot** be a naive STEP: they rewrite
+      `logos_program.bin`/`logos_secd` — the very artifacts the running orchestrator
+      IS. Not `[x]` until it actually is.
 - [ ] **LA-native test/verification harness** — the system testing itself in its
       own language (today: bash gates + QEMU).
 - [!] **The emulator** — testing runs in QEMU (foreign). Closing it needs our own
