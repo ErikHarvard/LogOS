@@ -1308,8 +1308,26 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       conjunction runs QSTAGE (`e`) before K2STAGE (`f`) — exactly as build.sh runs
       `build_k2.sh` ONCE and then both `gate_k1.sh` and `gate_k2.sh`. Verified
       **BUILD GREEN, 67 stages = 57 marker + 4 cross-engine + 3 guard + 1 namespace
-      + 2 QEMU (K1 boots+speaks, K2 faults loudly)**. **K3–K7** (PMM/paging ·
-      W^X/NX · timer IRQ · preemption) remain, each its own kernel-ELF variant.
+      + 2 QEMU (K1 boots+speaks, K2 faults loudly)**.
+      **AN EIGHTH SLICE — QEMU K3b, the PMM on the metal (`68 stages`, `K3STAGE`).**
+      K1/K2 proved boot + loud faults; K3b proves the physical memory manager reads
+      the LOADER's **real** multiboot map (not a synthetic string) via the `peek()`
+      runtime builtin: `kernel_pmm.elf` prints **"K3B ARENA 1048576"** (largest
+      usable-RAM arena base = `0x100000`) and **"K3B FRAME 1048576"** (first frame
+      allocated = the same base), then exits 33 — two markers AND the exit code, so
+      a wrong map (right rc, wrong base) still FAILs. ★ **Fast by design — it GATES
+      a pre-built ELF, it does NOT drive the build.** Unlike K1/K2 (whose
+      `build_k2.sh` is seconds), `kernel_pmm.elf`'s build (`kernel/build_k3b.sh`)
+      recompiles `native_codegen3` under tiny_host — **~16 min** (measured 962 s
+      under load) — squarely the foreign-toolchain seam (item c). Driving it inline
+      would triple buildla's wall-time, so the ELF is built **out of band** (as
+      build.sh does before its gate) and buildla gates whatever is present: qemu
+      absent → skip; ELF not pre-built → skip (naming `kernel/build_k3b.sh`); else
+      boot + judge. K3STAGE **isolate-verified** on the VM (real boot → both markers
+      + exit 33 → PASS) + codegen-clean; it is an independent leaf (no ordering
+      dependency), so **68 stages = 57 marker + 4 cross-engine + 3 guard + 1
+      namespace + 3 QEMU**. **K4–K7** (paging · W^X/NX · timer IRQ · preemption)
+      remain, each its own kernel-ELF variant.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
@@ -1323,10 +1341,10 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       **exact code equality**, never vacuous. So the code is checked always, the
       marker only when given — which is what lets `DEPTH(DEPTH)`, whose output is
       empty by construction, be gated honestly rather than fudged.
-      *Why `[~]`:* **67 of 103 stages.** What remains is **design- and cost-bound**,
-      not typing: ~~(a) `unshare` gates~~ **DONE (`USTAGE`)**; ~~(b) QEMU~~ **K1+K2
-      DONE (`QSTAGE`/`K2STAGE`)**, K3–K7 remain (each a foreign-emulator boot of its
-      own kernel variant); (c) stages driving the toolchain itself
+      *Why `[~]`:* **68 of 103 stages.** What remains is **design- and cost-bound**,
+      not typing: ~~(a) `unshare` gates~~ **DONE (`USTAGE`)**; ~~(b) QEMU~~ **K1+K2+K3b
+      DONE (`QSTAGE`/`K2STAGE`/`K3STAGE`)**, K4–K7 remain (each a foreign-emulator boot
+      of its own kernel variant); (c) stages driving the toolchain itself
       (`codegen.la`/`secd.la`) — the artifacts the orchestrator IS. Cross-engine is
       **cost-bound**: each XSTEP is a host run + codegen + bundle + VM run, so the
       four are cheap only because they are fast pure modules; extending to

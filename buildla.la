@@ -405,6 +405,38 @@ glyph K2STAGE = la _.
         (read_file("/tmp/buildla_q2_out.txt")))
       (RUN2("/usr/bin/timeout")(QK2CMD)("/tmp/buildla_q2_out.txt")))
 
+# ── QEMU K3b — the PMM walks the REAL multiboot map on the metal ──
+#  K1/K2 proved boot + loud faults; K3b proves the physical memory manager reads
+#  the LOADER's real memory map (not a synthetic string) via the `peek()` runtime
+#  builtin and finds the standard usable-RAM arena: `kernel_pmm.elf` parses the
+#  multiboot map, prints "K3B ARENA 1048576" (largest arena base = 0x100000, the
+#  start of usable PC RAM) and "K3B FRAME 1048576" (the first frame allocated from
+#  it = the same base), then exits 33. b_τ ≡ f_τ carried to the metal, on REAL
+#  hardware-reported memory.
+#  ★ FAST BY DESIGN: this GATES a pre-built ELF; it does NOT drive the build.
+#  Unlike K1/K2 (whose `build_k2.sh` is seconds), `kernel_pmm.elf`'s build
+#  (`kernel/build_k3b.sh`) recompiles `native_codegen3` under tiny_host — ~16 min
+#  — squarely the foreign toolchain seam (roadmap item c). Driving it inline would
+#  triple buildla's wall-time, so the ELF is built OUT OF BAND (as build.sh does
+#  before its gate) and buildla gates whatever is present: qemu absent → skip;
+#  ELF not pre-built → skip (with the build command named); else boot + judge.
+#  Two markers AND the exit code, so a wrong map (right rc, wrong base) still FAILs.
+glyph QK3CMD = "30 qemu-system-x86_64 -kernel kernel/kernel_pmm.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
+glyph K3STAGE = la _.
+  IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _.
+      IF(str_eq(str_head(stat("kernel/kernel_pmm.elf")))("-"))
+        (la _. SEQ(print("  PASS  vm  (skipped) kernel_pmm.elf not pre-built (run kernel/build_k3b.sh)"))(TRUE))
+        (la _.
+          (la code.
+            (la out.
+              (la ok.
+                SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K3b: PMM walks the REAL multiboot map via peek() — largest arena 0x100000, first frame allocated, clean exit 33")))(ok))
+              (AND(str_eq(code)("33"))(AND(HASSUB(out)("K3B ARENA 1048576"))(HASSUB(out)("K3B FRAME 1048576")))))
+            (read_file("/tmp/buildla_q3_out.txt")))
+          (RUN2("/usr/bin/timeout")(QK3CMD)("/tmp/buildla_q3_out.txt"))))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -423,7 +455,9 @@ glyph MAIN =
        (la c.
          (la d.
            (la e.
-             (la f. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(f))))))
+             (la f.
+               (la g. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(g)))))))
+               (SEQ(print("── QEMU K3b: the PMM walks the REAL multiboot map on the metal (peek) ──"))(K3STAGE("!"))))
              (SEQ(print("── QEMU K2: the fault IDT — a #UD is a diagnosed serial halt (EXCEPTION 06) ──"))(K2STAGE("!"))))
            (SEQ(print("── QEMU K1: the sovereign kernel boots on bare metal (foreign emulator) ──"))(QSTAGE("!"))))
          (SEQ(print("── namespaces: PID-namespace init — orphan reaping as PID 1 (unshare) ──"))(USTAGE("!"))))
