@@ -1294,9 +1294,22 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       **BUILD GREEN, 66 stages = 57 marker + 4 cross-engine + 3 guard + 1 namespace
       + 1 QEMU**. *Honest scope:* the kernel ELF is built by the foreign nasm/ld
       toolchain (`kernel/build_k2.sh`, the assembler/linker seam) — buildla drives
-      it, as it drives tiny_host; the LA contribution is the gate. Only **K1**
-      here; **K2–K7** (fault IDT · PMM/paging · W^X/NX · timer IRQ · preemption)
-      are further QEMU stages, each its own kernel-ELF variant.
+      it, as it drives tiny_host; the LA contribution is the gate.
+      **A SEVENTH SLICE — QEMU K2, the fault IDT (`67 stages`, `K2STAGE`).** K1
+      proved the kernel boots and speaks; **K2 proves it FAILS LOUDLY at ring 0** —
+      the guard-step discipline one privilege level down, enforced by the CPU.
+      `kernel_fault.elf` (the `ud2` variant `build_k2.sh` builds ALONGSIDE
+      `kernel.elf`) executes an undefined instruction; vector 6 (`#UD`) traps into
+      the IDT, `isr6` writes **"EXCEPTION 06 …"** to COM1 and exits **35**
+      (isa-debug-exit FAIL — ≠ 33, ≠ a silent triple-fault+reboot). So a CPU fault
+      **names itself and halts** — `b_τ ≡ f_τ` at ring 0. Same SAFE `stat()` probe
+      as K1. It does **not rebuild**: `kernel_fault.elf` is the shared prerequisite
+      QSTAGE's `build_k2.sh` already produced, and buildla's eager left-to-right
+      conjunction runs QSTAGE (`e`) before K2STAGE (`f`) — exactly as build.sh runs
+      `build_k2.sh` ONCE and then both `gate_k1.sh` and `gate_k2.sh`. Verified
+      **BUILD GREEN, 67 stages = 57 marker + 4 cross-engine + 3 guard + 1 namespace
+      + 2 QEMU (K1 boots+speaks, K2 faults loudly)**. **K3–K7** (PMM/paging ·
+      W^X/NX · timer IRQ · preemption) remain, each its own kernel-ELF variant.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
@@ -1310,10 +1323,10 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       **exact code equality**, never vacuous. So the code is checked always, the
       marker only when given — which is what lets `DEPTH(DEPTH)`, whose output is
       empty by construction, be gated honestly rather than fudged.
-      *Why `[~]`:* **66 of 103 stages.** What remains is **design- and cost-bound**,
-      not typing: ~~(a) `unshare` gates~~ **DONE (`USTAGE`)**; ~~(b) QEMU~~ **K1
-      DONE (`QSTAGE`)**, K2–K7 remain (each a foreign-emulator boot of its own
-      kernel variant); (c) stages driving the toolchain itself
+      *Why `[~]`:* **67 of 103 stages.** What remains is **design- and cost-bound**,
+      not typing: ~~(a) `unshare` gates~~ **DONE (`USTAGE`)**; ~~(b) QEMU~~ **K1+K2
+      DONE (`QSTAGE`/`K2STAGE`)**, K3–K7 remain (each a foreign-emulator boot of its
+      own kernel variant); (c) stages driving the toolchain itself
       (`codegen.la`/`secd.la`) — the artifacts the orchestrator IS. Cross-engine is
       **cost-bound**: each XSTEP is a host run + codegen + bundle + VM run, so the
       four are cheap only because they are fast pure modules; extending to
