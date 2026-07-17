@@ -1403,9 +1403,35 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       (scratch MAIN → both PASS, codegen-clean) then full **BUILD GREEN, 73 stages =
       57 marker + 4 cross-engine + 3 guard + 1 namespace + 8 QEMU (K1 boots · K2 #UD
       faults · K3b PMM · K4b paging · K4c-wx/nx W^X+NX enforce · K5a timer fires ·
-      K5b.2 preempts)**. **K5b.1** (cooperative spawn/yield + GC-across-suspension —
-      Linux-hosted, *drives `native_codegen3`* so it needs the toolchain-STEP care,
-      not a naive gate) and **K6–K7** (the remaining kernel milestones) remain.
+      K5b.2 preempts)**.
+      **A TWELFTH SLICE — K5b.1, the COOPERATIVE scheduler in the LA-native runtime
+      (`75 stages`, `K5B1STAGE` + `K5B1BSTAGE`).** K5b.2's *preemption* stands on a
+      userspace foundation: `native_codegen3`'s spawn/yield green-thread runtime and
+      its GC's awareness of *suspended* tasks. K5b.1 gates that foundation. These are
+      **not QEMU** (no ring 0) — they RUN a native binary the LA-native backend
+      emitted, which is exactly the ORCHESTRATION boundary the QEMU stages already
+      hold: the foreign toolchain (`tiny_host` + `native_codegen3`) BUILDS the binary
+      **out of band** (`kernel/build_k5b1.sh`; the ~78s compile is *not* driven
+      inline, as K3b/K4/K5 avoid), buildla RUNS + JUDGES it. **K5b.1a**
+      (`native_pingpong.bin`): two workers round-robin via `yield()`, interleaving
+      exactly `A B A B A B` then `done` — each worker's loop counter + mid-loop
+      continuation preserved across a REAL context switch on its own saved stack; the
+      whole exact interleave is the marker, clean exit 0. **K5b.1b**
+      (`native_gc.bin`): task A holds a canary live across a yield; task B churns
+      ~400 MB, forcing the periodic mark-sweep to fire *while A is suspended* —
+      `rt_gc`'s per-task root scan (every runnable task's saved regs +
+      `[saved_rsp, stkbase)`) marks it, so it is byte-intact on resume (`SURVIVED` +
+      `B-churned`); the prior rt_gc, scanning only the current task, swept it — the
+      regression this gate guards. Both compile to the SHARED `native_codegen3_out`,
+      so `build_k5b1.sh` copies each to a DISTINCT stable name buildla can gate.
+      SAFE: running these binaries never touches `logos_program.bin` or `logos_secd`
+      (no fork-bomb, no stream clobber). New out-of-band `.bin` artifacts are
+      gitignored (only the `.la`/`.sh` source is committed), as the kernel ELFs are.
+      Isolate-verified (scratch MAIN → both PASS, codegen-clean) then full **BUILD
+      GREEN, 75 stages = 57 marker + 4 cross-engine + 3 guard + 1 namespace + 8 QEMU
+      + 2 native-task**. So all of K5 (timer capability · preemption on the metal ·
+      the cooperative runtime + GC-safe suspension beneath it) is now orchestrated in
+      LA. **K6–K7** (the remaining kernel milestones) remain.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.

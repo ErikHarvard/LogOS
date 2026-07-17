@@ -595,6 +595,57 @@ glyph K5B2STAGE = la _.
             (read_file("/tmp/buildla_q5b2_out.txt")))
           (RUN2("/usr/bin/timeout")(QK5B2CMD)("/tmp/buildla_q5b2_out.txt"))))
 
+# ── native tasks — the COOPERATIVE scheduler in the LA-native runtime (K5b.1) ──
+#  The metal K5 stages (K5a timer, K5b.2 preemption) sit on a userspace
+#  foundation: native_codegen3's spawn/yield green-thread runtime, and its GC's
+#  awareness of suspended tasks. K5b.1 gates that foundation. These are NOT QEMU
+#  (no ring 0) — they RUN a native binary the LA-native backend (native_codegen3)
+#  emitted, exactly the ORCHESTRATION boundary the QEMU stages hold: the foreign
+#  toolchain (tiny_host + native_codegen3) BUILDS the binary OUT OF BAND
+#  (kernel/build_k5b1.sh; the ~78s native_codegen3 compile is not driven inline,
+#  as K3b/K4/K5 avoid), buildla RUNS + JUDGES it. Both binaries are pre-built to
+#  DISTINCT names (native_codegen3_out is a single shared file each compile
+#  overwrites) so buildla gates a stable artifact. SAFE: running these binaries
+#  never touches logos_program.bin or logos_secd (no fork-bomb / no stream clobber).
+
+# K5b.1a — cooperative spawn/yield. task_pingpong: two workers round-robin via
+#  yield(), interleaving exactly "A B A B A B" then "done" — each worker's loop
+#  counter + mid-loop continuation preserved across a REAL context switch on its
+#  own saved stack. The whole exact interleave is the marker (a dropped/reordered
+#  task or corrupt counter changes it); clean exit 0.
+glyph QK5B1CMD = "15 ./kernel/native_pingpong.bin"
+glyph K5B1STAGE = la _.
+  IF(str_eq(str_head(stat("kernel/native_pingpong.bin")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) native_pingpong.bin not pre-built (run kernel/build_k5b1.sh)"))(TRUE))
+    (la _.
+      (la code.
+        (la out.
+          (la ok.
+            SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K5b.1a: cooperative tasks via spawn/yield — two workers round-robin 'A B A B A B' then done, each worker's loop counter + mid-loop continuation preserved across a REAL context switch on its own saved stack, clean exit 0")))(ok))
+          (AND(str_eq(code)("0"))(HASSUB(out)("A\nB\nA\nB\nA\nB\ndone"))))
+        (read_file("/tmp/buildla_k5b1_out.txt")))
+      (RUN2("/usr/bin/timeout")(QK5B1CMD)("/tmp/buildla_k5b1_out.txt")))
+
+# K5b.1b — a suspended task's heap roots survive a GC. task_gc: task A holds a
+#  canary string live across a yield; task B then churns ~400 MB of garbage,
+#  forcing the periodic mark-sweep to fire WHILE A is suspended. rt_gc's per-task
+#  root scan (every runnable task's saved regs + [saved_rsp, stkbase)) marks A's
+#  canary, so it is byte-intact on resume: "SURVIVED" (+ "B-churned" = the churn
+#  ran). The prior rt_gc, scanning only the current task, sweeps it -> "CORRUPTED"
+#  or a crash: this is the regression the gate guards. Clean exit 0.
+glyph QK5B1BCMD = "90 ./kernel/native_gc.bin"
+glyph K5B1BSTAGE = la _.
+  IF(str_eq(str_head(stat("kernel/native_gc.bin")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) native_gc.bin not pre-built (run kernel/build_k5b1.sh)"))(TRUE))
+    (la _.
+      (la code.
+        (la out.
+          (la ok.
+            SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))("K5b.1b: a suspended task's heap roots survive a GC — task B churns ~400MB forcing collections while task A is suspended; rt_gc's per-task root scan keeps A's canary byte-intact (SURVIVED), GC-safe across suspension, clean exit 0")))(ok))
+          (AND(str_eq(code)("0"))(AND(HASSUB(out)("SURVIVED"))(HASSUB(out)("B-churned")))))
+        (read_file("/tmp/buildla_k5b1b_out.txt")))
+      (RUN2("/usr/bin/timeout")(QK5B1BCMD)("/tmp/buildla_k5b1b_out.txt")))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -619,7 +670,11 @@ glyph MAIN =
                    (la i.
                      (la j.
                        (la k.
-                         (la l. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(l))))))))))))
+                         (la l.
+                           (la m.
+                             (la n. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(n))))))))))))))
+                             (SEQ(print("── native tasks (K5b.1b): a suspended task's heap roots survive a GC — rt_gc scans the suspended task's roots ──"))(K5B1BSTAGE("!"))))
+                           (SEQ(print("── native tasks (K5b.1a): cooperative spawn/yield in the LA-native runtime — round-robin A B A B A B done ──"))(K5B1STAGE("!"))))
                          (SEQ(print("── QEMU K5b.2: PREEMPTIVE tasks — non-yielding workers interleaved by the timer ──"))(K5B2STAGE("!"))))
                        (SEQ(print("── QEMU K5a: the timer IRQ live on the metal — an async IRQ0 preempts the LA spin ──"))(K5STAGE("!"))))
                      (SEQ(print("── QEMU K4c-nx: NX ENFORCEMENT — a FETCH at a NO-EXECUTE page faults (EXCEPTION 0e, exit 35) ──"))(K4CNXSTAGE("!"))))
