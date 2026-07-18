@@ -83,30 +83,35 @@ glyph DROP = Z(la self. la n. la s.
 glyph LENOF = la s. str_to_int(str_len(s))
 glyph BYTE  = la s. la i. str_to_int(ord(str_head(DROP(i)(s))))
 
-#   Little-endian decode. Explicitly, not by a clever fold, because the
-#   byte order IS the thing being asserted and it should be readable as such.
-glyph U16 = la s. la i. add(BYTE(s)(i))(mul(BYTE(s)(add(i)(1)))(256))
-glyph U32 = la s. la i.
-    add(BYTE(s)(i))
-   (add(mul(BYTE(s)(add(i)(1)))(256))
-   (add(mul(BYTE(s)(add(i)(2)))(65536))
-       (mul(BYTE(s)(add(i)(3)))(16777216))))
+#   Little-endian decode, CARRYING THE TAIL rather than re-indexing.
+#
+#   ★ The obvious form — add(BYTE(s)(i))(mul(BYTE(s)(add(i)(1)))(256)) — is
+#   quadratic in disguise. BYTE re-DROPs from offset 0 every call, and DROP is
+#   O(i) because str_tail COPIES, so a 4-byte field at offset 800 copied ~3200
+#   bytes to read 4. LEDEC walks the tail it already holds: one DROP per FIELD
+#   instead of one per BYTE, which is the whole 4x on U32 and the reason a
+#   section-header walk stops being O(sections x offset).
+glyph LEDEC = Z(la self. la n. la t.
+    IF(int_eq(n)(0))
+      (la _. 0)
+      (la _. add(str_to_int(ord(str_head(t))))(mul(self(sub(n)(1))(str_tail(t)))(256))))
+glyph U16 = la s. la i. LEDEC(2)(DROP(i)(s))
+glyph U32 = la s. la i. LEDEC(4)(DROP(i)(s))
 #   The low word of an 8-byte field, and the high word we ignore but check.
 glyph LOW4  = la s. la i. U32(s)(i)
 glyph HIGH4 = la s. la i. U32(s)(add(i)(4))
 glyph SIGN32 = la n. IF(lt(n)(2147483648))(la _. n)(la _. sub(n)(4294967296))
 
 #   A NUL-terminated string out of a string table.
-glyph CSTR_GO = Z(la self. la s. la i. la acc.
+#   ★ Same fix, and here it mattered more: the old walk did DROP(i)(s) for
+#   EVERY CHARACTER, so reading one name was O(n x len) — the section-name
+#   table was being re-walked from the start once per letter. Carry the tail.
+glyph CSTR_GO = Z(la self. la t. la acc.
     (la c. IF(int_eq(str_to_int(ord(c)))(0))
              (la _. acc)
-             (la _. self(s)(add(i)(1))(concat(acc)(c))))
-    (str_head(DROP(i)(s))))
-#   The accumulator is an implementation detail of the walk, so it is seeded
-#   here rather than at every call site. Calling the 3-argument form with 2
-#   arguments does not fail — it silently yields a PARTIAL APPLICATION, which
-#   then reaches concat as a function and dies far from the cause.
-glyph CSTR = la s. la i. CSTR_GO(s)(i)("")
+             (la _. self(str_tail(t))(concat(acc)(c))))
+    (str_head(t)))
+glyph CSTR = la s. la i. CSTR_GO(DROP(i)(s))("")
 
 # ── the ELF header ──────────────────────────────────────────────────────────
 #   e_shoff@0x20(8) e_shentsize@0x3a(2) e_shnum@0x3c(2) e_shstrndx@0x3e(2)
