@@ -1456,11 +1456,32 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       markers `QGATE` doesn't model). Isolate-verified (scratch → all six PASS,
       codegen-clean, a mis-nested paren caught by a code-paren-balance check *before*
       the codegen) then full **BUILD GREEN, 81 stages = 57 marker + 4 cross-engine +
-      3 guard + 1 namespace + 8 QEMU + 2 native-task + 6 ring-3 (K6)**. **K7** (the
-      final kernel milestone: the sovereign bootloader — K7a/K7b are already built +
-      gated in `build.sh`) is the last kernel slice; then buildla's remaining ~22 of
-      103 are the cross-engine byte-identity, resource/QEMU, and toolchain-driving
-      stages already scoped in the honest-boundary notes below.
+      3 guard + 1 namespace + 8 QEMU + 2 native-task + 6 ring-3 (K6)**.
+      **A FOURTEENTH SLICE — K7, the SOVEREIGN BOOTLOADER: LogOS boots ITSELF
+      (`83 stages`, two slices).** K1..K6 booted via QEMU's `-kernel` — a *foreign*
+      loader placing the image. K7 closes that last seam: LogOS's OWN 512-byte MBR +
+      stage-2 loader, off a **raw disk image** (`-drive if=ide`, NOT `-kernel`), with
+      no GRUB and no multiboot loader. **K7a** — the sovereign boot sector: the MBR
+      ran in real mode, built a GDT, entered 32-bit protected mode (`K7 real` +
+      `K7 pmode`), exit 33. **K7b MILESTONE** — the whole chain: MBR (`K7 real`) →
+      reads stage 2 off disk (`K7 stage2`) → A20+GDT+protected mode (`K7 pmode`) →
+      ATA-PIO-loads the kernel's segments and hands off (`K7 handoff`) → the handed-off
+      kernel brings up long mode + the syscall substrate and the LA image speaks
+      `I AM THAT I AM`, exit 33. The gate demands **all five** stage-markers, so a
+      chain that fell over anywhere still FAILs. `QGATE` served this unchanged — the
+      disk-image path took the `stat()`/skip slot, the `-drive` command the `cmd`
+      slot; the images are built out of band (`kernel/build_k7a.sh` / `build_k7b.sh`)
+      and gitignored like the ELFs. Isolate-verified (scratch → both PASS,
+      codegen-clean; two mis-nested parens — one in `K7ALL`, one in the 16-var AND
+      fold — both caught by the code-paren-balance check *before* codegen) then full
+      **BUILD GREEN, 83 stages = 57 marker + 4 cross-engine + 3 guard + 1 namespace +
+      8 QEMU + 2 native-task + 6 ring-3 + 2 sovereign-boot**. **So the entire
+      sovereign kernel K1..K7 — boot, faults, PMM, paging (translate + protect),
+      timer, preemption, ring-3 user mode + IPC, and now LogOS booting ITSELF off its
+      own disk — is orchestrated in Lingua Adamica, on the VM, no shell.** Remaining:
+      buildla's other ~20 of build.sh's 103 stages — the cross-engine byte-identity
+      (host-artifact == VM-artifact) category, resource/negative gates, and the
+      toolchain-driving stages scoped in the honest-boundary notes below.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.

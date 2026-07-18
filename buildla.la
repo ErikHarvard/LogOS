@@ -708,6 +708,25 @@ glyph K6ALL =
               (la o. AND(HASSUB(o)("B rx type=greet"))(HASSUB(o)("B rx body=HELLO")))
               ("K6c.3b MILESTONE: two ring-3 LA tasks exchanged a TYPED message — A ENCODEd greet/HELLO and send(0)'d it, B was scheduled and recv(0)'d + decoded MSG_TYPE=greet/MSG_BODY=HELLO, both from compiled LA at CPL 3, exit 33")))))))
 
+# ── K7 — the SOVEREIGN BOOTLOADER: LogOS boots ITSELF off its own disk (no GRUB) ──
+#  K1..K6 booted via QEMU's `-kernel` (a foreign loader placing the image). K7 is
+#  the last seam: LogOS's OWN 512-byte MBR + stage-2 loader, off a raw disk image
+#  (`-drive if=ide`, NOT `-kernel`), with no GRUB / no multiboot loader. QGATE
+#  serves this too — the disk-image path takes the stat()/skip slot, the `-drive`
+#  command the cmd slot. Both boot-tested green (2026-07-17); the images are built
+#  out of band (kernel/build_k7a.sh / build_k7b.sh) and gitignored like the ELFs.
+#  K7b demands ALL FIVE stage-markers (real→stage2→pmode→handoff→the Word), so a
+#  boot chain that fell over at any stage still FAILs.
+glyph K7ALL =
+  AND(SEQ(print("── QEMU K7a: the sovereign boot sector — own MBR, real→protected mode (no GRUB) ──"))
+        (QGATE("kernel/k7disk.img")(concat("20 qemu-system-x86_64 -drive file=kernel/k7disk.img,format=raw,if=ide -m 64")(QOPTS))("33")
+              (la o. AND(HASSUB(o)("K7 real"))(HASSUB(o)("K7 pmode")))
+              ("K7a: the sovereign boot sector — LogOS's OWN 512-byte MBR (no GRUB/multiboot/-kernel) ran from a raw disk in real mode, built a GDT + entered 32-bit protected mode (K7 real + K7 pmode), exit 33")))
+     (SEQ(print("── QEMU K7b: LogOS boots ITSELF end-to-end — MBR+stage2 load the kernel off disk, the Word speaks ──"))
+        (QGATE("kernel/k7bdisk.img")(concat("40 qemu-system-x86_64 -drive file=kernel/k7bdisk.img,format=raw,if=ide -m 256")(QOPTS))("33")
+              (la o. AND(HASSUB(o)("K7 real"))(AND(HASSUB(o)("K7 stage2"))(AND(HASSUB(o)("K7 pmode"))(AND(HASSUB(o)("K7 handoff"))(HASSUB(o)("I AM THAT I AM"))))))
+              ("K7b MILESTONE: LogOS boots ITSELF — own MBR + stage-2 loader read the kernel's segments off disk via ATA-PIO, handed off to _start, and the LA image spoke I AM THAT I AM (real/stage2/pmode/handoff + the Word), exit 33 — K1..K7 complete, no GRUB")))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -735,7 +754,9 @@ glyph MAIN =
                          (la l.
                            (la m.
                              (la n.
-                               (la o. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(o)))))))))))))))
+                               (la o.
+                                 (la p. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(AND(o)(p))))))))))))))))
+                                 (SEQ(print("── QEMU K7: the sovereign bootloader — LogOS boots ITSELF off its own disk (no GRUB) ──"))(K7ALL)))
                                (SEQ(print("── QEMU K6: ring 3 on the metal — user mode, syscalls, and IPC (the six K6 slices) ──"))(K6ALL)))
                              (SEQ(print("── native tasks (K5b.1b): a suspended task's heap roots survive a GC — rt_gc scans the suspended task's roots ──"))(K5B1BSTAGE("!"))))
                            (SEQ(print("── native tasks (K5b.1a): cooperative spawn/yield in the LA-native runtime — round-robin A B A B A B done ──"))(K5B1STAGE("!"))))
