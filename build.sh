@@ -1373,6 +1373,69 @@ if bad: print("      regressed:", "; ".join(bad))
 sys.exit(1 if bad else 0)
 PY
     rm -f /tmp/nasm_mem.bin /tmp/asm_mem.out
+    # (2d2) OPERAND WIDTHS + hex literals + size keywords + immediate-to-memory.
+    #       The kernel .asm carry 713 sub-64-bit register mentions against 451
+    #       64-bit ones and 271 hex literals, so a 64-bit/decimal-only assembler
+    #       reads almost none of the OS. Width is not decoration: it selects the
+    #       opcode (the 8-bit form is the 32-bit one MINUS ONE), the 0x66 prefix,
+    #       and whether a REX byte may exist at all.
+    rm -f asm_out.bin /tmp/nasm_w.bin; cp asm_test_width.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm_w.out 2>&1 || { echo "FAIL  asm.la: width program failed: $(tail -1 /tmp/asm_w.out)"; ok=0; }
+    nasm -f bin asm_test_width.asm -o /tmp/nasm_w.bin 2>/dev/null || { echo "FAIL  asm.la: nasm width reference failed"; ok=0; }
+    cmp -s asm_out.bin /tmp/nasm_w.bin \
+      || { echo "FAIL  asm.la: operand widths DIFFER from nasm"; ok=0;
+           python3 - <<'PY'
+a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_w.bin','rb').read()
+print('      asm.la:', a.hex(' '))
+print('      nasm  :', b.hex(' '))
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x:02x} nasm={y:02x}'); break
+PY
+         }
+    python3 - <<'PY' || { echo "FAIL  asm.la: a width/REX encoding quirk regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# Each quirk is asserted BY NAME so a regression identifies itself rather than
+# surfacing as an anonymous byte diff. All six are hardware facts: an encoder
+# missing any produces something the CPU MISREADS, not merely something NASM
+# writes differently.
+q=[("mov al,0x20 -> B0 (8-bit, no REX)",   d[0:2]  == bytes([0xb0,0x20])),
+   ("mov ax -> 0x66 prefix",                d[2:4]  == bytes([0x66,0xb8])),
+   ("mov ah -> REX FORBIDDEN",              d[16:18]== bytes([0xb4,0x11])),
+   ("mov dil,5 -> BARE REX 0x40",           d[18:21]== bytes([0x40,0xb7,0x05])),
+   ("mov r9w,ax -> 0x66 BEFORE REX",        d[41:45]== bytes([0x66,0x41,0x89,0xc1])),
+   ("mov qword [rdi],0 -> imm32 not imm64", d[64:71]== bytes([0x48,0xc7,0x07,0,0,0,0]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PY
+    # (2d3) THE RED PATHS. A guard that cannot fire is not a guard, and
+    #       "the machinery is untouched" is an argument, not a test. Each of
+    #       these must halt LOUDLY (nonzero exit + a diagnostic naming the
+    #       cause), because every one of them is otherwise a SILENT-CORRUPTION
+    #       path: an unknown register used to encode as rax, and ah/spl share
+    #       register numbers 4-7 — told apart ONLY by whether a REX byte is
+    #       present, so emitting one alongside `ah` silently assembles a
+    #       DIFFERENT register than the author wrote.
+    for c in 'mov rax, rzz|undefined label' \
+             'mov ah, r8b|cannot be encoded alongside a REX' \
+             'mov [rdi], 5|operation size not specified' \
+             'mov rax, [rdi+8|unterminated ['; do
+        prog="${c%%|*}"; want="${c##*|}"
+        printf 'bits 64\n%s\n' "$prog" > asm_in.asm
+        if ./tiny_host asm.la >/tmp/asm_red.out 2>&1; then
+            echo "FAIL  asm.la: '$prog' assembled instead of halting loudly"; ok=0
+        else
+            grep -qF "$want" /tmp/asm_red.out \
+              || { echo "FAIL  asm.la: '$prog' halted without naming '$want': $(tail -1 /tmp/asm_red.out)"; ok=0; }
+        fi
+    done
+    # …and the negative control: a LEGAL program must still assemble, so the
+    # guards above are proven to discriminate rather than to reject everything.
+    printf 'bits 64\nmov byte [rdi], 5\nmov ah, bl\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1 \
+      || { echo "FAIL  asm.la: a legal width program was rejected by a guard"; ok=0; }
+    rm -f /tmp/nasm_w.bin /tmp/asm_w.out /tmp/asm_red.out
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`

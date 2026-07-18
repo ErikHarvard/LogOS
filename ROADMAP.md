@@ -1229,11 +1229,54 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       `e9` regardless — that is now fixed)*; **jcc covers `jz`/`je`/`jnz`/`jne`
       only**, not the signed/unsigned comparison set (`jl`/`jg`/`jb`/`ja`…),
       which is the same encoding plus a condition nibble and is mechanical to
-      extend; no sections, no data definitions, no immediates-to-memory, no
+      extend; no sections, no data definitions, no
       paging/GDT/IDT/segment forms. So it **cannot yet assemble
       `boot.asm` or `secd.asm`** and NASM remains in the kernel build. Closed for
       what is here, honestly open beyond it; the byte-identity gate extends to
       each increment.
+      **OPERAND WIDTHS + hex literals + size keywords + immediate-to-memory
+      added, byte-identical over 27 instructions / 86 bytes (2026-07-18).**
+      Scoped by MEASURING the target rather than guessing: across the seven
+      kernel `.asm` the sub-64-bit registers outnumber the 64-bit ones (713 uses
+      to 451), hex literals run 271 against 642 decimal, and the four size
+      keywords appear 181 times — so a 64-bit/decimal-only assembler reads
+      almost none of the OS it is meant to build. Width is not decoration: it
+      selects the opcode (**the 8-bit form is the 32-bit one MINUS ONE** —
+      `mov` 89→88, `add` 01→00), the `0x66` prefix, and **whether a REX byte may
+      exist at all**. The old encoder hard-coded `0x48` because every operand
+      was 64-bit; REX is now emitted only when it carries information, since an
+      unnecessary one is **not a no-op**. Four hardware facts are each asserted
+      BY NAME so a regression identifies itself: `mov dil, 5` → `40 b7 05`, a
+      **bare REX 0x40 carrying no bits**, emitted purely to reach `dil`;
+      `mov ah, 0x11` → `b4 11`, where a REX is **forbidden** (`ah/ch/dh/bh` and
+      `spl/bpl/sil/dil` share register numbers 4-7 and are told apart ONLY by
+      whether a REX is present, so emitting one silently assembles a DIFFERENT
+      register than was written — a mixed pair is now a loud halt, since it is
+      unrepresentable rather than re-encodable); `mov r9w, ax` → `66 41 89 c1`,
+      fixing `0x66` **before** REX; and `mov qword [rdi], 0` → `48 c7 07` + an
+      imm32 the CPU **sign-extends**, never imm64. Two tokenizer gaps closed
+      alongside: `;` comments (every kernel `.asm` is full of them; the earlier
+      tests avoided them entirely) and bracket-aware operands, so the
+      idiomatic `[rdi + 8]` no longer shreds on its spaces. **Sizing is now
+      MEASURED from the encoder** (`SIZEL ≡ len(ENC1)` by construction) rather
+      than computed in parallel with it — the width slice made lengths intricate
+      enough (optional prefix, optional REX, optional SIB, 0/1/4-byte disp,
+      1/2/4-byte imm) that a second implementation is exactly how a size/emit
+      drift bug enters, and the fixed point then converges silently on a wrong
+      image. **Red path verified**: four guards (unknown register, `ah`+REX,
+      unspecified operation size, unterminated `[`) each exit 1 naming the
+      cause, with a legal-program control proving they discriminate rather than
+      reject everything; and the GATE itself was proven to go red by breaking
+      the encoder deliberately — it named all three affected quirks. *(Two bugs
+      were caught only by running that red path: a `grep` whose pattern `[`
+      silently opened a regex character class, and a hollow test harness whose
+      truncated `if` block made a syntax error read as "all green". A test that
+      has never failed is not known to discriminate.)*
+      *Honest cost, measured:* assembling N `mov rax, rcx` went from
+      ~0.08 s to ~0.55 s per instruction — still LINEAR in program length, but a
+      ~6x constant, from the larger register table plus sizing-by-encoding.
+      Correctness was taken over speed here deliberately; at `boot.asm`'s 1555
+      lines that constant is the thing to attack next, before adding families.
 - [~] **LA image layout (`asmelf.la`) — the assembler+layout seam closed END TO
       END, gated (2026-07-16).** `elf.la` already emitted a runnable native ELF
       from LA — but its 36 bytes of machine code were **hand-assembled into a
