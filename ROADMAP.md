@@ -1315,7 +1315,7 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       the "linking" a `-f bin` image needs. A real **LA linker (ELF objects +
       relocations + linker script)** — which is what `ld -T kernel/kernel.ld`
       actually does for the kernel — remains genuinely open below.
-- [~] **LA linker — THREE SLICES DONE (2026-07-18, `track-b`).** Closes the `ld`
+- [~] **LA linker — FOUR SLICES DONE; IT LINKS AND THE RESULT RUNS (2026-07-18, `track-b`).** Closes the `ld`
       + linker-script seam. Real objects, symbol resolution, relocation sections.
       `asmelf.la` above closes only the single-source/single-segment image case
       and does not claim this.
@@ -1337,9 +1337,16 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
         relocated instruction is DETERMINED by its addresses, where a whole file
         carries ld's own choices. The 2-byte alignment gap stays a choice
         (ours `90 90`, ld's `66 90`) and the gate says so rather than hiding it.
-      - [ ] **slice 4 — ELF emission.** Header + program headers + the merged
-        image, then run it. Closest in shape to existing `asmelf.la` work; the
-        bytes that go inside are already correct.
+      - [x] **slice 4 — ELF EMISSION, and the OS runs it** (`7094101`). Two
+        objects in, one `ET_EXEC` out; it prints `I AM THAT I AM`, exit 0,
+        identical to ld's binary from the same inputs. **The proof is not a
+        diff — the gate executes it** and compares stdout and exit code (the
+        `asmelf.la` standard; a binary can diff correctly and still segfault).
+        Two `PT_LOAD` segments on purpose — one RWX would be simpler and would
+        still run, but **W^X** is a property the kernel enforces on itself
+        (K4c), so the gate asserts an R+X segment exists and no RWE one does.
+        Also asserts the loader's rule `p_offset ≡ p_vaddr (mod page)`, which
+        is why the file carries padding it does not obviously need.
       - [ ] **beyond:** N objects and N sections (today: two objects, `.text` +
         `.rodata` — what the fixtures exercise and therefore all that is
         claimed), and a linker script rather than a hard-coded layout.
