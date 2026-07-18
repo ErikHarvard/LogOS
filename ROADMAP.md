@@ -1378,6 +1378,32 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       substituted — that needs expression parsing, which is the same machinery
       `idt + 0x21 * 16` requires and belongs with it.
 
+      **THE PREPROCESSOR added — `%define` / `%ifdef` / `%ifndef` / `%else` /
+      `%elifdef` / `%endif` / `%include` — byte-identical over a 58-byte image
+      (2026-07-18). boot.asm is now 99.3% readable (1053 of 1060 lines); only
+      `section` (5), `global` (1) and `incbin` (1) remain.** This is a DIFFERENT
+      SUBSYSTEM from every slice above it: a text layer running BEFORE the
+      tokenizer, deciding which lines the assembler ever sees. It matters
+      because the `%ifdef` guards are how every kernel variant (K2, K5a, HAL2B,
+      RING3, HH1_HIGHMAP) is selected out of ONE source file — without it
+      `boot.asm` cannot be assembled at all, whatever the opcode coverage.
+      Scoped by measuring first, and the measurement kept it small: **no
+      function-like `%define`** (zero take arguments), most are valueless FLAGS
+      existing only to be tested, conditionals nest to depth 4 and balance, and
+      there are 4 `%include`s — so macro EXPANSION is not needed, only
+      definition, conditional selection and file splicing. `%include` **splices**
+      into the line stream and continues rather than recursing into a separate
+      pass, which falls out of the design and is also what NASM does: the
+      included file INHERITS the enclosing conditional state (`kbdirq.asm` sits
+      entirely inside the parent's `%ifdef HAL2B`) and a `%define` it makes stays
+      visible AFTER the include ends — both verified. **★ The gate's strongest
+      assertions are NEGATIVE ones** — that `%else` bodies, untaken `%ifdef`
+      bodies and untaken `%elifdef` branches DO NOT appear — because a
+      conditional that fails to *suppress* still assembles and still runs; it
+      merely carries code from a variant that was never selected, which is
+      exactly how a kernel built for one configuration ends up containing
+      another's instructions.
+
       *Honest cost, measured then reduced:* assembling N `mov rax, rcx` (CPU
       time under identical load) went `0.09` → `0.49` s/instruction with the
       slice — linear in program length, but a 5.5x constant — and back to

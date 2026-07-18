@@ -916,6 +916,79 @@ glyph STRIPLAB = la ts. IF(ISLABEL(HD(ts)))(la _. TL2(ts))(la _. ts)
 glyph SIZEL = la labs. la off. la ts. SIZEL0(labs)(off)(STRIPLAB(ts))
 glyph ENC1  = la labs. la off. la ts. ENC10(labs)(off)(STRIPLAB(ts))
 
+# ── THE PREPROCESSOR: %define / %ifdef / %ifndef / %else / %elifdef /
+#    %endif / %include ────────────────────────────────────────────────────────
+#   This is the last 12% of boot.asm, and it is a DIFFERENT SUBSYSTEM from
+#   everything above: a text layer that runs BEFORE the tokenizer, deciding
+#   which lines the assembler ever sees. It matters because the `%ifdef` guards
+#   are how every kernel variant (K2, K5a, HAL2B, RING3, HH1_HIGHMAP) is
+#   selected out of ONE source file — without it, boot.asm cannot be assembled
+#   at all, whatever the opcode coverage.
+#
+#   Scoped by measuring boot.asm first: NO function-like %define (zero take
+#   arguments), most are valueless FLAGS existing only to be tested by %ifdef,
+#   conditionals nest to depth 4 and are balanced, and there are 4 %includes.
+#   So macro EXPANSION is not needed — only definition, conditional selection,
+#   and file splicing.
+#
+#   %include SPLICES the file's lines into the stream and keeps going, rather
+#   than recursing into a separate pass. That falls out of the design and is
+#   also what NASM does: the included file INHERITS the enclosing conditional
+#   state (kbdirq.asm is entirely inside `%ifdef HAL2B` in the parent) and any
+#   %define it makes stays visible AFTER the include ends. Both are verified.
+#
+#   The condition stack holds PAIR(active)(taken) per level. `active` is
+#   ABSOLUTE — already ANDed with the enclosing level — so "are we emitting?"
+#   is just the top of the stack, and `taken` records whether any branch at
+#   this level has fired yet, which is what makes %else and %elifdef correct
+#   when several branches could match.
+glyph APPEND = Z(la self. la a. la b.
+    a(b)(la h. la t. CONS(h)(self(t)(b))))
+glyph PPEMIT   = la st. st(TRUE)(la h. la t. FST(h))
+glyph PPTAKEN  = la st. st(FALSE)(la h. la t. SND(h))
+glyph PPPARENT = la st. st(TRUE)(la h. la t. t(TRUE)(la h2. la t2. FST(h2)))
+glyph PPPOP    = la st. st(NIL)(la h. la t. t)
+glyph PPUSH    = la st. la cond.
+    (la act. CONS(PAIR(act)(act))(st))(AND(PPEMIT(st))(cond))
+glyph PPELSE   = la st.
+    (la par. la tk. CONS(PAIR(AND(par)(NOT(tk)))(TRUE))(PPPOP(st)))
+    (PPPARENT(st))(PPTAKEN(st))
+glyph PPELIF   = la st. la cond.
+    (la par. la tk.
+      (la act. CONS(PAIR(act)(OR(tk)(act)))(PPPOP(st)))
+      (AND(AND(par)(NOT(tk)))(cond)))
+    (PPPARENT(st))(PPTAKEN(st))
+glyph DEFINED  = la nm. la ds. ISSOME(LOOKREG(nm)(ds))
+glyph PPVAL    = la ts. NTH(2)(ts)
+glyph INCNAME  = la ts. str_tail(NTH(1)(ts))
+glyph PP = Z(la self. la ls. la ds. la st.
+  ls(PAIR(NIL)(ds))(la line. la rest.
+    (la ts.
+      (la d.
+        IF(str_eq(d)("%define"))
+          (la _. IF(PPEMIT(st))
+                   (la _. self(rest)(CONS(PAIR(NTH(1)(ts))(PPVAL(ts)))(ds))(st))
+                   (la _. self(rest)(ds)(st)))
+          (la _. IF(str_eq(d)("%ifdef"))
+            (la _. self(rest)(ds)(PPUSH(st)(DEFINED(NTH(1)(ts))(ds))))
+            (la _. IF(str_eq(d)("%ifndef"))
+              (la _. self(rest)(ds)(PPUSH(st)(NOT(DEFINED(NTH(1)(ts))(ds)))))
+              (la _. IF(str_eq(d)("%elifdef"))
+                (la _. self(rest)(ds)(PPELIF(st)(DEFINED(NTH(1)(ts))(ds))))
+                (la _. IF(str_eq(d)("%else"))
+                  (la _. self(rest)(ds)(PPELSE(st)))
+                  (la _. IF(str_eq(d)("%endif"))
+                    (la _. self(rest)(ds)(PPPOP(st)))
+                    (la _. IF(str_eq(d)("%include"))
+                      (la _. IF(PPEMIT(st))
+                               (la _. self(APPEND(LINES(read_file(INCNAME(ts)))(""))(rest))(ds)(st))
+                               (la _. self(rest)(ds)(st)))
+                      (la _. IF(PPEMIT(st))
+                        (la _. (la r. PAIR(CONS(line)(FST(r)))(SND(r)))(self(rest)(ds)(st)))
+                        (la _. self(rest)(ds)(st))))))))))
+      (HD(ts)))
+    (TOKS(line)(""))))
+
 # ── `equ` — SYMBOLIC CONSTANTS ──────────────────────────────────────────────
 #   boot.asm defines ~25 of these (`COM1 equ 0x3F8`, `K6C_SLOTSZ equ 288`).
 #
@@ -946,7 +1019,10 @@ glyph MKEQUS = Z(la self. la tls. la acc.
         (la _. self(t)(CONS(PAIR(HD(ts))(NTH(2)(ts)))(acc)))
         (la _. self(t)(acc))))
 glyph SUBTOK = la equs. la t.
-    (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. t))(LOOKREG(t)(equs))
+    (la o. IF(ISSOME(o))
+             (la _. (la v. IF(str_eq(v)(""))(la _. t)(la _. v))(OPTV(o)))
+             (la _. t))
+    (LOOKREG(t)(equs))
 glyph SUBLINE = la equs.
     Z(la self. la l. l(NIL)(la h. la t. CONS(SUBTOK(equs)(h))(self(t))))
 glyph SUBALL = la equs.
@@ -1003,13 +1079,15 @@ glyph ORGOF = Z(la self. la ls.
       IF(str_eq(HD(ts))("org"))(la _. NUMV(NTH(1)(ts)))(la _. self(t))))
 
 glyph ASSEMBLE = la src.
-    (la tls0.
-      (la equs.
-        (la tls. (la org. PASS2(FIXLABS(tls)(NIL)(TOTLEN(tls)(NIL)(org))(12)(org))(tls)(org))
-                 (ORGOF(tls)))
-        (SUBALL(equs)(tls0)))
-      (MKEQUS(tls0)(NIL)))
-    (MAPTOKS(LINES(src)("")))
+    (la pp.
+      (la tls0.
+        (la equs.
+          (la tls. (la org. PASS2(FIXLABS(tls)(NIL)(TOTLEN(tls)(NIL)(org))(12)(org))(tls)(org))
+                   (ORGOF(tls)))
+          (SUBALL(equs)(tls0)))
+        (APPEND(MKEQUS(tls0)(NIL))(SND(pp))))
+      (MAPTOKS(FST(pp))))
+    (PP(LINES(src)(""))(NIL)(NIL))
 
 glyph MAIN =
   (la code.

@@ -1617,6 +1617,55 @@ PYEQU2
     python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0x90,0x90]) else 1)" \
       || { echo "FAIL  asm.la: an equ definition line emitted bytes"; ok=0; }
     rm -f .asmgate/nasm_equ.bin .asmgate/asm_equ.out
+    # (2d9) THE PREPROCESSOR — %define / %ifdef / %ifndef / %else / %elifdef /
+    #       %endif / %include. A text layer running BEFORE the tokenizer, and a
+    #       different subsystem from every slice above it. It is what selects
+    #       each kernel variant (K2, K5a, HAL2B, RING3, HH1_HIGHMAP) out of ONE
+    #       source, so without it boot.asm cannot be assembled at all regardless
+    #       of opcode coverage. With it, boot.asm reaches 99.3% (1053 of 1060
+    #       lines); only section/global/incbin remain.
+    rm -f asm_out.bin .asmgate/nasm_pp.bin; cp asm_test_pp.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_pp.out 2>&1 || { echo "FAIL  asm.la: preprocessor program failed: $(tail -1 .asmgate/asm_pp.out)"; ok=0; }
+    nasm -f bin asm_test_pp.asm -o .asmgate/nasm_pp.bin 2>/dev/null || { echo "FAIL  asm.la: nasm preprocessor reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_pp.bin \
+      || { echo "FAIL  asm.la: preprocessor output DIFFERS from nasm"; ok=0;
+           python3 - <<'PYPP1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_pp.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+print('      asm.la:', a.hex(' ')); print('      nasm  :', b.hex(' '))
+PYPP1
+         }
+    python3 - <<'PYPP2' || { echo "FAIL  asm.la: a preprocessor semantic regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# The strongest assertions here are the NEGATIVE ones. A conditional that fails
+# to SUPPRESS still assembles and still runs -- it just silently includes code
+# from a variant that was not selected, which is exactly how a kernel built for
+# one configuration ends up carrying another's instructions.
+q=[("total length exactly 58 (nothing leaked)", len(d)==58),
+   ("%else NOT emitted when %ifdef was taken",  d.find(bytes([0xbb,0x02,0,0,0]))==-1),
+   ("%ifdef body NOT emitted when undefined",   d.find(bytes([0xbb,0x03,0,0,0]))==-1),
+   ("%ifndef NOT emitted when defined",         d.find(bytes([0xbe,0x06,0,0,0]))==-1),
+   ("%elifdef selects the right branch (edi=8)",d.find(bytes([0xbf,0x08,0,0,0]))>=0
+                                            and d.find(bytes([0xbf,0x07,0,0,0]))==-1
+                                            and d.find(bytes([0xbf,0x09,0,0,0]))==-1),
+   ("nested conditional, depth 2 (r8d=12)",     d.find(bytes([0x41,0xb8,0x0c,0,0,0]))>=0
+                                            and d.find(bytes([0x41,0xb8,0x0b,0,0,0]))==-1),
+   ("%include splices its body (ecx=0x11)",     d.find(bytes([0xb9,0x11,0,0,0]))>=0),
+   ("include INHERITS outer conditional",       d.find(bytes([0xba,0x22,0,0,0]))>=0),
+   ("%define made INSIDE include visible after",d.find(bytes([0x41,0xb9,0x0d,0,0,0]))>=0),
+   ("%define with a value substitutes",         d[0:5]==bytes([0xb8,0x34,0x12,0,0]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYPP2
+    # A valueless %define is a FLAG: it must register for %ifdef but must NOT
+    # substitute its empty value over the symbol and erase it from the source.
+    printf 'bits 64\n%%define FLAG\n%%ifdef FLAG\nmov eax, 1\n%%endif\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0xb8,1,0,0,0]) else 1)" \
+      || { echo "FAIL  asm.la: a valueless %define did not behave as a flag"; ok=0; }
+    rm -f .asmgate/nasm_pp.bin .asmgate/asm_pp.out
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`
