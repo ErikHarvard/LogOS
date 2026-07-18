@@ -197,6 +197,31 @@ glyph PHDR = la flags. la off. la vaddr. la sz. CAT(
 glyph DEFINES = la f. la ss. la i.
     AND(SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i)))
        (AND(NOT(SYM_IS_UNDEF(f)(ss)(i)))(NOT(SYM_IS_SECTION(f)(ss)(i))))
+#   ★ DUPLICATE DEFINITIONS MUST BE REFUSED, and this was a real gap: LOOKUP
+#   returns the FIRST match, so two objects both defining `greet` would have
+#   linked silently and one definition would have been chosen by input order.
+#   That is not a stylistic complaint — it is the "multiple definition" error
+#   every real linker raises, and the failure it prevents is vicious: the
+#   program links, runs, and calls whichever copy happened to come first, so
+#   the bug presents as the wrong behaviour rather than as a link failure.
+#
+#   Checked BEFORE anything is emitted, so a rejected link writes no output at
+#   all. A linker that refuses but leaves a stale executable behind invites the
+#   next command to run yesterday's binary.
+glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(f)(ss)))
+      (la _. FALSE)
+      (la _. IF(AND(DEFINES(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
+               (la _. TRUE)
+               (la _. self(add(i)(1))))))(0)
+
+glyph DUPCHECK = la f1. la ss1. la f2. la ss2. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(f2)(ss2)))
+      (la _. "ok")
+      (la _. IF(AND(DEFINES(f2)(ss2)(i))(HASDEF(f1)(ss1)(SYMNAME(f2)(ss2)(i))))
+               (la _. error(concat("link: duplicate symbol: ")(SYMNAME(f2)(ss2)(i))))
+               (la _. self(add(i)(1))))))(0)
+
 glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))
       (la _. sub(0)(1))
@@ -212,10 +237,11 @@ glyph MAIN =
   (la va1. (la va2.
   (la resolve.
   (la p1. (la p2.
-    (la merged. (la rodata. (la entry.
+    (la merged. (la rodata.
+      SEQ(DUPCHECK(f1)(ss1)(f2)(ss2))(
       SEQ(write_file("link_text.bin")(merged))(
       SEQ(write_exec("link_out")(CAT(
-            CONS(EHDR(entry))(
+            CONS(EHDR(resolve("_start")))(
             CONS(PHDR(5)(TEXT_FILEOFF)(TEXT_BASE)(str_to_int(str_len(merged))))(
             CONS(PHDR(4)(RODATA_FILEOFF)(RODATA_BASE)(str_to_int(str_len(rodata))))(
             CONS(ZEROS(sub(TEXT_FILEOFF)(add(EHSIZE)(mul(2)(PHENTSIZE)))))(
@@ -238,8 +264,7 @@ glyph MAIN =
         CONS(" bytes @ ")(
         CONS(int_to_str(t2addr))(
         CONS(NL)(
-        NIL))))))))))))))))))
-    )(resolve("_start"))
+        NIL)))))))))))))))))))
     )(SECBYTES(f2)(r2sec))
     )(CAT(CONS(p1)(CONS(NOPS(sub(t2addr)(add(TEXT_BASE)(SH_SIZE(f1)(t1sec)))))(CONS(p2)(NIL)))))
   )(APPLYRELS(f2)(ss2)(FIND_SEC(f2)(".rela.text"))(va2)(resolve)(t2addr)(SECBYTES(f2)(t2sec)))

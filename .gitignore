@@ -149,3 +149,5 @@ watched.la
 /ldtext.bin
 /link_text.bin
 /link_out
+/link_test_dup.o
+/gate.log

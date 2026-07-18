@@ -21,6 +21,7 @@ for t in nasm ld objcopy; do
 done
 
 nasm -f elf64 link_test_a.asm -o link_test_a.o
+nasm -f elf64 link_test_dup.asm -o link_test_dup.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
 ld -o link_ref link_test_a.o link_test_b.o
 objcopy -O binary --only-section=.text link_ref ldtext.bin
@@ -101,6 +102,30 @@ else
         || { echo "FAIL  link_reloc.la: refused, but not with the unresolved-symbol diagnostic"; ok=0; }
 fi
 
+# --- NEGATIVE: a symbol defined TWICE must be refused ---
+#   `ld` calls this "multiple definition" and refuses. Without the check a
+#   linker takes whichever definition came first and links happily, so the bug
+#   presents as the WRONG BEHAVIOUR at run time rather than as a link failure.
+#
+#   The fixture isolates it deliberately: link_test_dup.o defines BOTH _start
+#   and greet, so linking it against link_test_b.o (which also defines greet)
+#   is a duplicate and NOTHING ELSE. Using b.o against itself would also be a
+#   duplicate, but it lacks _start too, and then the test cannot tell which
+#   error it caught — the first version of this check did exactly that and
+#   silently proved the wrong thing.
+cp link_test_dup.o link_in1.o
+cp link_test_b.o   link_in2.o
+rm -f link_out link_text.bin
+if timeout 240 ./tiny_host link_reloc.la >/dev/null 2>&1; then
+    echo "FAIL  link_reloc.la: linked a duplicate definition instead of refusing"; ok=0
+else
+    timeout 240 ./tiny_host link_reloc.la 2>&1 | grep -q "duplicate symbol: greet" \
+        || { echo "FAIL  link_reloc.la: refused, but not with the duplicate-symbol diagnostic"; ok=0; }
+fi
+#   A refused link must leave NO output — otherwise the next command runs
+#   yesterday's binary and the refusal was cosmetic.
+[ -e link_out ] && { echo "FAIL  link_reloc.la: wrote link_out despite refusing the link"; ok=0; }
+
 rm -f link_in1.o link_in2.o
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (W^X, page-aligned, 1 negative gate)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (W^X, page-aligned, 2 negative gates)"
 [ "$ok" = 1 ]
