@@ -65,6 +65,33 @@ abs64=$(dd if=link_text.bin bs=1 skip=$((bstart + 12)) count=8 2>/dev/null | xxd
 abs64ld=$(dd if=ldtext.bin bs=1 skip=$((bstart + 12)) count=8 2>/dev/null | xxd -p)
 [ "$abs64" = "$abs64ld" ] || { echo "FAIL  link_reloc.la: 64-bit absolute is $abs64, ld says $abs64ld"; ok=0; }
 
+# --- ★ THE CAPSTONE: the emitted executable must RUN ---
+#   Every check above compares bytes. This one does not: it executes the
+#   program the linker produced and reads what it prints. The asmelf.la
+#   standard -- the proof is not a diff, the OS runs it. A linker whose output
+#   diffs correctly but segfaults has proved nothing.
+[ -x link_out ] || { echo "FAIL  link_reloc.la: emitted no executable link_out"; ok=0; }
+if [ -x link_out ]; then
+    GOT=$(./link_out); RC=$?
+    WANT=$(./link_ref); WRC=$?
+    [ "$GOT" = "$WANT" ] || { echo "FAIL  link_out printed '$GOT', ld's binary prints '$WANT'"; ok=0; }
+    [ "$RC" = "$WRC" ]   || { echo "FAIL  link_out exited $RC, ld's binary exits $WRC"; ok=0; }
+fi
+
+# --- the loader's rule: p_offset must equal p_vaddr modulo the page size ---
+#   Violate it and execve fails with ENOEXEC, or the code loads at the wrong
+#   address -- a failure that looks like a corrupt binary rather than a layout
+#   bug, so it is asserted directly instead of being inferred from "it ran".
+readelf -l --wide link_out 2>/dev/null | awk '/^  LOAD/ {print $2, $3}' | while read -r off va; do
+    d_off=$(printf '%d' "$off"); d_va=$(printf '%d' "$va")
+    [ $((d_off % 4096)) -eq $((d_va % 4096)) ] \
+        || { echo "FAIL  link_out: PT_LOAD $off/$va has p_offset !=~ p_vaddr (mod 4096)"; exit 1; }
+done || ok=0
+
+# --- W^X: the code segment must not be writable ---
+readelf -l --wide link_out 2>/dev/null | grep -q "LOAD.*R E "     || { echo "FAIL  link_out: no R+X code segment (W^X would be undercut)"; ok=0; }
+readelf -l --wide link_out 2>/dev/null | grep -q "LOAD.*RWE"     && { echo "FAIL  link_out: emitted a writable+executable segment"; ok=0; }
+
 # --- NEGATIVE: an unresolved symbol must still refuse, at patch time too ---
 cp link_test_a.o link_in2.o
 if timeout 240 ./tiny_host link_reloc.la >/dev/null 2>&1; then
@@ -75,5 +102,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: both relocation kinds byte-identical to ld (PC32 + 64, 1 negative gate)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (W^X, page-aligned, 1 negative gate)"
 [ "$ok" = 1 ]

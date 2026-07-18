@@ -127,6 +127,71 @@ glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
 #   why the gate does not diff it.
 glyph NOPS = Z(la self. la n.
     IF(int_eq(n)(0))(la _. "")(la _. concat(chr("144"))(self(sub(n)(1)))))
+glyph ZEROS = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(chr("0"))(self(sub(n)(1)))))
+glyph LE2 = la v. concat(B1(v))(B1(div(v)(256)))
+
+# ── SLICE 4: EMITTING THE EXECUTABLE ────────────────────────────────────────
+#   The patched bytes are correct; this wraps them in the ELF a kernel will
+#   load. Two PT_LOAD segments, because .text and .rodata need DIFFERENT
+#   permissions — R+X and R. Emitting one RWX segment would be simpler and
+#   would still run, which is exactly why it is not done: W^X is a property the
+#   kernel in this project enforces on itself (ROADMAP K4c), and a linker that
+#   quietly produced writable code would undercut it.
+#
+#   ★ THE CONSTRAINT THAT DICTATES THE FILE LAYOUT: for each segment the kernel
+#   requires p_offset ≡ p_vaddr (mod page size) — it maps whole pages, so the
+#   file offset and the virtual address must agree on where they sit within a
+#   page. Both bases here are page-aligned (0x1000, 0x2000 in the file;
+#   0x401000, 0x402000 in memory), which satisfies it in the simplest way and
+#   is why the file carries padding it does not strictly "need". Violate this
+#   and execve fails with ENOEXEC, or the program loads with its code at the
+#   wrong address — a failure that looks like a corrupt binary, not a layout
+#   bug.
+glyph PAGE = 4096
+glyph TEXT_FILEOFF = 4096
+glyph RODATA_FILEOFF = 8192
+glyph EHSIZE = 64
+glyph PHENTSIZE = 56
+
+#   e_ident: magic, ELFCLASS64, ELFDATA2LSB (little-endian), EV_CURRENT,
+#   SysV ABI, then 8 zero bytes.
+glyph EIDENT = CAT(CONS(chr("127"))(CONS("ELF")(CONS(B1(2))(CONS(B1(1))(
+                   CONS(B1(1))(CONS(ZEROS(9))(NIL)))))))
+
+#   ET_EXEC (2), EM_X86_64 (62). e_shoff/e_shnum/e_shstrndx are 0: section
+#   headers are for linkers and debuggers, not for the loader, and this
+#   produces none. The program runs without them.
+glyph EHDR = la entry. CAT(
+    CONS(EIDENT)(
+    CONS(LE2(2))(
+    CONS(LE2(62))(
+    CONS(LE4(1))(
+    CONS(LE8(entry))(
+    CONS(LE8(EHSIZE))(
+    CONS(LE8(0))(
+    CONS(LE4(0))(
+    CONS(LE2(EHSIZE))(
+    CONS(LE2(PHENTSIZE))(
+    CONS(LE2(2))(
+    CONS(LE2(0))(
+    CONS(LE2(0))(
+    CONS(LE2(0))(
+    NIL)))))))))))))))
+
+#   PT_LOAD. p_memsz equals p_filesz here — nothing in these fixtures needs
+#   zero-fill beyond the file (no .bss), and claiming more memory than the file
+#   supplies would be a silent lie about what gets mapped.
+glyph PHDR = la flags. la off. la vaddr. la sz. CAT(
+    CONS(LE4(1))(
+    CONS(LE4(flags))(
+    CONS(LE8(off))(
+    CONS(LE8(vaddr))(
+    CONS(LE8(vaddr))(
+    CONS(LE8(sz))(
+    CONS(LE8(sz))(
+    CONS(LE8(PAGE))(
+    NIL)))))))))
 
 # ── resolution (slice 2's rule, restated over the two objects) ──────────────
 glyph DEFINES = la f. la ss. la i.
@@ -147,8 +212,17 @@ glyph MAIN =
   (la va1. (la va2.
   (la resolve.
   (la p1. (la p2.
-    (la merged.
+    (la merged. (la rodata. (la entry.
       SEQ(write_file("link_text.bin")(merged))(
+      SEQ(write_exec("link_out")(CAT(
+            CONS(EHDR(entry))(
+            CONS(PHDR(5)(TEXT_FILEOFF)(TEXT_BASE)(str_to_int(str_len(merged))))(
+            CONS(PHDR(4)(RODATA_FILEOFF)(RODATA_BASE)(str_to_int(str_len(rodata))))(
+            CONS(ZEROS(sub(TEXT_FILEOFF)(add(EHSIZE)(mul(2)(PHENTSIZE)))))(
+            CONS(merged)(
+            CONS(ZEROS(sub(RODATA_FILEOFF)(add(TEXT_FILEOFF)(str_to_int(str_len(merged))))))(
+            CONS(rodata)(
+            NIL))))))))))(
       print(CAT(
         CONS("merged .text = ")(
         CONS(int_to_str(str_to_int(str_len(merged))))(
@@ -164,7 +238,9 @@ glyph MAIN =
         CONS(" bytes @ ")(
         CONS(int_to_str(t2addr))(
         CONS(NL)(
-        NIL)))))))))))))))))
+        NIL))))))))))))))))))
+    )(resolve("_start"))
+    )(SECBYTES(f2)(r2sec))
     )(CAT(CONS(p1)(CONS(NOPS(sub(t2addr)(add(TEXT_BASE)(SH_SIZE(f1)(t1sec)))))(CONS(p2)(NIL)))))
   )(APPLYRELS(f2)(ss2)(FIND_SEC(f2)(".rela.text"))(va2)(resolve)(t2addr)(SECBYTES(f2)(t2sec)))
   )(APPLYRELS(f1)(ss1)(FIND_SEC(f1)(".rela.text"))(va1)(resolve)(TEXT_BASE)(SECBYTES(f1)(t1sec)))
