@@ -1576,6 +1576,46 @@ d=open('asm_out.bin','rb').read()
 sys.exit(0 if d[0]==d[2]==0x72 and d[4]==d[6]==0x73 and d[8]==d[10]==0x74 else 1)" \
       || { echo "FAIL  asm.la: jcc aliases (jc/jb, jnc/jae, jz/je) do not encode identically"; ok=0; }
     rm -f /tmp/nasm_misc.bin /tmp/asm_misc.out
+    # (2d8) `equ` — SYMBOLIC CONSTANTS. boot.asm defines ~25 of them, and
+    #       coverage reaches 88% (932 of 1060 lines) with only the preprocessor
+    #       and section/global/incbin left.
+    #
+    #       ★ The point is the DISTINCTION, not the directive: an equ symbol is
+    #       a NUMBER, a label is an ADDRESS, the syntax at the use site is
+    #       identical, and NASM encodes them differently. An assembler that
+    #       treated equ symbols as labels would emit a clean-looking image with
+    #       every constant five bytes too long and every address after it wrong.
+    rm -f asm_out.bin /tmp/nasm_equ.bin; cp asm_test_equ.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm_equ.out 2>&1 || { echo "FAIL  asm.la: equ program failed: $(tail -1 /tmp/asm_equ.out)"; ok=0; }
+    nasm -f bin asm_test_equ.asm -o /tmp/nasm_equ.bin 2>/dev/null || { echo "FAIL  asm.la: nasm equ reference failed"; ok=0; }
+    cmp -s asm_out.bin /tmp/nasm_equ.bin \
+      || { echo "FAIL  asm.la: equ constants DIFFER from nasm"; ok=0;
+           python3 - <<'PYEQU1'
+a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_equ.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYEQU1
+         }
+    python3 - <<'PYEQU2' || { echo "FAIL  asm.la: the equ-vs-label distinction regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+q=[("mov rax,EQU is a 5-byte imm32",      d[0:5]  ==bytes([0xb8,0x20,0x01,0,0])),
+   ("mov rax,LABEL is a 10-byte movabs",  d[5:15] ==bytes([0x48,0xb8,0,0,0x40,0,0,0,0,0])),
+   ("an equ value reaches the imm8 form", d[24:28]==bytes([0x48,0x83,0xc0,0x08])),
+   ("an equ value reaches the accum form",d[28:34]==bytes([0x48,0x05,0x20,0x01,0,0])),
+   ("an equ value reaches data (dq)",     d[57:65]==bytes([0x20,0x01,0,0,0,0,0,0]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYEQU2
+    # The definition line itself must cost ZERO bytes, and an equ symbol must
+    # NOT be resolvable as a jump target (it is a value, not an address).
+    printf 'bits 64\nK equ 7\nnop\nnop\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0x90,0x90]) else 1)" \
+      || { echo "FAIL  asm.la: an equ definition line emitted bytes"; ok=0; }
+    rm -f /tmp/nasm_equ.bin /tmp/asm_equ.out
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`

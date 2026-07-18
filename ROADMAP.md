@@ -1355,6 +1355,29 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       thing that catches it — no test of behaviour would, short of running the
       kernel.)*
 
+      **`equ` SYMBOLIC CONSTANTS added, byte-identical over an 81-byte image
+      (2026-07-18); boot.asm is now 88% readable (932 of 1060 lines) and the
+      ONLY thing left is the preprocessor** (`%ifdef`/`%define`/`%include`, 121
+      lines) plus 7 lines of `section`/`global`/`incbin`. **★ The slice exists
+      for a DISTINCTION, not a directive: an equ symbol is a NUMBER, a label is
+      an ADDRESS, the syntax at the use site is identical, and NASM encodes them
+      differently** — `mov rax, SLOTSZ` is `b8` + imm32 (5 bytes) where
+      `mov rax, start` is a 10-byte `movabs`. An assembler that treated equ
+      symbols as labels would emit a clean-looking image with every constant
+      five bytes too long and every address after it wrong. *(This also
+      corrects an earlier note in this entry claiming boot.asm used `%define`
+      rather than `equ`; it uses both. The profiling missed the ~25 `equ` lines
+      because the first token on such a line is the SYMBOL, not the directive —
+      a reminder that a measurement is only as good as what it counts.)*
+      Implemented as **token substitution** between tokenizing and the passes:
+      an equ value is a constant, so replacing the symbol with its literal text
+      makes every downstream path — immediates, displacements, data definitions,
+      `org` — work unchanged, with no table threaded through them and no risk of
+      one operand position forgetting to consult it. *Honest scope:* whole-token
+      matching only, so a symbol inside a bracket token (`[rdi+COM1]`) is not
+      substituted — that needs expression parsing, which is the same machinery
+      `idt + 0x21 * 16` requires and belongs with it.
+
       *Honest cost, measured then reduced:* assembling N `mov rax, rcx` (CPU
       time under identical load) went `0.09` → `0.49` s/instruction with the
       slice — linear in program length, but a 5.5x constant — and back to

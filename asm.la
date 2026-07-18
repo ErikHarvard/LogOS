@@ -916,6 +916,44 @@ glyph STRIPLAB = la ts. IF(ISLABEL(HD(ts)))(la _. TL2(ts))(la _. ts)
 glyph SIZEL = la labs. la off. la ts. SIZEL0(labs)(off)(STRIPLAB(ts))
 glyph ENC1  = la labs. la off. la ts. ENC10(labs)(off)(STRIPLAB(ts))
 
+# ── `equ` — SYMBOLIC CONSTANTS ──────────────────────────────────────────────
+#   boot.asm defines ~25 of these (`COM1 equ 0x3F8`, `K6C_SLOTSZ equ 288`).
+#
+#   ★ AN EQU SYMBOL IS A NUMBER; A LABEL IS AN ADDRESS. The syntax is identical
+#   at the use site and NASM encodes them DIFFERENTLY: `mov rax, SLOTSZ` is
+#   `b8` + imm32 (5 bytes), while `mov rax, start` is a 10-byte movabs. An
+#   assembler that treated equ symbols as labels would emit a correct-looking
+#   image with every constant five bytes too long and every subsequent address
+#   wrong. This is the whole reason the slice exists.
+#
+#   Implemented as TOKEN SUBSTITUTION, done once between tokenizing and the
+#   passes: an equ value is a constant, so replacing the symbol with its literal
+#   text makes every downstream path — immediates, displacements, data
+#   definitions, `org` — work unchanged, with no table threaded through them and
+#   no risk of one operand position forgetting to consult it. The definition
+#   line itself substitutes to NOTHING, so it falls through to the empty case at
+#   size 0 like a bare label.
+#
+#   Honest scope: whole-token matching only. A symbol appearing INSIDE a bracket
+#   token (`[rdi+COM1]`) is not substituted, because the tokenizer already
+#   folded the brackets into one token — that needs expression parsing, which is
+#   the same machinery `idt + 0x21 * 16` will need and belongs with it.
+glyph ISEQU = la ts.
+    AND(NOT(ISLABEL(HD(ts))))(str_eq(NTH(1)(ts))("equ"))
+glyph MKEQUS = Z(la self. la tls. la acc.
+    tls(acc)(la ts. la t.
+      IF(ISEQU(ts))
+        (la _. self(t)(CONS(PAIR(HD(ts))(NTH(2)(ts)))(acc)))
+        (la _. self(t)(acc))))
+glyph SUBTOK = la equs. la t.
+    (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. t))(LOOKREG(t)(equs))
+glyph SUBLINE = la equs.
+    Z(la self. la l. l(NIL)(la h. la t. CONS(SUBTOK(equs)(h))(self(t))))
+glyph SUBALL = la equs.
+    Z(la self. la tls.
+        tls(NIL)(la ts. la t.
+          CONS(IF(ISEQU(ts))(la _. NIL)(la _. SUBLINE(equs)(ts)))(self(t))))
+
 # ── one pass: walk the lines, recording each label at its current offset ──
 glyph MKLABS = Z(la self. la ls. la labs. la off. la acc.
     ls(acc)(la ts. la t.
@@ -965,8 +1003,13 @@ glyph ORGOF = Z(la self. la ls.
       IF(str_eq(HD(ts))("org"))(la _. NUMV(NTH(1)(ts)))(la _. self(t))))
 
 glyph ASSEMBLE = la src.
-    (la tls. (la org. PASS2(FIXLABS(tls)(NIL)(TOTLEN(tls)(NIL)(org))(12)(org))(tls)(org))
-             (ORGOF(tls)))(MAPTOKS(LINES(src)("")))
+    (la tls0.
+      (la equs.
+        (la tls. (la org. PASS2(FIXLABS(tls)(NIL)(TOTLEN(tls)(NIL)(org))(12)(org))(tls)(org))
+                 (ORGOF(tls)))
+        (SUBALL(equs)(tls0)))
+      (MKEQUS(tls0)(NIL)))
+    (MAPTOKS(LINES(src)("")))
 
 glyph MAIN =
   (la code.
