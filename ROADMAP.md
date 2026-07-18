@@ -877,7 +877,33 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             overlap 4/4 green). Item 6 (Display protocol & compositor) now has a
             real metal realisation; the interactive/input-driven session on bare
             metal (Theourgia Stages 5-9's live loop, minus Linux DRM/evdev) is
-            what remains.
+            what remains → **DONE in HAL.4d.**
+      - [x] **HAL.4d — THE INTERACTIVE COMPOSITOR SESSION ON THE METAL — DONE +
+            gated (2026-07-17).** What HAL.4c named as "what remains": Theourgia's
+            INNER LOOP driven by real keyboard input, at ring 0 — read a key → move
+            a window → **re-compose** the z-ordered frame off-screen → **re-present**
+            it, forever, until ENTER. `kernel/comp_session.la` fuses two proven
+            metal drivers, both flat + import-free: HAL.4c's compositor (`SCENE`
+            z-ordered, `PRESENT` = one `memcpy` of the whole frame to the LFB) and
+            HAL.2's **polling** PS/2 reader (`inb` on 0x60/0x64) — polling, so it
+            reuses HAL.4c's straight-line `-D HAL4` boot with **no IRQ/PIC setup
+            added**. WASD moves window B; each keystroke recomposes + presents a NEW
+            frame. `gate_comp_session.sh` injects keystrokes through the QEMU
+            monitor (`sendkey d ×3`, then `ret`) and reads the SERIAL witness: the
+            initial probe pixel (200,150) is B's green (`session ov=0,255,0`); after
+            3× right the window has moved (`session bx=300`); and the probe is now
+            window A's **red showing through** (`session ov=0,0,255`) — the
+            load-bearing assertion, since **a static frame, or a loop that moved a
+            variable without re-presenting, would leave it green and FAIL**; then
+            `session done` + **exit 33**. So a real recomposition + present is driven
+            by real input, on bare metal, with no Linux DRM/evdev. *Honest scope /
+            note:* `comp_session.la`'s `native_codegen3` compile is **~13 min** (the
+            backend's codegen is superlinear in program size + nesting depth — the
+            known compile-blowup on larger programs); the ELF is built out of band
+            (`build_comp_session.sh`) and gitignored, and the gate boots it — the
+            same pattern as the heavy kernel ELFs. Item 6 (Display protocol &
+            compositor) now has an *interactive* metal realisation; a movable TEXT
+            window (a terminal) is the next compositor step.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*
