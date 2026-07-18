@@ -1,0 +1,193 @@
+# =====================================================================
+#  link_reloc.la — SLICE 3: APPLYING THE RELOCATIONS.
+#
+#  Slice 2 computed where everything lands. This PATCHES the code so it points
+#  there: the bytes a relocation reserved are overwritten with the resolved
+#  address, which is the act that turns two independent objects into one
+#  coherent program.
+#
+#  ── WHY BYTE-IDENTITY IS LEGITIMATE HERE, HAVING BEEN REFUSED TWICE ─────────
+#  slice 1 and slice 2 both refused to diff against `ld`, for a real reason:
+#  ld's FILE carries choices that are ld's own (build-id, section ordering,
+#  padding), so a whole-file diff measures the wrong thing.
+#
+#  A relocated instruction is different in kind. Given the same addresses, the
+#  patched bytes are DETERMINED — `call greet` at 0x401001 targeting 0x401010
+#  has exactly one correct rel32, and ld has no freedom about it. So each
+#  object's patched .text is diffed BYTE-FOR-BYTE against the corresponding
+#  span of ld's .text. Where the answer is forced, demand identity; where it is
+#  a choice, use an independent witness. That distinction is the whole
+#  verification strategy of this linker.
+#
+#  The one place we do keep a choice is the ALIGNMENT GAP between the two
+#  objects' .text. ld fills it with a 2-byte nop (66 90); this pads with 0x90
+#  single-byte nops. Both are correct and neither is reachable (control leaves
+#  A via `call`), so the gate compares the two CODE SPANS and deliberately does
+#  not compare the gap. That is stated rather than hidden, because a gate that
+#  quietly skipped a region would be worth nothing.
+#
+#  ── THE TWO RELOCATION KINDS, AND WHY P MATTERS ─────────────────────────────
+#    R_X86_64_PC32 (2)  value = S + A - P     4 bytes
+#    R_X86_64_64   (1)  value = S + A         8 bytes
+#
+#  P — the address OF THE PATCH SITE — is what makes PC32 relative, and it is
+#  the field with nowhere to hide: S and A come straight out of the object,
+#  but P must be derived from the layout. Get the layout wrong and PC32 is
+#  wrong while the absolute relocation still looks fine, which is exactly the
+#  asymmetry this fixture pair was built to catch (A uses PC32, B uses 64).
+#
+#  A's `call greet` sits at .text+1, so P = 0x401000 + 1, S = 0x401010,
+#  A = -4, giving 11 — and ld emits e8 0b 00 00 00. The addend is negative
+#  because the CPU measures rel32 from the END of the instruction; folding it
+#  into unsigned range before splitting into bytes is the same discipline
+#  asm.la uses for backward jumps (LA's div/mod on a negative is unreliable).
+# =====================================================================
+
+import("link.la")
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph NIL  = la n. la c. n
+glyph CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph NL   = "\n"
+
+glyph TEXT_BASE = 4198400
+glyph RODATA_BASE = 4202496
+
+glyph ALIGNUP = la n. la a.
+    IF(int_eq(a)(0))
+      (la _. n)
+      (la _. IF(int_eq(mod(n)(a))(0))
+               (la _. n)
+               (la _. add(n)(sub(a)(mod(n)(a)))))
+
+# ── byte-string surgery ─────────────────────────────────────────────────────
+glyph DROPS = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph TAKES = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph B1 = la n. chr(int_to_str(mod(n)(256)))
+#   Little-endian split, explicit. FOLD32 is why negatives never enter div/mod.
+glyph FOLD32 = la n. IF(lt(n)(0))(la _. add(n)(4294967296))(la _. n)
+glyph LE4 = la v. (la n. CAT(CONS(B1(n))(CONS(B1(div(n)(256)))(
+                             CONS(B1(div(n)(65536)))(CONS(B1(div(n)(16777216)))(NIL))))))
+                  (FOLD32(v))
+#   The upper word is zero for every address this linker produces (see the
+#   32-bit window note in link.la); emitting it explicitly keeps the field the
+#   8 bytes the format demands rather than silently short-writing.
+glyph LE8 = la v. concat(LE4(v))(CAT(CONS(B1(0))(CONS(B1(0))(
+                                     CONS(B1(0))(CONS(B1(0))(NIL))))))
+
+glyph PATCH = la s. la off. la width. la bytes.
+    CAT(CONS(TAKES(off)(s))(CONS(bytes)(CONS(DROPS(add(off)(width))(s))(NIL))))
+
+glyph SECBYTES = la f. la sec. TAKES(SH_SIZE(f)(sec))(DROPS(SH_OFF(f)(sec))(f))
+
+# ── the relocation value ────────────────────────────────────────────────────
+#   S, the symbol's address. An UNDEFINED symbol is the cross-object case and
+#   goes to the resolver; everything else — including a SECTION symbol, whose
+#   st_value is 0 — is its section's base plus its offset, so one rule covers
+#   both without a special case.
+glyph SYMVAL = la f. la ss. la va. la resolve. la i.
+    IF(SYM_IS_UNDEF(f)(ss)(i))
+      (la _. resolve(SYMNAME(f)(ss)(i)))
+      (la _. add(va(SYM_SHNDX(f)(ss)(i)))(SYM_VALUE(f)(ss)(i)))
+
+#   Apply every relocation of one object's .text, folding over the list so each
+#   patch sees the previous one's result.
+glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
+  IF(lt(rs)(0))
+    (la _. bytes)
+    (la _. (Z(la self. la i. la acc.
+      IF(int_eq(i)(REL_COUNT(f)(rs)))
+        (la _. acc)
+        (la _.
+          (la off. (la ty. (la s. (la a.
+            (la v.
+              self(add(i)(1))
+                  (IF(int_eq(ty)(1))
+                     (la _. PATCH(acc)(off)(8)(LE8(v)))
+                     (la _. IF(int_eq(ty)(2))
+                              (la _. PATCH(acc)(off)(4)(LE4(v)))
+                              (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty))))))
+            )(IF(int_eq(ty)(2))
+                (la _. sub(add(s)(a))(add(secva)(off)))
+                (la _. add(s)(a)))
+          )(REL_ADDEND(f)(rs)(i))
+          )(SYMVAL(f)(ss)(va)(resolve)(REL_SYM(f)(rs)(i)))
+          )(REL_TYPE(f)(rs)(i))
+          )(REL_OFFSET(f)(rs)(i)))))(0)(bytes))
+
+#   Pad with single-byte nops — see the header on why this is our choice and
+#   why the gate does not diff it.
+glyph NOPS = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(chr("144"))(self(sub(n)(1)))))
+
+# ── resolution (slice 2's rule, restated over the two objects) ──────────────
+glyph DEFINES = la f. la ss. la i.
+    AND(SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i)))
+       (AND(NOT(SYM_IS_UNDEF(f)(ss)(i)))(NOT(SYM_IS_SECTION(f)(ss)(i))))
+glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(f)(ss)))
+      (la _. sub(0)(1))
+      (la _. IF(AND(DEFINES(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
+               (la _. add(va(SYM_SHNDX(f)(ss)(i)))(SYM_VALUE(f)(ss)(i)))
+               (la _. self(add(i)(1))))))(0)
+
+glyph MAIN =
+  (la f1. (la f2.
+  (la ss1. (la ss2.
+  (la t1sec. (la t2sec. (la r2sec.
+  (la t2addr.
+  (la va1. (la va2.
+  (la resolve.
+  (la p1. (la p2.
+    (la merged.
+      SEQ(write_file("link_text.bin")(merged))(
+      print(CAT(
+        CONS("merged .text = ")(
+        CONS(int_to_str(str_to_int(str_len(merged))))(
+        CONS(" bytes")(
+        CONS(NL)(
+        CONS("  obj1 patched ")(
+        CONS(int_to_str(str_to_int(str_len(p1))))(
+        CONS(" bytes @ ")(
+        CONS(int_to_str(TEXT_BASE))(
+        CONS(NL)(
+        CONS("  obj2 patched ")(
+        CONS(int_to_str(str_to_int(str_len(p2))))(
+        CONS(" bytes @ ")(
+        CONS(int_to_str(t2addr))(
+        CONS(NL)(
+        NIL)))))))))))))))))
+    )(CAT(CONS(p1)(CONS(NOPS(sub(t2addr)(add(TEXT_BASE)(SH_SIZE(f1)(t1sec)))))(CONS(p2)(NIL)))))
+  )(APPLYRELS(f2)(ss2)(FIND_SEC(f2)(".rela.text"))(va2)(resolve)(t2addr)(SECBYTES(f2)(t2sec)))
+  )(APPLYRELS(f1)(ss1)(FIND_SEC(f1)(".rela.text"))(va1)(resolve)(TEXT_BASE)(SECBYTES(f1)(t1sec)))
+  )(la want. (la a1. IF(NOT(lt(a1)(0)))
+                       (la _. a1)
+                       (la _. (la a2. IF(NOT(lt(a2)(0)))
+                                        (la _. a2)
+                                        (la _. error(concat("link: unresolved symbol: ")(want))))
+                              (LOOKUP(f2)(ss2)(va2)(want))))
+             (LOOKUP(f1)(ss1)(va1)(want)))
+  )(la sec. IF(int_eq(sec)(t2sec))
+              (la _. t2addr)
+              (la _. IF(AND(NOT(lt(r2sec)(0)))(int_eq(sec)(r2sec)))
+                       (la _. RODATA_BASE)
+                       (la _. sub(0)(1))))
+  )(la sec. IF(int_eq(sec)(t1sec))(la _. TEXT_BASE)(la _. sub(0)(1)))
+  )(ALIGNUP(add(TEXT_BASE)(SH_SIZE(f1)(t1sec)))(SH_ALIGN(f2)(t2sec)))
+  )(FIND_SEC(f2)(".rodata"))
+  )(FIND_SEC(f2)(".text"))
+  )(FIND_SEC(f1)(".text"))
+  )(FIND_SEC(f2)(".symtab"))
+  )(FIND_SEC(f1)(".symtab"))
+  )(read_file("link_in2.o"))
+  )(read_file("link_in1.o"))
+
+glyph SEQ = la a. la b. b
