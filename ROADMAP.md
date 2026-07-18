@@ -1404,6 +1404,54 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       exactly how a kernel built for one configuration ends up containing
       another's instructions.
 
+      **`section` / `global` / `incbin` added — boot.asm's SYNTAX is now 100%
+      covered (1060 of 1060 lines parse and encode), 13 byte-identity gates
+      (2026-07-18).** `incbin` splices a binary file verbatim (boot.asm embeds
+      the LA image `native_codegen3_out` into `.la_image`, which is what makes
+      the kernel and the host binary literally the same bytes); `global` emits
+      nothing, since a flat image has no symbol table to export into, and only
+      becomes meaningful with an object writer; `section` emits its default
+      start padding — a section begins on a 4-byte boundary, zero-filled
+      (measured: a `.text` of 1/5/9/17 bytes puts the next section at
+      4/8/12/20). **Two measurements corrected claims written earlier in this
+      very entry:** `align` pads with `0x90` NOP in `.rodata` and `.data` too,
+      NOT only `.text` — the zero-fill between sections is section-START
+      padding, a different mechanism, and the earlier "data sections pad with
+      zeros" line was reasoning rather than measurement. And NASM raises a
+      section's start alignment to the LARGEST `align` inside it, which is NOT
+      implemented — named here rather than left as a silent divergence, since it
+      affects multi-section `-f bin` only, never the `-f elf64` path boot.asm
+      takes. *(Also settled: `-D` command-line defines and `-i` include paths
+      need NO asm.la feature — `-D X` is exactly prepending `%define X`, and
+      `-i` is running from that directory. Proven by the boot.asm end-to-end
+      test doing precisely this. Do not build features the invocation already
+      provides.)*
+
+      **★ HONEST SCOPE CORRECTION (2026-07-18), recorded because the coverage
+      number invites a wrong conclusion.** `boot.asm` is 99.3% *readable* — every
+      one of those lines parses and encodes — but it is built with
+      **`nasm -f elf64 -D HAL4 -i kernel/`** and linked with
+      **`ld -n -T kernel/kernel.ld`**, while `asm.la` emits a FLAT `-f bin`
+      image. Line coverage measures SYNTAX, not output format, so 99.3% does
+      **not** mean NASM can leave the kernel build. What that actually requires,
+      none of it yet built:
+      **(a) an ELF64 RELOCATABLE-OBJECT writer** — section headers, a symbol
+      table (`global _start`), and `.rela` relocations for every cross-section
+      and absolute reference. This is the real remaining work and is comparable
+      in size to the preprocessor slice. **It is also the convergence point with
+      the `link` track**, which READS ELF64 objects — the two halves meet at
+      this format, so the shape should be agreed rather than guessed
+      (a `NEEDS` is posted on the coordination board).
+      **(b) command-line defines** — variant selection is `nasm -D HAL4` /
+      `-dK6C` from the BUILD SCRIPT, not from inside the source, so the
+      preprocessor needs externally-supplied defines to select a variant at all.
+      **(c) an include search path** (`-i kernel/`).
+      **(d) `section` / `global` / `incbin`** — the last 7 lines.
+      **(e) `align` padding is section-dependent**: all 12 `align`s in boot.asm
+      sit in `.bss`/`.rodata`/`.multiboot` and pad with ZEROS; the current
+      `0x90` NOP rule is correct only for `-f bin`'s single `.text`. This is the
+      dependency flagged when `align` was built, now come due.
+
       *Honest cost, measured then reduced:* assembling N `mov rax, rcx` (CPU
       time under identical load) went `0.09` → `0.49` s/instruction with the
       slice — linear in program length, but a 5.5x constant — and back to
