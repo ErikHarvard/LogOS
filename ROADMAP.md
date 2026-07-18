@@ -1501,9 +1501,33 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       2 native-task + 6 ring-3 + 2 sovereign-boot + 2 cross-engine (FILES)**. *Honest
       scope:* the WAV (`phonym.la`) and the module-composed session/mux rasters emit
       identically too, but each host run + bundle is minutes, so they stay out of the
-      hot path. Remaining: buildla's other ~18 of build.sh's 103 stages — more
-      resource/negative gates and the toolchain-driving stages scoped in the
-      honest-boundary notes below.
+      hot path.
+      **A SIXTEENTH SLICE — VM loud-failure guards (`89 stages`, a new `GVSTEP`
+      kind).** The three `GSTEP` guards run on the C **host** (`tiny_host`) — its
+      diagnostics. But the OS runs on the native SECD **VM**, and build.sh regression-
+      tests a whole `secd:` guard set so no malformed input is a SILENT path on that
+      engine (a disarmed guard = a silent exit 0, or a SIGSEGV walking unmapped
+      memory). Those must run **on the VM** — which buildla cannot do via
+      `./logos_secd` (the fork bomb). So `GVSTEP` gives each broken program its own
+      vessel exactly as the cross-engine steps do: GEN it → codegen → bundle →
+      `logos_app`, then `RUN2` it and assert a **non-zero exit (1) AND the specific
+      `secd:` diagnostic** (RUN2 dup2s the capture fd onto both stdout and stderr, so
+      the stderr diagnostic is caught). Four guards: **unbound variable**
+      (`undefined_glyph_xyz`), **apply a non-function** (`"hello"("world")`), **chr
+      out of range** (`chr("300")`), **argument is not a string** (`str_len(5)` — an
+      INT where a descriptor is expected, which would otherwise SIGSEGV). Each
+      **parses + compiles fine** (codegen is syntactic) and fails at RUN time —
+      exactly where the guard must fire; the VM's `chr`/`argument-is-not-a-string`
+      guards are the sovereign-engine twins of the host `chr`/`str_to_int` guards
+      already covered. Green AND **red both verified** — a scratch feeding a program
+      that does NOT halt (`print("ok")`, exit 0) printed `FAIL vm RED does-not-halt`.
+      Verified full **BUILD GREEN, 89 stages = 57 marker + 4 cross-engine (stdout) + 3
+      host-guard + 4 VM-guard + 1 namespace + 8 QEMU + 2 native-task + 6 ring-3 + 2
+      sovereign-boot + 2 cross-engine (FILES)**. *Honest scope:* build.sh's
+      poll-cap / program-too-large / malformed-stream guards need a 500-fd literal or
+      a raw/truncated stream (they test the generic LOADER a bundle bypasses), so they
+      stay in build.sh's harness. Remaining: buildla's other ~14 of build.sh's 103
+      stages — the toolchain-driving stages scoped in the honest-boundary notes below.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.

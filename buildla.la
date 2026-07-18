@@ -205,6 +205,56 @@ glyph GRUN1 = la s.
 glyph GALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(GRUN1(h))))
 
+# ── GVSTEP — VM loud-failure guards: the SOVEREIGN engine halts on bad input ──
+#  The GSTEP guards above run on the C HOST (tiny_host) — its diagnostics. But the
+#  OS runs on the native SECD VM, and build.sh regression-tests a whole `secd:`
+#  guard set so no malformed input is a SILENT path on that engine (a disarmed
+#  guard = a silent exit 0, or a SIGSEGV walking unmapped memory). Those run ON THE
+#  VM — which buildla CANNOT do via ./logos_secd (the fork bomb). So, exactly like
+#  the cross-engine steps, each broken program is given its OWN VESSEL: GEN it,
+#  codegen → logos_embed.bin → bundle → logos_app, then RUN2 logos_app and assert
+#  a NON-ZERO exit (code 1) AND the specific `secd:` diagnostic. RUN2 dup2s the
+#  capture fd onto BOTH stdout and stderr, so the diagnostic (stderr) is caught.
+#  The broken programs PARSE + compile fine (codegen is syntactic) and fail at RUN
+#  time — exactly where the guard must fire. build.sh's poll-cap / program-too-large
+#  / malformed-stream guards need a 500-fd literal or a raw/truncated stream (they
+#  test the generic LOADER a bundle bypasses), so they stay in build.sh's harness.
+glyph GVSTEP = la nm. la prog. la code. la mark. la f. f(nm)(prog)(code)(mark)
+glyph GVNAME = la s. s(la a. la b. la c. la d. a)
+glyph GVPROG = la s. s(la a. la b. la c. la d. b)
+glyph GVCODE = la s. s(la a. la b. la c. la d. c)
+glyph GVMARK = la s. s(la a. la b. la c. la d. d)
+
+glyph GVSTEPS =
+  CONS(GVSTEP("VM: unbound variable halts loudly")("glyph MAIN = undefined_glyph_xyz\n")("1")("secd: unbound variable"))(
+  CONS(GVSTEP("VM: apply a non-function halts loudly")("glyph MAIN = \"hello\"(\"world\")\n")("1")("secd: attempt to apply a non-function"))(
+  CONS(GVSTEP("VM: chr out of range halts loudly")("glyph MAIN = chr(\"300\")\n")("1")("secd: chr out of range"))(
+  CONS(GVSTEP("VM: argument is not a string halts loudly")("glyph MAIN = str_len(5)\n")("1")("secd: argument is not a string"))(
+  NIL))))
+
+glyph GVRUN1 = la s.
+  IF(str_eq(GVMARK(s))(""))
+    (la _. error(concat("buildla: VM-guard step has an empty marker (it could never fail): ")(GVNAME(s))))
+    (la _.
+      SEQ(GEN("logos_source.la")(GVPROG(s)))
+      (SEQ(RUN("./tiny_host")("codegen.la")("/tmp/buildla_cg.txt"))
+      (SEQ(STAGE("logos_program.bin")("logos_embed.bin"))
+      ((la bout.
+         IF(HASSUB(bout)("bundled VM + stream -> logos_app"))
+           (la _.
+             (la code.
+               (la out.
+                 (la ok.
+                   SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))(GVNAME(s))))(ok))
+                 (AND(str_eq(code)(GVCODE(s)))(HASSUB(out)(GVMARK(s)))))
+               (read_file("/tmp/buildla_gvout.txt")))
+             (RUN2("./logos_app")("")("/tmp/buildla_gvout.txt")))
+           (la _. SEQ(print(concat("  FAIL  vm  bundle failed: ")(GVNAME(s))))(FALSE)))
+       (RUN("./tiny_host")("bundle.la")("/tmp/buildla_bundle.txt"))))))
+
+glyph GVALL = Z(la self. la l.
+  l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(GVRUN1(h))))
+
 # ── a CROSS-ENGINE step: b_τ ≡ f_τ ──────────────────────────────────────────
 #  build.sh's other big check is not a grep but an EQUALITY: `[ "$H" = "$V" ]` —
 #  the same program must print the SAME BYTES on the C host and the native VM.
@@ -809,7 +859,9 @@ glyph MAIN =
                              (la n.
                                (la o.
                                  (la p.
-                                   (la q. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(AND(o)(AND(p)(q)))))))))))))))))
+                                   (la q.
+                                     (la r. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(AND(o)(AND(p)(AND(q)(r))))))))))))))))))
+                                     (SEQ(print("── VM guards (secd:): the sovereign engine halts loudly on bad input (via bundle) ──"))(GVALL(GVSTEPS))))
                                    (SEQ(print("── cross-engine byte-identity: host artifact == VM artifact (emitted FILES) ──"))(XFALL(XFSTEPS))))
                                  (SEQ(print("── QEMU K7: the sovereign bootloader — LogOS boots ITSELF off its own disk (no GRUB) ──"))(K7ALL)))
                                (SEQ(print("── QEMU K6: ring 3 on the metal — user mode, syscalls, and IPC (the six K6 slices) ──"))(K6ALL)))
