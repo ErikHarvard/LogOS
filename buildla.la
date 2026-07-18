@@ -646,6 +646,68 @@ glyph K5B1BSTAGE = la _.
         (read_file("/tmp/buildla_k5b1b_out.txt")))
       (RUN2("/usr/bin/timeout")(QK5B1BCMD)("/tmp/buildla_k5b1b_out.txt")))
 
+# ── QGATE — a PARAMETERISED QEMU marker-gate (the shape K1..K5 hard-coded 8×) ──
+#  K6 has SIX ring-3 slices, all the same shape: boot a pre-built ELF, check
+#  exit code + marker(s). Rather than eight-more lambda layers, this factors the
+#  QEMU-gate shape once and the K6 slices become a flat table (K6ALL below).
+#  QGATE(elf)(cmd)(code)(chk)(label): the SAFE stat() probe (qemu absent OR ELF
+#  not pre-built → PASS-skip), else RUN2 the `timeout N qemu …` cmd, capture to
+#  one shared file (the slices run SEQUENTIALLY in K6ALL's left-to-right AND, so
+#  each reads its output before the next overwrites), and pass iff exit==code AND
+#  chk(out). `chk` is a PREDICATE on the captured output (la o. …) so a slice can
+#  demand ONE marker or, for the round-trip slices, BOTH (AND of two HASSUBs).
+#  The K1..K5 stages keep their bespoke glyphs (they carry exit-35 fault gates and
+#  the negative K5a/K5b.2 markers QGATE doesn't model); QGATE serves K6 onward.
+glyph QOUT = "/tmp/buildla_k6_out.txt"
+glyph QGATE = la elf. la cmd. la code. la chk. la label.
+  IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
+    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _.
+      IF(str_eq(str_head(stat(elf)))("-"))
+        (la _. SEQ(print(concat("  PASS  vm  (skipped) not pre-built: ")(elf)))(TRUE))
+        (la _.
+          (la rc.
+            (la out.
+              (la ok.
+                SEQ(print(concat(IF(ok)(la _. "  PASS  vm  ")(la _. "  FAIL  vm  "))(label)))(ok))
+              (AND(str_eq(rc)(code))(chk(out))))
+            (read_file(QOUT)))
+          (RUN2("/usr/bin/timeout")(cmd)(QOUT))))
+
+# ── K6 — RING 3 on the metal: user mode, syscalls, and IPC (the six slices) ──
+#  K5 proved the kernel schedules; K6 proves it enforces the PRIVILEGE BOUNDARY —
+#  a payload at CPL 3 that enters the kernel only through syscall/sysret, and the
+#  LogosIPC "nervous system" re-homed onto kernel-held channels between ring-3
+#  tasks. All six are exit-33 QEMU gates on pre-built ELFs (kernel/build_k6*.sh,
+#  out of band), boot-tested green (2026-07-17). The two round-trip slices (K6c2,
+#  K6c3b) demand BOTH of their markers, so a half-completed exchange still FAILs.
+glyph QOPTS = " -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
+glyph K6ALL =
+  AND(SEQ(print("── QEMU K6a: ring-3 user mode — a CPL-3 payload syscalls in and sysrets back ──"))
+        (QGATE("kernel/kernel_k6a.elf")(concat("20 qemu-system-x86_64 -kernel kernel/kernel_k6a.elf -m 512")(QOPTS))("33")
+              (la o. HASSUB(o)("K6A CPL=3"))
+              ("K6a: ring-3 user mode on the metal — a CPL-3 payload entered via syscall, the kernel serviced write() to COM1 + sysret'd back, exit 33 (GDT/TSS(RSP0)/iretq-to-ring3/syscall-sysret/user-page)")))
+  (AND(SEQ(print("── QEMU K6b: the REAL LA image (kernel.la) speaks the Word at ring 3 ──"))
+        (QGATE("kernel/kernel_k6b.elf")(concat("30 qemu-system-x86_64 -kernel kernel/kernel_k6b.elf -m 1024")(QOPTS))("33")
+              (la o. HASSUB(o)("I AM THAT I AM"))
+              ("K6b: the real LA image (kernel.la) at ring 3 — ∃(∃)≡∃ spoke the Word through a ring3->ring0->ring3 write syscall, exit 33 (the SAME image runs at ring 0 under K1..K5)")))
+  (AND(SEQ(print("── QEMU K6c.1: the kernel IPC service — a ring-3 payload send/recv's a typed message ──"))
+        (QGATE("kernel/kernel_k6c.elf")(concat("20 qemu-system-x86_64 -kernel kernel/kernel_k6c.elf -m 512")(QOPTS))("33")
+              (la o. HASSUB(o)("K6C t7 IAM"))
+              ("K6c.1: the kernel IPC service layer — a ring-3 payload SENT a typed message (type 7, body IAM) into kernel channel 0 and RECV'd it back, both serviced across the privilege boundary, exit 33")))
+  (AND(SEQ(print("── QEMU K6c.2: two ring-3 tasks exchange a typed message across a kernel context switch ──"))
+        (QGATE("kernel/kernel_k6c2.elf")(concat("20 qemu-system-x86_64 -kernel kernel/kernel_k6c2.elf -m 512")(QOPTS))("33")
+              (la o. AND(HASSUB(o)("K6C2 B got IAM"))(HASSUB(o)("K6C2 A got YOU")))
+              ("K6c.2: two ring-3 tasks + a real kernel context switch — A sent+yielded, the kernel SAVED A and switched to B (recv'd + replied), then RESTORED A (recv'd the reply); IPC crossed the boundary both ways, exit 33")))
+  (AND(SEQ(print("── QEMU K6c.3a: a REAL compiled LA process does IPC at ring 3 ──"))
+        (QGATE("kernel/kernel_k6c3.elf")(concat("30 qemu-system-x86_64 -kernel kernel/kernel_k6c3.elf -m 1024")(QOPTS))("33")
+              (la o. HASSUB(o)("K6C3 IPC OK"))
+              ("K6c.3a: a REAL LA process at ring 3 did IPC — ipc_kernel.la's send(0)(msg)/recv(0) drove kernel channel 0 from compiled Lingua Adamica, recovered K6C3 IPC OK, exit 33")))
+     (SEQ(print("── QEMU K6c.3b: two ring-3 LA tasks exchange a TYPED message — the LogosIPC milestone ──"))
+        (QGATE("kernel/kernel_k6c3b.elf")(concat("30 qemu-system-x86_64 -kernel kernel/kernel_k6c3b.elf -m 1024")(QOPTS))("33")
+              (la o. AND(HASSUB(o)("B rx type=greet"))(HASSUB(o)("B rx body=HELLO")))
+              ("K6c.3b MILESTONE: two ring-3 LA tasks exchanged a TYPED message — A ENCODEd greet/HELLO and send(0)'d it, B was scheduled and recv(0)'d + decoded MSG_TYPE=greet/MSG_BODY=HELLO, both from compiled LA at CPL 3, exit 33")))))))
+
 glyph MAIN =
   SEQ(print("── buildla.la: the build, orchestrated in Lingua Adamica (no shell) ──"))
   (SEQ(STAGE("asm_test_org.asm")("asm_in.asm"))
@@ -672,7 +734,9 @@ glyph MAIN =
                        (la k.
                          (la l.
                            (la m.
-                             (la n. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(n))))))))))))))
+                             (la n.
+                               (la o. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(o)))))))))))))))
+                               (SEQ(print("── QEMU K6: ring 3 on the metal — user mode, syscalls, and IPC (the six K6 slices) ──"))(K6ALL)))
                              (SEQ(print("── native tasks (K5b.1b): a suspended task's heap roots survive a GC — rt_gc scans the suspended task's roots ──"))(K5B1BSTAGE("!"))))
                            (SEQ(print("── native tasks (K5b.1a): cooperative spawn/yield in the LA-native runtime — round-robin A B A B A B done ──"))(K5B1STAGE("!"))))
                          (SEQ(print("── QEMU K5b.2: PREEMPTIVE tasks — non-yielding workers interleaved by the timer ──"))(K5B2STAGE("!"))))

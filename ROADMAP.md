@@ -1431,7 +1431,36 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       GREEN, 75 stages = 57 marker + 4 cross-engine + 3 guard + 1 namespace + 8 QEMU
       + 2 native-task**. So all of K5 (timer capability · preemption on the metal ·
       the cooperative runtime + GC-safe suspension beneath it) is now orchestrated in
-      LA. **K6–K7** (the remaining kernel milestones) remain.
+      LA.
+      **A THIRTEENTH SLICE — K6, RING 3 on the metal: user mode, syscalls, IPC
+      (`81 stages`, six slices via a new `QGATE` helper).** K5 proved the kernel
+      *schedules*; K6 proves it enforces the **privilege boundary** — a payload at
+      CPL 3 that enters the kernel only through `syscall`/`sysret`, and the LogosIPC
+      "nervous system" re-homed onto kernel-held channels between ring-3 tasks. Six
+      exit-33 QEMU gates on pre-built ELFs (all boot-tested green first): **K6a** —
+      ring-3 user mode (`K6A CPL=3`: GDT/TSS(RSP0)/iretq-to-ring3/syscall-sysret/
+      user-page); **K6b** — the *real* `kernel.la` image speaks the Word at ring 3
+      (`I AM THAT I AM`, the SAME image that runs at ring 0 under K1..K5); **K6c.1**
+      — the kernel IPC service (`K6C t7 IAM`: a typed message send/recv'd across the
+      boundary); **K6c.2** — two ring-3 tasks + a real kernel context switch (`B got
+      IAM` **AND** `A got YOU` — full save/restore); **K6c.3a** — a compiled LA
+      process does IPC (`K6C3 IPC OK`, `ipc_kernel.la`'s `send(0)`/`recv(0)`);
+      **K6c.3b MILESTONE** — two ring-3 LA tasks exchange a **typed** message (`B rx
+      type=greet` **AND** `B rx body=HELLO`, `ENCODE`d greet/HELLO decoded by the
+      peer). ★ Rather than six more lambda layers, this introduced a **parameterised
+      QEMU-gate helper `QGATE(elf)(cmd)(code)(chk)(label)`** — the SAFE `stat()`
+      probe + `RUN2` + `exit==code AND chk(out)`, where `chk` is a *predicate* on the
+      output so a slice can demand ONE marker or (the two round-trip slices) BOTH; the
+      six become a flat `K6ALL` table wired into MAIN as a single var. The K1..K5
+      stages keep their bespoke glyphs (exit-35 fault gates + the negative K5a/K5b.2
+      markers `QGATE` doesn't model). Isolate-verified (scratch → all six PASS,
+      codegen-clean, a mis-nested paren caught by a code-paren-balance check *before*
+      the codegen) then full **BUILD GREEN, 81 stages = 57 marker + 4 cross-engine +
+      3 guard + 1 namespace + 8 QEMU + 2 native-task + 6 ring-3 (K6)**. **K7** (the
+      final kernel milestone: the sovereign bootloader — K7a/K7b are already built +
+      gated in `build.sh`) is the last kernel slice; then buildla's remaining ~22 of
+      103 are the cross-engine byte-identity, resource/QEMU, and toolchain-driving
+      stages already scoped in the honest-boundary notes below.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
