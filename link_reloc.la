@@ -27,8 +27,9 @@
 #  quietly skipped a region would be worth nothing.
 #
 #  ── THE TWO RELOCATION KINDS, AND WHY P MATTERS ─────────────────────────────
-#    R_X86_64_PC32 (2)  value = S + A - P     4 bytes
-#    R_X86_64_64   (1)  value = S + A         8 bytes
+#    R_X86_64_PC32  (2)  value = S + A - P     4 bytes
+#    R_X86_64_PLT32 (4)  value = S + A - P     4 bytes  (static: same as PC32)
+#    R_X86_64_64    (1)  value = S + A         8 bytes
 #
 #  P — the address OF THE PATCH SITE — is what makes PC32 relative, and it is
 #  the field with nowhere to hide: S and A come straight out of the object,
@@ -51,6 +52,7 @@ glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
 glyph AND  = la a. la b. a(b)(FALSE)
 glyph NOT  = la b. b(FALSE)(TRUE)
+glyph OR   = la a. la b. a(TRUE)(b)
 glyph CONS = la h. la t. la n. la c. c(h)(t)
 glyph NIL  = la n. la c. n
 glyph CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
@@ -93,6 +95,18 @@ glyph SECBYTES = la f. la sec. TAKES(SH_SIZE(f)(sec))(DROPS(SH_OFF(f)(sec))(f))
 #   goes to the resolver; everything else — including a SECTION symbol, whose
 #   st_value is 0 — is its section's base plus its offset, so one rule covers
 #   both without a special case.
+#   ★ PLT32 IS PC32 HERE, and that is a statement about static linking rather
+#   than a shortcut. R_X86_64_PLT32 asks for the address of the symbol's
+#   PROCEDURE LINKAGE TABLE entry — the indirection a dynamic linker needs when
+#   the target may live in another shared object and is only bound at load
+#   time. This linker produces a static, self-contained image: the callee is in
+#   the very .text being emitted, its final address is already known, so the
+#   PLT entry it would jump through would be a stub that immediately jumps to
+#   an address we can just write directly. Resolving it as PC32 is what `ld`
+#   does for a static link too. It is NOT correct for a dynamic one, and if
+#   shared objects ever arrive here this must become a real PLT.
+glyph ISPCREL = la ty. OR(int_eq(ty)(2))(int_eq(ty)(4))
+
 glyph SYMVAL = la f. la ss. la va. la resolve. la i.
     IF(SYM_IS_UNDEF(f)(ss)(i))
       (la _. resolve(SYMNAME(f)(ss)(i)))
@@ -112,10 +126,10 @@ glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
               self(add(i)(1))
                   (IF(int_eq(ty)(1))
                      (la _. PATCH(acc)(off)(8)(LE8(v)))
-                     (la _. IF(int_eq(ty)(2))
+                     (la _. IF(ISPCREL(ty))
                               (la _. PATCH(acc)(off)(4)(LE4(v)))
                               (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty))))))
-            )(IF(int_eq(ty)(2))
+            )(IF(ISPCREL(ty))
                 (la _. sub(add(s)(a))(add(secva)(off)))
                 (la _. add(s)(a)))
           )(REL_ADDEND(f)(rs)(i))

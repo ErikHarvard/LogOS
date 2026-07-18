@@ -22,6 +22,7 @@ done
 
 nasm -f elf64 link_test_a.asm -o link_test_a.o
 nasm -f elf64 link_test_dup.asm -o link_test_dup.o
+nasm -f elf64 link_test_plt.asm -o link_test_plt.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
 ld -o link_ref link_test_a.o link_test_b.o
 objcopy -O binary --only-section=.text link_ref ldtext.bin
@@ -102,6 +103,41 @@ else
         || { echo "FAIL  link_reloc.la: refused, but not with the unresolved-symbol diagnostic"; ok=0; }
 fi
 
+# --- R_X86_64_PLT32: the relocation real objects actually carry ---
+#   nasm and gcc emit PLT32 for an ordinary call to a global function, so a
+#   linker handling only PC32 fails on most real input while looking fine on a
+#   hand-written fixture. Statically the two are equivalent — the callee is in
+#   the image being emitted, so the PLT stub it would jump through is
+#   redundant — and this proves the equivalence rather than assuming it, by
+#   requiring the same bytes ld produces from the same pair.
+ld -o link_ref_plt link_test_plt.o link_test_b.o
+objcopy -O binary --only-section=.text link_ref_plt ldtext_plt.bin
+cp link_test_plt.o link_in1.o
+cp link_test_b.o   link_in2.o
+rm -f link_out link_text.bin
+POUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1) || {
+    echo "FAIL  link_reloc.la: crashed on the PLT32 fixture"; echo "$POUT"; ok=0; }
+if [ -f link_text.bin ]; then
+    cmp -n "$asize" link_text.bin ldtext_plt.bin \
+        || { echo "FAIL  link_reloc.la: PLT32 object's patched .text differs from ld's"; ok=0; }
+    POB=$(mktemp); PLB=$(mktemp)
+    dd if=link_text.bin bs=1 skip=$bstart of="$POB" 2>/dev/null
+    dd if=ldtext_plt.bin bs=1 skip=$bstart of="$PLB" 2>/dev/null
+    cmp "$POB" "$PLB" || { echo "FAIL  link_reloc.la: PLT32 link's second object differs from ld's"; ok=0; }
+    rm -f "$POB" "$PLB"
+else
+    echo "FAIL  link_reloc.la: PLT32 link produced no .text"; ok=0
+fi
+#   and it must RUN, not merely diff
+if [ -x link_out ]; then
+    PGOT=$(./link_out); PRC=$?
+    PWANT=$(./link_ref_plt)
+    [ "$PGOT" = "$PWANT" ] && [ "$PRC" = "0" ] \
+        || { echo "FAIL  PLT32-linked binary printed '$PGOT' rc=$PRC, ld's prints '$PWANT'"; ok=0; }
+else
+    echo "FAIL  link_reloc.la: PLT32 link emitted no executable"; ok=0
+fi
+
 # --- NEGATIVE: a symbol defined TWICE must be refused ---
 #   `ld` calls this "multiple definition" and refuses. Without the check a
 #   linker takes whichever definition came first and links happily, so the bug
@@ -127,5 +163,5 @@ fi
 [ -e link_out ] && { echo "FAIL  link_reloc.la: wrote link_out despite refusing the link"; ok=0; }
 
 rm -f link_in1.o link_in2.o
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (W^X, page-aligned, 2 negative gates)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (PC32 + PLT32 + 64, W^X, page-aligned, 2 negative gates)"
 [ "$ok" = 1 ]

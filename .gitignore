@@ -151,3 +151,7 @@ watched.la
 /link_out
 /link_test_dup.o
 /gate.log
+/link_test_plt.o
+/link_ref_plt
+/ldtext_plt.bin
+/plt.log
