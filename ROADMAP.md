@@ -1080,6 +1080,52 @@ disk; GRUB/multiboot gone, the last foreign-toolchain seam at boot closed).
       its full self by streaming the rest (the honest version of the
       minimal-regenerable-seed idea). Late-stage.
 
+### Tier 2b — OS-level autopoiesis (added 2026-07-17; GATED on the OS layers existing first)
+
+The language/build autopoiesis is closed to its honest boundary (Tier 1 first-list
+items done; `buildla` at 91/103 with only the irreducible seed + foreign tools left).
+The **next round of autopoiesis is at the OS level** — the system maintaining not its
+source but its *running self*: drivers, memory, processes, verification while alive.
+Each of these is **gated on the OS layer it acts on existing first** (compositor +
+core drivers → then the process/memory/service layers → then these). Recorded now so
+the target is fixed; built when the substrate is there. This is *why* we build the OS
+outward — it is both the usable system and the substrate the next autopoiesis needs.
+
+- [ ] **Self-repairing drivers** — a driver that detects its own device fault
+      (a wedged NIC ring, a stuck ATA channel, a lost framebuffer) and
+      re-initialises itself from its own spec, the AATC repair loop applied to a
+      *device* organ rather than a source organ. *Gated on:* the core drivers
+      (disk · input · NIC send/recv) running on the metal.
+- [ ] **Self-managing memory — the "cull unless active" principle** — the system
+      reclaiming what is not in active use without an external allocator policy:
+      the frame/heap manager treats every region as *cullable by default* and
+      *retained only while demonstrably live* (the memory analogue of the GC's
+      reachability, lifted to the whole OS's working set). *Gated on:* the kernel
+      PMM/paging (K3/K4, done) grown into a live process-aware memory manager.
+- [ ] **Self-healing processes** — a supervised process that crashes is diagnosed
+      and respawned from its own descriptor (logosinit's respawn discipline +
+      AATC's Sense→Diagnose→Prescribe on a *live* task, not a source module).
+      *Gated on:* the ring-3 process/scheduler layer (K5/K6, done) grown into a
+      real process/session manager.
+- [ ] **Runtime self-verification — AATC while ALIVE, not just at build** — the
+      autological criterion run against the *running* system continuously, so an
+      organ that drifts from its spec at runtime is caught the moment it does, not
+      only when `build.sh`/`buildla` re-checks at build time. *Gated on:* a
+      live self-monitoring daemon (Tier-2 homeostasis) with the OS services to host it.
+- [ ] **Self-updating** — the running OS producing *and installing* a new version
+      of itself from within, with no external update mechanism, then rebooting
+      into it (K7's sovereign boot is the install target). *Gated on:* the
+      package/update layer (Citrinitas item 12) + self-distribution transport.
+- [ ] **Self-distribution / self-replication onto new hardware** — (same as Tier 2's
+      survival-level item; restated here as an OS capability) copying the running
+      system to new hardware and coming back up. *Gated on:* networking (NIC
+      send/recv done → the AegisNet transport) + self-updating.
+
+*(The `[!]` walls below still bound all of these: hardware/firmware is the
+irreducible floor, the trusted base stays trusted, goal-origination and the
+learned-model seam and Gödel-total-self-verification are not closed by any of the
+above. These are OS-level *resilience*, not the removal of those limits.)*
+
 ### The full seam map (added 2026-07-16)
 
 *The autopoietic move is always the same: every place the system depends on
@@ -1700,10 +1746,19 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       open; note it runs directly into the goal-origination wall below, so expect
       a bounded form, not a total one.
 
-**Priority order (highest value first):** self-optimization → the LA-native
-toolchain (assembler/linker/debugger/build/test) → runtime continuous
-self-verification. *(Denotational morphology was #1 on the original list; it is
-already built — see above.)*
+**Priority order (updated 2026-07-17 — the pivot):** the language/build autopoiesis
+is now closed to its honest boundary (self-optimization, the LA-native toolchain, and
+`buildla` at 91/103 all done; the rest is the irreducible seed + foreign-tool seams,
+low marginal return on the already-proven core claim). **The active frontier is
+building the OS OUTWARD** — compositor on the metal → core drivers (disk · keyboard ·
+NIC send/recv) → the process/memory/service layers → **Tier 2b OS-level autopoiesis**
+(above). *This is both the usable system and the substrate the next autopoiesis needs.*
+*(When we RETURN to language depth, the deepest remaining autological language closure
+is **denotational morphology in its TOTAL form** — the audit's #1 LA finding. Its
+COMPOSITIONAL layer is already built (`denote.la` — a settled result, do not re-open
+it), but full agreement across ALL κ-equivalences (not just the one documented rewrite)
+is bounded by undecidability, and the neighbouring language-depth seams — self-verifying
+grammar, the operators-`∂δγρ𝔄`-as-glyphs, self-typing — remain. Keep this on the list.)*
 
 ### Tier 3 — the honest LIMITS (named so they are never chased)
 
