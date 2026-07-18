@@ -566,6 +566,113 @@ glyph ALUENC = la op. la w. la a. la b.
     IF(ISREG(b))
       (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
       (la _. error("asm: unsupported operand (register-to-register only)"))
+# ── GROUP-1 ALU (add/or/and/sub/xor/cmp) — the reg,IMMEDIATE forms ──────────
+#   Profiling the kernel .asm showed reg+imm is the DOMINANT shape (or 31 of
+#   45 uses, shr 32 of 32, cmp 11 of 23, and 5 of 5) — and asm.la could not
+#   encode it at all, its ALU being register-to-register only.
+#
+#   The six ops differ ONLY by a 3-bit "digit", which is a regularity of the
+#   opcode map worth exploiting rather than writing six encoders:
+#       reg,reg   opcode = digit*8 + 1     (add 01, or 09, and 21, sub 29, ...)
+#       AL,imm    opcode = digit*8 + 4     (add 04, or 0C, and 24, cmp 3C, ...)
+#       eAX,imm   opcode = digit*8 + 5     (add 05, or 0D, and 25, cmp 3D, ...)
+#       reg,imm   81 /digit  (imm)   or   83 /digit (imm8, sign-extended)
+#
+#   ★ NASM'S CHOICE HIERARCHY, and it is not the obvious one. The SHORTEST
+#   encoding wins, which means the sign-extended imm8 form is tried FIRST and
+#   beats the accumulator form even for rax: `add rax, 8` is `48 83 C0 08`,
+#   not `48 05 08000000`. Only when the immediate will not fit a signed byte
+#   does the accumulator short form (which drops the ModRM byte entirely) win.
+#   At width 1 the order INVERTS — `sub al, 9` is `2C 09` (2 bytes) rather than
+#   `80 E8 09` (3), because there is no 8-bit sign-extension to save anything.
+#   An encoder that merely emitted a form the CPU accepts would be correct and
+#   still fail the diff.
+glyph MODRMD = la digit. la r. B(add(192)(add(mul(digit)(8))(mod(r)(8))))
+glyph FOLD8  = la n. IF(lt(n)(0))(la _. add(256)(n))(la _. n)
+glyph G1IMM = la digit. la w. la r. la n. la force.
+    IF(int_eq(w)(1))
+      (la _. IF(int_eq(r)(0))
+               (la _. concat(B(add(mul(digit)(8))(4)))(B(FOLD8(n))))
+               (la _. concat(REXOPT(1)(0)(r)(force))
+                     (concat(B(128))(concat(MODRMD(digit)(r))(B(FOLD8(n)))))))
+      (la _. IF(FITS8(n))
+        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(FALSE))
+              (concat(B(131))(concat(MODRMD(digit)(r))(B(FOLD8(n)))))))
+        (la _. IF(int_eq(r)(0))
+          (la _. concat(P66(w))(concat(REXOPT(w)(0)(0)(FALSE))
+                (concat(B(add(mul(digit)(8))(5)))(IMMW(w)(n)))))
+          (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(FALSE))
+                (concat(B(129))(concat(MODRMD(digit)(r))(IMMW(w)(n))))))))
+glyph G1ENC = la digit. la w. la a. la b.
+    IF(ISREG(b))
+      (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+      (la _. IF(ISNUM(b))
+               (la _. G1IMM(digit)(w)(REGNUM(a))(NUMV(b))(RFORCE(a)))
+               (la _. error("asm: unsupported ALU operand (want register or immediate)")))
+glyph G1DIG = la op.
+    IF(str_eq(op)("add"))(la _. 0)(la _.
+    IF(str_eq(op)("or"))(la _. 1)(la _.
+    IF(str_eq(op)("and"))(la _. 4)(la _.
+    IF(str_eq(op)("sub"))(la _. 5)(la _.
+    IF(str_eq(op)("xor"))(la _. 6)(la _. 7)))))
+glyph ISG1 = la op.
+    OR(str_eq(op)("add"))(OR(str_eq(op)("or"))(OR(str_eq(op)("and"))
+   (OR(str_eq(op)("sub"))(OR(str_eq(op)("xor"))(str_eq(op)("cmp"))))))
+
+# ── SHIFTS: C1 /digit ib, with the by-ONE special case D1 /digit ────────────
+#   `shl rax, 1` is `48 D1 E0` (3 bytes), not `48 C1 E0 01` (4) — a distinct
+#   opcode for a count of one, not an immediate that happens to be 1.
+glyph SHDIG = la op.
+    IF(str_eq(op)("shl"))(la _. 4)(la _.
+    IF(str_eq(op)("shr"))(la _. 5)(la _. 7))
+glyph ISSH = la op. OR(str_eq(op)("shl"))(OR(str_eq(op)("shr"))(str_eq(op)("sar")))
+glyph SHENC = la digit. la w. la a. la b.
+    IF(NOT(ISNUM(b)))
+      (la _. error("asm: shift count must be an immediate (the shl/shr reg,CL form is not implemented)"))
+      (la _.
+    (la r. la n.
+      IF(int_eq(n)(1))
+        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+              (concat(B(OP8(209)(w)))(MODRMD(digit)(r)))))
+        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+              (concat(B(OP8(193)(w)))(concat(MODRMD(digit)(r))(B(FOLD8(n))))))))
+    (REGNUM(a))(NUMV(b)))
+
+# ── inc/dec (FF /0, FF /1) and test (85 /r; F7 /0; A9 accumulator) ──────────
+#   ★ `test` has NO imm8 form — `test rdx, 8` is `48 F7 C2 08 00 00 00`, a full
+#   imm32 for a value that fits a byte. Reusing group-1's imm8 shortcut here
+#   would produce a shorter encoding NASM never emits.
+glyph IDENC = la digit. la w. la a.
+    (la r. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+          (concat(B(OP8(255)(w)))(MODRMD(digit)(r)))))
+    (REGNUM(a))
+glyph TSTENC = la w. la a. la b.
+    IF(ISREG(b))
+      (la _. RROP(133)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+      (la _. IF(NOT(ISNUM(b)))
+        (la _. error("asm: test operand must be a register or an immediate"))
+        (la _. (la r. la n.
+                IF(int_eq(r)(0))
+                  (la _. concat(P66(w))(concat(REXOPT(w)(0)(0)(FALSE))
+                        (concat(B(OP8(169)(w)))(IMMW(w)(n)))))
+                  (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+                        (concat(B(OP8(247)(w)))(concat(MODRMD(0)(r))(IMMW(w)(n)))))))
+             (REGNUM(a))(NUMV(b))))
+
+# ── lea: the same ModRM/SIB/disp machinery as mov, opcode 8D, never 8-bit ───
+glyph LEAENC = la w. la a. la b.
+    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(b))(RFORCE(a))
+
+# ── no-operand instructions ────────────────────────────────────────────────
+glyph ISNOARG = la op.
+    OR(str_eq(op)("cli"))(OR(str_eq(op)("sti"))(OR(str_eq(op)("hlt"))
+   (OR(str_eq(op)("cld"))(str_eq(op)("iretq")))))
+glyph NOARG = la op.
+    IF(str_eq(op)("cli"))(la _. B(250))(la _.
+    IF(str_eq(op)("sti"))(la _. B(251))(la _.
+    IF(str_eq(op)("hlt"))(la _. B(244))(la _.
+    IF(str_eq(op)("cld"))(la _. B(252))(la _. concat(B(72))(B(207))))))
+
 glyph MOVLBL = la a. la b.
     AND(NOT(ISMEM(a)))(AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))(NOT(ISNUM(b)))))
 glyph LENOF  = la s. str_to_int(str_len(s))
@@ -599,10 +706,14 @@ glyph SIZEL = la labs. la off. la ts.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
     IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 6))(la _.
     IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _.
-    IF(str_eq(op)("add"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(ALUENC(1)(w)(a)(b))))(la _.
-    IF(str_eq(op)("sub"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(ALUENC(41)(w)(a)(b))))(la _.
-    IF(str_eq(op)("xor"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(ALUENC(49)(w)(a)(b))))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))
+    IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
+    IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(G1DIG(op))(w)(a)(b))))(la _.
+    IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(w)(a)(b))))(la _.
+    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a))))(la _.
+    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a))))(la _.
+    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
+    IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(w)(a)(b))))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))
   (HD(ts))
 
 # ── one instruction -> its bytes (off = this instruction's own address) ──
@@ -617,9 +728,13 @@ glyph ENC1 = la labs. la off. la ts.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
     IF(str_eq(op)("push"))(la _. PUSHPOP(80)(REGNUM(A1(ts))))(la _.
     IF(str_eq(op)("pop"))(la _. PUSHPOP(88)(REGNUM(A1(ts))))(la _.
-    IF(str_eq(op)("add"))(la _. WITHOPS(ts)(ALUENC(1)))(la _.
-    IF(str_eq(op)("sub"))(la _. WITHOPS(ts)(ALUENC(41)))(la _.
-    IF(str_eq(op)("xor"))(la _. WITHOPS(ts)(ALUENC(49)))(la _.
+    IF(ISNOARG(op))(la _. NOARG(op))(la _.
+    IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(G1DIG(op))))(la _.
+    IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))))(la _.
+    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(0)(w)(a)))(la _.
+    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(1)(w)(a)))(la _.
+    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(TSTENC))(la _.
+    IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(LEAENC))(la _.
     IF(str_eq(op)("call"))(la _. concat(B(232))(LE4(REL32(labs)(TARGET(ts))(add(off)(5)))))(la _.
     IF(str_eq(op)("jmp"))
       (la _. IF(JSHORT(labs)(off)(ts))
@@ -634,7 +749,7 @@ glyph ENC1 = la labs. la off. la ts.
                (la _. concat(B(117))(B(REL8(labs)(off)(TARGET(ts)))))
                (la _. concat(B(15))(concat(B(133))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
     IF(str_eq(op)("mov"))(la _. WITHOPS(ts)(MOVENC(labs)))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))
   (HD(ts))
 
 #   Every line is tokenized ONCE, up front, and the passes consume token lists

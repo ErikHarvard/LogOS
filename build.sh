@@ -1436,6 +1436,57 @@ PY
     ./tiny_host asm.la >/dev/null 2>&1 \
       || { echo "FAIL  asm.la: a legal width program was rejected by a guard"; ok=0; }
     rm -f /tmp/nasm_w.bin /tmp/asm_w.out /tmp/asm_red.out
+    # (2d4) GROUP-1 ALU with IMMEDIATES + shifts + inc/dec + test/lea + no-arg.
+    #       Scoped by profiling the kernel .asm: reg+imm is the DOMINANT shape
+    #       (or 31 of 45 uses, shr 32 of 32, cmp 11 of 23, and 5 of 5) and
+    #       asm.la could not encode it at all — its ALU was register-to-register
+    #       only. With this, 75% of boot.asm's 1060 lines are readable; what
+    #       remains is mostly the PREPROCESSOR/directive layer (%ifdef/%define/
+    #       %include = 106 lines, resb/dq/dd/align/section = 53), not opcodes.
+    rm -f asm_out.bin /tmp/nasm_alu.bin; cp asm_test_alu.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm_alu.out 2>&1 || { echo "FAIL  asm.la: ALU program failed: $(tail -1 /tmp/asm_alu.out)"; ok=0; }
+    nasm -f bin asm_test_alu.asm -o /tmp/nasm_alu.bin 2>/dev/null || { echo "FAIL  asm.la: nasm ALU reference failed"; ok=0; }
+    cmp -s asm_out.bin /tmp/nasm_alu.bin \
+      || { echo "FAIL  asm.la: ALU/shift/test/lea encodings DIFFER from nasm"; ok=0;
+           python3 - <<'PYALU1'
+a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_alu.bin','rb').read()
+print('      asm.la:', a.hex(' ')); print('      nasm  :', b.hex(' '))
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x:02x} nasm={y:02x}'); break
+PYALU1
+         }
+    python3 - <<'PYALU2' || { echo "FAIL  asm.la: a NASM encoding-CHOICE rule regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# NASM picks the SHORTEST encoding, and the priority order is NOT the obvious
+# one. Each rule is asserted BY NAME: an encoder violating any would emit
+# something the CPU accepts perfectly and still fail the diff.
+q=[("add rax,8: imm8 form BEATS accumulator",  d[0:4]    == bytes([0x48,0x83,0xc0,0x08])),
+   ("sub al,9: accumulator BEATS 80 /5 at w=1",d[46:48]  == bytes([0x2c,0x09])),
+   ("or ecx,0x80: 0x80 does NOT fit signed i8",d[75:81]  == bytes([0x81,0xc9,0x80,0,0,0])),
+   ("shl rax,1: by-ONE opcode D1, not C1+ib",  d[108:111]== bytes([0x48,0xd1,0xe0])),
+   ("test rdx,8: test has NO imm8 form",       d[136:143]== bytes([0x48,0xf7,0xc2,0x08,0,0,0])),
+   ("lea r8,[rsp+32]: SIB under REX.R",        d[151:156]== bytes([0x4c,0x8d,0x44,0x24,0x20]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYALU2
+    # (2d5) RED PATH for the new families. `shl reg, reg` is the CL-count form,
+    #       which is NOT implemented — it must halt loudly rather than encode
+    #       the register number as though it were a shift count, which would be
+    #       a plausible-looking wrong instruction.
+    printf 'bits 64\nshl rax, rcx\n' > asm_in.asm
+    if ./tiny_host asm.la >/tmp/asm_red2.out 2>&1; then
+        echo "FAIL  asm.la: 'shl rax, rcx' (unimplemented CL form) assembled instead of halting"; ok=0
+    else
+        grep -qF "asm:" /tmp/asm_red2.out \
+          || { echo "FAIL  asm.la: 'shl rax, rcx' halted without an asm: diagnostic"; ok=0; }
+    fi
+    # negative control: the legal forms must still assemble
+    printf 'bits 64\nshl rax, 3\nand rax, 15\ntest rax, rbx\nlea rax, [rcx+8]\ncli\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1 \
+      || { echo "FAIL  asm.la: a legal ALU/shift/lea program was rejected"; ok=0; }
+    rm -f /tmp/nasm_alu.bin /tmp/asm_alu.out /tmp/asm_red2.out
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`

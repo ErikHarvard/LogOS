@@ -1272,6 +1272,36 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       silently opened a regex character class, and a hollow test harness whose
       truncated `if` block made a syntax error read as "all green". A test that
       has never failed is not known to discriminate.)*
+      **GROUP-1 ALU WITH IMMEDIATES + shifts + inc/dec + test/lea + the
+      no-operand set added, byte-identical over 42 instructions / 163 bytes
+      (2026-07-18).** Again scoped by profiling rather than guessing, and the
+      profile overturned the obvious plan: the gap was not *which mnemonics*
+      were missing but *which operand shape* — **reg+immediate dominates**
+      (`or` 31 of 45 uses, `shr` 32 of 32, `cmp` 11 of 23, `and` 5 of 5,
+      `test` 8 of 18) and `asm.la` could not encode it at all, its ALU being
+      register-to-register only. The six group-1 ops differ only by a 3-bit
+      digit (`reg,reg` = `digit*8+1`, `AL,imm` = `digit*8+4`, `eAX,imm` =
+      `digit*8+5`), so one encoder serves all six rather than six encoders.
+      **NASM picks the SHORTEST form and the priority is not the obvious one**,
+      each rule gated by name: the sign-extended `imm8` form (`83 /digit`)
+      beats the accumulator form even for `rax` — `add rax, 8` is
+      `48 83 c0 08`, not `48 05 08000000` — while at width 1 the order
+      **inverts**, `sub al, 9` being `2c 09` rather than `80 e8 09`, since
+      there is no 8-bit sign-extension to save anything; `or ecx, 0x80` needs
+      the full `imm32` because `0x80` does *not* fit a **signed** byte;
+      `shl rax, 1` is the distinct by-one opcode `48 d1 e0`, not `c1` with an
+      immediate of 1; and **`test` has no `imm8` form at all**, so `test rdx, 8`
+      is a full `48 f7 c2 08000000` for a value that fits a byte — reusing
+      group-1's shortcut there would emit something the CPU accepts and NASM
+      never writes. **`boot.asm` is now 75% readable (799 of 1060 lines)**, and
+      what remains is mostly the *preprocessor/directive* layer — `%ifdef` /
+      `%define` / `%include` (106 lines) and `resb`/`dq`/`dd`/`align`/`section`
+      (53) — rather than instructions. *(Running the gate's red path caught a
+      defect in the new code, not the gate: `shl rax, rcx` — the unimplemented
+      CL-count form — did halt, but with the host's `str_to_int: not a decimal
+      integer` instead of an assembler diagnostic. Both shift and test now name
+      the unsupported form.)*
+
       *Honest cost, measured then reduced:* assembling N `mov rax, rcx` (CPU
       time under identical load) went `0.09` → `0.49` s/instruction with the
       slice — linear in program length, but a 5.5x constant — and back to
