@@ -215,14 +215,20 @@ glyph REL32 = la labs. la nm. la next.
 #   char-by-char is quadratic and every operand re-scans it on every
 #   fixed-point pass. The list scan is pointer-chasing with no copying.
 #
-#   HONEST MEASUREMENT (the flat table was replaced on this reasoning, and the
-#   reasoning is only half the story): assembling N `mov rax, rcx` costs
-#   ~0.08 s/instruction before this slice and ~0.55 s/instruction after — both
-#   LINEAR in program length, but a ~6x constant. The table is not the whole
-#   cause; sizing-by-encoding (see MOVSIZE) is the rest, since SIZEL now runs
-#   the encoder and is itself called several times per line per pass. That cost
-#   is accepted here for correctness, and is the thing to attack before
-#   boot.asm's 1555 lines, not after.
+#   HONEST MEASUREMENT — and a caution about reasoning ahead of it. Assembling
+#   N `mov rax, rcx` (CPU time, same load, so comparable) went:
+#       0.09 s/instruction  before the width slice
+#       0.49 s/instruction  with the slice, unoptimised   (5.5x)
+#       0.26 s/instruction  after the optimisations below (2.9x)
+#   The list-vs-flat-table argument above is sound but was NOT the bottleneck,
+#   and neither was the operand plumbing WITHOPS fixes — both were changed on
+#   plausible reasoning and neither moved the number. What actually dominated
+#   was found only by MEASURING (stub out a suspect, re-time): every pass
+#   re-tokenized every line, so the fix was to tokenize once (see MAPTOKS),
+#   worth ~2x on its own. Sizing-by-encoding is the remaining ~39%, kept
+#   deliberately because a second length implementation is how drift enters.
+#   Two wrong hypotheses in a row is the lesson: a plausible cause is not a
+#   measured one.
 #
 #   Note `ah/ch/dh/bh` (numbers 4-7) COLLIDE with `spl/bpl/sil/dil`
 #   (also 4-7). They are not synonyms — the hardware distinguishes them by
@@ -475,12 +481,24 @@ glyph IWIDTH = la ts.
       IF(ISREG(a))(la _. RWIDTH(a))
         (la _. IF(ISREG(b))(la _. RWIDTH(b))(la _. DECLSZ(TL2(ts)))))
     (A1(ts))(A2(ts))
-glyph IW = la ts.
+#   Operands are derived ONCE per instruction and handed to the encoder, rather
+#   than each encoder re-deriving them. The obvious form — every helper calling
+#   A1(ts)/A2(ts) as it needs them — re-walked the token list about six times
+#   per instruction (twice in the encoder, twice for the high-byte check, twice
+#   for the width), and each of those re-ran DROPSZ to rebuild the operand list.
+#   WITHOPS computes the triple (width, first operand, second operand) once and
+#   passes it in, so an encoder is a pure function of already-resolved operands.
+#   This also makes the NEXT instruction family cheap to add: it receives w/a/b
+#   and does not repeat the plumbing.
+glyph IWOF = la ts. la a. la b.
     (la _. (la w. IF(int_eq(w)(0))
                     (la _. error(concat("asm: operation size not specified: ")(HD(ts))))
                     (la _. w))
-           (IWIDTH(ts)))
-    (HIGH8OK(A1(ts))(A2(ts)))
+           (IF(ISREG(a))(la _. RWIDTH(a))
+              (la _. IF(ISREG(b))(la _. RWIDTH(b))(la _. DECLSZ(TL2(ts))))))
+    (HIGH8OK(a)(b))
+glyph WITHOPS = la ts. la k.
+    (la a. (la b. k(IWOF(ts)(a)(b))(a)(b))(A2(ts)))(A1(ts))
 
 # ── SHORT-JUMP OPTIMISATION: iterate to a fixed point ───────────────────────
 #   NASM emits the SHORTEST jump that reaches: `jmp a` -> eb rel8 (2 bytes) when
@@ -529,9 +547,7 @@ glyph REL8 = la labs. la off. la nm.
 glyph RROP = la op. la w. la dst. la src. la force.
     concat(P66(w))(concat(REXOPT(w)(src)(dst)(force))
    (concat(B(OP8(op)(w)))(MODRM(dst)(src))))
-glyph MOVENC = la labs. la ts.
-  (la w.
-   (la a. la b.
+glyph MOVENC = la labs. la w. la a. la b.
     IF(ISMEM(a))
       (la _. IF(ISNUM(b))
                (la _. MEMIMM(w)(MEMBASE(a))(MEMDISP(a))(NUMV(b)))
@@ -545,24 +561,17 @@ glyph MOVENC = la labs. la ts.
                             (la _. MOVABS(REGNUM(a))(n))
                             (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))))
                    (NUMV(b)))
-            (la _. MOVABS(REGNUM(a))(LABADDR(b)(labs)))))))
-   (A1(ts))(A2(ts)))
-  (IW(ts))
-glyph ALUENC = la op. la ts.
-  (la w.
-   (la a. la b.
+            (la _. MOVABS(REGNUM(a))(LABADDR(b)(labs))))))
+glyph ALUENC = la op. la w. la a. la b.
     IF(ISREG(b))
       (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
-      (la _. error(concat("asm: unsupported operand for ")(HD(ts)))))
-   (A1(ts))(A2(ts)))
-  (IW(ts))
-glyph MOVLBL = la ts.
-    AND(NOT(ISMEM(A1(ts))))
-       (AND(NOT(ISMEM(A2(ts))))
-           (AND(NOT(ISREG(A2(ts))))(NOT(ISNUM(A2(ts))))))
+      (la _. error("asm: unsupported operand (register-to-register only)"))
+glyph MOVLBL = la a. la b.
+    AND(NOT(ISMEM(a)))(AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))(NOT(ISNUM(b)))))
 glyph LENOF  = la s. str_to_int(str_len(s))
 glyph MOVSIZE = la ts.
-    IF(MOVLBL(ts))(la _. 10)(la _. LENOF(MOVENC(NIL)(ts)))
+    WITHOPS(ts)(la w. la a. la b.
+      IF(MOVLBL(a)(b))(la _. 10)(la _. LENOF(MOVENC(NIL)(w)(a)(b))))
 
 # ── db: define bytes. Operands are quoted strings (emitted verbatim) or
 #    numbers (one byte each) — `db "I AM THAT I AM", 10`. This is what lets the
@@ -590,9 +599,9 @@ glyph SIZEL = la labs. la off. la ts.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
     IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 6))(la _.
     IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _.
-    IF(str_eq(op)("add"))(la _. LENOF(ALUENC(1)(ts)))(la _.
-    IF(str_eq(op)("sub"))(la _. LENOF(ALUENC(41)(ts)))(la _.
-    IF(str_eq(op)("xor"))(la _. LENOF(ALUENC(49)(ts)))
+    IF(str_eq(op)("add"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(ALUENC(1)(w)(a)(b))))(la _.
+    IF(str_eq(op)("sub"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(ALUENC(41)(w)(a)(b))))(la _.
+    IF(str_eq(op)("xor"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(ALUENC(49)(w)(a)(b))))
       (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))
   (HD(ts))
 
@@ -608,9 +617,9 @@ glyph ENC1 = la labs. la off. la ts.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
     IF(str_eq(op)("push"))(la _. PUSHPOP(80)(REGNUM(A1(ts))))(la _.
     IF(str_eq(op)("pop"))(la _. PUSHPOP(88)(REGNUM(A1(ts))))(la _.
-    IF(str_eq(op)("add"))(la _. ALUENC(1)(ts))(la _.
-    IF(str_eq(op)("sub"))(la _. ALUENC(41)(ts))(la _.
-    IF(str_eq(op)("xor"))(la _. ALUENC(49)(ts))(la _.
+    IF(str_eq(op)("add"))(la _. WITHOPS(ts)(ALUENC(1)))(la _.
+    IF(str_eq(op)("sub"))(la _. WITHOPS(ts)(ALUENC(41)))(la _.
+    IF(str_eq(op)("xor"))(la _. WITHOPS(ts)(ALUENC(49)))(la _.
     IF(str_eq(op)("call"))(la _. concat(B(232))(LE4(REL32(labs)(TARGET(ts))(add(off)(5)))))(la _.
     IF(str_eq(op)("jmp"))
       (la _. IF(JSHORT(labs)(off)(ts))
@@ -624,36 +633,57 @@ glyph ENC1 = la labs. la off. la ts.
       (la _. IF(JSHORT(labs)(off)(ts))
                (la _. concat(B(117))(B(REL8(labs)(off)(TARGET(ts)))))
                (la _. concat(B(15))(concat(B(133))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
-    IF(str_eq(op)("mov"))(la _. MOVENC(labs)(ts))
+    IF(str_eq(op)("mov"))(la _. WITHOPS(ts)(MOVENC(labs)))
       (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))
   (HD(ts))
 
+#   Every line is tokenized ONCE, up front, and the passes consume token lists
+#   rather than raw text. Each pass used to call TOKS(line) itself, so a source
+#   line was re-scanned character-by-character on every walk — the label pass,
+#   each fixed-point length pass, and the emit pass — for no gain, since
+#   tokenizing is a pure function of the line and nothing between passes can
+#   change it. This is the same generation/recognition discipline the rest of
+#   the project keeps: tokenizing is GENERATION, done once; the passes only
+#   RECOGNIZE what it produced.
+glyph MAPTOKS = Z(la self. la ls. ls(NIL)(la h. la t. CONS(TOKS(h)(""))(self(t))))
+
 # ── one pass: walk the lines, recording each label at its current offset ──
 glyph MKLABS = Z(la self. la ls. la labs. la off. la acc.
-    ls(acc)(la h. la t.
-      (la ts.
+    ls(acc)(la ts. la t.
         IF(ISLABEL(HD(ts)))
           (la _. self(t)(labs)(off)(CONS(PAIR(LABNAME(HD(ts)))(off))(acc)))
-          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))(acc)))
-      (TOKS(h)(""))))
+          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))(acc))))
 
 glyph TOTLEN = Z(la self. la ls. la labs. la off.
-    ls(off)(la h. la t.
-      (la ts. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts))))(TOKS(h)(""))))
+    ls(off)(la ts. la t. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))))
 
 # ── iterate to the fixed point: length unchanged <=> no promotion <=> stable ──
-glyph FIXLABS = Z(la self. la ls. la labs. la n. la org.
+#   The previous iteration's total length is CARRIED rather than recomputed.
+#   The old form evaluated TOTLEN twice per iteration — once for the incoming
+#   label table and once for the new one — but the first of those is exactly
+#   what the previous iteration already computed for the second. Since every
+#   TOTLEN is a full walk that re-tokenizes and re-sizes every line, dropping
+#   it removes a third of the fixed point's work with no change of meaning:
+#   the comparison is the same two numbers.
+glyph FIXLABS = Z(la self. la ls. la labs. la prev. la n. la org.
     IF(int_eq(n)(0))
       (la _. labs)
-      (la _. (la l2. IF(int_eq(TOTLEN(ls)(labs)(org))(TOTLEN(ls)(l2)(org)))
-                       (la _. l2)
-                       (la _. self(ls)(l2)(sub(n)(1))(org)))
+      (la _. (la l2.
+               (la len2. IF(int_eq(prev)(len2))
+                           (la _. l2)
+                           (la _. self(ls)(l2)(len2)(sub(n)(1))(org)))
+               (TOTLEN(ls)(l2)(org)))
              (MKLABS(ls)(labs)(org)(NIL))))
 
+#   The emitted bytes ARE the size, so the line is encoded ONCE. The old form
+#   called ENC1 and then SIZEL, and since SIZEL now runs the encoder to measure
+#   (see MOVSIZE), that meant assembling every line twice on the final pass.
+#   This is the same invariant MOVSIZE rests on — len(ENC1) = SIZEL — used in
+#   the one place where the labels are known and so ENC1 is safe to run.
 glyph PASS2 = Z(la self. la labs. la ls. la off.
-    ls("")(la h. la t.
-      (la ts. concat(ENC1(labs)(off)(ts))(self(labs)(t)(add(off)(SIZEL(labs)(off)(ts)))))
-      (TOKS(h)(""))))
+    ls("")(la ts. la t.
+      (la e. concat(e)(self(labs)(t)(add(off)(LENOF(e)))))
+      (ENC1(labs)(off)(ts))))
 
 # ── ASSEMBLE(source text) -> machine code bytes ──
 #   `org N` sets the base address, so labels are ABSOLUTE (what a -f bin image
@@ -661,12 +691,12 @@ glyph PASS2 = Z(la self. la labs. la ls. la off.
 #   offset simply starts at N instead of 0; rel8/rel32 are DIFFERENCES, so they
 #   are unaffected. `bits`/`org` emit nothing.
 glyph ORGOF = Z(la self. la ls.
-    ls(0)(la h. la t.
-      (la ts. IF(str_eq(HD(ts))("org"))(la _. str_to_int(NTH(1)(ts)))(la _. self(t)))
-      (TOKS(h)(""))))
+    ls(0)(la ts. la t.
+      IF(str_eq(HD(ts))("org"))(la _. NUMV(NTH(1)(ts)))(la _. self(t))))
 
 glyph ASSEMBLE = la src.
-    (la ls. (la org. PASS2(FIXLABS(ls)(NIL)(12)(org))(ls)(org))(ORGOF(ls)))(LINES(src)(""))
+    (la tls. (la org. PASS2(FIXLABS(tls)(NIL)(TOTLEN(tls)(NIL)(org))(12)(org))(tls)(org))
+             (ORGOF(tls)))(MAPTOKS(LINES(src)("")))
 
 glyph MAIN =
   (la code.

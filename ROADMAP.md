@@ -1272,11 +1272,30 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       silently opened a regex character class, and a hollow test harness whose
       truncated `if` block made a syntax error read as "all green". A test that
       has never failed is not known to discriminate.)*
-      *Honest cost, measured:* assembling N `mov rax, rcx` went from
-      ~0.08 s to ~0.55 s per instruction — still LINEAR in program length, but a
-      ~6x constant, from the larger register table plus sizing-by-encoding.
-      Correctness was taken over speed here deliberately; at `boot.asm`'s 1555
-      lines that constant is the thing to attack next, before adding families.
+      *Honest cost, measured then reduced:* assembling N `mov rax, rcx` (CPU
+      time under identical load) went `0.09` → `0.49` s/instruction with the
+      slice — linear in program length, but a 5.5x constant — and back to
+      **`0.26` s/instruction (2.9x)** after optimisation, recovering 46% of the
+      added cost. **The optimisation is a methodology lesson worth more than the
+      speedup:** the two changes made on the most plausible reasoning — a
+      CONS register table replacing a scanned flat literal (the flat-literal
+      idiom optimises the table's COMPILE time, not LOOKUP time through it), and
+      hoisting redundant operand derivation — were each defensible and *neither
+      moved the number*. The actual dominant cost was found only by measuring
+      (stub a suspect out, re-time): **every pass re-tokenized every line from
+      raw text**, so the label pass, each fixed-point length pass and the emit
+      pass all re-scanned each line character-by-character for no gain.
+      Tokenizing ONCE up front was worth ~2x by itself — and is the same Γ/Ρ
+      discipline the rest of the project keeps (tokenizing is *generation*, done
+      once; the passes only *recognize* what it produced). Two smaller wins
+      came with it: the fixed point now CARRIES the previous total length rather
+      than recomputing it (the old form evaluated `TOTLEN` twice per iteration,
+      the first being exactly the previous iteration's second), and `PASS2`
+      takes its size from the bytes it just emitted instead of re-running the
+      encoder to measure. Sizing-by-encoding is the remaining ~39% and is kept
+      deliberately — a second length implementation is precisely how drift
+      enters. **Two wrong hypotheses in a row: a plausible cause is not a
+      measured one.**
 - [~] **LA image layout (`asmelf.la`) — the assembler+layout seam closed END TO
       END, gated (2026-07-16).** `elf.la` already emitted a runnable native ELF
       from LA — but its 36 bytes of machine code were **hand-assembled into a
