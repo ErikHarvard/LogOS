@@ -42,6 +42,16 @@
 #  are kept out of the arithmetic and reintroduced only at the edges.
 # =====================================================================
 
+#   The reader is exported so the LAYOUT pass can consume it instead of
+#   duplicating a second copy of the ELF field offsets — two copies of a
+#   binary format's offsets is exactly how a parser and its user drift apart.
+#   The prelude below stays PRIVATE (the module system alpha-renames it), so
+#   an importer brings its own combinators and nothing leaks either way.
+export BYTE U16 U32 LOW4 SIGN32 CSTR IS_ELF E_TYPE E_SHNUM SH_TYPE SH_OFF
+export SH_SIZE SH_LINK SH_ALIGN SECNAME FIND_SEC SYM_INFO SYM_SHNDX SYM_VALUE
+export SYM_COUNT SYM_IS_GLOBAL SYM_IS_SECTION SYMNAME SYM_IS_UNDEF
+export REL_OFFSET REL_TYPE REL_SYM REL_ADDEND REL_COUNT
+
 # ── prelude: the standard combinators ───────────────────────────────────────
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")

@@ -1,0 +1,190 @@
+# =====================================================================
+#  link_layout.la — SLICE 2: LAYOUT + CROSS-OBJECT SYMBOL RESOLUTION.
+#
+#  This is the threshold slice 1 deliberately refused to claim. A reader that
+#  reports "greet is UNDEFINED here" is a reader; a linker is what RESOLVES
+#  that reference against the object defining it. A symbol defined in one
+#  translation unit and referenced from another — that case is what makes this
+#  a linker, and it is what this file does.
+#
+#  It `import`s link.la rather than re-deriving the ELF field offsets. Two
+#  copies of a binary format's offsets is how a parser and its consumer drift.
+#
+#  ── THE LAYOUT POLICY, AND WHY IT COPIES ld ─────────────────────────────────
+#  Addresses are a CHOICE, not a fact — a linker may lay sections out however
+#  it likes. That freedom is a verification problem: any self-consistent set of
+#  addresses looks correct against itself. So this adopts the policy `ld` uses
+#  on these inputs, which turns ld's output into an INDEPENDENT WITNESS:
+#  `nm link_ref` says _start=0x401000, greet=0x401010, msg=0x402000, and this
+#  must agree number-for-number. A plausible-but-wrong layout cannot pass,
+#  where a "does it run" test alone would let one through.
+#
+#    .text   at 0x401000, objects in command-line order, each aligned up to
+#            its own sh_addralign (16) — which is why greet is at 0x401010 and
+#            not 0x40100e: object A's .text is 14 bytes.
+#    .rodata at 0x402000 (its own page).
+#
+#  ── ★ WHY EVERYTHING IS LAMBDA-BOUND AND NOTHING IS A CONSTANT GLYPH ────────
+#  The obvious form — `glyph F1 = read_file("link_in1.o")` — DOES NOT WORK, and
+#  fails as a TIMEOUT rather than an error, which is what makes it worth
+#  recording. A glyph is a MACRO, not a binding: the table holds its AST and
+#  every reference RE-EVALUATES it. So `F1` re-read the file from disk at every
+#  single use, `T1_SEC` re-scanned the section table (itself a CSTR walk per
+#  section name) at every use, and since the reader's DROP is O(n) — str_tail
+#  copies — each byte access re-walks from offset 0. Composed, a report that
+#  should take a second did not finish in 120.
+#
+#  The fix is the standard LA idiom: `(la x. body)(value)` binds ONCE. So the
+#  file reads, section lookups and base addresses are all parameters threaded
+#  down, and the helpers take them as arguments rather than reaching for a
+#  global. This is the same discipline asm.la reached in its own performance
+#  pass (derive once, hand it to the consumer) — arrived at here from the
+#  opposite direction, by a hang.
+#
+#  ── THE HONEST SCOPE ────────────────────────────────────────────────────────
+#  TWO objects, sections .text and .rodata — what the fixtures exercise and
+#  therefore what is verified. A general N-object, N-section merge is a further
+#  step and is not claimed. Relocation PATCHING and ELF emission are slice 3;
+#  this computes the addresses those will need.
+# =====================================================================
+
+import("link.la")
+
+# ── prelude (private; the module's own are alpha-renamed away) ───────────────
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph NIL  = la n. la c. n
+glyph CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph NL   = "\n"
+
+glyph TEXT_BASE = 4198400      # 0x401000
+glyph RODATA_BASE = 4202496    # 0x402000
+
+#   Align up. sh_addralign is a REQUIREMENT the layout must honour, not a hint:
+#   get it wrong and every symbol after it shifts — the 0x40100e-vs-0x401010
+#   case above.
+glyph ALIGNUP = la n. la a.
+    IF(int_eq(a)(0))
+      (la _. n)
+      (la _. IF(int_eq(mod(n)(a))(0))
+               (la _. n)
+               (la _. add(n)(sub(a)(mod(n)(a)))))
+
+#   A defined symbol's address = its section's assigned VA + st_value (its
+#   offset WITHIN that section). `va` is the caller's section->address map.
+glyph SYMADDR = la f. la ss. la va. la i.
+    add(va(SYM_SHNDX(f)(ss)(i)))(SYM_VALUE(f)(ss)(i))
+
+#   A global DEFINITION this object exports: global, not undefined, and not a
+#   SECTION symbol — a section symbol's name IS its section's name, so without
+#   this a relocation against `.text` would shadow a real global of that name.
+glyph DEFINES = la f. la ss. la i.
+    AND(SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i)))
+       (AND(NOT(SYM_IS_UNDEF(f)(ss)(i)))(NOT(SYM_IS_SECTION(f)(ss)(i))))
+
+#   Scan one object for a global definition of `want`; -1 = not defined here.
+glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(f)(ss)))
+      (la _. sub(0)(1))
+      (la _. IF(AND(DEFINES(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
+               (la _. SYMADDR(f)(ss)(va)(i))
+               (la _. self(add(i)(1))))))(0)
+
+#   ★ THE RESOLUTION — the operation that makes this a linker.
+#   An unresolved symbol is a HARD ERROR, never address 0. Silently linking a
+#   missing symbol as zero is the classic linker failure: the program builds,
+#   then jumps to null at run time and the diagnostic arrives as a segfault far
+#   from the cause. A linker that cannot REFUSE is worthless the way a build
+#   tool that cannot go RED is.
+glyph RESOLVE = la f1. la ss1. la va1. la f2. la ss2. la va2. la want.
+    (la a1. IF(NOT(lt(a1)(0)))
+              (la _. a1)
+              (la _. (la a2. IF(NOT(lt(a2)(0)))
+                               (la _. a2)
+                               (la _. error(concat("link: unresolved symbol: ")(want))))
+                     (LOOKUP(f2)(ss2)(va2)(want))))
+    (LOOKUP(f1)(ss1)(va1)(want))
+
+#   Every global definition an object provides, with its final address.
+glyph DEFS = la tag. la f. la ss. la va. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(f)(ss)))
+      (la _. "")
+      (la _. IF(DEFINES(f)(ss)(i))
+               (la _. CAT(CONS("  ")(
+                          CONS(tag)(
+                          CONS(" ")(
+                          CONS(SYMNAME(f)(ss)(i))(
+                          CONS(" = ")(
+                          CONS(int_to_str(SYMADDR(f)(ss)(va)(i)))(
+                          CONS(NL)(
+                          CONS(self(add(i)(1)))(
+                          NIL))))))))))
+               (la _. self(add(i)(1))))))(0)
+
+#   Every UNDEFINED global of object 1, resolved against object 2 — the
+#   cross-object case named as such so the gate can check the exact line.
+glyph UNDEFS = la f1. la ss1. la va1. la f2. la ss2. la va2. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(f1)(ss1)))
+      (la _. "")
+      (la _. IF(AND(SYM_IS_GLOBAL(SYM_INFO(f1)(ss1)(i)))(SYM_IS_UNDEF(f1)(ss1)(i)))
+               (la _. CAT(CONS("  resolved ")(
+                          CONS(SYMNAME(f1)(ss1)(i))(
+                          CONS(" -> ")(
+                          CONS(int_to_str(RESOLVE(f1)(ss1)(va1)(f2)(ss2)(va2)(SYMNAME(f1)(ss1)(i))))(
+                          CONS(NL)(
+                          CONS(self(add(i)(1)))(
+                          NIL))))))))
+               (la _. self(add(i)(1))))))(0)
+
+#   Everything below is bound ONCE, for the reason in the header.
+glyph MAIN =
+  (la f1. (la f2.
+  (la ss1. (la ss2.
+  (la t1sec. (la t2sec. (la r2sec.
+  (la t1addr.
+  (la t2addr.
+  (la va1. (la va2.
+    print(CAT(
+      CONS("=== layout ===")(
+      CONS(NL)(
+      CONS("  .text   obj1 @ ")(
+      CONS(int_to_str(t1addr))(
+      CONS(" size ")(
+      CONS(int_to_str(SH_SIZE(f1)(t1sec)))(
+      CONS(NL)(
+      CONS("  .text   obj2 @ ")(
+      CONS(int_to_str(t2addr))(
+      CONS(" size ")(
+      CONS(int_to_str(SH_SIZE(f2)(t2sec)))(
+      CONS(NL)(
+      CONS("  .rodata obj2 @ ")(
+      CONS(int_to_str(RODATA_BASE))(
+      CONS(NL)(
+      CONS("=== definitions ===")(
+      CONS(NL)(
+      CONS(DEFS("obj1")(f1)(ss1)(va1))(
+      CONS(DEFS("obj2")(f2)(ss2)(va2))(
+      CONS("=== cross-object resolution ===")(
+      CONS(NL)(
+      CONS(UNDEFS(f1)(ss1)(va1)(f2)(ss2)(va2))(
+      NIL))))))))))))))))))))))))
+  )(la sec. IF(int_eq(sec)(t2sec))
+              (la _. t2addr)
+              (la _. IF(AND(NOT(lt(r2sec)(0)))(int_eq(sec)(r2sec)))
+                       (la _. RODATA_BASE)
+                       (la _. sub(0)(1))))
+  )(la sec. IF(int_eq(sec)(t1sec))(la _. t1addr)(la _. sub(0)(1)))
+  )(ALIGNUP(add(t1addr)(SH_SIZE(f1)(t1sec)))(SH_ALIGN(f2)(t2sec)))
+  )(TEXT_BASE)
+  )(FIND_SEC(f2)(".rodata"))
+  )(FIND_SEC(f2)(".text"))
+  )(FIND_SEC(f1)(".text"))
+  )(FIND_SEC(f2)(".symtab"))
+  )(FIND_SEC(f1)(".symtab"))
+  )(read_file("link_in2.o"))
+  )(read_file("link_in1.o"))
