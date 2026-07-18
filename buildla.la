@@ -340,7 +340,8 @@ glyph XFMARK = la s. s(la a. la b. la c. la d. d)
 glyph XFSTEPS =
   CONS(XFSTEP("theourgia raster PPM")("theourgia.la")("canvas.ppm")("P6"))(
   CONS(XFSTEP("text raster PPM")("theourgia_text.la")("text.ppm")("P6"))(
-  NIL))
+  CONS(XFSTEP("elf.la native ELF (Albedo Stage 1)")("elf.la")("logos_native")("ELF"))(
+  NIL)))
 
 glyph XFHOST = "/tmp/buildla_xf_host"
 glyph XFRUN1 = la s.
@@ -367,6 +368,49 @@ glyph XFRUN1 = la s.
 
 glyph XFALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(XFRUN1(h))))
+
+# ── NDSTEP — the LA-NATIVE BACKEND == the host interpreter (b_τ ≡ f_τ, Albedo Stage 3) ──
+#  The deepest toolchain-driving check: `native_codegen3.la` is the LA-native
+#  COMPILER — it lowers a program to a standalone native x86-64 binary. build.sh's
+#  Stage-1/2/3 differentials assert that binary's stdout equals `tiny_host`'s on the
+#  SAME program (the native backend and the reference interpreter are each other's
+#  oracle). NDSTEP orchestrates that: STAGE the target → native_input.la, drive
+#  `tiny_host native_codegen3.la` (it emits `native_codegen3_out`, a NEW file — it
+#  does NOT touch logos_program.bin/logos_secd, AUDITED, so no fork bomb / no stream
+#  clobber; the compile is ~18s for a small program, driven INLINE since the compile
+#  IS the toolchain step under test), then run the emitted binary and the host on the
+#  target and assert byte-equal stdout AND the marker. The compile is gated too —
+#  native_codegen3 prints "emitted native_codegen3_out" on success, so a compile
+#  failure FAILs the step rather than silently running a STALE binary.
+glyph NDSTEP = la nm. la file. la mark. la f. f(nm)(file)(mark)
+glyph NDNAME = la s. s(la a. la b. la c. a)
+glyph NDFILE = la s. s(la a. la b. la c. b)
+glyph NDMARK = la s. s(la a. la b. la c. c)
+
+glyph NDSTEPS =
+  CONS(NDSTEP("native backend compiles a module-importer, native==host")("greetapp.la")("module-importer"))(
+  NIL)
+
+glyph NDRUN1 = la s.
+  IF(str_eq(NDMARK(s))(""))
+    (la _. error(concat("buildla: native-diff step has an empty marker (it could never fail): ")(NDNAME(s))))
+    (la _.
+      (la hostOut.
+        SEQ(STAGE(NDFILE(s))("native_input.la"))
+        ((la cgout.
+           IF(HASSUB(cgout)("emitted native_codegen3_out"))
+             (la _.
+               ((la natOut.
+                  (la ok.
+                    SEQ(print(concat(IF(ok)(la _. "  PASS  native==host  ")(la _. "  FAIL  native!=host  "))(NDNAME(s))))(ok))
+                  (AND(HASSUB(hostOut)(NDMARK(s)))(str_eq(hostOut)(natOut))))
+                (RUN("./native_codegen3_out")("")("/tmp/buildla_nd_nat.txt"))))
+             (la _. SEQ(print(concat("  FAIL  native==host  native_codegen3 compile failed: ")(NDNAME(s))))(FALSE)))
+         (RUN("./tiny_host")("native_codegen3.la")("/tmp/buildla_nd_cg.txt"))))
+      (RUN("./tiny_host")(NDFILE(s))("/tmp/buildla_nd_host.txt")))
+
+glyph NDALL = Z(la self. la l.
+  l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(NDRUN1(h))))
 
 # ── the guard: a step whose marker is EMPTY could never FAIL ──
 #   HASSUB is substring containment, so an empty marker is contained in EVERY
@@ -860,7 +904,9 @@ glyph MAIN =
                                (la o.
                                  (la p.
                                    (la q.
-                                     (la r. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(AND(o)(AND(p)(AND(q)(r))))))))))))))))))
+                                     (la r.
+                                       (la s. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(AND(o)(AND(p)(AND(q)(AND(r)(s)))))))))))))))))))
+                                       (SEQ(print("── toolchain: the LA-native backend == the host interpreter (native_codegen3, b_τ ≡ f_τ) ──"))(NDALL(NDSTEPS))))
                                      (SEQ(print("── VM guards (secd:): the sovereign engine halts loudly on bad input (via bundle) ──"))(GVALL(GVSTEPS))))
                                    (SEQ(print("── cross-engine byte-identity: host artifact == VM artifact (emitted FILES) ──"))(XFALL(XFSTEPS))))
                                  (SEQ(print("── QEMU K7: the sovereign bootloader — LogOS boots ITSELF off its own disk (no GRUB) ──"))(K7ALL)))

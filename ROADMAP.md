@@ -1526,8 +1526,37 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       sovereign-boot + 2 cross-engine (FILES)**. *Honest scope:* build.sh's
       poll-cap / program-too-large / malformed-stream guards need a 500-fd literal or
       a raw/truncated stream (they test the generic LOADER a bundle bypasses), so they
-      stay in build.sh's harness. Remaining: buildla's other ~14 of build.sh's 103
-      stages — the toolchain-driving stages scoped in the honest-boundary notes below.
+      stay in build.sh's harness.
+      **A SEVENTEENTH SLICE — the TOOLCHAIN itself (`91 stages`, `elf.la` host==VM +
+      the `native_codegen3` differential).** The deepest category: stages that drive
+      the LA-native toolchain buildla is built on. Each was **audited** first —
+      `native_codegen3.la` only writes `native_codegen3_out` (a NEW file), never
+      `logos_program.bin`/`logos_secd`, so no fork bomb / no stream clobber. Two
+      added: **(1)** `elf.la` (Albedo Stage 1, the hand-written LA ELF assembler)
+      emits a native 171-byte ELF `logos_native` by pure generation — added to the
+      `XFSTEP` set (marker `ELF`), proving it is **byte-identical host==VM** (the
+      assembler is deterministic across the C host and the sovereign VM). **(2)** a
+      new `NDSTEP` kind — the LA-native BACKEND (`native_codegen3.la`, Albedo Stage 3)
+      lowers a program to a standalone native binary, and its stdout must equal
+      `tiny_host`'s on the same program (`b_τ ≡ f_τ` for the native compiler, the
+      backend and the interpreter each other's oracle). It STAGEs the target →
+      `native_input.la`, drives `tiny_host native_codegen3.la` **inline** (~18s — the
+      compile IS the toolchain step under test), gates the compile on its
+      `emitted native_codegen3_out` line (a stale binary can't sneak through), then
+      runs the emitted binary and the host and asserts byte-equal stdout + marker;
+      the module-importer `greetapp.la` compiles native==host (`module-importer`).
+      Green AND **red both verified** (a wrong marker → `FAIL native!=host`; a bug
+      found + fixed en route — `RUN2` returns the *exit code*, `RUN` returns the
+      *output*, so the native side must use `RUN`). Verified full **BUILD GREEN, 91
+      stages = 57 marker + 4 cross-engine (stdout) + 3 host-guard + 4 VM-guard + 1
+      namespace + 8 QEMU + 2 native-task + 6 ring-3 + 2 sovereign-boot + 3
+      cross-engine (FILES, incl. the native ELF) + 1 native-backend differential**.
+      *Honest scope:* the Albedo Stage-4 compiler==compiler / VM==VM fixed points
+      regenerate the compiler and the VM themselves — driving them inside a running
+      buildla would have it rewrite its own engine, so those stay in build.sh's
+      harness (the deepest self-hosting checks, run once from the C-host seed). What
+      remains of build.sh's 103 is now that irreducible seed core + the foreign-tool
+      seams (nasm/ld/gcc/qemu) buildla ORCHESTRATES but does not replace.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
