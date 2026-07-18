@@ -1427,6 +1427,20 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       test doing precisely this. Do not build features the invocation already
       provides.)*
 
+      **OBJECT-WRITER SCOPE, measured (2026-07-18).** Rather than wait on the
+      `link` track to specify the format, the requirement was measured from
+      `boot.asm`'s own `nasm -f elf64` output — the target defines the spec.
+      It needs only **three relocation types**: `R_X86_64_64` (41),
+      `R_X86_64_32` (21), `R_X86_64_32S` (1). **No `R_X86_64_PC32` at all** —
+      intra-section jumps and calls are resolved by the assembler itself and
+      cross-section references are absolute, which removes an entire class of
+      work. **107 symbols** (101 `NOTYPE LOCAL` labels, 5 `SECTION`, one
+      `GLOBAL` `_start`, one `FILE`) and **11 section headers** (`.multiboot`,
+      `.boot32`, `.rodata`, `.la_image` PROGBITS; `.bss` NOBITS; `.shstrtab`,
+      `.symtab`, `.strtab`; `.rela.boot32`, `.rela.rodata`). That is a bounded
+      job comparable to the preprocessor slice — not the open-ended one the
+      phrase "ELF object writer" suggests.
+
       **★ HONEST SCOPE CORRECTION (2026-07-18), recorded because the coverage
       number invites a wrong conclusion.** `boot.asm` is 99.3% *readable* — every
       one of those lines parses and encodes — but it is built with
