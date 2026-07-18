@@ -1,0 +1,285 @@
+# =====================================================================
+#  link.la — AN ELF64 LINKER IN LINGUA ADAMICA.
+#
+#  Slice 1: THE READER. Parses a real `nasm -f elf64` relocatable object —
+#  section headers, symbol table, relocations — and dumps what it found.
+#
+#  ── WHY THIS IS NOT asmelf.la AGAIN ─────────────────────────────────────────
+#  `asmelf.la` already emits a runnable ELF from LA, and it is easy to mistake
+#  that for linking. It is not. asmelf handles ONE source, ONE segment, ONE
+#  load address; `org` makes every label absolute, which is all the "linking" a
+#  `-f bin` image needs. A linker consumes ET_REL objects: several inputs,
+#  sections merged by name, a symbol table with UNDEFINED entries resolved
+#  across translation units, and relocations APPLIED once addresses are known.
+#  Until this resolves a symbol defined in one object and referenced from
+#  another, it is a reader and must not claim otherwise.
+#
+#  ── THE DIRECTION THAT IS NEW ───────────────────────────────────────────────
+#  Every LA tool so far has been pure GENERATION — asm.la, elf.la and bundle.la
+#  only ever build bytes. This one must RECOGNIZE them: read a foreign binary
+#  and recover its structure. Two host facts make that possible, both probed
+#  rather than assumed before a line was written:
+#
+#    read_file is BINARY-SAFE. It returned all 704 bytes of link_test_a.o and
+#    the first byte reads as 127 (0x7F, the ELF magic), so embedded NULs do not
+#    truncate it. Had strings been NUL-terminated here, the whole approach died.
+#
+#    ord returns a STRING ("65"), typeof "str" — like every other host
+#    primitive. So byte -> number is str_to_int(ord(c)), never ord alone.
+#
+#  ── THE 32-BIT WINDOW, STATED HONESTLY ──────────────────────────────────────
+#  ELF64 fields are 8 bytes; this reads the LOW 4 of each and ignores the high
+#  word. Legitimate here — offsets, sizes and addends in these objects are far
+#  under 2^32, and it keeps every intermediate inside a range LA's div/mod is
+#  reliable on. It is a REAL limit, not a subtlety: an object larger than 4 GB,
+#  or a load address above it, would be read wrong. HIGH4 is checked where it
+#  costs nothing so the failure is loud rather than silent.
+#
+#  Signed fields need care in the other direction. A PC32 addend of -4 is
+#  0xFFFFFFFFFFFFFFFC; its low word is 0xFFFFFFFC, so SIGN32 folds anything at
+#  or above 2^31 back to negative. Same fold asm.la uses for backward jumps,
+#  for the same reason: LA's div/mod on a negative is unreliable, so negatives
+#  are kept out of the arithmetic and reintroduced only at the edges.
+# =====================================================================
+
+# ── prelude: the standard combinators ───────────────────────────────────────
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph OR   = la a. la b. a(TRUE)(b)
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph NIL  = la n. la c. n
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph HD   = la l. l("")(la h. la t. h)
+glyph TL   = la l. l(NIL)(la h. la t. t)
+glyph NTH  = Z(la self. la n. la l.
+    l("")(la h. la t. IF(int_eq(n)(0))(la _. h)(la _. self(sub(n)(1))(t))))
+glyph LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph REV  = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(CONS(h)(acc))))
+
+# ── byte access ─────────────────────────────────────────────────────────────
+#   DROP costs O(n): str_tail COPIES, so stepping to offset n copies n times.
+#   The objects here are under 1 KB, so this is fine and kept simple on
+#   purpose. If this ever reads a megabyte-scale object it becomes the
+#   bottleneck long before anything else does, and the fix is a cursor that
+#   walks forward once rather than re-dropping from the start.
+glyph DROP = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph LENOF = la s. str_to_int(str_len(s))
+glyph BYTE  = la s. la i. str_to_int(ord(str_head(DROP(i)(s))))
+
+#   Little-endian decode. Explicitly, not by a clever fold, because the
+#   byte order IS the thing being asserted and it should be readable as such.
+glyph U16 = la s. la i. add(BYTE(s)(i))(mul(BYTE(s)(add(i)(1)))(256))
+glyph U32 = la s. la i.
+    add(BYTE(s)(i))
+   (add(mul(BYTE(s)(add(i)(1)))(256))
+   (add(mul(BYTE(s)(add(i)(2)))(65536))
+       (mul(BYTE(s)(add(i)(3)))(16777216))))
+#   The low word of an 8-byte field, and the high word we ignore but check.
+glyph LOW4  = la s. la i. U32(s)(i)
+glyph HIGH4 = la s. la i. U32(s)(add(i)(4))
+glyph SIGN32 = la n. IF(lt(n)(2147483648))(la _. n)(la _. sub(n)(4294967296))
+
+#   A NUL-terminated string out of a string table.
+glyph CSTR_GO = Z(la self. la s. la i. la acc.
+    (la c. IF(int_eq(str_to_int(ord(c)))(0))
+             (la _. acc)
+             (la _. self(s)(add(i)(1))(concat(acc)(c))))
+    (str_head(DROP(i)(s))))
+#   The accumulator is an implementation detail of the walk, so it is seeded
+#   here rather than at every call site. Calling the 3-argument form with 2
+#   arguments does not fail — it silently yields a PARTIAL APPLICATION, which
+#   then reaches concat as a function and dies far from the cause.
+glyph CSTR = la s. la i. CSTR_GO(s)(i)("")
+
+# ── the ELF header ──────────────────────────────────────────────────────────
+#   e_shoff@0x20(8) e_shentsize@0x3a(2) e_shnum@0x3c(2) e_shstrndx@0x3e(2)
+glyph IS_ELF = la f.
+    AND(int_eq(BYTE(f)(0))(127))
+   (AND(int_eq(BYTE(f)(1))(69))
+   (AND(int_eq(BYTE(f)(2))(76))(int_eq(BYTE(f)(3))(70))))
+glyph E_TYPE     = la f. U16(f)(16)
+glyph E_SHOFF    = la f. LOW4(f)(40)
+glyph E_SHENTSZ  = la f. U16(f)(58)
+glyph E_SHNUM    = la f. U16(f)(60)
+glyph E_SHSTRNDX = la f. U16(f)(62)
+
+# ── section headers: 64 bytes each ──────────────────────────────────────────
+#   sh_name@0(4) sh_type@4(4) sh_flags@8(8) sh_addr@16(8) sh_offset@24(8)
+#   sh_size@32(8) sh_link@40(4) sh_info@44(4) sh_addralign@48(8) sh_entsize@56(8)
+glyph SHOFF = la f. la i. add(E_SHOFF(f))(mul(i)(64))
+glyph SH_NAME  = la f. la i. U32(f)(SHOFF(f)(i))
+glyph SH_TYPE  = la f. la i. U32(f)(add(SHOFF(f)(i))(4))
+glyph SH_FLAGS = la f. la i. LOW4(f)(add(SHOFF(f)(i))(8))
+glyph SH_OFF   = la f. la i. LOW4(f)(add(SHOFF(f)(i))(24))
+glyph SH_SIZE  = la f. la i. LOW4(f)(add(SHOFF(f)(i))(32))
+glyph SH_LINK  = la f. la i. U32(f)(add(SHOFF(f)(i))(40))
+glyph SH_INFO  = la f. la i. U32(f)(add(SHOFF(f)(i))(44))
+glyph SH_ALIGN = la f. la i. LOW4(f)(add(SHOFF(f)(i))(48))
+glyph SH_ENTSZ = la f. la i. LOW4(f)(add(SHOFF(f)(i))(56))
+
+#   Section names live in the section-header string table, itself a section.
+glyph SHSTR_OFF = la f. SH_OFF(f)(E_SHSTRNDX(f))
+glyph SECNAME = la f. la i. CSTR(f)(add(SHSTR_OFF(f))(SH_NAME(f)(i)))
+
+#   Find a section by name -> index, or 0-1 = not found. Section 0 is the
+#   NULL section by definition, so 0 is safe to mean "absent" only because
+#   nothing real can live there; this returns sub(0)(1) to stay unambiguous.
+glyph FIND_SEC = la f. la want.
+    (Z(la self. la i.
+        IF(int_eq(i)(E_SHNUM(f)))
+          (la _. sub(0)(1))
+          (la _. IF(str_eq(SECNAME(f)(i))(want))
+                   (la _. i)
+                   (la _. self(add(i)(1)))))
+     )(0)
+
+# ── symbols: Elf64_Sym, 24 bytes ────────────────────────────────────────────
+#   st_name@0(4) st_info@4(1) st_other@5(1) st_shndx@6(2) st_value@8(8) st_size@16(8)
+glyph SYMOFF   = la f. la symsec. la i. add(SH_OFF(f)(symsec))(mul(i)(24))
+glyph SYM_NAME = la f. la ss. la i. U32(f)(SYMOFF(f)(ss)(i))
+glyph SYM_INFO = la f. la ss. la i. BYTE(f)(add(SYMOFF(f)(ss)(i))(4))
+glyph SYM_SHNDX= la f. la ss. la i. U16(f)(add(SYMOFF(f)(ss)(i))(6))
+glyph SYM_VALUE= la f. la ss. la i. LOW4(f)(add(SYMOFF(f)(ss)(i))(8))
+glyph SYM_COUNT= la f. la ss. div(SH_SIZE(f)(ss))(24)
+#   st_info packs bind in the high nibble, type in the low: GLOBAL bind = 1.
+glyph SYM_BIND = la info. div(info)(16)
+glyph SYM_IS_GLOBAL = la info. int_eq(SYM_BIND(info))(1)
+#   The symbol string table is sh_link of the symtab.
+glyph SYMSTR_OFF = la f. la ss. SH_OFF(f)(SH_LINK(f)(ss))
+#   st_info also packs the TYPE in its low nibble. STT_SECTION = 3.
+glyph SYM_TYPE = la info. mod(info)(16)
+glyph SYM_IS_SECTION = la f. la ss. la i. int_eq(SYM_TYPE(SYM_INFO(f)(ss)(i)))(3)
+#   ★ A SECTION symbol has an EMPTY st_name — readelf synthesizes the section
+#   name when it displays one, and this must too or the name is simply blank.
+#   Not cosmetic: object B's `mov rsi, msg` relocates against the .rodata
+#   SECTION symbol, not against `msg`, because msg is local. nasm emits
+#   section+addend for local data. So resolving a section symbol through
+#   st_shndx is exactly what slice 2 needs to compute that address at all —
+#   a linker that only understood named symbols would fail on this object.
+glyph SYMNAME = la f. la ss. la i.
+    IF(SYM_IS_SECTION(f)(ss)(i))
+      (la _. SECNAME(f)(SYM_SHNDX(f)(ss)(i)))
+      (la _. CSTR(f)(add(SYMSTR_OFF(f)(ss))(SYM_NAME(f)(ss)(i))))
+#   SHN_UNDEF = 0: the symbol is referenced here and defined elsewhere. This
+#   is the case that makes a linker a linker.
+glyph SYM_IS_UNDEF = la f. la ss. la i. int_eq(SYM_SHNDX(f)(ss)(i))(0)
+
+# ── relocations: Elf64_Rela, 24 bytes ───────────────────────────────────────
+#   r_offset@0(8) r_info@8(8) r_addend@16(8)
+#   r_info is sym<<32 | type, so its two 4-byte halves ARE the two fields —
+#   read separately, which sidesteps a 64-bit shift entirely.
+glyph RELOFF    = la f. la rs. la i. add(SH_OFF(f)(rs))(mul(i)(24))
+glyph REL_OFFSET= la f. la rs. la i. LOW4(f)(RELOFF(f)(rs)(i))
+glyph REL_TYPE  = la f. la rs. la i. U32(f)(add(RELOFF(f)(rs)(i))(8))
+glyph REL_SYM   = la f. la rs. la i. U32(f)(add(RELOFF(f)(rs)(i))(12))
+glyph REL_ADDEND= la f. la rs. la i. SIGN32(LOW4(f)(add(RELOFF(f)(rs)(i))(16)))
+glyph REL_COUNT = la f. la rs. div(SH_SIZE(f)(rs))(24)
+glyph RELTYPENAME = la t.
+    IF(int_eq(t)(1))(la _. "R_X86_64_64")(la _.
+    IF(int_eq(t)(2))(la _. "R_X86_64_PC32")(la _.
+    IF(int_eq(t)(4))(la _. "R_X86_64_PLT32")(la _.
+      concat("R_X86_64_? ")(int_to_str(t)))))
+
+# ── the dump ────────────────────────────────────────────────────────────────
+glyph NL = "\n"
+glyph PAD = la s. concat(s)("            ")
+
+#   Deep concat nesting is the documented trap in this project — a report line
+#   is a dozen fragments, and hand-counting a dozen closing parens is how the
+#   paren miscount keeps happening. CAT takes a LIST instead, so the closes are
+#   uniform (one per CONS) and a miscount fails the balance check rather than
+#   hiding. The line reads as the list of pieces it actually is.
+glyph CAT = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+
+glyph SECLINE = la f. la i. CAT(
+    CONS("  [")(
+    CONS(int_to_str(i))(
+    CONS("] ")(
+    CONS(PAD(SECNAME(f)(i)))(
+    CONS(" type=")(
+    CONS(int_to_str(SH_TYPE(f)(i)))(
+    CONS(" off=")(
+    CONS(int_to_str(SH_OFF(f)(i)))(
+    CONS(" size=")(
+    CONS(int_to_str(SH_SIZE(f)(i)))(
+    CONS(" align=")(
+    CONS(int_to_str(SH_ALIGN(f)(i)))(
+    NIL)))))))))))))
+
+glyph DUMPSECS = la f. (Z(la self. la i.
+    IF(int_eq(i)(E_SHNUM(f)))
+      (la _. "")
+      (la _. concat(SECLINE(f)(i))(concat(NL)(self(add(i)(1)))))))(0)
+
+glyph SYMLINE = la f. la ss. la i. CAT(
+    CONS("  ")(
+    CONS(PAD(SYMNAME(f)(ss)(i)))(
+    CONS(" value=")(
+    CONS(int_to_str(SYM_VALUE(f)(ss)(i)))(
+    CONS(" shndx=")(
+    CONS(int_to_str(SYM_SHNDX(f)(ss)(i)))(
+    CONS(IF(SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i)))(la _. " GLOBAL")(la _. " local"))(
+    CONS(IF(SYM_IS_UNDEF(f)(ss)(i))(la _. " UNDEFINED")(la _. ""))(
+    NIL)))))))))
+
+glyph DUMPSYMS = la f. la ss. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(f)(ss)))
+      (la _. "")
+      (la _. concat(SYMLINE(f)(ss)(i))(concat(NL)(self(add(i)(1)))))))(0)
+
+glyph RELLINE = la f. la rs. la ss. la i. CAT(
+    CONS("  offset=")(
+    CONS(int_to_str(REL_OFFSET(f)(rs)(i)))(
+    CONS(" ")(
+    CONS(PAD(RELTYPENAME(REL_TYPE(f)(rs)(i))))(
+    CONS(" sym=")(
+    CONS(SYMNAME(f)(ss)(REL_SYM(f)(rs)(i)))(
+    CONS(" addend=")(
+    CONS(int_to_str(REL_ADDEND(f)(rs)(i)))(
+    NIL)))))))))
+
+glyph DUMPRELS = la f. la rs. la ss. (Z(la self. la i.
+    IF(int_eq(i)(REL_COUNT(f)(rs)))
+      (la _. "")
+      (la _. concat(RELLINE(f)(rs)(ss)(i))(concat(NL)(self(add(i)(1)))))))(0)
+
+glyph REPORT = la path. la f.
+    IF(NOT(IS_ELF(f)))
+      (la _. error(concat("link: not an ELF object: ")(path)))
+      (la _.
+    IF(NOT(int_eq(E_TYPE(f))(1)))
+      (la _. error(concat("link: not ET_REL (relocatable): ")(path)))
+      (la _.
+    (la symsec. CAT(
+      CONS("=== ")(
+      CONS(path)(
+      CONS(" — ET_REL, ")(
+      CONS(int_to_str(E_SHNUM(f)))(
+      CONS(" sections ===")(
+      CONS(NL)(
+      CONS("sections:")(
+      CONS(NL)(
+      CONS(DUMPSECS(f))(
+      CONS("symbols:")(
+      CONS(NL)(
+      CONS(DUMPSYMS(f)(symsec))(
+      CONS("relocations:")(
+      CONS(NL)(
+      CONS((la relsec. IF(lt(relsec)(0))
+                         (la _. concat("  (none)")(NL))
+                         (la _. DUMPRELS(f)(relsec)(symsec)))
+            (FIND_SEC(f)(".rela.text")))(
+      NIL))))))))))))))))
+    )(FIND_SEC(f)(".symtab"))))
+
+#   Reads a single object from the fixed path `link_in.o`, the same convention
+#   asm.la uses with `asm_in.asm`. Fixed paths are what make the worktree the
+#   unit of isolation — see this worktree's CLAUDE.md.
+glyph MAIN = print(REPORT("link_in.o")(read_file("link_in.o")))
