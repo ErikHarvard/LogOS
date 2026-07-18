@@ -1302,6 +1302,32 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       integer` instead of an assembler diagnostic. Both shift and test now name
       the unsupported form.)*
 
+      **DATA DEFINITION + LAYOUT added — `dw`/`dd`/`dq`, `resb`/`resq`,
+      `align` — byte-identical over a 102-byte image (2026-07-18); boot.asm is
+      now 80% readable (848 of 1060 lines).** Two of the `-f bin` semantics are
+      NOT what they look like, and both were pinned by assembling with NASM and
+      **reading the bytes back** rather than by reasoning: **`align` pads with
+      `0x90` NOP, not zeros** (NASM pads a *code* section with no-ops, so
+      `align 8` at 0x39 emits seven `0x90`s — zero-padding is the obvious guess
+      and silently produces a different image), and **`resb`/`resq` EMIT zeros**
+      rather than merely advancing the counter (NASM warns "uninitialized space
+      declared in .text section: zeroing"; only a reservation at the very end is
+      truncated). A label used as a data value is **org-absolute** — `dq start`
+      is `0x400000` — the same rule the `movabs` form already followed.
+      **★ It also closed a latent bug older than this slice: a line carrying a
+      LABEL AND AN INSTRUCTION** (`w1: dw 0x1234`, how boot.asm writes nearly
+      all its data) was treated as a label and *nothing else*, silently
+      discarding the rest of the line — the label landed at the right address
+      while its data was never emitted, so the image came out short with
+      everything after it misplaced. It survived undetected because every
+      earlier test program put labels on their own lines; only real kernel
+      source exercises the combined form. Stripping the label and re-dispatching
+      on what remains makes both forms one path, with a bare label line falling
+      through to size 0 exactly as before (gated by a negative control). A
+      second latent gap surfaced with it: `db` still parsed its values with
+      `str_to_int`, so it could not read the hex literals the rest of the
+      assembler had accepted since the width slice.
+
       *Honest cost, measured then reduced:* assembling N `mov rax, rcx` (CPU
       time under identical load) went `0.09` → `0.49` s/instruction with the
       slice — linear in program length, but a 5.5x constant — and back to

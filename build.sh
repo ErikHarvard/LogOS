@@ -1487,6 +1487,47 @@ PYALU2
     ./tiny_host asm.la >/dev/null 2>&1 \
       || { echo "FAIL  asm.la: a legal ALU/shift/lea program was rejected"; ok=0; }
     rm -f /tmp/nasm_alu.bin /tmp/asm_alu.out /tmp/asm_red2.out
+    # (2d6) DATA DEFINITION + LAYOUT: dw/dd/dq, resb/resq, align — and the
+    #       LABEL-AND-INSTRUCTION-ON-ONE-LINE form that boot.asm writes its data
+    #       in (`w1: dw 0x1234`). The passes used to treat any line whose first
+    #       token ended in ":" as a label and NOTHING ELSE, silently dropping
+    #       the rest: the label landed at the right address but its data was
+    #       never emitted, so the image came out short with everything after it
+    #       misplaced. Invisible until now because every earlier test program
+    #       put its labels on their own lines.
+    rm -f asm_out.bin /tmp/nasm_data.bin; cp asm_test_data.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm_data.out 2>&1 || { echo "FAIL  asm.la: data program failed: $(tail -1 /tmp/asm_data.out)"; ok=0; }
+    nasm -f bin asm_test_data.asm -o /tmp/nasm_data.bin 2>/dev/null || { echo "FAIL  asm.la: nasm data reference failed"; ok=0; }
+    cmp -s asm_out.bin /tmp/nasm_data.bin \
+      || { echo "FAIL  asm.la: data/layout directives DIFFER from nasm"; ok=0;
+           python3 - <<'PYDAT1'
+a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_data.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYDAT1
+         }
+    python3 - <<'PYDAT2' || { echo "FAIL  asm.la: a data/layout semantic regressed"; ok=0; }
+import sys,struct
+d=open('asm_out.bin','rb').read()
+# Two of these are NOT what they look like, and both were pinned by assembling
+# with NASM and reading the bytes back rather than by reasoning about them.
+q=[("dw/dd/dq little-endian",        d[6:8]==bytes([0x34,0x12]) and d[0x18:0x20]==bytes([0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11])),
+   ("label as data is ORG-ABSOLUTE", struct.unpack('<Q',d[0x28:0x30])[0]==0x400000 and struct.unpack('<I',d[0x30:0x34])[0]==0x400006),
+   ("align pads with 0x90 NOP, NOT zeros", d[0x39:0x40]==b'\x90'*7),
+   ("resb/resq EMIT zeros, not merely advance", d[0x51:0x65]==b'\x00'*20),
+   ("label+instruction on ONE line emits both", d[0x65]==0x77 and len(d)==102)]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYDAT2
+    # Negative control: a bare label line must still cost 0 bytes, so the
+    # strip-and-redispatch cannot have changed the old form's meaning.
+    printf 'bits 64\nfoo:\nnop\nbar: nop\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0x90,0x90]) else 1)" \
+      || { echo "FAIL  asm.la: bare-label vs label+instruction lines disagree"; ok=0; }
+    rm -f /tmp/nasm_data.bin /tmp/asm_data.out
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`

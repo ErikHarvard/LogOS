@@ -686,12 +686,54 @@ glyph MOVSIZE = la ts.
 glyph TL2 = la l. l(NIL)(la h. la t. t)
 glyph ISSTRTOK = la t. IF(str_eq(t)(""))(la _. FALSE)(la _. str_eq(str_head(t))("\""))
 glyph DBEMIT = Z(la self. la l.
-    l("")(la h. la t. concat(IF(ISSTRTOK(h))(la _. str_tail(h))(la _. B(str_to_int(h))))(self(t))))
+    l("")(la h. la t. concat(IF(ISSTRTOK(h))(la _. str_tail(h))(la _. B(NUMV(h))))(self(t))))
 glyph DBSIZE = Z(la self. la l.
     l(0)(la h. la t. add(IF(ISSTRTOK(h))(la _. str_to_int(str_len(str_tail(h))))(la _. 1))(self(t))))
 
+# ── DATA DEFINITION + LAYOUT: dw/dd/dq, resb/resq, align ───────────────────
+#   62 of boot.asm's remaining lines are these. Pure generation, but two of the
+#   `-f bin` semantics are NOT what they look like, and both were pinned by
+#   assembling with NASM and reading the bytes back rather than reasoning:
+#
+#   ★ `align` PADS WITH 0x90 (NOP), NOT ZEROS. NASM pads a CODE section with
+#     no-ops, so `align 8` at offset 0x39 emits seven 0x90 bytes. Zero-padding
+#     would be the obvious guess and would silently produce a different image.
+#     (A data section pads with zeros — but sections are not modelled yet, and
+#     `-f bin` puts everything in .text, so NOP is the correct behaviour here.
+#     This must be revisited WITH sections, not before.)
+#
+#   ★ `resb`/`resq` EMIT ZEROS here rather than merely advancing. NASM warns
+#     ("uninitialized space declared in .text section: zeroing") and emits the
+#     bytes; only a reservation at the very END of the image is truncated.
+#
+#   A data value may be a NUMBER or a LABEL, and a label is absolute — with
+#   `org 0x400000`, `dq start` is 0x400000, not 0. Same rule the movabs form
+#   already follows, so DVAL routes both through the existing LABADDR.
+glyph REPB = Z(la self. la n. la b.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(b)(self(sub(n)(1))(b))))
+glyph LEW = la w. la n.
+    IF(int_eq(w)(2))(la _. LE2(n))
+      (la _. IF(int_eq(w)(4))(la _. LE4(n))(la _. LE8(n)))
+glyph DWIDTH = la op.
+    IF(str_eq(op)("dw"))(la _. 2)(la _. IF(str_eq(op)("dd"))(la _. 4)(la _. 8))
+glyph ISDATA = la op.
+    OR(str_eq(op)("dw"))(OR(str_eq(op)("dd"))(str_eq(op)("dq")))
+glyph DVAL = la labs. la t.
+    IF(ISNUM(t))(la _. NUMV(t))(la _. LABADDR(t)(labs))
+glyph DEMIT = la labs. la w. la l.
+    Z(la self. la ll.
+        ll("")(la h. la t. concat(LEW(w)(DVAL(labs)(h)))(self(t))))(l)
+glyph DSIZE = la w. la l. mul(w)(LEN(l))
+glyph ISRES = la op. OR(str_eq(op)("resb"))(str_eq(op)("resq"))
+glyph RESN  = la op. la ts.
+    mul(NUMV(NTH(1)(ts)))(IF(str_eq(op)("resb"))(la _. 1)(la _. 8))
+#   Padding is measured from the CURRENT offset, which is org-inclusive — the
+#   same counter the label table is built from, so alignment means the same
+#   thing to `align` as it does to a label's address.
+glyph ALIGNPAD = la off. la n. mod(sub(n)(mod(off)(n)))(n)
+
 # ── SIZEL: bytes this line occupies, given what we currently know of labels ──
-glyph SIZEL = la labs. la off. la ts.
+glyph SIZEL0 = la labs. la off. la ts.
   (la op.
     IF(str_eq(op)(""))(la _. 0)(la _.
     IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. 0)(la _.
@@ -706,6 +748,9 @@ glyph SIZEL = la labs. la off. la ts.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
     IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 6))(la _.
     IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _.
+    IF(ISDATA(op))(la _. DSIZE(DWIDTH(op))(TL2(ts)))(la _.
+    IF(ISRES(op))(la _. RESN(op)(ts))(la _.
+    IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
     IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(G1DIG(op))(w)(a)(b))))(la _.
     IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(w)(a)(b))))(la _.
@@ -713,11 +758,11 @@ glyph SIZEL = la labs. la off. la ts.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(w)(a)(b))))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))
   (HD(ts))
 
 # ── one instruction -> its bytes (off = this instruction's own address) ──
-glyph ENC1 = la labs. la off. la ts.
+glyph ENC10 = la labs. la off. la ts.
   (la op.
     IF(str_eq(op)(""))(la _. "")(la _.
     IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. "")(la _.
@@ -728,6 +773,9 @@ glyph ENC1 = la labs. la off. la ts.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
     IF(str_eq(op)("push"))(la _. PUSHPOP(80)(REGNUM(A1(ts))))(la _.
     IF(str_eq(op)("pop"))(la _. PUSHPOP(88)(REGNUM(A1(ts))))(la _.
+    IF(ISDATA(op))(la _. DEMIT(labs)(DWIDTH(op))(TL2(ts)))(la _.
+    IF(ISRES(op))(la _. REPB(RESN(op)(ts))(B(0)))(la _.
+    IF(str_eq(op)("align"))(la _. REPB(ALIGNPAD(off)(NUMV(NTH(1)(ts))))(B(144)))(la _.
     IF(ISNOARG(op))(la _. NOARG(op))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(G1DIG(op))))(la _.
     IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))))(la _.
@@ -749,7 +797,7 @@ glyph ENC1 = la labs. la off. la ts.
                (la _. concat(B(117))(B(REL8(labs)(off)(TARGET(ts)))))
                (la _. concat(B(15))(concat(B(133))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
     IF(str_eq(op)("mov"))(la _. WITHOPS(ts)(MOVENC(labs)))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))
   (HD(ts))
 
 #   Every line is tokenized ONCE, up front, and the passes consume token lists
@@ -762,11 +810,26 @@ glyph ENC1 = la labs. la off. la ts.
 #   RECOGNIZE what it produced.
 glyph MAPTOKS = Z(la self. la ls. ls(NIL)(la h. la t. CONS(TOKS(h)(""))(self(t))))
 
+
+#   A line may carry a LABEL AND AN INSTRUCTION — `w1: dw 0x1234`, which is how
+#   boot.asm writes most of its data. The passes used to treat any line whose
+#   first token ended in ":" as a label and NOTHING ELSE, silently discarding
+#   the rest of the line: the label landed at the right address but its data
+#   was never emitted, so the image came out short with everything after it
+#   misplaced. It went unnoticed because every existing test program put labels
+#   on their own lines. Stripping the label and dispatching on what remains
+#   makes the two forms identical — a bare label line strips to nothing and
+#   falls through to the empty case at size 0, exactly as before.
+glyph STRIPLAB = la ts. IF(ISLABEL(HD(ts)))(la _. TL2(ts))(la _. ts)
+glyph SIZEL = la labs. la off. la ts. SIZEL0(labs)(off)(STRIPLAB(ts))
+glyph ENC1  = la labs. la off. la ts. ENC10(labs)(off)(STRIPLAB(ts))
+
 # ── one pass: walk the lines, recording each label at its current offset ──
 glyph MKLABS = Z(la self. la ls. la labs. la off. la acc.
     ls(acc)(la ts. la t.
         IF(ISLABEL(HD(ts)))
-          (la _. self(t)(labs)(off)(CONS(PAIR(LABNAME(HD(ts)))(off))(acc)))
+          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))
+                     (CONS(PAIR(LABNAME(HD(ts)))(off))(acc)))
           (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))(acc))))
 
 glyph TOTLEN = Z(la self. la ls. la labs. la off.
