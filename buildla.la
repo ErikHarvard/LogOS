@@ -265,6 +265,59 @@ glyph XRUN1 = la s.
 glyph XALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(XRUN1(h))))
 
+# ── XFSTEP — cross-engine BYTE-IDENTITY of an emitted FILE (host artifact == VM artifact) ──
+#  XSTEP compares STDOUT (b_τ ≡ f_τ over what a program PRINTS). build.sh's OTHER
+#  half of cross-engine identity is `cmp -s canvas.ppm /tmp/canvas_host.ppm` — the
+#  same generator must emit a BYTE-IDENTICAL FILE on the C host and the native VM.
+#  XFSTEP is that: run the target on the host (it writes `outf`) and SAVE outf;
+#  then codegen+bundle the target into logos_app (NEVER ./logos_secd — the fork
+#  bomb; the bundle is the proven route XSTEP uses) and run logos_app (it REWRITES
+#  outf, now the VM's version); pass iff the saved host file str_eq's the VM file
+#  AND the host file carries `mark` (a header substring — so two empty or
+#  identically-broken files can't fake a pass, the marker-AND-equality discipline
+#  XSTEP holds). str_eq is byte-exact + binary-safe, so it IS `cmp -s`.
+glyph XFSTEP = la nm. la file. la outf. la mark. la f. f(nm)(file)(outf)(mark)
+glyph XFNAME = la s. s(la a. la b. la c. la d. a)
+glyph XFFILE = la s. s(la a. la b. la c. la d. b)
+glyph XFOUT  = la s. s(la a. la b. la c. la d. c)
+glyph XFMARK = la s. s(la a. la b. la c. la d. d)
+
+#  Two PPM rasters, DIFFERENT generators: the base surface compositor
+#  (theourgia.la) and the text renderer (theourgia_text.la). Both emit a P6 PPM
+#  byte-identically on host and VM (build.sh: cmp -s canvas.ppm / text.ppm). The
+#  WAV (phonym.la) and the module-composed session/mux rasters emit identically
+#  too but their host run + bundle is minutes each, so they stay out of the hot path.
+glyph XFSTEPS =
+  CONS(XFSTEP("theourgia raster PPM")("theourgia.la")("canvas.ppm")("P6"))(
+  CONS(XFSTEP("text raster PPM")("theourgia_text.la")("text.ppm")("P6"))(
+  NIL))
+
+glyph XFHOST = "/tmp/buildla_xf_host"
+glyph XFRUN1 = la s.
+  IF(str_eq(XFMARK(s))(""))
+    (la _. error(concat("buildla: file-identity step has an empty marker (it could never fail): ")(XFNAME(s))))
+    (la _.
+      (la hostOut.
+        SEQ(STAGE(XFOUT(s))(XFHOST))
+        (SEQ(STAGE(XFFILE(s))("logos_source.la"))
+        (SEQ(RUN("./tiny_host")("codegen.la")("/tmp/buildla_cg.txt"))
+        (SEQ(STAGE("logos_program.bin")("logos_embed.bin"))
+        ((la bout.
+           IF(HASSUB(bout)("bundled VM + stream -> logos_app"))
+             (la _.
+               SEQ(RUN("./logos_app")("")("/tmp/buildla_xfvm.txt"))
+               ((la hostf.
+                  (la ok.
+                    SEQ(print(concat(IF(ok)(la _. "  PASS  host==VM  ")(la _. "  FAIL  host!=VM  "))(XFNAME(s))))(ok))
+                  (AND(HASSUB(hostf)(XFMARK(s)))(str_eq(hostf)(read_file(XFOUT(s))))))
+                (read_file(XFHOST))))
+             (la _. SEQ(print(concat("  FAIL  host!=VM  bundle failed: ")(XFNAME(s))))(FALSE)))
+         (RUN("./tiny_host")("bundle.la")("/tmp/buildla_bundle.txt")))))))
+      (RUN("./tiny_host")(XFFILE(s))("/tmp/buildla_xfho.txt")))
+
+glyph XFALL = Z(la self. la l.
+  l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(XFRUN1(h))))
+
 # ── the guard: a step whose marker is EMPTY could never FAIL ──
 #   HASSUB is substring containment, so an empty marker is contained in EVERY
 #   output — the step would report PASS unconditionally, whatever the command
@@ -755,7 +808,9 @@ glyph MAIN =
                            (la m.
                              (la n.
                                (la o.
-                                 (la p. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(AND(o)(p))))))))))))))))
+                                 (la p.
+                                   (la q. AND(a)(AND(b)(AND(c)(AND(d)(AND(e)(AND(f)(AND(g)(AND(h)(AND(i)(AND(j)(AND(k)(AND(l)(AND(m)(AND(n)(AND(o)(AND(p)(q)))))))))))))))))
+                                   (SEQ(print("── cross-engine byte-identity: host artifact == VM artifact (emitted FILES) ──"))(XFALL(XFSTEPS))))
                                  (SEQ(print("── QEMU K7: the sovereign bootloader — LogOS boots ITSELF off its own disk (no GRUB) ──"))(K7ALL)))
                                (SEQ(print("── QEMU K6: ring 3 on the metal — user mode, syscalls, and IPC (the six K6 slices) ──"))(K6ALL)))
                              (SEQ(print("── native tasks (K5b.1b): a suspended task's heap roots survive a GC — rt_gc scans the suspended task's roots ──"))(K5B1BSTAGE("!"))))

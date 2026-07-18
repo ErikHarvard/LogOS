@@ -1478,10 +1478,32 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       8 QEMU + 2 native-task + 6 ring-3 + 2 sovereign-boot**. **So the entire
       sovereign kernel K1..K7 — boot, faults, PMM, paging (translate + protect),
       timer, preemption, ring-3 user mode + IPC, and now LogOS booting ITSELF off its
-      own disk — is orchestrated in Lingua Adamica, on the VM, no shell.** Remaining:
-      buildla's other ~20 of build.sh's 103 stages — the cross-engine byte-identity
-      (host-artifact == VM-artifact) category, resource/negative gates, and the
-      toolchain-driving stages scoped in the honest-boundary notes below.
+      own disk — is orchestrated in Lingua Adamica, on the VM, no shell.**
+      **A FIFTEENTH SLICE — cross-engine FILE byte-identity (`85 stages`, a new
+      `XFSTEP` kind).** The `XSTEP` cross-engine gate compares **stdout** (`b_τ ≡
+      f_τ` over what a program *prints*). build.sh's *other* half of cross-engine
+      identity is `cmp -s canvas.ppm /tmp/canvas_host.ppm` — the same generator must
+      emit a **byte-identical FILE** on the C host and the native VM. `XFSTEP` is that
+      gate: run the target under `tiny_host` (it writes `outf`) and SAVE `outf`; then
+      codegen+bundle the target into `logos_app` (**never `./logos_secd`** — the fork
+      bomb; the bundle is the proven route `XSTEP` already uses, and the write to
+      `logos_program.bin` mid-run is the documented-safe direction) and run
+      `logos_app` (it rewrites `outf`, now the VM's version); pass iff the saved host
+      file **`str_eq`s** the VM file (byte-exact + binary-safe — it *is* `cmp -s`)
+      **AND** the host file carries a header `mark`, so two empty or
+      identically-broken files can't fake a pass (the marker-AND-equality discipline
+      `XSTEP` holds). Two PPM rasters from **different** generators — the surface
+      compositor (`theourgia.la` → `canvas.ppm`) and the text renderer
+      (`theourgia_text.la` → `text.ppm`), both gated on `P6`. Green AND **red both
+      verified** — a scratch with a marker absent from the file printed
+      `FAIL host!=VM`, so the gate is not vacuous. Verified full **BUILD GREEN, 85
+      stages = 57 marker + 4 cross-engine (stdout) + 3 guard + 1 namespace + 8 QEMU +
+      2 native-task + 6 ring-3 + 2 sovereign-boot + 2 cross-engine (FILES)**. *Honest
+      scope:* the WAV (`phonym.la`) and the module-composed session/mux rasters emit
+      identically too, but each host run + bundle is minutes, so they stay out of the
+      hot path. Remaining: buildla's other ~18 of build.sh's 103 stages — more
+      resource/negative gates and the toolchain-driving stages scoped in the
+      honest-boundary notes below.
       It unlocks the **`DEPTH(DEPTH)`** gate — whose whole content is that it must
       **not** terminate (`timeout`, rc 124), the deliberate exception in
       `primitives.la` — and opens build.sh's `secd:`/host guard regression set.
