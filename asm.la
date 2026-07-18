@@ -413,8 +413,16 @@ glyph SPLITSIGN = Z(la self. la s. la cur.
             (la _. self(str_tail(s))(concat(cur)(c))))
         (str_head(s))))
 glyph MEMPARTS = la t. SPLITSIGN(STRIPBRK(t))("")
-glyph MEMBASE  = la t. REGNUM(FST(MEMPARTS(t)))
-glyph MEMDISP  = la t. SND(MEMPARTS(t))
+#   ★ An ABSOLUTE address has no base register at all — `mov [0x300000], ebx`.
+#   x86-64 spells "no base" as mod=00, rm=100 (SIB follows), SIB=0x25
+#   (scale=0, index=none(100), base=none(101)), then a disp32. A base of -1 is
+#   the sentinel for that shape; REXOPT already treats it correctly, since
+#   lt(-1)(8) leaves REX.B clear, which is right — there is no base to extend.
+glyph MEMABS   = la t. NOT(ISREG(FST(MEMPARTS(t))))
+glyph MEMBASE  = la t.
+    IF(MEMABS(t))(la _. sub(0)(1))(la _. REGNUM(FST(MEMPARTS(t))))
+glyph MEMDISP  = la t.
+    IF(MEMABS(t))(la _. NUMV(FST(MEMPARTS(t))))(la _. SND(MEMPARTS(t)))
 
 glyph FITS8 = la d. AND(NOT(lt(d)(sub(0)(128))))(lt(d)(128))
 glyph MODOF = la b. la d.
@@ -427,13 +435,9 @@ glyph DISPOF = la m. la d.
     IF(int_eq(m)(1))(la _. B(IF(lt(d)(0))(la _. add(256)(d))(la _. d)))
                     (la _. LE4(IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d))))
 glyph MEMENC = la op. la w. la reg. la b. la d. la force.
-    (la m.
-      concat(P66(w))
-     (concat(REXOPT(w)(reg)(b)(force))
-     (concat(B(OP8(op)(w)))
-     (concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
-     (concat(SIBOF(b))(DISPOF(m)(d)))))))
-    (MODOF(b)(d))
+    concat(P66(w))
+   (concat(REXOPT(w)(reg)(b)(force))
+   (concat(B(OP8(op)(w)))(MEMTAIL(reg)(b)(d))))
 
 #   IMMEDIATE TO MEMORY (C6 /0 for a byte, C7 /0 otherwise). The reg field of
 #   the ModRM byte is not a register here but the opcode extension /0, so the
@@ -444,13 +448,10 @@ glyph IMMW = la w. la n.
     IF(int_eq(w)(1))(la _. B(n))
       (la _. IF(int_eq(w)(2))(la _. LE2(n))(la _. LE4(n)))
 glyph MEMIMM = la w. la b. la d. la n.
-    (la m.
-      concat(P66(w))
-     (concat(REXOPT(w)(0)(b)(FALSE))
-     (concat(B(IF(int_eq(w)(1))(la _. 198)(la _. 199)))
-     (concat(B(add(mul(m)(64))(mod(b)(8))))
-     (concat(SIBOF(b))(concat(DISPOF(m)(d))(IMMW(w)(n))))))))
-    (MODOF(b)(d))
+    concat(P66(w))
+   (concat(REXOPT(w)(0)(b)(FALSE))
+   (concat(B(IF(int_eq(w)(1))(la _. 198)(la _. 199)))
+   (concat(MEMTAIL(0)(b)(d))(IMMW(w)(n)))))
 
 # ── OPERAND SIZE KEYWORDS ────────────────────────────────────────────────────
 #   `mov dword [rdi + 8], 0` carries its width in a KEYWORD, because neither
@@ -735,9 +736,11 @@ glyph LTRENC = la a. concat(B(15))(concat(B(0))(MODRMD(3)(REGNUM(a))))
 #   lgdt needs the ModRM/SIB/disp tail WITHOUT the REX+opcode that MEMENC bakes
 #   in, so the addressing machinery is factored out and shared.
 glyph MEMTAIL = la reg. la b. la d.
-    (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
-          (concat(SIBOF(b))(DISPOF(m)(d))))
-    (MODOF(b)(d))
+    IF(lt(b)(0))
+      (la _. concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(B(37))(LE4(d))))
+      (la _. (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
+                   (concat(SIBOF(b))(DISPOF(m)(d))))
+             (MODOF(b)(d)))
 glyph LGDTENC = la b.
     concat(B(15))(concat(B(1))(MEMTAIL(2)(MEMBASE(b))(MEMDISP(b))))
 glyph DIVENC = la w. la a.
@@ -1061,11 +1064,32 @@ glyph MKEQUS = Z(la self. la tls. la acc.
       IF(ISEQU(ts))
         (la _. self(t)(CONS(PAIR(HD(ts))(NTH(2)(ts)))(acc)))
         (la _. self(t)(acc))))
-glyph SUBTOK = la equs. la t.
+glyph SUBTOK1 = la equs. la t.
     (la o. IF(ISSOME(o))
              (la _. (la v. IF(str_eq(v)(""))(la _. t)(la _. v))(OPTV(o)))
              (la _. t))
     (LOOKREG(t)(equs))
+#   ★ A symbol can appear INSIDE a memory operand — `mov [MBI_SAVE], ebx` is
+#   how boot.asm addresses its scratch cells. Whole-token substitution cannot
+#   see it, because the tokenizer folded the brackets into ONE token. So a
+#   bracket token is split on its +/- operators, each component substituted,
+#   and the operators put back. This was a KNOWN, documented limit; running
+#   the real boot.asm proved it load-bearing rather than theoretical — the
+#   assembler halted with "unknown register: MBI_SAVE", having read the symbol
+#   as a base register.
+glyph SUBEXPR = Z(la self. la equs. la s. la cur.
+    IF(str_eq(s)(""))
+      (la _. SUBTOK1(equs)(cur))
+      (la _. (la c.
+          IF(OR(str_eq(c)("+"))(str_eq(c)("-")))
+            (la _. concat(SUBTOK1(equs)(cur))
+                         (concat(c)(self(equs)(str_tail(s))(""))))
+            (la _. self(equs)(str_tail(s))(concat(cur)(c))))
+        (str_head(s))))
+glyph SUBTOK = la equs. la t.
+    IF(ISMEM(t))
+      (la _. concat("[")(concat(SUBEXPR(equs)(STRIPBRK(t))(""))("]")))
+      (la _. SUBTOK1(equs)(t))
 glyph SUBLINE = la equs.
     Z(la self. la l. l(NIL)(la h. la t. CONS(SUBTOK(equs)(h))(self(t))))
 glyph SUBALL = la equs.
