@@ -1347,6 +1347,12 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
         (K4c), so the gate asserts an R+X segment exists and no RWE one does.
         Also asserts the loader's rule `p_offset ≡ p_vaddr (mod page)`, which
         is why the file carries padding it does not obviously need.
+      - [x] **duplicate definitions refused** (`9ef6056`) — ld's "multiple
+        definition". `LOOKUP` took the first match, so two objects defining the
+        same global linked silently and one won by input order; the program
+        then calls the wrong copy, presenting as wrong behaviour rather than a
+        link error. Refused before anything is written, and the gate asserts no
+        output survives a refusal.
       - [ ] **beyond:** N objects and N sections (today: two objects, `.text` +
         `.rodata` — what the fixtures exercise and therefore all that is
         claimed), and a linker script rather than a hard-coded layout.
