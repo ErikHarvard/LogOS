@@ -1328,6 +1328,33 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       `str_to_int`, so it could not read the hex literals the rest of the
       assembler had accepted since the width slice.
 
+      **THE OPCODE TAIL added — port I/O, MSRs, descriptor/system ops, string
+      ops with the `rep` prefix, the `o64` prefix, `div`/`imul`, rotates, and
+      the FULL jcc condition set — byte-identical over 47 instructions / 109
+      bytes (2026-07-18). boot.asm is now 85% readable (904 of 1060 lines), and
+      everything still missing is the PREPROCESSOR plus `equ`.** `out` alone was
+      37 uses, the largest remaining family, and port I/O turns out to have **no
+      ModRM at all** — its operands are *implied* (always DX and the
+      accumulator), so the width comes from which accumulator was named
+      (`out dx, ax` = `66 EF`) and the imm8-port forms are a **different opcode**
+      (`E6`/`E7`) rather than an addressing mode. Other facts gated by name:
+      `ltr ax` is `0F 00 D8` with **no** `0x66` despite a 16-bit operand (the
+      instruction takes r/m16 by definition, so the size needs no announcing);
+      three-operand `imul` uses `6B` with an imm8 and `69` with an imm32;
+      **`rep stosq` is `F3 48 AB` — the `F3` prefix precedes REX.W**; and `o64`
+      is likewise just a REX.W byte prepended to what follows, which is why both
+      prefixes are implemented as "emit a byte, then encode the rest of the
+      line" rather than as instructions. **The jcc set became table-driven**: the
+      old code hardcoded `jz`/`je`/`jnz`/`jne` as four cases, but every
+      conditional jump is one opcode family plus a 4-bit condition (short
+      `0x70+cc`, near `0F 80+cc`), and the ALIASES name one condition rather
+      than several — `jc` ≡ `jb`, `jnc` ≡ `jae`, `jz` ≡ `je` — so they must
+      encode identically, which is asserted directly. *(That alias check earns
+      its place: a wrong condition code still assembles into a perfectly valid
+      program that simply branches on the WRONG FLAG. Byte-identity is the only
+      thing that catches it — no test of behaviour would, short of running the
+      kernel.)*
+
       *Honest cost, measured then reduced:* assembling N `mov rax, rcx` (CPU
       time under identical load) went `0.09` → `0.49` s/instruction with the
       slice — linear in program length, but a 5.5x constant — and back to

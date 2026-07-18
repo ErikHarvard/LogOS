@@ -1528,6 +1528,54 @@ PYDAT2
     python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0x90,0x90]) else 1)" \
       || { echo "FAIL  asm.la: bare-label vs label+instruction lines disagree"; ok=0; }
     rm -f /tmp/nasm_data.bin /tmp/asm_data.out
+    # (2d7) THE OPCODE TAIL: port I/O, MSRs, descriptor/system ops, string ops
+    #       with the rep prefix, the o64 prefix, div/imul, rotates, and the FULL
+    #       jcc condition set. This is everything boot.asm still needs that is
+    #       not the preprocessor — coverage 85% (904 of 1060 lines), and what
+    #       remains is %ifdef/%define/%include (121 lines), `equ` symbols, and
+    #       section/global/incbin.
+    rm -f asm_out.bin /tmp/nasm_misc.bin; cp asm_test_misc.asm asm_in.asm
+    ./tiny_host asm.la >/tmp/asm_misc.out 2>&1 || { echo "FAIL  asm.la: opcode-tail program failed: $(tail -1 /tmp/asm_misc.out)"; ok=0; }
+    nasm -f bin asm_test_misc.asm -o /tmp/nasm_misc.bin 2>/dev/null || { echo "FAIL  asm.la: nasm opcode-tail reference failed"; ok=0; }
+    cmp -s asm_out.bin /tmp/nasm_misc.bin \
+      || { echo "FAIL  asm.la: opcode-tail encodings DIFFER from nasm"; ok=0;
+           python3 - <<'PYMSC1'
+a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_misc.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYMSC1
+         }
+    python3 - <<'PYMSC2' || { echo "FAIL  asm.la: an opcode-tail encoding rule regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# Port I/O has NO ModRM — its operands are implied (DX and the accumulator), so
+# the width comes from which accumulator was named, and the imm8-port forms are
+# a DIFFERENT OPCODE rather than an addressing mode.
+q=[("out dx,ax needs the 0x66 prefix",   d[1:3]    == bytes([0x66,0xef])),
+   ("out imm8,al is opcode E6, not EE",  d[4:6]    == bytes([0xe6,0x20])),
+   ("ltr ax: 0F 00 /3 with NO 0x66",     d[24:27]  == bytes([0x0f,0x00,0xd8])),
+   ("lgdt [rbx+8]: 0F 01 /2 + disp8",    d[33:37]  == bytes([0x0f,0x01,0x53,0x08])),
+   ("imul r,r,imm8 uses 6B, not 69",     d[42:46]  == bytes([0x48,0x6b,0xc0,0x40])),
+   ("rep stosq: F3 comes BEFORE REX.W",  d[68:71]  == bytes([0xf3,0x48,0xab])),
+   ("o64 sysret: REX.W then 0F 07",      d[73:76]  == bytes([0x48,0x0f,0x07])),
+   ("jl is condition 0xC (7C)",          d[96:98]  == bytes([0x7c,0xea])),
+   ("jc and jb are the SAME condition",  d[104:106]== bytes([0x72,0xe2]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYMSC2
+    # The jcc ALIASES must encode identically — jc==jb, jnc==jae, jz==je — since
+    # they name one condition, not four. A table that got an alias wrong would
+    # still assemble and would still branch, just on the wrong flag.
+    printf 'bits 64\nL:\njb L\njc L\njae L\njnc L\nje L\njz L\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "
+import sys
+d=open('asm_out.bin','rb').read()
+sys.exit(0 if d[0]==d[2]==0x72 and d[4]==d[6]==0x73 and d[8]==d[10]==0x74 else 1)" \
+      || { echo "FAIL  asm.la: jcc aliases (jc/jb, jnc/jae, jz/je) do not encode identically"; ok=0; }
+    rm -f /tmp/nasm_misc.bin /tmp/asm_misc.out
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`
