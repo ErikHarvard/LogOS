@@ -146,3 +146,5 @@ watched.la
 /link_test_b.o
 /link_in.o
 /link_ref
+/ldtext.bin
+/link_text.bin
