@@ -148,9 +148,31 @@ PCB_SIZE    equ 128
 ;   at 512 MiB leave physical RAM entirely;
 ; and `native: heap exhausted` is never reached in any of those cases. The
 ; failure mode is a clobbered return address -> control transfers into stack
-; bytes -> whatever they decode to. There is ~53 MiB of real headroom
-; (68 -> 121 MiB), so this is latent, not immediate — HAL.4e never got near it
-; (that RED was the gate's own screendump; see kernel/gate_hal4e.sh).
+; bytes -> whatever they decode to.
+;
+; ── THIS IS NOT LATENT. IT FIRES IN UNDER 90 SECONDS. (corrected 2026-07-18) ──
+; An earlier version of this comment said "~53 MiB of real headroom, so this is
+; latent, not immediate — HAL.4e never got near it". BOTH CLAUSES WERE WRONG.
+; Measured: every HAL.4x ELF, booted and left ALONE with ZERO keystrokes, dies
+; within 90 s — comp_text with #PF at rip=0x04454db8 (which is 346 KB INTO THE
+; HEAP, i.e. a return address overwritten by a heap pointer), comp_term and
+; comp_edit with #UD a few hundred bytes below LA_STACK_TOP.
+;
+; Two mistakes fed that wrong "latent":
+;   1. I reasoned a rising heap must hit the BOTTOM of the stack region (121
+;      MiB) first, and dismissed the collision because the faulting rip was at
+;      the TOP. But the runtime does TCO, so these loops run at CONSTANT SHALLOW
+;      DEPTH: the live frames are the top few HUNDRED BYTES, and 121 MiB up to
+;      them is unused. A rising heap crosses all of it harmlessly and destroys
+;      the live frames AT THE TOP. The "counter-evidence" was the signature.
+;   2. The headroom is crossed in about a minute because `POLL` BOXES AN INT PER
+;      SPIN ITERATION (`inb` returns a boxed INT), so an idle compositor
+;      allocates hard. That is also why stalling the guest (a screendump) or
+;      slowing the keystrokes always made the crash come SOONER, which had
+;      looked like two unrelated mysteries.
+;
+; So HAL.4e/4f/4g are TIME-BOUNDED, not correct: their gates run ~20 s and pass
+; honestly, but nothing in the suite runs long enough to witness this.
 ;
 ; The FIX belongs in rt_init, not here: it already discriminates metal from
 ; Linux (METAL_FLAG / CPL) and already computes STACK_LIMIT, so it is the one
