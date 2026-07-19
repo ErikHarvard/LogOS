@@ -6,10 +6,33 @@
 # does TCO, so the stack does not grow -- anything that grows is the HEAP.
 #
 # Therefore peak RSS must be FLAT in the iteration count. Measured, it is not:
-#      5,000,000 -> 170 MB      45,000,000 -> 519 MB
-#     15,000,000 -> 300 MB     135,000,000 -> 905 MB
-# ~1.74x memory per 3x work, no plateau. The GC reclaims SOMETHING (the 135M run
-# allocates ~3.2 GB of boxes yet peaks at 905 MB) but it does not hold steady.
+#         1,000 ->   0.75 MB      1,000,000 ->  72 MB
+#       100,000 ->  20 MB         2,000,000 -> 105 MB
+#       250,000 ->  36 MB         5,000,000 -> 170 MB
+#       500,000 ->  52 MB        45,000,000 -> 519 MB
+#                               135,000,000 -> 905 MB
+# The GC reclaims SOMETHING (the 135M run allocates ~3.2 GB of boxes yet peaks
+# at 905 MB) but it does not hold steady.
+#
+# ── THE PORTABLE NUMBER: ~700,000 ITERATIONS IS THE METAL'S WHOLE BUDGET ─────
+# In the small-N regime growth is essentially LINEAR at ~40 BYTES RETAINED PER
+# ITERATION (500k->1M costs 20.7 MB, 1M->2M costs 33 MB). Each iteration
+# allocates two boxed ints = 48 bytes, so roughly 85% of what is allocated is
+# never reclaimed.
+#
+# On bare metal the heap starts at 68.0 MiB and the LA stack's live frames sit
+# just under LA_STACK_TOP = 128 MiB, so there are ~60 MiB to consume. RSS
+# crosses 60 MB between N=500,000 (52 MB) and N=1,000,000 (72 MB) -- so a metal
+# LA program has a total budget of roughly SEVEN HUNDRED THOUSAND allocating
+# iterations, ever, after which it overwrites its own return addresses.
+#
+# That cross-checks the metal observation independently: every HAL.4x compositor
+# dies after ~6 s of idle polling, and 700k/6s = ~117k iterations/sec, which is
+# the right order for an `inb` port read under QEMU (each is a VM exit). Two
+# measurements, taken different ways, agreeing.
+#
+# "Six seconds" is machine-dependent; "700,000 allocating iterations" is not,
+# and it is the number to predict whether any given LA program survives.
 #
 # THE ITERATION COUNT IS READ FROM `churn.n`, not compiled in, so ONE build
 # serves every measurement point. native_codegen3's codegen is the expensive
