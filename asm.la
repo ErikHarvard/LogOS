@@ -426,6 +426,13 @@ glyph MOVABS = la r. la n.
     concat(B(add(72)(IF(lt(r)(8))(la _. 0)(la _. 1))))
    (concat(B(add(184)(mod(r)(8))))(LE8(n)))
 
+#   `push qword 0` — an IMMEDIATE, not a register. 6A + imm8 when it fits a
+#   signed byte, else 68 + imm32; the `qword` keyword does not add a REX, the
+#   push is 64-bit by default in long mode. idt.asm's ISR stubs push the vector
+#   number this way, 32 times via a macro.
+glyph PUSHIMM = la n.
+    IF(FITS8(n))(la _. concat(B(106))(B(FOLD8(n))))
+                (la _. concat(B(104))(LE4(n)))
 glyph PUSHPOP = la base. la r.
     concat(IF(lt(r)(8))(la _. "")(la _. B(65)))(B(add(base)(mod(r)(8))))
 
@@ -1171,6 +1178,8 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("syscall"))(la _. 2)(la _.
     IF(str_eq(op)("ret"))(la _. 1)(la _.
     IF(str_eq(op)("nop"))(la _. 1)(la _.
+    IF(AND(str_eq(op)("push"))(ISVAL(A1(ts))))
+      (la _. LENOF(PUSHIMM(EVAL(labs)(A1(ts)))))(la _.
     IF(OR(str_eq(op)("push"))(str_eq(op)("pop")))
       (la _. IF(lt(REGNUM(A1(ts)))(8))(la _. 1)(la _. 2))(la _.
     IF(str_eq(op)("call"))(la _. 5)(la _.
@@ -1201,7 +1210,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(labs)(w)(a)(b))))
-      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))))
   (HD(ts))
 
 # ── one instruction -> its bytes (off = this instruction's own address) ──
@@ -1214,6 +1223,7 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)("syscall"))(la _. concat(B(15))(B(5)))(la _.
     IF(str_eq(op)("ret"))(la _. B(195))(la _.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
+    IF(AND(str_eq(op)("push"))(ISVAL(A1(ts))))(la _. PUSHIMM(EVAL(labs)(A1(ts))))(la _.
     IF(str_eq(op)("push"))(la _. PUSHPOP(80)(REGNUM(A1(ts))))(la _.
     IF(str_eq(op)("pop"))(la _. PUSHPOP(88)(REGNUM(A1(ts))))(la _.
     IF(OR(str_eq(op)("global"))(OR(str_eq(op)("equ"))(ISEQU(ts))))(la _. "")(la _.
@@ -1253,7 +1263,7 @@ glyph ENC10 = la labs. la off. la ts.
                (la _. concat(B(add(112)(JCCC(op))))(B(REL8(labs)(off)(TARGET(ts)))))
                (la _. concat(B(15))(concat(B(add(128)(JCCC(op))))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
     IF(str_eq(op)("mov"))(la _. WITHOPS(ts)(MOVENC(labs)))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))))
   (HD(ts))
 
 #   Every line is tokenized ONCE, up front, and the passes consume token lists
@@ -1366,31 +1376,77 @@ glyph PPELIF   = la st. la cond.
 glyph DEFINED  = la nm. la ds. ISSOME(LOOKREG(nm)(ds))
 glyph PPVAL    = la ts. NTH(2)(ts)
 glyph INCNAME  = la ts. str_tail(NTH(1)(ts))
-glyph PP = Z(la self. la ls. la ds. la st.
+#   ── %macro / %endmacro ──────────────────────────────────────────────────
+#   idt.asm defines two single-parameter macros and invokes them 32 times to
+#   generate the ISR stubs. Expansion is LINE-LEVEL and must happen before
+#   tokenizing, because `%1` appears INSIDE tokens — `isr%1:` becomes `isr0:`,
+#   a label whose NAME is built by substitution. Token-level substitution could
+#   never produce that.
+#
+#   A macro body is collected verbatim between `%macro NAME n` and `%endmacro`,
+#   then spliced at each invocation with `%1`..`%9` replaced textually. Splicing
+#   into the line stream (rather than recursing) means an expanded body is
+#   preprocessed like any other lines — so a macro may contain conditionals, and
+#   its labels enter the ordinary label pass.
+glyph REPLACE = Z(la self. la s. la pat. la rep.
+    IF(str_eq(s)(""))(la _. "")
+      (la _. IF(STARTSW(s)(pat))
+               (la _. concat(rep)(self(DROPN2(s)(LENOF(pat)))(pat)(rep)))
+               (la _. concat(str_head(s))(self(str_tail(s))(pat)(rep)))))
+glyph STARTSW = Z(la self. la s. la p.
+    IF(str_eq(p)(""))(la _. TRUE)
+      (la _. IF(str_eq(s)(""))(la _. FALSE)
+        (la _. AND(str_eq(str_head(s))(str_head(p)))
+                  (self(str_tail(s))(str_tail(p))))))
+glyph DROPN2 = Z(la self. la s. la n.
+    IF(int_eq(n)(0))(la _. s)(la _. self(str_tail(s))(sub(n)(1))))
+glyph SUBARGS = Z(la self. la line. la args. la i.
+    args(line)(la h. la t.
+      self(REPLACE(line)(concat("%")(int_to_str(i)))(h))(t)(add(i)(1))))
+glyph EXPANDM = Z(la self. la body. la args.
+    body(NIL)(la h. la t. CONS(SUBARGS(h)(args)(1))(self(t)(args))))
+#   collect a macro body: everything up to %endmacro
+glyph MBODY = Z(la self. la ls. la acc.
+    ls(PAIR(acc)(NIL))(la h. la t.
+      IF(str_eq(HD(TOKS(h)("")))("%endmacro"))
+        (la _. PAIR(acc)(t))
+        (la _. (la r. PAIR(CONS(h)(FST(r)))(SND(r)))(self(t)(NIL)))))
+glyph LOOKMAC = Z(la self. la nm. la l.
+    l(NONE)(la h. la t. IF(str_eq(FST(h))(nm))(la _. SOME(SND(h)))(la _. self(nm)(t))))
+
+glyph PP = Z(la self. la ls. la ds. la st. la ms.
   ls(PAIR(NIL)(ds))(la line. la rest.
     (la ts.
       (la d.
-        IF(str_eq(d)("%define"))
+        IF(str_eq(d)("%macro"))
+          (la _. (la r. self(SND(r))(ds)(st)
+                          (CONS(PAIR(NTH(1)(ts))(FST(r)))(ms)))
+                 (MBODY(rest)(NIL)))
+        (la _. IF(ISSOME(LOOKMAC(d)(ms)))
           (la _. IF(PPEMIT(st))
-                   (la _. self(rest)(CONS(PAIR(NTH(1)(ts))(PPVAL(ts)))(ds))(st))
-                   (la _. self(rest)(ds)(st)))
+                   (la _. self(APPEND(EXPANDM(OPTV(LOOKMAC(d)(ms)))(TL2(ts)))(rest))(ds)(st)(ms))
+                   (la _. self(rest)(ds)(st)(ms)))
+        (la _. IF(str_eq(d)("%define"))
+          (la _. IF(PPEMIT(st))
+                   (la _. self(rest)(CONS(PAIR(NTH(1)(ts))(PPVAL(ts)))(ds))(st)(ms))
+                   (la _. self(rest)(ds)(st)(ms)))
           (la _. IF(str_eq(d)("%ifdef"))
-            (la _. self(rest)(ds)(PPUSH(st)(DEFINED(NTH(1)(ts))(ds))))
+            (la _. self(rest)(ds)(PPUSH(st)(DEFINED(NTH(1)(ts))(ds)))(ms))
             (la _. IF(str_eq(d)("%ifndef"))
-              (la _. self(rest)(ds)(PPUSH(st)(NOT(DEFINED(NTH(1)(ts))(ds)))))
+              (la _. self(rest)(ds)(PPUSH(st)(NOT(DEFINED(NTH(1)(ts))(ds))))(ms))
               (la _. IF(str_eq(d)("%elifdef"))
-                (la _. self(rest)(ds)(PPELIF(st)(DEFINED(NTH(1)(ts))(ds))))
+                (la _. self(rest)(ds)(PPELIF(st)(DEFINED(NTH(1)(ts))(ds)))(ms))
                 (la _. IF(str_eq(d)("%else"))
-                  (la _. self(rest)(ds)(PPELSE(st)))
+                  (la _. self(rest)(ds)(PPELSE(st))(ms))
                   (la _. IF(str_eq(d)("%endif"))
-                    (la _. self(rest)(ds)(PPPOP(st)))
+                    (la _. self(rest)(ds)(PPPOP(st))(ms))
                     (la _. IF(str_eq(d)("%include"))
                       (la _. IF(PPEMIT(st))
-                               (la _. self(APPEND(LINES(read_file(INCNAME(ts)))(""))(rest))(ds)(st))
-                               (la _. self(rest)(ds)(st)))
+                               (la _. self(APPEND(LINES(read_file(INCNAME(ts)))(""))(rest))(ds)(st)(ms))
+                               (la _. self(rest)(ds)(st)(ms)))
                       (la _. IF(PPEMIT(st))
-                        (la _. (la r. PAIR(CONS(line)(FST(r)))(SND(r)))(self(rest)(ds)(st)))
-                        (la _. self(rest)(ds)(st))))))))))
+                        (la _. (la r. PAIR(CONS(line)(FST(r)))(SND(r)))(self(rest)(ds)(st)(ms)))
+                        (la _. self(rest)(ds)(st)(ms))))))))))))
       (HD(ts)))
     (TOKS(line)(""))))
 
@@ -1634,7 +1690,7 @@ glyph ASSEMBLE = la src.
           (QUALALL(SUBALL(equs)(tls0))("")))
         (APPEND(MKEQUS(tls0)(NIL)(""))(SND(pp))))
       (MAPTOKS(FST(pp))))
-    (PP(LINES(src)(""))(NIL)(NIL))
+    (PP(LINES(src)(""))(NIL)(NIL)(NIL))
 
 glyph MAIN =
   (la code.
