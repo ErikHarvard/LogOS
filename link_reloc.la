@@ -303,9 +303,10 @@ glyph PSTEP = la f. la o. la name. la acc. la cur.
 #   number of inputs stops being written into the code and becomes the length
 #   of a list. Two objects still produce byte-identical output, which is what
 #   makes this safe to do as a refactor rather than a rewrite.
-glyph OBJ   = la idx. la f. PAIR(idx)(f)
+glyph OBJ   = la idx. la f. la ss. PAIR(idx)(PAIR(f)(ss))
 glyph O_IDX = la o. FST(o)
-glyph O_F   = la o. SND(o)
+glyph O_F   = la o. FST(SND(o))
+glyph O_SS  = la o. SND(SND(o))
 
 #   All objects, one section name, packed in input order from that name's base.
 glyph PNAME = la objs. la name. la acc.
@@ -448,6 +449,10 @@ glyph BODY = la regs. (Z(la self. la l. la cur.
                  (FILEOFF(BASEOF(R_NAME(h))))))
       (R_BYTES(h)))))(regs)
 
+glyph CHECKALL = la objs. (Z(la self. la l.
+    l("ok")(la h. la t.
+      SEQ(CHECKSECS(O_F(h))(concat("input ")(int_to_str(O_IDX(h)))))(self(t)))))(objs)
+
 glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))
       (la _. FALSE)
@@ -455,12 +460,36 @@ glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
                (la _. TRUE)
                (la _. self(add(i)(1))))))(0)
 
-glyph DUPCHECK = la f1. la ss1. la f2. la ss2. (Z(la self. la i.
-    IF(int_eq(i)(SYM_COUNT(f2)(ss2)))
+#   One ordered pair: every global b defines that a also defines is a clash.
+glyph DUPPAIR = la a. la b. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(O_F(b))(O_SS(b))))
       (la _. "ok")
-      (la _. IF(AND(DEFINES(f2)(ss2)(i))(HASDEF(f1)(ss1)(SYMNAME(f2)(ss2)(i))))
-               (la _. error(concat("link: duplicate symbol: ")(SYMNAME(f2)(ss2)(i))))
+      (la _. IF(AND(DEFINES(O_F(b))(O_SS(b))(i))
+                   (HASDEF(O_F(a))(O_SS(a))(SYMNAME(O_F(b))(O_SS(b))(i))))
+               (la _. error(concat("link: duplicate symbol: ")(SYMNAME(O_F(b))(O_SS(b))(i))))
                (la _. self(add(i)(1))))))(0)
+
+#   Every object against every LATER object — each unordered pair once, which
+#   is what two objects did by hand and N objects needs a nested walk to do.
+glyph DUPCHECK = la objs. (Z(la self. la l.
+    l("ok")(la h. la t.
+      SEQ((Z(la inner. la l2.
+            l2("ok")(la h2. la t2. SEQ(DUPPAIR(h)(h2))(inner(t2)))))(t))
+         (self(t)))))(objs)
+
+#   ★ The NIL branch is THUNKED on purpose. A Scott list evaluates l(nil)(cons)
+#   with the nil branch EAGERLY, so `error(...)` written there would fire on
+#   every successful lookup, not only on exhaustion. Both branches return a
+#   function and the result is forced with "!".
+glyph RESOLVE_L = la objs. la plan. la want.
+    (Z(la self. la l.
+      l(la _. error(concat("link: unresolved symbol: ")(want)))
+       (la h. la t. la _.
+         (la a. IF(NOT(lt(a)(0)))
+                  (la _. a)
+                  (la _. self(t)("!")))
+         (LOOKUP(O_F(h))(O_SS(h))(la sec. VAOF(plan)(O_IDX(h))(sec))(want)))))
+    (objs)("!")
 
 glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))
@@ -471,8 +500,9 @@ glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
 
 glyph MAIN =
   (la f1. (la f2.
-  (la _c1. (la _c2.
   (la ss1. (la ss2.
+  (la objs.
+  (la _chk.
   (la t1sec. (la t2sec. (la r2sec.
   (la plan.
   (la t2addr.
@@ -480,7 +510,7 @@ glyph MAIN =
   (la resolve.
   (la p1. (la p2.
     (la merged. (la rodata.
-      SEQ(DUPCHECK(f1)(ss1)(f2)(ss2))(
+      SEQ(DUPCHECK(objs))(
       SEQ(write_file("link_text.bin")(merged))(
       SEQ(write_exec("link_out")(
             (la regs. (la nph. CAT(
@@ -489,7 +519,7 @@ glyph MAIN =
                CONS(BODY(regs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
                NIL)))))
              (LENL(regs)))
-            (MKREGIONS(CONS(OBJ(1)(f1))(CONS(OBJ(2)(f2))(NIL)))
+            (MKREGIONS(objs)
                       (CONS(PAIR(1)(PAIR(t1sec)(p1)))(CONS(PAIR(2)(PAIR(t2sec)(p2)))(NIL)))
                       (plan))))(
       print(CAT(
@@ -512,24 +542,18 @@ glyph MAIN =
     )(CAT(CONS(p1)(CONS(NOPS(sub(t2addr)(add(TEXT_BASE)(SH_SIZE(f1)(t1sec)))))(CONS(p2)(NIL)))))
   )(APPLYRELS(f2)(ss2)(FIND_SEC(f2)(".rela.text"))(va2)(resolve)(t2addr)(SECBYTES(f2)(t2sec)))
   )(APPLYRELS(f1)(ss1)(FIND_SEC(f1)(".rela.text"))(va1)(resolve)(TEXT_BASE)(SECBYTES(f1)(t1sec)))
-  )(la want. (la a1. IF(NOT(lt(a1)(0)))
-                       (la _. a1)
-                       (la _. (la a2. IF(NOT(lt(a2)(0)))
-                                        (la _. a2)
-                                        (la _. error(concat("link: unresolved symbol: ")(want))))
-                              (LOOKUP(f2)(ss2)(va2)(want))))
-             (LOOKUP(f1)(ss1)(va1)(want)))
+  )(la want. RESOLVE_L(objs)(plan)(want))
   )(la sec. VAOF(plan)(2)(sec))
   )(la sec. VAOF(plan)(1)(sec))
   )(VAOF(plan)(2)(t2sec))
-  )(MKPLAN(CONS(OBJ(1)(f1))(CONS(OBJ(2)(f2))(NIL))))
+  )(MKPLAN(objs))
   )(FIND_SEC(f2)(".rodata"))
   )(FIND_SEC(f2)(".text"))
   )(FIND_SEC(f1)(".text"))
+  )(CHECKALL(objs))
+  )(CONS(OBJ(1)(f1)(ss1))(CONS(OBJ(2)(f2)(ss2))(NIL)))
   )(FIND_SEC(f2)(".symtab"))
   )(FIND_SEC(f1)(".symtab"))
-  )(CHECKSECS(f2)("input 2"))
-  )(CHECKSECS(f1)("input 1"))
   )(read_file("link_in2.o"))
   )(read_file("link_in1.o"))
 
