@@ -994,8 +994,17 @@ glyph NOARG = la op.
 #   while MOVENC emits 5 — a size/emit drift that silently misplaces every
 #   later address. One predicate, used by both.
 glyph ISVAL  = la t. OR(ISNUM(t))(ISEXPRTOK(t))
+# A label immediate is what b is when it is none of the operand kinds MOVENC
+# dispatches on BEFORE its label fallthrough: not memory, not a GP register, not
+# a control/segment register, not a value. The CR/SEG exclusions were missing —
+# so `mov rax, cr3` and `mov ax, ds` (a CR/SEG in the b position) were sized as
+# 10/4-byte label-movs while MOVENC correctly emitted the 3-byte 0F20/8C form.
+# Latent: byte-identity vs nasm passed because no label's address surfaced the
+# miscount; the SIZEDRIFT guard in ASSEMBLE caught it. Same class as the MOVSIZE
+# hardcoded-10 bug — MOVLBL must agree with MOVENC's dispatch, exactly.
 glyph MOVLBL = la a. la b.
-    AND(NOT(ISMEM(a)))(AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))(NOT(ISVAL(b)))))
+    AND(NOT(ISMEM(a)))(AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))
+      (AND(NOT(ISCR(b)))(AND(NOT(ISSEG(b)))(NOT(ISVAL(b)))))))
 glyph LENOF  = la s. str_to_int(str_len(s))
 #   ★ The label branch MEASURES too, and must. It used to answer a hardcoded
 #   `10` — correct only while every label immediate was a movabs. Once MOVENC
@@ -1697,11 +1706,38 @@ glyph ORGOF = Z(la self. la ls.
     ls(0)(la ts. la t.
       IF(str_eq(HD(ts))("org"))(la _. NUMV(NTH(1)(ts)))(la _. self(t))))
 
+# ── size/emit drift guard: the sizing pass and the emit pass must AGREE ──
+#   asm.la's stated invariant is len(ENC1) = SIZEL — asserted in comments (l.993,
+#   l.1684) and, until this guard, checked NOWHERE. 4d39c74's stale-label bug was
+#   exactly this drift: MOVSIZE reported 10 where MOVENC emitted 5, so the label
+#   table (accumulated from SIZEL) ended 20 bytes past the emitted image, and
+#   FIXLABS converged CLEANLY onto that wrong total (10 is value-independent). A
+#   fixpoint is only as sound as the function it iterates. This makes the claimed
+#   invariant load-bearing: TOTLEN is the sizing pass's total, str_len(code) the
+#   emit pass's — they must be equal or the image is silently misplaced.
+#   HONEST SCOPE: catches drift in the TOTAL. Two compensating per-line errors
+#   (one +N, one -N in the same program) would still pass; per-line is stronger.
+glyph SIZEDRIFT = la sized. la emitted.
+    error(concat("asm: INTERNAL size/emit drift — sizing pass accounted ")
+      (concat(int_to_str(sized))
+        (concat(" bytes, emitter produced ")
+          (concat(int_to_str(emitted))
+            (" — a SIZEL case disagrees with its encoder; labels are misplaced")))))
+
 glyph ASSEMBLE = la src.
     (la pp.
       (la tls0.
         (la equs.
-          (la tls. (la org. PASS2(FIXLABS(tls)(NIL)("")(12)(org))(tls)(org))
+          (la tls. (la org.
+                     (la labs.
+                       (la code.
+                         (la sized.
+                           IF(int_eq(sized)(LENOF(code)))
+                             (la _. code)
+                             (la _. SIZEDRIFT(sized)(LENOF(code))))
+                         (sub(TOTLEN(tls)(labs)(org))(org)))
+                       (PASS2(labs)(tls)(org)))
+                     (FIXLABS(tls)(NIL)("")(12)(org)))
                    (ORGOF(tls)))
           (QUALALL(SUBALL(equs)(tls0))("")))
         (APPEND(MKEQUS(tls0)(NIL)(""))(SND(pp))))

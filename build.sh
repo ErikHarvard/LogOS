@@ -1677,6 +1677,16 @@ PYPP2
     #       4d39c74 landed it RED and unwired on purpose (the encoding was right,
     #       the label VALUE was not), which is honest but is also exactly the
     #       state this loop exists to prevent becoming permanent.
+    #
+    #  DRIFT GUARD: asm.la now carries an internal size/emit invariant (SIZEDRIFT
+    #  in ASSEMBLE): the sizing pass's total (TOTLEN) must equal the emitted
+    #  length, else it halts loudly. It runs on EVERY assemble below, so these
+    #  gates exercise its happy path continuously. Its RED path cannot have a
+    #  standing gate — with the MOVSIZE fix in place, no program triggers drift —
+    #  so it was verified by hand (revert MOVSIZE to the hardcoded 10, confirm it
+    #  fires 56-vs-36 on asm_test_movlbl), the same inject-a-fault discipline the
+    #  DRM capstones use. A future SIZEL/encoder desync now fails loudly here
+    #  instead of silently misplacing every label after it.
     for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg asm_test_expr3 asm_test_equ2 asm_test_local asm_test_far asm_test_movlbl; do
         rm -f asm_out.bin .asmgate/nasm_$prog.bin
         cp $prog.asm asm_in.asm
