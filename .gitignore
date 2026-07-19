@@ -151,3 +151,4 @@ watched.la
 /kernel/kernel_polltest.elf
 /kernel/kernel_polltest_64.elf
 /kernel/alloc_churn_str.bin
+/kernel/alloc_churn_rare.bin
