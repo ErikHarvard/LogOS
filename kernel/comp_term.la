@@ -50,8 +50,10 @@
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")
 glyph SEQ  = la a. la b. b
+glyph TRUE  = la t. la f. t
 glyph FALSE = la t. la f. f
 glyph AND   = la a. la b. a(b)(FALSE)
+glyph OR    = la a. la b. a(TRUE)(b)
 
 # XRGB8888 little-endian: a dword lays bytes B,G,R,X = V&255, V>>8, V>>16
 glyph DESK = 128                 # desktop  B=128  (dim blue)
@@ -223,28 +225,33 @@ glyph POLL = Z(la self. la _.
 #   A key that maps to '~' (release code, modifier, unrenderable) and a buffer
 #   already at MAXCH both leave the buffer UNCHANGED and skip the frame, so a
 #   held key does not spin the compositor.
+#
+#   SKIPK FOLDS BOTH IGNORE CASES INTO ONE PREDICATE, deliberately. The obvious
+#   shape is two nested IFs plus a `la nn.` binder for the new length — but this
+#   file's own header records that native_codegen3's codegen is SUPERLINEAR IN
+#   NESTING DEPTH, and a first build attempt ran >22 min of CPU without emitting.
+#   One IF and one binder fewer is a real cut to the codegen's input. The cost is
+#   computing add(n)(1) twice instead of binding it once; that is arithmetic on
+#   the metal, which is free next to a quarter-hour of compile.
+glyph SKIPK = la c. la n. OR(str_eq(c)("~"))(int_eq(n)(MAXCH))
+
 glyph LOOP = Z(la self. la font. la base. la pitch. la buf. la n.
     (la sc.
       IF(int_eq(sc)(28))
         (la _. print("term done"))                  # ENTER: leave the loop
         (la _.
           (la c.
-            IF(str_eq(c)("~"))
-              (la _. self(font)(base)(pitch)(buf)(n))      # no character: ignore
+            IF(SKIPK(c)(n))
+              (la _. self(font)(base)(pitch)(buf)(n))   # no char, or buffer full
               (la _.
-              IF(int_eq(n)(MAXCH))
-                (la _. self(font)(base)(pitch)(buf)(n))    # full: discard
-                (la _.
                 (la nbuf.
-                  (la nn.
-                    SEQ(SCENE(font)(pitch)(nbuf)(nn))(
-                    SEQ(PRESENT(base)(pitch))(
-                    SEQ(print(concat("term buf=")(nbuf)))(
-                    SEQ(TWIT(base)(pitch))(
-                    self(font)(base)(pitch)(nbuf)(nn))))))
-                  (add(n)(1)))
-                 (concat(buf)(c))))))
-            (KEYCH(sc)))
+                  SEQ(SCENE(font)(pitch)(nbuf)(add(n)(1)))(
+                  SEQ(PRESENT(base)(pitch))(
+                  SEQ(print(concat("term buf=")(nbuf)))(
+                  SEQ(TWIT(base)(pitch))(
+                  self(font)(base)(pitch)(nbuf)(add(n)(1)))))))
+                 (concat(buf)(c))))
+            (KEYCH(sc))))
       (POLL("!")))
 
 glyph MAIN =

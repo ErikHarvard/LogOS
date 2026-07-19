@@ -18,7 +18,24 @@ cd "$(dirname "$0")/.."          # -> the worktree root
 
 echo "[1/4] compile comp_term.la via native_codegen3 (slow — superlinear codegen)"
 cp kernel/comp_term.la native_input.la
+# Report the codegen's exit status EXPLICITLY. A first attempt (2026-07-18) died
+# after ~22 min of CPU having written nothing, and because `set -e` aborts the
+# script silently on a killed child the log ended mid-step with no diagnostic —
+# it was not distinguishable from "still running". A SIGKILL leaves no stderr,
+# so the status is the only witness there is. `date` bookends it because the
+# process may be killed by something OUTSIDE this script (the machine runs
+# several build sessions at once), and then WHEN is the only clue to WHO.
+echo "      codegen start: $(date +%H:%M:%S)"
+set +e
 time ./tiny_host native_codegen3.la >/dev/null
+CGRC=$?
+set -e
+echo "      codegen end:   $(date +%H:%M:%S)  exit=$CGRC"
+if [ "$CGRC" -ne 0 ]; then
+    echo "FAIL: native_codegen3 exited $CGRC (137=SIGKILL, 143=SIGTERM — killed from outside, not a compile error)"
+    exit "$CGRC"
+fi
+[ -f native_codegen3_out ] || { echo "FAIL: codegen exited 0 but wrote no native_codegen3_out"; exit 1; }
 ENTRY=$(readelf -h native_codegen3_out | awk '/Entry point/{print $NF}')
 echo "      e_entry (LA prol) = $ENTRY"
 

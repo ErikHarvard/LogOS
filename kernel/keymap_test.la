@@ -24,6 +24,18 @@ glyph KEYCH = la sc.
 # The gate types L,O,G,O,S — SET-1 make codes 38,24,34,24,31.
 glyph TYPED = concat(concat(concat(concat(KEYCH(38))(KEYCH(24)))(KEYCH(34)))(KEYCH(24)))(KEYCH(31))
 
+# SKIPK folds the two ignore cases into ONE predicate (to cut codegen nesting
+# depth), so it is now the single gatekeeper on whether a keystroke mutates the
+# buffer. OR is a Church-boolean disjunction under EAGER evaluation — both arms
+# are values, not thunks, which is safe here but is exactly the shape that
+# misbehaves silently if it is ever fed a computation. Tested, not assumed.
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph OR    = la a. la b. a(TRUE)(b)
+glyph MAXCH = 7
+glyph SKIPK = la c. la n. OR(str_eq(c)("~"))(int_eq(n)(MAXCH))
+glyph SHOW  = la b. IF(b)(la _. "T")(la _. "F")
+
 glyph MAIN =
     SEQ(print(concat("typed=")(TYPED)))
    (SEQ(print(concat("len=")(str_len(TYPED))))
@@ -31,4 +43,9 @@ glyph MAIN =
    (SEQ(print(concat("esc1=")(KEYCH(1))))
    (SEQ(print(concat("enter28=")(KEYCH(28))))
    (SEQ(print(concat("release166=")(KEYCH(166))))
-       (print(concat("past_end_58=")(KEYCH(58)))))))))
+   (SEQ(print(concat("past_end_58=")(KEYCH(58))))
+       # skip on: no-char / buffer full / neither -> expect TTF
+       (print(concat(concat(concat("skip_nochar_full_ok=")
+                    (SHOW(SKIPK("~")(0))))
+                    (SHOW(SKIPK("L")(7))))
+                    (SHOW(SKIPK("L")(3)))))))))))
