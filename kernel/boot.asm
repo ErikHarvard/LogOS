@@ -154,9 +154,17 @@ PCB_SIZE    equ 128
 ; An earlier version of this comment said "~53 MiB of real headroom, so this is
 ; latent, not immediate — HAL.4e never got near it". BOTH CLAUSES WERE WRONG.
 ; Measured: every HAL.4x ELF, booted and left ALONE with ZERO keystrokes, dies
-; within 90 s — comp_text with #PF at rip=0x04454db8 (which is 346 KB INTO THE
-; HEAP, i.e. a return address overwritten by a heap pointer), comp_term and
-; comp_edit with #UD a few hundred bytes below LA_STACK_TOP.
+; in ABOUT SIX SECONDS — comp_text with #PF at rip=0x04454db8 (which is 346 KB
+; INTO THE HEAP, i.e. a return address overwritten by a heap pointer), comp_term
+; and comp_edit with #UD a few hundred bytes below LA_STACK_TOP.
+;
+; SIX SECONDS EXPLAINS EVERY SYMPTOM THIS TRACK CHASED. The interactive gates
+; pass only because they FINISH FIRST: HAL.4e sends 3 keys (~2 s) and HAL.4f
+; sends 5 (~3.5 s), both under the wire; HAL.4g sends 11 (~6.6 s) and dies just
+; short of its ENTER. Adding a screendump to 4e's gate cost ~1 s and pushed it
+; over — which is the "RED" that was originally blamed on the instrument.
+; Slowing 4g's keys to 2 s each killed it at the third character. One fact, and
+; it had been wearing four different disguises.
 ;
 ; Two mistakes fed that wrong "latent":
 ;   1. I reasoned a rising heap must hit the BOTTOM of the stack region (121
