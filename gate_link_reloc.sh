@@ -20,6 +20,45 @@ for t in nasm ld objcopy; do
     command -v $t >/dev/null 2>&1 || { echo "SKIP  link_reloc gate: $t absent"; exit 0; }
 done
 
+
+# ── byte-identity of the merged .text, for ANY object pair ─────────────────
+#   The original check was bespoke to link_test_a.o + link_test_b.o, so the
+#   32/32S fixtures were verified behaviourally only — a weaker guarantee that a
+#   five-row relocation table quietly implied was uniform. This makes the strong
+#   check reusable, so a relocation type is diffed against ld rather than merely
+#   observed to work.
+#
+#   The alignment gap between objects is NOT compared: ld fills it with a 2-byte
+#   nop (66 90), this pads with single-byte nops. Both correct, neither
+#   reachable. Sizes and alignments are read from the objects themselves, so the
+#   spans cannot drift from the fixtures.
+cmp_text_against_ld() {   # $1=obj1 $2=obj2 $3=label
+    _o1="$1"; _o2="$2"; _lbl="$3"
+    ld -o cmp_ref "$_o1" "$_o2" 2>/dev/null || { echo "SKIP  $_lbl: ld could not link the pair"; return 0; }
+    objcopy -O binary --only-section=.text cmp_ref cmp_ld.bin 2>/dev/null
+    cp "$_o1" link_in1.o; cp "$_o2" link_in2.o
+    printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
+    rm -f link_text.bin
+    if _out=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then :; else
+        echo "FAIL  $_lbl: link failed: $_out"; ok=0; return 0; fi
+    [ -f link_text.bin ] || { echo "FAIL  $_lbl: no link_text.bin"; ok=0; return 0; }
+
+    _sz1=$(readelf -S --wide "$_o1" | awk '/ \.text /{print $(NF-5)}')
+    _sz1=$(printf '%d' "0x$_sz1")
+    _al2=$(readelf -S --wide "$_o2" | awk '/ \.text /{print $NF}')
+    [ -n "$_al2" ] && [ "$_al2" -gt 0 ] || _al2=1
+    _start2=$(( (_sz1 + _al2 - 1) / _al2 * _al2 ))
+
+    cmp -n "$_sz1" link_text.bin cmp_ld.bin \
+        || { echo "FAIL  $_lbl: first object's patched .text differs from ld's"; ok=0; }
+    _a=$(mktemp); _b=$(mktemp)
+    dd if=link_text.bin bs=1 skip=$_start2 of="$_a" 2>/dev/null
+    dd if=cmp_ld.bin    bs=1 skip=$_start2 of="$_b" 2>/dev/null
+    cmp "$_a" "$_b" \
+        || { echo "FAIL  $_lbl: second object's patched .text differs from ld's"; ok=0; }
+    rm -f "$_a" "$_b" cmp_ref cmp_ld.bin
+}
+
 nasm -f elf64 link_test_a.asm -o link_test_a.o
 nasm -f elf64 link_test_dup.asm -o link_test_dup.o
 nasm -f elf64 link_test_plt.asm -o link_test_plt.o
@@ -345,6 +384,21 @@ CS
             echo "FAIL  link_reloc.la: 32S link emitted no executable"; ok=0
         fi
         rm -f gate_s32.o
+    fi
+fi
+
+# --- byte-identity for the ABSOLUTE relocations, closing a stated gap ---
+#   32 and 32S were checked only behaviourally. Now they are diffed against ld
+#   like PC32/PLT32/64, so all five types carry the same guarantee.
+cmp_text_against_ld link_test_a.o link_test_abs.o "R_X86_64_32 byte-identity"
+if command -v gcc >/dev/null 2>&1; then
+    gcc -c -O1 -fno-pic -mcmodel=small -x c - -o cmp_s32.o 2>/dev/null <<'CS32'
+static const int table[4] = {10, 20, 30, 40};
+int pick(int i) { return table[i & 3]; }
+CS32
+    if [ -f cmp_s32.o ] && readelf -r --wide cmp_s32.o | grep -q R_X86_64_32S; then
+        cmp_text_against_ld link_test_s32.o cmp_s32.o "R_X86_64_32S byte-identity"
+        rm -f cmp_s32.o
     fi
 fi
 

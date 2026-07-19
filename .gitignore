@@ -187,3 +187,6 @@ watched.la
 /abs.log
 /s32.log
 /.asmgate/
+/cmp_ref
+/cmp_ld.bin
+/cmp_s32.o
