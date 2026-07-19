@@ -20,7 +20,27 @@ command -v readelf >/dev/null 2>&1 || { echo "SKIP  link.la gate: readelf absent
 nasm -f elf64 link_test_a.asm -o link_test_a.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
 
-for obj in link_test_a.o link_test_b.o; do
+#   ★ A REAL TOOLCHAIN OBJECT, not only hand-written fixtures. gcc emits 14
+#   sections where the fixtures have 6 — including .bss (NOBITS: sh_offset
+#   points at bytes that are NOT in the file), .eh_frame with its own
+#   relocation section, and names carrying uppercase, hyphens and underscores.
+#   A reader that only ever saw its author's fixtures proves very little; this
+#   is the input the tool will actually be given. Expectations still come from
+#   readelf at gate time, so a different gcc version cannot make it stale.
+REAL_OBJ=""
+if command -v gcc >/dev/null 2>&1; then
+    cat > gate_real.c <<'CEOF'
+extern int helper(int);
+static const char msg[] = "hello";
+int compute(int x) { return helper(x) + (int)msg[0]; }
+CEOF
+    gcc -c -O0 gate_real.c -o gate_real.o 2>/dev/null && REAL_OBJ=gate_real.o
+    rm -f gate_real.c
+fi
+
+NOBJ=0
+for obj in link_test_a.o link_test_b.o $REAL_OBJ; do
+    NOBJ=$((NOBJ + 1))
     cp "$obj" link_in.o
     OUT=$(timeout 60 ./tiny_host link.la 2>&1) || { echo "FAIL  link.la: crashed on $obj"; echo "$OUT"; ok=0; continue; }
 
@@ -80,6 +100,6 @@ if NOUT=$(timeout 60 ./tiny_host link.la 2>&1); then NRC=0; else NRC=$?; fi
 echo "$NOUT" | grep -q "not an ELF object" \
     || { echo "FAIL  link.la: refused the non-ELF but not with the ELF diagnostic"; ok=0; }
 
-rm -f link_in.o
-[ "$ok" = 1 ] && echo "PASS  link.la: ELF64 object reader agrees with readelf (2 objects, both relocation kinds, 2 negative gates)"
+rm -f link_in.o gate_real.o gate_real.c
+[ "$ok" = 1 ] && echo "PASS  link.la: reader agrees with readelf ($NOBJ objects$([ -n "$REAL_OBJ" ] && echo ", incl. a real gcc object"), both relocation kinds, 2 negative gates)"
 [ "$ok" = 1 ]

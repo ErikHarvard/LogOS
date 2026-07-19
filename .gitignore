@@ -155,3 +155,7 @@ watched.la
 /link_ref_plt
 /ldtext_plt.bin
 /plt.log
+/real_gcc.o
+/gate_real.o
+/gate_real.c
+/gcc.log
