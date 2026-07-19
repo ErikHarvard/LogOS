@@ -24,6 +24,7 @@ nasm -f elf64 link_test_a.asm -o link_test_a.o
 nasm -f elf64 link_test_dup.asm -o link_test_dup.o
 nasm -f elf64 link_test_plt.asm -o link_test_plt.o
 nasm -f elf64 link_test_rw.asm -o link_test_rw.o
+nasm -f elf64 link_test_bss.asm -o link_test_bss.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
 ld -o link_ref link_test_a.o link_test_b.o
 objcopy -O binary --only-section=.text link_ref ldtext.bin
@@ -199,6 +200,39 @@ else
     echo "FAIL  link_reloc.la: 3-section link emitted no executable"; ok=0
 fi
 
+# --- .bss: memory without file bytes ---
+#   NOBITS is the first section whose sh_offset does NOT point at real content.
+#   Two independent ways to get it wrong, both silent at link time: read those
+#   bytes anyway (garbage in the image), or fail to reserve the address space
+#   (the symbol overlaps whatever follows). So the gate checks BOTH sizes, not
+#   just that a segment exists.
+ld -o link_ref_bss link_test_a.o link_test_bss.o
+cp link_test_a.o   link_in1.o
+cp link_test_bss.o link_in2.o
+rm -f link_out
+if BOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then BRC=0; else BRC=$?; fi
+[ "$BRC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link the .bss fixture: $BOUT"; ok=0; }
+if [ -x link_out ]; then
+    #   filesz 0 AND memsz non-zero — that pair IS the .bss property.
+    readelf -l --wide link_out 2>/dev/null \
+        | awk '/^  LOAD/ && $5=="0x000000" && $6!="0x000000" {found=1} END {exit !found}' \
+        || { echo "FAIL  link_reloc.la: no segment with p_filesz=0 and p_memsz>0 (.bss not reserved)"; ok=0; }
+    #   and it must be writable, never executable
+    readelf -l --wide link_out 2>/dev/null | grep -q 'LOAD.*RWE' \
+        && { echo "FAIL  link_reloc.la: .bss segment is executable (W^X violated)"; ok=0; }
+    #   an empty region must cost no FILE space: padding to it wrote 16 KB of
+    #   zeros to hold nothing until this was fixed.
+    fsz=$(stat -c%s link_out)
+    [ "$fsz" -lt 12288 ] \
+        || { echo "FAIL  link_reloc.la: $fsz-byte file — a zero-filesz segment is consuming file space"; ok=0; }
+    BGOT=$(./link_out); BRC2=$?
+    BWANT=$(./link_ref_bss)
+    [ "$BGOT" = "$BWANT" ] && [ "$BRC2" = "0" ] \
+        || { echo "FAIL  .bss binary printed '$BGOT' rc=$BRC2, ld's prints '$BWANT'"; ok=0; }
+else
+    echo "FAIL  link_reloc.la: .bss link emitted no executable"; ok=0
+fi
+
 # --- NEGATIVE: a section the layout cannot place must be REFUSED ---
 #   The layout knows .text and .rodata. Every real gcc object also carries
 #   .data/.bss/.eh_frame, all SHF_ALLOC — they occupy memory at run time and so
@@ -229,5 +263,5 @@ CEOF
 fi
 
 rm -f link_in1.o link_in2.o
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (PC32 + PLT32 + 64, 3 sections incl. a writable segment, W^X, page-aligned, 3 negative gates)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (PC32 + PLT32 + 64, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates)"
 [ "$ok" = 1 ]

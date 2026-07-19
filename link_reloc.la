@@ -200,14 +200,18 @@ glyph EHDR = la entry. la nph. CAT(
 #   PT_LOAD. p_memsz equals p_filesz here — nothing in these fixtures needs
 #   zero-fill beyond the file (no .bss), and claiming more memory than the file
 #   supplies would be a silent lie about what gets mapped.
-glyph PHDR = la flags. la off. la vaddr. la sz. CAT(
+#   p_filesz and p_memsz are now DISTINCT. They were equal for every section
+#   whose bytes live in the file; a NOBITS section (.bss) has filesz 0 and a
+#   non-zero memsz, and the kernel zero-fills the difference. Passing one size
+#   for both was correct only as long as no such section existed.
+glyph PHDR = la flags. la off. la vaddr. la fsz. la msz. CAT(
     CONS(LE4(1))(
     CONS(LE4(flags))(
     CONS(LE8(off))(
     CONS(LE8(vaddr))(
     CONS(LE8(vaddr))(
-    CONS(LE8(sz))(
-    CONS(LE8(sz))(
+    CONS(LE8(fsz))(
+    CONS(LE8(msz))(
     CONS(LE8(PAGE))(
     NIL)))))))))
 
@@ -240,7 +244,7 @@ glyph DEFINES = la f. la ss. la i.
 #   must have an answer for. Non-alloc sections (.symtab, .strtab, .comment,
 #   .note*) are metadata the loader never maps, and ignoring those is correct.
 glyph IS_ALLOC = la f. la i. int_eq(mod(div(SH_FLAGS(f)(i))(2))(2))(1)
-glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(str_eq(n)(".data")))
+glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(OR(str_eq(n)(".data"))(str_eq(n)(".bss"))))
 glyph CHECKSECS = la f. la tag. (Z(la self. la i.
     IF(int_eq(i)(E_SHNUM(f)))
       (la _. "ok")
@@ -265,11 +269,13 @@ glyph CHECKSECS = la f. la tag. (Z(la self. la i.
 #   This step changes NO behaviour — it is the same policy expressed so it can
 #   iterate. The gates are the proof of equivalence: same addresses, same bytes,
 #   same running binary.
-glyph PLACE_ORDER = CONS(".text")(CONS(".rodata")(CONS(".data")(NIL)))
+glyph PLACE_ORDER = CONS(".text")(CONS(".rodata")(CONS(".data")(CONS(".bss")(NIL))))
 glyph DATA_BASE = 4206592
+glyph BSS_BASE  = 4210688
 glyph BASEOF = la n.
     IF(str_eq(n)(".text"))(la _. TEXT_BASE)(la _.
-    IF(str_eq(n)(".data"))(la _. DATA_BASE)(la _. RODATA_BASE))
+    IF(str_eq(n)(".data"))(la _. DATA_BASE)(la _.
+    IF(str_eq(n)(".bss"))(la _. BSS_BASE)(la _. RODATA_BASE)))
 
 glyph MKE   = la o. la s. la a. PAIR(o)(PAIR(s)(a))
 glyph E_OBJ = la e. FST(e)
@@ -320,7 +326,8 @@ glyph F_R  = 4
 glyph F_RW = 6
 glyph FLAGSOF = la n.
     IF(str_eq(n)(".text"))(la _. F_RX)(la _.
-    IF(str_eq(n)(".data"))(la _. F_RW)(la _. F_R))
+    IF(str_eq(n)(".data"))(la _. F_RW)(la _.
+    IF(str_eq(n)(".bss"))(la _. F_RW)(la _. F_R)))
 
 #   The bytes a plan entry contributes: the RELOCATED text for a .text section,
 #   the raw section otherwise. Relocations are applied to .text only here, so
@@ -329,10 +336,15 @@ glyph ENAME = la f1. la f2. la e.
     IF(int_eq(E_OBJ(e))(1))(la _. SECNAME(f1)(E_SEC(e)))(la _. SECNAME(f2)(E_SEC(e)))
 glyph ESIZE = la f1. la f2. la e.
     IF(int_eq(E_OBJ(e))(1))(la _. SH_SIZE(f1)(E_SEC(e)))(la _. SH_SIZE(f2)(E_SEC(e)))
+glyph SH_NOBITS = 8
+glyph ETYPE = la f1. la f2. la e.
+    IF(int_eq(E_OBJ(e))(1))(la _. SH_TYPE(f1)(E_SEC(e)))(la _. SH_TYPE(f2)(E_SEC(e)))
 glyph EBYTES = la f1. la f2. la p1. la p2. la t1sec. la t2sec. la e.
-    IF(int_eq(E_OBJ(e))(1))
-      (la _. IF(int_eq(E_SEC(e))(t1sec))(la _. p1)(la _. SECBYTES(f1)(E_SEC(e))))
-      (la _. IF(int_eq(E_SEC(e))(t2sec))(la _. p2)(la _. SECBYTES(f2)(E_SEC(e))))
+    IF(int_eq(ETYPE(f1)(f2)(e))(SH_NOBITS))
+      (la _. "")
+      (la _. IF(int_eq(E_OBJ(e))(1))
+        (la _. IF(int_eq(E_SEC(e))(t1sec))(la _. p1)(la _. SECBYTES(f1)(E_SEC(e))))
+        (la _. IF(int_eq(E_SEC(e))(t2sec))(la _. p2)(la _. SECBYTES(f2)(E_SEC(e)))))
 
 #   Concatenate every plan entry of one section name, in placed order, padding
 #   each gap so the bytes land exactly where the plan says. Padding a code gap
@@ -363,29 +375,49 @@ glyph HASNAME = la f1. la f2. la name. la plan. (Z(la self. la l.
 glyph LENL    = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
 glyph FILEOFF = la base. add(PAGE)(sub(base)(TEXT_BASE))
 glyph R_NAME  = la r. FST(r)
-glyph R_BYTES = la r. SND(r)
+glyph R_BYTES = la r. FST(SND(r))
+glyph R_MEMSZ = la r. SND(SND(r))
+
+#   A region's MEMORY size is where its last placed section ends, which for a
+#   NOBITS section is past the end of its file bytes. This is the number the
+#   kernel zero-fills up to.
+glyph REGEND = la f1. la f2. la name. la plan. (Z(la self. la l. la end.
+    l(end)(la h. la t.
+      IF(str_eq(ENAME(f1)(f2)(h))(name))
+        (la _. self(t)(add(E_ADDR(h))(ESIZE(f1)(f2)(h))))
+        (la _. self(t)(end)))))(plan)(BASEOF(name))
 
 glyph MKREGIONS = la f1. la f2. la p1. la p2. la t1sec. la t2sec. la plan.
     (Z(la self. la names.
       names(NIL)(la h. la t.
         IF(HASNAME(f1)(f2)(h)(plan))
-          (la _. CONS(PAIR(h)(REGBYTES(f1)(f2)(p1)(p2)(t1sec)(t2sec)(h)(plan)))(self(t)))
+          (la _. CONS(PAIR(h)(PAIR(REGBYTES(f1)(f2)(p1)(p2)(t1sec)(t2sec)(h)(plan))
+                              (sub(REGEND(f1)(f2)(h)(plan))(BASEOF(h)))))(self(t)))
           (la _. self(t)))))(PLACE_ORDER)
 
 glyph PHDRS = la regs. (Z(la self. la l.
     l("")(la h. la t.
       concat(PHDR(FLAGSOF(R_NAME(h)))(FILEOFF(BASEOF(R_NAME(h))))(BASEOF(R_NAME(h)))
-                 (str_to_int(str_len(R_BYTES(h)))))(self(t)))))(regs)
+                 (str_to_int(str_len(R_BYTES(h))))(R_MEMSZ(h)))(self(t)))))(regs)
 
 #   The image body: pad from wherever we are to each region's file offset,
 #   then its bytes. One fold, so the number of segments is data.
+#   ★ A REGION WITH NO FILE BYTES CONSUMES NO FILE SPACE. Padding up to a
+#   .bss segment's offset wrote 16 KB of zeros to hold nothing — the file grew
+#   to 0x4000 for a program with 54 bytes of code. The loader never reads a
+#   segment whose p_filesz is 0, so the padding bought exactly nothing. Its
+#   p_offset stays as computed and stays congruent with p_vaddr, which is all
+#   the format requires.
 glyph BODY = la regs. (Z(la self. la l. la cur.
     l("")(la h. la t.
-      (la off. (la b.
-        CAT(CONS(ZEROS(sub(off)(cur)))(CONS(b)(
-            CONS(self(t)(add(off)(str_to_int(str_len(b)))))(NIL)))))
-        (R_BYTES(h)))
-      (FILEOFF(BASEOF(R_NAME(h)))))))(regs)
+      (la b.
+        IF(int_eq(str_to_int(str_len(b)))(0))
+          (la _. self(t)(cur))
+          (la _. (la off.
+                   CAT(CONS(ZEROS(sub(off)(cur)))(CONS(b)(
+                       CONS(self(t)(add(off)(str_to_int(str_len(b)))))(NIL)))))
+                 (FILEOFF(BASEOF(R_NAME(h))))))
+      (R_BYTES(h)))))(regs)
 
 glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))

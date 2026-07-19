@@ -163,3 +163,7 @@ watched.la
 /link_test_rw.o
 /link_ref_rw
 /rw.log
+/link_test_bss.o
+/link_ref_bss
+/bss.log
+/bss2.log
