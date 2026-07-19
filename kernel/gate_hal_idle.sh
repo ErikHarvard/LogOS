@@ -50,7 +50,14 @@ fi
 ok=1
 found=0
 
-for pair in "kernel_comp_text.elf:text:HAL.4e" \
+# polltest FIRST, because it is the isolation control and the cheapest witness:
+# 21 lines of LA, no compositor, no font, no text, no buffer — just HAL.2's
+# i8042 poll spin. It dies in ~5 s exactly like the compositors do, which is what
+# proves the defect is in the SUBSTRATE and not in anything the HAL.4x programs
+# render. It also builds in 41 SECONDS against comp_edit's 49 MINUTES, so this is
+# the case to iterate on when the allocator is being repaired.
+for pair in "kernel_polltest.elf:poll:POLLTEST(control)" \
+            "kernel_comp_text.elf:text:HAL.4e" \
             "kernel_comp_term.elf:term:HAL.4f" \
             "kernel_comp_edit.elf:edit:HAL.4g"; do
     elf="kernel/${pair%%:*}"; rest="${pair#*:}"; tag="${rest%%:*}"; name="${rest##*:}"
