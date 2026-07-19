@@ -111,6 +111,20 @@ glyph SECBYTES = la f. la sec. TAKES(SH_SIZE(f)(sec))(DROPS(SH_OFF(f)(sec))(f))
 #   shared objects ever arrive here this must become a real PLT.
 glyph ISPCREL = la ty. OR(int_eq(ty)(2))(int_eq(ty)(4))
 
+#   R_X86_64_32 (10) and 32S (11): ABSOLUTE, four bytes. They differ only in how
+#   the CPU extends the value — 32 zero-extends, 32S sign-extends — which for
+#   this linker is the same arithmetic (S + A) and the same width. gcc -fno-pic
+#   emits 32S for static data addressing; nasm emits 32 for `mov eax, label`.
+#   Handling only PC32/PLT32/64 meant ordinary non-PIC compiled code was refused.
+glyph ISABS32 = la ty. OR(int_eq(ty)(10))(int_eq(ty)(11))
+
+#   ★ A 4-byte absolute that does not FIT is truncated silently by LE4 — the
+#   image links, and the program jumps or loads somewhere plausible and wrong.
+#   This layout puts everything near 0x401000, far inside 32 bits, so the guard
+#   never fires today; it exists because the failure it prevents is invisible,
+#   and because a linker script or a high load address would make it reachable.
+glyph FITS32 = la v. AND(NOT(lt(v)(0)))(lt(v)(4294967296))
+
 #   ★ A symbol living in a DROPPED section has no address. VAOF returns -1 for
 #   an unplaced section, and add(-1)(value) would be a plausible-looking wrong
 #   address — exactly the silent failure dropping was supposed to avoid. Refuse
@@ -141,7 +155,12 @@ glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
                      (la _. PATCH(acc)(off)(8)(LE8(v)))
                      (la _. IF(ISPCREL(ty))
                               (la _. PATCH(acc)(off)(4)(LE4(v)))
-                              (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty))))))
+                              (la _. IF(ISABS32(ty))
+                                       (la _. IF(FITS32(v))
+                                                (la _. PATCH(acc)(off)(4)(LE4(v)))
+                                                (la _. error(CAT(CONS("link: 32-bit absolute does not fit: ")(
+                                                                 CONS(int_to_str(v))(NIL))))))
+                                       (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty)))))))
             )(IF(ISPCREL(ty))
                 (la _. sub(add(s)(a))(add(secva)(off)))
                 (la _. add(s)(a)))

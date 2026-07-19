@@ -179,3 +179,10 @@ watched.la
 /link_test_start.o
 /gcclink.log
 /link_test_odd.o
+/link_test_abs.o
+/link_test_s32.o
+/abs32s.o
+/ref_s32
+/gate_s32.o
+/abs.log
+/s32.log
