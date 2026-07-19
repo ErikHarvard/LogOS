@@ -904,6 +904,65 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             same pattern as the heavy kernel ELFs. Item 6 (Display protocol &
             compositor) now has an *interactive* metal realisation; a movable TEXT
             window (a terminal) is the next compositor step.
+      - [x] **HAL.4e — A MOVABLE TEXT WINDOW ON THE METAL — DONE + gated
+            (2026-07-18).** What HAL.4d named as next. `kernel/comp_text.la`
+            fuses HAL.4d's compositor with `theourgia_font.la`'s 8x8 bitmap font
+            (copied in verbatim, not `import`ed — a kernel `.la` must not drag
+            the import-mangler, and the surface path is O(n^2) per row). `DRAWT`
+            walks ONE flat index over NCH*FH*FW pixel-tests and recovers
+            (char,row,col) by div/mod, because codegen is superlinear in nesting
+            depth. Each keystroke moves the window AND its text.
+            `gate_hal4e.sh` reads PAIRED probes — white ON a glyph stroke,
+            green OFF one INSIDE THE SAME CELL — because either alone is passable
+            by a broken renderer (a dead draw leaves both green, a runaway fill
+            leaves both white), plus an independent screendump witness.
+      - [x] **HAL.4f — A TYPEWRITER ON THE METAL — DONE + gated (2026-07-18).**
+            `kernel/comp_term.la` decodes SET-1 scancodes into characters,
+            accumulates them in a live buffer, and re-rasters it every keystroke
+            with a cursor: "LOGOS" is TYPED, not displayed from a constant. New
+            code is only `KEYCH` (a 58-byte flat scancode->char table, packed as
+            ONE string for the same reason `FONTDATA` is) and `DRAWS` (N chars of
+            a RUNTIME string). The keymap bound is load-bearing, not decoration:
+            `DROP` past a string's end returns `""` and `str_head("")` is `""`,
+            so an unbounded lookup would append an EMPTY character and silently
+            corrupt the buffer length.
+      - [~] **HAL.4g — AN EDITABLE, SCROLLING LINE — BUILT, GATE RED
+            (2026-07-19).** `kernel/comp_edit.la` adds BACKSPACE and horizontal
+            SCROLLING (the buffer grows unbounded; the window shows its last
+            MAXCH characters). `n` is DERIVED (`str_len(buf)`) rather than
+            threaded, so the count cannot disagree with the string it counts —
+            which removed a parameter and a nesting level while adding two
+            features. The whole edit model is a pure function of
+            `(scancode, buffer)` and is verified host-side by
+            `kernel/editmodel_test.la` before ever reaching the metal.
+            **The gate is RED for a SUBSTRATE reason, not a compositor one —
+            see the six-second limit below. It is deliberately not worked
+            around.**
+      - [!] **★ THE SIX-SECOND LIMIT — every metal LA program dies of heap
+            exhaustion (found 2026-07-19, NOT fixed).** This bounds every claim
+            in this section. Booted with ZERO input, `polltest.la` (21 lines,
+            HAL.2's poll spin alone — no compositor, no font, no framebuffer)
+            dies in **~5 s**, as do all three HAL.4x compositors. The LA heap
+            grows UP from 68.0 MiB; `alloc24`'s only bound is `HEAP_END` at
+            **16.07 GiB**, unreachable on a 512 MiB machine; the LA stack's live
+            frames sit just under `LA_STACK_TOP` (128 MiB) and TCO keeps them
+            SHALLOW, so a rising heap crosses the unused gap harmlessly and
+            destroys the live frames at the TOP. A return address becomes a heap
+            pointer and control lands in garbage — `comp_text`'s faulting rip is
+            INSIDE the heap.
+            **The portable number is ~700,000 allocating iterations, ever**
+            (~40 bytes retained per iteration against 48 allocated, so ~85% is
+            never reclaimed). That cross-checks the metal independently:
+            700k / 6 s = ~117k iterations/sec, the right order for an `inb` VM
+            exit under QEMU.
+            *Consequence stated plainly:* **the interactive gates above pass only
+            because they FINISH FIRST** (4e ~2 s, 4f ~3.5 s; 4g's 11 keys take
+            ~6.6 s and it dies just short of its ENTER). They are TIME-BOUNDED,
+            not correct. `kernel/gate_hal_idle.sh` and
+            `kernel/gate_alloc_bounded.sh` now assert what none of them did, and
+            are RED. The fix is in `rt_init`/`rt_gc` (`native_codegen3_rt.asm`,
+            track A); clamping `HEAP_END` is a GUARD, not a cure — the collector
+            reclaims partly but never plateaus.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*
