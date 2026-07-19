@@ -39,10 +39,25 @@ if [ ! -f kernel/kernel_comp_text.elf ]; then
 fi
 
 SERF=$(mktemp); SHOT=$(mktemp -u).ppm
-# Boot, wait for the loop to arm, screendump the INITIAL frame (text at rest),
-# then move window B right 3x and press ENTER.
+# ── TWO BOOTS, ON PURPOSE. Do not fold them back into one. ──────────────────
+# This gate used to do both jobs in a single boot: screendump the initial frame,
+# THEN send the keys. That made the gate report its own perturbation as the
+# subject's defect. Measured 2026-07-18, 3 trials each, identical boot and
+# identical keystrokes, the ONLY difference being the screendump:
+#     no screendump  -> 'text done' 3/3, exit 33 3/3   (HAL.4e passes)
+#     pre-key dump   -> 'text done' 0/3, exit 35/33/35 (the recorded RED)
+#     post-key dump  -> 'text done' 1/1, exit 33
+# So HAL.4e was GREEN the whole time; the instrument was standing in the
+# subject's way. Note also that the exit code was FLAKY under the screendump
+# (35/33/35) while the missing 'text done' was deterministic — reading the
+# failure off `exit != 33` was reading it off the noisier signal.
+# Sleeping LONGER after the screendump does not help; it gets WORSE (with
+# sleep 3.0 the run never even reached bx=300), so this is not a transient the
+# harness can wait out. The mechanism is NOT pinned — see the board — which is
+# itself the reason to keep the measurements separated rather than interleaved.
+#
+# Boot 1: the interactive assertion, with NO screendump touching it.
 { for _ in $(seq 1 60); do grep -q 'text ready' "$SERF" 2>/dev/null && break; sleep 0.5; done
-  echo "screendump $SHOT"; sleep 1.0
   for _ in 1 2 3; do echo "sendkey d"; sleep 0.6; done
   sleep 0.4; echo "sendkey ret"
   sleep 1.5
@@ -52,6 +67,20 @@ SERF=$(mktemp); SHOT=$(mktemp -u).ppm
         -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
         -no-reboot -no-shutdown >/dev/null 2>&1
 RC=$?
+
+# Boot 2: the screendump witness ALONE — boot, arm, capture the initial frame
+# (text at rest, which is what the bbox below is computed for), quit. No keys
+# are sent, so there is no input for the capture to interfere with.
+SERF2=$(mktemp)
+{ for _ in $(seq 1 60); do grep -q 'text ready' "$SERF2" 2>/dev/null && break; sleep 0.5; done
+  echo "screendump $SHOT"; sleep 1.5
+  echo "quit"
+} | timeout 90 qemu-system-x86_64 \
+        -kernel kernel/kernel_comp_text.elf -m 512 \
+        -vga std -monitor stdio -serial "file:$SERF2" -display none \
+        -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+        -no-reboot -no-shutdown >/dev/null 2>&1
+rm -f "$SERF2"
 SER=$(tr -d '\0' < "$SERF"); rm -f "$SERF"
 seen=$(printf '%s' "$SER" | tr '\n' ' ' | head -c 400)
 
