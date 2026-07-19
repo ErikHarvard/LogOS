@@ -997,9 +997,25 @@ glyph ISVAL  = la t. OR(ISNUM(t))(ISEXPRTOK(t))
 glyph MOVLBL = la a. la b.
     AND(NOT(ISMEM(a)))(AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))(NOT(ISVAL(b)))))
 glyph LENOF  = la s. str_to_int(str_len(s))
+#   ★ The label branch MEASURES too, and must. It used to answer a hardcoded
+#   `10` — correct only while every label immediate was a movabs. Once MOVENC
+#   learned to follow the DESTINATION width, sizing kept saying 10 for a
+#   `mov esp, tgt` the encoder emitted in 5, so the label table placed `tgt` at
+#   the pre-fix total (0x37) while the image itself was the correct 36 bytes.
+#   FIXLABS converged CLEANLY onto that wrong table: 10 is value-independent, so
+#   the signature was stable from the second pass on. A fixpoint is only as
+#   sound as the function it iterates — a stable answer is not a right one.
+#   LABADDR errors on an unresolved label, which is why the original could not
+#   simply call MOVENC here; the placeholder 0 sidesteps that, and is exact
+#   because MOVABS (REX+op+LE8) and MOVIMM (B/LE2/LE4, no short form) both have
+#   value-INDEPENDENT lengths — verified, not assumed.
 glyph MOVSIZE = la ts.
     WITHOPS(ts)(la w. la a. la b.
-      IF(MOVLBL(a)(b))(la _. 10)(la _. LENOF(MOVENC(NIL)(w)(a)(b))))
+      IF(MOVLBL(a)(b))
+        (la _. IF(int_eq(w)(8))
+                 (la _. LENOF(MOVABS(REGNUM(a))(0)))
+                 (la _. LENOF(MOVIMM(w)(REGNUM(a))(0)(RFORCE(a)))))
+        (la _. LENOF(MOVENC(NIL)(w)(a)(b))))
 
 # ── db: define bytes. Operands are quoted strings (emitted verbatim) or
 #    numbers (one byte each) — `db "I AM THAT I AM", 10`. This is what lets the
