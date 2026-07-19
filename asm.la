@@ -108,11 +108,18 @@ glyph ISSOME = la o. o(la _. TRUE)(FALSE)
 glyph OPTV = la o. o(la x. x)(0)
 
 glyph B = la n. chr(int_to_str(n))
-glyph LE4 = la n.
-    concat(B(mod(n)(256)))
-   (concat(B(mod(div(n)(256))(256)))
-   (concat(B(mod(div(n)(65536))(256)))
-          (B(mod(div(n)(16777216))(256)))))
+#   A NEGATIVE immediate is folded into the unsigned 32-bit range before being
+#   split, because LA's div/mod on a negative is unreliable. That rule was
+#   already applied to rel32/rel8/disp; `MB_CHECK equ -(MB_MAGIC + MB_FLAGS)`
+#   is the first NEGATIVE CONSTANT, so the same fold belongs here at the source
+#   rather than at each call site.
+glyph LE4 = la n0.
+    (la n.
+      concat(B(mod(n)(256)))
+     (concat(B(mod(div(n)(256))(256)))
+     (concat(B(mod(div(n)(65536))(256)))
+            (B(mod(div(n)(16777216))(256))))))
+    (IF(lt(n0)(0))(la _. add(4294967296)(n0))(la _. n0))
 
 # ── tokenizing: lines, then whitespace/comma-separated tokens ──
 glyph ISSEP = la c. OR(str_eq(c)(" "))(OR(str_eq(c)(","))(str_eq(c)("	")))
@@ -329,7 +336,9 @@ glyph HIGH8OK = la a. la b.
 #   below (an immediate fitting unsigned 32 bits takes the zero-extending
 #   32-bit form, so REX.W is dropped) — which is why width 8 routes through the
 #   width-4 encoder here rather than having a case of its own.
-glyph LE2 = la n. concat(B(mod(n)(256)))(B(mod(div(n)(256))(256)))
+glyph LE2 = la n0.
+    (la n. concat(B(mod(n)(256)))(B(mod(div(n)(256))(256))))
+    (IF(lt(n0)(0))(la _. add(65536)(n0))(la _. n0))
 glyph MOVIMM = la w. la dst. la n. la force.
     IF(int_eq(w)(1))
       (la _. concat(REXOPT(1)(0)(dst)(force))
@@ -384,9 +393,15 @@ glyph NUMV = la t.
       (la _. IF(ISNUM(t))
                (la _. str_to_int(t))
                (la _. error(concat("asm: not a number (undefined symbol?): ")(t))))
+#   What makes a token a VALUE rather than a label: the `=` marker on a
+#   resolved equ, `$`, any operator, a parenthesis, or a LEADING minus. The last
+#   two were missing and `-(MB_MAGIC + MB_FLAGS)` fell through to the label
+#   path, which is why it halted as an undefined symbol rather than evaluating.
 glyph ISEXPRTOK = la t.
-    OR(INSTR("*")(t))(OR(INSTR("/")(t))(OR(INSTR("|")(t))(OR(INSTR("&")(t))
-   (OR(INSTR("^")(t))(OR(INSTR("<")(t))(OR(INSTR(">")(t))(INSTR("'")(t))))))))
+    OR(str_eq(str_head(t))("="))(OR(str_eq(str_head(t))("-"))(OR(INSTR("(")(t))
+   (OR(INSTR("$")(t))
+   (OR(INSTR("*")(t))(OR(INSTR("/")(t))(OR(INSTR("|")(t))(OR(INSTR("&")(t))
+   (OR(INSTR("^")(t))(OR(INSTR("<")(t))(OR(INSTR(">")(t))(INSTR("'")(t)))))))))))) 
 glyph ISNUM = la t.
     IF(str_eq(t)(""))(la _. FALSE)
       (la _. IF(ISHEXPFX(t))
@@ -503,13 +518,15 @@ glyph E7 = Z(la self. la labs. la s. la cur.
     IF(str_eq(s)(""))
       (la _. PAIR(MEMVAL(labs)(cur))(""))
       (la _. (la c.
-        IF(AND(str_eq(cur)(""))(str_eq(c)("(")))
+        IF(AND(str_eq(cur)(""))(str_eq(c)("-")))
+          (la _. (la p. PAIR(sub(0)(FST(p)))(SND(p)))(E7(labs)(str_tail(s))("")))
+        (la _. IF(AND(str_eq(cur)(""))(str_eq(c)("(")))
           (la _. (la p. PAIR(FST(p))(str_tail(SND(p))))(E1(labs)(str_tail(s))))
           (la _. IF(AND(str_eq(cur)(""))(str_eq(c)("'")))
             (la _. PAIR(str_to_int(ord(HD2(s))))(str_tail(str_tail(str_tail(s)))))
             (la _. IF(ISTERM(c))
                      (la _. PAIR(MEMVAL(labs)(cur))(s))
-                     (la _. self(labs)(str_tail(s))(concat(cur)(c))))))
+                     (la _. self(labs)(str_tail(s))(concat(cur)(c)))))))
       (str_head(s))))
 glyph ISTERM = la c.
     OR(str_eq(c)("|"))(OR(str_eq(c)("^"))(OR(str_eq(c)("&"))(OR(str_eq(c)("<"))
@@ -586,8 +603,10 @@ glyph SPLITFIRST = Z(la self. la s. la cur.
         (str_head(s))))
 
 glyph MEMVAL = la labs. la t.
-    IF(ISNUM(t))(la _. NUMV(t))
-      (la _. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB(t)(labs)))
+    IF(str_eq(str_head(t))("="))
+      (la _. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB(str_tail(t))(labs)))
+      (la _. IF(ISNUM(t))(la _. NUMV(t))
+        (la _. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB(t)(labs))))
 glyph MEMDISP  = la labs. la t.
     IF(MEMABS(t))
       (la _. EVAL(labs)(STRIPBRK(t)))
@@ -1086,7 +1105,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
     IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 6))(la _.
     IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _.
-    IF(str_eq(op)("global"))(la _. 0)(la _.
+    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("equ"))(ISEQU(ts))))(la _. 0)(la _.
     IF(str_eq(op)("section"))(la _. SECPAD(off))(la _.
     IF(str_eq(op)("incbin"))(la _. LENOF(INCBIN(ts)))(la _.
     IF(str_eq(op)("rep"))(la _. add(1)(SIZEL(labs)(add(off)(1))(TL2(ts))))(la _.
@@ -1122,7 +1141,7 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
     IF(str_eq(op)("push"))(la _. PUSHPOP(80)(REGNUM(A1(ts))))(la _.
     IF(str_eq(op)("pop"))(la _. PUSHPOP(88)(REGNUM(A1(ts))))(la _.
-    IF(str_eq(op)("global"))(la _. "")(la _.
+    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("equ"))(ISEQU(ts))))(la _. "")(la _.
     IF(str_eq(op)("section"))(la _. REPB(SECPAD(off))(B(0)))(la _.
     IF(str_eq(op)("incbin"))(la _. INCBIN(ts))(la _.
     IF(str_eq(op)("rep"))(la _. concat(B(243))(ENC1(labs)(add(off)(1))(TL2(ts))))(la _.
@@ -1177,8 +1196,12 @@ glyph MAPTOKS = Z(la self. la ls. ls(NIL)(la h. la t. CONS(TOKS(h)(""))(self(t))
 #   makes the two forms identical — a bare label line strips to nothing and
 #   falls through to the empty case at size 0, exactly as before.
 glyph STRIPLAB = la ts. IF(ISLABEL(HD(ts)))(la _. TL2(ts))(la _. ts)
-glyph SIZEL = la labs. la off. la ts. SIZEL0(labs)(off)(STRIPLAB(ts))
-glyph ENC1  = la labs. la off. la ts. ENC10(labs)(off)(STRIPLAB(ts))
+#   `$` is the CURRENT ADDRESS, so it is bound into the label table for the
+#   duration of one line. Doing it here rather than threading an `off` argument
+#   through every evaluator means `$` works in every operand position at once.
+glyph WITHDOLLAR = la labs. la off. CONS(PAIR("$")(off))(labs)
+glyph SIZEL = la labs. la off. la ts. SIZEL0(WITHDOLLAR(labs)(off))(off)(STRIPLAB(ts))
+glyph ENC1  = la labs. la off. la ts. ENC10(WITHDOLLAR(labs)(off))(off)(STRIPLAB(ts))
 
 # ── section / global / incbin ───────────────────────────────────────────────
 #   The last three directives boot.asm uses.
@@ -1312,53 +1335,127 @@ glyph PP = Z(la self. la ls. la ds. la st.
 #   token (`[rdi+COM1]`) is not substituted, because the tokenizer already
 #   folded the brackets into one token — that needs expression parsing, which is
 #   the same machinery `idt + 0x21 * 16` will need and belongs with it.
-glyph ISEQU = la ts.
-    AND(NOT(ISLABEL(HD(ts))))(str_eq(NTH(1)(ts))("equ"))
-glyph MKEQUS = Z(la self. la tls. la acc.
+#   ★ TWO KINDS OF equ, and conflating them silently corrupts the image.
+#   A CONSTANT-valued equ (`COM1 equ 0x3F8`, 15 of 33 here) can be substituted
+#   as text before anything else runs — that is the original design and it is
+#   right for those. An ADDRESS-valued one (`hh_msg_len equ $ - hh_msg`, 16
+#   uses; `IMAGE_LEN equ la_image_end - la_image_start`, 2) CANNOT: `$` means
+#   THE ADDRESS AT THE EQU LINE, so substituting the text `$-hh_msg` into each
+#   use site evaluates `$` THERE — a different address entirely. The program
+#   assembles cleanly and every string length comes out wrong.
+#
+#   So address-valued equs are resolved WHERE THEY ARE DEFINED, during the
+#   label pass, and their use sites get a marked token `=name` that the
+#   evaluator resolves from the label table.
+#
+#   ★★ THE MARKER IS NOT COSMETIC. Measured: `mov edx, msglen` is a 5-byte
+#   IMMEDIATE while `mov rax, msg` is a 10-byte movabs — an equ symbol encodes
+#   as a VALUE even when its value was computed FROM addresses. The kind of the
+#   symbol decides the encoding, not the provenance of its number. Storing these
+#   in the label table unmarked would make every one of them a movabs: five
+#   bytes too long, and every later address shifted.
+#
+#   `name:` with a colon is NASM's local-label form of the same thing
+#   (`.code: equ $ - gdt64`, 5 uses). The colon is part of the NAME, not a label
+#   definition — reading it as one strips it and leaves `equ` as the mnemonic,
+#   which is exactly how boot.asm failed.
+glyph ISEQU = la ts. str_eq(NTH(1)(ts))("equ")
+glyph EQUNAME = la ts.
+    (la h. IF(ISLABEL(h))(la _. LABNAME(h))(la _. h))(HD(ts))
+glyph EQUBODY = la ts. CATALL(TL2(TL2(ts)))
+#   Address-valued iff the body mentions `$` or any letter that is not part of
+#   a hex literal — i.e. it depends on something not yet known.
+glyph HASDOLLAR = la s. INSTR("$")(s)
+glyph ISADDREQU = la ts.
+    (la v. OR(HASDOLLAR(v))(NOT(ISNUM(v))))(EQUBODY(ts))
+glyph MKEQUS = Z(la self. la tls. la acc. la scope.
     tls(acc)(la ts. la t.
-      IF(ISEQU(ts))
-        (la _. self(t)(CONS(PAIR(HD(ts))(NTH(2)(ts)))(acc)))
-        (la _. self(t)(acc))))
+      IF(AND(ISEQU(ts))(NOT(ISADDREQU(ts))))
+        (la _. self(t)(CONS(PAIR(QUALIFY(scope)(EQUNAME(ts)))(EQUBODY(ts)))(acc))(scope))
+        (la _. IF(ISEQU(ts))
+          (la _. (la q. self(t)(CONS(PAIR(q)(concat("=")(q)))(acc))(scope))
+                 (QUALIFY(scope)(EQUNAME(ts))))
+          (la _. IF(ISLABEL(HD(ts)))
+            (la _. (la nm. self(t)(acc)
+                     (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm)))
+                   (LABNAME(HD(ts))))
+            (la _. self(t)(acc)(scope))))))
 glyph SUBTOK1 = la equs. la t.
     (la o. IF(ISSOME(o))
              (la _. (la v. IF(str_eq(v)(""))(la _. t)(la _. v))(OPTV(o)))
              (la _. t))
     (LOOKREG(t)(equs))
-#   ★ A symbol can appear INSIDE a memory operand — `mov [MBI_SAVE], ebx` is
-#   how boot.asm addresses its scratch cells. Whole-token substitution cannot
-#   see it, because the tokenizer folded the brackets into ONE token. So a
-#   bracket token is split on its +/- operators, each component substituted,
-#   and the operators put back. This was a KNOWN, documented limit; running
-#   the real boot.asm proved it load-bearing rather than theoretical — the
-#   assembler halted with "unknown register: MBI_SAVE", having read the symbol
-#   as a base register.
+#   ★ A symbol can be buried inside a token, not just be one. `-(MB_MAGIC`
+#   CONTAINS the symbol but is not equal to it, so whole-token substitution
+#   misses it — the same shape as `[MBI_SAVE]` did, arriving through a
+#   different door once expressions existed. So substitution splits on ANY
+#   non-identifier character, replaces each identifier run, and puts the
+#   separators back. Identifier characters include `.` (local labels like
+#   `gdt64.code`) and `$`, which must survive to the evaluator.
+glyph ISIDENT = la c.
+    OR(INSTR(c)("abcdefghijklmnopqrstuvwxyz"))
+      (OR(INSTR(c)("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+      (OR(INSTR(c)("0123456789"))(OR(str_eq(c)("_"))(OR(str_eq(c)("."))(str_eq(c)("$"))))))
 glyph SUBEXPR = Z(la self. la equs. la s. la cur.
     IF(str_eq(s)(""))
       (la _. SUBTOK1(equs)(cur))
       (la _. (la c.
-          IF(OR(str_eq(c)("+"))(str_eq(c)("-")))
+          IF(ISIDENT(c))
+            (la _. self(equs)(str_tail(s))(concat(cur)(c)))
             (la _. concat(SUBTOK1(equs)(cur))
-                         (concat(c)(self(equs)(str_tail(s))(""))))
-            (la _. self(equs)(str_tail(s))(concat(cur)(c))))
+                         (concat(c)(self(equs)(str_tail(s))(""))))) 
         (str_head(s))))
 glyph SUBTOK = la equs. la t.
     IF(ISMEM(t))
       (la _. concat("[")(concat(SUBEXPR(equs)(STRIPBRK(t))(""))("]")))
-      (la _. SUBTOK1(equs)(t))
+      (la _. SUBEXPR(equs)(t)(""))
 glyph SUBLINE = la equs.
     Z(la self. la l. l(NIL)(la h. la t. CONS(SUBTOK(equs)(h))(self(t))))
+#   A CONSTANT equ line disappears — its work is done by substitution. An
+#   ADDRESS-valued one SURVIVES into the passes, because it has to be evaluated
+#   at its own offset; it simply emits no bytes.
 glyph SUBALL = la equs.
     Z(la self. la tls.
         tls(NIL)(la ts. la t.
-          CONS(IF(ISEQU(ts))(la _. NIL)(la _. SUBLINE(equs)(ts)))(self(t))))
+          CONS(IF(AND(ISEQU(ts))(NOT(ISADDREQU(ts))))
+                 (la _. NIL)
+                 (la _. IF(ISEQU(ts))
+                          (la _. CONS(HD(ts))(CONS("equ")
+                                     (SUBLINE(equs)(TL2(TL2(ts))))))
+                          (la _. SUBLINE(equs)(ts))))(self(t))))
 
 # ── one pass: walk the lines, recording each label at its current offset ──
-glyph MKLABS = Z(la self. la ls. la labs. la off. la acc.
+#   ★ ISEQU is tested BEFORE ISLABEL, and the order is load-bearing.
+#   `.code: equ $ - gdt64` has a name ending in a colon, so it LOOKS like a
+#   label definition; recording it as one would place a label at that offset and
+#   never evaluate the expression. The colon belongs to the NAME.
+#
+#   An address-valued equ is evaluated HERE, at its own offset, with `$` bound
+#   to that offset — which is the whole reason it could not be substituted as
+#   text earlier. Its value lands in the same table labels use, but its use
+#   sites carry the `=name` marker so they still encode as immediates.
+#   ★ LOCAL LABELS. A name beginning with `.` belongs to the most recent
+#   NON-local label, so `.code:` after `gdt64:` is really `gdt64.code` — which
+#   is exactly how boot.asm refers to it (`lgdt [gdt64.ptr]`, `mov ax,
+#   gdt64.data`). The scope is threaded through the pass and updated whenever a
+#   non-local label is defined. Qualifying at DEFINITION is enough here because
+#   every use site in boot.asm writes the full name.
+glyph QUALIFY = la scope. la nm.
+    IF(str_eq(str_head(nm))("."))(la _. concat(scope)(nm))(la _. nm)
+glyph MKLABS = Z(la self. la ls. la labs. la off. la acc. la scope.
     ls(acc)(la ts. la t.
-        IF(ISLABEL(HD(ts)))
+        IF(ISEQU(ts))
           (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))
-                     (CONS(PAIR(LABNAME(HD(ts)))(off))(acc)))
-          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))(acc))))
+                     (CONS(PAIR(QUALIFY(scope)(EQUNAME(ts)))
+                               (EVAL(WITHDOLLAR(labs)(off))(EQUBODY(ts))))(acc))
+                     (scope))
+        (la _. IF(ISLABEL(HD(ts)))
+          (la _. (la nm.
+                   self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))
+                       (CONS(PAIR(QUALIFY(scope)(nm))(off))(acc))
+                       (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm)))
+                 (LABNAME(HD(ts))))
+          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))(acc)(scope)))))
 
 glyph TOTLEN = Z(la self. la ls. la labs. la off.
     ls(off)(la ts. la t. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))))
@@ -1371,15 +1468,32 @@ glyph TOTLEN = Z(la self. la ls. la labs. la off.
 #   TOTLEN is a full walk that re-tokenizes and re-sizes every line, dropping
 #   it removes a third of the fixed point's work with no change of meaning:
 #   the comparison is the same two numbers.
+#   ★ THE CONVERGENCE TEST HAD TO CHANGE, and the reason is subtle enough to
+#   record. It compared total LENGTH: unchanged length ⟺ no jump was promoted
+#   ⟺ stable. That was sound while the table held only label ADDRESSES, since
+#   every address feeds some instruction's size. It is NOT sound once the table
+#   holds address-valued equ VALUES: on the first pass the table is empty, so
+#   `msglen equ $ - msg` computes against msg=0 and comes out as an absolute
+#   address rather than a length — and `mov edx, msglen` is five bytes either
+#   way. The length converged immediately while the VALUE was still wrong, and
+#   the image assembled cleanly with a wrong constant in it.
+#
+#   So convergence now compares the TABLE, not its consequence. A signature of
+#   every name and value is compared between passes; unchanged means nothing
+#   moved, which is what stability actually means. Length stability is implied
+#   by it rather than standing in for it.
+glyph LABSIG = Z(la self. la l.
+    l("")(la h. la t. concat(FST(h))(concat(":")(concat(int_to_str(SND(h)))
+                     (concat(";")(self(t)))))))
 glyph FIXLABS = Z(la self. la ls. la labs. la prev. la n. la org.
     IF(int_eq(n)(0))
       (la _. labs)
       (la _. (la l2.
-               (la len2. IF(int_eq(prev)(len2))
+               (la sig2. IF(str_eq(prev)(sig2))
                            (la _. l2)
-                           (la _. self(ls)(l2)(len2)(sub(n)(1))(org)))
-               (TOTLEN(ls)(l2)(org)))
-             (MKLABS(ls)(labs)(org)(NIL))))
+                           (la _. self(ls)(l2)(sig2)(sub(n)(1))(org)))
+               (LABSIG(l2)))
+             (MKLABS(ls)(labs)(org)(NIL)(""))))
 
 #   The emitted bytes ARE the size, so the line is encoded ONCE. The old form
 #   called ENC1 and then SIZEL, and since SIZEL now runs the encoder to measure
@@ -1404,10 +1518,10 @@ glyph ASSEMBLE = la src.
     (la pp.
       (la tls0.
         (la equs.
-          (la tls. (la org. PASS2(FIXLABS(tls)(NIL)(TOTLEN(tls)(NIL)(org))(12)(org))(tls)(org))
+          (la tls. (la org. PASS2(FIXLABS(tls)(NIL)("")(12)(org))(tls)(org))
                    (ORGOF(tls)))
           (SUBALL(equs)(tls0)))
-        (APPEND(MKEQUS(tls0)(NIL))(SND(pp))))
+        (APPEND(MKEQUS(tls0)(NIL)(""))(SND(pp))))
       (MAPTOKS(FST(pp))))
     (PP(LINES(src)(""))(NIL)(NIL))
 
