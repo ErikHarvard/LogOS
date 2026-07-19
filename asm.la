@@ -1062,8 +1062,27 @@ glyph JCCC   = la op. OPTV(JCCOPT(op))
 #   A data value may be a NUMBER or a LABEL, and a label is absolute — with
 #   `org 0x400000`, `dq start` is 0x400000, not 0. Same rule the movabs form
 #   already follows, so DVAL routes both through the existing LABADDR.
+#   ★ REPEAT BY DOUBLING, not by a right fold. `REPB` builds the zero-fill for
+#   `resb`, `align` and section padding, and the obvious
+#   `concat(b)(self(n-1)(b))` copies the growing tail once per BYTE — O(n²) in
+#   the run length, and boot.asm reserves tens of thousands of bytes.
+#   Halving gives n/2 + n/4 + ... total copying: linear, not quadratic.
+#
+#   ★ FOUND BY MEASURING, AFTER TWO WRONG GUESSES. I first blamed the output
+#   assembly in PASS2 (a right fold over line pieces, genuinely O(total²)) and
+#   replaced it with a divide-and-conquer join — which measured NO faster, and
+#   was reverted. The distinguishing test was a source with FEW lines and a
+#   LARGE image: 4 lines producing 60001 bytes took 6.81 s, which no
+#   per-line or per-piece cost can explain. That isolated it here.
+#   Result: 6.81 s -> 0.56 s on that case, a 12x gain, output byte-identical.
 glyph REPB = Z(la self. la n. la b.
-    IF(int_eq(n)(0))(la _. "")(la _. concat(b)(self(sub(n)(1))(b))))
+    IF(int_eq(n)(0))(la _. "")
+      (la _. IF(int_eq(n)(1))(la _. b)
+        (la _. (la half.
+                 IF(int_eq(mod(n)(2))(0))
+                   (la _. concat(half)(half))
+                   (la _. concat(half)(concat(half)(b))))
+               (self(div(n)(2))(b)))))
 glyph LEW = la w. la n.
     IF(int_eq(w)(2))(la _. LE2(n))
       (la _. IF(int_eq(w)(4))(la _. LE4(n))(la _. LE8(n)))
