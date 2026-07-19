@@ -2973,7 +2973,17 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "13775" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 13775)"; ok=0; }
+# 13775 -> 14207: `05ed1fe` (VM execv + dup2) grew the VM by 432 bytes and did
+# not update this constant, so ./build.sh has been RED since 2026-07-16 — the
+# freeze-day self-audit and every commit after it landed on a red build. The
+# gate was not wrong; it was simply never run in full (the asm gates were run
+# in an ad-hoc loop instead). Corrected here on INDEPENDENT evidence, not by
+# matching observed output: the byte-level drift guard immediately below
+# (logos_secd == `nasm -f bin secd.asm`) PASSES at 14207, so the VM agrees with
+# its documented source and it is this expectation that was stale.
+# MAINTENANCE: adding a VM builtin changes this number. Update it here in the
+# same commit, or the build goes red and stays red unnoticed again.
+[ "$(stat -c%s logos_secd 2>/dev/null)" = "14207" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 14207)"; ok=0; }
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
