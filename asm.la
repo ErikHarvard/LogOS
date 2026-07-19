@@ -1457,6 +1457,36 @@ glyph SUBALL = la equs.
                                      (SUBLINE(equs)(TL2(TL2(ts))))))
                           (la _. SUBLINE(equs)(ts))))(self(t))))
 
+#   ★ LOCAL LABEL REFERENCES, not just definitions. `je .sys_write` inside
+#   `sys_write_impl:`'s scope means `sys_write_impl.sys_write`. Qualifying only
+#   DEFINITIONS (as MKLABS does) leaves every USE unresolved — boot.asm jumps to
+#   `.fill_pd`, `.w_done`, `.sys_write` and others this way.
+#
+#   Done as a pass over the token lists, tracking the same scope MKLABS does, so
+#   both sides agree by construction rather than by two implementations happening
+#   to match.
+#
+#   ★ DIRECTIVE OPERANDS ARE EXEMPT. `section .text` has a leading-dot operand
+#   that is a SECTION NAME, not a local label — qualifying it would produce
+#   `something.text` and break the layout. The exclusion is by directive, not by
+#   guessing from the name.
+glyph ISDIRECTIVE = la op.
+    OR(str_eq(op)("section"))(OR(str_eq(op)("global"))(str_eq(op)("extern")))
+glyph QUALTOK = la scope. la t.
+    IF(AND(str_eq(str_head(t))("."))(NOT(ISLABEL(t))))
+      (la _. concat(scope)(t))(la _. t)
+glyph QUALLINE = la scope. Z(la self. la l.
+    l(NIL)(la h. la t. CONS(QUALTOK(scope)(h))(self(t))))
+glyph QUALALL = Z(la self. la tls. la scope.
+    tls(NIL)(la ts. la t.
+      (la hd.
+        IF(ISDIRECTIVE(hd))
+          (la _. CONS(ts)(self(t)(scope)))
+          (la _. IF(AND(ISLABEL(hd))(NOT(str_eq(str_head(hd))("."))))
+            (la _. CONS(ts)(self(t)(LABNAME(hd))))
+            (la _. CONS(CONS(hd)(QUALLINE(scope)(TL2(ts))))(self(t)(scope)))))
+      (HD(ts))))
+
 # ── one pass: walk the lines, recording each label at its current offset ──
 #   ★ ISEQU is tested BEFORE ISLABEL, and the order is load-bearing.
 #   `.code: equ $ - gdt64` has a name ending in a colon, so it LOOKS like a
@@ -1553,7 +1583,7 @@ glyph ASSEMBLE = la src.
         (la equs.
           (la tls. (la org. PASS2(FIXLABS(tls)(NIL)("")(12)(org))(tls)(org))
                    (ORGOF(tls)))
-          (SUBALL(equs)(tls0)))
+          (QUALALL(SUBALL(equs)(tls0))("")))
         (APPEND(MKEQUS(tls0)(NIL)(""))(SND(pp))))
       (MAPTOKS(FST(pp))))
     (PP(LINES(src)(""))(NIL)(NIL))
