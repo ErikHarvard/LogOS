@@ -384,7 +384,9 @@ glyph NUMV = la t.
       (la _. IF(ISNUM(t))
                (la _. str_to_int(t))
                (la _. error(concat("asm: not a number (undefined symbol?): ")(t))))
-glyph ISEXPRTOK = la t. OR(INSTR("*")(t))(INSTR("/")(t))
+glyph ISEXPRTOK = la t.
+    OR(INSTR("*")(t))(OR(INSTR("/")(t))(OR(INSTR("|")(t))(OR(INSTR("&")(t))
+   (OR(INSTR("^")(t))(OR(INSTR("<")(t))(OR(INSTR(">")(t))(INSTR("'")(t))))))))
 glyph ISNUM = la t.
     IF(str_eq(t)(""))(la _. FALSE)
       (la _. IF(ISHEXPFX(t))
@@ -447,55 +449,133 @@ glyph MEMBASE  = la t.
 #   loud halt instead: boot.asm's three register-relative symbol uses are
 #   `[r8 + PCB_SIZE + 16]`, which are equ constants inside a MULTI-TERM sum —
 #   an expression-evaluator problem, not a label-resolution one.
-# ── AN EXPRESSION EVALUATOR FOR OPERANDS ────────────────────────────────────
-#   `mov [pml4 + 511*8], eax` — 30 uses inside brackets in boot.asm, 3 outside.
-#   This needs real PRECEDENCE, not left-to-right folding: `511*8` must bind
-#   tighter than the `+`, or the address comes out as (pml4+511)*8. So it is
-#   the standard two-level grammar, smallest that is correct:
+# ── AN EXPRESSION EVALUATOR, C PRECEDENCE ───────────────────────────────────
+#   boot.asm's real expression language, measured rather than guessed at
+#   one-operator-per-run: `|` x37, `<<` x29, parentheses x29, char literals
+#   x10, plus the `+ - * /` already handled. `or eax, (1 << 8) | (1 << 0)`
+#   needs six precedence levels and grouping; two levels and no parens is not
+#   a smaller version of that, it is a wrong one.
 #
-#       expr   := term (('+' | '-') term)*
-#       term   := factor ('*' factor)*
-#       factor := NUMBER | SYMBOL
+#       E1  |            (lowest)
+#       E2  ^
+#       E3  &
+#       E4  << >>
+#       E5  + -
+#       E6  * /          (highest)
+#       E7  primary: number, symbol, 'c', ( E1 )
 #
-#   A factor resolves through MEMVAL, so labels, equ constants and %defines all
-#   work in an expression exactly as they do alone — the evaluator adds
-#   arithmetic, it does not add a second notion of what a name means.
+#   Each level parses the level above, then folds while it sees its own
+#   operators — standard recursive descent, one glyph per level. Each returns
+#   PAIR(value)(rest) so a level can hand the unconsumed tail upward.
 #
-#   Only `*` appears in boot.asm, so division and parenthesised sub-expressions
-#   are deliberately NOT implemented; adding them without a use would be
-#   inventing requirements. Anything unrecognised still halts loudly via
-#   MEMVAL rather than silently evaluating to zero.
-#   `*` and `/` share a precedence level and associate LEFT — boot.asm's
-#   `2 * PCB_SIZE / 8` is (2*128)/8 = 32, not 2*(128/8). Carrying the pending
-#   operator is what makes that come out right.
-glyph EVALTERM = Z(la self. la labs. la s. la cur. la acc. la op.
-    IF(str_eq(s)(""))
-      (la _. (la v. IF(str_eq(op)("/"))(la _. div(acc)(v))(la _. mul(acc)(v)))
-             (MEMVAL(labs)(cur)))
-      (la _. (la c.
-          IF(OR(str_eq(c)("*"))(str_eq(c)("/")))
-            (la _. (la v. self(labs)(str_tail(s))("")
-                            (IF(str_eq(op)("/"))(la _. div(acc)(v))(la _. mul(acc)(v)))
-                            (c))
-                   (MEMVAL(labs)(cur)))
-            (la _. self(labs)(str_tail(s))(concat(cur)(c))(acc)(op)))
-        (str_head(s))))
-glyph EVALEXPR = Z(la self. la labs. la s. la cur. la acc. la sign.
-    IF(str_eq(s)(""))
-      (la _. add(acc)(mul(sign)(EVALTERM(labs)(cur)("")(1)("*"))))
-      (la _. (la c.
-          IF(OR(str_eq(c)("+"))(str_eq(c)("-")))
-            (la _. self(labs)(str_tail(s))("")
-                       (add(acc)(mul(sign)(EVALTERM(labs)(cur)("")(1)("*"))))
-                       (IF(str_eq(c)("+"))(la _. 1)(la _. sub(0)(1))))
-            (la _. self(labs)(str_tail(s))(concat(cur)(c))(acc)(sign)))
-        (str_head(s))))
-glyph EVAL = la labs. la s. EVALEXPR(labs)(s)("")(0)(1)
+#   ★ THE BITWISE OPS ARE ASSEMBLE-TIME CONSTANT FOLDS, which is why Lingua
+#   Adamica having no bitwise primitives does not block this. That measured
+#   limit — ~5.6 ms per emulated 32-bit XOR, ~16 HOURS to hash a MiB — is fatal
+#   for cryptography, where the operation is the inner loop over megabytes. Here
+#   it is 37 uses of small constants at assembly time: a 32-iteration loop each,
+#   microseconds in total. Same missing primitive, opposite verdict, because the
+#   workload differs by six orders of magnitude.
+#
+#   Shifts need no loop at all: `a << b` is `a * 2^b` and `a >> b` is
+#   `a / 2^b`.
+glyph POW2 = Z(la self. la n. IF(int_eq(n)(0))(la _. 1)(la _. mul(2)(self(sub(n)(1)))))
+glyph BITW = Z(la self. la kind. la a. la b. la p. la acc. la n.
+    IF(int_eq(n)(0))(la _. acc)
+      (la _. (la ab. (la bb.
+          (la r. self(kind)(a)(b)(mul(p)(2))(add(acc)(mul(r)(p)))(sub(n)(1)))
+          (IF(int_eq(kind)(0))
+             (la _. mul(ab)(bb))
+             (la _. IF(int_eq(kind)(1))
+                      (la _. IF(int_eq(add(ab)(bb))(0))(la _. 0)(la _. 1))
+                      (la _. mod(add(ab)(bb))(2)))))
+        (mod(div(b)(p))(2)))
+        (mod(div(a)(p))(2))))
+glyph BAND = la a. la b. BITW(0)(a)(b)(1)(0)(32)
+glyph BOR  = la a. la b. BITW(1)(a)(b)(1)(0)(32)
+glyph BXOR = la a. la b. BITW(2)(a)(b)(1)(0)(32)
 
-#   Split a bracket interior into its FIRST term and the remainder, keeping the
-#   operator with the remainder so the expression evaluator sees a well-formed
-#   string. The first term decides the shape: a register makes it base+disp,
-#   anything else makes it an absolute address.
+glyph HD2 = la s. str_head(str_tail(s))
+glyph ISQUOTE = la s. str_eq(str_head(s))("'")
+
+#   E7 — primary. A parenthesised sub-expression re-enters at the LOWEST level,
+#   which is what makes `(a | b) * c` group correctly.
+glyph E7 = Z(la self. la labs. la s. la cur.
+    IF(str_eq(s)(""))
+      (la _. PAIR(MEMVAL(labs)(cur))(""))
+      (la _. (la c.
+        IF(AND(str_eq(cur)(""))(str_eq(c)("(")))
+          (la _. (la p. PAIR(FST(p))(str_tail(SND(p))))(E1(labs)(str_tail(s))))
+          (la _. IF(AND(str_eq(cur)(""))(str_eq(c)("'")))
+            (la _. PAIR(str_to_int(ord(HD2(s))))(str_tail(str_tail(str_tail(s)))))
+            (la _. IF(ISTERM(c))
+                     (la _. PAIR(MEMVAL(labs)(cur))(s))
+                     (la _. self(labs)(str_tail(s))(concat(cur)(c))))))
+      (str_head(s))))
+glyph ISTERM = la c.
+    OR(str_eq(c)("|"))(OR(str_eq(c)("^"))(OR(str_eq(c)("&"))(OR(str_eq(c)("<"))
+   (OR(str_eq(c)(">"))(OR(str_eq(c)("+"))(OR(str_eq(c)("-"))(OR(str_eq(c)("*"))
+   (OR(str_eq(c)("/"))(str_eq(c)(")"))))))))))
+
+glyph E6T = Z(la self. la labs. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))
+      (la _. (la c.
+        IF(str_eq(c)("*"))
+          (la _. (la p. self(labs)(mul(acc)(FST(p)))(SND(p)))(E7(labs)(str_tail(s))("")))
+          (la _. IF(str_eq(c)("/"))
+            (la _. (la p. self(labs)(div(acc)(FST(p)))(SND(p)))(E7(labs)(str_tail(s))("")))
+            (la _. PAIR(acc)(s))))
+      (str_head(s))))
+glyph E6 = la labs. la s. (la p. E6T(labs)(FST(p))(SND(p)))(E7(labs)(s)(""))
+
+glyph E5T = Z(la self. la labs. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))
+      (la _. (la c.
+        IF(str_eq(c)("+"))
+          (la _. (la p. self(labs)(add(acc)(FST(p)))(SND(p)))(E6(labs)(str_tail(s))))
+          (la _. IF(str_eq(c)("-"))
+            (la _. (la p. self(labs)(sub(acc)(FST(p)))(SND(p)))(E6(labs)(str_tail(s))))
+            (la _. PAIR(acc)(s))))
+      (str_head(s))))
+glyph E5 = la labs. la s. (la p. E5T(labs)(FST(p))(SND(p)))(E6(labs)(s))
+
+#   `<<` and `>>` are TWO characters, so the second is consumed explicitly;
+#   reading only the first would leave a stray `<` and mis-parse the rest.
+glyph E4T = Z(la self. la labs. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))
+      (la _. (la c.
+        IF(AND(str_eq(c)("<"))(str_eq(HD2(s))("<")))
+          (la _. (la p. self(labs)(mul(acc)(POW2(FST(p))))(SND(p)))
+                 (E5(labs)(str_tail(str_tail(s)))))
+          (la _. IF(AND(str_eq(c)(">"))(str_eq(HD2(s))(">")))
+            (la _. (la p. self(labs)(div(acc)(POW2(FST(p))))(SND(p)))
+                   (E5(labs)(str_tail(str_tail(s)))))
+            (la _. PAIR(acc)(s))))
+      (str_head(s))))
+glyph E4 = la labs. la s. (la p. E4T(labs)(FST(p))(SND(p)))(E5(labs)(s))
+
+glyph E3T = Z(la self. la labs. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))
+      (la _. IF(str_eq(str_head(s))("&"))
+        (la _. (la p. self(labs)(BAND(acc)(FST(p)))(SND(p)))(E4(labs)(str_tail(s))))
+        (la _. PAIR(acc)(s))))
+glyph E3 = la labs. la s. (la p. E3T(labs)(FST(p))(SND(p)))(E4(labs)(s))
+
+glyph E2T = Z(la self. la labs. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))
+      (la _. IF(str_eq(str_head(s))("^"))
+        (la _. (la p. self(labs)(BXOR(acc)(FST(p)))(SND(p)))(E3(labs)(str_tail(s))))
+        (la _. PAIR(acc)(s))))
+glyph E2 = la labs. la s. (la p. E2T(labs)(FST(p))(SND(p)))(E3(labs)(s))
+
+glyph E1T = Z(la self. la labs. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))
+      (la _. IF(str_eq(str_head(s))("|"))
+        (la _. (la p. self(labs)(BOR(acc)(FST(p)))(SND(p)))(E2(labs)(str_tail(s))))
+        (la _. PAIR(acc)(s))))
+glyph E1 = la labs. la s. (la p. E1T(labs)(FST(p))(SND(p)))(E2(labs)(s))
+
+glyph EVAL = la labs. la s. FST(E1(labs)(s))
+
 glyph SPLITFIRST = Z(la self. la s. la cur.
     IF(str_eq(s)(""))
       (la _. PAIR(cur)(""))
@@ -567,7 +647,9 @@ glyph DECLSZ = Z(la self. la l.
 #   operator present the list is untouched, so `imul rax, rax, 64` keeps its
 #   three operands.
 glyph ISOPTOK = la t.
-    OR(str_eq(t)("*"))(OR(str_eq(t)("/"))(OR(str_eq(t)("+"))(str_eq(t)("-"))))
+    OR(str_eq(t)("*"))(OR(str_eq(t)("/"))(OR(str_eq(t)("+"))(OR(str_eq(t)("-"))
+   (OR(str_eq(t)("|"))(OR(str_eq(t)("&"))(OR(str_eq(t)("^"))(OR(str_eq(t)("<<"))
+          (str_eq(t)(">>")))))))))
 glyph HASOP = Z(la self. la l.
     l(FALSE)(la h. la t. IF(ISOPTOK(h))(la _. TRUE)(la _. self(t))))
 glyph CATALL = Z(la self. la l.
@@ -765,14 +847,14 @@ glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
        (la _. concat(B(129))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(IMMW(w)(n)))))))
 glyph G1ENC = la labs. la digit. la w. la a. la b.
     IF(ISMEM(a))
-      (la _. IF(ISNUM(b))
-               (la _. G1MEMIMM(labs)(digit)(w)(a)(NUMV(b)))
+      (la _. IF(ISVAL(b))
+               (la _. G1MEMIMM(labs)(digit)(w)(a)(EVAL(labs)(b)))
                (la _. G1MEMREG(labs)(digit)(w)(a)(b)))
       (la _. IF(ISREG(b))
         (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
-        (la _. IF(ISNUM(b))
-                 (la _. G1IMM(digit)(w)(REGNUM(a))(NUMV(b))(RFORCE(a)))
-                 (la _. error("asm: unsupported ALU operand (want register, memory or immediate)"))))
+        (la _. IF(ISVAL(b))
+                 (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a)))
+                 (la _. error(concat("asm: unsupported ALU operand: ")(b)))))
 glyph G1DIG = la op.
     IF(str_eq(op)("add"))(la _. 0)(la _.
     IF(str_eq(op)("or"))(la _. 1)(la _.
@@ -795,7 +877,7 @@ glyph ISSH = la op.
     OR(str_eq(op)("shl"))(OR(str_eq(op)("shr"))(OR(str_eq(op)("sar"))
    (OR(str_eq(op)("rol"))(str_eq(op)("ror")))))
 glyph SHENC = la digit. la w. la a. la b.
-    IF(NOT(ISNUM(b)))
+    IF(NOT(ISVAL(b)))
       (la _. error("asm: shift count must be an immediate (the shl/shr reg,CL form is not implemented)"))
       (la _.
     (la r. la n.

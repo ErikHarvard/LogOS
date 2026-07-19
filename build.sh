@@ -1673,7 +1673,7 @@ PYPP2
     #       build. Found by applying the cross-track review checklist to my own
     #       work: "is the red path gated?" is worth nothing if the gate is not
     #       in the build at all.
-    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg; do
+    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg asm_test_expr3; do
         rm -f asm_out.bin .asmgate/nasm_$prog.bin
         cp $prog.asm asm_in.asm
         ./tiny_host asm.la >.asmgate/$prog.out 2>&1 \
