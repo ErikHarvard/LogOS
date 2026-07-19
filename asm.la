@@ -653,8 +653,45 @@ glyph REL8 = la labs. la off. la nm.
 glyph RROP = la op. la w. la dst. la src. la force.
     concat(P66(w))(concat(REXOPT(w)(src)(dst)(force))
    (concat(B(OP8(op)(w)))(MODRM(dst)(src))))
+# ── CONTROL and SEGMENT registers ───────────────────────────────────────────
+#   The paging-setup family: `mov cr3, rax` (27 uses in the kernel asm) and the
+#   segment loads `mov ds, ax` (17). Neither lives in the general register file,
+#   so both are intercepted before the ordinary mov paths — otherwise `cr3`
+#   reaches REGNUM and halts as an unknown register, which is exactly how
+#   boot.asm failed.
+#
+#   ★ Control-register moves are MODE-INDEPENDENT: `0F 22 /r` (to CR) and
+#   `0F 20 /r` (from CR), with no REX and no 0x66, encoding identically in
+#   32-bit and 64-bit mode — measured, not assumed. The operand is implicitly
+#   the full register width, so `mov eax, cr0` in a bits-32 section and
+#   `mov rax, cr0` in a bits-64 one produce the same bytes. That is what lets
+#   this work without the assembler tracking CPU mode at all.
+#
+#   Segment loads are NOT symmetric: `mov ds, ax` is 8E with no prefix, but
+#   `mov ax, ds` is 66 8C — the 0x66 appears only in the read direction,
+#   because there the DESTINATION is a 16-bit general register.
+glyph CRS =
+  CONS(PAIR("cr0")(0))(CONS(PAIR("cr2")(2))(CONS(PAIR("cr3")(3))(
+  CONS(PAIR("cr4")(4))(NIL))))
+glyph SEGS =
+  CONS(PAIR("es")(0))(CONS(PAIR("cs")(1))(CONS(PAIR("ss")(2))(
+  CONS(PAIR("ds")(3))(CONS(PAIR("fs")(4))(CONS(PAIR("gs")(5))(NIL))))))
+glyph ISCR   = la t. ISSOME(LOOKREG(t)(CRS))
+glyph CRNUM  = la t. OPTV(LOOKREG(t)(CRS))
+glyph ISSEG  = la t. ISSOME(LOOKREG(t)(SEGS))
+glyph SEGNUM = la t. OPTV(LOOKREG(t)(SEGS))
+glyph SPECMODRM = la sel. la r. B(add(192)(add(mul(sel)(8))(mod(r)(8))))
+
 glyph MOVENC = la labs. la w. la a. la b.
-    IF(ISMEM(a))
+    IF(ISCR(a))
+      (la _. concat(B(15))(concat(B(34))(SPECMODRM(CRNUM(a))(REGNUM(b)))))
+    (la _. IF(ISCR(b))
+      (la _. concat(B(15))(concat(B(32))(SPECMODRM(CRNUM(b))(REGNUM(a)))))
+    (la _. IF(ISSEG(a))
+      (la _. concat(B(142))(SPECMODRM(SEGNUM(a))(REGNUM(b))))
+    (la _. IF(ISSEG(b))
+      (la _. concat(B(102))(concat(B(140))(SPECMODRM(SEGNUM(b))(REGNUM(a)))))
+    (la _. IF(ISMEM(a))
       (la _. IF(ISNUM(b))
                (la _. MEMIMM(w)(MEMBASE(a))(MEMDISP(labs)(a))(NUMV(b)))
                (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMDISP(labs)(a))(RFORCE(b))))
@@ -667,7 +704,7 @@ glyph MOVENC = la labs. la w. la a. la b.
                             (la _. MOVABS(REGNUM(a))(n))
                             (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))))
                    (EVAL(labs)(b)))
-            (la _. MOVABS(REGNUM(a))(LABADDR(b)(labs))))))
+            (la _. MOVABS(REGNUM(a))(LABADDR(b)(labs))))))))))
 glyph ALUENC = la op. la w. la a. la b.
     IF(ISREG(b))
       (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
