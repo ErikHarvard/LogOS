@@ -1,0 +1,15 @@
+# Minimal reproducer for the unbounded-heap question (track D -> track A).
+#
+# A tail-recursive countdown. `sub(n)(1)` and `int_eq(n)(0)` each produce a
+# BOXED int, so every iteration allocates and every one of those boxes is dead
+# immediately. The loop keeps NOTHING live: at any instant the live set is one
+# integer. So if rt_gc reclaims, RSS must stay flat; if the bump pointer only
+# ever rises, RSS grows without bound.
+#
+# The recursion is in TAIL position and the runtime does TCO, so this does not
+# grow the stack -- any growth observed is the HEAP.
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph LOOP = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "done")(la _. self(sub(n)(1))))
+glyph MAIN = print(LOOP(30000000))
