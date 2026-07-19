@@ -430,8 +430,28 @@ glyph MEMPARTS = la t. SPLITSIGN(STRIPBRK(t))("")
 glyph MEMABS   = la t. NOT(ISREG(FST(MEMPARTS(t))))
 glyph MEMBASE  = la t.
     IF(MEMABS(t))(la _. sub(0)(1))(la _. REGNUM(FST(MEMPARTS(t))))
-glyph MEMDISP  = la t.
-    IF(MEMABS(t))(la _. NUMV(FST(MEMPARTS(t))))(la _. SND(MEMPARTS(t)))
+#   ★ A LABEL may BE the address: `mov [pml4], eax` — 136 such uses in
+#   boot.asm. Resolving it needs the label table, which MEMDISP did not have,
+#   so this threads `labs` through the memory-operand path.
+#
+#   ★★ WHY LAZY RESOLUTION IS SAFE HERE, and why it would NOT be in general.
+#   During the fixed-point iteration the label table starts EMPTY, so an
+#   unresolved symbol yields 0. That is only sound because an ABSOLUTE address
+#   (no base register) always emits mod=00 + SIB + disp32 — a CONSTANT 6-byte
+#   tail whatever the value is. So sizing with 0 and emitting with the real
+#   address give the same LENGTH, and SIZEL cannot drift from ENC1.
+#   For a base+displacement form the size DOES depend on the value (disp8 vs
+#   disp32), so the same trick there would silently mis-size. That case is a
+#   loud halt instead: boot.asm's three register-relative symbol uses are
+#   `[r8 + PCB_SIZE + 16]`, which are equ constants inside a MULTI-TERM sum —
+#   an expression-evaluator problem, not a label-resolution one.
+glyph MEMVAL = la labs. la t.
+    IF(ISNUM(t))(la _. NUMV(t))
+      (la _. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB(t)(labs)))
+glyph MEMDISP  = la labs. la t.
+    IF(MEMABS(t))
+      (la _. MEMVAL(labs)(FST(MEMPARTS(t))))
+      (la _. SND(MEMPARTS(t)))
 
 glyph FITS8 = la d. AND(NOT(lt(d)(sub(0)(128))))(lt(d)(128))
 glyph MODOF = la b. la d.
@@ -559,10 +579,10 @@ glyph RROP = la op. la w. la dst. la src. la force.
 glyph MOVENC = la labs. la w. la a. la b.
     IF(ISMEM(a))
       (la _. IF(ISNUM(b))
-               (la _. MEMIMM(w)(MEMBASE(a))(MEMDISP(a))(NUMV(b)))
-               (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMDISP(a))(RFORCE(b))))
+               (la _. MEMIMM(w)(MEMBASE(a))(MEMDISP(labs)(a))(NUMV(b)))
+               (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMDISP(labs)(a))(RFORCE(b))))
       (la _. IF(ISMEM(b))
-        (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(b))(RFORCE(a)))
+        (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(labs)(b))(RFORCE(a)))
         (la _. IF(ISREG(b))
           (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
           (la _. IF(ISNUM(b))
@@ -612,12 +632,33 @@ glyph G1IMM = la digit. la w. la r. la n. la force.
                 (concat(B(add(mul(digit)(8))(5)))(IMMW(w)(n)))))
           (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(FALSE))
                 (concat(B(129))(concat(MODRMD(digit)(r))(IMMW(w)(n))))))))
-glyph G1ENC = la digit. la w. la a. la b.
-    IF(ISREG(b))
-      (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+#   ★ The DESTINATION may be MEMORY: `or dword [pml4], 0x04` (11 uses in
+#   boot.asm). The opcodes are the SAME as the register forms — the only
+#   difference is that ModRM/SIB/disp come from MEMTAIL, with the group digit
+#   sitting in the reg field where a register number would otherwise go. That
+#   is why this is a few lines rather than a second encoder: the opcode map
+#   does not distinguish "to register" from "to memory", the ModRM byte does.
+glyph G1MEMREG = la labs. la digit. la w. la a. la b.
+    concat(P66(w))(concat(REXOPT(w)(REGNUM(b))(MEMBASE(a))(RFORCE(b)))
+   (concat(B(OP8(add(mul(digit)(8))(1))(w)))
+          (MEMTAIL(REGNUM(b))(MEMBASE(a))(MEMDISP(labs)(a)))))
+glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
+    concat(P66(w))(concat(REXOPT(w)(0)(MEMBASE(a))(FALSE))
+   (IF(int_eq(w)(1))
+     (la _. concat(B(128))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
+     (la _. IF(FITS8(n))
+       (la _. concat(B(131))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
+       (la _. concat(B(129))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(IMMW(w)(n)))))))
+glyph G1ENC = la labs. la digit. la w. la a. la b.
+    IF(ISMEM(a))
       (la _. IF(ISNUM(b))
-               (la _. G1IMM(digit)(w)(REGNUM(a))(NUMV(b))(RFORCE(a)))
-               (la _. error("asm: unsupported ALU operand (want register or immediate)")))
+               (la _. G1MEMIMM(labs)(digit)(w)(a)(NUMV(b)))
+               (la _. G1MEMREG(labs)(digit)(w)(a)(b)))
+      (la _. IF(ISREG(b))
+        (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+        (la _. IF(ISNUM(b))
+                 (la _. G1IMM(digit)(w)(REGNUM(a))(NUMV(b))(RFORCE(a)))
+                 (la _. error("asm: unsupported ALU operand (want register, memory or immediate)"))))
 glyph G1DIG = la op.
     IF(str_eq(op)("add"))(la _. 0)(la _.
     IF(str_eq(op)("or"))(la _. 1)(la _.
@@ -673,8 +714,8 @@ glyph TSTENC = la w. la a. la b.
              (REGNUM(a))(NUMV(b))))
 
 # ── lea: the same ModRM/SIB/disp machinery as mov, opcode 8D, never 8-bit ───
-glyph LEAENC = la w. la a. la b.
-    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(b))(RFORCE(a))
+glyph LEAENC = la labs. la w. la a. la b.
+    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(labs)(b))(RFORCE(a))
 
 # ── no-operand instructions ────────────────────────────────────────────────
 glyph NOARGS =
@@ -750,8 +791,8 @@ glyph MEMTAIL = la reg. la b. la d.
       (la _. (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
                    (concat(SIBOF(b))(DISPOF(m)(d))))
              (MODOF(b)(d)))
-glyph LGDTENC = la b.
-    concat(B(15))(concat(B(1))(MEMTAIL(2)(MEMBASE(b))(MEMDISP(b))))
+glyph LGDTENC = la labs. la b.
+    concat(B(15))(concat(B(1))(MEMTAIL(2)(MEMBASE(b))(MEMDISP(labs)(b))))
 glyph DIVENC = la w. la a.
     concat(P66(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
    (concat(B(OP8(247)(w)))(MODRMD(6)(REGNUM(a)))))
@@ -848,19 +889,19 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("out"))(la _. LENOF(OUTENC(A1(ts))(A2(ts))))(la _.
     IF(str_eq(op)("in"))(la _. LENOF(INENC(A1(ts))(A2(ts))))(la _.
     IF(str_eq(op)("ltr"))(la _. LENOF(LTRENC(A1(ts))))(la _.
-    IF(str_eq(op)("lgdt"))(la _. LENOF(LGDTENC(A1(ts))))(la _.
+    IF(str_eq(op)("lgdt"))(la _. LENOF(LGDTENC(labs)(A1(ts))))(la _.
     IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(DIVENC(w)(a))))(la _.
     IF(str_eq(op)("imul"))(la _. LENOF(IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))))(la _.
     IF(ISDATA(op))(la _. DSIZE(DWIDTH(op))(TL2(ts)))(la _.
     IF(ISRES(op))(la _. RESN(op)(ts))(la _.
     IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
     IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
-    IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(G1DIG(op))(w)(a)(b))))(la _.
+    IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b))))(la _.
     IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(w)(a)(b))))(la _.
     IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a))))(la _.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
-    IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(w)(a)(b))))
+    IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(labs)(w)(a)(b))))
       (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))
   (HD(ts))
 
@@ -884,19 +925,19 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)("out"))(la _. OUTENC(A1(ts))(A2(ts)))(la _.
     IF(str_eq(op)("in"))(la _. INENC(A1(ts))(A2(ts)))(la _.
     IF(str_eq(op)("ltr"))(la _. LTRENC(A1(ts)))(la _.
-    IF(str_eq(op)("lgdt"))(la _. LGDTENC(A1(ts)))(la _.
+    IF(str_eq(op)("lgdt"))(la _. LGDTENC(labs)(A1(ts)))(la _.
     IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. DIVENC(w)(a)))(la _.
     IF(str_eq(op)("imul"))(la _. IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts)))))(la _.
     IF(ISDATA(op))(la _. DEMIT(labs)(DWIDTH(op))(TL2(ts)))(la _.
     IF(ISRES(op))(la _. REPB(RESN(op)(ts))(B(0)))(la _.
     IF(str_eq(op)("align"))(la _. REPB(ALIGNPAD(off)(NUMV(NTH(1)(ts))))(B(144)))(la _.
     IF(ISNOARG(op))(la _. NOARG(op))(la _.
-    IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(G1DIG(op))))(la _.
+    IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(labs)(G1DIG(op))))(la _.
     IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))))(la _.
     IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(0)(w)(a)))(la _.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(1)(w)(a)))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(TSTENC))(la _.
-    IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(LEAENC))(la _.
+    IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(LEAENC(labs)))(la _.
     IF(str_eq(op)("call"))(la _. concat(B(232))(LE4(REL32(labs)(TARGET(ts))(add(off)(5)))))(la _.
     IF(str_eq(op)("jmp"))
       (la _. IF(JSHORT(labs)(off)(ts))
