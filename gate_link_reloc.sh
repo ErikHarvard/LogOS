@@ -167,6 +167,35 @@ echo "$DOUT" | grep -q "duplicate symbol: greet" \
 #   yesterday's binary and the refusal was cosmetic.
 [ -e link_out ] && { echo "FAIL  link_reloc.la: wrote link_out despite refusing the link"; ok=0; }
 
+# --- NEGATIVE: a section the layout cannot place must be REFUSED ---
+#   The layout knows .text and .rodata. Every real gcc object also carries
+#   .data/.bss/.eh_frame, all SHF_ALLOC — they occupy memory at run time and so
+#   need addresses. Previously they were "handled" by not being looked for, and
+#   a symbol defined in one resolved against a base that was never assigned:
+#   the program links and then misbehaves far from the cause. SHF_ALLOC is the
+#   discriminator, not a name blacklist, so .symtab/.strtab/.comment/.note* are
+#   correctly ignored — the loader never maps them.
+if command -v gcc >/dev/null 2>&1; then
+    gcc -c -O0 -x c - -o gate_secs.o 2>/dev/null <<'CEOF'
+extern int helper(int);
+int compute(int x){ return helper(x); }
+CEOF
+    if [ -f gate_secs.o ]; then
+        cp link_test_a.o link_in1.o
+        cp gate_secs.o   link_in2.o
+        if SOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then SRC=0; else SRC=$?; fi
+        [ "$SRC" -ne 0 ] \
+            || { echo "FAIL  link_reloc.la: accepted an object with unplaceable sections"; ok=0; }
+        #   Must name the SECTION problem, not some downstream symptom. Both the
+        #   right and wrong behaviours exit non-zero, so checking only failure
+        #   would pass while the check ran in the wrong place — which it did,
+        #   until the check was moved from the body to a binder.
+        echo "$SOUT" | grep -q "allocatable section this layout cannot place" \
+            || { echo "FAIL  link_reloc.la: refused, but not for the section reason (got: $(echo "$SOUT" | tail -1))"; ok=0; }
+        rm -f gate_secs.o
+    fi
+fi
+
 rm -f link_in1.o link_in2.o
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (PC32 + PLT32 + 64, W^X, page-aligned, 2 negative gates)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (PC32 + PLT32 + 64, W^X, page-aligned, 3 negative gates)"
 [ "$ok" = 1 ]

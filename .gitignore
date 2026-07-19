@@ -159,3 +159,4 @@ watched.la
 /gate_real.o
 /gate_real.c
 /gcc.log
+/gate_secs.o

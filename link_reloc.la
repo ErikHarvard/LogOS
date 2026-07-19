@@ -222,6 +222,30 @@ glyph DEFINES = la f. la ss. la i.
 #   Checked BEFORE anything is emitted, so a rejected link writes no output at
 #   all. A linker that refuses but leaves a stale executable behind invites the
 #   next command to run yesterday's binary.
+#   ★ REFUSE SECTIONS WE CANNOT PLACE, rather than ignoring them.
+#   The layout knows exactly two allocatable sections, .text and .rodata. An
+#   object carrying a third — .bss and .eh_frame are the ordinary cases, and
+#   every gcc object has both — was previously handled by NOT LOOKING: those
+#   sections were skipped, and any symbol defined in one resolved against a
+#   base that was never assigned. That is silent wrong addresses, which is
+#   strictly worse than refusing, because the program links and then misbehaves
+#   far from the cause.
+#
+#   SHF_ALLOC (bit 1, value 2) is exactly the right test: it means "this
+#   section occupies memory at run time", so it is precisely the set the layout
+#   must have an answer for. Non-alloc sections (.symtab, .strtab, .comment,
+#   .note*) are metadata the loader never maps, and ignoring those is correct.
+glyph IS_ALLOC = la f. la i. int_eq(mod(div(SH_FLAGS(f)(i))(2))(2))(1)
+glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(str_eq(n)(".rodata"))
+glyph CHECKSECS = la f. la tag. (Z(la self. la i.
+    IF(int_eq(i)(E_SHNUM(f)))
+      (la _. "ok")
+      (la _. IF(AND(IS_ALLOC(f)(i))(NOT(PLACEABLE(SECNAME(f)(i)))))
+               (la _. error(CAT(CONS("link: ")(CONS(tag)(CONS(
+                        " has an allocatable section this layout cannot place: ")(
+                        CONS(SECNAME(f)(i))(NIL)))))))
+               (la _. self(add(i)(1))))))(0)
+
 glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))
       (la _. FALSE)
@@ -245,6 +269,7 @@ glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
 
 glyph MAIN =
   (la f1. (la f2.
+  (la _c1. (la _c2.
   (la ss1. (la ss2.
   (la t1sec. (la t2sec. (la r2sec.
   (la t2addr.
@@ -302,6 +327,8 @@ glyph MAIN =
   )(FIND_SEC(f1)(".text"))
   )(FIND_SEC(f2)(".symtab"))
   )(FIND_SEC(f1)(".symtab"))
+  )(CHECKSECS(f2)("input 2"))
+  )(CHECKSECS(f1)("input 1"))
   )(read_file("link_in2.o"))
   )(read_file("link_in1.o"))
 
