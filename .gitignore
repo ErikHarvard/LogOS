@@ -190,3 +190,5 @@ watched.la
 /cmp_ref
 /cmp_ld.bin
 /cmp_s32.o
+/cmp_got.txt
+/cmp_want.txt

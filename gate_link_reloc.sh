@@ -56,7 +56,25 @@ cmp_text_against_ld() {   # $1=obj1 $2=obj2 $3=label
     dd if=cmp_ld.bin    bs=1 skip=$_start2 of="$_b" 2>/dev/null
     cmp "$_a" "$_b" \
         || { echo "FAIL  $_lbl: second object's patched .text differs from ld's"; ok=0; }
-    rm -f "$_a" "$_b" cmp_ref cmp_ld.bin
+    rm -f "$_a" "$_b"
+
+    #   ...and RUN it, from the same link. These were previously two separate
+    #   links of the same pair — one to diff, one to execute — which is a full
+    #   ~25 s of linking for no extra information. Byte-identity says the code
+    #   is right; running says the ELF around it is loadable. Both matter, and
+    #   one link answers both.
+    if [ -x link_out ]; then
+        if ./link_out >cmp_got.txt 2>&1; then _ourrc=0; else _ourrc=$?; fi
+        if ./cmp_ref  >cmp_want.txt 2>&1; then _ldrc=0; else _ldrc=$?; fi
+        cmp -s cmp_got.txt cmp_want.txt \
+            || { echo "FAIL  $_lbl: output differs from ld's binary"; ok=0; }
+        [ "$_ourrc" = "$_ldrc" ] \
+            || { echo "FAIL  $_lbl: exit $_ourrc, ld's binary exits $_ldrc"; ok=0; }
+        rm -f cmp_got.txt cmp_want.txt
+    else
+        echo "FAIL  $_lbl: no executable emitted"; ok=0
+    fi
+    rm -f cmp_ref cmp_ld.bin
 }
 
 nasm -f elf64 link_test_a.asm -o link_test_a.o
@@ -338,58 +356,17 @@ else
     echo "FAIL  link_reloc.la: 3-object link emitted no executable"; ok=0
 fi
 
-# --- R_X86_64_32 and 32S: the absolute 4-byte relocations ---
-#   Handling only PC32/PLT32/64 refused ordinary non-PIC compiled code. nasm
-#   emits 32 for `mov eax, label`; gcc -fno-pic emits 32S for static data
-#   addressing. Both are S + A in four bytes here, differing only in how the
-#   CPU extends the value.
+# --- the ABSOLUTE relocations: 32 and 32S ---
+#   nasm emits 32 for `mov eax, label`; gcc -fno-pic emits 32S for static data
+#   addressing. Handling only PC32/PLT32/64 refused ordinary non-PIC code.
 #
-#   The 32S case is the stronger test and it uses REAL gcc output: pick(2)
-#   indexes a static table, so a wrong base address reads four bytes from
-#   somewhere plausible and the program exits CLEANLY with the wrong number.
-#   Hence the assertion is `exit 30` — table[2] — not "it ran".
-cp link_test_a.o   link_in1.o
-cp link_test_abs.o link_in2.o
-printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
-rm -f link_out
-if AOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then ARC=0; else ARC=$?; fi
-[ "$ARC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link an R_X86_64_32 object: $AOUT"; ok=0; }
-if [ -x link_out ]; then
-    AGOT=$(./link_out)
-    [ "$AGOT" = "I AM THAT I AM" ] \
-        || { echo "FAIL  R_X86_64_32 link printed '$AGOT'"; ok=0; }
-else
-    echo "FAIL  link_reloc.la: R_X86_64_32 link emitted no executable"; ok=0
-fi
-
-S32_RAN=no
-if command -v gcc >/dev/null 2>&1; then
-    gcc -c -O1 -fno-pic -mcmodel=small -x c - -o gate_s32.o 2>/dev/null <<'CS'
-static const int table[4] = {10, 20, 30, 40};
-int pick(int i) { return table[i & 3]; }
-CS
-    if [ -f gate_s32.o ] && readelf -r --wide gate_s32.o | grep -q R_X86_64_32S; then
-        S32_RAN=yes
-        cp link_test_s32.o link_in1.o
-        cp gate_s32.o      link_in2.o
-        printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
-        rm -f link_out
-        if SOUT32=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then S32RC=0; else S32RC=$?; fi
-        [ "$S32RC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link an R_X86_64_32S object: $SOUT32"; ok=0; }
-        if [ -x link_out ]; then
-            if ./link_out; then S32EXIT=0; else S32EXIT=$?; fi
-            [ "$S32EXIT" = "30" ] \
-                || { echo "FAIL  32S link exited $S32EXIT, expected 30 (table[2]) — wrong table address"; ok=0; }
-        else
-            echo "FAIL  link_reloc.la: 32S link emitted no executable"; ok=0
-        fi
-        rm -f gate_s32.o
-    fi
-fi
-
-# --- byte-identity for the ABSOLUTE relocations, closing a stated gap ---
-#   32 and 32S were checked only behaviourally. Now they are diffed against ld
-#   like PC32/PLT32/64, so all five types carry the same guarantee.
+#   Each is diffed against ld AND run, from ONE link. They used to be two links
+#   apiece — a behavioural check and a byte-identity check of the same pair —
+#   which cost ~50 s of the suite's runtime for no extra information.
+#
+#   The 32S pair uses REAL gcc output: pick(2) indexes a static table, so a
+#   wrong base address reads four plausible bytes and the program exits CLEANLY
+#   with the wrong number. Byte-identity catches that; "it ran" would not.
 cmp_text_against_ld link_test_a.o link_test_abs.o "R_X86_64_32 byte-identity"
 if command -v gcc >/dev/null 2>&1; then
     gcc -c -O1 -fno-pic -mcmodel=small -x c - -o cmp_s32.o 2>/dev/null <<'CS32'
@@ -474,5 +451,5 @@ C2
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32$([ "$S32_RAN" = yes ] && echo "/32S"), 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates)"
 [ "$ok" = 1 ]
