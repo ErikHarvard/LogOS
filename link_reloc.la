@@ -294,14 +294,30 @@ glyph PSTEP = la f. la o. la name. la acc. la cur.
                         (ALIGNUP(cur)(SH_ALIGN(f)(sec))))))
     (FIND_SEC(f)(name))
 
-#   All objects, one section name. Each name starts at its own base address.
-glyph PNAME = la f1. la f2. la name. la acc.
-    (la r1. FST(PSTEP(f2)(2)(name)(FST(r1))(SND(r1))))
-    (PSTEP(f1)(1)(name)(acc)(BASEOF(name)))
+#   ── N OBJECTS ──────────────────────────────────────────────────────────────
+#   An OBJECT is (index, contents). The index is what plan entries and symbol
+#   lookups refer to, so it must be stable and 1-based to match the diagnostics.
+#
+#   PSTEP already placed ONE object's copy of one section; PNAME just called it
+#   exactly twice. Folding it over an object list is the whole change: the
+#   number of inputs stops being written into the code and becomes the length
+#   of a list. Two objects still produce byte-identical output, which is what
+#   makes this safe to do as a refactor rather than a rewrite.
+glyph OBJ   = la idx. la f. PAIR(idx)(f)
+glyph O_IDX = la o. FST(o)
+glyph O_F   = la o. SND(o)
 
-glyph MKPLAN = la f1. la f2.
+#   All objects, one section name, packed in input order from that name's base.
+glyph PNAME = la objs. la name. la acc.
+    FST((Z(la self. la l. la a. la cur.
+        l(PAIR(a)(cur))(la h. la t.
+          (la r. self(t)(FST(r))(SND(r)))
+          (PSTEP(O_F(h))(O_IDX(h))(name)(a)(cur)))))
+      (objs)(acc)(BASEOF(name)))
+
+glyph MKPLAN = la objs.
     REV((Z(la self. la names. la acc.
-        names(acc)(la h. la t. self(t)(PNAME(f1)(f2)(h)(acc)))))(PLACE_ORDER)(NIL))(NIL)
+        names(acc)(la h. la t. self(t)(PNAME(objs)(h)(acc)))))(PLACE_ORDER)(NIL))(NIL)
 
 #   Address of a given object's given section, or -1 if it was not placed.
 glyph VAOF = la plan. la o. la sec. (Z(la self. la l.
@@ -332,41 +348,54 @@ glyph FLAGSOF = la n.
 #   The bytes a plan entry contributes: the RELOCATED text for a .text section,
 #   the raw section otherwise. Relocations are applied to .text only here, so
 #   this is where patched and raw meet.
-glyph ENAME = la f1. la f2. la e.
-    IF(int_eq(E_OBJ(e))(1))(la _. SECNAME(f1)(E_SEC(e)))(la _. SECNAME(f2)(E_SEC(e)))
-glyph ESIZE = la f1. la f2. la e.
-    IF(int_eq(E_OBJ(e))(1))(la _. SH_SIZE(f1)(E_SEC(e)))(la _. SH_SIZE(f2)(E_SEC(e)))
+#   ★ THIS is where "exactly two objects" really lived: every helper branched
+#   IF(E_OBJ == 1) ... ELSE ..., which is a two-way switch that cannot grow.
+#   Looking the object up by index in the list removes the branch entirely, and
+#   with it the arity assumption — the helpers stop knowing how many inputs
+#   there are.
+glyph FINDOBJ = la objs. la idx. (Z(la self. la l.
+    l("")(la h. la t. IF(int_eq(O_IDX(h))(idx))(la _. O_F(h))(la _. self(t)))))(objs)
+glyph E_F   = la objs. la e. FINDOBJ(objs)(E_OBJ(e))
+glyph ENAME = la objs. la e. SECNAME(E_F(objs)(e))(E_SEC(e))
+glyph ESIZE = la objs. la e. SH_SIZE(E_F(objs)(e))(E_SEC(e))
 glyph SH_NOBITS = 8
-glyph ETYPE = la f1. la f2. la e.
-    IF(int_eq(E_OBJ(e))(1))(la _. SH_TYPE(f1)(E_SEC(e)))(la _. SH_TYPE(f2)(E_SEC(e)))
-glyph EBYTES = la f1. la f2. la p1. la p2. la t1sec. la t2sec. la e.
-    IF(int_eq(ETYPE(f1)(f2)(e))(SH_NOBITS))
+glyph ETYPE = la objs. la e. SH_TYPE(E_F(objs)(e))(E_SEC(e))
+
+#   The relocated text of each object, as a list of (index, (text section,
+#   patched bytes)) — the list form of what p1/p2 were as separate binders.
+glyph PATCH_OF = la patched. la idx. (Z(la self. la l.
+    l(NIL)(la h. la t. IF(int_eq(FST(h))(idx))(la _. SND(h))(la _. self(t)))))(patched)
+
+glyph EBYTES = la objs. la patched. la e.
+    IF(int_eq(ETYPE(objs)(e))(SH_NOBITS))
       (la _. "")
-      (la _. IF(int_eq(E_OBJ(e))(1))
-        (la _. IF(int_eq(E_SEC(e))(t1sec))(la _. p1)(la _. SECBYTES(f1)(E_SEC(e))))
-        (la _. IF(int_eq(E_SEC(e))(t2sec))(la _. p2)(la _. SECBYTES(f2)(E_SEC(e)))))
+      (la _. (la pe.
+               IF(int_eq(E_SEC(e))(FST(pe)))
+                 (la _. SND(pe))
+                 (la _. SECBYTES(E_F(objs)(e))(E_SEC(e))))
+             (PATCH_OF(patched)(E_OBJ(e))))
 
 #   Concatenate every plan entry of one section name, in placed order, padding
 #   each gap so the bytes land exactly where the plan says. Padding a code gap
 #   with nops keeps it executable if control ever reaches it; other sections
 #   pad with zeros.
-glyph REGBYTES = la f1. la f2. la p1. la p2. la t1sec. la t2sec. la name. la plan.
+glyph REGBYTES = la objs. la patched. la name. la plan.
     (Z(la self. la l. la cur. la acc.
       l(acc)(la h. la t.
-        IF(str_eq(ENAME(f1)(f2)(h))(name))
-          (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(f1)(f2)(h)))
+        IF(str_eq(ENAME(objs)(h))(name))
+          (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(objs)(h)))
                         (CAT(CONS(acc)(CONS(IF(str_eq(name)(".text"))
                                               (la _. NOPS(gap))(la _. ZEROS(gap)))(
-                             CONS(EBYTES(f1)(f2)(p1)(p2)(t1sec)(t2sec)(h))(NIL))))))
+                             CONS(EBYTES(objs)(patched)(h))(NIL))))))
                  (sub(E_ADDR(h))(cur)))
           (la _. self(t)(cur)(acc)))))
     (plan)(BASEOF(name))("")
 
 #   A region exists for a name only if the plan placed something under it, so
 #   an absent .rodata (or .data) costs no segment rather than an empty one.
-glyph HASNAME = la f1. la f2. la name. la plan. (Z(la self. la l.
+glyph HASNAME = la objs. la name. la plan. (Z(la self. la l.
     l(FALSE)(la h. la t.
-      IF(str_eq(ENAME(f1)(f2)(h))(name))(la _. TRUE)(la _. self(t)))))(plan)
+      IF(str_eq(ENAME(objs)(h))(name))(la _. TRUE)(la _. self(t)))))(plan)
 
 #   A region's file offset is fixed by the loader's rule p_offset = p_vaddr
 #   (mod page). Deriving it from the base — rather than hardcoding 0x1000 and
@@ -381,18 +410,18 @@ glyph R_MEMSZ = la r. SND(SND(r))
 #   A region's MEMORY size is where its last placed section ends, which for a
 #   NOBITS section is past the end of its file bytes. This is the number the
 #   kernel zero-fills up to.
-glyph REGEND = la f1. la f2. la name. la plan. (Z(la self. la l. la end.
+glyph REGEND = la objs. la name. la plan. (Z(la self. la l. la end.
     l(end)(la h. la t.
-      IF(str_eq(ENAME(f1)(f2)(h))(name))
-        (la _. self(t)(add(E_ADDR(h))(ESIZE(f1)(f2)(h))))
+      IF(str_eq(ENAME(objs)(h))(name))
+        (la _. self(t)(add(E_ADDR(h))(ESIZE(objs)(h))))
         (la _. self(t)(end)))))(plan)(BASEOF(name))
 
-glyph MKREGIONS = la f1. la f2. la p1. la p2. la t1sec. la t2sec. la plan.
+glyph MKREGIONS = la objs. la patched. la plan.
     (Z(la self. la names.
       names(NIL)(la h. la t.
-        IF(HASNAME(f1)(f2)(h)(plan))
-          (la _. CONS(PAIR(h)(PAIR(REGBYTES(f1)(f2)(p1)(p2)(t1sec)(t2sec)(h)(plan))
-                              (sub(REGEND(f1)(f2)(h)(plan))(BASEOF(h)))))(self(t)))
+        IF(HASNAME(objs)(h)(plan))
+          (la _. CONS(PAIR(h)(PAIR(REGBYTES(objs)(patched)(h)(plan))
+                              (sub(REGEND(objs)(h)(plan))(BASEOF(h)))))(self(t)))
           (la _. self(t)))))(PLACE_ORDER)
 
 glyph PHDRS = la regs. (Z(la self. la l.
@@ -460,7 +489,9 @@ glyph MAIN =
                CONS(BODY(regs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
                NIL)))))
              (LENL(regs)))
-            (MKREGIONS(f1)(f2)(p1)(p2)(t1sec)(t2sec)(plan))))(
+            (MKREGIONS(CONS(OBJ(1)(f1))(CONS(OBJ(2)(f2))(NIL)))
+                      (CONS(PAIR(1)(PAIR(t1sec)(p1)))(CONS(PAIR(2)(PAIR(t2sec)(p2)))(NIL)))
+                      (plan))))(
       print(CAT(
         CONS("merged .text = ")(
         CONS(int_to_str(str_to_int(str_len(merged))))(
@@ -491,7 +522,7 @@ glyph MAIN =
   )(la sec. VAOF(plan)(2)(sec))
   )(la sec. VAOF(plan)(1)(sec))
   )(VAOF(plan)(2)(t2sec))
-  )(MKPLAN(f1)(f2))
+  )(MKPLAN(CONS(OBJ(1)(f1))(CONS(OBJ(2)(f2))(NIL))))
   )(FIND_SEC(f2)(".rodata"))
   )(FIND_SEC(f2)(".text"))
   )(FIND_SEC(f1)(".text"))
