@@ -25,11 +25,21 @@ cross-track request to track A, and it would make the chain LA end to end.
 | `link_test_rw.asm` | `.rodata` AND `.data` in one object — forces a third, writable segment. |
 | `link_test_bss.asm` | `.bss`: memory without file bytes (`p_filesz` 0, `p_memsz` 16). |
 | `link_inputs.txt` | the manifest — one object path per line, in link order. |
+| `link_test_abs.asm` | `R_X86_64_32` — a 32-bit absolute (`mov esi, msg`). |
+| `link_test_s32.asm` | entry for the `32S` case; links against a **real gcc** object and exits 30 = `table[2]`. |
+| `link_test_start.asm` | entry for the mixed asm + C link; exits 43 = `compute(21)`. |
+| `link_test_odd.asm` | `.weird`, `SHF_ALLOC` — a section the layout must REFUSE. |
 | `link_test_plt.asm` | same as A but `wrt ..plt`, so nasm emits PLT32 — what real toolchains actually produce. |
 | `link_test_dup.asm` | defines BOTH `_start` and `greet`, so linking it against B is a duplicate and *nothing else*. |
 
-Run: `./gate_link.sh && ./gate_link_reloc.sh` (~2 min; both self-skip if
-nasm/ld/readelf/objcopy are absent).
+Run: `./gate_link.sh && ./gate_link_reloc.sh` (~3 min; both self-skip with a
+SKIP line if nasm/ld/readelf/objcopy/gcc are absent). **Both are wired into
+`build.sh`** as of `0184d14`, so the linker is checked by the system's own
+criterion, not only when this track runs it by hand.
+
+⚠ **A full `build.sh` needs the other tracks idle** until every terminal is
+launched via `~/logos-agent`: it writes ~481 hardcoded `/tmp` paths, and no
+session currently has a private `/tmp`.
 
 ## The verification principle — the part worth keeping
 
@@ -57,9 +67,12 @@ most wrong implementations also exit non-zero.
   link order. **Four section kinds**: `.text`, `.rodata`, `.data`, `.bss`.
   Anything else that is `SHF_ALLOC` is **refused by name**, not ignored — which
   is why the reader can be pointed at real gcc objects without silently
-  producing wrong addresses. `.eh_frame` and `.note.gnu.property` are ALLOC, so
-  **real gcc objects are still refused** — that is the next capability gap, not
-  a claim that they work.
+  producing wrong addresses. `.eh_frame` and `.note.gnu.property` are ALLOC and
+  are **deliberately DROPPED** — recorded as a decision, not ignored: `.eh_frame`
+  carries its own relocation section this linker does not apply, so placing it
+  would embed unrelocated unwind data. A symbol in a dropped section is refused
+  BY NAME rather than resolved, so the choice cannot misplace anything silently.
+  **Real gcc objects link** (verified: asm entry + two gcc objects, exit 43).
 - **Per-segment permissions**: `.text` R+X, `.rodata` R, `.data`/`.bss` R+W,
   never R+W+X. `.bss` gets `p_memsz > p_filesz` and costs no file space.
 - **No linker script** — the layout is hard-coded to ld's policy on these
@@ -75,13 +88,13 @@ most wrong implementations also exit non-zero.
 
 ## Next
 
-1. **Real gcc objects.** They carry `.eh_frame` and `.note.gnu.property`, both
-   `SHF_ALLOC`, so the linker refuses them today. Either place them (both are
-   read-only data; `.eh_frame` only matters for unwinding) or skip them with a
-   stated justification — but *decide*, do not let them be ignored silently,
-   which is the failure the refusal exists to prevent.
-2. **More relocation types.** `R_X86_64_32`/`32S` appear in ordinary compiled
-   code; only PC32, PLT32 and 64 are handled.
+1. **Byte-identity for the 32/32S fixtures.** Five relocation types are
+   handled but not verified equally: `PC32`/`PLT32`/`64` are diffed
+   byte-for-byte against `ld`; `32`/`32S` are checked behaviourally only
+   (correct output, exit 30 = `table[2]`). That is a weaker guarantee, and a
+   five-row table implies a uniformity that does not exist.
+2. **`.eh_frame` properly**, which means applying EVERY section's relocations
+   rather than only `.rela.text`. Until then it stays dropped.
 3. **A real linker script**, replacing the hard-coded one-page-per-section
    layout. `ld` packs sections into shared pages (it put `.data` at `0x403010`,
    in the previous page's tail); this gives each its own page. Both satisfy
