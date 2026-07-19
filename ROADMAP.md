@@ -1272,6 +1272,200 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       silently opened a regex character class, and a hollow test harness whose
       truncated `if` block made a syntax error read as "all green". A test that
       has never failed is not known to discriminate.)*
+      **GROUP-1 ALU WITH IMMEDIATES + shifts + inc/dec + test/lea + the
+      no-operand set added, byte-identical over 42 instructions / 163 bytes
+      (2026-07-18).** Again scoped by profiling rather than guessing, and the
+      profile overturned the obvious plan: the gap was not *which mnemonics*
+      were missing but *which operand shape* — **reg+immediate dominates**
+      (`or` 31 of 45 uses, `shr` 32 of 32, `cmp` 11 of 23, `and` 5 of 5,
+      `test` 8 of 18) and `asm.la` could not encode it at all, its ALU being
+      register-to-register only. The six group-1 ops differ only by a 3-bit
+      digit (`reg,reg` = `digit*8+1`, `AL,imm` = `digit*8+4`, `eAX,imm` =
+      `digit*8+5`), so one encoder serves all six rather than six encoders.
+      **NASM picks the SHORTEST form and the priority is not the obvious one**,
+      each rule gated by name: the sign-extended `imm8` form (`83 /digit`)
+      beats the accumulator form even for `rax` — `add rax, 8` is
+      `48 83 c0 08`, not `48 05 08000000` — while at width 1 the order
+      **inverts**, `sub al, 9` being `2c 09` rather than `80 e8 09`, since
+      there is no 8-bit sign-extension to save anything; `or ecx, 0x80` needs
+      the full `imm32` because `0x80` does *not* fit a **signed** byte;
+      `shl rax, 1` is the distinct by-one opcode `48 d1 e0`, not `c1` with an
+      immediate of 1; and **`test` has no `imm8` form at all**, so `test rdx, 8`
+      is a full `48 f7 c2 08000000` for a value that fits a byte — reusing
+      group-1's shortcut there would emit something the CPU accepts and NASM
+      never writes. **`boot.asm` is now 75% readable (799 of 1060 lines)**, and
+      what remains is mostly the *preprocessor/directive* layer — `%ifdef` /
+      `%define` / `%include` (106 lines) and `resb`/`dq`/`dd`/`align`/`section`
+      (53) — rather than instructions. *(Running the gate's red path caught a
+      defect in the new code, not the gate: `shl rax, rcx` — the unimplemented
+      CL-count form — did halt, but with the host's `str_to_int: not a decimal
+      integer` instead of an assembler diagnostic. Both shift and test now name
+      the unsupported form.)*
+
+      **DATA DEFINITION + LAYOUT added — `dw`/`dd`/`dq`, `resb`/`resq`,
+      `align` — byte-identical over a 102-byte image (2026-07-18); boot.asm is
+      now 80% readable (848 of 1060 lines).** Two of the `-f bin` semantics are
+      NOT what they look like, and both were pinned by assembling with NASM and
+      **reading the bytes back** rather than by reasoning: **`align` pads with
+      `0x90` NOP, not zeros** (NASM pads a *code* section with no-ops, so
+      `align 8` at 0x39 emits seven `0x90`s — zero-padding is the obvious guess
+      and silently produces a different image), and **`resb`/`resq` EMIT zeros**
+      rather than merely advancing the counter (NASM warns "uninitialized space
+      declared in .text section: zeroing"; only a reservation at the very end is
+      truncated). A label used as a data value is **org-absolute** — `dq start`
+      is `0x400000` — the same rule the `movabs` form already followed.
+      **★ It also closed a latent bug older than this slice: a line carrying a
+      LABEL AND AN INSTRUCTION** (`w1: dw 0x1234`, how boot.asm writes nearly
+      all its data) was treated as a label and *nothing else*, silently
+      discarding the rest of the line — the label landed at the right address
+      while its data was never emitted, so the image came out short with
+      everything after it misplaced. It survived undetected because every
+      earlier test program put labels on their own lines; only real kernel
+      source exercises the combined form. Stripping the label and re-dispatching
+      on what remains makes both forms one path, with a bare label line falling
+      through to size 0 exactly as before (gated by a negative control). A
+      second latent gap surfaced with it: `db` still parsed its values with
+      `str_to_int`, so it could not read the hex literals the rest of the
+      assembler had accepted since the width slice.
+
+      **THE OPCODE TAIL added — port I/O, MSRs, descriptor/system ops, string
+      ops with the `rep` prefix, the `o64` prefix, `div`/`imul`, rotates, and
+      the FULL jcc condition set — byte-identical over 47 instructions / 109
+      bytes (2026-07-18). boot.asm is now 85% readable (904 of 1060 lines), and
+      everything still missing is the PREPROCESSOR plus `equ`.** `out` alone was
+      37 uses, the largest remaining family, and port I/O turns out to have **no
+      ModRM at all** — its operands are *implied* (always DX and the
+      accumulator), so the width comes from which accumulator was named
+      (`out dx, ax` = `66 EF`) and the imm8-port forms are a **different opcode**
+      (`E6`/`E7`) rather than an addressing mode. Other facts gated by name:
+      `ltr ax` is `0F 00 D8` with **no** `0x66` despite a 16-bit operand (the
+      instruction takes r/m16 by definition, so the size needs no announcing);
+      three-operand `imul` uses `6B` with an imm8 and `69` with an imm32;
+      **`rep stosq` is `F3 48 AB` — the `F3` prefix precedes REX.W**; and `o64`
+      is likewise just a REX.W byte prepended to what follows, which is why both
+      prefixes are implemented as "emit a byte, then encode the rest of the
+      line" rather than as instructions. **The jcc set became table-driven**: the
+      old code hardcoded `jz`/`je`/`jnz`/`jne` as four cases, but every
+      conditional jump is one opcode family plus a 4-bit condition (short
+      `0x70+cc`, near `0F 80+cc`), and the ALIASES name one condition rather
+      than several — `jc` ≡ `jb`, `jnc` ≡ `jae`, `jz` ≡ `je` — so they must
+      encode identically, which is asserted directly. *(That alias check earns
+      its place: a wrong condition code still assembles into a perfectly valid
+      program that simply branches on the WRONG FLAG. Byte-identity is the only
+      thing that catches it — no test of behaviour would, short of running the
+      kernel.)*
+
+      **`equ` SYMBOLIC CONSTANTS added, byte-identical over an 81-byte image
+      (2026-07-18); boot.asm is now 88% readable (932 of 1060 lines) and the
+      ONLY thing left is the preprocessor** (`%ifdef`/`%define`/`%include`, 121
+      lines) plus 7 lines of `section`/`global`/`incbin`. **★ The slice exists
+      for a DISTINCTION, not a directive: an equ symbol is a NUMBER, a label is
+      an ADDRESS, the syntax at the use site is identical, and NASM encodes them
+      differently** — `mov rax, SLOTSZ` is `b8` + imm32 (5 bytes) where
+      `mov rax, start` is a 10-byte `movabs`. An assembler that treated equ
+      symbols as labels would emit a clean-looking image with every constant
+      five bytes too long and every address after it wrong. *(This also
+      corrects an earlier note in this entry claiming boot.asm used `%define`
+      rather than `equ`; it uses both. The profiling missed the ~25 `equ` lines
+      because the first token on such a line is the SYMBOL, not the directive —
+      a reminder that a measurement is only as good as what it counts.)*
+      Implemented as **token substitution** between tokenizing and the passes:
+      an equ value is a constant, so replacing the symbol with its literal text
+      makes every downstream path — immediates, displacements, data definitions,
+      `org` — work unchanged, with no table threaded through them and no risk of
+      one operand position forgetting to consult it. *Honest scope:* whole-token
+      matching only, so a symbol inside a bracket token (`[rdi+COM1]`) is not
+      substituted — that needs expression parsing, which is the same machinery
+      `idt + 0x21 * 16` requires and belongs with it.
+
+      **THE PREPROCESSOR added — `%define` / `%ifdef` / `%ifndef` / `%else` /
+      `%elifdef` / `%endif` / `%include` — byte-identical over a 58-byte image
+      (2026-07-18). boot.asm is now 99.3% readable (1053 of 1060 lines); only
+      `section` (5), `global` (1) and `incbin` (1) remain.** This is a DIFFERENT
+      SUBSYSTEM from every slice above it: a text layer running BEFORE the
+      tokenizer, deciding which lines the assembler ever sees. It matters
+      because the `%ifdef` guards are how every kernel variant (K2, K5a, HAL2B,
+      RING3, HH1_HIGHMAP) is selected out of ONE source file — without it
+      `boot.asm` cannot be assembled at all, whatever the opcode coverage.
+      Scoped by measuring first, and the measurement kept it small: **no
+      function-like `%define`** (zero take arguments), most are valueless FLAGS
+      existing only to be tested, conditionals nest to depth 4 and balance, and
+      there are 4 `%include`s — so macro EXPANSION is not needed, only
+      definition, conditional selection and file splicing. `%include` **splices**
+      into the line stream and continues rather than recursing into a separate
+      pass, which falls out of the design and is also what NASM does: the
+      included file INHERITS the enclosing conditional state (`kbdirq.asm` sits
+      entirely inside the parent's `%ifdef HAL2B`) and a `%define` it makes stays
+      visible AFTER the include ends — both verified. **★ The gate's strongest
+      assertions are NEGATIVE ones** — that `%else` bodies, untaken `%ifdef`
+      bodies and untaken `%elifdef` branches DO NOT appear — because a
+      conditional that fails to *suppress* still assembles and still runs; it
+      merely carries code from a variant that was never selected, which is
+      exactly how a kernel built for one configuration ends up containing
+      another's instructions.
+
+      **`section` / `global` / `incbin` added — boot.asm's SYNTAX is now 100%
+      covered (1060 of 1060 lines parse and encode), 13 byte-identity gates
+      (2026-07-18).** `incbin` splices a binary file verbatim (boot.asm embeds
+      the LA image `native_codegen3_out` into `.la_image`, which is what makes
+      the kernel and the host binary literally the same bytes); `global` emits
+      nothing, since a flat image has no symbol table to export into, and only
+      becomes meaningful with an object writer; `section` emits its default
+      start padding — a section begins on a 4-byte boundary, zero-filled
+      (measured: a `.text` of 1/5/9/17 bytes puts the next section at
+      4/8/12/20). **Two measurements corrected claims written earlier in this
+      very entry:** `align` pads with `0x90` NOP in `.rodata` and `.data` too,
+      NOT only `.text` — the zero-fill between sections is section-START
+      padding, a different mechanism, and the earlier "data sections pad with
+      zeros" line was reasoning rather than measurement. And NASM raises a
+      section's start alignment to the LARGEST `align` inside it, which is NOT
+      implemented — named here rather than left as a silent divergence, since it
+      affects multi-section `-f bin` only, never the `-f elf64` path boot.asm
+      takes. *(Also settled: `-D` command-line defines and `-i` include paths
+      need NO asm.la feature — `-D X` is exactly prepending `%define X`, and
+      `-i` is running from that directory. Proven by the boot.asm end-to-end
+      test doing precisely this. Do not build features the invocation already
+      provides.)*
+
+      **OBJECT-WRITER SCOPE, measured (2026-07-18).** Rather than wait on the
+      `link` track to specify the format, the requirement was measured from
+      `boot.asm`'s own `nasm -f elf64` output — the target defines the spec.
+      It needs only **three relocation types**: `R_X86_64_64` (41),
+      `R_X86_64_32` (21), `R_X86_64_32S` (1). **No `R_X86_64_PC32` at all** —
+      intra-section jumps and calls are resolved by the assembler itself and
+      cross-section references are absolute, which removes an entire class of
+      work. **107 symbols** (101 `NOTYPE LOCAL` labels, 5 `SECTION`, one
+      `GLOBAL` `_start`, one `FILE`) and **11 section headers** (`.multiboot`,
+      `.boot32`, `.rodata`, `.la_image` PROGBITS; `.bss` NOBITS; `.shstrtab`,
+      `.symtab`, `.strtab`; `.rela.boot32`, `.rela.rodata`). That is a bounded
+      job comparable to the preprocessor slice — not the open-ended one the
+      phrase "ELF object writer" suggests.
+
+      **★ HONEST SCOPE CORRECTION (2026-07-18), recorded because the coverage
+      number invites a wrong conclusion.** `boot.asm` is 99.3% *readable* — every
+      one of those lines parses and encodes — but it is built with
+      **`nasm -f elf64 -D HAL4 -i kernel/`** and linked with
+      **`ld -n -T kernel/kernel.ld`**, while `asm.la` emits a FLAT `-f bin`
+      image. Line coverage measures SYNTAX, not output format, so 99.3% does
+      **not** mean NASM can leave the kernel build. What that actually requires,
+      none of it yet built:
+      **(a) an ELF64 RELOCATABLE-OBJECT writer** — section headers, a symbol
+      table (`global _start`), and `.rela` relocations for every cross-section
+      and absolute reference. This is the real remaining work and is comparable
+      in size to the preprocessor slice. **It is also the convergence point with
+      the `link` track**, which READS ELF64 objects — the two halves meet at
+      this format, so the shape should be agreed rather than guessed
+      (a `NEEDS` is posted on the coordination board).
+      **(b) command-line defines** — variant selection is `nasm -D HAL4` /
+      `-dK6C` from the BUILD SCRIPT, not from inside the source, so the
+      preprocessor needs externally-supplied defines to select a variant at all.
+      **(c) an include search path** (`-i kernel/`).
+      **(d) `section` / `global` / `incbin`** — the last 7 lines.
+      **(e) `align` padding is section-dependent**: all 12 `align`s in boot.asm
+      sit in `.bss`/`.rodata`/`.multiboot` and pad with ZEROS; the current
+      `0x90` NOP rule is correct only for `-f bin`'s single `.text`. This is the
+      dependency flagged when `align` was built, now come due.
+
       *Honest cost, measured then reduced:* assembling N `mov rax, rcx` (CPU
       time under identical load) went `0.09` → `0.49` s/instruction with the
       slice — linear in program length, but a 5.5x constant — and back to

@@ -186,3 +186,4 @@ watched.la
 /gate_s32.o
 /abs.log
 /s32.log
+/.asmgate/

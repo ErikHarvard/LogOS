@@ -1287,18 +1287,19 @@ say "LA-native assembler (asm.la — x86-64 assembled by Lingua Adamica, byte-id
 # memory operands, no labels/relocation, no jumps — so it CANNOT yet assemble
 # boot.asm or secd.asm. Closed for what is here, honestly open beyond it.
 ok=1
+mkdir -p .asmgate
 if ! command -v nasm >/dev/null 2>&1; then
     echo "SKIP  asm.la byte-identity gate: nasm not installed (nothing to diff against)"
 else
-    rm -f asm_out.bin /tmp/nasm_ref.bin asm_in.asm
+    rm -f asm_out.bin .asmgate/nasm_ref.bin asm_in.asm
     cp asm_test.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm.out 2>&1 || { echo "FAIL  asm.la: run failed: $(tail -1 /tmp/asm.out)"; ok=0; }
-    nasm -f bin asm_test.asm -o /tmp/nasm_ref.bin 2>/dev/null || { echo "FAIL  asm.la: nasm reference failed"; ok=0; }
+    ./tiny_host asm.la >.asmgate/asm.out 2>&1 || { echo "FAIL  asm.la: run failed: $(tail -1 .asmgate/asm.out)"; ok=0; }
+    nasm -f bin asm_test.asm -o .asmgate/nasm_ref.bin 2>/dev/null || { echo "FAIL  asm.la: nasm reference failed"; ok=0; }
     # (1) THE CLAIM — the same bytes as the tool it replaces. No partial credit.
-    cmp -s asm_out.bin /tmp/nasm_ref.bin \
+    cmp -s asm_out.bin .asmgate/nasm_ref.bin \
       || { echo "FAIL  asm.la: output DIFFERS from nasm"; ok=0;
            python3 - <<'PY'
-a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_ref.bin','rb').read()
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_ref.bin','rb').read()
 print('      asm.la:', ' '.join(str(x) for x in a))
 print('      nasm  :', ' '.join(str(x) for x in b))
 for i,(x,y) in enumerate(zip(a,b)):
@@ -1317,13 +1318,13 @@ PY
     #      be two's complement (jz start @22 -> 0f 84 e4 ff ff ff = -28). LA's
     #      div/mod on a negative is unreliable, so it is folded into the unsigned
     #      32-bit range before being split — asserted, not assumed.
-    rm -f asm_out.bin /tmp/nasm_lab.bin; cp asm_test_labels.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm_lab.out 2>&1 || { echo "FAIL  asm.la: label program failed: $(tail -1 /tmp/asm_lab.out)"; ok=0; }
-    nasm -f bin asm_test_labels.asm -o /tmp/nasm_lab.bin 2>/dev/null
-    cmp -s asm_out.bin /tmp/nasm_lab.bin \
+    rm -f asm_out.bin .asmgate/nasm_lab.bin; cp asm_test_labels.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_lab.out 2>&1 || { echo "FAIL  asm.la: label program failed: $(tail -1 .asmgate/asm_lab.out)"; ok=0; }
+    nasm -f bin asm_test_labels.asm -o .asmgate/nasm_lab.bin 2>/dev/null
+    cmp -s asm_out.bin .asmgate/nasm_lab.bin \
       || { echo "FAIL  asm.la: labels/jumps DIFFER from nasm"; ok=0;
            python3 - <<'PY'
-a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_lab.bin','rb').read()
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_lab.bin','rb').read()
 print('      asm.la:', ' '.join(str(x) for x in a))
 print('      nasm  :', ' '.join(str(x) for x in b))
 for i,(x,y) in enumerate(zip(a,b)):
@@ -1346,13 +1347,13 @@ PY
     #                         SIB=0x24;
     #        disp:            0 -> mod=00; fits signed byte -> mod=01+disp8
     #                         (negative in two's complement); else mod=10+disp32.
-    rm -f asm_out.bin /tmp/nasm_mem.bin; cp asm_test_mem.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm_mem.out 2>&1 || { echo "FAIL  asm.la: memory-operand program failed: $(tail -1 /tmp/asm_mem.out)"; ok=0; }
-    nasm -f bin asm_test_mem.asm -o /tmp/nasm_mem.bin 2>/dev/null
-    cmp -s asm_out.bin /tmp/nasm_mem.bin \
+    rm -f asm_out.bin .asmgate/nasm_mem.bin; cp asm_test_mem.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_mem.out 2>&1 || { echo "FAIL  asm.la: memory-operand program failed: $(tail -1 .asmgate/asm_mem.out)"; ok=0; }
+    nasm -f bin asm_test_mem.asm -o .asmgate/nasm_mem.bin 2>/dev/null
+    cmp -s asm_out.bin .asmgate/nasm_mem.bin \
       || { echo "FAIL  asm.la: memory operands DIFFER from nasm"; ok=0;
            python3 - <<'PY'
-a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_mem.bin','rb').read()
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_mem.bin','rb').read()
 print('      asm.la:', ' '.join(str(x) for x in a))
 print('      nasm  :', ' '.join(str(x) for x in b))
 for i,(x,y) in enumerate(zip(a,b)):
@@ -1372,20 +1373,20 @@ bad=[n for n,okk in q if not okk]
 if bad: print("      regressed:", "; ".join(bad))
 sys.exit(1 if bad else 0)
 PY
-    rm -f /tmp/nasm_mem.bin /tmp/asm_mem.out
+    rm -f .asmgate/nasm_mem.bin .asmgate/asm_mem.out
     # (2d2) OPERAND WIDTHS + hex literals + size keywords + immediate-to-memory.
     #       The kernel .asm carry 713 sub-64-bit register mentions against 451
     #       64-bit ones and 271 hex literals, so a 64-bit/decimal-only assembler
     #       reads almost none of the OS. Width is not decoration: it selects the
     #       opcode (the 8-bit form is the 32-bit one MINUS ONE), the 0x66 prefix,
     #       and whether a REX byte may exist at all.
-    rm -f asm_out.bin /tmp/nasm_w.bin; cp asm_test_width.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm_w.out 2>&1 || { echo "FAIL  asm.la: width program failed: $(tail -1 /tmp/asm_w.out)"; ok=0; }
-    nasm -f bin asm_test_width.asm -o /tmp/nasm_w.bin 2>/dev/null || { echo "FAIL  asm.la: nasm width reference failed"; ok=0; }
-    cmp -s asm_out.bin /tmp/nasm_w.bin \
+    rm -f asm_out.bin .asmgate/nasm_w.bin; cp asm_test_width.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_w.out 2>&1 || { echo "FAIL  asm.la: width program failed: $(tail -1 .asmgate/asm_w.out)"; ok=0; }
+    nasm -f bin asm_test_width.asm -o .asmgate/nasm_w.bin 2>/dev/null || { echo "FAIL  asm.la: nasm width reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_w.bin \
       || { echo "FAIL  asm.la: operand widths DIFFER from nasm"; ok=0;
            python3 - <<'PY'
-a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_w.bin','rb').read()
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_w.bin','rb').read()
 print('      asm.la:', a.hex(' '))
 print('      nasm  :', b.hex(' '))
 for i,(x,y) in enumerate(zip(a,b)):
@@ -1423,11 +1424,11 @@ PY
              'mov rax, [rdi+8|unterminated ['; do
         prog="${c%%|*}"; want="${c##*|}"
         printf 'bits 64\n%s\n' "$prog" > asm_in.asm
-        if ./tiny_host asm.la >/tmp/asm_red.out 2>&1; then
+        if ./tiny_host asm.la >.asmgate/asm_red.out 2>&1; then
             echo "FAIL  asm.la: '$prog' assembled instead of halting loudly"; ok=0
         else
-            grep -qF "$want" /tmp/asm_red.out \
-              || { echo "FAIL  asm.la: '$prog' halted without naming '$want': $(tail -1 /tmp/asm_red.out)"; ok=0; }
+            grep -qF "$want" .asmgate/asm_red.out \
+              || { echo "FAIL  asm.la: '$prog' halted without naming '$want': $(tail -1 .asmgate/asm_red.out)"; ok=0; }
         fi
     done
     # …and the negative control: a LEGAL program must still assemble, so the
@@ -1435,7 +1436,296 @@ PY
     printf 'bits 64\nmov byte [rdi], 5\nmov ah, bl\n' > asm_in.asm
     ./tiny_host asm.la >/dev/null 2>&1 \
       || { echo "FAIL  asm.la: a legal width program was rejected by a guard"; ok=0; }
-    rm -f /tmp/nasm_w.bin /tmp/asm_w.out /tmp/asm_red.out
+    rm -f .asmgate/nasm_w.bin .asmgate/asm_w.out .asmgate/asm_red.out
+    # (2d4) GROUP-1 ALU with IMMEDIATES + shifts + inc/dec + test/lea + no-arg.
+    #       Scoped by profiling the kernel .asm: reg+imm is the DOMINANT shape
+    #       (or 31 of 45 uses, shr 32 of 32, cmp 11 of 23, and 5 of 5) and
+    #       asm.la could not encode it at all — its ALU was register-to-register
+    #       only. With this, 75% of boot.asm's 1060 lines are readable; what
+    #       remains is mostly the PREPROCESSOR/directive layer (%ifdef/%define/
+    #       %include = 106 lines, resb/dq/dd/align/section = 53), not opcodes.
+    rm -f asm_out.bin .asmgate/nasm_alu.bin; cp asm_test_alu.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_alu.out 2>&1 || { echo "FAIL  asm.la: ALU program failed: $(tail -1 .asmgate/asm_alu.out)"; ok=0; }
+    nasm -f bin asm_test_alu.asm -o .asmgate/nasm_alu.bin 2>/dev/null || { echo "FAIL  asm.la: nasm ALU reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_alu.bin \
+      || { echo "FAIL  asm.la: ALU/shift/test/lea encodings DIFFER from nasm"; ok=0;
+           python3 - <<'PYALU1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_alu.bin','rb').read()
+print('      asm.la:', a.hex(' ')); print('      nasm  :', b.hex(' '))
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x:02x} nasm={y:02x}'); break
+PYALU1
+         }
+    python3 - <<'PYALU2' || { echo "FAIL  asm.la: a NASM encoding-CHOICE rule regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# NASM picks the SHORTEST encoding, and the priority order is NOT the obvious
+# one. Each rule is asserted BY NAME: an encoder violating any would emit
+# something the CPU accepts perfectly and still fail the diff.
+q=[("add rax,8: imm8 form BEATS accumulator",  d[0:4]    == bytes([0x48,0x83,0xc0,0x08])),
+   ("sub al,9: accumulator BEATS 80 /5 at w=1",d[46:48]  == bytes([0x2c,0x09])),
+   ("or ecx,0x80: 0x80 does NOT fit signed i8",d[75:81]  == bytes([0x81,0xc9,0x80,0,0,0])),
+   ("shl rax,1: by-ONE opcode D1, not C1+ib",  d[108:111]== bytes([0x48,0xd1,0xe0])),
+   ("test rdx,8: test has NO imm8 form",       d[136:143]== bytes([0x48,0xf7,0xc2,0x08,0,0,0])),
+   ("lea r8,[rsp+32]: SIB under REX.R",        d[151:156]== bytes([0x4c,0x8d,0x44,0x24,0x20]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYALU2
+    # (2d5) RED PATH for the new families. `shl reg, reg` is the CL-count form,
+    #       which is NOT implemented — it must halt loudly rather than encode
+    #       the register number as though it were a shift count, which would be
+    #       a plausible-looking wrong instruction.
+    printf 'bits 64\nshl rax, rcx\n' > asm_in.asm
+    if ./tiny_host asm.la >.asmgate/asm_red2.out 2>&1; then
+        echo "FAIL  asm.la: 'shl rax, rcx' (unimplemented CL form) assembled instead of halting"; ok=0
+    else
+        grep -qF "asm:" .asmgate/asm_red2.out \
+          || { echo "FAIL  asm.la: 'shl rax, rcx' halted without an asm: diagnostic"; ok=0; }
+    fi
+    # negative control: the legal forms must still assemble
+    printf 'bits 64\nshl rax, 3\nand rax, 15\ntest rax, rbx\nlea rax, [rcx+8]\ncli\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1 \
+      || { echo "FAIL  asm.la: a legal ALU/shift/lea program was rejected"; ok=0; }
+    rm -f .asmgate/nasm_alu.bin .asmgate/asm_alu.out .asmgate/asm_red2.out
+    # (2d6) DATA DEFINITION + LAYOUT: dw/dd/dq, resb/resq, align — and the
+    #       LABEL-AND-INSTRUCTION-ON-ONE-LINE form that boot.asm writes its data
+    #       in (`w1: dw 0x1234`). The passes used to treat any line whose first
+    #       token ended in ":" as a label and NOTHING ELSE, silently dropping
+    #       the rest: the label landed at the right address but its data was
+    #       never emitted, so the image came out short with everything after it
+    #       misplaced. Invisible until now because every earlier test program
+    #       put its labels on their own lines.
+    rm -f asm_out.bin .asmgate/nasm_data.bin; cp asm_test_data.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_data.out 2>&1 || { echo "FAIL  asm.la: data program failed: $(tail -1 .asmgate/asm_data.out)"; ok=0; }
+    nasm -f bin asm_test_data.asm -o .asmgate/nasm_data.bin 2>/dev/null || { echo "FAIL  asm.la: nasm data reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_data.bin \
+      || { echo "FAIL  asm.la: data/layout directives DIFFER from nasm"; ok=0;
+           python3 - <<'PYDAT1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_data.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYDAT1
+         }
+    python3 - <<'PYDAT2' || { echo "FAIL  asm.la: a data/layout semantic regressed"; ok=0; }
+import sys,struct
+d=open('asm_out.bin','rb').read()
+# Two of these are NOT what they look like, and both were pinned by assembling
+# with NASM and reading the bytes back rather than by reasoning about them.
+q=[("dw/dd/dq little-endian",        d[6:8]==bytes([0x34,0x12]) and d[0x18:0x20]==bytes([0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11])),
+   ("label as data is ORG-ABSOLUTE", struct.unpack('<Q',d[0x28:0x30])[0]==0x400000 and struct.unpack('<I',d[0x30:0x34])[0]==0x400006),
+   ("align pads with 0x90 NOP, NOT zeros", d[0x39:0x40]==b'\x90'*7),
+   ("resb/resq EMIT zeros, not merely advance", d[0x51:0x65]==b'\x00'*20),
+   ("label+instruction on ONE line emits both", d[0x65]==0x77 and len(d)==102)]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYDAT2
+    # Negative control: a bare label line must still cost 0 bytes, so the
+    # strip-and-redispatch cannot have changed the old form's meaning.
+    printf 'bits 64\nfoo:\nnop\nbar: nop\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0x90,0x90]) else 1)" \
+      || { echo "FAIL  asm.la: bare-label vs label+instruction lines disagree"; ok=0; }
+    rm -f .asmgate/nasm_data.bin .asmgate/asm_data.out
+    # (2d7) THE OPCODE TAIL: port I/O, MSRs, descriptor/system ops, string ops
+    #       with the rep prefix, the o64 prefix, div/imul, rotates, and the FULL
+    #       jcc condition set. This is everything boot.asm still needs that is
+    #       not the preprocessor — coverage 85% (904 of 1060 lines), and what
+    #       remains is %ifdef/%define/%include (121 lines), `equ` symbols, and
+    #       section/global/incbin.
+    rm -f asm_out.bin .asmgate/nasm_misc.bin; cp asm_test_misc.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_misc.out 2>&1 || { echo "FAIL  asm.la: opcode-tail program failed: $(tail -1 .asmgate/asm_misc.out)"; ok=0; }
+    nasm -f bin asm_test_misc.asm -o .asmgate/nasm_misc.bin 2>/dev/null || { echo "FAIL  asm.la: nasm opcode-tail reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_misc.bin \
+      || { echo "FAIL  asm.la: opcode-tail encodings DIFFER from nasm"; ok=0;
+           python3 - <<'PYMSC1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_misc.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYMSC1
+         }
+    python3 - <<'PYMSC2' || { echo "FAIL  asm.la: an opcode-tail encoding rule regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# Port I/O has NO ModRM — its operands are implied (DX and the accumulator), so
+# the width comes from which accumulator was named, and the imm8-port forms are
+# a DIFFERENT OPCODE rather than an addressing mode.
+q=[("out dx,ax needs the 0x66 prefix",   d[1:3]    == bytes([0x66,0xef])),
+   ("out imm8,al is opcode E6, not EE",  d[4:6]    == bytes([0xe6,0x20])),
+   ("ltr ax: 0F 00 /3 with NO 0x66",     d[24:27]  == bytes([0x0f,0x00,0xd8])),
+   ("lgdt [rbx+8]: 0F 01 /2 + disp8",    d[33:37]  == bytes([0x0f,0x01,0x53,0x08])),
+   ("imul r,r,imm8 uses 6B, not 69",     d[42:46]  == bytes([0x48,0x6b,0xc0,0x40])),
+   ("rep stosq: F3 comes BEFORE REX.W",  d[68:71]  == bytes([0xf3,0x48,0xab])),
+   ("o64 sysret: REX.W then 0F 07",      d[73:76]  == bytes([0x48,0x0f,0x07])),
+   ("jl is condition 0xC (7C)",          d[96:98]  == bytes([0x7c,0xea])),
+   ("jc and jb are the SAME condition",  d[104:106]== bytes([0x72,0xe2]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYMSC2
+    # The jcc ALIASES must encode identically — jc==jb, jnc==jae, jz==je — since
+    # they name one condition, not four. A table that got an alias wrong would
+    # still assemble and would still branch, just on the wrong flag.
+    printf 'bits 64\nL:\njb L\njc L\njae L\njnc L\nje L\njz L\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "
+import sys
+d=open('asm_out.bin','rb').read()
+sys.exit(0 if d[0]==d[2]==0x72 and d[4]==d[6]==0x73 and d[8]==d[10]==0x74 else 1)" \
+      || { echo "FAIL  asm.la: jcc aliases (jc/jb, jnc/jae, jz/je) do not encode identically"; ok=0; }
+    rm -f .asmgate/nasm_misc.bin .asmgate/asm_misc.out
+    # (2d8) `equ` — SYMBOLIC CONSTANTS. boot.asm defines ~25 of them, and
+    #       coverage reaches 88% (932 of 1060 lines) with only the preprocessor
+    #       and section/global/incbin left.
+    #
+    #       ★ The point is the DISTINCTION, not the directive: an equ symbol is
+    #       a NUMBER, a label is an ADDRESS, the syntax at the use site is
+    #       identical, and NASM encodes them differently. An assembler that
+    #       treated equ symbols as labels would emit a clean-looking image with
+    #       every constant five bytes too long and every address after it wrong.
+    rm -f asm_out.bin .asmgate/nasm_equ.bin; cp asm_test_equ.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_equ.out 2>&1 || { echo "FAIL  asm.la: equ program failed: $(tail -1 .asmgate/asm_equ.out)"; ok=0; }
+    nasm -f bin asm_test_equ.asm -o .asmgate/nasm_equ.bin 2>/dev/null || { echo "FAIL  asm.la: nasm equ reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_equ.bin \
+      || { echo "FAIL  asm.la: equ constants DIFFER from nasm"; ok=0;
+           python3 - <<'PYEQU1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_equ.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYEQU1
+         }
+    python3 - <<'PYEQU2' || { echo "FAIL  asm.la: the equ-vs-label distinction regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+q=[("mov rax,EQU is a 5-byte imm32",      d[0:5]  ==bytes([0xb8,0x20,0x01,0,0])),
+   ("mov rax,LABEL is a 10-byte movabs",  d[5:15] ==bytes([0x48,0xb8,0,0,0x40,0,0,0,0,0])),
+   ("an equ value reaches the imm8 form", d[24:28]==bytes([0x48,0x83,0xc0,0x08])),
+   ("an equ value reaches the accum form",d[28:34]==bytes([0x48,0x05,0x20,0x01,0,0])),
+   ("an equ value reaches data (dq)",     d[57:65]==bytes([0x20,0x01,0,0,0,0,0,0]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYEQU2
+    # The definition line itself must cost ZERO bytes, and an equ symbol must
+    # NOT be resolvable as a jump target (it is a value, not an address).
+    printf 'bits 64\nK equ 7\nnop\nnop\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0x90,0x90]) else 1)" \
+      || { echo "FAIL  asm.la: an equ definition line emitted bytes"; ok=0; }
+    rm -f .asmgate/nasm_equ.bin .asmgate/asm_equ.out
+    # (2d9) THE PREPROCESSOR — %define / %ifdef / %ifndef / %else / %elifdef /
+    #       %endif / %include. A text layer running BEFORE the tokenizer, and a
+    #       different subsystem from every slice above it. It is what selects
+    #       each kernel variant (K2, K5a, HAL2B, RING3, HH1_HIGHMAP) out of ONE
+    #       source, so without it boot.asm cannot be assembled at all regardless
+    #       of opcode coverage. With it, boot.asm reaches 99.3% (1053 of 1060
+    #       lines); only section/global/incbin remain.
+    rm -f asm_out.bin .asmgate/nasm_pp.bin; cp asm_test_pp.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_pp.out 2>&1 || { echo "FAIL  asm.la: preprocessor program failed: $(tail -1 .asmgate/asm_pp.out)"; ok=0; }
+    nasm -f bin asm_test_pp.asm -o .asmgate/nasm_pp.bin 2>/dev/null || { echo "FAIL  asm.la: nasm preprocessor reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_pp.bin \
+      || { echo "FAIL  asm.la: preprocessor output DIFFERS from nasm"; ok=0;
+           python3 - <<'PYPP1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_pp.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+print('      asm.la:', a.hex(' ')); print('      nasm  :', b.hex(' '))
+PYPP1
+         }
+    python3 - <<'PYPP2' || { echo "FAIL  asm.la: a preprocessor semantic regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# The strongest assertions here are the NEGATIVE ones. A conditional that fails
+# to SUPPRESS still assembles and still runs -- it just silently includes code
+# from a variant that was not selected, which is exactly how a kernel built for
+# one configuration ends up carrying another's instructions.
+q=[("total length exactly 58 (nothing leaked)", len(d)==58),
+   ("%else NOT emitted when %ifdef was taken",  d.find(bytes([0xbb,0x02,0,0,0]))==-1),
+   ("%ifdef body NOT emitted when undefined",   d.find(bytes([0xbb,0x03,0,0,0]))==-1),
+   ("%ifndef NOT emitted when defined",         d.find(bytes([0xbe,0x06,0,0,0]))==-1),
+   ("%elifdef selects the right branch (edi=8)",d.find(bytes([0xbf,0x08,0,0,0]))>=0
+                                            and d.find(bytes([0xbf,0x07,0,0,0]))==-1
+                                            and d.find(bytes([0xbf,0x09,0,0,0]))==-1),
+   ("nested conditional, depth 2 (r8d=12)",     d.find(bytes([0x41,0xb8,0x0c,0,0,0]))>=0
+                                            and d.find(bytes([0x41,0xb8,0x0b,0,0,0]))==-1),
+   ("%include splices its body (ecx=0x11)",     d.find(bytes([0xb9,0x11,0,0,0]))>=0),
+   ("include INHERITS outer conditional",       d.find(bytes([0xba,0x22,0,0,0]))>=0),
+   ("%define made INSIDE include visible after",d.find(bytes([0x41,0xb9,0x0d,0,0,0]))>=0),
+   ("%define with a value substitutes",         d[0:5]==bytes([0xb8,0x34,0x12,0,0]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYPP2
+    # A valueless %define is a FLAG: it must register for %ifdef but must NOT
+    # substitute its empty value over the symbol and erase it from the source.
+    printf 'bits 64\n%%define FLAG\n%%ifdef FLAG\nmov eax, 1\n%%endif\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0xb8,1,0,0,0]) else 1)" \
+      || { echo "FAIL  asm.la: a valueless %define did not behave as a flag"; ok=0; }
+    rm -f .asmgate/nasm_pp.bin .asmgate/asm_pp.out
+    # (2da) THE LATER SLICES — sections, labels-as-addresses, expressions,
+    #       control/segment registers. These five programs existed and passed,
+    #       but were only ever run in an ad-hoc loop and NOT wired into
+    #       build.sh, so a regression in any of them would not have failed the
+    #       build. Found by applying the cross-track review checklist to my own
+    #       work: "is the red path gated?" is worth nothing if the gate is not
+    #       in the build at all.
+    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg asm_test_expr3 asm_test_equ2; do
+        rm -f asm_out.bin .asmgate/nasm_$prog.bin
+        cp $prog.asm asm_in.asm
+        ./tiny_host asm.la >.asmgate/$prog.out 2>&1 \
+          || { echo "FAIL  asm.la: $prog failed: $(tail -1 .asmgate/$prog.out)"; ok=0; continue; }
+        nasm -f bin $prog.asm -o .asmgate/nasm_$prog.bin 2>/dev/null \
+          || { echo "FAIL  asm.la: nasm reference for $prog failed"; ok=0; continue; }
+        cmp -s asm_out.bin .asmgate/nasm_$prog.bin \
+          || { echo "FAIL  asm.la: $prog DIFFERS from nasm"; ok=0;
+               python3 - "$prog" <<'PYL'
+import sys
+p=sys.argv[1]
+a=open('asm_out.bin','rb').read(); b=open(f'.asmgate/nasm_{p}.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x:02x} nasm={y:02x}'); break
+PYL
+             }
+    done
+    # The invariants that separate a correct implementation from a plausible
+    # one, asserted BY NAME so a regression identifies itself.
+    cp asm_test_expr.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    python3 - <<'PYX' || { echo "FAIL  asm.la: expression PRECEDENCE regressed"; ok=0; }
+import sys,struct
+d=open('asm_out.bin','rb').read()
+# `mov [pml4 + 511*8], eax` must address pml4+4088, i.e. 0x401024 with this
+# fixture's org and layout. Folding LEFT-TO-RIGHT instead would compute
+# (pml4+511)*8 = 0x2001158 — a wrong address that assembles perfectly and
+# faults only when the kernel walks the page table. The two differ by a factor
+# of eight, so this assertion genuinely discriminates.
+i=d.find(bytes([0x89,0x04,0x25]))
+if i < 0:
+    print("      regressed: could not find the absolute-form mov at all"); sys.exit(1)
+disp=struct.unpack('<I',d[i+3:i+7])[0]
+if disp != 0x401024:
+    print(f"      regressed: precedence wrong — disp32 is 0x{disp:x}, expected 0x401024"
+          f" (left-to-right folding would give 0x2001158)")
+    sys.exit(1)
+sys.exit(0)
+PYX
+    cp asm_test_ctrlseg.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    python3 - <<'PYC' || { echo "FAIL  asm.la: control/segment register encoding regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+q=[("mov cr3,rax -> 0F 22, no REX, mode-independent", d[0:3]==bytes([0x0f,0x22,0xd8])),
+   ("mov rax,cr3 -> 0F 20",                            d[3:6]==bytes([0x0f,0x20,0xd8])),
+   ("mov ds,ax -> 8E with NO prefix",                  d.find(bytes([0x8e,0xd8]))>=0),
+   ("mov ax,ds -> 66 8C (0x66 only in the READ dir)",  d.find(bytes([0x66,0x8c,0xd8]))>=0)]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYC
+    rm -f .asmgate/nasm_asm_test_*.bin
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`
@@ -1446,10 +1736,10 @@ PY
     #      unchanged <=> no promotion <=> fixed point. Same shape as
     #      regen_selfhost.sh iterating the compiler image to ITS fixed point.
     for prog in asm_test_short asm_test_promote; do
-        rm -f asm_out.bin /tmp/nasm_j.bin; cp $prog.asm asm_in.asm
-        ./tiny_host asm.la >/tmp/asm_j.out 2>&1 || { echo "FAIL  asm.la: $prog failed: $(tail -1 /tmp/asm_j.out)"; ok=0; }
-        nasm -f bin $prog.asm -o /tmp/nasm_j.bin 2>/dev/null
-        cmp -s asm_out.bin /tmp/nasm_j.bin || { echo "FAIL  asm.la: $prog DIFFERS from nasm (short/near selection)"; ok=0; }
+        rm -f asm_out.bin .asmgate/nasm_j.bin; cp $prog.asm asm_in.asm
+        ./tiny_host asm.la >.asmgate/asm_j.out 2>&1 || { echo "FAIL  asm.la: $prog failed: $(tail -1 .asmgate/asm_j.out)"; ok=0; }
+        nasm -f bin $prog.asm -o .asmgate/nasm_j.bin 2>/dev/null
+        cmp -s asm_out.bin .asmgate/nasm_j.bin || { echo "FAIL  asm.la: $prog DIFFERS from nasm (short/near selection)"; ok=0; }
     done
     # The two halves of the choice, asserted by name so a regression says which:
     rm -f asm_out.bin; cp asm_test_short.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
@@ -1458,14 +1748,14 @@ PY
     rm -f asm_out.bin; cp asm_test_promote.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
     python3 -c "import sys; d=open('asm_out.bin','rb').read(); sys.exit(0 if d[200]==0xe9 and d[205:207]==bytes([0x0f,0x84]) and len(d)==211 else 1)" \
       || { echo "FAIL  asm.la: an out-of-range jump was not PROMOTED to near (the fixed point did not converge)"; ok=0; }
-    rm -f /tmp/nasm_j.bin /tmp/asm_j.out
+    rm -f .asmgate/nasm_j.bin .asmgate/asm_j.out
     # (2c) AN UNDEFINED LABEL MUST HALT — not silently resolve to 0.
     printf 'bits 64\njmp near nowhere\n' > asm_in.asm
-    URC=0; ./tiny_host asm.la >/tmp/asm_lab_bad.out 2>&1 || URC=$?
+    URC=0; ./tiny_host asm.la >.asmgate/asm_lab_bad.out 2>&1 || URC=$?
     [ "$URC" -ne 0 ] || { echo "FAIL  asm.la: an undefined label did not halt"; ok=0; }
-    grep -q "asm: undefined label" /tmp/asm_lab_bad.out \
+    grep -q "asm: undefined label" .asmgate/asm_lab_bad.out \
       || { echo "FAIL  asm.la: no 'undefined label' diagnostic"; ok=0; }
-    rm -f /tmp/nasm_lab.bin /tmp/asm_lab.out /tmp/asm_lab_bad.out
+    rm -f .asmgate/nasm_lab.bin .asmgate/asm_lab.out .asmgate/asm_lab_bad.out
     cp asm_test.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
     # (2f) ORG + LABEL-AS-IMMEDIATE. A LABEL immediate is NOT the same encoding
     #      as a NUMBER: NASM emits `mov rsi, msg` as 48 be + imm64 (movabs, 10
@@ -1474,13 +1764,13 @@ PY
     #      not arithmetic necessity. asm.la distinguishes them syntactically
     #      (all-digits -> number, else -> label), which also lets SIZEL know the
     #      size before any label address is known.
-    rm -f asm_out.bin /tmp/nasm_org.bin; cp asm_test_org.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm_org.out 2>&1 || { echo "FAIL  asm.la: org program failed: $(tail -1 /tmp/asm_org.out)"; ok=0; }
-    nasm -f bin asm_test_org.asm -o /tmp/nasm_org.bin 2>/dev/null
-    cmp -s asm_out.bin /tmp/nasm_org.bin || { echo "FAIL  asm.la: org/label-immediate DIFFERS from nasm"; ok=0; }
+    rm -f asm_out.bin .asmgate/nasm_org.bin; cp asm_test_org.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_org.out 2>&1 || { echo "FAIL  asm.la: org program failed: $(tail -1 .asmgate/asm_org.out)"; ok=0; }
+    nasm -f bin asm_test_org.asm -o .asmgate/nasm_org.bin 2>/dev/null
+    cmp -s asm_out.bin .asmgate/nasm_org.bin || { echo "FAIL  asm.la: org/label-immediate DIFFERS from nasm"; ok=0; }
     python3 -c "import sys; d=open('asm_out.bin','rb').read(); sys.exit(0 if d[10:12]==bytes([0x48,0xbe]) and d[12:16]==bytes([0x9d,0x00,0x40,0x00]) else 1)" \
       || { echo "FAIL  asm.la: a label immediate did not use movabs at its absolute address"; ok=0; }
-    rm -f /tmp/nasm_org.bin /tmp/asm_org.out
+    rm -f .asmgate/nasm_org.bin .asmgate/asm_org.out
 
     # (2g) THE CAPSTONE — A PROGRAM BUILT BY AN ENTIRELY LA-NATIVE TOOLCHAIN.
     #      elf.la already emitted a runnable ELF from LA, but its 36 bytes of
@@ -1492,28 +1782,49 @@ PY
     #      (This is the assembler + image-layout seam, NOT a linker: one source,
     #      one segment, one load address, no objects and no relocation sections.)
     rm -f asm_native; cp asm_test_org.asm asm_in.asm
-    ./tiny_host asmelf.la >/tmp/asmelf.out 2>&1 || { echo "FAIL  asmelf.la: emit failed: $(tail -1 /tmp/asmelf.out)"; ok=0; }
+    ./tiny_host asmelf.la >.asmgate/asmelf.out 2>&1 || { echo "FAIL  asmelf.la: emit failed: $(tail -1 .asmgate/asmelf.out)"; ok=0; }
     [ -x asm_native ] || { echo "FAIL  asmelf.la: asm_native not emitted executable"; ok=0; }
     NATOUT="$(./asm_native 2>/dev/null)"; NATRC=$?
     [ "$NATRC" -eq 0 ] || { echo "FAIL  asmelf.la: the LA-built binary exited $NATRC"; ok=0; }
     [ "$NATOUT" = "I AM THAT I AM" ] \
       || { echo "FAIL  asmelf.la: the LA-built binary printed '$NATOUT'"; ok=0; }
-    rm -f asm_native /tmp/asmelf.out
+    rm -f asm_native .asmgate/asmelf.out
 
     # (3) LOUD FAILURE — an instruction outside the subset must halt, not emit
     #     silent garbage. An assembler that quietly skips what it cannot encode
     #     is worse than one that refuses.
     printf 'bits 64\nvmxon rax\n' > asm_in.asm
-    ARC=0; ./tiny_host asm.la >/tmp/asm_bad.out 2>&1 || ARC=$?
+    ARC=0; ./tiny_host asm.la >.asmgate/asm_bad.out 2>&1 || ARC=$?
     [ "$ARC" -ne 0 ] || { echo "FAIL  asm.la: an unsupported instruction did not halt loudly"; ok=0; }
-    grep -q "asm: unsupported instruction" /tmp/asm_bad.out \
+    grep -q "asm: unsupported instruction" .asmgate/asm_bad.out \
       || { echo "FAIL  asm.la: no 'unsupported instruction' diagnostic"; ok=0; }
-    rm -f asm_in.asm asm_out.bin /tmp/nasm_ref.bin /tmp/asm.out /tmp/asm_bad.out
+    rm -f asm_in.asm asm_out.bin .asmgate/nasm_ref.bin .asmgate/asm.out .asmgate/asm_bad.out
     if [ "$ok" -eq 1 ]; then
         echo "PASS  asm.la: an x86-64 assembler written in Lingua Adamica — 61 bytes of a 20-instruction program (mov/add/sub/xor r64,r64; mov r64,imm32; push/pop; syscall/ret/nop; r8-r15 via REX) assembled BYTE-IDENTICAL to \`nasm -f bin\`, including NASM's own mov-eax immediate optimisation (b8, not the 10-byte REX.W movabs) — matching its encoding CHOICES, not merely emitting something the CPU accepts. An instruction outside the subset halts loudly rather than emitting silent garbage. The first LA-native toolchain component; the NASM seam is closed for this subset (labels/jumps/memory operands remain, and the byte-identity gate extends to each)"
     fi
 fi
 [ "$ok" -eq 1 ] || exit 1
+
+say "LA linker: N objects -> a running ET_EXEC, no ld (link.la, track B)"
+# The LA-native LINKER. asmelf.la already emitted a runnable ELF, but from ONE
+# source at ONE load address -- `org` made every label absolute, which is all a
+# -f bin image needs. This consumes ET_REL OBJECTS: N inputs from a manifest,
+# sections merged by name, UNDEFINED symbols resolved across translation units,
+# and relocations APPLIED once addresses are known.
+#
+# Verification splits by whether the answer is FORCED or CHOSEN. A relocated
+# instruction is forced -- `call greet` at 0x401001 targeting 0x401010 has
+# exactly one correct rel32 -- so those bytes are diffed against ld. File layout
+# and padding are ld's own choices, so readelf/nm judge those instead. And the
+# last check is not a diff: the emitted binary is RUN, because one can diff
+# correctly and still segfault.
+#
+# Both scripts self-skip with a SKIP line when nasm/ld/readelf/objcopy/gcc are
+# absent, and carry per-run timeouts, so they cannot wedge a build.
+./gate_link.sh       || ok=0
+./gate_link_reloc.sh || ok=0
+[ "$ok" -eq 1 ] || exit 1
+
 
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
