@@ -96,12 +96,15 @@ readelf -l --wide link_out 2>/dev/null | grep -q "LOAD.*RWE"     && { echo "FAIL
 
 # --- NEGATIVE: an unresolved symbol must still refuse, at patch time too ---
 cp link_test_a.o link_in2.o
-if timeout 240 ./tiny_host link_reloc.la >/dev/null 2>&1; then
-    echo "FAIL  link_reloc.la: patched an unresolved symbol instead of refusing"; ok=0
-else
-    timeout 240 ./tiny_host link_reloc.la 2>&1 | grep -q "unresolved symbol: greet" \
-        || { echo "FAIL  link_reloc.la: refused, but not with the unresolved-symbol diagnostic"; ok=0; }
-fi
+#   ONE run per case — see gate_link.sh. Halves the negative-gate cost.
+#   `set -e` makes a bare VAR=$(failing-cmd) fatal, and these commands are
+#   SUPPOSED to fail — so the capture goes inside an `if`, where the shell
+#   exempts it. Getting this wrong killed the gate with no output at all.
+if UOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then URC=0; else URC=$?; fi
+[ "$URC" -ne 0 ] \
+    || { echo "FAIL  link_reloc.la: patched an unresolved symbol instead of refusing"; ok=0; }
+echo "$UOUT" | grep -q "unresolved symbol: greet" \
+    || { echo "FAIL  link_reloc.la: refused, but not with the unresolved-symbol diagnostic"; ok=0; }
 
 # --- R_X86_64_PLT32: the relocation real objects actually carry ---
 #   nasm and gcc emit PLT32 for an ordinary call to a global function, so a
@@ -152,12 +155,14 @@ fi
 cp link_test_dup.o link_in1.o
 cp link_test_b.o   link_in2.o
 rm -f link_out link_text.bin
-if timeout 240 ./tiny_host link_reloc.la >/dev/null 2>&1; then
-    echo "FAIL  link_reloc.la: linked a duplicate definition instead of refusing"; ok=0
-else
-    timeout 240 ./tiny_host link_reloc.la 2>&1 | grep -q "duplicate symbol: greet" \
-        || { echo "FAIL  link_reloc.la: refused, but not with the duplicate-symbol diagnostic"; ok=0; }
-fi
+#   `set -e` makes a bare VAR=$(failing-cmd) fatal, and these commands are
+#   SUPPOSED to fail — so the capture goes inside an `if`, where the shell
+#   exempts it. Getting this wrong killed the gate with no output at all.
+if DOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then DRC=0; else DRC=$?; fi
+[ "$DRC" -ne 0 ] \
+    || { echo "FAIL  link_reloc.la: linked a duplicate definition instead of refusing"; ok=0; }
+echo "$DOUT" | grep -q "duplicate symbol: greet" \
+    || { echo "FAIL  link_reloc.la: refused, but not with the duplicate-symbol diagnostic"; ok=0; }
 #   A refused link must leave NO output — otherwise the next command runs
 #   yesterday's binary and the refusal was cosmetic.
 [ -e link_out ] && { echo "FAIL  link_reloc.la: wrote link_out despite refusing the link"; ok=0; }

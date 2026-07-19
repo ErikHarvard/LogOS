@@ -59,20 +59,26 @@ echo "$B_OUT" | grep -q "offset=12 R_X86_64_64 .*addend=0" \
 #   ld's own output is ET_EXEC, so it is the honest not-an-object input.
 ld -o link_ref link_test_a.o link_test_b.o 2>/dev/null
 cp link_ref link_in.o
-if timeout 60 ./tiny_host link.la >/dev/null 2>&1; then
-    echo "FAIL  link.la: accepted an ET_EXEC — a reader that cannot refuse is worthless"; ok=0
-else
-    timeout 60 ./tiny_host link.la 2>&1 | grep -q "not ET_REL" \
-        || { echo "FAIL  link.la: refused the ET_EXEC but not with the ET_REL diagnostic"; ok=0; }
-fi
+#   ONE run per case: capture output and exit status together. Running the
+#   linker twice — once to see it fail, once to read why — doubled the cost of
+#   every negative gate for no extra information.
+#   `set -e` makes a bare VAR=$(failing-cmd) fatal, and these commands are
+#   SUPPOSED to fail — so the capture goes inside an `if`, where the shell
+#   exempts it. Getting this wrong killed the gate with no output at all.
+if EOUT=$(timeout 60 ./tiny_host link.la 2>&1); then ERC=0; else ERC=$?; fi
+[ "$ERC" -ne 0 ] \
+    || { echo "FAIL  link.la: accepted an ET_EXEC — a reader that cannot refuse is worthless"; ok=0; }
+echo "$EOUT" | grep -q "not ET_REL" \
+    || { echo "FAIL  link.la: refused the ET_EXEC but not with the ET_REL diagnostic"; ok=0; }
 
 printf 'not an elf at all' > link_in.o
-if timeout 60 ./tiny_host link.la >/dev/null 2>&1; then
-    echo "FAIL  link.la: accepted a non-ELF file"; ok=0
-else
-    timeout 60 ./tiny_host link.la 2>&1 | grep -q "not an ELF object" \
-        || { echo "FAIL  link.la: refused the non-ELF but not with the ELF diagnostic"; ok=0; }
-fi
+#   `set -e` makes a bare VAR=$(failing-cmd) fatal, and these commands are
+#   SUPPOSED to fail — so the capture goes inside an `if`, where the shell
+#   exempts it. Getting this wrong killed the gate with no output at all.
+if NOUT=$(timeout 60 ./tiny_host link.la 2>&1); then NRC=0; else NRC=$?; fi
+[ "$NRC" -ne 0 ] || { echo "FAIL  link.la: accepted a non-ELF file"; ok=0; }
+echo "$NOUT" | grep -q "not an ELF object" \
+    || { echo "FAIL  link.la: refused the non-ELF but not with the ELF diagnostic"; ok=0; }
 
 rm -f link_in.o
 [ "$ok" = 1 ] && echo "PASS  link.la: ELF64 object reader agrees with readelf (2 objects, both relocation kinds, 2 negative gates)"
