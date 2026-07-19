@@ -132,6 +132,30 @@ unchallenged. A measured figure was used to support an *unmeasured attribution*.
 Profile by stage before optimising; a compelling analogy to another track's win
 is not evidence about this one.
 
+**★ UNVERIFIED RISK — RELOCATIONS OUTSIDE `.text` MAY BE SILENTLY IGNORED.**
+Found at the end of a session and NOT yet tested, so it is recorded as a
+suspicion rather than a defect. `MKPATCHED` applies `APPLYRELS` using
+`FIND_SEC(".rela.text")` only. An object with a `.rela.data` — trivially
+produced by `msgptr: dq msg`, a pointer stored in `.data` — would have `.data`
+PLACED but never PATCHED, so the pointer would keep its unrelocated value
+(0 plus addend) and the program would read from a wrong address.
+
+Confirmed to exist as an input shape: `nasm` emits both `.rela.data` and
+`.rela.text` for that source. What is NOT confirmed is what this linker does
+with it. Two possibilities and they differ sharply:
+
+  - the section is placed with unrelocated contents -> SILENTLY WRONG, the
+    exact failure `DROPPABLE` and the `SYMVAL` guard exist to prevent
+  - something refuses it earlier -> the boundary is intact and only needs
+    stating
+
+**Test it first.** Link the fixture, then check whether the emitted `.data`
+holds the resolved `.rodata` address or zero. If it is the former the risk is
+void; if the latter, either apply every section's relocations (which is item 1
+below, and would also let `.eh_frame` be placed) or REFUSE an object carrying
+a `.rela.*` for a section that is placed — refusing is cheap and honest, and
+matches how unplaceable sections are already handled.
+
 **1. `.eh_frame` properly**, which means applying EVERY section's relocations
 rather than only `.rela.text`. Until then it stays dropped, and a symbol inside
 it is refused by name rather than resolved.
