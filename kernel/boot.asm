@@ -127,7 +127,38 @@ PCB_SIZE    equ 128
 ; the guard misfires immediately. 0x8000000 (128 MiB) is identity-mapped RAM
 ; above the LA image (4 MiB), its GC worklist (~4-68 MiB) and heap use, giving
 ; a full 7 MiB stack with no underflow. (Requires QEMU -m >= 160 or so; the
-; gates use 256.) The 32-bit trampoline still uses the small boot_stack.
+; gates use 256 — gate_hal4e.sh uses 512.) The 32-bit trampoline still uses the
+; small boot_stack.
+;
+; ── WHAT IS *NOT* GUARDED HERE (measured 2026-07-18, from the built ELF's own
+;    PROL, not inferred from source — disassembled at LA_ENTRY) ──────────────
+;   worklist base 0x410be0 (4.06 MiB) | heap base r15 0x4410be0 (68.0 MiB)
+;   HEAP_END      0x404410be0 (16.07 GiB!) | STACK_LIMIT 0x7900000 (121 MiB)
+;
+; The stack guard is ONE-DIRECTIONAL. `cmp rsp,[STACK_LIMIT]` stops the STACK
+; growing DOWN into the heap. NOTHING stops the HEAP growing UP into the stack:
+; alloc24's only bound is `cmp rcx,[HEAP_END]`, and PROL sets HEAP_END to
+; hb + HEAP_SIZE where HEAP_SIZE is 16 GiB — sized for Linux, where it is lazily
+; mapped address space. On the metal that bound sits ~300x beyond the top of a
+; 512 MiB machine, so it is UNREACHABLE and cannot fire.
+;
+; Concretely, as the heap bumps up from 68 MiB it will:
+;   at 121 MiB (STACK_LIMIT) start overwriting the LA stack — SILENTLY;
+;   at 128 MiB pass the stack top;
+;   at 512 MiB leave physical RAM entirely;
+; and `native: heap exhausted` is never reached in any of those cases. The
+; failure mode is a clobbered return address -> control transfers into stack
+; bytes -> whatever they decode to. There is ~53 MiB of real headroom
+; (68 -> 121 MiB), so this is latent, not immediate — HAL.4e never got near it
+; (that RED was the gate's own screendump; see kernel/gate_hal4e.sh).
+;
+; The FIX belongs in rt_init, not here: it already discriminates metal from
+; Linux (METAL_FLAG / CPL) and already computes STACK_LIMIT, so it is the one
+; place that can clamp HEAP_END to STACK_LIMIT on the metal path and turn a
+; silent overrun into the loud halt the discipline requires. That file is
+; native_codegen3_rt.asm — TRACK A's, not this track's — so this comment states
+; the hazard where a kernel reader will hit it, and the request is on the board.
+; Do not "fix" it here by shrinking the stack; that hides it without closing it.
 LA_STACK_TOP equ 0x8000000
 
 ; HH1: the higher-half kernel base — the top −2 GiB of the 64-bit canonical space,
