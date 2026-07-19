@@ -88,48 +88,44 @@ most wrong implementations also exit non-zero.
 
 ## Next
 
-0. **`DROP` is O(n), and it is no longer a latent concern — it is the dominant
-   cost of the gates now wired into every `build.sh`.** Every byte access
-   re-walks from the file base; `LEDEC`/`CSTR` carry the tail within a field or
-   string, which bought 3.2x, but the accessors are still
-   `(file)(absolute_offset)`. Measured, on the same fixture pair:
+**0. `DROP` is O(n), and it is the dominant cost of the gates now in every
+`build.sh` — not a latent concern about large inputs.** Every byte access
+re-walks from the file base. `LEDEC`/`CSTR` carry the tail within a field or
+string, which bought 3.2x, but the accessors are still
+`(file)(absolute_offset)`. Measured on the same fixture pair:
 
-       26.53 s CPU per link   after the carrying-decoder fix
-       34.78 s CPU per link   now
+    26.53 s CPU per link   after the carrying-decoder fix
+    34.78 s CPU per link   now
 
-   A 31% growth, caused by capability rather than regression — `.data`, `.bss`,
-   N objects, `DROPPABLE`, two more relocation types — because each added
-   section name means more `FIND_SEC` calls, each walking the section table,
-   each byte access re-dropping from offset 0. **Capability growth multiplies
-   against an O(n) accessor.** The suite is ~10 links, so ~350 s CPU, and
-   trimming redundant links bought only ~70 s of that.
+31% growth from CAPABILITY, not regression — `.data`, `.bss`, N objects,
+`DROPPABLE`, two more relocation types — because each added section name means
+more `FIND_SEC` calls, each walking the section table, each byte access
+re-dropping from offset 0. **Capability growth multiplies against an O(n)
+accessor**, so the curve bends upward exactly as the linker becomes more
+useful. The suite is ~10 links ≈ 350 s CPU; trimming redundant links recovered
+only ~70 s of that.
 
-   The fix is a cursor threaded through a whole structure walk: drop once to
-   the section-header table, then step 64 bytes per entry carrying the tail, so
-   reading N headers is O(table) not O(N x offset). It changes the accessor
-   signature from `(file)(offset)` to `(tail)(relative)`, which is `link.la`'s
-   exported API and is consumed by `link_layout.la` and `link_reloc.la` — a
-   third structural refactor, worth starting deliberately rather than
-   appending to a long session. The two before it each surfaced defects only
-   the gates caught.
+The fix: a cursor threaded through a whole structure walk — drop once to the
+section-header table, then step 64 bytes per entry carrying the tail, so
+reading N headers is O(table) not O(N × offset). It changes the accessor
+signature from `(file)(offset)` to `(tail)(relative)`, which is `link.la`'s
+exported API, consumed by `link_layout.la` and `link_reloc.la`. A third
+structural refactor — worth starting deliberately; the two before it each
+surfaced defects only the gates caught.
 
-1. **~~Byte-identity for the 32/32S fixtures~~ — DONE.** All five relocation
-   types are now diffed against `ld`.
+**1. `.eh_frame` properly**, which means applying EVERY section's relocations
+rather than only `.rela.text`. Until then it stays dropped, and a symbol inside
+it is refused by name rather than resolved.
 
-2. **(was 1)** Five relocation types are
-   handled but not verified equally: `PC32`/`PLT32`/`64` are diffed
-   byte-for-byte against `ld`; `32`/`32S` are checked behaviourally only
-   (correct output, exit 30 = `table[2]`). That is a weaker guarantee, and a
-   five-row table implies a uniformity that does not exist.
-3. **`.eh_frame` properly**, which means applying EVERY section's relocations
-   rather than only `.rela.text`. Until then it stays dropped.
-4. **A real linker script**, replacing the hard-coded one-page-per-section
-   layout. `ld` packs sections into shared pages (it put `.data` at `0x403010`,
-   in the previous page's tail); this gives each its own page. Both satisfy
-   `p_offset ≡ p_vaddr (mod page)`; ours is simpler and larger.
-4. Cross-track: `asm.la` emitting ELF objects removes `nasm`. `link.la` is a
-   ready-made oracle for it — emit an object, read it back, require agreement
-   with `readelf` on the same file.
+**2. A real linker script**, replacing the hard-coded one-page-per-section
+layout. `ld` packs sections into shared pages (it put `.data` at `0x403010`, in
+the previous page's tail); this gives each its own page. Both satisfy
+`p_offset ≡ p_vaddr (mod page)`; ours is simpler and larger. A script also makes
+`FITS32` reachable, which is why that guard exists before it can fire.
+
+**3. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
+chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
+back, require agreement with `readelf` on the same file.
 
 ## Two LA traps this track paid for — read before editing any `.la`
 
