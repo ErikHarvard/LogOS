@@ -150,3 +150,4 @@ watched.la
 /churn.n
 /kernel/kernel_polltest.elf
 /kernel/kernel_polltest_64.elf
+/kernel/alloc_churn_str.bin

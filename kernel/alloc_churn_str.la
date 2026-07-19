@@ -1,0 +1,18 @@
+# Companion to alloc_churn.la: the SAME loop, but each iteration also allocates
+# a STRING (the blob path, classidx/alloc_blob) on top of the two boxed ints
+# (the 24-byte cell path, alloc24). Both are discarded immediately, so the live
+# set is still constant.
+#
+# The point is DIFFERENTIAL, not absolute: alloc_churn.la retains ~40 bytes per
+# iteration through the alloc24 path alone. If this version retains only about
+# the same, the blob path reclaims fine and the leak is specific to alloc24 /
+# FREE24. If it retains materially more, both paths leak. That distinction is
+# worth one measurement to whoever repairs the collector, because it says where
+# to look.
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+glyph LOOP = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "done")(la _.
+      SEQ(concat("abcdefgh")("ijklmnop"))(self(sub(n)(1)))))
+glyph MAIN = print(LOOP(str_to_int(read_file("churn.n"))))
