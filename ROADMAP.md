@@ -1353,7 +1353,20 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
         then calls the wrong copy, presenting as wrong behaviour rather than a
         link error. Refused before anything is written, and the gate asserts no
         output survives a refusal.
-      - [ ] **beyond:** N objects and N sections (today: two objects, `.text` +
+      - [x] **`.data` and `.bss`** (`5fb0b5f`, `5968a94`) — three and then four
+        section kinds, per-segment permissions (`.text` R+X, `.rodata` R,
+        `.data`/`.bss` R+W, never R+W+X), and `p_memsz > p_filesz` for `.bss`
+        with no file space spent. `.data` was the first genuinely writable
+        segment, which is what made the W^X assertion mean anything: before it,
+        "no RWE" passed in a world where RWE was unreachable.
+      - [x] **N objects** (`8a933dc`) — a manifest, `link_inputs.txt`, one path
+        per line; manifest order IS link order. A third object needed no code
+        change and landed exactly where `ld` put it. `MAIN` went from thirteen
+        binders to six, every one derived from the object list.
+      - [ ] **beyond:** real gcc objects (they carry `SHF_ALLOC` `.eh_frame`
+        and `.note.gnu.property`, which are refused rather than ignored),
+        `R_X86_64_32`/`32S`, and a real linker script instead of the hard-coded
+        one-page-per-section layout (today: two objects, `.text` +
         `.rodata` — what the fixtures exercise and therefore all that is
         claimed), and a linker script rather than a hard-coded layout.
 - [ ] **LA-native debugger** — the system inspecting its own execution. Deep

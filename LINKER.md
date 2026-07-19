@@ -5,9 +5,9 @@ building it can continue without re-deriving anything.
 
 ## What exists
 
-Two `nasm -f elf64` objects go in; one `ET_EXEC` comes out; it runs.
+N `nasm -f elf64` objects go in; one `ET_EXEC` comes out; it runs.
 
-    a.o + b.o --(link.la, all Lingua Adamica)--> link_out --> "I AM THAT I AM"
+    link_inputs.txt --(link.la, all Lingua Adamica)--> link_out --> "I AM THAT I AM"
 
 No `ld` anywhere in that chain. `nasm` is still there, because `asm.la` emits
 flat `-f bin` images rather than ELF objects — closing that is the standing
@@ -21,6 +21,10 @@ cross-track request to track A, and it would make the chain LA end to end.
 | `gate_link.sh` | gates the reader against `readelf`, over the fixtures **and a real gcc object**. |
 | `gate_link_reloc.sh` | gates the linker: bytes vs `ld`, W^X, page congruence, **runs the binary**, 3 negative gates. |
 | `link_test_{a,b}.asm` | the fixture pair: A calls `greet` (PC32, undefined), B defines it + `.rodata` (64-bit absolute). |
+| `link_test_c.asm` | a THIRD object defining `bump`, so "N objects" is tested rather than asserted. |
+| `link_test_rw.asm` | `.rodata` AND `.data` in one object — forces a third, writable segment. |
+| `link_test_bss.asm` | `.bss`: memory without file bytes (`p_filesz` 0, `p_memsz` 16). |
+| `link_inputs.txt` | the manifest — one object path per line, in link order. |
 | `link_test_plt.asm` | same as A but `wrt ..plt`, so nasm emits PLT32 — what real toolchains actually produce. |
 | `link_test_dup.asm` | defines BOTH `_start` and `greet`, so linking it against B is a duplicate and *nothing else*. |
 
@@ -49,11 +53,15 @@ most wrong implementations also exit non-zero.
 
 ## Honest scope — what it does NOT do
 
-- **Two objects. Two sections** (`.text`, `.rodata`). Anything else that is
-  `SHF_ALLOC` is **refused by name**, not ignored — refusing is why the reader
-  can be pointed at real gcc objects (which carry `.data`/`.bss`/`.eh_frame`)
-  without silently producing wrong addresses.
-- **No `.bss`**: `p_memsz = p_filesz`, so nothing gets zero-fill beyond the file.
+- **N objects** from `link_inputs.txt`, one path per line; manifest order IS
+  link order. **Four section kinds**: `.text`, `.rodata`, `.data`, `.bss`.
+  Anything else that is `SHF_ALLOC` is **refused by name**, not ignored — which
+  is why the reader can be pointed at real gcc objects without silently
+  producing wrong addresses. `.eh_frame` and `.note.gnu.property` are ALLOC, so
+  **real gcc objects are still refused** — that is the next capability gap, not
+  a claim that they work.
+- **Per-segment permissions**: `.text` R+X, `.rodata` R, `.data`/`.bss` R+W,
+  never R+W+X. `.bss` gets `p_memsz > p_filesz` and costs no file space.
 - **No linker script** — the layout is hard-coded to ld's policy on these
   inputs (`.text` @ `0x401000`, `.rodata` @ `0x402000`) precisely so ld's own
   addresses can serve as the witness.
@@ -62,17 +70,23 @@ most wrong implementations also exit non-zero.
 - **32-bit window**: ELF64 fields are 8 bytes, the low 4 are read. Fine here,
   wrong above 4 GB.
 - The **reader** is general (validated on a real gcc object, 14 sections). The
-  **linker** is not. That asymmetry is the whole of the next slice.
+  **linker** now takes N objects and four section kinds, but still only the
+  section names it knows — so the asymmetry is narrower than it was, not gone.
 
 ## Next
 
-1. **N objects / N sections.** The blocker for real input. Today the layout
-   binds `t1sec`/`t2sec`/`r2sec` explicitly and `va1`/`va2` are per-object
-   lambdas; generalising means a list of `(object, section, base)` and a lookup,
-   which is a structural rewrite of `MAIN`'s binder chain — worth starting with
-   fresh context rather than bolting a third section on.
-2. `.bss` (`p_memsz > p_filesz`), then a real linker script.
-3. Cross-track: `asm.la` emitting ELF objects removes `nasm`. `link.la` is a
+1. **Real gcc objects.** They carry `.eh_frame` and `.note.gnu.property`, both
+   `SHF_ALLOC`, so the linker refuses them today. Either place them (both are
+   read-only data; `.eh_frame` only matters for unwinding) or skip them with a
+   stated justification — but *decide*, do not let them be ignored silently,
+   which is the failure the refusal exists to prevent.
+2. **More relocation types.** `R_X86_64_32`/`32S` appear in ordinary compiled
+   code; only PC32, PLT32 and 64 are handled.
+3. **A real linker script**, replacing the hard-coded one-page-per-section
+   layout. `ld` packs sections into shared pages (it put `.data` at `0x403010`,
+   in the previous page's tail); this gives each its own page. Both satisfy
+   `p_offset ≡ p_vaddr (mod page)`; ours is simpler and larger.
+4. Cross-track: `asm.la` emitting ELF objects removes `nasm`. `link.la` is a
    ready-made oracle for it — emit an object, read it back, require agreement
    with `readelf` on the same file.
 
