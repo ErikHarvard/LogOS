@@ -1008,6 +1008,33 @@ glyph INENC = la a. la b.
 
 #   `ltr ax` is 0F 00 D8 with NO 0x66 prefix, even though the operand is 16-bit:
 #   the instruction takes r/m16 by definition, so the size needs no announcing.
+#   ★ THE FAR JUMP — and an honest choice about mode tracking.
+#   `jmp gdt64.code:long_start` is how boot.asm enters long mode: it loads CS
+#   from a GDT selector. It encodes `EA` + offset32 + selector16 and exists ONLY
+#   in 32-bit mode — NASM refuses it under `bits 64` outright.
+#
+#   That contradicts a claim made earlier in this file's history: that treating
+#   `bits` as a no-op is "accidentally correct for boot.asm" because none of its
+#   70 bits-32 lines use a 64-bit register. The test asked about OPERANDS and
+#   the real risk was a mode-specific OPCODE, which it could not see.
+#
+#   ★ What is implemented is SYNTACTIC detection, not mode tracking. A `seg:off`
+#   operand is unambiguous — no other form has a colon there — and since the
+#   instruction only exists in 32-bit mode, its presence implies the mode. That
+#   is sound FOR THIS INSTRUCTION and is not general mode tracking: `bits` is
+#   still a no-op, and any OTHER construct that encodes differently in 32-bit
+#   mode would still be wrong. Named here rather than left implied, because the
+#   previous version of this note was the thing that was wrong.
+glyph HASCOLON = la t. INSTR(":")(t)
+glyph SPLITCOLON = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))(la _. PAIR(cur)(""))
+      (la _. IF(str_eq(str_head(s))(":"))
+               (la _. PAIR(cur)(str_tail(s)))
+               (la _. self(str_tail(s))(concat(cur)(str_head(s))))))
+glyph FARJMP = la labs. la t.
+    (la p. concat(B(234))
+          (concat(LE4(EVAL(labs)(SND(p))))(LE2(EVAL(labs)(FST(p))))))
+    (SPLITCOLON(t)(""))
 glyph INDJMP = la digit. la a.
     concat(REXOPT(4)(0)(REGNUM(a))(FALSE))
    (concat(B(255))(MODRMD(digit)(REGNUM(a))))
@@ -1129,6 +1156,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(OR(str_eq(op)("push"))(str_eq(op)("pop")))
       (la _. IF(lt(REGNUM(A1(ts)))(8))(la _. 1)(la _. 2))(la _.
     IF(str_eq(op)("call"))(la _. 5)(la _.
+    IF(AND(str_eq(op)("jmp"))(HASCOLON(A1(ts))))(la _. 7)(la _.
     IF(AND(str_eq(op)("jmp"))(ISREG(A1(ts))))(la _. LENOF(INDJMP(4)(A1(ts))))(la _.
     IF(AND(str_eq(op)("call"))(ISREG(A1(ts))))(la _. LENOF(INDJMP(2)(A1(ts))))(la _.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
@@ -1155,7 +1183,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(labs)(w)(a)(b))))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))
   (HD(ts))
 
 # ── one instruction -> its bytes (off = this instruction's own address) ──
@@ -1192,6 +1220,8 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(TSTENC))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(LEAENC(labs)))(la _.
     IF(str_eq(op)("call"))(la _. concat(B(232))(LE4(REL32(labs)(TARGET(ts))(add(off)(5)))))(la _.
+    IF(AND(str_eq(op)("jmp"))(HASCOLON(A1(ts))))
+      (la _. FARJMP(labs)(A1(ts)))(la _.
     IF(AND(str_eq(op)("jmp"))(ISREG(A1(ts))))
       (la _. INDJMP(4)(A1(ts)))(la _.
     IF(AND(str_eq(op)("call"))(ISREG(A1(ts))))
@@ -1205,7 +1235,7 @@ glyph ENC10 = la labs. la off. la ts.
                (la _. concat(B(add(112)(JCCC(op))))(B(REL8(labs)(off)(TARGET(ts)))))
                (la _. concat(B(15))(concat(B(add(128)(JCCC(op))))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
     IF(str_eq(op)("mov"))(la _. WITHOPS(ts)(MOVENC(labs)))
-      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))))
   (HD(ts))
 
 #   Every line is tokenized ONCE, up front, and the passes consume token lists
