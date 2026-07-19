@@ -9,10 +9,18 @@
 # FREE24. If it retains materially more, both paths leak. That distinction is
 # worth one measurement to whoever repairs the collector, because it says where
 # to look.
+# *** CORRECTED 2026-07-19. The first version wrote the loop as
+#   SEQ(concat(...))(self(...))
+# which puts the RECURSIVE CALL IN ARGUMENT POSITION. Arguments are evaluated on
+# application, so that is NOT a tail call, TCO does not apply, the dump grows and
+# the program dies with `native: stack overflow` (exit 134) at a FIXED depth.
+# Its constant RSS was the memory in hand AT THE CRASH, and I read it as a
+# steady-state plateau. It was not. The allocation is now the ARGUMENT and
+# self(...) is the BODY, so the recursion is genuinely in tail position.
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")
 glyph SEQ  = la a. la b. b
 glyph LOOP = Z(la self. la n.
     IF(int_eq(n)(0))(la _. "done")(la _.
-      SEQ(concat("abcdefgh")("ijklmnop"))(self(sub(n)(1)))))
+      (la s. self(sub(n)(1)))(concat("abcdefgh")("ijklmnop"))))
 glyph MAIN = print(LOOP(str_to_int(read_file("churn.n"))))
