@@ -1,0 +1,34 @@
+# HAL.4f pre-flight: the SET-1 scancode -> character decode, on the HOST.
+#
+# comp_term.la's native_codegen3 compile is ~13 min (superlinear codegen), so an
+# off-by-one in a 58-byte flat keymap would cost a quarter-hour to discover on
+# the metal. KEYMAP / KMLEN / DROP / BYTE_AT / KEYCH are copied VERBATIM from
+# comp_term.la and exercised here with no screen, no PCI and no i8042 — the
+# pure-generation discipline the Theourgia stages use.
+#
+# If this file and comp_term.la ever disagree, THIS is the stale one: the metal
+# program is the artifact, this is its bench probe.
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
+    self(sub(n)(1))(str_tail(s))))
+glyph BYTE_AT = la s. la i. str_head(DROP(i)(s))
+
+glyph KEYMAP = "~~1234567890~~~~QWERTYUIOP~~~~ASDFGHJKL~~~~~ZXCVBNM~~~~~~ "
+glyph KMLEN  = 58
+glyph KEYCH = la sc.
+    IF(lt(sc)(KMLEN))(la _. BYTE_AT(KEYMAP)(sc))(la _. "~")
+
+# The gate types L,O,G,O,S — SET-1 make codes 38,24,34,24,31.
+glyph TYPED = concat(concat(concat(concat(KEYCH(38))(KEYCH(24)))(KEYCH(34)))(KEYCH(24)))(KEYCH(31))
+
+glyph MAIN =
+    SEQ(print(concat("typed=")(TYPED)))
+   (SEQ(print(concat("len=")(str_len(TYPED))))
+   (SEQ(print(concat("space57=[")(concat(KEYCH(57))("]"))))
+   (SEQ(print(concat("esc1=")(KEYCH(1))))
+   (SEQ(print(concat("enter28=")(KEYCH(28))))
+   (SEQ(print(concat("release166=")(KEYCH(166))))
+       (print(concat("past_end_58=")(KEYCH(58)))))))))
