@@ -88,30 +88,49 @@ most wrong implementations also exit non-zero.
 
 ## Next
 
-**0. `DROP` is O(n), and it is the dominant cost of the gates now in every
-`build.sh` — not a latent concern about large inputs.** Every byte access
-re-walks from the file base. `LEDEC`/`CSTR` carry the tail within a field or
-string, which bought 3.2x, but the accessors are still
-`(file)(absolute_offset)`. Measured on the same fixture pair:
+**0. There is NO single hot spot — the cost is reduction COUNT, and this item
+replaces a wrong diagnosis I committed one revision earlier.** Profiled by
+stage, same fixture pair, CPU:
 
-    26.53 s CPU per link   after the carrying-decoder fix
-    34.78 s CPU per link   now
+    read objects   0.81 s
+    + plan         4.73 s   (+3.9)
+    + relocations 14.97 s   (+10.2)
+    + regions     17.21 s   (+2.2)
+    full link     34.78 s   (+17.5 in emission)
 
-31% growth from CAPABILITY, not regression — `.data`, `.bss`, N objects,
-`DROPPABLE`, two more relocation types — because each added section name means
-more `FIND_SEC` calls, each walking the section table, each byte access
-re-dropping from offset 0. **Capability growth multiplies against an O(n)
-accessor**, so the curve bends upward exactly as the linker becomes more
-useful. The suite is ~10 links ≈ 350 s CPU; trimming redundant links recovered
-only ~70 s of that.
+Two plausible culprits were tested and **both were wrong**:
 
-The fix: a cursor threaded through a whole structure walk — drop once to the
-section-header table, then step 64 bytes per entry carrying the tail, so
-reading N headers is O(table) not O(N × offset). It changes the accessor
-signature from `(file)(offset)` to `(tail)(relative)`, which is `link.la`'s
-exported API, consumed by `link_layout.la` and `link_reloc.la`. A third
-structural refactor — worth starting deliberately; the two before it each
-surfaced defects only the gates caught.
+- **`DROP`'s O(n) walk** — asserted here previously as "the dominant cost",
+  with a real measurement (26.53 → 34.78 s per link, +31%) behind it. The
+  measurement was sound; the causal attribution was not. Emission dominates,
+  and emission is not `DROP`.
+- **`ZEROS` building padding one byte at a time** — visibly quadratic-looking,
+  and track A had won 12x on exactly this shape in `asm.la` (`REPB repeats by
+  doubling`). The analogy was compelling and false: **20 000 naive `concat`s
+  cost 2.05 s CPU**, so the ~4000-byte `.rodata` gap costs ~0.4 s, not 17.5.
+  `concat` is not quadratic here.
+
+What is actually true: roughly **0.1 ms per LA reduction**, millions of them,
+spread across relocation and emission. No function is algorithmically wrong;
+the linker simply performs a great many operations.
+
+`DROP` still matters — but as REDUCTION COUNT, not copying cost. Walking n
+bytes is n reductions however cheap each one is, so a cursor threaded through a
+structure walk (drop once to the section-header table, step 64 bytes per entry
+carrying the tail) still removes real work. It changes `link.la`'s exported
+accessor signature from `(file)(offset)` to `(tail)(relative)`, consumed by
+`link_layout.la` and `link_reloc.la`.
+
+**The 31% per-link growth is real and is not any one function.** It tracks
+capability — more section names means more `FIND_SEC` calls, more plan entries,
+more regions — so the curve bends upward as the linker becomes more useful, and
+no single fix flattens it.
+
+★ **Method note, because the wrong version was persuasive.** It had a number, a
+mechanism, and a plausible story, which is exactly why it survived a commit
+unchallenged. A measured figure was used to support an *unmeasured attribution*.
+Profile by stage before optimising; a compelling analogy to another track's win
+is not evidence about this one.
 
 **1. `.eh_frame` properly**, which means applying EVERY section's relocations
 rather than only `.rela.text`. Until then it stays dropped, and a symbol inside

@@ -171,10 +171,31 @@ glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
 
 #   Pad with single-byte nops — see the header on why this is our choice and
 #   why the gate does not diff it.
-glyph NOPS = Z(la self. la n.
-    IF(int_eq(n)(0))(la _. "")(la _. concat(chr("144"))(self(sub(n)(1)))))
-glyph ZEROS = Z(la self. la n.
-    IF(int_eq(n)(0))(la _. "")(la _. concat(chr("0"))(self(sub(n)(1)))))
+#   ★ PADDING IS BUILT BY DOUBLING, not one byte at a time.
+#   The obvious form -- concat(ch)(self(n-1)) -- is n concats, each copying the
+#   whole accumulator, so building k bytes costs O(k^2). Profiling put ~17.5 s
+#   of a 34.8 s link in EMISSION, and the .rodata gap alone is ~4000 bytes of
+#   padding: about 8 million character copies to produce 4 KB of zeros.
+#
+#   Doubling halves the count each step and concatenates the result with
+#   itself, so the total copying is ~2k rather than k^2/2. Track A hit exactly
+#   this in asm.la (`REPB repeats by doubling -- 12x on reserved space`), which
+#   is the same shape one layer down: both of us were generating large runs of
+#   a constant byte the naive way.
+#
+#   Measured before changing anything, because the plausible culprit was DROP's
+#   O(n) walk and the profile said otherwise -- read 0.81 s, plan 3.9 s,
+#   relocation 10.2 s, regions 2.2 s, emission 17.5 s.
+glyph REPCH = la ch. (Z(la self. la n.
+    IF(int_eq(n)(0))
+      (la _. "")
+      (la _. (la half.
+               IF(int_eq(mod(n)(2))(0))
+                 (la _. concat(half)(half))
+                 (la _. concat(ch)(concat(half)(half))))
+             (self(div(n)(2))))))
+glyph NOPS  = la n. REPCH(chr("144"))(n)
+glyph ZEROS = la n. REPCH(chr("0"))(n)
 glyph LE2 = la v. concat(B1(v))(B1(div(v)(256)))
 
 # ── SLICE 4: EMITTING THE EXECUTABLE ────────────────────────────────────────
