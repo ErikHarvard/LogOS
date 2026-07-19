@@ -427,9 +427,10 @@ glyph MEMPARTS = la t. SPLITSIGN(STRIPBRK(t))("")
 #   (scale=0, index=none(100), base=none(101)), then a disp32. A base of -1 is
 #   the sentinel for that shape; REXOPT already treats it correctly, since
 #   lt(-1)(8) leaves REX.B clear, which is right — there is no base to extend.
-glyph MEMABS   = la t. NOT(ISREG(FST(MEMPARTS(t))))
+glyph MEMABS   = la t. NOT(ISREG(FST(SPLITFIRST(STRIPBRK(t))("")))) 
 glyph MEMBASE  = la t.
-    IF(MEMABS(t))(la _. sub(0)(1))(la _. REGNUM(FST(MEMPARTS(t))))
+    IF(MEMABS(t))(la _. sub(0)(1))
+                 (la _. REGNUM(FST(SPLITFIRST(STRIPBRK(t))(""))))
 #   ★ A LABEL may BE the address: `mov [pml4], eax` — 136 such uses in
 #   boot.asm. Resolving it needs the label table, which MEMDISP did not have,
 #   so this threads `labs` through the memory-operand path.
@@ -445,13 +446,65 @@ glyph MEMBASE  = la t.
 #   loud halt instead: boot.asm's three register-relative symbol uses are
 #   `[r8 + PCB_SIZE + 16]`, which are equ constants inside a MULTI-TERM sum —
 #   an expression-evaluator problem, not a label-resolution one.
+# ── AN EXPRESSION EVALUATOR FOR OPERANDS ────────────────────────────────────
+#   `mov [pml4 + 511*8], eax` — 30 uses inside brackets in boot.asm, 3 outside.
+#   This needs real PRECEDENCE, not left-to-right folding: `511*8` must bind
+#   tighter than the `+`, or the address comes out as (pml4+511)*8. So it is
+#   the standard two-level grammar, smallest that is correct:
+#
+#       expr   := term (('+' | '-') term)*
+#       term   := factor ('*' factor)*
+#       factor := NUMBER | SYMBOL
+#
+#   A factor resolves through MEMVAL, so labels, equ constants and %defines all
+#   work in an expression exactly as they do alone — the evaluator adds
+#   arithmetic, it does not add a second notion of what a name means.
+#
+#   Only `*` appears in boot.asm, so division and parenthesised sub-expressions
+#   are deliberately NOT implemented; adding them without a use would be
+#   inventing requirements. Anything unrecognised still halts loudly via
+#   MEMVAL rather than silently evaluating to zero.
+glyph EVALTERM = Z(la self. la labs. la s. la cur. la acc.
+    IF(str_eq(s)(""))
+      (la _. mul(acc)(MEMVAL(labs)(cur)))
+      (la _. (la c.
+          IF(str_eq(c)("*"))
+            (la _. self(labs)(str_tail(s))("")(mul(acc)(MEMVAL(labs)(cur))))
+            (la _. self(labs)(str_tail(s))(concat(cur)(c))(acc)))
+        (str_head(s))))
+glyph EVALEXPR = Z(la self. la labs. la s. la cur. la acc. la sign.
+    IF(str_eq(s)(""))
+      (la _. add(acc)(mul(sign)(EVALTERM(labs)(cur)("")(1))))
+      (la _. (la c.
+          IF(OR(str_eq(c)("+"))(str_eq(c)("-")))
+            (la _. self(labs)(str_tail(s))("")
+                       (add(acc)(mul(sign)(EVALTERM(labs)(cur)("")(1))))
+                       (IF(str_eq(c)("+"))(la _. 1)(la _. sub(0)(1))))
+            (la _. self(labs)(str_tail(s))(concat(cur)(c))(acc)(sign)))
+        (str_head(s))))
+glyph EVAL = la labs. la s. EVALEXPR(labs)(s)("")(0)(1)
+
+#   Split a bracket interior into its FIRST term and the remainder, keeping the
+#   operator with the remainder so the expression evaluator sees a well-formed
+#   string. The first term decides the shape: a register makes it base+disp,
+#   anything else makes it an absolute address.
+glyph SPLITFIRST = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))
+      (la _. PAIR(cur)(""))
+      (la _. (la c.
+          IF(OR(str_eq(c)("+"))(str_eq(c)("-")))
+            (la _. PAIR(cur)(concat("0")(s)))
+            (la _. self(str_tail(s))(concat(cur)(c))))
+        (str_head(s))))
+
 glyph MEMVAL = la labs. la t.
     IF(ISNUM(t))(la _. NUMV(t))
       (la _. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB(t)(labs)))
 glyph MEMDISP  = la labs. la t.
     IF(MEMABS(t))
-      (la _. MEMVAL(labs)(FST(MEMPARTS(t))))
-      (la _. SND(MEMPARTS(t)))
+      (la _. EVAL(labs)(STRIPBRK(t)))
+      (la _. (la r. IF(str_eq(r)(""))(la _. 0)(la _. EVAL(labs)(r)))
+             (SND(SPLITFIRST(STRIPBRK(t))(""))))
 
 glyph FITS8 = la d. AND(NOT(lt(d)(sub(0)(128))))(lt(d)(128))
 glyph MODOF = la b. la d.
