@@ -23,6 +23,7 @@ done
 nasm -f elf64 link_test_a.asm -o link_test_a.o
 nasm -f elf64 link_test_dup.asm -o link_test_dup.o
 nasm -f elf64 link_test_plt.asm -o link_test_plt.o
+nasm -f elf64 link_test_rw.asm -o link_test_rw.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
 ld -o link_ref link_test_a.o link_test_b.o
 objcopy -O binary --only-section=.text link_ref ldtext.bin
@@ -167,6 +168,37 @@ echo "$DOUT" | grep -q "duplicate symbol: greet" \
 #   yesterday's binary and the refusal was cosmetic.
 [ -e link_out ] && { echo "FAIL  link_reloc.la: wrote link_out despite refusing the link"; ok=0; }
 
+# --- THREE SECTIONS, and the first WRITABLE segment ---
+#   .rodata AND .data in one object forces a third PT_LOAD. Until this fixture
+#   existed every segment was R or R+X, so "no RWE" passed without the linker
+#   ever having had the chance to get it wrong — the W^X assertion was green
+#   but untested. This is what makes it a real check.
+#
+#   .data's ADDRESS is not compared against ld: ld packs it into the tail of
+#   the previous page (0x403010) where this gives each section its own page.
+#   Both satisfy p_offset = p_vaddr (mod page), and layout is a CHOICE — so the
+#   witness here is the emitted structure plus the program running, not a diff.
+ld -o link_ref_rw link_test_a.o link_test_rw.o
+cp link_test_a.o  link_in1.o
+cp link_test_rw.o link_in2.o
+rm -f link_out
+if ROUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then RRC=0; else RRC=$?; fi
+[ "$RRC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link the 3-section fixture: $ROUT"; ok=0; }
+if [ -x link_out ]; then
+    nseg=$(readelf -l --wide link_out 2>/dev/null | grep -c '^  LOAD')
+    [ "$nseg" = "3" ] || { echo "FAIL  link_reloc.la: expected 3 PT_LOADs for .text/.rodata/.data, got $nseg"; ok=0; }
+    readelf -l --wide link_out 2>/dev/null | grep -q 'LOAD.*RW ' \
+        || { echo "FAIL  link_reloc.la: no writable segment emitted for .data"; ok=0; }
+    readelf -l --wide link_out 2>/dev/null | grep -q 'LOAD.*RWE' \
+        && { echo "FAIL  link_reloc.la: emitted a WRITABLE+EXECUTABLE segment (W^X violated)"; ok=0; }
+    RGOT=$(./link_out); RRC2=$?
+    RWANT=$(./link_ref_rw)
+    [ "$RGOT" = "$RWANT" ] && [ "$RRC2" = "0" ] \
+        || { echo "FAIL  3-section binary printed '$RGOT' rc=$RRC2, ld's prints '$RWANT'"; ok=0; }
+else
+    echo "FAIL  link_reloc.la: 3-section link emitted no executable"; ok=0
+fi
+
 # --- NEGATIVE: a section the layout cannot place must be REFUSED ---
 #   The layout knows .text and .rodata. Every real gcc object also carries
 #   .data/.bss/.eh_frame, all SHF_ALLOC — they occupy memory at run time and so
@@ -197,5 +229,5 @@ CEOF
 fi
 
 rm -f link_in1.o link_in2.o
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (PC32 + PLT32 + 64, W^X, page-aligned, 3 negative gates)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (PC32 + PLT32 + 64, 3 sections incl. a writable segment, W^X, page-aligned, 3 negative gates)"
 [ "$ok" = 1 ]

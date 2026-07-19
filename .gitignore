@@ -160,3 +160,6 @@ watched.la
 /gate_real.c
 /gcc.log
 /gate_secs.o
+/link_test_rw.o
+/link_ref_rw
+/rw.log

@@ -240,7 +240,7 @@ glyph DEFINES = la f. la ss. la i.
 #   must have an answer for. Non-alloc sections (.symtab, .strtab, .comment,
 #   .note*) are metadata the loader never maps, and ignoring those is correct.
 glyph IS_ALLOC = la f. la i. int_eq(mod(div(SH_FLAGS(f)(i))(2))(2))(1)
-glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(str_eq(n)(".rodata"))
+glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(str_eq(n)(".data")))
 glyph CHECKSECS = la f. la tag. (Z(la self. la i.
     IF(int_eq(i)(E_SHNUM(f)))
       (la _. "ok")
@@ -265,8 +265,11 @@ glyph CHECKSECS = la f. la tag. (Z(la self. la i.
 #   This step changes NO behaviour — it is the same policy expressed so it can
 #   iterate. The gates are the proof of equivalence: same addresses, same bytes,
 #   same running binary.
-glyph PLACE_ORDER = CONS(".text")(CONS(".rodata")(NIL))
-glyph BASEOF = la n. IF(str_eq(n)(".text"))(la _. TEXT_BASE)(la _. RODATA_BASE)
+glyph PLACE_ORDER = CONS(".text")(CONS(".rodata")(CONS(".data")(NIL)))
+glyph DATA_BASE = 4206592
+glyph BASEOF = la n.
+    IF(str_eq(n)(".text"))(la _. TEXT_BASE)(la _.
+    IF(str_eq(n)(".data"))(la _. DATA_BASE)(la _. RODATA_BASE))
 
 glyph MKE   = la o. la s. la a. PAIR(o)(PAIR(s)(a))
 glyph E_OBJ = la e. FST(e)
