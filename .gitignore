@@ -146,3 +146,5 @@ watched.la
 /kernel/kernel_comp_term_64.elf
 /kernel/kernel_comp_edit.elf
 /kernel/kernel_comp_edit_64.elf
+/kernel/alloc_churn.bin
+/churn.n

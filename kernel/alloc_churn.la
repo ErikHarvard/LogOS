@@ -1,15 +1,25 @@
-# Minimal reproducer for the unbounded-heap question (track D -> track A).
+# Minimal reproducer for the unbounded-heap defect (track D -> track A).
 #
 # A tail-recursive countdown. `sub(n)(1)` and `int_eq(n)(0)` each produce a
-# BOXED int, so every iteration allocates and every one of those boxes is dead
-# immediately. The loop keeps NOTHING live: at any instant the live set is one
-# integer. So if rt_gc reclaims, RSS must stay flat; if the bump pointer only
-# ever rises, RSS grows without bound.
+# BOXED int, and every one of those boxes is dead immediately: at any instant
+# THE LIVE SET IS ONE INTEGER. The recursion is in TAIL position and the runtime
+# does TCO, so the stack does not grow -- anything that grows is the HEAP.
 #
-# The recursion is in TAIL position and the runtime does TCO, so this does not
-# grow the stack -- any growth observed is the HEAP.
+# Therefore peak RSS must be FLAT in the iteration count. Measured, it is not:
+#      5,000,000 -> 170 MB      45,000,000 -> 519 MB
+#     15,000,000 -> 300 MB     135,000,000 -> 905 MB
+# ~1.74x memory per 3x work, no plateau. The GC reclaims SOMETHING (the 135M run
+# allocates ~3.2 GB of boxes yet peaks at 905 MB) but it does not hold steady.
+#
+# THE ITERATION COUNT IS READ FROM `churn.n`, not compiled in, so ONE build
+# serves every measurement point. native_codegen3's codegen is the expensive
+# part (~25 s even for a program this small), and a gate that compares TWO
+# workloads would otherwise pay it twice. `churn.n` must hold just the decimal
+# digits with NO trailing newline: str_to_int is strict on every engine and
+# halts loudly on anything else, which is the behaviour wanted here rather than
+# a silently-truncated count.
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")
 glyph LOOP = Z(la self. la n.
     IF(int_eq(n)(0))(la _. "done")(la _. self(sub(n)(1))))
-glyph MAIN = print(LOOP(30000000))
+glyph MAIN = print(LOOP(str_to_int(read_file("churn.n"))))
