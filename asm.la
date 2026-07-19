@@ -373,8 +373,17 @@ glyph HEXFOLD = Z(la self. la s. la acc.
 glyph ISHEXPFX = la t.
     AND(str_eq(str_head(t))("0"))(str_eq(str_head(str_tail(t)))("x"))
 glyph HEXBODY = la t. str_tail(str_tail(t))
+#   NUMV halts NAMING the token. It used to fall through to the host's
+#   `str_to_int: not a decimal integer`, which reports a real failure at the
+#   wrong layer — the reader learns a string builtin was misused, not WHICH
+#   operand the assembler could not read. Same defect as the earlier shl/test
+#   diagnostics: halting loudly is not enough if the message sends you to the
+#   wrong place.
 glyph NUMV = la t.
-    IF(ISHEXPFX(t))(la _. HEXFOLD(HEXBODY(t))(0))(la _. str_to_int(t))
+    IF(ISHEXPFX(t))(la _. HEXFOLD(HEXBODY(t))(0))
+      (la _. IF(ISNUM(t))
+               (la _. str_to_int(t))
+               (la _. error(concat("asm: not a number (undefined symbol?): ")(t))))
 glyph ISNUM = la t.
     IF(str_eq(t)(""))(la _. FALSE)
       (la _. IF(ISHEXPFX(t))
