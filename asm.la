@@ -122,7 +122,12 @@ glyph LE4 = la n0.
     (IF(lt(n0)(0))(la _. add(4294967296)(n0))(la _. n0))
 
 # ── tokenizing: lines, then whitespace/comma-separated tokens ──
-glyph ISSEP = la c. OR(str_eq(c)(" "))(OR(str_eq(c)(","))(str_eq(c)("	")))
+#   ★ A COMMA IS A TOKEN, NOT A SEPARATOR. Treating it as whitespace made
+#   `dw 1, 2` (TWO values) and `dw end - gdt64 - 1` (ONE expression) produce the
+#   same flat token list, so nothing downstream could tell them apart —
+#   `dw end - gdt64 - 1` emitted two words instead of one, the second being
+#   `-gdt64-1` = -1. Operand boundaries have to survive tokenization.
+glyph ISSEP = la c. OR(str_eq(c)(" "))(str_eq(c)("	"))
 #   The tokenizer must be STRING-AWARE: `db "I AM THAT I AM", 10` splits on
 #   spaces like everything else, which would shred the string into words. So a
 #   quoted run is consumed whole into ONE token, kept with its opening quote so
@@ -155,7 +160,11 @@ glyph TOKS = Z(la self. la s. la cur.
           IF(str_eq(c)("\""))
             (la _. (la p. CONS(concat("\"")(FST(p)))(self(SND(p))("")))
                    (SCANSTR(str_tail(s))("")))
-            (la _. IF(str_eq(c)(";"))
+            (la _. IF(str_eq(c)(","))
+              (la _. IF(str_eq(cur)(""))
+                       (la _. CONS(",")(self(str_tail(s))("")))
+                       (la _. CONS(cur)(CONS(",")(self(str_tail(s))("")))))
+              (la _. IF(str_eq(c)(";"))
               (la _. IF(str_eq(cur)(""))(la _. NIL)(la _. CONS(cur)(NIL)))
               (la _. IF(str_eq(c)("["))
               (la _. (la p. (la brk.
@@ -167,7 +176,7 @@ glyph TOKS = Z(la self. la s. la cur.
               (la _. IF(ISSEP(c))
                      (la _. IF(str_eq(cur)(""))(la _. self(str_tail(s))(""))
                                                (la _. CONS(cur)(self(str_tail(s))(""))))
-                     (la _. self(str_tail(s))(concat(cur)(c)))))))
+                     (la _. self(str_tail(s))(concat(cur)(c))))))))
         (str_head(s))))
 glyph LINES = Z(la self. la s. la cur.
     IF(str_eq(s)(""))
@@ -679,10 +688,19 @@ glyph HASOP = Z(la self. la l.
     l(FALSE)(la h. la t. IF(ISOPTOK(h))(la _. TRUE)(la _. self(t))))
 glyph CATALL = Z(la self. la l.
     l("")(la h. la t. concat(h)(self(t))))
-glyph JOINEXPR = la l.
-    l(NIL)(la h. la t.
-      IF(HASOP(t))(la _. CONS(h)(CONS(CATALL(t))(NIL)))(la _. l))
-glyph OPL = la ts. JOINEXPR(DROPSZ(TL2(ts)))
+#   Operands are the comma-delimited GROUPS of the tail, each group
+#   concatenated into one expression string. This replaces the old
+#   join-everything-after-the-first heuristic: `mov ecx, 2 * X / 8` and
+#   `dw a - b - 1` and `dw 1, 2` now all fall out of the same rule instead of
+#   needing three special cases.
+glyph GROUPS = Z(la self. la l. la cur.
+    l(IF(str_eq(cur)(""))(la _. NIL)(la _. CONS(cur)(NIL)))
+     (la h. la t.
+       IF(str_eq(h)(","))
+         (la _. CONS(cur)(self(t)("")))
+         (la _. self(t)(concat(cur)(h)))))
+glyph JOINEXPR = la l. GROUPS(l)("")
+glyph OPL = la ts. GROUPS(DROPSZ(TL2(ts)))("")
 glyph A1  = la ts. NTH(0)(OPL(ts))
 glyph A2  = la ts. NTH(1)(OPL(ts))
 
@@ -1149,7 +1167,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)(""))(la _. 0)(la _.
     IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. 0)(la _.
     IF(ISLABEL(op))(la _. 0)(la _.
-    IF(str_eq(op)("db"))(la _. DBSIZE(TL2(ts)))(la _.
+    IF(str_eq(op)("db"))(la _. DBSIZE(JOINEXPR(TL2(ts))))(la _.
     IF(str_eq(op)("syscall"))(la _. 2)(la _.
     IF(str_eq(op)("ret"))(la _. 1)(la _.
     IF(str_eq(op)("nop"))(la _. 1)(la _.
@@ -1192,7 +1210,7 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)(""))(la _. "")(la _.
     IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. "")(la _.
     IF(ISLABEL(op))(la _. "")(la _.
-    IF(str_eq(op)("db"))(la _. DBEMIT(TL2(ts)))(la _.
+    IF(str_eq(op)("db"))(la _. DBEMIT(JOINEXPR(TL2(ts))))(la _.
     IF(str_eq(op)("syscall"))(la _. concat(B(15))(B(5)))(la _.
     IF(str_eq(op)("ret"))(la _. B(195))(la _.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
