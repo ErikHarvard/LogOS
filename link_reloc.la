@@ -180,7 +180,7 @@ glyph EIDENT = CAT(CONS(chr("127"))(CONS("ELF")(CONS(B1(2))(CONS(B1(1))(
 #   ET_EXEC (2), EM_X86_64 (62). e_shoff/e_shnum/e_shstrndx are 0: section
 #   headers are for linkers and debuggers, not for the loader, and this
 #   produces none. The program runs without them.
-glyph EHDR = la entry. CAT(
+glyph EHDR = la entry. la nph. CAT(
     CONS(EIDENT)(
     CONS(LE2(2))(
     CONS(LE2(62))(
@@ -191,7 +191,7 @@ glyph EHDR = la entry. CAT(
     CONS(LE4(0))(
     CONS(LE2(EHSIZE))(
     CONS(LE2(PHENTSIZE))(
-    CONS(LE2(2))(
+    CONS(LE2(nph))(
     CONS(LE2(0))(
     CONS(LE2(0))(
     CONS(LE2(0))(
@@ -301,6 +301,89 @@ glyph VAOF = la plan. la o. la sec. (Z(la self. la l.
         (la _. E_ADDR(h))
         (la _. self(t)))))(plan)
 
+# ── REGIONS — step 2: emission stops hardcoding two segments ────────────────
+#   Placement became data in step 1; emission was still shaped for exactly two
+#   PT_LOADs with hardcoded file offsets. A REGION is one loadable segment:
+#   its section name, its bytes, its virtual base and its permissions. The
+#   image is then a fold over the region list, so the segment COUNT is
+#   LEN(regions) rather than the literal 2.
+#
+#   ★ PERMISSIONS ARE PER-REGION, which is the point W^X turns on. .text is
+#   R+X, .rodata is R, and .data would be R+W — never R+W+X. Emitting one RWX
+#   segment would be simpler and would still run, and is exactly what a linker
+#   must not do when the kernel it serves enforces W^X on itself (K4c).
+glyph F_RX = 5
+glyph F_R  = 4
+glyph F_RW = 6
+glyph FLAGSOF = la n.
+    IF(str_eq(n)(".text"))(la _. F_RX)(la _.
+    IF(str_eq(n)(".data"))(la _. F_RW)(la _. F_R))
+
+#   The bytes a plan entry contributes: the RELOCATED text for a .text section,
+#   the raw section otherwise. Relocations are applied to .text only here, so
+#   this is where patched and raw meet.
+glyph ENAME = la f1. la f2. la e.
+    IF(int_eq(E_OBJ(e))(1))(la _. SECNAME(f1)(E_SEC(e)))(la _. SECNAME(f2)(E_SEC(e)))
+glyph ESIZE = la f1. la f2. la e.
+    IF(int_eq(E_OBJ(e))(1))(la _. SH_SIZE(f1)(E_SEC(e)))(la _. SH_SIZE(f2)(E_SEC(e)))
+glyph EBYTES = la f1. la f2. la p1. la p2. la t1sec. la t2sec. la e.
+    IF(int_eq(E_OBJ(e))(1))
+      (la _. IF(int_eq(E_SEC(e))(t1sec))(la _. p1)(la _. SECBYTES(f1)(E_SEC(e))))
+      (la _. IF(int_eq(E_SEC(e))(t2sec))(la _. p2)(la _. SECBYTES(f2)(E_SEC(e))))
+
+#   Concatenate every plan entry of one section name, in placed order, padding
+#   each gap so the bytes land exactly where the plan says. Padding a code gap
+#   with nops keeps it executable if control ever reaches it; other sections
+#   pad with zeros.
+glyph REGBYTES = la f1. la f2. la p1. la p2. la t1sec. la t2sec. la name. la plan.
+    (Z(la self. la l. la cur. la acc.
+      l(acc)(la h. la t.
+        IF(str_eq(ENAME(f1)(f2)(h))(name))
+          (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(f1)(f2)(h)))
+                        (CAT(CONS(acc)(CONS(IF(str_eq(name)(".text"))
+                                              (la _. NOPS(gap))(la _. ZEROS(gap)))(
+                             CONS(EBYTES(f1)(f2)(p1)(p2)(t1sec)(t2sec)(h))(NIL))))))
+                 (sub(E_ADDR(h))(cur)))
+          (la _. self(t)(cur)(acc)))))
+    (plan)(BASEOF(name))("")
+
+#   A region exists for a name only if the plan placed something under it, so
+#   an absent .rodata (or .data) costs no segment rather than an empty one.
+glyph HASNAME = la f1. la f2. la name. la plan. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(str_eq(ENAME(f1)(f2)(h))(name))(la _. TRUE)(la _. self(t)))))(plan)
+
+#   A region's file offset is fixed by the loader's rule p_offset = p_vaddr
+#   (mod page). Deriving it from the base — rather than hardcoding 0x1000 and
+#   0x2000 — keeps that congruence true by construction for any number of
+#   page-separated regions.
+glyph LENL    = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph FILEOFF = la base. add(PAGE)(sub(base)(TEXT_BASE))
+glyph R_NAME  = la r. FST(r)
+glyph R_BYTES = la r. SND(r)
+
+glyph MKREGIONS = la f1. la f2. la p1. la p2. la t1sec. la t2sec. la plan.
+    (Z(la self. la names.
+      names(NIL)(la h. la t.
+        IF(HASNAME(f1)(f2)(h)(plan))
+          (la _. CONS(PAIR(h)(REGBYTES(f1)(f2)(p1)(p2)(t1sec)(t2sec)(h)(plan)))(self(t)))
+          (la _. self(t)))))(PLACE_ORDER)
+
+glyph PHDRS = la regs. (Z(la self. la l.
+    l("")(la h. la t.
+      concat(PHDR(FLAGSOF(R_NAME(h)))(FILEOFF(BASEOF(R_NAME(h))))(BASEOF(R_NAME(h)))
+                 (str_to_int(str_len(R_BYTES(h)))))(self(t)))))(regs)
+
+#   The image body: pad from wherever we are to each region's file offset,
+#   then its bytes. One fold, so the number of segments is data.
+glyph BODY = la regs. (Z(la self. la l. la cur.
+    l("")(la h. la t.
+      (la off. (la b.
+        CAT(CONS(ZEROS(sub(off)(cur)))(CONS(b)(
+            CONS(self(t)(add(off)(str_to_int(str_len(b)))))(NIL)))))
+        (R_BYTES(h)))
+      (FILEOFF(BASEOF(R_NAME(h)))))))(regs)
+
 glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))
       (la _. FALSE)
@@ -335,15 +418,14 @@ glyph MAIN =
     (la merged. (la rodata.
       SEQ(DUPCHECK(f1)(ss1)(f2)(ss2))(
       SEQ(write_file("link_text.bin")(merged))(
-      SEQ(write_exec("link_out")(CAT(
-            CONS(EHDR(resolve("_start")))(
-            CONS(PHDR(5)(TEXT_FILEOFF)(TEXT_BASE)(str_to_int(str_len(merged))))(
-            CONS(PHDR(4)(RODATA_FILEOFF)(RODATA_BASE)(str_to_int(str_len(rodata))))(
-            CONS(ZEROS(sub(TEXT_FILEOFF)(add(EHSIZE)(mul(2)(PHENTSIZE)))))(
-            CONS(merged)(
-            CONS(ZEROS(sub(RODATA_FILEOFF)(add(TEXT_FILEOFF)(str_to_int(str_len(merged))))))(
-            CONS(rodata)(
-            NIL))))))))))(
+      SEQ(write_exec("link_out")(
+            (la regs. (la nph. CAT(
+               CONS(EHDR(resolve("_start"))(nph))(
+               CONS(PHDRS(regs))(
+               CONS(BODY(regs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
+               NIL)))))
+             (LENL(regs)))
+            (MKREGIONS(f1)(f2)(p1)(p2)(t1sec)(t2sec)(plan))))(
       print(CAT(
         CONS("merged .text = ")(
         CONS(int_to_str(str_to_int(str_len(merged))))(
