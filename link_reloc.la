@@ -55,6 +55,10 @@ glyph NOT  = la b. b(FALSE)(TRUE)
 glyph OR   = la a. la b. a(TRUE)(b)
 glyph CONS = la h. la t. la n. la c. c(h)(t)
 glyph NIL  = la n. la c. n
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph REV  = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(CONS(h)(acc))))
 glyph CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 glyph NL   = "\n"
 
@@ -246,6 +250,57 @@ glyph CHECKSECS = la f. la tag. (Z(la self. la i.
                         CONS(SECNAME(f)(i))(NIL)))))))
                (la _. self(add(i)(1))))))(0)
 
+# ── THE PLACEMENT PLAN — step 1 of generalising the layout ──────────────────
+#   The layout used to be hard-coded: three binders (t1sec/t2sec/r2sec) and two
+#   per-object lambdas mapping a section index to an address. That shape cannot
+#   grow — a third section or a third object means more binders, and the
+#   addresses live in the binder chain where nothing can iterate over them.
+#
+#   A PLAN is a list of (object, section index, virtual address). It is computed
+#   by walking a SECTION-NAME ORDER, and for each name packing every object's
+#   copy of that section in input order, each aligned up to its own
+#   sh_addralign. Adding a section becomes adding a name to PLACE_ORDER;
+#   adding an object becomes one more STEP over the same code.
+#
+#   This step changes NO behaviour — it is the same policy expressed so it can
+#   iterate. The gates are the proof of equivalence: same addresses, same bytes,
+#   same running binary.
+glyph PLACE_ORDER = CONS(".text")(CONS(".rodata")(NIL))
+glyph BASEOF = la n. IF(str_eq(n)(".text"))(la _. TEXT_BASE)(la _. RODATA_BASE)
+
+glyph MKE   = la o. la s. la a. PAIR(o)(PAIR(s)(a))
+glyph E_OBJ = la e. FST(e)
+glyph E_SEC = la e. FST(SND(e))
+glyph E_ADDR= la e. SND(SND(e))
+
+#   Place one object's copy of one section, if it has a non-empty one.
+#   Returns PAIR(entries)(cursor) so the next object continues where this ended.
+glyph PSTEP = la f. la o. la name. la acc. la cur.
+    (la sec.
+      IF(lt(sec)(0))
+        (la _. PAIR(acc)(cur))
+        (la _. IF(int_eq(SH_SIZE(f)(sec))(0))
+                 (la _. PAIR(acc)(cur))
+                 (la _. (la a. PAIR(CONS(MKE(o)(sec)(a))(acc))(add(a)(SH_SIZE(f)(sec))))
+                        (ALIGNUP(cur)(SH_ALIGN(f)(sec))))))
+    (FIND_SEC(f)(name))
+
+#   All objects, one section name. Each name starts at its own base address.
+glyph PNAME = la f1. la f2. la name. la acc.
+    (la r1. FST(PSTEP(f2)(2)(name)(FST(r1))(SND(r1))))
+    (PSTEP(f1)(1)(name)(acc)(BASEOF(name)))
+
+glyph MKPLAN = la f1. la f2.
+    REV((Z(la self. la names. la acc.
+        names(acc)(la h. la t. self(t)(PNAME(f1)(f2)(h)(acc)))))(PLACE_ORDER)(NIL))(NIL)
+
+#   Address of a given object's given section, or -1 if it was not placed.
+glyph VAOF = la plan. la o. la sec. (Z(la self. la l.
+    l(sub(0)(1))(la h. la t.
+      IF(AND(int_eq(E_OBJ(h))(o))(int_eq(E_SEC(h))(sec)))
+        (la _. E_ADDR(h))
+        (la _. self(t)))))(plan)
+
 glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))
       (la _. FALSE)
@@ -272,6 +327,7 @@ glyph MAIN =
   (la _c1. (la _c2.
   (la ss1. (la ss2.
   (la t1sec. (la t2sec. (la r2sec.
+  (la plan.
   (la t2addr.
   (la va1. (la va2.
   (la resolve.
@@ -315,13 +371,10 @@ glyph MAIN =
                                         (la _. error(concat("link: unresolved symbol: ")(want))))
                               (LOOKUP(f2)(ss2)(va2)(want))))
              (LOOKUP(f1)(ss1)(va1)(want)))
-  )(la sec. IF(int_eq(sec)(t2sec))
-              (la _. t2addr)
-              (la _. IF(AND(NOT(lt(r2sec)(0)))(int_eq(sec)(r2sec)))
-                       (la _. RODATA_BASE)
-                       (la _. sub(0)(1))))
-  )(la sec. IF(int_eq(sec)(t1sec))(la _. TEXT_BASE)(la _. sub(0)(1)))
-  )(ALIGNUP(add(TEXT_BASE)(SH_SIZE(f1)(t1sec)))(SH_ALIGN(f2)(t2sec)))
+  )(la sec. VAOF(plan)(2)(sec))
+  )(la sec. VAOF(plan)(1)(sec))
+  )(VAOF(plan)(2)(t2sec))
+  )(MKPLAN(f1)(f2))
   )(FIND_SEC(f2)(".rodata"))
   )(FIND_SEC(f2)(".text"))
   )(FIND_SEC(f1)(".text"))
