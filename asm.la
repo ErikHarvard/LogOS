@@ -384,6 +384,7 @@ glyph NUMV = la t.
       (la _. IF(ISNUM(t))
                (la _. str_to_int(t))
                (la _. error(concat("asm: not a number (undefined symbol?): ")(t))))
+glyph ISEXPRTOK = la t. OR(INSTR("*")(t))(INSTR("/")(t))
 glyph ISNUM = la t.
     IF(str_eq(t)(""))(la _. FALSE)
       (la _. IF(ISHEXPFX(t))
@@ -464,21 +465,28 @@ glyph MEMBASE  = la t.
 #   are deliberately NOT implemented; adding them without a use would be
 #   inventing requirements. Anything unrecognised still halts loudly via
 #   MEMVAL rather than silently evaluating to zero.
-glyph EVALTERM = Z(la self. la labs. la s. la cur. la acc.
+#   `*` and `/` share a precedence level and associate LEFT — boot.asm's
+#   `2 * PCB_SIZE / 8` is (2*128)/8 = 32, not 2*(128/8). Carrying the pending
+#   operator is what makes that come out right.
+glyph EVALTERM = Z(la self. la labs. la s. la cur. la acc. la op.
     IF(str_eq(s)(""))
-      (la _. mul(acc)(MEMVAL(labs)(cur)))
+      (la _. (la v. IF(str_eq(op)("/"))(la _. div(acc)(v))(la _. mul(acc)(v)))
+             (MEMVAL(labs)(cur)))
       (la _. (la c.
-          IF(str_eq(c)("*"))
-            (la _. self(labs)(str_tail(s))("")(mul(acc)(MEMVAL(labs)(cur))))
-            (la _. self(labs)(str_tail(s))(concat(cur)(c))(acc)))
+          IF(OR(str_eq(c)("*"))(str_eq(c)("/")))
+            (la _. (la v. self(labs)(str_tail(s))("")
+                            (IF(str_eq(op)("/"))(la _. div(acc)(v))(la _. mul(acc)(v)))
+                            (c))
+                   (MEMVAL(labs)(cur)))
+            (la _. self(labs)(str_tail(s))(concat(cur)(c))(acc)(op)))
         (str_head(s))))
 glyph EVALEXPR = Z(la self. la labs. la s. la cur. la acc. la sign.
     IF(str_eq(s)(""))
-      (la _. add(acc)(mul(sign)(EVALTERM(labs)(cur)("")(1))))
+      (la _. add(acc)(mul(sign)(EVALTERM(labs)(cur)("")(1)("*"))))
       (la _. (la c.
           IF(OR(str_eq(c)("+"))(str_eq(c)("-")))
             (la _. self(labs)(str_tail(s))("")
-                       (add(acc)(mul(sign)(EVALTERM(labs)(cur)("")(1))))
+                       (add(acc)(mul(sign)(EVALTERM(labs)(cur)("")(1)("*"))))
                        (IF(str_eq(c)("+"))(la _. 1)(la _. sub(0)(1))))
             (la _. self(labs)(str_tail(s))(concat(cur)(c))(acc)(sign)))
         (str_head(s))))
@@ -551,7 +559,23 @@ glyph DROPSZ = Z(la self. la l.
     l(NIL)(la h. la t. IF(ISSZ(h))(la _. self(t))(la _. CONS(h)(self(t)))))
 glyph DECLSZ = Z(la self. la l.
     l(0)(la h. la t. IF(ISSZ(h))(la _. SZKW(h))(la _. self(t))))
-glyph OPL = la ts. DROPSZ(TL2(ts))
+#   ★ Inside brackets the tokenizer folds an expression into ONE token, but
+#   OUTSIDE them it splits on spaces, so `mov ecx, 2 * PCB_SIZE / 8` arrives as
+#   five separate operand tokens. If any bare operator appears among the
+#   operands, everything after the first is re-joined into a single expression
+#   string — which is exactly the form the evaluator already reads. Without an
+#   operator present the list is untouched, so `imul rax, rax, 64` keeps its
+#   three operands.
+glyph ISOPTOK = la t.
+    OR(str_eq(t)("*"))(OR(str_eq(t)("/"))(OR(str_eq(t)("+"))(str_eq(t)("-"))))
+glyph HASOP = Z(la self. la l.
+    l(FALSE)(la h. la t. IF(ISOPTOK(h))(la _. TRUE)(la _. self(t))))
+glyph CATALL = Z(la self. la l.
+    l("")(la h. la t. concat(h)(self(t))))
+glyph JOINEXPR = la l.
+    l(NIL)(la h. la t.
+      IF(HASOP(t))(la _. CONS(h)(CONS(CATALL(t))(NIL)))(la _. l))
+glyph OPL = la ts. JOINEXPR(DROPSZ(TL2(ts)))
 glyph A1  = la ts. NTH(0)(OPL(ts))
 glyph A2  = la ts. NTH(1)(OPL(ts))
 
@@ -638,11 +662,11 @@ glyph MOVENC = la labs. la w. la a. la b.
         (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(labs)(b))(RFORCE(a)))
         (la _. IF(ISREG(b))
           (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
-          (la _. IF(ISNUM(b))
+          (la _. IF(ISVAL(b))
             (la _. (la n. IF(AND(int_eq(w)(8))(NOT(lt(n)(4294967296))))
                             (la _. MOVABS(REGNUM(a))(n))
                             (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))))
-                   (NUMV(b)))
+                   (EVAL(labs)(b)))
             (la _. MOVABS(REGNUM(a))(LABADDR(b)(labs))))))
 glyph ALUENC = la op. la w. la a. la b.
     IF(ISREG(b))
@@ -796,8 +820,13 @@ glyph NOARG = la op.
       (la _. BYTESOF(OPTV(LOOKREG(op)(NOARG2)))("")))
     (LOOKREG(op)(NOARGS))
 
+#   ★ An EXPRESSION is a value, not a label, and SIZEL must agree with ENC1
+#   about that: classify `2*128/8` as a label and MOVSIZE reports 10 bytes
+#   while MOVENC emits 5 — a size/emit drift that silently misplaces every
+#   later address. One predicate, used by both.
+glyph ISVAL  = la t. OR(ISNUM(t))(ISEXPRTOK(t))
 glyph MOVLBL = la a. la b.
-    AND(NOT(ISMEM(a)))(AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))(NOT(ISNUM(b)))))
+    AND(NOT(ISMEM(a)))(AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))(NOT(ISVAL(b)))))
 glyph LENOF  = la s. str_to_int(str_len(s))
 glyph MOVSIZE = la ts.
     WITHOPS(ts)(la w. la a. la b.
@@ -911,8 +940,12 @@ glyph DEMIT = la labs. la w. la l.
         ll("")(la h. la t. concat(LEW(w)(DVAL(labs)(h)))(self(t))))(l)
 glyph DSIZE = la w. la l. mul(w)(LEN(l))
 glyph ISRES = la op. OR(str_eq(op)("resb"))(str_eq(op)("resq"))
-glyph RESN  = la op. la ts.
-    mul(NUMV(NTH(1)(ts)))(IF(str_eq(op)("resb"))(la _. 1)(la _. 8))
+#   A single-operand directive's WHOLE operand list is the expression, unlike
+#   `mov dst, expr` where the first operand is a destination. JOINEXPR keeps the
+#   first token separate for that reason, so directives join everything instead.
+glyph EVALALL = la labs. la ts. EVAL(labs)(CATALL(DROPSZ(TL2(ts))))
+glyph RESN  = la labs. la op. la ts.
+    mul(EVALALL(labs)(ts))(IF(str_eq(op)("resb"))(la _. 1)(la _. 8))
 #   Padding is measured from the CURRENT offset, which is org-inclusive — the
 #   same counter the label table is built from, so alignment means the same
 #   thing to `align` as it does to a label's address.
@@ -946,7 +979,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(DIVENC(w)(a))))(la _.
     IF(str_eq(op)("imul"))(la _. LENOF(IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))))(la _.
     IF(ISDATA(op))(la _. DSIZE(DWIDTH(op))(TL2(ts)))(la _.
-    IF(ISRES(op))(la _. RESN(op)(ts))(la _.
+    IF(ISRES(op))(la _. RESN(labs)(op)(ts))(la _.
     IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
     IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b))))(la _.
@@ -982,7 +1015,7 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. DIVENC(w)(a)))(la _.
     IF(str_eq(op)("imul"))(la _. IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts)))))(la _.
     IF(ISDATA(op))(la _. DEMIT(labs)(DWIDTH(op))(TL2(ts)))(la _.
-    IF(ISRES(op))(la _. REPB(RESN(op)(ts))(B(0)))(la _.
+    IF(ISRES(op))(la _. REPB(RESN(labs)(op)(ts))(B(0)))(la _.
     IF(str_eq(op)("align"))(la _. REPB(ALIGNPAD(off)(NUMV(NTH(1)(ts))))(B(144)))(la _.
     IF(ISNOARG(op))(la _. NOARG(op))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(labs)(G1DIG(op))))(la _.
