@@ -1666,6 +1666,66 @@ PYPP2
     python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0xb8,1,0,0,0]) else 1)" \
       || { echo "FAIL  asm.la: a valueless %define did not behave as a flag"; ok=0; }
     rm -f .asmgate/nasm_pp.bin .asmgate/asm_pp.out
+    # (2da) THE LATER SLICES — sections, labels-as-addresses, expressions,
+    #       control/segment registers. These five programs existed and passed,
+    #       but were only ever run in an ad-hoc loop and NOT wired into
+    #       build.sh, so a regression in any of them would not have failed the
+    #       build. Found by applying the cross-track review checklist to my own
+    #       work: "is the red path gated?" is worth nothing if the gate is not
+    #       in the build at all.
+    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg; do
+        rm -f asm_out.bin .asmgate/nasm_$prog.bin
+        cp $prog.asm asm_in.asm
+        ./tiny_host asm.la >.asmgate/$prog.out 2>&1 \
+          || { echo "FAIL  asm.la: $prog failed: $(tail -1 .asmgate/$prog.out)"; ok=0; continue; }
+        nasm -f bin $prog.asm -o .asmgate/nasm_$prog.bin 2>/dev/null \
+          || { echo "FAIL  asm.la: nasm reference for $prog failed"; ok=0; continue; }
+        cmp -s asm_out.bin .asmgate/nasm_$prog.bin \
+          || { echo "FAIL  asm.la: $prog DIFFERS from nasm"; ok=0;
+               python3 - "$prog" <<'PYL'
+import sys
+p=sys.argv[1]
+a=open('asm_out.bin','rb').read(); b=open(f'.asmgate/nasm_{p}.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x:02x} nasm={y:02x}'); break
+PYL
+             }
+    done
+    # The invariants that separate a correct implementation from a plausible
+    # one, asserted BY NAME so a regression identifies itself.
+    cp asm_test_expr.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    python3 - <<'PYX' || { echo "FAIL  asm.la: expression PRECEDENCE regressed"; ok=0; }
+import sys,struct
+d=open('asm_out.bin','rb').read()
+# `mov [pml4 + 511*8], eax` must address pml4+4088, i.e. 0x401024 with this
+# fixture's org and layout. Folding LEFT-TO-RIGHT instead would compute
+# (pml4+511)*8 = 0x2001158 — a wrong address that assembles perfectly and
+# faults only when the kernel walks the page table. The two differ by a factor
+# of eight, so this assertion genuinely discriminates.
+i=d.find(bytes([0x89,0x04,0x25]))
+if i < 0:
+    print("      regressed: could not find the absolute-form mov at all"); sys.exit(1)
+disp=struct.unpack('<I',d[i+3:i+7])[0]
+if disp != 0x401024:
+    print(f"      regressed: precedence wrong — disp32 is 0x{disp:x}, expected 0x401024"
+          f" (left-to-right folding would give 0x2001158)")
+    sys.exit(1)
+sys.exit(0)
+PYX
+    cp asm_test_ctrlseg.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    python3 - <<'PYC' || { echo "FAIL  asm.la: control/segment register encoding regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+q=[("mov cr3,rax -> 0F 22, no REX, mode-independent", d[0:3]==bytes([0x0f,0x22,0xd8])),
+   ("mov rax,cr3 -> 0F 20",                            d[3:6]==bytes([0x0f,0x20,0xd8])),
+   ("mov ds,ax -> 8E with NO prefix",                  d.find(bytes([0x8e,0xd8]))>=0),
+   ("mov ax,ds -> 66 8C (0x66 only in the READ dir)",  d.find(bytes([0x66,0x8c,0xd8]))>=0)]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYC
+    rm -f .asmgate/nasm_asm_test_*.bin
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`
