@@ -144,3 +144,5 @@ watched.la
 /kernel/kernel_comp_text_64.elf
 /kernel/kernel_comp_term.elf
 /kernel/kernel_comp_term_64.elf
+/kernel/kernel_comp_edit.elf
+/kernel/kernel_comp_edit_64.elf

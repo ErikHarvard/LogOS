@@ -1,0 +1,281 @@
+# =====================================================================
+#  LogOS HAL.4g — AN EDITABLE, SCROLLING LINE ON THE METAL, in LA.
+#
+#  HAL.4f could type. It could not un-type, and it silently DISCARDED anything
+#  past 7 characters — a terminal that ignores you once the line is full. HAL.4g
+#  adds the two affordances 4f's own header named as missing:
+#
+#    BACKSPACE   — scancode 14 removes the last character;
+#    SCROLLING   — the buffer keeps growing without limit, and the WINDOW shows
+#                  the last MAXCH characters of it. A long line slides left
+#                  instead of hitting a wall.
+#
+#  ── THE STRUCTURAL WIN: n IS DERIVED, NOT THREADED ──────────────────────────
+#  HAL.4f carried (buf, n) through the loop and had to keep them in step; every
+#  branch that changed the buffer also had to change the count, which is exactly
+#  the kind of paired invariant that rots. Here n IS str_len(buf), so the loop
+#  threads ONE value and the count cannot disagree with the string it counts.
+#  That removed a parameter AND a nesting level, which is why this file can add
+#  two features and still be no deeper than 4f — native_codegen3's codegen is
+#  superlinear in nesting depth. (Measured caution: flattening HAL.4f's LOOP did
+#  NOT speed its compile — 38m01s unflattened vs 41m24s flattened — so depth is
+#  claimed here as a CORRECTNESS and readability win, not a performance one. A
+#  comp_*.la rebuild is ~40 min regardless.)
+#
+#  The whole edit model is a PURE function of (scancode, buffer):
+#      NEWBUF(sc)(buf) -> the buffer after that key
+#  so it is verifiable on the C host with no screen, no PCI and no i8042 — the
+#  pure-generation discipline the Theourgia stages use. kernel/editmodel_test.la
+#  exercises it; a 40-minute compile is a bad place to discover an off-by-one.
+#  A key that changes nothing returns the SAME buffer, and the loop compares and
+#  skips the frame — so a release code or a backspace at an empty line does not
+#  spin the compositor.
+#
+#  Everything below the edit model is HAL.4e/4f's verbatim: SETMODE, RECT,
+#  BLOCK, the flat-index glyph walk, SCENE, PRESENT = one memcpy, PIX, and
+#  HAL.2's polling i8042 reader.
+#
+#  WHAT THIS STILL DOES NOT DO (named, so silence is not read as a claim):
+#    - NO SHIFT, so no lower case and no symbols. The font carries only A-Z, 0-9
+#      and space, so shift would have nothing to render.
+#    - NO CURSOR MOVEMENT. Backspace edits the END of the line only; there are
+#      no arrow keys, no insert-at-point. This is a line you can correct, not a
+#      line you can navigate.
+#    - NO WRAP TO A SECOND ROW. Scrolling is HORIZONTAL and the display stays
+#      one row; a genuine multi-line terminal needs DRAWS to take a row, which
+#      is the next step's problem.
+#    - NO HISTORY, and ENTER ends the session rather than submitting the line.
+#
+#  The witness the gate reads is the SERIAL line, and BOTH halves are
+#  load-bearing:
+#    - "edit buf=..."  — the WHOLE buffer, so backspace is visible as the string
+#                        getting SHORTER;
+#    - "edit view=..." — what is actually on screen, so scrolling is visible as
+#                        the view diverging from the buffer.
+#  Plus the paired pixel probes (201,141)/(222,141): white ON a glyph stroke and
+#  green OFF one INSIDE the same cell, which together pin a real glyph shape (a
+#  dead draw leaves both green; a runaway fill leaves both white).
+#  ENTER ends the loop; MAIN returns; exit(0) -> isa-debug-exit -> QEMU exit 33.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph AND   = la a. la b. a(b)(FALSE)
+
+# XRGB8888 little-endian: a dword lays bytes B,G,R,X = V&255, V>>8, V>>16
+glyph DESK = 128                 # desktop  B=128  (dim blue)
+glyph WINA = 16711680            # window A R=255  (red)
+glyph WINB = 65280               # window B G=255  (green)
+glyph FG   = 16777215            # text     B=G=R=255 (white)
+
+glyph BB   = 268435456           # 0x10000000 — backbuffer in plain RAM
+glyph SH   = 480                 # screen height
+
+glyph AX = 80
+glyph AY = 60
+glyph WW = 200
+glyph WH = 150
+glyph BX = 180
+glyph BY = 120
+
+glyph FW    = 8                  # font cell width
+glyph FH    = 8                  # font cell height
+glyph SCALE = 3                  # each font pixel -> a SCALE x SCALE block
+glyph TXTOX = 20                 # text origin, RELATIVE to the window
+glyph TXTOY = 20
+glyph MAXCH = 7                  # DISPLAY width: (WW-TXTOX)/(FW*SCALE) = 180/24.
+                                 # No longer a cap on the buffer — the buffer is
+                                 # unbounded and the VIEW scrolls over it.
+glyph BKSP_SC = 14               # SET-1 make code for BACKSPACE
+glyph ENTER_SC = 28
+
+# probes: 'L' row 0 is 15 = cols 0..3 set, col 7 clear (bit 0 = leftmost)
+glyph PONX = 201
+glyph PONY = 141
+glyph POFFX = 222
+glyph POFFY = 141
+
+# ── PCI config read: reg at (bus 0, dev, off) via 0xCF8/0xCFC ──
+glyph CFG = la dev. la off.
+    SEQ(outl(3320)(add(add(2147483648)(mul(dev)(2048)))(off)))
+       (inl(3324))
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 0)(la _.
+      IF(int_eq(CFG(dev)(0))(286331444))(la _. dev)(la _.
+        self(add(dev)(1)))))
+
+# ── Bochs VBE dispi (index 0x1CE=462, data 0x1CF=463) ──
+glyph DISPI  = la idx. la val. SEQ(outw(462)(idx))(outw(463)(val))
+glyph RDISPI = la idx. SEQ(outw(462)(idx))(inw(463))
+glyph SETMODE =
+    SEQ(DISPI(4)(0))
+    (SEQ(DISPI(1)(640))
+    (SEQ(DISPI(2)(480))
+    (SEQ(DISPI(3)(32))
+    (DISPI(4)(65)))))
+
+# ── string plumbing ──
+glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
+    self(sub(n)(1))(str_tail(s))))
+glyph TAKE = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+    concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph LEN     = la s. str_to_int(str_len(s))
+glyph BYTE_AT = la s. la i. str_head(DROP(i)(s))
+glyph ORDI    = la c. str_to_int(ord(c))
+glyph BYTES_GO = Z(la self. la rest. la tok.
+    IF(str_eq(rest)(""))(la _.
+        IF(str_eq(tok)(""))(la _. "")(la _. chr(tok)))
+    (la _.
+    IF(str_eq(str_head(rest))(" "))(la _.
+        IF(str_eq(tok)(""))(la _. self(str_tail(rest))(""))
+            (la _. concat(chr(tok))(self(str_tail(rest))(""))))
+    (la _. self(str_tail(rest))(concat(tok)(str_head(rest))))))
+glyph BYTES = la s. BYTES_GO(s)("")
+
+glyph INDEX = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+glyph FONTSTR = "0 0 0 0 0 0 0 0 12 30 51 51 63 51 51 0 63 102 102 62 102 102 63 0 60 102 3 3 3 102 60 0 31 54 102 102 102 54 31 0 127 70 22 30 22 70 127 0 127 70 22 30 22 6 15 0 60 102 3 3 115 102 124 0 51 51 51 63 51 51 51 0 30 12 12 12 12 12 30 0 120 48 48 48 51 51 30 0 103 102 54 30 54 102 103 0 15 6 6 6 70 102 127 0 99 119 127 127 107 99 99 0 99 103 111 123 115 99 99 0 28 54 99 99 99 54 28 0 63 102 102 62 6 6 15 0 30 51 51 51 59 30 56 0 63 102 102 62 54 102 103 0 30 51 7 14 56 51 30 0 63 12 12 12 12 12 12 0 51 51 51 51 51 51 63 0 51 51 51 51 51 30 12 0 99 99 99 107 127 119 99 0 99 99 54 28 28 54 99 0 51 51 51 30 12 12 30 0 127 99 49 24 76 102 127 0 62 99 115 123 111 103 62 0 12 14 12 12 12 12 63 0 30 51 48 28 6 51 63 0 30 51 48 28 48 51 30 0 56 60 54 51 127 48 120 0 63 3 31 48 48 51 30 0 28 6 3 31 51 51 30 0 127 51 48 24 12 12 12 0 30 51 51 30 51 51 30 0 30 51 51 62 48 24 14 0"
+glyph INDEXOF = Z(la self. la s. la c. la i.
+    IF(str_eq(s)(""))(la _. 0)(la _.
+    IF(str_eq(str_head(s))(c))(la _. i)(la _. self(str_tail(s))(c)(add(i)(1)))))
+glyph GLYPH_INDEX = la c. INDEXOF(INDEX)(c)(0)
+glyph POW2 = Z(la self. la k. IF(int_eq(k)(0))(la _. 1)(la _. mul(2)(self(sub(k)(1)))))
+glyph BITSET = la b. la col. int_eq(mod(div(b)(POW2(col)))(2))(1)
+
+# ── THE KEYMAP: SET-1 make-code -> character, as ONE flat 58-byte string ──
+#   Index IS the scancode. '~' means "no character here". Index 57 is SPACE.
+glyph KEYMAP = "~~1234567890~~~~QWERTYUIOP~~~~ASDFGHJKL~~~~~ZXCVBNM~~~~~~ "
+glyph KMLEN  = 58
+# A RELEASE code is make+0x80 (>=128) and anything past the table has no
+# character. The bound is LOAD-BEARING, not decoration: DROP past the end of a
+# string returns "", and str_head("") is "", so an unbounded lookup would append
+# an EMPTY character — a silent buffer corruption with no visible glyph.
+glyph KEYCH = la sc.
+    IF(lt(sc)(KMLEN))(la _. BYTE_AT(KEYMAP)(sc))(la _. "~")
+
+# ── THE EDIT MODEL — pure, host-testable, the whole of what HAL.4g adds ──
+#   NEWBUF(sc)(buf) is the buffer after that keystroke. A key that changes
+#   nothing returns buf ITSELF, which is how the loop knows to skip the frame.
+#   Backspace on an empty line is a no-op rather than an error: there is nothing
+#   to delete, and halting the compositor over it would be absurd.
+glyph BKSP = la buf.
+    (la n. IF(int_eq(n)(0))(la _. buf)(la _. TAKE(sub(n)(1))(buf)))(LEN(buf))
+glyph NEWBUF = la sc. la buf.
+    IF(int_eq(sc)(BKSP_SC))
+      (la _. BKSP(buf))
+      (la _. (la c. IF(str_eq(c)("~"))(la _. buf)(la _. concat(buf)(c)))(KEYCH(sc)))
+
+#   VIEW is the last MAXCH characters — the window onto an unbounded buffer.
+#   A buffer that fits shows whole; a longer one scrolls left.
+glyph VIEW = la buf.
+    (la n. IF(lt(n)(add(MAXCH)(1)))(la _. buf)(la _. DROP(sub(n)(MAXCH))(buf)))(LEN(buf))
+
+# ── a surface: one fill() per row (rows contiguous, pitch-strided) ──
+glyph RECT = Z(la self. la pitch. la x. la y. la w. la h. la col.
+    IF(int_eq(h)(0))(la _. "!")(la _.
+      SEQ(fill(add(BB)(add(mul(y)(pitch))(mul(x)(4))))(w)(col))
+         (self(pitch)(x)(add(y)(1))(w)(sub(h)(1))(col))))
+
+# ── one scaled font pixel: a SCALE-tall stack of SCALE-wide fills ──
+glyph BLOCK = Z(la self. la pitch. la px. la py. la k.
+    IF(int_eq(k)(0))(la _. "!")(la _.
+      SEQ(fill(add(BB)(add(mul(py)(pitch))(mul(px)(4))))(SCALE)(FG))
+         (self(pitch)(px)(add(py)(1))(sub(k)(1)))))
+
+# ── the visible text: ONE flat loop over n*FH*FW pixel-tests ──
+glyph DRAWS = Z(la self. la font. la pitch. la x. la y. la buf. la n. la i.
+    IF(int_eq(i)(mul(n)(mul(FH)(FW))))(la _. "!")(la _.
+      (la ci.
+        (la rr.
+          (la cc.
+            (la rb.
+              SEQ(IF(BITSET(rb)(cc))
+                    (la _. BLOCK(pitch)
+                             (add(x)(mul(add(mul(ci)(FW))(cc))(SCALE)))
+                             (add(y)(mul(rr)(SCALE)))
+                             (SCALE))
+                    (la _. "!"))
+                 (self(font)(pitch)(x)(y)(buf)(n)(add(i)(1))))
+            (ORDI(BYTE_AT(font)(add(mul(GLYPH_INDEX(BYTE_AT(buf)(ci)))(FH))(rr)))))
+          (mod(i)(FW)))
+        (mod(div(i)(FW))(FH)))
+      (div(i)(mul(FH)(FW)))))
+
+# ── the cursor: a bar under the next cell, so the caret is visible on an empty
+#    line and stays pinned at the right edge once the view is scrolling ──
+glyph CURSOR = la pitch. la x. la y. la n.
+    BLOCK(pitch)(add(x)(mul(mul(n)(FW))(SCALE)))(add(y)(mul(FH)(SCALE)))(SCALE)
+
+# ── compose the whole frame off-screen: desktop, A, B ON TOP, then B's TEXT ──
+#   SCENE takes the VIEW (not the buffer) and derives its own length, so the
+#   count can never disagree with the string being drawn.
+glyph SCENE = la font. la pitch. la view.
+    (la n.
+      SEQ(fill(BB)(mul(SH)(div(pitch)(4)))(DESK))
+      (SEQ(RECT(pitch)(AX)(AY)(WW)(WH)(WINA))
+      (SEQ(RECT(pitch)(BX)(BY)(WW)(WH)(WINB))
+      (SEQ(DRAWS(font)(pitch)(add(BX)(TXTOX))(add(BY)(TXTOY))(view)(n)(0))
+          (CURSOR(pitch)(add(BX)(TXTOX))(add(BY)(TXTOY))(n))))))
+    (LEN(view))
+
+glyph PRESENT = la base. la pitch. memcpy(base)(BB)(mul(SH)(pitch))
+
+glyph PIX = la base. la pitch. la x. la y.
+    (la p. concat(concat(concat(concat(int_to_str(peek(p)))(","))
+                              (int_to_str(peek(add(p)(1)))))(","))
+                 (int_to_str(peek(add(p)(2)))))
+    (add(base)(add(mul(y)(pitch))(mul(x)(4))))
+
+glyph TWIT = la base. la pitch.
+    SEQ(print(concat("edit on=")(PIX(base)(pitch)(PONX)(PONY))))
+       (print(concat("edit off=")(PIX(base)(pitch)(POFFX)(POFFY))))
+
+# ── i8042 polling keyboard (HAL.2): read one SET-1 scancode ──
+glyph OBF    = la st. int_eq(mod(st)(2))(1)
+glyph NOTAUX = la st. int_eq(mod(div(st)(32))(2))(0)
+glyph READY  = la st. AND(OBF(st))(NOTAUX(st))
+glyph POLL = Z(la self. la _.
+    (la st. IF(READY(st))(la _. inb(96))(la _. self("!")))
+      (inb(100)))
+
+# ── the inner loop: poll -> edit -> recompose -> present, until ENTER ──
+#   ONE threaded value (buf). A keystroke that leaves the buffer unchanged
+#   (release code, modifier, backspace at an empty line) is detected by
+#   comparing the NEW buffer with the old, and skips the frame entirely.
+glyph LOOP = Z(la self. la font. la base. la pitch. la buf.
+    (la sc.
+      IF(int_eq(sc)(ENTER_SC))
+        (la _. print("edit done"))
+        (la _.
+          (la nbuf.
+            IF(str_eq(nbuf)(buf))
+              (la _. self(font)(base)(pitch)(buf))
+              (la _.
+                SEQ(SCENE(font)(pitch)(VIEW(nbuf)))(
+                SEQ(PRESENT(base)(pitch))(
+                SEQ(print(concat("edit buf=")(nbuf)))(
+                SEQ(print(concat("edit view=")(VIEW(nbuf))))(
+                SEQ(TWIT(base)(pitch))(
+                self(font)(base)(pitch)(nbuf))))))))
+            (NEWBUF(sc)(buf))))
+      (POLL("!")))
+
+glyph MAIN =
+    (la font.
+      (la dev.
+        (la bar.
+          (la base.
+            SEQ(SETMODE)
+            ((la pitch.
+                SEQ(print(concat(concat("edit lfb=")(int_to_str(base)))(concat(" pitch=")(int_to_str(pitch)))))
+                (SEQ(SCENE(font)(pitch)(""))          # initial frame: empty line + cursor
+                (SEQ(PRESENT(base)(pitch))
+                (SEQ(print("edit ready"))
+                (LOOP(font)(base)(pitch)(""))))))
+             (mul(RDISPI(6))(4))))
+          (sub(bar)(mod(bar)(16))))
+        (CFG(dev)(16)))
+      (FIND(0)))
+    (BYTES(FONTSTR))

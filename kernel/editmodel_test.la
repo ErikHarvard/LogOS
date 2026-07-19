@@ -1,0 +1,67 @@
+# HAL.4g pre-flight: the EDIT MODEL, on the HOST, with no screen/PCI/i8042.
+#
+# comp_edit.la's whole contribution is a PURE function of (scancode, buffer) —
+# NEWBUF — plus VIEW, the window onto it. A comp_*.la rebuild is ~40 minutes
+# (measured: 38m01s and 41m24s for HAL.4f), so an off-by-one in TAKE or VIEW
+# discovered on the metal costs most of an hour. It is discovered here instead.
+#
+# KEYMAP / KMLEN / KEYCH / DROP / TAKE / LEN / BKSP / NEWBUF / VIEW / MAXCH are
+# copied VERBATIM from comp_edit.la. If this file and comp_edit.la ever disagree,
+# THIS is the stale one: the metal program is the artifact, this is its probe.
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
+    self(sub(n)(1))(str_tail(s))))
+glyph TAKE = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+    concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph LEN     = la s. str_to_int(str_len(s))
+glyph BYTE_AT = la s. la i. str_head(DROP(i)(s))
+
+glyph KEYMAP = "~~1234567890~~~~QWERTYUIOP~~~~ASDFGHJKL~~~~~ZXCVBNM~~~~~~ "
+glyph KMLEN  = 58
+glyph KEYCH = la sc.
+    IF(lt(sc)(KMLEN))(la _. BYTE_AT(KEYMAP)(sc))(la _. "~")
+
+glyph MAXCH = 7
+glyph BKSP_SC = 14
+glyph BKSP = la buf.
+    (la n. IF(int_eq(n)(0))(la _. buf)(la _. TAKE(sub(n)(1))(buf)))(LEN(buf))
+glyph NEWBUF = la sc. la buf.
+    IF(int_eq(sc)(BKSP_SC))
+      (la _. BKSP(buf))
+      (la _. (la c. IF(str_eq(c)("~"))(la _. buf)(la _. concat(buf)(c)))(KEYCH(sc)))
+glyph VIEW = la buf.
+    (la n. IF(lt(n)(add(MAXCH)(1)))(la _. buf)(la _. DROP(sub(n)(MAXCH))(buf)))(LEN(buf))
+
+# A whole session, folded left to right, exactly as the metal loop would:
+#   L(38) O(24) G(34) O(24) S(31)  -> "LOGOS"
+#   BKSP(14)                       -> "LOGO"       <- backspace
+#   S(31) A(30) B(48) C(46) D(32)  -> "LOGOSABCD"  <- 9 chars, past MAXCH=7
+glyph S1 = NEWBUF(31)(NEWBUF(24)(NEWBUF(34)(NEWBUF(24)(NEWBUF(38)(""))))) # LOGOS
+glyph S2 = NEWBUF(14)(S1)                                                # LOGO
+glyph S3 = NEWBUF(32)(NEWBUF(46)(NEWBUF(48)(NEWBUF(30)(NEWBUF(31)(S2))))) # LOGOSABCD
+
+# The no-op cases must return the buffer UNCHANGED, because the metal loop uses
+# str_eq(new)(old) to decide whether to spend a frame. If a no-op returned an
+# equal-but-rebuilt string that would still compare equal (str_eq is by value),
+# but a no-op that SILENTLY GREW the buffer would not — which is the bug the
+# KEYCH bound exists to stop, so it is asserted rather than assumed.
+glyph N1 = NEWBUF(166)(S1)      # release code -> unchanged
+glyph N2 = NEWBUF(14)("")       # backspace on an empty line -> unchanged (no-op)
+glyph N3 = NEWBUF(1)(S1)        # ESC, no character -> unchanged
+glyph SHOW = la b. IF(b)(la _. "T")(la _. "F")
+
+glyph MAIN =
+    SEQ(print(concat("typed=")(S1)))
+   (SEQ(print(concat("after_bksp=")(S2)))
+   (SEQ(print(concat("grown=")(S3)))
+   (SEQ(print(concat("view_short=")(VIEW(S1))))
+   (SEQ(print(concat("view_scrolled=")(VIEW(S3))))
+   (SEQ(print(concat("view_len=")(str_len(VIEW(S3)))))
+   (SEQ(print(concat(concat(concat("noop_rel_bkspempty_esc=")
+                (SHOW(str_eq(N1)(S1))))
+                (SHOW(str_eq(N2)(""))))
+                (SHOW(str_eq(N3)(S1)))))
+       (print(concat("bksp_to_empty=[")(concat(BKSP(BKSP(BKSP(BKSP("ABCD")))))("]"))))))))))
