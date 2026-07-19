@@ -836,7 +836,7 @@ glyph MOVENC = la labs. la w. la a. la b.
                             (la _. MOVABS(REGNUM(a))(n))
                             (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))))
                    (EVAL(labs)(b)))
-            (la _. MOVABS(REGNUM(a))(LABADDR(b)(labs))))))))))
+            (la _. IF(int_eq(w)(8))(la _. MOVABS(REGNUM(a))(LABADDR(b)(labs)))(la _. MOVIMM(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a)))))))))))
 glyph ALUENC = la op. la w. la a. la b.
     IF(ISREG(b))
       (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
