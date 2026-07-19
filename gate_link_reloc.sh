@@ -220,11 +220,31 @@ if [ -x link_out ]; then
     #   and it must be writable, never executable
     readelf -l --wide link_out 2>/dev/null | grep -q 'LOAD.*RWE' \
         && { echo "FAIL  link_reloc.la: .bss segment is executable (W^X violated)"; ok=0; }
-    #   an empty region must cost no FILE space: padding to it wrote 16 KB of
-    #   zeros to hold nothing until this was fixed.
+    #   ★ AN EMPTY REGION MUST COST NO FILE SPACE. Padding up to a .bss
+    #   segment's offset once wrote 16 KB of zeros to hold nothing.
+    #
+    #   This began as `[ "$fsz" -lt 12288 ]`, which was correct but BRITTLE: a
+    #   magic threshold coupled to today's section count. Add a legitimate
+    #   fifth section, the file outgrows the number, the gate fails
+    #   spuriously — and whoever "fixes" it by raising the threshold silently
+    #   destroys the protection. Correct today, wrong the moment the thing it
+    #   guards changes shape.
+    #
+    #   Stated structurally instead: the file must end exactly where its last
+    #   segment WITH FILE BYTES ends. Any byte past that is padding nothing
+    #   reads, whatever the section count. (Prompted by track A's review — the
+    #   claim there was that no assertion existed, which was wrong; the real
+    #   defect was that the assertion could not survive the next section.)
     fsz=$(stat -c%s link_out)
-    [ "$fsz" -lt 12288 ] \
-        || { echo "FAIL  link_reloc.la: $fsz-byte file — a zero-filesz segment is consuming file space"; ok=0; }
+    lastend=0
+    for pair in $(readelf -l --wide link_out 2>/dev/null | awk '/^  LOAD/ {print $2","$5}'); do
+        poff=${pair%,*}; pfsz=${pair#*,}
+        [ "$pfsz" = "0x000000" ] && continue
+        end=$(( $(printf '%d' "$poff") + $(printf '%d' "$pfsz") ))
+        [ "$end" -gt "$lastend" ] && lastend=$end
+    done
+    [ "$fsz" = "$lastend" ] \
+        || { echo "FAIL  link_reloc.la: file is $fsz bytes but its last loadable byte is at $lastend — $((fsz - lastend)) bytes of padding nothing reads"; ok=0; }
     BGOT=$(./link_out); BRC2=$?
     BWANT=$(./link_ref_bss)
     [ "$BGOT" = "$BWANT" ] && [ "$BRC2" = "0" ] \
