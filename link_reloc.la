@@ -449,6 +449,51 @@ glyph BODY = la regs. (Z(la self. la l. la cur.
                  (FILEOFF(BASEOF(R_NAME(h))))))
       (R_BYTES(h)))))(regs)
 
+#   ── N INPUTS ───────────────────────────────────────────────────────────────
+#   The object list comes from a MANIFEST — link_inputs.txt, one path per line
+#   — rather than two fixed names. This is the last place the number two
+#   survived, and it is why the previous stages were worth doing separately:
+#   with placement, lookup and resolution already folding over a list, the
+#   manifest only has to produce a longer list.
+#   ★ REV is not cosmetic. The walk accumulates with CONS, so without it the
+#   manifest comes back REVERSED — and that is link ORDER, which decides
+#   section packing, which object a duplicate is reported against, and where
+#   the entry point lands. The first version linked and RAN correctly with the
+#   order inverted (_start at 0x401020 instead of 0x401000), which is the
+#   silent-wrongness shape: a passing happy path over an incorrect layout.
+glyph SPLITLINES = la s. REV(
+    (Z(la self. la rest. la cur. la acc.
+      IF(int_eq(str_to_int(str_len(rest)))(0))
+        (la _. IF(int_eq(str_to_int(str_len(cur)))(0))(la _. acc)(la _. CONS(cur)(acc)))
+        (la _. IF(str_eq(str_head(rest))(NL))
+                 (la _. self(str_tail(rest))("")
+                        (IF(int_eq(str_to_int(str_len(cur)))(0))(la _. acc)(la _. CONS(cur)(acc))))
+                 (la _. self(str_tail(rest))(concat(cur)(str_head(rest)))(acc)))))
+    (s)("")(NIL))(NIL)
+
+#   Objects are numbered from 1 in manifest order, which is also link order —
+#   the order duplicate diagnostics and section packing refer to.
+glyph MKOBJS = la paths.
+    REV((Z(la self. la l. la i. la acc.
+        l(acc)(la h. la t.
+          (la f. self(t)(add(i)(1))(CONS(OBJ(i)(f)(FIND_SEC(f)(".symtab")))(acc)))
+          (read_file(h)))))
+      (paths)(1)(NIL))(NIL)
+
+#   Each object's relocated .text, keyed by index — the list form of what p1
+#   and p2 were as separate binders.
+glyph MKPATCHED = la objs. la plan. la resolve.
+    (Z(la self. la l.
+      l(NIL)(la h. la t.
+        (la ts.
+          CONS(PAIR(O_IDX(h))(PAIR(ts)
+              (APPLYRELS(O_F(h))(O_SS(h))(FIND_SEC(O_F(h))(".rela.text"))
+                        (la sec. VAOF(plan)(O_IDX(h))(sec))(resolve)
+                        (VAOF(plan)(O_IDX(h))(ts))(SECBYTES(O_F(h))(ts)))))
+              (self(t)))
+        (FIND_SEC(O_F(h))(".text")))))
+    (objs)
+
 glyph CHECKALL = la objs. (Z(la self. la l.
     l("ok")(la h. la t.
       SEQ(CHECKSECS(O_F(h))(concat("input ")(int_to_str(O_IDX(h)))))(self(t)))))(objs)
@@ -498,63 +543,44 @@ glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
                (la _. add(va(SYM_SHNDX(f)(ss)(i)))(SYM_VALUE(f)(ss)(i)))
                (la _. self(add(i)(1))))))(0)
 
+#   The merged .text, pulled back out of the regions. Collapsing MAIN's binders
+#   dropped the write of this file, and the byte-identity-against-ld check —
+#   the strongest assertion in the suite — then had no input and failed loudly.
+#   It is emitted for the gate, not for the linker: the executable carries the
+#   same bytes inside it.
+glyph REGOF = la regs. la name. (Z(la self. la l.
+    l("")(la h. la t. IF(str_eq(R_NAME(h))(name))(la _. R_BYTES(h))(la _. self(t)))))(regs)
+
 glyph MAIN =
-  (la f1. (la f2.
-  (la ss1. (la ss2.
   (la objs.
   (la _chk.
-  (la t1sec. (la t2sec. (la r2sec.
   (la plan.
-  (la t2addr.
-  (la va1. (la va2.
   (la resolve.
-  (la p1. (la p2.
-    (la merged. (la rodata.
-      SEQ(DUPCHECK(objs))(
-      SEQ(write_file("link_text.bin")(merged))(
-      SEQ(write_exec("link_out")(
-            (la regs. (la nph. CAT(
-               CONS(EHDR(resolve("_start"))(nph))(
-               CONS(PHDRS(regs))(
-               CONS(BODY(regs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
-               NIL)))))
-             (LENL(regs)))
-            (MKREGIONS(objs)
-                      (CONS(PAIR(1)(PAIR(t1sec)(p1)))(CONS(PAIR(2)(PAIR(t2sec)(p2)))(NIL)))
-                      (plan))))(
-      print(CAT(
-        CONS("merged .text = ")(
-        CONS(int_to_str(str_to_int(str_len(merged))))(
-        CONS(" bytes")(
-        CONS(NL)(
-        CONS("  obj1 patched ")(
-        CONS(int_to_str(str_to_int(str_len(p1))))(
-        CONS(" bytes @ ")(
-        CONS(int_to_str(TEXT_BASE))(
-        CONS(NL)(
-        CONS("  obj2 patched ")(
-        CONS(int_to_str(str_to_int(str_len(p2))))(
-        CONS(" bytes @ ")(
-        CONS(int_to_str(t2addr))(
-        CONS(NL)(
-        NIL)))))))))))))))))))
-    )(SECBYTES(f2)(r2sec))
-    )(CAT(CONS(p1)(CONS(NOPS(sub(t2addr)(add(TEXT_BASE)(SH_SIZE(f1)(t1sec)))))(CONS(p2)(NIL)))))
-  )(APPLYRELS(f2)(ss2)(FIND_SEC(f2)(".rela.text"))(va2)(resolve)(t2addr)(SECBYTES(f2)(t2sec)))
-  )(APPLYRELS(f1)(ss1)(FIND_SEC(f1)(".rela.text"))(va1)(resolve)(TEXT_BASE)(SECBYTES(f1)(t1sec)))
+  (la patched.
+  (la regs.
+  (la nph.
+    SEQ(DUPCHECK(objs))(
+    SEQ(write_file("link_text.bin")(REGOF(regs)(".text")))(
+    SEQ(write_exec("link_out")(CAT(
+          CONS(EHDR(resolve("_start"))(nph))(
+          CONS(PHDRS(regs))(
+          CONS(BODY(regs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
+          NIL))))))(
+    print(CAT(
+      CONS("linked ")(
+      CONS(int_to_str(LENL(objs)))(
+      CONS(" objects into ")(
+      CONS(int_to_str(LENL(regs)))(
+      CONS(" segments, entry ")(
+      CONS(int_to_str(resolve("_start")))(
+      CONS(NL)(
+      NIL))))))))))))
+  )(LENL(regs))
+  )(MKREGIONS(objs)(patched)(plan))
+  )(MKPATCHED(objs)(plan)(resolve))
   )(la want. RESOLVE_L(objs)(plan)(want))
-  )(la sec. VAOF(plan)(2)(sec))
-  )(la sec. VAOF(plan)(1)(sec))
-  )(VAOF(plan)(2)(t2sec))
   )(MKPLAN(objs))
-  )(FIND_SEC(f2)(".rodata"))
-  )(FIND_SEC(f2)(".text"))
-  )(FIND_SEC(f1)(".text"))
   )(CHECKALL(objs))
-  )(CONS(OBJ(1)(f1)(ss1))(CONS(OBJ(2)(f2)(ss2))(NIL)))
-  )(FIND_SEC(f2)(".symtab"))
-  )(FIND_SEC(f1)(".symtab"))
-  )(read_file("link_in2.o"))
-  )(read_file("link_in1.o"))
+  )(MKOBJS(SPLITLINES(read_file("link_inputs.txt"))))
 
 glyph SEQ = la a. la b. b

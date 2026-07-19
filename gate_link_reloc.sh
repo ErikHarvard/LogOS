@@ -25,12 +25,14 @@ nasm -f elf64 link_test_dup.asm -o link_test_dup.o
 nasm -f elf64 link_test_plt.asm -o link_test_plt.o
 nasm -f elf64 link_test_rw.asm -o link_test_rw.o
 nasm -f elf64 link_test_bss.asm -o link_test_bss.o
+nasm -f elf64 link_test_c.asm -o link_test_c.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
 ld -o link_ref link_test_a.o link_test_b.o
 objcopy -O binary --only-section=.text link_ref ldtext.bin
 
 cp link_test_a.o link_in1.o
 cp link_test_b.o link_in2.o
+printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
 rm -f link_text.bin
 OUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1) || {
     echo "FAIL  link_reloc.la: crashed or timed out"; echo "$OUT"; exit 1; }
@@ -98,6 +100,7 @@ readelf -l --wide link_out 2>/dev/null | grep -q "LOAD.*RWE"     && { echo "FAIL
 
 # --- NEGATIVE: an unresolved symbol must still refuse, at patch time too ---
 cp link_test_a.o link_in2.o
+printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
 #   ONE run per case — see gate_link.sh. Halves the negative-gate cost.
 #   `set -e` makes a bare VAR=$(failing-cmd) fatal, and these commands are
 #   SUPPOSED to fail — so the capture goes inside an `if`, where the shell
@@ -119,6 +122,7 @@ ld -o link_ref_plt link_test_plt.o link_test_b.o
 objcopy -O binary --only-section=.text link_ref_plt ldtext_plt.bin
 cp link_test_plt.o link_in1.o
 cp link_test_b.o   link_in2.o
+printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
 rm -f link_out link_text.bin
 POUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1) || {
     echo "FAIL  link_reloc.la: crashed on the PLT32 fixture"; echo "$POUT"; ok=0; }
@@ -156,6 +160,7 @@ fi
 #   silently proved the wrong thing.
 cp link_test_dup.o link_in1.o
 cp link_test_b.o   link_in2.o
+printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
 rm -f link_out link_text.bin
 #   `set -e` makes a bare VAR=$(failing-cmd) fatal, and these commands are
 #   SUPPOSED to fail — so the capture goes inside an `if`, where the shell
@@ -182,6 +187,7 @@ echo "$DOUT" | grep -q "duplicate symbol: greet" \
 ld -o link_ref_rw link_test_a.o link_test_rw.o
 cp link_test_a.o  link_in1.o
 cp link_test_rw.o link_in2.o
+printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
 rm -f link_out
 if ROUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then RRC=0; else RRC=$?; fi
 [ "$RRC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link the 3-section fixture: $ROUT"; ok=0; }
@@ -209,6 +215,7 @@ fi
 ld -o link_ref_bss link_test_a.o link_test_bss.o
 cp link_test_a.o   link_in1.o
 cp link_test_bss.o link_in2.o
+printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
 rm -f link_out
 if BOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then BRC=0; else BRC=$?; fi
 [ "$BRC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link the .bss fixture: $BOUT"; ok=0; }
@@ -253,6 +260,45 @@ else
     echo "FAIL  link_reloc.la: .bss link emitted no executable"; ok=0
 fi
 
+# --- THREE OBJECTS: N is not 2 ---
+#   Every stage of the N-object rewrite was verified equivalent ON TWO OBJECTS,
+#   which by construction cannot tell "supports N" from "shaped for two but
+#   tidier" — the same blind spot as DUPCHECK's nested walk covering exactly
+#   one pair. This is the case that distinguishes them, and it needs NO code
+#   change: a third line in the manifest.
+#
+#   A dropped third object would fail no other assertion here, since every
+#   other check uses the two-object fixtures. It would simply link two objects,
+#   run correctly, and be missing `bump`.
+ld -o link_ref3 link_test_a.o link_test_b.o link_test_c.o
+cp link_test_a.o link_in1.o
+cp link_test_b.o link_in2.o
+cp link_test_c.o link_in3.o
+printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt
+rm -f link_out
+if TOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then TRC=0; else TRC=$?; fi
+[ "$TRC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link three objects: $TOUT"; ok=0; }
+echo "$TOUT" | grep -q "linked 3 objects" \
+    || { echo "FAIL  link_reloc.la: did not report linking 3 objects (got: $TOUT)"; ok=0; }
+if [ -x link_out ]; then
+    #   The third object's placement is the payload: its .text must be packed
+    #   after the other two, at the address ld independently chose for `bump`.
+    want=$(nm link_ref3 | awk '$3=="bump"{print $1}')
+    wantdec=$(printf '%d' "0x$want")
+    tsz=$(readelf -l --wide link_out | awk '/^  LOAD/ && $7=="R" && $8=="E" {print $5; exit}')
+    [ -n "$tsz" ] || tsz=$(readelf -l --wide link_out | awk '/^  LOAD.*R E/ {print $5; exit}')
+    csz=$(readelf -S --wide link_test_c.o | awk '/ \.text /{print $7}')
+    endaddr=$(( 4198400 + $(printf '%d' "$tsz") ))
+    cstart=$(( endaddr - $(printf '%d' "0x$csz") ))
+    [ "$cstart" = "$wantdec" ] \
+        || { echo "FAIL  link_reloc.la: third object placed at $cstart, ld put bump at $wantdec"; ok=0; }
+    TGOT=$(./link_out); TRC2=$?
+    [ "$TGOT" = "$(./link_ref3)" ] && [ "$TRC2" = "0" ] \
+        || { echo "FAIL  3-object binary printed '$TGOT' rc=$TRC2"; ok=0; }
+else
+    echo "FAIL  link_reloc.la: 3-object link emitted no executable"; ok=0
+fi
+
 # --- NEGATIVE: a section the layout cannot place must be REFUSED ---
 #   The layout knows .text and .rodata. Every real gcc object also carries
 #   .data/.bss/.eh_frame, all SHF_ALLOC — they occupy memory at run time and so
@@ -282,6 +328,6 @@ CEOF
     fi
 fi
 
-rm -f link_in1.o link_in2.o
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (PC32 + PLT32 + 64, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates)"
+rm -f link_in1.o link_in2.o link_inputs.txt
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects, PC32 + PLT32 + 64, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates)"
 [ "$ok" = 1 ]

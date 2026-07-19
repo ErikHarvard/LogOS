@@ -167,3 +167,7 @@ watched.la
 /link_ref_bss
 /bss.log
 /bss2.log
+/link_test_c.o
+/link_ref3
+/three.log
+/link_inputs.txt
