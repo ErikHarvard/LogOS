@@ -300,34 +300,76 @@ else
 fi
 
 # --- NEGATIVE: a section the layout cannot place must be REFUSED ---
-#   The layout knows .text and .rodata. Every real gcc object also carries
-#   .data/.bss/.eh_frame, all SHF_ALLOC — they occupy memory at run time and so
-#   need addresses. Previously they were "handled" by not being looked for, and
-#   a symbol defined in one resolved against a base that was never assigned:
-#   the program links and then misbehaves far from the cause. SHF_ALLOC is the
-#   discriminator, not a name blacklist, so .symtab/.strtab/.comment/.note* are
-#   correctly ignored — the loader never maps them.
+#   ★ THIS FIXTURE REPLACED A STALE ONE, which is the point. The gate used to
+#   point at a gcc object, whose .data/.bss/.eh_frame were all unplaceable when
+#   it was written. Then .data and .bss became placeable and .eh_frame
+#   explicitly droppable — so that object no longer had the property the gate
+#   NAMES, and it began failing for an unrelated reason (unresolved symbol).
+#   The gate caught that ONLY because it asserts WHICH diagnostic; a check for
+#   "it failed" would have passed while testing nothing, indefinitely.
+#
+#   link_test_odd.asm carries `.weird`: PROGBITS + SHF_ALLOC, so it occupies
+#   memory at run time and the layout must answer for it, and it is a name this
+#   linker cannot know. It exists for no other purpose, so it cannot quietly
+#   become placeable the way .data did.
+cp link_test_a.o   link_in1.o
+cp link_test_odd.o link_in2.o
+printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
+rm -f link_out link_text.bin
+if SOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then SRC=0; else SRC=$?; fi
+[ "$SRC" -ne 0 ] \
+    || { echo "FAIL  link_reloc.la: accepted an object with an unplaceable section"; ok=0; }
+echo "$SOUT" | grep -q "allocatable section this layout cannot place" \
+    || { echo "FAIL  link_reloc.la: refused, but not for the section reason (got: $(echo "$SOUT" | tail -1))"; ok=0; }
+[ -e link_out ] && { echo "FAIL  link_reloc.la: wrote link_out despite refusing"; ok=0; }
+
+
+# --- REAL COMPILER OUTPUT: asm entry + two gcc objects ---
+#   The first fixture whose inputs this project did not author. gcc picks its
+#   own section layout, symbol ordering and relocations; the linker either
+#   copes or it only ever worked on objects shaped by its author.
+#
+#   The assertion is the EXIT STATUS: compute(21) -> helper(21)+1 = 43, so the
+#   value travelled through BOTH C objects. A wrong address for either gives a
+#   segfault or garbage, never 43.
+#
+#   ★ set -e KILLS the script on any non-zero exit, and this fixture exits 43
+#   BY DESIGN. Every other gated binary exits 0, so that trap was unreachable
+#   until a test whose whole point is a non-zero status — it died silently with
+#   exit=43, a suspiciously specific number that is test DATA, not a shell code.
+GCC_RAN=no
 if command -v gcc >/dev/null 2>&1; then
-    gcc -c -O0 -x c - -o gate_secs.o 2>/dev/null <<'CEOF'
+    gcc -c -O0 -x c - -o gate_g1.o 2>/dev/null <<'C1'
 extern int helper(int);
-int compute(int x){ return helper(x); }
-CEOF
-    if [ -f gate_secs.o ]; then
-        cp link_test_a.o link_in1.o
-        cp gate_secs.o   link_in2.o
-        if SOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then SRC=0; else SRC=$?; fi
-        [ "$SRC" -ne 0 ] \
-            || { echo "FAIL  link_reloc.la: accepted an object with unplaceable sections"; ok=0; }
-        #   Must name the SECTION problem, not some downstream symptom. Both the
-        #   right and wrong behaviours exit non-zero, so checking only failure
-        #   would pass while the check ran in the wrong place — which it did,
-        #   until the check was moved from the body to a binder.
-        echo "$SOUT" | grep -q "allocatable section this layout cannot place" \
-            || { echo "FAIL  link_reloc.la: refused, but not for the section reason (got: $(echo "$SOUT" | tail -1))"; ok=0; }
-        rm -f gate_secs.o
+int compute(int x) { return helper(x) + 1; }
+C1
+    gcc -c -O0 -x c - -o gate_g2.o 2>/dev/null <<'C2'
+int helper(int x) { return x * 2; }
+C2
+    if [ -f gate_g1.o ] && [ -f gate_g2.o ]; then
+        GCC_RAN=yes
+        ld -o link_ref_gcc link_test_start.o gate_g1.o gate_g2.o 2>/dev/null
+        if ./link_ref_gcc; then LDRC=0; else LDRC=$?; fi
+        cp link_test_start.o link_in1.o
+        cp gate_g1.o link_in2.o
+        cp gate_g2.o link_in3.o
+        printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt
+        rm -f link_out
+        if GOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then GRC=0; else GRC=$?; fi
+        [ "$GRC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link real gcc objects: $GOUT"; ok=0; }
+        if [ -x link_out ]; then
+            if ./link_out; then OURRC=0; else OURRC=$?; fi
+            [ "$OURRC" = "$LDRC" ] \
+                || { echo "FAIL  gcc-object link exited $OURRC, ld's binary exits $LDRC"; ok=0; }
+            [ "$OURRC" = "43" ] \
+                || { echo "FAIL  gcc-object link exited $OURRC, expected 43"; ok=0; }
+        else
+            echo "FAIL  link_reloc.la: gcc-object link emitted no executable"; ok=0
+        fi
+        rm -f gate_g1.o gate_g2.o
     fi
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects, PC32 + PLT32 + 64, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates)"
 [ "$ok" = 1 ]

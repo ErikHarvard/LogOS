@@ -171,3 +171,11 @@ watched.la
 /link_ref3
 /three.log
 /link_inputs.txt
+/gcc1.o
+/gcc2.o
+/gate_g1.o
+/gate_g2.o
+/link_ref_gcc
+/link_test_start.o
+/gcclink.log
+/link_test_odd.o

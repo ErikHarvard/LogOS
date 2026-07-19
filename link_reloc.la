@@ -111,10 +111,19 @@ glyph SECBYTES = la f. la sec. TAKES(SH_SIZE(f)(sec))(DROPS(SH_OFF(f)(sec))(f))
 #   shared objects ever arrive here this must become a real PLT.
 glyph ISPCREL = la ty. OR(int_eq(ty)(2))(int_eq(ty)(4))
 
+#   ★ A symbol living in a DROPPED section has no address. VAOF returns -1 for
+#   an unplaced section, and add(-1)(value) would be a plausible-looking wrong
+#   address — exactly the silent failure dropping was supposed to avoid. Refuse
+#   instead, naming the symbol.
 glyph SYMVAL = la f. la ss. la va. la resolve. la i.
     IF(SYM_IS_UNDEF(f)(ss)(i))
       (la _. resolve(SYMNAME(f)(ss)(i)))
-      (la _. add(va(SYM_SHNDX(f)(ss)(i)))(SYM_VALUE(f)(ss)(i)))
+      (la _. (la base.
+               IF(lt(base)(0))
+                 (la _. error(CAT(CONS("link: symbol lives in a section this layout does not place: ")(
+                                  CONS(SYMNAME(f)(ss)(i))(NIL)))))
+                 (la _. add(base)(SYM_VALUE(f)(ss)(i))))
+             (va(SYM_SHNDX(f)(ss)(i))))
 
 #   Apply every relocation of one object's .text, folding over the list so each
 #   patch sees the previous one's result.
@@ -243,12 +252,33 @@ glyph DEFINES = la f. la ss. la i.
 #   section occupies memory at run time", so it is precisely the set the layout
 #   must have an answer for. Non-alloc sections (.symtab, .strtab, .comment,
 #   .note*) are metadata the loader never maps, and ignoring those is correct.
+#   ★ DELIBERATELY DROPPED — decided, not ignored.
+#   Real gcc objects carry two ALLOC sections this linker will not place:
+#
+#   .eh_frame           unwinding data, and it has its OWN relocation section
+#                       (.rela.eh_frame, a PC32 into .text). Only .rela.text is
+#                       applied here, so PLACING it would embed unrelocated
+#                       unwind data — silently wrong, and worse than absent.
+#                       These are static binaries that never unwind, so nothing
+#                       reads it. Real support means applying every section's
+#                       relocations, not just .text's; that is the honest fix.
+#   .note.gnu.property  ISA/security metadata (CET/IBT). The loader consults it
+#                       via PT_NOTE, which this linker does not emit; omitting
+#                       it yields a binary without those opt-in properties,
+#                       which is what a minimal static exec has anyway.
+#
+#   Dropping is a CHOICE and is recorded as one. A symbol defined in a dropped
+#   section is refused rather than resolved (see SYMVAL), so the choice cannot
+#   silently produce a wrong address.
+glyph DROPPABLE = la n. OR(str_eq(n)(".eh_frame"))(str_eq(n)(".note.gnu.property"))
+
 glyph IS_ALLOC = la f. la i. int_eq(mod(div(SH_FLAGS(f)(i))(2))(2))(1)
 glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(OR(str_eq(n)(".data"))(str_eq(n)(".bss"))))
 glyph CHECKSECS = la f. la tag. (Z(la self. la i.
     IF(int_eq(i)(E_SHNUM(f)))
       (la _. "ok")
-      (la _. IF(AND(IS_ALLOC(f)(i))(NOT(PLACEABLE(SECNAME(f)(i)))))
+      (la _. IF(AND(IS_ALLOC(f)(i))
+                   (AND(NOT(PLACEABLE(SECNAME(f)(i))))(NOT(DROPPABLE(SECNAME(f)(i))))))
                (la _. error(CAT(CONS("link: ")(CONS(tag)(CONS(
                         " has an allocatable section this layout cannot place: ")(
                         CONS(SECNAME(f)(i))(NIL)))))))
