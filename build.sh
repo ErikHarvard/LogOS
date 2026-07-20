@@ -4113,17 +4113,19 @@ check_mono () {  # $1 = engine label, $2 = output file
     grep -q '^dir ▷.*DISTINCT'      "$2" || { echo "FAIL  monosemy($1): directional ▷ wrongly collapsed (not a synonym)"; ok=0; }
     grep -q '^polysemy.*YES (no polysemy)' "$2" || { echo "FAIL  monosemy($1): polysemy detected (distinct meanings share a glyph)"; ok=0; }
 }
-rm -f mono_host.out mono_vm.out
-./tiny_host monosemy_test.la > mono_host.out 2>/dev/null
+rm -f mono_host.out mono_vm.out mono_combined.la
+# DRIFT-PROOF: prepend canon.la's real κ; monosemy_test.la is report-only.
+cat canon.la monosemy_test.la > mono_combined.la
+./tiny_host mono_combined.la > mono_host.out 2>/dev/null
 check_mono "C host" mono_host.out
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
-cp monosemy_test.la logos_source.la
+cp mono_combined.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 ./logos_secd > mono_vm.out 2>/dev/null
 check_mono "native VM" mono_vm.out
 cmp -s mono_host.out mono_vm.out || { echo "FAIL  monosemy: native verdicts != C host verdicts"; ok=0; }
-rm -f mono_host.out mono_vm.out logos_secd logos_program.bin logos_source.la
+rm -f mono_host.out mono_vm.out logos_secd logos_program.bin logos_source.la mono_combined.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  monosemy: no polysemy (distinct meanings → distinct glyphs); synonymy collapsed up to the declared theory (⊗/⊕ commutativity + ↻BEING≡SELF), directional/assoc/idempotent forms correctly kept distinct, byte-identical on host and native VM"
 else
