@@ -1687,7 +1687,11 @@ PYPP2
     #  fires 56-vs-36 on asm_test_movlbl), the same inject-a-fault discipline the
     #  DRM capstones use. A future SIZEL/encoder desync now fails loudly here
     #  instead of silently misplacing every label after it.
-    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg asm_test_expr3 asm_test_equ2 asm_test_local asm_test_far asm_test_movlbl; do
+    #       asm_test_macro joins them too: 928c745 added the fixture (push imm +
+    #       %macro/%endmacro) but never wired it into build.sh, so a %macro
+    #       regression would not have failed the build. Found by auditing gate
+    #       coverage of every post-freeze commit, not just the one flagged red.
+    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg asm_test_expr3 asm_test_equ2 asm_test_local asm_test_far asm_test_movlbl asm_test_macro; do
         rm -f asm_out.bin .asmgate/nasm_$prog.bin
         cp $prog.asm asm_in.asm
         ./tiny_host asm.la >.asmgate/$prog.out 2>&1 \
