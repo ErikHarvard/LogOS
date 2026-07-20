@@ -1691,7 +1691,13 @@ PYPP2
     #       %macro/%endmacro) but never wired it into build.sh, so a %macro
     #       regression would not have failed the build. Found by auditing gate
     #       coverage of every post-freeze commit, not just the one flagged red.
-    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg asm_test_expr3 asm_test_equ2 asm_test_local asm_test_far asm_test_movlbl asm_test_macro; do
+    #       asm_test_comma closes the LAST post-freeze hole: a52cf39 (a comma is
+    #       a TOKEN; operands are comma-delimited groups) shipped with NO test.
+    #       Its discriminating case is a spaced expression in a data directive
+    #       (`dw gdt_end - gdt64 - 1` = ONE word) vs a comma list (`dw 1, 2` =
+    #       TWO). RED-PATH PROVEN against a52cf39^: the old tokenizer emits 37
+    #       bytes (16, then -1) where nasm and the fixed code emit 35.
+    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg asm_test_expr3 asm_test_equ2 asm_test_local asm_test_far asm_test_movlbl asm_test_macro asm_test_comma; do
         rm -f asm_out.bin .asmgate/nasm_$prog.bin
         cp $prog.asm asm_in.asm
         ./tiny_host asm.la >.asmgate/$prog.out 2>&1 \
