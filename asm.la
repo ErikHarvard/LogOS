@@ -490,6 +490,21 @@ glyph SCALEB = la n.
     IF(int_eq(n)(4))(la _. 2)(la _. 3)))
 glyph MEMSCALEB = la t.
     (la a. IF(str_eq(a)(""))(la _. 0)(la _. SCALEB(NUMV(a))))(AFTERSTAR(MEMIDXTOK(t)))
+# ── RIP-relative `[rel label]` ──────────────────────────────────────────────
+#   The tokenizer strips the space, so `[rel METAL_FLAG]` -> inner "relMETAL_FLAG".
+#   A `rel` prefix marks RIP-relative: ModRM mod=00 rm=101 + disp32 where
+#   disp32 = label - next_ip. next_ip (off + this instruction's length) is
+#   threaded through the label table as "@next" (bound in ENC1, exactly as `$`
+#   is via WITHDOLLAR), so no encoder signature changes — MEMBASE returns the
+#   sentinel -2, MEMDISP returns the RIP disp, MEMTAILX emits the rm=101 form.
+#   (Limitation: a bare bracket label literally starting with "rel" would be
+#   misread; none in the -f bin targets.)
+glyph HASRELPFX = la s.
+    AND(str_eq(str_head(s))("r"))(AND(str_eq(str_head(str_tail(s)))("e"))(str_eq(str_head(str_tail(str_tail(s))))("l")))
+glyph MEMRIP = la t. AND(ISMEM(t))(HASRELPFX(STRIPBRK(t)))
+glyph RIPLAB = la t. str_tail(str_tail(str_tail(STRIPBRK(t))))
+glyph RIPNEXT = la labs. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB("@next")(labs))
+glyph RIPDISP = la labs. la t. sub(EVAL(labs)(RIPLAB(t)))(RIPNEXT(labs))
 #   ★ An ABSOLUTE address has no base register at all — `mov [0x300000], ebx`.
 #   x86-64 spells "no base" as mod=00, rm=100 (SIB follows), SIB=0x25
 #   (scale=0, index=none(100), base=none(101)), then a disp32. A base of -1 is
@@ -497,8 +512,9 @@ glyph MEMSCALEB = la t.
 #   lt(-1)(8) leaves REX.B clear, which is right — there is no base to extend.
 glyph MEMABS   = la t. NOT(ISREG(FST(SPLITFIRST(STRIPBRK(t))("")))) 
 glyph MEMBASE  = la t.
-    IF(MEMABS(t))(la _. sub(0)(1))
-                 (la _. REGNUM(FST(SPLITFIRST(STRIPBRK(t))(""))))
+    IF(MEMRIP(t))(la _. sub(0)(2))
+    (la _. IF(MEMABS(t))(la _. sub(0)(1))
+                 (la _. REGNUM(FST(SPLITFIRST(STRIPBRK(t))("")))))
 #   ★ A LABEL may BE the address: `mov [pml4], eax` — 136 such uses in
 #   boot.asm. Resolving it needs the label table, which MEMDISP did not have,
 #   so this threads `labs` through the memory-operand path.
@@ -658,10 +674,12 @@ glyph MEMVAL = la labs. la t.
       (la _. IF(ISNUM(t))(la _. NUMV(t))
         (la _. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB(t)(labs))))
 glyph MEMDISP  = la labs. la t.
-    IF(MEMABS(t))
+    IF(MEMRIP(t))
+      (la _. RIPDISP(labs)(t))
+    (la _. IF(MEMABS(t))
       (la _. EVAL(labs)(STRIPBRK(t)))
       (la _. (la r. IF(str_eq(r)(""))(la _. 0)(la _. EVAL(labs)(r)))
-             (SND(SPLITFIRST(STRIPBRK(t))(""))))
+             (SND(SPLITFIRST(STRIPBRK(t))("")))))
 
 glyph FITS8 = la d. AND(NOT(lt(d)(sub(0)(128))))(lt(d)(128))
 glyph MODOF = la b. la d.
@@ -685,9 +703,11 @@ glyph MRMLBLD = la reg. la scaleb. la idx. la d.
 glyph MRMREG = la reg. la b. la scaleb. la idx. la d.
     (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(4)))(concat(SIBBYTE(scaleb)(idx)(b))(DISPOF(m)(d))))(MODOF(b)(d))
 glyph MEMTAILX = la reg. la b. la idx. la scaleb. la d.
-    IF(lt(idx)(0))
-      (la _. MEMTAIL(reg)(b)(d))
-      (la _. IF(lt(b)(0))(la _. MRMLBLD(reg)(scaleb)(idx)(d))(la _. MRMREG(reg)(b)(scaleb)(idx)(d)))
+    IF(int_eq(b)(sub(0)(2)))
+      (la _. concat(B(add(mul(mod(reg)(8))(8))(5)))(LE4(FOLDD(d))))
+      (la _. IF(lt(idx)(0))
+        (la _. MEMTAIL(reg)(b)(d))
+        (la _. IF(lt(b)(0))(la _. MRMLBLD(reg)(scaleb)(idx)(d))(la _. MRMREG(reg)(b)(scaleb)(idx)(d))))
 #   REX for a memory operand, adding the X bit (index>=8) to REXOPT's W/R/B.
 #   idx<0 -> X is 0 -> byte-identical to REXOPT, so this is safe everywhere.
 glyph MREX = la w. la reg. la idx. la base. la force.
@@ -1448,7 +1468,12 @@ glyph STRIPLAB = la ts. IF(ISLABEL(HD(ts)))(la _. TL2(ts))(la _. ts)
 #   through every evaluator means `$` works in every operand position at once.
 glyph WITHDOLLAR = la labs. la off. CONS(PAIR("$")(off))(labs)
 glyph SIZEL = la labs. la off. la ts. SIZEL0(WITHDOLLAR(labs)(off))(off)(STRIPLAB(ts))
-glyph ENC1  = la labs. la off. la ts. ENC10(WITHDOLLAR(labs)(off))(off)(STRIPLAB(ts))
+#   @next = off + this instruction's length, so a RIP-relative disp (target-@next)
+#   resolves without threading off/len through every encoder — the same label-
+#   channel trick WITHDOLLAR uses for `$`. SIZEL is RIP-length-correct (the mem
+#   part is a fixed 5 bytes) so @next needs no @next itself (no circularity).
+glyph ENC1  = la labs. la off. la ts.
+    ENC10(CONS(PAIR("@next")(add(off)(SIZEL(labs)(off)(ts))))(WITHDOLLAR(labs)(off)))(off)(STRIPLAB(ts))
 
 # ── section / global / incbin ───────────────────────────────────────────────
 #   The last three directives boot.asm uses.
