@@ -319,7 +319,26 @@ glyph DEFINES = la f. la ss. la i.
 glyph DROPPABLE = la n. str_eq(n)(".note.gnu.property")
 
 glyph IS_ALLOC = la f. la i. int_eq(mod(div(SH_FLAGS(f)(i))(2))(2))(1)
-glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(OR(str_eq(n)(".data"))(OR(str_eq(n)(".bss"))(str_eq(n)(".eh_frame")))))
+
+#   ── OUTPUT-SECTION MAPPING — merge .text.* into .text, etc. ─────────────────
+#   `gcc -ffunction-sections -fdata-sections` (the input to `--gc-sections` dead-
+#   code elimination) splits code into .text.compute, .text.helper, and data
+#   into .rodata.<sym> / .data.<sym>. A linker MERGES each family into its
+#   standard OUTPUT section, exactly as it already merges one object's .text with
+#   another's. OUTNAME maps an input section name to its output section; a name
+#   qualifies by being the standard name itself or the standard name followed by
+#   `.` (so .text.foo → .text, but a stray .textual would NOT match). Everything
+#   downstream is already keyed by (object, section INDEX), so placing several
+#   .text.* of one object needs no new plumbing beyond the placement walk itself.
+glyph STARTSW = la s. la pre. str_eq(TAKES(str_to_int(str_len(pre)))(s))(pre)
+glyph OUTNAME = la n.
+    IF(OR(str_eq(n)(".text"))(STARTSW(n)(".text.")))(la _. ".text")(la _.
+    IF(OR(str_eq(n)(".rodata"))(STARTSW(n)(".rodata.")))(la _. ".rodata")(la _.
+    IF(OR(str_eq(n)(".data"))(STARTSW(n)(".data.")))(la _. ".data")(la _.
+    IF(OR(str_eq(n)(".bss"))(STARTSW(n)(".bss.")))(la _. ".bss")(la _.
+    IF(OR(str_eq(n)(".eh_frame"))(STARTSW(n)(".eh_frame.")))(la _. ".eh_frame")(la _. n)))))
+glyph ISOUT = la m. OR(str_eq(m)(".text"))(OR(str_eq(m)(".rodata"))(OR(str_eq(m)(".data"))(OR(str_eq(m)(".bss"))(str_eq(m)(".eh_frame")))))
+glyph PLACEABLE = la n. ISOUT(OUTNAME(n))
 glyph CHECKSECS = la f. la tag. (Z(la self. la i.
     IF(int_eq(i)(E_SHNUM(f)))
       (la _. "ok")
@@ -375,17 +394,21 @@ glyph E_OBJ = la e. FST(e)
 glyph E_SEC = la e. FST(SND(e))
 glyph E_ADDR= la e. SND(SND(e))
 
-#   Place one object's copy of one section, if it has a non-empty one.
-#   Returns PAIR(entries)(cursor) so the next object continues where this ended.
-glyph PSTEP = la f. la o. la name. la acc. la cur.
-    (la sec.
-      IF(lt(sec)(0))
-        (la _. PAIR(acc)(cur))
-        (la _. IF(int_eq(SH_SIZE(f)(sec))(0))
-                 (la _. PAIR(acc)(cur))
-                 (la _. (la a. PAIR(CONS(MKE(o)(sec)(a))(acc))(add(a)(SH_SIZE(f)(sec))))
-                        (ALIGNUP(cur)(SH_ALIGN(f)(sec))))))
-    (FIND_SEC(f)(name))
+#   Place EVERY non-empty section of one object whose OUTPUT name is `oname`, in
+#   section-index order, each aligned to its own sh_addralign, from the cursor.
+#   With -ffunction-sections an object has several .text.* sections that all map
+#   to output .text; without it, exactly one .text — so an ordinary object packs
+#   identically to before (one match). Returns PAIR(entries)(cursor).
+glyph PSTEP = la f. la o. la oname. la acc. la cur.
+    (Z(la self. la i. la a. la c.
+       IF(int_eq(i)(E_SHNUM(f)))
+         (la _. PAIR(a)(c))
+         (la _. IF(AND(str_eq(OUTNAME(SECNAME(f)(i)))(oname))
+                      (NOT(int_eq(SH_SIZE(f)(i))(0))))
+                  (la _. (la aa. self(add(i)(1))(CONS(MKE(o)(i)(aa))(a))(add(aa)(SH_SIZE(f)(i))))
+                         (ALIGNUP(c)(SH_ALIGN(f)(i))))
+                  (la _. self(add(i)(1))(a)(c)))))
+    (0)(acc)(cur)
 
 #   ── N OBJECTS ──────────────────────────────────────────────────────────────
 #   An OBJECT is (index, contents). The index is what plan entries and symbol
@@ -514,10 +537,11 @@ glyph EBYTES = la objs. la patched. la e.
                (la _. PATCH_OF(patched)(E_OBJ(e))(E_SEC(e)))
                (la _. SECBYTES(E_F(objs)(e))(E_SEC(e))))
 
-#   Is a section name one of this segment's?
-glyph INSEG = la names. la name. (Z(la self. la l.
+#   Is a section one of this segment's? Compared by OUTPUT name, so .text.compute
+#   groups into the .text (R+X) segment alongside a plain .text.
+glyph INSEG = la names. la name. (la out. (Z(la self. la l.
     l(FALSE)(la h. la t.
-      IF(str_eq(h)(name))(la _. TRUE)(la _. self(t)))))(names)
+      IF(str_eq(h)(out))(la _. TRUE)(la _. self(t)))))(names))(OUTNAME(name))
 
 #   Does the plan place ANY section of this segment? An empty permission group
 #   costs no segment rather than an empty PT_LOAD.

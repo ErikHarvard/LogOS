@@ -215,10 +215,38 @@ segment its own fresh page in BOTH file and vaddr (`.data` at `0x403000`, offset
 `0x3000`) — one extra page of file per segment, but simpler and equally valid:
 both satisfy `p_offset ≡ p_vaddr (mod page)`. The addresses `.text` byte-identity
 depends on (`.text`, `.rodata`) still match `ld`; only later RW/segment vaddrs
-can differ by a sub-page tail. Matching `ld`'s file-page overlap is a later
-refinement. `FITS32` stays guarded (this layout still keeps everything low).
+can differ by a sub-page tail. `FITS32` stays guarded (this layout keeps
+everything low). Matching `ld`'s file-page overlap was investigated and
+DROPPED as not worth it: `ld`'s packing is heuristic, not a clean rule — across
+the gcc fixtures it puts each segment on its OWN fresh page (exactly what we do,
+so we already match), and only overlaps in specific cases (nasm objects, no
+`.bss`). Chasing an inconsistent target for zero capability gain, when we
+already match `ld` in the common case, is polish not progress.
 
-**3. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
+**✔ 3. `-ffunction-sections` — merge `.text.*`/`.rodata.*`/`.data.*` into their
+output sections.** `gcc -ffunction-sections -fdata-sections` (the input to
+`--gc-sections` dead-code elimination) splits code into `.text.compute`,
+`.text.helper` and data into `.rodata.<sym>`/`.data.<sym>`. The linker used to
+REFUSE them (`CHECKSECS`: "allocatable section this layout cannot place:
+.text.compute"). Now `OUTNAME` maps an input section to its output section by
+prefix (`.text.*` → `.text`, and the standard name itself; `STARTSW` requires a
+following `.` so a stray `.textual` would not match), `PLACEABLE`/`INSEG` compare
+by output name, and `PSTEP` places EVERY non-empty section of an object whose
+output name matches (not just `FIND_SEC` of one). Everything downstream was
+already keyed by (object, section INDEX), so no new plumbing was needed — the
+`.text.*` sections become ordinary plan entries that pack into the R+X segment,
+resolve, relocate, and run. An ordinary object (one `.text`) packs identically
+to before (one match), so no regression. Gate: a `-ffunction-sections` fixture
+(compute+helper split into `.text.compute`/`.text.helper`) links against the asm
+`_start` and RUNS — exit 43 = `helper(21)*... +1`, which only survives if BOTH
+merged functions resolved and relocated correctly. `.eh_frame` stays one unified
+section with multiple FDEs, which `EHMERGE` already handled. *Honest scope:*
+section ORDER within an output section is our own (section-index then input
+order), so a `-ffunction-sections` binary is not byte-identical to `ld` (whose
+order differs) — the witness is "it runs", not a byte-diff. `--gc-sections`
+itself (dropping unreferenced sections) is a separate, larger feature.
+
+**4. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
 back, require agreement with `readelf` on the same file.
 

@@ -194,3 +194,5 @@ watched.la
 /cmp_want.txt
 /link_ref_reldata
 /reldata.log
+/link_ref_fs
+/gate_fs.o

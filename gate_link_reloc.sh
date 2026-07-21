@@ -544,6 +544,52 @@ PYEH
     fi
 fi
 
+# --- ★ -ffunction-sections: .text.* / .data.* merged into output sections ---
+#   `gcc -ffunction-sections -fdata-sections` (the input to `--gc-sections`
+#   dead-code elimination) splits code into .text.compute / .text.helper and
+#   data into .rodata.<sym> / .data.<sym>. A linker MERGES each family into its
+#   standard output section. This linker used to REFUSE them ("allocatable
+#   section this layout cannot place: .text.compute"); it now maps every section
+#   by OUTPUT name and packs the .text.* into the R+X segment. Assertion is the
+#   EXIT STATUS: compute(21) -> helper(21)+1 = 43 travels through BOTH merged
+#   functions, so a .text.* that was mis-merged, mis-ordered or left unresolved
+#   segfaults or returns garbage — never exactly 43. (Same set -e caveat as the
+#   gcc block: the fixture exits 43 BY DESIGN, captured, not run bare.)
+if command -v gcc >/dev/null 2>&1; then
+    gcc -c -O0 -ffunction-sections -fdata-sections -x c - -o gate_fs.o 2>/dev/null <<'CFS'
+extern int helper(int);
+int compute(int x){return helper(x)+1;}
+int helper(int x){return x*2;}
+CFS
+    if [ -f gate_fs.o ]; then
+        # Prove the fixture actually splits — else it would silently prove nothing.
+        if readelf -SW gate_fs.o | grep -q '\.text\.compute'; then
+            ld -o link_ref_fs link_test_start.o gate_fs.o 2>/dev/null
+            if ./link_ref_fs; then LDFRC=0; else LDFRC=$?; fi
+            cp link_test_start.o link_in1.o
+            cp gate_fs.o          link_in2.o
+            printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
+            rm -f link_out
+            if FSOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then FSRC=0; else FSRC=$?; fi
+            [ "$FSRC" -eq 0 ] \
+                || { echo "FAIL  link_reloc.la: could not link -ffunction-sections object: $FSOUT"; ok=0; }
+            if [ -x link_out ]; then
+                if ./link_out; then OFRC=0; else OFRC=$?; fi
+                [ "$OFRC" = "$LDFRC" ] \
+                    || { echo "FAIL  -ffunction-sections link exited $OFRC, ld's binary exits $LDFRC"; ok=0; }
+                [ "$OFRC" = "43" ] \
+                    || { echo "FAIL  -ffunction-sections link exited $OFRC, expected 43 — a .text.* was mis-merged or unresolved"; ok=0; }
+            else
+                echo "FAIL  link_reloc.la: -ffunction-sections link emitted no executable"; ok=0
+            fi
+            rm -f link_in1.o link_in2.o link_inputs.txt link_ref_fs
+        else
+            echo "NOTE  link_reloc.la: gcc did not split sections — -ffunction-sections check skipped"
+        fi
+        rm -f gate_fs.o
+    fi
+fi
+
 # --- ★ A RELOCATION OUTSIDE .text — the SILENT-WRONGNESS case ---
 #   Every other fixture above relocates in .text ONLY — verified, not assumed:
 #   rw/b/abs/bss all carry `.rela.text` and nothing else, and link_test_c
@@ -612,5 +658,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]
