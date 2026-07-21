@@ -1,0 +1,901 @@
+# ═══════════════════════════════════════════════════════════════════
+#  native_codegen3.la — Native x86-64 backend, STAGE 3a: TCO. Compiles a
+#  multi-glyph LA program (lambdas, application, variables, the Stage-1
+#  builtins) DIRECTLY to an x86-64 ELF that runs on the carved Stage-2
+#  runtime (native_codegen2_rt.asm, REUSED UNCHANGED) — native closure
+#  records, env cells, and a native APPLY/RET calling convention; NO SECD
+#  interpreter, NO per-instruction dispatch.
+#
+#  Mechanism: glyph references are INLINED (idiomatic LA recurses via the Z
+#  combinator, not by-name, so closed-term inlining is sound); the result is
+#  one closed lambda term over builtins, compiled with lexical (de Bruijn)
+#  addressing. Each lambda body becomes a native code block; a closure is a
+#  heap record [codeptr][captured-env]; rt_apply extends the env and tail-
+#  jumps the body. Values are uniformly boxed [tag][payload] (INT/STR/CLO).
+#
+#  STAGE 3a — TAIL-CALL OPTIMISATION (the diff from native_codegen2.la). The
+#  codegen threads a `tail` flag (CG ... (tail) ...). rt_apply ALREADY tail-
+#  jumps into the body (jmp [rcx]); the native CPU stack grew only because the
+#  call SITE emitted `call rt_apply` then the body's `pop rbx; ret`. Now a
+#  general application in TAIL position emits `pop rbx; jmp rt_apply` instead
+#  of `call rt_apply` — no return address pushed; the callee's ret returns
+#  straight to OUR caller, so a tail-recursive loop runs in BOUNDED native
+#  stack. In tail mode every node owns its teardown+return (value nodes append
+#  `pop rbx; ret` via TAILED; the general apply does the jmp); CG_LAM compiles
+#  its body in tail mode and omits the standard epilogue. Non-tail mode is
+#  byte-for-byte identical to codegen2, so only programs with a general-apply
+#  in tail position change bytes. RUNTIME IS UNCHANGED (codegen-only change);
+#  the heap is enlarged (memsz only, lazily mapped) so the CPU stack — not the
+#  un-GC'd bump heap — is the binding constraint, making TCO observable.
+#
+#  SUPPORTED: lambdas, application/currying, variables, int/string literals,
+#  add/sub/mul/div/mod, int_eq/lt/str_eq (-> Church TRUE/FALSE closures),
+#  concat/str_head/str_tail/int_to_str/str_to_int, print. Anything else
+#  (unbound name, builtin used as a value, cyclic glyph) halts LOUDLY.
+#  HONEST LIMITS (deferred): no GC yet (a tail loop is ultimately HEAP-bounded
+#  until Stage 3b adds the collector), and a deep NON-tail recursion still
+#  grows the native stack and faults via raw CPU-stack overflow (SIGSEGV,
+#  nonzero exit) rather than a clean diagnostic — a native stack guard is
+#  deferred to 3b (where the runtime is reworked for GC). The module system
+#  (import/export) and chr/ord/str_len are not handled here.
+#
+#  INPUT : native_input.la   OUTPUT : native_codegen3_out (0755 ELF64).
+#  Additive: secd.asm / nativert.asm / native_codegen_rt.asm / native_codegen2*
+#  all UNTOUCHED. A build.sh drift guard checks the embedded runtime == nasm
+#  native_codegen2_rt.asm (3a reuses the Stage-2 runtime verbatim).
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Church / list / pair / option core ─────────────────────────────
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph OR    = la a. la b. a(TRUE)(b)
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph PAIR  = la a. la b. la f. f(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph NIL   = PAIR(FALSE)("")
+glyph CONS  = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph IS_CONS = la l. FST(l)
+glyph HD    = la l. FST(SND(l))
+glyph TL    = la l. SND(SND(l))
+glyph SOME  = la v. PAIR(TRUE)(v)
+glyph NONE  = PAIR(FALSE)("")
+glyph IS_SOME = la o. FST(o)
+glyph OPT_VAL = la o. SND(o)
+
+# ── AST nodes (Scott-encoded: onVar onLam onApp onStr) ──────────────
+glyph AST_VAR = la name. la v. la l. la a. la s. v(name)
+glyph AST_LAM = la p. la b. la v. la l. la a. la s. l(p)(b)
+glyph AST_APP = la f. la a. la v. la l. la ap. la s. ap(f)(a)
+glyph AST_STR = la val. la v. la l. la a. la s. s(val)
+glyph NODE_TAG = la nd. nd(la nm. "VAR")(la p. la b. "LAM")(la f. la a. "APP")(la v. "STR")
+glyph VAR_NM = la nd. nd(la nm. nm)(la p. la b. "")(la f. la a. "")(la v. "")
+glyph LAM_P  = la nd. nd(la nm. "")(la p. la b. p)(la f. la a. "")(la v. "")
+glyph LAM_B  = la nd. nd(la nm. "")(la p. la b. b)(la f. la a. "")(la v. "")
+glyph APP_F  = la nd. nd(la nm. "")(la p. la b. "")(la f. la a. f)(la v. "")
+glyph APP_A  = la nd. nd(la nm. "")(la p. la b. "")(la f. la a. a)(la v. "")
+glyph STR_V  = la nd. nd(la nm. "")(la p. la b. "")(la f. la a. "")(la v. v)
+
+# ── byte / integer encoding helpers ────────────────────────────────
+glyph B = la n. chr(int_to_str(n))
+# freeze-day #6: extract the low byte UNSIGNED (0..255) so a negative n encodes as
+# its two's-complement bytes instead of aborting the compile. C `mod` is signed
+# (mod(-5)(256) = -5), so the old B(mod(n)(256)) = chr("-5") tripped chr's 0..255
+# range check — e.g. str_to_int("-5") folds to MOV_RAX_IMM(-5) -> LE8(-5) and failed
+# to compile a host-valid program. b = ((n mod 256)+256) mod 256 is the real low
+# byte; n - b is then divisible by 256, so div(sub(n)(b))(256) is the exact FLOOR
+# shift (correct for both signs). Byte-identical for every positive n (b = n mod
+# 256, next = floor(n/256)), so all emitted addresses are unchanged.
+glyph LEBYTES = Z(la self. la n. la k.
+    IF(int_eq(k)(0))(la _. "")(la _.
+        (la b. concat(B(b))(self(div(sub(n)(b))(256))(sub(k)(1))))
+            (mod(add(mod(n)(256))(256))(256))))
+glyph LE8 = la n. LEBYTES(n)(8)
+glyph BYTES = la s.
+    Z(la self. la rest. la tok. la out.
+        IF(str_eq(rest)(""))(la _.
+            IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok)))
+        )(la _.
+        IF(str_eq(str_head(rest))(" "))(la _.
+            self(str_tail(rest))("")(IF(str_eq(tok)(""))(la _. out)(la _. concat(out)(chr(tok))))
+        )(la _.
+            self(str_tail(rest))(concat(tok)(str_head(rest)))(out)
+        ))
+    )(s)("")("")
+glyph STRLEN_INT = la s. str_to_int(str_len(s))
+
+# ── lexer ──────────────────────────────────────────────────────────
+glyph STR_HAS = Z(la self. la c. la s.
+    IF(str_eq(s)(""))(la _. FALSE)(la _.
+    IF(str_eq(c)(str_head(s)))(la _. TRUE)(la _. self(c)(str_tail(s)))))
+glyph IS_DIGIT = la c. STR_HAS(c)("0123456789")
+glyph IS_DELIM = la c. STR_HAS(c)(" \n\t()=#.\"")
+glyph IS_SPACE = la c. OR(str_eq(c)(" "))(OR(str_eq(c)("\n"))(str_eq(c)("\t")))
+glyph MKTOK  = la ty. la v. PAIR(ty)(v)
+glyph T_TYPE = FST
+glyph T_VAL  = SND
+glyph UNESCAPE = la c.
+    IF(str_eq(c)("n"))(la _. "\n")(la _.
+    IF(str_eq(c)("t"))(la _. "\t")(la _. c))
+glyph READ_STR = Z(la self. la acc. la s.
+    IF(str_eq(s)(""))(la _. error("native_codegen3: unterminated string literal"))(la _.
+    IF(str_eq(str_head(s))("\""))(la _. PAIR(acc)(str_tail(s)))(la _.
+    IF(str_eq(str_head(s))("\\"))(la _.
+        self(concat(acc)(UNESCAPE(str_head(str_tail(s)))))(str_tail(str_tail(s))))(la _.
+        self(concat(acc)(str_head(s)))(str_tail(s))))))
+glyph READ_WHILE = Z(la self. la pred. la acc. la s.
+    IF(str_eq(s)(""))(la _. PAIR(acc)(s))(la _.
+    IF(pred(str_head(s)))(la _. self(pred)(concat(acc)(str_head(s)))(str_tail(s)))(la _. PAIR(acc)(s))))
+glyph READ_INT  = READ_WHILE(IS_DIGIT)("")
+glyph READ_NAME = READ_WHILE(la c. NOT(IS_DELIM(c)))("")
+glyph DROP_LINE = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. s)(la _.
+    IF(str_eq(str_head(s))("\n"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+glyph TOKENIZE = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. CONS(MKTOK("eof")(""))(NIL))(la _.
+    (la c.
+        IF(IS_SPACE(c))(la _. self(str_tail(s)))(la _.
+        IF(str_eq(c)("#"))(la _. self(DROP_LINE(str_tail(s))))(la _.
+        IF(str_eq(c)("("))(la _. CONS(MKTOK("lp")("("))(self(str_tail(s))))(la _.
+        IF(str_eq(c)(")"))(la _. CONS(MKTOK("rp")(")"))(self(str_tail(s))))(la _.
+        IF(str_eq(c)("="))(la _. CONS(MKTOK("eq")("="))(self(str_tail(s))))(la _.
+        IF(str_eq(c)("."))(la _. CONS(MKTOK("dot")("."))(self(str_tail(s))))(la _.
+        IF(str_eq(c)("\""))(la _.
+            (la r. CONS(MKTOK("str")(FST(r)))(self(SND(r))))(READ_STR("")(str_tail(s))))(la _.
+        IF(IS_DIGIT(c))(la _.
+            (la r. CONS(MKTOK("int")(FST(r)))(self(SND(r))))(READ_INT(s)))(la _.
+            (la r. CONS(MKTOK("name")(FST(r)))(self(SND(r))))(READ_NAME(s))
+        ))))))))
+    )(str_head(s))))
+
+# ── parser (lambda, primary, left-assoc application) ───────────────
+glyph P_LAMBDA = la pexpr. la rest.
+    IF(str_eq(T_TYPE(HD(rest)))("name"))(la _.
+    IF(OR(str_eq(T_VAL(HD(rest)))("la"))(str_eq(T_VAL(HD(rest)))("glyph")))(la _.
+        error("native_codegen3: expected lambda parameter"))(la _.
+    (la param. (la afterdot.
+        (la bd. PAIR(AST_LAM(param)(FST(bd)))(SND(bd)))(pexpr(afterdot))
+    )(TL(TL(rest))))(T_VAL(HD(rest)))))
+    (la _. error("native_codegen3: expected lambda parameter"))
+
+glyph P_PRIMARY = la pexpr. la toks.
+    (la tok.
+    (la ty.
+    (la v.
+    (la rest.
+        IF(str_eq(ty)("lp"))(la _.
+            (la inner.
+                IF(str_eq(T_TYPE(HD(SND(inner))))("rp"))(la _. PAIR(FST(inner))(TL(SND(inner))))(la _. error("native_codegen3: expected close-paren"))
+            )(pexpr(rest))
+        )(la _.
+        IF(str_eq(ty)("str"))(la _. PAIR(AST_STR(v))(rest))(la _.
+        IF(str_eq(ty)("int"))(la _. PAIR(AST_APP(AST_VAR("str_to_int"))(AST_STR(v)))(rest))(la _.
+        IF(str_eq(ty)("name"))(la _.
+            IF(str_eq(v)("la"))(la _. P_LAMBDA(pexpr)(rest))(la _. PAIR(AST_VAR(v))(rest)))(la _.
+        error(concat("native_codegen3: unexpected token: ")(ty))
+        ))))
+    )(TL(toks))
+    )(T_VAL(tok))
+    )(T_TYPE(tok))
+    )(HD(toks))
+
+glyph APP_TAIL = la pexpr. Z(la self. la acc. la toks.
+    IF(str_eq(T_TYPE(HD(toks)))("lp"))(la _.
+        (la inner.
+            IF(str_eq(T_TYPE(HD(SND(inner))))("rp"))(la _. self(AST_APP(acc)(FST(inner)))(TL(SND(inner))))(la _. error("native_codegen3: expected close-paren after arg")))
+        (pexpr(TL(toks))))
+    (la _. PAIR(acc)(toks)))
+glyph P_APP  = la pexpr. la toks. (la base. APP_TAIL(pexpr)(FST(base))(SND(base)))(P_PRIMARY(pexpr)(toks))
+glyph P_EXPR = Z(la self. la toks. P_APP(self)(toks))
+
+# ── Module system (import / export) — resolved at PARSE time (Stage 3d) ──
+# Ported from codegen.la, adapted to codegen3's TOKEN-LIST parser (codegen.la
+# re-lexes a string; here we dispatch over an already-tokenized list). import /
+# export are discharged here, producing ONE flat glyph table with the module's
+# PRIVATE glyphs alpha-renamed (path-derived, deterministic). INLINE + codegen
+# consume the merged table unchanged, so the backend needs no new machinery and
+# the runtime is untouched (pure parse-time generation). read_file + error are
+# host builtins; mangled names are private and never observed (isolation only).
+# freeze-day #9: "la" must be a keyword so PARSE_EXPORT_NAMES stops at a lambda
+# binder. codegen3 lexes every keyword (glyph/import/export/la) as a plain "name"
+# token, and PARSE_EXPORT_NAMES collects consecutive non-keyword names after `export`;
+# without "la" here a `la` token following an export-name list would be wrongly
+# collected as a bogus export name (then CHECK_EXPORTS errors "exports undefined
+# glyph: la"). Adding it makes the export list terminate cleanly at a binder.
+glyph IS_KEYWORD = la v. OR(str_eq(v)("glyph"))(OR(str_eq(v)("import"))(OR(str_eq(v)("export"))(str_eq(v)("la"))))
+glyph IS_ALPHA = la c. STR_HAS(c)("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+glyph IS_IDENT_CHAR = la c. OR(IS_DIGIT(c))(OR(IS_ALPHA(c))(str_eq(c)("_")))
+# freeze-day #7: SANITIZE must be INJECTIVE so two distinct import paths never
+# mangle to the same private name. The old version mapped EVERY non-ident char to a
+# single "_", so "sub/m.la", "sub.m.la", "sub_m.la" all collapsed to "sub_m_la" — two
+# such modules with a same-named PRIVATE glyph mangled identically and first-match
+# lookup cross-resolved one module's export against the other's private. Now an
+# alnum char passes through and every OTHER char (including "_") escapes to
+# "_<ord>_" (e.g. "."->"_46_", "/"->"_47_", "_"->"_95_"). An output "_" appears only
+# bracketing an escape, so the encoding is decodable -> injective: distinct paths give
+# distinct names. (Path-derived + deterministic, per the cross-engine design — not the
+# C host's mutable counter.)
+glyph SANITIZE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _.
+    concat(IF(OR(IS_ALPHA(str_head(s)))(IS_DIGIT(str_head(s))))(la _. str_head(s))(la _.
+        concat("_")(concat(ord(str_head(s)))("_"))))(self(str_tail(s)))))
+glyph MANGLE = la path. la name. concat("__mod_")(concat(SANITIZE(path))(concat("__")(name)))
+glyph TABLE_HAS = la nm. la table. IS_SOME(LOOKUP_GLYPH(nm)(table))
+glyph CHECK_EXPORTS = Z(la self. la exports. la table.
+    IF(IS_CONS(exports))(la _.
+        IF(TABLE_HAS(HD(exports))(table))(la _. self(TL(exports))(table))(la _.
+            error(concat("native_codegen3: module exports undefined glyph: ")(HD(exports)))))
+    (la _. exports))
+# rewrite every FREE reference to `old` -> `new`, stopping under a binder of `old`
+glyph RENAME_FREE = Z(la self. la node. la old. la new.
+    node
+        (la name. IF(str_eq(name)(old))(la _. AST_VAR(new))(la _. AST_VAR(name)))
+        (la p. la b. IF(str_eq(p)(old))(la _. AST_LAM(p)(b))(la _. AST_LAM(p)(self(b)(old)(new))))
+        (la f. la a. AST_APP(self(f)(old)(new))(self(a)(old)(new)))
+        (la val. AST_STR(val)))
+glyph PRIVATE_NAMES = Z(la self. la table. la exports.
+    IF(IS_CONS(table))(la _.
+        (la nm. IF(STR_MEM(nm)(exports))(la _. self(TL(table))(exports))(la _. CONS(nm)(self(TL(table))(exports))))(FST(HD(table)))
+    )(la _. NIL))
+glyph MANGLE_BODY = Z(la self. la ast. la privs. la path.
+    IF(IS_CONS(privs))(la _.
+        (la p. self(RENAME_FREE(ast)(p)(MANGLE(path)(p)))(TL(privs))(path))(HD(privs))
+    )(la _. ast))
+glyph MANGLE_MAP = Z(la self. la table. la exports. la privs. la path.
+    IF(IS_CONS(table))(la _.
+        (la entry. (la nm. (la ast.
+            CONS(PAIR(IF(STR_MEM(nm)(exports))(la _. nm)(la _. MANGLE(path)(nm)))(MANGLE_BODY(ast)(privs)(path)))(self(TL(table))(exports)(privs)(path))
+        )(SND(entry)))(FST(entry)))(HD(table))
+    )(la _. NIL))
+glyph MANGLE_MODULE = la table. la exports. la path.
+    (la _. MANGLE_MAP(table)(exports)(PRIVATE_NAMES(table)(exports))(path))(CHECK_EXPORTS(exports)(table))
+# PARSE_IMPORT: tokens AFTER `import` -> PAIR(path string)(remaining tokens)
+glyph PARSE_IMPORT = la toks.
+    IF(str_eq(T_TYPE(HD(toks)))("lp"))(la _.
+        (la t1.
+            IF(str_eq(T_TYPE(HD(t1)))("str"))(la _.
+                (la path. (la t2.
+                    IF(str_eq(T_TYPE(HD(t2)))("rp"))(la _. PAIR(path)(TL(t2)))(la _.
+                        error("native_codegen3: import: expected ) after path")))
+                (TL(t1)))(T_VAL(HD(t1))))
+            (la _. error("native_codegen3: import: expected path string")))
+        (TL(toks)))
+    (la _. error("native_codegen3: import: expected ( after import"))
+# PARSE_EXPORT_NAMES: tokens AFTER `export` -> PAIR(name list)(remaining tokens),
+# collecting consecutive non-keyword name tokens (codegen3 lexes keywords as plain
+# names, so stop at the next glyph/import/export or any non-name token).
+glyph PARSE_EXPORT_NAMES = Z(la self. la toks.
+    IF(AND(str_eq(T_TYPE(HD(toks)))("name"))(NOT(IS_KEYWORD(T_VAL(HD(toks))))))(la _.
+        (la recp. PAIR(CONS(T_VAL(HD(toks)))(FST(recp)))(SND(recp)))(self(TL(toks))))
+    (la _. PAIR(NIL)(toks)))
+# PARSE_MOD_LOOP: token list -> PAIR(glyph table)(export list). A glyph def parses
+# exactly as before; import splices the mangled module table in; export accumulates.
+glyph PARSE_MOD_LOOP = Z(la self. la toks.
+    IF(str_eq(T_TYPE(HD(toks)))("eof"))(la _. PAIR(NIL)(NIL))(la _.
+    IF(str_eq(T_TYPE(HD(toks)))("name"))(la _.
+        (la kw.
+        IF(str_eq(kw)("glyph"))(la _.
+            (la nm. (la aftername.
+                IF(str_eq(T_TYPE(HD(aftername)))("eq"))(la _.
+                    (la r. (la recp. PAIR(CONS(PAIR(nm)(FST(r)))(FST(recp)))(SND(recp)))(self(SND(r))))(P_EXPR(TL(aftername))))
+                (la _. error("native_codegen3: expected = in glyph definition")))
+            (TL(TL(toks))))(T_VAL(HD(TL(toks)))))
+        (la _.
+        IF(str_eq(kw)("import"))(la _.
+            (la ip. (la modp. (la mangled. (la recp.
+                PAIR(APPEND(mangled)(FST(recp)))(SND(recp))
+            )(self(SND(ip))))(MANGLE_MODULE(FST(modp))(SND(modp))(FST(ip))))(self(TOKENIZE(read_file(FST(ip))))))(PARSE_IMPORT(TL(toks)))
+        )(la _.
+        IF(str_eq(kw)("export"))(la _.
+            (la ep. (la recp. PAIR(FST(recp))(APPEND(FST(ep))(SND(recp))))(self(SND(ep))))(PARSE_EXPORT_NAMES(TL(toks)))
+        )(la _.
+            error("native_codegen3: expected glyph / import / export")
+        ))))(T_VAL(HD(toks))))
+    (la _. error("native_codegen3: expected a glyph definition"))))
+glyph PARSE_MODULE = la toks. PARSE_MOD_LOOP(toks)
+# PARSE_PROGRAM: top-level entry — the root file's own exports are discarded.
+glyph PARSE_PROGRAM = la toks. FST(PARSE_MOD_LOOP(toks))
+
+glyph LOOKUP_GLYPH = Z(la self. la nm. la table.
+    IF(IS_CONS(table))(la _. IF(str_eq(nm)(FST(HD(table))))(la _. SOME(SND(HD(table))))(la _. self(nm)(TL(table))))(la _. NONE))
+
+# ── builtins ───────────────────────────────────────────────────────
+glyph IS_BUILTIN1 = la nm. OR(str_eq(nm)("print"))(OR(str_eq(nm)("int_to_str"))(OR(str_eq(nm)("str_to_int"))(OR(str_eq(nm)("str_head"))(OR(str_eq(nm)("str_tail"))(OR(str_eq(nm)("chr"))(OR(str_eq(nm)("ord"))(OR(str_eq(nm)("str_len"))(OR(str_eq(nm)("error"))(OR(str_eq(nm)("read_file"))(OR(str_eq(nm)("peek"))(OR(str_eq(nm)("set_cr3"))(OR(str_eq(nm)("exec_at"))(OR(str_eq(nm)("copy_self"))(OR(str_eq(nm)("spawn"))(OR(str_eq(nm)("yield"))(OR(str_eq(nm)("recv"))(OR(str_eq(nm)("inb"))(OR(str_eq(nm)("inl"))(str_eq(nm)("inw"))))))))))))))))))))
+glyph IS_BUILTIN2 = la nm. OR(str_eq(nm)("add"))(OR(str_eq(nm)("sub"))(OR(str_eq(nm)("mul"))(OR(str_eq(nm)("div"))(OR(str_eq(nm)("mod"))(OR(str_eq(nm)("int_eq"))(OR(str_eq(nm)("lt"))(OR(str_eq(nm)("str_eq"))(OR(str_eq(nm)("concat"))(OR(str_eq(nm)("write_exec"))(OR(str_eq(nm)("write_file"))(OR(str_eq(nm)("poke"))(OR(str_eq(nm)("send"))(OR(str_eq(nm)("outb"))(OR(str_eq(nm)("outl"))(str_eq(nm)("outw"))))))))))))))))
+# HAL.4b: the FIRST ternary builtins — the bulk framebuffer primitives.
+# fill(dst)(count)(value) lays `count` 32-bit dwords (a pixel at 32bpp) and
+# memcpy(dst)(src)(len) blits `len` bytes, each ONE `rep` instead of a poke +
+# beta-reduction per unit. Native-only, like peek/poke. IS_BUILTIN must know
+# them or INLINE rejects the name as unbound before codegen ever sees it.
+glyph IS_BUILTIN3 = la nm. OR(str_eq(nm)("fill"))(str_eq(nm)("memcpy"))
+glyph IS_BUILTIN = la nm. OR(IS_BUILTIN1(nm))(OR(IS_BUILTIN2(nm))(IS_BUILTIN3(nm)))
+glyph STR_MEM = Z(la self. la x. la lst. IF(IS_CONS(lst))(la _. IF(str_eq(x)(HD(lst)))(la _. TRUE)(la _. self(x)(TL(lst))))(la _. FALSE))
+
+# ── glyph inlining (produce one closed lambda term over builtins) ──
+glyph INLINE = Z(la self. la node. la table. la bound. la seen.
+    (la tag.
+        IF(str_eq(tag)("VAR"))(la _.
+            (la nm.
+                IF(STR_MEM(nm)(bound))(la _. AST_VAR(nm))(la _.
+                IF(IS_BUILTIN(nm))(la _. AST_VAR(nm))(la _.
+                (la g.
+                    IF(IS_SOME(g))(la _.
+                        IF(STR_MEM(nm)(seen))(la _. error(concat("native_codegen3: cyclic glyph reference: ")(nm)))(la _.
+                            self(OPT_VAL(g))(table)(NIL)(CONS(nm)(seen))))
+                    (la _. error(concat("native_codegen3: unbound name: ")(nm))))
+                (LOOKUP_GLYPH(nm)(table)))))
+            (VAR_NM(node)))(la _.
+        IF(str_eq(tag)("LAM"))(la _.
+            AST_LAM(LAM_P(node))(self(LAM_B(node))(table)(CONS(LAM_P(node))(bound))(seen)))(la _.
+        IF(str_eq(tag)("APP"))(la _.
+            AST_APP(self(APP_F(node))(table)(bound)(seen))(self(APP_A(node))(table)(bound)(seen)))(la _.
+        node
+        ))))
+    (NODE_TAG(node)))
+
+# Optimization pass #1 — compile-time β-reduction (β-value; pure codegen, no
+# autology cost). After INLINE flattens the program to one closed term, immediately-
+# applied lambdas `(la x. body)(arg)` are rampant — every IF/AND/PAIR/FST/list
+# combinator becomes one. When `arg` is a syntactic VALUE, substitute it at compile
+# time instead of emitting mkclo + rt_apply, killing a closure alloc, an env-frame
+# alloc, and an indirect call per redex. SLICE 1: `arg` is a VAR or STR — capture-
+# free and zero code bloat (LAM args, the further win, need occurrence-bounding +
+# capture handling and come later). Soundness (CBV): a value has no side effects and
+# evaluates to itself, so substituting it preserves semantics regardless of how many
+# times x occurs. Capture-safety: a STR has no free vars; a VAR v is substituted only
+# when `body` binds no `la v` (NO_BINDER), so v cannot be captured. SUBST stops under
+# a binder of x (shadowing), like RENAME_FREE. Reducing terminates: a VAR/STR arg is
+# not a lambda, so substitution creates no new redex; each step removes one.
+glyph NO_BINDER = Z(la self. la v. la node.
+    (la t.
+        IF(str_eq(t)("LAM"))(la _. AND(NOT(str_eq(LAM_P(node))(v)))(self(v)(LAM_B(node))))(la _.
+        IF(str_eq(t)("APP"))(la _. AND(self(v)(APP_F(node)))(self(v)(APP_A(node))))(la _.
+        TRUE)))
+    (NODE_TAG(node)))
+glyph SUBST = Z(la self. la node. la x. la rep.
+    node
+        (la name. IF(str_eq(name)(x))(la _. rep)(la _. AST_VAR(name)))
+        (la p. la b. IF(str_eq(p)(x))(la _. AST_LAM(p)(b))(la _. AST_LAM(p)(self(b)(x)(rep))))
+        (la f. la a. AST_APP(self(f)(x)(rep))(self(a)(x)(rep)))
+        (la val. AST_STR(val)))
+# SLICE 2 — also reduce a LAM (thunk) argument (the combinator-flattening win:
+# IF/AND/PAIR/… pass lambda thunks). A lambda is a value, so β is sound for any
+# occurrence count; the two extra guards make it safe in PRACTICE:
+#   (1) OCCURS(x)(body) <= 1 — bounds code bloat (the lambda is duplicated at most
+#       once) AND guarantees termination (blocks Ω = (la x. x(x))(la x. x(x)), whose
+#       body uses x twice), so reduction strictly shrinks the term;
+#   (2) every FREE var of the lambda arg has NO_BINDER in body — capture-safe with no
+#       fresh-name renaming (a conservative sufficient condition).
+glyph REMOVE_ALL = Z(la self. la x. la lst.
+    IF(IS_CONS(lst))(la _.
+        IF(str_eq(x)(HD(lst)))(la _. self(x)(TL(lst)))(la _. CONS(HD(lst))(self(x)(TL(lst)))))
+    (la _. NIL))
+glyph FREE = Z(la self. la node.
+    node
+        (la name. CONS(name)(NIL))
+        (la p. la b. REMOVE_ALL(p)(self(b)))
+        (la f. la a. APPEND(self(f))(self(a)))
+        (la val. NIL))
+glyph OCCURS = Z(la self. la x. la node.
+    node
+        (la name. IF(str_eq(name)(x))(la _. 1)(la _. 0))
+        (la p. la b. IF(str_eq(p)(x))(la _. 0)(la _. self(x)(b)))
+        (la f. la a. add(self(x)(f))(self(x)(a)))
+        (la val. 0))
+glyph ALL_NOBINDER = Z(la self. la fvs. la body.
+    IF(IS_CONS(fvs))(la _.
+        IF(NO_BINDER(HD(fvs))(body))(la _. self(TL(fvs))(body))(la _. FALSE))
+    (la _. TRUE))
+glyph BETA_SAFE = la x. la body. la arg.
+    (la t.
+        IF(str_eq(t)("STR"))(la _. TRUE)(la _.
+        IF(str_eq(t)("VAR"))(la _. NO_BINDER(VAR_NM(arg))(body))(la _.
+        IF(str_eq(t)("LAM"))(la _. AND(lt(OCCURS(x)(body))(2))(ALL_NOBINDER(FREE(arg))(body)))(la _.
+        FALSE))))
+    (NODE_TAG(arg))
+glyph BETA = Z(la self. la node.
+    (la t.
+        IF(str_eq(t)("LAM"))(la _. AST_LAM(LAM_P(node))(self(LAM_B(node))))(la _.
+        IF(str_eq(t)("APP"))(la _.
+            (la f. (la a.
+                IF(str_eq(NODE_TAG(f))("LAM"))(la _.
+                    IF(BETA_SAFE(LAM_P(f))(LAM_B(f))(a))(la _.
+                        self(SUBST(LAM_B(f))(LAM_P(f))(a)))
+                    (la _. AST_APP(f)(a)))
+                (la _. AST_APP(f)(a)))
+            (self(APP_A(node))))(self(APP_F(node))))(la _.
+        node)))
+    (NODE_TAG(node)))
+
+# ── string-literal collection + pool (after runtime; LITERAL_BASE fixed) ──
+glyph IS_INT_LIT = la node. AND(str_eq(NODE_TAG(node))("APP"))(AND(str_eq(NODE_TAG(APP_F(node)))("VAR"))(AND(str_eq(VAR_NM(APP_F(node)))("str_to_int"))(str_eq(NODE_TAG(APP_A(node)))("STR"))))
+glyph APPEND = Z(la self. la xs. la ys. IF(IS_CONS(xs))(la _. CONS(HD(xs))(self(TL(xs))(ys)))(la _. ys))
+glyph COLLECT = Z(la self. la node.
+    (la tag.
+        IF(str_eq(tag)("STR"))(la _. CONS(STR_V(node))(NIL))(la _.
+        IF(str_eq(tag)("LAM"))(la _. self(LAM_B(node)))(la _.
+        IF(str_eq(tag)("APP"))(la _. IF(IS_INT_LIT(node))(la _. NIL)(la _. APPEND(self(APP_F(node)))(self(APP_A(node)))))(la _.
+        NIL))))
+    (NODE_TAG(node)))
+glyph FOLDL = Z(la self. la f. la acc. la lst. IF(IS_CONS(lst))(la _. self(f)(f(acc)(HD(lst)))(TL(lst)))(la _. acc))
+glyph HAS_KEY = Z(la self. la k. la map. IF(IS_CONS(map))(la _. IF(str_eq(k)(FST(HD(map))))(la _. TRUE)(la _. self(k)(TL(map))))(la _. FALSE))
+glyph LOOKUP = Z(la self. la k. la map. IF(IS_CONS(map))(la _. IF(str_eq(k)(FST(HD(map))))(la _. SND(HD(map)))(la _. self(k)(TL(map))))(la _. error(concat("native_codegen3: literal not in pool: ")(k))))
+glyph LITERAL_BASE = 4206463
+glyph ADD_LIT = la acc. la v.
+    (la pool. (la map.
+        IF(HAS_KEY(v)(map))(la _. acc)(la _.
+            PAIR(concat(pool)(v))(CONS(PAIR(v)(add(LITERAL_BASE)(STRLEN_INT(pool))))(map))))
+    (SND(acc)))(FST(acc))
+glyph BUILD_POOL = la values. FOLDL(ADD_LIT)(PAIR("")(NIL))(values)
+
+# ── x86-64 emitters ────────────────────────────────────────────────
+glyph MOV_RAX_RBX  = BYTES("72 137 216")
+glyph MOV_RAX_MEM8 = BYTES("72 139 64 8")
+glyph MOV_RAX_MEM  = BYTES("72 139 0")
+glyph PUSH_RAX = chr("80")
+glyph POP_RSI  = chr("94")
+# HAL.4b: the ternary calling convention's second pop (rdi = arg1; see CG_TER).
+glyph POP_RDI  = chr("95")
+glyph POP_R10  = BYTES("65 90")
+glyph MOV_R11_RAX = BYTES("73 137 195")
+glyph PUSH_RBX = chr("83")
+glyph POP_RBX  = chr("91")
+glyph MOV_RBX_RDI = BYTES("72 137 251")
+glyph RET = chr("195")
+glyph CALL_RCX = BYTES("255 209")
+glyph XOR_RBX  = BYTES("72 49 219")
+glyph MOV_RAX_IMM = la n. concat(BYTES("72 184"))(LE8(n))
+glyph MOV_RCX_IMM = la n. concat(BYTES("72 185"))(LE8(n))
+glyph MOV_RSI_IMM = la n. concat(BYTES("72 190"))(LE8(n))
+glyph MOV_RDX_IMM = la n. concat(BYTES("72 186"))(LE8(n))
+glyph MOV_R10_IMM = la n. concat(BYTES("73 186"))(LE8(n))
+glyph MOV_R15_IMM = la n. concat(BYTES("73 191"))(LE8(n))
+glyph CALLR = la addr. concat(MOV_RCX_IMM(addr))(CALL_RCX)
+# Stage 3a TCO: absolute jmp (no return address pushed) — jmp rcx = FF E1.
+glyph JMP_RCX = BYTES("255 225")
+glyph JMPR = la addr. concat(MOV_RCX_IMM(addr))(JMP_RCX)
+# 3b.2: store rax into an absolute 32-bit address — mov [abs32], rax
+glyph MOV_MEM_RAX = la a. concat(BYTES("72 137 4 37"))(LEBYTES(a)(4))
+# 3b.2: store rsp into an absolute 32-bit address — mov [abs32], rsp
+glyph MOV_MEM_RSP = la a. concat(BYTES("72 137 36 37"))(LEBYTES(a)(4))
+
+# runtime routine addresses (fixed 256-byte slots from 0x400078)
+glyph RT_BOX_INT       = 4194846
+glyph RT_MKCLO       = 4194910
+glyph RT_APPLY       = 4194963
+glyph RT_PRINT       = 4195046
+glyph RT_ADD       = 4195254
+glyph RT_SUB       = 4195275
+glyph RT_MUL       = 4195296
+glyph RT_DIV       = 4195318
+glyph RT_MOD       = 4195375
+glyph RT_INT_EQ       = 4195439
+glyph RT_LT       = 4195472
+glyph RT_STR_EQ       = 4195505
+glyph RT_CONCAT       = 4195590
+glyph RT_STR_HEAD       = 4195797
+glyph RT_STR_TAIL       = 4195844
+glyph RT_INT_TO_STR       = 4195892
+glyph RT_STR_TO_INT       = 4195998
+glyph RT_CHR       = 4197545
+glyph RT_ORD       = 4197507
+glyph RT_STR_LEN       = 4197485
+glyph RT_ERROR       = 4197640
+glyph RT_WRITE_EXEC       = 4197702
+glyph RT_WRITE_FILE       = 4197964
+glyph RT_READ_FILE       = 4198200
+glyph RT_COPY_SELF       = 4198534
+# K3b: peek(addr) -> byte. rt_peek is appended AFTER the runtime data area, at
+# the old runtime end (= the old LITERAL_BASE), so only LITERAL_BASE shifts.
+glyph RT_PEEK            = 4204484
+# K4b: poke(addr)(byte) -> byte written. rt_poke (24 bytes) is appended AFTER
+# rt_peek at the old runtime end (old LITERAL_BASE 4204066), so again only
+# LITERAL_BASE shifts (4204066 -> 4204090) and RTLEN grows 9642 -> 9666.
+glyph RT_POKE            = 4204507
+glyph RT_SET_CR3        = 4204531
+# K4c: exec_at(vaddr) -> fetch+execute there (NX-fault probe). rt_exec_at (24
+# bytes) is appended AFTER rt_set_cr3 at the old runtime end (old LITERAL_BASE
+# 4204112), so again only LITERAL_BASE shifts (4204112 -> 4204136) and RTLEN
+# grows 9688 -> 9712.
+glyph RT_EXEC_AT        = 4204553
+# K5b.1a: spawn/yield (5th/6th native_codegen3 extensions; appended -> only LITERAL_BASE shifted).
+glyph RT_SPAWN          = 4204577
+glyph RT_YIELD          = 4204891
+glyph RT_MAKE_STR       = 4196108
+glyph RT_SEND           = 4205879
+glyph RT_RECV           = 4205906
+# HAL.1: port-I/O primitives (inb/inl unary, outb/outl binary). Appended at
+# rt.asm EOF after recv_buf, so all existing RT_* stay put; patch_la.py fills
+# these four + RTLEN + LITERAL_BASE from the fresh nasm listing.
+glyph RT_INB            = 4206214
+glyph RT_INL            = 4206238
+glyph RT_OUTB           = 4206258
+glyph RT_OUTL           = 4206283
+# HAL.4: 16-bit port I/O (inw unary, outw binary). patch_la.py fills these.
+glyph RT_INW            = 4206306
+glyph RT_OUTW           = 4206331
+glyph RT_FILL           = 4206389
+glyph RT_MEMCPY         = 4206426
+glyph RT_INIT       = 4196281
+# 3b.2 GC globals (data-area addresses in native_codegen3_rt.asm) + trigger interval
+glyph HEAP_BASE_ADDR       = 4199094
+glyph NEXT_GC_ADDR       = 4199102
+glyph GC_INTERVAL    = 4194304
+glyph STACK_BASE_ADDR       = 4199110
+glyph WORKLIST_BASE_ADDR       = 4199118
+glyph WL_SIZE            = 67108864
+# 3b.3 heap end (hard limit; GC-on-exhaustion). HEAP_SIZE = heap region after the worklist.
+glyph HEAP_END_ADDR       = 4199134
+glyph HEAP_SIZE          = 17179869184
+# GCfix: object-start bitmap — 1 bit / 8-byte heap granule = HEAP_SIZE/64 bytes.
+# .consider marks only candidates whose (rax-8) start-bit is set, rejecting
+# conservative interior/false pointers whose mark-write would corrupt live data.
+glyph BITMAP_BASE_ADDR   = 4199142
+glyph BITMAP_SIZE        = 268435456
+# 3b.4 native stack guard: limit global + loud-halt routine (data/code addrs in native_codegen3_rt.asm)
+glyph STACK_LIMIT_ADDR   = 4199166
+glyph RT_STACK_OVERFLOW  = 4197446
+# Entry prologue (parameterised by heap base `ha` so its LENGTH is constant and
+# computable as STRLEN_INT(PROL(0)) — no hardcoded prologue length to drift):
+# set r15=heap base, init the GC globals HEAP_BASE and NEXT_GC, then rt_init.
+glyph PROL = la ha.
+    concat(MOV_MEM_RSP(STACK_BASE_ADDR))(
+    concat(MOV_RAX_IMM(ha))(concat(MOV_MEM_RAX(WORKLIST_BASE_ADDR))(
+    (la hb.
+        concat(MOV_R15_IMM(hb))(
+        concat(MOV_RAX_IMM(hb))(concat(MOV_MEM_RAX(HEAP_BASE_ADDR))(
+        concat(MOV_RAX_IMM(add(hb)(HEAP_SIZE)))(concat(MOV_MEM_RAX(HEAP_END_ADDR))(
+        concat(MOV_RAX_IMM(add(hb)(GC_INTERVAL)))(concat(MOV_MEM_RAX(NEXT_GC_ADDR))(
+        concat(XOR_RBX)(CALLR(RT_INIT)))))))))
+    )(add(ha)(WL_SIZE)))))
+
+glyph RT_BIN = la nm.
+    IF(str_eq(nm)("add"))(la _. RT_ADD)(la _.
+    IF(str_eq(nm)("sub"))(la _. RT_SUB)(la _.
+    IF(str_eq(nm)("mul"))(la _. RT_MUL)(la _.
+    IF(str_eq(nm)("div"))(la _. RT_DIV)(la _.
+    IF(str_eq(nm)("mod"))(la _. RT_MOD)(la _.
+    IF(str_eq(nm)("int_eq"))(la _. RT_INT_EQ)(la _.
+    IF(str_eq(nm)("lt"))(la _. RT_LT)(la _.
+    IF(str_eq(nm)("str_eq"))(la _. RT_STR_EQ)(la _.
+    IF(str_eq(nm)("concat"))(la _. RT_CONCAT)(la _.
+    IF(str_eq(nm)("write_file"))(la _. RT_WRITE_FILE)(la _.
+    IF(str_eq(nm)("poke"))(la _. RT_POKE)(la _.
+    IF(str_eq(nm)("send"))(la _. RT_SEND)(la _.
+    IF(str_eq(nm)("outb"))(la _. RT_OUTB)(la _.
+    IF(str_eq(nm)("outl"))(la _. RT_OUTL)(la _.
+    IF(str_eq(nm)("outw"))(la _. RT_OUTW)(la _.
+    RT_WRITE_EXEC)))))))))))))))
+glyph RT_UN = la nm.
+    IF(str_eq(nm)("print"))(la _. RT_PRINT)(la _.
+    IF(str_eq(nm)("int_to_str"))(la _. RT_INT_TO_STR)(la _.
+    IF(str_eq(nm)("str_to_int"))(la _. RT_STR_TO_INT)(la _.
+    IF(str_eq(nm)("str_head"))(la _. RT_STR_HEAD)(la _.
+    IF(str_eq(nm)("str_tail"))(la _. RT_STR_TAIL)(la _.
+    IF(str_eq(nm)("chr"))(la _. RT_CHR)(la _.
+    IF(str_eq(nm)("ord"))(la _. RT_ORD)(la _.
+    IF(str_eq(nm)("str_len"))(la _. RT_STR_LEN)(la _.
+    IF(str_eq(nm)("error"))(la _. RT_ERROR)(la _.
+    IF(str_eq(nm)("read_file"))(la _. RT_READ_FILE)(la _.
+    IF(str_eq(nm)("peek"))(la _. RT_PEEK)(la _.
+    IF(str_eq(nm)("set_cr3"))(la _. RT_SET_CR3)(la _.
+    IF(str_eq(nm)("exec_at"))(la _. RT_EXEC_AT)(la _.
+    IF(str_eq(nm)("spawn"))(la _. RT_SPAWN)(la _.
+    IF(str_eq(nm)("yield"))(la _. RT_YIELD)(la _.
+    IF(str_eq(nm)("recv"))(la _. RT_RECV)(la _.
+    IF(str_eq(nm)("inb"))(la _. RT_INB)(la _.
+    IF(str_eq(nm)("inl"))(la _. RT_INL)(la _.
+    IF(str_eq(nm)("inw"))(la _. RT_INW)(la _.
+    RT_COPY_SELF)))))))))))))))))))
+# HAL.4b: the ternary dispatch (the twin of RT_BIN/RT_UN). Two entries, so the
+# fallthrough IS memcpy — the same shape RT_BIN's RT_WRITE_EXEC fallthrough has.
+glyph RT_TER = la nm.
+    IF(str_eq(nm)("fill"))(la _. RT_FILL)(la _.
+    RT_MEMCPY)
+
+# ── codegen: MK_CG(litmap)(textbase) -> CG(node)(cenv)(pool) -> PAIR(code)(pool') ──
+glyph VARWALK = Z(la self. la i. IF(int_eq(i)(0))(la _. "")(la _. concat(MOV_RAX_MEM8)(self(sub(i)(1)))))
+glyph VARCODE = la i. concat(MOV_RAX_RBX)(concat(VARWALK(i))(MOV_RAX_MEM))
+glyph VAR_LOOKUP = Z(la self. la nm. la cenv. la i.
+    IF(IS_CONS(cenv))(la _. IF(str_eq(nm)(HD(cenv)))(la _. SOME(i))(la _. self(nm)(TL(cenv))(add(i)(1))))(la _. NONE))
+glyph STRLIT_CODE = la litmap. la v. concat(MOV_RSI_IMM(LOOKUP(v)(litmap)))(concat(MOV_RDX_IMM(STRLEN_INT(v)))(CALLR(RT_MAKE_STR)))
+
+# Stage 3a TCO: a `tail` flag (Church bool) is threaded through CG. A
+# value-producing node in TAIL position owns its frame teardown+return — TAILED
+# appends `pop rbx; ret` to the value code; in non-tail position the value just
+# stays in rax and falls through (byte-identical to codegen2). The general
+# application overrides this with `pop rbx; jmp rt_apply` (see CG_GENAPP).
+glyph TAILED = la tail. la code. tail(concat(code)(concat(POP_RBX)(RET)))(code)
+
+# 3b.4 native stack guard. Every compiled lambda body begins with a check that
+# rsp has not fallen below STACK_LIMIT (= STACK_BASE - 7 MiB, set in rt_init). A
+# deep NON-tail recursion grows the CPU stack one frame per level; the guard fires
+# before the 8 MiB OS stack is exhausted, jumping to rt_stack_overflow (loud
+# `native: stack overflow`, exit 134) instead of a raw SIGSEGV. A tail loop (TCO)
+# reuses its frame, so rsp stays near STACK_BASE and the guard never fires.
+#   cmp rsp,[STACK_LIMIT]          ; 48 3B 24 25 <abs32>
+#   jae +12                        ; 73 0C  (skip the overflow jump when rsp>=limit)
+#   mov rcx,RT_STACK_OVERFLOW; jmp rcx   ; JMPR = 12 bytes (only taken when below)
+glyph CMP_RSP_LIMIT = concat(BYTES("72 59 36 37"))(LEBYTES(STACK_LIMIT_ADDR)(4))
+glyph STACK_CHECK = concat(CMP_RSP_LIMIT)(concat(BYTES("115 12"))(JMPR(RT_STACK_OVERFLOW)))
+
+glyph CG_LAM = la rec. la textbase. la x. la body. la cenv. la tail. la pool.
+    (la r.
+        (la bodyblock.
+            (la bodyaddr.
+                PAIR(TAILED(tail)(concat(MOV_R10_IMM(bodyaddr))(CALLR(RT_MKCLO))))(concat(SND(r))(bodyblock))
+            )(add(textbase)(STRLEN_INT(SND(r))))
+        )(concat(STACK_CHECK)(concat(PUSH_RBX)(concat(MOV_RBX_RDI)(FST(r)))))
+    )(rec(body)(CONS(x)(cenv))(TRUE)(pool))
+
+# Optimization pass #2 — arithmetic constant folding (pure codegen, no autology
+# cost). When BOTH operands of add/sub/mul are integer literals, compute the result
+# at compile time and emit the SAME shape CG_UN's int-literal path emits (`mov rax,
+# <result>; call rt_box_int`) instead of two boxes + push/pop + a runtime call.
+# Value-preserving and deterministic (str_to_int/add/sub/mul are byte-identical on
+# every engine), so the Stage-4 self-host still reaches a fixed point. Only add/sub/
+# mul fold: div/mod carry a divide-by-zero loud-halt, and lt/int_eq yield Church
+# booleans (a different emission). Int literals contribute nothing to the string
+# pool (COLLECT skips IS_INT_LIT), so the folded path threads `pool` unchanged.
+#
+# INT_LIT_SAFE, NOT the bare IS_INT_LIT: CG_BIN's operands a1/a2 can be ANY node
+# (VAR/STR/LAM/APP), but IS_INT_LIT's eager AND dereferences APP_F/APP_A, which are
+# only valid on an APP node — on a LAM operand that yields a non-function and faults
+# (`applied a non-function`). (The pre-existing IS_INT_LIT is safe only because its
+# sole caller, COLLECT, invokes it exclusively on already-known APP nodes.) The
+# leading NODE_TAG="APP" guard short-circuits before touching APP_F/APP_A.
+glyph FOLDABLE2 = la nm. OR(str_eq(nm)("add"))(OR(str_eq(nm)("sub"))(str_eq(nm)("mul")))
+glyph INT_LIT_SAFE = la node. IF(str_eq(NODE_TAG(node))("APP"))(la _. IS_INT_LIT(node))(la _. FALSE)
+glyph INT_LIT_VAL = la node. str_to_int(STR_V(APP_A(node)))
+glyph FOLD_BIN = la nm. la x. la y.
+    IF(str_eq(nm)("add"))(la _. add(x)(y))(la _.
+    IF(str_eq(nm)("sub"))(la _. sub(x)(y))(la _.
+    mul(x)(y)))
+glyph CG_BIN = la rec. la nm. la a1. la a2. la cenv. la tail. la pool.
+    IF(AND(FOLDABLE2(nm))(AND(INT_LIT_SAFE(a1))(INT_LIT_SAFE(a2))))(la _.
+        PAIR(TAILED(tail)(concat(MOV_RAX_IMM(FOLD_BIN(nm)(INT_LIT_VAL(a1))(INT_LIT_VAL(a2))))(CALLR(RT_BOX_INT))))(pool))(la _.
+    (la r1. (la r2.
+        PAIR(TAILED(tail)(concat(FST(r1))(concat(PUSH_RAX)(concat(FST(r2))(concat(POP_RSI)(CALLR(RT_BIN(nm))))))))(SND(r2))
+    )(rec(a2)(cenv)(FALSE)(SND(r1))))(rec(a1)(cenv)(FALSE)(pool)))
+
+glyph CG_UN = la rec. la nm. la a. la cenv. la tail. la pool.
+    IF(AND(str_eq(nm)("str_to_int"))(str_eq(NODE_TAG(a))("STR")))(la _.
+        PAIR(TAILED(tail)(concat(MOV_RAX_IMM(str_to_int(STR_V(a))))(CALLR(RT_BOX_INT))))(pool))(la _.
+    (la r. PAIR(TAILED(tail)(concat(FST(r))(CALLR(RT_UN(nm)))))(SND(r)))(rec(a)(cenv)(FALSE)(pool)))
+
+# HAL.4b: the ternary emission — CG_BIN's shape with one more operand.
+# CG_BIN evaluates a1 -> push -> a2 (rax) -> pop rsi, so the callee sees
+# rsi=arg1, rax=arg2. CG_TER extends that by one: push a1, push a2, evaluate a3
+# into rax, then pop rsi (=a2, pushed last) and pop rdi (=a1) — so the callee
+# sees rdi=arg1, rsi=arg2, rax=arg3, which is what rt_fill/rt_memcpy read. The
+# pops come AFTER a3's code, so a3 evaluating arbitrary nodes (which clobber
+# rdi/rsi freely) cannot corrupt the earlier operands — they are on the stack.
+# Pushes are balanced by the pops, so rsp at the CALL matches CG_BIN's.
+# No constant-folding arm: neither fill nor memcpy is pure (both write memory).
+glyph CG_TER = la rec. la nm. la a1. la a2. la a3. la cenv. la tail. la pool.
+    (la r1. (la r2. (la r3.
+        PAIR(TAILED(tail)(concat(FST(r1))(concat(PUSH_RAX)(concat(FST(r2))(concat(PUSH_RAX)(concat(FST(r3))(concat(POP_RSI)(concat(POP_RDI)(CALLR(RT_TER(nm)))))))))))(SND(r3))
+    )(rec(a3)(cenv)(FALSE)(SND(r2))))(rec(a2)(cenv)(FALSE)(SND(r1))))(rec(a1)(cenv)(FALSE)(pool))
+
+glyph CG_GENAPP = la rec. la f. la a. la cenv. la tail. la pool.
+    (la rf. (la ra.
+        (la prefix.
+            PAIR(tail(concat(prefix)(concat(POP_RBX)(JMPR(RT_APPLY))))(concat(prefix)(CALLR(RT_APPLY))))(SND(ra))
+        )(concat(FST(rf))(concat(PUSH_RAX)(concat(FST(ra))(concat(MOV_R11_RAX)(POP_R10)))))
+    )(rec(a)(cenv)(FALSE)(SND(rf))))(rec(f)(cenv)(FALSE)(pool))
+
+glyph CG_APP = la rec. la node. la cenv. la tail. la pool.
+    (la f. (la a.
+        IF(str_eq(NODE_TAG(f))("APP"))(la _.
+            (la g.
+                IF(AND(str_eq(NODE_TAG(g))("VAR"))(IS_BUILTIN2(VAR_NM(g))))(la _.
+                    CG_BIN(rec)(VAR_NM(g))(APP_A(f))(a)(cenv)(tail)(pool))
+                (la _.
+                # HAL.4b: a ternary builtin is APP(APP(APP(VAR nm,a1),a2),a3), so
+                # its head sits one level deeper than a binop's — g is an APP, not
+                # the VAR. The NODE_TAG(g)="APP" guard must come BEFORE APP_F(g):
+                # on a VAR/STR/LAM node APP_F yields a non-function and faults
+                # (the same trap INT_LIT_SAFE documents).
+                IF(str_eq(NODE_TAG(g))("APP"))(la _.
+                    (la h.
+                        IF(AND(str_eq(NODE_TAG(h))("VAR"))(IS_BUILTIN3(VAR_NM(h))))(la _.
+                            CG_TER(rec)(VAR_NM(h))(APP_A(g))(APP_A(f))(a)(cenv)(tail)(pool))
+                        (la _. CG_GENAPP(rec)(f)(a)(cenv)(tail)(pool)))
+                    (APP_F(g)))
+                (la _. CG_GENAPP(rec)(f)(a)(cenv)(tail)(pool))))
+            (APP_F(f)))(la _.
+        IF(str_eq(NODE_TAG(f))("VAR"))(la _.
+            IF(IS_BUILTIN1(VAR_NM(f)))(la _.
+                CG_UN(rec)(VAR_NM(f))(a)(cenv)(tail)(pool))
+            (la _. CG_GENAPP(rec)(f)(a)(cenv)(tail)(pool)))
+        (la _. CG_GENAPP(rec)(f)(a)(cenv)(tail)(pool)))
+    )(APP_A(node)))(APP_F(node))
+
+# MK_CG(litmap)(textbase) -> a Z-fixpoint compiler CG(node)(cenv)(pool) -> PAIR(code)(pool').
+# litmap/textbase are closed over once (not re-derived per node), so the whole
+# pipeline runs ONCE — tiny_host glyphs are macros (re-evaluated on each reference),
+# so the layout below threads every stage through let-bindings instead.
+glyph MK_CG = la litmap. la textbase.
+    Z(la self. la node. la cenv. la tail. la pool.
+        (la tag.
+            IF(str_eq(tag)("STR"))(la _. PAIR(TAILED(tail)(STRLIT_CODE(litmap)(STR_V(node))))(pool))(la _.
+            IF(str_eq(tag)("VAR"))(la _.
+                (la opt. IF(IS_SOME(opt))(la _. PAIR(TAILED(tail)(VARCODE(OPT_VAL(opt))))(pool))(la _. error(concat("native_codegen3: free variable (builtin used as value?): ")(VAR_NM(node)))))(VAR_LOOKUP(VAR_NM(node))(cenv)(0)))(la _.
+            IF(str_eq(tag)("LAM"))(la _. CG_LAM(self)(textbase)(LAM_P(node))(LAM_B(node))(cenv)(tail)(pool))(la _.
+            CG_APP(self)(node)(cenv)(tail)(pool)
+            ))))
+        (NODE_TAG(node)))
+
+# ── assemble the ELF image ─────────────────────────────────────────
+glyph RT    = BYTES("72 139 4 37 214 18 64 0 72 133 192 117 71 73 141 79 24 72 59 12 37 222 18 64 0 119 70 76 59 60 37 190 18 64 0 115 117 76 137 248 73 137 207 72 131 60 37 230 18 64 0 0 116 29 82 72 139 20 37 230 18 64 0 72 137 193 72 43 12 37 182 18 64 0 72 193 233 3 72 15 171 10 90 195 72 139 72 8 72 137 12 37 214 18 64 0 195 232 91 7 0 0 72 139 4 37 214 18 64 0 72 133 192 117 225 184 1 0 0 0 191 2 0 0 0 72 190 61 21 64 0 0 0 0 0 186 23 0 0 0 15 5 184 60 0 0 0 191 73 0 0 0 15 5 232 34 7 0 0 73 141 143 0 0 64 0 72 137 12 37 190 18 64 0 233 77 255 255 255 72 141 71 8 72 131 248 32 115 5 184 32 0 0 0 72 15 189 200 186 1 0 0 0 72 211 226 72 57 194 116 3 72 255 193 72 131 249 5 115 5 185 5 0 0 0 73 137 200 65 185 1 0 0 0 73 211 225 195 232 192 255 255 255 74 139 4 197 6 19 64 0 72 133 192 117 71 76 137 249 76 1 201 72 59 12 37 222 18 64 0 119 68 76 59 60 37 190 18 64 0 115 115 76 137 248 73 137 207 72 131 60 37 230 18 64 0 0 116 27 72 139 20 37 230 18 64 0 72 137 193 72 43 12 37 182 18 64 0 72 193 233 3 72 15 171 10 195 72 139 72 8 74 137 12 197 6 19 64 0 195 232 104 6 0 0 74 139 4 197 6 19 64 0 72 133 192 117 225 184 1 0 0 0 191 2 0 0 0 72 190 61 21 64 0 0 0 0 0 186 23 0 0 0 15 5 184 60 0 0 0 191 73 0 0 0 15 5 232 47 6 0 0 73 141 143 0 0 64 0 72 137 12 37 190 18 64 0 233 72 255 255 255 72 137 194 232 82 254 255 255 72 199 0 1 0 16 0 72 199 64 8 4 0 0 0 72 137 80 16 72 131 192 8 195 72 137 242 232 50 254 255 255 72 199 0 1 0 16 0 72 199 64 8 0 0 0 0 72 137 80 16 72 131 192 8 195 232 21 254 255 255 72 199 0 2 0 16 0 76 137 80 8 72 137 88 16 72 141 80 8 232 253 253 255 255 72 199 0 1 0 16 0 72 199 64 8 2 0 0 0 72 137 80 16 72 131 192 8 195 128 60 37 238 18 64 0 0 116 21 198 4 37 238 18 64 0 0 65 82 65 83 232 173 38 0 0 65 91 65 90 73 131 58 2 117 34 232 187 253 255 255 72 199 0 3 0 16 0 73 139 74 8 76 137 88 8 72 139 81 8 72 137 80 16 72 141 120 8 255 33 184 60 0 0 0 191 70 0 0 0 15 5 80 72 139 8 72 133 201 116 118 72 131 249 4 15 133 160 0 0 0 72 139 64 8 72 190 160 23 64 0 0 0 0 0 77 49 192 72 133 192 121 9 65 184 1 0 0 0 72 247 216 72 133 192 117 8 72 255 206 198 6 48 235 26 72 133 192 116 21 72 49 210 185 10 0 0 0 72 247 241 128 194 48 72 255 206 136 22 235 230 77 133 192 116 6 72 255 206 198 6 45 72 186 160 23 64 0 0 0 0 0 72 41 242 184 1 0 0 0 191 1 0 0 0 15 5 235 23 72 139 72 8 72 139 113 8 72 139 17 184 1 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 1 0 0 0 72 190 6 21 64 0 0 0 0 0 186 1 0 0 0 15 5 88 195 184 1 0 0 0 191 2 0 0 0 72 190 77 23 64 0 0 0 0 0 186 43 0 0 0 15 5 88 195 232 222 14 0 0 72 139 78 8 72 3 72 8 72 137 200 233 83 254 255 255 232 201 14 0 0 72 139 78 8 72 43 72 8 72 137 200 233 62 254 255 255 232 180 14 0 0 72 139 78 8 72 15 175 72 8 72 137 200 233 40 254 255 255 232 158 14 0 0 72 139 72 8 72 139 70 8 72 133 201 15 132 24 14 0 0 72 131 249 255 117 19 72 186 0 0 0 0 0 0 0 128 72 57 208 15 132 255 13 0 0 72 153 72 247 249 233 239 253 255 255 232 101 14 0 0 72 139 72 8 72 139 70 8 72 133 201 15 132 6 14 0 0 72 131 249 255 117 23 72 186 0 0 0 0 0 0 0 128 72 57 208 117 8 72 49 192 233 188 253 255 255 72 153 72 247 249 72 137 208 233 175 253 255 255 232 37 14 0 0 72 139 78 8 72 59 72 8 117 9 72 139 4 37 166 18 64 0 195 72 139 4 37 174 18 64 0 195 232 4 14 0 0 72 139 78 8 72 59 72 8 124 9 72 139 4 37 174 18 64 0 195 72 139 4 37 166 18 64 0 195 72 131 62 0 15 133 244 12 0 0 72 131 56 0 15 133 234 12 0 0 76 139 70 8 76 139 72 8 73 139 8 73 59 9 117 40 77 139 64 8 77 139 73 8 72 49 210 72 57 202 115 15 65 138 4 16 65 58 4 17 117 14 72 255 194 235 236 72 139 4 37 166 18 64 0 195 72 139 4 37 174 18 64 0 195 72 131 62 0 15 133 159 12 0 0 72 131 56 0 15 133 149 12 0 0 73 137 246 73 137 197 72 139 78 8 72 139 57 72 139 72 8 72 3 57 232 51 252 255 255 76 137 201 72 131 233 8 72 193 225 16 72 131 201 5 72 137 8 76 141 96 8 73 139 78 8 76 139 1 72 139 113 8 72 49 201 76 57 193 115 12 138 20 14 65 136 20 12 72 255 193 235 239 77 139 70 8 77 139 0 79 141 28 4 73 139 77 8 76 139 9 72 139 113 8 72 49 201 76 57 201 115 12 138 20 14 65 136 20 11 72 255 193 235 239 77 139 70 8 77 139 0 73 139 77 8 76 3 1 232 211 250 255 255 72 199 0 4 0 16 0 76 137 64 8 76 137 96 16 76 141 96 8 232 187 250 255 255 72 199 0 1 0 16 0 72 199 64 8 0 0 0 0 76 137 96 16 72 131 192 8 195 72 131 56 0 15 133 208 11 0 0 72 139 72 8 72 139 17 72 133 210 116 14 72 139 113 8 186 1 0 0 0 233 19 1 0 0 72 137 206 72 49 210 233 8 1 0 0 72 131 56 0 15 133 161 11 0 0 72 139 72 8 72 139 17 72 133 210 116 15 72 139 113 8 72 255 198 72 255 202 233 227 0 0 0 72 137 206 72 49 210 233 216 0 0 0 72 131 56 4 15 133 52 12 0 0 72 139 64 8 72 190 160 23 64 0 0 0 0 0 77 49 192 72 133 192 121 9 65 184 1 0 0 0 72 247 216 72 133 192 117 8 72 255 206 198 6 48 235 26 72 133 192 116 21 72 49 210 185 10 0 0 0 72 247 241 128 194 48 72 255 206 136 22 235 230 77 133 192 116 6 72 255 206 198 6 45 72 186 160 23 64 0 0 0 0 0 72 41 242 235 110 72 131 56 0 15 133 7 11 0 0 72 139 72 8 72 139 113 8 72 139 17 72 49 192 77 49 192 77 49 201 72 133 210 116 70 128 62 45 117 14 65 185 1 0 0 0 73 255 192 73 57 208 115 51 73 57 208 115 33 78 15 182 20 6 73 131 250 48 114 35 73 131 250 57 119 29 73 131 234 48 72 107 192 10 76 1 208 73 255 192 235 218 77 133 201 116 3 72 247 216 233 23 251 255 255 233 241 10 0 0 73 137 198 73 137 213 72 137 215 232 76 250 255 255 76 137 201 72 131 233 8 72 193 225 16 72 131 201 5 72 137 8 76 141 96 8 72 49 201 76 57 233 115 12 138 20 14 65 136 20 12 72 255 193 235 239 232 47 249 255 255 72 199 0 4 0 16 0 76 137 104 8 76 137 96 16 76 141 96 8 232 23 249 255 255 72 199 0 1 0 16 0 72 199 64 8 0 0 0 0 76 137 96 16 72 131 192 8 195 83 72 137 251 73 186 142 7 64 0 0 0 0 0 232 210 250 255 255 91 195 83 72 137 251 72 139 67 8 72 139 0 91 195 83 72 137 251 73 186 176 7 64 0 0 0 0 0 232 176 250 255 255 91 195 83 72 137 251 72 139 3 91 195 128 61 111 37 0 0 0 117 35 102 140 200 102 131 224 3 116 26 72 139 4 37 222 18 64 0 72 137 4 37 230 18 64 0 72 137 4 37 246 18 64 0 235 12 72 199 4 37 246 18 64 0 0 0 0 56 72 49 219 73 186 121 7 64 0 0 0 0 0 232 91 250 255 255 72 137 4 37 166 18 64 0 73 186 155 7 64 0 0 0 0 0 232 68 250 255 255 72 137 4 37 174 18 64 0 72 139 4 37 198 18 64 0 72 45 0 0 112 0 72 137 4 37 254 18 64 0 195 72 137 4 37 134 20 64 0 72 137 28 37 142 20 64 0 72 137 12 37 150 20 64 0 72 137 20 37 158 20 64 0 72 137 52 37 166 20 64 0 72 137 60 37 174 20 64 0 72 137 44 37 182 20 64 0 76 137 4 37 190 20 64 0 76 137 12 37 198 20 64 0 76 137 20 37 206 20 64 0 76 137 28 37 214 20 64 0 76 137 36 37 222 20 64 0 76 137 44 37 230 20 64 0 76 137 52 37 238 20 64 0 76 137 60 37 246 20 64 0 72 137 229 76 139 36 37 206 18 64 0 77 49 201 73 131 249 15 115 18 74 139 4 205 134 20 64 0 232 128 2 0 0 73 255 193 235 232 72 139 4 37 166 18 64 0 232 110 2 0 0 72 139 4 37 174 18 64 0 232 97 2 0 0 72 59 44 37 198 18 64 0 115 15 72 139 69 0 232 78 2 0 0 72 131 197 8 235 231 72 131 60 37 159 42 64 0 0 116 123 77 49 201 73 131 249 8 115 114 73 107 249 80 72 129 199 175 42 64 0 72 131 63 1 117 92 72 59 60 37 159 42 64 0 116 82 72 139 71 16 232 16 2 0 0 72 139 71 24 232 7 2 0 0 72 139 71 32 232 254 1 0 0 72 139 71 40 232 245 1 0 0 72 139 71 48 232 236 1 0 0 72 139 71 72 232 227 1 0 0 72 139 111 8 76 139 119 56 76 57 245 115 15 72 139 69 0 232 205 1 0 0 72 131 197 8 235 236 73 255 193 235 136 76 59 36 37 206 18 64 0 118 106 73 131 236 8 73 139 60 36 72 139 87 248 72 129 226 255 0 0 0 72 131 250 1 116 20 72 131 250 2 116 34 72 131 250 3 116 39 72 131 250 4 116 52 235 201 72 139 15 72 131 249 4 116 192 72 139 71 8 232 121 1 0 0 235 181 72 139 71 8 232 110 1 0 0 235 170 72 139 7 232 100 1 0 0 72 139 71 8 232 91 1 0 0 235 151 72 139 71 8 232 80 1 0 0 235 140 72 199 4 37 214 18 64 0 0 0 0 0 72 49 201 72 199 4 205 6 19 64 0 0 0 0 0 72 255 193 72 131 249 48 114 235 72 139 52 37 182 18 64 0 77 49 237 76 57 254 15 131 148 0 0 0 72 139 6 72 169 0 1 0 0 117 104 72 137 194 72 193 234 16 72 133 210 15 132 200 1 0 0 72 131 250 16 117 33 72 139 12 37 214 18 64 0 72 137 78 8 72 137 52 37 214 18 64 0 72 199 6 6 0 16 0 72 131 198 24 235 181 72 141 74 8 72 15 189 201 72 139 4 205 6 19 64 0 72 137 70 8 72 137 52 205 6 19 64 0 72 137 208 72 193 224 16 72 131 200 6 72 137 6 72 141 116 22 8 235 132 198 70 1 0 73 255 197 72 139 6 72 193 232 16 72 133 192 15 132 89 1 0 0 72 141 116 6 8 233 99 255 255 255 76 57 254 15 133 70 1 0 0 72 139 4 37 134 20 64 0 72 139 28 37 142 20 64 0 72 139 12 37 150 20 64 0 72 139 20 37 158 20 64 0 72 139 52 37 166 20 64 0 72 139 60 37 174 20 64 0 72 139 44 37 182 20 64 0 76 139 4 37 190 20 64 0 76 139 12 37 198 20 64 0 76 139 20 37 206 20 64 0 76 139 28 37 214 20 64 0 76 139 36 37 222 20 64 0 76 139 44 37 230 20 64 0 76 139 52 37 238 20 64 0 76 139 60 37 246 20 64 0 195 72 139 12 37 182 18 64 0 72 131 193 8 72 57 200 15 130 144 0 0 0 76 57 248 15 131 135 0 0 0 72 139 80 248 72 137 209 72 129 225 255 0 0 0 72 133 201 116 116 72 131 249 5 119 110 72 247 194 0 1 0 0 117 101 72 137 209 72 193 233 16 73 137 192 73 1 200 77 57 248 119 83 72 131 60 37 230 18 64 0 0 116 33 76 139 4 37 230 18 64 0 72 137 193 72 131 233 8 72 43 12 37 182 18 64 0 72 193 233 3 73 15 163 8 115 39 72 129 202 0 1 0 0 72 137 80 248 72 139 12 37 206 18 64 0 72 129 193 0 0 0 4 73 57 204 115 9 73 137 4 36 73 131 196 8 195 184 1 0 0 0 191 2 0 0 0 72 190 32 21 64 0 0 0 0 0 186 29 0 0 0 15 5 184 60 0 0 0 191 72 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 7 21 64 0 0 0 0 0 186 25 0 0 0 15 5 184 60 0 0 0 191 71 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 84 21 64 0 0 0 0 0 186 23 0 0 0 15 5 184 60 0 0 0 191 134 0 0 0 15 5 72 131 56 0 15 133 56 5 0 0 72 139 72 8 72 139 1 233 191 249 255 255 72 131 56 0 15 133 34 5 0 0 72 139 72 8 72 139 17 72 49 192 72 133 210 116 8 72 139 113 8 72 15 182 6 233 153 249 255 255 72 131 56 0 15 133 252 4 0 0 72 139 72 8 72 139 113 8 72 139 17 72 49 192 77 49 192 73 57 208 115 21 78 15 182 20 6 73 131 234 48 72 107 192 10 76 1 208 73 255 192 235 230 72 61 255 0 0 0 15 135 236 4 0 0 136 4 37 120 23 64 0 72 190 120 23 64 0 0 0 0 0 186 1 0 0 0 72 49 192 233 4 250 255 255 72 139 72 8 72 139 113 8 72 139 17 184 1 0 0 0 191 2 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 6 21 64 0 0 0 0 0 186 1 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 72 131 56 0 15 133 95 4 0 0 72 131 62 0 15 133 85 4 0 0 80 72 139 78 8 72 139 17 72 139 113 8 72 129 250 255 15 0 0 15 131 149 0 0 0 72 49 201 72 57 209 115 16 68 138 4 14 68 136 129 160 23 64 0 72 255 193 235 235 198 129 160 23 64 0 0 184 2 0 0 0 72 191 160 23 64 0 0 0 0 0 190 65 2 0 0 186 237 1 0 0 15 5 72 133 192 120 115 73 137 196 72 139 4 36 72 139 72 8 76 139 41 76 139 113 8 77 133 237 116 29 184 1 0 0 0 76 137 231 76 137 246 76 137 234 15 5 72 133 192 120 71 73 1 198 73 41 197 235 222 184 3 0 0 0 76 137 231 15 5 184 90 0 0 0 72 191 160 23 64 0 0 0 0 0 190 237 1 0 0 15 5 88 195 184 1 0 0 0 191 2 0 0 0 72 190 107 21 64 0 0 0 0 0 186 33 0 0 0 15 5 235 27 184 1 0 0 0 191 2 0 0 0 72 190 140 21 64 0 0 0 0 0 186 26 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 72 131 56 0 15 133 89 3 0 0 72 131 62 0 15 133 79 3 0 0 80 72 139 78 8 72 139 17 72 139 113 8 72 129 250 255 15 0 0 115 127 72 49 201 72 57 209 115 16 68 138 4 14 68 136 129 160 23 64 0 72 255 193 235 235 198 129 160 23 64 0 0 184 2 0 0 0 72 191 160 23 64 0 0 0 0 0 190 65 2 0 0 186 164 1 0 0 15 5 72 133 192 120 93 73 137 196 72 139 4 36 72 139 72 8 76 139 41 76 139 113 8 77 133 237 116 29 184 1 0 0 0 76 137 231 76 137 246 76 137 234 15 5 72 133 192 120 49 73 1 198 73 41 197 235 222 184 3 0 0 0 76 137 231 15 5 88 195 184 1 0 0 0 191 2 0 0 0 72 190 166 21 64 0 0 0 0 0 186 33 0 0 0 15 5 235 27 184 1 0 0 0 191 2 0 0 0 72 190 199 21 64 0 0 0 0 0 186 26 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 72 131 56 0 15 133 109 2 0 0 72 139 72 8 72 139 17 72 139 113 8 72 129 250 255 15 0 0 15 131 203 0 0 0 72 49 201 72 57 209 115 16 68 138 4 14 68 136 129 160 23 64 0 72 255 193 235 235 198 129 160 23 64 0 0 184 2 0 0 0 72 191 160 23 64 0 0 0 0 0 72 49 246 72 49 210 15 5 72 133 192 15 136 169 0 0 0 73 137 196 184 8 0 0 0 76 137 231 72 49 246 186 2 0 0 0 15 5 72 133 192 15 136 168 0 0 0 73 137 197 184 8 0 0 0 76 137 231 72 49 246 72 49 210 15 5 76 137 239 232 148 241 255 255 76 137 201 72 131 233 8 72 193 225 16 72 131 201 5 72 137 8 76 141 112 8 77 137 242 77 137 232 77 133 192 116 29 184 0 0 0 0 76 137 231 76 137 214 76 137 194 15 5 72 133 192 126 8 73 1 194 73 41 192 235 222 184 3 0 0 0 76 137 231 15 5 77 137 244 77 49 246 233 31 247 255 255 184 1 0 0 0 191 2 0 0 0 72 190 107 21 64 0 0 0 0 0 186 33 0 0 0 15 5 235 56 184 1 0 0 0 191 2 0 0 0 72 190 225 21 64 0 0 0 0 0 186 36 0 0 0 15 5 235 27 184 1 0 0 0 191 2 0 0 0 72 190 5 22 64 0 0 0 0 0 186 39 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 184 2 0 0 0 72 191 160 39 64 0 0 0 0 0 72 49 246 72 49 210 15 5 72 133 192 15 136 155 0 0 0 73 137 196 184 2 0 0 0 72 191 175 39 64 0 0 0 0 0 190 65 2 0 0 186 237 1 0 0 15 5 72 133 192 120 88 73 137 197 73 141 143 0 0 1 0 72 59 12 37 222 18 64 0 15 135 167 0 0 0 184 0 0 0 0 76 137 231 76 137 254 186 0 0 1 0 15 5 72 133 192 126 31 72 137 194 76 137 254 184 1 0 0 0 76 137 239 15 5 72 133 192 120 94 72 1 198 72 41 194 117 233 235 181 184 3 0 0 0 76 137 239 15 5 184 3 0 0 0 76 137 231 15 5 184 90 0 0 0 72 191 175 39 64 0 0 0 0 0 190 237 1 0 0 15 5 72 190 175 39 64 0 0 0 0 0 72 49 210 128 60 22 0 116 5 72 255 194 235 245 72 190 175 39 64 0 0 0 0 0 72 49 192 233 161 245 255 255 184 1 0 0 0 191 2 0 0 0 72 190 220 22 64 0 0 0 0 0 186 32 0 0 0 15 5 235 27 184 1 0 0 0 191 2 0 0 0 72 190 252 22 64 0 0 0 0 0 186 46 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 44 22 64 0 0 0 0 0 186 33 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 77 22 64 0 0 0 0 0 186 43 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 120 22 64 0 0 0 0 0 186 42 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 162 22 64 0 0 0 0 0 186 30 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 192 22 64 0 0 0 0 0 186 28 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 42 23 64 0 0 0 0 0 186 35 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 72 131 62 4 117 211 72 131 56 4 117 205 195 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 10 110 97 116 105 118 101 58 32 104 101 97 112 32 119 97 108 107 32 100 101 115 121 110 99 10 110 97 116 105 118 101 58 32 103 99 32 119 111 114 107 108 105 115 116 32 111 118 101 114 102 108 111 119 10 110 97 116 105 118 101 58 32 104 101 97 112 32 101 120 104 97 117 115 116 101 100 10 110 97 116 105 118 101 58 32 115 116 97 99 107 32 111 118 101 114 102 108 111 119 10 110 97 116 105 118 101 58 32 119 114 105 116 101 95 101 120 101 99 32 112 97 116 104 32 116 111 111 32 108 111 110 103 10 110 97 116 105 118 101 58 32 119 114 105 116 101 95 101 120 101 99 32 102 97 105 108 101 100 10 110 97 116 105 118 101 58 32 119 114 105 116 101 95 102 105 108 101 32 112 97 116 104 32 116 111 111 32 108 111 110 103 10 110 97 116 105 118 101 58 32 119 114 105 116 101 95 102 105 108 101 32 102 97 105 108 101 100 10 110 97 116 105 118 101 58 32 114 101 97 100 95 102 105 108 101 58 32 99 97 110 110 111 116 32 111 112 101 110 32 102 105 108 101 10 110 97 116 105 118 101 58 32 114 101 97 100 95 102 105 108 101 58 32 110 111 116 32 97 32 115 101 101 107 97 98 108 101 32 102 105 108 101 10 110 97 116 105 118 101 58 32 97 114 103 117 109 101 110 116 32 105 115 32 110 111 116 32 97 32 115 116 114 105 110 103 10 110 97 116 105 118 101 58 32 99 104 114 32 118 97 108 117 101 32 111 117 116 32 111 102 32 98 121 116 101 32 114 97 110 103 101 32 48 46 46 50 53 53 10 110 97 116 105 118 101 58 32 115 116 114 95 116 111 95 105 110 116 58 32 110 111 116 32 97 32 100 101 99 105 109 97 108 32 105 110 116 101 103 101 114 10 110 97 116 105 118 101 58 32 100 105 118 58 32 100 105 118 105 115 105 111 110 32 98 121 32 122 101 114 111 10 110 97 116 105 118 101 58 32 109 111 100 58 32 109 111 100 117 108 111 32 98 121 32 122 101 114 111 10 110 97 116 105 118 101 58 32 99 111 112 121 95 115 101 108 102 58 32 119 114 105 116 101 32 102 97 105 108 101 100 10 110 97 116 105 118 101 58 32 99 111 112 121 95 115 101 108 102 58 32 104 101 97 112 32 116 111 111 32 102 117 108 108 32 116 111 32 114 101 112 108 105 99 97 116 101 10 110 97 116 105 118 101 58 32 97 114 103 117 109 101 110 116 32 105 115 32 110 111 116 32 97 110 32 105 110 116 101 103 101 114 10 112 114 105 110 116 58 32 97 114 103 117 109 101 110 116 32 105 115 32 110 111 116 32 97 32 115 116 114 105 110 103 32 111 114 32 105 110 116 101 103 101 114 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 47 112 114 111 99 47 115 101 108 102 47 101 120 101 0 110 101 119 95 108 111 103 111 115 95 110 97 116 105 118 101 46 98 105 110 0 72 131 56 4 15 133 164 234 255 255 72 139 64 8 72 15 182 0 233 67 218 255 255 232 185 234 255 255 72 139 78 8 72 139 80 8 136 17 72 15 182 194 233 43 218 255 255 72 131 56 4 15 133 117 234 255 255 72 139 64 8 15 34 216 233 21 218 255 255 72 131 56 4 15 133 95 234 255 255 72 139 64 8 255 208 72 49 192 233 253 217 255 255 72 131 56 2 15 133 9 1 0 0 73 137 194 72 131 60 37 159 42 64 0 0 117 61 72 184 175 42 64 0 0 0 0 0 72 199 0 1 0 0 0 72 139 12 37 198 18 64 0 72 137 72 56 72 139 12 37 254 18 64 0 72 137 72 64 72 137 4 37 159 42 64 0 72 199 4 37 167 42 64 0 0 0 0 0 77 49 192 73 131 248 8 15 131 138 0 0 0 73 107 192 80 72 5 175 42 64 0 72 131 56 0 116 5 73 255 192 235 225 72 139 20 37 246 18 64 0 77 105 200 0 0 128 0 76 41 202 72 137 80 56 73 137 209 73 129 233 0 0 112 0 76 137 72 64 76 137 80 72 72 199 64 16 0 0 0 0 72 199 64 24 0 0 0 0 72 199 64 32 0 0 0 0 72 199 64 40 0 0 0 0 72 199 64 48 0 0 0 0 72 131 234 8 73 185 16 42 64 0 0 0 0 0 76 137 10 72 137 80 8 72 199 0 1 0 0 0 72 139 4 37 166 18 64 0 195 184 1 0 0 0 191 2 0 0 0 72 190 119 42 64 0 0 0 0 0 186 40 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 184 1 0 0 0 191 2 0 0 0 72 190 77 42 64 0 0 0 0 0 186 42 0 0 0 15 5 184 60 0 0 0 191 1 0 0 0 15 5 72 139 4 37 159 42 64 0 72 133 192 15 132 155 0 0 0 72 137 96 8 72 137 88 16 72 137 104 24 76 137 96 32 76 137 104 40 76 137 112 48 76 139 12 37 167 42 64 0 77 49 192 73 255 193 73 131 249 8 114 3 77 49 201 73 107 193 80 72 5 175 42 64 0 72 131 56 1 116 19 73 255 192 73 131 248 8 114 219 184 60 0 0 0 72 49 255 15 5 76 137 12 37 167 42 64 0 72 137 4 37 159 42 64 0 72 139 88 16 72 139 104 24 76 139 96 32 76 139 104 40 76 139 112 48 72 139 72 56 72 137 12 37 198 18 64 0 72 139 72 64 72 137 12 37 254 18 64 0 72 139 96 8 72 139 4 37 166 18 64 0 195 72 139 4 37 166 18 64 0 195 72 139 4 37 159 42 64 0 76 139 80 72 76 139 28 37 166 18 64 0 72 49 219 232 103 216 255 255 72 139 4 37 159 42 64 0 72 199 0 2 0 0 0 72 49 192 232 24 255 255 255 184 60 0 0 0 72 49 255 15 5 110 97 116 105 118 101 58 32 115 112 97 119 110 58 32 97 114 103 117 109 101 110 116 32 105 115 32 110 111 116 32 97 32 102 117 110 99 116 105 111 110 10 110 97 116 105 118 101 58 32 115 112 97 119 110 58 32 116 111 111 32 109 97 110 121 32 116 97 115 107 115 32 40 77 65 88 84 65 83 75 41 10 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 72 139 126 8 72 139 72 8 80 76 139 17 72 139 81 8 49 246 184 0 3 0 0 15 5 88 195 72 139 120 8 72 190 134 45 64 0 0 0 0 0 186 0 1 0 0 184 1 3 0 0 15 5 72 133 192 121 2 49 192 72 137 194 72 190 134 45 64 0 0 0 0 0 232 135 217 255 255 195 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 72 131 56 4 15 133 226 227 255 255 72 139 80 8 236 72 15 182 192 233 128 211 255 255 72 131 56 4 15 133 202 227 255 255 72 139 80 8 237 233 108 211 255 255 232 226 227 255 255 72 139 86 8 72 139 72 8 136 200 238 72 15 182 193 233 83 211 255 255 232 201 227 255 255 72 139 86 8 72 139 72 8 137 200 239 137 200 233 60 211 255 255 72 131 56 4 15 133 134 227 255 255 72 139 80 8 102 237 72 15 183 192 233 35 211 255 255 232 153 227 255 255 72 139 86 8 72 139 72 8 102 137 200 102 239 72 15 183 193 233 8 211 255 255 72 131 63 4 15 133 82 227 255 255 72 131 62 4 15 133 72 227 255 255 72 131 56 4 15 133 62 227 255 255 195 232 220 255 255 255 76 139 71 8 72 139 78 8 76 139 72 8 73 137 202 76 137 199 68 137 200 252 243 171 76 137 208 233 196 210 255 255 232 183 255 255 255 76 139 71 8 76 139 78 8 72 139 72 8 73 137 202 76 137 199 76 137 206 252 243 164 76 137 208 233 159 210 255 255")
+glyph RTLEN = 12039
+glyph VADDR = 4194304
+glyph EPILOGUE = concat(BYTES("184 60 0 0 0"))(concat(BYTES("72 49 255"))(BYTES("15 5")))
+
+# The whole compile threaded through let-bindings, so every stage (tokenize ->
+# parse -> inline -> collect -> codegen -> layout) is evaluated EXACTLY ONCE.
+# (tiny_host glyphs are macros — referencing a glyph re-runs its definition — so
+# the previous glyph-per-stage form re-ran the codegen ~8 times.)
+# ── letrec support: collapse mutually-recursive glyph groups to Z-fixpoints ──
+#   native_codegen3 compiles by INLINING every glyph into one closed term, so a
+#   CYCLE of named glyphs (asm.la's EVAL↔E1..E7) diverges — caught as "cyclic
+#   glyph reference". This pass runs BEFORE INLINE: it finds strongly-connected
+#   groups in the glyph-reference graph and rewrites each ≥2 group into ONE
+#   Z-recursive bundle + per-member projections, so the table INLINE sees is a
+#   DAG. SINGLETON groups (every current program) pass through UNCHANGED, so
+#   existing outputs stay byte-identical.
+#   Encoding: a group G=[g0..g(k-1)] becomes ONE bundle glyph
+#     __bundle_g0 = Z(la __LRSELF. la __LRSEL. __LRSEL b0' b1' .. b(k-1)')
+#   where bi' = body(gi) with each gj-ref (j in G) rewritten to __LRSELF(PROJ_j),
+#   PROJ_j = la __p0..__p(k-1). __pj ; and each member gi := __bundle_g0(PROJ_i).
+#   __LRSELF/__LRSEL are FRESH (members already bind `self` via Z — bare `self`
+#   would be captured). Needs Z in scope (the E-chain already uses it).
+glyph SETLEN = Z(la self. la s. IF(IS_CONS(s))(la _. add(1)(self(TL(s))))(la _. 0))
+glyph SET_ADD = la x. la s. IF(STR_MEM(x)(s))(la _. s)(la _. CONS(x)(s))
+glyph SET_UNION = Z(la self. la a. la b. IF(IS_CONS(a))(la _. self(TL(a))(SET_ADD(HD(a))(b)))(la _. b))
+glyph FILTERL = Z(la self. la p. la l. IF(IS_CONS(l))(la _. IF(p(HD(l)))(la _. CONS(HD(l))(self(p)(TL(l))))(la _. self(p)(TL(l))))(la _. NIL))
+glyph GNAMES = Z(la self. la table. IF(IS_CONS(table))(la _. CONS(FST(HD(table)))(self(TL(table))))(la _. NIL))
+glyph INDEXOF = la x. la l. Z(la self. la l2. la i. IF(IS_CONS(l2))(la _. IF(str_eq(x)(HD(l2)))(la _. i)(la _. self(TL(l2))(add(i)(1))))(la _. i))(l)(0)
+glyph BODYOF = la table. la nm. (la o. IF(IS_SOME(o))(la _. OPT_VAL(o))(la _. AST_VAR("__MISSING")))(LOOKUP_GLYPH(nm)(table))
+glyph REFS = la allnames. Z(la self. la node. la bound. la acc.
+    (la tag.
+        IF(str_eq(tag)("VAR"))(la _.
+            (la nm. IF(STR_MEM(nm)(bound))(la _. acc)(la _. IF(STR_MEM(nm)(allnames))(la _. SET_ADD(nm)(acc))(la _. acc)))
+            (VAR_NM(node)))(la _.
+        IF(str_eq(tag)("LAM"))(la _. self(LAM_B(node))(CONS(LAM_P(node))(bound))(acc))(la _.
+        IF(str_eq(tag)("APP"))(la _. self(APP_F(node))(bound)(self(APP_A(node))(bound)(acc)))(la _.
+        acc))))
+    (NODE_TAG(node)))
+glyph DREFS = la table. la allnames. la name. REFS(allnames)(BODYOF(table)(name))(NIL)(NIL)
+glyph EXPAND1 = la table. la allnames. Z(la self. la members. la acc.
+    IF(IS_CONS(members))(la _. self(TL(members))(SET_UNION(DREFS(table)(allnames)(HD(members)))(acc)))(la _. acc))
+glyph REACH = la table. la allnames. la name.
+    Z(la self. la cur.
+        (la nxt. IF(int_eq(SETLEN(nxt))(SETLEN(cur)))(la _. cur)(la _. self(nxt)))
+        (SET_UNION(cur)(EXPAND1(table)(allnames)(cur)(NIL))))
+    (DREFS(table)(allnames)(name))
+glyph SAMESCC = la table. la allnames. la a. la b.
+    OR(str_eq(a)(b))(AND(STR_MEM(b)(REACH(table)(allnames)(a)))(STR_MEM(a)(REACH(table)(allnames)(b))))
+glyph GROUPOF = la table. la allnames. la name.
+    FILTERL(la m. SAMESCC(table)(allnames)(name)(m))(allnames)
+# ── PERF: precompute direct-refs + reachability ONCE (O(n)), not per-pair (O(n²)) ──
+glyph MKDREFTAB = la table. la allnames. Z(la self. la ns.
+    IF(IS_CONS(ns))(la _. CONS(PAIR(HD(ns))(DREFS(table)(allnames)(HD(ns))))(self(TL(ns))))(la _. NIL))(allnames)
+glyph DLOOK = la dtab. la nm. (la o. IF(IS_SOME(o))(la _. OPT_VAL(o))(la _. NIL))(LOOKUP_GLYPH(nm)(dtab))
+glyph EXPAND1T = la dtab. Z(la self. la members. la acc.
+    IF(IS_CONS(members))(la _. self(TL(members))(SET_UNION(DLOOK(dtab)(HD(members)))(acc)))(la _. acc))
+glyph REACHT = la dtab. la name.
+    Z(la self. la cur.
+        (la nxt. IF(int_eq(SETLEN(nxt))(SETLEN(cur)))(la _. cur)(la _. self(nxt)))
+        (SET_UNION(cur)(EXPAND1T(dtab)(cur)(NIL))))
+    (DLOOK(dtab)(name))
+glyph MKREACHTAB = la dtab. la allnames. Z(la self. la ns.
+    IF(IS_CONS(ns))(la _. CONS(PAIR(HD(ns))(REACHT(dtab)(HD(ns))))(self(TL(ns))))(la _. NIL))(allnames)
+glyph RLOOK = la rtab. la nm. (la o. IF(IS_SOME(o))(la _. OPT_VAL(o))(la _. NIL))(LOOKUP_GLYPH(nm)(rtab))
+glyph SAMESCCT = la rtab. la a. la b.
+    OR(str_eq(a)(b))(AND(STR_MEM(b)(RLOOK(rtab)(a)))(STR_MEM(a)(RLOOK(rtab)(b))))
+glyph GROUPOFT = la rtab. la allnames. la name.
+    FILTERL(la m. SAMESCCT(rtab)(name)(m))(allnames)
+# a group is recursive (needs collapsing) if it has >1 member OR its lone member
+# self-references BY NAME (name ∈ its own reach → a singleton self-loop, e.g. a
+# glyph written `G = la n. ...G(n-1)...` rather than via Z). Non-self-referencing
+# singletons stay FALSE → pass through unchanged → byte-identical.
+glyph IS_REC = la rtab. la g. OR(lt(1)(SETLEN(g)))(STR_MEM(HD(g))(RLOOK(rtab)(HD(g))))
+glyph PNAME = la j. concat("__p")(int_to_str(j))
+glyph PNAMES = la k. Z(la self. la j. IF(lt(j)(k))(la _. CONS(PNAME(j))(self(add(j)(1))))(la _. NIL))(0)
+glyph MKPROJ = la k. la i.
+    Z(la self. la ps. IF(IS_CONS(ps))(la _. AST_LAM(HD(ps))(self(TL(ps))))(la _. AST_VAR(PNAME(i))))(PNAMES(k))
+glyph APPALL = Z(la self. la f. la args. IF(IS_CONS(args))(la _. self(AST_APP(f)(HD(args)))(TL(args)))(la _. f))
+glyph SUBSTREFS = la substmap. Z(la self. la node. la bound.
+    (la tag.
+        IF(str_eq(tag)("VAR"))(la _.
+            (la nm. IF(STR_MEM(nm)(bound))(la _. node)(la _. (la o. IF(IS_SOME(o))(la _. OPT_VAL(o))(la _. node))(LOOKUP_GLYPH(nm)(substmap))))
+            (VAR_NM(node)))(la _.
+        IF(str_eq(tag)("LAM"))(la _. AST_LAM(LAM_P(node))(self(LAM_B(node))(CONS(LAM_P(node))(bound))))(la _.
+        IF(str_eq(tag)("APP"))(la _. AST_APP(self(APP_F(node))(bound))(self(APP_A(node))(bound)))(la _.
+        node))))
+    (NODE_TAG(node)))
+glyph MKSUBSTMAP = la group. la k. Z(la self. la gs.
+    IF(IS_CONS(gs))(la _. CONS(PAIR(HD(gs))(AST_APP(AST_VAR("__LRSELF"))(MKPROJ(k)(INDEXOF(HD(gs))(group)))))(self(TL(gs))))(la _. NIL))(group)
+glyph MKBODIES = la table. la substmap. Z(la self. la gs.
+    IF(IS_CONS(gs))(la _. CONS(SUBSTREFS(substmap)(BODYOF(table)(HD(gs)))(NIL))(self(TL(gs))))(la _. NIL))
+glyph BUNDLENAME = la group. concat("__bundle_")(HD(group))
+glyph MKBUNDLE = la table. la group. la k.
+    (la substmap. (la bodies.
+        AST_APP(AST_VAR("Z"))(AST_LAM("__LRSELF")(AST_LAM("__LRSEL")(APPALL(AST_VAR("__LRSEL"))(bodies))))
+    )(MKBODIES(table)(substmap)(group)))(MKSUBSTMAP(group)(k))
+glyph BUNDLE_DEFS = la table. la rtab. la allnames. Z(la self. la names.
+    IF(IS_CONS(names))(la _.
+        (la g. IF(AND(IS_REC(rtab)(g))(str_eq(HD(names))(HD(g))))
+            (la _. CONS(PAIR(BUNDLENAME(g))(MKBUNDLE(table)(g)(SETLEN(g))))(self(TL(names))))
+            (la _. self(TL(names))))
+        (GROUPOFT(rtab)(allnames)(HD(names))))
+    (la _. NIL))(allnames)
+glyph REWRITE_DEFS = la table. la rtab. la allnames. Z(la self. la tbl.
+    IF(IS_CONS(tbl))(la _.
+        (la g. IF(IS_REC(rtab)(g))
+            (la _. CONS(PAIR(FST(HD(tbl)))(AST_APP(AST_VAR(BUNDLENAME(g)))(MKPROJ(SETLEN(g))(INDEXOF(FST(HD(tbl)))(g)))))(self(TL(tbl))))
+            (la _. CONS(HD(tbl))(self(TL(tbl)))))
+        (GROUPOFT(rtab)(allnames)(FST(HD(tbl)))))
+    (la _. NIL))(table)
+glyph COLLAPSE_RECGROUPS = la table.
+    (la allnames. (la rtab.
+        APPEND(BUNDLE_DEFS(table)(rtab)(allnames))(REWRITE_DEFS(table)(rtab)(allnames))
+    )(MKREACHTAB(MKDREFTAB(table)(allnames))(allnames)))(GNAMES(table))
+
+# ── shared-code: lambda-lift LARGE, HEAVILY-REFERENCED glyphs (compile once) ──
+#   native_codegen3 INLINEs every glyph reference, so a big glyph referenced K times
+#   emits its body K times (asm.la's EVAL: 12x, the E-chain bundle: ~13x -> huge term).
+#   Fix: bind such glyphs ONCE as lambda params — (la G. rest)(G_body) — so G_body
+#   compiles once and references become VAR lookups (the existing closure machinery,
+#   CG_LAM/rt_apply). Byte-IDENTICAL for programs with no qualifying glyph (SHARED_SET
+#   empty -> no wrap, and INLINE's bound=NIL = normal inlining). Reuses the letrec
+#   helpers (GNAMES/DREFS/BODYOF/FILTERL/AST_*).
+#   ORDERING: a shared glyph's body may reference OTHER shared glyphs bound OUTER
+#   (earlier in the list). Source order works when dependencies precede dependents
+#   (letrec's bundles are PREPENDED, so bundle-before-EVAL holds); a general toposort
+#   is the refinement for arbitrary shared-dependency DAGs.
+glyph NODECOUNT = Z(la self. la node.
+    (la t. IF(str_eq(t)("APP"))(la _. add(1)(add(self(APP_F(node)))(self(APP_A(node)))))
+          (la _. IF(str_eq(t)("LAM"))(la _. add(1)(self(LAM_B(node))))(la _. 1)))
+    (NODE_TAG(node)))
+glyph NREFS = la table. la allnames. la name. Z(la self. la tbl.
+    IF(IS_CONS(tbl))(la _.
+        add(IF(AND(NOT(str_eq(FST(HD(tbl)))(name)))(STR_MEM(name)(DREFS(table)(allnames)(FST(HD(tbl))))))(la _. 1)(la _. 0))(self(TL(tbl))))
+      (la _. 0))(table)
+glyph SHARE_BIG = 60
+glyph SHARED_SET = la table. la allnames.
+    FILTERL(la n. AND(lt(1)(NREFS(table)(allnames)(n)))(lt(SHARE_BIG)(NODECOUNT(BODYOF(table)(n)))))(allnames)
+glyph SHARE_LIFT = la table. la sset. la main_inlined. Z(la self. la s.
+    IF(IS_CONS(s))(la _. AST_APP(AST_LAM(HD(s))(self(TL(s))))(INLINE(BODYOF(table)(HD(s)))(table)(sset)(NIL)))
+      (la _. main_inlined))(sset)
+
+glyph MAIN =
+    (la table. (la main_ast. (la poolpair. (la pool. (la litmap. (la plen.
+    (la textbase. (la cgres. (la maincode. (la textpool. (la textlen.
+    (la maincodelen. (la codelen. (la filesize. (la heap_addr. (la memsz.
+    (la entry. (la ehdr. (la phdr. (la prol. (la image.
+        (la _. print("emitted native_codegen3_out"))(write_exec("native_codegen3_out")(image))
+    )(concat(ehdr)(concat(phdr)(concat(RT)(concat(pool)(concat(textpool)(concat(prol)(concat(maincode)(EPILOGUE))))))))
+    )(PROL(heap_addr))
+    )(concat(BYTES("1 0 0 0 7 0 0 0"))(concat(LE8(0))(concat(LE8(VADDR))(concat(LE8(VADDR))(concat(LE8(filesize))(concat(LE8(memsz))(LE8(4096))))))))
+    )(concat(BYTES("127 69 76 70 2 1 1 0 0 0 0 0 0 0 0 0 2 0 62 0 1 0 0 0"))(concat(LE8(entry))(BYTES("64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64 0 56 0 1 0 0 0 0 0 0 0"))))
+    )(add(textbase)(textlen))
+    )(add(sub(heap_addr)(VADDR))(add(HEAP_SIZE)(add(WL_SIZE)(BITMAP_SIZE))))
+    )(add(add(VADDR)(filesize))(mod(sub(16)(mod(add(VADDR)(filesize))(16)))(16)))
+    )(add(add(120)(add(RTLEN)(plen)))(add(textlen)(codelen)))
+    )(add(add(STRLEN_INT(PROL(0)))(STRLEN_INT(EPILOGUE)))(maincodelen))
+    )(STRLEN_INT(maincode))
+    )(STRLEN_INT(textpool))
+    )(SND(cgres))
+    )(FST(cgres))
+    )(MK_CG(litmap)(textbase)(main_ast)(NIL)(FALSE)(""))
+    )(add(LITERAL_BASE)(plen))
+    )(STRLEN_INT(pool))
+    )(SND(poolpair))
+    )(FST(poolpair))
+    )(BUILD_POOL(COLLECT(main_ast)))
+    )(BETA((la sset. SHARE_LIFT(table)(sset)(INLINE((la opt. IF(IS_SOME(opt))(la _. OPT_VAL(opt))(la _. error("native_codegen3: no glyph MAIN")))(LOOKUP_GLYPH("MAIN")(table)))(table)(sset)(CONS("MAIN")(NIL))))(SHARED_SET(table)(GNAMES(table)))))
+    )(COLLAPSE_RECGROUPS(PARSE_PROGRAM(TOKENIZE(read_file("native_input.la")))))
