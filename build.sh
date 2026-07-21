@@ -2664,6 +2664,24 @@ else
 fi
 rm -f native_codegen3_out native_input.la /tmp/c3gc.out /tmp/c3bc.out
 
+# ── Stage 3c: letrec — mutually-recursive glyphs compile (COLLAPSE_RECGROUPS) ──
+#    Whole-program inlining alone rejects a CYCLE of named glyphs ('cyclic glyph
+#    reference'); the SCC-collapse pre-pass rewrites each strongly-connected group
+#    to ONE Z-fixpoint bundle + per-member projections BEFORE inlining. These three
+#    programs are all cyclic-reference errors on a compiler WITHOUT the pass, so the
+#    gate goes red without letrec; native==host confirms correctness. Acyclic
+#    programs pass through UNCHANGED (every native test above stays byte-identical).
+say "Native backend Stage 3c: letrec — mutually-recursive glyphs compile (SCC-collapse pre-pass)"
+c3check "$(printf 'glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph TRUE = la t. la f. t\nglyph FALSE = la t. la f. f\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph COUNT = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(DOWN(sub(n)(1))))\nglyph DOWN = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(COUNT(sub(n)(1))))\nglyph MAIN = print(COUNT(6))')" "letrec: mutual recursion COUNT/DOWN -> 6"
+c3check "$(printf 'glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph TRUE = la t. la f. t\nglyph FALSE = la t. la f. f\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph A = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(B(sub(n)(1))))\nglyph B = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(C(sub(n)(1))))\nglyph C = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(A(sub(n)(1))))\nglyph MAIN = print(A(9))')" "letrec: 3-cycle A/B/C -> 9"
+c3check "$(printf 'glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph TRUE = la t. la f. t\nglyph FALSE = la t. la f. f\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph G = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(G(sub(n)(1))))\nglyph MAIN = print(G(5))')" "letrec: singleton self-loop by name G -> 5"
+rm -f native_codegen3_out native_input.la /tmp/c3.err /tmp/c3_native.out /tmp/c3_host.out
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  native backend Stage 3c: letrec — COLLAPSE_RECGROUPS (SCC-collapse -> Z-fixpoint pre-pass) compiles mutually-recursive named glyphs (COUNT/DOWN; the 3-cycle A/B/C) and singleton self-loops (G refs G by name) that whole-program inlining rejects as 'cyclic glyph reference'; each strongly-connected group rewritten to one Z-fixpoint bundle + per-member projections; native==host. Acyclic glyphs pass through unchanged (byte-identical — proven by every native test above staying green)."
+else
+    exit 1
+fi
+
 # ── FREEZE-DAY FIX #2 — a string builtin given a non-STR argument must HALT LOUDLY,
 #    not SIGSEGV. Every native string builtin (str_len/ord/chr/str_to_int/str_head/
 #    str_tail/read_file + both args of concat/str_eq/write_exec) now checks the value

@@ -738,6 +738,113 @@ glyph EPILOGUE = concat(BYTES("184 60 0 0 0"))(concat(BYTES("72 49 255"))(BYTES(
 # parse -> inline -> collect -> codegen -> layout) is evaluated EXACTLY ONCE.
 # (tiny_host glyphs are macros — referencing a glyph re-runs its definition — so
 # the previous glyph-per-stage form re-ran the codegen ~8 times.)
+# ── letrec support: collapse mutually-recursive glyph groups to Z-fixpoints ──
+#   native_codegen3 compiles by INLINING every glyph into one closed term, so a
+#   CYCLE of named glyphs (asm.la's EVAL↔E1..E7) diverges — caught as "cyclic
+#   glyph reference". This pass runs BEFORE INLINE: it finds strongly-connected
+#   groups in the glyph-reference graph and rewrites each ≥2 group into ONE
+#   Z-recursive bundle + per-member projections, so the table INLINE sees is a
+#   DAG. SINGLETON groups (every current program) pass through UNCHANGED, so
+#   existing outputs stay byte-identical.
+#   Encoding: a group G=[g0..g(k-1)] becomes ONE bundle glyph
+#     __bundle_g0 = Z(la __LRSELF. la __LRSEL. __LRSEL b0' b1' .. b(k-1)')
+#   where bi' = body(gi) with each gj-ref (j in G) rewritten to __LRSELF(PROJ_j),
+#   PROJ_j = la __p0..__p(k-1). __pj ; and each member gi := __bundle_g0(PROJ_i).
+#   __LRSELF/__LRSEL are FRESH (members already bind `self` via Z — bare `self`
+#   would be captured). Needs Z in scope (the E-chain already uses it).
+glyph SETLEN = Z(la self. la s. IF(IS_CONS(s))(la _. add(1)(self(TL(s))))(la _. 0))
+glyph SET_ADD = la x. la s. IF(STR_MEM(x)(s))(la _. s)(la _. CONS(x)(s))
+glyph SET_UNION = Z(la self. la a. la b. IF(IS_CONS(a))(la _. self(TL(a))(SET_ADD(HD(a))(b)))(la _. b))
+glyph FILTERL = Z(la self. la p. la l. IF(IS_CONS(l))(la _. IF(p(HD(l)))(la _. CONS(HD(l))(self(p)(TL(l))))(la _. self(p)(TL(l))))(la _. NIL))
+glyph GNAMES = Z(la self. la table. IF(IS_CONS(table))(la _. CONS(FST(HD(table)))(self(TL(table))))(la _. NIL))
+glyph INDEXOF = la x. la l. Z(la self. la l2. la i. IF(IS_CONS(l2))(la _. IF(str_eq(x)(HD(l2)))(la _. i)(la _. self(TL(l2))(add(i)(1))))(la _. i))(l)(0)
+glyph BODYOF = la table. la nm. (la o. IF(IS_SOME(o))(la _. OPT_VAL(o))(la _. AST_VAR("__MISSING")))(LOOKUP_GLYPH(nm)(table))
+glyph REFS = la allnames. Z(la self. la node. la bound. la acc.
+    (la tag.
+        IF(str_eq(tag)("VAR"))(la _.
+            (la nm. IF(STR_MEM(nm)(bound))(la _. acc)(la _. IF(STR_MEM(nm)(allnames))(la _. SET_ADD(nm)(acc))(la _. acc)))
+            (VAR_NM(node)))(la _.
+        IF(str_eq(tag)("LAM"))(la _. self(LAM_B(node))(CONS(LAM_P(node))(bound))(acc))(la _.
+        IF(str_eq(tag)("APP"))(la _. self(APP_F(node))(bound)(self(APP_A(node))(bound)(acc)))(la _.
+        acc))))
+    (NODE_TAG(node)))
+glyph DREFS = la table. la allnames. la name. REFS(allnames)(BODYOF(table)(name))(NIL)(NIL)
+glyph EXPAND1 = la table. la allnames. Z(la self. la members. la acc.
+    IF(IS_CONS(members))(la _. self(TL(members))(SET_UNION(DREFS(table)(allnames)(HD(members)))(acc)))(la _. acc))
+glyph REACH = la table. la allnames. la name.
+    Z(la self. la cur.
+        (la nxt. IF(int_eq(SETLEN(nxt))(SETLEN(cur)))(la _. cur)(la _. self(nxt)))
+        (SET_UNION(cur)(EXPAND1(table)(allnames)(cur)(NIL))))
+    (DREFS(table)(allnames)(name))
+glyph SAMESCC = la table. la allnames. la a. la b.
+    OR(str_eq(a)(b))(AND(STR_MEM(b)(REACH(table)(allnames)(a)))(STR_MEM(a)(REACH(table)(allnames)(b))))
+glyph GROUPOF = la table. la allnames. la name.
+    FILTERL(la m. SAMESCC(table)(allnames)(name)(m))(allnames)
+# ── PERF: precompute direct-refs + reachability ONCE (O(n)), not per-pair (O(n²)) ──
+glyph MKDREFTAB = la table. la allnames. Z(la self. la ns.
+    IF(IS_CONS(ns))(la _. CONS(PAIR(HD(ns))(DREFS(table)(allnames)(HD(ns))))(self(TL(ns))))(la _. NIL))(allnames)
+glyph DLOOK = la dtab. la nm. (la o. IF(IS_SOME(o))(la _. OPT_VAL(o))(la _. NIL))(LOOKUP_GLYPH(nm)(dtab))
+glyph EXPAND1T = la dtab. Z(la self. la members. la acc.
+    IF(IS_CONS(members))(la _. self(TL(members))(SET_UNION(DLOOK(dtab)(HD(members)))(acc)))(la _. acc))
+glyph REACHT = la dtab. la name.
+    Z(la self. la cur.
+        (la nxt. IF(int_eq(SETLEN(nxt))(SETLEN(cur)))(la _. cur)(la _. self(nxt)))
+        (SET_UNION(cur)(EXPAND1T(dtab)(cur)(NIL))))
+    (DLOOK(dtab)(name))
+glyph MKREACHTAB = la dtab. la allnames. Z(la self. la ns.
+    IF(IS_CONS(ns))(la _. CONS(PAIR(HD(ns))(REACHT(dtab)(HD(ns))))(self(TL(ns))))(la _. NIL))(allnames)
+glyph RLOOK = la rtab. la nm. (la o. IF(IS_SOME(o))(la _. OPT_VAL(o))(la _. NIL))(LOOKUP_GLYPH(nm)(rtab))
+glyph SAMESCCT = la rtab. la a. la b.
+    OR(str_eq(a)(b))(AND(STR_MEM(b)(RLOOK(rtab)(a)))(STR_MEM(a)(RLOOK(rtab)(b))))
+glyph GROUPOFT = la rtab. la allnames. la name.
+    FILTERL(la m. SAMESCCT(rtab)(name)(m))(allnames)
+# a group is recursive (needs collapsing) if it has >1 member OR its lone member
+# self-references BY NAME (name ∈ its own reach → a singleton self-loop, e.g. a
+# glyph written `G = la n. ...G(n-1)...` rather than via Z). Non-self-referencing
+# singletons stay FALSE → pass through unchanged → byte-identical.
+glyph IS_REC = la rtab. la g. OR(lt(1)(SETLEN(g)))(STR_MEM(HD(g))(RLOOK(rtab)(HD(g))))
+glyph PNAME = la j. concat("__p")(int_to_str(j))
+glyph PNAMES = la k. Z(la self. la j. IF(lt(j)(k))(la _. CONS(PNAME(j))(self(add(j)(1))))(la _. NIL))(0)
+glyph MKPROJ = la k. la i.
+    Z(la self. la ps. IF(IS_CONS(ps))(la _. AST_LAM(HD(ps))(self(TL(ps))))(la _. AST_VAR(PNAME(i))))(PNAMES(k))
+glyph APPALL = Z(la self. la f. la args. IF(IS_CONS(args))(la _. self(AST_APP(f)(HD(args)))(TL(args)))(la _. f))
+glyph SUBSTREFS = la substmap. Z(la self. la node. la bound.
+    (la tag.
+        IF(str_eq(tag)("VAR"))(la _.
+            (la nm. IF(STR_MEM(nm)(bound))(la _. node)(la _. (la o. IF(IS_SOME(o))(la _. OPT_VAL(o))(la _. node))(LOOKUP_GLYPH(nm)(substmap))))
+            (VAR_NM(node)))(la _.
+        IF(str_eq(tag)("LAM"))(la _. AST_LAM(LAM_P(node))(self(LAM_B(node))(CONS(LAM_P(node))(bound))))(la _.
+        IF(str_eq(tag)("APP"))(la _. AST_APP(self(APP_F(node))(bound))(self(APP_A(node))(bound)))(la _.
+        node))))
+    (NODE_TAG(node)))
+glyph MKSUBSTMAP = la group. la k. Z(la self. la gs.
+    IF(IS_CONS(gs))(la _. CONS(PAIR(HD(gs))(AST_APP(AST_VAR("__LRSELF"))(MKPROJ(k)(INDEXOF(HD(gs))(group)))))(self(TL(gs))))(la _. NIL))(group)
+glyph MKBODIES = la table. la substmap. Z(la self. la gs.
+    IF(IS_CONS(gs))(la _. CONS(SUBSTREFS(substmap)(BODYOF(table)(HD(gs)))(NIL))(self(TL(gs))))(la _. NIL))
+glyph BUNDLENAME = la group. concat("__bundle_")(HD(group))
+glyph MKBUNDLE = la table. la group. la k.
+    (la substmap. (la bodies.
+        AST_APP(AST_VAR("Z"))(AST_LAM("__LRSELF")(AST_LAM("__LRSEL")(APPALL(AST_VAR("__LRSEL"))(bodies))))
+    )(MKBODIES(table)(substmap)(group)))(MKSUBSTMAP(group)(k))
+glyph BUNDLE_DEFS = la table. la rtab. la allnames. Z(la self. la names.
+    IF(IS_CONS(names))(la _.
+        (la g. IF(AND(IS_REC(rtab)(g))(str_eq(HD(names))(HD(g))))
+            (la _. CONS(PAIR(BUNDLENAME(g))(MKBUNDLE(table)(g)(SETLEN(g))))(self(TL(names))))
+            (la _. self(TL(names))))
+        (GROUPOFT(rtab)(allnames)(HD(names))))
+    (la _. NIL))(allnames)
+glyph REWRITE_DEFS = la table. la rtab. la allnames. Z(la self. la tbl.
+    IF(IS_CONS(tbl))(la _.
+        (la g. IF(IS_REC(rtab)(g))
+            (la _. CONS(PAIR(FST(HD(tbl)))(AST_APP(AST_VAR(BUNDLENAME(g)))(MKPROJ(SETLEN(g))(INDEXOF(FST(HD(tbl)))(g)))))(self(TL(tbl))))
+            (la _. CONS(HD(tbl))(self(TL(tbl)))))
+        (GROUPOFT(rtab)(allnames)(FST(HD(tbl)))))
+    (la _. NIL))(table)
+glyph COLLAPSE_RECGROUPS = la table.
+    (la allnames. (la rtab.
+        APPEND(BUNDLE_DEFS(table)(rtab)(allnames))(REWRITE_DEFS(table)(rtab)(allnames))
+    )(MKREACHTAB(MKDREFTAB(table)(allnames))(allnames)))(GNAMES(table))
+
 glyph MAIN =
     (la table. (la main_ast. (la poolpair. (la pool. (la litmap. (la plen.
     (la textbase. (la cgres. (la maincode. (la textpool. (la textlen.
@@ -764,4 +871,4 @@ glyph MAIN =
     )(FST(poolpair))
     )(BUILD_POOL(COLLECT(main_ast)))
     )(BETA(INLINE((la opt. IF(IS_SOME(opt))(la _. OPT_VAL(opt))(la _. error("native_codegen3: no glyph MAIN")))(LOOKUP_GLYPH("MAIN")(table)))(table)(NIL)(CONS("MAIN")(NIL))))
-    )(PARSE_PROGRAM(TOKENIZE(read_file("native_input.la"))))
+    )(COLLAPSE_RECGROUPS(PARSE_PROGRAM(TOKENIZE(read_file("native_input.la")))))
