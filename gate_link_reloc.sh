@@ -590,6 +590,53 @@ CFS
     fi
 fi
 
+# --- ★ --gc-sections: drop unreferenced sections (opt-in) ---
+#   A `--gc-sections` directive line in link_inputs.txt turns on dead-section
+#   elimination: only sections REACHABLE from _start survive. The fixture adds a
+#   `dead_never_called` function (its own .text.dead_never_called under
+#   -ffunction-sections) that nothing references. WITH gc it must be dropped, so
+#   our R+X segment shrinks to exactly what ld --gc-sections produces, AND the
+#   program must still run (exit 43 — a wrongly-dropped LIVE section would
+#   segfault, a wrongly-kept dead one would leave the segment too big). The
+#   opt-in default (no directive) is already exercised by the -ffunction-sections
+#   block above, which keeps every section and runs. .eh_frame's dead FDE is
+#   pruned too (else the merge would fail relocating against the dropped
+#   function) — proven implicitly: a failed prune aborts the link.
+if command -v gcc >/dev/null 2>&1; then
+    gcc -c -O0 -ffunction-sections -fdata-sections -x c - -o gate_gc.o 2>/dev/null <<'CGC'
+extern int helper(int);
+int compute(int x){return helper(x)+1;}
+int helper(int x){return x*2;}
+int dead_never_called(int x){return x*999+12345;}
+CGC
+    if [ -f gate_gc.o ] && readelf -SW gate_gc.o | grep -q '\.text\.dead_never_called'; then
+        ld --gc-sections -o link_ref_gc link_test_start.o gate_gc.o -e _start 2>/dev/null
+        if ./link_ref_gc; then LDGRC=0; else LDGRC=$?; fi
+        LDGCSZ=$(readelf -lW link_ref_gc | awk '/LOAD/ && $7=="R" && $8=="E"{print $5; exit}')
+        cp link_test_start.o link_in1.o
+        cp gate_gc.o          link_in2.o
+        printf -- '--gc-sections\nlink_in1.o\nlink_in2.o\n' > link_inputs.txt
+        rm -f link_out
+        if GCOUT=$(timeout 500 ./tiny_host link_reloc.la 2>&1); then GCRC=0; else GCRC=$?; fi
+        [ "$GCRC" -eq 0 ] \
+            || { echo "FAIL  link_reloc.la: --gc-sections link failed (a dead FDE mis-pruned?): $GCOUT"; ok=0; }
+        if [ -x link_out ]; then
+            if ./link_out; then OGRC=0; else OGRC=$?; fi
+            [ "$OGRC" = "43" ] \
+                || { echo "FAIL  --gc-sections link exited $OGRC, expected 43 — a live section was dropped or a dead one kept"; ok=0; }
+            OURGCSZ=$(readelf -lW link_out | awk '/LOAD/ && $7=="R" && $8=="E"{print $5; exit}')
+            [ "$OURGCSZ" = "$LDGCSZ" ] \
+                || { echo "FAIL  --gc-sections R+X size $OURGCSZ, ld --gc-sections gives $LDGCSZ — dead_never_called not dropped (or a live section dropped)"; ok=0; }
+        else
+            echo "FAIL  link_reloc.la: --gc-sections link emitted no executable"; ok=0
+        fi
+        rm -f link_in1.o link_in2.o link_inputs.txt link_ref_gc
+    else
+        echo "NOTE  link_reloc.la: gcc did not split sections — --gc-sections check skipped"
+    fi
+    rm -f gate_gc.o
+fi
+
 # --- ★ A RELOCATION OUTSIDE .text — the SILENT-WRONGNESS case ---
 #   Every other fixture above relocates in .text ONLY — verified, not assumed:
 #   rw/b/abs/bss all carry `.rela.text` and nothing else, and link_test_c
@@ -658,5 +705,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]

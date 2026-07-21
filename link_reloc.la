@@ -398,13 +398,16 @@ glyph E_ADDR= la e. SND(SND(e))
 #   section-index order, each aligned to its own sh_addralign, from the cursor.
 #   With -ffunction-sections an object has several .text.* sections that all map
 #   to output .text; without it, exactly one .text — so an ordinary object packs
-#   identically to before (one match). Returns PAIR(entries)(cursor).
-glyph PSTEP = la f. la o. la oname. la acc. la cur.
+#   identically to before (one match). A section is skipped when `keep` rejects
+#   it (--gc-sections dead-section elimination); with gc off `keep` is always
+#   TRUE, so placement is unchanged. Returns PAIR(entries)(cursor).
+glyph PSTEP = la keep. la f. la o. la oname. la acc. la cur.
     (Z(la self. la i. la a. la c.
        IF(int_eq(i)(E_SHNUM(f)))
          (la _. PAIR(a)(c))
-         (la _. IF(AND(str_eq(OUTNAME(SECNAME(f)(i)))(oname))
-                      (NOT(int_eq(SH_SIZE(f)(i))(0))))
+         (la _. IF(AND(AND(str_eq(OUTNAME(SECNAME(f)(i)))(oname))
+                          (NOT(int_eq(SH_SIZE(f)(i))(0))))
+                      (keep(o)(i)))
                   (la _. (la aa. self(add(i)(1))(CONS(MKE(o)(i)(aa))(a))(add(aa)(SH_SIZE(f)(i))))
                          (ALIGNUP(c)(SH_ALIGN(f)(i))))
                   (la _. self(add(i)(1))(a)(c)))))
@@ -428,41 +431,46 @@ glyph O_SS  = la o. SND(SND(o))
 #   order. Returns PAIR(entries)(cursor) so the next name continues where this
 #   ended — the cursor now THREADS across names and segments, which is exactly
 #   what makes sections share a page instead of each taking its own.
-glyph PNAME = la objs. la name. la acc. la cur.
+glyph PNAME = la keep. la objs. la name. la acc. la cur.
     (Z(la self. la l. la a. la c.
         l(PAIR(a)(c))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
-          (PSTEP(O_F(h))(O_IDX(h))(name)(a)(c)))))
+          (PSTEP(keep)(O_F(h))(O_IDX(h))(name)(a)(c)))))
       (objs)(acc)(cur)
 
 #   .eh_frame is placed as ONE merged entry (object 0, size = merged size), not
 #   per-object, because ld merges it (dedup CIE). Aligned to 8 like the section.
-#   If nothing carries .eh_frame the merged size is 0 and no entry is placed.
+#   If nothing carries .eh_frame the merged size is 0 and no entry is placed. The
+#   accumulated plan-so-far (`acc`) already holds the .text placement (the R+X
+#   segment is planned before the R segment), so EHMSIZE consults it to size out
+#   the FDEs of any gc-dropped function — keeping .eh_frame's planned size equal
+#   to what EHMERGE actually emits.
 glyph PEH = la objs. la acc. la cur. (la sz.
     IF(int_eq(sz)(0))
       (la _. PAIR(acc)(cur))
       (la _. (la a. PAIR(CONS(MKE(0)(EHMARK)(a))(acc))(add(a)(sz)))(ALIGNUP(cur)(8))))
-    (EHMSIZE(objs))
+    (EHMSIZE(objs)(acc))
 
 #   All section names of ONE segment, packed contiguously from the cursor. Every
 #   section packs per-object except .eh_frame, which is placed once, merged.
-glyph SNAMES = la objs. la names. la acc. la cur.
+glyph SNAMES = la keep. la objs. la names. la acc. la cur.
     (Z(la self. la l. la a. la c.
         l(PAIR(a)(c))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
           (IF(str_eq(h)(".eh_frame"))
              (la _. PEH(objs)(a)(c))
-             (la _. PNAME(objs)(h)(a)(c))))))
+             (la _. PNAME(keep)(objs)(h)(a)(c))))))
       (names)(acc)(cur)
 
 #   The plan: fold the SCRIPT with one running cursor, page-aligning at each
-#   segment start and packing its sections. REV because entries accumulate with
+#   segment start and packing its sections. `keep` is the gc-sections liveness
+#   predicate (always TRUE when gc is off). REV because entries accumulate with
 #   CONS; without it link order — and thus packing — would invert.
-glyph MKPLAN = la objs.
+glyph MKPLAN = la keep. la objs.
     REV(FST((Z(la self. la segs. la acc. la cur.
         segs(PAIR(acc)(cur))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
-          (SNAMES(objs)(SEG_NAMES(h))(acc)(ALIGNUP(cur)(PAGE))))))
+          (SNAMES(keep)(objs)(SEG_NAMES(h))(acc)(ALIGNUP(cur)(PAGE))))))
       (SCRIPT)(NIL)(LOAD_BASE)))(NIL)
 
 #   Address of a given object's given section, or -1 if it was not placed.
@@ -502,8 +510,8 @@ glyph E_F   = la objs. la e. FINDOBJ(objs)(E_OBJ(e))
 glyph EHENTRY = la e. int_eq(E_OBJ(e))(0)
 glyph ENAME = la objs. la e.
     IF(EHENTRY(e))(la _. ".eh_frame")(la _. SECNAME(E_F(objs)(e))(E_SEC(e)))
-glyph ESIZE = la objs. la e.
-    IF(EHENTRY(e))(la _. EHMSIZE(objs))(la _. SH_SIZE(E_F(objs)(e))(E_SEC(e)))
+glyph ESIZE = la objs. la plan. la e.
+    IF(EHENTRY(e))(la _. EHMSIZE(objs)(plan))(la _. SH_SIZE(E_F(objs)(e))(E_SEC(e)))
 glyph SH_NOBITS = 8
 glyph ETYPE = la objs. la e.
     IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE(E_F(objs)(e))(E_SEC(e)))
@@ -562,7 +570,7 @@ glyph SEGBASE = la objs. la names. la plan. (Z(la self. la l.
 glyph SEGEND = la objs. la names. la plan. la base. (Z(la self. la l. la end.
     l(end)(la h. la t.
       IF(INSEG(names)(ENAME(objs)(h)))
-        (la _. self(t)(add(E_ADDR(h))(ESIZE(objs)(h))))
+        (la _. self(t)(add(E_ADDR(h))(ESIZE(objs)(plan)(h))))
         (la _. self(t)(end)))))(plan)(base)
 
 #   Concatenate a segment's placed sections in ascending order, padding each gap
@@ -575,7 +583,7 @@ glyph REGBYTES = la objs. la patched. la seg. la base. la plan.
       l(acc)(la h. la t.
         IF(AND(INSEG(SEG_NAMES(seg))(ENAME(objs)(h)))
               (NOT(int_eq(ETYPE(objs)(h))(SH_NOBITS))))
-          (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(objs)(h)))
+          (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(objs)(plan)(h)))
                         (CAT(CONS(acc)(CONS(IF(int_eq(SEG_FLAGS(seg))(F_RX))
                                               (la _. NOPS(gap))(la _. ZEROS(gap)))(
                              CONS(EBYTES(objs)(patched)(h))(NIL))))))
@@ -720,20 +728,46 @@ glyph FIRST_CIE = la objs. (Z(la self. la l.
       (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
 
 #   Sum of every object's FDE bytes = eh_size − its CIE size (one CIE per object).
-glyph EH_FDEBYTES = la objs. la cie. (Z(la self. la l.
+#   Is an FDE KEPT? Its initial_location relocation targets the .text SECTION of
+#   the function it describes; if that section was placed (VAOF >= 0) the FDE is
+#   live, else --gc-sections dropped the function and the FDE is pruned too (it
+#   could not be relocated against an unplaced section anyway). With gc off every
+#   section is placed, so every FDE is kept and .eh_frame is unchanged.
+glyph FDE_KEPT = la plan. la rec. la eh. la ofde. (la f. (la rs.
+    NOT(lt(VAOF(plan)(O_IDX(rec))
+              (SYM_SHNDX(f)(O_SS(rec))(REL_SYM(f)(rs)(EH_RELIDX(f)(rs)(add(ofde)(8))))))(0)))
+    (FIND_SEC(f)(".rela.eh_frame")))(O_F(rec))
+
+#   Sum of one object's KEPT FDE bytes (records whose target function survived gc).
+glyph EH_KEPTSZ = la plan. la rec. (la f. (la eh.
+    (Z(la self. la o. la a.
+       IF(int_eq(o)(str_to_int(str_len(eh))))
+         (la _. a)
+         (la _. (la tot.
+                  IF(REC_IS_CIE(eh)(o))
+                    (la _. self(add(o)(tot))(a))
+                    (la _. IF(FDE_KEPT(plan)(rec)(eh)(o))
+                             (la _. self(add(o)(tot))(add(a)(tot)))
+                             (la _. self(add(o)(tot))(a))))
+                (REC_TOTAL(eh)(o)))))
+     (0)(0))
+    (SECBYTES(f)(FIND_SEC(f)(".eh_frame"))))(O_F(rec))
+
+glyph EH_KEPTALL = la objs. la plan. (Z(la self. la l.
     l(0)(la h. la t.
       (la ehsec.
         IF(lt(ehsec)(0))
           (la _. self(t))
-          (la _. add(sub(SH_SIZE(O_F(h))(ehsec))(str_to_int(str_len(cie))))(self(t))))
+          (la _. add(EH_KEPTSZ(plan)(h))(self(t))))
       (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
 
-#   Merged size = one CIE + all FDEs. Needed at PLAN time (no addresses), so it
-#   is structural. 0 when nothing carries .eh_frame (then no entry is placed).
-glyph EHMSIZE = la objs. (la cie.
+#   Merged size = one CIE + all KEPT FDEs. Takes the plan so gc-dropped functions'
+#   FDEs are sized out, keeping the planned .eh_frame size equal to what EHMERGE
+#   emits. 0 when nothing carries .eh_frame (then no entry is placed).
+glyph EHMSIZE = la objs. la plan. (la cie.
     IF(int_eq(str_to_int(str_len(cie)))(0))
       (la _. 0)
-      (la _. add(str_to_int(str_len(cie)))(EH_FDEBYTES(objs)(cie))))
+      (la _. add(str_to_int(str_len(cie)))(EH_KEPTALL(objs)(plan))))
     (FIRST_CIE(objs))
 
 #   REFUSE differing CIEs — this merge dedups a single shared CIE. Objects built
@@ -788,9 +822,11 @@ glyph EH_OBJ = la rec. la plan. la resolve. la mbase. la acc. la moff.
          (la _. (la tot.
                   IF(REC_IS_CIE(eh)(o))
                     (la _. self(add(o)(tot))(a)(m))
-                    (la _. self(add(o)(tot))
-                                (concat(a)(FDE_OUT(rec)(plan)(resolve)(eh)(o)(mbase)(m)))
-                                (add(m)(tot))))
+                    (la _. IF(FDE_KEPT(plan)(rec)(eh)(o))
+                             (la _. self(add(o)(tot))
+                                         (concat(a)(FDE_OUT(rec)(plan)(resolve)(eh)(o)(mbase)(m)))
+                                         (add(m)(tot)))
+                             (la _. self(add(o)(tot))(a)(m))))
                 (REC_TOTAL(eh)(o)))))
      (0)(acc)(moff))
   (SECBYTES(O_F(rec))(FIND_SEC(O_F(rec))(".eh_frame")))
@@ -871,9 +907,102 @@ glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
 glyph TEXTBYTES = la regs. (Z(la self. la l.
     l("")(la h. la t. IF(int_eq(R_FLAGS(h))(F_RX))(la _. R_BYTES(h))(la _. self(t)))))(regs)
 
+# ── --gc-sections — drop unreferenced sections (opt-in) ─────────────────────
+#   A `--gc-sections` directive line in link_inputs.txt turns on dead-section
+#   elimination: only sections REACHABLE from the entry (_start) survive. A
+#   section is live if it is a root or a live section relocates to a symbol
+#   DEFINED in it; the live set is the fixpoint of that closure over the
+#   relocation graph. Default (no directive) keeps everything — matching ld's
+#   default and this suite's deliberately-unreferenced `bump`. `keep` is the
+#   predicate the plan consults; .eh_frame is always kept but the FDEs of dropped
+#   functions are pruned by the merge (checking the plan), so no liveness threads
+#   there.
+glyph HASGC = la lines. (Z(la self. la l.
+    l(FALSE)(la h. la t. IF(str_eq(h)("--gc-sections"))(la _. TRUE)(la _. self(t)))))(lines)
+glyph NODIRS = la lines. (Z(la self. la l.
+    l(NIL)(la h. la t. IF(STARTSW(h)("--"))(la _. self(t))(la _. CONS(h)(self(t))))))(lines)
+
+#   Index of a DEFINED symbol named `want` in one object's symtab, or -1.
+glyph DEFIDX = la f. la ss. la want. (Z(la self. la i.
+    IF(int_eq(i)(SYM_COUNT(f)(ss)))
+      (la _. sub(0)(1))
+      (la _. IF(AND(DEFINES(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
+               (la _. i)
+               (la _. self(add(i)(1))))))(0)
+
+#   The (object index, section index) that DEFINES a global `want`, or (-1,-1).
+glyph FINDDEF = la objs. la want. (Z(la self. la l.
+    l(PAIR(sub(0)(1))(sub(0)(1)))(la h. la t.
+      (la si.
+        IF(lt(si)(0))
+          (la _. self(t))
+          (la _. PAIR(O_IDX(h))(SYM_SHNDX(O_F(h))(O_SS(h))(si))))
+      (DEFIDX(O_F(h))(O_SS(h))(want)))))(objs)
+
+#   The (object, section) defining symbol `si` of object `oidx`: a symbol defined
+#   here (st_shndx a real section < 0xff00) resolves in place; an UNDEF (shndx 0)
+#   is a global defined in another object; a reserved shndx (COMMON/ABS) has no
+#   section and is returned as (-1,-1), ignored by the closure.
+glyph DEFSEC = la objs. la oidx. la si. (la rec. (la f. (la ss.
+    (la sh.
+      IF(AND(NOT(int_eq(sh)(0)))(lt(sh)(65280)))
+        (la _. PAIR(oidx)(sh))
+        (la _. IF(int_eq(sh)(0))
+                 (la _. FINDDEF(objs)(SYMNAME(f)(ss)(si)))
+                 (la _. PAIR(sub(0)(1))(sub(0)(1)))))
+    (SYM_SHNDX(f)(ss)(si)))
+   (O_SS(rec)))(O_F(rec)))(FINDREC(objs)(oidx))
+
+glyph MEMLS = la live. la o. la s. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(AND(int_eq(FST(h))(o))(int_eq(SND(h))(s)))(la _. TRUE)(la _. self(t)))))(live)
+glyph ADDLS = la live. la o. la s.
+    IF(OR(lt(s)(0))(MEMLS(live)(o)(s)))(la _. live)(la _. CONS(PAIR(o)(s))(live))
+
+#   Add the defining section of every relocation of live section (oidx, sec).
+glyph SECNEIGH = la objs. la oidx. la sec. la live. (la f. (la rs.
+    IF(lt(rs)(0))
+      (la _. live)
+      (la _. (Z(la self. la i. la acc.
+                IF(int_eq(i)(REL_COUNT(f)(rs)))
+                  (la _. acc)
+                  (la _. (la d. self(add(i)(1))(ADDLS(acc)(FST(d))(SND(d))))
+                         (DEFSEC(objs)(oidx)(REL_SYM(f)(rs)(i))))))
+             (0)(live)))
+    (FIND_SEC(f)(concat(".rela")(SECNAME(f)(sec)))))
+   (O_F(FINDREC(objs)(oidx)))
+
+#   One expansion pass: union the neighbours of every currently-live section.
+glyph EXPAND = la objs. la live. (Z(la self. la l. la acc.
+    l(acc)(la h. la t. self(t)(SECNEIGH(objs)(FST(h))(SND(h))(acc)))))(live)(live)
+
+#   Fixpoint: expand until the live set stops growing (it grows monotonically and
+#   is bounded by the total section count, so this terminates).
+glyph CLOSE = Z(la self. la objs. la live.
+    (la nx.
+       IF(int_eq(LENL(nx))(LENL(live)))
+         (la _. live)
+         (la _. self(objs)(nx)))
+    (EXPAND(objs)(live)))
+
+#   Roots = the section that defines the entry symbol `_start`.
+glyph ROOTS = la objs. (la d.
+    IF(lt(FST(d))(0))(la _. NIL)(la _. CONS(d)(NIL)))
+    (FINDDEF(objs)("_start"))
+
+glyph LIVESET = la objs. CLOSE(objs)(ROOTS(objs))
+
+#   The `keep` predicate the plan consults: with gc off everything is kept; with
+#   gc on only sections in the live set (computed once, bound in `ls`).
+glyph KEEPFN = la objs. la gcon.
+    IF(gcon)(la _. (la ls. la o. la s. MEMLS(ls)(o)(s))(LIVESET(objs)))
+            (la _. la o. la s. TRUE)
+
 glyph MAIN =
+  (la lines.
   (la objs.
   (la _chk.
+  (la keep.
   (la plan.
   (la resolve.
   (la patched.
@@ -899,8 +1028,10 @@ glyph MAIN =
   )(MKREGIONS(objs)(patched)(plan))
   )(MKPATCHED(objs)(plan)(resolve))
   )(la want. RESOLVE_L(objs)(plan)(want))
-  )(MKPLAN(objs))
+  )(MKPLAN(keep)(objs))
+  )(KEEPFN(objs)(HASGC(lines)))
   )(CHECKALL(objs))
-  )(MKOBJS(SPLITLINES(read_file("link_inputs.txt"))))
+  )(MKOBJS(NODIRS(lines)))
+  )(SPLITLINES(read_file("link_inputs.txt")))
 
 glyph SEQ = la a. la b. b

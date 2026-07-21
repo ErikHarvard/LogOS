@@ -243,10 +243,42 @@ merged functions resolved and relocated correctly. `.eh_frame` stays one unified
 section with multiple FDEs, which `EHMERGE` already handled. *Honest scope:*
 section ORDER within an output section is our own (section-index then input
 order), so a `-ffunction-sections` binary is not byte-identical to `ld` (whose
-order differs) — the witness is "it runs", not a byte-diff. `--gc-sections`
-itself (dropping unreferenced sections) is a separate, larger feature.
+order differs) — the witness is "it runs", not a byte-diff.
 
-**4. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
+**✔ 4. `--gc-sections` — drop unreferenced sections (opt-in).** A `--gc-sections`
+directive line in `link_inputs.txt` turns on dead-section elimination: only
+sections REACHABLE from the entry `_start` survive. `LIVESET` is the fixpoint of
+a closure over the relocation graph — roots = the section defining `_start`;
+a section is live if a live section relocates to a symbol DEFINED in it
+(`DEFSEC` resolves a reloc's symbol to its (object, section), following an UNDEF
+global to its definition). `keep` (the liveness predicate) threads through
+`MKPLAN`→`SNAMES`→`PNAME`→`PSTEP`, which skips a dead section. **Opt-in is
+required, not just conventional:** the 3-object test deliberately keeps an
+unreferenced `bump` to match `ld`'s default, so always-on gc would regress it.
+Default (no directive) keeps everything, `keep` is always TRUE, nothing changes.
+
+**The `.eh_frame` entanglement, handled:** dropping `.text.dead` leaves its FDE
+in the merged `.eh_frame` pointing at an unplaced section — the merge would fail
+relocating it. So `FDE_KEPT` prunes an FDE whose target `.text` is not in the
+plan (`VAOF < 0`); `EHMSIZE`/`EHMERGE` size and emit only kept FDEs. This reads
+the PLAN (not a threaded liveness set) — the R+X segment is planned before the R
+segment, so the .text placement is already known when `.eh_frame` is sized. With
+gc off every target is placed, so nothing is pruned and `.eh_frame` is byte-for-
+byte unchanged. Gate: a `dead_never_called` fixture linked WITH `--gc-sections`
+drops the dead function — our R+X segment shrinks to exactly `ld --gc-sections`'s
+size — and still runs (exit 43); a wrongly-dropped live section would segfault,
+a wrongly-kept dead one would leave the segment too big, a mis-pruned FDE would
+abort the link. Verified GREEN.
+
+**⚠ KNOWN PERF REGRESSION — the next slice.** Pruning made `EHMSIZE` walk the
+CFI records (via `SECBYTES`, whose `DROP` is O(offset·filesize)) where it used
+to be `SH_SIZE` arithmetic, and it is recomputed per region — a `.eh_frame`-
+bearing link went from ~40 s to ~280 s, and this hits the gc-OFF path too. The
+fix is a clean follow-up: compute the merged `.eh_frame` size ONCE (or restore
+the cheap `SH_SIZE` path when nothing is pruned, gated on gc-on) instead of
+re-walking bytes on every `ESIZE`. Correctness is unaffected; only speed.
+
+**5. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
 back, require agreement with `readelf` on the same file.
 

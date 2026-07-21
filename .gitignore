@@ -196,3 +196,4 @@ watched.la
 /reldata.log
 /link_ref_fs
 /gate_fs.o
+/link_ref_gc
