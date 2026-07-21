@@ -788,6 +788,30 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             compile on tiny_host, the font flat-literal lesson: a 41-deep nest took
             >12 min and was killed; the flat form compiles in the normal ~5 min).
             (AegisNet's crypto/onion layer sits far above this bare TX/RX.)
+      - [x] **HAL.5c — an ICMP ECHO round-trip (ping) — DONE + gated
+            (2026-07-20).** One IP layer above HAL.5b's ARP: the kernel PINGS the
+            SLIRP gateway (10.0.2.2) and receives the echo reply, in Lingua Adamica
+            at ring 0. `kernel/nic5c.la` reuses 5b's NIC bring-up verbatim and
+            stages a 42-byte ICMP echo request with the IP and ICMP **header
+            checksums precomputed offline** (one's-complement 16-bit, baked into
+            the flat decimal string — the reason the driver needs no bitwise ops,
+            which LA lacks). **The load-bearing finding:** a naive single-shot ping
+            FAILS against SLIRP — to unicast the reply SLIRP first ARPs for our MAC
+            (10.0.2.15), so that ARP arrives as the first RX packet (`et=0806`) and
+            the echo reply never comes (we never answer the ARP). The fix is to
+            **seed SLIRP's ARP cache first**: TX a GRATUITOUS ARP REPLY (`GARPDATA`,
+            oper 2, spa=tpa=10.0.2.15/our MAC — SLIRP caches a reply's sender and
+            answers nothing), so afterwards it already knows our MAC and the echo
+            reply arrives as the ONLY RX packet — no ARP responder or ring-advance
+            needed. So: TX gratuitous ARP (TSD0) + TX ICMP echo (TSD1) → poll RX →
+            decode straight out of the DMA ring with `peek`. `gate_nic5c.sh` boots
+            `-m 512 -device rtl8139` on a SLIRP netdev and asserts `nic tx ok` +
+            `nic rx et=0800 proto=01 icmp=00` (IPv4 / IP-proto ICMP / ICMP type 0 =
+            echo reply — an ARP or unsigned decode cannot fake all three) + `nic
+            done`. **Verified live: `nic rx et=0800 proto=01 icmp=00`.** NOTE:
+            native_codegen3 takes ~12 min on this program (NIC-sized, like HAL.4h),
+            so the gate's rebuild is long — build once + run QEMU manually when
+            iterating. A real IP-layer round-trip, driver in the language.
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
