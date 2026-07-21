@@ -445,20 +445,20 @@ glyph PNAME = la keep. la objs. la name. la acc. la cur.
 #   segment is planned before the R segment), so EHMSIZE consults it to size out
 #   the FDEs of any gc-dropped function — keeping .eh_frame's planned size equal
 #   to what EHMERGE actually emits.
-glyph PEH = la objs. la acc. la cur. (la sz.
+glyph PEH = la gcon. la objs. la acc. la cur. (la sz.
     IF(int_eq(sz)(0))
       (la _. PAIR(acc)(cur))
-      (la _. (la a. PAIR(CONS(MKE(0)(EHMARK)(a))(acc))(add(a)(sz)))(ALIGNUP(cur)(8))))
-    (EHMSIZE(objs)(acc))
+      (la _. (la a. PAIR(CONS(MKE(0)(sz)(a))(acc))(add(a)(sz)))(ALIGNUP(cur)(8))))
+    (EHMSIZE(objs)(gcon)(acc))
 
 #   All section names of ONE segment, packed contiguously from the cursor. Every
 #   section packs per-object except .eh_frame, which is placed once, merged.
-glyph SNAMES = la keep. la objs. la names. la acc. la cur.
+glyph SNAMES = la keep. la gcon. la objs. la names. la acc. la cur.
     (Z(la self. la l. la a. la c.
         l(PAIR(a)(c))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
           (IF(str_eq(h)(".eh_frame"))
-             (la _. PEH(objs)(a)(c))
+             (la _. PEH(gcon)(objs)(a)(c))
              (la _. PNAME(keep)(objs)(h)(a)(c))))))
       (names)(acc)(cur)
 
@@ -466,11 +466,11 @@ glyph SNAMES = la keep. la objs. la names. la acc. la cur.
 #   segment start and packing its sections. `keep` is the gc-sections liveness
 #   predicate (always TRUE when gc is off). REV because entries accumulate with
 #   CONS; without it link order — and thus packing — would invert.
-glyph MKPLAN = la keep. la objs.
+glyph MKPLAN = la keep. la gcon. la objs.
     REV(FST((Z(la self. la segs. la acc. la cur.
         segs(PAIR(acc)(cur))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
-          (SNAMES(keep)(objs)(SEG_NAMES(h))(acc)(ALIGNUP(cur)(PAGE))))))
+          (SNAMES(keep)(gcon)(objs)(SEG_NAMES(h))(acc)(ALIGNUP(cur)(PAGE))))))
       (SCRIPT)(NIL)(LOAD_BASE)))(NIL)
 
 #   Address of a given object's given section, or -1 if it was not placed.
@@ -504,14 +504,15 @@ glyph FINDREC = la objs. la idx. (Z(la self. la l.
 glyph FINDOBJ = la objs. la idx. O_F(FINDREC(objs)(idx))
 glyph E_F   = la objs. la e. FINDOBJ(objs)(E_OBJ(e))
 #   Plan entries are (object, section, address). The MERGED .eh_frame is the one
-#   entry with object 0 (no real object is 0 — they are 1-based), so ENAME/ESIZE/
-#   ETYPE answer for it WITHOUT an object lookup: it is a PROGBITS ".eh_frame" of
-#   the merged size. Every real entry defers to its object's section header.
+#   entry with object 0 (no real object is 0 — they are 1-based); its "section"
+#   slot carries the merged SIZE (computed once by PEH, so ESIZE never recomputes
+#   it — the perf fix). ENAME/ESIZE/ETYPE answer for it WITHOUT an object lookup:
+#   a PROGBITS ".eh_frame" of that size. Every real entry defers to its header.
 glyph EHENTRY = la e. int_eq(E_OBJ(e))(0)
 glyph ENAME = la objs. la e.
     IF(EHENTRY(e))(la _. ".eh_frame")(la _. SECNAME(E_F(objs)(e))(E_SEC(e)))
-glyph ESIZE = la objs. la plan. la e.
-    IF(EHENTRY(e))(la _. EHMSIZE(objs)(plan))(la _. SH_SIZE(E_F(objs)(e))(E_SEC(e)))
+glyph ESIZE = la objs. la e.
+    IF(EHENTRY(e))(la _. E_SEC(e))(la _. SH_SIZE(E_F(objs)(e))(E_SEC(e)))
 glyph SH_NOBITS = 8
 glyph ETYPE = la objs. la e.
     IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE(E_F(objs)(e))(E_SEC(e)))
@@ -570,7 +571,7 @@ glyph SEGBASE = la objs. la names. la plan. (Z(la self. la l.
 glyph SEGEND = la objs. la names. la plan. la base. (Z(la self. la l. la end.
     l(end)(la h. la t.
       IF(INSEG(names)(ENAME(objs)(h)))
-        (la _. self(t)(add(E_ADDR(h))(ESIZE(objs)(plan)(h))))
+        (la _. self(t)(add(E_ADDR(h))(ESIZE(objs)(h))))
         (la _. self(t)(end)))))(plan)(base)
 
 #   Concatenate a segment's placed sections in ascending order, padding each gap
@@ -583,7 +584,7 @@ glyph REGBYTES = la objs. la patched. la seg. la base. la plan.
       l(acc)(la h. la t.
         IF(AND(INSEG(SEG_NAMES(seg))(ENAME(objs)(h)))
               (NOT(int_eq(ETYPE(objs)(h))(SH_NOBITS))))
-          (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(objs)(plan)(h)))
+          (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(objs)(h)))
                         (CAT(CONS(acc)(CONS(IF(int_eq(SEG_FLAGS(seg))(F_RX))
                                               (la _. NOPS(gap))(la _. ZEROS(gap)))(
                              CONS(EBYTES(objs)(patched)(h))(NIL))))))
@@ -691,7 +692,7 @@ glyph PATCHSEC = la objs. la plan. la resolve. la e.
      (O_F(rec)))
     (FINDREC(objs)(E_OBJ(e)))
 
-#   The (0, EHMARK) sentinel entry is the MERGED .eh_frame — it is patched by
+#   The object-0 entry is the MERGED .eh_frame — it is patched by
 #   EHMERGE (dedup CIE, rewrite FDE CIE-pointers, relocate FDEs at their merged
 #   positions), keyed like any other patched section so EBYTES picks it up
 #   unchanged. Every real (object, section) goes through PATCHSEC as before.
@@ -761,13 +762,28 @@ glyph EH_KEPTALL = la objs. la plan. (Z(la self. la l.
           (la _. add(EH_KEPTSZ(plan)(h))(self(t))))
       (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
 
-#   Merged size = one CIE + all KEPT FDEs. Takes the plan so gc-dropped functions'
-#   FDEs are sized out, keeping the planned .eh_frame size equal to what EHMERGE
-#   emits. 0 when nothing carries .eh_frame (then no entry is placed).
-glyph EHMSIZE = la objs. la plan. (la cie.
+#   The CHEAP full-size path: every object's FDE bytes = eh_size − its CIE size,
+#   from SH_SIZE arithmetic with NO byte extraction. Used when gc is off (nothing
+#   is pruned) so an ordinary .eh_frame-bearing link does not pay the record walk.
+glyph EH_FDEBYTES = la objs. la cie. (Z(la self. la l.
+    l(0)(la h. la t.
+      (la ehsec.
+        IF(lt(ehsec)(0))
+          (la _. self(t))
+          (la _. add(sub(SH_SIZE(O_F(h))(ehsec))(str_to_int(str_len(cie))))(self(t))))
+      (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
+
+#   Merged size = one CIE + FDE bytes. When gc is ON, EH_KEPTALL walks the CFI
+#   records to size out gc-dropped functions' FDEs (keeping the planned size equal
+#   to what EHMERGE emits). When gc is OFF nothing is pruned, so the cheap
+#   SH_SIZE-only EH_FDEBYTES gives the same answer WITHOUT walking bytes — the
+#   perf path (EH_KEPTALL's SECBYTES walk is O(offset·filesize) via DROP). 0 when
+#   nothing carries .eh_frame.
+glyph EHMSIZE = la objs. la gcon. la plan. (la cie.
     IF(int_eq(str_to_int(str_len(cie)))(0))
       (la _. 0)
-      (la _. add(str_to_int(str_len(cie)))(EH_KEPTALL(objs)(plan))))
+      (la _. add(str_to_int(str_len(cie)))
+                (IF(gcon)(la _. EH_KEPTALL(objs)(plan))(la _. EH_FDEBYTES(objs)(cie)))))
     (FIRST_CIE(objs))
 
 #   REFUSE differing CIEs — this merge dedups a single shared CIE. Objects built
@@ -1000,6 +1016,7 @@ glyph KEEPFN = la objs. la gcon.
 
 glyph MAIN =
   (la lines.
+  (la gcon.
   (la objs.
   (la _chk.
   (la keep.
@@ -1028,10 +1045,11 @@ glyph MAIN =
   )(MKREGIONS(objs)(patched)(plan))
   )(MKPATCHED(objs)(plan)(resolve))
   )(la want. RESOLVE_L(objs)(plan)(want))
-  )(MKPLAN(keep)(objs))
-  )(KEEPFN(objs)(HASGC(lines)))
+  )(MKPLAN(keep)(gcon)(objs))
+  )(KEEPFN(objs)(gcon))
   )(CHECKALL(objs))
   )(MKOBJS(NODIRS(lines)))
+  )(HASGC(lines))
   )(SPLITLINES(read_file("link_inputs.txt")))
 
 glyph SEQ = la a. la b. b

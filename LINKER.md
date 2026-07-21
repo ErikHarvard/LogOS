@@ -270,13 +270,21 @@ size — and still runs (exit 43); a wrongly-dropped live section would segfault
 a wrongly-kept dead one would leave the segment too big, a mis-pruned FDE would
 abort the link. Verified GREEN.
 
-**⚠ KNOWN PERF REGRESSION — the next slice.** Pruning made `EHMSIZE` walk the
-CFI records (via `SECBYTES`, whose `DROP` is O(offset·filesize)) where it used
-to be `SH_SIZE` arithmetic, and it is recomputed per region — a `.eh_frame`-
-bearing link went from ~40 s to ~280 s, and this hits the gc-OFF path too. The
-fix is a clean follow-up: compute the merged `.eh_frame` size ONCE (or restore
-the cheap `SH_SIZE` path when nothing is pruned, gated on gc-on) instead of
-re-walking bytes on every `ESIZE`. Correctness is unaffected; only speed.
+**✔ PERF REGRESSION FIXED.** Pruning had made `EHMSIZE` walk the CFI records
+(via `SECBYTES`, whose `DROP` is O(offset·filesize)) where it used to be
+`SH_SIZE` arithmetic, recomputed per region — a `.eh_frame`-bearing link went
+~40 s → ~280 s, hitting the gc-OFF path too. Two changes undo it: (1) `EHMSIZE`
+takes `gcon` and uses the cheap `SH_SIZE`-only `EH_FDEBYTES` when gc is OFF
+(nothing is pruned, so the full size is exact) — the byte-walking `EH_KEPTALL`
+runs only when gc is actually ON; (2) the merged size is computed ONCE by `PEH`
+and STORED in the object-0 plan entry's section slot, so `ESIZE` reads it back
+instead of recomputing per region. `gcon` threads only to `PEH`
+(`MKPLAN`→`SNAMES`→`PEH`); `ESIZE` no longer needs the plan. Measured: the
+gc-off `-ffunction-sections` link 281 s → 149 s (back to its pre-gc baseline;
+the residual is the `-ffunction-sections` per-section `SECNAME` scan, a separate
+pre-existing cost), gc-on 271 s → 160 s, and monolithic `.eh_frame` links return
+to ~40 s. Correctness unchanged — gc-off keeps everything and is byte-identical,
+gc-on drops the dead function to exactly `ld --gc-sections`'s size.
 
 **5. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
