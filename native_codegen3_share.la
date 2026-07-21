@@ -889,6 +889,31 @@ glyph NREFST = la dtab. la name. Z(la self. la t.
       (la _. 0))(dtab)
 glyph SHARED_SETT = la dtab. la table. la allnames.
     FILTERL(la n. AND(lt(1)(NREFST(dtab)(n)))(lt(SHARE_BIG)(NODECOUNT(BODYOF(table)(n)))))(allnames)
+# ── ORDER the lift so dependencies bind OUTER ──
+#   SHARE_LIFT binds sset[0] OUTERMOST, so a shared glyph P whose (inlined) body
+#   references another shared glyph Q must have Q bound outer of it — i.e. Q must
+#   precede P in the lift order. Source order does NOT guarantee this (a shared
+#   glyph can forward-reference a later-defined shared glyph → Q is an unbound
+#   free VAR → "free variable: Q"). Fix: topologically sort sset dependencies-first.
+#   The graph is a DAG (letrec already collapsed every cycle into a bundle glyph
+#   BEFORE the share pass), so a valid order exists. RDEPS uses the transitive
+#   REACH set ∩ sset (an overapproximation of the actual VAR-deps — harmless: it
+#   only adds satisfiable ordering constraints, and REACH∩sset is acyclic post-
+#   collapse). Kahn's algorithm: repeatedly place a glyph whose shared-deps are
+#   all already placed. sset empty → [] (no-op, safety hinge preserved).
+glyph NONE_IN = la xs. la ys. Z(la self. la l.
+    IF(IS_CONS(l))(la _. IF(STR_MEM(HD(l))(ys))(la _. FALSE)(la _. self(TL(l))))(la _. TRUE))(xs)
+glyph REMOVE1 = la x. FILTERL(la e. NOT(str_eq(e)(x)))
+glyph RDEPS = la rtab. la sset. la name.
+    FILTERL(la d. AND(NOT(str_eq(d)(name)))(STR_MEM(d)(sset)))(RLOOK(rtab)(name))
+glyph FIRST_PLACEABLE = la rtab. la sset. la remaining. Z(la self. la l.
+    IF(IS_CONS(l))(la _. IF(NONE_IN(RDEPS(rtab)(sset)(HD(l)))(remaining))(la _. HD(l))(la _. self(TL(l))))
+      (la _. error("native_codegen3: share toposort found a cycle (post-collapse should be a DAG)")))(remaining)
+glyph TOPO_SSET = la rtab. la sset. Z(la self. la remaining. la acc.
+    IF(IS_CONS(remaining))(la _.
+        (la pick. self(REMOVE1(pick)(remaining))(APPEND(acc)(CONS(pick)(NIL))))
+        (FIRST_PLACEABLE(rtab)(sset)(remaining)))
+      (la _. acc))(sset)(NIL)
 glyph SHARE_LIFT = la table. la sset. la main_inlined. Z(la self. la s.
     IF(IS_CONS(s))(la _. AST_APP(AST_LAM(HD(s))(self(TL(s))))(INLINE(BODYOF(table)(HD(s)))(table)(NIL)(sset)(NIL)))
       (la _. main_inlined))(sset)
@@ -918,5 +943,5 @@ glyph MAIN =
     )(SND(poolpair))
     )(FST(poolpair))
     )(BUILD_POOL(COLLECT(main_ast)))
-    )(BETA((la sset. SHARE_LIFT(table)(sset)(INLINE((la opt. IF(IS_SOME(opt))(la _. OPT_VAL(opt))(la _. error("native_codegen3: no glyph MAIN")))(LOOKUP_GLYPH("MAIN")(table)))(table)(NIL)(sset)(CONS("MAIN")(NIL))))(SHARED_SETT(MKDREFTAB(table)(GNAMES(table)))(table)(GNAMES(table)))))
+    )(BETA((la sset. SHARE_LIFT(table)(sset)(INLINE((la opt. IF(IS_SOME(opt))(la _. OPT_VAL(opt))(la _. error("native_codegen3: no glyph MAIN")))(LOOKUP_GLYPH("MAIN")(table)))(table)(NIL)(sset)(CONS("MAIN")(NIL))))(TOPO_SSET(MKREACHTAB(MKDREFTAB(table)(GNAMES(table)))(GNAMES(table)))(SHARED_SETT(MKDREFTAB(table)(GNAMES(table)))(table)(GNAMES(table))))))
     )(COLLAPSE_RECGROUPS(PARSE_PROGRAM(TOKENIZE(read_file("native_input.la")))))
