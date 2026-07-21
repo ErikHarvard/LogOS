@@ -1,0 +1,118 @@
+# =====================================================================
+#  LogOS HAL.4h — a MOUSE CURSOR SPRITE on the framebuffer, in LA.
+#
+#  The first slice to cross INPUT x DISPLAY: HAL.2d's pointer (mouse ->
+#  a clamped cursor) drawn as a real sprite on HAL.4's linear framebuffer.
+#  On the metal, in Lingua Adamica, an LA program at ring 0:
+#    1. brings the framebuffer up exactly as HAL.4 does (PCI-scan the std
+#       VGA, read BAR0 = the LFB base, set 640x480x32 via the Bochs VBE
+#       dispi registers, read VIRT_WIDTH for the pitch);
+#    2. brings the PS/2 mouse up exactly as HAL.2c does (enable aux +
+#       data reporting, drain the ACK);
+#    3. reads a BOUNDED 4 packets, sign-extends the deltas (HAL.2d), and
+#       accumulates a cursor (cx,cy) clamped to the sprite's playfield;
+#    4. paints an 8x8 sprite AT THE CURSOR with a single FLAT-INDEX loop
+#       (the HAL.4e codegen lesson: no nested draw loops), plus a lone
+#       control pixel at a fixed far point;
+#    5. reads the framebuffer BACK with `peek` and reports over serial the
+#       cursor, the sprite pixel, and the off-sprite control pixel, then
+#       RETURNS (exit 33).
+#
+#  Verified by serial peek-back, NOT a screendump, so it EXITS instead of
+#  spinning — fully BOUNDED (a few thousand pokes, far under the six-second
+#  heap wall). Built with `-D HAL4` (boot.asm identity-maps 0..4 GiB so the
+#  high LFB is reachable). Flat + import-free.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+glyph FALSE = la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+
+# ── framebuffer bring-up (verbatim from HAL.4 / fb.la) ──
+glyph CFG = la dev. la off.
+    SEQ(outl(3320)(add(add(2147483648)(mul(dev)(2048)))(off)))
+       (inl(3324))
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 0)(la _.
+      IF(int_eq(CFG(dev)(0))(286331444))(la _. dev)(la _.
+        self(add(dev)(1)))))
+glyph DISPI  = la idx. la val. SEQ(outw(462)(idx))(outw(463)(val))
+glyph RDISPI = la idx. SEQ(outw(462)(idx))(inw(463))
+glyph SETMODE =
+    SEQ(DISPI(4)(0))(SEQ(DISPI(1)(640))(SEQ(DISPI(2)(480))(SEQ(DISPI(3)(32))(DISPI(4)(65)))))
+
+# ── PS/2 mouse bring-up + poll (from HAL.2c) ──
+glyph OBF    = la st. int_eq(mod(st)(2))(1)
+glyph ISAUX  = la st. int_eq(mod(div(st)(32))(2))(1)
+glyph MREADY = la st. AND(OBF(st))(ISAUX(st))
+glyph POLLM  = Z(la self. la _.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self("!")))
+      (inb(100)))
+glyph INIT = SEQ(outb(100)(168))(SEQ(outb(100)(212))(SEQ(outb(96)(244))(POLLM("!"))))
+glyph RDPKT = la k.
+    (la b0. (la b1. (la b2. k(b0)(b1)(b2)) (POLLM("!"))) (POLLM("!"))) (POLLM("!"))
+
+# ── decode + clamp (from HAL.2d) ──
+glyph BIT   = la b. la k. mod(div(b)(k))(2)
+glyph SGN   = la raw. la s. IF(int_eq(s)(1))(la _. sub(raw)(256))(la _. raw)
+glyph CLAMP = la v. la lo. la hi.
+    IF(lt(v)(lo))(la _. lo)(la _. IF(lt(hi)(v))(la _. hi)(la _. v))
+
+# ── one FLAT-INDEX filled rect: w*h pixels, (row,col) via div/mod (HAL.4e) ──
+glyph RECT = la base. la pitch. la x0. la y0. la w. la h. la cb. la cg. la cr.
+    (la n.
+      (Z(la self. la i.
+         IF(int_eq(i)(n))(la _. "!")(la _.
+           (la px.
+             SEQ(poke(px)(cb))(SEQ(poke(add(px)(1))(cg))(SEQ(poke(add(px)(2))(cr))
+               (self(add(i)(1))))))
+           (add(base)(add(mul(add(y0)(div(i)(w)))(pitch))(mul(add(x0)(mod(i)(w)))(4)))))))
+      (0))
+    (mul(w)(h))
+
+# address of the RED byte of pixel (x,y)
+glyph PXR = la base. la pitch. la x. la y.
+    add(base)(add(mul(y)(pitch))(add(mul(x)(4))(2)))
+
+# Set a control pixel's RED byte to 0 at a fixed far point, draw the red sprite
+# at (cx,cy), read both back, report, return. Only ONE RECT (the sprite) — the
+# control is a single poke, not a fill, which roughly halves codegen vs a bg rect.
+glyph DRAW = la base. la pitch. la cx. la cy.
+    SEQ(poke(PXR(base)(pitch)(300)(300))(0))                # control: R=0 at (300,300)
+   (SEQ(RECT(base)(pitch)(cx)(cy)(8)(8)(0)(0)(255))         # red sprite 8x8 @ cursor
+   ((la sp. la off.
+       SEQ(print(concat(concat("cur ")(int_to_str(cx)))(concat(" ")(int_to_str(cy)))))
+      (SEQ(print(concat("sp ")(int_to_str(sp))))
+      (print(concat("off ")(int_to_str(off))))))
+    (peek(PXR(base)(pitch)(add(cx)(3))(add(cy)(3))))        # sprite center R -> 255
+    (peek(PXR(base)(pitch)(300)(300)))))                    # control R -> stays 0
+
+# ── read 4 packets, thread the cursor, RETURN it as a pair. Crucially this
+#    loop does NO drawing: keeping RECT's Z-loop OUT of RUN's Z-recursion (no
+#    Z-in-Z) is what keeps codegen tractable — DRAW happens in MAIN below. ──
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph RUN = Z(la self. la n. la x. la y.
+    IF(int_eq(n)(0))
+      (la _. PAIR(x)(y))
+      (la _. RDPKT(la b0. la b1. la b2.
+        (la sdx. la sdy.
+          self(sub(n)(1))(CLAMP(add(x)(sdx))(72)(180))(CLAMP(add(y)(sdy))(72)(180)))
+        (SGN(b1)(BIT(b0)(16)))
+        (SGN(b2)(BIT(b0)(32))))))
+
+glyph MAIN =
+    (la dev. (la bar. (la base.
+      SEQ(SETMODE)
+      ((la pitch.
+          SEQ(print(concat(concat("fb lfb=")(int_to_str(base)))(concat(" pitch=")(int_to_str(pitch)))))
+         (SEQ(INIT)
+         ((la cxy. DRAW(base)(pitch)(FST(cxy))(SND(cxy)))
+          (RUN(4)(100)(100)))))
+       (mul(RDISPI(6))(4))))
+      (sub(bar)(mod(bar)(16))))
+     (CFG(dev)(16)))
+    (FIND(0))

@@ -873,6 +873,30 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             per-command wait (QEMU clears IBF synchronously), then drain every
             queued ACK ONCE with `DRAINALL` — one Z, not six — and it compiled
             (~4 min). BOUNDED (4 packets); no boot.asm change, no regen.
+      - [x] **HAL.4h — a MOUSE CURSOR SPRITE on the framebuffer — DONE + gated
+            (2026-07-20).** The first slice to cross **input × display**: HAL.2d's
+            mouse-driven cursor drawn as a real sprite on HAL.4's linear
+            framebuffer. `kernel/cursor.la` (built `-D HAL4`) brings up BOTH the
+            LFB (PCI-scan the std VGA, read BAR0, set 640×480×32 via the Bochs VBE
+            dispi regs — verbatim from `fb.la`) AND the PS/2 mouse (HAL.2c init),
+            reads a bounded 4 packets, sign-extends the deltas (HAL.2d) into a
+            clamped cursor, draws an 8×8 red sprite AT the cursor with a single
+            FLAT-INDEX loop, then reads the framebuffer BACK with `peek` and
+            reports over serial: `cur 170 100` (mouse drove it off the 100 origin,
+            clamp held), `sp 255` (the sprite's centre pixel reads back RED — drawn
+            at the cursor), `off 0` (a fixed far control pixel stayed 0 — localised,
+            no runaway). Verified by peek-back, NOT a screendump, so it EXITS
+            (exit 33) — fully BOUNDED, no six-second exposure, unlike the `comp_*`
+            interactive compositors. `gate_cursor.sh` asserts all four + exit 33.
+            **Codegen frontier (measured):** this fused fb+mouse+draw program is
+            the heaviest metal LA yet — native_codegen3 took **~11 min**. Two depth
+            fixes were needed to compile it AT ALL: (1) `RUN` returns the cursor as
+            a PAIR and the drawing happens in `MAIN`, so `RECT`'s Z-loop is NOT
+            nested inside `RUN`'s Z (no **Z-in-Z** — the dominant superlinear cost);
+            (2) the background fill was dropped for a single control pixel (one
+            `RECT` inline, not two). Even so ~11 min — the practical ceiling for a
+            single-image fused slice is near here; a richer on-metal pointer UI
+            wants the interpreted-asm / native-backend speedups Track A is building.
       - [x] **HAL.4b — bulk framebuffer fill + memcpy-to-MMIO, the language's
             FIRST TERNARY builtins — DONE + gated (2026-07-16).** HAL.4 drew its
             square with a poke (and a beta-reduction) per byte — 12288 for 64x64,
