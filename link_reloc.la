@@ -424,27 +424,43 @@ glyph FLAGSOF = la n.
 #   Looking the object up by index in the list removes the branch entirely, and
 #   with it the arity assumption — the helpers stop knowing how many inputs
 #   there are.
-glyph FINDOBJ = la objs. la idx. (Z(la self. la l.
-    l("")(la h. la t. IF(int_eq(O_IDX(h))(idx))(la _. O_F(h))(la _. self(t)))))(objs)
+glyph FINDREC = la objs. la idx. (Z(la self. la l.
+    l(NIL)(la h. la t. IF(int_eq(O_IDX(h))(idx))(la _. h)(la _. self(t)))))(objs)
+glyph FINDOBJ = la objs. la idx. O_F(FINDREC(objs)(idx))
 glyph E_F   = la objs. la e. FINDOBJ(objs)(E_OBJ(e))
 glyph ENAME = la objs. la e. SECNAME(E_F(objs)(e))(E_SEC(e))
 glyph ESIZE = la objs. la e. SH_SIZE(E_F(objs)(e))(E_SEC(e))
 glyph SH_NOBITS = 8
 glyph ETYPE = la objs. la e. SH_TYPE(E_F(objs)(e))(E_SEC(e))
 
-#   The relocated text of each object, as a list of (index, (text section,
-#   patched bytes)) — the list form of what p1/p2 were as separate binders.
-glyph PATCH_OF = la patched. la idx. (Z(la self. la l.
-    l(NIL)(la h. la t. IF(int_eq(FST(h))(idx))(la _. SND(h))(la _. self(t)))))(patched)
+#   ★ RELOCATIONS ARE APPLIED TO EVERY PLACED SECTION, not only .text.
+#   Applying just `.rela.text` was a CONFIRMED silent-wrongness bug: an object
+#   with `msgptr: dq msg` carries a `.rela.data`, and its `.data` was placed but
+#   never patched, so the pointer kept its unrelocated value of 0. The link
+#   succeeded, every gate passed (none exercised `.rela.data`), and the program
+#   wrote from a null pointer — printing nothing and exiting 0. Measured against
+#   ld: ours held 0000000000000000 where ld's held 0x402000.
+#
+#   Patched bytes are therefore keyed by (object, section) rather than one
+#   blob per object, and a section's relocation table is found by name:
+#   `.rela` ++ the section's own name.
+glyph PATCH_OF = la patched. la o. la s. (Z(la self. la l.
+    l("")(la h. la t.
+      IF(AND(int_eq(FST(FST(h)))(o))(int_eq(SND(FST(h)))(s)))
+        (la _. SND(h))
+        (la _. self(t)))))(patched)
+glyph HASPATCH = la patched. la o. la s. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(AND(int_eq(FST(FST(h)))(o))(int_eq(SND(FST(h)))(s)))
+        (la _. TRUE)
+        (la _. self(t)))))(patched)
 
 glyph EBYTES = la objs. la patched. la e.
     IF(int_eq(ETYPE(objs)(e))(SH_NOBITS))
       (la _. "")
-      (la _. (la pe.
-               IF(int_eq(E_SEC(e))(FST(pe)))
-                 (la _. SND(pe))
-                 (la _. SECBYTES(E_F(objs)(e))(E_SEC(e))))
-             (PATCH_OF(patched)(E_OBJ(e))))
+      (la _. IF(HASPATCH(patched)(E_OBJ(e))(E_SEC(e)))
+               (la _. PATCH_OF(patched)(E_OBJ(e))(E_SEC(e)))
+               (la _. SECBYTES(E_F(objs)(e))(E_SEC(e))))
 
 #   Concatenate every plan entry of one section name, in placed order, padding
 #   each gap so the bytes land exactly where the plan says. Padding a code gap
@@ -552,17 +568,29 @@ glyph MKOBJS = la paths.
 
 #   Each object's relocated .text, keyed by index — the list form of what p1
 #   and p2 were as separate binders.
+#   One entry per PLAN ENTRY — i.e. per placed section of each object — with
+#   that section's own relocations applied if it has a `.rela.<name>`.
+glyph PATCHSEC = la objs. la plan. la resolve. la e.
+    (la rec. (la f.
+      (la raw.
+        (la rs. IF(lt(rs)(0))
+                  (la _. raw)
+                  (la _. APPLYRELS(f)(O_SS(rec))(rs)
+                                  (la sec. VAOF(plan)(E_OBJ(e))(sec))(resolve)
+                                  (E_ADDR(e))(raw)))
+        (FIND_SEC(f)(concat(".rela")(SECNAME(f)(E_SEC(e))))))
+      (IF(int_eq(SH_TYPE(f)(E_SEC(e)))(SH_NOBITS))
+         (la _. "")
+         (la _. SECBYTES(f)(E_SEC(e)))))
+     (O_F(rec)))
+    (FINDREC(objs)(E_OBJ(e)))
+
 glyph MKPATCHED = la objs. la plan. la resolve.
     (Z(la self. la l.
       l(NIL)(la h. la t.
-        (la ts.
-          CONS(PAIR(O_IDX(h))(PAIR(ts)
-              (APPLYRELS(O_F(h))(O_SS(h))(FIND_SEC(O_F(h))(".rela.text"))
-                        (la sec. VAOF(plan)(O_IDX(h))(sec))(resolve)
-                        (VAOF(plan)(O_IDX(h))(ts))(SECBYTES(O_F(h))(ts)))))
-              (self(t)))
-        (FIND_SEC(O_F(h))(".text")))))
-    (objs)
+        CONS(PAIR(PAIR(E_OBJ(h))(E_SEC(h)))(PATCHSEC(objs)(plan)(resolve)(h)))
+            (self(t)))))
+    (plan)
 
 glyph CHECKALL = la objs. (Z(la self. la l.
     l("ok")(la h. la t.

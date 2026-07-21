@@ -84,6 +84,7 @@ nasm -f elf64 link_test_rw.asm -o link_test_rw.o
 nasm -f elf64 link_test_bss.asm -o link_test_bss.o
 nasm -f elf64 link_test_c.asm -o link_test_c.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
+nasm -f elf64 link_test_reldata.asm -o link_test_reldata.o
 ld -o link_ref link_test_a.o link_test_b.o
 objcopy -O binary --only-section=.text link_ref ldtext.bin
 
@@ -450,6 +451,73 @@ C2
     fi
 fi
 
+# --- ★ A RELOCATION OUTSIDE .text — the SILENT-WRONGNESS case ---
+#   Every other fixture above relocates in .text ONLY — verified, not assumed:
+#   rw/b/abs/bss all carry `.rela.text` and nothing else, and link_test_c
+#   carries no relocations at all. link_test_rw has a .data, but a .data of
+#   LITERAL bytes, which needs no patching. So a linker applying only
+#   `.rela.text` passed every check on this page.
+#
+#   link_test_reldata.asm closes that: `msgptr: dq msg` puts an R_X86_64_64 in
+#   .data. Unpatched, msgptr stays 0, and the program writes from a null
+#   pointer — which is the whole danger, because it does NOT crash:
+#
+#       the link succeeds, .data is placed, nothing is patched,
+#       write(1, NULL, 15) returns -EFAULT, and the program exits 0.
+#
+#   ★ SO EXIT STATUS CANNOT BE THE ASSERTION. `exit=0` is exactly what the bug
+#   produces; a gate checking only the status passes on the broken linker. The
+#   assertion has to be the OUTPUT TEXT, and the empty-output-with-exit-0
+#   signature is named explicitly so a regression says WHICH failure rather
+#   than "differs from ld" (this board's method finding 3).
+ld -o link_ref_reldata link_test_a.o link_test_reldata.o
+cp link_test_a.o       link_in1.o
+cp link_test_reldata.o link_in2.o
+printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
+rm -f link_out
+if RDOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then RDLRC=0; else RDLRC=$?; fi
+[ "$RDLRC" -eq 0 ] \
+    || { echo "FAIL  link_reloc.la: could not link the .rela.data fixture: $RDOUT"; ok=0; }
+if [ -x link_out ]; then
+    if RDGOT=$(./link_out 2>&1); then RDRC=0; else RDRC=$?; fi
+    RDWANT=$(./link_ref_reldata 2>&1)
+    #   the precise signature FIRST, so the diagnostic names the cause
+    if [ -z "$RDGOT" ] && [ "$RDRC" = "0" ]; then
+        echo "FAIL  link_reloc.la: .rela.data NOT applied — printed nothing and exited 0 (msgptr left unrelocated at 0; the null write returns -EFAULT and is discarded)"
+        ok=0
+    else
+        [ "$RDGOT" = "$RDWANT" ] \
+            || { echo "FAIL  link_reloc.la: .rela.data fixture printed '$RDGOT', ld's binary prints '$RDWANT'"; ok=0; }
+    fi
+    #   ...and the patched pointer ITSELF, read straight out of the writable
+    #   segment — a direct look at the byte the bug leaves at zero, instead of
+    #   inferring it from what was printed.
+    #
+    #   ★ NOT via `objcopy --only-section=.data`: this linker emits NO SECTION
+    #   HEADERS, only program headers, so that form silently finds nothing and
+    #   skips — a check that cannot fail, in the gate whose whole job is
+    #   catching exactly that. It is read from the RW PT_LOAD's file offset.
+    #
+    #   The expected value is OUR OWN read-only segment's vaddr, not ld's:
+    #   layout is a choice (see the 3-section case above), so what must hold is
+    #   that msgptr points at the msg WE placed, whatever address we chose.
+    RDRW=$(readelf -l --wide link_out 2>/dev/null | awk '/^  LOAD/ && $7=="RW" {print $2; exit}')
+    RDRO=$(readelf -l --wide link_out 2>/dev/null | awk '/^  LOAD/ && $7=="R" && $8!="E" {print $3; exit}')
+    if [ -n "$RDRW" ] && [ -n "$RDRO" ]; then
+        RDPTR=$(dd if=link_out bs=1 skip=$(printf '%d' "$RDRW") count=8 2>/dev/null | od -An -tx8 | tr -d ' \n')
+        RDWANT_PTR=$(printf '%016x' "$(printf '%d' "$RDRO")")
+        if [ "$RDPTR" = "0000000000000000" ]; then
+            echo "FAIL  link_reloc.la: msgptr is still 0 — the R_X86_64_64 in .data was never applied"; ok=0
+        elif [ "$RDPTR" != "$RDWANT_PTR" ]; then
+            echo "FAIL  link_reloc.la: msgptr is 0x$RDPTR but our .rodata segment is at 0x$RDWANT_PTR"; ok=0
+        fi
+    else
+        echo "FAIL  link_reloc.la: .rela.data fixture emitted no RW or RO segment to check msgptr in"; ok=0
+    fi
+else
+    echo "FAIL  link_reloc.la: .rela.data link emitted no executable"; ok=0
+fi
+
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]

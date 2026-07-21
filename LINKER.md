@@ -132,33 +132,35 @@ unchallenged. A measured figure was used to support an *unmeasured attribution*.
 Profile by stage before optimising; a compelling analogy to another track's win
 is not evidence about this one.
 
-**★ UNVERIFIED RISK — RELOCATIONS OUTSIDE `.text` MAY BE SILENTLY IGNORED.**
-Found at the end of a session and NOT yet tested, so it is recorded as a
-suspicion rather than a defect. `MKPATCHED` applies `APPLYRELS` using
-`FIND_SEC(".rela.text")` only. An object with a `.rela.data` — trivially
-produced by `msgptr: dq msg`, a pointer stored in `.data` — would have `.data`
-PLACED but never PATCHED, so the pointer would keep its unrelocated value
-(0 plus addend) and the program would read from a wrong address.
+**✔ FIXED + GATED — RELOCATIONS OUTSIDE `.text` ARE NOW APPLIED.** The risk
+above was real, not hypothetical: linking `link_test_reldata.asm` (whose
+`msgptr: dq msg` puts an `R_X86_64_64` in `.data`) against the old code placed
+`.data` but never patched it, so `msgptr` held `0` where `ld`'s binary held
+`0x402000` — the link succeeded, every existing gate passed, and the program
+wrote from a null pointer, printing nothing and exiting `0`. Silent wrongness
+with a green exit code, exactly the failure `DROPPABLE`/`SYMVAL` exist to
+prevent.
 
-Confirmed to exist as an input shape: `nasm` emits both `.rela.data` and
-`.rela.text` for that source. What is NOT confirmed is what this linker does
-with it. Two possibilities and they differ sharply:
+The fix generalises `MKPATCHED` from *one `.text` per object* to **one entry
+per PLAN ENTRY** — every placed section of every object — with that section's
+own relocations applied via `FIND_SEC(".rela" ++ <section name>)` (the new
+`PATCHSEC`). Patched bytes are keyed by `(object, section)` (`PATCH_OF`/
+`HASPATCH`), not one blob per object.
 
-  - the section is placed with unrelocated contents -> SILENTLY WRONG, the
-    exact failure `DROPPABLE` and the `SYMVAL` guard exist to prevent
-  - something refuses it earlier -> the boundary is intact and only needs
-    stating
+`gate_link_reloc.sh` gates it and **asserts on the OUTPUT TEXT, never the exit
+status** — because `exit=0` is precisely what the bug produced. It links the
+fixture, checks `link_out`'s stdout equals `ld`'s binary's, names the
+empty-output-with-exit-0 signature explicitly on regression, and then reads
+`msgptr` **straight out of the RW `PT_LOAD` segment** (via `readelf -l` +
+`dd`/`od`, not `objcopy --only-section` — this linker emits no section headers,
+so that form would silently find nothing) and asserts it equals our own
+`.rodata` vaddr, not `0`. Verified GREEN, byte-identical relocations vs `ld`.
 
-**Test it first.** Link the fixture, then check whether the emitted `.data`
-holds the resolved `.rodata` address or zero. If it is the former the risk is
-void; if the latter, either apply every section's relocations (which is item 1
-below, and would also let `.eh_frame` be placed) or REFUSE an object carrying
-a `.rela.*` for a section that is placed — refusing is cheap and honest, and
-matches how unplaceable sections are already handled.
-
-**1. `.eh_frame` properly**, which means applying EVERY section's relocations
-rather than only `.rela.text`. Until then it stays dropped, and a symbol inside
-it is refused by name rather than resolved.
+**1. `.eh_frame` properly.** Applying every section's relocations (the
+generalisation above) is now done, so a placed section with its own `.rela.*`
+is patched. `.eh_frame` itself stays DROPPED for a separate reason — a symbol
+inside it is refused by name rather than resolved (CFI-aware placement is the
+remaining work), not because its relocations would be skipped.
 
 **2. A real linker script**, replacing the hard-coded one-page-per-section
 layout. `ld` packs sections into shared pages (it put `.data` at `0x403010`, in
