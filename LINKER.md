@@ -181,11 +181,26 @@ These are static binaries that never unwind, so nothing reads it either way —
 what changed is that placing-and-relocating is the honest general behaviour, not
 a silent drop of an allocatable section.
 
-**2. A real linker script**, replacing the hard-coded one-page-per-section
-layout. `ld` packs sections into shared pages (it put `.data` at `0x403010`, in
-the previous page's tail); this gives each its own page. Both satisfy
-`p_offset ≡ p_vaddr (mod page)`; ours is simpler and larger. A script also makes
-`FITS32` reachable, which is why that guard exists before it can fire.
+**✔ 2. A linker script — packed, permission-grouped layout.** The hard-coded
+one-page-per-section `BASEOF` is gone, replaced by a declarative `SCRIPT`: a
+list of segments, each a `(permission, [section names])`. `MKPLAN` FOLLOWS it
+with one running cursor — page-align at each segment start, then pack every
+section of the segment contiguously (each aligned to its own `sh_addralign`) —
+so `.rodata` + `.eh_frame` share the R segment and `.data` + `.bss` share the
+R+W segment, exactly as `ld` groups them. A region is now one PT_LOAD per
+non-empty segment (≤ 3), its permission taken straight from its `SEG`; W^X is
+the grouping, not a name lookup. `.text`/`.rodata`/`.eh_frame` land at `ld`'s
+addresses (readelf agrees), so `ld` stays the witness.
+
+**HONEST DIFFERENCE from `ld`, recorded:** `ld` overlaps consecutive segments'
+FILE pages while page-separating their vaddrs (it put `.data` at vaddr
+`0x403010`, file offset `0x2010`, in `.rodata`'s page tail). Ours gives each
+segment its own fresh page in BOTH file and vaddr (`.data` at `0x403000`, offset
+`0x3000`) — one extra page of file per segment, but simpler and equally valid:
+both satisfy `p_offset ≡ p_vaddr (mod page)`. The addresses `.text` byte-identity
+depends on (`.text`, `.rodata`) still match `ld`; only later RW/segment vaddrs
+can differ by a sub-page tail. Matching `ld`'s file-page overlap is a later
+refinement. `FITS32` stays guarded (this layout still keeps everything low).
 
 **3. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it

@@ -62,8 +62,8 @@ glyph REV  = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(CONS(h)(acc))))
 glyph CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 glyph NL   = "\n"
 
-glyph TEXT_BASE = 4198400
-glyph RODATA_BASE = 4202496
+glyph TEXT_BASE = 4198400        # 0x401000 — the load base; the SCRIPT packs
+                                 # every segment upward from here (see MKPLAN)
 
 glyph ALIGNUP = la n. la a.
     IF(int_eq(a)(0))
@@ -337,23 +337,38 @@ glyph CHECKSECS = la f. la tag. (Z(la self. la i.
 #   addresses live in the binder chain where nothing can iterate over them.
 #
 #   A PLAN is a list of (object, section index, virtual address). It is computed
-#   by walking a SECTION-NAME ORDER, and for each name packing every object's
-#   copy of that section in input order, each aligned up to its own
-#   sh_addralign. Adding a section becomes adding a name to PLACE_ORDER;
-#   adding an object becomes one more STEP over the same code.
+#   by following the SCRIPT (see below): for each segment, page-align the cursor
+#   and pack every object's copy of each of the segment's sections in input
+#   order, each aligned up to its own sh_addralign.
 #
-#   This step changes NO behaviour — it is the same policy expressed so it can
-#   iterate. The gates are the proof of equivalence: same addresses, same bytes,
-#   same running binary.
-glyph PLACE_ORDER = CONS(".text")(CONS(".rodata")(CONS(".data")(CONS(".bss")(CONS(".eh_frame")(NIL)))))
-glyph DATA_BASE = 4206592
-glyph BSS_BASE  = 4210688
-glyph EH_BASE   = 4214784       # 0x405000, its own page above .bss
-glyph BASEOF = la n.
-    IF(str_eq(n)(".text"))(la _. TEXT_BASE)(la _.
-    IF(str_eq(n)(".data"))(la _. DATA_BASE)(la _.
-    IF(str_eq(n)(".bss"))(la _. BSS_BASE)(la _.
-    IF(str_eq(n)(".eh_frame"))(la _. EH_BASE)(la _. RODATA_BASE))))
+#   The gates are the proof: ld's addresses are the independent witness, and a
+#   section-for-section match with readelf says the packing is right.
+# ── THE LINKER SCRIPT — a declarative, packed, permission-grouped layout ─────
+#   The layout used to be hard-coded ONE PAGE PER SECTION: BASEOF gave each
+#   section a fixed base a page apart, so each became its own PT_LOAD (five
+#   segments). ld does not do that — it GROUPS sections by permission into one
+#   loadable segment each, page-aligns each segment, and packs the sections
+#   CONTIGUOUSLY within it: .rodata + .eh_frame share the R segment, .data +
+#   .bss share the R+W segment.
+#
+#   A SCRIPT is a list of segments, each a (permission, section-name list). The
+#   layout FOLLOWS it with ONE running cursor — page-align at each segment
+#   start, then pack every section of the segment from the cursor — so the
+#   addresses become ld's addresses and ld stays the independent witness
+#   (readelf agrees section-for-section). Adding a section is adding a name to a
+#   segment's list; adding a segment is one more SEG.
+glyph F_RX = 5
+glyph F_R  = 4
+glyph F_RW = 6
+glyph SEG       = la flags. la names. PAIR(flags)(names)
+glyph SEG_FLAGS = la s. FST(s)
+glyph SEG_NAMES = la s. SND(s)
+glyph SCRIPT =
+  CONS(SEG(F_RX)(CONS(".text")(NIL)))(
+  CONS(SEG(F_R)(CONS(".rodata")(CONS(".eh_frame")(NIL))))(
+  CONS(SEG(F_RW)(CONS(".data")(CONS(".bss")(NIL))))(
+  NIL)))
+glyph LOAD_BASE = TEXT_BASE      # 0x401000, where the first segment begins
 
 glyph MKE   = la o. la s. la a. PAIR(o)(PAIR(s)(a))
 glyph E_OBJ = la e. FST(e)
@@ -386,17 +401,34 @@ glyph O_IDX = la o. FST(o)
 glyph O_F   = la o. FST(SND(o))
 glyph O_SS  = la o. SND(SND(o))
 
-#   All objects, one section name, packed in input order from that name's base.
-glyph PNAME = la objs. la name. la acc.
-    FST((Z(la self. la l. la a. la cur.
-        l(PAIR(a)(cur))(la h. la t.
+#   All objects' copies of ONE section name, packed from the cursor in input
+#   order. Returns PAIR(entries)(cursor) so the next name continues where this
+#   ended — the cursor now THREADS across names and segments, which is exactly
+#   what makes sections share a page instead of each taking its own.
+glyph PNAME = la objs. la name. la acc. la cur.
+    (Z(la self. la l. la a. la c.
+        l(PAIR(a)(c))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
-          (PSTEP(O_F(h))(O_IDX(h))(name)(a)(cur)))))
-      (objs)(acc)(BASEOF(name)))
+          (PSTEP(O_F(h))(O_IDX(h))(name)(a)(c)))))
+      (objs)(acc)(cur)
 
+#   All section names of ONE segment, packed contiguously from the cursor.
+glyph SNAMES = la objs. la names. la acc. la cur.
+    (Z(la self. la l. la a. la c.
+        l(PAIR(a)(c))(la h. la t.
+          (la r. self(t)(FST(r))(SND(r)))
+          (PNAME(objs)(h)(a)(c)))))
+      (names)(acc)(cur)
+
+#   The plan: fold the SCRIPT with one running cursor, page-aligning at each
+#   segment start and packing its sections. REV because entries accumulate with
+#   CONS; without it link order — and thus packing — would invert.
 glyph MKPLAN = la objs.
-    REV((Z(la self. la names. la acc.
-        names(acc)(la h. la t. self(t)(PNAME(objs)(h)(acc)))))(PLACE_ORDER)(NIL))(NIL)
+    REV(FST((Z(la self. la segs. la acc. la cur.
+        segs(PAIR(acc)(cur))(la h. la t.
+          (la r. self(t)(FST(r))(SND(r)))
+          (SNAMES(objs)(SEG_NAMES(h))(acc)(ALIGNUP(cur)(PAGE))))))
+      (SCRIPT)(NIL)(LOAD_BASE)))(NIL)
 
 #   Address of a given object's given section, or -1 if it was not placed.
 glyph VAOF = la plan. la o. la sec. (Z(la self. la l.
@@ -405,24 +437,16 @@ glyph VAOF = la plan. la o. la sec. (Z(la self. la l.
         (la _. E_ADDR(h))
         (la _. self(t)))))(plan)
 
-# ── REGIONS — step 2: emission stops hardcoding two segments ────────────────
-#   Placement became data in step 1; emission was still shaped for exactly two
-#   PT_LOADs with hardcoded file offsets. A REGION is one loadable segment:
-#   its section name, its bytes, its virtual base and its permissions. The
-#   image is then a fold over the region list, so the segment COUNT is
-#   LEN(regions) rather than the literal 2.
+# ── REGIONS — one PT_LOAD per SCRIPT SEGMENT ────────────────────────────────
+#   A REGION is one loadable segment: its permission flags, its page-aligned
+#   virtual base, its file bytes, and its memory size. There is exactly ONE per
+#   non-empty SCRIPT segment, so the segment COUNT is the number of permission
+#   groups the inputs actually populate (≤ 3), not one per section name.
 #
-#   ★ PERMISSIONS ARE PER-REGION, which is the point W^X turns on. .text is
-#   R+X, .rodata is R, and .data would be R+W — never R+W+X. Emitting one RWX
-#   segment would be simpler and would still run, and is exactly what a linker
-#   must not do when the kernel it serves enforces W^X on itself (K4c).
-glyph F_RX = 5
-glyph F_R  = 4
-glyph F_RW = 6
-glyph FLAGSOF = la n.
-    IF(str_eq(n)(".text"))(la _. F_RX)(la _.
-    IF(str_eq(n)(".data"))(la _. F_RW)(la _.
-    IF(str_eq(n)(".bss"))(la _. F_RW)(la _. F_R)))
+#   ★ PERMISSIONS ARE PER-SEGMENT — W^X by construction. The R+X segment holds
+#   .text, the R segment .rodata + .eh_frame, the R+W segment .data + .bss;
+#   never R+W+X. A segment's flags come straight from its SEG in the SCRIPT, so
+#   the permission grouping IS the layout policy, not a name-keyed lookup.
 
 #   The bytes a plan entry contributes: the RELOCATED text for a .text section,
 #   the raw section otherwise. Relocations are applied to .text only here, so
@@ -470,58 +494,80 @@ glyph EBYTES = la objs. la patched. la e.
                (la _. PATCH_OF(patched)(E_OBJ(e))(E_SEC(e)))
                (la _. SECBYTES(E_F(objs)(e))(E_SEC(e))))
 
-#   Concatenate every plan entry of one section name, in placed order, padding
-#   each gap so the bytes land exactly where the plan says. Padding a code gap
-#   with nops keeps it executable if control ever reaches it; other sections
-#   pad with zeros.
-glyph REGBYTES = la objs. la patched. la name. la plan.
+#   Is a section name one of this segment's?
+glyph INSEG = la names. la name. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(str_eq(h)(name))(la _. TRUE)(la _. self(t)))))(names)
+
+#   Does the plan place ANY section of this segment? An empty permission group
+#   costs no segment rather than an empty PT_LOAD.
+glyph SEGHAS = la objs. la names. la plan. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(INSEG(names)(ENAME(objs)(h)))(la _. TRUE)(la _. self(t)))))(plan)
+
+#   A segment's page-aligned base is the address of its FIRST placed section:
+#   the plan is in ascending placed order and the page-align dominates every
+#   section align, so that first entry sits exactly on the page boundary.
+glyph SEGBASE = la objs. la names. la plan. (Z(la self. la l.
+    l(sub(0)(1))(la h. la t.
+      IF(INSEG(names)(ENAME(objs)(h)))(la _. E_ADDR(h))(la _. self(t)))))(plan)
+
+#   A segment's MEMORY size runs to where its last placed section ends — for a
+#   trailing NOBITS (.bss) that is past its file bytes; the kernel zero-fills
+#   that tail and it never appears in the file (see REGBYTES / BODY).
+glyph SEGEND = la objs. la names. la plan. la base. (Z(la self. la l. la end.
+    l(end)(la h. la t.
+      IF(INSEG(names)(ENAME(objs)(h)))
+        (la _. self(t)(add(E_ADDR(h))(ESIZE(objs)(h))))
+        (la _. self(t)(end)))))(plan)(base)
+
+#   Concatenate a segment's placed sections in ascending order, padding each gap
+#   so bytes land where the plan says. A code gap pads with nops (stays
+#   executable if reached), others with zeros. A NOBITS section (.bss) is
+#   SKIPPED for file bytes — it contributes memory size only, so the segment's
+#   file bytes stop at its last real section rather than padding out to .bss.
+glyph REGBYTES = la objs. la patched. la seg. la base. la plan.
     (Z(la self. la l. la cur. la acc.
       l(acc)(la h. la t.
-        IF(str_eq(ENAME(objs)(h))(name))
+        IF(AND(INSEG(SEG_NAMES(seg))(ENAME(objs)(h)))
+              (NOT(int_eq(ETYPE(objs)(h))(SH_NOBITS))))
           (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(objs)(h)))
-                        (CAT(CONS(acc)(CONS(IF(str_eq(name)(".text"))
+                        (CAT(CONS(acc)(CONS(IF(int_eq(SEG_FLAGS(seg))(F_RX))
                                               (la _. NOPS(gap))(la _. ZEROS(gap)))(
                              CONS(EBYTES(objs)(patched)(h))(NIL))))))
                  (sub(E_ADDR(h))(cur)))
           (la _. self(t)(cur)(acc)))))
-    (plan)(BASEOF(name))("")
+    (plan)(base)("")
 
-#   A region exists for a name only if the plan placed something under it, so
-#   an absent .rodata (or .data) costs no segment rather than an empty one.
-glyph HASNAME = la objs. la name. la plan. (Z(la self. la l.
-    l(FALSE)(la h. la t.
-      IF(str_eq(ENAME(objs)(h))(name))(la _. TRUE)(la _. self(t)))))(plan)
-
-#   A region's file offset is fixed by the loader's rule p_offset = p_vaddr
-#   (mod page). Deriving it from the base — rather than hardcoding 0x1000 and
-#   0x2000 — keeps that congruence true by construction for any number of
-#   page-separated regions.
+#   A region's file offset is fixed by the loader's rule p_offset ≡ p_vaddr
+#   (mod page); deriving it from the page-aligned base keeps that congruence
+#   true by construction, for any number of page-separated segments.
 glyph LENL    = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
 glyph FILEOFF = la base. add(PAGE)(sub(base)(TEXT_BASE))
-glyph R_NAME  = la r. FST(r)
-glyph R_BYTES = la r. FST(SND(r))
-glyph R_MEMSZ = la r. SND(SND(r))
+glyph MKREG   = la flags. la base. la bytes. la memsz.
+    PAIR(flags)(PAIR(base)(PAIR(bytes)(memsz)))
+glyph R_FLAGS = la r. FST(r)
+glyph R_BASE  = la r. FST(SND(r))
+glyph R_BYTES = la r. FST(SND(SND(r)))
+glyph R_MEMSZ = la r. SND(SND(SND(r)))
 
-#   A region's MEMORY size is where its last placed section ends, which for a
-#   NOBITS section is past the end of its file bytes. This is the number the
-#   kernel zero-fills up to.
-glyph REGEND = la objs. la name. la plan. (Z(la self. la l. la end.
-    l(end)(la h. la t.
-      IF(str_eq(ENAME(objs)(h))(name))
-        (la _. self(t)(add(E_ADDR(h))(ESIZE(objs)(h))))
-        (la _. self(t)(end)))))(plan)(BASEOF(name))
-
+#   One region per non-empty SCRIPT segment, in SCRIPT order. `base` is bound
+#   once (SEGBASE) and threaded to the bytes, the memsz, and the phdr.
 glyph MKREGIONS = la objs. la patched. la plan.
-    (Z(la self. la names.
-      names(NIL)(la h. la t.
-        IF(HASNAME(objs)(h)(plan))
-          (la _. CONS(PAIR(h)(PAIR(REGBYTES(objs)(patched)(h)(plan))
-                              (sub(REGEND(objs)(h)(plan))(BASEOF(h)))))(self(t)))
-          (la _. self(t)))))(PLACE_ORDER)
+    (Z(la self. la segs.
+      segs(NIL)(la h. la t.
+        IF(SEGHAS(objs)(SEG_NAMES(h))(plan))
+          (la _. (la base.
+                   CONS(MKREG(SEG_FLAGS(h))(base)
+                            (REGBYTES(objs)(patched)(h)(base)(plan))
+                            (sub(SEGEND(objs)(SEG_NAMES(h))(plan)(base))(base)))
+                       (self(t)))
+                 (SEGBASE(objs)(SEG_NAMES(h))(plan)))
+          (la _. self(t)))))(SCRIPT)
 
 glyph PHDRS = la regs. (Z(la self. la l.
     l("")(la h. la t.
-      concat(PHDR(FLAGSOF(R_NAME(h)))(FILEOFF(BASEOF(R_NAME(h))))(BASEOF(R_NAME(h)))
+      concat(PHDR(R_FLAGS(h))(FILEOFF(R_BASE(h)))(R_BASE(h))
                  (str_to_int(str_len(R_BYTES(h))))(R_MEMSZ(h)))(self(t)))))(regs)
 
 #   The image body: pad from wherever we are to each region's file offset,
@@ -540,7 +586,7 @@ glyph BODY = la regs. (Z(la self. la l. la cur.
           (la _. (la off.
                    CAT(CONS(ZEROS(sub(off)(cur)))(CONS(b)(
                        CONS(self(t)(add(off)(str_to_int(str_len(b)))))(NIL)))))
-                 (FILEOFF(BASEOF(R_NAME(h))))))
+                 (FILEOFF(R_BASE(h)))))
       (R_BYTES(h)))))(regs)
 
 #   ── N INPUTS ───────────────────────────────────────────────────────────────
@@ -654,8 +700,11 @@ glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
 #   the strongest assertion in the suite — then had no input and failed loudly.
 #   It is emitted for the gate, not for the linker: the executable carries the
 #   same bytes inside it.
-glyph REGOF = la regs. la name. (Z(la self. la l.
-    l("")(la h. la t. IF(str_eq(R_NAME(h))(name))(la _. R_BYTES(h))(la _. self(t)))))(regs)
+#   The merged .text pulled back out of the regions — it is the R+X segment,
+#   the only executable one. Emitted to link_text.bin for the byte-identity-vs-ld
+#   gate, not for the linker (the executable carries the same bytes inside it).
+glyph TEXTBYTES = la regs. (Z(la self. la l.
+    l("")(la h. la t. IF(int_eq(R_FLAGS(h))(F_RX))(la _. R_BYTES(h))(la _. self(t)))))(regs)
 
 glyph MAIN =
   (la objs.
@@ -666,7 +715,7 @@ glyph MAIN =
   (la regs.
   (la nph.
     SEQ(DUPCHECK(objs))(
-    SEQ(write_file("link_text.bin")(REGOF(regs)(".text")))(
+    SEQ(write_file("link_text.bin")(TEXTBYTES(regs)))(
     SEQ(write_exec("link_out")(CAT(
           CONS(EHDR(resolve("_start"))(nph))(
           CONS(PHDRS(regs))(

@@ -448,16 +448,17 @@ C2
             # --- ★ .eh_frame PLACED AND RELOCATED — the FDEs point at the code ---
             #   Each gcc object carries a .eh_frame with one R_X86_64_PC32: the
             #   FDE's PC-begin, pointing at the .text function it describes.
-            #   .eh_frame used to be DROPPED; it is now placed (own page at
-            #   0x405000, R-only) and its relocations applied via the plan. This
-            #   asserts the placement is CORRECT, not merely present: every
-            #   function address ld records in its unwind FDEs must appear,
-            #   PC-relative-encoded, in OUR placed .eh_frame. An unrelocated
-            #   field decodes to an address INSIDE .eh_frame (never into .text),
-            #   so it fails the search — the exact silent-wrongness signature.
+            #   .eh_frame used to be DROPPED; it is now placed in the R segment
+            #   (grouped with .rodata by the linker SCRIPT) and its relocations
+            #   applied via the plan. This asserts the placement is CORRECT, not
+            #   merely present: every function address ld records in its unwind
+            #   FDEs must appear, PC-relative-encoded, in OUR placed .eh_frame.
+            #   An unrelocated field decodes to an address INSIDE .eh_frame
+            #   (never into .text), so it fails the search — the exact
+            #   silent-wrongness signature.
             #
-            #   No section headers are emitted, so .eh_frame is found by its own
-            #   R PT_LOAD (vaddr 0x405000) via readelf -l, and each FDE by
+            #   No section headers are emitted, so .eh_frame is found via the
+            #   R (read-only) PT_LOAD from readelf -l, and each FDE by
             #   SCANNING for the position that decodes to an expected pc — robust
             #   to the CIE/FDE layout, no offset arithmetic. Expected pcs are
             #   read off ld at gate time, never hardcoded. HONEST SCOPE: this
@@ -476,9 +477,9 @@ lo=subprocess.run(["readelf","-lW",ours],capture_output=True,text=True).stdout
 segs=[]
 for m in re.finditer(r'LOAD\s+0x([0-9a-f]+)\s+0x([0-9a-f]+)\s+0x[0-9a-f]+\s+0x([0-9a-f]+)\s+0x([0-9a-f]+)\s+([RWE ]+?)\s+0x',lo):
     segs.append((int(m.group(1),16),int(m.group(2),16),int(m.group(3),16),int(m.group(4),16),m.group(5).strip()))
-eh=[s for s in segs if s[1]==0x405000]
+eh=[s for s in segs if s[4]=="R"]
 tx=[s for s in segs if 'E' in s[4]]
-if not eh: print("FAIL  .eh_frame R segment (vaddr 0x405000) not emitted"); sys.exit(0)
+if not eh: print("FAIL  .eh_frame R segment (flags R) not emitted"); sys.exit(0)
 if not tx: print("FAIL  no R+X text segment to bound the FDE pcs"); sys.exit(0)
 ehoff,ehva,ehfsz=eh[0][0],eh[0][1],eh[0][2]
 txlo,txhi=tx[0][1],tx[0][1]+tx[0][3]
