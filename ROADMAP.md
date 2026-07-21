@@ -819,6 +819,24 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             QEMU monitor and asserts the echoed `logos` + `kbd done` + exit 33. So a
             real hardware interrupt path (PIC + IRQ1 + IDT gate) drives input, the LA
             program woken by the keyboard rather than polling it.
+      - [x] **HAL.2c — PS/2 mouse (the AUX device) — DONE + gated (2026-07-20).**
+            The pointer twin of HAL.2, and the first driver to use BOTH port-I/O
+            directions: `kernel/mouse.la` (pure LA, `%ifdef`-free — the default
+            ring-0 boot path, no boot.asm change, no regen) brings the mouse up
+            itself with `outb` — `0xA8` enables the aux clock, then `0xD4`/`0xF4`
+            enable data reporting — drains the `0xFA` ACK, then polls the i8042
+            (status `0x64` bit5 = AUX, the exact complement of HAL.2's keyboard
+            skip / data `0x60`) and decodes 3-byte packets (flags, dx, dy), the
+            bit reads arithmetic (`(st div 2^k) mod 2`) since LA has no bitwise
+            ops. `gate_mouse.sh` injects motion + a click via the QEMU monitor
+            (`mouse_move`/`mouse_button`, the pointer analogue of HAL.2b's
+            `sendkey`) and asserts: every packet carries the flags bit3 sync bit
+            (a keyboard read can't fake it), at least one carries non-zero motion,
+            one carries a button press, and clean exit 33. Because QEMU only
+            queues mouse packets AFTER `0xF4`, a passing gate proves the LA init
+            ran. **BOUNDED BY DESIGN** — reads a fixed 3 packets then returns, so
+            it stays far under the six-second heap wall below (a correct gate, not
+            merely time-bounded; the counter-example to the interactive slices).
       - [x] **HAL.4b — bulk framebuffer fill + memcpy-to-MMIO, the language's
             FIRST TERNARY builtins — DONE + gated (2026-07-16).** HAL.4 drew its
             square with a poke (and a beta-reduction) per byte — 12288 for 64x64,
