@@ -837,6 +837,24 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             ran. **BOUNDED BY DESIGN** — reads a fixed 3 packets then returns, so
             it stays far under the six-second heap wall below (a correct gate, not
             merely time-bounded; the counter-example to the interactive slices).
+      - [x] **HAL.2d — a POINTER: signed decode + a live cursor — DONE + gated
+            (2026-07-20).** HAL.2c proved the packet stream arrives; HAL.2d turns
+            raw packets into the state a window manager moves things by.
+            `kernel/pointer.la` sign-extends the 9-bit deltas (a raw byte with its
+            flags sign bit — bit4/bit5 — set is `raw - 256`, the same S32 fold
+            `theourgia_input.la` does for evdev, here in one subtraction), reads
+            the button bits (0/1/2 = L/R/M), and accumulates a CURSOR (x,y)
+            **clamped to 640x480**. `gate_pointer.sh` injects a right-then-LEFT
+            move + a click and asserts `seen 1 1` (ng=1: a NEGATIVE dx was decoded,
+            so the sign fold ran — unsigned decode could never set it; bt=1: the
+            left button down) and `cursor 125 100` — x>100 proves the add/clamp
+            ACCUMULATES (a no-op would stay at the 100 origin), in-bounds proves
+            the CLAMP holds — exit 33. **A codegen lesson re-paid (HAL.4e's):** the
+            first cut printed a concat-heavy line per packet and native_codegen3
+            (superlinear in nesting depth) would not finish; flattening the loop
+            body to thread two 0/1 witnesses instead of formatting per-packet made
+            it compile (~4 min). BOUNDED (4 packets), reuses HAL.2c's exact init +
+            poll — no boot.asm change, no regen. The pointer HAL.4x can consume.
       - [x] **HAL.4b — bulk framebuffer fill + memcpy-to-MMIO, the language's
             FIRST TERNARY builtins — DONE + gated (2026-07-16).** HAL.4 drew its
             square with a poke (and a beta-reduction) per byte — 12288 for 64x64,
