@@ -1,0 +1,78 @@
+# =====================================================================
+#  LogOS HAL.2e — the SCROLL WHEEL (IntelliMouse / IMPS-2), in LA.
+#
+#  HAL.2c/2d drove the standard 3-byte PS/2 mouse. A real pointer also
+#  scrolls. A PS/2 mouse only reports a Z axis after the guest performs
+#  the IntelliMouse "magic knock": set the sample rate to 200, then 100,
+#  then 80 (each `0xF3 <rate>` to the aux device). The mouse then switches
+#  to device id 3 and every packet grows a FOURTH byte — the signed wheel
+#  delta. QEMU's ps2 mouse implements exactly this (`mouse_move dx dy dz`),
+#  so a passing gate proves the knock landed: without it the packets stay
+#  3 bytes and a 4-byte read desyncs.
+#
+#  Every aux command goes via the `0xD4` prefix (address the AUX device)
+#  and the mouse ACKs `0xFA`, which we drain. LA has no bitwise ops, so a
+#  bit is `(st div 2^k) mod 2`, and the signed wheel byte is `raw-256`
+#  when its sign bit is set (a full signed byte covers QEMU's +/-1 clicks).
+#
+#  FLAT + BOUNDED, per HAL.4e/HAL.2d's codegen lesson: the loop body only
+#  threads a 0/1 witness `wz` (a non-zero wheel delta was decoded, i.e. a
+#  4-byte IntelliMouse packet arrived), never formats per packet, and
+#  reads a fixed 4 packets then returns — far under the six-second heap
+#  wall. Reuses HAL.2c's poll; no boot.asm change, no regen.
+#
+#  CODEGEN NOTE (measured): draining an ACK with a `POLLM` spin after EACH of
+#  the knock's aux writes inlined the Z-combinator ~6 times and, being
+#  superlinear in nesting, blew the compile past budget. The knock instead
+#  SENDs all bytes (no per-command wait — QEMU clears IBF synchronously) then
+#  drains every queued ACK once with `DRAINALL`, so INIT costs ONE Z, not six.
+# =====================================================================
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph SEQ   = la a. la b. b
+glyph FALSE = la t. la f. f
+glyph AND   = la a. la b. a(b)(FALSE)
+
+# ── i8042 status decode (identical to HAL.2c) ──
+glyph OBF    = la st. int_eq(mod(st)(2))(1)
+glyph ISAUX  = la st. int_eq(mod(div(st)(32))(2))(1)
+glyph MREADY = la st. AND(OBF(st))(ISAUX(st))
+glyph POLLM  = Z(la self. la _.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self("!")))
+      (inb(100)))
+
+# send one byte to the AUX device (0xD4 prefix, then the byte) — NO wait, NO
+# per-command ACK drain (both are what blew up codegen); QEMU is synchronous.
+glyph SEND = la c. SEQ(outb(100)(212))(outb(96)(c))
+
+# drain EVERY queued AUX byte, then stop (one Z, replaces six per-command spins)
+glyph DRAINALL = Z(la self. la _.
+    IF(MREADY(inb(100)))(la _. SEQ(inb(96))(self("!")))(la _. "!"))
+
+# bring-up: enable aux, the 200/100/80 knock (0xF3 <rate> ×3), enable reporting,
+# then drain all the ACKs at once.
+glyph INIT =
+    SEQ(outb(100)(168))                        # 0xA8 enable aux clock (no ACK)
+   (SEQ(SEND(243))(SEQ(SEND(200))              # 0xF3 200
+   (SEQ(SEND(243))(SEQ(SEND(100))              # 0xF3 100
+   (SEQ(SEND(243))(SEQ(SEND(80))               # 0xF3 80  -> IntelliMouse mode
+   (SEQ(SEND(244))                             # 0xF4 enable data reporting
+   (DRAINALL("!")))))))))
+
+# read one 4-byte IntelliMouse packet (flags, dx, dy, z) in order
+glyph RDPKT4 = la k.
+    (la b0. (la b1. (la b2. (la b3. k(b0)(b1)(b2)(b3))
+      (POLLM("!"))) (POLLM("!"))) (POLLM("!"))) (POLLM("!"))
+
+glyph NZ = la v. IF(int_eq(v)(0))(la _. 0)(la _. 1)     # 1 if v != 0 else 0
+glyph MX = la a. la b. IF(int_eq(a)(1))(la _. 1)(la _. b)
+
+# read 4 packets, threading only the wheel witness wz; print once
+glyph RUN = Z(la self. la n. la wz.
+    IF(int_eq(n)(0))
+      (la _. print(concat("wheel ")(int_to_str(wz))))
+      (la _. RDPKT4(la b0. la b1. la b2. la b3.
+        self(sub(n)(1))(MX(wz)(NZ(b3))))))
+
+glyph MAIN = SEQ(print("whl:"))(SEQ(INIT)(RUN(4)(0)))

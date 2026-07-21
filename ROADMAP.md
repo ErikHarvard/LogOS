@@ -855,6 +855,24 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             body to thread two 0/1 witnesses instead of formatting per-packet made
             it compile (~4 min). BOUNDED (4 packets), reuses HAL.2c's exact init +
             poll — no boot.asm change, no regen. The pointer HAL.4x can consume.
+      - [x] **HAL.2e — the SCROLL WHEEL (IntelliMouse / IMPS-2) — DONE + gated
+            (2026-07-20).** A PS/2 mouse reports a Z axis only after the guest
+            performs the IntelliMouse "magic knock": set the sample rate to 200,
+            then 100, then 80 (each `0xF3 <rate>` via the `0xD4` aux prefix). The
+            mouse then switches to device id 3 and every packet grows a FOURTH
+            byte — the signed wheel delta. `kernel/wheel.la` does the knock, reads
+            4-byte packets (`RDPKT4`), and threads a witness `wz` = a non-zero
+            wheel delta was decoded. `gate_wheel.sh` injects `mouse_move dx dy DZ`
+            (QEMU's wheel channel) and asserts `wheel 1` — a non-zero z can ONLY
+            appear if the knock switched the mouse to 4-byte packets (without it a
+            4-byte read desyncs), so a pass proves the knock landed — exit 33.
+            **Codegen lesson, measured twice now:** the first cut drained an ACK
+            with a `POLLM` spin after EACH knock write, inlining the Z-combinator
+            ~6× on top of `RDPKT4` — codegen (superlinear in nesting) ran past a
+            400 s budget and was killed. Fix: SEND all knock bytes with no
+            per-command wait (QEMU clears IBF synchronously), then drain every
+            queued ACK ONCE with `DRAINALL` — one Z, not six — and it compiled
+            (~4 min). BOUNDED (4 packets); no boot.asm change, no regen.
       - [x] **HAL.4b — bulk framebuffer fill + memcpy-to-MMIO, the language's
             FIRST TERNARY builtins — DONE + gated (2026-07-16).** HAL.4 drew its
             square with a poke (and a beta-reduction) per byte — 12288 for 64x64,
