@@ -462,6 +462,34 @@ glyph SPLITSIGN = Z(la self. la s. la cur.
             (la _. self(str_tail(s))(concat(cur)(c))))
         (str_head(s))))
 glyph MEMPARTS = la t. SPLITSIGN(STRIPBRK(t))("")
+# ── SIB index/scale: `[base + index*scale (+ disp)]` ────────────────────────
+#   The tokenizer strips spaces inside brackets, so STRIPBRK is e.g.
+#   "rsi+r8*8" / "FREEBLOB+r8*8" / "rsi+r8" / "rax+rcx*4+8". The INDEX is the
+#   second '+'-term (idiomatic base+index[*scale][+disp]); its register resolves
+#   to 0 in MEMDISP's EVAL (unknown name -> 0, *scale -> 0), so MEMBASE/MEMDISP
+#   already give the right base and disp — only the index+scale need extracting
+#   and a SIB byte + REX.X emitting. No index -> every helper is a no-op sentinel.
+glyph AFTERPLUS = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      IF(str_eq(str_head(s))("+"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+glyph UPTOSIGN = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))(la _. cur)(la _.
+      (la c. IF(OR(str_eq(c)("+"))(str_eq(c)("-")))(la _. cur)(la _. self(str_tail(s))(concat(cur)(c))))(str_head(s))))
+glyph UPTOSTAR = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))(la _. cur)(la _.
+      IF(str_eq(str_head(s))("*"))(la _. cur)(la _. self(str_tail(s))(concat(cur)(str_head(s))))))
+glyph AFTERSTAR = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      IF(str_eq(str_head(s))("*"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+glyph MEMIDXTOK = la t. UPTOSIGN(AFTERPLUS(STRIPBRK(t)))("")
+glyph MEMIDXREG = la t. UPTOSTAR(MEMIDXTOK(t))("")
+glyph MEMHASIDX = la t. ISREG(MEMIDXREG(t))
+glyph MEMIDX = la t. IF(MEMHASIDX(t))(la _. REGNUM(MEMIDXREG(t)))(la _. sub(0)(1))
+glyph SCALEB = la n.
+    IF(int_eq(n)(1))(la _. 0)(la _. IF(int_eq(n)(2))(la _. 1)(la _.
+    IF(int_eq(n)(4))(la _. 2)(la _. 3)))
+glyph MEMSCALEB = la t.
+    (la a. IF(str_eq(a)(""))(la _. 0)(la _. SCALEB(NUMV(a))))(AFTERSTAR(MEMIDXTOK(t)))
 #   ★ An ABSOLUTE address has no base register at all — `mov [0x300000], ebx`.
 #   x86-64 spells "no base" as mod=00, rm=100 (SIB follows), SIB=0x25
 #   (scale=0, index=none(100), base=none(101)), then a disp32. A base of -1 is
@@ -645,10 +673,33 @@ glyph DISPOF = la m. la d.
     IF(int_eq(m)(0))(la _. "")(la _.
     IF(int_eq(m)(1))(la _. B(IF(lt(d)(0))(la _. add(256)(d))(la _. d)))
                     (la _. LE4(IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d))))
-glyph MEMENC = la op. la w. la reg. la b. la d. la force.
+#   SIB byte = scale<<6 | index<<3 | base. MEMTAILX emits ModRM(rm=100)+SIB+disp
+#   when an index is present; idx<0 falls back to the plain MEMTAIL (byte-
+#   identical). Register base uses MODOF's disp/rbp-quirk rules; a label/absolute
+#   base (b<0) becomes SIB base=5(none) with a mandatory disp32.
+glyph FOLDD  = la d. IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d)
+glyph SIBBYTE = la scaleb. la idx. la basef.
+    B(add(mul(scaleb)(64))(add(mul(mod(idx)(8))(8))(mod(basef)(8))))
+glyph MRMLBLD = la reg. la scaleb. la idx. la d.
+    concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(SIBBYTE(scaleb)(idx)(5))(LE4(FOLDD(d))))
+glyph MRMREG = la reg. la b. la scaleb. la idx. la d.
+    (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(4)))(concat(SIBBYTE(scaleb)(idx)(b))(DISPOF(m)(d))))(MODOF(b)(d))
+glyph MEMTAILX = la reg. la b. la idx. la scaleb. la d.
+    IF(lt(idx)(0))
+      (la _. MEMTAIL(reg)(b)(d))
+      (la _. IF(lt(b)(0))(la _. MRMLBLD(reg)(scaleb)(idx)(d))(la _. MRMREG(reg)(b)(scaleb)(idx)(d)))
+#   REX for a memory operand, adding the X bit (index>=8) to REXOPT's W/R/B.
+#   idx<0 -> X is 0 -> byte-identical to REXOPT, so this is safe everywhere.
+glyph MREX = la w. la reg. la idx. la base. la force.
+    (la v. IF(OR(NOT(int_eq(v)(64)))(force))(la _. B(v))(la _. ""))
+    (add(64)(add(IF(int_eq(w)(8))(la _. 8)(la _. 0))
+            (add(IF(lt(reg)(8))(la _. 0)(la _. 4))
+            (add(IF(AND(NOT(lt(idx)(0)))(NOT(lt(idx)(8))))(la _. 2)(la _. 0))
+                (IF(lt(base)(8))(la _. 0)(la _. 1))))))
+glyph MEMENC = la op. la w. la reg. la b. la idx. la scaleb. la d. la force.
     concat(P66(w))
-   (concat(REXOPT(w)(reg)(b)(force))
-   (concat(B(OP8(op)(w)))(MEMTAIL(reg)(b)(d))))
+   (concat(MREX(w)(reg)(idx)(b)(force))
+   (concat(B(OP8(op)(w)))(MEMTAILX(reg)(b)(idx)(scaleb)(d))))
 
 #   IMMEDIATE TO MEMORY (C6 /0 for a byte, C7 /0 otherwise). The reg field of
 #   the ModRM byte is not a register here but the opcode extension /0, so the
@@ -658,11 +709,11 @@ glyph MEMENC = la op. la w. la reg. la b. la d. la force.
 glyph IMMW = la w. la n.
     IF(int_eq(w)(1))(la _. B(n))
       (la _. IF(int_eq(w)(2))(la _. LE2(n))(la _. LE4(n)))
-glyph MEMIMM = la w. la b. la d. la n.
+glyph MEMIMM = la w. la b. la idx. la scaleb. la d. la n.
     concat(P66(w))
-   (concat(REXOPT(w)(0)(b)(FALSE))
+   (concat(MREX(w)(0)(idx)(b)(FALSE))
    (concat(B(IF(int_eq(w)(1))(la _. 198)(la _. 199)))
-   (concat(MEMTAIL(0)(b)(d))(IMMW(w)(n)))))
+   (concat(MEMTAILX(0)(b)(idx)(scaleb)(d))(IMMW(w)(n)))))
 
 # ── OPERAND SIZE KEYWORDS ────────────────────────────────────────────────────
 #   `mov dword [rdi + 8], 0` carries its width in a KEYWORD, because neither
@@ -825,10 +876,10 @@ glyph MOVENC = la labs. la w. la a. la b.
       (la _. concat(B(102))(concat(B(140))(SPECMODRM(SEGNUM(b))(REGNUM(a)))))
     (la _. IF(ISMEM(a))
       (la _. IF(ISNUM(b))
-               (la _. MEMIMM(w)(MEMBASE(a))(MEMDISP(labs)(a))(NUMV(b)))
-               (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMDISP(labs)(a))(RFORCE(b))))
+               (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(NUMV(b)))
+               (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))))
       (la _. IF(ISMEM(b))
-        (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(labs)(b))(RFORCE(a)))
+        (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a)))
         (la _. IF(ISREG(b))
           (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
           (la _. IF(ISVAL(b))
@@ -885,26 +936,35 @@ glyph G1IMM = la digit. la w. la r. la n. la force.
 #   is why this is a few lines rather than a second encoder: the opcode map
 #   does not distinguish "to register" from "to memory", the ModRM byte does.
 glyph G1MEMREG = la labs. la digit. la w. la a. la b.
-    concat(P66(w))(concat(REXOPT(w)(REGNUM(b))(MEMBASE(a))(RFORCE(b)))
+    concat(P66(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
    (concat(B(OP8(add(mul(digit)(8))(1))(w)))
-          (MEMTAIL(REGNUM(b))(MEMBASE(a))(MEMDISP(labs)(a)))))
+          (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a)))))
 glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
-    concat(P66(w))(concat(REXOPT(w)(0)(MEMBASE(a))(FALSE))
+    concat(P66(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
    (IF(int_eq(w)(1))
-     (la _. concat(B(128))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
+     (la _. concat(B(128))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
      (la _. IF(FITS8(n))
-       (la _. concat(B(131))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
-       (la _. concat(B(129))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(IMMW(w)(n)))))))
+       (la _. concat(B(131))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
+       (la _. concat(B(129))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a)))(IMMW(w)(n)))))))
+# ALU reg, [mem] (memory SOURCE): the r,r/m form, opcode digit*8+3 (add 03,
+# cmp 3B, …) — the reverse of G1MEMREG's digit*8+1. reg field = dest register,
+# rm = memory (index-aware via MEMTAILX/MREX).
+glyph G1REGMEM = la labs. la digit. la w. la a. la b.
+    concat(P66(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
+   (concat(B(OP8(add(mul(digit)(8))(3))(w)))
+          (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b)))))
 glyph G1ENC = la labs. la digit. la w. la a. la b.
     IF(ISMEM(a))
       (la _. IF(ISVAL(b))
                (la _. G1MEMIMM(labs)(digit)(w)(a)(EVAL(labs)(b)))
                (la _. G1MEMREG(labs)(digit)(w)(a)(b)))
+      (la _. IF(ISMEM(b))
+        (la _. G1REGMEM(labs)(digit)(w)(a)(b))
       (la _. IF(ISREG(b))
         (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
         (la _. IF(ISVAL(b))
                  (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a)))
-                 (la _. error(concat("asm: unsupported ALU operand: ")(b)))))
+                 (la _. error(concat("asm: unsupported ALU operand: ")(b))))))
 glyph G1DIG = la op.
     IF(str_eq(op)("add"))(la _. 0)(la _.
     IF(str_eq(op)("or"))(la _. 1)(la _.
@@ -961,7 +1021,7 @@ glyph TSTENC = la w. la a. la b.
 
 # ── lea: the same ModRM/SIB/disp machinery as mov, opcode 8D, never 8-bit ───
 glyph LEAENC = la labs. la w. la a. la b.
-    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(labs)(b))(RFORCE(a))
+    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))
 
 # ── no-operand instructions ────────────────────────────────────────────────
 glyph NOARGS =
@@ -1122,16 +1182,17 @@ glyph IMUL2 = la w. la a. la b.
 #   The rm field is a register OR a simple base/disp memory operand (SIB
 #   index/scale is a later slice — matches secd.asm's [reg]/[reg+d] movzx forms).
 glyph RMNUM  = la b. IF(ISREG(b))(la _. REGNUM(b))(la _. MEMBASE(b))
+glyph RMIDX = la b. IF(ISMEM(b))(la _. MEMIDX(b))(la _. sub(0)(1))
 glyph RMTAIL = la labs. la reg. la b.
-    IF(ISREG(b))(la _. MODRM(REGNUM(b))(reg))(la _. MEMTAIL(reg)(MEMBASE(b))(MEMDISP(labs)(b)))
+    IF(ISREG(b))(la _. MODRM(REGNUM(b))(reg))(la _. MEMTAILX(reg)(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b)))
 glyph SRCW = la ts. (la b. IF(ISREG(b))(la _. RWIDTH(b))(la _. DECLSZ(TL2(ts))))(A2(ts))
 #   movzx: 0F B6 (byte src, 182) / 0F B7 (word src, 183). reg=dest, rm=src.
 glyph MOVZXENC = la labs. la destw. la srcw. la a. la b.
-    concat(P66(destw))(concat(REXOPT(destw)(REGNUM(a))(RMNUM(b))(FALSE))
+    concat(P66(destw))(concat(MREX(destw)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
    (concat(B(15))(concat(B(IF(int_eq(srcw)(1))(la _. 182)(la _. 183)))(RMTAIL(labs)(REGNUM(a))(b)))))
 #   movsxd: 63 /r — dest always r64 (REX.W), src r/m32; no 0F, no 0x66.
 glyph MOVSXDENC = la labs. la a. la b.
-    concat(REXOPT(8)(REGNUM(a))(RMNUM(b))(FALSE))
+    concat(MREX(8)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
    (concat(B(99))(RMTAIL(labs)(REGNUM(a))(b)))
 #   Three-operand imul: 6B /r ib when the immediate fits a signed byte, else
 #   69 /r id. The ModRM reg field is the DESTINATION here, rm the source.
