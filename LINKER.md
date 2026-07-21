@@ -156,11 +156,30 @@ empty-output-with-exit-0 signature explicitly on regression, and then reads
 so that form would silently find nothing) and asserts it equals our own
 `.rodata` vaddr, not `0`. Verified GREEN, byte-identical relocations vs `ld`.
 
-**1. `.eh_frame` properly.** Applying every section's relocations (the
-generalisation above) is now done, so a placed section with its own `.rela.*`
-is patched. `.eh_frame` itself stays DROPPED for a separate reason — a symbol
-inside it is refused by name rather than resolved (CFI-aware placement is the
-remaining work), not because its relocations would be skipped.
+**✔ 1. `.eh_frame` placed and relocated.** It is no longer dropped: added to
+`PLACE_ORDER`/`PLACEABLE` with its own page (`EH_BASE` `0x405000`, R-only) and
+removed from `DROPPABLE`. Because `MKPATCHED` walks the plan, its
+`.rela.eh_frame` (a PC32 in each FDE's initial_location) is applied
+automatically, so the FDEs point at the `.text` functions they describe, and a
+symbol living in `.eh_frame` now RESOLVES via `SYMVAL` instead of being refused.
+
+Gated in `gate_link_reloc.sh` on the real gcc objects: since no section headers
+are emitted, `.eh_frame` is located by its own R `PT_LOAD` (vaddr `0x405000`)
+and each FDE is found by SCANNING the placed bytes for the position that decodes
+(PC-relative sdata4) to an expected function address — read off `ld`'s decoded
+frames at gate time (`0x401013`, `0x401031`), never hardcoded. An unrelocated
+field decodes to an address *inside* `.eh_frame`, never into `.text`, so it
+fails the scan — the silent-wrongness signature named explicitly. Verified GREEN.
+
+**HONEST SCOPE (deliberately deferred):** the objects' `.eh_frame` sections are
+CONCATENATED, not merged — no CIE deduplication and no 0-length terminator, so
+ours is larger than `ld`'s (two full CIE+FDE blocks vs one shared CIE) and is
+NOT a spec-valid mergeable unwind table. The FDEs are individually correct; a
+full merge (CIE-dedup + terminator + `.eh_frame_hdr` + `PT_GNU_EH_FRAME`) is the
+next `.eh_frame` slice, and is what a real unwinder / a `backtrace` would need.
+These are static binaries that never unwind, so nothing reads it either way —
+what changed is that placing-and-relocating is the honest general behaviour, not
+a silent drop of an allocatable section.
 
 **2. A real linker script**, replacing the hard-coded one-page-per-section
 layout. `ld` packs sections into shared pages (it put `.data` at `0x403010`, in

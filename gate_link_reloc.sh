@@ -444,6 +444,67 @@ C2
                 || { echo "FAIL  gcc-object link exited $OURRC, ld's binary exits $LDRC"; ok=0; }
             [ "$OURRC" = "43" ] \
                 || { echo "FAIL  gcc-object link exited $OURRC, expected 43"; ok=0; }
+
+            # --- ★ .eh_frame PLACED AND RELOCATED — the FDEs point at the code ---
+            #   Each gcc object carries a .eh_frame with one R_X86_64_PC32: the
+            #   FDE's PC-begin, pointing at the .text function it describes.
+            #   .eh_frame used to be DROPPED; it is now placed (own page at
+            #   0x405000, R-only) and its relocations applied via the plan. This
+            #   asserts the placement is CORRECT, not merely present: every
+            #   function address ld records in its unwind FDEs must appear,
+            #   PC-relative-encoded, in OUR placed .eh_frame. An unrelocated
+            #   field decodes to an address INSIDE .eh_frame (never into .text),
+            #   so it fails the search — the exact silent-wrongness signature.
+            #
+            #   No section headers are emitted, so .eh_frame is found by its own
+            #   R PT_LOAD (vaddr 0x405000) via readelf -l, and each FDE by
+            #   SCANNING for the position that decodes to an expected pc — robust
+            #   to the CIE/FDE layout, no offset arithmetic. Expected pcs are
+            #   read off ld at gate time, never hardcoded. HONEST SCOPE: this
+            #   checks the FDEs are individually correct; .eh_frame is
+            #   concatenated (no CIE-dedup/terminator), so it is larger than ld's
+            #   and not a spec-valid merged table — a deliberate deferred item.
+            if command -v python3 >/dev/null 2>&1; then
+                EHREPORT=$(python3 - link_out link_ref_gcc 2>&1 <<'PYEH' || true
+import sys,struct,subprocess,re
+ours,ref=sys.argv[1],sys.argv[2]
+fr=subprocess.run(["readelf","--debug-dump=frames",ref],capture_output=True,text=True).stdout
+want=sorted({int(m,16) for m in re.findall(r'pc=([0-9a-f]+)\.\.',fr)})
+if not want:
+    print("SKIP  no FDEs in ld reference to check"); sys.exit(0)
+lo=subprocess.run(["readelf","-lW",ours],capture_output=True,text=True).stdout
+segs=[]
+for m in re.finditer(r'LOAD\s+0x([0-9a-f]+)\s+0x([0-9a-f]+)\s+0x[0-9a-f]+\s+0x([0-9a-f]+)\s+0x([0-9a-f]+)\s+([RWE ]+?)\s+0x',lo):
+    segs.append((int(m.group(1),16),int(m.group(2),16),int(m.group(3),16),int(m.group(4),16),m.group(5).strip()))
+eh=[s for s in segs if s[1]==0x405000]
+tx=[s for s in segs if 'E' in s[4]]
+if not eh: print("FAIL  .eh_frame R segment (vaddr 0x405000) not emitted"); sys.exit(0)
+if not tx: print("FAIL  no R+X text segment to bound the FDE pcs"); sys.exit(0)
+ehoff,ehva,ehfsz=eh[0][0],eh[0][1],eh[0][2]
+txlo,txhi=tx[0][1],tx[0][1]+tx[0][3]
+data=open(ours,"rb").read()[ehoff:ehoff+ehfsz]
+found=[]
+for w in want:
+    hit=None
+    for i in range(0,len(data)-3):
+        v=struct.unpack_from("<i",data,i)[0]
+        if ehva+i+v==w: hit=ehva+i; break
+    found.append((w,hit))
+miss=[hex(w) for w,h in found if h is None]
+if miss:
+    print("FAIL  .eh_frame FDE(s) not relocated to "+",".join(miss)+" (an unrelocated field decodes into .eh_frame, never into .text)"); sys.exit(0)
+outside=[hex(w) for w,h in found if not (txlo<=w<txhi)]
+if outside:
+    print("FAIL  .eh_frame FDE pc "+",".join(outside)+" is not inside our R+X text segment"); sys.exit(0)
+print("OK  "+str(len(found))+" FDE(s) point at .text: "+",".join(hex(w) for w,_ in found))
+PYEH
+)
+                case "$EHREPORT" in
+                    OK*)   : ;;
+                    SKIP*) echo "NOTE  link_reloc.la: .eh_frame check skipped — $EHREPORT" ;;
+                    *)     echo "$EHREPORT"; ok=0 ;;
+                esac
+            fi
         else
             echo "FAIL  link_reloc.la: gcc-object link emitted no executable"; ok=0
         fi
@@ -519,5 +580,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 4 sections incl. .bss and a writable segment, W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 5 sections incl. .bss and a writable segment + .eh_frame placed with its FDEs relocated to point at .text, W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]

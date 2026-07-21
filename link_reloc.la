@@ -292,16 +292,22 @@ glyph DEFINES = la f. la ss. la i.
 #   section occupies memory at run time", so it is precisely the set the layout
 #   must have an answer for. Non-alloc sections (.symtab, .strtab, .comment,
 #   .note*) are metadata the loader never maps, and ignoring those is correct.
-#   ★ DELIBERATELY DROPPED — decided, not ignored.
-#   Real gcc objects carry two ALLOC sections this linker will not place:
+#   .eh_frame IS NOW PLACED (own page, R-only). It carries its own relocation
+#   section (.rela.eh_frame, a PC32 in each FDE's initial_location pointing at
+#   the .text function it describes). MKPATCHED applies every placed section's
+#   relocations, so those FDEs are patched to point at the right code — the
+#   reason it was dropped ("only .rela.text applied") no longer holds. A symbol
+#   living in .eh_frame therefore RESOLVES (via SYMVAL) rather than being
+#   refused. HONEST SCOPE, recorded so it is not mistaken for more: the objects'
+#   .eh_frame sections are CONCATENATED, not merged — no CIE deduplication and
+#   no 0-length terminator, so ours is larger than ld's and is NOT a spec-valid
+#   mergeable unwind table. The FDEs are individually correct; a full merge
+#   (dedup + terminator + .eh_frame_hdr + PT_GNU_EH_FRAME) is deferred. These
+#   are static binaries that never unwind, so nothing reads it either way; what
+#   changed is that placing-and-relocating is the honest general behaviour, not
+#   a silent drop of an allocatable section.
 #
-#   .eh_frame           unwinding data, and it has its OWN relocation section
-#                       (.rela.eh_frame, a PC32 into .text). Only .rela.text is
-#                       applied here, so PLACING it would embed unrelocated
-#                       unwind data — silently wrong, and worse than absent.
-#                       These are static binaries that never unwind, so nothing
-#                       reads it. Real support means applying every section's
-#                       relocations, not just .text's; that is the honest fix.
+#   ★ STILL DELIBERATELY DROPPED — decided, not ignored:
 #   .note.gnu.property  ISA/security metadata (CET/IBT). The loader consults it
 #                       via PT_NOTE, which this linker does not emit; omitting
 #                       it yields a binary without those opt-in properties,
@@ -310,10 +316,10 @@ glyph DEFINES = la f. la ss. la i.
 #   Dropping is a CHOICE and is recorded as one. A symbol defined in a dropped
 #   section is refused rather than resolved (see SYMVAL), so the choice cannot
 #   silently produce a wrong address.
-glyph DROPPABLE = la n. OR(str_eq(n)(".eh_frame"))(str_eq(n)(".note.gnu.property"))
+glyph DROPPABLE = la n. str_eq(n)(".note.gnu.property")
 
 glyph IS_ALLOC = la f. la i. int_eq(mod(div(SH_FLAGS(f)(i))(2))(2))(1)
-glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(OR(str_eq(n)(".data"))(str_eq(n)(".bss"))))
+glyph PLACEABLE = la n. OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(OR(str_eq(n)(".data"))(OR(str_eq(n)(".bss"))(str_eq(n)(".eh_frame")))))
 glyph CHECKSECS = la f. la tag. (Z(la self. la i.
     IF(int_eq(i)(E_SHNUM(f)))
       (la _. "ok")
@@ -339,13 +345,15 @@ glyph CHECKSECS = la f. la tag. (Z(la self. la i.
 #   This step changes NO behaviour — it is the same policy expressed so it can
 #   iterate. The gates are the proof of equivalence: same addresses, same bytes,
 #   same running binary.
-glyph PLACE_ORDER = CONS(".text")(CONS(".rodata")(CONS(".data")(CONS(".bss")(NIL))))
+glyph PLACE_ORDER = CONS(".text")(CONS(".rodata")(CONS(".data")(CONS(".bss")(CONS(".eh_frame")(NIL)))))
 glyph DATA_BASE = 4206592
 glyph BSS_BASE  = 4210688
+glyph EH_BASE   = 4214784       # 0x405000, its own page above .bss
 glyph BASEOF = la n.
     IF(str_eq(n)(".text"))(la _. TEXT_BASE)(la _.
     IF(str_eq(n)(".data"))(la _. DATA_BASE)(la _.
-    IF(str_eq(n)(".bss"))(la _. BSS_BASE)(la _. RODATA_BASE)))
+    IF(str_eq(n)(".bss"))(la _. BSS_BASE)(la _.
+    IF(str_eq(n)(".eh_frame"))(la _. EH_BASE)(la _. RODATA_BASE))))
 
 glyph MKE   = la o. la s. la a. PAIR(o)(PAIR(s)(a))
 glyph E_OBJ = la e. FST(e)
