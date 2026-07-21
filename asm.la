@@ -975,8 +975,8 @@ glyph NOARGS =
 glyph NOARG2 =
   CONS(PAIR("iretq")("72 207"))(CONS(PAIR("stosq")("72 171"))(CONS(PAIR("movsq")("72 165"))(
   CONS(PAIR("wrmsr")("15 48"))(CONS(PAIR("rdmsr")("15 50"))(CONS(PAIR("ud2")("15 11"))(
-  CONS(PAIR("sysret")("15 7"))(
-  NIL))))))) 
+  CONS(PAIR("sysret")("15 7"))(CONS(PAIR("cqo")("72 153"))(
+  NIL))))))))
 glyph BYTESOF = Z(la self. la s. la cur.
     IF(str_eq(s)(""))
       (la _. IF(str_eq(cur)(""))(la _. "")(la _. B(str_to_int(cur))))
@@ -1102,6 +1102,22 @@ glyph LGDTENC = la labs. la b.
 glyph DIVENC = la w. la a.
     concat(P66(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
    (concat(B(OP8(247)(w)))(MODRMD(6)(REGNUM(a)))))
+#   Group-3 unary (F7 /digit, register): div=/6, idiv=/7, neg=/3 — same shape,
+#   only the ModRM reg digit differs. G3ENC factors it so a new group-3 op is one
+#   digit, not a re-derived encoder (div stays via its own glyph, byte-verified).
+glyph G3ENC = la dig. la w. la a.
+    concat(P66(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
+   (concat(B(OP8(247)(w)))(MODRMD(dig)(REGNUM(a)))))
+glyph NEGENC  = G3ENC(3)
+glyph IDIVENC = G3ENC(7)
+#   cmovcc dest, src (reg,reg): 0F 40+cc /r, reg=dest, rm=src, REX.W for r64.
+glyph CMOVENC = la cc. la w. la a. la b.
+    concat(P66(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+   (concat(B(15))(concat(B(add(64)(cc)))(MODRM(REGNUM(b))(REGNUM(a))))))
+#   Two-operand imul dest, src (reg,reg): 0F AF /r, reg=dest, rm=src, REX.W.
+glyph IMUL2 = la w. la a. la b.
+    concat(P66(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+   (concat(B(15))(concat(B(175))(MODRM(REGNUM(b))(REGNUM(a))))))
 #   Three-operand imul: 6B /r ib when the immediate fits a signed byte, else
 #   69 /r id. The ModRM reg field is the DESTINATION here, rm the source.
 glyph IMUL3 = la w. la a. la b. la n.
@@ -1128,6 +1144,19 @@ glyph JCCS =
 glyph JCCOPT = la op. LOOKREG(op)(JCCS)
 glyph ISJCC  = la op. ISSOME(JCCOPT(op))
 glyph JCCC   = la op. OPTV(JCCOPT(op))
+# cmovcc: 0F 40+cc /r — SAME condition nibble as jcc, dest in reg, src in rm.
+glyph CMOVS =
+  CONS(PAIR("cmovo")(0))(CONS(PAIR("cmovno")(1))(CONS(PAIR("cmovb")(2))(CONS(PAIR("cmovc")(2))(
+  CONS(PAIR("cmovnae")(2))(CONS(PAIR("cmovae")(3))(CONS(PAIR("cmovnb")(3))(CONS(PAIR("cmovnc")(3))(
+  CONS(PAIR("cmove")(4))(CONS(PAIR("cmovz")(4))(CONS(PAIR("cmovne")(5))(CONS(PAIR("cmovnz")(5))(
+  CONS(PAIR("cmovbe")(6))(CONS(PAIR("cmovna")(6))(CONS(PAIR("cmova")(7))(CONS(PAIR("cmovnbe")(7))(
+  CONS(PAIR("cmovs")(8))(CONS(PAIR("cmovns")(9))(CONS(PAIR("cmovp")(10))(CONS(PAIR("cmovnp")(11))(
+  CONS(PAIR("cmovl")(12))(CONS(PAIR("cmovnge")(12))(CONS(PAIR("cmovge")(13))(CONS(PAIR("cmovnl")(13))(
+  CONS(PAIR("cmovle")(14))(CONS(PAIR("cmovng")(14))(CONS(PAIR("cmovg")(15))(CONS(PAIR("cmovnle")(15))(
+  NIL))))))))))))))))))))))))))))
+glyph CMOVOPT = la op. LOOKREG(op)(CMOVS)
+glyph ISCMOV  = la op. ISSOME(CMOVOPT(op))
+glyph CMOVCC  = la op. OPTV(CMOVOPT(op))
 
 # ── DATA DEFINITION + LAYOUT: dw/dd/dq, resb/resq, align ───────────────────
 #   62 of boot.asm's remaining lines are these. Pure generation, but two of the
@@ -1224,7 +1253,10 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("ltr"))(la _. LENOF(LTRENC(A1(ts))))(la _.
     IF(str_eq(op)("lgdt"))(la _. LENOF(LGDTENC(labs)(A1(ts))))(la _.
     IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(DIVENC(w)(a))))(la _.
-    IF(str_eq(op)("imul"))(la _. LENOF(IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))))(la _.
+    IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(NEGENC(w)(a))))(la _.
+    IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDIVENC(w)(a))))(la _.
+    IF(ISCMOV(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(CMOVENC(CMOVCC(op))(w)(a)(b))))(la _.
+    IF(str_eq(op)("imul"))(la _. IF(str_eq(NTH(2)(OPL(ts)))(""))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IMUL2(w)(a)(b))))(la _. LENOF(IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts)))))))(la _.
     IF(ISDATA(op))(la _. DSIZE(DWIDTH(op))(JOINEXPR(TL2(ts))))(la _.
     IF(ISRES(op))(la _. RESN(labs)(op)(ts))(la _.
     IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
@@ -1235,7 +1267,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(labs)(w)(a)(b))))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))))))
   (HD(ts))
 
 # ── one instruction -> its bytes (off = this instruction's own address) ──
@@ -1261,7 +1293,10 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)("ltr"))(la _. LTRENC(A1(ts)))(la _.
     IF(str_eq(op)("lgdt"))(la _. LGDTENC(labs)(A1(ts)))(la _.
     IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. DIVENC(w)(a)))(la _.
-    IF(str_eq(op)("imul"))(la _. IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts)))))(la _.
+    IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. NEGENC(w)(a)))(la _.
+    IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. IDIVENC(w)(a)))(la _.
+    IF(ISCMOV(op))(la _. WITHOPS(ts)(la w. la a. la b. CMOVENC(CMOVCC(op))(w)(a)(b)))(la _.
+    IF(str_eq(op)("imul"))(la _. IF(str_eq(NTH(2)(OPL(ts)))(""))(la _. WITHOPS(ts)(la w. la a. la b. IMUL2(w)(a)(b)))(la _. IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))))(la _.
     IF(ISDATA(op))(la _. DEMIT(labs)(DWIDTH(op))(JOINEXPR(TL2(ts))))(la _.
     IF(ISRES(op))(la _. REPB(RESN(labs)(op)(ts))(B(0)))(la _.
     IF(str_eq(op)("align"))(la _. REPB(ALIGNPAD(off)(NUMV(NTH(1)(ts))))(B(144)))(la _.
@@ -1288,7 +1323,7 @@ glyph ENC10 = la labs. la off. la ts.
                (la _. concat(B(add(112)(JCCC(op))))(B(REL8(labs)(off)(TARGET(ts)))))
                (la _. concat(B(15))(concat(B(add(128)(JCCC(op))))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
     IF(str_eq(op)("mov"))(la _. WITHOPS(ts)(MOVENC(labs)))
-      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))))))))
   (HD(ts))
 
 #   Every line is tokenized ONCE, up front, and the passes consume token lists
