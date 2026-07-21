@@ -412,12 +412,24 @@ glyph PNAME = la objs. la name. la acc. la cur.
           (PSTEP(O_F(h))(O_IDX(h))(name)(a)(c)))))
       (objs)(acc)(cur)
 
-#   All section names of ONE segment, packed contiguously from the cursor.
+#   .eh_frame is placed as ONE merged entry (object 0, size = merged size), not
+#   per-object, because ld merges it (dedup CIE). Aligned to 8 like the section.
+#   If nothing carries .eh_frame the merged size is 0 and no entry is placed.
+glyph PEH = la objs. la acc. la cur. (la sz.
+    IF(int_eq(sz)(0))
+      (la _. PAIR(acc)(cur))
+      (la _. (la a. PAIR(CONS(MKE(0)(EHMARK)(a))(acc))(add(a)(sz)))(ALIGNUP(cur)(8))))
+    (EHMSIZE(objs))
+
+#   All section names of ONE segment, packed contiguously from the cursor. Every
+#   section packs per-object except .eh_frame, which is placed once, merged.
 glyph SNAMES = la objs. la names. la acc. la cur.
     (Z(la self. la l. la a. la c.
         l(PAIR(a)(c))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
-          (PNAME(objs)(h)(a)(c)))))
+          (IF(str_eq(h)(".eh_frame"))
+             (la _. PEH(objs)(a)(c))
+             (la _. PNAME(objs)(h)(a)(c))))))
       (names)(acc)(cur)
 
 #   The plan: fold the SCRIPT with one running cursor, page-aligning at each
@@ -460,10 +472,18 @@ glyph FINDREC = la objs. la idx. (Z(la self. la l.
     l(NIL)(la h. la t. IF(int_eq(O_IDX(h))(idx))(la _. h)(la _. self(t)))))(objs)
 glyph FINDOBJ = la objs. la idx. O_F(FINDREC(objs)(idx))
 glyph E_F   = la objs. la e. FINDOBJ(objs)(E_OBJ(e))
-glyph ENAME = la objs. la e. SECNAME(E_F(objs)(e))(E_SEC(e))
-glyph ESIZE = la objs. la e. SH_SIZE(E_F(objs)(e))(E_SEC(e))
+#   Plan entries are (object, section, address). The MERGED .eh_frame is the one
+#   entry with object 0 (no real object is 0 — they are 1-based), so ENAME/ESIZE/
+#   ETYPE answer for it WITHOUT an object lookup: it is a PROGBITS ".eh_frame" of
+#   the merged size. Every real entry defers to its object's section header.
+glyph EHENTRY = la e. int_eq(E_OBJ(e))(0)
+glyph ENAME = la objs. la e.
+    IF(EHENTRY(e))(la _. ".eh_frame")(la _. SECNAME(E_F(objs)(e))(E_SEC(e)))
+glyph ESIZE = la objs. la e.
+    IF(EHENTRY(e))(la _. EHMSIZE(objs))(la _. SH_SIZE(E_F(objs)(e))(E_SEC(e)))
 glyph SH_NOBITS = 8
-glyph ETYPE = la objs. la e. SH_TYPE(E_F(objs)(e))(E_SEC(e))
+glyph ETYPE = la objs. la e.
+    IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE(E_F(objs)(e))(E_SEC(e)))
 
 #   ★ RELOCATIONS ARE APPLIED TO EVERY PLACED SECTION, not only .text.
 #   Applying just `.rela.text` was a CONFIRMED silent-wrongness bug: an object
@@ -639,12 +659,133 @@ glyph PATCHSEC = la objs. la plan. la resolve. la e.
      (O_F(rec)))
     (FINDREC(objs)(E_OBJ(e)))
 
+#   The (0, EHMARK) sentinel entry is the MERGED .eh_frame — it is patched by
+#   EHMERGE (dedup CIE, rewrite FDE CIE-pointers, relocate FDEs at their merged
+#   positions), keyed like any other patched section so EBYTES picks it up
+#   unchanged. Every real (object, section) goes through PATCHSEC as before.
 glyph MKPATCHED = la objs. la plan. la resolve.
     (Z(la self. la l.
       l(NIL)(la h. la t.
-        CONS(PAIR(PAIR(E_OBJ(h))(E_SEC(h)))(PATCHSEC(objs)(plan)(resolve)(h)))
+        CONS(PAIR(PAIR(E_OBJ(h))(E_SEC(h)))
+                 (IF(int_eq(E_OBJ(h))(0))
+                    (la _. EHMERGE(objs)(plan)(resolve)(E_ADDR(h)))
+                    (la _. PATCHSEC(objs)(plan)(resolve)(h))))
             (self(t)))))
     (plan)
+
+# ── .eh_frame MERGE — dedup the shared CIE, one merged relocated table ───────
+#   ld does NOT concatenate objects' .eh_frame — it MERGES: keep ONE copy of the
+#   (byte-identical) CIE, then every FDE, each with its CIE_pointer rewritten to
+#   the kept CIE's distance and its initial_location relocated at the FDE's NEW
+#   position. This makes ours byte-identical to ld's .eh_frame (the .rodata/eh
+#   base already matches ld). A .eh_frame is a sequence of length-prefixed CFI
+#   records: `len4`, then a 4-byte id — 0 marks a CIE, non-zero an FDE (the id
+#   being the FDE's backward distance to its CIE). Objects here carry no
+#   terminator (the linker would add one; ld here does not, so neither do we).
+glyph EHMARK    = sub(0)(2)                          # sentinel section id for the merged entry
+glyph REC_TOTAL = la eh. la o. add(4)(U32(eh)(o))    # bytes of the record at offset o
+glyph REC_IS_CIE= la eh. la o. int_eq(U32(eh)(add(o)(4)))(0)
+
+#   The kept CIE = record 0 of the first .eh_frame-bearing object, "" if none.
+glyph FIRST_CIE = la objs. (Z(la self. la l.
+    l("")(la h. la t.
+      (la ehsec.
+        IF(lt(ehsec)(0))
+          (la _. self(t))
+          (la _. (la eh. TAKES(REC_TOTAL(eh)(0))(eh))(SECBYTES(O_F(h))(ehsec))))
+      (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
+
+#   Sum of every object's FDE bytes = eh_size − its CIE size (one CIE per object).
+glyph EH_FDEBYTES = la objs. la cie. (Z(la self. la l.
+    l(0)(la h. la t.
+      (la ehsec.
+        IF(lt(ehsec)(0))
+          (la _. self(t))
+          (la _. add(sub(SH_SIZE(O_F(h))(ehsec))(str_to_int(str_len(cie))))(self(t))))
+      (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
+
+#   Merged size = one CIE + all FDEs. Needed at PLAN time (no addresses), so it
+#   is structural. 0 when nothing carries .eh_frame (then no entry is placed).
+glyph EHMSIZE = la objs. (la cie.
+    IF(int_eq(str_to_int(str_len(cie)))(0))
+      (la _. 0)
+      (la _. add(str_to_int(str_len(cie)))(EH_FDEBYTES(objs)(cie))))
+    (FIRST_CIE(objs))
+
+#   REFUSE differing CIEs — this merge dedups a single shared CIE. Objects built
+#   the same way share one; a genuinely different CIE would need multiple kept
+#   CIEs (not built), so halt loudly rather than emit a table pointing FDEs at
+#   the wrong CIE.
+glyph EH_CIE_OK = la objs. la cie. (Z(la self. la l.
+    l("ok")(la h. la t.
+      (la ehsec.
+        IF(lt(ehsec)(0))
+          (la _. self(t))
+          (la _. (la eh.
+                   IF(str_eq(TAKES(REC_TOTAL(eh)(0))(eh))(cie))
+                     (la _. self(t))
+                     (la _. error("link: .eh_frame merge: objects have differing CIEs (unsupported)")))
+                 (SECBYTES(O_F(h))(ehsec))))
+      (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
+
+#   The .rela.eh_frame reloc index whose r_offset == want (the FDE's
+#   initial_location field), or −1.
+glyph EH_RELIDX = la f. la rs. la want. (Z(la self. la i.
+    IF(int_eq(i)(REL_COUNT(f)(rs)))
+      (la _. sub(0)(1))
+      (la _. IF(int_eq(REL_OFFSET(f)(rs)(i))(want))
+               (la _. i)
+               (la _. self(add(i)(1))))))(0)
+
+#   One FDE, rewritten: CIE_pointer := (its field offset − the CIE at 0) = moff+4,
+#   initial_location := target_pc − (mbase + moff + 8), the PC-relative encoding
+#   at the FDE's MERGED position. target_pc = S + A from the FDE's own reloc.
+glyph FDE_OUT = la rec. la plan. la resolve. la eh. la ofde. la mbase. la moff.
+  (la f. (la rs.
+    (la raw.
+      (la ridx.
+        (la tgt.
+          (la p1.
+             PATCH(p1)(8)(4)(LE4(sub(tgt)(add(mbase)(add(moff)(8))))))
+          (PATCH(raw)(4)(4)(LE4(add(moff)(4)))))
+        (add(SYMVAL(f)(O_SS(rec))(la sec. VAOF(plan)(O_IDX(rec))(sec))(resolve)(REL_SYM(f)(rs)(ridx)))
+             (REL_ADDEND(f)(rs)(ridx))))
+      (EH_RELIDX(f)(rs)(add(ofde)(8))))
+    (TAKES(REC_TOTAL(eh)(ofde))(DROPS(ofde)(eh))))
+   (FIND_SEC(f)(".rela.eh_frame")))(O_F(rec))
+
+#   Walk one object's records, appending each FDE's rewritten bytes (skipping the
+#   CIE), threading the running merged offset. Returns PAIR(bytes-acc)(moff).
+glyph EH_OBJ = la rec. la plan. la resolve. la mbase. la acc. la moff.
+  (la eh.
+    (Z(la self. la o. la a. la m.
+       IF(int_eq(o)(str_to_int(str_len(eh))))
+         (la _. PAIR(a)(m))
+         (la _. (la tot.
+                  IF(REC_IS_CIE(eh)(o))
+                    (la _. self(add(o)(tot))(a)(m))
+                    (la _. self(add(o)(tot))
+                                (concat(a)(FDE_OUT(rec)(plan)(resolve)(eh)(o)(mbase)(m)))
+                                (add(m)(tot))))
+                (REC_TOTAL(eh)(o)))))
+     (0)(acc)(moff))
+  (SECBYTES(O_F(rec))(FIND_SEC(O_F(rec))(".eh_frame")))
+
+#   The merged, relocated .eh_frame: kept CIE, then every object's FDEs in link
+#   order, each rewritten at its merged position. mbase is where .eh_frame is
+#   placed (its plan address), so the PC-relative FDE fields are exact.
+glyph EHMERGE = la objs. la plan. la resolve. la mbase. (la cie.
+    SEQ(EH_CIE_OK(objs)(cie))(
+    FST((Z(la self. la l. la a. la m.
+        l(PAIR(a)(m))(la h. la t.
+          (la ehsec.
+            IF(lt(ehsec)(0))
+              (la _. self(t)(a)(m))
+              (la _. (la r. self(t)(FST(r))(SND(r)))
+                     (EH_OBJ(h)(plan)(resolve)(mbase)(a)(m))))
+          (FIND_SEC(O_F(h))(".eh_frame")))))
+      (objs)(cie)(str_to_int(str_len(cie))))))
+    (FIRST_CIE(objs))
 
 glyph CHECKALL = la objs. (Z(la self. la l.
     l("ok")(la h. la t.

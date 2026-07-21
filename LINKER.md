@@ -156,30 +156,46 @@ empty-output-with-exit-0 signature explicitly on regression, and then reads
 so that form would silently find nothing) and asserts it equals our own
 `.rodata` vaddr, not `0`. Verified GREEN, byte-identical relocations vs `ld`.
 
-**✔ 1. `.eh_frame` placed and relocated.** It is no longer dropped: added to
-`PLACE_ORDER`/`PLACEABLE` with its own page (`EH_BASE` `0x405000`, R-only) and
-removed from `DROPPABLE`. Because `MKPATCHED` walks the plan, its
+**✔ 1. `.eh_frame` placed, relocated, and merged.** It is no longer dropped:
+added to `PLACEABLE` and the linker `SCRIPT`'s R segment, removed from
+`DROPPABLE`. Because `MKPATCHED` walks the plan, its
 `.rela.eh_frame` (a PC32 in each FDE's initial_location) is applied
 automatically, so the FDEs point at the `.text` functions they describe, and a
 symbol living in `.eh_frame` now RESOLVES via `SYMVAL` instead of being refused.
 
-Gated in `gate_link_reloc.sh` on the real gcc objects: since no section headers
-are emitted, `.eh_frame` is located by its own R `PT_LOAD` (vaddr `0x405000`)
-and each FDE is found by SCANNING the placed bytes for the position that decodes
-(PC-relative sdata4) to an expected function address — read off `ld`'s decoded
-frames at gate time (`0x401013`, `0x401031`), never hardcoded. An unrelocated
-field decodes to an address *inside* `.eh_frame`, never into `.text`, so it
-fails the scan — the silent-wrongness signature named explicitly. Verified GREEN.
+(After the linker-script slice `.eh_frame` moved from its own page into the
+shared R segment, grouped with `.rodata` — see item 2.) Gated on the real gcc
+objects: since no section headers are emitted, `.eh_frame` is located by the R
+`PT_LOAD` and each FDE is found by SCANNING the placed bytes for the position
+that decodes (PC-relative sdata4) to an expected function address — read off
+`ld`'s decoded frames at gate time (`0x401013`, `0x401031`), never hardcoded. An
+unrelocated field decodes to an address *inside* `.eh_frame`, never into
+`.text`, so it fails the scan — the silent-wrongness signature named explicitly.
 
-**HONEST SCOPE (deliberately deferred):** the objects' `.eh_frame` sections are
-CONCATENATED, not merged — no CIE deduplication and no 0-length terminator, so
-ours is larger than `ld`'s (two full CIE+FDE blocks vs one shared CIE) and is
-NOT a spec-valid mergeable unwind table. The FDEs are individually correct; a
-full merge (CIE-dedup + terminator + `.eh_frame_hdr` + `PT_GNU_EH_FRAME`) is the
-next `.eh_frame` slice, and is what a real unwinder / a `backtrace` would need.
-These are static binaries that never unwind, so nothing reads it either way —
-what changed is that placing-and-relocating is the honest general behaviour, not
-a silent drop of an allocatable section.
+**✔ MERGED, byte-identical to `ld`.** The sections are no longer CONCATENATED —
+they are MERGED as `ld` does: keep ONE copy of the (byte-identical) CIE, then
+every FDE with its `CIE_pointer` rewritten to the kept CIE's distance and its
+`initial_location` relocated at the FDE's NEW merged position. `.eh_frame` is a
+sequence of length-prefixed CFI records (`len4`, then a 4-byte id — 0 = CIE,
+non-zero = an FDE's backward distance to its CIE), walked in LA. The merged
+table is placed as ONE plan entry (object `0`, the `EHMARK` sentinel; `ENAME`/
+`ESIZE`/`ETYPE` answer for it without an object lookup, `EHMERGE` fills the
+patched-map slot so `EBYTES` picks it up unchanged). Because our `.eh_frame`
+base already equals `ld`'s, the result is **byte-identical to `ld`'s
+`.eh_frame`** — the gate does `cmp -s` against `objcopy`'s `.eh_frame` from ld's
+binary (a concatenated table would be `0x70`, ld's is `0x58`, so a length diff
+alone fails), alongside the FDE-decode check. Verified GREEN.
+
+**HONEST SCOPE, recorded:** this dedups a SINGLE shared CIE (objects built the
+same way share one); a genuinely differing CIE is REFUSED loudly (`EH_CIE_OK`,
+"objects have differing CIEs (unsupported)") rather than emitting a table whose
+FDEs point at the wrong CIE — keeping multiple CIEs is a later refinement. No
+terminator (this `ld` emits none for these fixtures, so neither do we). Still
+deferred: `.eh_frame_hdr` + `PT_GNU_EH_FRAME` (the binary-search header a real
+unwinder / `backtrace` uses to FIND the FDEs) — nothing here unwinds. A symbol
+DEFINED in `.eh_frame` is no longer resolvable (its position is merged, so it is
+not a per-object plan entry); no object defines one (the relocations reference
+`.text` section symbols, which resolve fine).
 
 **✔ 2. A linker script — packed, permission-grouped layout.** The hard-coded
 one-page-per-section `BASEOF` is gone, replaced by a declarative `SCRIPT`: a

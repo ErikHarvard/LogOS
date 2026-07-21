@@ -461,10 +461,11 @@ C2
             #   R (read-only) PT_LOAD from readelf -l, and each FDE by
             #   SCANNING for the position that decodes to an expected pc — robust
             #   to the CIE/FDE layout, no offset arithmetic. Expected pcs are
-            #   read off ld at gate time, never hardcoded. HONEST SCOPE: this
-            #   checks the FDEs are individually correct; .eh_frame is
-            #   concatenated (no CIE-dedup/terminator), so it is larger than ld's
-            #   and not a spec-valid merged table — a deliberate deferred item.
+            #   read off ld at gate time, never hardcoded. This decode check is
+            #   kept alongside the byte-identity check below because it validates
+            #   the FDE *semantics* (points at the right code) independently of
+            #   the exact bytes. .eh_frame is now MERGED (see below), not
+            #   concatenated, so it is byte-identical to ld's.
             if command -v python3 >/dev/null 2>&1; then
                 EHREPORT=$(python3 - link_out link_ref_gcc 2>&1 <<'PYEH' || true
 import sys,struct,subprocess,re
@@ -505,6 +506,36 @@ PYEH
                     SKIP*) echo "NOTE  link_reloc.la: .eh_frame check skipped — $EHREPORT" ;;
                     *)     echo "$EHREPORT"; ok=0 ;;
                 esac
+            fi
+
+            # --- ★★ .eh_frame MERGED BYTE-IDENTICAL TO ld ---
+            #   The linker no longer CONCATENATES the objects' .eh_frame — it
+            #   MERGES like ld: one shared CIE (deduped), then every FDE with its
+            #   CIE_pointer rewritten and its initial_location relocated at the
+            #   FDE's new merged position. Since our .eh_frame base already equals
+            #   ld's, a correct merge is BYTE-IDENTICAL to ld's .eh_frame — the
+            #   strongest witness there is (the forced answer, demanded exactly,
+            #   like the .text relocation diff). For THIS fixture the R (read-only)
+            #   segment holds ONLY .eh_frame (no .rodata), so the whole segment is
+            #   the merged table; extract it and cmp against `objcopy`'s .eh_frame
+            #   from ld's binary. A concatenated (unmerged) table is 0x70, ld's is
+            #   0x58 — a length diff alone would already fail.
+            if command -v objcopy >/dev/null 2>&1; then
+                objcopy -O binary --only-section=.eh_frame link_ref_gcc ld_ehframe.bin 2>/dev/null
+                # our R-only PT_LOAD (flags "R", not "R E"): file offset + filesz,
+                # parsed as hex WITHOUT awk strtonum (mawk lacks it — see K4c/build.sh)
+                EHLINE=$(readelf -lW link_out | awk '/LOAD/ && $7=="R" && $8!="E"{print $2, $5; exit}')
+                if [ -n "$EHLINE" ] && [ -s ld_ehframe.bin ]; then
+                    EHOFF=$(( ${EHLINE%% *} )); EHSZ=$(( ${EHLINE##* } ))
+                    dd if=link_out bs=1 skip="$EHOFF" count="$EHSZ" of=our_ehframe.bin 2>/dev/null
+                    if cmp -s our_ehframe.bin ld_ehframe.bin; then
+                        :
+                    else
+                        echo "FAIL  link_reloc.la: merged .eh_frame is not byte-identical to ld ($(stat -c%s our_ehframe.bin 2>/dev/null) vs $(stat -c%s ld_ehframe.bin) bytes) — CIE not deduped or an FDE mis-relocated"; ok=0
+                    fi
+                    rm -f our_ehframe.bin
+                fi
+                rm -f ld_ehframe.bin
             fi
         else
             echo "FAIL  link_reloc.la: gcc-object link emitted no executable"; ok=0
@@ -581,5 +612,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 5 sections incl. .bss and a writable segment + .eh_frame placed with its FDEs relocated to point at .text, W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]
