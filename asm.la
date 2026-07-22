@@ -201,10 +201,15 @@ glyph LABNAME = la t. DROPLAST(t)
 #   branches are thunks and only the selected one is forced.
 glyph LOOKLAB = Z(la self. la nm. la l.
     l(NONE)(la h. la t. IF(str_eq(FST(h))(nm))(la _. SOME(SND(h)))(la _. self(nm)(t))))
+#   A jmp/call target may be a NUMERIC absolute address (`jmp 0x100000` —
+#   boot7b_s2 jumps to the loaded image at its physical address), not a label.
+#   TGTOPT resolves a number to its value, otherwise the label table.
+glyph TGTOPT = la labs. la nm.
+    IF(ISNUM(nm))(la _. SOME(NUMV(nm)))(la _. LOOKLAB(nm)(labs))
 glyph LABADDR = la nm. la labs.
     (la o. IF(ISSOME(o))(la _. OPTV(o))
                         (la _. error(concat("asm: undefined label: ")(nm))))
-    (LOOKLAB(nm)(labs))
+    (TGTOPT(labs)(nm))
 
 #   A jump's operand is NTH 1, or NTH 2 when an explicit `near` is written.
 glyph TARGET = la ts. IF(str_eq(NTH(1)(ts))("near"))(la _. NTH(2)(ts))(la _. NTH(1)(ts))
@@ -876,7 +881,7 @@ glyph JSHORT  = la labs. la off. la ts.
       (la _. (la o. IF(ISSOME(o))
                       (la _. FITS8(sub(OPTV(o))(add(off)(2))))
                       (la _. TRUE))
-             (LOOKLAB(TARGET(ts))(labs)))
+             (TGTOPT(labs)(TARGET(ts))))
 glyph REL8 = la labs. la off. la nm.
     (la d. IF(lt(d)(0))(la _. add(256)(d))(la _. d))
     (sub(LABADDR(nm)(labs))(add(off)(2)))
