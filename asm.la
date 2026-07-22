@@ -1000,11 +1000,11 @@ glyph G1IMM = la digit. la w. la r. la n. la force. la mode.
 #   is why this is a few lines rather than a second encoder: the opcode map
 #   does not distinguish "to register" from "to memory", the ModRM byte does.
 glyph G1MEMREG = la labs. la digit. la w. la a. la b.
-    concat(P66(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
+    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
    (concat(B(OP8(add(mul(digit)(8))(1))(w)))
           (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))))
 glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
-    concat(P66(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
+    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
    (IF(int_eq(w)(1))
      (la _. concat(B(128))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(B(FOLD8(n)))))
      (la _. IF(FITS8(n))
@@ -1014,7 +1014,7 @@ glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
 # cmp 3B, …) — the reverse of G1MEMREG's digit*8+1. reg field = dest register,
 # rm = memory (index-aware via MEMTAILX/MREX).
 glyph G1REGMEM = la labs. la digit. la w. la a. la b.
-    concat(P66(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
+    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
    (concat(B(OP8(add(mul(digit)(8))(3))(w)))
           (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs)))))
 glyph G1ENC = la labs. la digit. la w. la a. la b.
@@ -1050,15 +1050,15 @@ glyph SHDIG = la op.
 glyph ISSH = la op.
     OR(str_eq(op)("shl"))(OR(str_eq(op)("shr"))(OR(str_eq(op)("sar"))
    (OR(str_eq(op)("rol"))(str_eq(op)("ror")))))
-glyph SHENC = la digit. la w. la a. la b.
+glyph SHENC = la digit. la mode. la w. la a. la b.
     IF(NOT(ISVAL(b)))
       (la _. error(concat("asm: shift count must be an immediate (shl/shr reg,CL not implemented): ")(b)))
       (la _.
     (la r. la n.
       IF(int_eq(n)(1))
-        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+        (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
               (concat(B(OP8(209)(w)))(MODRMD(digit)(r)))))
-        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+        (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
               (concat(B(OP8(193)(w)))(concat(MODRMD(digit)(r))(B(FOLD8(n))))))))
     (REGNUM(a))(NUMV(b)))
 
@@ -1297,7 +1297,7 @@ glyph BSRENC = la w. la a. la b.
    (concat(B(15))(concat(B(189))(MODRM(REGNUM(b))(REGNUM(a))))))
 #   bt/bts [mem], reg: 0F A3 (bt, 163) / 0F AB (bts, 171); reg=bit-index, rm=mem.
 glyph BTENC = la labs. la opc. la w. la a. la b.
-    concat(P66(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
+    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
    (concat(B(15))(concat(B(opc))(MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs))))))
 #   Three-operand imul: 6B /r ib when the immediate fits a signed byte, else
 #   69 /r id. The ModRM reg field is the DESTINATION here, rm the source.
@@ -1467,7 +1467,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("times"))(la _. mul(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(SIZEL(labs)(off)(TIMESREST(TL2(ts)))))(la _.
     IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b))))(la _.
-    IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(w)(a)(b))))(la _.
+    IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(BITSMODE(labs))(w)(a)(b))))(la _.
     IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a)(BITSMODE(labs)))))(la _.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a)(BITSMODE(labs)))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
@@ -1521,7 +1521,7 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)("times"))(la _. REPB(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(ENC1(labs)(off)(TIMESREST(TL2(ts)))))(la _.
     IF(ISNOARG(op))(la _. NOARG(op))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(labs)(G1DIG(op))))(la _.
-    IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))))(la _.
+    IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))(BITSMODE(labs))))(la _.
     IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(0)(w)(a)(BITSMODE(labs))))(la _.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(1)(w)(a)(BITSMODE(labs))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(TSTENC))(la _.
