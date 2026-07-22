@@ -800,7 +800,7 @@ glyph FIRST_CIE = la objs. (Z(la self. la l.
         IF(lt(ehsec)(0))
           (la _. self(t))
           (la _. (la eh. TAKES(REC_TOTAL(eh)(0))(eh))(SECBYTES(O_F(h))(ehsec))))
-      (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
+      (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))(objs)
 
 #   Sum of every object's FDE bytes = eh_size − its CIE size (one CIE per object).
 #   Is an FDE KEPT? Its initial_location relocation targets the .text SECTION of
@@ -811,7 +811,7 @@ glyph FIRST_CIE = la objs. (Z(la self. la l.
 glyph FDE_KEPT = la plan. la rec. la eh. la ofde. (la f. (la rs.
     NOT(lt(VAOF(plan)(O_IDX(rec))
               (SYM_SHNDX(f)(O_SS(rec))(REL_SYM(f)(rs)(EH_RELIDX(f)(rs)(add(ofde)(8))))))(0)))
-    (FIND_SEC(f)(".rela.eh_frame")))(O_F(rec))
+    (FIND_SEC_M(O_SECTAB(rec))(".rela.eh_frame")))(O_F(rec))
 
 #   Sum of one object's KEPT FDE bytes (records whose target function survived gc).
 glyph EH_KEPTSZ = la plan. la rec. (la f. (la eh.
@@ -826,7 +826,7 @@ glyph EH_KEPTSZ = la plan. la rec. (la f. (la eh.
                              (la _. self(add(o)(tot))(a))))
                 (REC_TOTAL(eh)(o)))))
      (0)(0))
-    (SECBYTES(f)(FIND_SEC(f)(".eh_frame"))))(O_F(rec))
+    (SECBYTES(f)(FIND_SEC_M(O_SECTAB(rec))(".eh_frame"))))(O_F(rec))
 
 glyph EH_KEPTALL = la objs. la plan. (Z(la self. la l.
     l(0)(la h. la t.
@@ -834,7 +834,7 @@ glyph EH_KEPTALL = la objs. la plan. (Z(la self. la l.
         IF(lt(ehsec)(0))
           (la _. self(t))
           (la _. add(EH_KEPTSZ(plan)(h))(self(t))))
-      (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
+      (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))(objs)
 
 #   The CHEAP full-size path: every object's FDE bytes = eh_size − its CIE size,
 #   from SH_SIZE arithmetic with NO byte extraction. Used when gc is off (nothing
@@ -844,8 +844,8 @@ glyph EH_FDEBYTES = la objs. la cie. (Z(la self. la l.
       (la ehsec.
         IF(lt(ehsec)(0))
           (la _. self(t))
-          (la _. add(sub(SH_SIZE(O_F(h))(ehsec))(str_to_int(str_len(cie))))(self(t))))
-      (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
+          (la _. add(sub(SH_SIZE_M(O_SECTAB(h))(ehsec))(str_to_int(str_len(cie))))(self(t))))
+      (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))(objs)
 
 #   Merged size = one CIE + FDE bytes. When gc is ON, EH_KEPTALL walks the CFI
 #   records to size out gc-dropped functions' FDEs (keeping the planned size equal
@@ -874,7 +874,7 @@ glyph EH_CIE_OK = la objs. la cie. (Z(la self. la l.
                      (la _. self(t))
                      (la _. error("link: .eh_frame merge: objects have differing CIEs (unsupported)")))
                  (SECBYTES(O_F(h))(ehsec))))
-      (FIND_SEC(O_F(h))(".eh_frame")))))(objs)
+      (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))(objs)
 
 #   The .rela.eh_frame reloc index whose r_offset == want (the FDE's
 #   initial_location field), or −1.
@@ -900,7 +900,7 @@ glyph FDE_OUT = la rec. la plan. la resolve. la eh. la ofde. la mbase. la moff.
              (REL_ADDEND(f)(rs)(ridx))))
       (EH_RELIDX(f)(rs)(add(ofde)(8))))
     (TAKES(REC_TOTAL(eh)(ofde))(DROPS(ofde)(eh))))
-   (FIND_SEC(f)(".rela.eh_frame")))(O_F(rec))
+   (FIND_SEC_M(O_SECTAB(rec))(".rela.eh_frame")))(O_F(rec))
 
 #   Walk one object's records, appending each FDE's rewritten bytes (skipping the
 #   CIE), threading the running merged offset. Returns PAIR(bytes-acc)(moff).
@@ -919,7 +919,7 @@ glyph EH_OBJ = la rec. la plan. la resolve. la mbase. la acc. la moff.
                              (la _. self(add(o)(tot))(a)(m))))
                 (REC_TOTAL(eh)(o)))))
      (0)(acc)(moff))
-  (SECBYTES(O_F(rec))(FIND_SEC(O_F(rec))(".eh_frame")))
+  (SECBYTES(O_F(rec))(FIND_SEC_M(O_SECTAB(rec))(".eh_frame")))
 
 #   The merged, relocated .eh_frame: kept CIE, then every object's FDEs in link
 #   order, each rewritten at its merged position. mbase is where .eh_frame is
@@ -933,7 +933,7 @@ glyph EHMERGE = la objs. la plan. la resolve. la mbase. (la cie.
               (la _. self(t)(a)(m))
               (la _. (la r. self(t)(FST(r))(SND(r)))
                      (EH_OBJ(h)(plan)(resolve)(mbase)(a)(m))))
-          (FIND_SEC(O_F(h))(".eh_frame")))))
+          (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))
       (objs)(cie)(str_to_int(str_len(cie))))))
     (FIRST_CIE(objs))
 
@@ -1083,7 +1083,7 @@ glyph ADDLS = la live. la o. la s.
     IF(OR(lt(s)(0))(MEMLS(live)(o)(s)))(la _. live)(la _. CONS(PAIR(o)(s))(live))
 
 #   Add the defining section of every relocation of live section (oidx, sec).
-glyph SECNEIGH = la objs. la oidx. la sec. la live. (la f. (la rs.
+glyph SECNEIGH = la objs. la oidx. la sec. la live. (la rec. (la f. (la rs.
     IF(lt(rs)(0))
       (la _. live)
       (la _. (Z(la self. la i. la acc.
@@ -1092,8 +1092,9 @@ glyph SECNEIGH = la objs. la oidx. la sec. la live. (la f. (la rs.
                   (la _. (la d. self(add(i)(1))(ADDLS(acc)(FST(d))(SND(d))))
                          (DEFSEC(objs)(oidx)(REL_SYM(f)(rs)(i))))))
              (0)(live)))
-    (FIND_SEC(f)(concat(".rela")(SECNAME(f)(sec)))))
-   (O_F(FINDREC(objs)(oidx)))
+    (FIND_SEC_M(O_SECTAB(rec))(concat(".rela")(SECNAME_M(O_SECTAB(rec))(sec)))))
+   (O_F(rec)))
+  (FINDREC(objs)(oidx))
 
 #   One expansion pass: union the neighbours of every currently-live section.
 glyph EXPAND = la objs. la live. (Z(la self. la l. la acc.

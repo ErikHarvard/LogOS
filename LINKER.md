@@ -127,11 +127,15 @@ small remainder and the name from a once-dropped `.shstrtab` tail (3 helpers —
 a 4th field of the object record; the hot readers (`SECNAME_M`/`SH_*_M`/
 `FIND_SEC_M`) are plain list walks with cheap comparisons. `PSTEP`/`CHECKSECS`
 fold the list, `ENAME`/`ESIZE`/`ETYPE`/`PATCHSEC` read it via `E_SECTAB`.
-Measured: a `-ffunction-sections` link **149 s → 89 s** under identical
-contention. *Remaining:* the `.eh_frame` `FIND_SEC` path and `SECBYTES` still use
-the slow accessors (correct, just not yet memoised) — the next perf slice; and
-`SECBYTES`'s deep byte read is inherent (reading section content, not walking
-structure).
+The `.eh_frame` `FIND_SEC` path (`FIRST_CIE`/`FDE_KEPT`/`EH_KEPTSZ`/`EH_KEPTALL`/
+`EH_FDEBYTES`/`EHMERGE`/`EH_OBJ`) and the gc `SECNEIGH` were then rerouted to
+`FIND_SEC_M`/`SH_*_M` too. Cumulative measurement on a `-ffunction-sections`
+link under identical contention: **149 s → 89 s** (section-walk pass) **→ 41 s**
+(`.eh_frame` pass) — **~3.6×**. The only structure read left slow is `SECBYTES`,
+and its cost is the *inherent* deep byte read of section CONTENT (not a header
+walk), so it is not memoisable the same way — reading N bytes at a deep offset
+is O(offset) however you slice it, and that is the one place the whole-file
+`DROP` genuinely has to happen.
 
 **The 31% per-link growth is real and is not any one function.** It tracks
 capability — more section names means more `FIND_SEC` calls, more plan entries,
