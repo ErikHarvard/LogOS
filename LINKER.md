@@ -329,10 +329,9 @@ known: `SYMVAL` turns a still-unresolved WEAK reference into 0, keeps the loud
 (`no entry symbol _start`) so a missing entry still halts. Gate (built `-fno-pic`
 so `&opt` is a direct `R_X86_64_32`): the undefined-weak link succeeds and its
 exit matches ld; the negative gate still confirms an unresolved STRONG symbol is
-refused. *Honest scope:* the PIC form of this idiom emits `R_X86_64_GOTPCRELX`
-(type 42) for `&opt`, which this linker does not support — GOT-based relocations
-are a separate, larger gap (they need a `.got` and a `PT_LOAD` for it); the fix
-covers the non-PIC form our objects use.
+refused. *Note:* the PIC form of this idiom emits `R_X86_64_GOTPCRELX` (type 42)
+for `&opt`, now handled by the GOTPCRELX relaxation (item 6) and, for the
+non-relaxable GOT forms, the real `.got` synthesis (item 7) below.
 
 **✔ 6. GOTPCRELX relaxation.** A `-fPIE`/`-fPIC` object taking an EXTERNAL
 symbol's address emits `mov sym@GOTPCREL(%rip),%reg` — `48 8b 05 <disp32>` with
@@ -349,11 +348,36 @@ the address was loaded and called. *Different-but-valid vs ld, not a bug:* ld
 relaxes to `mov $addr,%reg` (`48 c7`, absolute immediate) where we relax to `lea
 addr(%rip),%reg` (`48 8d`, PC-relative) — both load the address; the `lea` form
 is position-independent (also correct for a PIE image, where ld's absolute `mov`
-would not be), so the witness is "it runs", not a byte-diff. *Honest scope:*
-non-relaxable `R_X86_64_GOTPCREL` (type 9) and the call/jmp-via-GOT forms still
-need a real synthesised `.got` — deferred.
+would not be), so the witness is "it runs", not a byte-diff.
 
-**7. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
+**✔ 7. Real `.got` synthesis.** GOTPCRELX (item 6) is the case ld RELAXES away —
+neither linker keeps a `.got` there. Three relocation types genuinely FORCE a
+GOT because they reference it as DATA / by its BASE and cannot be relaxed, and ld
+synthesises a real `.got` for them: `R_X86_64_GOT64` (27) / `GOT32` (3) store a
+symbol's GOT-slot OFFSET as data (`.quad sym@GOT`), and `R_X86_64_GOTPC32` (26)
+is the GOT base taken PC-relatively (`lea _GLOBAL_OFFSET_TABLE_(%rip),%reg`). The
+linker now builds one: it collects the distinct GOT64/GOT32 symbols (`GOTNAMES`,
+scanning the got-less plan), allocates one 8-byte slot each, and places a
+synthetic `.got` entry — a single plan entry under a sentinel object id
+(`GOTOBJ = −2`, as the merged `.eh_frame` uses object 0) whose
+`ENAME`/`ESIZE`/`ETYPE`/`EBYTES` are answered specially — in the **R
+(read-only)** segment (its slots are resolved at link time and never written, so
+R-only is correct and W^X-clean, and it is the RELRO ld also keeps read-only).
+`GOT64` patches to `8·slotindex + addend`; `GOTPC32` folds into the PC-relative
+path because the synthetic symbol `_GLOBAL_OFFSET_TABLE_` resolves (via a wrapped
+`resolve`) to the GOT base, so its value `S + A − P` IS the base taken PC-rel;
+each slot's bytes are the symbol's resolved absolute address. When no GOT reloc
+is present the size is 0 and no `.got` is placed — every prior fixture is
+untouched. *Different-but-valid vs ld, not a bug:* ld's GOT base (`_GLOBAL_OFFSET_TABLE_`)
+sits PAST its slots (negative offsets), ours at the slots' start (non-negative) —
+a self-consistent convention, so the witness is ld's EXIT, not a byte-diff (a
+layout choice, like the segment order). Gate: `.quad val@GOT` + a GOT-base load —
+which ld is PROVEN to keep a `.got` for (else the case is vacuous) — reads `val`
+THROUGH the synthesised GOT and RUNS with ld's exit (41). *Honest scope:* GOT64 /
+GOT32 / GOTPC32 for globals; a local-symbol GOT slot and the call/jmp-via-GOT
+forms (which ld relaxes anyway in a static link) are not exercised.
+
+**8. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
 back, require agreement with `readelf` on the same file.
 

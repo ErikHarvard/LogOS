@@ -130,6 +130,26 @@ glyph ISABS32 = la ty. OR(int_eq(ty)(10))(int_eq(ty)(11))
 glyph ISGOTX = la ty. int_eq(ty)(42)
 glyph SBYTE  = la s. la o. str_to_int(ord(DROPS(o)(s)))
 
+#   ── REAL GOT — the forms ld genuinely KEEPS a .got for ──────────────────────
+#   ld relaxes the mov/call GOTPCREL forms away (see ISGOTX), so those need no
+#   GOT. But three relocation types reference the GOT as DATA / by its BASE and
+#   CANNOT be relaxed — ld synthesises a real .got for them, and so must this
+#   linker:
+#     R_X86_64_GOT64 (27) / GOT32 (3): a symbol's GOT-SLOT OFFSET from the GOT
+#       base, stored as 8/4 data bytes (`.quad sym@GOT`). Forces a slot for sym.
+#     R_X86_64_GOTPC32 (26): the GOT BASE taken PC-relatively — the reloc on
+#       `lea _GLOBAL_OFFSET_TABLE_(%rip), %reg`. Needs only that the base exist;
+#       it resolves exactly like a PC32 to the synthetic _GLOBAL_OFFSET_TABLE_.
+#   One 8-byte slot is allocated per DISTINCT GOT64/GOT32 symbol; each holds the
+#   symbol's absolute address. Our GOT base is the START of .got (slots at
+#   non-negative offsets), where ld's base sits past its slots (negative offsets)
+#   — a different but self-consistent convention, so ours RUNS with ld's exit
+#   rather than byte-matching ld's .got (a layout choice, like the segment order).
+glyph ISGOT64   = la ty. int_eq(ty)(27)
+glyph ISGOT32   = la ty. int_eq(ty)(3)
+glyph ISGOTPC   = la ty. int_eq(ty)(26)
+glyph ISGOTSLOT = la ty. OR(ISGOT64(ty))(ISGOT32(ty))
+
 #   ★ A 4-byte absolute that does not FIT is truncated silently by LE4 — the
 #   image links, and the program jumps or loads somewhere plausible and wrong.
 #   This layout puts everything near 0x401000, far inside 32 bits, so the guard
@@ -165,7 +185,7 @@ glyph SYMVAL = la f. la ss. la va. la resolve. la i.
 
 #   Apply every relocation of one object's .text, folding over the list so each
 #   patch sees the previous one's result.
-glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
+glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la gotbase. la gotnames. la bytes.
   IF(lt(rs)(0))
     (la _. bytes)
     (la _. (Z(la self. la i. la acc.
@@ -177,7 +197,7 @@ glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
               self(add(i)(1))
                   (IF(int_eq(ty)(1))
                      (la _. PATCH(acc)(off)(8)(LE8(v)))
-                     (la _. IF(ISPCREL(ty))
+                     (la _. IF(OR(ISPCREL(ty))(ISGOTPC(ty)))
                               (la _. PATCH(acc)(off)(4)(LE4(v)))
                               (la _. IF(ISABS32(ty))
                                        (la _. IF(FITS32(v))
@@ -188,8 +208,12 @@ glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
                                                 (la _. IF(int_eq(SBYTE(acc)(sub(off)(2)))(139))
                                                          (la _. PATCH(PATCH(acc)(sub(off)(2))(1)(chr("141")))(off)(4)(LE4(v)))
                                                          (la _. error(concat("link: GOTPCRELX form not modelled (opcode 0x")(concat(int_to_str(SBYTE(acc)(sub(off)(2))))(" is not mov 8b; only mov->lea relaxation is supported)")))))
-                                                (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty))))))))
-            )(IF(OR(ISPCREL(ty))(ISGOTX(ty)))
+                                                (la _. IF(ISGOT64(ty))
+                                                         (la _. PATCH(acc)(off)(8)(LE8(add(mul(8)(GOTIDX(gotnames)(SYMNAME(f)(ss)(REL_SYM(f)(rs)(i)))))(a))))
+                                                         (la _. IF(ISGOT32(ty))
+                                                                  (la _. PATCH(acc)(off)(4)(LE4(add(mul(8)(GOTIDX(gotnames)(SYMNAME(f)(ss)(REL_SYM(f)(rs)(i)))))(a))))
+                                                                  (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty))))))))))
+            )(IF(OR(OR(ISPCREL(ty))(ISGOTX(ty)))(ISGOTPC(ty)))
                 (la _. sub(add(s)(a))(add(secva)(off)))
                 (la _. add(s)(a)))
           )(REL_ADDEND(f)(rs)(i))
@@ -411,7 +435,7 @@ glyph SEG_FLAGS = la s. FST(s)
 glyph SEG_NAMES = la s. SND(s)
 glyph SCRIPT =
   CONS(SEG(F_RX)(CONS(".text")(NIL)))(
-  CONS(SEG(F_R)(CONS(".rodata")(CONS(".eh_frame")(NIL))))(
+  CONS(SEG(F_R)(CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(NIL)))))(
   CONS(SEG(F_RW)(CONS(".data")(CONS(".bss")(NIL))))(
   NIL)))
 glyph LOAD_BASE = TEXT_BASE      # 0x401000, where the first segment begins
@@ -524,24 +548,26 @@ glyph PEH = la gcon. la objs. la acc. la cur. (la sz.
 
 #   All section names of ONE segment, packed contiguously from the cursor. Every
 #   section packs per-object except .eh_frame, which is placed once, merged.
-glyph SNAMES = la keep. la gcon. la objs. la names. la acc. la cur.
+glyph SNAMES = la keep. la gcon. la objs. la gotsz. la names. la acc. la cur.
     (Z(la self. la l. la a. la c.
         l(PAIR(a)(c))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
           (IF(str_eq(h)(".eh_frame"))
              (la _. PEH(gcon)(objs)(a)(c))
-             (la _. PNAME(keep)(objs)(h)(a)(c))))))
+             (la _. IF(str_eq(h)(".got"))
+                      (la _. PGOT(gotsz)(a)(c))
+                      (la _. PNAME(keep)(objs)(h)(a)(c)))))))
       (names)(acc)(cur)
 
 #   The plan: fold the SCRIPT with one running cursor, page-aligning at each
 #   segment start and packing its sections. `keep` is the gc-sections liveness
 #   predicate (always TRUE when gc is off). REV because entries accumulate with
 #   CONS; without it link order — and thus packing — would invert.
-glyph MKPLAN = la keep. la gcon. la objs.
+glyph MKPLAN = la keep. la gcon. la objs. la gotsz.
     REV(FST((Z(la self. la segs. la acc. la cur.
         segs(PAIR(acc)(cur))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
-          (SNAMES(keep)(gcon)(objs)(SEG_NAMES(h))(acc)(ALIGNUP(cur)(PAGE))))))
+          (SNAMES(keep)(gcon)(objs)(gotsz)(SEG_NAMES(h))(acc)(ALIGNUP(cur)(PAGE))))))
       (SCRIPT)(NIL)(LOAD_BASE)))(NIL)
 
 #   Address of a given object's given section, or -1 if it was not placed.
@@ -550,6 +576,66 @@ glyph VAOF = la plan. la o. la sec. (Z(la self. la l.
       IF(AND(int_eq(E_OBJ(h))(o))(int_eq(E_SEC(h))(sec)))
         (la _. E_ADDR(h))
         (la _. self(t)))))(plan)
+
+# ── SYNTHETIC .got — a real Global Offset Table ─────────────────────────────
+#   Unlike every other output section, .got is not read from an input object —
+#   the linker SYNTHESISES it: one 8-byte slot per distinct symbol referenced by
+#   a GOT64/GOT32 relocation, each slot holding that symbol's resolved absolute
+#   address. It is placed like the merged .eh_frame — a single plan entry under a
+#   sentinel object id (GOTOBJ) whose ENAME/ESIZE/ETYPE/EBYTES are answered
+#   specially — and lives in the R (read-only) segment: its slots are resolved at
+#   link time and never written at run time, so R-only is correct and W^X-clean
+#   (ld keeps it in a RELRO segment, likewise read-only after load).
+glyph GOTOBJ = sub(0)(2)                        # -2: real objects are >=1, eh is 0
+glyph GOTENTRY = la e. int_eq(E_OBJ(e))(GOTOBJ)
+glyph MEMNAME = la names. la nm. (Z(la self. la l.
+    l(FALSE)(la h. la t. IF(str_eq(h)(nm))(la _. TRUE)(la _. self(t)))))(names)
+glyph SNOC = la l. la x. (Z(la self. la ll.
+    ll(CONS(x)(NIL))(la h. la t. CONS(h)(self(t)))))(l)
+glyph ADDNAME = la names. la nm.
+    IF(MEMNAME(names)(nm))(la _. names)(la _. SNOC(names)(nm))
+#   The slot index of a GOT symbol: its position in the collected order, which is
+#   the SAME order the slots are emitted in (GOTBYTES), so index and byte agree.
+glyph GOTIDX = la names. la nm. (Z(la self. la l. la i.
+    l(sub(0)(1))(la h. la t.
+      IF(str_eq(h)(nm))(la _. i)(la _. self(t)(add(i)(1))))))(names)(0)
+#   Collect one plan entry's GOT-slot symbols (GOT64/GOT32 relocs of its section).
+#   Skips the merged .eh_frame (object 0) and the .got itself (GOTOBJ), which have
+#   no input relocations of their own.
+glyph GOTNAMES_E = la objs. la e. la acc.
+    IF(OR(GOTENTRY(e))(int_eq(E_OBJ(e))(0)))(la _. acc)(la _.
+    (la rec. (la f. (la rs.
+       IF(lt(rs)(0))
+         (la _. acc)
+         (la _. (Z(la self. la i. la a.
+                    IF(int_eq(i)(REL_COUNT(f)(rs)))
+                      (la _. a)
+                      (la _. IF(ISGOTSLOT(REL_TYPE(f)(rs)(i)))
+                               (la _. self(add(i)(1))(ADDNAME(a)(SYMNAME(f)(O_SS(rec))(REL_SYM(f)(rs)(i)))))
+                               (la _. self(add(i)(1))(a)))))
+                (0)(acc)))
+       (FIND_SEC_M(O_SECTAB(rec))(concat(".rela")(SECNAME_M(O_SECTAB(rec))(E_SEC(e))))))
+      (O_F(rec)))(FINDREC(objs)(E_OBJ(e))))
+#   Every GOT-slot symbol across the whole (got-less) plan, deduped in order.
+glyph GOTNAMES = la objs. la plan. (Z(la self. la l. la acc.
+    l(acc)(la h. la t. self(t)(GOTNAMES_E(objs)(h)(acc)))))(plan)(NIL)
+#   Place the synthetic .got: one entry, size 8*nslots, object GOTOBJ, aligned 8.
+glyph PGOT = la gotsz. la acc. la cur.
+    IF(int_eq(gotsz)(0))
+      (la _. PAIR(acc)(cur))
+      (la _. (la a. PAIR(CONS(MKE(GOTOBJ)(gotsz)(a))(acc))(add(a)(gotsz)))
+             (ALIGNUP(cur)(8)))
+#   The GOT base = the .got entry's address (start of the table), or -1 if none.
+glyph GOTBASE = la plan. (Z(la self. la l.
+    l(sub(0)(1))(la h. la t.
+      IF(int_eq(E_OBJ(h))(GOTOBJ))(la _. E_ADDR(h))(la _. self(t)))))(plan)
+#   The GOT bytes: each slot = the symbol's absolute address, in collected order.
+glyph GOTBYTES = la gotnames. la resolve. (Z(la self. la l.
+    l("")(la h. la t.
+      (la v. IF(lt(v)(0))
+               (la _. error(concat("link: GOT symbol unresolved: ")(h)))
+               (la _. concat(LE8(v))(self(t))))
+      (resolve(h)))))(gotnames)
 
 # ── REGIONS — one PT_LOAD per SCRIPT SEGMENT ────────────────────────────────
 #   A REGION is one loadable segment: its permission flags, its page-aligned
@@ -582,12 +668,15 @@ glyph E_SECTAB = la objs. la e. O_SECTAB(FINDREC(objs)(E_OBJ(e)))
 #   a PROGBITS ".eh_frame" of that size. Every real entry defers to its header.
 glyph EHENTRY = la e. int_eq(E_OBJ(e))(0)
 glyph ENAME = la objs. la e.
-    IF(EHENTRY(e))(la _. ".eh_frame")(la _. SECNAME_M(E_SECTAB(objs)(e))(E_SEC(e)))
+    IF(GOTENTRY(e))(la _. ".got")(la _.
+    IF(EHENTRY(e))(la _. ".eh_frame")(la _. SECNAME_M(E_SECTAB(objs)(e))(E_SEC(e))))
 glyph ESIZE = la objs. la e.
-    IF(EHENTRY(e))(la _. E_SEC(e))(la _. SH_SIZE_M(E_SECTAB(objs)(e))(E_SEC(e)))
+    IF(GOTENTRY(e))(la _. E_SEC(e))(la _.
+    IF(EHENTRY(e))(la _. E_SEC(e))(la _. SH_SIZE_M(E_SECTAB(objs)(e))(E_SEC(e))))
 glyph SH_NOBITS = 8
 glyph ETYPE = la objs. la e.
-    IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE_M(E_SECTAB(objs)(e))(E_SEC(e)))
+    IF(GOTENTRY(e))(la _. 1)(la _.
+    IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE_M(E_SECTAB(objs)(e))(E_SEC(e))))
 
 #   ★ RELOCATIONS ARE APPLIED TO EVERY PLACED SECTION, not only .text.
 #   Applying just `.rela.text` was a CONFIRMED silent-wrongness bug: an object
@@ -751,14 +840,14 @@ glyph MKOBJS = la paths.
 #   and p2 were as separate binders.
 #   One entry per PLAN ENTRY — i.e. per placed section of each object — with
 #   that section's own relocations applied if it has a `.rela.<name>`.
-glyph PATCHSEC = la objs. la plan. la resolve. la e.
+glyph PATCHSEC = la objs. la plan. la resolve. la gotbase. la gotnames. la e.
     (la rec. (la f.
       (la raw.
         (la rs. IF(lt(rs)(0))
                   (la _. raw)
                   (la _. APPLYRELS(f)(O_SS(rec))(rs)
                                   (la sec. VAOF(plan)(E_OBJ(e))(sec))(resolve)
-                                  (E_ADDR(e))(raw)))
+                                  (E_ADDR(e))(gotbase)(gotnames)(raw)))
         (FIND_SEC_M(O_SECTAB(rec))(concat(".rela")(SECNAME_M(O_SECTAB(rec))(E_SEC(e))))))
       (IF(int_eq(SH_TYPE_M(O_SECTAB(rec))(E_SEC(e)))(SH_NOBITS))
          (la _. "")
@@ -770,13 +859,15 @@ glyph PATCHSEC = la objs. la plan. la resolve. la e.
 #   EHMERGE (dedup CIE, rewrite FDE CIE-pointers, relocate FDEs at their merged
 #   positions), keyed like any other patched section so EBYTES picks it up
 #   unchanged. Every real (object, section) goes through PATCHSEC as before.
-glyph MKPATCHED = la objs. la plan. la resolve.
+glyph MKPATCHED = la objs. la plan. la resolve. la gotnames. la gotbase.
     (Z(la self. la l.
       l(NIL)(la h. la t.
         CONS(PAIR(PAIR(E_OBJ(h))(E_SEC(h)))
                  (IF(int_eq(E_OBJ(h))(0))
                     (la _. EHMERGE(objs)(plan)(resolve)(E_ADDR(h)))
-                    (la _. PATCHSEC(objs)(plan)(resolve)(h))))
+                    (la _. IF(int_eq(E_OBJ(h))(GOTOBJ))
+                             (la _. GOTBYTES(gotnames)(resolve))
+                             (la _. PATCHSEC(objs)(plan)(resolve)(gotbase)(gotnames)(h)))))
             (self(t)))))
     (plan)
 
@@ -1128,7 +1219,10 @@ glyph MAIN =
   (la objs.
   (la _chk.
   (la keep.
+  (la gotnames.
+  (la gotsz.
   (la plan.
+  (la gotbase.
   (la resolve.
   (la patched.
   (la regs.
@@ -1151,9 +1245,14 @@ glyph MAIN =
       NIL))))))))))))
   )(LENL(regs))
   )(MKREGIONS(objs)(patched)(plan))
-  )(MKPATCHED(objs)(plan)(resolve))
-  )(la want. RESOLVE_L(objs)(plan)(want))
-  )(MKPLAN(keep)(gcon)(objs))
+  )(MKPATCHED(objs)(plan)(resolve)(gotnames)(gotbase))
+  )(la want. IF(str_eq(want)("_GLOBAL_OFFSET_TABLE_"))
+               (la _. gotbase)
+               (la _. RESOLVE_L(objs)(plan)(want)))
+  )(GOTBASE(plan))
+  )(MKPLAN(keep)(gcon)(objs)(gotsz))
+  )(mul(8)(LENL(gotnames)))
+  )(GOTNAMES(objs)(MKPLAN(keep)(gcon)(objs)(0)))
   )(KEEPFN(objs)(gcon))
   )(CHECKALL(objs))
   )(MKOBJS(NODIRS(lines)))

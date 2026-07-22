@@ -724,6 +724,72 @@ CGXD
     rm -f gx.o gxd.o
 fi
 
+# --- ★ REAL .got SYNTHESIS: a symbol referenced through the GOT as DATA ---
+#   ld relaxes the mov/call GOTPCREL forms away (that is the GOTPCRELX case above,
+#   where NEITHER linker keeps a .got). But `.quad sym@GOT` — R_X86_64_GOT64 —
+#   stores a symbol's GOT-SLOT OFFSET as DATA and CANNOT be relaxed: ld
+#   synthesises a real .got, and so must this linker. The fixture proves ld keeps
+#   a .got (else the case is vacuous), then requires ours to RUN with ld's exit.
+#     readval(): rbx = _GLOBAL_OFFSET_TABLE_ (GOTPC32), rax = val@GOT (GOT64),
+#                then *(rbx+rax) = &val, then *&val = 41.  _start exits with it.
+#   It exits 41 ONLY if the slot held &val and the base/offset both resolved — a
+#   wrong GOT would fault or return garbage. (ld's GOT base sits PAST its slots,
+#   ours at the slots' start: different convention, same result, so the witness
+#   is ld's EXIT, not a byte-diff — a layout choice, like the segment ordering.)
+cat > gg2.s <<'GGR'
+.text
+.globl readval
+readval:
+  lea _GLOBAL_OFFSET_TABLE_(%rip), %rbx
+  movq gotslot(%rip), %rax
+  movq (%rbx,%rax), %rax
+  movl (%rax), %eax
+  ret
+.data
+gotslot: .quad val@GOT
+GGR
+cat > gg1.s <<'GGS'
+.text
+.globl _start
+_start:
+  call readval
+  mov %eax, %edi
+  mov $60, %eax
+  syscall
+GGS
+cat > gg3.s <<'GGV'
+.data
+.globl val
+val: .long 41
+GGV
+gcc -c gg2.s -o gg2.o 2>/dev/null
+if [ -f gg2.o ] && readelf -rW gg2.o | grep -q 'GOT64'; then
+    gcc -c gg1.s -o gg1.o 2>/dev/null
+    gcc -c gg3.s -o gg3.o 2>/dev/null
+    ld -static --no-pie -e _start -o gg_ref gg1.o gg2.o gg3.o 2>/dev/null
+    #   set -e: ./gg_ref exits 41 BY DESIGN, so capture via if/else — a bare
+    #   `./gg_ref; LDGX=$?` would abort the whole script at the non-zero exit.
+    if ./gg_ref >/dev/null 2>&1; then LDGX=0; else LDGX=$?; fi
+    if readelf -SW gg_ref 2>/dev/null | grep -q ' \.got '; then
+        cp gg1.o link_in1.o; cp gg2.o link_in2.o; cp gg3.o link_in3.o
+        printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt; rm -f link_out
+        if GGO=$(timeout 400 ./tiny_host link_reloc.la 2>&1); then :; else
+            echo "FAIL  link_reloc.la: real-.got link failed: $GGO"; ok=0; fi
+        if [ -x link_out ]; then
+            if ./link_out >/dev/null 2>&1; then OG=0; else OG=$?; fi
+            [ "$OG" = "$LDGX" ] \
+                || { echo "FAIL  real-.got link exited $OG, ld exits $LDGX — the .got synthesis is wrong"; ok=0; }
+        else echo "FAIL  real-.got: no executable emitted"; ok=0; fi
+        rm -f link_in1.o link_in2.o link_in3.o link_inputs.txt gg_ref
+    else
+        echo "NOTE  link_reloc.la: ld relaxed the GOT64 fixture (kept no .got) — real-.got check skipped"
+    fi
+    rm -f gg1.o gg3.o
+else
+    echo "NOTE  link_reloc.la: gcc/as emitted no GOT64 reloc — real-.got check skipped"
+fi
+rm -f gg1.s gg2.s gg3.s gg2.o
+
 # --- ★ --gc-sections: drop unreferenced sections (opt-in) ---
 #   A `--gc-sections` directive line in link_inputs.txt turns on dead-section
 #   elimination: only sections REACHABLE from _start survive. The fixture adds a
@@ -839,5 +905,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S + GOTPCRELX(mov->lea relax), WEAK symbols (strong overrides weak; weak resolves when no strong; undefined weak -> 0), 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S + GOTPCRELX(mov->lea relax) + REAL .got SYNTHESIS (GOT64/GOTPC32 via .quad sym@GOT, non-relaxable, RUNS == ld), WEAK symbols (strong overrides weak; weak resolves when no strong; undefined weak -> 0), 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]
