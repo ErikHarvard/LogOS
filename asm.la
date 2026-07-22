@@ -705,8 +705,12 @@ glyph DISPOF = la m. la d.
 #   identical). Register base uses MODOF's disp/rbp-quirk rules; a label/absolute
 #   base (b<0) becomes SIB base=5(none) with a mandatory disp32.
 glyph FOLDD  = la d. IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d)
+#   rsp (index field 4, and NOT r12 whose REX.X makes 4 mean r12) cannot be a SIB
+#   index — index=100 encodes "no index", so `[base+rsp*n]` would silently drop rsp.
 glyph SIBBYTE = la scaleb. la idx. la basef.
-    B(add(mul(scaleb)(64))(add(mul(mod(idx)(8))(8))(mod(basef)(8))))
+    IF(int_eq(idx)(4))
+      (la _. error("asm: rsp cannot be a SIB index register"))
+      (la _. B(add(mul(scaleb)(64))(add(mul(mod(idx)(8))(8))(mod(basef)(8)))))
 glyph MRMLBLD = la reg. la scaleb. la idx. la d.
     concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(SIBBYTE(scaleb)(idx)(5))(LE4(FOLDD(d))))
 glyph MRMREG = la reg. la b. la scaleb. la idx. la d.
@@ -1231,8 +1235,13 @@ glyph MOVZXENC = la labs. la destw. la srcw. la a. la b.
    (concat(B(15))(concat(B(MOVZXOP(srcw)))(RMTAIL(labs)(REGNUM(a))(b)))))
 #   movsxd: 63 /r — dest always r64 (REX.W), src r/m32; no 0F, no 0x66.
 glyph MOVSXDENC = la labs. la a. la b.
-    concat(MREX(8)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
-   (concat(B(99))(RMTAIL(labs)(REGNUM(a))(b)))
+    (la emit.
+      IF(ISREG(b))
+        (la _. IF(int_eq(RWIDTH(b))(4))(la _. emit)
+                 (la _. error("asm: movsxd source must be a 32-bit r/m")))
+        (la _. emit))
+    (concat(MREX(8)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
+           (concat(B(99))(RMTAIL(labs)(REGNUM(a))(b))))
 #   bsr dest, src (reg,reg): 0F BD /r, reg=dest, rm=src.
 glyph BSRENC = la w. la a. la b.
     concat(P66(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
