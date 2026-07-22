@@ -495,7 +495,8 @@ glyph MEMHASIDX = la t. ISREG(MEMIDXREG(t))
 glyph MEMIDX = la t. IF(MEMHASIDX(t))(la _. REGNUM(MEMIDXREG(t)))(la _. sub(0)(1))
 glyph SCALEB = la n.
     IF(int_eq(n)(1))(la _. 0)(la _. IF(int_eq(n)(2))(la _. 1)(la _.
-    IF(int_eq(n)(4))(la _. 2)(la _. 3)))
+    IF(int_eq(n)(4))(la _. 2)(la _. IF(int_eq(n)(8))(la _. 3)
+    (la _. error(concat("asm: invalid SIB scale (must be 1/2/4/8): ")(int_to_str(n)))))))
 glyph MEMSCALEB = la t.
     (la a. IF(str_eq(a)(""))(la _. 0)(la _. SCALEB(NUMV(a))))(AFTERSTAR(MEMIDXTOK(t)))
 # ── RIP-relative `[rel label]` ──────────────────────────────────────────────
@@ -1219,9 +1220,15 @@ glyph RMTAIL = la labs. la reg. la b.
     IF(ISREG(b))(la _. MODRM(REGNUM(b))(reg))(la _. MEMTAILX(reg)(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b)))
 glyph SRCW = la ts. (la b. IF(ISREG(b))(la _. RWIDTH(b))(la _. DECLSZ(TL2(ts))))(A2(ts))
 #   movzx: 0F B6 (byte src, 182) / 0F B7 (word src, 183). reg=dest, rm=src.
+#   The source MUST be byte or word — a 32/64-bit src (e.g. `movzx rax, rax`) is
+#   not a real movzx (nasm rejects it), so halt loudly rather than emit a nonsense
+#   B7 over a 64-bit rm that the CPU would misread.
+glyph MOVZXOP = la srcw.
+    IF(int_eq(srcw)(1))(la _. 182)(la _. IF(int_eq(srcw)(2))(la _. 183)
+      (la _. error(concat("asm: movzx source must be byte or word, got width ")(int_to_str(srcw)))))
 glyph MOVZXENC = la labs. la destw. la srcw. la a. la b.
     concat(P66(destw))(concat(MREX(destw)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
-   (concat(B(15))(concat(B(IF(int_eq(srcw)(1))(la _. 182)(la _. 183)))(RMTAIL(labs)(REGNUM(a))(b)))))
+   (concat(B(15))(concat(B(MOVZXOP(srcw)))(RMTAIL(labs)(REGNUM(a))(b)))))
 #   movsxd: 63 /r — dest always r64 (REX.W), src r/m32; no 0F, no 0x66.
 glyph MOVSXDENC = la labs. la a. la b.
     concat(MREX(8)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
