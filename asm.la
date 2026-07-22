@@ -737,11 +737,11 @@ glyph MRMLBLD = la reg. la scaleb. la idx. la d.
     concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(SIBBYTE(scaleb)(idx)(5))(LE4(FOLDD(d))))
 glyph MRMREG = la reg. la b. la scaleb. la idx. la d.
     (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(4)))(concat(SIBBYTE(scaleb)(idx)(b))(DISPOF(m)(d))))(MODOF(b)(d))
-glyph MEMTAILX = la reg. la b. la idx. la scaleb. la d.
+glyph MEMTAILX = la reg. la b. la idx. la scaleb. la d. la mode.
     IF(int_eq(b)(sub(0)(2)))
       (la _. concat(B(add(mul(mod(reg)(8))(8))(5)))(LE4(FOLDD(d))))
       (la _. IF(lt(idx)(0))
-        (la _. MEMTAIL(reg)(b)(d))
+        (la _. MEMTAIL(reg)(b)(d)(mode))
         (la _. IF(lt(b)(0))(la _. MRMLBLD(reg)(scaleb)(idx)(d))(la _. MRMREG(reg)(b)(scaleb)(idx)(d))))
 #   REX for a memory operand, adding the X bit (index>=8) to REXOPT's W/R/B.
 #   idx<0 -> X is 0 -> byte-identical to REXOPT, so this is safe everywhere.
@@ -751,10 +751,10 @@ glyph MREX = la w. la reg. la idx. la base. la force.
             (add(IF(lt(reg)(8))(la _. 0)(la _. 4))
             (add(IF(AND(NOT(lt(idx)(0)))(NOT(lt(idx)(8))))(la _. 2)(la _. 0))
                 (IF(lt(base)(8))(la _. 0)(la _. 1))))))
-glyph MEMENC = la op. la w. la reg. la b. la idx. la scaleb. la d. la force.
-    concat(P66(w))
+glyph MEMENC = la op. la w. la reg. la b. la idx. la scaleb. la d. la force. la mode.
+    concat(P66M(mode)(w))
    (concat(MREX(w)(reg)(idx)(b)(force))
-   (concat(B(OP8(op)(w)))(MEMTAILX(reg)(b)(idx)(scaleb)(d))))
+   (concat(B(OP8(op)(w)))(MEMTAILX(reg)(b)(idx)(scaleb)(d)(mode))))
 
 #   IMMEDIATE TO MEMORY (C6 /0 for a byte, C7 /0 otherwise). The reg field of
 #   the ModRM byte is not a register here but the opcode extension /0, so the
@@ -764,11 +764,11 @@ glyph MEMENC = la op. la w. la reg. la b. la idx. la scaleb. la d. la force.
 glyph IMMW = la w. la n.
     IF(int_eq(w)(1))(la _. B(n))
       (la _. IF(int_eq(w)(2))(la _. LE2(n))(la _. LE4(n)))
-glyph MEMIMM = la w. la b. la idx. la scaleb. la d. la n.
-    concat(P66(w))
+glyph MEMIMM = la w. la b. la idx. la scaleb. la d. la n. la mode.
+    concat(P66M(mode)(w))
    (concat(MREX(w)(0)(idx)(b)(FALSE))
    (concat(B(IF(int_eq(w)(1))(la _. 198)(la _. 199)))
-   (concat(MEMTAILX(0)(b)(idx)(scaleb)(d))(IMMW(w)(n)))))
+   (concat(MEMTAILX(0)(b)(idx)(scaleb)(d)(mode))(IMMW(w)(n)))))
 
 # ── OPERAND SIZE KEYWORDS ────────────────────────────────────────────────────
 #   `mov dword [rdi + 8], 0` carries its width in a KEYWORD, because neither
@@ -931,10 +931,10 @@ glyph MOVENC = la labs. la w. la a. la b.
       (la _. concat(B(102))(concat(B(140))(SPECMODRM(SEGNUM(b))(REGNUM(a)))))
     (la _. IF(ISMEM(a))
       (la _. IF(ISVAL(b))
-               (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b)))
-               (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))))
+               (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b))(BITSMODE(labs)))
+               (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs))))
       (la _. IF(ISMEM(b))
-        (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a)))
+        (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))
         (la _. IF(ISREG(b))
           (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
           (la _. IF(ISVAL(b))
@@ -993,21 +993,21 @@ glyph G1IMM = la digit. la w. la r. la n. la force.
 glyph G1MEMREG = la labs. la digit. la w. la a. la b.
     concat(P66(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
    (concat(B(OP8(add(mul(digit)(8))(1))(w)))
-          (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a)))))
+          (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))))
 glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
     concat(P66(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
    (IF(int_eq(w)(1))
-     (la _. concat(B(128))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
+     (la _. concat(B(128))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(B(FOLD8(n)))))
      (la _. IF(FITS8(n))
-       (la _. concat(B(131))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
-       (la _. concat(B(129))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a)))(IMMW(w)(n)))))))
+       (la _. concat(B(131))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(B(FOLD8(n)))))
+       (la _. concat(B(129))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(IMMW(w)(n)))))))
 # ALU reg, [mem] (memory SOURCE): the r,r/m form, opcode digit*8+3 (add 03,
 # cmp 3B, …) — the reverse of G1MEMREG's digit*8+1. reg field = dest register,
 # rm = memory (index-aware via MEMTAILX/MREX).
 glyph G1REGMEM = la labs. la digit. la w. la a. la b.
     concat(P66(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
    (concat(B(OP8(add(mul(digit)(8))(3))(w)))
-          (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b)))))
+          (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs)))))
 glyph G1ENC = la labs. la digit. la w. la a. la b.
     IF(ISMEM(a))
       (la _. IF(ISVAL(b))
@@ -1076,7 +1076,7 @@ glyph TSTENC = la w. la a. la b.
 
 # ── lea: the same ModRM/SIB/disp machinery as mov, opcode 8D, never 8-bit ───
 glyph LEAENC = la labs. la w. la a. la b.
-    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))
+    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs))
 
 # ── no-operand instructions ────────────────────────────────────────────────
 glyph NOARGS =
@@ -1210,17 +1210,26 @@ glyph INDJMP = la digit. la a.
 glyph LTRENC = la a. concat(B(15))(concat(B(0))(MODRMD(3)(REGNUM(a))))
 #   lgdt needs the ModRM/SIB/disp tail WITHOUT the REX+opcode that MEMENC bakes
 #   in, so the addressing machinery is factored out and shared.
-glyph MEMTAIL = la reg. la b. la d.
-    IF(lt(b)(0))
-      (la _. concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(B(37))(LE4(d))))
-      (la _. (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
-                   (concat(SIBOF(b))(DISPOF(m)(d))))
-             (MODOF(b)(d)))
+#   16-bit mode: a direct address is mod=00 rm=110 + disp16 (no SIB), not the
+#   [disp32]-via-SIB form. Register-based 16-bit addressing ([bx+si] …) uses a
+#   different ModRM table the boot sectors don't need, so it halts loudly rather
+#   than silently emitting 32/64-mode bytes. mode!=16 → the two original branches,
+#   byte-identical.
+glyph MEMTAIL = la reg. la b. la d. la mode.
+    IF(int_eq(mode)(16))
+      (la _. IF(lt(b)(0))
+               (la _. concat(B(add(mul(mod(reg)(8))(8))(6)))(LE2(d)))
+               (la _. error("asm: 16-bit register-based addressing not supported (only direct [disp16])")))
+      (la _. IF(lt(b)(0))
+               (la _. concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(B(37))(LE4(d))))
+               (la _. (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
+                            (concat(SIBOF(b))(DISPOF(m)(d))))
+                      (MODOF(b)(d))))
 glyph LGDTENC = la labs. la b.
-    concat(B(15))(concat(B(1))(MEMTAIL(2)(MEMBASE(b))(MEMDISP(labs)(b))))
+    concat(B(15))(concat(B(1))(MEMTAIL(2)(MEMBASE(b))(MEMDISP(labs)(b))(BITSMODE(labs))))
 #   lidt [mem]: 0F 01 /3 — same as lgdt (/2), one ModRM digit apart.
 glyph LIDTENC = la labs. la b.
-    concat(B(15))(concat(B(1))(MEMTAIL(3)(MEMBASE(b))(MEMDISP(labs)(b))))
+    concat(B(15))(concat(B(1))(MEMTAIL(3)(MEMBASE(b))(MEMDISP(labs)(b))(BITSMODE(labs))))
 glyph DIVENC = la w. la a.
     concat(P66(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
    (concat(B(OP8(247)(w)))(MODRMD(6)(REGNUM(a)))))
@@ -1246,7 +1255,7 @@ glyph IMUL2 = la w. la a. la b.
 glyph RMNUM  = la b. IF(ISREG(b))(la _. REGNUM(b))(la _. MEMBASE(b))
 glyph RMIDX = la b. IF(ISMEM(b))(la _. MEMIDX(b))(la _. sub(0)(1))
 glyph RMTAIL = la labs. la reg. la b.
-    IF(ISREG(b))(la _. MODRM(REGNUM(b))(reg))(la _. MEMTAILX(reg)(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b)))
+    IF(ISREG(b))(la _. MODRM(REGNUM(b))(reg))(la _. MEMTAILX(reg)(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs)))
 glyph SRCW = la ts. (la b. IF(ISREG(b))(la _. RWIDTH(b))(la _. DECLSZ(TL2(ts))))(A2(ts))
 #   movzx: 0F B6 (byte src, 182) / 0F B7 (word src, 183). reg=dest, rm=src.
 #   The source MUST be byte or word — a 32/64-bit src (e.g. `movzx rax, rax`) is
@@ -1274,7 +1283,7 @@ glyph BSRENC = la w. la a. la b.
 #   bt/bts [mem], reg: 0F A3 (bt, 163) / 0F AB (bts, 171); reg=bit-index, rm=mem.
 glyph BTENC = la labs. la opc. la w. la a. la b.
     concat(P66(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
-   (concat(B(15))(concat(B(opc))(MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))))))
+   (concat(B(15))(concat(B(opc))(MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs))))))
 #   Three-operand imul: 6B /r ib when the immediate fits a signed byte, else
 #   69 /r id. The ModRM reg field is the DESTINATION here, rm the source.
 glyph IMUL3 = la w. la a. la b. la n.
