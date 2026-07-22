@@ -1197,9 +1197,12 @@ glyph SPLITCOLON = Z(la self. la s. la cur.
       (la _. IF(str_eq(str_head(s))(":"))
                (la _. PAIR(cur)(str_tail(s)))
                (la _. self(str_tail(s))(concat(cur)(str_head(s))))))
+#   Far jmp: ptr16:16 (EA off16 seg16, 5 bytes) in 16-bit mode, ptr16:32
+#   (EA off32 seg16, 7 bytes) in 32/64. Only the OFFSET width changes.
 glyph FARJMP = la labs. la t.
     (la p. concat(B(234))
-          (concat(LE4(EVAL(labs)(SND(p))))(LE2(EVAL(labs)(FST(p))))))
+          (concat(IF(int_eq(BITSMODE(labs))(16))(la _. LE2(EVAL(labs)(SND(p))))(la _. LE4(EVAL(labs)(SND(p)))))
+                 (LE2(EVAL(labs)(FST(p))))))
     (SPLITCOLON(t)(""))
 glyph INDJMP = la digit. la a.
     concat(REXOPT(4)(0)(REGNUM(a))(FALSE))
@@ -1391,7 +1394,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(OR(str_eq(op)("push"))(str_eq(op)("pop")))
       (la _. IF(lt(REGNUM(A1(ts)))(8))(la _. 1)(la _. 2))(la _.
     IF(str_eq(op)("call"))(la _. NEARSZ(BITSMODE(labs))(1))(la _.
-    IF(AND(str_eq(op)("jmp"))(HASCOLON(A1(ts))))(la _. 7)(la _.
+    IF(AND(str_eq(op)("jmp"))(HASCOLON(A1(ts))))(la _. IF(int_eq(BITSMODE(labs))(16))(la _. 5)(la _. 7))(la _.
     IF(AND(str_eq(op)("jmp"))(ISREG(A1(ts))))(la _. LENOF(INDJMP(4)(A1(ts))))(la _.
     IF(AND(str_eq(op)("call"))(ISREG(A1(ts))))(la _. LENOF(INDJMP(2)(A1(ts))))(la _.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. NEARSZ(BITSMODE(labs))(1)))(la _.
