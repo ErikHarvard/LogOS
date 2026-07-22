@@ -970,19 +970,19 @@ glyph ALUENC = la op. la w. la a. la b.
 #   still fail the diff.
 glyph MODRMD = la digit. la r. B(add(192)(add(mul(digit)(8))(mod(r)(8))))
 glyph FOLD8  = la n. IF(lt(n)(0))(la _. add(256)(n))(la _. n)
-glyph G1IMM = la digit. la w. la r. la n. la force.
+glyph G1IMM = la digit. la w. la r. la n. la force. la mode.
     IF(int_eq(w)(1))
       (la _. IF(int_eq(r)(0))
                (la _. concat(B(add(mul(digit)(8))(4)))(B(FOLD8(n))))
                (la _. concat(REXOPT(1)(0)(r)(force))
                      (concat(B(128))(concat(MODRMD(digit)(r))(B(FOLD8(n)))))))
       (la _. IF(FITS8(n))
-        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(FALSE))
+        (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(FALSE))
               (concat(B(131))(concat(MODRMD(digit)(r))(B(FOLD8(n)))))))
         (la _. IF(int_eq(r)(0))
-          (la _. concat(P66(w))(concat(REXOPT(w)(0)(0)(FALSE))
+          (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(0)(FALSE))
                 (concat(B(add(mul(digit)(8))(5)))(IMMW(w)(n)))))
-          (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(FALSE))
+          (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(FALSE))
                 (concat(B(129))(concat(MODRMD(digit)(r))(IMMW(w)(n))))))))
 #   ★ The DESTINATION may be MEMORY: `or dword [pml4], 0x04` (11 uses in
 #   boot.asm). The opcodes are the SAME as the register forms — the only
@@ -1018,7 +1018,7 @@ glyph G1ENC = la labs. la digit. la w. la a. la b.
       (la _. IF(ISREG(b))
         (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
         (la _. IF(ISVAL(b))
-                 (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a)))
+                 (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a))(BITSMODE(labs)))
                  (la _. error(concat("asm: unsupported ALU operand: ")(b))))))
 glyph G1DIG = la op.
     IF(str_eq(op)("add"))(la _. 0)(la _.
@@ -1057,9 +1057,15 @@ glyph SHENC = la digit. la w. la a. la b.
 #   ★ `test` has NO imm8 form — `test rdx, 8` is `48 F7 C2 08 00 00 00`, a full
 #   imm32 for a value that fits a byte. Reusing group-1's imm8 shortcut here
 #   would produce a shorter encoding NASM never emits.
-glyph IDENC = la digit. la w. la a.
-    (la r. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
-          (concat(B(OP8(255)(w)))(MODRMD(digit)(r)))))
+#   inc/dec of r16/r32 is the 1-byte 0x40+r (inc) / 0x48+r (dec) form in 16/32-bit
+#   mode; in 64-bit those bytes are REX prefixes, so it is FF /0, FF /1 there (and
+#   for r8 in every mode). digit 0 = inc (0x40), 1 = dec (0x48).
+glyph IDENC = la digit. la w. la a. la mode.
+    (la r.
+      IF(AND(NOT(int_eq(mode)(64)))(NOT(int_eq(w)(1))))
+        (la _. concat(P66M(mode)(w))(B(add(IF(int_eq(digit)(0))(la _. 64)(la _. 72))(mod(r)(8)))))
+        (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+              (concat(B(OP8(255)(w)))(MODRMD(digit)(r))))))
     (REGNUM(a))
 glyph TSTENC = la w. la a. la b.
     IF(ISREG(b))
@@ -1447,8 +1453,8 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b))))(la _.
     IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(w)(a)(b))))(la _.
-    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a))))(la _.
-    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a))))(la _.
+    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a)(BITSMODE(labs)))))(la _.
+    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a)(BITSMODE(labs)))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(labs)(w)(a)(b))))
       (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))))))))))))))
@@ -1495,8 +1501,8 @@ glyph ENC10 = la labs. la off. la ts.
     IF(ISNOARG(op))(la _. NOARG(op))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(labs)(G1DIG(op))))(la _.
     IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))))(la _.
-    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(0)(w)(a)))(la _.
-    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(1)(w)(a)))(la _.
+    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(0)(w)(a)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(1)(w)(a)(BITSMODE(labs))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(TSTENC))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(LEAENC(labs)))(la _.
     IF(str_eq(op)("call"))(la _. concat(B(232))(NEARDISP(BITSMODE(labs))(labs)(TARGET(ts))(off)(1)))(la _.
