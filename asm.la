@@ -335,6 +335,10 @@ glyph P66M = la mode. la w.
     IF(int_eq(mode)(16))
       (la _. IF(int_eq(w)(4))(la _. B(102))(la _. ""))
       (la _. P66(w))
+#   String port I/O (ins/outs): insb 6C, insw/insd 6D, outsb 6E, outsw/outsd 6F.
+#   The word/dword variants carry an operand-size prefix per mode (P66M), so
+#   `insw` is 6D in 16-bit but 66 6D in 32-bit; insb/outsb (byte) never prefix.
+glyph STRIOENC = la opc. la sz. la mode. concat(P66M(mode)(sz))(B(opc))
 
 #   REX is OPTIONAL — this is the heart of the width slice. The old encoder
 #   hard-coded 0x48 (REX.W) because every operand was 64-bit; at other widths
@@ -1436,6 +1440,12 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("lgdt"))(la _. LENOF(LGDTENC(labs)(A1(ts))))(la _.
     IF(str_eq(op)("lidt"))(la _. LENOF(LIDTENC(labs)(A1(ts))))(la _.
     IF(str_eq(op)("int"))(la _. 2)(la _.
+    IF(str_eq(op)("insb"))(la _. LENOF(STRIOENC(108)(1)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("insw"))(la _. LENOF(STRIOENC(109)(2)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("insd"))(la _. LENOF(STRIOENC(109)(4)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("outsb"))(la _. LENOF(STRIOENC(110)(1)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("outsw"))(la _. LENOF(STRIOENC(111)(2)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("outsd"))(la _. LENOF(STRIOENC(111)(4)(BITSMODE(labs))))(la _.
     IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(DIVENC(w)(a))))(la _.
     IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(NEGENC(w)(a))))(la _.
     IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDIVENC(w)(a))))(la _.
@@ -1457,7 +1467,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a)(BITSMODE(labs)))))(la _.
     IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(labs)(w)(a)(b))))
-      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   (LOWER(HD(ts)))
 
 # ── one instruction -> its bytes (off = this instruction's own address) ──
@@ -1484,6 +1494,12 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)("lgdt"))(la _. LGDTENC(labs)(A1(ts)))(la _.
     IF(str_eq(op)("lidt"))(la _. LIDTENC(labs)(A1(ts)))(la _.
     IF(str_eq(op)("int"))(la _. concat(B(205))(B(EVAL(labs)(A1(ts)))))(la _.
+    IF(str_eq(op)("insb"))(la _. STRIOENC(108)(1)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("insw"))(la _. STRIOENC(109)(2)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("insd"))(la _. STRIOENC(109)(4)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("outsb"))(la _. STRIOENC(110)(1)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("outsw"))(la _. STRIOENC(111)(2)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("outsd"))(la _. STRIOENC(111)(4)(BITSMODE(labs)))(la _.
     IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. DIVENC(w)(a)))(la _.
     IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. NEGENC(w)(a)))(la _.
     IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. IDIVENC(w)(a)))(la _.
@@ -1521,7 +1537,7 @@ glyph ENC10 = la labs. la off. la ts.
                (la _. concat(B(add(112)(JCCC(op))))(B(REL8(labs)(off)(TARGET(ts)))))
                (la _. concat(B(15))(concat(B(add(128)(JCCC(op))))(NEARDISP(BITSMODE(labs))(labs)(TARGET(ts))(off)(2)))))(la _.
     IF(str_eq(op)("mov"))(la _. WITHOPS(ts)(MOVENC(labs)))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))))))))))))))))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   (LOWER(HD(ts)))
 
 #   Every line is tokenized ONCE, up front, and the passes consume token lists
