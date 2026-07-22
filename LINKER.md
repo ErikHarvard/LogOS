@@ -286,7 +286,27 @@ pre-existing cost), gc-on 271 s → 160 s, and monolithic `.eh_frame` links retu
 to ~40 s. Correctness unchanged — gc-off keeps everything and is byte-identical,
 gc-on drops the dead function to exactly `ld --gc-sections`'s size.
 
-**5. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
+**✔ 5. WEAK symbols.** `__attribute__((weak))` (and the weak symbols C++ emits
+for inline functions/templates) bind as `STB_WEAK`: a STRONG definition anywhere
+overrides a weak one EVERYWHERE, and a weak definition satisfies a reference only
+when no strong one exists. `DEFINES` (strong-only) already kept a weak+strong
+pair from being a multiple-definition error, but resolution was wrong two ways:
+a weak-only reference across objects errored `unresolved symbol` (a refusal of a
+valid link), and a weak object's reference to its OWN weak symbol used the weak
+def even when a strong one existed elsewhere (exit 53, not ld's 43). Fixed in
+two places: `RESOLVE_L` now resolves a name STRONG-first then WEAK
+(`FIND_DEF(DEFINES)` then `FIND_DEF(DEFINES_WEAK)`, else unresolved), and
+`SYMVAL` routes BOTH undefined AND weak-defined symbols through `resolve` — so a
+weak symbol always gets the global strong-override-or-weak answer rather than its
+in-object address, while strong/local/section symbols still resolve locally.
+(`SYM_IS_WEAK` reads `st_info >> 4 == 2` directly — `SYM_BIND` is `link.la`-
+private, not exported.) Gate: a weak-only link resolves + runs (was an error),
+and a weak+strong link's exit matches ld (the strong def overrides the weak
+object's own reference). *Honest scope:* an UNDEFINED weak reference to a symbol
+absent everywhere still errors rather than resolving to 0 (a separate, rarer
+half of weak semantics); and gc `DEFSEC` traces strong defs only.
+
+**6. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
 back, require agreement with `readelf` on the same file.
 

@@ -590,6 +590,65 @@ CFS
     fi
 fi
 
+# --- ★ WEAK symbols: strong overrides weak; a weak def resolves when no strong ---
+#   __attribute__((weak)) (and the weak symbols C++ emits for inline functions /
+#   templates) bind differently from a plain global: a STRONG definition anywhere
+#   overrides a weak one EVERYWHERE — even the weak object's own references — and
+#   a weak definition satisfies a reference only when no strong one exists. Our
+#   DEFINES (strong-only) already keeps a weak+strong pair from being a multiple-
+#   definition error; this checks RESOLUTION, two ways:
+#     A. weak-only   -> the weak def is used (was "unresolved symbol", a refusal
+#        of a VALID link ld accepts);
+#     B. weak+strong -> the strong def wins, INCLUDING the weak object's own
+#        reference (was the weak def: exit 53, not ld's 43).
+#   Assertion is exit-status agreement with ld — a mis-resolution changes it.
+if command -v gcc >/dev/null 2>&1; then
+    gcc -c -O0 -x c - -o w_ref.o    2>/dev/null <<'CWR'
+extern int helper(int);
+int compute(int x){return helper(x)+1;}
+CWR
+    gcc -c -O0 -x c - -o w_weak.o   2>/dev/null <<'CWW'
+__attribute__((weak)) int helper(int x){return x*2;}
+CWW
+    gcc -c -O0 -x c - -o w_cw.o     2>/dev/null <<'CWC'
+extern int helper(int);
+int compute(int x){return helper(x)+1;}
+__attribute__((weak)) int helper(int x){return x*100;}
+CWC
+    gcc -c -O0 -x c - -o w_strong.o 2>/dev/null <<'CWS'
+int helper(int x){return x*2;}
+CWS
+    if [ -f w_weak.o ] && readelf -sW w_weak.o | grep -q 'WEAK.* helper'; then
+        # A. weak fallback (no strong def anywhere)
+        ld -o w_ref_a link_test_start.o w_ref.o w_weak.o 2>/dev/null
+        if ./w_ref_a; then LDA=0; else LDA=$?; fi
+        cp link_test_start.o link_in1.o; cp w_ref.o link_in2.o; cp w_weak.o link_in3.o
+        printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt; rm -f link_out
+        if WAO=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then :; else
+            echo "FAIL  link_reloc.la: weak-only link failed (weak symbol not resolved): $WAO"; ok=0; fi
+        if [ -x link_out ]; then
+            if ./link_out; then OA=0; else OA=$?; fi
+            [ "$OA" = "$LDA" ] || { echo "FAIL  weak-only link exited $OA, ld exits $LDA"; ok=0; }
+        else echo "FAIL  weak-only: no executable emitted"; ok=0; fi
+        # B. a strong def overrides the weak one, even the weak object's own ref
+        ld -o w_ref_b link_test_start.o w_cw.o w_strong.o 2>/dev/null
+        if ./w_ref_b; then LDB=0; else LDB=$?; fi
+        cp w_cw.o link_in2.o; cp w_strong.o link_in3.o
+        printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt; rm -f link_out
+        if WBO=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then :; else
+            echo "FAIL  link_reloc.la: weak+strong link failed: $WBO"; ok=0; fi
+        if [ -x link_out ]; then
+            if ./link_out; then OB=0; else OB=$?; fi
+            [ "$OB" = "$LDB" ] \
+                || { echo "FAIL  weak+strong link exited $OB, ld exits $LDB — the strong def did not override the weak one"; ok=0; }
+        else echo "FAIL  weak+strong: no executable emitted"; ok=0; fi
+        rm -f link_in1.o link_in2.o link_in3.o link_inputs.txt w_ref_a w_ref_b
+    else
+        echo "NOTE  link_reloc.la: gcc emitted no WEAK helper — weak-symbol check skipped"
+    fi
+    rm -f w_ref.o w_weak.o w_cw.o w_strong.o
+fi
+
 # --- ★ --gc-sections: drop unreferenced sections (opt-in) ---
 #   A `--gc-sections` directive line in link_inputs.txt turns on dead-section
 #   elimination: only sections REACHABLE from _start survive. The fixture adds a
@@ -705,5 +764,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, WEAK symbols (strong overrides weak; weak resolves when no strong), 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]

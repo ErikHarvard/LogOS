@@ -129,8 +129,14 @@ glyph FITS32 = la v. AND(NOT(lt(v)(0)))(lt(v)(4294967296))
 #   an unplaced section, and add(-1)(value) would be a plausible-looking wrong
 #   address — exactly the silent failure dropping was supposed to avoid. Refuse
 #   instead, naming the symbol.
+#   A WEAK symbol resolves the same way whether or not it is defined here: a
+#   STRONG definition elsewhere OVERRIDES it (so w1's own reference to its weak
+#   `helper` must reach w2's strong one), and with no strong def it falls back to
+#   a weak one. So route BOTH undefined and weak-defined symbols through
+#   `resolve` (strong-then-weak, globally); only a strong/local/section symbol
+#   uses its in-object address directly.
 glyph SYMVAL = la f. la ss. la va. la resolve. la i.
-    IF(SYM_IS_UNDEF(f)(ss)(i))
+    IF(OR(SYM_IS_UNDEF(f)(ss)(i))(SYM_IS_WEAK(SYM_INFO(f)(ss)(i))))
       (la _. resolve(SYMNAME(f)(ss)(i)))
       (la _. (la base.
                IF(lt(base)(0))
@@ -891,26 +897,50 @@ glyph DUPCHECK = la objs. (Z(la self. la l.
             l2("ok")(la h2. la t2. SEQ(DUPPAIR(h)(h2))(inner(t2)))))(t))
          (self(t)))))(objs)
 
-#   ★ The NIL branch is THUNKED on purpose. A Scott list evaluates l(nil)(cons)
-#   with the nil branch EAGERLY, so `error(...)` written there would fire on
-#   every successful lookup, not only on exhaustion. Both branches return a
-#   function and the result is forced with "!".
-glyph RESOLVE_L = la objs. la plan. la want.
-    (Z(la self. la l.
-      l(la _. error(concat("link: unresolved symbol: ")(want)))
-       (la h. la t. la _.
-         (la a. IF(NOT(lt(a)(0)))
-                  (la _. a)
-                  (la _. self(t)("!")))
-         (LOOKUP(O_F(h))(O_SS(h))(la sec. VAOF(plan)(O_IDX(h))(sec))(want)))))
-    (objs)("!")
+#   A WEAK definition (binding 2) is a fallback: it satisfies a reference only
+#   when no STRONG (global) definition of the name exists anywhere — a strong
+#   definition always overrides it, and two weak definitions do not clash (the
+#   first wins), exactly as ld resolves `__attribute__((weak))` and the weak
+#   symbols C++ emits for inline functions/templates. `DEFINES` (strong only)
+#   stays the criterion for DUPLICATE detection, so a weak+strong pair is not a
+#   multiple-definition error.
+glyph SYM_IS_WEAK = la info. int_eq(div(info)(16))(2)   # binding (st_info>>4) == STB_WEAK; SYM_BIND is link.la-private
+glyph DEFINES_WEAK = la f. la ss. la i.
+    AND(SYM_IS_WEAK(SYM_INFO(f)(ss)(i)))
+       (AND(NOT(SYM_IS_UNDEF(f)(ss)(i)))(NOT(SYM_IS_SECTION(f)(ss)(i))))
 
-glyph LOOKUP = la f. la ss. la va. la want. (Z(la self. la i.
+#   Look a name up in one object under a given definition predicate (strong or
+#   weak); returns its address or -1.
+glyph LOOKUP_P = la dfn. la f. la ss. la va. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))
       (la _. sub(0)(1))
-      (la _. IF(AND(DEFINES(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
+      (la _. IF(AND(dfn(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
                (la _. add(va(SYM_SHNDX(f)(ss)(i)))(SYM_VALUE(f)(ss)(i)))
                (la _. self(add(i)(1))))))(0)
+glyph LOOKUP = LOOKUP_P(DEFINES)
+
+#   First object that defines `want` under `dfn`, as an address, or -1 (no
+#   error). The NIL branch is a plain -1, so — unlike the two-pass RESOLVE_L —
+#   it needs no thunking; there is nothing to fire eagerly.
+glyph FIND_DEF = la dfn. la objs. la plan. la want.
+    (Z(la self. la l.
+      l(sub(0)(1))
+       (la h. la t.
+         (la a. IF(NOT(lt(a)(0)))(la _. a)(la _. self(t)))
+         (LOOKUP_P(dfn)(O_F(h))(O_SS(h))(la sec. VAOF(plan)(O_IDX(h))(sec))(want)))))
+    (objs)
+
+#   Resolve a name: a STRONG definition first, then a WEAK one, else unresolved.
+glyph RESOLVE_L = la objs. la plan. la want.
+    (la strong.
+       IF(NOT(lt(strong)(0)))
+         (la _. strong)
+         (la _. (la weak.
+                   IF(NOT(lt(weak)(0)))
+                     (la _. weak)
+                     (la _. error(concat("link: unresolved symbol: ")(want))))
+                (FIND_DEF(DEFINES_WEAK)(objs)(plan)(want))))
+    (FIND_DEF(DEFINES)(objs)(plan)(want))
 
 #   The merged .text, pulled back out of the regions. Collapsing MAIN's binders
 #   dropped the write of this file, and the byte-identity-against-ld check —
