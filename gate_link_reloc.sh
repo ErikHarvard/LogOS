@@ -681,6 +681,49 @@ CWU
     rm -f wu.o
 fi
 
+# --- ★ GOTPCRELX relaxation: PIC address-of-external through the GOT ---
+#   A -fPIE/-fPIC object taking an external symbol's ADDRESS emits
+#   `mov sym@GOTPCREL(%rip),%reg` with an R_X86_64_REX_GOTPCRELX reloc. For a
+#   static image the address is known, so no GOT is needed: this linker RELAXES
+#   the mov (opcode 8b) to lea (8d) and resolves the disp32 as a plain PC32 — as
+#   ld does (it too emits no .got). Fixture: compute() takes &extfn (external),
+#   extfn defined in a second object. Assertion is the EXIT STATUS matching ld:
+#   exit 43 = extfn(21)*2+1 only holds if the address was LOADED (opcode
+#   rewritten) and CALLED (disp correct) — an un-relaxed mov reads a nonexistent
+#   GOT slot and calls garbage, a wrong disp calls the wrong place; neither is 43.
+#   NOT byte-identical to ld, and that is a DIFFERENT VALID CHOICE, not a layout
+#   accident: ld relaxes to `mov $addr,%reg` (48 c7, absolute immediate) while
+#   this linker relaxes to `lea addr(%rip),%reg` (48 8d, PC-relative). Both load
+#   the symbol's address; the lea form is position-independent (also correct for
+#   a PIE image, where ld's absolute mov would not be), so the witness is that it
+#   RUNS with ld's exit, not a byte-diff.
+if command -v gcc >/dev/null 2>&1; then
+    gcc -c -O0 -fPIE -x c - -o gx.o 2>/dev/null <<'CGX'
+extern int extfn(int);
+int compute(int x){ int (*f)(int) = extfn; return f(x)+1; }
+CGX
+    gcc -c -O0 -x c - -o gxd.o 2>/dev/null <<'CGXD'
+int extfn(int x){ return x*2; }
+CGXD
+    if [ -f gx.o ] && readelf -rW gx.o | grep -q 'GOTPCREL'; then
+        ld -o gx_ref link_test_start.o gx.o gxd.o 2>/dev/null
+        if ./gx_ref; then LDX=0; else LDX=$?; fi
+        cp link_test_start.o link_in1.o; cp gx.o link_in2.o; cp gxd.o link_in3.o
+        printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt; rm -f link_out
+        if GXO=$(timeout 300 ./tiny_host link_reloc.la 2>&1); then :; else
+            echo "FAIL  link_reloc.la: GOTPCRELX link failed: $GXO"; ok=0; fi
+        if [ -x link_out ]; then
+            if ./link_out; then OX=0; else OX=$?; fi
+            [ "$OX" = "$LDX" ] \
+                || { echo "FAIL  GOTPCRELX link exited $OX, ld exits $LDX — the mov->lea relaxation is wrong"; ok=0; }
+        else echo "FAIL  GOTPCRELX: no executable emitted"; ok=0; fi
+        rm -f link_in1.o link_in2.o link_in3.o link_inputs.txt gx_ref
+    else
+        echo "NOTE  link_reloc.la: gcc emitted no GOTPCREL reloc — GOTPCRELX check skipped"
+    fi
+    rm -f gx.o gxd.o
+fi
+
 # --- ★ --gc-sections: drop unreferenced sections (opt-in) ---
 #   A `--gc-sections` directive line in link_inputs.txt turns on dead-section
 #   elimination: only sections REACHABLE from _start survive. The fixture adds a
@@ -796,5 +839,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, WEAK symbols (strong overrides weak; weak resolves when no strong; undefined weak -> 0), 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S + GOTPCRELX(mov->lea relax), WEAK symbols (strong overrides weak; weak resolves when no strong; undefined weak -> 0), 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]

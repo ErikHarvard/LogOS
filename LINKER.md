@@ -318,7 +318,26 @@ refused. *Honest scope:* the PIC form of this idiom emits `R_X86_64_GOTPCRELX`
 are a separate, larger gap (they need a `.got` and a `PT_LOAD` for it); the fix
 covers the non-PIC form our objects use.
 
-**6. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
+**✔ 6. GOTPCRELX relaxation.** A `-fPIE`/`-fPIC` object taking an EXTERNAL
+symbol's address emits `mov sym@GOTPCREL(%rip),%reg` — `48 8b 05 <disp32>` with
+an `R_X86_64_REX_GOTPCRELX` (type 42) reloc, the disp32 pointing at a GOT slot.
+For a static image the address is known, so no GOT is needed: `APPLYRELS`
+RELAXES the instruction. `ISGOTX`/`SBYTE` were added — `SBYTE` reads the opcode
+byte at `offset − 2` (the first relocation that patches BEFORE the reloc site,
+not just at it); if it is `mov` (`0x8b`) it is rewritten to `lea` (`0x8d`) and
+the disp32 resolved as a plain PC32 (`S + A − P`), so `mov sym@GOT(%rip),%rax`
+becomes `lea sym(%rip),%rax`. A non-`mov` GOTPCRELX form (call/jmp-via-GOT) is
+REFUSED, not mis-rewritten. Gate: an `-fPIE` fixture (`compute()` takes `&extfn`,
+`extfn` defined elsewhere) links and RUNS with ld's exit — exit 43 only holds if
+the address was loaded and called. *Different-but-valid vs ld, not a bug:* ld
+relaxes to `mov $addr,%reg` (`48 c7`, absolute immediate) where we relax to `lea
+addr(%rip),%reg` (`48 8d`, PC-relative) — both load the address; the `lea` form
+is position-independent (also correct for a PIE image, where ld's absolute `mov`
+would not be), so the witness is "it runs", not a byte-diff. *Honest scope:*
+non-relaxable `R_X86_64_GOTPCREL` (type 9) and the call/jmp-via-GOT forms still
+need a real synthesised `.got` — deferred.
+
+**7. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
 back, require agreement with `readelf` on the same file.
 

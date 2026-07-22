@@ -118,6 +118,18 @@ glyph ISPCREL = la ty. OR(int_eq(ty)(2))(int_eq(ty)(4))
 #   Handling only PC32/PLT32/64 meant ordinary non-PIC compiled code was refused.
 glyph ISABS32 = la ty. OR(int_eq(ty)(10))(int_eq(ty)(11))
 
+#   R_X86_64_REX_GOTPCRELX (42): a PIC/PIE object loading an external symbol's
+#   ADDRESS through the GOT — `mov sym@GOTPCREL(%rip), %reg` (REX.W 8b /r, then a
+#   PC-relative disp32 that would point at the GOT slot). For a static image the
+#   symbol's final address is known, so no GOT is needed: RELAX the instruction
+#   to `lea sym(%rip), %reg` (opcode 8b→8d) and resolve the disp32 as a plain
+#   PC32 to the symbol — byte-for-byte what ld emits (it too drops the .got). The
+#   opcode byte to rewrite sits at (reloc offset − 2); SBYTE reads it so a form
+#   this relaxation does not model (call/jmp-via-GOT, a non-mov) is REFUSED, not
+#   silently mis-rewritten.
+glyph ISGOTX = la ty. int_eq(ty)(42)
+glyph SBYTE  = la s. la o. str_to_int(ord(DROPS(o)(s)))
+
 #   ★ A 4-byte absolute that does not FIT is truncated silently by LE4 — the
 #   image links, and the program jumps or loads somewhere plausible and wrong.
 #   This layout puts everything near 0x401000, far inside 32 bits, so the guard
@@ -172,8 +184,12 @@ glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la bytes.
                                                 (la _. PATCH(acc)(off)(4)(LE4(v)))
                                                 (la _. error(CAT(CONS("link: 32-bit absolute does not fit: ")(
                                                                  CONS(int_to_str(v))(NIL))))))
-                                       (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty)))))))
-            )(IF(ISPCREL(ty))
+                                       (la _. IF(ISGOTX(ty))
+                                                (la _. IF(int_eq(SBYTE(acc)(sub(off)(2)))(139))
+                                                         (la _. PATCH(PATCH(acc)(sub(off)(2))(1)(chr("141")))(off)(4)(LE4(v)))
+                                                         (la _. error(concat("link: GOTPCRELX form not modelled (opcode 0x")(concat(int_to_str(SBYTE(acc)(sub(off)(2))))(" is not mov 8b; only mov->lea relaxation is supported)")))))
+                                                (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty))))))))
+            )(IF(OR(ISPCREL(ty))(ISGOTX(ty)))
                 (la _. sub(add(s)(a))(add(secva)(off)))
                 (la _. add(s)(a)))
           )(REL_ADDEND(f)(rs)(i))
