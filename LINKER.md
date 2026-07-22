@@ -114,12 +114,24 @@ What is actually true: roughly **0.1 ms per LA reduction**, millions of them,
 spread across relocation and emission. No function is algorithmically wrong;
 the linker simply performs a great many operations.
 
-`DROP` still matters — but as REDUCTION COUNT, not copying cost. Walking n
-bytes is n reductions however cheap each one is, so a cursor threaded through a
-structure walk (drop once to the section-header table, step 64 bytes per entry
-carrying the tail) still removes real work. It changes `link.la`'s exported
-accessor signature from `(file)(offset)` to `(tail)(relative)`, consumed by
-`link_layout.la` and `link_reloc.la`.
+**✔ DONE — the cursor-threaded memoisation (`SECTAB`).** `DROP` copies
+(`str_tail` is O(n)), and the section headers + name table live near the END of
+the file, so every `SH_*`/`SECNAME`/`FIND_SEC` — each `(file)(index)` — re-DROPped
+from offset 0 to a deep field: O(offset·filesize) per read, and `FIND_SEC` (a
+`SECNAME` per section) O(sections²). Rather than change `link.la`'s exported
+accessor signatures (which `link_layout.la` also imports), `link_reloc.la` now
+builds a **`SECTAB`** per object ONCE: one deep `DROP` to `E_SHOFF`, then STEP 64
+bytes/entry carrying the tail, reading each field at a SHALLOW offset within the
+small remainder and the name from a once-dropped `.shstrtab` tail (3 helpers —
+`DROP`/`E_SHOFF`/`SHSTR_OFF` — newly `export`ed from `link.la`). It is stored as
+a 4th field of the object record; the hot readers (`SECNAME_M`/`SH_*_M`/
+`FIND_SEC_M`) are plain list walks with cheap comparisons. `PSTEP`/`CHECKSECS`
+fold the list, `ENAME`/`ESIZE`/`ETYPE`/`PATCHSEC` read it via `E_SECTAB`.
+Measured: a `-ffunction-sections` link **149 s → 89 s** under identical
+contention. *Remaining:* the `.eh_frame` `FIND_SEC` path and `SECBYTES` still use
+the slow accessors (correct, just not yet memoised) — the next perf slice; and
+`SECBYTES`'s deep byte read is inherent (reading section content, not walking
+structure).
 
 **The 31% per-link growth is real and is not any one function.** It tracks
 capability — more section names means more `FIND_SEC` calls, more plan entries,

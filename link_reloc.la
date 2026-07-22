@@ -346,7 +346,7 @@ glyph DEFINES = la f. la ss. la i.
 #   silently produce a wrong address.
 glyph DROPPABLE = la n. str_eq(n)(".note.gnu.property")
 
-glyph IS_ALLOC = la f. la i. int_eq(mod(div(SH_FLAGS(f)(i))(2))(2))(1)
+glyph SEC_IS_ALLOC = la h. int_eq(mod(div(SEC_FLAGS(h))(2))(2))(1)
 
 #   ── OUTPUT-SECTION MAPPING — merge .text.* into .text, etc. ─────────────────
 #   `gcc -ffunction-sections -fdata-sections` (the input to `--gc-sections` dead-
@@ -367,15 +367,14 @@ glyph OUTNAME = la n.
     IF(OR(str_eq(n)(".eh_frame"))(STARTSW(n)(".eh_frame.")))(la _. ".eh_frame")(la _. n)))))
 glyph ISOUT = la m. OR(str_eq(m)(".text"))(OR(str_eq(m)(".rodata"))(OR(str_eq(m)(".data"))(OR(str_eq(m)(".bss"))(str_eq(m)(".eh_frame")))))
 glyph PLACEABLE = la n. ISOUT(OUTNAME(n))
-glyph CHECKSECS = la f. la tag. (Z(la self. la i.
-    IF(int_eq(i)(E_SHNUM(f)))
-      (la _. "ok")
-      (la _. IF(AND(IS_ALLOC(f)(i))
-                   (AND(NOT(PLACEABLE(SECNAME(f)(i))))(NOT(DROPPABLE(SECNAME(f)(i))))))
-               (la _. error(CAT(CONS("link: ")(CONS(tag)(CONS(
-                        " has an allocatable section this layout cannot place: ")(
-                        CONS(SECNAME(f)(i))(NIL)))))))
-               (la _. self(add(i)(1))))))(0)
+glyph CHECKSECS = la st. la tag. (Z(la self. la l.
+    l("ok")(la h. la t.
+      IF(AND(SEC_IS_ALLOC(h))
+            (AND(NOT(PLACEABLE(SEC_NAME(h))))(NOT(DROPPABLE(SEC_NAME(h))))))
+        (la _. error(CAT(CONS("link: ")(CONS(tag)(CONS(
+                 " has an allocatable section this layout cannot place: ")(
+                 CONS(SEC_NAME(h))(NIL)))))))
+        (la _. self(t)))))(st)
 
 # ── THE PLACEMENT PLAN — step 1 of generalising the layout ──────────────────
 #   The layout used to be hard-coded: three binders (t1sec/t2sec/r2sec) and two
@@ -429,17 +428,19 @@ glyph E_ADDR= la e. SND(SND(e))
 #   identically to before (one match). A section is skipped when `keep` rejects
 #   it (--gc-sections dead-section elimination); with gc off `keep` is always
 #   TRUE, so placement is unchanged. Returns PAIR(entries)(cursor).
-glyph PSTEP = la keep. la f. la o. la oname. la acc. la cur.
-    (Z(la self. la i. la a. la c.
-       IF(int_eq(i)(E_SHNUM(f)))
-         (la _. PAIR(a)(c))
-         (la _. IF(AND(AND(str_eq(OUTNAME(SECNAME(f)(i)))(oname))
-                          (NOT(int_eq(SH_SIZE(f)(i))(0))))
-                      (keep(o)(i)))
-                  (la _. (la aa. self(add(i)(1))(CONS(MKE(o)(i)(aa))(a))(add(aa)(SH_SIZE(f)(i))))
-                         (ALIGNUP(c)(SH_ALIGN(f)(i))))
-                  (la _. self(add(i)(1))(a)(c)))))
-    (0)(acc)(cur)
+#   Folds over the object's memoised SECTAB (list in section-index order),
+#   threading the index i, so the per-section reads are cheap list accesses
+#   rather than deep header DROPs. Same placement as before.
+glyph PSTEP = la keep. la st. la o. la oname. la acc. la cur.
+    (Z(la self. la l. la i. la a. la c.
+       l(PAIR(a)(c))(la h. la t.
+         IF(AND(AND(str_eq(OUTNAME(SEC_NAME(h)))(oname))
+                   (NOT(int_eq(SEC_SIZE(h))(0))))
+               (keep(o)(i)))
+           (la _. (la aa. self(t)(add(i)(1))(CONS(MKE(o)(i)(aa))(a))(add(aa)(SEC_SIZE(h))))
+                  (ALIGNUP(c)(SEC_ALIGN(h))))
+           (la _. self(t)(add(i)(1))(a)(c)))))
+    (st)(0)(acc)(cur)
 
 #   ── N OBJECTS ──────────────────────────────────────────────────────────────
 #   An OBJECT is (index, contents). The index is what plan entries and symbol
@@ -450,10 +451,52 @@ glyph PSTEP = la keep. la f. la o. la oname. la acc. la cur.
 #   number of inputs stops being written into the code and becomes the length
 #   of a list. Two objects still produce byte-identical output, which is what
 #   makes this safe to do as a refactor rather than a rewrite.
-glyph OBJ   = la idx. la f. la ss. PAIR(idx)(PAIR(f)(ss))
+# ── MEMOISED SECTION TABLE — read the header table ONCE by cursor-threading ──
+#   Every SH_*/SECNAME/FIND_SEC took (file)(index) and re-DROPped from file
+#   offset 0 to the field — but DROP copies (str_tail is O(n)), and the section
+#   headers + name table live near the END of the file, so each field read was
+#   O(offset·filesize) and FIND_SEC (a SECNAME per section) was O(sections²).
+#   SECTAB walks the header table with ONE deep DROP (to E_SHOFF), then STEPS 64
+#   bytes per entry carrying the tail `sh`, reading each field at a SHALLOW
+#   offset within the small remaining tail, and the name from a once-dropped
+#   .shstrtab tail. Built ONCE per object (stored in its record); the _M readers
+#   below are then plain list walks with cheap comparisons, no deep DROP.
+glyph MKSEC = la name. la ty. la flags. la off. la size. la align.
+    PAIR(name)(PAIR(ty)(PAIR(flags)(PAIR(off)(PAIR(size)(align)))))
+glyph SEC_NAME  = la s. FST(s)
+glyph SEC_TYPE  = la s. FST(SND(s))
+glyph SEC_FLAGS = la s. FST(SND(SND(s)))
+glyph SEC_OFF   = la s. FST(SND(SND(SND(s))))
+glyph SEC_SIZE  = la s. FST(SND(SND(SND(SND(s)))))
+glyph SEC_ALIGN = la s. SND(SND(SND(SND(SND(s)))))
+glyph SECTAB = la f. (la n. (la shstrtail.
+    (Z(la self. la i. la sh.
+       IF(int_eq(i)(n))
+         (la _. NIL)
+         (la _. CONS(MKSEC(CSTR(shstrtail)(U32(sh)(0)))(U32(sh)(4))(LOW4(sh)(8))
+                          (LOW4(sh)(24))(LOW4(sh)(32))(LOW4(sh)(48)))
+                     (self(add(i)(1))(DROP(64)(sh))))))
+     (0)(DROP(E_SHOFF(f))(f)))
+   (DROP(SHSTR_OFF(f))(f)))
+  (E_SHNUM(f))
+glyph NTHREC = Z(la self. la l. la i.
+    l(NIL)(la h. la t. IF(int_eq(i)(0))(la _. h)(la _. self(t)(sub(i)(1)))))
+glyph SECNAME_M  = la st. la i. SEC_NAME(NTHREC(st)(i))
+glyph SH_TYPE_M  = la st. la i. SEC_TYPE(NTHREC(st)(i))
+glyph SH_FLAGS_M = la st. la i. SEC_FLAGS(NTHREC(st)(i))
+glyph SH_OFF_M   = la st. la i. SEC_OFF(NTHREC(st)(i))
+glyph SH_SIZE_M  = la st. la i. SEC_SIZE(NTHREC(st)(i))
+glyph SH_ALIGN_M = la st. la i. SEC_ALIGN(NTHREC(st)(i))
+glyph FIND_SEC_M = la st. la want. (Z(la self. la l. la i.
+    l(sub(0)(1))(la h. la t.
+      IF(str_eq(SEC_NAME(h))(want))(la _. i)(la _. self(t)(add(i)(1))))))(st)(0)
+
+#   An OBJECT now carries its memoised SECTAB as a fourth field.
+glyph OBJ   = la idx. la f. la ss. la st. PAIR(idx)(PAIR(f)(PAIR(ss)(st)))
 glyph O_IDX = la o. FST(o)
 glyph O_F   = la o. FST(SND(o))
-glyph O_SS  = la o. SND(SND(o))
+glyph O_SS  = la o. FST(SND(SND(o)))
+glyph O_SECTAB = la o. SND(SND(SND(o)))
 
 #   All objects' copies of ONE section name, packed from the cursor in input
 #   order. Returns PAIR(entries)(cursor) so the next name continues where this
@@ -463,7 +506,7 @@ glyph PNAME = la keep. la objs. la name. la acc. la cur.
     (Z(la self. la l. la a. la c.
         l(PAIR(a)(c))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
-          (PSTEP(keep)(O_F(h))(O_IDX(h))(name)(a)(c)))))
+          (PSTEP(keep)(O_SECTAB(h))(O_IDX(h))(name)(a)(c)))))
       (objs)(acc)(cur)
 
 #   .eh_frame is placed as ONE merged entry (object 0, size = merged size), not
@@ -531,6 +574,7 @@ glyph FINDREC = la objs. la idx. (Z(la self. la l.
     l(NIL)(la h. la t. IF(int_eq(O_IDX(h))(idx))(la _. h)(la _. self(t)))))(objs)
 glyph FINDOBJ = la objs. la idx. O_F(FINDREC(objs)(idx))
 glyph E_F   = la objs. la e. FINDOBJ(objs)(E_OBJ(e))
+glyph E_SECTAB = la objs. la e. O_SECTAB(FINDREC(objs)(E_OBJ(e)))
 #   Plan entries are (object, section, address). The MERGED .eh_frame is the one
 #   entry with object 0 (no real object is 0 — they are 1-based); its "section"
 #   slot carries the merged SIZE (computed once by PEH, so ESIZE never recomputes
@@ -538,12 +582,12 @@ glyph E_F   = la objs. la e. FINDOBJ(objs)(E_OBJ(e))
 #   a PROGBITS ".eh_frame" of that size. Every real entry defers to its header.
 glyph EHENTRY = la e. int_eq(E_OBJ(e))(0)
 glyph ENAME = la objs. la e.
-    IF(EHENTRY(e))(la _. ".eh_frame")(la _. SECNAME(E_F(objs)(e))(E_SEC(e)))
+    IF(EHENTRY(e))(la _. ".eh_frame")(la _. SECNAME_M(E_SECTAB(objs)(e))(E_SEC(e)))
 glyph ESIZE = la objs. la e.
-    IF(EHENTRY(e))(la _. E_SEC(e))(la _. SH_SIZE(E_F(objs)(e))(E_SEC(e)))
+    IF(EHENTRY(e))(la _. E_SEC(e))(la _. SH_SIZE_M(E_SECTAB(objs)(e))(E_SEC(e)))
 glyph SH_NOBITS = 8
 glyph ETYPE = la objs. la e.
-    IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE(E_F(objs)(e))(E_SEC(e)))
+    IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE_M(E_SECTAB(objs)(e))(E_SEC(e)))
 
 #   ★ RELOCATIONS ARE APPLIED TO EVERY PLACED SECTION, not only .text.
 #   Applying just `.rela.text` was a CONFIRMED silent-wrongness bug: an object
@@ -697,7 +741,9 @@ glyph SPLITLINES = la s. REV(
 glyph MKOBJS = la paths.
     REV((Z(la self. la l. la i. la acc.
         l(acc)(la h. la t.
-          (la f. self(t)(add(i)(1))(CONS(OBJ(i)(f)(FIND_SEC(f)(".symtab")))(acc)))
+          (la f. (la st.
+                   self(t)(add(i)(1))(CONS(OBJ(i)(f)(FIND_SEC_M(st)(".symtab"))(st))(acc)))
+                 (SECTAB(f)))
           (read_file(h)))))
       (paths)(1)(NIL))(NIL)
 
@@ -713,8 +759,8 @@ glyph PATCHSEC = la objs. la plan. la resolve. la e.
                   (la _. APPLYRELS(f)(O_SS(rec))(rs)
                                   (la sec. VAOF(plan)(E_OBJ(e))(sec))(resolve)
                                   (E_ADDR(e))(raw)))
-        (FIND_SEC(f)(concat(".rela")(SECNAME(f)(E_SEC(e))))))
-      (IF(int_eq(SH_TYPE(f)(E_SEC(e)))(SH_NOBITS))
+        (FIND_SEC_M(O_SECTAB(rec))(concat(".rela")(SECNAME_M(O_SECTAB(rec))(E_SEC(e))))))
+      (IF(int_eq(SH_TYPE_M(O_SECTAB(rec))(E_SEC(e)))(SH_NOBITS))
          (la _. "")
          (la _. SECBYTES(f)(E_SEC(e)))))
      (O_F(rec)))
@@ -893,7 +939,7 @@ glyph EHMERGE = la objs. la plan. la resolve. la mbase. (la cie.
 
 glyph CHECKALL = la objs. (Z(la self. la l.
     l("ok")(la h. la t.
-      SEQ(CHECKSECS(O_F(h))(concat("input ")(int_to_str(O_IDX(h)))))(self(t)))))(objs)
+      SEQ(CHECKSECS(O_SECTAB(h))(concat("input ")(int_to_str(O_IDX(h)))))(self(t)))))(objs)
 
 glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))

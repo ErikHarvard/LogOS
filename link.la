@@ -51,6 +51,11 @@ export BYTE U16 U32 LOW4 SIGN32 CSTR IS_ELF E_TYPE E_SHNUM SH_TYPE SH_OFF
 export SH_SIZE SH_LINK SH_ALIGN SH_FLAGS E_SHNUM SECNAME FIND_SEC SYM_INFO SYM_SHNDX SYM_VALUE
 export SYM_COUNT SYM_IS_GLOBAL SYM_IS_SECTION SYMNAME SYM_IS_UNDEF
 export REL_OFFSET REL_TYPE REL_SYM REL_ADDEND REL_COUNT
+#   Low-level tail/base helpers, exported so link_reloc.la can build a memoised
+#   section table (SECTAB) that reads the header table ONCE by cursor-threading,
+#   instead of re-DROPping from file-start for every field (DROP copies, so a
+#   deep field read is O(offset·filesize); see link_reloc.la SECTAB).
+export DROP E_SHOFF SHSTR_OFF
 
 # ── prelude: the standard combinators ───────────────────────────────────────
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
