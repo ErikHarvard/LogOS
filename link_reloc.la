@@ -137,7 +137,13 @@ glyph FITS32 = la v. AND(NOT(lt(v)(0)))(lt(v)(4294967296))
 #   uses its in-object address directly.
 glyph SYMVAL = la f. la ss. la va. la resolve. la i.
     IF(OR(SYM_IS_UNDEF(f)(ss)(i))(SYM_IS_WEAK(SYM_INFO(f)(ss)(i))))
-      (la _. resolve(SYMNAME(f)(ss)(i)))
+      (la _. (la r.
+               IF(NOT(lt(r)(0)))
+                 (la _. r)
+                 (la _. IF(SYM_IS_WEAK(SYM_INFO(f)(ss)(i)))
+                          (la _. 0)
+                          (la _. error(concat("link: unresolved symbol: ")(SYMNAME(f)(ss)(i))))))
+             (resolve(SYMNAME(f)(ss)(i))))
       (la _. (la base.
                IF(lt(base)(0))
                  (la _. error(CAT(CONS("link: symbol lives in a section this layout does not place: ")(
@@ -931,16 +937,25 @@ glyph FIND_DEF = la dfn. la objs. la plan. la want.
     (objs)
 
 #   Resolve a name: a STRONG definition first, then a WEAK one, else unresolved.
+#   NON-FATAL: a STRONG definition first, then a WEAK one, else -1. It does not
+#   error on failure — the caller decides, because the right answer depends on
+#   the REFERENCE: an undefined WEAK reference resolves to 0 (ld's behaviour for
+#   `if (&optional_fn) …` feature probing), while an undefined STRONG reference
+#   is the loud "unresolved symbol" (raised in SYMVAL, which knows the binding),
+#   and a missing ENTRY is its own error (ENTRYOF).
 glyph RESOLVE_L = la objs. la plan. la want.
     (la strong.
        IF(NOT(lt(strong)(0)))
          (la _. strong)
-         (la _. (la weak.
-                   IF(NOT(lt(weak)(0)))
-                     (la _. weak)
-                     (la _. error(concat("link: unresolved symbol: ")(want))))
-                (FIND_DEF(DEFINES_WEAK)(objs)(plan)(want))))
+         (la _. FIND_DEF(DEFINES_WEAK)(objs)(plan)(want)))
     (FIND_DEF(DEFINES)(objs)(plan)(want))
+
+#   The entry `_start` MUST resolve — RESOLVE_L is non-fatal now, so this keeps
+#   the loud halt (a binary with no entry is not linkable, as ld's "no entry"
+#   error says), rather than silently emitting an entry of -1.
+glyph ENTRYOF = la resolve.
+    (la e. IF(lt(e)(0))(la _. error("link: no entry symbol _start"))(la _. e))
+    (resolve("_start"))
 
 #   The merged .text, pulled back out of the regions. Collapsing MAIN's binders
 #   dropped the write of this file, and the byte-identity-against-ld check —
@@ -1058,7 +1073,7 @@ glyph MAIN =
     SEQ(DUPCHECK(objs))(
     SEQ(write_file("link_text.bin")(TEXTBYTES(regs)))(
     SEQ(write_exec("link_out")(CAT(
-          CONS(EHDR(resolve("_start"))(nph))(
+          CONS(EHDR(ENTRYOF(resolve))(nph))(
           CONS(PHDRS(regs))(
           CONS(BODY(regs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
           NIL))))))(
@@ -1068,7 +1083,7 @@ glyph MAIN =
       CONS(" objects into ")(
       CONS(int_to_str(LENL(regs)))(
       CONS(" segments, entry ")(
-      CONS(int_to_str(resolve("_start")))(
+      CONS(int_to_str(ENTRYOF(resolve)))(
       CONS(NL)(
       NIL))))))))))))
   )(LENL(regs))

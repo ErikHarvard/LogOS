@@ -302,9 +302,21 @@ in-object address, while strong/local/section symbols still resolve locally.
 (`SYM_IS_WEAK` reads `st_info >> 4 == 2` directly — `SYM_BIND` is `link.la`-
 private, not exported.) Gate: a weak-only link resolves + runs (was an error),
 and a weak+strong link's exit matches ld (the strong def overrides the weak
-object's own reference). *Honest scope:* an UNDEFINED weak reference to a symbol
-absent everywhere still errors rather than resolving to 0 (a separate, rarer
-half of weak semantics); and gc `DEFSEC` traces strong defs only.
+object's own reference). *(gc `DEFSEC` still traces strong defs only.)*
+
+**✔ 5b. Undefined WEAK → 0.** The other half: an `extern __attribute__((weak))`
+symbol referenced but defined NOWHERE is not an error — ld resolves it to 0 (the
+`if (&opt) opt();` optional-symbol-probe idiom). `RESOLVE_L` is now NON-FATAL
+(returns -1 rather than erroring), and the decision moves to where the binding is
+known: `SYMVAL` turns a still-unresolved WEAK reference into 0, keeps the loud
+`unresolved symbol` for a STRONG one, and the entry gets its own `ENTRYOF` guard
+(`no entry symbol _start`) so a missing entry still halts. Gate (built `-fno-pic`
+so `&opt` is a direct `R_X86_64_32`): the undefined-weak link succeeds and its
+exit matches ld; the negative gate still confirms an unresolved STRONG symbol is
+refused. *Honest scope:* the PIC form of this idiom emits `R_X86_64_GOTPCRELX`
+(type 42) for `&opt`, which this linker does not support — GOT-based relocations
+are a separate, larger gap (they need a `.got` and a `PT_LOAD` for it); the fix
+covers the non-PIC form our objects use.
 
 **6. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it

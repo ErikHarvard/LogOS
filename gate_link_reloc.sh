@@ -649,6 +649,38 @@ CWS
     rm -f w_ref.o w_weak.o w_cw.o w_strong.o
 fi
 
+# --- ★ weak-UNDEF -> 0: an undefined WEAK reference resolves to 0, not an error ---
+#   `extern T sym __attribute__((weak));` referenced but defined NOWHERE is not an
+#   error in ld — the reference resolves to 0, the idiom behind optional-symbol
+#   probing (`if (&opt) opt();`). RESOLVE_L is non-fatal now; SYMVAL turns a
+#   still-unresolved WEAK reference into 0 while a STRONG one stays the loud
+#   "unresolved symbol" (exercised by the negative gate above / the dup section).
+#   Built -fno-pic so `&opt` is a direct R_X86_64_32, not a GOT reloc (GOTPCRELX /
+#   type 42 is a separate unsupported-reloc gap). Assertion: it LINKS (a
+#   regression would refuse it) and its exit matches ld's.
+if command -v gcc >/dev/null 2>&1; then
+    gcc -c -O0 -fno-pic -mcmodel=small -x c - -o wu.o 2>/dev/null <<'CWU'
+extern int opt(int) __attribute__((weak));
+int compute(int x){ return (&opt) ? opt(x) : x*2+1; }
+CWU
+    if [ -f wu.o ] && readelf -sW wu.o | grep -q 'WEAK.* opt$'; then
+        ld -o wu_ref link_test_start.o wu.o 2>/dev/null
+        if ./wu_ref; then LDU=0; else LDU=$?; fi
+        cp link_test_start.o link_in1.o; cp wu.o link_in2.o
+        printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt; rm -f link_out
+        if WUO=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then :; else
+            echo "FAIL  link_reloc.la: undefined-weak link failed (weak ref not resolved to 0): $WUO"; ok=0; fi
+        if [ -x link_out ]; then
+            if ./link_out; then OU=0; else OU=$?; fi
+            [ "$OU" = "$LDU" ] || { echo "FAIL  weak-undef link exited $OU, ld exits $LDU"; ok=0; }
+        else echo "FAIL  weak-undef: no executable emitted"; ok=0; fi
+        rm -f link_in1.o link_in2.o link_inputs.txt wu_ref
+    else
+        echo "NOTE  link_reloc.la: gcc emitted no undefined-WEAK opt — weak-undef check skipped"
+    fi
+    rm -f wu.o
+fi
+
 # --- ★ --gc-sections: drop unreferenced sections (opt-in) ---
 #   A `--gc-sections` directive line in link_inputs.txt turns on dead-section
 #   elimination: only sections REACHABLE from _start survive. The fixture adds a
@@ -764,5 +796,5 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
-[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, WEAK symbols (strong overrides weak; weak resolves when no strong), 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
+[ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S, WEAK symbols (strong overrides weak; weak resolves when no strong; undefined weak -> 0), 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]
