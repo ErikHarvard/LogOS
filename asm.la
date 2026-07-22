@@ -1377,6 +1377,16 @@ glyph DEMIT = la labs. la w. la l.
         ll("")(la h. la t. concat(LEW(w)(DVAL(labs)(h)))(self(t))))(l)
 glyph DSIZE = la w. la l. mul(w)(LEN(l))
 glyph ISRES = la op. OR(str_eq(op)("resb"))(str_eq(op)("resq"))
+#   `times COUNT db 0`: the COUNT is an EXPRESSION that may span several tokens
+#   when it has spaces (`times 510 - ($ - $$) db 0` in the MBR). Collect tokens
+#   up to the data directive (db/dw/dd/dq/resb/resq) as the count string; the rest
+#   is the repeated instruction. A single-token count (`times 8 db 0`) is the
+#   degenerate case.
+glyph ISTIMESINSTR = la t. OR(str_eq(t)("db"))(OR(ISDATA(t))(ISRES(t)))
+glyph TIMESCOUNT = Z(la self. la l. la acc.
+    l(acc)(la h. la t. IF(ISTIMESINSTR(h))(la _. acc)(la _. self(t)(concat(acc)(h)))))
+glyph TIMESREST = Z(la self. la l.
+    l(NIL)(la h. la t. IF(ISTIMESINSTR(h))(la _. l)(la _. self(t))))
 #   A single-operand directive's WHOLE operand list is the expression, unlike
 #   `mov dst, expr` where the first operand is a destination. JOINEXPR keeps the
 #   first token separate for that reason, so directives join everything instead.
@@ -1433,7 +1443,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(ISDATA(op))(la _. DSIZE(DWIDTH(op))(JOINEXPR(TL2(ts))))(la _.
     IF(ISRES(op))(la _. RESN(labs)(op)(ts))(la _.
     IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
-    IF(str_eq(op)("times"))(la _. mul(EVAL(labs)(NTH(1)(ts)))(SIZEL(labs)(off)(TL2(TL2(ts)))))(la _.
+    IF(str_eq(op)("times"))(la _. mul(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(SIZEL(labs)(off)(TIMESREST(TL2(ts)))))(la _.
     IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b))))(la _.
     IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(w)(a)(b))))(la _.
@@ -1481,7 +1491,7 @@ glyph ENC10 = la labs. la off. la ts.
     IF(ISDATA(op))(la _. DEMIT(labs)(DWIDTH(op))(JOINEXPR(TL2(ts))))(la _.
     IF(ISRES(op))(la _. REPB(RESN(labs)(op)(ts))(B(0)))(la _.
     IF(str_eq(op)("align"))(la _. REPB(ALIGNPAD(off)(NUMV(NTH(1)(ts))))(B(144)))(la _.
-    IF(str_eq(op)("times"))(la _. REPB(EVAL(labs)(NTH(1)(ts)))(ENC1(labs)(off)(TL2(TL2(ts)))))(la _.
+    IF(str_eq(op)("times"))(la _. REPB(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(ENC1(labs)(off)(TIMESREST(TL2(ts)))))(la _.
     IF(ISNOARG(op))(la _. NOARG(op))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(labs)(G1DIG(op))))(la _.
     IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))))(la _.
