@@ -1499,6 +1499,17 @@ glyph STRIPLAB = la ts. IF(ISLABEL(HD(ts)))(la _. TL2(ts))(la _. ts)
 #   duration of one line. Doing it here rather than threading an `off` argument
 #   through every evaluator means `$` works in every operand position at once.
 glyph WITHDOLLAR = la labs. la off. CONS(PAIR("$")(off))(labs)
+# ── BITS mode (16-bit real mode) ────────────────────────────────────────────
+#   `bits N` sets the current CPU mode; it is POSITIONAL (changes mid-file), so
+#   the pass loops (MKLABS/TOTLEN/PASS2) carry a `mode` accumulator updated on
+#   each bits line, and bind it into the label channel as "@bits" (exactly how
+#   WITHDOLLAR binds `$`). asm.la's op-size model is already 32-bit-default, so
+#   modes 32 and 64 are identical here — only mode==16 differs, and every
+#   mode-aware branch is a NO-OP unless BITSMODE==16, keeping 32/64 byte-identical.
+glyph NEXTMODE = la mode. la ts.
+    IF(str_eq(LOWER(HD(STRIPLAB(ts))))("bits"))(la _. NUMV(NTH(1)(STRIPLAB(ts))))(la _. mode)
+glyph WITHBITS = la labs. la mode. CONS(PAIR("@bits")(mode))(labs)
+glyph BITSMODE = la labs. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 64))(LOOKLAB("@bits")(labs))
 glyph SIZEL = la labs. la off. la ts. SIZEL0(WITHDOLLAR(labs)(off))(off)(STRIPLAB(ts))
 #   @next = off + this instruction's length, so a RIP-relative disp (target-@next)
 #   resolves without threading off/len through every encoder — the same label-
@@ -1822,23 +1833,26 @@ glyph QUALALL = Z(la self. la tls. la scope.
 #   every use site in boot.asm writes the full name.
 glyph QUALIFY = la scope. la nm.
     IF(str_eq(str_head(nm))("."))(la _. concat(scope)(nm))(la _. nm)
-glyph MKLABS = Z(la self. la ls. la labs. la off. la acc. la scope.
+glyph MKLABS = Z(la self. la ls. la labs. la off. la acc. la scope. la mode.
     ls(acc)(la ts. la t.
+      (la md. (la lm.
         IF(ISEQU(ts))
-          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))
+          (la _. self(t)(labs)(add(off)(SIZEL(lm)(off)(ts)))
                      (CONS(PAIR(QUALIFY(scope)(EQUNAME(ts)))
-                               (EVAL(WITHDOLLAR(labs)(off))(EQUBODY(ts))))(acc))
-                     (scope))
+                               (EVAL(WITHDOLLAR(lm)(off))(EQUBODY(ts))))(acc))
+                     (scope)(md))
         (la _. IF(ISLABEL(HD(ts)))
           (la _. (la nm.
-                   self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))
+                   self(t)(labs)(add(off)(SIZEL(lm)(off)(ts)))
                        (CONS(PAIR(QUALIFY(scope)(nm))(off))(acc))
-                       (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm)))
+                       (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm))(md))
                  (LABNAME(HD(ts))))
-          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))(acc)(scope)))))
+          (la _. self(t)(labs)(add(off)(SIZEL(lm)(off)(ts)))(acc)(scope)(md))))
+       (WITHBITS(labs)(md)))
+      (NEXTMODE(mode)(ts))))
 
-glyph TOTLEN = Z(la self. la ls. la labs. la off.
-    ls(off)(la ts. la t. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))))
+glyph TOTLEN = Z(la self. la ls. la labs. la off. la mode.
+    ls(off)(la ts. la t. (la md. self(t)(labs)(add(off)(SIZEL(WITHBITS(labs)(md))(off)(ts)))(md))(NEXTMODE(mode)(ts))))
 
 # ── iterate to the fixed point: length unchanged <=> no promotion <=> stable ──
 #   The previous iteration's total length is CARRIED rather than recomputed.
@@ -1873,17 +1887,18 @@ glyph FIXLABS = Z(la self. la ls. la labs. la prev. la n. la org.
                            (la _. l2)
                            (la _. self(ls)(l2)(sig2)(sub(n)(1))(org)))
                (LABSIG(l2)))
-             (MKLABS(ls)(labs)(org)(CONS(PAIR("$$")(org))(NIL))(""))))
+             (MKLABS(ls)(labs)(org)(CONS(PAIR("$$")(org))(NIL))("")(64))))
 
 #   The emitted bytes ARE the size, so the line is encoded ONCE. The old form
 #   called ENC1 and then SIZEL, and since SIZEL now runs the encoder to measure
 #   (see MOVSIZE), that meant assembling every line twice on the final pass.
 #   This is the same invariant MOVSIZE rests on — len(ENC1) = SIZEL — used in
 #   the one place where the labels are known and so ENC1 is safe to run.
-glyph PASS2 = Z(la self. la labs. la ls. la off.
-    ls("")(la ts. la t.
-      (la e. concat(e)(self(labs)(t)(add(off)(LENOF(e)))))
-      (ENC1(labs)(off)(ts))))
+glyph PASS2 = Z(la self. la labs. la ls. la off. la mode.
+    ls("")(la ts. la t. (la md.
+      (la e. concat(e)(self(labs)(t)(add(off)(LENOF(e)))(md)))
+      (ENC1(WITHBITS(labs)(md))(off)(ts)))
+      (NEXTMODE(mode)(ts))))
 
 # ── ASSEMBLE(source text) -> machine code bytes ──
 #   `org N` sets the base address, so labels are ABSOLUTE (what a -f bin image
@@ -1923,8 +1938,8 @@ glyph ASSEMBLE = la src.
                            IF(int_eq(sized)(LENOF(code)))
                              (la _. code)
                              (la _. SIZEDRIFT(sized)(LENOF(code))))
-                         (sub(TOTLEN(tls)(labs)(org))(org)))
-                       (PASS2(labs)(tls)(org)))
+                         (sub(TOTLEN(tls)(labs)(org)(64))(org)))
+                       (PASS2(labs)(tls)(org)(64)))
                      (FIXLABS(tls)(NIL)("")(12)(org)))
                    (ORGOF(tls)))
           (QUALALL(SUBALL(equs)(tls0))("")))
