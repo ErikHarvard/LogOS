@@ -313,6 +313,15 @@ glyph MODRM = la dst. la src. B(add(192)(add(mul(mod(src)(8))(8))(mod(dst)(8))))
 
 #   16-bit operands are the 32-bit encoding under a 0x66 prefix.
 glyph P66 = la w. IF(int_eq(w)(2))(la _. B(102))(la _. "")
+#   Mode-aware operand-size prefix. In 16-bit mode the default is 16-bit, so a
+#   16-bit operand (w=2) needs NO 0x66 and a 32-bit operand (w=4) needs it — the
+#   reverse of 32/64 mode. Only the prefix changes; opcode (OP8), immediate width
+#   (IMMW), MODRM and REX are already correct for w=2. mode!=16 → plain P66, so
+#   32/64-bit output is byte-identical.
+glyph P66M = la mode. la w.
+    IF(int_eq(mode)(16))
+      (la _. IF(int_eq(w)(4))(la _. B(102))(la _. ""))
+      (la _. P66(w))
 
 #   REX is OPTIONAL — this is the heart of the width slice. The old encoder
 #   hard-coded 0x48 (REX.W) because every operand was 64-bit; at other widths
@@ -866,8 +875,8 @@ glyph REL8 = la labs. la off. la nm.
 #   The one form that cannot be measured is a label immediate, whose address is
 #   not yet known during the fixed-point iteration — it is a constant 10 bytes
 #   (movabs), which is precisely why NASM's label rule is worth matching.
-glyph RROP = la op. la w. la dst. la src. la force.
-    concat(P66(w))(concat(REXOPT(w)(src)(dst)(force))
+glyph RROP = la op. la w. la dst. la src. la force. la mode.
+    concat(P66M(mode)(w))(concat(REXOPT(w)(src)(dst)(force))
    (concat(B(OP8(op)(w)))(MODRM(dst)(src))))
 # ── CONTROL and SEGMENT registers ───────────────────────────────────────────
 #   The paging-setup family: `mov cr3, rax` (27 uses in the kernel asm) and the
@@ -914,7 +923,7 @@ glyph MOVENC = la labs. la w. la a. la b.
       (la _. IF(ISMEM(b))
         (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a)))
         (la _. IF(ISREG(b))
-          (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+          (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(64))
           (la _. IF(ISVAL(b))
             (la _. (la n. IF(AND(int_eq(w)(8))(NOT(lt(n)(4294967296))))
                             (la _. MOVABS(REGNUM(a))(n))
@@ -923,7 +932,7 @@ glyph MOVENC = la labs. la w. la a. la b.
             (la _. IF(int_eq(w)(8))(la _. MOVABS(REGNUM(a))(LABADDR(b)(labs)))(la _. MOVIMM(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a)))))))))))
 glyph ALUENC = la op. la w. la a. la b.
     IF(ISREG(b))
-      (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+      (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(64))
       (la _. error(concat("asm: unsupported operand (register-to-register only): ")(b)))
 # ── GROUP-1 ALU (add/or/and/sub/xor/cmp) — the reg,IMMEDIATE forms ──────────
 #   Profiling the kernel .asm showed reg+imm is the DOMINANT shape (or 31 of
@@ -994,7 +1003,7 @@ glyph G1ENC = la labs. la digit. la w. la a. la b.
       (la _. IF(ISMEM(b))
         (la _. G1REGMEM(labs)(digit)(w)(a)(b))
       (la _. IF(ISREG(b))
-        (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+        (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
         (la _. IF(ISVAL(b))
                  (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a)))
                  (la _. error(concat("asm: unsupported ALU operand: ")(b))))))
@@ -1041,7 +1050,7 @@ glyph IDENC = la digit. la w. la a.
     (REGNUM(a))
 glyph TSTENC = la w. la a. la b.
     IF(ISREG(b))
-      (la _. RROP(133)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+      (la _. RROP(133)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(64))
       (la _. IF(NOT(ISNUM(b)))
         (la _. error(concat("asm: test operand must be a register or an immediate: ")(b)))
         (la _. (la r. la n.
