@@ -363,15 +363,15 @@ glyph HIGH8OK = la a. la b.
 glyph LE2 = la n0.
     (la n. concat(B(mod(n)(256)))(B(mod(div(n)(256))(256))))
     (IF(lt(n0)(0))(la _. add(65536)(n0))(la _. n0))
-glyph MOVIMM = la w. la dst. la n. la force.
+glyph MOVIMM = la w. la dst. la n. la force. la mode.
     IF(int_eq(w)(1))
       (la _. concat(REXOPT(1)(0)(dst)(force))
             (concat(B(add(176)(mod(dst)(8))))(B(n))))
       (la _. IF(int_eq(w)(2))
-        (la _. concat(B(102))(concat(REXOPT(2)(0)(dst)(FALSE))
+        (la _. concat(P66M(mode)(2))(concat(REXOPT(2)(0)(dst)(FALSE))
               (concat(B(add(184)(mod(dst)(8))))(LE2(n)))))
-        (la _. concat(REXOPT(4)(0)(dst)(FALSE))
-              (concat(B(add(184)(mod(dst)(8))))(LE4(n)))))
+        (la _. concat(P66M(mode)(4))(concat(REXOPT(4)(0)(dst)(FALSE))
+              (concat(B(add(184)(mod(dst)(8))))(LE4(n))))))
 
 #   A LABEL as an immediate is NOT the same encoding as a NUMBER. NASM emits
 #   `mov rsi, msg` (msg a label) as 48 be + imm64 — movabs, 10 bytes — while
@@ -923,13 +923,13 @@ glyph MOVENC = la labs. la w. la a. la b.
       (la _. IF(ISMEM(b))
         (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a)))
         (la _. IF(ISREG(b))
-          (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(64))
+          (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
           (la _. IF(ISVAL(b))
             (la _. (la n. IF(AND(int_eq(w)(8))(NOT(lt(n)(4294967296))))
                             (la _. MOVABS(REGNUM(a))(n))
-                            (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))))
+                            (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))(BITSMODE(labs))))
                    (EVAL(labs)(b)))
-            (la _. IF(int_eq(w)(8))(la _. MOVABS(REGNUM(a))(LABADDR(b)(labs)))(la _. MOVIMM(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a)))))))))))
+            (la _. IF(int_eq(w)(8))(la _. MOVABS(REGNUM(a))(LABADDR(b)(labs)))(la _. MOVIMM(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a))(BITSMODE(labs)))))))))))
 glyph ALUENC = la op. la w. la a. la b.
     IF(ISREG(b))
       (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(64))
@@ -1121,13 +1121,13 @@ glyph LENOF  = la s. str_to_int(str_len(s))
 #   simply call MOVENC here; the placeholder 0 sidesteps that, and is exact
 #   because MOVABS (REX+op+LE8) and MOVIMM (B/LE2/LE4, no short form) both have
 #   value-INDEPENDENT lengths — verified, not assumed.
-glyph MOVSIZE = la ts.
+glyph MOVSIZE = la mode. la ts.
     WITHOPS(ts)(la w. la a. la b.
       IF(MOVLBL(a)(b))
         (la _. IF(int_eq(w)(8))
                  (la _. LENOF(MOVABS(REGNUM(a))(0)))
-                 (la _. LENOF(MOVIMM(w)(REGNUM(a))(0)(RFORCE(a)))))
-        (la _. LENOF(MOVENC(NIL)(w)(a)(b))))
+                 (la _. LENOF(MOVIMM(w)(REGNUM(a))(0)(RFORCE(a))(mode))))
+        (la _. LENOF(MOVENC(WITHBITS(NIL)(mode))(w)(a)(b))))
 
 # ── db: define bytes. Operands are quoted strings (emitted verbatim) or
 #    numbers (one byte each) — `db "I AM THAT I AM", 10`. This is what lets the
@@ -1383,7 +1383,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(AND(str_eq(op)("call"))(ISREG(A1(ts))))(la _. LENOF(INDJMP(2)(A1(ts))))(la _.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
     IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 6))(la _.
-    IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _.
+    IF(str_eq(op)("mov"))(la _. MOVSIZE(BITSMODE(labs))(ts))(la _.
     IF(OR(str_eq(op)("global"))(OR(str_eq(op)("equ"))(ISEQU(ts))))(la _. 0)(la _.
     IF(str_eq(op)("section"))(la _. SECPAD(off))(la _.
     IF(str_eq(op)("incbin"))(la _. LENOF(INCBIN(ts)))(la _.
