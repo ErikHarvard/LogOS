@@ -31,16 +31,32 @@ def icmp_echo_request():
     if len(f)<60: f=f+b'\x00'*(60-len(f))   # pad to Ethernet min so the NIC keeps it
     return f
 
-def udp_request():
+# IP OPTIONS. A 4-byte block of three NOPs + End-of-Option-List: the minimal
+# legal way to make IHL=6 instead of 5. Deliberately semantics-free — the point
+# is to move where the UDP header STARTS, not to ask the kernel to honour an
+# option. Options are counted in 32-bit words, so the block must be a multiple
+# of 4 for IHL to be an integer.
+IP_OPTS_NOP4 = [0x01,0x01,0x01,0x00]
+
+def udp_request(opts=None):
+    # opts=None -> IHL=5 (a 20-byte header, the classic case every earlier gate
+    # sent). opts=[...] -> IHL=5+len(opts)//4, so the UDP header no longer sits
+    # at the fixed frame offset 34 that HAL.5h assumed.
+    opts = opts or []
+    assert len(opts)%4==0, "IP options must be a multiple of 4 bytes (IHL counts words)"
+    ihl = 5 + len(opts)//4
     p=UDP_PAYLOAD; ul=8+len(p)
     udp=[SENDER_UDP_PORT>>8,SENDER_UDP_PORT&0xff, OUR_UDP_PORT>>8,OUR_UDP_PORT&0xff,
          ul>>8,ul&0xff, 0,0]+list(p)              # udp checksum 0 = disabled (IPv4 legal)
-    il=20+ul
-    ip=[0x45,0,il>>8,il&0xff,0,0,0,0,64,17,0,0]+list(PINGER_IP)+list(GUEST_IP)
+    il=4*ihl+ul
+    ip=[0x40|ihl,0,il>>8,il&0xff,0,0,0,0,64,17,0,0]+list(PINGER_IP)+list(GUEST_IP)+opts
     c=ipck(ip); ip[10]=c>>8; ip[11]=c&0xff
     f=bytes(GUEST_MAC)+bytes(PINGER_MAC)+b'\x08\x00'+bytes(ip)+bytes(udp)
     if len(f)<60: f=f+b'\x00'*(60-len(f))
     return f
+
+def udp_request_opts():
+    return udp_request(IP_OPTS_NOP4)
 
 def valid_udp_echo(f):
     # rigorous: IPv4/UDP, addresses swapped back, ports swapped, payload echoed exactly
@@ -92,15 +108,21 @@ def decode(f):
     if et==0x0806 and len(f)>=42:
         return f"ARP op={(f[20]<<8)|f[21]}"
     if et==0x0800 and len(f)>=34:
-        proto=f[23]; t="?"
-        if proto==1 and len(f)>=35: t=f"icmp_type={f[34]}"
-        elif proto==17 and len(f)>=38: t=f"udp {(f[34]<<8)|f[35]}->{(f[36]<<8)|f[37]}"
-        return f"IPv4 proto={proto} {t}"
+        proto=f[23]; ihl=(f[14]&0x0f)*4; u=14+ihl; t="?"
+        if proto==1 and len(f)>=u+1: t=f"icmp_type={f[u]}"
+        elif proto==17 and len(f)>=u+4: t=f"udp {(f[u]<<8)|f[u+1]}->{(f[u+2]<<8)|f[u+3]}"
+        return f"IPv4 ihl={ihl} proto={proto} {t}"
     return f"et={et:04x}"
 
 MODES={
-    "ping": (icmp_echo_request, valid_echo_reply, "ICMP echo request", "ECHO REPLY"),
-    "udp":  (udp_request,        valid_udp_echo,   "UDP datagram",      "UDP ECHO"),
+    "ping":   (icmp_echo_request,  valid_echo_reply, "ICMP echo request", "ECHO REPLY"),
+    "udp":    (udp_request,        valid_udp_echo,   "UDP datagram",      "UDP ECHO"),
+    # HAL.5i: the same datagram behind a 24-byte IP header (IHL=6). The UDP
+    # header starts 4 bytes later, so a kernel that assumes a 20-byte header
+    # reads the wrong fields and builds a malformed reply -- which is exactly
+    # what makes this mode a DISCRIMINATING gate rather than a second copy of
+    # `udp`. valid_udp_echo already parses IHL, so the validator needs no change.
+    "udpopt": (udp_request_opts,   valid_udp_echo,   "UDP datagram (IHL=6)", "UDP ECHO"),
 }
 
 def main():

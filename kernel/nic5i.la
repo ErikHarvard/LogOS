@@ -1,0 +1,107 @@
+# =====================================================================
+#  LogOS HAL.5i — an IHL-GENERAL UDP echo responder over RTL8139, in LA.
+#
+#  The honest de-cheat of HAL.5h, in the same spirit as 5f was of 5e. 5h
+#  answered a UDP datagram, but read the UDP header at the FIXED frame offset
+#  34 — correct only when the IPv4 header is exactly 20 bytes (IHL=5, no
+#  options). Every datagram the harness sent satisfied that, so 5h's gate was
+#  sound but could not see the assumption. 5i removes it: the kernel READS the
+#  header length out of the packet and locates the UDP header from it.
+#
+#    ihl nibble  = low 4 bits of frame byte 14  = mod(byte)(16)   [ring 18]
+#    header len  = ihl * 4 bytes
+#    udp starts at frame byte  u = 14 + 4*ihl   (34 when ihl=5, 38 when ihl=6)
+#
+#  Extracting the low nibble is `mod`, and scaling is `mul` — ARITHMETIC, so
+#  this needs no bitwise ops (LA has none; see the standing constraint).
+#
+#  What did NOT move, and why: the eth addresses (frame 0/6) precede the IP
+#  header, and ip src/dst sit at FIXED offsets 12/16 *within* the IP header
+#  (frame 26/30), so all four are independent of IHL and keep 5h's constants.
+#  Only the three UDP fields — sport, dport, checksum — are expressed relative
+#  to u. The IP header checksum is still untouched: swapping src/dst is
+#  commutative, and the options bytes are copied through unchanged.
+#
+#  The reply is still built FROM the request: COPYN the whole frame out of the
+#  RX ring (options included, so the reply's own IHL matches), then mutate in
+#  place, reading originals straight from the ring so a swap needs no temporary.
+#  Fires on TSD0 (the 5e lesson: the RTL8139 takes descriptors round-robin from
+#  TSD0, and firing on TSD1 gave an empty pcap while every TX write "succeeded").
+#
+#  Witnesses: "nic udp req ihl=06 proto=11 dport=0007" — the ihl field is the
+#  point, and it is read from the packet, so the serial PROVES the kernel parsed
+#  the header rather than happening to be right. The sender then independently
+#  verifies the echo (IPv4/UDP, addresses+ports swapped back, payload
+#  byte-for-byte). gate_nic5i.sh runs BOTH ihl=5 and ihl=6; 5h's own kernel
+#  passes the first and FAILS the second, which is what makes it a real check.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+glyph HEXD = la d.
+    IF(lt(d)(10))(la _. chr(int_to_str(add(48)(d))))
+                 (la _. chr(int_to_str(add(87)(d))))
+glyph HEX2 = la b. concat(HEXD(div(b)(16)))(HEXD(mod(b)(16)))
+
+glyph ADDR = la dev. la off. add(add(2147483648)(mul(dev)(2048)))(off)
+glyph CFG  = la dev. la off. SEQ(outl(3320)(ADDR(dev)(off)))(inl(3324))
+glyph CFGW = la dev. la off. la val. SEQ(outl(3320)(ADDR(dev)(off)))(outl(3324)(val))
+
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 32)(la _.
+      (la r.
+        IF(int_eq(mod(r)(65536))(4332))(la _.
+          IF(int_eq(div(r)(65536))(33081))(la _. dev)(la _. self(add(dev)(1))))
+        (la _. self(add(dev)(1))))
+      (CFG(dev)(0))))
+
+glyph OB = la base. la off. la v. outb(add(base)(off))(v)
+glyph OW = la base. la off. la v. outw(add(base)(off))(v)
+glyph OL = la base. la off. la v. outl(add(base)(off))(v)
+glyph IB = la base. la off. inb(add(base)(off))
+glyph IL = la base. la off. inl(add(base)(off))
+
+glyph RXBUF = 268435456     # 0x10000000 — 8 KiB RX ring
+glyph TXBUF = 268447744     # 0x10003000 — TX buffer (the UDP echo reply, TSD0)
+
+# copy n bytes from a peek-able src addr to a poke-able dst addr (bounded, no bitwise)
+glyph COPYN = Z(la self. la dst. la src. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+      SEQ(poke(dst)(peek(src)))(self(add(dst)(1))(add(src)(1))(sub(n)(1)))))
+
+glyph WAITRST = Z(la self. la base.
+    IF(int_eq(mod(div(IB(base)(55))(16))(2))(1))(la _. self(base))(la _. base))
+# wait for TOK (bit15) on a TSD at byte offset off (16=TSD0)
+glyph WAITTX = Z(la self. la base. la off.
+    IF(int_eq(mod(div(IL(base)(off))(32768))(2))(1))(la _. base)(la _. self(base)(off)))
+glyph WAITRX = Z(la self. la base. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+      IF(int_eq(mod(IB(base)(55))(2))(0))(la _. 1)(la _. self(base)(sub(n)(1)))))
+
+# RX packet total length from its 4-byte ring header (bytes 2..3, incl. CRC)
+glyph RXLEN = add(peek(add(RXBUF)(2)))(mul(peek(add(RXBUF)(3)))(256))
+# byte at ring offset off in the received packet (frame byte off-4)
+glyph RB = la off. peek(add(RXBUF)(off))
+
+# ★ HAL.5i: the IP header length, READ FROM THE PACKET rather than assumed.
+# Frame byte 14 (ring 18) is version<<4|ihl; the low nibble is mod 16, and the
+# header is that many 32-bit words. u is where the UDP header actually starts.
+glyph IHL    = mod(RB(18))(16)
+glyph UDPOFF = add(14)(mul(IHL)(4))
+
+glyph SETUP = la dev. la base.
+    SEQ(CFGW(dev)(4)(7))
+    (SEQ(OB(base)(82)(0))
+    (SEQ(OB(base)(55)(16))
+    (SEQ(WAITRST(base))
+    (SEQ(OL(base)(48)(RXBUF))
+    (SEQ(OW(base)(60)(0))
+    (SEQ(OW(base)(62)(65535))
+    (SEQ(OL(base)(68)(59151))
+    (SEQ(OW(base)(56)(65520))
+    (OB(base)(55)(12))))))))))
+glyph FROMWIT = la u. concat("nic udp req ihl=")(concat(HEX2(IHL))(concat(" proto=")(concat(HEX2(RB(27)))(concat(" dport=")(concat(HEX2(RB(add(u)(6))))(HEX2(RB(add(u)(7)))))))))
+glyph RESPOND = la base. la framelen. la u. SEQ(COPYN(TXBUF)(add(RXBUF)(4))(framelen))(SEQ(COPYN(TXBUF)(add(RXBUF)(10))(6))(SEQ(COPYN(add(TXBUF)(6))(add(RXBUF)(4))(6))(SEQ(COPYN(add(TXBUF)(26))(add(RXBUF)(34))(4))(SEQ(COPYN(add(TXBUF)(30))(add(RXBUF)(30))(4))(SEQ(COPYN(add(TXBUF)(u))(add(RXBUF)(add(u)(6)))(2))(SEQ(COPYN(add(TXBUF)(add(u)(2)))(add(RXBUF)(add(u)(4)))(2))(SEQ(poke(add(TXBUF)(add(u)(6)))(0))(SEQ(poke(add(TXBUF)(add(u)(7)))(0))(SEQ(OL(base)(32)(TXBUF))(SEQ((la tl. OL(base)(16)(tl))(IF(lt(framelen)(60))(la _. 60)(la _. framelen)))(SEQ(WAITTX(base)(16))(SEQ(print("nic udp reply sent"))(print("nic done"))))))))))))))
+glyph MAIN = SEQ(print("nic5i:"))(((la dev. IF(int_eq(dev)(32))(la _. print("nic not found"))(la _. ((la base. SEQ(SETUP(dev)(base))(SEQ(print("nic setup ok"))(IF(int_eq(WAITRX(base)(20000000))(0))(la _. print("nic rx timeout"))(la _. (la u. SEQ(print(FROMWIT(u)))(RESPOND(base)(sub(RXLEN)(4))(u)))(UDPOFF)))))(sub(CFG(dev)(16))(mod(CFG(dev)(16))(4))))))(FIND(0))))
