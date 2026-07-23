@@ -897,6 +897,33 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             NOTE: `native_codegen3` took ~37 min here (bigger than 5e — the copy
             loop + two hex read-back witnesses), near the practical single-image
             ceiling; build once + run QEMU manually when iterating.
+      - [x] **HAL.5g — an ICMP ECHO RESPONDER — DONE + gated (2026-07-23).** The
+            RECEIVE-side twin of HAL.5c: 5c pinged the gateway and read the reply;
+            5g **answers a ping sent TO us** — the kernel serving the network
+            rather than initiating. SLIRP won't deliver an inbound ICMP, so the
+            guest runs on a QEMU `socket` netdev and a small external pinger
+            (`kernel/ping_harness.py`, the sole L2 peer) unicasts an ICMP echo
+            REQUEST to our MAC. `kernel/nic5g.la` at ring 0 receives it and builds
+            the echo REPLY **from the request** (no static frame): `COPYN` the whole
+            request out of the RX ring, then mutate in place, reading the originals
+            straight from the ring so the swaps need no temporary — eth src↔dst, ip
+            src↔dst, icmp type 8→0, and the ICMP checksum by its one-word delta
+            (`+0x0800` with end-around carry, since type<<8|code drops by 0x0800;
+            f7fd→fffd). The **IP header checksum is unchanged** — swapping src/dst
+            leaves the header sum identical. All arithmetic, no bitwise ops. Reuses
+            5b/5c's bring-up; the NIC's promiscuous RCR (AAP) accepts the unicast
+            without programming the MAC registers. **Gated two ways** (`gate_nic5g.sh`):
+            the guest's own serial (`nic icmp req type=08 from=52550a000202` — the
+            request received + the pinger's MAC read from the ring — then `nic icmp
+            reply sent` / `nic done`) AND the pinger's independent end-to-end check —
+            it receives the reply and **verifies it in full**: IPv4/ICMP, addresses
+            swapped back (src=us, dst=pinger), type 0, and the **ICMP checksum sums
+            to 0xffff** (so the kernel's delta math is proven, not just the type).
+            Fully self-contained — the pinger is the only peer, no host egress,
+            deterministic. Built clean on the first attempt (all 5e/5f lessons
+            applied) and the whole reply/checksum logic was unit-tested against the
+            pinger BEFORE the ~37-min compile (feedback loop made cheap first). Needs
+            -m 512 + python3; near the single-image compile ceiling.
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
