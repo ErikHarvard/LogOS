@@ -868,6 +868,35 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             REACTIVE (waits for + verifies the real request — no pre-seeding) with
             static addressing for the known SLIRP gateway; a fully general responder
             that echoes the requester's own sender fields is a follow-up (5f).
+      - [x] **HAL.5f — a FULLY GENERAL ARP responder — DONE + gated
+            (2026-07-22).** 5e answered SLIRP's ARP but with STATIC peer-addressing
+            (the reply's dst + target fields hard-coded for the known gateway). 5f
+            makes it general: it READS the requester's own identity out of the
+            received request and builds the reply from it, so it is correct for ANY
+            requester on a real network. From the ARP request in the RX ring it
+            extracts the requester's sender HW addr (sha, ring 26..31) and sender
+            proto addr (spa, ring 32..35) and **`COPYN`s** them (a bounded byte-copy
+            loop, no bitwise ops) into a reply TEMPLATE: sha → reply eth-dst (buf
+            0..5) AND tha (buf 32..37); spa → tpa (buf 38..41). The reply's OWN
+            sender fields (our MAC as eth-src + arp sha, our IP as spa) stay static
+            — they are our fixed identity, not the peer's. `kernel/nic5f.la` reuses
+            5e's proven path otherwise (ICMP on TSD0 first, ARP reply on TSD1, then
+            ring-advance + RX the echo reply). **Built clean on the first attempt —
+            every 5e lesson applied up front** (flat MAIN with the post-ARP logic in
+            a `RESPOND` glyph, TSD0-first descriptor order, `WAITTX` after each fire,
+            paren-safe generation, pre-verified parse). `gate_nic5f.sh` asserts the
+            generality directly: `nic arp from=52550a000202 spa=0a000202` (the
+            requester's MAC + IP READ from the request) + `nic reply
+            dst=52550a000202` (the reply's eth-dst READ BACK after the copy — it
+            EQUALS the requester's sha, so the reply was built from the request, not
+            constants) + `nic rx et=0800 proto=01 icmp=00` (the echo reply, which
+            arrives only because the dynamically-built reply was valid) + `nic done`.
+            **Verified live; wire capture shows all 4 frames**, and reply #3's eth-dst
+            = the requester's MAC from #2. Fully SLIRP-internal → deterministic gate,
+            no egress. Six-second-safe (two bounded RX spins + a 16-byte copy).
+            NOTE: `native_codegen3` took ~37 min here (bigger than 5e — the copy
+            loop + two hex read-back witnesses), near the practical single-image
+            ceiling; build once + run QEMU manually when iterating.
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
