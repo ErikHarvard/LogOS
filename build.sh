@@ -1819,10 +1819,16 @@ say "LA linker: N objects -> a running ET_EXEC, no ld (link.la, track B)"
 # last check is not a diff: the emitted binary is RUN, because one can diff
 # correctly and still segfault.
 #
-# Both scripts self-skip with a SKIP line when nasm/ld/readelf/objcopy/gcc are
+# gate_link_script.sh is the third: the layout is no longer the linker's choice
+# at all -- it is read from a LINKER SCRIPT, and `ld -T <the same file>` is the
+# witness, so the addresses are neither linker's invention and can be compared
+# exactly rather than excluded as ld's own habits.
+#
+# All three self-skip with a SKIP line when nasm/ld/readelf/objcopy/gcc are
 # absent, and carry per-run timeouts, so they cannot wedge a build.
-./gate_link.sh       || ok=0
-./gate_link_reloc.sh || ok=0
+./gate_link.sh        || ok=0
+./gate_link_reloc.sh  || ok=0
+./gate_link_script.sh || ok=0
 [ "$ok" -eq 1 ] || exit 1
 
 

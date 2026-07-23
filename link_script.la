@@ -1,0 +1,306 @@
+# =====================================================================
+#  link_script.la — A GNU ld LINKER SCRIPT PARSER, IN LINGUA ADAMICA.
+#
+#  ── WHY THIS IS THE NEXT SLICE ──────────────────────────────────────────────
+#  link_reloc.la already FOLLOWS a script: a list of segments, each a
+#  (permission, section-name list), packed by one running cursor. But that
+#  script is a `glyph` inside the linker — the layout is still OURS, chosen to
+#  match ld's defaults so ld could stay the witness. A linker script is the
+#  point at which the layout stops being the linker's choice and becomes the
+#  CALLER's: `. = 0x100000` is how LogOS's own kernel is linked
+#  (`ld -n -T kernel/kernel.ld`), and no hard-coded 0x401000 will ever produce
+#  it. This module turns the text of a script into the structure the linker
+#  already consumes — so the layout becomes DATA, and `ld -T <same file>`
+#  becomes an independent witness for a layout neither linker invented.
+#
+#  ── WHAT IT PARSES, AND WHAT IT REFUSES ─────────────────────────────────────
+#      ENTRY(sym)
+#      SECTIONS {
+#        . = <number>;            -- start a segment at an absolute address
+#        . = ALIGN(<number>);     -- start a segment aligned up from the cursor
+#        <name> : { *(<sec>) ... }-- pull input sections, in order, into it
+#      }
+#
+#  EVERYTHING ELSE IS REFUSED BY NAME. That is the whole discipline of this
+#  file: a linker script's failure mode is not a parse error, it is a script
+#  that parses and is then half-obeyed. `/DISCARD/` silently treated as an
+#  ordinary output section would PLACE the sections it exists to drop;
+#  `*(.text*)` read as a literal name would match nothing and silently omit
+#  code; a PHDRS block skipped would emit segments with the wrong permissions.
+#  Each of those links successfully and produces a wrong binary, so each is an
+#  explicit halt naming the token, not a default.
+#
+#  ── HONEST SCOPE ────────────────────────────────────────────────────────────
+#  The output section NAME is parsed and then IGNORED: this linker emits no
+#  section headers, so a name has no output to appear in — only the INPUT
+#  patterns and the addresses affect the image. Recorded because it is a real
+#  difference from ld, not an oversight.
+#
+#  A SEGMENT here is exactly what a `. =` assignment starts: every output
+#  section between one location-counter assignment and the next is packed
+#  contiguously from it. That is the same shape MKPLAN already folds, so a
+#  parsed script and the built-in one go through ONE code path — the built-in
+#  default is re-expressed in this form rather than kept as a second mechanism.
+# =====================================================================
+
+export PARSE_SCRIPT SC_ENTRY SC_SEGS SS_MODE SS_VAL SS_NAMES SM_ABS SM_ALIGN
+
+# ── prelude: the standard combinators (private; the module alpha-renames) ────
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph OR   = la a. la b. a(TRUE)(b)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph NIL  = la n. la c. n
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph REV  = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(CONS(h)(acc))))
+glyph CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph SEQ  = la a. la b. b
+
+glyph LEN   = la s. str_to_int(str_len(s))
+glyph EMPTY = la s. int_eq(LEN(s))(0)
+
+#   DROPS/TAKES guard on the EMPTY string as well as the count: str_tail("")
+#   is not a value this host defines, and a malformed script is exactly where
+#   an index runs off the end. A parser that faults inside a host builtin
+#   reports the builtin, not the script line the user wrote.
+glyph DROPS = Z(la self. la n. la s.
+    IF(OR(int_eq(n)(0))(EMPTY(s)))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph TAKES = Z(la self. la n. la s.
+    IF(OR(int_eq(n)(0))(EMPTY(s)))
+      (la _. "")
+      (la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph STARTSW = la s. la pre. str_eq(TAKES(LEN(pre))(s))(pre)
+glyph HASCH = la s. la c. (Z(la self. la r.
+    IF(EMPTY(r))
+      (la _. FALSE)
+      (la _. IF(str_eq(str_head(r))(c))(la _. TRUE)(la _. self(str_tail(r))))))(s)
+
+# ── list helpers over the token stream ──────────────────────────────────────
+#   NTH answers "" past the end rather than failing, so every lookahead below
+#   is a comparison against a value that exists — the malformed script is then
+#   reported by the grammar rule that wanted the token, with the token named.
+glyph NTH = la l. la i. (Z(la self. la ll. la k.
+    ll("")(la h. la t. IF(int_eq(k)(0))(la _. h)(la _. self(t)(sub(k)(1))))))(l)(i)
+glyph DROPL = Z(la self. la n. la l.
+    IF(int_eq(n)(0))(la _. l)(la _. l(NIL)(la h. la t. self(sub(n)(1))(t))))
+glyph TAKEL = Z(la self. la n. la l.
+    IF(int_eq(n)(0))(la _. NIL)(la _. l(NIL)(la h. la t. CONS(h)(self(sub(n)(1))(t)))))
+glyph LENL  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+
+# ── COMMENTS ────────────────────────────────────────────────────────────────
+#   `/* ... */`, possibly spanning lines — kernel.ld opens with a 12-line one.
+#   Stripped before tokenising so no later rule has to know comments exist.
+glyph SKIPC = Z(la self. la r.
+    IF(lt(LEN(r))(2))
+      (la _. "")
+      (la _. IF(AND(str_eq(str_head(r))("*"))(str_eq(str_head(str_tail(r)))("/")))
+               (la _. str_tail(str_tail(r)))
+               (la _. self(str_tail(r)))))
+glyph UNCOMMENT = la s. (Z(la self. la r. la acc.
+    IF(EMPTY(r))
+      (la _. acc)
+      (la _. IF(AND(str_eq(str_head(r))("/"))
+                   (AND(NOT(lt(LEN(r))(2)))(str_eq(str_head(str_tail(r)))("*"))))
+               (la _. self(SKIPC(DROPS(2)(r)))(acc))
+               (la _. self(str_tail(r))(concat(acc)(str_head(r)))))))(s)("")
+
+# ── TOKENISER ───────────────────────────────────────────────────────────────
+#   Whitespace separates; the punctuation `{ } ( ) ; : =` are tokens on their
+#   own whether or not they are spaced, so `.text : { *(.text) }` and the same
+#   text written `.text:{*(.text)}` tokenise identically. `*` is an ordinary
+#   word character, so `*(.text)` becomes `*` `(` `.text` `)`.
+#   ANY byte below 33 counts as space — this is how a tab reaches the tokeniser
+#   without needing a `\t` escape the host may not have.
+glyph ISSP = la c. lt(str_to_int(ord(c)))(33)
+glyph ISDELIM = la c.
+    OR(str_eq(c)("{"))(OR(str_eq(c)("}"))(OR(str_eq(c)("("))(
+    OR(str_eq(c)(")"))(OR(str_eq(c)(";"))(OR(str_eq(c)(":"))(str_eq(c)("=")))))))
+glyph PUSHT = la cur. la acc. IF(EMPTY(cur))(la _. acc)(la _. CONS(cur)(acc))
+glyph TOKS = la s. REV((Z(la self. la r. la cur. la acc.
+    IF(EMPTY(r))
+      (la _. PUSHT(cur)(acc))
+      (la _. (la c.
+        IF(ISSP(c))
+          (la _. self(str_tail(r))("")(PUSHT(cur)(acc)))
+          (la _. IF(ISDELIM(c))
+                   (la _. self(str_tail(r))("")(CONS(c)(PUSHT(cur)(acc))))
+                   (la _. self(str_tail(r))(concat(cur)(c))(acc)))
+        )(str_head(r)))))(s)("")(NIL))(NIL)
+
+# ── NUMBERS ─────────────────────────────────────────────────────────────────
+#   `0x100000` and `4096`. str_to_int is decimal-only, so hex is walked here.
+#   A digit it cannot read HALTS naming the whole token: a script number read
+#   wrong is a wrong load address, which presents as a binary that loads and
+#   crashes, never as a parse failure.
+glyph IDXOF = la s. la c. (Z(la self. la r. la i.
+    IF(EMPTY(r))
+      (la _. sub(0)(1))
+      (la _. IF(str_eq(str_head(r))(c))(la _. i)(la _. self(str_tail(r))(add(i)(1))))))(s)(0)
+glyph LOWER = la c. (la i.
+    IF(lt(i)(0))
+      (la _. c)
+      (la _. str_head(DROPS(i)("abcdefghijklmnopqrstuvwxyz"))))
+    (IDXOF("ABCDEFGHIJKLMNOPQRSTUVWXYZ")(c))
+glyph HEXV = la tok. la s. (Z(la self. la r. la acc.
+    IF(EMPTY(r))
+      (la _. acc)
+      (la _. (la d.
+         IF(lt(d)(0))
+           (la _. error(concat("link script: not a number: ")(tok)))
+           (la _. self(str_tail(r))(add(mul(acc)(16))(d))))
+        (IDXOF("0123456789abcdef")(LOWER(str_head(r)))))))(s)(0)
+glyph DECV = la tok. la s. (Z(la self. la r. la acc.
+    IF(EMPTY(r))
+      (la _. acc)
+      (la _. (la d.
+         IF(lt(d)(0))
+           (la _. error(concat("link script: not a number: ")(tok)))
+           (la _. self(str_tail(r))(add(mul(acc)(10))(d))))
+        (IDXOF("0123456789")(str_head(r))))))(s)(0)
+glyph NUMV = la t.
+    IF(EMPTY(t))
+      (la _. error("link script: expected a number, found end of script"))
+      (la _. IF(STARTSW(t)("0x"))
+               (la _. HEXV(t)(DROPS(2)(t)))
+               (la _. DECV(t)(t)))
+
+# ── THE PARSED SCRIPT ───────────────────────────────────────────────────────
+#   A SEGMENT is (mode, value, input-section names): mode SM_ABS means the
+#   value IS the segment's address, SM_ALIGN means align the running cursor up
+#   to it. The linker folds these with one cursor — the same fold it already
+#   performed over its built-in script, which is now expressed in this form.
+glyph SM_ABS   = 0
+glyph SM_ALIGN = 1
+glyph SSEG     = la mode. la val. la names. PAIR(mode)(PAIR(val)(names))
+glyph SS_MODE  = la s. FST(s)
+glyph SS_VAL   = la s. FST(SND(s))
+glyph SS_NAMES = la s. SND(SND(s))
+glyph SC_ENTRY = la sc. FST(sc)
+glyph SC_SEGS  = la sc. SND(sc)
+
+#   A segment is only closed — pushed onto the list — when the next `. =` or
+#   the end of SECTIONS is reached, because that is when its name list is
+#   complete. An `open` flag distinguishes "no segment yet" from "a segment
+#   with no sections", which are different scripts.
+glyph CLOSESEG = la segs. la cur. la mode. la val. la open.
+    IF(open)(la _. CONS(SSEG(mode)(val)(REV(cur)(NIL)))(segs))(la _. segs)
+
+# ── THE GRAMMAR ─────────────────────────────────────────────────────────────
+#   One walk over the token list carrying (segments, current names, mode,
+#   value, open, inside-a-block). Each rule below takes `self` so the walk
+#   stays a single Z and the rules stay readable at one nesting level.
+
+#   `*( <name> )` — the only thing allowed inside an output section.
+#   A wildcard is REFUSED rather than matched literally: `*(.text*)` read as a
+#   name matches no section, so the code it names would be silently omitted
+#   from an image that still links.
+glyph CHKPAT = la self. la t. la segs. la cur. la mode. la val.
+    IF(AND(str_eq(NTH(t)(0))("("))(str_eq(NTH(t)(2))(")")))
+      (la _. IF(HASCH(NTH(t)(1))("*"))
+               (la _. error(concat("link script: wildcards in a section pattern are not supported: ")(NTH(t)(1))))
+               (la _. self(DROPL(3)(t))(segs)(CONS(NTH(t)(1))(cur))(mode)(val)(TRUE)(TRUE)))
+      (la _. error("link script: expected `*(<section>)' inside an output section"))
+glyph BLKSTEP = la self. la h. la t. la segs. la cur. la mode. la val.
+    IF(str_eq(h)("}"))
+      (la _. self(t)(segs)(cur)(mode)(val)(TRUE)(FALSE))
+      (la _. IF(str_eq(h)("*"))
+               (la _. CHKPAT(self)(t)(segs)(cur)(mode)(val))
+               (la _. error(concat("link script: unsupported token inside an output section: ")(h))))
+
+#   `. = <number>;` or `. = ALIGN(<number>);` — each starts a new segment.
+glyph DOTSTEP = la self. la t. la segs. la cur. la mode. la val. la open.
+    IF(NOT(str_eq(NTH(t)(0))("=")))
+      (la _. error(concat("link script: expected `. = ' but found: ")(NTH(t)(0))))
+      (la _. IF(str_eq(NTH(t)(1))("ALIGN"))
+        (la _. IF(AND(str_eq(NTH(t)(2))("("))
+                     (AND(str_eq(NTH(t)(4))(")"))(str_eq(NTH(t)(5))(";"))))
+                 (la _. self(DROPL(6)(t))(CLOSESEG(segs)(cur)(mode)(val)(open))
+                            (NIL)(SM_ALIGN)(NUMV(NTH(t)(3)))(TRUE)(FALSE))
+                 (la _. error("link script: expected `. = ALIGN(<number>);'")))
+        (la _. IF(str_eq(NTH(t)(2))(";"))
+                 (la _. self(DROPL(3)(t))(CLOSESEG(segs)(cur)(mode)(val)(open))
+                            (NIL)(SM_ABS)(NUMV(NTH(t)(1)))(TRUE)(FALSE))
+                 (la _. error("link script: expected `. = <number>;'"))))
+
+#   `<name> : {` — an output section header. The name is consumed and dropped
+#   (see HONEST SCOPE); what matters is that its inputs join the open segment.
+glyph OUTSTEP = la self. la h. la t. la segs. la cur. la mode. la val. la open.
+    IF(str_eq(h)("/DISCARD/"))
+      (la _. error("link script: /DISCARD/ is not supported — dropping a section must be an explicit decision in the linker, not a silently obeyed script directive"))
+      (la _. IF(NOT(open))
+        (la _. error(concat("link script: an output section appears before any `. = <address>': ")(h)))
+        (la _. IF(AND(str_eq(NTH(t)(0))(":"))(str_eq(NTH(t)(1))("{")))
+                 (la _. self(DROPL(2)(t))(segs)(cur)(mode)(val)(TRUE)(TRUE))
+                 (la _. error(CAT(CONS("link script: expected `<name> : {' at `")(
+                                  CONS(h)(CONS("', found: ")(CONS(NTH(t)(0))(NIL)))))))))
+
+#   The body walk. Returns (segments, remaining tokens) at the closing `}` of
+#   SECTIONS, so the caller can assert nothing follows it — a trailing PHDRS or
+#   MEMORY block would otherwise be skipped in silence.
+#   ★ The NIL branch is a THUNK. Arguments are evaluated on application in this
+#   host, so `l(error(...))(...)` would raise on EVERY call, including the ones
+#   that succeed — the "order is structure" trap, in its cheapest form.
+glyph SBODY = Z(la self. la l. la segs. la cur. la mode. la val. la open. la inblk.
+    (l(la _. error("link script: unterminated SECTIONS block"))
+       (la h. la t. la _.
+         IF(inblk)
+           (la _. BLKSTEP(self)(h)(t)(segs)(cur)(mode)(val))
+           (la _. IF(str_eq(h)("}"))
+                    (la _. PAIR(REV(CLOSESEG(segs)(cur)(mode)(val)(open))(NIL))(t))
+                    (la _. IF(str_eq(h)("."))
+                             (la _. DOTSTEP(self)(t)(segs)(cur)(mode)(val)(open))
+                             (la _. OUTSTEP(self)(h)(t)(segs)(cur)(mode)(val)(open))))))("!"))
+
+# ── WHAT SURROUNDS `SECTIONS` ───────────────────────────────────────────────
+#   Everything outside the SECTIONS block must be an `ENTRY(sym)` and nothing
+#   else. This is the check that makes the refusals above worth having: a
+#   PHDRS block (kernel.ld has one) or an OUTPUT_FORMAT would otherwise be
+#   skipped by a parser that only looks for what it understands, and the
+#   resulting image would differ from `ld -T <the same file>` in exactly the
+#   way nobody would think to check.
+glyph FINDTOK = la l. la w. (Z(la self. la ll. la i.
+    ll(sub(0)(1))(la h. la t. IF(str_eq(h)(w))(la _. i)(la _. self(t)(add(i)(1))))))(l)(0)
+glyph ENTRYSYM = la pre.
+    IF(int_eq(LENL(pre))(0))
+      (la _. "_start")
+      (la _. IF(AND(str_eq(NTH(pre)(0))("ENTRY"))
+                   (AND(str_eq(NTH(pre)(1))("("))(str_eq(NTH(pre)(3))(")"))))
+               (la _. NTH(pre)(2))
+               (la _. error(concat("link script: unsupported directive before SECTIONS: ")(NTH(pre)(0)))))
+glyph PRECHECK = la pre.
+    IF(lt(LENL(pre))(5))
+      (la _. "ok")
+      (la _. IF(AND(int_eq(LENL(pre))(5))(str_eq(NTH(pre)(4))(";")))
+               (la _. "ok")
+               (la _. error(concat("link script: unsupported directive before SECTIONS: ")(NTH(pre)(4)))))
+glyph RESTCHECK = la rest.
+    IF(int_eq(LENL(rest))(0))
+      (la _. "ok")
+      (la _. IF(AND(int_eq(LENL(rest))(1))(str_eq(NTH(rest)(0))(";")))
+               (la _. "ok")
+               (la _. error(concat("link script: unsupported directive after SECTIONS: ")(NTH(rest)(0)))))
+
+#   PARSE_SCRIPT: text in, (entry symbol, segment list) out.
+#   ★ Bound ONCE and threaded. `glyph T = TOKS(...)` would re-tokenise the
+#   whole script at every reference — a glyph is a macro, not a binding, and
+#   that mistake fails as a timeout rather than an error.
+glyph PARSE_SCRIPT = la text.
+    (la toks.
+      (la si.
+        IF(lt(si)(0))
+          (la _. error("link script: no SECTIONS block"))
+          (la _. IF(NOT(str_eq(NTH(toks)(add(si)(1)))("{")))
+            (la _. error("link script: expected `{' after SECTIONS"))
+            (la _. (la pre.
+                     SEQ(PRECHECK(pre))(
+                     (la r. SEQ(RESTCHECK(SND(r)))(PAIR(ENTRYSYM(pre))(FST(r))))
+                     (SBODY(DROPL(add(si)(2))(toks))(NIL)(NIL)(SM_ABS)(0)(FALSE)(FALSE))))
+                   (TAKEL(si)(toks)))))
+      (FINDTOK(toks)("SECTIONS")))
+    (TOKS(UNCOMMENT(text)))

@@ -16,6 +16,7 @@ cross-track request to track A, and it would make the chain LA end to end.
 | file | role |
 |---|---|
 | `link.la` | the READER. Parses an ET_REL object: section headers, symtab, relocations. `export`s its accessors so the later passes never re-derive ELF offsets. |
+| `link_script.la` | the LINKER-SCRIPT PARSER. `ENTRY(sym)` + `SECTIONS { . = <addr>; . = ALIGN(n); <name> : { *(<sec>) … } }` → the segment list the linker already folds. Everything else is REFUSED BY NAME. |
 | `link_layout.la` | slice 2 demo: layout + cross-object symbol resolution, printed. Imports `link.la`. |
 | `link_reloc.la` | the LINKER PROPER: checks, resolves, relocates, emits `link_out`. |
 | `gate_link.sh` | gates the reader against `readelf`, over the fixtures **and a real gcc object**. |
@@ -31,6 +32,8 @@ cross-track request to track A, and it would make the chain LA end to end.
 | `link_test_odd.asm` | `.weird`, `SHF_ALLOC` — a section the layout must REFUSE. |
 | `link_test_plt.asm` | same as A but `wrt ..plt`, so nasm emits PLT32 — what real toolchains actually produce. |
 | `link_test_dup.asm` | defines BOTH `_start` and `greet`, so linking it against B is a duplicate and *nothing else*. |
+| `link_test_script.ld` | a real linker script, base **0x500000** — deliberately not the built-in 0x401000, so a default-address image cannot pass by accident. |
+| `gate_link_script.sh` | gates the script path against **`ld -T` on the same file**, plus a no-script regression and 7 negative gates. |
 
 Run: `./gate_link.sh && ./gate_link_reloc.sh` (~3 min; both self-skip with a
 SKIP line if nasm/ld/readelf/objcopy/gcc are absent). **Both are wired into
@@ -75,9 +78,11 @@ most wrong implementations also exit non-zero.
   **Real gcc objects link** (verified: asm entry + two gcc objects, exit 43).
 - **Per-segment permissions**: `.text` R+X, `.rodata` R, `.data`/`.bss` R+W,
   never R+W+X. `.bss` gets `p_memsz > p_filesz` and costs no file space.
-- **No linker script** — the layout is hard-coded to ld's policy on these
-  inputs (`.text` @ `0x401000`, `.rodata` @ `0x402000`) precisely so ld's own
-  addresses can serve as the witness.
+- **A linker script, in the subset item 9 lists** — `ENTRY` + `. =` /
+  `. = ALIGN()` + output sections pulling `*(<sec>)`. Absent `--script=`, the
+  built-in layout still applies (`.text` @ `0x401000`, `.rodata` @ `0x402000`),
+  expressed in the *same* segment form the parser produces, so both travel one
+  code path. PHDRS, `/DISCARD/`, wildcards and `(NOLOAD)` are refused by name.
 - **Static only.** PLT32 is resolved as PC32, which is correct for a
   self-contained image and **wrong for dynamic linking**; the code says so.
 - **32-bit window**: ELF64 fields are 8 bytes, the low 4 are read. Fine here,
@@ -377,7 +382,80 @@ THROUGH the synthesised GOT and RUNS with ld's exit (41). *Honest scope:* GOT64 
 GOT32 / GOTPC32 for globals; a local-symbol GOT slot and the call/jmp-via-GOT
 forms (which ld relaxes anyway in a static link) are not exercised.
 
-**8. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
+**✔ 9. A REAL LINKER SCRIPT — the layout stops being the linker's choice.**
+Item 2 made the layout declarative but the declaration was a `glyph` inside the
+linker: the addresses were still *ours*, chosen to match ld's defaults so ld
+could stay the witness. This reads the layout from a FILE. `link_script.la`
+parses `ENTRY(sym)` and `SECTIONS { . = <num>; . = ALIGN(<num>); <name> : {
+*(<sec>) … } }` into the segment list `MKPLAN` already folds, and a
+`--script=<path>` line in `link_inputs.txt` selects it (same directive shape as
+`--gc-sections`, stripped from the object list by `NODIRS`).
+
+**The gate is the point of the slice: `ld -T <the same file>` is the witness.**
+Every earlier layout check asked "did you guess what ld does?", and the honest
+answer had to *exclude* ld's own choices. Handed the same declaration, the
+addresses are neither linker's invention, so they are compared exactly: the
+fixture names **0x500000** (not the built-in 0x401000, so a default-address
+image cannot pass by accident) and our two LOAD segments match `ld -T`'s
+**vaddr, file offset and flags exactly**, the entry matches ld's `_start` read
+from `nm` at gate time, and the binary RUNS with ld's stdout and exit code.
+
+**A segment now carries WHERE it starts, not just what is in it** (`SM_ABS` /
+`SM_ALIGN` + a value) — which is precisely what a `. =` assignment says. The
+built-in default is re-expressed in that form, so parsed and built-in scripts
+are ONE structure on ONE path; the gate's no-`--script` regression is what
+holds that honest.
+
+**Three things the slice forced, each a real bug avoided:**
+- **`FILEOFF` was measured from the hard-coded `TEXT_BASE`.** With a scripted
+  base that constant is no longer the load address — and because both bases are
+  page-aligned, `p_offset ≡ p_vaddr (mod page)` would still have HELD while the
+  bytes landed 1 MB into the file. It now reads the image base off the first
+  region (`IMGBASE`), so the loader's rule holds by construction for any base.
+- **`PLACEABLE` was a hard-coded five-name list** that merely happened to agree
+  with the built-in layout. With the layout in a file the two can disagree, and
+  the disagreement is silent in the dangerous direction — a section the script
+  never places would pass the check and then resolve against an unassigned
+  base. It is now read off the script, so the check cannot drift from the
+  layout it checks.
+- **Permissions are DERIVED** for a parsed segment (R always, +X for `.text`,
+  +W for `.data`/`.bss`), and a segment holding both is **REFUSED** rather than
+  emitted as RWX. W^X is a property the kernel enforces on itself (K4c); a
+  linker that quietly returns an RWX segment has removed a guarantee nobody
+  asked it to remove. kernel.ld *does* ask for RWX — via `PHDRS FLAGS(7)`,
+  which is item 10 and will be an explicit request, not an inference.
+
+**Everything else is REFUSED BY NAME, and that is the discipline.** A linker
+script's failure mode is not a parse error, it is a script that parses and is
+then half-obeyed: `/DISCARD/` treated as an ordinary output section would
+PLACE the sections it exists to drop; `*(.text*)` read as a literal name would
+match nothing and silently omit code; a skipped `PHDRS` block would emit
+segments with the wrong permissions. Each links successfully and produces a
+wrong binary, so each is a halt naming the token. **7 negative gates**, each
+asserting WHICH diagnostic.
+
+**Red-path verified, both directions.** With the linker made to ignore the
+parsed script, the gate goes RED on the segment and entry assertions and
+**exits 1**; restored, it is GREEN and exits 0. (The "it runs" check still
+PASSED in the red run — the binary is fine, just at the wrong address — which
+is exactly why the address comparison had to exist.)
+
+*Honest scope:* the output section NAME is parsed and dropped (this linker
+emits no section headers, so a name has nowhere to appear); one `. =` per
+segment; no `PHDRS`, `MEMORY`, `/DISCARD/`, wildcards, `(NOLOAD)`, symbol
+assignments or expressions.
+
+**10. `PHDRS` + `(NOLOAD)` + `/DISCARD/` — what `kernel/kernel.ld` needs.** That
+script is the real target: `PHDRS { boot PT_LOAD FLAGS(7); la PT_LOAD FLAGS(7); }`,
+`. = 0x100000`, `.boot : { *(.multiboot) *(.boot32) *(.text) *(.rodata) } :boot`,
+`.bss (NOLOAD)`, `. = 0x400000`, `.la_image`, and `/DISCARD/ : { *(.comment)
+*(.note*) *(.eh_frame*) }`. Each is refused by name today, so the gap is
+enumerated rather than guessed: explicit segment permissions (which is also how
+RWX becomes a request instead of an inference), a NOBITS output section, an
+explicit discard list, and `*(.note*)` — the one wildcard that would then have
+to be supported rather than refused.
+
+**11. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
 back, require agreement with `readelf` on the same file.
 
