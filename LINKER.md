@@ -16,7 +16,7 @@ cross-track request to track A, and it would make the chain LA end to end.
 | file | role |
 |---|---|
 | `link.la` | the READER. Parses an ET_REL object: section headers, symtab, relocations. `export`s its accessors so the later passes never re-derive ELF offsets. |
-| `link_script.la` | the LINKER-SCRIPT PARSER. `ENTRY(sym)` + `SECTIONS { . = <addr>; . = ALIGN(n); <name> : { *(<sec>) … } }` → the segment list the linker already folds. Everything else is REFUSED BY NAME. |
+| `link_script.la` | the LINKER-SCRIPT PARSER. `ENTRY` + `PHDRS` + `SECTIONS` (`. =`, `ALIGN`, output sections, `(NOLOAD)`, `/DISCARD/`, trailing-star patterns) → the ITEM list the cursor follows and the GROUP list that becomes the segments. Everything else is REFUSED BY NAME. |
 | `link_layout.la` | slice 2 demo: layout + cross-object symbol resolution, printed. Imports `link.la`. |
 | `link_reloc.la` | the LINKER PROPER: checks, resolves, relocates, emits `link_out`. |
 | `gate_link.sh` | gates the reader against `readelf`, over the fixtures **and a real gcc object**. |
@@ -33,11 +33,13 @@ cross-track request to track A, and it would make the chain LA end to end.
 | `link_test_plt.asm` | same as A but `wrt ..plt`, so nasm emits PLT32 — what real toolchains actually produce. |
 | `link_test_dup.asm` | defines BOTH `_start` and `greet`, so linking it against B is a duplicate and *nothing else*. |
 | `link_test_script.ld` | a real linker script, base **0x500000** — deliberately not the built-in 0x401000, so a default-address image cannot pass by accident. |
-| `gate_link_script.sh` | gates the script path against **`ld -T` on the same file**, plus a no-script regression and 7 negative gates. |
+| `link_test_kernel.ld` | `kernel/kernel.ld`'s SHAPE, reduced to something runnable: PHDRS + `FLAGS(7)`, two output sections in one segment across an `ALIGN`, `.bss (NOLOAD)`, `/DISCARD/ { *(.note*) … }`. |
+| `link_test_mb.asm` | its fixture object: `.multiboot`, `.boot32`, `.text`, `.rodata`, `.la_image`, `.bss`, and an **allocatable** `.note.mine` so `/DISCARD/` has something it must really drop. Its exit code is computed from a byte in the second segment plus a byte through `.bss`, so "it ran" proves both landed. |
+| `gate_link_script.sh` | gates the script path against **`ld -T` on the same file** — twice (a plain script and the kernel-shaped one) — plus a no-script regression, 10 negative gates, and a parse of the REAL `kernel/kernel.ld`. |
 
-Run: `./gate_link.sh && ./gate_link_reloc.sh` (~3 min; both self-skip with a
-SKIP line if nasm/ld/readelf/objcopy/gcc are absent). **Both are wired into
-`build.sh`** as of `0184d14`, so the linker is checked by the system's own
+Run: `./gate_link.sh && ./gate_link_reloc.sh && ./gate_link_script.sh` (all
+self-skip with a SKIP line if nasm/ld/readelf/objcopy/gcc are absent). **All
+three are wired into `build.sh`**, so the linker is checked by the system's own
 criterion, not only when this track runs it by hand.
 
 ⚠ **A full `build.sh` needs the other tracks idle** until every terminal is
@@ -76,13 +78,20 @@ most wrong implementations also exit non-zero.
   would embed unrelocated unwind data. A symbol in a dropped section is refused
   BY NAME rather than resolved, so the choice cannot misplace anything silently.
   **Real gcc objects link** (verified: asm entry + two gcc objects, exit 43).
-- **Per-segment permissions**: `.text` R+X, `.rodata` R, `.data`/`.bss` R+W,
-  never R+W+X. `.bss` gets `p_memsz > p_filesz` and costs no file space.
-- **A linker script, in the subset item 9 lists** — `ENTRY` + `. =` /
-  `. = ALIGN()` + output sections pulling `*(<sec>)`. Absent `--script=`, the
-  built-in layout still applies (`.text` @ `0x401000`, `.rodata` @ `0x402000`),
-  expressed in the *same* segment form the parser produces, so both travel one
-  code path. PHDRS, `/DISCARD/`, wildcards and `(NOLOAD)` are refused by name.
+- **Per-segment permissions**: DECLARED by a `PHDRS` block if there is one
+  (`FLAGS(7)` really does give RWX — kernel.ld asks for it), otherwise DERIVED
+  (`.text` R+X, `.rodata` R, `.data`/`.bss` R+W) and a derived segment that
+  would need R+W+X is REFUSED. `.bss` gets `p_memsz > p_filesz` and costs no
+  file space; so does any `(NOLOAD)` output section.
+- **A linker script, in the subset items 9-10 list** — `ENTRY`, `PHDRS` with
+  `PT_LOAD`+`FLAGS(n)`, `. =` / `. = ALIGN()`, output sections pulling
+  `*(<sec>)` with a `:segment` assignment, `(NOLOAD)`, `/DISCARD/`, and
+  trailing-star patterns. **`kernel/kernel.ld` parses in full.** Absent
+  `--script=`, the built-in layout still applies (`.text` @ `0x401000`,
+  `.rodata` @ `0x402000`), expressed in the *same* two structures the parser
+  produces, so both travel one code path. Everything outside that subset —
+  `MEMORY`, symbol assignments, expressions, non-trailing wildcards, non-
+  `PT_LOAD` segment types — is refused by name.
 - **Static only.** PLT32 is resolved as PC32, which is correct for a
   self-contained image and **wrong for dynamic linking**; the code says so.
 - **32-bit window**: ELF64 fields are 8 bytes, the low 4 are read. Fine here,
@@ -455,6 +464,67 @@ RWX becomes a request instead of an inference), a NOBITS output section, an
 explicit discard list, and `*(.note*)` — the one wildcard that would then have
 to be supported rather than refused.
 
+**✔ 10. `PHDRS` + `(NOLOAD)` + `/DISCARD/` + trailing-star patterns — the four
+constructs `kernel/kernel.ld` needs. IT PARSES THE REAL SCRIPT.**
+
+**★ The model had to change first, and the reason is worth keeping.** A segment
+used to be "one `. =` group", which was true of every script the linker had
+seen. kernel.ld breaks it on sight: `.boot` and `.bss` are BOTH `:boot` with a
+`. = ALIGN(4096)` between them — ONE PT_LOAD spanning both, the ordinary shape
+of a kernel image (file size covers the code, memory size extends over the
+bss). So placement and grouping became separate concerns, as they are in ld: an
+ITEM list drives the cursor in script order, and membership is by GROUP KEY —
+the `:segment` name, or a synthetic key per `. =` when no PHDRS block exists,
+which is exactly the old rule. One grouping mechanism, two ways of naming the
+group; the built-in default is re-expressed in both structures so it travels the
+same code path.
+
+- **`PHDRS`** — `name PT_LOAD FLAGS(n);`. The type must be `PT_LOAD` and FLAGS
+  is REQUIRED: ld would infer permissions, and inferring is precisely what item
+  9 did. An RWX segment is now something a script ASKS for (kernel.ld does) and
+  never something the linker worked out — a derived segment that would need W+X
+  is still refused.
+- **`(NOLOAD)`** — memory without file bytes. Easy to think decorative, because
+  `.bss` inputs are already NOBITS and would be skipped anyway; it is not, and a
+  PROGBITS input in a NOLOAD section is where the difference shows.
+- **`/DISCARD/`** — the drop list is the SCRIPT's now, not a private constant.
+  The fixture object carries an **allocatable** `.note.mine` for this: with the
+  `/DISCARD/` line removed the same link must be REFUSED by name, so the gate
+  proves the discard is load-bearing rather than passing vacuously on a section
+  nothing would have placed anyway.
+- **Trailing-star patterns** — `*(.note*)`, `*(.eh_frame*)`. One matcher,
+  exported from the parser and imported by the linker, because two copies of
+  "what a pattern means" is how a parser and its consumer drift apart. Any other
+  use of `*` is refused: a pattern that silently matches nothing omits code from
+  a binary that still links.
+- **A segment must be one CONTIGUOUS run of the plan.** A region reaches the
+  loader as one `(base, filesz, memsz)` triple, so two interleaved groups cannot
+  be expressed — every individual address would stay correct while the segments
+  overlapped in the file. Refused by name.
+
+**★★ THE BUG THE KERNEL SHAPE EXPOSED: file offsets were derived from
+ADDRESSES.** `offset = PAGE + vaddr − image base` satisfies the loader's
+`p_offset ≡ p_vaddr (mod page)` rule and had been correct for every fixture —
+until a script put two segments 3 MB apart, and the output grew to **3 MB to
+hold one byte of payload**. It ran. Every address was right. It was useless as a
+kernel image. Offsets are now PACKED (each region after the last, then the
+congruence restored by adding `vaddr mod PAGE`) — which is what ld does — and
+the gate asserts the file size against ld's, the assertion that would have
+caught it. *An invariant can hold while the thing it is protecting is wrong.*
+
+**The gate:** the kernel-shaped script (`link_test_kernel.ld`) linked against
+`link_test_mb.asm` matches `ld -T`'s program headers **field for field** —
+vaddr, file offset, filesz, memsz and flags, including `memsz > filesz` for the
+NOLOAD section and RWE on both segments — and RUNS with ld's stdout and exit
+code. That exit code is computed from a byte read out of the SECOND segment plus
+a byte written through `.bss`, so "it ran" cannot be true unless both landed.
+**10 negative gates.** And the last check reads the REAL `kernel/kernel.ld`
+(track D's file, read-only, self-skipping if absent) and asserts it parses.
+
+*Honest scope:* parsing kernel.ld is not linking the kernel — that needs the
+kernel's own objects, which belong to track D and whose relocation set is A's
+`-f elf64` output. What is now true is that nothing in the SCRIPT is a blocker.
+
 **11. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
 back, require agreement with `readelf` on the same file.
@@ -476,3 +546,33 @@ And a tooling note: paren *balance* is not paren *nesting*. A file can balance
 at delta 0 while a thunk closes in the wrong place and a glyph silently returns
 a function. Use a **per-glyph depth trace** (walk the file, assert each glyph
 returns to depth 0) — it names the culprit; a whole-file count cannot.
+
+**★★ AN EXPORT CAN COLLIDE WITH THE IMPORTER'S OWN GLYPH, SILENTLY.** Exporting
+a new constructor named `MKSEC` from `link_script.la` collided with
+`link_reloc.la`'s existing six-argument `MKSEC` (its SECTAB record builder).
+Nothing warned. What surfaced was `attempt to apply a non-function` from
+`SECTAB` — a glyph in a file I had not touched, several stages away from the
+export. The module system protects the importer from a module's PRIVATES (they
+are alpha-renamed); it does nothing about a name the module deliberately
+EXPORTS. **Before exporting a name, grep the importers for it.** Renaming them
+`MKIADDR`/`MKISEC` fixed it in one line — the cost was entirely in the hunt.
+
+**★ A GUARD MUST BE A BINDER, NOT A CONJUNCT — the same trap, a third form.**
+`AND(is-a-section)(key-equals)` evaluates BOTH sides, because `AND(a)(b)` takes
+b as an argument. Run over a list of mixed items it called `str_eq` on an
+ADDRESS item's numeric field and died inside a host builtin. Nest the tests.
+
+**★ AN INSTRUMENT THAT FIRES FALSELY COSTS WHAT ONE THAT CANNOT FIRE COSTS.**
+The depth trace reported three missing parens in a *correct* glyph, because it
+stripped comments with `split("#")` and `concat("#")` is a string containing a
+comment character. Two flattening rewrites went in chasing a phantom before the
+instrument itself was suspected. It now tracks string literals. Same family as
+"a check that cannot fail is not a check": trust in a tool has to be earned in
+both directions.
+
+**★ `set -e` + a fixture that exits non-zero = a gate that stops early and looks
+GREEN.** `out=$(./fixture)` where the fixture deliberately exits 43 made the
+gate script exit — silently, with status 0 — so half the assertions never ran
+and `build.sh` would have called it a pass. Every fixture run is wrapped in an
+`if` (making the exit code data), and a `finished` flag plus an EXIT trap turns
+any other early exit into a loud `ABORTED`.

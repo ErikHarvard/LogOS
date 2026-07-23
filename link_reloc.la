@@ -369,7 +369,18 @@ glyph DEFINES = la f. la ss. la i.
 #   Dropping is a CHOICE and is recorded as one. A symbol defined in a dropped
 #   section is refused rather than resolved (see SYMVAL), so the choice cannot
 #   silently produce a wrong address.
-glyph DROPPABLE = la n. str_eq(n)(".note.gnu.property")
+#   ── /DISCARD/ — the drop list is now the SCRIPT's, not a private constant ──
+#   `.note.gnu.property` stays a built-in drop because a script that says
+#   nothing about it still cannot place it. Anything the script's /DISCARD/
+#   names is dropped as well, matched with the SAME matcher the placement uses
+#   (so `*(.note*)` means the same thing in both directions). A symbol defined
+#   in a dropped section is still refused BY NAME in SYMVAL rather than
+#   resolved, so discarding cannot silently produce a wrong address.
+glyph MATCHANY = la pats. la n. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(MATCHSEC(h)(n))(la _. TRUE)(la _. self(t)))))(pats)
+glyph DROPPABLE = la disc. la n.
+    OR(str_eq(n)(".note.gnu.property"))(MATCHANY(disc)(n))
 
 glyph SEC_IS_ALLOC = la h. int_eq(mod(div(SEC_FLAGS(h))(2))(2))(1)
 
@@ -397,14 +408,22 @@ glyph OUTNAME = la n.
 #   a section the script never places would pass the check and then resolve
 #   against an unassigned base. A name is placeable iff some segment asks for
 #   it, so the check cannot drift from the layout it is checking.
-glyph ISOUT = la script. la m. (Z(la self. la l.
+#   ── ONE MATCHER, SHARED WITH THE PARSER ────────────────────────────────────
+#   A script pattern matches an input section if it matches the name outright
+#   (this is where `*(.note*)` and `*(.eh_frame*)` earn their keep) or matches
+#   its OUTPUT name — which is what merges `.text.compute` into `.text` for
+#   -ffunction-sections. MATCHPAT itself is imported from link_script.la rather
+#   than re-implemented here: two copies of "what a pattern means" is precisely
+#   how a parser and its consumer drift apart.
+glyph MATCHSEC = la pat. la n. OR(MATCHPAT(pat)(n))(MATCHPAT(pat)(OUTNAME(n)))
+glyph ISOUT = la segs. la n. (Z(la self. la l.
     l(FALSE)(la h. la t.
-      IF(MEMNAME(SEG_NAMES(h))(m))(la _. TRUE)(la _. self(t)))))(script)
-glyph PLACEABLE = la script. la n. ISOUT(script)(OUTNAME(n))
-glyph CHECKSECS = la script. la st. la tag. (Z(la self. la l.
+      IF(MATCHANY(SEG_NAMES(h))(n))(la _. TRUE)(la _. self(t)))))(segs)
+glyph PLACEABLE = la segs. la n. ISOUT(segs)(n)
+glyph CHECKSECS = la segs. la disc. la st. la tag. (Z(la self. la l.
     l("ok")(la h. la t.
       IF(AND(SEC_IS_ALLOC(h))
-            (AND(NOT(PLACEABLE(script)(SEC_NAME(h))))(NOT(DROPPABLE(SEC_NAME(h))))))
+            (AND(NOT(PLACEABLE(segs)(SEC_NAME(h))))(NOT(DROPPABLE(disc)(SEC_NAME(h))))))
         (la _. error(CAT(CONS("link: ")(CONS(tag)(CONS(
                  " has an allocatable section this layout cannot place: ")(
                  CONS(SEC_NAME(h))(NIL)))))))
@@ -446,37 +465,50 @@ glyph CHECKSECS = la script. la st. la tag. (Z(la self. la l.
 #   a script parsed by link_script.la are ONE structure travelling ONE code
 #   path — the default is re-expressed in the new form rather than kept as a
 #   second mechanism that could drift from it.
+#   ── PLACEMENT AND GROUPING ARE NOW SEPARATE ────────────────────────────────
+#   ★ A SEGMENT USED TO BE "ONE `. =` GROUP". kernel.ld breaks that on sight:
+#   `.boot` and `.bss` are BOTH `:boot` with a `. = ALIGN(4096)` between them —
+#   ONE PT_LOAD spanning both, which is the ordinary shape of a kernel image
+#   (file size covers the code, memory size extends over the bss). So the ITEM
+#   list drives the cursor in script order, and a SEGMENT is a group of section
+#   patterns with permissions, formed by the parser from the `:phdr` names (or,
+#   with no PHDRS block, one per `. =` assignment — the old rule, preserved).
+#   Two structures, both from one parse, both fed to the folds below.
 glyph F_RX = 5
 glyph F_R  = 4
 glyph F_RW = 6
-glyph SEG       = la flags. la mode. la val. la names.
-    PAIR(flags)(PAIR(mode)(PAIR(val)(names)))
+glyph SEG       = la flags. la names. PAIR(flags)(names)
 glyph SEG_FLAGS = la s. FST(s)
-glyph SEG_MODE  = la s. FST(SND(s))
-glyph SEG_VAL   = la s. FST(SND(SND(s)))
-glyph SEG_NAMES = la s. SND(SND(SND(s)))
-glyph DEFSCRIPT =
-  CONS(SEG(F_RX)(SM_ABS)(TEXT_BASE)(CONS(".text")(NIL)))(
-  CONS(SEG(F_R)(SM_ALIGN)(PAGE)(CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(NIL)))))(
-  CONS(SEG(F_RW)(SM_ALIGN)(PAGE)(CONS(".data")(CONS(".bss")(NIL))))(
+glyph SEG_NAMES = la s. SND(s)
+
+#   The built-in layout, expressed in the SAME two structures a parsed script
+#   produces, so the default travels the new code path rather than a private
+#   one that could drift from it. The gate's no-script regression is what keeps
+#   that claim honest.
+glyph DEFITEMS =
+  CONS(MKIADDR(SM_ABS)(TEXT_BASE))(
+  CONS(MKISEC("#1")(FALSE)(CONS(".text")(NIL)))(
+  CONS(MKIADDR(SM_ALIGN)(PAGE))(
+  CONS(MKISEC("#2")(FALSE)(CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(NIL)))))(
+  CONS(MKIADDR(SM_ALIGN)(PAGE))(
+  CONS(MKISEC("#3")(FALSE)(CONS(".data")(CONS(".bss")(NIL))))(
+  NIL))))))
+glyph DEFSEGS =
+  CONS(SEG(F_RX)(CONS(".text")(NIL)))(
+  CONS(SEG(F_R)(CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(NIL)))))(
+  CONS(SEG(F_RW)(CONS(".data")(CONS(".bss")(NIL))))(
   NIL)))
 
-#   Where a segment starts: an absolute address, or the cursor aligned up.
-glyph SEGSTART = la seg. la cur.
-    IF(int_eq(SEG_MODE(seg))(SM_ABS))
-      (la _. SEG_VAL(seg))
-      (la _. ALIGNUP(cur)(SEG_VAL(seg)))
-
-#   ── PERMISSIONS FOR A PARSED SEGMENT ───────────────────────────────────────
-#   The built-in script states each segment's flags; a linker script does not
-#   (without a PHDRS block, which this slice refuses), so they are DERIVED from
-#   what the segment holds: read always, +X if it holds code, +W if it holds
-#   writable data. A script grouping code WITH writable data would need W+X —
-#   REFUSED loudly rather than emitted, because W^X is a property the kernel
-#   enforces on itself (K4c) and a linker that quietly hands back an RWX
-#   segment has removed a guarantee nobody asked it to remove. (kernel.ld does
-#   ask for RWX, via PHDRS FLAGS(7) — that is the next slice, and it will be an
-#   explicit request in the script, not an inference.)
+#   ── PERMISSIONS: DECLARED, OR DERIVED ──────────────────────────────────────
+#   A PHDRS block STATES the flags, so `FLAGS(7)` is honoured as written — that
+#   is how kernel.ld gets its RWX segments, and it matters that it is a request
+#   in the script rather than something the linker worked out. With no PHDRS
+#   block there is nothing to state them, so they are derived from what the
+#   segment holds (read always, +X for code, +W for writable data) and a
+#   segment that would need W+X is REFUSED: W^X is a property the kernel
+#   enforces on itself (K4c), and a linker that quietly INFERS an RWX segment
+#   has removed a guarantee nobody asked it to remove. Asking is allowed;
+#   inferring is not.
 glyph ANYNAME = la names. la pred. (Z(la self. la l.
     l(FALSE)(la h. la t. IF(pred(h))(la _. TRUE)(la _. self(t)))))(names)
 glyph ISEXEC = la n. str_eq(n)(".text")
@@ -484,15 +516,34 @@ glyph ISWRIT = la n. OR(str_eq(n)(".data"))(str_eq(n)(".bss"))
 glyph SEGFLAGS = la names.
     (la x. (la w.
        IF(AND(x)(w))
-         (la _. error("link script: a segment holding both executable and writable sections would need W+X; refused (use separate segments, or PHDRS once supported)"))
+         (la _. error("link script: a segment holding both executable and writable sections would need W+X; refused — declare it in a PHDRS block if that is really wanted"))
          (la _. add(4)(add(IF(x)(la _. 1)(la _. 0))(IF(w)(la _. 2)(la _. 0)))))
      (ANYNAME(names)(ISWRIT)))(ANYNAME(names)(ISEXEC))
 
-#   A parsed script becomes the linker's own segment list.
-glyph FROMSCRIPT = la sc. (Z(la self. la l.
+#   A parsed script's GROUPS become the linker's segments. GR_FLAGS is -1 when
+#   the script declared no PHDRS, meaning "derive them".
+glyph FROMGROUPS = la sc. (Z(la self. la l.
     l(NIL)(la h. la t.
-      CONS(SEG(SEGFLAGS(SS_NAMES(h)))(SS_MODE(h))(SS_VAL(h))(SS_NAMES(h)))
-          (self(t)))))(SC_SEGS(sc))
+      CONS(SEG(IF(lt(GR_FLAGS(h))(0))
+                 (la _. SEGFLAGS(GR_NAMES(h)))
+                 (la _. GR_FLAGS(h)))
+              (GR_NAMES(h)))
+          (self(t)))))(SC_GROUPS(sc))
+
+#   ── (NOLOAD) ───────────────────────────────────────────────────────────────
+#   An output section marked (NOLOAD) occupies memory and no file bytes. For
+#   `.bss` that coincides with its inputs already being NOBITS, which is why it
+#   is easy to think the attribute is decorative — it is not: it is the script
+#   ASSERTING the property, and a PROGBITS input placed in a NOLOAD section
+#   must lose its file bytes too, or the image gains contents the script said
+#   it would not have.
+glyph NOLOADPATS = la items. (Z(la self. la l.
+    l(NIL)(la h. la t.
+      IF(int_eq(IT_KIND(h))(IK_SEC))
+        (la _. IF(IT_NOLOAD(h))
+                 (la _. APPL(IT_NAMES(h))(self(t)))
+                 (la _. self(t)))
+        (la _. self(t)))))(items)
 
 glyph MKE   = la o. la s. la a. PAIR(o)(PAIR(s)(a))
 glyph E_OBJ = la e. FST(e)
@@ -512,7 +563,7 @@ glyph E_ADDR= la e. SND(SND(e))
 glyph PSTEP = la keep. la st. la o. la oname. la acc. la cur.
     (Z(la self. la l. la i. la a. la c.
        l(PAIR(a)(c))(la h. la t.
-         IF(AND(AND(str_eq(OUTNAME(SEC_NAME(h)))(oname))
+         IF(AND(AND(MATCHSEC(oname)(SEC_NAME(h)))
                    (NOT(int_eq(SEC_SIZE(h))(0))))
                (keep(o)(i)))
            (la _. (la aa. self(t)(add(i)(1))(CONS(MKE(o)(i)(aa))(a))(add(aa)(SEC_SIZE(h))))
@@ -606,23 +657,37 @@ glyph SNAMES = la keep. la gcon. la objs. la gotsz. la names. la acc. la cur.
     (Z(la self. la l. la a. la c.
         l(PAIR(a)(c))(la h. la t.
           (la r. self(t)(FST(r))(SND(r)))
-          (IF(str_eq(h)(".eh_frame"))
+#   ★ The two synthesised sections are recognised by MATCHING, not by string
+#   equality, so a script that writes `*(.eh_frame*)` still reaches the MERGED
+#   placement. Equality would have sent it to the ordinary per-object path,
+#   which links and runs while duplicating every CIE — wrong unwind data in a
+#   binary that looks fine.
+          (IF(MATCHSEC(h)(".eh_frame"))
              (la _. PEH(gcon)(objs)(a)(c))
-             (la _. IF(str_eq(h)(".got"))
+             (la _. IF(MATCHSEC(h)(".got"))
                       (la _. PGOT(gotsz)(a)(c))
                       (la _. PNAME(keep)(objs)(h)(a)(c)))))))
       (names)(acc)(cur)
 
-#   The plan: fold the SCRIPT with one running cursor, page-aligning at each
-#   segment start and packing its sections. `keep` is the gc-sections liveness
-#   predicate (always TRUE when gc is off). REV because entries accumulate with
-#   CONS; without it link order — and thus packing — would invert.
-glyph MKPLAN = la script. la keep. la gcon. la objs. la gotsz.
-    REV(FST((Z(la self. la segs. la acc. la cur.
-        segs(PAIR(acc)(cur))(la h. la t.
-          (la r. self(t)(FST(r))(SND(r)))
-          (SNAMES(keep)(gcon)(objs)(gotsz)(SEG_NAMES(h))(acc)(SEGSTART(h)(cur))))))
-      (script)(NIL)(0)))(NIL)
+#   The plan: fold the script's ITEMS with one running cursor, in script order.
+#   An address item MOVES the cursor (absolutely, or aligned up); a section item
+#   PACKS its patterns from wherever the cursor is. `keep` is the gc-sections
+#   liveness predicate (always TRUE when gc is off). REV because entries
+#   accumulate with CONS; without it link order — and thus packing — inverts.
+#   ★ Nothing here page-aligns on its own any more. Alignment is whatever the
+#   script's `. = ALIGN(...)` items ask for, which is the only way `.boot` and
+#   `.bss` can share a segment across an alignment: the old code started a new
+#   segment at every assignment precisely BECAUSE it aligned there.
+glyph MKPLAN = la items. la keep. la gcon. la objs. la gotsz.
+    REV(FST((Z(la self. la l. la acc. la cur.
+        l(PAIR(acc)(cur))(la h. la t.
+          IF(int_eq(IT_KIND(h))(IK_ADDR))
+            (la _. self(t)(acc)(IF(int_eq(IT_MODE(h))(SM_ABS))
+                                  (la _. IT_VAL(h))
+                                  (la _. ALIGNUP(cur)(IT_VAL(h)))))
+            (la _. (la r. self(t)(FST(r))(SND(r)))
+                   (SNAMES(keep)(gcon)(objs)(gotsz)(IT_NAMES(h))(acc)(cur))))))
+      (items)(NIL)(0)))(NIL)
 
 #   Address of a given object's given section, or -1 if it was not placed.
 glyph VAOF = la plan. la o. la sec. (Z(la self. la l.
@@ -644,6 +709,7 @@ glyph GOTOBJ = sub(0)(2)                        # -2: real objects are >=1, eh i
 glyph GOTENTRY = la e. int_eq(E_OBJ(e))(GOTOBJ)
 glyph MEMNAME = la names. la nm. (Z(la self. la l.
     l(FALSE)(la h. la t. IF(str_eq(h)(nm))(la _. TRUE)(la _. self(t)))))(names)
+glyph APPL = Z(la self. la a. la b. a(b)(la h. la t. CONS(h)(self(t)(b))))
 glyph SNOC = la l. la x. (Z(la self. la ll.
     ll(CONS(x)(NIL))(la h. la t. CONS(h)(self(t)))))(l)
 glyph ADDNAME = la names. la nm.
@@ -761,11 +827,10 @@ glyph EBYTES = la objs. la patched. la e.
                (la _. PATCH_OF(patched)(E_OBJ(e))(E_SEC(e)))
                (la _. SECBYTES(E_F(objs)(e))(E_SEC(e))))
 
-#   Is a section one of this segment's? Compared by OUTPUT name, so .text.compute
-#   groups into the .text (R+X) segment alongside a plain .text.
-glyph INSEG = la names. la name. (la out. (Z(la self. la l.
-    l(FALSE)(la h. la t.
-      IF(str_eq(h)(out))(la _. TRUE)(la _. self(t)))))(names))(OUTNAME(name))
+#   Is a section one of this segment's? By the shared matcher, so .text.compute
+#   groups into the .text segment alongside a plain .text, and `.note*` groups
+#   a whole family.
+glyph INSEG = la names. la name. MATCHANY(names)(name)
 
 #   Does the plan place ANY section of this segment? An empty permission group
 #   costs no segment rather than an empty PT_LOAD.
@@ -794,11 +859,16 @@ glyph SEGEND = la objs. la names. la plan. la base. (Z(la self. la l. la end.
 #   executable if reached), others with zeros. A NOBITS section (.bss) is
 #   SKIPPED for file bytes — it contributes memory size only, so the segment's
 #   file bytes stop at its last real section rather than padding out to .bss.
-glyph REGBYTES = la objs. la patched. la seg. la base. la plan.
+#   ★ A section in a (NOLOAD) output section is skipped for file bytes too —
+#   that is what the attribute MEANS, and for a PROGBITS input it is the only
+#   thing that makes it true (a NOBITS input would have been skipped anyway,
+#   which is what makes (NOLOAD) look decorative until it is not).
+glyph REGBYTES = la objs. la nolo. la patched. la seg. la base. la plan.
     (Z(la self. la l. la cur. la acc.
       l(acc)(la h. la t.
         IF(AND(INSEG(SEG_NAMES(seg))(ENAME(objs)(h)))
-              (NOT(int_eq(ETYPE(objs)(h))(SH_NOBITS))))
+              (NOT(OR(int_eq(ETYPE(objs)(h))(SH_NOBITS))
+                     (MATCHANY(nolo)(ENAME(objs)(h))))))
           (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(objs)(h)))
                         (CAT(CONS(acc)(CONS(IF(int_eq(SEG_FLAGS(seg))(F_RX))
                                               (la _. NOPS(gap))(la _. ZEROS(gap)))(
@@ -811,15 +881,24 @@ glyph REGBYTES = la objs. la patched. la seg. la base. la plan.
 #   (mod page); deriving it from the page-aligned base keeps that congruence
 #   true by construction, for any number of page-separated segments.
 glyph LENL    = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
-#   ★ The offsets are measured from the IMAGE's first segment, not from a
-#   hard-coded TEXT_BASE. With the base coming from a script that constant is
-#   no longer the load address, and using it would have kept p_offset ≡ p_vaddr
-#   (mod page) only by accident — both bases were page-aligned, so a script at
-#   0x500000 would still have satisfied the congruence while placing the file
-#   bytes 1 MB into the file. IMGBASE reads it off the first region instead, so
-#   the rule holds by construction for any base the script names.
-glyph FILEOFF = la lb. la base. add(PAGE)(sub(base)(lb))
-glyph IMGBASE = la regs. regs(0)(la h. la t. R_BASE(h))
+#   ★ FILE OFFSETS ARE PACKED, NOT DERIVED FROM THE ADDRESS. Deriving them
+#   (offset = PAGE + vaddr − image base) satisfies the congruence and is what
+#   this did — until a script put two segments 3 MB apart, and the file grew to
+#   3 MB to hold ONE byte of payload. It ran, every address was right, and the
+#   image was unusable as a kernel. The general rule is to pack each region
+#   after the previous one and then restore the congruence by adding
+#   `vaddr mod PAGE`, which is what ld does (it put the second segment at file
+#   offset 0x2000 for vaddr 0x400000). ROFFS computes the offsets ONCE, paired
+#   with their regions, so the phdrs and the body cannot disagree about where a
+#   segment's bytes are — a disagreement the loader would resolve by running
+#   the wrong bytes.
+glyph ROFF    = la ro. SND(ro)
+glyph RREG    = la ro. FST(ro)
+glyph ROFFS   = la regs. REV((Z(la self. la l. la cur. la acc.
+    l(acc)(la h. la t.
+      (la off. self(t)(add(off)(str_to_int(str_len(R_BYTES(h)))))(CONS(PAIR(h)(off))(acc)))
+      (add(ALIGNUP(cur)(PAGE))(mod(R_BASE(h))(PAGE))))))
+  (regs)(PAGE)(NIL))(NIL)
 glyph MKREG   = la flags. la base. la bytes. la memsz.
     PAIR(flags)(PAIR(base)(PAIR(bytes)(memsz)))
 glyph R_FLAGS = la r. FST(r)
@@ -829,23 +908,43 @@ glyph R_MEMSZ = la r. SND(SND(SND(r)))
 
 #   One region per non-empty SCRIPT segment, in SCRIPT order. `base` is bound
 #   once (SEGBASE) and threaded to the bytes, the memsz, and the phdr.
-glyph MKREGIONS = la script. la objs. la patched. la plan.
-    (Z(la self. la segs.
-      segs(NIL)(la h. la t.
+glyph MKREGIONS = la segs. la objs. la nolo. la patched. la plan.
+    (Z(la self. la l.
+      l(NIL)(la h. la t.
         IF(SEGHAS(objs)(SEG_NAMES(h))(plan))
           (la _. (la base.
                    CONS(MKREG(SEG_FLAGS(h))(base)
-                            (REGBYTES(objs)(patched)(h)(base)(plan))
+                            (REGBYTES(objs)(nolo)(patched)(h)(base)(plan))
                             (sub(SEGEND(objs)(SEG_NAMES(h))(plan)(base))(base)))
                        (self(t)))
                  (SEGBASE(objs)(SEG_NAMES(h))(plan)))
-          (la _. self(t)))))(script)
+          (la _. self(t)))))(segs)
 
-glyph PHDRS = la regs. (la lb. (Z(la self. la l.
+#   ── A SEGMENT MUST BE ONE CONTIGUOUS RUN OF THE PLAN ───────────────────────
+#   A region is described to the loader by ONE (base, filesz, memsz) triple, so
+#   a group whose sections are interleaved with another group's cannot be
+#   expressed — SEGBASE would take the first and SEGEND the last, and the two
+#   segments would overlap in the file while every individual address stayed
+#   correct. `ld` reports that as a section-overlap error; this refuses it by
+#   name instead of emitting an image whose segments quietly claim each other's
+#   bytes. (0 = not started, 1 = inside the run, 2 = the run has ended.)
+glyph CONTIG = la objs. la names. la plan. la tag. (Z(la self. la l. la st.
+    l("ok")(la h. la t.
+      IF(INSEG(names)(ENAME(objs)(h)))
+        (la _. IF(int_eq(st)(2))
+                 (la _. error(concat("link script: this segment's sections are not contiguous — another segment is placed inside it: ")(tag)))
+                 (la _. self(t)(1)))
+        (la _. self(t)(IF(int_eq(st)(1))(la _. 2)(la _. st))))))(plan)(0)
+glyph CHECKCONTIG = la segs. la objs. la plan. (Z(la self. la l. la i.
+    l("ok")(la h. la t.
+      SEQ(CONTIG(objs)(SEG_NAMES(h))(plan)(concat("segment ")(int_to_str(i))))
+         (self(t)(add(i)(1))))))(segs)(1)
+
+glyph PHDRS = la roffs. (Z(la self. la l.
     l("")(la h. la t.
-      concat(PHDR(R_FLAGS(h))(FILEOFF(lb)(R_BASE(h)))(R_BASE(h))
-                 (str_to_int(str_len(R_BYTES(h))))(R_MEMSZ(h)))(self(t)))))(regs))
-    (IMGBASE(regs))
+      (la r. concat(PHDR(R_FLAGS(r))(ROFF(h))(R_BASE(r))
+                        (str_to_int(str_len(R_BYTES(r))))(R_MEMSZ(r)))(self(t)))
+      (RREG(h)))))(roffs)
 
 #   The image body: pad from wherever we are to each region's file offset,
 #   then its bytes. One fold, so the number of segments is data.
@@ -855,7 +954,7 @@ glyph PHDRS = la regs. (la lb. (Z(la self. la l.
 #   segment whose p_filesz is 0, so the padding bought exactly nothing. Its
 #   p_offset stays as computed and stays congruent with p_vaddr, which is all
 #   the format requires.
-glyph BODY = la regs. (la lb. (Z(la self. la l. la cur.
+glyph BODY = la roffs. (Z(la self. la l. la cur.
     l("")(la h. la t.
       (la b.
         IF(int_eq(str_to_int(str_len(b)))(0))
@@ -863,9 +962,8 @@ glyph BODY = la regs. (la lb. (Z(la self. la l. la cur.
           (la _. (la off.
                    CAT(CONS(ZEROS(sub(off)(cur)))(CONS(b)(
                        CONS(self(t)(add(off)(str_to_int(str_len(b)))))(NIL)))))
-                 (FILEOFF(lb)(R_BASE(h)))))
-      (R_BYTES(h)))))(regs))
-    (IMGBASE(regs))
+                 (ROFF(h))))
+      (R_BYTES(RREG(h))))))(roffs)
 
 #   ── N INPUTS ───────────────────────────────────────────────────────────────
 #   The object list comes from a MANIFEST — link_inputs.txt, one path per line
@@ -1092,9 +1190,9 @@ glyph EHMERGE = la objs. la plan. la resolve. la mbase. (la cie.
       (objs)(cie)(str_to_int(str_len(cie))))))
     (FIRST_CIE(objs))
 
-glyph CHECKALL = la script. la objs. (Z(la self. la l.
+glyph CHECKALL = la segs. la disc. la objs. (Z(la self. la l.
     l("ok")(la h. la t.
-      SEQ(CHECKSECS(script)(O_SECTAB(h))(concat("input ")(int_to_str(O_IDX(h)))))(self(t)))))(objs)
+      SEQ(CHECKSECS(segs)(disc)(O_SECTAB(h))(concat("input ")(int_to_str(O_IDX(h)))))(self(t)))))(objs)
 
 glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
     IF(int_eq(i)(SYM_COUNT(f)(ss)))
@@ -1298,7 +1396,10 @@ glyph KEEPFN = la entry. la objs. la gcon.
 glyph MAIN =
   (la lines.
   (la sc.
-  (la script.
+  (la items.
+  (la segs.
+  (la nolo.
+  (la disc.
   (la entry.
   (la gcon.
   (la objs.
@@ -1307,17 +1408,19 @@ glyph MAIN =
   (la gotnames.
   (la gotsz.
   (la plan.
+  (la _ctg.
   (la gotbase.
   (la resolve.
   (la patched.
   (la regs.
+  (la roffs.
   (la nph.
     SEQ(DUPCHECK(objs))(
     SEQ(write_file("link_text.bin")(TEXTBYTES(regs)))(
     SEQ(write_exec("link_out")(CAT(
           CONS(EHDR(ENTRYOF(entry)(resolve))(nph))(
-          CONS(PHDRS(regs))(
-          CONS(BODY(regs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
+          CONS(PHDRS(roffs))(
+          CONS(BODY(roffs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
           NIL))))))(
     print(CAT(
       CONS("linked ")(
@@ -1329,21 +1432,26 @@ glyph MAIN =
       CONS(NL)(
       NIL))))))))))))
   )(LENL(regs))
-  )(MKREGIONS(script)(objs)(patched)(plan))
+  )(ROFFS(regs))
+  )(MKREGIONS(segs)(objs)(nolo)(patched)(plan))
   )(MKPATCHED(objs)(plan)(resolve)(gotnames)(gotbase))
   )(la want. IF(str_eq(want)("_GLOBAL_OFFSET_TABLE_"))
                (la _. gotbase)
                (la _. RESOLVE_L(objs)(plan)(want)))
   )(GOTBASE(plan))
-  )(MKPLAN(script)(keep)(gcon)(objs)(gotsz))
+  )(CHECKCONTIG(segs)(objs)(plan))
+  )(MKPLAN(items)(keep)(gcon)(objs)(gotsz))
   )(mul(8)(LENL(gotnames)))
-  )(GOTNAMES(objs)(MKPLAN(script)(keep)(gcon)(objs)(0)))
+  )(GOTNAMES(objs)(MKPLAN(items)(keep)(gcon)(objs)(0)))
   )(KEEPFN(entry)(objs)(gcon))
-  )(CHECKALL(script)(objs))
+  )(CHECKALL(segs)(disc)(objs))
   )(MKOBJS(NODIRS(lines)))
   )(HASGC(lines))
   )(IF(HASSCRIPT(lines))(la _. SC_ENTRY(sc))(la _. "_start"))
-  )(IF(HASSCRIPT(lines))(la _. FROMSCRIPT(sc))(la _. DEFSCRIPT))
+  )(IF(HASSCRIPT(lines))(la _. SC_DISCARD(sc))(la _. NIL))
+  )(IF(HASSCRIPT(lines))(la _. NOLOADPATS(SC_ITEMS(sc)))(la _. NIL))
+  )(IF(HASSCRIPT(lines))(la _. FROMGROUPS(sc))(la _. DEFSEGS))
+  )(IF(HASSCRIPT(lines))(la _. SC_ITEMS(sc))(la _. DEFITEMS))
   )(SCPAIR(lines))
   )(SPLITLINES(read_file("link_inputs.txt")))
 

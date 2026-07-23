@@ -1,49 +1,61 @@
 # =====================================================================
 #  link_script.la — A GNU ld LINKER SCRIPT PARSER, IN LINGUA ADAMICA.
 #
-#  ── WHY THIS IS THE NEXT SLICE ──────────────────────────────────────────────
+#  ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
 #  link_reloc.la already FOLLOWS a script: a list of segments, each a
 #  (permission, section-name list), packed by one running cursor. But that
-#  script is a `glyph` inside the linker — the layout is still OURS, chosen to
+#  script was a `glyph` inside the linker — the layout was still OURS, chosen to
 #  match ld's defaults so ld could stay the witness. A linker script is the
 #  point at which the layout stops being the linker's choice and becomes the
 #  CALLER's: `. = 0x100000` is how LogOS's own kernel is linked
 #  (`ld -n -T kernel/kernel.ld`), and no hard-coded 0x401000 will ever produce
 #  it. This module turns the text of a script into the structure the linker
-#  already consumes — so the layout becomes DATA, and `ld -T <same file>`
-#  becomes an independent witness for a layout neither linker invented.
+#  consumes — so the layout becomes DATA, and `ld -T <the same file>` becomes an
+#  independent witness for a layout neither linker invented.
 #
-#  ── WHAT IT PARSES, AND WHAT IT REFUSES ─────────────────────────────────────
+#  ── WHAT IT PARSES ──────────────────────────────────────────────────────────
 #      ENTRY(sym)
+#      PHDRS { name PT_LOAD FLAGS(n); ... }
 #      SECTIONS {
-#        . = <number>;            -- start a segment at an absolute address
-#        . = ALIGN(<number>);     -- start a segment aligned up from the cursor
-#        <name> : { *(<sec>) ... }-- pull input sections, in order, into it
+#        . = <number>;              -- move the location counter
+#        . = ALIGN(<number>);       -- align it up
+#        <name> : { *(<pat>) ... } :phdr      -- pull input sections into it
+#        <name> (NOLOAD) : { ... } :phdr      -- ...occupying memory, no file
+#        /DISCARD/ : { *(<pat>) ... }         -- ...or drop them
 #      }
+#  A <pat> is an exact name or a TRAILING-star prefix (`.note*`).
 #
-#  EVERYTHING ELSE IS REFUSED BY NAME. That is the whole discipline of this
-#  file: a linker script's failure mode is not a parse error, it is a script
-#  that parses and is then half-obeyed. `/DISCARD/` silently treated as an
-#  ordinary output section would PLACE the sections it exists to drop;
-#  `*(.text*)` read as a literal name would match nothing and silently omit
-#  code; a PHDRS block skipped would emit segments with the wrong permissions.
-#  Each of those links successfully and produces a wrong binary, so each is an
-#  explicit halt naming the token, not a default.
+#  ── ★ WHY A SEGMENT IS NO LONGER "ONE `. =` GROUP" ─────────────────────────
+#  The previous version started a new segment at every location-counter
+#  assignment, which was true of every script it had seen. kernel.ld breaks it
+#  immediately: `.boot` and `.bss` are BOTH `:boot` with a `. = ALIGN(4096)`
+#  between them — one PT_LOAD spanning both, the ordinary shape of a kernel
+#  image (filesz covers the code, memsz extends over the bss). So placement and
+#  grouping are now separate concerns, as they are in ld: the ITEM list drives
+#  the cursor in script order, and membership is by GROUP KEY — the `:phdr`
+#  name when a PHDRS block declares one, otherwise a synthetic key per `. =`
+#  assignment, which reproduces the old rule exactly. One grouping mechanism,
+#  two ways of naming the group.
+#
+#  ── WHAT IT REFUSES, AND WHY THAT IS THE WHOLE DISCIPLINE ───────────────────
+#  A linker script's failure mode is not a parse error, it is a script that
+#  parses and is then HALF-OBEYED. `/DISCARD/` silently treated as an ordinary
+#  output section PLACES the sections it exists to drop; `*(.te*t)` read as a
+#  literal name matches nothing and silently omits code; a skipped PHDRS block
+#  emits segments with the wrong permissions. Each of those links successfully
+#  and produces a wrong binary, so each is an explicit halt naming the token.
 #
 #  ── HONEST SCOPE ────────────────────────────────────────────────────────────
-#  The output section NAME is parsed and then IGNORED: this linker emits no
-#  section headers, so a name has no output to appear in — only the INPUT
-#  patterns and the addresses affect the image. Recorded because it is a real
-#  difference from ld, not an oversight.
-#
-#  A SEGMENT here is exactly what a `. =` assignment starts: every output
-#  section between one location-counter assignment and the next is packed
-#  contiguously from it. That is the same shape MKPLAN already folds, so a
-#  parsed script and the built-in one go through ONE code path — the built-in
-#  default is re-expressed in this form rather than kept as a second mechanism.
+#  The output section NAME is parsed and then IGNORED (this linker emits no
+#  section headers, so a name has no output to appear in); only PT_LOAD phdrs;
+#  FLAGS is required where a PHDRS block exists (ld would infer — we will not
+#  infer a permission); no MEMORY, no symbol assignments, no expressions beyond
+#  ALIGN, and no wildcard except a trailing star.
 # =====================================================================
 
-export PARSE_SCRIPT SC_ENTRY SC_SEGS SS_MODE SS_VAL SS_NAMES SM_ABS SM_ALIGN
+export PARSE_SCRIPT SC_ENTRY SC_ITEMS SC_GROUPS SC_DISCARD
+export IT_KIND IT_MODE IT_VAL IT_KEY IT_NOLOAD IT_NAMES IK_ADDR IK_SEC
+export GR_FLAGS GR_NAMES SM_ABS SM_ALIGN MATCHPAT MKIADDR MKISEC
 
 # ── prelude: the standard combinators (private; the module alpha-renames) ────
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
@@ -61,6 +73,7 @@ glyph SND  = la p. p(la a. la b. b)
 glyph REV  = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(CONS(h)(acc))))
 glyph CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 glyph SEQ  = la a. la b. b
+glyph APP  = Z(la self. la a. la b. a(b)(la h. la t. CONS(h)(self(t)(b))))
 
 glyph LEN   = la s. str_to_int(str_len(s))
 glyph EMPTY = la s. int_eq(LEN(s))(0)
@@ -76,10 +89,11 @@ glyph TAKES = Z(la self. la n. la s.
       (la _. "")
       (la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
 glyph STARTSW = la s. la pre. str_eq(TAKES(LEN(pre))(s))(pre)
-glyph HASCH = la s. la c. (Z(la self. la r.
+glyph LASTCH  = la s. IF(EMPTY(s))(la _. "")(la _. str_head(DROPS(sub(LEN(s))(1))(s)))
+glyph COUNTCH = la s. la c. (Z(la self. la r. la n.
     IF(EMPTY(r))
-      (la _. FALSE)
-      (la _. IF(str_eq(str_head(r))(c))(la _. TRUE)(la _. self(str_tail(r))))))(s)
+      (la _. n)
+      (la _. self(str_tail(r))(IF(str_eq(str_head(r))(c))(la _. add(n)(1))(la _. n)))))(s)(0)
 
 # ── list helpers over the token stream ──────────────────────────────────────
 #   NTH answers "" past the end rather than failing, so every lookahead below
@@ -92,6 +106,8 @@ glyph DROPL = Z(la self. la n. la l.
 glyph TAKEL = Z(la self. la n. la l.
     IF(int_eq(n)(0))(la _. NIL)(la _. l(NIL)(la h. la t. CONS(h)(self(sub(n)(1))(t)))))
 glyph LENL  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph MEMS  = la l. la x. (Z(la self. la ll.
+    ll(FALSE)(la h. la t. IF(str_eq(h)(x))(la _. TRUE)(la _. self(t)))))(l)
 
 # ── COMMENTS ────────────────────────────────────────────────────────────────
 #   `/* ... */`, possibly spanning lines — kernel.ld opens with a 12-line one.
@@ -114,9 +130,13 @@ glyph UNCOMMENT = la s. (Z(la self. la r. la acc.
 #   Whitespace separates; the punctuation `{ } ( ) ; : =` are tokens on their
 #   own whether or not they are spaced, so `.text : { *(.text) }` and the same
 #   text written `.text:{*(.text)}` tokenise identically. `*` is an ordinary
-#   word character, so `*(.text)` becomes `*` `(` `.text` `)`.
+#   word character, so `*(.text)` becomes `*` `(` `.text` `)` and the pattern
+#   `.note*` stays one token.
 #   ANY byte below 33 counts as space — this is how a tab reaches the tokeniser
 #   without needing a `\t` escape the host may not have.
+#   ★ `/DISCARD/` must survive tokenisation intact, which it does because `/`
+#   is not a delimiter — it is only special inside a comment opener, and
+#   comments are already gone by here.
 glyph ISSP = la c. lt(str_to_int(ord(c)))(33)
 glyph ISDELIM = la c.
     OR(str_eq(c)("{"))(OR(str_eq(c)("}"))(OR(str_eq(c)("("))(
@@ -170,115 +190,272 @@ glyph NUMV = la t.
                (la _. HEXV(t)(DROPS(2)(t)))
                (la _. DECV(t)(t)))
 
+# ── SECTION PATTERNS ────────────────────────────────────────────────────────
+#   `*(.text)` is an exact name; `*(.note*)` is a TRAILING-star prefix, which
+#   kernel.ld needs to discard `.note.gnu.property` and friends by family.
+#   Any other use of `*` is REFUSED at parse time rather than matched
+#   literally: a pattern that silently matches nothing omits code from a binary
+#   that still links, which is the failure mode this whole file exists to stop.
+glyph ISGLOB   = la p. str_eq(LASTCH(p))("*")
+glyph GLOBSTEM = la p. TAKES(sub(LEN(p))(1))(p)
+glyph CHKPATOK = la p.
+    IF(int_eq(COUNTCH(p)("*"))(0))
+      (la _. "ok")
+      (la _. IF(AND(int_eq(COUNTCH(p)("*"))(1))(ISGLOB(p)))
+               (la _. "ok")
+               (la _. error(concat("link script: only a TRAILING `*' is supported in a section pattern: ")(p))))
+#   The one matcher every consumer uses, exported so the linker cannot grow a
+#   second copy that disagrees with the parser about what a pattern means.
+glyph MATCHPAT = la pat. la name.
+    IF(ISGLOB(pat))(la _. STARTSW(name)(GLOBSTEM(pat)))(la _. str_eq(pat)(name))
+
 # ── THE PARSED SCRIPT ───────────────────────────────────────────────────────
-#   A SEGMENT is (mode, value, input-section names): mode SM_ABS means the
-#   value IS the segment's address, SM_ALIGN means align the running cursor up
-#   to it. The linker folds these with one cursor — the same fold it already
-#   performed over its built-in script, which is now expressed in this form.
+#   ITEMS are the SECTIONS body in order — the cursor follows them.
+#     IK_ADDR: (mode, value)  — SM_ABS sets the counter, SM_ALIGN aligns it up
+#     IK_SEC : (key, noload, patterns) — place these here, in this group
+#   GROUPS are the ITEMS' keys, deduplicated in first-appearance order, each
+#   with its flags (from PHDRS) or -1 (derive them) and the union of its
+#   patterns. One PT_LOAD per group.
+#   DISCARD is the /DISCARD/ patterns.
 glyph SM_ABS   = 0
 glyph SM_ALIGN = 1
-glyph SSEG     = la mode. la val. la names. PAIR(mode)(PAIR(val)(names))
-glyph SS_MODE  = la s. FST(s)
-glyph SS_VAL   = la s. FST(SND(s))
-glyph SS_NAMES = la s. SND(SND(s))
-glyph SC_ENTRY = la sc. FST(sc)
-glyph SC_SEGS  = la sc. SND(sc)
+glyph IK_ADDR  = 0
+glyph IK_SEC   = 1
+glyph MKIADDR = la mode. la val. PAIR(IK_ADDR)(PAIR(mode)(PAIR(val)(NIL)))
+glyph MKISEC  = la key. la noload. la names. PAIR(IK_SEC)(PAIR(key)(PAIR(noload)(names)))
+glyph IT_KIND   = la i. FST(i)
+glyph IT_MODE   = la i. FST(SND(i))
+glyph IT_VAL    = la i. FST(SND(SND(i)))
+glyph IT_KEY    = la i. FST(SND(i))
+glyph IT_NOLOAD = la i. FST(SND(SND(i)))
+glyph IT_NAMES  = la i. SND(SND(SND(i)))
+glyph GR_FLAGS  = la g. FST(g)
+glyph GR_NAMES  = la g. SND(g)
+glyph SC_ENTRY   = la sc. FST(sc)
+glyph SC_ITEMS   = la sc. FST(SND(sc))
+glyph SC_GROUPS  = la sc. FST(SND(SND(sc)))
+glyph SC_DISCARD = la sc. SND(SND(SND(sc)))
 
-#   A segment is only closed — pushed onto the list — when the next `. =` or
-#   the end of SECTIONS is reached, because that is when its name list is
-#   complete. An `open` flag distinguishes "no segment yet" from "a segment
-#   with no sections", which are different scripts.
-glyph CLOSESEG = la segs. la cur. la mode. la val. la open.
-    IF(open)(la _. CONS(SSEG(mode)(val)(REV(cur)(NIL)))(segs))(la _. segs)
+# ── THE PHDRS BLOCK ─────────────────────────────────────────────────────────
+#   `name PT_LOAD FLAGS(n);` — the type must be PT_LOAD (this linker emits no
+#   other kind, and silently treating PT_NOTE as loadable would place bytes the
+#   loader was never asked to load), and FLAGS is REQUIRED. ld would infer the
+#   permissions from the sections; we will not, because inferring is exactly
+#   what the previous slice did and this block exists to override it — an RWX
+#   segment must be something the script ASKED for.
+glyph PHNAME = la p. FST(p)
+glyph PHFLAG = la p. SND(p)
+#   Written as three shallow glyphs rather than one deep expression. The depth
+#   trace is what caught the first version, and the fix is not more careful
+#   counting — it is not building a nine-level expression in the first place.
+glyph PHFLAGOK = la t.
+    AND(str_eq(NTH(t)(1))("FLAGS"))
+       (AND(str_eq(NTH(t)(2))("("))
+           (AND(str_eq(NTH(t)(4))(")"))(str_eq(NTH(t)(5))(";"))))
+glyph PHSTEP = la self. la h. la t. la acc.
+    IF(NOT(str_eq(NTH(t)(0))("PT_LOAD")))
+      (la _. error(CAT(CONS("link script: only PT_LOAD segments are supported, found: ")
+                      (CONS(NTH(t)(0))(CONS(" for segment ")(CONS(h)(NIL)))))))
+      (la _. IF(PHFLAGOK(t))
+               (la _. self(DROPL(6)(t))(CONS(PAIR(h)(NUMV(NTH(t)(3))))(acc)))
+               (la _. error(concat("link script: a PHDRS entry must be `<name> PT_LOAD FLAGS(<n>);' — no FLAGS for segment: ")(h))))
+glyph PHWALK = Z(la self. la l. la acc.
+    (l(la _. error("link script: unterminated PHDRS block"))
+       (la h. la t. la _.
+         IF(str_eq(h)("}"))
+           (la _. REV(acc)(NIL))
+           (la _. PHSTEP(self)(h)(t)(acc))))("!"))
+glyph PHDRSOF = la toks. (la i.
+    IF(lt(i)(0))
+      (la _. NIL)
+      (la _. IF(NOT(str_eq(NTH(toks)(add(i)(1)))("{")))
+               (la _. error("link script: expected `{' after PHDRS"))
+               (la _. PHWALK(DROPL(add(i)(2))(toks))(NIL))))
+    (IDXTOK(toks)("PHDRS"))
+glyph FLAGSOF = la phdrs. la nm. (Z(la self. la l.
+    l(sub(0)(1))(la h. la t.
+      IF(str_eq(PHNAME(h))(nm))(la _. PHFLAG(h))(la _. self(t)))))(phdrs)
 
-# ── THE GRAMMAR ─────────────────────────────────────────────────────────────
-#   One walk over the token list carrying (segments, current names, mode,
-#   value, open, inside-a-block). Each rule below takes `self` so the walk
-#   stays a single Z and the rules stay readable at one nesting level.
+# ── THE GRAMMAR OF `SECTIONS` ───────────────────────────────────────────────
+#   One walk over the token list carrying (items, current patterns, current
+#   key, noload, discarding?, address-count, discard patterns, in-a-block?).
+#   Each rule takes `self` so the walk stays a single Z and the rules stay
+#   readable at one nesting level.
 
-#   `*( <name> )` — the only thing allowed inside an output section.
-#   A wildcard is REFUSED rather than matched literally: `*(.text*)` read as a
-#   name matches no section, so the code it names would be silently omitted
-#   from an image that still links.
-glyph CHKPAT = la self. la t. la segs. la cur. la mode. la val.
+#   `*( <pattern> )` — the only thing allowed inside an output section.
+glyph PATSTEP = la self. la t. la items. la cur. la key. la nol. la isd. la an. la disc.
     IF(AND(str_eq(NTH(t)(0))("("))(str_eq(NTH(t)(2))(")")))
-      (la _. IF(HASCH(NTH(t)(1))("*"))
-               (la _. error(concat("link script: wildcards in a section pattern are not supported: ")(NTH(t)(1))))
-               (la _. self(DROPL(3)(t))(segs)(CONS(NTH(t)(1))(cur))(mode)(val)(TRUE)(TRUE)))
+      (la _. SEQ(CHKPATOK(NTH(t)(1)))
+                (self(DROPL(3)(t))(items)(CONS(NTH(t)(1))(cur))(key)(nol)(isd)(an)(disc)(TRUE)))
       (la _. error("link script: expected `*(<section>)' inside an output section"))
-glyph BLKSTEP = la self. la h. la t. la segs. la cur. la mode. la val.
+
+#   The closing `}` of an output section, and the `:phdr` that may follow it.
+#   ★ The phdr is recorded as the group KEY. A section with no `:phdr` in a
+#   script that has no PHDRS block gets the synthetic key `#<n>` of the last
+#   location assignment, which is precisely the old one-segment-per-`. =` rule
+#   — so both spellings of "which segment" reach the linker as one concept.
+glyph ENDBLK = la self. la t. la items. la cur. la key. la nol. la isd. la an. la disc.
+    IF(isd)
+      (la _. self(t)(items)(NIL)("")(FALSE)(FALSE)(an)(APP(disc)(REV(cur)(NIL)))(FALSE))
+      (la _. IF(str_eq(NTH(t)(0))(":"))
+        (la _. IF(EMPTY(NTH(t)(1)))
+          (la _. error("link script: expected a segment name after `:'"))
+          (la _. self(DROPL(2)(t))(CONS(MKISEC(NTH(t)(1))(nol)(REV(cur)(NIL)))(items))
+                     (NIL)("")(FALSE)(FALSE)(an)(disc)(FALSE)))
+        (la _. self(t)(CONS(MKISEC(key)(nol)(REV(cur)(NIL)))(items))
+                   (NIL)("")(FALSE)(FALSE)(an)(disc)(FALSE)))
+glyph BLKSTEP = la self. la h. la t. la items. la cur. la key. la nol. la isd. la an. la disc.
     IF(str_eq(h)("}"))
-      (la _. self(t)(segs)(cur)(mode)(val)(TRUE)(FALSE))
+      (la _. ENDBLK(self)(t)(items)(cur)(key)(nol)(isd)(an)(disc))
       (la _. IF(str_eq(h)("*"))
-               (la _. CHKPAT(self)(t)(segs)(cur)(mode)(val))
+               (la _. PATSTEP(self)(t)(items)(cur)(key)(nol)(isd)(an)(disc))
                (la _. error(concat("link script: unsupported token inside an output section: ")(h))))
 
-#   `. = <number>;` or `. = ALIGN(<number>);` — each starts a new segment.
-glyph DOTSTEP = la self. la t. la segs. la cur. la mode. la val. la open.
+#   `. = <number>;` or `. = ALIGN(<number>);`
+glyph DOTSTEP = la self. la t. la items. la an. la disc.
     IF(NOT(str_eq(NTH(t)(0))("=")))
       (la _. error(concat("link script: expected `. = ' but found: ")(NTH(t)(0))))
       (la _. IF(str_eq(NTH(t)(1))("ALIGN"))
         (la _. IF(AND(str_eq(NTH(t)(2))("("))
                      (AND(str_eq(NTH(t)(4))(")"))(str_eq(NTH(t)(5))(";"))))
-                 (la _. self(DROPL(6)(t))(CLOSESEG(segs)(cur)(mode)(val)(open))
-                            (NIL)(SM_ALIGN)(NUMV(NTH(t)(3)))(TRUE)(FALSE))
+                 (la _. self(DROPL(6)(t))(CONS(MKIADDR(SM_ALIGN)(NUMV(NTH(t)(3))))(items))
+                            (NIL)("")(FALSE)(FALSE)(add(an)(1))(disc)(FALSE))
                  (la _. error("link script: expected `. = ALIGN(<number>);'")))
         (la _. IF(str_eq(NTH(t)(2))(";"))
-                 (la _. self(DROPL(3)(t))(CLOSESEG(segs)(cur)(mode)(val)(open))
-                            (NIL)(SM_ABS)(NUMV(NTH(t)(1)))(TRUE)(FALSE))
+                 (la _. self(DROPL(3)(t))(CONS(MKIADDR(SM_ABS)(NUMV(NTH(t)(1))))(items))
+                            (NIL)("")(FALSE)(FALSE)(add(an)(1))(disc)(FALSE))
                  (la _. error("link script: expected `. = <number>;'"))))
 
-#   `<name> : {` — an output section header. The name is consumed and dropped
-#   (see HONEST SCOPE); what matters is that its inputs join the open segment.
-glyph OUTSTEP = la self. la h. la t. la segs. la cur. la mode. la val. la open.
-    IF(str_eq(h)("/DISCARD/"))
-      (la _. error("link script: /DISCARD/ is not supported — dropping a section must be an explicit decision in the linker, not a silently obeyed script directive"))
-      (la _. IF(NOT(open))
-        (la _. error(concat("link script: an output section appears before any `. = <address>': ")(h)))
-        (la _. IF(AND(str_eq(NTH(t)(0))(":"))(str_eq(NTH(t)(1))("{")))
-                 (la _. self(DROPL(2)(t))(segs)(cur)(mode)(val)(TRUE)(TRUE))
-                 (la _. error(CAT(CONS("link script: expected `<name> : {' at `")(
-                                  CONS(h)(CONS("', found: ")(CONS(NTH(t)(0))(NIL)))))))))
+#   `<name> [(NOLOAD)] : {` — an output section header, or `/DISCARD/ : {`.
+#   The output name is consumed and dropped (see HONEST SCOPE); what matters is
+#   which patterns join which group, and whether the section occupies file
+#   bytes.
+#   ★ A section placed before the location counter has been set would land at
+#   address 0 — silently, since nothing else in the pipeline knows the cursor
+#   was never positioned. /DISCARD/ is exempt: it places nothing, so it has no
+#   address to be wrong about.
+glyph SECHDR = la self. la h. la t. la items. la an. la disc. la nol. la skip.
+    IF(AND(int_eq(an)(0))(NOT(str_eq(h)("/DISCARD/"))))
+      (la _. error(concat("link script: an output section appears before any `. = <address>', so it would be placed at 0: ")(h)))
+      (la _. SECHDR2(self)(h)(t)(items)(an)(disc)(nol)(skip))
+glyph SECHDR2 = la self. la h. la t. la items. la an. la disc. la nol. la skip.
+    IF(AND(str_eq(NTH(t)(skip))(":"))(str_eq(NTH(t)(add(skip)(1)))("{")))
+      (la _. self(DROPL(add(skip)(2))(t))(items)(NIL)
+                 (concat("#")(int_to_str(an)))(nol)(str_eq(h)("/DISCARD/"))(an)(disc)(TRUE))
+      (la _. error(CAT(CONS("link script: expected `<name> : {' at ")
+                      (CONS(h)(CONS(", found: ")(CONS(NTH(t)(skip))(NIL)))))))
+glyph OUTSTEP = la self. la h. la t. la items. la an. la disc.
+    IF(AND(str_eq(NTH(t)(0))("("))(str_eq(NTH(t)(2))(")")))
+      (la _. IF(str_eq(NTH(t)(1))("NOLOAD"))
+               (la _. SECHDR(self)(h)(t)(items)(an)(disc)(TRUE)(3))
+               (la _. error(concat("link script: the only output-section attribute supported is (NOLOAD), found: ")(NTH(t)(1)))))
+      (la _. SECHDR(self)(h)(t)(items)(an)(disc)(FALSE)(0))
 
-#   The body walk. Returns (segments, remaining tokens) at the closing `}` of
-#   SECTIONS, so the caller can assert nothing follows it — a trailing PHDRS or
+#   The body walk. Returns (items, discard, remaining tokens) at the closing
+#   `}` of SECTIONS, so the caller can assert nothing follows it — a trailing
 #   MEMORY block would otherwise be skipped in silence.
 #   ★ The NIL branch is a THUNK. Arguments are evaluated on application in this
 #   host, so `l(error(...))(...)` would raise on EVERY call, including the ones
 #   that succeed — the "order is structure" trap, in its cheapest form.
-glyph SBODY = Z(la self. la l. la segs. la cur. la mode. la val. la open. la inblk.
+glyph SBODY = Z(la self. la l. la items. la cur. la key. la nol. la isd. la an. la disc. la inblk.
     (l(la _. error("link script: unterminated SECTIONS block"))
        (la h. la t. la _.
          IF(inblk)
-           (la _. BLKSTEP(self)(h)(t)(segs)(cur)(mode)(val))
+           (la _. BLKSTEP(self)(h)(t)(items)(cur)(key)(nol)(isd)(an)(disc))
            (la _. IF(str_eq(h)("}"))
-                    (la _. PAIR(REV(CLOSESEG(segs)(cur)(mode)(val)(open))(NIL))(t))
+                    (la _. PAIR(REV(items)(NIL))(PAIR(disc)(t)))
                     (la _. IF(str_eq(h)("."))
-                             (la _. DOTSTEP(self)(t)(segs)(cur)(mode)(val)(open))
-                             (la _. OUTSTEP(self)(h)(t)(segs)(cur)(mode)(val)(open))))))("!"))
+                             (la _. DOTSTEP(self)(t)(items)(an)(disc))
+                             (la _. OUTSTEP(self)(h)(t)(items)(an)(disc))))))("!"))
+
+# ── GROUPS — one PT_LOAD per distinct key, in first-appearance order ────────
+#   With a PHDRS block the key IS the declared segment name, so an unnamed
+#   section is a script the author has not finished writing: REFUSED, rather
+#   than quietly dropped into whichever group ran last. Without one, the key is
+#   synthetic and the flags come back -1, meaning "derive them" — the caller's
+#   job, since it is the one that knows what a section holds.
+glyph GKEYSTEP = la self. la h. la t. la acc. la phdrs.
+    IF(AND(NOT(int_eq(LENL(phdrs))(0)))(STARTSW(IT_KEY(h))("#")))
+      (la _. error("link script: this script declares PHDRS, so every output section needs an explicit `:<segment>' — one without it would land in a segment nobody named"))
+      (la _. IF(MEMS(acc)(IT_KEY(h)))
+               (la _. self(t)(acc))
+               (la _. self(t)(CONS(IT_KEY(h))(acc))))
+glyph GKEYS = la items. la phdrs. (Z(la self. la l. la acc.
+    l(REV(acc)(NIL))(la h. la t.
+      IF(int_eq(IT_KIND(h))(IK_SEC))
+        (la _. GKEYSTEP(self)(h)(t)(acc)(phdrs))
+        (la _. self(t)(acc)))))(items)(NIL)
+#   ★ The two tests are NESTED, not `AND`ed. `AND(a)(b)` evaluates b as an
+#   ARGUMENT, so `AND(is-a-section)(key-equals)` would run str_eq on an ADDRESS
+#   item — whose second field is a number, not a key — and die inside a host
+#   builtin ("str_eq: first argument is not a string") far from the cause. Order
+#   is structure in this language: a guard has to be a binder, not a conjunct.
+glyph KEYNAMES = la items. la k. (Z(la self. la l. la acc.
+    l(acc)(la h. la t.
+      IF(int_eq(IT_KIND(h))(IK_SEC))
+        (la _. IF(str_eq(IT_KEY(h))(k))
+                 (la _. self(t)(APP(acc)(IT_NAMES(h))))
+                 (la _. self(t)(acc)))
+        (la _. self(t)(acc)))))(items)(NIL)
+glyph MKGROUPS = la items. la phdrs. (Z(la self. la l.
+    l(NIL)(la h. la t.
+      CONS(PAIR(IF(int_eq(LENL(phdrs))(0))
+                  (la _. sub(0)(1))
+                  (la _. (la f. IF(lt(f)(0))
+                                  (la _. error(concat("link script: no such segment declared in PHDRS: ")(h)))
+                                  (la _. f))
+                         (FLAGSOF(phdrs)(h))))
+               (KEYNAMES(items)(h)))
+          (self(t)))))(GKEYS(items)(phdrs))
 
 # ── WHAT SURROUNDS `SECTIONS` ───────────────────────────────────────────────
-#   Everything outside the SECTIONS block must be an `ENTRY(sym)` and nothing
-#   else. This is the check that makes the refusals above worth having: a
-#   PHDRS block (kernel.ld has one) or an OUTPUT_FORMAT would otherwise be
-#   skipped by a parser that only looks for what it understands, and the
-#   resulting image would differ from `ld -T <the same file>` in exactly the
-#   way nobody would think to check.
-glyph FINDTOK = la l. la w. (Z(la self. la ll. la i.
+#   Everything outside the SECTIONS block must be an `ENTRY(sym)` and/or a
+#   PHDRS block. This is the check that makes the refusals above worth having:
+#   an OUTPUT_FORMAT or a MEMORY block would otherwise be skipped by a parser
+#   that only looks for what it understands, and the resulting image would
+#   differ from `ld -T <the same file>` in exactly the way nobody would think
+#   to check.
+glyph IDXTOK = la l. la w. (Z(la self. la ll. la i.
     ll(sub(0)(1))(la h. la t. IF(str_eq(h)(w))(la _. i)(la _. self(t)(add(i)(1))))))(l)(0)
-glyph ENTRYSYM = la pre.
-    IF(int_eq(LENL(pre))(0))
+glyph ENTRYSYM = la toks. (la i.
+    IF(lt(i)(0))
       (la _. "_start")
-      (la _. IF(AND(str_eq(NTH(pre)(0))("ENTRY"))
-                   (AND(str_eq(NTH(pre)(1))("("))(str_eq(NTH(pre)(3))(")"))))
-               (la _. NTH(pre)(2))
-               (la _. error(concat("link script: unsupported directive before SECTIONS: ")(NTH(pre)(0)))))
+      (la _. IF(AND(str_eq(NTH(toks)(add(i)(1)))("("))(str_eq(NTH(toks)(add(i)(3)))(")")))
+               (la _. NTH(toks)(add(i)(2)))
+               (la _. error("link script: ENTRY must be written ENTRY(symbol)"))))
+    (IDXTOK(toks)("ENTRY"))
+#   The tokens before SECTIONS, with the ENTRY(...) form and any PHDRS block
+#   removed, must be empty — whatever is left is a directive we would ignore.
+#   ★ The PHDRS block's LENGTH is measured, not computed from a per-entry token
+#   count. The first version multiplied by an assumed 9 tokens per entry (it is
+#   7) and reported the ENTRY symbol as an unsupported directive — a check whose
+#   arithmetic is a second, silent model of the grammar. The prefix holds
+#   exactly one `}` (SECTIONS' braces come after it), so the block runs from
+#   `PHDRS` to that brace, whatever is written between them.
+glyph SPANOF = la pre. la kw. la endtok.
+    (la i. IF(lt(i)(0))
+             (la _. 0)
+             (la _. add(sub(IDXTOK(pre)(endtok))(i))(1)))
+    (IDXTOK(pre)(kw))
 glyph PRECHECK = la pre.
-    IF(lt(LENL(pre))(5))
-      (la _. "ok")
-      (la _. IF(AND(int_eq(LENL(pre))(5))(str_eq(NTH(pre)(4))(";")))
-               (la _. "ok")
-               (la _. error(concat("link script: unsupported directive before SECTIONS: ")(NTH(pre)(4)))))
+    (la n.
+      IF(int_eq(LENL(pre))(n))
+        (la _. "ok")
+        (la _. IF(AND(int_eq(LENL(pre))(add(n)(1)))(str_eq(NTH(pre)(n))(";")))
+                 (la _. "ok")
+                 (la _. error(concat("link script: unsupported directive before SECTIONS: ")
+                                    (FIRSTUNK(pre))))))
+    (add(IF(lt(IDXTOK(pre)("ENTRY"))(0))(la _. 0)(la _. 4))
+        (SPANOF(pre)("PHDRS")("}")))
+#   Name the offending token, not just its position: the whole point of these
+#   refusals is that the reader learns which construct is unsupported.
+glyph FIRSTUNK = la pre. (Z(la self. la l.
+    l("(nothing)")(la h. la t.
+      IF(OR(str_eq(h)("ENTRY"))(OR(str_eq(h)("("))(OR(str_eq(h)(")"))(
+         OR(str_eq(h)(";"))(OR(str_eq(h)("PHDRS"))(OR(str_eq(h)("{"))(
+         OR(str_eq(h)("}"))(OR(str_eq(h)("PT_LOAD"))(str_eq(h)("FLAGS"))))))))))
+        (la _. self(t))
+        (la _. h))))(pre)
 glyph RESTCHECK = la rest.
     IF(int_eq(LENL(rest))(0))
       (la _. "ok")
@@ -286,21 +463,25 @@ glyph RESTCHECK = la rest.
                (la _. "ok")
                (la _. error(concat("link script: unsupported directive after SECTIONS: ")(NTH(rest)(0)))))
 
-#   PARSE_SCRIPT: text in, (entry symbol, segment list) out.
+#   PARSE_SCRIPT: text in, (entry, items, groups, discard) out.
 #   ★ Bound ONCE and threaded. `glyph T = TOKS(...)` would re-tokenise the
 #   whole script at every reference — a glyph is a macro, not a binding, and
 #   that mistake fails as a timeout rather than an error.
 glyph PARSE_SCRIPT = la text.
     (la toks.
+      (la phdrs.
       (la si.
         IF(lt(si)(0))
           (la _. error("link script: no SECTIONS block"))
           (la _. IF(NOT(str_eq(NTH(toks)(add(si)(1)))("{")))
             (la _. error("link script: expected `{' after SECTIONS"))
-            (la _. (la pre.
-                     SEQ(PRECHECK(pre))(
-                     (la r. SEQ(RESTCHECK(SND(r)))(PAIR(ENTRYSYM(pre))(FST(r))))
-                     (SBODY(DROPL(add(si)(2))(toks))(NIL)(NIL)(SM_ABS)(0)(FALSE)(FALSE))))
-                   (TAKEL(si)(toks)))))
-      (FINDTOK(toks)("SECTIONS")))
+            (la _. SEQ(PRECHECK(TAKEL(si)(toks)))(
+                   (la r. SEQ(RESTCHECK(SND(SND(r))))(
+                          (la items.
+                            PAIR(ENTRYSYM(toks))(PAIR(items)(
+                                 PAIR(MKGROUPS(items)(phdrs))(FST(SND(r))))))
+                          (FST(r))))
+                   (SBODY(DROPL(add(si)(2))(toks))(NIL)(NIL)("")(FALSE)(FALSE)(0)(NIL)(FALSE))))))
+      (IDXTOK(toks)("SECTIONS")))
+      (PHDRSOF(toks)))
     (TOKS(UNCOMMENT(text)))
