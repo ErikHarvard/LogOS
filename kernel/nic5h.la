@@ -1,0 +1,92 @@
+# =====================================================================
+#  LogOS HAL.5h — a UDP ECHO responder over RTL8139, in LA.
+#
+#  The transport-layer sibling of HAL.5g (which answered ICMP): 5h answers a
+#  UDP datagram sent TO us, echoing its payload back to the sender. An external
+#  agent (kernel/ping_harness.py, `udp` mode, over a QEMU `socket` netdev — the
+#  sole L2 peer) sends a UDP datagram to our echo port (7); the LA kernel at
+#  ring 0 receives it, builds the echo reply, and transmits it.
+#
+#  Simpler than 5g: the UDP checksum is OPTIONAL in IPv4, so the reply sets it
+#  to 0 (disabled) — no checksum arithmetic at all. The reply is built FROM the
+#  request (no static frame): COPYN the whole frame out of the RX ring, then
+#  mutate in place, reading originals straight from the ring so swaps need no
+#  temporary:
+#    - eth dst := req eth SRC / eth src := req eth DST   [ring 10..15 / 4..9]
+#    - ip  src := req ip DST  / ip  dst := req ip SRC    [ring 34..37 / 30..33]
+#    - udp sport := req udp DPORT / udp dport := req SPORT  [ring 40..41 / 38..39]
+#    - udp checksum := 0 (disabled)                     [buf 40..41]
+#    - payload unchanged (already copied)
+#  The IP header checksum is UNCHANGED (swapping src/dst is commutative; length
+#  and proto untouched). All arithmetic, no bitwise ops. Fires on TSD0, min 60.
+#
+#  Witnesses: "nic udp req proto=11 dport=0007" (a UDP datagram to our echo port,
+#  read from the ring); the sender independently confirms the echo — IPv4/UDP,
+#  addresses + ports swapped back, and the PAYLOAD returned byte-for-byte. Fully
+#  self-contained + deterministic. Reuses 5b/5c's bring-up; promiscuous RCR (AAP)
+#  accepts the unicast without programming the MAC regs. Needs -m 512 + python3.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+glyph HEXD = la d.
+    IF(lt(d)(10))(la _. chr(int_to_str(add(48)(d))))
+                 (la _. chr(int_to_str(add(87)(d))))
+glyph HEX2 = la b. concat(HEXD(div(b)(16)))(HEXD(mod(b)(16)))
+
+glyph ADDR = la dev. la off. add(add(2147483648)(mul(dev)(2048)))(off)
+glyph CFG  = la dev. la off. SEQ(outl(3320)(ADDR(dev)(off)))(inl(3324))
+glyph CFGW = la dev. la off. la val. SEQ(outl(3320)(ADDR(dev)(off)))(outl(3324)(val))
+
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 32)(la _.
+      (la r.
+        IF(int_eq(mod(r)(65536))(4332))(la _.
+          IF(int_eq(div(r)(65536))(33081))(la _. dev)(la _. self(add(dev)(1))))
+        (la _. self(add(dev)(1))))
+      (CFG(dev)(0))))
+
+glyph OB = la base. la off. la v. outb(add(base)(off))(v)
+glyph OW = la base. la off. la v. outw(add(base)(off))(v)
+glyph OL = la base. la off. la v. outl(add(base)(off))(v)
+glyph IB = la base. la off. inb(add(base)(off))
+glyph IL = la base. la off. inl(add(base)(off))
+
+glyph RXBUF = 268435456     # 0x10000000 — 8 KiB RX ring
+glyph TXBUF = 268447744     # 0x10003000 — TX buffer (the UDP echo reply, TSD0)
+
+# copy n bytes from a peek-able src addr to a poke-able dst addr (bounded, no bitwise)
+glyph COPYN = Z(la self. la dst. la src. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+      SEQ(poke(dst)(peek(src)))(self(add(dst)(1))(add(src)(1))(sub(n)(1)))))
+
+glyph WAITRST = Z(la self. la base.
+    IF(int_eq(mod(div(IB(base)(55))(16))(2))(1))(la _. self(base))(la _. base))
+# wait for TOK (bit15) on a TSD at byte offset off (16=TSD0)
+glyph WAITTX = Z(la self. la base. la off.
+    IF(int_eq(mod(div(IL(base)(off))(32768))(2))(1))(la _. base)(la _. self(base)(off)))
+glyph WAITRX = Z(la self. la base. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+      IF(int_eq(mod(IB(base)(55))(2))(0))(la _. 1)(la _. self(base)(sub(n)(1)))))
+
+# RX packet total length from its 4-byte ring header (bytes 2..3, incl. CRC)
+glyph RXLEN = add(peek(add(RXBUF)(2)))(mul(peek(add(RXBUF)(3)))(256))
+# byte at ring offset off in the received packet (frame byte off-4)
+glyph RB = la off. peek(add(RXBUF)(off))
+
+glyph SETUP = la dev. la base.
+    SEQ(CFGW(dev)(4)(7))
+    (SEQ(OB(base)(82)(0))
+    (SEQ(OB(base)(55)(16))
+    (SEQ(WAITRST(base))
+    (SEQ(OL(base)(48)(RXBUF))
+    (SEQ(OW(base)(60)(0))
+    (SEQ(OW(base)(62)(65535))
+    (SEQ(OL(base)(68)(59151))
+    (SEQ(OW(base)(56)(65520))
+    (OB(base)(55)(12))))))))))
+glyph FROMWIT = concat("nic udp req proto=")(concat(HEX2(RB(27)))(concat(" dport=")(concat(HEX2(RB(40)))(HEX2(RB(41))))))
+glyph RESPOND = la base. la framelen. SEQ(COPYN(TXBUF)(add(RXBUF)(4))(framelen))(SEQ(COPYN(TXBUF)(add(RXBUF)(10))(6))(SEQ(COPYN(add(TXBUF)(6))(add(RXBUF)(4))(6))(SEQ(COPYN(add(TXBUF)(26))(add(RXBUF)(34))(4))(SEQ(COPYN(add(TXBUF)(30))(add(RXBUF)(30))(4))(SEQ(COPYN(add(TXBUF)(34))(add(RXBUF)(40))(2))(SEQ(COPYN(add(TXBUF)(36))(add(RXBUF)(38))(2))(SEQ(poke(add(TXBUF)(40))(0))(SEQ(poke(add(TXBUF)(41))(0))(SEQ(OL(base)(32)(TXBUF))(SEQ((la tl. OL(base)(16)(tl))(IF(lt(framelen)(60))(la _. 60)(la _. framelen)))(SEQ(WAITTX(base)(16))(SEQ(print("nic udp reply sent"))(print("nic done"))))))))))))))
+glyph MAIN = SEQ(print("nic5h:"))(((la dev. IF(int_eq(dev)(32))(la _. print("nic not found"))(la _. ((la base. SEQ(SETUP(dev)(base))(SEQ(print("nic setup ok"))(IF(int_eq(WAITRX(base)(20000000))(0))(la _. print("nic rx timeout"))(la _. SEQ(print(FROMWIT))(RESPOND(base)(sub(RXLEN)(4)))))))(sub(CFG(dev)(16))(mod(CFG(dev)(16))(4))))))(FIND(0))))

@@ -12,6 +12,9 @@ import socket, struct, sys, time
 GUEST_MAC = bytes([0x52,0x54,0x00,0x12,0x34,0x56])   # the LA kernel's MAC
 PINGER_MAC= bytes([0x52,0x55,0x0a,0x00,0x02,0x02])   # our (pinger) MAC
 GUEST_IP  = bytes([10,0,2,15]); PINGER_IP = bytes([10,0,2,2])
+UDP_PAYLOAD = b"LOGOS-UDP-ECHO-42!"                  # 18 bytes -> a 60-byte frame
+OUR_UDP_PORT = 7                                     # the guest's echo port (req dst)
+SENDER_UDP_PORT = 40000                              # our ephemeral port (req src)
 
 def ipck(h):
     s=sum((h[i]<<8)+h[i+1] for i in range(0,len(h),2))
@@ -27,6 +30,27 @@ def icmp_echo_request():
     f=bytes(GUEST_MAC)+bytes(PINGER_MAC)+b'\x08\x00'+bytes(ip)+bytes(icmp)
     if len(f)<60: f=f+b'\x00'*(60-len(f))   # pad to Ethernet min so the NIC keeps it
     return f
+
+def udp_request():
+    p=UDP_PAYLOAD; ul=8+len(p)
+    udp=[SENDER_UDP_PORT>>8,SENDER_UDP_PORT&0xff, OUR_UDP_PORT>>8,OUR_UDP_PORT&0xff,
+         ul>>8,ul&0xff, 0,0]+list(p)              # udp checksum 0 = disabled (IPv4 legal)
+    il=20+ul
+    ip=[0x45,0,il>>8,il&0xff,0,0,0,0,64,17,0,0]+list(PINGER_IP)+list(GUEST_IP)
+    c=ipck(ip); ip[10]=c>>8; ip[11]=c&0xff
+    f=bytes(GUEST_MAC)+bytes(PINGER_MAC)+b'\x08\x00'+bytes(ip)+bytes(udp)
+    if len(f)<60: f=f+b'\x00'*(60-len(f))
+    return f
+
+def valid_udp_echo(f):
+    # rigorous: IPv4/UDP, addresses swapped back, ports swapped, payload echoed exactly
+    if len(f)<42 or (f[12]<<8|f[13])!=0x0800 or f[23]!=17: return False
+    if bytes(f[26:30])!=GUEST_IP or bytes(f[30:34])!=PINGER_IP: return False  # src=guest, dst=us
+    il=(f[16]<<8)|f[17]; ihl=(f[14]&0x0f)*4; udp=f[14+ihl:14+il]
+    if len(udp)<8: return False
+    sport=(udp[0]<<8)|udp[1]; dport=(udp[2]<<8)|udp[3]
+    if sport!=OUR_UDP_PORT or dport!=SENDER_UDP_PORT: return False            # ports swapped
+    return bytes(udp[8:])==UDP_PAYLOAD                                        # payload echoed
 
 def connect(port):
     for _ in range(50):
@@ -70,29 +94,35 @@ def decode(f):
     if et==0x0800 and len(f)>=34:
         proto=f[23]; t="?"
         if proto==1 and len(f)>=35: t=f"icmp_type={f[34]}"
+        elif proto==17 and len(f)>=38: t=f"udp {(f[34]<<8)|f[35]}->{(f[36]<<8)|f[37]}"
         return f"IPv4 proto={proto} {t}"
     return f"et={et:04x}"
 
+MODES={
+    "ping": (icmp_echo_request, valid_echo_reply, "ICMP echo request", "ECHO REPLY"),
+    "udp":  (udp_request,        valid_udp_echo,   "UDP datagram",      "UDP ECHO"),
+}
+
 def main():
     mode,port,secs=sys.argv[1],int(sys.argv[2]),float(sys.argv[3])
+    build,validate,label,name=MODES[mode]
     s=connect(port); print("PINGER: connected")
     got_reply=False
-    if mode=="ping":
-        # retry the request so at least one lands AFTER the guest enables RX
-        # (a request sent before RX-enable is dropped; several spaced sends cover it)
-        import threading
-        req=icmp_echo_request()
-        def pinger():
-            for t in (0.6,1.4,2.4,3.4):
-                time.sleep(t if t==0.6 else t-prev[0]); prev[0]=t
-                try: send_frame(s,req); print(f"PINGER: sent ICMP echo request (t~{t}s)")
-                except OSError: return
-        prev=[0.0]; threading.Thread(target=pinger,daemon=True).start()
+    # retry the request so at least one lands AFTER the guest enables RX
+    # (a request sent before RX-enable is dropped; several spaced sends cover it)
+    import threading
+    req=build()
+    def sender():
+        prev=0.0
+        for t in (0.6,1.4,2.4,3.4):
+            time.sleep(t-prev); prev=t
+            try: send_frame(s,req); print(f"PINGER: sent {label} (t~{t}s)")
+            except OSError: return
+    threading.Thread(target=sender,daemon=True).start()
     for f in recv_frames(s, secs):
-        d=decode(f); print("PINGER RX:", d)
-        if valid_echo_reply(f): got_reply=True; print("PINGER: valid echo reply verified"); break
-    if mode=="ping":
-        print("PINGER:", "ECHO REPLY RECEIVED" if got_reply else "no echo reply")
-        sys.exit(0 if got_reply else 1)
+        print("PINGER RX:", decode(f))
+        if validate(f): got_reply=True; print(f"PINGER: valid {name.lower()} verified"); break
+    print("PINGER:", f"{name} RECEIVED" if got_reply else f"no {name.lower()}")
+    sys.exit(0 if got_reply else 1)
 
 if __name__=="__main__": main()
