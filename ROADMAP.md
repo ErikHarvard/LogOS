@@ -954,6 +954,46 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             witness *and* make `RESPOND`, which uses the same fixed offsets, build a
             malformed reply. **The whole 5x arc shares this assumption**; parsing IHL
             is the follow-up and needs only division, no bitwise ops.
+      - [x] **HAL.5i — an IHL-GENERAL UDP echo responder — DONE + gated
+            (2026-07-23).** The follow-up 5h's own scope note named, done: the
+            kernel no longer ASSUMES a 20-byte IPv4 header, it **reads the header
+            length out of the packet** — `ihl = mod(RB(18))(16)` (the low nibble of
+            frame byte 14) and `u = 14 + 4*ihl`, so the UDP header is located at 34
+            when IHL=5 and 38 when IHL=6. Extracting the nibble is `mod` and scaling
+            is `mul`, so this stays inside the standing no-bitwise-ops constraint;
+            no new builtin, no regen, zero Track-A impact. **Minimal by
+            construction:** only the three UDP fields move, because the eth
+            addresses precede the IP header and ip src/dst sit at fixed offsets
+            12/16 *within* it — all four are IHL-independent and keep 5h's
+            constants. Substituting `u=34` reproduces 5h's `RESPOND`
+            character-for-character, so at IHL=5 this **is** the already-gated
+            program: a strict generalisation, not a rewrite.
+            **★ The gate had to be made able to fail first.** A gate that only
+            sends IHL=5 passes identically with or without the fix, so the work
+            started at the harness: `ping_harness.py` gains a `udpopt` mode — the
+            same datagram behind a 24-byte header via a 4-byte NOP/NOP/NOP/EOL
+            option block, deliberately semantics-free because the point is to MOVE
+            where the UDP header starts, not to ask the kernel to honour an option.
+            `gate_nic5i.sh` runs the SAME kernel twice (`udp`→ihl=05,
+            `udpopt`→ihl=06) and asserts **the ihl the guest actually parsed**, so
+            the serial proves the kernel read the header rather than happening to
+            be right.
+            **★ Red-path tested against the real prior kernel, not just a model.**
+            HAL.5h's actual ELF was run against a `udpopt` datagram and failed as
+            predicted — and more informatively: it reported `dport=0100`, because
+            with IHL=6 the option bytes `01 01 01 00` occupy frame 34..37 and 5h
+            read bytes 36/37 as the port. **Its serial still said `nic udp reply
+            sent` / `nic done`** — it transmitted a malformed reply and called the
+            run healthy. Only the independent external validator caught it, which
+            is the whole argument for gating on two witnesses: the guest's
+            self-report alone passes a wrong answer.
+            *Honest scope:* no ethertype/proto pre-check (the first frame received
+            is parsed as ours — inherited from 5h/5g, not introduced here), no IHL
+            sanity bound, no IP-total-length cross-check, the UDP checksum still
+            disabled on the reply and unverified on the request, and single-packet
+            (no RX-ring advance — that is 5e's mechanism). **5i fixes the UDP
+            responder only; 5c/5d/5g carry their own fixed-offset assumptions and
+            each would need the same treatment.**
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
