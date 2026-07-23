@@ -835,6 +835,39 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             (~a few thousand poll iters at ~117k/s), far under the ~700k-alloc metal
             heap wall — it finishes first *honestly*, not by luck. Requires host
             network egress (the proxy forwards the query); ~12 min compile like 5c.
+      - [x] **HAL.5e — a real ARP RESPONDER + RX-ring advance — DONE + gated
+            (2026-07-22).** The honest de-cheat of 5c/5d, which dodged answering
+            SLIRP's ARP by PRE-SEEDING its cache with a gratuitous reply (a
+            proactive trick, so the wanted reply arrived as the only RX packet —
+            no responder, no ring advance). 5e removes the seed and builds the two
+            mechanisms 5c's note named as missing: (1) a real **ARP responder** —
+            the kernel TXes an ICMP echo request UNSEEDED, RECEIVES SLIRP's ARP
+            REQUEST, verifies it out of the DMA ring (`oper=0001`, `tpa=0a00020f` =
+            "who has 10.0.2.15?" — asking for US), and TXes a proper ARP REPLY in
+            answer; and (2) **RX-ring advancement** — after consuming that first
+            packet it advances the RTL8139 `CAPR` (`off2 = align4(4+size)`,
+            `CAPR := off2-16` for the -0x10 quirk; no bitwise ops — `align4` is
+            `mul(div(add(x)(3))(4))(4)`) so the SECOND packet, the ICMP echo reply
+            SLIRP now unicasts knowing our MAC, is read at its own ring offset.
+            `kernel/nic5e.la` reuses 5b/5c's bring-up verbatim. **Two bugs found +
+            fixed live (both under the ~12-min compile, diagnosed by wire capture
+            + progress markers rather than blind rebuilds):** a stray closing paren
+            in MAIN's deep nesting (caught offline with a paren-balance check;
+            MAIN/RESPOND now generated from matched pieces), and — the real one — the
+            ICMP request was fired on TSD1 while the RTL8139 uses its 4 TX
+            descriptors round-robin from TSD0, so nothing transmitted (empty pcap
+            despite reaching the TX writes); fixed by firing the ICMP request on
+            TSD0 first and the ARP reply on TSD1 second, with a `WAITTX` after each,
+            exactly 5c/5d's proven order. `gate_nic5e.sh` asserts `nic arp req
+            oper=0001 tpa=0a00020f` (SLIRP's request received + decoded — a
+            seeded/proactive run never sees this) + `nic rx et=0800 proto=01
+            icmp=00` (the echo reply, which arrives ONLY because we answered the
+            ARP) + `nic done`. **Fully SLIRP-internal — no host egress, so the gate
+            is deterministic** (stronger than 5d's). Six-second-safe: two bounded
+            RX poll spins, both round-trips internal. Honest scope: the reply is
+            REACTIVE (waits for + verifies the real request — no pre-seeding) with
+            static addressing for the known SLIRP gateway; a fully general responder
+            that echoes the requester's own sender fields is a follow-up (5f).
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
