@@ -924,6 +924,36 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             applied) and the whole reply/checksum logic was unit-tested against the
             pinger BEFORE the ~37-min compile (feedback loop made cheap first). Needs
             -m 512 + python3; near the single-image compile ceiling.
+      - [x] **HAL.5h — a UDP ECHO RESPONDER — DONE + gated (2026-07-23).** The
+            TRANSPORT-layer sibling of 5g: where 5g answered an ICMP echo, 5h answers
+            a **UDP datagram** sent to our echo port (7), returning its payload. Same
+            receive-side shape — `kernel/ping_harness.py` in `udp` mode is the sole L2
+            peer over a QEMU `socket` netdev — and `kernel/nic5h.la` builds the reply
+            **from the request**: `COPYN` the frame out of the RX ring, then swap
+            eth src↔dst, ip src↔dst and the udp ports, reading each original straight
+            from the ring so no temporary is needed. **Simpler than 5g by design:** the
+            UDP checksum is OPTIONAL in IPv4, so the reply sets it to 0 (disabled) and
+            there is no checksum arithmetic at all; the IP header checksum is unchanged
+            because swapping src/dst is commutative. All arithmetic, no bitwise ops.
+            Fires on TSD0 (the 5e lesson — the RTL8139 uses descriptors round-robin
+            from TSD0, and firing on TSD1 produced an empty pcap while every TX write
+            appeared to succeed). **Gated two ways** (`gate_nic5h.sh`): the guest's own
+            serial (`nic udp req proto=11 dport=0007` — IP proto 17 to our echo port,
+            read from the DMA ring — then `nic udp reply sent` / `nic done`) AND the
+            sender's independent end-to-end check — IPv4/UDP, addresses **and ports**
+            swapped back, and the **payload returned byte-for-byte**. Fully
+            self-contained and deterministic; needs -m 512 + python3. The UDP transform
+            was unit-tested against the harness BEFORE the compile (correct output
+            accepted, corrupted payload and wrong port both rejected), so the ~14-min
+            `native_codegen3` build was entered with the logic already proven.
+            **HONEST SCOPE — a fixed-offset assumption the gate cannot see:** the
+            witness reads ring offsets 40/41 = frame bytes 36/37, which is the UDP
+            destination port only when the IP header is exactly 20 bytes (IHL=5, no
+            options). That holds for every datagram the harness sends, so the gate is
+            sound as written — but an options-bearing header would misreport the
+            witness *and* make `RESPOND`, which uses the same fixed offsets, build a
+            malformed reply. **The whole 5x arc shares this assumption**; parsing IHL
+            is the follow-up and needs only division, no bitwise ops.
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
