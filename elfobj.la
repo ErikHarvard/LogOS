@@ -61,7 +61,10 @@
 #    asm.la emitting those lists from source is the remaining nasm-free step.
 # =====================================================================
 
-export EMIT_OBJ_N
+#    The record CONSTRUCTORS and the list pair are exported alongside the emitter
+#    so a producer (asm.la's ASM_ELF) can build elfobj's inputs without importing
+#    elfobj's representation of them — it is handed the constructors instead.
+export EMIT_OBJ_N SDESC SREC RINFO RREC CONS NIL
 
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")

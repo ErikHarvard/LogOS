@@ -1,0 +1,41 @@
+# =====================================================================
+#  asmelfobj.la — the nasm-free object step: .asm source -> ELF64 .o
+# =====================================================================
+#
+#  This is the seam closing. `asm.la` encodes x86-64 byte-identically to nasm
+#  but emitted only a flat `-f bin` image; `elfobj.la` writes an ELF64
+#  relocatable-object container but was fed section/symbol/reloc lists that a
+#  dev scaffold had extracted from nasm's own output. Neither half alone
+#  removed nasm from the chain. Together they do:
+#
+#      asm_in.asm --ASM_ELF--> (sections, symbols, relocations)
+#                 --EMIT_OBJ_N--> elfobj_out.o
+#
+#  ASM_ELF's continuation `k` has exactly EMIT_OBJ_N's shape
+#  (content -> symlist -> relainfo -> bytes), so the two compose by passing the
+#  emitter AS the continuation — no glue, no intermediate representation to
+#  drift. The record constructors travel the same way: elfobj exports them,
+#  the driver hands them to asm.la, and asm.la stays ignorant of how elfobj
+#  represents a list.
+#
+#  THE GATE IS ONE LEVEL UP: `ld(ours) == ld(nasm)`, not byte-identity of the
+#  `.o`. An object's internal layout (section order, padding, which bytes sit
+#  in a field a relocation will overwrite) is nasm convention, not semantics —
+#  what an object MEANS is what it links to.
+#
+#  Run:  cp <target>.asm asm_in.asm ; ./tiny_host asmelfobj.la
+#        -> elfobj_out.o
+#  The file name passed as the FILE symbol is the source's name, since that is
+#  what nasm records and it survives into the linked .symtab.
+
+import("asm.la")      # ASM_ELF
+import("elfobj.la")   # EMIT_OBJ_N SDESC SREC RINFO RREC CONS NIL
+
+glyph SRCNAME = "asm_in.asm"
+
+glyph MAIN =
+  (la obj.
+    (la _.
+      print(concat(concat("asm.la -f elf64: ")(str_len(obj)))(" bytes -> elfobj_out.o")))
+    (write_file("elfobj_out.o")(obj)))
+  (ASM_ELF(read_file(SRCNAME))(SRCNAME)(SDESC)(SREC)(RINFO)(RREC)(CONS)(NIL)(EMIT_OBJ_N))
