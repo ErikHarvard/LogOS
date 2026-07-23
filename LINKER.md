@@ -521,9 +521,40 @@ a byte written through `.bss`, so "it ran" cannot be true unless both landed.
 **10 negative gates.** And the last check reads the REAL `kernel/kernel.ld`
 (track D's file, read-only, self-skipping if absent) and asserts it parses.
 
-*Honest scope:* parsing kernel.ld is not linking the kernel — that needs the
-kernel's own objects, which belong to track D and whose relocation set is A's
-`-f elf64` output. What is now true is that nothing in the SCRIPT is a blocker.
+**★★ AND THEN IT LINKED THE REAL KERNEL OBJECT — BYTE-IDENTICALLY.** Not the
+fixture: `kernel/boot.asm` assembled `nasm -f elf64 -D HAL4 -i kernel/`, linked
+with `--script=kernel/kernel.ld`, against `ld -n -T kernel/kernel.ld`:
+
+| | entry | segment 1 | segment 2 |
+|---|---|---|---|
+| `ld -n -T` | `0x10000c` | `0x100000` filesz `0x53a` memsz `0xc000` RWE | `0x400000` `0x1000`/`0x1000` RWE |
+| `link.la`  | `0x10000c` | `0x100000` filesz `0x53a` memsz `0xc000` RWE | `0x400000` `0x1000`/`0x1000` RWE |
+
+and **every loadable byte of both segments is byte-identical to ld's** (`cmp`
+over the extracted `p_filesz` spans) — 41 `R_X86_64_64`, 21 `_32` and one `_32S`
+relocation all applied to the same values ld computed. The multiboot magic
+`1BADB002` lands at the top of the image, where a boot loader looks for it. 16
+minutes for an 11 KB object, which is the `DROP`-cost curve, not a wrong
+algorithm.
+
+*The one difference, and it is ld's choice not ours:* `-n` (nmagic) puts ld's
+second segment at file offset `0x153a`, which is NOT congruent to its vaddr mod
+page; ours sits at `0x2000` and keeps the congruence. Both are valid for an
+image a boot loader reads by segment; ours is the stricter one.
+
+**✗ THE HONEST BLOCKER, found by carrying on one step further.** The kernel
+build's next line is `objcopy -O elf32-i386`, and on our image that fails:
+**`the input file 'link_out' has no sections`** — this linker emits no section
+header table (`e_shnum` 0; ld's has 7). Every byte the loader reads is right and
+the container is still not consumable by the build's own next tool. That is item
+12, and it is a real gap rather than a formality: section headers are also what
+`readelf -S`, `nm` and `objdump` need to say anything about our output.
+
+*Honest scope:* this used a STAND-IN `native_codegen3_out` and `entry.inc`
+(track D's `build_hal4.sh` regenerates both through track A's compiler, and
+writing into `kernel/` is not track B's to do), so the .la_image payload was
+4 KB of random bytes. That changes nothing about the link — the payload is
+`incbin`'d data either way — but it does mean this image was never booted.
 
 **11. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
