@@ -21,15 +21,24 @@ def ipck(h):
     while s>>16: s=(s&0xffff)+(s>>16)
     return (~s)&0xffff
 
-def icmp_echo_request():
+def icmp_echo_request(opts=None):
+    # opts=None -> IHL=5 (what every gate before HAL.5j sent). opts=[...] ->
+    # IHL=5+len(opts)//4, so the ICMP header no longer sits at the fixed frame
+    # offset 34 that HAL.5g assumed. See IP_OPTS_NOP4 below.
+    opts = opts or []
+    assert len(opts)%4==0, "IP options must be a multiple of 4 bytes (IHL counts words)"
+    ihl = 5 + len(opts)//4
     icmp=[8,0,0,0, 0,1,0,1]                 # type8 code0 cksum id1 seq1
     c=ipck(icmp); icmp[2]=c>>8; icmp[3]=c&0xff
-    ln=20+len(icmp)
-    ip=[0x45,0,ln>>8,ln&0xff,0,0,0,0,64,1,0,0]+list(PINGER_IP)+list(GUEST_IP)
+    ln=4*ihl+len(icmp)
+    ip=[0x40|ihl,0,ln>>8,ln&0xff,0,0,0,0,64,1,0,0]+list(PINGER_IP)+list(GUEST_IP)+opts
     c=ipck(ip); ip[10]=c>>8; ip[11]=c&0xff
     f=bytes(GUEST_MAC)+bytes(PINGER_MAC)+b'\x08\x00'+bytes(ip)+bytes(icmp)
     if len(f)<60: f=f+b'\x00'*(60-len(f))   # pad to Ethernet min so the NIC keeps it
     return f
+
+def icmp_echo_request_opts():
+    return icmp_echo_request(IP_OPTS_NOP4)
 
 # IP OPTIONS. A 4-byte block of three NOPs + End-of-Option-List: the minimal
 # legal way to make IHL=6 instead of 5. Deliberately semantics-free — the point
@@ -123,6 +132,9 @@ MODES={
     # what makes this mode a DISCRIMINATING gate rather than a second copy of
     # `udp`. valid_udp_echo already parses IHL, so the validator needs no change.
     "udpopt": (udp_request_opts,   valid_udp_echo,   "UDP datagram (IHL=6)", "UDP ECHO"),
+    # HAL.5j: the ICMP twin of udpopt. valid_echo_reply already parses IHL, so
+    # again only the generator changed.
+    "pingopt":(icmp_echo_request_opts, valid_echo_reply, "ICMP echo request (IHL=6)", "ECHO REPLY"),
 }
 
 def main():
