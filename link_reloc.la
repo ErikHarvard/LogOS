@@ -282,21 +282,21 @@ glyph EIDENT = CAT(CONS(chr("127"))(CONS("ELF")(CONS(B1(2))(CONS(B1(1))(
 #   ET_EXEC (2), EM_X86_64 (62). e_shoff/e_shnum/e_shstrndx are 0: section
 #   headers are for linkers and debuggers, not for the loader, and this
 #   produces none. The program runs without them.
-glyph EHDR = la entry. la nph. CAT(
+glyph EHDR = la entry. la nph. la shoff. la shnum. la shstrndx. CAT(
     CONS(EIDENT)(
     CONS(LE2(2))(
     CONS(LE2(62))(
     CONS(LE4(1))(
     CONS(LE8(entry))(
     CONS(LE8(EHSIZE))(
-    CONS(LE8(0))(
+    CONS(LE8(shoff))(
     CONS(LE4(0))(
     CONS(LE2(EHSIZE))(
     CONS(LE2(PHENTSIZE))(
     CONS(LE2(nph))(
-    CONS(LE2(0))(
-    CONS(LE2(0))(
-    CONS(LE2(0))(
+    CONS(LE2(SHENTSIZE))(
+    CONS(LE2(shnum))(
+    CONS(LE2(shstrndx))(
     NIL)))))))))))))))
 
 #   PT_LOAD. p_memsz equals p_filesz here — nothing in these fixtures needs
@@ -485,14 +485,22 @@ glyph SEG_NAMES = la s. SND(s)
 #   produces, so the default travels the new code path rather than a private
 #   one that could drift from it. The gate's no-script regression is what keeps
 #   that claim honest.
+#   ★ ONE ITEM PER OUTPUT SECTION, not one per segment. The three-item form
+#   placed identically (the cursor runs through a segment's names in order
+#   either way), but an output section is what a section HEADER describes, so
+#   the built-in layout has to name its output sections for the same reason a
+#   script does.
 glyph DEFITEMS =
   CONS(MKIADDR(SM_ABS)(TEXT_BASE))(
-  CONS(MKISEC("#1")(FALSE)(CONS(".text")(NIL)))(
+  CONS(MKISEC(".text")("#1")(FALSE)(CONS(".text")(NIL)))(
   CONS(MKIADDR(SM_ALIGN)(PAGE))(
-  CONS(MKISEC("#2")(FALSE)(CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(NIL)))))(
+  CONS(MKISEC(".rodata")("#2")(FALSE)(CONS(".rodata")(NIL)))(
+  CONS(MKISEC(".eh_frame")("#2")(FALSE)(CONS(".eh_frame")(NIL)))(
+  CONS(MKISEC(".got")("#2")(FALSE)(CONS(".got")(NIL)))(
   CONS(MKIADDR(SM_ALIGN)(PAGE))(
-  CONS(MKISEC("#3")(FALSE)(CONS(".data")(CONS(".bss")(NIL))))(
-  NIL))))))
+  CONS(MKISEC(".data")("#3")(FALSE)(CONS(".data")(NIL)))(
+  CONS(MKISEC(".bss")("#3")(FALSE)(CONS(".bss")(NIL)))(
+  NIL)))))))))
 glyph DEFSEGS =
   CONS(SEG(F_RX)(CONS(".text")(NIL)))(
   CONS(SEG(F_R)(CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(NIL)))))(
@@ -798,6 +806,129 @@ glyph ETYPE = la objs. la e.
     IF(GOTENTRY(e))(la _. 1)(la _.
     IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE_M(E_SECTAB(objs)(e))(E_SEC(e))))
 
+glyph EALIGN = la objs. la e.
+    IF(GOTENTRY(e))(la _. 8)(la _.
+    IF(EHENTRY(e))(la _. 8)(la _. SH_ALIGN_M(E_SECTAB(objs)(e))(E_SEC(e))))
+#   An entry's own ELF section flags. The two SYNTHESISED sections have no input
+#   to read them from: both hold link-time-resolved, never-written data, so both
+#   are plain SHF_ALLOC.
+glyph EFLAGS = la objs. la e.
+    IF(GOTENTRY(e))(la _. 2)(la _.
+    IF(EHENTRY(e))(la _. 2)(la _. SH_FLAGS_M(E_SECTAB(objs)(e))(E_SEC(e))))
+#   No bitwise operators in this language, so a flag test is arithmetic:
+#   SHF_WRITE is bit 0, SHF_EXECINSTR is bit 2.
+glyph HAS_W = la f. int_eq(mod(f)(2))(1)
+glyph HAS_X = la f. int_eq(mod(div(f)(4))(2))(1)
+
+# ── THE SECTION HEADER TABLE ────────────────────────────────────────────────
+#   ★ WHY THIS EXISTS, AND WHY IT WAS FOUND LATE. The linker emitted no section
+#   headers at all: `e_shnum` 0. Every gate passed, because every gate asked
+#   what the LOADER sees — and the loader reads program headers, not section
+#   headers. Then the real kernel image was linked byte-identically to ld's and
+#   the build's NEXT line, `objcopy -O elf32-i386`, refused it outright: "the
+#   input file has no sections". Nothing about the bytes was wrong; the
+#   container simply could not be spoken to by the tools that come after. Run
+#   the real consumer's next step, not only your own criterion.
+#
+#   One header per OUTPUT SECTION of the script (which is why the parser now
+#   keeps the output name), spanning that section's plan entries, plus the
+#   mandatory NULL header and a `.shstrtab` holding the names. No symbol table
+#   yet — `nm` still says "no symbols" — but `objcopy`, `readelf -S` and
+#   `objdump -h` all work on the output now.
+glyph SHT_PROGBITS = 1
+glyph SHT_STRTAB   = 3
+glyph SHENTSIZE    = 64
+
+#   A section's extent over the plan: (lo, hi, all-nobits, max-align). `lo` is
+#   -1 when the script named an output section nothing matched — an empty
+#   section gets no header rather than a zero-length one at address 0.
+glyph OS_LO = la x. FST(x)
+glyph OS_HI = la x. FST(SND(x))
+glyph OS_NB = la x. FST(SND(SND(x)))
+glyph OS_AL = la x. FST(SND(SND(SND(x))))
+glyph OS_FL = la x. SND(SND(SND(SND(x))))
+glyph OSEXT = la objs. la pats. la plan. (Z(la self. la l. la lo. la hi. la nb. la al. la fl.
+    l(PAIR(lo)(PAIR(hi)(PAIR(nb)(PAIR(al)(fl)))))(la h. la t.
+      IF(MATCHANY(pats)(ENAME(objs)(h)))
+        (la _. self(t)(IF(lt(lo)(0))(la _. E_ADDR(h))(la _. lo))
+                      (add(E_ADDR(h))(ESIZE(objs)(h)))
+                      (AND(nb)(int_eq(ETYPE(objs)(h))(SH_NOBITS)))
+                      (IF(lt(al)(EALIGN(objs)(h)))(la _. EALIGN(objs)(h))(la _. al))
+                      (ORFLAGS(fl)(EFLAGS(objs)(h))))
+        (la _. self(t)(lo)(hi)(nb)(al)(fl)))))(plan)(sub(0)(1))(0)(TRUE)(1)(2)
+#   The OR of two flag words, spelled out because there are no bitwise ops: the
+#   only bits that can appear here are ALLOC (always set), WRITE and EXECINSTR.
+glyph ORFLAGS = la a. la b.
+    add(2)(add(IF(OR(HAS_W(a))(HAS_W(b)))(la _. 1)(la _. 0))
+              (IF(OR(HAS_X(a))(HAS_X(b)))(la _. 4)(la _. 0)))
+
+#   ★ A SECTION'S FLAGS COME FROM ITS INPUT SECTIONS, NOT FROM ITS SEGMENT.
+#   The first version read them off the segment's PERMISSIONS, which looks
+#   equivalent and is not: kernel.ld declares `FLAGS(7)`, so every section came
+#   out `WAX` where ld emits `A`, `WA`, `A` — the segment says what the LOADER
+#   may do with the page, the section says what the CONTENT is. ld ORs the
+#   inputs, and doing the same reproduces its table exactly (the kernel's
+#   `.boot` is `A` because `.multiboot`/`.boot32`/`.rodata` are all `A`).
+#   ★ The gate compared name, address and size and used the flags column only to
+#   FILTER for allocatable — so it would have passed this. It compares flags now.
+
+#   A section's file offset: found through the REGION that contains it, so it
+#   cannot disagree with the segment the loader will map it from.
+glyph OFFOF = la roffs. la addr. (Z(la self. la l.
+    l(0)(la h. la t.
+      (la r. IF(AND(NOT(lt(addr)(R_BASE(r))))(lt(addr)(add(R_BASE(r))(R_MEMSZ(r)))))
+               (la _. add(ROFF(h))(sub(addr)(R_BASE(r))))
+               (la _. self(t)))
+      (RREG(h)))))(roffs)
+
+#   .shstrtab: a NUL, then every name NUL-terminated. A name's sh_name is its
+#   byte offset into it, computed by the same walk that builds it so the two
+#   cannot drift.
+glyph STRTAB_BYTES = la names. concat(B1(0))((Z(la self. la l.
+    l("")(la h. la t. concat(concat(h)(B1(0)))(self(t)))))(names))
+glyph STRTAB_OFF = la names. la nm. (Z(la self. la l. la off.
+    l(0)(la h. la t.
+      IF(str_eq(h)(nm))(la _. off)(la _. self(t)(add(off)(add(LENS(h))(1)))))))(names)(1)
+glyph LENS = la s. str_to_int(str_len(s))
+
+#   The output sections that actually got placed, in script order.
+glyph PLACEDSECS = la items. la objs. la plan. (Z(la self. la l.
+    l(NIL)(la h. la t.
+      IF(int_eq(IT_KIND(h))(IK_SEC))
+        (la _. IF(lt(OS_LO(OSEXT(objs)(IT_NAMES(h))(plan)))(0))
+                 (la _. self(t))
+                 (la _. CONS(h)(self(t))))
+        (la _. self(t)))))(items)
+
+glyph SHDR = la nameoff. la ty. la flags. la addr. la off. la size. la align. CAT(
+    CONS(LE4(nameoff))(
+    CONS(LE4(ty))(
+    CONS(LE8(flags))(
+    CONS(LE8(addr))(
+    CONS(LE8(off))(
+    CONS(LE8(size))(
+    CONS(LE4(0))(
+    CONS(LE4(0))(
+    CONS(LE8(align))(
+    CONS(LE8(0))(
+    NIL)))))))))))
+glyph NULLSHDR = ZEROS(SHENTSIZE)
+
+glyph SHDRS = la secs. la names. la objs. la segs. la plan. la roffs. la strtaboff. la strtabsz.
+    CAT(CONS(NULLSHDR)(CONS((Z(la self. la l.
+      l("")(la h. la t.
+        (la x. concat(SHDR(STRTAB_OFF(names)(IT_ONAME(h)))
+                          (IF(OS_NB(x))(la _. SH_NOBITS)(la _. SHT_PROGBITS))
+                          (OS_FL(x))
+                          (OS_LO(x))
+                          (OFFOF(roffs)(OS_LO(x)))
+                          (sub(OS_HI(x))(OS_LO(x)))
+                          (OS_AL(x)))
+                     (self(t)))
+        (OSEXT(objs)(IT_NAMES(h))(plan)))))(secs))(
+    CONS(SHDR(STRTAB_OFF(names)(".shstrtab"))(SHT_STRTAB)(0)(0)
+             (strtaboff)(strtabsz)(1))(NIL))))
+
 #   ★ RELOCATIONS ARE APPLIED TO EVERY PLACED SECTION, not only .text.
 #   Applying just `.rela.text` was a CONFIRMED silent-wrongness bug: an object
 #   with `msgptr: dq msg` carries a `.rela.data`, and its `.data` was placed but
@@ -892,6 +1023,25 @@ glyph LENL    = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
 #   with their regions, so the phdrs and the body cannot disagree about where a
 #   segment's bytes are — a disagreement the loader would resolve by running
 #   the wrong bytes.
+#   Where the loadable image ends in the FILE — the section-name table and the
+#   section headers go after it, so nothing the loader reads moves when they
+#   are added (the gate asserts exactly that).
+#   ★ A REGION WITH NO FILE BYTES IS SKIPPED, exactly as BODY skips it. It has
+#   an assigned offset, and that offset can sit PAST the last byte anyone wrote
+#   — BODY deliberately emits nothing for it. Counting it made this answer a
+#   position no byte occupies, so the section table was written at an offset
+#   the file never reached and `readelf` read past EOF: "Reading 320 bytes
+#   extends past end of file". Two places computing "where the body ends" must
+#   use one rule, and the rule is BODY's.
+glyph BODYEND = la roffs. (Z(la self. la l. la end.
+    l(end)(la h. la t.
+      (la n. IF(int_eq(n)(0))
+               (la _. self(t)(end))
+               (la _. (la e. self(t)(IF(lt(end)(e))(la _. e)(la _. end)))
+                      (add(ROFF(h))(n))))
+      (str_to_int(str_len(R_BYTES(RREG(h))))))))(roffs)(0)
+glyph SECNAMES = la secs. (Z(la self. la l.
+    l(NIL)(la h. la t. CONS(IT_ONAME(h))(self(t)))))(secs)
 glyph ROFF    = la ro. SND(ro)
 glyph RREG    = la ro. FST(ro)
 glyph ROFFS   = la regs. REV((Z(la self. la l. la cur. la acc.
@@ -1415,13 +1565,23 @@ glyph MAIN =
   (la regs.
   (la roffs.
   (la nph.
+  (la secs.
+  (la shnames.
+  (la strtab.
+  (la strtaboff.
+  (la shoff.
     SEQ(DUPCHECK(objs))(
     SEQ(write_file("link_text.bin")(TEXTBYTES(regs)))(
     SEQ(write_exec("link_out")(CAT(
-          CONS(EHDR(ENTRYOF(entry)(resolve))(nph))(
+          CONS(EHDR(ENTRYOF(entry)(resolve))(nph)(shoff)(add(LENL(secs))(2))
+                   (add(LENL(secs))(1)))(
           CONS(PHDRS(roffs))(
           CONS(BODY(roffs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
-          NIL))))))(
+          CONS(ZEROS(sub(strtaboff)(BODYEND(roffs))))(
+          CONS(strtab)(
+          CONS(ZEROS(sub(shoff)(add(strtaboff)(LENS(strtab)))))(
+          CONS(SHDRS(secs)(shnames)(objs)(segs)(plan)(roffs)(strtaboff)(LENS(strtab)))(
+          NIL))))))))))(
     print(CAT(
       CONS("linked ")(
       CONS(int_to_str(LENL(objs)))(
@@ -1431,6 +1591,11 @@ glyph MAIN =
       CONS(int_to_str(ENTRYOF(entry)(resolve)))(
       CONS(NL)(
       NIL))))))))))))
+  )(ALIGNUP(add(strtaboff)(LENS(strtab)))(8))
+  )(BODYEND(roffs))
+  )(STRTAB_BYTES(shnames))
+  )(APPL(SECNAMES(secs))(CONS(".shstrtab")(NIL)))
+  )(PLACEDSECS(items)(objs)(plan))
   )(LENL(regs))
   )(ROFFS(regs))
   )(MKREGIONS(segs)(objs)(nolo)(patched)(plan))

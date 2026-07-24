@@ -46,15 +46,14 @@
 #  and produces a wrong binary, so each is an explicit halt naming the token.
 #
 #  ── HONEST SCOPE ────────────────────────────────────────────────────────────
-#  The output section NAME is parsed and then IGNORED (this linker emits no
-#  section headers, so a name has no output to appear in); only PT_LOAD phdrs;
+#  Only PT_LOAD phdrs;
 #  FLAGS is required where a PHDRS block exists (ld would infer — we will not
 #  infer a permission); no MEMORY, no symbol assignments, no expressions beyond
 #  ALIGN, and no wildcard except a trailing star.
 # =====================================================================
 
 export PARSE_SCRIPT SC_ENTRY SC_ITEMS SC_GROUPS SC_DISCARD
-export IT_KIND IT_MODE IT_VAL IT_KEY IT_NOLOAD IT_NAMES IK_ADDR IK_SEC
+export IT_KIND IT_MODE IT_VAL IT_KEY IT_NOLOAD IT_NAMES IT_ONAME IK_ADDR IK_SEC
 export GR_FLAGS GR_NAMES SM_ABS SM_ALIGN MATCHPAT MKIADDR MKISEC
 
 # ── prelude: the standard combinators (private; the module alpha-renames) ────
@@ -222,13 +221,20 @@ glyph SM_ALIGN = 1
 glyph IK_ADDR  = 0
 glyph IK_SEC   = 1
 glyph MKIADDR = la mode. la val. PAIR(IK_ADDR)(PAIR(mode)(PAIR(val)(NIL)))
-glyph MKISEC  = la key. la noload. la names. PAIR(IK_SEC)(PAIR(key)(PAIR(noload)(names)))
+#   ★ The output section NAME is kept now. Slice 9 dropped it with the note
+#   "this linker emits no section headers, so a name has no output to appear
+#   in" — which was true and stopped being true the moment `objcopy` refused an
+#   image with no section table. A parser that discards what it parsed is a
+#   decision with an expiry date.
+glyph MKISEC  = la oname. la key. la noload. la names.
+    PAIR(IK_SEC)(PAIR(oname)(PAIR(key)(PAIR(noload)(names))))
 glyph IT_KIND   = la i. FST(i)
 glyph IT_MODE   = la i. FST(SND(i))
 glyph IT_VAL    = la i. FST(SND(SND(i)))
-glyph IT_KEY    = la i. FST(SND(i))
-glyph IT_NOLOAD = la i. FST(SND(SND(i)))
-glyph IT_NAMES  = la i. SND(SND(SND(i)))
+glyph IT_ONAME  = la i. FST(SND(i))
+glyph IT_KEY    = la i. FST(SND(SND(i)))
+glyph IT_NOLOAD = la i. FST(SND(SND(SND(i))))
+glyph IT_NAMES  = la i. SND(SND(SND(SND(i))))
 glyph GR_FLAGS  = la g. FST(g)
 glyph GR_NAMES  = la g. SND(g)
 glyph SC_ENTRY   = la sc. FST(sc)
@@ -283,10 +289,10 @@ glyph FLAGSOF = la phdrs. la nm. (Z(la self. la l.
 #   readable at one nesting level.
 
 #   `*( <pattern> )` — the only thing allowed inside an output section.
-glyph PATSTEP = la self. la t. la items. la cur. la key. la nol. la isd. la an. la disc.
+glyph PATSTEP = la self. la t. la items. la cur. la on. la key. la nol. la isd. la an. la disc.
     IF(AND(str_eq(NTH(t)(0))("("))(str_eq(NTH(t)(2))(")")))
       (la _. SEQ(CHKPATOK(NTH(t)(1)))
-                (self(DROPL(3)(t))(items)(CONS(NTH(t)(1))(cur))(key)(nol)(isd)(an)(disc)(TRUE)))
+                (self(DROPL(3)(t))(items)(CONS(NTH(t)(1))(cur))(on)(key)(nol)(isd)(an)(disc)(TRUE)))
       (la _. error("link script: expected `*(<section>)' inside an output section"))
 
 #   The closing `}` of an output section, and the `:phdr` that may follow it.
@@ -294,21 +300,21 @@ glyph PATSTEP = la self. la t. la items. la cur. la key. la nol. la isd. la an. 
 #   script that has no PHDRS block gets the synthetic key `#<n>` of the last
 #   location assignment, which is precisely the old one-segment-per-`. =` rule
 #   — so both spellings of "which segment" reach the linker as one concept.
-glyph ENDBLK = la self. la t. la items. la cur. la key. la nol. la isd. la an. la disc.
+glyph ENDBLK = la self. la t. la items. la cur. la on. la key. la nol. la isd. la an. la disc.
     IF(isd)
-      (la _. self(t)(items)(NIL)("")(FALSE)(FALSE)(an)(APP(disc)(REV(cur)(NIL)))(FALSE))
+      (la _. self(t)(items)(NIL)("")("")(FALSE)(FALSE)(an)(APP(disc)(REV(cur)(NIL)))(FALSE))
       (la _. IF(str_eq(NTH(t)(0))(":"))
         (la _. IF(EMPTY(NTH(t)(1)))
           (la _. error("link script: expected a segment name after `:'"))
-          (la _. self(DROPL(2)(t))(CONS(MKISEC(NTH(t)(1))(nol)(REV(cur)(NIL)))(items))
-                     (NIL)("")(FALSE)(FALSE)(an)(disc)(FALSE)))
-        (la _. self(t)(CONS(MKISEC(key)(nol)(REV(cur)(NIL)))(items))
-                   (NIL)("")(FALSE)(FALSE)(an)(disc)(FALSE)))
-glyph BLKSTEP = la self. la h. la t. la items. la cur. la key. la nol. la isd. la an. la disc.
+          (la _. self(DROPL(2)(t))(CONS(MKISEC(on)(NTH(t)(1))(nol)(REV(cur)(NIL)))(items))
+                     (NIL)("")("")(FALSE)(FALSE)(an)(disc)(FALSE)))
+        (la _. self(t)(CONS(MKISEC(on)(key)(nol)(REV(cur)(NIL)))(items))
+                   (NIL)("")("")(FALSE)(FALSE)(an)(disc)(FALSE)))
+glyph BLKSTEP = la self. la h. la t. la items. la cur. la on. la key. la nol. la isd. la an. la disc.
     IF(str_eq(h)("}"))
-      (la _. ENDBLK(self)(t)(items)(cur)(key)(nol)(isd)(an)(disc))
+      (la _. ENDBLK(self)(t)(items)(cur)(on)(key)(nol)(isd)(an)(disc))
       (la _. IF(str_eq(h)("*"))
-               (la _. PATSTEP(self)(t)(items)(cur)(key)(nol)(isd)(an)(disc))
+               (la _. PATSTEP(self)(t)(items)(cur)(on)(key)(nol)(isd)(an)(disc))
                (la _. error(concat("link script: unsupported token inside an output section: ")(h))))
 
 #   `. = <number>;` or `. = ALIGN(<number>);`
@@ -319,17 +325,16 @@ glyph DOTSTEP = la self. la t. la items. la an. la disc.
         (la _. IF(AND(str_eq(NTH(t)(2))("("))
                      (AND(str_eq(NTH(t)(4))(")"))(str_eq(NTH(t)(5))(";"))))
                  (la _. self(DROPL(6)(t))(CONS(MKIADDR(SM_ALIGN)(NUMV(NTH(t)(3))))(items))
-                            (NIL)("")(FALSE)(FALSE)(add(an)(1))(disc)(FALSE))
+                            (NIL)("")("")(FALSE)(FALSE)(add(an)(1))(disc)(FALSE))
                  (la _. error("link script: expected `. = ALIGN(<number>);'")))
         (la _. IF(str_eq(NTH(t)(2))(";"))
                  (la _. self(DROPL(3)(t))(CONS(MKIADDR(SM_ABS)(NUMV(NTH(t)(1))))(items))
-                            (NIL)("")(FALSE)(FALSE)(add(an)(1))(disc)(FALSE))
+                            (NIL)("")("")(FALSE)(FALSE)(add(an)(1))(disc)(FALSE))
                  (la _. error("link script: expected `. = <number>;'"))))
 
 #   `<name> [(NOLOAD)] : {` — an output section header, or `/DISCARD/ : {`.
-#   The output name is consumed and dropped (see HONEST SCOPE); what matters is
-#   which patterns join which group, and whether the section occupies file
-#   bytes.
+#   The output name is CARRIED now: it becomes the name in the emitted section
+#   header table.
 #   ★ A section placed before the location counter has been set would land at
 #   address 0 — silently, since nothing else in the pipeline knows the cursor
 #   was never positioned. /DISCARD/ is exempt: it places nothing, so it has no
@@ -340,7 +345,7 @@ glyph SECHDR = la self. la h. la t. la items. la an. la disc. la nol. la skip.
       (la _. SECHDR2(self)(h)(t)(items)(an)(disc)(nol)(skip))
 glyph SECHDR2 = la self. la h. la t. la items. la an. la disc. la nol. la skip.
     IF(AND(str_eq(NTH(t)(skip))(":"))(str_eq(NTH(t)(add(skip)(1)))("{")))
-      (la _. self(DROPL(add(skip)(2))(t))(items)(NIL)
+      (la _. self(DROPL(add(skip)(2))(t))(items)(NIL)(h)
                  (concat("#")(int_to_str(an)))(nol)(str_eq(h)("/DISCARD/"))(an)(disc)(TRUE))
       (la _. error(CAT(CONS("link script: expected `<name> : {' at ")
                       (CONS(h)(CONS(", found: ")(CONS(NTH(t)(skip))(NIL)))))))
@@ -357,11 +362,11 @@ glyph OUTSTEP = la self. la h. la t. la items. la an. la disc.
 #   ★ The NIL branch is a THUNK. Arguments are evaluated on application in this
 #   host, so `l(error(...))(...)` would raise on EVERY call, including the ones
 #   that succeed — the "order is structure" trap, in its cheapest form.
-glyph SBODY = Z(la self. la l. la items. la cur. la key. la nol. la isd. la an. la disc. la inblk.
+glyph SBODY = Z(la self. la l. la items. la cur. la on. la key. la nol. la isd. la an. la disc. la inblk.
     (l(la _. error("link script: unterminated SECTIONS block"))
        (la h. la t. la _.
          IF(inblk)
-           (la _. BLKSTEP(self)(h)(t)(items)(cur)(key)(nol)(isd)(an)(disc))
+           (la _. BLKSTEP(self)(h)(t)(items)(cur)(on)(key)(nol)(isd)(an)(disc))
            (la _. IF(str_eq(h)("}"))
                     (la _. PAIR(REV(items)(NIL))(PAIR(disc)(t)))
                     (la _. IF(str_eq(h)("."))
@@ -481,7 +486,7 @@ glyph PARSE_SCRIPT = la text.
                             PAIR(ENTRYSYM(toks))(PAIR(items)(
                                  PAIR(MKGROUPS(items)(phdrs))(FST(SND(r))))))
                           (FST(r))))
-                   (SBODY(DROPL(add(si)(2))(toks))(NIL)(NIL)("")(FALSE)(FALSE)(0)(NIL)(FALSE))))))
+                   (SBODY(DROPL(add(si)(2))(toks))(NIL)(NIL)("")("")(FALSE)(FALSE)(0)(NIL)(FALSE))))))
       (IDXTOK(toks)("SECTIONS")))
       (PHDRSOF(toks)))
     (TOKS(UNCOMMENT(text)))

@@ -265,6 +265,54 @@ neg "a derived segment that would need W+X" "would need W+X" "link_in1.o link_in
 'SECTIONS { . = 0x500000; .all : { *(.text) *(.data) } }
 '
 
+# ══ PART 6 — THE SECTION HEADER TABLE ══════════════════════════════════════
+#   The linker emitted no section headers at all until now (`e_shnum` 0), and
+#   every gate passed, because every gate asked what the LOADER sees — and the
+#   loader reads program headers. The gap surfaced only when the real kernel
+#   image was linked byte-identically to ld's and the build's NEXT line,
+#   `objcopy -O elf32-i386`, refused it: "the input file has no sections".
+#   So the assertion here is the CONSUMER's, not ours: objcopy must accept it.
+#
+#   Note what is already covered elsewhere and deliberately not repeated: that
+#   adding the table moved no loadable byte is exactly what Parts 1-2 check, by
+#   comparing every LOAD segment's offset and size against ld's.
+#   ★ FLAGS ARE COMPARED, not merely used to filter. The first version of this
+#   printed (name, address, size) and used the flags column only to select the
+#   allocatable sections — so it passed an output whose every section was marked
+#   WAX (flags taken from the segment's permissions) where ld emits A / WA / A.
+#   A field you filter on is a field you are not checking.
+sec_quads() {   # ALLOC sections as (name addr size flags) — all four must agree with ld
+    readelf -SW "$1" | sed 's/^ *\[[ 0-9]*\] *//' | awk '$1 ~ /^\./ && $7 ~ /A/ {print $1, $3, $5, $7}'
+}
+
+for pair in "$SCRIPT:link_in1.o link_in2.o" "$KSCRIPT:link_in3.o"; do
+    scr=${pair%%:*}; objs=${pair#*:}
+    ld -o sec_ref $objs -T "$scr" 2>/dev/null
+    printf -- '--script=%s\n' "$scr" > link_inputs.txt
+    printf '%s\n' $objs | tr ' ' '\n' >> link_inputs.txt
+    rm -f link_out
+    if out=$(timeout 400 ./tiny_host link_reloc.la 2>&1); then :; else
+        echo "FAIL  link_script sections [$scr]: link failed: $out"; ok=0; continue; fi
+
+    if objcopy -O elf32-i386 link_out sec_out32 2>sec_err; then
+        echo "PASS  link_script sections [$scr]: objcopy -O elf32-i386 ACCEPTS the image (this is the kernel build's own next step)"
+    else
+        echo "FAIL  link_script sections [$scr]: objcopy refuses it: $(cat sec_err)"; ok=0
+    fi
+
+    ours=$(sec_quads link_out); theirs=$(sec_quads sec_ref)
+    [ -n "$theirs" ] || { echo "FAIL  link_script sections [$scr]: ld's own section list came back empty — the comparison would be vacuous"; ok=0; }
+    if [ "$ours" = "$theirs" ]; then
+        echo "PASS  link_script sections [$scr]: $(echo "$ours" | wc -l) allocatable sections, name/address/size/FLAGS identical to ld's"
+    else
+        echo "FAIL  link_script sections [$scr]: allocatable sections differ from ld's"
+        echo "        ld  : $(echo "$theirs" | tr '\n' '|')"
+        echo "        ours: $(echo "$ours"   | tr '\n' '|')"
+        ok=0
+    fi
+    rm -f sec_ref sec_out32 sec_err
+done
+
 # ══ PART 5 — the real kernel script parses ════════════════════════════════
 #   `kernel/kernel.ld` belongs to track D, so this reads it and never writes it,
 #   and it SKIPS when absent. It is a real assertion rather than a note because

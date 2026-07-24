@@ -300,6 +300,22 @@ if [ -x link_out ]; then
     #   reads, whatever the section count. (Prompted by track A's review — the
     #   claim there was that no assertion existed, which was wrong; the real
     #   defect was that the assertion could not survive the next section.)
+    #
+    #   ★★ AND IT DID NOT SURVIVE THE NEXT *STRUCTURE*. That version assumed
+    #   nothing may follow the last loadable byte, which held only while the
+    #   linker emitted no section header table. It emits one now (so that
+    #   `objcopy` can read the output at all), and a section table legitimately
+    #   lives past the segments — ld's own file does exactly this. The gate went
+    #   RED on a correct image.
+    #
+    #   The INTENT survives, so it is restated one level up rather than
+    #   loosened: the file must end exactly where the SECTION TABLE ends, and
+    #   only alignment may separate the last loadable byte from the section-name
+    #   table. Dead padding is still caught anywhere it could hide — before the
+    #   name table, or after the headers — but the bytes tools actually read are
+    #   no longer counted as waste. Twice now this assertion has been re-derived
+    #   at a higher level; each time the magic-number version would have been
+    #   "fixed" by raising a threshold, which is how a guard becomes decorative.
     fsz=$(stat -c%s link_out)
     lastend=0
     for pair in $(readelf -l --wide link_out 2>/dev/null | awk '/^  LOAD/ {print $2","$5}'); do
@@ -308,8 +324,24 @@ if [ -x link_out ]; then
         end=$(( $(printf '%d' "$poff") + $(printf '%d' "$pfsz") ))
         [ "$end" -gt "$lastend" ] && lastend=$end
     done
-    [ "$fsz" = "$lastend" ] \
-        || { echo "FAIL  link_reloc.la: file is $fsz bytes but its last loadable byte is at $lastend — $((fsz - lastend)) bytes of padding nothing reads"; ok=0; }
+    shoff=$(readelf -hW link_out | awk '/Start of section headers/{print $5}')
+    shnum=$(readelf -hW link_out | awk '/Number of section headers/{print $5}')
+    shent=$(readelf -hW link_out | awk '/Size of section headers/{print $5}')
+    stroff=$(readelf -SW link_out | sed 's/^ *\[[ 0-9]*\] *//' \
+             | awk '$1==".shstrtab"{print $4}')
+    #   ★ Assert the measurement parsed before asserting anything about it: an
+    #   empty $shnum would make the arithmetic below silently agree with itself.
+    if [ -z "$shoff" ] || [ -z "$shnum" ] || [ -z "$shent" ] || [ -z "$stroff" ] \
+       || [ "$shnum" -lt 2 ]; then
+        echo "FAIL  link_reloc.la: could not read the section table (shoff=$shoff shnum=$shnum shent=$shent stroff=$stroff) — the file-size check would be vacuous"; ok=0
+    else
+        tabend=$(( shoff + shnum * shent ))
+        [ "$fsz" = "$tabend" ] \
+            || { echo "FAIL  link_reloc.la: file is $fsz bytes but the section table ends at $tabend — $((fsz - tabend)) bytes nothing reads"; ok=0; }
+        slack=$(( $(printf '%d' "0x$stroff") - lastend ))
+        [ "$slack" -ge 0 ] && [ "$slack" -le 7 ] \
+            || { echo "FAIL  link_reloc.la: $slack bytes between the last loadable byte ($lastend) and the section-name table (0x$stroff) — more than alignment"; ok=0; }
+    fi
     BGOT=$(./link_out); BRC2=$?
     BWANT=$(./link_ref_bss)
     [ "$BGOT" = "$BWANT" ] && [ "$BRC2" = "0" ] \

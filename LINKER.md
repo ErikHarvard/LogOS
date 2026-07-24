@@ -556,6 +556,74 @@ writing into `kernel/` is not track B's to do), so the .la_image payload was
 4 KB of random bytes. That changes nothing about the link — the payload is
 `incbin`'d data either way — but it does mean this image was never booted.
 
+**✔ 12. A SECTION HEADER TABLE — the container tools can read.** The linker
+emitted none (`e_shnum` 0), and every gate passed, because every gate asked what
+the LOADER sees — and the loader reads program headers. `objcopy -O elf32-i386`,
+the kernel build's very next line, refused the image outright: *"the input file
+has no sections"*. One header per OUTPUT SECTION (which is why the parser now
+KEEPS the output name it used to discard), plus the mandatory NULL header and a
+`.shstrtab`. `objcopy`, `readelf -S` and `objdump -h` all read the output now;
+`nm` still reports no symbols, since there is no symtab yet.
+
+**Verified on the real kernel object, not just the fixture** — name, type, flags
+and size identical to `ld -n -T kernel/kernel.ld`'s, segment 1 still
+byte-identical, `objcopy` accepting it, and the run completing (`RC=0`) rather
+than being cut off by a timeout as the previous attempt was:
+
+| | ours | ld |
+|---|---|---|
+| `.boot` | PROGBITS A 0x53a | PROGBITS A 0x53a |
+| `.bss` | NOBITS WA 0xb000 | NOBITS WA 0xb000 |
+| `.la_image` | PROGBITS A 0x1000 | PROGBITS A 0x1000 |
+
+**★ A SECTION'S FLAGS COME FROM ITS INPUTS, NOT FROM ITS SEGMENT.** The first
+version read them off the segment's permissions, which looks equivalent and is
+not: kernel.ld declares `FLAGS(7)`, so every section came out `WAX` where ld
+emits `A`/`WA`/`A`. A segment's flags say what the loader may do with the page;
+a section's say what the content IS. ld ORs the inputs, and doing the same
+reproduces its table exactly. **The gate would have passed the broken version** —
+it compared name/address/size and used the flags column only to FILTER for
+allocatable. *A field you filter on is a field you are not checking.* It
+compares all four now.
+
+**★★ THE BUG THE NEW GUARD CAUGHT ON ITS FIRST RUN.** `BODYEND` took the maximum
+offset over ALL regions — including a segment that is entirely `.bss`, which has
+an assigned offset but which `BODY` deliberately writes NOTHING for. So it
+returned a position no byte occupies, the section table was written at an offset
+the file never reached, and the table was truncated: `readelf: Error: Reading
+320 bytes extends past end of file`. Any script giving `.bss` its own segment —
+an ordinary layout — would have produced a corrupt table. (kernel.ld happens not
+to: its `.bss` shares the `:boot` segment with `.boot`, so that region has file
+bytes.) **Two places computing "where the body ends" must use ONE rule**, and the
+rule is BODY's: skip empty regions. Caught by the "assert the measurement
+parsed" guard written into the file-size check precisely so it could not be
+vacuous.
+
+**The file-size assertion, re-derived a second time.** It began as
+`fsz < 12288` — a magic threshold track A's review correctly called brittle —
+then became "the file must end exactly where its last loadable segment ends".
+That held only while no section table existed. The INTENT is restated one level
+up rather than loosened: the file must end exactly where the SECTION TABLE ends,
+and only alignment may separate the last loadable byte from the name table. Dead
+padding is still caught wherever it could hide. Each time, the tempting fix was
+to raise a number until it passed, which is how a guard becomes decorative.
+
+*Honest differences from ld, recorded:* a NOBITS section's `sh_offset` is
+conventional (it owns no file bytes) — ours derives from the vaddr, ld packs it
+after the previous section; `objcopy`/`objdump` read both. And there is still no
+`.symtab`/`.strtab`, so `nm` on the output says "no symbols".
+
+**★ A NOTE ON TIMING MEASUREMENTS ON THIS MACHINE.** The kernel link was 960 s
+of user CPU before this slice and 1950 s after, which looked like a 2x
+regression and was attributed first to another track's concurrent compiles
+(refuted: `user == wall`) and then to this slice (refuted: an A/B of both
+versions on the same fixture, at two sizes, is identical to within 0.2 s). The
+governor is `powersave` and the per-core clock ranges **800-5284 MHz, a 6.6x
+spread** — so `user` CPU time is NOT a stable unit of work here, and absolute
+times from different runs are not comparable. Only back-to-back A/B in one
+session is. The real cost driver is object SIZE (1 KB -> 56 s, 5.7 KB -> 165 s),
+which is the known `DROP` curve.
+
 **11. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
 chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
 back, require agreement with `readelf` on the same file.
