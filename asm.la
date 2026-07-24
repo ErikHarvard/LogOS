@@ -929,6 +929,15 @@ glyph ISSEG  = la t. ISSOME(LOOKREG(t)(SEGS))
 glyph SEGNUM = la t. OPTV(LOOKREG(t)(SEGS))
 glyph SPECMODRM = la sel. la r. B(add(192)(add(mul(sel)(8))(mod(r)(8))))
 
+#   The A3/A1 moffs form applies only when EVERY condition holds: 32-bit mode
+#   (in 64-bit the moffs operand is a full 64-bit address, a different form),
+#   a bare absolute address with no index, the accumulator, and the native
+#   32-bit width. Anything else must stay on the general path, so this is a
+#   conjunction rather than a guess.
+glyph MOFFSOK = la mode. la a. la w. la r.
+    AND(int_eq(mode)(32))
+      (AND(MEMABS(a))(AND(lt(MEMIDX(a))(0))
+        (AND(int_eq(w)(4))(int_eq(REGNUM(r))(0)))))
 glyph MOVENC = la labs. la w. la a. la b.
     IF(ISCR(a))
       (la _. concat(B(15))(concat(B(34))(SPECMODRM(CRNUM(a))(REGNUM(b)))))
@@ -942,7 +951,15 @@ glyph MOVENC = la labs. la w. la a. la b.
       (la _. IF(ISVAL(b))
                (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b))(BITSMODE(labs)))
              (la _. IF(ISREG(b))
-               (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs)))
+               (la _. IF(MOFFSOK(BITSMODE(labs))(a)(w)(b))
+                 #   The accumulator has a one-byte form with no ModRM at all:
+                 #   `mov [addr], eax` is A3 + moffs32 (5 bytes) where the
+                 #   general path emits 7. nasm always takes it, so byte
+                 #   identity requires it — and boot.asm opens .boot32 with
+                 #   exactly this instruction, which is why an earlier note
+                 #   calling the moffs form "not in the boot files" was wrong.
+                 (la _. concat(B(163))(LE4(FOLDD(MEMDISP(labs)(a)))))
+                 (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs))))
                #   `mov qword [rax], _start` — a LABEL immediate to memory. It used
                #   to fall into the register path above, where REGNUM read the label
                #   as a register name and halted `unknown register: _start`. Same
@@ -950,7 +967,10 @@ glyph MOVENC = la labs. la w. la a. la b.
                #   and LABADDR is what MOVENC's reg-destination arm already uses.
                (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(LABADDR(b)(labs))(BITSMODE(labs)))))
       (la _. IF(ISMEM(b))
-        (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))
+        (la _. IF(MOFFSOK(BITSMODE(labs))(b)(w)(a))
+          #   A1 is A3's load twin: `mov eax, [addr]` in 5 bytes.
+          (la _. concat(B(161))(LE4(FOLDD(MEMDISP(labs)(b)))))
+          (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs))))
         (la _. IF(ISREG(b))
           (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
           (la _. IF(ISVAL(b))
@@ -1266,7 +1286,19 @@ glyph MEMTAIL = la reg. la b. la d. la mode.
                (la _. concat(B(add(mul(mod(reg)(8))(8))(6)))(LE2(d)))
                (la _. error("asm: 16-bit register-based addressing not supported (only direct [disp16])")))
       (la _. IF(lt(b)(0))
-               (la _. concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(B(37))(LE4(d))))
+               #   ★ ABSOLUTE [disp32] IS MODE-DEPENDENT, and the 64-bit form is
+               #   the ODD one. In 64-bit mode ModRM mod=00 rm=101 means
+               #   RIP-relative, so an absolute address must go the long way
+               #   round through a SIB byte (rm=100, SIB=0x25) — which is what
+               #   this always emitted. In 32-bit mode rm=101 IS absolute
+               #   disp32, so the SIB byte is a wasted byte and nasm does not
+               #   emit it. Measured on boot.asm's .boot32 (a `bits 32`
+               #   section): nasm `89 1d <disp32>` vs ours `89 1c 25 <disp32>`.
+               #   One byte per access, compounding to +8 across the prologue
+               #   and shifting every later label and relocation.
+               (la _. IF(int_eq(mode)(64))
+                        (la _. concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(B(37))(LE4(d))))
+                        (la _. concat(B(add(mul(mod(reg)(8))(8))(5)))(LE4(d))))
                (la _. (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
                             (concat(SIBOF(b))(DISPOF(m)(d))))
                       (MODOF(b)(d))))
@@ -2381,10 +2413,47 @@ glyph DATARELS = Z(la self. la locs. la secoff. la w. la els. la i.
         (la _. CONS(RD(add(secoff)(mul(i)(w)))(TSYM(e)(locs))(DRTYPE(w))(TADD(e)(locs)))
                    (self(locs)(secoff)(w)(t)(add(i)(1))))
         (la _. self(locs)(secoff)(w)(t)(add(i)(1)))))
+#   ★ A LABEL CAN BE THE ADDRESS, NOT JUST THE VALUE — and that is a relocation
+#   too. `mov [pml4], eax` puts the label in the DISPLACEMENT; the classifier
+#   only looked at the source operand, so 7 of boot.asm's 19 .boot32 relocations
+#   were simply absent. It is deliberately NOT a `mov` special case: `lgdt
+#   [gdt64.ptr]` and `lidt [idt_ptr]` carry one too, so the rule is about the
+#   OPERAND SHAPE, not the mnemonic.
+#
+#   The displacement is the last four bytes of the instruction unless a trailing
+#   immediate follows it, so its position is (length − immediate − 4) — derived
+#   from SIZEL, the same measure the emitter agrees with by construction.
+#
+#   TYPE FOLLOWS THE MODE, measured on nasm's boot.o: 32-bit code gets
+#   R_X86_64_32 (the field is zero-extended), 64-bit gets R_X86_64_32S (sign-
+#   extended). Both appear in the one file, so guessing either would be wrong
+#   half the time.
+glyph HASMEMLBL = la t. AND(ISMEM(t))(AND(MEMABS(t))(BISLBL(STRIPBRK(t))))
+glyph MDTYPE  = la mode. IF(int_eq(mode)(64))(la _. 11)(la _. 10)
+#   The width is asked for ONLY when there actually is an immediate. `lgdt
+#   [desc]` has one operand and no width to infer, so IWOF halts loudly on it —
+#   correctly. Computing the width up front turned that correct diagnostic into
+#   a failure on a legal instruction, so it is resolved inside the branch that
+#   needs it (IF's arms are thunks, so the call does not run otherwise).
+glyph IMMTAIL = la st.
+    (la a2. IF(str_eq(a2)(""))(la _. 0)
+      (la _. IF(OR(ISREG(a2))(ISMEM(a2)))(la _. 0)
+        (la _. (la w. IF(lt(w)(4))(la _. w)(la _. 4))(IWOF(st)(A1(st))(a2)))))
+    (A2(st))
+glyph MEMLBLOF = la st.
+    IF(HASMEMLBL(A1(st)))(la _. STRIPBRK(A1(st)))
+      (la _. IF(HASMEMLBL(A2(st)))(la _. STRIPBRK(A2(st)))(la _. ""))
+glyph MEMDRELS = la locs. la mode. la secoff. la linelen. la st.
+    (la m. IF(str_eq(m)(""))
+             (la _. NIL)
+             (la _. CONS(RD(add(secoff)(sub(sub(linelen)(IMMTAIL(st)))(4)))
+                           (TSYM(m)(locs))(MDTYPE(mode))(TADD(m)(locs)))(NIL)))
+    (MEMLBLOF(st))
 glyph RELLINE = la mlabs. la locs. la mode. la secoff. la ts.
   (la st.
     (la op.
       (la linelen.
+       APPEND(MEMDRELS(locs)(mode)(secoff)(linelen)(st))(
         IF(str_eq(op)("mov"))
           (la _. (la a. (la b.
                    IF(BISLBL(b))
@@ -2397,7 +2466,7 @@ glyph RELLINE = la mlabs. la locs. la mode. la secoff. la ts.
                  (A2(st)))(A1(st)))
           (la _. IF(AND(ISDATA(op))(NOT(int_eq(DWIDTH(op))(1))))
             (la _. DATARELS(locs)(secoff)(DWIDTH(op))(JOINEXPR(TL2(st)))(0))
-            (la _. NIL)))
+            (la _. NIL))))
       (SIZEL(WITHBITS(mlabs)(mode))(secoff)(ts)))
     (LOWER(HD(st))))
   (STRIPLAB(ts))
