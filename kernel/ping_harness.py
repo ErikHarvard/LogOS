@@ -84,6 +84,31 @@ def connect(port):
         except OSError: time.sleep(0.1)
     print("PINGER: could not connect"); sys.exit(2)
 
+def serve(port):
+    """Listen and let QEMU connect to US (-netdev socket,connect=...).
+
+    ★ WHY THIS EXISTS. With QEMU listening and the harness connecting, there is
+    a startup RACE: a requester kernel (HAL.5c/5k/5d/5l) transmits its ARP and
+    request within the first few hundred ms of boot, and QEMU DROPS transmitted
+    frames while no peer is attached. The harness then legitimately sees zero
+    guest frames and the gate reports a failure that says nothing about the
+    kernel -- which is exactly what happened on 5k's first run. Reversing the
+    direction removes the race by construction: we are listening before QEMU is
+    even launched, so no guest frame can be sent into a void. Responder kernels
+    (5g/5j/5h/5i) never hit this, because they transmit only AFTER receiving,
+    by which time the peer is necessarily attached."""
+    srv=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1",port)); srv.listen(1); srv.settimeout(30)
+    print("PINGER: listening", flush=True)   # the gate waits for this before starting QEMU
+    try:
+        conn,_=srv.accept()
+    except socket.timeout:
+        print("PINGER: qemu never connected"); sys.exit(2)
+    finally:
+        srv.close()
+    return conn
+
 def send_frame(s,f): s.sendall(struct.pack(">I",len(f))+f)
 
 def recv_frames(s, secs):
@@ -123,6 +148,64 @@ def decode(f):
         return f"IPv4 ihl={ihl} proto={proto} {t}"
     return f"et={et:04x}"
 
+
+# ---------------------------------------------------------------------------
+# HAL.5k / HAL.5l — INJECTED replies.
+# SLIRP cannot emit IP options, so a requester kernel's IHL handling can only be
+# exercised by crafting the reply ourselves. These build frames FROM the pinger
+# TO the guest (the reverse direction of the request builders above).
+# ---------------------------------------------------------------------------
+
+def icmp_echo_reply(opts=None):
+    """An ICMP echo REPLY (type 0) addressed to the guest -- what HAL.5c/5k
+    expect to receive. With opts the ICMP header no longer sits at frame 34."""
+    opts = opts or []
+    assert len(opts) % 4 == 0
+    ihl = 5 + len(opts)//4
+    icmp = [0,0,0,0, 0,1,0,1]                     # type0 code0 cksum id1 seq1
+    c = ipck(icmp); icmp[2] = c >> 8; icmp[3] = c & 0xff
+    ln = 4*ihl + len(icmp)
+    ip = [0x40|ihl,0,ln>>8,ln&0xff,0,0,0,0,64,1,0,0]+list(GUEST_IP)+list(PINGER_IP)+opts
+    c = ipck(ip); ip[10] = c >> 8; ip[11] = c & 0xff
+    f = bytes(GUEST_MAC)+bytes(PINGER_MAC)+b'\x08\x00'+bytes(ip)+bytes(icmp)
+    if len(f) < 60: f = f + b'\x00'*(60-len(f))
+    return f
+
+DNS_SRC_IP = bytes([10,0,2,3])          # SLIRP's DNS proxy address, for realism
+
+def dns_response(opts=None):
+    """A DNS response over UDP from port 53 with ancount=2 -- the shape
+    HAL.5d/5l read (sport at frame u, ancount at u+14). The DNS body only has
+    to be well-formed as far as the kernel looks: it reads the answer COUNT out
+    of the header and nothing deeper, so the records are representative
+    filler, not a parseable RRset. Stated plainly rather than implied."""
+    opts = opts or []
+    assert len(opts) % 4 == 0
+    ihl = 5 + len(opts)//4
+    dns = [0x12,0x34, 0x81,0x80, 0,1, 0,2, 0,0, 0,0]   # id flags qd=1 an=2 ns=0 ar=0
+    dns += [3,ord('d'),ord('n'),ord('s'),6,ord('g'),ord('o'),ord('o'),
+            ord('g'),ord('l'),ord('e'),0, 0,1, 0,1]     # question: dns.google A IN
+    dns += [0xc0,0x0c, 0,1, 0,1, 0,0,0,60, 0,4, 8,8,8,8]        # answer 1
+    dns += [0xc0,0x0c, 0,1, 0,1, 0,0,0,60, 0,4, 8,8,4,4]        # answer 2
+    ul = 8 + len(dns)
+    udp = [0,53, 0x9c,0x40, ul>>8,ul&0xff, 0,0] + dns   # sport 53 -> dport 40000
+    il = 4*ihl + ul
+    ip = [0x40|ihl,0,il>>8,il&0xff,0,0,0,0,64,17,0,0]+list(DNS_SRC_IP)+list(GUEST_IP)+opts
+    c = ipck(ip); ip[10] = c >> 8; ip[11] = c & 0xff
+    f = bytes(GUEST_MAC)+bytes(PINGER_MAC)+b'\x08\x00'+bytes(ip)+bytes(udp)
+    if len(f) < 60: f = f + b'\x00'*(60-len(f))
+    return f
+
+def icmp_echo_reply_opts(): return icmp_echo_reply(IP_OPTS_NOP4)
+def dns_response_opts():    return dns_response(IP_OPTS_NOP4)
+
+def saw_guest_frame(f):
+    """The ONLY thing an inject mode can honestly assert: a frame came FROM the
+    guest, so the kernel ran and transmitted. It does NOT corroborate the RX
+    parse -- that is observable only on the guest's serial, which is why the
+    5k/5l gates are single-witness and say so."""
+    return len(f) >= 12 and bytes(f[6:12]) == GUEST_MAC
+
 MODES={
     "ping":   (icmp_echo_request,  valid_echo_reply, "ICMP echo request", "ECHO REPLY"),
     "udp":    (udp_request,        valid_udp_echo,   "UDP datagram",      "UDP ECHO"),
@@ -135,12 +218,22 @@ MODES={
     # HAL.5j: the ICMP twin of udpopt. valid_echo_reply already parses IHL, so
     # again only the generator changed.
     "pingopt":(icmp_echo_request_opts, valid_echo_reply, "ICMP echo request (IHL=6)", "ECHO REPLY"),
+    # HAL.5k/5l inject modes -- see INJECT below for why they do not break early.
+    "icmpreply6":(icmp_echo_reply_opts, saw_guest_frame, "ICMP echo REPLY (IHL=6)", "GUEST FRAME"),
+    "dnsreply6": (dns_response_opts,    saw_guest_frame, "DNS response (IHL=6)",    "GUEST FRAME"),
 }
+
+# Modes that INJECT a reply rather than solicit one. They must run the whole
+# window: breaking on the first valid frame would exit as soon as the guest
+# sent its gratuitous ARP, killing QEMU before the injected reply landed.
+INJECT = {"icmpreply6", "dnsreply6"}
 
 def main():
     mode,port,secs=sys.argv[1],int(sys.argv[2]),float(sys.argv[3])
     build,validate,label,name=MODES[mode]
-    s=connect(port); print("PINGER: connected")
+    # Inject modes LISTEN (see serve()); request/response modes connect.
+    s=serve(port) if mode in INJECT else connect(port)
+    print("PINGER: connected")
     got_reply=False
     # retry the request so at least one lands AFTER the guest enables RX
     # (a request sent before RX-enable is dropped; several spaced sends cover it)
@@ -155,7 +248,9 @@ def main():
     threading.Thread(target=sender,daemon=True).start()
     for f in recv_frames(s, secs):
         print("PINGER RX:", decode(f))
-        if validate(f): got_reply=True; print(f"PINGER: valid {name.lower()} verified"); break
+        if validate(f):
+            got_reply=True; print(f"PINGER: valid {name.lower()} verified")
+            if mode not in INJECT: break      # inject modes run the full window
     print("PINGER:", f"{name} RECEIVED" if got_reply else f"no {name.lower()}")
     sys.exit(0 if got_reply else 1)
 
