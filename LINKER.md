@@ -34,6 +34,7 @@ cross-track request to track A, and it would make the chain LA end to end.
 | `link_test_dup.asm` | defines BOTH `_start` and `greet`, so linking it against B is a duplicate and *nothing else*. |
 | `link_test_script.ld` | a real linker script, base **0x500000** — deliberately not the built-in 0x401000, so a default-address image cannot pass by accident. |
 | `link_test_kernel.ld` | `kernel/kernel.ld`'s SHAPE, reduced to something runnable: PHDRS + `FLAGS(7)`, two output sections in one segment across an `ALIGN`, `.bss (NOLOAD)`, `/DISCARD/ { *(.note*) … }`. |
+| `link_test_sym.asm` | the symbol-torture object: an END-OF-SECTION marker (value == the section's exclusive end) and a HIGH-HALF ABS constant (`0xffffffff80000000`). Both crashed the symtab emitter on the real kernel object; neither is in the a/b fixtures. |
 | `link_test_mb.asm` | its fixture object: `.multiboot`, `.boot32`, `.text`, `.rodata`, `.la_image`, `.bss`, and an **allocatable** `.note.mine` so `/DISCARD/` has something it must really drop. Its exit code is computed from a byte in the second segment plus a byte through `.bss`, so "it ran" proves both landed. |
 | `gate_link_script.sh` | gates the script path against **`ld -T` on the same file** — twice (a plain script and the kernel-shaped one) — plus a no-script regression, 10 negative gates, and a parse of the REAL `kernel/kernel.ld`. |
 

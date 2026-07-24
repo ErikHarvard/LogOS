@@ -338,9 +338,32 @@ if [ -x link_out ]; then
         tabend=$(( shoff + shnum * shent ))
         [ "$fsz" = "$tabend" ] \
             || { echo "FAIL  link_reloc.la: file is $fsz bytes but the section table ends at $tabend — $((fsz - tabend)) bytes nothing reads"; ok=0; }
-        slack=$(( $(printf '%d' "0x$stroff") - lastend ))
-        [ "$slack" -ge 0 ] && [ "$slack" -le 7 ] \
-            || { echo "FAIL  link_reloc.la: $slack bytes between the last loadable byte ($lastend) and the section-name table (0x$stroff) — more than alignment"; ok=0; }
+        #   ★ THIRD DERIVATION, and this time stated so it survives growth.
+        #   v1 was a magic threshold; v2 was "the file ends at the last loadable
+        #   byte" (broken by the section table); v3 was "only alignment
+        #   separates the last loadable byte from the NAME table" — broken the
+        #   moment .symtab and .strtab appeared BETWEEN them. Each version
+        #   encoded the file's shape at the time.
+        #
+        #   The invariant that does not depend on the shape: from the end of the
+        #   loadable body to the start of the section headers, the file is
+        #   COVERED by the non-allocatable sections, with nothing but alignment
+        #   between any two of them. Add a section, a table, anything — it stays
+        #   true, and dead padding anywhere in that span still fails.
+        gap_ok=1; cursor=$lastend
+        for pair in $(readelf -SW link_out | sed 's/^ *\[[ 0-9]*\] *//' \
+                      | awk '$1 ~ /^\./ && $7 !~ /A/ {print $4","$5}' | sort); do
+            o=$(printf '%d' "0x${pair%,*}"); z=$(printf '%d' "0x${pair#*,}")
+            g=$(( o - cursor ))
+            if [ "$g" -lt 0 ] || [ "$g" -gt 7 ]; then
+                echo "FAIL  link_reloc.la: $g bytes of dead space before the section at file offset 0x${pair%,*} — more than alignment"; ok=0; gap_ok=0
+            fi
+            cursor=$(( o + z ))
+        done
+        gtail=$(( shoff - cursor ))
+        if [ "$gap_ok" = 1 ] && { [ "$gtail" -lt 0 ] || [ "$gtail" -gt 7 ]; }; then
+            echo "FAIL  link_reloc.la: $gtail bytes between the last section's end ($cursor) and the section headers ($shoff) — more than alignment"; ok=0
+        fi
     fi
     BGOT=$(./link_out); BRC2=$?
     BWANT=$(./link_ref_bss)

@@ -46,6 +46,7 @@
 
 import("link.la")
 import("link_script.la")
+# SYM_VALUE64 (full 8-byte st_value) is exported by link.la for the ABS path.
 
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")
@@ -900,22 +901,129 @@ glyph PLACEDSECS = la items. la objs. la plan. (Z(la self. la l.
                  (la _. CONS(h)(self(t))))
         (la _. self(t)))))(items)
 
-glyph SHDR = la nameoff. la ty. la flags. la addr. la off. la size. la align. CAT(
+# ── .symtab / .strtab — so `nm` can speak about what we emit ────────────────
+#   The section table (item 12) made the container readable by objcopy and
+#   objdump; `nm` still said "no symbols", because a symbol table is a separate
+#   thing. This adds one: every DEFINED, NAMED symbol of every input object, at
+#   its FINAL address.
+#
+#   ★ ELF REQUIRES ALL LOCAL SYMBOLS BEFORE ALL NON-LOCAL ONES, and `sh_info`
+#   must be the index of the first non-local. That is not a convention to
+#   imitate — readers use sh_info to find the globals without scanning, so
+#   getting it wrong makes a table that parses and lies.
+glyph SHT_SYMTAB  = 2
+glyph SYMENTSIZE  = 24
+glyph SHN_ABS     = 65521
+glyph SYM_TYPE_OF = la info. mod(info)(16)
+glyph SYM_IS_FILE = la info. int_eq(SYM_TYPE_OF(info))(4)
+
+glyph MKSYM   = la nm. la vlo. la vhi. la sx. la g.
+    PAIR(nm)(PAIR(vlo)(PAIR(vhi)(PAIR(sx)(g))))
+glyph SY_NAME = la y. FST(y)
+glyph SY_VLO  = la y. FST(SND(y))
+glyph SY_VHI  = la y. FST(SND(SND(y)))
+glyph SY_SHX  = la y. FST(SND(SND(SND(y))))
+glyph SY_GLB  = la y. SND(SND(SND(SND(y))))
+
+#   Each placed output section's (lo, hi), computed ONCE and threaded, rather
+#   than re-walking the plan per symbol per section.
+glyph SECEXTS = la objs. la secs. la plan. (Z(la self. la l.
+    l(NIL)(la h. la t. CONS(OSEXT(objs)(IT_NAMES(h))(plan))(self(t)))))(secs)
+#   Which output section (1-based header index) contains an address. Called on
+#   a symbol's SECTION BASE, never its final value: an end-of-section marker
+#   (`la_image_end` = base + size = the section's exclusive `hi`) matches no
+#   section under a strict `addr < hi` and returned the -1 sentinel, which
+#   LE2(-1) then fed to `chr` — a crash the fixture never reached because it
+#   has no such symbol. The base is always a real in-section byte address, so
+#   the lookup is unambiguous and the marker gets the section it ends, as ld's.
+glyph SECIDX = la exts. la addr. (Z(la self. la l. la i.
+    l(sub(0)(1))(la h. la t.
+      IF(AND(NOT(lt(addr)(OS_LO(h))))(lt(addr)(OS_HI(h))))
+        (la _. i)
+        (la _. self(t)(add(i)(1))))))(exts)(1)
+
+#   One object's contribution. A symbol is skipped when it is a SECTION or FILE
+#   entry (structural, and `nm` does not show them), when it is UNDEFINED (it
+#   has no address here), when it is nameless, or when its section was not
+#   placed — a --gc-sections casualty must not appear at a fabricated address.
+#   An ABS symbol (`MSGLEN equ $-msg`) keeps its value and SHN_ABS: it belongs
+#   to no section, and running it through the placement would either error or
+#   invent an address for a constant.
+glyph OSYMS = la objs. la plan. la exts. la rec. (la f. (la ss.
+    (Z(la self. la i. la acc.
+      IF(int_eq(i)(SYM_COUNT(f)(ss)))
+        (la _. REV(acc)(NIL))
+        (la _. IF(OR(SYM_IS_SECTION(f)(ss)(i))
+                    (OR(SYM_IS_FILE(SYM_INFO(f)(ss)(i)))
+                       (OR(SYM_IS_UNDEF(f)(ss)(i))
+                          (int_eq(str_to_int(str_len(SYMNAME(f)(ss)(i))))(0)))))
+                 (la _. self(add(i)(1))(acc))
+                 (la _. SYMREC(objs)(plan)(exts)(rec)(f)(ss)(i)(self)(acc)))))
+     (0)(NIL))
+    (O_SS(rec)))(O_F(rec))
+glyph SYMREC = la objs. la plan. la exts. la rec. la f. la ss. la i. la self. la acc.
+    IF(int_eq(SYM_SHNDX(f)(ss)(i))(SHN_ABS))
+      (la _. self(add(i)(1))(CONS(MKSYM(SYMNAME(f)(ss)(i))
+                                       (SYM_VALUE(f)(ss)(i))(SYM_VHIGH(f)(ss)(i))
+                                       (SHN_ABS)(SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i))))(acc)))
+      (la _. (la base.
+               IF(lt(base)(0))
+                 (la _. self(add(i)(1))(acc))
+                 (la _. self(add(i)(1))
+                            (CONS(MKSYM(SYMNAME(f)(ss)(i))
+                                       (add(base)(SYM_VALUE(f)(ss)(i)))(0)
+                                       (SECIDX(exts)(base))
+                                       (SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i))))(acc))))
+             (VAOF(plan)(O_IDX(rec))(SYM_SHNDX(f)(ss)(i))))
+glyph ALLSYMS = la objs. la plan. la exts. (Z(la self. la l.
+    l(NIL)(la h. la t. APPL(OSYMS(objs)(plan)(exts)(h))(self(t)))))(objs)
+glyph SYMSBY = la syms. la want. (Z(la self. la l.
+    l(NIL)(la h. la t.
+      IF(int_eq(IF(SY_GLB(h))(la _. 1)(la _. 0))(want))
+        (la _. CONS(h)(self(t)))
+        (la _. self(t)))))(syms)
+#   Locals first, then globals — the ELF ordering rule, applied once here so
+#   nothing downstream has to remember it.
+glyph SORTSYMS = la syms. APPL(SYMSBY(syms)(0))(SYMSBY(syms)(1))
+glyph NLOCAL   = la syms. add(LENL(SYMSBY(syms)(0)))(1)   # +1 for the NULL entry
+
+glyph SYMENT = la nameoff. la info. la shndx. la vlo. la vhi. CAT(
+    CONS(LE4(nameoff))(
+    CONS(B1(info))(
+    CONS(B1(0))(
+    CONS(LE2(shndx))(
+    CONS(concat(LE4(vlo))(LE4(vhi)))(
+    CONS(LE8(0))(
+    NIL)))))))
+glyph SYMBYTES = la syms. la names. concat(ZEROS(SYMENTSIZE))((Z(la self. la l.
+    l("")(la h. la t.
+      concat(SYMENT(STRTAB_OFF(names)(SY_NAME(h)))
+                   (IF(SY_GLB(h))(la _. 16)(la _. 0))
+                   (SY_SHX(h))(SY_VLO(h))(SY_VHI(h)))
+            (self(t)))))(syms))
+
+#   sh_link / sh_info / sh_entsize are parameters, not zeros: a .symtab whose
+#   sh_link does not point at its string table is a table no reader can use,
+#   and sh_info is how a reader finds the first non-local without scanning.
+glyph SHDR = la nameoff. la ty. la flags. la addr. la off. la size. la align.
+             la lnk. la inf. la ent. CAT(
     CONS(LE4(nameoff))(
     CONS(LE4(ty))(
     CONS(LE8(flags))(
     CONS(LE8(addr))(
     CONS(LE8(off))(
     CONS(LE8(size))(
-    CONS(LE4(0))(
-    CONS(LE4(0))(
+    CONS(LE4(lnk))(
+    CONS(LE4(inf))(
     CONS(LE8(align))(
-    CONS(LE8(0))(
+    CONS(LE8(ent))(
     NIL)))))))))))
 glyph NULLSHDR = ZEROS(SHENTSIZE)
 
-glyph SHDRS = la secs. la names. la objs. la segs. la plan. la roffs. la strtaboff. la strtabsz.
-    CAT(CONS(NULLSHDR)(CONS((Z(la self. la l.
+glyph SHDRS = la secs. la names. la objs. la segs. la plan. la roffs.
+              la symoff. la symsz. la stroff. la strsz. la shstroff. la shstrsz. la nloc.
+    (la nsec.
+     CAT(CONS(NULLSHDR)(CONS((Z(la self. la l.
       l("")(la h. la t.
         (la x. concat(SHDR(STRTAB_OFF(names)(IT_ONAME(h)))
                           (IF(OS_NB(x))(la _. SH_NOBITS)(la _. SHT_PROGBITS))
@@ -923,11 +1031,17 @@ glyph SHDRS = la secs. la names. la objs. la segs. la plan. la roffs. la strtabo
                           (OS_LO(x))
                           (OFFOF(roffs)(OS_LO(x)))
                           (sub(OS_HI(x))(OS_LO(x)))
-                          (OS_AL(x)))
+                          (OS_AL(x))(0)(0)(0))
                      (self(t)))
         (OSEXT(objs)(IT_NAMES(h))(plan)))))(secs))(
-    CONS(SHDR(STRTAB_OFF(names)(".shstrtab"))(SHT_STRTAB)(0)(0)
-             (strtaboff)(strtabsz)(1))(NIL))))
+     CONS(SHDR(STRTAB_OFF(names)(".symtab"))(SHT_SYMTAB)(0)(0)
+              (symoff)(symsz)(8)(add(nsec)(2))(nloc)(SYMENTSIZE))(
+     CONS(SHDR(STRTAB_OFF(names)(".strtab"))(SHT_STRTAB)(0)(0)
+              (stroff)(strsz)(1)(0)(0)(0))(
+     CONS(SHDR(STRTAB_OFF(names)(".shstrtab"))(SHT_STRTAB)(0)(0)
+              (shstroff)(shstrsz)(1)(0)(0)(0))(
+     NIL)))))))
+    (LENL(secs))
 
 #   ★ RELOCATIONS ARE APPLIED TO EVERY PLACED SECTION, not only .text.
 #   Applying just `.rela.text` was a CONFIRMED silent-wrongness bug: an object
@@ -1040,6 +1154,8 @@ glyph BODYEND = la roffs. (Z(la self. la l. la end.
                (la _. (la e. self(t)(IF(lt(end)(e))(la _. e)(la _. end)))
                       (add(ROFF(h))(n))))
       (str_to_int(str_len(R_BYTES(RREG(h))))))))(roffs)(0)
+glyph SYMNAMES = la syms. (Z(la self. la l.
+    l(NIL)(la h. la t. CONS(SY_NAME(h))(self(t)))))(syms)
 glyph SECNAMES = la secs. (Z(la self. la l.
     l(NIL)(la h. la t. CONS(IT_ONAME(h))(self(t)))))(secs)
 glyph ROFF    = la ro. SND(ro)
@@ -1566,22 +1682,32 @@ glyph MAIN =
   (la roffs.
   (la nph.
   (la secs.
-  (la shnames.
+  (la exts.
+  (la syms.
+  (la symnames.
   (la strtab.
-  (la strtaboff.
+  (la shnames.
+  (la shstrtab.
+  (la symoff.
+  (la stroff.
+  (la shstroff.
   (la shoff.
     SEQ(DUPCHECK(objs))(
     SEQ(write_file("link_text.bin")(TEXTBYTES(regs)))(
     SEQ(write_exec("link_out")(CAT(
-          CONS(EHDR(ENTRYOF(entry)(resolve))(nph)(shoff)(add(LENL(secs))(2))
-                   (add(LENL(secs))(1)))(
+          CONS(EHDR(ENTRYOF(entry)(resolve))(nph)(shoff)(add(LENL(secs))(4))
+                   (add(LENL(secs))(3)))(
           CONS(PHDRS(roffs))(
           CONS(BODY(roffs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
-          CONS(ZEROS(sub(strtaboff)(BODYEND(roffs))))(
+          CONS(ZEROS(sub(symoff)(BODYEND(roffs))))(
+          CONS(SYMBYTES(syms)(symnames))(
           CONS(strtab)(
-          CONS(ZEROS(sub(shoff)(add(strtaboff)(LENS(strtab)))))(
-          CONS(SHDRS(secs)(shnames)(objs)(segs)(plan)(roffs)(strtaboff)(LENS(strtab)))(
-          NIL))))))))))(
+          CONS(shstrtab)(
+          CONS(ZEROS(sub(shoff)(add(shstroff)(LENS(shstrtab)))))(
+          CONS(SHDRS(secs)(shnames)(objs)(segs)(plan)(roffs)
+                    (symoff)(mul(add(LENL(syms))(1))(SYMENTSIZE))
+                    (stroff)(LENS(strtab))(shstroff)(LENS(shstrtab))(NLOCAL(syms)))(
+          NIL))))))))))))(
     print(CAT(
       CONS("linked ")(
       CONS(int_to_str(LENL(objs)))(
@@ -1591,10 +1717,16 @@ glyph MAIN =
       CONS(int_to_str(ENTRYOF(entry)(resolve)))(
       CONS(NL)(
       NIL))))))))))))
-  )(ALIGNUP(add(strtaboff)(LENS(strtab)))(8))
-  )(BODYEND(roffs))
+  )(ALIGNUP(add(shstroff)(LENS(shstrtab)))(8))
+  )(add(stroff)(LENS(strtab)))
+  )(add(symoff)(mul(add(LENL(syms))(1))(SYMENTSIZE)))
+  )(ALIGNUP(BODYEND(roffs))(8))
   )(STRTAB_BYTES(shnames))
-  )(APPL(SECNAMES(secs))(CONS(".shstrtab")(NIL)))
+  )(APPL(SECNAMES(secs))(CONS(".symtab")(CONS(".strtab")(CONS(".shstrtab")(NIL)))))
+  )(STRTAB_BYTES(symnames))
+  )(SYMNAMES(syms))
+  )(SORTSYMS(ALLSYMS(objs)(plan)(exts)))
+  )(SECEXTS(objs)(PLACEDSECS(items)(objs)(plan))(plan))
   )(PLACEDSECS(items)(objs)(plan))
   )(LENL(regs))
   )(ROFFS(regs))

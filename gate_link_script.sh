@@ -285,10 +285,23 @@ sec_quads() {   # ALLOC sections as (name addr size flags) — all four must agr
     readelf -SW "$1" | sed 's/^ *\[[ 0-9]*\] *//' | awk '$1 ~ /^\./ && $7 ~ /A/ {print $1, $3, $5, $7}'
 }
 
-for pair in "$SCRIPT:link_in1.o link_in2.o" "$KSCRIPT:link_in3.o"; do
+#   The third pair is the symbol-torture object: an end-of-section marker
+#   (value == the section's exclusive end) and a high-half ABS constant
+#   (0xffffffff80000000). Both crashed the symtab emitter when it first met the
+#   REAL kernel object, and neither appears in the other fixtures — this is the
+#   small object that reproduces those on every run instead of in a 44-minute
+#   kernel link. It has no linker script, so it is linked with the default
+#   layout (empty script arg).
+nasm -f elf64 link_test_sym.asm -o link_in4.o 2>/dev/null
+for pair in "$SCRIPT:link_in1.o link_in2.o" "$KSCRIPT:link_in3.o" ":link_in4.o"; do
     scr=${pair%%:*}; objs=${pair#*:}
-    ld -o sec_ref $objs -T "$scr" 2>/dev/null
-    printf -- '--script=%s\n' "$scr" > link_inputs.txt
+    if [ -n "$scr" ]; then
+        ld -o sec_ref $objs -T "$scr" 2>/dev/null
+        printf -- '--script=%s\n' "$scr" > link_inputs.txt
+    else
+        ld -o sec_ref $objs 2>/dev/null
+        : > link_inputs.txt
+    fi
     printf '%s\n' $objs | tr ' ' '\n' >> link_inputs.txt
     rm -f link_out
     if out=$(timeout 400 ./tiny_host link_reloc.la 2>&1); then :; else
@@ -309,6 +322,38 @@ for pair in "$SCRIPT:link_in1.o link_in2.o" "$KSCRIPT:link_in3.o"; do
         echo "        ld  : $(echo "$theirs" | tr '\n' '|')"
         echo "        ours: $(echo "$ours"   | tr '\n' '|')"
         ok=0
+    fi
+    # ── the SYMBOL table: `nm` must agree with ld, symbol for symbol ───────
+    #   We emit every DEFINED NAMED symbol of every input at its final address;
+    #   ld additionally synthesises its own (__bss_start, _edata, _end), so ours
+    #   is a SUBSET — but every symbol we do emit must have exactly the address
+    #   and type ld gave it. Checking containment rather than equality is the
+    #   honest shape here, and it still catches a wrong address, a wrong
+    #   binding, or a symbol invented from nothing.
+    if command -v nm >/dev/null 2>&1; then
+        nm link_out 2>/dev/null | sort > sym_ours
+        nm sec_ref  2>/dev/null | sort > sym_ld
+        if [ ! -s sym_ours ]; then
+            echo "FAIL  link_script symtab [$scr]: nm reports no symbols in our output"; ok=0
+        elif [ ! -s sym_ld ]; then
+            echo "SKIP  link_script symtab [$scr]: nm found nothing in ld's binary to compare against"
+        elif missing=$(comm -23 sym_ours sym_ld) && [ -z "$missing" ]; then
+            echo "PASS  link_script symtab [$scr]: nm lists $(wc -l < sym_ours) symbols, every one at ld's own address and binding"
+        else
+            echo "FAIL  link_script symtab [$scr]: symbols ld does not agree with: $(echo "$missing" | tr '\n' '|')"; ok=0
+        fi
+        #   ★ readelf VALIDATES the table's structure — a wrong sh_info (the
+        #   index of the first non-local) or an sh_link not pointing at the
+        #   string table produces a table that still parses and lies. nm would
+        #   not necessarily complain; readelf does, on stderr.
+        if rew=$(readelf -sW link_out 2>&1 >/dev/null) && [ -z "$rew" ]; then
+            echo "PASS  link_script symtab [$scr]: readelf validates the table (sh_link/sh_info consistent)"
+        else
+            echo "FAIL  link_script symtab [$scr]: readelf complains about our symbol table: $rew"; ok=0
+        fi
+        rm -f sym_ours sym_ld
+    else
+        echo "SKIP  link_script symtab [$scr]: nm absent"
     fi
     rm -f sec_ref sec_out32 sec_err
 done

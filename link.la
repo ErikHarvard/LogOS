@@ -55,7 +55,7 @@ export REL_OFFSET REL_TYPE REL_SYM REL_ADDEND REL_COUNT
 #   section table (SECTAB) that reads the header table ONCE by cursor-threading,
 #   instead of re-DROPping from file-start for every field (DROP copies, so a
 #   deep field read is O(offset·filesize); see link_reloc.la SECTAB).
-export DROP E_SHOFF SHSTR_OFF
+export DROP E_SHOFF SHSTR_OFF SYM_VHIGH
 
 # ── prelude: the standard combinators ───────────────────────────────────────
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
@@ -167,6 +167,14 @@ glyph SYM_NAME = la f. la ss. la i. U32(f)(SYMOFF(f)(ss)(i))
 glyph SYM_INFO = la f. la ss. la i. BYTE(f)(add(SYMOFF(f)(ss)(i))(4))
 glyph SYM_SHNDX= la f. la ss. la i. U16(f)(add(SYMOFF(f)(ss)(i))(6))
 glyph SYM_VALUE= la f. la ss. la i. LOW4(f)(add(SYMOFF(f)(ss)(i))(8))
+#   The HIGH word of st_value, for the symbol table emitter. An ABS symbol can
+#   hold a genuine 64-bit constant (a higher-half address, 0xffffffff...), and
+#   0xffffffff80000000 exceeds 2^63 — combining the two words into one host int
+#   would overflow to a negative, on which this language's div/mod is
+#   unreliable. So the emitter keeps the two 32-bit words SEPARATE (see MKSYM),
+#   exactly as the reader keeps a 32-bit window everywhere else, and this hands
+#   it the high word to store beside the low one.
+glyph SYM_VHIGH = la f. la ss. la i. HIGH4(f)(add(SYMOFF(f)(ss)(i))(8))
 glyph SYM_COUNT= la f. la ss. div(SH_SIZE(f)(ss))(24)
 #   st_info packs bind in the high nibble, type in the low: GLOBAL bind = 1.
 glyph SYM_BIND = la info. div(info)(16)
