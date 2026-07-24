@@ -994,6 +994,53 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             (no RX-ring advance — that is 5e's mechanism). **5i fixes the UDP
             responder only; 5c/5d/5g carry their own fixed-offset assumptions and
             each would need the same treatment.**
+      - [x] **HAL.5j / 5k / 5l — the IHL series COMPLETED across the arc — DONE
+            + gated (2026-07-23).** 5i removed the fixed-offset assumption from
+            the UDP responder; these three remove it everywhere else it existed.
+            All share one rule — `ihl = mod(RB(18))(16)`, `L4OFF = 14 + 4*ihl` —
+            expressed once per kernel rather than four transcriptions of a
+            constant, and all arithmetic (`mod`/`mul`), so no bitwise ops, no new
+            builtin, no regen.
+            **5j — ICMP echo RESPONDER (generalises 5g).** The one that mattered:
+            like 5h it BUILT A MALFORMED PACKET under IHL≠5, writing the reply's
+            ICMP type and checksum at frames 34/36/37. The checksum is still
+            *adjusted* (+0x0800, end-around carry) rather than recomputed; the
+            pinger verifies it sums to 0xffff at both header lengths, so the
+            delta math is proven, not just the offsets. Red-path: 5g reports
+            `type=01` — and, exactly as 5h did, still prints `nic icmp reply
+            sent` / `nic done`. **A second independent confirmation, in a
+            different protocol, that a device reporting its own success will
+            report success for a wrong answer.**
+            **5k / 5l — the REQUESTERS (generalise 5c / 5d).** A genuinely
+            WEAKER class, kept labelled as such: these construct nothing from the
+            reply, so they misreported *diagnostics* rather than corrupting the
+            wire — worth fixing because a lying witness is what hides the next
+            bug (5h's defect was found by reading its witness), but not the same
+            defect. Red-path: 5c reports `icmp=01`; 5d reports `sport=0101
+            anc=8180` — the option bytes as the port AND the DNS flags field as
+            the answer count. **Their gates are SINGLE-WITNESS by necessity** —
+            these kernels send no reply, so the RX parse is observable only on
+            their own serial; the harness confirms the kernel TXed, not how it
+            parsed. Each is gated twice regardless (SLIRP round-trip at IHL=5 to
+            preserve real-network interop, plus an INJECTED IHL=6 reply, since
+            SLIRP cannot emit IP options).
+            **★ THE GATE BUG THIS SERIES PAID FOR, worth more than the kernel
+            changes.** 5k's first run FAILED while its serial showed a perfectly
+            correct `ihl=06 icmp=00` parse. With QEMU on `-netdev socket,listen=`
+            and the harness connecting, a REQUESTER kernel transmits within the
+            first few hundred ms of boot and QEMU DROPS frames sent while no peer
+            is attached — so the harness saw nothing and the gate reported a
+            failure that said nothing about the kernel. **The gate was wrong, not
+            the code.** Fixed directionally, not by timing luck: the harness
+            LISTENS, QEMU CONNECTS, and the gate waits for `PINGER: listening`
+            before launching QEMU, so the peer exists before the guest boots and
+            the race is gone by construction. Deleting the check would also have
+            gone green — by lowering the bar. Responder gates are immune (they
+            transmit only after receiving) and were left untouched.
+            *Honest scope, shared by the whole arc and unchanged:* no
+            ethertype/proto pre-check, no IHL sanity bound, no IP-total-length
+            cross-check, single packet (no RX-ring advance). 5e/5f are ARP and
+            never touch the IP header, so they were never affected.
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
