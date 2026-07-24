@@ -611,9 +611,18 @@ glyph BITW = Z(la self. la kind. la a. la b. la p. la acc. la n.
                       (la _. mod(add(ab)(bb))(2)))))
         (mod(div(b)(p))(2)))
         (mod(div(a)(p))(2))))
-glyph BAND = la a. la b. BITW(0)(a)(b)(1)(0)(32)
-glyph BOR  = la a. la b. BITW(1)(a)(b)(1)(0)(32)
-glyph BXOR = la a. la b. BITW(2)(a)(b)(1)(0)(32)
+#   ★ 63-BIT, NOT 32. BITW walks n bit positions; at 32 every bit from 32 up was
+#   silently dropped, so `(1<<43)|(1<<44)` came out 0. boot.asm's GDT descriptors
+#   are exactly this shape — `dq (1<<43)|(1<<44)|(1<<47)|(1<<53)` — so a 64-bit
+#   constant assembled to zeros, and the only place it showed was the LINKED
+#   image (the reloc metadata all matched; this is section CONTENT). 63 covers
+#   bits 0..62 — the full positive signed-64 range, which is every assembler
+#   constant — while stopping short of bit 63, whose value 2^63 is negative and
+#   would break BITW's div/mod decomposition. `p` is doubled per step, not a POW2
+#   lookup, so the wider walk costs 31 extra cheap iterations per bitwise op.
+glyph BAND = la a. la b. BITW(0)(a)(b)(1)(0)(63)
+glyph BOR  = la a. la b. BITW(1)(a)(b)(1)(0)(63)
+glyph BXOR = la a. la b. BITW(2)(a)(b)(1)(0)(63)
 
 glyph HD2 = la s. str_head(str_tail(s))
 glyph ISQUOTE = la s. str_eq(str_head(s))("'")
