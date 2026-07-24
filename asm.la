@@ -2428,7 +2428,16 @@ glyph DATARELS = Z(la self. la locs. la secoff. la w. la els. la i.
 #   R_X86_64_32 (the field is zero-extended), 64-bit gets R_X86_64_32S (sign-
 #   extended). Both appear in the one file, so guessing either would be wrong
 #   half the time.
-glyph HASMEMLBL = la t. AND(ISMEM(t))(AND(MEMABS(t))(BISLBL(STRIPBRK(t))))
+#   ★ THE ADDRESS MAY BE label+offset, NOT JUST label. `mov dword [pml4+4], 0`
+#   is a relocation against pml4 with 4 folded into the addend; requiring the
+#   bracket contents to BE a label missed every such site. The label is the
+#   FIRST term (the same split MEMBASE uses to find a base register), and the
+#   addend is simply MEMDISP — which EVALs the whole bracket expression against
+#   the label table and so already yields label_offset + numeric. That makes the
+#   bare [label] case fall out of the same expression rather than needing its
+#   own arm, which is why this replaces TADD here instead of special-casing.
+glyph MEMLBLNAME = la t. FST(SPLITFIRST(STRIPBRK(t))(""))
+glyph HASMEMLBL = la t. AND(ISMEM(t))(AND(MEMABS(t))(BISLBL(MEMLBLNAME(t))))
 glyph MDTYPE  = la mode. IF(int_eq(mode)(64))(la _. 11)(la _. 10)
 #   The width is asked for ONLY when there actually is an immediate. `lgdt
 #   [desc]` has one operand and no width to infer, so IWOF halts loudly on it —
@@ -2440,20 +2449,35 @@ glyph IMMTAIL = la st.
       (la _. IF(OR(ISREG(a2))(ISMEM(a2)))(la _. 0)
         (la _. (la w. IF(lt(w)(4))(la _. w)(la _. 4))(IWOF(st)(A1(st))(a2)))))
     (A2(st))
-glyph MEMLBLOF = la st.
-    IF(HASMEMLBL(A1(st)))(la _. STRIPBRK(A1(st)))
-      (la _. IF(HASMEMLBL(A2(st)))(la _. STRIPBRK(A2(st)))(la _. ""))
-glyph MEMDRELS = la locs. la mode. la secoff. la linelen. la st.
-    (la m. IF(str_eq(m)(""))
+glyph MEMTOKOF = la st.
+    IF(HASMEMLBL(A1(st)))(la _. A1(st))
+      (la _. IF(HASMEMLBL(A2(st)))(la _. A2(st))(la _. ""))
+glyph MEMDRELS = la mlabs. la locs. la mode. la secoff. la linelen. la st.
+    (la mt. IF(str_eq(mt)(""))
              (la _. NIL)
              (la _. CONS(RD(add(secoff)(sub(sub(linelen)(IMMTAIL(st)))(4)))
-                           (TSYM(m)(locs))(MDTYPE(mode))(TADD(m)(locs)))(NIL)))
-    (MEMLBLOF(st))
+                           (TSYM(MEMLBLNAME(mt))(locs))(MDTYPE(mode))(MEMDISP(mlabs)(mt)))(NIL)))
+    (MEMTOKOF(st))
+#   ★ THE FAR JUMP'S OFFSET IS NOT THE LAST FIELD. `jmp gdt64.code:long_start`
+#   encodes EA + off32 + sel16, so the relocation sits at length−6, not the
+#   length−4 every other displacement uses — the 2-byte SELECTOR trails it.
+#   Guarded to non-16-bit mode, where the offset is LE2 and the arithmetic
+#   differs again; the boot sectors' 16-bit far jumps target no relocatable
+#   symbol, so that arm is named rather than silently assumed correct.
+glyph FARTGT = la st. SND(SPLITCOLON(A1(st))(""))
+glyph FARRELS = la locs. la mode. la secoff. la linelen. la op. la st.
+    IF(AND(str_eq(op)("jmp"))(AND(NOT(int_eq(mode)(16)))(NOT(str_eq(FARTGT(st))("")))))
+      (la _. (la tgt. IF(BISLBL(tgt))
+                        (la _. CONS(RD(add(secoff)(sub(linelen)(6)))
+                                      (TSYM(tgt)(locs))(MDTYPE(mode))(TADD(tgt)(locs)))(NIL))
+                        (la _. NIL))
+             (FARTGT(st)))
+      (la _. NIL)
 glyph RELLINE = la mlabs. la locs. la mode. la secoff. la ts.
   (la st.
     (la op.
       (la linelen.
-       APPEND(MEMDRELS(locs)(mode)(secoff)(linelen)(st))(
+       APPEND(FARRELS(locs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMDRELS(mlabs)(locs)(mode)(secoff)(linelen)(st))(
         IF(str_eq(op)("mov"))
           (la _. (la a. (la b.
                    IF(BISLBL(b))
@@ -2466,7 +2490,7 @@ glyph RELLINE = la mlabs. la locs. la mode. la secoff. la ts.
                  (A2(st)))(A1(st)))
           (la _. IF(AND(ISDATA(op))(NOT(int_eq(DWIDTH(op))(1))))
             (la _. DATARELS(locs)(secoff)(DWIDTH(op))(JOINEXPR(TL2(st)))(0))
-            (la _. NIL))))
+            (la _. NIL)))))
       (SIZEL(WITHBITS(mlabs)(mode))(secoff)(ts)))
     (LOWER(HD(st))))
   (STRIPLAB(ts))
