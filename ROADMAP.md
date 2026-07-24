@@ -1079,6 +1079,36 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             the ICMP type, nor the IP checksum. **5m covers the ICMP responder
             only; 5i's UDP responder and the 5k/5l requesters still read slot 0
             without classifying.**
+      - [x] **HAL.5n / 5o / 5p — frame classification extended across the arc —
+            DONE + gated (2026-07-23).** 5m's scope note said it covered the ICMP
+            responder only; these close the rest. **5n** generalises the UDP
+            responder (5i), **5o** the ICMP requester (5k), **5p** the DNS
+            requester (5l). Same machinery as 5m verbatim in shape — classify
+            (ethertype 0800 + expected proto), bound `ihl >= 5`, and on a
+            non-match print `nic skip et=XXXX`, advance CAPR past the packet
+            (`align4(o+4+len)−16`), and retry the next ring slot, FUEL(8)-bounded.
+            5n is a strict extension of 5i (its RESPOND reduces to 5i's UDP reply
+            at o=0); 5o/5p keep their IHL-general witnesses but read them at the
+            matched offset. **Red-pathed against 5i's real ELF:** given an ARP
+            broadcast ahead of a UDP datagram it printed `nic udp req ihl=00
+            proto=55 dport=0800` — the ARP frame read as IPv4, ARP bytes taken as
+            proto and port — replied with garbage, and never saw the datagram.
+            5n classifies it out. 5n is two-witness; 5o/5p single-witness (they
+            send no reply). Each noise case asserts the DECISION (`nic skip
+            et=0806`) plus a negative assertion on the `ihl=00` signature; 5o/5p's
+            noise cases carry IHL=6 replies, testing classification and IHL
+            generality together. Classification proven in Python against real
+            2-packet ring images before compiling.
+            *A gate-honesty note recorded because it recurred:* gate_nic5n.sh's
+            PASS line first described `valid_echo_reply`'s ICMP check when the UDP
+            modes run `valid_udp_echo` — a blanket sed had replaced lowercase
+            `icmp` but not `ICMP`. The assertions were always correct; only the
+            claim string lied. Fixed and 5n RE-RUN so the recorded output matches
+            what is tested (the PASS string is the claim). 5o/5p were clean.
+            *Honest scope:* no ring wrap (5e's limit); classification is
+            ethertype+proto+ihl only. **The ORIGINAL pre-IHL kernels (5c/5d/5g/5h)
+            still read slot 0 without classifying** — 5m–5p are their generalised
+            successors; retiring the originals is a separate decision.
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
