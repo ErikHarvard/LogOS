@@ -1041,6 +1041,44 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             ethertype/proto pre-check, no IHL sanity bound, no IP-total-length
             cross-check, single packet (no RX-ring advance). 5e/5f are ARP and
             never touch the IP header, so they were never affected.
+      - [x] **HAL.5m — a frame-CLASSIFYING ICMP responder with RX-RING ADVANCE
+            — DONE + gated (2026-07-23).** The first 5x kernel that decides
+            whether a received frame is *for it*. Every kernel through 5l did
+            `WAITRX` then parsed whatever landed first as its own protocol,
+            reading ring slot 0 and nothing else — **measured on the shipped 5j
+            before 5m was written**: given an ARP broadcast ahead of a real echo
+            request, 5j printed `nic icmp req ihl=00 type=00`, built a reply out
+            of the ARP frame, **transmitted it**, and never saw the ping. ARP
+            broadcasts are constant on a real LAN, so that is the normal case.
+            Three fixes: **classify** (ethertype 0800 + proto 1); **bound
+            `ihl >= 5`** — without it an ARP frame yields `L4OFF = 14`, an offset
+            pointing back into the Ethernet header, which is precisely the
+            `ihl=00` 5j printed, so this bound is what turns a silent misparse
+            into a rejection; and **advance + retry** — on a non-match move CAPR
+            past the packet and examine the next, reusing 5e's
+            `NEXTOFF(o) = align4(o+4+RXLEN2(o))`, `CAPR := NEXTOFF−16`, with
+            frame byte k of the packet at o read via `RB2(o)(k+4)`. Arithmetic
+            only. **Bounded by FUEL(8)** — a ring full of noise reports
+            `nic no match` and stops; an unbounded retry would have been a new
+            way to hang. **Strict extension:** at o=0 with a matching first
+            packet, `RESPOND` is 5j's construction unchanged, IHL generality
+            included. Composes 5e's ring advance with 5i/5j's responder.
+            **Gate is two-witness** (the kernel transmits, so the pinger verifies
+            independently) **and asserts the DECISION, not the outcome** — the
+            observed trace is `nic skip et=0806` then `nic icmp req ihl=05
+            type=08`, so a kernel that answered correctly *by luck* without
+            classifying would fail on the absent skip witness. Two negative
+            assertions: `nic skip` must NOT appear on a clean ring (a classifier
+            wrongly rejecting a good frame would otherwise hide behind a
+            successful retry), and the literal `ihl=00` must not appear on the
+            noisy one (5j's regression fingerprint). Build 38 min, the largest of
+            the arc.
+            *Honest scope:* no ring WRAP handling (5e carries the same limit).
+            Classification is ethertype + proto + ihl only — it does NOT check
+            the frame is addressed to us (promiscuous RCR accepts anything), nor
+            the ICMP type, nor the IP checksum. **5m covers the ICMP responder
+            only; 5i's UDP responder and the 5k/5l requesters still read slot 0
+            without classifying.**
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
