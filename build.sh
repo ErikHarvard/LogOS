@@ -1814,6 +1814,33 @@ PYC
       || { echo "FAIL  asmelf.la: the LA-built binary printed '$NATOUT'"; ok=0; }
     rm -f asm_native .asmgate/asmelf.out
 
+    # (2b) THE -f elf64 OBJECT PATH — asm.la emits ELF64 relocatable objects, not
+    #      just flat -f bin images, so nasm leaves the OBJECT step of the kernel
+    #      build. The standard is one level up from byte-identity of the .o (its
+    #      internal layout is nasm convention, not semantics): ld(ours) == ld(nasm).
+    #      gate_asmelf.sh drives fixtures r3..r9, each exercising a distinct
+    #      mechanism the real boot.asm needs — every reloc type, equ symbols at
+    #      ABS with 64-bit values, NOBITS/alignment/unknown sections, re-entered
+    #      sections MERGING with symbols kept in source order, 32-bit absolute
+    #      [disp32]+moffs, memory-displacement + far-jump relocs. This is the
+    #      CHEAP regression guard (~30s). The SCALE proof — asm.la assembling the
+    #      real 60KB kernel boot.asm to an object that links byte-identically to
+    #      nasm's — is verified GREEN but runs a ~26-min native-VM cycle (the C
+    #      host walls at 15 min), so like the QEMU kernel gates it is invoked
+    #      separately (.elfobjgate/bootelf2/, gate_boot.sh), not in this audit.
+    if ! command -v ld >/dev/null 2>&1; then
+        echo "SKIP  asm.la -f elf64 gate: ld not installed (cannot link to compare)"
+    elif [ ! -x ./gate_asmelf.sh ]; then
+        echo "SKIP  asm.la -f elf64 gate: gate_asmelf.sh absent"
+    else
+        if ./gate_asmelf.sh >.asmgate/elf64.out 2>&1; then
+            echo "PASS  asm.la -f elf64: $(grep -c '^PASS' .asmgate/elf64.out) fixtures link byte-identical to nasm (ld(ours)==ld(nasm) + section-header equality); the OBJECT step of the kernel build is nasm-free"
+        else
+            echo "FAIL  asm.la -f elf64 object gate:"; grep -E '^(FAIL|----)' .asmgate/elf64.out | sed 's/^/      /'; ok=0
+        fi
+        rm -f .asmgate/elf64.out asm_in.asm asm_out.bin elfobj_out.o
+    fi
+
     # (3) LOUD FAILURE — an instruction outside the subset must halt, not emit
     #     silent garbage. An assembler that quietly skips what it cannot encode
     #     is worse than one that refuses.
