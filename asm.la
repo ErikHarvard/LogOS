@@ -1610,6 +1610,15 @@ glyph WITHDOLLAR = la labs. la off. CONS(PAIR("$")(off))(labs)
 glyph NEXTMODE = la mode. la ts.
     IF(str_eq(LOWER(HD(STRIPLAB(ts))))("bits"))(la _. NUMV(NTH(1)(STRIPLAB(ts))))(la _. mode)
 glyph WITHBITS = la labs. la mode. CONS(PAIR("@bits")(mode))(labs)
+#   ★ `align` PADS WITH 0x90 IN EVERY SECTION — including non-executable ones.
+#   MEASURED on `nasm -f elf64`, in a .rodata section: the fill is `90 90 90 90
+#   90 90`, not zeros. This settles the long-standing note below, which guessed
+#   that "a data section pads with zeros" and honestly labelled itself as
+#   reasoning rather than measurement. It was wrong, and the guess is seductive
+#   enough that I rebuilt it: on first writing the ELF path I threaded a
+#   per-section pad byte (0x90 when executable, 0 otherwise) through the label
+#   channel, and the r6 fixture failed against nasm's NOPs. The deferred
+#   divergence never existed; 144 is simply correct, in both formats.
 glyph BITSMODE = la labs. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 64))(LOOKLAB("@bits")(labs))
 glyph SIZEL = la labs. la off. la ts. SIZEL0(WITHDOLLAR(labs)(off))(off)(STRIPLAB(ts))
 #   @next = off + this instruction's length, so a RIP-relative disp (target-@next)
@@ -2202,20 +2211,53 @@ glyph ELFFIX = Z(la self. la tls. la secs. la mlabs. la prev. la n. la mode.
 #   on a real `nasm -f elf64` object, not from memory. An unrecognised section
 #   halts loudly rather than guessing an alignment that would silently relocate
 #   everything after it.
+#   An UNRECOGNISED name is not an error — nasm has a default for it, and
+#   boot.asm relies on it three times: `.multiboot`, `.boot32` and `.la_image`
+#   all come out PROGBITS, ALLOC, align 1, and notably NOT executable even
+#   though .boot32 is full of code. nasm decides exec from the NAME, not the
+#   contents, so following it is the whole job here.
 glyph SECATTR = la nm.
     IF(str_eq(nm)(".text"))(la _. PAIR(1)(PAIR(6)(16)))
    (la _. IF(str_eq(nm)(".data"))(la _. PAIR(1)(PAIR(3)(4)))
    (la _. IF(str_eq(nm)(".rodata"))(la _. PAIR(1)(PAIR(2)(4)))
-   (la _. error(concat("asm: -f elf64: no recorded nasm default for section ")(nm)))))
-glyph SC   = la nm. la at. la by. PAIR(PAIR(nm)(at))(by)
+   (la _. IF(str_eq(nm)(".bss"))(la _. PAIR(8)(PAIR(3)(4)))
+   (la _. PAIR(1)(PAIR(2)(1))))))
+#   ★ A SECTION'S ALIGNMENT IS RAISED BY THE `align`s INSIDE IT. The per-name
+#   default is only a floor: boot.asm's .rodata comes out 8 (not the default 4)
+#   because it contains `align 8`, and .bss comes out 4096. Measured on nasm's
+#   own boot.o — assuming the name defaults alone would have mis-aligned every
+#   section that carries an align, and a linker script would then place them
+#   somewhere the code does not expect.
+glyph MAXOF = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph MAXALIGN = Z(la self. la lines. la acc.
+    lines(acc)(la ts. la t.
+      (la st.
+        IF(str_eq(LOWER(HD(st)))("align"))
+          (la _. self(t)(MAXOF(acc)(NUMV(NTH(1)(st)))))
+          (la _. self(t)(acc)))
+      (STRIPLAB(ts))))
+glyph SC   = la nm. la ty. la fl. la al. la by. la sz.
+    PAIR(PAIR(nm)(PAIR(ty)(fl)))(PAIR(al)(PAIR(by)(sz)))
 glyph SCNM = la s. FST(FST(s))
-glyph SCAT = la s. SND(FST(s))
-glyph SCBY = la s. SND(s)
+glyph SCTY = la s. FST(SND(FST(s)))
+glyph SCFL = la s. SND(SND(FST(s)))
+glyph SCAL = la s. FST(SND(s))
+glyph SCBY = la s. FST(SND(SND(s)))
+glyph SCSZ = la s. SND(SND(SND(s)))
+#   NOBITS (.bss) takes a header slot and a byte COUNT but contributes no file
+#   bytes. asm.la's `resb` emits real zeros for `-f bin` (where a reservation
+#   must occupy the image), so the size is simply the length of what PASS2
+#   produced and the content is then thrown away — one pass, both meanings.
+glyph ISNOBITS = la ty. int_eq(ty)(8)
 glyph BUILDSECS = Z(la self. la mlabs. la mode. la secs.
     secs(NIL)(la sp. la t.
-      (la lines.
-        CONS(SC(FST(sp))(SECATTR(FST(sp)))(PASS2(mlabs)(lines)(0)(mode)))
+      (la lines. (la at. (la ty. (la by.
+        CONS(SC(FST(sp))(ty)(FST(SND(at)))(MAXOF(SND(SND(at)))(MAXALIGN(lines)(1)))
+               (IF(ISNOBITS(ty))(la _. "")(la _. by))(LENOF(by)))
             (self(mlabs)(SECMODEEND(mode)(lines))(t)))
+        (PASS2(mlabs)(lines)(0)(mode)))
+        (FST(at)))
+        (SECATTR(FST(sp))))
       (SND(sp))))
 
 # ── symbols, in nasm's order — the order is part of the target ──────────────
@@ -2320,10 +2362,8 @@ glyph BUILDRELA = Z(la self. la mlabs. la locs. la mode. la secs. la i.
 # ── the boundary: asm.la's own lists -> the caller's constructors ───────────
 glyph TOXSECS = la XSDESC. la XCONS. la XNIL. Z(la self. la l.
     l(XNIL)(la s. la t.
-      (la by. (la at.
-        XCONS(XSDESC(SCNM(s))(FST(at))(FST(SND(at)))(SND(SND(at)))(0)(0)(0)(by)(LENOF(by)))
-             (self(t)))
-        (SCAT(s)))(SCBY(s))))
+      XCONS(XSDESC(SCNM(s))(SCTY(s))(SCFL(s))(SCAL(s))(0)(0)(0)(SCBY(s))(SCSZ(s)))
+           (self(t))))
 #   st_value is 64 bits and elfobj carries it as two 32-bit halves, because an
 #   equ's value routinely exceeds LA's signed-int lexer limit — boot.asm's
 #   HIGH_BASE is 0xFFFFFFFF80000000 and MB_CHECK is 0xFFFFFFFFE4524FFC, both of

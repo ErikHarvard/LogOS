@@ -46,11 +46,56 @@ for f in asm_elf_*.asm; do
     if ! ld "$G/$n.ours.o" -o "$G/$n.ours.elf" 2>"$G/$n.ldours.err"; then
         printf 'FAIL %-14s ld(ours) failed: %s\n' "$n" "$(head -1 "$G/$n.ldours.err")"; fail=$((fail+1)); continue
     fi
-    if cmp -s "$G/$n.ref.elf" "$G/$n.ours.elf"; then
-        printf 'PASS %-14s ld(ours) == ld(nasm)\n' "$n"; pass=$((pass+1))
-    else
-        printf 'FAIL %-14s %s\n' "$n" "$(cmp "$G/$n.ref.elf" "$G/$n.ours.elf" 2>&1 | head -1)"; fail=$((fail+1))
+    if ! cmp -s "$G/$n.ref.elf" "$G/$n.ours.elf"; then
+        printf 'FAIL %-14s %s\n' "$n" "$(cmp "$G/$n.ref.elf" "$G/$n.ours.elf" 2>&1 | head -1)"; fail=$((fail+1)); continue
     fi
+    # SECOND ASSERTION — the section header TABLE, minus file offsets.
+    #
+    # DEFENCE IN DEPTH, and honestly labelled as such: every red path tried so
+    # far (wrong addend, dropped st_value high half, dropped preamble equs,
+    # alignment not raised, .bss typed PROGBITS) was already caught by ld==ld
+    # above. This assertion has not yet caught anything that one missed.
+    #
+    # It is kept because it is nearly free and it pins the properties a
+    # PERMISSIVE link could absorb — type, flags, alignment, size are SEMANTICS
+    # (a NOBITS section occupies memory but not the file), whereas plain `ld`
+    # with its default script is one linker with one policy. At boot.asm scale
+    # the real link uses kernel/kernel.ld, where flags and alignment decide
+    # placement. sh_offset and inter-section padding stay excluded: those really
+    # are nasm convention, which is why the PRIMARY standard remains the link.
+    #
+    # (An earlier version of this comment claimed ld==ld was blind to the
+    # PROGBITS/NOBITS swap. That was false — the red path that "passed" had
+    # only changed which CONTENT was emitted, not the section type, so the
+    # header still said NOBITS and the object was semantically identical. A
+    # red path that does not test what you think it tests is worse than none:
+    # it manufactures false confidence in the opposite direction.)
+    if ! python3 - "$G/$n.ref.o" "$G/$n.ours.o" >"$G/$n.hdr.diff" 2>&1 <<'PY'
+import subprocess, sys
+def hdrs(p):
+    out = subprocess.check_output(['readelf','-SW',p]).decode().splitlines()
+    rows = []
+    for ln in out:
+        ln = ln.strip()
+        if not ln.startswith('['): continue
+        ln = ln[ln.index(']')+1:].split()
+        if len(ln) < 9: continue          # the NULL section prints fewer columns
+        name, typ, addr, off, size, es, *rest = ln
+        flg  = rest[0] if len(rest) == 4 else ''
+        al   = rest[-1]
+        rows.append((name, typ, flg, al, size))
+    return rows
+a, b = hdrs(sys.argv[1]), hdrs(sys.argv[2])
+if a != b:
+    for x, y in zip(a, b):
+        if x != y: print('nasm', x, '!= ours', y)
+    if len(a) != len(b): print('section COUNT differs:', len(a), 'vs', len(b))
+    sys.exit(1)
+PY
+    then
+        printf 'FAIL %-14s section headers: %s\n' "$n" "$(head -1 "$G/$n.hdr.diff")"; fail=$((fail+1)); continue
+    fi
+    printf 'PASS %-14s ld(ours) == ld(nasm), headers match\n' "$n"; pass=$((pass+1))
 done
 echo "---- asm.la -f elf64 gate: $pass pass, $fail fail ----"
 [ "$fail" -eq 0 ]
