@@ -1829,6 +1829,14 @@ say "LA linker: N objects -> a running ET_EXEC, no ld (link.la, track B)"
 ./gate_link.sh        || ok=0
 ./gate_link_reloc.sh  || ok=0
 ./gate_link_script.sh || ok=0
+# gate_link_e2e.sh is the convergence check: .asm --asm.la--> object
+# --link.la--> executable, with NO nasm and NO ld anywhere in the chain. It
+# takes track A's producer from A's published branch (read-only) and SKIPs
+# rather than failing when that half is absent or refuses a fixture — B does
+# not own the assembler, and an unattended session must not go red for another
+# track's move. It works in its own .e2egate/ directory, so it does not race
+# the three gates above over the worktree's link_inputs.txt.
+./gate_link_e2e.sh    || ok=0
 [ "$ok" -eq 1 ] || exit 1
 
 

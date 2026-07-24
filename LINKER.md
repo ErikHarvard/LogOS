@@ -624,9 +624,50 @@ times from different runs are not comparable. Only back-to-back A/B in one
 session is. The real cost driver is object SIZE (1 KB -> 56 s, 5.7 KB -> 165 s),
 which is the known `DROP` curve.
 
-**11. Cross-track:** `asm.la` emitting ELF objects removes `nasm`, making the
-chain LA end to end. `link.la` is a ready-made oracle — emit an object, read it
-back, require agreement with `readelf` on the same file.
+**✔ 11. THE CHAIN WITH NO FOREIGN TOOL IN IT — for a single object.**
+
+    e2e.asm --asm.la--> ELF64 object --link.la--> executable --> "I AM THAT I AM", exit 42
+
+no `nasm`, no `ld`, at any step. Track A landed `elfobj.la` + `asm.la -f elf64`,
+and their gate proves `ld(ours) == ld(nasm)` — which removes nasm from the OBJECT
+step while keeping ld as the verifier. `gate_link_e2e.sh` is the other half: the
+object is linked by `link.la`, so the last foreign tool leaves the chain. The
+relocated `.text` is then compared with `ld(nasm)`'s and is **byte-identical** —
+both halves agree with the reference they replaced, which is a stronger statement
+than either gate makes alone.
+
+**★ THE OWNERSHIP SPLIT IS IN THE FAILURE MODES.** `asm.la`/`elfobj.la`/
+`asmelfobj.la` are track A's and live on A's branch; the gate reads them from the
+shared object store (published commits, read-only — never A's worktree). If they
+are absent, or A's producer REFUSES a fixture, it prints SKIP and exits 0: B does
+not own that half, and an unattended B session must not go red because another
+track's tool moved. If the producer emits an object and OUR side mishandles it,
+that is a FAIL. The gate can only accuse the half this track is responsible for.
+
+**★ ALL THREE PRODUCER FILES COME FROM ONE COMMIT, NEVER A MIX** — found by the
+gate on its first run. Preferring a local copy per file paired THIS branch's
+stale pre-`-f elf64` `asm.la` with A's new driver and died on `unbound variable
+'ASM_ELF'`. Files that must agree about an interface have to be taken from one
+commit; choosing each independently assembles a combination that never existed.
+
+**✗ THE STANDING GAP: `extern`, and it is the one that matters.** `asm.la` halts
+with `asm: unsupported instruction: extern`, so a source cannot declare an
+UNDEFINED symbol — and resolving an undefined symbol across objects is the exact
+threshold this track defined as the difference between a linker and an image
+writer. **So the LA-only chain is SINGLE-OBJECT only**; the multi-object case
+still needs nasm to produce the `UND` entry. What A needs to emit is small and
+measured, not guessed — for `extern greet` + `call greet`, nasm produces:
+
+    symtab:  NOTYPE GLOBAL DEFAULT UND greet      (st_shndx = 0)
+    rela:    R_X86_64_PC32  greet - 4  at .text+1
+
+The gate **asserts** this rather than remembering it: it feeds `extern` to A's
+producer every run and prints which state it is in, so the day A supports it the
+line changes by itself. A comment would have gone stale in silence.
+
+**12b. Next for this track:** a `.symtab`/`.strtab` in the output (so `nm` works
+on what we emit — the one gap track D was told about), and the multi-object
+LA-only link the moment `extern` lands.
 
 ## Two LA traps this track paid for — read before editing any `.la`
 
