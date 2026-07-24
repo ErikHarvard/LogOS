@@ -218,6 +218,22 @@ def arp_then_ping():
     and never sees the ping. Measured on 5j's real ELF before 5m was written."""
     return [arp_noise(), icmp_echo_request()]
 
+
+def arp_then_udp():
+    """HAL.5n: ARP noise ahead of a UDP echo request (the UDP twin of
+    arp_then_ping)."""
+    return [arp_noise(), udp_request()]
+
+def arp_then_icmpreply6():
+    """HAL.5o: ARP noise ahead of an INJECTED IHL=6 ICMP echo reply. Tests
+    classification AND IHL generality in one run — the requester must skip the
+    ARP, advance the ring, and then read the 24-byte-header reply correctly."""
+    return [arp_noise(), icmp_echo_reply_opts()]
+
+def arp_then_dnsreply6():
+    """HAL.5p: ARP noise ahead of an INJECTED IHL=6 DNS response."""
+    return [arp_noise(), dns_response_opts()]
+
 def saw_guest_frame(f):
     """The ONLY thing an inject mode can honestly assert: a frame came FROM the
     guest, so the kernel ran and transmitted. It does NOT corroborate the RX
@@ -242,12 +258,16 @@ MODES={
     "dnsreply6": (dns_response_opts,    saw_guest_frame, "DNS response (IHL=6)",    "GUEST FRAME"),
     # HAL.5m: ARP noise ahead of the real request. build() returns a LIST.
     "arpthenping":(arp_then_ping,      valid_echo_reply, "ARP noise + ICMP echo request", "ECHO REPLY"),
+    "arpthenudp": (arp_then_udp,       valid_udp_echo,   "ARP noise + UDP datagram",      "UDP ECHO"),
+    # 5o/5p: INJECT modes (see INJECT below) with noise ahead of the reply.
+    "arpicmprep6":(arp_then_icmpreply6, saw_guest_frame, "ARP noise + ICMP reply (IHL=6)", "GUEST FRAME"),
+    "arpdnsrep6": (arp_then_dnsreply6,  saw_guest_frame, "ARP noise + DNS response (IHL=6)", "GUEST FRAME"),
 }
 
 # Modes that INJECT a reply rather than solicit one. They must run the whole
 # window: breaking on the first valid frame would exit as soon as the guest
 # sent its gratuitous ARP, killing QEMU before the injected reply landed.
-INJECT = {"icmpreply6", "dnsreply6"}
+INJECT = {"icmpreply6", "dnsreply6", "arpicmprep6", "arpdnsrep6"}
 
 def main():
     mode,port,secs=sys.argv[1],int(sys.argv[2]),float(sys.argv[3])
