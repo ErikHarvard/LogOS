@@ -199,6 +199,25 @@ def dns_response(opts=None):
 def icmp_echo_reply_opts(): return icmp_echo_reply(IP_OPTS_NOP4)
 def dns_response_opts():    return dns_response(IP_OPTS_NOP4)
 
+def arp_noise():
+    """A plain ARP request from a third party — ethertype 0806, addressed to
+    nobody in particular. Exactly the background traffic a real LAN carries,
+    and the thing a kernel with no ethertype check will happily parse as IPv4."""
+    arp = [0,1, 8,0, 6,4, 0,1] + list(PINGER_MAC) + [10,0,2,99] \
+          + [0,0,0,0,0,0] + [10,0,2,15]
+    f = b'\xff'*6 + bytes(PINGER_MAC) + b'\x08\x06' + bytes(arp)
+    if len(f) < 60: f = f + b'\x00'*(60-len(f))
+    return f
+
+def arp_then_ping():
+    """HAL.5m: NOISE FIRST, then the real request. Returns a LIST — main()
+    sends each frame in order, so the ARP always lands in the ring ahead of the
+    ICMP echo request. A kernel that classifies frames skips the ARP, advances
+    the RX ring, and answers the ping; a kernel that parses whatever arrives
+    first (every 5x kernel up to 5l) chews on the ARP, replies with garbage,
+    and never sees the ping. Measured on 5j's real ELF before 5m was written."""
+    return [arp_noise(), icmp_echo_request()]
+
 def saw_guest_frame(f):
     """The ONLY thing an inject mode can honestly assert: a frame came FROM the
     guest, so the kernel ran and transmitted. It does NOT corroborate the RX
@@ -221,6 +240,8 @@ MODES={
     # HAL.5k/5l inject modes -- see INJECT below for why they do not break early.
     "icmpreply6":(icmp_echo_reply_opts, saw_guest_frame, "ICMP echo REPLY (IHL=6)", "GUEST FRAME"),
     "dnsreply6": (dns_response_opts,    saw_guest_frame, "DNS response (IHL=6)",    "GUEST FRAME"),
+    # HAL.5m: ARP noise ahead of the real request. build() returns a LIST.
+    "arpthenping":(arp_then_ping,      valid_echo_reply, "ARP noise + ICMP echo request", "ECHO REPLY"),
 }
 
 # Modes that INJECT a reply rather than solicit one. They must run the whole
@@ -239,11 +260,16 @@ def main():
     # (a request sent before RX-enable is dropped; several spaced sends cover it)
     import threading
     req=build()
+    # A builder may return ONE frame or a LIST of frames to send in order (the
+    # ordering IS the test for HAL.5m: the noise must land before the request).
+    frames = req if isinstance(req, list) else [req]
     def sender():
         prev=0.0
         for t in (0.6,1.4,2.4,3.4):
             time.sleep(t-prev); prev=t
-            try: send_frame(s,req); print(f"PINGER: sent {label} (t~{t}s)")
+            try:
+                for fr in frames: send_frame(s,fr)
+                print(f"PINGER: sent {label} (t~{t}s)")
             except OSError: return
     threading.Thread(target=sender,daemon=True).start()
     for f in recv_frames(s, secs):
