@@ -241,7 +241,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           assert `entry.inc` ≥ `0xFFFFFFFF80000000`, high-mapped image speaks the Word →
           exit 33 (K2 catches any stray low ref as `#PF`). Sharp edges to verify: nasm
           64-bit `org` + `[abs]`→`disp32` truncation; the `LEBYTES` negative round-trip.
-  - [~] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
+  - [x] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
     - [x] K5a — the timer IRQ live on the metal (QEMU-gated, like K4b/K4c).
           `timer.asm` (entirely `%ifdef K5_TIMER`, so other kernel ELFs stay
           byte-identical — verified: `boot.asm` without the flag is byte-for-byte
@@ -259,7 +259,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           (preemption *capability* proven, b_τ ≡ f_τ). `gate_k5a.sh` asserts
           `n ≥ 1` + exit 33; wired into `build.sh`. No new native_codegen3 builtin
           (reuses `peek`), so Stage 4's fixed point is untouched.
-    - [~] K5b — tasks + context switch. **SCOPED 2026-07-09.** Runtime ABI: `rbx` =
+    - [x] K5b — tasks + context switch. **SCOPED 2026-07-09.** Runtime ABI: `rbx` =
           current env, `r15` = heap bump (a SHARED single heap across all tasks),
           `rbp`/`r12`–`r14` callee-saved, `STACK_BASE`/`STACK_LIMIT` globals (GC
           scan-bound + stack guard). **Pivot finding: `rt_gc` is conservative
