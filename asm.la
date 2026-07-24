@@ -2127,8 +2127,11 @@ glyph INNAMES = Z(la self. la nm. la l.
 #   needs two — the section and the offset within it — because the address does
 #   not exist yet; the linker supplies it. That is the whole representational
 #   difference between the two formats, and it is why this pass exists at all.
-#   shndx 0 is the ABSOLUTE marker for an `equ` (real sections are 1-based), so
-#   an equ's value still reaches the sizing pass while contributing no symbol.
+#   shndx 0 is the ABSOLUTE marker for an `equ` (real sections are 1-based); it
+#   becomes SHN_ABS (65521) at emission. An equ IS a symbol — nasm emits all 21
+#   of boot.asm's as LOCAL ABS, interleaved with the labels in strict SOURCE
+#   order (`gdt64.code` sits between `gdt64` and `gdt64.ptr`), so they cannot be
+#   appended as a group afterwards.
 glyph LOCREC  = la nm. la shndx. la val. PAIR(nm)(PAIR(shndx)(val))
 glyph LOCNAME = la r. FST(r)
 glyph LOCSEC  = la r. FST(SND(r))
@@ -2156,12 +2159,23 @@ glyph SECLABS = Z(la self. la mlabs. la lines. la off. la shndx. la scope. la mo
         (SIZEL(lm)(off)(ts)))
        (WITHBITS(mlabs)(md)))
       (NEXTMODE(mode)(ts))))
-glyph ALLLOCS = Z(la self. la secs. la mlabs. la shndx. la mode.
+glyph SECWALK = Z(la self. la secs. la mlabs. la shndx. la mode.
     secs(NIL)(la sp. la t.
       (la lines.
         APPEND(SECLABS(mlabs)(lines)(0)(shndx)("")(mode))
               (self(t)(mlabs)(add(shndx)(1))(SECMODEEND(mode)(lines))))
       (SND(sp))))
+#   ★ THE PREAMBLE CARRIES SYMBOLS. Lines before the first `section` emit no
+#   bytes, so the byte passes rightly ignore them — but 21 of boot.asm's 23 equs
+#   are declared there, and each is a symbol. Dropping the preamble (which is
+#   correct for CODE) silently dropped a fifth of the symbol table. Walked at
+#   shndx 0 = ABS; a label there would be meaningless and nasm rejects it, so
+#   only equs can appear.
+glyph PRELINES = Z(la self. la ls.
+    ls(NIL)(la ts. la t. IF(ISSECLINE(ts))(la _. NIL)(la _. CONS(ts)(self(t)))))
+glyph ALLLOCS = la tls. la secs. la mlabs. la mode.
+    APPEND(SECLABS(mlabs)(PRELINES(tls))(0)(0)("")(mode))
+          (SECWALK(secs)(mlabs)(1)(mode))
 
 # ── the same fixed point ASSEMBLE runs, over section-relative offsets ───────
 #   Sizes can depend on label values (jump promotion, MOVSIZE), so the table has
@@ -2173,15 +2187,15 @@ glyph FLATLABS = Z(la self. la locs.
 glyph LOCSIG = Z(la self. la l.
     l("")(la h. la t. concat(LOCNAME(h))(concat(":")(concat(int_to_str(LOCVAL(h)))
                      (concat("/")(concat(int_to_str(LOCSEC(h)))(concat(";")(self(t)))))))))
-glyph ELFFIX = Z(la self. la secs. la mlabs. la prev. la n. la mode.
+glyph ELFFIX = Z(la self. la tls. la secs. la mlabs. la prev. la n. la mode.
     IF(int_eq(n)(0))
       (la _. mlabs)
       (la _. (la locs.
                (la sig. IF(str_eq(prev)(sig))
                           (la _. FLATLABS(locs))
-                          (la _. self(secs)(FLATLABS(locs))(sig)(sub(n)(1))(mode)))
+                          (la _. self(tls)(secs)(FLATLABS(locs))(sig)(sub(n)(1))(mode)))
                (LOCSIG(locs)))
-             (ALLLOCS(secs)(mlabs)(1)(mode))))
+             (ALLLOCS(tls)(secs)(mlabs)(mode))))
 
 # ── section descriptors: nasm's defaults, READ OFF nasm's own output ────────
 #   .text AX align 16, .data WA align 4, .rodata A align 4 — from `readelf -SW`
@@ -2216,11 +2230,15 @@ glyph SDSEC  = la s. FST(SND(s))
 glyph SDVAL  = la s. SND(SND(s))
 glyph SECSYMS = Z(la self. la secs. la i.
     secs(NIL)(la sp. la t. CONS(SD("")(3)(i)(0))(self(t)(add(i)(1)))))
+#   The internal ABS marker (0) becomes SHN_ABS at emission. Kept distinct so
+#   the walk can use plain 1-based section indices and one reserved slot, rather
+#   than carrying 65521 through the arithmetic.
+glyph SHNABS  = 65521
+glyph OUTSEC  = la s. IF(int_eq(s)(0))(la _. SHNABS)(la _. s)
 glyph BINDSYMS = la gs. la want. la info. Z(la self. la locs.
     locs(NIL)(la r. la t.
-      IF(AND(NOT(int_eq(LOCSEC(r))(0)))
-            (IF(want)(la _. INNAMES(LOCNAME(r))(gs))(la _. NOT(INNAMES(LOCNAME(r))(gs)))))
-        (la _. CONS(SD(LOCNAME(r))(info)(LOCSEC(r))(LOCVAL(r)))(self(t)))
+      IF(IF(want)(la _. INNAMES(LOCNAME(r))(gs))(la _. NOT(INNAMES(LOCNAME(r))(gs))))
+        (la _. CONS(SD(LOCNAME(r))(info)(OUTSEC(LOCSEC(r)))(LOCVAL(r)))(self(t)))
         (la _. self(t))))
 glyph BUILDSYMS = la fname. la secs. la locs. la gs.
     CONS(SD(fname)(4)(65521)(0))
@@ -2306,15 +2324,48 @@ glyph TOXSECS = la XSDESC. la XCONS. la XNIL. Z(la self. la l.
         XCONS(XSDESC(SCNM(s))(FST(at))(FST(SND(at)))(SND(SND(at)))(0)(0)(0)(by)(LENOF(by)))
              (self(t)))
         (SCAT(s)))(SCBY(s))))
+#   st_value is 64 bits and elfobj carries it as two 32-bit halves, because an
+#   equ's value routinely exceeds LA's signed-int lexer limit — boot.asm's
+#   HIGH_BASE is 0xFFFFFFFF80000000 and MB_CHECK is 0xFFFFFFFFE4524FFC, both of
+#   which arrive here as NEGATIVE LA integers. LA's div/mod on a negative are
+#   documented unreliable in this file, so the negative case is folded into the
+#   unsigned range by addition instead of divided. Values below -2^32 halt
+#   loudly rather than silently emitting a wrong high half.
+glyph TWO32  = 4294967296
+glyph SYMLO = la v.
+    IF(lt(v)(0))
+      (la _. IF(lt(v)(sub(0)(TWO32)))
+               (la _. error(concat("asm: -f elf64: symbol value below -2^32: ")(int_to_str(v))))
+               (la _. add(v)(TWO32)))
+      (la _. mod(v)(TWO32))
+glyph SYMHI = la v.
+    IF(lt(v)(0))(la _. sub(TWO32)(1))(la _. div(v)(TWO32))
 glyph TOXSYMS = la XSREC. la XCONS. la XNIL. Z(la self. la l.
     l(XNIL)(la s. la t.
-      XCONS(XSREC(SDNM(s))(SDINFO(s))(SDSEC(s))(SDVAL(s))(0))(self(t))))
+      (la v. XCONS(XSREC(SDNM(s))(SDINFO(s))(SDSEC(s))(SYMLO(v))(SYMHI(v)))(self(t)))
+      (SDVAL(s))))
 glyph TOXRECS = la XRREC. la XCONS. la XNIL. Z(la self. la l.
     l(XNIL)(la r. la t.
       XCONS(XRREC(RDOFF(r))(RDSYM(r))(RDTYP(r))(RDADD(r)))(self(t))))
 glyph TOXRELA = la XRINFO. la XRREC. la XCONS. la XNIL. Z(la self. la l.
     l(XNIL)(la e. la t.
       XCONS(XRINFO(FST(FST(e)))(SND(FST(e)))(TOXRECS(XRREC)(XCONS)(XNIL)(SND(e))))(self(t))))
+
+# ── SUBALL2: substitute the equs but KEEP their lines ──────────────────────
+#   `-f bin` DELETES a numeric equ's line once its uses have been substituted —
+#   correct there, since an equ contributes no bytes and nothing downstream
+#   needs it. An object file does need it: the line is the only record of where
+#   the symbol sits in SOURCE ORDER, and nasm's symbol table is ordered by it.
+#   Keeping the line is free for the byte passes — SIZEL already answers 0 for
+#   an equ and PASS2 already emits "" — so the same PASS2 serves both formats
+#   with no special case. Only the SUBALL variant differs, which is why this is
+#   a sibling glyph rather than a flag threaded through the original.
+glyph SUBALL2 = la equs.
+    Z(la self. la tls.
+        tls(NIL)(la ts. la t.
+          CONS(IF(ISEQU(ts))
+                 (la _. CONS(HD(ts))(CONS("equ")(SUBLINE(equs)(TL2(TL2(ts))))))
+                 (la _. SUBLINE(equs)(ts)))(self(t))))
 
 # ── ASM_ELF(src)(fname)(SDESC)(SREC)(RINFO)(RREC)(CONS)(NIL)(k) ────────────
 #   -> k(content)(symlist)(relainfo), which is exactly EMIT_OBJ_N's shape, so a
@@ -2338,11 +2389,11 @@ glyph ASM_ELF = la src. la fname. la XSDESC. la XSREC. la XRINFO. la XRREC. la X
                            (TOXSYMS(XSREC)(XCONS)(XNIL)(BUILDSYMS(fname)(secs)(locs)(gs)))
                            (TOXRELA(XRINFO)(XRREC)(XCONS)(XNIL)(BUILDRELA(mlabs)(locs)(mode0)(secs)(1))))
                         (GLOBALSOF(tls)))
-                      (ALLLOCS(secs)(mlabs)(1)(mode0)))
-                    (ELFFIX(secs)(NIL)("")(12)(mode0)))
+                      (ALLLOCS(tls)(secs)(mlabs)(mode0)))
+                    (ELFFIX(tls)(secs)(NIL)("")(12)(mode0)))
                   (PREMODE(tls)(64))))
             (SECSPLIT(tls)))
-          (QUALALL(SUBALL(equs)(tls0))("")))
+          (QUALALL(SUBALL2(equs)(tls0))("")))
         (APPEND(MKEQUS(tls0)(NIL)(""))(SND(pp))))
       (MAPTOKS(FST(pp))))
     (PP(LINES(src)(""))(NIL)(NIL)(NIL))
