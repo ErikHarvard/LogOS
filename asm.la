@@ -2106,11 +2106,44 @@ glyph TAKESEC = Z(la self. la ls.
       IF(ISSECLINE(ts))
         (la _. PAIR(NIL)(ls))
         (la _. (la p. PAIR(CONS(ts)(FST(p)))(SND(p)))(self(t)))))
-glyph SECSPLIT = Z(la self. la ls.
+glyph SECFRAGS = Z(la self. la ls.
     ls(NIL)(la ts. la t.
       IF(ISSECLINE(ts))
         (la _. (la p. CONS(PAIR(SECNAMEOF(ts))(FST(p)))(self(SND(p))))(TAKESEC(t)))
         (la _. self(t))))
+#   ★ RE-ENTERING A SECTION APPENDS TO IT — it does not start a new one.
+#   boot.asm declares five sections, but its %includes declare more: idt.asm
+#   re-enters .boot32/.rodata/.bss and timer.asm and kbdirq.asm each re-enter
+#   .boot32, so `section .boot32` appears four times in the spliced stream.
+#   Emitting one section per DIRECTIVE produced 16 sections against nasm's 11,
+#   with .boot32/.rodata/.bss each duplicated.
+#
+#   MEASURED semantics, on a fixture built for the purpose rather than recalled:
+#   a re-entry resumes at the section's CURRENT END, and an `align` inside the
+#   continuation pads from the MERGED section-local offset — `.text` holding
+#   3 nops then a re-entered `align 16` pads 13 bytes to reach 16. So merging is
+#   plain concatenation of the fragments' lines, and the existing per-section
+#   offset threading then does the rest unchanged. That is also why the wrong
+#   version was CLOSE but not equal: each fragment restarted at offset 0, so
+#   every align inside a continuation rounded against the wrong base.
+#
+#   Order is FIRST APPEARANCE, which is nasm's section order.
+#   HONEST SCOPE — `bits` is a SOURCE-ORDER property, not a section one, so a
+#   section re-entered under a different CPU mode than it was left in would be
+#   mis-threaded here. boot.asm is safe (every `bits` sits inside .boot32 and
+#   all three re-entries are `bits 64`, the mode .boot32 already ends in) and it
+#   is named rather than silently assumed.
+glyph SAMENAME = la nm. Z(la self. la fr.
+    fr(NIL)(la sp. la t.
+      IF(str_eq(FST(sp))(nm))(la _. APPEND(SND(sp))(self(t)))(la _. self(t))))
+glyph DROPNAME = la nm. Z(la self. la fr.
+    fr(NIL)(la sp. la t.
+      IF(str_eq(FST(sp))(nm))(la _. self(t))(la _. CONS(sp)(self(t)))))
+glyph SECMERGE = Z(la self. la fr.
+    fr(NIL)(la sp. la t.
+      (la nm. CONS(PAIR(nm)(APPEND(SND(sp))(SAMENAME(nm)(t))))(self(DROPNAME(nm)(t))))
+      (FST(sp))))
+glyph SECSPLIT = la ls. SECMERGE(SECFRAGS(ls))
 #   Lines before the first `section` are not part of any section, but a `bits`
 #   among them still sets the mode every section inherits — so the preamble is
 #   dropped for BYTES and folded for MODE.
@@ -2150,30 +2183,57 @@ glyph LOCVAL  = la r. SND(SND(r))
 #   up by name but fatal here, where nasm's symbol ORDER is part of the target.
 #   Scope is threaded exactly as MKLABS threads it so a local `.foo` qualifies to
 #   the same name both passes produce.
+#   Returns PAIR(records)(the scope at the end), because a local label's scope
+#   is a SOURCE-ORDER property spanning fragments: `.w_done` inside a re-entered
+#   .boot32 belongs to the last non-local label seen, which may have been
+#   defined in an earlier fragment of a different file. Returning the scope
+#   rather than recomputing it in a second fold keeps one implementation — the
+#   thing this file has already been bitten by twice.
 glyph SECLABS = Z(la self. la mlabs. la lines. la off. la shndx. la scope. la mode.
-    lines(NIL)(la ts. la t.
+    lines(PAIR(NIL)(scope))(la ts. la t.
       (la md. (la lm.
         (la sz.
           IF(ISEQU(ts))
-            (la _. CONS(LOCREC(QUALIFY(scope)(EQUNAME(ts)))(0)
-                              (EVAL(WITHDOLLAR(lm)(off))(EQUBODY(ts))))
-                       (self(mlabs)(t)(add(off)(sz))(shndx)(scope)(md)))
+            (la _. (la r. PAIR(CONS(LOCREC(QUALIFY(scope)(EQUNAME(ts)))(0)
+                                          (EVAL(WITHDOLLAR(lm)(off))(EQUBODY(ts))))(FST(r)))(SND(r)))
+                   (self(mlabs)(t)(add(off)(sz))(shndx)(scope)(md)))
             (la _. IF(ISLABEL(HD(ts)))
               (la _. (la nm.
-                       CONS(LOCREC(QUALIFY(scope)(nm))(shndx)(off))
-                           (self(mlabs)(t)(add(off)(sz))(shndx)
-                                 (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm))(md)))
+                       (la r. PAIR(CONS(LOCREC(QUALIFY(scope)(nm))(shndx)(off))(FST(r)))(SND(r)))
+                       (self(mlabs)(t)(add(off)(sz))(shndx)
+                             (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm))(md)))
                      (LABNAME(HD(ts))))
               (la _. self(mlabs)(t)(add(off)(sz))(shndx)(scope)(md))))
         (SIZEL(lm)(off)(ts)))
        (WITHBITS(mlabs)(md)))
       (NEXTMODE(mode)(ts))))
-glyph SECWALK = Z(la self. la secs. la mlabs. la shndx. la mode.
-    secs(NIL)(la sp. la t.
-      (la lines.
-        APPEND(SECLABS(mlabs)(lines)(0)(shndx)("")(mode))
-              (self(t)(mlabs)(add(shndx)(1))(SECMODEEND(mode)(lines))))
-      (SND(sp))))
+#   ★ SYMBOL ORDER IS SOURCE ORDER, NOT MERGED-SECTION ORDER. Merging the
+#   fragments is right for BYTES but wrong for the symbol table: nasm lists a
+#   label at the point its DEFINITION appears in the source, so a `.data` label
+#   written between two `.text` fragments comes out between their labels. The
+#   r7 fixture caught exactly this — headers and relocations already matched and
+#   only the order of `val` and `tail` was swapped.
+#
+#   So this walks the FRAGMENTS in source order while giving each label the
+#   offset it has in its MERGED section: `offs` carries the running end offset
+#   per section name, so a re-entered fragment resumes where that section left
+#   off, and `shndx` is the section's index in the merged order. Scope and CPU
+#   mode thread across fragments for the same source-order reason.
+glyph SECIDX = la nm. Z(la self. la secs. la i.
+    secs(0)(la sp. la t. IF(str_eq(FST(sp))(nm))(la _. i)(la _. self(t)(add(i)(1)))))
+glyph OFFOF = la nm. Z(la self. la offs.
+    offs(0)(la p. la t. IF(str_eq(FST(p))(nm))(la _. SND(p))(la _. self(t))))
+glyph SECWALK = Z(la self. la secs. la fr. la mlabs. la offs. la scope. la mode.
+    fr(NIL)(la sp. la t.
+      (la nm. (la lines. (la off0. (la r.
+        APPEND(FST(r))
+              (self(secs)(t)(mlabs)
+                   (CONS(PAIR(nm)(TOTLEN(lines)(mlabs)(off0)(mode)))(offs))
+                   (SND(r))(SECMODEEND(mode)(lines))))
+        (SECLABS(mlabs)(lines)(off0)(SECIDX(nm)(secs)(1))(scope)(mode)))
+        (OFFOF(nm)(offs)))
+        (SND(sp)))
+      (FST(sp))))
 #   ★ THE PREAMBLE CARRIES SYMBOLS. Lines before the first `section` emit no
 #   bytes, so the byte passes rightly ignore them — but 21 of boot.asm's 23 equs
 #   are declared there, and each is a symbol. Dropping the preamble (which is
@@ -2183,8 +2243,8 @@ glyph SECWALK = Z(la self. la secs. la mlabs. la shndx. la mode.
 glyph PRELINES = Z(la self. la ls.
     ls(NIL)(la ts. la t. IF(ISSECLINE(ts))(la _. NIL)(la _. CONS(ts)(self(t)))))
 glyph ALLLOCS = la tls. la secs. la mlabs. la mode.
-    APPEND(SECLABS(mlabs)(PRELINES(tls))(0)(0)("")(mode))
-          (SECWALK(secs)(mlabs)(1)(mode))
+    APPEND(FST(SECLABS(mlabs)(PRELINES(tls))(0)(0)("")(mode)))
+          (SECWALK(secs)(SECFRAGS(tls))(mlabs)(NIL)("")(mode))
 
 # ── the same fixed point ASSEMBLE runs, over section-relative offsets ───────
 #   Sizes can depend on label values (jump promotion, MOVSIZE), so the table has
