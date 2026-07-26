@@ -319,9 +319,9 @@ glyph PHDR = la flags. la off. la vaddr. la fsz. la msz. CAT(
     NIL)))))))))
 
 # ── resolution (slice 2's rule, restated over the two objects) ──────────────
-glyph DEFINES = la f. la ss. la i.
-    AND(SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i)))
-       (AND(NOT(SYM_IS_UNDEF(f)(ss)(i)))(NOT(SYM_IS_SECTION(f)(ss)(i))))
+#   The strong-definition predicate is now the record-level `DEFINES_R`, folded
+#   over the memoised STAB rather than re-derived per index — see the
+#   resolution-predicates block just after STAB below.
 #   ★ DUPLICATE DEFINITIONS MUST BE REFUSED, and this was a real gap: LOOKUP
 #   returns the FIRST match, so two objects both defining `greet` would have
 #   linked silently and one definition would have been chosen by input order.
@@ -986,6 +986,21 @@ glyph R_SEC   = la r. int_eq(R_TYPE(r))(3)
 glyph R_FILE  = la r. int_eq(R_TYPE(r))(4)
 glyph R_UNDEF = la r. int_eq(ST_SHX(r))(0)
 glyph R_NAMED = la r. NOT(int_eq(str_to_int(str_len(ST_NM(r))))(0))
+#   ── resolution predicates over a STAB record (the memoised path) ────────────
+#   The per-index HASDEF/DUPPAIR/LOOKUP/DEFIDX below each rescanned the symtab
+#   with SYM_* accessors — every one an O(offset) deep DROP (SYMOFF = SH_OFF+i*24
+#   re-walked from file start). They now fold over RSTAB, the symbol table read
+#   ONCE per object, and read each record's fields shallow — the win OSYMS took,
+#   applied to the resolution band (~3.5 s). ST_NM is the plain .strtab name (no
+#   SECTION-name synthesis), which is exactly right here: every predicate below
+#   excludes section symbols (NOT R_SEC), so a name is only ever compared for a
+#   real named symbol. ST_VLO == SYM_VALUE (LOW4 ≡ U32), so LOOKUP's address is
+#   byte-identical.
+glyph SYM_IS_WEAK    = la info. int_eq(div(info)(16))(2)   # binding (st_info>>4) == STB_WEAK; SYM_BIND is link.la-private
+glyph DEFINES_R      = la r. AND(R_GLB(r))(AND(NOT(R_UNDEF(r)))(NOT(R_SEC(r))))
+glyph R_WEAK         = la r. SYM_IS_WEAK(ST_INFO(r))
+glyph DEFINES_WEAK_R = la r. AND(R_WEAK(r))(AND(NOT(R_UNDEF(r)))(NOT(R_SEC(r))))
+glyph RSTAB          = la rec. STAB(O_F(rec))(O_SS(rec))(O_SECTAB(rec))
 #   OSYMS now folds over STAB(f)(ss)(sectab) — one memoised pass — and each
 #   record's fields are shallow reads, not a deep DROP apiece.
 glyph OSYMS = la objs. la plan. la exts. la rec.
@@ -1491,21 +1506,18 @@ glyph CHECKALL = la segs. la disc. la objs. (Z(la self. la l.
     l("ok")(la h. la t.
       SEQ(CHECKSECS(segs)(disc)(O_SECTAB(h))(concat("input ")(int_to_str(O_IDX(h)))))(self(t)))))(objs)
 
-glyph HASDEF = la f. la ss. la want. (Z(la self. la i.
-    IF(int_eq(i)(SYM_COUNT(f)(ss)))
-      (la _. FALSE)
-      (la _. IF(AND(DEFINES(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
-               (la _. TRUE)
-               (la _. self(add(i)(1))))))(0)
+glyph HASDEF = la rec. la want. (Z(la self. la l.
+    l(FALSE)(la r. la t.
+      IF(AND(DEFINES_R(r))(str_eq(ST_NM(r))(want)))
+        (la _. TRUE)
+        (la _. self(t)))))(RSTAB(rec))
 
 #   One ordered pair: every global b defines that a also defines is a clash.
-glyph DUPPAIR = la a. la b. (Z(la self. la i.
-    IF(int_eq(i)(SYM_COUNT(O_F(b))(O_SS(b))))
-      (la _. "ok")
-      (la _. IF(AND(DEFINES(O_F(b))(O_SS(b))(i))
-                   (HASDEF(O_F(a))(O_SS(a))(SYMNAME(O_F(b))(O_SS(b))(i))))
-               (la _. error(concat("link: duplicate symbol: ")(SYMNAME(O_F(b))(O_SS(b))(i))))
-               (la _. self(add(i)(1))))))(0)
+glyph DUPPAIR = la a. la b. (Z(la self. la l.
+    l("ok")(la r. la t.
+      IF(AND(DEFINES_R(r))(HASDEF(a)(ST_NM(r))))
+        (la _. error(concat("link: duplicate symbol: ")(ST_NM(r))))
+        (la _. self(t)))))(RSTAB(b))
 
 #   Every object against every LATER object — each unordered pair once, which
 #   is what two objects did by hand and N objects needs a nested walk to do.
@@ -1522,20 +1534,17 @@ glyph DUPCHECK = la objs. (Z(la self. la l.
 #   symbols C++ emits for inline functions/templates. `DEFINES` (strong only)
 #   stays the criterion for DUPLICATE detection, so a weak+strong pair is not a
 #   multiple-definition error.
-glyph SYM_IS_WEAK = la info. int_eq(div(info)(16))(2)   # binding (st_info>>4) == STB_WEAK; SYM_BIND is link.la-private
-glyph DEFINES_WEAK = la f. la ss. la i.
-    AND(SYM_IS_WEAK(SYM_INFO(f)(ss)(i)))
-       (AND(NOT(SYM_IS_UNDEF(f)(ss)(i)))(NOT(SYM_IS_SECTION(f)(ss)(i))))
+#   The weak-definition predicate is the record-level `DEFINES_WEAK_R` (STB_WEAK
+#   bind, defined, non-section) in the resolution-predicates block above.
 
 #   Look a name up in one object under a given definition predicate (strong or
 #   weak); returns its address or -1.
-glyph LOOKUP_P = la dfn. la f. la ss. la va. la want. (Z(la self. la i.
-    IF(int_eq(i)(SYM_COUNT(f)(ss)))
-      (la _. sub(0)(1))
-      (la _. IF(AND(dfn(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
-               (la _. add(va(SYM_SHNDX(f)(ss)(i)))(SYM_VALUE(f)(ss)(i)))
-               (la _. self(add(i)(1))))))(0)
-glyph LOOKUP = LOOKUP_P(DEFINES)
+glyph LOOKUP_P = la dfn. la rec. la va. la want. (Z(la self. la l.
+    l(sub(0)(1))(la r. la t.
+      IF(AND(dfn(r))(str_eq(ST_NM(r))(want)))
+        (la _. add(va(ST_SHX(r)))(ST_VLO(r)))
+        (la _. self(t)))))(RSTAB(rec))
+glyph LOOKUP = LOOKUP_P(DEFINES_R)
 
 #   First object that defines `want` under `dfn`, as an address, or -1 (no
 #   error). The NIL branch is a plain -1, so — unlike the two-pass RESOLVE_L —
@@ -1545,7 +1554,7 @@ glyph FIND_DEF = la dfn. la objs. la plan. la want.
       l(sub(0)(1))
        (la h. la t.
          (la a. IF(NOT(lt(a)(0)))(la _. a)(la _. self(t)))
-         (LOOKUP_P(dfn)(O_F(h))(O_SS(h))(la sec. VAOF(plan)(O_IDX(h))(sec))(want)))))
+         (LOOKUP_P(dfn)(h)(la sec. VAOF(plan)(O_IDX(h))(sec))(want)))))
     (objs)
 
 #   Resolve a name: a STRONG definition first, then a WEAK one, else unresolved.
@@ -1559,8 +1568,8 @@ glyph RESOLVE_L = la objs. la plan. la want.
     (la strong.
        IF(NOT(lt(strong)(0)))
          (la _. strong)
-         (la _. FIND_DEF(DEFINES_WEAK)(objs)(plan)(want)))
-    (FIND_DEF(DEFINES)(objs)(plan)(want))
+         (la _. FIND_DEF(DEFINES_WEAK_R)(objs)(plan)(want)))
+    (FIND_DEF(DEFINES_R)(objs)(plan)(want))
 
 #   The entry `_start` MUST resolve — RESOLVE_L is non-fatal now, so this keeps
 #   the loud halt (a binary with no entry is not linkable, as ld's "no entry"
@@ -1613,22 +1622,23 @@ glyph SCPAIR = la lines.
 glyph NODIRS = la lines. (Z(la self. la l.
     l(NIL)(la h. la t. IF(STARTSW(h)("--"))(la _. self(t))(la _. CONS(h)(self(t))))))(lines)
 
-#   Index of a DEFINED symbol named `want` in one object's symtab, or -1.
-glyph DEFIDX = la f. la ss. la want. (Z(la self. la i.
-    IF(int_eq(i)(SYM_COUNT(f)(ss)))
-      (la _. sub(0)(1))
-      (la _. IF(AND(DEFINES(f)(ss)(i))(str_eq(SYMNAME(f)(ss)(i))(want)))
-               (la _. i)
-               (la _. self(add(i)(1))))))(0)
+#   The st_shndx of a DEFINED symbol named `want` in one object, or -1. (Folds
+#   over RSTAB and returns the section index directly — FINDDEF needed only the
+#   shndx the old DEFIDX+SYM_SHNDX pair recovered from the index.)
+glyph DEFSHNDX = la rec. la want. (Z(la self. la l.
+    l(sub(0)(1))(la r. la t.
+      IF(AND(DEFINES_R(r))(str_eq(ST_NM(r))(want)))
+        (la _. ST_SHX(r))
+        (la _. self(t)))))(RSTAB(rec))
 
 #   The (object index, section index) that DEFINES a global `want`, or (-1,-1).
 glyph FINDDEF = la objs. la want. (Z(la self. la l.
     l(PAIR(sub(0)(1))(sub(0)(1)))(la h. la t.
-      (la si.
-        IF(lt(si)(0))
+      (la sh.
+        IF(lt(sh)(0))
           (la _. self(t))
-          (la _. PAIR(O_IDX(h))(SYM_SHNDX(O_F(h))(O_SS(h))(si))))
-      (DEFIDX(O_F(h))(O_SS(h))(want)))))(objs)
+          (la _. PAIR(O_IDX(h))(sh)))
+      (DEFSHNDX(h)(want)))))(objs)
 
 #   The (object, section) defining symbol `si` of object `oidx`: a symbol defined
 #   here (st_shndx a real section < 0xff00) resolves in place; an UNDEF (shndx 0)
