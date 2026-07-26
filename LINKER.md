@@ -98,8 +98,14 @@ most wrong implementations also exit non-zero.
 - **32-bit window**: ELF64 fields are 8 bytes, the low 4 are read. Fine here,
   wrong above 4 GB.
 - The **reader** is general (validated on a real gcc object, 14 sections). The
-  **linker** now takes N objects and four section kinds, but still only the
-  section names it knows — so the asymmetry is narrower than it was, not gone.
+  **linker** now takes N objects and — as of `bb045e0` — ARBITRARY allocatable
+  section names: the no-script default layout groups sections by SHF flags
+  (exec→RX, writable→RW, else→R) exactly as ld's default does, so a name the
+  linker never heard of (`.mydata`, `.weird`) is placed by its permissions, not
+  refused. The known five keep their canonical slots so that case stays
+  byte-identical to ld. Arbitrary-section ORDER is NOT matched to ld (its own
+  convention); the gate (`gate_link_nsec.sh`) asserts placed + runs + W^X. The
+  reader/linker asymmetry over section NAMES is now closed.
 
 ## Next
 
