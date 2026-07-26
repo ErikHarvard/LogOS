@@ -491,22 +491,82 @@ glyph SEG_NAMES = la s. SND(s)
 #   either way), but an output section is what a section HEADER describes, so
 #   the built-in layout has to name its output sections for the same reason a
 #   script does.
-glyph DEFITEMS =
-  CONS(MKIADDR(SM_ABS)(TEXT_BASE))(
-  CONS(MKISEC(".text")("#1")(FALSE)(CONS(".text")(NIL)))(
-  CONS(MKIADDR(SM_ALIGN)(PAGE))(
-  CONS(MKISEC(".rodata")("#2")(FALSE)(CONS(".rodata")(NIL)))(
-  CONS(MKISEC(".eh_frame")("#2")(FALSE)(CONS(".eh_frame")(NIL)))(
-  CONS(MKISEC(".got")("#2")(FALSE)(CONS(".got")(NIL)))(
-  CONS(MKIADDR(SM_ALIGN)(PAGE))(
-  CONS(MKISEC(".data")("#3")(FALSE)(CONS(".data")(NIL)))(
-  CONS(MKISEC(".bss")("#3")(FALSE)(CONS(".bss")(NIL)))(
-  NIL)))))))))
-glyph DEFSEGS =
-  CONS(SEG(F_RX)(CONS(".text")(NIL)))(
-  CONS(SEG(F_R)(CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(NIL)))))(
-  CONS(SEG(F_RW)(CONS(".data")(CONS(".bss")(NIL))))(
-  NIL)))
+#   ── N-SECTION: the default layout GROUPED BY SHF FLAGS, not a fixed name list ─
+#   ld's no-script default puts allocatable sections into one PT_LOAD per
+#   permission (RX / R / RW). The known five keep their canonical slots, so a
+#   link with no arbitrary sections stays byte-identical to before (the
+#   regression gate proves it); any OTHER allocatable output-section is appended
+#   to the segment its SHF flags select — exec→RX, writable→RW, else→R. Within
+#   RW, PROGBITS precede NOBITS so p_filesz<=p_memsz stays honest (a writable
+#   NOBITS placed before a PROGBITS would put file bytes past the zero-fill gap).
+glyph SEC_IS_WRITE  = la h. int_eq(mod(SEC_FLAGS(h))(2))(1)          # SHF_WRITE bit0
+glyph SEC_IS_EXEC   = la h. int_eq(mod(div(SEC_FLAGS(h))(4))(2))(1)  # SHF_EXECINSTR bit2
+glyph SEC_IS_NOBITS = la h. int_eq(SEC_TYPE(h))(SH_NOBITS)
+#   The six output names the canonical skeleton already carries; an ARBITRARY
+#   section is one whose OUTPUT name (post-OUTNAME) is none of these.
+glyph KNOWN_ONAME = la n.
+    OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(OR(str_eq(n)(".eh_frame"))
+      (OR(str_eq(n)(".data"))(OR(str_eq(n)(".bss"))(str_eq(n)(".got"))))))
+glyph NMEM = la names. la n. (Z(la self. la l.
+    l(FALSE)(la h. la t. IF(str_eq(h)(n))(la _. TRUE)(la _. self(t)))))(names)
+glyph NADD = la names. la n.
+    IF(NMEM(names)(n))(la _. names)(la _. APPL(names)(CONS(n)(NIL)))
+#   The four buckets, threaded through the section fold as a 4-tuple: RX, R,
+#   writable-PROGBITS, writable-NOBITS — each a first-seen-ordered, deduped list.
+glyph B_RX  = la s. FST(s)
+glyph B_R   = la s. FST(SND(s))
+glyph B_RWP = la s. FST(SND(SND(s)))
+glyph B_RWN = la s. SND(SND(SND(s)))
+glyph MKB   = la rx. la r. la rwp. la rwn. PAIR(rx)(PAIR(r)(PAIR(rwp)(rwn)))
+glyph BUCKET_ADD = la s. la nm. la h.
+    IF(SEC_IS_EXEC(h))
+      (la _. MKB(NADD(B_RX(s))(nm))(B_R(s))(B_RWP(s))(B_RWN(s)))
+      (la _. IF(SEC_IS_WRITE(h))
+               (la _. IF(SEC_IS_NOBITS(h))
+                        (la _. MKB(B_RX(s))(B_R(s))(B_RWP(s))(NADD(B_RWN(s))(nm)))
+                        (la _. MKB(B_RX(s))(B_R(s))(NADD(B_RWP(s))(nm))(B_RWN(s))))
+               (la _. MKB(B_RX(s))(NADD(B_R(s))(nm))(B_RWP(s))(B_RWN(s))))
+#   Fold every object's every allocatable, non-droppable, non-known output
+#   section into the four buckets. `.note.gnu.property` is skipped exactly as
+#   DROPPABLE skips it under the fixed layout.
+#   One object's sections folded into the running buckets `a`.
+glyph ARB_OBJ = la a. la o.
+    (Z(la self. la sl. la acc.
+      sl(acc)(la h. la t.
+        (la nm.
+          IF(OR(NOT(SEC_IS_ALLOC(h)))
+               (OR(KNOWN_ONAME(nm))(str_eq(nm)(".note.gnu.property"))))
+            (la _. self(t)(acc))
+            (la _. self(t)(BUCKET_ADD(acc)(nm)(h))))
+          (OUTNAME(SEC_NAME(h))))))
+    (O_SECTAB(o))(a)
+#   Every object, threaded left to right.
+glyph ARBSECS = la objs.
+    (Z(la self. la ol. la acc.
+      ol(acc)(la o. la ot. self(ot)(ARB_OBJ(acc)(o)))))
+    (objs)(MKB(NIL)(NIL)(NIL)(NIL))
+#   Skeleton ++ this link's arbitrary names; NOBITS last within RW. With empty
+#   buckets these are exactly the old fixed lists — the regression is by construction.
+glyph DEFRX = la B. CONS(".text")(B_RX(B))
+glyph DEFR  = la B. CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(B_R(B))))
+glyph DEFRW = la B. CONS(".data")(APPL(B_RWP(B))(CONS(".bss")(B_RWN(B))))
+glyph MKSECITEMS = la key. la names. (Z(la self. la l.
+    l(NIL)(la h. la t. CONS(MKISEC(h)(key)(FALSE)(CONS(h)(NIL)))(self(t)))))(names)
+glyph DEFITEMS = la objs. (la B.
+    CONS(MKIADDR(SM_ABS)(TEXT_BASE))(
+    APPL(MKSECITEMS("#1")(DEFRX(B)))(
+    CONS(MKIADDR(SM_ALIGN)(PAGE))(
+    APPL(MKSECITEMS("#2")(DEFR(B)))(
+    CONS(MKIADDR(SM_ALIGN)(PAGE))(
+    APPL(MKSECITEMS("#3")(DEFRW(B)))(
+    NIL)))))))
+  (ARBSECS(objs))
+glyph DEFSEGS = la objs. (la B.
+    CONS(SEG(F_RX)(DEFRX(B)))(
+    CONS(SEG(F_R)(DEFR(B)))(
+    CONS(SEG(F_RW)(DEFRW(B)))(
+    NIL))))
+  (ARBSECS(objs))
 
 #   ── PERMISSIONS: DECLARED, OR DERIVED ──────────────────────────────────────
 #   A PHDRS block STATES the flags, so `FLAGS(7)` is honoured as written — that
@@ -1703,13 +1763,13 @@ glyph KEEPFN = la entry. la objs. la gcon.
 glyph MAIN =
   (la lines.
   (la sc.
+  (la objs.
   (la items.
   (la segs.
   (la nolo.
   (la disc.
   (la entry.
   (la gcon.
-  (la objs.
   (la _chk.
   (la keep.
   (la gotnames.
@@ -1783,13 +1843,13 @@ glyph MAIN =
   )(GOTNAMES(objs)(MKPLAN(items)(keep)(gcon)(objs)(0)))
   )(KEEPFN(entry)(objs)(gcon))
   )(CHECKALL(segs)(disc)(objs))
-  )(MKOBJS(NODIRS(lines)))
   )(HASGC(lines))
   )(IF(HASSCRIPT(lines))(la _. SC_ENTRY(sc))(la _. "_start"))
   )(IF(HASSCRIPT(lines))(la _. SC_DISCARD(sc))(la _. NIL))
   )(IF(HASSCRIPT(lines))(la _. NOLOADPATS(SC_ITEMS(sc)))(la _. NIL))
-  )(IF(HASSCRIPT(lines))(la _. FROMGROUPS(sc))(la _. DEFSEGS))
-  )(IF(HASSCRIPT(lines))(la _. SC_ITEMS(sc))(la _. DEFITEMS))
+  )(IF(HASSCRIPT(lines))(la _. FROMGROUPS(sc))(la _. DEFSEGS(objs)))
+  )(IF(HASSCRIPT(lines))(la _. SC_ITEMS(sc))(la _. DEFITEMS(objs)))
+  )(MKOBJS(NODIRS(lines)))
   )(SCPAIR(lines))
   )(SPLITLINES(read_file("link_inputs.txt")))
 

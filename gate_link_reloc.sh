@@ -435,29 +435,37 @@ CS32
     fi
 fi
 
-# --- NEGATIVE: a section the layout cannot place must be REFUSED ---
-#   ★ THIS FIXTURE REPLACED A STALE ONE, which is the point. The gate used to
-#   point at a gcc object, whose .data/.bss/.eh_frame were all unplaceable when
-#   it was written. Then .data and .bss became placeable and .eh_frame
-#   explicitly droppable — so that object no longer had the property the gate
-#   NAMES, and it began failing for an unrelated reason (unresolved symbol).
-#   The gate caught that ONLY because it asserts WHICH diagnostic; a check for
-#   "it failed" would have passed while testing nothing, indefinitely.
+# --- ARBITRARY SECTION: the default layout PLACES it BY ITS SHF FLAGS ---
+#   ★ THIS WAS A REFUSAL GATE, and the behaviour it tested was deliberately
+#   changed. `link_test_odd.asm`'s `.weird` (PROGBITS, SHF_ALLOC, read-only) is
+#   a name this linker cannot know; the OLD default layout REFUSED any such
+#   allocatable section ("...this layout cannot place"). The default layout now
+#   groups allocatable sections by PERMISSION (RX / R / RW) as ld does, so
+#   `.weird` — read-only — is PLACED in the R segment, not refused.
 #
-#   link_test_odd.asm carries `.weird`: PROGBITS + SHF_ALLOC, so it occupies
-#   memory at run time and the layout must answer for it, and it is a name this
-#   linker cannot know. It exists for no other purpose, so it cannot quietly
-#   become placeable the way .data did.
+#   The refusal MECHANISM is not lost, it is gated where it is still correct:
+#   with an explicit --script a section no segment names is still refused
+#   (gate_link_script: `.note.mine`). And the full runs-and-reads-back proof of
+#   by-flags placement is gate_link_nsec (`.mydata`, RW). Here we assert the
+#   narrower fact this multi-object fixture is for: the old refusal is gone and
+#   `.weird` lands in a LOAD segment with W^X intact.
 cp link_test_a.o   link_in1.o
 cp link_test_odd.o link_in2.o
 printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt
 rm -f link_out link_text.bin
 if SOUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then SRC=0; else SRC=$?; fi
-[ "$SRC" -ne 0 ] \
-    || { echo "FAIL  link_reloc.la: accepted an object with an unplaceable section"; ok=0; }
-echo "$SOUT" | grep -q "allocatable section this layout cannot place" \
-    || { echo "FAIL  link_reloc.la: refused, but not for the section reason (got: $(echo "$SOUT" | tail -1))"; ok=0; }
-[ -e link_out ] && { echo "FAIL  link_reloc.la: wrote link_out despite refusing"; ok=0; }
+[ "$SRC" -eq 0 ] \
+    || { echo "FAIL  link_reloc.la: REFUSED .weird instead of placing it by flags (got: $(echo "$SOUT" | tail -1))"; ok=0; }
+[ -x link_out ] \
+    || { echo "FAIL  link_reloc.la: no link_out for the arbitrary-section link"; ok=0; }
+if [ -x link_out ]; then
+    readelf -lW link_out | grep -q '\.weird' \
+        || { echo "FAIL  link_reloc.la: .weird was not placed into any LOAD segment"; ok=0; }
+    if readelf -lW link_out | grep -E 'LOAD' | grep -qE 'RWE|RWX'; then
+        echo "FAIL  link_reloc.la: a W+X LOAD segment exists (W^X violated) after placing .weird"; ok=0
+    fi
+    [ "$ok" = 1 ] && echo "PASS  link_reloc.la: the arbitrary read-only section .weird is PLACED by flags into a LOAD segment (W^X held), not refused"
+fi
 
 
 # --- REAL COMPILER OUTPUT: asm entry + two gcc objects ---

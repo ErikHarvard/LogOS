@@ -1829,6 +1829,12 @@ say "LA linker: N objects -> a running ET_EXEC, no ld (link.la, track B)"
 ./gate_link.sh        || ok=0
 ./gate_link_reloc.sh  || ok=0
 ./gate_link_script.sh || ok=0
+# gate_link_nsec.sh: the DEFAULT (no-script) layout places an ARBITRARY
+# allocatable section by its SHF flags -- exec->RX, writable->RW, else->R, as
+# ld groups by permission. The known five stay byte-identical to ld (the three
+# gates above); this covers a section name the linker cannot know (.mydata),
+# proving it is placed, mapped, readable at run time, and W^X is preserved.
+./gate_link_nsec.sh   || ok=0
 # gate_link_e2e.sh is the convergence check: .asm --asm.la--> object
 # --link.la--> executable, with NO nasm and NO ld anywhere in the chain. It
 # takes track A's producer from A's published branch (read-only) and SKIPs
