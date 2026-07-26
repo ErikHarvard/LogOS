@@ -949,32 +949,63 @@ glyph SECIDX = la exts. la addr. (Z(la self. la l. la i.
 #   An ABS symbol (`MSGLEN equ $-msg`) keeps its value and SHN_ABS: it belongs
 #   to no section, and running it through the placement would either error or
 #   invent an address for a constant.
-glyph OSYMS = la objs. la plan. la exts. la rec. (la f. (la ss.
-    (Z(la self. la i. la acc.
-      IF(int_eq(i)(SYM_COUNT(f)(ss)))
-        (la _. REV(acc)(NIL))
-        (la _. IF(OR(SYM_IS_SECTION(f)(ss)(i))
-                    (OR(SYM_IS_FILE(SYM_INFO(f)(ss)(i)))
-                       (OR(SYM_IS_UNDEF(f)(ss)(i))
-                          (int_eq(str_to_int(str_len(SYMNAME(f)(ss)(i))))(0)))))
-                 (la _. self(add(i)(1))(acc))
-                 (la _. SYMREC(objs)(plan)(exts)(rec)(f)(ss)(i)(self)(acc)))))
-     (0)(NIL))
-    (O_SS(rec)))(O_F(rec))
-glyph SYMREC = la objs. la plan. la exts. la rec. la f. la ss. la i. la self. la acc.
-    IF(int_eq(SYM_SHNDX(f)(ss)(i))(SHN_ABS))
-      (la _. self(add(i)(1))(CONS(MKSYM(SYMNAME(f)(ss)(i))
-                                       (SYM_VALUE(f)(ss)(i))(SYM_VHIGH(f)(ss)(i))
-                                       (SHN_ABS)(SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i))))(acc)))
+#   ── STAB: the symbol table read ONCE, the way SECTAB reads the headers ──────
+#   ★ MEASURED, not guessed: emitting the symtab cost ~12 s of a 54 s link for
+#   EIGHT symbols, because every SYM_* accessor recomputed SYMOFF = SH_OFF + i*24
+#   and SH_OFF is an un-memoised deep DROP from file start — ~6 per symbol, each
+#   O(offset). SECTAB fixed exactly this for section headers; the symbol reads
+#   were never given the same treatment. STAB DROPs to the symtab base once,
+#   steps 24 bytes/entry carrying the tail (O(1) amortised per symbol), and reads
+#   each field at a shallow offset within the current record; names come from a
+#   once-DROPped .strtab tail, as SECTAB's names come from a once-DROPped
+#   .shstrtab tail. The five fields are exactly what the emitter and the filter
+#   need — nothing is read that OSYMS would not have read anyway.
+glyph STREC  = la nm. la info. la shndx. la vlo. la vhi.
+    PAIR(nm)(PAIR(info)(PAIR(shndx)(PAIR(vlo)(vhi))))
+glyph ST_NM   = la r. FST(r)
+glyph ST_INFO = la r. FST(SND(r))
+glyph ST_SHX  = la r. FST(SND(SND(r)))
+glyph ST_VLO  = la r. FST(SND(SND(SND(r))))
+glyph ST_VHI  = la r. SND(SND(SND(SND(r))))
+glyph STAB = la f. la ss. la st.
+    (la n. (la strtail.
+      (Z(la self. la i. la sy.
+         IF(int_eq(i)(n))
+           (la _. NIL)
+           (la _. CONS(STREC(CSTR(strtail)(U32(sy)(0)))(BYTE(sy)(4))(U16(sy)(6))
+                            (U32(sy)(8))(U32(sy)(12)))
+                       (self(add(i)(1))(DROP(24)(sy))))))
+       (0)(DROP(SH_OFF_M(st)(ss))(f)))
+      (DROP(SH_OFF_M(st)(SH_LINK(f)(ss)))(f)))
+    (div(SH_SIZE_M(st)(ss))(24))
+
+#   Predicates over a STAB record, replacing the per-index SYM_* deep reads.
+glyph R_TYPE  = la r. mod(ST_INFO(r))(16)
+glyph R_GLB   = la r. int_eq(div(ST_INFO(r))(16))(1)
+glyph R_SEC   = la r. int_eq(R_TYPE(r))(3)
+glyph R_FILE  = la r. int_eq(R_TYPE(r))(4)
+glyph R_UNDEF = la r. int_eq(ST_SHX(r))(0)
+glyph R_NAMED = la r. NOT(int_eq(str_to_int(str_len(ST_NM(r))))(0))
+#   OSYMS now folds over STAB(f)(ss)(sectab) — one memoised pass — and each
+#   record's fields are shallow reads, not a deep DROP apiece.
+glyph OSYMS = la objs. la plan. la exts. la rec.
+    (Z(la self. la l. la acc.
+      l(REV(acc)(NIL))(la r. la t.
+        IF(OR(R_SEC(r))(OR(R_FILE(r))(OR(R_UNDEF(r))(NOT(R_NAMED(r))))))
+          (la _. self(t)(acc))
+          (la _. SYMREC(objs)(plan)(exts)(rec)(r)(self)(t)(acc)))))
+    (STAB(O_F(rec))(O_SS(rec))(O_SECTAB(rec)))(NIL)
+glyph SYMREC = la objs. la plan. la exts. la rec. la r. la self. la t. la acc.
+    IF(int_eq(ST_SHX(r))(SHN_ABS))
+      (la _. self(t)(CONS(MKSYM(ST_NM(r))(ST_VLO(r))(ST_VHI(r))
+                               (SHN_ABS)(R_GLB(r)))(acc)))
       (la _. (la base.
                IF(lt(base)(0))
-                 (la _. self(add(i)(1))(acc))
-                 (la _. self(add(i)(1))
-                            (CONS(MKSYM(SYMNAME(f)(ss)(i))
-                                       (add(base)(SYM_VALUE(f)(ss)(i)))(0)
-                                       (SECIDX(exts)(base))
-                                       (SYM_IS_GLOBAL(SYM_INFO(f)(ss)(i))))(acc))))
-             (VAOF(plan)(O_IDX(rec))(SYM_SHNDX(f)(ss)(i))))
+                 (la _. self(t)(acc))
+                 (la _. self(t)
+                            (CONS(MKSYM(ST_NM(r))(add(base)(ST_VLO(r)))(0)
+                                       (SECIDX(exts)(base))(R_GLB(r)))(acc))))
+             (VAOF(plan)(O_IDX(rec))(ST_SHX(r))))
 glyph ALLSYMS = la objs. la plan. la exts. (Z(la self. la l.
     l(NIL)(la h. la t. APPL(OSYMS(objs)(plan)(exts)(h))(self(t)))))(objs)
 glyph SYMSBY = la syms. la want. (Z(la self. la l.
@@ -1726,7 +1757,7 @@ glyph MAIN =
   )(STRTAB_BYTES(symnames))
   )(SYMNAMES(syms))
   )(SORTSYMS(ALLSYMS(objs)(plan)(exts)))
-  )(SECEXTS(objs)(PLACEDSECS(items)(objs)(plan))(plan))
+  )(SECEXTS(objs)(secs)(plan))
   )(PLACEDSECS(items)(objs)(plan))
   )(LENL(regs))
   )(ROFFS(regs))

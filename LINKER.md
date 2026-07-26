@@ -152,6 +152,38 @@ walk), so it is not memoisable the same way — reading N bytes at a deep offset
 is O(offset) however you slice it, and that is the one place the whole-file
 `DROP` genuinely has to happen.
 
+**★★ 2026-07-24 — THE DOCUMENTED BOTTLENECK WAS STALE; MEASUREMENT OVERTURNED IT.**
+The note above concluded `SECBYTES` (deep section-content reads) was "the one
+place the whole-file `DROP` genuinely has to happen." That predated the section
+table (12) and the symbol table (12b), and it was wrong about where the time now
+goes. A stage profile (min-of-3, back-to-back — single runs are not comparable,
+the governor is `powersave` with an 800-5284 MHz spread) on a 1560-byte gcc
+object:
+
+    read 0.7 · plan 2.9 · relocate 6.4 · regions 7.0 · placedsecs 9.4 ·
+    secexts 11.5 · SYMTAB 24.3 · emit ~54   (cumulative user s)
+
+The symbol table — 8 symbols — cost **~12 s of 54**. Stubbing localised it to
+`ALLSYMS`, and the cause was NOT the count: every `SYM_*` accessor recomputed
+`SYMOFF = SH_OFF + i*24`, and `SH_OFF` is an un-memoised deep `DROP` from file
+start — ~6 per symbol, each O(offset). `SECTAB` had fixed exactly this shape for
+section headers; the symbol reads were simply never given the same treatment.
+(A first guess — that `SYM_COUNT` in the loop guard was the cost — was MEASURED
+and refuted before the real cause was found. Reasoning about a bottleneck picked
+the wrong glyph; stubbing found the right one.)
+
+**The fix — `STAB`, a symbol-table memo mirroring `SECTAB`:** `DROP` to the
+symtab base once, step 24 bytes/entry carrying the tail (O(1) amortised per
+symbol), read each field at a shallow offset, names from a once-`DROP`ped
+`.strtab` tail. `OSYMS`/`SYMREC` fold over that list instead of indexing the
+per-`i` accessors. Plus `exts` now reuses the already-computed `secs` instead of
+recomputing `PLACEDSECS`. Measured on the same object, back-to-back: **54 → 39 s
+(~28%)**, symbols still byte-for-byte ld's. It scales with symbol count, so the
+win is far larger on the real kernel object (107 symbols). *The resolution path
+(`DEFINES`/`FIND_DEF`, three more `SYM_COUNT`-in-guard loops) still uses the
+per-index accessors — a smaller band (relocate 3.5 s), and the same STAB could
+serve it next.*
+
 **The 31% per-link growth is real and is not any one function.** It tracks
 capability — more section names means more `FIND_SEC` calls, more plan entries,
 more regions — so the curve bends upward as the linker becomes more useful, and
