@@ -1841,6 +1841,27 @@ PYC
         rm -f .asmgate/elf64.out asm_in.asm asm_out.bin elfobj_out.o
     fi
 
+    # (2c) THE MULTI-OBJECT SEAM — asm.la's `extern`. A single object with an
+    #      unresolved symbol cannot link alone, so gate_asmelf.sh (which links
+    #      each object by itself) cannot exercise it. gate_asmelf_extern.sh does
+    #      the smallest honest test: a.o `extern greet` + references it (code and
+    #      data reloc), b.o `global greet` defines it, link BOTH and compare
+    #      ld(ours)==ld(nasm). This is the exact cross-object UNDEF resolution
+    #      link.la was built to cross — the last asm.la feature before the
+    #      nasm+ld-free build works for MANY objects, not just one.
+    if ! command -v ld >/dev/null 2>&1; then
+        echo "SKIP  asm.la -f elf64 extern gate: ld not installed"
+    elif [ ! -x ./gate_asmelf_extern.sh ]; then
+        echo "SKIP  asm.la -f elf64 extern gate: gate_asmelf_extern.sh absent"
+    else
+        if ./gate_asmelf_extern.sh >.asmgate/extern.out 2>&1; then
+            echo "PASS  asm.la -f elf64 extern: two-object link byte-identical to nasm+ld (UNDEF symbol + reloc resolved across objects); MULTI-object assembly is nasm-free"
+        else
+            echo "FAIL  asm.la -f elf64 extern gate:"; grep -E '^(FAIL|----)' .asmgate/extern.out | sed 's/^/      /'; ok=0
+        fi
+        rm -f .asmgate/extern.out asm_in.asm asm_out.bin elfobj_out.o
+    fi
+
     # (3) LOUD FAILURE — an instruction outside the subset must halt, not emit
     #     silent garbage. An assembler that quietly skips what it cannot encode
     #     is worse than one that refuses.

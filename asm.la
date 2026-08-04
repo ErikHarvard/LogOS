@@ -1505,7 +1505,7 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. NEARSZ(BITSMODE(labs))(1)))(la _.
     IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. NEARSZ(BITSMODE(labs))(2)))(la _.
     IF(str_eq(op)("mov"))(la _. MOVSIZE(BITSMODE(labs))(ts))(la _.
-    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("equ"))(ISEQU(ts))))(la _. 0)(la _.
+    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("extern"))(OR(str_eq(op)("equ"))(ISEQU(ts)))))(la _. 0)(la _.
     IF(str_eq(op)("section"))(la _. SECPAD(off))(la _.
     IF(str_eq(op)("incbin"))(la _. LENOF(INCBIN(ts)))(la _.
     IF(str_eq(op)("rep"))(la _. add(1)(SIZEL(labs)(add(off)(1))(TL2(ts))))(la _.
@@ -1559,7 +1559,7 @@ glyph ENC10 = la labs. la off. la ts.
     IF(AND(str_eq(op)("push"))(ISVAL(A1(ts))))(la _. PUSHIMM(EVAL(labs)(A1(ts))))(la _.
     IF(str_eq(op)("push"))(la _. PUSHPOP(80)(REGNUM(A1(ts))))(la _.
     IF(str_eq(op)("pop"))(la _. PUSHPOP(88)(REGNUM(A1(ts))))(la _.
-    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("equ"))(ISEQU(ts))))(la _. "")(la _.
+    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("extern"))(OR(str_eq(op)("equ"))(ISEQU(ts)))))(la _. "")(la _.
     IF(str_eq(op)("section"))(la _. REPB(SECPAD(off))(B(0)))(la _.
     IF(str_eq(op)("incbin"))(la _. INCBIN(ts))(la _.
     IF(str_eq(op)("rep"))(la _. concat(B(243))(ENC1(labs)(add(off)(1))(TL2(ts))))(la _.
@@ -2204,6 +2204,51 @@ glyph GLOBALSOF = Z(la self. la ls.
         (la _. self(t))))
 glyph INNAMES = Z(la self. la nm. la l.
     l(FALSE)(la h. la t. IF(str_eq(h)(nm))(la _. TRUE)(la _. self(nm)(t))))
+#   ── externs: names declared `extern`, undefined HERE, resolved by the linker ──
+#   The mirror of GLOBALSOF: a `global` names a label this object DEFINES and
+#   exports; an `extern` names one it USES but another object defines. An extern
+#   becomes an SHN_UNDEF symbol (shndx 0, GLOBAL bind, value 0) and a relocation
+#   against it points at that symbol directly with addend 0 — not at a section
+#   symbol + in-section offset, which is how a LOCAL reference relocates. This is
+#   the single missing piece for MULTI-OBJECT linking: link.la already resolves a
+#   cross-object undefined symbol, but nothing could DECLARE one until now.
+glyph EXTERNSOF = Z(la self. la ls.
+    ls(NIL)(la ts. la t.
+      IF(str_eq(LOWER(HD(ts)))("extern"))
+        (la _. CONS(NTH(1)(ts))(self(t)))
+        (la _. self(t))))
+#   Each extern's symtab index is fixed once the local symbols are laid out:
+#   0 null, 1 FILE, then |secs| section symbols, then |locs| defined labels, so
+#   the first extern sits at |secs| + 2 + |locs| (the SAME layout TSYM's LOCSEC+1
+#   arithmetic already assumes). XIDX numbers the extern names from that base;
+#   XLOOK resolves a name to SOME(index) or NONE.
+glyph XIDX = Z(la self. la names. la i.
+    names(NIL)(la h. la t. CONS(PAIR(h)(i))(self(t)(add(i)(1)))))
+glyph XLOOK = Z(la self. la nm. la xs.
+    xs(NONE)(la h. la t.
+      IF(str_eq(FST(h))(nm))(la _. SOME(SND(h)))(la _. self(nm)(t))))
+#   The byte EMITTER resolves a label operand to its value to fill the immediate
+#   field (`mov rax, greet` writes an 8-byte field). An extern has no value here —
+#   the linker supplies it — so its field is a PLACEHOLDER the RELA overwrites
+#   (ld computes S+A-P and ignores the field). Injecting each extern into the
+#   encoder's label table makes LABADDR return that placeholder instead of halting
+#   "undefined label", WITHOUT adding it to `locs` (built from actual `label:`
+#   definitions, not this table) — so it stays an UNDEF symbol, never a defined one.
+#
+#   ★ THE PLACEHOLDER IS A LARGE POSITIVE VALUE, ON PURPOSE. A near `jmp` picks a
+#   SHORT (rel8) encoding when its target is within ±127 (JSHORT/FITS8). An extern
+#   jmp MUST be near (rel8 has no room for a PLT32 reloc, and can't reach an
+#   unknown symbol), so the placeholder must be far enough that FITS8 fails for
+#   any instruction offset off>=0: `V-(off+2) > 127`. A big positive V guarantees
+#   that. It must be POSITIVE (not a large negative, which would be equally "far")
+#   because a `dq greet` emits this value through LE8, whose div/mod split is
+#   unreliable on a negative. The value is otherwise inert: it only fills fields
+#   ld overwrites and it changes NO instruction's SIZE (a label operand is imm64 /
+#   e8 rel32 regardless of value). Honest bound: correct for a section shorter
+#   than EXTPLACE-130 bytes (~1 GiB); a larger .text is not a thing here.
+glyph EXTPLACE = 1073741824
+glyph EXTLABS = Z(la self. la names.
+    names(NIL)(la h. la t. CONS(PAIR(h)(EXTPLACE))(self(t))))
 
 # ── a label's LOCATION: which section, and where in it ──────────────────────
 #   `-f bin` needs one number per label (its absolute address). An object file
@@ -2383,10 +2428,18 @@ glyph BINDSYMS = la gs. la want. la info. Z(la self. la locs.
       IF(IF(want)(la _. INNAMES(LOCNAME(r))(gs))(la _. NOT(INNAMES(LOCNAME(r))(gs))))
         (la _. CONS(SD(LOCNAME(r))(info)(OUTSEC(LOCSEC(r)))(LOCVAL(r)))(self(t)))
         (la _. self(t))))
-glyph BUILDSYMS = la fname. la secs. la locs. la gs.
+#   An extern is a GLOBAL-bind (info 16) NOTYPE symbol at SHN_UNDEF (shndx 0,
+#   kept raw — NOT run through OUTSEC, which would turn 0 into SHN_ABS: an equ's
+#   0 means "absolute", an extern's 0 means "undefined"). value 0. They follow
+#   the defined globals so their indices match XIDX's base (|secs|+2+|locs|), and
+#   being global they do not change sh_info (the local count elfobj derives).
+glyph EXTSYMS = Z(la self. la names.
+    names(NIL)(la h. la t. CONS(SD(h)(16)(0)(0))(self(t))))
+glyph BUILDSYMS = la fname. la secs. la locs. la gs. la xnames.
     CONS(SD(fname)(4)(65521)(0))
         (APPEND(SECSYMS(secs)(1))
-               (APPEND(BINDSYMS(gs)(FALSE)(0)(locs))(BINDSYMS(gs)(TRUE)(16)(locs))))
+               (APPEND(BINDSYMS(gs)(FALSE)(0)(locs))
+                      (APPEND(BINDSYMS(gs)(TRUE)(16)(locs))(EXTSYMS(xnames)))))
 
 # ── relocations: one per label reference, classified by the ENCODING it lands in ──
 #   The reloc's offset is the field's position, so it is derived from the line's
@@ -2407,21 +2460,34 @@ glyph LOOKLOC = Z(la self. la nm. la locs.
 #   sections in order), and the addend carries the label's offset within it.
 glyph TLOC = la nm. la locs.
     (la o. IF(ISSOME(o))(la _. OPTV(o))
-             (la _. error(concat("asm: -f elf64: relocation against an undefined symbol: ")(nm))))
+             (la _. error(concat("asm: -f elf64: relocation against a symbol neither defined here nor declared extern: ")(nm))))
     (LOOKLOC(nm)(locs))
-glyph TSYM = la nm. la locs. add(LOCSEC(TLOC(nm)(locs)))(1)
-glyph TADD = la nm. la locs. LOCVAL(TLOC(nm)(locs))
+#   ★ An extern relocates against its OWN symbol (XLOOK's index), addend 0 — the
+#   linker supplies the address. A local relocates against its SECTION symbol
+#   (LOCSEC+1) with the in-section offset as addend. A well-formed name is in at
+#   most one table: XLOOK is consulted first, and any name that is genuinely a
+#   local label is absent from the extern list, so it falls through to the local
+#   path. (A name both DEFINED here and declared `extern` is malformed; it would
+#   emit an UNDEF reloc, which ld still resolves via the definition.)
+glyph TSYM = la nm. la locs. la xs.
+    (la o. IF(ISSOME(o))(la _. OPTV(o))
+             (la _. add(LOCSEC(TLOC(nm)(locs)))(1)))
+    (XLOOK(nm)(xs))
+glyph TADD = la nm. la locs. la xs.
+    (la o. IF(ISSOME(o))(la _. 0)
+             (la _. LOCVAL(TLOC(nm)(locs))))
+    (XLOOK(nm)(xs))
 glyph DRTYPE = la w.
     IF(int_eq(w)(8))(la _. 1)(la _. IF(int_eq(w)(4))(la _. 10)(la _. 12))
 #   A `dq`/`dd`/`dw` operand list places element i at i*w from the line's start.
 #   Width 1 (`db`) is EXCLUDED on purpose: its operands may be quoted strings,
 #   which are not label references and would be misread as one.
-glyph DATARELS = Z(la self. la locs. la secoff. la w. la els. la i.
+glyph DATARELS = Z(la self. la locs. la xs. la secoff. la w. la els. la i.
     els(NIL)(la e. la t.
       IF(BISLBL(e))
-        (la _. CONS(RD(add(secoff)(mul(i)(w)))(TSYM(e)(locs))(DRTYPE(w))(TADD(e)(locs)))
-                   (self(locs)(secoff)(w)(t)(add(i)(1))))
-        (la _. self(locs)(secoff)(w)(t)(add(i)(1)))))
+        (la _. CONS(RD(add(secoff)(mul(i)(w)))(TSYM(e)(locs)(xs))(DRTYPE(w))(TADD(e)(locs)(xs)))
+                   (self(locs)(xs)(secoff)(w)(t)(add(i)(1))))
+        (la _. self(locs)(xs)(secoff)(w)(t)(add(i)(1)))))
 #   ★ A LABEL CAN BE THE ADDRESS, NOT JUST THE VALUE — and that is a relocation
 #   too. `mov [pml4], eax` puts the label in the DISPLACEMENT; the classifier
 #   only looked at the source operand, so 7 of boot.asm's 19 .boot32 relocations
@@ -2446,7 +2512,13 @@ glyph DATARELS = Z(la self. la locs. la secoff. la w. la els. la i.
 #   bare [label] case fall out of the same expression rather than needing its
 #   own arm, which is why this replaces TADD here instead of special-casing.
 glyph MEMLBLNAME = la t. FST(SPLITFIRST(STRIPBRK(t))(""))
-glyph HASMEMLBL = la t. AND(ISMEM(t))(AND(MEMABS(t))(BISLBL(MEMLBLNAME(t))))
+#   ★ A RIP-relative `[rel label]` is EXCLUDED here: MEMABS is true for it (no
+#   base register), so without this it would be read as an ABSOLUTE-memory label
+#   and MEMLBLNAME would return "rellabel" (the `rel` prefix unstripped), emitting
+#   a reloc against a nonexistent symbol. RIP operands are handled by MEMRIPRELS,
+#   which strips `rel` and emits R_X86_64_PC32 — a distinct relocation from the
+#   absolute R_X86_64_32/32S this path produces.
+glyph HASMEMLBL = la t. AND(ISMEM(t))(AND(MEMABS(t))(AND(NOT(MEMRIP(t)))(BISLBL(MEMLBLNAME(t)))))
 glyph MDTYPE  = la mode. IF(int_eq(mode)(64))(la _. 11)(la _. 10)
 #   The width is asked for ONLY when there actually is an immediate. `lgdt
 #   [desc]` has one operand and no width to infer, so IWOF halts loudly on it —
@@ -2461,12 +2533,48 @@ glyph IMMTAIL = la st.
 glyph MEMTOKOF = la st.
     IF(HASMEMLBL(A1(st)))(la _. A1(st))
       (la _. IF(HASMEMLBL(A2(st)))(la _. A2(st))(la _. ""))
-glyph MEMDRELS = la mlabs. la locs. la mode. la secoff. la linelen. la st.
+#   NOTE (scope): the addend here is MEMDISP, which EVALs the bracket against the
+#   LOCAL label table — so a label in an ABSOLUTE memory operand (`[greet]`) must
+#   be local; an absolute-memory extern would take EXTPLACE as its addend and is
+#   not supported. The RIP-relative memory extern (`[rel greet]`) IS supported —
+#   see MEMRIPRELS below (R_X86_64_PC32). The other extern paths are register-
+#   immediate (`mov rax, greet`), data (`dq greet`), and PC-relative call/jmp.
+#   NOTE (scope): an ABSOLUTE memory extern (`mov rax, [greet]`) is NOT supported.
+#   The instruction + reloc are producible correctly (measured: the R_X86_64_32S
+#   against greet with addend 0 matches nasm byte-for-byte, and greet resolves to
+#   the right absolute address — `MEMDISP − EXTPLACE` recovers the offset), but the
+#   LINKED byte-identity gate then trips on symbol-TABLE ordering (a difference in
+#   metadata, not code), which is a separate concern from the reloc. Modern code
+#   references external data RIP-relatively (`[rel greet]`, MEMRIPRELS above), which
+#   IS supported, so this absolute form is left out rather than chased into the
+#   symbol-order weeds. A local label uses MEMDISP directly (its value is the
+#   in-section offset the section-symbol relocation needs).
+glyph MEMDRELS = la mlabs. la locs. la xs. la mode. la secoff. la linelen. la st.
     (la mt. IF(str_eq(mt)(""))
              (la _. NIL)
              (la _. CONS(RD(add(secoff)(sub(sub(linelen)(IMMTAIL(st)))(4)))
-                           (TSYM(MEMLBLNAME(mt))(locs))(MDTYPE(mode))(MEMDISP(mlabs)(mt)))(NIL)))
+                           (TSYM(MEMLBLNAME(mt))(locs)(xs))(MDTYPE(mode))(MEMDISP(mlabs)(mt)))(NIL)))
     (MEMTOKOF(st))
+#   ── RIP-relative reference to an EXTERN: `mov rax, [rel greet]` -> R_X86_64_PC32.
+#   The modern way to reference external DATA. For a LOCAL `[rel label]` the disp32
+#   is the label minus the next IP, computed at assembly time — no reloc (XLOOK
+#   NONE). For an extern it must be relocated: R_X86_64_PC32 (type 2) at the disp32
+#   field (the same linelen−IMMTAIL−4 position MEMDRELS uses) with addend −4 (RIP
+#   points at the next instruction, so S+A−P = target−4−P = target−next). RIPLAB
+#   strips the `rel` prefix to recover the real symbol name. The placeholder disp
+#   the encoder wrote (EXTPLACE − next) is overwritten by ld, so the linked result
+#   matches nasm's.
+glyph MEMRIPTOK = la st.
+    IF(MEMRIP(A1(st)))(la _. A1(st))
+      (la _. IF(MEMRIP(A2(st)))(la _. A2(st))(la _. ""))
+glyph MEMRIPRELS = la locs. la xs. la secoff. la linelen. la st.
+    (la mt. IF(str_eq(mt)(""))
+             (la _. NIL)
+             (la _. (la o. IF(ISSOME(o))
+                             (la _. CONS(RD(add(secoff)(sub(sub(linelen)(IMMTAIL(st)))(4)))(OPTV(o))(2)(sub(0)(4)))(NIL))
+                             (la _. NIL))
+                    (XLOOK(RIPLAB(mt))(xs))))
+    (MEMRIPTOK(st))
 #   ★ THE FAR JUMP'S OFFSET IS NOT THE LAST FIELD. `jmp gdt64.code:long_start`
 #   encodes EA + off32 + sel16, so the relocation sits at length−6, not the
 #   length−4 every other displacement uses — the 2-byte SELECTOR trails it.
@@ -2474,51 +2582,77 @@ glyph MEMDRELS = la mlabs. la locs. la mode. la secoff. la linelen. la st.
 #   differs again; the boot sectors' 16-bit far jumps target no relocatable
 #   symbol, so that arm is named rather than silently assumed correct.
 glyph FARTGT = la st. SND(SPLITCOLON(A1(st))(""))
-glyph FARRELS = la locs. la mode. la secoff. la linelen. la op. la st.
+glyph FARRELS = la locs. la xs. la mode. la secoff. la linelen. la op. la st.
     IF(AND(str_eq(op)("jmp"))(AND(NOT(int_eq(mode)(16)))(NOT(str_eq(FARTGT(st))("")))))
       (la _. (la tgt. IF(BISLBL(tgt))
                         (la _. CONS(RD(add(secoff)(sub(linelen)(6)))
-                                      (TSYM(tgt)(locs))(MDTYPE(mode))(TADD(tgt)(locs)))(NIL))
+                                      (TSYM(tgt)(locs)(xs))(MDTYPE(mode))(TADD(tgt)(locs)(xs)))(NIL))
                         (la _. NIL))
              (FARTGT(st)))
       (la _. NIL)
-glyph RELLINE = la mlabs. la locs. la mode. la secoff. la ts.
+#   ★ A near `call` or `jmp` to an EXTERN symbol is the one PC-RELATIVE relocation
+#   asm.la emits — every other reloc it makes is absolute. To a LOCAL label both
+#   are self-contained: the rel32 (or rel8) is computed at assembly time and needs
+#   NO reloc. To an extern neither can be — the target address is unknown here — so
+#   each emits R_X86_64_PLT32 (type 4) at the rel32 field (linelen−4) with addend
+#   −4 (rel32 is measured from the next instruction, P+4, so S+A−P = target−4−P is
+#   exactly target−next). The field bytes are irrelevant (RELA: ld computes S+A−P
+#   and OVERWRITES the field), so the placeholder rel32 does not matter and the
+#   LINKED result still matches nasm's byte-for-byte. Only externs get a reloc:
+#   XLOOK NONE ⇒ local ⇒ none.
+#
+#   Both are NEAR (e8/e9 rel32, 5 bytes ⇒ field at linelen−4). `call` has no short
+#   form, so it is always near. A `jmp` to an extern is forced near by EXTPLACE
+#   (the far placeholder makes JSHORT reject the rel8 form) — see EXTLABS. The far
+#   `jmp seg:off` and the `near`-keyword forms are not extern targets here (a colon
+#   target is not BISLBL; the keyword case is redundant since externs are already
+#   forced near), so A1(st) is the plain target in the cases this fires.
+glyph PCRELS = la locs. la xs. la mode. la secoff. la linelen. la op. la st.
+    IF(AND(OR(str_eq(op)("call"))(str_eq(op)("jmp")))(NOT(int_eq(mode)(16))))
+      (la _. (la tgt.
+               (la o. IF(AND(BISLBL(tgt))(ISSOME(o)))
+                        (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(OPTV(o))(4)(sub(0)(4)))(NIL))
+                        (la _. NIL))
+               (XLOOK(tgt)(xs)))
+             (A1(st)))
+      (la _. NIL)
+glyph RELLINE = la mlabs. la locs. la xs. la mode. la secoff. la ts.
   (la st.
     (la op.
       (la linelen.
-       APPEND(FARRELS(locs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMDRELS(mlabs)(locs)(mode)(secoff)(linelen)(st))(
+       APPEND(PCRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMRIPRELS(locs)(xs)(secoff)(linelen)(st))(APPEND(FARRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMDRELS(mlabs)(locs)(xs)(mode)(secoff)(linelen)(st))(
         IF(str_eq(op)("mov"))
           (la _. (la a. (la b.
                    IF(BISLBL(b))
                      (la _. IF(ISMEM(a))
-                       (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(TSYM(b)(locs))(11)(TADD(b)(locs)))(NIL))
+                       (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(TSYM(b)(locs)(xs))(11)(TADD(b)(locs)(xs)))(NIL))
                        (la _. IF(int_eq(RWIDTH(a))(8))
-                         (la _. CONS(RD(add(secoff)(sub(linelen)(8)))(TSYM(b)(locs))(1)(TADD(b)(locs)))(NIL))
-                         (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(TSYM(b)(locs))(10)(TADD(b)(locs)))(NIL))))
+                         (la _. CONS(RD(add(secoff)(sub(linelen)(8)))(TSYM(b)(locs)(xs))(1)(TADD(b)(locs)(xs)))(NIL))
+                         (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(TSYM(b)(locs)(xs))(10)(TADD(b)(locs)(xs)))(NIL))))
                      (la _. NIL))
                  (A2(st)))(A1(st)))
           (la _. IF(AND(ISDATA(op))(NOT(int_eq(DWIDTH(op))(1))))
-            (la _. DATARELS(locs)(secoff)(DWIDTH(op))(JOINEXPR(TL2(st)))(0))
-            (la _. NIL)))))
+            (la _. DATARELS(locs)(xs)(secoff)(DWIDTH(op))(JOINEXPR(TL2(st)))(0))
+            (la _. NIL)))))))
       (SIZEL(WITHBITS(mlabs)(mode))(secoff)(ts)))
     (LOWER(HD(st))))
   (STRIPLAB(ts))
-glyph SECRELS = Z(la self. la mlabs. la locs. la mode. la lines. la secoff.
+glyph SECRELS = Z(la self. la mlabs. la locs. la xs. la mode. la lines. la secoff.
     lines(NIL)(la ts. la t.
       (la md.
-        APPEND(RELLINE(mlabs)(locs)(md)(secoff)(ts))
-              (self(mlabs)(locs)(md)(t)(add(secoff)(SIZEL(WITHBITS(mlabs)(md))(secoff)(ts)))))
+        APPEND(RELLINE(mlabs)(locs)(xs)(md)(secoff)(ts))
+              (self(mlabs)(locs)(xs)(md)(t)(add(secoff)(SIZEL(WITHBITS(mlabs)(md))(secoff)(ts)))))
       (NEXTMODE(mode)(ts))))
 #   nasm emits no `.rela.<name>` for a section with no relocations, so an empty
 #   list must be DROPPED rather than emitted empty — an extra section header
 #   would shift every later index and the linked output with it.
 glyph NULLP = la l. l(TRUE)(la h. la t. FALSE)
-glyph BUILDRELA = Z(la self. la mlabs. la locs. la mode. la secs. la i.
+glyph BUILDRELA = Z(la self. la mlabs. la locs. la xs. la mode. la secs. la i.
     secs(NIL)(la sp. la t.
       (la lines. (la rs. (la rest.
         IF(NULLP(rs))(la _. rest)(la _. CONS(PAIR(PAIR(FST(sp))(i))(rs))(rest)))
-        (self(mlabs)(locs)(SECMODEEND(mode)(lines))(t)(add(i)(1))))
-        (SECRELS(mlabs)(locs)(mode)(lines)(0)))
+        (self(mlabs)(locs)(xs)(SECMODEEND(mode)(lines))(t)(add(i)(1))))
+        (SECRELS(mlabs)(locs)(xs)(mode)(lines)(0)))
       (SND(sp))))
 
 # ── the boundary: asm.la's own lists -> the caller's constructors ───────────
@@ -2584,15 +2718,21 @@ glyph ASM_ELF = la src. la fname. la XSDESC. la XSREC. la XRINFO. la XRREC. la X
                 (la _. error("asm: -f elf64: no `section` directive — an object file has no implicit .text"))
                 (la _.
                   (la mode0.
+                   (la xnames.
                     (la mlabs.
+                     (la mlabsx.
                       (la locs.
                         (la gs.
-                          k(TOXSECS(XSDESC)(XCONS)(XNIL)(BUILDSECS(mlabs)(mode0)(secs)))
-                           (TOXSYMS(XSREC)(XCONS)(XNIL)(BUILDSYMS(fname)(secs)(locs)(gs)))
-                           (TOXRELA(XRINFO)(XRREC)(XCONS)(XNIL)(BUILDRELA(mlabs)(locs)(mode0)(secs)(1))))
+                          (la xidx.
+                            k(TOXSECS(XSDESC)(XCONS)(XNIL)(BUILDSECS(mlabsx)(mode0)(secs)))
+                             (TOXSYMS(XSREC)(XCONS)(XNIL)(BUILDSYMS(fname)(secs)(locs)(gs)(xnames)))
+                             (TOXRELA(XRINFO)(XRREC)(XCONS)(XNIL)(BUILDRELA(mlabsx)(locs)(xidx)(mode0)(secs)(1))))
+                          (XIDX(xnames)(add(add(LEN(secs))(2))(LEN(locs)))))
                         (GLOBALSOF(tls)))
-                      (ALLLOCS(tls)(secs)(mlabs)(mode0)))
+                      (ALLLOCS(tls)(secs)(mlabsx)(mode0)))
+                     (APPEND(mlabs)(EXTLABS(xnames))))
                     (ELFFIX(tls)(secs)(NIL)("")(12)(mode0)))
+                   (EXTERNSOF(tls)))
                   (PREMODE(tls)(64))))
             (SECSPLIT(tls)))
           (QUALALL(SUBALL2(equs)(tls0))("")))

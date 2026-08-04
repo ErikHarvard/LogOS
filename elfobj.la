@@ -82,6 +82,18 @@ glyph LE4 = la n.
    (concat(B(mod(div(n)(65536))(256)))
           (B(mod(div(n)(16777216))(256)))))
 glyph LE8 = la n. concat(LE4(mod(n)(4294967296)))(LE4(div(n)(4294967296)))
+#   A SIGNED 8-byte little-endian, for a field that can be NEGATIVE — the
+#   Elf64_Rela r_addend (a PC-relative call/jmp reloc carries addend −4). LE8's
+#   div/mod split is unreliable on a negative here (as documented across this
+#   codebase), so a negative in [−2^32, 0) is folded to its two's-complement 64
+#   bits explicitly: low = n + 2^32, high = all ones (sign extension). This is
+#   the same fold asm.la's SYMLO/SYMHI apply to a negative symbol value. Positive
+#   values pass straight through to LE8, so every existing addend (all ≥ 0) is
+#   byte-for-byte unchanged. An addend below −2^32 is not produced by any reloc.
+glyph LE8S = la n.
+    IF(lt(n)(0))
+      (la _. concat(LE4(add(n)(4294967296)))(LE4(4294967295)))
+      (la _. LE8(n))
 glyph ZEROS = Z(la self. la n.
     IF(int_eq(n)(0))(la _. "")(la _. concat(B(0))(self(sub(n)(1)))))
 glyph LENOF = la s. str_to_int(str_len(s))
@@ -235,7 +247,7 @@ glyph SYM = la nm. la info. la shndx. la vlo. la vhi. la size.
 glyph REL = la off. la sym. la typ. la addend.
     concat(LE8(off))
    (concat(LE8(add(mul(sym)(4294967296))(typ)))
-          (LE8(addend)))
+          (LE8S(addend)))
 
 #   Slice (iii): relocations are a LIST too, one per .rela.<section>. A record is
 #   RREC(offset)(sym)(type)(addend); the three types boot.asm needs are 1
