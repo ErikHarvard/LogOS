@@ -648,34 +648,48 @@ glyph ISTERM = la c.
    (OR(str_eq(c)(">"))(OR(str_eq(c)("+"))(OR(str_eq(c)("-"))(OR(str_eq(c)("*"))
    (OR(str_eq(c)("/"))(str_eq(c)(")"))))))))))
 
-#   An operand expression that REFERENCES A LABEL is address-valued, so a
-#   64-bit destination must take the imm64 `movabs` form — exactly as a BARE
-#   label does. NASM assembles `mov rax, idt + 8` like `mov rax, idt`
+#   An operand expression whose NET LABEL COEFFICIENT is non-zero is address-
+#   valued, so a 64-bit destination must take the imm64 `movabs` form — exactly
+#   as a BARE label does. NASM assembles `mov rax, idt + 8` like `mov rax, idt`
 #   (48 b8 + imm64), NOT like a number that happens to fit 32 bits
 #   (b8 + imm32). Before this, a label buried in an expression (has an operator,
 #   so ISVAL routes it through EVAL) took the numeric b8 path — the wrong form
 #   AND, because the size was then 5 not 10, a wrong label address fed back
 #   through the fixed point (`idt+0x210` came out 0x215 instead of 0x21a).
 #   equ symbols are substituted to their literal number BEFORE the passes, so
-#   any maximal token that is NOT a number is a label (or `$`). That makes the
-#   test purely SYNTACTIC — no label table needed — so MOVSIZE (which sizes this
-#   case via MOVENC with an EMPTY label table) and the emit pass reach the same
-#   verdict, and it is MONOTONE (a token stays non-numeric across passes;
-#   movabs only GROWS the image), so it folds into the length fixed point like
-#   jump promotion.
+#   any maximal token that is NOT a number is a label (or `$`); the SIGNED SUM of
+#   those over the additive terms (ADDRBAL, below) is the coefficient — a label
+#   DIFFERENCE like `tail - head` nets to 0 and stays a b8 constant. That makes
+#   the test purely SYNTACTIC — no label table needed — so MOVSIZE (which sizes
+#   this case via MOVENC with an EMPTY label table) and the emit pass reach the
+#   same verdict, and it is MONOTONE (movabs only GROWS the image), so it folds
+#   into the length fixed point like jump promotion.
 glyph EXBND = la c.
     OR(ISTERM(c))(OR(str_eq(c)("("))(OR(str_eq(c)(" "))(str_eq(c)("'"))))
-glyph EXLAB = Z(la self. la s. la cur.
+#   "Contains a label token" is too broad: a label DIFFERENCE `tail - head` is a
+#   relative CONSTANT (nasm emits b8+imm32), not an address, even though it names
+#   two labels. The right test is nasm's: an expression is address-typed iff its
+#   NET LABEL COEFFICIENT is non-zero — sum, over the top-level additive terms,
+#   of +1 for a label term and -1 for a subtracted one. `idt + 8` -> +1 (address
+#   -> movabs); `tail - head` -> +1-1 = 0 (constant -> b8); `0x100 + idt` -> +1.
+#   FLUSHLAB folds a completed term (a non-number identifier token is the label)
+#   into the running net with the term's sign; NEWSGN sets the next term's sign
+#   from a top-level + or - (other operators keep it, since * / << bind tighter
+#   than the additive split). A term with two labels (idt*jdt) or a scaled label
+#   nasm rejects outright, so mis-counting those is a don't-care (no reference).
+glyph FLUSHLAB = la cur. la sgn. la net.
+    IF(AND(NOT(str_eq(cur)("")))(NOT(ISNUM(cur))))(la _. add(net)(sgn))(la _. net)
+glyph NEWSGN = la c. la sgn.
+    IF(str_eq(c)("+"))(la _. 1)(la _. IF(str_eq(c)("-"))(la _. sub(0)(1))(la _. sgn))
+glyph ADDRBAL = Z(la self. la s. la cur. la sgn. la net.
     IF(str_eq(s)(""))
-      (la _. AND(NOT(str_eq(cur)("")))(NOT(ISNUM(cur))))
+      (la _. FLUSHLAB(cur)(sgn)(net))
       (la _. (la c.
         IF(EXBND(c))
-          (la _. IF(AND(NOT(str_eq(cur)("")))(NOT(ISNUM(cur))))
-                   (la _. TRUE)
-                   (la _. self(str_tail(s))("")))
-          (la _. self(str_tail(s))(concat(cur)(c))))
+          (la _. self(str_tail(s))("")(NEWSGN(c)(sgn))(FLUSHLAB(cur)(sgn)(net)))
+          (la _. self(str_tail(s))(concat(cur)(c))(sgn)(net)))
       (str_head(s))))
-glyph EXPRHASLAB = la s. EXLAB(s)("")
+glyph EXPRHASLAB = la s. NOT(int_eq(ADDRBAL(s)("")(1)(0))(0))
 
 glyph E6T = Z(la self. la labs. la acc. la s.
     IF(str_eq(s)(""))(la _. PAIR(acc)(s))
