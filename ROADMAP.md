@@ -1161,7 +1161,7 @@ you cannot**. Grouped by seam, exhaustively.*
 **Toolchain seams — bring every tool into LA.** *(The boot ASSEMBLY is
 irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
 
-- [~] **LA assembler (`asm.la`) — SUBSET DONE + gated (2026-07-16).** The first
+- [x] **LA assembler (`asm.la`) — assembles the kernel `boot.asm` == nasm, gated (2026-07-23).** The first
       LA-native toolchain component. The boot ASSEMBLY is irreducibly
       machine-level — but the TOOL that assembles it need not be foreign, and
       that is the seam. **Verified by byte-identity against the tool it
@@ -1490,6 +1490,28 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       deliberately — a second length implementation is precisely how drift
       enters. **Two wrong hypotheses in a row: a plausible cause is not a
       measured one.**
+      **★ MILESTONE — the object writer is built and boot.asm assembles == nasm,
+      END TO END (2026-07-23), so this item is now `[x]`.** Everything the honest-
+      scope correction above lists as "none of it yet built" is now done, each
+      gated by byte-identity: (a) `elfobj.la`, the ELF64 relocatable-object writer
+      (section headers, a symbol table, `.rela` relocation sections) — extended by
+      `extern` for the multi-object seam `link.la` consumes (SHN_UNDEF symbols +
+      PLT32/PC32 cross-object relocs, `484622c`); (b) `-D` and (c) `-i` need no
+      asm.la feature (a `-D X` is a prepended `%define`, `-i` is the working
+      directory), proven by the end-to-end run; (d) `section`/`global`/`incbin`;
+      (e) the section-dependent `align`. `asm.la` + `elfobj.la` now assemble the
+      real 60 KB kernel `boot.asm` (5 sections, 106 symbols, 53 relocations,
+      `%include`s + `incbin`) into an ELF64 object that **links byte-identically to
+      nasm's** — `ld(ours) == ld(nasm)` (BOOTELF.md). **NASM is OUT of the kernel
+      OBJECT step, end to end.** Guarded on demand by the committed `gate_bootelf.sh`
+      (`8965cfc`, verified GREEN + red-pathed); the cheap per-build proxy stays
+      `gate_asmelf.sh` (`asm_elf_r3..r9`).
+      *This closes the ASSEMBLER + object writer only.* The boundary is unchanged
+      and lives in the SEPARATE items below: the final kernel LINK still runs
+      `ld -T kernel/kernel.ld` (**LA linker**, `[ ]`, Track B), the single-segment
+      image layout stays **`asmelf.la`** (`[~]`), and the build **orchestrator**
+      still drives foreign tools including nasm 46× elsewhere (**`buildla.la`**,
+      `[~]`) — so this is a nasm-free OBJECT step, not yet a nasm+ld-free kernel.
 - [~] **LA image layout (`asmelf.la`) — the assembler+layout seam closed END TO
       END, gated (2026-07-16).** `elf.la` already emitted a runnable native ELF
       from LA — but its 36 bytes of machine code were **hand-assembled into a
