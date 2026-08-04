@@ -648,6 +648,35 @@ glyph ISTERM = la c.
    (OR(str_eq(c)(">"))(OR(str_eq(c)("+"))(OR(str_eq(c)("-"))(OR(str_eq(c)("*"))
    (OR(str_eq(c)("/"))(str_eq(c)(")"))))))))))
 
+#   An operand expression that REFERENCES A LABEL is address-valued, so a
+#   64-bit destination must take the imm64 `movabs` form — exactly as a BARE
+#   label does. NASM assembles `mov rax, idt + 8` like `mov rax, idt`
+#   (48 b8 + imm64), NOT like a number that happens to fit 32 bits
+#   (b8 + imm32). Before this, a label buried in an expression (has an operator,
+#   so ISVAL routes it through EVAL) took the numeric b8 path — the wrong form
+#   AND, because the size was then 5 not 10, a wrong label address fed back
+#   through the fixed point (`idt+0x210` came out 0x215 instead of 0x21a).
+#   equ symbols are substituted to their literal number BEFORE the passes, so
+#   any maximal token that is NOT a number is a label (or `$`). That makes the
+#   test purely SYNTACTIC — no label table needed — so MOVSIZE (which sizes this
+#   case via MOVENC with an EMPTY label table) and the emit pass reach the same
+#   verdict, and it is MONOTONE (a token stays non-numeric across passes;
+#   movabs only GROWS the image), so it folds into the length fixed point like
+#   jump promotion.
+glyph EXBND = la c.
+    OR(ISTERM(c))(OR(str_eq(c)("("))(OR(str_eq(c)(" "))(str_eq(c)("'"))))
+glyph EXLAB = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))
+      (la _. AND(NOT(str_eq(cur)("")))(NOT(ISNUM(cur))))
+      (la _. (la c.
+        IF(EXBND(c))
+          (la _. IF(AND(NOT(str_eq(cur)("")))(NOT(ISNUM(cur))))
+                   (la _. TRUE)
+                   (la _. self(str_tail(s))("")))
+          (la _. self(str_tail(s))(concat(cur)(c))))
+      (str_head(s))))
+glyph EXPRHASLAB = la s. EXLAB(s)("")
+
 glyph E6T = Z(la self. la labs. la acc. la s.
     IF(str_eq(s)(""))(la _. PAIR(acc)(s))
       (la _. (la c.
@@ -983,7 +1012,7 @@ glyph MOVENC = la labs. la w. la a. la b.
         (la _. IF(ISREG(b))
           (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
           (la _. IF(ISVAL(b))
-            (la _. (la n. IF(AND(int_eq(w)(8))(NOT(lt(n)(4294967296))))
+            (la _. (la n. IF(AND(int_eq(w)(8))(OR(NOT(lt(n)(4294967296)))(EXPRHASLAB(b))))
                             (la _. MOVABS(REGNUM(a))(n))
                             (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))(BITSMODE(labs))))
                    (EVAL(labs)(b)))
