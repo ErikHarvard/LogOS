@@ -1,0 +1,169 @@
+# ═════════════════════════════════════════════════════════════════════
+#  debug_eval.la — the tracing debugger: the evaluator watching itself.
+#
+#  DEBUG_EVAL mirrors EVAL's dispatch and emits one line per node entered
+#  and one per node reduced, indented by depth:
+#
+#      -> APP
+#        -> VAR
+#        <- VAR = bi:concat
+#        ...
+#      <- APP = str:hello
+#
+#  ── WHY IT MIRRORS EVAL RATHER THAN WRAPPING IT ─────────────────────
+#  EVAL's recursion is INTERNAL: it is Z(la self. …) and every recursive
+#  step goes through its own `self`. An outer wrapper therefore sees only
+#  the OUTERMOST call — the one node you already knew about — and nothing
+#  underneath. To trace every step, the tracer must BE the self that EVAL
+#  would have used, so the dispatch is reproduced here.
+#
+#  ── AND WHY THAT IS THE DANGEROUS PART ──────────────────────────────
+#  A reproduced evaluator can DRIFT from the one it claims to trace, and
+#  drift is invisible: the trace still looks plausible while describing a
+#  reduction that never happened. So the gate's central assertion is not
+#  "the trace looks right" — it is that DEBUG_EVAL and EVAL AGREE on the
+#  RESULT for every program tested. Tracing must not change the answer.
+#  This file imports eval.la rather than copying its helpers, so only the
+#  dispatch is duplicated, and the duplication is what the gate watches.
+# ═════════════════════════════════════════════════════════════════════
+
+import("eval.la")
+
+# ── the node kind, read off the AST's own dispatch ───────────────────
+#   The AST is Scott-encoded: applying it to four handlers IS the case
+#   analysis. VAR and STR carry one payload, LAM and APP carry two, which
+#   is why the arities differ — they match EVAL's own handlers exactly.
+glyph AST_KIND = la ast.
+    ast (la _. "VAR")
+        (la _. la _. "LAM")
+        (la _. la _. "APP")
+        (la _. "STR")
+
+# ── a value, rendered short ──────────────────────────────────────────
+#   A closure prints its PARAMETER, not its body: a body is an AST and
+#   rendering it would bury the trace in source. The param is what tells
+#   you which closure you are looking at.
+glyph SHOW_VAL = la v.
+    v (la s. concat("str:")(s))
+      (la p. la b. la e. concat("clo:")(p))
+      (la n. concat("bi:")(n))
+      (la n. la pv. concat("pa:")(n))
+      (la i. concat("int:")(int_to_str(i)))
+
+# ── indentation by depth ─────────────────────────────────────────────
+glyph IND = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "")(la _. concat("  ")(self(sub(n)(1)))))
+
+glyph ENTER = la d. la ast.
+    print(concat(IND(d))(concat("-> ")(AST_KIND(ast))))
+
+glyph LEAVE = la d. la ast. la result.
+    print(concat(IND(d))(concat("<- ")(concat(AST_KIND(ast))(concat(" = ")(SHOW_VAL(result))))))
+
+# ── DEBUG_EVAL — EVAL's dispatch, with the two trace lines around it ──
+#   ★ ORDER IS STRUCTURE, NOT STATEMENT SEQUENCE. `(la result. …)(body)`
+#   evaluates `body` FIRST because arguments are evaluated on application
+#   — which is exactly what is wanted here: enter, reduce, then report
+#   the value. Writing the LEAVE line "after" the body in the source
+#   would not have ordered it; the binder does.
+glyph DEBUG_EVAL = Z(la self. la d. la ast. la env. la gl.
+    SEQ(ENTER(d)(ast))(
+    (la result.
+        SEQ(LEAVE(d)(ast)(result))(result)
+    )(
+        ast
+            # ── VAR(name) — local env, then glyph table, then builtins ──
+            (la name.
+                (la local.
+                    IF(IS_SOME(local))(la _.
+                        R_VAL(local)
+                    )(la _.
+                    (la found.
+                        IF(IS_SOME(found))(la _.
+                            self(add(d)(1))(R_VAL(found))(NIL)(gl)
+                        )(la _.
+                        IF(IS_BI_NAME(name))(la _.
+                            VAL_BI(name)
+                        )(la _.
+                            error(concat("debug_eval: unbound variable: ")(name))
+                        ))
+                    )(LIST_FIND(name)(gl)))
+                )(LIST_FIND(name)(env))
+            )
+            # ── LAM(param, body) — capture the environment ──
+            (la param. la body.
+                VAL_CLO(param)(body)(env)
+            )
+            # ── APP(func, arg) — dispatch on the function's VALUE ──
+            (la func. la arg.
+                (la fval.
+                    fval
+                        (la s.
+                            error(concat("debug_eval: cannot apply string: ")(s))
+                        )
+                        (la p. la b. la e.
+                            (la aval.
+                                self(add(d)(1))(b)(CONS(PAIR(p)(aval))(e))(gl)
+                            )(self(add(d)(1))(arg)(env)(gl))
+                        )
+                        (la biname.
+                            APPLY_BI(biname)(self(add(d)(1))(arg)(env)(gl))
+                        )
+                        (la paname. la pv.
+                            APPLY_BI2(paname)(pv)(self(add(d)(1))(arg)(env)(gl))
+                        )
+                        (la n.
+                            error(concat("debug_eval: cannot apply integer: ")(int_to_str(n)))
+                        )
+                )(self(add(d)(1))(func)(env)(gl))
+            )
+            # ── STR(val) — a value already ──
+            (la val. VAL_STR(val))
+    ))
+)
+
+# ── the runner: trace a named glyph from a parsed program ────────────
+glyph DEBUG_RUN_GLYPH = la name. la gl.
+    (la found.
+        IF(IS_SOME(found))(la _.
+            DEBUG_EVAL(0)(R_VAL(found))(NIL)(gl)
+        )(la _.
+            error(concat("debug_eval: no glyph: ")(name))
+        )
+    )(LIST_FIND(name)(gl))
+
+glyph DEBUG_RUN = la gl. DEBUG_RUN_GLYPH("MAIN")(gl)
+
+# ── AGREEMENT — the assertion this whole file rests on ───────────────
+#   Tracing must not change the answer. Compares the RENDERED values, so
+#   a divergence in kind (str vs int vs closure) or in content both show.
+glyph AGREES = la src.
+    (la gl.
+        (la traced.
+            (la plain.
+                IF(str_eq(SHOW_VAL(traced))(SHOW_VAL(plain)))(la _.
+                    concat("AGREE ")(SHOW_VAL(plain))
+                )(la _.
+                    concat(concat("DIVERGED traced=")(SHOW_VAL(traced)))(concat(" plain=")(SHOW_VAL(plain)))
+                )
+            )(RUN(gl))
+        )(DEBUG_RUN(gl))
+    )(PARSE_PROGRAM(src))
+
+glyph SRC_STR = "glyph MAIN = \"hello\""
+glyph SRC_APP = "glyph MAIN = concat(\"ab\")(\"cd\")"
+glyph SRC_LAM = "glyph MAIN = (la x. x)(\"id\")"
+glyph SRC_INT = "glyph MAIN = int_to_str(add(2)(3))"
+glyph SRC_NEST = "glyph K = la a. la b. a\nglyph MAIN = K(\"kept\")(\"dropped\")"
+
+glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- trace: STR ---"))(
+    print(AGREES(SRC_STR))))(
+    print("--- trace: APP (curried builtin) ---")))(
+    print(AGREES(SRC_APP))))(
+    print("--- trace: LAM applied ---")))(
+    print(AGREES(SRC_LAM))))(
+    print("--- trace: INT arithmetic ---")))(
+    print(AGREES(SRC_INT))))(
+    print("--- trace: nested glyph reference ---")))(
+    print(AGREES(SRC_NEST)))

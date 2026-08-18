@@ -18,6 +18,21 @@
 #    VAL_PA(name)(v)       — a curried builtin with its first argument captured
 # ═══════════════════════════════════════════════════════════════════
 
+# ── 0. Exports — what debug_eval.la imports ─────────────────────────
+#
+#   Added for `debug_eval.la`, the tracing debugger, so it can mirror EVAL's
+#   dispatch without DUPLICATING it. A copied evaluator is an evaluator that
+#   silently drifts from the one it claims to trace.
+#
+#   ★ Nothing imported eval.la before this (it had zero exports), so these
+#   names cannot collide with an importer's own glyph — the failure mode the
+#   linker paid for, where an export silently shadowed a 6-arg glyph in a file
+#   nobody had touched. Grep the importers before adding to this list.
+export TRUE FALSE ID SEQ Z IF NIL CONS PAIR FST SND
+export LIST_FIND IS_SOME R_VAL IS_BI_NAME APPLY_BI APPLY_BI2
+export VAL_STR VAL_CLO VAL_BI VAL_PA VAL_INT
+export PARSE_PROGRAM EVAL RUN RUN_GLYPH SHOW_SRC
+
 # ── 1. Foundations ──────────────────────────────────────────────────
 
 glyph TRUE  = la t. la f. t
