@@ -105,9 +105,17 @@ honestly in the distance.
 - [ ] GC tuning (generational allocation, reduced pause time)
 
 ### Polish (orthogonal to the OS — safe to improve in parallel)
-- [x] Onset/energy fix (resolve the Beauty / Becoming-Form phonetic collision) — collision closed (8/8 injective, verified host==VM in the full audit); honest cost: concordance 0.73→0.71 (onset cues discriminate but aren't ontologically ordered — documented, not chased)
+- [x] Onset/energy fix (resolve the Beauty / Becoming-Form phonetic collision) — collision closed (8/8 injective, verified host==VM in the full audit); honest cost: concordance 0.73→0.71 (onset cues discriminate but aren't ontologically ordered — documented, not chased). **⚠ 2026-08-18: the 0.71 figure WILL MOVE.** VOID's vowel nucleus was corrected to match BEING's /ɑ/ (see the five-vowel finding below); `build.sh`'s instantiation-fidelity assertion must be recomputed from a real run, and the 8/8 injectivity re-confirmed FIRST. Edited in-tree, **not yet verified**.
 - [ ] Stratified fidelity measurement (roots vs. composites)
 - [ ] Fractal Monoglyph — depth recoverable by decomposition, not surface marks
+- [ ] Formant-table single source of truth — the nine vowel triples are stated
+      independently in `phonym.la` and `phonsem.la`. **Measured 2026-08-18: all nine
+      AGREE** — not a divergence. The defect is structural: they agree by care, not
+      construction, and no gate catches a future one-sided edit. `goertzel.la` already
+      shows the right pattern (it *imports* phonym's oscillator as a single source of
+      truth); `phonsem.la` does not import `phonym.la` at all.
+- [ ] Compound spectral recovery as a build gate — the ⊗-compound recovering BOTH
+      parents' formants is demonstrated but ungated (`goertzel.la` gates Love /u/ only).
 
 ---
 
@@ -2132,6 +2140,36 @@ depends on recording what was found, not what was hoped.
 
 - **The Cycle of Being is enacted by the derived geometry** — all three
   cosmogenic beats present, with a discriminating control, observed not imposed.
+
+- **ρ ≡ SR_ABOUT — a discovered identity** (2026-08-18). The recognition coefficient
+  ρ = ↻(RECOGNITION) is the SAME canonical form as `canon.la`'s `SR_ABOUT`, the Logos
+  *about* itself. Ruled INTENDED, not a collision: two names were found to name one
+  meaning, which is monosemy working from two directions — not polysemy (one form, two
+  meanings). The claim it commits to: *to bear a recognition coefficient IS to be the
+  Logos describing itself.* To be asserted as a POSITIVE gate with a RED path, because a
+  merely tolerated identity is indistinguishable from a collision nobody noticed.
+
+- **The nine phonyms rest on a FIVE-vowel ontological base** (2026-08-18). The nine
+  vowel nuclei collapse onto five grounds — opening /ɑ/ · distinction /i/ · grounding
+  /u/ · wholeness /ɔ/ · relation /a/ — with the consonantal ONSET as the differentiating
+  layer above. Not imposed: the build had already hit it from the other side, since the
+  onset cues were introduced precisely *because* BEING/SELF/FORM collide on /ɑ/ and
+  LOVE/BECOMING on /u/. This reframes the onset machinery from a patch into architecture,
+  and immediately exposed one primitive (VOID, declared /hɑ/) whose nucleus deviated from
+  the /ɑ/ it claims — corrected, pending verification.
+
+- **★ A check that cannot fail is not a check — FOUR independent instances** (tallied
+  2026-08-18). (1) An empty marker, contained in every output, made a build step report
+  PASS unconditionally. (2) A proposed "more than two parents ⇒ violates dyadic
+  recursion" gate on a state the Scott encoding makes *unconstructible* — it could never
+  fire; the dyadic law is enforced by the data type, which is stronger, and must be
+  reported as such rather than dressed up as a passing check. (3) A 24-byte reclamation
+  gate silently voided when `HEAP_SIZE` was raised 1.5→16 GiB for an unrelated fix — it
+  now passes with ZERO reclamation while its text claims "impossible without
+  reclamation". (4) A gate whose *measurement step* died on an octal parse, so the
+  assertion never ran and it still exited 0. **Each looked green.** The discipline that
+  follows: test the RED path, and assert that you MEASURED — not merely that the
+  comparison passed. This is the project's highest-yield defect class.
 
 - **Two-register discipline.** *Alignment* (sign ≡ referent) is 1.0 by nature
   (Alignment Theory of Truth — identity, not correspondence). *Instantiation
