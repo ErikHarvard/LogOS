@@ -704,9 +704,23 @@ The gate **asserts** this rather than remembering it: it feeds `extern` to A's
 producer every run and prints which state it is in, so the day A supports it the
 line changes by itself. A comment would have gone stale in silence.
 
-**12b. Next for this track:** a `.symtab`/`.strtab` in the output (so `nm` works
-on what we emit — the one gap track D was told about), and the multi-object
-LA-only link the moment `extern` lands.
+**✔ 12b. DONE — `.symtab`/`.strtab` in the output (`9b34d65`), and the
+multi-object LA-only link (`f4ff53f`, slice 13).** `nm` reads what we emit, and
+`gate_link_script.sh` asserts every symbol sits at **ld's own address and
+binding** across three layouts (4/6/6 symbols), plus `readelf` validating
+`sh_link`/`sh_info`. Both halves of this line are closed.
+
+**★ THIS LINE SAID "NEXT" FOR THREE WEEKS AFTER IT WAS DONE, AND IT MISLED A
+SESSION INTO RE-STARTING IT (2026-08-18).** `9b34d65` landed the symbol table and
+gated it; nobody edited this paragraph, so the file that calls itself THE LIVE
+STATE advertised finished work as the frontier. I read it, believed it, wrote
+"12b is still open" into my own slice-13 entry below and onto the shared board,
+and only caught it by running `nm` on the artifact — which took one command and
+should have come first. *The lesson is not "update your docs": it is that a
+prose NEXT line has nothing forcing it to be true, while a gate's PASS line
+cannot survive the thing it describes being false. Trust the gate output over
+any prose in this file, including this sentence — and when a doc and an artifact
+disagree, the artifact is the state.*
 
 ## Two LA traps this track paid for — read before editing any `.la`
 
@@ -803,6 +817,76 @@ prevent repeating it; only RUNNING the check did. Hex is now parsed with
 `printf`, and every derived number is asserted to have parsed before it judges
 anything. *The lesson that survives: a documented hazard is not a defended one.*
 
-**12b is still open** — no `.symtab`/`.strtab` in our output, so `nm` cannot read
-what we emit (which is why 6c reads `greet` off **ld's** image, not ours). That
-is the next slice.
+**★ CORRECTION to what this entry first said.** It claimed "12b is still open —
+no `.symtab`/`.strtab` in our output" and named it the next slice. **That was
+wrong**: `9b34d65` landed the symbol table weeks ago and `gate_link_script.sh`
+gates it. I took it from the stale `12b. Next` paragraph above instead of running
+`nm`, and repeated it onto the shared board. 6c reads `greet` off **ld's** image
+for a different and still-good reason — the reference should be independent of
+the thing under test — not because ours lacks symbols. Ours has them.
+
+## Slice 14 — THE KERNEL SEAM: ld REMOVED FROM A REAL KERNEL BUILD (2026-08-18)
+
+**★★ THE LA-LINKED KERNEL BOOTS.** `link.la` is a drop-in for
+`ld -n -T kernel/kernel.ld` on track D's real `boot.o`: `objcopy -O elf32-i386`
+accepts the container, the entry point is `0x10000c` like ld's, **all 33,340
+loadable bytes across both segments are byte-identical to ld's**, and the image
+boots in QEMU with the **same serial output and the same clean exit 33** as the
+ld-built control. `gate_link_kernel.sh`.
+
+**★ THIS IS THE STEP EVERY PREVIOUS CLAIM STOPPED SHORT OF.** On 07-23 this
+track linked the real kernel object byte-identically to ld and that looked like
+complete success — the build's very next line (`objcopy`) then refused the image
+for having no sections. Item 12 fixed that, and the claim moved to "the
+container is acceptable", which is still one step short of the only thing anyone
+wants to know. Carrying it to QEMU is what makes it a result rather than a
+property. *Reproduce the real consumer's next step, not your own criterion.*
+
+**ONE VARIABLE MOVES:** the SAME `boot.o` goes into both linkers, so anything
+the comparison finds is the linker's — the discipline from `gate_link_e2e` 4b.
+
+**The one difference, and it is ld's choice:** `-n` (nmagic) packs segment 2 at
+file offset `0x14ca`, not congruent to its vaddr mod page; ours sits at `0x2000`
+and keeps the congruence. Both load at `0x400000` and both boot. This is why the
+gate compares segment CONTENT, not file offsets.
+
+**Cost: ~36 minutes** for the 39 KB object (32 KB of it the incbin'd
+`.la_image`) — the known `DROP` curve, not a wrong algorithm. **On-demand only;
+do NOT wire this into `build.sh`.**
+
+**★ HONEST LIMITS, all three real:**
+1. `boot.o` is an **uncommitted build artifact in D's worktree**, so the gate
+   tests whatever kernel D last built (it records the sha256 it tested —
+   `d22f2609…`, a `nic5s_probe` kernel). A reproducible version would assemble
+   `boot.asm` here, which needs A's compiler for the incbin payload.
+2. The object came from **nasm**, not `asm.la`. This closes the LINKER seam, not
+   the whole LA-only kernel chain. Combining both halves is a separate step, and
+   A's `92a29ad` equ regression is an open question for `boot.asm` specifically.
+3. QEMU has no NIC attached, so the kernel reports "nic not found". Both images
+   are identical so the comparison is sound, but the kernel exercises little.
+
+**★ THREE HARNESS BUGS CAUGHT IN MY OWN GATE — the checks, not the linker:**
+- **`readelf | while read` runs in a SUBSHELL**, so an `ok=0` set inside it is
+  lost and the verdict prints GREEN over a failed segment. Redirect from a file.
+- **mtime is the wrong freshness basis for inputs the checker itself rewrites.**
+  The first cut cached on `-nt`, but the gate `cp`s `boot.o` and regenerates
+  `kernel.ld` every run, so they are always newer by construction and the cache
+  could never hit. Freshness is now a **content hash** of every input, stored
+  beside the artifact. *A cached artifact is a false-green waiting to happen, so
+  the staleness test has to be about content, not timestamps.*
+- **The reuse message described the mtime check after it became a hash check.**
+  In this project the PASS/NOTE string IS the claim; a line that misdescribes
+  its own check is a real defect, not cosmetics.
+
+**★★ AND ONE THAT COST THE 36 MINUTES: DO NOT EDIT A SHELL SCRIPT WHILE IT IS
+RUNNING.** `/bin/sh` reads a script lazily by file offset. I patched
+`gate_link_kernel.sh` while a background instance was mid-link; rewriting the
+file shifts every later byte, so the shell would have resumed into the middle of
+a different line. The run had to be killed and its 36 minutes discarded — the
+output could not be trusted either way. Edit a COPY, or wait.
+
+**Red-pathed:** one flipped byte in the LA-linked image is caught by BOTH the
+byte comparison (segment 1 differs) and the boot (`EXCEPTION 06`, exit 35 vs
+33) — gate RED, exit 1. The control is deterministic across 3 boots, and the
+gate SKIPs rather than passing if ld's own control fails to boot or boots to
+silence (a silent control would make "same serial" true and meaningless).
