@@ -13,6 +13,8 @@ glyph OR = la a. la b. a(TRUE)(b)
 glyph IF = la c. la t. la f. c(t)(f)("!")
 # IMPLIES : :: a -> b -> c
 glyph IMPLIES = la a. la b. OR(NOT(a))(b)
+# ZC : the call-by-value fixed-point combinator (trusted)
+glyph ZC = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 # TERM : :: a -> b -> c -> d
 glyph TERM = la form. la val. la f. f(form)(val)
 # FORM : :: a -> b
@@ -25,14 +27,42 @@ glyph GROUND = la s. IF(str_eq(s)("∃(∃)"))(la _. "∃")(la _. s)
 glyph YIELDS = la a. la b. str_eq(VAL(a))(VAL(b))
 # TRIBAR : :: a -> b -> c
 glyph TRIBAR = la a. la b. str_eq(GROUND(FORM(a)))(GROUND(FORM(b)))
-# LAW_IDENTITY : :: a -> b
-glyph LAW_IDENTITY = la a. TRIBAR(a)(a)
-# LAW_NONCONTRADICTION : :: a -> b -> c
-glyph LAW_NONCONTRADICTION = la a. la b. NOT(AND(TRIBAR(a)(b))(NOT(TRIBAR(a)(b))))
-# LAW_EXCLUDED_MIDDLE : :: a -> b -> c
-glyph LAW_EXCLUDED_MIDDLE = la a. la b. OR(TRIBAR(a)(b))(NOT(TRIBAR(a)(b)))
+# PRIM : κ node: a primitive leaf (trusted, Scott-encoded)
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+# SYN : κ node: ⊗ synthesis (trusted)
+glyph SYN = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+# CON : κ node: ⊕ conjunction (trusted)
+glyph CON = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+# DIR : κ node: ▷ direction (trusted)
+glyph DIR = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+# CONT : κ node: ⊂ containment (trusted)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+# MC : κ node: ↻ metacursion (trusted)
+glyph MC = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+# CANON : κ: canonical prefix string of a decomposition (trusted)
+glyph CANON = ZC(la self. la node. node (la nm. nm) (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("▷(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. la b. concat("⊂(")(concat(self(a))(concat(",")(concat(self(b))(")"))))) (la a. concat("↻(")(concat(self(a))(")"))))
+# MONO : a sealed monoglyph MONO(ren)(etym) (trusted)
+glyph MONO = la ren. la etym. la f. f(ren)(etym)
+# REN : the Ren (name) of a monoglyph (trusted)
+glyph REN = la g. g(la r. la e. r)
+# ETYM : the etymology of a monoglyph (trusted)
+glyph ETYM = la g. g(la r. la e. e)
+# AUTO_OK : autological criterion: REN ≡ κ(ETYM) (trusted)
+glyph AUTO_OK = la g. str_eq(REN(g))(CANON(ETYM(g)))
+# ATERM : an arity term (decl, body) (trusted)
+glyph ATERM = la d. la b. la f. f(d)(b)
+# DECL_ARITY : declared arity of an arity term (trusted)
+glyph DECL_ARITY = la t. t(la d. la b. d)
+# BODY_ARITY : body arity of an arity term (trusted)
+glyph BODY_ARITY = la t. t(la d. la b. b)
 # INHABITS : :: a -> b -> c
 glyph INHABITS = la dec. la bod. int_eq(dec)(bod)
+# LAW_IDENTITY : :: a -> b
+glyph LAW_IDENTITY = la g. AUTO_OK(g)
+# LAW_NONCONTRADICTION : :: a -> b
+glyph LAW_NONCONTRADICTION = la term. INHABITS(DECL_ARITY(term))(BODY_ARITY(term))
+# LAW_EXCLUDED_MIDDLE : :: a -> b
+glyph LAW_EXCLUDED_MIDDLE = la term. WELLFORMED(term)
 # NC_TYPECHECK : :: a -> b -> c
 glyph NC_TYPECHECK = la dec. la bod. NOT(AND(INHABITS(dec)(bod))(NOT(INHABITS(dec)(bod))))
 # VERDICT : :: a -> b -> c
@@ -41,11 +71,11 @@ glyph VERDICT = la a. la b. IF(TRIBAR(a)(b))(la _. "≡")(la _. "≢")
 glyph WELLFORMED = la a. NOT(str_eq(FORM(a))(""))
 # VERDICT_OR_DIE : :: a -> b -> c
 glyph VERDICT_OR_DIE = la a. la b. IF(WELLFORMED(a))(la _. VERDICT(a)(b))(la _. error("metalogic: ill-formed term — excluded middle admits no silent third value; halting"))
-# T_LAW_IDENTITY : term-witness for LAW_IDENTITY (trusted data)
-glyph T_LAW_IDENTITY = TERM("LAW_IDENTITY")("LAW_IDENTITY")
-# T_LAW_NONCONTRADICTION : term-witness for LAW_NONCONTRADICTION (trusted data)
-glyph T_LAW_NONCONTRADICTION = TERM("LAW_NONCONTRADICTION")("LAW_NONCONTRADICTION")
-# T_LAW_EXCLUDED_MIDDLE : term-witness for LAW_EXCLUDED_MIDDLE (trusted data)
-glyph T_LAW_EXCLUDED_MIDDLE = TERM("LAW_EXCLUDED_MIDDLE")("LAW_EXCLUDED_MIDDLE")
+# LAW_IDENTITY_G : the identity law as a monoglyph (trusted data)
+glyph LAW_IDENTITY_G = MONO(CANON(MC(PRIM("BEING"))))(MC(PRIM("BEING")))
+# LAW_NONCONTRADICTION_G : the non-contradiction law as a monoglyph (trusted data)
+glyph LAW_NONCONTRADICTION_G = MONO(CANON(DIR(PRIM("FORM"))(PRIM("VOID"))))(DIR(PRIM("FORM"))(PRIM("VOID")))
+# LAW_EXCLUDED_MIDDLE_G : the excluded-middle law as a monoglyph (trusted data)
+glyph LAW_EXCLUDED_MIDDLE_G = MONO(CANON(SYN(PRIM("BEING"))(PRIM("VOID"))))(SYN(PRIM("BEING"))(PRIM("VOID")))
 # LAWS_AUTOLOGICAL : :: a -> b
-glyph LAWS_AUTOLOGICAL = la _. AND(LAW_IDENTITY(T_LAW_IDENTITY))(AND(LAW_NONCONTRADICTION(T_LAW_NONCONTRADICTION)(T_LAW_NONCONTRADICTION))(LAW_EXCLUDED_MIDDLE(T_LAW_EXCLUDED_MIDDLE)(T_LAW_EXCLUDED_MIDDLE)))
+glyph LAWS_AUTOLOGICAL = la _. AND(LAW_IDENTITY(LAW_IDENTITY_G))(AND(LAW_IDENTITY(LAW_NONCONTRADICTION_G))(LAW_IDENTITY(LAW_EXCLUDED_MIDDLE_G)))

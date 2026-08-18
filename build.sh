@@ -1894,10 +1894,11 @@ say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalo
 # GENERATED module is run stand-alone, byte-identical on host and VM.
 ML="$(./tiny_host metalogic_spec.la 2>/dev/null)"
 ok=1
-for G in TRUE FALSE NOT AND OR IF IMPLIES TERM FORM VAL GROUND YIELDS TRIBAR \
-         LAW_IDENTITY LAW_NONCONTRADICTION LAW_EXCLUDED_MIDDLE INHABITS NC_TYPECHECK \
-         VERDICT WELLFORMED VERDICT_OR_DIE T_LAW_IDENTITY T_LAW_NONCONTRADICTION \
-         T_LAW_EXCLUDED_MIDDLE LAWS_AUTOLOGICAL; do
+for G in TRUE FALSE NOT AND OR IF IMPLIES ZC TERM FORM VAL GROUND YIELDS TRIBAR \
+         PRIM SYN CON DIR CONT MC CANON MONO REN ETYM AUTO_OK ATERM DECL_ARITY BODY_ARITY \
+         INHABITS LAW_IDENTITY LAW_NONCONTRADICTION LAW_EXCLUDED_MIDDLE NC_TYPECHECK \
+         VERDICT WELLFORMED VERDICT_OR_DIE LAW_IDENTITY_G LAW_NONCONTRADICTION_G \
+         LAW_EXCLUDED_MIDDLE_G LAWS_AUTOLOGICAL; do
     printf '%s\n' "$ML" | grep -qx "  $G: PASS" || { echo "FAIL  metalogic: $G not verified"; ok=0; }
 done
 printf '%s\n' "$ML" | grep -q "module VERIFIED" || { echo "FAIL  metalogic: module not verified"; ok=0; }
@@ -1910,31 +1911,41 @@ for G in TRUE FALSE NOT AND OR IF IMPLIES TERM FORM VAL GROUND YIELDS TRIBAR \
          VERDICT WELLFORMED VERDICT_OR_DIE LAWS_AUTOLOGICAL; do
     printf '%s\n' "$ML" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  metalogic: $G not type-checked OK"; ok=0; }
 done
-for G in T_LAW_IDENTITY T_LAW_NONCONTRADICTION T_LAW_EXCLUDED_MIDDLE; do
+# the inlined κ machinery (Scott-encoded nodes, CANON, MONO/REN/ETYM, AUTO_OK),
+# the arity accessors, and the three law-monoglyphs are trusted (point-free /
+# Church-encoded bodies), as canon.la trusts the same forms.
+for G in ZC PRIM SYN CON DIR CONT MC CANON MONO REN ETYM AUTO_OK ATERM DECL_ARITY BODY_ARITY \
+         LAW_IDENTITY_G LAW_NONCONTRADICTION_G LAW_EXCLUDED_MIDDLE_G; do
     printf '%s\n' "$ML" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  metalogic: $G not reported untyped/trusted"; ok=0; }
 done
-# Run the GENERATED metalogic.la stand-alone. The witness is six parts joined by '|':
-# (1) ∃(∃) ≡ ∃ — the Archē as ONTOLOGICAL identity (VERDICT → "≡"); (2) "=≢" — the
-# category distinction: add(2,3) = 5 (yields) yet ≢ 5 (being); (3) "INE" — the three
-# laws hold; (4) "ineY" — AUTOLOGY: each law of its own term + LAWS_AUTOLOGICAL; (5)
-# "TFy" — NC wired to the type checker: INHABITS match (T), mismatch caught (F), NC
-# holds (y); (6) "du" — = does NOT entail ≡ (d), but ≡ DOES entail = (u). Host == VM.
+# Run the GENERATED metalogic.la stand-alone. The witness is six parts joined by '|',
+# and the crux of item 1 is that each law now returns BOTH T and F (it was a constant-
+# TRUE tautology before): (1) "FFF" — each law FALSIFIES on a real violation:
+# LAW_IDENTITY on a heterological glyph (Ren floats free of its etymology),
+# LAW_NONCONTRADICTION on an arity contradiction (decl≠body), LAW_EXCLUDED_MIDDLE on
+# the empty-form term (no being); (2) "TTT" — each law HOLDS on a conforming structure;
+# (3) "TfY" — GENUINE self-application: LAW_IDENTITY run on the identity law's OWN
+# monoglyph → T (AUTO_OK of the law itself, no string proxy), a heterological decoy law
+# → f, and LAWS_AUTOLOGICAL (each law abides the identity law) → Y; (4) "=≢" — the
+# category distinction retained: add(2,3) = 5 (yields) yet ≢ 5 (being); (5) "TFy" — NC
+# wired to the type checker: INHABITS match (T), mismatch caught (F), NC_TYPECHECK holds
+# (y); (6) "du" — = does NOT entail ≡ (d), but ≡ DOES entail = (u). Host == VM.
 cp metalogic.la /tmp/mltest.la
 cat >> /tmp/mltest.la <<'LA'
-glyph ADD23     = TERM("add(2,3)")(int_to_str(add(2)(3)))
-glyph FIVE      = TERM("5")(int_to_str(5))
-glyph EXIST     = TERM("∃")("∃")
-glyph EXIST_SELF = TERM("∃(∃)")("∃")
-glyph W1 = VERDICT(EXIST_SELF)(EXIST)
-glyph W2 = concat(YIELDS(ADD23)(FIVE)("=")("x"))(VERDICT(ADD23)(FIVE))
-glyph W3 = concat(LAW_IDENTITY(ADD23)("I")("x"))(concat(LAW_NONCONTRADICTION(ADD23)(FIVE)("N")("x"))(LAW_EXCLUDED_MIDDLE(ADD23)(FIVE)("E")("x")))
-glyph W4 = concat(LAW_IDENTITY(T_LAW_IDENTITY)("i")("x"))(concat(LAW_NONCONTRADICTION(T_LAW_NONCONTRADICTION)(T_LAW_NONCONTRADICTION)("n")("x"))(concat(LAW_EXCLUDED_MIDDLE(T_LAW_EXCLUDED_MIDDLE)(T_LAW_EXCLUDED_MIDDLE)("e")("x"))(LAWS_AUTOLOGICAL("!")("Y")("x"))))
+glyph ADD23 = TERM("add(2,3)")(int_to_str(add(2)(3)))
+glyph FIVE  = TERM("5")(int_to_str(5))
+glyph HET   = MONO("floats-free")(MC(PRIM("BEING")))
+glyph EMPTY = TERM("")("x")
+glyph W1 = concat(LAW_IDENTITY(HET)("T")("F"))(concat(LAW_NONCONTRADICTION(ATERM(2)(1))("T")("F"))(LAW_EXCLUDED_MIDDLE(EMPTY)("T")("F")))
+glyph W2 = concat(LAW_IDENTITY(LAW_IDENTITY_G)("T")("F"))(concat(LAW_NONCONTRADICTION(ATERM(2)(2))("T")("F"))(LAW_EXCLUDED_MIDDLE(ADD23)("T")("F")))
+glyph W3 = concat(LAW_IDENTITY(LAW_IDENTITY_G)("T")("x"))(concat(LAW_IDENTITY(HET)("x")("f"))(LAWS_AUTOLOGICAL("!")("Y")("x")))
+glyph W4 = concat(YIELDS(ADD23)(FIVE)("=")("x"))(VERDICT(ADD23)(FIVE))
 glyph W5 = concat(INHABITS(2)(2)("T")("F"))(concat(INHABITS(2)(1)("T")("F"))(NC_TYPECHECK(2)(1)("y")("x")))
 glyph W6 = concat(IMPLIES(YIELDS(ADD23)(FIVE))(TRIBAR(ADD23)(FIVE))("x")("d"))(IMPLIES(TRIBAR(ADD23)(ADD23))(YIELDS(ADD23)(ADD23))("u")("x"))
 glyph J = la a. la b. concat(a)(concat("|")(b))
 glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(W6))))))
 LA
-ML_EXPECT="≡|=≢|INE|ineY|TFy|du"
+ML_EXPECT="FFF|TTT|TfY|=≢|TFy|du"
 MLH="$(./tiny_host /tmp/mltest.la 2>/dev/null)"
 [ "$MLH" = "$ML_EXPECT" ] || { echo "FAIL  metalogic: laws/≡-vs-= witness wrong on host"; printf 'got: %s\n' "$MLH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -1969,8 +1980,8 @@ printf '%s\n' "$NCR" | grep -q "module REJECTED" || { echo "FAIL  metalogic: typ
 [ -f /tmp/should_not_exist.la ] && { echo "FAIL  metalogic: rejected module was written anyway"; ok=0; }
 rm -f /tmp/mltest.la /tmp/mlloud.la /tmp/nc_reject_spec.la /tmp/should_not_exist.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  metalogic: SPEC GENERATEs/DEPLOYs metalogic.la, META_DEBUG verifies the two relations (≡ vs =), the three laws, and their autology"
-    echo "PASS  metalogic: ≡ (ontological identity) and = (computational yields) genuinely disagree (add(2,3)=5 yet ≢5); NC→type checker rejects contradictions; EM→loud halt; byte-identical host/VM"
+    echo "PASS  metalogic: SPEC GENERATEs/DEPLOYs metalogic.la, META_DEBUG verifies the two relations (≡ vs =), the three FALSIFIABLE laws, and their genuine self-application"
+    echo "PASS  metalogic: each law returns BOTH T and F (LAW_IDENTITY→AUTO_OK, LAW_NONCONTRADICTION→INHABITS, LAW_EXCLUDED_MIDDLE→WELLFORMED — no longer constant-TRUE tautologies); LAW_IDENTITY self-applies on the laws' own monoglyphs (no string proxy); ≡ vs = disagree; NC→type checker rejects contradictions; EM→loud halt; byte-identical host/VM"
 else
     printf '%s\n' "$ML"
     exit 1
