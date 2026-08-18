@@ -755,3 +755,54 @@ gate script exit — silently, with status 0 — so half the assertions never ra
 and `build.sh` would have called it a pass. Every fixture run is wrapped in an
 `if` (making the exit code data), and a `finished` flag plus an EXIT trap turns
 any other early exit into a loud `ABORTED`.
+
+## Slice 13 — THE CROSS-OBJECT LA-ONLY LINK (2026-08-18)
+
+**★★ THE THRESHOLD THIS TRACK DEFINED ITSELF BY IS CROSSED IN A CHAIN WITH NO
+FOREIGN TOOL IN IT.** Two `.asm` sources → track A's `asm.la -f elf64` +
+`elfobj.la` → two ET_REL objects → `link.la` → one image that RUNS, where
+`_start` in object A calls a `greet` **defined in object B** and declared
+`extern`. No nasm, no ld anywhere in the chain under test. `gate_link_e2e.sh`
+steps 6a/6b/6c.
+
+This was blocked since 07-23 on one thing: `asm.la` halted on `extern`, so an
+UNDEFINED symbol could not be expressed, so the chain was single-object only.
+The gate carried a **probe** rather than a comment — it fed `extern` to A's
+producer every run and printed which state the world was in. A landed `extern`
+in `484622c` and the probe flipped by itself. That is the whole argument for
+probes over comments: a comment would have gone stale in silence.
+
+**What the three assertions are, and why each exists:**
+- **6a** — `x_a.o` must carry `greet` as `UND`. Without this the step could pass
+  on two self-contained objects that never needed a linker at all.
+- **6b** — it runs: `TWO OBJECTS, ONE IMAGE`, exit 17. The behavioural witness.
+- **6c** — the relocated `.text` vs `ld` **over the same two objects**.
+
+**★ HONEST SCOPE, MEASURED: we match ld except in ALIGNMENT FILL.** ld encodes
+inter-object padding as multi-byte NOPs (`66 2e 0f 1f 84 …`); we emit `0x90`
+runs. Same length, same layout, same instruction bytes — the `call greet`
+displacement `e8 1b 00 00 00` is identical. That is ld's encoding convention,
+not semantics, so 6c asserts it rather than matching it.
+
+**★★ AND "EVERY DIFFERING BYTE IS 0x90" IS NOT A SUFFICIENT ASSERTION.** A
+mis-relocation that happened to write `0x90` over an instruction satisfies it.
+6c therefore derives the fill region's BOUNDARIES from the reference at gate
+time (gap starts at the end of `x_a.o`'s `.text`, ends where `nm` says ld put
+`greet` → `[17,32)`) and requires every differing byte to be `0x90` **and**
+inside it. Red-pathed by writing `0x90` over a real instruction at offset 0:
+value test accepts it, range test catches it — 1 of 16 bytes flagged, gate RED,
+exit 1. It also refuses to judge at all if the measurement did not parse, and
+fails an empty region, so it cannot go vacuous.
+
+**★★ I REINTRODUCED THIS FILE'S OWN DOCUMENTED `strtonum` TRAP.** The first cut
+of 6c parsed hex with awk's `strtonum` — which **mawk does not have**. This file
+already records that exact failure from the slice-4 alignment assertion: awk
+errors to stderr, the pipeline emits nothing, and the gate prints PASS,
+decorative for a whole run. Knowing the trap and having written it down did not
+prevent repeating it; only RUNNING the check did. Hex is now parsed with
+`printf`, and every derived number is asserted to have parsed before it judges
+anything. *The lesson that survives: a documented hazard is not a defended one.*
+
+**12b is still open** — no `.symtab`/`.strtab` in our output, so `nm` cannot read
+what we emit (which is why 6c reads `greet` off **ld's** image, not ours). That
+is the next slice.
