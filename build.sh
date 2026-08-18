@@ -2235,6 +2235,50 @@ else
     exit 1
 fi
 
+say "Grammar differential: the transcribed grammar vs parser.la (fuzz_grammar.py)"
+# parser.la IS the grammar -- the productions exist only as recursive-descent
+# control flow, so nothing states them as data and nothing can check them. This
+# gate is the interim answer (arc item 5's L2 differential, one layer early):
+# fuzz_grammar.py carries a Python recognizer built from the productions
+# transcribed out of parser.la, generates random VALID programs AND mutated
+# malformed ones, and asserts both agree on every case.
+#
+# WHY THE REJECT SIDE IS THE POINT: a corpus drawn from real .la files tests only
+# ACCEPT, because those files contain only valid forms by construction. Grammar
+# drift hides where the two disagree about what is MALFORMED. The corpus is
+# therefore generated, and mutations are classified by the recognizer rather than
+# assumed broken (a truncation can land on a still-valid program).
+#
+# It has already paid for itself: its first real run found the transcription said
+# `export ident+` where parser.la does `ident*` (PARSE_EXPORT_NAMES falls through
+# to PAIR(NIL)(s), so a bare `export` is legal). The parser was right, the spec
+# was wrong -- caught BEFORE any LA module was built against it.
+#
+# NOTE the harness runs ONE tiny_host per case on purpose: parser.la's reject is
+# a LOUD HALT (error "parser: parse error near:"), not a value, so batching the
+# way fuzz_canon.py does would let the first reject kill the run. ~1.5 s / 40.
+if command -v python3 >/dev/null && [ -f fuzz_grammar.py ]; then
+    FGOUT="$(python3 fuzz_grammar.py --n 40 2>&1)"; FGRC=$?
+    if printf '%s\n' "$FGOUT" | grep -q "^SKIP"; then
+        echo "SKIP  fuzz_grammar: prerequisites absent"
+    elif [ "$FGRC" -eq 0 ] && printf '%s\n' "$FGOUT" | grep -q "^PASS  fuzz_grammar"; then
+        # assert we MEASURED, not merely that nothing complained: a run that
+        # checked zero cases would otherwise pass silently.
+        if printf '%s\n' "$FGOUT" | grep -qE "^fuzz_grammar: 40 cases .* parser accepted [1-9][0-9]*, rejected [1-9][0-9]*$"; then
+            echo "PASS  fuzz_grammar: transcribed grammar == parser.la on 40 generated cases, accept AND reject sides"
+        else
+            echo "FAIL  fuzz_grammar: passed but the case tally is missing or degenerate (all-accept or all-reject means the corpus stopped discriminating)"
+            printf '%s\n' "$FGOUT"; exit 1
+        fi
+    else
+        echo "FAIL  fuzz_grammar: the transcribed grammar and parser.la DISAGREE (or the harness could not classify a case)"
+        printf '%s\n' "$FGOUT"
+        exit 1
+    fi
+else
+    echo "SKIP  fuzz_grammar: python3 or fuzz_grammar.py absent"
+fi
+
 say "Testing byte instructions + stack machine (bytecode.la)"
 # bytecode.la is a third representation of a program: a flat byte-
 # instruction stream. EMIT compiles an AST to byte instructions,
