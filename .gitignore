@@ -152,3 +152,5 @@ watched.la
 /kernel/kernel_polltest_64.elf
 /kernel/alloc_churn_str.bin
 /kernel/alloc_churn_rare.bin
+# NIC arc (HAL.5b–5r) kernel ELFs — built out of band per the arc convention
+/kernel/kernel_nic5*.elf

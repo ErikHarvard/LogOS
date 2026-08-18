@@ -1109,6 +1109,81 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             ethertype+proto+ihl only. **The ORIGINAL pre-IHL kernels (5c/5d/5g/5h)
             still read slot 0 without classifying** — 5m–5p are their generalised
             successors; retiring the originals is a separate decision.
+      - [x] **HAL.5q — a SELF-REPAIRING NIC driver (Tier-2b "self-repairing
+            drivers", first instance) — DONE + gated (2026-08-03).** The AATC
+            Sense→Diagnose→Prescribe→Retry loop (`aatc.la`) reinstantiated over a
+            DEVICE organ: the NIC's transmit path. Extends HAL.5m (the
+            frame-classifying ICMP responder) and makes its TX fault-tolerant.
+            **The pre-existing bug it fixes:** every 5x kernel's `WAITTX` was
+            UNBOUNDED — a transmit that never completes (TOK/TSD bit15 never sets)
+            hung the kernel forever. `kernel/nic5q.la` adds `WAITTXB`, fuel-bounded
+            exactly like `WAITRX`, so a wedged TX returns a timeout sentinel
+            instead of spinning. **The fault is real and self-inflicted:** SETUP's
+            first pass deliberately leaves TE (transmit-enable) OFF, so the first
+            transmit genuinely cannot complete. On the bounded timeout the driver
+            SENSES TSD0, DIAGNOSES (`nic tx wedged tsd=003c`), PRESCRIBES (re-enable
+            TE, `CR := TE|RE`), RETRIES bounded, and reports `nic tx recovered` or
+            the loud `nic tx dead` if the retry also times out. **Fault manifestation
+            VERIFIED in QEMU** (the load-bearing unknown the design flagged): QEMU's
+            RTL8139 does withhold TOK with TE off — serial shows `nic tx wedged
+            tsd=003c` (length 0x3c, TOK unset) then `nic tx recovered`, and the
+            pinger (`ping_harness.py`) independently verifies the *repaired*
+            transmit put a correct ICMP echo on the wire. **Red-pathed against
+            `nic5q_ctrl`** (`kernel/nic5q_ctrl.la` + `build_nic5q_ctrl.sh`, the
+            repair branch removed): same fault manifests, but it diagnoses and
+            stops — the pinger gets NO reply (rc=1), so the gate DISCRIMINATES and
+            5q's green is not vacuous. `gate_nic5q.sh` asserts, in order: the fault
+            manifested (`nic tx wedged`, load-bearing), the repair worked (`nic tx
+            recovered` + valid echo, `nic tx dead` absent), and the red-path
+            (control gets no reply). *Gate-honesty note:* the control still prints
+            `nic icmp reply sent` unconditionally (that line is OUTSIDE the transmit
+            branch), so the red-path keys on the PINGER's rc, never that serial
+            line — as the gate does. *Honest scope:* a self-inflicted fault proves
+            the detect→diagnose→repair→retry MECHANISM, not universal
+            fault-tolerance; TX-only (RX-ring-wedge and a real TABT are later
+            slices, 5r+). *Build cost:* RESPOND is a depth-20 / 1095-char SEQ tower
+            → ~51 min via `tiny_host` (~4x HAL.5c's ~12 min). **A refactor into
+            shallow helper glyphs (`HDRSWAP`/`SETCKSUM`/`XMIT`/`TXREPAIR`) was
+            TRIED and REVERTED (2026-08-04):** clean measurement showed only
+            User 44m38s vs 50m52s (~12% faster) but **4.2x the memory** (2.9 GB vs
+            ~700 MB) — so max-depth 20→12 is NOT the bottleneck (cost tracks total
+            node-count, not the deepest glyph), and the memory regression + arc
+            divergence outweighed a 12% gain that still needs the fast path anyway.
+            The real fast path is `native_codegen3_selfhost.bin` (~2s, byte-verified
+            identical to `tiny_host`) — use it for iteration; the authoritative
+            gate stays on `tiny_host`. Do NOT re-attempt the glyph-split refactor.
+            Not wired into `build.sh` (the whole 5x arc runs standalone).
+      - [x] **HAL.5r — a SELF-REPAIRING (RX-side) NIC driver — DONE + gated
+            (2026-08-03).** The RX twin of HAL.5q: same AATC
+            Sense→Diagnose→Prescribe→Retry loop, applied to the NIC's RECEIVE
+            organ. TX is clean (TE on); RX is deliberately faulted — SETUP's first
+            pass leaves RE (receive-enable) OFF (`CR := 4`). **Fixes a real latent
+            bug found while building this:** every prior 5x kernel's `WAITRX` used
+            fuel `20000000`, and on a genuinely stuck RX the native kernel recurses
+            ~20M deep and OVERFLOWS THE STACK — a deterministic `EXCEPTION 0e`
+            (`rip=0x100005`), reproduced, and shown to vanish when the fuel is
+            dropped to `200000` (clean `nic rx timeout`). So the bound is not
+            cosmetic: an unbounded/over-large RX wait *crashes* the kernel on a
+            stuck receiver, exactly as the unbounded `WAITTX` *hung* it (5q).
+            `kernel/nic5r.la` bounds `WAITRX` (`RXFUEL=200000`) and, on the clean
+            timeout, SENSES CR, DIAGNOSES (`nic rx wedged cr=05`), re-enables RE
+            (`CR := TE|RE`), and RETRIES — a `rep` flag bounds it to ONE repair
+            (a second timeout prints the loud `nic rx dead`). Because the pinger
+            sends several requests, one arriving after RE is re-enabled is received
+            and answered (`nic rx recovered` → `nic tx ok` → reply); the pinger
+            independently verified the echo (rc=0). **Red-pathed vs `nic5r_ctrl`**
+            (RX repair removed): same fault manifests, it diagnoses and stops, RE
+            stays off, pinger gets no reply (rc=1) — the gate discriminates.
+            `gate_nic5r.sh` asserts fault-manifested (`nic rx wedged`) /
+            repair-worked (`nic rx recovered` + echo, `nic rx dead` absent) /
+            red-path. *Honest scope:* a self-inflicted RE-off fault proves the
+            detect→diagnose→repair→retry MECHANISM, not universal RX
+            fault-tolerance (a real CAPR/ring wedge that preserves the buffered
+            frame is a later slice); the recovery relies on the peer re-sending,
+            which ICMP ping does. Shares 5q's RESPOND (nested; the glyph-split
+            refactor was tried and reverted — see 5q). Same ~51-min tiny_host build
+            cost; use `native_codegen3_selfhost.bin` (~2s) for iteration.
+            Standalone gate, not in `build.sh`.
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
