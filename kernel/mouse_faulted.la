@@ -98,7 +98,8 @@ glyph INIT =
        SEQ(outb(100)(212))                  # 0xD4: address the AUX device
        ((la w2.
          IF(int_eq(w2)(1))(la _.
-           SEQ(outb(96)(244))               # 0xF4: enable data reporting
+           # FAULT INJECTED: the 0xF4 "enable data reporting" write is REMOVED,
+           # so nothing owes the 0xFA ACK the next stage waits for.
            ((la ack.                        # the 0xFA ACK is OWED
              IF(int_eq(ack)(NOBYTE))(la _. DIAG("ack"))(la _. 1)
             )(POLLMB(AUXFUEL))))
