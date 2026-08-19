@@ -131,3 +131,68 @@ which is why HAL.5q/5r are genuine.
   decremented would read as bounded and pass.
 - Adjudication is by reading. Nothing here is a measurement except the four
   already-fixed cases; the rest are *predicted* hangs, not observed ones.
+
+
+---
+
+# Q3 by-product: the UNGATED sweep (2026-08-19)
+
+`kbd.la` being gated by nothing raised the obvious question — how many tracked
+`.la` files does nothing exercise? Method: transitive closure from `build.sh` and
+every `gate_*.sh`, through the build scripts they invoke, into the `.la` files
+those build, then following `import("x.la")` between modules.
+
+**158 tracked `.la` files · 141 reachable · 17 not.** Triaged, because 17 is not
+the finding — most of it is explainable:
+
+### False positives I caused myself (4)
+`cursor_ctrl` · `cursor_faulted` · `pointer_ctrl` · `pointer_faulted` — these ARE
+gated, by `gate_ps2_bounded.sh`, which names them as `kernel/${D}_ctrl.la` with
+`$D` a **parameter**. `mouse_ctrl`/`mouse_faulted` did NOT show up, because
+`gate_mouse_bounded.sh` names them literally.
+**★ A PARAMETERISED GATE IS INVISIBLE TO A STATIC REACHABILITY SWEEP.** I wrote
+that gate this session and it immediately defeated my own audit method. Any
+future sweep of this kind must either resolve parameters or accept that
+generic gates hide their targets — worth knowing before the number is trusted.
+
+### Legitimately ungated (5)
+`ata_faultprobe`/`ata_faultprobe2` — standalone diagnostic probes, deliberately
+not production. `archive/adam.compiler.la`, `archive/compiler.la` — archived.
+`sigil_live` · `sigil_seal_live` · `theourgia_mux_session_live` ·
+`theourgia_text_session_live` — drive REAL hardware (DRM scanout); they cannot
+run headless in CI. Not gaps, but they should be *labelled* as hardware-only
+rather than left looking like oversights.
+
+### ★ REAL GAP: `buildla.la`
+**Zero references in `build.sh`. No gate.** This is the LA build driver — the
+thing standing in for `build.sh` itself as the toolchain moves into Lingua
+Adamica. Nothing verifies it.
+
+### ★★ REAL DEFECT, and it is Q2's class found by Q3's method: `gate_hal_idle.sh`
+It consumes four **prebuilt, untracked** ELFs (`kernel_polltest`,
+`kernel_comp_{text,term,edit}`) and never builds them. Two consequences:
+
+1. **It is VACUOUS ON A FRESH CHECKOUT.** `[ -f "$elf" ] || continue` skips any
+   absent ELF, and if none are found it prints SKIP and `exit 0`. Clone the repo,
+   or `git clean`, and this gate passes having tested *nothing*.
+2. **Nothing detects staleness.** No gate rebuilds those ELFs, so an edit to
+   `comp_text.la` tomorrow leaves the gate testing yesterday's binary, silently.
+
+**★ AND THE HONEST PART: consequence 2 is NOT currently manifesting.** I checked
+rather than assumed — sources last committed 2026-07-18, ELFs built 2026-07-18/19.
+They match. Reporting "this gate tests month-old stale binaries" would have been
+a *false* finding, and it was the shape I expected before measuring. The defect is
+that nothing *enforces* the match, not that the match is currently broken.
+
+### Not yet adjudicated (3)
+`kernel/alloc_churn_rare.la` · `kernel/alloc_churn_str.la` ·
+`kernel/paging_poke_smoke.la` — likely invoked by name from a gate in a form the
+sweep did not resolve, same class as the parameterised false positives. Needs the
+same by-hand check the others got before being called anything.
+
+## What this means for the freeze
+Q1 and Q2 both operate on **what the suite already runs**. This sweep bounds what
+they can possibly reach: a defect in `buildla.la`, or in any file behind a
+skip-to-green gate, is outside both of their reach by construction. **Coverage is
+prior to both questions**, and should be settled before their results are read as
+a completeness claim.
