@@ -25,7 +25,15 @@
 #      point of the whole gate.
 set -u
 cd "$(dirname "$0")" || exit 1
-MINPASS="${MINPASS:-10}"
+# ★ 91 IS MEASURED, NOT GUESSED. The first passing run reported exactly 91 steps,
+#  matching ROADMAP's "buildla at 91/103". The initial threshold here was 10 -- a
+#  placeholder written before anything had ever run this file -- and 10 would not
+#  have noticed buildla silently dropping EIGHTY steps while still reporting zero
+#  failures. A non-vacuity guard set far below the true value is barely a guard.
+#  Raise this as buildla grows. A DROP must be explained, not accommodated: if a
+#  legitimate refactor merges steps, change the number in the same commit that
+#  merges them, so the reduction is a stated decision rather than a silent one.
+MINPASS="${MINPASS:-91}"
 
 [ -f buildla.la ] || { echo "SKIP  buildla: buildla.la absent"; exit 0; }
 [ -x ./tiny_host ] || { echo "SKIP  buildla: tiny_host not built"; exit 0; }
