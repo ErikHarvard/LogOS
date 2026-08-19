@@ -154,3 +154,7 @@ watched.la
 /kernel/alloc_churn_rare.bin
 # NIC arc (HAL.5b–5r) kernel ELFs — built out of band per the arc convention
 /kernel/kernel_nic5*.elf
+# HAL.3 disk-arc kernels + their red-path controls — same convention, built by
+# gate_hal3c/3bc/3d out of band. Untracked ELFs accumulating make `git status`
+# unreadable, which is how uncommitted WORK hides among build artifacts.
+/kernel/kernel_hal3*.elf
