@@ -33,6 +33,51 @@
 > lost to an inert fault; the lesson was cheap the second time because someone
 > wrote it down the first time.
 >
+> ## ★★ 2026-08-19 — THE REPLACEMENT FAULT WAS TESTED FIRST, AND IT ALSO FAILS
+> ### (differently, and the difference is the useful part)
+>
+> Two probes, written before any repair code this time — the step this slice
+> originally skipped.
+>
+> **Probe 1 — does it wedge?** Out-of-range LBA (0x0FFFFFFF against a 2048-sector
+> image): **WEDGED 6/6**, identical every run, `st=0x41` (DRDY|ERR) `err=0x04`
+> (ABRT). A real device error response, not a timing race. As a *fault* this is
+> everything SRST was not.
+>
+> **Probe 2 — does it PERSIST?** Issue the bad LBA, then the real read of LBA 1
+> with **no reset and no repair in between**: **4/4 the valid read SUCCEEDS.**
+> ERR does not survive a new command — which is exactly what ATA specifies.
+>
+> ⇒ **There is nothing to repair.** The drive recovers by itself on the next
+> command. A repair loop built here would go GREEN while measuring nothing: the
+> retry succeeds whether or not anything was reset. That is the same false
+> positive HAL.3d's first run produced, arrived at from the opposite direction —
+> SRST gave no fault, this gives a fault that needs no repair.
+>
+> ## ★★★ THE CRITERION THIS YIELDS, for the whole self-repair programme
+>
+> A repair loop is only meaningful if **both** hold, and both are cheap to test
+> before a line of repair code exists:
+>
+> 1. **The fault MANIFESTS** — N/N, not once. (HAL.3d's SRST failed here: 0/4 on
+>    re-measure, the single wedge was a race.)
+> 2. **The fault PERSISTS across a retry with no repair.** (The bad LBA fails
+>    here: 4/4 self-clearing.)
+>
+> Only then does "sensed, diagnosed, prescribed, retried, recovered" describe the
+> repair rather than the device recovering on its own.
+>
+> **This is why HAL.5q/5r are genuine and these are not:** TE-off and RE-off
+> *stay off* until the driver re-enables them, so their controls get no reply and
+> the repair is provably load-bearing. Both of ATA's candidate faults fail one
+> condition each.
+>
+> **Status: HAL.3d remains HELD.** Not for want of a repair loop — the loop is
+> written and structurally sound — but for want of a fault that needs one. The
+> honest slice for an aborted command is what HAL.3c already does: bound the
+> wait and REPORT it. Resuming needs a fault that survives a retry; a physically
+> failing drive would, and QEMU does not model one.
+>
 > **Next, if resumed:** the fault must be one QEMU actually models. The design's
 > own candidates stand — a bogus command byte and repairing from the resulting
 > ERR state, or an out-of-range LBA. Both should be verified to wedge N/N times
