@@ -2708,12 +2708,35 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "13775" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 13775)"; ok=0; }
-# Drift guard: the VM bytes must match their documented source.
+# Drift guard: the VM bytes must match their documented source. This is the
+# AUTHORITATIVE check and it STRICTLY SUBSUMES a size comparison — identical
+# bytes implies identical size.
+#
+# ★ WHY THE HARDCODED SIZE IS NOW A FALLBACK, NOT A PEER CHECK (2026-08-19).
+# A `= "13775"` assertion sat here as a second, weaker witness. The constant was
+# written 2026-06-12; secd.la changed 2026-07-16 (05ed1fe, "VM: execv + dup2"),
+# growing the VM to 14207 — and the constant was never updated. So build.sh has
+# FAILED AT THIS LINE FOR EVERY RUN SINCE 2026-07-16. The last verified-* tag is
+# dated 2026-07-08. Thirty-four days of red, unnoticed, because a full build.sh
+# run is long and nobody made one.
+#
+# The byte comparison below was PASSING throughout — it fired zero failures in
+# the 2026-08-19 run — so the suite already held the stronger evidence while
+# failing on the weaker, stale one. Verified independently: secd.la's VM and
+# `nasm -f bin secd.asm` are BYTE-IDENTICAL at 14207.
+#
+# So the size check is demoted to what it actually is: a fallback for when nasm
+# is unavailable and the authoritative check cannot run. Keeping it as a peer
+# assertion buys nothing and costs a stale constant that silently reds the suite.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
     cmp -s logos_secd /tmp/secd_ref || { echo "FAIL  codegen: VM bytes differ from nasm -f bin secd.asm"; ok=0; }
     rm -f /tmp/secd_ref
+else
+    # Weak fallback only. If this fires after a deliberate secd.asm change, the
+    # number is stale — update it in the SAME commit that changes the VM, so the
+    # size is a stated consequence rather than a trap for the next runner.
+    [ "$(stat -c%s logos_secd 2>/dev/null)" = "14207" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 14207) [fallback check — nasm absent, so byte-identity could not be verified]"; ok=0; }
 fi
 # RUN_SM harness: bytecode.la's machinery, running logos_source.la and
 # discarding the result so only the program's own output shows.
