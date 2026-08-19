@@ -38,17 +38,39 @@ glyph AND   = la a. la b. a(b)(FALSE)
 glyph OBF    = la st. int_eq(mod(st)(2))(1)
 glyph ISAUX  = la st. int_eq(mod(div(st)(32))(2))(1)
 glyph MREADY = la st. AND(OBF(st))(ISAUX(st))
+# ── waits split by WHO OWES THE RESPONSE (Freeze Audit II, Q3) ─────────────
+#  Byte 0 of a packet waits for the USER and stays unbounded. Bytes 1-3 are the
+#  REST of a packet already begun — the device owes them, so they are bounded.
+#
+#  ★ NOT CHANGED, and deliberately: SEND does no IBF handshake and no per-command
+#  ACK drain. The file documents why ("both are what blew up codegen"), and it
+#  drains every ACK at once with DRAINALL instead. That is a recorded trade-off,
+#  not an oversight, and it is not mine to reverse here.
+#  ★ DRAINALL is also NOT a hazard despite having no counter: its exit condition
+#  is "no more AUX bytes queued", which an absent or healthy device satisfies
+#  immediately. It is bounded anyway, cheaply, against a device that produces
+#  bytes without end — but it is listed as insurance, not as a found bug.
+glyph AUXFUEL = 200000
+glyph NOBYTE  = 256
 glyph POLLM  = Z(la self. la _.
     (la st. IF(MREADY(st))(la _. inb(96))(la _. self("!")))
       (inb(100)))
+glyph POLLMB = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. NOBYTE)(la _.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self(sub(n)(1))))
+      (inb(100))))
+glyph DIAG = la what.
+    SEQ(print(concat("whl ")(concat(what)(concat(" timeout st=")(int_to_str(inb(100)))))))
+       (SEQ(print("whl dead"))(0))
 
 # send one byte to the AUX device (0xD4 prefix, then the byte) — NO wait, NO
 # per-command ACK drain (both are what blew up codegen); QEMU is synchronous.
 glyph SEND = la c. SEQ(outb(100)(212))(outb(96)(c))
 
 # drain EVERY queued AUX byte, then stop (one Z, replaces six per-command spins)
-glyph DRAINALL = Z(la self. la _.
-    IF(MREADY(inb(100)))(la _. SEQ(inb(96))(self("!")))(la _. "!"))
+glyph DRAINALL = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "!")(la _.
+    IF(MREADY(inb(100)))(la _. SEQ(inb(96))(self(sub(n)(1))))(la _. "!")))
 
 # bring-up: enable aux, the 200/100/80 knock (0xF3 <rate> ×3), enable reporting,
 # then drain all the ACKs at once.
@@ -58,12 +80,22 @@ glyph INIT =
    (SEQ(SEND(243))(SEQ(SEND(100))              # 0xF3 100
    (SEQ(SEND(243))(SEQ(SEND(80))               # 0xF3 80  -> IntelliMouse mode
    (SEQ(SEND(244))                             # 0xF4 enable data reporting
-   (DRAINALL("!")))))))))
+   (DRAINALL(AUXFUEL)))))))))
 
 # read one 4-byte IntelliMouse packet (flags, dx, dy, z) in order
-glyph RDPKT4 = la k.
-    (la b0. (la b1. (la b2. (la b3. k(b0)(b1)(b2)(b3))
-      (POLLM("!"))) (POLLM("!"))) (POLLM("!"))) (POLLM("!"))
+#  byte 0 = USER wait (unbounded, on purpose); bytes 1-3 = OWED (bounded).
+glyph RDPKT4 = la k. la onfail.
+    (la b0.
+      (la b1.
+        IF(int_eq(b1)(NOBYTE))(la _. onfail("pkt byte1"))(la _.
+        (la b2.
+          IF(int_eq(b2)(NOBYTE))(la _. onfail("pkt byte2"))(la _.
+          (la b3.
+            IF(int_eq(b3)(NOBYTE))(la _. onfail("pkt byte3"))(la _. k(b0)(b1)(b2)(b3))
+          )(POLLMB(AUXFUEL)))
+        )(POLLMB(AUXFUEL)))
+      )(POLLMB(AUXFUEL))
+    )(POLLM("!"))
 
 glyph NZ = la v. IF(int_eq(v)(0))(la _. 0)(la _. 1)     # 1 if v != 0 else 0
 glyph MX = la a. la b. IF(int_eq(a)(1))(la _. 1)(la _. b)
@@ -73,6 +105,13 @@ glyph RUN = Z(la self. la n. la wz.
     IF(int_eq(n)(0))
       (la _. print(concat("wheel ")(int_to_str(wz))))
       (la _. RDPKT4(la b0. la b1. la b2. la b3.
-        self(sub(n)(1))(MX(wz)(NZ(b3))))))
+        self(sub(n)(1))(MX(wz)(NZ(b3))))
+        # onfail: diagnose and stop, rather than recursing on data we never got.
+        (DIAG)))
 
+#  ★ MAIN still SEQUENCES past INIT here, unlike mouse/pointer/cursor, and that
+#  is correct rather than an oversight: this INIT has no failure branch to report
+#  because SEND performs no handshake and DRAINALL cannot stall (it stops when the
+#  queue is empty). There is nothing for MAIN to branch ON. Recorded explicitly so
+#  the difference from the other three reads as a decision, not a missed edit.
 glyph MAIN = SEQ(print("whl:"))(SEQ(INIT)(RUN(4)(0)))

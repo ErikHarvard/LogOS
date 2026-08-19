@@ -38,17 +38,57 @@ glyph OBF    = la st. int_eq(mod(st)(2))(1)
 glyph ISAUX  = la st. int_eq(mod(div(st)(32))(2))(1)
 glyph MREADY = la st. AND(OBF(st))(ISAUX(st))
 glyph IBF    = la st. int_eq(mod(div(st)(2))(2))(1)
-glyph WAITIN = Z(la self. la _. IF(IBF(inb(100)))(la _. self("!"))(la _. "!"))
+# ── waits split by WHO OWES THE RESPONSE (Freeze Audit II, Q3) ─────────────
+#  waiting for a USER is correctly unbounded (packet byte 0 -> POLLM, unchanged);
+#  waiting for a response the DEVICE OWES is a bug (IBF handshake, the 0xFA ACK,
+#  packet bytes 1-2 -> WAITINB/POLLMB). Bounding byte 0 too would make an idle
+#  user look like a broken device. NOBYTE=256 is unproducible by an 8-bit port
+#  read, so a timeout cannot be mistaken for data.
+glyph AUXFUEL = 200000
+glyph NOBYTE  = 256
 glyph POLLM  = Z(la self. la _.
     (la st. IF(MREADY(st))(la _. inb(96))(la _. self("!")))
       (inb(100)))
+glyph WAITINB = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+    IF(IBF(inb(100)))(la _. self(sub(n)(1)))(la _. 1)))
+glyph POLLMB = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. NOBYTE)(la _.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self(sub(n)(1))))
+      (inb(100))))
+#  DIAG returns 0 so callers can BRANCH. Printing alone is not stopping: in
+#  mouse.la the first cut reported the fault and then read packets from the
+#  device it had just declared dead, faulting a second time.
+glyph DIAG = la what.
+    SEQ(print(concat("ptr ")(concat(what)(concat(" timeout st=")(int_to_str(inb(100)))))))
+       (SEQ(print("ptr dead"))(0))
+#  Each command write is conditional on the previous stage being answered.
+#  Returns 1 on success, 0 on any stalled stage.
 glyph INIT =
     SEQ(outb(100)(168))
-   (SEQ(WAITIN("!"))(SEQ(outb(100)(212))
-   (SEQ(WAITIN("!"))(SEQ(outb(96)(244))
-   (POLLM("!"))))))
-glyph RDPKT = la k.
-    (la b0. (la b1. (la b2. k(b0)(b1)(b2)) (POLLM("!"))) (POLLM("!"))) (POLLM("!"))
+   ((la w1.
+     IF(int_eq(w1)(1))(la _.
+       SEQ(outb(100)(212))
+       ((la w2.
+         IF(int_eq(w2)(1))(la _.
+           SEQ(outb(96)(244))
+           ((la ack.
+             IF(int_eq(ack)(NOBYTE))(la _. DIAG("ack"))(la _. 1)
+            )(POLLMB(AUXFUEL))))
+         (la _. DIAG("ibf2"))
+        )(WAITINB(AUXFUEL))))
+     (la _. DIAG("ibf1"))
+    )(WAITINB(AUXFUEL)))
+#  byte 0 waits for the USER (unbounded, on purpose); bytes 1-2 are OWED.
+glyph RDPKT = la k. la onfail.
+    (la b0.
+      (la b1.
+        IF(int_eq(b1)(NOBYTE))(la _. onfail("pkt byte1"))(la _.
+        (la b2.
+          IF(int_eq(b2)(NOBYTE))(la _. onfail("pkt byte2"))(la _. k(b0)(b1)(b2))
+        )(POLLMB(AUXFUEL)))
+      )(POLLMB(AUXFUEL))
+    )(POLLM("!"))
 
 # ── decode helpers ──
 glyph BIT  = la b. la k. mod(div(b)(k))(2)            # bit at weight k (1,2,4,16,32)
@@ -71,6 +111,13 @@ glyph RUN = Z(la self. la n. la x. la y. la ng. la bt.
               (MX(ng)(NEG(sdx)))
               (MX(bt)(BIT(b0)(1))))
         (SGN(b1)(BIT(b0)(16)))
-        (SGN(b2)(BIT(b0)(32))))))
+        (SGN(b2)(BIT(b0)(32))))(DIAG)))
 
-glyph MAIN = SEQ(print("ptr:"))(SEQ(INIT)(RUN(4)(100)(100)(0)(0)))
+#  BRANCH on INIT, never sequence past it: reporting a dead device and then
+#  reading from it anyway is how the diagnosis becomes a second crash (caught in
+#  mouse.la by gate_mouse_bounded.sh, EXCEPTION 03 after a correct diagnosis).
+glyph MAIN = SEQ(print("ptr:"))
+    ((la ok.
+      IF(int_eq(ok)(1))(la _. RUN(4)(100)(100)(0)(0))
+                       (la _. print("ptr init failed — not reading packets"))
+     )(INIT))
