@@ -1,0 +1,150 @@
+# =====================================================================
+#  LogOS HAL.3d — a SELF-REPAIRING ATA read path, in Lingua Adamica.
+#
+#  HAL.3c bounded the wait and NAMED the failure; it stops rather than
+#  recovering. This is the recovery: AATC's Sense -> Diagnose -> Prescribe ->
+#  Retry loop applied to the DISK organ, as HAL.5q/5r applied it to the NIC.
+#
+#  ★ NOT COMPILED, NOT GATED at time of writing — see SELFREPAIR_3d_DESIGN.md.
+#
+#  Derived from HAL.3 (ATA/IDE disk read, Lingua Adamica).
+#
+#  Persistent storage the kernel drives itself. On the thin asm "physics"
+#  of the HAL.1 port-I/O primitives (inb/outb/inl), an LA program at ring 0
+#  reads a sector off the primary IDE disk via ATA PIO — the same sequence
+#  K7b's bootloader proved, now as a driver in the language itself. No new
+#  builtin, no regen, no boot.asm change.
+#
+#  Primary ATA bus, ports (decimal): 0x1F0=496 data, 0x1F2=498 sector count,
+#  0x1F3=499/0x1F4=500/0x1F5=501 = LBA[7:0]/[15:8]/[23:16], 0x1F6=502 drive
+#  (0xE0=224 | LBA[27:24]), 0x1F7=503 status/command. READ SECTORS = 0x20=32.
+#  Status bits (read arithmetically — LA has no bitwise ops): BSY = bit 7 =
+#  (st div 128) mod 2, DRQ = bit 3 = (st div 8) mod 2.
+#
+#  The data register is 16-bit, but a 32-bit `inl` read pulls two consecutive
+#  words, so one sector (512 B) is 128 dword reads; each dword's 4 bytes come
+#  out low-first (disk order) and are recovered by div/mod. Reads LBA 1 and
+#  echoes the sector's bytes over serial. Flat + import-free, like pci/kbd.la.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# issue a single-sector READ (cmd 0x20) of a 28-bit LBA on the primary master
+glyph ISSUE = la lba.
+    SEQ(outb(502)(add(224)(mod(div(lba)(16777216))(16))))    # drive/head: 0xE0 | LBA[27:24]
+    (SEQ(outb(498)(1))                                        # sector count = 1
+    (SEQ(outb(499)(mod(lba)(256)))                            # LBA[7:0]
+    (SEQ(outb(500)(mod(div(lba)(256))(256)))                 # LBA[15:8]
+    (SEQ(outb(501)(mod(div(lba)(65536))(256)))               # LBA[23:16]
+    (outb(503)(32))))))                                       # command: READ SECTORS
+
+# ── BOUNDED wait for BSY to clear and DRQ to set. Returns 1 ready, 0 timeout.
+#
+#  ★ THIS WAS UNBOUNDED AND IT CRASHED THE KERNEL ON A DEVICE THAT NEVER GETS
+#  READY (found + reproduced 2026-08-18). The old `self("!")` recursed until it
+#  ran off into unmapped memory:
+#      ata:|EXCEPTION 0d err=0000000000000000 rip=0000000007ffffc0
+#  Deterministic over 3 runs, and identical with a present-but-empty CD-ROM
+#  drive — two different real fault modes, one silent crash with no diagnosis
+#  naming the disk. The same latent shape as HAL.5r's WAITRX stack overflow.
+#  No gate could see it because every ATA gate attaches a working disk.
+#
+#  ★ WHICH BRANCH SPINS — MEASURED, and NOT what I first wrote here. I had this
+#  comment claiming a driveless channel floats to 0xFF so BSY reads permanently
+#  SET. The bounded version prints the status byte, and it is 0 with no drive
+#  and 0x41 (ERR|DRDY) with an empty CD-ROM. In BOTH cases BSY is clear and DRQ
+#  is clear, so it is the "neither -> keep waiting" branch that spins, not the
+#  BSY branch. Same crash either way, wrong mechanism. Corrected from the
+#  device's own reported status rather than from what the bus "should" read.
+#
+#  FUEL is 100000: a ready disk answers in far fewer iterations, and the crash
+#  depth measured above is orders of magnitude higher, so this bounds the wait
+#  well inside both limits. A repair that cannot succeed must fail LOUDLY rather
+#  than die namelessly — the HAL.5q/5r discipline applied to the disk organ.
+glyph DRQFUEL = 100000
+glyph WAITDRQ = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.                                # out of fuel -> timeout
+    (la st.
+      IF(int_eq(mod(div(st)(128))(2))(1))(la _. self(sub(n)(1)))  # BSY set -> keep waiting
+      (la _. IF(int_eq(mod(div(st)(8))(2))(1))(la _. 1)           # DRQ set -> ready
+             (la _. self(sub(n)(1)))))                             # neither -> keep waiting
+    (inb(503))))
+
+# a 32-bit data word -> its 4 bytes as a string, disk order (little-endian)
+glyph B4 = la v.
+    concat(chr(int_to_str(mod(v)(256))))
+    (concat(chr(int_to_str(mod(div(v)(256))(256))))
+    (concat(chr(int_to_str(mod(div(v)(65536))(256))))
+            (chr(int_to_str(mod(div(v)(16777216))(256))))))
+
+# drain 128 dwords (= 512 bytes = one sector) from the data port, accumulating
+glyph READSEC = Z(la self. la n. la acc.
+    IF(int_eq(n)(0))(la _. acc)(la _.
+      self(sub(n)(1))(concat(acc)(B4(inl(496))))))
+
+# ── the repair machinery ─────────────────────────────────────────────────────
+#
+#  Ports: 0x1F7=503 status/command, 0x1F1=497 error, 0x3F6=1014 device control.
+#  Software reset is the drive's OWN documented way back to a known state: set
+#  SRST (bit 2 = 4) in device control, then clear it, then wait BSY to fall.
+#  Repairing with the device's spec rather than an invented poke is the whole
+#  point of calling this AATC applied to a device organ.
+
+glyph DEVCTL = 1014
+glyph ERRREG = 497
+glyph SRST   = 4
+glyph BSYFUEL = 100000
+
+# wait for BSY to clear, bounded. 1 = clear, 0 = timed out.
+glyph WAITBSY = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+    IF(int_eq(mod(div(inb(503))(128))(2))(1))(la _. self(sub(n)(1)))(la _. 1)))
+
+# SENSE + DIAGNOSE: name the organ and both registers that describe the wedge.
+#   The error register matters as much as status — status says "not ready",
+#   err says WHY, and a repair loop that reports only the first is guessing.
+glyph DIAGNOSE = la tag.
+    print(concat(concat("ata ")(concat(tag)(" st=")))
+                (concat(int_to_str(inb(503)))(concat(" err=")(int_to_str(inb(ERRREG))))))
+
+# PRESCRIBE: the ATA software reset, then wait for the drive to settle.
+#   Returns 1 if the drive came back (BSY fell), 0 if it never did.
+glyph RESET = SEQ(outb(DEVCTL)(SRST))(SEQ(outb(DEVCTL)(0))(WAITBSY(BSYFUEL)))
+
+# ── FAULT INJECTION (self-inflicted, deliberately recoverable) ───────────────
+#  Hold the drive in reset so the first read cannot complete. Mirrors HAL.5q's
+#  TE-off. ★ IF QEMU IGNORES THIS the drive never wedges, the repair branch is
+#  DEAD CODE, and a green gate proves nothing — which is why the gate's first
+#  assertion is that "ata wedged" actually appears. See the design doc.
+glyph INJECT = outb(DEVCTL)(SRST)
+
+# ── the loop: try, and on failure sense -> diagnose -> reset -> retry ────────
+glyph ATTEMPT = la _. SEQ(ISSUE(1))(WAITDRQ(DRQFUEL))
+
+glyph MAIN =
+    SEQ(print("ata3d:"))
+    (SEQ(INJECT)                          # fault: hold the channel in reset
+    (SEQ(print("ata setup ok (srst fault injected)"))
+    ((la first.
+      IF(int_eq(first)(1))(la _.
+        # No wedge. Either the fault did not manifest or the drive shrugged it
+        # off; either way the repair path below was never exercised.
+        SEQ(print("ata read ok (NO WEDGE — fault did not manifest)"))
+        (SEQ(print(READSEC(128)("")))(print("ata3d done"))))
+      (la _.
+        # SENSE + DIAGNOSE, then PRESCRIBE the drive's own reset.
+        SEQ(DIAGNOSE("wedged"))
+        ((la settled.
+          IF(int_eq(settled)(1))(la _.
+            # RETRY, bounded. Recovery is only claimed if the re-read succeeds.
+            (la second.
+              IF(int_eq(second)(1))(la _.
+                SEQ(print("ata recovered"))
+                (SEQ(print(READSEC(128)("")))(print("ata3d done"))))
+              (la _. SEQ(DIAGNOSE("retry failed"))(print("ata dead")))
+            )(ATTEMPT("!")))
+          (la _. SEQ(DIAGNOSE("reset did not settle"))(print("ata dead")))
+         )(RESET)))
+     )(ATTEMPT("!")))))
