@@ -4861,6 +4861,42 @@ bash kernel/gate_k5b1b.sh || exit 1
 # The safe-point reshuffle self-hosts (the GC interior-pointer fix unblocked it).
 bash kernel/gate_k5b2.sh || exit 1
 
+# ── Freeze Audit II / Q3 driver gates ───────────────────────────────────────
+#
+#  ★ WHY THESE ARE HERE, AND WHY IT MATTERS THAT THEY WERE NOT. Track A's Q0
+#  found that build.sh invokes 26 of 78 tracked gate scripts, and that the ENTIRE
+#  HAL driver layer sits in the other 52 — gated, but never asked. Meanwhile the
+#  block immediately below stamps `verified-DATE-SHA` with the message "Full
+#  audit (build.sh) passed clean." So a green build was issuing a checkpoint
+#  claiming a clean full audit while never running a single driver gate. That is
+#  the strongest argument for the cost these add: a claim the suite could not
+#  support.
+#
+#  They guard four kernel-killing bugs found and fixed on 2026-08-18/19: unbounded
+#  waits in ata.la and ata3b.la (EXCEPTION 0d / 06, recursion into unmapped
+#  memory) and in the PS/2 mouse/pointer/cursor drivers (EXCEPTION 0e / 06 / 0d).
+#  Every one was invisible to the suite because EVERY GATE HANDS THE DRIVER A
+#  HEALTHY DEVICE; these present the fault.
+#
+#  ★ COST IS REAL AND IS NOT HIDDEN: roughly 58 MINUTES. Ordered CHEAPEST FIRST
+#  so a regression surfaces early rather than an hour in. There is deliberately
+#  NO skip flag — an opt-out is how the other 52 got where they are, and a gate
+#  that runs only when someone remembers is how gate_bootelf went stale-green for
+#  two commits without anyone noticing.
+#
+#  NOT WIRED, deliberately: kernel/gate_hal3d.sh (HAL.3d self-repair) is HELD and
+#  currently RED — its injected fault does not manifest in QEMU (0/4 on
+#  re-measure), so the repair branch is dead code and a green would prove nothing.
+#  See kernel/SELFREPAIR_3d_DESIGN.md. Wiring a knowingly-red gate would train
+#  everyone to ignore this section.
+say "Driver bounds — the fault-presenting gates (Freeze Q3, ~58 min)"
+bash kernel/gate_hal3c.sh        || exit 1   # ~5m  ATA read: bounded wait, diagnosed
+bash kernel/gate_mouse_bounded.sh || exit 1  # ~9m  PS/2 mouse: owed waits bounded
+bash kernel/gate_hal3bc.sh       || exit 1   # ~12m ATA write: three waits bounded
+./gate_buildla.sh                || exit 1   # ~12m the LA build driver itself (91 steps)
+bash kernel/gate_ps2_bounded.sh pointer ptr    || exit 1   # ~10m
+bash kernel/gate_ps2_bounded.sh cursor cursor  || exit 1   # ~10m
+
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),
 # so the audit is clean here. Tag the CURRENT COMMIT as a verified rollback

@@ -29,7 +29,21 @@ boot() {
       -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown 2>/dev/null | tr -d '\0'
 }
 
-[ -x "./kernel/build_${D}_faulted.sh" ] || { echo "SKIP  ${D}_bounded: no faulted build script"; exit 0; }
+# ★ A MISNAMED DRIVER MUST NOT SKIP TO GREEN. This gate is invoked from build.sh
+#  with a literal argument, so a typo there would previously have produced
+#  "SKIP ... exit 0" and let the build continue believing a driver was covered —
+#  the exact skip-to-green shape this Q3 work exists to remove, reproduced in a
+#  gate written to remove it. Found by running it with a bogus name rather than
+#  by reading it.
+#  The distinction: an absent DRIVER SOURCE means the caller named something that
+#  is not a driver (a configuration error -> FAIL). An absent build SCRIPT for a
+#  real driver means this red-path harness was never built for it (-> SKIP).
+if [ ! -f "kernel/${D}.la" ]; then
+    echo "FAIL  ${D}_bounded: kernel/${D}.la does not exist — '${D}' is not a driver."
+    echo "      Refusing to SKIP: a misnamed argument must not read as coverage."
+    exit 1
+fi
+[ -x "./kernel/build_${D}_faulted.sh" ] || { echo "SKIP  ${D}_bounded: kernel/${D}.la exists but no faulted build script — red-path harness not built for this driver"; exit 0; }
 ./kernel/build_${D}_faulted.sh >/dev/null 2>&1 || { echo "FAIL  ${D}_bounded: faulted build failed"; exit 1; }
 F=$(boot "kernel/kernel_${D}_faulted.elf")
 fseen=$(printf '%s' "$F" | tr '\n' '|' | head -c 170)
