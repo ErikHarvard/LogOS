@@ -57,7 +57,46 @@ rather than stop existing.
 **Byte 0 of a packet is NOT in this list.** It legitimately waits for the user to
 move the mouse. Only the continuation bytes are owed.
 
-### Judgement — by design, with a real caveat
+### ★ RULED 2026-08-19: ACCEPTED AND DOCUMENTED — leave all six unbounded
+
+**The ruling: these are NOT bugs and will NOT be bounded.** Recorded in the first
+audit's "accepted divergence" category, which exists exactly for this.
+
+**1. Unbounded is semantically correct here.** Waiting for a user is not a fault.
+Bounding would introduce a **false failure mode** — an idle user reported as a
+dead device — which is a worse defect than the one it fixes, and one that would
+fire constantly rather than never.
+
+**2. The tempting middle option is not buildable under our own criterion.** The
+attractive fix is a long fuel that emits `kbd still waiting st=NN` and then
+*keeps waiting*, distinguishing wedged from idle without changing behaviour. It
+is rejected because **I cannot produce a wedged i8042 in QEMU**, so it could not
+be red-path tested — and Phase 4 is explicit that a fix without a failing-first
+test is not a fix. Building an untestable mitigation is precisely what HAL.3d
+cost. *(Honest: "cannot wedge the i8042" is ASSUMED, not measured. If someone
+finds a producible wedge, this option becomes buildable and testable and the
+ruling should be revisited.)*
+
+**3. The real detection mechanism is architectural, not a loop bound.** Telling
+"no input yet" from "controller dead" requires something OUTSIDE the poll — a
+timer or watchdog noticing that no input has arrived while the system believes a
+device is live. That is scheduler territory (K5/K6), not a `Z` loop.
+
+**4. Test exposure is already bounded externally.** The gates run QEMU under
+`timeout`, so a wedge in CI surfaces as a gate timeout rather than an infinite
+hang. The kernel hanging forever is only a problem for a *human at the machine*,
+which is case 3.
+
+**★ SUB-FINDING, and it is worth more than the ruling: `kbd.la` IS GATED BY
+NOTHING.** Checked, not assumed — no `gate_*.sh` references `kbd.la` or
+`kernel_kbd.elf`. The other five are covered (`polltest`, `comp_text`,
+`comp_term`, `comp_edit` by `gate_hal_idle.sh` and their own HAL gates;
+`comp_session` by `gate_comp_session.sh`). **An unbounded loop in a file nothing
+gates is doubly invisible** — Q3 found it by reading, and no amount of running
+the suite would have. That is a gap in coverage, not in bounds, and it belongs on
+the freeze's findings list in its own right.
+
+### Judgement — the original triage that led to the ruling above
 `kbd.la` (59) · `polltest.la` (20) · `comp_session.la` · `comp_text.la` ·
 `comp_term.la` · `comp_edit.la` — all `POLL` waiting for a keypress. Unbounded is
 **correct** here. The caveat, recorded rather than "fixed": a WEDGED controller is
