@@ -162,7 +162,7 @@ glyph PH_RELATION = la i.
 # g6 VOID /hɑ/ — breath (low-pass glottal noise, 0..2080) into open back /ɑ/.
 glyph PH_VOID = la i.
     IF(lt(i)(2080))(la _. NSAMP(0)(1500)(54321)(2080)(i))
-                   (la _. VDYN(650)(1000)(2500)(120)(85)(2600)(120)(4800)(sub(i)(2080)))
+                   (la _. VDYN(700)(1100)(2540)(120)(85)(2600)(120)(4800)(sub(i)(2080)))
 # g7 BECOMING /vu/ — voiced labiodental fricative (0..1440) forward into /u/.
 glyph PH_BECOMING = la i.
     IF(lt(i)(1440))(la _. NSAMP(0)(1200)(999)(1440)(i))

@@ -42,7 +42,7 @@
 
 import("topoderive.la") # ONF_FEAT FT_CYC FT_DEP FT_CONT FT_BR FT_SYM FT_LV CANONIQ PRIM SYN CON DIR CONT MC
 
-export ODIST PDIST PEAKS CONC DISC PCT VERDICT
+export ODIST PDIST PEAKS CONC DISC PCT VERDICT CL
 
 # ── Foundations ──
 glyph SEQ   = la a. la b. b
@@ -87,7 +87,7 @@ glyph NMFMT = la nm.
     IF(str_eq(nm)("LOVE"))       (la _. LCONS(1300)(LCONS(300)(LCONS(870)(LCONS(2240)(LNIL)))))(la _.
     IF(str_eq(nm)("SELF"))       (la _. LCONS(250)(LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL)))))(la _.
     IF(str_eq(nm)("RELATION"))   (la _. LCONS(520)(LCONS(750)(LCONS(1150)(LCONS(2500)(LNIL)))))(la _.
-    IF(str_eq(nm)("VOID"))       (la _. LCONS(400)(LCONS(650)(LCONS(1000)(LCONS(2500)(LNIL)))))(la _.
+    IF(str_eq(nm)("VOID"))       (la _. LCONS(400)(LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL)))))(la _.
     IF(str_eq(nm)("BECOMING"))   (la _. LCONS(580)(LCONS(300)(LCONS(870)(LCONS(2240)(LNIL)))))(la _.
     IF(str_eq(nm)("FORM"))       (la _. LCONS(3500)(LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL)))))(la _.
                                   LCONS(2200)(LCONS(500)(LCONS(800)(LCONS(2830)(LNIL)))))))))))) # DEPTH /dɔ/: /d/ onset 2200
