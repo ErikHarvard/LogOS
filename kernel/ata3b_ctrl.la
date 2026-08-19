@@ -1,0 +1,79 @@
+# =====================================================================
+#  ata3b_ctrl.la — RED-PATH CONTROL for HAL.3bc. Do not "fix" this file.
+#
+#  kernel/ata3b.la as it stood BEFORE the bounded waits (2026-08-18), kept
+#  verbatim so gate_hal3bc.sh can prove the bounds are load-bearing. Its
+#  WAITDRQ and WAITBSY have no fuel: on a channel that never becomes ready
+#  they recurse until the kernel runs off into unmapped memory and dies with
+#  EXCEPTION 0d, with nothing on serial naming the disk.
+#
+#  A gate that only shows the FIXED driver behaving well cannot tell you the
+#  bounds did anything. This control is what makes the assertion discriminate.
+# =====================================================================
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# ── spin on status: BSY=bit7=(st/128)mod2, DRQ=bit3=(st/8)mod2 (port 0x1F7=503) ──
+glyph WAITDRQ = Z(la self. la _.
+    (la st.
+      IF(int_eq(mod(div(st)(128))(2))(1))(la _. self("!"))
+      (la _. IF(int_eq(mod(div(st)(8))(2))(1))(la _. "!")
+             (la _. self("!"))))
+    (inb(503)))
+glyph WAITBSY = Z(la self. la _.
+    IF(int_eq(mod(div(inb(503))(128))(2))(1))(la _. self("!"))(la _. "!"))
+
+# ── issue WRITE SECTORS (cmd 0x30=48) / READ SECTORS (cmd 0x20=32) of a 28-bit LBA ──
+glyph LBASET = la lba. la cmd.
+    SEQ(outb(502)(add(224)(mod(div(lba)(16777216))(16))))    # drive/head: 0xE0 | LBA[27:24]
+    (SEQ(outb(498)(1))                                        # sector count = 1
+    (SEQ(outb(499)(mod(lba)(256)))                            # LBA[7:0]
+    (SEQ(outb(500)(mod(div(lba)(256))(256)))                 # LBA[15:8]
+    (SEQ(outb(501)(mod(div(lba)(65536))(256)))               # LBA[23:16]
+    (outb(503)(cmd))))))                                      # command byte
+glyph ISSUEW = la lba. LBASET(lba)(48)
+glyph ISSUER = la lba. LBASET(lba)(32)
+
+# ── first byte of s as an int (ord returns a decimal STRING) ──
+glyph B0 = la s. str_to_int(ord(str_head(s)))
+# ── write a 512-byte sector: 128 little-endian dwords via outl to 0x1F0(496) ──
+glyph WSEC = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "!")(la _.
+      (la t1. (la t2. (la t3.
+        SEQ(outl(496)(add(B0(s))(add(mul(B0(t1))(256))(add(mul(B0(t2))(65536))(mul(B0(t3))(16777216))))))
+           (self(str_tail(t3))))
+        (str_tail(t2)))
+        (str_tail(t1)))
+        (str_tail(s))))
+
+# ── read-back path (verbatim HAL.3): dword -> 4 bytes, drain 128 dwords ──
+glyph B4 = la v.
+    concat(chr(int_to_str(mod(v)(256))))
+    (concat(chr(int_to_str(mod(div(v)(256))(256))))
+    (concat(chr(int_to_str(mod(div(v)(65536))(256))))
+            (chr(int_to_str(mod(div(v)(16777216))(256))))))
+glyph READSEC = Z(la self. la n. la acc.
+    IF(int_eq(n)(0))(la _. acc)(la _.
+      self(sub(n)(1))(concat(acc)(B4(inl(496))))))
+
+# ── the sector to write: a printable signature + NUL padding to 512 bytes ──
+glyph ZEROS = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(chr(int_to_str(0)))(self(sub(n)(1)))))
+glyph SIG    = "LOGOS-WROTE-THIS-HAL3B"
+glyph SECTOR = concat(SIG)(ZEROS(490))
+glyph FLUSH  = SEQ(outb(503)(231))(WAITBSY("!"))     # cmd 0xE7 = cache flush, then wait BSY
+
+glyph MAIN =
+    SEQ(print("ata3b:"))
+    (SEQ(ISSUEW(2))                     # WRITE SECTORS to LBA 2
+    (SEQ(WAITDRQ("!"))                  # drive ready to accept data
+    (SEQ(WSEC(SECTOR))                  # push the 512-byte sector
+    (SEQ(FLUSH)                         # cache flush + wait BSY clear
+    (SEQ(print("ata write done"))
+    (SEQ(ISSUER(2))                     # read LBA 2 back
+    (SEQ(WAITDRQ("!"))
+    (SEQ(print(concat("ata rb=")(READSEC(128)("")))) # echo the round-trip
+    (print("ata3b done"))))))))))
