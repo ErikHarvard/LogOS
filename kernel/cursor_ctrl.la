@@ -1,4 +1,5 @@
 # =====================================================================
+#  cursor_ctrl.la — RED-PATH CONTROL. Bound removed, handshake KEPT.
 #  LogOS HAL.4h — a MOUSE CURSOR SPRITE on the framebuffer, in LA.
 #
 #  The first slice to cross INPUT x DISPLAY: HAL.2d's pointer (mouse ->
@@ -47,12 +48,66 @@ glyph SETMODE =
 glyph OBF    = la st. int_eq(mod(st)(2))(1)
 glyph ISAUX  = la st. int_eq(mod(div(st)(32))(2))(1)
 glyph MREADY = la st. AND(OBF(st))(ISAUX(st))
+# ── waits split by WHO OWES THE RESPONSE (Freeze Audit II, Q3) ─────────────
+#  USER waits stay unbounded (packet byte 0); waits the DEVICE OWES are bounded.
+#
+#  ★★ AND A SECOND DEFECT UNIQUE TO THIS FILE: INIT here wrote 0xA8 / 0xD4 / 0xF4
+#  back to back with NO IBF HANDSHAKE AT ALL. mouse.la and pointer.la both wait
+#  for the controller's input buffer to clear before each write; this one did
+#  not. Its failure mode is therefore NOT a hang but a SILENTLY DROPPED COMMAND —
+#  the mouse never gets enabled, and the driver then waits forever for data it
+#  never actually asked for. A bound alone would convert that into a "timeout"
+#  diagnosis naming the wrong cause, so the handshake is ADDED, not just bounded.
+glyph IBF    = la st. int_eq(mod(div(st)(2))(2))(1)
+glyph AUXFUEL = 200000
+glyph NOBYTE  = 256
 glyph POLLM  = Z(la self. la _.
     (la st. IF(MREADY(st))(la _. inb(96))(la _. self("!")))
       (inb(100)))
-glyph INIT = SEQ(outb(100)(168))(SEQ(outb(100)(212))(POLLM("!")))
-glyph RDPKT = la k.
-    (la b0. (la b1. (la b2. k(b0)(b1)(b2)) (POLLM("!"))) (POLLM("!"))) (POLLM("!"))
+# ★ THE CONTROL'S ONLY DIFFERENCE: these two waits are UNBOUNDED. They take the
+#  same argument as the bounded forms and IGNORE it, so every other line of this
+#  file — including the IBF handshake — is identical to the fixed driver.
+#
+#  THE FIRST CONTROL WAS WRONG AND THIS COMMENT IS WHY. It was the PRE-FIX
+#  cursor, which differed in TWO ways: no bound AND no IBF handshake (cursor.la
+#  wrote 0xA8/0xD4/0xF4 back to back with no handshake at all; adding it was the
+#  second half of the fix). Without the handshake the driver raced ahead and
+#  consumed a stray byte, so the ACK wait never spun, the control exited cleanly
+#  at rc=33, and the red-path could conclude nothing. A control that moves TWO
+#  variables isolates NEITHER.
+glyph WAITINB = Z(la self. la n.
+    IF(IBF(inb(100)))(la _. self(n))(la _. 1))
+glyph POLLMB = Z(la self. la n.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self(n)))
+      (inb(100)))
+glyph DIAG = la what.
+    SEQ(print(concat("cursor ")(concat(what)(concat(" timeout st=")(int_to_str(inb(100)))))))
+       (SEQ(print("cursor dead"))(0))
+#  Returns 1 on success, 0 if any stage stalled.
+glyph INIT =
+    SEQ(outb(100)(168))
+   ((la w1.
+     IF(int_eq(w1)(1))(la _.
+       SEQ(outb(100)(212))
+       ((la w2.
+         IF(int_eq(w2)(1))(la _.
+           # FAULT INJECTED: 0xF4 removed, so nothing owes the 0xFA ACK.
+           ((la ack.
+             IF(int_eq(ack)(NOBYTE))(la _. DIAG("ack"))(la _. 1)
+            )(POLLMB(AUXFUEL))))
+         (la _. DIAG("ibf2"))
+        )(WAITINB(AUXFUEL))))
+     (la _. DIAG("ibf1"))
+    )(WAITINB(AUXFUEL)))
+glyph RDPKT = la k. la onfail.
+    (la b0.
+      (la b1.
+        IF(int_eq(b1)(NOBYTE))(la _. onfail("pkt byte1"))(la _.
+        (la b2.
+          IF(int_eq(b2)(NOBYTE))(la _. onfail("pkt byte2"))(la _. k(b0)(b1)(b2))
+        )(POLLMB(AUXFUEL)))
+      )(POLLMB(AUXFUEL))
+    )(POLLM("!"))
 
 # ── decode + clamp (from HAL.2d) ──
 glyph BIT   = la b. la k. mod(div(b)(k))(2)
@@ -102,16 +157,24 @@ glyph RUN = Z(la self. la n. la x. la y.
         (la sdx. la sdy.
           self(sub(n)(1))(CLAMP(add(x)(sdx))(72)(180))(CLAMP(add(y)(sdy))(72)(180)))
         (SGN(b1)(BIT(b0)(16)))
-        (SGN(b2)(BIT(b0)(32))))))
+        (SGN(b2)(BIT(b0)(32))))
+        # onfail must return what RUN returns -- a position PAIR -- so a stalled
+        # packet degrades to the LAST KNOWN cursor position instead of a type
+        # error. ★ RDPKT is 2-arg now: a 2-arg glyph called with 1 arg does NOT
+        # fail in LA, it yields a PARTIAL APPLICATION that dies stages away.
+        (la w. SEQ(DIAG(w))(PAIR(x)(y)))))
 
 glyph MAIN =
     (la dev. (la bar. (la base.
       SEQ(SETMODE)
       ((la pitch.
           SEQ(print(concat(concat("fb lfb=")(int_to_str(base)))(concat(" pitch=")(int_to_str(pitch)))))
-         (SEQ(INIT)
-         ((la cxy. DRAW(base)(pitch)(FST(cxy))(SND(cxy)))
-          (RUN(4)(100)(100)))))
+         ((la ok.                      # BRANCH on INIT; never sequence past it
+           IF(int_eq(ok)(1))(la _.
+             ((la cxy. DRAW(base)(pitch)(FST(cxy))(SND(cxy)))
+              (RUN(4)(100)(100))))
+           (la _. print("cursor init failed — not reading packets"))
+          )(INIT)))
        (mul(RDISPI(6))(4))))
       (sub(bar)(mod(bar)(16))))
      (CFG(dev)(16)))

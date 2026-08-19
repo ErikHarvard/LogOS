@@ -30,7 +30,24 @@ MINPASS="${MINPASS:-10}"
 [ -f buildla.la ] || { echo "SKIP  buildla: buildla.la absent"; exit 0; }
 [ -x ./tiny_host ] || { echo "SKIP  buildla: tiny_host not built"; exit 0; }
 
-OUT=$(timeout 3600 ./tiny_host buildla.la 2>&1); rc=$?
+# ── ★ IT MUST RUN ON THE VM, NOT tiny_host ─────────────────────────────────
+# The first version of this gate ran `./tiny_host buildla.la` and got
+# `eval error: unbound variable 'fork'` in 11 milliseconds. That was MY error,
+# not a defect in buildla.la: it orchestrates a build, so it needs fork/execv/
+# dup2/waitpid, and those live in the SECD VM (secd.asm has all four) while
+# tiny_host has NONE of them. An orchestrator cannot run on an interpreter that
+# cannot spawn a process.
+#   The non-vacuity guard below is what caught it: 3 lines of output, so the gate
+#   refused to draw any verdict rather than reporting "0 FAILs". That is exactly
+#   what it was written for, and it earned its place on the first run.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+[ -x ./logos_secd ] || { echo "SKIP  buildla: could not build logos_secd from secd.la"; exit 0; }
+cp buildla.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+[ -s logos_program.bin ] || { echo "FAIL  buildla: codegen produced no program from buildla.la"; exit 1; }
+OUT=$(timeout 3600 ./logos_secd 2>&1); rc=$?
+rm -f logos_secd logos_program.bin logos_source.la
 
 lines=$(printf '%s\n' "$OUT" | grep -c .)
 if [ "$lines" -lt 5 ]; then
