@@ -49,6 +49,27 @@ fi
 
 ok=1
 found=0
+stale=0
+
+# ── ★ FRESH-CHECKOUT FIX (Freeze Audit II / Q3, 2026-08-19) ─────────────────
+# This gate USED to `continue` past every absent ELF and then, finding none,
+# print SKIP and `exit 0`. The ELFs are UNTRACKED build artifacts, so on a fresh
+# clone — or after `git clean` — it passed having tested NOTHING. A gate that
+# reports success while exercising nothing is the defect Q2 exists to find; this
+# one was found by Q3's ungated sweep instead.
+#
+# Two changes, both minimal:
+#  1. The CONTROL is built automatically if missing. polltest is 21 lines of LA
+#     and builds in ~41 SECONDS (the comment below explains why it is the witness
+#     that matters), so the gate can always exercise at least one kernel without
+#     the 49-MINUTE comp_edit build. Auto-building all four was rejected on cost.
+#  2. Absence is REPORTED and, if nothing at all can be tested, the gate now
+#     EXITS NON-ZERO. "I tested nothing" must not be spelled the same way as
+#     "everything passed".
+if [ ! -f kernel/kernel_polltest.elf ] && [ -x ./kernel/build_polltest.sh ]; then
+    echo "NOTE  idle: control kernel absent — building it (~41s) so this gate cannot pass on an empty set"
+    ./kernel/build_polltest.sh >/dev/null 2>&1 || echo "NOTE  idle: control build failed; continuing with whatever else is present"
+fi
 
 # polltest FIRST, because it is the isolation control and the cheapest witness:
 # 21 lines of LA, no compositor, no font, no text, no buffer — just HAL.2's
@@ -61,8 +82,23 @@ for pair in "kernel_polltest.elf:poll:POLLTEST(control)" \
             "kernel_comp_term.elf:term:HAL.4f" \
             "kernel_comp_edit.elf:edit:HAL.4g"; do
     elf="kernel/${pair%%:*}"; rest="${pair#*:}"; tag="${rest%%:*}"; name="${rest##*:}"
-    [ -f "$elf" ] || continue
+    if [ ! -f "$elf" ]; then
+        echo "  --  idle/$name: SKIPPED, $elf not built (this gate does not build it; see kernel/build_hal4*.sh)"
+        continue
+    fi
     found=1
+
+    #  ★ STALENESS: nothing rebuilds these ELFs, so an edit to the .la leaves the
+    #  gate testing yesterday's binary, silently. Checked at gate time rather
+    #  than trusted. (Measured 2026-08-19: all four ELFs then MATCHED their
+    #  sources, so this is a guard against a latent defect, not a live one.)
+    src="kernel/${tag}.la"
+    case "$tag" in poll) src="kernel/polltest.la" ;; text) src="kernel/comp_text.la" ;;
+                   term) src="kernel/comp_term.la" ;; edit) src="kernel/comp_edit.la" ;; esac
+    if [ -f "$src" ] && [ "$src" -nt "$elf" ]; then
+        echo "FAIL  idle/$name: $src is NEWER than $elf — this gate would be testing a stale binary"
+        ok=0; continue
+    fi
 
     SERF=$(mktemp)
     # NO MONITOR, NO STDIN. The idle test sends nothing, so it needs no monitor
@@ -113,8 +149,15 @@ for pair in "kernel_polltest.elf:poll:POLLTEST(control)" \
 done
 
 if [ "$found" -eq 0 ]; then
-    echo "SKIP  HAL idle-survival gate: no compositor ELF built (see kernel/build_hal4[efg].sh)"
-    exit 0
+    #  ★ WAS `exit 0`. Testing nothing is not passing. The builders exist
+    #  (kernel/build_polltest.sh, build_hal4{e,f,g}.sh), so absence is a state
+    #  this gate can do something about — which is exactly why it must not be
+    #  reported as success.
+    echo "FAIL  HAL idle-survival gate: NO kernel was tested — every ELF absent and the"
+    echo "      control could not be built. Run kernel/build_polltest.sh (~41s) or"
+    echo "      kernel/build_hal4{e,f,g}.sh, then re-run. Exiting NON-ZERO because a gate"
+    echo "      that exercised nothing must not be spelled the same way as one that passed."
+    exit 1
 fi
 
 if [ "$ok" -eq 1 ]; then
