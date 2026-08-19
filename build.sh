@@ -21,6 +21,35 @@ run_host() {
     rm -f "$err"
 }
 
+# ── absolute-path hygiene — cheap, so it runs FIRST ────────────────────────
+#   ~1s (git ls-files + grep), unlike the nic-arc gates at ~100 min, so it is
+#   affordable here and fails the build before anything expensive runs.
+#   It catches one thing: a literal /home/<user>/ path in a tracked file that
+#   EXECUTES. Real instance, found 2026-08-18 in committed code —
+#   kernel/gen_nic5q.py wrote to /home/<user>/logos-d/kernel/nic5q.la, so
+#   running it from another worktree overwrote track D's source. The worktree
+#   isolation cannot catch that: it gives each session a private /tmp, and the
+#   path is in $HOME.
+#
+#   ★ TWO THINGS THIS BLOCK IS CAREFUL ABOUT, both learned the hard way:
+#   1. `set -e` is on. A gate that exits non-zero would abort the script at the
+#      call site with no message of ours. The exit code is captured as DATA via
+#      `if ...; then :; else`, so the failure is REPORTED and then exits 1.
+#   2. build.sh is SHARED and diverged across all four branches, but
+#      gate_abspath.sh currently exists only where it was added. A hard
+#      reference would break the build on every branch this file merges to
+#      before the gate does. So an absent gate SKIPs loudly — announced, never
+#      silent, because a silent skip is indistinguishable from a pass.
+say "Absolute-path hygiene"
+if [ -x ./gate_abspath.sh ]; then
+    if ./gate_abspath.sh; then :; else
+        echo "FAIL  build.sh: gate_abspath.sh went RED (see the lines above)"
+        exit 1
+    fi
+else
+    echo "SKIP  gate_abspath.sh is not on this branch — merge it here; the build is NOT checking absolute paths"
+fi
+
 say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
 echo "compiled -> tiny_host"
