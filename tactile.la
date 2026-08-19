@@ -135,4 +135,4 @@ glyph W5 = int_to_str(FST(TACTILE(MC(A))))   # frames — proof we rendered some
 glyph J    = la a. la b. concat(a)(concat("|")(b))
 glyph MAIN = print(concat("tactile [mc,con,cont,dir] ")(
              concat(J(W1)(J(W2)(J(W3)(J(W4)(W5)))))(
-             concat("\n(W4=T asserts the LIMIT: ⊗ is spectral-only, unrecoverable by touch)")())))
+             "\n(W4=T asserts the LIMIT: ⊗ is spectral-only, unrecoverable by touch)")))

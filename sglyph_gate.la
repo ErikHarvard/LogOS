@@ -55,7 +55,7 @@ glyph NAMES =
 # from the declared length and never duplicates phonym's onset table. That is
 # deliberate: a second copy of those numbers is the "agree by care, not by
 # construction" defect the ROADMAP already names for the formant tables.
-glyph RT   = la nm. IF(str_eq(RECOGNIZE(PHON_PRIM(nm)))(nm))("T")("F")
+glyph RT   = la nm. IF(str_eq(RECOGNIZE(PHON_PRIM(nm)))(nm))(la _. "T")(la _. "F")
 glyph W1   = Z(la self. la l. l("")(la h. la t. concat(RT(h))(self(t))))(NAMES)
 
 # ── W2 — RED PATH: a tone belonging to no phonym must be REFUSED, not
@@ -63,11 +63,11 @@ glyph W1   = Z(la self. la l. l("")(la h. la t. concat(RT(h))(self(t))))(NAMES)
 #    nearest-match recogniser with no rejection threshold returns some glyph
 #    here, and that is precisely the failure this asserts against. ──
 glyph DECOY = PAIR(6080)(la i. PSIN(i)(1750))
-glyph W2    = IF(str_eq(RECOGNIZE(DECOY))("⊥"))("T")("F")
+glyph W2    = IF(str_eq(RECOGNIZE(DECOY))("⊥"))(la _. "T")(la _. "F")
 
 # ── W3 — RED PATH: silence is not a glyph. ──
 glyph SILENCE = PAIR(6080)(la i. 0)
-glyph W3      = IF(str_eq(RECOGNIZE(SILENCE))("⊥"))("T")("F")
+glyph W3      = IF(str_eq(RECOGNIZE(SILENCE))("⊥"))(la _. "T")(la _. "F")
 
 # ── W4 — the onset is LOAD-BEARING (see the header). The four /ɑ/ phonyms
 #    must be INDISTINGUISHABLE at the nucleus, so W1 cannot have passed on
@@ -76,7 +76,7 @@ glyph VA = VOWEL_OF(PHON_PRIM("BEING"))
 glyph W4 =
     IF(str_eq(VOWEL_OF(PHON_PRIM("SELF")))(VA))(la _.
     IF(str_eq(VOWEL_OF(PHON_PRIM("VOID")))(VA))(la _.
-    IF(str_eq(VOWEL_OF(PHON_PRIM("FORM")))(VA))(la _. "Y")(la _. "n"))(la _. "n"))(la _. "n")("!")
+    IF(str_eq(VOWEL_OF(PHON_PRIM("FORM")))(VA))(la _. "Y")(la _. "n"))(la _. "n"))(la _. "n")
 
 # ── W5 — WE MEASURED. The count of peaks recovered from BEING's nucleus. ──
 glyph LEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))

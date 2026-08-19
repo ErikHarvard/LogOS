@@ -42,7 +42,12 @@
 
 import("topoderive.la") # ONF_FEAT FT_CYC FT_DEP FT_CONT FT_BR FT_SYM FT_LV CANONIQ PRIM SYN CON DIR CONT MC
 
-export ODIST PDIST PEAKS CONC DISC PCT VERDICT CL
+# VERDICT was exported but NEVER DEFINED — latent since this line was written, and
+# invisible because nothing had ever import()ed phonsem.la. crossmodal.la is the first
+# importer and surfaced it immediately: "module exports 'VERDICT' but does not define it".
+# Removed rather than defined: nothing referenced it, so defining one would be inventing
+# a glyph to satisfy a typo.
+export ODIST PDIST PEAKS CONC DISC PCT CL
 
 # ── Foundations ──
 glyph SEQ   = la a. la b. b

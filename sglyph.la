@@ -30,12 +30,24 @@
 #  architecture rather than a patch, and sglyph_gate.la's W4 asserts the
 #  collapse holds so the round trip cannot pass on nucleus evidence alone.
 #
-#  ── ★ THE NUCLEUS IS THE TAIL — a deliberate refusal to duplicate ─────────
+#  ── ★ THE NUCLEUS IS THE MIDPOINT — and why it is NOT the tail ────────────
 #  Each phonym is onset-then-nucleus, and the onset lengths differ per phonym
-#  (960..2240 samples). Hardcoding them here would be that third copy again.
-#  Instead the nucleus window is taken from the END of the signal, using only
-#  the length PHON_PRIM already returns: the nucleus always runs to the end,
-#  so the tail is the nucleus, whatever the onset did.
+#  (960..2240 samples). Hardcoding them here would be a third copy of phonym's
+#  data, so the window must be derived from the declared LENGTH alone.
+#
+#  The first version took the TAIL for exactly that reason: the nucleus always
+#  runs to the end, so the last samples are always nucleus. Correct — and it
+#  broke on one phonym. MEASURED: VOID returned ZERO peaks while BEING/SELF/FORM
+#  each returned an identical 700,1100,2500 at Chamfer distance 0. Cause: PH_VOID
+#  is the one built with VDYN, whose amplitude decays ampA 2600 -> ampB 120
+#  across the nucleus, so by the END it sits at ~4.6% of its opening level, and
+#  integer GPOWER (already scaled down by 1e6) underflows to zero there. The >0
+#  floor then correctly rejected everything, and VOID became unrecognisable.
+#
+#  The MIDPOINT avoids both hazards at no cost. Onsets are 0..2240 of totals
+#  6000..6880, so the midpoint (3000..3440) is past every onset and before every
+#  decay, for all nine — still derived from the length alone, no onset table and
+#  no new constant.
 #
 #  ── HONEST BOUNDS, stated before the gate is run ──────────────────────────
 #  · Grid resolution is FSTEP Hz, and a formant's bandwidth (~120 Hz) is wider
@@ -91,15 +103,21 @@ glyph LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
 # rejection, since a resonance now lands up to FSTEP/2 = 100 Hz off-grid. So a
 # GREEN W1 here is trustworthy, while a RED W2/W4 must be re-run fine before it
 # is reported as a real defect rather than an artefact of the grid.
-glyph NW    = 128            # analysis window, samples (8 ms at SR 16000)
+# ★ FINE RESOLUTION restored. The coarse pass (NW 128 / FSTEP 200) measured ONE
+# peak at 600 Hz where BEING's nucleus has three formants (700/1100/2540) — so the
+# nucleus signature was nearly contentless, and W4 and VOID's round trip both
+# degraded from that single root. Per this file's own pre-run bound, a RED W4 at
+# coarse resolution is NOT reportable as a defect until re-run fine. This is that
+# re-run: 31 grid points instead of 16, and a 16 ms window instead of 8.
+glyph NW    = 256            # analysis window, samples (16 ms at SR 16000)
 glyph FLO   = 200            # grid low edge, Hz
 glyph FHI   = 3200           # grid high edge — above F3 for every phonym
-glyph FSTEP = 200            # grid step, Hz
-glyph THR   = 250            # a peak must reach THR/1000 of the window maximum
+glyph FSTEP = 100            # grid step, Hz
+glyph NPEAK = 3              # F1, F2, F3 — take the three strongest, not a ratio
 glyph TOL   = 150            # nucleus Chamfer tolerance, Hz, for candidacy
 
 # ── WINDOWS. p is PHON_PRIM's PAIR(length)(gen). ──────────────────────────
-glyph TAILGEN = la p. la i. SND(p)(add(i)(sub(FST(p))(NW)))
+glyph TAILGEN = la p. la i. SND(p)(add(i)(sub(div(FST(p))(2))(div(NW)(2))))
 glyph HEADGEN = la p. la i. SND(p)(i)
 
 # ── SPECTRUM over the grid: a list of PAIR(freq)(power) ───────────────────
@@ -110,22 +128,48 @@ glyph SPECT  = la gen. SPECGO(gen)(FLO)
 
 glyph MAXPOW = Z(la self. la l. l(0)(la h. la t. MAXI(SND(h))(self(t))))
 
-# ── PEAKS: grid-local maxima reaching THR/1000 of the window maximum.
-#    Walking with the PREVIOUS power threaded, so a peak is a genuine turn in
-#    the spectrum rather than any loud bin. ──
-glyph PKGO = Z(la self. la mx. la pp. la l.
+# ── PEAKS: the THREE STRONGEST grid-local maxima.
+#
+#    ★ WHY NOT A RATIO. The first version kept peaks reaching 25% of the window
+#    MAXIMUM. Measured consequence: it returned ONE peak — F1 only — because
+#    formant amplitude falls off steeply, so F2 and F3 sit below a quarter of F1
+#    and were filtered out. A one-element signature cannot distinguish nuclei,
+#    which is what broke W4 and VOID's round trip. A count is the right bound
+#    here because the thing being measured HAS a known count: three formants.
+#
+#    ★ THE FLOOR IS LOad-BEARING, do not remove it. Peaks must have power > 0.
+#    Without it, "take three" would return three bogus peaks from SILENCE, and
+#    RECOGNIZE's ⊥-on-empty path (gate W3) would silently stop working — a
+#    refusal test that passes while refusing nothing.
+glyph PKGO = Z(la self. la pp. la l.
     l(NIL)(la h. la t.
         (la f. (la pw.
-            (la loud. (la rising.
-                t   ( IF(AND(loud)(rising))(la _. CONS(f)(NIL))(la _. NIL) )
+            (la keep.
+                t   ( IF(keep)(la _. CONS(PAIR(f)(pw))(NIL))(la _. NIL) )
                     ( la h2. la t2.
-                        IF(AND(AND(loud)(rising))(GEQ(pw)(SND(h2))))
-                          (la _. CONS(f)(self(mx)(pw)(t)))
-                          (la _. self(mx)(pw)(t)) ) )
-             (lt(pp)(pw)))
-             (GEQ(pw)(div(mul(THR)(mx))(1000))))
+                        IF(AND(keep)(GEQ(pw)(SND(h2))))
+                          (la _. CONS(PAIR(f)(pw))(self(pw)(t)))
+                          (la _. self(pw)(t)) ) )
+             (AND(lt(pp)(pw))(lt(0)(pw))))
          (SND(h)))(FST(h))))
-glyph PEAKSOF = la gen. (la sp. PKGO(MAXPOW(sp))(0)(sp))(SPECT(gen))
+
+glyph MAXBY = Z(la self. la best. la l.
+    l(best)(la h. la t. IF(lt(SND(best))(SND(h)))(la _. self(h)(t))(la _. self(best)(t))))
+glyph DROPF = Z(la self. la f. la l.
+    l(NIL)(la h. la t. IF(int_eq(FST(h))(f))(la _. t)(la _. CONS(h)(self(f)(t)))))
+# take the n strongest by POWER; stops early if fewer than n exist (silence -> NIL)
+glyph TAKEGO = Z(la self. la n. la l.
+    IF(int_eq(n)(0))(la _. NIL)(la _.
+      l(NIL)(la h. la t.
+        (la m. CONS(FST(m))(self(sub(n)(1))(DROPF(FST(m))(l))))(MAXBY(PAIR(0)(0))(l)))))
+# then sort ASCENDING by frequency, so VOWEL_OF's rendered signature is stable
+# (Chamfer itself is order-independent; the string comparison is not).
+glyph INS = Z(la self. la x. la l.
+    l(CONS(x)(NIL))(la h. la t.
+        IF(lt(x)(h))(la _. CONS(x)(CONS(h)(t)))(la _. CONS(h)(self(x)(t)))))
+glyph SORTA = Z(la self. la l. l(NIL)(la h. la t. INS(h)(self(t))))
+
+glyph PEAKSOF = la gen. SORTA(TAKEGO(NPEAK)(PKGO(0)(SPECT(gen))))
 
 glyph TAILPEAKS = la p. PEAKSOF(TAILGEN(p))
 glyph HEADPEAKS = la p. PEAKSOF(HEADGEN(p))

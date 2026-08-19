@@ -79,28 +79,34 @@ glyph DPAIRS = Z(la self. la l. l(NIL)(la h. la t. APP(INNER(h)(t))(self(t))))(C
 #    the score exactly where the measurement is least informative. ──
 glyph SGN = la a. la b. IF(lt(a)(b))(la _. sub(0)(1))(la _. IF(lt(b)(a))(la _. 1)(la _. 0))
 glyph AGREE = la x. la y.
-    (la sv. (la sp.
+    (la sv. la sp.
         IF(int_eq(sv)(0))(la _. 0)(la _.
         IF(int_eq(sp)(0))(la _. 0)(la _.
         IF(int_eq(sv)(sp))(la _. 1)(la _. sub(0)(1)))))
-     )(SGN(SND(x))(SND(y))))(SGN(FST(x))(FST(y)))
+    (SGN(FST(x))(FST(y)))
+    (SGN(SND(x))(SND(y)))
+# Curried, not nested: the earlier form closed the `la h. la t.` lambda before
+# (self(x)(t)) was applied, so `t` escaped its own scope — and it bound the pair
+# and the integer the wrong way round besides. a := the verdict, rest := the tail.
 glyph SCOREGO = Z(la self. la x. la l.
     l(PAIR(0)(0))(la h. la t.
-        (la rest. (la a.
+        (la a. la rest.
             IF(int_eq(a)(1))(la _. PAIR(add(1)(FST(rest)))(SND(rest)))(la _.
             IF(int_eq(a)(sub(0)(1)))(la _. PAIR(FST(rest))(add(1)(SND(rest))))(la _. rest)))
-         )(AGREE(x)(h)))(self(x)(t)))
+        (AGREE(x)(h))
+        (self(x)(t))))
 glyph TALLYGO = Z(la self. la l.
     l(PAIR(0)(0))(la h. la t.
-        (la here. (la rest. PAIR(add(FST(here))(FST(rest)))(add(SND(here))(SND(rest))))
-         )(self(t)))(SCOREGO(h)(t))))
+        (la here. la rest. PAIR(add(FST(here))(FST(rest)))(add(SND(here))(SND(rest))))
+        (SCOREGO(h)(t))
+        (self(t))))
 glyph PCT100 = la p. (la c. la d. IF(int_eq(add(c)(d))(0))(la _. 0)(la _. div(mul(100)(c))(add(c)(d))))(FST(p))(SND(p))
 
 # ── the CONTROL: rotate d_𝒫 by one against d_𝒱. Same two distributions,
 #    pairing destroyed. Real structure must fall toward chance here. ──
 glyph ROT1 = la l. l(NIL)(la h. la t. APP(t)(CONS(h)(NIL)))
 glyph ZIPGO = Z(la self. la a. la b.
-    a(NIL)(la ha. la ta. b(NIL)(la hb. la tb. CONS(PAIR(FST(ha))(SND(hb)))(self(ta)(tb))))))
+    a(NIL)(la ha. la ta. b(NIL)(la hb. la tb. CONS(PAIR(FST(ha))(SND(hb)))(self(ta)(tb)))))
 glyph SHUFFLED = ZIPGO(DPAIRS)(ROT1(DPAIRS))
 
 glyph REAL = TALLYGO(DPAIRS)
