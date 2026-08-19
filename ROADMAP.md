@@ -1650,11 +1650,26 @@ core drivers → then the process/memory/service layers → then these). Recorde
 the target is fixed; built when the substrate is there. This is *why* we build the OS
 outward — it is both the usable system and the substrate the next autopoiesis needs.
 
-- [ ] **Self-repairing drivers** — a driver that detects its own device fault
+- [~] **Self-repairing drivers** — a driver that detects its own device fault
       (a wedged NIC ring, a stuck ATA channel, a lost framebuffer) and
       re-initialises itself from its own spec, the AATC repair loop applied to a
       *device* organ rather than a source organ. *Gated on:* the core drivers
       (disk · input · NIC send/recv) running on the metal.
+      **2026-08-18 — the NIC organ is DONE; the item names three and stays [~].**
+      `HAL.5q` (TX) and `HAL.5r` (RX) are committed (`9c20d08`): a bounded wait
+      detects the wedge, the driver SENSES the device register, DIAGNOSES it on
+      serial, re-initialises the faulted path from spec, RETRIES bounded, and
+      RECOVERS — or fails loudly rather than hanging. Each is red-pathed against
+      a no-repair control that gets no reply, so the gates discriminate.
+      Both fix real latent bugs found while building them: `WAITTX` was
+      UNBOUNDED (a stuck TX hung every 5x kernel forever) and `WAITRX`'s 20M fuel
+      recursed deep enough to OVERFLOW THE STACK on a genuinely stuck RX
+      (deterministic `EXCEPTION 0e`). *Honest scope, in the design doc: a
+      SELF-INFLICTED fault proves the MECHANISM, not universal fault-tolerance.*
+      **Still open for [x]:** the stuck ATA channel and the lost framebuffer.
+      `HAL.5s` (a real TABT fault) is **HELD** — `SELFREPAIR_5s_DESIGN.md`
+      records that QEMU raises TOK+TUN and never TABT, so the fault is INERT in
+      emulation; that is a preserved negative finding, not an open task.
 - [ ] **Self-managing memory — the "cull unless active" principle** — the system
       reclaiming what is not in active use without an external allocator policy:
       the frame/heap manager treats every region as *cullable by default* and
