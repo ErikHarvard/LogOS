@@ -1,0 +1,119 @@
+# ═══════════════════════════════════════════════════════════════════
+#  crossmodal.la — DO THE MODALITIES AGREE WITH EACH OTHER?
+#
+#  ── THE GAP THIS CLOSES ───────────────────────────────────────────────────
+#  sigil.la derives a concept's FORM from its ONF structure. phonym/phonsem
+#  derive the same concept's SOUND from the same ONF structure. build.sh
+#  measures each against the ontology separately — d_𝒪↔d_𝒱 at 0.863 (item 7)
+#  and d_𝒪↔d_𝒫 (item 8) — but NOTHING has ever measured the two modalities
+#  against EACH OTHER. Two independent derivations from one source have never
+#  been checked for mutual agreement.
+#
+#  That is the missing half of the trimodal identity. If form and sound both
+#  express the same structure, then concepts that LOOK alike should SOUND
+#  alike. This module states that as a number that can be wrong.
+#
+#  ── WHAT IS BEING CLAIMED, AND HOW IT CAN FAIL ────────────────────────────
+#  Claim: d_𝒱 and d_𝒫 are POSITIVELY CONCORDANT across the concept set — for
+#  two pairs of concepts, the pair that is further apart visually tends to be
+#  further apart acoustically. Kendall's concordance, the same statistic
+#  build.sh already uses for the other two axes.
+#
+#  This can fail in the ordinary way (concordance at chance ⇒ the modalities
+#  are independent renderings that share only an origin, which would be a real
+#  and publishable finding about the framework, not a bug).
+#
+#  ── ★ THE CONTROL, AND WHY IT IS NOT THE OBVIOUS ONE ──────────────────────
+#  The tempting control is to flip the sign of one distance and show
+#  concordance inverts. That control CANNOT FAIL — it is arithmetic, true of
+#  any two lists whatsoever, and would be a fifth vacuous gate in a project
+#  that has already tallied four.
+#  The control used instead ROTATES the acoustic distances by one position
+#  against the visual ones, breaking the pairing while preserving both
+#  distributions exactly. If the headline number is real structure, the
+#  rotated number must fall toward chance. If rotation changes nothing, the
+#  statistic is not measuring the correspondence and the headline means
+#  nothing — so the control has a genuine way to indict the gate it guards.
+#
+#  ── BOUND ────────────────────────────────────────────────────────────────
+#  Over COMPOUNDS both form and sound are derived, so this tests derivation
+#  coherence. Over the nine PRIMITIVES the sigils are TRANSCRIBED from the
+#  catalogue while the sounds are derived, which is a different question
+#  (catalogue-vs-derivation) and is reported separately, not averaged in.
+# ═══════════════════════════════════════════════════════════════════
+
+import("topoderive.la")      # DSIGIL, SIG_AT, SZ — the derived FORM
+import("phonsem.la")         # PDIST, CL — the derived SOUND, and the concept set
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph APP  = Z(la self. la a. la b. a(b)(la h. la t. CONS(h)(self(t)(b))))
+glyph LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+
+# ── d_𝒱 — Hamming distance between two DERIVED 32x32 sigils ───────────────
+glyph XOR1 = la a. la b. IF(a)(la _. IF(b)(la _. 0)(la _. 1))(la _. IF(b)(la _. 1)(la _. 0))
+glyph HROW = Z(la self. la s1. la s2. la r. la c.
+    IF(int_eq(c)(SZ))(la _. 0)(la _.
+        add(XOR1(SIG_AT(s1)(r)(c))(SIG_AT(s2)(r)(c)))(self(s1)(s2)(r)(add(c)(1)))))
+glyph HAMM = Z(la self. la s1. la s2. la r.
+    IF(int_eq(r)(SZ))(la _. 0)(la _. add(HROW(s1)(s2)(r)(0))(self(s1)(s2)(add(r)(1)))))
+glyph VDIST = la na. la nb. HAMM(DSIGIL(na))(DSIGIL(nb))(0)
+
+# ── every unordered pair of concepts, as PAIR(d_𝒱)(d_𝒫). Built ONCE into a
+#    list, because a glyph in this dialect is a MACRO: re-mentioning a distance
+#    recomputes it, and d_𝒫 is expensive. ──
+glyph INNER = Z(la self. la h. la t.
+    t(NIL)(la h2. la t2.
+        CONS(PAIR(VDIST(SND(h))(SND(h2)))(PDIST(SND(h))(SND(h2))))(self(h)(t2))))
+glyph DPAIRS = Z(la self. la l. l(NIL)(la h. la t. APP(INNER(h)(t))(self(t))))(CL)
+
+# ── Kendall concordance over the (d_𝒱, d_𝒫) list. Ties on either axis are
+#    excluded rather than counted as agreement — counting them would inflate
+#    the score exactly where the measurement is least informative. ──
+glyph SGN = la a. la b. IF(lt(a)(b))(la _. sub(0)(1))(la _. IF(lt(b)(a))(la _. 1)(la _. 0))
+glyph AGREE = la x. la y.
+    (la sv. (la sp.
+        IF(int_eq(sv)(0))(la _. 0)(la _.
+        IF(int_eq(sp)(0))(la _. 0)(la _.
+        IF(int_eq(sv)(sp))(la _. 1)(la _. sub(0)(1)))))
+     )(SGN(SND(x))(SND(y))))(SGN(FST(x))(FST(y)))
+glyph SCOREGO = Z(la self. la x. la l.
+    l(PAIR(0)(0))(la h. la t.
+        (la rest. (la a.
+            IF(int_eq(a)(1))(la _. PAIR(add(1)(FST(rest)))(SND(rest)))(la _.
+            IF(int_eq(a)(sub(0)(1)))(la _. PAIR(FST(rest))(add(1)(SND(rest))))(la _. rest)))
+         )(AGREE(x)(h)))(self(x)(t)))
+glyph TALLYGO = Z(la self. la l.
+    l(PAIR(0)(0))(la h. la t.
+        (la here. (la rest. PAIR(add(FST(here))(FST(rest)))(add(SND(here))(SND(rest))))
+         )(self(t)))(SCOREGO(h)(t))))
+glyph PCT100 = la p. (la c. la d. IF(int_eq(add(c)(d))(0))(la _. 0)(la _. div(mul(100)(c))(add(c)(d))))(FST(p))(SND(p))
+
+# ── the CONTROL: rotate d_𝒫 by one against d_𝒱. Same two distributions,
+#    pairing destroyed. Real structure must fall toward chance here. ──
+glyph ROT1 = la l. l(NIL)(la h. la t. APP(t)(CONS(h)(NIL)))
+glyph ZIPGO = Z(la self. la a. la b.
+    a(NIL)(la ha. la ta. b(NIL)(la hb. la tb. CONS(PAIR(FST(ha))(SND(hb)))(self(ta)(tb))))))
+glyph SHUFFLED = ZIPGO(DPAIRS)(ROT1(DPAIRS))
+
+glyph REAL = TALLYGO(DPAIRS)
+glyph CTRL = TALLYGO(SHUFFLED)
+
+glyph MAIN = print(
+    concat("crossmodal d_V<->d_P: ")(
+    concat(int_to_str(PCT100(REAL)))(
+    concat(" pct  [concordant ")(
+    concat(int_to_str(FST(REAL)))(
+    concat(" / discordant ")(
+    concat(int_to_str(SND(REAL)))(
+    concat("]  n_concepts=")(
+    concat(int_to_str(LEN(CL)))(
+    concat("  control(rotated pairing): ")(
+    concat(int_to_str(PCT100(CTRL)))(" pct")))))))))))

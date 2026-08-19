@@ -1,0 +1,129 @@
+# ═══════════════════════════════════════════════════════════════════
+#  explain.la — GLYPH → ENGLISH. The system saying, in a foreign tongue,
+#  what one of its own compounds means.
+#
+#  ── ★ THE ONE ASSERTED TABLE, DECLARED AS SUCH ────────────────────────────
+#  Everywhere else this project DERIVES: form from ONF, sound from ONF, meaning
+#  from the modes. An English gloss cannot be derived, because English is not in
+#  the system. There is no honest way around that, so it is confined rather than
+#  hidden: exactly FOURTEEN asserted atoms — nine primitive glosses and five mode
+#  phrasings — and every compound explanation is COMPOSED from them. Nothing else
+#  in this file is hand-authored.
+#
+#  This is the system's only hand-authored correspondence, and it is a BRIDGE
+#  OUTWARD, not a derivation. Stated here so no reader has to discover it.
+#
+#  ── WHAT REDUCES (BUT DOES NOT REMOVE) THE ARBITRARINESS ──────────────────
+#  The five MODE phrasings are not invented here: they are denote.la's own role
+#  definitions, transcribed —
+#      ⊗ "the two-place link — both present, each recoverable"   (RELATION)
+#      ⊕ "reciprocal — RELATION symmetrised"                     (LOVE)
+#      ▷ "a acts on b"                                           (application)
+#      ⊂ "a sealed in a FORM, b the accessor"                    (FORM)
+#      ↻ "self-fold a(a)"                                        (DEPTH)
+#  Their correctness is witnessed by denote.la's homomorphism, which already
+#  proves MEANING(M(a,b)) = ⟦M⟧(MEANING a)(MEANING b). The nine PRIMITIVE
+#  glosses are anchored to their λ-denotations where the λ-term admits a plain
+#  reading (VOID = la a. la b. b discards its first argument, hence "what is
+#  not"), but that anchoring is interpretive and is NOT claimed as derivation.
+#
+#  ── ★ WHAT THE GATE TESTS — COMPOSITIONALITY, NOT CORRECTNESS ─────────────
+#  No gate can check whether "what simply is" is a GOOD English rendering of
+#  BEING; that is a judgement, and asserting it would be a check that cannot
+#  fail. What IS checkable, and what the gate asserts:
+#    · the nine glosses are pairwise DISTINCT (an ambiguous explainer is a real
+#      defect — two primitives sharing prose is the monosemy failure in reverse);
+#    · a compound's explanation CONTAINS both constituents' explanations, so
+#      structure survives into the prose;
+#    · distinct modes yield distinct prose (the mode is recoverable);
+#    · ▷ is ORDER-SENSITIVE in the prose, because denote.la says it is
+#      directional while ⊗ and ⊕ are not.
+#  Each has a constructible violation, which is the acceptance test.
+# ═══════════════════════════════════════════════════════════════════
+
+import("topoderive.la")   # PRIM SYN CON DIR CONT MC — the κ-node constructors
+
+export EXPLAIN GLOSS CONTAINS
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph BSTR = la b. b("T")("F")
+
+# ── substring containment (no builtin) ────────────────────────────────────
+glyph STARTS = Z(la self. la h. la n.
+    IF(str_eq(n)(""))(la _. TRUE)(la _.
+    IF(str_eq(h)(""))(la _. FALSE)(la _.
+    IF(str_eq(str_head(h))(str_head(n)))(la _. self(str_tail(h))(str_tail(n)))(la _. FALSE))))
+glyph CONTAINS = Z(la self. la h. la n.
+    IF(STARTS(h)(n))(la _. TRUE)(la _.
+    IF(str_eq(h)(""))(la _. FALSE)(la _. self(str_tail(h))(n))))
+
+# ── ATOM 1..9 — the nine primitive glosses (ASSERTED; see the header) ─────
+glyph GLOSS = la nm.
+    IF(str_eq(nm)("BEING"))      (la _. "what simply is")(la _.
+    IF(str_eq(nm)("RELATION"))   (la _. "a two-place link")(la _.
+    IF(str_eq(nm)("RECOGNITION"))(la _. "a thing standing in relation to itself")(la _.
+    IF(str_eq(nm)("LOVE"))       (la _. "mutual relation, held both ways")(la _.
+    IF(str_eq(nm)("SELF"))       (la _. "being turned upon being")(la _.
+    IF(str_eq(nm)("VOID"))       (la _. "what is not")(la _.
+    IF(str_eq(nm)("BECOMING"))   (la _. "one more than what was")(la _.
+    IF(str_eq(nm)("FORM"))       (la _. "what holds a thing so it can be taken up")(la _.
+    IF(str_eq(nm)("DEPTH"))      (la _. "a thing applied to itself")(la _.
+                                        "an unnamed ground")))))))))
+
+# ── ATOM 10..14 — the five mode phrasings (transcribed from denote.la) ────
+glyph P_SYN  = la a. la b. concat("(")(concat(a)(concat(" and ")(concat(b)(", both present and each recoverable)"))))
+glyph P_CON  = la a. la b. concat("(")(concat(a)(concat(" and ")(concat(b)(", each reciprocally the other's)"))))
+glyph P_DIR  = la a. la b. concat("(")(concat(a)(concat(" acting upon ")(concat(b)(")"))))
+glyph P_CONT = la a. la b. concat("(")(concat(a)(concat(" sealed within ")(concat(b)(", which is how it is taken up)"))))
+glyph P_MC   = la a.        concat("(")(concat(a)(" folded upon itself)"))
+
+# ── EXPLAIN — compositional by construction; nothing below is a table ─────
+glyph EXPLAIN = Z(la self. la node.
+    node
+        (la nm. GLOSS(nm))
+        (la a. la b. P_SYN(self(a))(self(b)))
+        (la a. la b. P_CON(self(a))(self(b)))
+        (la a. la b. P_DIR(self(a))(self(b)))
+        (la a. la b. P_CONT(self(a))(self(b)))
+        (la a.       P_MC(self(a))))
+
+# ── the four checkable properties ─────────────────────────────────────────
+glyph NAMES9 = la f.
+    f("BEING")("RELATION")("RECOGNITION")("LOVE")("SELF")("VOID")("BECOMING")("FORM")("DEPTH")
+# W1 — gloss injectivity: 9 pairwise-distinct glosses. Counted, not asserted.
+glyph DIFF2 = la x. la y. IF(str_eq(GLOSS(x))(GLOSS(y)))(la _. 0)(la _. 1)
+glyph INJ9 = NAMES9(la a. la b. la c. la d. la e. la f. la g. la h. la i.
+    add(add(add(add(add(add(add(add(
+        DIFF2(a)(b))(DIFF2(b)(c)))(DIFF2(c)(d)))(DIFF2(d)(e)))(DIFF2(e)(f)))
+        (DIFF2(f)(g)))(DIFF2(g)(h)))(DIFF2(h)(i)))(DIFF2(a)(i)))
+glyph W1 = concat(int_to_str(INJ9))("/9")
+
+glyph A = MC(PRIM("BEING"))                    # ↻(BEING) — SELF by the rewrite
+glyph B = PRIM("VOID")
+glyph CMP = SYN(A)(B)
+
+# W2 — a compound CONTAINS both constituents' explanations
+glyph W2 = BSTR(AND(CONTAINS(EXPLAIN(CMP))(EXPLAIN(A)))(CONTAINS(EXPLAIN(CMP))(EXPLAIN(B))))
+
+# W3 — THE RED PATH: a deliberately broken renderer that DROPS the right
+# constituent must FAIL the very same containment check. Without this, W2
+# passing would not show the check discriminates.
+glyph BROKEN = la a. la b. concat("(")(concat(a)(" and something unstated)"))
+glyph W3 = BSTR(NOT(CONTAINS(BROKEN(EXPLAIN(A))(EXPLAIN(B)))(EXPLAIN(B))))
+
+# W4 — the MODE is recoverable: distinct modes give distinct prose
+glyph W4 = BSTR(AND(NOT(str_eq(EXPLAIN(SYN(A)(B)))(EXPLAIN(CON(A)(B)))))
+                   (NOT(str_eq(EXPLAIN(SYN(A)(B)))(EXPLAIN(DIR(A)(B))))))
+
+# W5 — ▷ is DIRECTIONAL in the prose (denote.la: "a acts on b"), while ⊗ is
+# commutative in meaning; the rendering must not flatten that asymmetry.
+glyph W5 = BSTR(NOT(str_eq(EXPLAIN(DIR(A)(B)))(EXPLAIN(DIR(B)(A)))))
+
+glyph J    = la a. la b. concat(a)(concat("|")(b))
+glyph MAIN = print(concat(J(W1)(J(W2)(J(W3)(J(W4)(W5)))))(
+             concat("\n")(concat("EXPLAIN(⊗(↻(BEING),VOID)) = ")(EXPLAIN(CMP)))))

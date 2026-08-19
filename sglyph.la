@@ -1,0 +1,176 @@
+# ═══════════════════════════════════════════════════════════════════
+#  sglyph.la — the SPEECH→GLYPH compiler. "Click → Glyph: Ontoglyphic"
+#  (Logoscribeologiae, the trans-species collapse table).
+#
+#  ── WHAT THIS IS, AND WHY IT IS NOT A NEW INVENTION ───────────────────────
+#  phonsem.la maps a concept to Θ_P, a set of formant peaks derived from ONF
+#  structure, and build.sh gates that map SET-INJECTIVE. An injective map is
+#  exactly a map that HAS a well-defined inverse. So this module does not
+#  invent a recogniser; it INVERTS a map the build already gates, measuring
+#  through goertzel.la's integer Goertzel — the same analyzer, imported, not
+#  copied.
+#
+#  ── ★ THE REFERENCE SET IS MEASURED, NEVER TYPED IN ───────────────────────
+#  The obvious implementation carries a table of the nine formant triples and
+#  compares against it. That would be a THIRD copy of numbers already stated in
+#  phonym.la and phonsem.la — precisely the defect the ROADMAP names: they
+#  agree by care, not by construction, and nothing catches a one-sided edit.
+#  So instead the recogniser CALIBRATES ITSELF: every reference signature is
+#  measured, at analysis time, from phonym.la's own PHON_PRIM synthesis. There
+#  is no formant table in this file. Retune a phonym and the recogniser
+#  retunes with it; no drift is possible, because there is nothing to drift.
+#
+#  ── ★ WHY RECOGNITION MUST BE TWO-STAGE (this is forced, not chosen) ──────
+#  The nine phonyms rest on FIVE vowel grounds (phonym.la:145-181):
+#      /ɑ/ BEING · SELF · VOID · FORM      /u/ LOVE · BECOMING
+#      /i/ RECOGNITION    /a/ RELATION     /ɔ/ DEPTH
+#  Six of nine share a nucleus with another. No amount of measuring precision
+#  separates them, so the nucleus can only ever narrow to a CANDIDATE SET, and
+#  the ONSET must carry the rest. That is why the onset machinery is
+#  architecture rather than a patch, and sglyph_gate.la's W4 asserts the
+#  collapse holds so the round trip cannot pass on nucleus evidence alone.
+#
+#  ── ★ THE NUCLEUS IS THE TAIL — a deliberate refusal to duplicate ─────────
+#  Each phonym is onset-then-nucleus, and the onset lengths differ per phonym
+#  (960..2240 samples). Hardcoding them here would be that third copy again.
+#  Instead the nucleus window is taken from the END of the signal, using only
+#  the length PHON_PRIM already returns: the nucleus always runs to the end,
+#  so the tail is the nucleus, whatever the onset did.
+#
+#  ── HONEST BOUNDS, stated before the gate is run ──────────────────────────
+#  · Grid resolution is FSTEP Hz, and a formant's bandwidth (~120 Hz) is wider
+#    than the /ɑ/–/a/ separation (700/1100/2540 vs 750/1150/2500, i.e. 50/50/40
+#    Hz). RELATION may therefore NOT separate from the /ɑ/ group at the
+#    nucleus. The candidate-set design absorbs this: if /a/ and /ɑ/ collapse,
+#    RELATION simply joins the group and its uvular-trill onset does the work.
+#    This is written down BEFORE the run so the outcome cannot be narrated as
+#    though it were expected either way.
+#  · Recognition is over the NINE PRIMITIVES here. Compounds are what phonsem's
+#    8/8 injectivity actually covers, and extending to them is the next slice,
+#    not a claim this file makes.
+#  · This is not speech recognition of human speech. It recognises phonym.la's
+#    OWN synthesis. Whether a human mouth lands inside these tolerances is
+#    unmeasured and is NOT claimed.
+# ═══════════════════════════════════════════════════════════════════
+
+import("phonym.la")          # SR, PSIN, PHON_PRIM — the synthesis under analysis
+import("goertzel.la")        # GPOWER — the analyzer, single source of truth
+
+export RECOGNIZE VOWEL_OF TAILPEAKS HEADPEAKS PKDIST
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph GEQ  = la a. la b. NOT(lt(a)(b))
+glyph MINI = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
+glyph MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph ABSD = la a. la b. IF(lt(a)(b))(la _. sub(b)(a))(la _. sub(a)(b))
+glyph LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+
+# ── ANALYSIS PARAMETERS ───────────────────────────────────────────────────
+# Deliberately modest. Cost is (grid points x NW) Goertzel steps per window,
+# and every glyph in this dialect is a MACRO, so nothing is shared between
+# uses and the cost multiplies. These are starting values to be tuned from a
+# REAL timing, not from reasoning about which step looks expensive.
+# ★ COARSE FIRST PASS (NW 256->128, FSTEP 100->200): ~4x cheaper, and safe for
+# the ROUND TRIP for a specific reason worth stating. Because the reference
+# signatures are MEASURED on the same grid as the input rather than typed in,
+# grid-quantisation error is IDENTICAL on both sides and CANCELS: the same
+# phonym measured twice yields the same grid peaks however coarse the grid.
+# Self-calibration is what buys this; a hardcoded formant table would have made
+# coarsening corrupt W1 directly.
+# What coarsening DOES cost is near-neighbour discrimination and decoy
+# rejection, since a resonance now lands up to FSTEP/2 = 100 Hz off-grid. So a
+# GREEN W1 here is trustworthy, while a RED W2/W4 must be re-run fine before it
+# is reported as a real defect rather than an artefact of the grid.
+glyph NW    = 128            # analysis window, samples (8 ms at SR 16000)
+glyph FLO   = 200            # grid low edge, Hz
+glyph FHI   = 3200           # grid high edge — above F3 for every phonym
+glyph FSTEP = 200            # grid step, Hz
+glyph THR   = 250            # a peak must reach THR/1000 of the window maximum
+glyph TOL   = 150            # nucleus Chamfer tolerance, Hz, for candidacy
+
+# ── WINDOWS. p is PHON_PRIM's PAIR(length)(gen). ──────────────────────────
+glyph TAILGEN = la p. la i. SND(p)(add(i)(sub(FST(p))(NW)))
+glyph HEADGEN = la p. la i. SND(p)(i)
+
+# ── SPECTRUM over the grid: a list of PAIR(freq)(power) ───────────────────
+glyph SPECGO = Z(la self. la gen. la f.
+    IF(lt(FHI)(f))(la _. NIL)(la _.
+        CONS(PAIR(f)(GPOWER(gen)(NW)(f)))(self(gen)(add(f)(FSTEP)))))
+glyph SPECT  = la gen. SPECGO(gen)(FLO)
+
+glyph MAXPOW = Z(la self. la l. l(0)(la h. la t. MAXI(SND(h))(self(t))))
+
+# ── PEAKS: grid-local maxima reaching THR/1000 of the window maximum.
+#    Walking with the PREVIOUS power threaded, so a peak is a genuine turn in
+#    the spectrum rather than any loud bin. ──
+glyph PKGO = Z(la self. la mx. la pp. la l.
+    l(NIL)(la h. la t.
+        (la f. (la pw.
+            (la loud. (la rising.
+                t   ( IF(AND(loud)(rising))(la _. CONS(f)(NIL))(la _. NIL) )
+                    ( la h2. la t2.
+                        IF(AND(AND(loud)(rising))(GEQ(pw)(SND(h2))))
+                          (la _. CONS(f)(self(mx)(pw)(t)))
+                          (la _. self(mx)(pw)(t)) ) )
+             (lt(pp)(pw)))
+             (GEQ(pw)(div(mul(THR)(mx))(1000))))
+         (SND(h)))(FST(h))))
+glyph PEAKSOF = la gen. (la sp. PKGO(MAXPOW(sp))(0)(sp))(SPECT(gen))
+
+glyph TAILPEAKS = la p. PEAKSOF(TAILGEN(p))
+glyph HEADPEAKS = la p. PEAKSOF(HEADGEN(p))
+
+# ── d_𝒫 on measured peak sets: the SAME symmetric Chamfer phonsem.la uses
+#    for Θ_P, so the inverse is scored by the metric the forward map is gated
+#    on — not by a new one invented to make this pass. ──
+glyph NEARGO  = Z(la self. la x. la best. la l. l(best)(la h. la t. self(x)(MINI(best)(ABSD(x)(h)))(t)))
+glyph NEAREST = la x. la l. l(99999)(la h. la t. NEARGO(x)(ABSD(x)(h))(t))
+glyph CHAMDIR = Z(la self. la a. la b. a(0)(la h. la t. add(NEAREST(h)(b))(self(t)(b))))
+glyph PKDIST  = la a. la b. add(CHAMDIR(a)(b))(CHAMDIR(b)(a))
+
+# ── the nine primitives, catalogue order ──────────────────────────────────
+glyph NAMES =
+    CONS("BEING")(CONS("RECOGNITION")(CONS("LOVE")(CONS("SELF")(CONS("RELATION")(
+    CONS("VOID")(CONS("BECOMING")(CONS("FORM")(CONS("DEPTH")(NIL)))))))))
+
+# ── VOWEL_OF: the nucleus signature as text. Two phonyms share a vowel ground
+#    exactly when this string agrees — which is what W4 asserts for the /ɑ/ four. ──
+glyph FMTGO   = Z(la self. la l. l("")(la h. la t. concat(concat(int_to_str(h))(","))(self(t))))
+glyph VOWEL_OF = la p. FMTGO(TAILPEAKS(p))
+
+# ── STAGE 1 — candidacy by nucleus. Every primitive whose measured nucleus is
+#    within TOL of the input's. Empty ⇒ the sound is not a phonym at all. ──
+glyph CANDGO = Z(la self. la pk. la l.
+    l(NIL)(la h. la t.
+        IF(GEQ(TOL)(PKDIST(pk)(TAILPEAKS(PHON_PRIM(h)))))
+          (la _. CONS(h)(self(pk)(t)))
+          (la _. self(pk)(t))))
+glyph CANDS = la p. CANDGO(TAILPEAKS(p))(NAMES)
+
+# ── STAGE 2 — the ONSET decides among the candidates: nearest head-window
+#    signature, again by the same Chamfer. ──
+glyph BESTGO = Z(la self. la hp. la best. la bd. la l.
+    l(PAIR(best)(bd))(la h. la t.
+        (la d. IF(lt(d)(bd))(la _. self(hp)(h)(d)(t))(la _. self(hp)(best)(bd)(t)))
+        (PKDIST(hp)(HEADPEAKS(PHON_PRIM(h))))))
+glyph BEST = la p. la cs. BESTGO(HEADPEAKS(p))("⊥")(99999)(cs)
+
+# ── RECOGNIZE. Refuses rather than snapping to a nearest match: no nucleus
+#    candidate ⇒ ⊥ (W2's off-formant tone, W3's silence), and an empty measured
+#    nucleus ⇒ ⊥ before any comparison is attempted. ──
+glyph RECOGNIZE = la p.
+    IF(int_eq(LEN(TAILPEAKS(p)))(0))(la _. "⊥")(la _.
+        (la cs. IF(int_eq(LEN(cs))(0))(la _. "⊥")(la _.
+                IF(int_eq(LEN(cs))(1))(la _. cs("⊥")(la h. la t. h))(la _.
+                    FST(BEST(p)(cs)))))
+        (CANDS(p)))

@@ -1,0 +1,86 @@
+# ═══════════════════════════════════════════════════════════════════
+#  sglyph_gate.la — the ROUND-TRIP gate for the speech→glyph compiler.
+#
+#  WRITTEN BEFORE THE RECOGNIZER, ON PURPOSE. This project's highest-yield
+#  defect class is the gate that cannot fail (four instances tallied). The
+#  cheapest way not to write a fifth is to watch this one be RED first: with
+#  no sglyph.la on disk the import below fails loudly, which is the correct
+#  starting state and the proof the gate is wired to something real.
+#
+#  WHAT IS BEING TESTED. phonsem.la maps a concept to Θ_P, a formant-peak set,
+#  and build.sh gates that map SET-INJECTIVE (8/8 over the compound concepts).
+#  Injectivity is exactly the precondition for a well-defined inverse, so the
+#  compiler is not a new invention — it is the inverse of a map already gated,
+#  measured through goertzel.la's integer Goertzel. Round-tripping is therefore
+#  the honest acceptance test: synthesise a phonym with phonym.la's OWN
+#  synthesis, recognise it, and demand the same glyph back.
+#
+#  ★ THE ONSET IS LOAD-BEARING, AND W4 PROVES IT. After VOID's nucleus was
+#  corrected to BEING's /ɑ/, the nine phonyms rest on FIVE vowel grounds:
+#      /ɑ/ 700,1100,2540 — BEING · SELF · VOID · FORM   (four!)
+#      /u/ 300, 870,2240 — LOVE · BECOMING              (two)
+#      /i/ 270,2300,3000 — RECOGNITION
+#      /a/ 750,1150,2500 — RELATION
+#      /ɔ/ 500, 800,2830 — DEPTH
+#  So a nucleus-only recogniser CANNOT separate six of the nine, no matter how
+#  well it measures. W4 asserts that collapse rather than hiding it: if the
+#  four /ɑ/ phonyms ever stopped colliding at the nucleus, W4 goes RED and the
+#  five-vowel finding is wrong. A gate that only ever confirms success would
+#  let a recogniser secretly keying on nucleus alone pass W1 by luck.
+#
+#  W5 ASSERTS THAT MEASUREMENT HAPPENED. Vacuous-gate instance #4 in this
+#  project was a gate whose measurement step died soft and still exited 0.
+#  W5 prints the number of peaks actually recovered from BEING's nucleus, so
+#  "3" is a claim about work done, not about a comparison not failing.
+# ═══════════════════════════════════════════════════════════════════
+
+import("phonym.la")          # PHON_PRIM, PSIN, SR — the SAME synthesis, not a copy
+import("sglyph.la")          # RECOGNIZE, VOWEL_OF, TAILPEAKS — the compiler under test
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+
+# ── the nine primitives, in catalogue order g1..g9 ──
+glyph NAMES =
+    CONS("BEING")(CONS("RECOGNITION")(CONS("LOVE")(CONS("SELF")(CONS("RELATION")(
+    CONS("VOID")(CONS("BECOMING")(CONS("FORM")(CONS("DEPTH")(NIL)))))))))
+
+# ── W1 — ROUND TRIP. Each phonym's own synthesis must come back as itself. ──
+# RECOGNIZE takes PHON_PRIM's PAIR(length)(gen) whole, so it windows the signal
+# from the declared length and never duplicates phonym's onset table. That is
+# deliberate: a second copy of those numbers is the "agree by care, not by
+# construction" defect the ROADMAP already names for the formant tables.
+glyph RT   = la nm. IF(str_eq(RECOGNIZE(PHON_PRIM(nm)))(nm))("T")("F")
+glyph W1   = Z(la self. la l. l("")(la h. la t. concat(RT(h))(self(t))))(NAMES)
+
+# ── W2 — RED PATH: a tone belonging to no phonym must be REFUSED, not
+#    snapped to the nearest glyph. 1750 Hz sits in no formant set above; a
+#    nearest-match recogniser with no rejection threshold returns some glyph
+#    here, and that is precisely the failure this asserts against. ──
+glyph DECOY = PAIR(6080)(la i. PSIN(i)(1750))
+glyph W2    = IF(str_eq(RECOGNIZE(DECOY))("⊥"))("T")("F")
+
+# ── W3 — RED PATH: silence is not a glyph. ──
+glyph SILENCE = PAIR(6080)(la i. 0)
+glyph W3      = IF(str_eq(RECOGNIZE(SILENCE))("⊥"))("T")("F")
+
+# ── W4 — the onset is LOAD-BEARING (see the header). The four /ɑ/ phonyms
+#    must be INDISTINGUISHABLE at the nucleus, so W1 cannot have passed on
+#    nucleus evidence alone. ──
+glyph VA = VOWEL_OF(PHON_PRIM("BEING"))
+glyph W4 =
+    IF(str_eq(VOWEL_OF(PHON_PRIM("SELF")))(VA))(la _.
+    IF(str_eq(VOWEL_OF(PHON_PRIM("VOID")))(VA))(la _.
+    IF(str_eq(VOWEL_OF(PHON_PRIM("FORM")))(VA))(la _. "Y")(la _. "n"))(la _. "n"))(la _. "n")("!")
+
+# ── W5 — WE MEASURED. The count of peaks recovered from BEING's nucleus. ──
+glyph LEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph W5  = int_to_str(LEN(TAILPEAKS(PHON_PRIM("BEING"))))
+
+glyph J    = la a. la b. concat(a)(concat("|")(b))
+glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(W5)))))

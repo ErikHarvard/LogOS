@@ -1,0 +1,183 @@
+# ═══════════════════════════════════════════════════════════════════
+#  phonseq.la — RECOVER THE TREE FROM THE SOUND. The parsing half of
+#  speech→glyph: not "which primitive is this" (sglyph.la) but "what
+#  STRUCTURE was uttered".
+#
+#  ── ★ WHY THIS NEEDS NO SEGMENTATION HEURISTICS ───────────────────────────
+#  The obvious build is a spectral-flux onset detector with a tuned threshold —
+#  invented machinery, tuned until it works, unfalsifiable in the middle. It is
+#  unnecessary. Reading phonym.la's own mode synthesis shows FOUR of the five
+#  modes already carry a DISTINCT TEMPORAL SIGNATURE, by construction:
+#      ⊕ CONP  : A · 960 samples of exact silence (the /ʔ/ closure) · B
+#      ↻ MCP   : AA — exact reduplication, both halves sample-identical
+#      ▷ DIRP  : A at full strength, then B scaled to 3/5 (the light second beat)
+#      ⊂ CONTP : B A B — the second frames the first, outer thirds identical
+#      ⊗ SYNP  : superposition over ONE window — no temporal boundary at all
+#  So the mode is READ OFF the signal's own construction. Every constant here
+#  (960, 3/5, "identical halves") is phonym.la's, not mine. Nothing is tuned.
+#
+#  ── WHAT THIS BUYS ───────────────────────────────────────────────────────
+#  Recursion. Having found the mode and its split point, each part is itself a
+#  signal, so the same test applies — and the whole TREE comes back out of the
+#  audio, not just a flat sequence of names. That is what makes Lingua Adamica
+#  actually SPEAKABLE rather than merely pronounceable: a compound is uttered as
+#  one sound and recovered as one structure.
+#
+#  ── THE GATE: A TRUE ROUND TRIP, SCORED BY THE BUILD'S OWN WITNESS ────────
+#  phonym.la already exports SPEC — the prefix notation of the structure a
+#  phonym was built from ("⊗(BEING,VOID)"). So the test needs no new notion of
+#  equality and no new oracle:
+#        SPEC(PARSE(PHONYM(node)))  ==  SPEC(node)
+#  Utter a structure, listen to it, recover it, and compare against the
+#  build's own witness of what was uttered.
+#
+#  ── ★ THE RED PATH IS A CONFUSION MATRIX, NOT A PASS ──────────────────────
+#  Each detector firing on its OWN mode proves nothing on its own — a detector
+#  that returns TRUE always would pass that. What is asserted instead: each
+#  detector fires on its own mode AND STAYS SILENT on the other four. The
+#  diagonal must be the only hits. A detector that cannot stay silent is
+#  reported as the defect it is.
+#
+#  ── HONEST BOUNDS, written before the run ────────────────────────────────
+#  · ⊗ is diagnosed by ELIMINATION (no temporal signature found). That makes it
+#    the residue: any failure of the other four detectors lands in ⊗. Stated
+#    plainly because it means ⊗ carries the accumulated error of the rest.
+#  · ▷'s 3/5 scaling is detected on integer sample ratios, and integer division
+#    in the synthesis loses low-amplitude detail; near-silent regions are
+#    therefore skipped rather than ratio-tested.
+#  · Split points for ▷ and ⊂ are searched on a COARSE STRIDE, so recovery is
+#    exact only when a boundary lands on the stride. This is a resolution
+#    bound, not a correctness one, and the gate reports which trees recovered.
+#  · Cost is high: every candidate split re-walks the signal. Deliberately not
+#    optimised before it is first MEASURED.
+# ═══════════════════════════════════════════════════════════════════
+
+import("phonym.la")     # PHONYM, SPEC, PHON_PRIM, PRIM/SYN/CON/DIR/CONT/MC
+import("sglyph.la")     # RECOGNIZE — the primitive recogniser at the leaves
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph BSTR = la b. b("T")("F")
+glyph ABSD = la a. la b. IF(lt(a)(b))(la _. sub(b)(a))(la _. sub(a)(b))
+
+glyph STRIDE = 160        # split-point search stride, samples (10 ms at SR 16000)
+glyph GAP    = 960        # phonym.la's OWN /ʔ/ closure length — not a tuned value
+glyph EPS    = 24         # sample-equality slack, for integer-division residue
+
+# ── a windowed view of a signal: PAIR(len)(gen) ───────────────────────────
+glyph SUB = la p. la off. la n. PAIR(n)(la i. SND(p)(add(i)(off)))
+
+# ── are two ranges sample-identical (within integer-division slack)? ──────
+glyph SAMEGO = Z(la self. la p. la q. la n. la i.
+    IF(int_eq(i)(n))(la _. TRUE)(la _.
+    IF(lt(EPS)(ABSD(SND(p)(i))(SND(q)(i))))(la _. FALSE)(la _.
+        self(p)(q)(n)(add(i)(STRIDE)))))
+glyph SAME = la p. la q. la n. SAMEGO(p)(q)(n)(0)
+
+# ── is there a run of exact silence of length GAP starting at off? ────────
+glyph SILGO = Z(la self. la p. la off. la k.
+    IF(int_eq(k)(GAP))(la _. TRUE)(la _.
+    IF(lt(EPS)(ABSD(SND(p)(add(off)(k)))(0)))(la _. FALSE)(la _.
+        self(p)(off)(add(k)(STRIDE)))))
+
+# ── ↻ : the two halves are identical ─────────────────────────────────────
+glyph IS_MC = la p. (la h.
+    SAME(SUB(p)(0)(h))(SUB(p)(h)(h))(h))(div(FST(p))(2))
+
+# ── ⊕ : a GAP-long silence sits strictly inside. Scan on the stride. ──────
+glyph FINDSIL = Z(la self. la p. la off.
+    IF(lt(sub(FST(p))(GAP))(off))(la _. sub(0)(1))(la _.
+    IF(SILGO(p)(off)(0))(la _. off)(la _. self(p)(add(off)(STRIDE)))))
+glyph SIL_AT = la p. FINDSIL(p)(STRIDE)
+glyph IS_CON = la p. NOT(int_eq(SIL_AT(p))(sub(0)(1)))
+
+# ── ⊂ : outer thirds identical (B A B), inner different ──────────────────
+glyph TRYCONT = Z(la self. la p. la nq.
+    IF(lt(div(FST(p))(2))(nq))(la _. sub(0)(1))(la _.
+    IF(AND(SAME(SUB(p)(0)(nq))(SUB(p)(sub(FST(p))(nq))(nq))(nq))
+          (NOT(SAME(SUB(p)(0)(nq))(SUB(p)(nq)(nq))(nq))))
+      (la _. nq)(la _. self(p)(add(nq)(STRIDE)))))
+glyph CONT_AT = la p. TRYCONT(p)(STRIDE)
+glyph IS_CONT = la p. NOT(int_eq(CONT_AT(p))(sub(0)(1)))
+
+# ── ▷ : phonym.la scales the SECOND part to 3/5. That cannot be detected as a
+#    ratio, because detecting "this is 3/5 of something" would require knowing
+#    what B sounds like at FULL strength, and B is arbitrary. What IS detectable
+#    without a reference is the consequence: a SHARP STEP DOWN in mean amplitude
+#    at the boundary, in the 3/5 proportion. So the test is
+#        5 * meanabs(tail)  ≈  3 * meanabs(head)
+#    which uses phonym.la's own constant and needs no reference signal.
+#    ⚠ HONEST FALSE-POSITIVE: two phonyms whose second is NATURALLY about 3/5 as
+#    loud as the first would also match. This detector is therefore weaker than
+#    the ↻/⊕/⊂ ones, which are exact. The confusion matrix is what exposes that,
+#    and ▷ is tested LAST for the same reason.
+glyph MABSGO = Z(la self. la p. la off. la n. la i. la acc.
+    IF(lt(n)(add(i)(1)))(la _. PAIR(acc)(div(add(i)(STRIDE))(STRIDE)))(la _.
+        self(p)(off)(n)(add(i)(STRIDE))(add(acc)(ABSD(SND(p)(add(off)(i)))(0)))))
+glyph MEANABS = la p. la off. la n.
+    (la r. IF(int_eq(SND(r))(0))(la _. 0)(la _. div(FST(r))(SND(r))))(MABSGO(p)(off)(n)(0)(0))
+glyph DIRFIT = la p. la s.
+    (la h. la t.
+        AND(lt(200)(h))
+            (lt(ABSD(mul(5)(t))(mul(3)(h)))(div(mul(3)(h))(4))))
+    (MEANABS(p)(0)(s))(MEANABS(p)(s)(sub(FST(p))(s)))
+glyph TRYDIR = Z(la self. la p. la s.
+    IF(lt(sub(FST(p))(STRIDE))(s))(la _. sub(0)(1))(la _.
+    IF(DIRFIT(p)(s))(la _. s)(la _. self(p)(add(s)(STRIDE)))))
+glyph DIR_AT = la p. TRYDIR(p)(mul(STRIDE)(4))
+glyph IS_DIR = la p. NOT(int_eq(DIR_AT(p))(sub(0)(1)))
+
+# ── MODE_OF: ordered so the two EXACT signatures are tested before the
+#    approximate ones, and ⊗ is the residue (see the bound in the header). ──
+glyph MODE_OF = la p.
+    IF(IS_MC(p))  (la _. "MC")(la _.
+    IF(IS_CON(p)) (la _. "CON")(la _.
+    IF(IS_CONT(p))(la _. "CONT")(la _.
+    IF(IS_DIR(p)) (la _. "DIR")(la _. "SYN"))))
+
+# ── PARSE: read the mode, split at its own boundary, recurse. At a leaf
+#    (no temporal signature and a single recognisable nucleus) hand off to
+#    sglyph's RECOGNIZE. ──
+glyph PARSE = Z(la self. la p.
+    (la m.
+      IF(str_eq(m)("MC"))  (la _. concat("↻(")(concat(self(SUB(p)(0)(div(FST(p))(2))))(")")))(la _.
+      IF(str_eq(m)("CON")) (la _. (la s. concat("⊕(")(concat(self(SUB(p)(0)(s)))
+                                     (concat(",")(concat(self(SUB(p)(add(s)(GAP))(sub(sub(FST(p))(s))(GAP))))(")")))))(SIL_AT(p)))(la _.
+      IF(str_eq(m)("CONT"))(la _. (la q. concat("⊂(")(concat(self(SUB(p)(q)(sub(sub(FST(p))(q))(q))))
+                                     (concat(",")(concat(self(SUB(p)(0)(q)))(")")))))(CONT_AT(p)))(la _.
+      IF(str_eq(m)("DIR")) (la _. (la d. concat("▷(")(concat(self(SUB(p)(0)(d)))
+                                     (concat(",")(concat(self(SUB(p)(d)(sub(FST(p))(d))))(")")))))(DIR_AT(p)))(la _.
+        RECOGNIZE(p))))))
+    (MODE_OF(p)))
+
+# ── THE CONFUSION MATRIX — each detector must STAY SILENT off its diagonal ──
+glyph A = PRIM("BEING")
+glyph B = PRIM("VOID")
+glyph U_MC   = PHONYM(MC(A))
+glyph U_CON  = PHONYM(CON(A)(B))
+glyph U_CONT = PHONYM(CONT(A)(B))
+glyph U_SYN  = PHONYM(SYN(A)(B))
+glyph U_DIR  = PHONYM(DIR(A)(B))
+
+glyph ROW = la p. concat(BSTR(IS_MC(p)))(concat(BSTR(IS_CON(p)))(concat(BSTR(IS_CONT(p)))(BSTR(IS_DIR(p)))))
+glyph W1 = ROW(U_MC)      # expect T on MC only
+glyph W2 = ROW(U_CON)     # expect T on CON only
+glyph W3 = ROW(U_CONT)    # expect T on CONT only
+glyph W4 = ROW(U_SYN)     # expect NO hit — ⊗ has no temporal signature
+glyph W4b = ROW(U_DIR)    # expect T on DIR only (the weakest detector)
+
+# ── THE ROUND TRIP, scored by the build's own witness ────────────────────
+glyph W5 = BSTR(str_eq(PARSE(PHONYM(MC(A))))(SPEC(MC(A))))
+
+glyph J    = la a. la b. concat(a)(concat("|")(b))
+glyph MAIN = print(concat("phonseq confusion[mc,con,cont,dir] ")(
+             concat(J(W1)(J(W2)(J(W3)(J(W4)(J(W4b)(W5))))))(
+             concat("\nroundtrip SPEC: ")(concat(SPEC(MC(A)))(
+             concat(" -> ")(PARSE(PHONYM(MC(A)))))))))

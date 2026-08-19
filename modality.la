@@ -1,0 +1,78 @@
+# ═══════════════════════════════════════════════════════════════════
+#  modality.la — ONE GLYPH, RENDERED FOUR WAYS. The unified interface.
+#
+#  ── WHAT THIS IS, AND WHAT IT DELIBERATELY IS NOT ─────────────────────────
+#  It is a DISPATCHER, not a table. The obvious version is a per-glyph map —
+#  {"tree": {"visual": ..., "tactile": ...}} — which would be a fifth hand-
+#  authored correspondence and would make the modalities agree by fiat. Every
+#  branch here instead CALLS the module that DERIVES that modality from the same
+#  ONF structure: sigil geometry via topoderive, sound via phonym, touch via
+#  tactile (phonym's envelope), and English via explain.
+#
+#  So the four renderings cannot silently drift apart: there is one source of
+#  structure and four projections of it. What CAN differ is how much structure
+#  each projection carries, which is a real question with a measured answer —
+#  see the asymmetry below.
+#
+#  ── ★ THE MODALITIES ARE NOT EQUIPOTENT, AND THE API SAYS SO ──────────────
+#  A uniform-looking interface invites the assumption that the four channels are
+#  interchangeable. They are not, and hiding that behind a tidy signature would
+#  be the API lying about its own contents:
+#     visual    carries full structure (32x32, injective on the lexicon)
+#     phonetic  carries full structure (Θ_P set-injective 8/8 over compounds)
+#     tactile   carries FOUR of five modes — ⊗ is spectral-only, so a
+#               ⊗-compound is unrecoverable by touch (tactile.la asserts this)
+#     english   carries structure but rests on 14 ASSERTED atoms; it is the one
+#               projection that is a BRIDGE OUTWARD rather than a derivation
+#  CARRIES reports that per modality, so a caller can ask what a channel is good
+#  for instead of assuming.
+#
+#  ── BOUND ────────────────────────────────────────────────────────────────
+#  Neural is absent, not stubbed. A branch returning a placeholder would let the
+#  API claim five channels while having four. It is deferred until hardware
+#  exists, and its honest shape is a LEARNED correspondence — measured from a
+#  person, not derived from ONF — which makes it categorically unlike these four.
+# ═══════════════════════════════════════════════════════════════════
+
+import("topoderive.la")   # DSIGIL, SIG_AT, SZ + the κ-node constructors
+import("phonym.la")       # PHONYM, SPEC
+import("tactile.la")      # TACTILE
+import("explain.la")      # EXPLAIN
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+# ── visual: the derived sigil as text, built from the EXPORTED accessors
+#    (SIG_AT/SZ) rather than a second copy of the raster loop ──
+glyph VCELL = la s. la r. la c. IF(SIG_AT(s)(r)(c))(la _. "#")(la _. ".")
+glyph VROW  = Z(la self. la s. la r. la c.
+    IF(int_eq(c)(SZ))(la _. "")(la _. concat(VCELL(s)(r)(c))(self(s)(r)(add(c)(1)))))
+glyph VIS   = Z(la self. la s. la r.
+    IF(int_eq(r)(SZ))(la _. "")(la _. concat(concat(VROW(s)(r)(0))("\n"))(self(s)(add(r)(1)))))
+
+# ── the dispatcher ────────────────────────────────────────────────────────
+glyph RENDER_IN = la node. la m.
+    IF(str_eq(m)("visual"))  (la _. VIS(DSIGIL(node))(0))(la _.
+    IF(str_eq(m)("phonetic"))(la _. concat(SPEC(node))(concat("  samples=")(int_to_str(FST(PHONYM(node))))))(la _.
+    IF(str_eq(m)("tactile")) (la _. concat(SPEC(node))(concat("  frames=")(int_to_str(FST(TACTILE(node))))))(la _.
+    IF(str_eq(m)("english")) (la _. EXPLAIN(node))(la _.
+        "unknown modality"))))
+
+# ── what each channel is good for — stated, not assumed ──────────────────
+glyph CARRIES = la m.
+    IF(str_eq(m)("visual"))  (la _. "full structure (injective on the lexicon)")(la _.
+    IF(str_eq(m)("phonetic"))(la _. "full structure (Theta_P set-injective 8/8)")(la _.
+    IF(str_eq(m)("tactile")) (la _. "four of five modes; XOR-compound is spectral-only")(la _.
+    IF(str_eq(m)("english")) (la _. "structure, over 14 ASSERTED atoms (a bridge outward)")(la _.
+        "unknown modality")))) 
+
+glyph N = MC(PRIM("BEING"))
+glyph MAIN = print(
+    concat("=== one glyph, four renderings: ")(concat(SPEC(N))(concat(" ===\n")(
+    concat(concat("english  : ")(concat(RENDER_IN(N)("english"))("\n")))(
+    concat(concat("phonetic : ")(concat(RENDER_IN(N)("phonetic"))("\n")))(
+    concat(concat("tactile  : ")(concat(RENDER_IN(N)("tactile"))("\n")))(
+    concat(concat("carries  : ")(concat(CARRIES("tactile"))("\n")))(
+    concat("visual   :\n")(RENDER_IN(N)("visual")))))))))) 

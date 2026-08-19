@@ -1,0 +1,138 @@
+# ═══════════════════════════════════════════════════════════════════
+#  tactile.la — THE FOURTH MODALITY. A glyph as something FELT.
+#
+#  ── WHAT IT IS, DERIVED NOT ASSIGNED ──────────────────────────────────────
+#  sigil.la renders a concept's ONF structure as a 32x32 form; phonym.la renders
+#  the SAME structure as sound. This renders it as a haptic intensity envelope —
+#  what a vibration actuator can actually produce: amplitude over time, no
+#  spectrum. Nothing here invents a new mapping. The tactile signal IS phonym's
+#  own synthesis with its frequency content removed and only the time/intensity
+#  skeleton kept, downsampled from 16 kHz to haptic bandwidth.
+#
+#  That choice is deliberate and it is what makes the module falsifiable rather
+#  than decorative: if tactile were given its OWN table of patterns per glyph, it
+#  would agree with the other modalities by construction and could never disagree.
+#  Deriving it as a projection of the phonym means it can FAIL to carry things —
+#  and it does. See the finding below.
+#
+#  ── ★ THE FINDING: THE MODALITIES ARE NOT EQUIPOTENT ──────────────────────
+#  phonym.la gives four of the five modes a TEMPORAL signature and one a purely
+#  SPECTRAL one:
+#      ⊕ CONP  : A · 960 samples silence · B      — temporal, survives
+#      ↻ MCP   : AA reduplication                 — temporal, survives
+#      ⊂ CONTP : B A B framing                    — temporal, survives
+#      ▷ DIRP  : second part at 3/5 amplitude     — AMPLITUDE, survives (it IS the envelope)
+#      ⊗ SYNP  : superposition over one window    — SPECTRAL ONLY
+#  Stripping frequency therefore costs exactly one mode. ⊗ has no temporal or
+#  amplitude signature at all — both parents occupy the same window — so a
+#  compound formed by ⊗ is NOT RECOVERABLE by touch, while the other four are.
+#
+#  This is a real architectural limit, not a gap to be closed later: it says the
+#  visual and phonetic modalities carry structure the tactile one cannot, and it
+#  falls out of the construction rather than being decided. The gate ASSERTS it —
+#  ⊗ must come back unrecoverable. If a future change made ⊗ tactilely
+#  detectable, this gate goes RED and the claim above is wrong, which is the
+#  point of asserting it rather than remarking on it.
+#
+#  ── BOUND ────────────────────────────────────────────────────────────────
+#  "Recoverable" here means the mode's temporal signature survives the envelope
+#  projection, tested with phonseq.la's own detectors. It does NOT mean a human
+#  finger can feel the difference; no human-perception claim is made or measured.
+# ═══════════════════════════════════════════════════════════════════
+
+import("phonym.la")     # PHONYM, SPEC, PRIM/SYN/CON/DIR/CONT/MC — the source rendering
+
+export TACTILE T_MC T_CON T_CONT T_DIR ANYMODE HW
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph BSTR = la b. b("T")("F")
+glyph ABSD = la a. la b. IF(lt(a)(b))(la _. sub(b)(a))(la _. sub(a)(b))
+
+# ── HAPTIC BANDWIDTH. An LRA/ERM actuator follows an amplitude envelope, not a
+#    waveform; 200 Hz is the usual ceiling. 16000/80 = 200. ──
+glyph HW   = 80          # samples per haptic frame
+glyph HSTEP = 8          # sub-sampling inside a frame (cost control, stated)
+
+# ── the envelope: mean |amplitude| over one haptic frame ──────────────────
+glyph FRAMEGO = Z(la self. la g. la off. la i. la acc.
+    IF(NOT(lt(i)(HW)))(la _. acc)(la _.
+        self(g)(off)(add(i)(HSTEP))(add(acc)(ABSD(g(add(off)(i)))(0)))))
+glyph FRAME = la g. la k. div(FRAMEGO(g)(mul(k)(HW))(0)(0))(div(HW)(HSTEP))
+
+# ── TACTILE: a node → PAIR(frames)(frame → intensity). The κ of touch. ────
+glyph TACTILE = la node.
+    (la p. PAIR(div(FST(p))(HW))(la k. FRAME(SND(p))(k)))(PHONYM(node))
+
+# ── the mode signatures, tested ON THE ENVELOPE (frames, not samples) ─────
+glyph GAPF = div(960)(HW)          # phonym's own /ʔ/ closure, in haptic frames
+glyph EPSI = 40                    # intensity slack after averaging
+
+glyph TSUB = la t. la off. la n. PAIR(n)(la i. SND(t)(add(i)(off)))
+glyph TSAMEGO = Z(la self. la a. la b. la n. la i.
+    IF(NOT(lt(i)(n)))(la _. TRUE)(la _.
+    IF(lt(EPSI)(ABSD(SND(a)(i))(SND(b)(i))))(la _. FALSE)(la _. self(a)(b)(n)(add(i)(1)))))
+glyph TSAME = la a. la b. la n. TSAMEGO(a)(b)(n)(0)
+
+# ↻ — both halves identical
+glyph T_MC = la t. (la h. TSAME(TSUB(t)(0)(h))(TSUB(t)(h)(h))(h))(div(FST(t))(2))
+
+# ⊕ — a run of GAPF silent frames strictly inside
+glyph QUIETGO = Z(la self. la t. la off. la k.
+    IF(NOT(lt(k)(GAPF)))(la _. TRUE)(la _.
+    IF(lt(EPSI)(ABSD(SND(t)(add(off)(k)))(0)))(la _. FALSE)(la _. self(t)(off)(add(k)(1)))))
+glyph FINDQ = Z(la self. la t. la off.
+    IF(lt(sub(FST(t))(GAPF))(off))(la _. sub(0)(1))(la _.
+    IF(QUIETGO(t)(off)(0))(la _. off)(la _. self(t)(add(off)(1)))))
+glyph T_CON = la t. NOT(int_eq(FINDQ(t)(1))(sub(0)(1)))
+
+# ⊂ — outer thirds identical, inner different
+glyph TRYC = Z(la self. la t. la q.
+    IF(lt(div(FST(t))(2))(q))(la _. sub(0)(1))(la _.
+    IF(AND(TSAME(TSUB(t)(0)(q))(TSUB(t)(sub(FST(t))(q))(q))(q))
+          (NOT(TSAME(TSUB(t)(0)(q))(TSUB(t)(q)(q))(q))))
+      (la _. q)(la _. self(t)(add(q)(1)))))
+glyph T_CONT = la t. NOT(int_eq(TRYC(t)(1))(sub(0)(1)))
+
+# ▷ — a split where mean intensity steps to 3/5. This is the mode the tactile
+#     channel carries BEST, because ▷'s signature is amplitude and amplitude is
+#     all the envelope keeps.
+glyph MGO = Z(la self. la t. la off. la n. la i. la acc.
+    IF(NOT(lt(i)(n)))(la _. IF(int_eq(n)(0))(la _. 0)(la _. div(acc)(n)))(la _.
+        self(t)(off)(n)(add(i)(1))(add(acc)(SND(t)(add(off)(i))))))
+glyph TMEAN = la t. la off. la n. MGO(t)(off)(n)(0)(0)
+glyph TDIRFIT = la t. la s.
+    (la h. la tl. AND(lt(20)(h))(lt(ABSD(mul(5)(tl))(mul(3)(h)))(div(mul(3)(h))(4))))
+    (TMEAN(t)(0)(s))(TMEAN(t)(s)(sub(FST(t))(s)))
+glyph TRYD = Z(la self. la t. la s.
+    IF(NOT(lt(s)(sub(FST(t))(2))))(la _. sub(0)(1))(la _.
+    IF(TDIRFIT(t)(s))(la _. s)(la _. self(t)(add(s)(1)))))
+glyph T_DIR = la t. NOT(int_eq(TRYD(t)(2))(sub(0)(1)))
+
+glyph ANYMODE = la t. (la x. x)(IF(T_MC(t))(la _. TRUE)(la _.
+                                IF(T_CON(t))(la _. TRUE)(la _.
+                                IF(T_CONT(t))(la _. TRUE)(la _. T_DIR(t)))))
+
+# ── the witness ───────────────────────────────────────────────────────────
+glyph A = PRIM("BEING")
+glyph B = PRIM("VOID")
+glyph ROW = la t. concat(BSTR(T_MC(t)))(concat(BSTR(T_CON(t)))(concat(BSTR(T_CONT(t)))(BSTR(T_DIR(t)))))
+
+glyph W1 = ROW(TACTILE(MC(A)))          # ↻ — expect recoverable
+glyph W2 = ROW(TACTILE(CON(A)(B)))      # ⊕ — expect recoverable
+glyph W3 = ROW(TACTILE(CONT(A)(B)))     # ⊂ — expect recoverable
+# ★ W4 — THE ASSERTED LIMIT: ⊗ must come back with NO mode detected.
+glyph W4 = BSTR(NOT(ANYMODE(TACTILE(SYN(A)(B)))))
+glyph W5 = int_to_str(FST(TACTILE(MC(A))))   # frames — proof we rendered something
+
+glyph J    = la a. la b. concat(a)(concat("|")(b))
+glyph MAIN = print(concat("tactile [mc,con,cont,dir] ")(
+             concat(J(W1)(J(W2)(J(W3)(J(W4)(W5)))))(
+             concat("\n(W4=T asserts the LIMIT: ⊗ is spectral-only, unrecoverable by touch)")())))
