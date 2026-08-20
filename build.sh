@@ -105,6 +105,43 @@ else
     echo "FAIL  chr/ord: got '$OUT'"
     exit 1
 fi
+# ── ★ CROSS-ENGINE SCOPE. Freeze-Day Audit II, Q1 (2026-08-19).
+# The gate above ran ./tiny_host ALONE while its title says "binary-safe
+# primitives" — one engine tested, the language implied. Measured across the
+# engines, chr/ord are NOT universal:
+#     tiny_host.c · secd.asm · native_codegen3.la   HAVE them
+#     eval.la · bytecode.la (RUN_BYTES and RUN_SM)  DO NOT — `unbound variable`
+# That is a loud failure, not silent corruption, and the ROADMAP's claim is
+# "byte-identical host vs VM" (both of which have them), so it stands. But an
+# ungated gap drifts: this asserts the ACTUAL distribution so a change in EITHER
+# direction goes red — the three that have it silently losing it, or the three
+# that lack it silently gaining a DIFFERENT implementation nothing compared.
+# Absence is asserted by its diagnostic, not by "no output": an engine that
+# started returning something wrong would otherwise pass as still-absent.
+chrok=1
+for eng in eval bytecode_bytes bytecode_sm; do
+    case $eng in
+      eval)           sed '/^glyph MAIN/,$d' eval.la > /tmp/ce.la
+                      printf 'glyph MAIN = RUN(PARSE_PROGRAM(read_file("/tmp/test_chr.la")))\n' >> /tmp/ce.la ;;
+      bytecode_bytes) sed '/^glyph MAIN/,$d' bytecode.la > /tmp/ce.la
+                      printf 'glyph MAIN = (la _. print(""))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("/tmp/test_chr.la"))))\n' >> /tmp/ce.la ;;
+      bytecode_sm)    sed '/^glyph MAIN/,$d' bytecode.la > /tmp/ce.la
+                      printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/test_chr.la"))))\n' >> /tmp/ce.la ;;
+    esac
+    CE="$(timeout 600 ./tiny_host /tmp/ce.la 2>&1)"; CERC=$?
+    if [ "$CERC" -eq 124 ]; then
+        echo "FAIL  chr/ord scope: $eng TIMED OUT — cannot judge presence (a timeout is not an absence)"; chrok=0
+    elif printf '%s' "$CE" | grep -q "unbound variable: chr\|unbound variable: ord"; then
+        :   # expected: absent, and says so
+    else
+        echo "FAIL  chr/ord scope: $eng no longer reports chr/ord unbound — it produced '$CE'."
+        echo "      Either the builtin was added (then compare it against the host here)"
+        echo "      or it now fails differently. Both need a decision, not a silent pass."; chrok=0
+    fi
+done
+rm -f /tmp/ce.la
+[ "$chrok" -eq 1 ] || exit 1
+echo "PASS  chr/ord SCOPE gated: present on tiny_host (verified above); ABSENT and loudly diagnosed on eval.la, RUN_BYTES, RUN_SM — the distribution itself is now asserted, so drift in either direction fails"
 # A NUL byte must survive concat and write_file: A \0 B == 41 00 42.
 cat > /tmp/test_nul.la <<'LAEOF'
 glyph MAIN = write_file("/tmp/test_nul.bin")(concat(chr("65"))(concat(chr("0"))(chr("66"))))
