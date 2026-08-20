@@ -677,8 +677,27 @@ glyph EXBND = la c.
 #   from a top-level + or - (other operators keep it, since * / << bind tighter
 #   than the additive split). A term with two labels (idt*jdt) or a scaled label
 #   nasm rejects outright, so mis-counting those is a don't-care (no reference).
+#   ★ AN `=`-MARKED TOKEN IS AN equ SYMBOL, NOT A LABEL — coefficient 0.
+#   The comment above states "equ symbols are substituted to their literal number
+#   BEFORE the passes, so any maximal token that is NOT a number is a label".
+#   That premise is TRUE for constant equs and FALSE for ADDRESS-VALUED ones.
+#   Those are deliberately NOT substituted (see the equ section): `$` means the
+#   address AT THE EQU LINE, so substituting the text into each use site would
+#   evaluate `$` in the wrong place and silently corrupt every length. Their use
+#   sites instead carry the marked token `=name`, resolved from the label table.
+#   Counting that marker as a label made `mov rdx, MSGLEN` a 10-byte movabs where
+#   nasm emits a 5-byte b8+imm32 — the value right, the FORM wrong, so the image
+#   still ran and nothing downstream caught it (found by Track B, bisected to
+#   92a29ad; 8b8c407 fixed the DIRECT `tail - head` form but not the equ-mediated
+#   one). The file's own rule decides it: "an equ symbol encodes as a VALUE even
+#   when its value was computed FROM addresses — the KIND of the symbol decides
+#   the encoding, not the provenance of its number." So the marker nets 0.
+#   Still purely SYNTACTIC (no label table), so MOVSIZE's empty-table sizing and
+#   the emit pass agree; still MONOTONE, so it folds into the length fixed point.
 glyph FLUSHLAB = la cur. la sgn. la net.
-    IF(AND(NOT(str_eq(cur)("")))(NOT(ISNUM(cur))))(la _. add(net)(sgn))(la _. net)
+    IF(AND(NOT(str_eq(cur)("")))
+          (AND(NOT(ISNUM(cur)))(NOT(str_eq(str_head(cur))("=")))))
+      (la _. add(net)(sgn))(la _. net)
 glyph NEWSGN = la c. la sgn.
     IF(str_eq(c)("+"))(la _. 1)(la _. IF(str_eq(c)("-"))(la _. sub(0)(1))(la _. sgn))
 glyph ADDRBAL = Z(la self. la s. la cur. la sgn. la net.

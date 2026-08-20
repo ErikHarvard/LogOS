@@ -79,3 +79,25 @@ glyph LAW_NONCONTRADICTION_G = MONO(CANON(DIR(PRIM("FORM"))(PRIM("VOID"))))(DIR(
 glyph LAW_EXCLUDED_MIDDLE_G = MONO(CANON(SYN(PRIM("BEING"))(PRIM("VOID"))))(SYN(PRIM("BEING"))(PRIM("VOID")))
 # LAWS_AUTOLOGICAL : :: a -> b
 glyph LAWS_AUTOLOGICAL = la _. AND(LAW_IDENTITY(LAW_IDENTITY_G))(AND(LAW_IDENTITY(LAW_NONCONTRADICTION_G))(LAW_IDENTITY(LAW_EXCLUDED_MIDDLE_G)))
+# ITEM : a sequence item: identity, arity, form (trusted)
+glyph ITEM = la m. la a. la t. la f. f(m)(a)(t)
+# ITMONO : the identity aspect of an item (trusted)
+glyph ITMONO = la it. it(la m. la a. la t. m)
+# ITAR : the arity aspect of an item (trusted)
+glyph ITAR = la it. it(la m. la a. la t. a)
+# ITTERM : the form aspect of an item (trusted)
+glyph ITTERM = la it. it(la m. la a. la t. t)
+# LAWS_ALL : :: a -> b
+glyph LAWS_ALL = la it. AND(LAW_IDENTITY(ITMONO(it)))(AND(LAW_NONCONTRADICTION(ITAR(it)))(LAW_EXCLUDED_MIDDLE(ITTERM(it))))
+# SNIL : the empty sequence (trusted)
+glyph SNIL = la n. la c. n
+# SCONS : sequence cons (trusted)
+glyph SCONS = la h. la t. la n. la c. c(h)(t)
+# SEQ_OK : every item of a sequence abides all three laws (trusted)
+glyph SEQ_OK = ZC(la self. la s. s(TRUE)(la h. la t. AND(LAWS_ALL(h))(self(t))))
+# RENCMP : compose two Rens under ⊗ (trusted)
+glyph RENCMP = la ra. la rb. concat("⊗(")(concat(ra)(concat(",")(concat(rb)(")"))))
+# SEQ_COMPOSE : fold a sequence into one composed monoglyph (trusted)
+glyph SEQ_COMPOSE = ZC(la self. la s. s(MONO("")(PRIM("VOID")))(la h. la t. t(ITMONO(h))(la h2. la t2. (la rest. MONO(RENCMP(REN(ITMONO(h)))(REN(rest)))(SYN(ETYM(ITMONO(h)))(ETYM(rest))))(self(t)))))
+# SEQ_VALID : :: a -> b
+glyph SEQ_VALID = la s. AND(SEQ_OK(s))(AUTO_OK(SEQ_COMPOSE(s)))

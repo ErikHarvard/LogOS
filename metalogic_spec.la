@@ -170,7 +170,45 @@ glyph SRC_AUTOOK = "la g. str_eq(REN(g))(CANON(ETYM(g)))"
 glyph SRC_ATERM  = "la d. la b. la f. f(d)(b)"
 glyph SRC_DECLA  = "la t. t(la d. la b. d)"
 glyph SRC_BODYA  = "la t. t(la d. la b. b)"
+
+# ── sequence-validator VALUES (spec-side twins of the SRC strings above) ──
+glyph ITEM   = la m. la a. la t. la f. f(m)(a)(t)
+glyph ITMONO = la it. it(la m. la a. la t. m)
+glyph ITAR   = la it. it(la m. la a. la t. a)
+glyph ITTERM = la it. it(la m. la a. la t. t)
+glyph LAWS_ALL = la it. AND(LAW_IDENTITY(ITMONO(it)))(AND(LAW_NONCONTRADICTION(ITAR(it)))(LAW_EXCLUDED_MIDDLE(ITTERM(it))))
+glyph SNIL   = la n. la c. n
+glyph SCONS  = la h. la t. la n. la c. c(h)(t)
+glyph SEQ_OK = ZC(la self. la s. s(TRUE)(la h. la t. AND(LAWS_ALL(h))(self(t))))
+glyph RENCMP = la ra. la rb. concat("⊗(")(concat(ra)(concat(",")(concat(rb)(")"))))
+glyph SEQ_COMPOSE = ZC(la self. la s. s(MONO("")(PRIM("VOID")))(la h. la t. t(ITMONO(h))(la h2. la t2. (la rest. MONO(RENCMP(REN(ITMONO(h)))(REN(rest)))(SYN(ETYM(ITMONO(h)))(ETYM(rest))))(self(t)))))
+glyph SEQ_VALID = la s. AND(SEQ_OK(s))(AUTO_OK(SEQ_COMPOSE(s)))
+# fixtures: a law-abiding item, and one whose Ren FLOATS FREE of its etymology.
+# The heterological one is what gives every FALSE witness above a real cause.
+glyph GOOD_ITEM   = ITEM(MONO(CANON(MC(PRIM("BEING"))))(MC(PRIM("BEING"))))(ATERM(2)(2))(ADD23)
+glyph HETERO_ITEM = ITEM(MONO("floats-free")(MC(PRIM("BEING"))))(ATERM(2)(2))(ADD23)
+
 glyph SRC_LAWID  = "la g. AUTO_OK(g)"
+
+# ── the SEQUENCE VALIDATOR (Erik 2.4): a spoken/compiled glyph SEQUENCE checked
+#    against the ontosyntax. An ITEM carries the three aspects the three laws
+#    each need -- identity (monoglyph), arity, and form -- because the laws are
+#    NOT type-uniform: identity applies to a monoglyph, non-contradiction to an
+#    arity term, excluded middle to a form-bearing term.
+glyph SRC_ITEM   = "la m. la a. la t. la f. f(m)(a)(t)"
+glyph SRC_ITMONO = "la it. it(la m. la a. la t. m)"
+glyph SRC_ITAR   = "la it. it(la m. la a. la t. a)"
+glyph SRC_ITTERM = "la it. it(la m. la a. la t. t)"
+glyph SRC_LAWSALL= "la it. AND(LAW_IDENTITY(ITMONO(it)))(AND(LAW_NONCONTRADICTION(ITAR(it)))(LAW_EXCLUDED_MIDDLE(ITTERM(it))))"
+glyph SRC_SNIL   = "la n. la c. n"
+glyph SRC_SCONS  = "la h. la t. la n. la c. c(h)(t)"
+glyph SRC_SEQOK  = "ZC(la self. la s. s(TRUE)(la h. la t. AND(LAWS_ALL(h))(self(t))))"
+# the composite's Ren is built from the PARTS' DECLARED Rens -- never recomputed
+# from the structure, which is what keeps the closure test able to FAIL.
+glyph SRC_RENCMP = "la ra. la rb. concat(\"\⊗(\")(concat(ra)(concat(\",\")(concat(rb)(\")\"))))"
+glyph SRC_SEQCMP = "ZC(la self. la s. s(MONO(\"\")(PRIM(\"VOID\")))(la h. la t. t(ITMONO(h))(la h2. la t2. (la rest. MONO(RENCMP(REN(ITMONO(h)))(REN(rest)))(SYN(ETYM(ITMONO(h)))(ETYM(rest))))(self(t)))))"
+glyph SRC_SEQVAL = "la s. AND(SEQ_OK(s))(AUTO_OK(SEQ_COMPOSE(s)))"
+glyph SRC_SEQDIE = "la s. IF(SEQ_VALID(s))(la _. \"VALID\")(la _. error(\"ontosyntax: sequence violates the three laws\"))"
 glyph SRC_LAWNC  = "la term. INHABITS(DECL_ARITY(term))(BODY_ARITY(term))"
 glyph SRC_LAWEM  = "la term. WELLFORMED(term)"
 glyph SRC_INHAB  = "la dec. la bod. int_eq(dec)(bod)"
@@ -304,7 +342,32 @@ glyph METALOGIC_SPEC =
         T1L(TC(la g. AUTO_OK(g)("T")("F"))("T"))))(
   CONS(E("LAWS_AUTOLOGICAL")(":: a -> b")(SRC_AUTO)(LAWS_AUTOLOGICAL)(
         T1L(TC(la g. g("!")("T")("F"))("T"))))(
-  NIL))))))))))))))))))))))))))))))))))))))))
+  CONS(E("ITEM")("a sequence item: identity, arity, form (trusted)")(SRC_ITEM)(ITEM)(
+        T1L(TC(la i. i(MONO("r")("e"))(ATERM(2)(2))(ADD23)(la m. la a. la t. REN(m)))("r"))))(
+  CONS(E("ITMONO")("the identity aspect of an item (trusted)")(SRC_ITMONO)(ITMONO)(
+        T1L(TC(la f. REN(f(GOOD_ITEM)))("↻(BEING)"))))(
+  CONS(E("ITAR")("the arity aspect of an item (trusted)")(SRC_ITAR)(ITAR)(
+        T1L(TC(la f. int_eq(DECL_ARITY(f(GOOD_ITEM)))(2)("T")("F"))("T"))))(
+  CONS(E("ITTERM")("the form aspect of an item (trusted)")(SRC_ITTERM)(ITTERM)(
+        T1L(TC(la f. WELLFORMED(f(GOOD_ITEM))("T")("F"))("T"))))(
+  CONS(E("LAWS_ALL")(":: a -> b")(SRC_LAWSALL)(LAWS_ALL)(
+        T2L(TC(la g. g(GOOD_ITEM)("T")("F"))("T"))
+           (TC(la g. g(HETERO_ITEM)("T")("F"))("F"))))(
+  CONS(E("SNIL")("the empty sequence (trusted)")(SRC_SNIL)(SNIL)(
+        T1L(TC(la n. n("e")(la h. la t. "c"))("e"))))(
+  CONS(E("SCONS")("sequence cons (trusted)")(SRC_SCONS)(SCONS)(
+        T1L(TC(la c. c("x")(SNIL)("e")(la h. la t. h))("x"))))(
+  CONS(E("SEQ_OK")("every item of a sequence abides all three laws (trusted)")(SRC_SEQOK)(SEQ_OK)(
+        T2L(TC(la g. g(SCONS(GOOD_ITEM)(SCONS(GOOD_ITEM)(SNIL)))("T")("F"))("T"))
+           (TC(la g. g(SCONS(GOOD_ITEM)(SCONS(HETERO_ITEM)(SNIL)))("T")("F"))("F"))))(
+  CONS(E("RENCMP")("compose two Rens under ⊗ (trusted)")(SRC_RENCMP)(RENCMP)(
+        T1L(TC(la f. f("A")("B"))("⊗(A,B)"))))(
+  CONS(E("SEQ_COMPOSE")("fold a sequence into one composed monoglyph (trusted)")(SRC_SEQCMP)(SEQ_COMPOSE)(
+        T1L(TC(la f. REN(f(SCONS(GOOD_ITEM)(SCONS(GOOD_ITEM)(SNIL)))))("⊗(↻(BEING),↻(BEING))"))))(
+  CONS(E("SEQ_VALID")(":: a -> b")(SRC_SEQVAL)(SEQ_VALID)(
+        T2L(TC(la g. g(SCONS(GOOD_ITEM)(SCONS(GOOD_ITEM)(SNIL)))("T")("F"))("T"))
+           (TC(la g. g(SCONS(GOOD_ITEM)(SCONS(HETERO_ITEM)(SNIL)))("T")("F"))("F"))))(
+  NIL)))))))))))))))))))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(METALOGIC_SPEC) ===\n")(GENERATE(METALOGIC_SPEC))))
