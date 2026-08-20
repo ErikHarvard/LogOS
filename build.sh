@@ -4014,6 +4014,33 @@ fi
 #
 # Each asserts what the item CLAIMS, not merely that the module runs, and each
 # expected witness is EXACT — an exact value is what lets a gate fail.
+say "Family-tree graph test (ontological audit test 4): grounding + unary census (familytree.la)"
+ok=1
+FT_H="$(./tiny_host familytree.la 2>/dev/null)"
+# ★ THE NAIVE GATE IS DELIBERATELY ABSENT. The audit states ">2 parents ⇒ violates
+# dyadic recursion". That can NEVER FIRE: a κ-node is Scott-encoded with exactly six
+# constructors — PRIM(0 parents), SYN/CON/DIR/CONT(2), MC(1) — so a 3-parent node is
+# UNCONSTRUCTIBLE, not merely absent. The dyadic law is enforced by the DATA TYPE,
+# which is STRONGER than a check. Asserting it would report verification where none
+# occurred. It is reported by familytree.la, never gated.
+printf '%s\n' "$FT_H" | grep -qF "G1 grounding (every leaf one of the nine):T" \
+    || { echo "FAIL  familytree G1: an ungrounded leaf — $(printf '%s' "$FT_H" | grep -o 'OFFENDER=[^ ]*')"; ok=0; }
+printf '%s\n' "$FT_H" | grep -qF "G2 distinct ↻ forms=8 expected 8:T" \
+    || { echo "FAIL  familytree G2: unary census changed — $(printf '%s' "$FT_H" | grep -o 'G2 distinct[^|]*')"; ok=0; }
+# ★ G2 is keyed on the CANONICAL FORM, never the glyph NAME. The catalogue contains
+# BOTH SR_ABOUT and OP_RHO and both are ↻(RECOGNITION) — one glyph, two names, an
+# identity Erik ruled INTENDED. A name-keyed census would count 9 and be WRONG.
+# ★ R1 (max lineage depth) is a REPORT and is NOT asserted here. A depth flag that
+# could fail the build would be a structural law wearing a report's clothes.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp familytree.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+FT_V="$(./logos_secd 2>/dev/null)"
+[ "$FT_H" = "$FT_V" ] || { echo "FAIL  familytree: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+[ "$ok" -eq 1 ] && echo "PASS  familytree: every leaf of all 17 catalogue glyphs grounds in the nine primitives (RED path NAMES the offender); the unary census is keyed on κ so ρ ≡ SR_ABOUT counts ONCE; byte-identical host==VM. The >2-parent law is TYPE-ENFORCED, reported not gated" || exit 1
+
 say "LA arc item 2: the five operators ∂δγρ𝔄 as first-class glyphs (metaglyph.la)"
 ok=1
 MG_H="$(./tiny_host metaglyph.la 2>/dev/null)"
