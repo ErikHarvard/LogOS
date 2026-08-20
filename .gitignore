@@ -175,3 +175,20 @@ watched.la
 /.diag/
 /.kseam/
 /.gate_kernel_frozen.sh
+
+# ★ Liveness markers. A background job writes <name>.RUNNING on start and removes
+# it on exit, so "is it alive?" is a file that exists or does not -- adopted after
+# `ps`-greps misled in BOTH directions in one session (reporting alive when the
+# pattern matched the caller's own command line, dead when the process was real
+# but its command line displayed truncated).
+#
+# ★★ AND THIS LINE EXISTS BECAUSE THAT FIX BROKE SOMETHING ELSE. build.sh gates
+# its auto-checkpoint on `git status --porcelain` being empty. A .RUNNING marker
+# is untracked, so it sat in the tree at the exact moment the tag step ran --
+# and a FULLY GREEN six-hour audit (196 PASS / 0 FAIL, 2026-08-20) printed
+# "auto-tag skipped: working tree dirty" because of the marker tracking that very
+# run. The marker was removed on exit, so the tree looked clean afterwards and the
+# cause was invisible in the aftermath.
+# INSTRUMENTATION IS PART OF THE SYSTEM IT OBSERVES. A probe that changes what it
+# measures is not neutral, and this one silently cost a checkpoint.
+*.RUNNING
