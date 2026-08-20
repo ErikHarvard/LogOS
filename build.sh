@@ -2698,6 +2698,52 @@ else
 fi
 rm -f native_codegen3_out native_input.la /tmp/c12_reg.txt /tmp/h12.err /tmp/n12.err /tmp/c12.err
 
+# ── K4b poke/peek smoke test — a working check nothing was running ─────────
+#
+#  ★ WHY IT IS HERE NOW. kernel/paging_poke_smoke.la asserts that `poke` writes
+#  and `peek` reads back at a DEEP heap address (~504 MiB in), and that an
+#  untouched neighbour is still zero — i.e. that native_codegen3's single RWX
+#  PT_LOAD really does map its 16 GiB zero-filled heap. It works. NOTHING RAN IT.
+#  Found by a transitive-reachability sweep over all 158 tracked .la (Freeze
+#  Audit II, Q3): no gate, no build script, no .la referenced it.
+#
+#  ★ AND IT NEARLY WENT INTO THE FINDINGS AS "ROTTED". Run under ./tiny_host it
+#  errors `unbound variable 'poke'`, which reads as a missing feature. It is the
+#  WRONG ENGINE: poke/peek exist only in the native backend (native_codegen3_rt.asm
+#  and native_codegen3.la), not in tiny_host and not in secd. An "unbound
+#  variable" for a builtin means wrong engine far more often than missing code.
+#
+#  ★ THE EXPECTED BYTE IS READ OFF THE SOURCE AT GATE TIME, never hardcoded. The
+#  block above this one records a hardcoded 11201 that went stale against a
+#  11360-byte runtime; the SECD VM size gate cost 34 days of red builds the same
+#  way. A constant duplicated from a file is a constant that will disagree with it.
+say "K4b poke/peek: deep-heap write+readback on the native backend"
+POKE_SRC=kernel/paging_poke_smoke.la
+if [ ! -f "$POKE_SRC" ]; then
+    echo "SKIP  poke smoke: $POKE_SRC absent"
+else
+    PK_VAL=$(grep -oE 'poke\([0-9]+\)\([0-9]+\)' "$POKE_SRC" | head -1 | sed 's/.*)(\([0-9]*\))/\1/')
+    if [ -z "$PK_VAL" ]; then
+        echo "FAIL  poke smoke: could not read the poked byte out of $POKE_SRC — refusing to"
+        echo "      judge the output against a value that did not parse"
+        exit 1
+    fi
+    rm -f native_input.la native_codegen3_out
+    cp "$POKE_SRC" native_input.la
+    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    if [ ! -s native_codegen3_out ]; then
+        echo "FAIL  poke smoke: native_codegen3 emitted no binary from $POKE_SRC"; exit 1
+    fi
+    chmod +x native_codegen3_out
+    PK_OUT=$(timeout 120 ./native_codegen3_out 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+    rm -f native_input.la native_codegen3_out
+    if [ "$PK_OUT" = "$PK_VAL 0" ]; then
+        echo "PASS  K4b poke/peek: poked $PK_VAL at a deep heap address, peeked it back, and the untouched neighbour is still 0 — native_codegen3's RWX PT_LOAD really does map its zero-filled heap"
+    else
+        echo "FAIL  K4b poke/peek: expected '$PK_VAL 0', got '$PK_OUT'"; exit 1
+    fi
+fi
+
 say "Native codegen: compile to SECD streams, diff against RUN_SM (Albedo Stage 2)"
 # secd.la emits the native SECD VM once; codegen.la compiles a source program
 # (logos_source.la) to a native instruction stream (logos_program.bin); the VM
