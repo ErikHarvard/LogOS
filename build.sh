@@ -128,7 +128,16 @@ for eng in eval bytecode_bytes bytecode_sm; do
       bytecode_sm)    sed '/^glyph MAIN/,$d' bytecode.la > /tmp/ce.la
                       printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/test_chr.la"))))\n' >> /tmp/ce.la ;;
     esac
+    # ★ set -e MUST be suspended here. This gate deliberately runs a program that
+    # FAILS — an engine reporting `unbound variable: chr` is the EXPECTED result —
+    # and under set -e the nonzero status of the command substitution ABORTS THE
+    # WHOLE BUILD. It did: the regression died here with 7 PASSes and ZERO FAIL
+    # lines, which reads as a crash rather than a failed assertion. The gate passed
+    # in isolation because the extracted block ran under `set -u` alone — testing a
+    # gate outside the harness it lives in does not test the gate.
+    set +e
     CE="$(timeout 600 ./tiny_host /tmp/ce.la 2>&1)"; CERC=$?
+    set -e
     if [ "$CERC" -eq 124 ]; then
         echo "FAIL  chr/ord scope: $eng TIMED OUT — cannot judge presence (a timeout is not an absence)"; chrok=0
     elif printf '%s' "$CE" | grep -q "unbound variable: chr\|unbound variable: ord"; then
