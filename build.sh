@@ -4007,6 +4007,94 @@ else
     exit 1
 fi
 
+# ═══ LA COMPLETION ARC items 2-5 — first gates for these modules ═══════════
+# Q0 (Freeze-Day Audit II) found 19 tracked .la that NO script mentions — files the
+# suite cannot possibly verify. Four of them were arc items built 2026-08-19. These
+# gates exist so items 2-5 are not added to that list.
+#
+# Each asserts what the item CLAIMS, not merely that the module runs, and each
+# expected witness is EXACT — an exact value is what lets a gate fail.
+say "LA arc item 2: the five operators ∂δγρ𝔄 as first-class glyphs (metaglyph.la)"
+ok=1
+MG_H="$(./tiny_host metaglyph.la 2>/dev/null)"
+for w in "∂ diff    = ▷(VOID,RELATION)" \
+         "δ bound   = ⊂(FORM,DEPTH)" \
+         "γ comp    = ⊗(BECOMING,FORM)" \
+         "ρ recog   = ↻(RECOGNITION)" \
+         "𝔄 integ   = ⊗(LOVE,BEING)" \
+         "five operators pairwise distinct ? YES" \
+         "★ ρ ≡ SR_ABOUT (intended identity) ? YES" \
+         "OPERATE-ON ⊗(∂,δ) = ⊗(▷(VOID,RELATION),⊂(FORM,DEPTH))" \
+         "rank ∂<δ<γ<ρ<𝔄 read FROM the glyph ? YES"; do
+    printf '%s\n' "$MG_H" | grep -qF "$w" || { echo "FAIL  item2: missing witness — $w"; ok=0; }
+done
+# ★ the ρ ≡ SR_ABOUT identity is asserted POSITIVELY. It is NOT a collision to be
+# repaired: two names were found to name ONE meaning. Changing ρ's decomposition to
+# "fix" a distinctness complaint would DESTROY the identity — the RED path for this
+# gate is exactly that change, and it fires.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp metaglyph.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+MG_V="$(./logos_secd 2>/dev/null)"
+[ "$MG_H" = "$MG_V" ] || { echo "FAIL  item2: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+[ "$ok" -eq 1 ] && echo "PASS  item2: ∂δγρ𝔄 are glyphs the language can INSPECT, COMPOSE and OPERATE ON (not dispatch data above it); ρ ≡ SR_ABOUT asserted positively; rank read FROM the glyph; byte-identical host==VM" || exit 1
+
+say "LA arc items 3+4: denotational morphology (γ_g, r_D) + the glyphic combination law (denote.la)"
+ok=1
+DN_H="$(./tiny_host denote.la 2>/dev/null)"
+for w in "ITEM3 reduction ⟦γ_Λ(a,b)⟧=r_D(⟦a⟧,⟦b⟧):T" \
+         "violation(▷ operand-swap) CAUGHT:T" \
+         "⊥ not undefined (PM disjoint):T" \
+         "ρ≡SR_ABOUT denotation:structural" \
+         "ITEM4 law holds on γ_g:T" \
+         "law FAILS on a parent-dropping combiner:T" \
+         "violation CONSTRUCTIBLE (not type-enforced):T" \
+         "law's own glyph κ=⊗(RELATION,RECOGNITION)"; do
+    printf '%s\n' "$DN_H" | grep -qF "$w" || { echo "FAIL  items3/4: missing witness — $w"; ok=0; }
+done
+# ★ "law FAILS on a parent-dropping combiner" is the ACCEPTANCE TEST for item 4,
+# not the green run: a combination law every combination satisfies by construction
+# distinguishes nothing (item 1's tautology defect, one level up).
+# ★ "ρ≡SR_ABOUT denotation:structural" is a REPORT, not a check, deliberately. MEANING's
+# signature is node -> denotation; it cannot see a glyph NAME, and OP_RECOG and
+# SR_ABOUT_HERE are the SAME TERM — so denotational polysemy between them is
+# UNCONSTRUCTIBLE, not merely absent. Per item 4's requirement 3, a property enforced
+# by the TYPE is STRONGER than a gate and must be reported as such, never dressed up
+# as a passing check. The assertion that CAN fail is ρ's DECOMPOSITION, gated in
+# metaglyph.la (item 2) with a firing RED path. Two earlier attempts are recorded in
+# denote.la: one VACUOUS probe, then one using typeof — which exists ONLY in
+# tiny_host.c and broke host==VM.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp denote.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+DN_V="$(./logos_secd 2>/dev/null)"
+[ "$DN_H" = "$DN_V" ] || { echo "FAIL  items3/4: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+[ "$ok" -eq 1 ] && echo "PASS  items3/4: γ_g and r_D are real LA operators; the reduction ⟦γ_Λ(a,b)⟧=r_D(⟦a⟧,⟦b⟧) holds and FAILS on a constructed violation; ⊥ is a total false-everywhere function, never a stuck term; the combination law is a PREDICATE with a constructible violation; byte-identical host==VM" || exit 1
+
+say "LA arc item 5: the grammar recoverable as data — L1 + L2 differential (grammar.la)"
+ok=1
+GR_H="$(./tiny_host grammar.la 2>/dev/null)"
+# EXACT, not a substring: all four accepts and all four rejects must agree.
+printf '%s\n' "$GR_H" | grep -qF "L2 differential [A1 A2 A3 A4 R1 R2 R3 R4] = TTTTTTTT" \
+    || { echo "FAIL  item5: L2 differential not TTTTTTTT — got: $(printf '%s' "$GR_H" | grep -o 'L2 differential.*')"; ok=0; }
+printf '%s\n' "$GR_H" | grep -qF "L1 grammar-as-data: expr = [(T:la (T:ident (T:dot N:expr))) | N:app]" \
+    || { echo "FAIL  item5: L1 expr production changed"; ok=0; }
+# ★ A3 is a BARE `export`. fuzz_grammar.py's first real run proved that legal:
+# PARSE_EXPORT_NAMES falls through to an empty list, so exportdir is ident* not
+# ident+. Reverting that production is this gate's RED path and flips A3/A4.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp grammar.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+GR_V="$(./logos_secd 2>/dev/null)"
+[ "$GR_H" = "$GR_V" ] || { echo "FAIL  item5: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+[ "$ok" -eq 1 ] && echo "PASS  item5: the grammar is FIRST-CLASS DATA (Scott-encoded, GDECOMP-able) and GPARSE agrees with the fuzzer-verified productions on BOTH the accept and reject sides; byte-identical host==VM. BOUND: associativity is invisible to a verdict-only differential" || exit 1
+
 say "Denotational COMPOSE: the meaning of a compound as a FUNCTION of its parts (denote.la)"
 # Closes the MORPHOLOGY gap the linguistic-closure audit found: the modes ⊗⊕▷⊂↻ combined
 # NAME-leaves (canon.la's κ over trees), but nothing composed the primitives' λ-MEANINGS —

@@ -19,11 +19,20 @@
 #  Pure λ, so byte-identical on the C host and the SECD VM.
 # ===================================================================
 
+import("metaglyph.la")   # item 2's operator-glyphs — consumed, not re-inlined
+
 glyph Z  = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph FST = la a. la b. a
 glyph SND = la a. la b. b
 glyph BSTR = la b. b("T")("F")
+# item 3 needs the booleans. FST/SND above ARE Church TRUE/FALSE (la a. la b. a
+# and la a. la b. b), so these are named aliases rather than new machinery — the
+# file already had them under other names.
+glyph TRUEc  = FST
+glyph FALSEc = SND
+glyph AND    = la a. la b. a(b)(FALSEc)
+glyph NOT    = la b. b(FALSEc)(TRUEc)
 
 # ── the nine primitive MEANINGS (the closed algebra; canonical in primitives.la) ──
 glyph BEING       = la self. self
@@ -90,7 +99,241 @@ glyph W_MC   = BSTR(str_eq(C_MC("z"))(SELF("z")))                  # both "z" �
 glyph C_NEST = MEANING(SYN(MC(PRIM("BEING")))(PRIM("VOID")))
 glyph W_NEST = concat(C_NEST(FST)("r"))(C_NEST(SND)("x")("s"))     # SELF→"r", VOID→"s" ⇒ "rs"
 
+# ═══════════════════════════════════════════════════════════════════
+#  ITEM 3 — DENOTATIONAL MORPHOLOGY: γ_g, r_D, and the reduction check
+#
+#  denote.la already realised Fregean compositionality for the five MODES. Three
+#  gaps remained, and they are what item 3 closes:
+#    1. it denoted MODES, not the ∂δγρ𝔄 OPERATORS — which only became first-class
+#       in item 2, hence the dependency (imported above, not re-inlined);
+#    2. γ_g (glyph-level compose) and r_D (denotational reduction) were named in
+#       the Codex proof but were not real LA operators;
+#    3. NO VIOLATION CASE — every witness passed, so the check could not go RED.
+#
+#  Structured as the Codex proof's ρ ∘ γ_Λ ∘ ρ — recognition-of-compression, two
+#  recognition-events at two resolutions:
+#    ρ  (resolution 1)  recognise each part's meaning
+#    γ_Λ                compose/compress at level Λ
+#    ρ  (resolution 2)  recognise the WHOLE, recovering the parts from the compound
+#  The theorem is that the two agree: the compressed form still recognises as its
+#  parts.
+#
+#  -- Witnesses the conditional theorem given the Arche (exists(exists) === exists), not frame-independent
+#
+#  ── ★★ THE ρ ≡ SR_ABOUT CONSTRAINT — THIS IS WHERE IT CAN SILENTLY BREAK ───
+#  Item 2 established that ρ ≡ SR_ABOUT: one glyph, two names, both ↻(RECOGNITION).
+#  But canonicalization and DENOTATION are two different mappings. Item 2 makes κ
+#  agree they are one glyph; nothing in item 2 stops MEANING from assigning them
+#  DIFFERENT denotations — which would be one FORM with two MEANINGS, polysemy at
+#  the denotational level, and invisible to every gate item 2 ships.
+#
+#  THE CONSTRAINT, enforced below: MEANING is keyed on the CANONICAL FORM, never
+#  on the glyph NAME. MEANING(OP_RHO) and MEANING(SR_ABOUT) are therefore the SAME
+#  denotation not by coincidence but BY CONSTRUCTION — they are the same term.
+# ═══════════════════════════════════════════════════════════════════
+
+# probe-and-compare, generalising W_MC's pattern into a reusable equality
+glyph MEQ = la x. la y. str_eq(x("probe"))(y("probe"))
+
+# ── the three reduction rules (Codex proof §3d, transcribed) ──
+glyph R_FA   = la a. la b. a(b)                        # Rule 1 Function-Application
+glyph R_PM   = la a. la b. la x. AND(a(x))(b(x))       # Rule 2 Predicate-Modification
+glyph R_ABST = la body. la d. body(d)                  # Rule 3 Abstraction (object-β)
+
+# r_D — per-rule dispatch, mirroring COMPOSE's per-mode shape
+glyph R_D = la rule. la a. la b.
+    IF(str_eq(rule)("FA"))(la _. R_FA(a)(b))(la _.
+    IF(str_eq(rule)("PM"))(la _. R_PM(a)(b))(la _.
+        R_ABST(a)))
+
+# γ_g — glyph-level compose. COMPOSE generalised to range over OPERATOR-glyphs,
+# not only mode nodes: it takes the operator's own decomposition as the node.
+glyph GAMMA_G = la op. la a. la b. SYN(op)(SYN(a)(b))
+
+# ── GATE 1 — the reduction holds on real compounds ──
+#    MEANING(γ_g(op,a,b)) recovers r_D(MEANING a)(MEANING b) under FA.
+glyph G3_A    = PRIM("BEING")
+glyph G3_B    = PRIM("VOID")
+glyph LHS_FA  = MEANING(SYN(G3_A)(G3_B))
+glyph RHS_FA  = D_SYN(MEANING(G3_A))(MEANING(G3_B))
+glyph RED_OK  = BSTR(str_eq(LHS_FA(FST)("p"))(RHS_FA(FST)("p")))
+
+# ── GATE 2 — a CONSTRUCTED VIOLATION must go RED. Operand-swap on a
+#    DIRECTIONAL operator: ▷ is not commutative, so swapping must change the
+#    denotation. If this reports agreement, the check discriminates nothing. ──
+# Probed through the FST/SND projections, exactly as W_SYN does, because the
+# denotations have HETEROGENEOUS ARITIES: BEING is the identity (one argument)
+# while VOID discards its first (two). A single-argument probe therefore lands on
+# a FUNCTION where a string was expected. The projections recover each parent and
+# apply it at ITS OWN arity, which is why the existing witnesses are written this
+# way — a detail that only shows up when you try to compare two compounds.
+glyph C_SWAP = MEANING(SYN(PRIM("VOID"))(PRIM("BEING")))
+glyph W_SWAP = concat(C_SWAP(FST)("p")("q"))(C_SWAP(SND)("x"))
+glyph VIOL_CAUGHT = BSTR(NOT(str_eq(W_SYN)(W_SWAP)))
+
+# ── GATE 3 — ⊥ vs UNDEFINED. Two properties with DISJOINT support; their PM
+#    intersection must be FALSE at every probe — recognition FIRED with an empty
+#    extension, a TOTAL false-everywhere function — never a stuck term.
+# -- rho returns bot (recognition fired, empty result), never undefined
+# --   (undefined would mean the structure doesn't exist -- ruled out by closure)
+glyph P_A     = la x. str_eq(x)("a")
+glyph P_B     = la x. str_eq(x)("b")
+glyph BOT_PM  = R_PM(P_A)(P_B)
+glyph BOT_OK  = BSTR(AND(NOT(BOT_PM("a")))(AND(NOT(BOT_PM("b")))(NOT(BOT_PM("z")))))
+
+# ── ★ GATE 4 — THE ρ IDENTITY AT THE DENOTATIONAL LEVEL. The ONLY gate that
+#    would catch a name-keyed MEANING. RED path: give ρ a bespoke denotation
+#    keyed by name and this fires. ──
+glyph M_RHO   = MEANING(OP_RECOG)
+glyph M_ABOUT = MEANING(SR_ABOUT_HERE)
+# ⟦↻⟧(RECOGNITION) = DEPTH(RECOGNITION) = RECOGNITION(RECOGNITION), and
+# RECOGNITION = la x. RELATION(x)(x), so this reduces to RELATION(REC)(REC) — a
+# pair. Probe it through the pair's own projections rather than applying it to a
+# bare string.
+# ★★ THIS PROPERTY IS STRUCTURALLY ENFORCED, NOT GATED — and saying so is the
+# honest report, per item 4's requirement 3: if the data type makes the violation
+# UNCONSTRUCTIBLE, the property is enforced by the type (which is STRONGER than a
+# check) and must be reported that way rather than dressed up as a passing gate.
+#
+# The history is worth keeping, because it took two wrong turns to get here.
+#   1. First probe:  RHO_PROBE = la m. m(FST)("z")(FST)  — VACUOUS. It returned
+#      "z" for the correct ρ AND for a deliberately wrong one, because
+#      RECOGNITION = la x. RELATION(x)(x) DUPLICATES its argument, so both
+#      projections collapse to the probe value. The RED-path test did not fire.
+#   2. Second probe used `typeof` to discriminate structure. It worked on the C
+#      host and BROKE host==VM: typeof exists ONLY in tiny_host.c — zero in
+#      secd.asm, eval.la, bytecode.la, native_codegen3. The same cross-engine
+#      capability gap Q1 found for chr/ord, walked into hours later.
+#
+# The third look showed there is nothing to gate. MEANING's signature is
+# node -> denotation; it CANNOT see a glyph's name. OP_RECOG and SR_ABOUT_HERE are
+# the SAME TERM, so a name-keyed divergence between their denotations is not
+# merely absent — it is unconstructible. What CAN change, and what IS therefore
+# asserted (in metaglyph.la, item 2, with a firing RED path), is ρ's DECOMPOSITION.
+# Change that and the identity breaks there, loudly.
+#
+# So: the claim "to bear a recognition coefficient IS to be the Logos describing
+# itself" is carried by the type, and the gate that could fail lives one module up.
+glyph RHO_DEN_SAME = "structural"
+# ρ is the one operator using ↻; ⟦↻RECOGNITION⟧ = RECOGNITION(RECOGNITION)
+# reduces to a pair and TERMINATES. That it yields a value at all is the check.
+glyph RHO_TERMINATES = BSTR(str_eq(M_RHO(FST)("t")(FST))("t"))
+
+# ═══════════════════════════════════════════════════════════════════
+#  ITEM 4 — THE GLYPHIC COMBINATION LAW
+#
+#  ★ SPEC'D FROM THE BUILT FORM, NOT FROM THE PRE-SPEC. The arc deferred item 4
+#  until item 3's γ_g existed, precisely so the law would be read off running
+#  code rather than drafted and then confirmed. The built forms are:
+#      γ_g = la op. la a. la b. SYN(op)(SYN(a)(b))
+#      r_D = per-rule dispatch — FA: a(b) | PM: la x. AND(a x)(b x) | ABST: β
+#  and MEANING is the homomorphism over them.
+#
+#  ── THE LAW THOSE FORMS LICENSE ──────────────────────────────────────────
+#  A combination RETAINS BOTH PARENTS IN BOTH REGISTERS:
+#      structurally   κ(compound) contains κ(a) and κ(b)
+#      denotationally ⟦compound⟧ recovers each parent's meaning
+#  "Both present, each recoverable" — which is this file's own gloss of ⊗,
+#  raised one level: not what ⊗ DOES, but the rule combination must OBEY.
+#
+#  ── ★ WHY THIS IS A PREDICATE AND NOT A THEOREM ──────────────────────────
+#  Item 1 found the three laws were constant-TRUE tautologies. A combination law
+#  every combination satisfies BY CONSTRUCTION would be that defect one level up.
+#  So LAW_COMBINE takes the COMBINER as an argument and returns T or F on it —
+#  and BAD_COMBINE below is a real combiner it returns F on.
+#
+#  ── ★ NOT VACUOUS BY TYPE — checked, not assumed ─────────────────────────
+#  The family-tree audit's ">2 parents" gate had to be discarded because the
+#  Scott encoding made the violating state UNCONSTRUCTIBLE — the law was enforced
+#  by the data type, which is STRONGER, and had to be reported that way rather
+#  than dressed up as a passing check. That is not the case here: a combiner that
+#  drops a parent is trivially constructible (BAD_COMBINE), so the law has
+#  content. VIOL_EXISTS witnesses that it is buildable.
+#
+#  ── THE BOUND, which does not depend on any of this ──────────────────────
+#  Compression is STRUCTURE-SHARING, not infinite compression. A derivation
+#  reusing motifs compresses dramatically; a fully-distinct tree still costs
+#  Θ(distinct subterms) — the Shannon floor. "Deeper not larger" holds
+#  STRUCTURALLY (always one monoglyph), never in bytes.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph STARTSW = Z(la self. la h. la n.
+    IF(str_eq(n)(""))(la _. TRUEc)(la _.
+    IF(str_eq(h)(""))(la _. FALSEc)(la _.
+    IF(str_eq(str_head(h))(str_head(n)))(la _. self(str_tail(h))(str_tail(n)))(la _. FALSEc))))
+glyph HASSUB = Z(la self. la h. la n.
+    IF(STARTSW(h)(n))(la _. TRUEc)(la _.
+    IF(str_eq(h)(""))(la _. FALSEc)(la _. self(str_tail(h))(n))))
+
+# the two registers the law relates
+glyph RETAINS_FORM = la comb. la a. la b.
+    (la w. AND(HASSUB(CANON(w))(CANON(a)))(HASSUB(CANON(w))(CANON(b))))(comb(a)(b))
+glyph RETAINS_MEAN = la comb. la a. la b.
+    (la m. AND(str_eq(m(FST)("p"))("p"))(str_eq(m(SND)("x")("q"))("q")))(MEANING(comb(a)(b)))
+
+# ★ THE LAW — a PREDICATE over combiners, returning T or F.
+#
+#  ★★ SCOPE BOUND, FOUND BY BUILDING IT: the law quantifies over the STRUCTURAL
+#  register only, and that is forced, not chosen. RETAINS_MEAN must APPLY each
+#  recovered parent to probe it, and application needs the parent's ARITY —
+#  BEING is the identity, VOID discards its first argument. A violating combiner
+#  CHANGES what sits in each slot, so a two-argument probe explodes on the
+#  parent-dropping combiner while a one-argument probe explodes on the good one.
+#  There is no probe that discriminates for every combiner, because comparing
+#  λ-denotations requires applying them.
+#
+#  So: LAW_COMBINE quantifies over ARBITRARY combiners in the structural
+#  register, where CANON walks any node and no arity is needed. The DENOTATIONAL
+#  retention is witnessed separately, on the fixed BEING/VOID pair whose arities
+#  are known (RETAINS_MEAN below, and item 3's reduction check above).
+#
+#  This is a genuine limit on what can be stated as a law over all combiners, not
+#  a shortcut — and it is the honest form of "the compression bound is
+#  structural, not denotational" that §5 of the pre-spec already predicted.
+glyph LAW_COMBINE = la comb. la a. la b. RETAINS_FORM(comb)(a)(b)
+# denotational retention, on the known-arity pair — the half that cannot generalise
+glyph DEN_RETAINS = BSTR(RETAINS_MEAN(GOOD_COMBINE)(PRIM("BEING"))(PRIM("VOID")))
+
+glyph GOOD_COMBINE = la a. la b. SYN(a)(b)          # γ_g's shape: keeps both
+glyph BAD_COMBINE  = la a. la b. SYN(a)(a)          # drops b — a real violation
+
+glyph L4_A = PRIM("BEING")
+glyph L4_B = PRIM("VOID")
+glyph LAW_HOLDS  = BSTR(LAW_COMBINE(GOOD_COMBINE)(L4_A)(L4_B))
+glyph LAW_FAILS  = BSTR(NOT(LAW_COMBINE(BAD_COMBINE)(L4_A)(L4_B)))
+# requirement 3: the violation is CONSTRUCTIBLE — the law is not type-enforced
+glyph VIOL_EXISTS = BSTR(NOT(str_eq(CANON(BAD_COMBINE(L4_A)(L4_B)))(CANON(GOOD_COMBINE(L4_A)(L4_B)))))
+
+# ── ★ SELF-APPLICATION (item 1's standard: a sealed monoglyph, no string proxy).
+#    The law is itself a glyphic combination — "both present, each recoverable" is
+#    ⊗(RELATION,RECOGNITION) — so it must satisfy itself. ──
+glyph LAW_COMBINE_ET = SYN(PRIM("RELATION"))(PRIM("RECOGNITION"))
+# ⚠ SELF-APPLICATION USES THE STRUCTURAL HALF ONLY, and the reason is a real
+# bound rather than convenience. RETAINS_MEAN must probe each recovered parent at
+# ITS OWN ARITY (BEING is the identity, VOID discards its first argument), so it
+# is written for a known operand pair. The law's own etymology is
+# ⊗(RELATION,RECOGNITION), whose parents have different arities again — probing
+# them would require a per-arity table, which is exactly the name-keyed dispatch
+# this arc keeps removing. RETAINS_FORM is arity-agnostic because CANON walks any
+# node, so the self-application is witnessed there and the denotational half is
+# witnessed on BEING/VOID above. Stated, not hidden: self-application is
+# STRUCTURAL here, not yet denotational.
+glyph LAW_SELF = BSTR(RETAINS_FORM(GOOD_COMBINE)(PRIM("RELATION"))(PRIM("RECOGNITION")))
+# and the law's own sealed glyph canonicalizes — it IS a combination, not a proxy
+glyph LAW_SELF_CANON = CANON(LAW_COMBINE_ET)
+
 glyph MAIN = print(
     concat("DENOTE ⊗-recovers-both[BEING,VOID]:")(concat(W_SYN)(
     concat(" | ↻(BEING)≡SELF-denotationally:")(concat(W_MC)(
-    concat(" | nested-⊗(↻BEING,VOID):")(W_NEST))))))
+    concat(" | nested-⊗(↻BEING,VOID):")(concat(W_NEST)(
+    concat("\nITEM3 reduction ⟦γ_Λ(a,b)⟧=r_D(⟦a⟧,⟦b⟧):")(concat(RED_OK)(
+    concat(" | violation(▷ operand-swap) CAUGHT:")(concat(VIOL_CAUGHT)(
+    concat(" | ⊥ not undefined (PM disjoint):")(concat(BOT_OK)(
+    concat(" | ρ≡SR_ABOUT denotation:")(concat(RHO_DEN_SAME)(
+    concat(" | ρ terminates:")(concat(RHO_TERMINATES)(
+    concat("\nITEM4 law holds on γ_g:")(concat(LAW_HOLDS)(
+    concat(" | law FAILS on a parent-dropping combiner:")(concat(LAW_FAILS)(
+    concat(" | violation CONSTRUCTIBLE (not type-enforced):")(concat(VIOL_EXISTS)(
+    concat(" | law applies to its OWN statement (structural):")(concat(LAW_SELF)(
+    concat(" | denotational retention (known arity):")(concat(DEN_RETAINS)(
+    concat(" | law's own glyph κ=")(LAW_SELF_CANON))))))))))))))))))))))))))))
