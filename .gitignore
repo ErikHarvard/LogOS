@@ -154,7 +154,24 @@ watched.la
 /kernel/alloc_churn_rare.bin
 # NIC arc (HAL.5b–5r) kernel ELFs — built out of band per the arc convention
 /kernel/kernel_nic5*.elf
-# HAL.3 disk-arc kernels + their red-path controls — same convention, built by
-# gate_hal3c/3bc/3d out of band. Untracked ELFs accumulating make `git status`
-# unreadable, which is how uncommitted WORK hides among build artifacts.
-/kernel/kernel_hal3*.elf
+# ── ALL built kernel ELFs, and why this is one broad rule ──────────────────
+# Previously this was a growing list of narrow patterns (kernel_hal3.elf,
+# kernel_hal3b.elf, kernel_nic5*.elf, ...), each added after the fact. NO
+# kernel/kernel_*.elf is tracked -- checked, 0 of them -- so they are build
+# products without exception and the narrow list only ever lagged reality.
+#
+# ★ THIS IS NOT TIDINESS. build.sh gates its auto-checkpoint on
+# `[ -n "$(git status --porcelain)" ]`, which counts UNTRACKED files. So every
+# stray ELF suppresses the `verified-*` tag -- and build.sh's own gates are what
+# produce them. On 2026-08-19 a FULLY GREEN 6-hour run (196 PASS / 0 FAIL, the
+# first green since 07-08) printed "auto-tag skipped: working tree dirty" because
+# of 26 ELFs its own driver gates had just built. The suite was defeating its own
+# checkpoint, and wiring in more gates made it strictly worse.
+/kernel/kernel_*.elf
+
+# Session scratch: run markers, captured gate logs, and the two reproducer dirs
+# referenced from ~/logos-status.md (.diag holds the ata fault probes and the
+# asm.la bisect harness; .kseam holds the kernel-seam comparison).
+/.diag/
+/.kseam/
+/.gate_kernel_frozen.sh
