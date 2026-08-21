@@ -75,6 +75,27 @@ rather than merely incorrect.
 fails, so an arm set enumerated by reading guards would list them as arms that
 cannot be built. **Arms have dependencies; the set is not flat.**
 
+**Two of the five defective arms are UNBUILDABLE FROM COMMITTED STATE.**
+`build_k6b.sh:38` writes both `LA_ENTRY` and `METAL_FLAG_ABS` into
+`kernel/entry.inc`, but every `entry.inc` that exists contains ONLY `LA_ENTRY`
+(22 bytes, `LA_ENTRY equ 0x410a9e` frozen; `0x402fb6` live on kernel-k1), and no
+tracked `.inc` in the repo defines `METAL_FLAG_ABS` at all. track-b has no
+`kernel/entry.inc` committed whatsoever. So the checked-in file was not produced
+by `build_k6b.sh` -- a different generator made it, and nothing on disk can
+assemble HH2B or HH2C until a build step the arm listing never mentions has run.
+
+An arm list read from guards therefore contains entries that are not merely
+untested but **unrunnable**, and nothing in the listing distinguishes them. The
+site counts for those two arms in this document were obtained by supplying
+`-D METAL_FLAG_ABS=0x400078` by hand.
+
+## The fix must key on "fits unsigned 32", not on "looks symbolic"
+
+`HIGH_BASE` (0xFFFFFFFF80000000) fails that predicate; `METAL_FLAG_ABS`
+(offset + 0x400078) passes it. A fix widened to "any symbolic immediate takes
+`C7 /0`" would break four currently-CORRECT sites and regress byte-identity
+with nasm. That discrimination is precisely the one `MOVIMM` does not make.
+
 Checked and NOT part of this defect: the four `mov rax, METAL_FLAG_ABS` sites
 (450, 836, 966, 1131). `METAL_FLAG_ABS` is a file offset + `0x400078` -- a low
 address that fits unsigned 32, so the short form is correct there.
