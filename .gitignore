@@ -204,3 +204,8 @@ watched.la
 
 # gate_link_e2e.sh scratch (track B)
 .e2egate/
+
+# build artifacts from the imm64/ALU verification runs (2026-08-21)
+.kseam/
+link_nsec_ref
+.gate_kernel_frozen.sh
