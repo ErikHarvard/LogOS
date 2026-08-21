@@ -287,3 +287,47 @@ correct (2/2 and 5/5, zero old defect forms), with .rodata, .multiboot and
 .la_image all byte-identical outside relocated fields. They FAIL only on these
 two new defects. So the imm64 and ALU fixes are confirmed on these arms; the
 arms are not yet byte-identical for reasons neither fix addresses.
+
+
+## BOTH FIXED — unit-verified, boot verification IN FLIGHT
+
+`ASMLA_MEMOPERAND_FIX.patch` (119 lines, on top of the other two;
+`ASMLA_ALL_FIXES.patch` is the 290-line pristine->all-four form).
+
+**Defect 4** — `MEMIDXTOK` read exactly ONE term past the base
+(`UPTOSIGN(AFTERPLUS(...))`), so `[r8 + 24 + r9]` inspected `24`, found no
+register, and lost `r9`. Replaced by `IDXSCAN`, which walks every term for the
+first register. `MEMDISP` needs no change: it EVALs the whole tail with unknown
+names resolving to 0, so a register term already contributes nothing to the
+displacement wherever it sits.
+
+**Defect 3** — the `0x67` prefix cannot live inside `MEMENC`/`MEMIMM`, which
+receive the base as a REGISTER NUMBER with the width already discarded. `P67` is
+therefore applied at the 8 sites where the bracketed TOKEN is still in scope,
+guarded by `ISREG` first because a base may be a label.
+
+Unit-verified byte-identical to nasm on 10 cases:
+
+    mov [edi], eax          67 89 07          prefix, memory destination
+    mov dword [edi+4], 0    67 c7 47 04 ...   prefix through MEMIMM
+    mov eax, [edi]          67 8b 07          prefix, memory source
+    add dword [edi], 5      67 83 07 05       prefix through G1MEMIMM
+    lea rbx, [edi + 8]                        prefix through LEA
+    mov al, [r8 + 24 + r9]  43 8a 44 08 18    index after displacement
+    mov al, [rsi + 8 + r9*4]                  scaled index after displacement
+    mov [rdi], eax          89 07             NEGATIVE CONTROL: no prefix
+    mov rax, [rbx + 16]     48 8b 43 10       NEGATIVE CONTROL: no prefix
+
+The negative controls matter as much as the positives: they prove the prefix is
+not applied to a 64-bit base.
+
+**Why both survived every existing check.** A missing `0x67` makes the
+instruction one byte SHORTER, so it fails only a byte-identity comparison. The
+dropped index produces a same-shape instruction addressing DIFFERENT MEMORY --
+identical length, valid encoding, wrong address. Neither is reachable from the
+no-flag build, and both live in arms that could not be assembled at all until
+the ALU gap was fixed.
+
+**NOT yet boot-verified.** HH2B and HH2C are assembling with all four fixes; the
+run will show whether these two account for the entire remaining shortfall or
+whether a fifth defect sits underneath. Stated as in-flight, not as passed.

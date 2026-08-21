@@ -1,0 +1,119 @@
+--- .bootfix2/asm.la	2026-08-21 12:31:06.589545559 -0600
++++ .imm64/asm.la	2026-08-21 13:47:52.806880858 -0600
+@@ -575,7 +575,24 @@
+ glyph AFTERSTAR = Z(la self. la s.
+     IF(str_eq(s)(""))(la _. "")(la _.
+       IF(str_eq(str_head(s))("*"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+-glyph MEMIDXTOK = la t. UPTOSIGN(AFTERPLUS(STRIPBRK(t)))("")
++#   ★ THE INDEX MAY BE ANY TERM, NOT THE SECOND ONE. This used to read exactly
++#   one term past the base — `UPTOSIGN(AFTERPLUS(...))` — so `[r8 + 24 + r9]`
++#   inspected "24", found no register, and SILENTLY DROPPED r9: it assembled as
++#   `[r8+0x18]` and read the wrong address. `[r8 + r9 + 24]` worked, so the
++#   trigger was TERM ORDER, not the registers. Live site asm_in.asm:1072
++#   (`mov al, [r8 + 24 + r9]`, the ring-3 IPC receive path).
++#   Scanning every term for the first REGISTER is correct because a displacement
++#   term can never be one, and MEMDISP needs no change: it EVALs the whole tail
++#   with unknown names resolving to 0, so a register term already contributes
++#   nothing to the displacement wherever it sits.
++glyph IDXSCAN = Z(la self. la s.
++    IF(str_eq(s)(""))(la _. "")
++      (la _. (la tok.
++               IF(ISREG(UPTOSTAR(tok)("")))
++                 (la _. tok)
++                 (la _. self(AFTERPLUS(s))))
++             (UPTOSIGN(s)(""))))
++glyph MEMIDXTOK = la t. IDXSCAN(AFTERPLUS(STRIPBRK(t)))
+ glyph MEMIDXREG = la t. UPTOSTAR(MEMIDXTOK(t))("")
+ glyph MEMHASIDX = la t. ISREG(MEMIDXREG(t))
+ glyph MEMIDX = la t. IF(MEMHASIDX(t))(la _. REGNUM(MEMIDXREG(t)))(la _. sub(0)(1))
+@@ -886,6 +903,20 @@
+             (add(IF(lt(reg)(8))(la _. 0)(la _. 4))
+             (add(IF(AND(NOT(lt(idx)(0)))(NOT(lt(idx)(8))))(la _. 2)(la _. 0))
+                 (IF(lt(base)(8))(la _. 0)(la _. 1))))))
++#   ★ THE 0x67 ADDRESS-SIZE OVERRIDE. A 32-bit register used as a memory BASE
++#   in 64-bit mode needs it: `mov [edi], eax` is `67 89 07`, not `89 07`. Without
++#   it the instruction addresses through the full 64-bit rdi instead of the
++#   zero-extended edi — the same length as a correct instruction for a different
++#   address, which is why it survived every size check.
++#   It cannot live inside MEMENC/MEMIMM: those receive the base as a REGISTER
++#   NUMBER, which has already lost the width. So it is applied where the
++#   bracketed TOKEN is still in scope, and the guard tests ISREG first because a
++#   base may be a label rather than a register.
++glyph MEMBASETOK = la t. FST(SPLITFIRST(STRIPBRK(t))(""))
++glyph MEM32BASE = la t.
++    AND(ISMEM(t))(AND(NOT(MEMRIP(t)))(AND(NOT(MEMABS(t)))
++      (AND(ISREG(MEMBASETOK(t)))(int_eq(RWIDTH(MEMBASETOK(t)))(4)))))
++glyph P67 = la t. IF(MEM32BASE(t))(la _. B(103))(la _. "")
+ glyph MEMENC = la op. la w. la reg. la b. la idx. la scaleb. la d. la force. la mode.
+     concat(P66M(mode)(w))
+    (concat(MREX(w)(reg)(idx)(b)(force))
+@@ -1075,7 +1106,7 @@
+       (la _. concat(B(102))(concat(B(140))(SPECMODRM(SEGNUM(b))(REGNUM(a)))))
+     (la _. IF(ISMEM(a))
+       (la _. IF(ISVAL(b))
+-               (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b))(BITSMODE(labs)))
++               (la _. concat(P67(a))(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b))(BITSMODE(labs))))
+              (la _. IF(ISREG(b))
+                (la _. IF(MOFFSOK(BITSMODE(labs))(a)(w)(b))
+                  #   The accumulator has a one-byte form with no ModRM at all:
+@@ -1085,18 +1116,18 @@
+                  #   exactly this instruction, which is why an earlier note
+                  #   calling the moffs form "not in the boot files" was wrong.
+                  (la _. concat(B(163))(LE4(FOLDD(MEMDISP(labs)(a)))))
+-                 (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs))))
++                 (la _. concat(P67(a))(MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs)))))
+                #   `mov qword [rax], _start` — a LABEL immediate to memory. It used
+                #   to fall into the register path above, where REGNUM read the label
+                #   as a register name and halted `unknown register: _start`. Same
+                #   MEMIMM encoding as a numeric immediate; only the value differs,
+                #   and LABADDR is what MOVENC's reg-destination arm already uses.
+-               (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(LABADDR(b)(labs))(BITSMODE(labs)))))
++               (la _. concat(P67(a))(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(LABADDR(b)(labs))(BITSMODE(labs))))))
+       (la _. IF(ISMEM(b))
+         (la _. IF(MOFFSOK(BITSMODE(labs))(b)(w)(a))
+           #   A1 is A3's load twin: `mov eax, [addr]` in 5 bytes.
+           (la _. concat(B(161))(LE4(FOLDD(MEMDISP(labs)(b)))))
+-          (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs))))
++          (la _. concat(P67(b))(MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))))
+         (la _. IF(ISREG(b))
+           (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
+           (la _. IF(ISVAL(b))
+@@ -1178,23 +1209,23 @@
+ #   is why this is a few lines rather than a second encoder: the opcode map
+ #   does not distinguish "to register" from "to memory", the ModRM byte does.
+ glyph G1MEMREG = la labs. la digit. la w. la a. la b.
+-    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
++    concat(P67(a))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
+    (concat(B(OP8(add(mul(digit)(8))(1))(w)))
+-          (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))))
++          (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs))))))
+ glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
+-    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
++    concat(P67(a))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
+    (IF(int_eq(w)(1))
+      (la _. concat(B(128))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(B(FOLD8(n)))))
+      (la _. IF(FITS8(n))
+        (la _. concat(B(131))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(B(FOLD8(n)))))
+-       (la _. concat(B(129))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(IMMW(w)(n)))))))
++       (la _. concat(B(129))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(IMMW(w)(n))))))))
+ # ALU reg, [mem] (memory SOURCE): the r,r/m form, opcode digit*8+3 (add 03,
+ # cmp 3B, …) — the reverse of G1MEMREG's digit*8+1. reg field = dest register,
+ # rm = memory (index-aware via MEMTAILX/MREX).
+ glyph G1REGMEM = la labs. la digit. la w. la a. la b.
+-    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
++    concat(P67(b))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
+    (concat(B(OP8(add(mul(digit)(8))(3))(w)))
+-          (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs)))))
++          (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs))))))
+ glyph G1ENC = la labs. la digit. la w. la a. la b.
+     IF(ISMEM(a))
+       (la _. IF(ISVAL(b))
+@@ -1269,7 +1300,7 @@
+ 
+ # ── lea: the same ModRM/SIB/disp machinery as mov, opcode 8D, never 8-bit ───
+ glyph LEAENC = la labs. la w. la a. la b.
+-    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs))
++    concat(P67(b))(MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))
+ 
+ # ── no-operand instructions ────────────────────────────────────────────────
+ glyph NOARGS =
