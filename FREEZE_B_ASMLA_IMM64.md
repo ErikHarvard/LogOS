@@ -120,6 +120,32 @@ untested but **unrunnable**, and nothing in the listing distinguishes them. The
 site counts for those two arms in this document were obtained by supplying
 `-D METAL_FLAG_ABS=0x400078` by hand.
 
+## SECOND, INDEPENDENT LIMITATION: `add r64, <label>` is unsupported
+
+Assembling HH2B with the patched `asm.la` halts:
+
+    asm: unsupported ALU operand: k6a_kstack_top
+
+Source: `add rax, k6a_kstack_top` — asm_in.asm:829 (HH2B) and :952 (HH2C).
+`ALUENC` accepts REGISTER-TO-REGISTER only; a label or immediate operand is an
+explicit `error(...)`. nasm assembles both arms fine (nasm_ref.o is 8656 B).
+
+This is PRE-EXISTING and unrelated to the imm64 fix: the error string is in the
+unpatched `asm.la`, and the patch touches no ALU path (0 hits for "ALU").
+
+**Consequence for the freeze: 7 of the 16 defect sites (HH2B 2 + HH2C 5) live in
+arms `asm.la` CANNOT ASSEMBLE AT ALL.** The imm64 fix is verified on NONE, HH1,
+HH2 and HH1B. HH2B and HH2C cannot be verified end-to-end through `asm.la` until
+ALU-immediate support exists — so their sites are counted from nasm's encoding,
+not from a comparison. That is a stated scope limit, not a passed test.
+
+It also means the count of arms that cannot be built is now FIVE, by two
+different causes:
+    HH2B, HH2C           `METAL_FLAG_ABS` undefined in any committed state
+    LA_RING3_IMAGE       `k6a_tss` not defined
+    HH2B, HH2C (again)   `add r64,<label>` unsupported BY asm.la, though nasm
+                         accepts them — an assembler gap, not a fixture gap
+
 ## The fix must key on "fits unsigned 32", not on "looks symbolic"
 
 `HIGH_BASE` (0xFFFFFFFF80000000) fails that predicate; `METAL_FLAG_ABS`
