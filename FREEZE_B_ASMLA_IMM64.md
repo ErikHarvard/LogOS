@@ -126,7 +126,20 @@ Assembling HH2B with the patched `asm.la` halts:
 
     asm: unsupported ALU operand: k6a_kstack_top
 
-Source: `add rax, k6a_kstack_top` — asm_in.asm:829 (HH2B) and :952 (HH2C).
+Sources — FOUR sites, TWO symbols, enumerated by CONSTRUCT (an ALU op with a
+non-register operand) rather than by symbol:
+
+    :829  add rax, k6a_kstack_top     HH2B   <- HH2B halts here
+    :937  add rax, k6a_tss            HH2C   <- HH2C halts here
+    :947  add rax, k6a_tss            HH2C
+    :952  add rax, k6a_kstack_top     HH2C
+
+Measured halts: HH2B `unsupported ALU operand: k6a_kstack_top`, HH2C
+`unsupported ALU operand: k6a_tss`. I predicted HH2C would halt at :952 on
+`k6a_kstack_top` and it did not — :829 is inside HH2B's block and inactive under
+HH2C, so the first ACTIVE site is :937. **Predicting by symbol instead of by
+construct, for the third time in one session** — the same error that undercounted
+the imm64 radius at 11 instead of 16.
 `ALUENC` accepts REGISTER-TO-REGISTER only; a label or immediate operand is an
 explicit `error(...)`. nasm assembles both arms fine (nasm_ref.o is 8656 B).
 
