@@ -62,7 +62,38 @@ entirely."* Accurate about what the code does, silent about the case it omits --
 and nothing witnessed the gap, because a signed-32-only immediate never appears
 in the no-flag build.
 
-## Blast radius: 11 sites across 5 arms, ASSEMBLED not read
+## VERIFIED FIXED (2026-08-20 23:19, patched asm.la, boot fixture)
+
+    arm    .boot32   relocs   HIGH_BASE  old defect form   verdict
+    NONE    877 B    53 ==    0          0                 unchanged (control)
+    HH1    1018 B    60 ==    1/1        0                 PASS all sections
+    HH2    1311 B    84 ==    2/2        0                 PASS all sections
+
+Every section byte-identical to nasm outside relocated fields, and the
+relocation tables — which DIFFERED before the fix — now match on offset, type,
+symbol AND addend. `.boot32` grew exactly +2 (HH1, one site) and +4 (HH2, two
+sites), the shortfall the defect was producing. NONE is unchanged, so the fix
+touches nothing it should not. A 19-case unit matrix is byte-identical to nasm.
+
+## Blast radius: 16 sites across 9 arms — WIDER THAN FIRST FILED
+
+The original filing said 11 sites / 5 arms, counting only `mov rax, HIGH_BASE`.
+Enumerating every arm and counting `REX.W C7 /0 reg` (`(48|49) c7 c0..c7`, all
+registers) finds more:
+
+    HH1  1   HH1B 2   HH2  2   HH2B 2   HH2C 5      (higher-half transition)
+    IPC  1   K6C  1   K6C2 1   K6C3 1               ← NOT in the HH family
+
+The four outside the HH family, plus HH2C's fifth, are **`mov rax, -1`**. The
+old encoder emitted `b8 ffffffff`, giving `rax = 0x00000000FFFFFFFF` instead of
+all-ones — an all-bits sentinel/mask silently becoming a 32-bit one. So the
+defect is not confined to the higher-half work: it reaches the IPC and K6C
+paths too.
+
+`LA_RING3_IMAGE` is UNBUILDABLE (`symbol 'k6a_tss' not defined`), joining HH2B
+and HH2C as arms that cannot be assembled from committed state.
+
+## Original count: 11 sites across 5 arms, ASSEMBLED not read
 
     NONE  0        HH1  1        HH1B 2
     HH2   2        HH2B 2        HH2C 4        = 11
