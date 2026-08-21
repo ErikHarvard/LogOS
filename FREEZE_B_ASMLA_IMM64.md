@@ -159,6 +159,41 @@ different causes:
     HH2B, HH2C (again)   `add r64,<label>` unsupported BY asm.la, though nasm
                          accepts them — an assembler gap, not a fixture gap
 
+### The ALU gap is FIXED — unit-verified, boot verification IN FLIGHT
+
+`ASMLA_ALU_LABEL_FIX.patch` (72 lines, applies on top of the imm64 patch;
+`ASMLA_BOTH_FIXES.patch` is the combined 177-line form). It needed FOUR parts,
+not the one the error message suggests:
+
+1. **`G1IMM32`** — a forced-imm32 variant. `G1IMM` picks the sign-extended imm8
+   short form when the value fits, and a label address like `0x2a` DOES fit, so
+   routing labels into it would emit `48 83 C0 2A` where nasm emits
+   `48 05 imm32`. Worse, the length would then depend on an address unknown in
+   pass 1 — the SIZEL/ENC1 disagreement the hardcoded-10 MOVLBL bug already cost
+   once. This form's length is value-independent, so the two cannot drift.
+2. **`G1ENC`** — route a label operand there instead of halting. `LABADDR`
+   errors on an unknown symbol, so a genuinely bad operand still fails loudly
+   (with a better message: "undefined label" rather than "unsupported operand").
+3. **`RELLINE`** — an ALU arm emitting the relocation. Without it the bytes look
+   right and the linker gets a bare address with no fixup: `R_X86_64_32S` at
+   `linelen-4` for a 64-bit destination, `R_X86_64_32` otherwise, matching what
+   nasm does (measured: `add rax,tgt` -> 32S, `add eax,tgt` -> 32).
+4. **The size path** — `LABADDR` was being called in PASS 1 and halting with
+   "undefined label". `MOVSIZE` avoids this by sizing with `0`; the ALU path now
+   does the same.
+
+Unit-verified against nasm on `add/sub/cmp` with rax, rbx, rcx, rdx and eax:
+
+    .boot32   43 B both, byte-identical outside relocated fields
+    relocs    5/5 identical — offsets, types AND addends
+              add rax,tgt -> 48 05 imm32      (accumulator short form)
+              add rbx,tgt -> 48 81 C3 imm32
+              add rax,8   -> 48 83 C0 08      (imm8 still chosen for real values)
+
+**NOT yet verified at boot scale.** HH2B and HH2C are assembling now; until they
+land, the four real ALU sites are covered only by the unit fixture. Stated as
+in-flight, not as passed.
+
 ## The fix must key on "fits unsigned 32", not on "looks symbolic"
 
 `HIGH_BASE` (0xFFFFFFFF80000000) fails that predicate; `METAL_FLAG_ABS`
