@@ -242,3 +242,48 @@ the semantic content.
 This is a finding, not a fix. The correct encoding choice for `mov r64, imm` is
 a real decision (when to use `B8+r imm32`, `REX.W C7 /0 imm32`, `REX.W B8+r
 imm64`) and belongs in daylight, not alongside three running VMs.
+
+
+# THIRD AND FOURTH DEFECTS — exposed by fixing the ALU gap (2026-08-21)
+
+Unblocking HH2B and HH2C made them assemblable for the first time, and they
+immediately failed the nasm comparison for two NEW reasons. Both are
+PRE-EXISTING and unrelated to either fix (my patches touch no memory-operand
+path: 0 hits for MEMENC, MREX, MEMTAILX, P67, 0x67, MEMIDX, MEMSCALE).
+
+## Defect 4 (worst): an INDEX REGISTER IS SILENTLY DROPPED after a displacement
+
+    source                nasm                ours                verdict
+    [r8 + 24 + r9]        43 8a 44 08 18      41 8a 40 18         INDEX DROPPED
+    [r8 + r9 + 24]        43 8a 44 08 18      43 8a 44 08 18      correct
+    [rsi + r9]            42 8a 04 0e         42 8a 04 0e         correct
+    [rsi + 24 + r9]       42 8a 44 0e 18      8a 46 18            INDEX DROPPED
+
+The trigger is TERM ORDER, not the registers: an index that appears AFTER a
+displacement term is lost. `[base + index + disp]` encodes correctly;
+`[base + disp + index]` silently reads from the wrong address.
+
+This is the most severe class found in this audit. It is not a size difference
+or a missing prefix — the instruction assembles, links and runs, and reads the
+wrong memory. Live site: asm_in.asm:1072 `mov al, [r8 + 24 + r9]`, the ring-3
+IPC receive path copying into the caller's buffer.
+
+## Defect 3: missing 0x67 address-size prefix for a 32-bit memory base
+
+    [edi]   nasm 67 8b 07   ours 8b 07
+
+A 32-bit register used as a memory base in 64-bit mode needs the 0x67
+address-size override. 10 source lines use this form. HH2B: 2 sites, HH2C: 4.
+
+## How the shortfalls decompose, measured
+
+    HH2B   2 B short = 2 missing 0x67 prefixes                    fully explained
+    HH2C   6 B short = 4 missing 0x67 prefixes + 2 dropped indexes  fully explained
+
+## Status of the two arms
+
+HH2B and HH2C now ASSEMBLE (the ALU gap is fixed) and their HIGH_BASE sites are
+correct (2/2 and 5/5, zero old defect forms), with .rodata, .multiboot and
+.la_image all byte-identical outside relocated fields. They FAIL only on these
+two new defects. So the imm64 and ALU fixes are confirmed on these arms; the
+arms are not yet byte-identical for reasons neither fix addresses.
