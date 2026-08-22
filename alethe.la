@@ -1,0 +1,127 @@
+# =====================================================================
+#  alethe.la — TRUTH AS IDENTITY, and the collapse of meta-reality.
+#
+#  LINGUA ADAMICA.tex, Thm. "The Truth--Identity Collapse" (:1245):
+#
+#        True(P) ≡ P
+#
+#  The truth operator IS the identity function. There is no glyph for "the
+#  truth of P" distinct from P — by the Uniqueness Corollary, one concept has
+#  one glyph, so a second glyph meaning "P, truly" cannot exist.
+#
+#  ── ★ THE DISTINCTION THIS MODULE EXISTS TO PROTECT ─────────────────
+#  The theorem is one sentence away from a catastrophic misreading, and the
+#  spec names the danger itself: True(P) ≡ P does NOT mean every well-formed
+#  glyph is true. Quoting the proof directly —
+#
+#      "The identity True(P) ≡ P is a statement about CONTENT;
+#       R(P) = 𝔤⊤ is a statement about EVALUATION.
+#       Both are needed; neither subsumes the other."
+#
+#  A false proposition Q is a perfectly well-formed glyph. True(Q) ≡ Q holds
+#  of it — the truth operator adds nothing to Q's content — and Q still
+#  evaluates to 𝔤⊥. **Applying True to a falsehood does not make it true.**
+#  So this module gates BOTH registers and, decisively, gates that they
+#  DISAGREE on a witness. That disagreement is the whole content: a module in
+#  which content-identity and evaluation never came apart would be one that
+#  had quietly conflated ≡ with =, which is the category error the project
+#  names as its founding distinction.
+#
+#  ── THE COLLAPSE OF META-REALITY (:1799) ────────────────────────────
+#  Meta-reality ℛ* — "the reality of reality" — is identical to ℛ. The proof
+#  runs through the Idempotence of Identity: Id(Id(x)) ≡ Id(x). There is no
+#  outside from which to observe reality; a reflection on reality is itself a
+#  real process, so ℛ* ⊂ ℛ and ℛ ⊂ ℛ*, hence ℛ* ≡ ℛ. No new layer is
+#  introduced — which is the same shape as 𝓡(𝓡) ≡ 𝓡 and ∃(∃) ≡ ∃.
+#
+#  ── THE LIAR IS NOT REFUTED. IT IS UNFORMULABLE. ────────────────────
+#  "This sentence is false" needs a GAP between a proposition and its
+#  truth-value — a gap in which the truth-predicate can be turned against
+#  itself. When truth IS identity there is no such gap: the operator adds
+#  nothing, so there is no separate predicate to negate. Structurally, the
+#  liar would require FORM(L) ≡ FORM(¬L), and negation changes the form. The
+#  liar therefore fails self-identity BEFORE evaluation — refused by the
+#  well-foundedness constraint rather than evaluated to a paradox.
+#  ★ This module asserts the liar's UNFORMULABILITY as a positive check. An
+#  implementation in which the liar merely evaluated oddly would pass a test
+#  that only looked at its value; only a form-level check catches it.
+# =====================================================================
+
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph AND   = la p. la q. p(q)(p)
+glyph NOT   = la p. la t. la f. p(f)(t)
+
+# ── a proposition carries BOTH projections: its form and its value ──
+# Conflating them is the category error; keeping them in one record and
+# comparing them separately is how the disagreement stays visible.
+glyph PROP  = la form. la val. la f. f(form)(val)
+glyph FORM  = la p. p(la f. la v. f)
+glyph VAL   = la p. p(la f. la v. v)
+
+glyph TOP = "T"
+glyph BOT = "F"
+
+# ≡ ontological identity, over FORM (intension)
+glyph TRIBAR = la a. la b. str_eq(FORM(a))(FORM(b))
+# = computational equality, over VALUE (extension)
+glyph YIELDS = la a. la b. str_eq(VAL(a))(VAL(b))
+
+# ── True is the identity function. Not "returns true" — IDENTITY. ───
+glyph TRUE_OP = la p. p
+
+# ── negation changes the FORM, which is why the liar cannot close ───
+glyph NEG = la p. PROP(concat("¬")(FORM(p)))(IF(str_eq(VAL(p))(TOP))(la _. BOT)(la _. TOP))
+
+# ── Id, and its idempotence ─────────────────────────────────────────
+glyph ID = la p. p
+
+# ── ℛ, the evaluation operator: does the proposition obtain? ────────
+glyph R      = la p. VAL(p)
+# ℛ* — the reflection on reality. Reflecting is itself a real process, so
+# the reflection evaluates exactly as the thing reflected does.
+glyph RSTAR  = la p. R(ID(p))
+
+# ── the fixtures: one true proposition, one FALSE one ───────────────
+glyph P_T = PROP("rain")(TOP)
+glyph Q_F = PROP("square-circle")(BOT)
+
+# 1. Truth--Identity Collapse: True(P) ≡ P, over CONTENT
+glyph T_COLLAPSE = AND(TRIBAR(TRUE_OP(P_T))(P_T))(TRIBAR(TRUE_OP(Q_F))(Q_F))
+
+# 2. ★ AND IT HOLDS OF THE FALSE ONE TOO — that is the point, not a bug.
+#    True(Q) ≡ Q for a FALSE Q: the operator added nothing to its content.
+glyph T_FALSE_CONTENT = TRIBAR(TRUE_OP(Q_F))(Q_F)
+
+# 3. ★★ THE REGISTERS DISAGREE, AND MUST. Applying True to a falsehood does
+#    not make it obtain. If this check ever passed, ≡ and = would have been
+#    conflated and the whole distinction would be decorative.
+glyph T_NOT_TRUE = AND(str_eq(R(TRUE_OP(Q_F)))(BOT))
+                      (NOT(str_eq(R(TRUE_OP(Q_F)))(TOP)))
+
+# 4. ≡ ⟹ = but = ⇏ ≡ : two propositions can share a value and differ in being
+glyph Q_F2 = PROP("round-square")(BOT)
+glyph T_DIRECTION = AND(YIELDS(Q_F)(Q_F2))(NOT(TRIBAR(Q_F)(Q_F2)))
+
+# 5. Idempotence of Identity: Id(Id(x)) ≡ Id(x)
+glyph T_IDEM = AND(TRIBAR(ID(ID(P_T)))(ID(P_T)))(TRIBAR(ID(ID(Q_F)))(ID(Q_F)))
+
+# 6. The Collapse of Meta-Reality: ℛ* ≡ ℛ — no new layer
+glyph T_METAREAL = AND(str_eq(RSTAR(P_T))(R(P_T)))(str_eq(RSTAR(Q_F))(R(Q_F)))
+
+# 7. ★ THE LIAR IS UNFORMULABLE. It would need FORM(L) ≡ FORM(¬L); negation
+#    changes the form, so self-identity fails at the level of FORM, before
+#    any evaluation is attempted. Checked on the form, not on the value —
+#    a value-only check would miss it.
+glyph T_LIAR = AND(NOT(TRIBAR(P_T)(NEG(P_T))))(NOT(TRIBAR(Q_F)(NEG(Q_F))))
+
+glyph MARK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat("alethe True(P)≡P ")(MARK(T_COLLAPSE)))
+                (concat(" | holds-of-false ")(MARK(T_FALSE_CONTENT))))
+        (concat(concat(concat(" | ≢obtains ")(MARK(T_NOT_TRUE)))
+                      (concat(" | =⇏≡ ")(MARK(T_DIRECTION))))
+               (concat(concat(" | idem ")(MARK(T_IDEM)))
+                      (concat(concat(" | ℛ*≡ℛ ")(MARK(T_METAREAL)))
+                             (concat(" | liar-unformulable ")(MARK(T_LIAR)))))))
+
+export PROP FORM VAL TRIBAR YIELDS TRUE_OP NEG ID R RSTAR TOP BOT

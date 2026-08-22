@@ -1,0 +1,135 @@
+# =====================================================================
+#  naming.la — the Algebra of Naming (The Science of Naming, §8).
+#
+#  The three naming operators form a finite NON-ASSOCIATIVE MAGMA
+#  𝔈 = ({𝒩, 𝒩⁻¹, ∂_Λ}, ∘) under composition:
+#
+#      𝒩     the true name        — recognition fires, the Ren is spoken
+#      𝒩⁻¹   the anti-name        — the euphemism: a sign put where the Ren was
+#      ∂_Λ   differentiation      — the precondition of naming, not a naming act
+#
+#  ── THE CAYLEY TABLE, READ ROW ∘ COLUMN ─────────────────────────────
+#
+#          ∘   |  𝒩     𝒩⁻¹   ∂_Λ
+#         -----+-------------------
+#          𝒩   |  𝒩     𝒩     𝒩
+#          𝒩⁻¹ |  𝒩⁻¹   𝒩     𝒩⁻¹
+#          ∂_Λ |  𝒩     𝒩     ∂_Λ
+#
+#  ── WHY A MAGMA AND NOT A MONOID ────────────────────────────────────
+#  Composition is CLOSED but NOT ASSOCIATIVE, and the paper supplies the
+#  witness itself:
+#        (𝒩⁻¹ ∘ 𝒩⁻¹) ∘ 𝒩⁻¹ = 𝒩      but      𝒩⁻¹ ∘ (𝒩⁻¹ ∘ 𝒩⁻¹) = 𝒩⁻¹
+#  Bracketing changes the result. That is not a defect to be normalised away:
+#  it says the ORDER IN WHICH NAMING ACTS ARE NESTED IS SEMANTICALLY REAL.
+#  A structure that quietly re-bracketed would erase the finding.
+#
+#  ── THE FOUR THEOREMS ───────────────────────────────────────────────
+#  T1 NON-CLOSURE.  {𝒩⁻¹} is not closed: 𝒩⁻¹ ∘ 𝒩⁻¹ = 𝒩 ∉ {𝒩⁻¹}.
+#     The set of anti-names cannot reproduce itself. THE PATHOLOGY'S OWN
+#     RECURSION PRODUCES ITS CURE — a lie told about a lie is a truth.
+#  T2 ABSORPTION.   𝒩 is LEFT-absorbing: 𝒩 ∘ x = 𝒩 for every x.
+#     Truth absorbs every operation; falsity absorbs nothing permanently.
+#  T3 UNIQUE ATTRACTOR. 𝒩 is the unique element with x∘x = x AND y∘y = x
+#     for some y ≠ x. ∂_Λ is SEPARATELY idempotent — its fixed point is
+#     itself, because differentiation precedes naming rather than performing it.
+#  T4 NON-COMMUTATIVITY. 𝒩 ∘ 𝒩⁻¹ = 𝒩 ≠ 𝒩⁻¹ = 𝒩⁻¹ ∘ 𝒩.
+#
+#  ── THE α-VALUATION ─────────────────────────────────────────────────
+#  α : 𝔈 → [−1, 1] extends the sign-index past the arbitrary floor, because
+#  the anti-name does not merely FAIL to align — it ACTIVELY MISALIGNS.
+#      α(𝒩) = 1     α(∂_Λ) = 1     α(𝒩⁻¹) < 0
+#  Absorption law: α(X ∘ Y) = max(α(X), α(Y)) when 𝒩 is the left factor.
+#  Integers here, not reals: α(𝒩⁻¹) = −1 realises "< 0" at the floor.
+#
+#  ── ★ ONE PROSE CLAIM OF §8 IS FALSE AS WRITTEN, AND IS GATED AS FALSE ──
+#  T3's paragraph says "All naming paths (chains through 𝒩 and 𝒩⁻¹)
+#  terminate at 𝒩." Composed left-to-right, THAT DOES NOT HOLD:
+#        𝒩⁻¹ ∘ 𝒩 = 𝒩⁻¹,   and 𝒩⁻¹ followed by any number of 𝒩 stays 𝒩⁻¹.
+#  Five counterexamples exist at length ≤ 6. What IS true is narrower and is
+#  what this module asserts: 𝒩 absorbs from the LEFT, and chains drawn only
+#  from {𝒩⁻¹} reach 𝒩 at length ≥ 2. The counterexample is asserted here as
+#  a POSITIVE CHECK so it cannot be quietly lost: if someone later "fixes"
+#  the table so that 𝒩⁻¹ ∘ 𝒩 = 𝒩, this module goes RED and says so.
+#  A theorem is not damaged by having its scope stated correctly.
+# =====================================================================
+
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph OR   = la p. la q. p(p)(q)
+
+# ── the three operators, as three-way selectors ─────────────────────
+glyph NAME = la n. la a. la d. n
+glyph ANTI = la n. la a. la d. a
+glyph DIFF = la n. la a. la d. d
+
+glyph OPS  = la x. x("N")("A")("D")
+glyph OPEQ = la x. la y. str_eq(OPS(x))(OPS(y))
+
+# ── composition: x picks the ROW, y picks the COLUMN within it ──────
+glyph COMPOSE = la x. la y.
+    x (y(NAME)(NAME)(NAME))
+      (y(ANTI)(NAME)(ANTI))
+      (y(NAME)(NAME)(DIFF))
+
+glyph ALPHA = la x. x(1)(sub(0)(1))(1)
+glyph MAXI  = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+
+# ── T1 — {𝒩⁻¹} is not closed under ∘ ────────────────────────────────
+glyph T1 = AND(OPEQ(COMPOSE(ANTI)(ANTI))(NAME))
+              (NOT(OPEQ(COMPOSE(ANTI)(ANTI))(ANTI)))
+
+# ── T2 — 𝒩 absorbs from the left, for every element ─────────────────
+glyph T2 = AND(OPEQ(COMPOSE(NAME)(NAME))(NAME))
+              (AND(OPEQ(COMPOSE(NAME)(ANTI))(NAME))
+                  (OPEQ(COMPOSE(NAME)(DIFF))(NAME)))
+
+# ── T3 — 𝒩 is the UNIQUE idempotent that is also attracted to ───────
+glyph IDEM = la x. OPEQ(COMPOSE(x)(x))(x)
+# ATTRACTED(x): does some OTHER element square to x?  The y ≠ x guard is the
+# whole content — without it every idempotent trivially attracts itself, and
+# the uniqueness half of T3 becomes a check that cannot fail.
+glyph HIT = la y. la x. AND(NOT(OPEQ(y)(x)))(OPEQ(COMPOSE(y)(y))(x))
+glyph ATTRACTED = la x. OR(HIT(NAME)(x))(OR(HIT(ANTI)(x))(HIT(DIFF)(x)))
+glyph T3 = AND(AND(IDEM(NAME))(ATTRACTED(NAME)))
+              (AND(NOT(IDEM(ANTI)))
+                  (AND(IDEM(DIFF))(NOT(ATTRACTED(DIFF)))))
+
+# ── T4 — order of application changes the immediate result ──────────
+glyph T4 = AND(NOT(OPEQ(COMPOSE(NAME)(ANTI))(COMPOSE(ANTI)(NAME))))
+              (AND(OPEQ(COMPOSE(NAME)(ANTI))(NAME))
+                  (OPEQ(COMPOSE(ANTI)(NAME))(ANTI)))
+
+# ── the non-associativity witness, both bracketings ─────────────────
+glyph NA_L = COMPOSE(COMPOSE(ANTI)(ANTI))(ANTI)
+glyph NA_R = COMPOSE(ANTI)(COMPOSE(ANTI)(ANTI))
+glyph NONASSOC = AND(NOT(OPEQ(NA_L)(NA_R)))
+                    (AND(OPEQ(NA_L)(NAME))(OPEQ(NA_R)(ANTI)))
+
+# ── the α-valuation: order-preserving, and absorbing under 𝒩 ────────
+glyph AORDER = AND(int_eq(ALPHA(NAME))(1))
+                  (AND(lt(ALPHA(ANTI))(0))(int_eq(ALPHA(DIFF))(1)))
+glyph AABSORB = AND(int_eq(ALPHA(COMPOSE(NAME)(NAME)))(MAXI(ALPHA(NAME))(ALPHA(NAME))))
+                   (AND(int_eq(ALPHA(COMPOSE(NAME)(ANTI)))(MAXI(ALPHA(NAME))(ALPHA(ANTI))))
+                       (int_eq(ALPHA(COMPOSE(NAME)(DIFF)))(MAXI(ALPHA(NAME))(ALPHA(DIFF)))))
+
+# ── the terminus, stated at its TRUE scope, plus the counterexample ──
+# left-absorption reaches 𝒩; {𝒩⁻¹}-only chains reach 𝒩 at length ≥ 2;
+# but 𝒩⁻¹ ∘ 𝒩 does NOT, and that is asserted rather than omitted.
+glyph TERM_TRUE  = AND(OPEQ(COMPOSE(COMPOSE(NAME)(ANTI))(DIFF))(NAME))
+                      (OPEQ(COMPOSE(COMPOSE(ANTI)(ANTI))(ANTI))(NAME))
+glyph TERM_FALSE = AND(OPEQ(COMPOSE(ANTI)(NAME))(ANTI))
+                      (OPEQ(COMPOSE(COMPOSE(ANTI)(NAME))(NAME))(ANTI))
+
+glyph MARK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat(concat("naming T1 ")(MARK(T1)))
+                      (concat(" | T2 ")(MARK(T2))))
+               (concat(concat(" | T3 ")(MARK(T3)))(concat(" | T4 ")(MARK(T4)))))
+        (concat(concat(concat(" | nonassoc ")(MARK(NONASSOC)))
+                      (concat(" | alpha ")(MARK(AND(AORDER)(AABSORB)))))
+               (concat(concat(" | terminus ")(MARK(TERM_TRUE)))
+                      (concat(" | counterex ")(MARK(TERM_FALSE))))))
+
+export NAME ANTI DIFF COMPOSE ALPHA OPS OPEQ
