@@ -79,6 +79,11 @@ org RT_ORG
 ;   if still none -> loud 'native: heap exhausted'. Clobbers rax, rcx only on the
 ;   non-GC path (rt_gc restores all regs), so callers keep inputs in other regs.
 alloc24:
+    ; GCfix2: count ALLOCATION, not frontier position. NEXT_GC is a budget
+    ; of bytes until the next collection, charged on EVERY alloc --
+    ; including .pop, which the old `cmp r15,[NEXT_GC]` could not see.
+    sub     qword [NEXT_GC], 24
+    jle     .periodic
     mov     rax, [FREE24]
     test    rax, rax
     jnz     .pop
@@ -86,8 +91,6 @@ alloc24:
     lea     rcx, [r15+24]
     cmp     rcx, [HEAP_END]
     ja      .gc
-    cmp     r15, [NEXT_GC]      ; K5b.1c: periodic GC — bound memory instead of
-    jae     .periodic           ;   only collecting at 16 GiB exhaustion
     mov     rax, r15
     mov     r15, rcx
     ; GCfix: record rax as a real object START in the bitmap, so .consider can
@@ -125,9 +128,7 @@ alloc24:
     ; r15 crossed NEXT_GC: reclaim garbage (non-moving, register-transparent),
     ; advance the threshold past the (unchanged) bump top, and retry from the top
     ; so a reclaimed FREE24 cell is reused before bumping — keeps r15 bounded.
-    call    rt_gc
-    lea     rcx, [r15 + GC_INTERVAL]
-    mov     [NEXT_GC], rcx
+    call    rt_gc               ; GCfix2b: rt_gc sets the next budget itself
     jmp     alloc24
 
 ; ── classidx(rdi=blob body len) -> r8=classidx(>=5), r9=classsize(=1<<r8) ──
@@ -160,6 +161,8 @@ classidx:
 ;   Clobbers rax,rcx,rdx,r8,r9.
 alloc_blob:
     call    classidx
+    sub     [NEXT_GC], r9       ; GCfix2: charge the class size (see alloc24)
+    jle     .periodic
     mov     rax, [FREEBLOB + r8*8]
     test    rax, rax
     jnz     .pop
@@ -168,8 +171,6 @@ alloc_blob:
     add     rcx, r9
     cmp     rcx, [HEAP_END]
     ja      .gc
-    cmp     r15, [NEXT_GC]      ; K5b.1c: periodic GC (see alloc24)
-    jae     .periodic
     mov     rax, r15
     mov     r15, rcx
     ; GCfix: record the start bit (see alloc24). rdx is in alloc_blob's clobber set.
@@ -202,9 +203,22 @@ alloc_blob:
 .periodic:
     ; rdi (blob len) is preserved across rt_gc (REGDUMP), so retry from the top
     ; recomputes classidx and reuses a reclaimed FREEBLOB cell before bumping.
-    call    rt_gc
-    lea     rcx, [r15 + GC_INTERVAL]
-    mov     [NEXT_GC], rcx
+    call    rt_gc               ; GCfix2b: rt_gc sets the next budget itself
+    ; GCfix3: GUARANTEE FORWARD PROGRESS. rt_gc sets the budget from the LIVE set,
+    ; which can be SMALLER than one pending allocation (a >4 MB blob exceeds
+    ; GC_INTERVAL). The retry below re-charges the budget at the top of
+    ; alloc_blob, so a budget under r9 goes non-positive again and collects
+    ; again — a LIVELOCK, measured at 1800 s with peak RSS 2088 KB for a 5 MB
+    ; blob: bounded memory precisely because nothing is ever allocated.
+    ; The frontier trigger this replaced could not do that (NEXT_GC = r15 +
+    ; GC_INTERVAL cannot immediately re-fire), so the guarantee has to be restored
+    ; explicitly. Floor the budget at the pending size plus one interval.
+    call    classidx            ; re-derive r8/r9 from the preserved rdi
+    lea     rdx, [r9 + GC_INTERVAL]
+    cmp     qword [NEXT_GC], rdx
+    jge     .pgok
+    mov     [NEXT_GC], rdx
+.pgok:
     jmp     alloc_blob
 
 ; ── slot 0: rt_box_int(rax=int) -> rax = boxed INT ──
@@ -908,6 +922,9 @@ rt_gc:
     jb      .clrfb
     mov     rsi, [HEAP_BASE]
     xor     r13, r13              ; live count
+    xor     r14, r14              ; GCfix2b: live BYTES. r14 is free here --
+                                  ;   its task-stack-scan use ends in the root
+                                  ;   phase, and REGDUMP restores it on exit.
 .walk:
     cmp     rsi, r15
     jae     .walked
@@ -948,11 +965,23 @@ rt_gc:
     shr     rax, 16
     test    rax, rax
     jz      .desync
+    lea     r14, [r14+rax+8]      ; GCfix2b: + header(8) + body
     lea     rsi, [rsi+rax+8]
     jmp     .walk
 .walked:
     cmp     rsi, r15
     jne     .desync
+    ; GCfix2b: ADAPTIVE budget -- allocate about as much as survived before
+    ; collecting again, floored at GC_INTERVAL. A FIXED budget re-marks the
+    ; whole live set every 4 MiB allocated; measured 9x SLOWER than baseline
+    ; on a 300k-cell live set. Proportional keeps marking amortised O(1) per
+    ; byte allocated, at a bounded space cost of roughly 2x the live set.
+    mov     rax, r14
+    cmp     rax, GC_INTERVAL
+    jae     .budok
+    mov     rax, GC_INTERVAL
+.budok:
+    mov     [NEXT_GC], rax
     ; FIX #5: removed the GC live-count debug write to stderr. The host emits nothing,
     ;   and with the 16 GiB heap the GC now actually fires on ordinary programs, so this
     ;   debug line was a real b_τ≢f_τ stderr divergence on any GC-triggering program.
@@ -1587,6 +1616,66 @@ chk_int2:
     cmp     qword [rax], 4
     jne     rt_not_int
     ret
+
+
+; ── bitwise: band/bor/bxor/bshl/bshr (arity 2), bnot (arity 1) ──
+; bshr is LOGICAL (shr, zero-fill), never arithmetic: ARX crypto needs the
+; high bits to come in as zero.  Shift counts outside 0..63 yield 0, checked
+; explicitly -- x86 masks cl to 6 bits, so `shl rax, cl` with count 64 would
+; otherwise leave rax UNCHANGED, and ARM would give 0.  The check makes all
+; five engines agree instead of inheriting the host CPU's accident.
+rt_band:
+    call    chk_int2
+    mov     rcx, [rsi+8]
+    and     rcx, [rax+8]
+    mov     rax, rcx
+    jmp     rt_box_int
+
+rt_bor:
+    call    chk_int2
+    mov     rcx, [rsi+8]
+    or      rcx, [rax+8]
+    mov     rax, rcx
+    jmp     rt_box_int
+
+rt_bxor:
+    call    chk_int2
+    mov     rcx, [rsi+8]
+    xor     rcx, [rax+8]
+    mov     rax, rcx
+    jmp     rt_box_int
+
+rt_bshl:
+    call    chk_int2
+    mov     rcx, [rax+8]        ; count (B) -- read BEFORE rax is overwritten
+    mov     rax, [rsi+8]        ; value (A)
+    cmp     rcx, 63
+    ja      .zero               ; unsigned compare: catches >63 and negative
+    shl     rax, cl
+    jmp     rt_box_int
+.zero:
+    xor     eax, eax
+    jmp     rt_box_int
+
+rt_bshr:
+    call    chk_int2
+    mov     rcx, [rax+8]
+    mov     rax, [rsi+8]
+    cmp     rcx, 63
+    ja      .zero
+    shr     rax, cl             ; LOGICAL, zero-fill
+    jmp     rt_box_int
+.zero:
+    xor     eax, eax
+    jmp     rt_box_int
+
+rt_bnot:
+    cmp     qword [rax], 4      ; no chk_int1 exists; inline the tag check
+    jne     rt_not_int
+    mov     rax, [rax+8]
+    not     rax
+    jmp     rt_box_int
+
 
 ; ── slot 24: data area (RWX, writable) ──
 TRUEVAL:  dq 0
