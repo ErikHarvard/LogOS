@@ -560,3 +560,57 @@ own choice). The same comparison is rigorous in one place and false in the other
 
 **Red-pathed:** flipping ONE BIT of the `lea` disp32 makes it report
 `resolves 0x401001, symbol at 0x401000`. It is measuring something.
+
+
+# NIGHT3: the LA-only chain, end to end (2026-08-22)
+
+## Six boot arms re-verified against the CURRENT asm.la
+
+The freeze was proven BEFORE the P66 work landed. "It passed before the last
+change" is not a verified state, so all six arms were re-run against the
+assembler as it now stands:
+
+    HH2B   .boot32 identical outside relocs   relocation tables identical
+    HH2C   .boot32 identical outside relocs   relocation tables identical
+
+## ★★ THE FULL LA-ONLY CHAIN RAN — asm.la -> link.la, no nasm, no ld
+
+    asm.la  ->  7072 B object      (no nasm)
+    link.la ->  9528 B image       (no ld)     entry 0x401158
+    ld control: 9648 B
+
+Each half was gated separately — `asm.la` byte-identical to nasm, `link.la`
+matching `ld` — but the real boot fixture had never gone through BOTH with
+neither GNU tool in the chain. **The milestone claim is now demonstrated rather
+than inferred from its two halves.**
+
+## The seam, closed by construction rather than by sampling
+
+    link.la handles:  1 2 3 4 9 10 11 26 27 42
+    asm.la emits:     1 (64) · 2 (PC32) · 10 (32) · 11 (32S)
+
+`asm.la`'s emitted set is a strict SUBSET of `link.la`'s handled set. There is no
+relocation the assembler can produce that the linker cannot consume — a set
+containment, not a sample of cases that happened to work.
+
+## ★ A capability audit whose METRIC was wrong — recorded, not filed
+
+Step 10 counted, for each `IS<CAP>` predicate in the linker, how many gate
+scripts MENTION it. Every one of the 14 came back 0:
+
+    ISABS32 ISDELIM IS_ELF ISEXEC ISGLOB ISGOT32 ISGOT64 ISGOTPC
+    ISGOTSLOT ISGOTX ISOUT ISPCREL ISSP ISWRIT      all: gates-mentioning=0
+
+**A uniform zero is the tell.** A gate exercises BEHAVIOUR, not glyph names — no
+gate would ever contain the string `ISGOTX`. The metric measures nothing, and
+reporting it as coverage would have filed fourteen false findings at once.
+
+The relocation-type audit that DID work asked a different question: which types
+appear in any fixture's object. That found GOT32 and GOTPC32 uncovered and
+GOTPCREL unhandled. **The difference is that it looked at artifacts the gates
+produce rather than at the text of the gates.**
+
+⇒ Same lesson as the seam byte-comparison and the `0 PASS / 0 FAIL` counter: an
+instrument that returns the same answer for everything is not reporting on
+anything. Kept here because the next person to audit "claimed vs exercised" will
+reach for the name-grep first, as I did.
