@@ -424,3 +424,92 @@ both had the same root cause: my fixtures contained only the cases I thought of.
 rather than a silently corrupt kernel — its own comment records that the old
 table returned 0 on a miss, so a typo assembled to a wrong-but-plausible
 instruction. The loud-failure discipline paid for itself.
+
+
+# DEFECTS 8 & 9 — the P66 encoders 2daddbb left open (2026-08-21)
+
+`2daddbb` documented ten encoders still on plain `P66`: correct for the NATIVE
+size in each mode, mis-encoding only a cross-size operand, and unreached by any
+current target. Now fixed — `TSTENC`, `DIVENC`, `G3ENC` (neg/idiv), `CMOVENC`,
+`IMUL2`, `IMUL3`, `BSRENC`, `MOVZXENC`, `OUTENC`, `INENC` all take the mode and
+use `P66M(BITSMODE(labs))`, threaded from the dispatch exactly as that commit
+prescribed.
+
+## Defect 8: `TSTENC` had a HARDCODED MODE, hiding behind the P66 one
+
+`test reg, reg` routes through `RROP(...)(64)` — a literal 64 where the mode
+belongs. Threading `mode` into the encoder was NOT enough: the prefix came out
+INVERTED in 16-bit mode (`66` on `test ax,bx`, none on `test eax,ebx`), which
+is precisely plain-`P66` behaviour. A second, independent defect sitting behind
+the first, and fixing only the visible one would have been a green-looking
+change that fixed nothing.
+
+## Defect 9 (informational): `ALUENC` is DEAD CODE
+
+One mention in the whole file — its own definition. `G1ENC` superseded it. It
+also carries a hardcoded `(64)`, so anyone auditing for that pattern will find
+it and repair a function nothing calls. Recorded rather than removed.
+
+## Verification
+
+No `bits 16` exists in the boot fixture or in any of the 25 flat tests, so this
+gap was declared but UNEXERCISED — there was no test that could fail. The fixture is
+reproduced in full at the end of this document rather than committed: it belongs
+to `asm_test*.asm`, which is track A's namespace, and the ownership guard
+correctly refused it. 38 instructions covering `test/div/idiv/neg/bsr/imul2/
+imul3/cmovz/in/out/movzx`, each in NATIVE and CROSS size, across `bits 16` and
+`bits 32`. **Byte-identical to nasm, 103 B.**
+
+Flat regression after the change: 25 PASS / 0 FAIL / 0 SKIP. This matters more
+than usual because threading `mode` touched every `RROP` caller, and `RROP` is
+the shared register-to-register encoder for the whole ALU family.
+
+
+## The cross-size fixture (for track A to add as `asm_test_xsize.asm`)
+
+Not committed here — `asm_test*.asm` is track A's pattern and the ownership
+guard refused it, correctly. Reproduced so A can add it under its own ownership.
+Verified byte-identical to `nasm -f bin`, 103 B.
+
+```asm
+bits 16
+    test ax, bx
+    test eax, ebx
+    div cx
+    div ecx
+    neg ax
+    neg eax
+    idiv cx
+    idiv ecx
+    bsr ax, bx
+    bsr eax, ebx
+    imul ax, bx
+    imul eax, ebx
+    imul ax, bx, 7
+    imul eax, ebx, 7
+    cmovz ax, bx
+    cmovz eax, ebx
+    in ax, dx
+    in eax, dx
+    out dx, ax
+    out dx, eax
+    movzx ax, bl
+    movzx eax, bl
+bits 32
+    test ax, bx
+    test eax, ebx
+    div cx
+    div ecx
+    neg ax
+    neg eax
+    bsr ax, bx
+    bsr eax, ebx
+    imul ax, bx
+    imul eax, ebx
+    cmovz ax, bx
+    cmovz eax, ebx
+    in ax, dx
+    in eax, dx
+    out dx, ax
+    out dx, eax
+```

@@ -1,5 +1,5 @@
 --- .bootelf/asm.la	2026-08-20 21:29:30.534719304 -0600
-+++ .imm64/asm.la	2026-08-21 20:20:42.601891392 -0600
++++ .imm64/asm.la	2026-08-21 22:11:14.036545951 -0600
 @@ -382,13 +382,18 @@
  #   below (an immediate fitting unsigned 32 bits takes the zero-extending
  #   32-bit form, so REX.W is dropped) — which is why width 8 routes through the
@@ -262,7 +262,26 @@
  glyph G1DIG = la op.
      IF(str_eq(op)("add"))(la _. 0)(la _.
      IF(str_eq(op)("or"))(la _. 1)(la _.
-@@ -1189,7 +1320,7 @@
+@@ -1174,22 +1305,22 @@
+         (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+               (concat(B(OP8(255)(w)))(MODRMD(digit)(r))))))
+     (REGNUM(a))
+-glyph TSTENC = la w. la a. la b.
++glyph TSTENC = la w. la a. la b. la mode.
+     IF(ISREG(b))
+-      (la _. RROP(133)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(64))
++      (la _. RROP(133)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(mode))
+       (la _. IF(NOT(ISNUM(b)))
+         (la _. error(concat("asm: test operand must be a register or an immediate: ")(b)))
+         (la _. (la r. la n.
+                 IF(int_eq(r)(0))
+-                  (la _. concat(P66(w))(concat(REXOPT(w)(0)(0)(FALSE))
++                  (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(0)(FALSE))
+                         (concat(B(OP8(169)(w)))(IMMW(w)(n)))))
+-                  (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
++                  (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+                         (concat(B(OP8(247)(w)))(concat(MODRMD(0)(r))(IMMW(w)(n)))))))
+              (REGNUM(a))(NUMV(b))))
  
  # ── lea: the same ModRM/SIB/disp machinery as mov, opcode 8D, never 8-bit ───
  glyph LEAENC = la labs. la w. la a. la b.
@@ -271,7 +290,125 @@
  
  # ── no-operand instructions ────────────────────────────────────────────────
  glyph NOARGS =
-@@ -1599,7 +1730,10 @@
+@@ -1297,15 +1428,15 @@
+ #   coming from which accumulator was named: `out dx, ax` is 66 EF, `out dx,
+ #   eax` is EF. The imm8-port forms are a different opcode (E6/E7), not an
+ #   addressing mode.
+-glyph OUTENC = la a. la b.
++glyph OUTENC = la a. la b. la mode.
+     (la w. IF(ISREG(a))
+-      (la _. concat(P66(w))(B(IF(int_eq(w)(1))(la _. 238)(la _. 239))))
+-      (la _. concat(P66(w))(concat(B(IF(int_eq(w)(1))(la _. 230)(la _. 231)))(B(NUMV(a))))))
++      (la _. concat(P66M(mode)(w))(B(IF(int_eq(w)(1))(la _. 238)(la _. 239))))
++      (la _. concat(P66M(mode)(w))(concat(B(IF(int_eq(w)(1))(la _. 230)(la _. 231)))(B(NUMV(a))))))
+     (RWIDTH(b))
+-glyph INENC = la a. la b.
++glyph INENC = la a. la b. la mode.
+     (la w. IF(ISREG(b))
+-      (la _. concat(P66(w))(B(IF(int_eq(w)(1))(la _. 236)(la _. 237))))
+-      (la _. concat(P66(w))(concat(B(IF(int_eq(w)(1))(la _. 228)(la _. 229)))(B(NUMV(b))))))
++      (la _. concat(P66M(mode)(w))(B(IF(int_eq(w)(1))(la _. 236)(la _. 237))))
++      (la _. concat(P66M(mode)(w))(concat(B(IF(int_eq(w)(1))(la _. 228)(la _. 229)))(B(NUMV(b))))))
+     (RWIDTH(a))
+ 
+ #   `ltr ax` is 0F 00 D8 with NO 0x66 prefix, even though the operand is 16-bit:
+@@ -1378,24 +1509,24 @@
+ #   lidt [mem]: 0F 01 /3 — same as lgdt (/2), one ModRM digit apart.
+ glyph LIDTENC = la labs. la b.
+     concat(B(15))(concat(B(1))(MEMTAIL(3)(MEMBASE(b))(MEMDISP(labs)(b))(BITSMODE(labs))))
+-glyph DIVENC = la w. la a.
+-    concat(P66(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
++glyph DIVENC = la w. la a. la mode.
++    concat(P66M(mode)(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
+    (concat(B(OP8(247)(w)))(MODRMD(6)(REGNUM(a)))))
+ #   Group-3 unary (F7 /digit, register): div=/6, idiv=/7, neg=/3 — same shape,
+ #   only the ModRM reg digit differs. G3ENC factors it so a new group-3 op is one
+ #   digit, not a re-derived encoder (div stays via its own glyph, byte-verified).
+-glyph G3ENC = la dig. la w. la a.
+-    concat(P66(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
++glyph G3ENC = la dig. la w. la a. la mode.
++    concat(P66M(mode)(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
+    (concat(B(OP8(247)(w)))(MODRMD(dig)(REGNUM(a)))))
+ glyph NEGENC  = G3ENC(3)
+ glyph IDIVENC = G3ENC(7)
+ #   cmovcc dest, src (reg,reg): 0F 40+cc /r, reg=dest, rm=src, REX.W for r64.
+-glyph CMOVENC = la cc. la w. la a. la b.
+-    concat(P66(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
++glyph CMOVENC = la cc. la w. la a. la b. la mode.
++    concat(P66M(mode)(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+    (concat(B(15))(concat(B(add(64)(cc)))(MODRM(REGNUM(b))(REGNUM(a))))))
+ #   Two-operand imul dest, src (reg,reg): 0F AF /r, reg=dest, rm=src, REX.W.
+-glyph IMUL2 = la w. la a. la b.
+-    concat(P66(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
++glyph IMUL2 = la w. la a. la b. la mode.
++    concat(P66M(mode)(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+    (concat(B(15))(concat(B(175))(MODRM(REGNUM(b))(REGNUM(a))))))
+ #   movzx/movsxd: DEST width drives REX.W/0x66; SRC width drives the opcode.
+ #   The rm field is a register OR a simple base/disp memory operand (SIB
+@@ -1413,7 +1544,7 @@
+     IF(int_eq(srcw)(1))(la _. 182)(la _. IF(int_eq(srcw)(2))(la _. 183)
+       (la _. error(concat("asm: movzx source must be byte or word, got width ")(int_to_str(srcw)))))
+ glyph MOVZXENC = la labs. la destw. la srcw. la a. la b.
+-    concat(P66(destw))(concat(MREX(destw)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
++    concat(P66M(BITSMODE(labs))(destw))(concat(MREX(destw)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
+    (concat(B(15))(concat(B(MOVZXOP(srcw)))(RMTAIL(labs)(REGNUM(a))(b)))))
+ #   movsxd: 63 /r — dest always r64 (REX.W), src r/m32; no 0F, no 0x66.
+ glyph MOVSXDENC = la labs. la a. la b.
+@@ -1425,8 +1556,8 @@
+     (concat(MREX(8)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
+            (concat(B(99))(RMTAIL(labs)(REGNUM(a))(b))))
+ #   bsr dest, src (reg,reg): 0F BD /r, reg=dest, rm=src.
+-glyph BSRENC = la w. la a. la b.
+-    concat(P66(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
++glyph BSRENC = la w. la a. la b. la mode.
++    concat(P66M(mode)(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+    (concat(B(15))(concat(B(189))(MODRM(REGNUM(b))(REGNUM(a))))))
+ #   bt/bts [mem], reg: 0F A3 (bt, 163) / 0F AB (bts, 171); reg=bit-index, rm=mem.
+ glyph BTENC = la labs. la opc. la w. la a. la b.
+@@ -1434,8 +1565,8 @@
+    (concat(B(15))(concat(B(opc))(MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs))))))
+ #   Three-operand imul: 6B /r ib when the immediate fits a signed byte, else
+ #   69 /r id. The ModRM reg field is the DESTINATION here, rm the source.
+-glyph IMUL3 = la w. la a. la b. la n.
+-    concat(P66(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
++glyph IMUL3 = la w. la a. la b. la n. la mode.
++    concat(P66M(mode)(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+    (IF(FITS8(n))
+      (la _. concat(B(107))(concat(MODRM(REGNUM(b))(REGNUM(a)))(B(FOLD8(n)))))
+      (la _. concat(B(105))(concat(MODRM(REGNUM(b))(REGNUM(a)))(IMMW(w)(n))))))
+@@ -1572,8 +1703,8 @@
+     IF(str_eq(op)("incbin"))(la _. LENOF(INCBIN(ts)))(la _.
+     IF(str_eq(op)("rep"))(la _. add(1)(SIZEL(labs)(add(off)(1))(TL2(ts))))(la _.
+     IF(str_eq(op)("o64"))(la _. add(1)(SIZEL(labs)(add(off)(1))(TL2(ts))))(la _.
+-    IF(str_eq(op)("out"))(la _. LENOF(OUTENC(A1(ts))(A2(ts))))(la _.
+-    IF(str_eq(op)("in"))(la _. LENOF(INENC(A1(ts))(A2(ts))))(la _.
++    IF(str_eq(op)("out"))(la _. LENOF(OUTENC(A1(ts))(A2(ts))(BITSMODE(labs))))(la _.
++    IF(str_eq(op)("in"))(la _. LENOF(INENC(A1(ts))(A2(ts))(BITSMODE(labs))))(la _.
+     IF(str_eq(op)("ltr"))(la _. LENOF(LTRENC(A1(ts))))(la _.
+     IF(str_eq(op)("lgdt"))(la _. LENOF(LGDTENC(labs)(A1(ts))))(la _.
+     IF(str_eq(op)("lidt"))(la _. LENOF(LIDTENC(labs)(A1(ts))))(la _.
+@@ -1584,14 +1715,14 @@
+     IF(str_eq(op)("outsb"))(la _. LENOF(STRIOENC(110)(1)(BITSMODE(labs))))(la _.
+     IF(str_eq(op)("outsw"))(la _. LENOF(STRIOENC(111)(2)(BITSMODE(labs))))(la _.
+     IF(str_eq(op)("outsd"))(la _. LENOF(STRIOENC(111)(4)(BITSMODE(labs))))(la _.
+-    IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(DIVENC(w)(a))))(la _.
+-    IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(NEGENC(w)(a))))(la _.
+-    IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDIVENC(w)(a))))(la _.
+-    IF(ISCMOV(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(CMOVENC(CMOVCC(op))(w)(a)(b))))(la _.
+-    IF(str_eq(op)("imul"))(la _. IF(str_eq(NTH(2)(OPL(ts)))(""))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IMUL2(w)(a)(b))))(la _. LENOF(IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts)))))))(la _.
++    IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(DIVENC(w)(a)(BITSMODE(labs)))))(la _.
++    IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(NEGENC(w)(a)(BITSMODE(labs)))))(la _.
++    IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDIVENC(w)(a)(BITSMODE(labs)))))(la _.
++    IF(ISCMOV(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(CMOVENC(CMOVCC(op))(w)(a)(b)(BITSMODE(labs)))))(la _.
++    IF(str_eq(op)("imul"))(la _. IF(str_eq(NTH(2)(OPL(ts)))(""))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IMUL2(w)(a)(b)(BITSMODE(labs)))))(la _. LENOF(IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))(BITSMODE(labs)))))(la _.
+     IF(str_eq(op)("movzx"))(la _. LENOF(MOVZXENC(labs)(RWIDTH(A1(ts)))(SRCW(ts))(A1(ts))(A2(ts))))(la _.
+     IF(str_eq(op)("movsxd"))(la _. LENOF(MOVSXDENC(labs)(A1(ts))(A2(ts))))(la _.
+-    IF(str_eq(op)("bsr"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(BSRENC(w)(a)(b))))(la _.
++    IF(str_eq(op)("bsr"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(BSRENC(w)(a)(b)(BITSMODE(labs)))))(la _.
+     IF(str_eq(op)("bt"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(BTENC(labs)(163)(w)(a)(b))))(la _.
+     IF(str_eq(op)("bts"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(BTENC(labs)(171)(w)(a)(b))))(la _.
+     IF(ISDATA(op))(la _. DSIZE(DWIDTH(op))(JOINEXPR(TL2(ts))))(la _.
+@@ -1599,11 +1730,14 @@
      IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
      IF(str_eq(op)("times"))(la _. mul(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(SIZEL(labs)(off)(TIMESREST(TL2(ts)))))(la _.
      IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
@@ -283,6 +420,52 @@
      IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(BITSMODE(labs))(w)(a)(b))))(la _.
      IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a)(BITSMODE(labs)))))(la _.
      IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a)(BITSMODE(labs)))))(la _.
+-    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
++    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b)(BITSMODE(labs)))))(la _.
+     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(labs)(w)(a)(b))))
+       (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+   (LOWER(HD(ts)))
+@@ -1626,8 +1760,8 @@
+     IF(str_eq(op)("incbin"))(la _. INCBIN(ts))(la _.
+     IF(str_eq(op)("rep"))(la _. concat(B(243))(ENC1(labs)(add(off)(1))(TL2(ts))))(la _.
+     IF(str_eq(op)("o64"))(la _. concat(B(72))(ENC1(labs)(add(off)(1))(TL2(ts))))(la _.
+-    IF(str_eq(op)("out"))(la _. OUTENC(A1(ts))(A2(ts)))(la _.
+-    IF(str_eq(op)("in"))(la _. INENC(A1(ts))(A2(ts)))(la _.
++    IF(str_eq(op)("out"))(la _. OUTENC(A1(ts))(A2(ts))(BITSMODE(labs)))(la _.
++    IF(str_eq(op)("in"))(la _. INENC(A1(ts))(A2(ts))(BITSMODE(labs)))(la _.
+     IF(str_eq(op)("ltr"))(la _. LTRENC(A1(ts)))(la _.
+     IF(str_eq(op)("lgdt"))(la _. LGDTENC(labs)(A1(ts)))(la _.
+     IF(str_eq(op)("lidt"))(la _. LIDTENC(labs)(A1(ts)))(la _.
+@@ -1638,14 +1772,14 @@
+     IF(str_eq(op)("outsb"))(la _. STRIOENC(110)(1)(BITSMODE(labs)))(la _.
+     IF(str_eq(op)("outsw"))(la _. STRIOENC(111)(2)(BITSMODE(labs)))(la _.
+     IF(str_eq(op)("outsd"))(la _. STRIOENC(111)(4)(BITSMODE(labs)))(la _.
+-    IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. DIVENC(w)(a)))(la _.
+-    IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. NEGENC(w)(a)))(la _.
+-    IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. IDIVENC(w)(a)))(la _.
+-    IF(ISCMOV(op))(la _. WITHOPS(ts)(la w. la a. la b. CMOVENC(CMOVCC(op))(w)(a)(b)))(la _.
+-    IF(str_eq(op)("imul"))(la _. IF(str_eq(NTH(2)(OPL(ts)))(""))(la _. WITHOPS(ts)(la w. la a. la b. IMUL2(w)(a)(b)))(la _. IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))))(la _.
++    IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. DIVENC(w)(a)(BITSMODE(labs))))(la _.
++    IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. NEGENC(w)(a)(BITSMODE(labs))))(la _.
++    IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. IDIVENC(w)(a)(BITSMODE(labs))))(la _.
++    IF(ISCMOV(op))(la _. WITHOPS(ts)(la w. la a. la b. CMOVENC(CMOVCC(op))(w)(a)(b)(BITSMODE(labs))))(la _.
++    IF(str_eq(op)("imul"))(la _. IF(str_eq(NTH(2)(OPL(ts)))(""))(la _. WITHOPS(ts)(la w. la a. la b. IMUL2(w)(a)(b)(BITSMODE(labs))))(la _. IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))(BITSMODE(labs))))(la _.
+     IF(str_eq(op)("movzx"))(la _. MOVZXENC(labs)(RWIDTH(A1(ts)))(SRCW(ts))(A1(ts))(A2(ts)))(la _.
+     IF(str_eq(op)("movsxd"))(la _. MOVSXDENC(labs)(A1(ts))(A2(ts)))(la _.
+-    IF(str_eq(op)("bsr"))(la _. WITHOPS(ts)(la w. la a. la b. BSRENC(w)(a)(b)))(la _.
++    IF(str_eq(op)("bsr"))(la _. WITHOPS(ts)(la w. la a. la b. BSRENC(w)(a)(b)(BITSMODE(labs))))(la _.
+     IF(str_eq(op)("bt"))(la _. WITHOPS(ts)(la w. la a. la b. BTENC(labs)(163)(w)(a)(b)))(la _.
+     IF(str_eq(op)("bts"))(la _. WITHOPS(ts)(la w. la a. la b. BTENC(labs)(171)(w)(a)(b)))(la _.
+     IF(ISDATA(op))(la _. DEMIT(labs)(DWIDTH(op))(JOINEXPR(TL2(ts))))(la _.
+@@ -1657,7 +1791,7 @@
+     IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))(BITSMODE(labs))))(la _.
+     IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(0)(w)(a)(BITSMODE(labs))))(la _.
+     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(1)(w)(a)(BITSMODE(labs))))(la _.
+-    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(TSTENC))(la _.
++    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. TSTENC(w)(a)(b)(BITSMODE(labs))))(la _.
+     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(LEAENC(labs)))(la _.
+     IF(str_eq(op)("call"))(la _. concat(B(232))(NEARDISP(BITSMODE(labs))(labs)(TARGET(ts))(off)(1)))(la _.
+     IF(AND(str_eq(op)("jmp"))(HASCOLON(A1(ts))))
 @@ -2629,6 +2763,33 @@
  glyph MEMRIPTOK = la st.
      IF(MEMRIP(A1(st)))(la _. A1(st))
