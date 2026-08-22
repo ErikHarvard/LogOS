@@ -1,0 +1,8 @@
+glyph S = la n. concat(int_to_str(n))(" ")
+glyph MAIN = print(concat(
+    concat(S(band(12)(10)))(concat(S(bor(12)(10)))(S(bxor(12)(10)))))(
+  concat(
+    concat(S(bshl(1)(8)))(concat(S(bshr(256)(4)))(S(bnot(0)))))(
+  concat(
+    concat(S(bshr(sub(0)(1))(60)))(concat(S(bshl(1)(64)))(S(bshr(1)(64)))))(
+    concat(S(bshl(1)(sub(0)(1))))(concat(S(band(sub(0)(1))(255)))(S(bxor(sub(0)(1))(sub(0)(1)))))))))
