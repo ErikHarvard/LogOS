@@ -23,12 +23,16 @@ glyph S = PRIM("SELF")
 glyph MAIN =
     # ── (2) SYNONYMY κ DOES collapse (the declared equivalence theory) ──
     SEQ(ROW("comm ⊕   : ⊕(R,F) vs ⊕(F,R)    ")(CON(R)(F))(CON(F)(R)))(
-    SEQ(ROW("comm ⊗   : ⊗(B,L) vs ⊗(L,B)    ")(SYN(B)(L))(SYN(L)(B)))(
-    SEQ(ROW("nested   : ⊗(⊕(V,F),B) vs ⊗(B,⊕(F,V))")(SYN(CON(V)(F))(B))(SYN(B)(CON(F)(V))))(
+    SEQ(ROW("nested ⊕ : ⊗(⊕(V,F),B) vs ⊗(⊕(F,V),B)")(SYN(CON(V)(F))(B))(SYN(CON(F)(V))(B)))(
     SEQ(ROW("rewrite  : ↻(BEING) vs SELF     ")(MC(B))(S))(
     # ── (2-gaps) SYNONYMY κ does NOT collapse (residual — honest) ──
     SEQ(ROW("assoc ⊗  : ⊗(⊗(B,L),V) vs ⊗(B,⊗(L,V))")(SYN(SYN(B)(L))(V))(SYN(B)(SYN(L)(V))))(
     SEQ(ROW("idempot ⊗: ⊗(B,B) vs B          ")(SYN(B)(B))(B))(
+      # ── ★ ⊗ CORRECTLY stays distinct: LINGUA ADAMICA.tex:2837 calls
+      #    ontosynthesis NON-COMMUTATIVE — "g_E ⊗ g_Rec yields Being-
+      #    recognizing... g_Rec ⊗ g_E yields a DIFFERENT concept... Direction
+      #    matters in Being." Sorting ⊗ collapsed two concepts into one glyph.
+    SEQ(ROW("order ⊗  : ⊗(B,L) vs ⊗(L,B)    ")(SYN(B)(L))(SYN(L)(B)))(
     # ── directional modes CORRECTLY stay distinct (not synonyms) ──
     SEQ(ROW("dir ▷    : ▷(B,F) vs ▷(F,B)     ")(DIR(B)(F))(DIR(F)(B)))(
     # ── (1) POLYSEMY: distinct meanings → distinct glyphs (κ injective) ──

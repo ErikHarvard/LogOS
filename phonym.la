@@ -27,7 +27,7 @@
 #  with a 44-byte RIFF/WAVE header → a playable .wav.
 # ═══════════════════════════════════════════════════════════════════
 
-export PHONYM PSC_STAR SPEC RENDER PCM SR PRIM SYN CON DIR CONT MC PHON_PRIM WAVE
+export PHONYM PSC_STAR SPEC RENDER PCM SR PRIM SYN CON DIR CONT MC PHON_PRIM WAVE NORMP PHONYM_N SPEC_N FST SND
 
 # ── Foundations ──
 glyph SEQ   = la a. la b. b
@@ -251,11 +251,19 @@ glyph PHON_PRIM = la nm.
 # SUMMED. Superposition (not interpolation) keeps BOTH parents' spectra present —
 # both formant peak-sets and both glottal periodicities survive — so a listener
 # hears Love's and Recognition's signatures inside the compressed Compassion, and
+# ★ WEIGHTED α = 2/3, NOT AVERAGED (corrected 2026-08-22).
+# LINGUA ADAMICA.tex:4230: S(π_C) ≡ α·S(π_A) + (1−α)·S(π_B), where "the first
+# operand receives greater weight in NON-COMMUTATIVE modes". ⊗ is
+# non-commutative (tex:2837, "Direction matters in Being"), so an EQUAL blend
+# was the commutative weighting applied to the one mode the spec singles out as
+# directional. Equal weights made ⊗ symmetric BY CONSTRUCTION -- addition
+# commutes -- so no amount of normalisation upstream could ever have made
+# ⊗(A,B) sound different from ⊗(B,A). The order had to enter the RENDERING.
 # Θ_P (the spectral/pitch invariants) of each parent is recoverable from the
 # compound. This is the audio parallel of preserving etymology in the visual form.
 glyph SYNP  = la p. la q. (la np. la gp. la nq. la gq.
     (la n. PAIR(n)(la i.
-        div(add(gp(div(mul(i)(np))(n)))(gq(div(mul(i)(nq))(n))))(2)))
+        div(add(mul(gp(div(mul(i)(np))(n)))(2))(gq(div(mul(i)(nq))(n))))(3)))
      (MAX(np)(nq)))
     (FST(p))(SND(p))(FST(q))(SND(q))
 # ⊕ glottal pause: A, 960-sample /ʔ/ closure (silence), B.
@@ -289,6 +297,84 @@ glyph PHONYM = Z(la self. la node.
         (la a. la b. DIRP (self(a))(self(b)))
         (la a. la b. CONTP(self(a))(self(b)))
         (la a. MCP(self(a))))
+
+# ── ★ NORMP — THE PHONETIC NORMALISER, THE PIECE THAT WAS MISSING ────
+# The glyphic register has TWO functions: CANON (raw, order-preserving) and
+# NORMK (normalised — commutative operands sorted, so synonyms collapse to one
+# glyph). The phonetic register had only PHONYM, the raw renderer. That
+# asymmetry was not cosmetic: it broke monosemy IN SOUND.
+#
+#   canon.la:91 sorts ⊕ operands, because ⊕ is ONTOCONJUNCTION -- "the
+#   co-presence of two concepts WITHOUT FUSION" (LINGUA ADAMICA.tex:2817).
+#   Co-presence is symmetric; ⊕(A,B) and ⊕(B,A) are ONE concept and ONE glyph.
+#   But CONP renders ⊕ as A, silence, B -- sequential, so it cannot commute.
+#   Measured: ⊗ SAME, ⊕ DIFFER, ▷ DIFFER, ⊂ DIFFER. One glyph, TWO phonyms.
+#
+# ★ THE FIX IS NOT TO CHANGE WHAT ⊕ SOUNDS LIKE. A symmetric CONP would have
+# to fuse the parents, and fusion is precisely what ⊗ means and ⊕ denies. The
+# defect is that the phonetic register never applied the equivalence theory
+# the glyphic one applies. So: normalise the DECOMPOSITION first, then render.
+# The sound of a concept is the sound of its canonical form.
+#
+# This restores the structure Erik requires -- the same neologization and
+# monosemy discipline in both registers, no gap -- and it generalises: any
+# commutative mode added later is handled, because the ordering is by the same
+# canonical string (SPEC) the glyphic side sorts on.
+glyph LEXLT = Z(la self. la a. la b.
+    IF(str_eq(a)(""))(la _. NOT_(str_eq(b)("")))
+      (la _. IF(str_eq(b)(""))(la _. FALSE_)
+        (la _. IF(str_eq(str_head(a))(str_head(b)))
+                 (la _. self(str_tail(a))(str_tail(b)))
+                 (la _. lt(str_to_int(ord(str_head(a))))(str_to_int(ord(str_head(b))))))))
+glyph NOT_   = la p. la t. la f. p(f)(t)
+glyph FALSE_ = la t. la f. f
+
+# NORMP : decomposition -> decomposition.  ONLY ⊕ is commutative, so only its
+# operands are ordered.  ⊗ is NON-COMMUTATIVE per tex:2837 ("Direction matters
+# in Being"), and ▷/⊂ are directional -- ordering any of the three would
+# destroy meaning rather than preserve it.
+# ── ★ THE REWRITES, IN VERBATIM PARITY WITH canon.la's REWRITE_MC ────
+# Sorting was only HALF the equivalence theory. NORMK also carries ALGEBRAIC
+# rewrites, and without them the phonetic register still splits concepts the
+# glyphic register has already collapsed:
+#
+#   ↻(BEING) ≡ SELF     -- glyphically ONE concept; /ɑɑ/ vs /mɑ/ in sound
+#   ↻(↻ y)  ≡ ↻ y       -- glyphically idempotent; ↻ⁿ was n-times AUDIBLE
+#
+# Each is one concept with two phonyms -- the same defect ⊕ had, surviving in a
+# different arm. The rewrites key on the CANONICAL STRING of the already-
+# normalised child, exactly as REWRITE_MC keys on it, so the theory has ONE
+# home instead of two implementations that agree by care.
+glyph TRUEP  = la t. la f. t
+glyph FALSEP = la t. la f. f
+glyph HASPRE = Z(la self. la s. la p.
+    IF(str_eq(p)(""))(la _. TRUEP)
+      (la _. IF(str_eq(s)(""))(la _. FALSEP)
+        (la _. IF(str_eq(str_head(s))(str_head(p)))
+                 (la _. self(str_tail(s))(str_tail(p)))
+                 (la _. FALSEP))))
+glyph MCNORM = la ca. (la sp.
+    IF(str_eq(sp)("BEING"))(la _. PRIM("SELF"))
+      (la _. IF(HASPRE(sp)("↻("))(la _. ca)
+        (la _. IF(str_eq(sp)("▷(DEPTH,RECOGNITION)"))(la _. ca)
+          (la _. IF(str_eq(sp)("⊕(SELF,SELF)"))(la _. ca)
+            (la _. MC(ca)))))) (SPEC(ca))
+
+glyph NORMP = Z(la self. la node.
+    node
+        (la nm. PRIM(nm))
+        (la a. la b. SYN(self(a))(self(b)))
+        (la a. la b. IF(LEXLT(SPEC(b))(SPEC(a)))
+                       (la _. CON(self(b))(self(a)))(la _. CON(self(a))(self(b))))
+        (la a. la b. DIR(self(a))(self(b)))
+        (la a. la b. CONT(self(a))(self(b)))
+        (la a. MCNORM(self(a))))
+
+# PHONYM_N -- the phonym OF A CONCEPT, as PHONYM is the phonym of a TREE.
+# This is the phonetic twin of NORMK, and the pair (PHONYM, PHONYM_N) now
+# mirrors (CANON, NORMK) exactly.
+glyph PHONYM_N = la node. PHONYM(NORMP(node))
+glyph SPEC_N   = la node. SPEC(NORMP(node))
 
 # SPEC — the witness: prefix-notation of the structure the phonym was built from
 # (the same shape canon.la's CANON emits), so the rendering carries its own proof

@@ -190,9 +190,18 @@ glyph NDISTINCT = Z(la self. la l. l(0)(la h. la t. add(IF(STRMEM(h)(t))(la _. 0
 glyph SIGS    = MAP(la c. SETSTR(SND(c)))(CL)
 glyph NCPT    = LEN(CL)
 glyph NDIST   = NDISTINCT(SIGS)
-# canonicity (genuine — via CANONIQ, not via sorting): SYN(LOVE,REC) and
-# SYN(REC,LOVE) are ONE concept, so their RAW derived Θ_P must already coincide.
-glyph CANEQ   = IF(str_eq(RAWSTR(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))(RAWSTR(SYN(PRIM("RECOGNITION"))(PRIM("LOVE")))))(la _. "YES")(la _. "NO")
+# ★ CANONICITY, CORRECTED 2026-08-22 AGAINST THE SPEC.
+# This gate previously asserted that ⊗(LOVE,REC) and ⊗(REC,LOVE) are ONE
+# concept and must coincide. LINGUA ADAMICA.tex:2837-2839 says the opposite,
+# and says it is load-bearing: "Ontosynthesis is NON-COMMUTATIVE... g_E ⊗ g_Rec
+# yields 'Being-recognizing'... g_Rec ⊗ g_E yields a DIFFERENT concept: the
+# being OF recognition as such. Non-commutativity is not a complication; it is
+# a feature. Direction matters in Being." And :2854 makes ⊕'s commutativity
+# "the fundamental distinction between ⊕ and ⊗".
+# Sorting ⊗ collapsed exactly that distinction — two concepts into one glyph,
+# a monosemy violation ASSERTED AS A PASSING PROPERTY. The gate now asserts
+# what the spec requires: the two orders are DISTINCT.
+glyph CANEQ   = IF(str_eq(RAWSTR(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))(RAWSTR(SYN(PRIM("RECOGNITION"))(PRIM("LOVE")))))(la _. "NO")(la _. "YES")
 
 # ── FIDELITY register: how faithfully the derived Θ_P INSTANTIATES that 1.0
 #    alignment in synthesized form (a Kendall concordance of the d_𝒪 vs d_𝒫

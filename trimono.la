@@ -1,0 +1,115 @@
+# =====================================================================
+#  trimono.la — TRIMODAL MONOSEMY: the same identity law, in all three
+#  registers at once.
+#
+#  ── WHY THIS MODULE EXISTS ──────────────────────────────────────────
+#  The language claims G^vis ≡ G^phon ≡ G^comp ≡ C — three faces of one
+#  sign. Identity was enforced in the κ-register (NORMK) and MEASURED
+#  between modalities (crossmodal concordance), but **the identity LAW was
+#  never checked in the derived registers themselves.** In one day that
+#  produced two breaks, in two different registers, of two different kinds:
+#
+#    PHONETIC   ⊕ commuted in FORM and not in SOUND. `canon.la` sorts ⊕
+#               operands (Ontoconjunction is co-presence, symmetric); CONP
+#               rendered it A-silence-B, sequential. ONE GLYPH, TWO PHONYMS.
+#    VISUAL     SIGIL(↻(RECOGNITION)) was BYTE-IDENTICAL to SIGIL(RECOGNITION).
+#               MC_SIG = a ∪ MIRRORH(a) is the identity on any H-symmetric
+#               form, so metacursion left no trace. TWO CONCEPTS, ONE SIGIL.
+#
+#  Neither was visible from the other. Each register was checked, if at all,
+#  by its own gate against its own expectations. **THE MONOSEMY CHECK WAS
+#  RUNNING IN ONE REGISTER OUT OF THREE**, and that is the defect this module
+#  closes — not either break, but the class.
+#
+#  ── THE MATRIX ──────────────────────────────────────────────────────
+#  Identity has two directions and both must hold in every register. A gate
+#  that checked only one direction would pass a system that collapsed
+#  everything to a constant (perfect "monosemy", no injectivity) or one that
+#  distinguished synonyms (perfect injectivity, no monosemy):
+#
+#              κ-register      visual        phonetic
+#    INJECTIVE  distinct concepts  →  distinct representations
+#    MONOSEMIC  synonyms           →  IDENTICAL representations
+#    DIRECTED   ▷ order            →  preserved, in all three
+#
+#  ★ The DIRECTED row is what keeps the MONOSEMIC row honest. A normaliser
+#  that made every mode commute would satisfy monosemy perfectly and destroy
+#  meaning: ▷(A,B) is not ▷(B,A). Over-normalisation and under-normalisation
+#  are both failures, and only checking both rows catches both.
+#
+#  ── ON THE PHONETIC COLUMN ──────────────────────────────────────────
+#  It uses PHONYM_N, not PHONYM — the phonym OF A CONCEPT, not of a tree.
+#  That distinction is the repair: the phonetic register now has the same
+#  raw/normalised pair the glyphic one always had (CANON/NORMK ↔
+#  PHONYM/PHONYM_N). Using raw PHONYM here would reintroduce the break.
+# =====================================================================
+
+import("sigil.la")    # SIGIL SIG_AT SZ and the node constructors
+import("phonym.la")   # PHONYM_N SPEC_N FST SND  (constructors identical)
+
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph Zc   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+# ── a representation in each register, reduced to a comparable string ──
+# κ: the normalised canonical form.  visual: the ink pattern.
+# phonetic: length plus sampled amplitudes.
+glyph K_OF = la n. SPEC_N(n)
+
+glyph ROWSIG = Zc(la self. la s. la r. la c.
+    IF(lt(c)(SZ))
+      (la _. concat(IF(SIG_AT(s)(r)(c))(la _. "#")(la _. "."))(self(s)(r)(add(c)(1))))
+      (la _. ""))
+glyph FORMSIG = Zc(la self. la s. la r.
+    IF(lt(r)(SZ))(la _. concat(ROWSIG(s)(r)(0))(self(s)(add(r)(1))))(la _. ""))
+glyph V_OF = la n. FORMSIG(SIGIL(n))(0)
+
+glyph SAMP = la ph. la i. int_to_str(SND(ph)(i))
+glyph P_OF = la n. (la ph.
+    concat(concat(int_to_str(FST(ph)))(":"))
+          (concat(concat(SAMP(ph)(400))("/"))
+                 (concat(concat(SAMP(ph)(1200))("/"))(SAMP(ph)(2600)))))
+    (PHONYM_N(n))
+
+# ── the three-register verdicts ─────────────────────────────────────
+glyph ALL_SAME = la x. la y.
+    AND(str_eq(K_OF(x))(K_OF(y)))
+       (AND(str_eq(V_OF(x))(V_OF(y)))(str_eq(P_OF(x))(P_OF(y))))
+glyph ALL_DIFF = la x. la y.
+    AND(NOT(str_eq(K_OF(x))(K_OF(y))))
+       (AND(NOT(str_eq(V_OF(x))(V_OF(y))))(NOT(str_eq(P_OF(x))(P_OF(y)))))
+
+glyph A_ = PRIM("LOVE")
+glyph B_ = PRIM("RECOGNITION")
+
+# ── INJECTIVE: distinct concepts, distinct representations everywhere ──
+# ↻(RECOGNITION) vs RECOGNITION is the pair that was visually identical.
+glyph INJ_MC   = ALL_DIFF(MC(B_))(B_)
+glyph INJ_SELF = ALL_DIFF(MC(PRIM("SELF")))(PRIM("SELF"))
+glyph INJ_MODE = ALL_DIFF(SYN(A_)(B_))(CON(A_)(B_))
+
+# ── MONOSEMIC: synonyms collapse, in every register ──
+# ⊕(A,B) vs ⊕(B,A) is the pair that sounded different.
+glyph MONO_CON = ALL_SAME(CON(A_)(B_))(CON(B_)(A_))
+# ★ ⊗ moved from the MONOSEMIC row to the DIRECTED row, 2026-08-22.
+# tex:2837 — ontosynthesis is NON-COMMUTATIVE, and tex:2854 makes ⊕'s
+# commutativity the fundamental distinction between the two modes.
+# Asserting ⊗(A,B) ≡ ⊗(B,A) collapsed 'Being-recognizing' with 'the
+# being of recognition' — two concepts, one glyph, in every register.
+glyph SYN_KEPT = ALL_DIFF(SYN(A_)(B_))(SYN(B_)(A_))
+
+# ── DIRECTED: order-bearing modes stay order-bearing, in every register ──
+# ★ this is what stops "make everything commute" from passing the row above
+glyph DIR_KEPT  = ALL_DIFF(DIR(A_)(B_))(DIR(B_)(A_))
+glyph CONT_KEPT = ALL_DIFF(CONT(A_)(B_))(CONT(B_)(A_))
+
+glyph MARK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat("trimono inj-↻ ")(MARK(INJ_MC)))
+                (concat(concat(" | inj-SELF ")(MARK(INJ_SELF)))
+                       (concat(" | inj-mode ")(MARK(INJ_MODE)))))
+        (concat(concat(concat(" | mono-⊕ ")(MARK(MONO_CON)))
+                      (concat(" | dir-⊗ ")(MARK(SYN_KEPT))))
+               (concat(concat(" | dir-▷ ")(MARK(DIR_KEPT)))
+                      (concat(" | dir-⊂ ")(MARK(CONT_KEPT))))))
