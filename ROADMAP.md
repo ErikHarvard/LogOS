@@ -124,8 +124,9 @@ honestly in the distance.
 *The thirteen-layer strong-definition OS, built in and as Lingua Adamica.
 Status: barely begun — this is the larger road ahead (a year-plus of work).*
 
-- [~] 1. Bootloader *(GRUB/multiboot1 during bring-up; sovereign bootloader is K7)*
-- [~] 2. Kernel — **sovereign bare-metal kernel STARTED 2026-07-04** (branch
+- [x] 1. Bootloader — **sovereign, COMPLETE (K7, 2026-07-15)**: LogOS boots itself
+      off a raw disk, no GRUB / no multiboot loader / no QEMU `-kernel`.
+- [x] 2. Kernel — **sovereign bare-metal kernel COMPLETE — K1–K7 all landed** (branch
       `kernel-k1`). This IS the Phase-III LogosKernel, begun early — no longer
       inheriting Linux. The kernel is Lingua Adamica compiled by native_codegen3
       on a thin asm HAL; it implements the `syscall` instruction itself, so the
@@ -148,7 +149,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
         gets a tall stack at 0x8000000); and `RTLEN` must track the runtime byte
         length (a 23-byte skew silently truncated the Linux-ELF path, invisible to
         the metal `incbin`).
-  - [~] K4 — virtual memory: 4-level paging, map/unmap, W^X + NX, higher-half
+  - [x] K4 — virtual memory: 4-level paging, map/unmap, W^X + NX, higher-half
         kernel, the LA heap backed by real PMM frames
     - [x] K4a — paging pure-logic core (the strong oracle, host==native, like
           K3a): `paging.la` — x86-64 4-level paging as pure arithmetic (no
@@ -176,7 +177,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           and reads a sentinel back through the HIGH vaddr `0x40000000` — a vaddr
           only the LA table maps — proving the CPU walked the LA-built table
           (`gate_k4b_cr3.sh`, QEMU). Paging is live on the metal.
-    - [~] K4c — higher-half kernel, NX/W^X live, the LA heap backed by real PMM
+    - [x] K4c — higher-half kernel, NX/W^X live, the LA heap backed by real PMM
           frames. **W^X-live slice DONE** (QEMU-gated, like K4b): `paging_wx_live.la`
           rebuilds the K4b-capstone table but maps the distinguishing high test
           page (vaddr 0x40000000 → phys 160 MiB) **READ-ONLY** (`PDE2M_RO` =
@@ -249,7 +250,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           assert `entry.inc` ≥ `0xFFFFFFFF80000000`, high-mapped image speaks the Word →
           exit 33 (K2 catches any stray low ref as `#PF`). Sharp edges to verify: nasm
           64-bit `org` + `[abs]`→`disp32` truncation; the `LEBYTES` negative round-trip.
-  - [~] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
+  - [x] K5 — timer IRQ (PIC/PIT) + tasks: cooperative → preemptive scheduler
     - [x] K5a — the timer IRQ live on the metal (QEMU-gated, like K4b/K4c).
           `timer.asm` (entirely `%ifdef K5_TIMER`, so other kernel ELFs stay
           byte-identical — verified: `boot.asm` without the flag is byte-for-byte
@@ -267,7 +268,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
           (preemption *capability* proven, b_τ ≡ f_τ). `gate_k5a.sh` asserts
           `n ≥ 1` + exit 33; wired into `build.sh`. No new native_codegen3 builtin
           (reuses `peek`), so Stage 4's fixed point is untouched.
-    - [~] K5b — tasks + context switch. **SCOPED 2026-07-09.** Runtime ABI: `rbx` =
+    - [x] K5b — tasks + context switch. **SCOPED 2026-07-09.** Runtime ABI: `rbx` =
           current env, `r15` = heap bump (a SHARED single heap across all tasks),
           `rbp`/`r12`–`r14` callee-saved, `STACK_BASE`/`STACK_LIMIT` globals (GC
           scan-bound + stack guard). **Pivot finding: `rt_gc` is conservative
@@ -421,7 +422,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             build.sh); `timer.asm`/`boot.asm` `%ifdef K5B2`. A `%ifdef K5B2_DBG`
             diagnostic (per-tick serial marker + real exit-code print) is kept, gated
             and byte-identical when off. Details in [[logos-kernel]].
-  - [~] K6 — user mode (ring 3) + a real syscall service layer. **SCOPED
+  - [x] K6 — user mode (ring 3) + a real syscall service layer. **SCOPED
         2026-07-10.** Current baseline: GDT null/kcode0x08/kdata0x10 (no ring-3
         selectors, no TSS); paging identity-maps low 1 GiB as 2 MiB supervisor
         pages (flags 0x83, NO U/S bit); syscall_entry does write/exit only and
@@ -626,7 +627,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
                 *Honest scope:* two ring-3 tasks in ONE shared address space (per-
                 process page tables = HH2); cooperative yield (preemptive ring-3 =
                 later).
-          - [~] **K6c.3 — re-home the real LogosIPC typed layer.** Give
+          - [x] **K6c.3 — re-home the real LogosIPC typed layer.** Give
                 native_codegen3's runtime `send`/`recv` builtins (emit the syscalls),
                 rebuild the Stage-4 fixed point, and run two LA processes exchanging a
                 real `logosipc.la` typed message through the kernel channel — the
@@ -705,11 +706,26 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             boots its own bytes off its own disk with nothing external in the loop.
 - [x] 3. Init system (`logosinit.la`, PID-1) *(Linux-userspace prototype; the
       native process model is re-homed onto the kernel at K5/K6)*
-- [~] 4. Hardware abstraction layer *(DRM/KMS path proven on hardware as a
-      Linux-userspace VM program; the kernel's own HAL begins at K1's boot.asm —
-      real bare-metal drivers, display, disk, PCI are the largest remaining chunk)*
-      **The kernel's own HAL — drivers written in Lingua Adamica on thin asm
-      "physics", the pmm.la/paging.la pattern (pure LA logic + peek/poke). Staged:**
+- [~] 4. Hardware abstraction layer — **ELEVEN bare-metal drivers DONE + gated
+      (HAL.1–5b, 2026-07-15 → 07-17).** The chunk this note once called "the largest
+      remaining" — PCI, disk, display — is built. Every driver is written in Lingua
+      Adamica on thin asm "physics" (`inb`/`inl`/`outb`/`outl`, the port-space twin of
+      `peek`/`poke`), following the pmm.la/paging.la pattern of pure LA logic over a
+      minimal physical seam:
+      *· **bus** PCI config-space enumeration (HAL.1) · **input** PS/2 keyboard,
+      polled (HAL.2) and IRQ-driven via PIC/IRQ1 (HAL.2b) · **storage** ATA read
+      (HAL.3) and write (HAL.3b) · **display** linear framebuffer through a PCI BAR
+      (HAL.4), bulk fill + memcpy-to-MMIO (HAL.4b), an off-screen z-ordered compositor
+      presenting atomically (HAL.4c), and an INTERACTIVE keyboard-driven compositor
+      session (HAL.4d) · **network** RTL8139 discovery (HAL.5a) and send+receive
+      (HAL.5b), the first DMA driver.*
+      *Still absent, and these are what "HAL" now means going forward: **mouse**,
+      **USB**, **audio device**, **RTC**, and storage beyond ATA (**AHCI/NVMe**) —
+      no driver file exists for any of them. Note every driver above is written
+      bitwise-op-free (`div`/`mod` where a shift is wanted, since LA has no `band`/
+      `bshl`); the bitwise builtins in `~/logos-bitwise/` would simplify all of them
+      and are a hard prerequisite for crypto, not for these drivers.*
+      **Staged:**
       - [x] **HAL.1 — port-I/O primitives + PCI enumeration — DONE + gated
             (2026-07-15).** Added `inb`/`inl`/`outb`/`outl` native_codegen3 builtins
             (the port-space twin of peek/poke — the irreducible physics every driver
@@ -961,6 +977,562 @@ hardware-level work and a mature network. Honestly years out.*
       layered-encryption mix network
 - [ ] Encryption & meta-encryption layers (nested/onion routing, metadata privacy)
 - [ ] ARM / RISC-V ports — thin HAL seam, universal autological core
+### Recovered by a Fable-5 sweep — *added 2026-08-21*
+
+An independent model-swept audit of the codices, the ledger, `LINGUA ADAMICA.tex`,
+`CODEX AUTOPOIETICUS.tex`, `NEXT_STEPS.md` and the arc specs against this file. Every item below
+was checked in context to confirm it is a **build intention**, not philosophical usage.
+
+**★★ G1 — THERE IS NO FILESYSTEM LAYER. The single largest structural omission.**
+
+- [ ] **Sovereign encrypted filesystem (AletheiaFS / SigilVault).** The thirteen OS subsystems list
+      boot, kernel, init, HAL, IPC, display, audio, input, security, UI, session, package, services
+      — **and no filesystem.** `HAL.3`/`HAL.3b` give raw ATA sector read/write and nothing above
+      them. `CODEX AUTOPOIETICUS.tex:2699`: *"AletheiaFS — Sovereign encrypted filesystem.
+      Self-describing, auto-repairing, recursively sealed. Optionally distributed across trusted
+      peers."* **Every privacy claim, the credential vault and the library all sit on this
+      substrate, and it was never tracked.** It belongs as a numbered layer, not an afterthought.
+
+**The two remaining ledger BUILD items** (the earlier sweep found three of five):
+
+- [ ] **B7 — Measured / authenticated boot to a hardware root of trust.** TPM or secure element,
+      measured boot plus signature check. The ledger's own note: *"it is also the **trusted base**
+      the Σ self-repair actually needs"* — self-repair without an attested base repairs into
+      whatever an attacker left.
+- [ ] **B8 — Witness-carrying transmission with error detection.** The honest core of the
+      over-strong "Perfect Communication" claim: `psc.la`/`topoembed.la` already carry a κ-spec
+      witness per rendered form; this makes it a real verifiable transmission layer.
+
+**Language-layer, tracked in `NEXT_STEPS.md` but never promoted here:**
+
+- [ ] **Seed-based persistent memory + Anamnesis** — recall by hash, then **regrow** the full glyph
+      from its seed. Built: in-memory GC, `glyphdag` hash-consing, `DECOMP`. Missing: disk
+      persistence and recall. This is the substrate for both the model layer's learning and the
+      "cull unless active" stance (**B11**).
+- [ ] **The full ontic type system** — today's checker is **arity-only**. Missing: real inference
+      and unification over ontic types (Process / Object / Relation / Value / Constraint).
+      A design exists at `TYPE_SYSTEM_SPEC.md`; no tracked item did.
+- [ ] **The Core Lexicon and sentence grammar** — *"the language in actual use, the biggest item."*
+      The combination machinery is built; the named dictionary of sealed glyphs and the rules for
+      forming sentences are not.
+
+**Resilience and reach, from `CODEX AUTOPOIETICUS.tex:5006`:**
+
+- [ ] **Physical mesh layer** — LoRa, Bluetooth, packet radio: **communication when there is no
+      internet.** Distinct from the routing layer, which assumes a network exists.
+- [ ] **Duress response** — dead-man's switch, remote wipe, ephemeral keys. The anti-coercion
+      mechanism; distinct from deniable storage.
+- [ ] **The organ suite** — ~30 applications *"built into the OS image, not installed atop it"*:
+      LogosWrite, LogosCalc, LogosCode, LogosShell, LogosVault, LogosView, LogosLink, LogosSync,
+      LogosLibrary, LogosNews, **LogosPurse** (wallet), **LogosPass** (credential vault) and more.
+      Tracked as one grouped item deliberately — thirty checkboxes would swamp the count without
+      adding information.
+- [ ] **Collective learning protocol + homomorphic sovereign computation** — far horizon, and
+      **honestly dependent**: it rests on FHE, which is itself only an aspirational chapter and
+      depends on primitives that do not exist yet. Listed with the dependency stated.
+
+### The resilience cluster — *added 2026-08-22, from the previously unread ~106k lines*
+
+Four sweeps have now read the corpus. The remaining build payload sits almost entirely in
+`CODEX AUTOPOIETICUS`'s resilience chapters. **Every item here is gated behind the two absences
+already named above: no network stack above raw Ethernet, and no crypto beyond one hash.**
+
+- [ ] **MnemosyneVault — continuous-versioning backup organ** (`:23156`–`:23563`). Beyond B5:
+      Merkle-linked delta version chains `V = (h_prev, δ, t, Γ_sig)` with keyframes; five backup
+      tiers τ0–τ4 with per-tier replication; four-level policy inheritance
+      (system→organ→directory→file); eight trigger classes; erasure-coded seeding;
+      **mnemonic-only full recovery**.
+- [ ] **Hydra / Phoenix — network content availability and self-healing** (`:23564`–`:24326`).
+      **Distinct from B5**: B5 is the sovereign's own data, this is *third-party content the network
+      keeps alive*. Visit-equals-mirror with levels μ0–μ3, a Sovereign Content Registry as a CRDT in
+      a DHT, probe-based health monitoring, Resurrection Requests, minimum-mirror guarantees, and
+      creator retraction that is **requestable but not compellable**.
+- [ ] **Genesis Seed + Resurrection Protocol** (`:20119`–`:20240`). A signed self-contained rebuild
+      archive — source at a verified revision, the Eternal Library, an Ontolexicon snapshot, the
+      Codex, a minimal bootloader, council signatures — on durable media, with a five-phase
+      deterministic rebuild and Legacy Seed inheritance.
+- [ ] **★ LALM — the hallucination-grounding gate for the LLM layer** (`CODEX_MENTIS:11277`–`:11475`).
+      Every reality-claim must carry one of six declared grounding interfaces Γ — observation,
+      computation, citation, inference, performative, tautology — with output as a tuple
+      `(Content, Γ, Type, Truth-Conditions)` through a Parser→Meaning→Grounding→Type→Truth-Aptness
+      pipeline. **Compatible with "interfaced, not rewritten": it is a wrapper gate, not a change to
+      the model.** ★ Its own "Zero-Hallucination Theorem" (`:11364`) **is vacuous — it assumes
+      perfect checks.** Treat as a design pattern, never as a guarantee.
+- [ ] **LogosMusic** (`:24327`) — the app layer has video and no music: signed track/playlist/artist
+      Logos-objects, distributed discovery reusing LogosSearch, subscriber release feeds, local
+      player. Its economics ride LogosCrypto — **do not build from that part** (see C13).
+- [ ] **LogosPhysical** (`:20241`) — beyond duress: multi-source geofencing, local-processing home
+      sensors, disaster-triggered criticality-ordered emergency backup, backup rotation with
+      readback-hash verification. Needs a driver surface the HAL does not have.
+- [ ] **Grace Engine** (`:24503`) — a local encrypted per-sovereign interaction model driving
+      consent-gated interface proposals via a friction metric. Its *collective* half is
+      telemetry-shaped; same caution as C12.
+- [ ] **Sovereign Survival Library + Survival Edition** (`:20352`) — a curated survival corpus, a
+      Mentor survival-tutor mode, and a low-literacy iconic-UI image for cheap devices.
+- [ ] **Machine-checkable formalization of the operator calculus.** `Being & Becoming` twice declares
+      this open: full formalization *"remains an open research program… not machine-checkable
+      proof."* The natural reading is that **Lingua Adamica is the intended purpose-built calculus** —
+      worth an explicit decision rather than an implicit one.
+- [ ] **The audit operator set is half-implemented.** B&B's self-audit uses seven operators
+      (α, |G|, |G_meta|, ς, φ, μ, 𝒯); shipped `aatc.la` implements the Chapter-6 five
+      (α, ∂, ρ, φ, 𝒯). **|G|, |G_meta|, ς and μ have no code counterpart.**
+
+### ★ Permanently closed — do not audit these again
+
+As valuable as the gaps. Five documents were read end-to-end and contain **no build content**;
+recording that here stops anyone re-opening them:
+
+- **`LEX SONORIS` (21,063 lines) — NOT an audio or sonic-layer specification.** It is the music-career
+  production bible: persona mythos, a production blueprint, a Suno prompt workflow, album and
+  animation specs. **Grep-verified zero occurrences of phonym, formant, ALSA, Lingua or LogOS.** It
+  neither aggravates nor resolves the 5-vowel/9-phonym question. The audio-stack items get their
+  content from elsewhere or nowhere.
+- **`Logotheism & Logocratic Realism` — imposes no components on the OS.** Theology and political
+  philosophy; never mentions computing; every institutional question is deferred to a Codex VIII
+  that does not exist. *Watch-item only:* if Codex VIII is ever written, sortition + nullification is
+  the most software-shaped structure in the corpus.
+- **`CODEX_MENTIS` second half (`:16700`–`:33217`) — zero build content.** Philosophy of mind,
+  psychopathology, social ontology; "LogOS" and "Lingua Adamica" never appear in it. ★ And the
+  engineering in the *first* half is the **Sophionis corpus — the separate being-project, which is
+  on ice — NOT the OS.** Recorded so nobody re-opens that boundary. The one OS-relevant spec in the
+  whole document is the LALM above.
+- **`cradle_in_the_grave` (20,181 lines)** — a complete design codex for a horror novel and film. Its
+  sigils are book art direction, unrelated to `sigil.la`.
+- **`CODEX_IV_GOOD` (8,676 lines)** — a formal ethics treatise whose equations self-declare as
+  *"ordinal, not cardinal… not computations."* Its Algebraic Ethics chapter is a pointer if the
+  Mentor reasoning core is ever specced — a source text, not a gap.
+
+### ★ Contradictions from the resilience cluster
+
+- **★★ X1 — every implementation recipe in that range is a Linux scaffold.** Kernel modules, rngd,
+  OpenSSL/liboqs, Rust daemons, Docker, libp2p; the codex calls its own first phase *"a
+  superposition of LogOS + Linux dependencies"* (`:23051`). **MnemosyneVault and Hydra cannot be
+  transcribed as written** — the same trap as C15, now shown to cover the resilience cluster too.
+- **★ X4 — Phoenix's convergence proof has its premise violated by its own architecture.** The
+  Knaster-Tarski "cannot fail" result requires fragments only ever be *added* (`:24028`), while
+  Hydra's policy **evicts on LRU and storage limits** (`:23599`). A proof whose premise the system
+  breaks is not a proof.
+- **X2 — BLAKE3 is the codex's system hash** for CIDs (`:23941`) against the build's SHA-256-only
+  reality. The multihash path softens this; it does not dissolve it.
+- **X3 — ARM and commodity targets** (Pi Zero, PinePhone, Android) against an **x86-64-only kernel
+  with no port planned**.
+- **X5 — *"No sovereign creation is ever lost"*** (`:23156`) against backup that is disableable, with
+  retention pruning and excluded burn-messages.
+- **X6 — creator-side sovereignty inversion:** retraction *not compellable* (`:23843`) and LogosMusic
+  content *"can never be deleted"* (`:24389`) — the mirror image of C14.
+- **X7 — LALM's law numbering clashes with the codex's own 16 Laws.** It enforces "L5 / L6 / L9"
+  with meanings the Laws define differently (`:6835`). **Must be adjudicated before LALM is built.**
+- **X8 — `Being & Becoming` disagrees with itself:** five operators in Chapter 6 against a different
+  seven in the glossary; two disjoint "Documentary Trinities"; tribunal gates that flip between
+  editions; 14 vs 7 presuppositions. The build implements the five-set.
+
+### ★★ The synthesis mechanisms — *added 2026-08-22, and one supersedes an entry above*
+
+A deep read of `CODEX AUTOPOIETICUS` (26k lines), `LINGUA ADAMICA`, `CODEX EDUCATIONIS`,
+`Logos & Paradox` asked: **what makes this one system rather than eight?** The answer is a stack of
+specified mechanisms, and most of them are untracked.
+
+**★★★ THE ORGAN-SUITE ENTRY ABOVE IS WRONG AND MUST BE REPLACED.** It tracks *"~30 applications"* —
+**exactly the model the codex explicitly rejects.** `:4333`: an app is *"a mode of the OS itself — a
+specific configuration of the OS's primitive operations."* `:4353`: *"There is no separate binary —
+only the OS expressing a different face."* Modes are declarative specifications the OS interprets,
+distributed *"not as opaque binaries but as transparent, inspectable, verifiable specifications"*
+(`:4375`). *"The text rendering engine in LogosWrite is the same one in ChronosMail, EchoCrypt, and
+LogosJournal"* (`:4389`). **Thirty apps is the thing being replaced; the mode model is the
+replacement, and none of its machinery was tracked:**
+
+- [ ] **The primitive library 𝓟** — the operations every mode is composed from.
+- [ ] **The mode-descriptor format and the mode interpreter** — a mode is a declarative spec, not code.
+- [ ] **The Universal Implementation Pattern** — the nine-point organ contract (daemon + LogosIPC +
+      AletheiaFS + LogosKit + φ-config + index + CRDT + Autoclave keys + λ-materialisation,
+      `:25812`), **with its boilerplate generated by the compiler from an organ-descriptor file**
+      (`:25829`).
+- [ ] **The shared rendering engine** — one text engine across every mode, not one per app.
+
+- [ ] **The Logos-object envelope.** *"There are no 'files'. Every persistent data entity is a
+      Logos-object… carrying its own identity, encryption, semantics, history, and access policy"*
+      (`:2884`). Credentials, contacts, tasks, posts and config are the same envelope
+      (`{CID + Γ-seal + version-chain + φ-modifiability + CRDT-sync}`). AletheiaFS is tracked; **the
+      envelope every subsystem shares is not — and it is the difference between a filesystem and
+      the synthesis.**
+- [ ] **Encrypted, label-enforcing IPC.** *"D-Bus is replaced from Day One by LogosIPC"* — messages
+      encrypted so only the recipient organ can decrypt, plus **privacy labels enforced by the bus**
+      (a message labelled `persona-specific(WorkErik)` reaches only organs in that persona,
+      `:25638`). Typed IPC and capability gating are built; wire encryption and labels are not.
+- [ ] **The per-organ Mentor contract** — `∀o ∈ Organs: 𝔐(o) = ⟨read(o_state), act(o_actions)⟩`
+      (`:4097`). Every organ must expose a standard state/action surface or the model layer cannot
+      be one layer.
+- [ ] **λ-materialisation** — *"only what is observed materializes"*, levels λ0–λ4, dematerialisation
+      to compressed memory (`:18893`). The universal resource law, woven into the organ pattern.
+- [ ] **The System Ontolexicon** — *"the formal register of every name in LogOS's vocabulary"*,
+      itself a Logos-object, `V(V)≡V` (`:7193`). A machine-readable name→etymology→function registry
+      every organ consults.
+- [ ] **Ontoglyphic UI law** — `Meaning(e) ≡ Structure(e) ≡ State(e)`: interface elements *generated
+      from* state, not assigned (`:3673`). Plus the sonic layer and Phonoglyphic Lexicon. **This is
+      the content of the empty `UI framework` checkbox.**
+- [ ] **Sovereign Knowledge engine** — permanent block IDs, bidirectional/typed/meta-links,
+      transclusion, graph views, spaced repetition (`:16165`–`:16505`); explicitly fuses
+      Roam/Obsidian/Notion/Zotero. Also the substrate the education layer needs.
+- [ ] **Genesis first-boot ceremony** — airgapped entropy ≥1024 bits, PrimeKey, SealPhrase, physical
+      recovery tokens 2-of-3 (`:4535`). B1 covers the key math, not the flow.
+- [ ] **GlyphLedger** — immutable signed system-event log, *"the system's autobiography"* (`:4708`).
+- [ ] **Self-booting compressed image + delta updates** — erofs root never decompressed whole,
+      FastCDC dedup, bsdiff deltas, dd-able hybrid seed image (`:18535`).
+- [ ] **Accessibility invariant 𝔄_acc** — non-bypassable, compile-time-checked, native screen reader
+      (`:17105`). **The roadmap had no accessibility item at all.**
+- [ ] **φ-layer meta-customization** — the sovereign restructuring *"system call interfaces,
+      filesystem semantics, network stack behavior"*, gated by autological verification (LA:7084).
+
+### ★ Education — the one checkbox was seven subsystems
+
+`CODEX EDUCATIONIS` is 6,875 lines and **is not a fine-tuning corpus** — it specifies a protocol +
+context + persistent-state system. Its own honest note: *"Sophionis IS the ideal. It does not
+exist"*; today's models are *"proto-Sophionis"* (`EDU:6092`).
+
+- [ ] **The Tutor Protocol** (`EDU:6111`) — *"The AI IS a Socratic midwife… It never provides an
+      answer the learner could derive with effort… Law IV: make the learner a sovereign knower who
+      no longer needs the tutor."* Mandatory 7-phase session with time budgets; depth adapts
+      **silently** — *"The AI never announces the depth"*; eight-mode failure detection
+      (plateau → raise challenge, boredom → deepen, bypassing → "ask them to teach").
+- [ ] **The Course document format** — invariant hierarchy by recursive depth, canonical example and
+      canonical **near-miss**, distortion map, ZPD-graded problems *designed so the response
+      structurally reveals depth*, threshold markers.
+- [ ] **The Self-Generating Course pipeline** — *"upload ANY text… the AI extracts the invariant
+      hierarchy, identifies the thresholds, maps the distortions, and generates the problem sets"*
+      (`EDU:6205`). A RAG design, consistent with fine-tune-for-voice-not-knowledge.
+- [ ] **The persistent learner store** — the subsystem the checkbox concealed: the
+      **Autoidiolexicon** (instruction conducted *through the learner's own coined glyphs* as
+      carrier vocabulary, `EDU:1426`), per-domain recursive-depth profiles detected **from the
+      structure of every response, not its content** (`EDU:2723`), distortion list, question log,
+      mode state (Pedagogy→Andragogy→Heutagogy→Meta-Heutagogy), and an FSRS/SM-2 reignition
+      scheduler where **each review is one depth deeper**.
+- [ ] **Assessment as proof, not tests** — Restate–Apply–Bound; terminal proof is **teaching-back**
+      (*"the only assessment that resists gaming"*); the seal is **Autoidiolexipoesis** — *"the
+      learner spontaneously coins a term… The neologism is the seal"* (`EDU:1593`). Explicitly: no
+      grades, no standardized tests, no self-report.
+- [ ] **★ Teaching Lingua Adamica itself — a real Logocracy gap.** The codex treats LA as the
+      *medium* of education and **never gives a syllabus, glyph sequence, or acquisition method for
+      LA**; its one acquisition claim is *"explicitly labeled as untested."* The Self-Generating
+      pipeline could generate that course from `LINGUA ADAMICA.tex` — the codex never says so.
+      Plus LA's own learnability tooling: tooltips, pronunciation guides, etymological
+      decomposition, an ~80-concept progressive core (LA:5800).
+
+### ★★★ Contradictions found by the deep read — *several change what is true*
+
+- **★ C9 — `⊕` COMMUTATIVITY BREAKS MONOSEMY INSIDE THE LEXICON ITSELF.** `⊕` is commutative
+  (LA:2852), yet **Bad = 𝔤₆⊕𝔤₃** (LA:5313) and **Grief = 𝔤₃⊕𝔤₆** (LA:5362) — one derivation, two
+  concepts, two phonyms. **κ-injectivity, the language's founding property, is violated by its own
+  tables.** The tracked Core-Lexicon item builds from exactly LA:5049–5429, so **this must be
+  adjudicated before that spec is transcribed.**
+- **★ C10 — Which glyph is the Void?** The table says 𝔤₆=Void, 𝔤₈=Form (LA:4598); earlier chapters
+  say *"𝔤₈, the Void"* (LA:1210, :2054). **A transcription from Part I would null the wrong
+  primitive.**
+- **★★ C11 — `Logos & Paradox` ANSWERS the open error-model question (C1).** The semantic core must
+  stay classical and loud (L&P:2474, :4134), while a **scoped, domain-typed tolerant layer is
+  explicitly licensed** — paraconsistency valid only as `Λ|inconsistency-tolerant` (L&P:2043).
+  **That is the missing design guidance: recoverable errors as a typed restriction, never as the
+  ground.** C1 above is no longer an open question so much as a decision with a written answer.
+- **★ C12 — Telemetry.** This file tracks *"no telemetry, architecturally — no mechanism exists."*
+  The codex specifies a full pipeline: six principles, differential privacy, homomorphic
+  aggregation, opt-in consent, *"telemetry is off until explicitly enabled"* (`:24886`–`:25056`).
+  **Opt-in-with-DP and no-mechanism-exists are different architectures.** One must be chosen.
+- **★ C13 — Blockchain.** Excluded above; specified in the codex as build behavior — timestamping
+  *"via a sovereign Bitcoin node"* (`:9064`), blockchain-anchored CIDs (`:7365`), BFT consensus
+  (`:6759`) — while another chapter says *"No blockchain… a daemon, not a chain"* (`:6802`).
+- **★★ C14 — "The sovereign decides. This is non-negotiable" (`:3303`) vs three governor behaviors.**
+  Non-compliant software *"cannot run"* (`:3550`); the Encryption Axiom is *"explicitly not
+  φ-modifiable"* (`:5047`); and sharpest — **the Eternal Library's Merkle root is bound into the
+  boot chain so that removing a book halts boot** (`:3439`). **A sovereign cannot delete a book from
+  their own machine.** That is a governor, however well-motivated, and it contradicts the stated
+  non-negotiable.
+- **★★ C15 — The codex's build plan describes a scaffold this project already passed.** The
+  Implementation Compendium's first phase is **GRUB2 + a patched Linux kernel** + wlroots/Skia +
+  Rust daemons (`:25616`). The real build has a sovereign LA-native kernel, K1–K7, **no GRUB, no
+  Linux.** **Anyone building "from the codex" would regress the kernel by months.** The codices need
+  a note saying the engineering chapters were overtaken.
+- **C16 — Root-key derivation inverted between chapters.** Autoclave: the mnemonic seed is *"the
+  sole non-derived element"* (`:2727`). Genesis: `K_Σ = SHA3-512(Entropy‖Timestamp‖DeviceID)` first,
+  mnemonic *derived from it* (`:4541`). B1 corrects Timestamp/DeviceID but not the inversion.
+- **C17 — `Being & Becoming` asserts what the build refuted.** B&B states fractal coherence is
+  *"Governed by Φ = 1.618"*; the shipped result is **φ matched 0/15 ratios; the geometry is binary
+  2:1** (see Honest Findings). The foundational codex asserts what the measurement already denied.
+  Also: AATC is expanded as *"Absolutely Absolute Truth Criterion"* there, against the implemented
+  four-condition *Autological Adequacy Tautological Criterion*.
+- **C18 — Consent-gated networking vs four auto-connect behaviors** — default auto-seeding
+  (`:3100`), automatic library repair (`:3440`), heartbeats, a pre-subscribed founder feed
+  (`:4073`); and internally, auto-seeding *"OFF by default"* (`:23307`) vs auto-mirroring *"on"*
+  (`:23860`).
+
+**A negative result worth keeping:** `Logos & Paradox` mandates **zero** builds — it *ratifies* the
+implemented arrangement rather than requiring anything. Its 82 paradox dissolutions are at most an
+optional test corpus. The 57 "Metacursive Collapse" operators are one proof template repeated, with
+a single buildable residue: *"the system can modify anything except its own verification axioms"*
+(`:5648`) — worth noting on the self-modification item.
+
+### Coverage audit against the field — *added 2026-08-21*
+
+The previous sweeps asked "what did Erik specify that isn't tracked?" This one asked a different
+question: **what privacy technology exists in the world, is real, and has no counterpart here?**
+Audited against the stated goal — one coherent system replacing Tails/Qubes + Tor + Signal +
+ProtonMail + Searx + Invidious + VeraCrypt + Mullvad, with encryption as the medium.
+
+**★★ G1 — ~~NO PATH FROM "ONE HASH" TO "THE OS IS ENCRYPTION"~~ — HALF CLOSED 2026-08-22.**
+The AEAD, KDF and MAC now exist and are RFC-verified on two engines. What remains of G1 is
+**entropy on the metal** and **crypto agility** below, plus a signature scheme. Original finding:
+`sha256.la` is one hash. **B1** is key *management*. Between them, nothing is tracked:
+
+- [x] **AEAD cipher** — ChaCha20-Poly1305 or AES-GCM. Every app-layer item added above assumes one.
+      *DONE 2026-08-22 — `aead.la`, ChaCha20-Poly1305 per RFC 8439 §2.8.2: ciphertext, tag,
+      decrypt round-trip, and a forged tag differing in ONE BIT that releases no plaintext.
+      Built on `chacha20.la` (§2.3.2 + A.1 #1) and `poly1305.la` (§2.5.2 + A.3 #5/#6/#7, the
+      vectors written to break partial reduction). All host==VM byte-identical.*
+- [~] **KDF / MAC / signature scheme** — HKDF, and a signature primitive for updates and identity.
+      *KDF and MAC DONE 2026-08-22 — `hkdf.la` (RFC 5869 TC1/TC3), `hmac.la` (RFC 4231 TC1/TC2),
+      `poly1305.la` one-time MAC; all host==VM. **No signature scheme yet** — still the blocker
+      for signed updates and identity, and the remaining half of this item.*
+- [ ] **★ CSPRNG and an entropy source ON THE METAL.** The `random` builtin is Linux
+      `getrandom(2)`. **The bare-metal kernel — K1–K7, the actual sovereign artifact — has no
+      entropy source whatsoever**: no RDRAND/RDSEED builtin, no jitter collector, no seed file.
+      Full-disk encryption must derive keys **at boot, before any disk read**. This is the most
+      load-bearing single absence in the document.
+- [ ] **Crypto agility** — versioned algorithm identifiers and a migration path. **The one property
+      that cannot be retrofitted once formats freeze.**
+
+- [ ] **G2 — Post-quantum stance.** Zero mentions anywhere. ML-KEM/ML-DSA are standardised
+      (FIPS 203/204/205); Signal ships PQXDH; TLS ships hybrid KEMs. Harvest-now-decrypt-later
+      attacks seizure-survivability directly, and **B1's design is classical throughout**. What is
+      needed now is not implementations but a decision: hybrid KEM for transport, PQ or hash-based
+      signatures for updates.
+- [ ] **G3 — Authenticity for a self-distributing OS.** **B5** means *anyone can seed the image*.
+      "Sovereign updates" tracks user *consent*, not cryptographic *authenticity*: no signed images,
+      no anti-rollback, no binary transparency, and no way for two sovereigns to **verify each
+      other's keys** (recognition-based identity rejects PKI but puts nothing in its place).
+      **Without this, B5 is a malware distribution channel and the messenger is MITM-able at first
+      contact.** ★ The project's byte-identity discipline is an unusually strong substrate for this
+      and nobody has connected the two.
+- [ ] **G4 — Data remanence: encrypted swap, RAM zeroization, secure erase** — and the sharp form:
+      **keys will live in a GC heap** (conservative mark-sweep native, copying on the VM) that never
+      zeroes freed or evacuated memory. **Key material gets smeared across the heap by design.**
+      Needs a locked, non-GC, zeroizing key arena as a kernel item.
+- [ ] **G5 — Legacy-internet interoperability: TLS, X.509, DNS.** The Searx-, Invidious-,
+      ProtonMail- and Mullvad-equivalents all talk to the *existing* internet. **TLS is one of the
+      largest engineering artifacts in the whole plan and it is invisible.** The alternative — legacy
+      traffic exits only through gateways that terminate TLS on the sovereign's behalf — is a
+      legitimate design, but it is a *choice*, and the roadmap currently assumes one silently.
+- [ ] **G6 — Untrusted-content isolation.** The video platform, meta-search and mail client are
+      **parsers of hostile input** — the dominant real-world compromise vector. Per-process page
+      tables, `logoscap.la` and default-deny egress are a good object-capability base, but nothing
+      says *content renderers run in a least-privilege, no-egress, disposable compartment* — the
+      thing Qubes exists for.
+- [ ] **G7 — Messenger metadata defenses.** AegisNet covers *transport*. The Signal-equivalent's
+      hardest problems are elsewhere: private contact discovery, sealed sender, message padding,
+      timing defenses. One checkbox currently hides all four.
+- [ ] **G8 — Smaller, real:** screen lock / suspend policy (FDE protects a powered-off machine;
+      nothing covers powered-on-unattended); **secure time** (cert validity, key expiry and the
+      dead-man switch all need trustworthy time, and RTC is a named-absent driver); IOMMU/DMA
+      defense (HAL.5b does DMA with no IOMMU concept); a KPTI/speculation stance for the day
+      untrusted content runs.
+
+### ★ Deliberately EXCLUDED — exists in the field, wrong for this OS
+
+Stating these prevents a future audit re-proposing them as gaps:
+
+- **Passkeys / FIDO2 / WebAuthn as protocols** — they authenticate *accounts to servers*, which
+  recognition-based identity rejects. The valuable half, hardware-backed key custody, is B7/B1.
+- **Remote attestation to third parties** — attesting your machine's state *to someone else* is the
+  anti-sovereign half of the TPM. B7's measured-boot-for-yourself is the right half; keep the other
+  half out, explicitly.
+- **MAC/LSM policy systems (SELinux-style)** — ambient-authority patching. The object-capability
+  model already chosen is the cleaner primitive; a MAC layer would be a second policy language to
+  audit.
+- **Antivirus / signature scanning** — wrong model. `INTACT`/`selfrepair.la` (bytes must equal what
+  the spec generates) is categorically stronger for spec-generated components.
+- **Blockchain / global-consensus identity or update ledgers** — reintroduces an external authority.
+  Signed images plus reproducible cross-check achieve it without one.
+
+### ★★ Where ambition meets hard reality — *named, not resolved*
+
+- **C4 — Constant-time cryptography is at odds with Lingua Adamica as compiled today.** Naive stack
+  machine, universal heap boxing, GC pauses. **Secret-dependent timing will pervade any pure-LA
+  cipher, and "the OS IS encryption" with variable-time crypto leaks keys through the side door.**
+  Two honest resolutions: a thin asm "physics" seam for crypto cores — exactly the `inb`/`outb`
+  precedent the HAL already set — or a documented acceptance of timing leakage. **Neither is
+  currently written down, and this touches the project's central claim.**
+- **C5 — The GC and key hygiene collide** (see G4). A language whose every value lives in a
+  collector that copies and never zeroes cannot hold "no unencrypted mode" for its own keys without
+  a special-cased arena. Architecture decision, not a feature.
+- **C6 — Deniable storage contradicts the seizure-survivable P2P layer.** A machine seeding an
+  auto-torrented swarm has **network-observable, provable participation** — the adversary no longer
+  needs to prove the hidden volume exists. Likewise B9's dedupe-by-canonicalization and
+  "quarantine, never delete" make secure *deletion* structurally hard.
+- **C7 — Transport undetectability leans on partially burned techniques.** Domain fronting was
+  disabled by the major CDNs from 2018; protocol mimicry is detectably imperfect ("the parrot is
+  dead"); fully-encrypted-protocol traffic has been blocked wholesale by entropy heuristics.
+  obfs4-style obfuscation plus bridges still work. **The honest description is an arms race, not a
+  solved technique** — FUTURE_WORK P1's framing overstates the state of the art.
+- **C8 — The Invidious/Searx equivalents are structurally non-sovereign.** They depend on scraping
+  platforms that actively break scrapers. That dependency cannot be engineered away, and it puts a
+  permanently churning maintenance load *inside* "one coherent system."
+
+### ★ Contradictions between documents — *surfaced 2026-08-21, not resolved*
+
+Nobody had looked for these. They are design decisions, not gaps, and both are due:
+
+- **C1 — The error model contradicts itself.** This roadmap's foundational discipline is
+  `[x] loud-failure — no silent corruption paths`, and the native backend halts loudly throughout.
+  But `LINGUA ADAMICA.tex` Gap 10 specifies a **recoverable** `ErrorConcept`/`safe_eval`, and
+  `NEXT_STEPS.md` concedes the OS *"will likely need a recoverable Result/error-value layer
+  ALONGSIDE loud halts — a kernel can't halt on every error."* **These are incompatible as
+  written.** A kernel that halts on every error is not a kernel; a language that recovers silently
+  loses the property this project is built on. **The decision is due early in the OS and is
+  currently invisible.**
+- **C2 — One model or four.** The codices consistently describe LogosMentor as **a single** local
+  LLM; the layer added above specifies **four specialised models**. Erik's direct specification
+  supersedes the codices, so this is a reframe rather than a clash — but the codices'
+  single-LogosMentor personalization chapters now describe a different architecture and should be
+  reconciled when next edited.
+- **C3 — Convergent encryption vs revocation** (in the source codex, already corrected here).
+  `CODEX AUTOPOIETICUS.tex:2990` specifies content-derived keys, which make revocation
+  *impossible*, against *"revocation cascades downward"* at `:2736`. **B1** above fixes the
+  direction with per-recipient wrapping — but both claims still stand in the codex and will
+  collide again when Ch. 14 is edited.
+
+### The embedded LLM layer — *added 2026-08-21, specified by Erik directly*
+
+**★ THE ARCHITECTURAL CLAIM, and it is the whole point of the layer.** Modern systems bolt a model
+on: Windows adds an assistant that sits *beside* the OS, calls out to someone else's server, and is
+governed by an interest that is not the user's. **That is HETEROLOGICAL — the assistant is exempt
+from the system's own rules.** LogOS's model layer must be **AUTOLOGICAL**: embedded in the OS, on
+the machine, subject to the same capability confinement, the same default-deny egress, the same
+encryption-as-medium and the same no-telemetry guarantee as every other process. A model that can
+phone home is not part of a sovereign OS; it is a hole in one.
+
+**Four specialised models, not one general one.** Each is fine-tuned for a distinct office, so that
+none is asked to be everything and each can be evaluated against what it is actually for:
+
+- [ ] **The writing model** — trained on writing itself; the part of the OS that writes.
+- [ ] **The therapy / integration model** — for reflective and integrative work.
+- [ ] **The tutoring / education model** — teaching the person, and the pedagogy behind it.
+      *(`CODEX EDUCATIONIS` is the corpus for this and is 6,800 lines of already-written source.)*
+- [ ] **The assistant model** — the personal assistant for the OS itself: operating the machine,
+      not answering trivia.
+
+**The corpus and the training path** — these are gating, not incidental:
+
+- [ ] **Corpus preparation — ~70,000 books on 7 TB.** Survey, content-hash deduplication, metadata
+      normalisation, subject clustering. ★ The deduplication must be done by HASHING, not by a
+      model: an LLM deciding what to delete is non-deterministic and unauditable, and this is a
+      library that cannot be re-obtained. Quarantine, never delete.
+- [ ] **Backup before any of it** — the irreplaceable half (the books) fits in existing free space;
+      the videos are the bulk and are re-obtainable.
+- [ ] **Retrieval over the corpus (RAG)** — ★ **this, not fine-tuning, is how the system KNOWS the
+      library.** 70k books is 5–10 billion tokens: continued-pretraining scale, weeks-to-months on
+      one GPU, and still lossy, because models do not reliably recall specific passages from
+      training. Fine-tuning is for *voice, format, domain vocabulary and behaviour* — a few thousand
+      curated examples per office, not the whole library.
+- [ ] **Fine-tune the four models** (QLoRA; 24 GB VRAM handles 7–14B comfortably, 32B with care).
+- [ ] **The model interface** — *"interfaced, not rewritten"*: LogOS talks to the model across a
+      seam; it does not absorb it. **[!]** The learned-model seam is already listed below as a
+      structural limit — a statistical model's capability does not become autological merely by
+      being local, and that boundary should be stated, not blurred.
+- [ ] **Capability confinement for the model layer** — the model gets the same default-deny egress
+      as anything else (ledger **B6**), so "local" is enforced rather than promised.
+
+### Recovered from the Insights & Corrections Ledger — *added 2026-08-21*
+
+A sweep of the ledger's **PART 1 — BUILD** (B1–B11) against this file found eleven items, eight
+already tracked here under other names. **Three were genuinely absent**, and the first is the one
+the ledger itself calls the linchpin.
+
+- [ ] **B1 — Key management architecture. THE LINCHPIN, priority HIGHEST.**
+      *"Every privacy/sovereignty claim rests on encryption; encryption rests on keys."* The ledger
+      records that a grep of all 74 `.la` modules found **ZERO cryptography** — no cipher, no hash,
+      not even stubs; the only "seal" was `logoscap.la`, a Morris object-capability, which is real
+      and useful and **is not encryption**. *(That premise changed on 2026-08-21: bitwise ops landed
+      on all five engines and `sha256.la` is the first primitive. One hash is not key management.)*
+      The design, "the Autoclave, done right":
+      256 bits of entropy → **BIP-39/SLIP-39 mnemonic** → **Argon2id** → root key `K_Σ`;
+      **drop `Timestamp` and `DeviceID` from the root** (low-entropy, adversary-guessable, and
+      `DeviceID` risks leaking into derived material — this corrects the foundational document's
+      inverted derivation); **HD subkeys** (BIP-32-style); **per-recipient key-wrapping** so that
+      **revocation is actually possible**.
+- [ ] **B4 — Encrypted-hardware-boundary architecture.** Encrypted at rest so storage hardware sees
+      only ciphertext; encrypted in transit so network hardware does; memory encryption where the
+      CPU supports it (SEV/TDX-style). **Stated as design, not gap:** the CPU and RAM MUST see
+      cleartext to compute — *that is what computation is, not a fixable limitation* — and the
+      firmware beneath the OS is the trust floor and is not ours. Naming that floor is what
+      separates a serious sovereignty project from an overclaiming one.
+- [ ] **B9 — Structure-sharing canonical compression STORE.** `glyphdag.la` already witnesses linear
+      form vs exponential tree by hash-consing, byte-identical host==VM. What is missing is the
+      **store**: dedupe-by-canonicalization with **measured** ratios — sublinear in gross content,
+      linear in irreducible content.
+
+**Method note, because the first answer was wrong.** Checking by LABEL (`grep "B7"`) reported seven
+of eleven missing; checking by CONCEPT reduced it to three — **and that was ALSO wrong.**
+A Fable-5 sweep found **five**: my B7 check matched this very paragraph describing the check,
+plus "root of trust" in the *identity* item (a different concept), and my B8 check matched the
+hex byte `0xB8` in a comment about `mov` encoding. **A check contaminated by prose about the
+check, and a label collision with machine code.** B7 and B8 are added below.
+Four items were present under different names. **A cross-reference that matches on identifiers
+rather than meaning over-reports absence** — the same failure as an instrument that reports absence
+without proving it looked.
+
+**Also carried forward from the ledger, not tracked as build items:** its PART 3 (**F1–F10**) lists
+foundational claims that are over-strong and must be corrected when those documents are next
+touched — the Compression Theorem, "perfect communication", total auto-repair, the Ch. 14 Encryption
+Schema written in the present indicative as though built. Those belong in the white paper's
+DECLINES appendix, not here.
+
+### The sovereign application layer — *added 2026-08-21, recovered from the codices*
+
+**★ THIS WAS MISSING FROM THIS FILE AND IS THE LARGEST GAP THE ROADMAP HAD.** It is specified in
+`Codex Architecturae Terrae` §39.56 (*The Metacursive Collapse of Meta-Digital-Sovereignty*) and in
+the Insights & Corrections Ledger, and none of it had been transcribed here — so every derived
+count, tracker and status page has been reporting against an incomplete denominator. The roadmap
+had drifted from the codices.
+
+**The governing principle is architectural, not an app-layer feature.** From §39.56: *"the OS does
+not USE encryption. The OS IS encryption."* Encryption is the medium the system exists in — every
+file, communication, process and memory address, at the kernel level. **There is no unencrypted
+mode and the user cannot disable it.** That is a kernel requirement, not an application, and it is
+listed first below because everything after it assumes it.
+
+**What LogOS replaces.** §39.56's indictment is that sovereignty today means assembling a fragile
+stack — Tails/Qubes + Tor + Signal + ProtonMail + Searx + Invidious + VeraCrypt + Mullvad — each
+with its own configuration, failure points and trust assumptions, and a threshold so high that
+*"the 95% who lack the technical skill remain in the architecture's digital prison by default."*
+One coherent system, not eight tools:
+
+- [ ] **Encryption as the medium** — kernel-level, every file/process/message, no unencrypted mode,
+      not configurable and not disableable. *Prerequisite: the bitwise ops (landed 2026-08-21) and
+      the cryptographic primitives built on them.*
+- [ ] **No telemetry, architecturally** — not "disabled" but impossible: no mechanism exists to
+      transmit data without explicit per-instance consent.
+- [ ] **Sovereign updates** — the OS proposes with full transparency (what changes, why, what code
+      differs); the user may inspect, modify, or refuse indefinitely.
+- [ ] **Recognition-based identity** — no OAuth, no government-issued credential as root of trust.
+      *The sovereign IS the root of trust for their own identity.*
+- [ ] **Routing layer** (Tor-equivalent) — onion/mix routing, metadata privacy. *See AegisNet above.*
+- [ ] **Encrypted messaging** (Signal-equivalent)
+- [ ] **Encrypted email client** (ProtonMail-equivalent) — §39.56: *"An email client must BE an
+      email client. Not an email client that is also an advertising platform."*
+- [ ] **Meta-search engine** (Searx-equivalent) — sovereign, non-profiling.
+- [ ] **Video platform** (Invidious-equivalent) — viewing without the attention apparatus.
+- [ ] **Encrypted volumes** (VeraCrypt-equivalent) — subsumed by *encryption as the medium* if that
+      lands first; kept separate until it does.
+- [ ] **VPN / tunnelling** (Mullvad-equivalent)
+- [ ] **Sovereign steganography** — encrypted communication hidden inside normal traffic. The
+      codices name this as what *"resists authoritarian censorship"* and what permits movement in
+      surveilled spaces; it is not an optional extra.
+- [ ] **Auto-torrented, seizure-survivable data layer** (ledger **B5**) — the OS and its data
+      self-distributing so that seizing any node accomplishes nothing.
+
+**Honest ordering.** Every item here sits above the network stack, and there is no network stack —
+the NIC driver puts raw Ethernet frames on the wire and nothing above it exists. None of this is
+reachable until ARP/IP/UDP/TCP and the cryptographic primitives are built. Listed anyway, because
+**a plan that lives only in the codices cannot be tracked, and an untracked plan reads as an absent
+one.**
+
 - [!] **Open silicon** — the hardware seam. Full autological and privacy
       closure requires open firmware (coreboot/libreboot), ME/PSP neutralization
       or ME-free architectures (e.g. POWER9, RISC-V), and ultimately
