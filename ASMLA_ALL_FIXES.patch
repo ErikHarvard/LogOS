@@ -1,5 +1,5 @@
 --- .bootelf/asm.la	2026-08-20 21:29:30.534719304 -0600
-+++ .imm64/asm.la	2026-08-21 13:47:52.806880858 -0600
++++ .imm64/asm.la	2026-08-21 20:20:42.601891392 -0600
 @@ -382,13 +382,18 @@
  #   below (an immediate fitting unsigned 32 bits takes the zero-extending
  #   32-bit form, so REX.W is dropped) — which is why width 8 routes through the
@@ -112,7 +112,7 @@
  glyph MEMIDXREG = la t. UPTOSTAR(MEMIDXTOK(t))("")
  glyph MEMHASIDX = la t. ISREG(MEMIDXREG(t))
  glyph MEMIDX = la t. IF(MEMHASIDX(t))(la _. REGNUM(MEMIDXREG(t)))(la _. sub(0)(1))
-@@ -831,6 +903,20 @@
+@@ -831,6 +903,40 @@
              (add(IF(lt(reg)(8))(la _. 0)(la _. 4))
              (add(IF(AND(NOT(lt(idx)(0)))(NOT(lt(idx)(8))))(la _. 2)(la _. 0))
                  (IF(lt(base)(8))(la _. 0)(la _. 1))))))
@@ -126,41 +126,61 @@
 +#   bracketed TOKEN is still in scope, and the guard tests ISREG first because a
 +#   base may be a label rather than a register.
 +glyph MEMBASETOK = la t. FST(SPLITFIRST(STRIPBRK(t))(""))
-+glyph MEM32BASE = la t.
-+    AND(ISMEM(t))(AND(NOT(MEMRIP(t)))(AND(NOT(MEMABS(t)))
-+      (AND(ISREG(MEMBASETOK(t)))(int_eq(RWIDTH(MEMBASETOK(t)))(4)))))
-+glyph P67 = la t. IF(MEM32BASE(t))(la _. B(103))(la _. "")
++#   ★ THE PREFIX IS RELATIVE TO THE MODE, not absolute. 0x67 toggles between the
++#   default address size and the alternate one, so what needs it depends on which
++#   mode the line is assembled in:
++#       bits 64  default 8-byte address  ->  a 32-bit base needs 67
++#       bits 32  default 4-byte address  ->  a 32-bit base needs NOTHING
++#       bits 16  default 2-byte address  ->  a 32-bit base needs 67
++#   Emitting it whenever the base was 32-bit made `mov [edi], eax` two bytes
++#   longer than nasm inside boot.asm's `bits 32` block, where edi IS the default.
++#   So the test is: base width != the mode's default address width.
++#   ★ AND THE GUARD MUST NEST `IF`s, NOT USE `AND`. LA is EAGER, so
++#   `AND(ISREG(bt))(...RWIDTH(bt)...)` still evaluates RWIDTH on a NON-register,
++#   and RWIDTH goes through REGENT, which HALTS on an unknown name by design.
++#   `[MBI_SAVE]` (a label base, equ 0x300000) killed the assembler that way.
++glyph ADDRW = la mode.
++    IF(int_eq(mode)(64))(la _. 8)(la _. IF(int_eq(mode)(32))(la _. 4)(la _. 2))
++glyph P67M = la mode. la t.
++    IF(ISMEM(t))
++      (la _. IF(MEMRIP(t))(la _. "")
++        (la _. IF(MEMABS(t))(la _. "")
++          (la _. (la bt. IF(ISREG(bt))
++                           (la _. IF(int_eq(RWIDTH(bt))(ADDRW(mode)))(la _. "")(la _. B(103)))
++                           (la _. ""))
++                 (MEMBASETOK(t)))))
++      (la _. "")
  glyph MEMENC = la op. la w. la reg. la b. la idx. la scaleb. la d. la force. la mode.
      concat(P66M(mode)(w))
     (concat(MREX(w)(reg)(idx)(b)(force))
-@@ -1020,7 +1106,7 @@
+@@ -1020,7 +1126,7 @@
        (la _. concat(B(102))(concat(B(140))(SPECMODRM(SEGNUM(b))(REGNUM(a)))))
      (la _. IF(ISMEM(a))
        (la _. IF(ISVAL(b))
 -               (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b))(BITSMODE(labs)))
-+               (la _. concat(P67(a))(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b))(BITSMODE(labs))))
++               (la _. concat(P67M(BITSMODE(labs))(a))(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b))(BITSMODE(labs))))
               (la _. IF(ISREG(b))
                 (la _. IF(MOFFSOK(BITSMODE(labs))(a)(w)(b))
                   #   The accumulator has a one-byte form with no ModRM at all:
-@@ -1030,23 +1116,31 @@
+@@ -1030,23 +1136,31 @@
                   #   exactly this instruction, which is why an earlier note
                   #   calling the moffs form "not in the boot files" was wrong.
                   (la _. concat(B(163))(LE4(FOLDD(MEMDISP(labs)(a)))))
 -                 (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs))))
-+                 (la _. concat(P67(a))(MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs)))))
++                 (la _. concat(P67M(BITSMODE(labs))(a))(MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs)))))
                 #   `mov qword [rax], _start` — a LABEL immediate to memory. It used
                 #   to fall into the register path above, where REGNUM read the label
                 #   as a register name and halted `unknown register: _start`. Same
                 #   MEMIMM encoding as a numeric immediate; only the value differs,
                 #   and LABADDR is what MOVENC's reg-destination arm already uses.
 -               (la _. MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(LABADDR(b)(labs))(BITSMODE(labs)))))
-+               (la _. concat(P67(a))(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(LABADDR(b)(labs))(BITSMODE(labs))))))
++               (la _. concat(P67M(BITSMODE(labs))(a))(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(LABADDR(b)(labs))(BITSMODE(labs))))))
        (la _. IF(ISMEM(b))
          (la _. IF(MOFFSOK(BITSMODE(labs))(b)(w)(a))
            #   A1 is A3's load twin: `mov eax, [addr]` in 5 bytes.
            (la _. concat(B(161))(LE4(FOLDD(MEMDISP(labs)(b)))))
 -          (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs))))
-+          (la _. concat(P67(b))(MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))))
++          (la _. concat(P67M(BITSMODE(labs))(b))(MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))))
          (la _. IF(ISREG(b))
            (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
            (la _. IF(ISVAL(b))
@@ -179,7 +199,7 @@
                              (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))(BITSMODE(labs))))
                     (EVAL(labs)(b)))
              (la _. IF(int_eq(w)(8))(la _. MOVABS(REGNUM(a))(LABADDR(b)(labs)))(la _. MOVIMM(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a))(BITSMODE(labs)))))))))))
-@@ -1091,6 +1185,23 @@
+@@ -1091,6 +1205,23 @@
                  (concat(B(add(mul(digit)(8))(5)))(IMMW(w)(n)))))
            (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(FALSE))
                  (concat(B(129))(concat(MODRMD(digit)(r))(IMMW(w)(n))))))))
@@ -203,18 +223,18 @@
  #   ★ The DESTINATION may be MEMORY: `or dword [pml4], 0x04` (11 uses in
  #   boot.asm). The opcodes are the SAME as the register forms — the only
  #   difference is that ModRM/SIB/disp come from MEMTAIL, with the group digit
-@@ -1098,23 +1209,23 @@
+@@ -1098,23 +1229,23 @@
  #   is why this is a few lines rather than a second encoder: the opcode map
  #   does not distinguish "to register" from "to memory", the ModRM byte does.
  glyph G1MEMREG = la labs. la digit. la w. la a. la b.
 -    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
-+    concat(P67(a))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
++    concat(P67M(BITSMODE(labs))(a))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
     (concat(B(OP8(add(mul(digit)(8))(1))(w)))
 -          (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))))
 +          (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs))))))
  glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
 -    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
-+    concat(P67(a))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
++    concat(P67M(BITSMODE(labs))(a))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
     (IF(int_eq(w)(1))
       (la _. concat(B(128))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(B(FOLD8(n)))))
       (la _. IF(FITS8(n))
@@ -226,14 +246,14 @@
  # rm = memory (index-aware via MEMTAILX/MREX).
  glyph G1REGMEM = la labs. la digit. la w. la a. la b.
 -    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
-+    concat(P67(b))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
++    concat(P67M(BITSMODE(labs))(b))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
     (concat(B(OP8(add(mul(digit)(8))(3))(w)))
 -          (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs)))))
 +          (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs))))))
  glyph G1ENC = la labs. la digit. la w. la a. la b.
      IF(ISMEM(a))
        (la _. IF(ISVAL(b))
-@@ -1126,7 +1237,7 @@
+@@ -1126,7 +1257,7 @@
          (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
          (la _. IF(ISVAL(b))
                   (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a))(BITSMODE(labs)))
@@ -242,16 +262,16 @@
  glyph G1DIG = la op.
      IF(str_eq(op)("add"))(la _. 0)(la _.
      IF(str_eq(op)("or"))(la _. 1)(la _.
-@@ -1189,7 +1300,7 @@
+@@ -1189,7 +1320,7 @@
  
  # ── lea: the same ModRM/SIB/disp machinery as mov, opcode 8D, never 8-bit ───
  glyph LEAENC = la labs. la w. la a. la b.
 -    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs))
-+    concat(P67(b))(MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))
++    concat(P67M(BITSMODE(labs))(b))(MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))
  
  # ── no-operand instructions ────────────────────────────────────────────────
  glyph NOARGS =
-@@ -1599,7 +1710,10 @@
+@@ -1599,7 +1730,10 @@
      IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
      IF(str_eq(op)("times"))(la _. mul(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(SIZEL(labs)(off)(TIMESREST(TL2(ts)))))(la _.
      IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
@@ -263,10 +283,51 @@
      IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(BITSMODE(labs))(w)(a)(b))))(la _.
      IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a)(BITSMODE(labs)))))(la _.
      IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a)(BITSMODE(labs)))))(la _.
-@@ -2683,6 +2797,15 @@
+@@ -2629,6 +2763,33 @@
+ glyph MEMRIPTOK = la st.
+     IF(MEMRIP(A1(st)))(la _. A1(st))
+       (la _. IF(MEMRIP(A2(st)))(la _. A2(st))(la _. ""))
++#   ★ A RIP-RELATIVE REFERENCE TO ANOTHER SECTION NEEDS A RELOCATION, and
++#   MEMRIPRELS only ever emitted one for an EXTERN (it fires on an XLOOK hit).
++#   A LOCAL label in a different section took neither path, so asm.la computed
++#   the displacement itself — which it cannot know, because where .rodata and
++#   .bss land relative to .boot32 is the LINKER's decision. Measured against
++#   nasm on HH2C: nasm emits 5 R_X86_64_PC32, we emitted 0.
++#   Same section is genuinely different: the displacement IS computable there,
++#   nasm emits no relocation, and emitting one would leave our table carrying
++#   entries nasm's lacks. So the test is CROSS-SECTION, which needs the current
++#   section index threaded down from BUILDRELA.
++#   Addend = the label's offset MINUS 4 MINUS any trailing immediate. The PC in
++#   `S + A - P` is the END of the instruction, but the displacement FIELD sits
++#   BEFORE a trailing immediate — so `cmp byte [rel flag], 0` needs -5, not -4,
++#   while `lea rax, [rel msg]` needs -4. Measured against nasm both ways.
++glyph RIPXSECRELS = la locs. la xs. la cursec. la secoff. la linelen. la st.
++    (la mt. IF(str_eq(mt)(""))
++             (la _. NIL)
++             (la _. (la lbl.
++                      IF(ISSOME(XLOOK(lbl)(xs)))
++                        (la _. NIL)
++                        (la _. IF(int_eq(LOCSEC(TLOC(lbl)(locs)))(cursec))
++                                 (la _. NIL)
++                                 (la _. CONS(RD(add(secoff)(sub(sub(linelen)(IMMTAIL(st)))(4)))
++                                               (TSYM(lbl)(locs)(xs))(2)
++                                               (sub(sub(TADD(lbl)(locs)(xs))(4))(IMMTAIL(st))))(NIL))))
++                    (RIPLAB(mt))))
++    (MEMRIPTOK(st))
+ glyph MEMRIPRELS = la locs. la xs. la secoff. la linelen. la st.
+     (la mt. IF(str_eq(mt)(""))
+              (la _. NIL)
+@@ -2678,11 +2839,20 @@
+                (XLOOK(tgt)(xs)))
+              (A1(st)))
+       (la _. NIL)
+-glyph RELLINE = la mlabs. la locs. la xs. la mode. la secoff. la ts.
++glyph RELLINE = la mlabs. la locs. la xs. la mode. la secoff. la cursec. la ts.
+   (la st.
      (la op.
        (la linelen.
-        APPEND(PCRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMRIPRELS(locs)(xs)(secoff)(linelen)(st))(APPEND(FARRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMDRELS(mlabs)(locs)(xs)(mode)(secoff)(linelen)(st))(
+-       APPEND(PCRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMRIPRELS(locs)(xs)(secoff)(linelen)(st))(APPEND(FARRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMDRELS(mlabs)(locs)(xs)(mode)(secoff)(linelen)(st))(
++       APPEND(RIPXSECRELS(locs)(xs)(cursec)(secoff)(linelen)(st))(APPEND(PCRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMRIPRELS(locs)(xs)(secoff)(linelen)(st))(APPEND(FARRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMDRELS(mlabs)(locs)(xs)(mode)(secoff)(linelen)(st))(
 +        IF(ISG1(op))
 +          (la _. (la a. (la b.
 +                   IF(AND(BISLBL(b))(NOT(ISMEM(a))))
@@ -279,12 +340,32 @@
          IF(str_eq(op)("mov"))
            (la _. (la a. (la b.
                     IF(BISLBL(b))
-@@ -2695,7 +2818,7 @@
+@@ -2695,15 +2865,15 @@
                   (A2(st)))(A1(st)))
            (la _. IF(AND(ISDATA(op))(NOT(int_eq(DWIDTH(op))(1))))
              (la _. DATARELS(locs)(xs)(secoff)(DWIDTH(op))(JOINEXPR(TL2(st)))(0))
 -            (la _. NIL)))))))
-+            (la _. NIL))))))))
++            (la _. NIL)))))))))
        (SIZEL(WITHBITS(mlabs)(mode))(secoff)(ts)))
      (LOWER(HD(st))))
    (STRIPLAB(ts))
+-glyph SECRELS = Z(la self. la mlabs. la locs. la xs. la mode. la lines. la secoff.
++glyph SECRELS = Z(la self. la mlabs. la locs. la xs. la mode. la lines. la secoff. la cursec.
+     lines(NIL)(la ts. la t.
+       (la md.
+-        APPEND(RELLINE(mlabs)(locs)(xs)(md)(secoff)(ts))
+-              (self(mlabs)(locs)(xs)(md)(t)(add(secoff)(SIZEL(WITHBITS(mlabs)(md))(secoff)(ts)))))
++        APPEND(RELLINE(mlabs)(locs)(xs)(md)(secoff)(cursec)(ts))
++              (self(mlabs)(locs)(xs)(md)(t)(add(secoff)(SIZEL(WITHBITS(mlabs)(md))(secoff)(ts)))(cursec)))
+       (NEXTMODE(mode)(ts))))
+ #   nasm emits no `.rela.<name>` for a section with no relocations, so an empty
+ #   list must be DROPPED rather than emitted empty — an extra section header
+@@ -2714,7 +2884,7 @@
+       (la lines. (la rs. (la rest.
+         IF(NULLP(rs))(la _. rest)(la _. CONS(PAIR(PAIR(FST(sp))(i))(rs))(rest)))
+         (self(mlabs)(locs)(xs)(SECMODEEND(mode)(lines))(t)(add(i)(1))))
+-        (SECRELS(mlabs)(locs)(xs)(mode)(lines)(0)))
++        (SECRELS(mlabs)(locs)(xs)(mode)(lines)(0)(i)))
+       (SND(sp))))
+ 
+ # ── the boundary: asm.la's own lists -> the caller's constructors ───────────
