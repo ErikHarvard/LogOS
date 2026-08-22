@@ -385,3 +385,42 @@ native size in each mode and mis-encoding only a cross-size operand:
 `TSTENC`, `DIVENC/G3ENC`, `IMUL2/3`, `CMOVENC`, `BSRENC`, `MOVZXENC`,
 `OUTENC/INENC`, `PUSHPOP`. Not reached by any current target. They belong in the
 ledger before this milestone counts as secured.
+
+
+# BOOT-SCALE VERIFICATION COMPLETE — all six arms (2026-08-21 21:17)
+
+    arm     .boot32   relocs        verdict
+    NONE      877 B    53 ==        control, unchanged
+    HH1      1018 B    60 ==        PASS
+    HH2      1311 B    84 ==        PASS
+    HH1B      997 B    60 ==        PASS
+    HH2B     1257 B    83 ==        PASS
+    HH2C     1735 B   103 ==        PASS
+
+Every section byte-identical to nasm outside relocated fields, and every
+relocation table identical on offset, type, symbol AND addend. HH2C went from
+5 missing `R_X86_64_PC32` to 103/103 identical.
+
+**Both arms that could not be assembled at all when this began now match nasm
+exactly.** All three verification streams are clean: 25/25 flat, 7/7 object,
+6/6 boot.
+
+## The two regressions I introduced, and what caught them
+
+Neither was found by a unit fixture — both were caught by the boot arms, and
+both had the same root cause: my fixtures contained only the cases I thought of.
+
+1. **`AND` is not a short-circuit.** LA is EAGER, so
+   `AND(ISREG(bt))(int_eq(RWIDTH(bt))(4))` still called `RWIDTH` on a
+   non-register, and `RWIDTH` halts by design. `[MBI_SAVE]` (a label base)
+   killed the assembler. My 10-case fixture used only REGISTER bases.
+   Fix: nest `IF`s so the branch is a thunk.
+2. **The prefix is mode-relative.** Emitting `0x67` for any 32-bit base made
+   `mov [edi], eax` two bytes LONGER than nasm inside `bits 32`, where edi IS
+   the default. My fixture had no `bits 32` block.
+   Fix: base width != the mode's default address width.
+
+`REGENT` halting on an unknown name is what made (1) a loud failure at 183 s
+rather than a silently corrupt kernel — its own comment records that the old
+table returned 0 on a miss, so a typo assembled to a wrong-but-plausible
+instruction. The loud-failure discipline paid for itself.
