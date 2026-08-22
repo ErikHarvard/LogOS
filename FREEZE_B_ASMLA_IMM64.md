@@ -331,3 +331,57 @@ the ALU gap was fixed.
 **NOT yet boot-verified.** HH2B and HH2C are assembling with all four fixes; the
 run will show whether these two account for the entire remaining shortfall or
 whether a fifth defect sits underneath. Stated as in-flight, not as passed.
+
+
+# FREEZE: REGRESSION EVIDENCE (2026-08-21)
+
+The question that had NOT been asked until now: do these six fixes break
+anything that already worked? Every verification up to this point tested the
+NEW cases — which proves nothing about the old ones, and my own fixtures had
+already missed a label base, a `bits 32` block, and this entire suite.
+
+## Flat `-f bin` suite — 25 PASS / 0 FAIL / 0 SKIP
+
+Every `asm_test*.asm` on kernel-k1, run through the pipeline `build.sh` itself
+uses (`cp <t>.asm asm_in.asm; ./tiny_host asm.la` -> `asm_out.bin`, vs
+`nasm -f bin`). Covers the encoders the fixes touch: `asm_test_alu` (163 B),
+`asm_test_mem`, `asm_test_width`, `asm_test_promote` (211 B), `asm_test_expr2`
+(775 B). `build.sh`'s sharp check also holds — byte 0 of `asm_test.asm` is
+`0xB8` (mov eax,1), not `0x48` (REX.W movabs), which is precisely the `MOVIMM`
+choice this work modified.
+
+Two tests initially SKIPped for missing `ppinc.inc` and `incdata.bin`. Both were
+MY staging gap, not the tests': `ppinc.inc` is tracked and was not copied;
+`incdata.bin` is generated, so one was synthesised (its content cannot bias the
+result — both assemblers read the same file). Both then PASSED. **A skip counted
+as a pass is a vacuous green.**
+
+## Object `-f elf64` suite — 7 PASS / 0 FAIL
+
+Every `asm_elf_r*.asm`, using `gate_asmelf.sh`'s own bar: **`ld(ours) ==
+ld(nasm)` byte-identical on the LINKED IMAGE**, not byte-identity of the `.o`
+(asmelfobj.la's header states an object's internal layout is nasm convention,
+not semantics). This is the ONLY path that reaches `RIPXSECRELS` and the
+`cursec` threading — the flat suite cannot exercise a relocation at all — so it
+is the stream that actually verifies defect 5, with the linker consuming the
+relocations rather than a comparator agreeing with itself.
+
+## A harness failure worth recording
+
+The first regression attempt fed these fixtures to `-f elf64` through
+`asmelfobj.la` and reported 6 FAIL / 13 SKIP. **Every one was the harness.**
+They are FLAT-BINARY tests: `asmelfobj.la` correctly refuses a source with no
+`section`, and `nasm -f elf64` correctly refuses `org`. I invented a harness
+instead of reading how the tests are actually run, and got 19 results that
+looked like findings and were noise.
+
+> **An instrument reporting FAILURE must first be shown to be running the thing
+> under test** — the mirror of the absence rule, and it cost a full run.
+
+## Still open, declared not hidden
+
+Commit `2daddbb` documented encoders still on plain `P66`, correct for the
+native size in each mode and mis-encoding only a cross-size operand:
+`TSTENC`, `DIVENC/G3ENC`, `IMUL2/3`, `CMOVENC`, `BSRENC`, `MOVZXENC`,
+`OUTENC/INENC`, `PUSHPOP`. Not reached by any current target. They belong in the
+ledger before this milestone counts as secured.
