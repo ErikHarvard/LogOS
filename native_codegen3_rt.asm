@@ -771,6 +771,43 @@ rt_init:
     mov     rax, [STACK_BASE]
     sub     rax, 0x700000
     mov     [STACK_LIMIT], rax
+
+    ; ── ★ METAL HEAP CLAMP — closes a filed, unguarded hazard ────────────
+    ; STACK_LIMIT above guards the stack growing DOWN. Nothing guarded the
+    ; HEAP growing UP into the same region. On the metal the LA stack sits at
+    ; 121-128 MiB (boot.asm LA_STACK_TOP = 0x8000000, growing down) while the
+    ; heap bumps upward from low RAM, so a long-running program's allocation
+    ; simply walks into the stack and corrupts frames SILENTLY -- no fault at
+    ; the moment of damage, control flow wrecked later somewhere else.
+    ;
+    ; The two guards measure OPPOSITE directions and only one existed. This
+    ; clamps HEAP_END down to STACK_LIMIT on the metal path, so an allocation
+    ; that would cross the boundary trips the existing `cmp rcx,[HEAP_END]`
+    ; heap-exhausted check and HALTS LOUDLY instead of scribbling on frames.
+    ;
+    ; Linux is untouched: there the 8 MiB OS stack is a separate mapping and
+    ; the kernel's own guard page catches it, so the clamp would only shrink
+    ; a 16 GiB heap for nothing.
+    ;
+    ; ★ THIS DOES NOT FIX HAL.4h. That terminal fault is deterministic on the
+    ; 6th keystroke with a fault address that varies from 128 B to 5.2 MiB
+    ; below the stack top -- 7 MiB above where this guard fires, with the
+    ; stack under half a kilobyte deep. Four theories have been refuted and
+    ; its cause is unknown. This closes a REAL hazard that was filed, unfixed
+    ; and unwitnessed for a month; it is not that bug, and must not be read
+    ; as having fixed it.
+    cmp     byte [rel METAL_FLAG], 0
+    jnz     .clampheap
+    mov     ax, cs
+    and     ax, 3
+    jz      .clampheap
+    ret                             ; Linux self-host: unchanged
+.clampheap:
+    mov     rax, [STACK_LIMIT]      ; reload: the cs test clobbered ax
+    cmp     [HEAP_END], rax
+    jbe     .initdone               ; heap already ends below the guard
+    mov     [HEAP_END], rax         ; clamp -> overrun becomes a loud halt
+.initdone:
     ret
 
 ; ── rt_gc: 3b.2b DRY-RUN collection — conservative MARK + heap-walk (no reclaim).
