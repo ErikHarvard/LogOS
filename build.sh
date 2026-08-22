@@ -21,6 +21,38 @@ run_host() {
     rm -f "$err"
 }
 
+# ── ncg3: compile native_input.la with native_codegen3, retrying ONLY a signal death ──
+# A long tiny_host compile has twice been killed by a signal mid-build, printing
+# bash's "Terminated" and nothing else. Under `set -e` that is an UNDIAGNOSABLE RED:
+# the log shows a section header, then stops. The next step then reports rc 127
+# ("not found") because no binary was produced — a symptom that reads like a
+# missing file rather than a killed compile.
+#
+# ★ RETRY ONLY ON rc >= 128, i.e. death by signal. A genuine compile failure
+# (rc 1: bad LA source, a real regression) is NOT retried and NOT masked —
+# a wrapper that hid real failures would be far worse than the fragility it
+# guards against. And the retry is ANNOUNCED, so a build that needed one is
+# visibly different from a build that did not.
+ncg3 () {
+    local rc
+    ./tiny_host native_codegen3.la >/dev/null 2>&1; rc=$?
+    # ★ RETRY ONLY 137/143 — SIGKILL and SIGTERM, the signals an EXTERNAL killer
+    # sends. Not every rc>=128: SIGSEGV/SIGBUS/SIGILL mean the compiler itself
+    # broke on its input, which is deterministic, so retrying would mask a real
+    # defect and double the time doing it. (The first version of this guard used
+    # rc>=128 and could not tell those apart.)
+    if [ "$rc" = "137" ] || [ "$rc" = "143" ]; then
+        echo "NOTE  native_codegen3 compile killed by signal $((rc-128)) — retrying once"
+        ./tiny_host native_codegen3.la >/dev/null 2>&1; rc=$?
+        if [ "$rc" = "137" ] || [ "$rc" = "143" ]; then
+            echo "FAIL  native_codegen3 compile killed by signal $((rc-128)) TWICE — not transient"
+        else
+            echo "NOTE  retry succeeded (rc=$rc) — the first kill was transient"
+        fi
+    fi
+    return $rc
+}
+
 say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
 echo "compiled -> tiny_host"
@@ -316,6 +348,71 @@ rm -f logos_secd logos_program.bin logos_source.la
 
 if [ "$ok" -eq 1 ]; then
     echo "PASS  import/export coherent across all 5 engines (C host, eval.la, RUN_BYTES, RUN_SM, native VM)"
+fi
+
+# ── bitwise operations across the engines ────────────────────────────────────
+# LA had NO bitwise ops, which is why every kernel driver is written with div/mod
+# where a shift is wanted, and why cryptography could not be written in the
+# language at all. band/bor/bxor/bshl/bshr/bnot now exist on every engine.
+#
+# The expected string below is the SPECIFICATION, not a captured run:
+#   8 14 6      band/bor/bxor of 12,10
+#   256 16      bshl(1,8), bshr(256,4)
+#   -1          bnot(0)
+#   15          bshr(-1,60) -- THE DISCRIMINATOR. Logical (zero-fill) gives 15;
+#               an ARITHMETIC shift would give -1. Crypto needs zero-fill.
+#   0 0 0       shift counts 64, 64, -1 -- outside 0..63 yield 0. x86 masks the
+#               count to 6 bits and ARM does not; the explicit range check
+#               suppresses the host CPU's accident so the engines agree.
+#   255 0       band(-1,255), bxor(-1,-1)
+say "SHA-256 in Lingua Adamica — the first cryptographic primitive the language can express"
+# Sits immediately BEFORE the bitwise gate on purpose: if both go red, the order
+# says which is the cause. sha256 is composed of those six builtins, so a broken
+# builtin breaks the hash — but a correct builtin set can still be composed wrong.
+bash gate_sha256.sh || exit 1
+
+say "the crypto substrate above the hash — KDF, MAC, stream cipher, authenticator, AEAD"
+# Sits immediately AFTER the sha256 gate for the same reason that one sits before
+# the bitwise gate: HMAC and HKDF are compositions of SHA-256, so if both go red
+# the order says which is the cause. ~360 s, of which ~200 s is hmac+hkdf on the
+# C host — SHA-256 is the expensive part, not the new modules.
+bash gate_crypto.sh || exit 1
+
+say "bitwise ops (band/bor/bxor/bshl/bshr/bnot) across the engines"
+BWEXP="8 14 6 256 16 -1 15 0 0 0 255 0 "
+ok=1
+bwc () { [ "$2" = "$BWEXP" ] || { echo "FAIL  bitwise $1: [$2] != [$BWEXP]"; ok=0; }; }
+
+bwc "C host"    "$(./tiny_host bitwise_test.la 2>/dev/null)"
+
+BWM="$(grep -n '^glyph MAIN' eval.la | tail -1 | cut -d: -f1)"
+head -$((BWM-1)) eval.la > /tmp/bw_eval.la
+printf 'glyph MAIN = (la _. print(""))(RUN(PARSE_PROGRAM(read_file("bitwise_test.la"))))\n' >> /tmp/bw_eval.la
+bwc "eval.la"   "$(./tiny_host /tmp/bw_eval.la 2>/dev/null | sed '${/^$/d;}')"
+
+BWB="$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)"
+head -$((BWB-1)) bytecode.la > /tmp/bw_bc.la
+printf 'glyph MAIN = (la _. print(""))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("bitwise_test.la"))))\n' >> /tmp/bw_bc.la
+bwc "RUN_BYTES" "$(./tiny_host /tmp/bw_bc.la 2>/dev/null | sed '${/^$/d;}')"
+
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp bitwise_test.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+bwc "native VM"  "$(./logos_secd 2>/dev/null)"
+rm -f logos_secd logos_program.bin logos_source.la
+
+# RUN_SM is ~100 s per recursion level, so it gets the DISCRIMINATOR alone
+# rather than the full matrix -- a bounded cost that still proves the builtin
+# is reachable and zero-filling on that engine.
+printf 'glyph MAIN = print(int_to_str(bshr(sub(0)(1))(60)))\n' > /tmp/bw_min.la
+head -$((BWB-1)) bytecode.la > /tmp/bw_sm.la
+printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/bw_min.la"))))\n' >> /tmp/bw_sm.la
+BWSM="$(timeout 1200 ./tiny_host /tmp/bw_sm.la 2>/dev/null | sed '${/^$/d;}')"
+[ "$BWSM" = "15" ] || { echo "FAIL  bitwise RUN_SM: bshr(-1,60) = [$BWSM], expected 15 (logical, not arithmetic)"; ok=0; }
+
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  bitwise: 12-case matrix identical on C host, eval.la, RUN_BYTES and the native VM; RUN_SM zero-fills (crypto is now writable IN the language)"
 else
     exit 1
 fi
@@ -1393,6 +1490,23 @@ PY
     #                         SIB=0x24;
     #        disp:            0 -> mod=00; fits signed byte -> mod=01+disp8
     #                         (negative in two's complement); else mod=10+disp32.
+    # ── cross-size: `bits 16` and `bits 32`, native AND cross operand size ──
+    # ★ Guards a defect no LENGTH check can see. TSTENC routed through
+    # RROP(...)(64) -- a literal where the MODE belongs -- so the operand-size
+    # prefix came out INVERTED in 16-bit: a correctly-sized instruction with the
+    # wrong bytes. It hid BEHIND a documented gap: 2daddbb listed ten encoders on
+    # plain P66 and threading `mode` through all ten still left `test` wrong.
+    # It could hide because there is no `bits 16` anywhere else in the suite --
+    # A DOCUMENTED GAP WITH NO FIXTURE IS INDISTINGUISHABLE FROM A CLOSED ONE.
+    # Fixture authored by track-b, added here because asm_test_*.asm is track A's
+    # to own; verified byte-identical at 103 B, and verified to FAIL (same 103
+    # bytes, different content) against the pre-fix assembler.
+    rm -f asm_out.bin .asmgate/nasm_xsize.bin; cp asm_test_xsize.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_xsize.out 2>&1 || { echo "FAIL  asm.la: cross-size program failed to assemble"; ok=0; }
+    nasm -f bin asm_test_xsize.asm -o .asmgate/nasm_xsize.bin 2>/dev/null
+    cmp -s asm_out.bin .asmgate/nasm_xsize.bin \
+      || { echo "FAIL  asm.la: cross-size (bits 16/32, operand-size prefix) DIFFERS from nasm"; ok=0; }
+
     rm -f asm_out.bin .asmgate/nasm_mem.bin; cp asm_test_mem.asm asm_in.asm
     ./tiny_host asm.la >.asmgate/asm_mem.out 2>&1 || { echo "FAIL  asm.la: memory-operand program failed: $(tail -1 .asmgate/asm_mem.out)"; ok=0; }
     nasm -f bin asm_test_mem.asm -o .asmgate/nasm_mem.bin 2>/dev/null
@@ -2570,7 +2684,7 @@ ok=1
 # (Stage 3b forked the runtime to add object headers; codegen3 no longer reuses codegen2's).
 if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
     # count = the actual assembled RT length (was a hardcoded 11201 that went stale
     # against the 11360-byte RT — a too-small count silently truncates the cmp, the
@@ -2693,7 +2807,7 @@ glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))
 glyph MAIN = print(COUNT(1000000)(0))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3: compile tail-1M"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3: compile tail-1M"; ok=0; }
 rc=0; timeout 120 ./native_codegen3_out > /tmp/c3_tail.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3_tail.out)" = "1000000" ]; } || { echo "FAIL  native_codegen3: tail N=1,000,000 did not complete (rc=$rc out=$(cat /tmp/c3_tail.out))"; ok=0; }
 printf 'glyph TRUE = la t. la f. t
@@ -2702,7 +2816,7 @@ glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph NT = Z(la self. la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(self(sub(n)(1)))))
 glyph MAIN = print(NT(1000000))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3: compile nontail-1M"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3: compile nontail-1M"; ok=0; }
 rc=0; NTERR=$(timeout 120 ./native_codegen3_out 2>&1 >/dev/null) || rc=$?
 # 3b.4: the deep non-tail recursion must halt LOUDLY via the native stack guard
 # (clean `native: stack overflow`, exit 134) — NOT complete (rc 0) and NOT a raw
@@ -2753,8 +2867,12 @@ say "Native backend Stage 3b: conservative mark-sweep GC — bounded memory (nat
 # allocator entry on exhaustion) marks from the verified root set (all GP regs +
 # TRUEVAL/FALSEVAL + the stack), then sweeps unmarked 24-byte objects onto a
 # free-list that the allocators reuse. HEADLINE: an int-forced tail loop at
-# N=10,000,000 allocates ~8 GB of mostly-dead 24-byte objects but COMPLETES in the
-# 1.5 GB heap — impossible without reclamation (the same workload un-GC'd runs the
+# N=10,000,000 allocates ~0.8 GB of mostly-dead 24-byte objects (MEASURED; the old
+# "~8 GB" was ~10x high) but COMPLETES in the 16 GiB heap. NOTE: completion alone
+# is a VACUOUS check at 16 GiB (peak RSS ~252 MiB); part (a') below asserts the
+# real property — bounded memory — as a scale-invariant RATIO.
+# 16 GiB heap. Completion alone no longer proves reclamation here (~0.8 GB fits un-GC'd);
+# part (a') asserts it via bounded peak RSS. The un-GC'd workload still runs the
 # bump frontier off the end). 3b.3b adds blob reclamation: blobs round up to
 # power-of-2 size-class free-lists (FREEBLOB), so a blob-churn loop is bounded too.
 # 3b.4 native stack guard (the last Stage-3b piece): every compiled lambda body
@@ -2764,14 +2882,14 @@ say "Native backend Stage 3b: conservative mark-sweep GC — bounded memory (nat
 # above (the non-tail N=1,000,000 differential).
 rm -f native_codegen3_out native_input.la
 ok=1
-# (a) 24-byte reclamation: int-forced tail loop, ~8 GB of dead 24B objects in 1.5 GB.
+# (a) 24-byte reclamation: int-forced tail loop, ~0.8 GB of dead 24B objects.
 printf 'glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
 glyph IF = la c. la t. la f. c(t)(f)(0)
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))
 glyph MAIN = print(COUNT(10000000)(0))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 Stage 3b: compile 24B GC-churn"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3 Stage 3b: compile 24B GC-churn"; ok=0; }
 rc=0; timeout 300 ./native_codegen3_out > /tmp/c3gc.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3gc.out)" = "10000000" ]; } || { echo "FAIL  native_codegen3 Stage 3b: 24B tail N=10,000,000 not bounded (rc=$rc out=$(cat /tmp/c3gc.out))"; ok=0; }
 # (b) blob reclamation: a tail loop that builds + discards strings each iter; a
@@ -2784,7 +2902,7 @@ glyph IF = la c. la t. la f. c(t)(f)(0)
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph CHURN = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la s. self(sub(n)(1)))(concat("%s")("%s"))))
 glyph MAIN = print(CHURN(2000000))\n' "$LIT" "$LIT" > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
 rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 not bounded (rc=$rc out=$(cat /tmp/c3bc.out))"; ok=0; }
 # (c) FREEZE-DAY FIX #1 — large-blob GC sweep must not corrupt REGDUMP. A >4 MB
@@ -2801,13 +2919,31 @@ printf 'glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LOOP = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la _. self(sub(n)(1)))(read_file("c3_big.txt"))))
 glyph MAIN = print(LOOP(400))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
 rc=0; timeout 200 ./native_codegen3_out > /tmp/c3big.out 2>/dev/null || rc=$?
 ./tiny_host native_input.la > /tmp/c3big.host 2>/dev/null
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3big.out)" = "done" ] && cmp -s /tmp/c3big.out /tmp/c3big.host; } || { echo "FAIL  native_codegen3 freeze-day #1: >4 MB blob GC sweep corrupts/diverges (rc=$rc native='$(cat /tmp/c3big.out)' host='$(cat /tmp/c3big.host)')"; ok=0; }
 rm -f c3_big.txt /tmp/c3big.out /tmp/c3big.host
+# (a') BOUNDED MEMORY — the assertion (a) cannot make. Peak RSS at 16x the
+#      allocation must not grow: a leak whose trigger tracks the bump frontier
+#      rather than allocation volume makes peak RSS ~ sqrt(allocations), which
+#      (a)'s completion check passes clean at 16 GiB. A RATIO is scale-invariant
+#      where an absolute limit is exactly what the 1.5->16 GiB bump gutted.
+mk24() { printf 'glyph TRUE = la t. la f. t\nglyph FALSE = la t. la f. f\nglyph IF = la c. la t. la f. c(t)(f)(0)\nglyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))\nglyph MAIN = print(COUNT(%d)(0))\n' "$1" > native_input.la; }
+gcpeak() { ncg3 || { echo X; return; }
+          o=$(/usr/bin/time -f '%M' ./native_codegen3_out 2>.gcp); a=$?
+          [ "$a" = 0 ] && [ "$o" = "$1" ] && tail -1 .gcp || echo X; }
+mk24 16000000;  P16=$(gcpeak 16000000)
+mk24 256000000; P256=$(gcpeak 256000000)
+case "$P16$P256" in *X*) echo "FAIL  native_codegen3 Stage 3b (a'): a bounded-memory run did not complete"; ok=0;; 
+esac
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~8 GB of dead 24B objects) COMPLETES in the 1.5 GB heap (live set ~25/pass via the FREE24 free-list). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~4 GB of blobs via power-of-2 FREEBLOB size-class lists) COMPLETES in the 1.5 GB heap (result 'done'). Both impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, dead blob swept every GC) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
+    GRW=$(( P256 * 100 / P16 ))
+    [ "$GRW" -lt 150 ] || { echo "FAIL  native_codegen3 Stage 3b (a'): 16x the allocation grew peak RSS ${GRW}% (${P16}->${P256} KB) — GC is not bounding memory"; ok=0; }
+fi
+rm -f .gcp
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~0.8 GB of dead 24B objects) COMPLETES in the 16 GiB heap (live set ~25/pass via the FREE24 free-list); (a') peak RSS is BOUNDED — 16x the allocation grows it <150% (was ~sqrt(allocations) when the GC trigger tracked the frontier not the volume). (b) blob reclamation: a blob-churn loop at N=2,000,000 COMPLETES in the 16 GiB heap (result 'done'). Bounded peak RSS (a') and the blob loop (b) are impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, dead blob swept every GC) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
 else
     exit 1
 fi
@@ -2845,7 +2981,7 @@ say "Native backend freeze-day fix #2: non-STR argument loud-halt (no SIGSEGV)"
 c2ok=1
 for c2p in 'str_len(add(1)(2))' 'ord(add(1)(2))' 'chr(add(1)(2))' 'str_to_int(add(1)(2))' 'str_head(add(1)(2))' 'str_tail(add(1)(2))' 'concat(add(1)(2))("x")' 'concat("x")(add(1)(2))' 'read_file(add(1)(2))'; do
     printf 'glyph MAIN = print(%s)\n' "$c2p" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #2: compile '$c2p'"; c2ok=0; }
+    ncg3 || { echo "FAIL  native_codegen3 #2: compile '$c2p'"; c2ok=0; }
     nrc=0; nout=$(timeout 30 ./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
     { [ "$nrc" != "0" ] && [ "$nrc" != "139" ] && [ -z "$nout" ] && [ "$hrc" != "0" ]; } \
@@ -2853,7 +2989,7 @@ for c2p in 'str_len(add(1)(2))' 'ord(add(1)(2))' 'chr(add(1)(2))' 'str_to_int(ad
 done
 # valid string use is UNAFFECTED (the guard rejects only non-STR values)
 printf 'glyph MAIN = print(str_len("Lingua Adamica"))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1
+ncg3
 { [ "$(./native_codegen3_out)" = "14" ] && [ "$(./tiny_host native_input.la)" = "14" ]; } \
   || { echo "FAIL  native_codegen3 #2: guard broke a valid str_len"; c2ok=0; }
 if [ "$c2ok" -eq 1 ]; then
@@ -2872,7 +3008,7 @@ say "Native backend freeze-day fix #3: chr out-of-range loud-halt"
 c3ok=1
 for c3v in 256 300 999; do
     printf 'glyph MAIN = print(chr("%s"))\n' "$c3v" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #3: compile chr($c3v)"; c3ok=0; }
+    ncg3 || { echo "FAIL  native_codegen3 #3: compile chr($c3v)"; c3ok=0; }
     nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
     { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
@@ -2881,7 +3017,7 @@ done
 # in-range chr is UNAFFECTED (boundary 0 and 255, plus a mid value) native==host
 for c3v in 0 65 255; do
     printf 'glyph MAIN = print(ord(chr("%s")))\n' "$c3v" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     { [ "$(./native_codegen3_out)" = "$c3v" ] && [ "$(./tiny_host native_input.la)" = "$c3v" ]; } \
       || { echo "FAIL  native_codegen3 #3: in-range chr($c3v) broke"; c3ok=0; }
 done
@@ -2907,7 +3043,7 @@ say "Native backend freeze-day fix #4: str_to_int strictness loud-halt"
 c4ok=1
 for c4s in x12x x x-; do   # str_tail -> "12x" (non-digit) / "" (empty) / "-" (lone minus)
     printf 'glyph MAIN = print(int_to_str(str_to_int(str_tail("%s"))))\n' "$c4s" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #4: compile str_to_int(str_tail($c4s))"; c4ok=0; }
+    ncg3 || { echo "FAIL  native_codegen3 #4: compile str_to_int(str_tail($c4s))"; c4ok=0; }
     nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
     { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
@@ -2918,7 +3054,7 @@ set -- "x42:42" "x-5:-5" "x0:0"
 for pair in "$@"; do
     inp=${pair%%:*}; exp=${pair##*:}
     printf 'glyph MAIN = print(int_to_str(str_to_int(str_tail("%s"))))\n' "$inp" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
       || { echo "FAIL  native_codegen3 #4: valid str_to_int(str_tail(\"$inp\"))=$exp broke (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c4ok=0; }
 done
@@ -2941,7 +3077,7 @@ say "Native backend freeze-day fix #5: div/mod by zero loud-halt (no SIGFPE)"
 c5ok=1
 for c5p in 'div(10)(sub(3)(3))' 'mod(10)(sub(7)(7))'; do
     printf 'glyph MAIN = print(%s)\n' "$c5p" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #5: compile [$c5p]"; c5ok=0; }
+    ncg3 || { echo "FAIL  native_codegen3 #5: compile [$c5p]"; c5ok=0; }
     nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
     { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
@@ -2951,7 +3087,7 @@ done
 for pair in 'div(17)(5):3' 'mod(17)(5):2' 'div(20)(4):5' 'mod(10)(sub(0)(3)):1'; do
     prog=${pair%:*}; exp=${pair##*:}
     printf 'glyph MAIN = print(%s)\n' "$prog" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
       || { echo "FAIL  native_codegen3 #5: valid [$prog]=$exp broke (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c5ok=0; }
 done
@@ -2982,7 +3118,7 @@ done
 for pair in 'print(42):42' 'print(str_to_int("0")):0' 'print(add(17)(5)):22' 'print((la x. x)(255)):255'; do
     prog=${pair%:*}; exp=${pair##*:}
     printf 'glyph MAIN = %s\n' "$prog" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
       || { echo "FAIL  native_codegen3 #6: positive [$prog]=$exp regressed (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c6ok=0; }
 done
@@ -3045,7 +3181,7 @@ hout=$(./tiny_host native_input.la 2>/dev/null)
   || { echo "FAIL  native_codegen3 #8: write_file produced an EXECUTABLE file (must be a plain data file, unlike write_exec)"; c8ok=0; }
 # read_file round-trips the native-written file (the moved rt_read_file/rt_copy_self addrs still resolve)
 printf 'glyph MAIN = print(read_file("/tmp/c8_nat.txt"))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1
+ncg3
 { [ "$(./native_codegen3_out)" = "hello write_file" ] && [ "$(./tiny_host native_input.la)" = "hello write_file" ]; } \
   || { echo "FAIL  native_codegen3 #8: read_file of the native-written file (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c8ok=0; }
 rm -f /tmp/c8_nat.txt /tmp/c8_host.txt
@@ -3140,7 +3276,7 @@ n12rc=0; echo data | ./native_codegen3_out >/dev/null 2>/tmp/n12.err || n12rc=$?
 printf 'seekable regular file\n' > /tmp/c12_reg.txt
 printf 'glyph MAIN = print(read_file("/tmp/c12_reg.txt"))\n' > native_input.la
 h12v="$(./tiny_host native_input.la 2>/dev/null)"
-./tiny_host native_codegen3.la >/dev/null 2>&1; n12v="$(./native_codegen3_out 2>/dev/null)"
+ncg3; n12v="$(./native_codegen3_out 2>/dev/null)"
 { [ "$h12v" = "seekable regular file" ] && [ "$n12v" = "seekable regular file" ]; } \
   || { echo "FAIL  native_codegen3 #12: regular-file read_file regressed (host='$h12v' native='$n12v')"; c12ok=0; }
 if [ "$c12ok" -eq 1 ]; then
@@ -3160,17 +3296,39 @@ rm -f logos_secd logos_program.bin logos_source.la new_logos_secd.bin new_logos_
 ./tiny_host secd.la >/dev/null 2>&1
 ok=1
 [ -f logos_secd ]                                  || { echo "FAIL  codegen: VM not emitted"; ok=0; }
-# 13775 -> 14207: `05ed1fe` (VM execv + dup2) grew the VM by 432 bytes and did
-# not update this constant, so ./build.sh has been RED since 2026-07-16 — the
-# freeze-day self-audit and every commit after it landed on a red build. The
-# gate was not wrong; it was simply never run in full (the asm gates were run
-# in an ad-hoc loop instead). Corrected here on INDEPENDENT evidence, not by
-# matching observed output: the byte-level drift guard immediately below
-# (logos_secd == `nasm -f bin secd.asm`) PASSES at 14207, so the VM agrees with
-# its documented source and it is this expectation that was stale.
-# MAINTENANCE: adding a VM builtin changes this number. Update it here in the
-# same commit, or the build goes red and stays red unnoticed again.
-[ "$(stat -c%s logos_secd 2>/dev/null)" = "14207" ] || { echo "FAIL  codegen: VM wrong size ($(stat -c%s logos_secd 2>/dev/null) != 14207)"; ok=0; }
+# ── THE SIZE EXPECTATION WAS A MAINTAINED CONSTANT. IT IS NOW DERIVED. ──
+# History, because it is the whole argument for the change:
+#   13775 -> 14207  `05ed1fe` (VM execv + dup2) grew the VM 432 bytes and did not
+#                   update the constant. ./build.sh was RED for 34 days unnoticed —
+#                   the freeze-day self-audit and every commit after it landed on a
+#                   red build. A MAINTENANCE note was added here saying "adding a VM
+#                   builtin changes this number, update it in the same commit".
+#   14207 -> 14639  adding the bitwise builtins grew the VM 432 bytes and did not
+#                   update the constant. Same defect, same cause, WITH the warning
+#                   already written in this file, by an author who had just read it.
+# Twice is a pattern, and the pattern is that a number a human must keep true is a
+# claim nothing keeps true. The prose did not defend it; only a check can.
+# So the expectation is DERIVED from the artifact instead: the VM's size must equal
+# the size of `nasm -f bin secd.asm`, the same source the byte-level drift guard
+# below compares against. Adding a builtin now needs NO edit here — and if the
+# emitted VM ever disagrees with its documented source, both this and the drift
+# guard go red, which is the property that actually matters.
+if command -v nasm >/dev/null 2>&1; then
+    nasm -f bin secd.asm -o /tmp/secd_size_ref 2>/dev/null
+    SECD_EXPECT=$(stat -c%s /tmp/secd_size_ref 2>/dev/null)
+    SECD_GOT=$(stat -c%s logos_secd 2>/dev/null)
+    [ -n "$SECD_EXPECT" ] && [ "$SECD_EXPECT" -gt 1024 ] \
+        || { echo "FAIL  codegen: could not derive the VM size from secd.asm"; ok=0; }
+    [ "$SECD_GOT" = "$SECD_EXPECT" ] \
+        || { echo "FAIL  codegen: VM size $SECD_GOT != $SECD_EXPECT derived from secd.asm"; ok=0; }
+    rm -f /tmp/secd_size_ref
+else
+    # No nasm: the size cannot be derived and the drift guard below is skipped too.
+    # Assert only what is checkable — that a VM was emitted at all — and SAY that the
+    # size is unverified rather than leaving a stale literal to rot.
+    [ -s logos_secd ] || { echo "FAIL  codegen: VM empty"; ok=0; }
+    echo "NOTE  codegen: VM size unverified (no nasm to derive the expectation from)"
+fi
 # Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
@@ -4143,15 +4301,24 @@ say "Denotational COMPOSE: the meaning of a compound as a FUNCTION of its parts 
 # Pure λ, byte-identical on the C host and the native VM.
 ok=1
 DEN_EXPECT="DENOTE ⊗-recovers-both[BEING,VOID]:pq | ↻(BEING)≡SELF-denotationally:T | nested-⊗(↻BEING,VOID):rs"
-DENH="$(./tiny_host denote.la 2>/dev/null)"
+# ★ FIRST LINE, exact. denote.la grew items 3 and 4 (γ_g / r_D and the combination
+# law), so its output is now three lines and a whole-output equality test against
+# this one-line constant fails — correctly. It is NOT loosened to a substring
+# match: this gate still exact-matches ITS OWN line, and the item 3/4 lines are
+# exact-matched by the LA-arc gate above. Each assertion owns what it asserts.
+DENALL="$(./tiny_host denote.la 2>/dev/null)"
+DENH="$(printf '%s\n' "$DENALL" | head -1)"
 [ "$DENH" = "$DEN_EXPECT" ] || { echo "FAIL  denote: host verdict wrong (got: $DENH)"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp denote.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-DENV="$(./logos_secd 2>/dev/null)"
+DENVALL="$(./logos_secd 2>/dev/null)"
+DENV="$(printf '%s\n' "$DENVALL" | head -1)"
 [ "$DENV" = "$DEN_EXPECT" ] || { echo "FAIL  denote: native VM verdict wrong (got: $DENV)"; ok=0; }
-[ "$DENH" = "$DENV" ]       || { echo "FAIL  denote: native != host"; ok=0; }
+# host==VM compares the FULL output, not just the first line — the byte-identity
+# claim is about everything the module emits, including items 3 and 4.
+[ "$DENALL" = "$DENVALL" ]  || { echo "FAIL  denote: native != host"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  denote: denotational COMPOSE — MEANING(⊗(BEING,VOID)) recovers BOTH parents (compositionality) + the κ→meaning homomorphism COMMUTES with canon's ↻(BEING)≡SELF (Fregean compositionality realised), byte-identical host and native VM"
@@ -5439,6 +5606,57 @@ bash kernel/gate_k5b1b.sh || exit 1
 # 0x3F000000 + task stacks at 0x38000000); skips cleanly when QEMU is absent.
 # The safe-point reshuffle self-hosts (the GC interior-pointer fix unblocked it).
 bash kernel/gate_k5b2.sh || exit 1
+
+# HAL.4e — the terminal window. NOTE: its siblings gate_comp_session.sh,
+# gate_hal1..5b, gate_hh1/2*, gate_k6*, gate_k7* all EXIST and PASS when run by
+# hand, and build.sh invokes NONE of them (14 of 40 kernel gates are wired).
+# That is the Q0 coverage finding, live: "done and gated" is true of those
+# milestones only in the sense that a gate exists — the build does not assert
+# them. Wiring this one does not fix that; it just does not add to it.
+say "LogOS HAL.4e: a terminal window in the compositor (text on the metal)"
+bash kernel/gate_comp_term.sh || exit 1
+
+# ── THE GATES THAT EXISTED AND WERE NEVER RUN ────────────────────────────
+# Before this block, build.sh invoked 15 of 40 kernel gates. The rest asserted
+# the HAL, the higher-half, all of ring 3 and the sovereign bootloader — and
+# nothing ran them. A milestone whose gate is never invoked can regress in
+# silence; that is exactly how the VM-size constant sat red for 34 days.
+# Each gate self-skips (exit 0) when qemu-system-x86_64 is absent.
+
+say "HAL — the bare-metal drivers, written in Lingua Adamica on thin asm physics"
+bash kernel/gate_hal1.sh || exit 1   # HAL.1 port-I/O primitives + PCI enumeration
+bash kernel/gate_hal2.sh || exit 1   # HAL.2 PS/2 keyboard (polled)
+bash kernel/gate_hal2b.sh || exit 1   # HAL.2b IRQ-driven keyboard (PIC + IRQ1)
+bash kernel/gate_hal3.sh || exit 1   # HAL.3 ATA disk read
+bash kernel/gate_hal3b.sh || exit 1   # HAL.3b ATA disk write
+bash kernel/gate_hal4.sh || exit 1   # HAL.4 linear framebuffer via a PCI BAR
+bash kernel/gate_hal4b.sh || exit 1   # HAL.4b bulk fill + memcpy-to-MMIO
+bash kernel/gate_hal4c.sh || exit 1   # HAL.4c the compositor on the metal
+bash kernel/gate_comp_session.sh || exit 1   # HAL.4d the interactive compositor session
+bash kernel/gate_hal5.sh || exit 1   # HAL.5a NIC discovery (RTL8139)
+bash kernel/gate_hal5b.sh || exit 1   # HAL.5b NIC send + receive — the first DMA driver
+
+say "Higher-half — the kernel running wholly above the canonical split"
+bash kernel/gate_hh1.sh || exit 1   # HH1 higher-half
+bash kernel/gate_hh1b.sh || exit 1   # HH1b the kernel runs WHOLLY in the higher half
+bash kernel/gate_hh2.sh || exit 1   # HH2
+bash kernel/gate_hh2b.sh || exit 1   # HH2b
+bash kernel/gate_hh2c.sh || exit 1   # HH2c
+
+say "K6 — ring 3, syscalls, and the typed IPC layer"
+bash kernel/gate_k6a.sh || exit 1   # K6a ring-3 privilege drop
+bash kernel/gate_k6b.sh || exit 1   # K6b the real LA image at ring 3
+bash kernel/gate_k6c.sh || exit 1   # K6c the syscall service layer
+bash kernel/gate_k6c2.sh || exit 1   # K6c.2 two ring-3 tasks + a kernel context switch
+bash kernel/gate_k6c3.sh || exit 1   # K6c.3a a single LA process does IPC at ring 3
+bash kernel/gate_k6c3b.sh || exit 1   # K6c.3b TWO LA tasks exchange a typed message
+
+say "K7 — the sovereign bootloader (LogOS boots itself, no GRUB)"
+bash kernel/gate_k7a.sh || exit 1   # K7a the sovereign boot sector
+bash kernel/gate_k7b.sh || exit 1   # K7b load the kernel image from disk + hand off
+
+say "Substrate invariance — the same LA image is ONE BEING on host and on metal"
+bash kernel/gate_with_ok.sh || exit 1   # WITH_OK host_image == metal_image, the eighth self-relation
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),
