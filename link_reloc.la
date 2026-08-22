@@ -129,7 +129,21 @@ glyph ISABS32 = la ty. OR(int_eq(ty)(10))(int_eq(ty)(11))
 #   opcode byte to rewrite sits at (reloc offset − 2); SBYTE reads it so a form
 #   this relaxation does not model (call/jmp-via-GOT, a non-mov) is REFUSED, not
 #   silently mis-rewritten.
-glyph ISGOTX = la ty. int_eq(ty)(42)
+#   ★ TYPE 9 (plain R_X86_64_GOTPCREL) RELAXES IDENTICALLY, and ld proves it
+#   rather than the ABI implying it. Assembling `mov rax, [rel s wrt ..gotpc]`
+#   gives `48 8b 05 disp32` with a type-9 reloc; ld emits
+#   `48 8d 05 f9 1f 00 00` = `lea 0x1ff9(%rip),%rax` resolving to s itself.
+#   Same 8b->8d rewrite, same PC32-to-symbol resolution as 42 — so this is one
+#   more type on an existing arm, not new machinery.
+#   42 is the assembler's "I promise this is relaxable" marker; 9 is the classic
+#   form. In a STATIC link the symbol is never preemptible, so the promise holds
+#   either way — which is why ld relaxes both here.
+#   The SBYTE opcode guard below still applies: a form this relaxation does not
+#   model is REFUSED, not silently mis-rewritten. That guard is what makes
+#   widening the type set safe rather than hopeful.
+#   Found because link_test_got32.asm was the first fixture to emit a type 9 at
+#   all — the linker had halted "unsupported relocation type 9" since inception.
+glyph ISGOTX = la ty. OR(int_eq(ty)(42))(int_eq(ty)(9))
 glyph SBYTE  = la s. la o. str_to_int(ord(DROPS(o)(s)))
 
 #   ── REAL GOT — the forms ld genuinely KEEPS a .got for ──────────────────────

@@ -209,11 +209,36 @@ glyph REL_TYPE  = la f. la rs. la i. U32(f)(add(RELOFF(f)(rs)(i))(8))
 glyph REL_SYM   = la f. la rs. la i. U32(f)(add(RELOFF(f)(rs)(i))(12))
 glyph REL_ADDEND= la f. la rs. la i. SIGN32(LOW4(f)(add(RELOFF(f)(rs)(i))(16)))
 glyph REL_COUNT = la f. la rs. div(SH_SIZE(f)(rs))(24)
+#   ★ NAME EVERY TYPE THE LINKER HANDLES, not a subset. This named 1, 2 and 4
+#   while the resolver handles more, so a failure involving 32S, GOT32 or GOT64
+#   reported as `R_X86_64_? 11` — a bare number, at the moment the reader most
+#   needs the name. Same defect NUMV's comment records one layer down: halting
+#   loudly is not enough if the message sends you to the wrong place.
+#
+#   ★★ EVERY NUMBER HERE WAS READ OUT OF A REAL OBJECT, not recalled. My first
+#   cut named 26 as R_X86_64_GOTPCREL from memory — it is NOT. GOTPCREL is 9,
+#   confirmed by parsing r_info from an object nasm produced. A diagnostic table
+#   is exactly the wrong place to be approximately right: a wrong name is worse
+#   than a bare number, because the number invites a lookup and the name ends it.
+#   26 and 42 are therefore NOT named: `ISGOTPC`/`ISGOTX` reference them, but I
+#   could not get nasm to emit either here, so I cannot verify what they are.
+#   They fall to the `?` arm until someone produces one.
+#
+#   Verified: 1 R_X86_64_64 · 2 PC32 · 3 GOT32 · 4 PLT32 · 9 GOTPCREL ·
+#             10 R_X86_64_32 · 11 32S · 27 GOT64
+#   ★ TYPE 9 IS NAMED BUT NOT HANDLED — link_reloc.la has no arm for it and
+#   halts "unsupported relocation type 9". Naming it is the point: the halt now
+#   says what it choked on instead of leaving a number to look up.
 glyph RELTYPENAME = la t.
     IF(int_eq(t)(1))(la _. "R_X86_64_64")(la _.
     IF(int_eq(t)(2))(la _. "R_X86_64_PC32")(la _.
+    IF(int_eq(t)(3))(la _. "R_X86_64_GOT32")(la _.
     IF(int_eq(t)(4))(la _. "R_X86_64_PLT32")(la _.
-      concat("R_X86_64_? ")(int_to_str(t)))))
+    IF(int_eq(t)(9))(la _. "R_X86_64_GOTPCREL")(la _.
+    IF(int_eq(t)(10))(la _. "R_X86_64_32")(la _.
+    IF(int_eq(t)(11))(la _. "R_X86_64_32S")(la _.
+    IF(int_eq(t)(27))(la _. "R_X86_64_GOT64")(la _.
+      concat("R_X86_64_? ")(int_to_str(t))))))))))
 
 # ── the dump ────────────────────────────────────────────────────────────────
 glyph NL = "\n"
