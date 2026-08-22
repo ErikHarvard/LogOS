@@ -513,3 +513,50 @@ bits 32
     out dx, ax
     out dx, eax
 ```
+
+
+# THE SEAM: does `link.la` still consume what `asm.la` now emits? (2026-08-22)
+
+The nine fixes changed the assembler's OUTPUT. Defect 7 made it emit
+`R_X86_64_PC32` against SECTION symbols with NEGATIVE addends — a form it had
+never produced. `link.la` is what consumes those, and nothing had checked the
+two halves of the LA-only toolchain still agree across the change: each was
+verified alone.
+
+**Result: they agree.** Fixture exercising four fixed defects at once
+(cross-section RIP, index-after-displacement, imm64, ALU-label):
+
+    entry point        ld 0x401005  ==  link.la 0x401005
+    .rodata            byte-identical
+    lea rax,[rel msg]  ld -> 0x401000 = msg    link.la -> 0x401000 = msg
+    lea r8, [rel flag] ld -> 0x402034 = flag   link.la -> 0x402000 = flag
+
+## ★★ THE OBVIOUS GATE IS THE WRONG ONE, and that is the finding
+
+Byte-comparing `link.la`'s image against `ld`'s FAILS at `.boot32` byte 11 —
+because `ld` places `.bss` at `0x402034` and `link.la` at `0x402000`, so every
+RIP-relative displacement LEGITIMATELY differs. **Two correct linkers, two valid
+layouts, different bytes.** Reporting that FAIL at face value would have filed a
+defect against `link.la` that does not exist — the false-accusation mode, from a
+check that looks rigorous *precisely because it is strict*.
+
+The gate must be SEMANTIC: does `P_next + disp` equal the symbol's address? Both
+linkers pass independently, under different layouts.
+
+⇒ Byte-identity is the right gate for an ASSEMBLER against nasm (same layout by
+construction) and the WRONG one for a LINKER against ld (layout is the linker's
+own choice). The same comparison is rigorous in one place and false in the other.
+
+## Two defects in the gate itself, fixed before committing
+
+1. **It skipped permanently.** It looked for `asmelfobj.la` locally — track A's
+   file, absent from this worktree — so it would have SKIPped forever here.
+   A gate that can never run is worse than no gate, and a SKIP reads like a PASS
+   at a glance. Now the producer is staged READ-ONLY from git.
+2. **It did not say which assembler it tested.** A silent fallback to the
+   committed `asm.la` would test the PRE-FIX code while claiming to verify the
+   fix. It now prints the assembler under test and labels the fallback
+   explicitly.
+
+**Red-pathed:** flipping ONE BIT of the `lea` disp32 makes it report
+`resolves 0x401001, symbol at 0x401000`. It is measuring something.
