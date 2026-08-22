@@ -1,0 +1,77 @@
+export HMAC HMAC_RAW
+# =====================================================================
+#  hmac.la — HMAC-SHA256 in Lingua Adamica (RFC 2104 / RFC 4231).
+#
+#  The MAC the coverage audit named as absent. `sha256.la` is a hash; a hash is
+#  not a MAC — appending a key to a message and hashing it is forgeable by length
+#  extension, which is precisely why HMAC exists and why this is a separate
+#  module rather than two lines somewhere.
+#
+#      HMAC(K, m) = H( (K' XOR opad) || H( (K' XOR ipad) || m ) )
+#
+#  ── WHY IT IMPORTS RATHER THAN COPIES ───────────────────────────────
+#  It imports SHA256_RAW from sha256.la. Inlining the hash would make a second
+#  copy of 64 round constants that must stay identical forever — the duplicate
+#  class this project keeps finding. One hash, one home.
+#
+#  ── THE PART THAT FAILS SILENTLY ────────────────────────────────────
+#  The inner hash must produce BYTES. Feeding the hex TEXT of a digest into the
+#  outer hash yields a well-formed 64-character answer that is simply wrong — no
+#  error, no crash, just a MAC that never matches anyone else's. That is why
+#  sha256.la grew SHA256_RAW instead of this module calling SHA256.
+#
+#  ── WITNESS ─────────────────────────────────────────────────────────
+#  RFC 4231 test cases 1 and 2. Case 2's key is SHORTER than the block and case
+#  1's is padded, so together they exercise both key paths. A third case with an
+#  over-long key (which must be hashed first) is left for when the caller needs
+#  it, and its absence is stated rather than implied.
+# =====================================================================
+
+import("sha256.la")
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph BLKSZ = 64
+glyph IPAD  = 54
+glyph OPAD  = 92
+
+glyph CHRI = la n. chr(int_to_str(n))
+glyph ORDI = la c. str_to_int(ord(c))
+glyph SLEN = la s. str_to_int(str_len(s))
+
+# K XOR pad, byte by byte, over a key already padded to the block size
+glyph XORP = Z(la self. la s. la pad. la i.
+    IF(int_eq(i)(BLKSZ))(la _. "")(la _.
+      concat(CHRI(bxor(ORDI(str_head(s)))(pad)))
+            (self(str_tail(s))(pad)(add(i)(1)))))
+
+# right-pad a key with zero bytes to exactly one block
+glyph ZPADK = Z(la self. la s. la n.
+    IF(int_eq(n)(0))(la _. s)(la _. self(concat(s)(CHRI(0)))(sub(n)(1))))
+
+# K' — a key longer than the block is HASHED first, then padded (RFC 2104)
+glyph KPRIME = la k.
+    (la kk. ZPADK(kk)(sub(BLKSZ)(SLEN(kk))))
+    (IF(lt(BLKSZ)(SLEN(k)))(la _. SHA256_RAW(k))(la _. k))
+
+glyph HMAC_RAW = la k. la m.
+    (la kp. SHA256_RAW(concat(XORP(kp)(OPAD)(0))
+                             (SHA256_RAW(concat(XORP(kp)(IPAD)(0))(m)))))
+    (KPRIME(k))
+
+glyph HEXD = la n. str_head((Z(la self. la i. la s.
+    IF(int_eq(i)(0))(la _. s)(la _. self(sub(i)(1))(str_tail(s)))))(n)("0123456789abcdef"))
+glyph TOHEX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      concat(concat(HEXD(div(ORDI(str_head(s)))(16)))(HEXD(mod(ORDI(str_head(s)))(16))))
+            (self(str_tail(s)))))
+glyph HMAC = la k. la m. TOHEX(HMAC_RAW(k)(m))
+
+# ── RFC 4231 known-answer tests ──
+glyph REP = Z(la self. la c. la n. IF(int_eq(n)(0))(la _. "")(la _. concat(c)(self(c)(sub(n)(1)))))
+glyph K1 = REP(CHRI(11))(20)
+glyph E1 = "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+glyph E2 = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+glyph MARK = la got. la exp. IF(str_eq(got)(exp))(la _. "OK")(la _. concat("WRONG ")(got))
+glyph MAIN = print(concat(concat("hmac TC1 ")(MARK(HMAC(K1)("Hi There"))(E1)))
+                         (concat(" | TC2 ")(MARK(HMAC("Jefe")("what do ya want for nothing?"))(E2))))
