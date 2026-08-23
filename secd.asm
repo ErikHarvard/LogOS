@@ -608,6 +608,36 @@ _start:
     test    eax, eax
     je      .bi27
     mov     rsi, rbp
+    mov     rdi, str_band
+    call    strcmp
+    test    eax, eax
+    je      .bi60
+    mov     rsi, rbp
+    mov     rdi, str_bor
+    call    strcmp
+    test    eax, eax
+    je      .bi61
+    mov     rsi, rbp
+    mov     rdi, str_bxor
+    call    strcmp
+    test    eax, eax
+    je      .bi62
+    mov     rsi, rbp
+    mov     rdi, str_bshl
+    call    strcmp
+    test    eax, eax
+    je      .bi63
+    mov     rsi, rbp
+    mov     rdi, str_bshr
+    call    strcmp
+    test    eax, eax
+    je      .bi64
+    mov     rsi, rbp
+    mov     rdi, str_bnot
+    call    strcmp
+    test    eax, eax
+    je      .bi65
+    mov     rsi, rbp
     mov     rdi, str_reap
     call    strcmp
     test    eax, eax
@@ -852,6 +882,24 @@ _start:
 .bi27:
     mov     r11, 27
     jmp     .pushbi
+.bi60:
+    mov     r11, 60
+    jmp     .pushbi
+.bi61:
+    mov     r11, 61
+    jmp     .pushbi
+.bi62:
+    mov     r11, 62
+    jmp     .pushbi
+.bi63:
+    mov     r11, 63
+    jmp     .pushbi
+.bi64:
+    mov     r11, 64
+    jmp     .pushbi
+.bi65:
+    mov     r11, 65
+    jmp     .pushbi
 .bi28:
     mov     r11, 28
     jmp     .pushbi
@@ -1059,6 +1107,18 @@ _start:
     je      .bi_strtoint
     cmp     r11, 20
     je      .bi_inttostr
+    cmp     r11, 60
+    je      .mkpa
+    cmp     r11, 61
+    je      .mkpa
+    cmp     r11, 62
+    je      .mkpa
+    cmp     r11, 63
+    je      .mkpa
+    cmp     r11, 64
+    je      .mkpa
+    cmp     r11, 65
+    je      .bi_bnot
     cmp     r11, 21
     je      .mkpa
     cmp     r11, 22
@@ -1180,6 +1240,16 @@ _start:
     je      .bi_lt2
     cmp     r10, 27
     je      .bi_inteq2
+    cmp     r10, 60
+    je      .bi_band2
+    cmp     r10, 61
+    je      .bi_bor2
+    cmp     r10, 62
+    je      .bi_bxor2
+    cmp     r10, 63
+    je      .bi_bshl2
+    cmp     r10, 64
+    je      .bi_bshr2
     cmp     r10, 32
     je      .bi_read2
     cmp     r10, 38
@@ -3276,6 +3346,39 @@ _start:
     idiv    r9
     mov     rax, rdx
     jmp     .push_int
+.bi_band2:                       ; rbp & r9 — two's complement, matches tiny_host
+    mov     rax, rbp
+    and     rax, r9
+    jmp     .push_int
+.bi_bor2:
+    mov     rax, rbp
+    or      rax, r9
+    jmp     .push_int
+.bi_bxor2:
+    mov     rax, rbp
+    xor     rax, r9
+    jmp     .push_int
+.bi_bshl2:                       ; count outside 0..63 -> 0 (see header: x86
+    cmp     r9, 63               ; MASKS the count to 6 bits and ARM does not,
+    ja      .bi_shift_zero       ; so the range check suppresses that accident;
+    mov     rcx, r9              ; `ja` also catches negatives as unsigned-large
+    mov     rax, rbp
+    shl     rax, cl
+    jmp     .push_int
+.bi_bshr2:                       ; LOGICAL (shr), never arithmetic (sar)
+    cmp     r9, 63
+    ja      .bi_shift_zero
+    mov     rcx, r9
+    mov     rax, rbp
+    shr     rax, cl
+    jmp     .push_int
+.bi_shift_zero:
+    xor     rax, rax
+    jmp     .push_int
+.bi_bnot:                        ; UNARY: r9 = arg
+    mov     rax, r9
+    not     rax
+    jmp     .push_int
 .push_int:
     mov     qword [r12], 4
     mov     [r12+8], rax
@@ -3715,6 +3818,12 @@ str_div:       db "div", 0
 str_mod:       db "mod", 0
 str_lt:        db "lt", 0
 str_inteq:     db "int_eq", 0
+str_band:      db "band", 0
+str_bor:       db "bor", 0
+str_bxor:      db "bxor", 0
+str_bshl:      db "bshl", 0
+str_bshr:      db "bshr", 0
+str_bnot:      db "bnot", 0
 str_reap:      db "reap", 0
 str_sleep:     db "sleep", 0
 str_error:     db "error", 0

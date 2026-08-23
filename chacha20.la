@@ -1,0 +1,125 @@
+# =====================================================================
+#  chacha20.la — the ChaCha20 block function in Lingua Adamica (RFC 8439).
+#
+#  The cipher the coverage audit named as absent. With sha256/hmac/hkdf already
+#  here, this completes the minimum set a key-management design (B1) needs:
+#  a hash, a MAC, a KDF, and a cipher.
+#
+#  ── WHY CHACHA20 AND NOT AES ────────────────────────────────────────
+#  Not availability — SAFETY, and it bears directly on contradiction C4 (that
+#  constant-time cryptography is at odds with LA as compiled today). AES in
+#  software uses lookup tables, so its timing depends on secret data through the
+#  cache; defeating that needs hardware instructions LA cannot emit. ChaCha20 is
+#  pure ARX: add, rotate, xor, on fixed indices, with NO data-dependent branch
+#  and NO data-dependent memory access. **Its constant-time property comes from
+#  the algorithm, not the compiler** — so a naive stack machine with heap boxing
+#  inherits it. That is the one cipher choice that survives C4 rather than
+#  arguing with it.
+#
+#  ── WHY THE STATE IS SIXTEEN ARGUMENTS, NOT A LIST ──────────────────
+#  LA has no arrays. Holding the 16 words in a list means NTH on every access —
+#  O(n) per read and a full rebuild per write, ~640 traversals per block. The
+#  state is instead threaded as sixteen values through continuation-passing, so
+#  every access is a variable reference. Same algorithm, no data structure.
+#
+#  ── WHAT THIS IS NOT ────────────────────────────────────────────────
+#  This is the BLOCK FUNCTION and the keystream, not an AEAD. Encryption without
+#  authentication is a footgun: it hides content while leaving it silently
+#  malleable. Poly1305 and the AEAD construction are the next module, and until
+#  they exist **this must not be used to protect anything.** Stated here because
+#  a cipher that looks finished is exactly how that mistake gets made.
+#
+#  ── WITNESS ─────────────────────────────────────────────────────────
+#  RFC 8439 section 2.3.2: the full 20-round block for a known key, counter and
+#  nonce. Any rotate off by one, any missed wrap, any transposed index changes
+#  all 16 output words.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph M32  = 4294967295
+glyph ADD32 = la a. la b. band(add(a)(b))(M32)
+glyph XOR32 = la a. la b. bxor(a)(b)
+glyph ROTL  = la a. la n. bor(band(bshl(a)(n))(M32))(bshr(a)(sub(32)(n)))
+
+# ── the quarter round, in continuation-passing style ──
+#    QR(a)(b)(c)(d)(k) applies the round and hands the four new words to k.
+glyph QR = la a. la b. la c. la d. la k.
+    (la a1. (la d1. (la c1. (la b1.
+      (la a2. (la d2. (la c2. (la b2.
+        k(a2)(b2)(c2)(d2))
+        (ROTL(XOR32(b1)(c2))(7)))
+        (ADD32(c1)(d2)))
+        (ROTL(XOR32(d1)(a2))(8)))
+        (ADD32(a1)(b1)))
+      (ROTL(XOR32(b)(c1))(12)))
+      (ADD32(c)(d1)))
+      (ROTL(XOR32(d)(a1))(16)))
+      (ADD32(a)(b))
+
+glyph CONST0 = 1634760805
+glyph CONST1 = 857760878
+glyph CONST2 = 2036477234
+glyph CONST3 = 1797285236
+
+glyph DBLROUND = la s0. la s1. la s2. la s3. la s4. la s5. la s6. la s7. la s8. la s9. la s10. la s11. la s12. la s13. la s14. la s15. la k.
+    QR(s0)(s4)(s8)(s12)(la t1_0. la t1_4. la t1_8. la t1_12.
+    QR(s1)(s5)(s9)(s13)(la t2_1. la t2_5. la t2_9. la t2_13.
+    QR(s2)(s6)(s10)(s14)(la t3_2. la t3_6. la t3_10. la t3_14.
+    QR(s3)(s7)(s11)(s15)(la t4_3. la t4_7. la t4_11. la t4_15.
+    QR(t1_0)(t2_5)(t3_10)(t4_15)(la t5_0. la t5_5. la t5_10. la t5_15.
+    QR(t2_1)(t3_6)(t4_11)(t1_12)(la t6_1. la t6_6. la t6_11. la t6_12.
+    QR(t3_2)(t4_7)(t1_8)(t2_13)(la t7_2. la t7_7. la t7_8. la t7_13.
+    QR(t4_3)(t1_4)(t2_9)(t3_14)(la t8_3. la t8_4. la t8_9. la t8_14.
+      k(t5_0)(t6_1)(t7_2)(t8_3)(t8_4)(t5_5)(t6_6)(t7_7)(t7_8)(t8_9)(t5_10)(t6_11)(t6_12)(t7_13)(t8_14)(t5_15)))))))))
+
+glyph ROUNDS = la s0. la s1. la s2. la s3. la s4. la s5. la s6. la s7. la s8. la s9. la s10. la s11. la s12. la s13. la s14. la s15. la k.
+    DBLROUND(s0)(s1)(s2)(s3)(s4)(s5)(s6)(s7)(s8)(s9)(s10)(s11)(s12)(s13)(s14)(s15)(la r0_0. la r0_1. la r0_2. la r0_3. la r0_4. la r0_5. la r0_6. la r0_7. la r0_8. la r0_9. la r0_10. la r0_11. la r0_12. la r0_13. la r0_14. la r0_15.
+    DBLROUND(r0_0)(r0_1)(r0_2)(r0_3)(r0_4)(r0_5)(r0_6)(r0_7)(r0_8)(r0_9)(r0_10)(r0_11)(r0_12)(r0_13)(r0_14)(r0_15)(la r1_0. la r1_1. la r1_2. la r1_3. la r1_4. la r1_5. la r1_6. la r1_7. la r1_8. la r1_9. la r1_10. la r1_11. la r1_12. la r1_13. la r1_14. la r1_15.
+    DBLROUND(r1_0)(r1_1)(r1_2)(r1_3)(r1_4)(r1_5)(r1_6)(r1_7)(r1_8)(r1_9)(r1_10)(r1_11)(r1_12)(r1_13)(r1_14)(r1_15)(la r2_0. la r2_1. la r2_2. la r2_3. la r2_4. la r2_5. la r2_6. la r2_7. la r2_8. la r2_9. la r2_10. la r2_11. la r2_12. la r2_13. la r2_14. la r2_15.
+    DBLROUND(r2_0)(r2_1)(r2_2)(r2_3)(r2_4)(r2_5)(r2_6)(r2_7)(r2_8)(r2_9)(r2_10)(r2_11)(r2_12)(r2_13)(r2_14)(r2_15)(la r3_0. la r3_1. la r3_2. la r3_3. la r3_4. la r3_5. la r3_6. la r3_7. la r3_8. la r3_9. la r3_10. la r3_11. la r3_12. la r3_13. la r3_14. la r3_15.
+    DBLROUND(r3_0)(r3_1)(r3_2)(r3_3)(r3_4)(r3_5)(r3_6)(r3_7)(r3_8)(r3_9)(r3_10)(r3_11)(r3_12)(r3_13)(r3_14)(r3_15)(la r4_0. la r4_1. la r4_2. la r4_3. la r4_4. la r4_5. la r4_6. la r4_7. la r4_8. la r4_9. la r4_10. la r4_11. la r4_12. la r4_13. la r4_14. la r4_15.
+    DBLROUND(r4_0)(r4_1)(r4_2)(r4_3)(r4_4)(r4_5)(r4_6)(r4_7)(r4_8)(r4_9)(r4_10)(r4_11)(r4_12)(r4_13)(r4_14)(r4_15)(la r5_0. la r5_1. la r5_2. la r5_3. la r5_4. la r5_5. la r5_6. la r5_7. la r5_8. la r5_9. la r5_10. la r5_11. la r5_12. la r5_13. la r5_14. la r5_15.
+    DBLROUND(r5_0)(r5_1)(r5_2)(r5_3)(r5_4)(r5_5)(r5_6)(r5_7)(r5_8)(r5_9)(r5_10)(r5_11)(r5_12)(r5_13)(r5_14)(r5_15)(la r6_0. la r6_1. la r6_2. la r6_3. la r6_4. la r6_5. la r6_6. la r6_7. la r6_8. la r6_9. la r6_10. la r6_11. la r6_12. la r6_13. la r6_14. la r6_15.
+    DBLROUND(r6_0)(r6_1)(r6_2)(r6_3)(r6_4)(r6_5)(r6_6)(r6_7)(r6_8)(r6_9)(r6_10)(r6_11)(r6_12)(r6_13)(r6_14)(r6_15)(la r7_0. la r7_1. la r7_2. la r7_3. la r7_4. la r7_5. la r7_6. la r7_7. la r7_8. la r7_9. la r7_10. la r7_11. la r7_12. la r7_13. la r7_14. la r7_15.
+    DBLROUND(r7_0)(r7_1)(r7_2)(r7_3)(r7_4)(r7_5)(r7_6)(r7_7)(r7_8)(r7_9)(r7_10)(r7_11)(r7_12)(r7_13)(r7_14)(r7_15)(la r8_0. la r8_1. la r8_2. la r8_3. la r8_4. la r8_5. la r8_6. la r8_7. la r8_8. la r8_9. la r8_10. la r8_11. la r8_12. la r8_13. la r8_14. la r8_15.
+    DBLROUND(r8_0)(r8_1)(r8_2)(r8_3)(r8_4)(r8_5)(r8_6)(r8_7)(r8_8)(r8_9)(r8_10)(r8_11)(r8_12)(r8_13)(r8_14)(r8_15)(la r9_0. la r9_1. la r9_2. la r9_3. la r9_4. la r9_5. la r9_6. la r9_7. la r9_8. la r9_9. la r9_10. la r9_11. la r9_12. la r9_13. la r9_14. la r9_15.
+      k(r9_0)(r9_1)(r9_2)(r9_3)(r9_4)(r9_5)(r9_6)(r9_7)(r9_8)(r9_9)(r9_10)(r9_11)(r9_12)(r9_13)(r9_14)(r9_15)))))))))))
+
+# ── the block function: 20 rounds, then add the original state back in ──
+#    The feed-forward add is what makes it one-way; without it the permutation
+#    is trivially invertible and the keystream leaks the state.
+glyph SHOW = Z(la self. la i. la l.
+    IF(int_eq(i)(0))(la _. "")(la _. concat(concat(int_to_str(HEADL(l)))(" "))(self(sub(i)(1))(TAILL(l)))))
+glyph PAIRC = la a. la b. la s. s(a)(b)
+glyph HEADL = la l. l(la a. la b. a)
+glyph TAILL = la l. l(la a. la b. b)
+glyph L16 = la v0. la v1. la v2. la v3. la v4. la v5. la v6. la v7. la v8. la v9. la v10. la v11. la v12. la v13. la v14. la v15. PAIRC(v0)(PAIRC(v1)(PAIRC(v2)(PAIRC(v3)(PAIRC(v4)(PAIRC(v5)(PAIRC(v6)(PAIRC(v7)(PAIRC(v8)(PAIRC(v9)(PAIRC(v10)(PAIRC(v11)(PAIRC(v12)(PAIRC(v13)(PAIRC(v14)(PAIRC(v15)(""))))))))))))))))
+
+glyph BLOCK = la k0. la k1. la k2. la k3. la k4. la k5. la k6. la k7. la ctr. la n0. la n1. la n2.
+    ROUNDS(CONST0)(CONST1)(CONST2)(CONST3)(k0)(k1)(k2)(k3)(k4)(k5)(k6)(k7)(ctr)(n0)(n1)(n2)
+      (la o0. la o1. la o2. la o3. la o4. la o5. la o6. la o7. la o8. la o9. la o10. la o11. la o12. la o13. la o14. la o15.
+        L16(ADD32(o0)(CONST0))(ADD32(o1)(CONST1))(ADD32(o2)(CONST2))(ADD32(o3)(CONST3))(ADD32(o4)(k0))(ADD32(o5)(k1))(ADD32(o6)(k2))(ADD32(o7)(k3))(ADD32(o8)(k4))(ADD32(o9)(k5))(ADD32(o10)(k6))(ADD32(o11)(k7))(ADD32(o12)(ctr))(ADD32(o13)(n0))(ADD32(o14)(n1))(ADD32(o15)(n2)))
+
+
+
+# ── a 64-byte keystream block, little-endian, for callers that want bytes ──
+glyph CHRI = la n. chr(int_to_str(n))
+glyph W2LE = la w.
+    concat(concat(CHRI(band(w)(255)))(CHRI(band(bshr(w)(8))(255))))
+          (concat(CHRI(band(bshr(w)(16))(255)))(CHRI(band(bshr(w)(24))(255))))
+glyph SERIAL = Z(la self. la i. la l.
+    IF(int_eq(i)(0))(la _. "")(la _. concat(W2LE(HEADL(l)))(self(sub(i)(1))(TAILL(l)))))
+glyph KSBYTES = la k0. la k1. la k2. la k3. la k4. la k5. la k6. la k7. la ctr. la n0. la n1. la n2.
+    SERIAL(16)(BLOCK(k0)(k1)(k2)(k3)(k4)(k5)(k6)(k7)(ctr)(n0)(n1)(n2))
+
+export BLOCK KSBYTES
+
+glyph EXPECT = "3840405776 358169553 534581072 3295748259 3354710471 57196595 2594841092 1315755203 1180992210 162176775 98026004 2718075865 3516666549 3108902622 3900952779 1312575650 "
+glyph EXPECT2 = "2917185654 2419978656 3848953152 683509331 3088700093 451775904 3438229160 3339548555 2086224346 2370328401 1071654007 927652024 4105716586 480319509 1773569987 2254827186 "
+glyph MARK = la got. la exp. IF(str_eq(got)(exp))(la _. "OK")(la _. concat("WRONG ")(got))
+glyph MAIN = (la a. la b.
+    print(concat(concat("chacha20 2.3.2 ")(MARK(a)(EXPECT)))
+                (concat(" | A.1#1 zero-key ")(MARK(b)(EXPECT2)))))
+  (SHOW(16)(BLOCK(50462976)(117835012)(185207048)(252579084)(319951120)(387323156)(454695192)(522067228)(1)(150994944)(1241513984)(0)))
+  (SHOW(16)(BLOCK(0)(0)(0)(0)(0)(0)(0)(0)(0)(0)(0)(0)))

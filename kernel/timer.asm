@@ -31,7 +31,7 @@ TICK_ADDR   equ 0x310000        ; 3211264 — the LA probe peek()s its low byte
 ; point reads+clears it and yields. This MUST match the address derived from the
 ; rt listing — build_k5b2.sh asserts it (a wrong address would set a random byte
 ; in the LA image and never preempt). It lives in the identity-mapped LA image.
-YIELD_PENDING_ABS equ 0x4012ee  ; = 4199150 (derive_consts.py YIELD_PENDING_ADDR)
+YIELD_PENDING_ABS equ 0x4013b0  ; = 4199344 (derive_consts.py YIELD_PENDING_ADDR)
 %endif
 
 section .boot32

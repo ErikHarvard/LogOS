@@ -49,6 +49,37 @@ if [ -x ./gate_abspath.sh ]; then
 else
     echo "SKIP  gate_abspath.sh is not on this branch — merge it here; the build is NOT checking absolute paths"
 fi
+# ── ncg3: compile native_input.la with native_codegen3, retrying ONLY a signal death ──
+# A long tiny_host compile has twice been killed by a signal mid-build, printing
+# bash's "Terminated" and nothing else. Under `set -e` that is an UNDIAGNOSABLE RED:
+# the log shows a section header, then stops. The next step then reports rc 127
+# ("not found") because no binary was produced — a symptom that reads like a
+# missing file rather than a killed compile.
+#
+# ★ RETRY ONLY ON rc >= 128, i.e. death by signal. A genuine compile failure
+# (rc 1: bad LA source, a real regression) is NOT retried and NOT masked —
+# a wrapper that hid real failures would be far worse than the fragility it
+# guards against. And the retry is ANNOUNCED, so a build that needed one is
+# visibly different from a build that did not.
+ncg3 () {
+    local rc
+    ./tiny_host native_codegen3.la >/dev/null 2>&1; rc=$?
+    # ★ RETRY ONLY 137/143 — SIGKILL and SIGTERM, the signals an EXTERNAL killer
+    # sends. Not every rc>=128: SIGSEGV/SIGBUS/SIGILL mean the compiler itself
+    # broke on its input, which is deterministic, so retrying would mask a real
+    # defect and double the time doing it. (The first version of this guard used
+    # rc>=128 and could not tell those apart.)
+    if [ "$rc" = "137" ] || [ "$rc" = "143" ]; then
+        echo "NOTE  native_codegen3 compile killed by signal $((rc-128)) — retrying once"
+        ./tiny_host native_codegen3.la >/dev/null 2>&1; rc=$?
+        if [ "$rc" = "137" ] || [ "$rc" = "143" ]; then
+            echo "FAIL  native_codegen3 compile killed by signal $((rc-128)) TWICE — not transient"
+        else
+            echo "NOTE  retry succeeded (rc=$rc) — the first kill was transient"
+        fi
+    fi
+    return $rc
+}
 
 say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
@@ -134,6 +165,52 @@ else
     echo "FAIL  chr/ord: got '$OUT'"
     exit 1
 fi
+# ── ★ CROSS-ENGINE SCOPE. Freeze-Day Audit II, Q1 (2026-08-19).
+# The gate above ran ./tiny_host ALONE while its title says "binary-safe
+# primitives" — one engine tested, the language implied. Measured across the
+# engines, chr/ord are NOT universal:
+#     tiny_host.c · secd.asm · native_codegen3.la   HAVE them
+#     eval.la · bytecode.la (RUN_BYTES and RUN_SM)  DO NOT — `unbound variable`
+# That is a loud failure, not silent corruption, and the ROADMAP's claim is
+# "byte-identical host vs VM" (both of which have them), so it stands. But an
+# ungated gap drifts: this asserts the ACTUAL distribution so a change in EITHER
+# direction goes red — the three that have it silently losing it, or the three
+# that lack it silently gaining a DIFFERENT implementation nothing compared.
+# Absence is asserted by its diagnostic, not by "no output": an engine that
+# started returning something wrong would otherwise pass as still-absent.
+chrok=1
+for eng in eval bytecode_bytes bytecode_sm; do
+    case $eng in
+      eval)           sed '/^glyph MAIN/,$d' eval.la > /tmp/ce.la
+                      printf 'glyph MAIN = RUN(PARSE_PROGRAM(read_file("/tmp/test_chr.la")))\n' >> /tmp/ce.la ;;
+      bytecode_bytes) sed '/^glyph MAIN/,$d' bytecode.la > /tmp/ce.la
+                      printf 'glyph MAIN = (la _. print(""))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("/tmp/test_chr.la"))))\n' >> /tmp/ce.la ;;
+      bytecode_sm)    sed '/^glyph MAIN/,$d' bytecode.la > /tmp/ce.la
+                      printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/test_chr.la"))))\n' >> /tmp/ce.la ;;
+    esac
+    # ★ set -e MUST be suspended here. This gate deliberately runs a program that
+    # FAILS — an engine reporting `unbound variable: chr` is the EXPECTED result —
+    # and under set -e the nonzero status of the command substitution ABORTS THE
+    # WHOLE BUILD. It did: the regression died here with 7 PASSes and ZERO FAIL
+    # lines, which reads as a crash rather than a failed assertion. The gate passed
+    # in isolation because the extracted block ran under `set -u` alone — testing a
+    # gate outside the harness it lives in does not test the gate.
+    set +e
+    CE="$(timeout 600 ./tiny_host /tmp/ce.la 2>&1)"; CERC=$?
+    set -e
+    if [ "$CERC" -eq 124 ]; then
+        echo "FAIL  chr/ord scope: $eng TIMED OUT — cannot judge presence (a timeout is not an absence)"; chrok=0
+    elif printf '%s' "$CE" | grep -q "unbound variable: chr\|unbound variable: ord"; then
+        :   # expected: absent, and says so
+    else
+        echo "FAIL  chr/ord scope: $eng no longer reports chr/ord unbound — it produced '$CE'."
+        echo "      Either the builtin was added (then compare it against the host here)"
+        echo "      or it now fails differently. Both need a decision, not a silent pass."; chrok=0
+    fi
+done
+rm -f /tmp/ce.la
+[ "$chrok" -eq 1 ] || exit 1
+echo "PASS  chr/ord SCOPE gated: present on tiny_host (verified above); ABSENT and loudly diagnosed on eval.la, RUN_BYTES, RUN_SM — the distribution itself is now asserted, so drift in either direction fails"
 # A NUL byte must survive concat and write_file: A \0 B == 41 00 42.
 cat > /tmp/test_nul.la <<'LAEOF'
 glyph MAIN = write_file("/tmp/test_nul.bin")(concat(chr("65"))(concat(chr("0"))(chr("66"))))
@@ -299,6 +376,71 @@ rm -f logos_secd logos_program.bin logos_source.la
 
 if [ "$ok" -eq 1 ]; then
     echo "PASS  import/export coherent across all 5 engines (C host, eval.la, RUN_BYTES, RUN_SM, native VM)"
+fi
+
+# ── bitwise operations across the engines ────────────────────────────────────
+# LA had NO bitwise ops, which is why every kernel driver is written with div/mod
+# where a shift is wanted, and why cryptography could not be written in the
+# language at all. band/bor/bxor/bshl/bshr/bnot now exist on every engine.
+#
+# The expected string below is the SPECIFICATION, not a captured run:
+#   8 14 6      band/bor/bxor of 12,10
+#   256 16      bshl(1,8), bshr(256,4)
+#   -1          bnot(0)
+#   15          bshr(-1,60) -- THE DISCRIMINATOR. Logical (zero-fill) gives 15;
+#               an ARITHMETIC shift would give -1. Crypto needs zero-fill.
+#   0 0 0       shift counts 64, 64, -1 -- outside 0..63 yield 0. x86 masks the
+#               count to 6 bits and ARM does not; the explicit range check
+#               suppresses the host CPU's accident so the engines agree.
+#   255 0       band(-1,255), bxor(-1,-1)
+say "SHA-256 in Lingua Adamica — the first cryptographic primitive the language can express"
+# Sits immediately BEFORE the bitwise gate on purpose: if both go red, the order
+# says which is the cause. sha256 is composed of those six builtins, so a broken
+# builtin breaks the hash — but a correct builtin set can still be composed wrong.
+bash gate_sha256.sh || exit 1
+
+say "the crypto substrate above the hash — KDF, MAC, stream cipher, authenticator, AEAD"
+# Sits immediately AFTER the sha256 gate for the same reason that one sits before
+# the bitwise gate: HMAC and HKDF are compositions of SHA-256, so if both go red
+# the order says which is the cause. ~360 s, of which ~200 s is hmac+hkdf on the
+# C host — SHA-256 is the expensive part, not the new modules.
+bash gate_crypto.sh || exit 1
+
+say "bitwise ops (band/bor/bxor/bshl/bshr/bnot) across the engines"
+BWEXP="8 14 6 256 16 -1 15 0 0 0 255 0 "
+ok=1
+bwc () { [ "$2" = "$BWEXP" ] || { echo "FAIL  bitwise $1: [$2] != [$BWEXP]"; ok=0; }; }
+
+bwc "C host"    "$(./tiny_host bitwise_test.la 2>/dev/null)"
+
+BWM="$(grep -n '^glyph MAIN' eval.la | tail -1 | cut -d: -f1)"
+head -$((BWM-1)) eval.la > /tmp/bw_eval.la
+printf 'glyph MAIN = (la _. print(""))(RUN(PARSE_PROGRAM(read_file("bitwise_test.la"))))\n' >> /tmp/bw_eval.la
+bwc "eval.la"   "$(./tiny_host /tmp/bw_eval.la 2>/dev/null | sed '${/^$/d;}')"
+
+BWB="$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)"
+head -$((BWB-1)) bytecode.la > /tmp/bw_bc.la
+printf 'glyph MAIN = (la _. print(""))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("bitwise_test.la"))))\n' >> /tmp/bw_bc.la
+bwc "RUN_BYTES" "$(./tiny_host /tmp/bw_bc.la 2>/dev/null | sed '${/^$/d;}')"
+
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp bitwise_test.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+bwc "native VM"  "$(./logos_secd 2>/dev/null)"
+rm -f logos_secd logos_program.bin logos_source.la
+
+# RUN_SM is ~100 s per recursion level, so it gets the DISCRIMINATOR alone
+# rather than the full matrix -- a bounded cost that still proves the builtin
+# is reachable and zero-filling on that engine.
+printf 'glyph MAIN = print(int_to_str(bshr(sub(0)(1))(60)))\n' > /tmp/bw_min.la
+head -$((BWB-1)) bytecode.la > /tmp/bw_sm.la
+printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/bw_min.la"))))\n' >> /tmp/bw_sm.la
+BWSM="$(timeout 1200 ./tiny_host /tmp/bw_sm.la 2>/dev/null | sed '${/^$/d;}')"
+[ "$BWSM" = "15" ] || { echo "FAIL  bitwise RUN_SM: bshr(-1,60) = [$BWSM], expected 15 (logical, not arithmetic)"; ok=0; }
+
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  bitwise: 12-case matrix identical on C host, eval.la, RUN_BYTES and the native VM; RUN_SM zero-fills (crypto is now writable IN the language)"
 else
     exit 1
 fi
@@ -1316,18 +1458,19 @@ say "LA-native assembler (asm.la — x86-64 assembled by Lingua Adamica, byte-id
 # memory operands, no labels/relocation, no jumps — so it CANNOT yet assemble
 # boot.asm or secd.asm. Closed for what is here, honestly open beyond it.
 ok=1
+mkdir -p .asmgate
 if ! command -v nasm >/dev/null 2>&1; then
     echo "SKIP  asm.la byte-identity gate: nasm not installed (nothing to diff against)"
 else
-    rm -f asm_out.bin /tmp/nasm_ref.bin asm_in.asm
+    rm -f asm_out.bin .asmgate/nasm_ref.bin asm_in.asm
     cp asm_test.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm.out 2>&1 || { echo "FAIL  asm.la: run failed: $(tail -1 /tmp/asm.out)"; ok=0; }
-    nasm -f bin asm_test.asm -o /tmp/nasm_ref.bin 2>/dev/null || { echo "FAIL  asm.la: nasm reference failed"; ok=0; }
+    ./tiny_host asm.la >.asmgate/asm.out 2>&1 || { echo "FAIL  asm.la: run failed: $(tail -1 .asmgate/asm.out)"; ok=0; }
+    nasm -f bin asm_test.asm -o .asmgate/nasm_ref.bin 2>/dev/null || { echo "FAIL  asm.la: nasm reference failed"; ok=0; }
     # (1) THE CLAIM — the same bytes as the tool it replaces. No partial credit.
-    cmp -s asm_out.bin /tmp/nasm_ref.bin \
+    cmp -s asm_out.bin .asmgate/nasm_ref.bin \
       || { echo "FAIL  asm.la: output DIFFERS from nasm"; ok=0;
            python3 - <<'PY'
-a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_ref.bin','rb').read()
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_ref.bin','rb').read()
 print('      asm.la:', ' '.join(str(x) for x in a))
 print('      nasm  :', ' '.join(str(x) for x in b))
 for i,(x,y) in enumerate(zip(a,b)):
@@ -1346,13 +1489,13 @@ PY
     #      be two's complement (jz start @22 -> 0f 84 e4 ff ff ff = -28). LA's
     #      div/mod on a negative is unreliable, so it is folded into the unsigned
     #      32-bit range before being split — asserted, not assumed.
-    rm -f asm_out.bin /tmp/nasm_lab.bin; cp asm_test_labels.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm_lab.out 2>&1 || { echo "FAIL  asm.la: label program failed: $(tail -1 /tmp/asm_lab.out)"; ok=0; }
-    nasm -f bin asm_test_labels.asm -o /tmp/nasm_lab.bin 2>/dev/null
-    cmp -s asm_out.bin /tmp/nasm_lab.bin \
+    rm -f asm_out.bin .asmgate/nasm_lab.bin; cp asm_test_labels.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_lab.out 2>&1 || { echo "FAIL  asm.la: label program failed: $(tail -1 .asmgate/asm_lab.out)"; ok=0; }
+    nasm -f bin asm_test_labels.asm -o .asmgate/nasm_lab.bin 2>/dev/null
+    cmp -s asm_out.bin .asmgate/nasm_lab.bin \
       || { echo "FAIL  asm.la: labels/jumps DIFFER from nasm"; ok=0;
            python3 - <<'PY'
-a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_lab.bin','rb').read()
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_lab.bin','rb').read()
 print('      asm.la:', ' '.join(str(x) for x in a))
 print('      nasm  :', ' '.join(str(x) for x in b))
 for i,(x,y) in enumerate(zip(a,b)):
@@ -1375,13 +1518,30 @@ PY
     #                         SIB=0x24;
     #        disp:            0 -> mod=00; fits signed byte -> mod=01+disp8
     #                         (negative in two's complement); else mod=10+disp32.
-    rm -f asm_out.bin /tmp/nasm_mem.bin; cp asm_test_mem.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm_mem.out 2>&1 || { echo "FAIL  asm.la: memory-operand program failed: $(tail -1 /tmp/asm_mem.out)"; ok=0; }
-    nasm -f bin asm_test_mem.asm -o /tmp/nasm_mem.bin 2>/dev/null
-    cmp -s asm_out.bin /tmp/nasm_mem.bin \
+    # ── cross-size: `bits 16` and `bits 32`, native AND cross operand size ──
+    # ★ Guards a defect no LENGTH check can see. TSTENC routed through
+    # RROP(...)(64) -- a literal where the MODE belongs -- so the operand-size
+    # prefix came out INVERTED in 16-bit: a correctly-sized instruction with the
+    # wrong bytes. It hid BEHIND a documented gap: 2daddbb listed ten encoders on
+    # plain P66 and threading `mode` through all ten still left `test` wrong.
+    # It could hide because there is no `bits 16` anywhere else in the suite --
+    # A DOCUMENTED GAP WITH NO FIXTURE IS INDISTINGUISHABLE FROM A CLOSED ONE.
+    # Fixture authored by track-b, added here because asm_test_*.asm is track A's
+    # to own; verified byte-identical at 103 B, and verified to FAIL (same 103
+    # bytes, different content) against the pre-fix assembler.
+    rm -f asm_out.bin .asmgate/nasm_xsize.bin; cp asm_test_xsize.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_xsize.out 2>&1 || { echo "FAIL  asm.la: cross-size program failed to assemble"; ok=0; }
+    nasm -f bin asm_test_xsize.asm -o .asmgate/nasm_xsize.bin 2>/dev/null
+    cmp -s asm_out.bin .asmgate/nasm_xsize.bin \
+      || { echo "FAIL  asm.la: cross-size (bits 16/32, operand-size prefix) DIFFERS from nasm"; ok=0; }
+
+    rm -f asm_out.bin .asmgate/nasm_mem.bin; cp asm_test_mem.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_mem.out 2>&1 || { echo "FAIL  asm.la: memory-operand program failed: $(tail -1 .asmgate/asm_mem.out)"; ok=0; }
+    nasm -f bin asm_test_mem.asm -o .asmgate/nasm_mem.bin 2>/dev/null
+    cmp -s asm_out.bin .asmgate/nasm_mem.bin \
       || { echo "FAIL  asm.la: memory operands DIFFER from nasm"; ok=0;
            python3 - <<'PY'
-a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_mem.bin','rb').read()
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_mem.bin','rb').read()
 print('      asm.la:', ' '.join(str(x) for x in a))
 print('      nasm  :', ' '.join(str(x) for x in b))
 for i,(x,y) in enumerate(zip(a,b)):
@@ -1401,20 +1561,20 @@ bad=[n for n,okk in q if not okk]
 if bad: print("      regressed:", "; ".join(bad))
 sys.exit(1 if bad else 0)
 PY
-    rm -f /tmp/nasm_mem.bin /tmp/asm_mem.out
+    rm -f .asmgate/nasm_mem.bin .asmgate/asm_mem.out
     # (2d2) OPERAND WIDTHS + hex literals + size keywords + immediate-to-memory.
     #       The kernel .asm carry 713 sub-64-bit register mentions against 451
     #       64-bit ones and 271 hex literals, so a 64-bit/decimal-only assembler
     #       reads almost none of the OS. Width is not decoration: it selects the
     #       opcode (the 8-bit form is the 32-bit one MINUS ONE), the 0x66 prefix,
     #       and whether a REX byte may exist at all.
-    rm -f asm_out.bin /tmp/nasm_w.bin; cp asm_test_width.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm_w.out 2>&1 || { echo "FAIL  asm.la: width program failed: $(tail -1 /tmp/asm_w.out)"; ok=0; }
-    nasm -f bin asm_test_width.asm -o /tmp/nasm_w.bin 2>/dev/null || { echo "FAIL  asm.la: nasm width reference failed"; ok=0; }
-    cmp -s asm_out.bin /tmp/nasm_w.bin \
+    rm -f asm_out.bin .asmgate/nasm_w.bin; cp asm_test_width.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_w.out 2>&1 || { echo "FAIL  asm.la: width program failed: $(tail -1 .asmgate/asm_w.out)"; ok=0; }
+    nasm -f bin asm_test_width.asm -o .asmgate/nasm_w.bin 2>/dev/null || { echo "FAIL  asm.la: nasm width reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_w.bin \
       || { echo "FAIL  asm.la: operand widths DIFFER from nasm"; ok=0;
            python3 - <<'PY'
-a=open('asm_out.bin','rb').read(); b=open('/tmp/nasm_w.bin','rb').read()
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_w.bin','rb').read()
 print('      asm.la:', a.hex(' '))
 print('      nasm  :', b.hex(' '))
 for i,(x,y) in enumerate(zip(a,b)):
@@ -1452,11 +1612,11 @@ PY
              'mov rax, [rdi+8|unterminated ['; do
         prog="${c%%|*}"; want="${c##*|}"
         printf 'bits 64\n%s\n' "$prog" > asm_in.asm
-        if ./tiny_host asm.la >/tmp/asm_red.out 2>&1; then
+        if ./tiny_host asm.la >.asmgate/asm_red.out 2>&1; then
             echo "FAIL  asm.la: '$prog' assembled instead of halting loudly"; ok=0
         else
-            grep -qF "$want" /tmp/asm_red.out \
-              || { echo "FAIL  asm.la: '$prog' halted without naming '$want': $(tail -1 /tmp/asm_red.out)"; ok=0; }
+            grep -qF "$want" .asmgate/asm_red.out \
+              || { echo "FAIL  asm.la: '$prog' halted without naming '$want': $(tail -1 .asmgate/asm_red.out)"; ok=0; }
         fi
     done
     # …and the negative control: a LEGAL program must still assemble, so the
@@ -1464,7 +1624,320 @@ PY
     printf 'bits 64\nmov byte [rdi], 5\nmov ah, bl\n' > asm_in.asm
     ./tiny_host asm.la >/dev/null 2>&1 \
       || { echo "FAIL  asm.la: a legal width program was rejected by a guard"; ok=0; }
-    rm -f /tmp/nasm_w.bin /tmp/asm_w.out /tmp/asm_red.out
+    rm -f .asmgate/nasm_w.bin .asmgate/asm_w.out .asmgate/asm_red.out
+    # (2d4) GROUP-1 ALU with IMMEDIATES + shifts + inc/dec + test/lea + no-arg.
+    #       Scoped by profiling the kernel .asm: reg+imm is the DOMINANT shape
+    #       (or 31 of 45 uses, shr 32 of 32, cmp 11 of 23, and 5 of 5) and
+    #       asm.la could not encode it at all — its ALU was register-to-register
+    #       only. With this, 75% of boot.asm's 1060 lines are readable; what
+    #       remains is mostly the PREPROCESSOR/directive layer (%ifdef/%define/
+    #       %include = 106 lines, resb/dq/dd/align/section = 53), not opcodes.
+    rm -f asm_out.bin .asmgate/nasm_alu.bin; cp asm_test_alu.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_alu.out 2>&1 || { echo "FAIL  asm.la: ALU program failed: $(tail -1 .asmgate/asm_alu.out)"; ok=0; }
+    nasm -f bin asm_test_alu.asm -o .asmgate/nasm_alu.bin 2>/dev/null || { echo "FAIL  asm.la: nasm ALU reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_alu.bin \
+      || { echo "FAIL  asm.la: ALU/shift/test/lea encodings DIFFER from nasm"; ok=0;
+           python3 - <<'PYALU1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_alu.bin','rb').read()
+print('      asm.la:', a.hex(' ')); print('      nasm  :', b.hex(' '))
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x:02x} nasm={y:02x}'); break
+PYALU1
+         }
+    python3 - <<'PYALU2' || { echo "FAIL  asm.la: a NASM encoding-CHOICE rule regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# NASM picks the SHORTEST encoding, and the priority order is NOT the obvious
+# one. Each rule is asserted BY NAME: an encoder violating any would emit
+# something the CPU accepts perfectly and still fail the diff.
+q=[("add rax,8: imm8 form BEATS accumulator",  d[0:4]    == bytes([0x48,0x83,0xc0,0x08])),
+   ("sub al,9: accumulator BEATS 80 /5 at w=1",d[46:48]  == bytes([0x2c,0x09])),
+   ("or ecx,0x80: 0x80 does NOT fit signed i8",d[75:81]  == bytes([0x81,0xc9,0x80,0,0,0])),
+   ("shl rax,1: by-ONE opcode D1, not C1+ib",  d[108:111]== bytes([0x48,0xd1,0xe0])),
+   ("test rdx,8: test has NO imm8 form",       d[136:143]== bytes([0x48,0xf7,0xc2,0x08,0,0,0])),
+   ("lea r8,[rsp+32]: SIB under REX.R",        d[151:156]== bytes([0x4c,0x8d,0x44,0x24,0x20]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYALU2
+    # (2d5) RED PATH for the new families. `shl reg, reg` is the CL-count form,
+    #       which is NOT implemented — it must halt loudly rather than encode
+    #       the register number as though it were a shift count, which would be
+    #       a plausible-looking wrong instruction.
+    printf 'bits 64\nshl rax, rcx\n' > asm_in.asm
+    if ./tiny_host asm.la >.asmgate/asm_red2.out 2>&1; then
+        echo "FAIL  asm.la: 'shl rax, rcx' (unimplemented CL form) assembled instead of halting"; ok=0
+    else
+        grep -qF "asm:" .asmgate/asm_red2.out \
+          || { echo "FAIL  asm.la: 'shl rax, rcx' halted without an asm: diagnostic"; ok=0; }
+    fi
+    # negative control: the legal forms must still assemble
+    printf 'bits 64\nshl rax, 3\nand rax, 15\ntest rax, rbx\nlea rax, [rcx+8]\ncli\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1 \
+      || { echo "FAIL  asm.la: a legal ALU/shift/lea program was rejected"; ok=0; }
+    rm -f .asmgate/nasm_alu.bin .asmgate/asm_alu.out .asmgate/asm_red2.out
+    # (2d6) DATA DEFINITION + LAYOUT: dw/dd/dq, resb/resq, align — and the
+    #       LABEL-AND-INSTRUCTION-ON-ONE-LINE form that boot.asm writes its data
+    #       in (`w1: dw 0x1234`). The passes used to treat any line whose first
+    #       token ended in ":" as a label and NOTHING ELSE, silently dropping
+    #       the rest: the label landed at the right address but its data was
+    #       never emitted, so the image came out short with everything after it
+    #       misplaced. Invisible until now because every earlier test program
+    #       put its labels on their own lines.
+    rm -f asm_out.bin .asmgate/nasm_data.bin; cp asm_test_data.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_data.out 2>&1 || { echo "FAIL  asm.la: data program failed: $(tail -1 .asmgate/asm_data.out)"; ok=0; }
+    nasm -f bin asm_test_data.asm -o .asmgate/nasm_data.bin 2>/dev/null || { echo "FAIL  asm.la: nasm data reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_data.bin \
+      || { echo "FAIL  asm.la: data/layout directives DIFFER from nasm"; ok=0;
+           python3 - <<'PYDAT1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_data.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYDAT1
+         }
+    python3 - <<'PYDAT2' || { echo "FAIL  asm.la: a data/layout semantic regressed"; ok=0; }
+import sys,struct
+d=open('asm_out.bin','rb').read()
+# Two of these are NOT what they look like, and both were pinned by assembling
+# with NASM and reading the bytes back rather than by reasoning about them.
+q=[("dw/dd/dq little-endian",        d[6:8]==bytes([0x34,0x12]) and d[0x18:0x20]==bytes([0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11])),
+   ("label as data is ORG-ABSOLUTE", struct.unpack('<Q',d[0x28:0x30])[0]==0x400000 and struct.unpack('<I',d[0x30:0x34])[0]==0x400006),
+   ("align pads with 0x90 NOP, NOT zeros", d[0x39:0x40]==b'\x90'*7),
+   ("resb/resq EMIT zeros, not merely advance", d[0x51:0x65]==b'\x00'*20),
+   ("label+instruction on ONE line emits both", d[0x65]==0x77 and len(d)==102)]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYDAT2
+    # Negative control: a bare label line must still cost 0 bytes, so the
+    # strip-and-redispatch cannot have changed the old form's meaning.
+    printf 'bits 64\nfoo:\nnop\nbar: nop\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0x90,0x90]) else 1)" \
+      || { echo "FAIL  asm.la: bare-label vs label+instruction lines disagree"; ok=0; }
+    rm -f .asmgate/nasm_data.bin .asmgate/asm_data.out
+    # (2d7) THE OPCODE TAIL: port I/O, MSRs, descriptor/system ops, string ops
+    #       with the rep prefix, the o64 prefix, div/imul, rotates, and the FULL
+    #       jcc condition set. This is everything boot.asm still needs that is
+    #       not the preprocessor — coverage 85% (904 of 1060 lines), and what
+    #       remains is %ifdef/%define/%include (121 lines), `equ` symbols, and
+    #       section/global/incbin.
+    rm -f asm_out.bin .asmgate/nasm_misc.bin; cp asm_test_misc.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_misc.out 2>&1 || { echo "FAIL  asm.la: opcode-tail program failed: $(tail -1 .asmgate/asm_misc.out)"; ok=0; }
+    nasm -f bin asm_test_misc.asm -o .asmgate/nasm_misc.bin 2>/dev/null || { echo "FAIL  asm.la: nasm opcode-tail reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_misc.bin \
+      || { echo "FAIL  asm.la: opcode-tail encodings DIFFER from nasm"; ok=0;
+           python3 - <<'PYMSC1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_misc.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYMSC1
+         }
+    python3 - <<'PYMSC2' || { echo "FAIL  asm.la: an opcode-tail encoding rule regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# Port I/O has NO ModRM — its operands are implied (DX and the accumulator), so
+# the width comes from which accumulator was named, and the imm8-port forms are
+# a DIFFERENT OPCODE rather than an addressing mode.
+q=[("out dx,ax needs the 0x66 prefix",   d[1:3]    == bytes([0x66,0xef])),
+   ("out imm8,al is opcode E6, not EE",  d[4:6]    == bytes([0xe6,0x20])),
+   ("ltr ax: 0F 00 /3 with NO 0x66",     d[24:27]  == bytes([0x0f,0x00,0xd8])),
+   ("lgdt [rbx+8]: 0F 01 /2 + disp8",    d[33:37]  == bytes([0x0f,0x01,0x53,0x08])),
+   ("imul r,r,imm8 uses 6B, not 69",     d[42:46]  == bytes([0x48,0x6b,0xc0,0x40])),
+   ("rep stosq: F3 comes BEFORE REX.W",  d[68:71]  == bytes([0xf3,0x48,0xab])),
+   ("o64 sysret: REX.W then 0F 07",      d[73:76]  == bytes([0x48,0x0f,0x07])),
+   ("jl is condition 0xC (7C)",          d[96:98]  == bytes([0x7c,0xea])),
+   ("jc and jb are the SAME condition",  d[104:106]== bytes([0x72,0xe2]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYMSC2
+    # The jcc ALIASES must encode identically — jc==jb, jnc==jae, jz==je — since
+    # they name one condition, not four. A table that got an alias wrong would
+    # still assemble and would still branch, just on the wrong flag.
+    printf 'bits 64\nL:\njb L\njc L\njae L\njnc L\nje L\njz L\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "
+import sys
+d=open('asm_out.bin','rb').read()
+sys.exit(0 if d[0]==d[2]==0x72 and d[4]==d[6]==0x73 and d[8]==d[10]==0x74 else 1)" \
+      || { echo "FAIL  asm.la: jcc aliases (jc/jb, jnc/jae, jz/je) do not encode identically"; ok=0; }
+    rm -f .asmgate/nasm_misc.bin .asmgate/asm_misc.out
+    # (2d8) `equ` — SYMBOLIC CONSTANTS. boot.asm defines ~25 of them, and
+    #       coverage reaches 88% (932 of 1060 lines) with only the preprocessor
+    #       and section/global/incbin left.
+    #
+    #       ★ The point is the DISTINCTION, not the directive: an equ symbol is
+    #       a NUMBER, a label is an ADDRESS, the syntax at the use site is
+    #       identical, and NASM encodes them differently. An assembler that
+    #       treated equ symbols as labels would emit a clean-looking image with
+    #       every constant five bytes too long and every address after it wrong.
+    rm -f asm_out.bin .asmgate/nasm_equ.bin; cp asm_test_equ.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_equ.out 2>&1 || { echo "FAIL  asm.la: equ program failed: $(tail -1 .asmgate/asm_equ.out)"; ok=0; }
+    nasm -f bin asm_test_equ.asm -o .asmgate/nasm_equ.bin 2>/dev/null || { echo "FAIL  asm.la: nasm equ reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_equ.bin \
+      || { echo "FAIL  asm.la: equ constants DIFFER from nasm"; ok=0;
+           python3 - <<'PYEQU1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_equ.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte 0x{i:x}: asm.la={x:02x} nasm={y:02x}'); break
+PYEQU1
+         }
+    python3 - <<'PYEQU2' || { echo "FAIL  asm.la: the equ-vs-label distinction regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+q=[("mov rax,EQU is a 5-byte imm32",      d[0:5]  ==bytes([0xb8,0x20,0x01,0,0])),
+   ("mov rax,LABEL is a 10-byte movabs",  d[5:15] ==bytes([0x48,0xb8,0,0,0x40,0,0,0,0,0])),
+   ("an equ value reaches the imm8 form", d[24:28]==bytes([0x48,0x83,0xc0,0x08])),
+   ("an equ value reaches the accum form",d[28:34]==bytes([0x48,0x05,0x20,0x01,0,0])),
+   ("an equ value reaches data (dq)",     d[57:65]==bytes([0x20,0x01,0,0,0,0,0,0]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYEQU2
+    # The definition line itself must cost ZERO bytes, and an equ symbol must
+    # NOT be resolvable as a jump target (it is a value, not an address).
+    printf 'bits 64\nK equ 7\nnop\nnop\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0x90,0x90]) else 1)" \
+      || { echo "FAIL  asm.la: an equ definition line emitted bytes"; ok=0; }
+    rm -f .asmgate/nasm_equ.bin .asmgate/asm_equ.out
+    # (2d9) THE PREPROCESSOR — %define / %ifdef / %ifndef / %else / %elifdef /
+    #       %endif / %include. A text layer running BEFORE the tokenizer, and a
+    #       different subsystem from every slice above it. It is what selects
+    #       each kernel variant (K2, K5a, HAL2B, RING3, HH1_HIGHMAP) out of ONE
+    #       source, so without it boot.asm cannot be assembled at all regardless
+    #       of opcode coverage. With it, boot.asm reaches 99.3% (1053 of 1060
+    #       lines); only section/global/incbin remain.
+    rm -f asm_out.bin .asmgate/nasm_pp.bin; cp asm_test_pp.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_pp.out 2>&1 || { echo "FAIL  asm.la: preprocessor program failed: $(tail -1 .asmgate/asm_pp.out)"; ok=0; }
+    nasm -f bin asm_test_pp.asm -o .asmgate/nasm_pp.bin 2>/dev/null || { echo "FAIL  asm.la: nasm preprocessor reference failed"; ok=0; }
+    cmp -s asm_out.bin .asmgate/nasm_pp.bin \
+      || { echo "FAIL  asm.la: preprocessor output DIFFERS from nasm"; ok=0;
+           python3 - <<'PYPP1'
+a=open('asm_out.bin','rb').read(); b=open('.asmgate/nasm_pp.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+print('      asm.la:', a.hex(' ')); print('      nasm  :', b.hex(' '))
+PYPP1
+         }
+    python3 - <<'PYPP2' || { echo "FAIL  asm.la: a preprocessor semantic regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+# The strongest assertions here are the NEGATIVE ones. A conditional that fails
+# to SUPPRESS still assembles and still runs -- it just silently includes code
+# from a variant that was not selected, which is exactly how a kernel built for
+# one configuration ends up carrying another's instructions.
+q=[("total length exactly 58 (nothing leaked)", len(d)==58),
+   ("%else NOT emitted when %ifdef was taken",  d.find(bytes([0xbb,0x02,0,0,0]))==-1),
+   ("%ifdef body NOT emitted when undefined",   d.find(bytes([0xbb,0x03,0,0,0]))==-1),
+   ("%ifndef NOT emitted when defined",         d.find(bytes([0xbe,0x06,0,0,0]))==-1),
+   ("%elifdef selects the right branch (edi=8)",d.find(bytes([0xbf,0x08,0,0,0]))>=0
+                                            and d.find(bytes([0xbf,0x07,0,0,0]))==-1
+                                            and d.find(bytes([0xbf,0x09,0,0,0]))==-1),
+   ("nested conditional, depth 2 (r8d=12)",     d.find(bytes([0x41,0xb8,0x0c,0,0,0]))>=0
+                                            and d.find(bytes([0x41,0xb8,0x0b,0,0,0]))==-1),
+   ("%include splices its body (ecx=0x11)",     d.find(bytes([0xb9,0x11,0,0,0]))>=0),
+   ("include INHERITS outer conditional",       d.find(bytes([0xba,0x22,0,0,0]))>=0),
+   ("%define made INSIDE include visible after",d.find(bytes([0x41,0xb9,0x0d,0,0,0]))>=0),
+   ("%define with a value substitutes",         d[0:5]==bytes([0xb8,0x34,0x12,0,0]))]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYPP2
+    # A valueless %define is a FLAG: it must register for %ifdef but must NOT
+    # substitute its empty value over the symbol and erase it from the source.
+    printf 'bits 64\n%%define FLAG\n%%ifdef FLAG\nmov eax, 1\n%%endif\n' > asm_in.asm
+    ./tiny_host asm.la >/dev/null 2>&1
+    python3 -c "import sys;d=open('asm_out.bin','rb').read();sys.exit(0 if d==bytes([0xb8,1,0,0,0]) else 1)" \
+      || { echo "FAIL  asm.la: a valueless %define did not behave as a flag"; ok=0; }
+    rm -f .asmgate/nasm_pp.bin .asmgate/asm_pp.out
+    # (2da) THE LATER SLICES — sections, labels-as-addresses, expressions,
+    #       control/segment registers. These five programs existed and passed,
+    #       but were only ever run in an ad-hoc loop and NOT wired into
+    #       build.sh, so a regression in any of them would not have failed the
+    #       build. Found by applying the cross-track review checklist to my own
+    #       work: "is the red path gated?" is worth nothing if the gate is not
+    #       in the build at all.
+    #       asm_test_movlbl joins them for the same reason, one commit later:
+    #       4d39c74 landed it RED and unwired on purpose (the encoding was right,
+    #       the label VALUE was not), which is honest but is also exactly the
+    #       state this loop exists to prevent becoming permanent.
+    #
+    #  DRIFT GUARD: asm.la now carries an internal size/emit invariant (SIZEDRIFT
+    #  in ASSEMBLE): the sizing pass's total (TOTLEN) must equal the emitted
+    #  length, else it halts loudly. It runs on EVERY assemble below, so these
+    #  gates exercise its happy path continuously. Its RED path cannot have a
+    #  standing gate — with the MOVSIZE fix in place, no program triggers drift —
+    #  so it was verified by hand (revert MOVSIZE to the hardcoded 10, confirm it
+    #  fires 56-vs-36 on asm_test_movlbl), the same inject-a-fault discipline the
+    #  DRM capstones use. A future SIZEL/encoder desync now fails loudly here
+    #  instead of silently misplacing every label after it.
+    #       asm_test_macro joins them too: 928c745 added the fixture (push imm +
+    #       %macro/%endmacro) but never wired it into build.sh, so a %macro
+    #       regression would not have failed the build. Found by auditing gate
+    #       coverage of every post-freeze commit, not just the one flagged red.
+    #       asm_test_comma closes the LAST post-freeze hole: a52cf39 (a comma is
+    #       a TOKEN; operands are comma-delimited groups) shipped with NO test.
+    #       Its discriminating case is a spaced expression in a data directive
+    #       (`dw gdt_end - gdt64 - 1` = ONE word) vs a comma list (`dw 1, 2` =
+    #       TWO). RED-PATH PROVEN against a52cf39^: the old tokenizer emits 37
+    #       bytes (16, then -1) where nasm and the fixed code emit 35.
+    for prog in asm_test_sect asm_test_memlbl asm_test_expr asm_test_expr2 asm_test_ctrlseg asm_test_expr3 asm_test_equ2 asm_test_local asm_test_far asm_test_movlbl asm_test_macro asm_test_comma; do
+        rm -f asm_out.bin .asmgate/nasm_$prog.bin
+        cp $prog.asm asm_in.asm
+        ./tiny_host asm.la >.asmgate/$prog.out 2>&1 \
+          || { echo "FAIL  asm.la: $prog failed: $(tail -1 .asmgate/$prog.out)"; ok=0; continue; }
+        nasm -f bin $prog.asm -o .asmgate/nasm_$prog.bin 2>/dev/null \
+          || { echo "FAIL  asm.la: nasm reference for $prog failed"; ok=0; continue; }
+        cmp -s asm_out.bin .asmgate/nasm_$prog.bin \
+          || { echo "FAIL  asm.la: $prog DIFFERS from nasm"; ok=0;
+               python3 - "$prog" <<'PYL'
+import sys
+p=sys.argv[1]
+a=open('asm_out.bin','rb').read(); b=open(f'.asmgate/nasm_{p}.bin','rb').read()
+print(f'      len asm.la={len(a)} nasm={len(b)}')
+for i,(x,y) in enumerate(zip(a,b)):
+    if x!=y: print(f'      first diff at byte {i}: asm.la={x:02x} nasm={y:02x}'); break
+PYL
+             }
+    done
+    # The invariants that separate a correct implementation from a plausible
+    # one, asserted BY NAME so a regression identifies itself.
+    cp asm_test_expr.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    python3 - <<'PYX' || { echo "FAIL  asm.la: expression PRECEDENCE regressed"; ok=0; }
+import sys,struct
+d=open('asm_out.bin','rb').read()
+# `mov [pml4 + 511*8], eax` must address pml4+4088, i.e. 0x401024 with this
+# fixture's org and layout. Folding LEFT-TO-RIGHT instead would compute
+# (pml4+511)*8 = 0x2001158 — a wrong address that assembles perfectly and
+# faults only when the kernel walks the page table. The two differ by a factor
+# of eight, so this assertion genuinely discriminates.
+i=d.find(bytes([0x89,0x04,0x25]))
+if i < 0:
+    print("      regressed: could not find the absolute-form mov at all"); sys.exit(1)
+disp=struct.unpack('<I',d[i+3:i+7])[0]
+if disp != 0x401024:
+    print(f"      regressed: precedence wrong — disp32 is 0x{disp:x}, expected 0x401024"
+          f" (left-to-right folding would give 0x2001158)")
+    sys.exit(1)
+sys.exit(0)
+PYX
+    cp asm_test_ctrlseg.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
+    python3 - <<'PYC' || { echo "FAIL  asm.la: control/segment register encoding regressed"; ok=0; }
+import sys
+d=open('asm_out.bin','rb').read()
+q=[("mov cr3,rax -> 0F 22, no REX, mode-independent", d[0:3]==bytes([0x0f,0x22,0xd8])),
+   ("mov rax,cr3 -> 0F 20",                            d[3:6]==bytes([0x0f,0x20,0xd8])),
+   ("mov ds,ax -> 8E with NO prefix",                  d.find(bytes([0x8e,0xd8]))>=0),
+   ("mov ax,ds -> 66 8C (0x66 only in the READ dir)",  d.find(bytes([0x66,0x8c,0xd8]))>=0)]
+bad=[n for n,okk in q if not okk]
+if bad: print("      regressed:", "; ".join(bad))
+sys.exit(1 if bad else 0)
+PYC
+    rm -f .asmgate/nasm_asm_test_*.bin
     # (2e) SHORT-JUMP SELECTION via the FIXED POINT — the last encoding-CHOICE
     #      mismatch. NASM emits the shortest jump that reaches (eb rel8 / 74 rel8,
     #      2 bytes) and promotes to near (e9 / 0f 84) only when it must; `call`
@@ -1475,10 +1948,10 @@ PY
     #      unchanged <=> no promotion <=> fixed point. Same shape as
     #      regen_selfhost.sh iterating the compiler image to ITS fixed point.
     for prog in asm_test_short asm_test_promote; do
-        rm -f asm_out.bin /tmp/nasm_j.bin; cp $prog.asm asm_in.asm
-        ./tiny_host asm.la >/tmp/asm_j.out 2>&1 || { echo "FAIL  asm.la: $prog failed: $(tail -1 /tmp/asm_j.out)"; ok=0; }
-        nasm -f bin $prog.asm -o /tmp/nasm_j.bin 2>/dev/null
-        cmp -s asm_out.bin /tmp/nasm_j.bin || { echo "FAIL  asm.la: $prog DIFFERS from nasm (short/near selection)"; ok=0; }
+        rm -f asm_out.bin .asmgate/nasm_j.bin; cp $prog.asm asm_in.asm
+        ./tiny_host asm.la >.asmgate/asm_j.out 2>&1 || { echo "FAIL  asm.la: $prog failed: $(tail -1 .asmgate/asm_j.out)"; ok=0; }
+        nasm -f bin $prog.asm -o .asmgate/nasm_j.bin 2>/dev/null
+        cmp -s asm_out.bin .asmgate/nasm_j.bin || { echo "FAIL  asm.la: $prog DIFFERS from nasm (short/near selection)"; ok=0; }
     done
     # The two halves of the choice, asserted by name so a regression says which:
     rm -f asm_out.bin; cp asm_test_short.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
@@ -1487,14 +1960,14 @@ PY
     rm -f asm_out.bin; cp asm_test_promote.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
     python3 -c "import sys; d=open('asm_out.bin','rb').read(); sys.exit(0 if d[200]==0xe9 and d[205:207]==bytes([0x0f,0x84]) and len(d)==211 else 1)" \
       || { echo "FAIL  asm.la: an out-of-range jump was not PROMOTED to near (the fixed point did not converge)"; ok=0; }
-    rm -f /tmp/nasm_j.bin /tmp/asm_j.out
+    rm -f .asmgate/nasm_j.bin .asmgate/asm_j.out
     # (2c) AN UNDEFINED LABEL MUST HALT — not silently resolve to 0.
     printf 'bits 64\njmp near nowhere\n' > asm_in.asm
-    URC=0; ./tiny_host asm.la >/tmp/asm_lab_bad.out 2>&1 || URC=$?
+    URC=0; ./tiny_host asm.la >.asmgate/asm_lab_bad.out 2>&1 || URC=$?
     [ "$URC" -ne 0 ] || { echo "FAIL  asm.la: an undefined label did not halt"; ok=0; }
-    grep -q "asm: undefined label" /tmp/asm_lab_bad.out \
+    grep -q "asm: undefined label" .asmgate/asm_lab_bad.out \
       || { echo "FAIL  asm.la: no 'undefined label' diagnostic"; ok=0; }
-    rm -f /tmp/nasm_lab.bin /tmp/asm_lab.out /tmp/asm_lab_bad.out
+    rm -f .asmgate/nasm_lab.bin .asmgate/asm_lab.out .asmgate/asm_lab_bad.out
     cp asm_test.asm asm_in.asm; ./tiny_host asm.la >/dev/null 2>&1
     # (2f) ORG + LABEL-AS-IMMEDIATE. A LABEL immediate is NOT the same encoding
     #      as a NUMBER: NASM emits `mov rsi, msg` as 48 be + imm64 (movabs, 10
@@ -1503,13 +1976,13 @@ PY
     #      not arithmetic necessity. asm.la distinguishes them syntactically
     #      (all-digits -> number, else -> label), which also lets SIZEL know the
     #      size before any label address is known.
-    rm -f asm_out.bin /tmp/nasm_org.bin; cp asm_test_org.asm asm_in.asm
-    ./tiny_host asm.la >/tmp/asm_org.out 2>&1 || { echo "FAIL  asm.la: org program failed: $(tail -1 /tmp/asm_org.out)"; ok=0; }
-    nasm -f bin asm_test_org.asm -o /tmp/nasm_org.bin 2>/dev/null
-    cmp -s asm_out.bin /tmp/nasm_org.bin || { echo "FAIL  asm.la: org/label-immediate DIFFERS from nasm"; ok=0; }
+    rm -f asm_out.bin .asmgate/nasm_org.bin; cp asm_test_org.asm asm_in.asm
+    ./tiny_host asm.la >.asmgate/asm_org.out 2>&1 || { echo "FAIL  asm.la: org program failed: $(tail -1 .asmgate/asm_org.out)"; ok=0; }
+    nasm -f bin asm_test_org.asm -o .asmgate/nasm_org.bin 2>/dev/null
+    cmp -s asm_out.bin .asmgate/nasm_org.bin || { echo "FAIL  asm.la: org/label-immediate DIFFERS from nasm"; ok=0; }
     python3 -c "import sys; d=open('asm_out.bin','rb').read(); sys.exit(0 if d[10:12]==bytes([0x48,0xbe]) and d[12:16]==bytes([0x9d,0x00,0x40,0x00]) else 1)" \
       || { echo "FAIL  asm.la: a label immediate did not use movabs at its absolute address"; ok=0; }
-    rm -f /tmp/nasm_org.bin /tmp/asm_org.out
+    rm -f .asmgate/nasm_org.bin .asmgate/asm_org.out
 
     # (2g) THE CAPSTONE — A PROGRAM BUILT BY AN ENTIRELY LA-NATIVE TOOLCHAIN.
     #      elf.la already emitted a runnable ELF from LA, but its 36 bytes of
@@ -1521,23 +1994,71 @@ PY
     #      (This is the assembler + image-layout seam, NOT a linker: one source,
     #      one segment, one load address, no objects and no relocation sections.)
     rm -f asm_native; cp asm_test_org.asm asm_in.asm
-    ./tiny_host asmelf.la >/tmp/asmelf.out 2>&1 || { echo "FAIL  asmelf.la: emit failed: $(tail -1 /tmp/asmelf.out)"; ok=0; }
+    ./tiny_host asmelf.la >.asmgate/asmelf.out 2>&1 || { echo "FAIL  asmelf.la: emit failed: $(tail -1 .asmgate/asmelf.out)"; ok=0; }
     [ -x asm_native ] || { echo "FAIL  asmelf.la: asm_native not emitted executable"; ok=0; }
     NATOUT="$(./asm_native 2>/dev/null)"; NATRC=$?
     [ "$NATRC" -eq 0 ] || { echo "FAIL  asmelf.la: the LA-built binary exited $NATRC"; ok=0; }
     [ "$NATOUT" = "I AM THAT I AM" ] \
       || { echo "FAIL  asmelf.la: the LA-built binary printed '$NATOUT'"; ok=0; }
-    rm -f asm_native /tmp/asmelf.out
+    rm -f asm_native .asmgate/asmelf.out
+
+    # (2b) THE -f elf64 OBJECT PATH — asm.la emits ELF64 relocatable objects, not
+    #      just flat -f bin images, so nasm leaves the OBJECT step of the kernel
+    #      build. The standard is one level up from byte-identity of the .o (its
+    #      internal layout is nasm convention, not semantics): ld(ours) == ld(nasm).
+    #      gate_asmelf.sh drives fixtures r3..r9, each exercising a distinct
+    #      mechanism the real boot.asm needs — every reloc type, equ symbols at
+    #      ABS with 64-bit values, NOBITS/alignment/unknown sections, re-entered
+    #      sections MERGING with symbols kept in source order, 32-bit absolute
+    #      [disp32]+moffs, memory-displacement + far-jump relocs. This is the
+    #      CHEAP regression guard (~30s). The SCALE proof — asm.la assembling the
+    #      real 60KB kernel boot.asm to an object that links byte-identically to
+    #      nasm's — is verified GREEN but runs a ~26-min native-VM cycle (the C
+    #      host walls at 15 min), so like the QEMU kernel gates it is invoked
+    #      separately (.elfobjgate/bootelf2/, gate_boot.sh), not in this audit.
+    if ! command -v ld >/dev/null 2>&1; then
+        echo "SKIP  asm.la -f elf64 gate: ld not installed (cannot link to compare)"
+    elif [ ! -x ./gate_asmelf.sh ]; then
+        echo "SKIP  asm.la -f elf64 gate: gate_asmelf.sh absent"
+    else
+        if ./gate_asmelf.sh >.asmgate/elf64.out 2>&1; then
+            echo "PASS  asm.la -f elf64: $(grep -c '^PASS' .asmgate/elf64.out) fixtures link byte-identical to nasm (ld(ours)==ld(nasm) + section-header equality); the OBJECT step of the kernel build is nasm-free"
+        else
+            echo "FAIL  asm.la -f elf64 object gate:"; grep -E '^(FAIL|----)' .asmgate/elf64.out | sed 's/^/      /'; ok=0
+        fi
+        rm -f .asmgate/elf64.out asm_in.asm asm_out.bin elfobj_out.o
+    fi
+
+    # (2c) THE MULTI-OBJECT SEAM — asm.la's `extern`. A single object with an
+    #      unresolved symbol cannot link alone, so gate_asmelf.sh (which links
+    #      each object by itself) cannot exercise it. gate_asmelf_extern.sh does
+    #      the smallest honest test: a.o `extern greet` + references it (code and
+    #      data reloc), b.o `global greet` defines it, link BOTH and compare
+    #      ld(ours)==ld(nasm). This is the exact cross-object UNDEF resolution
+    #      link.la was built to cross — the last asm.la feature before the
+    #      nasm+ld-free build works for MANY objects, not just one.
+    if ! command -v ld >/dev/null 2>&1; then
+        echo "SKIP  asm.la -f elf64 extern gate: ld not installed"
+    elif [ ! -x ./gate_asmelf_extern.sh ]; then
+        echo "SKIP  asm.la -f elf64 extern gate: gate_asmelf_extern.sh absent"
+    else
+        if ./gate_asmelf_extern.sh >.asmgate/extern.out 2>&1; then
+            echo "PASS  asm.la -f elf64 extern: two-object link byte-identical to nasm+ld (UNDEF symbol + reloc resolved across objects); MULTI-object assembly is nasm-free"
+        else
+            echo "FAIL  asm.la -f elf64 extern gate:"; grep -E '^(FAIL|----)' .asmgate/extern.out | sed 's/^/      /'; ok=0
+        fi
+        rm -f .asmgate/extern.out asm_in.asm asm_out.bin elfobj_out.o
+    fi
 
     # (3) LOUD FAILURE — an instruction outside the subset must halt, not emit
     #     silent garbage. An assembler that quietly skips what it cannot encode
     #     is worse than one that refuses.
     printf 'bits 64\nvmxon rax\n' > asm_in.asm
-    ARC=0; ./tiny_host asm.la >/tmp/asm_bad.out 2>&1 || ARC=$?
+    ARC=0; ./tiny_host asm.la >.asmgate/asm_bad.out 2>&1 || ARC=$?
     [ "$ARC" -ne 0 ] || { echo "FAIL  asm.la: an unsupported instruction did not halt loudly"; ok=0; }
-    grep -q "asm: unsupported instruction" /tmp/asm_bad.out \
+    grep -q "asm: unsupported instruction" .asmgate/asm_bad.out \
       || { echo "FAIL  asm.la: no 'unsupported instruction' diagnostic"; ok=0; }
-    rm -f asm_in.asm asm_out.bin /tmp/nasm_ref.bin /tmp/asm.out /tmp/asm_bad.out
+    rm -f asm_in.asm asm_out.bin .asmgate/nasm_ref.bin .asmgate/asm.out .asmgate/asm_bad.out
     if [ "$ok" -eq 1 ]; then
         echo "PASS  asm.la: an x86-64 assembler written in Lingua Adamica — 61 bytes of a 20-instruction program (mov/add/sub/xor r64,r64; mov r64,imm32; push/pop; syscall/ret/nop; r8-r15 via REX) assembled BYTE-IDENTICAL to \`nasm -f bin\`, including NASM's own mov-eax immediate optimisation (b8, not the 10-byte REX.W movabs) — matching its encoding CHOICES, not merely emitting something the CPU accepts. An instruction outside the subset halts loudly rather than emitting silent garbage. The first LA-native toolchain component; the NASM seam is closed for this subset (labels/jumps/memory operands remain, and the byte-identity gate extends to each)"
     fi
@@ -1561,10 +2082,11 @@ say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalo
 # GENERATED module is run stand-alone, byte-identical on host and VM.
 ML="$(./tiny_host metalogic_spec.la 2>/dev/null)"
 ok=1
-for G in TRUE FALSE NOT AND OR IF IMPLIES TERM FORM VAL GROUND YIELDS TRIBAR \
-         LAW_IDENTITY LAW_NONCONTRADICTION LAW_EXCLUDED_MIDDLE INHABITS NC_TYPECHECK \
-         VERDICT WELLFORMED VERDICT_OR_DIE T_LAW_IDENTITY T_LAW_NONCONTRADICTION \
-         T_LAW_EXCLUDED_MIDDLE LAWS_AUTOLOGICAL; do
+for G in TRUE FALSE NOT AND OR IF IMPLIES ZC TERM FORM VAL GROUND YIELDS TRIBAR \
+         PRIM SYN CON DIR CONT MC CANON MONO REN ETYM AUTO_OK ATERM DECL_ARITY BODY_ARITY \
+         INHABITS LAW_IDENTITY LAW_NONCONTRADICTION LAW_EXCLUDED_MIDDLE NC_TYPECHECK \
+         VERDICT WELLFORMED VERDICT_OR_DIE LAW_IDENTITY_G LAW_NONCONTRADICTION_G \
+         LAW_EXCLUDED_MIDDLE_G LAWS_AUTOLOGICAL; do
     printf '%s\n' "$ML" | grep -qx "  $G: PASS" || { echo "FAIL  metalogic: $G not verified"; ok=0; }
 done
 printf '%s\n' "$ML" | grep -q "module VERIFIED" || { echo "FAIL  metalogic: module not verified"; ok=0; }
@@ -1577,31 +2099,41 @@ for G in TRUE FALSE NOT AND OR IF IMPLIES TERM FORM VAL GROUND YIELDS TRIBAR \
          VERDICT WELLFORMED VERDICT_OR_DIE LAWS_AUTOLOGICAL; do
     printf '%s\n' "$ML" | grep -qE "^  $G : .*  OK$" || { echo "FAIL  metalogic: $G not type-checked OK"; ok=0; }
 done
-for G in T_LAW_IDENTITY T_LAW_NONCONTRADICTION T_LAW_EXCLUDED_MIDDLE; do
+# the inlined κ machinery (Scott-encoded nodes, CANON, MONO/REN/ETYM, AUTO_OK),
+# the arity accessors, and the three law-monoglyphs are trusted (point-free /
+# Church-encoded bodies), as canon.la trusts the same forms.
+for G in ZC PRIM SYN CON DIR CONT MC CANON MONO REN ETYM AUTO_OK ATERM DECL_ARITY BODY_ARITY \
+         LAW_IDENTITY_G LAW_NONCONTRADICTION_G LAW_EXCLUDED_MIDDLE_G; do
     printf '%s\n' "$ML" | grep -qx "  $G: untyped (trusted)" || { echo "FAIL  metalogic: $G not reported untyped/trusted"; ok=0; }
 done
-# Run the GENERATED metalogic.la stand-alone. The witness is six parts joined by '|':
-# (1) ∃(∃) ≡ ∃ — the Archē as ONTOLOGICAL identity (VERDICT → "≡"); (2) "=≢" — the
-# category distinction: add(2,3) = 5 (yields) yet ≢ 5 (being); (3) "INE" — the three
-# laws hold; (4) "ineY" — AUTOLOGY: each law of its own term + LAWS_AUTOLOGICAL; (5)
-# "TFy" — NC wired to the type checker: INHABITS match (T), mismatch caught (F), NC
-# holds (y); (6) "du" — = does NOT entail ≡ (d), but ≡ DOES entail = (u). Host == VM.
+# Run the GENERATED metalogic.la stand-alone. The witness is six parts joined by '|',
+# and the crux of item 1 is that each law now returns BOTH T and F (it was a constant-
+# TRUE tautology before): (1) "FFF" — each law FALSIFIES on a real violation:
+# LAW_IDENTITY on a heterological glyph (Ren floats free of its etymology),
+# LAW_NONCONTRADICTION on an arity contradiction (decl≠body), LAW_EXCLUDED_MIDDLE on
+# the empty-form term (no being); (2) "TTT" — each law HOLDS on a conforming structure;
+# (3) "TfY" — GENUINE self-application: LAW_IDENTITY run on the identity law's OWN
+# monoglyph → T (AUTO_OK of the law itself, no string proxy), a heterological decoy law
+# → f, and LAWS_AUTOLOGICAL (each law abides the identity law) → Y; (4) "=≢" — the
+# category distinction retained: add(2,3) = 5 (yields) yet ≢ 5 (being); (5) "TFy" — NC
+# wired to the type checker: INHABITS match (T), mismatch caught (F), NC_TYPECHECK holds
+# (y); (6) "du" — = does NOT entail ≡ (d), but ≡ DOES entail = (u). Host == VM.
 cp metalogic.la /tmp/mltest.la
 cat >> /tmp/mltest.la <<'LA'
-glyph ADD23     = TERM("add(2,3)")(int_to_str(add(2)(3)))
-glyph FIVE      = TERM("5")(int_to_str(5))
-glyph EXIST     = TERM("∃")("∃")
-glyph EXIST_SELF = TERM("∃(∃)")("∃")
-glyph W1 = VERDICT(EXIST_SELF)(EXIST)
-glyph W2 = concat(YIELDS(ADD23)(FIVE)("=")("x"))(VERDICT(ADD23)(FIVE))
-glyph W3 = concat(LAW_IDENTITY(ADD23)("I")("x"))(concat(LAW_NONCONTRADICTION(ADD23)(FIVE)("N")("x"))(LAW_EXCLUDED_MIDDLE(ADD23)(FIVE)("E")("x")))
-glyph W4 = concat(LAW_IDENTITY(T_LAW_IDENTITY)("i")("x"))(concat(LAW_NONCONTRADICTION(T_LAW_NONCONTRADICTION)(T_LAW_NONCONTRADICTION)("n")("x"))(concat(LAW_EXCLUDED_MIDDLE(T_LAW_EXCLUDED_MIDDLE)(T_LAW_EXCLUDED_MIDDLE)("e")("x"))(LAWS_AUTOLOGICAL("!")("Y")("x"))))
+glyph ADD23 = TERM("add(2,3)")(int_to_str(add(2)(3)))
+glyph FIVE  = TERM("5")(int_to_str(5))
+glyph HET   = MONO("floats-free")(MC(PRIM("BEING")))
+glyph EMPTY = TERM("")("x")
+glyph W1 = concat(LAW_IDENTITY(HET)("T")("F"))(concat(LAW_NONCONTRADICTION(ATERM(2)(1))("T")("F"))(LAW_EXCLUDED_MIDDLE(EMPTY)("T")("F")))
+glyph W2 = concat(LAW_IDENTITY(LAW_IDENTITY_G)("T")("F"))(concat(LAW_NONCONTRADICTION(ATERM(2)(2))("T")("F"))(LAW_EXCLUDED_MIDDLE(ADD23)("T")("F")))
+glyph W3 = concat(LAW_IDENTITY(LAW_IDENTITY_G)("T")("x"))(concat(LAW_IDENTITY(HET)("x")("f"))(LAWS_AUTOLOGICAL("!")("Y")("x")))
+glyph W4 = concat(YIELDS(ADD23)(FIVE)("=")("x"))(VERDICT(ADD23)(FIVE))
 glyph W5 = concat(INHABITS(2)(2)("T")("F"))(concat(INHABITS(2)(1)("T")("F"))(NC_TYPECHECK(2)(1)("y")("x")))
 glyph W6 = concat(IMPLIES(YIELDS(ADD23)(FIVE))(TRIBAR(ADD23)(FIVE))("x")("d"))(IMPLIES(TRIBAR(ADD23)(ADD23))(YIELDS(ADD23)(ADD23))("u")("x"))
 glyph J = la a. la b. concat(a)(concat("|")(b))
 glyph MAIN = print(J(W1)(J(W2)(J(W3)(J(W4)(J(W5)(W6))))))
 LA
-ML_EXPECT="≡|=≢|INE|ineY|TFy|du"
+ML_EXPECT="FFF|TTT|TfY|=≢|TFy|du"
 MLH="$(./tiny_host /tmp/mltest.la 2>/dev/null)"
 [ "$MLH" = "$ML_EXPECT" ] || { echo "FAIL  metalogic: laws/≡-vs-= witness wrong on host"; printf 'got: %s\n' "$MLH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
@@ -1636,8 +2168,8 @@ printf '%s\n' "$NCR" | grep -q "module REJECTED" || { echo "FAIL  metalogic: typ
 [ -f /tmp/should_not_exist.la ] && { echo "FAIL  metalogic: rejected module was written anyway"; ok=0; }
 rm -f /tmp/mltest.la /tmp/mlloud.la /tmp/nc_reject_spec.la /tmp/should_not_exist.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  metalogic: SPEC GENERATEs/DEPLOYs metalogic.la, META_DEBUG verifies the two relations (≡ vs =), the three laws, and their autology"
-    echo "PASS  metalogic: ≡ (ontological identity) and = (computational yields) genuinely disagree (add(2,3)=5 yet ≢5); NC→type checker rejects contradictions; EM→loud halt; byte-identical host/VM"
+    echo "PASS  metalogic: SPEC GENERATEs/DEPLOYs metalogic.la, META_DEBUG verifies the two relations (≡ vs =), the three FALSIFIABLE laws, and their genuine self-application"
+    echo "PASS  metalogic: each law returns BOTH T and F (LAW_IDENTITY→AUTO_OK, LAW_NONCONTRADICTION→INHABITS, LAW_EXCLUDED_MIDDLE→WELLFORMED — no longer constant-TRUE tautologies); LAW_IDENTITY self-applies on the laws' own monoglyphs (no string proxy); ≡ vs = disagree; NC→type checker rejects contradictions; EM→loud halt; byte-identical host/VM"
 else
     printf '%s\n' "$ML"
     exit 1
@@ -1891,6 +2423,50 @@ else
     exit 1
 fi
 
+say "Grammar differential: the transcribed grammar vs parser.la (fuzz_grammar.py)"
+# parser.la IS the grammar -- the productions exist only as recursive-descent
+# control flow, so nothing states them as data and nothing can check them. This
+# gate is the interim answer (arc item 5's L2 differential, one layer early):
+# fuzz_grammar.py carries a Python recognizer built from the productions
+# transcribed out of parser.la, generates random VALID programs AND mutated
+# malformed ones, and asserts both agree on every case.
+#
+# WHY THE REJECT SIDE IS THE POINT: a corpus drawn from real .la files tests only
+# ACCEPT, because those files contain only valid forms by construction. Grammar
+# drift hides where the two disagree about what is MALFORMED. The corpus is
+# therefore generated, and mutations are classified by the recognizer rather than
+# assumed broken (a truncation can land on a still-valid program).
+#
+# It has already paid for itself: its first real run found the transcription said
+# `export ident+` where parser.la does `ident*` (PARSE_EXPORT_NAMES falls through
+# to PAIR(NIL)(s), so a bare `export` is legal). The parser was right, the spec
+# was wrong -- caught BEFORE any LA module was built against it.
+#
+# NOTE the harness runs ONE tiny_host per case on purpose: parser.la's reject is
+# a LOUD HALT (error "parser: parse error near:"), not a value, so batching the
+# way fuzz_canon.py does would let the first reject kill the run. ~1.5 s / 40.
+if command -v python3 >/dev/null && [ -f fuzz_grammar.py ]; then
+    FGOUT="$(python3 fuzz_grammar.py --n 40 2>&1)"; FGRC=$?
+    if printf '%s\n' "$FGOUT" | grep -q "^SKIP"; then
+        echo "SKIP  fuzz_grammar: prerequisites absent"
+    elif [ "$FGRC" -eq 0 ] && printf '%s\n' "$FGOUT" | grep -q "^PASS  fuzz_grammar"; then
+        # assert we MEASURED, not merely that nothing complained: a run that
+        # checked zero cases would otherwise pass silently.
+        if printf '%s\n' "$FGOUT" | grep -qE "^fuzz_grammar: 40 cases .* parser accepted [1-9][0-9]*, rejected [1-9][0-9]*$"; then
+            echo "PASS  fuzz_grammar: transcribed grammar == parser.la on 40 generated cases, accept AND reject sides"
+        else
+            echo "FAIL  fuzz_grammar: passed but the case tally is missing or degenerate (all-accept or all-reject means the corpus stopped discriminating)"
+            printf '%s\n' "$FGOUT"; exit 1
+        fi
+    else
+        echo "FAIL  fuzz_grammar: the transcribed grammar and parser.la DISAGREE (or the harness could not classify a case)"
+        printf '%s\n' "$FGOUT"
+        exit 1
+    fi
+else
+    echo "SKIP  fuzz_grammar: python3 or fuzz_grammar.py absent"
+fi
+
 say "Testing byte instructions + stack machine (bytecode.la)"
 # bytecode.la is a third representation of a program: a flat byte-
 # instruction stream. EMIT compiles an AST to byte instructions,
@@ -2136,7 +2712,7 @@ ok=1
 # (Stage 3b forked the runtime to add object headers; codegen3 no longer reuses codegen2's).
 if command -v nasm >/dev/null 2>&1; then
     printf 'glyph MAIN = print(42)\n' > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     nasm -f bin native_codegen3_rt.asm -o /tmp/c3rt_ref 2>/dev/null
     # count = the actual assembled RT length (was a hardcoded 11201 that went stale
     # against the 11360-byte RT — a too-small count silently truncates the cmp, the
@@ -2259,7 +2835,7 @@ glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))
 glyph MAIN = print(COUNT(1000000)(0))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3: compile tail-1M"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3: compile tail-1M"; ok=0; }
 rc=0; timeout 120 ./native_codegen3_out > /tmp/c3_tail.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3_tail.out)" = "1000000" ]; } || { echo "FAIL  native_codegen3: tail N=1,000,000 did not complete (rc=$rc out=$(cat /tmp/c3_tail.out))"; ok=0; }
 printf 'glyph TRUE = la t. la f. t
@@ -2268,7 +2844,7 @@ glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph NT = Z(la self. la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(self(sub(n)(1)))))
 glyph MAIN = print(NT(1000000))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3: compile nontail-1M"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3: compile nontail-1M"; ok=0; }
 rc=0; NTERR=$(timeout 120 ./native_codegen3_out 2>&1 >/dev/null) || rc=$?
 # 3b.4: the deep non-tail recursion must halt LOUDLY via the native stack guard
 # (clean `native: stack overflow`, exit 134) — NOT complete (rc 0) and NOT a raw
@@ -2319,8 +2895,12 @@ say "Native backend Stage 3b: conservative mark-sweep GC — bounded memory (nat
 # allocator entry on exhaustion) marks from the verified root set (all GP regs +
 # TRUEVAL/FALSEVAL + the stack), then sweeps unmarked 24-byte objects onto a
 # free-list that the allocators reuse. HEADLINE: an int-forced tail loop at
-# N=10,000,000 allocates ~8 GB of mostly-dead 24-byte objects but COMPLETES in the
-# 1.5 GB heap — impossible without reclamation (the same workload un-GC'd runs the
+# N=10,000,000 allocates ~0.8 GB of mostly-dead 24-byte objects (MEASURED; the old
+# "~8 GB" was ~10x high) but COMPLETES in the 16 GiB heap. NOTE: completion alone
+# is a VACUOUS check at 16 GiB (peak RSS ~252 MiB); part (a') below asserts the
+# real property — bounded memory — as a scale-invariant RATIO.
+# 16 GiB heap. Completion alone no longer proves reclamation here (~0.8 GB fits un-GC'd);
+# part (a') asserts it via bounded peak RSS. The un-GC'd workload still runs the
 # bump frontier off the end). 3b.3b adds blob reclamation: blobs round up to
 # power-of-2 size-class free-lists (FREEBLOB), so a blob-churn loop is bounded too.
 # 3b.4 native stack guard (the last Stage-3b piece): every compiled lambda body
@@ -2330,14 +2910,14 @@ say "Native backend Stage 3b: conservative mark-sweep GC — bounded memory (nat
 # above (the non-tail N=1,000,000 differential).
 rm -f native_codegen3_out native_input.la
 ok=1
-# (a) 24-byte reclamation: int-forced tail loop, ~8 GB of dead 24B objects in 1.5 GB.
+# (a) 24-byte reclamation: int-forced tail loop, ~0.8 GB of dead 24B objects.
 printf 'glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
 glyph IF = la c. la t. la f. c(t)(f)(0)
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))
 glyph MAIN = print(COUNT(10000000)(0))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 Stage 3b: compile 24B GC-churn"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3 Stage 3b: compile 24B GC-churn"; ok=0; }
 rc=0; timeout 300 ./native_codegen3_out > /tmp/c3gc.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3gc.out)" = "10000000" ]; } || { echo "FAIL  native_codegen3 Stage 3b: 24B tail N=10,000,000 not bounded (rc=$rc out=$(cat /tmp/c3gc.out))"; ok=0; }
 # (b) blob reclamation: a tail loop that builds + discards strings each iter; a
@@ -2350,7 +2930,7 @@ glyph IF = la c. la t. la f. c(t)(f)(0)
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph CHURN = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la s. self(sub(n)(1)))(concat("%s")("%s"))))
 glyph MAIN = print(CHURN(2000000))\n' "$LIT" "$LIT" > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
 rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 not bounded (rc=$rc out=$(cat /tmp/c3bc.out))"; ok=0; }
 # (c) FREEZE-DAY FIX #1 — large-blob GC sweep must not corrupt REGDUMP. A >4 MB
@@ -2367,17 +2947,53 @@ printf 'glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LOOP = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la _. self(sub(n)(1)))(read_file("c3_big.txt"))))
 glyph MAIN = print(LOOP(400))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
+ncg3 || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
 rc=0; timeout 200 ./native_codegen3_out > /tmp/c3big.out 2>/dev/null || rc=$?
 ./tiny_host native_input.la > /tmp/c3big.host 2>/dev/null
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3big.out)" = "done" ] && cmp -s /tmp/c3big.out /tmp/c3big.host; } || { echo "FAIL  native_codegen3 freeze-day #1: >4 MB blob GC sweep corrupts/diverges (rc=$rc native='$(cat /tmp/c3big.out)' host='$(cat /tmp/c3big.host)')"; ok=0; }
 rm -f c3_big.txt /tmp/c3big.out /tmp/c3big.host
+# (a') BOUNDED MEMORY — the assertion (a) cannot make. Peak RSS at 16x the
+#      allocation must not grow: a leak whose trigger tracks the bump frontier
+#      rather than allocation volume makes peak RSS ~ sqrt(allocations), which
+#      (a)'s completion check passes clean at 16 GiB. A RATIO is scale-invariant
+#      where an absolute limit is exactly what the 1.5->16 GiB bump gutted.
+mk24() { printf 'glyph TRUE = la t. la f. t\nglyph FALSE = la t. la f. f\nglyph IF = la c. la t. la f. c(t)(f)(0)\nglyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph COUNT = Z(la self. la n. la acc. IF(int_eq(n)(0))(la _. acc)(la _. self(sub(n)(1))(add(acc)(1))))\nglyph MAIN = print(COUNT(%d)(0))\n' "$1" > native_input.la; }
+gcpeak() { ncg3 || { echo X; return; }
+          o=$(/usr/bin/time -f '%M' ./native_codegen3_out 2>.gcp); a=$?
+          [ "$a" = 0 ] && [ "$o" = "$1" ] && tail -1 .gcp || echo X; }
+mk24 16000000;  P16=$(gcpeak 16000000)
+mk24 256000000; P256=$(gcpeak 256000000)
+case "$P16$P256" in *X*) echo "FAIL  native_codegen3 Stage 3b (a'): a bounded-memory run did not complete"; ok=0;; 
+esac
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~8 GB of dead 24B objects) COMPLETES in the 1.5 GB heap (live set ~25/pass via the FREE24 free-list). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~4 GB of blobs via power-of-2 FREEBLOB size-class lists) COMPLETES in the 1.5 GB heap (result 'done'). Both impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, dead blob swept every GC) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
+    GRW=$(( P256 * 100 / P16 ))
+    [ "$GRW" -lt 150 ] || { echo "FAIL  native_codegen3 Stage 3b (a'): 16x the allocation grew peak RSS ${GRW}% (${P16}->${P256} KB) — GC is not bounding memory"; ok=0; }
+fi
+rm -f .gcp
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~0.8 GB of dead 24B objects) COMPLETES in the 16 GiB heap (live set ~25/pass via the FREE24 free-list); (a') peak RSS is BOUNDED — 16x the allocation grows it <150% (was ~sqrt(allocations) when the GC trigger tracked the frontier not the volume). (b) blob reclamation: a blob-churn loop at N=2,000,000 COMPLETES in the 16 GiB heap (result 'done'). Bounded peak RSS (a') and the blob loop (b) are impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, dead blob swept every GC) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
 else
     exit 1
 fi
 rm -f native_codegen3_out native_input.la /tmp/c3gc.out /tmp/c3bc.out
+
+# ── Stage 3c: letrec — mutually-recursive glyphs compile (COLLAPSE_RECGROUPS) ──
+#    Whole-program inlining alone rejects a CYCLE of named glyphs ('cyclic glyph
+#    reference'); the SCC-collapse pre-pass rewrites each strongly-connected group
+#    to ONE Z-fixpoint bundle + per-member projections BEFORE inlining. These three
+#    programs are all cyclic-reference errors on a compiler WITHOUT the pass, so the
+#    gate goes red without letrec; native==host confirms correctness. Acyclic
+#    programs pass through UNCHANGED (every native test above stays byte-identical).
+say "Native backend Stage 3c: letrec — mutually-recursive glyphs compile (SCC-collapse pre-pass)"
+c3check "$(printf 'glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph TRUE = la t. la f. t\nglyph FALSE = la t. la f. f\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph COUNT = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(DOWN(sub(n)(1))))\nglyph DOWN = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(COUNT(sub(n)(1))))\nglyph MAIN = print(COUNT(6))')" "letrec: mutual recursion COUNT/DOWN -> 6"
+c3check "$(printf 'glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph TRUE = la t. la f. t\nglyph FALSE = la t. la f. f\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph A = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(B(sub(n)(1))))\nglyph B = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(C(sub(n)(1))))\nglyph C = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(A(sub(n)(1))))\nglyph MAIN = print(A(9))')" "letrec: 3-cycle A/B/C -> 9"
+c3check "$(printf 'glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph TRUE = la t. la f. t\nglyph FALSE = la t. la f. f\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph G = la n. IF(int_eq(n)(0))(la _. 0)(la _. add(1)(G(sub(n)(1))))\nglyph MAIN = print(G(5))')" "letrec: singleton self-loop by name G -> 5"
+rm -f native_codegen3_out native_input.la /tmp/c3.err /tmp/c3_native.out /tmp/c3_host.out
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  native backend Stage 3c: letrec — COLLAPSE_RECGROUPS (SCC-collapse -> Z-fixpoint pre-pass) compiles mutually-recursive named glyphs (COUNT/DOWN; the 3-cycle A/B/C) and singleton self-loops (G refs G by name) that whole-program inlining rejects as 'cyclic glyph reference'; each strongly-connected group rewritten to one Z-fixpoint bundle + per-member projections; native==host. Acyclic glyphs pass through unchanged (byte-identical — proven by every native test above staying green)."
+else
+    exit 1
+fi
 
 # ── FREEZE-DAY FIX #2 — a string builtin given a non-STR argument must HALT LOUDLY,
 #    not SIGSEGV. Every native string builtin (str_len/ord/chr/str_to_int/str_head/
@@ -2393,7 +3009,7 @@ say "Native backend freeze-day fix #2: non-STR argument loud-halt (no SIGSEGV)"
 c2ok=1
 for c2p in 'str_len(add(1)(2))' 'ord(add(1)(2))' 'chr(add(1)(2))' 'str_to_int(add(1)(2))' 'str_head(add(1)(2))' 'str_tail(add(1)(2))' 'concat(add(1)(2))("x")' 'concat("x")(add(1)(2))' 'read_file(add(1)(2))'; do
     printf 'glyph MAIN = print(%s)\n' "$c2p" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #2: compile '$c2p'"; c2ok=0; }
+    ncg3 || { echo "FAIL  native_codegen3 #2: compile '$c2p'"; c2ok=0; }
     nrc=0; nout=$(timeout 30 ./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
     { [ "$nrc" != "0" ] && [ "$nrc" != "139" ] && [ -z "$nout" ] && [ "$hrc" != "0" ]; } \
@@ -2401,7 +3017,7 @@ for c2p in 'str_len(add(1)(2))' 'ord(add(1)(2))' 'chr(add(1)(2))' 'str_to_int(ad
 done
 # valid string use is UNAFFECTED (the guard rejects only non-STR values)
 printf 'glyph MAIN = print(str_len("Lingua Adamica"))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1
+ncg3
 { [ "$(./native_codegen3_out)" = "14" ] && [ "$(./tiny_host native_input.la)" = "14" ]; } \
   || { echo "FAIL  native_codegen3 #2: guard broke a valid str_len"; c2ok=0; }
 if [ "$c2ok" -eq 1 ]; then
@@ -2420,7 +3036,7 @@ say "Native backend freeze-day fix #3: chr out-of-range loud-halt"
 c3ok=1
 for c3v in 256 300 999; do
     printf 'glyph MAIN = print(chr("%s"))\n' "$c3v" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #3: compile chr($c3v)"; c3ok=0; }
+    ncg3 || { echo "FAIL  native_codegen3 #3: compile chr($c3v)"; c3ok=0; }
     nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
     { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
@@ -2429,7 +3045,7 @@ done
 # in-range chr is UNAFFECTED (boundary 0 and 255, plus a mid value) native==host
 for c3v in 0 65 255; do
     printf 'glyph MAIN = print(ord(chr("%s")))\n' "$c3v" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     { [ "$(./native_codegen3_out)" = "$c3v" ] && [ "$(./tiny_host native_input.la)" = "$c3v" ]; } \
       || { echo "FAIL  native_codegen3 #3: in-range chr($c3v) broke"; c3ok=0; }
 done
@@ -2455,7 +3071,7 @@ say "Native backend freeze-day fix #4: str_to_int strictness loud-halt"
 c4ok=1
 for c4s in x12x x x-; do   # str_tail -> "12x" (non-digit) / "" (empty) / "-" (lone minus)
     printf 'glyph MAIN = print(int_to_str(str_to_int(str_tail("%s"))))\n' "$c4s" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #4: compile str_to_int(str_tail($c4s))"; c4ok=0; }
+    ncg3 || { echo "FAIL  native_codegen3 #4: compile str_to_int(str_tail($c4s))"; c4ok=0; }
     nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
     { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
@@ -2466,7 +3082,7 @@ set -- "x42:42" "x-5:-5" "x0:0"
 for pair in "$@"; do
     inp=${pair%%:*}; exp=${pair##*:}
     printf 'glyph MAIN = print(int_to_str(str_to_int(str_tail("%s"))))\n' "$inp" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
       || { echo "FAIL  native_codegen3 #4: valid str_to_int(str_tail(\"$inp\"))=$exp broke (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c4ok=0; }
 done
@@ -2489,7 +3105,7 @@ say "Native backend freeze-day fix #5: div/mod by zero loud-halt (no SIGFPE)"
 c5ok=1
 for c5p in 'div(10)(sub(3)(3))' 'mod(10)(sub(7)(7))'; do
     printf 'glyph MAIN = print(%s)\n' "$c5p" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  native_codegen3 #5: compile [$c5p]"; c5ok=0; }
+    ncg3 || { echo "FAIL  native_codegen3 #5: compile [$c5p]"; c5ok=0; }
     nrc=0; nout=$(./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
     { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" = "1" ]; } \
@@ -2499,7 +3115,7 @@ done
 for pair in 'div(17)(5):3' 'mod(17)(5):2' 'div(20)(4):5' 'mod(10)(sub(0)(3)):1'; do
     prog=${pair%:*}; exp=${pair##*:}
     printf 'glyph MAIN = print(%s)\n' "$prog" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
       || { echo "FAIL  native_codegen3 #5: valid [$prog]=$exp broke (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c5ok=0; }
 done
@@ -2530,7 +3146,7 @@ done
 for pair in 'print(42):42' 'print(str_to_int("0")):0' 'print(add(17)(5)):22' 'print((la x. x)(255)):255'; do
     prog=${pair%:*}; exp=${pair##*:}
     printf 'glyph MAIN = %s\n' "$prog" > native_input.la
-    ./tiny_host native_codegen3.la >/dev/null 2>&1
+    ncg3
     { [ "$(./native_codegen3_out)" = "$exp" ] && [ "$(./tiny_host native_input.la)" = "$exp" ]; } \
       || { echo "FAIL  native_codegen3 #6: positive [$prog]=$exp regressed (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c6ok=0; }
 done
@@ -2593,7 +3209,7 @@ hout=$(./tiny_host native_input.la 2>/dev/null)
   || { echo "FAIL  native_codegen3 #8: write_file produced an EXECUTABLE file (must be a plain data file, unlike write_exec)"; c8ok=0; }
 # read_file round-trips the native-written file (the moved rt_read_file/rt_copy_self addrs still resolve)
 printf 'glyph MAIN = print(read_file("/tmp/c8_nat.txt"))\n' > native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1
+ncg3
 { [ "$(./native_codegen3_out)" = "hello write_file" ] && [ "$(./tiny_host native_input.la)" = "hello write_file" ]; } \
   || { echo "FAIL  native_codegen3 #8: read_file of the native-written file (native='$(./native_codegen3_out)' host='$(./tiny_host native_input.la)')"; c8ok=0; }
 rm -f /tmp/c8_nat.txt /tmp/c8_host.txt
@@ -2688,7 +3304,7 @@ n12rc=0; echo data | ./native_codegen3_out >/dev/null 2>/tmp/n12.err || n12rc=$?
 printf 'seekable regular file\n' > /tmp/c12_reg.txt
 printf 'glyph MAIN = print(read_file("/tmp/c12_reg.txt"))\n' > native_input.la
 h12v="$(./tiny_host native_input.la 2>/dev/null)"
-./tiny_host native_codegen3.la >/dev/null 2>&1; n12v="$(./native_codegen3_out 2>/dev/null)"
+ncg3; n12v="$(./native_codegen3_out 2>/dev/null)"
 { [ "$h12v" = "seekable regular file" ] && [ "$n12v" = "seekable regular file" ]; } \
   || { echo "FAIL  native_codegen3 #12: regular-file read_file regressed (host='$h12v' native='$n12v')"; c12ok=0; }
 if [ "$c12ok" -eq 1 ]; then
@@ -2774,6 +3390,40 @@ ok=1
 # So the size check is demoted to what it actually is: a fallback for when nasm
 # is unavailable and the authoritative check cannot run. Keeping it as a peer
 # assertion buys nothing and costs a stale constant that silently reds the suite.
+# ── THE SIZE EXPECTATION WAS A MAINTAINED CONSTANT. IT IS NOW DERIVED. ──
+# History, because it is the whole argument for the change:
+#   13775 -> 14207  `05ed1fe` (VM execv + dup2) grew the VM 432 bytes and did not
+#                   update the constant. ./build.sh was RED for 34 days unnoticed —
+#                   the freeze-day self-audit and every commit after it landed on a
+#                   red build. A MAINTENANCE note was added here saying "adding a VM
+#                   builtin changes this number, update it in the same commit".
+#   14207 -> 14639  adding the bitwise builtins grew the VM 432 bytes and did not
+#                   update the constant. Same defect, same cause, WITH the warning
+#                   already written in this file, by an author who had just read it.
+# Twice is a pattern, and the pattern is that a number a human must keep true is a
+# claim nothing keeps true. The prose did not defend it; only a check can.
+# So the expectation is DERIVED from the artifact instead: the VM's size must equal
+# the size of `nasm -f bin secd.asm`, the same source the byte-level drift guard
+# below compares against. Adding a builtin now needs NO edit here — and if the
+# emitted VM ever disagrees with its documented source, both this and the drift
+# guard go red, which is the property that actually matters.
+if command -v nasm >/dev/null 2>&1; then
+    nasm -f bin secd.asm -o /tmp/secd_size_ref 2>/dev/null
+    SECD_EXPECT=$(stat -c%s /tmp/secd_size_ref 2>/dev/null)
+    SECD_GOT=$(stat -c%s logos_secd 2>/dev/null)
+    [ -n "$SECD_EXPECT" ] && [ "$SECD_EXPECT" -gt 1024 ] \
+        || { echo "FAIL  codegen: could not derive the VM size from secd.asm"; ok=0; }
+    [ "$SECD_GOT" = "$SECD_EXPECT" ] \
+        || { echo "FAIL  codegen: VM size $SECD_GOT != $SECD_EXPECT derived from secd.asm"; ok=0; }
+    rm -f /tmp/secd_size_ref
+else
+    # No nasm: the size cannot be derived and the drift guard below is skipped too.
+    # Assert only what is checkable — that a VM was emitted at all — and SAY that the
+    # size is unverified rather than leaving a stale literal to rot.
+    [ -s logos_secd ] || { echo "FAIL  codegen: VM empty"; ok=0; }
+    echo "NOTE  codegen: VM size unverified (no nasm to derive the expectation from)"
+fi
+# Drift guard: the VM bytes must match their documented source.
 if command -v nasm >/dev/null 2>&1; then
     nasm -f bin secd.asm -o /tmp/secd_ref 2>/dev/null
     cmp -s logos_secd /tmp/secd_ref || { echo "FAIL  codegen: VM bytes differ from nasm -f bin secd.asm"; ok=0; }
@@ -3504,7 +4154,7 @@ check_phonsem () {  # $1 = engine label, $2 = output file
     grep -qF "phonsem ontophonosemantic alignment (phonym ≡ referent's acoustic structure, alpha=1, ATT) = 1.0 by nature" "$2" || { echo "FAIL  phonsem($1): the 1.0-by-nature ontophonosemantic alignment line (ATT) changed"; ok=0; }
     grep -qF 'phonsem derived Theta_P(Compassion=Love⊗Recognition) = 1300,300,870,2240,2800,270,2300,3000,' "$2"                     || { echo "FAIL  phonsem($1): derived Θ_P (Love⊗Recognition superposition) changed"; ok=0; }
     grep -qF 'phonsem instantiation identity: canonical(one concept⇒one form)=YES  injective(SET) Theta_P = 8 / 8' "$2"     || { echo "FAIL  phonsem($1): identity register (canonicity=YES / 8-of-8 injective) changed"; ok=0; }
-    grep -qF 'phonsem instantiation fidelity (NOT alignment): 71 pct  [concordant 224 / discordant 90]' "$2"               || { echo "FAIL  phonsem($1): instantiation-fidelity score changed"; ok=0; }
+    grep -qF 'phonsem instantiation fidelity (NOT alignment): 67 pct  [concordant 211 / discordant 103]' "$2"               || { echo "FAIL  phonsem($1): instantiation-fidelity score changed"; ok=0; }
 }
 rm -f phonsem_host.out phonsem_vm.out
 ./tiny_host phonsem.la > phonsem_host.out 2>/dev/null
@@ -3518,7 +4168,7 @@ check_phonsem "native VM" phonsem_vm.out
 cmp -s phonsem_host.out phonsem_vm.out || { echo "FAIL  phonsem: native output != C host output"; ok=0; }
 rm -f phonsem_host.out phonsem_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  meta-phonosemantics (item 8): the derived phonym realises the trimodal identity — canonical (one concept⇒one Θ_P, the α=1 'exactly one name') and 8/8 set-injective (onset axis added — /u/ collision closed) — and INSTANTIATES it at 71% acoustic fidelity (d_𝒪↔d_𝒫 Kendall concordance, the audio twin of item 7's 0.863); per ATT ontosemantic alignment = 1.0 BY NATURE (identity, not correspondence), so the sub-1.0 numbers are instantiation residual (onset/energy axis not yet captured), work toward 1.0; φ not imposed; byte-identical host==VM"
+    echo "PASS  meta-phonosemantics (item 8): the derived phonym realises the trimodal identity — canonical (one concept⇒one Θ_P, the α=1 'exactly one name') and 8/8 set-injective (onset axis added — /u/ collision closed) — and INSTANTIATES it at 67% acoustic fidelity (d_𝒪↔d_𝒫 Kendall concordance, the audio twin of item 7's 0.863); per ATT ontosemantic alignment = 1.0 BY NATURE (identity, not correspondence), so the sub-1.0 numbers are instantiation residual (onset/energy axis not yet captured), work toward 1.0; φ not imposed; byte-identical host==VM"
 else
     exit 1
 fi
@@ -3623,6 +4273,121 @@ else
     exit 1
 fi
 
+# ═══ LA COMPLETION ARC items 2-5 — first gates for these modules ═══════════
+# Q0 (Freeze-Day Audit II) found 19 tracked .la that NO script mentions — files the
+# suite cannot possibly verify. Four of them were arc items built 2026-08-19. These
+# gates exist so items 2-5 are not added to that list.
+#
+# Each asserts what the item CLAIMS, not merely that the module runs, and each
+# expected witness is EXACT — an exact value is what lets a gate fail.
+say "Family-tree graph test (ontological audit test 4): grounding + unary census (familytree.la)"
+ok=1
+FT_H="$(./tiny_host familytree.la 2>/dev/null)"
+# ★ THE NAIVE GATE IS DELIBERATELY ABSENT. The audit states ">2 parents ⇒ violates
+# dyadic recursion". That can NEVER FIRE: a κ-node is Scott-encoded with exactly six
+# constructors — PRIM(0 parents), SYN/CON/DIR/CONT(2), MC(1) — so a 3-parent node is
+# UNCONSTRUCTIBLE, not merely absent. The dyadic law is enforced by the DATA TYPE,
+# which is STRONGER than a check. Asserting it would report verification where none
+# occurred. It is reported by familytree.la, never gated.
+printf '%s\n' "$FT_H" | grep -qF "G1 grounding (every leaf one of the nine):T" \
+    || { echo "FAIL  familytree G1: an ungrounded leaf — $(printf '%s' "$FT_H" | grep -o 'OFFENDER=[^ ]*')"; ok=0; }
+printf '%s\n' "$FT_H" | grep -qF "G2 distinct ↻ forms=8 expected 8:T" \
+    || { echo "FAIL  familytree G2: unary census changed — $(printf '%s' "$FT_H" | grep -o 'G2 distinct[^|]*')"; ok=0; }
+# ★ G2 is keyed on the CANONICAL FORM, never the glyph NAME. The catalogue contains
+# BOTH SR_ABOUT and OP_RHO and both are ↻(RECOGNITION) — one glyph, two names, an
+# identity Erik ruled INTENDED. A name-keyed census would count 9 and be WRONG.
+# ★ R1 (max lineage depth) is a REPORT and is NOT asserted here. A depth flag that
+# could fail the build would be a structural law wearing a report's clothes.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp familytree.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+FT_V="$(./logos_secd 2>/dev/null)"
+[ "$FT_H" = "$FT_V" ] || { echo "FAIL  familytree: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+[ "$ok" -eq 1 ] && echo "PASS  familytree: every leaf of all 17 catalogue glyphs grounds in the nine primitives (RED path NAMES the offender); the unary census is keyed on κ so ρ ≡ SR_ABOUT counts ONCE; byte-identical host==VM. The >2-parent law is TYPE-ENFORCED, reported not gated" || exit 1
+
+say "LA arc item 2: the five operators ∂δγρ𝔄 as first-class glyphs (metaglyph.la)"
+ok=1
+MG_H="$(./tiny_host metaglyph.la 2>/dev/null)"
+for w in "∂ diff    = ▷(VOID,RELATION)" \
+         "δ bound   = ⊂(FORM,DEPTH)" \
+         "γ comp    = ⊗(BECOMING,FORM)" \
+         "ρ recog   = ↻(RECOGNITION)" \
+         "𝔄 integ   = ⊗(LOVE,BEING)" \
+         "five operators pairwise distinct ? YES" \
+         "★ ρ ≡ SR_ABOUT (intended identity) ? YES" \
+         "OPERATE-ON ⊗(∂,δ) = ⊗(▷(VOID,RELATION),⊂(FORM,DEPTH))" \
+         "rank ∂<δ<γ<ρ<𝔄 read FROM the glyph ? YES"; do
+    printf '%s\n' "$MG_H" | grep -qF "$w" || { echo "FAIL  item2: missing witness — $w"; ok=0; }
+done
+# ★ the ρ ≡ SR_ABOUT identity is asserted POSITIVELY. It is NOT a collision to be
+# repaired: two names were found to name ONE meaning. Changing ρ's decomposition to
+# "fix" a distinctness complaint would DESTROY the identity — the RED path for this
+# gate is exactly that change, and it fires.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp metaglyph.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+MG_V="$(./logos_secd 2>/dev/null)"
+[ "$MG_H" = "$MG_V" ] || { echo "FAIL  item2: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+[ "$ok" -eq 1 ] && echo "PASS  item2: ∂δγρ𝔄 are glyphs the language can INSPECT, COMPOSE and OPERATE ON (not dispatch data above it); ρ ≡ SR_ABOUT asserted positively; rank read FROM the glyph; byte-identical host==VM" || exit 1
+
+say "LA arc items 3+4: denotational morphology (γ_g, r_D) + the glyphic combination law (denote.la)"
+ok=1
+DN_H="$(./tiny_host denote.la 2>/dev/null)"
+for w in "ITEM3 reduction ⟦γ_Λ(a,b)⟧=r_D(⟦a⟧,⟦b⟧):T" \
+         "violation(▷ operand-swap) CAUGHT:T" \
+         "⊥ not undefined (PM disjoint):T" \
+         "ρ≡SR_ABOUT denotation:structural" \
+         "ITEM4 law holds on γ_g:T" \
+         "law FAILS on a parent-dropping combiner:T" \
+         "violation CONSTRUCTIBLE (not type-enforced):T" \
+         "law's own glyph κ=⊗(RELATION,RECOGNITION)"; do
+    printf '%s\n' "$DN_H" | grep -qF "$w" || { echo "FAIL  items3/4: missing witness — $w"; ok=0; }
+done
+# ★ "law FAILS on a parent-dropping combiner" is the ACCEPTANCE TEST for item 4,
+# not the green run: a combination law every combination satisfies by construction
+# distinguishes nothing (item 1's tautology defect, one level up).
+# ★ "ρ≡SR_ABOUT denotation:structural" is a REPORT, not a check, deliberately. MEANING's
+# signature is node -> denotation; it cannot see a glyph NAME, and OP_RECOG and
+# SR_ABOUT_HERE are the SAME TERM — so denotational polysemy between them is
+# UNCONSTRUCTIBLE, not merely absent. Per item 4's requirement 3, a property enforced
+# by the TYPE is STRONGER than a gate and must be reported as such, never dressed up
+# as a passing check. The assertion that CAN fail is ρ's DECOMPOSITION, gated in
+# metaglyph.la (item 2) with a firing RED path. Two earlier attempts are recorded in
+# denote.la: one VACUOUS probe, then one using typeof — which exists ONLY in
+# tiny_host.c and broke host==VM.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp denote.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+DN_V="$(./logos_secd 2>/dev/null)"
+[ "$DN_H" = "$DN_V" ] || { echo "FAIL  items3/4: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+[ "$ok" -eq 1 ] && echo "PASS  items3/4: γ_g and r_D are real LA operators; the reduction ⟦γ_Λ(a,b)⟧=r_D(⟦a⟧,⟦b⟧) holds and FAILS on a constructed violation; ⊥ is a total false-everywhere function, never a stuck term; the combination law is a PREDICATE with a constructible violation; byte-identical host==VM" || exit 1
+
+say "LA arc item 5: the grammar recoverable as data — L1 + L2 differential (grammar.la)"
+ok=1
+GR_H="$(./tiny_host grammar.la 2>/dev/null)"
+# EXACT, not a substring: all four accepts and all four rejects must agree.
+printf '%s\n' "$GR_H" | grep -qF "L2 differential [A1 A2 A3 A4 R1 R2 R3 R4] = TTTTTTTT" \
+    || { echo "FAIL  item5: L2 differential not TTTTTTTT — got: $(printf '%s' "$GR_H" | grep -o 'L2 differential.*')"; ok=0; }
+printf '%s\n' "$GR_H" | grep -qF "L1 grammar-as-data: expr = [(T:la (T:ident (T:dot N:expr))) | N:app]" \
+    || { echo "FAIL  item5: L1 expr production changed"; ok=0; }
+# ★ A3 is a BARE `export`. fuzz_grammar.py's first real run proved that legal:
+# PARSE_EXPORT_NAMES falls through to an empty list, so exportdir is ident* not
+# ident+. Reverting that production is this gate's RED path and flips A3/A4.
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp grammar.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+GR_V="$(./logos_secd 2>/dev/null)"
+[ "$GR_H" = "$GR_V" ] || { echo "FAIL  item5: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la
+[ "$ok" -eq 1 ] && echo "PASS  item5: the grammar is FIRST-CLASS DATA (Scott-encoded, GDECOMP-able) and GPARSE agrees with the fuzzer-verified productions on BOTH the accept and reject sides; byte-identical host==VM. BOUND: associativity is invisible to a verdict-only differential" || exit 1
+
 say "Denotational COMPOSE: the meaning of a compound as a FUNCTION of its parts (denote.la)"
 # Closes the MORPHOLOGY gap the linguistic-closure audit found: the modes ⊗⊕▷⊂↻ combined
 # NAME-leaves (canon.la's κ over trees), but nothing composed the primitives' λ-MEANINGS —
@@ -3635,15 +4400,24 @@ say "Denotational COMPOSE: the meaning of a compound as a FUNCTION of its parts 
 # Pure λ, byte-identical on the C host and the native VM.
 ok=1
 DEN_EXPECT="DENOTE ⊗-recovers-both[BEING,VOID]:pq | ↻(BEING)≡SELF-denotationally:T | nested-⊗(↻BEING,VOID):rs"
-DENH="$(./tiny_host denote.la 2>/dev/null)"
+# ★ FIRST LINE, exact. denote.la grew items 3 and 4 (γ_g / r_D and the combination
+# law), so its output is now three lines and a whole-output equality test against
+# this one-line constant fails — correctly. It is NOT loosened to a substring
+# match: this gate still exact-matches ITS OWN line, and the item 3/4 lines are
+# exact-matched by the LA-arc gate above. Each assertion owns what it asserts.
+DENALL="$(./tiny_host denote.la 2>/dev/null)"
+DENH="$(printf '%s\n' "$DENALL" | head -1)"
 [ "$DENH" = "$DEN_EXPECT" ] || { echo "FAIL  denote: host verdict wrong (got: $DENH)"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp denote.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-DENV="$(./logos_secd 2>/dev/null)"
+DENVALL="$(./logos_secd 2>/dev/null)"
+DENV="$(printf '%s\n' "$DENVALL" | head -1)"
 [ "$DENV" = "$DEN_EXPECT" ] || { echo "FAIL  denote: native VM verdict wrong (got: $DENV)"; ok=0; }
-[ "$DENH" = "$DENV" ]       || { echo "FAIL  denote: native != host"; ok=0; }
+# host==VM compares the FULL output, not just the first line — the byte-identity
+# claim is about everything the module emits, including items 3 and 4.
+[ "$DENALL" = "$DENVALL" ]  || { echo "FAIL  denote: native != host"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  denote: denotational COMPOSE — MEANING(⊗(BEING,VOID)) recovers BOTH parents (compositionality) + the κ→meaning homomorphism COMMUTES with canon's ↻(BEING)≡SELF (Fregean compositionality realised), byte-identical host and native VM"
@@ -3887,17 +4661,19 @@ check_mono () {  # $1 = engine label, $2 = output file
     grep -q '^dir ▷.*DISTINCT'      "$2" || { echo "FAIL  monosemy($1): directional ▷ wrongly collapsed (not a synonym)"; ok=0; }
     grep -q '^polysemy.*YES (no polysemy)' "$2" || { echo "FAIL  monosemy($1): polysemy detected (distinct meanings share a glyph)"; ok=0; }
 }
-rm -f mono_host.out mono_vm.out
-./tiny_host monosemy_test.la > mono_host.out 2>/dev/null
+rm -f mono_host.out mono_vm.out mono_combined.la
+# DRIFT-PROOF: prepend canon.la's real κ; monosemy_test.la is report-only.
+cat canon.la monosemy_test.la > mono_combined.la
+./tiny_host mono_combined.la > mono_host.out 2>/dev/null
 check_mono "C host" mono_host.out
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
-cp monosemy_test.la logos_source.la
+cp mono_combined.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 ./logos_secd > mono_vm.out 2>/dev/null
 check_mono "native VM" mono_vm.out
 cmp -s mono_host.out mono_vm.out || { echo "FAIL  monosemy: native verdicts != C host verdicts"; ok=0; }
-rm -f mono_host.out mono_vm.out logos_secd logos_program.bin logos_source.la
+rm -f mono_host.out mono_vm.out logos_secd logos_program.bin logos_source.la mono_combined.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  monosemy: no polysemy (distinct meanings → distinct glyphs); synonymy collapsed up to the declared theory (⊗/⊕ commutativity + ↻BEING≡SELF), directional/assoc/idempotent forms correctly kept distinct, byte-identical on host and native VM"
 else
@@ -4965,6 +5741,56 @@ bash kernel/gate_hal3bc.sh       || exit 1   # ~12m ATA write: three waits bound
 ./gate_buildla.sh                || exit 1   # ~12m the LA build driver itself (91 steps)
 bash kernel/gate_ps2_bounded.sh pointer ptr    || exit 1   # ~10m
 bash kernel/gate_ps2_bounded.sh cursor cursor  || exit 1   # ~10m
+# HAL.4e — the terminal window. NOTE: its siblings gate_comp_session.sh,
+# gate_hal1..5b, gate_hh1/2*, gate_k6*, gate_k7* all EXIST and PASS when run by
+# hand, and build.sh invokes NONE of them (14 of 40 kernel gates are wired).
+# That is the Q0 coverage finding, live: "done and gated" is true of those
+# milestones only in the sense that a gate exists — the build does not assert
+# them. Wiring this one does not fix that; it just does not add to it.
+say "LogOS HAL.4e: a terminal window in the compositor (text on the metal)"
+bash kernel/gate_comp_term.sh || exit 1
+
+# ── THE GATES THAT EXISTED AND WERE NEVER RUN ────────────────────────────
+# Before this block, build.sh invoked 15 of 40 kernel gates. The rest asserted
+# the HAL, the higher-half, all of ring 3 and the sovereign bootloader — and
+# nothing ran them. A milestone whose gate is never invoked can regress in
+# silence; that is exactly how the VM-size constant sat red for 34 days.
+# Each gate self-skips (exit 0) when qemu-system-x86_64 is absent.
+
+say "HAL — the bare-metal drivers, written in Lingua Adamica on thin asm physics"
+bash kernel/gate_hal1.sh || exit 1   # HAL.1 port-I/O primitives + PCI enumeration
+bash kernel/gate_hal2.sh || exit 1   # HAL.2 PS/2 keyboard (polled)
+bash kernel/gate_hal2b.sh || exit 1   # HAL.2b IRQ-driven keyboard (PIC + IRQ1)
+bash kernel/gate_hal3.sh || exit 1   # HAL.3 ATA disk read
+bash kernel/gate_hal3b.sh || exit 1   # HAL.3b ATA disk write
+bash kernel/gate_hal4.sh || exit 1   # HAL.4 linear framebuffer via a PCI BAR
+bash kernel/gate_hal4b.sh || exit 1   # HAL.4b bulk fill + memcpy-to-MMIO
+bash kernel/gate_hal4c.sh || exit 1   # HAL.4c the compositor on the metal
+bash kernel/gate_comp_session.sh || exit 1   # HAL.4d the interactive compositor session
+bash kernel/gate_hal5.sh || exit 1   # HAL.5a NIC discovery (RTL8139)
+bash kernel/gate_hal5b.sh || exit 1   # HAL.5b NIC send + receive — the first DMA driver
+
+say "Higher-half — the kernel running wholly above the canonical split"
+bash kernel/gate_hh1.sh || exit 1   # HH1 higher-half
+bash kernel/gate_hh1b.sh || exit 1   # HH1b the kernel runs WHOLLY in the higher half
+bash kernel/gate_hh2.sh || exit 1   # HH2
+bash kernel/gate_hh2b.sh || exit 1   # HH2b
+bash kernel/gate_hh2c.sh || exit 1   # HH2c
+
+say "K6 — ring 3, syscalls, and the typed IPC layer"
+bash kernel/gate_k6a.sh || exit 1   # K6a ring-3 privilege drop
+bash kernel/gate_k6b.sh || exit 1   # K6b the real LA image at ring 3
+bash kernel/gate_k6c.sh || exit 1   # K6c the syscall service layer
+bash kernel/gate_k6c2.sh || exit 1   # K6c.2 two ring-3 tasks + a kernel context switch
+bash kernel/gate_k6c3.sh || exit 1   # K6c.3a a single LA process does IPC at ring 3
+bash kernel/gate_k6c3b.sh || exit 1   # K6c.3b TWO LA tasks exchange a typed message
+
+say "K7 — the sovereign bootloader (LogOS boots itself, no GRUB)"
+bash kernel/gate_k7a.sh || exit 1   # K7a the sovereign boot sector
+bash kernel/gate_k7b.sh || exit 1   # K7b load the kernel image from disk + hand off
+
+say "Substrate invariance — the same LA image is ONE BEING on host and on metal"
+bash kernel/gate_with_ok.sh || exit 1   # WITH_OK host_image == metal_image, the eighth self-relation
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),

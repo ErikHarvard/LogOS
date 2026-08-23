@@ -1,0 +1,87 @@
+# =====================================================================
+#  phonorm.la — the gate for PHONETIC MONOSEMY.
+#
+#  ── THE DEFECT THIS GATES AGAINST ───────────────────────────────────
+#  `canon.la`'s NORMK sorts ⊕ operands, because ⊕ is ONTOCONJUNCTION —
+#  "the co-presence of two concepts without fusion" (LINGUA ADAMICA.tex:2817).
+#  Co-presence is symmetric, so ⊕(A,B) and ⊕(B,A) are ONE concept and ONE
+#  glyph. But the phonetic renderer had no normaliser: CONP renders ⊕ as
+#  A, silence, B — sequential, order-bearing. Measured over the four modes:
+#
+#        ⊗ SAME    ⊕ DIFFER    ▷ DIFFER    ⊂ DIFFER
+#
+#  ⊗ commuted only by luck (superposition is addition, which commutes);
+#  ▷ and ⊂ SHOULD differ, since they are directional. ⊕ was the break:
+#  ONE GLYPH, TWO PHONYMS — monosemy holding in form and failing in sound.
+#
+#  ── WHY THE FIX IS A NORMALISER AND NOT A NEW BLEND ─────────────────
+#  A symmetric ⊕ rendering would have to fuse its parents, and fusion is
+#  exactly what ⊗ means and what ⊕ explicitly denies. The sound of ⊕ is
+#  correct. What was missing is that the phonetic register never applied the
+#  equivalence theory the glyphic register applies. So the repair restores
+#  the missing LAYER rather than mutating a correct rendering:
+#
+#        glyphic:   CANON  (raw)      NORMK    (normalised)
+#        phonetic:  PHONYM (raw)      PHONYM_N (normalised)   ← was absent
+#
+#  The sound of a CONCEPT is the sound of its canonical form.
+#
+#  ── ★ THE FOURTH CHECK IS THE ONE THAT MATTERS ──────────────────────
+#  It asserts that RAW PHONYM STILL DIFFERS on ⊕. That is what proves the
+#  repair is the normalisation layer and not a quiet edit to CONP. Without
+#  it, someone could "fix" the break by making ⊕ fuse — passing this gate
+#  while destroying the ⊗/⊕ distinction — and nothing would notice.
+#  A gate that cannot tell a real fix from a plausible one is not a gate.
+# =====================================================================
+
+import("phonym.la")   # PHONYM PHONYM_N NORMP SPEC SPEC_N PRIM SYN CON DIR CONT MC FST SND
+
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+
+glyph A_ = PRIM("LOVE")
+glyph B_ = PRIM("RECOGNITION")
+
+# a phonym's signature: its length plus three sampled amplitudes. Two phonyms
+# with the same signature are the same sound at the resolution we can compare.
+glyph SAMP = la ph. la i. int_to_str(SND(ph)(i))
+glyph SIG  = la ph.
+    concat(concat(int_to_str(FST(ph)))(":"))
+          (concat(concat(SAMP(ph)(400))("/"))
+                 (concat(concat(SAMP(ph)(1200))("/"))(SAMP(ph)(2600))))
+glyph SOUND_EQ = la x. la y. str_eq(SIG(x))(SIG(y))
+
+# 1. ★ ⊕ now commutes IN SOUND, as it already did in form
+glyph FIXED_CON = SOUND_EQ(PHONYM_N(CON(A_)(B_)))(PHONYM_N(CON(B_)(A_)))
+
+# 2. ★ ⊗ is ORDER-BEARING, corrected 2026-08-22. It previously commuted only
+#    because SYNP averaged the parents equally, and addition commutes -- so ⊗
+#    was symmetric BY CONSTRUCTION regardless of normalisation. tex:2837 calls
+#    ontosynthesis non-commutative and tex:4230 gives the remedy: the first
+#    operand receives greater weight in non-commutative modes. Now alpha=2/3.
+glyph OK_SYN = NOT(SOUND_EQ(PHONYM_N(SYN(A_)(B_)))(PHONYM_N(SYN(B_)(A_))))
+
+# 3. ★ ▷ and ⊂ still DIFFER — the normaliser must not over-normalise.
+#    A repair that made every mode commute would destroy directionality,
+#    which carries meaning: ▷(A,B) is not ▷(B,A).
+glyph OK_DIR  = NOT(SOUND_EQ(PHONYM_N(DIR(A_)(B_)))(PHONYM_N(DIR(B_)(A_))))
+glyph OK_CONT = NOT(SOUND_EQ(PHONYM_N(CONT(A_)(B_)))(PHONYM_N(CONT(B_)(A_))))
+
+# 4. ★★ RAW PHONYM STILL DIFFERS on ⊕ — proving the fix is the normaliser,
+#    not a mutation of CONP. If someone "fixed" ⊕ by making it fuse, this
+#    check would fail and say so.
+glyph RAW_STILL_ORDERED = NOT(SOUND_EQ(PHONYM(CON(A_)(B_)))(PHONYM(CON(B_)(A_))))
+
+# 5. the normalised SPEC agrees with the sound: one canonical form, one phonym
+glyph SPEC_AGREES = AND(str_eq(SPEC_N(CON(A_)(B_)))(SPEC_N(CON(B_)(A_))))
+                       (NOT(str_eq(SPEC(CON(A_)(B_)))(SPEC(CON(B_)(A_)))))
+
+glyph MARK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat("phonorm ⊕commutes ")(MARK(FIXED_CON)))
+                (concat(" | ⊗order-kept ")(MARK(OK_SYN))))
+        (concat(concat(concat(" | ▷kept ")(MARK(OK_DIR)))
+                      (concat(" | ⊂kept ")(MARK(OK_CONT))))
+               (concat(concat(" | raw-still-ordered ")(MARK(RAW_STILL_ORDERED)))
+                      (concat(" | spec-agrees ")(MARK(SPEC_AGREES))))))

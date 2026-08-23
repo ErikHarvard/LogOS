@@ -1,0 +1,162 @@
+# =====================================================================
+#  ontofelicity.la — ONTOPRAGMATICS: felicity as capability.
+#
+#  `pragmatics.la` gave the USE branch its autological seed and `deixis.la`
+#  gave it reference. Neither gave it FELICITY — the condition under which a
+#  performative actually does what it says. This closes that.
+#
+#  ── WHY THE PROBLEM INVERTS HERE ────────────────────────────────────
+#  Austin's puzzle was how a saying can ever DO. At α = 1 the sign IS the
+#  referent and the utterance IS the operation, so saying is doing by
+#  construction — and the interesting object flips over. The question stops
+#  being "how can words act?" and becomes:
+#
+#        ★ HOW CAN A SAYING EVER FAIL TO DO?
+#
+#  Infelicity, not felicity, is what needs a theory in this language.
+#
+#  ── AUSTIN'S THREE CONDITIONS, EACH ALREADY AN ORGAN ────────────────
+#  The three conditions map one-to-one onto machinery that already exists and
+#  that nothing had ever connected:
+#
+#    (A) a conventional procedure exists and is correctly executed
+#          → the utterance is WELL-FORMED and WELL-FOUNDED (parser + SWC)
+#    (B) the persons and circumstances are appropriate
+#          → THE SPEAKER HOLDS THE CAPABILITY (logoscap.la's sealer model)
+#    (Γ) uptake — the act is recognised
+#          → a WITNESS exists; recognition ρ > 0 rather than unwitnessed
+#
+#  ── ★ THE FINDING: ONTOPRAGMATICS IS THE SEMANTICS OF THE SECURITY MODEL ──
+#  In a system where the utterance IS the operation, condition (B) is not
+#  analogous to a permission check — it IS one. "I hereby open X" succeeds
+#  exactly when the speaker's capability set contains X. That is why a
+#  language which is also an operating system can HAVE a pragmatics that no
+#  natural language ever could: the felicity condition is enforceable because
+#  the saying and the doing are the same act, and the same guard governs both.
+#
+#  ── WHY THE THREE MUST BE SEPARATELY DISCRIMINATING ─────────────────
+#  Three conditions that always fail together are one condition wearing three
+#  names. So the gate does not merely check that infelicity is caught — it
+#  checks that each condition can fail ALONE, and that the diagnosis names
+#  which one. Three cases, three distinct signatures, one F apiece.
+#
+#  ── AND THE REFUSAL MUST NOT BE SILENT ──────────────────────────────
+#  An infelicitous performative must leave the world PROVABLY unchanged and
+#  say so. A refusal that returns quietly is the silent-death defect class:
+#  the caller cannot distinguish "refused" from "performed with no visible
+#  effect". The gate asserts the state is byte-identical before and after AND
+#  that the report names the failing condition.
+# =====================================================================
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph AND   = la p. la q. p(q)(p)
+glyph NOT   = la p. la t. la f. p(f)(t)
+
+# ── an utterance: a performative verb and the capability it requires ──
+glyph UTT   = la verb. la needs. la f. f(verb)(needs)
+glyph UVERB = la u. u(la v. la n. v)
+glyph UNEED = la u. u(la v. la n. n)
+
+# ── a context: who speaks, and who witnesses the act ────────────────
+glyph CTX    = la speaker. la witness. la f. f(speaker)(witness)
+glyph SPEAKER = la c. c(la s. la w. s)
+glyph WITNESS = la c. c(la s. la w. w)
+
+# ── capability sets are delimited so a prefix cannot pass for a name ──
+# "|open|" inside "|open|read|" matches; "|ope|" does not. Without the
+# delimiters a capability named "read" would be satisfied by "readonly".
+glyph STARTS = Z(la self. la p. la s.
+    IF(str_eq(p)(""))(la _. TRUE)
+      (la _. IF(str_eq(s)(""))(la _. FALSE)
+        (la _. IF(str_eq(str_head(p))(str_head(s)))
+                 (la _. self(str_tail(p))(str_tail(s)))
+                 (la _. FALSE))))
+glyph HAS = Z(la self. la p. la s.
+    IF(STARTS(p)(s))(la _. TRUE)
+      (la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(p)(str_tail(s)))))
+glyph WRAP = la n. concat("|")(concat(n)("|"))
+
+# ── the three conditions ────────────────────────────────────────────
+# (A) the procedure exists: the verb is in the known performative vocabulary
+#     and the utterance names a capability at all. An unknown verb is not a
+#     failed act; it is not an act.
+glyph VOCAB = "|open|seal|declare|"
+glyph COND_A = la u. AND(HAS(WRAP(UVERB(u)))(VOCAB))(NOT(str_eq(UNEED(u))("")))
+# (B) the speaker holds the capability
+glyph COND_B = la u. la caps. HAS(WRAP(UNEED(u)))(caps)
+# (Γ) the act is witnessed — an unwitnessed act drifts toward potentiality
+glyph COND_G = la ctx. NOT(str_eq(WITNESS(ctx))(""))
+
+glyph FELICITY = la u. la ctx. la caps.
+    AND(COND_A(u))(AND(COND_B(u)(caps))(COND_G(ctx)))
+
+glyph TF = la b. IF(b)(la _. "T")(la _. "F")
+glyph DIAG = la u. la ctx. la caps.
+    concat(TF(COND_A(u)))(concat(TF(COND_B(u)(caps)))(TF(COND_G(ctx))))
+
+# ── PERFORM: the utterance IS the operation, so it either changes the
+#    world or it refuses and says which condition failed ──────────────
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+glyph PERFORM = la u. la ctx. la caps. la world.
+    IF(FELICITY(u)(ctx)(caps))
+      (la _. PAIR(concat(world)(concat(" +")(UVERB(u))))
+                 (concat("performed:")(UVERB(u))))
+      (la _. PAIR(world)
+                 (concat("INFELICITOUS ")(concat(DIAG(u)(ctx)(caps))
+                          (concat(" refusing:")(UVERB(u))))))
+
+# ── the fixtures ────────────────────────────────────────────────────
+glyph W0    = "world"
+glyph HELD  = "|open|read|"
+glyph NONE_ = "|read|"
+glyph SEEN  = CTX("alice")("bob")
+glyph UNSEEN = CTX("alice")("")
+glyph U_OK  = UTT("open")("open")
+glyph U_BAD = UTT("levitate")("open")
+
+glyph R_GOOD   = PERFORM(U_OK)(SEEN)(HELD)(W0)
+glyph R_NOCAP  = PERFORM(U_OK)(SEEN)(NONE_)(W0)
+glyph R_NOVOC  = PERFORM(U_BAD)(SEEN)(HELD)(W0)
+glyph R_NOWIT  = PERFORM(U_OK)(UNSEEN)(HELD)(W0)
+
+# 1. the felicitous act changes the world and reports performance
+glyph OK_PERF = AND(str_eq(FST(R_GOOD))("world +open"))
+                   (str_eq(SND(R_GOOD))("performed:open"))
+
+# 2. ★ the incapable act leaves the world BYTE-IDENTICAL — no partial effect
+glyph OK_NOEFFECT = AND(str_eq(FST(R_NOCAP))(W0))
+                       (AND(str_eq(FST(R_NOVOC))(W0))(str_eq(FST(R_NOWIT))(W0)))
+
+# 3. ★ and the refusal is LOUD — it names the failing condition, never returns
+#    quietly. A silent refusal is indistinguishable from a no-op success.
+glyph OK_LOUD = AND(STARTS("INFELICITOUS")(SND(R_NOCAP)))
+                   (AND(STARTS("INFELICITOUS")(SND(R_NOVOC)))
+                       (STARTS("INFELICITOUS")(SND(R_NOWIT))))
+
+# 4. ★★ the three conditions are SEPARATELY discriminating: each case fails
+#    exactly one, and the three signatures are distinct. Conditions that only
+#    ever fail together are one condition under three names.
+glyph OK_SEPARATE =
+    AND(str_eq(DIAG(U_OK)(SEEN)(HELD))("TTT"))
+       (AND(str_eq(DIAG(U_OK)(SEEN)(NONE_))("TFT"))
+           (AND(str_eq(DIAG(U_BAD)(SEEN)(HELD))("FTT"))
+               (str_eq(DIAG(U_OK)(UNSEEN)(HELD))("TTF"))))
+
+# 5. the delimiter guard: a capability may not be satisfied by a prefix
+glyph OK_PREFIX = NOT(HAS(WRAP("ope"))(HELD))
+
+glyph MARK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat("ontofelicity perform ")(MARK(OK_PERF)))
+                (concat(" | no-effect ")(MARK(OK_NOEFFECT))))
+        (concat(concat(concat(" | loud ")(MARK(OK_LOUD)))
+                      (concat(" | separable ")(MARK(OK_SEPARATE))))
+               (concat(" | prefix-guard ")(MARK(OK_PREFIX)))))
+
+export UTT CTX PERFORM FELICITY DIAG COND_A COND_B COND_G HAS WRAP

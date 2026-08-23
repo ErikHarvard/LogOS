@@ -1,0 +1,88 @@
+# ═══════════════════════════════════════════════════════════════════
+#  depthreport.la — LINEAGE DEPTH, REPORTED. Not gated.
+#
+#  ── ★ THIS FILE DELIBERATELY CANNOT FAIL, AND THAT IS CORRECT ─────────────
+#  Everything else built today was designed so it COULD go RED, because the
+#  project's highest-yield defect class is the check that cannot fail. This is
+#  the exception, and the distinction is worth stating so nobody later reads it
+#  as a fifth vacuous gate and "fixes" it:
+#
+#      A CHECK that cannot fail is a defect — it claims verification and
+#      delivers none. A REPORT that cannot fail is not a check at all. It
+#      makes no claim; it states a measurement and lets a human judge.
+#
+#  Erik's ruling (2026-08-18) was explicit: the lineage-depth cap is a REPORT,
+#  canon unchanged, non-gating, and must never turn build.sh RED. It follows
+#  that the threshold is ARBITRARY and needs no grounding — and saying so is the
+#  honest move, because a number presented as principled invites someone to
+#  defend it later as though the corpus required it. It does not. It is a
+#  legibility aid for a human reading a lineage, nothing more.
+#
+#  ── WHY DEPTH IS WORTH REPORTING AT ALL ───────────────────────────────────
+#  glyphdag_spec.la already proves the compression that matters: self-combining
+#  n times grows the stored FORM linearly while the unfolded TREE grows
+#  exponentially — "deeper, not larger". So depth is precisely the axis along
+#  which a glyph can grow without its representation growing, which is the
+#  point of the design AND the reason a human can lose the thread. Reporting
+#  DEPTH beside TSIZE shows both halves of that trade in one line.
+#
+#  ── BOUND ────────────────────────────────────────────────────────────────
+#  DEPTH and TSIZE here are computed over the κ-TREE, not the hash-consed DAG.
+#  The DAG node count (the actual stored size) lives in glyphdag.la, which is
+#  spec-generated and exports nothing, so the compression RATIO is not reported
+#  here. That is a missing number, named rather than approximated.
+# ═══════════════════════════════════════════════════════════════════
+
+import("topoderive.la")   # PRIM SYN CON DIR CONT MC, CANON — the κ-node
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+
+# ── DEPTH: the longest chain of nested combinations. A primitive is depth 0. ──
+glyph DEPTH = Z(la self. la node.
+    node
+        (la nm. 0)
+        (la a. la b. add(1)(MAXI(self(a))(self(b))))
+        (la a. la b. add(1)(MAXI(self(a))(self(b))))
+        (la a. la b. add(1)(MAXI(self(a))(self(b))))
+        (la a. la b. add(1)(MAXI(self(a))(self(b))))
+        (la a.       add(1)(self(a))))
+
+# ── TSIZE: the UNFOLDED tree, the number the DAG form does not grow with. ──
+glyph TSIZE = Z(la self. la node.
+    node
+        (la nm. 1)
+        (la a. la b. add(1)(add(self(a))(self(b))))
+        (la a. la b. add(1)(add(self(a))(self(b))))
+        (la a. la b. add(1)(add(self(a))(self(b))))
+        (la a. la b. add(1)(add(self(a))(self(b))))
+        (la a.       add(1)(self(a))))
+
+# ── the threshold. ARBITRARY BY RULING — a legibility aid, not a law. ──
+glyph CAP = 7
+glyph NOTE = la d. IF(lt(CAP)(d))(la _. "  [deep — beyond the legibility cap of 7]")(la _. "")
+
+glyph LINE = la node.
+    concat(CANON(node))(
+    concat("   depth=")(concat(int_to_str(DEPTH(node)))(
+    concat("  tree=")(concat(int_to_str(TSIZE(node)))(
+    concat(NOTE(DEPTH(node)))("\n"))))))
+
+# ── a self-combining chain: the exact shape glyphdag's compression claim is
+#    about, so the report shows depth climbing while the stored form does not. ──
+glyph B0 = PRIM("BEING")
+glyph B1 = MC(B0)
+glyph B2 = MC(B1)
+glyph B3 = SYN(B2)(PRIM("VOID"))
+glyph B4 = MC(B3)
+glyph B5 = SYN(B4)(B2)
+glyph B6 = CONT(B5)(PRIM("FORM"))
+glyph B7 = MC(B6)
+glyph B8 = SYN(B7)(B5)
+
+glyph MAIN = print(
+    concat("=== lineage depth report (NON-GATING — a measurement, not a check) ===\n")(
+    concat(LINE(B0))(concat(LINE(B1))(concat(LINE(B2))(concat(LINE(B3))(
+    concat(LINE(B4))(concat(LINE(B5))(concat(LINE(B6))(concat(LINE(B7))(
+    concat(LINE(B8))("=== end of report — exits 0 whatever it found ===")))))))))))

@@ -1,0 +1,144 @@
+# ═══════════════════════════════════════════════════════════════════
+#  grammar.la — ITEM 5: THE GRAMMAR RECOVERABLE AS DATA (L1 + L2)
+#
+#  Scope DECIDED (Erik, 2026-08-18): L1 + L2. L3 (full self-parse) only after L2
+#  is green, and reported PARTIAL if it lands bounded.
+#
+#  ── THE GRAMMAR IS READ OFF parser.la, NOT INVENTED ──────────────────────
+#      module    := ( glyphdef | importdir | exportdir )*   [PARSE_MOD_LOOP :338]
+#      glyphdef  := 'glyph' ident 'eq' expr                 [PARSE_GLYPH    :243]
+#      importdir := 'import' 'lp' str 'rp'                  [PARSE_IMPORT   :320]
+#      exportdir := 'export' ident*                         [PARSE_EXPORT_NAMES :332]
+#      expr      := 'la' ident 'dot' expr | app             [PARSE_EXPR     :220]
+#      app       := primary app_tail                        [PARSE_APP      :195]
+#      app_tail  := ( 'lp' expr 'rp' )*                     [PARSE_APP_TAIL :202]
+#      primary   := ident | str | 'lp' expr 'rp'            [PARSE_PRIMARY  :173]
+#
+#  ★ exportdir is `ident*`, NOT `ident+`. fuzz_grammar.py's first real run caught
+#  that: PARSE_EXPORT_NAMES falls through to PAIR(NIL)(s) when the next token is
+#  not an ident, so a BARE `export` is legal LA. A wrong production caught BEFORE
+#  any module was built against it — which is what the fuzzer exists for.
+#
+#  ── ★ THE VERIFICATION CHAIN, stated because L2's strength depends on it ──
+#  fuzz_grammar.py carries a recognizer built from the SAME transcription and
+#  differentially tested it against parser.la itself: 60/60 agreeing on BOTH the
+#  accept and the reject side, with parser.la's loud-halt rejects handled (its
+#  PARSE_MOD_LOOP calls error(), it does not return NONE). So the productions
+#  below are not asserted — they are the ones already witnessed equal to the real
+#  parser. GPARSE is then differentially checked against those same verdicts.
+#
+#  ── BOUNDS, stated up front ──────────────────────────────────────────────
+#  · GPARSE consumes TOKEN TYPES, not raw text. Lexing is parser.la's job and is
+#    not re-implemented here; item 5 is about the grammar, not the lexer.
+#  · ★ ASSOCIATIVITY IS INVISIBLE TO A VERDICT-ONLY DIFFERENTIAL. app_tail is
+#    LEFT-associative — f(x)(y) ≡ (f(x))(y) — and a data grammar that accepted the
+#    same STRINGS with the wrong associativity would pass this gate silently.
+#    That is a known blind spot of L2, not a defect in it.
+#  · importdir is EXCLUDED from the differential corpus: parser.la's import arm
+#    calls read_file() and recurses into a real module, so a corpus string with an
+#    import would touch the filesystem.
+#  · L1 ALONE IS DECORATIVE — a data structure agreeing with nothing. It is not a
+#    deliverable without L2, and is not reported as one.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph BSTR = la b. b("T")("F")
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+
+# ── L1 — the grammar as FIRST-CLASS DATA (Scott-encoded, DECOMP-able like every
+#    other glyph in the house discipline) ──
+glyph GT    = la t. la ft. la fn. la fq. la fa. la fs. la fe. ft(t)
+glyph GN    = la n. la ft. la fn. la fq. la fa. la fs. la fe. fn(n)
+glyph GSEQ  = la a. la b. la ft. la fn. la fq. la fa. la fs. la fe. fq(a)(b)
+glyph GALT  = la a. la b. la ft. la fn. la fq. la fa. la fs. la fe. fa(a)(b)
+glyph GSTAR = la a. la ft. la fn. la fq. la fa. la fs. la fe. fs(a)
+glyph GEPS  = la ft. la fn. la fq. la fa. la fs. la fe. fe
+
+glyph PROD = la lhs. la rhs. PAIR(lhs)(rhs)
+
+# ── GDECOMP — recover a production's structure as data (the round-trip standard
+#    glyphdag.la asserts: build(GDECOMP P) ≡ P) ──
+glyph GDECOMP = Z(la self. la g.
+    g (la t. concat("T:")(t))
+      (la n. concat("N:")(n))
+      (la a. la b. concat("(")(concat(self(a))(concat(" ")(concat(self(b))(")")))))
+      (la a. la b. concat("[")(concat(self(a))(concat(" | ")(concat(self(b))("]")))))
+      (la a. concat("{")(concat(self(a))("}")))
+      ("eps"))
+
+# ── the productions, transcribed above ──
+glyph P_PRIMARY  = GALT(GT("ident"))(GALT(GT("str"))(GSEQ(GT("lp"))(GSEQ(GN("expr"))(GT("rp")))))
+glyph P_APPTAIL  = GSTAR(GSEQ(GT("lp"))(GSEQ(GN("expr"))(GT("rp"))))
+glyph P_APP      = GSEQ(GN("primary"))(GN("app_tail"))
+glyph P_EXPR     = GALT(GSEQ(GT("la"))(GSEQ(GT("ident"))(GSEQ(GT("dot"))(GN("expr")))))(GN("app"))
+glyph P_GLYPHDEF = GSEQ(GT("glyph"))(GSEQ(GT("ident"))(GSEQ(GT("eq"))(GN("expr"))))
+glyph P_EXPORTD  = GSEQ(GT("export"))(GSTAR(GT("ident")))
+glyph P_MODULE   = GSTAR(GALT(GN("glyphdef"))(GN("exportdir")))
+
+glyph LOOKUP = la n.
+    IF(str_eq(n)("primary")) (la _. P_PRIMARY)(la _.
+    IF(str_eq(n)("app_tail"))(la _. P_APPTAIL)(la _.
+    IF(str_eq(n)("app"))     (la _. P_APP)(la _.
+    IF(str_eq(n)("expr"))    (la _. P_EXPR)(la _.
+    IF(str_eq(n)("glyphdef"))(la _. P_GLYPHDEF)(la _.
+    IF(str_eq(n)("exportdir"))(la _. P_EXPORTD)(la _. P_MODULE))))))
+
+# ── L2 — GPARSE: an interpreter over the DATA grammar.
+#    MATCH returns PAIR(ok)(remaining-tokens). Alternation tries the left arm and
+#    falls back; star repeats while it consumes. ──
+glyph MATCH = Z(la self. la g. la ts.
+    g (la t. ts(PAIR(FALSE)(NIL))(la h. la r.
+              IF(str_eq(h)(t))(la _. PAIR(TRUE)(r))(la _. PAIR(FALSE)(ts))))
+      (la n. self(LOOKUP(n))(ts))
+      (la a. la b. (la ra. IF(FST(ra))(la _. self(b)(SND(ra)))(la _. PAIR(FALSE)(ts)))(self(a)(ts)))
+      (la a. la b. (la ra. IF(FST(ra))(la _. ra)(la _. self(b)(ts)))(self(a)(ts)))
+      (la a. (Z(la rep. la cur.
+                 (la r. IF(FST(r))(la _. rep(SND(r)))(la _. PAIR(TRUE)(cur)))(self(a)(cur))))(ts))
+      (PAIR(TRUE)(ts)))
+
+glyph GPARSE = la start. la ts.
+    (la r. AND(FST(r))(SND(r)(TRUE)(la h. la t. FALSE)))(MATCH(LOOKUP(start))(ts))
+
+# ── the corpus, as TOKEN LISTS (see the lexing bound in the header) ──
+glyph TL = Z(la self. la l. l(NIL)(la h. la t. CONS(h)(self(t))))
+# ACCEPT: glyph f = la x . x
+glyph A1 = CONS("glyph")(CONS("ident")(CONS("eq")(CONS("la")(CONS("ident")(CONS("dot")(CONS("ident")(NIL)))))))
+# ACCEPT: glyph f = g(x)(y)   — left-associative application
+glyph A2 = CONS("glyph")(CONS("ident")(CONS("eq")(CONS("ident")(CONS("lp")(CONS("ident")(CONS("rp")(CONS("lp")(CONS("ident")(CONS("rp")(NIL))))))))))
+# ACCEPT: export            — ★ the bare export the fuzzer proved legal
+glyph A3 = CONS("export")(NIL)
+# ACCEPT: export a b
+glyph A4 = CONS("export")(CONS("ident")(CONS("ident")(NIL)))
+# REJECT: glyph f =         — truncated mid-expression
+glyph R1 = CONS("glyph")(CONS("ident")(CONS("eq")(NIL)))
+# REJECT: glyph f = ( x     — unbalanced paren
+glyph R2 = CONS("glyph")(CONS("ident")(CONS("eq")(CONS("lp")(CONS("ident")(NIL)))))
+# REJECT: la . x            — binder ident dropped after la
+glyph R3 = CONS("glyph")(CONS("ident")(CONS("eq")(CONS("la")(CONS("dot")(CONS("ident")(NIL))))))
+# REJECT: a bare ident at top level
+glyph R4 = CONS("ident")(NIL)
+
+glyph EXPECT = la got. la want. BSTR(str_eq(BSTR(got))(want))
+glyph L2 = concat(EXPECT(GPARSE("module")(A1))("T"))(
+           concat(EXPECT(GPARSE("module")(A2))("T"))(
+           concat(EXPECT(GPARSE("module")(A3))("T"))(
+           concat(EXPECT(GPARSE("module")(A4))("T"))(
+           concat(EXPECT(GPARSE("module")(R1))("F"))(
+           concat(EXPECT(GPARSE("module")(R2))("F"))(
+           concat(EXPECT(GPARSE("module")(R3))("F"))(
+                  EXPECT(GPARSE("module")(R4))("F"))))))))
+
+glyph MAIN = print(
+    concat("ITEM5 L1 grammar-as-data: expr = ")(concat(GDECOMP(P_EXPR))(
+    concat("\nL1 primary = ")(concat(GDECOMP(P_PRIMARY))(
+    concat("\nL2 differential [A1 A2 A3 A4 R1 R2 R3 R4] = ")(concat(L2)(
+    concat("\n(all T = GPARSE agrees with the fuzzer-verified grammar on both sides)")(""))))))))

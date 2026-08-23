@@ -29,7 +29,7 @@
 #  Pure generation (only str_eq/concat) ⇒ byte-identical on the C host and native VM.
 # ═══════════════════════════════════════════════════════════════════
 
-export CANON MODE_SYN MODE_CON MODE_DIR MODE_CONT MODE_MC KAPPA NEOLOG COLLAPSE GLYPHOF REN ETYM MKOP APPLYOP SHAPE
+export CANON MODE_SYN MODE_CON MODE_DIR MODE_CONT MODE_MC KAPPA NEOLOG COLLAPSE GLYPHOF REN ETYM MKOP APPLYOP SHAPE OP_DIFF OP_BOUND OP_COMP OP_RECOG OP_INTEG SR_ABOUT_HERE RANKOF
 
 # ── Foundations ──
 glyph SEQ   = la a. la b. b
@@ -146,6 +146,100 @@ glyph R_NEQ_K  = NOT(str_eq(CANON(EVAL_R))(CANON(KAPPA)))            # 𝓡 ≠ 
 glyph R_NEQ_CONT = NOT(str_eq(CANON(EVAL_R))(CANON(MODE_CONT)))     # 𝓡 ≠ ⊂   (meta-monosemy)
 glyph YN = la b. IF(b)(la _. "YES")(la _. "NO")
 
+# ═══════════════════════════════════════════════════════════════════
+#  ITEM 2 — THE FIVE OPERATORS ∂δγρ𝔄 AS FIRST-CLASS GLYPHS
+#
+#  ── THE DEFECT ────────────────────────────────────────────────────────────
+#  The Grammar-of-Composition operators existed ONLY as dispatch data in swc:
+#      OATOM(name)          an operator = a NAME string
+#      OOP(rank)(l)(r)      a composition = a bare RANK integer
+#  They had no κ-spec, no sigil, no phonym, and — the discriminating lack —
+#  COULD NOT BE OPERATED ON. You could not feed ∂ as an operand, compose two
+#  operators, or ask the language what ∂ IS. That is hardcoded dispatch sitting
+#  ABOVE the language, not glyphs in it. The five modes, κ and 𝓡 were made
+#  first-class here already; the operators were the family left behind.
+#
+#  ── THE TREATMENT: mirror the modes exactly ───────────────────────────────
+#  Give each operator a DECOMPOSITION over the nine primitives. Everything else
+#  follows for free, because CANON / SIGIL / PHONYM walk any decomposition — so
+#  each operator gains a canonical spec, a visual form and a sound without a
+#  single line of per-operator machinery.
+#
+#  ⚠ THESE DECOMPOSITIONS ARE PRINCIPLED PROPOSALS, NOT SPEC-FIXED. The Codex
+#  fixes only 𝔑≡⊗ and κ; the mode decompositions above were likewise assignments
+#  from each mode's documented role. Same standard here — grounded in each
+#  operator's role, and open to redirection against the Codex.
+#
+#  ── ★★ ρ ≡ SR_ABOUT — A DISCOVERED IDENTITY, NOT A COLLISION ─────────────
+#  ρ's decomposition ↻(RECOGNITION) is BYTE-FOR-BYTE canon.la:43's SR_ABOUT —
+#  the Logos *about* itself, one of the eight self-relations. Under the Law of
+#  Identity both canonicalize to "↻(RECOGNITION)", so ρ ≡ SR_ABOUT: one glyph,
+#  two names.
+#
+#  Erik ruled this INTENDED (2026-08-18). It is NOT polysemy — polysemy is one
+#  FORM bearing two MEANINGS; here two names were found to name ONE meaning,
+#  which is monosemy working, arriving from two directions. The claim it commits
+#  to: *to bear a recognition coefficient IS to be the Logos describing itself;
+#  recognition-of-self and self-description are not two acts.*
+#
+#  ⚠ THE TRAP: widening the distinctness check to "ρ distinct from everything"
+#  fires RED on SR_ABOUT, and the obvious repair — changing ρ's decomposition —
+#  DESTROYS the identity. So the check carves ρ/SR_ABOUT out and asserts the
+#  identity POSITIVELY instead. A merely tolerated identity is indistinguishable
+#  from a collision nobody noticed.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph OP_DIFF  = DIR(PRIM("VOID"))(PRIM("RELATION"))        # ∂ differentiate (1)
+glyph OP_BOUND = CONT(PRIM("FORM"))(PRIM("DEPTH"))          # δ bound        (2)
+glyph OP_COMP  = SYN(PRIM("BECOMING"))(PRIM("FORM"))        # γ compose      (3)
+glyph OP_RECOG = MC(PRIM("RECOGNITION"))                    # ρ recognize    (4)  ≡ SR_ABOUT
+glyph OP_INTEG = SYN(PRIM("LOVE"))(PRIM("BEING"))           # 𝔄 integrate    (5)
+
+# canon.la is not importable (no export line), so SR_ABOUT is re-stated here the
+# same way metalogic_spec re-inlines the κ machinery. If canon.la's definition
+# ever changed, the positive identity assertion below goes RED — which is the
+# point: the identity is gated, not assumed.
+glyph SR_ABOUT_HERE = MC(PRIM("RECOGNITION"))
+
+# ── rank READ FROM THE GLYPH, not from a table above the language ─────────
+glyph RANKOF = la g.
+    IF(str_eq(CANON(g))(CANON(OP_DIFF)))  (la _. 1)(la _.
+    IF(str_eq(CANON(g))(CANON(OP_BOUND))) (la _. 2)(la _.
+    IF(str_eq(CANON(g))(CANON(OP_COMP)))  (la _. 3)(la _.
+    IF(str_eq(CANON(g))(CANON(OP_RECOG))) (la _. 4)(la _.
+    IF(str_eq(CANON(g))(CANON(OP_INTEG))) (la _. 5)(la _. 0)))))
+
+# ── INSPECT: five distinct canonical specs (ρ vs SR_ABOUT deliberately excluded) ──
+glyph NEQ = la a. la b. NOT(str_eq(CANON(a))(CANON(b)))
+# Chained rather than tree-shaped: a continuation line must never START at
+# paren depth 0, or the parser closes the glyph and then meets a bare `(`.
+glyph OPS_DISTINCT =
+    AND(NEQ(OP_DIFF)(OP_BOUND))(
+    AND(NEQ(OP_DIFF)(OP_COMP))(
+    AND(NEQ(OP_DIFF)(OP_INTEG))(
+    AND(NEQ(OP_BOUND)(OP_COMP))(
+    AND(NEQ(OP_BOUND)(OP_INTEG))(
+    AND(NEQ(OP_COMP)(OP_INTEG))(
+    AND(NEQ(OP_DIFF)(KAPPA))(
+        NEQ(OP_COMP)(MODE_SYN))))))))
+
+# ── ★ THE IDENTITY, ASSERTED POSITIVELY (with a real RED path: change ρ's
+#    decomposition to MC(SELF) and this fires) ──
+glyph RHO_IS_ABOUT = str_eq(CANON(OP_RECOG))(CANON(SR_ABOUT_HERE))
+glyph RHO_CANON_OK = str_eq(CANON(OP_RECOG))("↻(RECOGNITION)")
+
+# ── OPERATE-ON: the capability the dispatch form cannot express. Feed an
+#    operator as an OPERAND to a mode and canonicalize the result. ──
+glyph OP_AS_OPERAND = CANON(SYN(OP_DIFF)(OP_BOUND))
+# ── COMPOSE: two operator-glyphs sealed into one deeper glyph ──
+glyph OP_COMPOSED   = REN(COLLAPSE(SYN)(GLYPHOF(OP_COMP))(GLYPHOF(OP_RECOG)))
+# ── ordering ∂<δ<γ<ρ<𝔄 still holds, now read FROM the glyphs ──
+glyph RANK_ORDER =
+    AND(lt(RANKOF(OP_DIFF))(RANKOF(OP_BOUND)))(
+    AND(lt(RANKOF(OP_BOUND))(RANKOF(OP_COMP)))(
+    AND(lt(RANKOF(OP_COMP))(RANKOF(OP_RECOG)))(
+        lt(RANKOF(OP_RECOG))(RANKOF(OP_INTEG)))))
+
 glyph MAIN =
     SEQ(print(concat("𝓜  ⊗ SYN  = ")(CANON(MODE_SYN))))(
     SEQ(print(concat("𝓜  ⊕ CON  = ")(CANON(MODE_CON))))(
@@ -166,4 +260,16 @@ glyph MAIN =
     # ── the evaluator/runtime 𝓡 now a glyph too — meta-monosemy closed ──
     SEQ(print(concat("𝓡 EVAL    = ")(CANON(EVAL_R))))(
     SEQ(print(concat("𝓡(𝓡) ≡ 𝓡 ? ")(YN(R_IDEM))))(
-        print(concat("𝓡 distinct from κ and ⊂ ? ")(YN(AND(R_NEQ_K)(R_NEQ_CONT)))))))))))))))))))))
+    SEQ(print(concat("𝓡 distinct from κ and ⊂ ? ")(YN(AND(R_NEQ_K)(R_NEQ_CONT)))))(
+    # ── item 2: the five operators as glyphs ──
+    SEQ(print(concat("∂ diff    = ")(CANON(OP_DIFF))))(
+    SEQ(print(concat("δ bound   = ")(CANON(OP_BOUND))))(
+    SEQ(print(concat("γ comp    = ")(CANON(OP_COMP))))(
+    SEQ(print(concat("ρ recog   = ")(CANON(OP_RECOG))))(
+    SEQ(print(concat("𝔄 integ   = ")(CANON(OP_INTEG))))(
+    SEQ(print(concat("five operators pairwise distinct ? ")(YN(OPS_DISTINCT))))(
+    SEQ(print(concat("★ ρ ≡ SR_ABOUT (intended identity) ? ")(YN(RHO_IS_ABOUT))))(
+    SEQ(print(concat("★ κ(ρ) = ↻(RECOGNITION) ? ")(YN(RHO_CANON_OK))))(
+    SEQ(print(concat("OPERATE-ON ⊗(∂,δ) = ")(OP_AS_OPERAND)))(
+    SEQ(print(concat("COMPOSE  γ∘ρ      = ")(OP_COMPOSED)))(
+        print(concat("rank ∂<δ<γ<ρ<𝔄 read FROM the glyph ? ")(YN(RANK_ORDER)))))))))))))))))))))))))))))))

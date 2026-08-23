@@ -511,6 +511,12 @@ static int is_builtin(const char *name) {
         || strcmp(name, "mod") == 0 || strcmp(name, "lt") == 0
         || strcmp(name, "int_eq") == 0
         || strcmp(name, "int_to_str") == 0 || strcmp(name, "str_to_int") == 0
+        /* bitwise: the operations a cipher needs. Without these, crypto can
+         * only be emulated via div/mod at ~16 h/MiB, which is why every driver
+         * in the tree is written shift-free. */
+        || strcmp(name, "band") == 0 || strcmp(name, "bor") == 0
+        || strcmp(name, "bxor") == 0 || strcmp(name, "bshl") == 0
+        || strcmp(name, "bshr") == 0 || strcmp(name, "bnot") == 0
         /* typeof: recognize a value's Form (g_8) as a string tag. The one
          * host primitive the type system needs; all type predicates derive
          * from it in Lingua Adamica. */
@@ -520,14 +526,19 @@ static int is_builtin(const char *name) {
         || strcmp(name, "error") == 0;
 }
 
-/* The seven binary integer operations are curried like concat/str_eq: the
- * first application captures arg1 and returns a partial; the second performs
- * the operation. This predicate marks them. */
+/* The binary integer operations are curried like concat/str_eq: the first
+ * application captures arg1 and returns a partial; the second performs the
+ * operation. This predicate marks them. (No count is stated here on purpose --
+ * a hardcoded number is a claim nothing keeps true.) `bnot` is deliberately
+ * ABSENT: it is unary and is applied directly, like int_to_str. */
 static int is_int_binop(const char *name) {
     return strcmp(name, "add") == 0 || strcmp(name, "sub") == 0
         || strcmp(name, "mul") == 0 || strcmp(name, "div") == 0
         || strcmp(name, "mod") == 0 || strcmp(name, "lt") == 0
-        || strcmp(name, "int_eq") == 0;
+        || strcmp(name, "int_eq") == 0
+        || strcmp(name, "band") == 0 || strcmp(name, "bor") == 0
+        || strcmp(name, "bxor") == 0 || strcmp(name, "bshl") == 0
+        || strcmp(name, "bshr") == 0;
 }
 
 /* The generation of the currently running host, read from its own filename.
@@ -663,6 +674,24 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
             if (x == LONG_MIN && y == -1) { fprintf(stderr, "div: overflow (LONG_MIN / -1)\n"); exit(1); }
             return mkint(x / y);
         }
+        if (strcmp(name, "band") == 0)
+            return mkint((long)((unsigned long)x & (unsigned long)y));
+        if (strcmp(name, "bor") == 0)
+            return mkint((long)((unsigned long)x | (unsigned long)y));
+        if (strcmp(name, "bxor") == 0)
+            return mkint((long)((unsigned long)x ^ (unsigned long)y));
+        /* A shift count outside 0..63 yields 0. C leaves it undefined, x86
+         * masks the count to 6 bits and ARM does not, so an unchecked shift
+         * would make the engines disagree on a case no test covers. */
+        if (strcmp(name, "bshl") == 0) {
+            if (y < 0 || y > 63) return mkint(0);
+            return mkint((long)((unsigned long)x << (unsigned long)y));
+        }
+        /* LOGICAL shift right -- zero-fill, never arithmetic. */
+        if (strcmp(name, "bshr") == 0) {
+            if (y < 0 || y > 63) return mkint(0);
+            return mkint((long)((unsigned long)x >> (unsigned long)y));
+        }
         if (strcmp(name, "mod") == 0) {
             if (y == 0) { fprintf(stderr, "mod: modulo by zero\n"); exit(1); }
             if (x == LONG_MIN && y == -1) return mkint(0);  /* mathematically 0; avoids the SIGFPE */
@@ -765,6 +794,11 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         Node *v = eval(argexpr);
         if (v->t != N_INT) { fprintf(stderr, "%s: first argument is not an integer\n", name); exit(1); }
         return mkpartial(name, v);
+    }
+    if (strcmp(name, "bnot") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_INT) { fprintf(stderr, "bnot: argument is not an integer\n"); exit(1); }
+        return mkint((long)(~(unsigned long)v->i));
     }
     if (strcmp(name, "int_to_str") == 0) {
         /* native integer -> its decimal string (for printing / observability) */

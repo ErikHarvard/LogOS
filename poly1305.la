@@ -1,0 +1,254 @@
+# =====================================================================
+#  poly1305.la — the Poly1305 one-time authenticator (RFC 8439 §2.5).
+#
+#  The authenticator ChaCha20 needs. Together they are the AEAD the sovereign
+#  layer is built on; separately, ChaCha20 alone hides content while leaving it
+#  SILENTLY MALLEABLE, which is worse than no encryption because it looks safe.
+#
+#  ── THE HARD PART: 130-BIT ARITHMETIC IN 64-BIT INTEGERS ────────────
+#  Poly1305 evaluates a polynomial mod 2^130 - 5. LA integers are 64-bit signed,
+#  so the accumulator is held as FIVE 26-BIT LIMBS. That size is not arbitrary:
+#  the worst intermediate in the multiply-reduce is 5 x (2^26)^2 x 5, which is
+#  2^57 — comfortably inside the signed range, VERIFIED before writing a line of
+#  this. Wider limbs overflow silently and produce a plausible wrong tag.
+#
+#  ── WHY MULTIPLYING THE WRAPPED TERMS BY 5 *IS* THE REDUCTION ───────
+#  Since 2^130 = 5 (mod 2^130 - 5), any product term that overflows past limb 4
+#  re-enters at the bottom scaled by 5. The reduction is therefore folded into
+#  the multiply rather than done afterwards — no separate modulo step exists.
+#
+#  ── r IS CLAMPED, AND THE CLAMP IS LOAD-BEARING ─────────────────────
+#  Specific bits of r are forced to zero (0x0ffffffc0ffffffc0ffffffc0fffffff).
+#  This is what bounds the intermediates so the limb arithmetic cannot overflow.
+#  Skipping the clamp does not fail loudly; it produces wrong tags for some keys
+#  and correct ones for others, which is the worst possible failure mode.
+#
+#  ── ONE-TIME KEY. NOT NEGOTIABLE. ───────────────────────────────────
+#  Poly1305 is a ONE-TIME authenticator. Reusing (r, s) across two messages lets
+#  an attacker solve for r and forge freely. In the AEAD the key comes from a
+#  fresh ChaCha20 block per nonce. Never call this twice with one key.
+#
+#  ── WITNESS ─────────────────────────────────────────────────────────
+#  RFC 8439 section 2.5.2. A single wrong limb, a missed carry, or an unclamped
+#  bit changes the whole tag.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph L26  = 67108863
+glyph ORDI = la c. str_to_int(ord(c))
+glyph CHRI = la n. chr(int_to_str(n))
+glyph SLEN = la s. str_to_int(str_len(s))
+glyph DROPN = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph BAT  = la s. la i. ORDI(str_head(DROPN(i)(s)))
+
+glyph CARRY = la d0. la d1. la d2. la d3. la d4. la k.
+    (la c0.
+    (la e0.
+    (la c1.
+    (la e1.
+    (la c2.
+    (la e2.
+    (la c3.
+    (la e3.
+    (la c4.
+    (la e4.
+    (la f0.
+    (la g0.
+    (la g1.
+      k(g0)(g1)(e2)(e3)(e4)
+    )(add(e1)(div(f0)(67108864)))
+    )(band(f0)(L26))
+    )(add(e0)(mul(5)(c4)))
+    )(band(add(d4)(c3))(L26))
+    )(div(add(d4)(c3))(67108864))
+    )(band(add(d3)(c2))(L26))
+    )(div(add(d3)(c2))(67108864))
+    )(band(add(d2)(c1))(L26))
+    )(div(add(d2)(c1))(67108864))
+    )(band(add(d1)(c0))(L26))
+    )(div(add(d1)(c0))(67108864))
+    )(band(d0)(L26))
+    )(div(d0)(67108864))
+
+# h := (h + n) * r  mod 2^130-5, with the reduction folded into the multiply
+glyph MULMOD = la h0. la h1. la h2. la h3. la h4.
+               la r0. la r1. la r2. la r3. la r4.
+               la s5_1. la s5_2. la s5_3. la s5_4. la k.
+    (la d0.
+    (la d1.
+    (la d2.
+    (la d3.
+    (la d4.
+      CARRY(d0)(d1)(d2)(d3)(d4)(k)
+    )(add(add(add(add(mul(h0)(r4))(mul(h1)(r3)))(mul(h2)(r2)))(mul(h3)(r1)))(mul(h4)(r0)))
+    )(add(add(add(add(mul(h0)(r3))(mul(h1)(r2)))(mul(h2)(r1)))(mul(h3)(r0)))(mul(h4)(s5_4)))
+    )(add(add(add(add(mul(h0)(r2))(mul(h1)(r1)))(mul(h2)(r0)))(mul(h3)(s5_4)))(mul(h4)(s5_3)))
+    )(add(add(add(add(mul(h0)(r1))(mul(h1)(r0)))(mul(h2)(s5_4)))(mul(h3)(s5_3)))(mul(h4)(s5_2)))
+    )(add(add(add(add(mul(h0)(r0))(mul(h1)(s5_4)))(mul(h2)(s5_3)))(mul(h3)(s5_2)))(mul(h4)(s5_1)))
+
+glyph EXPECT = "a8061dc1305136c6c22b8baf0c0127a9"
+
+# ── byte and 32-bit-word access ─────────────────────────────────────
+# Everything below works in 32-BIT WORDS, never 64. That is deliberate: no
+# intermediate ever reaches the sign bit, so the five engines cannot disagree
+# about what bshl does when a value overflows into it.
+glyph LE32 = la s. la i.
+    bor(bor(BAT(s)(i))(bshl(BAT(s)(add(i)(1)))(8)))
+       (bor(bshl(BAT(s)(add(i)(2)))(16))(bshl(BAT(s)(add(i)(3)))(24)))
+
+# ── the key schedule ────────────────────────────────────────────────
+# Each mask below is the 26-bit limb mask AND the clamp, folded into ONE
+# constant. Clamping as a separate step would be a second chance to get it
+# wrong; folded, an unclamped bit cannot survive limb extraction at all.
+glyph R0 = la k. band(LE32(k)(0))(67108863)
+glyph R1 = la k. band(bor(bshr(LE32(k)(0))(26))(bshl(LE32(k)(4))(6)))(67108611)
+glyph R2 = la k. band(bor(bshr(LE32(k)(4))(20))(bshl(LE32(k)(8))(12)))(67092735)
+glyph R3 = la k. band(bor(bshr(LE32(k)(8))(14))(bshl(LE32(k)(12))(18)))(66076671)
+glyph R4 = la k. band(bshr(LE32(k)(12))(8))(1048575)
+
+# the accumulator as one value: a function awaiting a five-argument continuation
+glyph MKH   = la a. la b. la c. la d. la e. la k. k(a)(b)(c)(d)(e)
+glyph HZERO = MKH(0)(0)(0)(0)(0)
+glyph PICK  = la c. la x. la y. IF(c)(la _. x)(la _. y)
+
+# ── one 16-byte block: h := (h + n) * r ─────────────────────────────
+# hb is the high bit 2^128: 16777216 for a whole block. A short final block
+# gets a 0x01 byte appended instead and hb = 0 — the two are the same number,
+# and doing it by padding means the short path shares the whole path's code.
+glyph STEP = la r0. la r1. la r2. la r3. la r4. la q1. la q2. la q3. la q4.
+             la H. la blk. la hb.
+  H(la h0. la h1. la h2. la h3. la h4.
+    (la t0.
+    (la t1.
+    (la t2.
+    (la t3.
+      MULMOD(add(h0)(band(t0)(L26)))
+            (add(h1)(band(bor(bshr(t0)(26))(bshl(t1)(6)))(L26)))
+            (add(h2)(band(bor(bshr(t1)(20))(bshl(t2)(12)))(L26)))
+            (add(h3)(band(bor(bshr(t2)(14))(bshl(t3)(18)))(L26)))
+            (add(h4)(bor(bshr(t3)(8))(hb)))
+            (r0)(r1)(r2)(r3)(r4)(q1)(q2)(q3)(q4)(MKH)
+    )(LE32(blk)(12))
+    )(LE32(blk)(8))
+    )(LE32(blk)(4))
+    )(LE32(blk)(0)))
+
+glyph TAKEN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph ZEROS = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(CHRI(0))(self(sub(n)(1)))))
+
+# ── the message loop ────────────────────────────────────────────────
+glyph RUN = la st. Z(la self. la H. la rest.
+   (la l.
+     IF(lt(l)(16))
+       (la _. IF(int_eq(l)(0))(la _. H)
+                (la _. st(H)(concat(concat(rest)(CHRI(1)))(ZEROS(sub(15)(l))))(0)))
+       (la _. self(st(H)(TAKEN(16)(rest))(16777216))(DROPN(16)(rest)))
+   )(SLEN(rest)))
+
+# ── finalize: full carry, conditional subtract of p, then + s mod 2^128 ──
+# The conditional subtract is where a partial-reduction implementation goes
+# wrong: after the loop h may sit in [p, 2^130), which LOOKS reduced. We add
+# -p and keep that result only if it did not go negative. RFC 8439 A.3
+# vectors #5 and #7 exist precisely to catch getting this backwards.
+glyph FINAL = la key. la H.
+  H(la a0. la a1. la a2. la a3. la a4.
+    (la n2.
+    (la n3.
+    (la n4.
+    (la n0.
+    (la f0.
+    (la f1.
+    (la f2.
+    (la f3.
+    (la f4.
+    (la gr0.
+    (la gr1.
+    (la gr2.
+    (la gr3.
+    (la g4.
+    (la p0.
+    (la p1.
+    (la p2.
+    (la p3.
+    (la p4.
+    (la w0.
+    (la w1.
+    (la w2.
+    (la w3.
+    (la u0.
+    (la u1.
+    (la u2.
+    (la u3.
+      concat(concat(W2H(u0))(W2H(u1)))(concat(W2H(u2))(W2H(u3)))
+    )(add(add(w3)(LE32(key)(28)))(bshr(u2)(32)))
+    )(add(add(w2)(LE32(key)(24)))(bshr(u1)(32)))
+    )(add(add(w1)(LE32(key)(20)))(bshr(u0)(32)))
+    )(add(w0)(LE32(key)(16)))
+    )(band(bor(bshr(p3)(18))(bshl(p4)(8)))(4294967295))
+    )(band(bor(bshr(p2)(12))(bshl(p3)(14)))(4294967295))
+    )(band(bor(bshr(p1)(6))(bshl(p2)(20)))(4294967295))
+    )(band(bor(p0)(bshl(p1)(26)))(4294967295))
+    )(PICK(lt(g4)(0))(f4)(g4))
+    )(PICK(lt(g4)(0))(f3)(band(gr3)(L26)))
+    )(PICK(lt(g4)(0))(f2)(band(gr2)(L26)))
+    )(PICK(lt(g4)(0))(f1)(band(gr1)(L26)))
+    )(PICK(lt(g4)(0))(f0)(band(gr0)(L26)))
+    )(sub(add(f4)(bshr(gr3)(26)))(67108864))
+    )(add(f3)(bshr(gr2)(26)))
+    )(add(f2)(bshr(gr1)(26)))
+    )(add(f1)(bshr(gr0)(26)))
+    )(add(f0)(5))
+    )(band(n4)(L26))
+    )(band(n3)(L26))
+    )(band(n2)(L26))
+    )(add(band(a1)(L26))(bshr(n0)(26)))
+    )(band(n0)(L26))
+    )(add(a0)(mul(5)(bshr(n4)(26))))
+    )(add(a4)(bshr(n3)(26)))
+    )(add(a3)(bshr(n2)(26)))
+    )(add(a2)(bshr(a1)(26))))
+
+glyph POLY1305 = la key. la msg.
+  (la r0.
+  (la r1.
+  (la r2.
+  (la r3.
+  (la r4.
+     FINAL(key)(RUN(STEP(r0)(r1)(r2)(r3)(r4)
+                        (mul(5)(r1))(mul(5)(r2))(mul(5)(r3))(mul(5)(r4)))(HZERO)(msg))
+  )(R4(key))
+  )(R3(key))
+  )(R2(key))
+  )(R1(key))
+  )(R0(key))
+
+# ── hex in, hex out ─────────────────────────────────────────────────
+glyph HEXD = la n. str_head(DROPN(n)("0123456789abcdef"))
+glyph HEXB = la b. concat(HEXD(div(b)(16)))(HEXD(mod(b)(16)))
+glyph W2H  = la w. concat(concat(HEXB(band(w)(255)))(HEXB(band(bshr(w)(8))(255))))
+                         (concat(HEXB(band(bshr(w)(16))(255)))(HEXB(band(bshr(w)(24))(255))))
+glyph HEXV = la c. (la n. IF(lt(n)(58))(la _. sub(n)(48))(la _. sub(n)(87)))(ORDI(c))
+glyph FROMHEX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      concat(CHRI(add(mul(HEXV(str_head(s)))(16))(HEXV(str_head(str_tail(s))))))
+            (self(str_tail(str_tail(s))))))
+
+# ── known-answer tests ──────────────────────────────────────────────
+# 2.5.2 is the worked example. #5/#6/#7 are RFC 8439 A.3 vectors written
+# specifically to break an implementation that mishandles the final partial
+# reduction, the overflow of + s past 2^128, or a carry out of a full limb.
+glyph MARK = la got. la exp. IF(str_eq(got)(exp))(la _. "OK")(la _. concat("WRONG ")(got))
+glyph K252 = FROMHEX("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+glyph T5 = MARK(POLY1305(FROMHEX("0200000000000000000000000000000000000000000000000000000000000000"))(FROMHEX("ffffffffffffffffffffffffffffffff")))("03000000000000000000000000000000")
+glyph T6 = MARK(POLY1305(FROMHEX("02000000000000000000000000000000ffffffffffffffffffffffffffffffff"))(FROMHEX("02000000000000000000000000000000")))("03000000000000000000000000000000")
+glyph T7 = MARK(POLY1305(FROMHEX("0100000000000000000000000000000000000000000000000000000000000000"))(FROMHEX("fffffffffffffffffffffffffffffffff0ffffffffffffffffffffffffffffff11000000000000000000000000000000")))("05000000000000000000000000000000")
+glyph MAIN = print(
+    concat(concat(concat("poly1305 2.5.2 ")
+                        (MARK(POLY1305(K252)("Cryptographic Forum Research Group"))(EXPECT)))
+                 (concat(" | A.3#5 ")(T5)))
+          (concat(concat(" | A.3#6 ")(T6))(concat(" | A.3#7 ")(T7))))
+
+export POLY1305

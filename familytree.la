@@ -1,0 +1,155 @@
+# ═══════════════════════════════════════════════════════════════════
+#  familytree.la — the family-tree graph test (test 4 of the ontological audit)
+#
+#  ── ★★ THE NAIVE GATE IS VACUOUS AND IS DELIBERATELY NOT BUILT ───────────
+#  The audit framework states test 4 as: emit parentage for every glyph; no
+#  parent ⇒ root dyad; MORE THAN TWO PARENTS ⇒ violates dyadic recursion.
+#
+#  The >2-parent half CAN NEVER FIRE. A decomposition node is Scott-encoded with
+#  exactly six constructors — PRIM (0 parents), SYN/CON/DIR/CONT (2), MC (1). A
+#  three-parent node is UNCONSTRUCTIBLE, not merely absent. A gate on it reports
+#  PASS unconditionally, forever.
+#
+#  That is GOOD NEWS, not a defect: the dyadic law is enforced by the DATA TYPE,
+#  which is stronger than any test. It is REPORTED here, never asserted — a
+#  passing check would read as verification where none occurred. (Same call as
+#  denote.la's ρ denotational identity, and for the same reason.)
+#
+#  ── WHAT IS ACTUALLY BUILT: two gates that CAN fail, and one report ───────
+#    G1 GROUNDING   every leaf of every catalogue glyph is one of the NINE
+#                   primitives. This is the real "no arbitrary glyph" test —
+#                   a glyph far from its origin becomes arbitrary.
+#    G2 UNARY CENSUS counts nodes by arity and gates the set of distinct ↻ forms
+#                   against a DECLARED expectation. Turns the ρ question into
+#                   data instead of argument.
+#    R1 DEPTH        a REPORT, explicitly NOT a gate — see below.
+#
+#  ── ★ KEYED ON THE CANONICAL FORM, NEVER THE NAME ────────────────────────
+#  The standing invariant, which has now bitten in three places. ρ and SR_ABOUT
+#  are BOTH ↻(RECOGNITION) — one glyph, two names, an identity Erik ruled
+#  INTENDED. A name-keyed census would count them as two and be WRONG. The unary
+#  census below dedupes on κ, so it counts them once.
+#
+#  ── ★ R1 MUST NEVER TURN THE BUILD RED ───────────────────────────────────
+#  Lineage depth is an optional reporting layer, canon unchanged (Erik, 2026-08-18).
+#  Nothing here rewrites, abstracts or promotes a deep glyph; COLLAPSE stays
+#  unbounded and depth keeps counting past any threshold. "Deeper not larger" is
+#  UNCHANGED. A depth flag that could fail the build would be a structural law
+#  wearing a report's clothes — the ruling reversed by the back door. The
+#  threshold is therefore ARBITRARY and needs no grounding.
+# ═══════════════════════════════════════════════════════════════════
+
+import("metaglyph.la")     # CANON + the κ-node constructors
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph BSTR = la b. b("T")("F")
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+
+# The κ-node constructors. metaglyph exports CANON but not these, and they are the
+# same Scott encoding everywhere in the house — so a node built here is the same
+# TERM as one built there, and the imported CANON walks it unchanged. (denote.la
+# defines its own for the same reason.)
+glyph PRIM = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph SYN  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph CON  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph DIR  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+
+# ── THE REAL CATALOGUE (canon.la's self-relations + metaglyph's modes) ────
+# Transcribed: canon.la has no export line, so its glyphs cannot be imported —
+# the same re-inlining metalogic_spec and sigil/denote already do.
+glyph CAT =
+  CONS(PAIR("KAPPA")(DIR(PRIM("RECOGNITION"))(PRIM("FORM"))))(
+  CONS(PAIR("REVAL")(DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))))(
+  CONS(PAIR("SR_TO")(MC(PRIM("DEPTH"))))(
+  CONS(PAIR("SR_ABOUT")(MC(PRIM("RECOGNITION"))))(
+  CONS(PAIR("SR_AS")(MC(PRIM("FORM"))))(
+  CONS(PAIR("SR_BY")(MC(PRIM("BECOMING"))))(
+  CONS(PAIR("SR_FROM")(MC(PRIM("VOID"))))(
+  CONS(PAIR("SR_THROUGH")(MC(PRIM("RELATION"))))(
+  CONS(PAIR("SR_FOR")(MC(PRIM("LOVE"))))(
+  CONS(PAIR("SR_WITH")(CON(PRIM("SELF"))(PRIM("SELF"))))(
+  CONS(PAIR("MODE_SYN")(DIR(PRIM("LOVE"))(PRIM("RELATION"))))(
+  CONS(PAIR("MODE_CON")(CONT(PRIM("RELATION"))(PRIM("FORM"))))(
+  CONS(PAIR("MODE_DIR")(SYN(PRIM("BECOMING"))(PRIM("RELATION"))))(
+  CONS(PAIR("MODE_CONT")(DIR(PRIM("DEPTH"))(PRIM("FORM"))))(
+  CONS(PAIR("MODE_MC")(MC(PRIM("SELF"))))(
+  CONS(PAIR("OP_RHO")(MC(PRIM("RECOGNITION"))))(
+  CONS(PAIR("NU_STAR")(SYN(DIR(PRIM("LOVE"))(PRIM("RELATION")))(MC(PRIM("SELF")))))(
+  NIL)))))))))))))))))
+
+# ── the nine primitives ──
+glyph IS9 = la n.
+    IF(str_eq(n)("BEING"))(la _. TRUE)(la _.
+    IF(str_eq(n)("RECOGNITION"))(la _. TRUE)(la _.
+    IF(str_eq(n)("LOVE"))(la _. TRUE)(la _.
+    IF(str_eq(n)("SELF"))(la _. TRUE)(la _.
+    IF(str_eq(n)("RELATION"))(la _. TRUE)(la _.
+    IF(str_eq(n)("VOID"))(la _. TRUE)(la _.
+    IF(str_eq(n)("BECOMING"))(la _. TRUE)(la _.
+    IF(str_eq(n)("FORM"))(la _. TRUE)(la _.
+    IF(str_eq(n)("DEPTH"))(la _. TRUE)(la _. FALSE)))))))))
+
+# ── G1 — GROUNDING: every leaf is one of the nine. Returns the OFFENDING leaf
+#    name, or "" if grounded — so a failure NAMES the culprit. ──
+glyph BADLEAF = Z(la self. la node.
+    node (la nm. IF(IS9(nm))(la _. "")(la _. nm))
+         (la a. la b. (la x. IF(str_eq(x)(""))(la _. self(b))(la _. x))(self(a)))
+         (la a. la b. (la x. IF(str_eq(x)(""))(la _. self(b))(la _. x))(self(a)))
+         (la a. la b. (la x. IF(str_eq(x)(""))(la _. self(b))(la _. x))(self(a)))
+         (la a. la b. (la x. IF(str_eq(x)(""))(la _. self(b))(la _. x))(self(a)))
+         (la a. self(a)))
+glyph G1GO = Z(la self. la l.
+    l("")(la h. la t.
+      (la bad. IF(str_eq(bad)(""))(la _. self(t))(la _. concat(FST(h))(concat("/")(bad))))
+      (BADLEAF(SND(h)))))
+glyph G1 = G1GO(CAT)
+glyph G1OK = BSTR(str_eq(G1)(""))
+
+# ── G2 — UNARY CENSUS, keyed on the CANONICAL FORM so ρ and SR_ABOUT count ONCE ──
+glyph MEMB = Z(la self. la s. la l. l(FALSE)(la h. la t. IF(str_eq(h)(s))(la _. TRUE)(la _. self(s)(t))))
+glyph UGO = Z(la self. la node. la acc.
+    node (la nm. acc)
+         (la a. la b. self(b)(self(a)(acc)))
+         (la a. la b. self(b)(self(a)(acc)))
+         (la a. la b. self(b)(self(a)(acc)))
+         (la a. la b. self(b)(self(a)(acc)))
+         (la a. (la k. IF(MEMB(k)(acc))(la _. self(a)(acc))(la _. self(a)(CONS(k)(acc))))(CANON(node))))
+glyph UNARIES = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(UGO(SND(h))(acc))))(CAT)(NIL)
+glyph LEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph NUNARY = LEN(UNARIES)
+# DECLARED expectation: ↻DEPTH ↻RECOGNITION ↻FORM ↻BECOMING ↻VOID ↻RELATION ↻LOVE ↻SELF
+# = EIGHT distinct unary forms. ρ and SR_ABOUT are BOTH ↻(RECOGNITION) and are counted
+# ONCE — which is the identity showing up as data rather than as an argument.
+glyph G2OK = BSTR(int_eq(NUNARY)(8))
+
+# ── R1 — DEPTH REPORT. NOT A GATE. Never fails the build. ──
+glyph DEPTHOF = Z(la self. la node.
+    node (la nm. 0)
+         (la a. la b. add(1)(MAXI(self(a))(self(b))))
+         (la a. la b. add(1)(MAXI(self(a))(self(b))))
+         (la a. la b. add(1)(MAXI(self(a))(self(b))))
+         (la a. la b. add(1)(MAXI(self(a))(self(b))))
+         (la a. add(1)(self(a))))
+glyph MAXD = Z(la self. la l. l(0)(la h. la t. MAXI(DEPTHOF(SND(h)))(self(t))))(CAT)
+
+glyph MAIN = print(
+    concat("FAMILYTREE catalogue=")(concat(int_to_str(LEN(CAT)))(
+    concat(" | G1 grounding (every leaf one of the nine):")(concat(G1OK)(
+    concat(IF(str_eq(G1)(""))(la _. "")(la _. concat(" OFFENDER=")(G1)))(
+    concat(" | G2 distinct ↻ forms=")(concat(int_to_str(NUNARY))(concat(" expected 8:")(concat(G2OK)(
+    concat(" | R1 max lineage depth=")(concat(int_to_str(MAXD))(
+    concat(" (REPORT ONLY — never fails the build)")(
+    concat("\n>2-parent check DELIBERATELY NOT BUILT: unconstructible by the Scott encoding")(
+           " — the dyadic law is enforced by the DATA TYPE, which is stronger than a gate"))))))))))))))

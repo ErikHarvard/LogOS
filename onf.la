@@ -52,7 +52,7 @@ glyph SORTC = la mk. la a. la b. IF(STR_LE(CANON(a))(CANON(b)))(la _. mk(a)(b))(
 glyph CANONIQ = Z(la self. la node.
     node
         (la nm. PRIM(nm))
-        (la a. la b. SORTC(SYN)(self(a))(self(b)))
+        (la a. la b. SYN(self(a))(self(b)))
         (la a. la b. SORTC(CON)(self(a))(self(b)))
         (la a. la b. DIR(self(a))(self(b)))
         (la a. la b. CONT(self(a))(self(b)))

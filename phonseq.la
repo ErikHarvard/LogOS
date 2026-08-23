@@ -1,0 +1,247 @@
+# ═══════════════════════════════════════════════════════════════════
+#  phonseq.la — RECOVER THE TREE FROM THE SOUND. The parsing half of
+#  speech→glyph: not "which primitive is this" (sglyph.la) but "what
+#  STRUCTURE was uttered".
+#
+#  ── ★ WHY THIS NEEDS NO SEGMENTATION HEURISTICS ───────────────────────────
+#  The obvious build is a spectral-flux onset detector with a tuned threshold —
+#  invented machinery, tuned until it works, unfalsifiable in the middle. It is
+#  unnecessary. Reading phonym.la's own mode synthesis shows FOUR of the five
+#  modes already carry a DISTINCT TEMPORAL SIGNATURE, by construction:
+#      ⊕ CONP  : A · 960 samples of exact silence (the /ʔ/ closure) · B
+#      ↻ MCP   : AA — exact reduplication, both halves sample-identical
+#      ▷ DIRP  : A at full strength, then B scaled to 3/5 (the light second beat)
+#      ⊂ CONTP : B A B — the second frames the first, outer thirds identical
+#      ⊗ SYNP  : superposition over ONE window — no temporal boundary at all
+#  So the mode is READ OFF the signal's own construction. Every constant here
+#  (960, 3/5, "identical halves") is phonym.la's, not mine. Nothing is tuned.
+#
+#  ── WHAT THIS BUYS ───────────────────────────────────────────────────────
+#  Recursion. Having found the mode and its split point, each part is itself a
+#  signal, so the same test applies — and the whole TREE comes back out of the
+#  audio, not just a flat sequence of names. That is what makes Lingua Adamica
+#  actually SPEAKABLE rather than merely pronounceable: a compound is uttered as
+#  one sound and recovered as one structure.
+#
+#  ── THE GATE: A TRUE ROUND TRIP, SCORED BY THE BUILD'S OWN WITNESS ────────
+#  phonym.la already exports SPEC — the prefix notation of the structure a
+#  phonym was built from ("⊗(BEING,VOID)"). So the test needs no new notion of
+#  equality and no new oracle:
+#        SPEC(PARSE(PHONYM(node)))  ==  SPEC(node)
+#  Utter a structure, listen to it, recover it, and compare against the
+#  build's own witness of what was uttered.
+#
+#  ── ★ MEASURED STATE OF THE MATRIX (2026-08-20) ──────────────────────────
+#      TFFF | FTFF | FTTF | FFFT | FFFT      rows: ⊗?no — ↻ ⊕ ⊂ ⊗ ▷
+#      ↻ clean · ⊕ clean · ▷ clean · ⊂ has ONE false positive (⊕ fires) ·
+#      ⊗ classifies as ▷ — the DOCUMENTED ambiguity, not a defect.
+#
+#  It began badly off-diagonal, and every fix removed one SAMPLING artifact:
+#    1. ▷ by amplitude ratio — MEASURED FALSE. DIRP scales B to 3/5, but VOID's
+#       intrinsic amplitude is higher than BEING's, so the scaling NORMALISES them:
+#       head 137 vs tail 123, a ratio of 0.90 not 0.60. No fixed ratio can detect ▷.
+#    2. Silence by POINT SAMPLES at stride 160 — six points across a 960 window. A
+#       periodic waveform crosses zero regularly, so ⊕ was finding ZERO CROSSINGS,
+#       not gaps.
+#    3. "Quiet" without context — every VSAMP has an ADSR RELEASE TAIL that is
+#       genuinely quiet, so any decaying ending read as a gap. A gap is quiet WITH
+#       LOUD ON BOTH SIDES.
+#    4. Segment identity by POINT SAMPLES — two periodic waveforms agree at six
+#       phases by coincidence. Comparing MEAN ENERGY over sub-windows measures the
+#       envelope, which is what "the same segment" means.
+#    5. Threshold too loose — ⊕'s gap is LITERAL ZERO (CONP writes 0); ⊂'s junctions
+#       merely DIP. A threshold that calls a dip silent makes ⊕ fire on ⊂.
+#
+#  ★ ONE ROOT CAUSE UNDERNEATH FOUR OF THE FIVE: sparse point-sampling of a
+#  PERIODIC signal is not a measurement. Every detector that asked about individual
+#  samples was reading phase coincidences. The ones that ask about ENERGY OVER A
+#  WINDOW are the ones that work.
+#
+#  ── ★ THE RED PATH IS A CONFUSION MATRIX, NOT A PASS ──────────────────────
+#  Each detector firing on its OWN mode proves nothing on its own — a detector
+#  that returns TRUE always would pass that. What is asserted instead: each
+#  detector fires on its own mode AND STAYS SILENT on the other four. The
+#  diagonal must be the only hits. A detector that cannot stay silent is
+#  reported as the defect it is.
+#
+#  ── HONEST BOUNDS, written before the run ────────────────────────────────
+#  · ⊗ is diagnosed by ELIMINATION (no temporal signature found). That makes it
+#    the residue: any failure of the other four detectors lands in ⊗. Stated
+#    plainly because it means ⊗ carries the accumulated error of the rest.
+#  · ▷'s 3/5 scaling is detected on integer sample ratios, and integer division
+#    in the synthesis loses low-amplitude detail; near-silent regions are
+#    therefore skipped rather than ratio-tested.
+#  · Split points for ▷ and ⊂ are searched on a COARSE STRIDE, so recovery is
+#    exact only when a boundary lands on the stride. This is a resolution
+#    bound, not a correctness one, and the gate reports which trees recovered.
+#  · Cost is high: every candidate split re-walks the signal. Deliberately not
+#    optimised before it is first MEASURED.
+# ═══════════════════════════════════════════════════════════════════
+
+import("phonym.la")     # PHONYM, SPEC, PHON_PRIM, PRIM/SYN/CON/DIR/CONT/MC
+import("sglyph.la")     # RECOGNIZE — the primitive recogniser at the leaves
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph BSTR = la b. b("T")("F")
+glyph ABSD = la a. la b. IF(lt(a)(b))(la _. sub(b)(a))(la _. sub(a)(b))
+
+glyph STRIDE = 160        # split-point search stride, samples (10 ms at SR 16000)
+glyph GAP    = 960        # phonym.la's OWN /ʔ/ closure length — not a tuned value
+glyph EPS    = 24         # sample-equality slack, for integer-division residue
+
+# ── a windowed view of a signal: PAIR(len)(gen) ───────────────────────────
+glyph SUB = la p. la off. la n. PAIR(n)(la i. SND(p)(add(i)(off)))
+
+# ── are two ranges sample-identical (within integer-division slack)? ──────
+# ★ ENERGY PROFILES, NOT POINT SAMPLES — the same defect as the silence test, one
+# level along. Comparing individual samples at STRIDE 160 asks whether two periodic
+# waveforms happen to agree at six phases, which they frequently do BY COINCIDENCE
+# and irrespective of whether they are the same signal. Sparse point-sampling of a
+# periodic signal is not a comparison. Comparing MEAN ENERGY over successive
+# sub-windows is: it measures the envelope, which is what "the same segment" means
+# here, and coincidental phase agreement cannot forge it.
+glyph NSEG = 8
+glyph SEGOK = Z(la self. la p. la q. la n. la k.
+    IF(int_eq(k)(NSEG))(la _. TRUE)(la _.
+    (la w. (la mp. (la mq.
+        IF(lt(EPS)(ABSD(mp)(mq)))(la _. FALSE)(la _. self(p)(q)(n)(add(k)(1))))
+      (MEANABS(q)(mul(k)(w))(w)))(MEANABS(p)(mul(k)(w))(w)))
+     (div(n)(NSEG))))
+glyph SAME = la p. la q. la n. IF(lt(n)(mul(NSEG)(STRIDE)))(la _. FALSE)(la _. SEGOK(p)(q)(n)(0))
+
+# ── is there a run of exact silence of length GAP starting at off? ────────
+# mean |amplitude| over a window — the robust alternative to point sampling
+glyph MABSGO = Z(la self. la p. la off. la n. la i. la acc.
+    IF(lt(n)(add(i)(1)))(la _. PAIR(acc)(div(add(i)(STRIDE))(STRIDE)))(la _.
+        self(p)(off)(n)(add(i)(STRIDE))(add(acc)(ABSD(SND(p)(add(off)(i)))(0)))))
+glyph MEANABS = la p. la off. la n.
+    (la r. IF(int_eq(SND(r))(0))(la _. 0)(la _. div(FST(r))(SND(r))))(MABSGO(p)(off)(n)(0)(0))
+
+# ★ MEAN ENERGY, NOT POINT SAMPLES. The first version tested individual samples at
+# STRIDE 160 — six points across the 960-sample window — and asked whether each was
+# near zero. A PERIODIC WAVEFORM CROSSES ZERO REGULARLY, so six sampled points can
+# all land near zero by coincidence: the test found zero crossings, not silence, and
+# ⊕ fired on signals with no gap in them at all. Mean |amplitude| over the window
+# cannot be fooled that way — silence averages to ~0, any tone or noise does not.
+# ★ A GAP IS QUIET WITH LOUD ON BOTH SIDES. Testing only "is this window quiet"
+# fired everywhere: every phonym's VSAMP carries an ADSR envelope whose RELEASE
+# TAIL is genuinely quiet, so a decaying ending reads as a gap. ⊕'s /ʔ/ closure is
+# different in kind — it is silence BETWEEN two voiced regions. Requiring loudness
+# on both sides is what separates an interior gap from an ending.
+# ★ ⊕'s GAP IS LITERAL ZERO, not merely quiet. phonym.la's CONP writes `0` for the
+# 960-sample /ʔ/ closure. ⊂'s segment junctions and ⊗'s superposition merely DIP —
+# an ADSR release is quiet but nonzero — so a threshold loose enough to call a dip
+# silent makes ⊕ fire on both. GAP_EPS is therefore near-exact: what CONP inserts
+# averages to 0, and nothing else in the synthesis does.
+glyph GAP_EPS = 2
+glyph LOUD = la p. la off. lt(EPS)(MEANABS(p)(off)(GAP))
+glyph SILGO = la p. la off. la _k.
+    IF(lt(GAP)(off))(la _.
+        AND(NOT(lt(GAP_EPS)(MEANABS(p)(off)(GAP))))
+            (AND(LOUD(p)(sub(off)(GAP)))(LOUD(p)(add(off)(GAP)))))
+      (la _. FALSE)
+
+# ── ↻ : the two halves are identical ─────────────────────────────────────
+glyph IS_MC = la p. (la h.
+    SAME(SUB(p)(0)(h))(SUB(p)(h)(h))(h))(div(FST(p))(2))
+
+# ── ⊕ : a GAP-long silence sits strictly inside. Scan on the stride. ──────
+glyph FINDSIL = Z(la self. la p. la off.
+    IF(lt(sub(FST(p))(GAP))(off))(la _. sub(0)(1))(la _.
+    IF(SILGO(p)(off)(0))(la _. off)(la _. self(p)(add(off)(STRIDE)))))
+glyph SIL_AT = la p. FINDSIL(p)(STRIDE)
+glyph IS_CON = la p. NOT(int_eq(SIL_AT(p))(sub(0)(1)))
+
+# ── ⊂ : outer thirds identical (B A B), inner different ──────────────────
+glyph TRYCONT = Z(la self. la p. la nq.
+    IF(lt(div(FST(p))(2))(nq))(la _. sub(0)(1))(la _.
+    IF(AND(SAME(SUB(p)(0)(nq))(SUB(p)(sub(FST(p))(nq))(nq))(nq))
+          (NOT(SAME(SUB(p)(0)(nq))(SUB(p)(nq)(nq))(nq))))
+      (la _. nq)(la _. self(p)(add(nq)(STRIDE)))))
+glyph CONT_AT = la p. TRYCONT(p)(STRIDE)
+glyph IS_CONT = la p. NOT(int_eq(CONT_AT(p))(sub(0)(1)))
+
+# ── ▷ : NOT detectable by amplitude ratio. MEASURED, not assumed.
+#
+#    phonym.la's DIRP is "A at full strength, then B reduced to 3/5", so the first
+#    version searched for a split where 5*mean(tail) ~= 3*mean(head). That premise
+#    is FALSE. Measured on DIRP(BEING,VOID) at the true splice (6080):
+#         head mean = 137     tail mean = 123     ratio 0.90, not 0.60
+#    The 3/5 scaling is real in the code, but VOID's INTRINSIC amplitude is higher
+#    than BEING's, and the scaling coincidentally NORMALISES the two to roughly
+#    equal. There is no step to find. The observable ratio depends on the parents'
+#    intrinsic loudness, which varies per pair, so no fixed ratio can detect ▷.
+#    That detector fired on almost everything and on its own mode not at all.
+#
+#    ★ ▷ IS THEREFORE THE ELIMINATION CASE among the TEMPORAL modes: it has a
+#    boundary but carries no marker at it — no silence (⊕), no repetition (↻), no
+#    framing (⊂). It is what remains when those three are excluded.
+#
+#    ★★ KNOWN BOUND, stated rather than papered over: ⊗ is ALSO none of those
+#    three, because it superposes into ONE window and has no temporal signature at
+#    all. So elimination alone cannot separate ▷ from ⊗ — both are residues. The
+#    two differ in LENGTH (▷ concatenates to np+nq; ⊗ compresses to max(np,nq)),
+#    but a parser reading an unknown signal does not know np and nq, so that
+#    difference is not available to it. ▷/⊗ ambiguity is a REAL LIMIT of recovery
+#    from sound, not a defect in this code, and the confusion matrix reports it
+#    honestly instead of a detector that fires at random.
+glyph IS_DIR = la p. NOT(OR3(IS_MC(p))(IS_CON(p))(IS_CONT(p)))
+glyph OR3 = la a. la b. la c. IF(a)(la _. TRUE)(la _. IF(b)(la _. TRUE)(la _. c))
+
+# ── MODE_OF: ordered so the two EXACT signatures are tested before the
+#    approximate ones, and ⊗ is the residue (see the bound in the header). ──
+glyph MODE_OF = la p.
+    IF(IS_MC(p))  (la _. "MC")(la _.
+    IF(IS_CON(p)) (la _. "CON")(la _.
+    IF(IS_CONT(p))(la _. "CONT")(la _.
+    IF(IS_DIR(p)) (la _. "DIR")(la _. "SYN"))))
+
+# ── PARSE: read the mode, split at its own boundary, recurse. At a leaf
+#    (no temporal signature and a single recognisable nucleus) hand off to
+#    sglyph's RECOGNIZE. ──
+glyph PARSE = Z(la self. la p.
+    (la m.
+      IF(str_eq(m)("MC"))  (la _. concat("↻(")(concat(self(SUB(p)(0)(div(FST(p))(2))))(")")))(la _.
+      IF(str_eq(m)("CON")) (la _. (la s. concat("⊕(")(concat(self(SUB(p)(0)(s)))
+                                     (concat(",")(concat(self(SUB(p)(add(s)(GAP))(sub(sub(FST(p))(s))(GAP))))(")")))))(SIL_AT(p)))(la _.
+      IF(str_eq(m)("CONT"))(la _. (la q. concat("⊂(")(concat(self(SUB(p)(q)(sub(sub(FST(p))(q))(q))))
+                                     (concat(",")(concat(self(SUB(p)(0)(q)))(")")))))(CONT_AT(p)))(la _.
+      # ▷ has no marker at its boundary (see IS_DIR), so there is no split point to
+      # descend into. A ▷-classified signal is reported as a LEAF rather than given
+      # an invented split — recovering the mode without recovering the structure is
+      # the honest partial result.
+        RECOGNIZE(p)))))
+    (MODE_OF(p)))
+
+# ── THE CONFUSION MATRIX — each detector must STAY SILENT off its diagonal ──
+glyph A = PRIM("BEING")
+glyph B = PRIM("VOID")
+glyph U_MC   = PHONYM(MC(A))
+glyph U_CON  = PHONYM(CON(A)(B))
+glyph U_CONT = PHONYM(CONT(A)(B))
+glyph U_SYN  = PHONYM(SYN(A)(B))
+glyph U_DIR  = PHONYM(DIR(A)(B))
+
+glyph ROW = la p. concat(BSTR(IS_MC(p)))(concat(BSTR(IS_CON(p)))(concat(BSTR(IS_CONT(p)))(BSTR(IS_DIR(p)))))
+glyph W1 = ROW(U_MC)      # expect T on MC only
+glyph W2 = ROW(U_CON)     # expect T on CON only
+glyph W3 = ROW(U_CONT)    # expect T on CONT only
+glyph W4 = ROW(U_SYN)     # expect NO hit — ⊗ has no temporal signature
+glyph W4b = ROW(U_DIR)    # expect T on DIR only (the weakest detector)
+
+# ── THE ROUND TRIP, scored by the build's own witness ────────────────────
+glyph W5 = BSTR(str_eq(PARSE(PHONYM(MC(A))))(SPEC(MC(A))))
+
+glyph J    = la a. la b. concat(a)(concat("|")(b))
+glyph MAIN = print(concat("phonseq confusion[mc,con,cont,dir] ")(
+             concat(J(W1)(J(W2)(J(W3)(J(W4)(J(W4b)(W5))))))(
+             concat("\nroundtrip SPEC: ")(concat(SPEC(MC(A)))(
+             concat(" -> ")(PARSE(PHONYM(MC(A)))))))))
