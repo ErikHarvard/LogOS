@@ -890,3 +890,40 @@ byte comparison (segment 1 differs) and the boot (`EXCEPTION 06`, exit 35 vs
 33) — gate RED, exit 1. The control is deterministic across 3 boots, and the
 gate SKIPs rather than passing if ld's own control fails to boot or boots to
 silence (a silent control would make "same serial" true and meaningless).
+
+
+## Red path: `gate_link_layout.sh` — the one gate that had never been shown to fail
+
+A red-path audit over the eight gates this track owns reported all eight as
+having NO documented red path. **That was the instrument, not the gates.** It
+grepped the `.sh` files — where red-path evidence never lives. Six of the eight
+have it in this file or in commit messages; the audit could not see either.
+
+⇒ Same failure as the `IS<CAP>` capability audit that returned a uniform zero
+for fourteen predicates: **an instrument aimed at the wrong surface returns the
+same answer for everything, and uniformity is the tell.**
+
+Corrected, exactly one gate had no evidence anywhere — script, this file, or any
+commit: **`gate_link_layout.sh`**. It does now.
+
+**The perturbation was one byte**, chosen as the smallest change that could
+possibly matter: `link_layout.la:65`, `TEXT_BASE 4198400 -> 4198401`.
+
+    baseline    PASS  link_layout.la: layout + cross-object resolution agree
+                      with ld (3 addresses, 1 negative gate)
+    perturbed   FAIL  link_layout.la: _start should be 4198400
+                      (ld says 0x0000000000401000); got: obj1 _start = 4198401
+    restored    PASS  (link_layout.la byte-identical to HEAD, verified by hash)
+
+It discriminates at single-byte resolution AND names the offending address
+rather than merely failing — the difference between a gate that says "wrong" and
+one that says WHAT is wrong.
+
+**The restore-and-reprove is the third leg and it is not optional.** A red path
+that leaves the tree perturbed is how a deliberate break ships by accident. The
+hash check against HEAD is what makes "restored" a measurement instead of a
+belief — this session has already produced one case where I said "reverted",
+had not, and reported results from the un-reverted build for an hour.
+
+**Still weak:** `gate_link_nsec.sh` — one mention in this file, no red-path
+commit, no in-script evidence. Not proven vacuous, merely unproven.
