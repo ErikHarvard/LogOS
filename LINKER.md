@@ -927,3 +927,46 @@ had not, and reported results from the un-reverted build for an hour.
 
 **Still weak:** `gate_link_nsec.sh` — one mention in this file, no red-path
 commit, no in-script evidence. Not proven vacuous, merely unproven.
+
+
+## Red path: `gate_link_nsec.sh` — and a red path that was itself invalid
+
+The second of the two gates with no red-path evidence. It now has one, and the
+FIRST ATTEMPT FAILED IN A WAY WORTH RECORDING.
+
+**Attempt 1 — invalid.** Perturbed `RODATA_FILEOFF 8192 -> 8193` in
+`link_reloc.la`. The gate stayed GREEN, which reads exactly like "this gate is
+decorative". **It is not: `link_out` came out BYTE-IDENTICAL** (sha
+`03cd693882630901` both ways). `ALIGNUP` — which appears 8 times in that file —
+rounds 8193 straight back. **The perturbation was a no-op, and the gate was never
+asked anything.**
+
+⇒ Had that been reported, it would have been a false finding against a working
+gate, and might have prompted rewriting one that was fine.
+
+★ **SO A RED PATH NEEDS ITS OWN PRECONDITION CHECK: prove the perturbation
+CHANGED THE ARTIFACT before drawing any conclusion from the gate's response.**
+Hashing `link_out` is what separated ABSORBED from UNDETECTED. This is the
+absence rule one level in — *an instrument reporting no-change must first prove
+something changed.*
+
+**Attempt 2 — valid.** Perturbed `F_RW 6 -> 5`, flipping the read-write segment
+flags to read-execute. `link_out` sha `03cd693882630901 -> 7ae5216905977dd2`,
+so the artifact genuinely moved.
+
+    PASS  runs and reads .mydata back (exit 42 == ld's 42)
+    PASS  .mydata emitted as an allocatable writable section (WA), not refused
+    PASS  W^X holds — no writable+executable LOAD segment
+    FAIL  no RW (read+write, non-exec) LOAD segment in the image
+          link_nsec gate RED
+
+**Only the assertion the perturbation breaks fails; the other three still hold.**
+That is better than a blanket red — the gate LOCALISES the defect. And note it
+correctly reports `W^X holds`: flipping RW to RX made the segment non-writable,
+so W^X really is still satisfied. A cruder gate would have fired that too.
+
+Restored; `link_reloc.la` byte-identical to HEAD, verified by hash.
+
+**Both previously-unverified gates now have real red paths.** All eight gates
+this track owns have evidence: six pre-existing in this file or in commits, and
+these two added.
