@@ -1,0 +1,18 @@
+# =====================================================================
+#  xmssidx_exhaust.la — the key MUST refuse when spent.
+#
+#  A tree of height h holds exactly 2^h one-time keys. When they are gone the
+#  only safe act is to stop. The tempting failure is to wrap to 0, which reuses
+#  every index in the tree and leaks every leaf secret — and it would look like
+#  a working signer forever.
+#
+#  This driver sets h=1 (capacity 2) and a state of 2, i.e. spent, then asks
+#  for one more index. It MUST halt with a nonzero exit. The gate asserts the
+#  nonzero exit AND the diagnostic, so a future edit that turned the refusal
+#  into a silent wrap would fail the build rather than ship a broken key.
+# =====================================================================
+import("xmssidx.la")
+glyph SEQ = la a. la b. b
+glyph P = "xmssidx_exhaust.state"
+glyph MAIN = SEQ(write_file(P)("2"))
+                (print(concat("BUG: reserved index ")(int_to_str(IDX_RESERVE(P)(1)))))

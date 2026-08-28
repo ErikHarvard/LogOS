@@ -1,0 +1,115 @@
+export IDX_READ IDX_RESERVE IDX_CAPACITY
+# =====================================================================
+#  xmssidx.la — the durable leaf-index register for XMSS.
+#
+#  WHY THIS EXISTS: A REUSED INDEX IS A BROKEN KEY.
+#  XMSS is STATEFUL. Each of the 2^h leaves holds a WOTS+ one-time key, and
+#  signing twice under one leaf leaks that leaf's secret — an attacker who sees
+#  two signatures from the same index can forge. So the index is not
+#  bookkeeping; it is part of the private key.
+#
+#  ★ AND IT IS THE ONE DEFECT CLASS A GATE CANNOT SEE BY ACCIDENT. `xmss.la`
+#  is green on nine checks and would stay green forever with no index tracking
+#  at all, because NOTHING IN A TEST REUSES AN INDEX. Every signature verifies;
+#  the key is destroyed anyway. That is why this module ships with a gate that
+#  DELIBERATELY exhausts and deliberately re-reads, and why `wotsp.la`'s
+#  negative-control discipline is not enough here — the failure is not a wrong
+#  answer, it is a correct answer given twice.
+#
+#  ── THE ORDERING IS THE WHOLE DESIGN ────────────────────────────────
+#  IDX_RESERVE writes the ADVANCED index to disk BEFORE returning the index to
+#  be signed with. Because the language is call-by-value, a caller written as
+#      (la i. SIGN(i)(msg))(IDX_RESERVE(path)(h))
+#  cannot sign before the write completes — the argument is evaluated first.
+#  Reverse those two steps and a crash between signing and writing reuses an
+#  index, which is the exact catastrophe this module exists to prevent. So the
+#  failure mode is deliberately asymmetric: a crash after the write LOSES a
+#  signature slot (harmless, 2^h-1 remain) and never reuses one. Losing a slot
+#  is a cost; reusing one is a break. The gate asserts this direction, because
+#  a register that advanced lazily would pass every ordinary test.
+#
+#  ── A MISSING STATE FILE MUST HALT, AND read_file GIVES THAT FOR FREE ─
+#  `read_file` on an absent path halts loudly (exit 1), so there is no way in
+#  pure Lingua Adamica to probe for existence without halting — and that is
+#  CORRECT here, not a limitation worked around. A register that created its
+#  file on first read would, if the file were ever lost or restored from an old
+#  backup, silently restart at 0 and REUSE EVERY INDEX. Refusing to sign when
+#  the state is missing is the only safe behaviour. The state file is therefore
+#  created once, deliberately, when the keypair is created — never by a signer.
+#
+#  ── WHAT THIS DOES NOT GIVE YOU — the honest boundary ────────────────
+#  * NO fsync. `write_file` is the only primitive available on both engines, so
+#    the write reaches the OS but not provably the platter. A power loss can
+#    lose it, and then the register goes BACKWARDS — the one direction that
+#    breaks the key. Closing this needs an fsync builtin; until then the
+#    guarantee is "survives process death", not "survives power loss", and
+#    those are different guarantees.
+#  * NO concurrency control. Two signers sharing one state file can interleave
+#    read-then-write and both take the same index. Single-writer only. An
+#    O_EXCL lockfile would need builtins the host does not have.
+#  * It does not make reuse UNREACHABLE, only unreachable through this path.
+#    `xmss.la`'s XMSS_SIGN still takes an explicit index and a caller can pass
+#    whatever it likes; the guard is the discipline of going through
+#    IDX_RESERVE, not a type-level impossibility. Stated rather than implied.
+# =====================================================================
+
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+# SEQ forces its first argument before yielding its second. Under call-by-value
+# naming `a` is what performs the write; this is the ordering primitive the
+# write-ahead discipline above rests on.
+glyph SEQ  = la a. la b. b
+glyph POW2 = la h. bshl(1)(h)
+
+glyph IDX_CAPACITY = la h. POW2(h)
+glyph IDX_READ = la path. str_to_int(read_file(path))
+
+# IDX_RESERVE: hand out the next unused index, having FIRST persisted the
+# advance. Halts loudly when the key is spent rather than wrapping to 0 —
+# wrapping would silently reuse every index in the tree, which is precisely the
+# catastrophe. Loud failure is the project's discipline and here it is also the
+# only safe option.
+glyph IDX_RESERVE = la path. la h.
+    (la i.
+      IF(lt(i)(POW2(h)))
+        (la _. SEQ(write_file(path)(int_to_str(add(i)(1))))(i))
+        (la _. error("xmssidx: key exhausted — all 2^h leaf indices used; a new keypair is required, and REUSING one would leak the leaf secret")))
+    (IDX_READ(path))
+
+# =====================================================================
+#  WITNESS — pure index logic, no hashing, so this costs seconds rather
+#  than the hours xmss.la's gate costs. The register is separable from the
+#  signature scheme, so it is verified separately and cheaply; only the
+#  integration needs the expensive path.
+# =====================================================================
+glyph P = "xmssidx_test.state"
+glyph H = 2
+
+glyph MARK = la ok. la name. IF(ok)(la _. concat(name)(" OK"))(la _. concat(name)(" WRONG"))
+
+glyph RUN =
+  # Deliberately start from a known state so the run is reproducible. A signer
+  # must NEVER do this; only a keypair-creation step may.
+  SEQ(write_file(P)("0"))
+  ((la a. (la b. (la afterTwo. (la discarded. (la afterDiscard.
+      concat(concat(concat(concat(
+        concat("xmssidx h=2: ")(MARK(int_eq(a)(0))("first=0")))
+        (concat(" | ")(MARK(int_eq(b)(1))("second=1"))))
+        (concat(" | ")(MARK(NOT_EQ(a)(b))("no reuse"))))
+        (concat(" | ")(MARK(int_eq(afterTwo)(2))("advance persisted"))))
+        (concat(concat(" | ")(MARK(int_eq(discarded)(2))("third=2")))
+               (concat(" | ")(MARK(int_eq(afterDiscard)(3))("unused slot LOST not reissued")))))
+      (IDX_READ(P)))
+      # ★ Reserve and then throw the index away without signing. The register
+      # must NOT hand index 2 out again: a crash between reserving and signing
+      # has to lose a slot, never duplicate one. A lazily-advancing register
+      # passes every other check here and fails exactly this one.
+      (IDX_RESERVE(P)(H)))
+      (IDX_READ(P)))
+      (IDX_RESERVE(P)(H)))
+      (IDX_RESERVE(P)(H)))
+
+glyph NOT_EQ = la a. la b. IF(int_eq(a)(b))(la _. FALSE_)(la _. TRUE_)
+glyph TRUE_  = la t. la f. t
+glyph FALSE_ = la t. la f. f
+
+glyph MAIN = print(RUN)

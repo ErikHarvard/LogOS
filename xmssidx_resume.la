@@ -1,0 +1,23 @@
+# =====================================================================
+#  xmssidx_resume.la — proves the register survives PROCESS DEATH.
+#
+#  This is the check `xmssidx.la`'s own MAIN structurally cannot make: it
+#  initialises its state file, so everything it verifies happens inside one
+#  process. Durability is a claim about what survives when the process does
+#  not, and only a SECOND process can witness it.
+#
+#  So this module deliberately does NOT initialise. It reads whatever the
+#  previous process left and reserves once. Run straight after xmssidx.la
+#  (which leaves the file at 3) it must hand out exactly 3 — not 0.
+#
+#  ★ A register that kept its counter in memory, or that re-created its state
+#  file on read, would pass every check in xmssidx.la and fail here by handing
+#  out 0 — and handing out 0 a second time is the reuse that breaks the key.
+#  If the state file is ABSENT this halts loudly via read_file, which is the
+#  correct behaviour and is asserted separately by the gate.
+# =====================================================================
+import("xmssidx.la")
+glyph P = "xmssidx_test.state"
+glyph H = 2
+glyph MAIN = print(concat(concat("xmssidx resume: reserved=")(int_to_str(IDX_RESERVE(P)(H))))
+                         (concat(" next=")(int_to_str(IDX_READ(P)))))

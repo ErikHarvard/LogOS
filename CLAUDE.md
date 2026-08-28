@@ -1703,6 +1703,66 @@ Practically:
 - If you cannot identify the bug, read the relevant codex in `codices/` to
   verify what the specification actually requires.
 
+## The Six Doors — how a check is true without being informative
+
+Meta-debugging says: if the tests themselves are wrong, fix the tests first. This
+is the operational form of that rule. Freeze-Day Audits III and IV (2026-08-27)
+found ten checks that could not fail, across gate scripts, Lingua Adamica
+witnesses, the mutation lever, and the audit tools themselves. Every one was a
+different way for a check to be **true without being informative** — and before
+that day, all six known instances had been found *by accident, while looking at
+something else*. Accident is not a search.
+
+**Every gate review asks which door each check could fail through:**
+
+| | door | the check is green because… | seen in |
+|---|---|---|---|
+| **i** | **Implied by a neighbour** | two other assertions entail it | the six triangles (`X=E`, `Y=E`, `X=Y`); the `wrong-PK` family |
+| **ii** | **Defeated by a neighbour** | an adjacent line makes it true by construction | `rm -f logos_app` immediately above `[ -e logos_app ]` |
+| **iii** | **Never executed** | nothing about it can catch anything | `gate_selfext2b.sh` exiting 0; the ungated set |
+| **iv** | **Satisfied by a reader, not a runner** | something went red, but it only *read* the code | a mutation `[CAUGHT]` by a static analyser |
+| **v** | **Never looked at** | the instrument never parsed it and reported clean | an audit tool reading 51 of 96 checks |
+| **vi** | **Not a check at all** | an ANNOUNCEMENT that reads as a verdict | a `PASS` line claiming "four divergences" where the gate asserts 24 |
+
+Three rules follow, and each was learned expensively:
+
+1. **A SKIP must not satisfy a gate invocation.** `sh gate_X.sh || exit 1` has one
+   bit of resolution, so a gate that declines to run is indistinguishable from one
+   that ran and passed. A gate must build its prerequisites or fail loudly; it may
+   never `exit 0` because an input is absent. A missing gate file is a broken
+   checkout, not a valid configuration.
+2. **Ask "does this check RUN?" of the whole inventory, not only "can this check
+   FAIL?" of the checks that run.** The second question presupposes the first, and
+   the ungated set is where every other defect class survives.
+3. **An instrument must prove it LOOKED, and coverage is not detection.** A
+   calibration that shows a tool finds known defects certifies nothing about the
+   input it never parsed. ★ **Coverage has two axes and a control for one will not
+   catch the other:** *idiom* coverage (the tool read the right files but only one
+   of the notations in them) and *surface* coverage (the tool read every notation,
+   of the wrong files). Both have occurred here, hours apart. The reconciliation
+   that generalises: **a self-test must compare a count taken INDEPENDENTLY of the
+   tool against what the tool parsed**, and refuse to report on a mismatch. ★ This
+   applies to any scan whose output you are about to ACT on, not only to a tool's
+   own self-test: a scan that under-reported untracked files was one re-check away
+   from a commit that could not build, and what caught it was acting on the list
+   and re-checking the remainder — distrusting the instrument rather than
+   improving it. ★ A clean report is not evidence a check can fail; it is only
+   evidence the tool found nothing.
+
+★ Door **vi** deserves its own entry because the fix is different in kind. Every
+other door is repaired by changing a *check*; this one lives in a *sentence*, where
+no gate can reach — the gate around it ran and was live. A `PASS` message is prose,
+so no arm can fail on it: it is not merely uninformative but unfalsifiable by
+construction, and it is read as the section's result. The repair is to make the
+announcement DERIVE from what the gate asserted rather than restate it from memory,
+and there is no mechanism for that today.
+
+★ And the controls are as fallible as the assertions. A negative control written
+to demonstrate a clean case was found to contain the very defect it excluded, and
+read as a false-positive rate in the tool until it was examined. A planted control
+proves only that the tool sees what it was built to see; the real-world control is
+reverting a known defect and confirming it is found again.
+
 ## Extending
 
 - New built-ins: add to `is_builtin` and `apply_builtin` in `tiny_host.c`.

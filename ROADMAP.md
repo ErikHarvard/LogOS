@@ -1288,8 +1288,50 @@ The AEAD, KDF and MAC now exist and are RFC-verified on two engines. What remain
       vectors written to break partial reduction). All host==VM byte-identical.*
 - [~] **KDF / MAC / signature scheme** — HKDF, and a signature primitive for updates and identity.
       *KDF and MAC DONE 2026-08-22 — `hkdf.la` (RFC 5869 TC1/TC3), `hmac.la` (RFC 4231 TC1/TC2),
-      `poly1305.la` one-time MAC; all host==VM. **No signature scheme yet** — still the blocker
-      for signed updates and identity, and the remaining half of this item.*
+      `poly1305.la` one-time MAC; all host==VM.*
+      *SIGNATURE PRIMITIVE 2026-08-23 — `wotsp.la`, WOTS+ hash-based one-time signatures
+      (`gate_wotsp.sh`). The first public-key primitive the system has. Hash-based, not
+      elliptic-curve: LA integers are 64-bit signed, so Ed25519 would need a multi-limb bignum
+      layer built first, whereas a hash-based scheme needs only SHA-256 — which is already
+      known-answer verified on two engines. This is also **G2's own stated choice** ("PQ or
+      hash-based signatures for updates"), so the post-quantum stance is taken here rather than
+      deferred. RFC 8391 §3.1 (base_w, checksum, shift, chain) with the SPHINCS+ "simple"
+      tweakable hash — (i,j) domain separation instead of per-step bitmasks. Verified n=2 w=4
+      **byte-identical on the C host AND the native VM**, and n=32 w=16 on the VM.*
+      ***Three limitations, none of them incidental:*** *(1) the vectors are cross-implementation
+      agreement with an independent Python model (`wotsp_model.py`), NOT a published third-party
+      KAT — no such vector exists for this construction; an RFC 8391 XMSS KAT closes it once a
+      Merkle layer exists. (2) It is **ONE-TIME**: two signatures under one key leak it, so this
+      is not yet usable for signed updates, which need a many-time key — a Merkle tree over these
+      keys (XMSS) is the next build and the actual unblocker. (3) The gate is expensive — 31 min
+      on the C host at n=2 w=4, measured — so its build.sh wiring is a cost decision, not a
+      given.*
+      *MANY-TIME SCHEME 2026-08-23 — `xmss.la` (`gate_xmss.sh`). A Merkle tree over 2^h WOTS+
+      one-time keys: one small public key (the root) signs 2^h messages. **This is the part G1
+      actually needed** — a one-time key cannot sign a stream of updates, so WOTS+ alone left the
+      item half-open. Nine checks, five of them negative; the headline is that two signatures
+      under DIFFERENT leaves verify against the SAME root, which is the only check that witnesses
+      many-time-ness (any single-signature test passes on a tree that ignores its leaf index).
+      A wrong leaf index, a one-bit-corrupted authentication path, a wrong message, and a flipped
+      bit in the root all reject. Byte-identical host==VM at n=2 w=4 h=2.*
+      ***Design note worth keeping:*** *each leaf derives its OWN seed pair (tags 4/5) rather than
+      threading a leaf index through WOTS+'s hashes. Since pk_seed already enters every chain
+      hash, distinct leaves get distinct chain domains for free — so `wotsp.la` is called
+      completely UNMODIFIED and its expensive vectors stayed valid. Two extra hashes per leaf,
+      zero edits below.*
+      ***★ A COST LESSON THAT WILL BITE THE NEXT ESTIMATE:*** *per-hash extrapolation understates
+      any `sha256.la` consumer whose input crosses 55 bytes — 56+ pads to a SECOND block, and byte
+      access is quadratic within a block. The n=32 WOTS+ leg was predicted at 13 min from a
+      per-hash bench and took 76. Measure the real input size, do not extrapolate.*
+      ***What remains before this closes:*** *(1) the vectors are cross-implementation agreement
+      with independent Python models, NOT published KATs — RFC 8391 publishes XMSS vectors, and
+      reaching them needs the RFC's own tweakable hash (per-step bitmasks + L-trees) in place of
+      the SPHINCS+ "simple" construction used here; (2) the witnessed parameters are a TOY
+      security level (n=2, 16 bits) chosen for code-path coverage — n=32 w=16 costs ~31 min PER
+      LEAF on this substrate, so production parameters are a performance problem, not a
+      correctness one; (3) no state management — XMSS is stateful, and reusing a leaf index is
+      catastrophic, so a real signer needs durable index tracking that does not yet exist.
+      **This item stays `[~]` on (1) and (3).***
 - [ ] **★ CSPRNG and an entropy source ON THE METAL.** The `random` builtin is Linux
       `getrandom(2)`. **The bare-metal kernel — K1–K7, the actual sovereign artifact — has no
       entropy source whatsoever**: no RDRAND/RDSEED builtin, no jitter collector, no seed file.

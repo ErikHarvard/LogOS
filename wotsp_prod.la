@@ -1,0 +1,81 @@
+# =====================================================================
+#  wotsp_prod.la — the SAME WOTS+ code at PRODUCTION parameters (n=32, w=16).
+#
+#  WHY THIS IS A SEPARATE FILE AND NOT A SECOND MAIN
+#  `wotsp.la`'s witness runs at n=2 w=4 because that is what the C host can
+#  afford: a SHA-256 call costs 6.5 s there and 0.31 s on the native SECD VM
+#  (measured 2026-08-23, this machine). At n=32 w=16 a keygen alone is ~1072
+#  hashes — 1.9 h on the host, 5.5 min on the VM. So the two parameter sets are
+#  witnessed on different engines, and saying which is which is the point of
+#  splitting the file rather than hiding a parameter behind a flag.
+#
+#  WHAT EACH LEG ACTUALLY ESTABLISHES — stated, because they are not the same:
+#    wotsp.la   (host AND VM, n=2 w=4)  — the two engines agree BYTE-FOR-BYTE
+#                                         on every path of the scheme.
+#    wotsp_prod.la (VM only, n=32 w=16) — the real parameter set produces the
+#                                         values the independent Python model
+#                                         produced, and the three discriminating
+#                                         negative (see wotsp.la: the fourth,
+#                                         wrong-PK, cannot fail — Audit IV)
+#                                         controls still reject.
+#  Neither alone is enough. The first proves the code is engine-independent but
+#  at a toy security level; the second proves the parameters are right but on
+#  one engine. n=2 is 16 bits of hash — breakable by hand — and nothing here
+#  pretends otherwise; it is a CODE-PATH witness, not a security claim.
+#
+#  The imported code is IDENTICAL — `WOTS_MKP(32)(16)` is the only difference
+#  from `WOTS_MKP(2)(4)`. That is what makes the split honest: if the two legs
+#  ran different code, host==VM at n=2 would say nothing about n=32.
+# =====================================================================
+
+import("wotsp.la")
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph NOT   = la c. c(FALSE)(TRUE)
+glyph PAIR  = la a. la b. la s. s(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph CONS  = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph HEAD  = la l. FST(SND(l))
+glyph TAIL  = la l. SND(SND(l))
+glyph CHRI  = la n. chr(int_to_str(n))
+glyph ORDI  = la c. str_to_int(ord(c))
+
+glyph SKSEED = "logos-wots-sk-seed"
+glyph PKSEED = "logos-wots-pk-seed"
+glyph M1 = "the first message"
+glyph M2 = "the second message"
+# Produced by wotsp_model.py at n=32 w=16 BEFORE this module was written.
+glyph EXP_PK   = "bb4ae2d73e18aeaadb1253d1ce69ca83f4e12b76d18d3e74184060917907a62a"
+glyph EXP_SIG0 = "2ecad02c666c6ebcb1755cd7ed3bc4461b822e15ce9c04eede717ba8560a2ca9"
+
+glyph FLIPS = la s. concat(CHRI(bxor(ORDI(str_head(s)))(1)))(str_tail(s))
+glyph FLIP1 = la sig. CONS(FLIPS(HEAD(sig)))(TAIL(sig))
+glyph MARK  = la ok. la name. IF(ok)(la _. concat(name)(" OK"))(la _. concat(name)(" WRONG"))
+glyph NEQ   = la a. la b. NOT(str_eq(a)(b))
+
+glyph P0 = WOTS_MKP(32)(16)
+glyph RUN =
+  (la kp. (la sk. (la pk.
+    (la sig1. (la sig2.
+      (la pkA. (la pkB. (la pkC.
+        concat(concat(concat(
+          concat("wotsp n=32 w=16: ")(MARK(str_eq(WOTS_HEXS(pk))(EXP_PK))("PK")))
+          (concat(concat(" | ")(MARK(str_eq(WOTS_HEXS(HEAD(sig1)))(EXP_SIG0))("sig")))
+                 (concat(" | ")(MARK(NEQ(WOTS_SIGCAT(sig1))(WOTS_SIGCAT(sig2)))("sig(m1)!=sig(m2)")))))
+          (concat(concat(" | ")(MARK(str_eq(pkA)(pk))("genuine verifies")))
+                 (concat(" | ")(MARK(NEQ(pkB)(pk))("wrong-msg rejected")))))
+          (concat(concat(" | ")(MARK(NEQ(pkC)(pk))("tampered-sig rejected")))
+                 (concat(" | ")(MARK(NEQ(pkA)(FLIPS(pk)))("wrong-PK rejected")))))
+        (WOTS_PKFROMSIG(P0)(FLIP1(sig1))(PKSEED)(M1)))
+        (WOTS_PKFROMSIG(P0)(sig1)(PKSEED)(M2)))
+        (WOTS_PKFROMSIG(P0)(sig1)(PKSEED)(M1)))
+      (WOTS_SIGN(P0)(sk)(PKSEED)(M2)))
+      (WOTS_SIGN(P0)(sk)(PKSEED)(M1)))
+    (SND(kp))) (FST(kp)))
+  (WOTS_KEYGEN(P0)(SKSEED)(PKSEED))
+
+glyph MAIN = print(RUN)

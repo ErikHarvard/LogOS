@@ -1,0 +1,213 @@
+export XMSS_KEYGEN XMSS_ROOT XMSS_SIGN XMSS_AUTH XMSS_ROOTFROMSIG XMSS_HEX
+# =====================================================================
+#  xmss.la — XMSS: a MANY-TIME hash-based signature, in Lingua Adamica.
+#
+#  WHAT THIS UNBLOCKS, AND WHY WOTS+ ALONE DID NOT
+#  `wotsp.la` gave the system its first public-key primitive, but WOTS+ is
+#  ONE-TIME: sign twice under one key and the key leaks. ROADMAP G1 needs
+#  "signed updates and identity", and an update key that can sign exactly once
+#  is not a signing key — it is a fuse. XMSS is the standard repair: build a
+#  Merkle tree over 2^h independent WOTS+ key pairs, publish only the ROOT as
+#  the public key, and let every signature carry the AUTHENTICATION PATH that
+#  proves its leaf hangs under that root. One small public key; 2^h signatures.
+#
+#  ── ★ THE DESIGN DECISION THAT LEFT wotsp.la BYTE-FOR-BYTE ALONE ────
+#  Each leaf needs its own WOTS+ key AND its own CHAIN DOMAIN. If two leaves
+#  shared the (i,j) tweak separating chain steps, chain values could be spliced
+#  between leaves — a real break, not a tidiness issue. The obvious fix is to
+#  thread a leaf index through WOTS+'s hashes, but that changes every vector in
+#  `wotsp.la` and invalidates legs that cost 2 h 15 min to witness. Instead each
+#  leaf derives its OWN SEED PAIR:
+#        sk_seed_L = H(4 || master_sk_seed || u32(L))
+#        pk_seed_L = H(5 || master_pk_seed || u32(L))
+#  pk_seed_L already enters every H_F call inside WOTS+, so distinct leaves get
+#  distinct chain domains for free and `wotsp.la` is called UNMODIFIED. The
+#  verifier derives pk_seed_L with no secret: the master pk_seed is public and L
+#  travels in the signature. Two extra hashes per leaf, and no edit below.
+#
+#  ── WHY THE NODE HASH CARRIES height AND index ──────────────────────
+#  A parent is H(6 || pk_seed || u32(height) || u32(index) || left || right).
+#  Drop height and index and an internal node could be replayed as a leaf, or a
+#  subtree grafted at another position — the signature would still verify. This
+#  is the XMSS analogue of WOTS+'s checksum: the part that fails SILENTLY,
+#  because every honest signature still passes without it.
+#
+#  ── PARAMETERS, STATED RATHER THAN IMPLIED ──────────────────────────
+#  One leaf is a full WOTS+ keygen. At n=32 w=16 that is 1072 hashes, measured
+#  at ~1.75 s/hash on the native VM for this input size — ~31 min PER LEAF, ~2 h
+#  for a height-2 tree before anything is signed. That is beyond this substrate
+#  today. So MAIN witnesses n=2 w=4 h=2: four leaves, four signatures. It
+#  exercises every path (two tree levels, both sibling directions, an odd and an
+#  even leaf) at a security level that is a TOY and is not offered as more. What
+#  is witnessed here is that the CONSTRUCTION is right — not that these
+#  parameters are safe. `wotsp_prod.la` is where the real parameter set runs.
+#
+#  ── WHAT MAIN CHECKS, AND WHY EACH ONE CAN FAIL ─────────────────────
+#  The headline claim is many-time-ness, so the headline check is that TWO
+#  signatures under DIFFERENT leaves verify against the SAME root. A tree that
+#  ignored its leaf index entirely would pass any single-signature test.
+#      leaf0 and leaf2 both verify   -- many-time: the whole point of the layer
+#      the two signatures differ     -- the leaves are genuinely independent
+#      wrong leaf index rejects      -- the index is authenticated
+#      corrupt auth path rejects     -- the path is authenticated
+#      wrong message rejects         -- the message is authenticated
+#      one flipped bit in root       -- the root is authenticated
+#  Cross-checked byte-for-byte against `xmss_model.py`, an independent Python
+#  implementation written BEFORE this one. That is cross-implementation
+#  agreement, NOT a published third-party vector — the same honest limit
+#  `wotsp.la` carries, and it is not dressed up as more here either.
+# =====================================================================
+
+# BOTH imports are needed, and the second one is not redundant. `wotsp.la`
+# exports only its own WOTS_* names, so SHA256_RAW -- which it imports and uses
+# throughout -- stays PRIVATE inside its namespace and is invisible here. This
+# layer hashes on its own account (tags 4/5/6), so it must import the hash
+# itself. Caught in 33 ms by a stubbed harness rather than 100 min into a run.
+import("sha256.la")
+import("wotsp.la")
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph NOT   = la c. c(FALSE)(TRUE)
+glyph PAIR  = la a. la b. la s. s(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph NIL   = PAIR(FALSE)("")
+glyph CONS  = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph HEAD  = la l. FST(SND(l))
+glyph TAIL  = la l. SND(SND(l))
+glyph NTH   = Z(la self. la l. la i.
+    IF(int_eq(i)(0))(la _. HEAD(l))(la _. self(TAIL(l))(sub(i)(1))))
+glyph BUILDF = la n. la f. (Z(la self. la i.
+    IF(int_eq(i)(n))(la _. NIL)(la _. CONS(f(i))(self(add(i)(1))))))(0)
+
+glyph CHRI  = la n. chr(int_to_str(n))
+glyph ORDI  = la c. str_to_int(ord(c))
+glyph TAKEN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph U32BE = la n.
+    concat(concat(CHRI(band(bshr(n)(24))(255)))(CHRI(band(bshr(n)(16))(255))))
+          (concat(CHRI(band(bshr(n)(8))(255)))(CHRI(band(n)(255))))
+glyph POW2  = la h. bshl(1)(h)
+
+# ── the three hashes this layer adds, tags 4/5/6 ────────────────────
+# wotsp.la owns tags 0..3. Reusing one of those would let a WOTS+ chain value be
+# presented as a leaf seed, which is exactly what domain separation is for.
+glyph H_SKL = la n. la skseed. la l.
+    TAKEN(n)(SHA256_RAW(concat(concat(CHRI(4))(skseed))(U32BE(l))))
+glyph H_PKL = la n. la pkseed. la l.
+    TAKEN(n)(SHA256_RAW(concat(concat(CHRI(5))(pkseed))(U32BE(l))))
+glyph H_NODE = la n. la pkseed. la ht. la idx. la lft. la rgt.
+    TAKEN(n)(SHA256_RAW(concat(concat(concat(CHRI(6))(pkseed))
+                              (concat(U32BE(ht))(U32BE(idx))))(concat(lft)(rgt))))
+
+# ── one leaf: a whole WOTS+ public key, under its own derived seeds ──
+glyph LEAFPK = la n. la w. la skseed. la pkseed. la l.
+    SND(WOTS_KEYGEN(WOTS_MKP(n)(w))(H_SKL(n)(skseed)(l))(H_PKL(n)(pkseed)(l)))
+
+# ── the tree, as a list of levels (level 0 = the leaves) ────────────
+# Built bottom-up by folding NEXTLEVEL h times. Keeping every level (not just
+# the root) is what makes the authentication path a lookup rather than a second
+# traversal that could disagree with the first.
+glyph NEXTLEVEL = la n. la pkseed. la ht. la lvl. la cnt.
+    BUILDF(cnt)(la i.
+      H_NODE(n)(pkseed)(ht)(i)(NTH(lvl)(mul(i)(2)))(NTH(lvl)(add(mul(i)(2))(1))))
+# ★ The leaf level is bound ONCE. An earlier version wrote BUILDF(...) twice --
+# as the accumulator seed and as the starting level -- which silently generated
+# all 2^h WOTS+ key pairs TWICE. It would have produced the correct root, so no
+# check here could have caught it; only the clock would have, and only if
+# someone knew what the number should have been.
+glyph LEVELS = la n. la w. la h. la skseed. la pkseed.
+    (la leaves.
+      (Z(la self. la acc. la lvl. la ht. la cnt.
+          IF(int_eq(ht)(add(h)(1)))(la _. acc)
+            (la _. (la nx. self(CONS(nx)(acc))(nx)(add(ht)(1))(div(cnt)(2)))
+                   (NEXTLEVEL(n)(pkseed)(ht)(lvl)(div(cnt)(2))))))
+      (CONS(leaves)(NIL))(leaves)(1)(POW2(h)))
+    (BUILDF(POW2(h))(LEAFPK(n)(w)(skseed)(pkseed)))
+
+# LEVELS accumulates newest-first, so level k sits at position h-k. LVLAT undoes
+# that once, here, rather than at each of the three call sites.
+glyph LVLAT = la lv. la h. la k. NTH(lv)(sub(h)(k))
+glyph XMSS_KEYGEN = la n. la w. la h. la skseed. la pkseed. LEVELS(n)(w)(h)(skseed)(pkseed)
+glyph XMSS_ROOT  = la lv. la h. HEAD(LVLAT(lv)(h)(h))
+
+# ── the authentication path: at height k the sibling of leaf L ──────
+# index at height k is L>>k, and its sibling is that index with the low bit
+# flipped. One line, and it is the line an off-by-one would live in.
+glyph XMSS_AUTH = la lv. la h. la l.
+    BUILDF(h)(la k. NTH(LVLAT(lv)(h)(k))(bxor(bshr(l)(k))(1)))
+
+# ── signing: regenerate leaf L's WOTS+ key from the seeds and sign ──
+# The 2^h secret keys are never stored; a leaf key is re-derived on demand from
+# the master seed. Storing them would make the private key grow with the tree.
+glyph XMSS_SIGN = la n. la w. la skseed. la pkseed. la l. la msg.
+    (la p. WOTS_SIGN(p)(FST(WOTS_KEYGEN(p)(H_SKL(n)(skseed)(l))(H_PKL(n)(pkseed)(l))))
+                     (H_PKL(n)(pkseed)(l))(msg))
+    (WOTS_MKP(n)(w))
+
+# ── verification: recompute the root a signature implies ────────────
+# As in wotsp.la, this returns the ROOT rather than a boolean, so the caller
+# compares it itself and cannot be handed a verdict whose provenance it cannot
+# inspect. A leaf at an ODD index is the RIGHT child, so the sibling goes first
+# — get that branch backwards and only odd leaves fail, which is why MAIN signs
+# leaf 0 AND leaf 2 and why the auth-path negative exists.
+glyph XMSS_ROOTFROMSIG = la n. la w. la h. la pkseed. la l. la wsig. la auth. la msg.
+    (Z(la self. la node. la idx. la k.
+        IF(int_eq(k)(h))(la _. node)
+          (la _. self(IF(int_eq(band(idx)(1))(1))
+                        (la _. H_NODE(n)(pkseed)(add(k)(1))(bshr(idx)(1))(NTH(auth)(k))(node))
+                        (la _. H_NODE(n)(pkseed)(add(k)(1))(bshr(idx)(1))(node)(NTH(auth)(k))))
+                     (bshr(idx)(1))(add(k)(1)))))
+    (WOTS_PKFROMSIG(WOTS_MKP(n)(w))(wsig)(H_PKL(n)(pkseed)(l))(msg))
+    (l)(0)
+
+glyph XMSS_HEX = la s. WOTS_HEXS(s)
+
+# =====================================================================
+#  WITNESS — n=2, w=4, h=2 (four leaves). ★ FOUR of the seven checks are
+#  negative, and the two positive ones are the many-time claim itself.
+# =====================================================================
+glyph SKSEED = "logos-xmss-sk-seed"
+glyph PKSEED = "logos-xmss-pk-seed"
+glyph M1 = "the first message"
+glyph M2 = "the second message"
+# Produced by xmss_model.py BEFORE this module was written.
+glyph EXP_ROOT  = "7d20"
+glyph EXP_LEAF0 = "cf5d"
+
+glyph N = 2
+glyph W = 4
+glyph H = 2
+
+glyph FLIPS = la s. concat(CHRI(bxor(ORDI(str_head(s)))(1)))(str_tail(s))
+glyph FLIP1 = la l. CONS(FLIPS(HEAD(l)))(TAIL(l))
+glyph MARK  = la ok. la name. IF(ok)(la _. concat(name)(" OK"))(la _. concat(name)(" WRONG"))
+glyph NEQ   = la a. la b. NOT(str_eq(a)(b))
+glyph RFS   = la l. la wsig. la auth. la msg. XMSS_ROOTFROMSIG(N)(W)(H)(PKSEED)(l)(wsig)(auth)(msg)
+glyph SIGN  = la l. la msg. XMSS_SIGN(N)(W)(SKSEED)(PKSEED)(l)(msg)
+glyph CATL  = Z(la self. la l. IF(NOT(FST(l)))(la _. "")(la _. concat(HEAD(l))(self(TAIL(l)))))
+
+glyph RUN =
+  (la lv. (la root. (la sig0. (la sig2. (la auth0. (la auth2. (la r0.
+    concat(concat(concat(concat(
+      concat("xmss n=2 w=4 h=2: ")(MARK(str_eq(XMSS_HEX(root))(EXP_ROOT))("root")))
+      (concat(" | ")(MARK(str_eq(XMSS_HEX(NTH(LVLAT(lv)(H)(0))(0)))(EXP_LEAF0))("leaf0"))))
+      (concat(concat(" | ")(MARK(str_eq(r0)(root))("leaf0 verifies")))
+             (concat(" | ")(MARK(str_eq(RFS(2)(sig2)(auth2)(M2))(root))("leaf2 verifies vs SAME root")))))
+      (concat(concat(" | ")(MARK(NEQ(CATL(sig0))(CATL(sig2)))("sigs differ")))
+             (concat(" | ")(MARK(NEQ(RFS(1)(sig0)(auth0)(M1))(root))("wrong leaf idx rejected")))))
+      (concat(concat(" | ")(MARK(NEQ(RFS(0)(sig0)(FLIP1(auth0))(M1))(root))("corrupt auth path rejected")))
+             (concat(concat(" | ")(MARK(NEQ(RFS(0)(sig0)(auth0)(M2))(root))("wrong msg rejected")))
+                    (concat(" | ")(MARK(NEQ(r0)(FLIPS(root)))("wrong root rejected"))))))
+    (RFS(0)(sig0)(auth0)(M1)))
+    (XMSS_AUTH(lv)(H)(2)))
+    (XMSS_AUTH(lv)(H)(0)))
+    (SIGN(2)(M2)))
+    (SIGN(0)(M1)))
+    (XMSS_ROOT(lv)(H)))
+  (XMSS_KEYGEN(N)(W)(H)(SKSEED)(PKSEED))
+
+glyph MAIN = print(RUN)

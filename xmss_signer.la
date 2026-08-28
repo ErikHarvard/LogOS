@@ -1,0 +1,128 @@
+export SIGN_GUARDED SIG_IDX SIG_WOTS SIG_AUTH
+# =====================================================================
+#  xmss_signer.la — XMSS signing with the index guard actually WIRED IN.
+#
+#  ── WHY THE export LINE ABOVE IS LOAD-BEARING ───────────────────────
+#  ★ This module shipped with NO export line, and that inverted its whole
+#  purpose. tiny_host's `mangle_privates` alpha-renames every glyph of a module
+#  whose export set is EMPTY, so SIGN_GUARDED — the safe entry point this file
+#  exists to provide — was invisible to any importer, while `xmss.la` happily
+#  exported the UNGUARDED `XMSS_SIGN`, which takes an explicit index. The only
+#  importable way to sign was the unsafe one. It went unnoticed because nothing
+#  imports this module yet: it is only ever run as a top-level program by its
+#  own MAIN, which is exactly the case the mangling does not touch.
+#
+#  Adding the line cannot change what this module DOES. `mangle_privates` is
+#  called only from `do_import` (tiny_host.c:942), and codegen.la mirrors that —
+#  it applies MANGLE_MODULE only on the import arm, while the top level takes
+#  `FST(PARSE_MODULE(s))` and discards the export list. So a top-level run is
+#  never mangled by its own exports, and `export` emits no glyph. The compiled
+#  stream, and therefore gate_xmss_signer.sh's expected output, are unaffected.
+#
+#  The witness constants (N/W/H/SKSEED/…), MARK/NEQ/VER, RUN and MAIN stay
+#  PRIVATE on purpose: they are this module's self-test, not its API, and a
+#  consumer that could see H would be able to sign at a height the state file
+#  was not created for.
+#
+#  `xmssidx.la` is a correct register and `xmss.la` is a correct signature
+#  scheme, and having both proves nothing about the combination: the danger is
+#  a caller that holds a register and then signs with an index of its own
+#  choosing anyway. This module is the join. SIGN_GUARDED takes a STATE PATH
+#  and NO INDEX — the index is not a parameter a caller can get wrong, because
+#  it is not a parameter at all.
+#
+#  ── WHY THE INDEX COMES BACK OUT ────────────────────────────────────
+#  SIGN_GUARDED returns (index, signature, auth-path). The verifier needs the
+#  index, so it must travel with the signature — but the SIGNER never accepted
+#  it. That is the whole distinction: the index is an OUTPUT of signing, not an
+#  input to it. A signer that takes an index as input can be handed a stale one
+#  by any caller, and no amount of correct register code prevents that.
+#
+#  ── ORDERING, INHERITED AND LOAD-BEARING ────────────────────────────
+#  Because the language is call-by-value, `(la idx. ...)(IDX_RESERVE(...))`
+#  completes the reserve — INCLUDING its durable write — before any signing
+#  happens. The write-ahead property is not re-implemented here; it is inherited
+#  from IDX_RESERVE and cannot be reordered by this module even by accident,
+#  because the index does not exist until the reserve has returned.
+#
+#  ── EXHAUSTION IS NOT RE-TESTED HERE, DELIBERATELY ──────────────────
+#  A third signature under h=1 must refuse, and it does — but the refusal lives
+#  entirely in IDX_RESERVE, which `gate_xmssidx.sh` already exhausts on purpose
+#  and mutation-tests (a mutant that wraps to 0 passes all six of the
+#  register's own checks and is caught only by that arm). Re-proving it here
+#  would cost a full tree build for a witness that already exists. Stated
+#  rather than silently skipped: this module's gate covers the JOIN, and
+#  gate_xmssidx.sh covers the refusal.
+#
+#  ── WITNESS: h=1, so the tree holds exactly TWO keys ────────────────
+#  Two signatures is the minimum that can show the index advancing, and with
+#  h=1 it is also the entire capacity — so the run ends with the key spent,
+#  which is the state a real signer must handle. Parameters n=2 w=4 remain a
+#  TOY security level, as in xmss.la; what is witnessed is the wiring.
+#      idx0=0, idx1=1        -- consecutive signs took DIFFERENT leaves,
+#                               and the caller named neither
+#      both verify vs root   -- many-time-ness, through the guarded path
+#      signatures differ     -- the leaves are genuinely independent
+#      state spent (=2)      -- the register advanced durably, twice
+# =====================================================================
+
+# ★ NO `import("sha256.la")` HERE, DELIBERATELY. This module hashes nothing on
+# its own account — it only calls XMSS_* and IDX_* — so importing the hash was
+# dead weight, and not free dead weight: sha256 already arrives twice through
+# xmss.la (directly, and again via wotsp.la), and a third merge pushed this
+# module's codegen to 163 MINUTES against xmss.la's 27. An unused import is a
+# measured cost here, not a tidiness question.
+import("xmss.la")
+import("xmssidx.la")
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph NOT   = la c. c(FALSE)(TRUE)
+glyph PAIR  = la a. la b. la s. s(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph SEQ   = la a. la b. b
+glyph CATL  = Z(la self. la l. IF(NOT(FST(l)))(la _. "")(la _. concat(HEAD(l))(self(TAIL(l)))))
+glyph HEAD  = la l. FST(SND(l))
+glyph TAIL  = la l. SND(SND(l))
+
+# ── the guard: a signer with no index parameter ─────────────────────
+glyph SIGN_GUARDED = la n. la w. la h. la statepath. la skseed. la pkseed. la lv. la msg.
+    (la idx. PAIR(idx)(PAIR(XMSS_SIGN(n)(w)(skseed)(pkseed)(idx)(msg))
+                           (XMSS_AUTH(lv)(h)(idx))))
+    (IDX_RESERVE(statepath)(h))
+glyph SIG_IDX  = la g. FST(g)
+glyph SIG_WOTS = la g. FST(SND(g))
+glyph SIG_AUTH = la g. SND(SND(g))
+
+glyph N = 2
+glyph W = 4
+glyph H = 1
+glyph SKSEED = "logos-xmss-sk-seed"
+glyph PKSEED = "logos-xmss-pk-seed"
+glyph STATE = "xmss_signer.state"
+glyph M1 = "the first message"
+glyph M2 = "the second message"
+
+glyph MARK = la ok. la name. IF(ok)(la _. concat(name)(" OK"))(la _. concat(name)(" WRONG"))
+glyph NEQ  = la a. la b. NOT(str_eq(a)(b))
+glyph VER  = la g. la msg. XMSS_ROOTFROMSIG(N)(W)(H)(PKSEED)(SIG_IDX(g))(SIG_WOTS(g))(SIG_AUTH(g))(msg)
+
+glyph RUN =
+  SEQ(write_file(STATE)("0"))
+  ((la lv. (la root. (la g0. (la g1.
+      concat(concat(concat(concat(
+        concat("xmss_signer n=2 w=4 h=1: ")(MARK(int_eq(SIG_IDX(g0))(0))("idx0=0")))
+        (concat(" | ")(MARK(int_eq(SIG_IDX(g1))(1))("idx1=1"))))
+        (concat(concat(" | ")(MARK(str_eq(VER(g0)(M1))(root))("sig0 verifies")))
+               (concat(" | ")(MARK(str_eq(VER(g1)(M2))(root))("sig1 verifies vs SAME root")))))
+        (concat(" | ")(MARK(NEQ(CATL(SIG_WOTS(g0)))(CATL(SIG_WOTS(g1))))("sigs differ"))))
+        (concat(" | ")(MARK(int_eq(IDX_READ(STATE))(2))("state spent=2"))))
+      (SIGN_GUARDED(N)(W)(H)(STATE)(SKSEED)(PKSEED)(lv)(M2)))
+      (SIGN_GUARDED(N)(W)(H)(STATE)(SKSEED)(PKSEED)(lv)(M1)))
+      (XMSS_ROOT(lv)(H)))
+      (XMSS_KEYGEN(N)(W)(H)(SKSEED)(PKSEED)))
+
+glyph MAIN = print(RUN)

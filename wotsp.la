@@ -1,0 +1,246 @@
+export WOTS_MKP WOTS_KEYGEN WOTS_SIGN WOTS_PKFROMSIG WOTS_HEXS WOTS_SIGCAT
+# =====================================================================
+#  wotsp.la — WOTS+, a hash-based one-time signature, in Lingua Adamica.
+#
+#  THE FIRST PUBLIC-KEY PRIMITIVE THE SYSTEM HAS. ROADMAP G1 has carried
+#  "**No signature scheme yet** — still the blocker for signed updates and
+#  identity" as the open half of KDF/MAC/signature; G2 states the choice
+#  directly: "PQ or **hash-based signatures** for updates." This is that.
+#
+#  ── WHY HASH-BASED AND NOT ELLIPTIC-CURVE ───────────────────────────
+#  LA integers are 64-bit signed. Ed25519 would need a multi-limb bignum layer
+#  built first — a whole separate substrate, and one with its own carry bugs. A
+#  hash-based scheme needs exactly one thing: a hash. `sha256.la` is already
+#  known-answer verified against both NIST vectors on the C host AND the native
+#  VM, so this module's entire trust base is something already witnessed.
+#  Post-quantum security is a consequence, not a claim added afterwards.
+#
+#  ── WHAT WOTS+ IS, IN ONE PARAGRAPH ─────────────────────────────────
+#  Take `len` secret values. Hash each one w-1 times; the endpoints are the
+#  public key. To sign, hash secret i forward b_i times, where the b_i are the
+#  message digest read as base-w digits. A verifier hashes each signature value
+#  the REMAINING w-1-b_i times and must land on the public key. Chains only run
+#  forward, so a forger can RAISE any digit — which is why the digits are
+#  followed by a checksum of (w-1-b_i): raising a message digit necessarily
+#  lowers a checksum digit, and lowering is what nobody can do.
+#
+#  ★ THE CHECKSUM SHIFT IS THE PART THAT FAILS QUIETLY. Get `csum << shift`
+#  wrong and the checksum silently drops its low bits — every honest signature
+#  still verifies, and the scheme is simply forgeable. No test of the accept
+#  path can see it. It is stated here because a comment is the only place it
+#  can be seen at all.
+#
+#  ── WHAT THIS IS NOT ────────────────────────────────────────────────
+#  Not FIPS 205. This follows RFC 8391 §3.1 for base_w, the checksum, the shift
+#  and the chain, but uses the SPHINCS+ "simple" tweakable hash — chain step j
+#  of chain i is domain-separated by the pair (i,j) — instead of RFC 8391's
+#  per-step bitmasks. Deliberate, and stated rather than left to be discovered.
+#  It is also ONE-TIME: signing two messages under one key leaks the key. The
+#  many-time construction is a Merkle tree over these keys and is NOT built.
+#
+#  ── DOMAIN SEPARATION ───────────────────────────────────────────────
+#  Four hash uses, four distinct leading tag bytes: 0 derives a secret, 1 steps
+#  a chain, 2 hashes a message, 3 compresses the public key. Sharing one tag
+#  would let an output of one be replayed as an output of another.
+#
+#  ── WITNESS (MAIN, at n=2 w=4) ──────────────────────────────────────
+#  Cross-checked byte-for-byte against `wotsp_model.py`, an independent Python
+#  implementation written BEFORE this one. That is cross-implementation
+#  agreement, not a published third-party vector, and the difference is real —
+#  it is named in the gate and in the model. What carries the weight instead is
+#  that THREE of the six checks are negative AND DISCRIMINATING. ★ A fourth —
+#  "wrong-PK rejected" — is NOT: it asserts pkA != FLIPS(pk) while the check
+#  above already asserts pkA == pk, so it reduces to pk != FLIPS(pk), true by
+#  construction. It exercises bxor and str_eq, never the verifier. Structural,
+#  not a slip: verification is deliberately kept OUT of this module, so this is
+#  not a property it can fail. Corrected 2026-08-27; the CHECK is left in place
+#  until gate_wotsp.sh has had a baseline run. The three that discriminate:
+#      sig(m1) != sig(m2)              the signer must READ the message
+#      verify(m2, sig(m1)) rejects     the verifier must READ the message
+#      one flipped bit in sig rejects  the verifier must READ the signature
+#      one flipped bit in PK rejects   the verifier must READ the public key
+#  ★ This is aimed at a defect this project has already shipped once: chacha20's
+#  BLOCK took its key as an argument and fed forward hardcoded constants equal
+#  to that one vector's key. A block function ignoring its key entirely passed.
+#  The signature-scheme form of that bug is a signer that ignores the message,
+#  and "a valid signature verifies" cannot detect it.
+#
+#  n=2 here is a TOY security level and is not pretending otherwise: it is the
+#  parameter set at which the C host can run the whole scheme (a SHA-256 call
+#  costs 6.5 s there against 0.31 s on the native VM, measured 2026-08-23), so
+#  it is what host==VM byte-identity can be established on. `wotsp_prod.la`
+#  runs the identical code at n=32 w=16 on the VM.
+# =====================================================================
+
+import("sha256.la")
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph NOT   = la c. c(FALSE)(TRUE)
+glyph PAIR  = la a. la b. la s. s(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph NIL   = PAIR(FALSE)("")
+glyph CONS  = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph ISNIL = la l. NOT(FST(l))
+glyph HEAD  = la l. FST(SND(l))
+glyph TAIL  = la l. SND(SND(l))
+glyph NTH   = Z(la self. la l. la i.
+    IF(int_eq(i)(0))(la _. HEAD(l))(la _. self(TAIL(l))(sub(i)(1))))
+glyph APPEND = Z(la self. la a. la b.
+    IF(ISNIL(a))(la _. b)(la _. CONS(HEAD(a))(self(TAIL(a))(b))))
+# BUILD(n)(f) = [f(0), f(1), ... f(n-1)].  Every list here is an index map, so
+# one builder replaces five hand-rolled loops that could each be off by one.
+glyph BUILDF = la n. la f. (Z(la self. la i.
+    IF(int_eq(i)(n))(la _. NIL)(la _. CONS(f(i))(self(add(i)(1))))))(0)
+glyph FOLDI = la n. la f. la z. (Z(la self. la i. la acc.
+    IF(int_eq(i)(n))(la _. acc)(la _. self(add(i)(1))(f(acc)(i)))))(0)(z)
+
+glyph CHRI  = la n. chr(int_to_str(n))
+glyph ORDI  = la c. str_to_int(ord(c))
+glyph SLEN  = la s. str_to_int(str_len(s))
+glyph DROPN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph TAKEN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph BYTEAT = la s. la i. ORDI(str_head(DROPN(i)(s)))
+glyph U32BE = la n.
+    concat(concat(CHRI(band(bshr(n)(24))(255)))(CHRI(band(bshr(n)(16))(255))))
+          (concat(CHRI(band(bshr(n)(8))(255)))(CHRI(band(n)(255))))
+glyph CATL = Z(la self. la l.
+    IF(ISNIL(l))(la _. "")(la _. concat(HEAD(l))(self(TAIL(l)))))
+
+# ── parameters ──────────────────────────────────────────────────────
+# A parameter set is a record, not six loose arguments: len1 and len2 are
+# DERIVED from n and w, and a caller that could pass them separately could pass
+# an inconsistent pair. BITLEN gives floor(log2(x))+1 for x>0.
+glyph BITLEN = Z(la self. la x.
+    IF(int_eq(x)(0))(la _. 0)(la _. add(1)(self(bshr(x)(1)))))
+glyph CEILDIV = la a. la b. div(add(a)(sub(b)(1)))(b)
+glyph MKREC = la n. la w. la lgw. la l1. la l2. la ln. la s. s(n)(w)(lgw)(l1)(l2)(ln)
+glyph WOTS_MKP = la n. la w.
+    (la lgw.
+      (la l1.
+        (la l2. MKREC(n)(w)(lgw)(l1)(l2)(add(l1)(l2)))
+        (add(div(sub(BITLEN(mul(l1)(sub(w)(1))))(1))(lgw))(1)))
+      (CEILDIV(mul(8)(n))(lgw)))
+    (sub(BITLEN(w))(1))
+glyph P_N   = la p. p(la n. la w. la g. la a. la b. la c. n)
+glyph P_W   = la p. p(la n. la w. la g. la a. la b. la c. w)
+glyph P_LGW = la p. p(la n. la w. la g. la a. la b. la c. g)
+glyph P_L1  = la p. p(la n. la w. la g. la a. la b. la c. a)
+glyph P_L2  = la p. p(la n. la w. la g. la a. la b. la c. b)
+glyph P_LEN = la p. p(la n. la w. la g. la a. la b. la c. c)
+
+# ── the four hashes, each with its own tag byte ─────────────────────
+glyph TRUNC = la p. la s. TAKEN(P_N(p))(s)
+glyph H_PRF = la p. la skseed. la i.
+    TRUNC(p)(SHA256_RAW(concat(concat(CHRI(0))(skseed))(U32BE(i))))
+glyph H_F   = la p. la pkseed. la i. la j. la x.
+    TRUNC(p)(SHA256_RAW(concat(concat(concat(CHRI(1))(pkseed))
+                              (concat(U32BE(i))(U32BE(j))))(x)))
+glyph H_MSG = la p. la pkseed. la m.
+    TRUNC(p)(SHA256_RAW(concat(concat(CHRI(2))(pkseed))(m)))
+glyph H_PK  = la p. la pkseed. la pks.
+    TRUNC(p)(SHA256_RAW(concat(concat(CHRI(3))(pkseed))(CATL(pks))))
+
+# ── the chain: steps applications of H_F, starting at step `start` ──
+# One chain, one direction. CHAIN(x)(start)(0) is x itself, which is the case
+# that carries a signature digit of 0 and a verify of a maxed-out digit.
+glyph CHAIN = la p. la pkseed. la i. la x. la start. la steps.
+    (Z(la self. la v. la j. la k.
+        IF(int_eq(k)(0))(la _. v)
+                        (la _. self(H_F(p)(pkseed)(i)(j)(v))(add(j)(1))(sub(k)(1)))))
+    (x)(start)(steps)
+
+# ── base-w digits ───────────────────────────────────────────────────
+# lgw divides 8 for every w this module accepts (4, 16, 256), so digit k sits
+# wholly inside one byte and can be read directly rather than streamed.
+glyph DIGIT = la p. la s. la k.
+    (la bp. band(bshr(BYTEAT(s)(div(bp)(8)))(sub(sub(8)(mod(bp)(8)))(P_LGW(p))))
+                (sub(P_W(p))(1)))
+    (mul(k)(P_LGW(p)))
+glyph MSGDIGITS = la p. la d. BUILDF(P_L1(p))(DIGIT(p)(d))
+# The checksum digits are read out of the shifted integer directly rather than
+# through a byte string: same bits, one fewer transcription.
+glyph CSUMDIGITS = la p. la mds.
+    (la csum.
+      (la shifted. (la totbits.
+          BUILDF(P_L2(p))(la k.
+            band(bshr(shifted)(sub(totbits)(mul(add(k)(1))(P_LGW(p)))))(sub(P_W(p))(1))))
+        (mul(CEILDIV(mul(P_L2(p))(P_LGW(p)))(8))(8)))
+      (bshl(csum)(mod(sub(8)(mod(mul(P_L2(p))(P_LGW(p)))(8)))(8))))
+    (FOLDI(P_L1(p))(la acc. la i. add(acc)(sub(sub(P_W(p))(1))(NTH(mds)(i))))(0))
+glyph DIGITS = la p. la d. (la mds. APPEND(mds)(CSUMDIGITS(p)(mds)))(MSGDIGITS(p)(d))
+
+# ── keygen / sign / verify ──────────────────────────────────────────
+# KEYGEN returns PAIR(secret chain starts)(compressed public key).
+glyph WOTS_KEYGEN = la p. la skseed. la pkseed.
+    (la sk. PAIR(sk)(H_PK(p)(pkseed)
+        (BUILDF(P_LEN(p))(la i. CHAIN(p)(pkseed)(i)(NTH(sk)(i))(0)(sub(P_W(p))(1))))))
+    (BUILDF(P_LEN(p))(H_PRF(p)(skseed)))
+
+glyph WOTS_SIGN = la p. la sk. la pkseed. la msg.
+    (la b. BUILDF(P_LEN(p))(la i. CHAIN(p)(pkseed)(i)(NTH(sk)(i))(0)(NTH(b)(i))))
+    (DIGITS(p)(H_MSG(p)(pkseed)(msg)))
+
+# WOTS_PKFROMSIG recomputes the public key a signature implies. Verification is
+# str_eq against the real one — kept OUT of this module on purpose, so that the
+# caller cannot be handed a boolean whose provenance it cannot inspect.
+glyph WOTS_PKFROMSIG = la p. la sig. la pkseed. la msg.
+    (la b. H_PK(p)(pkseed)(BUILDF(P_LEN(p))(la i.
+        CHAIN(p)(pkseed)(i)(NTH(sig)(i))(NTH(b)(i))(sub(sub(P_W(p))(1))(NTH(b)(i))))))
+    (DIGITS(p)(H_MSG(p)(pkseed)(msg)))
+
+glyph WOTS_SIGCAT = la sig. CATL(sig)
+glyph HEXD  = la n. str_head(DROPN(n)("0123456789abcdef"))
+glyph WOTS_HEXS = Z(la self. la s.
+    IF(int_eq(SLEN(s))(0))(la _. "")(la _.
+      concat(concat(HEXD(band(bshr(ORDI(str_head(s)))(4))(15)))
+                   (HEXD(band(ORDI(str_head(s)))(15))))
+            (self(str_tail(s)))))
+
+# =====================================================================
+#  WITNESS — n=2, w=4. Six checks, four of which are negative.
+# =====================================================================
+glyph SKSEED = "logos-wots-sk-seed"
+glyph PKSEED = "logos-wots-pk-seed"
+glyph M1 = "the first message"
+glyph M2 = "the second message"
+glyph EXP_PK   = "150b"
+glyph EXP_SIG0 = "e829"
+
+# FLIP1 replaces the first byte of the first chain value with that byte XOR 1 —
+# the smallest possible tamper. A one-bit change must be rejected, or the
+# verifier is not reading the signature at all.
+glyph FLIP1 = la sig.
+    CONS(concat(CHRI(bxor(ORDI(str_head(HEAD(sig))))(1)))(str_tail(HEAD(sig))))(TAIL(sig))
+glyph FLIPS = la s. concat(CHRI(bxor(ORDI(str_head(s)))(1)))(str_tail(s))
+
+glyph MARK = la ok. la name. IF(ok)(la _. concat(name)(" OK"))(la _. concat(name)(" WRONG"))
+glyph NEQ  = la a. la b. NOT(str_eq(a)(b))
+
+glyph P0 = WOTS_MKP(2)(4)
+glyph RUN =
+  (la kp. (la sk. (la pk.
+    (la sig1. (la sig2.
+      (la pkA. (la pkB. (la pkC.
+        concat(concat(concat(
+          concat("wotsp n=2 w=4: ")(MARK(str_eq(WOTS_HEXS(pk))(EXP_PK))("PK")))
+          (concat(concat(" | ")(MARK(str_eq(WOTS_HEXS(NTH(sig1)(0)))(EXP_SIG0))("sig")))
+                 (concat(" | ")(MARK(NEQ(WOTS_SIGCAT(sig1))(WOTS_SIGCAT(sig2)))("sig(m1)!=sig(m2)")))))
+          (concat(concat(" | ")(MARK(str_eq(pkA)(pk))("genuine verifies")))
+                 (concat(" | ")(MARK(NEQ(pkB)(pk))("wrong-msg rejected")))))
+          (concat(concat(" | ")(MARK(NEQ(pkC)(pk))("tampered-sig rejected")))
+                 (concat(" | ")(MARK(NEQ(pkA)(FLIPS(pk)))("wrong-PK rejected")))))
+        (WOTS_PKFROMSIG(P0)(FLIP1(sig1))(PKSEED)(M1)))
+        (WOTS_PKFROMSIG(P0)(sig1)(PKSEED)(M2)))
+        (WOTS_PKFROMSIG(P0)(sig1)(PKSEED)(M1)))
+      (WOTS_SIGN(P0)(sk)(PKSEED)(M2)))
+      (WOTS_SIGN(P0)(sk)(PKSEED)(M1)))
+    (SND(kp))) (FST(kp)))
+  (WOTS_KEYGEN(P0)(SKSEED)(PKSEED))
+
+glyph MAIN = print(RUN)

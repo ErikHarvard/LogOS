@@ -1,0 +1,125 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  xmssidx_spec.la — the durable leaf-index register, written as a SPEC and
+#  produced by the spec→implementation pipeline (import("specpipe.la")).
+#
+#  WHY THIS EXISTS: THE CRYPTO CORNER HAD DRIFTED OFF THE PIPELINE.
+#  CLAUDE.md says new modules are built spec-first, "never hand-written", and
+#  thirteen modules are (aatc, canon, primitives, swc, psc, metalogic, …). But
+#  EVERY crypto module in this repo is hand-written — sha256, hmac, hkdf,
+#  chacha20, poly1305, aead, hmacdrbg — so each has exactly ONE whole-module
+#  witness (its MAIN) and no per-glyph tests and no type-checking. wotsp/xmss/
+#  xmssidx followed that precedent and widened the drift. This is the pilot for
+#  reversing it, and the register is the right pilot: small, pure enough to
+#  test, and it guards the failure mode nothing else can see.
+#
+#  WHAT THE PIPELINE ADDS THAT A MAIN WITNESS CANNOT
+#    * PER-GLYPH tests — META_DEBUG runs each glyph's own contract, so a failure
+#      names the glyph instead of one line going WRONG. POW2 and IDX_CAPACITY
+#      have no independent witness at all today; the module's MAIN never
+#      isolates them.
+#    * COMPILE-TIME arity type-checking — DEPLOY compares each declared arrow
+#      arity against its body's binder count and REJECTS the module, writing no
+#      file, on a mismatch. That is a defect class the witness cannot reach.
+#
+#  ── ★ THE EFFECTFUL-GLYPH PROBLEM, AND HOW IT IS HANDLED ─────────────
+#  META_DEBUG assumes PURE glyphs: a probe is run and compared to an expected
+#  value. IDX_RESERVE is deliberately EFFECTFUL — persisting state is its whole
+#  purpose — so running its test twice would naively give different answers and
+#  the suite would depend on its own execution order.
+#  The fix is that every effectful probe INITIALISES ITS OWN STATE FIRST:
+#      SEQ(write_file(S)("0"))(… g(S)(2) …)
+#  so each test is deterministic, order-independent, and repeatable. That is
+#  also why these tests may never be reordered into sharing one state file.
+#
+#  ── WHAT STAYS IN gate_xmssidx.sh AND MUST NOT MOVE HERE ─────────────
+#  Three checks CANNOT live in META_DEBUG and are not silently dropped:
+#    * EXHAUSTION — a spent key calls `error`, which HALTS. A halting probe
+#      cannot return a value to compare, so the refusal is asserted by the gate
+#      running a separate driver and checking a nonzero exit.
+#    * MISSING STATE — likewise halts, in read_file.
+#    * CROSS-PROCESS DURABILITY — a claim about what survives when the process
+#      does not; no in-process test can witness it.
+#  So the spec and the gate are complementary, not redundant, and neither alone
+#  covers the register.
+#
+#  ── ★ THE src/val DRIFT HAZARD THIS FILE INHERITS ────────────────────
+#  Each entry carries BOTH a `src` STRING (what GENERATE writes) and a `val`
+#  (what META_DEBUG runs). They can diverge — and this repo shipped exactly that
+#  on 2026-08-23: canon_spec's live NORMK was corrected while its SRC_NORMK
+#  string was not, so the pipeline TESTED one artifact and DEPLOYED another, and
+#  re-running it silently reverted the fix. Every SRC_ string below is therefore
+#  a transcription of the value directly above it, and the acceptance test is
+#  BEHAVIOURAL rather than textual: gate_xmssidx.sh runs the DEPLOYED module and
+#  requires the same witness line as before. A drifted src produces a module
+#  that behaves differently, and the gate — already mutation-tested against
+#  three separate defects — catches it.
+# ═══════════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + TRIPLE/DEF/CONS/NIL/Z/IF/SEQ/…
+
+# ── implementation VALUES (what META_DEBUG runs) ─────────────────────
+glyph POW2         = la h. bshl(1)(h)
+glyph IDX_CAPACITY = la h. POW2(h)
+glyph IDX_READ     = la path. str_to_int(read_file(path))
+glyph IDX_RESERVE  = la path. la h.
+    (la i.
+      IF(lt(i)(POW2(h)))
+        (la _. SEQ(write_file(path)(int_to_str(add(i)(1))))(i))
+        (la _. error("xmssidx: key exhausted — all 2^h leaf indices used; a new keypair is required, and REUSING one would leak the leaf secret")))
+    (IDX_READ(path))
+
+# ── source strings (what GENERATE writes; transcribed from the values above) ──
+glyph SRC_IF   = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_SEQ  = "la a. la b. b"
+glyph SRC_POW2 = "la h. bshl(1)(h)"
+glyph SRC_CAP  = "la h. POW2(h)"
+glyph SRC_READ = "la path. str_to_int(read_file(path))"
+glyph SRC_RES  = "la path. la h. (la i. IF(lt(i)(POW2(h)))(la _. SEQ(write_file(path)(int_to_str(add(i)(1))))(i))(la _. error(\"xmssidx: key exhausted — all 2^h leaf indices used; a new keypair is required, and REUSING one would leak the leaf secret\")))(IDX_READ(path))"
+
+# ── test-case helpers ────────────────────────────────────────────────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph T1L = la a. CONS(a)(NIL)
+glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
+glyph T3L = la a. la b. la c. CONS(a)(CONS(b)(CONS(c)(NIL)))
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+glyph S   = "xmssidx_spec.state"
+
+glyph IDX_SPEC =
+  CONS(E("IDX_RESERVE")(":: Str -> Int -> Int")(SRC_RES)(IDX_RESERVE)(
+        T3L
+          # a fresh register hands out 0 — and initialises its own state, so
+          # this test does not depend on any other test having run.
+          (TC(la g. SEQ(write_file(S)("0"))(int_to_str(g(S)(2))))("0"))
+          # ★ NO REUSE: two consecutive reserves must differ. This is the whole
+          # purpose of the register, expressed as one glyph's contract.
+          (TC(la g. SEQ(write_file(S)("0"))(concat(int_to_str(g(S)(2)))(int_to_str(g(S)(2)))))("01"))
+          # ★ WRITE-AHEAD: the advance is on DISK after reserving, before the
+          # caller could have signed anything. read_file is the witness.
+          (TC(la g. SEQ(write_file(S)("0"))(SEQ(g(S)(2))(read_file(S))))("1"))))(
+  CONS(E("IDX_READ")(":: Str -> Int")(SRC_READ)(IDX_READ)(
+        T2L(TC(la g. SEQ(write_file(S)("7"))(int_to_str(g(S))))("7"))
+           (TC(la g. SEQ(write_file(S)("0"))(int_to_str(g(S))))("0"))))(
+  CONS(E("IDX_CAPACITY")(":: Int -> Int")(SRC_CAP)(IDX_CAPACITY)(
+        # A tree of height h holds exactly 2^h one-time keys. h=0 is one key,
+        # not zero — the off-by-one that would make a spent key look unspent.
+        T3L(TC(la g. int_to_str(g(0)))("1"))
+           (TC(la g. int_to_str(g(1)))("2"))
+           (TC(la g. int_to_str(g(10)))("1024"))))(
+  CONS(E("POW2")(":: Int -> Int")(SRC_POW2)(POW2)(
+        T2L(TC(la g. int_to_str(g(0)))("1"))
+           (TC(la g. int_to_str(g(4)))("16"))))(
+  # ── support glyphs, kept so the generated module is self-contained ──
+  CONS(E("IF")(":: Bool -> a -> a -> a")(SRC_IF)(IF)(
+        T2L(TC(la g. g(TRUE)(la _. "yes")(la _. "no"))("yes"))
+           (TC(la g. g(FALSE)(la _. "yes")(la _. "no"))("no"))))(
+  CONS(E("SEQ")(":: a -> b -> b")(SRC_SEQ)(SEQ)(
+        # SEQ is the ordering primitive the write-ahead discipline rests on:
+        # naming `a` forces its effect before `b` is produced. The second case
+        # witnesses the EFFECT happening, not merely the value being returned.
+        T2L(TC(la g. g("a")("b"))("b"))
+           (TC(la g. SEQ(write_file(S)("42"))(g(read_file(S))("done")))("done"))))(
+  NIL))))))
+
+glyph MAIN =
+    SEQ(print(concat("=== GENERATE(IDX_SPEC) ===\n")(GENERATE(IDX_SPEC))))
+       (print(DEPLOY(IDX_SPEC)("xmssidx_core.la")))
