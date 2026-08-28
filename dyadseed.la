@@ -1,0 +1,110 @@
+# =====================================================================
+#  dyadseed.la — 0 and 1 beneath the nine primitives.
+#
+#  ── THE QUESTION THIS ANSWERS ───────────────────────────────────────
+#  Erik: "What about the dyad? What about the power of 2, if at all?" — and,
+#  more sharply, that 1 and 0 should START the glyphic sequence.
+#
+#  `archroot.la`'s settled, corpus-honest finding is that only THREE of the
+#  nine primitives derive from the root (SELF, RECOGNITION, LOVE) and SIX are
+#  CO-PRIMITIVE — none is forced into a derivation. Taken as a derivation
+#  chain, "0 and 1 generate the nine" contradicts that finding directly.
+#
+#  ★★ BUT 0 AND 1 ARE ALREADY AT THE BASE OF THE NINE, AND THIS MODULE
+#  WITNESSES IT BY REDUCTION RATHER THAN BY ASSERTION:
+#
+#        VOID     = la a. la b. b                   IS Church ZERO
+#        BEING    = la self. self                   IS Church ONE
+#        BECOMING = la n. la f. la x. f(n(f)(x))    IS the SUCCESSOR
+#
+#  BEING being ONE is not a coincidence and not a pun: the identity function is
+#  eta-equivalent to la f. la x. f(x). Probed, VAL(BEING) = VAL(ONE) = "|".
+#  So Erik's "1 and 0 start the glyphic sequence" is CORRECT, and the two are
+#  the primitives already in the catalogue -- VOID and BEING.
+#
+#  So the naturals are generated beneath TWO of the nine, and `cob.la`'s first
+#  cosmogenic beat is literally ⊗(VOID, BEING) — "the first distinction arises
+#  from the undifferentiated", the 0/1 dyad enacted.
+#
+#  ── THE DISTINCTION THAT KEEPS BOTH TRUE ────────────────────────────
+#  0 and 1 GROUND THE ARITHMETIC STRATUM. They do NOT generate the nine.
+#  That is the same shape as the five vowel nuclei sitting beneath the nine
+#  phonyms: a layer underneath, not a derivation above. Stated this way the
+#  dyad seed and archroot's six UNDERIVED primitives are compatible; stated as a
+#  derivation chain they are not, and archroot's reduction gates would rightly
+#  go RED. This module asserts ONLY the reduction facts.
+#
+#  ── AND THE POWERS OF 2, HONESTLY ───────────────────────────────────
+#  Self-combining a glyph grows the stored DAG LINEARLY (1,2,3,4,5,6) while the
+#  unfolded tree grows as 2^(n+1)−1 (1,3,7,15,31,63). That exponent is real and
+#  measured — and it is EXACTLY AND ONLY binary branching, the counting shadow
+#  of arity-2. Nothing produces powers of two by any other mechanism.
+#  ★ The deeper reading is better than a numerological one: 2^n is the cost the
+#  language REFUSES TO PAY. The seal keeps one glyph while the tree it means
+#  doubles. The power of two is present as the thing defeated, not as a
+#  signature.
+# =====================================================================
+
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+
+# ── the two primitives under test, verbatim from primitives_spec.la ──
+glyph VOID     = la a. la b. b
+glyph BECOMING = la n. la f. la x. f(n(f)(x))
+glyph BEING    = la self. self
+
+# ── a Church numeral is probed by what it DOES, not by what it is called ──
+# n(MARK)("") builds a string of n marks, so the numeral's value is readable.
+glyph MARK  = la s. concat("|")(s)
+glyph VAL   = la n. n(MARK)("")
+
+# ── 1. VOID IS ZERO — not "like" zero, reducible to it ──────────────
+# Church zero is la f. la x. x, which is la a. la b. b up to the names of its
+# binders. The probe: applied to any successor-step and any seed, it yields the
+# seed untouched — no application ever happens.
+glyph ZERO_OK = str_eq(VAL(VOID))("")
+
+# ── 2. BECOMING IS THE SUCCESSOR ────────────────────────────────────
+glyph ONE   = BECOMING(VOID)
+glyph TWO   = BECOMING(ONE)
+glyph THREE = BECOMING(TWO)
+glyph SUCC_OK = AND(str_eq(VAL(ONE))("|"))
+                   (AND(str_eq(VAL(TWO))("||"))(str_eq(VAL(THREE))("|||")))
+
+# ── 3. ★ THE ARITHMETIC STRATUM IS GENERATED, AND ONLY IT ───────────
+# Iterating the successor from VOID reaches every natural. That is the whole
+# claim: a stratum beneath the primitives, not a derivation of them.
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph ITER = Z(la self. la k. IF(int_eq(k)(0))(la _. VOID)(la _. BECOMING(self(sub(k)(1)))))
+glyph REP  = Z(la self. la k. IF(int_eq(k)(0))(la _. "")(la _. concat("|")(self(sub(k)(1)))))
+glyph STRATUM_OK = AND(str_eq(VAL(ITER(5)))(REP(5)))(str_eq(VAL(ITER(9)))(REP(9)))
+
+# ── 4. ★ BEING IS ONE ───────────────────────────────────────────────
+glyph BEING_IS_ONE = str_eq(VAL(BEING))(VAL(ONE))
+
+# ── 5. ★★ AND THE BOUND, PROVED RATHER THAN ASSERTED ────────────────
+# Does the seed GENERATE the nine? No -- and the reason is exact: the map down
+# to numerals is NOT INJECTIVE, so it cannot be inverted. SELF = BEING(BEING)
+# is the identity applied to itself, hence the identity again, hence ONE. So
+# BEING and SELF -- two DISTINCT glyphs, which canon keeps distinct (SELF is
+# the normal form of the rewrite ↻(BEING)) -- collapse to the SAME numeral.
+# A projection that loses a distinction cannot generate what it lost.
+#
+# So both things are true at once, which is what the ruling needs:
+#   0 and 1 GROUND the arithmetic stratum beneath the primitives -- witnessed.
+#   0 and 1 do NOT DERIVE the nine -- archroot's six remain UNDERIVED (THE GAP,
+#   per Erik's ruling 2026-08-24). ⚠️ This module may NOT be cited as that chain.
+# Claimed as a derivation chain it is false; claimed as a stratum it is proved.
+glyph SELF_ = BEING(BEING)
+glyph SEED_BOUND = AND(str_eq(VAL(SELF_))(VAL(BEING)))
+                      (NOT(str_eq(VAL(SELF_))(VAL(VOID))))
+
+glyph MK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat("dyadseed VOID=0 ")(MK(ZERO_OK)))
+                (concat(" | BECOMING=succ ")(MK(SUCC_OK))))
+        (concat(concat(" | stratum ")(MK(STRATUM_OK)))
+               (concat(concat(" | BEING=1 ")(MK(BEING_IS_ONE)))(concat(" | bound(projection not injective) ")(MK(SEED_BOUND))))))
+
+export VOID BECOMING VAL ITER

@@ -1,0 +1,242 @@
+# =====================================================================
+#  phoncoll.la — THE BIJECTION GATE IN THE REGISTER THAT WAS NEVER
+#  CHECKED, and the fourth Engineering Seal.
+#
+#  ── WHAT WAS ALREADY GATED, AND WHAT WAS NOT ────────────────────────
+#  opgrammar.la runs the cross-table monosemy scan on the NORMALISED
+#  canonical key: every entry against every later entry, both tables,
+#  one glyph per concept. That is the bijection gate IN THE GLYPH
+#  REGISTER, and after Erik's four rulings it is clean.
+#
+#  Nothing had ever run it in the PHONETIC register. Synthesis is gated
+#  (phonym.la, goertzel.la) and the ⊗-compound recovery is gated, but
+#  the question "do two DISTINCT concepts ever come out SOUNDING the
+#  same across the whole vocabulary?" had no answer. It is the acoustic
+#  twin of a gate the glyphic side has had for months, and it is the
+#  fourth Engineering Seal -- PERCEPTUAL DISCRIMINABILITY -- which had
+#  no implementation at all.
+#
+#      An identity that cannot be perceived is not yet a distinction
+#      for the speaker.
+#
+#  ── TWO PROPERTIES, AND ONLY ONE OF THEM IS A GATE ──────────────────
+#  ★ HOMOPHONY is decidable, so it is GATED. Two distinct canonical
+#    forms rendering to the SAME phonym is a flat violation of the
+#    trimodal identity: one sound, two concepts, which is exactly the
+#    polysemy the language exists to forbid, arriving through the
+#    phonetic door while the glyphic door is bolted.
+#
+#  ★ CONFUSABILITY needs a DECLARED metric, and the declaration is a
+#    ruling about the phonology rather than a fact about the code. So
+#    the metric is declared narrowly and its findings are PINNED AS AN
+#    INVENTORY, not failed:
+#
+#        CONFUSABLE(a,b) := a and b are identical once stress is
+#                           removed, i.e. they differ ONLY in stress.
+#
+#    The codex treats stress as PHONEMIC -- it prints /l'a/ for
+#    Gratitude and /v'ura/ for Give, and the stress rule was corrected
+#    this session against the codex's own example sentences. So a
+#    stress-only pair is a legitimate minimal pair, NOT a defect. What
+#    it is, is THIN: a two-syllable word distinguished from another
+#    only by which vowel carries the accent is the least redundant
+#    contrast this phonology can produce, and a language whose whole
+#    claim is unambiguity should know how many of those it has rather
+#    than discover it from a speaker.
+#    Inventing an acoustic threshold to fail them on would be this
+#    module ruling on the language. Counting them is not.
+#
+#  ── WHY THE MEASUREMENT IS CHEAP ────────────────────────────────────
+#  The canonical form and the phonym are computed ONCE PER ENTRY into a
+#  keyed table, then the scan compares precomputed fields. Recomputing
+#  PH_N across the square would be quadratic in a recursive renderer;
+#  computing it once per row is not. Same substitution opgrammar.la
+#  makes, and sound for the same reason -- what is compared is still
+#  the normalised value, not a cheaper proxy for it.
+# =====================================================================
+
+import("lexicon.la")    # PARSE PH_N KAN_N LEX RULED FOLD
+import("opgrammar.la")  # GRAM GRULED
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph TRUE = la t. la f. t
+glyph FST  = la p. p(la a. la b. a)
+
+glyph UPTO = Z(la self. la d. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(str_eq(str_head(s))(d))(la _. "")
+      (la _. concat(str_head(s))(self(d)(str_tail(s))))))
+glyph PAST = Z(la self. la d. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(str_eq(str_head(s))(d))(la _. str_tail(s))
+      (la _. self(d)(str_tail(s)))))
+
+glyph T_ = la d. FST(PARSE(d))
+glyph K_ = la d. KAN_N(T_(d))
+glyph P_ = la d. PH_N(T_(d))
+
+# ── strip the stress mark: the declared confusability metric ─────────
+glyph STRIP = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(str_eq(str_head(s))("'"))(la _. self(str_tail(s)))
+      (la _. concat(str_head(s))(self(str_tail(s))))))
+
+glyph ALL_ = concat(concat(LEX)(GRAM))(concat(RULED)(GRULED))
+
+# ── the keyed table: NAME|CANONICAL|PHONYM, computed once per entry ──
+glyph KP = FOLD(la a. la n. la d. la p.
+    concat(a)(concat(n)(concat("|")(concat(K_(d))(concat("|")(concat(P_(d))(";")))))))("")(ALL_)
+
+# ── field accessors over one NAME|K|P record ─────────────────────────
+glyph F_NAME = la r. UPTO("|")(r)
+glyph F_KEY  = la r. UPTO("|")(PAST("|")(r))
+glyph F_PH   = la r. UPTO("|")(PAST("|")(PAST("|")(r)))
+
+# ── the pairwise scan. Each entry against the entries AFTER it, so a
+#    colliding pair is reported once and in table order; a scan over
+#    the whole square would double-report and the count would silently
+#    mean something else.
+#    MODE: "h" collects exact homophones, "s" collects stress-only pairs.
+# MATCH : the mode-selected comparison. "h" = exact homophony (a flat
+# violation); "s" = the declared confusability metric, equal-after-
+# stripping-stress but NOT equal outright.
+glyph MATCH = la mode. la p2. la ph.
+    IF(str_eq(mode)("h"))(la _. str_eq(p2)(ph))
+      (la _. AND(NOT(str_eq(p2)(ph)))(str_eq(STRIP(p2))(STRIP(ph))))
+
+# HIT : one candidate record against the entry being scanned. Entries
+# with the SAME canonical key are the same concept and are skipped --
+# an alias sounding like itself is not a collision.
+glyph HIT = la self. la mode. la nm. la k. la ph. la rec. la rest.
+    IF(str_eq(F_KEY(rec))(k))(la _. self(mode)(nm)(k)(ph)(rest))(la _.
+    IF(MATCH(mode)(F_PH(rec))(ph))
+      (la _. concat(concat(nm)(concat("=")(concat(F_NAME(rec))(" "))))(self(mode)(nm)(k)(ph)(rest)))
+      (la _. self(mode)(nm)(k)(ph)(rest)))
+
+glyph INNER = Z(la self. la mode. la nm. la k. la ph. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      HIT(self)(mode)(nm)(k)(ph)(UPTO(";")(s))(PAST(";")(s))))
+
+glyph SCAN = Z(la self. la mode. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      concat(INNER(mode)(F_NAME(UPTO(";")(s)))(F_KEY(UPTO(";")(s)))(F_PH(UPTO(";")(s)))(PAST(";")(s)))
+            (self(mode)(PAST(";")(s)))))
+
+glyph HOMOPHONES = SCAN("h")(KP)
+glyph STRESSONLY = SCAN("s")(KP)
+
+# ── ★ THE GATE: no two distinct canonical forms may SOUND the same ───
+glyph OK_INJECTIVE = str_eq(HOMOPHONES)("")
+
+# ── ★★ THE RED PATH, RE-FOUNDED 2026-08-26 (R-D). A scan that found
+#    nothing has to prove it looked, or OK_INJECTIVE passes vacuously.
+#    The OLD control was `NOT(str_eq(STRESSONLY)(""))` -- it asserted the
+#    VOCABULARY still contained a stress-only pair, using Know/You as the
+#    fixture. R-D removed the last such pair (see the measured result
+#    below), so that control now fails for the RIGHT reason: its fixture
+#    was an accident of the vocabulary, and the accident has been fixed.
+#    ★ Deleting it would have been the wrong repair. It is the only thing
+#    separating "no collisions" from "the scan is broken", which is this
+#    codebase's highest-yield defect shape -- an instrument reporting
+#    ABSENCE must prove it LOOKED.
+#    So it is re-founded on CONSTRUCTED input, which cannot be removed by
+#    fixing the language: the confusability metric itself is exercised on
+#    a pair built here, in both directions.
+#      positive: /m'ashi/ vs /mashi/ differ ONLY in stress  -> MATCH "s" TRUE
+#      negative: /mashi/  vs /mashu/ differ in a SEGMENT    -> MATCH "s" FALSE
+#    If STRIP or MATCH break, one of these flips and the module goes red
+#    even though the vocabulary scan is clean. That is the property the
+#    old fixture only accidentally had.
+glyph SAW_POS = MATCH("s")("m'ashi")("mashi")
+glyph SAW_NEG = NOT(MATCH("s")("mashi")("mashu"))
+glyph OK_SAW  = AND(SAW_POS)(SAW_NEG)
+
+# ── the pinned inventory of thin contrasts (a MEASUREMENT) ───────────
+#  Not a failure. Pinned so it cannot GROW silently: a new entry that
+#  lands on an existing phonym-modulo-stress turns this red and forces
+#  the question to be looked at rather than drifted past.
+# ── ★★ RESOLVED 2026-08-26 BY R-D. THE SET IS NOW EMPTY. ────────────
+#  Erik's ruling 2026-08-24: "an accent mark alone is insufficient for the
+#  two most-used operators." ▷ now carries a SECOND cue in the ROMANISED
+#  register -- a tail DURATION mark ":" (lexicon.la's PH, DIR branch), in
+#  addition to the head stress it already had. ASCII on purpose: the ruling
+#  requires the cue to survive across rendering environments, and ":" occurs
+#  nowhere else in the phonym alphabet (verified: zero occurrences before
+#  the change), so it cannot collide with an existing contrast.
+#  ★ ALL FIFTEEN pairs are gone; the stress-only set measures EMPTY, and
+#    homophones remain empty, so nothing was traded for it.
+#
+#  ★ AN HONEST QUALIFICATION ON "FOLLOWING THE AUDIO". The ruling ranked
+#    duration first BECAUSE "▷ already carries a rate marker in PCM, so the
+#    written form would be following the audio rather than inventing". Read
+#    against the code that premise is INEXACT and saying so matters: DIRP's
+#    acoustic marker is a PERIODIC AMPLITUDE MODULATION of the tail (4/8-5/8
+#    -6/8 at period 128), and its own comment records that DURATION IS
+#    PRESERVED EXACTLY (np+nq) -- deliberately, because a ▷ compound sits in
+#    the gated WAV output and a length change would move the file size.
+#    So a written duration mark is NOT a transcription of the acoustic
+#    parameter. What it IS: a convention marking the SAME OPERAND the audio
+#    marks. That is still a strict improvement, because until now the two
+#    registers did not even agree on which operand carries ▷ --
+#    ★ THE WRITING STRESSED THE HEAD WHILE THE AUDIO MODULATED THE TAIL.
+#    The duration mark puts the written cue on the tail, where the acoustic
+#    one is. A fully faithful romanisation of a periodic modulation is a
+#    separate question and is NOT claimed here.
+#
+#  ── WHAT THE MEASUREMENT WAS, BEFORE THE FIX (kept: it is the evidence) ─
+#  FIFTEEN pairs of distinct concepts differed ONLY in stress. Checked
+#  mechanically rather than by eye: in ALL FIFTEEN, the two entries have
+#  the SAME OPERAND PAIR and differ only in ⊗ versus ▷. Zero exceptions.
+#
+#      ★ THE ⊗/▷ DISTINCTION IS CARRIED, IN THE ROMANISED PHONETIC
+#        REGISTER, BY STRESS ALONE.
+#
+#  Substance/This · Appearance/See · Care/Kindness · Alter/Can ·
+#  Large/This · Small/That · Old/Future · Warm/Gratitude ·
+#  False/Question · Promise/We · Witness/Consciousness · You/Know
+#
+#  These are the two most-used operators -- ablate.la's census counts
+#  ⊗=59 and ▷=24 across the vocabulary -- separated by an accent mark.
+#  THIRTEEN OF THE FIFTEEN ARE THE CODEX'S OWN ENTRIES; only Alter/Can
+#  and You/Know come from this session's rulings, so the thinness is
+#  the phonology's and not something the rulings introduced.
+#
+#  ── THE SCOPE, WHICH IS NARROWER THAN THE HEADLINE ──────────────────
+#  This gate reads the ROMANISED phonym, which is what the codex prints
+#  and what a person reads and writes. It is NOT a claim about the PCM.
+#  phonym.la's ▷ renderer gained a RATE-CARRIED marker this session --
+#  added precisely because a level cue was measured false, the parents'
+#  own loudness normalising any fixed ratio away -- so the acoustic
+#  signal for ▷ now carries more than the romanisation shows. Whether
+#  that is ENOUGH is a separate, open question, and phonseq.la still
+#  reports ▷ as a leaf. So: the writing system separates ⊗ from ▷ by
+#  stress alone; the audio separates them by stress plus a rate marker
+#  of unverified sufficiency. Both statements are needed; either alone
+#  misleads.
+#
+#  Pinned. The pin now reads EMPTY, and it still means what it meant: the
+#  set cannot change silently IN EITHER DIRECTION. A new entry that lands
+#  on an existing phonym-modulo-stress turns this red and forces the
+#  question to be looked at rather than drifted past -- and so does a
+#  regression that removes the ▷ duration cue, since all fifteen would
+#  return at once.
+#  ★ COST, STATED: the derived phonym for every ▷ entry now DIFFERS from
+#  the codex's printed IPA, which predates the cue. lexicon.la's codex
+#  concordance moved from `agree=55 diverge=2 [Think Gratitude]` to
+#  `agree=43 diverge=14`, and the divergent set is EXACTLY the fourteen
+#  LEX entries whose canonical form contains ▷ -- verified against an
+#  independent census, not read off the new output. That is a PRINCIPLED
+#  divergence (every ▷ entry, by construction) rather than a number that
+#  drifted, and build.sh asserts the SET, not the count.
+glyph OK_STRESSSET = str_eq(STRESSONLY)("")
+
+glyph MK  = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph J   = la a. la b. concat(a)(b)
+glyph ROW = la l. la c. J(J(" | ")(l))(J(" ")(MK(c)))
+glyph HDR = J("phoncoll homophones=[")(J(HOMOPHONES)(J("] stress-only=[")(J(STRESSONLY)("]"))))
+glyph MAIN = print(J(HDR)(J(ROW("phonetic-injective")(OK_INJECTIVE))(J(ROW("scan-proved-it-looked")(OK_SAW))(ROW("stress-inventory-pinned")(OK_STRESSSET)))))
+
+export STRIP KP HOMOPHONES STRESSONLY

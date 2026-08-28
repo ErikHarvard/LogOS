@@ -29,3 +29,4 @@ glyph PERFORMATIVE = la utterance. la effect. str_eq(utterance)(effect)
 glyph IGNITION = la speaker. la initiator. IF(str_eq(speaker)(initiator))(la _. "self-ignited")(la _. "other-ignited")
 # PRAGMATICS : :: a -> b
 glyph PRAGMATICS = la g. str_eq(g)("PRAGMATICS")
+export TRUE FALSE NOT AND IF PAIR FST SND USE HETERO_PROMPTED AUTO_PROMPTED META_PROMPTED PERFORMATIVE IGNITION PRAGMATICS 

@@ -1,0 +1,112 @@
+# ════════════════════════════════════════════════════════════════════
+#  grammar_l3.la — ITEM 5, L3: THE GRAMMAR PARSING ITSELF.
+#
+#  L1 made the grammar first-class DATA; L2 gave GPARSE, an interpreter over
+#  that data, differentially checked against parser.la (60/60, both sides, via
+#  fuzz_grammar.py). L3 is the self-application: **GPARSE, driven by the data
+#  grammar, parses the source file that DEFINES the data grammar.**
+#
+#  ── HOW IT COMPOSES, AND WHY IT IS A CONCATENATION ──────────────────
+#  Run as:  cat grammar_l3.la grammar.la <parser.la minus its MAIN>
+#  · `import("parser.la")` does NOT work: parser.la carries no `export` line, so
+#    the import binds nothing. Concatenation is this codebase's existing answer
+#    (build.sh does exactly this for monosemy_test: `cat canon.la monosemy_test.la`).
+#  · ORDER IS LOAD-BEARING. Redefinition takes the FIRST binding, and parser.la
+#    and grammar.la use INCOMPATIBLE list encodings —
+#        parser.la : NIL = PAIR(FALSE)(""), CONS = tagged pair
+#        grammar.la: NIL = la n. la c. n,   CONS = Scott
+#    GPARSE deconstructs its token list Scott-style, so grammar.la's must win;
+#    hence grammar.la precedes parser.la. This is safe because parser.la's LEXER
+#    (SKIP_SPACES/LEX_ONE/READ_IDENT/READ_STRING/MKTOK/NEXT_TOKEN) uses PAIR and
+#    strings ONLY — verified: zero NIL/CONS references in that region. Concatenating
+#    them in the other order fails loudly, which is how the incompatibility was found.
+#  · parser.la's own MAIN is trimmed; otherwise IT wins (first binding) and parses
+#    kernel.la instead of running this gate.
+#
+#  ── THE BOUND THIS RESPECTS ─────────────────────────────────────────
+#  ★ THE LEXER IS NOT RE-IMPLEMENTED. L2's stated bound is that GPARSE consumes
+#    TOKEN TYPES and lexing is parser.la's job. So TOKENIZE below is a thin driver
+#    over parser.la's OWN NEXT_TOKEN, keeping the type names it produces. A lexer
+#    written here for this test could be tuned until the self-parse passed, which
+#    is exactly the result this must not be.
+#
+#  ── WHAT IS AND IS NOT CLAIMED ──────────────────────────────────────
+#  ★ CLAIMED: the data grammar accepts the full 144-line source of the module that
+#    defines it, and REJECTS a corrupted version of that same token stream.
+#  ★ NOT CLAIMED: that GPARSE is parser.la. L2's associativity blind spot is
+#    unchanged — app_tail is left-associative and a verdict-only differential
+#    cannot see associativity. L3 inherits that bound and does not repair it.
+#  ★ NOT CLAIMED: unbounded self-parse. This is ONE file — its own. That is the
+#    file the discriminator names, and the honest word for it is BOUNDED.
+#
+#  ── ★★ THE MEASURED BOUND, AND IT IS A PERFORMANCE BOUND, NOT A GRAMMAR ONE ──
+#  grammar.la lexes to 1689 tokens. TOKENIZE handles that quickly — the lexer is
+#  not the cost. GPARSE is: MATCH does NAIVE BACKTRACKING alternation, re-scanning
+#  from the same position on every failed arm, and P_MODULE is a STAR over an ALT,
+#  so the work grows superlinearly in token count. Measured on prefixes cut at
+#  definition boundaries (so a slice never ends mid-definition, which would confuse
+#  "rejected because truncated" with "rejected because broken"):
+#
+#      defs  lines  tokens   accept  reject-corrupted   time
+#        4     47      84      T           F             2s
+#        8     51     145      T           F             5s
+#       12     58     209      T           F             7s
+#       16     62     333      T           F            15s
+#       20     78     538      T           F            37s
+#
+#       ALL   144    1689      T           F          1637s (27 min)
+#
+#  ★★ THE WHOLE FILE SELF-PARSES. Witnessed 2026-08-26 19:05: accept=T, reject=F on
+#    the complete 1689-token stream, in 27 minutes. An earlier version of this header
+#    said the full run "has not been witnessed to complete" — that was TRUE WHEN
+#    WRITTEN and is now FALSE; it is corrected rather than quietly dropped, because a
+#    stale bound reads as a real one.
+#  ★ EVERY size self-parses CORRECTLY — accept=T and reject=F throughout, so the
+#    grammar was never what was in doubt; the interpreter is slow. Cost grows about
+#    n^3.3 (538 tok/37s -> 1689 tok/1637s is 3.1x the tokens for 44x the time),
+#    which is the signature of MATCH re-scanning from the same position on every
+#    failed arm of a STAR-over-ALT.
+#  ★ THE REJECT ARM IS WHAT MAKES THE ACCEPTS MEAN ANYTHING. Without it a GPARSE
+#    that returned TRUE unconditionally would produce an identical accept column.
+#  ★ WHY THE GATE STILL USES A PREFIX: build time, not evidence. 27 minutes is ~15%
+#    on a 3-hour build for a fact already established out of band. Point SELF_SRC at
+#    grammar.la directly to reproduce the whole-file result.
+# ════════════════════════════════════════════════════════════════════
+
+# TOKENIZE — parser.la's own lexer, driven to exhaustion, keeping TYPES only.
+# Builds with grammar.la's Scott CONS/NIL (forward-referenced), which is what
+# GPARSE consumes.
+glyph TOKENIZE = Z(la self. la s.
+    (la r. (la tk.
+        IF(str_eq(TOK_TYPE(tk))("eof"))(la _. NIL)
+          (la _. CONS(TOK_TYPE(tk))(self(SND(r)))))(FST(r)))(NEXT_TOKEN(s)))
+
+glyph TLEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+
+# THE SUBJECT: this module's own grammar definition, read from disk.
+# ★ THE SUBJECT IS SUPPLIED AS A FILE so the same module can be run against the
+#   WHOLE of grammar.la (the true self-parse, which is slow — see the bound above)
+#   and against a definition-boundary PREFIX of it (which is what build.sh gates,
+#   because a gate may only assert what has been WITNESSED to terminate).
+#   In both cases the subject is grammar.la's own source: the prefix is a prefix
+#   OF THE SELF, not a different corpus. build.sh writes l3_subject.la.
+glyph SELF_SRC    = read_file("l3_subject.la")
+glyph SELF_TOKENS = TOKENIZE(SELF_SRC)
+
+# ★ THE SELF-PARSE.
+glyph L3_ACCEPT = GPARSE("module")(SELF_TOKENS)
+
+# ★ THE REJECT ARM. A self-parse that can only say T is not a gate — it would pass
+#   identically if GPARSE returned TRUE unconditionally. Prefixing an `eq` token
+#   makes the stream start with `=`, which no production can begin, so a working
+#   GPARSE must refuse it. Same tokens otherwise, so nothing but validity differs.
+glyph L3_REJECT = GPARSE("module")(CONS("eq")(SELF_TOKENS))
+
+glyph L3 = concat(BSTR(L3_ACCEPT))(BSTR(L3_REJECT))
+
+glyph SEQ3 = la a. la b. b
+glyph LN1 = print(concat("ITEM5 L3 self-parse: tokens=")(int_to_str(TLEN(SELF_TOKENS))))
+glyph LN2 = print(concat("L3 accept(own source)=")(concat(BSTR(L3_ACCEPT))(concat("  reject(corrupted)=")(BSTR(L3_REJECT)))))
+glyph LN3 = print(concat("L3 verdict [want TF] = ")(L3))
+glyph LN4 = print("(the data grammar parses the source that defines it; BOUNDED to that one file)")
+glyph MAIN = SEQ3(LN1)(SEQ3(LN2)(SEQ3(LN3)(LN4)))

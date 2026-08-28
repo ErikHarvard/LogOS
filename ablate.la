@@ -1,0 +1,151 @@
+# =====================================================================
+#  ablate.la — IS ANY OF THE FIVE OPERATORS ELIMINABLE?
+#
+#  The language claims five combination modes and claims they are
+#  PRIMITIVE — "the five operators span the modes of combination"
+#  (:5429). A primitive that does no distinguishing work is not a
+#  primitive; it is decoration, and the minimality the whole design rests
+#  on would be false. Nothing had ever asked the question.
+#
+#  ── THE METHOD: ABLATION ────────────────────────────────────────────
+#  Remove one operator by collapsing it into another, and ask what stops
+#  being sayable. If two distinct concepts become one glyph, the operator
+#  was load-bearing and the collapse names exactly what it carried. If
+#  nothing changes, the operator distinguishes nothing in the vocabulary
+#  that exists, and that is worth knowing.
+#
+#  ── ★ AND THE USAGE CENSUS, WHICH IS THE PART THAT SURPRISED ────────
+#  Before ablating, simply count which operators the codex's own 79-entry
+#  vocabulary actually USES. An operator can only be load-bearing where it
+#  appears. The census is exact and cheap: the derivation strings are the
+#  data, so this is a count, not an estimate.
+# =====================================================================
+
+import("lexicon.la")   # PARSE PH KAN PH_N PRIM SYN CON DIR CONT MC LEX RULED FOLD
+import("opgrammar.la")  # GRAM GRULED
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph TRUE = la t. la f. t
+glyph FST  = la p. p(la a. la b. a)
+glyph T_   = la d. FST(PARSE(d))
+glyph P_   = la d. PH_N(T_(d))
+
+# ★ THE CENSUS MUST RANGE OVER THE WHOLE VOCABULARY, NOT THE CODEX
+# TABLES. When Erik's rulings (2026-08-23) moved Bad and Because onto ⊂,
+# they landed in RULED/GRULED -- and a census over LEX+GRAM alone went on
+# reporting ⊂=0 while the language had two ⊂ concepts and a negation rule
+# applying ⊂ to every negated sentence. The instrument would have hidden
+# the very change that answered its own finding. A census that names a
+# gap must range over everything that could close it.
+glyph ALL_ = concat(concat(LEX)(GRAM))(concat(RULED)(GRULED))
+
+# ── the census. ★ It must count inside the DERIVATION FIELD ONLY.
+#    The first version counted the mode character anywhere in the table
+#    and reported ⊂=8, ↻=29 — because "c" occurs in Consciousness, Care,
+#    Cold, Change, Can, Community and "m" in ma, shima, Move, Many. The
+#    comment justifying that shortcut asserted the mode characters could
+#    not appear in a name or a phonym. That was simply false, and it was
+#    prose, so nothing checked it. The gate caught it only because a
+#    prediction had been committed to in advance.
+glyph UPTO = Z(la self. la d. la s. IF(str_eq(s)(""))(la _. "")(la _. IF(str_eq(str_head(s))(d))(la _. "")(la _. concat(str_head(s))(self(d)(str_tail(s))))))
+glyph PAST = Z(la self. la d. la s. IF(str_eq(s)(""))(la _. "")(la _. IF(str_eq(str_head(s))(d))(la _. str_tail(s))(la _. self(d)(str_tail(s)))))
+
+glyph CNT1 = Z(la self. la ch. la s.
+    IF(str_eq(s)(""))(la _. 0)(la _.
+    IF(str_eq(str_head(s))(ch))(la _. add(1)(self(ch)(str_tail(s))))
+      (la _. self(ch)(str_tail(s)))))
+
+glyph CNT = Z(la self. la ch. la s.
+    IF(str_eq(s)(""))(la _. 0)(la _.
+      (la rec. add(CNT1(ch)(UPTO("|")(PAST("|")(rec))))(self(ch)(PAST(";")(s))))
+      (UPTO(";")(s))))
+
+glyph N_SYN  = CNT("*")(ALL_)
+glyph N_CON  = CNT("+")(ALL_)
+glyph N_DIR  = CNT(">")(ALL_)
+glyph N_CONT = CNT("c")(ALL_)
+glyph N_MC   = CNT("m")(ALL_)
+
+# ── ★★ THE FINDING: ⊂ IS NEVER USED ─────────────────────────────────
+#  Ontocontainment appears in the operator table, in the sigil blend
+#  modes, in the phonology (B[A]B framing) and in sentence-formation rule
+#  (viii) — and in NOT ONE of the 79 lexical entries. The codex's own
+#  vocabulary never once forms a concept by containment.
+#
+#  That is not a defect in the operator; rule (viii) uses it and the
+#  embedding it performs is real. It is a gap in the LEXICON: the closure
+#  Cl(M₀, {⊗ ⊕ ▷ ⊂ ↻}) is claimed over five modes and exercised over four.
+#  Any claim that the vocabulary demonstrates the five-operator algebra is
+#  overstated by exactly one operator, and this pins that.
+# ── ★★ AND THE FINDING IS NOW CLOSED (2026-08-23) ───────────────────
+#  The gap above was real and is answered. Erik's ruling on the C9
+#  collision moved NEGATION off ⊕ -- which, being commutative, made every
+#  ¬X identical to the co-presence X⊕Void -- and onto ⊂. ⊂ was chosen
+#  BECAUSE this census measured it at zero: it was the only operator
+#  whose adoption could not collide with an existing concept. So the
+#  measurement did not merely record the gap, it selected the fix.
+#  ⊂ now carries two concepts (Bad = ⊂(LOVE,VOID), Because =
+#  ⊂(BECOMING,RELATION)) and sentence-rule (ii), which applies it to
+#  EVERY negated utterance -- load-bearing use, not a token entry added
+#  to make a count non-zero, which is exactly what the original finding
+#  warned against.
+#  The gate is INVERTED rather than deleted: ⊂ must now be used, so a
+#  revert of the ruling turns this RED instead of silently restoring a
+#  four-operator lexicon.
+glyph OK_CONT_USED = lt(0)(N_CONT)
+glyph OK_OTHERS_USED = AND(lt(0)(N_SYN))(AND(lt(0)(N_CON))(AND(lt(0)(N_DIR))(lt(0)(N_MC))))
+
+# ── ABLATION. Each rewriter collapses ONE mode into another and leaves
+#    the rest alone, so what is lost is attributable to that mode.
+glyph AB_CON = Z(la self. la t.
+    t(la d. PRIM(d))(la a. la b. SYN(self(a))(self(b)))(la a. la b. SYN(self(a))(self(b)))
+     (la a. la b. DIR(self(a))(self(b)))(la a. la b. CONT(self(a))(self(b)))(la a. MC(self(a))))
+glyph AB_DIR = Z(la self. la t.
+    t(la d. PRIM(d))(la a. la b. SYN(self(a))(self(b)))(la a. la b. CON(self(a))(self(b)))
+     (la a. la b. SYN(self(a))(self(b)))(la a. la b. CONT(self(a))(self(b)))(la a. MC(self(a))))
+glyph AB_MC  = Z(la self. la t.
+    t(la d. PRIM(d))(la a. la b. SYN(self(a))(self(b)))(la a. la b. CON(self(a))(self(b)))
+     (la a. la b. DIR(self(a))(self(b)))(la a. la b. CONT(self(a))(self(b)))(la a. self(a)))
+
+# ── ★ what each ablation DESTROYS, named concretely. These are real
+#    lexicon pairs, distinguished by exactly one operator.
+#    Removing ⊕ : Cold ⊗(VOID,LOVE) and Bad ⊕(VOID,LOVE) become one glyph.
+#    Removing ▷ : Kindness ⊗(LOVE,SELF) and Care ▷(LOVE,SELF) become one.
+#                 Consciousness ⊗(RECOG,SELF) and Witness ▷(RECOG,SELF) too.
+#    Removing ↻ : Yes ↻(RECOGNITION) becomes bare Recognition — the
+#                 affirmative particle stops existing.
+glyph SAME_AB = la ab. la x. la y. str_eq(KAN(ab(T_(x))))(KAN(ab(T_(y))))
+glyph DIFF_NOW = la x. la y. NOT(str_eq(KAN(T_(x)))(KAN(T_(y))))
+
+glyph LOSS_CON = AND(DIFF_NOW("*63")("+63"))(SAME_AB(AB_CON)("*63")("+63"))
+glyph LOSS_DIR = AND(AND(DIFF_NOW("*34")(">34"))(SAME_AB(AB_DIR)("*34")(">34")))
+                    (AND(DIFF_NOW("*24")(">24"))(SAME_AB(AB_DIR)("*24")(">24")))
+glyph LOSS_MC  = AND(DIFF_NOW("m2")("2"))(SAME_AB(AB_MC)("m2")("2"))
+
+# ── ★★ AND THE CONTROL, WITHOUT WHICH THE ABOVE PROVES NOTHING ──────
+#    An ablation that collapsed EVERYTHING would satisfy every check
+#    above while telling us nothing about the operator removed. So each
+#    ablation must leave untouched pairs still distinct: removing ⊕ must
+#    not collapse a ▷ pair, and removing ▷ must not collapse a ⊕ pair.
+glyph OK_ABL_TARGETED = AND(NOT(SAME_AB(AB_CON)("*34")(">34")))
+                           (AND(NOT(SAME_AB(AB_DIR)("*63")("+63")))
+                               (NOT(SAME_AB(AB_MC)("*63")("+63"))))
+
+glyph OK_ALL_LOADBEARING = AND(LOSS_CON)(AND(LOSS_DIR)(LOSS_MC))
+
+glyph MK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat(concat("ablate census ⊗=")(int_to_str(N_SYN)))
+                       (concat(" ⊕=")(int_to_str(N_CON))))
+                (concat(concat(" ▷=")(int_to_str(N_DIR)))
+                       (concat(concat(" ⊂=")(int_to_str(N_CONT)))
+                              (concat(" ↻=")(int_to_str(N_MC))))))
+        (concat(concat(concat(" | ⊂-now-used ")(MK(OK_CONT_USED)))
+                      (concat(" | others-used ")(MK(OK_OTHERS_USED))))
+               (concat(concat(concat(" | loss⊕ ")(MK(LOSS_CON)))
+                             (concat(concat(" | loss▷ ")(MK(LOSS_DIR)))(concat(" | loss↻ ")(MK(LOSS_MC)))))
+                      (concat(concat(" | targeted ")(MK(OK_ABL_TARGETED)))
+                             (concat(" | all-load-bearing ")(MK(OK_ALL_LOADBEARING)))))))
