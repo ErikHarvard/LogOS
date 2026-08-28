@@ -60,6 +60,38 @@ Marker, measured: 20 CAUGHT lines, 19 carry a `% of baseline` ratio, the 1
 without is the bogus one — the ratio is computed against the gate's runtime, so
 it cannot exist when the gate never ran.
 
+### ★★ THE STANDARD DOES NOT PREVENT THE NEXT INSTANCE — measured, same day
+Recorded because it is the accurate picture of how these classes propagate, and
+because a governing section that omitted it would be claiming more than it earns.
+
+The rule *reconcile against an independently obtained count before acting* was
+written into this document, applied to the untracked-file scan, and caught **27
+files** whose absence would have produced a checkout that cannot build. Within
+the same hour the same rule was **not** applied to the staging check one step
+later, and commit `a9e27e8` went out materially incomplete: `specpipe.la` — the
+export fix — absent while a generated output of it was present, and the eight
+newly-gated modules committed alongside a `build.sh` that gates none of them.
+It committed the exact condition this section exists to remove, in the commit
+whose message argues against it.
+
+Same rule, same person, same hour, adjacent step.
+
+★ **What caught it was not the knowledge. It was repeating the ACT** — counting
+what remained uncommitted *after* committing, rather than trusting that the
+staged set was complete. The taxonomy names the class; naming does not fire.
+A written standard is a lookup table someone has to remember to consult, and the
+moment of not consulting it is precisely the moment one believes the work is
+finished.
+
+⇒ **THE OPERATIONAL FORM.** Attach the rule to the ACT, not to the class:
+* after any bulk `add`/stage — **count what REMAINS**, and read the list;
+* after any scan you are about to act on — reconcile against a count obtained
+  **another way**, before acting;
+* after any completion — ask **what would look identical if this had failed**.
+
+Three habits rather than one principle, because the principle was already
+written down and did not fire.
+
 ### The corollary for instruments — the subjects are not the only thing that rots
 An instrument's `--selftest` must calibrate **coverage**, not only detection. A
 tool can pass a detection control while reading half its surface — and then a

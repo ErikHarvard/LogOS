@@ -65,8 +65,15 @@ emit honest && {
   mkaudit
   H="$(run_host)"; V="$(run_vm)"
   [ "$H" = "$HELD_OUT" ] || { echo "FAIL  selfext5(A): host leg gave '$H', expected '$HELD_OUT'"; ok=0; }
-  [ "$V" = "$HELD_OUT" ] || { echo "FAIL  selfext5(A): VM leg gave '$V', expected '$HELD_OUT'"; ok=0; }
-  [ "$H" = "$V" ] || { echo "FAIL  selfext5(A): host and VM DISAGREE — host '$H' vs VM '$V'. This is a failure, not a note"; ok=0; }
+  # ★★ RE-POINTED, NOT DELETED (III-5). This was three comparisons among three
+  #    values — H=E, V=E, H=V — where two carry all the information, so the third
+  #    was implied and COULD NOT FIRE ALONE. The message below ends "This is a
+  #    failure, not a note", written with conviction, on the line that could not
+  #    fire. Comparing the VM TO THE HOST instead keeps identical total strength
+  #    (H=E and V=H is equivalent to H=E and V=E) and makes every line live: the
+  #    first fires when both engines are wrong identically, the second when the VM
+  #    alone is wrong.
+  [ "$V" = "$H" ] || { echo "FAIL  selfext5(A): host and VM DISAGREE — host '$H' vs VM '$V'. This is a failure, not a note"; ok=0; }
   [ -s logos_program.bin ] || { echo "FAIL  selfext5(A): no compiled stream — the VM leg cannot have run"; ok=0; }
 }
 

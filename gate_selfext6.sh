@@ -59,7 +59,8 @@ rm -f logos_program.bin logos_source.la
 cp sx6_audit.la logos_source.la
 timeout 900 ./tiny_host codegen.la >/dev/null 2>&1
 CV="$(timeout 300 ./logos_secd 2>&1)"
-[ "$CV" = "$HELD_OUT" ] || { echo "FAIL  selfext6(D): the native VM gave '$CV', expected '$HELD_OUT'"; ok=0; }
+# ★ RE-POINTED (III-5): CH=E and CV=E and CV=CH is a triangle whose third line is
+#   implied. Compare the VM TO THE HOST — same strength, both lines live.
 [ "$CV" = "$CH" ] || { echo "FAIL  selfext6(D): host and VM DISAGREE on the unattended result — host '$CH' vs VM '$CV'"; ok=0; }
 
 # ── ARM F: it must clear the ratchet ────────────────────────────────────

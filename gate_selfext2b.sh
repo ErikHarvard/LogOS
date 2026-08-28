@@ -29,13 +29,57 @@ ok=1
 python3 gate_selfext2b_safety.py >/dev/null 2>&1 \
   || { echo "FAIL  selfext2b: the exec-surface safety gate is RED — refusing to fork"; exit 1; }
 
+# ── ★★ A SKIP MUST NOT SATISFY A REQUIRED GATE (III-1) ──────────────────────
+#  This loop returned EXIT 0 when a vessel was missing, and build.sh reads only
+#  the exit status -- `sh gate_selfext2b.sh || exit 1`, one bit of resolution. So
+#  a gate that DECLINED TO RUN was indistinguishable from one that ran and passed.
+#  Confirmed in four consecutive build logs: "SKIP selfext2b: prerequisite vessel
+#  compiler.bin absent", every time. compiler.bin is deleted by an earlier
+#  build.sh section and never recreated before this gate; bundler.bin appears
+#  nowhere in build.sh at all.
+#  ★ WORSE THAN AN UNWIRED GATE: the safety check above prints PASS naming
+#  ./compiler.bin as a validated exec target, on the line directly before the one
+#  saying it is absent. The section does not look uncovered — it displays a green
+#  verdict about the very file whose absence disables it.
+#  ★★ AND IT IS THE TWIN OF THE selfext5/6 DEFECT, with the opposite symptom.
+#  Those consumed ./logos_secd without building it and died LOUDLY the first time
+#  a build reached them. This one exits 0 and has been passing indefinitely. The
+#  loud one was fixed the day it appeared; the quiet one was not, because nothing
+#  in the build can ask "did you actually run?".
+#  THE FIX IS BOTH HALVES, because either alone leaves the class open:
+#   (1) BUILD the prerequisites rather than skipping on them, and
+#   (2) if they still cannot be produced, FAIL — never exit 0.
 for V in sx2b_app compiler.bin bundler.bin logos_secd; do
-  [ -x "$V" ] || [ -f "$V" ] || { echo "SKIP  selfext2b: prerequisite vessel $V absent"; exit 0; }
+  if [ ! -x "$V" ] && [ ! -f "$V" ]; then
+    case "$V" in
+      logos_secd)   ./tiny_host secd.la >/dev/null 2>&1 ;;
+      compiler.bin) [ -f logos_secd ] || ./tiny_host secd.la >/dev/null 2>&1
+                    cp codegen.la logos_source.la 2>/dev/null
+                    ./tiny_host codegen.la >/dev/null 2>&1
+                    [ -f logos_program.bin ] && cp logos_program.bin compiler.bin 2>/dev/null ;;
+      bundler.bin)  [ -f .sx2b_build.sh ] && sh .sx2b_build.sh >/dev/null 2>&1 ;;
+      sx2b_app)     [ -f .sx2b_build.sh ] && sh .sx2b_build.sh >/dev/null 2>&1 ;;
+    esac
+  fi
+  [ -x "$V" ] || [ -f "$V" ] || {
+    echo "FAIL  selfext2b: prerequisite vessel $V is absent and could not be built — this gate now FAILS rather than exiting 0, because a SKIP is indistinguishable from a PASS to the one bit of resolution build.sh reads, and this gate skipped silently in four consecutive builds"
+    exit 1; }
 done
 
 # (1) the discriminator's precondition: the organ must CREATE the vessel
+# ── ★★ THE CHECK GOES ABOVE THE rm (III-6), OR IT TESTS NOTHING ─────────────
+#  This was `rm -f logos_app ...` and THEN `[ -e logos_app ] && FAIL`. Nothing runs
+#  between them and the organ executes later, so it asserted that `rm -f` had
+#  succeeded. The PROPERTY is still achieved — the rm does guarantee the organ
+#  creates the vessel — but the CHECK was theatre, and it would keep passing if the
+#  rm were ever dropped and a stale vessel left behind.
+#  ★ NOT "implied by a neighbour" like the triangles: DEFEATED by one. Two sibling
+#  checks with the identical `rm` ... `[ -f X ] &&` shape ARE live — gate_selfext2.sh
+#  and gate_selfext6.sh — because in those a producer RUNS in between. That contrast
+#  is what makes this a finding rather than a style note.
+#  Moved above the rm, where it tests what it claims; the rm follows as cleanup.
+[ -e logos_app ] && { echo "FAIL  selfext2b: logos_app existed BEFORE the run — a vessel left over from a previous run cannot be attributed to the organ, so the discriminator would be measuring someone else's artifact"; ok=0; }
 rm -f logos_app logos_program.bin logos_embed.bin logos_source.la
-[ -e logos_app ] && { echo "FAIL  selfext2b: logos_app exists before the run — its origin cannot be attributed to the organ"; ok=0; }
 
 printf '0' > .sx2b_gen
 OUT="$(timeout 600 ./sx2b_app 2>&1)"; RC=$?

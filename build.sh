@@ -4239,11 +4239,12 @@ say "Self-extension stage 2 — the adopted artifact becomes EXECUTABLE (gate_se
 #  witness the organ itself begetting and execve-ing that process (the bundled
 #  VM-side form, stage 2b) -- same logical content, plus autonomy, which is
 #  stage 6's subject.
-if [ -f gate_selfext2.sh ]; then
-    sh gate_selfext2.sh || exit 1
-else
-    echo "SKIP  selfext2: gate_selfext2.sh absent"
-fi
+# ★ A MISSING GATE FILE IS A BROKEN CHECKOUT, NOT A CONFIGURATION (III-3).
+#   This read `if [ -f gate_selfext2.sh ]; then ... else echo SKIP; fi`, so deleting the
+#   file kept the build GREEN. There is no legitimate build in which a gate is
+#   optional; absence is now a hard failure.
+[ -f gate_selfext2.sh ] || { echo "FAIL  selfext2: gate_selfext2.sh is absent — a gate file missing means a broken checkout, not an optional check"; exit 1; }
+sh gate_selfext2.sh || exit 1
 
 say "Self-extension stage 2b — the ORGAN begets its own successor (gate_selfext2b.sh)"
 # ── ★ THE EXEC ORIGINATES INSIDE THE ORGAN ───────────────────────────────
@@ -4266,11 +4267,12 @@ say "Self-extension stage 2b — the ORGAN begets its own successor (gate_selfex
 #  BAND with .sx2b_build.sh / .sx2b_rebuild.sh. The gate SKIPS when the vessel
 #  is absent rather than pretending, and says so.
 python3 gate_selfext2b_safety.py || exit 1
-if [ -f gate_selfext2b.sh ]; then
-    sh gate_selfext2b.sh || exit 1
-else
-    echo "SKIP  selfext2b: gate_selfext2b.sh absent"
-fi
+# ★ A MISSING GATE FILE IS A BROKEN CHECKOUT, NOT A CONFIGURATION (III-3).
+#   This read `if [ -f gate_selfext2b.sh ]; then ... else echo SKIP; fi`, so deleting the
+#   file kept the build GREEN. There is no legitimate build in which a gate is
+#   optional; absence is now a hard failure.
+[ -f gate_selfext2b.sh ] || { echo "FAIL  selfext2b: gate_selfext2b.sh is absent — a gate file missing means a broken checkout, not an optional check"; exit 1; }
+sh gate_selfext2b.sh || exit 1
 
 say "Self-extension stage 3 — the RATCHET GATE (gate_ratchet.sh)"
 # ── ★ THE ONE FAILURE THE WHOLE CHAIN OTHERWISE PASSES ───────────────────
@@ -4292,11 +4294,12 @@ say "Self-extension stage 3 — the RATCHET GATE (gate_ratchet.sh)"
 #  BOUND: α-equivalence is decidable; behavioural equivalence is not. A
 #  non-literal restatement of an existing capability still passes here — that
 #  is stage 4's job, and naming which is which is the point of saying it.
-if [ -f gate_ratchet.sh ]; then
-    sh gate_ratchet.sh || exit 1
-else
-    echo "SKIP  ratchet: gate_ratchet.sh absent"
-fi
+# ★ A MISSING GATE FILE IS A BROKEN CHECKOUT, NOT A CONFIGURATION (III-3).
+#   This read `if [ -f gate_ratchet.sh ]; then ... else echo SKIP; fi`, so deleting the
+#   file kept the build GREEN. There is no legitimate build in which a gate is
+#   optional; absence is now a hard failure.
+[ -f gate_ratchet.sh ] || { echo "FAIL  ratchet: gate_ratchet.sh is absent — a gate file missing means a broken checkout, not an optional check"; exit 1; }
+sh gate_ratchet.sh || exit 1
 
 say "Self-extension stage 4 — HELD-OUT acceptance (gate_selfext4.sh)"
 # ── ★ THE CHACHA20 SHAPE, IN MINIATURE ───────────────────────────────────
@@ -4319,11 +4322,12 @@ say "Self-extension stage 4 — HELD-OUT acceptance (gate_selfext4.sh)"
 #  changed only the tested half left the deployed module untouched. That is the
 #  test-one/deploy-another split gate_srcdrift.py was built for, one level down.
 #  Arm E re-runs the organ's OWN probe against the DEPLOYED module.
-if [ -f gate_selfext4.sh ]; then
-    sh gate_selfext4.sh || exit 1
-else
-    echo "SKIP  selfext4: gate_selfext4.sh absent"
-fi
+# ★ A MISSING GATE FILE IS A BROKEN CHECKOUT, NOT A CONFIGURATION (III-3).
+#   This read `if [ -f gate_selfext4.sh ]; then ... else echo SKIP; fi`, so deleting the
+#   file kept the build GREEN. There is no legitimate build in which a gate is
+#   optional; absence is now a hard failure.
+[ -f gate_selfext4.sh ] || { echo "FAIL  selfext4: gate_selfext4.sh is absent — a gate file missing means a broken checkout, not an optional check"; exit 1; }
+sh gate_selfext4.sh || exit 1
 
 say "Self-extension stage 5 — CROSS-ENGINE audit (gate_selfext5.sh)"
 # ── ★ AN AUDITOR THAT SHARES AN EVALUATOR SHARES ITS BUGS ────────────────
@@ -4338,11 +4342,12 @@ say "Self-extension stage 5 — CROSS-ENGINE audit (gate_selfext5.sh)"
 #  cross-engine gate that silently fell back to the host would report agreement
 #  between an engine and itself, which is absence of a witness presented as a
 #  witness.
-if [ -f gate_selfext5.sh ]; then
-    sh gate_selfext5.sh || exit 1
-else
-    echo "SKIP  selfext5: gate_selfext5.sh absent"
-fi
+# ★ A MISSING GATE FILE IS A BROKEN CHECKOUT, NOT A CONFIGURATION (III-3).
+#   This read `if [ -f gate_selfext5.sh ]; then ... else echo SKIP; fi`, so deleting the
+#   file kept the build GREEN. There is no legitimate build in which a gate is
+#   optional; absence is now a hard failure.
+[ -f gate_selfext5.sh ] || { echo "FAIL  selfext5: gate_selfext5.sh is absent — a gate file missing means a broken checkout, not an optional check"; exit 1; }
+sh gate_selfext5.sh || exit 1
 
 say "Self-extension stage 6 — the UNATTENDED run (gate_selfext6.sh)"
 # ── ★ TOLD ONLY WHAT IS WANTED ───────────────────────────────────────────
@@ -4366,11 +4371,12 @@ say "Self-extension stage 6 — the UNATTENDED run (gate_selfext6.sh)"
 #  SCOPE, and it is in the PASS line: this closes the item for ONE extension,
 #  under a stated budget, over a stated space of four. "The system extends
 #  itself" does not follow from it.
-if [ -f gate_selfext6.sh ]; then
-    sh gate_selfext6.sh || exit 1
-else
-    echo "SKIP  selfext6: gate_selfext6.sh absent"
-fi
+# ★ A MISSING GATE FILE IS A BROKEN CHECKOUT, NOT A CONFIGURATION (III-3).
+#   This read `if [ -f gate_selfext6.sh ]; then ... else echo SKIP; fi`, so deleting the
+#   file kept the build GREEN. There is no legitimate build in which a gate is
+#   optional; absence is now a hard failure.
+[ -f gate_selfext6.sh ] || { echo "FAIL  selfext6: gate_selfext6.sh is absent — a gate file missing means a broken checkout, not an optional check"; exit 1; }
+sh gate_selfext6.sh || exit 1
 
 say "The mutation lever, extended past the 2 gates it could reach (mutate.py)"
 # ── ★ THE FOURTH VACUITY AXIS, AND THE ONLY INSTRUMENT THAT REACHES IT ───
@@ -5694,10 +5700,67 @@ else
     exit 1
 fi
 
+say "Obscurantism, coined and made mechanical (obscurantism.la)"
+# ── ★★ THE TERM THE CORPUS NEVER NAMED ──────────────────────────────────
+#  Erik, 2026-08-27: euphemisms and meta-euphemisms create SEMANTIC OBSCURANTISM,
+#  and it is a term the language should coin and use. Nothing in the corpus named
+#  it. The definition is in LA's own machinery, not imported from linguistics:
+#      OBSCURE(t) := SDEPTH(CANON(t)) > SDEPTH(NORMK(t))
+#  a form carries AVOIDABLE DEPTH when it denotes the same concept as its own
+#  canonical form and makes the hearer walk further to reach it. CANON is the
+#  form AS UTTERED, NORMK the α=1 ontoglyph it collapses to; both are strings in
+#  the same prefix notation, so one depth measure covers both.
+#  ★★ WHY DEPTH AND NOT α<1 — AND THIS IS SETTLED BY MEASUREMENT, NOT ARGUMENT.
+#  Every non-canonical form is α<1, INCLUDING ⊕(B,A) for ⊕(A,B). That is a
+#  REORDERING — the same structure spelled another way — and calling it
+#  obscurantism would make the term mean "not in normal form", which is not what
+#  was named. The naive α-based definition was red-pathed against this module's
+#  own corpus and FAILS the `spares` arm by flagging ⊕(B,A). The depth definition
+#  spares it. So the coinage is discriminating rather than decorative.
+#  ★ WHAT LA ALREADY FORBIDS: the WORD-LEVEL euphemism is UNCONSTRUCTIBLE, and
+#  not by policy — a sealed monoglyph has REN ≡ κ∘ETYM BY CONSTRUCTION, so a name
+#  cannot float free of its derivation. "Collateral damage" is unmintable: the
+#  form would have to carry ⊗(killing,civilians) in its own body. Obscurantism can
+#  therefore only enter as avoidable depth, which is detectable and removable.
+#  RESULT: obscurantism is DETECTABLE AND REMOVABLE, NOT PREVENTABLE. The language
+#  cannot stop a speaker uttering the deeper form; any hearer computes the α=1
+#  form in one total pass, so obscuring is SELF-DEFEATING rather than forbidden.
+#  BOUNDS, both stated in the module rather than left to be found later:
+#   · detection is RELATIVE TO κ's DECLARED rewrite set — the same bound monosemy
+#     carries, since full semantic equivalence is undecidable;
+#   · the UTTERANCE level is outside the semantics BY RULING R-B. A technically
+#     true composition assembled to mislead is a pragmatic act, LA does not model
+#     it, so LA cannot forbid it. Banning implicature from the semantics also bans
+#     misleading-by-implicature from what the language can police.
+#  RED PATH MEASURED, three ways, each flipping only what it should: the naive
+#  α definition reds `spares`; an OBSCURE that never fires reds `detects`; a blind
+#  SDEPTH reds `detects` and `removable`.
+ok=1
+OBS_RC=0
+./tiny_host obscurantism.la > obsc.out 2>&1 || OBS_RC=$?
+[ "$OBS_RC" = "0" ] || { echo "FAIL  obscurantism: host run exited $OBS_RC (want 0); last line: $(tail -1 obsc.out)"; ok=0; }
+# ★ the summary line WHOLE, not a scan for a word: this file has already been
+#   bitten three times today by a substring matching prose it did not mean to.
+grep -qF 'obscurantism  detects OK | spares OK | removable OK | lexical-seal OK' obsc.out || { echo "FAIL  obscurantism: an arm is not OK — $(grep -F 'obscurantism  detects' obsc.out)"; ok=0; }
+# ★ the DEPTHS are pinned because they are a MEASUREMENT: a change is news. They
+#   are derived from the forms' own nesting, not read back off a run — ⊗(∃,∃) has
+#   one level and ∃ has none; ↻(↻X) has two and ↻(X) one; ⊕(B,A) has one and so
+#   does its canonical form, which is exactly why it is spared.
+grep -qF '⊗(∃,∃) uttered=1 canonical=0' obsc.out || { echo "FAIL  obscurantism: R-A's avoidable depth is no longer 1→0"; ok=0; }
+grep -qF '↻↻LOVE uttered=2 canonical=1' obsc.out || { echo "FAIL  obscurantism: ↻-idempotence's avoidable depth is no longer 2→1"; ok=0; }
+grep -qF '⊕(B,A) uttered=1 canonical=1' obsc.out || { echo "FAIL  obscurantism: the reordered ⊕ no longer has equal depth — the discriminator between obscurantism and a variant spelling has moved"; ok=0; }
+grep -qF 'VERDICT: obscurantism := avoidable depth' obsc.out || { echo "FAIL  obscurantism: verdict line absent — the module HALTED mid-run, so every check above passed on a partial file"; ok=0; }
+rm -f obsc.out
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  obscurantism: the term is COINED and MECHANICAL — a form is obscurantist when it carries AVOIDABLE DEPTH over κ's declared theory (⊗(∃,∃) 1→0, ↻↻LOVE 2→1), while a REORDERING (⊕(B,A), 1→1) is spared, which is the discriminator: the naive α<1 definition flags the reordering and fails this gate. The LEXICAL euphemism is already unconstructible (REN ≡ κ∘ETYM by construction), so obscurantism can only enter as depth — detectable and removable, not preventable, since any hearer computes the α=1 form in one total pass. BOUNDS: relative to the declared rewrite set, as monosemy is; and the utterance level is outside the semantics by ruling R-B, so misleading-by-implicature is not something the language can police"
+else
+    exit 1
+fi
+
 say "Monosemy: the bijection glyph↔meaning — synonym collapse audit (Monosemic Principle)"
 # Audits κ's monosemic normalization (canon.la's NORMK/NIS, verbatim). NO POLYSEMY:
 # distinct meanings → distinct glyphs (κ deterministic + injective). NO SYNONYMY up
-# to the declared equivalence theory: ⊗/⊕ commutativity (incl. nested) and the
+# to the declared equivalence theory: ⊕ commutativity (incl. nested) and the
 # ↻(BEING)≡SELF rewrite COLLAPSE to one glyph; directional ▷/⊂ correctly stay
 # DISTINCT; and associativity/idempotence of ⊗ correctly stay DISTINCT (ontosynthesis
 # has surplus, and ontoetymological uniqueness REQUIRES distinct trees → distinct
@@ -5707,7 +5770,25 @@ say "Monosemy: the bijection glyph↔meaning — synonym collapse audit (Monosem
 ok=1
 check_mono () {  # $1 = engine label, $2 = output file
     grep -q '^comm ⊕.*COLLAPSED'    "$2" || { echo "FAIL  monosemy($1): ⊕ commutativity not collapsed"; ok=0; }
-    grep -q '^comm ⊗.*COLLAPSED'    "$2" || { echo "FAIL  monosemy($1): ⊗ commutativity not collapsed"; ok=0; }
+    # ★★ ⊗ IS NON-COMMUTATIVE, SO THIS ASSERTS THE OPPOSITE OF WHAT IT USED TO.
+    #    It read: grep '^comm ⊗.*COLLAPSED' -- i.e. it required ⊗(A,B) and ⊗(B,A)
+    #    to normalise to ONE glyph. LA.tex:2837 calls ontosynthesis NON-commutative
+    #    ("g_E ⊗ g_Rec yields Being-recognizing... g_Rec ⊗ g_E yields a DIFFERENT
+    #    concept... Direction matters in Being"), and 91fc923 corrected five
+    #    normalisers and two renderers accordingly. monosemy_test.la was updated
+    #    with them -- its row was renamed `comm ⊗` -> `order ⊗` and its expected
+    #    verdict flipped to DISTINCT -- and THIS LINE WAS NOT.
+    #    ★ So the gate demanded the collapse the ruling forbids: had it ever passed,
+    #    that would have meant ⊗ was being sorted, which is the defect 91fc923 fixed.
+    #    It gated the contradiction as correct, exactly as the arc's own notes record
+    #    happening before.
+    #    ★★ AND IT COULD NOT PASS. `comm ⊗` is not emitted at all any more, so the
+    #    grep could only ever fail -- a gate that can ONLY go red, the mirror of the
+    #    mutation classifier found today that could only go green. Both lived in this
+    #    file; both were invisible until a build ran far enough to reach them. This
+    #    section is the LAST in the file, and build 6 was the first build ever to
+    #    complete, which is why a defect this old surfaced today.
+    grep -q '^order ⊗.*DISTINCT'    "$2" || { echo "FAIL  monosemy($1): ⊗ order wrongly collapsed — ontosynthesis is NON-commutative (:2837), so ⊗(B,L) and ⊗(L,B) are two concepts and must stay two glyphs"; ok=0; }
     grep -q '^nested.*COLLAPSED'    "$2" || { echo "FAIL  monosemy($1): nested commutativity not collapsed"; ok=0; }
     grep -q '^rewrite.*COLLAPSED'   "$2" || { echo "FAIL  monosemy($1): ↻(BEING)≡SELF rewrite not collapsed"; ok=0; }
     grep -q '^assoc ⊗.*DISTINCT'    "$2" || { echo "FAIL  monosemy($1): ⊗ associativity wrongly collapsed (would break ontoetymology)"; ok=0; }
