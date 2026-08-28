@@ -14,6 +14,121 @@ Status key: `[ ]` unbuilt · `[~]` partial · `[✓]` done today · `[!]` needs 
 
 ---
 
+## ★★★ THE GOVERNING STANDARD — read before building anything on this list
+
+**Complexity accrues error faster than capability unless the verification layer
+compounds too.** Stated as a principle before 2026-08-27; **empirically supported
+after it.** Syntropy is not automatic. It is conditional on the system's capacity
+to catch itself growing at least as fast as the system.
+
+### The standard
+**Before building anything new, ask: does the check for THIS actually run?**
+A module with a gate that exits 0 unconditionally is **worse than a module with
+no gate**, because it reports false confidence — an unwired gate looks
+uncovered; a dead one looks covered. **Every gate in the arc must be able to go
+RED**, and that must be demonstrated by planting the defect it claims to catch,
+not argued.
+
+### Why this is now evidence and not exhortation
+One day's findings, all in the verification layer rather than the language:
+
+| defect | count |
+|---|---|
+| modules marked `[✓]` in THIS FILE with no runner at all | 8 |
+| gates exiting 0 without running, reported as passing, every build | 1 |
+| gate invocations where deleting the gate file keeps the build green | 6 |
+| comparisons that cannot fail alone (each implied by two others) | 6 |
+| provenance controls defeated by an adjacent line | 1 |
+| PASS messages announcing measurements that had moved | 5 |
+| this document's own entries marking built work as open | 1 |
+| mutation-lever entries crediting a STATIC reader for BEHAVIOURAL coverage | 1 |
+| instruments that were broken when first written (mine, this session) | 3 |
+
+Two of those deserve their own line because they generalise:
+
+★ **The question no audit was asking.** Every audit this project has run —
+Audit II's discriminating power, Audit III's cannot-fail comparisons — asks
+*"can this check fail?"* of checks that **run**. None asked *"does this check
+run?"* of the whole inventory. Three hits in one day, every one a by-product of
+looking for something else. (Framing: track E, Freeze III.)
+
+★ **And one level up: did the evidence come from EXECUTION?** The mutation lever
+reported `selfext2b.la` CAUGHT; the mutant was killed by a *static analyser
+reading the source*, and the gate never ran the organ. A static analyser and a
+behavioural gate can both go red, and only one is evidence the code works.
+Marker, measured: 20 CAUGHT lines, 19 carry a `% of baseline` ratio, the 1
+without is the bogus one — the ratio is computed against the gate's runtime, so
+it cannot exist when the gate never ran.
+
+### The corollary for instruments — the subjects are not the only thing that rots
+An instrument's `--selftest` must calibrate **coverage**, not only detection. A
+tool can pass a detection control while reading half its surface — and then a
+clean report means nothing. Every absence-claim in this project must be able to
+show it looked.
+
+★ **Coverage has TWO axes, and a calibration for one will not catch the other.**
+* **Idiom coverage** — right files, one notation of two. (Track E's Audit IV tool
+  read 51 of 96 checks and reported clean; all three calibration fixtures used
+  the idiom it handled.)
+* **Surface coverage** — every notation, wrong files. (`preflight_artifacts.py`
+  v1 scanned `build.sh` and not the `gate_*.sh` scripts, so it **could not have
+  found the bug it was written for**, and its planted controls passed.)
+
+**The reconciliation that catches both:** a self-test must compare a count taken
+**independently of the tool** against what the tool actually parsed, and refuse
+to report on a mismatch. Planted controls only prove a tool sees what you built
+it to see; a real-world control — revert a known fix and require the tool to find
+it again — is what proves it sees what you did not.
+
+⚠ **FOUR instrument failures in one day, all mine or track E's, none in the
+subjects:** a tool that could not find its own motivating bug; a detection-only
+calibration certifying a third of an input; a dependency scan matching on
+**basename**, so `.bootelf_fix/asm.la` matched `asm.la` and produced 45 false
+positives; and the same scan then **under-reporting**, missing eight untracked
+files that were only found by acting on the result and re-checking. The
+instruments need this standard at least as much as the subjects do.
+
+---
+
+---
+
+## OBSCURANTISM — COINED 2026-08-27. `[~]` MODULE GREEN, GATE PENDING.
+
+`obscurantism.la`. Erik: euphemisms and meta-euphemisms create semantic
+obscurantism, and it is a term the language should coin. Nothing in the corpus
+named it.
+
+    OBSCURE(t) := SDEPTH(CANON(t)) > SDEPTH(NORMK(t))
+
+A form is obscurantist when it carries **avoidable depth** — same referent as its
+own canonical form, more structure to walk. Fires on `⊗(∃,∃)` (1→0) and
+`↻(↻LOVE)` (2→1); **spares** `⊕(B,A)` (1→1), a reordering rather than an
+obscuring.
+
+★ **Why depth and not α<1, settled by measurement.** Every non-canonical form is
+α<1, including `⊕(B,A)`. The naive α-based definition was red-pathed against this
+module's own corpus and **fails the `spares` arm**. Defining obscurantism as "not
+in normal form" would have made the term mean nothing.
+
+**The result:** obscurantism is DETECTABLE AND REMOVABLE, NOT PREVENTABLE. The
+lexical euphemism is already unconstructible — `REN ≡ κ∘ETYM` by construction, so
+"collateral damage" is unmintable; the form would have to carry
+`⊗(killing,civilians)` in its own body. What remains can only be avoidable depth,
+and any hearer collapses it in one total pass. Obscuring is self-defeating rather
+than forbidden.
+**BOUNDS:** relative to κ's declared rewrite set, as monosemy is; and the
+utterance level is outside the semantics **by ruling R-B**, so
+misleading-by-implicature is not something LA can police.
+
+⚠ **`[~]` AND NOT `[✓]`, DELIBERATELY.** The module is green with three measured
+red paths, but **its `build.sh` gate is not yet wired** — it was written during
+build 5 and lands in build 6. By this document's own governing standard it is
+therefore an UNGATED module, and marking it done would make it the ninth entry in
+exactly the class this session spent the day pulling out. It is `[~]` until a
+build has run its gate.
+
+---
+
 ## ITEM 5 / L3 — THE GRAMMAR PARSING ITSELF. `[✓]` BOUNDED, 2026-08-26.
 
 `grammar_l3.la`, gated. **GPARSE — interpreting the L1 data productions — parses the
@@ -400,10 +515,24 @@ registers. `trimono.la` now gates all three. What remains:
   equivalence.
 - `[ ]` **⊗ has no temporal signature either** — indistinguishable from ▷ in the
   decoder, and loses everything below it.
-- `[ ]` **A phonetic SEAL.** Glyphically `REN ≡ κ∘ETYM` by construction makes a
-  heterological glyph unconstructible. Phonetically any `PAIR(len)(gen)` is a
-  valid PHON — a sound can float free of its etymology. Needs `MONO_P` +
-  `AUTO_OK_P`.
+- `[✓]` **A phonetic SEAL — BUILT AND GATED (`phonseal.la`).** ★ THIS ENTRY WAS
+  STALE, and it was found by being cited: it was quoted as an open item, and the
+  module it asks for already existed. `phonseal.la:53` defines
+  `MONO_P = la etym. PAIR(PH_N(etym))(etym)` — the sound is COMPUTED from the
+  etymology, never supplied — and `:56` `AUTO_OK_P` is the criterion, with
+  `AUTO_OK_G` beside it so the two registers are comparable. Gated (the
+  `discourse/coin/immune/ablate/phonseal` loop), verdict pinned:
+  `detached-constructible OK | criterion-fires OK | asymmetry OK`.
+  **What it actually establishes is better than "seal built":** a detached sound
+  IS still constructible — the hole was real and the module SHOWS it rather than
+  patching it — and the criterion FIRES on it. That is exactly the status of a
+  detached name glyphically: unconstructible *through the blessed constructor*,
+  detectable when built any other way. A module that only demonstrated sealed
+  phonyms passing would have proved nothing, since everything a correct
+  constructor builds is correct.
+  ⚠ The stale-status defect this entry was: a document marking built work as
+  open is the same class as a PASS message announcing a measurement that has
+  moved — prose that no gate can fail on. See the five found 2026-08-27.
 - `[ ]` **`PSC_STAR` still pairs raw `PHONYM` with raw `SPEC`** — after the
   normalisation landed, one concept gets two seals depending on operand order.
 

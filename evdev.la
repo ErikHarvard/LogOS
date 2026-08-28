@@ -37,3 +37,4 @@ glyph OPEN_INPUT = la path. open(path)("0")
 glyph READ_EVENT = la fd. read(fd)("24")
 # CLOSE_INPUT : Fd -> Int  [VM-only: close the device fd]
 glyph CLOSE_INPUT = la fd. close(fd)
+export Z IF TRUE FALSE AND DROP B U16 U32 S32 EV_TYPE EV_CODE EV_VALUE IS_KEY_PRESS IS_KEY_RELEASE IS_MOUSE_MOVE OPEN_INPUT READ_EVENT CLOSE_INPUT 

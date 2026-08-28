@@ -32,7 +32,10 @@
 #  shortfall in the attempt: it is what the root is.
 #
 #  ─── THE BOUND, STATED ────────────────────────────────────────────
-#  The closure is WITNESSED to depth 4 (all 8 application trees over {BEING}),
+#  The closure is WITNESSED to depth 4 here (all 8 application trees over {BEING})
+#  and MECHANISED past every depth in `archclosure.la`: base + inductive step +
+#  a Catalan-checked enumeration, which is induction on shape size rather than a
+#  deeper finite witness. What remains is stated there, not here.
 #  not proved mechanically. The induction is trivial and stated in prose —
 #  I(t) reduces to t, so a tree collapses left-to-right — but this module
 #  witnesses instances, not the induction. A bounded witness is the honest
@@ -134,5 +137,5 @@ glyph L5 = print(concat("DEPTH    AXIOM — seam: CONTRACTION (duplicates an arg
 glyph L6 = print(concat("FORM     AXIOM — seam: EXCHANGE (reorders its arguments) ? ")(YN(AX_FORM)))
 glyph L7 = print(concat("RELATION AXIOM — seam: EXCHANGE + ARITY 2 (the binary FORM) ? ")(YN(AX_REL)))
 glyph L8 = print(concat("BECOMING AXIOM — seam: CONTRACTION (uses f twice; iteration) ? ")(YN(AX_BEC)))
-glyph L9 = print("VERDICT: of the six, BEING is the root itself; the other five are AXIOMS with the seam stated — the root is LINEAR (I neither discards, duplicates nor reorders) and the five are exactly the structural rules it lacks: WEAKENING, CONTRACTION, EXCHANGE. Bounded witness: closure shown to depth 4, induction argued not mechanised. NOT a derivation, and no stipulation offered in place of one.")
+glyph L9 = print("VERDICT: of the six, BEING is the root itself; the other five are AXIOMS with the seam stated — the root is LINEAR (I neither discards, duplicates nor reorders) and the five are exactly the structural rules it lacks: WEAKENING, CONTRACTION, EXCHANGE. Closure is MECHANISED in archclosure.la — base + step + a coverage check against the Catalan count = induction on shape size, so {I} is closed under application at EVERY depth rather than to a bound; the residual bound is that identity there is observational up to a probe set. NOT a derivation, and no stipulation offered in place of one.")
 glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(SEQ(L5)(SEQ(L6)(SEQ(L7)(SEQ(L8)(L9)))))))) 

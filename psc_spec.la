@@ -38,6 +38,16 @@ glyph THETA_P = la l. LDEDUP(l)
 # ⊗ neologistic compression at the invariant level: the compound's signature is
 # the superposition (union) of the parents' formant sets — both spectra present.
 glyph SYN_INV = la a. la b. THETA_P(LAPP(a)(b))
+# ── ★ PINV — Θ_P WITH ITS MODE, the exact twin of topoembed's VINV ──
+# Θ_P was MODE-BLIND: ⊗, ⊕, ▷ and ⊂ over the same parents gave ONE peak-set,
+# so the mode was unrecoverable from the phonetic invariant. The VISUAL side
+# has carried its mode since it was written — topoembed.la:35
+#     VINV = MODESYM(node) : LEAVES(node)
+# and topoembed even GATES it (MODE_REC: VINV(⊗) != VINV(⊕)). The phonetic
+# side had no counterpart, so the trimodal identity held in one register and
+# not the other — the same asymmetry that let ⊕ commute in form and not sound.
+glyph PINV = la sym. la a. la b. concat(sym)(concat(":")(LREN(SYN_INV(a)(b))))
+glyph PMODE_REC = la a. la b. IF(str_eq(PINV("⊗")(a)(b))(PINV("⊕")(a)(b)))(la _. FALSE)(la _. TRUE)
 # preservation: every formant of the parent survives in the compound.
 glyph PRESERVES = la parent. la comp. LSUB(parent)(comp)
 # duration under ⊗: compressed to the max of the parents (spec §4233), not the sum.
@@ -62,6 +72,8 @@ glyph SRC_LDEDUP = "Z(la self. la l. l(LNIL)(la h. la t. IF(LMEM(h)(t))(la _. se
 glyph SRC_LREN  = "Z(la self. la l. l(\"\")(la h. la t. concat(int_to_str(h))(concat(\",\")(self(t)))))"
 glyph SRC_THETA = "la l. LDEDUP(l)"
 glyph SRC_SYNINV = "la a. la b. THETA_P(LAPP(a)(b))"
+glyph SRC_PINV = "la sym. la a. la b. concat(sym)(concat(\":\")(LREN(SYN_INV(a)(b))))"
+glyph SRC_PMREC = "la a. la b. IF(str_eq(PINV(\"⊗\")(a)(b))(PINV(\"⊕\")(a)(b)))(la _. FALSE)(la _. TRUE)"
 glyph SRC_PRES  = "la parent. la comp. LSUB(parent)(comp)"
 glyph SRC_SYNDUR = "la da. la db. IF(lt(da)(db))(la _. db)(la _. da)"
 glyph SRC_LOVEF  = "LCONS(300)(LCONS(870)(LCONS(2240)(LNIL)))"
@@ -106,6 +118,11 @@ glyph PSC_SPEC =
         T1L(TC(la g. str_eq(LREN(g(g(LAPP(LOVE_F)(REC_F)))))(LREN(g(LAPP(LOVE_F)(REC_F))))("T")("F"))("T"))))(  # Θ(Θx) = Θx (§6286)
   CONS(E("SYN_INV")("⊗ compound invariant = superposition of both spectra (trusted)")(SRC_SYNINV)(SYN_INV)(
         T1L(TC(la g. LREN(g(LOVE_F)(REC_F)))("300,870,2240,270,2300,3000,"))))(  # both parents' peaks, deduped
+  CONS(E("PINV")("Θ_P WITH its mode — the phonetic twin of topoembed's VINV (trusted)")(SRC_PINV)(PINV)(
+        T2L(TC(la g. g("⊗")(LOVE_F)(REC_F))("⊗:300,870,2240,270,2300,3000,"))
+           (TC(la g. g("⊕")(LOVE_F)(REC_F))("⊕:300,870,2240,270,2300,3000,"))))(
+  CONS(E("PMODE_REC")("the mode is RECOVERABLE from the phonetic invariant (trusted)")(SRC_PMREC)(PMODE_REC)(
+        T1L(TC(la g. g(LOVE_F)(REC_F)("T")("F"))("T"))))(
   CONS(E("PRESERVES")("does the compound preserve the parent's invariants? (trusted)")(SRC_PRES)(PRESERVES)(
         T3L(TC(la g. g(LOVE_F)(SYN_INV(LOVE_F)(REC_F))("T")("F"))("T"))            # Love's /u/ formants survive in Compassion
            (TC(la g. g(REC_F)(SYN_INV(LOVE_F)(REC_F))("T")("F"))("T"))             # Recognition's /i/ formants survive in Compassion
@@ -119,7 +136,7 @@ glyph PSC_SPEC =
         T1L(TC(la g. LREN(g))("270,2300,3000,"))))(
   CONS(E("DEPTH_F")("Depth /ɔ/ formant signature 500,800,2830 — non-constituent control (trusted)")(SRC_DEPTHF)(DEPTH_F)(
         T1L(TC(la g. LREN(g))("500,800,2830,"))))(
-  NIL)))))))))))))))))))
+  NIL)))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(PSC_SPEC) ===\n")(GENERATE(PSC_SPEC))))

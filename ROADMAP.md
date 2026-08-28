@@ -2561,12 +2561,25 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       **commutes with κ** on the documented rewrite (syntax-rewrite and
       semantic-reduction agree). Gated in `build.sh`, byte-identical host==VM.
       Not a frontier — a settled result.
-- [ ] **Self-verifying grammar** — the grammar recoverable-as-data; it currently
-      fails its own `DECOMP` standard (audit finding). Make its own rules
-      expressible and checkable in itself.
-- [ ] **The operators as glyphs** — `∂δγρ𝔄` are hardcoded dispatch, not
-      first-class glyphs (audit finding). Full autological uniformity; the same
-      move `metaglyph.la` already made for the five modes, κ and the evaluator.
+- [x] **Self-verifying grammar — DONE + gated (2026-08-21), `grammar.la`.**
+      Productions are first-class Scott-encoded data (`GT`/`GN`/`GSEQ`/`GALT`/
+      `GSTAR`/`GEPS`), decomposable (`GDECOMP`) and executable (`MATCH`/`GPARSE`),
+      so the grammar no longer fails its own `DECOMP` standard. Differential
+      accept/reject against the real parser over an 8-case corpus:
+      `[A1 A2 A3 A4 R1 R2 R3 R4] = TTTTTTTT`, gated host==VM. RED path proven —
+      reverting one production to `ident+` yields `TTFFTTTT`. **Bounded: L1+L2.
+      Full self-parse remains a stretch goal and is still open.**
+- [x] **The operators as glyphs — DONE + gated (2026-08-20/21), `metaglyph.la`.**
+      `∂δγρ𝔄` are no longer hardcoded dispatch: each is a κ-node decomposition —
+      `∂ = ▷(VOID,RELATION)`, `δ = ⊂(FORM,DEPTH)`, `γ = ⊗(BECOMING,FORM)`,
+      `ρ = ↻(RECOGNITION)`, `𝔄 = ⊗(LOVE,BEING)` — and they compose as data
+      (`OPERATE-ON ⊗(∂,δ)`). Gated host==VM. ★ **ρ ≡ SR_ABOUT is a DISCOVERED
+      IDENTITY**, intended, not a collision: recognition-of-self and
+      self-description reduce to one κ-node. ★ **Honest bound: that identity is
+      structurally enforced, NOT gated** — a first probe was vacuous (returned
+      the same answer for a correct and a deliberately-wrong ρ) and a second
+      broke host==VM by using a builtin present in only one engine. It is
+      therefore reported, not asserted.
 - [ ] **Self-typing** — the type checker checking its own types, in itself.
 - [x] **Runtime continuous self-verification — DONE + gated (2026-07-16),
       `selfwatch.la`.** The criterion applied to the LIVE system, not once at

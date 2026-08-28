@@ -75,3 +75,10 @@ glyph MARK = la got. la exp. IF(str_eq(got)(exp))(la _. "OK")(la _. concat("WRON
 glyph MAIN = print(concat(
     concat("hkdf TC1 ")(MARK(TOHEX(HKDF(SALT1)(IKM1)(INFO1)(42)))(EOKM1)))
     (concat(" | TC3 (no salt, no info) ")(MARK(TOHEX(HKDF("")(IKM1)("")(42)))(EOKM3))))
+
+# EXTRACT and EXPAND are exported separately on purpose: they answer different
+# questions (concentrate a non-uniform secret vs. derive many domain-separated
+# keys from one uniform one), and a caller that already holds a PRK should not
+# have to re-extract. HKDF is the one-shot. HLEN is part of the contract — RFC
+# 5869 bounds the output at L <= 255*HLEN.
+export EXTRACT EXPAND HKDF HLEN

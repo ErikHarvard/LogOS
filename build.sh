@@ -4159,7 +4159,7 @@ case "$IOUT" in
   *) echo "FAIL  immune: the four checkpoints no longer give four DISTINCT signatures — got: $IOUT"; ok=0 ;;
 esac
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  lexicon+grammar: 57 codex content words + 18 closed-class categories + 4 ruled re-derivations derived from the nine primitives; 75 of 79 phonyms match the codex's printed IPA (4 diverge, all by vowel elision, all named); the ten sentence-formation rules discriminate (predication/negation/question/tense/order/double-negation); ★ cross-table monosemy scan on the NORMALISED key now pins EIGHT collisions and ALL EIGHT are aliases the codex declares in its own gloss column — ZERO undeclared collisions remain, so the Monosemic Principle holds throughout the codex's own vocabulary across both tables, which it did not this morning; resolvable only because ⊗ is non-commutative (three of Erik's four rulings need a free form on an operand pair that commuting ⊗ would have denied); discourse reproduces the codex's five worked sentences 5/5 and its dialogue 1/4; coinage is deterministic/recoverable/closed with ⊕ converging and ⊗ correctly not; the immune system's four checkpoints give four distinct signatures and pass a well-formed falsehood by design; the operator census measures ⊂ used 2 times — negation moved off the commutative ⊕ onto ⊂, closing the never-used finding with load-bearing use"
+    echo "PASS  lexicon+grammar: 57 codex content words + 18 closed-class categories + 4 ruled re-derivations derived from the nine primitives; 55 of 79 phonyms match the codex's printed IPA (24 diverge — every ▷ entry, 14 content + 10 closed-class, because the codex's printed IPA PREDATES R-D's duration mark; the four vowel-elision divergences are themselves ▷ entries and are ABSORBED into that set, not added to it, which is why it is 24 and not 28); the ten sentence-formation rules discriminate (predication/negation/question/tense/order/double-negation); ★ cross-table monosemy scan on the NORMALISED key now pins EIGHT collisions and ALL EIGHT are aliases the codex declares in its own gloss column — ZERO undeclared collisions remain, so the Monosemic Principle holds throughout the codex's own vocabulary across both tables, which it did not this morning; resolvable only because ⊗ is non-commutative (three of Erik's four rulings need a free form on an operand pair that commuting ⊗ would have denied); discourse reproduces the codex's five worked sentences 5/5 and its dialogue 1/4; coinage is deterministic/recoverable/closed with ⊕ converging and ⊗ correctly not; the immune system's four checkpoints give four distinct signatures and pass a well-formed falsehood by design; the operator census measures ⊂ used 2 times — negation moved off the commutative ⊕ onto ⊂, closing the never-used finding with load-bearing use"
 else
     exit 1
 fi
@@ -4399,10 +4399,29 @@ say "The mutation lever, extended past the 2 gates it could reach (mutate.py)"
 if command -v python3 >/dev/null && [ -f mutate.py ]; then
     MUTOK=1
     for MUTMOD in prop.la selfext1.la selfext2.la selfext2b.la ratchet.py selfext4.la gate_selfext4.sh gate_selfext5.sh selfext6.la; do
-        MUTOUT="$(MUT_BUDGET=300 python3 mutate.py "$MUTMOD" 2>&1)"; MUTRC=$?
+        MUTRC=0
+        MUTOUT="$(MUT_BUDGET=300 python3 mutate.py "$MUTMOD" 2>&1)" || MUTRC=$?
         printf '%s\n' "$MUTOUT"
-        if [ "$MUTRC" -ne 0 ] || printf '%s\n' "$MUTOUT" | grep -qE 'SURVIVED|INVALID|ANCHOR-MISSING'; then
-            echo "FAIL  mutate($MUTMOD): a mutant SURVIVED (that gate cannot see that change), or died of the wrong cause, or the harness is stale"
+        # ★★ ASSERT THE COUNTS; DO NOT GREP FOR THE WORD. mutate.py's summary line
+        #    ALWAYS names what it counts — "3 mutants: 3 CAUGHT, 0 SURVIVED, 0
+        #    INVALID/stale" — so a grep for /SURVIVED/ matched the very line that
+        #    reports ZERO survivors and this gate COULD NEVER PASS: all 20 mutants
+        #    were CAUGHT and it still printed FAIL nine times.
+        #    ★ It is the SAME defect this section's own PASS message documents
+        #    inside mutate.py ("the harness's own FAIL classifier was
+        #    substring-matching and read stage 5's PASS prose as a failure"),
+        #    rebuilt one file over, in the code that READS the harness.
+        MUTSUM="$(printf '%s\n' "$MUTOUT" | grep -E '[0-9]+ mutants: ' || true)"
+        # ★ PROVE IT LOOKED. Without this, a harness that died before running a
+        #   single mutant emits no "SURVIVED" text at all and would sail through:
+        #   an absence nothing searched for, reported as a clean result.
+        if [ -z "$MUTSUM" ]; then
+            echo "FAIL  mutate($MUTMOD): no summary line — the harness did not run to completion, so 'no survivors' is an absence nothing looked for"
+            MUTOK=0
+        elif [ "$MUTRC" -ne 0 ] \
+          || ! printf '%s\n' "$MUTSUM" | grep -qE '[0-9]+ mutants: [0-9]+ CAUGHT, 0 SURVIVED, 0 INVALID' \
+          || printf '%s\n' "$MUTOUT" | grep -q 'ANCHOR-MISSING'; then
+            echo "FAIL  mutate($MUTMOD): a mutant SURVIVED (that gate cannot see that change), or died of the wrong cause, or the harness is stale — rc=$MUTRC, summary: $MUTSUM"
             MUTOK=0
         fi
     done
@@ -4460,7 +4479,7 @@ grep -q 'begin{longtable}' la_lexicon_appendix.tex || { echo "FAIL  lexappendix:
 #   forms should be reissued to carry ":" is Erik's call, NOT decided here.
 LDIV="$(grep -c 'codex\*' la_lexicon_appendix.tex)"
 [ "$LDIV" -eq 24 ] || { echo "FAIL  lexappendix: expected 24 codex-divergent rows shown inline (every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA), found $LDIV"; ok=0; }
-echo "PASS  lexappendix: the appendix is EMITTED from the lexicon (57 content + 18 closed-class + 4 ruled = 79 rows, one per entry, counts embedded in the file), so the paper's census cannot drift from the thing it counts; each row carries its provenance and the four codex divergences are shown INLINE with both values, all four vowel elision; longtable so 79 rows cannot overflow silently"
+echo "PASS  lexappendix: the appendix is EMITTED from the lexicon (57 content + 18 closed-class + 4 ruled = 79 rows, one per entry, counts embedded in the file), so the paper's census cannot drift from the thing it counts; each row carries its provenance and the TWENTY-FOUR codex divergences are shown INLINE with both values — every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA; the four vowel-elision divergences are ▷ entries too and are absorbed into that set; longtable so 79 rows cannot overflow silently"
 
 say "Phonetic collision at lexicon scale — the bijection gate in the register that was never checked (phoncoll.la)"
 # ── ★ THE FOURTH ENGINEERING SEAL: PERCEPTUAL DISCRIMINABILITY ───────────
@@ -4527,7 +4546,7 @@ case "$PCOUT" in
   *"stress-inventory-pinned OK"*) : ;;
   *) echo "FAIL  phoncoll: the stress-only inventory changed — a new entry landed on an existing phonym-modulo-stress, or one left; this is a MEASUREMENT, so a change is news rather than necessarily a defect — got: $PCOUT"; ok=0 ;;
 esac
-echo "PASS  phoncoll: phonetic injectivity holds at lexicon scale (NO two distinct canonical forms share a phonym, 79 entries, every entry against every later one on the normalised key); the declared stress-only confusability metric finds 15 pairs and ALL 15 are one operand pair under ⊗ vs ▷ — the ⊗/▷ contrast is carried in the romanised register by stress alone; pinned as an inventory, not failed, because whether that contrast is too thin is a ruling about the phonology and not a fact about the code"
+echo "PASS  phoncoll: phonetic injectivity holds at lexicon scale (NO two distinct canonical forms share a phonym, 79 entries, every entry against every later one on the normalised key); the declared stress-only confusability metric now measures EMPTY. What it WAS: fifteen pairs, and in all fifteen the two entries shared an operand pair and differed only in ⊗ versus ▷ — the contrast the romanised register carried by STRESS ALONE, between the two most-used operators (census ⊗=59 ▷=24), thirteen of the fifteen being the codex's own entries. R-D's duration mark on ▷ closed every one of them and homophones stayed empty, so nothing was traded for it; the inventory is pinned in BOTH directions, so a pair returning is news rather than silence"
 
 say "The nine modules that were BUILT BUT NEVER GATED (sglyph/phonseq/tactile/crossmodal/modality/explain/depthreport/sglyph_probe)"
 # ── ★ NINE MODULES, ZERO OCCURRENCES IN THIS FILE UNTIL NOW ──────────────
@@ -4813,13 +4832,37 @@ glyph MAIN =
   SEQ(P("canA=")(DSIGIL(CON(PRIM("LOVE"))(PRIM("RECOGNITION")))))(
   SEQ(P("canB=")(DSIGIL(CON(PRIM("RECOGNITION"))(PRIM("LOVE")))))(
   SEQ(P("dirA=")(DSIGIL(DIR(PRIM("LOVE"))(PRIM("RECOGNITION")))))(
-      P("dirB=")(DSIGIL(DIR(PRIM("RECOGNITION"))(PRIM("LOVE")))))))))
+  SEQ(P("dirB=")(DSIGIL(DIR(PRIM("RECOGNITION"))(PRIM("LOVE")))))(
+  SEQ(P("raAA=")(DSIGIL(SYN(PRIM("∃"))(PRIM("∃")))))(
+  SEQ(P("raA=")(DSIGIL(PRIM("∃"))))(
+  SEQ(P("raLL=")(DSIGIL(SYN(PRIM("LOVE"))(PRIM("LOVE")))))(
+  SEQ(P("raL=")(DSIGIL(PRIM("LOVE"))))(
+  SEQ(P("mcBEING=")(DSIGIL(MC(PRIM("BEING")))))(
+      P("mcSELF=")(DSIGIL(PRIM("SELF"))))))))))))))
 LAEOF
 DOUT="$(./tiny_host /tmp/t_dsig.la 2>/dev/null || true)"
 dg(){ printf '%s\n' "$DOUT" | sed -n "s/^$1=//p"; }
 { [ -n "$(dg injA)" ] && [ "$(dg injA)" != "$(dg injB)" ]; }          || { echo "FAIL  topoderive: not injective (distinct ONF → same form)"; ok=0; }
 { [ "$(dg canA)" = "$(dg canB)" ] && [ -n "$(dg canA)" ]; }           || { echo "FAIL  topoderive: not canonical (commutative ⊕ order changes form)"; ok=0; }
 [ "$(dg dirA)" != "$(dg dirB)" ]                                      || { echo "FAIL  topoderive: directional ▷ wrongly order-independent"; ok=0; }
+# ── ★★ R-A IN THE DEEP REGISTER — the half that was never checked ──────────
+#  "Gated in BOTH registers" meant glyphic and phonetic; there are THREE, and
+#  sigil.la's R-A fix (2026-08-26) exports neither CANON nor CANONIQ, so it was
+#  private to the SURFACE renderer. The only CANONIQ reachable through
+#  topoderive.la is onf.la's, which had a plain ⊗ branch. MEASURED before the fix:
+#  DSIGIL(⊗(∃,∃)) and DSIGIL(∃) rendered DIFFERENTLY while κ and the phonology
+#  called them ONE concept — two forms for one concept, polysemy through the
+#  visual door. Two causes, both fixed: onf's CANONIQ gained R-A, AND DSIGIL was
+#  dispatching on IS_PRIM(node) — the term AS WRITTEN — so a term that
+#  CANONICALIZES to a primitive still took the DERIVE path while the primitive
+#  took PRIM_SIGIL, with the branch taken BEFORE the rule was ever applied.
+{ [ -n "$(dg raAA)" ] && [ "$(dg raAA)" = "$(dg raA)" ]; }            || { echo "FAIL  topoderive: R-A absent in the deep register — DSIGIL(⊗(∃,∃)) != DSIGIL(∃), two forms for one concept"; ok=0; }
+#  ★ The FALSE arm. The TRUE arm alone is satisfied by a rule collapsing EVERY
+#    ⊗(A,A) — which is exactly the collapse that shipped in the phonetic register.
+{ [ -n "$(dg raLL)" ] && [ "$(dg raLL)" != "$(dg raL)" ]; }           || { echo "FAIL  topoderive: ⊗(LOVE,LOVE) collapsed to LOVE — R-A holds for the ARCHĒ ALONE; every other ⊗(A,A) is a distinct compound"; ok=0; }
+#  ★ And κ's OLDEST declared rewrite, which this register had never honoured:
+#    measured False before the fix, True after.
+{ [ -n "$(dg mcBEING)" ] && [ "$(dg mcBEING)" = "$(dg mcSELF)" ]; }   || { echo "FAIL  topoderive: DSIGIL(↻(BEING)) != DSIGIL(SELF) — the deep renderer disagrees with κ on ↻(BEING) ≡ SELF"; ok=0; }
 rm -f /tmp/t_dsig.la onf_host.out onf_vm.out td_host.out td_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  deep geometry (item 7): onf.la extracts ONF graph features (cycles/hierarchy/branching/automorphism, canonical) + topoderive.la's DSIGIL derives geometry from them per the TopoEmbed table — injective (distinct ONF→distinct form via leaf-marks), order-independent for commutative modes, directional for ▷; byte-identical host==VM. (32×32 1-bit: feature counts + leaf-set, not WL/force-layout/colour.)"
@@ -5435,7 +5478,7 @@ check_arch "native VM" arch_vm.out
 cmp -s arch_host.out arch_vm.out || { echo "FAIL  archroot: native derivation != C host derivation"; ok=0; }
 rm -f arch_host.out arch_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  archroot: ∃(∃)≡∃ (I AM THAT I AM) established as the root ontomonoglyph (autological meta-Ren); the primitive-derivation chain verified BY REDUCTION — 3 of 9 genuinely derive (SELF⟵BEING via self-application, RECOGNITION⟵RELATION = operator ρ, LOVE⟵RELATION symmetrized), 6 are UNDERIVED — THE GAP per Erik's ruling 2026-08-24, not a settled result (BEING/RELATION/DEPTH = B&B's three faces of the Archē, + VOID/FORM/BECOMING); derivation from the root is NOT YET ATTEMPTED for those six; etymology sealed + recoverable; the operator chain ∂→δ→γ→ρ→𝔄 is a process not a catalogue (not forced); byte-identical on host and native VM"
+    echo "PASS  archroot: ∃(∃)≡∃ (I AM THAT I AM) established as the root ontomonoglyph (autological meta-Ren); the primitive-derivation chain verified BY REDUCTION — 3 of 9 genuinely derive (SELF⟵BEING via self-application, RECOGNITION⟵RELATION = operator ρ, LOVE⟵RELATION symmetrized), 6 are UNDERIVED — THE GAP per Erik's ruling 2026-08-24, not a settled result (BEING/RELATION/DEPTH = B&B's three faces of the Archē, + VOID/FORM/BECOMING); derivation from the root IS attempted — in archderive.la, in this same build: BEING resolves as the root itself and the other five are AXIOMS with the seam stated; etymology sealed + recoverable; the operator chain ∂→δ→γ→ρ→𝔄 is a process not a catalogue (not forced); byte-identical on host and native VM"
 else
     exit 1
 fi
@@ -5485,7 +5528,168 @@ check_arcd "native VM" arcd_vm.out
 cmp -s arcd_host.out arcd_vm.out || { echo "FAIL  archderive: native attempt != C host attempt"; ok=0; }
 rm -f arcd_host.out arcd_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  archderive: R-C step 2 — the six ATTEMPTED from the root. BEING resolves as the root itself (not a gap); VOID/DEPTH/FORM/RELATION/BECOMING are AXIOMS with the seam stated and witnessed by reduction: the root is the identity combinator, {I} is closed under application (witnessed to depth 4), and the five are exactly the structural rules I lacks — weakening, contraction, exchange. A bounded result, and NOT a derivation: no stipulation is offered in place of one; byte-identical on host and native VM"
+    echo "PASS  archderive: R-C step 2 — the six ATTEMPTED from the root. BEING resolves as the root itself (not a gap); VOID/DEPTH/FORM/RELATION/BECOMING are AXIOMS with the seam stated and witnessed by reduction: the root is the identity combinator, {I} is closed under application (witnessed to depth 4 here, and MECHANISED past every depth in archclosure.la below), and the five are exactly the structural rules I lacks — weakening, contraction, exchange. A bounded result, and NOT a derivation: no stipulation is offered in place of one; byte-identical on host and native VM"
+else
+    exit 1
+fi
+
+say "The eight modules marked DONE that no gate ever ran (trimono/siginj/phonorm/naming/entropy/alethe/ontofelicity/dyadseed)"
+# ── ★★ A CLAIM WITHOUT A GATE IS NOT COUNTED — AND THIS IS THE SECOND SET ────
+#  Tier 1 of LA_COMPLETION.md recorded "nine modules built but never gated", and
+#  those nine were wired. These are EIGHT MORE, and every one of them is marked
+#  [✓] in that same document — trimono as "one gate, three registers", alethe as
+#  "the liar unformulable", entropy as "E_G/E_S formalised". Nothing in this file,
+#  in any gate_*.sh, or in any .py ran a single one of them.
+#  ★ IT IS NOT BOOKKEEPING, and entropy.la is the proof. Its NORM SORTED ⊗
+#  operands — ontosynthesis treated as COMMUTATIVE, against tex:2837 — and commit
+#  91fc923, which swept the codebase and "corrected five normalisers and two
+#  renderers", COULD NOT have caught it, because nothing executed the file. An
+#  unrun module is invisible to every gate by construction, so the ungated set is
+#  where every other defect class goes to survive. Fixed, and it now has the arm.
+#  ★ EACH ARM WAS RED-PATH TESTED BEFORE WIRING, by planting the defect it claims
+#  to catch: trimono (both directions), siginj, phonorm, naming, entropy (both),
+#  alethe, ontofelicity and dyadseed all flip, mostly one flag apiece. Wiring an
+#  arm without that check would risk adding a fourth entry to this file's own
+#  "gates that cannot go RED" list while calling it coverage.
+#  ★ THE COUNT IS ASSERTED, not just the names: deleting an arm would otherwise be
+#  a silent narrowing that still prints a confident line.
+#  ⚠ BOUND, stated rather than left to be assumed: these seven are gated on the C
+#  HOST ONLY. host==VM was measured for trimono and holds, but it costs 969 s for
+#  ONE module (16 min) — eight would add hours to a three-hour build. dyadseed,
+#  which is small, keeps its native-VM leg below.
+ok=1
+check_flags () {   # $1 module  $2 engine  $3 output file  $4 "flag|flag|..."
+    local m="$1" eng="$2" f="$3" want="$4" n=0 flag got
+    local IFS='|'
+    for flag in $want; do
+        n=$((n+1))
+        grep -qF "$flag OK" "$f" || { echo "FAIL  $m($eng): flag '$flag' is not OK — $(cat "$f")"; ok=0; }
+    done
+    unset IFS
+    grep -qw FAIL "$f" && { echo "FAIL  $m($eng): a flag reported FAIL — $(cat "$f")"; ok=0; }
+    got=$(grep -o ' OK' "$f" | wc -l)
+    [ "$got" -eq "$n" ] || { echo "FAIL  $m($eng): $got flags OK, expected exactly $n — an arm was added or removed, so this line is no longer the claim it was"; ok=0; }
+}
+# The expected flags are DERIVED from each module's own source (the labels it
+# applies MARK() to), not pasted from a run.
+run_eight () {  # $1 module  $2 flag list  $3 timeout
+    local out; out=$(mktemp)
+    local rc=0
+    timeout "$3" ./tiny_host "$1.la" > "$out" 2>&1 || rc=$?
+    [ "$rc" = "0" ] || { echo "FAIL  $1: host run exited $rc (want 0); last line: $(tail -1 "$out")"; ok=0; }
+    check_flags "$1" "C host" "$out" "$2"
+    rm -f "$out"
+}
+run_eight trimono      "inj-↻|inj-SELF|inj-mode|mono-⊕|dir-⊗|dir-▷|dir-⊂"                                    900
+run_eight siginj       "↻trace-REC|↻trace-SELF|↻trace-BEING|↻≠⊂|distinct|mirror-lives"                        900
+run_eight phonorm      "⊕commutes|⊗order-kept|▷kept|⊂kept|raw-still-ordered|spec-agrees"                      900
+run_eight naming       "T1|T2|T3|T4|nonassoc|alpha|terminus|counterex"                                        900
+run_eight entropy      "E_G|E_S clean|E_S C9=1bit|syntropy|centropy d=1|one-unit|⊗order-kept|⊕commutes"       900
+run_eight alethe       "True(P)≡P|holds-of-false|≢obtains|=⇏≡|idem|ℛ*≡ℛ|liar-unformulable"                    900
+run_eight ontofelicity "perform|no-effect|loud|separable|prefix-guard"                                        900
+
+# ── dyadseed: the arithmetic stratum, host AND native VM ────────────────────
+#  Cited as the ground of the stratum by archderive.la, archroot.la, lexicon.la,
+#  LA_COMPLETION.md and LA_PAPER_ADDITIONS_3.md, and run by nothing.
+#  ★★ THE BOUND IS THE LOAD-BEARING ARM. VOID is Church ZERO, BECOMING the
+#  SUCCESSOR, BEING Church ONE by eta-equivalence — but SELF = BEING(BEING) is the
+#  identity applied to itself, hence ONE again, so BEING and SELF (which canon
+#  keeps DISTINCT) collapse to the SAME numeral. The projection is NOT INJECTIVE
+#  and cannot be inverted: the dyad GROUNDS the arithmetic stratum and does NOT
+#  generate the nine. Gating the four positive flags ALONE would leave standing
+#  exactly the reading R-C forbids, so the bound is asserted WITH them.
+#  ★ RED PATH MEASURED in two modes: mutating VOID or BEING makes str_eq receive a
+#  non-string and HALTS the module (rc 1, output EMPTY, so every grep fails);
+#  mutating BECOMING prints FAIL flags at rc 0; and SELF_ := VOID leaves all four
+#  positive flags OK and flips ONLY the bound — which is what proves the bound arm
+#  is not redundant with the other four.
+check_dyad () {  # $1 = engine label, $2 = output file
+    grep -qF 'dyadseed VOID=0 OK' "$2"     || { echo "FAIL  dyadseed($1): VOID no longer reduces to Church zero"; ok=0; }
+    grep -qF '| BECOMING=succ OK' "$2"     || { echo "FAIL  dyadseed($1): BECOMING no longer reduces to the successor"; ok=0; }
+    grep -qF '| stratum OK' "$2"           || { echo "FAIL  dyadseed($1): the naturals are no longer generated beneath VOID/BEING"; ok=0; }
+    grep -qF '| BEING=1 OK' "$2"           || { echo "FAIL  dyadseed($1): BEING no longer probes as Church ONE — the eta-equivalence is what makes 1 a primitive already in the catalogue"; ok=0; }
+    grep -q 'FAIL' "$2"                    && { echo "FAIL  dyadseed($1): a flag reported FAIL — $(cat "$2")"; ok=0; }
+    grep -qF '| bound(projection not injective) OK' "$2" || { echo "FAIL  dyadseed($1): the non-injectivity bound no longer holds — without it the arithmetic stratum reads as a derivation chain for the nine, which is the stipulation R-C forbids"; ok=0; }
+}
+rm -f dyad_host.out dyad_vm.out
+# ★ `cmd; rc=$?` is unsafe under this file's `set -e`: the shell exits AT the
+#   failing command, before the assignment, so the rc branch never runs and the
+#   build dies undiagnosed. `|| DYAD_RC=$?` makes it a condition.
+DYAD_RC=0
+./tiny_host dyadseed.la > dyad_host.out 2>&1 || DYAD_RC=$?
+[ "$DYAD_RC" = "0" ] || { echo "FAIL  dyadseed: host run exited $DYAD_RC (want 0); last line: $(tail -1 dyad_host.out)"; ok=0; }
+check_dyad "C host" dyad_host.out
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp dyadseed.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+./logos_secd > dyad_vm.out 2>&1
+check_dyad "native VM" dyad_vm.out
+cmp -s dyad_host.out dyad_vm.out || { echo "FAIL  dyadseed: the native reduction differs from the host's"; ok=0; }
+rm -f dyad_host.out dyad_vm.out logos_secd logos_program.bin logos_source.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  ungated-eight: eight modules that every document counted as DONE now RUN. trimono gates the trimodal identity in three registers; siginj the ↻ fold-trace; phonorm ⊕-commutes/⊗-order-kept in sound; naming T1-T4 + α; entropy E_G/E_S + the two ORDER arms added with the ⊗ fix; alethe True(P)≡P and the unformulable liar; ontofelicity felicity≡capability with its refusal arms. Each arm was red-path tested by planting the defect it claims to catch. dyadseed additionally byte-identical host==VM, INCLUDING the non-injectivity bound — the dyad grounds the arithmetic stratum and does not generate the nine. BOUND: the seven are host-only (host==VM measured for trimono, 969 s/module — too slow to gate eight)"
+else
+    exit 1
+fi
+
+say "The closure induction, MECHANISED past depth 4 (archclosure.la)"
+# ── ★★ MORE DEPTH IS NOT THE ANSWER ─────────────────────────────────────
+#  archderive.la witnesses {I}'s closure at depth 4 and says so honestly. Depth 5,
+#  6, 7 would still be finite witnessing. What makes it a proof for ALL depths is
+#  CLOSURE UNDER THE GENERATOR: application is the only way to build a term from
+#  the root, so if the class is closed under application, nothing outside it is
+#  reachable at any depth. BASE + STEP + COVERAGE is that induction.
+#  ★ THE CALL-BY-VALUE TRAP THIS HAD TO AVOID: `BEING(BEING)` reduces to `BEING`
+#  at DEFINITION time, so enumerating terms as VALUES would make "all of them are
+#  I" trivially true while proving nothing about coverage -- every tree would be
+#  the same object before the check ran. The shapes are enumerated as Scott-encoded
+#  DATA and evaluated by EVS; the shape space is real though its image is a point.
+#  ★★ COVERAGE IS THE ARM THAT STOPS THIS BEING VACUOUS, and it was measured:
+#  crippling the generator to split only at k=1 yields 5 shapes instead of 23 and
+#  reds `cover` ALONE -- base, step and all stay green. Without it a crippled
+#  generator prints "every shape is I: YES" and is indistinguishable from a
+#  complete proof. The expected count comes from the CATALAN RECURRENCE computed
+#  independently of the generator, so it is derived rather than pasted.
+#  ★ RED PATH, both modes: breaking the root (BEING := la a. la b. a) HALTS the
+#  module loudly with truncated output; crippling the generator reds coverage at
+#  rc 0. Same two-mode shape as archderive's.
+#  BOUND, and it does not go away: "is identity" is OBSERVATIONAL up to the probe
+#  set -- a string, the EMPTY string, and a FUNCTION probe, so a term that is
+#  identity on strings but not on functions fails. That is the sense the argument
+#  needs (nothing EXTENSIONALLY distinct from I is reachable); it is not
+#  intensional equality and the module does not claim it is.
+#  SIZE: gated at NMAX=6 (65 shapes, ~14 s). NMAX=7 (197 shapes) is equally green
+#  out of band at 218 s -- too much per build for corroboration of a fact the
+#  induction already settles. Raising NMAX buys corroboration, not certainty.
+ok=1
+ACL_RC=0
+./tiny_host archclosure.la > acl_host.out 2>&1 || ACL_RC=$?
+[ "$ACL_RC" = "0" ] || { echo "FAIL  archclosure: host run exited $ACL_RC (want 0); last line: $(tail -1 acl_host.out)"; ok=0; }
+grep -qF 'coverage YES' acl_host.out            || { echo "FAIL  archclosure: the enumeration does not match the independently computed Catalan total — the shape space was not fully generated, so 'every shape is I' would range over a subset"; ok=0; }
+grep -qF 'BASE  EVS(LEAF) is identity on the probe set ? YES' acl_host.out || { echo "FAIL  archclosure: the BASE of the induction fails — the leaf is not the identity"; ok=0; }
+grep -qF 'the root is left-neutral on an opaque argument, and the APP rule is application ? YES' acl_host.out || { echo "FAIL  archclosure: the inductive STEP fails — the step is what makes this an induction rather than a deeper finite witness"; ok=0; }
+grep -qF 'ALL   every enumerated shape evaluates to I ? YES' acl_host.out || { echo "FAIL  archclosure: some enumerated shape does not evaluate to I"; ok=0; }
+# ★★ THE ARM THAT MAKES THE OTHERS MEAN SOMETHING. EVS's carrier is a SINGLE
+#    POINT — every shape evaluates to I — so any traversal that returns I passes
+#    and EVS alone CANNOT be red-path tested (measured: dropping the right
+#    operand from the APP rule left all four other arms green). The traversal is
+#    therefore factored into one FOLDS scheme with a DISCRIMINATING second
+#    instance over the integers; a broken traversal collapses leaf counts and
+#    reds HERE, taking EVS's traversal with it because they are the same scheme.
+grep -qF 'leaves — the discriminating instance of the same traversal ? YES' acl_host.out || { echo "FAIL  archclosure: the traversal is wrong — a shape's leaf count disagrees with its level, so the fold is not visiting the whole shape and EVS's own traversal is unsound"; ok=0; }
+# ★ ASSERT THE SUMMARY LINE WHOLE, rather than scanning for the word "no". A
+#   ` no` scan matched the VERDICT's own prose ("NOT to a bound" contains " no")
+#   and reported a green run as failed — the substring trap, in the very gate
+#   written to catch vacuity. The summary names every arm, so one exact match
+#   covers them all and cannot be tripped by prose.
+grep -qF 'archclosure base YES | step YES | cover YES | all YES | trav YES' acl_host.out || { echo "FAIL  archclosure: the summary line is not all-YES — $(grep -F 'archclosure base' acl_host.out)"; ok=0; }
+# ★ the verdict is the LAST line, so asserting it also proves the module ran to
+#   completion rather than halting with every earlier grep true.
+grep -qF 'VERDICT: base + step + coverage = induction on shape size' acl_host.out || { echo "FAIL  archclosure: verdict line absent — the module HALTED mid-run, so every check above passed on a partial file"; ok=0; }
+rm -f acl_host.out
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  archclosure: the closure induction is MECHANISED, not witnessed to a bound. BASE (the leaf is I) + STEP (identity of u and of v implies identity of u applied to v, over every pair to size 4) + COVERAGE (65 shapes to 6 leaves, matching the Catalan total computed independently of the generator) = induction on shape size, so {I} is closed under application at EVERY depth. Shapes are enumerated as DATA because call-by-value collapses them to one value as terms; and because that same collapse makes EVS's own traversal untestable, the traversal is one FOLDS scheme with a DISCRIMINATING integer instance (leaf counts vs level), which is the arm that can actually go red. BOUND: identity is observational up to a three-element probe set including a function probe — the sense the argument needs, not intensional equality"
 else
     exit 1
 fi
