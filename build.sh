@@ -378,6 +378,43 @@ say "the crypto substrate above the hash — KDF, MAC, stream cipher, authentica
 # C host — SHA-256 is the expensive part, not the new modules.
 bash gate_crypto.sh || exit 1
 
+say "the signature layer — WOTS+ one-time, XMSS many-time, and the durable index register"
+# ── ★ ROADMAP G1'S OPEN HALF, AND THE FOUR GATES THAT COVER IT ───────────────
+#  G1 carried "No signature scheme yet — still the blocker for signed updates and
+#  identity"; G2 named the choice ("PQ or hash-based signatures"). These four
+#  gates are that half. Until 2026-08-28 NONE of them was referenced here — the
+#  whole layer sat in the ungated set (Freeze III, FINDING 2), where nothing in
+#  build.sh would have noticed if any of it broke.
+#
+#  ORDER IS THE DIAGNOSTIC, exactly as it is for sha256 -> crypto above: each gate
+#  composes the one before it, so if several go red the ORDER says which is the
+#  cause. The register first (it hashes nothing and costs seconds), then the
+#  one-time primitive, then the Merkle layer over it, then the join.
+#
+#  ★ TWO OF THESE RUN THEIR VM LEG ONLY, AND THAT IS A TRADE, NOT AN OVERSIGHT.
+#  Whole, the four cost ~5.5 h against a ~3 h build. gate_xmss.sh is 2 h 41 m and
+#  gate_xmss_signer.sh is 93 min on the C host alone. An 8-hour build gets run
+#  less often, and a gate nobody runs is the defect this section exists to close.
+#  So host==VM byte-identity — this project's core discipline — is established
+#  here for WOTS+ and for the register, and GIVEN UP for XMSS and the join.
+#  Each of those two SAYS SO IN ITS OWN PASS LINE. Never silently.
+#  To restore full coverage out of band:
+#      bash gate_xmss.sh              # + the 124-min C host leg
+#      bash gate_xmss_signer.sh       # + the 93-min C host leg
+#      WOTSP_FULL=1 bash gate_wotsp.sh   # + the n=32 w=16 production arm
+#
+#  ★ A MISSING GATE FILE IS A HARD FAILURE, not a SKIP. This follows the III-1
+#  correction: `if [ -f gate ]; then ... else echo SKIP; fi` kept the build green
+#  when the file was deleted. There is no legitimate build in which a gate is
+#  optional; absence is a broken checkout.
+for g in gate_xmssidx.sh gate_wotsp.sh gate_xmss.sh gate_xmss_signer.sh; do
+    [ -f "$g" ] || { echo "FAIL  signature layer: $g is absent — a gate file missing means a broken checkout, not a configuration"; exit 1; }
+done
+bash gate_xmssidx.sh || exit 1
+bash gate_wotsp.sh || exit 1
+XMSS_VM_ONLY=1 bash gate_xmss.sh || exit 1
+SIGNER_VM_ONLY=1 bash gate_xmss_signer.sh || exit 1
+
 say "bitwise ops (band/bor/bxor/bshl/bshr/bnot) across the engines"
 BWEXP="8 14 6 256 16 -1 15 0 0 0 255 0 "
 ok=1

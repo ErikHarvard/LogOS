@@ -66,8 +66,17 @@ ok=1
 
 E_XMSS="xmss n=2 w=4 h=2: root OK | leaf0 OK | leaf0 verifies OK | leaf2 verifies vs SAME root OK | sigs differ OK | wrong leaf idx rejected OK | corrupt auth path rejected OK | wrong msg rejected OK | wrong root rejected OK"
 
-HOSTOUT="$(timeout 10800 ./tiny_host xmss.la 2>&1 | head -1)"
-[ "$HOSTOUT" = "$E_XMSS" ] || { echo "FAIL  xmss C host: [$HOSTOUT]"; ok=0; }
+# ★ XMSS_VM_ONLY=1 runs the VM leg alone (~37 min instead of 2 h 41 m) and GIVES
+#   UP host==VM. This is the trade this gate's header names above; it is now
+#   implemented rather than merely described, and the PASS line SAYS which ran.
+if [ "${XMSS_VM_ONLY:-0}" = "1" ]; then
+    HOSTNOTE="C host leg NOT RUN in this invocation (XMSS_VM_ONLY=1; that leg is 124 min). host==VM byte-identity is therefore NOT established here — only the native VM ran, against the derived expectation."
+    HOSTOUT="$E_XMSS"   # not measured; see the note above
+else
+    HOSTOUT="$(timeout 10800 ./tiny_host xmss.la 2>&1 | head -1)"
+    [ "$HOSTOUT" = "$E_XMSS" ] || { echo "FAIL  xmss C host: [$HOSTOUT]"; ok=0; }
+    HOSTNOTE="Byte-identical on the C host AND the native VM."
+fi
 
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
@@ -81,5 +90,5 @@ rm -f logos_secd logos_program.bin logos_source.la
 # same way, and each can be wrong its own way. Only this line catches the second.
 [ "$HOSTOUT" = "$VMOUT" ] || { echo "FAIL  xmss: host != VM"; ok=0; }
 
-[ "$ok" -eq 1 ] && echo "PASS  xmss: a MANY-TIME hash-based signature in Lingua Adamica — a Merkle tree over 2^h WOTS+ one-time keys, so one small public key (the root) signs 2^h messages. This is what ROADMAP G1's 'signed updates and identity' actually needs; wotsp.la alone could sign once. Two signatures under DIFFERENT leaves verify against the SAME root, and FOUR DISCRIMINATING negative controls reject: a wrong leaf index, a one-bit-corrupted authentication path, a wrong message, and the two signatures are not equal. (A fifth control, a flipped bit in the ROOT, is NOT discriminating — Audit IV, 2026-08-27: it reduces to root != FLIPS(root), true by construction, and is retained pending a baseline run.) Byte-identical on the C host AND the native VM. Parameters n=2 w=4 h=2 are a TOY security level chosen for code-path coverage, NOT a safe parameter set — n=32 w=16 costs ~31 min per leaf on this substrate. Vectors are cross-implementation agreement with an independent Python model, NOT a published RFC 8391 KAT."
+[ "$ok" -eq 1 ] && echo "PASS  xmss: a MANY-TIME hash-based signature in Lingua Adamica — a Merkle tree over 2^h WOTS+ one-time keys, so one small public key (the root) signs 2^h messages. This is what ROADMAP G1's 'signed updates and identity' actually needs; wotsp.la alone could sign once. Two signatures under DIFFERENT leaves verify against the SAME root, and FOUR DISCRIMINATING negative controls reject: a wrong leaf index, a one-bit-corrupted authentication path, a wrong message, and the two signatures are not equal. (A fifth control, a flipped bit in the ROOT, is NOT discriminating — Audit IV, 2026-08-27: it reduces to root != FLIPS(root), true by construction, and is retained pending a baseline run.) $HOSTNOTE Parameters n=2 w=4 h=2 are a TOY security level chosen for code-path coverage, NOT a safe parameter set — n=32 w=16 costs ~31 min per leaf on this substrate. Vectors are cross-implementation agreement with an independent Python model, NOT a published RFC 8391 KAT."
 [ "$ok" -eq 1 ]
