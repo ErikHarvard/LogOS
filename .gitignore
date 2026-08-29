@@ -91,6 +91,9 @@ grown.la
 /kernel/la_seg.bin
 /kernel/*.o
 /live_blue
+*.log
+# log files from the Track E signature gates (gate_wotsp / gate_xmss /
+#   gate_xmss_signer); each run rewrites its own, none are inputs
 /logos_app
 # LogOS kernel build products (K1+): generated per-build, sources tracked
 /logos_native
@@ -136,6 +139,9 @@ selfdoc_out.txt
 /typed_module.la
 # Unpublished codices stay local-only; ONLY codices/published/ is tracked.
 watched.la
+# xmss_signer.la's persisted index register (STATE); gate_xmss_signer.sh
+#   rm -f's it at both ends of its run, so a file here is a leftover, not an input
+/xmss_signer.state
 /kernel/native_pingpong.bin
 /kernel/native_gc.bin
 /kernel/kernel_comp_session.elf
