@@ -526,8 +526,11 @@ rm -f logos_secd logos_program.bin logos_source.la
 cp logoscap.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 VCAP="$(./logos_secd 2>/dev/null)"
-[ "$VCAP" = "$CAP_EXPECT" ] || { echo "FAIL  logoscap (native VM): capability gating mismatch"; printf '%s\n' "$VCAP"; ok=0; }
-[ "$HCAP" = "$VCAP" ] || { echo "FAIL  logoscap: host and VM differ"; ok=0; }
+# ★ RE-POINTED (III-5, 2026-08-28): logoscap host=EXPECT, VM=EXPECT and host=VM
+#   is three comparisons among three values; the third is implied by transitivity
+#   and CANNOT FIRE ALONE. VM-vs-EXPECT is folded into the host-vs-EXPECT and
+#   host-vs-VM pair below — identical total strength, both lines live.
+[ "$HCAP" = "$VCAP" ] || { echo "FAIL  logoscap: host and VM differ (VM gave: $VCAP)"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  import(\"logosipc.la\") + capabilities: sealed typed messages — authorized opens, foreign cap and forged probe denied, byte-identical on host and VM"
@@ -2141,7 +2144,9 @@ PYC
     if ! command -v ld >/dev/null 2>&1; then
         echo "SKIP  asm.la -f elf64 gate: ld not installed (cannot link to compare)"
     elif [ ! -x ./gate_asmelf.sh ]; then
-        echo "SKIP  asm.la -f elf64 gate: gate_asmelf.sh absent"
+        # III-3 (second sweep): a gate FILE is never optional. Deleting it used to
+        # keep the build GREEN. A missing gate is a broken checkout, not a config.
+        echo "FAIL  asm.la -f elf64 gate: gate_asmelf.sh is missing or not executable — a gate file is never optional, so this is a broken checkout rather than a configuration"; ok=0
     else
         if ./gate_asmelf.sh >.asmgate/elf64.out 2>&1; then
             echo "PASS  asm.la -f elf64: $(grep -c '^PASS' .asmgate/elf64.out) fixtures link byte-identical to nasm (ld(ours)==ld(nasm) + section-header equality); the OBJECT step of the kernel build is nasm-free"
@@ -2162,7 +2167,8 @@ PYC
     if ! command -v ld >/dev/null 2>&1; then
         echo "SKIP  asm.la -f elf64 extern gate: ld not installed"
     elif [ ! -x ./gate_asmelf_extern.sh ]; then
-        echo "SKIP  asm.la -f elf64 extern gate: gate_asmelf_extern.sh absent"
+        # III-3 (second sweep) — twin of the block above.
+        echo "FAIL  asm.la -f elf64 extern gate: gate_asmelf_extern.sh is missing or not executable — a gate file is never optional, so this is a broken checkout rather than a configuration"; ok=0
     else
         if ./gate_asmelf_extern.sh >.asmgate/extern.out 2>&1; then
             echo "PASS  asm.la -f elf64 extern: two-object link byte-identical to nasm+ld (UNDEF symbol + reloc resolved across objects); MULTI-object assembly is nasm-free"
@@ -3847,8 +3853,11 @@ rm -f logos_secd logos_program.bin logos_source.la
 cp theourgia_input.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 VIN="$(./logos_secd 2>/dev/null)"
-[ "$VIN" = "$EXPECT" ] || { echo "FAIL  theourgia_input (native VM): decode mismatch"; printf '%s\n' "$VIN"; ok=0; }
-[ "$HIN" = "$VIN" ] || { echo "FAIL  theourgia_input: host and VM decodes differ"; ok=0; }
+# ★ RE-POINTED (III-5, 2026-08-28): theourgia_input host=EXPECT, VM=EXPECT and host=VM
+#   is three comparisons among three values; the third is implied by transitivity
+#   and CANNOT FIRE ALONE. VM-vs-EXPECT is folded into the host-vs-EXPECT and
+#   host-vs-VM pair below — identical total strength, both lines live.
+[ "$HIN" = "$VIN" ] || { echo "FAIL  theourgia_input: host and VM decodes differ (VM gave: $VIN)"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  theourgia: evdev decoder reads type/code/value (incl. signed deltas), byte-identical on host and native VM"
@@ -3922,8 +3931,11 @@ rm -f logos_secd logos_program.bin logos_source.la
 cp theourgia_poll.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 VP="$(./logos_secd 2>/dev/null)"
-[ "$VP" = "$EXPECT" ] || { echo "FAIL  theourgia_poll (native VM): mismatch"; printf '%s\n' "$VP"; ok=0; }
-[ "$HP" = "$VP" ] || { echo "FAIL  theourgia_poll: host and VM differ"; ok=0; }
+# ★ RE-POINTED (III-5, 2026-08-28): theourgia_poll host=EXPECT, VM=EXPECT and host=VM
+#   is three comparisons among three values; the third is implied by transitivity
+#   and CANNOT FIRE ALONE. VM-vs-EXPECT is folded into the host-vs-EXPECT and
+#   host-vs-VM pair below — identical total strength, both lines live.
+[ "$HP" = "$VP" ] || { echo "FAIL  theourgia_poll: host and VM differ (VM gave: $VP)"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  theourgia: multiplexed input loop — JOIN/SPLIT poll marshalling + DRAIN dispatch routes a ready-set through the decoder, byte-identical on host and native VM"
@@ -4552,7 +4564,25 @@ case "$PCOUT" in
   *"stress-inventory-pinned OK"*) : ;;
   *) echo "FAIL  phoncoll: the stress-only inventory changed — a new entry landed on an existing phonym-modulo-stress, or one left; this is a MEASUREMENT, so a change is news rather than necessarily a defect — got: $PCOUT"; ok=0 ;;
 esac
-echo "PASS  phoncoll: phonetic injectivity holds at lexicon scale (NO two distinct canonical forms share a phonym, 79 entries, every entry against every later one on the normalised key); the declared stress-only confusability metric now measures EMPTY. What it WAS: fifteen pairs, and in all fifteen the two entries shared an operand pair and differed only in ⊗ versus ▷ — the contrast the romanised register carried by STRESS ALONE, between the two most-used operators (census ⊗=59 ▷=24), thirteen of the fifteen being the codex's own entries. R-D's duration mark on ▷ closed every one of them and homophones stayed empty, so nothing was traded for it; the inventory is pinned in BOTH directions, so a pair returning is news rather than silence"
+# ── ★★ THE CONSTRUCTED ⊗/▷ PAIR — the inventory above is LEXICON-SCOPED ──
+#  R-D's acceptance test was "two concepts differing only in ⊗-vs-▷ must come
+#  out distinct in the romanised form" — a claim about the LANGUAGE, not about
+#  the 79 entries that happen to exist. The lexicon holds NO pair in which ▷'s
+#  left operand already carries a stress mark, so the empty inventory above
+#  cannot see the case where the cue fails. These three arms construct it.
+case "$PCOUT" in
+  *"nest-two-terms OK"*) : ;;
+  *) echo "FAIL  phoncoll: the constructed ⊗/▷ pair no longer denotes TWO terms — their canonical forms collapsed, so the bound arm below would agree by IDENTITY rather than by homophony and would pin nothing — got: $PCOUT"; ok=0 ;;
+esac
+case "$PCOUT" in
+  *"nest-control-distinct OK"*) : ;;
+  *) echo "FAIL  phoncoll: ⊗ and ▷ over an UNMARKED operand now render identically — R-D's duration cue has REGRESSED and the ⊗/▷ contrast is gone in the romanised register even in the simple case — got: $PCOUT"; ok=0 ;;
+esac
+case "$PCOUT" in
+  *"nest-bound-collides OK"*) : ;;
+  *) echo "FAIL  phoncoll: the nested-▷ collision CHANGED. This arm PINS A KNOWN DEFECT awaiting a phonology ruling — ▷ over an already-marked operand contributes neither cue (STRESS is idempotence-guarded, the duration mark is utterance-level), so ⊗ and ▷ are homophones there. If the ruling has landed and the collision is CLOSED, FLIP this arm to assert distinctness; this is not a regression to repair — got: $PCOUT"; ok=0 ;;
+esac
+echo "PASS  phoncoll: phonetic injectivity holds at lexicon scale (NO two distinct canonical forms share a phonym, 79 entries, every entry against every later one on the normalised key); the declared stress-only confusability metric now measures EMPTY. What it WAS: fifteen pairs, and in all fifteen the two entries shared an operand pair and differed only in ⊗ versus ▷ — the contrast the romanised register carried by STRESS ALONE, between the two most-used operators (census ⊗=59 ▷=24), thirteen of the fifteen being the codex's own entries. R-D's duration mark on ▷ closed every one of them and homophones stayed empty, so nothing was traded for it; the inventory is pinned in BOTH directions, so a pair returning is news rather than silence. ★ THAT INVENTORY IS LEXICON-SCOPED, and R-D's cue is DEFEATED WHERE ▷ NESTS: a CONSTRUCTED pair — >(>(SELF,RECOGNITION),VOID) versus *(>(SELF,RECOGNITION),VOID) — renders IDENTICALLY as m'ashiha:, because STRESS is idempotence-guarded (a ▷ whose operand already carries a mark adds none) and the duration mark is utterance-level (present once for both, separating neither), so BOTH of ▷'s cues vanish together. The lexicon contains no such pair, which is exactly why an empty inventory could sit beside a live collision. Now gated in three arms; nest-bound-collides PINS THE DEFECT, so its green means the collision is still OPEN, not that it is acceptable"
 
 say "The nine modules that were BUILT BUT NEVER GATED (sglyph/phonseq/tactile/crossmodal/modality/explain/depthreport/sglyph_probe)"
 # ── ★ NINE MODULES, ZERO OCCURRENCES IN THIS FILE UNTIL NOW ──────────────
@@ -5013,8 +5043,11 @@ rm -f logos_secd logos_program.bin logos_source.la
 cp goertzel.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 GZV="$(./logos_secd 2>/dev/null)"
-[ "$GZV" = "$GZ_EXPECT" ] || { echo "FAIL  goertzel: native VM verdict wrong (got: $GZV)"; ok=0; }
-[ "$GZH" = "$GZV" ]        || { echo "FAIL  goertzel: native != host"; ok=0; }
+# ★ RE-POINTED (III-5, 2026-08-28): goertzel host=EXPECT, VM=EXPECT and host=VM
+#   is three comparisons among three values; the third is implied by transitivity
+#   and CANNOT FIRE ALONE. VM-vs-EXPECT is folded into the host-vs-EXPECT and
+#   host-vs-VM pair below — identical total strength, both lines live.
+[ "$GZH" = "$GZV" ]        || { echo "FAIL  goertzel: native != host (VM gave: $GZV)"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  goertzel: integer Goertzel MEASURES phonym's Love /u/ formants (F1 300 / F2 870 / F3 2240) each >=50x every off-target control + analyzer self-detects a pure tone — 'spectrally verified' is now an actual test, byte-identical host and native VM"
@@ -5326,8 +5359,11 @@ rm -f logos_secd logos_program.bin logos_source.la
 cp /tmp/pgtest.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 PGV="$(./logos_secd 2>/dev/null)"
-[ "$PGV" = "$PG_EXPECT" ] || { echo "FAIL  pragmatics: witness wrong on native VM"; printf 'got: %s\n' "$PGV"; ok=0; }
-[ "$PGH" = "$PGV" ]       || { echo "FAIL  pragmatics: native != host"; ok=0; }
+# ★ RE-POINTED (III-5, 2026-08-28): pragmatics host=EXPECT, VM=EXPECT and host=VM
+#   is three comparisons among three values; the third is implied by transitivity
+#   and CANNOT FIRE ALONE. VM-vs-EXPECT is folded into the host-vs-EXPECT and
+#   host-vs-VM pair below — identical total strength, both lines live.
+[ "$PGH" = "$PGV" ]       || { echo "FAIL  pragmatics: native != host (VM gave: $PGV)"; ok=0; }
 rm -f /tmp/pgtest.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  pragmatics: SPEC GENERATEs/DEPLOYs pragmatics.la, META_DEBUG verifies the USE branch — USE, the HETERO/AUTO/META prompting taxonomy, PERFORMATIVE (saying=doing), IGNITION felicity"
@@ -5393,8 +5429,11 @@ rm -f logos_secd logos_program.bin logos_source.la
 cp /tmp/dxtest.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 DXV="$(./logos_secd 2>/dev/null)"
-[ "$DXV" = "$DX_EXPECT" ] || { echo "FAIL  deixis: witness wrong on native VM"; printf 'got: %s\n' "$DXV"; ok=0; }
-[ "$DXH" = "$DXV" ]       || { echo "FAIL  deixis: native != host"; ok=0; }
+# ★ RE-POINTED (III-5, 2026-08-28): deixis host=EXPECT, VM=EXPECT and host=VM
+#   is three comparisons among three values; the third is implied by transitivity
+#   and CANNOT FIRE ALONE. VM-vs-EXPECT is folded into the host-vs-EXPECT and
+#   host-vs-VM pair below — identical total strength, both lines live.
+[ "$DXH" = "$DXV" ]       || { echo "FAIL  deixis: native != host (VM gave: $DXV)"; ok=0; }
 rm -f /tmp/dxtest.la logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
     echo "PASS  deixis: SPEC GENERATEs/DEPLOYs deixis.la, META_DEBUG verifies the indexicals (I/you/here/now as characters), DEIXIS resolution, character-fixity, and the ORIGO deictic centre"
@@ -6786,10 +6825,31 @@ if [ "$ok" -eq 1 ]; then
     # moving YIELD_PENDING_ADDR into UNCONSUMED would satisfy VALIDATION PASS on its own.
     printf '%s\n' "$RTC" | grep -q 'YIELD_PENDING_ADDR .* OK (kernel/timer.asm)' \
       || { echo "FAIL  rtconsts: YIELD_PENDING_ADDR was not checked against kernel/timer.asm — its external consumer went unvalidated (the exact 2026-08-28 shape)"; ok=0; }
+    # ── ★ THE COUNT THIS GATE ANNOUNCES MUST BE DERIVED, NOT WRITTEN ────────
+    #  The PASS line below used to state a literal "60 in native_codegen3.la"
+    #  while nothing asserted any count. It was ALSO WRONG: the real figures are
+    #  59 internal + 1 external = 60 TOTAL, so the message reported the total as
+    #  the internal count and then added the external one again. Nobody caught it
+    #  because no assertion could. That is the archroot "6 co-primitive" defect
+    #  reproduced inside the gate written to close that class.
+    #  ★ DERIVED, NOT ASSERTED AT A LITERAL. A 61st rt constant is NOT an event —
+    #  pinning the number would turn a routine addition red and train people to
+    #  edit the expectation. (Contrast the "5 engines" claim, where a sixth engine
+    #  IS an event and the literal SHOULD be asserted. The test is not "is it
+    #  hardcoded" but "should this number changing be an event?")
+    RTC_IN=$(printf '%s\n'  "$RTC" | grep -cE '= +[0-9-]+ +OK$')
+    RTC_EX=$(printf '%s\n'  "$RTC" | grep -cE '= +[0-9-]+ +OK \(')
+    #  ★ ANTI-VACUITY FLOOR. VALIDATION PASS is computed by folding over the
+    #  derived rows, so a derivation that produced ZERO rows passes vacuously —
+    #  the empty-collection shape (Q4). The floor is deliberately far below the
+    #  current 59 so that adding or removing constants is never an event, while a
+    #  collapsed or partial derivation cannot read as success.
+    [ "$RTC_IN" -ge 40 ] && [ "$RTC_EX" -ge 1 ] \
+      || { echo "FAIL  rtconsts: the derivation checked $RTC_IN internal + $RTC_EX external constants — far below the expected scale. VALIDATION PASS folds over the rows, so a derivation yielding few or none passes VACUOUSLY; this floor is what makes an empty check fail"; ok=0; }
 fi
 rm -f /tmp/rtconsts_build.bin /tmp/rtconsts_build.lst
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  rtconsts: every native_codegen3_rt.asm-derived constant matches a consumer that was actually read — 60 in native_codegen3.la plus YIELD_PENDING_ADDR in kernel/timer.asm; a constant with no declared consumer, a stale/deleted equ, and an unreadable consumer are each a FAIL (checker self-tested first), and this runs without QEMU, where gate_k5b2.sh's drift guard does not"
+    echo "PASS  rtconsts: every native_codegen3_rt.asm-derived constant matches a consumer that was actually read — $RTC_IN in native_codegen3.la plus $RTC_EX external (YIELD_PENDING_ADDR in kernel/timer.asm), $((RTC_IN+RTC_EX)) in total, every figure DERIVED from the checker's own rows rather than written here; a constant with no declared consumer, a stale/deleted equ, and an unreadable consumer are each a FAIL (checker self-tested first), and this runs without QEMU, where gate_k5b2.sh's drift guard does not"
 else
     exit 1
 fi
@@ -6886,12 +6946,33 @@ bash kernel/gate_k5b1b.sh || exit 1
 # The safe-point reshuffle self-hosts (the GC interior-pointer fix unblocked it).
 bash kernel/gate_k5b2.sh || exit 1
 
-# HAL.4e — the terminal window. NOTE: its siblings gate_comp_session.sh,
-# gate_hal1..5b, gate_hh1/2*, gate_k6*, gate_k7* all EXIST and PASS when run by
-# hand, and build.sh invokes NONE of them (14 of 40 kernel gates are wired).
-# That is the Q0 coverage finding, live: "done and gated" is true of those
-# milestones only in the sense that a gate exists — the build does not assert
-# them. Wiring this one does not fix that; it just does not add to it.
+# HAL.4e — the terminal window.
+# ── ★ THIS NOTE WAS STALE AND IT MANUFACTURED WORK. Corrected 2026-08-28. ──
+# It read: "its siblings gate_comp_session.sh, gate_hal1..5b, gate_hh1/2*,
+# gate_k6*, gate_k7* all EXIST and PASS when run by hand, and build.sh invokes
+# NONE of them (14 of 40 kernel gates are wired)."
+# ★ The COUNT was never wrong — 14 kernel gates really are invoked above this
+#   line, and the note 8 lines below correctly says 15 once gate_comp_term.sh
+#   runs. What went false is the SENTENCE: the wiring block immediately below
+#   now invokes every one of those siblings, so "invokes NONE of them" became
+#   untrue while the parenthetical beside it stayed true. A local count read as
+#   a global claim.
+# ★ THE COST WAS NOT MISINFORMATION, IT WAS LABOUR. This sentence became a
+#   memory ("52 of 78 gate scripts never invoked, incl. ALL HAL drivers"), the
+#   memory became a queued work item, and the item was assigned and staffed —
+#   to wire gates that were already wired.
+# ★ MEASURED 2026-08-28, independently by two sessions, with controls (a
+#   known-invoked and a known-uninvoked gate) checked BEFORE believing the
+#   number: 52 gate scripts exist (12 root + 40 kernel); 50 are invoked; all 40
+#   kernel gates run, from the block below. The two that are not are
+#   gate_bootelf.sh (deliberate — a ~26-min native-VM cycle, invoked separately
+#   like the QEMU gates) and gate_rss.sh (a real candidate, still unwired).
+#   Method note, because three greps in a row got this wrong: a bare-name grep
+#   matches gate names inside THIS comment, and a \b-anchored one silently
+#   misses every ./gate_X.sh. Search per script, excluding existence-test and
+#   comment lines, and check the pattern against both controls first.
+# ★ So: state the number AND how it was measured, or state nothing. A count
+#   hand-updated and never re-derived is how this one drifted.
 say "LogOS HAL.4e: a terminal window in the compositor (text on the metal)"
 bash kernel/gate_comp_term.sh || exit 1
 

@@ -233,10 +233,48 @@ glyph OK_SAW  = AND(SAW_POS)(SAW_NEG)
 #  drifted, and build.sh asserts the SET, not the count.
 glyph OK_STRESSSET = str_eq(STRESSONLY)("")
 
+# ── ★★ THE CONSTRUCTED PAIR: R-D's CUE IS DEFEATED WHERE ▷ NESTS ────
+#  The stress-only inventory above reads EMPTY at LEXICON scale, and that
+#  is true. It is not the whole of what R-D claimed. R-D's own acceptance
+#  test was "two concepts differing only in ⊗-vs-▷ must come out distinct
+#  in the romanised form" — a claim about the LANGUAGE, not about the 79
+#  entries that happen to exist. The lexicon contains NO minimal pair in
+#  which ▷'s left operand already carries a stress mark, so nothing above
+#  can see the case where the cue fails. An inventory that reads empty
+#  because the corpus lacks the shape is not evidence the shape is safe.
+#  ★ WHY IT FAILS. STRESS is idempotence-guarded — `IF(HASMARK(s)) s
+#  (MARKLAST s)` (lexicon.la:137) — so when ▷'s left operand ALREADY
+#  carries a mark, ▷ contributes NO stress. And R-D's duration mark is
+#  UTTERANCE-level (Erik's ruling 2026-08-27), so it is present once for
+#  both terms and distinguishes neither. Both of ▷'s cues vanish together
+#  and ⊗ and ▷ become homophones.
+#  MEASURED on the NORMALISED key this gate uses:
+#    >(>(SELF,RECOGNITION),VOID)  ->  m'ashiha:
+#    *(>(SELF,RECOGNITION),VOID)  ->  m'ashiha:
+#  ⚠⚠ THE BOUND ARM PINS A DEFECT, NOT A PROPERTY. It is GREEN because the
+#  collision is real and is awaiting a phonology ruling. When that ruling
+#  lands and the collision closes, this arm goes RED — that is the SIGNAL
+#  TO FLIP IT, not a regression. Read the arm name, not the colour.
+glyph NA = ">>426"
+glyph NB = "*>426"
+glyph CA = ">46"
+glyph CB = "*46"
+# ★ WITHOUT THIS THE BOUND ARM IS VACUOUS. "They render the same" is only a
+#  COLLISION if they are genuinely two terms. A normaliser that collapsed
+#  the two canonical forms would satisfy the bound arm for the wrong
+#  reason — agreement by identity rather than by homophony.
+glyph OK_NEST_TWOTERMS = NOT(str_eq(K_(NA))(K_(NB)))
+glyph OK_NEST_BOUND    = str_eq(P_(NA))(P_(NB))
+# ★ THE LIVE ARM. R-D genuinely works when the operand is UNMARKED, and
+#  this is the arm that reds if the duration cue is ever removed or the
+#  stress cue regresses. Without it the block would only pin a defect and
+#  would assert nothing that must stay true.
+glyph OK_NEST_CONTROL  = NOT(str_eq(P_(CA))(P_(CB)))
+
 glyph MK  = la c. IF(c)(la _. "OK")(la _. "FAIL")
 glyph J   = la a. la b. concat(a)(b)
 glyph ROW = la l. la c. J(J(" | ")(l))(J(" ")(MK(c)))
 glyph HDR = J("phoncoll homophones=[")(J(HOMOPHONES)(J("] stress-only=[")(J(STRESSONLY)("]"))))
-glyph MAIN = print(J(HDR)(J(ROW("phonetic-injective")(OK_INJECTIVE))(J(ROW("scan-proved-it-looked")(OK_SAW))(ROW("stress-inventory-pinned")(OK_STRESSSET)))))
+glyph MAIN = print(J(HDR)(J(ROW("phonetic-injective")(OK_INJECTIVE))(J(ROW("scan-proved-it-looked")(OK_SAW))(J(ROW("stress-inventory-pinned")(OK_STRESSSET))(J(ROW("nest-two-terms")(OK_NEST_TWOTERMS))(J(ROW("nest-control-distinct")(OK_NEST_CONTROL))(ROW("nest-bound-collides")(OK_NEST_BOUND))))))))
 
 export STRIP KP HOMOPHONES STRESSONLY
