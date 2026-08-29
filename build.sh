@@ -4954,7 +4954,26 @@ say "Meta-phonosemantics (item 8): the derived phonym's d_𝒪↔d_𝒫 map — 
 # Pure str/int ⇒ byte-identical host == VM (imports topoderive ALONE, like cob.la).
 ok=1
 check_phonsem () {  # $1 = engine label, $2 = output file
-    grep -qF "phonsem ontophonosemantic alignment (phonym ≡ referent's acoustic structure, alpha=1, ATT) = 1.0 by nature" "$2" || { echo "FAIL  phonsem($1): the 1.0-by-nature ontophonosemantic alignment line (ATT) changed"; ok=0; }
+    # ★ FIXED 2026-08-28 — THIS GATE COULD NOT GO RED. It grepped for the literal that
+    #   phonsem.la:215 prints UNCONDITIONALLY (`glyph L1 = print("...1.0 by nature")`),
+    #   so it asserted only that the print still exists. α=1 is [S] — true by
+    #   CONSTRUCTION under ATT, identity rather than correspondence — and must NOT be
+    #   gated as a measurement; build.sh:932 already fails the build for making α
+    #   numeric in canon. So gate the thing that CAN actually fail: the TWO-REGISTER
+    #   SEPARATION. Alignment (identity, 1.0 by nature) and instantiation fidelity
+    #   (measured, <1.0) must stay in different registers; collapsing them is the
+    #   category error the ATT discipline exists to prevent.
+    ALINE=$(grep -F "phonsem ontophonosemantic alignment" "$2" | head -1)
+    [ -n "$ALINE" ] || { echo "FAIL  phonsem($1): the alignment line is ABSENT — the identity register is not reported at all"; ok=0; }
+    case "$ALINE" in
+      *"= 1.0 by nature"*) : ;;
+      *) echo "FAIL  phonsem($1): alignment no longer stated as 1.0 BY NATURE — got: $ALINE"; ok=0 ;;
+    esac
+    # ★ THE LIVE ONE: a measured quantity in the identity register IS register collapse.
+    case "$ALINE" in
+      *pct*|*%*|*concordant*|*discordant*)
+        echo "FAIL  phonsem($1): the IDENTITY register reports a MEASURED quantity — alignment and instantiation fidelity have collapsed into one register (ATT two-register violation): $ALINE"; ok=0 ;;
+    esac
     grep -qF 'phonsem derived Theta_P(Compassion=Love⊗Recognition) = 1300,300,870,2240,2800,270,2300,3000,' "$2"                     || { echo "FAIL  phonsem($1): derived Θ_P (Love⊗Recognition superposition) changed"; ok=0; }
     grep -qF 'phonsem instantiation identity: canonical(one concept⇒one form)=YES  injective(SET) Theta_P = 8 / 8' "$2"     || { echo "FAIL  phonsem($1): identity register (canonicity=YES / 8-of-8 injective) changed"; ok=0; }
     grep -qF 'phonsem instantiation fidelity (NOT alignment): 67 pct  [concordant 211 / discordant 103]' "$2"               || { echo "FAIL  phonsem($1): instantiation-fidelity score changed"; ok=0; }
