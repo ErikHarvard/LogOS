@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."          # -> ~/logos
 
 echo "[1/4] compile comp.la via native_codegen3"
 cp kernel/comp.la native_input.la
-./tiny_host native_codegen3.la >/dev/null
+( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null
 ENTRY=$(readelf -h native_codegen3_out | awk '/Entry point/{print $NF}')
 echo "      e_entry (LA prol) = $ENTRY"
 
