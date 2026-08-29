@@ -370,7 +370,13 @@ glyph IS_BI_NAME_INT = la name.
     IF(str_eq(name)("int_eq"))(la _. TRUE)(la _.
     IF(str_eq(name)("int_to_str"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_to_int"))(la _. TRUE)(la _.
-    FALSE)))))))))
+    IF(str_eq(name)("band"))(la _. TRUE)(la _.
+    IF(str_eq(name)("bor"))(la _. TRUE)(la _.
+    IF(str_eq(name)("bxor"))(la _. TRUE)(la _.
+    IF(str_eq(name)("bshl"))(la _. TRUE)(la _.
+    IF(str_eq(name)("bshr"))(la _. TRUE)(la _.
+    IF(str_eq(name)("bnot"))(la _. TRUE)(la _.
+    FALSE)))))))))))))))
 
 glyph APPLY_BI_INT = la name. la val.
     IF(str_eq(name)("int_to_str"))(la _. VAL_STR(int_to_str(UNWRAP_INT(val))))(la _.
@@ -382,7 +388,13 @@ glyph APPLY_BI_INT = la name. la val.
     IF(str_eq(name)("mod"))(la _. VAL_PA("mod")(val))(la _.
     IF(str_eq(name)("lt"))(la _. VAL_PA("lt")(val))(la _.
     IF(str_eq(name)("int_eq"))(la _. VAL_PA("int_eq")(val))(la _.
-    VAL_STR(concat("ERROR: unknown builtin ")(name)))))))))))
+    IF(str_eq(name)("band"))(la _. VAL_PA("band")(val))(la _.
+    IF(str_eq(name)("bor"))(la _. VAL_PA("bor")(val))(la _.
+    IF(str_eq(name)("bxor"))(la _. VAL_PA("bxor")(val))(la _.
+    IF(str_eq(name)("bshl"))(la _. VAL_PA("bshl")(val))(la _.
+    IF(str_eq(name)("bshr"))(la _. VAL_PA("bshr")(val))(la _.
+    IF(str_eq(name)("bnot"))(la _. VAL_INT(bnot(UNWRAP_INT(val))))(la _.
+    VAL_STR(concat("ERROR: unknown builtin ")(name)))))))))))))))))
 
 glyph APPLY_BI2_INT = la t. la f. la name. la v1. la v2.
     IF(str_eq(name)("add"))(la _. VAL_INT(add(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
@@ -392,7 +404,12 @@ glyph APPLY_BI2_INT = la t. la f. la name. la v1. la v2.
     IF(str_eq(name)("mod"))(la _. VAL_INT(mod(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
     IF(str_eq(name)("lt"))(la _. IF(lt(UNWRAP_INT(v1))(UNWRAP_INT(v2)))(la _. t)(la _. f))(la _.
     IF(str_eq(name)("int_eq"))(la _. IF(int_eq(UNWRAP_INT(v1))(UNWRAP_INT(v2)))(la _. t)(la _. f))(la _.
-    VAL_STR(concat("ERROR: unknown builtin2 ")(name)))))))))
+    IF(str_eq(name)("band"))(la _. VAL_INT(band(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("bor"))(la _. VAL_INT(bor(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("bxor"))(la _. VAL_INT(bxor(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("bshl"))(la _. VAL_INT(bshl(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    IF(str_eq(name)("bshr"))(la _. VAL_INT(bshr(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
+    VAL_STR(concat("ERROR: unknown builtin2 ")(name))))))))))))))
 
 # First-argument builtin dispatch (effects pass through to the host).
 glyph APPLY_BI = la name. la val.
