@@ -6749,6 +6749,51 @@ for f in new_logos_gen*.bin; do
     printf '  %s  %s\n' "$(md5sum "$f" | cut -d' ' -f1)" "$f"
 done
 
+say "rt constant provenance: every native_codegen3_rt.asm-derived constant reaches a CHECKED consumer"
+# WHY THIS GATE EXISTS (2026-08-28). kernel/timer.asm hard-codes YIELD_PENDING_ABS,
+# the absolute address of the LA runtime's yield flag. Commit 0b031c6 (the rt_init
+# HEAP_END clamp) grew rt_init by 45 bytes and moved that slot 0x4013b0 -> 0x4013dd
+# WITHOUT updating the equ. A wrong address makes the timer ISR poke a random byte in
+# the LA image and never preempt.
+# Two things let it survive: (1) derive_consts.py --validate checked constants against
+# native_codegen3.la, and YIELD_PENDING is consumed by timer.asm instead, so the tool
+# DERIVED it correctly, printed "(not in .la — new)" and exited PASS — it looked, found
+# nothing, and reported success; (2) the only real check was build_k5b2.sh's drift
+# guard, and gate_k5b2.sh SKIPS when QEMU is absent, so on a QEMU-less machine nothing
+# checked it at all. Hence this gate is deliberately NOT QEMU-gated and runs BEFORE the
+# kernel section: it is pure nasm + python.
+# The checker now requires every derived constant to reach a declared consumer that was
+# actually read (a missing file or an absent equ is a FAIL, never a skip). --selftest is
+# run FIRST, because a verdict from a checker whose own negative controls do not hold
+# means nothing.
+ok=1
+command -v nasm >/dev/null 2>&1 \
+  || { echo "FAIL  rtconsts: nasm absent — the rt listing cannot be derived (the kernel gates below require it too)"; ok=0; }
+if [ "$ok" -eq 1 ]; then
+    rm -f /tmp/rtconsts_build.bin /tmp/rtconsts_build.lst
+    nasm -f bin native_codegen3_rt.asm -o /tmp/rtconsts_build.bin -l /tmp/rtconsts_build.lst 2>/dev/null \
+      || { echo "FAIL  rtconsts: nasm could not assemble native_codegen3_rt.asm"; ok=0; }
+fi
+if [ "$ok" -eq 1 ]; then
+    python3 scratchpad/derive_consts.py --selftest >/dev/null 2>&1 \
+      || { echo "FAIL  rtconsts: derive_consts.py --selftest FAILED — the checker's own negative controls (stale equ / deleted equ / unreadable file / undeclared consumer) do not hold, so its verdict below would mean nothing"; ok=0; }
+fi
+if [ "$ok" -eq 1 ]; then
+    RTC="$(python3 scratchpad/derive_consts.py /tmp/rtconsts_build.lst /tmp/rtconsts_build.bin --validate native_codegen3.la 2>&1)"
+    printf '%s\n' "$RTC" | grep -q '^VALIDATION PASS$' \
+      || { echo "FAIL  rtconsts: a derived constant does not match its consumer:"; printf '%s\n' "$RTC" | grep -E '\*\*\*|VALIDATION'; ok=0; }
+    # Prove the tool LOOKED at the external consumer, rather than merely not complaining:
+    # moving YIELD_PENDING_ADDR into UNCONSUMED would satisfy VALIDATION PASS on its own.
+    printf '%s\n' "$RTC" | grep -q 'YIELD_PENDING_ADDR .* OK (kernel/timer.asm)' \
+      || { echo "FAIL  rtconsts: YIELD_PENDING_ADDR was not checked against kernel/timer.asm — its external consumer went unvalidated (the exact 2026-08-28 shape)"; ok=0; }
+fi
+rm -f /tmp/rtconsts_build.bin /tmp/rtconsts_build.lst
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  rtconsts: every native_codegen3_rt.asm-derived constant matches a consumer that was actually read — 60 in native_codegen3.la plus YIELD_PENDING_ADDR in kernel/timer.asm; a constant with no declared consumer, a stale/deleted equ, and an unreadable consumer are each a FAIL (checker self-tested first), and this runs without QEMU, where gate_k5b2.sh's drift guard does not"
+else
+    exit 1
+fi
+
 say "LogOS kernel — K1/K2: first bare-metal boot + loud fault handling (ring 0)"
 # Build the kernel (compile kernel.la -> LA image, wrap with the boot stub +
 # syscall substrate + IDT) in both the normal and fault-injection variants, then
