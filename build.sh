@@ -5883,7 +5883,24 @@ say "Sealing: ontoneologization → ONE monoglyph of formal complexity one (seal
 # VISUAL seal (the fused ⊗ sigil) is verified by the sigil stage above (host==VM).
 check_seal () {  # $1 = engine label, $2 = output file
     grep -qxF "seal-name: ⊗(LOVE,RECOGNITION)" "$2"       || { echo "FAIL  seal($1): sealed name is not the autological κ(etymology)"; ok=0; }
-    grep -qxF "seal-complexity: 1" "$2"                    || { echo "FAIL  seal($1): formal complexity is not one"; ok=0; }
+    # ── ★ DEMOTED TO A REPORT (2026-08-28). It was: grep -qxF "seal-complexity: 1"
+    #  seal_test.la:36 is `glyph COMPLEXITY = la g. 1` — a CONSTANT function — so this
+    #  grepped for a literal a constant produces. It could not fail unless someone
+    #  edited the constant.
+    #  ★ NOT REPAIRED BY MAKING COMPLEXITY COMPUTE SOMETHING. A glyph is MONO(ren)(etym),
+    #  a pair with ONE Ren: complexity-one is UNCONSTRUCTIBLE-OTHERWISE, not a measurement
+    #  that happens to come out as 1 — nothing MONO builds can have complexity 2. Teaching
+    #  the function to "compute" it by parsing the Ren would invent a measurement for a
+    #  quantity that CANNOT VARY: a FAKE RED PATH, which is worse than an honestly absent
+    #  one because it looks like evidence. Same category error as gating α=1 as though it
+    #  were measured, which :932 already fails the build for. This is [S] — structurally
+    #  enforced, and the failure to prevent is an [S] claim being counted as [W].
+    #  ★ COSTS NO COVERAGE: the two lines below still gate the MEASURED half. :5890's
+    #  `nodes 3 5 7` is ENODES, a recursive walk over COMPASSION → C2 → C3; :5891's `2` is
+    #  LENc(COUPLE2(...)), a recursive list length. "Deepens without widening" stays gated.
+    grep -qxF "seal-complexity: 1" "$2" \
+      && echo "      report  seal($1): formal complexity 1 — [S] structural, not measured (see seal_test.la:36)" \
+      || echo "      report  seal($1): the complexity line changed shape — [S] report, not a gate; nothing fails on it"
     grep -qxF "seal-recover: tensor LOVE RECOGNITION" "$2" || { echo "FAIL  seal($1): etymology (both parents + mode) not recoverable from the sealed form"; ok=0; }
     grep -qxF "seal-autological: YES" "$2"                 || { echo "FAIL  seal($1): name not autologically determined by etymology (REN ≠ κ(ETYM))"; ok=0; }
     grep -qxF "seal-fixedpoint: YES" "$2"                  || { echo "FAIL  seal($1): collapse is not a metacursive fixed point (re-seal unstable)"; ok=0; }
