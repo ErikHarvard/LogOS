@@ -1331,7 +1331,35 @@ The AEAD, KDF and MAC now exist and are RFC-verified on two engines. What remain
       LEAF on this substrate, so production parameters are a performance problem, not a
       correctness one; (3) no state management — XMSS is stateful, and reusing a leaf index is
       catastrophic, so a real signer needs durable index tracking that does not yet exist.
-      **This item stays `[~]` on (1) and (3).***
+      ***DURABLE INDEX TRACKING 2026-08-28 — limitation (3) CLOSES.*** *`xmssidx.la`
+      (`gate_xmssidx.sh`) is the leaf-index register, and `xmss_signer.la`
+      (`gate_xmss_signer.sh`) is the join that wires it into signing. This was the half **no
+      signature test could witness**: `gate_xmss.sh` would stay green forever with no index
+      tracking at all, because nothing in a signature test reuses an index — the failure is not
+      a wrong answer but **a correct answer given twice**. So the register's gate attacks the
+      property rather than asserting it: it exhausts the key on purpose (a spent key REFUSES
+      with a nonzero exit rather than wrapping to 0 and leaking every leaf secret), removes the
+      state file on purpose (a missing register REFUSES rather than restarting at 0), and
+      crosses a process boundary on purpose (a second process resumes at index 3, not 0). It
+      pins the write-ahead ORDERING: a reserved-but-unsigned index is LOST, never reissued — a
+      crash costs one signature out of 2^h instead of leaking a key. Byte-identical host==VM.*
+      *The join is the piece neither prior gate saw: `SIGN_GUARDED` takes a state path and **no
+      index**, so the index is an OUTPUT of signing rather than a parameter a caller can get
+      wrong; because the language is call-by-value, `IDX_RESERVE`'s durable write completes
+      BEFORE any signing happens, and that ordering is **inherited rather than
+      re-implemented**. Two consecutive signs took leaves 0 and 1 with the caller naming
+      neither, both verify against the SAME root, and the register ended durably spent — at h=1
+      that is the entire capacity, so the run ends in the state a real signer must handle.*
+      ***Named, not dropped:*** *(a) **no power-loss durability** — there is no `fsync` builtin,
+      so the register can go backwards, which is the direction that breaks the key; (b)
+      **single-writer only** — concurrent signers are not handled; (c) **the unguarded path is
+      still exported** — `xmss.la`'s `XMSS_SIGN` still takes an explicit index, so the guard is
+      opt-in at the call site, not structural. (a) is the one that matters for a real
+      deployment.*
+      **This item stays `[~]` on (1) alone** *— the vectors are still cross-implementation
+      agreement with independent Python models, not published KATs, and the witnessed
+      parameters are still a TOY security level. Neither is a correctness gap: (1) needs the
+      RFC's own tweakable hash, and the toy parameters are a performance problem.*
 - [ ] **★ CSPRNG and an entropy source ON THE METAL.** The `random` builtin is Linux
       `getrandom(2)`. **The bare-metal kernel — K1–K7, the actual sovereign artifact — has no
       entropy source whatsoever**: no RDRAND/RDSEED builtin, no jitter collector, no seed file.
