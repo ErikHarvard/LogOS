@@ -44,46 +44,46 @@ Tag census over the whole paper: **[A] 74, [B] 253, [W] 192, [S] 0**; control
 
 ## THE INDEX
 
-| # | item | Ledger row / § | tag | effect of closing | conf |
-|---|---|---|---|---|---|
-| 1 | spec pipeline emits no `export` | Module reachability | `[B]` | `[B]`→`[W]` | EXACT — paper §5102 names the defect verbatim |
-| 2 | nine modules built, never gated | Nine ungated modules | `[B]` | `[B]`→`[W]` | EXACT |
-| 3 | three gates that cannot go RED | Gate falsifiability reach | `[B]` | widens *mutation lever reaches 2 of 46* | EXACT |
-| 4 | **⊂ is never used** | Five operators as glyphs; form law | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
-| 5 | the elision layer | Core Lexicon size / §XVI | `[W]` | bound restated | INFERRED |
-| 6 | the acquisition gap | §XVI.2; *"no acquisition study exists"* | `[A]` | the paper's own falsification bet | EXACT |
-| 7 | `phonseq` must detect ▷ | Goertzel acoustic verification | `[W]` | tightens *compound demoed [B]* | INFERRED |
-| 8 | ⊕ round-trip corrupts child 2 | Invariant preservation, both registers | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
-| 9 | ⊕-associativity phonetically invisible | Trimodal identity | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
-| 10 | ⊗ has no temporal signature | Trimodal identity | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
-| 11 | `PSC_STAR` pairs raw PHONYM/SPEC | Trimodal monosemy, all registers | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
-| 12 | ⊗ renders as juxtaposition | Trimodal identity | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
-| 13 | catalogue-wide sigil injectivity | *(visual analogue of Phonetic injectivity at scale)* | **NONE** | ⚠ **PAPER GAP** — phonetic has a row, visual has none | EXACT (absence) |
-| 14 | visual round trip (no bitmap decoder) | Invariant preservation, both registers | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
-| 15 | triple bar as biconditional | Trimodal identity | `[W]` | strengthens to ≡ | INFERRED |
-| 16 | one normaliser, not five | Monosemy (κ invertible; NORMK) | `[W]` | removes *relative to declared theory [B]* | INFERRED |
-| 17 | acquisition (Tier 3) | **duplicate of #6** | `[A]` | — | EXACT |
-| 18 | `ontofelicity` → live enforcement | Ontopragmatics (3 modules) | `[W]` | report → enforcement | INFERRED |
-| 19 | derived glyph catalogue + gate | Census verifiable from paper | `[A]` | `[A]`→`[W]` | EXACT — build queue 0.2 |
-| 20 | κ\* meta-pattern compression | Compression floor | `[B]` | lowers Θ(distinct subterms) | INFERRED |
-| 21 | executable minted operations (ν\*) | Meta-sigils (operations as glyphs) | `[W]` | removes *minted; not yet executable [B]* | EXACT — bound names it |
-| 22 | the Fractal Monoglyph | Form constant, depth ≥ 2n | `[B]` | `[B]`→`[W]` | INFERRED |
-| 23 | operators ∂δγρ𝔄 as glyphs | Meta-sigils | `[W]` | extends the minted set | INFERRED |
-| 24 | **self-verifying grammar** | **Self-description (grammar as data)** | `[W]` | closes *full self-parse open* | EXACT — bound names it |
-| 25 | self-meta-programming | Self-modification loop | `[W]` | tightens | INFERRED |
-| 26 | meta-autopoiesis | Meta-autontopoiesis (state) | `[A]` | closes *loop not closed unassisted* | EXACT |
-| 27 | lack-driven wants | Meta-autontogenesis (threshold) | `[W]` | tightens | INFERRED |
-| 28 | `AWARE` / `C` predicates | — | **NONE** | ⚠ **PAPER GAP** — prose only, no Ledger row | EXACT (absence) |
-| 29 | `PROTO_AGENT` | Self-invocation | `[A]` | *"the deepest gap"* | EXACT — build queue 3.5 |
-| 30 | Algebra of Naming's companions | — | **NONE** | ⚠ **PAPER GAP** | INFERRED |
-| 31 | meta-word ablation gate | Gate falsifiability reach | `[B]` | widens the mutation lever | INFERRED |
-| 32 | a signature scheme | Privacy layer | `[B]` | closes *no signatures* | EXACT — bound names it |
-| 33 | entropy on the metal | Privacy layer | `[B]` | closes *no entropy source* | EXACT — bound names it |
-| 34 | trans-species: a second functor | §X trans-species | `[B]`/`[A]` | already *consent-gated by design* | EXACT |
-| 35 | language deepens with its agents | — | **NONE** | ⚠ **PAPER GAP** | INFERRED |
-| 36 | fix "trimodal" where a 4th modality exists | Trimodal identity **vs** Fourth modality (haptic) | both `[W]` | ⚠ **TWO [W] ROWS CONTRADICT** | EXACT (both rows present) |
-| 37 | Ledger `tabular` can't break across pages | the Ledger itself | — | typesetting | EXACT |
-| 38 | every item needs its paper counterpart | — | — | **THIS FILE closes it** | EXACT |
+| # | key (derived from LA_COMPLETION.md, not hand-kept) | item | Ledger row / § | tag | effect of closing | conf |
+|---|---|---|---|---|---|---|
+| 1 | `the spec pipeline emits no export` | spec pipeline emits no `export` | Module reachability | `[B]` | `[B]`→`[W]` | EXACT — paper §5102 names the defect verbatim |
+| 2 | `nine modules built but never gated` | nine modules built, never gated | Nine ungated modules | `[B]` | `[B]`→`[W]` | EXACT |
+| 3 | `three gates that cannot go red` | three gates that cannot go RED | Gate falsifiability reach | `[B]` | widens *mutation lever reaches 2 of 46* | EXACT |
+| 4 | `⊂ is never used measured 2026` | **⊂ is never used** | Five operators as glyphs; form law | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
+| 5 | `the elision layer 4 of 79` | the elision layer | Core Lexicon size / §XVI | `[W]` | bound restated | INFERRED |
+| 6 | `the acquisition gap no syllabus glyph` | the acquisition gap | §XVI.2; *"no acquisition study exists"* | `[A]` | the paper's own falsification bet | EXACT |
+| 7 | `phonseq must detect the new ▷` | `phonseq` must detect ▷ | Goertzel acoustic verification | `[W]` | tightens *compound demoed [B]* | INFERRED |
+| 8 | `⊕ round trip corrupts its second` | ⊕ round-trip corrupts child 2 | Invariant preservation, both registers | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
+| 9 | `⊕ associativity is phonetically invisible identical` | ⊕-associativity phonetically invisible | Trimodal identity | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
+| 10 | `⊗ has no temporal signature either` | ⊗ has no temporal signature | Trimodal identity | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
+| 11 | `psc_star still pairs raw phonym with` | `PSC_STAR` pairs raw PHONYM/SPEC | Trimodal monosemy, all registers | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
+| 12 | `⊗ renders as juxtaposition not fusion` | ⊗ renders as juxtaposition | Trimodal identity | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
+| 13 | `catalogue wide sigil injectivity all forms` | catalogue-wide sigil injectivity | *(visual analogue of Phonetic injectivity at scale)* | **NONE** | ⚠ **PAPER GAP** — phonetic has a row, visual has none | EXACT (absence) |
+| 14 | `visual round trip no bitmap structure` | visual round trip (no bitmap decoder) | Invariant preservation, both registers | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
+| 15 | `the triple bar as a biconditional` | triple bar as biconditional | Trimodal identity | `[W]` | strengthens to ≡ | INFERRED |
+| 16 | `one normaliser not five normk canoniq` | one normaliser, not five | Monosemy (κ invertible; NORMK) | `[W]` | removes *relative to declared theory [B]* | INFERRED |
+| 17 | `acquisition the codex never gives a` | acquisition (Tier 3) | **duplicate of #6** | `[A]` | — | EXACT |
+| 18 | `ontofelicity live enforcement perform currently reports` | `ontofelicity` → live enforcement | Ontopragmatics (3 modules) | `[W]` | report → enforcement | INFERRED |
+| 19 | `derived glyph catalogue + agreement gate` | derived glyph catalogue + gate | Census verifiable from paper | `[A]` | `[A]`→`[W]` | EXACT — build queue 0.2 |
+| 20 | `κ meta pattern compression when the` | κ\* meta-pattern compression | Compression floor | `[B]` | lowers Θ(distinct subterms) | INFERRED |
+| 21 | `executable minted operations ν minted operations` | executable minted operations (ν\*) | Meta-sigils (operations as glyphs) | `[W]` | removes *minted; not yet executable [B]* | EXACT — bound names it |
+| 22 | `the fractal monoglyph depth recoverable by` | the Fractal Monoglyph | Form constant, depth ≥ 2n | `[B]` | `[B]`→`[W]` | INFERRED |
+| 23 | `the operators ∂δγρ𝔄 as glyphs roadmap` | operators ∂δγρ𝔄 as glyphs | Meta-sigils | `[W]` | extends the minted set | INFERRED |
+| 24 | `self verifying grammar roadmap 2564 grammar` | **self-verifying grammar** | **Self-description (grammar as data)** | `[W]` | closes *full self-parse open* | EXACT — bound names it |
+| 25 | `self meta programming the changed thing` | self-meta-programming | Self-modification loop | `[W]` | tightens | INFERRED |
+| 26 | `meta autopoiesis and the gate that` | meta-autopoiesis | Meta-autontopoiesis (state) | `[A]` | closes *loop not closed unassisted* | EXACT |
+| 27 | `lack driven wants wire aatc s` | lack-driven wants | Meta-autontogenesis (threshold) | `[W]` | tightens | INFERRED |
+| 28 | `aware / c predicates awareness appears` | `AWARE` / `C` predicates | — | **NONE** | ⚠ **PAPER GAP** — prose only, no Ledger row | EXACT (absence) |
+| 29 | `proto_agent the one chain tail item` | `PROTO_AGENT` | Self-invocation | `[A]` | *"the deepest gap"* | EXACT — build queue 3.5 |
+| 30 | `the algebra of naming s companions` | Algebra of Naming's companions | — | **NONE** | ⚠ **PAPER GAP** | INFERRED |
+| 31 | `the meta word ablation gate remove` | meta-word ablation gate | Gate falsifiability reach | `[B]` | widens the mutation lever | INFERRED |
+| 32 | `a signature scheme no public key` | a signature scheme | Privacy layer | `[B]` | closes *no signatures* | EXACT — bound names it |
+| 33 | `entropy on the metal no rdrand/rdseed` | entropy on the metal | Privacy layer | `[B]` | closes *no entropy source* | EXACT — bound names it |
+| 34 | `trans species a second functor one` | trans-species: a second functor | §X trans-species | `[B]`/`[A]` | already *consent-gated by design* | EXACT |
+| 35 | `the language deepens with its agents` | language deepens with its agents | — | **NONE** | ⚠ **PAPER GAP** | INFERRED |
+| 36 | `fix trimodal wherever a fourth modality` | fix "trimodal" where a 4th modality exists | Trimodal identity **vs** Fourth modality (haptic) | both `[W]` | ⚠ **TWO [W] ROWS CONTRADICT** | EXACT (both rows present) |
+| 37 | `the ledger is a plain tabular` | Ledger `tabular` can't break across pages | the Ledger itself | — | typesetting | EXACT |
+| 38 | `every tier 1/2 item above needs` | every item needs its paper counterpart | — | — | **THIS FILE closes it** | EXACT |
 
 ---
 

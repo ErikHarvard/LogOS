@@ -480,12 +480,21 @@ every item below cites the ruling rather than inferring one.
   document.** Gate: a module importing `canon.la` resolves `CANON`; and a
   drift gate asserting every re-implementation agrees with its source.
   *Paper: §Limitations, [B].*
-- `[ ]` **Nine modules built but never gated** — `sglyph`, `sglyph_gate`,
-  `phonseq`, `tactile`, `crossmodal`, `modality`, `explain`, `depthreport`,
-  `sglyph_probe`. Zero occurrences in `build.sh`. **`sglyph_gate.la` is a gate
-  nothing runs.** Under the project's own "a claim without a gate is not
-  counted", these must be wired before they are claimed.
-  *Paper: they are cited in ADDITIONS_2 §C/D — must be gated first or tagged [B].*
+- `[~]` **Nine modules built but never gated — STALE AS WRITTEN, re-measured
+  2026-09-05.** The claim was "Zero occurrences in `build.sh`". Measured now,
+  every one of the nine appears: `sglyph` 1, `sglyph_gate` 2, `phonseq` 2,
+  `tactile` 2, `crossmodal` 2, `modality` 2, `explain` 1, `depthreport` 1,
+  `sglyph_probe` 1 — against a control (`nosuchmodule.la`) of 0, so the counter
+  can report absence. `build.sh:4659` runs them and `:4757` pins the phonseq
+  confusion matrix and the tactile carry matrix INCLUDING their off-diagonals.
+  ★ **RESIDUE, which is why this is `[~]` and not `[✓]`:** `crossmodal` is
+  pinned as a **REPORT, not a gate** — headline 61% vs a rotated control of 59%,
+  which is AT CHANCE by the module's own falsification criterion. So eight are
+  gated and one is reported, and the trimodal identity gets no quantitative
+  support from that instrument. Closing this item means giving `crossmodal` a
+  criterion it can fail, or demoting the claim it was supposed to support.
+  *Paper: Ledger row "Nine ungated modules" `[B]`. The `[B]`→`[W]` move is
+  available for the eight; the ninth is what still holds the row open.*
 - `[ ]` **Three gates that cannot go RED.** (a) phonetic α=1 is a `grep` for a
   sentence the module prints unconditionally; (b) the 8/8 phonetic injectivity
   gate's concept list contains no two entries sharing a leaf-set, so the
