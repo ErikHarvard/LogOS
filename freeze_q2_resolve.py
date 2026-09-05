@@ -25,7 +25,11 @@ that is a different claim from "this assertion is worth having".
 """
 import re, subprocess
 from pathlib import Path
-REPO=Path("/home/erikxanderharvard/logos")
+# The repo is where THIS SCRIPT lives, not a path baked in at authoring time.
+# A hardcoded $HOME makes a tool silently read the wrong worktree when run from
+# another one -- and the worktree isolation that guards /tmp cannot see it,
+# because the path is not in /tmp.
+REPO = Path(__file__).resolve().parent
 SRC=(REPO/"build.sh").read_text(errors="replace").splitlines()
 
 GOVERN = [

@@ -1,0 +1,139 @@
+# =====================================================================
+#  obscurantism.la — COINING THE TERM, AND MAKING IT MECHANICAL.
+#
+#  Erik, 2026-08-27: euphemisms and meta-euphemisms create SEMANTIC
+#  OBSCURANTISM, and it is a term the language should coin and use.
+#  Nothing in the corpus names it. This module does, in LA's own machinery.
+#
+#  ── THE DEFINITION ──────────────────────────────────────────────────
+#  A form is OBSCURANTIST when it carries AVOIDABLE DEPTH: it denotes the
+#  same concept as its own canonical form and is structurally deeper than
+#  it. Formally, over κ's declared equivalence theory:
+#
+#      OBSCURE(t)  :=  SDEPTH(CANON(t))  >  SDEPTH(NORMK(t))
+#
+#  CANON is the form AS UTTERED; NORMK is the α=1 ontoglyph it collapses
+#  to. Both are strings in the same prefix notation, so SDEPTH — maximal
+#  parenthesis nesting — measures both on one scale.
+#
+#  ★ WHY DEPTH AND NOT MERELY α<1. Every non-canonical form is α<1,
+#  including `⊕(B,A)` for `⊕(A,B)` — but that is a REORDERING, the same
+#  structure spelled another way, and calling it obscurantism would make
+#  the term mean "not in normal form", which is not what Erik named. The
+#  obscurantist form is the one that makes the hearer WALK FURTHER for the
+#  same referent. Depth is that cost, and it discriminates: reordering is
+#  spared, `↻(↻X)` and `⊗(∃,∃)` are caught.
+#
+#  ── ★★ WHAT LA ALREADY MAKES IMPOSSIBLE, AND WHAT IT DOES NOT ───────
+#  The WORD-LEVEL euphemism is UNCONSTRUCTIBLE and this is not a policy:
+#  a sealed monoglyph has `REN ≡ κ∘ETYM` BY CONSTRUCTION, so a name cannot
+#  float free of its derivation. You cannot mint "collateral damage" — the
+#  form would have to carry ⊗(killing,civilians) in its own body. That is
+#  anti-euphemism enforced by the seal.
+#  So obscurantism cannot enter LA as a LEXICAL lie. It can only enter as
+#  avoidable depth — and that is DETECTABLE and REMOVABLE.
+#
+#  ── THE RESULT, STATED HONESTLY ─────────────────────────────────────
+#  OBSCURANTISM IS DETECTABLE AND REMOVABLE, NOT PREVENTABLE.
+#  For any t: either t is α=1 and carries no avoidable depth, or ALPHA1(t)
+#  yields the unique α=1 form, no deeper and usually shallower. The
+#  language cannot stop a speaker uttering the deeper form. What it can do
+#  — and what English cannot — is let ANY hearer compute the canonical form
+#  in one total pass. Obscurantism in LA is therefore SELF-DEFEATING rather
+#  than forbidden: the effort of obscuring is undone by a normalisation the
+#  hearer already has.
+#
+#  ── THE BOUND, and it is the same one κ carries ─────────────────────
+#  Detection is RELATIVE TO THE DECLARED EQUIVALENCE THEORY. A form deeper
+#  than its referent needs, for a reason outside NORMK's rewrite set, is
+#  not detected here — exactly as monosemy is enforced relative to that set
+#  rather than absolutely. Full semantic equivalence is undecidable; this
+#  measures what κ can see, and says so.
+#  ⚠ AND THE UTTERANCE LEVEL IS OUT OF SCOPE BY RULING. A technically-true
+#  composition assembled to mislead is a PRAGMATIC act, and Erik's ruling
+#  R-B places implicature outside the semantics. LA does not model it, so
+#  LA cannot forbid it. Banning implicature from the semantics also bans
+#  misleading-by-implicature from what the language can police — that is a
+#  consequence of R-B, recorded here rather than discovered later.
+# =====================================================================
+
+import("canon.la")
+
+export OBSCURE SDEPTH LUCID OK_DETECTS OK_SPARES OK_REMOVABLE OK_LEXICAL
+
+glyph SEQ2  = la a. la b. b
+glyph YN    = la b. IF(b)(la _. "YES")(la _. "no")
+glyph MKO   = la c. IF(c)(la _. "OK")(la _. "FAIL")
+
+# ── SDEPTH: maximal parenthesis nesting of a canonical form ──────────
+#  The canonical notation is prefix with parenthesised operands, so nesting
+#  depth IS structural depth. Counted with a fold over the bytes, tracking
+#  the running depth and its maximum.
+glyph MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph SD_GO = Z(la self. la s. la cur. la best.
+    IF(str_eq(s)(""))(la _. best)
+      (la _. (la c.
+          IF(str_eq(c)("("))(la _. self(str_tail(s))(add(cur)(1))(MAXI(best)(add(cur)(1))))
+            (la _. IF(str_eq(c)(")"))(la _. self(str_tail(s))(sub(cur)(1))(best))
+                     (la _. self(str_tail(s))(cur)(best))))
+        (str_head(s))))
+glyph SDEPTH = la s. SD_GO(s)(0)(0)
+
+# ── the coinage ─────────────────────────────────────────────────────
+glyph OBSCURE = la t. lt(SDEPTH(NORMK(t)))(SDEPTH(CANON(t)))
+glyph LUCID   = la t. NOT(OBSCURE(t))
+
+# ── the vocabulary under test ───────────────────────────────────────
+glyph A_    = PRIM("LOVE")
+glyph B_    = PRIM("RECOGNITION")
+glyph ARCHE = PRIM("∃")
+
+# obscurantist: same referent, avoidable depth
+glyph O1 = SYN(ARCHE)(ARCHE)          # ⊗(∃,∃) ≡ ∃      — R-A collapses it
+glyph O2 = MC(MC(A_))                 # ↻(↻LOVE) ≡ ↻LOVE — idempotence
+glyph O3 = MC(PRIM("BEING"))          # ↻(BEING) ≡ SELF  — the declared rewrite
+
+# lucid: nothing avoidable, though two are NOT in normal form
+glyph L1 = A_                          # a primitive
+glyph L2 = SYN(A_)(B_)                 # a genuine compound
+glyph L3 = CON(B_)(A_)                 # ⊕ REORDERED — α<1, but no extra depth
+glyph L4 = DIR(A_)(B_)                 # directional, order carries meaning
+
+# ── 1. it DETECTS avoidable depth ───────────────────────────────────
+glyph OK_DETECTS = AND(AND(OBSCURE(O1))(OBSCURE(O2)))(OBSCURE(O3))
+
+# ── 2. ★ IT SPARES WHAT IT SHOULD, which is the discriminating arm ──
+#  Without this the measure could be "flags everything not in normal form",
+#  which would make the coinage vacuous — and L3 is the case that proves it
+#  is not: ⊕(B,A) IS α<1, so an α-based definition would call it
+#  obscurantist. It is not. It is the same structure, spelled the other way.
+glyph OK_SPARES = AND(AND(LUCID(L1))(LUCID(L2)))(AND(LUCID(L3))(LUCID(L4)))
+
+# ── 3. removable: the α=1 form is never deeper, and here strictly shallower ──
+glyph SHALLOWER = la t. lt(SDEPTH(ALPHA1(t)))(SDEPTH(CANON(t)))
+glyph OK_REMOVABLE = AND(AND(SHALLOWER(O1))(SHALLOWER(O2)))(SHALLOWER(O3))
+
+# ── 4. ★ the LEXICAL euphemism is unconstructible — the seal, cited not re-proved ──
+#  A sealed glyph's Ren IS its etymology. Build one honestly and AUTO_OK holds;
+#  detach the name from the derivation and it fails. So obscurantism cannot
+#  enter as a lexical lie, only as depth — which is what this module measures.
+#  (canon exports MONO/REN/ETYM/AUTO_OK but not SEAL, so the honest seal is
+#   built here the way AUTO_OK defines it: the Ren IS the canonical etymology.)
+glyph SEALED   = MONO(CANON(SYN(A_)(B_)))(SYN(A_)(B_))
+glyph DETACHED = MONO("a-name-that-hides-its-derivation")(SYN(A_)(B_))
+glyph OK_LEXICAL = AND(AUTO_OK(SEALED))(NOT(AUTO_OK(DETACHED)))
+
+glyph V1 = print(concat("obscurantism  detects ")(concat(MKO(OK_DETECTS))
+             (concat(" | spares ")(concat(MKO(OK_SPARES))
+             (concat(" | removable ")(concat(MKO(OK_REMOVABLE))
+             (concat(" | lexical-seal ")(MKO(OK_LEXICAL)))))))))
+glyph V2 = print(concat("  ⊗(∃,∃) uttered=")(concat(int_to_str(SDEPTH(CANON(O1))))
+             (concat(" canonical=")(concat(int_to_str(SDEPTH(NORMK(O1))))
+             (concat("  ↻↻LOVE uttered=")(concat(int_to_str(SDEPTH(CANON(O2))))
+             (concat(" canonical=")(int_to_str(SDEPTH(NORMK(O2)))))))))))
+glyph V3 = print(concat("  ⊕(B,A) uttered=")(concat(int_to_str(SDEPTH(CANON(L3))))
+             (concat(" canonical=")(concat(int_to_str(SDEPTH(NORMK(L3))))
+             (" — REORDERED, not obscurantist: same depth, and that is the discriminator")))))
+glyph V4 = print("VERDICT: obscurantism := avoidable depth over κ's declared theory. The LEXICAL euphemism is unconstructible (REN ≡ κ∘ETYM by construction); what remains is DETECTABLE and REMOVABLE, not preventable — any hearer computes the α=1 form in one total pass, so obscuring is self-defeating rather than forbidden. BOUND: relative to the declared rewrite set, as monosemy is; and the utterance level is outside the semantics by ruling R-B, so misleading-by-implicature is not something LA can police.")
+
+glyph MAIN = SEQ2(V1)(SEQ2(V2)(SEQ2(V3)(V4)))

@@ -100,3 +100,8 @@ glyph MAIN =
             (la wire. concat("FORGED ")(MSG_TYPE(wire)))))
     )(CAP_SEND(GRANT_SEND(realmA))("ping")("hello"))
   )(BRAND("realm-B-secret")))(BRAND("realm-A-secret"))
+
+# The capability surface. SOME/NONE are part of CAP_RECV's return contract — a
+# caller must be able to name the failure branch. PAIR/FST/SND stay private: a
+# realm is reached through GRANT_SEND/GRANT_RECV, not by taking it apart.
+export SEAL UNSEAL BRAND MINT GRANT_SEND GRANT_RECV CAP_SEND CAP_RECV SOME NONE

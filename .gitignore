@@ -108,6 +108,10 @@ nasm_ref.bin
 # native_codegen3.la, so it must track the source — regenerate it after any
 /native_codegen3_out
 !/native_codegen3_selfhost.bin
+# str_at_fixture.bin is a build INPUT, not an output: build.sh hard-requires it
+# and every engine reads it as the subject of the str_at gate. Without this
+# negation *.bin hides it, and the gate is green here and red in every clone.
+!/str_at_fixture.bin
 /native_codegen_out
 /native_input.la
 /native_small.bin
@@ -192,3 +196,44 @@ watched.la
 # measures is not neutral, and this one silently cost a checkpoint.
 *.RUNNING
 /.asmgate/
+
+# ── scratch from a long uncommitted stretch (2026-08-28) ─────────────────
+# Per-investigation dirs, commit-message drafts, build logs, backups.
+.bootelf_fix/
+.bootrun/
+.elfobjgate/
+.equfix/
+.gcfix_backup/
+.isolate/
+.k4afast/
+.q1/
+.seqfix/
+.shapetest/
+__pycache__/
+scratchpad/
+.*_msg.txt
+.commit_all.sh
+.run_full_build.sh
+.fullbuild_run.sh
+.sx2b_build.sh
+.sx2b_rebuild.sh
+.fullbuild.log
+.sx2b_build.log
+.dirdiag.la
+.probe.la
+.vowdiag.la
+.g3_consts.txt
+.g3_rt.lst
+.gcfix_consts.txt
+.gcfix_rt.lst
+.pc_timing.txt
+ROADMAP.md.bak-*
+tiny_host.pre-bitwise
+k4a_diag.out
+sx2b_app
+commit_today.sh
+# Kernel ELFs are build products — ZERO are tracked and each is named here.
+/kernel/kernel_comp_term.elf
+/kernel/kernel_comp_term_64.elf
+/kernel/kernel_comp_text.elf
+/kernel/kernel_comp_text_64.elf

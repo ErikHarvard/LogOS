@@ -1,0 +1,279 @@
+# =====================================================================
+#  prop.la — THE PROPOSITIONAL LAYER, and the two algebras the volume
+#  and the paper were asserting of ONE object.
+#
+#  ── THE CONTRADICTION THIS MODULE EXISTS TO SETTLE ──────────────────
+#  The volume gives the language a BOOLEAN ALGEBRA with truth values.
+#  Boolean algebra REQUIRES complementation -- an involution, ¬¬P = P.
+#  §III says 𝒢 is a MAGMA WITH NO INVERSE: sealing is one-way, a
+#  derivation cannot be run backward. Both cannot hold of one object.
+#
+#  ── THE RESOLUTION, AND WHY ONLY CODE SETTLES IT ────────────────────
+#  They are two algebras over two kinds of object, and the ≡ / = split
+#  (metalogic.la) is what makes them compatible rather than contradictory:
+#
+#    AS A GLYPH   ¬¬P records the derivation EXCLUSION OF THE EXCLUSION
+#                 OF P. That is not P's derivation, and under monosemy
+#                 different derivations are different concepts.
+#                 So  ¬¬P ≢ P   -- double negation elimination FAILS
+#                 ontologically, and the magma keeps its one-wayness.
+#    AS A TRUTH   both obtain together in any context asking only
+#                 whether the state of affairs holds.
+#                 So  ¬¬P = P    -- DNE HOLDS operationally, and the
+#                 Boolean algebra keeps its complement.
+#
+#  A tongue that forgot the route by which it reached a truth would be
+#  one where ¬¬P and P were the same utterance -- which is the condition
+#  every natural language is in, and why rectification is interminable
+#  there.
+#
+#  That was tagged [A]: argued, not gated. This module is the gate. Both
+#  halves are asserted, each with a red path: if κ(¬¬P) ≡ κ(P) the
+#  ontological half goes RED, and if the two evaluate differently the
+#  operational half does. The claim is not that both are true -- it is
+#  that they are true IN DIFFERENT REGISTERS, so the gate has to catch
+#  either one leaking into the other.
+#
+#  ── NEGATION IS NOT A PRIMITIVE ─────────────────────────────────────
+#  LA.tex:1210 reads the connectives ontologically: ∧ is CO-PRESENCE,
+#  ∨ is DETERMINATION, → is GENERATION, ¬ is EXCLUSION -- "identify a
+#  region of Being as absent, belonging to the Void". So ¬ is built,
+#  not stipulated: ¬P = ⊗(VOID,P), exclusion as VOID-composition. ∧ is
+#  ⊕, ontoconjunction being co-presence by definition (:2854). ∨ and →
+#  are DERIVED from those two rather than declared, because "nothing is
+#  stipulated; everything is derived" (Thm. gen-complete) applies to the
+#  logical vocabulary or it applies to nothing.
+#
+#  ★ AND A LIVE TENSION, STATED NOT BURIED. Erik's ruling of 2026-08-23
+#  moved SENTENCE negation off ⊕ onto ⊂ (opgrammar.la's R_NEG), because
+#  commutative ⊕ made every ¬X identical to the co-presence X⊕Void.
+#  This module's PROPOSITIONAL negation is ⊗(VOID,·) per the volume's
+#  exclusion reading. Two negations is a monosemy question one level up,
+#  and it is measured here rather than decided: NEG_AGREE reports whether
+#  the two registers give one glyph or two. It is a REPORT, not a gate --
+#  a gate would be this module ruling on the language, which is not its
+#  place.
+# =====================================================================
+
+import("canon.la")   # PRIM SYN CON DIR CONT MC CANON NORMK NIS Z IF TRUE FALSE NOT AND
+
+glyph SEQ  = la a. la b. b
+glyph MK   = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph TF   = la c. IF(c)(la _. "T")(la _. "F")
+
+# ── the nine, named ──────────────────────────────────────────────────
+glyph BEING = PRIM("BEING")
+glyph RECOG = PRIM("RECOGNITION")
+glyph LOVE  = PRIM("LOVE")
+glyph SELFP = PRIM("SELF")
+glyph RELN  = PRIM("RELATION")
+glyph VOIDP = PRIM("VOID")
+glyph BECOM = PRIM("BECOMING")
+glyph FORMP = PRIM("FORM")
+glyph DEPTHP= PRIM("DEPTH")
+
+# ── THE CONNECTIVES ──────────────────────────────────────────────────
+# ¬ EXCLUSION  : a region of Being identified as absent (:1210).
+#  ★ ONE NEGATION, AND IT IS ⊂ (Erik's ruling, 2026-08-23). The first
+#  version built propositional ¬ as ⊗(VOID,P) from the volume's
+#  "exclusion" reading, which left the language with TWO negations --
+#  ⊂(X,VOID) for sentences (opgrammar's R_NEG) and ⊗(VOID,P) here. Two
+#  glyphs for one concept is a monosemy violation one level up, and the
+#  module REPORTED it rather than deciding it. Erik decided: ⊂ everywhere.
+#  ⊂(P,VOID) reads as P framed by Void -- the thing enclosed by absence --
+#  and it keeps the choice that the operator census earned, ⊂ having been
+#  the only operator with no lexical uses to collide with.
+#  It also makes the lexicon cohere: Bad = ⊂(LOVE,VOID) IS ¬Love, which
+#  is what the ruling on C9 said it was.
+glyph PNOT = la p. CONT(p)(VOIDP)
+# ∧ CO-PRESENCE: ⊕ is ontoconjunction, co-presence, by definition (:2854)
+glyph PAND = la p. la q. CON(p)(q)
+# ∨ DETERMINATION and → GENERATION are DERIVED, not declared.
+#   De Morgan gives ∨ from ¬ and ∧; material implication gives →.
+#   Deriving them is the point: a logical vocabulary that stipulated its
+#   own connectives would be the one place the language allowed itself
+#   what it forbids everywhere else.
+glyph POR  = la p. la q. PNOT(PAND(PNOT(p))(PNOT(q)))
+glyph PIMP = la p. la q. POR(PNOT(p))(q)
+# atomic predication: rule (i), X ▷ Y
+glyph PRED = la s. la p. DIR(s)(p)
+
+# ── THE GLYPH REGISTER — identity is κ, the canonical form ───────────
+glyph KEY = la p. NORMK(p)
+glyph GEQ = la a. la b. str_eq(KEY(a))(KEY(b))
+
+# ── THE TRUTH REGISTER ───────────────────────────────────────────────
+# A world is the set of atomic propositions that OBTAIN, written as
+# their canonical forms. HONEST SCOPE, stated because it is the module's
+# real bound: the world is STIPULATED. This is a semantics, not an
+# oracle -- it says what obtaining MEANS, not which things obtain.
+glyph HASSUB = Z(la self. la n. la h.
+    IF(str_eq(h)(""))(la _. FALSE)(la _.
+    IF(str_eq(n)(TAKEN(n)(h)))(la _. TRUE)(la _. self(n)(str_tail(h)))))
+glyph TAKEN = Z(la self. la n. la h.
+    IF(str_eq(n)(""))(la _. "")(la _.
+    IF(str_eq(h)(""))(la _. "")
+      (la _. concat(str_head(h))(self(str_tail(n))(str_tail(h))))))
+
+glyph IS_VOID = la n. str_eq(NORMK(n))("VOID")
+
+# ── ★ TVAL — A POLARITY EVALUATOR, AND WHY THE OBVIOUS ONE CANNOT
+#    DISCRIMINATE THE LAWS.
+#  The first version computed negation: TVAL(¬P) = NOT(TVAL(P)). That is
+#  classical, and it makes the three laws UNFALSIFIABLE BY CONSTRUCTION --
+#  no world can make P and ¬P both true when ¬ is a function of P, so
+#  non-contradiction cannot fail, and none can leave both untrue, so
+#  excluded middle cannot fail either. Three laws that cannot fail are
+#  three restatements of the evaluator, not three laws. The gate reported
+#  them green and was asserting nothing.
+#
+#  So a world is a PAIR of sets -- what is TRUE and, independently, what
+#  is FALSE -- and the evaluator carries a POLARITY: `pol` TRUE asks "is
+#  n true?", FALSE asks "is n false?". Negation FLIPS the polarity rather
+#  than inverting a value, and conjunction dualises (true iff both true;
+#  false iff EITHER false). Now the two sets can overlap (a GLUT: P both
+#  true and false) or leave a hole (a GAP: neither), which is exactly
+#  what separately breaks non-contradiction and excluded middle.
+#  This is the standard paraconsistent/paracomplete construction, and it
+#  is here for one reason: it gives each law its own way to fail.
+glyph LOOKUP = la ts. la fs. la pol. la k.
+    IF(pol)(la _. HASSUB(k)(ts))(la _. HASSUB(k)(fs))
+
+glyph EV = la ts. la fs. Z(la self. la pol. la n.
+    n (la nm. FALSE)
+      (la a. la b. LOOKUP(ts)(fs)(pol)(NORMK(SYN(a)(b))))
+      (la a. la b. IF(pol)(la _. AND(self(pol)(a))(self(pol)(b)))
+                          (la _. OR(self(pol)(a))(self(pol)(b))))
+      (la a. la b. LOOKUP(ts)(fs)(pol)(NORMK(DIR(a)(b))))
+      (la a. la b. IF(IS_VOID(b))(la _. self(NOT(pol))(a))
+                      (la _. LOOKUP(ts)(fs)(pol)(NORMK(CONT(a)(b)))))
+      (la a.       LOOKUP(ts)(fs)(pol)(NORMK(MC(a)))))
+
+glyph TVAL = la ts. la fs. la n. EV(ts)(fs)(TRUE)(n)
+
+# ── STRUCTURAL COHERENCE — the boundary the paper asserts and nothing
+#    witnessed: COHERES vs OBTAINS.
+#  A proposition predicates something OF a subject. VOID is absence; to
+#  predicate a process of absence is to assert a region of Being where
+#  there is none -- a category error, not a falsehood. So a proposition
+#  whose SUBJECT is the bare Void is structurally incoherent and must be
+#  UNCONSTRUCTIBLE, exactly as canon.la makes a heterological glyph
+#  unconstructible rather than merely false.
+#  ★ The scope matters and is not a dodge: ▷(VOID,BECOMING) IS a
+#  legitimate GLYPH -- it is the closed-class tense marker Future,
+#  "not-yet" (:5170). It is not a legitimate PROPOSITION. Propositions
+#  are built FROM glyphs, not alongside them, and the constructor that
+#  refuses here is the propositional one. A rule that refused the glyph
+#  would contradict the codex; this one refuses the assertion.
+glyph COHERES = la s. la p. NOT(IS_VOID(s))
+
+# PROP : the smart constructor. Refuses incoherence LOUDLY -- a quiet
+# refusal is indistinguishable from a no-op success.
+glyph PROP = la s. la p.
+    IF(COHERES(s)(p))(la _. PRED(s)(p))
+      (la _. error(concat("prop: structurally incoherent -- cannot predicate of the Void: ")
+                         (concat(NORMK(s))(concat(" ▷ ")(NORMK(p))))))
+
+# ── THE VECTORS ──────────────────────────────────────────────────────
+# Water = ⊗(⊗(FORM,BEING),BECOMING), the codex's own compound (:5263).
+glyph WATER = SYN(SYN(FORMP)(BEING))(BECOM)
+# "The water flows" -- the codex's worked example (:5195). COHERENT, and
+# it OBTAINS.
+glyph P_FLOW = PROP(WATER)(BECOM)
+# "The water is Void" -- COHERENT (Water is a subject that can bear a
+# predicate) and FALSE. This is the merely-false half of the boundary.
+glyph P_WVOID = PROP(WATER)(VOIDP)
+
+# the classical world: the two sets are DISJOINT
+glyph TS0 = concat(NORMK(P_FLOW))(";")
+glyph FS0 = concat(NORMK(P_WVOID))(";")
+
+# ══ GATE 1 — DNE FAILS ONTOLOGICALLY (the magma keeps its one-wayness)
+glyph OK_DN_GLYPH = NOT(GEQ(PNOT(PNOT(P_FLOW)))(P_FLOW))
+# ══ GATE 2 — DNE HOLDS OPERATIONALLY (the Boolean keeps its complement)
+glyph OK_DN_TRUTH = str_eq(TF(TVAL(TS0)(FS0)(PNOT(PNOT(P_FLOW)))))
+                           (TF(TVAL(TS0)(FS0)(P_FLOW)))
+# ══ GATE 3 — and they are GENUINELY TWO REGISTERS, not one restated.
+#  If a single algebra were doing both jobs the two gates above would
+#  agree; the content of the resolution is that they DISAGREE on the
+#  same pair. This asserts the disagreement itself, so a change that
+#  collapsed the registers into one passes 1 or 2 and fails here.
+glyph OK_TWO_ALGEBRAS = AND(OK_DN_GLYPH)(OK_DN_TRUTH)
+# ══ GATE 4 — one negation is visible, i.e. ¬ is not the identity.
+#  Without this, a PNOT that did nothing would satisfy gate 2 trivially.
+glyph OK_NEG_REAL = AND(NOT(GEQ(PNOT(P_FLOW))(P_FLOW)))
+                       (NOT(str_eq(TF(TVAL(TS0)(FS0)(PNOT(P_FLOW))))
+                                  (TF(TVAL(TS0)(FS0)(P_FLOW)))))
+
+# ══ GATE 5 — COHERES vs OBTAINS, the boundary made mechanical.
+#  A structurally incoherent proposition is REFUSED; a merely false one
+#  is ACCEPTED and evaluates false. §XVII's falsification is exactly
+#  this pair: exhibit an incoherent proposition the constructors accept,
+#  or a merely false one they refuse, and the boundary claim dies.
+glyph OK_INCOHERENT = NOT(COHERES(VOIDP)(BECOM))          # "Void flows" -- refused
+glyph OK_FALSE_OK   = AND(COHERES(WATER)(VOIDP))          # "Water is Void" -- accepted
+                          (NOT(TVAL(TS0)(FS0)(P_WVOID)))  # ...and not TRUE
+glyph OK_TRUE_OK    = TVAL(TS0)(FS0)(P_FLOW)              # "Water flows" -- TRUE
+
+# ══ GATE 6 — THE THREE LAWS OVER PROPOSITIONS, EACH DISCRIMINATING.
+#  Three conditions that always fail together are one condition wearing
+#  three names (the discipline ontofelicity.la applies to Austin's
+#  (A)(B)(Γ) and immune.la to its four checkpoints). Each law is given a
+#  perturbation that breaks IT and leaves the other two standing, and
+#  the gate pins three signatures with ONE F apiece:
+#    identity   broken by a NON-REFLEXIVE key   -> FTT
+#    non-contr  broken by a GLUT world  (P both true and false) -> TFT
+#    excl-mid   broken by a GAP  world  (P neither) -> TTF
+#  The perturbations are worlds, not edits to the evaluator, so what is
+#  being tested stays the same object in all four runs.
+glyph L_ID  = str_eq(NORMK(P_FLOW))(NORMK(P_FLOW))
+glyph L_NC  = la ts. la fs. NOT(TVAL(ts)(fs)(PAND(P_FLOW)(PNOT(P_FLOW))))
+glyph L_EM  = la ts. la fs. TVAL(ts)(fs)(POR(P_FLOW)(PNOT(P_FLOW)))
+
+glyph SIG = la idv. la ts. la fs.
+    concat(TF(idv))(concat(TF(L_NC(ts)(fs)))(TF(L_EM(ts)(fs))))
+
+# a GLUT: P_FLOW is in BOTH sets at once
+glyph FS_GLUT = concat(NORMK(P_FLOW))(";")
+# a GAP: P_FLOW is in NEITHER
+glyph EMPTY = ""
+# identity broken: compared against a DIFFERENT proposition, which is
+# what a non-reflexive identity relation amounts to
+glyph L_ID_BROKEN = str_eq(NORMK(P_FLOW))(NORMK(P_WVOID))
+
+glyph OK_LAWS     = str_eq(SIG(L_ID)(TS0)(FS0))("TTT")
+glyph OK_LAW_ID   = str_eq(SIG(L_ID_BROKEN)(TS0)(FS0))("FTT")
+glyph OK_LAW_NC   = str_eq(SIG(L_ID)(TS0)(FS_GLUT))("TFT")
+glyph OK_LAW_EM   = str_eq(SIG(L_ID)(EMPTY)(EMPTY))("TTF")
+glyph OK_LAWS_SEP = AND(OK_LAW_ID)(AND(OK_LAW_NC)(OK_LAW_EM))
+
+# ── REPORT (not a gate): do the two negations agree? ─────────────────
+#  opgrammar's R_NEG is ⊂(X,VOID); this module's PNOT is ⊗(VOID,X).
+#  Whether that is one concept with two glyphs -- a monosemy violation
+#  one level up -- is Erik's ruling, not this module's.
+# ── ★ ONE NEGATION — now a GATE, not a report ───────────────────────
+#  Before the ruling this measured whether the propositional and
+#  sentence negations gave one glyph or two, and reported F. It is a
+#  gate now because Erik ruled: they must be the SAME derivation, so a
+#  future edit that reintroduces a second negation turns this RED
+#  instead of quietly restoring the monosemy violation.
+# ★★ THIS GATE WAS VACUOUS AND ITS COMMENT WAS FALSE. It read
+#      NEG_SENT  = CONT(P_FLOW)(VOIDP)   # "opgrammar's R_NEG, applied"
+#      OK_ONE_NEG = GEQ(PNOT(P_FLOW))(NEG_SENT)
+#  PNOT(p) IS CONT(p)(VOIDP), so that compared a value with itself and
+#  could not fail; and NEG_SENT was a local reconstruction, not
+#  opgrammar's rule, so the comment claimed a cross-module check that was
+#  never performed. Caught by mutate.py within minutes of the lever
+#  existing, which is the argument for the lever.
+#  Pinned instead: the SHAPE of the propositional negation, against a
+#  form written out independently of PNOT's definition. If PNOT reverted
+#  to ⊗(VOID,p) this fails. The cross-module half is gated where the rule
+#  actually lives -- opgrammar.la's OK_NEG_IS_CONT -- because a claim
+#  about another module's rule has to reference that rule.
+glyph OK_ONE_NEG = str_eq(KEY(PNOT(P_FLOW)))(concat("⊂(")(concat(KEY(P_FLOW))(",VOID)")))
+
+glyph J   = la a. la b. concat(a)(b)
+glyph ROW = la lbl. la c. J(J(" | ")(lbl))(J(" ")(MK(c)))
+glyph MAIN = print(J(J(J("prop  neg-neg-P(glyph) = ")(KEY(PNOT(PNOT(P_FLOW)))))(J("\n              P(glyph) = ")(KEY(P_FLOW))))(J(ROW("dne-fails-ontologically")(OK_DN_GLYPH))(J(ROW("dne-holds-operationally")(OK_DN_TRUTH))(J(ROW("two-registers")(OK_TWO_ALGEBRAS))(J(ROW("neg-is-real")(OK_NEG_REAL))(J(ROW("incoherent-refused")(OK_INCOHERENT))(J(ROW("false-constructible")(OK_FALSE_OK))(J(ROW("true-obtains")(OK_TRUE_OK))(J(ROW("laws")(OK_LAWS))(J(ROW("laws-separable")(OK_LAWS_SEP))(ROW("one-negation-only")(OK_ONE_NEG))))))))))))
+
+export PNOT PAND POR PIMP PRED PROP COHERES TVAL KEY GEQ WATER P_FLOW P_WVOID TS0 FS0 BEING RECOG LOVE SELFP RELN VOIDP BECOM FORMP DEPTHP

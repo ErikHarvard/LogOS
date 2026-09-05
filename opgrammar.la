@@ -1,0 +1,329 @@
+# =====================================================================
+#  opgrammar.la — THE OPERATIVE GRAMMAR (LA.tex :5150–5222), and the first
+#  monosemy check ever run ACROSS the whole vocabulary.
+#
+#  `lexicon.la` built the 59 content words. This builds the closed class:
+#  22 grammatical categories (pronouns and deixis, negation, questions,
+#  tense and aspect, quantifiers, modality, connectives) and the ten
+#  sentence-formation rules (i)–(x). With both, the language can form
+#  sentences — which is what "speakable" meant.
+#
+#  ── ★ WHY THE TWO TABLES HAD TO BE CHECKED TOGETHER ─────────────────
+#  Both tables derive from the same nine primitives under the same five
+#  operators. Nothing had ever compared them. Each was internally
+#  consistent, and that is exactly the condition under which a collision
+#  survives: `trimono.la` found that the monosemy check was running in one
+#  REGISTER out of three; this is the same defect one level up — the
+#  monosemy check was running in one TABLE out of two.
+#
+#  ── ★★ THE MEASURED RESULT ──────────────────────────────────────────
+#  The collision set below is COMPUTED over the union of both tables, not
+#  declared. Every pair it reports is two distinct concepts sharing one
+#  canonical glyph and therefore one phonym — a violation of the Monosemic
+#  Principle in the codex's own vocabulary. It is reported as a finding
+#  against the specification, not silently normalised away: the gate pins
+#  the measured set, so a later edit that removes a collision, or adds one,
+#  turns this RED and must be looked at.
+#
+#  Naming a collision is not the same as fixing it. Fixing it is a ruling
+#  about which concept keeps the glyph, and that is the author's to make.
+# =====================================================================
+
+import("lexicon.la")   # PRIM SYN CON DIR CONT MC PARSE PH KAN LEX FOLD PHN NAM
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph TRUE = la t. la f. t
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+glyph UPTO = Z(la self. la d. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(str_eq(str_head(s))(d))(la _. "")
+      (la _. concat(str_head(s))(self(d)(str_tail(s))))))
+glyph PAST = Z(la self. la d. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(str_eq(str_head(s))(d))(la _. str_tail(s))
+      (la _. self(d)(str_tail(s)))))
+
+glyph T_ = la d. FST(PARSE(d))
+glyph P_ = la d. PH(T_(d))
+# K_ is the NORMALISED canonical form, not the raw one. KAN preserves
+# operand order in every mode; + is CO-PRESENCE (LA.tex:2854), so +(A,B)
+# and +(B,A) are ONE concept. Keying the collision scan on raw KAN made
+# it BLIND TO EVERY + COLLISION -- including C9, the Bad/Grief collision
+# this project had known about for weeks and formalised in entropy.la.
+# The gate built to find collisions could not see the one collision it
+# was built for. KAN_N applies NORMT first.
+glyph K_ = la d. KAN_N(T_(d))
+
+# ── the closed class, transcribed from LA.tex :5150–5180 ────────────
+# ★ TWO ROWS OF THE CODEX TABLE ARE NOT GLYPHS. "Not" is written 𝔤₆ ⊕ (−)
+# and "And" is written ⊕ -- an operator with an UNFILLED operand, not a
+# derivation. They cannot be vocabulary entries: to put them in this table
+# one would have to invent an operand, which is stipulation, and the whole
+# lexicon rests on "nothing is stipulated; everything is derived". They are
+# rules, and they are built as rules below -- R_NEG (ii) and R_CONN (ix).
+# The parser found this by refusing to parse them.
+# Present is "(unmarked)" in the codex and has no derivation, so it is
+# deliberately ABSENT from the table rather than invented: the default
+# temporal mode is the absence of a marker, and a stipulated glyph for it
+# would be the one entry not derived from anything.
+glyph GRAM = concat(concat(
+    "You|>42|m'ashi;We|*45|mara;This|>81|t'aa;That|>86|t'aha;Question|>26|sh'a;")
+   ("Past|>76|v'a;Future|>67|h'avu;Ongoing|m7|vuvu;All|*19|ado;Some|*89|tado;None|m6|haha;"))
+   ("Must|*18|ata;Should|>38|l'uta;Or|+56|ra.ha;IfThen|>57|r'avu;I|4|ma;Here|>81|t'aa;There|>86|t'aha;")
+
+# ── GRULED — the closed-class entry Erik re-derived, 2026-08-23 ──────
+#  Because  c(BECOMING,RELATION) -- the becoming held WITHIN the
+#           relation, which is what grounding is. Was >(BECOMING,RELATION),
+#           identical to the verb Give. Give keeps it: Give's gloss
+#           ("Becoming toward Relation: creating a bond") matches the form
+#           it has, while Because's gloss ("Becoming directed BY Relation")
+#           describes the CONVERSE >(RELATION,BECOMING) -- which is
+#           already occupied by If...then (:5183). So Because is the row
+#           whose printed derivation never matched its own rationale.
+#  Not part of the codex-agreement statistic, for the reason given in
+#  lexicon.la's RULED: the codex prints no IPA for a derivation it never
+#  wrote down.
+#  Can      *(FORM,BECOMING) -- form in the process of arriving, i.e.
+#           POTENTIAL FORM, which is the codex's own gloss for Can
+#           (:5166) and reads better on this derivation than on the one
+#           it had. Was *(BECOMING,FORM), identical to Change. Change
+#           keeps it: "alteration of form" is a becoming acting on a
+#           form, and that is the operand order it already had.
+#           ★ Can is distinct from Change ONLY BECAUSE ⊗ IS
+#           NON-COMMUTATIVE -- the third ruling in a row that rests on
+#           the LA.tex:2837 correction. Had ⊗ stayed commutative there
+#           would have been no free form on this operand pair at all,
+#           and the collision would have been unresolvable without
+#           abandoning one of the two concepts.
+glyph GRULED = "Because|c75|ra[vu]ra;Can|*87|tavu;"
+
+glyph ALL_ = concat(concat(LEX)(GRAM))(concat(RULED)(GRULED))
+
+# ── ★ THE COLLISION SCAN. Computed, not declared. For each entry, look
+#    only at the entries AFTER it, so each colliding pair is reported once
+#    and in table order — a scan over the whole square would double-report
+#    and the count would silently mean something else.
+glyph INNER = Z(la self. la nm. la k. la s. IF(str_eq(s)(""))(la _. "")(la _. (la rec. (la rest. (la n2. (la d2. IF(str_eq(d2)(k))(la _. concat(concat(concat(nm)("="))(concat(n2)(" ")))(self(nm)(k)(rest)))(la _. self(nm)(k)(rest)))(UPTO("|")(PAST("|")(rec))))(UPTO("|")(rec)))(PAST(";")(s)))(UPTO(";")(s))))
+
+glyph SCAN = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. (la rec. (la rest. (la nm. (la dv. concat(INNER(nm)(dv)(rest))(self(rest)))(UPTO("|")(PAST("|")(rec))))(UPTO("|")(rec)))(PAST(";")(s)))(UPTO(";")(s))))
+
+# ★ The scan keys on the DERIVATION STRING rather than on the canonical
+# form, because recomputing KAN across the square is quadratic. That is
+# only sound if the two agree, so the substitution is GATED rather than
+# assumed: equal derivations must give equal canonical forms, unequal ones
+# must not. An optimisation that changes what is being measured is not an
+# optimisation.
+# ── the property the scan now RELIES on, asserted with real red paths.
+# Keying on the canonical form is sound only if that form actually
+# collapses the commutative mode and actually preserves the directed
+# ones. The old gate asserted str_eq(K(x))(K(x)) twice -- two comparisons
+# of a value with itself, which cannot fail -- and never tested a + pair
+# at all, which is the ONLY place the substitution was unsound.
+glyph OK_NORM = AND(str_eq(K_("+36"))(K_("+63")))                 # ⊕ commutes: one glyph
+                   (AND(NOT(str_eq(K_("*42"))(K_("*24"))))        # ⊗ does not (LA.tex:2837)
+                       (NOT(str_eq(K_(">75"))(K_(">57")))))       # ▷ does not
+
+# ── ★ THE RULINGS, GATED BY DISCRIMINATION. Each re-derived concept must
+# now differ from the one it used to collide with. This is the red path
+# that a mis-applied ruling trips: if a derivation were reverted or
+# mistyped back onto its partner's form, the pair collapses and this
+# turns RED. It is also why the RULED rows need no codex comparison --
+# what is being asserted of them is distinctness, not transcription.
+# ── ★★ GATE THE RULE, NOT ONLY THE LEXICON. Found by mutate.py: reverting
+#  R_NEG from ⊂ back to ⊕ left this module ENTIRELY GREEN. OK_NEG and
+#  OK_DBLNEG only ask that negation CHANGES the utterance, which a ⊕
+#  negation does too; OK_RULED checks the lexical entries Bad/Grief, which
+#  R_NEG does not touch. So Erik's ruling was gated for the WORDS and not
+#  for the RULE, and the rule could be reverted silently.
+#  This pins the SHAPE: negating anything must yield ⊂(X,VOID).
+glyph NEG_SHAPE = KAN_N(R_NEG(T_("7")))
+glyph OK_NEG_IS_CONT = str_eq(NEG_SHAPE)("c(BECOMING,VOID)")
+
+glyph OK_RULED = AND(NOT(str_eq(K_("*42"))(K_(">42"))))           # Know  ≠ You
+                    (AND(NOT(str_eq(K_("c36"))(K_("+36"))))       # Bad   ≠ Grief
+                        (AND(NOT(str_eq(K_("c75"))(K_(">75"))))    # Because ≠ Give
+                             (NOT(str_eq(K_("*87"))(K_("*78"))))))# Can   ≠ Change
+
+
+# ── KEYED — the table with each derivation replaced by its CANONICAL
+#  form, computed ONCE per entry. The scan then compares keys, so two
+#  entries that differ in written form but denote ONE glyph (any +
+#  pair, since + commutes) are seen. This is linear in canonicalisations
+#  -- the reason the original keyed on raw strings was that recomputing
+#  KAN across the square is quadratic, and that is still true; computing
+#  it once per ROW is not. An optimisation that changes what is being
+#  measured is not an optimisation, and this one had.
+glyph KEYED = FOLD(la a. la n. la d. la p.
+    concat(a)(concat(n)(concat("|")(concat(K_(d))(concat("|")(concat(p)(";")))))))("")(ALL_)
+
+glyph COLLISIONS = SCAN(KEYED)
+
+# ── ★★ THE RESULT, PINNED ───────────────────────────────────────────
+# Eleven pairs share one canonical glyph. EIGHT are aliases the codex
+# itself declares in its own gloss column -- "(= Substance)", "(= Mystery)",
+# "(= Beauty)", "(= Agency)", Bond/Friendship listed in two tables,
+# Totality glossed "everything", and the two slashed rows This/Here and
+# That/There. Those are monosemy WORKING: one concept, one glyph, and
+# English needing two words for it. They are not defects.
+#
+# THREE ARE NOT DECLARED ANYWHERE, and they are two distinct concepts
+# sharing one glyph and therefore one phonym:
+#
+#   Change = Can       ⊗(BECOMING,FORM)     "alteration of form" vs "potential form"
+#   Give   = Because   ▷(BECOMING,RELATION) a verb vs a connective
+#   Know   = You       ▷(SELF,RECOGNITION)  a verb vs a pronoun
+#
+# Know = You is the sharpest: a speaker cannot say "you" without saying
+# "know", and /m'ashi/ in the codex's own example sentences is glossed both
+# ways. This violates the Monosemic Principle in the specification's own
+# vocabulary, and it was invisible while each table was checked alone.
+#
+# ★ It is PINNED, not fixed. Deciding which concept keeps the glyph and
+# which is re-derived is a ruling about the language, and that is the
+# author's to make, not the gate's. What the gate guarantees is that the
+# set cannot change silently -- adding a collision, or removing one, turns
+# this RED and forces the question to be answered rather than drifted past.
+# ── ★★ THE SET AFTER ALL FOUR RULINGS (measured 2026-08-23) ─────────
+# ELEVEN pairs -> EIGHT, AND EVERY ONE OF THE EIGHT IS AN ALIAS THE
+# CODEX DECLARES IN ITS OWN GLOSS COLUMN: "(= Substance)", "(= Mystery)",
+# "(= Beauty)", "(= Agency)", Bond/Friendship listed in two tables,
+# Totality glossed "everything", and the two slashed rows This/Here and
+# That/There. Those are monosemy WORKING -- one concept, one glyph, and
+# English needing two words for it.
+#
+# ★ SO THERE ARE NO UNDECLARED COLLISIONS LEFT. The Monosemic Principle
+# now holds throughout the codex's own vocabulary, across BOTH tables,
+# on the NORMALISED key. It did not hold this morning, and the first
+# scan ever run across the two tables is what showed that.
+#
+# Worth recording why it was resolvable at all: three of the four
+# rulings (Know, Can, and Bad's distinctness from Grief) depend on ⊗
+# being NON-COMMUTATIVE (LA.tex:2837). Had the five normalisers kept
+# commuting ⊗ -- as they did until today, with build.sh gating the
+# contradiction as correct -- there would have been no free form on
+# those operand pairs, and each collision would have been unresolvable
+# without abandoning one of the two concepts.
+#
+# Bad=Grief never appeared in this list because the scan was keyed on
+# raw derivation strings and could not see a ⊕ collision. It is absent
+# now for the opposite reason -- Bad was re-derived onto ⊂ and the scan
+# CAN see ⊕. absent-because-invisible and absent-because-fixed look
+# identical in a list, so OK_NORM asserts the ⊕ sensitivity separately.
+glyph OK_COLLSET = str_eq(COLLISIONS)("Substance=Large Bond=Friendship Totality=All Sky=Mystery Move=Agency Good=Beauty This=Here That=There ")
+
+# and the three undeclared ones are individually present, so a partial
+# edit cannot quietly drop one while the total count stays plausible
+glyph HASSUB = Z(la self. la n. la h.
+    IF(str_eq(h)(""))(la _. NOT(TRUE))(la _.
+    IF(str_eq(n)(UPTOLEN(n)(h)))(la _. TRUE)(la _. self(n)(str_tail(h)))))
+glyph UPTOLEN = Z(la self. la n. la h.
+    IF(str_eq(n)(""))(la _. "")(la _.
+    IF(str_eq(h)(""))(la _. "")
+      (la _. concat(str_head(h))(self(str_tail(n))(str_tail(h))))))
+# The one still-open collision must be individually present, and the two
+# RULED ones individually ABSENT -- so a partial edit can neither quietly
+# drop the open one while the total stays plausible, nor silently revert
+# a ruling. Asserting the absence is the half that makes this a check on
+# the rulings rather than a restatement of the list.
+# ★ THE STRONGER ASSERTION: every ruled pair is individually ABSENT.
+# Asserting absence, one name at a time, is what makes this a check on
+# the RULINGS rather than a restatement of the list -- a partial edit
+# that reverted one ruling would leave the total plausible while
+# reintroducing a monosemy violation, and this catches that.
+glyph OK_UNDECLARED = AND(NOT(HASSUB("Change=Can")(COLLISIONS)))
+                         (AND(NOT(HASSUB("Give=Because")(COLLISIONS)))
+                              (NOT(HASSUB("Know=You")(COLLISIONS))))
+
+# ── the ten sentence-formation rules, (i)–(x) ───────────────────────
+glyph R_PRED   = la x. la y. DIR(x)(y)                       # (i)   X ▷ Y
+# (ii) NEGATION -- and the ruling that moved it off + (Erik, 2026-08-23).
+# The codex writes negation as +(VOID,X) (:5166, :5212 "Void-prefix
+# negates"). But :2854 declares + COMMUTATIVE, so +(VOID,X) IS +(X,VOID):
+# every negation is identical to the co-presence of X with Void. That is
+# not one bad row in a table -- it is a GRAMMAR-WIDE collision, and
+# Bad/Grief was simply its first visible instance.
+# Negation now takes c: X framed by Void, the thing enclosed by absence.
+# c was chosen by MEASUREMENT, not taste: ablate.la's census over all 79
+# published entries counts *=58 +=4 >=26 m=2 and c=ZERO. c is the only
+# operator with no lexical uses, so adopting it for a rule that applies
+# to EVERY negated sentence cannot collide with any existing concept --
+# and it closes the "c is never used" finding with a load-bearing use
+# rather than a token entry added to make a count non-zero.
+glyph R_NEG    = la x.       CONT(x)(PRIM("6"))               # (ii)  X ⊂ Void
+glyph R_QUES   = la s.       CON(s)(T_(">26"))               # (iii) S + Q
+glyph R_PAST   = la s.       CON(s)(T_(">76"))               # (iv)
+glyph R_FUT    = la s.       CON(s)(T_(">67"))               # (v)
+glyph R_MODAL  = la m. la x. la y. DIR(x)(CON(m)(y))         # (vi)  X ▷ (M ⊕ Y)
+glyph R_QUANT  = la q. la x. la y. DIR(CON(q)(x))(y)         # (vii) (Q ⊕ X) ▷ Y
+glyph R_EMBED  = la x. la s. CONT(x)(s)                      # (viii) X ⊂ S
+glyph R_CONN   = la a. la b. CON(a)(b)                       # (ix)  A ⊕ B
+glyph R_IMPER  = la act.     DIR(PRIM("4"))(DIR(T_(">42"))(act))  # (x)
+
+# ── the codex's OWN worked example (:5195/:5384): "The water flows" ──
+# The expected string is the codex's PRINTED phonym /tɑɑv'u vu/ with the
+# prosodic space removed -- an independent vector, not this module's output
+# copied back into its own assertion. It is also the vector that refuted
+# the first-vowel stress rule: it stresses the LAST vowel of Water.
+glyph WATER = T_("**817")
+glyph S_FLOW = R_PRED(WATER)(PRIM("7"))
+# ★ THE CODEX'S PRINTED VECTOR IS KEPT UNMODIFIED, and the RULING is applied to
+#   it here. Erik ruled 2026-08-27 that R-D's duration cue is ONE MARK PER
+#   UTTERANCE; S_FLOW is a ▷ predication, so its derived phonym is the codex's
+#   printed form plus exactly one tail mark. Folding ":" into the literal would
+#   blend the codex's datum with our own rule and leave nothing independent to
+#   check against -- the vector that once refuted the first-vowel stress rule
+#   would stop being an outside witness.
+glyph CODEX_FLOW = "taav'uvu"
+glyph OK_PRED = str_eq(PH(S_FLOW))(concat(CODEX_FLOW)(":"))
+
+# ── ★ the rules must DISCRIMINATE. A grammar whose markers left the
+#    utterance unchanged would be decoration. Each rule must move it, and
+#    the tense markers must not move it the SAME way.
+glyph OK_NEG   = NOT(str_eq(PH(R_NEG(S_FLOW)))(PH(S_FLOW)))
+glyph OK_QUES  = NOT(str_eq(PH(R_QUES(S_FLOW)))(PH(S_FLOW)))
+glyph OK_TENSE = AND(NOT(str_eq(PH(R_PAST(S_FLOW)))(PH(R_FUT(S_FLOW)))))
+                    (AND(NOT(str_eq(PH(R_PAST(S_FLOW)))(PH(S_FLOW))))
+                        (NOT(str_eq(PH(R_FUT(S_FLOW)))(PH(S_FLOW)))))
+
+# ── ★★ WORD ORDER CARRIES MEANING. X▷Y is not Y▷X. If predication
+#    commuted, "the water flows" and "becoming waters" would be one
+#    sentence, and ▷ would not be the copula the grammar says it is.
+glyph OK_ORDER = NOT(str_eq(PH(R_PRED(WATER)(PRIM("7"))))(PH(R_PRED(PRIM("7"))(WATER))))
+
+# ── ★ negation does not absorb: ¬¬X is not X. In a language where the
+#    negator is a co-present Void rather than a truth-functional flip,
+#    double negation is a DIFFERENT concept, and the form must show it.
+glyph OK_DBLNEG = NOT(str_eq(PH(R_NEG(R_NEG(S_FLOW))))(PH(S_FLOW)))
+
+# ── ★ and the rules are distinct from each other, not one rule renamed ─
+glyph OK_RULES_DIFFER = AND(NOT(str_eq(PH(R_NEG(S_FLOW)))(PH(R_QUES(S_FLOW)))))
+                           (NOT(str_eq(PH(R_EMBED(WATER)(S_FLOW)))(PH(R_CONN(WATER)(S_FLOW)))))
+
+# ── the closed-class table agrees with the codex's printed phonyms ──
+glyph GCOUNT = FOLD(la a. la n. la d. la p. add(a)(1))(0)(GRAM)
+glyph GAGREE = FOLD(la a. la n. la d. la p.
+    IF(str_eq(P_(d))(p))(la _. add(a)(1))(la _. a))(0)(GRAM)
+glyph GDIV = FOLD(la a. la n. la d. la p.
+    IF(str_eq(P_(d))(p))(la _. a)(la _. concat(a)(concat(n)(" "))))("")(GRAM)
+
+glyph MK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat(concat("grammar closed-class=")(int_to_str(GCOUNT)))
+                       (concat(" agree=")(int_to_str(GAGREE))))
+                (concat(" div=[")(concat(GDIV)("]"))))
+        (concat(concat(concat(concat(" | pred ")(MK(OK_PRED)))
+                             (concat(" | neg ")(MK(OK_NEG))))
+                      (concat(concat(" | ques ")(MK(OK_QUES)))
+                             (concat(" | tense ")(MK(OK_TENSE)))))
+               (concat(concat(concat(" | order ")(MK(OK_ORDER)))
+                             (concat(" | dbl-neg ")(MK(OK_DBLNEG))))
+                      (concat(concat(" | rules-differ ")(MK(OK_RULES_DIFFER)))
+                             (concat(concat(concat(concat(" | norm ")(MK(OK_NORM)))(concat(" | ruled ")(MK(OK_RULED))))(concat(concat(" | neg-shape ")(MK(OK_NEG_IS_CONT)))(concat(" [")(concat(NEG_SHAPE)("]")))))(concat(concat(concat(" | collset ")(MK(OK_COLLSET)))(concat(" | undeclared ")(MK(OK_UNDECLARED))))(concat(" | COLLISIONS: ")(COLLISIONS))))))))
+
+export GRAM GRULED T_ P_ K_ R_PRED R_NEG R_QUES R_PAST R_FUT R_MODAL R_QUANT R_EMBED R_CONN R_IMPER

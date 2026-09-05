@@ -17,13 +17,13 @@ cd "$(dirname "$0")/.."          # -> ~/logos
 
 echo "[1/2] compile task_pingpong.la via native_codegen3 (spawn/yield)"
 cp kernel/task_pingpong.la native_input.la
-./tiny_host native_codegen3.la >/dev/null
+( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null
 cp native_codegen3_out kernel/native_pingpong.bin
 echo "      -> kernel/native_pingpong.bin"
 
 echo "[2/2] compile task_gc.la via native_codegen3 (spawn/yield + rt_gc)"
 cp kernel/task_gc.la native_input.la
-./tiny_host native_codegen3.la >/dev/null
+( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null
 cp native_codegen3_out kernel/native_gc.bin
 echo "      -> kernel/native_gc.bin"
 

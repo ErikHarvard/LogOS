@@ -1,0 +1,131 @@
+# =====================================================================
+#  selfext6.la — STAGE 6: THE UNATTENDED RUN.
+#
+#  ── WHAT IS SUPPLIED, AND WHAT IS NOT ───────────────────────────────
+#  The WANT is a NAME, a TYPE and ONE acceptance test. No source. No
+#  implementation. No decomposition. That constraint is the stage: the
+#  scope's failure mode 7 is "the seed is the answer" -- autoloop.la says
+#  it about itself, its GOAL hands each step the implementation, so the
+#  loop ASSEMBLES rather than extends. Here the organ is told only that
+#  it wants something of type Int -> Int satisfying f(5) = 12, and it
+#  must write the HOW out of what it already is.
+#
+#  ── THE SEARCH SPACE IS SMALL AND STATED ────────────────────────────
+#  Every ordered composition of two of the organ's own glyphs, mirroring
+#  selfprog.la's CANDIDATES (a NEOLOGIZE of two of my own glyphs, so
+#  whatever is found carries its own etymology). With two glyphs that is
+#  FOUR candidates, in a fixed order:
+#      1  TRIPLEN(TRIPLEN(x))   5 -> 45
+#      2  TRIPLEN(DEC(x))       5 -> 12   <- satisfies the want
+#      3  DEC(TRIPLEN(x))       5 -> 14
+#      4  DEC(DEC(x))           5 ->  3
+#  ★ Stating the space is not decoration. "A search over its own
+#  capability space will find SOMETHING" is failure mode 6, and the
+#  answer to it is to say what was searched and how much was allowed,
+#  in the PASS line, where a reader can see that four is four.
+#
+#  ★★ AND THE SPACE'S SHAPE EXCLUDES THE OVERFIT. `la x. 12` -- stage 4's
+#  memorising fixture -- is not a composition of TRIPLEN and DEC, so it
+#  is not reachable here at all. That is worth stating precisely because
+#  it is a property of THIS space and not a general guarantee: a richer
+#  space containing constants would reach it again, which is why stage
+#  4's held-out probes remain necessary rather than superseded.
+#
+#  ── BUDGET, AND WHY EXHAUSTION MUST BE LOUD ─────────────────────────
+#  The budget bounds how many candidates may be tried. On exhaustion the
+#  organ emits NOTHING and says so. A run that quietly emitted a
+#  best-effort module would be a silent partial success -- the reader
+#  would see an artifact and assume the want was met. Nothing to run is
+#  the only honest report of a search that did not finish, the same
+#  discipline stage 2 applies to an unverified extension.
+# =====================================================================
+
+import("specpipe.la")   # GENERATE META_DEBUG DEF TRIPLE PAIR CONS NIL IF TRUE FALSE
+
+glyph SEQ2 = la a. la b. b
+glyph J    = la a. la b. concat(a)(b)
+glyph NOT2 = la p. la t. la f. p(f)(t)
+
+# ── what the organ already is ───────────────────────────────────────
+glyph TRIPLEN_I = la x. mul(x)(3)
+glyph DEC_I     = la x. sub(x)(1)
+
+# ── THE WANT: a name, a type, and one probe. Nothing else. ──────────
+glyph WANT_NAME = "TRIPLEDEC"
+glyph WANT_SIG  = ":: Int -> Int"
+glyph WANT_IN   = 5
+glyph WANT_OUT  = "12"
+glyph SATISFIES = la f. str_eq(int_to_str(f(WANT_IN)))(WANT_OUT)
+
+# ── THE SPACE: every ordered composition of two of its own glyphs.
+#    The SOURCE is CONSTRUCTED from the component names, not supplied.
+glyph MKSRC  = la a. la b. J("la x. ")(J(a)(J("(")(J(b)("(x))"))))
+glyph MKIMPL = la f. la g. la x. f(g(x))
+
+glyph N1 = "TRIPLEN"
+glyph N2 = "DEC"
+glyph SPACE_SIZE = 4
+
+glyph S1 = MKSRC(N1)(N1)
+glyph S2 = MKSRC(N1)(N2)
+glyph S3 = MKSRC(N2)(N1)
+glyph S4 = MKSRC(N2)(N2)
+glyph I1 = MKIMPL(TRIPLEN_I)(TRIPLEN_I)
+glyph I2 = MKIMPL(TRIPLEN_I)(DEC_I)
+glyph I3 = MKIMPL(DEC_I)(TRIPLEN_I)
+glyph I4 = MKIMPL(DEC_I)(DEC_I)
+
+# ── BUDGET: how many candidates may be tried ────────────────────────
+glyph BUDGET = str_to_int(read_file(".sx6budget"))
+
+# ── THE SEARCH. Returns the index of the first candidate that satisfies
+#    the want within budget, or 0 for exhausted. Explicit rather than
+#    folded, so the order and the bound are both readable.
+glyph FOUND =
+  IF(lt(BUDGET)(1))(la _. 0)(la _.
+  IF(SATISFIES(I1))(la _. 1)(la _.
+  IF(lt(BUDGET)(2))(la _. 0)(la _.
+  IF(SATISFIES(I2))(la _. 2)(la _.
+  IF(lt(BUDGET)(3))(la _. 0)(la _.
+  IF(SATISFIES(I3))(la _. 3)(la _.
+  IF(lt(BUDGET)(4))(la _. 0)(la _.
+  IF(SATISFIES(I4))(la _. 4)(la _. 0))))))))
+
+glyph TRIED = IF(int_eq(FOUND)(0))
+    (la _. IF(lt(BUDGET)(SPACE_SIZE))(la _. BUDGET)(la _. SPACE_SIZE))
+    (la _. FOUND)
+
+glyph WON_SRC  = IF(int_eq(FOUND)(2))(la _. S2)(la _.
+                 IF(int_eq(FOUND)(1))(la _. S1)(la _.
+                 IF(int_eq(FOUND)(3))(la _. S3)(la _. S4)))
+glyph WON_IMPL = IF(int_eq(FOUND)(2))(la _. I2)(la _.
+                 IF(int_eq(FOUND)(1))(la _. I1)(la _.
+                 IF(int_eq(FOUND)(3))(la _. I3)(la _. I4)))
+
+glyph E_TRIPLEN = TRIPLE("TRIPLEN")(DEF(":: Int -> Int")("la x. mul(x)(3)")(TRIPLEN_I))(
+    CONS(PAIR(la g. int_to_str(g(4)))("12"))(NIL))
+glyph E_DEC     = TRIPLE("DEC")(DEF(":: Int -> Int")("la x. sub(x)(1)")(DEC_I))(
+    CONS(PAIR(la g. int_to_str(g(5)))("4"))(NIL))
+glyph E_WON     = TRIPLE(WANT_NAME)(DEF(WANT_SIG)(WON_SRC)(WON_IMPL))(
+    CONS(PAIR(la g. int_to_str(g(WANT_IN)))(WANT_OUT))(NIL))
+
+glyph SPEC = CONS(E_TRIPLEN)(CONS(E_DEC)(CONS(E_WON)(NIL)))
+glyph VERIFIED = NOT2(HASSUB("FAIL")(META_DEBUG(SPEC)))
+
+glyph TAKEN = Z(la self. la n. la h.
+    IF(str_eq(n)(""))(la _. "")(la _.
+    IF(str_eq(h)(""))(la _. "")
+      (la _. concat(str_head(h))(self(str_tail(n))(str_tail(h))))))
+glyph HASSUB = Z(la self. la n. la h.
+    IF(str_eq(h)(""))(la _. FALSE)(la _.
+    IF(str_eq(n)(TAKEN(n)(h)))(la _. TRUE)(la _. self(n)(str_tail(h)))))
+
+glyph REPORT = J("selfext6 budget=")(J(int_to_str(BUDGET))(J(" space=")(J(int_to_str(SPACE_SIZE))(J(" tried=")(J(int_to_str(TRIED))(J(" found=")(int_to_str(FOUND))))))))
+
+glyph ACT = IF(int_eq(FOUND)(0))
+  (la _. print(J(REPORT)(" | BUDGET EXHAUSTED — goal not met; NO module emitted")))
+  (la _. SEQ2(write_file("sx6_organ.la")(GENERATE(SPEC)))
+             (print(J(REPORT)(J(" | wrote ")(J(WON_SRC)
+                    (J(" verified=")(IF(VERIFIED)(la _. "T")(la _. "F"))))))))
+
+glyph MAIN = ACT

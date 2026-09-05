@@ -29,3 +29,4 @@ glyph DEIXIS = la ix. la c. ix(c)
 glyph ORIGO = la c. PAIR(DEIXIS(IX_I)(c))(PAIR(DEIXIS(IX_HERE)(c))(DEIXIS(IX_NOW)(c)))
 # SELF_REF : :: a -> b -> c
 glyph SELF_REF = la c. la ego. str_eq(DEIXIS(IX_I)(c))(ego)
+export CTX SPEAKER ADDRESSEE PLACE TIME IX_I IX_YOU IX_HERE IX_NOW PAIR FST SND DEIXIS ORIGO SELF_REF 

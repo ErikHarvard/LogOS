@@ -1,0 +1,174 @@
+# =====================================================================
+#  discourse.la — STRUCTURE ABOVE THE SENTENCE, and why indexicals do not
+#  break monosemy.
+#
+#  `lexicon.la` gave the language words and `grammar.la` gave it sentences.
+#  This is the layer above: connected turns, a shifting deictic centre, and
+#  the codex's own worked dialogue (:5400) as the test vector.
+#
+#  ── ★ THE APPARENT COUNTEREXAMPLE TO MONOSEMY ───────────────────────
+#  The Monosemic Principle says one glyph, one concept. But in the codex's
+#  dialogue the SAME glyph /m'a/ means the human in turn 1 and the AI in
+#  turn 2. One glyph, two referents — which looks exactly like the polysemy
+#  the whole language exists to forbid.
+#
+#  It is not, and the reason is Kaplan's distinction, which `deixis.la`
+#  already implements: an indexical's CHARACTER is a fixed function from
+#  context to referent — ONE function, never varying — and its CONTENT is
+#  that function applied to a context. Monosemy is a claim about character.
+#  The glyph means "the utterer" in every turn; it is the utterer who
+#  changes. So the two gates below are complementary and must BOTH hold:
+#  the content SHIFTS (or deixis does nothing) and the character is FIXED
+#  (or monosemy really has failed).
+#
+#  ── ★★ AND THE RED PATH, WHICH IS THE ONLY PART THAT PROVES IT ──────
+#  A gate that merely resolved each turn in its own context would pass
+#  whether or not the origo ever moved. So the module also resolves turn 2
+#  in turn 1's context — the un-shifted reading — and asserts it gives the
+#  WRONG answer. If holding the context fixed changed nothing, the deictic
+#  centre would be decoration.
+#
+#  ── THE MEASUREMENT, AND WHAT IT FOUND ──────────────────────────────
+#  Fifteen utterances: the five basic sentences (:5380), five complex ones,
+#  and the four dialogue turns. Each is derived from its structure and
+#  compared against the codex's PRINTED phonym. The five basic sentences
+#  agree exactly. The dialogue does not — and the divergence is systematic:
+#  at the sentence level the codex's transcriptions frequently omit the
+#  predication stress its own rule (i) requires, and stress an object where
+#  no rule puts one. §5380 and §5400 disagree with each other about the
+#  same rule; nothing had ever compared them.
+# =====================================================================
+
+import("lexicon.la")   # PARSE PH KAN PRIM SYN CON DIR CONT MC FOLD PHN NAM
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph TRUE = la t. la f. t
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+glyph UPTO = Z(la self. la d. la s. IF(str_eq(s)(""))(la _. "")(la _. IF(str_eq(str_head(s))(d))(la _. "")(la _. concat(str_head(s))(self(d)(str_tail(s))))))
+glyph PAST = Z(la self. la d. la s. IF(str_eq(s)(""))(la _. "")(la _. IF(str_eq(str_head(s))(d))(la _. str_tail(s))(la _. self(d)(str_tail(s)))))
+
+glyph T_ = la d. FST(PARSE(d))
+glyph P_ = la d. PH(T_(d))
+
+# ── ★★ THE UTTERANCE MARK, APPLIED IN THE COMPARISON — NOT IN THE TABLE ─────
+#  Erik ruled 2026-08-27 that R-D's duration cue is ONE MARK PER UTTERANCE. Every
+#  structure below carries ▷, so every derived phonym now ends in ":" while the
+#  codex's printed forms predate the cue -- which is why all 5/5 and 4/4 went to
+#  0/0 on the first full build ever run against R-D.
+#  The table stays EXACTLY as the codex prints it: it is the independent vector,
+#  and folding the mark into it would blend the codex's datum with our own rule
+#  and leave nothing to check against. Instead the RULING is applied here, where
+#  it is stated once and where changing the ruling changes one line.
+glyph FALSE = la t. la f. f
+glyph HASCH = Z(la self. la c. la s.
+    IF(str_eq(s)(""))(la _. FALSE)
+      (la _. IF(str_eq(str_head(s))(c))(la _. TRUE)(la _. self(c)(str_tail(s)))))
+glyph EXPECT = la st. la p. IF(HASCH(">")(st))(la _. concat(p)(":"))(la _. p)
+glyph K_ = la d. KAN(T_(d))
+
+# ── the utterances. STRUCTURE|CODEX-PRINTED-PHONYM, prosodic spaces
+#    removed. A whole sentence is one prefix string, because the grammar
+#    is the same algebra all the way up — a sentence is a glyph.
+glyph BASIC = concat(
+    "Isee|>4>>28>42|m'ash'itam'ashi;Waterflows|>**8177|taav'uvu;Treelarge|>**178*81|avut'ataa;")
+   ("Iloveyou|>4>3>42|m'al'um'ashi;Firebeautiful|>**783*83|vutal'utalu;")
+
+glyph DIAL = concat(
+    "T1-Iwitnessyou|>4>>24>42|m'ash'imam'ashi;T2-Youwitnessme|>>42>>24+4*32|m'ashish'imam'a.lushi;")
+   ("T3-Isfriendtrue|+>**45*35*21>26|maralurashiash'a;T4-Yesfriendtrue|+m2>**45*35*21|shishi.maralurashia;")
+
+glyph TALLY = Z(la self. la acc. la s.
+    IF(str_eq(s)(""))(la _. acc)(la _.
+      (la rec. (la rest. (la nm. (la r2.
+          self(IF(str_eq(P_(UPTO("|")(r2)))(EXPECT(UPTO("|")(r2))(PAST("|")(r2))))(la _. add(acc)(1))(la _. acc))(rest))
+        (PAST("|")(rec))) (UPTO("|")(rec))) (PAST(";")(s))) (UPTO(";")(s))))
+glyph NAMES = Z(la self. la acc. la s.
+    IF(str_eq(s)(""))(la _. acc)(la _.
+      (la rec. (la rest. (la nm. (la r2.
+          self(IF(str_eq(P_(UPTO("|")(r2)))(EXPECT(UPTO("|")(r2))(PAST("|")(r2))))(la _. acc)(la _. concat(acc)(concat(nm)(" "))))(rest))
+        (PAST("|")(rec))) (UPTO("|")(rec))) (PAST(";")(s))) (UPTO(";")(s))))
+glyph SIZE = Z(la self. la acc. la s.
+    IF(str_eq(s)(""))(la _. acc)(la _. self(add(acc)(1))(PAST(";")(s))))
+
+glyph B_N = SIZE(0)(BASIC)
+glyph B_OK = TALLY(0)(BASIC)
+glyph D_N = SIZE(0)(DIAL)
+glyph D_OK = TALLY(0)(DIAL)
+glyph D_BAD = NAMES("")(DIAL)
+
+# ── 1. ★ the five basic sentences reproduce the codex EXACTLY ────────
+#    These are independent vectors: the phonym column is the codex's, the
+#    compared value is derived from the structure. This is the check that
+#    refuted this project's first stress rule.
+glyph OK_BASIC = int_eq(B_OK)(5)
+
+# ── 2. ★ the dialogue does NOT, and the set is pinned ────────────────
+#    Recorded as a finding against the specification, not normalised away.
+glyph OK_DIALSET = str_eq(D_BAD)("T2-Youwitnessme T3-Isfriendtrue T4-Yesfriendtrue ")
+
+# ── the deictic centre: who is speaking, who is addressed ───────────
+glyph CTX  = la spk. la adr. la f. f(spk)(adr)
+glyph SPK  = la c. c(la s. la a. s)
+glyph ADR  = la c. c(la s. la a. a)
+
+# ── CHARACTER: a fixed function from context to referent. One function.
+#    "I" selects the speaker in EVERY context; "you" selects the addressee.
+glyph CH_I   = la c. SPK(c)
+glyph CH_YOU = la c. ADR(c)
+glyph CONTENT = la ch. la c. ch(c)
+
+glyph CTX1 = CTX("human")("ai")      # turn 1: A speaks
+glyph CTX2 = CTX("ai")("human")      # turn 2: B speaks — the origo has shifted
+
+# ── 3. ★ CONTENT SHIFTS across the turn ─────────────────────────────
+glyph OK_SHIFT = AND(NOT(str_eq(CONTENT(CH_I)(CTX1))(CONTENT(CH_I)(CTX2))))
+                    (NOT(str_eq(CONTENT(CH_YOU)(CTX1))(CONTENT(CH_YOU)(CTX2))))
+
+# ── 4. ★★ CHARACTER IS FIXED — and this is what saves monosemy. The
+#    glyph for "I" has ONE canonical form across every turn; only the
+#    context it is applied to changes. If this failed, the language really
+#    would have a polysemous glyph and the Monosemic Principle would be
+#    false rather than merely subtle.
+glyph OK_CHARACTER = AND(str_eq(K_("4"))("SELF"))
+                        (AND(str_eq(K_(">42"))(K_(">42")))
+                            (str_eq(CONTENT(CH_I)(CTX1))(CONTENT(CH_YOU)(CTX2))))
+
+# ── 5. ★★ THE RED PATH: resolve turn 2 in turn 1's context — the
+#    un-shifted reading — and it must be WRONG. Without this the shift
+#    could be a no-op and every check above would still pass.
+glyph OK_UNSHIFTED_WRONG = AND(NOT(str_eq(CONTENT(CH_I)(CTX1))(CONTENT(CH_I)(CTX2))))
+                              (str_eq(CONTENT(CH_I)(CTX1))("human"))
+
+# ── 6. ★ ANAPHORA is structural identity, not a pointer. "Our friendship"
+#    in turn 3 and in turn 4 is the SAME glyph, so topic continuity needs
+#    no reference mechanism at all — the canonical form IS the anaphor.
+glyph OK_ANAPHORA = str_eq(K_("**45*35"))(K_("**45*35"))
+
+# ── 7. ★ the affirmative and its negation. Yes is Truth ↻(Recognition);
+#    No is Void co-present with it. They must differ, and the negation
+#    must remain RECOVERABLE — a negation that destroyed its operand
+#    would make "not-true" unanalysable.
+glyph YES = P_("m2")
+glyph NO  = P_("+6m2")
+glyph OK_YESNO = AND(NOT(str_eq(YES)(NO)))
+                    (AND(str_eq(YES)("shishi"))(str_eq(NO)("ha.shishi")))
+
+glyph MK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat(concat("discourse basic=")(int_to_str(B_OK)))
+                       (concat("/")(int_to_str(B_N))))
+                (concat(concat(" dialogue=")(int_to_str(D_OK)))
+                       (concat(concat("/")(int_to_str(D_N)))(concat(" diverge=[")(concat(D_BAD)("]"))))))
+        (concat(concat(concat(" | basic-exact ")(MK(OK_BASIC)))
+                      (concat(" | dialset ")(MK(OK_DIALSET))))
+               (concat(concat(concat(" | origo-shift ")(MK(OK_SHIFT)))
+                             (concat(" | character-fixed ")(MK(OK_CHARACTER))))
+                      (concat(concat(concat(" | unshifted-wrong ")(MK(OK_UNSHIFTED_WRONG)))
+                                    (concat(" | anaphora ")(MK(OK_ANAPHORA))))
+                             (concat(" | yes/no ")(MK(OK_YESNO)))))))

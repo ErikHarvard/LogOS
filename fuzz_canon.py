@@ -42,8 +42,19 @@ import tempfile
 
 PRIMS = ["BEING", "RECOGNITION", "LOVE", "SELF", "RELATION",
          "VOID", "BECOMING", "FORM", "DEPTH"]
-COMMUTATIVE = ["SYN", "CON"]      # otimes, oplus  -> SORT2 (order-independent)
-DIRECTIONAL = ["DIR", "CONT"]     # triangleright, subset -> WRAP2 (order-kept)
+# ★ CORRECTED 2026-08-26 (Freeze II). This table was WRONG about SYN and had been
+#   since it was written: it listed SYN as commutative "-> SORT2 (order-independent)",
+#   but canon.la:91's NORMK routes SYN through WRAP2 (order-KEPT) and gives SORT2 to
+#   CON alone. P1 therefore generated otimes-swaps, expected NIS==TRUE, correctly got
+#   FALSE, and reported 9 false failures on every run.
+#   canon's behaviour is the INTENDED one and is separately gated: monosemy_test.la
+#   asserts "order otimes: otimes(B,L) vs otimes(L,B) : DISTINCT". The instrument was
+#   wrong about the thing it tests, not the other way round.
+#   ⚠ Nothing caught this because build.sh NEVER INVOKES fuzz_canon.py — it appears
+#   only in a COMMENT at build.sh:2448. That is Q0's hazard exactly: an uninvoked
+#   instrument can be broken for weeks and its failures never read.
+COMMUTATIVE = ["CON"]                    # oplus only            -> SORT2 (order-independent)
+DIRECTIONAL = ["SYN", "DIR", "CONT"]     # otimes, triangleright, subset -> WRAP2 (order-kept)
 
 
 # --- a decomposition tree as nested python tuples -------------------------

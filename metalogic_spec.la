@@ -205,7 +205,7 @@ glyph SRC_SCONS  = "la h. la t. la n. la c. c(h)(t)"
 glyph SRC_SEQOK  = "ZC(la self. la s. s(TRUE)(la h. la t. AND(LAWS_ALL(h))(self(t))))"
 # the composite's Ren is built from the PARTS' DECLARED Rens -- never recomputed
 # from the structure, which is what keeps the closure test able to FAIL.
-glyph SRC_RENCMP = "la ra. la rb. concat(\"\⊗(\")(concat(ra)(concat(\",\")(concat(rb)(\")\"))))"
+glyph SRC_RENCMP = "la ra. la rb. concat(\"⊗(\")(concat(ra)(concat(\",\")(concat(rb)(\")\"))))"
 glyph SRC_SEQCMP = "ZC(la self. la s. s(MONO(\"\")(PRIM(\"VOID\")))(la h. la t. t(ITMONO(h))(la h2. la t2. (la rest. MONO(RENCMP(REN(ITMONO(h)))(REN(rest)))(SYN(ETYM(ITMONO(h)))(ETYM(rest))))(self(t)))))"
 glyph SRC_SEQVAL = "la s. AND(SEQ_OK(s))(AUTO_OK(SEQ_COMPOSE(s)))"
 glyph SRC_SEQDIE = "la s. IF(SEQ_VALID(s))(la _. \"VALID\")(la _. error(\"ontosyntax: sequence violates the three laws\"))"

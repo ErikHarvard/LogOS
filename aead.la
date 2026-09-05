@@ -159,3 +159,9 @@ glyph MAIN = (la ct. (la tg.
                               (DECRYPT(AK)(AN)(AA)(ct)(FTAG)(la p. "LEAKED PLAINTEXT")(la m. "rejected")))))
   )(TAGOF(AK)(AN)(AA)(ct)))(ENCRYPT(AK)(AN)(AP))
 
+
+# The AEAD pair is the only safe surface: ChaCha20 alone is silently malleable and
+# Poly1305 alone authenticates something anyone can read. The layers below are
+# exported by their own modules for those who need them; nothing here re-exports
+# them, and the hex helpers stay private on purpose.
+export ENCRYPT DECRYPT TAGOF

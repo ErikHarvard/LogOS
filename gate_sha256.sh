@@ -36,7 +36,9 @@ cp sha256.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
 VMOUT="$(timeout 300 ./logos_secd 2>&1 | head -1)"
 rm -f logos_secd logos_program.bin logos_source.la
-[ "$VMOUT" = "$EXPECT" ] || { echo "FAIL  sha256 native VM: [$VMOUT]"; ok=0; }
+# ★ RE-POINTED (III-5): HOSTOUT=EXPECT and VMOUT=EXPECT and HOSTOUT=VMOUT is a
+#   triangle. The VM is compared to the HOST below; this line is what it implied.
+: # (VM-vs-EXPECT folded into the host-vs-EXPECT and VM-vs-host pair)
 
 [ "$HOSTOUT" = "$VMOUT" ] || { echo "FAIL  sha256: host != VM"; ok=0; }
 

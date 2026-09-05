@@ -27,6 +27,32 @@
 #  USE-branch put to USE on its own name RECOGNISES itself —
 #  PRAGMATICS("PRAGMATICS") ≡ TRUE — the ∃(∃)≡∃ of pragmatics.
 #
+#  ═══ IMPLICATURE IS BANNED AT THE SEMANTIC LAYER — Erik's ruling, 2026-08-24 ═══
+#  LA encodes LITERAL COMPOSITIONAL MEANING. Implicature arises in USE; it is not a
+#  property of the LANGUAGE. Meaning STOPS at κ.
+#
+#  ★ This is a POSITIVE claim, deliberately, not silence. A language that merely
+#  LACKED implicature would be indistinguishable from one that had not got round to
+#  building it. Stated positively it is FALSIFIABLE: exhibit an LA utterance whose
+#  literal composition UNDERDETERMINES what a competent reader takes from it, and the
+#  ban is wrong. That is the test, and it is offered rather than avoided.
+#
+#  ★ GRICE IS NOT REFUTED — he is PLACED. The maxims describe how speakers reason
+#  about each other in use, and that reasoning is real; it simply happens OUTSIDE the
+#  semantics, in the same way that a speaker's tone is real and is not a fact about
+#  the lexicon. The earlier note here said implicature "survives monosemy and needs a
+#  ruling". It has one, and this is it. Monosemy removes AMBIGUITY, not CHOICE: a
+#  speaker who says Some when All holds may still be TAKEN to mean not-all — but that
+#  is a fact about the speaker's audience, not about what the glyph MEANS.
+#
+#  ★ STANDING CONSTRAINT, AND IT IS MECHANICAL ON PURPOSE: this module must NOT grow
+#  a defeasible quantity layer. "We decided not to build it" decays into "someone
+#  built it" across sessions, so the decision is enforced by a gate in build.sh which
+#  asserts no IMPLICATE / SCALAR / QUANTITY / DEFEASIBLE / MAXIM glyph is defined
+#  here, and which CITES THIS RULING in its failure message so the next author reads
+#  the decision rather than the symptom. A ban recorded only in prose is a ban that
+#  expires.
+#
 #  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY
 #  writes pragmatics.la, type-checks the generated source, and META_DEBUG
 #  verifies every glyph against its executable test cases; the module is

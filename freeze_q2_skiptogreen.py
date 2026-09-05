@@ -25,9 +25,13 @@ and is then discarded. Still a SHAPE: a gate that legitimately reports SKIP when
 hardware is absent is correct. The defect is exiting 0 while KNOWING it tested
 nothing, because the caller cannot distinguish that from success.
 """
-import re, subprocess
+import os, re, subprocess
 from pathlib import Path
-REPO = Path("/home/erikxanderharvard/logos")
+# The repo is where THIS SCRIPT lives, not a path baked in at authoring time.
+# A hardcoded $HOME makes a tool silently read the wrong worktree when run from
+# another one -- and the worktree isolation that guards /tmp cannot see it,
+# because the path is not in /tmp.
+REPO = Path(__file__).resolve().parent
 
 def strip_comments(t):
     out=[]
@@ -62,7 +66,20 @@ def gates(root):
 
 def main():
     # ── POSITIVE CONTROL FIRST. A detector that misses the known instance is worthless. ──
-    D=Path("/home/erikxanderharvard/logos-d")
+    # ★ The control tree. This reads ANOTHER worktree, deliberately: the detector
+    #   is validated against a known before/after pair that lives only there, and
+    #   a detector that misses its known instance is worthless. Two things make
+    #   that acceptable and both are load-bearing:
+    #     (a) it is READ-ONLY -- git log / git show / read_text, never a write.
+    #         The hazard this file class is named for is the sibling that WROTE
+    #         to another track's source and overwrote it.
+    #     (b) the path is now DERIVED, not baked in, and overridable. A literal
+    #         $HOME path reaches into a fixed tree from wherever it runs, which
+    #         is precisely the failure worktree isolation cannot catch.
+    #   If the control tree is absent, okctl stays False and main() suppresses
+    #   every result below -- the correct behaviour for a missing control, and
+    #   the reason this does not need to fail loudly on its own.
+    D = Path(os.environ.get("LOGOS_CONTROL_TREE", str(REPO.parent / "logos-d")))
     pre=subprocess.run(["git","-C",str(D),"log","--format=%H","-1","--skip=1","--",
                         "kernel/gate_hal_idle.sh"],capture_output=True,text=True).stdout.strip()
     okctl=False

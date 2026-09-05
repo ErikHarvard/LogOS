@@ -93,3 +93,4 @@ glyph DECOMP = la form. BUILD(SPLIT(";")(form))(NILc)
 glyph DCOLLAPSE = la sym. la fa. la fb. DAG(MKMODE(sym)(DECOMP(fa))(DECOMP(fb)))
 # TSIZE : unfolded tree node count (trusted)
 glyph TSIZE = Zc(la self. la tree. tree (la nm. 1) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. la b. add(1)(add(self(a))(self(b)))) (la a. add(1)(self(a))))
+export Zc TRc FAc IFc NILc CONSc PAIRc FSTc SNDc ORc PRIM SYN CON DIR CONT MC LEN APPEND NTH LAST IDXOF JOIN SPLIT HEAD3 DROP3 UPTO AFTERC SYN_S CON_S DIR_S CONT_S MC_S IS_BIN MKDEF2 MKDEF1 ADDNODE INTERNB INTERNU INTERN DAG NODES MKMODE DEFTOTREE BUILD DECOMP DCOLLAPSE TSIZE 

@@ -52,7 +52,21 @@ glyph SORTC = la mk. la a. la b. IF(STR_LE(CANON(a))(CANON(b)))(la _. mk(a)(b))(
 glyph CANONIQ = Z(la self. la node.
     node
         (la nm. PRIM(nm))
-        (la a. la b. SYN(self(a))(self(b)))
+        # ★ R-A, THE THIRD REGISTER'S DEEP HALF (2026-08-27). ⊗(A,A) ≡ A for the
+        # ARCHĒ ALONE; every other ⊗(A,A) stays a DISTINCT compound (Erik's ruling
+        # 2026-08-24). canon.la (REWRITE_SYN) and phonym.la (SYNNORM) carried this
+        # from the day of the ruling, and sigil.la gained it on 2026-08-26 -- but
+        # sigil.la exports NEITHER CANON NOR CANONIQ, so that fix was private to the
+        # SURFACE renderer. topoderive.la, the DEEP renderer, imports sigil AND onf,
+        # and the only CANONIQ reachable through it is THIS one. Measured before the
+        # fix: DSIGIL(⊗(∃,∃)) and DSIGIL(∃) rendered as DIFFERENT forms while κ and
+        # the phonology called them ONE concept -- two forms for one concept,
+        # polysemy through the visual door, in the register nobody had checked.
+        # Keyed on the CANONICAL FORM via CANON, never on a glyph name: "∃" and
+        # "LOGOS" were two names for one referent once already.
+        (la a. la b. (la na. la nb.
+              IF(AND(str_eq(CANON(na))(CANON(nb)))(str_eq(CANON(na))("∃")))
+                (la _. na)(la _. SYN(na)(nb)))(self(a))(self(b)))
         (la a. la b. SORTC(CON)(self(a))(self(b)))
         (la a. la b. DIR(self(a))(self(b)))
         (la a. la b. CONT(self(a))(self(b)))

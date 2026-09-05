@@ -81,7 +81,14 @@ glyph SORTC = la mk. la a. la b. IF(STR_LE(CANON(a))(CANON(b)))(la _. mk(a)(b))(
 glyph CANONIQ = Z(la self. la node.
     node
         (la nm. PRIM(nm))
-        (la a. la b. SYN(self(a))(self(b)))                  # ⊗ NON-commutative (tex:2837)
+        (la a. la b. (la na. la nb.                          # ⊗ NON-commutative (tex:2837)
+              # ★ R-A, THIRD REGISTER (2026-08-26). ⊗(A,A) ≡ A for the ARCHĒ ALONE;
+              # every other ⊗(A,A) stays a distinct compound. canon.la (REWRITE_SYN)
+              # and phonym.la (SYNNORM) carried this from the day of the ruling; the
+              # visual register could not express it until ∃ became a name here.
+              # Keyed on the CANONICAL FORM via CANON, never on a glyph name.
+              IF(AND(str_eq(CANON(na))(CANON(nb)))(str_eq(CANON(na))("∃")))
+                (la _. na)(la _. SYN(na)(nb)))(self(a))(self(b)))
         (la a. la b. SORTC(CON)(self(a))(self(b)))           # ⊕ commutative → sort
         (la a. la b. DIR(self(a))(self(b)))                  # ▷ directional → keep
         (la a. la b. CONT(self(a))(self(b)))                 # ⊂ directional → keep
@@ -343,7 +350,16 @@ glyph PRIM_SIGIL = la nm.
     IF(str_eq(nm)("BECOMING"))   (la _. BECOMING)(la _.
     IF(str_eq(nm)("FORM"))       (la _. FORM)(la _.
     IF(str_eq(nm)("DEPTH"))      (la _. DEPTH)(la _.
-    IF(str_eq(nm)("LOGOS"))      (la _. LOGOS)(la _.   # the Meta-Word Λ (not a primitive)
+    IF(str_eq(nm)("∃"))          (la _. LOGOS)(la _.   # the Archē. ★ KEYED ON "∃",
+    #   ★ Erik's ruling 2026-08-26: ∃ EVERYWHERE; LOGOS is just this drawn form's
+    #   LABEL. Before, the visual register called the Archē "LOGOS" while canon.la,
+    #   phonym.la and archroot.la called it "∃" — two names for one referent, which
+    #   is the exact polysemy the language forbids, appearing inside the IMPLEMENTATION
+    #   of the rule rather than in the vocabulary. It also made R-A (⊗(A,A) ≡ A for the
+    #   Archē alone) INEXPRESSIBLE here, because ⊗(∃,∃) had no ∃ to match.
+    #   The glyph `LOGOS` below is still the drawn form — it is the picture's name, not
+    #   the concept's. "LOGOS" is deliberately NOT accepted as an alias: an alias would
+    #   reintroduce the two-names-one-referent problem this ruling exists to close.
     UNDEF))))))))))
 
 # ── SIGIL — the visual κ: a decomposition node → its sigil (mirrors CANON).
@@ -380,7 +396,7 @@ glyph MAIN =
     SEQ(SHOW("g8 FORM        triangle in circle             witness: type ctor")(SIGIL(PRIM("FORM"))))(
     SEQ(SHOW("g9 DEPTH       nested circles, descending     witness: recursion")(SIGIL(PRIM("DEPTH"))))(
     # ── The Logos / Meta-Word Λ — the whole naming itself (Totality, not a 10th primitive) ──
-    SEQ(SHOW("Λ  LOGOS       Λ(Λ)≡Λ = ∃(∃)≡∃ — Being's circle holding the ∞ + the Name")(SIGIL(PRIM("LOGOS"))))(
+    SEQ(SHOW("Λ  LOGOS       Λ(Λ)≡Λ = ∃(∃)≡∃ — Being's circle holding the ∞ + the Name")(SIGIL(PRIM("∃"))))(
     # ── Derived concepts — GENERATED from the drawn primitives (First Derivations) ──
     SEQ(SHOW("DERIVED Truth         = ↻(RECOGNITION)")(SIGIL(MC(PRIM("RECOGNITION")))))(
     SEQ(SHOW("DERIVED Consciousness = RECOGNITION ⊗ SELF")(SIGIL(SYN(PRIM("RECOGNITION"))(PRIM("SELF")))))(
