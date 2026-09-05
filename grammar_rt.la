@@ -129,6 +129,11 @@ glyph D_EPS   = BSTR(GEQ(GEPS)(GT("a")))
 glyph CTRL_SAME = BSTR(GEQ(P_EXPR)(P_EXPR))
 glyph CTRL_DIFF = BSTR(GEQ(P_EXPR)(P_APP))
 glyph HAND = GSEQ(GT("glyph"))(GALT(GN("expr"))(GSTAR(GT("ident"))))
+# ★ HAND2 — the constructor the corpus cannot reach. GEPS appears in NO production
+#   and not in HAND, so without this a GBUILD whose `eps` arm is broken round-trips
+#   all seven productions AND the hand-built term and ships GREEN. Measured, not
+#   argued: breaking the eps arm leaves every other column T and flips only this one.
+glyph HAND2 = GALT(GSEQ(GT("la"))(GSTAR(GN("expr"))))(GEPS)
 
 glyph SEQ2 = la a. la b. b
 glyph MAIN =
@@ -136,6 +141,7 @@ glyph MAIN =
       concat(RT(P_PRIMARY))(concat(RT(P_APPTAIL))(concat(RT(P_APP))(concat(RT(P_EXPR))(
       concat(RT(P_GLYPHDEF))(concat(RT(P_EXPORTD))(RT(P_MODULE))))))))))(
   SEQ2(print(concat("RT hand-built (not a P_*) = ")(RT(HAND))))(
+  SEQ2(print(concat("RT eps-bearing (GEPS reached) = ")(RT(HAND2))))(
        print(concat("discriminators [same seq2 alt2 star kind eps diff] want TFFFFFF = ")(
       concat(CTRL_SAME)(concat(D_SEQ2)(concat(D_ALT2)(concat(D_STAR)(
-      concat(D_KIND)(concat(D_EPS)(CTRL_DIFF))))))))))
+      concat(D_KIND)(concat(D_EPS)(CTRL_DIFF)))))))))))

@@ -548,7 +548,7 @@ registers. `trimono.la` now gates all three. What remains:
   between *unbounded in principle* and *sayable by a person*.
 - `[ ]` **`phonseq` must DETECT the new ▷ marker** — the signature exists; the
   decoder still reports ▷ as a leaf.
-- `[ ]` **⊕ round-trip fails, but NOT for the reason recorded here — re-measured
+- `[✓]` **⊕/VOID: WITNESSED AS A BOUND, gated 2026-09-05 (Erik's ruling). Re-measured
   2026-09-05, and the split is EXONERATED.** As written this item said
   "`SIL_AT=6240` vs a true boundary at 6080, one stride late, inside the next
   phonym's own closure", and proposed splitting at the edges of the maximal
@@ -585,10 +585,26 @@ registers. `trimono.la` now gates all three. What remains:
   has ever been asked to stay silent on a signal containing no mode — the
   control is a class member in a DIFFERENT IDIOM, which is the shape this repo
   keeps re-finding. Adding a primitive row is the fix to the INSTRUMENT.
-  **Needs Erik on the detector itself:** distinguishing ⊕'s inserted /ʔ/ closure
-  from VOID's intrinsic breath silence may be a genuine acoustic bound rather
-  than a bug, and if it is, it should be witnessed as a bound rather than tuned
-  away. Do not "fix" `IS_CON` by loosening it until that is ruled.
+  ★★ **RULED A REAL BOUND (Erik, 2026-09-05) AND WITNESSED.** ⊕'s inserted /ʔ/
+  closure and VOID's intrinsic breath silence **are the same acoustic event** —
+  there is nothing there to separate, so no temporal-silence test can separate
+  them. `IS_CON` was NOT loosened; loosening it would have traded a true bound
+  for a detector that can no longer fire.
+  **Closed by witnessing, per the build queue's own rule** ("if irreducible,
+  state the irreducibility as a witnessed bound rather than an open item"):
+  · `phonseq.la` emits a PRIMITIVE ROW — the missing control — and `build.sh`
+    pins `DDDDDCDDD`, exactly as `tactile` pins its `W4=F` limit.
+  · **RED PATH RUN:** forcing `IS_CON` false yields `DDDDDDDDD` and the gate
+    fails, so a moved bound is caught rather than absorbed.
+  · Ledger row added in `LA_PAPER_ADDITIONS_3.md` §8:
+    *Temporal mode decoding: ⊕ vs VOID · `[B]` · one acoustic event; compounds
+    under VOID ambiguous.* It NAMES, for the first time, one of the invariants
+    the existing `Invariant preservation, both registers [W]` row bounds itself
+    "up to".
+  · **Scope:** this bounds the PHONETIC register only. κ still inverts and the
+    glyphic round trip is untouched, so the honest statement is not "the
+    trimodal identity fails" but that the phonetic register carries strictly
+    less recoverable structure, on a named input class.
 - `[ ]` **⊕-associativity is phonetically invisible** — identical PCM; no parser
   can separate the bracketings. Needs a bracketing marker or a declared
   equivalence.

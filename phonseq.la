@@ -240,8 +240,43 @@ glyph W4b = ROW(U_DIR)    # expect T on DIR only (the weakest detector)
 # ── THE ROUND TRIP, scored by the build's own witness ────────────────────
 glyph W5 = BSTR(str_eq(PARSE(PHONYM(MC(A))))(SPEC(MC(A))))
 
+# ── ★ THE PRIMITIVE ROW — the control the confusion matrix never had ──────
+# Every row above (U_MC/U_CON/U_CONT/U_SYN/U_DIR) is a COMPOUND, so no detector
+# had ever been asked to stay silent on a signal containing NO MODE AT ALL. The
+# missing control is a member of the same class in a DIFFERENT IDIOM, and its
+# absence is why the matrix stayed green while ⊕(BEING,VOID) failed to
+# round-trip: the case that breaks it was never a row.
+#
+# ★★ VOID READING AS ⊕ IS A WITNESSED BOUND, NOT A BUG — ruled by Erik
+# 2026-09-05, and pinned here the way tactile.la pins W4=F.
+# phonym.la:162 synthesises VOID as /hɑ/, breath — low-pass glottal noise into
+# open back /ɑ/ — and IS_CON's discriminator is a GAP-long run of LITERAL ZERO
+# with loud on both sides. VOID's breath onset contains exactly that. The two
+# are not distinguishable by a temporal-silence test, because ⊕'s inserted /ʔ/
+# closure and VOID's intrinsic breath silence ARE THE SAME ACOUSTIC EVENT. That
+# is a property of the phonology, not a defect in the detector, and loosening
+# IS_CON until this went green would trade a true bound for a gate that can no
+# longer fail.
+# CONSEQUENCE, stated rather than hidden: any compound whose child is VOID is
+# ambiguous to the temporal decoder. ⊕(BEING,VOID) parses as ⊕(BEING,⊕(⊥,⊥)).
+# The written register is unaffected — this bounds the PHONETIC decoder only.
+# ★ If VOID ever stops reading as C, or any other primitive stops reading as D,
+# that is a change to EXAMINE, not to absorb: the bound would have moved.
+glyph MODEC = la p.
+    IF(str_eq(MODE_OF(p))("MC"))  (la _. "M")(la _.
+    IF(str_eq(MODE_OF(p))("CON")) (la _. "C")(la _.
+    IF(str_eq(MODE_OF(p))("CONT"))(la _. "N")(la _.
+    IF(str_eq(MODE_OF(p))("DIR")) (la _. "D")(la _. "S"))))
+glyph PC = la nm. MODEC(PHONYM(PRIM(nm)))
+glyph PRIMROW =
+    concat(PC("BEING"))(concat(PC("RECOGNITION"))(concat(PC("LOVE"))(
+    concat(PC("SELF"))(concat(PC("RELATION"))(concat(PC("VOID"))(
+    concat(PC("BECOMING"))(concat(PC("FORM"))(PC("DEPTH")))))))))
+
 glyph J    = la a. la b. concat(a)(concat("|")(b))
 glyph MAIN = print(concat("phonseq confusion[mc,con,cont,dir] ")(
              concat(J(W1)(J(W2)(J(W3)(J(W4)(J(W4b)(W5))))))(
+             concat("\nprimitives[being,recog,love,self,rel,void,becoming,form,depth] ")(
+             concat(PRIMROW)(
              concat("\nroundtrip SPEC: ")(concat(SPEC(MC(A)))(
-             concat(" -> ")(PARSE(PHONYM(MC(A)))))))))
+             concat(" -> ")(PARSE(PHONYM(MC(A)))))))))))

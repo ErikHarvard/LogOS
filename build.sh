@@ -4680,6 +4680,31 @@ case "$PSQOUT" in
   *"TFFF|FTFF|FTTF|FFFT|FFFT|T"*) : ;;
   *) echo "FAIL  phonseq: the decoder confusion matrix changed — got: $PSQOUT"; ok=0 ;;
 esac
+# ★ THE PRIMITIVE ROW — the control the matrix above never had. Every one of its
+#   five rows is a COMPOUND, so no detector was ever asked to stay silent on a
+#   signal containing NO MODE AT ALL. The missing control is a member of the same
+#   class in a DIFFERENT IDIOM, and its absence is why this gate stayed green
+#   while ⊕(BEING,VOID) failed to round-trip: the breaking case was never a row.
+# ★★ THE C IS A WITNESSED BOUND, NOT A BUG — Erik's ruling, 2026-09-05, and it is
+#   pinned here exactly as tactile.la pins W4=F. Order is being/recog/love/self/
+#   rel/VOID/becoming/form/depth, so the C is VOID reading as ⊕. phonym.la:162
+#   synthesises VOID as /hɑ/ — breath, low-pass glottal noise into open back /ɑ/ —
+#   and IS_CON's discriminator is a GAP-long run of LITERAL ZERO with loud on both
+#   sides, which that breath onset contains. ⊕'s inserted /ʔ/ closure and VOID's
+#   intrinsic breath silence ARE THE SAME ACOUSTIC EVENT; no temporal-silence test
+#   can separate them. Loosening IS_CON until this read D would trade a true bound
+#   for a gate that can no longer fail.
+#   CONSEQUENCE, stated rather than hidden: any compound whose child is VOID is
+#   ambiguous to the TEMPORAL decoder — ⊕(BEING,VOID) parses as ⊕(BEING,⊕(⊥,⊥)).
+#   The written register is unaffected; this bounds the phonetic decoder only.
+# ★ RED PATH RUN, not argued: forcing IS_CON false makes the row DDDDDDDDD and
+#   this gate FAIL. So if the bound ever MOVES — VOID stops reading C, or any
+#   other primitive stops reading D — it is caught, and it is to be EXAMINED, not
+#   absorbed by editing this string.
+case "$PSQOUT" in
+  *"primitives[being,recog,love,self,rel,void,becoming,form,depth] DDDDDCDDD"*) : ;;
+  *) echo "FAIL  phonseq: the primitive row changed — 8 of 9 primitives must read D (no temporal mode) and VOID must read C (the witnessed acoustic bound). A change here means the bound moved: examine it, do not absorb it — got: $PSQOUT"; ok=0 ;;
+esac
 TACOUT="$(timeout 2400 ./tiny_host tactile.la 2>&1 || true)"
 # ★ W4=F is asserted deliberately: it is the LIMIT (⊗ is spectral-only and
 #   unrecoverable by touch). The modalities are NOT equipotent, and that
@@ -5319,7 +5344,13 @@ fi
 
 say "LA arc item 5: the grammar recoverable as data — L1 + L2 differential (grammar.la)"
 ok=1
-GR_H="$(./tiny_host grammar.la 2>/dev/null)"
+# ★ TIMEOUT, and a timeout is an explicit FAILURE. Two measured GBUILD/GPARSE
+# regression shapes DIVERGE rather than returning F (a constant GBUILD, and
+# GSEQ/GALT swapped — both rc=124 under tiny_host). Unwrapped, those hang the
+# whole build instead of failing it, and a hung build reads as "still running",
+# not as RED. The round-trip block below already does this; this one did not.
+GR_H="$(timeout 300 ./tiny_host grammar.la 2>/dev/null)"; GR_RC=$?
+[ "$GR_RC" -eq 124 ] && { echo "FAIL  item5: ./tiny_host grammar.la TIMED OUT (300s) — the data grammar or its interpreter diverges; this is a RED, not a slow build"; ok=0; }
 # EXACT, not a substring: all four accepts and all four rejects must agree.
 printf '%s\n' "$GR_H" | grep -qF "L2 differential [A1 A2 A3 A4 R1 R2 R3 R4] = TTTTTTTT" \
     || { echo "FAIL  item5: L2 differential not TTTTTTTT — got: $(printf '%s' "$GR_H" | grep -o 'L2 differential.*')"; ok=0; }
@@ -5332,7 +5363,8 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp grammar.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-GR_V="$(./logos_secd 2>/dev/null)"
+GR_V="$(timeout 300 ./logos_secd 2>/dev/null)"; GRV_RC=$?
+[ "$GRV_RC" -eq 124 ] && { echo "FAIL  item5: ./logos_secd TIMED OUT (300s) on the same program — divergence on the VM side"; ok=0; }
 [ "$GR_H" = "$GR_V" ] || { echo "FAIL  item5: host != VM"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 [ "$ok" -eq 1 ] && echo "PASS  item5: the grammar is FIRST-CLASS DATA (Scott-encoded, GDECOMP-able) and GPARSE agrees with the fuzzer-verified productions on BOTH the accept and reject sides; byte-identical host==VM. BOUND: associativity is invisible to a verdict-only differential" || exit 1
@@ -5384,6 +5416,12 @@ printf '%s\n' "$RTOUT" | grep -qF "RT [primary app_tail app expr glyphdef export
 # corpus it was written against.
 printf '%s\n' "$RTOUT" | grep -qF "RT hand-built (not a P_*) = T" \
     || { echo "FAIL  item5 round-trip: the hand-built term does not round-trip — got: $RTOUT"; ok=0; }
+# ★ THE CONSTRUCTOR THE CORPUS CANNOT REACH. GEPS appears in NO production and
+# not in HAND, so before this line a GBUILD with a broken `eps` arm round-tripped
+# all seven productions AND the hand-built term and went GREEN. Measured: breaking
+# the eps arm flips ONLY this row; every other column stays T.
+printf '%s\n' "$RTOUT" | grep -qF "RT eps-bearing (GEPS reached) = T" \
+    || { echo "FAIL  item5 round-trip: the eps-bearing term does not round-trip — GBUILD's eps arm is wrong, and nothing else in this gate can see it — got: $RTOUT"; ok=0; }
 # ★ ASSERT THE DISCRIMINATORS, not just the round trip. Without this a GEQ that
 # returned TRUE unconditionally would make every row above green.
 printf '%s\n' "$RTOUT" | grep -qF "discriminators [same seq2 alt2 star kind eps diff] want TFFFFFF = TFFFFFF" \

@@ -869,3 +869,82 @@ If the paper takes only a single sentence from this brief, take this:
 It is this project's method indicting itself and repairing the class rather
 than the instance — which is the argument the whole document is trying to make,
 made by the document's own subject, against itself.
+
+---
+
+## §8 — A NEW LEDGER ROW: the ⊕/VOID acoustic identity  *(added 2026-09-05)*
+
+**The row to add, in the Ledger's own three columns:**
+
+| Component | Tag | Bound / status |
+|---|---|---|
+| Temporal mode decoding: ⊕ vs VOID | `[B]` | one acoustic event; compounds under VOID ambiguous |
+
+### What it witnesses
+
+The phonetic decoder recovers a compound's MODE from temporal signatures.
+`⊕` (concatenation) is detected by its inserted `/ʔ/` closure: a 960-sample run
+of literal zero with voiced material on both sides.
+
+**`VOID` is synthesised as `/hɑ/` — breath, low-pass glottal noise into open
+back `/ɑ/` (`phonym.la:162`) — and its breath onset contains exactly that.**
+
+So `IS_CON` fires on `PHONYM(VOID)`, a bare primitive with no mode in it at all.
+Measured across all nine primitives, each phonym's length printed beside its
+verdict so a name failing to resolve could not pass as a primitive:
+
+    BEING 6080 DIR   RECOGNITION 6720 DIR   LOVE 6560 DIR
+    SELF  6560 DIR   RELATION    6720 DIR   VOID 6880 CON
+    BECOMING 6400 DIR  FORM 6160 DIR        DEPTH 6000 DIR
+
+Eight of nine are correctly silent. **VOID alone fires the ⊕ detector.**
+
+### Why this is a BOUND and not a defect
+
+★ **Ruled by Erik, 2026-09-05.** `⊕`'s inserted `/ʔ/` closure and VOID's
+intrinsic breath silence **are the same acoustic event**. No temporal-silence
+test can separate them, because there is nothing there to separate: the signal
+is identical. This is a property of the phonology — of what VOID *sounds like* —
+not a threshold that was set wrong.
+
+The repair that suggests itself is to loosen `IS_CON` until VOID reads DIR.
+That would be the worst available move: it trades a true bound for a detector
+that can no longer fire, which is the vacuous-gate defect this paper repeatedly
+catches in itself. **The bound is witnessed instead.**
+
+### The consequence, stated rather than implied
+
+Any compound whose child is VOID is **ambiguous to the temporal decoder**.
+`⊕(BEING, VOID)` round-trips as `⊕(BEING, ⊕(⊥,⊥))`.
+
+★ **This bounds the PHONETIC register only.** The written register is
+unaffected: `κ` inverts, and the glyphic round trip is untouched. So the correct
+statement is not "the trimodal identity fails" but that **the phonetic register
+carries strictly less recoverable structure than the glyphic one, and here is
+the exact input class on which it does.** That belongs beside the existing
+`Invariant preservation, both registers` `[W]` row, whose bound already reads
+*"up to declared invariants [B]"* — this NAMES one of those invariants for the
+first time.
+
+### How it is now gated
+
+`phonseq.la` emits a PRIMITIVE ROW — the control the confusion matrix never had.
+★ Every one of the matrix's five existing rows (`U_MC`/`U_CON`/`U_CONT`/`U_SYN`/
+`U_DIR`) is a **compound**, so no detector had ever been asked to stay silent on
+a signal containing no mode. The missing control was a member of the same class
+in a *different idiom*, and its absence is the whole reason the matrix stayed
+green while `⊕(BEING,VOID)` failed to round-trip: **the case that breaks it was
+never a row.**
+
+`build.sh` pins `DDDDDCDDD`, exactly as it pins `tactile`'s `W4=F` limit. Red
+path run: forcing `IS_CON` false yields `DDDDDDDDD` and the gate fails. If the
+bound ever moves, it is caught — and it is to be **examined, not absorbed** by
+editing the expected string.
+
+### For the paper's method section
+
+This is the fourth instance in this document of one pattern, and the sharpest:
+**a gate green because the breaking case was outside its corpus, not because the
+property held.** The lexicon's expected column had independent origins and could
+disagree; this matrix's rows did not span its own input class. The corpus is as
+much a part of a gate as the assertion is.
