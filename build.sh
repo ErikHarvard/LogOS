@@ -53,6 +53,67 @@ ncg3 () {
     return $rc
 }
 
+say "clean-checkout inputs: every incbin target is tracked (a clone must get it)"
+# ★ WHY THIS EXISTS, AND WHY IT RUNS FIRST. Build 9 (2026-09-05) spent 57 MINUTES
+# to discover that `incdata.bin` — an 8-byte fixture named ONLY in
+# asm_test_sect.asm's `incbin`, never anywhere in build.sh, and swallowed by the
+# blanket `*.bin` in .gitignore — is absent from a fresh clone, so the committed
+# state does not build. That was the FOURTH clean-checkout break of this class.
+# The clean-checkout probe finds these by RUNNING; this finds them by READING, in
+# under a second, before anything else is compiled.
+# ★ THE ORACLE IS `git ls-files`, NOT `git status`, and that is the whole point. A
+# git-status sweep is STRUCTURALLY BLIND here: an ignored file never appears in
+# git status at all, which is why an earlier sweep of this same class correctly
+# "returned zero" while the build still failed. Both were right; they searched
+# different idioms. ls-files sees ignored-but-tracked and reports untracked.
+# ★ RED PATH, evaluated against b8e3ace — the exact commit build 9 failed on:
+#   this check flags `incdata.bin`. It would have caught the real break.
+# ★ HONEST SCOPE: `incbin` targets in tracked .asm only. `read_file(` targets in
+#   .la are NOT swept — they are dominated by build products and runtime state
+#   (logos_program.bin, organ.la, .sx*mode, /tmp/...), so gating them would need
+#   an allowlist large enough to silently disable the check. Narrow and real
+#   beats broad and switched-off.
+ok=1
+# ★ ONE PATTERN, USED TWICE ON PURPOSE. The self-test below must exercise the
+# SAME expression the scan uses; a self-test against a COPY of the pattern
+# passes while the real one rots.
+CI_PAT='incbin\s+"\K[^"]+'
+CI_REFS="$(git ls-files '*.asm' | xargs grep -hoP "$CI_PAT" 2>/dev/null | sort -u)"
+CI_N=$(printf '%s\n' "$CI_REFS" | grep -c . || true)
+# ★ THE INSTRUMENT MUST PROVE IT LOOKED. A broken pattern, a grep without -P, or a
+# git that returns nothing all emit an empty list — every check below then passes
+# vacuously and the gate reports the right answer for the wrong reason.
+# ★ PROVED BY SELF-TEST, NOT BY COUNT. The first version required CI_N >= 2 —
+# exactly the number this tree happened to hold. That is the "a number a human
+# must keep true" antipattern already ruled against twice here (the VM size
+# constant; secd.la's 13775 header), and it fails in the WRONG DIRECTION:
+# legitimately deleting one incbin would report "the SCAN is broken", a false
+# accusation against the instrument instead of a true report of the tree.
+# Running the extractor on a line whose answer is known proves the mechanism
+# regardless of how many targets exist, so zero targets becomes a legitimate
+# state the gate can report honestly rather than a failure it must invent.
+CI_SELF="$(printf '%s\n' '    incbin "control_target.bin"' | grep -hoP "$CI_PAT")"
+[ "$CI_SELF" = "control_target.bin" ] \
+  || { echo "FAIL  cleanin: the incbin extractor failed its own self-test (got [$CI_SELF], expected control_target.bin) — the SCAN is broken, not the tree"; ok=0; }
+# Build PRODUCTS the build itself emits, so a clone is not expected to carry them.
+# Each needs a REASON; an unjustified entry here turns this gate off silently.
+#   native_codegen3_out — emitted by the native_codegen3 stage (rm -f'd first, then rebuilt)
+CI_PRODUCTS=" native_codegen3_out "
+CI_BAD=""
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in /*) continue ;; esac
+    case "$CI_PRODUCTS" in *" $f "*) continue ;; esac
+    git ls-files --error-unmatch "$f" >/dev/null 2>&1 || CI_BAD="$CI_BAD $f"
+done <<< "$CI_REFS"
+[ -z "$CI_BAD" ] || {
+    echo "FAIL  cleanin: incbin'd by the build but NOT TRACKED —$CI_BAD"
+    echo "      A fresh clone will not have these, so the committed state does not build."
+    echo "      Fix: git add -f <file>, AND negate it in .gitignore (!/<file>) so the"
+    echo "      class cannot recur — tracking the instance alone leaves the trap armed."
+    ok=0; }
+[ "$ok" -eq 1 ] && echo "PASS  cleanin: all $CI_N incbin targets are tracked or justified build products (extractor self-test passed, so a zero here would mean the tree, not the scan); oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
+
 say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
 echo "compiled -> tiny_host"
