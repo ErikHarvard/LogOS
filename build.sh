@@ -112,7 +112,59 @@ done <<< "$CI_REFS"
     echo "      Fix: git add -f <file>, AND negate it in .gitignore (!/<file>) so the"
     echo "      class cannot recur — tracking the instance alone leaves the trap armed."
     ok=0; }
-[ "$ok" -eq 1 ] && echo "PASS  cleanin: all $CI_N incbin targets are tracked or justified build products (extractor self-test passed, so a zero here would mean the tree, not the scan); oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
+# ── ARM 2: read_file targets. ─────────────────────────────────────────────
+# ★ THIS ARM EXISTS BECAUSE THE SCOPE NOTE ABOVE WAS WRONG, AND MEASURING SAID SO.
+# Arm 1 was shipped with a stated limit: read_file targets are "dominated by build
+# products and runtime state, so gating them would need an allowlist large enough
+# to silently disable the check". That was a reasonable prediction and it was
+# checked rather than inherited. All 30 literal read_file targets in tracked .la
+# classify BY RULE, with an allowlist of ZERO:
+#     13  absolute (/tmp, /dev)          — not repo files
+#      4  tracked                        — fine
+#     10  produced by build.sh or the LA layer
+#      3  runtime state written by tracked gate scripts (.sx2mode -> gate_selfext2.sh,
+#        .sx4mode -> gate_selfext4.sh, .sx6budget -> gate_selfext6.sh)
+#      0  needing human judgement
+# What the prediction missed is that "written by a tracked .sh" is a RULE, not a
+# list — one clause, and the whole runtime-state category classifies itself.
+# ★ WHY IT IS WORTH HAVING SEPARATELY FROM ARM 1: str_at_fixture.bin is the same
+# defect class as incdata.bin in a DIFFERENT IDIOM — reached by read_file, not
+# incbin — so arm 1 is structurally blind to it. A sweep searches an idiom, not a
+# class, and that is why the red path below unTRACKS str_at_fixture.bin rather
+# than re-testing incdata.bin: a control that shares the subject's idiom proves
+# nothing about the class.
+RF_PAT='read_file\("\K[^"]+'
+RF_SELF="$(printf '%s\n' 'glyph X = read_file("control_target.la")' | grep -hoP "$RF_PAT")"
+[ "$RF_SELF" = "control_target.la" ] \
+  || { echo "FAIL  cleanin: the read_file extractor failed its own self-test (got [$RF_SELF], expected control_target.la) — the SCAN is broken, not the tree"; ok=0; }
+RF_REFS="$(git ls-files '*.la' | xargs grep -hoP "$RF_PAT" 2>/dev/null | sort -u)"
+rf_made () {   # produced by the build rather than shipped with it?
+    e=$(printf '%s' "$1" | sed 's/[].[^$\\*\/]/\\&/g')
+    grep -qE "(rm -f[^|;&]*|> *|-o +|cp +[^ ]+ +)$e( |\$|;)" build.sh 2>/dev/null && return 0
+    git ls-files '*.la' | xargs grep -qF "write_file(\"$1\"" 2>/dev/null && return 0
+    git ls-files '*.la' | xargs grep -qF "write_exec(\"$1\"" 2>/dev/null && return 0
+    git ls-files '*.sh' | xargs grep -qE "> *$e|rm -f[^|;&]*$e" 2>/dev/null && return 0
+    return 1
+}
+RF_BAD=""; RF_ORPHAN=""; RF_N=0
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in /*) continue ;; esac
+    RF_N=$((RF_N+1))
+    git ls-files --error-unmatch "$f" >/dev/null 2>&1 && continue
+    if [ -e "$f" ]; then rf_made "$f" || RF_BAD="$RF_BAD $f"
+    else rf_made "$f" || RF_ORPHAN="$RF_ORPHAN $f"; fi
+done <<< "$RF_REFS"
+[ -z "$RF_BAD" ] || {
+    echo "FAIL  cleanin: read_file'd by the build but NOT TRACKED and not produced by it —$RF_BAD"
+    echo "      A fresh clone will not have these, so the committed state does not build."
+    echo "      Fix: git add -f <file>, AND negate it in .gitignore (!/<file>)."
+    ok=0; }
+# Referenced, absent everywhere, and nothing creates them. Reported, not failed:
+# it is how an optional runtime signal legitimately looks, and failing on it would
+# be the gate inventing a defect. It is printed so it cannot accumulate unseen.
+[ -z "$RF_ORPHAN" ] || echo "      cleanin: NOTE — read_file'd, absent, and nothing creates them:$RF_ORPHAN"
+[ "$ok" -eq 1 ] && echo "PASS  cleanin: $CI_N incbin + $RF_N read_file targets all tracked or produced by the build; both extractors passed their own self-tests, so a zero here would mean the tree, not the scan; oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
 
 say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
