@@ -504,6 +504,14 @@ static int is_builtin(const char *name) {
         || strcmp(name, "str_tail") == 0 || strcmp(name, "str_eq") == 0
         || strcmp(name, "chr") == 0 || strcmp(name, "ord") == 0
         || strcmp(name, "write_exec") == 0 || strcmp(name, "str_len") == 0
+        /* str_at(s)(i): the i-th byte of s as a one-byte string, O(1). LA had
+         * no indexed access to anything, so reaching byte i cost i reductions
+         * -- which is why asm.la is O(passes*n^2) and secd.asm takes 13+ min.
+         * This adds no ontological primitive: a string already CARRIES its
+         * length (that is why str_len is O(1)), so indexing is recognition
+         * over a form the host already holds, exactly as str_len is. It is
+         * the Stage-0 move -- deepen the host's primitives -- not a tenth glyph. */
+        || strcmp(name, "str_at") == 0
         /* native integers (Form g_8, tau_Q): arithmetic is Ontodirection (>),
          * an operator acting upon operands. */
         || strcmp(name, "add") == 0 || strcmp(name, "sub") == 0
@@ -658,6 +666,29 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         else
             return mklam("t", mklam("f", mkvar("f")));  /* FALSE */
     }
+    if (strcmp(name, "str_at") == 0) {
+        /* str_at(s)(i) -> the i-th byte as a one-byte string; "" when i is out
+         * of range. TOTAL on the out-of-range case, and deliberately so:
+         *   i >= 0  -- str_at(s)(i) EQUALS str_head(str_tail^i(s)), including
+         *              past the end, where str_head("")/str_tail("") are "".
+         *              That equality is DERIVED, and it is what the gate
+         *              checks: the oracle is the walk this replaces, not a
+         *              table of pasted values.
+         *   i < 0   -- "" BY FIAT. A walk with a negative count has no
+         *              meaning, so this case is a choice, not a derivation.
+         *              It is the choice that keeps the string family total,
+         *              as str_head and str_tail already are on "".
+         * A type error still halts loudly, as every other string builtin does. */
+        if (arg1->t != N_STR) {
+            fprintf(stderr, "str_at: first argument is not a string\n"); exit(1);
+        }
+        if (arg2->t != N_INT) {
+            fprintf(stderr, "str_at: index is not an integer\n"); exit(1);
+        }
+        long i = arg2->i;
+        if (i < 0 || (unsigned long)i >= (unsigned long)arg1->len) return mkstrn("", 0);
+        return mkstrn(arg1->s + i, 1);
+    }
     if (is_int_binop(name)) {
         if (arg1->t != N_INT || arg2->t != N_INT) {
             fprintf(stderr, "%s: arguments must be integers\n", name); exit(1);
@@ -760,6 +791,11 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "str_eq: first argument is not a string\n"); exit(1); }
         return mkpartial("str_eq", v);
+    }
+    if (strcmp(name, "str_at") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "str_at: first argument is not a string\n"); exit(1); }
+        return mkpartial("str_at", v);
     }
     if (strcmp(name, "chr") == 0) {
         /* decimal-string -> one byte. The way a .la program spells an arbitrary

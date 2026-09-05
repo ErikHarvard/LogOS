@@ -258,6 +258,7 @@ glyph IS_BI_NAME = la name.
     IF(str_eq(name)("str_tail"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_eq"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_len"))(la _. TRUE)(la _.
+    IF(str_eq(name)("str_at"))(la _. TRUE)(la _.
     IF(str_eq(name)("add"))(la _. TRUE)(la _.
     IF(str_eq(name)("sub"))(la _. TRUE)(la _.
     IF(str_eq(name)("mul"))(la _. TRUE)(la _.
@@ -273,7 +274,7 @@ glyph IS_BI_NAME = la name.
     IF(str_eq(name)("bshl"))(la _. TRUE)(la _.
     IF(str_eq(name)("bshr"))(la _. TRUE)(la _.
     IF(str_eq(name)("bnot"))(la _. TRUE)(la _.
-    FALSE))))))))))))))))))))))))
+    FALSE)))))))))))))))))))))))))
 
 # ── 7. Built-in dispatch ───────────────────────────────────────────
 #
@@ -312,6 +313,9 @@ glyph APPLY_BI = la name. la val.
     IF(str_eq(name)("str_eq"))(la _.
         VAL_PA("str_eq")(val)
     )(la _.
+    IF(str_eq(name)("str_at"))(la _.
+        VAL_PA("str_at")(val)
+    )(la _.
     IF(str_eq(name)("int_to_str"))(la _. VAL_STR(int_to_str(UNWRAP_INT(val))))(la _.
     IF(str_eq(name)("str_to_int"))(la _. VAL_INT(str_to_int(UNWRAP_STR(val))))(la _.
     IF(str_eq(name)("add"))(la _. VAL_PA("add")(val))(la _.
@@ -328,7 +332,7 @@ glyph APPLY_BI = la name. la val.
     IF(str_eq(name)("bshr"))(la _. VAL_PA("bshr")(val))(la _.
     IF(str_eq(name)("bnot"))(la _. VAL_INT(bnot(UNWRAP_INT(val))))(la _.
         error(concat("eval: unknown builtin: ")(name))
-    ))))))))))))))))))))))))
+    )))))))))))))))))))))))))
 
 glyph APPLY_BI2 = la name. la v1. la v2.
     IF(str_eq(name)("write_file"))(la _.
@@ -339,6 +343,11 @@ glyph APPLY_BI2 = la name. la v1. la v2.
     )(la _.
     IF(str_eq(name)("str_eq"))(la _.
         IF(str_eq(UNWRAP_STR(v1))(UNWRAP_STR(v2)))(la _. META_TRUE)(la _. META_FALSE)
+    )(la _.
+    IF(str_eq(name)("str_at"))(la _.
+        # FORWARDS to the host rather than reimplementing: the rule for an
+        # out-of-range index has exactly one home, so it cannot drift here.
+        VAL_STR(str_at(UNWRAP_STR(v1))(UNWRAP_INT(v2)))
     )(la _.
     IF(str_eq(name)("add"))(la _. VAL_INT(add(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
     IF(str_eq(name)("sub"))(la _. VAL_INT(sub(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
@@ -353,7 +362,7 @@ glyph APPLY_BI2 = la name. la v1. la v2.
     IF(str_eq(name)("bshl"))(la _. VAL_INT(bshl(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
     IF(str_eq(name)("bshr"))(la _. VAL_INT(bshr(UNWRAP_INT(v1))(UNWRAP_INT(v2))))(la _.
         error(concat("eval: unknown builtin2: ")(name))
-    )))))))))))))))
+    ))))))))))))))))
 
 # ── 8. The evaluator ───────────────────────────────────────────────
 #

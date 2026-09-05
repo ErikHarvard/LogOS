@@ -108,6 +108,10 @@ nasm_ref.bin
 # native_codegen3.la, so it must track the source — regenerate it after any
 /native_codegen3_out
 !/native_codegen3_selfhost.bin
+# str_at_fixture.bin is a build INPUT, not an output: build.sh hard-requires it
+# and every engine reads it as the subject of the str_at gate. Without this
+# negation *.bin hides it, and the gate is green here and red in every clone.
+!/str_at_fixture.bin
 /native_codegen_out
 /native_input.la
 /native_small.bin

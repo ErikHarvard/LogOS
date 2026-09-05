@@ -348,7 +348,8 @@ glyph IS_BI_NAME = la name.
     IF(str_eq(name)("str_tail"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_eq"))(la _. TRUE)(la _.
     IF(str_eq(name)("str_len"))(la _. TRUE)(la _.
-    IS_BI_NAME_INT(name))))))))))
+    IF(str_eq(name)("str_at"))(la _. TRUE)(la _.
+    IS_BI_NAME_INT(name)))))))))))
 
 # str_eq yields Church booleans; in the VM those must be closures whose
 # bodies are BYTE instructions, so applying them runs under RUN_BYTES.
@@ -422,14 +423,16 @@ glyph APPLY_BI = la name. la val.
     IF(str_eq(name)("str_tail"))(la _. VAL_STR(str_tail(UNWRAP_STR(val))))(la _.
     IF(str_eq(name)("str_eq"))(la _. VAL_PA("str_eq")(val))(la _.
     IF(str_eq(name)("str_len"))(la _. VAL_STR(str_len(UNWRAP_STR(val))))(la _.
-    APPLY_BI_INT(name)(val))))))))))
+    IF(str_eq(name)("str_at"))(la _. VAL_PA("str_at")(val))(la _.
+    APPLY_BI_INT(name)(val)))))))))))
 
 # Second-argument builtin dispatch.
 glyph APPLY_BI2 = la name. la v1. la v2.
     IF(str_eq(name)("write_file"))(la _. (la _. v2)(write_file(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
     IF(str_eq(name)("concat"))(la _. VAL_STR(concat(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
     IF(str_eq(name)("str_eq"))(la _. IF(str_eq(UNWRAP_STR(v1))(UNWRAP_STR(v2)))(la _. BYTE_TRUE)(la _. BYTE_FALSE))(la _.
-    APPLY_BI2_INT(BYTE_TRUE)(BYTE_FALSE)(name)(v1)(v2))))
+    IF(str_eq(name)("str_at"))(la _. VAL_STR(str_at(UNWRAP_STR(v1))(UNWRAP_INT(v2))))(la _.
+    APPLY_BI2_INT(BYTE_TRUE)(BYTE_FALSE)(name)(v1)(v2)))))
 
 # SKIP_FIELD / SKIP_BYTES — advance past one field / one expression
 # without evaluating, so a lambda can find where its body ends.
@@ -560,7 +563,8 @@ glyph APPLY_BI2_SM = la name. la v1. la v2.
     IF(str_eq(name)("write_file"))(la _. (la _. v2)(write_file(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
     IF(str_eq(name)("concat"))(la _. VAL_STR(concat(UNWRAP_STR(v1))(UNWRAP_STR(v2))))(la _.
     IF(str_eq(name)("str_eq"))(la _. IF(str_eq(UNWRAP_STR(v1))(UNWRAP_STR(v2)))(la _. SM_TRUE)(la _. SM_FALSE))(la _.
-    APPLY_BI2_INT(SM_TRUE)(SM_FALSE)(name)(v1)(v2))))
+    IF(str_eq(name)("str_at"))(la _. VAL_STR(str_at(UNWRAP_STR(v1))(UNWRAP_INT(v2))))(la _.
+    APPLY_BI2_INT(SM_TRUE)(SM_FALSE)(name)(v1)(v2)))))
 
 # RUN_SM(gl0)(code0) — execute a compiled instruction list. The state is
 # (S, E, C, D); STEP transitions it; the trampoline iterates to a halt

@@ -416,6 +416,78 @@ if [ "$ok" -eq 1 ]; then
 else
     exit 1
 fi
+
+# ── str_at: O(1) indexed access across the engines ───────────────────────────
+# LA had no indexed access to ANYTHING. Reaching byte i cost i reductions, which
+# is why asm.la is O(passes*n^2) and why the LA-native assembler cannot displace
+# nasm at scale. str_at adds no ontological primitive: a string already CARRIES
+# its length (that is why str_len is O(1)), so indexing is recognition over a
+# form the host already holds -- the Stage-0 move, deepen the host's primitives.
+#
+# ★ THE EXPECTATION IS NOT A PASTED TABLE. str_at_test.la checks str_at against
+# WALK -- str_head after i str_tails -- built only from primitives that predate
+# it. The expected value is DERIVED from the expression str_at replaces.
+say "str_at (O(1) indexed access) across the engines"
+SAEXP="15|RECON_OK|CTRL_BAD|MATCH"
+ok=1
+sac () { [ "$2" = "$SAEXP" ] || { echo "FAIL  str_at $1: [$2] != [$SAEXP]"; ok=0; }; }
+
+# ★ THE FIXTURE IS CHECKED FIRST, AND ITS LENGTH IS THE FIRST OUTPUT FIELD.
+# The subject of every arm below is a file, so the gate states what it needs
+# before it needs it, rather than letting a bad subject look like a bad builtin.
+# A TRUNCATED fixture is the case the length pin actually catches: read_file
+# returns a short file happily, and RECON and WALK would then agree on fewer
+# bytes and report MATCH. (A file that is MISSING makes tiny_host halt loudly
+# -- "read_file: cannot open ..." -- so that one is caught by the host, not by
+# the pin. On the metal, where read_file returns "" silently, the pin is what
+# catches it.) Both checks stay: they fail on different things.
+#
+# ⚠ str_at_fixture.bin is TRACKED DELIBERATELY, against .gitignore:8 (*.bin),
+# via the !/ negation beside it. Without that negation this gate is red in
+# every clone while being green here -- the failure a committed-state check
+# catches and a working-tree check never can.
+[ -s str_at_fixture.bin ] \
+    || { echo "FAIL  str_at: str_at_fixture.bin missing or empty -- the subject of every arm below"; ok=0; }
+[ "$(stat -c%s str_at_fixture.bin 2>/dev/null)" = "15" ] \
+    || { echo "FAIL  str_at: fixture is $(stat -c%s str_at_fixture.bin 2>/dev/null) bytes, expected 15"; ok=0; }
+
+sac "C host"    "$(./tiny_host str_at_test.la 2>/dev/null)"
+
+SAM="$(grep -n '^glyph MAIN' eval.la | tail -1 | cut -d: -f1)"
+head -$((SAM-1)) eval.la > /tmp/sa_eval.la
+printf 'glyph MAIN = (la _. print(""))(RUN(PARSE_PROGRAM(read_file("str_at_test.la"))))\n' >> /tmp/sa_eval.la
+sac "eval.la"   "$(./tiny_host /tmp/sa_eval.la 2>/dev/null | sed '${/^$/d;}')"
+
+SAB="$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)"
+head -$((SAB-1)) bytecode.la > /tmp/sa_bc.la
+printf 'glyph MAIN = (la _. print(""))(RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("str_at_test.la"))))\n' >> /tmp/sa_bc.la
+sac "RUN_BYTES" "$(./tiny_host /tmp/sa_bc.la 2>/dev/null | sed '${/^$/d;}')"
+
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp str_at_test.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+sac "native VM" "$(./logos_secd 2>/dev/null)"
+rm -f logos_secd logos_program.bin logos_source.la
+
+# RUN_SM is ~100 s per recursion level, so it gets a DISCRIMINATOR alone rather
+# than the full matrix -- the same bounded-cost treatment the bitwise gate uses.
+# The discriminator is chosen to fail on the two defects that actually occurred
+# during development: index 7 is the NUL, so a NUL-terminated (strlen-based)
+# implementation returns "" and prints 0 instead of 1; index 15 is one past the
+# end, so a missing range check reads out of bounds instead of printing 0.
+printf 'glyph S = read_file("str_at_fixture.bin")\nglyph MAIN = print(concat(str_len(str_at(S)(7)))(str_len(str_at(S)(15))))\n' > /tmp/sa_min.la
+head -$((SAB-1)) bytecode.la > /tmp/sa_sm.la
+printf 'glyph MAIN = (la _. print(""))(RUN_SM_PROGRAM(PARSE_PROGRAM(read_file("/tmp/sa_min.la"))))\n' >> /tmp/sa_sm.la
+SASM="$(timeout 1200 ./tiny_host /tmp/sa_sm.la 2>/dev/null | sed '${/^$/d;}')"
+[ "$SASM" = "10" ] \
+    || { echo "FAIL  str_at RUN_SM: len(str_at(S,7))|len(str_at(S,15)) = [$SASM], expected 10 (1 at the NUL, 0 past the end)"; ok=0; }
+
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  str_at: indexed access identical on C host, eval.la, RUN_BYTES and the native VM, checked against the str_head/str_tail walk it replaces; RUN_SM indexes the NUL and stops at the end"
+else
+    exit 1
+fi
 rm -f /tmp/xi_eval.la /tmp/xi_bc.la /tmp/xi_sm.la
 
 # ── Export-of-undefined is rejected loudly at parse time on EVERY engine ──
