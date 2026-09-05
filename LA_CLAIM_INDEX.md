@@ -53,7 +53,7 @@ Tag census over the whole paper: **[A] 74, [B] 253, [W] 192, [S] 0**; control
 | 5 | `the elision layer 4 of 79` | the elision layer | Core Lexicon size / §XVI | `[W]` | bound restated | INFERRED |
 | 6 | `the acquisition gap no syllabus glyph` | the acquisition gap | §XVI.2; *"no acquisition study exists"* | `[A]` | the paper's own falsification bet | EXACT |
 | 7 | `phonseq must detect the new ▷` | `phonseq` must detect ▷ | Goertzel acoustic verification | `[W]` | tightens *compound demoed [B]* | INFERRED |
-| 8 | `⊕ round trip corrupts its second` | ⊕ round-trip corrupts child 2 | Invariant preservation, both registers | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
+| 8 | `⊕ round trip fails but not` | ⊕ round trip fails — **VOID alone false-fires `IS_CON`**; the split is byte-exact | Invariant preservation, both registers | `[W]` | ⚠ **CHALLENGES a [W]** — and the confusion matrix has NO primitive row, so nothing could catch it | **MEASURED 2026-09-05** |
 | 9 | `⊕ associativity is phonetically invisible identical` | ⊕-associativity phonetically invisible | Trimodal identity | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
 | 10 | `⊗ has no temporal signature either` | ⊗ has no temporal signature | Trimodal identity | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |
 | 11 | `psc_star still pairs raw phonym with` | `PSC_STAR` pairs raw PHONYM/SPEC | Trimodal monosemy, all registers | `[W]` | ⚠ **CHALLENGES a [W]** | INFERRED |

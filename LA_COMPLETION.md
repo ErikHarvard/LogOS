@@ -548,9 +548,47 @@ registers. `trimono.la` now gates all three. What remains:
   between *unbounded in principle* and *sayable by a person*.
 - `[ ]` **`phonseq` must DETECT the new ▷ marker** — the signature exists; the
   decoder still reports ▷ as a leaf.
-- `[ ]` **⊕ round-trip corrupts its second child** — `SIL_AT=6240` vs a true
-  boundary at 6080, one stride late, inside the next phonym's own closure. Fix:
-  split at the edges of the maximal zero-run, not first-fire + GAP.
+- `[ ]` **⊕ round-trip fails, but NOT for the reason recorded here — re-measured
+  2026-09-05, and the split is EXONERATED.** As written this item said
+  "`SIL_AT=6240` vs a true boundary at 6080, one stride late, inside the next
+  phonym's own closure", and proposed splitting at the edges of the maximal
+  zero-run. Measured on `PHONYM(CON(BEING)(VOID))`:
+
+      lenA=6080  lenB=6880  lenCON=13920  SIL_AT=6080  true run=[6078,7041)
+      second child as split: len=6880  <- EXACTLY lenB, byte-exact
+
+  `SIL_AT` is **6080, not 6240**, and 6080+960+6880 = 13920 exactly, so the
+  split already extracts precisely `PHONYM(BEING)` and `PHONYM(VOID)`. ★ The
+  proposed fix would make it WORSE: splitting at the true run edge yields a
+  6879-sample child that classifies as **DIR instead of CON**, off by one sample
+  from the real child.
+
+  ★ **THE ACTUAL DEFECT, and it is upstream of any split.** `PHONYM(VOID)` —
+  a bare primitive, never split, with no mode in it at all — classifies as
+  **CON** and parses as `⊕(⊥,⊥)`. Measured across all nine primitives (lengths
+  printed beside each verdict, so a name that failed to resolve could not pass
+  as a primitive):
+
+      BEING 6080 DIR · RECOGNITION 6720 DIR · LOVE 6560 DIR · SELF 6560 DIR
+      RELATION 6720 DIR · **VOID 6880 CON** · BECOMING 6400 DIR
+      FORM 6160 DIR · DEPTH 6000 DIR
+
+  Eight of nine are correctly silent; **VOID alone fires `IS_CON`.** `phonym.la:162`
+  synthesises VOID as "/hɑ/ — breath (low-pass glottal noise, 0..2080) into open
+  back /ɑ/", and `IS_CON`'s discriminator is a GAP-long run of literal zero with
+  loud on both sides — which VOID's own breath onset apparently contains. So the
+  ⊕ round trip fails because its SECOND CHILD IS VOID, not because the boundary
+  moved.
+
+  ★★ **WHY NOTHING CAUGHT IT: the confusion matrix has no primitive row.** All
+  five rows (`U_MC`/`U_CON`/`U_CONT`/`U_SYN`/`U_DIR`) are COMPOUNDS. No detector
+  has ever been asked to stay silent on a signal containing no mode — the
+  control is a class member in a DIFFERENT IDIOM, which is the shape this repo
+  keeps re-finding. Adding a primitive row is the fix to the INSTRUMENT.
+  **Needs Erik on the detector itself:** distinguishing ⊕'s inserted /ʔ/ closure
+  from VOID's intrinsic breath silence may be a genuine acoustic bound rather
+  than a bug, and if it is, it should be witnessed as a bound rather than tuned
+  away. Do not "fix" `IS_CON` by loosening it until that is ruled.
 - `[ ]` **⊕-associativity is phonetically invisible** — identical PCM; no parser
   can separate the bracketings. Needs a bracketing marker or a declared
   equivalence.
