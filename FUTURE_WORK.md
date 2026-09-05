@@ -164,3 +164,24 @@ roadmap's Rubedo phase, so they are scheduled, not merely remembered. When the
 language is complete and the core OS exists, these become the sovereignty-
 hardening work — with **transport undetectability (Priority 1)** as the highest-
 value addition to the existing AegisNet / nine-layer / Hydra architecture.
+
+## ★ UNMEASURED: does metacursive collapse reduce complexity WHILE increasing depth?
+
+Erik's framing (2026-08-26): the meta-pattern "metacursively tautologically collapses
+... thus reducing complexity while increasing ontosemantic depth of recognition at the
+same time." **Half of that is witnessed; the joint claim is not measured anywhere.**
+
+* **Witnessed:** the collapse itself. `REWRITE_MC` gives ↻² = ↻ — a genuine fixed point,
+  not a rewrite that merely terminates — and `fuzz_canon.py`'s property P3 checks it on
+  random trees.
+* **Exists but uncorrelated:** `TDEPTH` (depth of an etymology tree, canon.la).
+* **NOT MEASURED:** that form-size **falls** while `TDEPTH` **rises** across a collapse,
+  in one motion. Nothing anywhere computes both sides of that and compares them.
+
+**The pass that would close it:** over a corpus of decomposition trees, record
+(form-length before, form-length after, `TDEPTH` before, `TDEPTH` after) across `NORMK`
+and report the correlation. ★ The honest outcome may be that complexity falls and depth
+is *unchanged* — collapse is idempotent, and an idempotent rewrite has no obvious reason
+to deepen anything. That would be a real result and must not be treated as a failed
+sprint. What is forbidden is continuing to *assert* the joint claim while only the
+collapse half is witnessed.

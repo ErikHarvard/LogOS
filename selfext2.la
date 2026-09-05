@@ -1,0 +1,73 @@
+# =====================================================================
+#  selfext2.la — STAGE 2: THE ADOPTED ARTIFACT BECOMES EXECUTABLE.
+#
+#  Stage 0 measured the baseline: adopted artifacts were only ever READ.
+#  Stage 1 built the criterion that distinguishes a revision from a copy
+#  and from a corruption. Neither made the changed thing RUN.
+#
+#  ── WHAT THIS EMITS, AND WHY TWO PROGRAMS AND NOT ONE ───────────────
+#  A module is not a program. To demonstrate a capability at runtime the
+#  organ has to emit something with a MAIN, so this writes a RUNNABLE
+#  program built from the grown organ plus a MAIN that exercises the new
+#  glyph.
+#
+#  ★ AND IT EMITS THE PARENT PROGRAM TOO, WITH THE IDENTICAL MAIN.
+#  That pair is the whole design. One MAIN, two organs:
+#      sx2_parent.la = base organ    + MAIN using TRIPLEDEC -> MUST FAIL
+#      sx2_child.la  = grown organ   + MAIN using TRIPLEDEC -> MUST PRINT 12
+#  A child that prints 12 proves only that SOMETHING printed 12; the
+#  parent failing on the SAME MAIN is what isolates the capability as
+#  the thing that changed. Without the parent leg, a MAIN that hardcoded
+#  the answer would pass, and so would a child that never grew at all.
+#
+#  ── THE RED PATH IS THE POINT OF THE STAGE ──────────────────────────
+#  An UNVERIFIED extension must not reach execution. So the mode is read
+#  from a medium (`.sx2mode`, the pattern autopoiesis.la uses for its
+#  generation counter) and in "bad" mode the extension carries a test it
+#  fails. The organ must then write NO child program at all -- not a
+#  broken one, not one that halts politely. Nothing to run is the only
+#  refusal that cannot be mistaken for a run that went badly.
+#
+#  ── SCOPE, STATED PLAINLY ───────────────────────────────────────────
+#  This witnesses "a SEPARATE PROCESS runs the adopted extension, and
+#  the parent could not have". It does NOT yet witness "the organ itself
+#  begets and execve's that process" -- the bundled, VM-side form the
+#  ledger ultimately asks for, where copy_self + execve carry the whole
+#  vessel. That is a further step (2b) and it costs codegen minutes;
+#  its logical content is the same as this, and its additional content
+#  is autonomy, which is stage 6's subject. Saying which of the two is
+#  witnessed here matters more than having both today.
+# =====================================================================
+
+import("specpipe.la")   # GENERATE META_DEBUG DEF TRIPLE PAIR CONS NIL Z IF TRUE FALSE AND
+import("selfext1.la")   # C_VERIFIED S_BASE S_EXT S_BAD HASSUB NOT2
+
+glyph SEQ2 = la a. la b. b
+glyph J    = la a. la b. concat(a)(b)
+
+# the MAIN both programs carry, character for character
+glyph MAINSRC = "\nglyph MAIN = print(int_to_str(TRIPLEDEC(5)))\n"
+
+glyph MODE = read_file(".sx2mode")
+glyph WANT_BAD = HASSUB("bad")(MODE)
+
+# the extension under consideration: the honest one, or the one whose
+# OWN test fails
+glyph SPEC = IF(WANT_BAD)(la _. S_BAD)(la _. S_EXT)
+
+glyph VERIFIED = C_VERIFIED(SPEC)
+
+# the parent program is always emitted: it is the control, and a control
+# that is only written when convenient is not a control
+glyph EMIT_PARENT = write_file("sx2_parent.la")(J(GENERATE(S_BASE))(MAINSRC))
+
+# the child program is emitted ONLY if the extension verified
+glyph EMIT_CHILD = IF(VERIFIED)
+    (la _. SEQ2(write_file("sx2_child.la")(J(GENERATE(SPEC))(MAINSRC)))
+               ("emitted — the grown organ is now a runnable program"))
+    (la _. "REFUSED — the extension failed its own test; NO child program written")
+
+glyph MAIN = SEQ2(EMIT_PARENT)(print(
+    J("selfext2 mode=")(J(IF(WANT_BAD)(la _. "bad")(la _. "ok"))
+     (J(" verified=")(J(IF(VERIFIED)(la _. "T")(la _. "F"))
+      (J(" | ")(EMIT_CHILD)))))))

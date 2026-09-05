@@ -37,3 +37,4 @@ glyph VINV = la node. concat(MODESYM(node))(concat(":")(LEAVES(node)))
 glyph PRESERVES_V = la name. la node. CONTAINS(concat(name)(","))(LEAVES(node))
 # MODE_REC : is the combining mode recoverable from the form? (trusted)
 glyph MODE_REC = la a. la b. NOT(str_eq(VINV(SYN(a)(b)))(VINV(CON(a)(b))))
+export Z TRUE FALSE AND IF NOT PRIM SYN CON DIR CONT MC STARTSW CONTAINS LEAVES MODESYM VINV PRESERVES_V MODE_REC 

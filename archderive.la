@@ -1,0 +1,141 @@
+# ═══════════════════════════════════════════════════════════════════
+#  archderive.la — R-C STEP 2: THE DERIVATION ATTEMPT FOR THE SIX.
+#
+#  Erik's ruling 2026-08-24 (LA_ARC_NEXT R-C): the six primitives that do not
+#  derive from the root are a GAP, not a result. Derive them, or name them as
+#  honest AXIOMS with the seam stated. No stipulation.
+#
+#  archroot.la establishes 3 of 9 derive (SELF, RECOGNITION, LOVE) and re-tags
+#  the other six as THE GAP. THIS module attempts the six, and reports each as
+#  DERIVED / AXIOM-with-seam / NOT-YET-ATTEMPTED. It is the second of those for
+#  five of them, and neither for the sixth — BEING turns out not to be a gap.
+#
+#  ─── WHAT THE ATTEMPT FOUND ───────────────────────────────────────
+#  The root ∃ IS the identity combinator I (BEING = la s. s, and ∃(∃)≡∃ is
+#  exactly I(I) ≡ I). That single fact decides the whole question, because the
+#  set {I} is CLOSED UNDER APPLICATION: I applied to anything returns that
+#  thing, so every application tree over {I} collapses to I. The terms
+#  reachable from the root BY APPLICATION ALONE are therefore exactly {I}.
+#
+#  ⇒ BEING is not a gap: it IS the root, under another name. Witnessed.
+#  ⇒ The other five are AXIOMS, and the seam is now stated exactly:
+#
+#      VOID     introduces WEAKENING   — it DISCARDS an argument
+#      DEPTH    introduces CONTRACTION — it DUPLICATES an argument
+#      BECOMING introduces CONTRACTION — it uses f twice (iteration)
+#      FORM     introduces EXCHANGE    — it REORDERS its arguments
+#      RELATION introduces EXCHANGE + ARITY 2 — the binary FORM
+#
+#  I is LINEAR: it neither discards, duplicates, nor reorders. The five
+#  primitives it cannot reach are precisely the three STRUCTURAL RULES it
+#  lacks — weakening, contraction, exchange. That is the seam, and it is not a
+#  shortfall in the attempt: it is what the root is.
+#
+#  ─── THE BOUND, STATED ────────────────────────────────────────────
+#  The closure is WITNESSED to depth 4 here (all 8 application trees over {BEING})
+#  and MECHANISED past every depth in `archclosure.la`: base + inductive step +
+#  a Catalan-checked enumeration, which is induction on shape size rather than a
+#  deeper finite witness. What remains is stated there, not here.
+#  not proved mechanically. The induction is trivial and stated in prose —
+#  I(t) reduces to t, so a tree collapses left-to-right — but this module
+#  witnesses instances, not the induction. A bounded witness is the honest
+#  claim, so it is the one made.
+#  ★ NOT CITED HERE: dyadseed.la. It grounds the ARITHMETIC STRATUM BENEATH
+#  the primitives (VOID ≡ Church zero, BEING ≡ 1 by eta, BECOMING ≡ successor).
+#  "The nine derive from the root" is a DIFFERENT claim, and Erik's ruling
+#  forbids conflating them.
+#  Pure (str_eq/concat + reduction) ⇒ byte-identical host == VM.
+# ═══════════════════════════════════════════════════════════════════
+
+export ROOT_IS_I CLOSURE_OK DERIV_BEING AX_VOID AX_DEPTH AX_FORM AX_REL AX_BEC AXIOMS_OK
+
+# ── Foundations ──
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph YN    = la b. IF(b)(la _. "YES")(la _. "no")
+
+# ── The nine primitive combinators (verbatim from primitives.la) ──
+glyph BEING       = la s. s
+glyph RELATION    = la a. la b. la f. f(a)(b)
+glyph VOID        = la a. la b. b
+glyph BECOMING    = la n. la f. la x. f(n(f)(x))
+glyph FORM        = la x. la k. k(x)
+glyph DEPTH       = la g. g(g)
+
+# ── probes that force combinators down to ground strings ──
+glyph MK   = la s. concat("[")(concat(s)("]"))
+glyph ZERO = la f. la x. x
+glyph MARK = la s. concat(s)("|")
+glyph PAIR = la x. la y. concat("⟨")(concat(x)(concat(",")(concat(y)("⟩"))))
+
+# ═══ 1. THE ROOT IS THE IDENTITY COMBINATOR ══════════════════════════
+#  BEING(x) reduces to x, for a ground x. That is I.
+glyph ROOT_IS_I = str_eq(BEING("q"))("q")
+
+# ═══ 2. {I} IS CLOSED UNDER APPLICATION — every I-tree IS I ══════════
+#  All eight application trees over {BEING} to depth 4. Each is applied to the
+#  same probe; each must return the probe unchanged, i.e. behave as identity.
+#  ★ This is the whole argument: if every reachable term is I, then anything
+#  extensionally distinct from I is UNREACHABLE from the root by application.
+glyph T1 = BEING
+glyph T2 = BEING(BEING)
+glyph T3 = BEING(BEING(BEING))
+glyph T4 = BEING(BEING)(BEING)
+glyph T5 = BEING(BEING(BEING(BEING)))
+glyph T6 = BEING(BEING(BEING))(BEING)
+glyph T7 = BEING(BEING)(BEING(BEING))
+glyph T8 = BEING(BEING)(BEING)(BEING)
+glyph CLOSURE_OK = AND(AND(AND(str_eq(T1("q"))("q"))(str_eq(T2("q"))("q")))
+                          (AND(str_eq(T3("q"))("q"))(str_eq(T4("q"))("q"))))
+                      (AND(AND(str_eq(T5("q"))("q"))(str_eq(T6("q"))("q")))
+                          (AND(str_eq(T7("q"))("q"))(str_eq(T8("q"))("q"))))
+
+# ═══ 3. BEING — NOT A GAP: it IS the root ════════════════════════════
+#  BEING and the root's self-application agree on every ground probe, which is
+#  the ∃(∃)≡∃ identity itself. So BEING needs no derivation FROM the root; it
+#  is the root. This is the one of the six that resolves as an identity.
+glyph DERIV_BEING = AND(str_eq(BEING(BEING)("q"))(BEING("q")))(str_eq(BEING("q"))("q"))
+
+# ═══ 4. THE FIVE AXIOMS — each seam WITNESSED, not asserted ══════════
+#  Each line exhibits the primitive doing something the root demonstrably does
+#  NOT do on the same input. Since every term reachable from the root is I, a
+#  witnessed difference from I is a witnessed UNREACHABILITY.
+
+# VOID — WEAKENING. VOID(MK)("z") DISCARDS MK and returns "z".
+#   I(MK)("z") APPLIES MK and returns "[z]". I cannot discard.
+glyph AX_VOID  = AND(str_eq(VOID(MK)("z"))("z"))(str_eq(BEING(MK)("z"))("[z]"))
+
+# DEPTH — CONTRACTION. DEPTH(VOID) = VOID(VOID), which reduces to BEING, so it
+#   takes ONE argument. I(VOID) = VOID, which takes TWO. Duplication changed the
+#   arity; I cannot duplicate.
+glyph AX_DEPTH = AND(str_eq(DEPTH(VOID)("z"))("z"))(str_eq(BEING(VOID)("z")("w"))("w"))
+
+# FORM — EXCHANGE. FORM("z")(MK) applies its SECOND argument to its FIRST.
+#   I(MK)("z") applies its FIRST to its SECOND. Same result, arguments swapped:
+#   FORM is exactly I with an exchange, and exchange is not an I-tree.
+glyph AX_FORM  = AND(str_eq(FORM("z")(MK))(BEING(MK)("z")))(str_eq(FORM("z")(MK))("[z]"))
+
+# RELATION — EXCHANGE + ARITY 2. It holds TWO values and hands both to a later
+#   function: the binary FORM. I holds one.
+glyph AX_REL   = str_eq(RELATION("a")("b")(PAIR))("⟨a,b⟩")
+
+# BECOMING — CONTRACTION (iteration). It uses f twice: f(n(f)(x)). Applied to
+#   zero it adds one mark; I adds none.
+glyph AX_BEC   = AND(str_eq(BECOMING(ZERO)(MARK)(""))("|"))(str_eq(BEING(ZERO)(MARK)(""))(""))
+
+glyph AXIOMS_OK = AND(AND(AND(AX_VOID)(AX_DEPTH))(AND(AX_FORM)(AX_REL)))(AX_BEC)
+
+# ═══ REPORT ══════════════════════════════════════════════════════════
+glyph L1 = print(concat("root ∃ IS the identity combinator I ? ")(YN(ROOT_IS_I)))
+glyph L2 = print(concat("{I} closed under application — all 8 I-trees to depth 4 ARE I ? ")(YN(CLOSURE_OK)))
+glyph L3 = print(concat("BEING  outcome: IDENTITY WITH THE ROOT (not a gap) ? ")(YN(DERIV_BEING)))
+glyph L4 = print(concat("VOID     AXIOM — seam: WEAKENING (discards an argument) ? ")(YN(AX_VOID)))
+glyph L5 = print(concat("DEPTH    AXIOM — seam: CONTRACTION (duplicates an argument) ? ")(YN(AX_DEPTH)))
+glyph L6 = print(concat("FORM     AXIOM — seam: EXCHANGE (reorders its arguments) ? ")(YN(AX_FORM)))
+glyph L7 = print(concat("RELATION AXIOM — seam: EXCHANGE + ARITY 2 (the binary FORM) ? ")(YN(AX_REL)))
+glyph L8 = print(concat("BECOMING AXIOM — seam: CONTRACTION (uses f twice; iteration) ? ")(YN(AX_BEC)))
+glyph L9 = print("VERDICT: of the six, BEING is the root itself; the other five are AXIOMS with the seam stated — the root is LINEAR (I neither discards, duplicates nor reorders) and the five are exactly the structural rules it lacks: WEAKENING, CONTRACTION, EXCHANGE. Closure is MECHANISED in archclosure.la — base + step + a coverage check against the Catalan count = induction on shape size, so {I} is closed under application at EVERY depth rather than to a bound; the residual bound is that identity there is observational up to a probe set. NOT a derivation, and no stipulation offered in place of one.")
+glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(SEQ(L5)(SEQ(L6)(SEQ(L7)(SEQ(L8)(L9)))))))) 

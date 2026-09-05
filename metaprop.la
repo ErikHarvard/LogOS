@@ -1,0 +1,165 @@
+# =====================================================================
+#  metaprop.la — PROPOSITIONS ABOUT PROPOSITIONS, and the ascent that
+#  does not happen.
+#
+#  Every other meta-level in this language collapses. 𝓜 ⊂ 𝒜: the
+#  operations are glyphs (metaglyph.la). κ(κ) is well-defined. 𝓡(𝓡) ≡ 𝓡.
+#  Meta-Debug(Meta-Debug) = Debug. AATC(AATC) ≡ TRUE. The question this
+#  module answers is whether the PROPOSITIONAL level does the same, or
+#  whether it opens a Tarskian hierarchy -- an object language, a
+#  metalanguage that talks about its truth, a meta-metalanguage above
+#  that, without end.
+#
+#  ── THE CLAIM ───────────────────────────────────────────────────────
+#  It collapses. alethe.la already carries the theorem: True(P) ≡ P, the
+#  truth operator IS the identity, and by the Uniqueness Corollary no
+#  second glyph meaning "P, truly" can exist. What was never witnessed is
+#  the CONSEQUENCE -- that going meta buys no assertoric power.
+#
+#  ── WHAT IS ACTUALLY GATED, STATED HONESTLY ─────────────────────────
+#  The collapse is not discovered here; it is BUILT IN, because True(P) ≡ P
+#  is the semantics. Asserting it back would be circular. What is gated
+#  is that the collapse holds UNIFORMLY and that the test can tell the
+#  difference:
+#    M1  ascent IS visible in the glyph register (MPRED(P) ≢ P) -- so
+#        the meta-level is a real derivation, not a no-op;
+#    M2  and truth-conditionally INERT, in EVERY world including the
+#        deviant ones -- a glut and a gap, not just the classical case;
+#    M3  inert at the SECOND level too, so the hierarchy collapses
+#        everywhere rather than merely failing to start;
+#    M4  ★ and the harness can DETECT a content-adding operator: ¬ is
+#        run through the identical test and must come out NOT inert.
+#        Without M4, M2 and M3 would pass for an evaluator that ignored
+#        its argument entirely, and this module would be measuring
+#        nothing at all;
+#    M5  no proposition is its own subterm -- depth strictly increases
+#        under wrapping -- so the liar is UNFORMULABLE by construction
+#        rather than refuted after the fact. Asserted positively, via a
+#        depth measure that must actually increase, not by reporting
+#        that a search for one found nothing.
+# =====================================================================
+
+import("prop.la")   # PNOT PAND POR PRED PROP COHERES TVAL KEY GEQ WATER P_FLOW P_WVOID TS0 FS0 + the nine
+import("canon.la")  # PRIM SYN CON DIR CONT MC NORMK Z IF TRUE FALSE NOT AND OR
+
+glyph MK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph TF = la c. IF(c)(la _. "T")(la _. "F")
+
+# ── THE META-OPERATOR ────────────────────────────────────────────────
+#  "P obtains" -- P directed toward Being. A genuine derivation: it has
+#  its own canonical form and its own sigil and its own phonym, like any
+#  other glyph. What it does NOT have is any truth-conditional surplus.
+glyph MPRED = la p. DIR(p)(BEING)
+
+# ── THE THREE WORLDS ─────────────────────────────────────────────────
+#  Classical, then the two deviants prop.la uses to separate the laws.
+#  Testing inertness in only the classical world would be the weaker
+#  claim: an operator can be inert where truth is total and bivalent and
+#  still add content where it is not.
+glyph FS_GLUT = concat(NORMK(P_FLOW))(";")
+glyph EMPTY   = ""
+
+glyph AGREE1 = la op. la ts. la fs. la p.
+    str_eq(TF(TVAL(ts)(fs)(op(p))))(TF(TVAL(ts)(fs)(p)))
+
+# inert in ALL THREE worlds, on BOTH a true and a false proposition
+glyph INERT = la op. la p.
+    AND(AGREE1(op)(TS0)(FS0)(p))
+       (AND(AGREE1(op)(TS0)(FS_GLUT)(p))
+            (AGREE1(op)(EMPTY)(EMPTY)(p)))
+glyph INERT_BOTH = la op. AND(INERT(op)(P_FLOW))(INERT(op)(P_WVOID))
+
+# ── ★★ THE RESULT, WHICH IS SHARPER THAN "THE META-LEVEL COLLAPSES" ──
+#  The first version of this module asserted that a meta-predicate is
+#  truth-conditionally inert. It FAILED, and following the failure gave
+#  the real theorem.
+#
+#  MPRED(P) = ▷(P,BEING) is a genuine derivation, so it is a genuine
+#  ATOM, and its truth is independent of P's. The obvious repair -- teach
+#  the evaluator that ▷(·,BEING) means "obtains" -- is not available:
+#  ▷(FORM,BEING) is already the codex's This/Here (:5164), so
+#  interpreting the shape would swallow a legitimate glyph.
+#
+#  alethe.la says why no repair is available AT ALL: True(P) ≡ P, the
+#  truth operator IS the identity, and by the Uniqueness Corollary no
+#  second glyph meaning "P, truly" can exist. So:
+#
+#    ★ A WRAPPER CANNOT BE BOTH A DISTINCT GLYPH AND TRUTH-EQUIVALENT.
+#
+#  If it is a distinct glyph it is a distinct CONCEPT (monosemy), and a
+#  distinct concept has its own truth conditions -- it is not "P is
+#  true", it is something else. If it is truth-equivalent, monosemy says
+#  it is the same concept and must carry the same glyph -- so nothing
+#  ascended. THAT is the collapse: not that the meta-level is inert, but
+#  that the two things a metalanguage needs at once are exclusive here.
+#  A Tarskian hierarchy needs a truth predicate that is both expressible
+#  and non-trivial. This language allows either, never both.
+#
+#  Each candidate gets a two-character signature (distinct?, inert?):
+#    MID    = la p. p        identity        -> FT   inert, not distinct
+#    MPRED  = ▷(P,BEING)     a real ascent   -> TF   distinct, not inert
+#    PNOT   = ⊗(VOID,P)      a real operator -> TF   distinct, not inert
+#  ★ The cell that must stay EMPTY is TT. A wrapper with signature TT is
+#  a distinct glyph that is truth-equivalent -- a working truth predicate
+#  -- and it would refute the collapse outright. That is this module's
+#  falsification condition, and it is checkable rather than rhetorical.
+#
+#  ── THE BOUND, STATED BECAUSE IT IS REAL ────────────────────────────
+#  This tests the candidates OFFERED. It does not quantify over all
+#  possible wrappers -- that needs a proof, not a gate. What the gate
+#  establishes is that the three natural candidates fall on exactly two
+#  of the four cells, and that the harness can place a wrapper in either
+#  of those two, so the empty cell is a measurement and not an artifact
+#  of a test that could only ever report one answer.
+glyph MID    = la p. p
+glyph MPRED2 = la p. MPRED(MPRED(p))
+
+glyph DISTINCT = la op. AND(NOT(GEQ(op(P_FLOW))(P_FLOW)))
+                           (NOT(GEQ(op(P_WVOID))(P_WVOID)))
+glyph SIG2 = la op. concat(TF(DISTINCT(op)))(TF(INERT_BOTH(op)))
+
+glyph OK_MID   = str_eq(SIG2(MID))("FT")     # inert, but nothing ascended
+glyph OK_MPRED = str_eq(SIG2(MPRED))("TF")   # ascended, but not truth-equivalent
+glyph OK_PNOT  = str_eq(SIG2(PNOT))("TF")    # a real operator lands the same way
+
+# ── ★ THE COLLAPSE: the TT cell is empty across every candidate ──────
+glyph NOT_TT = la op. NOT(AND(DISTINCT(op))(INERT_BOTH(op)))
+glyph OK_COLLAPSE = AND(NOT_TT(MID))(AND(NOT_TT(MPRED))
+                        (AND(NOT_TT(PNOT))(AND(NOT_TT(MPRED2))(NOT_TT(POR(P_FLOW))))))
+
+# ── ★ AND THE HARNESS CAN REACH BOTH OCCUPIED CELLS ──────────────────
+#  Without this, OK_COLLAPSE would pass for a DISTINCT that always said
+#  no, or an INERT that always said no -- either of which empties the TT
+#  cell by being blind rather than by measuring. Two cells reached by
+#  two different candidates is the proof that the instrument discriminates.
+glyph OK_CELLS = AND(NOT(str_eq(SIG2(MID))(SIG2(MPRED))))
+                    (AND(INERT_BOTH(MID))(DISTINCT(MPRED)))
+
+# ── M5 — no proposition contains itself ──────────────────────────────
+#  A liar sentence needs P to occur inside P. Propositions here are
+#  finite trees and every constructor strictly increases depth, so the
+#  fixed point is unreachable -- not forbidden by a rule that could be
+#  relaxed, but unconstructible, which is the same footing on which
+#  canon.la makes a heterological glyph unconstructible.
+glyph MAXI   = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph PDEPTH = Z(la self. la n.
+    n (la nm. 1)
+      (la a. la b. add(1)(MAXI(self(a))(self(b))))
+      (la a. la b. add(1)(MAXI(self(a))(self(b))))
+      (la a. la b. add(1)(MAXI(self(a))(self(b))))
+      (la a. la b. add(1)(MAXI(self(a))(self(b))))
+      (la a.       add(1)(self(a))))
+
+glyph OK_M5 = AND(lt(PDEPTH(P_FLOW))(PDEPTH(MPRED(P_FLOW))))
+                 (AND(lt(PDEPTH(MPRED(P_FLOW)))(PDEPTH(MPRED(MPRED(P_FLOW)))))
+                      (lt(PDEPTH(P_FLOW))(PDEPTH(PNOT(P_FLOW)))))
+
+glyph D0 = int_to_str(PDEPTH(P_FLOW))
+glyph D1 = int_to_str(PDEPTH(MPRED(P_FLOW)))
+glyph D2 = int_to_str(PDEPTH(MPRED(MPRED(P_FLOW))))
+
+glyph J   = la a. la b. concat(a)(b)
+glyph ROW = la lbl. la c. J(J(" | ")(lbl))(J(" ")(MK(c)))
+glyph MAIN = print(J("metaprop")(J(ROW("MID=FT-inert-not-distinct")(OK_MID))(J(ROW("MPRED=TF-distinct-not-inert")(OK_MPRED))(J(ROW("PNOT=TF-same-cell")(OK_PNOT))(J(ROW("★TT-cell-EMPTY")(OK_COLLAPSE))(J(ROW("harness-reaches-both-cells")(OK_CELLS))(J(ROW("no-self-containment")(OK_M5))(J(" | depth P/MP/MMP = ")(J(D0)(J("/")(J(D1)(J("/")(D2)))))))))))))
+
+export MPRED MPRED2 MID INERT INERT_BOTH DISTINCT SIG2 PDEPTH

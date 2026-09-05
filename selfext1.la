@@ -1,0 +1,163 @@
+# =====================================================================
+#  selfext1.la — STAGE 1: SPLIT THE BYTE-IDENTITY GATE.
+#
+#  ── THE PROBLEM ─────────────────────────────────────────────────────
+#  build.sh:3577 asserts `cmp -s logos_app new_logos_secd.bin`: a
+#  successor must be BYTE-IDENTICAL to its parent. That is exactly right
+#  for REPRODUCTION -- it is the only thing standing between a faithful
+#  lineage and a corrupt one.
+#
+#  It is also exactly wrong for REVISION. A self-revised successor
+#  DIFFERS from its parent by definition, so it goes RED on the
+#  project's own criterion. The criterion that guarantees the copy is
+#  faithful is the same criterion that forbids the change.
+#
+#  ── WHAT THIS IS NOT ────────────────────────────────────────────────
+#  Not a relaxation. Deleting or loosening the byte check to "permit"
+#  self-revision would replace a CHECK with a PERMISSION and lose the
+#  only guard against a corrupt successor. So the gate is SPLIT into two
+#  arms with two different criteria, and the load-bearing fact is that
+#  ★ THE SAME SUCCESSOR MUST PASS ONE ARM AND FAIL THE OTHER. If a
+#  successor could satisfy both, the split would be decoration.
+#
+#      REPRODUCTION  child bytes == parent bytes.            (as now)
+#      REVISION      child DIFFERS from parent, AND
+#                    child is its own derivation (INTACT), AND
+#                    every glyph passes its own tests, AND
+#                    every parent capability SURVIVES.
+#
+#  ── THE FOUR CONJUNCTS MUST FAIL SEPARATELY ─────────────────────────
+#  Four conditions that always fail together are one condition wearing
+#  four names -- the discipline immune.la applies to its checkpoints and
+#  ontofelicity.la to Austin's (A)(B)(Γ). So each conjunct is given a
+#  fixture that breaks IT and leaves the other three standing, and the
+#  gate pins four signatures with ONE F apiece, in four DIFFERENT
+#  positions:
+#
+#      TTTT  a genuine revision                    -> ACCEPT
+#      FTTT  child identical to parent             -> reject: nothing changed
+#      TFTT  child is not its own derivation       -> reject: CORRUPT
+#      TTFT  child's own glyph fails its own test  -> reject: unverified
+#      TTTF  a parent capability was LOST          -> reject: regression
+#
+#  TFTT is the corrupt-successor red path the scope demanded: a revision
+#  arm that accepted corruption would have replaced the byte check with
+#  nothing at all.
+#
+#  ── SCOPE, STATED ───────────────────────────────────────────────────
+#  The arms are defined over BYTES, so they apply unchanged to
+#  read_file output; the fixtures supply bytes directly rather than
+#  round-tripping through disk, which is the same object DEPLOY writes
+#  and costs nothing. SURVIVES here checks the two parent glyph sources
+#  literally, which is fixture-specific; the general form folds over the
+#  parent spec's own names, and that is what a real implementation owes.
+#  Nothing here produces a revised successor from a WANT -- that is
+#  stage 2 onward. This builds the CRITERION the later stages plug into.
+# =====================================================================
+
+import("specpipe.la")   # GENERATE META_DEBUG DEF TRIPLE PAIR CONS NIL Z IF TRUE FALSE AND
+
+glyph NOT2 = la p. la t. la f. p(f)(t)
+glyph TF   = la c. IF(c)(la _. "T")(la _. "F")
+glyph MK   = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph J    = la a. la b. concat(a)(b)
+
+glyph TAKEN = Z(la self. la n. la h.
+    IF(str_eq(n)(""))(la _. "")(la _.
+    IF(str_eq(h)(""))(la _. "")
+      (la _. concat(str_head(h))(self(str_tail(n))(str_tail(h))))))
+glyph HASSUB = Z(la self. la n. la h.
+    IF(str_eq(h)(""))(la _. FALSE)(la _.
+    IF(str_eq(n)(TAKEN(n)(h)))(la _. TRUE)(la _. self(n)(str_tail(h)))))
+
+# ── the organ's own capabilities, as impls the tests actually run ────
+glyph TRIPLEN_I = la x. mul(x)(3)
+glyph DEC_I     = la x. sub(x)(1)
+glyph TD_I      = la x. TRIPLEN_I(DEC_I(x))
+
+glyph E_TRIPLEN = TRIPLE("TRIPLEN")(DEF(":: Int -> Int")("la x. mul(x)(3)")(TRIPLEN_I))(
+    CONS(PAIR(la g. int_to_str(g(4)))("12"))(NIL))
+glyph E_DEC     = TRIPLE("DEC")(DEF(":: Int -> Int")("la x. sub(x)(1)")(DEC_I))(
+    CONS(PAIR(la g. int_to_str(g(5)))("4"))(NIL))
+glyph E_TD      = TRIPLE("TRIPLEDEC")(DEF(":: Int -> Int")("la x. TRIPLEN(DEC(x))")(TD_I))(
+    CONS(PAIR(la g. int_to_str(g(5)))("12"))(NIL))
+# the SAME neologism with a WRONG expectation: its own test fails
+glyph E_TD_BAD  = TRIPLE("TRIPLEDEC")(DEF(":: Int -> Int")("la x. TRIPLEN(DEC(x))")(TD_I))(
+    CONS(PAIR(la g. int_to_str(g(5)))("13"))(NIL))
+
+glyph S_BASE = CONS(E_TRIPLEN)(CONS(E_DEC)(NIL))
+glyph S_EXT  = CONS(E_TRIPLEN)(CONS(E_DEC)(CONS(E_TD)(NIL)))
+glyph S_BAD  = CONS(E_TRIPLEN)(CONS(E_DEC)(CONS(E_TD_BAD)(NIL)))
+glyph S_DROP = CONS(E_DEC)(CONS(E_TD)(NIL))          # TRIPLEN lost
+
+glyph PARENT = GENERATE(S_BASE)
+
+# ── THE TWO ARMS ────────────────────────────────────────────────────
+glyph REPRO = la parent. la child. str_eq(parent)(child)
+
+glyph C_DIFFERS  = la parent. la child. NOT2(str_eq(parent)(child))
+glyph C_INTACT   = la child. la spec. str_eq(child)(GENERATE(spec))
+glyph C_VERIFIED = la spec. NOT2(HASSUB("FAIL")(META_DEBUG(spec)))
+glyph C_SURVIVES = la child. AND(HASSUB("glyph TRIPLEN = la x. mul(x)(3)")(child))
+                                (HASSUB("glyph DEC = la x. sub(x)(1)")(child))
+
+glyph REVIS = la parent. la child. la spec.
+    AND(C_DIFFERS(parent)(child))
+       (AND(C_INTACT(child)(spec))
+            (AND(C_VERIFIED(spec))(C_SURVIVES(child))))
+
+glyph SIG = la parent. la child. la spec.
+    J(TF(C_DIFFERS(parent)(child)))
+     (J(TF(C_INTACT(child)(spec)))
+       (J(TF(C_VERIFIED(spec)))(TF(C_SURVIVES(child)))))
+
+# ── the five fixtures ───────────────────────────────────────────────
+glyph CH_GOOD   = GENERATE(S_EXT)
+glyph CH_SAME   = GENERATE(S_BASE)
+glyph CH_CORRUPT= concat(GENERATE(S_EXT))("# a byte that is not in its derivation\n")
+glyph CH_BAD    = GENERATE(S_BAD)
+glyph CH_DROP   = GENERATE(S_DROP)
+
+glyph OK_ACCEPT  = str_eq(SIG(PARENT)(CH_GOOD)(S_EXT))("TTTT")
+glyph OK_SAME    = str_eq(SIG(PARENT)(CH_SAME)(S_BASE))("FTTT")
+glyph OK_CORRUPT = str_eq(SIG(PARENT)(CH_CORRUPT)(S_EXT))("TFTT")
+glyph OK_BADTEST = str_eq(SIG(PARENT)(CH_BAD)(S_BAD))("TTFT")
+glyph OK_DROP    = str_eq(SIG(PARENT)(CH_DROP)(S_DROP))("TTTF")
+glyph OK_SEPARABLE = AND(OK_SAME)(AND(OK_CORRUPT)(AND(OK_BADTEST)(OK_DROP)))
+
+# ── ★ THE SPLIT ITSELF: one successor, opposite verdicts ────────────
+#  A genuine revision must PASS the revision arm and FAIL the
+#  reproduction arm. If any successor satisfied both, the two arms would
+#  be one arm and the split would be decoration.
+glyph OK_SPLIT = AND(REVIS(PARENT)(CH_GOOD)(S_EXT))
+                    (NOT2(REPRO(PARENT)(CH_GOOD)))
+#  and reproduction still works as it did, in both directions
+glyph OK_REPRO = AND(REPRO(PARENT)(CH_SAME))(NOT2(REPRO(PARENT)(CH_CORRUPT)))
+
+# ── ★ LOCAL ALIASES SO DOWNSTREAM NEED NOT IMPORT specpipe TOO ──────
+#  selfext2b.la imported BOTH specpipe.la and this module, and this
+#  module imports specpipe.la -- a diamond. The host's import-mangler
+#  alpha-renames every private of every imported module, so specpipe's
+#  62 glyphs were dragged through TWICE, ~164 glyphs of deeply nested
+#  source. codegen is super-linear in nesting depth (CLAUDE.md), and the
+#  compile had not finished in 12 minutes.
+#  Re-exporting under names DEFINED HERE breaks it: an importer takes one
+#  module and specpipe appears once. The host requires an export to be
+#  defined by the exporting module, so these are real definitions rather
+#  than pass-through names.
+glyph GEN_ = GENERATE
+glyph IF_  = IF
+
+glyph ROW = la l. la c. J(J(" | ")(l))(J(" ")(MK(c)))
+glyph MAIN = print(
+  J(J("selfext1 sig(good)=")(SIG(PARENT)(CH_GOOD)(S_EXT)))
+   (J(ROW("revision-accepts")(OK_ACCEPT))
+   (J(ROW("rejects-identical")(OK_SAME))
+   (J(ROW("rejects-CORRUPT")(OK_CORRUPT))
+   (J(ROW("rejects-unverified")(OK_BADTEST))
+   (J(ROW("rejects-regression")(OK_DROP))
+   (J(ROW("four-conjuncts-separable")(OK_SEPARABLE))
+   (J(ROW("arms-disagree-on-one-successor")(OK_SPLIT))
+      (ROW("reproduction-arm-intact")(OK_REPRO))))))))))
+
+export REPRO REVIS SIG C_DIFFERS C_INTACT C_VERIFIED C_SURVIVES S_BASE S_EXT S_BAD PARENT HASSUB NOT2 GEN_ IF_

@@ -15,11 +15,24 @@
 #       NOT a catalogue that generates the nine. So it is NOT forced onto glyphs;
 #       only ρ (recognition = reflexive relation) genuinely fits a glyph (RECOGNITION).
 #
-#  THE HONEST RESULT (verified below by reduction, the definitions are primitives.la
+#  THE RESULT (verified below by reduction, the definitions are primitives.la
 #  verbatim): 3 of 9 DERIVE — SELF⟵BEING (∃(∃), via self-application DEPTH),
-#  RECOGNITION⟵RELATION (=ρ), LOVE⟵RELATION (symmetrized). 6 are CO-PRIMITIVE atoms
-#  — BEING, RELATION, DEPTH (B&B's three faces) + VOID, FORM, BECOMING. "Co-primitive"
-#  is the corpus-honest verdict for those six; none is forced into a derivation.
+#  RECOGNITION⟵RELATION (=ρ), LOVE⟵RELATION (symmetrized).
+#
+#  ★★ THE OTHER SIX ARE **THE GAP**, NOT A RESULT — Erik's ruling, 2026-08-24.
+#  BEING, RELATION, DEPTH (B&B's three faces) + VOID, FORM, BECOMING were formerly
+#  reported here as "CO-PRIMITIVE atoms" and that was read as a SETTLED FINDING.
+#  Re-tagged: an incompleteness to close, not a fact to report. Each of the six has
+#  exactly three honest outcomes — DERIVED (a chain from the root, gated, witnessed
+#  BY REDUCTION), AXIOM (named as such, WITH THE SEAM STATED: what it is not derived
+#  from, and why the attempt failed), or NOT YET ATTEMPTED (and said so). Today all
+#  six are the third. The forbidden fourth thing is a chain that LOOKS like a
+#  derivation and is a stipulation. No stipulation.
+#
+#  ⚠️ dyadseed.la may NOT be cited as the chain this needs. It grounds the ARITHMETIC
+#  STRATUM BENEATH the primitives (VOID ≡ Church zero, BEING ≡ 1 by eta, BECOMING ≡
+#  successor). "The nine derive from the root" is a DIFFERENT claim, and conflating
+#  them is exactly the stipulation the ruling forbids.
 #  Pure (str_eq/concat + reduction) ⇒ byte-identical host == VM.
 # ═══════════════════════════════════════════════════════════════════
 
@@ -117,5 +130,5 @@ glyph L8  = print(concat("BEING  RELATION  DEPTH   = B&B's three faces (Being/St
 glyph L9  = print(concat("VOID   FORM      BECOMING = further atoms (no derivation in corpus or code)       autology? ")(YN(AND(AT_VOID)(AND(AT_FORM)(AT_BEC)))))
 glyph L10 = print(concat("etymology contained & recoverable from each sealed derived glyph ? ")(YN(SEALS_OK)))
 glyph L11 = print(concat("operator chain d->b->g->rho->A : process not catalogue; only rho fits a glyph (RECOGNITION) ? ")(YN(RHO_FITS)))
-glyph L12 = print("VERDICT: 3 of 9 derive (SELF, RECOGNITION, LOVE); 6 co-primitive (BEING, RELATION, DEPTH, VOID, FORM, BECOMING). The chain does NOT generate the nine.")
+glyph L12 = print("VERDICT: 3 of 9 derive (SELF, RECOGNITION, LOVE); 6 UNDERIVED (BEING, RELATION, DEPTH, VOID, FORM, BECOMING) = THE GAP, not a result: derivation from the root is NOT YET ATTEMPTED for these six. The chain does NOT generate the nine.")
 glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(SEQ(L5)(SEQ(L6)(SEQ(L7)(SEQ(L8)(SEQ(L9)(SEQ(L10)(SEQ(L11)(L12)))))))))))

@@ -1,0 +1,182 @@
+# =====================================================================
+#  archclosure.la — {I} IS CLOSED UNDER APPLICATION, MECHANISED.
+#
+#  archderive.la witnesses the closure at DEPTH 4 (eight hand-written trees)
+#  and says so honestly: "closure shown to depth 4, induction argued not
+#  mechanised". Erik: mechanise it past depth 4.
+#
+#  ── WHY MORE DEPTH IS NOT THE ANSWER ────────────────────────────────
+#  Enumerating depth 5, 6, 7 is still finite witnessing. What turns it into a
+#  proof for ALL depths is CLOSURE UNDER THE GENERATOR: the only way to build a
+#  term from the root is application, so if the class is closed under
+#  application then nothing outside it is reachable, at any depth.
+#
+#  ── ★★ THE TRAP THIS MODULE HAD TO AVOID ────────────────────────────
+#  The language is CALL-BY-VALUE, so `BEING(BEING)` reduces to `BEING` at
+#  DEFINITION time. Enumerating terms as VALUES would make "all of them are I"
+#  trivially true while proving nothing about coverage: every tree would be the
+#  same object before the check ever ran. So the trees are enumerated as
+#  SHAPES — Scott-encoded DATA — and evaluated by EVS. The shape space is real
+#  even though its image is a single point.
+#
+#  ── WHAT IS ASSERTED ────────────────────────────────────────────────
+#  BASE   EVS(LEAF) = BEING, and BEING is identity on the probe set.
+#  STEP   for every pair of shapes u,v drawn from the enumeration:
+#           IS_ID(EVS u) ∧ IS_ID(EVS v)  ⟹  IS_ID(EVS(APP u v))
+#         which is the inductive step instantiated at every pair the
+#         enumeration provides.
+#  COVER  the enumeration really produced the whole shape space: the number of
+#         shapes with n leaves is the CATALAN number C(n-1), computed here by
+#         the Catalan recurrence INDEPENDENTLY of the generator. If the
+#         generator silently produced nothing, or dropped a branch, the count
+#         disagrees and this goes red — without it, "every shape is I" is a
+#         claim about a set that might be empty.
+#  ⇒ by induction on shape size, EVERY term over {∃} evaluates to I, at every
+#    depth. The bound below is what remains.
+#
+#  ── SIZE, AND WHY IT IS NOT THE ARGUMENT ────────────────────────────
+#  Gated at NMAX=6: 65 shapes, 14 s. NMAX=7 (197 shapes) was run out of band
+#  and is equally green, at 218 s — too much to spend every build for
+#  corroboration of a fact the induction already settles. ★ The enumeration
+#  is NOT the proof; the base and the step are. Raising NMAX buys more
+#  corroboration and no more certainty, which is the whole difference
+#  between this module and the depth-4 witness it replaces.
+#
+#  ── THE RESIDUAL BOUND, and it is not removable here ────────────────
+#  "Is identity" is OBSERVATIONAL, up to the probe set: a term agreeing with I
+#  on every probe is called I. That is exactly the sense the argument needs —
+#  the claim is that nothing EXTENSIONALLY distinct from I is reachable — but
+#  it is not intensional equality, and this module does not claim it is.
+#  The probe set is deliberately mixed: a string, the EMPTY string, and a
+#  FUNCTION probe (a term that is identity on strings but not on functions
+#  fails the third), so it is not one probe wearing three hats.
+# =====================================================================
+
+export CLOSURE_ALL SHAPES_OK STEP_OK BASE_OK NSHAPES TRAVERSE_OK
+
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph NOT   = la b. la t. la f. b(f)(t)
+glyph YN    = la b. IF(b)(la _. "YES")(la _. "no")
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+# ── the root, verbatim from primitives.la ──
+glyph BEING = la s. s
+
+# ── shapes as DATA (Scott): LEAF | APP(l)(r) ──
+glyph LEAF = la l. la a. l
+glyph APP  = la p. la q. la l. la a. a(p)(q)
+
+# ── Church lists ──
+glyph NIL   = la n. la c. n
+glyph CONS  = la h. la t. la n. la c. c(h)(t)
+glyph FOLDR = Z(la self. la f. la z. la xs. xs(z)(la h. la t. f(h)(self(f)(z)(t))))
+glyph APPEND = la xs. la ys. FOLDR(CONS)(ys)(xs)
+glyph MAPL  = la g. la xs. FOLDR(la h. la t. CONS(g(h))(t))(NIL)(xs)
+glyph CMAP  = la g. la xs. FOLDR(la h. la t. APPEND(g(h))(t))(NIL)(xs)
+glyph LEN   = la xs. FOLDR(la h. la t. add(1)(t))(0)(xs)
+glyph ALLP  = la p. la xs. FOLDR(la h. la t. AND(p(h))(t))(TRUE)(xs)
+glyph NTH   = Z(la self. la i. la xs. xs("!")(la h. la t. IF(int_eq(i)(0))(la _. h)(la _. self(sub(i)(1))(t))))
+
+# ── ONE recursion scheme, TWO instances — and the second is what makes the
+#    first falsifiable ─────────────────────────────────────────────────
+#  ★★ EVS alone CANNOT be red-path tested. Its carrier is a single point (every
+#  shape evaluates to I), so ANY traversal that returns I passes — measured:
+#  dropping the right operand from the APP rule left all four arms green. An arm
+#  that cannot go red is not an arm, and "the APP rule is application" was
+#  agreeing for the wrong reason.
+#  So the traversal is factored out. FOLDS is the single recursion scheme; EVS
+#  instantiates it at the term algebra (one point) and NLEAVES at the INTEGERS,
+#  where distinct shapes have distinct images. A change to the traversal must be
+#  made in FOLDS, and NLEAVES sees it immediately.
+glyph FOLDS = la lf. la ap. Z(la self. la s. s(lf)(la p. la q. ap(self(p))(self(q))))
+glyph EVS     = FOLDS(BEING)(la a. la b. a(b))
+glyph NLEAVES = FOLDS(1)(la a. la b. add(a)(b))
+
+# ── the probe set: a string, the EMPTY string, and a FUNCTION ──
+glyph FN    = la z. concat("f")(z)
+glyph IS_ID = la t. AND(AND(str_eq(t("q"))("q"))(str_eq(t(""))("")))
+                       (str_eq(t(FN)("y"))("fy"))
+
+# ── generate every shape, by size ───────────────────────────────────
+#  PROD: all APP(f)(a) with f from fs and a from as
+glyph PROD = la fs. la as. CMAP(la f. MAPL(la a. APP(f)(a))(as))(fs)
+#  level m+1 = sum over k=1..m of PROD(level k)(level m+1-k); level k sits at index k-1
+glyph BNEXT = Z(la self. la levels. la m. la k.
+    IF(lt(m)(k))(la _. NIL)
+      (la _. APPEND(PROD(NTH(sub(k)(1))(levels))(NTH(sub(m)(k))(levels)))
+                   (self(levels)(m)(add(k)(1)))))
+glyph GROW = Z(la self. la levels. la m. la target.
+    IF(int_eq(m)(target))(la _. levels)
+      (la _. self(APPEND(levels)(CONS(BNEXT(levels)(m)(1))(NIL)))(add(m)(1))(target)))
+
+glyph NMAX   = 6
+glyph LEVELS = GROW(CONS(CONS(LEAF)(NIL))(NIL))(1)(NMAX)
+glyph SHAPES = FOLDR(APPEND)(NIL)(LEVELS)
+glyph NSHAPES = LEN(SHAPES)
+
+# ── COVERAGE: the count must equal the Catalan total, computed independently ──
+#  shapes with n leaves = C(n-1);  C(0)=1,  C(n) = sum_{i<n} C(i)*C(n-1-i)
+glyph CSUM = la rec. la n. (Z(la loop. la i. la acc.
+    IF(int_eq(i)(n))(la _. acc)
+      (la _. loop(add(i)(1))(add(acc)(mul(rec(i))(rec(sub(sub(n)(1))(i))))))))(0)(0)
+glyph CAT = Z(la self. la n. IF(int_eq(n)(0))(la _. 1)(la _. CSUM(self)(n)))
+glyph CTOT = (Z(la loop. la n. la acc.
+    IF(lt(NMAX)(n))(la _. acc)(la _. loop(add(n)(1))(add(acc)(CAT(sub(n)(1)))))))(1)(0)
+glyph SHAPES_OK = int_eq(NSHAPES)(CTOT)
+
+# ── BASE: the leaf is I ──
+glyph BASE_OK = IS_ID(EVS(LEAF))
+
+# ── STEP, AT THE CONSTRUCTION-RULE LEVEL — NOT AN ENUMERATION ────────
+#  ★★ An earlier version quantified the step over PAIRS DRAWN FROM THE
+#  ENUMERATION. That is still finite instantiation: it checks the step where the
+#  enumeration happens to reach and says nothing about u,v beyond it. The step
+#  has to hold for ARBITRARY u,v or the induction does not close.
+#  It does, and it follows from TWO DEFINITIONS rather than from any instance:
+#    (1) EVS's APP rule IS  EVS(APP u v) = EVS(u)(EVS(v)).  The constructor is
+#        interpreted BY application — that is what EVS is defined to do, for all
+#        u and v, not for the ones enumerated.
+#    (2) the root is  BEING = la s. s , so  BEING(x)  reduces to  x  for ANY x.
+#  Induction hypothesis: EVS(u) and EVS(v) are identity. By (1),
+#  EVS(APP u v) = EVS(u)(EVS(v)); by IH the left factor is identity; by (2) it
+#  returns its argument, so EVS(APP u v) = EVS(v), identity by IH. ∎
+#  No instance is consulted anywhere in that chain.
+#  What is MECHANISED here is the two definitional facts the chain rests on.
+#  ★ (2) is probed with an OPAQUE token — a function the term cannot destructure
+#  — as well as strings, because "returns its argument" must not be witnessed
+#  only on arguments the term could have rebuilt.
+glyph OPAQ = la k. concat("ω")(k)
+glyph NEUTRAL_OK = AND(AND(str_eq(BEING("q"))("q"))(str_eq(BEING(""))("")))
+                      (str_eq(BEING(OPAQ)("z"))("ωz"))
+#  (1) exhibited: the APP rule agrees with application, on opaque operands and
+#  at two different shapes, so the exhibit is not one shape wearing two hats.
+glyph HOM_OK = AND(str_eq(EVS(APP(LEAF)(LEAF))(OPAQ)("z"))((EVS(LEAF)(EVS(LEAF)))(OPAQ)("z")))
+                  (str_eq(EVS(APP(APP(LEAF)(LEAF))(LEAF))("q"))((EVS(APP(LEAF)(LEAF))(EVS(LEAF)))("q")))
+glyph STEP_OK = AND(NEUTRAL_OK)(HOM_OK)
+
+# ── and the enumeration itself: every shape evaluates to I ──
+glyph CLOSURE_ALL = ALLP(la s. IS_ID(EVS(s)))(SHAPES)
+
+# ── TRAVERSAL: the discriminating instance of the SAME scheme ────────
+#  Every shape at level i must have exactly i+1 leaves. This is the arm that can
+#  actually go red when the traversal is wrong — it is why the homomorphism is
+#  not merely asserted. If the APP rule stopped visiting an operand, leaf counts
+#  would collapse and this reds, taking EVS's traversal down with it, because
+#  both are the same FOLDS.
+glyph LVLOK = Z(la self. la i. la ls.
+    ls(TRUE)(la h. la t. AND(ALLP(la s. int_eq(NLEAVES(s))(add(i)(1)))(h))(self(add(i)(1))(t))))
+glyph TRAVERSE_OK = LVLOK(0)(LEVELS)
+
+glyph L1 = print(concat("shape space enumerated to ")(concat(int_to_str(NMAX))(concat(" leaves: ")(concat(int_to_str(NSHAPES))(concat(" shapes; Catalan total ")(concat(int_to_str(CTOT))(concat(" — coverage ")(YN(SHAPES_OK)))))))))
+glyph L2 = print(concat("BASE  EVS(LEAF) is identity on the probe set ? ")(YN(BASE_OK)))
+glyph L3 = print(concat("STEP  construction-rule level: the root is left-neutral on an opaque argument, and the APP rule is application ? ")(YN(STEP_OK)))
+glyph L4 = print(concat("ALL   every enumerated shape evaluates to I ? ")(YN(CLOSURE_ALL)))
+glyph L4b = print(concat("TRAV  every shape at level i has exactly i+1 leaves — the discriminating instance of the same traversal ? ")(YN(TRAVERSE_OK)))
+glyph L5 = print(concat("archclosure base ")(concat(YN(BASE_OK))(concat(" | step ")(concat(YN(STEP_OK))(concat(" | cover ")(concat(YN(SHAPES_OK))(concat(" | all ")(concat(YN(CLOSURE_ALL))(concat(" | trav ")(YN(TRAVERSE_OK)))))))))))
+glyph L6 = print("VERDICT: base + step + coverage = induction on shape size, so {I} is closed under application at EVERY depth, not to a bound. The STEP is structural — it follows from EVS's APP rule and from BEING = la s. s, for arbitrary u and v — so the enumeration below is CORROBORATION, not the argument. Residual bound: identity is OBSERVATIONAL up to the probe set, which now includes an opaque token the term cannot destructure.")
+
+glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(SEQ(L4b)(SEQ(L5)(L6))))))

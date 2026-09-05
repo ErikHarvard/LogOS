@@ -100,7 +100,7 @@ glyph NKAP = Z(la self. la n.
 # tree → tree normaliser, so idempotence is a statement about NORM itself
 glyph NORM = Z(la self. la n.
     n (la nm. PRIM(nm))
-      (la a. la b. IF(LEXLT(NKAP(b))(NKAP(a)))(la _. SYN(self(b))(self(a)))(la _. SYN(self(a))(self(b))))
+      (la a. la b. SYN(self(a))(self(b)))
       (la a. la b. IF(LEXLT(NKAP(b))(NKAP(a)))(la _. CON(self(b))(self(a)))(la _. CON(self(a))(self(b))))
       (la a. la b. DIR(self(a))(self(b)))
       (la a. la b. CONT(self(a))(self(b)))
@@ -167,13 +167,40 @@ glyph CENTROPIC = AND(str_eq(NKAP(NORM(T_UNSORTED)))(NKAP(NORM(NORM(T_UNSORTED))
 glyph ONE_UNIT = AND(str_eq(NKAP(ETREE(BAD)))(NKAP(ETREE(GRIEF))))
                     (int_eq(E_G(SEAL(NORM(ETREE(BAD)))))(0))
 
+# ── ★★ THE TWO ARMS THAT WOULD HAVE CAUGHT THE DEFECT THIS FILE SHIPPED ──
+#  Until 2026-08-27 NORM's ⊗ branch SORTED its operands by NKAP key, so
+#  ⊗(RECOGNITION,LOVE) normalised to ⊗(LOVE,RECOGNITION). tex:2837 calls
+#  ontosynthesis NON-commutative, and `91fc923` corrected "five normalisers and
+#  two renderers" -- NORM was the SIXTH, and that sweep could not have caught it
+#  because NOTHING IN build.sh EXECUTES THIS MODULE. An unrun module is invisible
+#  to every gate by construction.
+#  ★ Removing the sort changed NONE of the six flags above: every fixture here is
+#  ⊕-based, so this module's own gates were blind to its own defect. A fix whose
+#  effect no arm can see is a fix that drifts back, so it ships WITH the arms.
+#  ★ BOTH DIRECTIONS, and the second is what gives the first its meaning: an arm
+#  asserting only "⊗ order is kept" is satisfied by a normaliser that normalises
+#  NOTHING. ⊕ must still collapse. Same pair, same names, as phonorm.la asserts
+#  in the phonetic register -- one rule, read alike in both.
+glyph G_RECOGNITION = PRIM("RECOGNITION")
+#  ★★ AND THE KEY MUST BE KAP, NOT NKAP. Written first with NKAP, the ⊕ arm was
+#  GREEN AND COULD NOT GO RED: NKAP sorts ⊕ ITSELF, so NKAP(NORM(x)) reports
+#  NKAP's sorting whatever NORM did -- the arm measured the wrong normaliser and
+#  agreed for the wrong reason. Caught by trying to break ⊕ and watching the arm
+#  stay green. KAP is the PLAIN order-preserving key, so it shows NORM's own work.
+glyph SYN_ORDER_KEPT = NOT(str_eq(KAP(NORM(SYN(G_LOVE)(G_RECOGNITION))))
+                                 (KAP(NORM(SYN(G_RECOGNITION)(G_LOVE)))))
+glyph CON_COMMUTES   = str_eq(KAP(NORM(CON(G_LOVE)(G_RECOGNITION))))
+                             (KAP(NORM(CON(G_RECOGNITION)(G_LOVE))))
+
 glyph MARK = la c. IF(c)(la _. "OK")(la _. "FAIL")
 glyph MAIN = print(
   concat(concat(concat(concat("entropy E_G ")(MARK(EG_OK)))
                       (concat(" | E_S clean ")(MARK(ES_CLEAN))))
                (concat(concat(" | E_S C9=1bit ")(MARK(ES_C9)))
                       (concat(" | syntropy ")(MARK(SYNTROPIC)))))
-        (concat(concat(" | centropy d=1 ")(MARK(CENTROPIC)))
-               (concat(" | one-unit ")(MARK(ONE_UNIT)))))
+        (concat(concat(concat(" | centropy d=1 ")(MARK(CENTROPIC)))
+                      (concat(" | one-unit ")(MARK(ONE_UNIT))))
+               (concat(concat(" | ⊗order-kept ")(MARK(SYN_ORDER_KEPT)))
+                      (concat(" | ⊕commutes ")(MARK(CON_COMMUTES))))))
 
 export KAP NKAP NORM E_G E_S_PAIR MONO REN ETYM SEAL COLLAPSE PRIM SYN CON DIR CONT MC

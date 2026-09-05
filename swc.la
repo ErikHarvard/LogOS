@@ -39,3 +39,4 @@ glyph MAXRANK = Z(la self. la c. c (la n. 0) (la r. la l. la rr. MAXn(r)(MAXn(se
 glyph ORD = Z(la self. la c. c (la n. 0) (la r. la l. la rr. MAXn(IFc(ORc(lt(r)(MAXRANK(l)))(lt(r)(MAXRANK(rr))))(la _. 2)(la _. 0))(MAXn(self(l))(self(rr)))))
 # ORDER : operator-order verdict (trusted)
 glyph ORDER = la c. IFc(int_eq(ORD(c))(0))(la _. "WELL-ORDERED")(la _. "ORDER-VIOLATION")
+export Z TRUE FALSE AND IFc MAXn AST_VAR AST_LAM AST_APP AST_STR IS_VAR FIND_SA SWC VERDICT ORc OATOM OOP MAXRANK ORD ORDER 

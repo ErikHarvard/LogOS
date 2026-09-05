@@ -39,7 +39,51 @@ SHAPES = [
     ("C-pattern",       re.compile(r'\bgrep\s+-q\b')),
     ("F-threshold",     re.compile(r'\b-(lt|le|gt|ge)\b|\$\(\(')),
     ("E-presence",      re.compile(r'\[\s+-[fdsxe]\s|\[\s+-n\s|\[\s+-z\s')),
+    # ★ APPENDED 2026-08-26 (Freeze II, finishing the Z pile). The first run left
+    #   251 rows "Z-unclassified", read as 251 gates needing hand review. They were
+    #   not: the table was simply MISSING build.sh's most common assertion idioms.
+    #   Bucketing the Z rows by what their window actually contained gave
+    #   str-eq 128 · case/esac 40 · numeric-eq 13 · diff 13 — i.e. the tool was
+    #   reporting its own blind spot as a property of the code.
+    #   ★ These are APPENDED, never reordered: classify() returns the FIRST match,
+    #   so appending can only reclassify rows that were already Z. A/B/C/D/E/F
+    #   counts are unchanged by construction, and that is asserted in the tests.
+    ("G-string-eq",     re.compile(r'\[\s*"?\$[A-Za-z_{(][^]]*"?\s*!?=\s')),
+    ("H-numeric-eq",    re.compile(r'\s-(eq|ne)\s')),
+    ("J-diff",          re.compile(r'\bdiff\b')),
+    ("I-case-dispatch", re.compile(r'\bcase\b.*\bin\b|\besac\b')),
+    # ★ The POSITIVE complement of the negative class: `cmd || { echo "FAIL" ...; }`
+    #   asserts the command MUST SUCCEED. Sound by construction on the never-ran
+    #   axis -- a missing binary exits non-zero and the gate goes RED, correctly and
+    #   for the right reason. This is why it is a separate class from N: the same
+    #   accident that makes a NEGATIVE assertion silently green makes a POSITIVE one
+    #   loudly red. All four rows still unrecognised at a 40-line window were this.
+    ("K-must-succeed",  re.compile(r'\|\|\s*\{\s*echo\s+"FAIL')),
 ]
+
+# ★ THE NEGATIVE-ASSERTION CLASS (new 2026-08-26, and the audit's first proven
+#   defect came out of it).  Shape:  `cmd && { echo "FAIL ..."; ok=0; }`
+#   The assertion is "cmd must FAIL". It therefore passes on ANY non-zero exit —
+#   including exits for the WRONG REASON: the binary is missing, its input was
+#   never written, it died on a parse error unrelated to the property under test.
+#   A negative assertion is only sound if something PAIRS with it to prove the
+#   step actually ran and failed for the stated reason. That pairing is what
+#   distinguishes "the compiler correctly refused" from "there was no compiler".
+NEGATIVE = re.compile(r'&&\s*\{\s*echo\s+"FAIL')
+# evidence that the same run was independently observed: a positive assertion on
+# its output, an exact rc, or a byte-comparison.
+#   ★ CALIBRATION 3 (2026-08-26) — this detector's FIRST verdicts included two
+#   false positives of its own, and they are recorded here for the same reason
+#   calibrations 1 and 2 are: a triage tool that cries wolf gets ignored, and one
+#   that cries "sound" is worse. `[ "$ok" -eq 1 ]` is the VERDICT AGGREGATOR that
+#   closes every gate block in build.sh. It says nothing about any particular
+#   assertion, yet it matched the rc arm and certified build.sh:2622 and :2691 as
+#   PAIRED. Pairing must be evidence about THIS run, so the aggregator variables
+#   are excluded by name.
+AGG = r'(?!ok\b|rc\b)'
+PAIRED = re.compile(r'grep\s+-q|cmp\s+-s'
+                    r'|\[\s*"?\$\{?' + AGG + r'\w+"?\s*-eq\s'
+                    r'|\[\s*"?\$\{?' + AGG + r'\w+"?\s*=\s')
 FAILLINE = re.compile(r'echo\s+"FAIL')
 
 def marker_of(line):
@@ -121,6 +165,17 @@ def main():
         cls    = classify(ctx)
         marker = marker_of(ctx)
         flags  = suspects(ctx, cls, marker, sec_at[n])
+        # ★ negative assertions: judged on the FAIL LINE itself, and paired against
+        #   BOTH directions — many gates assert the diagnostic on the lines AFTER.
+        if NEGATIVE.search(line):
+            fwd = "\n".join(lines[n:min(len(lines), n + 4)])
+            if PAIRED.search(ctx + "\n" + fwd):
+                flags.append((1, "negative assertion (`cmd && FAIL`) — PAIRED with a "
+                                 "positive check on the same run; sound"))
+            else:
+                flags.append((3, "NEGATIVE assertion with NOTHING proving the step ran: "
+                                 "passes on any non-zero exit, so 'correctly refused' and "
+                                 "'never ran at all' are indistinguishable"))
         rows.append((n, sec_at[n], cls, marker, flags, line.strip()))
 
     if a.klass:   rows = [r for r in rows if r[2] == a.klass]

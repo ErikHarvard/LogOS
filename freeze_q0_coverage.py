@@ -23,7 +23,11 @@ Read-only. Touches nothing.
 import re, subprocess, sys
 from pathlib import Path
 
-REPO = Path("/home/erikxanderharvard/logos")
+# The repo is where THIS SCRIPT lives, not a path baked in at authoring time.
+# A hardcoded $HOME makes a tool silently read the wrong worktree when run from
+# another one -- and the worktree isolation that guards /tmp cannot see it,
+# because the path is not in /tmp.
+REPO = Path(__file__).resolve().parent
 
 def tracked():
     out = subprocess.run(["git","-C",str(REPO),"ls-files"],capture_output=True,text=True).stdout

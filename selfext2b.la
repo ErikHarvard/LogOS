@@ -1,0 +1,93 @@
+# =====================================================================
+#  selfext2b.la — STAGE 2b: THE ORGAN BEGETS ITS OWN SUCCESSOR.
+#
+#  Stage 2 made the adopted artifact executable, but the GATE compiled it
+#  and the GATE ran it. A child that runs because a shell script compiled
+#  it is not the organ begetting anything. Here the whole chain
+#  originates inside the organ: it writes the grown source, invokes the
+#  compiler, fuses a self-contained vessel, and execve's THAT -- and the
+#  capability is demonstrated by a process the organ itself started.
+#
+#  ── WHY EVERY EXEC TARGET IS A LITERAL, AND A BUNDLE ────────────────
+#  `execve(path)` takes NO arguments (argv=[path]), so every tool it
+#  invokes must already read fixed paths. codegen reads logos_source.la
+#  and writes logos_program.bin; bundle reads logos_secd + logos_embed.bin
+#  and write_exec's logos_app. Both qualify.
+#
+#  ★★ AND NOTHING HERE MAY EXECVE THE GENERIC VM LOADER. The organ runs
+#  on the VM, so the organ IS what logos_program.bin holds; an organ that
+#  execve'd ./logos_secd would have the loader re-execute the organ, which
+#  forks, which re-executes... CLAUDE.md rule 2 records this happening
+#  for real: 148,121 processes, load 27. So every target below is a
+#  SELF-CONTAINED BUNDLE -- a bundle carries its program embedded and
+#  never reads logos_program.bin, which is exactly why autopoiesis.la
+#  "must run as a bundle". Re-entry is impossible by construction, not by
+#  care. `gate_selfext2b_safety.py` enforces it statically and REFUSES a
+#  variable exec target, because a target it cannot read it cannot clear.
+#
+#  ★★★ AND A CAP, because a structural argument is still an argument.
+#  The generation is read from `.sx2b_gen`; past the cap the organ stops
+#  and begets nothing. If the reasoning above is wrong, this terminates.
+#
+#  ── VERIFICATION STILL GATES EXECUTION ──────────────────────────────
+#  Stage 2's red path is preserved: if the extension fails its own test,
+#  no source is written, no compiler is invoked, and no child is begotten.
+# =====================================================================
+
+# ★ ONE import, not two. Importing specpipe.la here as well made a diamond
+# that dragged its 62 glyphs through the mangler twice; the compile had not
+# finished in 12 minutes. selfext1.la re-exports GEN_/IF_ under names it
+# defines, so specpipe arrives exactly once.
+import("selfext1.la")   # C_VERIFIED S_BASE S_EXT HASSUB NOT2 GEN_ IF_
+
+glyph SEQ2 = la a. la b. b
+glyph J    = la a. la b. concat(a)(b)
+
+# ── the cap medium ──────────────────────────────────────────────────
+glyph GEN     = read_file(".sx2b_gen")
+glyph AT_CAP  = NOT2(str_eq(GEN)("0"))
+
+# ── the grown program: the organ's own source plus a MAIN that
+#    exercises the neologism. The MAIN is identical to stage 2's, so the
+#    parent control there and the begotten child here are comparable.
+glyph MAINSRC   = "\nglyph MAIN = print(int_to_str(TRIPLEDEC(5)))\n"
+glyph CHILD_SRC = J(GEN_(S_EXT))(MAINSRC)
+
+glyph VERIFIED = C_VERIFIED(S_EXT)
+
+# ── fork/execve/waitpid, written out per target so every exec surface
+#    is a LITERAL the safety gate can read. A variable path would be
+#    shorter and is exactly what the gate refuses.
+glyph RUN_COMPILER = (la pid.
+    IF_(str_eq(pid)("0"))
+      (la _. SEQ2(execve("./compiler.bin"))(exit("127")))
+      (la _. waitpid(pid)))(fork("!"))
+
+glyph RUN_BUNDLER = (la pid.
+    IF_(str_eq(pid)("0"))
+      (la _. SEQ2(execve("./bundler.bin"))(exit("127")))
+      (la _. waitpid(pid)))(fork("!"))
+
+glyph RUN_CHILD = (la pid.
+    IF_(str_eq(pid)("0"))
+      (la _. SEQ2(execve("./logos_app"))(exit("127")))
+      (la _. waitpid(pid)))(fork("!"))
+
+# ── the chain, in order, each step's output being the next step's input
+glyph BEGET =
+    SEQ2(write_file("logos_source.la")(CHILD_SRC))
+   (SEQ2(print(J("  [organ] wrote grown source, ")(J(str_len(CHILD_SRC))(" bytes"))))
+   (SEQ2(print(J("  [organ] compiler exit ")(RUN_COMPILER)))
+   (SEQ2(write_file("logos_embed.bin")(read_file("logos_program.bin")))
+   (SEQ2(print(J("  [organ] bundler exit ")(RUN_BUNDLER)))
+   (SEQ2(write_file(".sx2b_gen")("1"))
+        (print(J("  [organ] BEGOTTEN child exit ")(RUN_CHILD))))))))
+
+glyph ACT = IF_(AT_CAP)
+    (la _. print("  [organ] at cap — begetting nothing"))
+    (la _. IF_(VERIFIED)
+        (la _. BEGET)
+        (la _. print("  [organ] REFUSED — extension failed its own test; no child begotten")))
+
+glyph MAIN = SEQ2(print(J("selfext2b gen=")(J(GEN)(J(" verified=")(
+    IF_(VERIFIED)(la _. "T")(la _. "F"))))))(ACT)

@@ -690,3 +690,227 @@ boots an image and greps serial tokens: perturbing the token list only proves
 grep works, and perturbing the artifact means mutating kernel source. The real
 test is whether each gate has ever ACTUALLY gone red — which build logs would
 show and git does not retain. Naming this as unresolved rather than closing it.
+
+---
+
+# Freeze-Day Audit II — finishing the Z pile, 2026-08-26
+
+Erik's sequencing: *finish the audit before starting the archroot arc.* The
+outstanding item was **217 (by then 251) Z-unclassified assertions**, recorded as
+"shape not recognised — read by hand." Read by hand, that is 251 human judgements.
+It turned out not to be 251 gates.
+
+## ★ FINDING 1 — the Z pile was the INSTRUMENT'S SHADOW, not a property of the code
+
+Before reading 251 rows, each was bucketed by what its 6-line window **actually
+contained**. The result:
+
+| bucket | count | what it means |
+|---|---|---|
+| `[ "$a" = "$b" ]` string equality | 128 | **absent from the SHAPES table entirely** |
+| `case`/`esac` dispatch | 40 | absent |
+| numeric `-eq`/`-ne` | 13 | absent |
+| `diff` | 13 | absent |
+| assertion sits >6 lines above its FAIL line | 64 | WINDOW too small |
+| `cmd \|\| { echo FAIL; }` (must-succeed) | 4 | absent |
+
+**`build.sh`'s single most common assertion idiom — exact string equality — was
+not in the tool's table.** The tool was reporting its own blind spot as a property
+of the code, and the report read identically to "251 weak gates."
+
+Four shapes were **appended** (never reordered — `classify()` returns the first
+match, so appending can only reclassify rows that were already Z). The invariant
+was asserted and held exactly: **A=64 B=150 C=121 D=40 E=33 F=5 unchanged**,
+total unchanged at 664. Only Z moved.
+
+    Z-unclassified   251  ->  68  (new shapes)
+                      68  ->  12  (K-must-succeed + the window measurement)
+    flagged           298  ->  65
+
+⚠️ **THIS IS NOT AN UPGRADE OF ANY GATE.** Reclassifying a row from Z to
+G-string-eq says the assertion has a strong SHAPE. It does not say the expected
+value is right, and it does not say the gate can go red. The pile shrank because
+the instrument stopped being blind, not because the code got safer. **Zero of the
+251 turned out to be a vacuous gate** — and zero were shown to be sound, either.
+
+**The generalisable form, and it is the one this audit keeps re-learning:** when
+an instrument reports a large undifferentiated pile, measure the pile's SHAPE
+before working it. The 251 would have cost days of hand-reading to discover the
+same four missing regexes. [[an instrument must prove it looked]]
+
+## ★★ FINDING 2 — the NEGATIVE-ASSERTION class, and one PROVEN defect
+
+Bucketing surfaced a class no prior question could see. Q2 asks *which assertions
+cannot go RED?* — every one of these CAN. The right question here is different:
+
+> **A negative assertion — `cmd && { echo "FAIL"; }` — passes on ANY non-zero
+> exit, including an exit for the WRONG REASON. Unless something pairs with it
+> to prove the step ran, "the compiler correctly refused" and "there was no
+> compiler" are the same green.**
+
+Nine such gates exist. Five are **sound**: each is paired with a positive
+assertion on the same run's output (`681`, `2167`, `2391`, `2394`, `3683`), so a
+crashed step reddens the pair. `3683` reasons this out in its own comment.
+
+Four were **unpaired**: `2150`, `2155`, `2622`, `2691` — output sent to
+`/dev/null`, only the exit code consulted.
+
+### The proven one: `build.sh:2155`
+
+Its own window deletes the binary it then tests:
+
+    rm -f logos_secd logos_program.bin logos_source.la
+    ./tiny_host secd.la    >/dev/null 2>&1     # rc NOT checked
+    cp /tmp/mlloud.la logos_source.la
+    ./tiny_host codegen.la >/dev/null 2>&1     # rc NOT checked
+    ./logos_secd >/dev/null 2>&1 && { echo "FAIL ... did NOT halt on VM"; ok=0; }
+
+Reproduced in shape, four states measured:
+
+| state | old gate |
+|---|---|
+| A — VM binary never built | **GREEN** |
+| B — VM present, correctly halts | GREEN |
+| C — VM present, halts SILENTLY (rc=1, no diagnostic) | **GREEN** |
+| D — VM present, fails to halt (rc=0) | RED |
+
+**A is indistinguishable from B.** The gate catches 1 of 3 bad states. And
+`logos_secd` did not exist in the working tree when this was found — state A was
+not hypothetical.
+
+Note this is a **third** shape beside "cannot fail" and "never asked": *a gate
+that CAN fail, does fail correctly on the state it was written for, and is
+silently green on a different state its own setup can produce.*
+
+### The fix, shown RED before being applied
+
+Assert the **diagnostic**, not merely the exit code — which repairs both the
+never-ran hazard and the loudness claim at once (three of the four gates' own
+text says "halt LOUDLY" / "no silent wrong binary" while discarding the output
+that would prove it).
+
+    MLLV="$(./logos_secd 2>&1)" && { echo "FAIL ... did NOT halt on VM"; ok=0; }
+    printf '%s\n' "$MLLV" | grep -q "ill-formed term" || { echo "FAIL ... WITHOUT the loud diagnostic (got: $MLLV)"; ok=0; }
+
+Measured on all four states: **A RED · B GREEN · C RED · D RED** — 3 of 3 bad
+states caught, up from 1 of 3. In state A the red names the real reason
+(`./logos_secd: not found`), satisfying the standing rule that a red must name
+the real output and not a missing binary.
+
+The diagnostics were **witnessed, not assumed**, by running each:
+
+    host  ./tiny_host mlloud.la      -> "metalogic: ill-formed term — excluded middle admits no silent third value; halting"  rc=1
+    VM    ./logos_secd               -> the IDENTICAL line                                                                    rc=1
+          ./tiny_host native_codegen.la  -> "native_codegen: unsupported binary builtin: lt"                                  rc=1
+          ./tiny_host native_codegen2.la -> "native_codegen2: unbound name: chr"                                              rc=1
+
+★ The expected values are patterns encoding the PROPERTY (`unsupported.*\blt\b`),
+not the captured line verbatim — so a reworded message does not go red, but a
+diagnostic that loses its specificity does. [[expected values: derived, not captured]]
+
+All four patched and re-verified GREEN on the true state (both halves of the
+mutation test: red shown first, green confirmed after). All nine negative
+assertions now report PAIRED.
+
+## ★ CALIBRATION 3 — this session's new detector produced its own false positives
+
+Recorded because calibrations 1 and 2 are, and because the pattern is now three
+for three: **the PAIRED detector certified `2622` and `2691` as sound.** They are
+not. It had matched `[ "$ok" -eq 1 ]` — the verdict aggregator that closes *every*
+gate block in `build.sh`, which says nothing about any particular assertion. The
+aggregator variables are now excluded by name, after which the tool's verdicts
+matched the hand analysis on all nine.
+
+**A tool that cries wolf gets ignored; one that cries "sound" is worse.** Every
+verdict of a changed classifier must be re-checked — including the ones that
+agree with you. [[instruments: match words, not substrings]]
+
+## Remaining, named rather than dropped
+
+* **12 rows still Z**, all FAIL lines inside multi-line `if`/`case` blocks whose
+  assertion is the enclosing condition. Structurally sound; not separately verified.
+* **65 flagged rows** still need their one human line. Densest: the LA-native
+  assembler at 34.
+* **`build.sh:3995`** — asserts a structurally incoherent proposition is
+  *unconstructible*. That is the exact shape of known vacuous gate #2 (the
+  >2-parent node). It is a candidate for the proposed **`[S]` structurally
+  enforced** tag rather than `[W]`, and has NOT been checked here.
+* **127 G-string-eq rows** are exact-equality gates whose expected value's
+  PROVENANCE is unknown — derived, or captured from a run? A captured expectation
+  pins current behaviour including current bugs. Not investigated; named.
+* The 52-of-78 uninvoked gate scripts (Q0) are **unchanged** by this session.
+
+## The remaining 65 flagged rows — worked, 2026-08-26
+
+All 65 reviewed. Breakdown by flag reason, and what each turned out to be:
+
+| flags | reason | verdict |
+|---|---|---|
+| 33 | presence-only `[ -f ]` | **zero stand alone** — see below |
+| 12 | shape not recognised | FAIL lines inside multi-line `if`/`case`; the assertion is the enclosing condition |
+| 9 | negative assertion | 4 fixed above, 5 already PAIRED |
+| 7 | marker `'###'` very short | one `grep -q '###'` precondition, attributed to 7 rows by window bleed — **but reading them found a real defect, below** |
+| 5 | absolute threshold | reviewed 2026-08-22: 4 false positives + `:5683` weak-but-not-vacuous |
+| 3 | computes a value inline | `:48` and `:4500` false positives (arithmetic inside an `echo`; the awk fails safe to RED). `:5683` is the known sleep gate. |
+
+**The 33 presence flags, checked mechanically at BLOCK granularity** (block = between
+`say` lines) rather than by the 6-line window: **not one is a standalone presence
+claim.** Most are not presence tests at all — they are string-equality assertions
+(`[ "$NATIVE_OUT" = "I AM THAT I AM" ]`) that inherited the E-presence label from a
+neighbouring `[ -f ]` precondition. The genuine ones (`:1997` `:2533` `:3329` …) sit
+in blocks that also assert size, rc, and output on the same artifact.
+**BOUND:** "a strong assertion exists in the same block" is weaker than "this
+artifact's content is checked." Several were confirmed same-artifact by eye
+(`logos_native`: presence + size 171 + output + rc; `logos_secd`: presence + derived
+size + `cmp -s`). It was NOT confirmed individually for all 33.
+
+## ★★ FINDING 3 — VACUOUS GATE, PROVEN AND FIXED: the sigil symmetry predicates
+
+Found by reading the 7 low-severity `'###'` rows — i.e. by reading, again, not by
+the tool. That is now **five of seven** known vacuous gates found by reading.
+
+`build.sh:4480-4481` define the symmetry predicates as awk over a piped block:
+
+    is_hsym () { awk '{ s=substr($0,2); ... if(r!=s) bad=1 } END { exit bad?1:0 }'; }
+    is_vsym () { awk '{ a[NR]=$0 } END { for(i=2;i<=NR;i++) ... exit bad?1:0 }'; }
+
+**On EMPTY input neither loop body runs, `bad` stays unset, and both exit 0 — an
+ABSENT sigil reads as SYMMETRIC.** Measured:
+
+    is_hsym < /dev/null            -> rc 0   ("H-symmetric")
+    is_vsym < /dev/null            -> rc 0   ("V-symmetric")
+    HSYM "g4 SELF" <file lacking that label>  -> rc 0
+    => build.sh:4487 GREEN on a sigil that is not there
+
+The helpers themselves are CORRECT on real data (verified separately: rc 0 on a
+properly shaped symmetric 32-wide block, rc 1 on an asymmetric one — an earlier
+test of mine used 3-char rows, the wrong geometry, and proved nothing; recorded
+because a wrong-shaped fixture that "fails" invites a false defect report).
+
+**Why the existing count guard does not catch it:** `[ "$(grep -c '^g[1-9] ' "$2")" = "9" ]`
+keys on the PREFIX; `block` keys on the FULL label. Rename a sigil and the count is
+still 9 while its block goes empty. Seven gate lines (`:4487-4493`) depend on this.
+
+### ★ The fix is a SEPARATE presence assertion — and fixing the predicate would have BROKEN the gate
+
+The obvious repair — make the helpers return 1 on empty — is **wrong**, and this is
+the part worth carrying forward. Line `:4492` asserts `! HSYM && ! VSYM` (BECOMING is
+chiral), so under the *broken* helpers it goes **RED** on absence: accidentally
+correct. Returning 1 on empty would make both negations TRUE and turn the one line
+that survives absence into a vacuous one. **The repair that looks like it fixes six
+lines would have broken the seventh.**
+
+Shipped instead: one loop asserting every label's block is non-empty, leaving
+`HSYM`/`VSYM` semantics untouched. Red path exercised before shipping:
+
+    label absent, count still 9   -> WITHOUT guard GREEN (the defect) · WITH guard RED
+    all labels present            -> WITH guard GREEN (no over-fire)
+    line :4492 on absent label    -> RED, unchanged
+    the guard against the REAL `./tiny_host sigil.la` output (680 lines,
+      all 7 labels present)       -> GREEN
+
+**The class, stated generally:** *a predicate that quantifies over a collection is
+vacuously true on the empty collection.* Every `for`/`while` assertion over
+grep-derived input carries it, and it is invisible to Q1 (both engines agree — on
+nothing) and to Q2 (the gate CAN go red, on non-empty input). It joins the
+enumeration as a third question the audit did not know to ask.

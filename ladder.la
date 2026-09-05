@@ -1,0 +1,117 @@
+# ═══════════════════════════════════════════════════════════════════
+#  ladder.la — THE SEMIOTIC-ONTOGLYPHIC LADDER, as data.
+#
+#  The Science of Naming, "Signs are not uniform": signs occupy a hierarchy of
+#  structural alignment with their referents. Seven levels, Noise to Ontoglyph.
+#  Peirce's icon/index/symbol lands at Levels 2-1 (he classified in DESCENDING
+#  α-order — his "symbol" IS Level 1, the arbitrary sign); the ladder extends
+#  upward through glyph, neoglyph and ontoglyph, levels Peirce did not anticipate
+#  because they require the autological turn.
+#
+#  ── ★★ THE ORDINAL DISCIPLINE, AND IT IS MECHANICAL HERE ────────────
+#  The corpus states it in the Ladder's own header: the α values are
+#      "illustrative ORDINAL placements, NOT cardinal measurements."
+#  So this module stores the ORDINAL RANK (0..6) and NOT the illustrative decimals
+#  (0.2/0.4/0.6/0.8). Storing the decimals would invite arithmetic on them — a mean
+#  α, a difference in α — and every such number would be a category error wearing a
+#  plausible shape. What the ladder asserts is an ORDER, so an order is what is stored.
+#
+#  ★ THE CORPUS PROVES ITS OWN POINT, and the proof is checkable: Level 0 (Noise)
+#    and Level 1 (Sign) are BOTH α≈0. The decimal column is therefore NOT INJECTIVE
+#    across levels — two distinct levels share one value — so those numbers cannot be
+#    what distinguishes the levels. The RANK is. That is asserted below as
+#    DECIMALS_NOT_INJECTIVE, and it is the whole ordinal argument in one gate.
+#
+#  ── HOW THIS SITS WITH α BEING BOOLEAN IN canon.la ──────────────────
+#  Both are true, in different scopes, and conflating them is the error:
+#    · ACROSS SIGN KINDS — this ladder — α is ORDINAL. Icon really does align better
+#      than Sign, and worse than Glyph. That is a ranking of KINDS.
+#    · WITHIN LINGUA ADAMICA — canon.la's IS_ALPHA1 — α is TWO-VALUED, because LA
+#      contains only LEVEL-6 forms and the synonyms that collapse onto them. There is
+#      nothing here at Icon or Index to be graded. IS_ALPHA1 is a LEVEL-6 MEMBERSHIP
+#      TEST, and a boolean is the right shape for that question.
+#  ★ Level 6 is the ONLY level the corpus commits to an EXACT value for (= 1.0), and
+#    it is exact because it is an IDENTITY — G(OS*) ≅ OS*, sign ≡ referent — not a
+#    measurement that happened to come out round.
+#  ★ STILL FORBIDDEN, unchanged: reporting a MEASURED instantiation-fidelity number
+#    (FIDELITY.md: visual ~0.863, phonetic 0.71) as α. That would be cardinal, which
+#    the corpus rules out even for the ladder, and in the wrong register besides.
+#
+#  ── THE BOUND ───────────────────────────────────────────────────────
+#  This module carries the ladder and enforces its ORDER. It does not CLASSIFY an
+#  arbitrary foreign sign onto a level — that would need a theory of what an
+#  arbitrary sign's structure IS, which the corpus supplies for kinds and not for
+#  instances. What it does claim about LA is the one thing that is checkable here:
+#  LA's canonical forms sit at Level 6, which is what IS_ALPHA1 tests.
+#  Pure (str_eq/concat/lt + reduction) ⇒ byte-identical host == VM.
+# ═══════════════════════════════════════════════════════════════════
+
+export RANKS_ORDERED DECIMALS_NOT_INJECTIVE SEVEN_LEVELS TOP_IS_IDENTITY LADDER_OK
+
+glyph SEQ   = la a. la b. b
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph YN    = la b. IF(b)(la _. "YES")(la _. "no")
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+# ── a LEVEL is a 4-field record: rank · name · illustrative-α (as a STRING, so it
+#    can be displayed and compared but never summed) · structure ──
+glyph LVL  = la r. la nm. la ill. la st. la k. k(r)(nm)(ill)(st)
+glyph L_R  = la l. l(la r. la nm. la ill. la st. r)
+glyph L_N  = la l. l(la r. la nm. la ill. la st. nm)
+glyph L_I  = la l. l(la r. la nm. la ill. la st. ill)
+glyph L_S  = la l. l(la r. la nm. la ill. la st. st)
+
+glyph L0 = LVL(0)("Noise")     ("~0")  ("no sign-referent relation")
+glyph L1 = LVL(1)("Sign")      ("~0")  ("arbitrary coupling (Saussure)")
+glyph L2 = LVL(2)("Icon")      ("~0.2")("structural resemblance (photograph)")
+glyph L3 = LVL(3)("Index")     ("~0.4")("causal link (smoke -> fire)")
+glyph L4 = LVL(4)("Glyph")     ("~0.6")("compressed notation (H2O)")
+glyph L5 = LVL(5)("Neoglyph")  ("~0.8")("recursively aligned neologism")
+glyph L6 = LVL(6)("Ontoglyph") ("=1.0")("G(OS*) =~ OS*. Sign = referent.")
+
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph LADDER = CONS(L0)(CONS(L1)(CONS(L2)(CONS(L3)(CONS(L4)(CONS(L5)(CONS(L6)(NIL))))))) 
+
+glyph LEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+
+# ═══ 1. SEVEN LEVELS ════════════════════════════════════════════════
+glyph SEVEN_LEVELS = str_eq(int_to_str(LEN(LADDER)))("7")
+
+# ═══ 2. THE RANKS ARE STRICTLY ORDERED — the ladder's actual content ═
+#  A ladder whose rungs are not ordered is a set. Walk the list and require each
+#  rank to be strictly greater than the one before.
+glyph ORD = Z(la self. la prev. la l.
+    l(TRUE)(la h. la t. IF(lt(prev)(L_R(h)))(la _. self(L_R(h))(t))(la _. FALSE)))
+# (no negative literal in the lexer, so: assert the first rank is 0, then strictly rise)
+glyph RANKS_ORDERED = LADDER(FALSE)(la h. la t. AND(str_eq(int_to_str(L_R(h)))("0"))(ORD(L_R(h))(t)))
+
+# ═══ 3. ★ THE DECIMALS ARE NOT INJECTIVE — so they are not cardinal ══
+#  Level 0 and Level 1 carry the SAME illustrative value ("~0") while being
+#  DISTINCT levels. If those numbers were cardinal measurements they would have to
+#  distinguish what they measure; they do not. This is the corpus's own parenthetical
+#  ("illustrative ordinal placements, not cardinal measurements") made checkable.
+glyph DECIMALS_NOT_INJECTIVE =
+    AND(str_eq(L_I(L0))(L_I(L1)))(NOT(str_eq(int_to_str(L_R(L0)))(int_to_str(L_R(L1)))))
+
+# ═══ 4. THE TOP IS AN IDENTITY, NOT A ROUNDED MEASUREMENT ═══════════
+#  Level 6 is the only level the corpus gives an EXACT value, and it is exact
+#  because it is the identity G(OS*) ≅ OS* — sign ≡ referent.
+glyph TOP_IS_IDENTITY = AND(str_eq(L_I(L6))("=1.0"))(str_eq(L_N(L6))("Ontoglyph"))
+
+glyph LADDER_OK = AND(AND(SEVEN_LEVELS)(RANKS_ORDERED))(AND(DECIMALS_NOT_INJECTIVE)(TOP_IS_IDENTITY))
+
+# ═══ REPORT ═════════════════════════════════════════════════════════
+glyph ROW = la l. concat(int_to_str(L_R(l)))(concat("  ")(concat(L_N(l))(concat("  a")(concat(L_I(l))(concat("  ")(L_S(l)))))))
+glyph SHOW = Z(la self. la l. l("")(la h. la t. concat(ROW(h))(concat("\n")(self(t)))))
+glyph P1 = print(concat("SEMIOTIC-ONTOGLYPHIC LADDER (7 levels, ordinal)\n")(SHOW(LADDER)))
+glyph P2 = print(concat("seven levels ? ")(YN(SEVEN_LEVELS)))
+glyph P3 = print(concat("ranks strictly ordered ? ")(YN(RANKS_ORDERED)))
+glyph P4 = print(concat("illustrative decimals NOT injective (L0=L1 while ranks differ) ⇒ ORDINAL not cardinal ? ")(YN(DECIMALS_NOT_INJECTIVE)))
+glyph P5 = print(concat("top is an IDENTITY (=1.0, Ontoglyph), not a rounded measurement ? ")(YN(TOP_IS_IDENTITY)))
+glyph P6 = print(concat("LADDER VERDICT ? ")(YN(LADDER_OK)))
+glyph MAIN = SEQ(P1)(SEQ(P2)(SEQ(P3)(SEQ(P4)(SEQ(P5)(P6)))))

@@ -21,7 +21,7 @@ ok=1
 
 # ── 1. success oracle: VA decomposition + PTE assembly + W^X verdicts ──
 cp kernel/paging.la native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  K4a: native_codegen3 could not compile paging.la"; exit 1; }
+( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL  K4a: compile of paging.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or paging.la is at fault"; exit 1; }
 NAT=$(./native_codegen3_out 2>&1)
 HOST=$(./tiny_host kernel/paging.la 2>&1)
 # PML4=1 PDPT=2 PD=3 PT=4 offset=1656 | data-PTE lo/hi (1048576|P|W, NX) |
@@ -32,7 +32,7 @@ EXP=$'1\n2\n3\n4\n1656\n1048579\n2147483648\n2097153\n0\n1\n1\n0'
 
 # ── 2. W^X loud-refusal regression: must halt loudly on BOTH engines ──
 cp kernel/paging_wxfail.la native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  K4a: native_codegen3 could not compile paging_wxfail.la"; exit 1; }
+( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL  K4a: compile of paging_wxfail.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or paging_wxfail.la is at fault"; exit 1; }
 WNAT=$(./native_codegen3_out 2>&1); WNAT_RC=$?
 WHOST=$(./tiny_host kernel/paging_wxfail.la 2>&1); WHOST_RC=$?
 [ "$WHOST_RC" -ne 0 ] || { echo "FAIL  K4a: host did NOT halt on the W^X violation (rc=0, out: $WHOST)"; ok=0; }

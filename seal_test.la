@@ -33,6 +33,11 @@ glyph AUTO_OK = la g. str_eq(REN(g))(CANON(ETYM(g)))
 
 # ── THE SEALING — the verified additions ──
 # formal complexity of a sealed monoglyph = ONE (spec property (i): |𝔤_new| ≡ 1)
+# ★ [S] STRUCTURALLY ENFORCED, NOT MEASURED. A glyph is MONO(ren)(etym) — a pair
+# with ONE Ren — so complexity-one is unconstructible-otherwise: nothing MONO builds
+# can have complexity 2. Do NOT "fix" this into a computation that parses the Ren.
+# That would invent a measurement for a quantity that cannot vary — a fake red path,
+# worse than an honestly absent one. build.sh reports this line; it gates nothing.
 glyph COMPLEXITY = la g. 1
 # etymology node-count — the CONTAINED structure that DEEPENS (so we can show
 # complexity stays one while conceptual depth grows: "deepens without widening")

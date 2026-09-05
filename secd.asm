@@ -668,6 +668,11 @@ _start:
     test    eax, eax
     je      .bi33
     mov     rsi, rbp
+    mov     rdi, str_strat
+    call    strcmp
+    test    eax, eax
+    je      .bi66
+    mov     rsi, rbp
     mov     rdi, str_drmmode
     call    strcmp
     test    eax, eax
@@ -900,6 +905,9 @@ _start:
 .bi65:
     mov     r11, 65
     jmp     .pushbi
+.bi66:
+    mov     r11, 66
+    jmp     .pushbi
 .bi28:
     mov     r11, 28
     jmp     .pushbi
@@ -1119,6 +1127,8 @@ _start:
     je      .mkpa
     cmp     r11, 65
     je      .bi_bnot
+    cmp     r11, 66
+    je      .mkpa
     cmp     r11, 21
     je      .mkpa
     cmp     r11, 22
@@ -1250,6 +1260,8 @@ _start:
     je      .bi_bshl2
     cmp     r10, 64
     je      .bi_bshr2
+    cmp     r10, 66
+    je      .bi_strat2
     cmp     r10, 32
     je      .bi_read2
     cmp     r10, 38
@@ -1332,6 +1344,42 @@ _start:
     mov     qword [r15], 0       ; len 0
     mov     [r15+8], r15         ; ptr (unused for empty)
 .sh_push:
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+
+.bi_strat2:                      ; rbp = a1 STRDESC, r9 = a2 index, r8 = a2 tag
+    ; str_at(s)(i) -- the i-th byte as a one-byte string. Deliberately placed
+    ; beside .bi_strhead: it is that builtin generalised from 0 to i, and the
+    ; allocation below is str_head's, unchanged. What makes it O(1) is that a
+    ; STRDESC CARRIES its length, so no walk is needed to find the end.
+    cmp     qword [r11+8], 0     ; a1 must be STR (its tag is in the PA record)
+    jne     .strtype
+    cmp     r8, 4                ; a2 must be INT (tag 4). The int builtins do
+    jne     .strtype             ; not check, but this one DEREFERENCES a1 at
+                                 ; a2's value, so an unchecked tag is a wild read.
+    mov     rcx, [rbp]           ; length
+    cmp     r9, rcx              ; UNSIGNED: a negative index compares huge and
+    jae     .sa_zero             ; so takes the out-of-range branch, one test
+    mov     rsi, [rbp+8]         ; for both ends -- matching tiny_host, which
+    add     rsi, r9              ; also folds i<0 and i>=len into one "".
+    mov     al, [rsi]
+    mov     [r15], al            ; DATA blob: 1 raw byte (no header)
+    mov     rbp, r15
+    inc     r15
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 1       ; len 1
+    mov     [r15+8], rbp         ; ptr -> the fresh byte
+    jmp     .sa_push
+.sa_zero:                        ; out of range -> "" (the rule lives in tiny_host)
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 0       ; len 0
+    mov     [r15+8], r15         ; ptr (unused for empty)
+.sa_push:
     mov     qword [r12], 0
     mov     [r12+8], r15
     add     r12, 16
@@ -3830,6 +3878,7 @@ str_error:     db "error", 0
 str_pipe:      db "pipe", 0
 str_read:      db "read", 0
 str_strlen:    db "str_len", 0
+str_strat:     db "str_at", 0
 str_drmmode:   db "drm_mode", 0
 str_present:   db "present", 0
 str_clockgettime: db "clock_gettime", 0

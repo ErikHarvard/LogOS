@@ -1,0 +1,90 @@
+# =====================================================================
+#  selfext4.la — STAGE 4: HELD-OUT ACCEPTANCE.
+#
+#  ── THE GAP THIS CLOSES, WHICH IS ALREADY IN THE REPO ───────────────
+#  selfmod.la's demo constructs the neologism and its acceptance test in
+#  ONE expression: TRIPLEDEC and the test TRIPLEN(DEC(5))==12 are written
+#  by one author, in one glyph, at one time. Nothing is held out. SYNTH
+#  searching until an acceptance test passes demonstrates that the search
+#  TERMINATED, not that a capability was gained.
+#
+#  ── THE SHAPE OF THE FAILURE ────────────────────────────────────────
+#  This is the chacha20 defect in miniature. There, BLOCK fed forward
+#  constants that happened to equal the test vector's own key: correct for
+#  exactly one input, silently wrong for every other, and the gate could
+#  not see it because for that vector the constants EQUALLED the
+#  arguments. A block function that ignored its key entirely would have
+#  passed. Here the equivalent is an extension that simply carries the
+#  answer:
+#
+#      honest   TRIPLEDEC = la x. TRIPLEN(DEC(x))     3(x-1), for every x
+#      overfit  TRIPLEDEC = la x. 12                  correct at x=5 only
+#
+#  ★★ BOTH PASS THE ORGAN'S OWN TEST. That is the whole point and it is
+#  why this stage is not redundant with the four before it. The overfit
+#  extension VERIFIES (its own test passes), it IS its own derivation, the
+#  parent capabilities survive, a begotten child demonstrates it, and it
+#  is α-DISTINCT from everything the organ had -- so it clears stages 1,
+#  2, 2b and even the ratchet. Only a probe the synthesiser never saw can
+#  refuse it.
+#
+#  ── AND THE HELD-OUT-NESS IS ITSELF GATED ───────────────────────────
+#  "The synthesiser never saw the audit test" is an assertion unless
+#  something checks it. So the held-out probes and their expected values
+#  live ONLY in the auditor, and gate_selfext4.sh greps this file and the
+#  emitted module to prove those values appear in neither. A held-out
+#  test whose answer is sitting in the thing under test is not held out,
+#  and that is exactly the disease being treated.
+#
+#  This module emits a MODULE, not a program: the auditor supplies its own
+#  MAIN. The organ therefore cannot know which inputs it will be asked
+#  about -- structurally, not by promise.
+# =====================================================================
+
+import("specpipe.la")   # GENERATE META_DEBUG DEF TRIPLE PAIR CONS NIL IF TRUE FALSE
+
+glyph SEQ2 = la a. la b. b
+glyph J    = la a. la b. concat(a)(b)
+glyph NOT2 = la p. la t. la f. p(f)(t)
+
+glyph TAKEN = (la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v))))(la self. la n. la h.
+    IF(str_eq(n)(""))(la _. "")(la _.
+    IF(str_eq(h)(""))(la _. "")
+      (la _. concat(str_head(h))(self(str_tail(n))(str_tail(h))))))
+glyph HASSUB = (la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v))))(la self. la n. la h.
+    IF(str_eq(h)(""))(la _. FALSE)(la _.
+    IF(str_eq(n)(TAKEN(n)(h)))(la _. TRUE)(la _. self(n)(str_tail(h)))))
+
+glyph MODE    = read_file(".sx4mode")
+glyph OVERFIT = HASSUB("overfit")(MODE)
+
+# the organ's existing capabilities
+glyph TRIPLEN_I = la x. mul(x)(3)
+glyph DEC_I     = la x. sub(x)(1)
+
+# the two candidate extensions. Identical NAME, identical TYPE, identical
+# OWN TEST -- they differ only in whether they compute or recite.
+glyph HONEST_I  = la x. TRIPLEN_I(DEC_I(x))
+glyph OVERFIT_I = la x. 12
+
+glyph TD_IMPL = IF(OVERFIT)(la _. OVERFIT_I)(la _. HONEST_I)
+glyph TD_SRC  = IF(OVERFIT)(la _. "la x. 12")(la _. "la x. TRIPLEN(DEC(x))")
+
+glyph E_TRIPLEN = TRIPLE("TRIPLEN")(DEF(":: Int -> Int")("la x. mul(x)(3)")(TRIPLEN_I))(
+    CONS(PAIR(la g. int_to_str(g(4)))("12"))(NIL))
+glyph E_DEC     = TRIPLE("DEC")(DEF(":: Int -> Int")("la x. sub(x)(1)")(DEC_I))(
+    CONS(PAIR(la g. int_to_str(g(5)))("4"))(NIL))
+# ★ THE ORGAN'S OWN TEST — the ONLY probe it can see: x=5 -> 12
+glyph E_TD      = TRIPLE("TRIPLEDEC")(DEF(":: Int -> Int")(TD_SRC)(TD_IMPL))(
+    CONS(PAIR(la g. int_to_str(g(5)))("12"))(NIL))
+
+glyph SPEC = CONS(E_TRIPLEN)(CONS(E_DEC)(CONS(E_TD)(NIL)))
+
+# verification by the organ's own lights: this must be TRUE in BOTH modes,
+# or the stage proves nothing -- the overfit extension has to look fine
+glyph VERIFIED = NOT2(HASSUB("FAIL")(META_DEBUG(SPEC)))
+
+glyph MAIN = SEQ2(write_file("sx4_organ.la")(GENERATE(SPEC)))(print(
+    J("selfext4 mode=")(J(IF(OVERFIT)(la _. "overfit")(la _. "honest"))
+     (J(" own-test-verified=")(J(IF(VERIFIED)(la _. "T")(la _. "F"))
+      (" | emitted sx4_organ.la (a MODULE — the auditor brings its own MAIN)"))))))
