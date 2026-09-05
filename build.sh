@@ -160,11 +160,40 @@ done <<< "$RF_REFS"
     echo "      A fresh clone will not have these, so the committed state does not build."
     echo "      Fix: git add -f <file>, AND negate it in .gitignore (!/<file>)."
     ok=0; }
+# ── ARM 3: files the build EXECUTES. ──────────────────────────────────────
+# ★ THE THIRD IDIOM OF THE SAME CLASS. Arm 1 reads incbin, arm 2 reads
+# read_file — and both are blind to `./tiny_host X.la`, where the reference is a
+# SHELL INVOCATION. That blindness was not hypothetical: when arm 2 landed, this
+# very build.sh carried an uncommitted gate invoking ./tiny_host phonassoc.la
+# with phonassoc.la UNTRACKED, and neither existing arm could see it. A clone
+# would run a gate whose subject it does not have.
+# ⇒ The lesson this file keeps re-learning: A SWEEP SEARCHES AN IDIOM, NOT A
+# CLASS. Each new way of naming a dependency needs its own reader, and the way
+# to find the next one is to ask how ELSE a file could be named — not to widen
+# the last pattern until it looks general.
+IV_PAT='(?:\./tiny_host|bash|sh|python3|\./)\s+\K(?:kernel/)?[A-Za-z0-9_.][A-Za-z0-9_./-]*\.(?:la|sh|py)'
+IV_SELF="$(printf '%s\n' './tiny_host control_target.la' | grep -hoP "$IV_PAT")"
+[ "$IV_SELF" = "control_target.la" ] \
+  || { echo "FAIL  cleanin: the invocation extractor failed its own self-test (got [$IV_SELF], expected control_target.la) — the SCAN is broken, not the tree"; ok=0; }
+IV_REFS="$(grep -v '^[[:space:]]*#' build.sh | grep -hoP "$IV_PAT" | sed 's#^\./##' | sort -u)"
+IV_BAD=""; IV_N=0
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in /*) continue ;; esac
+    IV_N=$((IV_N+1))
+    git ls-files --error-unmatch "$f" >/dev/null 2>&1 && continue
+    [ -e "$f" ] || continue
+    rf_made "$f" || IV_BAD="$IV_BAD $f"
+done <<< "$IV_REFS"
+[ -z "$IV_BAD" ] || {
+    echo "FAIL  cleanin: EXECUTED by build.sh but NOT TRACKED —$IV_BAD"
+    echo "      A fresh clone cannot run these. Fix: git add <file>."
+    ok=0; }
 # Referenced, absent everywhere, and nothing creates them. Reported, not failed:
 # it is how an optional runtime signal legitimately looks, and failing on it would
 # be the gate inventing a defect. It is printed so it cannot accumulate unseen.
 [ -z "$RF_ORPHAN" ] || echo "      cleanin: NOTE — read_file'd, absent, and nothing creates them:$RF_ORPHAN"
-[ "$ok" -eq 1 ] && echo "PASS  cleanin: $CI_N incbin + $RF_N read_file targets all tracked or produced by the build; both extractors passed their own self-tests, so a zero here would mean the tree, not the scan; oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
+[ "$ok" -eq 1 ] && echo "PASS  cleanin: $CI_N incbin + $RF_N read_file + $IV_N executed targets all tracked or produced by the build; all three extractors passed their own self-tests, so a zero here would mean the tree, not the scan; oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
 
 say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
