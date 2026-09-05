@@ -5337,6 +5337,71 @@ GR_V="$(./logos_secd 2>/dev/null)"
 rm -f logos_secd logos_program.bin logos_source.la
 [ "$ok" -eq 1 ] && echo "PASS  item5: the grammar is FIRST-CLASS DATA (Scott-encoded, GDECOMP-able) and GPARSE agrees with the fuzzer-verified productions on BOTH the accept and reject sides; byte-identical host==VM. BOUND: associativity is invisible to a verdict-only differential" || exit 1
 
+say "LA claim index: every unbuilt item mapped to its paper counterpart"
+# Absent gate file is a FAIL, not a SKIP -- c58a133's ruling: "there is no
+# legitimate build in which a gate file is optional; a missing gate is a broken
+# checkout, not a configuration."
+if [ ! -x ./gate_claimindex.sh ]; then
+    echo "FAIL  claimindex: gate_claimindex.sh missing or not executable"; exit 1
+fi
+bash ./gate_claimindex.sh || exit 1
+
+say "LA arc item 5: the ROUND TRIP — build(GDECOMP P) equiv P (grammar_rt.la)"
+# ★ WHAT THIS CLOSES. grammar.la:68 named "the round-trip standard glyphdag.la
+# asserts: build(GDECOMP P) equiv P". glyphdag.la contains ZERO occurrences of
+# GDECOMP, "round-trip" or "build(" — verified against a control of 47 `glyph`
+# hits, so the file reads and the absence is real. The standard was named and
+# never asserted anywhere, and GDECOMP is a PRETTY-PRINTER: it renders a Scott
+# term to a string, and nothing read that string back. So "decomposable" held in
+# the sense that structure can be RENDERED, not that it can be RECOVERED.
+# grammar_rt.la supplies the missing half (GBUILD) and gates the identity.
+# Paper: Ledger row "Self-description (grammar as data)" [W], bound "full
+# self-parse open" — this strengthens the [W]'s "decomposable", it does not
+# close the bound, which remains L3's.
+#
+# ★ THE ORACLE IS NOT THE PRINTER. GDECOMP(GBUILD(s)) == s would be circular.
+# GEQ walks the Scott encoding constructor by constructor and never calls
+# GDECOMP, so the two sides meet only in the encoding.
+#
+# ★ THIS GATE'S FIRST VERSION FAILED ITS OWN RED PATH, twice, and the checks
+# below exist because of it rather than in anticipation of it:
+#   · GBUILD advanced past " | ", " ", "}", ":" and "eps" by ARITHMETIC. Drifting
+#     GDECOMP's separator from "|" to "!" left the round trip GREEN while printer
+#     and parser had silently diverged. Every literal is now CHECKED.
+#   · The control compared P_EXPR to P_APP, which differ in their FIRST child, so
+#     a GEQ ignoring every SECOND child still answered F and looked healthy. The
+#     discriminators now differ ONLY in the place each defect hides.
+# Planted-defect signatures, all three distinct and all re-verified:
+#   GBUILD mis-skip      -> RT row FTTFTTF, hand-built F
+#   GDECOMP separator    -> RT row FTTFTTF, hand-built F
+#   GEQ drops 2nd child  -> discriminators TTFFFFF instead of TFFFFFF
+ok=1
+cat grammar_rt.la grammar.la > .rt_run.la
+RTOUT="$(timeout 600 ./tiny_host .rt_run.la 2>&1)"
+printf '%s\n' "$RTOUT" | grep -qF "RT [primary app_tail app expr glyphdef exportdir module] = TTTTTTT" \
+    || { echo "FAIL  item5 round-trip: a production does not survive GBUILD(GDECOMP(P)) — got: $RTOUT"; ok=0; }
+# A term that is NOT one of the seven, so GBUILD cannot pass by recognising the
+# corpus it was written against.
+printf '%s\n' "$RTOUT" | grep -qF "RT hand-built (not a P_*) = T" \
+    || { echo "FAIL  item5 round-trip: the hand-built term does not round-trip — got: $RTOUT"; ok=0; }
+# ★ ASSERT THE DISCRIMINATORS, not just the round trip. Without this a GEQ that
+# returned TRUE unconditionally would make every row above green.
+printf '%s\n' "$RTOUT" | grep -qF "discriminators [same seq2 alt2 star kind eps diff] want TFFFFFF = TFFFFFF" \
+    || { echo "FAIL  item5 round-trip: GEQ no longer discriminates — a structural difference is being reported equal, which would make the round trip above vacuous — got: $RTOUT"; ok=0; }
+# host == VM, as item5 itself requires
+rm -f logos_secd logos_program.bin logos_source.la
+./tiny_host secd.la >/dev/null 2>&1
+cp .rt_run.la logos_source.la
+./tiny_host codegen.la >/dev/null 2>&1
+RTV="$(timeout 600 ./logos_secd 2>/dev/null)"
+[ "$RTOUT" = "$RTV" ] || { echo "FAIL  item5 round-trip: host != VM"; ok=0; }
+rm -f logos_secd logos_program.bin logos_source.la .rt_run.la
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  item5 round-trip: build(GDECOMP P) equiv P for all seven productions AND a hand-built term, under a STRUCTURAL equality that never calls GDECOMP; GBUILD verifies every literal rather than skipping it, so a printer/parser drift goes red; six discriminators prove GEQ can still say NO; byte-identical host==VM"
+else
+    exit 1
+fi
+
 say "Denotational COMPOSE: the meaning of a compound as a FUNCTION of its parts (denote.la)"
 # Closes the MORPHOLOGY gap the linguistic-closure audit found: the modes ⊗⊕▷⊂↻ combined
 # NAME-leaves (canon.la's κ over trees), but nothing composed the primitives' λ-MEANINGS —

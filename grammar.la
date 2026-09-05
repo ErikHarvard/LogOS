@@ -65,8 +65,19 @@ glyph GEPS  = la ft. la fn. la fq. la fa. la fs. la fe. fe
 
 glyph PROD = la lhs. la rhs. PAIR(lhs)(rhs)
 
-# ── GDECOMP — recover a production's structure as data (the round-trip standard
-#    glyphdag.la asserts: build(GDECOMP P) ≡ P) ──
+# ── GDECOMP — RENDER a production's structure as a string ──
+#    ★ THIS IS A PRETTY-PRINTER, NOT A DECOMPOSITION, and the comment that stood
+#    here said otherwise: it claimed "the round-trip standard glyphdag.la
+#    asserts: build(GDECOMP P) ≡ P". glyphdag.la contains ZERO occurrences of
+#    GDECOMP, "round-trip" or "build(" (control: 47 `glyph` hits, so the file
+#    reads and the absence is real). The standard was NAMED here and asserted
+#    NOWHERE, and there was no `build` at all — nothing ever read this string
+#    back. "Decomposable" therefore held only in the sense that structure can be
+#    RENDERED, not that it can be RECOVERED.
+#    The inverse now exists: grammar_rt.la's GBUILD, gated in build.sh under a
+#    STRUCTURAL equality (GEQ) that never calls GDECOMP, so the round trip is
+#    witnessed rather than asserted. If you change the syntax emitted below,
+#    that gate goes red — GBUILD verifies every literal instead of skipping it.
 glyph GDECOMP = Z(la self. la g.
     g (la t. concat("T:")(t))
       (la n. concat("N:")(n))
