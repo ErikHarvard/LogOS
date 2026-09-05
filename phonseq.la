@@ -196,13 +196,32 @@ glyph IS_CONT = la p. NOT(int_eq(CONT_AT(p))(sub(0)(1)))
 glyph IS_DIR = la p. NOT(OR3(IS_MC(p))(IS_CON(p))(IS_CONT(p)))
 glyph OR3 = la a. la b. la c. IF(a)(la _. TRUE)(la _. IF(b)(la _. TRUE)(la _. c))
 
-# ── MODE_OF: ordered so the two EXACT signatures are tested before the
-#    approximate ones, and ⊗ is the residue (see the bound in the header). ──
+# ── MODE_OF: the two EXACT signatures first, then the residue. ────────────
+# ★ THE COMMENT HERE USED TO SAY "⊗ is the residue". IT IS BACKWARDS, and the
+#   code proves it. IS_DIR is defined as NOT(IS_MC or IS_CON or IS_CONT), so
+#   reaching the fourth test means all three are false, which makes IS_DIR
+#   NECESSARILY TRUE. The fourth test therefore always succeeds and the fifth
+#   verdict was UNREACHABLE — a five-way classifier that could only ever emit
+#   four. ▷ was the residue; ⊗ was never a possible answer, so every ⊗ was
+#   reported as ▷ rather than going undetected.
+# ★ THE FOURTH VERDICT NOW SAYS WHAT IT KNOWS. It is not a ▷ detection: nothing
+#   here examines DIRP's actual rate-carried marker (3 amplitude levels, period
+#   384, tail only). It is the EXCLUSION of the other three, which leaves ▷ and
+#   ⊗ undetermined — so it is named for that rather than claiming a ▷ it never
+#   established. The unreachable branch is deleted rather than left as
+#   decoration; a branch that cannot be taken is not a case, it is a claim.
+# ★ ⊗ IS NOT SIGNATURE-FREE, contrary to the completion list. SYNP divides by
+#   (7 + (i/64) mod 2) across the WHOLE signal — 2 levels, period 128 — where
+#   DIRP modulates the TAIL ONLY at 3 levels, period 384. A discriminator is
+#   therefore constructible in principle. One attempt (head-alternation over
+#   64-sample windows) was MEASURED AND FAILED: ⊗=656 against ▷/⊕/↻/BEING all
+#   =1124, because those compounds share BEING's unmodulated head and the
+#   statistic was reading the phonym's own envelope, not the modulation.
+#   Recorded as a negative result; the separation remains open.
 glyph MODE_OF = la p.
     IF(IS_MC(p))  (la _. "MC")(la _.
     IF(IS_CON(p)) (la _. "CON")(la _.
-    IF(IS_CONT(p))(la _. "CONT")(la _.
-    IF(IS_DIR(p)) (la _. "DIR")(la _. "SYN"))))
+    IF(IS_CONT(p))(la _. "CONT")(la _. "DIR|SYN")))
 
 # ── PARSE: read the mode, split at its own boundary, recurse. At a leaf
 #    (no temporal signature and a single recognisable nucleus) hand off to
@@ -266,7 +285,7 @@ glyph MODEC = la p.
     IF(str_eq(MODE_OF(p))("MC"))  (la _. "M")(la _.
     IF(str_eq(MODE_OF(p))("CON")) (la _. "C")(la _.
     IF(str_eq(MODE_OF(p))("CONT"))(la _. "N")(la _.
-    IF(str_eq(MODE_OF(p))("DIR")) (la _. "D")(la _. "S"))))
+    IF(str_eq(MODE_OF(p))("DIR|SYN"))(la _. "U")(la _. "?"))))
 glyph PC = la nm. MODEC(PHONYM(PRIM(nm)))
 glyph PRIMROW =
     concat(PC("BEING"))(concat(PC("RECOGNITION"))(concat(PC("LOVE"))(

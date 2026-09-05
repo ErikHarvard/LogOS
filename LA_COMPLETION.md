@@ -605,11 +605,63 @@ registers. `trimono.la` now gates all three. What remains:
     glyphic round trip is untouched, so the honest statement is not "the
     trimodal identity fails" but that the phonetic register carries strictly
     less recoverable structure, on a named input class.
-- `[ ]` **⊕-associativity is phonetically invisible** — identical PCM; no parser
-  can separate the bracketings. Needs a bracketing marker or a declared
-  equivalence.
-- `[ ]` **⊗ has no temporal signature either** — indistinguishable from ▷ in the
-  decoder, and loses everything below it.
+- `[!]` **⊕-associativity is phonetically invisible — MEASURED 2026-09-05, and
+  the "declared equivalence" option is FORECLOSED BY THE PAPER. NEEDS ERIK.**
+  The claim of identical PCM is CORRECT, and exactly so:
+
+      ⊕(⊕(BEING,VOID),FORM) vs ⊕(BEING,⊕(VOID,FORM))
+      lenL=21040  lenR=21040  firstdiff=-1     <- NOT ONE SAMPLE DIFFERS
+
+  ★ It is not a detection difficulty; it is a STRUCTURAL IDENTITY. `CONP` is
+  `A ++ 960 zeros ++ B`, so both bracketings render to the same sequence
+  `A ++ Z ++ B ++ Z ++ C`. Concatenation with a fixed separator is associative,
+  so no detector could ever separate them: there is one object, not two.
+
+  ★★ **AND THE ALGEBRA SAYS THEY ARE DIFFERENT CONCEPTS.** The paper:
+  *"G IS the free magma on nine generators … **non-associative because grouping
+  IS etymology**"*, and *"(a⊗b)⊗c and a⊗(b⊗c) record different derivations and
+  therefore are different concepts. **An associative algebra would erase the
+  etymology the seal exists to carry.**"* A free magma is non-associative in ALL
+  its operations, not only ⊗.
+
+  So the phonetic register **collapses a distinction the paper calls
+  meaning-bearing** — and this item's own second option, "a declared
+  equivalence", would contradict §III and the `Non-associativity` Ledger row.
+  Two options remain, and the choice is Erik's because both are costly:
+  · **a bracketing marker in `CONP`** — changes the phonology and therefore the
+    gated WAV outputs (a ▷ compound is already in the gated set), or
+  · **witness it as a bound** — but a far graver one than ⊕/VOID: not one
+    ambiguous primitive, but an entire structural distinction invisible in the
+    register, on every ⊕ compound of depth ≥ 2.
+  Unlike ⊕/VOID this is **not obviously irreducible** — a depth cue is
+  constructible — so it should not be closed by witnessing without trying.
+- `[~]` **⊗ vs ▷ — the premise was WRONG and a DEAD BRANCH was the real defect.
+  Half fixed 2026-09-05.** The item said "⊗ has no temporal signature either".
+  ★ **It has one.** Read off the synthesis: `SYNP` divides by `(7 + (i/64) mod 2)`
+  across the WHOLE signal — 2 levels, period 128 — where `DIRP` modulates the
+  TAIL ONLY at 3 levels, period 384. Different period, different level count.
+
+  ★★ **THE REAL DEFECT, provable without any detector: `MODE_OF`'s fifth verdict
+  was UNREACHABLE.** `IS_DIR := NOT(IS_MC or IS_CON or IS_CONT)` and it is tested
+  fourth, so reaching it means all three are false, which makes it *necessarily*
+  true. The fourth test always succeeded and `"SYN"` could never be emitted — a
+  five-way classifier that could emit four. **So ⊗ was never undetected; it was
+  always REPORTED AS ▷.** The header comment said "⊗ is the residue"; the code
+  made ▷ the residue. Backwards.
+
+  **FIXED:** the unreachable branch is deleted and the fourth verdict renamed
+  `DIR|SYN` — it is not a ▷ detection (nothing examines `DIRP`'s rate marker),
+  it is the exclusion of three others, which leaves ▷ and ⊗ undetermined. Gated:
+  the primitive row moves `DDDDDCDDD` → `UUUUUCUUU`. Confusion matrix unchanged
+  (`ROW` calls `IS_DIR` directly).
+
+  ★ **RESIDUE, and a NEGATIVE RESULT recorded rather than buried:** separating ⊗
+  from ▷ is still not done. One discriminator was designed from the synthesis
+  (head-alternation over 64-sample windows, since `SYNP` modulates the head and
+  `DIRP` does not) and **MEASURED AS FAILING**: ⊗=656 against ▷/⊕/↻/BEING all
+  =1124 — those compounds share BEING's unmodulated head, so the statistic was
+  reading the phonym's own envelope, not the modulation. The separation is
+  constructible in principle and remains open in fact.
 - `[✓]` **A phonetic SEAL — BUILT AND GATED (`phonseal.la`).** ★ THIS ENTRY WAS
   STALE, and it was found by being cited: it was quoted as an open item, and the
   module it asks for already existed. `phonseal.la:53` defines

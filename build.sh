@@ -4758,13 +4758,20 @@ esac
 #   CONSEQUENCE, stated rather than hidden: any compound whose child is VOID is
 #   ambiguous to the TEMPORAL decoder — ⊕(BEING,VOID) parses as ⊕(BEING,⊕(⊥,⊥)).
 #   The written register is unaffected; this bounds the phonetic decoder only.
-# ★ RED PATH RUN, not argued: forcing IS_CON false makes the row DDDDDDDDD and
+# ★ D BECAME U THE SAME DAY, and the letter change is a correction, not churn.
+#   The fourth verdict used to read "DIR", claiming a ▷ DETECTION. It was never
+#   one: IS_DIR is NOT(IS_MC or IS_CON or IS_CONT), so it only EXCLUDES three
+#   others and leaves ▷ and ⊗ undetermined. Worse, that made MODE_OF's fifth
+#   verdict "SYN" UNREACHABLE — a five-way classifier that could emit four, so
+#   every ⊗ was reported as ▷ rather than going undetected. The branch is deleted
+#   and the residue is named "DIR|SYN" (U) for what it actually knows.
+# ★ RED PATH RUN, not argued: forcing IS_CON false makes the row UUUUUUUUU and
 #   this gate FAIL. So if the bound ever MOVES — VOID stops reading C, or any
 #   other primitive stops reading D — it is caught, and it is to be EXAMINED, not
 #   absorbed by editing this string.
 case "$PSQOUT" in
-  *"primitives[being,recog,love,self,rel,void,becoming,form,depth] DDDDDCDDD"*) : ;;
-  *) echo "FAIL  phonseq: the primitive row changed — 8 of 9 primitives must read D (no temporal mode) and VOID must read C (the witnessed acoustic bound). A change here means the bound moved: examine it, do not absorb it — got: $PSQOUT"; ok=0 ;;
+  *"primitives[being,recog,love,self,rel,void,becoming,form,depth] UUUUUCUUU"*) : ;;
+  *) echo "FAIL  phonseq: the primitive row changed — 8 of 9 primitives must read U (undetermined between ▷ and ⊗, which is all the detector knows) and VOID must read C (the witnessed acoustic bound). A change here means the bound moved: examine it, do not absorb it — got: $PSQOUT"; ok=0 ;;
 esac
 TACOUT="$(timeout 2400 ./tiny_host tactile.la 2>&1 || true)"
 # ★ W4=F is asserted deliberately: it is the LIMIT (⊗ is spectral-only and
