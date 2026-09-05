@@ -160,40 +160,53 @@ done <<< "$RF_REFS"
     echo "      A fresh clone will not have these, so the committed state does not build."
     echo "      Fix: git add -f <file>, AND negate it in .gitignore (!/<file>)."
     ok=0; }
-# ── ARM 3: files the build EXECUTES. ──────────────────────────────────────
-# ★ THE THIRD IDIOM OF THE SAME CLASS. Arm 1 reads incbin, arm 2 reads
-# read_file — and both are blind to `./tiny_host X.la`, where the reference is a
-# SHELL INVOCATION. That blindness was not hypothetical: when arm 2 landed, this
-# very build.sh carried an uncommitted gate invoking ./tiny_host phonassoc.la
-# with phonassoc.la UNTRACKED, and neither existing arm could see it. A clone
-# would run a gate whose subject it does not have.
-# ⇒ The lesson this file keeps re-learning: A SWEEP SEARCHES AN IDIOM, NOT A
-# CLASS. Each new way of naming a dependency needs its own reader, and the way
-# to find the next one is to ask how ELSE a file could be named — not to widen
-# the last pattern until it looks general.
-IV_PAT='(?:\./tiny_host|bash|sh|python3|\./)\s+\K(?:kernel/)?[A-Za-z0-9_.][A-Za-z0-9_./-]*\.(?:la|sh|py)'
-IV_SELF="$(printf '%s\n' './tiny_host control_target.la' | grep -hoP "$IV_PAT")"
-[ "$IV_SELF" = "control_target.la" ] \
-  || { echo "FAIL  cleanin: the invocation extractor failed its own self-test (got [$IV_SELF], expected control_target.la) — the SCAN is broken, not the tree"; ok=0; }
-IV_REFS="$(grep -v '^[[:space:]]*#' build.sh | grep -hoP "$IV_PAT" | sed 's#^\./##' | sort -u)"
-IV_BAD=""; IV_N=0
+# ── ARM 3: every path build.sh NAMES. ─────────────────────────────────────
+# ★ THIS REPLACED A NARROWER ARM, BY MEASUREMENT. The first version of this arm
+# read only EXECUTED files (`./tiny_host X.la`, `bash X.sh`). It was written
+# because arms 1-2 could not see a shell invocation — true — and it worked. But
+# it still missed asm_test_xsize.asm, a REAL past break (untracked 15 days,
+# referenced as `cp asm_test_xsize.asm asm_in.asm` and `nasm -f bin ... X`):
+# a data file passed as a command ARGUMENT is neither incbin'd, nor read_file'd,
+# nor executed. Tested against a clean checkout of 3164274 with incdata.bin
+# force-tracked to isolate it, the three-arm gate returned PASS, exit 0.
+# ★ IT WENT RED ON THAT TREE FOR THE WRONG DEFECT, which is why the isolation
+# mattered: a gate that fails for a reason other than the one you are testing
+# looks exactly like coverage.
+# ★ AND THE WIDER ARM STRICTLY SUBSUMES THE NARROWER: of the 151 executed paths,
+# ZERO are outside the 378 named ones. Keeping both would have been two checks
+# over one class, free to drift apart — the thing this file already had to
+# reconcile once today. So the narrow arm was REMOVED, not stacked. Its better
+# diagnostic survives below: an executed file still says so, because "a clone
+# cannot RUN this" is more actionable than "a clone lacks this".
+AR_PAT='[A-Za-z0-9_.][A-Za-z0-9_./-]*\.(?:la|sh|py|c|asm|ld|bin|txt|tex|md)'
+AR_SELF="$(printf '%s\n' 'cp control_target.asm asm_in.asm' | grep -hoP "$AR_PAT" | head -1)"
+[ "$AR_SELF" = "control_target.asm" ] \
+  || { echo "FAIL  cleanin: the path extractor failed its own self-test (got [$AR_SELF], expected control_target.asm) — the SCAN is broken, not the tree"; ok=0; }
+AR_EXEC='(?:\./tiny_host|bash|sh|python3|\./)\s+\K(?:kernel/)?[A-Za-z0-9_.][A-Za-z0-9_./-]*\.(?:la|sh|py)'
+AR_RUN="$(grep -v '^[[:space:]]*#' build.sh | grep -hoP "$AR_EXEC" | sed 's#^\./##' | sort -u)"
+AR_REFS="$(grep -v '^[[:space:]]*#' build.sh | grep -hoP "$AR_PAT" | sed 's#^\./##' | sort -u)"
+AR_BAD=""; AR_RUNBAD=""; AR_N=0
 while IFS= read -r f; do
     [ -n "$f" ] || continue
     case "$f" in /*) continue ;; esac
-    IV_N=$((IV_N+1))
+    AR_N=$((AR_N+1))
     git ls-files --error-unmatch "$f" >/dev/null 2>&1 && continue
-    [ -e "$f" ] || continue
-    rf_made "$f" || IV_BAD="$IV_BAD $f"
-done <<< "$IV_REFS"
-[ -z "$IV_BAD" ] || {
-    echo "FAIL  cleanin: EXECUTED by build.sh but NOT TRACKED —$IV_BAD"
-    echo "      A fresh clone cannot run these. Fix: git add <file>."
-    ok=0; }
+    [ -e "$f" ] || continue          # absent everywhere: not a shipped input
+    rf_made "$f" && continue         # produced by the build; a clone rebuilds it
+    if printf '%s\n' "$AR_RUN" | grep -qx "$f"; then AR_RUNBAD="$AR_RUNBAD $f"; else AR_BAD="$AR_BAD $f"; fi
+done <<< "$AR_REFS"
+[ -z "$AR_RUNBAD" ] || {
+    echo "FAIL  cleanin: EXECUTED by build.sh but NOT TRACKED —$AR_RUNBAD"
+    echo "      A fresh clone cannot RUN these. Fix: git add <file>."; ok=0; }
+[ -z "$AR_BAD" ] || {
+    echo "FAIL  cleanin: NAMED by build.sh, present here, but NOT TRACKED —$AR_BAD"
+    echo "      A fresh clone will not have these. Fix: git add <file> (and negate in"
+    echo "      .gitignore if a blanket rule hides it)."; ok=0; }
 # Referenced, absent everywhere, and nothing creates them. Reported, not failed:
 # it is how an optional runtime signal legitimately looks, and failing on it would
 # be the gate inventing a defect. It is printed so it cannot accumulate unseen.
 [ -z "$RF_ORPHAN" ] || echo "      cleanin: NOTE — read_file'd, absent, and nothing creates them:$RF_ORPHAN"
-[ "$ok" -eq 1 ] && echo "PASS  cleanin: $CI_N incbin + $RF_N read_file + $IV_N executed targets all tracked or produced by the build; all three extractors passed their own self-tests, so a zero here would mean the tree, not the scan; oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
+[ "$ok" -eq 1 ] && echo "PASS  cleanin: $CI_N incbin + $RF_N read_file + $AR_N build.sh-named paths all tracked or produced by the build; all three extractors passed their own self-tests, so a zero here would mean the tree, not the scan; oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
 
 say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
