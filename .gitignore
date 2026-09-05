@@ -111,6 +111,14 @@ nasm_ref.bin
 # native_codegen3.la, so it must track the source — regenerate it after any
 /native_codegen3_out
 !/native_codegen3_selfhost.bin
+# INPUTS, not outputs — the blanket `*.bin` above swallows them. Both are read
+# by the build and neither is produced by it, so without these negations a
+# clone silently lacks them and the gate that needs them fails for a reason
+# its message does not name.
+#   incdata.bin      — `incbin "incdata.bin"` in asm_test_sect.asm. build.sh
+#                      never mentions it, which is why a build.sh-only scan
+#                      could not see it; CLEANCO_FULL found it by running.
+!/incdata.bin
 # str_at_fixture.bin is a build INPUT, not an output: build.sh hard-requires it
 # and every engine reads it as the subject of the str_at gate. Without this
 # negation *.bin hides it, and the gate is green here and red in every clone.
