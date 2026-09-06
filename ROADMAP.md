@@ -975,6 +975,38 @@ hardware-level work and a mature network. Honestly years out.*
       is now under active construction, not deferred.
 - [ ] Network sovereignty / AegisNet — torrent-native, self-distributing,
       layered-encryption mix network
+- [ ] **Sovereign communications — SMS/voice over a controlled number, IPFS-backed,
+      with a companion device.** *Added 2026-09-06.* A LogOS machine sends and
+      receives SMS and calls through a programmable number (a VoIP endpoint, no
+      SIM), surfaced in the OS the way a Mac surfaces an iPhone's calls; a
+      companion app on a second device shares the same distributed layer, so
+      messages and state move between them with no central server.
+      **Sits above AegisNet**, on the NIC send/receive stack (HAL.5) and on
+      AletheiaFS for persistence. Shape: LogOS networking → encrypted tunnel →
+      provider API → PSTN.
+      **Prerequisites, none of them met:** TCP/IP does not exist (HAL.5b sent one
+      ARP); AegisNet does not exist; AletheiaFS does not exist. This is not
+      startable and is filed to be *tracked*, not scheduled.
+      **★ THE SEAM, and it must be stated in the item rather than discovered
+      later:** a programmable number is rented from a commercial carrier. That
+      carrier sees the metadata — who called whom, when, from where — and can be
+      compelled to produce it. This is a *sovereignty seam of the same kind as
+      the tiny_host.c seed and the hardware floor*: the content can be sealed,
+      the transport cannot, because the PSTN is not ours and cannot be brought
+      inside the closure. Filing it as "sovereign communications" without that
+      line would be b_τ ≢ f_τ — the name claiming more than the thing does.
+      ★ **RULED 2026-09-06 (Erik): the name stays, and the seam stays with it.**
+      Not a compromise between the two — the pairing is the discipline. A claim
+      carrying its named bound is not an overclaim; that is what the paper's
+      `[B]` tag does, and the ledger row *"Self-compilation [W] seed bound
+      stated [B]"* is the precedent: self-compilation is not renamed because of
+      `tiny_host.c`, the seed is stated beside it. Sovereign communications is
+      sovereign in the same qualified way, and the qualification is load-bearing
+      rather than decorative. **The obligation this creates:** the seam must
+      travel with the name everywhere the feature is described — module header,
+      gate name, and any user-facing text — never the name alone. A later
+      document that says "sovereign communications" without the carrier line has
+      dropped the bound, and that is the defect to catch, not the name itself.
 - [ ] Encryption & meta-encryption layers (nested/onion routing, metadata privacy)
 - [ ] ARM / RISC-V ports — thin HAL seam, universal autological core
 ### Recovered by a Fable-5 sweep — *added 2026-08-21*
