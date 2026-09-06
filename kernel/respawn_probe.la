@@ -1,0 +1,18 @@
+# SCOPE PROBE (not a gate, not committed as one): does a respawn loop exhaust
+# MAXTASK? Each spawned task prints its number and RETURNS (dies). The
+# supervisor yields so the task actually runs, then spawns another.
+# If dead TCB slots were reclaimed this would run to 12. Today it should halt
+# at the 8th spawn with "native: spawn: too many tasks (MAXTASK)".
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SEQ = la a. la b. b
+
+glyph SERVICE = la n. la _. print(concat("svc")(int_to_str(n)))
+
+glyph MAIN =
+  (Z(la self. la i.
+     IF(lt(i)(12))
+       (la _. SEQ(print(concat("spawn")(int_to_str(i))))(
+              SEQ(spawn(SERVICE(i)))(
+              SEQ(yield("!"))(self(add(i)(1))))))
+       (la _. print("ALL-12-SPAWNED"))))(0)
