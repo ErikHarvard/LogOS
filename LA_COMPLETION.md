@@ -703,6 +703,19 @@ registers. `trimono.la` now gates all three. What remains:
   symmetric partner of `sglyph`/`phonseq`, and the strongest available
   cross-substrate invariance test: sound → decode → κ → re-render → decode → κ.
 
+- `[ ]` **★ The meta-referent has no sigil** (white paper v18 §"What IS not
+  claimed", the only paper debt tracked in NO list — not here, not
+  `LA_CLAIM_INDEX.md`, not the build queue). The paper argues the dyad is the
+  language's name for itself and the only glyph surviving self-application
+  (`Dyad(Dyad) ≡ Dyad`), then states plainly: *"No sigil for the meta-referent
+  has been rendered, no gate checks it… constructing it under gates IS owed."*
+  Keep it distinct from **meta-sigil**, which this project already uses for a
+  different object (the visual form of a glyph about visual forms, §V) — the
+  paper names that collision itself. Gate: the rendered form is injective
+  against the whole catalogue AND `SIGIL(Dyad(Dyad))` is byte-identical to
+  `SIGIL(Dyad)`, the visual witness of its autology. Red path: render it as any
+  existing catalogue entry and the injectivity gate must fail.
+
 ### Cross-register
 - `[✓]` `trimono.la` — one gate, three registers, three rows (injective /
   monosemic / directed).
@@ -722,7 +735,7 @@ registers. `trimono.la` now gates all three. What remains:
 - `[✓]` **The Core Lexicon** — ~80 concepts (LA.tex :5049–5429). Currently **8**.  **DONE 2026-08-23** — `lexicon.la`: 59 content concepts, all derived; 57/59 phonyms match the codex's printed IPA (2 diverge, vowel elision). Gated.
   Gate: every entry canonicalises, renders in all modalities, and no two share a
   κ-image. **Would go RED today on C9's Bad/Grief.** *Blocked on C9 + C10.*
-- `[✓]` **The Operative Grammar, rules (i)–(x)** — predication `X▷Y`, negation,  **DONE 2026-08-23** — `grammar.la`: 20 closed-class categories + rules (i)-(x); each rule shown to DISCRIMINATE. Gated.
+- `[✓]` **The Operative Grammar, rules (i)–(x)** — predication `X▷Y`, negation,  **DONE 2026-08-23** — `opgrammar.la`: **22** closed-class categories + rules (i)-(x); each rule shown to DISCRIMINATE. Gated. ★ **CITATION CORRECTED 2026-09-05:** this line read `grammar.la`, which is the **data grammar** (`GT`/`GN`/`GSEQ`/`GALT`/`GSTAR`/`GEPS`, used to parse LA source) — a different module entirely, so a reader following the reference landed in the wrong file. The Operative Grammar is `opgrammar.la`, whose own header cites `LA.tex :5150–5222` (the Grammatical Glyphs table + Sentence Formation Rules). The count was also wrong: **22**, per that header, not 20.
   the question particle, tense, modality, quantification, imperative, mood
   marking. None built. *Blocked on the lexicon.*
 - `[✓]` **`discourse.la`** — structure above the sentence: per-turn origo shift,  **DONE 2026-08-23** — `discourse.la`: origo shift + character/content + anaphora + yes/no; red path = the unshifted reading must be wrong. Gated.
@@ -745,6 +758,18 @@ registers. `trimono.la` now gates all three. What remains:
   wiring it to the real capability layer makes felicity enforceable.
 
 ---
+
+- `[ ]` **★ No gate checks ontomorphology, and the inflectional census is owed**
+  (white paper v18, §on ontopragmasemantics). The paper's words: *"No gate
+  checks ontomorphology as such, and the census of which operator combinations
+  constitute this language's inflectional system IS owed to the build."* The
+  claim being paid for is that use IS meaning — that a form's shape and its
+  sense are one object at the pragmatic resolution. Nothing asserts it. Do: emit
+  the full operator-combination census from the DAG at build time, and gate that
+  every combination the census admits has a κ-image distinct from every other.
+  Red path: admit two combinations that canonicalise the same and the gate must
+  go red. Cheap, and it converts a paper assertion into a measurement — the same
+  move `0.2 Generated lexicon appendix` makes in the build queue.
 
 ## TIER 4 — SELF-RELATION
 
@@ -838,6 +863,18 @@ registers. `trimono.la` now gates all three. What remains:
 - `[✓]` ⊗ non-commutative across five normalisers and two renderers.
 
 ---
+
+- `[ ]` **★ Self-invocation — the paper calls it the deepest gap.** In the
+  self-relation table (v18), four rows: self-compilation `[W]`, self-description
+  `[W]`, self-translation `[B]`, and **self-invocation — *"begins its own
+  recursion [A] not built; the deepest gap."*** The paper further states that the
+  seed bound and self-invocation are ONE boundary at two levels, which is why it
+  sits here and not in Tier 5: the seed bound is named as a wall, but
+  self-invocation is not — it is unbuilt, and the paper does not say it is
+  unbuildable. Scope it before building: what would it mean for the language to
+  begin its own recursion rather than be started, and what gate could go red if
+  it did not? Spec first — this is the one item on the list where writing code
+  before the criterion exists would produce something unfalsifiable.
 
 ## TIER 5 — BEYOND THE LANGUAGE (named, not chased)
 
