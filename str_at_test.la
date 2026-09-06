@@ -1,0 +1,61 @@
+# str_at_test.la — the differential oracle for the str_at primitive.
+#
+# str_at(s)(i) is not checked against a table of pasted bytes. It is checked
+# against WALK, the expression it replaces: str_head after i str_tails, built
+# from primitives that all PREDATE str_at. The expectation is therefore
+# derived from an independent implementation, not captured from a run.
+#
+# The output carries its own proof that the comparison can still say NO:
+# CTRL compares the reconstruction against a string known to differ and must
+# report BAD. A str_eq stuck at TRUE turns CTRL green and fails the gate.
+
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+# The subject: binary, not text. A NUL at index 7 and byte 255 at the end —
+# a str_at that stops at a NUL, or that sign-extends the byte, dies here.
+#
+# It is READ, not built with chr, because chr is on the C host and the native
+# VM but NOT on eval.la / RUN_BYTES / RUN_SM (a separate, pre-existing engine
+# divergence). read_file is on all five, so the fixture keeps every engine on
+# the same binary bytes instead of testing three of them on ASCII only.
+#
+# ★ NLEN is printed as the FIRST field and the gate pins it to 15, so this
+# test cannot pass without having read 15 real bytes. Two different failures
+# make that pin necessary, and they are not the same failure:
+#   - a TRUNCATED or ALTERED fixture: tiny_host's read_file returns it
+#     happily, and a shorter subject would still satisfy every comparison
+#     below, since RECON and WALK would simply agree on less.
+#   - a MISSING fixture ON THE METAL, where read_file returns "" silently.
+#     ⚠ tiny_host does NOT do this — it prints "read_file: cannot open ..."
+#     and exits 1. An earlier version of this comment claimed the silent ""
+#     for the host; that was wrong for the engine it named. The pin is still
+#     right, but a loud host halt is what actually catches the missing file
+#     here, and .gitignore is what nearly made it missing (see the gate).
+glyph SRC  = read_file("str_at_fixture.bin")
+glyph NLEN = str_to_int(str_len(SRC))
+
+# THE ORACLE. Only str_head / str_tail / sub / int_eq / lt — no str_at.
+glyph WALK = Z(la self. la s. la i.
+    IF(lt(i)(0))(la _. "")(la _.
+    IF(int_eq(i)(0))(la _. str_head(s))(la _.
+      self(str_tail(s))(sub(i)(1)))))
+
+# Rebuild SRC one indexed byte at a time; must come back byte-identical.
+glyph RECON = Z(la self. la i.
+    IF(int_eq(i)(NLEN))(la _. "")(la _.
+      concat(str_at(SRC)(i))(self(add(i)(1)))))
+
+# Scan i from -2 to NLEN+2: below zero, in range, and past the end.
+glyph SCAN = Z(la self. la i.
+    IF(lt(add(NLEN)(2))(i))(la _. "MATCH")(la _.
+    IF(str_eq(str_at(SRC)(i))(WALK(SRC)(i)))(la _. self(add(i)(1)))(la _.
+      concat("MISMATCH@")(int_to_str(i)))))
+
+glyph VER  = IF(str_eq(RECON(0))(SRC))(la _. "RECON_OK")(la _. "RECON_BAD")
+glyph CTRL = IF(str_eq(RECON(0))(concat(SRC)("x")))(la _. "CTRL_OK")(la _. "CTRL_BAD")
+
+glyph MAIN = print(concat(concat(int_to_str(NLEN))(concat("|")(VER)))(
+                   concat(concat("|")(CTRL))(concat("|")(SCAN(sub(0)(2))))))

@@ -504,6 +504,14 @@ static int is_builtin(const char *name) {
         || strcmp(name, "str_tail") == 0 || strcmp(name, "str_eq") == 0
         || strcmp(name, "chr") == 0 || strcmp(name, "ord") == 0
         || strcmp(name, "write_exec") == 0 || strcmp(name, "str_len") == 0
+        /* str_at(s)(i): the i-th byte of s as a one-byte string, O(1). LA had
+         * no indexed access to anything, so reaching byte i cost i reductions
+         * -- which is why asm.la is O(passes*n^2) and secd.asm takes 13+ min.
+         * This adds no ontological primitive: a string already CARRIES its
+         * length (that is why str_len is O(1)), so indexing is recognition
+         * over a form the host already holds, exactly as str_len is. It is
+         * the Stage-0 move -- deepen the host's primitives -- not a tenth glyph. */
+        || strcmp(name, "str_at") == 0
         /* native integers (Form g_8, tau_Q): arithmetic is Ontodirection (>),
          * an operator acting upon operands. */
         || strcmp(name, "add") == 0 || strcmp(name, "sub") == 0
@@ -511,6 +519,12 @@ static int is_builtin(const char *name) {
         || strcmp(name, "mod") == 0 || strcmp(name, "lt") == 0
         || strcmp(name, "int_eq") == 0
         || strcmp(name, "int_to_str") == 0 || strcmp(name, "str_to_int") == 0
+        /* bitwise: the operations a cipher needs. Without these, crypto can
+         * only be emulated via div/mod at ~16 h/MiB, which is why every driver
+         * in the tree is written shift-free. */
+        || strcmp(name, "band") == 0 || strcmp(name, "bor") == 0
+        || strcmp(name, "bxor") == 0 || strcmp(name, "bshl") == 0
+        || strcmp(name, "bshr") == 0 || strcmp(name, "bnot") == 0
         /* typeof: recognize a value's Form (g_8) as a string tag. The one
          * host primitive the type system needs; all type predicates derive
          * from it in Lingua Adamica. */
@@ -520,14 +534,19 @@ static int is_builtin(const char *name) {
         || strcmp(name, "error") == 0;
 }
 
-/* The seven binary integer operations are curried like concat/str_eq: the
- * first application captures arg1 and returns a partial; the second performs
- * the operation. This predicate marks them. */
+/* The binary integer operations are curried like concat/str_eq: the first
+ * application captures arg1 and returns a partial; the second performs the
+ * operation. This predicate marks them. (No count is stated here on purpose --
+ * a hardcoded number is a claim nothing keeps true.) `bnot` is deliberately
+ * ABSENT: it is unary and is applied directly, like int_to_str. */
 static int is_int_binop(const char *name) {
     return strcmp(name, "add") == 0 || strcmp(name, "sub") == 0
         || strcmp(name, "mul") == 0 || strcmp(name, "div") == 0
         || strcmp(name, "mod") == 0 || strcmp(name, "lt") == 0
-        || strcmp(name, "int_eq") == 0;
+        || strcmp(name, "int_eq") == 0
+        || strcmp(name, "band") == 0 || strcmp(name, "bor") == 0
+        || strcmp(name, "bxor") == 0 || strcmp(name, "bshl") == 0
+        || strcmp(name, "bshr") == 0;
 }
 
 /* The generation of the currently running host, read from its own filename.
@@ -647,6 +666,29 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         else
             return mklam("t", mklam("f", mkvar("f")));  /* FALSE */
     }
+    if (strcmp(name, "str_at") == 0) {
+        /* str_at(s)(i) -> the i-th byte as a one-byte string; "" when i is out
+         * of range. TOTAL on the out-of-range case, and deliberately so:
+         *   i >= 0  -- str_at(s)(i) EQUALS str_head(str_tail^i(s)), including
+         *              past the end, where str_head("")/str_tail("") are "".
+         *              That equality is DERIVED, and it is what the gate
+         *              checks: the oracle is the walk this replaces, not a
+         *              table of pasted values.
+         *   i < 0   -- "" BY FIAT. A walk with a negative count has no
+         *              meaning, so this case is a choice, not a derivation.
+         *              It is the choice that keeps the string family total,
+         *              as str_head and str_tail already are on "".
+         * A type error still halts loudly, as every other string builtin does. */
+        if (arg1->t != N_STR) {
+            fprintf(stderr, "str_at: first argument is not a string\n"); exit(1);
+        }
+        if (arg2->t != N_INT) {
+            fprintf(stderr, "str_at: index is not an integer\n"); exit(1);
+        }
+        long i = arg2->i;
+        if (i < 0 || (unsigned long)i >= (unsigned long)arg1->len) return mkstrn("", 0);
+        return mkstrn(arg1->s + i, 1);
+    }
     if (is_int_binop(name)) {
         if (arg1->t != N_INT || arg2->t != N_INT) {
             fprintf(stderr, "%s: arguments must be integers\n", name); exit(1);
@@ -662,6 +704,24 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
             if (y == 0) { fprintf(stderr, "div: division by zero\n"); exit(1); }
             if (x == LONG_MIN && y == -1) { fprintf(stderr, "div: overflow (LONG_MIN / -1)\n"); exit(1); }
             return mkint(x / y);
+        }
+        if (strcmp(name, "band") == 0)
+            return mkint((long)((unsigned long)x & (unsigned long)y));
+        if (strcmp(name, "bor") == 0)
+            return mkint((long)((unsigned long)x | (unsigned long)y));
+        if (strcmp(name, "bxor") == 0)
+            return mkint((long)((unsigned long)x ^ (unsigned long)y));
+        /* A shift count outside 0..63 yields 0. C leaves it undefined, x86
+         * masks the count to 6 bits and ARM does not, so an unchecked shift
+         * would make the engines disagree on a case no test covers. */
+        if (strcmp(name, "bshl") == 0) {
+            if (y < 0 || y > 63) return mkint(0);
+            return mkint((long)((unsigned long)x << (unsigned long)y));
+        }
+        /* LOGICAL shift right -- zero-fill, never arithmetic. */
+        if (strcmp(name, "bshr") == 0) {
+            if (y < 0 || y > 63) return mkint(0);
+            return mkint((long)((unsigned long)x >> (unsigned long)y));
         }
         if (strcmp(name, "mod") == 0) {
             if (y == 0) { fprintf(stderr, "mod: modulo by zero\n"); exit(1); }
@@ -732,6 +792,11 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         if (v->t != N_STR) { fprintf(stderr, "str_eq: first argument is not a string\n"); exit(1); }
         return mkpartial("str_eq", v);
     }
+    if (strcmp(name, "str_at") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_STR) { fprintf(stderr, "str_at: first argument is not a string\n"); exit(1); }
+        return mkpartial("str_at", v);
+    }
     if (strcmp(name, "chr") == 0) {
         /* decimal-string -> one byte. The way a .la program spells an arbitrary
          * byte (0..255), including NUL, so it can assemble binary like ELF. */
@@ -765,6 +830,11 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         Node *v = eval(argexpr);
         if (v->t != N_INT) { fprintf(stderr, "%s: first argument is not an integer\n", name); exit(1); }
         return mkpartial(name, v);
+    }
+    if (strcmp(name, "bnot") == 0) {
+        Node *v = eval(argexpr);
+        if (v->t != N_INT) { fprintf(stderr, "bnot: argument is not an integer\n"); exit(1); }
+        return mkint((long)(~(unsigned long)v->i));
     }
     if (strcmp(name, "int_to_str") == 0) {
         /* native integer -> its decimal string (for printing / observability) */

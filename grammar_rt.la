@@ -1,0 +1,147 @@
+# ════════════════════════════════════════════════════════════════════
+#  grammar_rt.la — ITEM 5, THE ROUND TRIP: build(GDECOMP P) ≡ P
+#
+#  ── WHAT WAS ACTUALLY MISSING ───────────────────────────────────────
+#  grammar.la:68 says the round-trip standard is "glyphdag.la asserts:
+#  build(GDECOMP P) ≡ P". Measured: glyphdag.la contains ZERO occurrences of
+#  GDECOMP, "round-trip" or "build(" — against a control of 47 `glyph` hits, so
+#  the file reads and the absence is real. GDECOMP appears in exactly two files,
+#  grammar.la and build.sh.
+#
+#  ★ AND GDECOMP IS NOT A DECOMPOSITION. It is a PRETTY-PRINTER: it maps a
+#  Scott-encoded production to a STRING, "[(T:la (T:ident (T:dot N:expr))) |
+#  N:app]". Nothing ever read that string back, so there was no `build` and the
+#  round-trip could not have held. The paper's Ledger row "Self-description
+#  (grammar as data)" is [W] and says the productions are "decomposable" — true
+#  in the weak sense that the structure can be RENDERED, but not in the sense
+#  the round-trip standard names, which is that it can be RECOVERED.
+#
+#  This file supplies the missing half — GBUILD, string -> Scott term — and
+#  gates the identity.
+#
+#  ── ★ THE ORACLE IS NOT THE PRINTER ─────────────────────────────────
+#  The obvious test, GDECOMP(GBUILD(s)) == s, is CIRCULAR: it asks the printer
+#  to confirm its own inverse, and a GBUILD that lost structure the printer also
+#  ignores would pass. So equality is STRUCTURAL — GEQ walks the Scott encoding
+#  itself, constructor by constructor, and never calls GDECOMP. The round-trip
+#  asserted is GEQ(GBUILD(GDECOMP(P)))(P), where the two sides meet only in the
+#  encoding, not in the rendering.
+#
+#  ── RUN ─────────────────────────────────────────────────────────────
+#      cat grammar_rt.la grammar.la > /tmp/rt.la && ./tiny_host /tmp/rt.la
+#  Order matters, as in grammar_l3.la: the FIRST binding wins, so this MAIN
+#  wins, and grammar.la still supplies GT/GN/GSEQ/GALT/GSTAR/GEPS and the
+#  seven P_* productions, which are defined nowhere here — this file cannot
+#  quietly test a grammar of its own making.
+#
+#  ── USES str_at ─────────────────────────────────────────────────────
+#  GBUILD indexes its input. Before str_at (landed today) that was a str_tail
+#  walk costing i reductions per character; the parser below is O(n) because a
+#  string carries its length.
+# ════════════════════════════════════════════════════════════════════
+
+glyph OR = la a. la b. a(TRUE)(b)
+
+# ── GEQ — structural equality over the six constructors. Each arm selects on
+#    x, then re-selects on y and demands the SAME constructor. A mismatch
+#    returns FALSE rather than falling through, so GEQ cannot succeed by
+#    forgetting to look. GSEQ/GALT take two continuations, GSTAR one, and GEPS
+#    is a VALUE, not a function — hence the shape of each row.
+glyph GEQ = Z(la self. la x. la y.
+    x (la t. y (la t2. str_eq(t)(t2))(la _. FALSE)(la _. la _. FALSE)(la _. la _. FALSE)(la _. FALSE)(FALSE))
+      (la n. y (la _. FALSE)(la n2. str_eq(n)(n2))(la _. la _. FALSE)(la _. la _. FALSE)(la _. FALSE)(FALSE))
+      (la a. la b. y (la _. FALSE)(la _. FALSE)(la a2. la b2. AND(self(a)(a2))(self(b)(b2)))(la _. la _. FALSE)(la _. FALSE)(FALSE))
+      (la a. la b. y (la _. FALSE)(la _. FALSE)(la _. la _. FALSE)(la a2. la b2. AND(self(a)(a2))(self(b)(b2)))(la _. FALSE)(FALSE))
+      (la a. y (la _. FALSE)(la _. FALSE)(la _. la _. FALSE)(la _. la _. FALSE)(la a2. self(a)(a2))(FALSE))
+      (y (la _. FALSE)(la _. FALSE)(la _. la _. FALSE)(la _. la _. FALSE)(la _. FALSE)(TRUE)))
+
+# ── GBUILD — the inverse of GDECOMP. Returns PAIR(term)(next index).
+#    The printed forms, read straight off GDECOMP:
+#      T:name   N:name   (A B)   [A | B]   {A}   eps
+glyph ISDELIM = la c.
+    OR(str_eq(c)(" "))(OR(str_eq(c)(")"))(OR(str_eq(c)("]"))(OR(str_eq(c)("}"))(str_eq(c)("")))))
+
+glyph RDNAME = Z(la self. la s. la i. la acc.
+    IF(ISDELIM(str_at(s)(i)))(la _. PAIR(acc)(i))
+      (la _. self(s)(add(i)(1))(concat(acc)(str_at(s)(i)))))
+
+# ★ EVERY LITERAL IS CHECKED, NOT SKIPPED. The first version advanced past
+#   " | ", " ", "}", ":" and "eps" by ARITHMETIC, never looking at them — so
+#   changing GDECOMP's separator from "|" to "!" left the round-trip GREEN while
+#   the printer and the parser had silently drifted apart. A parser that assumes
+#   its input rather than reading it cannot witness the printer.
+#   On a mismatch GB yields ERR, which is a real term and so compares FALSE
+#   against every genuine production under GEQ.
+glyph ERR = GN("!ERR")
+glyph EXP = la s. la i. la c. la k.
+    IF(str_eq(str_at(s)(i))(c))(k)(la _. PAIR(ERR)(i))
+
+glyph GB = Z(la self. la s. la i.
+    (la c.
+      IF(str_eq(c)("("))(la _.
+        (la ra. EXP(s)(SND(ra))(" ")(la _.
+                  (la rb. EXP(s)(SND(rb))(")")(la _.
+                            PAIR(GSEQ(FST(ra))(FST(rb)))(add(SND(rb))(1))))
+                  (self(s)(add(SND(ra))(1)))))
+        (self(s)(add(i)(1))))
+      (la _.
+      IF(str_eq(c)("["))(la _.
+        (la ra. EXP(s)(SND(ra))(" ")(la _.
+                EXP(s)(add(SND(ra))(1))("|")(la _.
+                EXP(s)(add(SND(ra))(2))(" ")(la _.
+                  (la rb. EXP(s)(SND(rb))("]")(la _.
+                            PAIR(GALT(FST(ra))(FST(rb)))(add(SND(rb))(1))))
+                  (self(s)(add(SND(ra))(3)))))))
+        (self(s)(add(i)(1))))
+      (la _.
+      IF(str_eq(c)("{"))(la _.
+        (la ra. EXP(s)(SND(ra))("}")(la _. PAIR(GSTAR(FST(ra)))(add(SND(ra))(1))))
+        (self(s)(add(i)(1))))
+      (la _.
+      IF(str_eq(c)("e"))(la _.
+        EXP(s)(add(i)(1))("p")(la _. EXP(s)(add(i)(2))("s")(la _. PAIR(GEPS)(add(i)(3)))))
+      (la _.
+      IF(str_eq(c)("T"))(la _.
+        EXP(s)(add(i)(1))(":")(la _. (la r. PAIR(GT(FST(r)))(SND(r)))(RDNAME(s)(add(i)(2))(""))))
+      (la _.
+      IF(str_eq(c)("N"))(la _.
+        EXP(s)(add(i)(1))(":")(la _. (la r. PAIR(GN(FST(r)))(SND(r)))(RDNAME(s)(add(i)(2))(""))))
+      (la _. PAIR(ERR)(i)
+      )))))))
+    (str_at(s)(i)))
+
+glyph GBUILD = la s. FST(GB(s)(0))
+
+# ── the assertion, per production ──
+glyph RT = la p. BSTR(GEQ(GBUILD(GDECOMP(p)))(p))
+
+# ★ CONTROLS — and the first version's were INADEQUATE, which a planted defect
+#   proved rather than argued. CTRL_DIFF compared P_EXPR against P_APP, which
+#   differ in their FIRST child; so a GEQ that ignored every SECOND child still
+#   answered F and the control still looked healthy. A control must differ ONLY
+#   in the place the defect hides. These pairs are identical except in the
+#   second child of GSEQ, of GALT, and inside GSTAR.
+glyph D_SEQ2  = BSTR(GEQ(GSEQ(GT("a"))(GT("b")))(GSEQ(GT("a"))(GT("c"))))
+glyph D_ALT2  = BSTR(GEQ(GALT(GT("a"))(GT("b")))(GALT(GT("a"))(GT("c"))))
+glyph D_STAR  = BSTR(GEQ(GSTAR(GT("a")))(GSTAR(GT("b"))))
+glyph D_KIND  = BSTR(GEQ(GT("a"))(GN("a")))
+glyph D_EPS   = BSTR(GEQ(GEPS)(GT("a")))
+glyph CTRL_SAME = BSTR(GEQ(P_EXPR)(P_EXPR))
+glyph CTRL_DIFF = BSTR(GEQ(P_EXPR)(P_APP))
+glyph HAND = GSEQ(GT("glyph"))(GALT(GN("expr"))(GSTAR(GT("ident"))))
+# ★ HAND2 — the constructor the corpus cannot reach. GEPS appears in NO production
+#   and not in HAND, so without this a GBUILD whose `eps` arm is broken round-trips
+#   all seven productions AND the hand-built term and ships GREEN. Measured, not
+#   argued: breaking the eps arm leaves every other column T and flips only this one.
+glyph HAND2 = GALT(GSEQ(GT("la"))(GSTAR(GN("expr"))))(GEPS)
+
+glyph SEQ2 = la a. la b. b
+glyph MAIN =
+  SEQ2(print(concat("RT [primary app_tail app expr glyphdef exportdir module] = ")(
+      concat(RT(P_PRIMARY))(concat(RT(P_APPTAIL))(concat(RT(P_APP))(concat(RT(P_EXPR))(
+      concat(RT(P_GLYPHDEF))(concat(RT(P_EXPORTD))(RT(P_MODULE))))))))))(
+  SEQ2(print(concat("RT hand-built (not a P_*) = ")(RT(HAND))))(
+  SEQ2(print(concat("RT eps-bearing (GEPS reached) = ")(RT(HAND2))))(
+       print(concat("discriminators [same seq2 alt2 star kind eps diff] want TFFFFFF = ")(
+      concat(CTRL_SAME)(concat(D_SEQ2)(concat(D_ALT2)(concat(D_STAR)(
+      concat(D_KIND)(concat(D_EPS)(CTRL_DIFF)))))))))))

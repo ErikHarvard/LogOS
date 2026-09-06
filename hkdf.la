@@ -1,0 +1,84 @@
+# =====================================================================
+#  hkdf.la — HKDF-SHA256 in Lingua Adamica (RFC 5869).
+#
+#  The KDF the coverage audit named as absent, and the second half of what B1
+#  needs. Extract-then-expand:
+#
+#      PRK      = HMAC(salt, IKM)                       -- concentrate entropy
+#      T(i)     = HMAC(PRK, T(i-1) || info || i)        -- expand to any length
+#      OKM      = first L bytes of T(1) || T(2) || ...
+#
+#  ── WHY EXTRACT AND EXPAND ARE SEPARATE ─────────────────────────────
+#  They answer different questions. Extract turns a non-uniform secret (a
+#  Diffie-Hellman result, a passphrase-derived key) into a uniform one. Expand
+#  turns one uniform key into many independent ones, domain-separated by `info`.
+#  Collapsing them is the usual misuse: reusing a PRK directly as several keys
+#  gives you keys that are related, and relatedness is what an attacker wants.
+#
+#  ── THE BRANCH THAT IS USUALLY WRONG ────────────────────────────────
+#  RFC 5869 says an ABSENT salt is not an empty string — it is HashLen zero
+#  bytes. An implementation that passes "" straight to HMAC produces a different
+#  PRK from every other implementation, and every test that only uses a non-empty
+#  salt still passes. TC3 below exercises exactly that path.
+#
+#  ── WITNESS ─────────────────────────────────────────────────────────
+#  RFC 5869 test case 1 (salt and info present) and test case 3 (both absent).
+#  Together they cover both salt branches. A digest is a known answer or nothing.
+# =====================================================================
+
+import("hmac.la")
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph HLEN = 32
+
+glyph CHRI = la n. chr(int_to_str(n))
+glyph ORDI = la c. str_to_int(ord(c))
+glyph SLEN = la s. str_to_int(str_len(s))
+glyph REP  = Z(la self. la c. la n. IF(int_eq(n)(0))(la _. "")(la _. concat(c)(self(c)(sub(n)(1)))))
+
+# ★ An absent salt is HLEN zero bytes, NOT the empty string (RFC 5869 s2.2).
+glyph EXTRACT = la salt. la ikm.
+    HMAC_RAW(IF(str_eq(salt)(""))(la _. REP(CHRI(0))(HLEN))(la _. salt))(ikm)
+
+# take the first n bytes
+glyph TAKE = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+
+# T(i) chain, accumulating until it covers L
+glyph TCHAIN = Z(la self. la prk. la info. la prev. la i. la acc. la need.
+    IF(NOTLESS(SLEN(acc))(need))(la _. acc)(la _.
+      (la t. self(prk)(info)(t)(add(i)(1))(concat(acc)(t))(need))
+      (HMAC_RAW(prk)(concat(concat(prev)(info))(CHRI(i))))))
+glyph NOTLESS = la a. la b. IF(lt(a)(b))(la _. FALSEV)(la _. TRUEV)
+glyph TRUEV  = la t. la f. t
+glyph FALSEV = la t. la f. f
+
+glyph EXPAND = la prk. la info. la l. TAKE(l)(TCHAIN(prk)(info)("")(1)("")(l))
+glyph HKDF = la salt. la ikm. la info. la l. EXPAND(EXTRACT(salt)(ikm))(info)(l)
+
+glyph HEXD = la n. str_head((Z(la self. la i. la s.
+    IF(int_eq(i)(0))(la _. s)(la _. self(sub(i)(1))(str_tail(s)))))(n)("0123456789abcdef"))
+glyph TOHEX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      concat(concat(HEXD(div(ORDI(str_head(s)))(16)))(HEXD(mod(ORDI(str_head(s)))(16))))
+            (self(str_tail(s)))))
+
+# ── RFC 5869 known-answer tests ──
+glyph RANGE = Z(la self. la a. la b. IF(int_eq(a)(b))(la _. "")(la _. concat(CHRI(a))(self(add(a)(1))(b))))
+glyph IKM1  = REP(CHRI(11))(22)
+glyph SALT1 = RANGE(0)(13)
+glyph INFO1 = RANGE(240)(250)
+glyph EOKM1 = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
+glyph EOKM3 = "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
+glyph MARK = la got. la exp. IF(str_eq(got)(exp))(la _. "OK")(la _. concat("WRONG ")(got))
+glyph MAIN = print(concat(
+    concat("hkdf TC1 ")(MARK(TOHEX(HKDF(SALT1)(IKM1)(INFO1)(42)))(EOKM1)))
+    (concat(" | TC3 (no salt, no info) ")(MARK(TOHEX(HKDF("")(IKM1)("")(42)))(EOKM3))))
+
+# EXTRACT and EXPAND are exported separately on purpose: they answer different
+# questions (concentrate a non-uniform secret vs. derive many domain-separated
+# keys from one uniform one), and a caller that already holds a PRK should not
+# have to re-extract. HKDF is the one-shot. HLEN is part of the contract — RFC
+# 5869 bounds the output at L <= 255*HLEN.
+export EXTRACT EXPAND HKDF HLEN

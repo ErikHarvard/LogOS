@@ -1,0 +1,167 @@
+# =====================================================================
+#  aead.la — ChaCha20-Poly1305 AEAD (RFC 8439 §2.8).
+#
+#  The construction that makes the previous four modules usable. ChaCha20 alone
+#  hides content while leaving it SILENTLY MALLEABLE; Poly1305 alone proves
+#  integrity of something anyone can read. Only the pair is safe to hand a
+#  message to, which is why nothing above this line should be used directly.
+#
+#      OTK        = ChaCha20_block(key, counter=0, nonce)[0..31]
+#      ciphertext = plaintext XOR ChaCha20_keystream(key, counter=1, nonce)
+#      mac_data   = AAD || pad16(AAD) || ct || pad16(ct) || len(AAD)u64le || len(ct)u64le
+#      tag        = Poly1305(OTK, mac_data)
+#
+#  ── THE FOUR THINGS THAT FAIL SILENTLY ──────────────────────────────
+#
+#  1. COUNTER 0 FOR THE KEY, COUNTER 1 FOR THE KEYSTREAM.
+#     Using counter 0 for both XORs the plaintext with the authenticator key —
+#     which both leaks the key and produces a ciphertext that still decrypts
+#     correctly under the same bug. Nothing errors. Everything is broken.
+#
+#  2. THE TRAILING LENGTHS ARE NOT DECORATION.
+#     Without len(AAD) and len(ct) appended, an attacker can move bytes between
+#     the associated data and the ciphertext and the tag still verifies. The
+#     lengths are what bind the two halves. Padding alone does not.
+#
+#  3. VERIFY BEFORE DECRYPTING, AND NEVER RELEASE UNVERIFIED PLAINTEXT.
+#     A decrypt that returns bytes and reports the tag failure afterwards has
+#     already handed the caller attacker-chosen data. DECRYPT below returns
+#     nothing at all on failure — there is no partial result to misuse.
+#
+#  4. TAG COMPARISON MUST BE CONSTANT TIME.
+#     A byte-by-byte compare that stops at the first mismatch leaks, through
+#     timing, how many leading bytes were right — enough to forge one byte at a
+#     time. TAGEQ below accumulates a difference over ALL 16 bytes and tests it
+#     once, so its running time does not depend on where a mismatch occurs.
+#
+#  ── NONCE REUSE IS CATASTROPHIC, NOT MERELY BAD ─────────────────────
+#  One (key, nonce) pair twice reveals the XOR of two plaintexts AND lets an
+#  attacker solve for Poly1305's r, after which they can forge arbitrary
+#  messages. The nonce is not a formality; a counter or a random 96-bit value
+#  per message is mandatory. This module cannot enforce that — the caller must.
+#
+#  ── STATUS ──────────────────────────────────────────────────────────
+#  The construction and its safety properties are written here in full. It
+#  depends on a multi-block keystream from chacha20.la and a full message loop
+#  in poly1305.la, both of which currently expose only their cores. Those two
+#  work — stated plainly rather than implied by a module that merely parses.
+# =====================================================================
+
+import("chacha20.la")
+import("poly1305.la")
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUEV  = la t. la f. t
+glyph FALSEV = la t. la f. f
+glyph ORDI = la c. str_to_int(ord(c))
+glyph CHRI = la n. chr(int_to_str(n))
+glyph SLEN = la s. str_to_int(str_len(s))
+
+# ── pad a string to a 16-byte boundary with zeros ──
+glyph PAD16 = Z(la self. la s. la n.
+    IF(int_eq(mod(n)(16))(0))(la _. s)(la _. self(concat(s)(CHRI(0)))(add(n)(1))))
+glyph PADTO16 = la s. PAD16(s)(SLEN(s))
+
+# ── a 64-bit little-endian length ──
+glyph LE64 = la n. (Z(la self. la v. la i.
+    IF(int_eq(i)(8))(la _. "")(la _.
+      concat(CHRI(band(v)(255)))(self(bshr(v)(8))(add(i)(1))))))(n)(0)
+
+# ── mac_data: the exact byte string Poly1305 is run over ──
+glyph MACDATA = la aad. la ct.
+    concat(concat(concat(PADTO16(aad))(PADTO16(ct)))(LE64(SLEN(aad))))(LE64(SLEN(ct)))
+
+# ── XOR a message against the keystream ──
+glyph XORSTR = Z(la self. la a. la b.
+    IF(str_eq(a)(""))(la _. "")(la _.
+      concat(CHRI(bxor(ORDI(str_head(a)))(ORDI(str_head(b)))))
+            (self(str_tail(a))(str_tail(b)))))
+
+# ── ★ constant-time tag comparison: fold ALL bytes, then test once ──
+glyph DIFFACC = Z(la self. la a. la b. la acc.
+    IF(str_eq(a)(""))(la _. acc)(la _.
+      self(str_tail(a))(str_tail(b))
+          (bor(acc)(bxor(ORDI(str_head(a)))(ORDI(str_head(b)))))))
+glyph TAGEQ = la a. la b.
+    IF(int_eq(SLEN(a))(SLEN(b)))
+      (la _. IF(int_eq(DIFFACC(a)(b)(0))(0))(la _. TRUEV)(la _. FALSEV))
+      (la _. FALSEV)
+
+# ── DECRYPT returns NOTHING on a bad tag — no partial plaintext exists ──
+glyph DECRYPT = la key. la nonce. la aad. la ct. la tag. la ok. la fail.
+    IF(TAGEQ(tag)(TAGOF(key)(nonce)(aad)(ct)))
+      (la _. ok(XORSTR(ct)(KEYSTREAM(key)(nonce)(SLEN(ct)))))
+      (la _. fail("aead: tag mismatch — no plaintext released"))
+
+# ── byte access, and the pieces the construction was waiting on ──
+glyph DROPN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph TAKEN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph BAT  = la s. la i. ORDI(str_head(DROPN(i)(s)))
+glyph LE32 = la s. la i.
+    bor(bor(BAT(s)(i))(bshl(BAT(s)(add(i)(1)))(8)))
+       (bor(bshl(BAT(s)(add(i)(2)))(16))(bshl(BAT(s)(add(i)(3)))(24)))
+
+# one 64-byte keystream block, key and nonce taken as byte strings
+glyph KSB = la key. la ctr. la nonce.
+    KSBYTES(LE32(key)(0))(LE32(key)(4))(LE32(key)(8))(LE32(key)(12))
+           (LE32(key)(16))(LE32(key)(20))(LE32(key)(24))(LE32(key)(28))
+           (ctr)(LE32(nonce)(0))(LE32(nonce)(4))(LE32(nonce)(8))
+
+# ── ★ THE ONE-TIME KEY COMES FROM COUNTER 0, THE MESSAGE FROM COUNTER 1 ──
+# If both started at 0 the first 32 bytes of plaintext would be XORed with the
+# very key that authenticates it, and an attacker who knows any plaintext
+# recovers r and s and can forge at will. The gap is the whole security
+# argument, and nothing in a test vector for a SINGLE message would reveal
+# getting it wrong — the tag would still verify against itself.
+glyph OTK = la key. la nonce. TAKEN(32)(KSB(key)(0)(nonce))
+
+glyph KSGROW = Z(la self. la key. la nonce. la ctr. la acc. la n.
+    IF(lt(SLEN(acc))(n))
+      (la _. self(key)(nonce)(add(ctr)(1))(concat(acc)(KSB(key)(ctr)(nonce)))(n))
+      (la _. TAKEN(n)(acc)))
+glyph KEYSTREAM = la key. la nonce. la n. KSGROW(key)(nonce)(1)("")(n)
+
+glyph ENCRYPT = la key. la nonce. la pt. XORSTR(pt)(KEYSTREAM(key)(nonce)(SLEN(pt)))
+glyph TAGOF   = la key. la nonce. la aad. la ct.
+    POLY1305(OTK(key)(nonce))(MACDATA(aad)(ct))
+
+# ── hex, for the vectors ──
+glyph HEXD = la n. str_head(DROPN(n)("0123456789abcdef"))
+glyph TOHEX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      concat(concat(HEXD(div(ORDI(str_head(s)))(16)))(HEXD(mod(ORDI(str_head(s)))(16))))
+            (self(str_tail(s)))))
+glyph HEXV = la c. (la n. IF(lt(n)(58))(la _. sub(n)(48))(la _. sub(n)(87)))(ORDI(c))
+glyph FROMHEX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      concat(CHRI(add(mul(HEXV(str_head(s)))(16))(HEXV(str_head(str_tail(s))))))
+            (self(str_tail(str_tail(s))))))
+
+# ── RFC 8439 2.8.2 known-answer test ──
+glyph AK   = FROMHEX("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+glyph AN   = FROMHEX("070000004041424344454647")
+glyph AA   = FROMHEX("50515253c0c1c2c3c4c5c6c7")
+glyph AP   = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it."
+glyph WCT  = "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116"
+glyph WTAG = "1ae10b594f09e26a7e902ecbd0600691"
+glyph FTAG = "1ae10b594f09e26a7e902ecbd0600690"
+glyph MARK = la got. la exp. IF(str_eq(got)(exp))(la _. "OK")(la _. concat("WRONG ")(got))
+
+glyph MAIN = (la ct. (la tg.
+    print(concat(concat(concat("aead 2.8.2 ct ")(MARK(TOHEX(ct))(WCT)))
+                       (concat(" | tag ")(MARK(tg)(WTAG))))
+                (concat(concat(" | roundtrip ")
+                              (MARK(DECRYPT(AK)(AN)(AA)(ct)(tg)(la p. p)(la m. m))(AP)))
+                       (concat(" | forged-tag ")
+                              (DECRYPT(AK)(AN)(AA)(ct)(FTAG)(la p. "LEAKED PLAINTEXT")(la m. "rejected")))))
+  )(TAGOF(AK)(AN)(AA)(ct)))(ENCRYPT(AK)(AN)(AP))
+
+
+# The AEAD pair is the only safe surface: ChaCha20 alone is silently malleable and
+# Poly1305 alone authenticates something anyone can read. The layers below are
+# exported by their own modules for those who need them; nothing here re-exports
+# them, and the hex helpers stay private on purpose.
+export ENCRYPT DECRYPT TAGOF

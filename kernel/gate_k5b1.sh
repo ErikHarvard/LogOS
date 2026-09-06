@@ -15,7 +15,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 cp kernel/task_pingpong.la native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  K5b.1a gate: native_codegen3 failed to compile task_pingpong.la"; exit 1; }
+( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL  K5b.1a gate: native_codegen3 failed to compile task_pingpong.la"; exit 1; }
 
 OUT=$(timeout 15 ./native_codegen3_out 2>/dev/null)
 RC=$?

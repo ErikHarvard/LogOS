@@ -91,7 +91,16 @@ glyph DERIVE = la feat.
 # ── DSIGIL — the deep renderer. Primitives stay drawn; compounds feature-derived. ──
 glyph IS_PRIM = la node. node (la nm. TRUE) (la a. la b. FALSE) (la a. la b. FALSE) (la a. la b. FALSE) (la a. la b. FALSE) (la a. FALSE)
 glyph NAMEOF  = la node. node (la nm. nm) (la a. la b. "") (la a. la b. "") (la a. la b. "") (la a. la b. "") (la a. "")
-glyph DSIGIL  = la node. IF(IS_PRIM(node))(la _. PRIM_SIGIL(NAMEOF(node)))(la _. DERIVE(ONF_FEAT(node)))
+# ★★ DISPATCH ON THE CANONICAL CONCEPT, NOT ON THE RAW EXPRESSION (2026-08-27).
+# This branched on IS_PRIM(node) -- the term AS WRITTEN -- so a term that
+# CANONICALIZES to a primitive still took the DERIVE path while the primitive
+# itself took PRIM_SIGIL: two different renderers for one concept. Measured:
+# DSIGIL(⊗(∃,∃)) != DSIGIL(∃) even after onf.la's CANONIQ gained R-A, because the
+# rule was applied INSIDE ONF_FEAT, one step too late -- the branch had already
+# been taken. Same for ↻(BEING), which κ has always called SELF and which drew a
+# derived form instead of SELF's lemniscate. Canonicalize FIRST, then dispatch;
+# ONF_FEAT canonicalizes again, which is harmless because CANONIQ is idempotent.
+glyph DSIGIL  = la node. (la cn. IF(IS_PRIM(cn))(la _. PRIM_SIGIL(NAMEOF(cn)))(la _. DERIVE(ONF_FEAT(cn))))(CANONIQ(node))
 
 # ── ASCII render for the self-test (host == VM) ──
 glyph CELL = la s. la r. la c. IF(SIG_AT(s)(r)(c))(la _. "#")(la _. ".")

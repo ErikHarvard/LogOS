@@ -10,7 +10,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 cp kernel/pmm.la native_input.la
-./tiny_host native_codegen3.la >/dev/null 2>&1 || { echo "FAIL  K3a: native_codegen3 could not compile pmm.la"; exit 1; }
+( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL  K3a: compile of pmm.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or pmm.la is at fault"; exit 1; }
 NAT=$(./native_codegen3_out 2>&1)
 HOST=$(./tiny_host kernel/pmm.la 2>&1)
 EXP=$'1048576\n1052672\n1056768\n1052672'   # 0x100000, +4K, +8K, then the freed +4K reused

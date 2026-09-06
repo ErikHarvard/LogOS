@@ -31,7 +31,7 @@ printf '      YIELD_PENDING @ 0x%x (%d) — timer.asm matches the rt slot\n' "$D
 
 echo "[2/5] compile task_preempt.la via native_codegen3 (spawn/yield + safe point)"
 cp kernel/task_preempt.la native_input.la
-./tiny_host native_codegen3.la >/dev/null
+( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null
 ENTRY=$(readelf -h native_codegen3_out | awk '/Entry point/{print $NF}')
 echo "      e_entry (LA prol) = $ENTRY"
 

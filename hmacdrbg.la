@@ -1,0 +1,105 @@
+# =====================================================================
+#  hmacdrbg.la — HMAC_DRBG over SHA-256 (NIST SP 800-90A §10.1.2).
+#
+#  A deterministic random bit generator. Given a seed, it produces an
+#  unbounded stream that is computationally indistinguishable from random,
+#  and — crucially — it does so WITHOUT needing more entropy per byte.
+#
+#  ── ★ WHAT THIS IS NOT ──────────────────────────────────────────────
+#  This is NOT an entropy source. A DRBG is a stretcher, not a spring. Seed it
+#  with something predictable and every byte it emits is predictable, silently
+#  and at full speed. ROADMAP G1 names the real absence plainly: the bare-metal
+#  kernel K1-K7 has NO entropy source whatsoever — no RDRAND/RDSEED builtin, no
+#  jitter collector, no seed file — and full-disk encryption must derive keys at
+#  boot BEFORE any disk read. This module does not close that gap and must never
+#  be reported as though it did. It closes the OTHER half: once one good seed
+#  exists, this turns it into every key the system will ever need.
+#
+#  ── WHY HMAC AND NOT A CIPHER ───────────────────────────────────────
+#  The security reduction is to HMAC-SHA256 as a PRF, which `hmac.la` already
+#  establishes against RFC 4231. Nothing new is trusted here.
+#
+#  ── THE UPDATE IS WHERE IMPLEMENTATIONS GO WRONG ────────────────────
+#  update() runs the K/V ratchet ONCE when there is no provided data and TWICE
+#  when there is. Getting that branch backwards still produces beautiful random
+#  bytes — every statistical test passes — but the state ratchet is wrong and
+#  BACKTRACKING RESISTANCE IS GONE: an attacker who later reads (K,V) can run
+#  the generator backwards and recover keys already issued. No amount of
+#  randomness testing detects this. Only a known-answer vector does.
+#
+#  ── WITNESS ─────────────────────────────────────────────────────────
+#  NIST SP 800-90A HMAC_DRBG, SHA-256, no prediction resistance, no reseed, no
+#  personalization string, no additional input. TWO generate calls; the FIRST
+#  IS DISCARDED and the second is the answer. That discard is not ceremony: it
+#  is what forces the state ratchet to be exercised before the comparison, so
+#  an implementation that never updated its state would fail here and pass a
+#  single-generate test.
+# =====================================================================
+
+import("hmac.la")      # HMAC_RAW
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph ORDI = la c. str_to_int(ord(c))
+glyph CHRI = la n. chr(int_to_str(n))
+glyph SLEN = la s. str_to_int(str_len(s))
+glyph DROPN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph TAKEN = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph REP = Z(la self. la c. la n.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(c)(self(c)(sub(n)(1)))))
+
+# the state is one value: a function awaiting a two-argument continuation
+glyph PAIR = la a. la b. la s. s(a)(b)
+glyph SEED_K = REP(CHRI(0))(32)
+glyph SEED_V = REP(CHRI(1))(32)
+
+# ── the K/V ratchet — ONCE with no data, TWICE with data ────────────
+glyph UPD = la st. la data.
+  st(la K. la V.
+    (la K1.
+    (la V1.
+      IF(str_eq(data)(""))
+        (la _. PAIR(K1)(V1))
+        (la _. (la K2. (la V2. PAIR(K2)(V2))(HMAC_RAW(K2)(V1)))
+                 (HMAC_RAW(K1)(concat(concat(V1)(CHRI(1)))(data))))
+    )(HMAC_RAW(K1)(V))
+    )(HMAC_RAW(K)(concat(concat(V)(CHRI(0)))(data))))
+
+glyph INSTANTIATE = la seed. UPD(PAIR(SEED_K)(SEED_V))(seed)
+
+glyph GENLOOP = Z(la self. la K. la V. la acc. la n.
+    IF(lt(SLEN(acc))(n))
+      (la _. (la V1. self(K)(V1)(concat(acc)(V1))(n))(HMAC_RAW(K)(V)))
+      (la _. PAIR(TAKEN(n)(acc))(PAIR(K)(V))))
+
+# generate returns BOTH the bytes and the advanced state — the state must move
+# or the next call repeats the same bytes, which is the failure that looks fine
+glyph GENERATE = la st. la n.
+    st(la K. la V.
+      GENLOOP(K)(V)("")(n)(la bytes. la st2. PAIR(bytes)(UPD(st2)(""))))
+
+glyph HEXD = la n. str_head(DROPN(n)("0123456789abcdef"))
+glyph TOHEX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      concat(concat(HEXD(div(ORDI(str_head(s)))(16)))(HEXD(mod(ORDI(str_head(s)))(16))))
+            (self(str_tail(s)))))
+glyph HEXV = la c. (la n. IF(lt(n)(58))(la _. sub(n)(48))(la _. sub(n)(87)))(ORDI(c))
+glyph FROMHEX = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      concat(CHRI(add(mul(HEXV(str_head(s)))(16))(HEXV(str_head(str_tail(s))))))
+            (self(str_tail(str_tail(s))))))
+
+# ── NIST SP 800-90A known-answer test ───────────────────────────────
+glyph ENTROPY = FROMHEX("ca851911349384bffe89de1cbdc46e6831e44d34a4fb935ee285dd14b71a7488")
+glyph NONCE   = FROMHEX("659ba96c601dc69fc902940805ec0ca8")
+glyph EXPECT  = "e528e9abf2dece54d47c7e75e5fe302149f817ea9fb4bee6f4199697d04d5b89d54fbb978a15b5c443c9ec21036d2460b6f73ebad0dc2aba6e624abf07745bc107694bb7547bb0995f70de25d6b29e2d3011bb19d27676c07162c8b5ccde0668961df86803482cb37ed6d5c0bb8d50cf1f50d476aa0458bdaba806f48be9dcb8"
+glyph MARK = la got. la exp. IF(str_eq(got)(exp))(la _. "OK")(la _. concat("WRONG ")(got))
+
+glyph MAIN =
+  GENERATE(INSTANTIATE(concat(ENTROPY)(NONCE)))(128)(la _. la st1.
+    GENERATE(st1)(128)(la bytes. la _.
+      print(concat("hmacdrbg SP800-90A ")(MARK(TOHEX(bytes))(EXPECT)))))
+
+export INSTANTIATE GENERATE

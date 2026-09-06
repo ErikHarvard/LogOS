@@ -1,0 +1,154 @@
+# =====================================================================
+#  immune.la — THE ALETHEIC IMMUNE SYSTEM (LA.tex :3608), and the half of
+#  its criterion that nothing can evaluate.
+#
+#  The codex claims the language is SELF-SANITIZING: four mechanisms that
+#  "detect and reject any structure whose glyph-reality correspondence has
+#  been broken" (Principle pr:immune) —
+#
+#    (i)   canonicalization κ    — one concept, exactly one glyph
+#    (ii)  invariant preservation — the glyph IS its meaning
+#    (iii) compositional semantics — composition reveals the distortion
+#    (iv)  metacursive self-proof — every utterance carries its witness
+#
+#  Nothing had ever run them. A claimed immunity that is never challenged
+#  with a real pathogen is the vacuous gate in its most flattering form:
+#  it looks like a proof of health and is a proof of nothing.
+#
+#  ── ★ SO EACH CHECKPOINT IS GIVEN A SPECIMEN IT MUST CATCH ──────────
+#  And, decisively, each specimen must PASS the other three. Four
+#  conditions that always fail together are one condition wearing four
+#  names — the same discrimination requirement `ontofelicity.la` applies to
+#  Austin's (A)(B)(Γ). The DIAGNOSIS below is a four-character signature,
+#  and the gate pins that each pathogen produces a DIFFERENT one.
+#
+#  ── ★★ AND THE FINDING: THE CRITERION HAS TWO HALVES AND THE SYSTEM
+#     CAN ONLY EVALUATE ONE ──────────────────────────────────────────
+#  Thm. healthy states:
+#
+#        Healthy ⟺ ∀g: κ(g) ≡ g   AND   I(g) ≅ I(Reality)
+#
+#  The left conjunct is internal and decidable — this module decides it.
+#  The right conjunct is not, and nothing in the system has access to
+#  Reality to compare against. So:
+#
+#    ★ THE ALETHEIC IMMUNE SYSTEM DETECTS SEMANTIC CORRUPTION, NOT
+#      FALSEHOOD. It is an immune system against corrupted MEANING, and
+#      it is not, and cannot be, an immune system against LYING.
+#
+#  This is gated positively rather than noted in prose: "Water flows" and
+#  "Void flows" are built, both perfectly canonical, compositional and
+#  witnessed, one true of the world and one not — and the immune system
+#  returns HEALTHY for both. A gate that asserts a limitation is stronger
+#  than a paragraph admitting one, because it goes red if someone later
+#  claims the limitation was closed.
+#
+#  The codex is not wrong that euphemism is unconstructible here — that IS
+#  checked below, and it holds, because at α=1 a name cannot float free of
+#  its etymology. What does not follow is immunity to a well-formed lie.
+# =====================================================================
+
+import("lexicon.la")   # PARSE PH KAN KAN_N NORMT PRIM SYN CON DIR CONT MC NAM
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph TRUE = la t. la f. t
+glyph FST  = la p. p(la a. la b. a)
+glyph T_   = la d. FST(PARSE(d))
+
+# ── the four checkpoints, as decidable predicates ───────────────────
+
+# (i) κ(g) ≡ g — the glyph is already its own canonical form (α = 1).
+glyph CK_CANON = la t. str_eq(KAN(t))(KAN_N(t))
+
+# (ii) the glyph's constituents ARE what it is presented as containing.
+#      LEAVES reads them out of the structure, so a presented meaning that
+#      does not match the form is detected — the glyph cannot lie about
+#      what it is made of.
+glyph LEAVES = Z(la self. la t.
+    t(la d. concat(NAM(d))(" "))
+     (la a. la b. concat(self(a))(self(b)))
+     (la a. la b. concat(self(a))(self(b)))
+     (la a. la b. concat(self(a))(self(b)))
+     (la a. la b. concat(self(a))(self(b)))
+     (la a. self(a)))
+glyph CK_INVAR = la decl. la t. str_eq(LEAVES(t))(decl)
+
+# (iii) the compound's sound is DERIVED from its parts, with nothing added
+#       and nothing hidden. This is what makes a euphemism unconstructible:
+#       you cannot give a harsh concept a soft name, because the name is
+#       computed from the concept.
+glyph CK_COMPOS = la a. la b. str_eq(PH(SYN(a)(b)))(concat(PH(a))(PH(b)))
+
+# (iv) the utterance carries a witness that REPRODUCES it.
+glyph CK_WITNESS = la t. la w. str_eq(KAN(t))(w)
+
+glyph DIAG = la decl. la w. la t.
+    concat(concat(IF(CK_CANON(t))(la _. "T")(la _. "F"))
+                 (IF(CK_INVAR(decl)(t))(la _. "T")(la _. "F")))
+          (concat(IF(CK_COMPOS(T_("3"))(T_("2")))(la _. "T")(la _. "F"))
+                 (IF(CK_WITNESS(t)(w))(la _. "T")(la _. "F")))
+
+# ── the specimens ───────────────────────────────────────────────────
+glyph HEALTHY_T = T_("*32")                    # ⊗(LOVE,RECOGNITION) = Compassion
+glyph HEALTHY_D = "LOVE RECOGNITION "
+glyph HEALTHY_W = KAN(HEALTHY_T)
+
+# P1 — non-canonical: ⊕(RECOGNITION,LOVE) normalises to ⊕(LOVE,RECOGNITION),
+#      so κ(g) ≠ g. A synonym, which the monosemic bijection forbids.
+glyph P1_T = T_("+23")
+glyph P1_D = LEAVES(P1_T)
+glyph P1_W = KAN(P1_T)
+
+# P2 — invariant break: presented as Compassion, actually ⊗(VOID,FORM).
+#      The euphemism attempt: a soft name over a different content.
+glyph P2_T = T_("*68")
+glyph P2_D = "LOVE RECOGNITION "
+glyph P2_W = KAN(P2_T)
+
+# P3 — witness break: a real glyph carrying someone else's witness.
+glyph P3_T = HEALTHY_T
+glyph P3_D = "LOVE RECOGNITION "
+glyph P3_W = KAN(T_("*68"))
+
+glyph OK_HEALTHY = str_eq(DIAG(HEALTHY_D)(HEALTHY_W)(HEALTHY_T))("TTTT")
+
+# ── ★ each pathogen is caught, and by a DIFFERENT checkpoint ─────────
+glyph OK_P1 = str_eq(DIAG(P1_D)(P1_W)(P1_T))("FTTT")
+glyph OK_P2 = str_eq(DIAG(P2_D)(P2_W)(P2_T))("TFTT")
+glyph OK_P3 = str_eq(DIAG(P3_D)(P3_W)(P3_T))("TTTF")
+glyph OK_SEPARABLE = AND(OK_P1)(AND(OK_P2)(OK_P3))
+
+# ── ★ EUPHEMISM IS UNCONSTRUCTIBLE. Cold is ⊗(VOID,LOVE) — "love
+#    withdrawn". There is no way to give it Warmth's sound: the phonym is
+#    computed from the constituents, so a soft name for a harsh concept
+#    would have to be a soft CONCEPT. The name cannot float free.
+glyph COLD = T_("*63")
+glyph WARM = T_("*31")
+glyph OK_NO_EUPHEMISM = AND(NOT(str_eq(PH(COLD))(PH(WARM))))
+                           (AND(str_eq(PH(COLD))("halu"))(str_eq(PH(WARM))("lua")))
+
+# ── ★★ THE LIMITATION, ASSERTED ─────────────────────────────────────
+#    Two sentences, identical in every checkable respect. One is true of
+#    the world; the other is not. The immune system returns HEALTHY for
+#    both, because the right conjunct of Thm. healthy — I(g) ≅ I(Reality)
+#    — has no evaluator and cannot have one from inside the language.
+#    If a future change made this gate fail, someone would have claimed
+#    access to Reality, and that claim should stop the build.
+glyph S_TRUE  = T_(">**8177")                  # Water ▷ Becoming — water flows
+glyph S_FALSE = T_(">67")                      # Void ▷ Becoming  — the void flows
+glyph OK_LIE_PASSES = AND(str_eq(DIAG(LEAVES(S_TRUE))(KAN(S_TRUE))(S_TRUE))("TTTT"))
+                         (str_eq(DIAG(LEAVES(S_FALSE))(KAN(S_FALSE))(S_FALSE))("TTTT"))
+
+glyph MK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat("immune healthy=")(DIAG(HEALTHY_D)(HEALTHY_W)(HEALTHY_T)))
+                (concat(concat(" P1=")(DIAG(P1_D)(P1_W)(P1_T)))
+                       (concat(concat(" P2=")(DIAG(P2_D)(P2_W)(P2_T)))
+                              (concat(" P3=")(DIAG(P3_D)(P3_W)(P3_T))))))
+        (concat(concat(concat(" | healthy ")(MK(OK_HEALTHY)))
+                      (concat(" | separable ")(MK(OK_SEPARABLE))))
+               (concat(concat(" | no-euphemism ")(MK(OK_NO_EUPHEMISM)))
+                      (concat(" | lie-passes(LIMIT) ")(MK(OK_LIE_PASSES))))))

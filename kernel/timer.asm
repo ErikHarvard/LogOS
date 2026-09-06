@@ -31,7 +31,12 @@ TICK_ADDR   equ 0x310000        ; 3211264 — the LA probe peek()s its low byte
 ; point reads+clears it and yields. This MUST match the address derived from the
 ; rt listing — build_k5b2.sh asserts it (a wrong address would set a random byte
 ; in the LA image and never preempt). It lives in the identity-mapped LA image.
-YIELD_PENDING_ABS equ 0x4012ee  ; = 4199150 (derive_consts.py YIELD_PENDING_ADDR)
+YIELD_PENDING_ABS equ 0x4013dd  ; = 4199389 (derive_consts.py YIELD_PENDING_ADDR)
+; Re-derived 2026-08-28: 0b031c6 (rt_init HEAP_END clamp) grew rt_init by 45 bytes
+; and moved this slot 0x4013b0 -> 0x4013dd without updating the equ here. It is
+; the ONE rt-derived constant derive_consts.py --validate cannot check, because
+; that mode validates native_codegen3.la and this copy lives in timer.asm; the
+; only check is build_k5b2.sh step [1/5], which runs only when K5b.2 runs.
 %endif
 
 section .boot32

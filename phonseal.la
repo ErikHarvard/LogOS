@@ -1,0 +1,122 @@
+# =====================================================================
+#  phonseal.la — THE AUTOLOGICAL SEAL WAS RUNNING IN ONE REGISTER OUT OF
+#  THREE.
+#
+#  `canon.la` makes the glyphic seal the centre of the whole design: a
+#  finished glyph is MONO(ren)(etym) with REN ≡ κ∘ETYM **by construction**,
+#  so a heterological glyph — a name floating free of its derivation — is
+#  UNCONSTRUCTIBLE. The paper leans on this repeatedly, and it holds.
+#
+#  ── ★★ BUT ONLY IN THE GLYPHIC REGISTER ─────────────────────────────
+#  A phonym is a bare PAIR(length)(generator). Nothing computes it from an
+#  etymology and nothing checks that it was. **A sound can be paired with
+#  any concept whatsoever, and no gate in the system notices.** The
+#  guarantee the language advertises — the sign cannot float free of what
+#  it means — has a phonetic hole in it exactly the size of the claim.
+#
+#  This is `trimono.la`'s finding one level up. There, the MONOSEMY check
+#  was running in one register out of three. Here it is the AUTOLOGICAL
+#  SEAL, which is the stronger property and the one the design rests on.
+#
+#  ── WHAT THIS MODULE ADDS ───────────────────────────────────────────
+#  MONO_P seals a phonym the way MONO seals a glyph: the sound is COMPUTED
+#  from the etymology, never supplied. AUTO_OK_P is the criterion. Once
+#  both exist, a detached sound is constructible only by refusing to use
+#  the constructor — which is exactly the status of a detached name on the
+#  glyphic side, and the point of a seal.
+#
+#  ── ★ AND THE GATE MUST SHOW THE HOLE, NOT JUST PATCH IT ────────────
+#  A module that only demonstrated sealed phonyms passing would prove
+#  nothing: everything built by a correct constructor is correct. So the
+#  gate CONSTRUCTS the heterological phonym — the detached sound — and
+#  asserts that AUTO_OK_P catches it while every pre-existing phonetic
+#  check passes it. That contrast IS the finding. If the detached sound
+#  ever stops being constructible by hand, this gate goes red and someone
+#  should ask what closed it.
+# =====================================================================
+
+import("lexicon.la")   # PARSE PH KAN PH_N KAN_N PRIM SYN CON DIR CONT MC NAM
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph TRUE = la t. la f. t
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph T_   = la d. FST(PARSE(d))
+
+# ── THE SEAL. The Ren is COMPUTED from the etymology. There is no
+#    parameter by which a caller could supply a different sound, which is
+#    what makes the heterological case unconstructible THROUGH here.
+glyph MONO_P  = la etym. PAIR(PH_N(etym))(etym)
+glyph REN_P   = la g. FST(g)
+glyph ETYM_P  = la g. SND(g)
+glyph AUTO_OK_P = la g. str_eq(REN_P(g))(PH_N(ETYM_P(g)))
+
+# ── the glyphic seal, for comparison. Same shape, other register.
+glyph MONO_G  = la etym. PAIR(KAN_N(etym))(etym)
+glyph AUTO_OK_G = la g. str_eq(FST(g))(KAN_N(SND(g)))
+
+# ── 1. every SEALED phonym is autological, by construction ───────────
+glyph COMPASSION = T_("*32")
+glyph TRUTH      = T_("m2")
+glyph S1 = MONO_P(COMPASSION)
+glyph S2 = MONO_P(TRUTH)
+glyph S3 = MONO_P(T_(">**8177"))
+glyph OK_SEALED = AND(AUTO_OK_P(S1))(AND(AUTO_OK_P(S2))(AUTO_OK_P(S3)))
+
+# ── 2. ★★ THE HOLE, EXHIBITED. A detached sound: the phonym of Compassion
+#    paired with the etymology of Absence. Nothing computed it; it was
+#    simply asserted. This is the phonetic heterological glyph, and it is
+#    constructible by hand today.
+glyph DETACHED = PAIR(PH_N(COMPASSION))(T_("*68"))
+glyph OK_DETACHED_CONSTRUCTIBLE = AND(str_eq(REN_P(DETACHED))("lushi"))
+                                     (str_eq(KAN(ETYM_P(DETACHED)))("*(VOID,FORM)"))
+
+# ── 3. ★ AND THE CRITERION CATCHES IT. Without this the module would be
+#    a definition rather than a check: a predicate that never returns
+#    false distinguishes nothing.
+glyph OK_CRITERION_FIRES = NOT(AUTO_OK_P(DETACHED))
+
+# ── 4. ★★ THE ASYMMETRY, MEASURED. The SAME detachment on the glyphic
+#    side is caught by machinery that has existed all along; on the
+#    phonetic side nothing existed to catch it. Both predicates are run on
+#    the same structural fault so the comparison is like-for-like.
+glyph DETACHED_G = PAIR(KAN_N(COMPASSION))(T_("*68"))
+glyph OK_ASYMMETRY = AND(NOT(AUTO_OK_G(DETACHED_G)))(NOT(AUTO_OK_P(DETACHED)))
+
+# ── 5. ★ the pre-existing phonetic checks PASS the detached sound, which
+#    is why it survived. A well-formed phonym is well-formed whatever it
+#    is paired with: it has a length, it has samples, it renders. Those
+#    are the only questions anything asked.
+glyph WELLFORMED_P = la g. AND(NOT(str_eq(REN_P(g))("")))(NOT(str_eq(KAN(ETYM_P(g)))("")))
+glyph OK_HOLE_WAS_INVISIBLE = AND(WELLFORMED_P(DETACHED))(WELLFORMED_P(S1))
+
+# ── 6. ★ the seal COMPOSES. A sealed compound of sealed parts is sealed,
+#    so the guarantee survives neologization rather than holding only at
+#    the leaves — which is what makes it a seal and not a spot-check.
+glyph COMPOSE_P = la a. la b. MONO_P(SYN(ETYM_P(a))(ETYM_P(b)))
+glyph S4 = COMPOSE_P(S1)(S2)
+glyph OK_COMPOSES = AND(AUTO_OK_P(S4))
+                       (NOT(str_eq(REN_P(S4))(REN_P(S1))))
+
+# ── 7. ★ and the seal is MODE-FAITHFUL: ⊗ order changes the sealed sound
+#    (directed) while ⊕ order does not (co-presence). A seal that flattened
+#    the modes would be computing the wrong thing correctly.
+glyph OK_MODE_FAITHFUL =
+    AND(NOT(str_eq(REN_P(MONO_P(SYN(PRIM("3"))(PRIM("2")))))(REN_P(MONO_P(SYN(PRIM("2"))(PRIM("3")))))))
+       (str_eq(REN_P(MONO_P(CON(PRIM("3"))(PRIM("2")))))(REN_P(MONO_P(CON(PRIM("2"))(PRIM("3"))))))
+
+glyph MK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat(concat("phonseal ren(S1)=")(REN_P(S1)))
+                       (concat(" detached-ren=")(REN_P(DETACHED))))
+                (concat(concat(" | sealed-autological ")(MK(OK_SEALED)))
+                       (concat(" | detached-constructible ")(MK(OK_DETACHED_CONSTRUCTIBLE)))))
+        (concat(concat(concat(" | criterion-fires ")(MK(OK_CRITERION_FIRES)))
+                      (concat(" | asymmetry ")(MK(OK_ASYMMETRY))))
+               (concat(concat(concat(" | hole-was-invisible ")(MK(OK_HOLE_WAS_INVISIBLE)))
+                             (concat(" | composes ")(MK(OK_COMPOSES))))
+                      (concat(" | mode-faithful ")(MK(OK_MODE_FAITHFUL))))))

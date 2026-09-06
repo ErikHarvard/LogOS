@@ -1,0 +1,164 @@
+export SHA256 SHA256_RAW
+# =====================================================================
+#  sha256.la — SHA-256 in Lingua Adamica.
+#
+#  THE FIRST CRYPTOGRAPHIC PRIMITIVE WRITABLE IN THE LANGUAGE. Until the
+#  bitwise builtins landed (2026-08-21) this module could not exist: no
+#  band/bxor/bshr means no cipher and no hash, and emulating shifts via div/mod
+#  costs ~16 h/MiB. Every operation below is one of those six builtins.
+#
+#  ── WHY 32-BIT ARITHMETIC NEEDS SAYING ──────────────────────────────
+#  LA integers are 64-bit signed; SHA-256 is defined mod 2^32. Every operation
+#  therefore MASKS to 32 bits (M32). Skipping one mask does not fail loudly — it
+#  produces a plausible wrong digest — so the known-answer test at the bottom is
+#  not decoration, it is the only thing standing between this and silent garbage.
+#
+#  ── THE CONSTANTS ARE DERIVED, NOT TRANSCRIBED ──────────────────────
+#  K is frac(cbrt(p)) and H0 is frac(sqrt(p)) over the first primes. They were
+#  generated and cross-checked against the published values rather than typed;
+#  72 hand-copied hex words is precisely the transcription this project keeps
+#  finding defects in.
+#
+#  ── WITNESS ─────────────────────────────────────────────────────────
+#  MAIN runs the two canonical NIST vectors. A digest is a known answer or it is
+#  nothing: any masking slip, any rotate off by one, any wrong constant changes
+#  it completely. Byte-identical on every engine or the module is wrong.
+# =====================================================================
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph PAIR  = la a. la b. la s. s(a)(b)
+glyph FST   = la p. p(la a. la b. a)
+glyph SND   = la p. p(la a. la b. b)
+glyph NIL   = PAIR(FALSE)("")
+glyph CONS  = la h. la t. PAIR(TRUE)(PAIR(h)(t))
+glyph ISNIL = la l. NOT(FST(l))
+glyph NOT   = la c. c(FALSE)(TRUE)
+glyph HEAD  = la l. FST(SND(l))
+glyph TAIL  = la l. SND(SND(l))
+glyph NTH   = Z(la self. la l. la i.
+    IF(int_eq(i)(0))(la _. HEAD(l))(la _. self(TAIL(l))(sub(i)(1))))
+glyph SNOC  = Z(la self. la l. la x.
+    IF(ISNIL(l))(la _. CONS(x)(NIL))(la _. CONS(HEAD(l))(self(TAIL(l))(x))))
+
+# ── 32-bit arithmetic over the bitwise builtins ──
+glyph M32   = 4294967295
+glyph AND32 = la a. la b. band(a)(b)
+glyph XOR32 = la a. la b. bxor(a)(b)
+glyph OR32  = la a. la b. bor(a)(b)
+glyph NOT32 = la a. band(bnot(a))(M32)
+glyph SHR32 = la a. la n. bshr(a)(n)
+glyph SHL32 = la a. la n. band(bshl(a)(n))(M32)
+glyph ADD32 = la a. la b. band(add(a)(b))(M32)
+glyph ROTR  = la a. la n. OR32(SHR32(a)(n))(SHL32(a)(sub(32)(n)))
+
+# ── the six SHA-256 functions ──
+glyph CH   = la x. la y. la z. XOR32(AND32(x)(y))(AND32(NOT32(x))(z))
+glyph MAJ  = la x. la y. la z. XOR32(XOR32(AND32(x)(y))(AND32(x)(z)))(AND32(y)(z))
+glyph BS0  = la x. XOR32(XOR32(ROTR(x)(2))(ROTR(x)(13)))(ROTR(x)(22))
+glyph BS1  = la x. XOR32(XOR32(ROTR(x)(6))(ROTR(x)(11)))(ROTR(x)(25))
+glyph SS0  = la x. XOR32(XOR32(ROTR(x)(7))(ROTR(x)(18)))(SHR32(x)(3))
+glyph SS1  = la x. XOR32(XOR32(ROTR(x)(17))(ROTR(x)(19)))(SHR32(x)(10))
+
+# ── constants ──
+glyph KLIST = CONS(1116352408)(CONS(1899447441)(CONS(3049323471)(CONS(3921009573)(CONS(961987163)(CONS(1508970993)(CONS(2453635748)(CONS(2870763221)(CONS(3624381080)(CONS(310598401)(CONS(607225278)(CONS(1426881987)(CONS(1925078388)(CONS(2162078206)(CONS(2614888103)(CONS(3248222580)(CONS(3835390401)(CONS(4022224774)(CONS(264347078)(CONS(604807628)(CONS(770255983)(CONS(1249150122)(CONS(1555081692)(CONS(1996064986)(CONS(2554220882)(CONS(2821834349)(CONS(2952996808)(CONS(3210313671)(CONS(3336571891)(CONS(3584528711)(CONS(113926993)(CONS(338241895)(CONS(666307205)(CONS(773529912)(CONS(1294757372)(CONS(1396182291)(CONS(1695183700)(CONS(1986661051)(CONS(2177026350)(CONS(2456956037)(CONS(2730485921)(CONS(2820302411)(CONS(3259730800)(CONS(3345764771)(CONS(3516065817)(CONS(3600352804)(CONS(4094571909)(CONS(275423344)(CONS(430227734)(CONS(506948616)(CONS(659060556)(CONS(883997877)(CONS(958139571)(CONS(1322822218)(CONS(1537002063)(CONS(1747873779)(CONS(1955562222)(CONS(2024104815)(CONS(2227730452)(CONS(2361852424)(CONS(2428436474)(CONS(2756734187)(CONS(3204031479)(CONS(3329325298)(NIL))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+glyph H0    = CONS(1779033703)(CONS(3144134277)(CONS(1013904242)(CONS(2773480762)(CONS(1359893119)(CONS(2600822924)(CONS(528734635)(CONS(1541459225)(NIL))))))))
+
+# ── message padding: append 0x80, zero-pad to 56 mod 64, then the 64-bit bit length ──
+glyph ORDI  = la c. str_to_int(ord(c))
+# CHRI() takes a DECIMAL STRING, not an int (the BYTES convention used by
+# secd.la / theourgia_font.la). Every byte emitted here goes through CHRI.
+glyph CHRI  = la n. chr(int_to_str(n))
+glyph SLEN  = la s. str_to_int(str_len(s))
+glyph ZPAD  = Z(la self. la n. IF(int_eq(n)(0))(la _. "")(la _. concat(CHRI(0))(self(sub(n)(1)))))
+glyph BE64  = la n.
+    concat(concat(concat(CHRI(band(bshr(n)(56))(255)))(CHRI(band(bshr(n)(48))(255))))
+                 (concat(CHRI(band(bshr(n)(40))(255)))(CHRI(band(bshr(n)(32))(255)))))
+          (concat(concat(CHRI(band(bshr(n)(24))(255)))(CHRI(band(bshr(n)(16))(255))))
+                 (concat(CHRI(band(bshr(n)(8))(255)))(CHRI(band(n)(255)))))
+# PADLEN returns K, the ZERO-BYTE count: L + 1 + K + 8 == 64 (mod 64).
+# An earlier version subtracted 1 here and produced 63-byte blocks -- and the
+# EMPTY-string vector STILL passed, because the byte it dropped was a zero of the
+# length field. One test vector would have shipped this bug.
+glyph PADLEN = la l. (la r. IF(lt(r)(56))(la _. sub(56)(r))(la _. sub(120)(r)))(mod(add(l)(1))(64))
+glyph PAD = la s. (la l.
+    concat(concat(s)(concat(CHRI(128))(ZPAD(PADLEN(l)))))(BE64(mul(l)(8))))
+  (SLEN(s))
+
+# ── a 64-byte block -> 16 big-endian words ──
+glyph DROPN = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph BAT   = la s. la i. ORDI(str_head(DROPN(i)(s)))
+glyph WORD  = la s. la i.
+    (la o. OR32(OR32(SHL32(BAT(s)(o))(24))(SHL32(BAT(s)(add(o)(1)))(16)))
+               (OR32(SHL32(BAT(s)(add(o)(2)))(8))(BAT(s)(add(o)(3)))))
+    (mul(i)(4))
+glyph W16 = Z(la self. la s. la i.
+    IF(int_eq(i)(16))(la _. NIL)(la _. CONS(WORD(s)(i))(self(s)(add(i)(1)))))
+
+# ── extend the schedule to 64 words ──
+glyph EXTEND = Z(la self. la w. la t.
+    IF(int_eq(t)(64))(la _. w)(la _.
+      self(SNOC(w)(ADD32(ADD32(SS1(NTH(w)(sub(t)(2))))(NTH(w)(sub(t)(7))))
+                        (ADD32(SS0(NTH(w)(sub(t)(15))))(NTH(w)(sub(t)(16))))))
+          (add(t)(1))))
+
+# ── the compression loop: state is the 8 working variables ──
+glyph ST = la a. la b. la c. la d. la e. la f. la g. la h. la k. k(a)(b)(c)(d)(e)(f)(g)(h)
+glyph ROUND = la w. la t. la st.
+    st(la a. la b. la c. la d. la e. la f. la g. la h.
+      (la t1. (la t2.
+          ST(ADD32(t1)(t2))(a)(b)(c)(ADD32(d)(t1))(e)(f)(g))
+        (ADD32(BS0(a))(MAJ(a)(b)(c))))
+      (ADD32(ADD32(ADD32(h)(BS1(e)))(ADD32(CH(e)(f)(g))(NTH(KLIST)(t))))(NTH(w)(t))))
+glyph ROUNDS = Z(la self. la w. la t. la st.
+    IF(int_eq(t)(64))(la _. st)(la _. self(w)(add(t)(1))(ROUND(w)(t)(st))))
+
+# ── one block: expand, compress, add back into the chaining value ──
+glyph L8 = la a. la b. la c. la d. la e. la f. la g. la h.
+    CONS(a)(CONS(b)(CONS(c)(CONS(d)(CONS(e)(CONS(f)(CONS(g)(CONS(h)(NIL))))))))
+
+glyph BLOCK = la hs. la blk.
+    (la w.
+      (la st.
+        st(la a. la b. la c. la d. la e. la f. la g. la h.
+          L8(ADD32(NTH(hs)(0))(a))(ADD32(NTH(hs)(1))(b))
+            (ADD32(NTH(hs)(2))(c))(ADD32(NTH(hs)(3))(d))
+            (ADD32(NTH(hs)(4))(e))(ADD32(NTH(hs)(5))(f))
+            (ADD32(NTH(hs)(6))(g))(ADD32(NTH(hs)(7))(h))))
+      (ROUNDS(w)(0)(ST(NTH(hs)(0))(NTH(hs)(1))(NTH(hs)(2))(NTH(hs)(3))
+                     (NTH(hs)(4))(NTH(hs)(5))(NTH(hs)(6))(NTH(hs)(7)))))
+    (EXTEND(W16(blk)(0))(16))
+
+glyph BLOCKS = Z(la self. la hs. la s.
+    IF(int_eq(SLEN(s))(0))(la _. hs)(la _.
+      self(BLOCK(hs)(s))(DROPN(64)(s))))
+
+# ── hex output ──
+glyph HEXD = la n. str_head(DROPN(n)("0123456789abcdef"))
+glyph HEX8 = Z(la self. la n. la i.
+    IF(int_eq(i)(8))(la _. "")(la _.
+      concat(HEXD(band(bshr(n)(sub(28)(mul(i)(4))))(15)))(self(n)(add(i)(1)))))
+glyph HEXALL = Z(la self. la hs. la i.
+    IF(int_eq(i)(8))(la _. "")(la _. concat(HEX8(NTH(hs)(i))(0))(self(hs)(add(i)(1)))))
+
+# ── raw 32-byte digest, for consumers that need bytes rather than hex ──
+#    HMAC nests H(...) inside H(...), so the inner digest must be BYTES. Emitting
+#    hex there would hash the 64-character text of a digest instead of the digest,
+#    which produces a plausible-looking wrong answer rather than an error.
+glyph W2B = la n.
+    concat(concat(CHRI(band(bshr(n)(24))(255)))(CHRI(band(bshr(n)(16))(255))))
+          (concat(CHRI(band(bshr(n)(8))(255)))(CHRI(band(n)(255))))
+glyph RAWALL = Z(la self. la hs. la i.
+    IF(int_eq(i)(8))(la _. "")(la _. concat(W2B(NTH(hs)(i)))(self(hs)(add(i)(1)))))
+glyph SHA256_RAW = la msg. RAWALL(BLOCKS(H0)(PAD(msg)))(0)
+
+glyph SHA256 = la msg. HEXALL(BLOCKS(H0)(PAD(msg)))(0)
+
+# ── known-answer test: NIST vectors. A digest is a known answer or it is nothing. ──
+glyph EXP1 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+glyph EXP2 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+glyph MARK = la got. la exp. IF(str_eq(got)(exp))(la _. "OK")(la _. concat("WRONG got=")(got))
+glyph MAIN = print(concat(concat("sha256(abc) ")(MARK(SHA256("abc"))(EXP1)))
+                         (concat(" | sha256('') ")(MARK(SHA256(""))(EXP2))))

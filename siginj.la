@@ -1,0 +1,88 @@
+# =====================================================================
+#  siginj.la — the gate for VISUAL MONOSEMY (α=1 in the sigil register).
+#
+#  ── THE DEFECT ──────────────────────────────────────────────────────
+#  `MC_SIG a = OVERLAY(a)(MIRRORH(a))` is THE IDENTITY on any form already
+#  symmetric about column 16 — and most catalogue forms are. Measured:
+#
+#      SIGIL(↻(RECOGNITION))  ==  SIGIL(RECOGNITION)     byte-identical
+#      SIGIL(↻(SELF))         ==  SIGIL(SELF)            byte-identical
+#
+#  Two canonically distinct concepts rendering to ONE form. Monosemy held in
+#  the κ-register and failed in the visual one. This is the same class of
+#  break as ⊕ commuting in form but not in sound — one concept, two phonyms;
+#  here, two concepts, one sigil. **THE MONOSEMY CHECK WAS RUNNING IN ONE
+#  REGISTER OUT OF THREE.**
+#
+#  ── WHAT THIS GATE ASSERTS ──────────────────────────────────────────
+#  1. ↻ LEAVES A TRACE — SIGIL(↻(x)) ≠ SIGIL(x) for symmetric x, which is
+#     precisely where the old render was degenerate.
+#  2. ↻ DOES NOT COLLIDE WITH ⊂ — the obvious "fix" of rendering ↻(a) as a
+#     nested self-copy would make it identical to ⊂(a,a), trading one
+#     injectivity break for another. Asserted so that repair is not taken.
+#  3. DISTINCT CONCEPTS RENDER DISTINCTLY across a set that includes the
+#     previously-colliding pairs.
+#  4. ★ THE MIRROR IS STILL THERE. The fix must not have quietly replaced
+#     the fold semantics with a bare mode-badge: for an ASYMMETRIC form the
+#     render must differ from that same form with only the mark added, which
+#     it can only do if MIRRORH still contributes.
+#
+#  Check 4 is the one that keeps this honest. Without it, MC_SIG could be
+#  reduced to `OVERLAY(a)(MARK_MC)` — passing 1, 2 and 3 while discarding the
+#  automorphism the mode means. A gate that cannot tell the real repair from
+#  the cheap one is not a gate.
+# =====================================================================
+
+import("sigil.la")
+
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph TRUE_  = la t. la f. t
+glyph FALSE_ = la t. la f. f
+
+# a form's signature: its ink pattern, row by row, as a string
+glyph Zc = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph ROWSIG = Zc(la self. la s. la r. la c.
+    IF(lt(c)(SZ))
+      (la _. concat(IF(SIG_AT(s)(r)(c))(la _. "#")(la _. "."))(self(s)(r)(add(c)(1))))
+      (la _. ""))
+glyph FORMSIG = Zc(la self. la s. la r.
+    IF(lt(r)(SZ))(la _. concat(ROWSIG(s)(r)(0))(self(s)(add(r)(1))))(la _. ""))
+glyph FSIG = la s. FORMSIG(s)(0)
+glyph SAME = la x. la y. str_eq(FSIG(x))(FSIG(y))
+
+glyph REC  = PRIM("RECOGNITION")
+glyph SELF_ = PRIM("SELF")
+glyph BEING_ = PRIM("BEING")
+glyph BECOM = PRIM("BECOMING")
+
+# 1. ★ ↻ now leaves a trace on the forms where it previously vanished
+glyph TRACE_REC  = NOT(SAME(SIGIL(MC(REC)))(SIGIL(REC)))
+glyph TRACE_SELF = NOT(SAME(SIGIL(MC(SELF_)))(SIGIL(SELF_)))
+glyph TRACE_BEING = NOT(SAME(SIGIL(MC(BEING_)))(SIGIL(BEING_)))
+
+# 2. ★ ↻(x) is not ⊂(x,x) — the nesting repair would have collided here
+glyph NO_CONT_COLLIDE = AND(NOT(SAME(SIGIL(MC(REC)))(SIGIL(CONT(REC)(REC)))))
+                           (NOT(SAME(SIGIL(MC(SELF_)))(SIGIL(CONT(SELF_)(SELF_)))))
+
+# 3. distinct concepts render distinctly, including the old colliding pairs
+glyph DISTINCT = AND(NOT(SAME(SIGIL(MC(REC)))(SIGIL(MC(SELF_)))))
+                    (AND(NOT(SAME(SIGIL(REC))(SIGIL(SELF_))))
+                        (NOT(SAME(SIGIL(MC(REC)))(SIGIL(SELF_)))))
+
+# 4. ★★ the MIRROR still contributes — the fold was not replaced by a badge.
+#    BECOMING is chiral (the catalogue's one asymmetric primitive), so if
+#    MIRRORH were dropped, ↻(BECOMING) would equal BECOMING-plus-mark. It
+#    must not, and only a real fold makes it differ.
+glyph MARKONLY = la a. OVERLAY(a)(MARK_MC)
+glyph MIRROR_LIVES = NOT(SAME(SIGIL(MC(BECOM)))(MARKONLY(SIGIL(BECOM))))
+
+glyph MARK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph MAIN = print(
+  concat(concat(concat("siginj ↻trace-REC ")(MARK(TRACE_REC)))
+                (concat(concat(" | ↻trace-SELF ")(MARK(TRACE_SELF)))
+                       (concat(" | ↻trace-BEING ")(MARK(TRACE_BEING)))))
+        (concat(concat(" | ↻≠⊂ ")(MARK(NO_CONT_COLLIDE)))
+               (concat(concat(" | distinct ")(MARK(DISTINCT)))
+                      (concat(" | mirror-lives ")(MARK(MIRROR_LIVES))))))

@@ -1,0 +1,62 @@
+# ═══════════════════════════════════════════════════════════════════
+#  grammar.la — ITEM 5: THE GRAMMAR RECOVERABLE AS DATA (L1 + L2)
+#
+#  Scope DECIDED (Erik, 2026-08-18): L1 + L2. L3 (full self-parse) only after L2
+#  is green, and reported PARTIAL if it lands bounded.
+#
+#  ── THE GRAMMAR IS READ OFF parser.la, NOT INVENTED ──────────────────────
+#      module    := ( glyphdef | importdir | exportdir )*   [PARSE_MOD_LOOP :338]
+#      glyphdef  := 'glyph' ident 'eq' expr                 [PARSE_GLYPH    :243]
+#      importdir := 'import' 'lp' str 'rp'                  [PARSE_IMPORT   :320]
+#      exportdir := 'export' ident*                         [PARSE_EXPORT_NAMES :332]
+#      expr      := 'la' ident 'dot' expr | app             [PARSE_EXPR     :220]
+#      app       := primary app_tail                        [PARSE_APP      :195]
+#      app_tail  := ( 'lp' expr 'rp' )*                     [PARSE_APP_TAIL :202]
+#      primary   := ident | str | 'lp' expr 'rp'            [PARSE_PRIMARY  :173]
+#
+#  ★ exportdir is `ident*`, NOT `ident+`. fuzz_grammar.py's first real run caught
+#  that: PARSE_EXPORT_NAMES falls through to PAIR(NIL)(s) when the next token is
+#  not an ident, so a BARE `export` is legal LA. A wrong production caught BEFORE
+#  any module was built against it — which is what the fuzzer exists for.
+#
+#  ── ★ THE VERIFICATION CHAIN, stated because L2's strength depends on it ──
+#  fuzz_grammar.py carries a recognizer built from the SAME transcription and
+#  differentially tested it against parser.la itself: 60/60 agreeing on BOTH the
+#  accept and the reject side, with parser.la's loud-halt rejects handled (its
+#  PARSE_MOD_LOOP calls error(), it does not return NONE). So the productions
+#  below are not asserted — they are the ones already witnessed equal to the real
+#  parser. GPARSE is then differentially checked against those same verdicts.
+#
+#  ── BOUNDS, stated up front ──────────────────────────────────────────────
+#  · GPARSE consumes TOKEN TYPES, not raw text. Lexing is parser.la's job and is
+#    not re-implemented here; item 5 is about the grammar, not the lexer.
+#  · ★ ASSOCIATIVITY IS INVISIBLE TO A VERDICT-ONLY DIFFERENTIAL. app_tail is
+#    LEFT-associative — f(x)(y) ≡ (f(x))(y) — and a data grammar that accepted the
+#    same STRINGS with the wrong associativity would pass this gate silently.
+#    That is a known blind spot of L2, not a defect in it.
+#  · importdir is EXCLUDED from the differential corpus: parser.la's import arm
+#    calls read_file() and recurses into a real module, so a corpus string with an
+#    import would touch the filesystem.
+#  · L1 ALONE IS DECORATIVE — a data structure agreeing with nothing. It is not a
+#    deliverable without L2, and is not reported as one.
+# ═══════════════════════════════════════════════════════════════════
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph BSTR = la b. b("T")("F")
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+
+# ── L1 — the grammar as FIRST-CLASS DATA (Scott-encoded, DECOMP-able like every
+#    other glyph in the house discipline) ──
+glyph GT    = la t. la ft. la fn. la fq. la fa. la fs. la fe. ft(t)
+glyph GN    = la n. la ft. la fn. la fq. la fa. la fs. la fe. fn(n)
+glyph GSEQ  = la a. la b. la ft. la fn. la fq. la fa. la fs. la fe. fq(a)(b)
+glyph GALT  = la a. la b. la ft. la fn. la fq. la fa. la fs. la fe. fa(a)(b)

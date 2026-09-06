@@ -159,10 +159,64 @@ glyph HAS_PREFIX = Z(la self. la s. la p. IF(str_eq(p)(""))(la _. TRUE)(la _. IF
 # (de-heterologised). 𝓡 (▷(DEPTH,RECOGNITION)) and SR_WITH (⊕(SELF,SELF)) are stable
 # on distinct grounds (evaluator / co-presence) and kept explicit.
 glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. IF(HAS_PREFIX(x)("↻("))(la _. x)(la _. IF(str_eq(x)("▷(DEPTH,RECOGNITION)"))(la _. x)(la _. IF(str_eq(x)("⊕(SELF,SELF)"))(la _. x)(la _. concat("↻(")(concat(x)(")"))))))
-glyph NORMK = Z(la self. la node. node (la nm. nm) (la a. la b. SORT2("⊗")(self(a))(self(b))) (la a. la b. SORT2("⊕")(self(a))(self(b))) (la a. la b. WRAP2("▷")(self(a))(self(b))) (la a. la b. WRAP2("⊂")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))
+# REWRITE_SYN : ⊗-IDEMPOTENCE, AND IT HOLDS FOR THE ARCHĒ ALONE. Erik's ruling
+# 2026-08-24 (LA_ARC_NEXT R-A): ⊗(A,A) ≡ A for the Archē; for EVERY other A, ⊗(A,A)
+# is a DISTINCT compound. A DECLARED equivalence, not a discovered one — it belongs
+# beside ↻(BEING)→SELF and ↻(𝓡)→𝓡 because that is where declared equivalences live.
+# SHAPE-keyed on the CANONICAL FORM (NORMK's output "∃"), never on a glyph name.
+# ★ WHY A RULE AND NOT AN ACCIDENT: the general case used to collapse in the PHONETIC
+# register, where a weighted blend of identical parents gives (2g+g)/3 = g — so an
+# infinite family of distinct glyphs shared one phonym and the RENDERER, not the
+# theory, was deciding. Declared here, the THEORY decides it, and NIS gates it in
+# BOTH directions. HONEST BOUND: this extends NORMK's equivalence theory, so
+# monosemy stays enforced RELATIVE to that theory, not absolutely.
+glyph REWRITE_SYN = la a. la b. IF(AND(str_eq(a)(b))(str_eq(a)("∃")))(la _. a)(la _. WRAP2("⊗")(a)(b))
+glyph NORMK = Z(la self. la node. node (la nm. nm) (la a. la b. REWRITE_SYN(self(a))(self(b))) (la a. la b. SORT2("⊕")(self(a))(self(b))) (la a. la b. WRAP2("▷")(self(a))(self(b))) (la a. la b. WRAP2("⊂")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))
 glyph NIS = la a. la b. str_eq(NORMK(a))(NORMK(b))
 
 # ── α alignment (Science of Naming): α=1 ⇔ sign IS referent (the ontoglyph) ────
+# ★★ RESOLVED 2026-08-26 (LA_ARC_NEXT "THE LAWS"): **α IS BINARY, AND THE CODE IS
+#    RIGHT.** The arc recorded a live discrepancy — "α is binary in code and graded
+#    in the paper" — and it must be resolved in ONE direction and stated. It is
+#    resolved in favour of BINARY, and the reason is that the "graded α" was never
+#    α at all. It is a DIFFERENT REGISTER wearing the same letter.
+#
+#    FIDELITY.md already draws the line and this is the same line, restated where α
+#    is DEFINED rather than only where fidelity is measured:
+#      · ALIGNMENT (sign ≡ referent, α=1): **1.0 BY NATURE** — identity, established
+#        BY CONSTRUCTION via κ/NORMK injectivity. NOT MEASURED. A predicate, not a
+#        quantity. That is IS_ALPHA1 below, and it is a BOOLEAN on purpose.
+#      · INSTANTIATION FIDELITY: how faithfully a low-dimensional derived FORM (a
+#        sigil, a phonym) realises that alignment. **MEASURED, sub-1.0, bounded** —
+#        visual ≈0.863, phonetic 0.71. Real, and it is NOT α.
+#
+#    ★ THE CATEGORY ERROR THIS FORBIDS: reporting a fidelity number as though it were
+#    α. It would read as "the sign is 86% the referent", which is not a weaker version
+#    of the ontoglyph claim — it is a different claim in a register where degrees are
+#    meaningful at all. Conflating them is exactly the two-register violation the ATT
+#    note names.
+#    ★★ CORRECTED 2026-08-26, SAME DAY, against the corpus. An earlier wording here
+#    said α is "a two-valued predicate, not a scale" full stop. That OVERREACHED.
+#    The Science of Naming DOES place α on the Semiotic-Ontoglyphic Ladder — Noise,
+#    Sign, Icon, Index, Glyph, Neoglyph, Ontoglyph — and says "each level IS a degree
+#    of α-alignment". The precise claim, which the corpus itself supplies in the
+#    Ladder's own header, is:
+#      · ACROSS SIGN KINDS, α is ORDINAL — "illustrative ordinal placements, NOT
+#        cardinal measurements" (The Science of Naming, Ladder table). A ranking of
+#        kinds, not a measured quantity. 0.2/0.4/0.6/0.8 are positions, not amounts.
+#      · WITHIN LINGUA ADAMICA, α is TWO-VALUED — not because gradation is denied,
+#        but because LA contains only LEVEL-6 forms and the synonyms that collapse to
+#        them. There is nothing in this language at Icon or Index to be graded. So
+#        IS_ALPHA1 is a LEVEL-6 MEMBERSHIP TEST, and a boolean is the right shape for
+#        it.
+#    ★ What stays forbidden is unchanged and is the thing that actually matters:
+#    reporting a MEASURED instantiation-fidelity number as α. That would be cardinal,
+#    which the corpus rules out even for the ladder, and in the wrong register besides.
+#    See ladder.la, which carries the seven levels as data and enforces the ordinal
+#    discipline mechanically.
+#    ★ Gated: build.sh exercises BOTH arms (CON(A,B) is already normalised ⇒ α=1;
+#    CON(B,A) needs sorting ⇒ α<1), so the predicate is witnessed to discriminate and
+#    a constant-TRUE α would go red.
 # A decomposition's plain form is at α=1 (meta-ontosemantic: the name IS the
 # referent's self-disclosure) iff it already equals its NORMALIZED form — no
 # synonym-collapse changes it. Synonyms sit at α<1 (CANON ≠ NORMK) and collapse
@@ -217,7 +271,8 @@ glyph SRC_WRAP2 = "la sym. la a. la b. concat(sym)(concat(\"(\")(concat(a)(conca
 glyph SRC_SORT2 = "la sym. la a. la b. IF(LE(a)(b))(la _. WRAP2(sym)(a)(b))(la _. WRAP2(sym)(b)(a))"
 glyph SRC_HASPREFIX = "Z(la self. la s. la p. IF(str_eq(p)(\"\"))(la _. TRUE)(la _. IF(str_eq(s)(\"\"))(la _. FALSE)(la _. IF(str_eq(str_head(s))(str_head(p)))(la _. self(str_tail(s))(str_tail(p)))(la _. FALSE))))"
 glyph SRC_REWMC = "la x. IF(str_eq(x)(\"BEING\"))(la _. \"SELF\")(la _. IF(HAS_PREFIX(x)(\"↻(\"))(la _. x)(la _. IF(str_eq(x)(\"▷(DEPTH,RECOGNITION)\"))(la _. x)(la _. IF(str_eq(x)(\"⊕(SELF,SELF)\"))(la _. x)(la _. concat(\"↻(\")(concat(x)(\")\"))))))"
-glyph SRC_NORMK = "Z(la self. la node. node (la nm. nm) (la a. la b. SORT2(\"⊗\")(self(a))(self(b))) (la a. la b. SORT2(\"⊕\")(self(a))(self(b))) (la a. la b. WRAP2(\"▷\")(self(a))(self(b))) (la a. la b. WRAP2(\"⊂\")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))"
+glyph SRC_REWSYN = "la a. la b. IF(AND(str_eq(a)(b))(str_eq(a)(\"∃\")))(la _. a)(la _. WRAP2(\"⊗\")(a)(b))"
+glyph SRC_NORMK = "Z(la self. la node. node (la nm. nm) (la a. la b. REWRITE_SYN(self(a))(self(b))) (la a. la b. SORT2(\"⊕\")(self(a))(self(b))) (la a. la b. WRAP2(\"▷\")(self(a))(self(b))) (la a. la b. WRAP2(\"⊂\")(self(a))(self(b))) (la a. REWRITE_MC(self(a))))"
 glyph SRC_NIS = "la a. la b. str_eq(NORMK(a))(NORMK(b))"
 glyph SRC_ISA1 = "la d. str_eq(CANON(d))(NORMK(d))"
 glyph SRC_A1 = "la d. NORMK(d)"
@@ -349,6 +404,8 @@ glyph CANON_SPEC =
         T1L(TC(la g. g("↻(DEPTH)")("↻(")("T")("F"))("T"))))(
   CONS(E("REWRITE_MC")("metacursion-idempotence, SHAPE-keyed not name-keyed (trusted)")(SRC_REWMC)(REWRITE_MC)(
         T2L(TC(la g. g("BEING"))("SELF"))(TC(la g. g("X"))("↻(X)"))))(
+  CONS(E("REWRITE_SYN")("⊗-idempotence — DECLARED for the Archē alone (Erik 2026-08-24) (trusted)")(SRC_REWSYN)(REWRITE_SYN)(
+        T2L(TC(la g. g("∃")("∃"))("∃"))(TC(la g. g("LOVE")("LOVE"))("⊗(LOVE,LOVE)"))))(
   CONS(E("NORMK")("κ with commutative + algebraic normalization (trusted)")(SRC_NORMK)(NORMK)(
         T3L(TC(la g. g(CON(PRIM("A"))(PRIM("B"))))("⊕(A,B)"))
            (TC(la g. g(CON(PRIM("B"))(PRIM("A"))))("⊕(A,B)"))                        # ⊕(B,A) normalises to ⊕(A,B)
@@ -363,7 +420,7 @@ glyph CANON_SPEC =
   CONS(E("ALPHA1")("the α=1 ontoglyph: synonyms collapse to this one name (trusted)")(SRC_A1)(ALPHA1)(
         T2L(TC(la g. g(CON(PRIM("B"))(PRIM("A"))))("⊕(A,B)"))                                             # the α=1 representative of ⊕(B,A)
            (TC(la g. str_eq(g(CON(PRIM("A"))(PRIM("B"))))(g(CON(PRIM("B"))(PRIM("A"))))("one")("two"))("one"))))(  # bijection: both synonyms → one name
-  NIL))))))))))))))))))))))))))))))))))))))))))))))))
+  NIL)))))))))))))))))))))))))))))))))))))))))))))))))
 
 glyph MAIN =
     SEQ(print(concat("=== GENERATE(CANON_SPEC) ===\n")(GENERATE(CANON_SPEC))))

@@ -1,0 +1,7 @@
+# sglyph_probe.la — the CHEAP feedback loop, run before the full gate.
+# One nucleus window: 31 grid points x NW samples. Its wall time is the unit
+# cost every other number in the gate is a multiple of, so this is measured
+# once rather than reasoned about after the fact.
+import("phonym.la")
+import("sglyph.la")
+glyph MAIN = print(concat("BEING nucleus peaks: ")(VOWEL_OF(PHON_PRIM("BEING"))))

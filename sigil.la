@@ -34,7 +34,7 @@
 #  predicate model has no colour channel — the topology is what is preserved.
 # ═══════════════════════════════════════════════════════════════════
 
-export SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL LOGOS OVERLAY RING SEG DOT DISK PLACE MIRRORH
+export SIGIL SIG_AT SZ PRIM SYN CON DIR CONT MC PRIM_SIGIL LOGOS OVERLAY RING SEG DOT DISK PLACE MIRRORH MARK_MC
 
 # ── Foundations ──
 glyph SEQ   = la a. la b. b
@@ -81,7 +81,14 @@ glyph SORTC = la mk. la a. la b. IF(STR_LE(CANON(a))(CANON(b)))(la _. mk(a)(b))(
 glyph CANONIQ = Z(la self. la node.
     node
         (la nm. PRIM(nm))
-        (la a. la b. SORTC(SYN)(self(a))(self(b)))           # ⊗ commutative → sort
+        (la a. la b. (la na. la nb.                          # ⊗ NON-commutative (tex:2837)
+              # ★ R-A, THIRD REGISTER (2026-08-26). ⊗(A,A) ≡ A for the ARCHĒ ALONE;
+              # every other ⊗(A,A) stays a distinct compound. canon.la (REWRITE_SYN)
+              # and phonym.la (SYNNORM) carried this from the day of the ruling; the
+              # visual register could not express it until ∃ became a name here.
+              # Keyed on the CANONICAL FORM via CANON, never on a glyph name.
+              IF(AND(str_eq(CANON(na))(CANON(nb)))(str_eq(CANON(na))("∃")))
+                (la _. na)(la _. SYN(na)(nb)))(self(a))(self(b)))
         (la a. la b. SORTC(CON)(self(a))(self(b)))           # ⊕ commutative → sort
         (la a. la b. DIR(self(a))(self(b)))                  # ▷ directional → keep
         (la a. la b. CONT(self(a))(self(b)))                 # ⊂ directional → keep
@@ -299,8 +306,37 @@ glyph DIR_SIG  = la a. la b.
 # and placed inside b.
 glyph CONT_SIG = la a. la b. OVERLAY(b)(PLACE(a)(Q)(Q)(HALF)(HALF))
 # ↻ MC — self-folding: the form's own automorphism made visible
-# (Symmetries→Symmetric placement) — reflected onto itself.
-glyph MC_SIG   = la a. OVERLAY(a)(MIRRORH(a))
+# (Symmetries→Symmetric placement) — reflected onto itself, PLUS a fold trace.
+#
+# ── ★ WHY THE FOLD TRACE IS NOT DECORATION ──────────────────────────
+# `OVERLAY(a)(MIRRORH(a))` alone is THE IDENTITY on any form already
+# symmetric about column 16 — and most catalogue forms are. Measured before
+# the fix: SIGIL(↻(RECOGNITION)) was BYTE-IDENTICAL to SIGIL(RECOGNITION),
+# and SIGIL(↻(SELF)) to SIGIL(SELF). Two canonically distinct concepts, one
+# visual form: monosemy holding in the κ-register and FAILING in the visual
+# one — the same class of break as ⊕ commuting in form but not in sound.
+#
+# The repair leaves the fold semantics untouched (the mirror IS the
+# automorphism, and that reading is correct) and adds what was missing: a
+# WITNESS THAT THE FOLD HAPPENED. A self-application that leaves no trace is
+# indistinguishable from no application, which is exactly what the renders
+# showed. MARK_MC is the ↻ counterpart of MARK_SYN, so the mode also stays
+# recoverable from the form (TopoEmbed's MODE_REC requirement).
+#
+# HONEST BOUND, stated rather than traded away: this fixes INJECTIVITY. It
+# does not fix clause (ii) of the Visual Morphic Blend (a single connected
+# shape) — MARK_MC, like MARK_SYN, is a detached mark, so a ↻ render has two
+# components. That defect is real, is separate, and is not silently repaired
+# by this change.
+# ★ THE FOLD TRACE MUST ITSELF RESPECT THE FOLD. A one-sided mark would
+# destroy the H-symmetry that ↻ GENERATES — and build.sh gates exactly
+# that: "Truth = MC(RECOGNITION) (self-fold) -> H symmetric (generated)".
+# A mark that breaks the symmetry it marks is incoherent, and would have
+# traded an injectivity break for a symmetry break. So the trace is
+# mirrored about column 16: present, and symmetric.
+glyph MARK_MC_H = la r. la c. OR(SEG(27)(26)(27)(30)(1)(r)(c))(SEG(30)(26)(30)(30)(1)(r)(c))
+glyph MARK_MC  = OVERLAY(MARK_MC_H)(MIRRORH(MARK_MC_H))
+glyph MC_SIG   = la a. OVERLAY(OVERLAY(a)(MIRRORH(a)))(MARK_MC)
 
 # PRIM_SIGIL(name) — a primitive's catalogue form. All nine are drawn (the
 # catalogue gives each its own settled form); a name outside the nine is UNDEF.
@@ -314,7 +350,16 @@ glyph PRIM_SIGIL = la nm.
     IF(str_eq(nm)("BECOMING"))   (la _. BECOMING)(la _.
     IF(str_eq(nm)("FORM"))       (la _. FORM)(la _.
     IF(str_eq(nm)("DEPTH"))      (la _. DEPTH)(la _.
-    IF(str_eq(nm)("LOGOS"))      (la _. LOGOS)(la _.   # the Meta-Word Λ (not a primitive)
+    IF(str_eq(nm)("∃"))          (la _. LOGOS)(la _.   # the Archē. ★ KEYED ON "∃",
+    #   ★ Erik's ruling 2026-08-26: ∃ EVERYWHERE; LOGOS is just this drawn form's
+    #   LABEL. Before, the visual register called the Archē "LOGOS" while canon.la,
+    #   phonym.la and archroot.la called it "∃" — two names for one referent, which
+    #   is the exact polysemy the language forbids, appearing inside the IMPLEMENTATION
+    #   of the rule rather than in the vocabulary. It also made R-A (⊗(A,A) ≡ A for the
+    #   Archē alone) INEXPRESSIBLE here, because ⊗(∃,∃) had no ∃ to match.
+    #   The glyph `LOGOS` below is still the drawn form — it is the picture's name, not
+    #   the concept's. "LOGOS" is deliberately NOT accepted as an alias: an alias would
+    #   reintroduce the two-names-one-referent problem this ruling exists to close.
     UNDEF))))))))))
 
 # ── SIGIL — the visual κ: a decomposition node → its sigil (mirrors CANON).
@@ -351,7 +396,7 @@ glyph MAIN =
     SEQ(SHOW("g8 FORM        triangle in circle             witness: type ctor")(SIGIL(PRIM("FORM"))))(
     SEQ(SHOW("g9 DEPTH       nested circles, descending     witness: recursion")(SIGIL(PRIM("DEPTH"))))(
     # ── The Logos / Meta-Word Λ — the whole naming itself (Totality, not a 10th primitive) ──
-    SEQ(SHOW("Λ  LOGOS       Λ(Λ)≡Λ = ∃(∃)≡∃ — Being's circle holding the ∞ + the Name")(SIGIL(PRIM("LOGOS"))))(
+    SEQ(SHOW("Λ  LOGOS       Λ(Λ)≡Λ = ∃(∃)≡∃ — Being's circle holding the ∞ + the Name")(SIGIL(PRIM("∃"))))(
     # ── Derived concepts — GENERATED from the drawn primitives (First Derivations) ──
     SEQ(SHOW("DERIVED Truth         = ↻(RECOGNITION)")(SIGIL(MC(PRIM("RECOGNITION")))))(
     SEQ(SHOW("DERIVED Consciousness = RECOGNITION ⊗ SELF")(SIGIL(SYN(PRIM("RECOGNITION"))(PRIM("SELF")))))(

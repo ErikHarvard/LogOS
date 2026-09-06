@@ -19,3 +19,17 @@ add r10, r11
 pop rbp
 ret
 nop
+
+eq_head:  db "hello, world!", 10
+eq_tail:
+EQ_DIRLEN equ eq_tail - eq_head
+EQ_DOLLEN equ $ - eq_head
+EQ_NUM    equ 5
+mov rax, 15
+mov rbx, eq_tail - eq_head
+mov rcx, (eq_tail - eq_head)
+mov rdx, EQ_NUM
+mov rsi, eq_head
+mov rdi, EQ_DIRLEN
+mov r8, EQ_DOLLEN
+mov r9, eq_head + 8

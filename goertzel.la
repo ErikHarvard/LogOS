@@ -19,6 +19,13 @@
 
 import("phonym.la")          # SR, SINEK, PSIN, VMIX, VSAMP (the real synthesis)
 
+# The analyzer is a SINGLE SOURCE OF TRUTH, so sglyph.la imports it rather than
+# carrying a second Goertzel. Nothing imported this module before, so adding the
+# line changes no existing importer; MAIN stays private and standalone runs are
+# unaffected. (Non-exported glyphs are alpha-renamed at import, which is why the
+# export must be explicit.)
+export GPOWER GIDX GCOEFF N
+
 glyph Z  = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph PAIR = la a. la b. la f. f(a)(b)

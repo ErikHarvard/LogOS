@@ -608,6 +608,36 @@ _start:
     test    eax, eax
     je      .bi27
     mov     rsi, rbp
+    mov     rdi, str_band
+    call    strcmp
+    test    eax, eax
+    je      .bi60
+    mov     rsi, rbp
+    mov     rdi, str_bor
+    call    strcmp
+    test    eax, eax
+    je      .bi61
+    mov     rsi, rbp
+    mov     rdi, str_bxor
+    call    strcmp
+    test    eax, eax
+    je      .bi62
+    mov     rsi, rbp
+    mov     rdi, str_bshl
+    call    strcmp
+    test    eax, eax
+    je      .bi63
+    mov     rsi, rbp
+    mov     rdi, str_bshr
+    call    strcmp
+    test    eax, eax
+    je      .bi64
+    mov     rsi, rbp
+    mov     rdi, str_bnot
+    call    strcmp
+    test    eax, eax
+    je      .bi65
+    mov     rsi, rbp
     mov     rdi, str_reap
     call    strcmp
     test    eax, eax
@@ -637,6 +667,11 @@ _start:
     call    strcmp
     test    eax, eax
     je      .bi33
+    mov     rsi, rbp
+    mov     rdi, str_strat
+    call    strcmp
+    test    eax, eax
+    je      .bi66
     mov     rsi, rbp
     mov     rdi, str_drmmode
     call    strcmp
@@ -852,6 +887,27 @@ _start:
 .bi27:
     mov     r11, 27
     jmp     .pushbi
+.bi60:
+    mov     r11, 60
+    jmp     .pushbi
+.bi61:
+    mov     r11, 61
+    jmp     .pushbi
+.bi62:
+    mov     r11, 62
+    jmp     .pushbi
+.bi63:
+    mov     r11, 63
+    jmp     .pushbi
+.bi64:
+    mov     r11, 64
+    jmp     .pushbi
+.bi65:
+    mov     r11, 65
+    jmp     .pushbi
+.bi66:
+    mov     r11, 66
+    jmp     .pushbi
 .bi28:
     mov     r11, 28
     jmp     .pushbi
@@ -1059,6 +1115,20 @@ _start:
     je      .bi_strtoint
     cmp     r11, 20
     je      .bi_inttostr
+    cmp     r11, 60
+    je      .mkpa
+    cmp     r11, 61
+    je      .mkpa
+    cmp     r11, 62
+    je      .mkpa
+    cmp     r11, 63
+    je      .mkpa
+    cmp     r11, 64
+    je      .mkpa
+    cmp     r11, 65
+    je      .bi_bnot
+    cmp     r11, 66
+    je      .mkpa
     cmp     r11, 21
     je      .mkpa
     cmp     r11, 22
@@ -1180,6 +1250,18 @@ _start:
     je      .bi_lt2
     cmp     r10, 27
     je      .bi_inteq2
+    cmp     r10, 60
+    je      .bi_band2
+    cmp     r10, 61
+    je      .bi_bor2
+    cmp     r10, 62
+    je      .bi_bxor2
+    cmp     r10, 63
+    je      .bi_bshl2
+    cmp     r10, 64
+    je      .bi_bshr2
+    cmp     r10, 66
+    je      .bi_strat2
     cmp     r10, 32
     je      .bi_read2
     cmp     r10, 38
@@ -1262,6 +1344,42 @@ _start:
     mov     qword [r15], 0       ; len 0
     mov     [r15+8], r15         ; ptr (unused for empty)
 .sh_push:
+    mov     qword [r12], 0
+    mov     [r12+8], r15
+    add     r12, 16
+    add     r15, 16
+    jmp     .loop
+
+.bi_strat2:                      ; rbp = a1 STRDESC, r9 = a2 index, r8 = a2 tag
+    ; str_at(s)(i) -- the i-th byte as a one-byte string. Deliberately placed
+    ; beside .bi_strhead: it is that builtin generalised from 0 to i, and the
+    ; allocation below is str_head's, unchanged. What makes it O(1) is that a
+    ; STRDESC CARRIES its length, so no walk is needed to find the end.
+    cmp     qword [r11+8], 0     ; a1 must be STR (its tag is in the PA record)
+    jne     .strtype
+    cmp     r8, 4                ; a2 must be INT (tag 4). The int builtins do
+    jne     .strtype             ; not check, but this one DEREFERENCES a1 at
+                                 ; a2's value, so an unchecked tag is a wild read.
+    mov     rcx, [rbp]           ; length
+    cmp     r9, rcx              ; UNSIGNED: a negative index compares huge and
+    jae     .sa_zero             ; so takes the out-of-range branch, one test
+    mov     rsi, [rbp+8]         ; for both ends -- matching tiny_host, which
+    add     rsi, r9              ; also folds i<0 and i>=len into one "".
+    mov     al, [rsi]
+    mov     [r15], al            ; DATA blob: 1 raw byte (no header)
+    mov     rbp, r15
+    inc     r15
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 1       ; len 1
+    mov     [r15+8], rbp         ; ptr -> the fresh byte
+    jmp     .sa_push
+.sa_zero:                        ; out of range -> "" (the rule lives in tiny_host)
+    mov     qword [r15], 0       ; STRDESC GC fwd header
+    add     r15, 8
+    mov     qword [r15], 0       ; len 0
+    mov     [r15+8], r15         ; ptr (unused for empty)
+.sa_push:
     mov     qword [r12], 0
     mov     [r12+8], r15
     add     r12, 16
@@ -3276,6 +3394,39 @@ _start:
     idiv    r9
     mov     rax, rdx
     jmp     .push_int
+.bi_band2:                       ; rbp & r9 — two's complement, matches tiny_host
+    mov     rax, rbp
+    and     rax, r9
+    jmp     .push_int
+.bi_bor2:
+    mov     rax, rbp
+    or      rax, r9
+    jmp     .push_int
+.bi_bxor2:
+    mov     rax, rbp
+    xor     rax, r9
+    jmp     .push_int
+.bi_bshl2:                       ; count outside 0..63 -> 0 (see header: x86
+    cmp     r9, 63               ; MASKS the count to 6 bits and ARM does not,
+    ja      .bi_shift_zero       ; so the range check suppresses that accident;
+    mov     rcx, r9              ; `ja` also catches negatives as unsigned-large
+    mov     rax, rbp
+    shl     rax, cl
+    jmp     .push_int
+.bi_bshr2:                       ; LOGICAL (shr), never arithmetic (sar)
+    cmp     r9, 63
+    ja      .bi_shift_zero
+    mov     rcx, r9
+    mov     rax, rbp
+    shr     rax, cl
+    jmp     .push_int
+.bi_shift_zero:
+    xor     rax, rax
+    jmp     .push_int
+.bi_bnot:                        ; UNARY: r9 = arg
+    mov     rax, r9
+    not     rax
+    jmp     .push_int
 .push_int:
     mov     qword [r12], 4
     mov     [r12+8], rax
@@ -3715,12 +3866,19 @@ str_div:       db "div", 0
 str_mod:       db "mod", 0
 str_lt:        db "lt", 0
 str_inteq:     db "int_eq", 0
+str_band:      db "band", 0
+str_bor:       db "bor", 0
+str_bxor:      db "bxor", 0
+str_bshl:      db "bshl", 0
+str_bshr:      db "bshr", 0
+str_bnot:      db "bnot", 0
 str_reap:      db "reap", 0
 str_sleep:     db "sleep", 0
 str_error:     db "error", 0
 str_pipe:      db "pipe", 0
 str_read:      db "read", 0
 str_strlen:    db "str_len", 0
+str_strat:     db "str_at", 0
 str_drmmode:   db "drm_mode", 0
 str_present:   db "present", 0
 str_clockgettime: db "clock_gettime", 0

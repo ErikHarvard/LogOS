@@ -21,3 +21,4 @@ glyph FORM = la x. la k. k(x)
 glyph DEPTH = la g. g(g)
 # DEPTH_Z : (a -> a) -> a   (guarded metacursion = Z; point-free body, so untyped/trusted)
 glyph DEPTH_Z = Z
+export BEING Z RELATION RECOGNITION LOVE SELF VOID BECOMING FORM DEPTH DEPTH_Z 

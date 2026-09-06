@@ -88,7 +88,7 @@
 #  C host and the native VM, like elf.la.
 # =====================================================================
 
-export ASSEMBLE TOKS LINES REGNUM
+export ASSEMBLE ASM_ELF TOKS LINES REGNUM
 
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")
@@ -122,7 +122,12 @@ glyph LE4 = la n0.
     (IF(lt(n0)(0))(la _. add(4294967296)(n0))(la _. n0))
 
 # ── tokenizing: lines, then whitespace/comma-separated tokens ──
-glyph ISSEP = la c. OR(str_eq(c)(" "))(OR(str_eq(c)(","))(str_eq(c)("	")))
+#   ★ A COMMA IS A TOKEN, NOT A SEPARATOR. Treating it as whitespace made
+#   `dw 1, 2` (TWO values) and `dw end - gdt64 - 1` (ONE expression) produce the
+#   same flat token list, so nothing downstream could tell them apart —
+#   `dw end - gdt64 - 1` emitted two words instead of one, the second being
+#   `-gdt64-1` = -1. Operand boundaries have to survive tokenization.
+glyph ISSEP = la c. OR(str_eq(c)(" "))(str_eq(c)("	"))
 #   The tokenizer must be STRING-AWARE: `db "I AM THAT I AM", 10` splits on
 #   spaces like everything else, which would shred the string into words. So a
 #   quoted run is consumed whole into ONE token, kept with its opening quote so
@@ -155,7 +160,11 @@ glyph TOKS = Z(la self. la s. la cur.
           IF(str_eq(c)("\""))
             (la _. (la p. CONS(concat("\"")(FST(p)))(self(SND(p))("")))
                    (SCANSTR(str_tail(s))("")))
-            (la _. IF(str_eq(c)(";"))
+            (la _. IF(str_eq(c)(","))
+              (la _. IF(str_eq(cur)(""))
+                       (la _. CONS(",")(self(str_tail(s))("")))
+                       (la _. CONS(cur)(CONS(",")(self(str_tail(s))("")))))
+              (la _. IF(str_eq(c)(";"))
               (la _. IF(str_eq(cur)(""))(la _. NIL)(la _. CONS(cur)(NIL)))
               (la _. IF(str_eq(c)("["))
               (la _. (la p. (la brk.
@@ -167,7 +176,7 @@ glyph TOKS = Z(la self. la s. la cur.
               (la _. IF(ISSEP(c))
                      (la _. IF(str_eq(cur)(""))(la _. self(str_tail(s))(""))
                                                (la _. CONS(cur)(self(str_tail(s))(""))))
-                     (la _. self(str_tail(s))(concat(cur)(c)))))))
+                     (la _. self(str_tail(s))(concat(cur)(c))))))))
         (str_head(s))))
 glyph LINES = Z(la self. la s. la cur.
     IF(str_eq(s)(""))
@@ -192,10 +201,15 @@ glyph LABNAME = la t. DROPLAST(t)
 #   branches are thunks and only the selected one is forced.
 glyph LOOKLAB = Z(la self. la nm. la l.
     l(NONE)(la h. la t. IF(str_eq(FST(h))(nm))(la _. SOME(SND(h)))(la _. self(nm)(t))))
+#   A jmp/call target may be a NUMERIC absolute address (`jmp 0x100000` —
+#   boot7b_s2 jumps to the loaded image at its physical address), not a label.
+#   TGTOPT resolves a number to its value, otherwise the label table.
+glyph TGTOPT = la labs. la nm.
+    IF(ISNUM(nm))(la _. SOME(NUMV(nm)))(la _. LOOKLAB(nm)(labs))
 glyph LABADDR = la nm. la labs.
     (la o. IF(ISSOME(o))(la _. OPTV(o))
                         (la _. error(concat("asm: undefined label: ")(nm))))
-    (LOOKLAB(nm)(labs))
+    (TGTOPT(labs)(nm))
 
 #   A jump's operand is NTH 1, or NTH 2 when an explicit `near` is written.
 glyph TARGET = la ts. IF(str_eq(NTH(1)(ts))("near"))(la _. NTH(2)(ts))(la _. NTH(1)(ts))
@@ -208,6 +222,19 @@ glyph TARGET = la ts. IF(str_eq(NTH(1)(ts))("near"))(la _. NTH(2)(ts))(la _. NTH
 glyph REL32 = la labs. la nm. la next.
     (la d. IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d))
     (sub(LABADDR(nm)(labs))(next))
+#   16-bit mode: near call/jmp use rel16 (2-byte offset), so a near jmp/call is
+#   3 bytes (opcode+rel16) not 5, a near jcc 4 not 6. mode!=16 → rel32, byte-
+#   identical. NEARSZ/NEARDISP parameterise by opclen (1 for call/jmp, 2 for jcc)
+#   and keep SIZE and EMIT in lockstep (same next = off + opclen + disp-width).
+glyph REL16 = la labs. la nm. la next.
+    (la d. IF(lt(d)(0))(la _. add(65536)(d))(la _. d))
+    (sub(LABADDR(nm)(labs))(next))
+glyph NEARSZ = la mode. la opclen.
+    IF(int_eq(mode)(16))(la _. add(opclen)(2))(la _. add(opclen)(4))
+glyph NEARDISP = la mode. la labs. la nm. la off. la opclen.
+    IF(int_eq(mode)(16))
+      (la _. LE2(REL16(labs)(nm)(add(off)(add(opclen)(2)))))
+      (la _. LE4(REL32(labs)(nm)(add(off)(add(opclen)(4)))))
 
 # ── the register file: name -> (number, WIDTH in bytes) ─────────────────────
 #   Width is not decoration — it selects the opcode, the prefix and the REX
@@ -223,10 +250,16 @@ glyph REL32 = la labs. la nm. la next.
 #   fixed-point pass. The list scan is pointer-chasing with no copying.
 #
 #   HONEST MEASUREMENT — and a caution about reasoning ahead of it. Assembling
-#   N `mov rax, rcx` (CPU time, same load, so comparable) went:
-#       0.09 s/instruction  before the width slice
-#       0.49 s/instruction  with the slice, unoptimised   (5.5x)
-#       0.26 s/instruction  after the optimisations below (2.9x)
+#   N `mov rax, rcx` (CPU time) went roughly:
+#       ~0.06-0.09 s/instruction  before the width slice
+#       ~0.49       s/instruction  with the slice, unoptimised
+#       ~0.25       s/instruction  after the optimisations below
+#   ★ Stated as RANGES, not points, and that correction came from a freeze-day
+#   re-measurement: the original figures were 0.09 and 0.26, and re-running the
+#   identical benchmark later gave 0.062 and 0.247. The machine was running two
+#   other agents' builds, so the absolute numbers move with load and only the
+#   RATIO (~3-4x) is stable. Writing them as though they were exact was the same
+#   over-precision this file warns about elsewhere.
 #   The list-vs-flat-table argument above is sound but was NOT the bottleneck,
 #   and neither was the operand plumbing WITHOPS fixes — both were changed on
 #   plausible reasoning and neither moved the number. What actually dominated
@@ -298,6 +331,19 @@ glyph MODRM = la dst. la src. B(add(192)(add(mul(mod(src)(8))(8))(mod(dst)(8))))
 
 #   16-bit operands are the 32-bit encoding under a 0x66 prefix.
 glyph P66 = la w. IF(int_eq(w)(2))(la _. B(102))(la _. "")
+#   Mode-aware operand-size prefix. In 16-bit mode the default is 16-bit, so a
+#   16-bit operand (w=2) needs NO 0x66 and a 32-bit operand (w=4) needs it — the
+#   reverse of 32/64 mode. Only the prefix changes; opcode (OP8), immediate width
+#   (IMMW), MODRM and REX are already correct for w=2. mode!=16 → plain P66, so
+#   32/64-bit output is byte-identical.
+glyph P66M = la mode. la w.
+    IF(int_eq(mode)(16))
+      (la _. IF(int_eq(w)(4))(la _. B(102))(la _. ""))
+      (la _. P66(w))
+#   String port I/O (ins/outs): insb 6C, insw/insd 6D, outsb 6E, outsw/outsd 6F.
+#   The word/dword variants carry an operand-size prefix per mode (P66M), so
+#   `insw` is 6D in 16-bit but 66 6D in 32-bit; insb/outsb (byte) never prefix.
+glyph STRIOENC = la opc. la sz. la mode. concat(P66M(mode)(sz))(B(opc))
 
 #   REX is OPTIONAL — this is the heart of the width slice. The old encoder
 #   hard-coded 0x48 (REX.W) because every operand was 64-bit; at other widths
@@ -336,18 +382,23 @@ glyph HIGH8OK = la a. la b.
 #   below (an immediate fitting unsigned 32 bits takes the zero-extending
 #   32-bit form, so REX.W is dropped) — which is why width 8 routes through the
 #   width-4 encoder here rather than having a case of its own.
+#   LE1 exists for the same reason LE2 and LE4 do: an imm8 may be NEGATIVE, and
+#   `B` calls chr() which rejects anything outside 0..255. `mov al, -1` used to
+#   halt the assembler with "chr: value -1 out of byte range" — a loud failure
+#   rather than a silent one, but a failure on valid NASM source.
+glyph LE1 = la n0. B(IF(lt(n0)(0))(la _. add(256)(n0))(la _. n0))
 glyph LE2 = la n0.
     (la n. concat(B(mod(n)(256)))(B(mod(div(n)(256))(256))))
     (IF(lt(n0)(0))(la _. add(65536)(n0))(la _. n0))
-glyph MOVIMM = la w. la dst. la n. la force.
+glyph MOVIMM = la w. la dst. la n. la force. la mode.
     IF(int_eq(w)(1))
       (la _. concat(REXOPT(1)(0)(dst)(force))
-            (concat(B(add(176)(mod(dst)(8))))(B(n))))
+            (concat(B(add(176)(mod(dst)(8))))(LE1(n))))
       (la _. IF(int_eq(w)(2))
-        (la _. concat(B(102))(concat(REXOPT(2)(0)(dst)(FALSE))
+        (la _. concat(P66M(mode)(2))(concat(REXOPT(2)(0)(dst)(FALSE))
               (concat(B(add(184)(mod(dst)(8))))(LE2(n)))))
-        (la _. concat(REXOPT(4)(0)(dst)(FALSE))
-              (concat(B(add(184)(mod(dst)(8))))(LE4(n)))))
+        (la _. concat(P66M(mode)(4))(concat(REXOPT(4)(0)(dst)(FALSE))
+              (concat(B(add(184)(mod(dst)(8))))(LE4(n))))))
 
 #   A LABEL as an immediate is NOT the same encoding as a NUMBER. NASM emits
 #   `mov rsi, msg` (msg a label) as 48 be + imm64 — movabs, 10 bytes — while
@@ -356,11 +407,40 @@ glyph MOVIMM = la w. la dst. la n. la force.
 #   necessity: matching it means distinguishing the two SYNTACTICALLY (all
 #   digits -> number; otherwise -> label), which also lets SIZEL know the size
 #   before any label address is known.
-glyph LE8 = la n. concat(LE4(mod(n)(4294967296)))(LE4(div(n)(4294967296)))
+#   ★ LE8 must do TWO'S COMPLEMENT AT 64 BITS, not at 32. LE4 already
+#   normalises a negative by adding 2^32, so LE8's LOW word came out right by
+#   accident while its HIGH word came from `div(n)(2^32)` — which truncates
+#   toward zero, giving 0 instead of -1. `mov rax, -2147483649` therefore
+#   assembled as movabs 0x000000007FFFFFFF instead of 0xFFFFFFFF7FFFFFFF.
+#   2^64 + n cannot be formed directly (it overflows the host integer), so the
+#   two words are derived from m = -n:
+#       m = mhigh*2^32 + mlow
+#       mlow = 0 : low = 0,           high = 2^32 - mhigh
+#       else     : low = 2^32 - mlow, high = 2^32 - 1 - mhigh
+glyph LE8 = la n.
+    IF(lt(n)(0))
+      (la _. (la m.
+               (la ml.
+                 (la mh.
+                   IF(int_eq(ml)(0))
+                     (la _. concat(LE4(0))(LE4(sub(4294967296)(mh))))
+                     (la _. concat(LE4(sub(4294967296)(ml)))(LE4(sub(4294967295)(mh)))))
+                 (div(m)(4294967296)))
+               (mod(m)(4294967296)))
+             (sub(0)(n)))
+      (la _. concat(LE4(mod(n)(4294967296)))(LE4(div(n)(4294967296))))
 glyph INSTR = Z(la self. la c. la s.
     IF(str_eq(s)(""))(la _. FALSE)
       (la _. IF(str_eq(str_head(s))(c))(la _. TRUE)(la _. self(c)(str_tail(s)))))
 glyph ISDIGIT = la c. INSTR(c)("0123456789")
+#   NASM folds mnemonic/directive case (BITS == bits). The op token is the
+#   mnemonic AFTER STRIPLAB (labels are removed first, operands read the original
+#   ts), so lowercasing it is safe and makes `BITS 64` etc. dispatch. Labels and
+#   register operands keep their case.
+glyph LOWER1 = la c.
+    (la o. IF(AND(NOT(lt(o)(65)))(lt(o)(91)))(la _. chr(int_to_str(add(o)(32))))(la _. c))(str_to_int(ord(c)))
+glyph LOWER = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _. concat(LOWER1(str_head(s)))(self(str_tail(s)))))
 glyph ALLDIG = Z(la self. la s.
     IF(str_eq(s)(""))(la _. TRUE)(la _. AND(ISDIGIT(str_head(s)))(self(str_tail(s)))))
 
@@ -398,10 +478,10 @@ glyph NUMV = la t.
 #   two were missing and `-(MB_MAGIC + MB_FLAGS)` fell through to the label
 #   path, which is why it halted as an undefined symbol rather than evaluating.
 glyph ISEXPRTOK = la t.
-    OR(str_eq(str_head(t))("="))(OR(str_eq(str_head(t))("-"))(OR(INSTR("(")(t))
+    OR(str_eq(str_head(t))("="))(OR(INSTR("-")(t))(OR(INSTR("+")(t))(OR(INSTR("(")(t))
    (OR(INSTR("$")(t))
    (OR(INSTR("*")(t))(OR(INSTR("/")(t))(OR(INSTR("|")(t))(OR(INSTR("&")(t))
-   (OR(INSTR("^")(t))(OR(INSTR("<")(t))(OR(INSTR(">")(t))(INSTR("'")(t)))))))))))) 
+   (OR(INSTR("^")(t))(OR(INSTR("<")(t))(OR(INSTR(">")(t))(INSTR("'")(t)))))))))))))
 glyph ISNUM = la t.
     IF(str_eq(t)(""))(la _. FALSE)
       (la _. IF(ISHEXPFX(t))
@@ -411,6 +491,42 @@ glyph MOVABS = la r. la n.
     concat(B(add(72)(IF(lt(r)(8))(la _. 0)(la _. 1))))
    (concat(B(add(184)(mod(r)(8))))(LE8(n)))
 
+#   ★ NASM HAS THREE `mov r64, imm` FORMS, NOT TWO, and the third is chosen by
+#   SIGN — which is why it stayed invisible: every immediate the no-flag build
+#   assembles is non-negative.
+#
+#       0 <= n < 2^32       b8+r imm32          5 B   zero-extends
+#       -2^31 <= n < 0      REX.W c7 /0 imm32   7 B   SIGN-extends
+#       otherwise           REX.W b8+r imm64   10 B   movabs
+#
+#   `HIGH_BASE equ 0xFFFFFFFF80000000` is the higher-half kernel base. It exceeds
+#   2^63, so as a signed integer it IS -2147483648 — the middle case. The old
+#   dispatch asked only `n >= 2^32`, which is FALSE for a negative n, so the
+#   value fell through to the 5-byte form and `mov rax, HIGH_BASE` assembled as
+#   `mov eax, 0x80000000`: rax = 0x0000000080000000, the high half silently
+#   dropped. EVERY negative immediate to a 64-bit register was wrong the same
+#   way — `mov rax, -1` zero-extended to 0xFFFFFFFF, `mov rax, -2147483649`
+#   truncated to 0x7FFFFFFF.
+#
+#   The predicate is FITS-UNSIGNED-32, never "looks like a big symbolic
+#   constant": METAL_FLAG_ABS (a low vaddr, rt offset + 0x400078) satisfies it
+#   and is CORRECT in the 5-byte form at all four of its sites. Widening this to
+#   all symbolic immediates would regress them.
+#
+#   SIZEL cannot drift: MOVSIZE's value branch is LENOF(MOVENC(...)), i.e. it
+#   measures this same encoder rather than restating the rule.
+glyph MOVI32S = la r. la n.
+    concat(B(add(72)(IF(lt(r)(8))(la _. 0)(la _. 1))))
+   (concat(B(199))(concat(B(add(192)(mod(r)(8))))(LE4(n))))
+glyph IMIN32 = sub(0)(2147483648)
+
+#   `push qword 0` — an IMMEDIATE, not a register. 6A + imm8 when it fits a
+#   signed byte, else 68 + imm32; the `qword` keyword does not add a REX, the
+#   push is 64-bit by default in long mode. idt.asm's ISR stubs push the vector
+#   number this way, 32 times via a macro.
+glyph PUSHIMM = la n.
+    IF(FITS8(n))(la _. concat(B(106))(B(FOLD8(n))))
+                (la _. concat(B(104))(LE4(n)))
 glyph PUSHPOP = la base. la r.
     concat(IF(lt(r)(8))(la _. "")(la _. B(65)))(B(add(base)(mod(r)(8))))
 
@@ -440,6 +556,67 @@ glyph SPLITSIGN = Z(la self. la s. la cur.
             (la _. self(str_tail(s))(concat(cur)(c))))
         (str_head(s))))
 glyph MEMPARTS = la t. SPLITSIGN(STRIPBRK(t))("")
+# ── SIB index/scale: `[base + index*scale (+ disp)]` ────────────────────────
+#   The tokenizer strips spaces inside brackets, so STRIPBRK is e.g.
+#   "rsi+r8*8" / "FREEBLOB+r8*8" / "rsi+r8" / "rax+rcx*4+8". The INDEX is the
+#   second '+'-term (idiomatic base+index[*scale][+disp]); its register resolves
+#   to 0 in MEMDISP's EVAL (unknown name -> 0, *scale -> 0), so MEMBASE/MEMDISP
+#   already give the right base and disp — only the index+scale need extracting
+#   and a SIB byte + REX.X emitting. No index -> every helper is a no-op sentinel.
+glyph AFTERPLUS = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      IF(str_eq(str_head(s))("+"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+glyph UPTOSIGN = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))(la _. cur)(la _.
+      (la c. IF(OR(str_eq(c)("+"))(str_eq(c)("-")))(la _. cur)(la _. self(str_tail(s))(concat(cur)(c))))(str_head(s))))
+glyph UPTOSTAR = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))(la _. cur)(la _.
+      IF(str_eq(str_head(s))("*"))(la _. cur)(la _. self(str_tail(s))(concat(cur)(str_head(s))))))
+glyph AFTERSTAR = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+      IF(str_eq(str_head(s))("*"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+#   ★ THE INDEX MAY BE ANY TERM, NOT THE SECOND ONE. This used to read exactly
+#   one term past the base — `UPTOSIGN(AFTERPLUS(...))` — so `[r8 + 24 + r9]`
+#   inspected "24", found no register, and SILENTLY DROPPED r9: it assembled as
+#   `[r8+0x18]` and read the wrong address. `[r8 + r9 + 24]` worked, so the
+#   trigger was TERM ORDER, not the registers. Live site asm_in.asm:1072
+#   (`mov al, [r8 + 24 + r9]`, the ring-3 IPC receive path).
+#   Scanning every term for the first REGISTER is correct because a displacement
+#   term can never be one, and MEMDISP needs no change: it EVALs the whole tail
+#   with unknown names resolving to 0, so a register term already contributes
+#   nothing to the displacement wherever it sits.
+glyph IDXSCAN = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")
+      (la _. (la tok.
+               IF(ISREG(UPTOSTAR(tok)("")))
+                 (la _. tok)
+                 (la _. self(AFTERPLUS(s))))
+             (UPTOSIGN(s)(""))))
+glyph MEMIDXTOK = la t. IDXSCAN(AFTERPLUS(STRIPBRK(t)))
+glyph MEMIDXREG = la t. UPTOSTAR(MEMIDXTOK(t))("")
+glyph MEMHASIDX = la t. ISREG(MEMIDXREG(t))
+glyph MEMIDX = la t. IF(MEMHASIDX(t))(la _. REGNUM(MEMIDXREG(t)))(la _. sub(0)(1))
+glyph SCALEB = la n.
+    IF(int_eq(n)(1))(la _. 0)(la _. IF(int_eq(n)(2))(la _. 1)(la _.
+    IF(int_eq(n)(4))(la _. 2)(la _. IF(int_eq(n)(8))(la _. 3)
+    (la _. error(concat("asm: invalid SIB scale (must be 1/2/4/8): ")(int_to_str(n)))))))
+glyph MEMSCALEB = la t.
+    (la a. IF(str_eq(a)(""))(la _. 0)(la _. SCALEB(NUMV(a))))(AFTERSTAR(MEMIDXTOK(t)))
+# ── RIP-relative `[rel label]` ──────────────────────────────────────────────
+#   The tokenizer strips the space, so `[rel METAL_FLAG]` -> inner "relMETAL_FLAG".
+#   A `rel` prefix marks RIP-relative: ModRM mod=00 rm=101 + disp32 where
+#   disp32 = label - next_ip. next_ip (off + this instruction's length) is
+#   threaded through the label table as "@next" (bound in ENC1, exactly as `$`
+#   is via WITHDOLLAR), so no encoder signature changes — MEMBASE returns the
+#   sentinel -2, MEMDISP returns the RIP disp, MEMTAILX emits the rm=101 form.
+#   (Limitation: a bare bracket label literally starting with "rel" would be
+#   misread; none in the -f bin targets.)
+glyph HASRELPFX = la s.
+    AND(str_eq(str_head(s))("r"))(AND(str_eq(str_head(str_tail(s)))("e"))(str_eq(str_head(str_tail(str_tail(s))))("l")))
+glyph MEMRIP = la t. AND(ISMEM(t))(HASRELPFX(STRIPBRK(t)))
+glyph RIPLAB = la t. str_tail(str_tail(str_tail(STRIPBRK(t))))
+glyph RIPNEXT = la labs. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB("@next")(labs))
+glyph RIPDISP = la labs. la t. sub(EVAL(labs)(RIPLAB(t)))(RIPNEXT(labs))
 #   ★ An ABSOLUTE address has no base register at all — `mov [0x300000], ebx`.
 #   x86-64 spells "no base" as mod=00, rm=100 (SIB follows), SIB=0x25
 #   (scale=0, index=none(100), base=none(101)), then a disp32. A base of -1 is
@@ -447,8 +624,9 @@ glyph MEMPARTS = la t. SPLITSIGN(STRIPBRK(t))("")
 #   lt(-1)(8) leaves REX.B clear, which is right — there is no base to extend.
 glyph MEMABS   = la t. NOT(ISREG(FST(SPLITFIRST(STRIPBRK(t))("")))) 
 glyph MEMBASE  = la t.
-    IF(MEMABS(t))(la _. sub(0)(1))
-                 (la _. REGNUM(FST(SPLITFIRST(STRIPBRK(t))(""))))
+    IF(MEMRIP(t))(la _. sub(0)(2))
+    (la _. IF(MEMABS(t))(la _. sub(0)(1))
+                 (la _. REGNUM(FST(SPLITFIRST(STRIPBRK(t))("")))))
 #   ★ A LABEL may BE the address: `mov [pml4], eax` — 136 such uses in
 #   boot.asm. Resolving it needs the label table, which MEMDISP did not have,
 #   so this threads `labs` through the memory-operand path.
@@ -505,9 +683,18 @@ glyph BITW = Z(la self. la kind. la a. la b. la p. la acc. la n.
                       (la _. mod(add(ab)(bb))(2)))))
         (mod(div(b)(p))(2)))
         (mod(div(a)(p))(2))))
-glyph BAND = la a. la b. BITW(0)(a)(b)(1)(0)(32)
-glyph BOR  = la a. la b. BITW(1)(a)(b)(1)(0)(32)
-glyph BXOR = la a. la b. BITW(2)(a)(b)(1)(0)(32)
+#   ★ 63-BIT, NOT 32. BITW walks n bit positions; at 32 every bit from 32 up was
+#   silently dropped, so `(1<<43)|(1<<44)` came out 0. boot.asm's GDT descriptors
+#   are exactly this shape — `dq (1<<43)|(1<<44)|(1<<47)|(1<<53)` — so a 64-bit
+#   constant assembled to zeros, and the only place it showed was the LINKED
+#   image (the reloc metadata all matched; this is section CONTENT). 63 covers
+#   bits 0..62 — the full positive signed-64 range, which is every assembler
+#   constant — while stopping short of bit 63, whose value 2^63 is negative and
+#   would break BITW's div/mod decomposition. `p` is doubled per step, not a POW2
+#   lookup, so the wider walk costs 31 extra cheap iterations per bitwise op.
+glyph BAND = la a. la b. BITW(0)(a)(b)(1)(0)(63)
+glyph BOR  = la a. la b. BITW(1)(a)(b)(1)(0)(63)
+glyph BXOR = la a. la b. BITW(2)(a)(b)(1)(0)(63)
 
 glyph HD2 = la s. str_head(str_tail(s))
 glyph ISQUOTE = la s. str_eq(str_head(s))("'")
@@ -532,6 +719,68 @@ glyph ISTERM = la c.
     OR(str_eq(c)("|"))(OR(str_eq(c)("^"))(OR(str_eq(c)("&"))(OR(str_eq(c)("<"))
    (OR(str_eq(c)(">"))(OR(str_eq(c)("+"))(OR(str_eq(c)("-"))(OR(str_eq(c)("*"))
    (OR(str_eq(c)("/"))(str_eq(c)(")"))))))))))
+
+#   An operand expression whose NET LABEL COEFFICIENT is non-zero is address-
+#   valued, so a 64-bit destination must take the imm64 `movabs` form — exactly
+#   as a BARE label does. NASM assembles `mov rax, idt + 8` like `mov rax, idt`
+#   (48 b8 + imm64), NOT like a number that happens to fit 32 bits
+#   (b8 + imm32). Before this, a label buried in an expression (has an operator,
+#   so ISVAL routes it through EVAL) took the numeric b8 path — the wrong form
+#   AND, because the size was then 5 not 10, a wrong label address fed back
+#   through the fixed point (`idt+0x210` came out 0x215 instead of 0x21a).
+#   equ symbols are substituted to their literal number BEFORE the passes, so
+#   any maximal token that is NOT a number is a label (or `$`); the SIGNED SUM of
+#   those over the additive terms (ADDRBAL, below) is the coefficient — a label
+#   DIFFERENCE like `tail - head` nets to 0 and stays a b8 constant. That makes
+#   the test purely SYNTACTIC — no label table needed — so MOVSIZE (which sizes
+#   this case via MOVENC with an EMPTY label table) and the emit pass reach the
+#   same verdict, and it is MONOTONE (movabs only GROWS the image), so it folds
+#   into the length fixed point like jump promotion.
+glyph EXBND = la c.
+    OR(ISTERM(c))(OR(str_eq(c)("("))(OR(str_eq(c)(" "))(str_eq(c)("'"))))
+#   "Contains a label token" is too broad: a label DIFFERENCE `tail - head` is a
+#   relative CONSTANT (nasm emits b8+imm32), not an address, even though it names
+#   two labels. The right test is nasm's: an expression is address-typed iff its
+#   NET LABEL COEFFICIENT is non-zero — sum, over the top-level additive terms,
+#   of +1 for a label term and -1 for a subtracted one. `idt + 8` -> +1 (address
+#   -> movabs); `tail - head` -> +1-1 = 0 (constant -> b8); `0x100 + idt` -> +1.
+#   FLUSHLAB folds a completed term (a non-number identifier token is the label)
+#   into the running net with the term's sign; NEWSGN sets the next term's sign
+#   from a top-level + or - (other operators keep it, since * / << bind tighter
+#   than the additive split). A term with two labels (idt*jdt) or a scaled label
+#   nasm rejects outright, so mis-counting those is a don't-care (no reference).
+#   ★ AN `=`-MARKED TOKEN IS AN equ SYMBOL, NOT A LABEL — coefficient 0.
+#   The comment above states "equ symbols are substituted to their literal number
+#   BEFORE the passes, so any maximal token that is NOT a number is a label".
+#   That premise is TRUE for constant equs and FALSE for ADDRESS-VALUED ones.
+#   Those are deliberately NOT substituted (see the equ section): `$` means the
+#   address AT THE EQU LINE, so substituting the text into each use site would
+#   evaluate `$` in the wrong place and silently corrupt every length. Their use
+#   sites instead carry the marked token `=name`, resolved from the label table.
+#   Counting that marker as a label made `mov rdx, MSGLEN` a 10-byte movabs where
+#   nasm emits a 5-byte b8+imm32 — the value right, the FORM wrong, so the image
+#   still ran and nothing downstream caught it (found by Track B, bisected to
+#   92a29ad; 8b8c407 fixed the DIRECT `tail - head` form but not the equ-mediated
+#   one). The file's own rule decides it: "an equ symbol encodes as a VALUE even
+#   when its value was computed FROM addresses — the KIND of the symbol decides
+#   the encoding, not the provenance of its number." So the marker nets 0.
+#   Still purely SYNTACTIC (no label table), so MOVSIZE's empty-table sizing and
+#   the emit pass agree; still MONOTONE, so it folds into the length fixed point.
+glyph FLUSHLAB = la cur. la sgn. la net.
+    IF(AND(NOT(str_eq(cur)("")))
+          (AND(NOT(ISNUM(cur)))(NOT(str_eq(str_head(cur))("=")))))
+      (la _. add(net)(sgn))(la _. net)
+glyph NEWSGN = la c. la sgn.
+    IF(str_eq(c)("+"))(la _. 1)(la _. IF(str_eq(c)("-"))(la _. sub(0)(1))(la _. sgn))
+glyph ADDRBAL = Z(la self. la s. la cur. la sgn. la net.
+    IF(str_eq(s)(""))
+      (la _. FLUSHLAB(cur)(sgn)(net))
+      (la _. (la c.
+        IF(EXBND(c))
+          (la _. self(str_tail(s))("")(NEWSGN(c)(sgn))(FLUSHLAB(cur)(sgn)(net)))
+          (la _. self(str_tail(s))(concat(cur)(c))(sgn)(net)))
+      (str_head(s))))
+glyph EXPRHASLAB = la s. NOT(int_eq(ADDRBAL(s)("")(1)(0))(0))
 
 glyph E6T = Z(la self. la labs. la acc. la s.
     IF(str_eq(s)(""))(la _. PAIR(acc)(s))
@@ -608,10 +857,12 @@ glyph MEMVAL = la labs. la t.
       (la _. IF(ISNUM(t))(la _. NUMV(t))
         (la _. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 0))(LOOKLAB(t)(labs))))
 glyph MEMDISP  = la labs. la t.
-    IF(MEMABS(t))
+    IF(MEMRIP(t))
+      (la _. RIPDISP(labs)(t))
+    (la _. IF(MEMABS(t))
       (la _. EVAL(labs)(STRIPBRK(t)))
       (la _. (la r. IF(str_eq(r)(""))(la _. 0)(la _. EVAL(labs)(r)))
-             (SND(SPLITFIRST(STRIPBRK(t))(""))))
+             (SND(SPLITFIRST(STRIPBRK(t))("")))))
 
 glyph FITS8 = la d. AND(NOT(lt(d)(sub(0)(128))))(lt(d)(128))
 glyph MODOF = la b. la d.
@@ -623,10 +874,73 @@ glyph DISPOF = la m. la d.
     IF(int_eq(m)(0))(la _. "")(la _.
     IF(int_eq(m)(1))(la _. B(IF(lt(d)(0))(la _. add(256)(d))(la _. d)))
                     (la _. LE4(IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d))))
-glyph MEMENC = la op. la w. la reg. la b. la d. la force.
-    concat(P66(w))
-   (concat(REXOPT(w)(reg)(b)(force))
-   (concat(B(OP8(op)(w)))(MEMTAIL(reg)(b)(d))))
+#   SIB byte = scale<<6 | index<<3 | base. MEMTAILX emits ModRM(rm=100)+SIB+disp
+#   when an index is present; idx<0 falls back to the plain MEMTAIL (byte-
+#   identical). Register base uses MODOF's disp/rbp-quirk rules; a label/absolute
+#   base (b<0) becomes SIB base=5(none) with a mandatory disp32.
+glyph FOLDD  = la d. IF(lt(d)(0))(la _. add(4294967296)(d))(la _. d)
+#   rsp (index field 4, and NOT r12 whose REX.X makes 4 mean r12) cannot be a SIB
+#   index — index=100 encodes "no index", so `[base+rsp*n]` would silently drop rsp.
+glyph SIBBYTE = la scaleb. la idx. la basef.
+    IF(int_eq(idx)(4))
+      (la _. error("asm: rsp cannot be a SIB index register"))
+      (la _. B(add(mul(scaleb)(64))(add(mul(mod(idx)(8))(8))(mod(basef)(8)))))
+glyph MRMLBLD = la reg. la scaleb. la idx. la d.
+    concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(SIBBYTE(scaleb)(idx)(5))(LE4(FOLDD(d))))
+glyph MRMREG = la reg. la b. la scaleb. la idx. la d.
+    (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(4)))(concat(SIBBYTE(scaleb)(idx)(b))(DISPOF(m)(d))))(MODOF(b)(d))
+glyph MEMTAILX = la reg. la b. la idx. la scaleb. la d. la mode.
+    IF(int_eq(b)(sub(0)(2)))
+      (la _. concat(B(add(mul(mod(reg)(8))(8))(5)))(LE4(FOLDD(d))))
+      (la _. IF(lt(idx)(0))
+        (la _. MEMTAIL(reg)(b)(d)(mode))
+        (la _. IF(lt(b)(0))(la _. MRMLBLD(reg)(scaleb)(idx)(d))(la _. MRMREG(reg)(b)(scaleb)(idx)(d))))
+#   REX for a memory operand, adding the X bit (index>=8) to REXOPT's W/R/B.
+#   idx<0 -> X is 0 -> byte-identical to REXOPT, so this is safe everywhere.
+glyph MREX = la w. la reg. la idx. la base. la force.
+    (la v. IF(OR(NOT(int_eq(v)(64)))(force))(la _. B(v))(la _. ""))
+    (add(64)(add(IF(int_eq(w)(8))(la _. 8)(la _. 0))
+            (add(IF(lt(reg)(8))(la _. 0)(la _. 4))
+            (add(IF(AND(NOT(lt(idx)(0)))(NOT(lt(idx)(8))))(la _. 2)(la _. 0))
+                (IF(lt(base)(8))(la _. 0)(la _. 1))))))
+#   ★ THE 0x67 ADDRESS-SIZE OVERRIDE. A 32-bit register used as a memory BASE
+#   in 64-bit mode needs it: `mov [edi], eax` is `67 89 07`, not `89 07`. Without
+#   it the instruction addresses through the full 64-bit rdi instead of the
+#   zero-extended edi — the same length as a correct instruction for a different
+#   address, which is why it survived every size check.
+#   It cannot live inside MEMENC/MEMIMM: those receive the base as a REGISTER
+#   NUMBER, which has already lost the width. So it is applied where the
+#   bracketed TOKEN is still in scope, and the guard tests ISREG first because a
+#   base may be a label rather than a register.
+glyph MEMBASETOK = la t. FST(SPLITFIRST(STRIPBRK(t))(""))
+#   ★ THE PREFIX IS RELATIVE TO THE MODE, not absolute. 0x67 toggles between the
+#   default address size and the alternate one, so what needs it depends on which
+#   mode the line is assembled in:
+#       bits 64  default 8-byte address  ->  a 32-bit base needs 67
+#       bits 32  default 4-byte address  ->  a 32-bit base needs NOTHING
+#       bits 16  default 2-byte address  ->  a 32-bit base needs 67
+#   Emitting it whenever the base was 32-bit made `mov [edi], eax` two bytes
+#   longer than nasm inside boot.asm's `bits 32` block, where edi IS the default.
+#   So the test is: base width != the mode's default address width.
+#   ★ AND THE GUARD MUST NEST `IF`s, NOT USE `AND`. LA is EAGER, so
+#   `AND(ISREG(bt))(...RWIDTH(bt)...)` still evaluates RWIDTH on a NON-register,
+#   and RWIDTH goes through REGENT, which HALTS on an unknown name by design.
+#   `[MBI_SAVE]` (a label base, equ 0x300000) killed the assembler that way.
+glyph ADDRW = la mode.
+    IF(int_eq(mode)(64))(la _. 8)(la _. IF(int_eq(mode)(32))(la _. 4)(la _. 2))
+glyph P67M = la mode. la t.
+    IF(ISMEM(t))
+      (la _. IF(MEMRIP(t))(la _. "")
+        (la _. IF(MEMABS(t))(la _. "")
+          (la _. (la bt. IF(ISREG(bt))
+                           (la _. IF(int_eq(RWIDTH(bt))(ADDRW(mode)))(la _. "")(la _. B(103)))
+                           (la _. ""))
+                 (MEMBASETOK(t)))))
+      (la _. "")
+glyph MEMENC = la op. la w. la reg. la b. la idx. la scaleb. la d. la force. la mode.
+    concat(P66M(mode)(w))
+   (concat(MREX(w)(reg)(idx)(b)(force))
+   (concat(B(OP8(op)(w)))(MEMTAILX(reg)(b)(idx)(scaleb)(d)(mode))))
 
 #   IMMEDIATE TO MEMORY (C6 /0 for a byte, C7 /0 otherwise). The reg field of
 #   the ModRM byte is not a register here but the opcode extension /0, so the
@@ -636,11 +950,11 @@ glyph MEMENC = la op. la w. la reg. la b. la d. la force.
 glyph IMMW = la w. la n.
     IF(int_eq(w)(1))(la _. B(n))
       (la _. IF(int_eq(w)(2))(la _. LE2(n))(la _. LE4(n)))
-glyph MEMIMM = la w. la b. la d. la n.
-    concat(P66(w))
-   (concat(REXOPT(w)(0)(b)(FALSE))
+glyph MEMIMM = la w. la b. la idx. la scaleb. la d. la n. la mode.
+    concat(P66M(mode)(w))
+   (concat(MREX(w)(0)(idx)(b)(FALSE))
    (concat(B(IF(int_eq(w)(1))(la _. 198)(la _. 199)))
-   (concat(MEMTAIL(0)(b)(d))(IMMW(w)(n)))))
+   (concat(MEMTAILX(0)(b)(idx)(scaleb)(d)(mode))(IMMW(w)(n)))))
 
 # ── OPERAND SIZE KEYWORDS ────────────────────────────────────────────────────
 #   `mov dword [rdi + 8], 0` carries its width in a KEYWORD, because neither
@@ -673,10 +987,19 @@ glyph HASOP = Z(la self. la l.
     l(FALSE)(la h. la t. IF(ISOPTOK(h))(la _. TRUE)(la _. self(t))))
 glyph CATALL = Z(la self. la l.
     l("")(la h. la t. concat(h)(self(t))))
-glyph JOINEXPR = la l.
-    l(NIL)(la h. la t.
-      IF(HASOP(t))(la _. CONS(h)(CONS(CATALL(t))(NIL)))(la _. l))
-glyph OPL = la ts. JOINEXPR(DROPSZ(TL2(ts)))
+#   Operands are the comma-delimited GROUPS of the tail, each group
+#   concatenated into one expression string. This replaces the old
+#   join-everything-after-the-first heuristic: `mov ecx, 2 * X / 8` and
+#   `dw a - b - 1` and `dw 1, 2` now all fall out of the same rule instead of
+#   needing three special cases.
+glyph GROUPS = Z(la self. la l. la cur.
+    l(IF(str_eq(cur)(""))(la _. NIL)(la _. CONS(cur)(NIL)))
+     (la h. la t.
+       IF(str_eq(h)(","))
+         (la _. CONS(cur)(self(t)("")))
+         (la _. self(t)(concat(cur)(h)))))
+glyph JOINEXPR = la l. GROUPS(l)("")
+glyph OPL = la ts. GROUPS(DROPSZ(TL2(ts)))("")
 glyph A1  = la ts. NTH(0)(OPL(ts))
 glyph A2  = la ts. NTH(1)(OPL(ts))
 
@@ -735,7 +1058,7 @@ glyph JSHORT  = la labs. la off. la ts.
       (la _. (la o. IF(ISSOME(o))
                       (la _. FITS8(sub(OPTV(o))(add(off)(2))))
                       (la _. TRUE))
-             (LOOKLAB(TARGET(ts))(labs)))
+             (TGTOPT(labs)(TARGET(ts))))
 glyph REL8 = la labs. la off. la nm.
     (la d. IF(lt(d)(0))(la _. add(256)(d))(la _. d))
     (sub(LABADDR(nm)(labs))(add(off)(2)))
@@ -751,8 +1074,8 @@ glyph REL8 = la labs. la off. la nm.
 #   The one form that cannot be measured is a label immediate, whose address is
 #   not yet known during the fixed-point iteration — it is a constant 10 bytes
 #   (movabs), which is precisely why NASM's label rule is worth matching.
-glyph RROP = la op. la w. la dst. la src. la force.
-    concat(P66(w))(concat(REXOPT(w)(src)(dst)(force))
+glyph RROP = la op. la w. la dst. la src. la force. la mode.
+    concat(P66M(mode)(w))(concat(REXOPT(w)(src)(dst)(force))
    (concat(B(OP8(op)(w)))(MODRM(dst)(src))))
 # ── CONTROL and SEGMENT registers ───────────────────────────────────────────
 #   The paging-setup family: `mov cr3, rax` (27 uses in the kernel asm) and the
@@ -783,6 +1106,15 @@ glyph ISSEG  = la t. ISSOME(LOOKREG(t)(SEGS))
 glyph SEGNUM = la t. OPTV(LOOKREG(t)(SEGS))
 glyph SPECMODRM = la sel. la r. B(add(192)(add(mul(sel)(8))(mod(r)(8))))
 
+#   The A3/A1 moffs form applies only when EVERY condition holds: 32-bit mode
+#   (in 64-bit the moffs operand is a full 64-bit address, a different form),
+#   a bare absolute address with no index, the accumulator, and the native
+#   32-bit width. Anything else must stay on the general path, so this is a
+#   conjunction rather than a guess.
+glyph MOFFSOK = la mode. la a. la w. la r.
+    AND(int_eq(mode)(32))
+      (AND(MEMABS(a))(AND(lt(MEMIDX(a))(0))
+        (AND(int_eq(w)(4))(int_eq(REGNUM(r))(0)))))
 glyph MOVENC = la labs. la w. la a. la b.
     IF(ISCR(a))
       (la _. concat(B(15))(concat(B(34))(SPECMODRM(CRNUM(a))(REGNUM(b)))))
@@ -793,23 +1125,49 @@ glyph MOVENC = la labs. la w. la a. la b.
     (la _. IF(ISSEG(b))
       (la _. concat(B(102))(concat(B(140))(SPECMODRM(SEGNUM(b))(REGNUM(a)))))
     (la _. IF(ISMEM(a))
-      (la _. IF(ISNUM(b))
-               (la _. MEMIMM(w)(MEMBASE(a))(MEMDISP(labs)(a))(NUMV(b)))
-               (la _. MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMDISP(labs)(a))(RFORCE(b))))
+      (la _. IF(ISVAL(b))
+               (la _. concat(P67M(BITSMODE(labs))(a))(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(EVAL(labs)(b))(BITSMODE(labs))))
+             (la _. IF(ISREG(b))
+               (la _. IF(MOFFSOK(BITSMODE(labs))(a)(w)(b))
+                 #   The accumulator has a one-byte form with no ModRM at all:
+                 #   `mov [addr], eax` is A3 + moffs32 (5 bytes) where the
+                 #   general path emits 7. nasm always takes it, so byte
+                 #   identity requires it — and boot.asm opens .boot32 with
+                 #   exactly this instruction, which is why an earlier note
+                 #   calling the moffs form "not in the boot files" was wrong.
+                 (la _. concat(B(163))(LE4(FOLDD(MEMDISP(labs)(a)))))
+                 (la _. concat(P67M(BITSMODE(labs))(a))(MEMENC(137)(w)(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(RFORCE(b))(BITSMODE(labs)))))
+               #   `mov qword [rax], _start` — a LABEL immediate to memory. It used
+               #   to fall into the register path above, where REGNUM read the label
+               #   as a register name and halted `unknown register: _start`. Same
+               #   MEMIMM encoding as a numeric immediate; only the value differs,
+               #   and LABADDR is what MOVENC's reg-destination arm already uses.
+               (la _. concat(P67M(BITSMODE(labs))(a))(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(LABADDR(b)(labs))(BITSMODE(labs))))))
       (la _. IF(ISMEM(b))
-        (la _. MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(labs)(b))(RFORCE(a)))
+        (la _. IF(MOFFSOK(BITSMODE(labs))(b)(w)(a))
+          #   A1 is A3's load twin: `mov eax, [addr]` in 5 bytes.
+          (la _. concat(B(161))(LE4(FOLDD(MEMDISP(labs)(b)))))
+          (la _. concat(P67M(BITSMODE(labs))(b))(MEMENC(139)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))))
         (la _. IF(ISREG(b))
-          (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+          (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
           (la _. IF(ISVAL(b))
-            (la _. (la n. IF(AND(int_eq(w)(8))(NOT(lt(n)(4294967296))))
-                            (la _. MOVABS(REGNUM(a))(n))
-                            (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))))
+            (la _. (la n. IF(int_eq(w)(8))
+                            (la _. IF(EXPRHASLAB(b))
+                                     (la _. MOVABS(REGNUM(a))(n))
+                                     (la _. IF(lt(n)(0))
+                                              (la _. IF(lt(n)(IMIN32))
+                                                       (la _. MOVABS(REGNUM(a))(n))
+                                                       (la _. MOVI32S(REGNUM(a))(n)))
+                                              (la _. IF(lt(n)(4294967296))
+                                                       (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))(BITSMODE(labs)))
+                                                       (la _. MOVABS(REGNUM(a))(n)))))
+                            (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))(BITSMODE(labs))))
                    (EVAL(labs)(b)))
-            (la _. MOVABS(REGNUM(a))(LABADDR(b)(labs))))))))))
+            (la _. IF(int_eq(w)(8))(la _. MOVABS(REGNUM(a))(LABADDR(b)(labs)))(la _. MOVIMM(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a))(BITSMODE(labs)))))))))))
 glyph ALUENC = la op. la w. la a. la b.
     IF(ISREG(b))
-      (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
-      (la _. error("asm: unsupported operand (register-to-register only)"))
+      (la _. RROP(op)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(64))
+      (la _. error(concat("asm: unsupported operand (register-to-register only): ")(b)))
 # ── GROUP-1 ALU (add/or/and/sub/xor/cmp) — the reg,IMMEDIATE forms ──────────
 #   Profiling the kernel .asm showed reg+imm is the DOMINANT shape (or 31 of
 #   45 uses, shr 32 of 32, cmp 11 of 23, and 5 of 5) — and asm.la could not
@@ -833,20 +1191,37 @@ glyph ALUENC = la op. la w. la a. la b.
 #   still fail the diff.
 glyph MODRMD = la digit. la r. B(add(192)(add(mul(digit)(8))(mod(r)(8))))
 glyph FOLD8  = la n. IF(lt(n)(0))(la _. add(256)(n))(la _. n)
-glyph G1IMM = la digit. la w. la r. la n. la force.
+glyph G1IMM = la digit. la w. la r. la n. la force. la mode.
     IF(int_eq(w)(1))
       (la _. IF(int_eq(r)(0))
                (la _. concat(B(add(mul(digit)(8))(4)))(B(FOLD8(n))))
                (la _. concat(REXOPT(1)(0)(r)(force))
                      (concat(B(128))(concat(MODRMD(digit)(r))(B(FOLD8(n)))))))
       (la _. IF(FITS8(n))
-        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(FALSE))
+        (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(FALSE))
               (concat(B(131))(concat(MODRMD(digit)(r))(B(FOLD8(n)))))))
         (la _. IF(int_eq(r)(0))
-          (la _. concat(P66(w))(concat(REXOPT(w)(0)(0)(FALSE))
+          (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(0)(FALSE))
                 (concat(B(add(mul(digit)(8))(5)))(IMMW(w)(n)))))
-          (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(FALSE))
+          (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(FALSE))
                 (concat(B(129))(concat(MODRMD(digit)(r))(IMMW(w)(n))))))))
+#   ★ A LABEL IMMEDIATE MUST TAKE THE imm32 FORM UNCONDITIONALLY, never the
+#   sign-extended imm8 short form — for two independent reasons, and the second
+#   is the one that bites.
+#     1. nasm does: `add rax, tgt` is `48 05 imm32`, `add rbx, tgt` is
+#        `48 81 C3 imm32` — measured, even where the address fits a byte.
+#     2. A label's value is NOT KNOWN IN PASS 1. If the encoding could shrink to
+#        the imm8 form for a small address, SIZEL would answer one length before
+#        the label table is built and ENC1 another after — the pass-1/pass-2
+#        disagreement the hardcoded-10 MOVLBL bug already cost once. This form's
+#        length is INDEPENDENT of the immediate, so the two cannot drift.
+#   The relocation the linker overwrites lands in that imm32 field; see RELLINE.
+glyph G1IMM32 = la digit. la w. la r. la n. la force. la mode.
+    IF(int_eq(r)(0))
+      (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(0)(FALSE))
+            (concat(B(add(mul(digit)(8))(5)))(IMMW(w)(n)))))
+      (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(FALSE))
+            (concat(B(129))(concat(MODRMD(digit)(r))(IMMW(w)(n))))))
 #   ★ The DESTINATION may be MEMORY: `or dword [pml4], 0x04` (11 uses in
 #   boot.asm). The opcodes are the SAME as the register forms — the only
 #   difference is that ModRM/SIB/disp come from MEMTAIL, with the group digit
@@ -854,26 +1229,35 @@ glyph G1IMM = la digit. la w. la r. la n. la force.
 #   is why this is a few lines rather than a second encoder: the opcode map
 #   does not distinguish "to register" from "to memory", the ModRM byte does.
 glyph G1MEMREG = la labs. la digit. la w. la a. la b.
-    concat(P66(w))(concat(REXOPT(w)(REGNUM(b))(MEMBASE(a))(RFORCE(b)))
+    concat(P67M(BITSMODE(labs))(a))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
    (concat(B(OP8(add(mul(digit)(8))(1))(w)))
-          (MEMTAIL(REGNUM(b))(MEMBASE(a))(MEMDISP(labs)(a)))))
+          (MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs))))))
 glyph G1MEMIMM = la labs. la digit. la w. la a. la n.
-    concat(P66(w))(concat(REXOPT(w)(0)(MEMBASE(a))(FALSE))
+    concat(P67M(BITSMODE(labs))(a))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(0)(MEMIDX(a))(MEMBASE(a))(FALSE))
    (IF(int_eq(w)(1))
-     (la _. concat(B(128))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
+     (la _. concat(B(128))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(B(FOLD8(n)))))
      (la _. IF(FITS8(n))
-       (la _. concat(B(131))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(B(FOLD8(n)))))
-       (la _. concat(B(129))(concat(MEMTAIL(digit)(MEMBASE(a))(MEMDISP(labs)(a)))(IMMW(w)(n)))))))
+       (la _. concat(B(131))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(B(FOLD8(n)))))
+       (la _. concat(B(129))(concat(MEMTAILX(digit)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs)))(IMMW(w)(n))))))))
+# ALU reg, [mem] (memory SOURCE): the r,r/m form, opcode digit*8+3 (add 03,
+# cmp 3B, …) — the reverse of G1MEMREG's digit*8+1. reg field = dest register,
+# rm = memory (index-aware via MEMTAILX/MREX).
+glyph G1REGMEM = la labs. la digit. la w. la a. la b.
+    concat(P67M(BITSMODE(labs))(b))(concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(a))(MEMIDX(b))(MEMBASE(b))(RFORCE(a)))
+   (concat(B(OP8(add(mul(digit)(8))(3))(w)))
+          (MEMTAILX(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs))))))
 glyph G1ENC = la labs. la digit. la w. la a. la b.
     IF(ISMEM(a))
       (la _. IF(ISVAL(b))
                (la _. G1MEMIMM(labs)(digit)(w)(a)(EVAL(labs)(b)))
                (la _. G1MEMREG(labs)(digit)(w)(a)(b)))
+      (la _. IF(ISMEM(b))
+        (la _. G1REGMEM(labs)(digit)(w)(a)(b))
       (la _. IF(ISREG(b))
-        (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+        (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
         (la _. IF(ISVAL(b))
-                 (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a)))
-                 (la _. error(concat("asm: unsupported ALU operand: ")(b)))))
+                 (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a))(BITSMODE(labs)))
+                 (la _. G1IMM32(digit)(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a))(BITSMODE(labs))))))
 glyph G1DIG = la op.
     IF(str_eq(op)("add"))(la _. 0)(la _.
     IF(str_eq(op)("or"))(la _. 1)(la _.
@@ -895,15 +1279,15 @@ glyph SHDIG = la op.
 glyph ISSH = la op.
     OR(str_eq(op)("shl"))(OR(str_eq(op)("shr"))(OR(str_eq(op)("sar"))
    (OR(str_eq(op)("rol"))(str_eq(op)("ror")))))
-glyph SHENC = la digit. la w. la a. la b.
+glyph SHENC = la digit. la mode. la w. la a. la b.
     IF(NOT(ISVAL(b)))
-      (la _. error("asm: shift count must be an immediate (the shl/shr reg,CL form is not implemented)"))
+      (la _. error(concat("asm: shift count must be an immediate (shl/shr reg,CL not implemented): ")(b)))
       (la _.
     (la r. la n.
       IF(int_eq(n)(1))
-        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+        (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
               (concat(B(OP8(209)(w)))(MODRMD(digit)(r)))))
-        (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+        (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
               (concat(B(OP8(193)(w)))(concat(MODRMD(digit)(r))(B(FOLD8(n))))))))
     (REGNUM(a))(NUMV(b)))
 
@@ -911,41 +1295,48 @@ glyph SHENC = la digit. la w. la a. la b.
 #   ★ `test` has NO imm8 form — `test rdx, 8` is `48 F7 C2 08 00 00 00`, a full
 #   imm32 for a value that fits a byte. Reusing group-1's imm8 shortcut here
 #   would produce a shorter encoding NASM never emits.
-glyph IDENC = la digit. la w. la a.
-    (la r. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
-          (concat(B(OP8(255)(w)))(MODRMD(digit)(r)))))
+#   inc/dec of r16/r32 is the 1-byte 0x40+r (inc) / 0x48+r (dec) form in 16/32-bit
+#   mode; in 64-bit those bytes are REX prefixes, so it is FF /0, FF /1 there (and
+#   for r8 in every mode). digit 0 = inc (0x40), 1 = dec (0x48).
+glyph IDENC = la digit. la w. la a. la mode.
+    (la r.
+      IF(AND(NOT(int_eq(mode)(64)))(NOT(int_eq(w)(1))))
+        (la _. concat(P66M(mode)(w))(B(add(IF(int_eq(digit)(0))(la _. 64)(la _. 72))(mod(r)(8)))))
+        (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+              (concat(B(OP8(255)(w)))(MODRMD(digit)(r))))))
     (REGNUM(a))
-glyph TSTENC = la w. la a. la b.
+glyph TSTENC = la w. la a. la b. la mode.
     IF(ISREG(b))
-      (la _. RROP(133)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b))))
+      (la _. RROP(133)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(mode))
       (la _. IF(NOT(ISNUM(b)))
-        (la _. error("asm: test operand must be a register or an immediate"))
+        (la _. error(concat("asm: test operand must be a register or an immediate: ")(b)))
         (la _. (la r. la n.
                 IF(int_eq(r)(0))
-                  (la _. concat(P66(w))(concat(REXOPT(w)(0)(0)(FALSE))
+                  (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(0)(FALSE))
                         (concat(B(OP8(169)(w)))(IMMW(w)(n)))))
-                  (la _. concat(P66(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
+                  (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(RFORCE(a)))
                         (concat(B(OP8(247)(w)))(concat(MODRMD(0)(r))(IMMW(w)(n)))))))
              (REGNUM(a))(NUMV(b))))
 
 # ── lea: the same ModRM/SIB/disp machinery as mov, opcode 8D, never 8-bit ───
 glyph LEAENC = la labs. la w. la a. la b.
-    MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMDISP(labs)(b))(RFORCE(a))
+    concat(P67M(BITSMODE(labs))(b))(MEMENC(141)(w)(REGNUM(a))(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(RFORCE(a))(BITSMODE(labs)))
 
 # ── no-operand instructions ────────────────────────────────────────────────
 glyph NOARGS =
   CONS(PAIR("cli")("250"))(CONS(PAIR("sti")("251"))(CONS(PAIR("hlt")("244"))(
   CONS(PAIR("cld")("252"))(CONS(PAIR("popfq")("157"))(CONS(PAIR("pushfq")("156"))(
   CONS(PAIR("movsb")("164"))(CONS(PAIR("stosb")("170"))(
-  NIL)))))))) 
+  CONS(PAIR("lodsb")("172"))(CONS(PAIR("stosd")("171"))(CONS(PAIR("int3")("204"))(
+  NIL)))))))))))
 #   Two-byte and REX.W-carrying forms are spelled out rather than squeezed into
 #   the single-byte table: iretq is 48 CF, stosq/movsq carry REX.W, and the 0F
 #   escape family (wrmsr/rdmsr/ud2/sysret) is a second opcode map entirely.
 glyph NOARG2 =
   CONS(PAIR("iretq")("72 207"))(CONS(PAIR("stosq")("72 171"))(CONS(PAIR("movsq")("72 165"))(
   CONS(PAIR("wrmsr")("15 48"))(CONS(PAIR("rdmsr")("15 50"))(CONS(PAIR("ud2")("15 11"))(
-  CONS(PAIR("sysret")("15 7"))(
-  NIL))))))) 
+  CONS(PAIR("sysret")("15 7"))(CONS(PAIR("cqo")("72 153"))(
+  NIL))))))))
 glyph BYTESOF = Z(la self. la s. la cur.
     IF(str_eq(s)(""))
       (la _. IF(str_eq(cur)(""))(la _. "")(la _. B(str_to_int(cur))))
@@ -963,12 +1354,60 @@ glyph NOARG = la op.
 #   while MOVENC emits 5 — a size/emit drift that silently misplaces every
 #   later address. One predicate, used by both.
 glyph ISVAL  = la t. OR(ISNUM(t))(ISEXPRTOK(t))
-glyph MOVLBL = la a. la b.
-    AND(NOT(ISMEM(a)))(AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))(NOT(ISVAL(b)))))
+# A label immediate is what b is when it is none of the operand kinds MOVENC
+# dispatches on BEFORE its label fallthrough: not memory, not a GP register, not
+# a control/segment register, not a value. The CR/SEG exclusions were missing —
+# so `mov rax, cr3` and `mov ax, ds` (a CR/SEG in the b position) were sized as
+# 10/4-byte label-movs while MOVENC correctly emitted the 3-byte 0F20/8C form.
+# Latent: byte-identity vs nasm passed because no label's address surfaced the
+# miscount; the SIZEDRIFT guard in ASSEMBLE caught it. Same class as the MOVSIZE
+# hardcoded-10 bug — MOVLBL must agree with MOVENC's dispatch, exactly.
+#   ★ The "b is a label" test is FACTORED OUT, and that is the point. There are
+#   now TWO mov forms whose source is a label — `mov reg, lbl` and
+#   `mov qword [mem], lbl` — and they are sized by different branches. Two
+#   copies of this five-way exclusion would be two things that must agree
+#   forever; one predicate cannot drift from itself. (The comment above records
+#   what a drift here already cost once: MOVLBL disagreeing with MOVENC's
+#   dispatch sized a 3-byte 0F20 as a 10-byte movabs.)
+glyph BISLBL = la b.
+    AND(NOT(ISMEM(b)))(AND(NOT(ISREG(b)))
+      (AND(NOT(ISCR(b)))(AND(NOT(ISSEG(b)))(NOT(ISVAL(b))))))
+glyph MOVLBL = la a. la b. AND(NOT(ISMEM(a)))(BISLBL(b))
+#   The memory-destination twin: `mov qword [rax], _start`. nasm emits
+#   C7 /0 with a 32-bit immediate holding the address, which in an object file
+#   is where an R_X86_64_32S relocation lands — so this form is not an
+#   ornament, it is one of the three reloc sites r3.asm exists to exercise.
+glyph MEMLBL = la a. la b. AND(ISMEM(a))(BISLBL(b))
 glyph LENOF  = la s. str_to_int(str_len(s))
-glyph MOVSIZE = la ts.
+#   ★ The label branch MEASURES too, and must. It used to answer a hardcoded
+#   `10` — correct only while every label immediate was a movabs. Once MOVENC
+#   learned to follow the DESTINATION width, sizing kept saying 10 for a
+#   `mov esp, tgt` the encoder emitted in 5, so the label table placed `tgt` at
+#   the pre-fix total (0x37) while the image itself was the correct 36 bytes.
+#   FIXLABS converged CLEANLY onto that wrong table: 10 is value-independent, so
+#   the signature was stable from the second pass on. A fixpoint is only as
+#   sound as the function it iterates — a stable answer is not a right one.
+#   LABADDR errors on an unresolved label, which is why the original could not
+#   simply call MOVENC here; the placeholder 0 sidesteps that, and is exact
+#   because MOVABS (REX+op+LE8) and MOVIMM (B/LE2/LE4, no short form) both have
+#   value-INDEPENDENT lengths — verified, not assumed.
+#   The memory-destination label form sizes by the same placeholder trick and
+#   for the same reason: MEMIMM's length is value-INDEPENDENT (MEMTAILX is a
+#   function of the DISPLACEMENT, and IMMW is B/LE2/LE4 — a fixed width per w),
+#   so encoding with 0 measures the real instruction exactly. It cannot go
+#   through the MOVENC branch below, because that branch passes an EMPTY label
+#   table and LABADDR errors on an unresolved label — which is the whole reason
+#   the label forms are sized separately in the first place.
+glyph MOVSIZE = la mode. la ts.
     WITHOPS(ts)(la w. la a. la b.
-      IF(MOVLBL(a)(b))(la _. 10)(la _. LENOF(MOVENC(NIL)(w)(a)(b))))
+      IF(MEMLBL(a)(b))
+        (la _. LENOF(MEMIMM(w)(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))
+                            (MEMDISP(WITHBITS(NIL)(mode))(a))(0)(mode)))
+      (la _. IF(MOVLBL(a)(b))
+        (la _. IF(int_eq(w)(8))
+                 (la _. LENOF(MOVABS(REGNUM(a))(0)))
+                 (la _. LENOF(MOVIMM(w)(REGNUM(a))(0)(RFORCE(a))(mode))))
+        (la _. LENOF(MOVENC(WITHBITS(NIL)(mode))(w)(a)(b)))))
 
 # ── db: define bytes. Operands are quoted strings (emitted verbatim) or
 #    numbers (one byte each) — `db "I AM THAT I AM", 10`. This is what lets the
@@ -989,37 +1428,145 @@ glyph DBSIZE = Z(la self. la l.
 #   coming from which accumulator was named: `out dx, ax` is 66 EF, `out dx,
 #   eax` is EF. The imm8-port forms are a different opcode (E6/E7), not an
 #   addressing mode.
-glyph OUTENC = la a. la b.
+glyph OUTENC = la a. la b. la mode.
     (la w. IF(ISREG(a))
-      (la _. concat(P66(w))(B(IF(int_eq(w)(1))(la _. 238)(la _. 239))))
-      (la _. concat(P66(w))(concat(B(IF(int_eq(w)(1))(la _. 230)(la _. 231)))(B(NUMV(a))))))
+      (la _. concat(P66M(mode)(w))(B(IF(int_eq(w)(1))(la _. 238)(la _. 239))))
+      (la _. concat(P66M(mode)(w))(concat(B(IF(int_eq(w)(1))(la _. 230)(la _. 231)))(B(NUMV(a))))))
     (RWIDTH(b))
-glyph INENC = la a. la b.
+glyph INENC = la a. la b. la mode.
     (la w. IF(ISREG(b))
-      (la _. concat(P66(w))(B(IF(int_eq(w)(1))(la _. 236)(la _. 237))))
-      (la _. concat(P66(w))(concat(B(IF(int_eq(w)(1))(la _. 228)(la _. 229)))(B(NUMV(b))))))
+      (la _. concat(P66M(mode)(w))(B(IF(int_eq(w)(1))(la _. 236)(la _. 237))))
+      (la _. concat(P66M(mode)(w))(concat(B(IF(int_eq(w)(1))(la _. 228)(la _. 229)))(B(NUMV(b))))))
     (RWIDTH(a))
 
 #   `ltr ax` is 0F 00 D8 with NO 0x66 prefix, even though the operand is 16-bit:
 #   the instruction takes r/m16 by definition, so the size needs no announcing.
+#   ★ THE FAR JUMP — and an honest choice about mode tracking.
+#   `jmp gdt64.code:long_start` is how boot.asm enters long mode: it loads CS
+#   from a GDT selector. It encodes `EA` + offset32 + selector16 and exists ONLY
+#   in 32-bit mode — NASM refuses it under `bits 64` outright.
+#
+#   That contradicts a claim made earlier in this file's history: that treating
+#   `bits` as a no-op is "accidentally correct for boot.asm" because none of its
+#   70 bits-32 lines use a 64-bit register. The test asked about OPERANDS and
+#   the real risk was a mode-specific OPCODE, which it could not see.
+#
+#   ★ What is implemented is SYNTACTIC detection, not mode tracking. A `seg:off`
+#   operand is unambiguous — no other form has a colon there — and since the
+#   instruction only exists in 32-bit mode, its presence implies the mode. That
+#   is sound FOR THIS INSTRUCTION and is not general mode tracking: `bits` is
+#   still a no-op, and any OTHER construct that encodes differently in 32-bit
+#   mode would still be wrong. Named here rather than left implied, because the
+#   previous version of this note was the thing that was wrong.
+glyph HASCOLON = la t. INSTR(":")(t)
+glyph SPLITCOLON = Z(la self. la s. la cur.
+    IF(str_eq(s)(""))(la _. PAIR(cur)(""))
+      (la _. IF(str_eq(str_head(s))(":"))
+               (la _. PAIR(cur)(str_tail(s)))
+               (la _. self(str_tail(s))(concat(cur)(str_head(s))))))
+#   Far jmp: ptr16:16 (EA off16 seg16, 5 bytes) in 16-bit mode, ptr16:32
+#   (EA off32 seg16, 7 bytes) in 32/64. Only the OFFSET width changes.
+glyph FARJMP = la labs. la t.
+    (la p. concat(B(234))
+          (concat(IF(int_eq(BITSMODE(labs))(16))(la _. LE2(EVAL(labs)(SND(p))))(la _. LE4(EVAL(labs)(SND(p)))))
+                 (LE2(EVAL(labs)(FST(p))))))
+    (SPLITCOLON(t)(""))
+glyph INDJMP = la digit. la a.
+    concat(REXOPT(4)(0)(REGNUM(a))(FALSE))
+   (concat(B(255))(MODRMD(digit)(REGNUM(a))))
 glyph LTRENC = la a. concat(B(15))(concat(B(0))(MODRMD(3)(REGNUM(a))))
 #   lgdt needs the ModRM/SIB/disp tail WITHOUT the REX+opcode that MEMENC bakes
 #   in, so the addressing machinery is factored out and shared.
-glyph MEMTAIL = la reg. la b. la d.
-    IF(lt(b)(0))
-      (la _. concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(B(37))(LE4(d))))
-      (la _. (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
-                   (concat(SIBOF(b))(DISPOF(m)(d))))
-             (MODOF(b)(d)))
+#   16-bit mode: a direct address is mod=00 rm=110 + disp16 (no SIB), not the
+#   [disp32]-via-SIB form. Register-based 16-bit addressing ([bx+si] …) uses a
+#   different ModRM table the boot sectors don't need, so it halts loudly rather
+#   than silently emitting 32/64-mode bytes. mode!=16 → the two original branches,
+#   byte-identical.
+glyph MEMTAIL = la reg. la b. la d. la mode.
+    IF(int_eq(mode)(16))
+      (la _. IF(lt(b)(0))
+               (la _. concat(B(add(mul(mod(reg)(8))(8))(6)))(LE2(d)))
+               (la _. error("asm: 16-bit register-based addressing not supported (only direct [disp16])")))
+      (la _. IF(lt(b)(0))
+               #   ★ ABSOLUTE [disp32] IS MODE-DEPENDENT, and the 64-bit form is
+               #   the ODD one. In 64-bit mode ModRM mod=00 rm=101 means
+               #   RIP-relative, so an absolute address must go the long way
+               #   round through a SIB byte (rm=100, SIB=0x25) — which is what
+               #   this always emitted. In 32-bit mode rm=101 IS absolute
+               #   disp32, so the SIB byte is a wasted byte and nasm does not
+               #   emit it. Measured on boot.asm's .boot32 (a `bits 32`
+               #   section): nasm `89 1d <disp32>` vs ours `89 1c 25 <disp32>`.
+               #   One byte per access, compounding to +8 across the prologue
+               #   and shifting every later label and relocation.
+               (la _. IF(int_eq(mode)(64))
+                        (la _. concat(B(add(mul(mod(reg)(8))(8))(4)))(concat(B(37))(LE4(d))))
+                        (la _. concat(B(add(mul(mod(reg)(8))(8))(5)))(LE4(d))))
+               (la _. (la m. concat(B(add(add(mul(m)(64))(mul(mod(reg)(8))(8)))(mod(b)(8))))
+                            (concat(SIBOF(b))(DISPOF(m)(d))))
+                      (MODOF(b)(d))))
 glyph LGDTENC = la labs. la b.
-    concat(B(15))(concat(B(1))(MEMTAIL(2)(MEMBASE(b))(MEMDISP(labs)(b))))
-glyph DIVENC = la w. la a.
-    concat(P66(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
+    concat(B(15))(concat(B(1))(MEMTAIL(2)(MEMBASE(b))(MEMDISP(labs)(b))(BITSMODE(labs))))
+#   lidt [mem]: 0F 01 /3 — same as lgdt (/2), one ModRM digit apart.
+glyph LIDTENC = la labs. la b.
+    concat(B(15))(concat(B(1))(MEMTAIL(3)(MEMBASE(b))(MEMDISP(labs)(b))(BITSMODE(labs))))
+glyph DIVENC = la w. la a. la mode.
+    concat(P66M(mode)(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
    (concat(B(OP8(247)(w)))(MODRMD(6)(REGNUM(a)))))
+#   Group-3 unary (F7 /digit, register): div=/6, idiv=/7, neg=/3 — same shape,
+#   only the ModRM reg digit differs. G3ENC factors it so a new group-3 op is one
+#   digit, not a re-derived encoder (div stays via its own glyph, byte-verified).
+glyph G3ENC = la dig. la w. la a. la mode.
+    concat(P66M(mode)(w))(concat(REXOPT(w)(0)(REGNUM(a))(RFORCE(a)))
+   (concat(B(OP8(247)(w)))(MODRMD(dig)(REGNUM(a)))))
+glyph NEGENC  = G3ENC(3)
+glyph IDIVENC = G3ENC(7)
+#   cmovcc dest, src (reg,reg): 0F 40+cc /r, reg=dest, rm=src, REX.W for r64.
+glyph CMOVENC = la cc. la w. la a. la b. la mode.
+    concat(P66M(mode)(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+   (concat(B(15))(concat(B(add(64)(cc)))(MODRM(REGNUM(b))(REGNUM(a))))))
+#   Two-operand imul dest, src (reg,reg): 0F AF /r, reg=dest, rm=src, REX.W.
+glyph IMUL2 = la w. la a. la b. la mode.
+    concat(P66M(mode)(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+   (concat(B(15))(concat(B(175))(MODRM(REGNUM(b))(REGNUM(a))))))
+#   movzx/movsxd: DEST width drives REX.W/0x66; SRC width drives the opcode.
+#   The rm field is a register OR a simple base/disp memory operand (SIB
+#   index/scale is a later slice — matches secd.asm's [reg]/[reg+d] movzx forms).
+glyph RMNUM  = la b. IF(ISREG(b))(la _. REGNUM(b))(la _. MEMBASE(b))
+glyph RMIDX = la b. IF(ISMEM(b))(la _. MEMIDX(b))(la _. sub(0)(1))
+glyph RMTAIL = la labs. la reg. la b.
+    IF(ISREG(b))(la _. MODRM(REGNUM(b))(reg))(la _. MEMTAILX(reg)(MEMBASE(b))(MEMIDX(b))(MEMSCALEB(b))(MEMDISP(labs)(b))(BITSMODE(labs)))
+glyph SRCW = la ts. (la b. IF(ISREG(b))(la _. RWIDTH(b))(la _. DECLSZ(TL2(ts))))(A2(ts))
+#   movzx: 0F B6 (byte src, 182) / 0F B7 (word src, 183). reg=dest, rm=src.
+#   The source MUST be byte or word — a 32/64-bit src (e.g. `movzx rax, rax`) is
+#   not a real movzx (nasm rejects it), so halt loudly rather than emit a nonsense
+#   B7 over a 64-bit rm that the CPU would misread.
+glyph MOVZXOP = la srcw.
+    IF(int_eq(srcw)(1))(la _. 182)(la _. IF(int_eq(srcw)(2))(la _. 183)
+      (la _. error(concat("asm: movzx source must be byte or word, got width ")(int_to_str(srcw)))))
+glyph MOVZXENC = la labs. la destw. la srcw. la a. la b.
+    concat(P66M(BITSMODE(labs))(destw))(concat(MREX(destw)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
+   (concat(B(15))(concat(B(MOVZXOP(srcw)))(RMTAIL(labs)(REGNUM(a))(b)))))
+#   movsxd: 63 /r — dest always r64 (REX.W), src r/m32; no 0F, no 0x66.
+glyph MOVSXDENC = la labs. la a. la b.
+    (la emit.
+      IF(ISREG(b))
+        (la _. IF(int_eq(RWIDTH(b))(4))(la _. emit)
+                 (la _. error("asm: movsxd source must be a 32-bit r/m")))
+        (la _. emit))
+    (concat(MREX(8)(REGNUM(a))(RMIDX(b))(RMNUM(b))(FALSE))
+           (concat(B(99))(RMTAIL(labs)(REGNUM(a))(b))))
+#   bsr dest, src (reg,reg): 0F BD /r, reg=dest, rm=src.
+glyph BSRENC = la w. la a. la b. la mode.
+    concat(P66M(mode)(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+   (concat(B(15))(concat(B(189))(MODRM(REGNUM(b))(REGNUM(a))))))
+#   bt/bts [mem], reg: 0F A3 (bt, 163) / 0F AB (bts, 171); reg=bit-index, rm=mem.
+glyph BTENC = la labs. la opc. la w. la a. la b.
+    concat(P66M(BITSMODE(labs))(w))(concat(MREX(w)(REGNUM(b))(MEMIDX(a))(MEMBASE(a))(RFORCE(b)))
+   (concat(B(15))(concat(B(opc))(MEMTAILX(REGNUM(b))(MEMBASE(a))(MEMIDX(a))(MEMSCALEB(a))(MEMDISP(labs)(a))(BITSMODE(labs))))))
 #   Three-operand imul: 6B /r ib when the immediate fits a signed byte, else
 #   69 /r id. The ModRM reg field is the DESTINATION here, rm the source.
-glyph IMUL3 = la w. la a. la b. la n.
-    concat(P66(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
+glyph IMUL3 = la w. la a. la b. la n. la mode.
+    concat(P66M(mode)(w))(concat(REXOPT(w)(REGNUM(a))(REGNUM(b))(FALSE))
    (IF(FITS8(n))
      (la _. concat(B(107))(concat(MODRM(REGNUM(b))(REGNUM(a)))(B(FOLD8(n)))))
      (la _. concat(B(105))(concat(MODRM(REGNUM(b))(REGNUM(a)))(IMMW(w)(n))))))
@@ -1042,6 +1589,19 @@ glyph JCCS =
 glyph JCCOPT = la op. LOOKREG(op)(JCCS)
 glyph ISJCC  = la op. ISSOME(JCCOPT(op))
 glyph JCCC   = la op. OPTV(JCCOPT(op))
+# cmovcc: 0F 40+cc /r — SAME condition nibble as jcc, dest in reg, src in rm.
+glyph CMOVS =
+  CONS(PAIR("cmovo")(0))(CONS(PAIR("cmovno")(1))(CONS(PAIR("cmovb")(2))(CONS(PAIR("cmovc")(2))(
+  CONS(PAIR("cmovnae")(2))(CONS(PAIR("cmovae")(3))(CONS(PAIR("cmovnb")(3))(CONS(PAIR("cmovnc")(3))(
+  CONS(PAIR("cmove")(4))(CONS(PAIR("cmovz")(4))(CONS(PAIR("cmovne")(5))(CONS(PAIR("cmovnz")(5))(
+  CONS(PAIR("cmovbe")(6))(CONS(PAIR("cmovna")(6))(CONS(PAIR("cmova")(7))(CONS(PAIR("cmovnbe")(7))(
+  CONS(PAIR("cmovs")(8))(CONS(PAIR("cmovns")(9))(CONS(PAIR("cmovp")(10))(CONS(PAIR("cmovnp")(11))(
+  CONS(PAIR("cmovl")(12))(CONS(PAIR("cmovnge")(12))(CONS(PAIR("cmovge")(13))(CONS(PAIR("cmovnl")(13))(
+  CONS(PAIR("cmovle")(14))(CONS(PAIR("cmovng")(14))(CONS(PAIR("cmovg")(15))(CONS(PAIR("cmovnle")(15))(
+  NIL))))))))))))))))))))))))))))
+glyph CMOVOPT = la op. LOOKREG(op)(CMOVS)
+glyph ISCMOV  = la op. ISSOME(CMOVOPT(op))
+glyph CMOVCC  = la op. OPTV(CMOVOPT(op))
 
 # ── DATA DEFINITION + LAYOUT: dw/dd/dq, resb/resq, align ───────────────────
 #   62 of boot.asm's remaining lines are these. Pure generation, but two of the
@@ -1090,13 +1650,22 @@ glyph DWIDTH = la op.
     IF(str_eq(op)("dw"))(la _. 2)(la _. IF(str_eq(op)("dd"))(la _. 4)(la _. 8))
 glyph ISDATA = la op.
     OR(str_eq(op)("dw"))(OR(str_eq(op)("dd"))(str_eq(op)("dq")))
-glyph DVAL = la labs. la t.
-    IF(ISNUM(t))(la _. NUMV(t))(la _. LABADDR(t)(labs))
+glyph DVAL = la labs. la t. EVAL(labs)(t)
 glyph DEMIT = la labs. la w. la l.
     Z(la self. la ll.
         ll("")(la h. la t. concat(LEW(w)(DVAL(labs)(h)))(self(t))))(l)
 glyph DSIZE = la w. la l. mul(w)(LEN(l))
 glyph ISRES = la op. OR(str_eq(op)("resb"))(str_eq(op)("resq"))
+#   `times COUNT db 0`: the COUNT is an EXPRESSION that may span several tokens
+#   when it has spaces (`times 510 - ($ - $$) db 0` in the MBR). Collect tokens
+#   up to the data directive (db/dw/dd/dq/resb/resq) as the count string; the rest
+#   is the repeated instruction. A single-token count (`times 8 db 0`) is the
+#   degenerate case.
+glyph ISTIMESINSTR = la t. OR(str_eq(t)("db"))(OR(ISDATA(t))(ISRES(t)))
+glyph TIMESCOUNT = Z(la self. la l. la acc.
+    l(acc)(la h. la t. IF(ISTIMESINSTR(h))(la _. acc)(la _. self(t)(concat(acc)(h)))))
+glyph TIMESREST = Z(la self. la l.
+    l(NIL)(la h. la t. IF(ISTIMESINSTR(h))(la _. l)(la _. self(t))))
 #   A single-operand directive's WHOLE operand list is the expression, unlike
 #   `mov dst, expr` where the first operand is a destination. JOINEXPR keeps the
 #   first token separate for that reason, so directives join everything instead.
@@ -1114,39 +1683,64 @@ glyph SIZEL0 = la labs. la off. la ts.
     IF(str_eq(op)(""))(la _. 0)(la _.
     IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. 0)(la _.
     IF(ISLABEL(op))(la _. 0)(la _.
-    IF(str_eq(op)("db"))(la _. DBSIZE(TL2(ts)))(la _.
+    IF(str_eq(op)("db"))(la _. DBSIZE(JOINEXPR(TL2(ts))))(la _.
     IF(str_eq(op)("syscall"))(la _. 2)(la _.
     IF(str_eq(op)("ret"))(la _. 1)(la _.
     IF(str_eq(op)("nop"))(la _. 1)(la _.
+    IF(AND(str_eq(op)("push"))(ISVAL(A1(ts))))
+      (la _. LENOF(PUSHIMM(EVAL(labs)(A1(ts)))))(la _.
     IF(OR(str_eq(op)("push"))(str_eq(op)("pop")))
       (la _. IF(lt(REGNUM(A1(ts)))(8))(la _. 1)(la _. 2))(la _.
-    IF(str_eq(op)("call"))(la _. 5)(la _.
-    IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 5))(la _.
-    IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. 6))(la _.
-    IF(str_eq(op)("mov"))(la _. MOVSIZE(ts))(la _.
-    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("equ"))(ISEQU(ts))))(la _. 0)(la _.
+    IF(str_eq(op)("call"))(la _. NEARSZ(BITSMODE(labs))(1))(la _.
+    IF(AND(str_eq(op)("jmp"))(HASCOLON(A1(ts))))(la _. IF(int_eq(BITSMODE(labs))(16))(la _. 5)(la _. 7))(la _.
+    IF(AND(str_eq(op)("jmp"))(ISREG(A1(ts))))(la _. LENOF(INDJMP(4)(A1(ts))))(la _.
+    IF(AND(str_eq(op)("call"))(ISREG(A1(ts))))(la _. LENOF(INDJMP(2)(A1(ts))))(la _.
+    IF(str_eq(op)("jmp"))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. NEARSZ(BITSMODE(labs))(1)))(la _.
+    IF(ISJCC(op))(la _. IF(JSHORT(labs)(off)(ts))(la _. 2)(la _. NEARSZ(BITSMODE(labs))(2)))(la _.
+    IF(str_eq(op)("mov"))(la _. MOVSIZE(BITSMODE(labs))(ts))(la _.
+    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("extern"))(OR(str_eq(op)("equ"))(ISEQU(ts)))))(la _. 0)(la _.
     IF(str_eq(op)("section"))(la _. SECPAD(off))(la _.
     IF(str_eq(op)("incbin"))(la _. LENOF(INCBIN(ts)))(la _.
     IF(str_eq(op)("rep"))(la _. add(1)(SIZEL(labs)(add(off)(1))(TL2(ts))))(la _.
     IF(str_eq(op)("o64"))(la _. add(1)(SIZEL(labs)(add(off)(1))(TL2(ts))))(la _.
-    IF(str_eq(op)("out"))(la _. LENOF(OUTENC(A1(ts))(A2(ts))))(la _.
-    IF(str_eq(op)("in"))(la _. LENOF(INENC(A1(ts))(A2(ts))))(la _.
+    IF(str_eq(op)("out"))(la _. LENOF(OUTENC(A1(ts))(A2(ts))(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("in"))(la _. LENOF(INENC(A1(ts))(A2(ts))(BITSMODE(labs))))(la _.
     IF(str_eq(op)("ltr"))(la _. LENOF(LTRENC(A1(ts))))(la _.
     IF(str_eq(op)("lgdt"))(la _. LENOF(LGDTENC(labs)(A1(ts))))(la _.
-    IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(DIVENC(w)(a))))(la _.
-    IF(str_eq(op)("imul"))(la _. LENOF(IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))))(la _.
-    IF(ISDATA(op))(la _. DSIZE(DWIDTH(op))(TL2(ts)))(la _.
+    IF(str_eq(op)("lidt"))(la _. LENOF(LIDTENC(labs)(A1(ts))))(la _.
+    IF(str_eq(op)("int"))(la _. 2)(la _.
+    IF(str_eq(op)("insb"))(la _. LENOF(STRIOENC(108)(1)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("insw"))(la _. LENOF(STRIOENC(109)(2)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("insd"))(la _. LENOF(STRIOENC(109)(4)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("outsb"))(la _. LENOF(STRIOENC(110)(1)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("outsw"))(la _. LENOF(STRIOENC(111)(2)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("outsd"))(la _. LENOF(STRIOENC(111)(4)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(DIVENC(w)(a)(BITSMODE(labs)))))(la _.
+    IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(NEGENC(w)(a)(BITSMODE(labs)))))(la _.
+    IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDIVENC(w)(a)(BITSMODE(labs)))))(la _.
+    IF(ISCMOV(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(CMOVENC(CMOVCC(op))(w)(a)(b)(BITSMODE(labs)))))(la _.
+    IF(str_eq(op)("imul"))(la _. IF(str_eq(NTH(2)(OPL(ts)))(""))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IMUL2(w)(a)(b)(BITSMODE(labs)))))(la _. LENOF(IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))(BITSMODE(labs)))))(la _.
+    IF(str_eq(op)("movzx"))(la _. LENOF(MOVZXENC(labs)(RWIDTH(A1(ts)))(SRCW(ts))(A1(ts))(A2(ts))))(la _.
+    IF(str_eq(op)("movsxd"))(la _. LENOF(MOVSXDENC(labs)(A1(ts))(A2(ts))))(la _.
+    IF(str_eq(op)("bsr"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(BSRENC(w)(a)(b)(BITSMODE(labs)))))(la _.
+    IF(str_eq(op)("bt"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(BTENC(labs)(163)(w)(a)(b))))(la _.
+    IF(str_eq(op)("bts"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(BTENC(labs)(171)(w)(a)(b))))(la _.
+    IF(ISDATA(op))(la _. DSIZE(DWIDTH(op))(JOINEXPR(TL2(ts))))(la _.
     IF(ISRES(op))(la _. RESN(labs)(op)(ts))(la _.
     IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
+    IF(str_eq(op)("times"))(la _. mul(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(SIZEL(labs)(off)(TIMESREST(TL2(ts)))))(la _.
     IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
-    IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b))))(la _.
-    IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(w)(a)(b))))(la _.
-    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a))))(la _.
-    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a))))(la _.
-    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b))))(la _.
+    IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b.
+      IF(AND(BISLBL(b))(NOT(ISMEM(a))))
+        (la _. LENOF(G1IMM32(G1DIG(op))(w)(REGNUM(a))(0)(RFORCE(a))(BITSMODE(labs))))
+        (la _. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b)))))(la _.
+    IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(BITSMODE(labs))(w)(a)(b))))(la _.
+    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a)(BITSMODE(labs)))))(la _.
+    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a)(BITSMODE(labs)))))(la _.
+    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(TSTENC(w)(a)(b)(BITSMODE(labs)))))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(LEAENC(labs)(w)(a)(b))))
-      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))
-  (HD(ts))
+      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  (LOWER(HD(ts)))
 
 # ── one instruction -> its bytes (off = this instruction's own address) ──
 glyph ENC10 = la labs. la off. la ts.
@@ -1154,45 +1748,69 @@ glyph ENC10 = la labs. la off. la ts.
     IF(str_eq(op)(""))(la _. "")(la _.
     IF(OR(str_eq(op)("bits"))(str_eq(op)("org")))(la _. "")(la _.
     IF(ISLABEL(op))(la _. "")(la _.
-    IF(str_eq(op)("db"))(la _. DBEMIT(TL2(ts)))(la _.
+    IF(str_eq(op)("db"))(la _. DBEMIT(JOINEXPR(TL2(ts))))(la _.
     IF(str_eq(op)("syscall"))(la _. concat(B(15))(B(5)))(la _.
     IF(str_eq(op)("ret"))(la _. B(195))(la _.
     IF(str_eq(op)("nop"))(la _. B(144))(la _.
+    IF(AND(str_eq(op)("push"))(ISVAL(A1(ts))))(la _. PUSHIMM(EVAL(labs)(A1(ts))))(la _.
     IF(str_eq(op)("push"))(la _. PUSHPOP(80)(REGNUM(A1(ts))))(la _.
     IF(str_eq(op)("pop"))(la _. PUSHPOP(88)(REGNUM(A1(ts))))(la _.
-    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("equ"))(ISEQU(ts))))(la _. "")(la _.
+    IF(OR(str_eq(op)("global"))(OR(str_eq(op)("extern"))(OR(str_eq(op)("equ"))(ISEQU(ts)))))(la _. "")(la _.
     IF(str_eq(op)("section"))(la _. REPB(SECPAD(off))(B(0)))(la _.
     IF(str_eq(op)("incbin"))(la _. INCBIN(ts))(la _.
     IF(str_eq(op)("rep"))(la _. concat(B(243))(ENC1(labs)(add(off)(1))(TL2(ts))))(la _.
     IF(str_eq(op)("o64"))(la _. concat(B(72))(ENC1(labs)(add(off)(1))(TL2(ts))))(la _.
-    IF(str_eq(op)("out"))(la _. OUTENC(A1(ts))(A2(ts)))(la _.
-    IF(str_eq(op)("in"))(la _. INENC(A1(ts))(A2(ts)))(la _.
+    IF(str_eq(op)("out"))(la _. OUTENC(A1(ts))(A2(ts))(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("in"))(la _. INENC(A1(ts))(A2(ts))(BITSMODE(labs)))(la _.
     IF(str_eq(op)("ltr"))(la _. LTRENC(A1(ts)))(la _.
     IF(str_eq(op)("lgdt"))(la _. LGDTENC(labs)(A1(ts)))(la _.
-    IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. DIVENC(w)(a)))(la _.
-    IF(str_eq(op)("imul"))(la _. IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts)))))(la _.
-    IF(ISDATA(op))(la _. DEMIT(labs)(DWIDTH(op))(TL2(ts)))(la _.
+    IF(str_eq(op)("lidt"))(la _. LIDTENC(labs)(A1(ts)))(la _.
+    IF(str_eq(op)("int"))(la _. concat(B(205))(B(EVAL(labs)(A1(ts)))))(la _.
+    IF(str_eq(op)("insb"))(la _. STRIOENC(108)(1)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("insw"))(la _. STRIOENC(109)(2)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("insd"))(la _. STRIOENC(109)(4)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("outsb"))(la _. STRIOENC(110)(1)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("outsw"))(la _. STRIOENC(111)(2)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("outsd"))(la _. STRIOENC(111)(4)(BITSMODE(labs)))(la _.
+    IF(str_eq(op)("div"))(la _. WITHOPS(ts)(la w. la a. la b. DIVENC(w)(a)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("neg"))(la _. WITHOPS(ts)(la w. la a. la b. NEGENC(w)(a)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("idiv"))(la _. WITHOPS(ts)(la w. la a. la b. IDIVENC(w)(a)(BITSMODE(labs))))(la _.
+    IF(ISCMOV(op))(la _. WITHOPS(ts)(la w. la a. la b. CMOVENC(CMOVCC(op))(w)(a)(b)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("imul"))(la _. IF(str_eq(NTH(2)(OPL(ts)))(""))(la _. WITHOPS(ts)(la w. la a. la b. IMUL2(w)(a)(b)(BITSMODE(labs))))(la _. IMUL3(RWIDTH(A1(ts)))(A1(ts))(A2(ts))(NUMV(NTH(2)(OPL(ts))))(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("movzx"))(la _. MOVZXENC(labs)(RWIDTH(A1(ts)))(SRCW(ts))(A1(ts))(A2(ts)))(la _.
+    IF(str_eq(op)("movsxd"))(la _. MOVSXDENC(labs)(A1(ts))(A2(ts)))(la _.
+    IF(str_eq(op)("bsr"))(la _. WITHOPS(ts)(la w. la a. la b. BSRENC(w)(a)(b)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("bt"))(la _. WITHOPS(ts)(la w. la a. la b. BTENC(labs)(163)(w)(a)(b)))(la _.
+    IF(str_eq(op)("bts"))(la _. WITHOPS(ts)(la w. la a. la b. BTENC(labs)(171)(w)(a)(b)))(la _.
+    IF(ISDATA(op))(la _. DEMIT(labs)(DWIDTH(op))(JOINEXPR(TL2(ts))))(la _.
     IF(ISRES(op))(la _. REPB(RESN(labs)(op)(ts))(B(0)))(la _.
     IF(str_eq(op)("align"))(la _. REPB(ALIGNPAD(off)(NUMV(NTH(1)(ts))))(B(144)))(la _.
+    IF(str_eq(op)("times"))(la _. REPB(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(ENC1(labs)(off)(TIMESREST(TL2(ts)))))(la _.
     IF(ISNOARG(op))(la _. NOARG(op))(la _.
     IF(ISG1(op))(la _. WITHOPS(ts)(G1ENC(labs)(G1DIG(op))))(la _.
-    IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))))(la _.
-    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(0)(w)(a)))(la _.
-    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(1)(w)(a)))(la _.
-    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(TSTENC))(la _.
+    IF(ISSH(op))(la _. WITHOPS(ts)(SHENC(SHDIG(op))(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(0)(w)(a)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. IDENC(1)(w)(a)(BITSMODE(labs))))(la _.
+    IF(str_eq(op)("test"))(la _. WITHOPS(ts)(la w. la a. la b. TSTENC(w)(a)(b)(BITSMODE(labs))))(la _.
     IF(str_eq(op)("lea"))(la _. WITHOPS(ts)(LEAENC(labs)))(la _.
-    IF(str_eq(op)("call"))(la _. concat(B(232))(LE4(REL32(labs)(TARGET(ts))(add(off)(5)))))(la _.
+    IF(str_eq(op)("call"))(la _. concat(B(232))(NEARDISP(BITSMODE(labs))(labs)(TARGET(ts))(off)(1)))(la _.
+    IF(AND(str_eq(op)("jmp"))(HASCOLON(A1(ts))))
+      (la _. FARJMP(labs)(A1(ts)))(la _.
+    IF(AND(str_eq(op)("jmp"))(ISREG(A1(ts))))
+      (la _. INDJMP(4)(A1(ts)))(la _.
+    IF(AND(str_eq(op)("call"))(ISREG(A1(ts))))
+      (la _. INDJMP(2)(A1(ts)))(la _.
     IF(str_eq(op)("jmp"))
       (la _. IF(JSHORT(labs)(off)(ts))
                (la _. concat(B(235))(B(REL8(labs)(off)(TARGET(ts)))))
-               (la _. concat(B(233))(LE4(REL32(labs)(TARGET(ts))(add(off)(5))))))(la _.
+               (la _. concat(B(233))(NEARDISP(BITSMODE(labs))(labs)(TARGET(ts))(off)(1))))(la _.
     IF(ISJCC(op))
       (la _. IF(JSHORT(labs)(off)(ts))
                (la _. concat(B(add(112)(JCCC(op))))(B(REL8(labs)(off)(TARGET(ts)))))
-               (la _. concat(B(15))(concat(B(add(128)(JCCC(op))))(LE4(REL32(labs)(TARGET(ts))(add(off)(6)))))))(la _.
+               (la _. concat(B(15))(concat(B(add(128)(JCCC(op))))(NEARDISP(BITSMODE(labs))(labs)(TARGET(ts))(off)(2)))))(la _.
     IF(str_eq(op)("mov"))(la _. WITHOPS(ts)(MOVENC(labs)))
-      (la _. error(concat("asm: unsupported instruction: ")(op)))))))))))))))))))))))))))))))))))))
-  (HD(ts))
+      (la _. error(concat("asm: unsupported instruction: ")(op))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  (LOWER(HD(ts)))
 
 #   Every line is tokenized ONCE, up front, and the passes consume token lists
 #   rather than raw text. Each pass used to call TOKS(line) itself, so a source
@@ -1219,8 +1837,33 @@ glyph STRIPLAB = la ts. IF(ISLABEL(HD(ts)))(la _. TL2(ts))(la _. ts)
 #   duration of one line. Doing it here rather than threading an `off` argument
 #   through every evaluator means `$` works in every operand position at once.
 glyph WITHDOLLAR = la labs. la off. CONS(PAIR("$")(off))(labs)
+# ── BITS mode (16-bit real mode) ────────────────────────────────────────────
+#   `bits N` sets the current CPU mode; it is POSITIONAL (changes mid-file), so
+#   the pass loops (MKLABS/TOTLEN/PASS2) carry a `mode` accumulator updated on
+#   each bits line, and bind it into the label channel as "@bits" (exactly how
+#   WITHDOLLAR binds `$`). asm.la's op-size model is already 32-bit-default, so
+#   modes 32 and 64 are identical here — only mode==16 differs, and every
+#   mode-aware branch is a NO-OP unless BITSMODE==16, keeping 32/64 byte-identical.
+glyph NEXTMODE = la mode. la ts.
+    IF(str_eq(LOWER(HD(STRIPLAB(ts))))("bits"))(la _. NUMV(NTH(1)(STRIPLAB(ts))))(la _. mode)
+glyph WITHBITS = la labs. la mode. CONS(PAIR("@bits")(mode))(labs)
+#   ★ `align` PADS WITH 0x90 IN EVERY SECTION — including non-executable ones.
+#   MEASURED on `nasm -f elf64`, in a .rodata section: the fill is `90 90 90 90
+#   90 90`, not zeros. This settles the long-standing note below, which guessed
+#   that "a data section pads with zeros" and honestly labelled itself as
+#   reasoning rather than measurement. It was wrong, and the guess is seductive
+#   enough that I rebuilt it: on first writing the ELF path I threaded a
+#   per-section pad byte (0x90 when executable, 0 otherwise) through the label
+#   channel, and the r6 fixture failed against nasm's NOPs. The deferred
+#   divergence never existed; 144 is simply correct, in both formats.
+glyph BITSMODE = la labs. (la o. IF(ISSOME(o))(la _. OPTV(o))(la _. 64))(LOOKLAB("@bits")(labs))
 glyph SIZEL = la labs. la off. la ts. SIZEL0(WITHDOLLAR(labs)(off))(off)(STRIPLAB(ts))
-glyph ENC1  = la labs. la off. la ts. ENC10(WITHDOLLAR(labs)(off))(off)(STRIPLAB(ts))
+#   @next = off + this instruction's length, so a RIP-relative disp (target-@next)
+#   resolves without threading off/len through every encoder — the same label-
+#   channel trick WITHDOLLAR uses for `$`. SIZEL is RIP-length-correct (the mem
+#   part is a fixed 5 bytes) so @next needs no @next itself (no circularity).
+glyph ENC1  = la labs. la off. la ts.
+    ENC10(CONS(PAIR("@next")(add(off)(SIZEL(labs)(off)(ts))))(WITHDOLLAR(labs)(off)))(off)(STRIPLAB(ts))
 
 # ── section / global / incbin ───────────────────────────────────────────────
 #   The last three directives boot.asm uses.
@@ -1304,31 +1947,77 @@ glyph PPELIF   = la st. la cond.
 glyph DEFINED  = la nm. la ds. ISSOME(LOOKREG(nm)(ds))
 glyph PPVAL    = la ts. NTH(2)(ts)
 glyph INCNAME  = la ts. str_tail(NTH(1)(ts))
-glyph PP = Z(la self. la ls. la ds. la st.
+#   ── %macro / %endmacro ──────────────────────────────────────────────────
+#   idt.asm defines two single-parameter macros and invokes them 32 times to
+#   generate the ISR stubs. Expansion is LINE-LEVEL and must happen before
+#   tokenizing, because `%1` appears INSIDE tokens — `isr%1:` becomes `isr0:`,
+#   a label whose NAME is built by substitution. Token-level substitution could
+#   never produce that.
+#
+#   A macro body is collected verbatim between `%macro NAME n` and `%endmacro`,
+#   then spliced at each invocation with `%1`..`%9` replaced textually. Splicing
+#   into the line stream (rather than recursing) means an expanded body is
+#   preprocessed like any other lines — so a macro may contain conditionals, and
+#   its labels enter the ordinary label pass.
+glyph REPLACE = Z(la self. la s. la pat. la rep.
+    IF(str_eq(s)(""))(la _. "")
+      (la _. IF(STARTSW(s)(pat))
+               (la _. concat(rep)(self(DROPN2(s)(LENOF(pat)))(pat)(rep)))
+               (la _. concat(str_head(s))(self(str_tail(s))(pat)(rep)))))
+glyph STARTSW = Z(la self. la s. la p.
+    IF(str_eq(p)(""))(la _. TRUE)
+      (la _. IF(str_eq(s)(""))(la _. FALSE)
+        (la _. AND(str_eq(str_head(s))(str_head(p)))
+                  (self(str_tail(s))(str_tail(p))))))
+glyph DROPN2 = Z(la self. la s. la n.
+    IF(int_eq(n)(0))(la _. s)(la _. self(str_tail(s))(sub(n)(1))))
+glyph SUBARGS = Z(la self. la line. la args. la i.
+    args(line)(la h. la t.
+      self(REPLACE(line)(concat("%")(int_to_str(i)))(h))(t)(add(i)(1))))
+glyph EXPANDM = Z(la self. la body. la args.
+    body(NIL)(la h. la t. CONS(SUBARGS(h)(args)(1))(self(t)(args))))
+#   collect a macro body: everything up to %endmacro
+glyph MBODY = Z(la self. la ls. la acc.
+    ls(PAIR(acc)(NIL))(la h. la t.
+      IF(str_eq(HD(TOKS(h)("")))("%endmacro"))
+        (la _. PAIR(acc)(t))
+        (la _. (la r. PAIR(CONS(h)(FST(r)))(SND(r)))(self(t)(NIL)))))
+glyph LOOKMAC = Z(la self. la nm. la l.
+    l(NONE)(la h. la t. IF(str_eq(FST(h))(nm))(la _. SOME(SND(h)))(la _. self(nm)(t))))
+
+glyph PP = Z(la self. la ls. la ds. la st. la ms.
   ls(PAIR(NIL)(ds))(la line. la rest.
     (la ts.
       (la d.
-        IF(str_eq(d)("%define"))
+        IF(str_eq(d)("%macro"))
+          (la _. (la r. self(SND(r))(ds)(st)
+                          (CONS(PAIR(NTH(1)(ts))(FST(r)))(ms)))
+                 (MBODY(rest)(NIL)))
+        (la _. IF(ISSOME(LOOKMAC(d)(ms)))
           (la _. IF(PPEMIT(st))
-                   (la _. self(rest)(CONS(PAIR(NTH(1)(ts))(PPVAL(ts)))(ds))(st))
-                   (la _. self(rest)(ds)(st)))
+                   (la _. self(APPEND(EXPANDM(OPTV(LOOKMAC(d)(ms)))(TL2(ts)))(rest))(ds)(st)(ms))
+                   (la _. self(rest)(ds)(st)(ms)))
+        (la _. IF(str_eq(d)("%define"))
+          (la _. IF(PPEMIT(st))
+                   (la _. self(rest)(CONS(PAIR(NTH(1)(ts))(PPVAL(ts)))(ds))(st)(ms))
+                   (la _. self(rest)(ds)(st)(ms)))
           (la _. IF(str_eq(d)("%ifdef"))
-            (la _. self(rest)(ds)(PPUSH(st)(DEFINED(NTH(1)(ts))(ds))))
+            (la _. self(rest)(ds)(PPUSH(st)(DEFINED(NTH(1)(ts))(ds)))(ms))
             (la _. IF(str_eq(d)("%ifndef"))
-              (la _. self(rest)(ds)(PPUSH(st)(NOT(DEFINED(NTH(1)(ts))(ds)))))
+              (la _. self(rest)(ds)(PPUSH(st)(NOT(DEFINED(NTH(1)(ts))(ds))))(ms))
               (la _. IF(str_eq(d)("%elifdef"))
-                (la _. self(rest)(ds)(PPELIF(st)(DEFINED(NTH(1)(ts))(ds))))
+                (la _. self(rest)(ds)(PPELIF(st)(DEFINED(NTH(1)(ts))(ds)))(ms))
                 (la _. IF(str_eq(d)("%else"))
-                  (la _. self(rest)(ds)(PPELSE(st)))
+                  (la _. self(rest)(ds)(PPELSE(st))(ms))
                   (la _. IF(str_eq(d)("%endif"))
-                    (la _. self(rest)(ds)(PPPOP(st)))
+                    (la _. self(rest)(ds)(PPPOP(st))(ms))
                     (la _. IF(str_eq(d)("%include"))
                       (la _. IF(PPEMIT(st))
-                               (la _. self(APPEND(LINES(read_file(INCNAME(ts)))(""))(rest))(ds)(st))
-                               (la _. self(rest)(ds)(st)))
+                               (la _. self(APPEND(LINES(read_file(INCNAME(ts)))(""))(rest))(ds)(st)(ms))
+                               (la _. self(rest)(ds)(st)(ms)))
                       (la _. IF(PPEMIT(st))
-                        (la _. (la r. PAIR(CONS(line)(FST(r)))(SND(r)))(self(rest)(ds)(st)))
-                        (la _. self(rest)(ds)(st))))))))))
+                        (la _. (la r. PAIR(CONS(line)(FST(r)))(SND(r)))(self(rest)(ds)(st)(ms)))
+                        (la _. self(rest)(ds)(st)(ms))))))))))))
       (HD(ts)))
     (TOKS(line)(""))))
 
@@ -1443,6 +2132,36 @@ glyph SUBALL = la equs.
                                      (SUBLINE(equs)(TL2(TL2(ts))))))
                           (la _. SUBLINE(equs)(ts))))(self(t))))
 
+#   ★ LOCAL LABEL REFERENCES, not just definitions. `je .sys_write` inside
+#   `sys_write_impl:`'s scope means `sys_write_impl.sys_write`. Qualifying only
+#   DEFINITIONS (as MKLABS does) leaves every USE unresolved — boot.asm jumps to
+#   `.fill_pd`, `.w_done`, `.sys_write` and others this way.
+#
+#   Done as a pass over the token lists, tracking the same scope MKLABS does, so
+#   both sides agree by construction rather than by two implementations happening
+#   to match.
+#
+#   ★ DIRECTIVE OPERANDS ARE EXEMPT. `section .text` has a leading-dot operand
+#   that is a SECTION NAME, not a local label — qualifying it would produce
+#   `something.text` and break the layout. The exclusion is by directive, not by
+#   guessing from the name.
+glyph ISDIRECTIVE = la op.
+    OR(str_eq(op)("section"))(OR(str_eq(op)("global"))(str_eq(op)("extern")))
+glyph QUALTOK = la scope. la t.
+    IF(AND(str_eq(str_head(t))("."))(NOT(ISLABEL(t))))
+      (la _. concat(scope)(t))(la _. t)
+glyph QUALLINE = la scope. Z(la self. la l.
+    l(NIL)(la h. la t. CONS(QUALTOK(scope)(h))(self(t))))
+glyph QUALALL = Z(la self. la tls. la scope.
+    tls(NIL)(la ts. la t.
+      (la hd.
+        IF(ISDIRECTIVE(hd))
+          (la _. CONS(ts)(self(t)(scope)))
+          (la _. IF(AND(ISLABEL(hd))(NOT(str_eq(str_head(hd))("."))))
+            (la _. CONS(ts)(self(t)(LABNAME(hd))))
+            (la _. CONS(CONS(hd)(QUALLINE(scope)(TL2(ts))))(self(t)(scope)))))
+      (HD(ts))))
+
 # ── one pass: walk the lines, recording each label at its current offset ──
 #   ★ ISEQU is tested BEFORE ISLABEL, and the order is load-bearing.
 #   `.code: equ $ - gdt64` has a name ending in a colon, so it LOOKS like a
@@ -1461,23 +2180,26 @@ glyph SUBALL = la equs.
 #   every use site in boot.asm writes the full name.
 glyph QUALIFY = la scope. la nm.
     IF(str_eq(str_head(nm))("."))(la _. concat(scope)(nm))(la _. nm)
-glyph MKLABS = Z(la self. la ls. la labs. la off. la acc. la scope.
+glyph MKLABS = Z(la self. la ls. la labs. la off. la acc. la scope. la mode.
     ls(acc)(la ts. la t.
+      (la md. (la lm.
         IF(ISEQU(ts))
-          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))
+          (la _. self(t)(labs)(add(off)(SIZEL(lm)(off)(ts)))
                      (CONS(PAIR(QUALIFY(scope)(EQUNAME(ts)))
-                               (EVAL(WITHDOLLAR(labs)(off))(EQUBODY(ts))))(acc))
-                     (scope))
+                               (EVAL(WITHDOLLAR(lm)(off))(EQUBODY(ts))))(acc))
+                     (scope)(md))
         (la _. IF(ISLABEL(HD(ts)))
           (la _. (la nm.
-                   self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))
+                   self(t)(labs)(add(off)(SIZEL(lm)(off)(ts)))
                        (CONS(PAIR(QUALIFY(scope)(nm))(off))(acc))
-                       (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm)))
+                       (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm))(md))
                  (LABNAME(HD(ts))))
-          (la _. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))(acc)(scope)))))
+          (la _. self(t)(labs)(add(off)(SIZEL(lm)(off)(ts)))(acc)(scope)(md))))
+       (WITHBITS(labs)(md)))
+      (NEXTMODE(mode)(ts))))
 
-glyph TOTLEN = Z(la self. la ls. la labs. la off.
-    ls(off)(la ts. la t. self(t)(labs)(add(off)(SIZEL(labs)(off)(ts)))))
+glyph TOTLEN = Z(la self. la ls. la labs. la off. la mode.
+    ls(off)(la ts. la t. (la md. self(t)(labs)(add(off)(SIZEL(WITHBITS(labs)(md))(off)(ts)))(md))(NEXTMODE(mode)(ts))))
 
 # ── iterate to the fixed point: length unchanged <=> no promotion <=> stable ──
 #   The previous iteration's total length is CARRIED rather than recomputed.
@@ -1512,17 +2234,18 @@ glyph FIXLABS = Z(la self. la ls. la labs. la prev. la n. la org.
                            (la _. l2)
                            (la _. self(ls)(l2)(sig2)(sub(n)(1))(org)))
                (LABSIG(l2)))
-             (MKLABS(ls)(labs)(org)(NIL)(""))))
+             (MKLABS(ls)(labs)(org)(CONS(PAIR("$$")(org))(NIL))("")(64))))
 
 #   The emitted bytes ARE the size, so the line is encoded ONCE. The old form
 #   called ENC1 and then SIZEL, and since SIZEL now runs the encoder to measure
 #   (see MOVSIZE), that meant assembling every line twice on the final pass.
 #   This is the same invariant MOVSIZE rests on — len(ENC1) = SIZEL — used in
 #   the one place where the labels are known and so ENC1 is safe to run.
-glyph PASS2 = Z(la self. la labs. la ls. la off.
-    ls("")(la ts. la t.
-      (la e. concat(e)(self(labs)(t)(add(off)(LENOF(e)))))
-      (ENC1(labs)(off)(ts))))
+glyph PASS2 = Z(la self. la labs. la ls. la off. la mode.
+    ls("")(la ts. la t. (la md.
+      (la e. concat(e)(self(labs)(t)(add(off)(LENOF(e)))(md)))
+      (ENC1(WITHBITS(labs)(md))(off)(ts)))
+      (NEXTMODE(mode)(ts))))
 
 # ── ASSEMBLE(source text) -> machine code bytes ──
 #   `org N` sets the base address, so labels are ABSOLUTE (what a -f bin image
@@ -1533,16 +2256,721 @@ glyph ORGOF = Z(la self. la ls.
     ls(0)(la ts. la t.
       IF(str_eq(HD(ts))("org"))(la _. NUMV(NTH(1)(ts)))(la _. self(t))))
 
+# ── size/emit drift guard: the sizing pass and the emit pass must AGREE ──
+#   asm.la's stated invariant is len(ENC1) = SIZEL — asserted in comments (l.993,
+#   l.1684) and, until this guard, checked NOWHERE. 4d39c74's stale-label bug was
+#   exactly this drift: MOVSIZE reported 10 where MOVENC emitted 5, so the label
+#   table (accumulated from SIZEL) ended 20 bytes past the emitted image, and
+#   FIXLABS converged CLEANLY onto that wrong total (10 is value-independent). A
+#   fixpoint is only as sound as the function it iterates. This makes the claimed
+#   invariant load-bearing: TOTLEN is the sizing pass's total, str_len(code) the
+#   emit pass's — they must be equal or the image is silently misplaced.
+#   HONEST SCOPE: catches drift in the TOTAL. Two compensating per-line errors
+#   (one +N, one -N in the same program) would still pass; per-line is stronger.
+glyph SIZEDRIFT = la sized. la emitted.
+    error(concat("asm: INTERNAL size/emit drift — sizing pass accounted ")
+      (concat(int_to_str(sized))
+        (concat(" bytes, emitter produced ")
+          (concat(int_to_str(emitted))
+            (" — a SIZEL case disagrees with its encoder; labels are misplaced")))))
+
 glyph ASSEMBLE = la src.
     (la pp.
       (la tls0.
         (la equs.
-          (la tls. (la org. PASS2(FIXLABS(tls)(NIL)("")(12)(org))(tls)(org))
+          (la tls. (la org.
+                     (la labs.
+                       (la code.
+                         (la sized.
+                           IF(int_eq(sized)(LENOF(code)))
+                             (la _. code)
+                             (la _. SIZEDRIFT(sized)(LENOF(code))))
+                         (sub(TOTLEN(tls)(labs)(org)(64))(org)))
+                       (PASS2(labs)(tls)(org)(64)))
+                     (FIXLABS(tls)(NIL)("")(12)(org)))
                    (ORGOF(tls)))
-          (SUBALL(equs)(tls0)))
+          (QUALALL(SUBALL(equs)(tls0))("")))
         (APPEND(MKEQUS(tls0)(NIL)(""))(SND(pp))))
       (MAPTOKS(FST(pp))))
-    (PP(LINES(src)(""))(NIL)(NIL))
+    (PP(LINES(src)(""))(NIL)(NIL)(NIL))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ELF64 OBJECT EMISSION (`-f elf64`) — the LISTS, not the container
+# ═══════════════════════════════════════════════════════════════════════════
+#   `elfobj.la` writes the ELF64 relocatable-object CONTAINER, but until now the
+#   section/symbol/reloc lists it consumes were extracted from nasm's own `boot.o`
+#   by a dev scaffold. That proved the WRITER correct while leaving nasm in the
+#   chain. This is the other half: the lists derived FROM SOURCE.
+#
+#   ★ ADDITIVE BY CONSTRUCTION. Nothing here is reachable from ASSEMBLE or MAIN.
+#   The `-f bin` path's glyphs are CALLED (PP/MAPTOKS/SUBALL/QUALALL/SIZEL/PASS2
+#   are reused verbatim) and never CHANGED, so the 24-program byte-identity gate
+#   cannot regress through this file — one assembler, two output formats, one
+#   encoder. If the two formats ever disagree about an instruction's bytes, they
+#   disagree because the encoder is wrong, not because a second one drifted.
+#
+#   ★ CONSTRUCTORS ARE INJECTED. asm.la does not import elfobj.la; the caller
+#   passes SDESC/SREC/RINFO/RREC and a cons/nil pair. asm.la builds every list in
+#   its OWN Scott encoding and converts once, at the boundary (TOX*), so it needs
+#   to know nothing about how elfobj represents a list. The two modules stay
+#   independently testable, which is the only reason this could be gated at all.
+#
+#   ★ THE PLACEHOLDER IN THE FIELD DOES NOT MATTER — measured, not reasoned.
+#   A reference to label L emits a reloc against the SECTION symbol of L's
+#   section with `addend = L's offset within it` (nasm's convention, read off
+#   real output: a ref to `b` at .data+8 gives sym=.data, addend=8). The bytes
+#   PASS2 leaves in the instruction field are therefore redundant, and for RELA
+#   they are also IGNORED: ld computes S+A and OVERWRITES the field. Verified by
+#   clobbering a linked object's field with DEADBEEF — the linked output was
+#   byte-identical. So there is no need to zero the field ranges, and the plan's
+#   feared "correct only when the target's offset is 0" limitation is not one.
+#   (Our `.o` differs from nasm's in those bytes; the gate is ld(ours)==ld(nasm),
+#   one level up, exactly because an object's internal layout is convention.)
+#
+#   HONEST SCOPE of this slice: sections must be declared explicitly (no implicit
+#   .text); `.bss`/NOBITS is not emitted (it needs `resb` reservation semantics);
+#   an address-valued `equ` contributes its VALUE to the label table but gets no
+#   symbol-table entry; and the reloc classifier covers the sites that actually
+#   occur — `mov reg,label`, `mov [mem],label`, and `dw`/`dd`/`dq label`.
+
+# ── splitting the line stream into sections ─────────────────────────────────
+glyph ISSECLINE = la ts. str_eq(LOWER(HD(STRIPLAB(ts))))("section")
+glyph SECNAMEOF = la ts. NTH(1)(STRIPLAB(ts))
+#   TAKESEC returns PAIR(this section's lines)(the rest, starting at the NEXT
+#   `section` line) so SECSPLIT never has to look ahead twice.
+glyph TAKESEC = Z(la self. la ls.
+    ls(PAIR(NIL)(NIL))(la ts. la t.
+      IF(ISSECLINE(ts))
+        (la _. PAIR(NIL)(ls))
+        (la _. (la p. PAIR(CONS(ts)(FST(p)))(SND(p)))(self(t)))))
+glyph SECFRAGS = Z(la self. la ls.
+    ls(NIL)(la ts. la t.
+      IF(ISSECLINE(ts))
+        (la _. (la p. CONS(PAIR(SECNAMEOF(ts))(FST(p)))(self(SND(p))))(TAKESEC(t)))
+        (la _. self(t))))
+#   ★ RE-ENTERING A SECTION APPENDS TO IT — it does not start a new one.
+#   boot.asm declares five sections, but its %includes declare more: idt.asm
+#   re-enters .boot32/.rodata/.bss and timer.asm and kbdirq.asm each re-enter
+#   .boot32, so `section .boot32` appears four times in the spliced stream.
+#   Emitting one section per DIRECTIVE produced 16 sections against nasm's 11,
+#   with .boot32/.rodata/.bss each duplicated.
+#
+#   MEASURED semantics, on a fixture built for the purpose rather than recalled:
+#   a re-entry resumes at the section's CURRENT END, and an `align` inside the
+#   continuation pads from the MERGED section-local offset — `.text` holding
+#   3 nops then a re-entered `align 16` pads 13 bytes to reach 16. So merging is
+#   plain concatenation of the fragments' lines, and the existing per-section
+#   offset threading then does the rest unchanged. That is also why the wrong
+#   version was CLOSE but not equal: each fragment restarted at offset 0, so
+#   every align inside a continuation rounded against the wrong base.
+#
+#   Order is FIRST APPEARANCE, which is nasm's section order.
+#   HONEST SCOPE — `bits` is a SOURCE-ORDER property, not a section one, so a
+#   section re-entered under a different CPU mode than it was left in would be
+#   mis-threaded here. boot.asm is safe (every `bits` sits inside .boot32 and
+#   all three re-entries are `bits 64`, the mode .boot32 already ends in) and it
+#   is named rather than silently assumed.
+glyph SAMENAME = la nm. Z(la self. la fr.
+    fr(NIL)(la sp. la t.
+      IF(str_eq(FST(sp))(nm))(la _. APPEND(SND(sp))(self(t)))(la _. self(t))))
+glyph DROPNAME = la nm. Z(la self. la fr.
+    fr(NIL)(la sp. la t.
+      IF(str_eq(FST(sp))(nm))(la _. self(t))(la _. CONS(sp)(self(t)))))
+glyph SECMERGE = Z(la self. la fr.
+    fr(NIL)(la sp. la t.
+      (la nm. CONS(PAIR(nm)(APPEND(SND(sp))(SAMENAME(nm)(t))))(self(DROPNAME(nm)(t))))
+      (FST(sp))))
+glyph SECSPLIT = la ls. SECMERGE(SECFRAGS(ls))
+#   Lines before the first `section` are not part of any section, but a `bits`
+#   among them still sets the mode every section inherits — so the preamble is
+#   dropped for BYTES and folded for MODE.
+glyph PREMODE = Z(la self. la ls. la mode.
+    ls(mode)(la ts. la t.
+      IF(ISSECLINE(ts))(la _. mode)(la _. self(t)(NEXTMODE(mode)(ts)))))
+glyph SECMODEEND = Z(la self. la mode. la ls.
+    ls(mode)(la ts. la t. self(NEXTMODE(mode)(ts))(t)))
+
+# ── `global` marks a symbol's BINDING, which is where it finally means something ──
+#   In a flat `-f bin` image `global` emits nothing (there is no symbol table to
+#   export into). Here it selects st_info 16 (GLOBAL) over 0 (LOCAL).
+glyph GLOBALSOF = Z(la self. la ls.
+    ls(NIL)(la ts. la t.
+      IF(str_eq(LOWER(HD(ts)))("global"))
+        (la _. CONS(NTH(1)(ts))(self(t)))
+        (la _. self(t))))
+glyph INNAMES = Z(la self. la nm. la l.
+    l(FALSE)(la h. la t. IF(str_eq(h)(nm))(la _. TRUE)(la _. self(nm)(t))))
+#   ── externs: names declared `extern`, undefined HERE, resolved by the linker ──
+#   The mirror of GLOBALSOF: a `global` names a label this object DEFINES and
+#   exports; an `extern` names one it USES but another object defines. An extern
+#   becomes an SHN_UNDEF symbol (shndx 0, GLOBAL bind, value 0) and a relocation
+#   against it points at that symbol directly with addend 0 — not at a section
+#   symbol + in-section offset, which is how a LOCAL reference relocates. This is
+#   the single missing piece for MULTI-OBJECT linking: link.la already resolves a
+#   cross-object undefined symbol, but nothing could DECLARE one until now.
+glyph EXTERNSOF = Z(la self. la ls.
+    ls(NIL)(la ts. la t.
+      IF(str_eq(LOWER(HD(ts)))("extern"))
+        (la _. CONS(NTH(1)(ts))(self(t)))
+        (la _. self(t))))
+#   Each extern's symtab index is fixed once the local symbols are laid out:
+#   0 null, 1 FILE, then |secs| section symbols, then |locs| defined labels, so
+#   the first extern sits at |secs| + 2 + |locs| (the SAME layout TSYM's LOCSEC+1
+#   arithmetic already assumes). XIDX numbers the extern names from that base;
+#   XLOOK resolves a name to SOME(index) or NONE.
+glyph XIDX = Z(la self. la names. la i.
+    names(NIL)(la h. la t. CONS(PAIR(h)(i))(self(t)(add(i)(1)))))
+glyph XLOOK = Z(la self. la nm. la xs.
+    xs(NONE)(la h. la t.
+      IF(str_eq(FST(h))(nm))(la _. SOME(SND(h)))(la _. self(nm)(t))))
+#   The byte EMITTER resolves a label operand to its value to fill the immediate
+#   field (`mov rax, greet` writes an 8-byte field). An extern has no value here —
+#   the linker supplies it — so its field is a PLACEHOLDER the RELA overwrites
+#   (ld computes S+A-P and ignores the field). Injecting each extern into the
+#   encoder's label table makes LABADDR return that placeholder instead of halting
+#   "undefined label", WITHOUT adding it to `locs` (built from actual `label:`
+#   definitions, not this table) — so it stays an UNDEF symbol, never a defined one.
+#
+#   ★ THE PLACEHOLDER IS A LARGE POSITIVE VALUE, ON PURPOSE. A near `jmp` picks a
+#   SHORT (rel8) encoding when its target is within ±127 (JSHORT/FITS8). An extern
+#   jmp MUST be near (rel8 has no room for a PLT32 reloc, and can't reach an
+#   unknown symbol), so the placeholder must be far enough that FITS8 fails for
+#   any instruction offset off>=0: `V-(off+2) > 127`. A big positive V guarantees
+#   that. It must be POSITIVE (not a large negative, which would be equally "far")
+#   because a `dq greet` emits this value through LE8, whose div/mod split is
+#   unreliable on a negative. The value is otherwise inert: it only fills fields
+#   ld overwrites and it changes NO instruction's SIZE (a label operand is imm64 /
+#   e8 rel32 regardless of value). Honest bound: correct for a section shorter
+#   than EXTPLACE-130 bytes (~1 GiB); a larger .text is not a thing here.
+glyph EXTPLACE = 1073741824
+glyph EXTLABS = Z(la self. la names.
+    names(NIL)(la h. la t. CONS(PAIR(h)(EXTPLACE))(self(t))))
+
+# ── a label's LOCATION: which section, and where in it ──────────────────────
+#   `-f bin` needs one number per label (its absolute address). An object file
+#   needs two — the section and the offset within it — because the address does
+#   not exist yet; the linker supplies it. That is the whole representational
+#   difference between the two formats, and it is why this pass exists at all.
+#   shndx 0 is the ABSOLUTE marker for an `equ` (real sections are 1-based); it
+#   becomes SHN_ABS (65521) at emission. An equ IS a symbol — nasm emits all 21
+#   of boot.asm's as LOCAL ABS, interleaved with the labels in strict SOURCE
+#   order (`gdt64.code` sits between `gdt64` and `gdt64.ptr`), so they cannot be
+#   appended as a group afterwards.
+glyph LOCREC  = la nm. la shndx. la val. PAIR(nm)(PAIR(shndx)(val))
+glyph LOCNAME = la r. FST(r)
+glyph LOCSEC  = la r. FST(SND(r))
+glyph LOCVAL  = la r. SND(SND(r))
+#   Source order, and deliberately NOT via MKLABS — MKLABS accumulates onto the
+#   front and so reverses, which is invisible when the result is only ever looked
+#   up by name but fatal here, where nasm's symbol ORDER is part of the target.
+#   Scope is threaded exactly as MKLABS threads it so a local `.foo` qualifies to
+#   the same name both passes produce.
+#   Returns PAIR(records)(the scope at the end), because a local label's scope
+#   is a SOURCE-ORDER property spanning fragments: `.w_done` inside a re-entered
+#   .boot32 belongs to the last non-local label seen, which may have been
+#   defined in an earlier fragment of a different file. Returning the scope
+#   rather than recomputing it in a second fold keeps one implementation — the
+#   thing this file has already been bitten by twice.
+glyph SECLABS = Z(la self. la mlabs. la lines. la off. la shndx. la scope. la mode.
+    lines(PAIR(NIL)(scope))(la ts. la t.
+      (la md. (la lm.
+        (la sz.
+          IF(ISEQU(ts))
+            (la _. (la r. PAIR(CONS(LOCREC(QUALIFY(scope)(EQUNAME(ts)))(0)
+                                          (EVAL(WITHDOLLAR(lm)(off))(EQUBODY(ts))))(FST(r)))(SND(r)))
+                   (self(mlabs)(t)(add(off)(sz))(shndx)(scope)(md)))
+            (la _. IF(ISLABEL(HD(ts)))
+              (la _. (la nm.
+                       (la r. PAIR(CONS(LOCREC(QUALIFY(scope)(nm))(shndx)(off))(FST(r)))(SND(r)))
+                       (self(mlabs)(t)(add(off)(sz))(shndx)
+                             (IF(str_eq(str_head(nm))("."))(la _. scope)(la _. nm))(md)))
+                     (LABNAME(HD(ts))))
+              (la _. self(mlabs)(t)(add(off)(sz))(shndx)(scope)(md))))
+        (SIZEL(lm)(off)(ts)))
+       (WITHBITS(mlabs)(md)))
+      (NEXTMODE(mode)(ts))))
+#   ★ SYMBOL ORDER IS SOURCE ORDER, NOT MERGED-SECTION ORDER. Merging the
+#   fragments is right for BYTES but wrong for the symbol table: nasm lists a
+#   label at the point its DEFINITION appears in the source, so a `.data` label
+#   written between two `.text` fragments comes out between their labels. The
+#   r7 fixture caught exactly this — headers and relocations already matched and
+#   only the order of `val` and `tail` was swapped.
+#
+#   So this walks the FRAGMENTS in source order while giving each label the
+#   offset it has in its MERGED section: `offs` carries the running end offset
+#   per section name, so a re-entered fragment resumes where that section left
+#   off, and `shndx` is the section's index in the merged order. Scope and CPU
+#   mode thread across fragments for the same source-order reason.
+glyph SECIDX = la nm. Z(la self. la secs. la i.
+    secs(0)(la sp. la t. IF(str_eq(FST(sp))(nm))(la _. i)(la _. self(t)(add(i)(1)))))
+glyph OFFOF = la nm. Z(la self. la offs.
+    offs(0)(la p. la t. IF(str_eq(FST(p))(nm))(la _. SND(p))(la _. self(t))))
+glyph SECWALK = Z(la self. la secs. la fr. la mlabs. la offs. la scope. la mode.
+    fr(NIL)(la sp. la t.
+      (la nm. (la lines. (la off0. (la r.
+        APPEND(FST(r))
+              (self(secs)(t)(mlabs)
+                   (CONS(PAIR(nm)(TOTLEN(lines)(mlabs)(off0)(mode)))(offs))
+                   (SND(r))(SECMODEEND(mode)(lines))))
+        (SECLABS(mlabs)(lines)(off0)(SECIDX(nm)(secs)(1))(scope)(mode)))
+        (OFFOF(nm)(offs)))
+        (SND(sp)))
+      (FST(sp))))
+#   ★ THE PREAMBLE CARRIES SYMBOLS. Lines before the first `section` emit no
+#   bytes, so the byte passes rightly ignore them — but 21 of boot.asm's 23 equs
+#   are declared there, and each is a symbol. Dropping the preamble (which is
+#   correct for CODE) silently dropped a fifth of the symbol table. Walked at
+#   shndx 0 = ABS; a label there would be meaningless and nasm rejects it, so
+#   only equs can appear.
+glyph PRELINES = Z(la self. la ls.
+    ls(NIL)(la ts. la t. IF(ISSECLINE(ts))(la _. NIL)(la _. CONS(ts)(self(t)))))
+glyph ALLLOCS = la tls. la secs. la mlabs. la mode.
+    APPEND(FST(SECLABS(mlabs)(PRELINES(tls))(0)(0)("")(mode)))
+          (SECWALK(secs)(SECFRAGS(tls))(mlabs)(NIL)("")(mode))
+
+# ── the same fixed point ASSEMBLE runs, over section-relative offsets ───────
+#   Sizes can depend on label values (jump promotion, MOVSIZE), so the table has
+#   to be iterated to stability here too. It compares the TABLE's signature, not
+#   a total length — for the reason FIXLABS records: a stable answer is not a
+#   right one, and length converged while a value was still wrong.
+glyph FLATLABS = Z(la self. la locs.
+    locs(NIL)(la r. la t. CONS(PAIR(LOCNAME(r))(LOCVAL(r)))(self(t))))
+glyph LOCSIG = Z(la self. la l.
+    l("")(la h. la t. concat(LOCNAME(h))(concat(":")(concat(int_to_str(LOCVAL(h)))
+                     (concat("/")(concat(int_to_str(LOCSEC(h)))(concat(";")(self(t)))))))))
+glyph ELFFIX = Z(la self. la tls. la secs. la mlabs. la prev. la n. la mode.
+    IF(int_eq(n)(0))
+      (la _. mlabs)
+      (la _. (la locs.
+               (la sig. IF(str_eq(prev)(sig))
+                          (la _. FLATLABS(locs))
+                          (la _. self(tls)(secs)(FLATLABS(locs))(sig)(sub(n)(1))(mode)))
+               (LOCSIG(locs)))
+             (ALLLOCS(tls)(secs)(mlabs)(mode))))
+
+# ── section descriptors: nasm's defaults, READ OFF nasm's own output ────────
+#   .text AX align 16, .data WA align 4, .rodata A align 4 — from `readelf -SW`
+#   on a real `nasm -f elf64` object, not from memory. An unrecognised section
+#   halts loudly rather than guessing an alignment that would silently relocate
+#   everything after it.
+#   An UNRECOGNISED name is not an error — nasm has a default for it, and
+#   boot.asm relies on it three times: `.multiboot`, `.boot32` and `.la_image`
+#   all come out PROGBITS, ALLOC, align 1, and notably NOT executable even
+#   though .boot32 is full of code. nasm decides exec from the NAME, not the
+#   contents, so following it is the whole job here.
+glyph SECATTR = la nm.
+    IF(str_eq(nm)(".text"))(la _. PAIR(1)(PAIR(6)(16)))
+   (la _. IF(str_eq(nm)(".data"))(la _. PAIR(1)(PAIR(3)(4)))
+   (la _. IF(str_eq(nm)(".rodata"))(la _. PAIR(1)(PAIR(2)(4)))
+   (la _. IF(str_eq(nm)(".bss"))(la _. PAIR(8)(PAIR(3)(4)))
+   (la _. PAIR(1)(PAIR(2)(1))))))
+#   ★ A SECTION'S ALIGNMENT IS RAISED BY THE `align`s INSIDE IT. The per-name
+#   default is only a floor: boot.asm's .rodata comes out 8 (not the default 4)
+#   because it contains `align 8`, and .bss comes out 4096. Measured on nasm's
+#   own boot.o — assuming the name defaults alone would have mis-aligned every
+#   section that carries an align, and a linker script would then place them
+#   somewhere the code does not expect.
+glyph MAXOF = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph MAXALIGN = Z(la self. la lines. la acc.
+    lines(acc)(la ts. la t.
+      (la st.
+        IF(str_eq(LOWER(HD(st)))("align"))
+          (la _. self(t)(MAXOF(acc)(NUMV(NTH(1)(st)))))
+          (la _. self(t)(acc)))
+      (STRIPLAB(ts))))
+glyph SC   = la nm. la ty. la fl. la al. la by. la sz.
+    PAIR(PAIR(nm)(PAIR(ty)(fl)))(PAIR(al)(PAIR(by)(sz)))
+glyph SCNM = la s. FST(FST(s))
+glyph SCTY = la s. FST(SND(FST(s)))
+glyph SCFL = la s. SND(SND(FST(s)))
+glyph SCAL = la s. FST(SND(s))
+glyph SCBY = la s. FST(SND(SND(s)))
+glyph SCSZ = la s. SND(SND(SND(s)))
+#   NOBITS (.bss) takes a header slot and a byte COUNT but contributes no file
+#   bytes. asm.la's `resb` emits real zeros for `-f bin` (where a reservation
+#   must occupy the image), so the size is simply the length of what PASS2
+#   produced and the content is then thrown away — one pass, both meanings.
+glyph ISNOBITS = la ty. int_eq(ty)(8)
+glyph BUILDSECS = Z(la self. la mlabs. la mode. la secs.
+    secs(NIL)(la sp. la t.
+      (la lines. (la at. (la ty. (la by.
+        CONS(SC(FST(sp))(ty)(FST(SND(at)))(MAXOF(SND(SND(at)))(MAXALIGN(lines)(1)))
+               (IF(ISNOBITS(ty))(la _. "")(la _. by))(LENOF(by)))
+            (self(mlabs)(SECMODEEND(mode)(lines))(t)))
+        (PASS2(mlabs)(lines)(0)(mode)))
+        (FST(at)))
+        (SECATTR(FST(sp))))
+      (SND(sp))))
+
+# ── symbols, in nasm's order — the order is part of the target ──────────────
+#   FILE, then one SECTION symbol per section, then every LOCAL label in source
+#   order, then every GLOBAL. Locals precede globals across the WHOLE object,
+#   not per section (verified on r3: `a`,`b` from .data precede `_start` from
+#   .text). sh_info of .symtab is the count of locals, which elfobj derives.
+glyph SD     = la nm. la info. la shndx. la val. PAIR(PAIR(nm)(info))(PAIR(shndx)(val))
+glyph SDNM   = la s. FST(FST(s))
+glyph SDINFO = la s. SND(FST(s))
+glyph SDSEC  = la s. FST(SND(s))
+glyph SDVAL  = la s. SND(SND(s))
+glyph SECSYMS = Z(la self. la secs. la i.
+    secs(NIL)(la sp. la t. CONS(SD("")(3)(i)(0))(self(t)(add(i)(1)))))
+#   The internal ABS marker (0) becomes SHN_ABS at emission. Kept distinct so
+#   the walk can use plain 1-based section indices and one reserved slot, rather
+#   than carrying 65521 through the arithmetic.
+glyph SHNABS  = 65521
+glyph OUTSEC  = la s. IF(int_eq(s)(0))(la _. SHNABS)(la _. s)
+glyph BINDSYMS = la gs. la want. la info. Z(la self. la locs.
+    locs(NIL)(la r. la t.
+      IF(IF(want)(la _. INNAMES(LOCNAME(r))(gs))(la _. NOT(INNAMES(LOCNAME(r))(gs))))
+        (la _. CONS(SD(LOCNAME(r))(info)(OUTSEC(LOCSEC(r)))(LOCVAL(r)))(self(t)))
+        (la _. self(t))))
+#   An extern is a GLOBAL-bind (info 16) NOTYPE symbol at SHN_UNDEF (shndx 0,
+#   kept raw — NOT run through OUTSEC, which would turn 0 into SHN_ABS: an equ's
+#   0 means "absolute", an extern's 0 means "undefined"). value 0. They follow
+#   the defined globals so their indices match XIDX's base (|secs|+2+|locs|), and
+#   being global they do not change sh_info (the local count elfobj derives).
+glyph EXTSYMS = Z(la self. la names.
+    names(NIL)(la h. la t. CONS(SD(h)(16)(0)(0))(self(t))))
+glyph BUILDSYMS = la fname. la secs. la locs. la gs. la xnames.
+    CONS(SD(fname)(4)(65521)(0))
+        (APPEND(SECSYMS(secs)(1))
+               (APPEND(BINDSYMS(gs)(FALSE)(0)(locs))
+                      (APPEND(BINDSYMS(gs)(TRUE)(16)(locs))(EXTSYMS(xnames)))))
+
+# ── relocations: one per label reference, classified by the ENCODING it lands in ──
+#   The reloc's offset is the field's position, so it is derived from the line's
+#   own length rather than tracked separately — `mov rax,lbl` is 10 bytes ending
+#   in an 8-byte field (len-8), the 32-bit forms end in a 4-byte field (len-4).
+#   Using SIZEL for that length is what keeps this honest: it is the SAME measure
+#   the emitter agrees with by construction (len(ENC1) = SIZEL), so a reloc can
+#   never point somewhere the bytes did not go.
+glyph RD    = la off. la sym. la typ. la ad. PAIR(PAIR(off)(sym))(PAIR(typ)(ad))
+glyph RDOFF = la r. FST(FST(r))
+glyph RDSYM = la r. SND(FST(r))
+glyph RDTYP = la r. FST(SND(r))
+glyph RDADD = la r. SND(SND(r))
+glyph LOOKLOC = Z(la self. la nm. la locs.
+    locs(NONE)(la h. la t.
+      IF(str_eq(LOCNAME(h))(nm))(la _. SOME(h))(la _. self(nm)(t))))
+#   A section's SECTION symbol sits at index shndx+1 (0 null, 1 FILE, then the
+#   sections in order), and the addend carries the label's offset within it.
+glyph TLOC = la nm. la locs.
+    (la o. IF(ISSOME(o))(la _. OPTV(o))
+             (la _. error(concat("asm: -f elf64: relocation against a symbol neither defined here nor declared extern: ")(nm))))
+    (LOOKLOC(nm)(locs))
+#   ★ An extern relocates against its OWN symbol (XLOOK's index), addend 0 — the
+#   linker supplies the address. A local relocates against its SECTION symbol
+#   (LOCSEC+1) with the in-section offset as addend. A well-formed name is in at
+#   most one table: XLOOK is consulted first, and any name that is genuinely a
+#   local label is absent from the extern list, so it falls through to the local
+#   path. (A name both DEFINED here and declared `extern` is malformed; it would
+#   emit an UNDEF reloc, which ld still resolves via the definition.)
+glyph TSYM = la nm. la locs. la xs.
+    (la o. IF(ISSOME(o))(la _. OPTV(o))
+             (la _. add(LOCSEC(TLOC(nm)(locs)))(1)))
+    (XLOOK(nm)(xs))
+glyph TADD = la nm. la locs. la xs.
+    (la o. IF(ISSOME(o))(la _. 0)
+             (la _. LOCVAL(TLOC(nm)(locs))))
+    (XLOOK(nm)(xs))
+glyph DRTYPE = la w.
+    IF(int_eq(w)(8))(la _. 1)(la _. IF(int_eq(w)(4))(la _. 10)(la _. 12))
+#   A `dq`/`dd`/`dw` operand list places element i at i*w from the line's start.
+#   Width 1 (`db`) is EXCLUDED on purpose: its operands may be quoted strings,
+#   which are not label references and would be misread as one.
+glyph DATARELS = Z(la self. la locs. la xs. la secoff. la w. la els. la i.
+    els(NIL)(la e. la t.
+      IF(BISLBL(e))
+        (la _. CONS(RD(add(secoff)(mul(i)(w)))(TSYM(e)(locs)(xs))(DRTYPE(w))(TADD(e)(locs)(xs)))
+                   (self(locs)(xs)(secoff)(w)(t)(add(i)(1))))
+        (la _. self(locs)(xs)(secoff)(w)(t)(add(i)(1)))))
+#   ★ A LABEL CAN BE THE ADDRESS, NOT JUST THE VALUE — and that is a relocation
+#   too. `mov [pml4], eax` puts the label in the DISPLACEMENT; the classifier
+#   only looked at the source operand, so 7 of boot.asm's 19 .boot32 relocations
+#   were simply absent. It is deliberately NOT a `mov` special case: `lgdt
+#   [gdt64.ptr]` and `lidt [idt_ptr]` carry one too, so the rule is about the
+#   OPERAND SHAPE, not the mnemonic.
+#
+#   The displacement is the last four bytes of the instruction unless a trailing
+#   immediate follows it, so its position is (length − immediate − 4) — derived
+#   from SIZEL, the same measure the emitter agrees with by construction.
+#
+#   TYPE FOLLOWS THE MODE, measured on nasm's boot.o: 32-bit code gets
+#   R_X86_64_32 (the field is zero-extended), 64-bit gets R_X86_64_32S (sign-
+#   extended). Both appear in the one file, so guessing either would be wrong
+#   half the time.
+#   ★ THE ADDRESS MAY BE label+offset, NOT JUST label. `mov dword [pml4+4], 0`
+#   is a relocation against pml4 with 4 folded into the addend; requiring the
+#   bracket contents to BE a label missed every such site. The label is the
+#   FIRST term (the same split MEMBASE uses to find a base register), and the
+#   addend is simply MEMDISP — which EVALs the whole bracket expression against
+#   the label table and so already yields label_offset + numeric. That makes the
+#   bare [label] case fall out of the same expression rather than needing its
+#   own arm, which is why this replaces TADD here instead of special-casing.
+glyph MEMLBLNAME = la t. FST(SPLITFIRST(STRIPBRK(t))(""))
+#   ★ A RIP-relative `[rel label]` is EXCLUDED here: MEMABS is true for it (no
+#   base register), so without this it would be read as an ABSOLUTE-memory label
+#   and MEMLBLNAME would return "rellabel" (the `rel` prefix unstripped), emitting
+#   a reloc against a nonexistent symbol. RIP operands are handled by MEMRIPRELS,
+#   which strips `rel` and emits R_X86_64_PC32 — a distinct relocation from the
+#   absolute R_X86_64_32/32S this path produces.
+glyph HASMEMLBL = la t. AND(ISMEM(t))(AND(MEMABS(t))(AND(NOT(MEMRIP(t)))(BISLBL(MEMLBLNAME(t)))))
+glyph MDTYPE  = la mode. IF(int_eq(mode)(64))(la _. 11)(la _. 10)
+#   The width is asked for ONLY when there actually is an immediate. `lgdt
+#   [desc]` has one operand and no width to infer, so IWOF halts loudly on it —
+#   correctly. Computing the width up front turned that correct diagnostic into
+#   a failure on a legal instruction, so it is resolved inside the branch that
+#   needs it (IF's arms are thunks, so the call does not run otherwise).
+glyph IMMTAIL = la st.
+    (la a2. IF(str_eq(a2)(""))(la _. 0)
+      (la _. IF(OR(ISREG(a2))(ISMEM(a2)))(la _. 0)
+        (la _. (la w. IF(lt(w)(4))(la _. w)(la _. 4))(IWOF(st)(A1(st))(a2)))))
+    (A2(st))
+glyph MEMTOKOF = la st.
+    IF(HASMEMLBL(A1(st)))(la _. A1(st))
+      (la _. IF(HASMEMLBL(A2(st)))(la _. A2(st))(la _. ""))
+#   NOTE (scope): the addend here is MEMDISP, which EVALs the bracket against the
+#   LOCAL label table — so a label in an ABSOLUTE memory operand (`[greet]`) must
+#   be local; an absolute-memory extern would take EXTPLACE as its addend and is
+#   not supported. The RIP-relative memory extern (`[rel greet]`) IS supported —
+#   see MEMRIPRELS below (R_X86_64_PC32). The other extern paths are register-
+#   immediate (`mov rax, greet`), data (`dq greet`), and PC-relative call/jmp.
+#   NOTE (scope): an ABSOLUTE memory extern (`mov rax, [greet]`) is NOT supported.
+#   The instruction + reloc are producible correctly (measured: the R_X86_64_32S
+#   against greet with addend 0 matches nasm byte-for-byte, and greet resolves to
+#   the right absolute address — `MEMDISP − EXTPLACE` recovers the offset), but the
+#   LINKED byte-identity gate then trips on symbol-TABLE ordering (a difference in
+#   metadata, not code), which is a separate concern from the reloc. Modern code
+#   references external data RIP-relatively (`[rel greet]`, MEMRIPRELS above), which
+#   IS supported, so this absolute form is left out rather than chased into the
+#   symbol-order weeds. A local label uses MEMDISP directly (its value is the
+#   in-section offset the section-symbol relocation needs).
+glyph MEMDRELS = la mlabs. la locs. la xs. la mode. la secoff. la linelen. la st.
+    (la mt. IF(str_eq(mt)(""))
+             (la _. NIL)
+             (la _. CONS(RD(add(secoff)(sub(sub(linelen)(IMMTAIL(st)))(4)))
+                           (TSYM(MEMLBLNAME(mt))(locs)(xs))(MDTYPE(mode))(MEMDISP(mlabs)(mt)))(NIL)))
+    (MEMTOKOF(st))
+#   ── RIP-relative reference to an EXTERN: `mov rax, [rel greet]` -> R_X86_64_PC32.
+#   The modern way to reference external DATA. For a LOCAL `[rel label]` the disp32
+#   is the label minus the next IP, computed at assembly time — no reloc (XLOOK
+#   NONE). For an extern it must be relocated: R_X86_64_PC32 (type 2) at the disp32
+#   field (the same linelen−IMMTAIL−4 position MEMDRELS uses) with addend −4 (RIP
+#   points at the next instruction, so S+A−P = target−4−P = target−next). RIPLAB
+#   strips the `rel` prefix to recover the real symbol name. The placeholder disp
+#   the encoder wrote (EXTPLACE − next) is overwritten by ld, so the linked result
+#   matches nasm's.
+glyph MEMRIPTOK = la st.
+    IF(MEMRIP(A1(st)))(la _. A1(st))
+      (la _. IF(MEMRIP(A2(st)))(la _. A2(st))(la _. ""))
+#   ★ A RIP-RELATIVE REFERENCE TO ANOTHER SECTION NEEDS A RELOCATION, and
+#   MEMRIPRELS only ever emitted one for an EXTERN (it fires on an XLOOK hit).
+#   A LOCAL label in a different section took neither path, so asm.la computed
+#   the displacement itself — which it cannot know, because where .rodata and
+#   .bss land relative to .boot32 is the LINKER's decision. Measured against
+#   nasm on HH2C: nasm emits 5 R_X86_64_PC32, we emitted 0.
+#   Same section is genuinely different: the displacement IS computable there,
+#   nasm emits no relocation, and emitting one would leave our table carrying
+#   entries nasm's lacks. So the test is CROSS-SECTION, which needs the current
+#   section index threaded down from BUILDRELA.
+#   Addend = the label's offset MINUS 4 MINUS any trailing immediate. The PC in
+#   `S + A - P` is the END of the instruction, but the displacement FIELD sits
+#   BEFORE a trailing immediate — so `cmp byte [rel flag], 0` needs -5, not -4,
+#   while `lea rax, [rel msg]` needs -4. Measured against nasm both ways.
+glyph RIPXSECRELS = la locs. la xs. la cursec. la secoff. la linelen. la st.
+    (la mt. IF(str_eq(mt)(""))
+             (la _. NIL)
+             (la _. (la lbl.
+                      IF(ISSOME(XLOOK(lbl)(xs)))
+                        (la _. NIL)
+                        (la _. IF(int_eq(LOCSEC(TLOC(lbl)(locs)))(cursec))
+                                 (la _. NIL)
+                                 (la _. CONS(RD(add(secoff)(sub(sub(linelen)(IMMTAIL(st)))(4)))
+                                               (TSYM(lbl)(locs)(xs))(2)
+                                               (sub(sub(TADD(lbl)(locs)(xs))(4))(IMMTAIL(st))))(NIL))))
+                    (RIPLAB(mt))))
+    (MEMRIPTOK(st))
+glyph MEMRIPRELS = la locs. la xs. la secoff. la linelen. la st.
+    (la mt. IF(str_eq(mt)(""))
+             (la _. NIL)
+             (la _. (la o. IF(ISSOME(o))
+                             (la _. CONS(RD(add(secoff)(sub(sub(linelen)(IMMTAIL(st)))(4)))(OPTV(o))(2)(sub(0)(4)))(NIL))
+                             (la _. NIL))
+                    (XLOOK(RIPLAB(mt))(xs))))
+    (MEMRIPTOK(st))
+#   ★ THE FAR JUMP'S OFFSET IS NOT THE LAST FIELD. `jmp gdt64.code:long_start`
+#   encodes EA + off32 + sel16, so the relocation sits at length−6, not the
+#   length−4 every other displacement uses — the 2-byte SELECTOR trails it.
+#   Guarded to non-16-bit mode, where the offset is LE2 and the arithmetic
+#   differs again; the boot sectors' 16-bit far jumps target no relocatable
+#   symbol, so that arm is named rather than silently assumed correct.
+glyph FARTGT = la st. SND(SPLITCOLON(A1(st))(""))
+glyph FARRELS = la locs. la xs. la mode. la secoff. la linelen. la op. la st.
+    IF(AND(str_eq(op)("jmp"))(AND(NOT(int_eq(mode)(16)))(NOT(str_eq(FARTGT(st))("")))))
+      (la _. (la tgt. IF(BISLBL(tgt))
+                        (la _. CONS(RD(add(secoff)(sub(linelen)(6)))
+                                      (TSYM(tgt)(locs)(xs))(MDTYPE(mode))(TADD(tgt)(locs)(xs)))(NIL))
+                        (la _. NIL))
+             (FARTGT(st)))
+      (la _. NIL)
+#   ★ A near `call` or `jmp` to an EXTERN symbol is the one PC-RELATIVE relocation
+#   asm.la emits — every other reloc it makes is absolute. To a LOCAL label both
+#   are self-contained: the rel32 (or rel8) is computed at assembly time and needs
+#   NO reloc. To an extern neither can be — the target address is unknown here — so
+#   each emits R_X86_64_PLT32 (type 4) at the rel32 field (linelen−4) with addend
+#   −4 (rel32 is measured from the next instruction, P+4, so S+A−P = target−4−P is
+#   exactly target−next). The field bytes are irrelevant (RELA: ld computes S+A−P
+#   and OVERWRITES the field), so the placeholder rel32 does not matter and the
+#   LINKED result still matches nasm's byte-for-byte. Only externs get a reloc:
+#   XLOOK NONE ⇒ local ⇒ none.
+#
+#   Both are NEAR (e8/e9 rel32, 5 bytes ⇒ field at linelen−4). `call` has no short
+#   form, so it is always near. A `jmp` to an extern is forced near by EXTPLACE
+#   (the far placeholder makes JSHORT reject the rel8 form) — see EXTLABS. The far
+#   `jmp seg:off` and the `near`-keyword forms are not extern targets here (a colon
+#   target is not BISLBL; the keyword case is redundant since externs are already
+#   forced near), so A1(st) is the plain target in the cases this fires.
+glyph PCRELS = la locs. la xs. la mode. la secoff. la linelen. la op. la st.
+    IF(AND(OR(str_eq(op)("call"))(str_eq(op)("jmp")))(NOT(int_eq(mode)(16))))
+      (la _. (la tgt.
+               (la o. IF(AND(BISLBL(tgt))(ISSOME(o)))
+                        (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(OPTV(o))(4)(sub(0)(4)))(NIL))
+                        (la _. NIL))
+               (XLOOK(tgt)(xs)))
+             (A1(st)))
+      (la _. NIL)
+glyph RELLINE = la mlabs. la locs. la xs. la mode. la secoff. la cursec. la ts.
+  (la st.
+    (la op.
+      (la linelen.
+       APPEND(RIPXSECRELS(locs)(xs)(cursec)(secoff)(linelen)(st))(APPEND(PCRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMRIPRELS(locs)(xs)(secoff)(linelen)(st))(APPEND(FARRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMDRELS(mlabs)(locs)(xs)(mode)(secoff)(linelen)(st))(
+        IF(ISG1(op))
+          (la _. (la a. (la b.
+                   IF(AND(BISLBL(b))(NOT(ISMEM(a))))
+                     (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(TSYM(b)(locs)(xs))
+                                   (IF(int_eq(RWIDTH(a))(8))(la _. 11)(la _. 10))
+                                   (TADD(b)(locs)(xs)))(NIL))
+                     (la _. NIL))
+                 (A2(st)))(A1(st)))
+        (la _.
+        IF(str_eq(op)("mov"))
+          (la _. (la a. (la b.
+                   IF(BISLBL(b))
+                     (la _. IF(ISMEM(a))
+                       (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(TSYM(b)(locs)(xs))(11)(TADD(b)(locs)(xs)))(NIL))
+                       (la _. IF(int_eq(RWIDTH(a))(8))
+                         (la _. CONS(RD(add(secoff)(sub(linelen)(8)))(TSYM(b)(locs)(xs))(1)(TADD(b)(locs)(xs)))(NIL))
+                         (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(TSYM(b)(locs)(xs))(10)(TADD(b)(locs)(xs)))(NIL))))
+                     (la _. NIL))
+                 (A2(st)))(A1(st)))
+          (la _. IF(AND(ISDATA(op))(NOT(int_eq(DWIDTH(op))(1))))
+            (la _. DATARELS(locs)(xs)(secoff)(DWIDTH(op))(JOINEXPR(TL2(st)))(0))
+            (la _. NIL)))))))))
+      (SIZEL(WITHBITS(mlabs)(mode))(secoff)(ts)))
+    (LOWER(HD(st))))
+  (STRIPLAB(ts))
+glyph SECRELS = Z(la self. la mlabs. la locs. la xs. la mode. la lines. la secoff. la cursec.
+    lines(NIL)(la ts. la t.
+      (la md.
+        APPEND(RELLINE(mlabs)(locs)(xs)(md)(secoff)(cursec)(ts))
+              (self(mlabs)(locs)(xs)(md)(t)(add(secoff)(SIZEL(WITHBITS(mlabs)(md))(secoff)(ts)))(cursec)))
+      (NEXTMODE(mode)(ts))))
+#   nasm emits no `.rela.<name>` for a section with no relocations, so an empty
+#   list must be DROPPED rather than emitted empty — an extra section header
+#   would shift every later index and the linked output with it.
+glyph NULLP = la l. l(TRUE)(la h. la t. FALSE)
+glyph BUILDRELA = Z(la self. la mlabs. la locs. la xs. la mode. la secs. la i.
+    secs(NIL)(la sp. la t.
+      (la lines. (la rs. (la rest.
+        IF(NULLP(rs))(la _. rest)(la _. CONS(PAIR(PAIR(FST(sp))(i))(rs))(rest)))
+        (self(mlabs)(locs)(xs)(SECMODEEND(mode)(lines))(t)(add(i)(1))))
+        (SECRELS(mlabs)(locs)(xs)(mode)(lines)(0)(i)))
+      (SND(sp))))
+
+# ── the boundary: asm.la's own lists -> the caller's constructors ───────────
+glyph TOXSECS = la XSDESC. la XCONS. la XNIL. Z(la self. la l.
+    l(XNIL)(la s. la t.
+      XCONS(XSDESC(SCNM(s))(SCTY(s))(SCFL(s))(SCAL(s))(0)(0)(0)(SCBY(s))(SCSZ(s)))
+           (self(t))))
+#   st_value is 64 bits and elfobj carries it as two 32-bit halves, because an
+#   equ's value routinely exceeds LA's signed-int lexer limit — boot.asm's
+#   HIGH_BASE is 0xFFFFFFFF80000000 and MB_CHECK is 0xFFFFFFFFE4524FFC, both of
+#   which arrive here as NEGATIVE LA integers. LA's div/mod on a negative are
+#   documented unreliable in this file, so the negative case is folded into the
+#   unsigned range by addition instead of divided. Values below -2^32 halt
+#   loudly rather than silently emitting a wrong high half.
+glyph TWO32  = 4294967296
+glyph SYMLO = la v.
+    IF(lt(v)(0))
+      (la _. IF(lt(v)(sub(0)(TWO32)))
+               (la _. error(concat("asm: -f elf64: symbol value below -2^32: ")(int_to_str(v))))
+               (la _. add(v)(TWO32)))
+      (la _. mod(v)(TWO32))
+glyph SYMHI = la v.
+    IF(lt(v)(0))(la _. sub(TWO32)(1))(la _. div(v)(TWO32))
+glyph TOXSYMS = la XSREC. la XCONS. la XNIL. Z(la self. la l.
+    l(XNIL)(la s. la t.
+      (la v. XCONS(XSREC(SDNM(s))(SDINFO(s))(SDSEC(s))(SYMLO(v))(SYMHI(v)))(self(t)))
+      (SDVAL(s))))
+glyph TOXRECS = la XRREC. la XCONS. la XNIL. Z(la self. la l.
+    l(XNIL)(la r. la t.
+      XCONS(XRREC(RDOFF(r))(RDSYM(r))(RDTYP(r))(RDADD(r)))(self(t))))
+glyph TOXRELA = la XRINFO. la XRREC. la XCONS. la XNIL. Z(la self. la l.
+    l(XNIL)(la e. la t.
+      XCONS(XRINFO(FST(FST(e)))(SND(FST(e)))(TOXRECS(XRREC)(XCONS)(XNIL)(SND(e))))(self(t))))
+
+# ── SUBALL2: substitute the equs but KEEP their lines ──────────────────────
+#   `-f bin` DELETES a numeric equ's line once its uses have been substituted —
+#   correct there, since an equ contributes no bytes and nothing downstream
+#   needs it. An object file does need it: the line is the only record of where
+#   the symbol sits in SOURCE ORDER, and nasm's symbol table is ordered by it.
+#   Keeping the line is free for the byte passes — SIZEL already answers 0 for
+#   an equ and PASS2 already emits "" — so the same PASS2 serves both formats
+#   with no special case. Only the SUBALL variant differs, which is why this is
+#   a sibling glyph rather than a flag threaded through the original.
+glyph SUBALL2 = la equs.
+    Z(la self. la tls.
+        tls(NIL)(la ts. la t.
+          CONS(IF(ISEQU(ts))
+                 (la _. CONS(HD(ts))(CONS("equ")(SUBLINE(equs)(TL2(TL2(ts))))))
+                 (la _. SUBLINE(equs)(ts)))(self(t))))
+
+# ── ASM_ELF(src)(fname)(SDESC)(SREC)(RINFO)(RREC)(CONS)(NIL)(k) ────────────
+#   -> k(content)(symlist)(relainfo), which is exactly EMIT_OBJ_N's shape, so a
+#   driver passes EMIT_OBJ_N as k and gets the finished object back.
+#   The front half is ASSEMBLE's, verbatim: preprocess, tokenize, substitute the
+#   text equs, qualify local labels. Only from `tls` on do the two formats part.
+glyph ASM_ELF = la src. la fname. la XSDESC. la XSREC. la XRINFO. la XRREC. la XCONS. la XNIL. la k.
+    (la pp.
+      (la tls0.
+        (la equs.
+          (la tls.
+            (la secs.
+              IF(NULLP(secs))
+                (la _. error("asm: -f elf64: no `section` directive — an object file has no implicit .text"))
+                (la _.
+                  (la mode0.
+                   (la xnames.
+                    (la mlabs.
+                     (la mlabsx.
+                      (la locs.
+                        (la gs.
+                          (la xidx.
+                            k(TOXSECS(XSDESC)(XCONS)(XNIL)(BUILDSECS(mlabsx)(mode0)(secs)))
+                             (TOXSYMS(XSREC)(XCONS)(XNIL)(BUILDSYMS(fname)(secs)(locs)(gs)(xnames)))
+                             (TOXRELA(XRINFO)(XRREC)(XCONS)(XNIL)(BUILDRELA(mlabsx)(locs)(xidx)(mode0)(secs)(1))))
+                          (XIDX(xnames)(add(add(LEN(secs))(2))(LEN(locs)))))
+                        (GLOBALSOF(tls)))
+                      (ALLLOCS(tls)(secs)(mlabsx)(mode0)))
+                     (APPEND(mlabs)(EXTLABS(xnames))))
+                    (ELFFIX(tls)(secs)(NIL)("")(12)(mode0)))
+                   (EXTERNSOF(tls)))
+                  (PREMODE(tls)(64))))
+            (SECSPLIT(tls)))
+          (QUALALL(SUBALL2(equs)(tls0))("")))
+        (APPEND(MKEQUS(tls0)(NIL)(""))(SND(pp))))
+      (MAPTOKS(FST(pp))))
+    (PP(LINES(src)(""))(NIL)(NIL)(NIL))
 
 glyph MAIN =
   (la code.

@@ -83,9 +83,18 @@ Three ideas recur throughout the system:
   `add(2,3) = 5`; but `add(2,3) ≢ 5` — a synthesis is not the primitive it
   evaluates to. Conflating the two is the category error the theory names.
 
-- **α = 1 — the sign *is* the referent.** In an ordinary language a name is an
-  arbitrary label (α = 0). At α = 1 a concept has exactly one name and the name
-  *is* what it names — an **ontoglyph**. LogOS's canonicalizer enforces this: one
+- **α = 1 — the sign *is* the referent.** Across sign *kinds* α is **ordinal** —
+  the Semiotic-Ontoglyphic Ladder ranks Noise, Sign, Icon, Index, Glyph, Neoglyph,
+  Ontoglyph, and the corpus is explicit that those numbers are "illustrative ordinal
+  placements, not cardinal measurements". *Within* Lingua Adamica it is **two-valued**,
+  because the language contains only Level-6 forms and the synonyms that collapse to
+  them: an ordinary language's arbitrary label is a different *kind* of sign (Level 1),
+  not a lower score for the same kind. At α = 1 a concept has exactly one name and the name *is* what it
+  names — an **ontoglyph**. (The measured, sub-1.0 quantity in `FIDELITY.md` is
+  **instantiation fidelity** — how faithfully a derived sigil or phonym realises that
+  alignment — and it is deliberately **not** called α. Reporting it as α would read
+  as "the sign is 86% the referent", a claim in a register where degrees mean
+  something; alignment is 1.0 *by nature*, established by construction, not measured.) LogOS's canonicalizer enforces this: one
   concept normalizes to one glyph; synonyms collapse to their single α = 1 form.
 
 These are not decorations on a conventional OS. They are the operating

@@ -147,7 +147,34 @@ glyph STEPS =
   CONS(STEP("phonological modality — the nine phonyms")("./tiny_host")("phonym.la")("9 primitives + 3 GENERATED + 2 modes + the evaluator 𝓡"))(
   CONS(STEP("phonosemantics — alignment vs fidelity")("./tiny_host")("phonsem.la")("injective(SET) Theta_P = 8 / 8"))(
   CONS(STEP("derived geometry from ONF features")("./tiny_host")("topoderive.la")("@@@ Nest3 ⊂(VOID,⊂(FORM,DEPTH))"))(
-  NIL)))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  # ── ported from build.sh 2026-08-28: the modules today's freeze wired.
+  #    Each marker is the module's own flag-summary — the form that encodes its
+  #    CLAIM rather than an arbitrary line — and each was red-path tested by
+  #    planting the defect the arm claims to catch before it was gated at all.
+  CONS(STEP("trimono — the trimodal identity in three registers")("./tiny_host")("trimono.la")("dir-⊗ OK | dir-▷ OK | dir-⊂ OK"))(
+  CONS(STEP("siginj — the ↻ fold-trace is drawn")("./tiny_host")("siginj.la")("↻≠⊂ OK | distinct OK | mirror-lives OK"))(
+  CONS(STEP("phonorm — ⊕ commutes and ⊗ order is KEPT in sound")("./tiny_host")("phonorm.la")("⊕commutes OK | ⊗order-kept OK"))(
+  CONS(STEP("naming — the Algebra of Naming, T1–T4 and α")("./tiny_host")("naming.la")("T1 OK | T2 OK | T3 OK | T4 OK"))(
+  CONS(STEP("entropy — E_G/E_S, and ⊗ order KEPT")("./tiny_host")("entropy.la")("⊗order-kept OK | ⊕commutes OK"))(
+  CONS(STEP("alethe — True(P)≡P and the liar unformulable")("./tiny_host")("alethe.la")("liar-unformulable OK"))(
+  CONS(STEP("ontofelicity — felicity ≡ capability")("./tiny_host")("ontofelicity.la")("loud OK | separable OK | prefix-guard OK"))(
+  CONS(STEP("dyadseed — the arithmetic stratum, and its BOUND")("./tiny_host")("dyadseed.la")("bound(projection not injective) OK"))(
+  CONS(STEP("archclosure — {I} closed under application, MECHANISED")("./tiny_host")("archclosure.la")("base YES | step YES | cover YES | all YES | trav YES"))(
+  CONS(STEP("obscurantism — avoidable depth, and the spare")("./tiny_host")("obscurantism.la")("detects OK | spares OK | removable OK | lexical-seal OK"))(
+  CONS(STEP("archderive — the six ATTEMPTED from the root")("./tiny_host")("archderive.la")("VERDICT: of the six, BEING is the root itself"))(
+  # ── ported 2026-08-28 (second batch). Markers are the CLAIM-encoding fragment
+  #    of each module's own verdict, each OBSERVED by running the module rather
+  #    than read off build.sh — a marker that never appears would be a step that
+  #    can only fail, which is the defect fixed in build.sh's monosemy arm.
+  CONS(STEP("ablate — ⊂ is no longer an unused operator")("./tiny_host")("ablate.la")("⊂-now-used OK"))(
+  CONS(STEP("discourse — the codex's five worked sentences")("./tiny_host")("discourse.la")("basic=5/5"))(
+  CONS(STEP("immune — four pathogens, four distinct signatures")("./tiny_host")("immune.la")("healthy=TTTT P1=FTTT P2=TFTT P3=TTTF"))(
+  CONS(STEP("phonseal — a DETACHED sound is constructible")("./tiny_host")("phonseal.la")("detached-constructible OK"))(
+  CONS(STEP("prop — DNE fails ontologically, holds operationally")("./tiny_host")("prop.la")("dne-fails-ontologically OK"))(
+  CONS(STEP("metaprop — the meta-level collapses, not ascends")("./tiny_host")("metaprop.la")("MID=FT-inert-not-distinct OK"))(
+  CONS(STEP("ladder — the Semiotic-Ontoglyphic Ladder")("./tiny_host")("ladder.la")("LADDER VERDICT ? YES"))(
+  CONS(STEP("familytree — the derived catalogue is grounded")("./tiny_host")("familytree.la")("FAMILYTREE catalogue=17"))(
+  NIL))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 # ── a GUARD step: the build's THIRD kind of gate — the EXIT CODE ────────────
 #  A marker step asks "did it say the right thing?"; a cross-engine step asks
@@ -408,6 +435,59 @@ glyph NDRUN1 = la s.
              (la _. SEQ(print(concat("  FAIL  native==host  native_codegen3 compile failed: ")(NDNAME(s))))(FALSE)))
          (RUN("./tiny_host")("native_codegen3.la")("/tmp/buildla_nd_cg.txt"))))
       (RUN("./tiny_host")(NDFILE(s))("/tmp/buildla_nd_host.txt")))
+
+# ── CMPF: BYTE COMPARISON OF TWO FILES, and it needs no foreign tool ────────
+#  build.sh reaches for `cmp -s` in 59 places. LA does not have to: its strings
+#  carry an explicit length and are binary-safe, so `str_eq(read_file a)(read_file b)`
+#  IS a byte comparison — over NUL bytes, over whole ELF images, over anything.
+#  That makes this arm MORE autological than the shell it replaces rather than a
+#  reimplementation of it: one fewer external tool in the seam buildla's own
+#  header warns about.
+glyph CMPF = la a. la b. str_eq(read_file(a))(read_file(b))
+
+# ── VSTEP: the host==VM oracle, which is the strongest check in this codebase ─
+#  A marker step asks "did it say the right thing?" and NDRUN1 asks "do the host
+#  and the NATIVE BACKEND agree?". Neither asks what build.sh's dozen
+#  `cmp -s X_host.out X_vm.out` sites ask: does the module reduce IDENTICALLY on
+#  the C host and on the hand-written SECD VM — two engines sharing no code?
+#  ★ Byte-identity is the strongest oracle here precisely because it cannot be
+#  satisfied by agreement-in-substance: a single differing byte fails it. That is
+#  why it is worth a step type rather than another marker.
+#  The pipeline is build.sh's, expressed in LA: run on the host; emit the VM;
+#  stage the module as logos_source.la; compile it; run it on the VM; compare.
+glyph VSTEP = la nm. la file. la mark. la f. f(nm)(file)(mark)
+glyph VNAME = la s. s(la a. la b. la c. a)
+glyph VFILE = la s. s(la a. la b. la c. b)
+glyph VMARK = la s. s(la a. la b. la c. c)
+
+glyph VRUN1 = la s.
+  IF(str_eq(VMARK(s))(""))
+    (la _. error(concat("buildla: host==VM step has an empty marker (it could never fail): ")(VNAME(s))))
+    (la _.
+      (la hostOut.
+        SEQ(RUN("./tiny_host")("secd.la")("/tmp/buildla_v_secd.txt"))
+        (SEQ(STAGE(VFILE(s))("logos_source.la"))
+        (SEQ(RUN("./tiny_host")("codegen.la")("/tmp/buildla_v_cg.txt"))
+          ((la vmOut.
+             (la ok.
+               SEQ(print(concat(IF(ok)(la _. "  PASS  host==VM  ")(la _. "  FAIL  host!=VM  "))(VNAME(s))))(ok))
+             (AND(HASSUB(hostOut)(VMARK(s)))(str_eq(hostOut)(vmOut))))
+           (RUN("./logos_secd")("")("/tmp/buildla_v_vm.txt"))))))
+      (RUN("./tiny_host")(VFILE(s))("/tmp/buildla_v_host.txt")))
+
+glyph VALL = Z(la self. la l.
+  l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(VRUN1(h))))
+
+# ── the host==VM stages, ported from build.sh's cmp -s X_host.out X_vm.out ──
+#  ★ THE MARKER IS ASSERTED AS WELL AS THE IDENTITY, and both are needed: two
+#  engines agreeing on the WRONG answer is still agreement. build.sh makes the
+#  same pairing (check_arcd greps the witnesses, THEN cmp -s the two files).
+glyph VSTEPS =
+  CONS(VSTEP("archderive — the six ATTEMPTED, host==VM")("archderive.la")("VERDICT: of the six, BEING is the root itself"))(
+  CONS(VSTEP("dyadseed — the arithmetic stratum, host==VM")("dyadseed.la")("bound(projection not injective) OK"))(
+  CONS(VSTEP("archroot — the root ontomonoglyph, host==VM")("archroot.la")("I AM THAT I AM"))(
+  CONS(VSTEP("metaglyph — 𝓜 ⊂ 𝒜, host==VM")("metaglyph.la")("κ(κ)"))(
+  NIL))))
 
 glyph NDALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(NDRUN1(h))))
