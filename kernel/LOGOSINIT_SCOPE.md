@@ -1,5 +1,24 @@
 # On-metal LogosInit — specification review and scope
 
+> ## ★ ERIK'S RULING — 2026-09-06
+>
+> **LogosInit supervises FAULT-ISOLATED PROCESSES, not green-thread tasks.**
+>
+> This answers Part 6 Q2 and **overturns §3.4**, which scoped this work to tasks
+> in one address space. What §3.4 named as out of scope — *"a kernel process
+> table and LA-driven CR3 switching… a separate and much larger brick"* — **is
+> the brick.** Part 4 is re-scoped accordingly.
+>
+> **Q1 is also answered: `Codex Autopoieticus` EXISTS**, and is now in the repo
+> at `CODEX_AUTOPOIETICUS.tex` on `kernel-k1` (`e13c00c`). It was in
+> `~/Downloads/CODICIES/`, outside the repo — which is why §1.1 could not find
+> it. §1.1's *conclusion* was wrong; its *method* was not, and it is kept below
+> with a correction rather than rewritten, because "the cited source is absent
+> from the repo" was a true and useful statement about the repo at the time.
+>
+> **The codex is far more specific than the white paper, and it decides this.**
+> Q3 and Q4 remain open and are still Erik's.
+
 **Track D · 2026-09-06 · SPEC ONLY — nothing built, nothing gated yet.**
 
 Erik's standard for this work: *witnessed, not asserted. No item is done until
@@ -28,7 +47,18 @@ and twice defers the actual specification to it:
 **`Codex Autopoieticus` is not in this repository.** I searched all of
 `codices/published/` — twenty-two files, none of them it. So the request to
 "read the Codex Autopoieticus section on LogosInit" cannot be satisfied as
-stated. What follows is what the *white paper* specifies, which is the best
+stated.
+
+> **★ CORRECTED 2026-09-06 (Erik).** It exists. It lived in
+> `~/Downloads/CODICIES/`, outside the repository, and is now committed at
+> `CODEX_AUTOPOIETICUS.tex` on `kernel-k1` (`e13c00c`). The search above was
+> exhaustive **over the repo**, and that is exactly its limit: a document can be
+> absent from `codices/` and still exist. The paragraph is kept rather than
+> rewritten because "the cited primary source is not in the tree" was true, was
+> worth reporting, and is what got the codex committed. What follows in §1.2–1.4
+> is the **white paper's** account, which was the best available source at the
+> time; **§1.5 supersedes it** with the codex's own, which is more specific and
+> which the ruling rests on. What follows is what the *white paper* specifies, which is the best
 available source and which I have read completely on this point.
 
 ★ **This is a finding, not an obstacle.** The document that supposedly holds the
@@ -94,6 +124,50 @@ exist. **Writing that spec is the actual work in front of us**, and it is why
 this document exists rather than a build.
 
 ---
+
+### 1.5 What the CODEX specifies — and it decides the process question
+
+`CODEX_AUTOPOIETICUS.tex` names LogosInit **thirteen times**. Unlike the white
+paper's three sentences, it specifies behaviour. Verbatim, with line numbers:
+
+- **:18405** — *"LogosInit initialises itself (it is the first process, started
+  by the kernel, and it manages **all subsequent processes** including its own
+  child monitoring)."* → init is **PID 1**, started by the kernel, and the
+  kernel starts **only** it; every other process is init's child.
+- **:25856** — *"If an organ crashes, LogosInit restarts it. The organ restores
+  state from AletheiaFS… **Other organs are unaffected (message-passing
+  isolation). The crash of LogosForge does not affect LogosWrite.**"*
+- **:25861** — *"LogosInit implements **supervision trees (like Erlang/OTP)**:
+  crashed processes are restarted, with **exponential backoff to prevent restart
+  storms**… **Process isolation (separate address spaces) prevents crash
+  propagation.**"*
+- **:25618** — the boot steps in order: mount `/proc`,`/sys`,`/dev`,`/run`; load
+  the QRNG module; init the Autoclave; start the φ-daemon; start Theourgia;
+  start the LogosIPC bus; start Ω-Vigilance; present the Γ-seal challenge.
+  *"**Each step is a function call, not a service file. Dependencies are
+  compile-time, not runtime. Failure at any step halts boot with a diagnostic
+  message.**"*
+- **:18250** — *"a minimal, sovereign init daemon that starts services and
+  manages the boot-to-session transition"*; systemd's other functions go to
+  other organs (logging → Ω-Vigilance, DNS/network → AegisNet, time → LogosTime).
+  **This bounds the work: LogosInit is init, and nothing else.**
+- **:22868** — init reads a new φ and updates the Algorithm Registry (crypto
+  hot-swap), so init also owns φ-configuration reload.
+
+**Why this settles §3.4.** "Process isolation (separate address spaces)
+prevents crash propagation" and "other organs are unaffected" are not
+satisfiable by green threads. Tasks in one address space share a fault: on this
+kernel a faulting task takes the whole machine down through K2's diagnosed halt,
+which is the exact opposite of the requirement. The codex also rules out reading
+"crash" loosely — it says *crash*, contrasted with a clean exit, and the
+supervision tree must tell them apart to apply backoff. **Erik's ruling follows
+the text; §3.4 did not.**
+
+**What §3.4 got right, and why it is kept.** Its account of what the metal can
+do *today* is accurate and unchanged: `spawn`/`yield` are green threads, K2
+halts on fault, and HH2b/HH2c's isolated processes are hardcoded `boot.asm`
+demos rather than a model LA can drive. That is still the honest starting
+position — it is now a **gap list** instead of a scope boundary.
 
 ## Part 2 — What is already built (do not rebuild it)
 
@@ -203,7 +277,14 @@ and the Stage-4 self-host fixed point had to be re-verified byte-identical
 precedent — "appended → only LITERAL_BASE shifted"), and re-verify the
 self-host fixed point as an explicit gate step, not a hope.
 
-### 3.4 Scope boundary — tasks, not isolated processes
+### 3.4 ~~Scope boundary — tasks, not isolated processes~~ — **SUPERSEDED 2026-09-06**
+
+> **★ OVERTURNED BY ERIK'S RULING (2026-09-06).** LogosInit supervises
+> **fault-isolated processes**. What this section calls "a separate and much
+> larger brick" **is the brick** — see §1.5 for the codex text and Part 4 for
+> the re-scoped list. The section is kept, not deleted, because its description
+> of *what the metal can do today* remains accurate and is now the gap list the
+> new bricks close. Read it as diagnosis, not as scope.
 
 The metal's `spawn` creates **green-thread tasks in one address space**.
 HH2b/HH2c demonstrated *isolated ring-3 processes*, but as hardcoded two-stage
@@ -221,7 +302,87 @@ violation — the exact failure the project exists to refuse.
 
 ---
 
-## Part 4 — Proposed scope: five bricks
+## Part 4 — RE-SCOPED 2026-09-06: the process-model bricks
+
+The five D-INIT bricks below the fold were scoped to green-thread tasks and are
+**superseded** by Erik's ruling. They are kept after the new list because
+D-INIT.1 is built and its findings (the identity invariant especially) carry
+over — a *process* table will need the same identity discipline a task table did.
+
+**Foundation that already exists — do not rebuild it.** The isolation mechanism
+is proven; what is missing is that LA cannot drive it.
+
+| Have | What it proved |
+|---|---|
+| HH1 | kernel wholly in the −2 GiB half; the low canonical half is free per-process |
+| HH2 | per-process PML4s; CR3 round-trip isolation (A's write invisible to B) |
+| HH2b | **one ring-3 LA process in its own address space**, syscalling to the high kernel |
+| HH2c | **two isolated LA processes** exchanging a typed message via a kernel channel |
+| K2 | IDT + 32 exception handlers — a fault **is** diagnosed, just fatally |
+| K6c | ring-3 syscall layer (`write`/`exit`/`send`/`recv`/`yield`) |
+| K5b.2 | preemption via a safe-point yield flag |
+
+**The gap in one sentence:** HH2b/HH2c are *hardcoded `boot.asm` demos* — two
+processes, a stage byte, an `iretq` written into the boot path — and K2 answers
+every fault by stopping the machine. Nothing here is a model LA can drive, and
+nothing survives a crash.
+
+### P1 — the kernel process table
+Replace HH2c's two-process/one-stage-byte demo with a real PCB array the kernel
+owns: pid, CR3 (its PML4 phys), state (free/runnable/blocked/dead), entry, exit
+status, **and fault cause**. A scheduler over it replaces `.sys_exit`'s hardcoded
+CR3 switch. *Gate:* three processes round-robin and each reports its **own** pid.
+
+### P2 — fault attribution and containment ★ THE KEYSTONE
+K2's 32 handlers diagnose and **halt**. They must instead: identify the current
+pid, record vector + error code + CR2 in its PCB, mark it **dead-by-fault**, tear
+its mapping down, and **return to the scheduler**. The machine survives; the
+process does not. Everything else in the ruling depends on this brick.
+
+### P3 — LA-driven process creation (`pspawn`)
+Today entry into a process is an `iretq` hardcoded in `boot.asm`. Init must
+create children itself: a syscall that allocates a pid, builds a per-process
+PML4 from a pristine image, maps it `U=1`, shares the kernel `[511]` as
+supervisor, and enqueues it runnable. **The largest brick** — HH2b did all of
+this once, by hand, at boot.
+
+### P4 — process death visible to init (`pwait`)
+The process-level analogue of D-INIT.1's `reap`, and it must return **more**:
+`(pid, cause)`, where cause distinguishes a **clean exit** from a **fault** (and
+which fault). The codex requires the distinction — a supervision tree applies
+backoff to crashes, not to a service that finished its work.
+
+### P5 — init as PID 1, in LA
+Codex :18405. The kernel starts **exactly one** process — init — and init spawns
+every other. This replaces `logosinit.la`'s Linux `fork`+`execve` shape with
+`pspawn`, and makes init itself an ordinary ring-3 LA process.
+
+### P6 — the supervision tree, with exponential backoff
+Codex :25861, which names both. A **tree**, not a flat set: each child's death is
+reported to its supervisor, restart policy lives per node, and backoff prevents
+restart storms. Note what "restart" means after a fault: the address space is
+corrupt, so restart = tear down the PML4 and rebuild from the pristine image
+under a **new pid** — not resume.
+
+### P7 — the declared boot sequence
+Codex :25618: *"Each step is a function call, not a service file. Dependencies
+are compile-time, not runtime. Failure at any step halts boot with a diagnostic
+message."* Directly gateable: the declared ordered list **is** the boot, and a
+failing step halts loudly rather than degrading silently. This is `b_τ ≡ f_τ`
+for the boot itself, and it is the specific thing systemd fails.
+
+**Still deferred, and now explicitly:** AletheiaFS state restore (codex has
+organs resume from durable state — needs a filesystem), Γ-seal capability
+delegation from init, zram snapshots, the φ-daemon and Algorithm Registry
+reload, and the Attention-Graph DAG over 90+ organs.
+
+---
+
+<details>
+<summary><b>SUPERSEDED — the original five task-level bricks (2026-09-06, pre-ruling)</b></summary>
+
+Kept because D-INIT.1 is built, gated and witnessed, and its findings carry over.
+
 
 Staged smallest-first, each independently gateable, each red-able. Nothing
 starts until Erik approves the shape.
@@ -293,7 +454,13 @@ The append invariant held exactly as §3.3(b) hoped: `RT_REAP` landed at the old
 is unchanged** — so the K6b shift, which once broke the self-host fixed point,
 did not recur.
 
-### D-INIT.2 — `initmetal.la`: the supervision loop — **WRITTEN, awaiting D-INIT.1's runtime**
+### D-INIT.2 — `initmetal.la`: the supervision loop — **SUPERSEDED BY THE RULING**
+
+> `kernel/initmetal.la` supervises **tasks**, so the ruling supersedes it as a
+> design. It is committed unexecuted and says so in its own header; it is left
+> in place because the **identity invariant** below survives the change of
+> substrate — a process table will need the same discipline, and `pspawn`
+> returning its pid is the process-level form of the `rt_spawn` recommendation.
 An LA init: spawn a declared service set, then loop `reap` → identify → decide.
 Terminates when the declared set is complete. Structurally the sibling of
 `logosinit.la`'s `DRAIN`/`SUPERVISE`, with `reap` where `reapnb` was and the
@@ -350,7 +517,56 @@ misfeature, and b_τ ≡ f_τ counts against it).
 
 ---
 
+</details>
+
 ## Part 5 — Gate design (the "can go red" requirement)
+
+### 5.0 ★ THE FAULT GATE — what can go RED on a process that faults
+
+The keystone gate (P2). One QEMU boot, one deliberately faulting service.
+
+**Scenario.** Init (PID 1) spawns three services — `alpha`, `beta`, `gamma`.
+`beta` faults on purpose: a write to a supervisor-only page (`#PF`, vector 0e),
+with `ud2` (`#UD`, 06) as the second shape so the gate is not tuned to one
+vector. `alpha` holds a canary in **its own** address space.
+
+**Green — six assertions, all on the serial transcript plus `isa-debug-exit`:**
+
+1. **The fault is diagnosed WITH its process.** `FAULT pid=2 vec=0e` — not just
+   K2's existing "EXCEPTION 0e". Attribution is the new information.
+2. **The machine does not halt.** This is the whole ruling in one line.
+3. **The siblings finish.** `alpha` and `gamma` run to completion and say so —
+   codex :25856, *"other organs are unaffected"*.
+4. **`alpha`'s canary is intact** after `beta` faults — isolation, not just
+   survival.
+5. **`beta` is restarted under a NEW pid** (its address space was torn down and
+   rebuilt from the pristine image — a restart, not a resume).
+6. **Bounded, then quiescent:** after the declared restart budget init reports
+   and exits 33.
+
+**Red controls — each must FAIL, and each catches a different lie:**
+
+| # | Control | What passes without it |
+|---|---|---|
+| **R1** | **Today's kernel IS the red.** The same faulting image on HEAD's K2 halts the machine and never reaches exit 33. | Nothing — this is the pre-existing behaviour, so the red is free and already witnessed by every K2 fault gate. It is the exact shape of D-INIT.1's no-reap loop halting at 7. |
+| **R2** | **Attribution.** Make `gamma` fault instead of `beta`; the reported pid must change. | A handler that hardcodes a pid, or misreads "current", passes assertion 1 and fails only here. |
+| **R3** | **Containment vs MASKING.** `beta`'s post-fault instruction would print `beta-continued`; assert it **never appears**. | A handler that "contains" by mapping the faulting page and resuming looks identical on assertions 1–4. This is the `b_τ ≡ f_τ` check on the word *isolated*: the process must **die**, not be papered over. |
+| **R4** | **Isolation has power.** Re-run with `alpha` and `beta` mapped into ONE address space; `beta`'s wild write must reach `alpha`'s canary and corrupt it. | Assertion 4 is vacuous if nothing could ever have corrupted the canary — this proves the test can fail. |
+| **R5** | **Restart storm.** A service that faults instantly, every time, must be backed off and eventually given up on. Remove the backoff → the restart count in a fixed window differs. | A supervisor that restarts in a tight loop satisfies "it restarts it" while violating codex :25861. |
+
+**R3 and R4 are the two that matter most**, and neither is obvious: R3 separates
+containment from masking, and R4 stops the isolation assertion from being
+vacuous. R1 costs nothing because the current kernel already produces it.
+
+**Honest note on cost.** This gate needs P1–P4 before it can run at all; it is
+the *acceptance test* for the keystone, not an early check. P1 and P2 each want
+their own smaller gate first (pid round-robin; a single faulting process that
+the kernel survives with no init involved), on the K-series discipline of
+verifying each brick green before the next.
+
+---
+
+### 5.1 The task-level gate table (D-INIT.1, built)
 
 Erik's standard is that a green gate proves nothing unless the same gate is
 shown to go red. Each brick therefore ships **a negative control**: a
@@ -378,13 +594,13 @@ Additional standing requirements, per this repo's discipline:
 
 ## Part 6 — Open questions for Erik (blocking the build, not the spec)
 
-1. **Is `Codex Autopoieticus` a real document?** If it exists, it should be in
-   `codices/` — it is the cited source for exactly this work. If it does not,
-   then Part 4 above is the spec and should be marked as such.
-2. **Tasks or processes?** §3.4 scopes this to green-thread tasks in one
-   address space. Fault-isolated process supervision is the "real" init but is
-   a much larger brick (kernel process table + LA-driven CR3). Confirm the
-   smaller one is what "minimal" means here.
+1. ~~**Is `Codex Autopoieticus` a real document?**~~ **ANSWERED 2026-09-06 — it
+   exists.** Now committed at `CODEX_AUTOPOIETICUS.tex` on `kernel-k1`
+   (`e13c00c`); it was in `~/Downloads/CODICIES/`, outside the repo. See §1.5:
+   it names LogosInit thirteen times and is far more specific than the white
+   paper. **It, not the white paper, is the spec.**
+2. ~~**Tasks or processes?**~~ **ANSWERED 2026-09-06 — PROCESSES**, fault-isolated,
+   separate address spaces. §3.4 superseded; Part 4 re-scoped to P1–P7.
 3. **Does the Linux `logosinit.la` stay?** The codex places it in Nigredo, and
    Nigredo scaffolding is meant to be burned at Rubedo. It is currently gated
    and green. Recommend: keep it, gate both, since it is the codex-specified
