@@ -564,6 +564,37 @@ their own smaller gate first (pid round-robin; a single faulting process that
 the kernel survives with no init involved), on the K-series discipline of
 verifying each brick green before the next.
 
+### 5.0.1 P1's gate — why the number is THREE
+
+`kernel/gate_p1.sh` + `kernel/build_p1.sh` are **written** (2026-09-06); the
+`boot.asm` half is not, so the gate does not yet run.
+
+**The design turns on one number.** HH2c already boots *two* isolated LA
+processes and passes its gate — but it does so with a hardcoded `hh2c_stage`
+byte: the first `.sys_exit` switches CR3 to B, the second halts. That is not a
+process table, it is an if-statement, and **a two-process gate cannot tell the
+difference.** A third process is the discriminator: nothing hardcoded for two
+produces a third without a real PCB array and a real scheduler loop.
+
+So the gate asserts **three** distinct pids, and that is the entire reason for
+the number. Each process reads the **same virtual address** and must get its
+**own** value (`pid=1 val=A1`, `pid=2 val=B2`, `pid=3 val=C3`) — HH2's isolation
+proof, now driven from the table's CR3 rather than a hand-written round-trip.
+
+**The red control, without which assertion 3 is vacuous:** `build_p1.sh
+--shared` points all three PCBs at **one** PML4. The three then share an address
+space and read the same value, and `gate_p1.sh --red` **requires** that to fail.
+If it passes, no arrangement of memory could ever have failed the isolation
+assertion, and the gate says so in its own output and demands rewriting rather
+than deletion.
+
+**Sequencing hazard, recorded because it nearly bit:** `build_p1.sh` writes
+`kernel/entry.inc`, which `build.sh` and `build_hal4g.sh` also write, and
+`boot.asm` is read by every kernel build. Editing `boot.asm` or running
+`build_p1.sh` while another kernel build is in flight silently contaminates that
+build's ELF — it is not a conflict git can see, because these artifacts are
+gitignored. Run kernel builds **sequentially**.
+
 ---
 
 ### 5.1 The task-level gate table (D-INIT.1, built)
