@@ -1,0 +1,36 @@
+# ===================================================================
+#  D-INIT.1 — the headline: a supervisor that can restart indefinitely.
+#
+#  This is kernel/respawn_probe.la with ONE change: the supervisor calls
+#  reap("!") after each service exits. Everything else — the loop, the
+#  service, the 12 cycles — is identical, so the pair is a controlled
+#  experiment and reap is the only variable.
+#
+#    respawn_probe.la       (no reap) -> 7 spawns, then
+#                                        "native: spawn: too many tasks (MAXTASK)"
+#    respawn_reap_probe.la  (reap)    -> all 12 cycles, "ALL-12-SPAWNED"
+#
+#  12 > MAXTASK (8), so completing at all is only possible if dead TCB slots
+#  are genuinely reclaimed. Each cycle also prints the index it reaped: that
+#  index stays CONSTANT at 1, which is the direct evidence of reuse — the
+#  supervisor is handed the same slot back every time rather than consuming
+#  a fresh one. A run that grew 1,2,3,... would mean slots were leaking and
+#  the 12 cycles only fit by luck.
+#
+#  Native-only, Linux-hosted, no QEMU — like task_pingpong.la.
+# ===================================================================
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SEQ = la a. la b. b
+
+glyph SERVICE = la n. la _. print(concat("svc")(int_to_str(n)))
+
+glyph MAIN =
+  (Z(la self. la i.
+     IF(lt(i)(12))
+       (la _. SEQ(spawn(SERVICE(i)))(
+              SEQ(yield("!"))(
+              SEQ(print(concat("reaped=")(int_to_str(reap("!")))))(
+              self(add(i)(1))))))
+       (la _. print("ALL-12-SPAWNED"))))(0)

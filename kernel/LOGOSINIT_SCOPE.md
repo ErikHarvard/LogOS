@@ -226,7 +226,7 @@ violation — the exact failure the project exists to refuse.
 Staged smallest-first, each independently gateable, each red-able. Nothing
 starts until Erik approves the shape.
 
-### D-INIT.1 — `reap`: make task death visible to LA
+### D-INIT.1 — `reap`: make task death visible to LA — **BUILT + GATED, RUNTIME HALF PARKED**
 Append `rt_reap` at EOF of `native_codegen3_rt.asm`; wire `reap` as a builtin
 in `native_codegen3.la`. Non-blocking, mirroring the VM's `reapnb` convention:
 returns a dead task's index, `"0"` when tasks live but none are dead, `"-1"`
@@ -234,6 +234,64 @@ when none remain. Frees the TCB slot (fixing the MAXTASK leak). Includes the
 3.3(a) dying/dead split.
 *Substrate:* pure runtime — **gateable Linux-hosted, no QEMU**, like
 `task_pingpong.la`.
+
+★ **The runtime half is PARKED, not pending.** `rt_reap` lives in
+`native_codegen3_rt.asm` and its wiring in `native_codegen3.la` — both **track
+A's** files per `~/logos-tracks.conf` (`native_codegen*.la|.asm|.bin`).
+`logos-guard` refuses a track-D commit that touches them, and that refusal is
+correct: matching another track's *explicit* pattern is a hard block, unlike the
+catch-all `*` that merely warns on unowned files. So what is committed here is
+the **kernel/-side half** — the probes, the gate, and this scope. The runtime
+half is complete, gated and witnessed, and is saved outside every worktree:
+
+```
+git apply ~/logos-dinit1-runtime.patch     # rt_reap + RT_REAP + the regenerated
+                                           # selfhost.bin fixed point (954094 B)
+~/logos-dinit1-rt.asm.copy                 # the runtime alone, for reference
+```
+
+`kernel/build_dinit1.sh` detects its absence and SKIPs with that instruction
+rather than emitting probes that cannot resolve `reap`. `gate_dinit1.sh` is
+deliberately **not wired into `build.sh`**, so the shared build cannot go red on
+a prerequisite that has not landed. Wiring it is one line, recorded in the
+cross-track request. One more line is needed too, and could not be committed for
+the same reason: `"RT_REAP": "rt_reap"` in `scratchpad/derive_consts.py`'s
+`LABELS` (also track A's), without which `build.sh`'s `rtconsts` gate derives no
+row for this constant and validates it against nothing — so the gate derives the
+address itself and only treats `derive_consts` as a bonus.
+
+**Built as scoped, with one design change made during the build.** §3.3(a)
+proposed a dying(3)/dead(2) split converted by `rt_yield` after the stack
+switch. The simpler guard is **`reap` skips `CUR_TASK`**: `rt_spawn` re-carves a
+task's stack from its *index*, and the only `STATE==2` TCB that can still be
+executing is the current one, so skipping it makes "reaped" imply "provably off
+its stack." Same invariant, one compare, and neither the trampoline nor the
+scheduler changes — so no existing path could regress. Preferred on that ground.
+
+**Return shape** (boxed INT, not the VM's decimal strings — this engine has
+native ints): `>= 1` the reaped index · `0` others live, none dead · `-1` no
+other task at all. Mirrors `reapnb`'s `-ECHILD`/`"0"`/pid so the supervision
+loop reads the same on both substrates.
+
+**Witnessed** (`kernel/gate_dinit1.sh`, Linux-hosted, no QEMU):
+
+| | result |
+|---|---|
+| semantics | `r0=-1  r1=0  svc-ran  r2=1  r3=-1` — exact |
+| reclamation | 12 cycles > MAXTASK=8, `ALL-12-SPAWNED`, **`reaped=1` every cycle** (one slot reused, not leaked) |
+| **red control** | identical loop minus `reap` **still halts at 7** with `too many tasks (MAXTASK)`, rc=1 |
+| constant drift | only `RT_REAP`/`RTLEN`/`LITERAL_BASE` moved; all other `RT_*` revalidated |
+
+The red control is the point: same runtime, same compiler, same loop, one
+variable. It proves `reap` is what fixed the ceiling and not an incidental
+change to `spawn`. The gate **runs the failing case and requires it to fail**,
+and says so in its own failure text — if the control ever passes, the gate
+demands rewriting rather than deletion.
+
+The append invariant held exactly as §3.3(b) hoped: `RT_REAP` landed at the old
+`LITERAL_BASE` (4206702), `RTLEN` 12278 → 12373, and **every other `RT_*` address
+is unchanged** — so the K6b shift, which once broke the self-host fixed point,
+did not recur.
 
 ### D-INIT.2 — `initmetal.la`: the supervision loop
 An LA init: spawn a declared service set, then loop `reap` → identify → decide.
