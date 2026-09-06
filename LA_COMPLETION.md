@@ -738,11 +738,41 @@ registers. `trimono.la` now gates all three. What remains:
 - `[✓]` **The Operative Grammar, rules (i)–(x)** — predication `X▷Y`, negation,  **DONE 2026-08-23** — `opgrammar.la`: **22** closed-class categories + rules (i)-(x); each rule shown to DISCRIMINATE. Gated. ★ **CITATION CORRECTED 2026-09-05:** this line read `grammar.la`, which is the **data grammar** (`GT`/`GN`/`GSEQ`/`GALT`/`GSTAR`/`GEPS`, used to parse LA source) — a different module entirely, so a reader following the reference landed in the wrong file. The Operative Grammar is `opgrammar.la`, whose own header cites `LA.tex :5150–5222` (the Grammatical Glyphs table + Sentence Formation Rules). The count was also wrong: **22**, per that header, not 20.
   the question particle, tense, modality, quantification, imperative, mood
   marking. None built. *Blocked on the lexicon.*
-- `[✓]` **`discourse.la`** — structure above the sentence: per-turn origo shift,  **DONE 2026-08-23** — `discourse.la`: origo shift + character/content + anaphora + yes/no; red path = the unshifted reading must be wrong. Gated.
-  a discourse-referent store, connective-linked utterance graph. Composes
-  `deixis` + `pragmatics`, both already gated. **The cheapest genuinely-new
-  branch.** Gate: in a two-turn dialogue, turn-2 "you" resolves to turn-1's
-  speaker; a referent introduced in turn 1 is retrievable in turn 3.
+- `[✓]` **`discourse.la` — TURN-LINKING, on one dialogue.** **DONE 2026-08-23.**
+  ★ **SCOPE NARROWED 2026-09-06 (Erik's ruling).** The line previously read
+  "structure above the sentence" and was read as *discourse, done*. What is
+  actually witnessed is narrower, and the narrower claim is the true one.
+  **Gated, and genuinely so:** seven assertions — `basic-exact`, `dialset`,
+  `origo-shift`, `character-fixed`, `unshifted-wrong`, `anaphora`, `yes/no`.
+  `MK = la c. IF(c)("OK")("FAIL")` emits the literal string `FAIL`, so
+  `build.sh:4311`'s `*FAIL*` catch guards all seven, and `build.sh:4334` pins
+  `basic=5/5` by value on top. `unshifted-wrong` is a real constructed-violation
+  red path: the unshifted reading must come out wrong.
+  **The bound:** one test vector — the codex's worked dialogue at `:5400`. Turn
+  linking is witnessed; nothing here measures a whole text.
+  **Not gated, and not claimed by this line:** the discourse-referent store and
+  the connective-linked utterance graph the original entry named, and the white
+  paper's phrase *"coherence across a whole text."* Those are the open item in
+  TIER 3 below. The paper (v18, 2026-08-28) says discourse *"has no apparatus
+  here"* — that is wrong, this is apparatus — but its scope word was wider than
+  this gate, and both halves of that are recorded rather than one winning.
+- `[ ]` **★ Text-level coherence — the half of "discourse" that is not gated.**
+  Split out of the `discourse.la` `[✓]` on 2026-09-06 rather than left inside it,
+  because a checkmark whose wording is wider than its gate is the defect this
+  list exists to catch. `discourse.la` witnesses turn-linking against ONE
+  dialogue; the white paper claims *"structure above the sentence, coherence
+  across a whole text."* The gap is everything past the turn pair: a
+  discourse-referent store that survives more than the worked vector, a
+  connective-linked utterance graph, and some measure that a text hangs together
+  rather than merely that turn 2 resolves against turn 1.
+  **Owed first, before code:** a criterion that can fail. "Coherent" with no
+  falsifier is not a gate. One candidate with a real red path — a coherence
+  measure over an utterance graph must score a deliberately shuffled version of
+  the same text strictly lower; if shuffling does not lower it, the measure is
+  reading something other than coherence.
+  **Do not build this before the criterion exists.** It is the same shape as
+  self-invocation in TIER 4: code written first would be unfalsifiable.
+
 - `[ ]` **Acquisition** — the codex never gives a syllabus, glyph sequence or
   acquisition method for LA; its one acquisition claim is "explicitly labeled as
   untested" (ROADMAP:1213), and Erik intends children to learn it. Buildable
