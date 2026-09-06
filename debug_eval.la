@@ -39,6 +39,17 @@ glyph AST_KIND = la ast.
         (la _. la _. "APP")
         (la _. "STR")
 
+# ── the VAR node's own name, read off the same dispatch ──────────────
+#   Only the VAR branch carries a name; the other three return "" so a
+#   name-matching breakpoint simply never fires on them. Reading the name
+#   through the AST's own Scott dispatch is the same discipline AST_KIND
+#   uses — there is no separate accessor to fall out of step with.
+glyph AST_VARNAME = la ast.
+    ast (la n. n)
+        (la _. la _. "")
+        (la _. la _. "")
+        (la _. "")
+
 # ── a value, rendered short ──────────────────────────────────────────
 #   A closure prints its PARAMETER, not its body: a body is an AST and
 #   rendering it would bury the trace in source. The param is what tells
@@ -50,6 +61,37 @@ glyph SHOW_VAL = la v.
       (la n. la pv. concat("pa:")(n))
       (la i. concat("int:")(int_to_str(i)))
 
+# ── the local environment, rendered ──────────────────────────────────
+#   env is eval.la's list of PAIR(name)(value): NIL = PAIR(FALSE)(""),
+#   CONS h t = PAIR(TRUE)(PAIR(h)(t)). So the emptiness flag is FST, the
+#   head is FST(SND) and the tail SND(SND) — destructured here rather
+#   than imported, because eval.la keeps its list helpers private.
+#
+#   ★ INNERMOST FIRST. APP conses the new binding onto the front, and
+#   LIST_FIND takes the FIRST match, so the render's left-to-right order
+#   IS lookup order. Under shadowing that is the whole answer: the
+#   binding that wins is the one printed first.
+#
+#   Values go through SHOW_VAL, so a closure shows its parameter and not
+#   its captured environment — otherwise one breakpoint on a recursive
+#   program would print the entire chain of frames beneath it.
+glyph ENV_MORE = la env. FST(env)
+glyph ENV_HEAD = la env. FST(SND(env))
+glyph ENV_TAIL = la env. SND(SND(env))
+
+glyph SHOW_BINDING = la e. concat(FST(e))(concat("=")(SHOW_VAL(SND(e))))
+
+glyph SHOW_ENV = Z(la self. la env.
+    IF(ENV_MORE(env))(la _.
+        (la rest.
+            IF(ENV_MORE(rest))(la _.
+                concat(SHOW_BINDING(ENV_HEAD(env)))(concat(", ")(self(rest)))
+            )(la _.
+                SHOW_BINDING(ENV_HEAD(env))
+            )
+        )(ENV_TAIL(env))
+    )(la _. "<empty>"))
+
 # ── indentation by depth ─────────────────────────────────────────────
 glyph IND = Z(la self. la n.
     IF(int_eq(n)(0))(la _. "")(la _. concat("  ")(self(sub(n)(1)))))
@@ -60,14 +102,33 @@ glyph ENTER = la d. la ast.
 glyph LEAVE = la d. la ast. la result.
     print(concat(IND(d))(concat("<- ")(concat(AST_KIND(ast))(concat(" = ")(SHOW_VAL(result))))))
 
+# ── the breakpoint line ──────────────────────────────────────────────
+#   A tracer answers "what ran". A debugger has to answer "what was it
+#   bound to WHEN it ran" — so a breakpoint reports the ENVIRONMENT that
+#   was in force at the node, which the trace lines never show.
+glyph BREAK = la d. la ast. la env.
+    print(concat(IND(d))(concat("!! BREAK ")(concat(AST_KIND(ast))(concat(" env: ")(SHOW_ENV(env))))))
+
+# ── breakpoint predicates — (depth -> ast -> Church bool) ────────────
+#   The tracer takes the predicate as a parameter, so a new kind of
+#   breakpoint is a new predicate and NOT a second copy of the dispatch.
+#   That matters more here than it usually would: this file exists
+#   because a duplicated evaluator can drift from the one it traces, and
+#   forking the dispatch per breakpoint kind would reintroduce exactly
+#   the hazard the gate is watching for.
+glyph BRK_NONE  = la d. la ast. FALSE
+glyph BRK_VAR   = la name. la d. la ast. str_eq(AST_VARNAME(ast))(name)
+glyph BRK_DEPTH = la n.    la d. la ast. int_eq(d)(n)
+
 # ── DEBUG_EVAL — EVAL's dispatch, with the two trace lines around it ──
 #   ★ ORDER IS STRUCTURE, NOT STATEMENT SEQUENCE. `(la result. …)(body)`
 #   evaluates `body` FIRST because arguments are evaluated on application
 #   — which is exactly what is wanted here: enter, reduce, then report
 #   the value. Writing the LEAVE line "after" the body in the source
 #   would not have ordered it; the binder does.
-glyph DEBUG_EVAL = Z(la self. la d. la ast. la env. la gl.
+glyph DEBUG_EVAL_BRK = la brk. Z(la self. la d. la ast. la env. la gl.
     SEQ(ENTER(d)(ast))(
+    SEQ(IF(brk(d)(ast))(la _. BREAK(d)(ast)(env))(la _. ""))(
     (la result.
         SEQ(LEAVE(d)(ast)(result))(result)
     )(
@@ -119,25 +180,32 @@ glyph DEBUG_EVAL = Z(la self. la d. la ast. la env. la gl.
             )
             # ── STR(val) — a value already ──
             (la val. VAL_STR(val))
-    ))
+    )))
 )
 
+# ── slice 1's tracer IS the parameterised one with no breakpoint ─────
+#   Defined by application, not by a second definition, so "tracing with
+#   breakpoints off" cannot diverge from "tracing" — there is nothing to
+#   keep in step.
+glyph DEBUG_EVAL = DEBUG_EVAL_BRK(BRK_NONE)
+
 # ── the runner: trace a named glyph from a parsed program ────────────
-glyph DEBUG_RUN_GLYPH = la name. la gl.
+glyph DEBUG_RUN_BRK = la brk. la name. la gl.
     (la found.
         IF(IS_SOME(found))(la _.
-            DEBUG_EVAL(0)(R_VAL(found))(NIL)(gl)
+            DEBUG_EVAL_BRK(brk)(0)(R_VAL(found))(NIL)(gl)
         )(la _.
             error(concat("debug_eval: no glyph: ")(name))
         )
     )(LIST_FIND(name)(gl))
 
+glyph DEBUG_RUN_GLYPH = DEBUG_RUN_BRK(BRK_NONE)
 glyph DEBUG_RUN = la gl. DEBUG_RUN_GLYPH("MAIN")(gl)
 
 # ── AGREEMENT — the assertion this whole file rests on ───────────────
 #   Tracing must not change the answer. Compares the RENDERED values, so
 #   a divergence in kind (str vs int vs closure) or in content both show.
-glyph AGREES = la src.
+glyph AGREES_BRK = la brk. la src.
     (la gl.
         (la traced.
             (la plain.
@@ -147,8 +215,14 @@ glyph AGREES = la src.
                     concat(concat("DIVERGED traced=")(SHOW_VAL(traced)))(concat(" plain=")(SHOW_VAL(plain)))
                 )
             )(RUN(gl))
-        )(DEBUG_RUN(gl))
+        )(DEBUG_RUN_BRK(brk)("MAIN")(gl))
     )(PARSE_PROGRAM(src))
+
+#   ★ AND THIS IS THE SLICE-2 ASSERTION. Slice 1 proved TRACING does not
+#   change the answer. A breakpoint reads the environment and prints — it
+#   must not change it either, so every breakpoint program below is run
+#   through the same agreement check, with the breakpoint ARMED.
+glyph AGREES = AGREES_BRK(BRK_NONE)
 
 glyph SRC_STR = "glyph MAIN = \"hello\""
 glyph SRC_APP = "glyph MAIN = concat(\"ab\")(\"cd\")"
@@ -156,7 +230,7 @@ glyph SRC_LAM = "glyph MAIN = (la x. x)(\"id\")"
 glyph SRC_INT = "glyph MAIN = int_to_str(add(2)(3))"
 glyph SRC_NEST = "glyph K = la a. la b. a\nglyph MAIN = K(\"kept\")(\"dropped\")"
 
-glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+glyph MAIN_TRACE = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
     print("--- trace: STR ---"))(
     print(AGREES(SRC_STR))))(
     print("--- trace: APP (curried builtin) ---")))(
@@ -167,3 +241,24 @@ glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
     print(AGREES(SRC_INT))))(
     print("--- trace: nested glyph reference ---")))(
     print(AGREES(SRC_NEST)))
+
+# ── slice 2 programs ─────────────────────────────────────────────────
+#   SRC_BIND binds x to a value the render must show verbatim.
+#   SRC_SHADOW binds x TWICE. That is the case a trace alone cannot
+#   answer: both bindings are live, the trace shows only which VALUE came
+#   back, and only the environment shows WHY — the inner frame is in
+#   front, so LIST_FIND reaches it first.
+glyph SRC_BIND   = "glyph MAIN = (la x. concat(x)(\"!\"))(\"VALUE\")"
+glyph SRC_SHADOW = "glyph MAIN = (la x. (la x. x)(\"inner\"))(\"outer\")"
+
+glyph MAIN_BREAK = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- break: VAR x, env must show the binding ---"))(
+    print(AGREES_BRK(BRK_VAR("x"))(SRC_BIND))))(
+    print("--- break: VAR nosuchvar, must NOT fire ---")))(
+    print(AGREES_BRK(BRK_VAR("nosuchvar"))(SRC_BIND))))(
+    print("--- break: shadowed x, innermost binding first ---")))(
+    print(AGREES_BRK(BRK_VAR("x"))(SRC_SHADOW))))(
+    print("--- break: at depth 1 ---")))(
+    print(AGREES_BRK(BRK_DEPTH(1))(SRC_BIND)))
+
+glyph MAIN = SEQ(MAIN_TRACE)(MAIN_BREAK)

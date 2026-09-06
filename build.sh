@@ -4832,6 +4832,26 @@ bash kernel/gate_k5b1b.sh || exit 1
 # The safe-point reshuffle self-hosts (the GC interior-pointer fix unblocked it).
 bash kernel/gate_k5b2.sh || exit 1
 
+# ── Track C — the tracing debugger (debug_eval.la) ────────────────────────────
+# The evaluator watching itself: DEBUG_EVAL reproduces EVAL's dispatch (it
+# cannot wrap it — EVAL's recursion is internal to its own Z, so a wrapper sees
+# only the outermost node) and emits enter/reduce lines plus, at a breakpoint,
+# the ENVIRONMENT in force. A reproduced evaluator can DRIFT from the one it
+# claims to trace, and drift is invisible: the trace still looks plausible while
+# describing a reduction that never happened. So the gate's load-bearing
+# assertion is that DEBUG_EVAL and EVAL AGREE on every program's result, with
+# breakpoints armed — observing must not change the answer.
+#
+# Invoked as ./gate_debug.sh, NOT `bash gate_debug.sh`, deliberately: its
+# shebang is #!/bin/sh so the audit runs it under dash, which is where a
+# bashism in a FAILURE branch gets caught. Running it under bash would hide
+# exactly the defect that shipped once already here.
+#
+# NOTE it rebuilds logos_secd / logos_program.bin / logos_source.la for its
+# host==VM half and removes them afterwards, so it is placed last, after every
+# step that depends on those fixed paths.
+./gate_debug.sh || exit 1
+
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),
 # so the audit is clean here. Tag the CURRENT COMMIT as a verified rollback
