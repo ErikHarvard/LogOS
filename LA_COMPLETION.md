@@ -545,6 +545,21 @@ every item below cites the ruling rather than inferring one.
   defect class this file exists to catch. Then one gate per collision, each able
   to go red by re-introducing the collision it closed.
 
+- `[!]` **★★ ENGINEERING SEAL 1 — THREE TYPE SYSTEMS, NO RULING. Needs Erik.**
+  `LINGUA_ADAMICA.tex` §5012 specifies the **Ontic Type System**: every glyph
+  has a type `τ ∈ {Object, Process, Relation, Value, Constraint}`, and
+  composition is typed (`A ⊕ B : τ₃` only if `τ₁`,`τ₂` are composable under that
+  operator). **Zero occurrences of those five as types anywhere in the code.**
+  `TYPE_SYSTEM_SPEC.md` in this repo proposes a *different* system — dependent
+  types built on the five MODES, "type ≡ spec ≡ b_τ ≡ f_τ" — and says of itself
+  *"No code is added by this document."* What is actually built is **neither**:
+  arrow-arity checking in `DEPLOY` (`:: a -> b -> c`), which is a lambda-calculus
+  discipline, not an ontological one. Three type systems, one implemented, none
+  ruled. **This blocks Seal 2** (a proof-carrying glyph ships a *type
+  derivation* — in which system?). Rule which is the language's type system
+  before anything downstream is built on the answer.
+
+
 ## TIER 2 — THE THREE REGISTERS (complete the trimodal identity)
 
 The claim is `G^vis ≡ G^phon ≡ G^comp ≡ C`. Identity was enforced in κ and
@@ -719,6 +734,17 @@ registers. `trimono.la` now gates all three. What remains:
 - `[ ]` **`PSC_STAR` still pairs raw `PHONYM` with raw `SPEC`** — after the
   normalisation landed, one concept gets two seals depending on operand order.
 
+- `[ ]` **★ Toroidal closure of the metaphonetic manifold** (`LINGUA_ADAMICA.tex`
+  §4398, a `\lemma`, not an aside): *"The metaphonetic manifold M_P is naturally
+  modeled as a toroidal manifold (a product of circles)"* — it cannot be an open
+  space like ℝⁿ. Nothing in the phonetic register asserts a topology at all;
+  `phonym.la` synthesises formants and `psc.la` checks invariant containment,
+  and neither says what space the phonyms live in. **Gate:** a phonym walk that
+  leaves in one direction returns — wrap-around in each generating circle,
+  measured on real synthesised phonyms, not asserted. **Red path:** an open-space
+  embedding must fail the wrap-around test; if a flat embedding passes, the gate
+  is measuring nothing.
+
 ### Visual
 - `[✓]` `SIGIL(↻(RECOGNITION))` was byte-identical to `SIGIL(RECOGNITION)` →
   fold trace added, mirrored about column 16 so the H-symmetry ↻ *generates* is
@@ -818,6 +844,28 @@ registers. `trimono.la` now gates all three. What remains:
   a value exists that fails it — a candidate red path is that shuffling the
   depth assignment across the lexicon must break the relation; if a shuffled
   assignment scores the same, the measure is reading nothing.
+
+- `[ ]` **★ The four modes of poetic depth** (`LINGUA_ADAMICA.tex` §2250): *"The
+  ontosynthetic entendre operates in four distinct modes, each exploiting a
+  different dimension of the ontomonoglyph"* — I. Vertical Depth
+  (ontoetymological entendre: a glyph contains its lineage, and a competent
+  listener hears it), plus three more named there. Nothing implements the
+  entendre. This is not decoration: it is the claim that *depth is audible*, and
+  it is the payoff of `glyphdag`'s etymology being recoverable. **Gate:** for a
+  compound glyph, each of the four modes yields a DIFFERENT reading, and the
+  readings are derived from the DAG rather than tabulated. **Red path:** a glyph
+  with no lineage must yield no vertical-depth reading.
+
+- `[ ]` **★ The Grammar Completeness theorem has no gate** (`LINGUA_ADAMICA.tex`
+  §4085, a `\theorem`): *"The four derivation rules are complete: every
+  ontologically coherent concept is expressible — ∀C ∈ 𝒪, ∃E ∈ L_A : E ≡ C."*
+  Nothing anywhere asserts it; grep finds no gate and no test. A completeness
+  theorem cannot be proved by a gate, but it CAN be falsified by one, and that
+  is the honest form: **Gate:** a corpus of concepts, each derived to an
+  expression by the four rules, with the derivation shown rather than asserted.
+  **Red path:** a concept the rules cannot reach must be reportable as such —
+  and if no such concept can be constructed, say so, because a completeness
+  claim that nothing could ever contradict is decoration.
 
 - `[ ]` **Acquisition** — the codex never gives a syllabus, glyph sequence or
   acquisition method for LA; its one acquisition claim is "explicitly labeled as
@@ -995,7 +1043,83 @@ registers. `trimono.la` now gates all three. What remains:
   `CLOSURE(x)` for a named x and let the red path be a deliberately re-introduced
   slack entry.
 
+- `[ ]` **★★ ENGINEERING SEAL 2 — Proof-carrying glyphs. NOT BUILT, and it is
+  property (v) of the completeness theorem.** §5020: *"Every glyph ships with:
+  (a) a type derivation, (b) an equivalence certificate linking it to its ONF,
+  (c) a reality witness."* The Operational Completeness Theorem (§5032) lists
+  seven properties the system must have, and (v) is **Self-Validation: every
+  glyph carries its own proof**. No per-glyph certificate exists anywhere — the
+  pieces are scattered (a type checker in `DEPLOY`, an ONF in `onf.la`, gates in
+  `build.sh`) and nothing binds them to the glyph as a shipped artifact.
+  **Blocked on the Seal-1 ruling** — (a) is a derivation in whichever type system
+  is the real one. **Gate:** every entry in the catalogue carries all three, and
+  the checker verifies the certificate rather than trusting it. **Red path:**
+  forge a certificate for a glyph whose ONF does not match and the check must
+  refuse it.
+
+- `[ ]` **★ ENGINEERING SEAL 3 — Versioning without semantic drift.** §5024: a
+  **centropic migration law** governs glyph evolution — cosmetic changes (form
+  refinements) are permitted only if they preserve invariants. Nothing governs
+  glyph evolution today; `COIN` mints and the Ratchet Gate forbids collapsing
+  two κ-distinct forms, but there is no law for *changing an existing glyph*.
+  This is the gap that lets a form drift while its Ren stays put — the exact
+  failure the monosemy discipline exists to prevent, arriving through the back
+  door of revision rather than coinage. **Gate:** a proposed revision is admitted
+  only if the invariants of the prior version are preserved. **Red path:** a
+  revision that alters an invariant must be refused, and the refusal must name
+  which invariant.
+
+- `[ ]` **★ The Recognition Depth function ρ(L_t)** (`LINGUA_ADAMICA.tex` §3842,
+  a formal `\definition`): *"For a language state L_t at time t, the recognition
+  depth ρ(L_t) is the number of distinct levels…"*. Distinct from `DEPTH`
+  (`g₉`, a primitive) and from lexical depth D (computable from the DAG, ledger
+  row above): this one measures the LANGUAGE's state, not a glyph's. Nothing
+  computes it. **Gate:** ρ is computable from the live catalogue and strictly
+  increases when a level is genuinely added. **Red path:** add a glyph at an
+  existing level and ρ must NOT move.
+
+- `[ ]` **★ The Self-Evolution Equation** (`LINGUA_ADAMICA.tex` §3975): *"All
+  five laws and three axes can be compressed into a single recursive equation
+  governing the language's self-evolution."* The three axes (§3945) are
+  autological, metalinguistic and ontological deepening. This is the closing
+  form of the whole self-evolution chapter and nothing implements it. **Owed
+  first:** it depends on ρ above — the equation is over language states, so
+  build ρ first or this has nothing to range over.
+
+
+- `[ ]` **★ DERIVATION RULE 4 — the Neological Seal ν is not implemented.**
+  `LINGUA_ADAMICA.tex` §4062 gives the language four derivation rules. Rules 1-3
+  (primitive introduction, modal combination, metacursive closure) are built.
+  **Rule 4 is not:** *"E ∈ L_A, d(E) > 0 ⟹ ν(E) ∈ 𝒜 — the sealed glyph is added
+  to 𝒜 as a NEW PRIMITIVE"*, with the consequence the codex states outright:
+  *"the distinction between 'primitive' and 'derived' is historical: every
+  derived expression can become a primitive."*
+  **What exists vs what is owed:** `coin.la` MINTS — COIN takes a mode and two
+  glyphs and returns a new one, deterministic, recoverable, pronounceable, and
+  the coinage organ is rightly `[✓]`. But minting is not sealing. Nothing writes
+  a coined glyph back into the alphabet: `primitives.la` is GENERATED from the
+  spec and holds a fixed 11, and no code path adds to it at runtime. The
+  alphabet is closed; Rule 4 requires it to be open.
+  **This is why it matters beyond bookkeeping:** the Grammar Completeness
+  theorem (Tier 3 above) rests on all four rules. With Rule 4 unbuilt the
+  language cannot grow its own primitives, which is the mechanism the codex
+  gives for an unbounded lexicon.
+  **Gate:** seal a coined glyph, then show it behaves as a primitive — it
+  appears in the alphabet, canonicalises as a leaf rather than a decomposition,
+  and survives a reload. **Red path:** the Ratchet Gate must still refuse a seal
+  that collapses two κ-distinct forms; sealing must be additive or refused.
+
 ## TIER 5 — BEYOND THE LANGUAGE (named, not chased)
+
+- `[ ]` **★ ENGINEERING SEAL 4 — Empirical calibration loops.** §5028: for
+  cross-species phonosemantics the system maintains *"training datasets per
+  channel mapping metaphonetic features to signals"*. Filed HERE rather than in
+  a build tier for one reason: it needs data from outside the system — another
+  species' channel — the same shape as the psycholinguistic measure, which needs
+  a speaker. **But it is a named Engineering Seal, not an aspiration**, and it is
+  filed so it cannot be quietly dropped: three of the four seals are unbuilt and
+  this is the only one that is unbuildable from inside. If cross-species is ever
+  descoped, this seal must be descoped explicitly, in writing, not by silence.
 
 - `[ ]` **A signature scheme.** No public-key primitive exists. **The single
   unlock for the whole record/law layer**: signed updates, identity, contracts,
