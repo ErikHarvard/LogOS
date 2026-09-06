@@ -1,0 +1,81 @@
+# ═══════════════════════════════════════════════════════════════════
+#  phonassoc.la — ⊕ IS ASSOCIATIVE IN THE PHONETIC REGISTER, and the
+#  algebra says it must not be. This module WITNESSES that bound.
+#
+#  ── THE COLLAPSE ────────────────────────────────────────────────────
+#  CONP renders ⊕ as `A ++ 960 zeros ++ B`. Concatenation with a fixed
+#  separator is associative, so
+#      ⊕(⊕(A,B),C)  and  ⊕(A,⊕(B,C))
+#  both render `A ++ Z ++ B ++ Z ++ C`. Not similar — THE SAME SEQUENCE.
+#  It is a structural identity, not a detection difficulty: there is one
+#  object, so no detector could ever separate them.
+#
+#  ── WHY THAT IS A BOUND AND NOT A CURIOSITY ────────────────────────
+#  The paper: "G IS the free magma on nine generators … NON-ASSOCIATIVE
+#  because grouping IS etymology", and "(a⊗b)⊗c and a⊗(b⊗c) record
+#  different derivations and therefore are different concepts. An
+#  associative algebra would erase the etymology the seal exists to
+#  carry." A free magma is non-associative in ALL its operations. So the
+#  phonetic register identifies two terms the algebra declares distinct.
+#
+#  ── ★ WHAT KIND OF BOUND THIS IS, stated precisely ─────────────────
+#  NOT the same kind as ⊕/VOID. There, ⊕'s inserted /ʔ/ closure and
+#  VOID's breath silence are the SAME ACOUSTIC EVENT — nothing exists to
+#  separate, and no rendering could. Here a bracketing marker IS
+#  constructible: a depth cue in the closure would separate them.
+#  ⇒ This is a bound BY RULING (Erik, 2026-09-05), not by acoustics: the
+#  cue was declined because it changes the phonology and the gated WAV
+#  outputs. Recording it as acoustically irreducible would be a stronger
+#  claim than the evidence supports, so it is recorded as what it is.
+#
+#  ── SCOPE ───────────────────────────────────────────────────────────
+#  Affects every ⊕ compound of depth ≥ 2. Bounds the PHONETIC register
+#  ONLY — κ still inverts and the glyphic round trip is untouched.
+#
+#  ★ IF THIS GATE GOES RED, THE BOUND MOVED. A red here means the two
+#  bracketings stopped rendering identically — i.e. someone added the
+#  bracketing marker. That is the bound being LIFTED, and it should be
+#  celebrated and re-witnessed, not silenced by editing the expectation.
+# ═══════════════════════════════════════════════════════════════════
+
+import("phonym.la")
+
+glyph TRUE = la t. la f. t
+glyph FALSE= la t. la f. f
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+glyph A = PRIM("BEING")
+glyph B = PRIM("VOID")
+glyph C = PRIM("FORM")
+
+# first index at which two signals differ, or -1 if identical throughout
+glyph FIRSTDIFF = Z(la self. la p. la q. la i.
+    IF(NOT(lt(i)(FST(p))))(la _. sub(0)(1))(la _.
+    IF(int_eq(SND(p)(i))(SND(q)(i)))(la _. self(p)(q)(add(i)(1)))(la _. i)))
+
+glyph CMP = la p. la q.
+    IF(int_eq(FST(p))(FST(q)))(la _. int_to_str(FIRSTDIFF(p)(q)(0)))
+                              (la _. "len-differs")
+
+# THE BOUND: the two bracketings of ⊕
+glyph LB = PHONYM(CON(CON(A)(B))(C))
+glyph RB = PHONYM(CON(A)(CON(B)(C)))
+
+# ★ THE CONTROL, and it is what makes the line above mean anything. A
+#   FIRSTDIFF stuck at -1 would report every pair identical and look
+#   exactly like a bound. ⊕(A,B) and ⊕(B,A) have the SAME LENGTH and
+#   MUST differ — ⊕ is not commutative — so the comparator is required
+#   to produce a non-negative index here.
+glyph SW1 = PHONYM(CON(A)(B))
+glyph SW2 = PHONYM(CON(B)(A))
+
+glyph SEQ2 = la a. la b. b
+glyph MAIN =
+  SEQ2(print(concat("assoc  lenL=")(concat(int_to_str(FST(LB)))(
+       concat(" lenR=")(concat(int_to_str(FST(RB)))(
+       concat(" firstdiff=")(CMP(LB)(RB))))))))(
+       print(concat("control(swap) lenX=")(concat(int_to_str(FST(SW1)))(
+       concat(" lenY=")(concat(int_to_str(FST(SW2)))(
+       concat(" firstdiff=")(CMP(SW1)(SW2))))))))

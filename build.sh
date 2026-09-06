@@ -5540,6 +5540,37 @@ if [ ! -x ./gate_claimindex.sh ]; then
 fi
 bash ./gate_claimindex.sh || exit 1
 
+say "⊕ associativity: the phonetic register collapses it (phonassoc.la) — a WITNESSED BOUND"
+# ★ WHAT IS BEING ASSERTED, AND WHY A GREEN HERE IS A LIMITATION.
+# CONP renders ⊕ as `A ++ 960 zeros ++ B`. Concatenation with a fixed separator
+# is ASSOCIATIVE, so ⊕(⊕(A,B),C) and ⊕(A,⊕(B,C)) render THE SAME SEQUENCE — not
+# similar, identical. It is a structural identity, not a detection difficulty.
+# The paper declares the opposite of the algebra: "G IS the free magma on nine
+# generators … NON-ASSOCIATIVE because grouping IS etymology", and "an
+# associative algebra would erase the etymology the seal exists to carry". So
+# the phonetic register identifies two terms the algebra calls different
+# concepts, on every ⊕ compound of depth >= 2.
+# ★ THE KIND OF BOUND, stated precisely rather than flattened into the ⊕/VOID
+# one: there, the two signals ARE the same acoustic event and no rendering could
+# separate them. HERE A BRACKETING MARKER IS CONSTRUCTIBLE — a depth cue in the
+# closure would do it. This is a bound BY RULING (Erik, 2026-09-05), the cue
+# declined because it changes the phonology and the gated WAV outputs. Calling
+# it acoustically irreducible would claim more than the evidence supports.
+# ★ THE CONTROL IS WHAT MAKES THE -1 MEAN ANYTHING. A FIRSTDIFF stuck at -1
+# would call every pair identical and look exactly like a bound, so the module
+# also compares ⊕(A,B) with ⊕(B,A) — same length, and REQUIRED to differ, since
+# ⊕ does not commute. Without that line this gate would assert nothing.
+# ★ A RED HERE MEANS THE BOUND WAS LIFTED, not that something broke: the two
+# bracketings stopped rendering identically, i.e. someone added the marker.
+# Re-witness it; do not silence it by editing the expected string.
+ok=1
+PAOUT="$(timeout 1800 ./tiny_host phonassoc.la 2>&1 || true)"
+printf '%s\n' "$PAOUT" | grep -qF "assoc  lenL=21040 lenR=21040 firstdiff=-1" \
+    || { echo "FAIL  phonassoc: ⊕ associativity no longer collapses — the bound MOVED (a bracketing marker would do this). Re-witness it rather than editing this line — got: $PAOUT"; ok=0; }
+printf '%s\n' "$PAOUT" | grep -qF "control(swap) lenX=13920 lenY=13920 firstdiff=1" \
+    || { echo "FAIL  phonassoc: the CONTROL failed — ⊕(A,B) and ⊕(B,A) must differ, so a comparator that cannot report a difference makes the -1 above vacuous — got: $PAOUT"; ok=0; }
+[ "$ok" -eq 1 ] && echo "PASS  phonassoc: ⊕ is ASSOCIATIVE in the phonetic register (both bracketings byte-identical, firstdiff=-1 over 21040 samples) while the algebra is a NON-ASSOCIATIVE free magma — the register identifies two terms the paper calls different concepts. Witnessed as a bound, with a control proving the comparator can still report a difference (⊕(A,B) vs ⊕(B,A) at index 1). Bounds the PHONETIC register only; κ still inverts" || exit 1
+
 say "LA arc item 5: the ROUND TRIP — build(GDECOMP P) equiv P (grammar_rt.la)"
 # ★ WHAT THIS CLOSES. grammar.la:68 named "the round-trip standard glyphdag.la
 # asserts: build(GDECOMP P) equiv P". glyphdag.la contains ZERO occurrences of
