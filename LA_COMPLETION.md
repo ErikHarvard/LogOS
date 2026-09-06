@@ -3,8 +3,23 @@
 Everything still required for the language to be complete **by Erik's own stated
 criteria**, ordered so that each tier unblocks the next. Assembled from: five
 Fable sweeps of the codices, the phonetic/glyphic parity audit, the
-meta-programming audit, the dyad/meta-sigil audit, ROADMAP's 114 open and 14
-partial items, and the defects found by building.
+meta-programming audit, the dyad/meta-sigil audit, ROADMAP's **113 open and 14
+partial** items *(snapshot, 2026-09-06 — see the note below)*, and the defects
+found by building.
+
+> ★ **That pair of numbers is a SNAPSHOT, not a live count, and it has already
+> drifted once.** Written `114 open and 14 partial` in `a9e27e8` (2026-08-27),
+> where it was **exactly correct** — ROADMAP held 114 and 14 that day. It is now
+> **113 and 14**: the open count moved, the partial count did not. So this was
+> never a wrong number, it is a **number a human must keep true**, which is the
+> antipattern this project retired once already (the incbin gate's `CI_N >= 2`
+> guard, replaced by an extractor self-test in `c60cbf0`).
+> **Derive it, do not maintain it:**
+> `grep -cE '^[[:space:]]*- \[ \]' ROADMAP.md` → 113 · `-\[~\]` → 14.
+> **Owed:** a gate asserting the figures in this line equal those two greps, with
+> the red path being to change either file's item count without updating the
+> other. Not added today — `build.sh` is mid-run and bash reads a script lazily,
+> so editing it under a live build can corrupt the run.
 
 **Every item carries the gate that would prove it, and its white-paper
 counterpart.** The paper and the language must land together: an item is not
