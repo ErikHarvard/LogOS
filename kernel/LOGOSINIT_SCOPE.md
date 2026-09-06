@@ -293,11 +293,41 @@ The append invariant held exactly as §3.3(b) hoped: `RT_REAP` landed at the old
 is unchanged** — so the K6b shift, which once broke the self-host fixed point,
 did not recur.
 
-### D-INIT.2 — `initmetal.la`: the supervision loop
+### D-INIT.2 — `initmetal.la`: the supervision loop — **WRITTEN, awaiting D-INIT.1's runtime**
 An LA init: spawn a declared service set, then loop `reap` → identify → decide.
 Terminates when the declared set is complete. Structurally the sibling of
 `logosinit.la`'s `DRAIN`/`SUPERVISE`, with `reap` where `reapnb` was and the
 task table where the process table was.
+
+★ **A design problem the scope did not anticipate: `spawn` returns nothing, so
+nothing tells LA which slot a service got.** `reap` hands back a TCB *index*;
+without a mapping, a supervisor knows something died but not *what*. The mapping
+is recoverable, but only because two allocation policies happen to compose:
+
+- `rt_reap` returns the **lowest dead** index (it scans upward from 0);
+- `rt_spawn` takes the **lowest free** index (`.findfree` scans upward from 0);
+- a dead-but-unreaped slot is `STATE=2`, which is **not free**.
+
+So reaping index *k* frees *k*, every slot below *k* is then alive or
+dead-unreaped, and *k* is the lowest free slot — the very next `spawn` lands
+there. Hence the discipline the loop is built on:
+
+> **Reap one, respawn one, in that order, with nothing in between.**
+
+Reap twice before respawning and it breaks: the second reap frees a lower slot
+and the respawn lands there instead, silently rebinding one service's name to
+another's task. The gate must therefore assert *identity*, not just liveness —
+each restarted service printing its **own** name, so a scrambled mapping shows
+up as the wrong name rather than as a still-green "something restarted".
+
+**Recommended for track A (who owns the runtime), not required:** have
+`rt_spawn` return its index. That makes the mapping explicit instead of derived
+from two coupled policies a future scheduler change could silently decouple —
+and a scheduler that allocated, say, round-robin rather than lowest-free would
+break this invariant with no test failing anywhere else. `spawn`'s return value
+is documented as ignored and every existing caller (`task_pingpong.la`,
+`ipc2.la`) discards it through `SEQ`, so the change is small. Until then the
+invariant is load-bearing and the gate asserts it.
 
 ### D-INIT.3 — respawn with a bounded restart policy
 A service that exits is restarted; a service that keeps exiting is given up on

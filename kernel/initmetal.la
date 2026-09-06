@@ -1,0 +1,108 @@
+# ═══════════════════════════════════════════════════════════════════
+#  D-INIT.2 — initmetal.la: the supervision loop on the sovereign kernel.
+#
+#  The on-metal sibling of logosinit.la. Where that one is a Linux PID-1
+#  (fork/execve/signalfd/reapnb), this supervises TASKS on the LogOS kernel
+#  with the four primitives the metal actually has: spawn, yield, reap, print.
+#
+#  ★ SCOPE, STATED BECAUSE OMITTING IT WOULD ITSELF BREAK b_τ ≡ f_τ:
+#    this supervises TASKS IN ONE ADDRESS SPACE, not fault-isolated processes.
+#    A service that FAULTS still halts the machine through K2's diagnosed halt;
+#    only a service that RETURNS is supervised here. Fault-contained services
+#    need per-task fault attribution in the IDT and a kernel process table —
+#    a separate and much larger brick (LOGOSINIT_SCOPE.md D-INIT.4).
+#
+#  ── THE IDENTITY INVARIANT ────────────────────────────────────────────────
+#  reap() returns a TCB *index*, but spawn() returns nothing, so nothing tells
+#  LA which index a service was given. The mapping is recovered from two
+#  allocation policies that happen to compose:
+#
+#     rt_reap  returns the LOWEST dead index (it scans upward from 0)
+#     rt_spawn takes  the LOWEST free index (.findfree scans upward from 0)
+#
+#  A dead-but-unreaped slot is STATE=2, which is NOT free — so a reap of index
+#  k frees k, and every slot below k is then alive (STATE=1) or dead (STATE=2).
+#  Therefore k is the lowest free slot, and the very next spawn lands in k.
+#
+#     ⇒ REAP ONE, RESPAWN ONE, IN THAT ORDER, WITH NOTHING BETWEEN.
+#
+#  Reap twice before respawning and the mapping breaks: the second reap frees a
+#  lower slot, and the respawn lands there instead. The loop below is written to
+#  respect this and the gate asserts the identity survives (each service prints
+#  its OWN name after restart — a scrambled mapping shows up as the wrong name).
+#
+#  ★ RECOMMENDED, NOT REQUIRED (a note for track A, who owns the runtime):
+#    having rt_spawn RETURN its index would make this mapping explicit instead
+#    of derived from two coupled policies that a future scheduler change could
+#    silently decouple. spawn's return value is documented as ignored and every
+#    existing caller discards it through SEQ, so the change looks cheap. Until
+#    then the invariant above is load-bearing and is asserted by the gate.
+#
+#  ── THE RESTART POLICY IS DECLARED AND ENFORCED ───────────────────────────
+#  BUDGET is the total number of restarts this init will perform. It is not
+#  decoration: when it is exhausted the init stops restarting and lets the
+#  system quiesce. A supervisor whose declared policy and actual behaviour
+#  differ is exactly the heterological element the project refuses.
+#
+#  ⚠ THIS FILE HAS NEVER BEEN EXECUTED. It calls reap(), whose runtime half is
+#    PARKED (track A owns native_codegen3*; see LOGOSINIT_SCOPE.md D-INIT.1), so
+#    it cannot compile in this tree yet. It is committed for the identity
+#    invariant above, which is the real finding — not as working code. Nothing
+#    here is witnessed. Do not wire it into a gate until it has been run.
+#
+#  Native-only (spawn/yield/reap are runtime task-table operations).
+# ═══════════════════════════════════════════════════════════════════
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph SEQ = la a. la b. b
+
+# ── Scott-encoded list, for the declared service table ──
+glyph NIL  = la c. la n. n("!")
+glyph CONS = la h. la t. la c. la n. c(h)(t)
+
+# NTH(list)(i) — 0-based. Out of range is a LOUD halt, never a silent default:
+# a supervisor that cannot identify a service must not guess which to restart.
+glyph NTH = Z(la self. la l. la i.
+    l(la h. la t. IF(int_eq(i)(0))(la _. h)(la _. self(t)(sub(i)(1))))
+     (la _. error("initmetal: no service at that index — the identity invariant broke")))
+
+# ── THE DECLARED SERVICE SET. This list IS the system: b_τ ≡ f_τ. ──
+# Each service is a thunk that announces itself and returns (a return is the
+# only death this init supervises — see the scope note above).
+glyph SERVICE = la nm. la _. print(concat("svc ")(nm))
+
+glyph SERVICES = CONS(SERVICE("alpha"))(CONS(SERVICE("beta"))(CONS(SERVICE("gamma"))(NIL)))
+glyph NSERVICES = 3
+glyph BUDGET    = 4
+
+# START — spawn the declared set in order, so service i lands in TCB slot i+1.
+glyph START = Z(la self. la i.
+    IF(lt(i)(NSERVICES))
+        (la _. SEQ(spawn(NTH(SERVICES)(i)))(self(add(i)(1))))
+        (la _. "started"))
+
+# SUPERVISE(budget) — the loop. reap tells us what happened; we respond.
+#   -1  no task left at all      -> the system has quiesced; report and stop
+#    0  services live, none dead -> yield, let them run
+#    k  service k died           -> restart it IMMEDIATELY (the invariant),
+#                                   or, with the budget spent, let it stay down
+glyph SUPERVISE = Z(la self. la budget.
+    (la r.
+      IF(int_eq(r)(sub(0)(1)))
+        (la _. print(concat("init: quiesced, restarts spent=")(int_to_str(sub(BUDGET)(budget)))))
+        (la _. IF(int_eq(r)(0))
+          (la _. SEQ(yield("!"))(self(budget)))
+          (la _. IF(lt(0)(budget))
+            (la _. SEQ(print(concat("init: restarting svc at slot ")(int_to_str(r))))(
+                   SEQ(spawn(NTH(SERVICES)(sub(r)(1))))(
+                   self(sub(budget)(1)))))
+            (la _. SEQ(print(concat("init: budget spent, leaving down slot ")(int_to_str(r))))(
+                   self(budget)))))))
+    (reap("!")))
+
+glyph MAIN =
+    SEQ(print("LogOS init (metal): starting declared services."))(
+    SEQ(START(0))(
+    SEQ(yield("!"))(
+        SUPERVISE(BUDGET))))
