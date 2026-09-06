@@ -509,6 +509,27 @@ every item below cites the ruling rather than inferring one.
 
 ---
 
+- `[ ]` **★ LEDGER ROW — Constant-time execution: `[A]` not held.** The paper's
+  own ledger, and §XIII states it plainly: *"no signature scheme, and none of
+  the modules IS constant-time. Three of their security properties are carried
+  by discipline — a convention."* The paper also draws the distinction that
+  matters here: *"The third differs in kind from the first two. Missing
+  components can be added; not constant-time is a property"* — you cannot bolt
+  it on afterwards. Seven crypto modules pass published vectors `[W]`; none is
+  timing-safe. **Gate:** for each module, execution time over two input classes
+  that differ only in secret bytes must not separate. **Red path:** feed it a
+  deliberately data-dependent branch and the timing gate must fire. A discipline
+  carried by convention is precisely what this list exists to convert into a
+  gate.
+
+- `[ ]` **★ LEDGER ROW — Identity Adequacy: three collisions open `[A]`.**
+  Criterion 6 of the paper's own nine, unmet: monosemy holds except for three
+  κ-collisions. `Bad/Grief` is one and is tracked separately (1 bit, open); the
+  other two are named nowhere in this list. **Owed first:** enumerate all three
+  from the DAG rather than from the paper's prose — a count in prose is the
+  defect class this file exists to catch. Then one gate per collision, each able
+  to go red by re-introducing the collision it closed.
+
 ## TIER 2 — THE THREE REGISTERS (complete the trimodal identity)
 
 The claim is `G^vis ≡ G^phon ≡ G^comp ≡ C`. Identity was enforced in κ and
@@ -773,6 +794,16 @@ registers. `trimono.la` now gates all three. What remains:
   **Do not build this before the criterion exists.** It is the same shape as
   self-invocation in TIER 4: code written first would be unfalsifiable.
 
+- `[ ]` **★ LEDGER ROW — Lexical depth D: computable `[W]`, use-gating `[A]`.**
+  The ledger splits this row in two and only half is witnessed: depth IS
+  computable from the DAG, but nothing gates depth against USE. The claim the
+  gate would pay for is that a concept's depth predicts something about how it
+  is used, not merely that a number can be derived. **Owed first, before code:**
+  say what use-gating asserts. "Depth correlates with use" is not a gate unless
+  a value exists that fails it — a candidate red path is that shuffling the
+  depth assignment across the lexicon must break the relation; if a shuffled
+  assignment scores the same, the measure is reading nothing.
+
 - `[ ]` **Acquisition** — the codex never gives a syllabus, glyph sequence or
   acquisition method for LA; its one acquisition claim is "explicitly labeled as
   untested" (ROADMAP:1213), and Erik intends children to learn it. Buildable
@@ -905,6 +936,49 @@ registers. `trimono.la` now gates all three. What remains:
   begin its own recursion rather than be started, and what gate could go red if
   it did not? Spec first — this is the one item on the list where writing code
   before the criterion exists would produce something unfalsifiable.
+  ★ **RULED BOUNDED, 2026-09-06 (Erik).** The system re-invoking itself from an
+  internal condition counts; "no external trigger ever" hits the bootstrap wall
+  and is not the target. The paper's own ledger already agrees — its row reads
+  *"Self-invocation [A] bounded target stated in advance"* — so the prose
+  ("not built; the deepest gap") and the ledger disagree with each other.
+  ★ **AND IT MAY ALREADY BE MET.** `autopoiesis.la` is gated at `build.sh:3898`:
+  *"Every prior generation of LogOS was launched by an outside hand.
+  autopoiesis.la closes that gap"* — each generation reads its number from the
+  medium, `copy_self`s a byte-identical successor, `fork`+`execve`s it, with a
+  **generation cap of 3** (the bound, explicit) and the gate asserting
+  generations 0..3 each spoke in order. No recursion combinator; the loop IS the
+  process lineage. **The open question is scope, not existence:** the module's
+  own header notes each generation is byte-identical (`≡` per generation) but
+  the succession is a chain of `=` productions — a lineage that begins its own
+  recursion, not one being re-invoking itself. Decide whether that satisfies the
+  bounded target before building anything new. This is the discourse split
+  again: prose says unbuilt, gate says otherwise, and the honest move is to
+  narrow the claim rather than pick a winner.
+
+- `[ ]` **★ LEDGER ROW — Meta-autontopoiesis (state): `[A]` loop not closed
+  unassisted.** Autontopoiesis is the paper's term for *"the continuous
+  condition of a system producing the means of its own production"* (§, and
+  the Neologicon: auto + onto + poiesis, the ongoing condition AFTER genesis).
+  The ledger's verdict is precise and is the whole item: **machinery built; loop
+  not closed unassisted.** Every piece exists — self-compilation, self-
+  modification, the coinage organ, `autopoiesis.la`'s lineage — and a hand still
+  closes the circuit. **Gate:** the system runs a full produce-its-own-means
+  cycle with no external invocation between start and end, and the gate names
+  which hand it removed. **Red path:** re-insert that hand and the gate must go
+  red. Distinct from self-invocation above: that one asks whether it can BEGIN
+  itself, this asks whether it can KEEP itself going.
+
+- `[ ]` **★ LEDGER ROW — Meta-Ontosemantic Closure: `SLACKS ≠ ""`, not met
+  `[A]`.** Criterion 9 of the nine, and the closure test is already written in
+  code: `glyph CLOSURE = la s. Str_eq(SLACKS(s))("")`. Closure holds when a
+  thing's slack is empty. The paper measures its OWN slack and publishes the
+  failure: *"compression debt. One overfull box. A labelling at the base.
+  `SLACKS(paper) ≠ ""`."* So the criterion is met by nothing yet, including the
+  document that states it. **Note what this is not:** it is not a wall. `CLOSURE`
+  exists, `SLACKS` exists, and the residue is enumerated — the work is emptying
+  it, item by item, not discovering whether it can be emptied. **Gate:** assert
+  `CLOSURE(x)` for a named x and let the red path be a deliberately re-introduced
+  slack entry.
 
 ## TIER 5 — BEYOND THE LANGUAGE (named, not chased)
 
