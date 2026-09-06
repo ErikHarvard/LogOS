@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LogOS Boot Screen</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #06060d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: Georgia, 'Times New Roman', serif;
+  overflow: hidden;
+  cursor: none;
+}
+.stage {
+  position: relative;
+  width: 480px;
+  height: 480px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+}
+.wordmark {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  margin-top: 180px;
+  opacity: 0;
+  transition: opacity 1.8s ease;
+}
+.wordmark.visible { opacity: 1; }
+.wordmark .name {
+  font-size: 52px;
+  font-weight: 400;
+  letter-spacing: 16px;
+  color: #eeeef8;
+  text-indent: 16px;
+}
+.wordmark .arche {
+  font-size: 16px;
+  letter-spacing: 6px;
+  color: #6a5a2a;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 1.2s ease 0.6s;
+}
+.wordmark.visible .arche { opacity: 1; }
+.wordmark .sub {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: #2a2a40;
+  margin-top: 12px;
+  font-family: monospace;
+  opacity: 0;
+  transition: opacity 1s ease 1.2s;
+}
+.wordmark.visible .sub { opacity: 1; }
+.replay {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #1a1a2a;
+  color: #6a5a2a;
+  border: 1px solid #2a2a3a;
+  padding: 8px 16px;
+  font-family: monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  z-index: 100;
+}
+.replay:hover { background: #2a2a3a; color: #c8a84b; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <canvas id="c" width="480" height="480"></canvas>
+  <div class="wordmark" id="wm">
+    <div class="name">LogOS</div>
+    <div class="arche">∃(∃) ≡ ∃</div>
+    <div class="sub">sovereign · autological · self-hosting</div>
+  </div>
+</div>
+<button class="replay" onclick="location.reload()">↺ replay</button>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 480, CX = W/2, CY = 200;
+const R = 68;
+const ORBIT = 54;
+
+let start = null;
+let thunderFired = false;
+let audioCtx = null;
+
+function thunder() {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const gain = audioCtx.createGain();
+  gain.connect(audioCtx.destination);
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(0.35, t + 0.08);
+  gain.gain.exponentialRampToValueAtTime(0.18, t + 0.4);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 2.2);
+
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2.5, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(180, t);
+  lp.frequency.exponentialRampToValueAtTime(60, t + 0.5);
+  lp.Q.value = 1.2;
+
+  const lp2 = audioCtx.createBiquadFilter();
+  lp2.type = 'lowpass';
+  lp2.frequency.value = 320;
+
+  const rumble = audioCtx.createOscillator();
+  rumble.type = 'sawtooth';
+  rumble.frequency.setValueAtTime(38, t);
+  rumble.frequency.exponentialRampToValueAtTime(22, t + 1.8);
+  const rg = audioCtx.createGain();
+  rg.gain.setValueAtTime(0.18, t);
+  rg.gain.exponentialRampToValueAtTime(0.001, t + 1.9);
+  rumble.connect(rg); rg.connect(lp2);
+
+  src.connect(lp); lp.connect(lp2); lp2.connect(gain);
+  src.start(t); rumble.start(t);
+  src.stop(t + 2.5); rumble.stop(t + 2.5);
+}
+
+function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+function easeOut(t) { return 1 - Math.pow(1-t, 3); }
+
+function draw(ts) {
+  if (!start) start = ts;
+  const elapsed = (ts - start) / 1000;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const PHASE1 = 1.0;
+  const PHASE2 = 5.0;
+  const PHASE3 = 6.0;
+  const PHASE4 = 8.5;
+
+  let angle = 0;
+  let separation = 1;
+  let masterAlpha = 1;
+  let merging = 0;
+  let circleAlpha = 0;
+  let pulseAlpha = 0;
+
+  if (elapsed < PHASE1) {
+    circleAlpha = easeOut(elapsed / PHASE1);
+    separation = 1;
+    angle = 0;
+  } else if (elapsed < PHASE2) {
+    circleAlpha = 1;
+    const p = (elapsed - PHASE1) / (PHASE2 - PHASE1);
+    angle = p * Math.PI * 1.5;
+    separation = 1;
+  } else if (elapsed < PHASE3) {
+    circleAlpha = 1;
+    const p = (elapsed - PHASE2) / (PHASE3 - PHASE2);
+    angle = Math.PI * 1.5 + p * Math.PI * 0.4;
+    separation = 1 - easeInOut(p);
+    merging = easeInOut(p);
+
+    if (!thunderFired && p > 0.05 && audioCtx) {
+      thunderFired = true;
+      thunder();
+    }
+  } else if (elapsed < PHASE4) {
+    const p = (elapsed - PHASE3) / (PHASE4 - PHASE3);
+    separation = 0;
+    merging = 1;
+    circleAlpha = 1;
+    pulseAlpha = easeOut(p);
+
+    if (p > 0.3) {
+      const wm = document.getElementById('wm');
+      wm.classList.add('visible');
+    }
+  } else {
+    separation = 0;
+    merging = 1;
+    circleAlpha = 1;
+    pulseAlpha = 1;
+  }
+
+  const lx = CX + Math.cos(angle + Math.PI) * ORBIT * separation;
+  const ly = CY + Math.sin(angle + Math.PI) * ORBIT * separation * 0.3;
+  const rx = CX + Math.cos(angle) * ORBIT * separation;
+  const ry = CY + Math.sin(angle) * ORBIT * separation * 0.3;
+
+  if (circleAlpha > 0) {
+    ctx.save();
+    ctx.globalAlpha = circleAlpha * 0.18;
+    const gOuter = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 1.8);
+    gOuter.addColorStop(0, '#c8a84b');
+    gOuter.addColorStop(1, 'transparent');
+    ctx.fillStyle = gOuter;
+    ctx.beginPath();
+    ctx.arc(CX, CY, R * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    const drawCircle = (x, y, alpha) => {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      const g = ctx.createRadialGradient(x, y, R * 0.2, x, y, R);
+      g.addColorStop(0, 'rgba(200,168,75,0.06)');
+      g.addColorStop(0.7, 'transparent');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#c8a84b';
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = alpha * (0.7 + 0.3 * (1 - separation));
+      ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    };
+
+    drawCircle(lx, ly, circleAlpha);
+    drawCircle(rx, ry, circleAlpha);
+
+    if (separation < 0.8) {
+      ctx.save();
+      ctx.globalAlpha = circleAlpha * (1 - separation) * 0.5;
+      ctx.strokeStyle = '#c8a84b';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([3, 6]);
+      ctx.beginPath();
+      ctx.arc(CX, CY, R * 1.02, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    if (merging > 0.5) {
+      ctx.save();
+      ctx.globalAlpha = (merging - 0.5) * 2 * circleAlpha;
+      ctx.font = `${44 + pulseAlpha * 4}px Georgia, serif`;
+      ctx.fillStyle = '#c8a84b';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('∃', CX, CY + 2);
+      ctx.restore();
+    }
+
+    if (pulseAlpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = pulseAlpha * 0.15;
+      ctx.strokeStyle = '#c8a84b';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.arc(CX, CY, R + 20 + pulseAlpha * 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  if (elapsed < PHASE4 + 2) {
+    requestAnimationFrame(draw);
+  }
+}
+
+document.body.addEventListener('click', () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}, { once: true });
+
+window.addEventListener('load', () => {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  requestAnimationFrame(draw);
+});
+</script>
+</body>
+</html>
