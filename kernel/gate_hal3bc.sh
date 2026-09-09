@@ -32,6 +32,13 @@ command -v qemu-system-x86_64 >/dev/null 2>&1 || { echo "SKIP  HAL.3bc: qemu abs
 # ★ CALL IT BARE, NEVER `X=$(boot ...)`. A value assigned inside a function
 # invoked through command substitution is set in a SUBSHELL and lost — the same
 # defect that once made gate_p1.sh unable to go GREEN.
+# ★ A BUDGET KILL IS NOT ONE NUMBER. `timeout N` yields 124, but `timeout -k`
+# yields 137 (SIGKILL) and a TERM path yields 143 — so asserting `= 124` makes
+# this branch stop matching on an invocation-shape change, and the red path goes
+# INERT AGAIN, which is the exact defect this gate was just repaired for. Accept
+# any budget kill and PRINT the value. (Caught by ~/logos-hexis.sh's
+# hardcoded-kill-code check, run against my own work before shipping.)
+killed() { case "${1:-}" in 124|137|143) return 0 ;; *) return 1 ;; esac; }
 boot() {  # $1 = elf, $2 = extra qemu args ("" for no disk)
     _bt=$(mktemp)
     timeout 60 qemu-system-x86_64 -kernel "$1" $2 -m 256 -serial stdio -display none \
@@ -56,8 +63,8 @@ boot kernel/kernel_hal3b.elf ""; F=$BOOT_OUT; F_RC=$BOOT_RC
 fseen=$(printf '%s' "$F" | tr '\n' '|' | head -c 180)
 if printf '%s' "$F" | grep -q 'EXCEPTION'; then
     echo "FAIL  HAL.3bc 2: the kernel still faults on a never-ready channel: $fseen"; ok=0
-elif [ "$F_RC" = 124 ]; then
-    echo "FAIL  HAL.3bc 2: the bounded driver printed a diagnosis but NEVER TERMINATED (rc=124): $fseen"; ok=0
+elif killed "$F_RC"; then
+    echo "FAIL  HAL.3bc 2: the bounded driver printed a diagnosis but NEVER TERMINATED (rc=$F_RC): $fseen"; ok=0
 elif printf '%s' "$F" | grep -qF 'ata3b dead' && printf '%s' "$F" | grep -q 'ata3b .* timeout st='; then
     echo "PASS  HAL.3bc 2: a never-ready channel is diagnosed and the kernel exits cleanly — $(printf '%s' "$F" | grep -o 'ata3b [a-z ]*timeout st=[0-9]*')"
 else
@@ -97,8 +104,8 @@ if [ -x ./kernel/build_hal3bc_ctrl.sh ] && [ -f kernel/ata3b_ctrl.la ]; then
             echo "      driver, so this gate proves nothing. Check kernel/ata3b_ctrl.la still lacks its fuel."; ok=0
         elif printf '%s' "$C" | grep -q 'EXCEPTION'; then
             echo "      red-path OK (crash): the UNBOUNDED control dies on the same input ($cseen) — the bounds are load-bearing"
-        elif [ "$C_RC" = 124 ]; then
-            echo "      red-path OK (hang): the UNBOUNDED control never terminates on the same input (rc=124, $cseen) — the bounds are load-bearing"
+        elif killed "$C_RC"; then
+            echo "      red-path OK (hang): the UNBOUNDED control never terminates on the same input (rc=$C_RC, $cseen) — the bounds are load-bearing"
         else
             echo "FAIL  HAL.3bc 3 [red-path]: the control neither diagnosed, crashed, nor hung (rc=$C_RC, $cseen)"; ok=0
         fi

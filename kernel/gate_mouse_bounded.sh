@@ -37,6 +37,13 @@ command -v qemu-system-x86_64 >/dev/null 2>&1 || { echo "SKIP  mouse_bounded: qe
 # ★ CALL IT BARE, NEVER `X=$(boot ...)`. A value assigned inside a function
 # invoked through command substitution is set in a SUBSHELL and lost — the same
 # defect that once made gate_p1.sh unable to go GREEN.
+# ★ A BUDGET KILL IS NOT ONE NUMBER. `timeout N` yields 124, but `timeout -k`
+# yields 137 (SIGKILL) and a TERM path yields 143 — so asserting `= 124` makes
+# this branch stop matching on an invocation-shape change, and the red path goes
+# INERT AGAIN, which is the exact defect this gate was just repaired for. Accept
+# any budget kill and PRINT the value. (Caught by ~/logos-hexis.sh's
+# hardcoded-kill-code check, run against my own work before shipping.)
+killed() { case "${1:-}" in 124|137|143) return 0 ;; *) return 1 ;; esac; }
 boot() {
     _bt=$(mktemp)
     timeout 45 qemu-system-x86_64 -kernel "$1" -m 256 -serial stdio -display none \
@@ -52,8 +59,8 @@ boot kernel/kernel_mouse_faulted.elf; F=$BOOT_OUT; F_RC=$BOOT_RC
 fseen=$(printf '%s' "$F" | tr '\n' '|' | head -c 160)
 if printf '%s' "$F" | grep -q 'EXCEPTION'; then
     echo "FAIL  mouse_bounded 1: the BOUNDED driver still faults on an unanswered wait: $fseen"; ok=0
-elif [ "$F_RC" = 124 ]; then
-    echo "FAIL  mouse_bounded 1: the BOUNDED driver printed a diagnosis but NEVER TERMINATED (rc=124): $fseen"; ok=0
+elif killed "$F_RC"; then
+    echo "FAIL  mouse_bounded 1: the BOUNDED driver printed a diagnosis but NEVER TERMINATED (rc=$F_RC): $fseen"; ok=0
 elif printf '%s' "$F" | grep -qF 'mouse dead' && printf '%s' "$F" | grep -q 'mouse ack timeout st='; then
     echo "PASS  mouse_bounded 1: an unanswered ACK is diagnosed and the kernel exits cleanly — $(printf '%s' "$F" | grep -o 'mouse ack timeout st=[0-9]*')"
 else
@@ -84,8 +91,8 @@ if [ -x ./kernel/build_mouse_ctrl.sh ] && [ -f kernel/mouse_ctrl.la ]; then
             echo "FAIL  mouse_bounded 2 [red-path]: the control DIAGNOSED ($cseen) — it is not the unbounded driver, so this gate proves nothing"; ok=0
         elif printf '%s' "$C" | grep -q 'EXCEPTION'; then
             echo "      red-path OK (crash): the UNBOUNDED pre-fix driver dies on the same input ($cseen) — the bound is load-bearing"
-        elif [ "$C_RC" = 124 ]; then
-            echo "      red-path OK (hang): the UNBOUNDED pre-fix driver never terminates on the same input (rc=124, $cseen) — the bound is load-bearing"
+        elif killed "$C_RC"; then
+            echo "      red-path OK (hang): the UNBOUNDED pre-fix driver never terminates on the same input (rc=$C_RC, $cseen) — the bound is load-bearing"
         else
             echo "FAIL  mouse_bounded 2 [red-path]: the control neither diagnosed, crashed, nor hung (rc=$C_RC, $cseen)"; ok=0
         fi

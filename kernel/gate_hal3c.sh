@@ -39,6 +39,13 @@ command -v qemu-system-x86_64 >/dev/null 2>&1 || { echo "SKIP  HAL.3c: qemu abse
 # ★ CALL IT BARE, NEVER AS `X=$(boot ...)`. A value assigned inside a function
 # invoked through command substitution is set in a SUBSHELL and lost — the same
 # defect that once made gate_p1.sh unable to go GREEN.
+# ★ A BUDGET KILL IS NOT ONE NUMBER. `timeout N` yields 124, but `timeout -k`
+# yields 137 (SIGKILL) and a TERM path yields 143 — so asserting `= 124` makes
+# this branch stop matching on an invocation-shape change, and the red path goes
+# INERT AGAIN, which is the exact defect this gate was just repaired for. Accept
+# any budget kill and PRINT the value. (Caught by ~/logos-hexis.sh's
+# hardcoded-kill-code check, run against my own work before shipping.)
+killed() { case "${1:-}" in 124|137|143) return 0 ;; *) return 1 ;; esac; }
 boot() {  # $1 = elf, $2 = extra qemu args ("" for no disk)
     _bt=$(mktemp)
     timeout 60 qemu-system-x86_64 -kernel "$1" $2 -m 256 -serial stdio -display none \
@@ -64,11 +71,11 @@ boot kernel/kernel_hal3.elf ""; F=$BOOT_OUT; F_RC=$BOOT_RC
 fseen=$(printf '%s' "$F" | tr '\n' '|' | head -c 160)
 if printf '%s' "$F" | grep -q 'EXCEPTION'; then
     echo "FAIL  HAL.3c 2: the kernel still faults on a never-ready channel: $fseen"; ok=0
-elif [ "$F_RC" = 124 ]; then
+elif killed "$F_RC"; then
     # ★ The old check asserted the diagnosis and called it "exits cleanly"
     # without ever testing that it exited. A driver can print its timeout line
     # and then hang; that is a failure and it used to read as a PASS.
-    echo "FAIL  HAL.3c 2: the bounded driver printed a diagnosis but NEVER TERMINATED (rc=124): $fseen"; ok=0
+    echo "FAIL  HAL.3c 2: the bounded driver printed a diagnosis but NEVER TERMINATED (rc=$F_RC): $fseen"; ok=0
 elif printf '%s' "$F" | grep -qF 'ata drq timeout st=' && printf '%s' "$F" | grep -qF 'ata dead'; then
     echo "PASS  HAL.3c 2: a never-ready channel is DIAGNOSED and the kernel exits cleanly (rc=$F_RC) — $(printf '%s' "$F" | grep -o 'ata drq timeout st=[0-9]*')"
 else
@@ -100,8 +107,8 @@ if [ -x ./kernel/build_hal3c_ctrl.sh ] && [ -f kernel/ata_ctrl.la ]; then
             echo "      driver, so this gate proves nothing. Check kernel/ata_ctrl.la still lacks DRQFUEL."; ok=0
         elif printf '%s' "$C" | grep -q 'EXCEPTION'; then
             echo "      red-path OK (crash): the UNBOUNDED control dies on the same input ($cseen) — the bound is load-bearing"
-        elif [ "$C_RC" = 124 ]; then
-            echo "      red-path OK (hang): the UNBOUNDED control never terminates on the same input (rc=124, $cseen) — the bound is load-bearing"
+        elif killed "$C_RC"; then
+            echo "      red-path OK (hang): the UNBOUNDED control never terminates on the same input (rc=$C_RC, $cseen) — the bound is load-bearing"
         else
             echo "FAIL  HAL.3c 3 [red-path]: the control neither diagnosed, crashed, nor hung (rc=$C_RC, $cseen)"
             echo "      — it exited cleanly without the bound, which the unbounded driver cannot do."; ok=0
