@@ -172,8 +172,12 @@ scratchpad/
 .commit_all.sh
 .run_full_build.sh
 .fullbuild_run.sh
-.sx2b_build.sh
-.sx2b_rebuild.sh
+# ★ TRACKED 2026-09-09: these are the MEANS OF PRODUCTION for sx2b_app, not
+# artifacts. gate_selfext2b.sh guards its own rebuild on `[ -f .sx2b_build.sh ]`,
+# so while these were ignored a clean checkout could not even ATTEMPT the vessel
+# and the gate was unsatisfiable forever. The artifacts they PRODUCE stay ignored.
+!.sx2b_build.sh
+!.sx2b_rebuild.sh
 .fullbuild.log
 .sx2b_build.log
 .dirdiag.la
