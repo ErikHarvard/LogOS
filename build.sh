@@ -5452,6 +5452,23 @@ printf '%s\n' "$FT_H" | grep -qF "G1 grounding (every leaf one of the nine):T" \
     || { echo "FAIL  familytree G1: an ungrounded leaf — $(printf '%s' "$FT_H" | grep -o 'OFFENDER=[^ ]*')"; ok=0; }
 printf '%s\n' "$FT_H" | grep -qF "G2 distinct ↻ forms=8 expected 8:T" \
     || { echo "FAIL  familytree G2: unary census changed — $(printf '%s' "$FT_H" | grep -o 'G2 distinct[^|]*')"; ok=0; }
+# ★ G3 — OPERATOR COVERAGE (M11a-residue). The catalogue must CONTAIN all five
+# Theory operators ∂δγρ𝔄, so G1 and the G2 census range over them. It held only ρ
+# (as SR_ABOUT/OP_RHO) until 2026-09-09; the other four were exported first-class
+# glyphs that no gate in this block could see. Witness is PER-OPERATOR in rank
+# order, so the RED path NAMES the missing one instead of saying "something moved".
+# ⚠ Coverage is decided BY CANONICAL FORM, not by row name — ρ is found through
+# SR_ABOUT/OP_RHO. That is why the pre-fix reading was FFFTF and not FFFFF, and
+# that T is what proves this check is not a probe that always fails.
+# (Authored by Track B / ENTELECHEIA; red path re-derived here on Track A's base
+#  before landing — 21/TTTTT green, 17/FFFTF with the four rows removed.)
+grep -qF "G3 ops ∂δγρ𝔄 in catalogue=TTTTT" <<< "$FT_H" \
+    || { echo "FAIL  familytree G3: a Theory operator left the catalogue — $(printf '%s' "$FT_H" | grep -o 'G3 ops[^|]*') (order ∂δγρ𝔄)"; ok=0; }
+# The catalogue SIZE is asserted exactly, per this block's own rule that an exact
+# value is what lets a gate fail. G3 alone would still pass if a row were swapped
+# for another; the count alone would still pass if four wrong rows were added.
+grep -qF "FAMILYTREE catalogue=21 " <<< "$FT_H" \
+    || { echo "FAIL  familytree: catalogue size changed — $(printf '%s' "$FT_H" | grep -o 'FAMILYTREE catalogue=[0-9]*'), expected 21"; ok=0; }
 # ★ G2 is keyed on the CANONICAL FORM, never the glyph NAME. The catalogue contains
 # BOTH SR_ABOUT and OP_RHO and both are ↻(RECOGNITION) — one glyph, two names, an
 # identity Erik ruled INTENDED. A name-keyed census would count 9 and be WRONG.
@@ -5464,7 +5481,7 @@ cp familytree.la logos_source.la
 FT_V="$(./logos_secd 2>/dev/null)"
 [ "$FT_H" = "$FT_V" ] || { echo "FAIL  familytree: host != VM"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
-[ "$ok" -eq 1 ] && echo "PASS  familytree: every leaf of all 17 catalogue glyphs grounds in the nine primitives (RED path NAMES the offender); the unary census is keyed on κ so ρ ≡ SR_ABOUT counts ONCE; byte-identical host==VM. The >2-parent law is TYPE-ENFORCED, reported not gated" || exit 1
+[ "$ok" -eq 1 ] && echo "PASS  familytree: every leaf of all 21 catalogue glyphs grounds in the nine primitives (RED path NAMES the offender); all five Theory operators ∂δγρ𝔄 are IN the catalogue, matched by κ-form so ρ counts through SR_ABOUT; the unary census is keyed on κ so ρ ≡ SR_ABOUT counts ONCE; byte-identical host==VM. The >2-parent law is TYPE-ENFORCED, reported not gated" || exit 1
 
 say "LA arc item 2: the five operators ∂δγρ𝔄 as first-class glyphs (metaglyph.la)"
 ok=1

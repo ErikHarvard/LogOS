@@ -93,8 +93,12 @@ glyph CAT =
   CONS(PAIR("MODE_CONT")(MODE_CONT))(
   CONS(PAIR("MODE_MC")(MODE_MC))(
   CONS(PAIR("OP_RHO")(OP_RECOG))(
+  CONS(PAIR("OP_DIFF")(OP_DIFF))(
+  CONS(PAIR("OP_BOUND")(OP_BOUND))(
+  CONS(PAIR("OP_COMP")(OP_COMP))(
+  CONS(PAIR("OP_INTEG")(OP_INTEG))(
   CONS(PAIR("NU_STAR")(SYN(DIR(PRIM("LOVE"))(PRIM("RELATION")))(MC(PRIM("SELF")))))(
-  NIL)))))))))))))))))
+  NIL)))))))))))))))))))))
 
 # ── the nine primitives ──
 glyph IS9 = la n.
@@ -141,6 +145,19 @@ glyph NUNARY = LEN(UNARIES)
 # ONCE — which is the identity showing up as data rather than as an argument.
 glyph G2OK = BSTR(int_eq(NUNARY)(8))
 
+# ── G3 — OPERATOR COVERAGE (M11a-residue): all five Theory operators ∂δγρ𝔄 are IN
+#    the catalogue, looked up BY CANONICAL FORM, never by name — so ρ is found via
+#    SR_ABOUT/OP_RHO, the ρ ≡ SR_ABOUT identity showing up as COVERAGE as G2 makes
+#    it show up as a COUNT. Per-operator witness so a RED path NAMES which one left.
+glyph INCAT = la g. Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(str_eq(CANON(SND(h)))(CANON(g)))(la _. TRUE)(la _. self(t))))(CAT)
+glyph G3 = concat(BSTR(INCAT(OP_DIFF)))(
+           concat(BSTR(INCAT(OP_BOUND)))(
+           concat(BSTR(INCAT(OP_COMP)))(
+           concat(BSTR(INCAT(OP_RECOG)))(
+                  BSTR(INCAT(OP_INTEG))))))
+
 # ── R1 — DEPTH REPORT. NOT A GATE. Never fails the build. ──
 glyph DEPTHOF = Z(la self. la node.
     node (la nm. 0)
@@ -156,7 +173,8 @@ glyph MAIN = print(
     concat(" | G1 grounding (every leaf one of the nine):")(concat(G1OK)(
     concat(IF(str_eq(G1)(""))(la _. "")(la _. concat(" OFFENDER=")(G1)))(
     concat(" | G2 distinct ↻ forms=")(concat(int_to_str(NUNARY))(concat(" expected 8:")(concat(G2OK)(
+    concat(" | G3 ops ∂δγρ𝔄 in catalogue=")(concat(G3)(
     concat(" | R1 max lineage depth=")(concat(int_to_str(MAXD))(
     concat(" (REPORT ONLY — never fails the build)")(
     concat("\n>2-parent check DELIBERATELY NOT BUILT: unconstructible by the Scott encoding")(
-           " — the dyadic law is enforced by the DATA TYPE, which is stronger than a gate"))))))))))))))
+           " — the dyadic law is enforced by the DATA TYPE, which is stronger than a gate"))))))))))))))))
