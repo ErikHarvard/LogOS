@@ -1425,3 +1425,47 @@ input (~150 000×). Not a leak — the host has a GC, so that is live data — a
 risk on this machine (188 GB, 143 free), but it is the next constraint to bind if
 object sizes grow.
 
+## Slice 19 — the 12.4 GB is NOT a size effect, and the model fails its own control (2026-09-09)
+
+Slice 18 recorded *"the link peaked at 12.4 GB RSS for an 86 KB input (~150,000×)
+… the next constraint to bind if object sizes grow"* and filed it for later.
+Measured now, and **the framing was wrong**.
+
+`link_reloc.la`, peak RSS and wall time vs object size, 3 repeats per size:
+
+| object | RSS median | spread | time median | spread |
+|---|---|---|---|---|
+| 1,184 B | **36,444 KB** | 1.004× | 13.24 s | 1.035× |
+| 2,864 B | **41,348 KB** | 1.007× | 82.31 s | 1.043× |
+
+**RSS and TIME are not the same curve.** Size ×2.42 gives RSS ×1.13 — exponent
+**k = 0.14, nearly flat** — and time ×6.22 — **k = 2.07, quadratic**. Slice 18
+reported the 2h42m and the 12.4 GB in one sentence, which implied one cause.
+There are two.
+
+★ **AND THE CONTROL FAILS BY 193×.** Extrapolating RSS at k=0.14 to the recorded
+86 KB case predicts **0.06 GB**; the record says **12.4 GB**. ⇒ **The 150,000× is
+not a smooth scaling effect.** Small objects do not exercise whatever produces it:
+it is a **threshold or structural** effect — plausibly relocation count, section
+count, or a specific construct in `kernel/boot.o`. **Making inputs bigger will not
+find it. The next probe must vary object SHAPE, not object SIZE.**
+
+⚠ **This is a refutation, not a diagnosis.** It establishes what the cause is not.
+Two points cannot name it, and fitting a cause from two points is the exact
+two-point extrapolation retracted earlier the same day.
+
+⚠ **Sizes 512 and 2048 abandoned as infeasible** — at k=2.07 they project to ~10 h
+and ~163 h, and would have spent ~3 h recording `rc=124`. The two completed sizes
+answer the question that was asked.
+
+**Method, because the harness failed four times before yielding a single row, and
+every failure was in the instrument rather than the linker:**
+`pkill -f` killed the job it was launching (exit 144), taking the guard fix with
+it · the guard counted *shells* not binaries · `pgrep -c` prints `0` **and** exits
+1, so `|| echo 0` produced `"0\n0"` and the arithmetic died · and
+`/usr/bin/time`'s own stderr was redirected into `/dev/null`, so **the link
+succeeded and the row came back empty** — which would have landed as fifteen rows
+of blanks that look like data. Only a smoke test at the smallest size caught it.
+★ **RSS was the metric to trust under load** (spread 1.004×) because peak RSS is
+per-process; the time column was taken with a live front and underpins no claim.
+

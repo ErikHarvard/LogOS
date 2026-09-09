@@ -2119,11 +2119,15 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       ★ **The per-slice record is `LINKER.md`** (8 linker gates: `gate_link*.sh`).
       This entry summarises; that file is the evidence, and until 2026-09-09 the
       roadmap carried **no pointer to it at all**.
-      ⚠ **NEXT CONSTRAINT, measured and unfixed:** the kernel link peaked at
-      **12.4 GB RSS for an 86 KB input (~150,000×)** and took **2h42m**. Not a
-      leak — the host has a GC, so that is live data — and harmless on this
-      machine, but it is the limit that binds first as object sizes grow.
-      Characterising the scaling is claimed by Track B (2026-09-09).
+      ⚠ **NEXT CONSTRAINT — MEASURED 2026-09-09, and it is TIME, not memory.**
+      Slice 19: RSS scales at **k=0.14 (nearly flat)** while time scales at
+      **k=2.07 (quadratic)** — two different curves, so the 2h42m and the 12.4 GB
+      have different causes. ★ **Extrapolated RSS misses the recorded 12.4 GB by
+      193×**, so the memory spike is **not a size effect at all**: it is a
+      threshold/structural one that small objects do not exercise. **Growing
+      inputs will not reproduce it; varying object SHAPE might.** The constraint
+      that genuinely binds as objects grow is the **quadratic time**. See
+      `LINKER.md` slice 19.
       ⚠ **The canonical copy on `kernel-k1` still reads `[ ]` — unstarted.** That
       is stale by eighteen slices and by the kernel-seam result. Recorded on
       `~/logos-status.md` rather than edited there, per the cross-track rule.
