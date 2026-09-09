@@ -33,7 +33,8 @@
 # ── WHICH ENGINES, AND WHY NOT ALL OF THEM ──────────────────────────────────
 # chacha20/poly1305/aead run on the C host AND the native SECD VM (~2 min).
 # hmac/hkdf run on the C host ONLY. That is a measured decision, not an
-# oversight: hkdf's codegen leg alone costs 398 s, and the VM leg would add no
+# oversight: hkdf's codegen leg alone costs 398 s (2026-08-22; RE-MEASURED
+# 2026-09-09 at 1001 s — see THE HOST TIMEOUT below), and the VM leg would add no
 # information — hmac and hkdf are compositions of SHA-256, whose host==VM
 # agreement gate_sha256.sh already establishes, over concat/xor, whose
 # five-engine agreement the BITWISE gate already establishes. Stated rather
@@ -42,8 +43,39 @@ set -uo pipefail
 cd "$(dirname "$0")"
 ok=1
 
+# ── THE HOST TIMEOUT — raised 900 -> 1800 on 2026-09-09, and why ────────────
+#  It was 900 s and hkdf now needs 1001 s, so this gate failed EVERY build with
+#  `FAIL hkdf C host: []`. The empty [] is the timeout's own signature: the
+#  capture below is empty when `timeout` kills the process, so a budget overrun
+#  is indistinguishable from a wrong answer at the point of failure. hkdf was
+#  never wrong — measured untimed, it prints the expected E_HKDF and exits 0.
+#
+#  ★ MEASURED, AND DECOMPOSED, so the next person re-derives instead of guessing
+#  (`/usr/bin/time -v`, isolated dirs, load/core 0.41 on 24 cores — untainted):
+#      documented 2026-08-22 (af730ee)        398.00 s
+#      Aug-22 host + Aug-22 hkdf.la           738.66 s   <- NEITHER had changed
+#      current host + Aug-22 hkdf.la          970.63 s   <- interpreter only
+#      current host + current hkdf.la        1001.02 s   <- source only
+#  Of the 603 s gap: 341 s (56%) the 398 s figure never reproduced on this
+#  hardware AT ALL; 232 s (38%) commit adc80a6 "str_at: O(1) indexed access",
+#  which made hkdf 31% slower on the C host and is a real interpreter
+#  regression affecting every LA compile, not just this gate; 30 s (5%) hkdf.la's
+#  own growth. Runs 2 and 3 differ in tiny_host ONLY (md5-verified).
+#
+#  ⚠ 1800 IS A HANG-CATCHER, NOT A PERFORMANCE BUDGET. It is 1.8x the measured
+#  1001 s, chosen for headroom on a loaded machine, not because 1800 s is
+#  acceptable. Two things this does NOT fix and must not be read as fixing:
+#  the adc80a6 regression is unaddressed, and whether a ~17-minute leg belongs
+#  in build.sh's serial abort chain at all is a separate open question. If this
+#  needs raising again, RE-MEASURE and update the table — a budget raised
+#  without a measurement is how it drifted 2.5x from its documented cost in the
+#  first place.
+#
+#  The VM timeout below is deliberately left at 900: its legs (chacha20,
+#  poly1305, aead) completed inside 900 s in the 2026-09-09 run, so raising it
+#  would be guessing at a budget nobody has measured — the exact defect above.
 check_host () {   # name expected
-    local out; out="$(timeout 900 ./tiny_host "$1.la" 2>&1 | head -1)"
+    local out; out="$(timeout 1800 ./tiny_host "$1.la" 2>&1 | head -1)"
     [ "$out" = "$2" ] || { echo "FAIL  $1 C host: [$out]"; ok=0; return 1; }
     return 0
 }
