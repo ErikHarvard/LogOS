@@ -2450,6 +2450,61 @@ PYC
 fi
 [ "$ok" -eq 1 ] || exit 1
 
+# ── boot.asm ARM COVERAGE — the cheap half of gate_bootelf.sh, WIRED ─────────
+#    Track C, 2026-09-09. This is the guard for FREEZE_II_FINDINGS.md Q0b: the
+#    scale gate came back GREEN having assembled NONE of the three `equ` sites
+#    it exists to cover, because they sit in mutually exclusive %elifdef arms
+#    (kernel/boot.asm:364 %ifdef K6A … :610 %elifdef HH1 … :676 %elifdef HH2)
+#    and it assembled with no -D. The green was true and hollow.
+#
+#    ★ WHAT THIS BLOCK IS, EXACTLY — and it is deliberately not the whole gate.
+#    It runs `gate_bootelf.sh --coverage-only`, which needs nothing but fresh
+#    nasm and the tracked boot source: per arm, does the arm's source really
+#    carry the sites that arm exists to cover; does the no-define configuration
+#    carry NONE of them (the control, so the per-arm claims cannot pass
+#    vacuously); and does the arm set cover all three between them. MEASURED
+#    0.048 s. Red-tested BOTH ways before wiring: renaming a site away gives
+#    MISSING + UNCOVERED → RED, and making the no-define build carry a site
+#    fires UNEXPECTED → RED.
+#
+#    ★ WHAT IT IS NOT, AND WHY THAT IS NOT HEDGING. It never runs
+#    ld(ours)==ld(nasm) and never looks at asm.la's output, so it says NOTHING
+#    about whether the assembler is correct — its own PASS line says so. The
+#    scale comparison needs asm.la's per-arm objects, and those cost ~62 min to
+#    derive (phase 2 ~22 min + VM 26/30/39 min) and are gitignored, so a fresh
+#    tree has none. The three ways to wire that are all bad: deriving in-build
+#    is +62 min per build; skipping when the objects are absent is
+#    green-by-absence, the exact defect the six selfext blocks below were
+#    repaired out of; and committing the objects with a provenance stamp is
+#    honest but reds the build on any asm.la or boot.asm change until someone
+#    spends 62 minutes — a 63rd hard abort firing on unrelated churn. So the
+#    scale half stays on demand, and the verdict it produced on 2026-09-09
+#    (GREEN on all three arms, against real asm.la objects, red-tested on those
+#    same objects) is recorded in BOOTELF.md rather than re-derived per build.
+#    Wiring the cheap half is not a substitute for that; it is the part that can
+#    honestly run every time.
+say "boot.asm arm coverage: the three equ sites are actually assembled (gate_bootelf.sh --coverage-only)"
+if ! command -v nasm >/dev/null 2>&1; then
+    echo "SKIP  bootelf-coverage: nasm not installed"
+else
+    BE_S=.bootelf_cov
+    rm -rf "$BE_S"; mkdir -p "$BE_S" || { echo "FAIL  bootelf-coverage: cannot stage $BE_S"; exit 1; }
+    cp kernel/boot.asm "$BE_S/boot_base.asm" || { echo "FAIL  bootelf-coverage: kernel/boot.asm unreadable"; exit 1; }
+    for BE_F in idt.asm timer.asm kbdirq.asm; do
+        cp "kernel/$BE_F" "$BE_S/" || { echo "FAIL  bootelf-coverage: kernel/$BE_F unreadable"; exit 1; }
+    done
+    # entry.inc and the incbin target are build products, generated here so both
+    # arms of the comparison read one deterministic value; nothing under kernel/
+    # is written.
+    printf 'LA_ENTRY equ 0x400000\n' > "$BE_S/entry.inc"
+    printf 'STUB' > "$BE_S/native_codegen3_out"
+    # A gate FILE is never optional: deleting it must not leave this GREEN.
+    [ -x ./gate_bootelf.sh ] \
+      || { echo "FAIL  bootelf-coverage: gate_bootelf.sh is missing or not executable — a gate file is never optional, so this is a broken checkout rather than a configuration"; exit 1; }
+    ./gate_bootelf.sh --coverage-only "$BE_S" || exit 1
+    rm -rf "$BE_S" .elfobjgate/_bootelfgate
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes

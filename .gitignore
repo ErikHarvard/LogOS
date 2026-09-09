@@ -157,6 +157,7 @@ watched.la
 # ── scratch from a long uncommitted stretch (2026-08-28) ─────────────────
 # Per-investigation dirs, commit-message drafts, build logs, backups.
 .bootelf_fix/
+.bootelf_cov/
 .bootrun/
 .elfobjgate/
 .equfix/

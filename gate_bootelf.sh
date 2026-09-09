@@ -73,6 +73,19 @@
 # %define-prepended file produce BYTE-IDENTICAL objects.)
 #
 # USAGE
+#   ./gate_bootelf.sh --coverage-only <bootsrc-dir>
+#     The CHEAP HALF, ~0.2 s, wired into build.sh. It asserts only what fresh
+#     nasm can settle: that each arm's source really does carry the equ sites
+#     that arm exists to cover, that the no-define configuration carries NONE of
+#     them, and that the arm set covers all of them between them. That IS the
+#     Q0b guard — it is what catches the chain being restructured, an arm
+#     renamed, or a site removed, any of which silently returns this gate to
+#     assembling a configuration in which the defect cannot exist.
+#     ★ IT IS NOT THE SCALE COMPARISON. It never runs ld(ours)==ld(nasm) and
+#     never touches asm.la's output, so it can say nothing about whether the
+#     assembler is correct. Read its PASS line as "the arms still carry their
+#     constructs", never as "the nasm-free object step holds".
+#
 #   ./gate_bootelf.sh <bootsrc-dir> <objdir>
 #     <bootsrc-dir>  a dir holding the frozen boot source as `boot_base.asm`
 #                    plus its four %includes (entry.inc idt.asm timer.asm
@@ -105,25 +118,34 @@ sites_for() {
 # hollow green.
 REQUIRED_SITES="hh_msg_len hh2_ok_len hh2_bad_len"
 
+MODE=full
+if [ "${1:-}" = "--coverage-only" ]; then MODE=coverage; shift; fi
 DIR="${1:-}"; OBJDIR="${2:-}"
-[ -n "$DIR" ] && [ -n "$OBJDIR" ] || die "usage: $0 <bootsrc-dir> <objdir>"
+if [ "$MODE" = coverage ]; then
+    [ -n "$DIR" ] || die "usage: $0 --coverage-only <bootsrc-dir>"
+    OBJDIR=""
+else
+    [ -n "$DIR" ] && [ -n "$OBJDIR" ] || die "usage: $0 <bootsrc-dir> <objdir>"
+    [ -d "$OBJDIR" ] || die "no object dir at '$OBJDIR'"
+fi
 [ -d "$DIR" ]    || die "no bootsrc dir at '$DIR'"
-[ -d "$OBJDIR" ] || die "no object dir at '$OBJDIR'"
 [ -s "$DIR/boot_base.asm" ] || die "'$DIR' has no boot_base.asm (the frozen boot.asm)"
 for inc in entry.inc idt.asm timer.asm kbdirq.asm native_codegen3_out; do
     [ -e "$DIR/$inc" ] || die "'$DIR' is missing boot.asm dependency: $inc"
 done
-for arm in $ARMS; do
-    [ -s "$OBJDIR/ours_$arm.o" ] \
-      || die "no ours_$arm.o in '$OBJDIR' (produce it via BOOTELF.md's VM cycle on the $arm source, isolated session) — an uncovered arm is a FAIL, never a skip"
-done
+if [ "$MODE" = full ]; then
+    for arm in $ARMS; do
+        [ -s "$OBJDIR/ours_$arm.o" ] \
+          || die "no ours_$arm.o in '$OBJDIR' (produce it via BOOTELF.md's VM cycle on the $arm source, isolated session) — an uncovered arm is a FAIL, never a skip"
+    done
+fi
 command -v nasm    >/dev/null || die "nasm not found"
-command -v ld      >/dev/null || die "ld not found"
+[ "$MODE" = full ] && { command -v ld >/dev/null || die "ld not found"; }
 command -v readelf >/dev/null || die "readelf not found"
 command -v python3 >/dev/null || die "python3 not found"
 
 DIR="$(cd "$DIR" && pwd)"
-OBJDIR="$(cd "$OBJDIR" && pwd)"
+[ "$MODE" = full ] && OBJDIR="$(cd "$OBJDIR" && pwd)"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 G="$ROOT/.elfobjgate/_bootelfgate"
 rm -rf "$G"; mkdir -p "$G" || die "cannot make scratch $G"
@@ -160,7 +182,9 @@ for arm in $ARMS; do
           || die "cannot write asm_in.asm for $arm"
     fi
     cp asm_in.asm "asm_in_$arm.asm"
-    cp "$OBJDIR/ours_$arm.o" boot_ours.o || die "cannot stage ours_$arm.o"
+    if [ "$MODE" = full ]; then
+        cp "$OBJDIR/ours_$arm.o" boot_ours.o || die "cannot stage ours_$arm.o"
+    fi
 
     nasm -f elf64 asm_in.asm -o boot_ref.o 2>"nasm_$arm.err" \
         || { sed 's/^/  nasm: /' "nasm_$arm.err" >&2; die "nasm failed on the $arm boot.asm"; }
@@ -172,7 +196,15 @@ for arm in $ARMS; do
     if [ -n "$want" ]; then
         echo "== coverage: equ sites this arm must carry =="
         for s in $want; do
-            if symnames boot_ref.o | grep -qx "$s" && symnames boot_ours.o | grep -qx "$s"; then
+            if [ "$MODE" = coverage ]; then
+                if symnames boot_ref.o | grep -qx "$s"; then
+                    echo "  ok   $s present (nasm side; no object comparison in --coverage-only)"
+                    covered="$covered $s"
+                else
+                    echo "  MISSING $s — the arm assembled a configuration in which the construct does not exist (hollow green); ref=0"
+                    fail=1
+                fi
+            elif symnames boot_ref.o | grep -qx "$s" && symnames boot_ours.o | grep -qx "$s"; then
                 echo "  ok   $s present in BOTH ref and ours"
                 covered="$covered $s"
             else
@@ -192,6 +224,11 @@ for arm in $ARMS; do
             fi
         done
         [ "$ctl" = 0 ] && echo "  ok   none of: $REQUIRED_SITES (this is the hollow configuration, kept as the control)"
+    fi
+
+    if [ "$MODE" = coverage ]; then
+        mv boot_ref.o "ref_$arm.o"
+        continue
     fi
 
     echo "== section headers (type/flags/align/size — semantics, not layout) =="
@@ -252,6 +289,14 @@ for s in $REQUIRED_SITES; do
 done
 
 echo
-[ "$fail" = 0 ] && echo "---- gate_bootelf: GREEN (arms: $ARMS; sites: $REQUIRED_SITES) ----" \
-                || echo "---- gate_bootelf: RED ----"
+if [ "$fail" != 0 ]; then
+    echo "---- gate_bootelf: RED ----"
+elif [ "$MODE" = coverage ]; then
+    echo "---- gate_bootelf: GREEN — ARM COVERAGE ONLY (arms: $ARMS; sites: $REQUIRED_SITES) ----"
+    echo "     NOT the scale proof: ld(ours)==ld(nasm) was never run and asm.la's"
+    echo "     output was never examined. This says the arms still carry their"
+    echo "     constructs, nothing about whether the assembler is correct."
+else
+    echo "---- gate_bootelf: GREEN (arms: $ARMS; sites: $REQUIRED_SITES) ----"
+fi
 exit $fail
