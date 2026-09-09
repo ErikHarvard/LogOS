@@ -2111,10 +2111,22 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       the "linking" a `-f bin` image needs. A real **LA linker (ELF objects +
       relocations + linker script)** — which is what `ld -T kernel/kernel.ld`
       actually does for the kernel — remains genuinely open below.
-- [~] **LA linker — FOUR SLICES DONE; IT LINKS AND THE RESULT RUNS (2026-07-18, `track-b`).** Closes the `ld`
-      + linker-script seam. Real objects, symbol resolution, relocation sections.
+- [~] **LA linker — EIGHTEEN SLICES; `ld` REMOVED FROM A REAL KERNEL BUILD (slice 14,
+      2026-08-18). Last slice 18, 2026-09-08 (`track-b`).** Closes the `ld` + linker-script
+      seam. Real objects, symbol resolution, relocation sections.
       `asmelf.la` above closes only the single-source/single-segment image case
       and does not claim this.
+      ★ **The per-slice record is `LINKER.md`** (8 linker gates: `gate_link*.sh`).
+      This entry summarises; that file is the evidence, and until 2026-09-09 the
+      roadmap carried **no pointer to it at all**.
+      ⚠ **NEXT CONSTRAINT, measured and unfixed:** the kernel link peaked at
+      **12.4 GB RSS for an 86 KB input (~150,000×)** and took **2h42m**. Not a
+      leak — the host has a GC, so that is live data — and harmless on this
+      machine, but it is the limit that binds first as object sizes grow.
+      Characterising the scaling is claimed by Track B (2026-09-09).
+      ⚠ **The canonical copy on `kernel-k1` still reads `[ ]` — unstarted.** That
+      is stale by eighteen slices and by the kernel-seam result. Recorded on
+      `~/logos-status.md` rather than edited there, per the cross-track rule.
       - [x] **slice 1 — the READER** (`link.la`, `ed4f284`). Parses a real
         `nasm -f elf64` object: section headers, symbol table, relocations. The
         project's first **recognition** tool — every LA tool before it only ever

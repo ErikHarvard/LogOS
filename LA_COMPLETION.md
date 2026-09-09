@@ -705,15 +705,35 @@ every item below cites the ruling rather than inferring one.
 
 ## TIER 1 — ROOT CAUSES (fixing these prevents whole defect classes)
 
-- `[ ]` **The spec pipeline emits no `export`.** Every generated module —
-  `canon`, `aatc`, `metalogic`, `swc`, `glyphdag`, `pragmatics`, `deixis`, `psc`,
-  `topoembed` — is **unreachable by `import`**. Verified: `import("canon.la")`
-  then `CANON(...)` gives `unbound variable`. This is why ⊗ was sorted in FIVE
-  places instead of one, why `denote.la` and `metaglyph.la` re-declare, and why
-  `entropy.la` had to re-implement κ. **The single highest-leverage fix in this
-  document.** Gate: a module importing `canon.la` resolves `CANON`; and a
-  drift gate asserting every re-implementation agrees with its source.
-  *Paper: §Limitations, [B].*
+- `[✓]` **The spec pipeline emits no `export` — RETIRED AS WRITTEN, re-measured
+  2026-09-09.** The defect was real and is **fixed**; this entry outlived it by
+  long enough to dispatch a track onto retired work, which is why it is corrected
+  here rather than deleted.
+  **Measured:** all nine modules emit an export line today — `canon` 49 names,
+  `aatc` 47, `metalogic` 51, `swc` 20, `glyphdag` 47, `pragmatics` 15, `deixis`
+  15, `psc` 21, `topoembed` 19. **The stated symptom does not reproduce**:
+  `import("canon.la")` then `CANON(SR_ABOUT)` returns `↻(RECOGNITION)`, rc=0 —
+  with a **negative control in the same probe** printing `unbound variable
+  'NO_SUCH_GLYPH'`, so the test can fail and did not. The generator emits it at
+  `specpipe.la:74`; fixed in **`9112c18`**, and `specpipe.la`'s own comment now
+  records the symptom in the **past tense**.
+  **Both gates this item asked for now exist:** (a) a module importing `canon.la`
+  resolving `CANON` — `build.sh:1203`, a live execution not a grep; (b) the drift
+  gate — `gate_normdrift.sh`, landed **`7a4e76d`**, behavioural (runs each
+  normaliser and compares OUTPUT, since a source diff is a static analyser).
+  ★ **THE CAUSAL ARGUMENT ABOVE STILL HOLDS AND STILL NAMES OPEN WORK.** The fix
+  was *"inert until a consumer is converted"* (`specpipe.la`) — eleven generated
+  modules, 313 glyphs, imported by **nothing** — and **the conversion never
+  happened**. Measured 2026-09-09: **14 distinct sites** still re-declare canon's
+  κ machinery (`m76_kappa_census.sh`, filed **M76**). So ⊗-sorted-in-five-places
+  is still true; its **cause** is fixed and its **debris** is not.
+  ⚠ Conversion is **priced and deferred**, not forgotten: importing `canon.la`
+  costs codegen ~quadratically-and-steepening in glyph count, **per build**
+  (pilot on `denote.la`: +121.79 s, +45%, and it is codegen'd twice per build).
+  The obstacle is **name collision**, not cost — canon exports 49 names and 5
+  collided with denote's own. **A gated copy and no copy are equivalent with
+  respect to drift**; (b) removes the exposure at zero recurring cost.
+  *Paper: §Limitations, [B] — the paper still asserts this and owes the same edit.*
 - `[~]` **Nine modules built but never gated — STALE AS WRITTEN, re-measured
   2026-09-05.** The claim was "Zero occurrences in `build.sh`". Measured now,
   every one of the nine appears: `sglyph` 1, `sglyph_gate` 2, `phonseq` 2,
