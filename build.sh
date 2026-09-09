@@ -2505,6 +2505,41 @@ else
     rm -rf "$BE_S" .elfobjgate/_bootelfgate
 fi
 
+# ── bootelf PROVENANCE — a COUNTED OBLIGATION, deliberately not a 63rd abort ──
+#    The scale comparison ld(ours)==ld(nasm) runs on demand (~62 min to derive
+#    asm.la's per-arm objects) and its verdict lives in BOOTELF.md. This asserts
+#    that verdict still describes the current sources — ~0.1 s, every build.
+#
+#    ★ WHY IT DOES NOT `exit 1`, AND THE DISTINCTION IS NOT COST (ruling: The
+#    General, 2026-09-09). A provenance mismatch says "nobody has re-derived
+#    since asm.la changed." It CANNOT say the new asm.la is wrong. A correctness
+#    gate says the code is broken; a staleness gate says the evidence is old.
+#    Every `|| exit 1` in this file strands ~50 of the 52 gate invocations behind
+#    it, so putting a staleness red in that chain would give "nobody has spent 62
+#    minutes yet" the power to halt fifty CORRECTNESS gates. That is the wrong
+#    trade at any cost.
+#
+#    ⚠ AND WHAT KEEPS THIS FROM BEING A 50th SKIP IN DISGUISE. A third state that
+#    is merely quiet is green-by-absence wearing a new name — this tree already
+#    has ~49 SKIP paths that report neither PASS nor FAIL and so show nothing
+#    wrong in any tally. Exactly two properties make STALE honest: it is COUNTED
+#    (below), and the count is ASSERTED ZERO where it blocks a release (the
+#    auto-checkpoint at the end of this file refuses to tag `verified-*` while
+#    any obligation stands). Remove either and this has been diluted back into a
+#    SKIP. Do not remove one without removing both, and say so when you do.
+mkdir -p .obligations
+if [ -x ./gate_bootelf.sh ]; then
+    BE_PRC=0; ./gate_bootelf.sh --provenance || BE_PRC=$?
+    case "$BE_PRC" in
+        0) rm -f .obligations/bootelf-stale ;;
+        3) echo "OBLIGATION  bootelf-provenance is STALE — counted, not fatal. The build continues; the auto-checkpoint at the end will REFUSE to tag this commit verified until it is cleared."
+           echo "stale since $(date +%Y-%m-%d): re-derive per BOOTELF.md (~62 min) and update BOOTELF_STAMP in gate_bootelf.sh" > .obligations/bootelf-stale ;;
+        *) echo "FAIL  bootelf-provenance: exited $BE_PRC — that is a broken checkout (missing stamp inputs, unset stamp), not a stale one"; exit 1 ;;
+    esac
+else
+    echo "FAIL  bootelf-provenance: gate_bootelf.sh is missing or not executable"; exit 1
+fi
+
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
 # GENERATEs + DEPLOYs metalogic.la (REGENERATED here, so it never drifts). It makes
@@ -7703,7 +7738,18 @@ say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # checkpoint, exactly the trap we hit by hand). Skip if a verified-* tag
 # already marks this commit. A tagging hiccup must never fail a green build,
 # so every fallible step degrades to a NOTE.
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
+# ── THE OBLIGATION ASSERTION — this is what makes a counted STALE honest ─────
+#  A staleness red is kept out of the serial abort chain above (see the bootelf
+#  provenance block) precisely so it cannot strand fifty correctness gates. The
+#  price of that is that it must bite SOMEWHERE, or it is just another silent
+#  SKIP. It bites here: an outstanding obligation blocks the `verified-*`
+#  checkpoint, so evidence that has gone stale can never be labelled verified,
+#  and the obligation accumulates visibly instead of being ignored indefinitely.
+OBLIGATIONS=$(ls .obligations 2>/dev/null | grep -c . || true)
+if [ "${OBLIGATIONS:-0}" -gt 0 ]; then
+    echo "NOTE  auto-tag REFUSED: $OBLIGATIONS outstanding obligation(s) — the audit is green but some of its evidence is stale, so this commit is not a verified checkpoint:"
+    for o in .obligations/*; do [ -e "$o" ] && echo "        $(basename "$o"): $(cat "$o")"; done
+elif ! git rev-parse --git-dir >/dev/null 2>&1; then
     echo "NOTE  auto-tag skipped: not a git repository"
 elif [ -n "$(git status --porcelain)" ]; then
     echo "NOTE  auto-tag skipped: working tree dirty — commit, then re-run to checkpoint"

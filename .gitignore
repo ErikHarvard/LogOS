@@ -202,3 +202,4 @@ vm_seed
 # Track A's local asm-gate scratch (per-test .out captures). Referenced by
 # nothing in the tree; it is working state, not source.
 .asmgate_local/
+.obligations/

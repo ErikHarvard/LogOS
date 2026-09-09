@@ -103,6 +103,50 @@ set -u
 
 die() { echo "gate_bootelf: $*" >&2; exit 1; }
 
+# ── THE PROVENANCE STAMP — "the evidence is old" is not "the code is broken" ──
+#  The scale comparison (ld(ours)==ld(nasm)) needs asm.la's per-arm objects, which
+#  cost ~62 min to derive and are gitignored. So it runs ON DEMAND, and the verdict
+#  it produced is recorded in BOOTELF.md. What runs every build is this: a check
+#  that the recorded verdict still describes the current sources.
+#
+#  ★ A STALENESS RED IS NOT A CORRECTNESS RED, AND THE DIFFERENCE IS THE WHOLE
+#  DESIGN. A mismatch here says "nobody has re-derived since asm.la changed." It
+#  CANNOT say the new asm.la is wrong. Ruling (The General, 2026-09-09): a
+#  staleness red must therefore NOT enter build.sh's serial abort chain, because
+#  every `|| exit 1` there strands ~50 of the 52 gate invocations behind it — and
+#  giving "nobody has spent 62 minutes yet" the power to halt fifty correctness
+#  gates is the wrong trade at any cost. So `--provenance` exits 3, not 1, and
+#  build.sh COUNTS it instead of aborting.
+#
+#  ⚠ AND THE TRAP THAT MAKES THAT LEGITIMATE RATHER THAN A NEW KIND OF SKIP.
+#  This tree already has ~49 SKIP paths that report neither PASS nor FAIL and so
+#  show nothing wrong in any tally. A third state that is merely QUIET is
+#  green-by-absence wearing a new name. Exactly two properties keep STALE honest:
+#  it is COUNTED, and the count is ASSERTED ZERO somewhere that blocks a release
+#  — build.sh refuses the auto-checkpoint `verified-*` tag while any obligation
+#  stands. If either property is ever removed, this has been diluted back into a
+#  SKIP and the gate is lying. Do not remove one without removing both and saying
+#  so.
+#
+#  Structure and exclusion discipline copied from kernel/gate_ncc3.sh (POROS,
+#  track-d f701984), which solved the same shape for the committed selfhost
+#  compiler: an expensive derived artifact plus a gate that detects drift, with
+#  the one exclusion asserted BY NAME so the carve-out cannot go stale.
+BOOTELF_VERDICT_COMMIT=d7be3be
+BOOTELF_VERDICT_DATE=2026-09-09
+BOOTELF_STAMP=c8fa4b9c2d8e0484836096a29f4009c2cf3848d7c76e1dfe65d191cfdc25c536
+#  What the stamp covers: every input whose change can invalidate the recorded
+#  verdict without changing nasm's reference — i.e. the assembler itself — plus
+#  the boot source, so a boot.asm edit is reported as STALE with a name rather
+#  than surfacing later as an anonymous link diff.
+BOOTELF_STAMP_FILES="asm.la elfobj.la asmelfobj.la kernel/boot.asm kernel/idt.asm kernel/timer.asm kernel/kbdirq.asm"
+#  ★ WHAT IT DELIBERATELY EXCLUDES, asserted rather than assumed: entry.inc and
+#  native_codegen3_out. Both are BUILD PRODUCTS, and this gate generates them
+#  itself, deterministically, so both sides read one value. If a future edit ever
+#  makes the gate read either from kernel/ instead, the exclusion is stale and the
+#  stamp would silently stop covering a real input — so --provenance asserts the
+#  generation is still in this file.
+
 # The arm set this gate covers, and the equ sites each arm must carry.
 ARMS="NONE HH1 HH2"
 sites_for() {
@@ -120,6 +164,50 @@ REQUIRED_SITES="hh_msg_len hh2_ok_len hh2_bad_len"
 
 MODE=full
 if [ "${1:-}" = "--coverage-only" ]; then MODE=coverage; shift; fi
+if [ "${1:-}" = "--provenance" ]; then MODE=provenance; shift; fi
+
+if [ "$MODE" = provenance ]; then
+    # ── anti-vacuity floor ────────────────────────────────────────────────────
+    #  Every check below passes on a tree where the stamp was never set, so this
+    #  floor is what makes that case FAIL instead of reporting a cheerful match.
+    case "$BOOTELF_STAMP" in
+        ""|STAMPVALUE|unset) die "BOOTELF_STAMP is unset — the recorded verdict has no provenance, so this check would pass vacuously" ;;
+    esac
+    [ ${#BOOTELF_STAMP} -eq 64 ] || die "BOOTELF_STAMP is not a sha256 (len ${#BOOTELF_STAMP})"
+    [ -n "$BOOTELF_VERDICT_COMMIT" ] || die "BOOTELF_VERDICT_COMMIT is unset"
+    command -v sha256sum >/dev/null || die "sha256sum not found"
+    #  ⚠ THE EXCLUSION IS ENFORCED AT STAGING TIME, NOT HERE, AND THAT IS
+    #  DELIBERATE. An earlier version of this check grepped THIS FILE for the
+    #  entry.inc generation — but the generation lives in build.sh's block, and
+    #  the grep pattern contained the very string it searched for, so the check
+    #  was SELF-SATISFYING and could never fail. It is removed rather than
+    #  patched: the real risk (a caller handing us a kernel-derived entry.inc,
+    #  which track D regenerates per build, so the stamp would stop covering a
+    #  live input) is checked where it can actually be observed — see
+    #  ASSERT_DETERMINISTIC_INC in the staging path below, which compares the
+    #  handed-in entry.inc against the exact literal both assemblers must read.
+    missing=""
+    for f in $BOOTELF_STAMP_FILES; do [ -f "$f" ] || missing="$missing $f"; done
+    [ -z "$missing" ] && [ -n "$BOOTELF_STAMP_FILES" ] \
+      || die "stamp inputs missing:$missing — a broken checkout, not a stale stamp"
+
+    now=$(for f in $BOOTELF_STAMP_FILES; do sha256sum "$f"; done | sha256sum | cut -d' ' -f1)
+    if [ "$now" = "$BOOTELF_STAMP" ]; then
+        echo "PASS  bootelf-provenance: the recorded per-arm verdict still describes the current sources — BOOTELF.md's GREEN on NONE/HH1/HH2 was taken at $BOOTELF_VERDICT_COMMIT ($BOOTELF_VERDICT_DATE) against these exact bytes of $BOOTELF_STAMP_FILES, and none has changed since. This asserts the EVIDENCE IS CURRENT, not that the assembler is correct — that is the on-demand comparison the verdict records."
+        exit 0
+    fi
+    echo "STALE bootelf-provenance: the recorded per-arm verdict NO LONGER describes the current sources."
+    for f in $BOOTELF_STAMP_FILES; do
+        h=$(sha256sum "$f" | cut -d' ' -f1)
+        git show "$BOOTELF_VERDICT_COMMIT:$f" 2>/dev/null | sha256sum | cut -d' ' -f1 | grep -qx "$h" \
+          || echo "        changed since $BOOTELF_VERDICT_COMMIT: $f"
+    done
+    echo "      This is NOT a claim that asm.la is wrong. It is a claim that nobody has re-derived."
+    echo "      To clear it: run BOOTELF.md's cycle once per arm (~62 min), confirm ./gate_bootelf.sh <bootsrc> <objdir> is GREEN,"
+    echo "      then update BOOTELF_VERDICT_COMMIT/DATE and BOOTELF_STAMP in this file to the new sources."
+    exit 3
+fi
+
 DIR="${1:-}"; OBJDIR="${2:-}"
 if [ "$MODE" = coverage ]; then
     [ -n "$DIR" ] || die "usage: $0 --coverage-only <bootsrc-dir>"
@@ -161,6 +249,18 @@ cp "$DIR/boot_base.asm" "$G/" || die "cannot stage boot_base.asm"
 for inc in entry.inc idt.asm timer.asm kbdirq.asm native_codegen3_out; do
     cp "$DIR/$inc" "$G/" || die "cannot stage $inc"
 done
+
+# ── ASSERT_DETERMINISTIC_INC — the exclusion, checked where it can fire ──────
+#  entry.inc is excluded from BOOTELF_STAMP_FILES because it is a build product
+#  this gate's callers generate deterministically. That exclusion is only safe
+#  while the value really is fixed: kernel/entry.inc is regenerated per build by
+#  track D, so a caller that handed us THAT file would make the stamp silently
+#  stop covering a live input, and the verdict would drift without ever going
+#  stale. Asserted rather than trusted, and red-testable by handing a different
+#  LA_ENTRY.
+EXPECT_INC='LA_ENTRY equ 0x400000'
+grep -qxF "$EXPECT_INC" "$G/entry.inc" \
+  || die "entry.inc is not the deterministic value this gate's exclusion assumes (expected exactly '$EXPECT_INC', got '$(head -1 "$G/entry.inc")') — either the caller handed us kernel/entry.inc, which track D regenerates per build, or the fixed value changed. Cover entry.inc in BOOTELF_STAMP_FILES or restore the deterministic generation."
 
 cd "$G" || die "cannot cd scratch"
 fail=0
