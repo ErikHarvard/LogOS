@@ -2175,12 +2175,22 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
         per line; manifest order IS link order. A third object needed no code
         change and landed exactly where `ld` put it. `MAIN` went from thirteen
         binders to six, every one derived from the object list.
-      - [ ] **beyond:** real gcc objects (they carry `SHF_ALLOC` `.eh_frame`
-        and `.note.gnu.property`, which are refused rather than ignored),
-        `R_X86_64_32`/`32S`, and a real linker script instead of the hard-coded
-        one-page-per-section layout (today: two objects, `.text` +
-        `.rodata` — what the fixtures exercise and therefore all that is
-        claimed), and a linker script rather than a hard-coded layout.
+      - [x] **beyond: real gcc objects — STALE AS WRITTEN, re-measured 2026-09-09.**
+        Every element this item named is done, and each was checked by RUNNING it
+        rather than by reading the code:
+        • `.eh_frame` + `.note.gnu.property` are **NOT refused** — `link.la` reads
+          all 12 sections of a `gcc -c -nostdlib` object, matching `readelf`
+          exactly, and `link_reloc.la` **links it and the output RUNS (exit 0)**.
+        • `R_X86_64_32` — measured present in a gcc object alongside `_64` and
+          `_PC32`; all three link and the result runs.
+        • `R_X86_64_32S` — handled, `link_reloc.la:116-119`, which documents why
+          32 vs 32S differ and that gcc emits 32S for static data addressing.
+        • the **linker script** exists and is gated: `link_script.la` (28 KB),
+          `gate_link_script.sh` — *"the layout comes from a LINKER SCRIPT, and
+          `ld -T` on the SAME FILE is the witness."*
+        ⚠ **Left as a checked box rather than deleted**, so the next reader can see
+        what was claimed open and what retired it. This was the SIXTH stale record
+        found on 2026-09-09 — and the only one inside Track B's own territory.
 - [ ] **LA-native debugger** — the system inspecting its own execution. Deep
       closure: the system observing itself (today: `qemu -d int` + foreign tools).
 - [~] **LA build orchestrator (`buildla.la`) — FIRST REAL SLICE DONE (2026-07-16).**
