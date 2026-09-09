@@ -4,11 +4,33 @@
 #  language half.
 #
 #  WHY THIS EXISTS
-#  build.sh is 7511 lines. The kernel half is lines 7064-7485 — 422 lines, the
-#  last 5.6% of the file, holding 65 of the file's 83 `|| exit 1` hard aborts.
-#  Nothing reaches it until the entire language half passes, which is why every
-#  verdict this project has produced is a verdict on the language half only.
-#  MEASURED 2026-09-08: a build that ran for hours invoked ZERO gate scripts.
+#  The kernel half is the last ~6% of build.sh, and nothing reaches it until the
+#  entire language half passes — which is why every verdict this project has
+#  produced is a verdict on the language half only. MEASURED 2026-09-08: a build
+#  that ran for hours invoked ZERO gate scripts.
+#
+#  ★ THE ABORT CHAIN IN FRONT OF IT IS THE WHOLE SCRIPT, NOT A COUNT OF ONE
+#  IDIOM. Counting `|| exit 1` gives 83 on this branch and was the figure this
+#  file first carried — but that is an IDIOM, not the CLASS. Measured on
+#  track-d's build.sh: 237 non-comment `exit 1` sites, of which 83 are
+#  `|| exit 1`, 116 are a bare `exit 1` inside an if/else/fi (the most common
+#  form, and the one an `|| exit 1` sweep never sees), 11 are
+#  `{ echo "FAIL ..."; exit 1; }` and the rest other shapes. On top of that
+#  build.sh line 8 is `set -euo pipefail`, so every UNGUARDED nonzero command
+#  aborts as well. The abort surface is not 83 links and not 237 — it is every
+#  line. (A SWEEP SEARCHES AN IDIOM, NOT A CLASS; the control that catches the
+#  error is a class member in a DIFFERENT idiom.)
+#
+#  ★ AND EVERY SUCH FIGURE IS BRANCH-RELATIVE. build.sh is diverged across five
+#  branches, so a bare line number or count names nothing until the branch is
+#  pinned. Measured from committed blobs, same patterns, same day:
+#      track-d 7570 lines, 83 `|| exit 1`, 64 kernel-gate invocations
+#      kernel-k1 7523,     62,             40      <- the canonical branch
+#      track-b 7580, 62, 40   track-c 7667, 63, 40   track-e 7191, 63, 40
+#  The "7523 lines / 62 aborts / 40 kernel gates" in the open-work item are
+#  kernel-k1's, and they are exactly right FOR kernel-k1. track-d differs
+#  because the 16 P1/P2/P2.0/P3 invocations are track-D work that exists only
+#  here and is not yet on any other branch.
 #
 #  WHAT THE KERNEL HALF ACTUALLY NEEDS FROM THE LANGUAGE HALF
 #  Traced through every kernel/*.sh reference — exactly two artifacts:
@@ -36,7 +58,7 @@
 #  byte-for-byte as build.sh executes it.
 #
 #  ★ SKIP IS A COUNTED, NAMED, EXIT-AFFECTING CLASS — and not only for gates
-#  this script adds (it adds none). The 52 invoked kernel gates carry 57 SKIP
+#  this script adds (it adds none). The 52 invoked gate files carry 54 SKIP
 #  paths between them, each exiting 0 while asserting nothing, so a tally of
 #  exit statuses shows nothing wrong. Here a SKIP is counted, named in the
 #  summary, and forces exit status 2 (INCOMPLETE) — distinct from green and red.
@@ -98,8 +120,14 @@ die() { echo "FAIL  build_kernel_half: $*" >&2; exit 1; }
 # instrument written to avoid it).
 # The prose occurrence is deliberately LEFT IN build.sh as a standing control:
 # revert this to `grep -nF` and the region collapses and this runner refuses.
-B=$(grep -nxF -- "$BEGIN_MARK" "$SRC" | head -1 | cut -d: -f1)
-E=$(grep -nxF -- "$END_MARK"   "$SRC" | head -1 | cut -d: -f1)
+# ★ NO PIPELINE AT A DECISION POINT. `set -uo pipefail` is on from the top of
+# this script, and `grep ... | head -1` makes head exit early, SIGPIPE the grep,
+# and the pipeline report 141 — a nonzero status on a SUCCESSFUL match. That is
+# this project's known rc-141 hazard, and under pipefail it silently converts
+# every early-exit pipeline into a fake failure. awk finds the line in one
+# process, so there is no pipe to break.
+B=$(awk -v m="$BEGIN_MARK" '$0==m{print NR; exit}' "$SRC")
+E=$(awk -v m="$END_MARK"   '$0==m{print NR; exit}' "$SRC")
 [ -n "$B" ] || die "$BEGIN_MARK not found in $SRC — the sentinels were removed or lost in a merge; restore them around the kernel-gate block (this runner will NOT guess line numbers)"
 [ -n "$E" ] || die "$END_MARK not found in $SRC — see above"
 [ "$E" -gt "$B" ] || die "sentinels out of order in $SRC ($BEGIN_MARK at $B, $END_MARK at $E)"
@@ -113,16 +141,16 @@ REGION=$(sed -n "$((B+1)),$((E-1))p" "$SRC")
 # reproduced deliberately here and rejected). Two shapes exist in the region:
 #   64x   bash kernel/gate_X.sh [args] || exit 1     -> caught by the wrapper
 #    1x   ./gate_buildla.sh            || exit 1     -> rewritten, asserted once
-TOTAL=$(printf '%s\n' "$REGION" | grep -cE '^[[:space:]]*(bash|sh|\./)[^#]*gate_[a-z0-9_]*\.sh')
-VIA_BASH=$(printf '%s\n' "$REGION" | grep -cE '^[[:space:]]*(bash|sh) +[^#]*gate_[a-z0-9_]*\.sh')
-VIA_PATH=$(printf '%s\n' "$REGION" | grep -cE '^[[:space:]]*\./gate_[a-z0-9_]*\.sh')
+TOTAL=$(grep -cE '^[[:space:]]*(bash|sh|\./)[^#]*gate_[a-z0-9_]*\.sh' <<< "$REGION")
+VIA_BASH=$(grep -cE '^[[:space:]]*(bash|sh) +[^#]*gate_[a-z0-9_]*\.sh' <<< "$REGION")
+VIA_PATH=$(grep -cE '^[[:space:]]*\./gate_[a-z0-9_]*\.sh' <<< "$REGION")
 [ "$TOTAL" -gt 0 ] || die "the region contains no gate invocations — an empty run cannot be a pass"
 [ $((VIA_BASH + VIA_PATH)) -eq "$TOTAL" ] \
   || die "$TOTAL invocations in the region but only $((VIA_BASH+VIA_PATH)) can be routed ($VIA_BASH via the bash wrapper, $VIA_PATH via path-rewrite). A gate in an unrecognised shape would run UNCLASSIFIED, so this run is refused rather than reporting a tally that omits it"
 
 # Route the direct-path invocations through the wrapper. Rewrite is targeted and
 # counted: if it does not fire exactly VIA_PATH times, build.sh changed shape.
-PROGRAM=$(printf '%s\n' "$REGION" | sed -E 's#^([[:space:]]*)\./(gate_[a-z0-9_]*\.sh)#\1bash ./\2#')
+PROGRAM=$(sed -E 's#^([[:space:]]*)\./(gate_[a-z0-9_]*\.sh)#\1bash ./\2#' <<< "$REGION")
 # ★ ASSERT THE PROPERTY, NOT A SIDE-EFFECT COUNT. The first version of this
 # check counted lines matching `^bash \./gate_` in the OUTPUT and compared it to
 # VIA_PATH — but that counts lines already in that form, not lines rewritten, so
@@ -130,8 +158,8 @@ PROGRAM=$(printf '%s\n' "$REGION" | sed -E 's#^([[:space:]]*)\./(gate_[a-z0-9_]*
 # worked because real build.sh happens to contain no `bash ./gate_*` line. The
 # property actually needed is simply: after the rewrite, EVERY invocation goes
 # through the wrapper and NONE is left executing directly. Say that.
-POST_BASH=$(printf '%s\n' "$PROGRAM" | grep -cE '^[[:space:]]*(bash|sh) +[^#]*gate_[a-z0-9_]*\.sh')
-POST_PATH=$(printf '%s\n' "$PROGRAM" | grep -cE '^[[:space:]]*\./[^#]*gate_[a-z0-9_]*\.sh')
+POST_BASH=$(grep -cE '^[[:space:]]*(bash|sh) +[^#]*gate_[a-z0-9_]*\.sh' <<< "$PROGRAM")
+POST_PATH=$(grep -cE '^[[:space:]]*\./[^#]*gate_[a-z0-9_]*\.sh' <<< "$PROGRAM")
 [ "$POST_PATH" -eq 0 ] \
   || die "$POST_PATH invocation(s) still execute directly after the rewrite and would run UNCLASSIFIED — refusing rather than reporting a tally that omits them"
 [ "$POST_BASH" -eq "$TOTAL" ] \
@@ -216,9 +244,9 @@ bash() {
     #     costs 0.2s via the committed selfhost compiler — measured, not assumed)
     #   - never counted in the PASS/FAIL/SKIP gate tally
     #   - fatal to the run's verdict if it FAILS, which is a real failure
-    if ! printf '%s' "$label" | grep -qE '(^|/)gate_[a-z0-9_]*\.sh'; then
+    if ! grep -qE '(^|/)gate_[a-z0-9_]*\.sh' <<< "$label"; then
         printf '\n\033[2m--- prereq: %s\033[0m\n' "$label"
-        set +e; command bash "$@"; rc=$?; set -o pipefail
+        set +e; command bash "$@"; rc=$?; set -e
         if [ "$rc" -ne 0 ]; then
             N_PREREQ_FAIL=$((N_PREREQ_FAIL+1))
             PREREQ_FAILED="$PREREQ_FAILED  PREREQ FAIL  $label (rc=$rc)"$'\n'
@@ -226,26 +254,28 @@ bash() {
         [ "$MODE" = abort ] && return "$rc"
         return 0
     fi
-    if [ -n "$ONLY" ] && ! printf '%s' "$label" | grep -qE "$ONLY"; then
+    if [ -n "$ONLY" ] && ! grep -qE "$ONLY" <<< "$label"; then
         N_EXCL=$((N_EXCL+1)); return 0
     fi
     printf '\n\033[2m--- %s\033[0m\n' "$label"
     # Stream live (these gates run for minutes) AND capture for classification.
     # set +e around the capture: `VAR=$(cmd)` under errexit aborts before the
     # gate's own FAIL line can be read.
+    # tee is the one pipeline kept: it never exits early, so it cannot SIGPIPE
+    # the gate, and PIPESTATUS[0] is the gate's own status regardless of pipefail.
     set +e
     command bash "$@" 2>&1 | tee "$RUN_LOG"
     rc=${PIPESTATUS[0]}
-    set -o pipefail
+    set -e
     out=$(cat "$RUN_LOG")
 
     if [ "$rc" -ne 0 ]; then
         N_FAIL=$((N_FAIL+1)); FAILED="$FAILED  FAIL  $label (rc=$rc)"$'\n'
-    elif printf '%s\n' "$out" | grep -qE '^PASS'; then
+    elif grep -qE '^PASS' <<< "$out"; then
         N_PASS=$((N_PASS+1))
-    elif printf '%s\n' "$out" | grep -qE '^SKIP'; then
+    elif grep -qE '^SKIP' <<< "$out"; then
         N_SKIP=$((N_SKIP+1))
-        SKIPPED="$SKIPPED  SKIP  $label — $(printf '%s\n' "$out" | grep -E '^SKIP' | head -1 | cut -c1-110)"$'\n'
+        SKIPPED="$SKIPPED  SKIP  $label — $(awk '/^SKIP/{print substr($0,1,110); exit}' <<< "$out")"$'\n'
     else
         # Exit 0 with no verdict line asserts nothing. Counted FAIL-side: an
         # unreadable result must never be spelled the same way as a pass.

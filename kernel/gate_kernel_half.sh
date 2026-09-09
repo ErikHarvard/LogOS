@@ -169,5 +169,31 @@ else
       || { echo "FAIL  kernel-half gate [R10]: the real kernel half resolved to ${N:-no} invocations — far below the ~65 present; a sentinel moved or the region collapsed"; ok=0; }
 fi
 
-[ "$ok" -eq 1 ] && echo "PASS  kernel-half runner: the classifier was shown to REJECT, not merely to accept — a FAIL is named and exits 1 (R2), an UNKNOWN is counted FAIL-side (R4), and ★ a SKIP is counted, named, and exits 2 rather than 0 (R3), so none of the kernel half's 57 self-skip paths can read as green; one FAIL no longer hides the gates after it (R5) while --abort-first still reproduces build.sh's serial abort (R6); an empty region (R8) and a missing sentinel (R9) each REFUSE instead of passing vacuously; and the live build.sh still resolves to ${N:-?} invocations (R10)"
+# ── R11 ★ a gate with MORE OUTPUT THAN THE PIPE BUFFER still classifies ─────
+#  THE rc-141 REGRESSION. This runner has `set -uo pipefail` on from its first
+#  line. Classifying with `printf "$out" | grep -q '^PASS'` makes grep -q exit on
+#  the first match, SIGPIPE the writer, and the PIPELINE report 141 — a NONZERO
+#  status on a SUCCESSFUL match — so a PASS falls through to UNKNOWN and the run
+#  goes falsely RED. It only bites once the output exceeds the ~64 KiB pipe
+#  buffer, which is why it survives every small synthetic gate and would have
+#  first appeared on a real QEMU gate dumping serial output.
+#  This gate emits ~256 KiB BEFORE its PASS line. The classifier must still say
+#  PASS. (The fix is here-strings at every decision point, not pipelines.)
+#  ★ THE VERDICT LINE COMES FIRST, THE BULK AFTER IT. This is the whole
+#  discriminator, and the first version of R11 got it backwards: with the PASS
+#  line LAST, grep -q must read the entire input to find it, so it never exits
+#  early, never SIGPIPEs the writer, and the test passed against the BROKEN
+#  implementation too — an inert control. The hazard needs an EARLY match with
+#  bulk still queued behind it, which is when grep -q exits and the writer dies.
+#  (Red-tested: revert any decision point to `printf | grep -q` and this fails.)
+mkgate gate_big.sh 'echo "PASS  synthetic pass, then 256 KiB"; for i in $(seq 1 4000); do echo "trailing line $i ................................................"; done; exit 0'
+mksrc <<EOF
+bash $T/gate_big.sh || exit 1
+EOF
+if run_case 0 R11-bigoutput; then
+    printf '%s' "$OUT" | grep -q '1 PASS / 0 FAIL / 0 SKIP' \
+      || { echo "FAIL  kernel-half gate [R11]: a gate emitting more than the pipe buffer was not classified PASS — the rc-141 SIGPIPE hazard is back (a decision point is using a pipeline again; use a here-string)"; ok=0; }
+fi
+
+[ "$ok" -eq 1 ] && echo "PASS  kernel-half runner: the classifier was shown to REJECT, not merely to accept — a FAIL is named and exits 1 (R2), an UNKNOWN is counted FAIL-side (R4), and ★ a SKIP is counted, named, and exits 2 rather than 0 (R3), so none of the kernel half's 54 self-skip paths can read as green; one FAIL no longer hides the gates after it (R5) while --abort-first still reproduces build.sh's serial abort (R6); an empty region (R8) and a missing sentinel (R9) each REFUSE instead of passing vacuously; the live build.sh still resolves to ${N:-?} invocations (R10), and a gate emitting 256 KiB before its verdict still reads PASS rather than tripping the rc-141 SIGPIPE hazard that pipefail turns into a false red (R11)"
 [ "$ok" -eq 1 ]
