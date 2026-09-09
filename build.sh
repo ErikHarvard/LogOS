@@ -140,7 +140,16 @@ RF_SELF="$(printf '%s\n' 'glyph X = read_file("control_target.la")' | grep -hoP 
 RF_REFS="$(git ls-files '*.la' | xargs grep -hoP "$RF_PAT" 2>/dev/null | sort -u)"
 rf_made () {   # produced by the build rather than shipped with it?
     e=$(printf '%s' "$1" | sed 's/[].[^$\\*\/]/\\&/g')
-    grep -qE "(rm -f[^|;&]*|> *|-o +|cp +[^ ]+ +)$e( |\$|;)" build.sh 2>/dev/null && return 0
+    # ★★ COMMENTS ARE STRIPPED BEFORE MATCHING, IN EVERY ARM. Arm 3 has always
+    # done this; arms 1 and 4 never did, and it bit immediately and recursively:
+    # the comment written ABOVE to document the arrow fix contains the examples
+    # `cat x > sx2b_app` and `rm -f sx2b_app`, and build.sh is itself a tracked
+    # .sh — so the DOCUMENTATION OF THE FIX satisfied the pattern the fix
+    # repairs, and rf_made went back to claiming the vessel was produced.
+    # A comment is not an execution path (041631a), including a comment that
+    # says so. Found 2026-09-09 when the red-path test for the new gate arm
+    # refused to go red.
+    grep -qE "(rm -f[^|;&]*|> *|-o +|cp +[^ ]+ +)$e( |\$|;)" <(sed 's/[[:space:]]*#.*$//' build.sh) 2>/dev/null && return 0
     git ls-files '*.la' | xargs grep -qF "write_file(\"$1\"" 2>/dev/null && return 0
     git ls-files '*.la' | xargs grep -qF "write_exec(\"$1\"" 2>/dev/null && return 0
     # ★ THE '>' MUST BE A REDIRECT, NOT THE '>' OF AN ASCII ARROW. This read
@@ -155,7 +164,8 @@ rf_made () {   # produced by the build rather than shipped with it?
     # Red-tested BOTH ways: the log line no longer matches; `cat x > sx2b_app`,
     # `foo>sx2b_app` and `rm -f sx2b_app` still do. Checked against all 30 paths
     # in the current read_file population -- the tightening newly flags NONE.
-    git ls-files '*.sh' | xargs grep -qE "(^|[^-<])> *$e|rm -f[^|;&]*$e" 2>/dev/null && return 0
+    git ls-files '*.sh' | while read -r _f; do sed 's/[[:space:]]*#.*$//' "$_f"; done \
+        | grep -qE "(^|[^-<])> *$e|rm -f[^|;&]*$e" 2>/dev/null && return 0
     return 1
 }
 RF_BAD=""; RF_ORPHAN=""; RF_N=0
@@ -214,11 +224,49 @@ done <<< "$AR_REFS"
     echo "FAIL  cleanin: NAMED by build.sh, present here, but NOT TRACKED —$AR_BAD"
     echo "      A fresh clone will not have these. Fix: git add <file> (and negate in"
     echo "      .gitignore if a blanket rule hides it)."; ok=0; }
+# ── ARM 4: every executable a TRACKED GATE INVOKES. ───────────────────────
+# ★ THE FOURTH IDIOM, and arms 1-3 cannot express it. They read build.sh and the
+# tracked sources for CREATION; none of them asks what a GATE REQUIRES. A vessel
+# named only inside gate_selfext2b.sh is invisible to a scan that reads build.sh
+# — build.sh mentions sx2b_app exactly ONCE, in a COMMENT, and a comment is
+# correctly not an execution path, so the dependency was structurally unseeable.
+# ★ FOUND BY A REAL RED: a 3h36m clean build failed with "prerequisite vessel
+# sx2b_app is absent and could not be built". It was not merely unbuilt — its
+# BUILDERS were untracked, so the gate was unsatisfiable from a clean checkout
+# forever, and gate_selfext2b.sh:61 guards its own rebuild on `[ -f
+# .sx2b_build.sh ]`, so in a clone no build was even ATTEMPTED.
+# ★ "OBTAINABLE" HAS THREE CASES, and the third is why rf_made alone is not
+# enough: the builder produces the vessel as `mv logos_app "$2"` — through a
+# VARIABLE — so no static creation pattern can ever attribute it. The gate
+# DECLARES its producer in its own case arm, and that declaration is the check.
+GX_SELF="$(printf '%s\n' 'OUT="$(timeout 600 ./control_target_exec 2>&1)"' \
+          | grep -hoE '\./[A-Za-z0-9_][A-Za-z0-9_.-]*' | sed 's#^\./##')"
+[ "$GX_SELF" = "control_target_exec" ] \
+  || { echo "FAIL  cleanin: the gate-prerequisite extractor failed its own self-test (got [$GX_SELF], expected control_target_exec) — the SCAN is broken, not the tree"; ok=0; }
+GX_BAD=""; GX_N=0
+for g in $(git ls-files 'gate_*.sh' 'kernel/gate_*.sh'); do
+  gsrc="$(sed -e 's/[[:space:]]*#.*$//' "$g")"
+  for x in $(printf '%s\n' "$gsrc" | grep -hoE '\./[A-Za-z0-9_][A-Za-z0-9_.-]*' | sed 's#^\./##' | sort -u); do
+    case "$x" in *.la|*.sh|*.py) continue ;; esac   # sources: arms 1-3 cover them
+    GX_N=$((GX_N+1))
+    git ls-files --error-unmatch "$x" >/dev/null 2>&1 && continue
+    rf_made "$x" && continue
+    gxb=$(printf '%s\n' "$gsrc" | grep -E "^[[:space:]]*$x\)" | grep -oE '(sh|bash) +[^ ]+\.sh' | awk '{print $2}' | head -1)
+    [ -n "$gxb" ] && git ls-files --error-unmatch "$gxb" >/dev/null 2>&1 && continue
+    if [ -n "$gxb" ]; then GX_BAD="$GX_BAD $x(builder $gxb untracked)"; else GX_BAD="$GX_BAD $x(in $g)"; fi
+  done
+done
+[ -z "$GX_BAD" ] || {
+    echo "FAIL  cleanin: a tracked GATE invokes these, and a clone cannot obtain them —$GX_BAD"
+    echo "      Not merely absent: unobtainable. Track the declared builder, or make"
+    echo "      build.sh produce it. A gate whose prerequisite no clone can build is"
+    echo "      permanently RED, which is a different defect from a missing artifact."
+    ok=0; }
 # Referenced, absent everywhere, and nothing creates them. Reported, not failed:
 # it is how an optional runtime signal legitimately looks, and failing on it would
 # be the gate inventing a defect. It is printed so it cannot accumulate unseen.
 [ -z "$RF_ORPHAN" ] || echo "      cleanin: NOTE — read_file'd, absent, and nothing creates them:$RF_ORPHAN"
-[ "$ok" -eq 1 ] && echo "PASS  cleanin: $CI_N incbin + $RF_N read_file + $AR_N build.sh-named paths all tracked or produced by the build; all three extractors passed their own self-tests, so a zero here would mean the tree, not the scan; oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
+[ "$ok" -eq 1 ] && echo "PASS  cleanin: $CI_N incbin + $RF_N read_file + $AR_N build.sh-named + $GX_N gate-invoked paths all tracked, produced, or buildable by a TRACKED builder a clone has; all four extractors passed their own self-tests, so a zero here would mean the tree, not the scan; oracle is git ls-files, which sees .gitignore'd files a git-status sweep cannot" || exit 1
 
 say "Compiling the host (tiny_host.c)"
 gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c
