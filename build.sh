@@ -5519,6 +5519,58 @@ done
 # repaired: two names were found to name ONE meaning. Changing ρ's decomposition to
 # "fix" a distinctness complaint would DESTROY the identity — the RED path for this
 # gate is exactly that change, and it fires.
+# ★ M67 [~] PARTIAL — the ρ ≡ SR_ABOUT identity, GATED ACROSS THE MODULE BOUNDARY.
+# ⚠ THIS IS AN INTERIM. It stands in for M67's mechanism (metaglyph.la importing
+#   canon.la so SR_ABOUT has ONE definition), which is DEFERRED, not delivered.
+#   ⇒ M67 IS NOT DONE. Do not mark it [x] because this gate is green.
+#   WHAT IT DELIVERS: M67's PURPOSE. "Copy-drift surface" means UNDETECTED drift;
+#   a copy carrying a red-witnessed gate has none, so a gated copy and no copy are
+#   equivalent with respect to drift. They differ in maintenance cost, not exposure.
+#   WHAT IT DEFERS: the copy itself. RETIRED BY M0a / roadmap item 0.
+#   WHY DEFERRED (measured 2026-09-09): the import costs codegen 260.13s -> 1145.15s
+#   (x4.40) and stream +40.2% PER IMPORTER; familytree.la and denote.la each pay it.
+#   ⚠ Whether that amortises under M0a is UNMEASURED — see M76.
+# ★ M67 (design 2) — the ρ ≡ SR_ABOUT identity, GATED ACROSS THE MODULE BOUNDARY
+# without metaglyph.la importing canon.la.
+# metaglyph.la keeps a LOCAL SR_ABOUT_HERE. Until 2026-09-09 nothing checked it
+# against canon.la at all: canon.la's SR_ABOUT could be changed to MC(PRIM("SELF"))
+# and metaglyph still reported YES — it compared two local terms. This gate makes
+# that copy honest by comparing the two modules' κ-forms directly, and REQUIRES
+# them to diverge under a mutation.
+# ⚠ Probes are written to a mktemp dir, not the repo: no new tracked files, and
+# canon+metaglyph both export CANON so a single module importing both would
+# collide (the reason build.sh:1281 uses the cp-and-append idiom elsewhere).
+MP="$(mktemp -d)"
+cp canon.la metaglyph.la tiny_host "$MP/"
+printf 'import("canon.la")\nglyph MAIN = print(CANON(SR_ABOUT))\n'          > "$MP/p_canon.la"
+printf 'import("metaglyph.la")\nglyph MAIN = print(CANON(SR_ABOUT_HERE))\n' > "$MP/p_meta.la"
+M67_C="$( cd "$MP" && ./tiny_host p_canon.la 2>/dev/null || true )"
+M67_M="$( cd "$MP" && ./tiny_host p_meta.la  2>/dev/null || true )"
+[ -n "$M67_C" ] || { echo "FAIL  M67: the canon.la probe produced nothing — the check never ran"; ok=0; }
+[ "$M67_C" = "$M67_M" ] \
+  || { echo "FAIL  M67: metaglyph.la's SR_ABOUT_HERE ($M67_M) has DRIFTED from canon.la's SR_ABOUT ($M67_C)"; ok=0; }
+# ★ RED PATH, exercised every run: mutate canon.la and REQUIRE the probes to diverge.
+# Without this the check above passes on two files that are both wrong, and on a
+# metaglyph that cannot see canon.la at all — which is the state this gate exists to end.
+# ⚠ Mutate by REPLACING WHATEVER SR_ABOUT CURRENTLY IS, not a literal form. A
+# literal sed cannot match an already-drifted canon.la, and then this red path
+# emits two further failures blaming the probe for a drift the check above has
+# already named — three diagnostics, one fault, two of them pointing at the
+# instrument. The sentinel is chosen to differ from the value just observed.
+M67_MUT='MC(PRIM("BECOMING"))'
+case "$M67_C" in *BECOMING*) M67_MUT='MC(PRIM("VOID"))' ;; esac
+sed -i "s|^glyph SR_ABOUT = .*|glyph SR_ABOUT = $M67_MUT|" "$MP/canon.la"
+grep -qF "glyph SR_ABOUT = $M67_MUT" "$MP/canon.la" \
+  || { echo "FAIL  M67: could not apply the canon.la mutation — the red path never ran, so the green above means nothing"; ok=0; }
+M67_C2="$( cd "$MP" && ./tiny_host p_canon.la 2>/dev/null || true )"
+# ⚠ Compare against canon's OWN pre-mutation value, not against metaglyph's. Comparing
+# to metaglyph makes this fire a second, WRONG diagnostic whenever metaglyph has drifted
+# to whatever the mutation happens to produce — blaming the probe for the drift the check
+# above already named. What must be true is narrower and exact: mutating canon.la changes
+# what the canon probe reports, i.e. the probe is genuinely reading that file.
+[ "$M67_C2" != "$M67_C" ] \
+  || { echo "FAIL  M67: canon.la was mutated and its own probe did not change — the probe is not reading canon.la, so the agreement above proves nothing"; ok=0; }
+rm -rf "$MP"
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp metaglyph.la logos_source.la
@@ -5526,7 +5578,7 @@ cp metaglyph.la logos_source.la
 MG_V="$(./logos_secd 2>/dev/null)"
 [ "$MG_H" = "$MG_V" ] || { echo "FAIL  item2: host != VM"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
-[ "$ok" -eq 1 ] && echo "PASS  item2: ∂δγρ𝔄 are glyphs the language can INSPECT, COMPOSE and OPERATE ON (not dispatch data above it); ρ ≡ SR_ABOUT asserted positively; rank read FROM the glyph; byte-identical host==VM" || exit 1
+[ "$ok" -eq 1 ] && echo "PASS  item2: ∂δγρ𝔄 are glyphs the language can INSPECT, COMPOSE and OPERATE ON (not dispatch data above it); ρ ≡ SR_ABOUT asserted positively AND gated across the module boundary (canon.la mutated, witness required to flip); rank read FROM the glyph; byte-identical host==VM" || exit 1
 
 say "LA arc items 3+4: denotational morphology (γ_g, r_D) + the glyphic combination law (denote.la)"
 ok=1
