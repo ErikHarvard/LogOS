@@ -1469,3 +1469,34 @@ of blanks that look like data. Only a smoke test at the smallest size caught it.
 ★ **RSS was the metric to trust under load** (spread 1.004×) because peak RSS is
 per-process; the time column was taken with a live front and underpins no claim.
 
+## Slice 20 — shape is not the cause either; a REAL object still misses by 18× (2026-09-09)
+
+Slice 19 excluded size and concluded *"the next probe must vary object SHAPE, not
+object SIZE."* Done, and shape does not explain it either.
+
+`kernel/boot.asm` assembled **locally** — `nasm -f elf64 -i .bootfix2_HH2B/` —
+which also retires `gate_link_kernel.sh`'s own stated honest limit, that a
+reproducible version *"would assemble boot.asm here"* rather than read Track D's
+uncommitted artifact.
+
+| object | shape | peak RSS | time |
+|---|---|---|---|
+| 2,864 B synthetic | 32 relocs, ~5 sections | 40 MB | 82 s |
+| **7,104 B real** | **53 relocs (41× `R_X86_64_64`), 12 sections, 98 syms** | **86 MB** | **423 s** |
+
+**RSS exponent k = 0.84 — still SUBLINEAR** even on a real object with real
+relocation types. Extrapolated to 86 KB: **0.70 GB**. Recorded: **12.4 GB**.
+⇒ **Still 18× short.** Time k = 1.81, quadratic, consistent with slice 19.
+
+⇒ **Four shape dimensions now exercised at realistic values — relocation count,
+relocation TYPE, section count, symbol count — and RSS stays sublinear in all of
+them.** Combined with slice 19's exclusion of size, the 150,000× belongs to
+neither.
+
+⚠ **A second refutation, not a diagnosis.** What is excluded is now large and what
+is identified is still nothing. **The honest next step needs Track D's ACTUAL
+86 KB boot.o** — mine assembles to 7,104 B, so theirs is a different build
+(different includes/config, or a `--script` layout path a plain link never takes).
+That artifact is in their worktree; filed as a cross-track question rather than
+read.
+
