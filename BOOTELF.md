@@ -34,7 +34,7 @@ the module system's isolation exactly (exports keep their spelling, privates are
 prefixed), and is verified byte-identical to the real `import` build on every
 `asm_elf_*` fixture.
 
-## Reproduce (~26 min, native VM)
+## Reproduce (native VM — see "Measured cost" below; the old "~26 min" is not what this machine does)
 
 Runs a native SECD VM cycle, so do it in a scratch dir, and **never while
 another session drives `logos_program.bin`** (the VM re-executes that one path).
@@ -71,6 +71,59 @@ done
 # actually CARRIES the equ sites it exists to cover.
 ../gate_bootelf.sh . obj
 ```
+
+## Verdict, 2026-09-09 — the per-arm cycle was run, and it is GREEN
+
+The first time this gate has ever been run against real `asm.la` objects on the arms it exists to
+cover. All three produced objects (`rc=0`) and all three link byte-identically to nasm's:
+
+| arm | ours.o | symbols | relocs | equ sites in BOTH objects | `ld(ours)==ld(nasm)` |
+|---|---|---|---|---|---|
+| NONE | 6,820 B | 104 | 53 | none — the control | **GREEN** |
+| HH1  | 7,378 B | 111 | 60 | `hh_msg_len` | **GREEN** |
+| HH2  | 8,337 B | 116 | 84 | `hh2_ok_len`, `hh2_bad_len` | **GREEN** |
+
+Arm-set union: all three sites covered. **`asm.la` assembles the HH1 and HH2 arms of the real
+kernel `boot.asm` correctly** — never previously tested, because the un-armed build compiled the
+construct away before the assembler saw it.
+
+★ **The green was red-tested on these same objects, not merely asserted.** Planting the defect
+class in the real `ours_HH1.o` — `hh_msg_len`'s imm32 `4 -> 5`, i.e. `asm.la` computing the equ
+one byte long — turns HH1 **RED** (`differ: byte 4754`) while NONE and HH2 stay GREEN. Note the
+site sits at file offset `0x183` in `asm.la`'s object against `0x447` in nasm's: different layout,
+identical semantics, which is exactly why the standard is `ld(ours)==ld(nasm)` and not `.o`
+byte-identity.
+
+## Measured cost, 2026-09-09 — the documented figures do not reproduce
+
+The `~12 min` / `~5 GB` above is the 2026-07-23 figure and it was never re-derived.
+Re-run end to end on this machine (24 cores, load/core 0.36 by `~/logos-hw.sh`,
+156 GB free — i.e. *not* contended), the whole cycle is:
+
+| phase | measured |
+|---|---|
+| `tiny_host secd.la` → `logos_secd` | 47 s |
+| `la_flatten` + `tiny_host codegen.la` → `logos_program.bin` | **~22 min, ~9.4 GB peak** |
+| `logos_secd` per arm → `elfobj_out.o` | **NONE 26 min · HH1 30 min · HH2 39 min** (run in parallel) |
+
+★ **The obvious explanation is wrong, and the control is what showed it.** `asm.la` has grown
+since July, so the natural hypothesis is that the cost grew with it. Tested by re-running phase 2
+against the **July** `asm.la`/`elfobj.la` (`430b2a7`) on the same machine:
+
+| phase-2 input | wall | peak RSS |
+|---|---|---|
+| documented, 2026-07-23 | ~12:00 | ~5 GB |
+| **July `asm.la`, 155,700 B** | **18:12** | **8.52 GB** |
+| current `asm.la`, 185,477 B | ~22:00 | ~9.4 GB |
+
+The July code takes **18:12 and 8.5 GB here too**. So growth explains the *delta between the two
+versions* (1.19× input → 1.21× time, near-proportional) and explains **none** of the gap to the
+documented figure. Whatever `~12 min / ~5 GB` measured, this hardware does not reproduce it for
+either version — so plan against the table above, not against the July line.
+
+⚠ A caution the numbers themselves cannot carry: the per-arm figures are for **three VMs running
+concurrently**, and phase 2's `~22 min` was read off polling rather than `/usr/bin/time` (the
+18:12 control *is* precisely measured). Treat the arm times as an upper bound for one arm alone.
 
 ## Cheap regression guard (in `build.sh`)
 
