@@ -27,7 +27,7 @@ cp kernel/comp_term.la native_input.la
 # several build sessions at once), and then WHEN is the only clue to WHO.
 echo "      codegen start: $(date +%H:%M:%S)"
 set +e
-time ./tiny_host native_codegen3.la >/dev/null
+time bash kernel/ncc3.sh >/dev/null
 CGRC=$?
 set -e
 echo "      codegen end:   $(date +%H:%M:%S)  exit=$CGRC"

@@ -85,6 +85,36 @@ elif grep -qxF '# ===KERNEL-HALF-BEGIN===' build.sh; then
 else
     echo "SKIP  kernel/gate_kernel_half.sh is not on this branch AND neither are the KERNEL-HALF sentinels — this build.sh predates the kernel-only entry point, so there is nothing here to check. Merge kernel/build_kernel_half.sh + kernel/gate_kernel_half.sh + the sentinels together to enable it."
 fi
+
+# ── the second toll: kernel builders must not re-pay the language half ─────
+# ~1s, no QEMU, no compile — so it sits with the other cheap structural checks.
+# 35 kernel builders compiled their driver with `./tiny_host native_codegen3.la`
+# (the compiler's SOURCE, interpreted) while 34 already ran the COMMITTED native
+# image. Same compiler, ~100x apart: build.sh's own annotations below measure
+# gate_mouse at 883s and gate_wheel at 1255s against gate_comp_term_hal4e at
+# 16s, and say the cost is "dominated by the LA COMPILE, not the QEMU run". So
+# the language half was being paid AGAIN, per gate, INSIDE the kernel half. The
+# 35 now share kernel/ncc3.sh.
+#
+# ★ THIS GATE EXISTS BECAUSE THE REGRESSION IS SILENT. The slow path is
+# CORRECT, merely 100x slower, so a builder written in the old shape turns
+# nothing red — the kernel half just quietly gets expensive again, which is how
+# it got this way. The census fails on any builder calling the slow compiler
+# outside a fast path's own fallback.
+say "Second toll (the gate on kernel/ncc3.sh — builders must not re-pay the language half)"
+if [ -x ./kernel/gate_ncc3.sh ]; then
+    if ./kernel/gate_ncc3.sh; then :; else
+        echo "FAIL  build.sh: kernel/gate_ncc3.sh went RED (see the lines above)"
+        exit 1
+    fi
+elif [ -x ./kernel/ncc3.sh ]; then
+    # Half-merge, same rule as the block above: the helper is here and its gate
+    # is not, so nothing is stopping a builder drifting back to the slow path.
+    echo "FAIL  build.sh: kernel/ncc3.sh is present but kernel/gate_ncc3.sh is missing — a half-merged second-toll fix, with nothing guarding the conversion. Merge the gate, or remove the helper."
+    exit 1
+else
+    echo "SKIP  kernel/ncc3.sh and kernel/gate_ncc3.sh are both absent — this branch predates the second-toll fix, so its kernel builders still pay ~15 min of interpreted tiny_host per gate. Merge kernel/ncc3.sh + kernel/gate_ncc3.sh + the 35 converted builders together."
+fi
 # ── ncg3: compile native_input.la with native_codegen3, retrying ONLY a signal death ──
 # A long tiny_host compile has twice been killed by a signal mid-build, printing
 # bash's "Terminated" and nothing else. Under `set -e` that is an UNDIAGNOSABLE RED:

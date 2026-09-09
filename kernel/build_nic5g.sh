@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."          # -> ~/logos
 
 echo "[1/4] compile nic5g.la via native_codegen3"
 cp kernel/nic5g.la native_input.la
-./tiny_host native_codegen3.la >/dev/null
+bash kernel/ncc3.sh >/dev/null
 ENTRY=$(readelf -h native_codegen3_out | awk '/Entry point/{print $NF}')
 echo "      e_entry (LA prol) = $ENTRY"
 

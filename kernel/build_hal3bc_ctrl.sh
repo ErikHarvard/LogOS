@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."          # -> ~/logos
 
 echo "[1/5] compile ata3b_ctrl.la (unbounded waits — the red-path control) via native_codegen3"
 cp kernel/ata3b_ctrl.la native_input.la
-./tiny_host native_codegen3.la >/dev/null
+bash kernel/ncc3.sh >/dev/null
 ENTRY=$(readelf -h native_codegen3_out | awk '/Entry point/{print $NF}')
 echo "      e_entry (LA prol) = $ENTRY"
 

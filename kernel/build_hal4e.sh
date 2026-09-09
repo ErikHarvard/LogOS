@@ -15,7 +15,7 @@ cd "$(dirname "$0")/.."          # -> ~/logos
 
 echo "[1/4] compile comp_text.la via native_codegen3 (slow — superlinear codegen)"
 cp kernel/comp_text.la native_input.la
-time ./tiny_host native_codegen3.la >/dev/null
+time bash kernel/ncc3.sh >/dev/null
 ENTRY=$(readelf -h native_codegen3_out | awk '/Entry point/{print $NF}')
 echo "      e_entry (LA prol) = $ENTRY"
 
