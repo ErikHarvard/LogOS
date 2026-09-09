@@ -28,16 +28,31 @@ cd "$(dirname "$0")/.." || exit 1
 ok=1
 command -v qemu-system-x86_64 >/dev/null 2>&1 || { echo "SKIP  HAL.3c: qemu absent"; exit 0; }
 
+# Sets BOOT_OUT (serial text) and BOOT_RC (timeout/qemu exit status).
+#
+# ★ THE EXIT STATUS IS THE POINT, AND THE OLD FORM THREW IT AWAY. Piping qemu
+# into `tr` made $? the status of `tr`, which is always 0 — so a run that HUNG
+# and was killed by `timeout` (rc 124) was indistinguishable from one that
+# exited cleanly. That is precisely the difference this gate has to see.
+# `#!/bin/sh` has no PIPESTATUS, so the output goes to a file instead.
+#
+# ★ CALL IT BARE, NEVER AS `X=$(boot ...)`. A value assigned inside a function
+# invoked through command substitution is set in a SUBSHELL and lost — the same
+# defect that once made gate_p1.sh unable to go GREEN.
 boot() {  # $1 = elf, $2 = extra qemu args ("" for no disk)
+    _bt=$(mktemp)
     timeout 60 qemu-system-x86_64 -kernel "$1" $2 -m 256 -serial stdio -display none \
-      -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown 2>/dev/null | tr -d '\0'
+      -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown >"$_bt" 2>/dev/null
+    BOOT_RC=$?
+    BOOT_OUT=$(tr -d '\0' < "$_bt")
+    rm -f "$_bt"
 }
 
 [ -x ./kernel/build_hal3.sh ] || { echo "SKIP  HAL.3c: build_hal3.sh absent"; exit 0; }
 ./kernel/build_hal3.sh >/dev/null 2>&1 || { echo "FAIL  HAL.3c: build_hal3.sh failed"; exit 1; }
 
 # ── 1. healthy path ────────────────────────────────────────────────────────
-H=$(boot kernel/kernel_hal3.elf "-drive file=kernel/hal3disk.img,format=raw,if=ide")
+boot kernel/kernel_hal3.elf "-drive file=kernel/hal3disk.img,format=raw,if=ide"; H=$BOOT_OUT
 if printf '%s' "$H" | grep -qF 'ata done' && printf '%s' "$H" | grep -qF 'LOGOS-DISK-OK-HAL3'; then
     echo "PASS  HAL.3c 1: with a real disk the bounded driver still reads the sector (healthy path unchanged)"
 else
@@ -45,12 +60,17 @@ else
 fi
 
 # ── 2. the fault is diagnosed, not fatal ───────────────────────────────────
-F=$(boot kernel/kernel_hal3.elf "")
+boot kernel/kernel_hal3.elf ""; F=$BOOT_OUT; F_RC=$BOOT_RC
 fseen=$(printf '%s' "$F" | tr '\n' '|' | head -c 160)
 if printf '%s' "$F" | grep -q 'EXCEPTION'; then
     echo "FAIL  HAL.3c 2: the kernel still faults on a never-ready channel: $fseen"; ok=0
+elif [ "$F_RC" = 124 ]; then
+    # ★ The old check asserted the diagnosis and called it "exits cleanly"
+    # without ever testing that it exited. A driver can print its timeout line
+    # and then hang; that is a failure and it used to read as a PASS.
+    echo "FAIL  HAL.3c 2: the bounded driver printed a diagnosis but NEVER TERMINATED (rc=124): $fseen"; ok=0
 elif printf '%s' "$F" | grep -qF 'ata drq timeout st=' && printf '%s' "$F" | grep -qF 'ata dead'; then
-    echo "PASS  HAL.3c 2: a never-ready channel is DIAGNOSED and the kernel exits cleanly — $(printf '%s' "$F" | grep -o 'ata drq timeout st=[0-9]*')"
+    echo "PASS  HAL.3c 2: a never-ready channel is DIAGNOSED and the kernel exits cleanly (rc=$F_RC) — $(printf '%s' "$F" | grep -o 'ata drq timeout st=[0-9]*')"
 else
     echo "FAIL  HAL.3c 2: no diagnosis on serial (wanted 'ata drq timeout st=' + 'ata dead'): $fseen"; ok=0
 fi
@@ -61,13 +81,30 @@ fi
 if [ -x ./kernel/build_hal3c_ctrl.sh ] && [ -f kernel/ata_ctrl.la ]; then
     ./kernel/build_hal3c_ctrl.sh >/dev/null 2>&1 || { echo "FAIL  HAL.3c: control build failed"; ok=0; }
     if [ -f kernel/kernel_hal3_ctrl.elf ]; then
-        C=$(boot kernel/kernel_hal3_ctrl.elf "")
+        boot kernel/kernel_hal3_ctrl.elf ""; C=$BOOT_OUT; C_RC=$BOOT_RC
         cseen=$(printf '%s' "$C" | tr '\n' '|' | head -c 120)
-        if printf '%s' "$C" | grep -q 'EXCEPTION'; then
-            echo "      red-path OK: the UNBOUNDED control still dies on the same input ($cseen) — the bound is load-bearing"
+        # ★ WHAT THE CONTROL MUST DO IS *NOT DIAGNOSE-AND-EXIT*. IT NEED NOT CRASH.
+        # This assertion used to demand `EXCEPTION`, because in 2026-08 the
+        # unbounded WAITDRQ recursed off into unmapped memory (EXCEPTION 0d).
+        # It no longer does, and the driver did not change: `self("!")` is in
+        # TAIL POSITION and the native backend gained TCO, so the same runaway
+        # recursion is now an infinite LOOP in bounded stack. MEASURED
+        # 2026-09-09: the control prints "ata:" and hangs for the full budget,
+        # rc=124, no EXCEPTION — while the FIXED driver diagnoses and exits 33
+        # in 3s. The bound is still load-bearing; only the failure MODE moved.
+        # A substrate improvement silently disarmed the red path of five gates.
+        # So test the property that actually discriminates: the fix DIAGNOSES
+        # AND TERMINATES, the control does neither. Crash or hang both prove it.
+        if printf '%s' "$C" | grep -qF 'ata dead'; then
+            echo "FAIL  HAL.3c 3 [red-path]: the control DIAGNOSED ($cseen) — it is not the unbounded"
+            echo "      driver, so this gate proves nothing. Check kernel/ata_ctrl.la still lacks DRQFUEL."; ok=0
+        elif printf '%s' "$C" | grep -q 'EXCEPTION'; then
+            echo "      red-path OK (crash): the UNBOUNDED control dies on the same input ($cseen) — the bound is load-bearing"
+        elif [ "$C_RC" = 124 ]; then
+            echo "      red-path OK (hang): the UNBOUNDED control never terminates on the same input (rc=124, $cseen) — the bound is load-bearing"
         else
-            echo "FAIL  HAL.3c 3 [red-path]: the unbounded control did NOT crash ($cseen) — this gate cannot"
-            echo "      distinguish the fix from no fix, so check 2 proves nothing."; ok=0
+            echo "FAIL  HAL.3c 3 [red-path]: the control neither diagnosed, crashed, nor hung (rc=$C_RC, $cseen)"
+            echo "      — it exited cleanly without the bound, which the unbounded driver cannot do."; ok=0
         fi
     else
         # ★ 2026-09-08: this branch had NO else, so a control build exiting 0
