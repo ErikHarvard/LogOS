@@ -143,7 +143,19 @@ rf_made () {   # produced by the build rather than shipped with it?
     grep -qE "(rm -f[^|;&]*|> *|-o +|cp +[^ ]+ +)$e( |\$|;)" build.sh 2>/dev/null && return 0
     git ls-files '*.la' | xargs grep -qF "write_file(\"$1\"" 2>/dev/null && return 0
     git ls-files '*.la' | xargs grep -qF "write_exec(\"$1\"" 2>/dev/null && return 0
-    git ls-files '*.sh' | xargs grep -qE "> *$e|rm -f[^|;&]*$e" 2>/dev/null && return 0
+    # ★ THE '>' MUST BE A REDIRECT, NOT THE '>' OF AN ASCII ARROW. This read
+    # `"> *$e"`, which matched `echo "  -> sx2b_app ... bytes" >> $L` -- a LOG
+    # MESSAGE in .sx2b_rebuild.sh:17. rf_made therefore reported that the build
+    # PRODUCES sx2b_app because a log line contains an arrow, and a gate built to
+    # catch exactly that missing vessel went GREEN on the strength of it.
+    # This is "a comment is not an execution path" (041631a) one register over:
+    # an arrow inside a string is not a redirect operator. Found 2026-09-09 only
+    # because the false green was IMPLAUSIBLE -- had sx2b_app not been the case
+    # under investigation, it would have passed unexamined.
+    # Red-tested BOTH ways: the log line no longer matches; `cat x > sx2b_app`,
+    # `foo>sx2b_app` and `rm -f sx2b_app` still do. Checked against all 30 paths
+    # in the current read_file population -- the tightening newly flags NONE.
+    git ls-files '*.sh' | xargs grep -qE "(^|[^-<])> *$e|rm -f[^|;&]*$e" 2>/dev/null && return 0
     return 1
 }
 RF_BAD=""; RF_ORPHAN=""; RF_N=0
