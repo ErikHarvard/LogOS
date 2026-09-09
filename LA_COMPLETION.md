@@ -530,8 +530,11 @@ every item below cites the ruling rather than inferring one.
   by discipline — a convention."* The paper also draws the distinction that
   matters here: *"The third differs in kind from the first two. Missing
   components can be added; not constant-time is a property"* — you cannot bolt
-  it on afterwards. Seven crypto modules pass published vectors `[W]`; none is
-  timing-safe. **Gate:** for each module, execution time over two input classes
+  it on afterwards. **Six** crypto modules pass published vectors `[W]` — corrected
+  2026-09-09, the count was one too many: `sha256` (`gate_sha256.sh`) and
+  `hmac`/`hkdf`/`chacha20`/`poly1305`/`aead` (`gate_crypto.sh:68-72`) are witnessed;
+  `hmacdrbg.la` is `[B]`, carrying a NIST SP 800-90A known-answer vector that no
+  script had ever run. None of the six is timing-safe. **Gate:** for each module, execution time over two input classes
   that differ only in secret bytes must not separate. **Red path:** feed it a
   deliberately data-dependent branch and the timing gate must fire. A discipline
   carried by convention is precisely what this list exists to convert into a

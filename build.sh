@@ -526,11 +526,18 @@ say "SHA-256 in Lingua Adamica — the first cryptographic primitive the languag
 # builtin breaks the hash — but a correct builtin set can still be composed wrong.
 bash gate_sha256.sh || exit 1
 
-say "the crypto substrate above the hash — KDF, MAC, stream cipher, authenticator, AEAD"
+say "the crypto substrate above the hash — KDF, MAC, stream cipher, authenticator, AEAD, DRBG"
 # Sits immediately AFTER the sha256 gate for the same reason that one sits before
 # the bitwise gate: HMAC and HKDF are compositions of SHA-256, so if both go red
 # the order says which is the cause. ~360 s, of which ~200 s is hmac+hkdf on the
 # C host — SHA-256 is the expensive part, not the new modules.
+# ★ 2026-09-09: hmacdrbg WIRED, and it dominates this gate's cost. The gate is now
+# roughly 1560-2320 s, of which hmacdrbg alone is ~1200-1964 s — the spread is LOAD,
+# measured on this box the same day (~1200 s at load ~4.8, 1964 s at load ~8), not a
+# range of guesses. It carries its own 3600 s budget for that reason; gate_crypto.sh's
+# header states the measurement and the budget separately. This cost is the GATE'S own
+# — it runs the module — not the cost of producing an input it does not re-derive.
+# It had been in the tree since af730ee, whose subject claims "DRBG", gated by nothing.
 bash gate_crypto.sh || exit 1
 
 say "bitwise ops (band/bor/bxor/bshl/bshr/bnot) across the engines"
