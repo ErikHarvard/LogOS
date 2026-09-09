@@ -62,9 +62,14 @@ ok=1
 #  regression affecting every LA compile, not just this gate; 30 s (5%) hkdf.la's
 #  own growth. Runs 2 and 3 differ in tiny_host ONLY (md5-verified).
 #
-#  ⚠ 1800 IS A HANG-CATCHER, NOT A PERFORMANCE BUDGET. It is 1.8x the measured
-#  1001 s, chosen for headroom on a loaded machine, not because 1800 s is
-#  acceptable. Two things this does NOT fix and must not be read as fixing:
+#  ⚠ 2400 IS A HANG-CATCHER, NOT A PERFORMANCE BUDGET, and it is 2400 rather
+#  than 1800 because Track A's own note above corrected my arithmetic: this
+#  module's three runs establish a ~64% LOAD SWING (~1200 / ~1610 / 1964 s).
+#  Apply that to hkdf's 1001 s and a contended run reaches ~1642 s — so 1800
+#  would have been ~10% of headroom, not the 80% "1.8x the measured cost"
+#  suggests. A budget set from a quiet-machine number is how a gate acquires a
+#  silent RED-for-load. 2400 clears the contended estimate by ~1.46x. It is not
+#  an assertion that 2400 s is acceptable. Two things this does NOT fix and must not be read as fixing:
 #  the adc80a6 regression is unaddressed, and whether a ~17-minute leg belongs
 #  in build.sh's serial abort chain at all is a separate open question. If this
 #  needs raising again, RE-MEASURE and update the table — a budget raised
@@ -74,8 +79,17 @@ ok=1
 #  The VM timeout below is deliberately left at 900: its legs (chacha20,
 #  poly1305, aead) completed inside 900 s in the 2026-09-09 run, so raising it
 #  would be guessing at a budget nobody has measured — the exact defect above.
-check_host () {   # name expected
-    local out; out="$(timeout 1800 ./tiny_host "$1.la" 2>&1 | head -1)"
+#  ★ THE FUNCTION SHAPE BELOW IS TRACK A's, ADOPTED RATHER THAN RE-DERIVED
+#  (kernel-k1, a5b0343). A hit the same wall independently and fixed the half I
+#  had not: capture the exit code and SAY which side failed, so a budget kill is
+#  never again mistaken for a wrong answer. Mine fixed the number, theirs fixed
+#  the diagnosis; the two branches converge here instead of conflicting at merge.
+check_host () {   # name expected [timeout_s, default 900]
+    local f rc=0 out
+    f="$(mktemp)"
+    timeout "${3:-900}" ./tiny_host "$1.la" > "$f" 2>&1 || rc=$?
+    out="$(head -1 "$f")"; rm -f "$f"
+    [ "$rc" = 0 ] || { echo "FAIL  $1 C host: exited $rc (want 0. 124/137/143 = the ${3:-900}s budget killed it -- timeout's own code, a SIGKILL escalation, or the shell reporting SIGTERM; ANY OTHER VALUE IS THE PROGRAM, not the budget); first line: [$out]"; ok=0; return 1; }
     [ "$out" = "$2" ] || { echo "FAIL  $1 C host: [$out]"; ok=0; return 1; }
     return 0
 }
@@ -98,7 +112,7 @@ E_POLY="poly1305 2.5.2 OK | A.3#5 OK | A.3#6 OK | A.3#7 OK"
 E_AEAD="aead 2.8.2 ct OK | tag OK | roundtrip OK | forged-tag rejected"
 
 check_host hmac     "$E_HMAC"
-check_host hkdf     "$E_HKDF"
+check_host hkdf     "$E_HKDF" 2400   # measured 1001 s; see THE HOST TIMEOUT above
 check_host chacha20 "$E_CC20" && check_vm chacha20 "$E_CC20"
 check_host poly1305 "$E_POLY" && check_vm poly1305 "$E_POLY"
 check_host aead     "$E_AEAD" && check_vm aead     "$E_AEAD"
