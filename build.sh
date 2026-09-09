@@ -4638,8 +4638,17 @@ say "Self-extension stage 2b — the ORGAN begets its own successor (gate_selfex
 #  chain even if that reasoning is wrong. Both are mutation-tested.
 #  ★★★ The vessel sx2b_app costs ~10 min of codegen to build (a specpipe
 #  importer is ~160 s measured, and depth multiplies it), so it is built OUT OF
-#  BAND with .sx2b_build.sh / .sx2b_rebuild.sh. The gate SKIPS when the vessel
-#  is absent rather than pretending, and says so.
+#  BAND with .sx2b_build.sh / .sx2b_rebuild.sh -- both TRACKED as of 51e69fa, so
+#  a clean checkout can build the vessel; before that they were untracked and this
+#  gate was UNSATISFIABLE FROM A CLONE, permanently.
+#  ★ CORRECTED 2026-09-09: this said the gate SKIPS when the vessel is absent.
+#  It does not, and has not since the skip-to-fail change -- gate_selfext2b.sh:65
+#  FAILS, because a SKIP and a PASS are one bit to build.sh and this gate skipped
+#  silently for four consecutive builds. The note described the behaviour that was
+#  DELIBERATELY REMOVED, two lines above the call site, so anyone scoping the RED
+#  from the comment would have concluded it was impossible. Stated as what IS,
+#  never by quoting the retracted claim, so a grep for the old wording cannot
+#  match a corrected file.
 python3 gate_selfext2b_safety.py || exit 1
 # ★ A MISSING GATE FILE IS A BROKEN CHECKOUT, NOT A CONFIGURATION (III-3).
 #   This read `if [ -f gate_selfext2b.sh ]; then ... else echo SKIP; fi`, so deleting the
