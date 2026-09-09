@@ -49,6 +49,42 @@ if [ -x ./gate_abspath.sh ]; then
 else
     echo "SKIP  gate_abspath.sh is not on this branch — merge it here; the build is NOT checking absolute paths"
 fi
+
+# ── the kernel half is reachable on its own ────────────────────────────────
+# ~1s, so it sits here with the other cheap structural checks, before anything
+# expensive runs. It gates kernel/build_kernel_half.sh, the entry point that
+# runs THIS FILE's kernel region (between the ===KERNEL-HALF-=== sentinels far
+# below) against a prebuilt language half — the fix for the fact that the
+# kernel gates sit behind ~7000 lines of language-half work and had therefore
+# never run in any build (MEASURED 2026-09-08: a multi-hour build invoked ZERO
+# gate scripts).
+#
+# ★ IT IS WIRED HERE BECAUSE AN UNWIRED GATE IS THE DEFECT IT EXISTS TO FIX.
+# gate_bootelf.sh sits on disk invoked by nothing; the census found 30 more.
+# A gate written for this entry point and left uninvoked would be the 31st.
+#
+# What it actually asserts: the runner REJECTS as well as accepts — a SKIP is
+# counted and exits 2 rather than 0, an unreadable result is FAIL-side, an
+# empty region and a missing sentinel each refuse — and, R10, that the
+# sentinels below still bracket ~65 live invocations. So a merge that drops a
+# sentinel or reshapes a gate invocation fails HERE, in one second, instead of
+# silently shrinking what the kernel-only entry point covers.
+say "Kernel-half entry point (the gate on kernel/build_kernel_half.sh)"
+if [ -x ./kernel/gate_kernel_half.sh ]; then
+    if ./kernel/gate_kernel_half.sh; then :; else
+        echo "FAIL  build.sh: kernel/gate_kernel_half.sh went RED (see the lines above)"
+        exit 1
+    fi
+elif grep -qxF '# ===KERNEL-HALF-BEGIN===' build.sh; then
+    # ★ NOT A BLANKET SKIP. This file carries the sentinels, so it is claiming a
+    # kernel-only entry point — and the gate on that entry point is missing.
+    # That is a HALF-MERGE, a real defect, and it fails. The skip below covers
+    # only the honest case: a branch that predates the feature entirely.
+    echo "FAIL  build.sh: this build.sh carries the KERNEL-HALF sentinels but kernel/gate_kernel_half.sh is missing — a half-merged kernel-only entry point. Merge the kernel/ half, or remove the sentinels."
+    exit 1
+else
+    echo "SKIP  kernel/gate_kernel_half.sh is not on this branch AND neither are the KERNEL-HALF sentinels — this build.sh predates the kernel-only entry point, so there is nothing here to check. Merge kernel/build_kernel_half.sh + kernel/gate_kernel_half.sh + the sentinels together to enable it."
+fi
 # ── ncg3: compile native_input.la with native_codegen3, retrying ONLY a signal death ──
 # A long tiny_host compile has twice been killed by a signal mid-build, printing
 # bash's "Terminated" and nothing else. Under `set -e` that is an UNDIAGNOSABLE RED:
@@ -7061,6 +7097,28 @@ else
     exit 1
 fi
 
+# ===KERNEL-HALF-BEGIN===
+# ★ SENTINEL — DO NOT DELETE. Everything between this marker and
+# ===KERNEL-HALF-END=== is the KERNEL HALF: 65 gate invocations across 52
+# scripts, and 65 of build.sh's 83 hard aborts, in the last 5.6% of the file.
+# kernel/build_kernel_half.sh EXTRACTS this region at run time and executes it
+# verbatim against a prebuilt language half (tiny_host + the committed
+# native_codegen3_selfhost.bin), so kernel work can be verified without first
+# paying the ~7000-line language-half toll. MEASURED 2026-09-08: a build that
+# ran for hours invoked ZERO gate scripts — nothing here had ever run.
+#
+# Extraction, not duplication, is deliberate: build.sh stays the ONE definition
+# of what the kernel half is, so a gate added here runs there the same day. The
+# runner REFUSES to run if a sentinel is missing rather than guessing line
+# numbers, and refuses if any invocation is in a shape it cannot classify — a
+# gate that ran unclassified would be invisible in the tally, which is the
+# defect this whole block exists to remove.
+#
+# The region must stay free of shell state from above (it references ZERO
+# variables today) and every invocation must keep the shape
+#     bash <script> [args] || exit 1        or     ./<script> [args] || exit 1
+# Adding a gate in another shape does not break the build, but the runner will
+# fail loudly rather than silently omit it. Keep new gates in these shapes.
 say "LogOS kernel — K1/K2: first bare-metal boot + loud fault handling (ring 0)"
 # Build the kernel (compile kernel.la -> LA image, wrap with the boot stub +
 # syscall substrate + IDT) in both the normal and fault-injection variants, then
@@ -7483,6 +7541,7 @@ bash kernel/gate_k7b.sh || exit 1   # K7b load the kernel image from disk + hand
 
 say "Substrate invariance — the same LA image is ONE BEING on host and on metal"
 bash kernel/gate_with_ok.sh || exit 1   # WITH_OK host_image == metal_image, the eighth self-relation
+# ===KERNEL-HALF-END===
 
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),
