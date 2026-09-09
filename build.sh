@@ -1168,6 +1168,28 @@ grep -qF 'glyph IS_ALPHA1 = la d. str_eq(CANON(d))(NORMK(d))' canon.la || { echo
 for ANUM in ALPHA_VAL ALPHA_SCORE ALPHA_DEG ALPHA_NUM ALPHA_LEVEL; do
     grep -qE "^glyph $ANUM" canon.la && { echo "FAIL  canon α: glyph '$ANUM' is defined — α is being made NUMERIC inside the identity register. That is the two-register category error the ATT note names: alignment is identity (1.0 by nature), instantiation fidelity is the measured one and lives in FIDELITY.md under its own name"; ok=0; }
 done
+# ═══ BEHAVIOURAL DRIFT GATE — the κ-normaliser copies must AGREE ═══════════
+# The export fix landed in 9112c18 but specpipe.la records it was "inert until a
+# consumer is converted" — eleven generated modules, 313 glyphs, imported by
+# nothing. The conversion never happened, so the re-implementations remain: 14
+# distinct sites re-declare canon's κ machinery (M76). This gate does not remove
+# them; it makes their DISAGREEMENT impossible to miss, which is the M67 ruling
+# generalised — a gated copy and no copy are equivalent with respect to drift.
+#
+# ⚠ BEHAVIOURAL, NOT TEXTUAL. The check two blocks up greps canon.la for a glyph
+#   body; a source diff is a static analyser and passes on two copies that are
+#   byte-identical and WRONG. This runs each normaliser and compares OUTPUT.
+# ★ It CAUGHT ONE, live, on 2026-09-09: entropy.la:NKAP lacked REWRITE_MC, so
+#   MC(BEING) normalised to ↻(BEING) where canon gives SELF — one copy carrying a
+#   declared rewrite and its twin not, i.e. build.sh:928's shape found by
+#   measurement. Fixed in the same commit; --selftest R3 reproduces it on demand.
+say "behavioural drift: every κ-normaliser agrees with canon.la:NORMK (gate_normdrift.sh)"
+bash gate_normdrift.sh . || exit 1
+# ★ the gate's own red paths, run every build so it cannot rot into a green stamp:
+#   R1 output literal · R2 comparator inversion · R3 the real 2026-09-09 defect.
+#   Three sites, three idioms — a sweep searches an idiom, not a class.
+bash gate_normdrift.sh --selftest . || { echo "FAIL  normdrift: a RED PATH NO LONGER FIRES — the gate can no longer fail"; exit 1; }
+
 # ★★ THE SEMIOTIC-ONTOGLYPHIC LADDER (ladder.la) — the 7 levels as data, and the
 #   ORDINAL discipline made mechanical. The Science of Naming ranks signs by
 #   structural alignment: Noise, Sign, Icon, Index, Glyph, Neoglyph, Ontoglyph, and
