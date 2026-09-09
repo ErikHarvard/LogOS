@@ -46,20 +46,30 @@ cp ../tiny_host ../secd.la ../codegen.la ../asm.la ../elfobj.la ../asmelfobj.la 
 # boot.asm + its four %includes + the incbin stub (from the frozen .bootrun set,
 # which is byte-identical to kernel/ except entry.inc — regenerated per build,
 # harmless here since nasm and asm.la assemble from the SAME dir)
-cp ../.bootrun/boot.asm asm_in.asm
+cp ../.bootrun/boot.asm boot_base.asm
 cp ../.bootrun/entry.inc ../.bootrun/idt.asm ../.bootrun/timer.asm ../.bootrun/kbdirq.asm .
 cp ../.elfobjgate/native_codegen3_out .          # incbin target stub
 
 ./tiny_host secd.la                              # emit logos_secd (~30s)
 python3 la_flatten.py asmelfobj.la logos_source.la asm.la:A_ elfobj.la:E_
 ./tiny_host codegen.la                           # ~12 min -> logos_program.bin
-./logos_secd                                     # ~14 min -> elfobj_out.o
 
-# the gate: link ours and nasm's, compare
-nasm -f elf64 asm_in.asm -o ref.o
-ld ref.o        -o ref.elf
-ld elfobj_out.o -o ours.elf
-cmp ref.elf ours.elf && echo "GREEN — ld(ours) == ld(nasm)"
+# ONE OBJECT PER ARM. boot.asm's three equ sites live in MUTUALLY EXCLUSIVE
+# arms of an %elifdef chain, so a single un-armed build assembles NONE of them
+# — the hollow green this cycle used to produce (FREEZE_II_FINDINGS.md Q0b).
+# The arm is selected by a %define PREPENDED TO THE SOURCE, never by a -D on
+# one side only: nasm and asm.la must read the identical file.
+mkdir -p obj
+for ARM in NONE HH1 HH2; do
+    if [ "$ARM" = NONE ]; then cp boot_base.asm asm_in.asm
+    else { printf '%%define %s\n' "$ARM"; cat boot_base.asm; } > asm_in.asm; fi
+    ./logos_secd                                 # ~14 min each -> elfobj_out.o
+    cp elfobj_out.o "obj/ours_$ARM.o"
+done
+
+# the gate: per arm, link ours and nasm's and compare — and assert each arm
+# actually CARRIES the equ sites it exists to cover.
+../gate_bootelf.sh . obj
 ```
 
 ## Cheap regression guard (in `build.sh`)
@@ -72,3 +82,11 @@ sections MERGING with symbols in source order; 32-bit absolute `[disp32]` +
 moffs; memory-displacement and far-jump relocs; 64-bit bitwise constants). It is
 wired into `build.sh`'s asm section, so a regression in any of those fails the
 build without a 26-minute run.
+
+**The cheap guard does not subsume the scale gate, and neither one subsumes
+per-arm coverage.** `gate_asmelf.sh` runs synthetic fixtures; `gate_bootelf.sh`
+runs the real 60 KB file — but only over the arms named in its `ARMS` list
+(`NONE HH1 HH2`), which are the arms carrying the three `equ` sites. `boot.asm`
+has **51** conditional arms (`grep -cE '^[[:space:]]*%(ifdef|ifndef|elifdef)'`),
+so **49 are covered by neither gate** — and a coverage claim phrased per-gate
+cannot even express that gap. See `FREEZE_II_FINDINGS.md` Q0b.
