@@ -40,10 +40,23 @@ EXCLUDED=kernel/build_hh1b.sh
 # ── 1. the census: no builder may call the slow compiler outside a fast path ──
 slow_files=""
 for b in kernel/build_*.sh; do
-    grep -qF "$SLOW" "$b" || continue
+    # ★ BOTH SIDES MUST STRIP COMMENTS, AND I FIXED ONLY ONE. When the exemption
+    # below was raw, three builders that merely MENTIONED the image in a comment
+    # were skipped while running the slow path. I fixed that line and left THIS
+    # one raw — so two builders that now mention the SLOW compiler only in a
+    # comment were wrongly flagged. Same defect, same file, one line apart, in
+    # opposite directions: a raw detector false-POSITIVES, a raw exemption
+    # false-NEGATIVES. Comments are not execution paths on either side of a test.
+    sed -e 's/[[:space:]]*#.*$//' "$b" | grep -qF "$SLOW" || continue
     # A match inside a builder that ALSO knows the fast path is that path's own
     # `else` fallback, which is correct and must not be flagged.
-    grep -q 'native_codegen3_selfhost' "$b" && continue
+    # ★ A COMMENT IS NOT AN EXECUTION PATH — 041631a's defect, committed in the
+    # gate written to catch drift back to the slow path. This exemption used a
+    # RAW grep, so three builders that merely MENTION the image in a comment
+    # while executing `./tiny_host native_codegen3.la` were skipped, and this
+    # gate reported PASS over them: build_nic5q_ctrl, build_nic5r_ctrl,
+    # build_nic5r. Strip comments before deciding a file has a fast path.
+    sed -e 's/[[:space:]]*#.*$//' "$b" | grep -q 'native_codegen3_selfhost' && continue
     slow_files="$slow_files $b"
 done
 if [ -n "$slow_files" ]; then

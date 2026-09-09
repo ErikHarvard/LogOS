@@ -39,10 +39,7 @@ grep -q '^rt_reap:' native_codegen3_rt.asm 2>/dev/null \
 
 compile() {   # $1 = source .la, $2 = destination .bin
     cp "$1" native_input.la
-    ( if [ -x native_codegen3_selfhost.bin ]; then
-          cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?
-          rm -f /tmp/_ncc$$; exit $rc
-      else ./tiny_host native_codegen3.la; fi ) >/dev/null
+        bash kernel/ncc3.sh >/dev/null
     cp native_codegen3_out "$2"
     echo "      -> $2"
 }
