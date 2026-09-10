@@ -7477,12 +7477,21 @@ bash kernel/gate_hal5b.sh || exit 1   # HAL.5b NIC send + receive — the first 
 #  regression surfaces early. NO skip flag, deliberately — an opt-out is how the
 #  other 52 got where they are.
 #
-#  NOT WIRED YET, and INCONCLUSIVE rather than failing: kernel/gate_pointer.sh and
+#  ★ RESOLVED 2026-09-09 — AND THE DIAGNOSIS ABOVE WAS RIGHT ABOUT THE CAUSE AND
+#  WRONG ABOUT THE REMEDY. This note read: "kernel/gate_pointer.sh and
 #  kernel/gate_cursor.sh both hit rc 124 — MY 1800 s harness timeout, not a gate
-#  verdict. Neither has the selfhost fast path (build_pointer/build_cursor still go
-#  through tiny_host + native_codegen3.la), so they simply need longer. They are
-#  being re-measured; "not yet verified" must not be spelled the same way as
-#  "failed", which is the same rule this census applied to SKIP and exit 0.
+#  verdict. Neither has the selfhost fast path (build_pointer/build_cursor still
+#  go through tiny_host + native_codegen3.la), so they simply need longer."
+#  It named the cause exactly and then prescribed WAITING. They did not need
+#  longer; they needed the fast compiler. Since kernel/ncc3.sh routes every
+#  builder through the committed native image, MEASURED:
+#      gate_pointer   PASS   4 s      (was rc 124 at 1800 s)
+#      gate_cursor    PASS   6 s
+#  Two gates that were UNRUNNABLE are green in ten seconds combined, and both are
+#  wired below. ⇒ The note was also RIGHT about the thing that mattered most:
+#  "not yet verified" must not be spelled the same way as "failed". Had these
+#  been recorded as failures they would have been debugged; recorded as
+#  inconclusive, they were merely expensive, and the expense is what got fixed.
 say "HAL drivers the suite never ran — mouse, wheel, terminal window (~36 min, measured)"
 bash kernel/gate_comp_term_hal4e.sh || exit 1  #   16 s  HAL.4h terminal window on the metal
 # ★ HAL.4g — WIRED 2026-09-09, the day it was first ever RUN. It was committed in
@@ -7501,6 +7510,8 @@ bash kernel/gate_comp_term_hal4e.sh || exit 1  #   16 s  HAL.4h terminal window 
 bash kernel/gate_hal4g.sh || exit 1            #  ~25 s  HAL.4g editable scrolling line (backspace + scroll)
 bash kernel/gate_mouse.sh || exit 1            #  883 s  HAL.2c PS/2 mouse: AUX enable + packet decode
 bash kernel/gate_wheel.sh || exit 1            # 1255 s  HAL.2e scroll wheel: the IMPS-2 knock + Z axis
+bash kernel/gate_pointer.sh || exit 1          #    4 s  HAL.2d PS/2 pointer: 9-bit delta sign-extension + buttons
+bash kernel/gate_cursor.sh || exit 1           #    6 s  HAL.4h cursor sprite on the LFB (PCI+VBE + PS/2 together)
 
 say "Higher-half — the kernel running wholly above the canonical split"
 bash kernel/gate_hh1.sh || exit 1   # HH1 higher-half
