@@ -7512,6 +7512,28 @@ bash kernel/gate_mouse.sh || exit 1            #  883 s  HAL.2c PS/2 mouse: AUX 
 bash kernel/gate_wheel.sh || exit 1            # 1255 s  HAL.2e scroll wheel: the IMPS-2 knock + Z axis
 bash kernel/gate_pointer.sh || exit 1          #    4 s  HAL.2d PS/2 pointer: 9-bit delta sign-extension + buttons
 bash kernel/gate_cursor.sh || exit 1           #    6 s  HAL.4h cursor sprite on the LFB (PCI+VBE + PS/2 together)
+bash kernel/gate_alloc_bounded.sh || exit 1    #   30 s  allocator boundedness: 15M iterations peak 3 MB, under the 64 MB floor
+# ── THE THREE THAT STAY UNWIRED, RUN 2026-09-09, EACH RED FOR A DIFFERENT REASON ──
+#  Run before judging, per this file's own census rule that structural
+#  classification hands you a red gate to wire. None declares itself expected-red.
+#   kernel/gate_hal4f.sh   RED ON A FRESH BUILD — not staleness. I closed its
+#     stale-ELF hole first (it only rebuilt when the ELF was ABSENT, and the one
+#     on disk was from Jul 18 — the same defect gate_hal4g had). With a fresh
+#     build it still fails: typing works (term ch=L, col/row advance) but it
+#     times out at rc 124 before 'term done', and the screendump finds 0 white
+#     glyph pixels where >200 are expected. A real HAL.4f regression. NOT
+#     superseded by HAL.4g — 4g is a single editable scrolling line, 4f is the
+#     multi-row typewriter — so this is a genuine open gap, not a duplicate.
+#   kernel/gate_hal3d.sh   Its INJECTED FAULT does not manifest: "QEMU ignored
+#     the reset hold". Same class as the driver-bounds block repaired earlier
+#     today — the control cannot discriminate, so the gate proves nothing yet.
+#   kernel/gate_dinit1.sh  Depends on rt_reap, which its message calls "gone from
+#     native_codegen3_rt.asm". IT WAS NEVER THERE: a presence scan over all 36
+#     committed revisions of that file, on every branch, finds it in ZERO (with a
+#     positive control — rt_gc/rt_apply hit 25 times in HEAD, so the scan reads
+#     the file). The gate is AHEAD OF THE CODE, depending on an uncommitted local
+#     edit. "Gone" implies a regression to debug; "never landed" is a different
+#     job, and the wording would have sent someone hunting the wrong thing.
 
 say "Higher-half — the kernel running wholly above the canonical split"
 bash kernel/gate_hh1.sh || exit 1   # HH1 higher-half

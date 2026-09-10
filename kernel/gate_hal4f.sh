@@ -63,18 +63,30 @@ fi
 # So: build on explicit opt-in, and otherwise FAIL LOUDLY. Note this is the
 # opposite of the skip flag build.sh forbids — there is no way to make this gate
 # report success without actually running the kernel.
-if [ ! -f kernel/kernel_comp_term.elf ]; then
-    if [ "${LOGOS_GATE_BUILD:-0}" = "1" ] && [ -x ./kernel/build_hal4f.sh ]; then
-        echo "NOTE  HAL.4f typewriter: kernel/kernel_comp_term.elf absent — building it (38m01s and 41m24s, measured on two runs (build_hal4f.sh:11)) because LOGOS_GATE_BUILD=1"
-        ./kernel/build_hal4f.sh >/dev/null 2>&1 || {
-            echo "FAIL  HAL.4f typewriter gate: ./kernel/build_hal4f.sh failed, so the kernel under test does not exist"; exit 1; }
-    fi
+# ★ ALWAYS REBUILD — same repair as gate_hal4g.sh, same day, same reason. This
+# built ONLY when the ELF was ABSENT because a rebuild cost "38m01s and 41m24s,
+# measured on two runs". ⇒ A PRESENT-BUT-STALE ELF WAS TESTED AS THOUGH IT WERE
+# THE SOURCE. The one on disk dated from Jul 18. gate_hal4g failed exactly this
+# way on 2026-09-09 and I misdiagnosed it as a live codegen fault before finding
+# the binary was a July leftover; a fresh build of the unchanged source passed.
+#
+# ⇒ The gate had already been repaired for the ABSENT case (it used to SKIP +
+# exit 0) and left open for the STALE case, which is worse: absent is loud,
+# stale is a confident wrong answer.
+#
+# ⇒ AND THE COST THAT JUSTIFIED THE HOLE IS GONE. Those ~40 minutes were the
+# interpreted `./tiny_host native_codegen3.la` compile; through kernel/ncc3.sh
+# the rebuild is seconds. LOGOS_GATE_BUILD is retired.
+if [ ! -x ./kernel/build_hal4f.sh ]; then
+    echo "FAIL  HAL.4f typewriter gate: ./kernel/build_hal4f.sh is missing, so this gate cannot build what it tests and would otherwise test a leftover binary."
+    exit 1
+fi
+if ! ./kernel/build_hal4f.sh >/dev/null 2>&1; then
+    echo "FAIL  HAL.4f typewriter gate: ./kernel/build_hal4f.sh failed, so the kernel under test does not exist."
+    exit 1
 fi
 if [ ! -f kernel/kernel_comp_term.elf ]; then
-    echo "FAIL  HAL.4f typewriter gate: kernel/kernel_comp_term.elf is absent, so this gate tested NOTHING."
-    echo "      It used to report SKIP and exit 0 here, which is indistinguishable from a pass."
-    echo "      Build it out of band (./kernel/build_hal4f.sh, 38m01s and 41m24s, measured on two runs (build_hal4f.sh:11)),"
-    echo "      or re-run with LOGOS_GATE_BUILD=1 to have this gate build it itself."
+    echo "FAIL  HAL.4f typewriter gate: build reported success but kernel/kernel_comp_term.elf is absent, so this gate tested NOTHING."
     exit 1
 fi
 
