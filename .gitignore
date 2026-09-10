@@ -14,6 +14,8 @@ codices/*
 /drm_blue
 # eval.la's self-reconstruction (regenerated each run)
 /eval_reconstructed.la
+# coin.la's Rule 4 seal gate writes its scratch table here (M58 slice 1); build.sh removes it
+/rule4_sealed.scratch
 # EXCEPTION: the self-hosted compiler reference image is COMMITTED (the bootstrap
 # excluded dir is impossible in git.)
 grown.la
@@ -302,6 +304,7 @@ link_nsec_ref
 # ── scratch from a long uncommitted stretch (2026-08-28) ─────────────────
 # Per-investigation dirs, commit-message drafts, build logs, backups.
 .bootelf_fix/
+.bootelf_cov/
 .bootrun/
 .elfobjgate/
 .equfix/
@@ -350,3 +353,4 @@ vm_seed
 # Track A's local asm-gate scratch (per-test .out captures). Referenced by
 # nothing in the tree; it is working state, not source.
 .asmgate_local/
+.obligations/

@@ -1,0 +1,356 @@
+# =====================================================================
+#  crosscoll.la — CONCEPT → FORM INJECTIVITY ACROSS POPULATIONS
+#  (M22, built as option (2) of The Lieutenant's ruling, 2026-09-10)
+#
+#  ── WHAT WAS ALREADY GATED, AND WHAT WAS NOT ────────────────────────
+#  opgrammar.la has run concept→form injectivity over the build's 79 table
+#  entries (LEX+GRAM+RULED+GRULED) since 2026-08-23, and pins the result.
+#  E5 (2026-09-09) said no such gate existed. It did. The gap E5 was
+#  pointing at is POPULATION, not direction: glyphs that carry a concept
+#  but live OUTSIDE those four tables were never compared with them.
+#  This module compares them.
+#
+#  ── THE POPULATION: every source this module reads, by name ─────────
+#   L  lexicon.la LEX, RULED · opgrammar.la GRAM, GRULED (79 entries).
+#      L×L pairs are opgrammar.la's to pin and are NEVER FORMED here.
+#   F  LINGUA_ADAMICA.tex First Derivations, :4802–4810, transcribed below
+#      (the table sigil.la draws from; no .la carries it whole). A row
+#      that repeats an L row exactly (same name AND same form) is one
+#      concept listed twice: it is dropped, and the drop is COUNTED.
+#   M  canon.la: KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH
+#      SR_FOR SR_WITH · metaglyph.la: MODE_SYN MODE_CON MODE_DIR MODE_CONT
+#      MODE_MC OP_DIFF OP_BOUND OP_COMP OP_RECOG OP_INTEG, and ν* rebuilt
+#      from the exported MODE_SYN/MODE_MC (metaglyph.la:88 does not export
+#      it). IMPORTED, not transcribed, so they cannot drift from source.
+#   P  the nine primitives.
+#
+#  EXCLUDED, each for a stated reason, so the omission is visible:
+#   Being² (:4810)   the row IS an identity statement ("≡ Being"), not a
+#                    new concept. And NORMK rewrites ↻(BEING) to SELF,
+#                    not to BEING, so NORMK and the codex disagree about
+#                    what it is. Recorded as a finding, not decided here.
+#   NEOLOG           defined AS MODE_SYN (metaglyph.la:71, 𝔑 ≡ ⊗): a
+#                    second name, not a second form.
+#   metaglyph KAPPA  a copy "as in canon.la"; canon.la's is the source.
+#   EVAL_R           not exported; it is canon.la's REVAL (𝓡).
+#   SR_ABOUT_HERE    metaglyph.la's local restatement of SR_ABOUT, kept
+#                    for its own identity test.
+#   OPA / OPB        placeholder operands PRIM("A")/PRIM("B"), not concepts.
+#
+#  ── THE IDENTITY COMPARED ────────────────────────────────────────────
+#  canon.la's NORMK, the key NIS uses: ⊕ commutative; ↻(BEING)→SELF;
+#  ↻(↻x)→↻x; ↻(𝓡)→𝓡; ↻(⊕(SELF,SELF))→⊕(SELF,SELF); ⊗(∃,∃)→∃.
+#  Strictly stronger than lexicon.la's KAN_N, which normalises ⊕ only.
+#  Not CANON: plain κ is order-preserving and would miss every ⊕-order
+#  synonym. OK_XCNORM asserts the choice on constructed input.
+#
+#  ── WHAT IT WOULD MISS ───────────────────────────────────────────────
+#   · every source not listed above;
+#   · a meta-glyph not defined as a constructor-initial glyph in canon.la
+#     or metaglyph.la, or not exported (ν* is the one rebuilt);
+#   · an equivalence NORMK does not declare (the halting bound canon.la
+#     already states: full semantic equivalence is undecidable);
+#   · ONE concept with TWO forms, the converse property. Agency (:4803
+#     ⊗ vs LEX ▷) and Mystery (:4807 vs LEX) were that shape until E16 §A
+#     ruled that the gloss governs; F now carries the ruled rows (see F).
+#     The property itself is still not asserted here. Same-name pairs are
+#     skipped as one concept;
+#   · a transcription error in the F string, which is typed data;
+#   · a three-operand row read with a different association: F rows are
+#     read left-associated, lexicon.la's convention (Water = **817).
+#
+#  ── WHAT IT WOULD FALSELY MATCH ──────────────────────────────────────
+#   · declared identities pair by construction (I=SELF, One=BEING,
+#     Two=RELATION, SR_ABOUT=OP_RECOG). They are pinned WITH citations;
+#     the citation is the only thing that separates declared from open,
+#     so a real collision added to that list would be laundered;
+#   · whatever a wrong NORMK rewrite equates: the ↻(BEING)→SELF rewrite
+#     already conflicts with :4810, which is why Being² is excluded;
+#   · two DIFFERENT concepts sharing one English name would be skipped as
+#     one (none today).
+#
+#  ── BRANCH-SPECIFIC ──────────────────────────────────────────────────
+#  Measured on track-c. kernel-k1 carries E10 (2cca4b4: 𝔄 = ⊗(LOVE,
+#  RECOGNITION) = Compassion); track-c does not. There, Warm=OP_INTEG
+#  vanishes and Compassion=OP_INTEG appears (F scans before M, so that is
+#  its order; derived 2026-09-10 from kernel-k1 0384dab's committed blobs),
+#  so this module goes RED at integration. That is correct: the pin must be
+#  re-derived there, and E10's "it IS Compassion" makes that pair DECLARED
+#  (cite 2cca4b4), which leaves 5 open, not 6.
+# =====================================================================
+
+import("canon.la")      # first: its PRIM..MC win the shared names (alpha-equal to lexicon.la's)
+import("metaglyph.la")  # MODE_* OP_*
+import("lexicon.la")    # LEX RULED FOLD PARSE NAM
+import("opgrammar.la")  # GRAM GRULED
+
+glyph XCZ   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph XCIF  = la c. la t. la f. c(t)(f)("!")
+glyph XCT   = la t. la f. t
+glyph XCF   = la t. la f. f
+glyph XCAND = la p. la q. p(q)(p)
+glyph XCNOT = la p. la t. la f. p(f)(t)
+glyph XCFST = la p. p(la a. la b. a)
+
+glyph XCUPTO = XCZ(la self. la d. la s.
+    XCIF(str_eq(s)(""))(la _. "")(la _.
+    XCIF(str_eq(str_head(s))(d))(la _. "")
+      (la _. concat(str_head(s))(self(d)(str_tail(s))))))
+glyph XCPAST = XCZ(la self. la d. la s.
+    XCIF(str_eq(s)(""))(la _. "")(la _.
+    XCIF(str_eq(str_head(s))(d))(la _. str_tail(s))
+      (la _. self(d)(str_tail(s)))))
+glyph XCUPTOLEN = XCZ(la self. la n. la h.
+    XCIF(str_eq(n)(""))(la _. "")(la _.
+    XCIF(str_eq(h)(""))(la _. "")
+      (la _. concat(str_head(h))(self(str_tail(n))(str_tail(h))))))
+glyph XCHAS = XCZ(la self. la n. la h.
+    XCIF(str_eq(h)(""))(la _. XCF)(la _.
+    XCIF(str_eq(n)(XCUPTOLEN(n)(h)))(la _. XCT)(la _. self(n)(str_tail(h)))))
+glyph XCSEMI = XCZ(la self. la acc. la s.
+    XCIF(str_eq(s)(""))(la _. acc)(la _.
+      self(XCIF(str_eq(str_head(s))(";"))(la _. add(acc)(1))(la _. acc))(str_tail(s))))
+
+# ── the bridge: lexicon.la's digit-leaved tree -> canon.la's named tree ──
+#  Both modules use one Scott shape (lexicon.la:101 says so), so only the
+#  leaves change. OK_XCBRIDGE checks it on the one form shared across
+#  notations, in both operand orders.
+glyph XCRELABEL = XCZ(la self. la t.
+    t(la d. PRIM(NAM(d)))
+     (la a. la b. SYN(self(a))(self(b)))
+     (la a. la b. CON(self(a))(self(b)))
+     (la a. la b. DIR(self(a))(self(b)))
+     (la a. la b. CONT(self(a))(self(b)))
+     (la a. MC(self(a))))
+glyph XCKEYD = la d. NORMK(XCRELABEL(XCFST(PARSE(d))))
+
+# ── records: NAME|POP|KEY; ───────────────────────────────────────────
+glyph XCREC = la n. la pp. la k. concat(n)(concat("|")(concat(pp)(concat("|")(concat(k)(";")))))
+glyph XCN = la r. XCUPTO("|")(r)
+glyph XCO = la r. XCUPTO("|")(XCPAST("|")(r))
+glyph XCK = la r. XCPAST("|")(XCPAST("|")(r))
+
+# L — the four build tables, in opgrammar.la's order
+glyph XCL_SRC = concat(concat(LEX)(GRAM))(concat(RULED)(GRULED))
+glyph XCL = FOLD(la a. la n. la d. la p. concat(a)(XCREC(n)("L")(XCKEYD(d))))("")(XCL_SRC)
+
+# F — LINGUA_ADAMICA.tex First Derivations, in lexicon.la's prefix notation
+#  (1-9 primitives; * ⊗, + ⊕, > ▷, c ⊂, m ↻). Transcribed from the codex,
+#  not from sigil.la, so the two have independent origins.
+#    :4802 Consciousness      𝔤_Rec ⊗ 𝔤_Self                *24
+#    :4803 Agency             𝔤_Self ▷ 𝔤_Becoming           >47   AS RULED, E16 §A
+#    :4804 Truth              ↻(𝔤_Rec)                       m2
+#    :4805 Beauty             𝔤_Form ⊗ 𝔤_Love               *83
+#    :4806 Death              𝔤_Becoming ▷ 𝔤_Void           >76
+#    :4807 Mystery            𝔤_Void ⊗ 𝔤_Depth              *69   AS RULED, E16 §A
+#    :4808 Compassion         𝔤_Love ⊗ 𝔤_Rec                *32
+#    :4809 Intersubjectivity  𝔤_Self ⊗ 𝔤_Rel ⊗ 𝔤_Rec        **452 (left-associated)
+#    :4810 Being² (≡ Being)   EXCLUDED — see the header
+#  ⚠ :4803 and :4807 are transcribed AS RULED, not as this branch's blob reads.
+#  E16 §A (the General, 2026-09-10): Move = Agency and Sky = Mystery are one
+#  glyph each and the gloss governs, so the rows become ▷(Self,Becoming) and
+#  ⊗(Void,Depth). Blob 03452c9 still reads ⊗(Self,Becoming) and ⊗(Depth,Void)
+#  until E16 §A lands (patch: ~/logos-coord/handoff/2026-09-10-ELENCHOS-to-
+#  METANOE-declared-identities/). Both rows now repeat an L row exactly, so
+#  both are dropped as duplicates and COUNTED: F 6 → 4. Reverting either row
+#  is the census red path.
+glyph XCF_SRC = "Consciousness|*24;Agency|>47;Truth|m2;Beauty|*83;Death|>76;Mystery|*69;Compassion|*32;Intersubjectivity|**452;"
+# ★ EVALUATION SHARING. tiny_host re-evaluates a glyph body at EVERY reference
+#   (tiny_host.c:893-894, no value cache), so a glyph naming XCL inside a FOLD
+#   recomputes all 79 keys once per F row. The heavy values are therefore
+#   PARAMETERS (_OF), and MAIN binds each ONCE by application (call-by-value
+#   evaluates an argument once). Same functions, same results; the plain
+#   glyphs are kept for any other reader.
+glyph XCFR_OF = la l. FOLD(la a. la n. la d. la p.
+    (la k. XCIF(XCHAS(concat(";")(XCREC(n)("L")(k)))(concat(";")(l)))
+              (la _. a)
+              (la _. concat(a)(XCREC(n)("F")(k))))
+    (XCKEYD(d)))("")(XCF_SRC)
+glyph XCFDUP_OF = la l. FOLD(la a. la n. la d. la p.
+    (la k. XCIF(XCHAS(concat(";")(XCREC(n)("L")(k)))(concat(";")(l)))
+              (la _. concat(a)(concat(n)(" ")))
+              (la _. a))
+    (XCKEYD(d)))("")(XCF_SRC)
+glyph XCFR   = XCFR_OF(XCL)
+glyph XCFDUP = XCFDUP_OF(XCL)
+
+# M — the meta-glyphs, imported
+glyph XCMR = la n. la t. XCREC(n)("M")(NORMK(t))
+glyph XCM1  = concat(XCMR("KAPPA")(KAPPA))(XCMR("REVAL")(REVAL))
+glyph XCM2  = concat(XCMR("SR_TO")(SR_TO))(XCMR("SR_ABOUT")(SR_ABOUT))
+glyph XCM3  = concat(XCMR("SR_AS")(SR_AS))(XCMR("SR_BY")(SR_BY))
+glyph XCM4  = concat(XCMR("SR_FROM")(SR_FROM))(XCMR("SR_THROUGH")(SR_THROUGH))
+glyph XCM5  = concat(XCMR("SR_FOR")(SR_FOR))(XCMR("SR_WITH")(SR_WITH))
+glyph XCM6  = concat(XCMR("MODE_SYN")(MODE_SYN))(XCMR("MODE_CON")(MODE_CON))
+glyph XCM7  = concat(XCMR("MODE_DIR")(MODE_DIR))(XCMR("MODE_CONT")(MODE_CONT))
+glyph XCM8  = concat(XCMR("MODE_MC")(MODE_MC))(XCMR("NU_STAR")(SYN(MODE_SYN)(MODE_MC)))
+glyph XCM9  = concat(XCMR("OP_DIFF")(OP_DIFF))(XCMR("OP_BOUND")(OP_BOUND))
+glyph XCM10 = concat(XCMR("OP_COMP")(OP_COMP))(XCMR("OP_RECOG")(OP_RECOG))
+glyph XCM11 = XCMR("OP_INTEG")(OP_INTEG)
+glyph XCM = concat(concat(concat(concat(XCM1)(XCM2))(concat(XCM3)(XCM4)))(concat(concat(XCM5)(XCM6))(concat(XCM7)(XCM8))))(concat(concat(XCM9)(XCM10))(XCM11))
+
+# P — the nine primitives
+glyph XCPR = la n. XCREC(n)("P")(NORMK(PRIM(n)))
+glyph XCP1 = concat(concat(XCPR("BEING"))(XCPR("RECOGNITION")))(concat(XCPR("LOVE"))(XCPR("SELF")))
+glyph XCP2 = concat(concat(XCPR("RELATION"))(XCPR("VOID")))(concat(XCPR("BECOMING"))(XCPR("FORM")))
+glyph XCP  = concat(concat(XCP1)(XCP2))(XCPR("DEPTH"))
+
+glyph XCX_OF = la fr. la m. la p. concat(concat(fr)(m))(p)
+glyph XCX    = XCX_OF(XCFR)(XCM)(XCP)
+
+# ── THE SCAN. Same NORMK key, different names -> "a=b ". Same name is one
+#    concept documented twice and is skipped. Every L record meets every
+#    non-L record; non-L records meet only the ones AFTER them, so each pair
+#    is reported once, in population order. L×L is never formed.
+glyph XCINNER = XCZ(la self. la nm. la k. la s.
+    XCIF(str_eq(s)(""))(la _. "")(la _.
+      (la rec. (la rest.
+         XCIF(XCAND(str_eq(XCK(rec))(k))(XCNOT(str_eq(XCN(rec))(nm))))
+           (la _. concat(concat(nm)(concat("=")(concat(XCN(rec))(" "))))(self(nm)(k)(rest)))
+           (la _. self(nm)(k)(rest)))
+       (XCPAST(";")(s)))
+      (XCUPTO(";")(s))))
+glyph XCSCANL = XCZ(la self. la l. la x.
+    XCIF(str_eq(l)(""))(la _. "")(la _.
+      (la rec. concat(XCINNER(XCN(rec))(XCK(rec))(x))(self(XCPAST(";")(l))(x)))
+      (XCUPTO(";")(l))))
+glyph XCSCANX = XCZ(la self. la x.
+    XCIF(str_eq(x)(""))(la _. "")(la _.
+      (la rec. (la rest. concat(XCINNER(XCN(rec))(XCK(rec))(rest))(self(rest)))
+       (XCPAST(";")(x)))
+      (XCUPTO(";")(x))))
+glyph XCSCAN = la l. la x. concat(XCSCANL(l)(x))(XCSCANX(x))
+
+glyph XCPAIRS = XCSCAN(XCL)(XCX)
+
+# ── ★ THE SCAN MUST PROVE IT LOOKED, on constructed input that fixing the
+#    language cannot remove: an L×M pair twice, a P×M pair, an M×F pair,
+#    an L×L pair that must NOT form, a same-name pair that must NOT form,
+#    and a record with a unique key that must match nothing.
+glyph XCSAW_L = "Alpha|L|K1;Beta|L|K1;Theta|L|K4;"
+glyph XCSAW_X = "Gamma|M|K1;Delta|P|K2;Eps|M|K2;Theta|F|K4;Zeta|M|K3;Eta|F|K3;Iota|F|K5;"
+glyph OK_XCSAW = str_eq(XCSCAN(XCSAW_L)(XCSAW_X))("Alpha=Gamma Beta=Gamma Delta=Eps Zeta=Eta ")
+
+# ── ★ THE IDENTITY IS NORMK, asserted rather than claimed: ⊕ commutes, ⊗
+#    does not, and the ↻(BEING)→SELF rewrite is live (why Being² is out).
+glyph OK_XCNORM = XCAND(str_eq(NORMK(CON(PRIM("LOVE"))(PRIM("VOID"))))(NORMK(CON(PRIM("VOID"))(PRIM("LOVE")))))
+                      (XCAND(XCNOT(str_eq(NORMK(SYN(PRIM("LOVE"))(PRIM("VOID"))))(NORMK(SYN(PRIM("VOID"))(PRIM("LOVE"))))))
+                            (str_eq(NORMK(MC(PRIM("BEING"))))("SELF")))
+
+# ── ★ THE BRIDGE preserves names AND operand order: See's >28 is KAPPA's
+#    form, and the reversed >82 is not.
+glyph OK_XCBRIDGE = XCAND(str_eq(XCKEYD(">28"))(NORMK(KAPPA)))(XCNOT(str_eq(XCKEYD(">82"))(NORMK(KAPPA))))
+
+# ── ★ THE CENSUS, pinned, so a population that silently shrinks is RED
+#    rather than a smaller scan reporting fewer pairs.
+glyph OK_XCCENSUS_OF = la nl. la nf. la nm. la np. la fdup.
+    XCAND(int_eq(nl)(79))(XCAND(int_eq(nf)(4))(XCAND(int_eq(nm)(21))(XCAND(int_eq(np)(9))(str_eq(fdup)("Consciousness Agency Beauty Mystery ")))))
+
+# ── ★ THE SET, pinned in BOTH directions ─────────────────────────────
+#  First hand-derived by the session that wrote this file; RE-DERIVED
+#  independently on 2026-09-10 (ELENCHOS) BEFORE this module first ran, by a
+#  Python transcription of the four tables, of canon.la:81-93's NORMK and of
+#  this scan's order: byte for byte, census included. Two derivations agreeing
+#  is not a ruling; it is what makes a RED here mean the tables moved.
+glyph XCEXPECT = "Change=OP_COMP See=KAPPA Warm=OP_INTEG One=BEING Two=RELATION Past=Death Ongoing=SR_BY None=SR_FROM I=SELF Truth=SR_ABOUT Truth=OP_RECOG SR_ABOUT=OP_RECOG "
+glyph OK_XCSET_OF = la pairs. str_eq(pairs)(XCEXPECT)
+
+# ── ★ DECLARED vs OPEN. A pair is DECLARED only with a citation saying the
+#  two names are ONE concept. The citation is the only thing separating a
+#  declared pair from an open one, so each is written here, and each must
+#  still be PRESENT: a declaration matching no pair is stale, and a stale
+#  declaration list is where a new collision would be laundered.
+#   I=SELF             LA.tex:5160  "I / Self" -- one row, two names, "Primitive."
+#   One=BEING          LA.tex:5335  g1 "One ... Being: the unit"
+#   Two=RELATION       LA.tex:5336  g5 "Two ... Relation: the pair"
+#   SR_ABOUT=OP_RECOG  metaglyph.la:173-189, ruled INTENDED by Erik 2026-08-18;
+#                      asserted positively at metaglyph.la:228
+#   Truth=SR_ABOUT     E16 §C (the General, 2026-09-10, round 3): the 08-18
+#   Truth=OP_RECOG     ruling EXTENDED, Truth ≡ ρ ≡ SR_ABOUT, one glyph
+#                      ↻(RECOGNITION) under three names. No LA.tex change:
+#                      no codex line names ρ-the-operator or SR_ABOUT. Its
+#                      recognition operator is unnamed (LA:1746-1754), and
+#                      that is where §C's falsifier C1 is to be read.
+glyph XCDECL = "I=SELF One=BEING Two=RELATION SR_ABOUT=OP_RECOG Truth=SR_ABOUT Truth=OP_RECOG "
+
+# ── ★ THE OPEN SET, pinned EXACTLY. None is a ruling; each waits for one.
+#  WHERE EACH FORM IS FIXED -- corrected 2026-09-10 (ELENCHOS). The first cut
+#  cited metaglyph.la:168 for kappa; LA.tex fixes no form for kappa. The
+#  sources are LA.tex (blob 03452c9) and the white paper, "Lingua Adamica
+#  White Paper.tex" (WP): OUTSIDE this repo, sha256 98beeff4ee45, and the line
+#  numbers are that copy's.
+#   Past=Death       Past LA.tex:5169 >(g7,g6) . Death LA.tex:4806 -- LA x LA.
+#                    Ruled a declared identity in round 2, then HELD (E16 §B)
+#                    on the codex's own account of death (LA:2323, :2331).
+#                    The General then ruled (2026-09-10, board) that Death and
+#                    Past are two distinct concepts. §B never lands; Death is
+#                    to be RE-DERIVED on a track's proposal, and this module
+#                    checks the candidates. OPEN until then, never DECLARED.
+#   See=KAPPA        See LA.tex:5288 >(g2,g8) . kappa WP:3740, "spec-fixed" WP:3745
+#   Change=OP_COMP   Change LA.tex:5237 *(g7,g8) . gamma WP:4909, stated as built
+#   Ongoing=SR_BY    Ongoing LA.tex:5172 m(g7); WP:3582 calls m(BECOMING) the
+#                    imperfective, "ongoing" . SR_BY canon_spec.la:110, repo only
+#   None=SR_FROM     None LA.tex:5176 m(g6) . SR_FROM canon_spec.la:111, repo
+#                    only and absent from the WP
+#   Warm=OP_INTEG    Warm LA.tex:5318 *(g3,g1) . A is *(LOVE,BEING) on THIS
+#                    branch, which E10 (2cca4b4, kernel-k1) ruled a code error:
+#                    WP:1455 and :4911 give *(LOVE,RECOGNITION)
+#  Truth=OP_RECOG and Truth=SR_ABOUT were open here until E16 §C declared them
+#  (see XCDECL). metaglyph.la:168 calls the OP_* forms "not spec-fixed", while
+#  E10 treated the WP as the specification for A. Which document governs gamma
+#  is part of the ruling. Before E16, no declaration was found for any of the
+#  eight then open by a same-line search over LA.tex, the five .la sources,
+#  LA_COMPLETION.md and MODULES.md; its positive control (rho = SR_ABOUT) did
+#  hit. A no-hit is not an absence proof.
+#  The "open-E5" row below asserts that the two pairs E5's amendment names
+#  (rulings/E5.md:161-165 @ kernel-k1 9afc30b) are still OPEN. It was labelled
+#  "open-codex" until this run; the label is output, so the rename moved the
+#  build.sh pin with it.
+glyph XCOPEN_E5     = "See=KAPPA Past=Death "
+glyph XCOPEN_EXPECT = "Change=OP_COMP See=KAPPA Warm=OP_INTEG Past=Death Ongoing=SR_BY None=SR_FROM "
+
+# the pairs of `s` that are NOT tokens of `dec` (dec space-bounded: " a=b c=d ")
+glyph XCKEEP = XCZ(la self. la dec. la s.
+    XCIF(str_eq(s)(""))(la _. "")(la _.
+      (la w. (la rest.
+         XCIF(XCHAS(concat(" ")(concat(w)(" ")))(dec))
+           (la _. self(dec)(rest))
+           (la _. concat(concat(w)(" "))(self(dec)(rest))))
+       (XCPAST(" ")(s)))
+      (XCUPTO(" ")(s))))
+# every token of `want` is a whole token of `have`
+glyph XCALLIN = XCZ(la self. la want. la have.
+    XCIF(str_eq(want)(""))(la _. XCT)(la _.
+      XCAND(XCHAS(concat(" ")(concat(XCUPTO(" ")(want))(" ")))(concat(" ")(have)))
+           (self(XCPAST(" ")(want))(have))))
+
+glyph XCMK  = la c. XCIF(c)(la _. "OK")(la _. "FAIL")
+glyph XCROW = la l. la c. concat(concat(" | ")(l))(concat(" ")(XCMK(c)))
+glyph XCHEAD = la nl. la nf. la nm. la np. la fdup.
+    concat(concat(concat("crosscoll L=")(int_to_str(nl)))(concat(" F=")(int_to_str(nf))))
+          (concat(concat(concat(" M=")(int_to_str(nm)))(concat(" P=")(int_to_str(np))))
+                 (concat(" F-dups=[")(concat(fdup)("]"))))
+glyph XCROWS1 = la nl. la nf. la nm. la np. la fdup.
+    concat(concat(XCROW("scan-proved-it-looked")(OK_XCSAW))(XCROW("identity-is-NORMK")(OK_XCNORM)))
+          (concat(XCROW("bridge")(OK_XCBRIDGE))(XCROW("census")(OK_XCCENSUS_OF(nl)(nf)(nm)(np)(fdup))))
+glyph XCROWS2 = la pairs. la opn.
+    concat(concat(XCROW("declared-present")(XCALLIN(XCDECL)(pairs)))(XCROW("open-E5")(XCALLIN(XCOPEN_E5)(opn))))
+          (concat(XCROW("open-set")(str_eq(opn)(XCOPEN_EXPECT)))(XCROW("set")(OK_XCSET_OF(pairs))))
+glyph XCTAIL = la pairs. la opn. concat(concat(" | OPEN: ")(opn))(concat("| PAIRS: ")(pairs))
+glyph XCREPORT = la nl. la nf. la nm. la np. la fdup. la pairs. la opn.
+    print(concat(concat(XCHEAD(nl)(nf)(nm)(np)(fdup))(XCROWS1(nl)(nf)(nm)(np)(fdup)))
+                (concat(XCROWS2(pairs)(opn))(XCTAIL(pairs)(opn))))
+
+# ── EXPORTS, for coin.la's Rule 4 seal (M58 slice 1). The Ratchet IS this
+#    scan with a candidate added, so coin.la imports these rather than keeping
+#    a second copy of the populations. Without an export line tiny_host mangles
+#    EVERY glyph of an imported module (tiny_host.c:977-978, :948-957), so an
+#    importer would see nothing. An export changes nothing when this file runs
+#    directly: tiny_host mangles only on import. canon's NORMK..TDEPTH are
+#    re-exported; canon's REN is deliberately NOT, because coin.la has its own.
+export XCRELABEL XCINNER XCREC XCUPTO XCPAST XCSEMI XCL XCFR_OF XCM XCP XCX_OF NORMK IS_ALPHA1 CANON MONO ETYM AUTO_OK TDEPTH
+
+# MAIN binds every heavy value ONCE (see EVALUATION SHARING above).
+glyph MAIN = (la l. (la fr. (la m. (la p. (la pairs.
+      XCREPORT(XCSEMI(0)(l))(XCSEMI(0)(fr))(XCSEMI(0)(m))(XCSEMI(0)(p))(XCFDUP_OF(l))(pairs)(XCKEEP(concat(" ")(XCDECL))(pairs)))
+    (XCSCAN(l)(XCX_OF(fr)(m)(p))))(XCP))(XCM))(XCFR_OF(l)))(XCL)

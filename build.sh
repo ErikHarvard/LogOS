@@ -2742,6 +2742,95 @@ say "LA linker: N objects -> a running ET_EXEC, no ld (link.la, track B)"
 # exclusion was undocumented — my own gate_link*.sh sweep glob had missed it.
 [ "$ok" -eq 1 ] || exit 1
 
+# ── boot.asm ARM COVERAGE — the cheap half of gate_bootelf.sh, WIRED ─────────
+#    Track C, 2026-09-09. This is the guard for FREEZE_II_FINDINGS.md Q0b: the
+#    scale gate came back GREEN having assembled NONE of the three `equ` sites
+#    it exists to cover, because they sit in mutually exclusive %elifdef arms
+#    (kernel/boot.asm:364 %ifdef K6A … :610 %elifdef HH1 … :676 %elifdef HH2)
+#    and it assembled with no -D. The green was true and hollow.
+#
+#    ★ WHAT THIS BLOCK IS, EXACTLY — and it is deliberately not the whole gate.
+#    It runs `gate_bootelf.sh --coverage-only`, which needs nothing but fresh
+#    nasm and the tracked boot source: per arm, does the arm's source really
+#    carry the sites that arm exists to cover; does the no-define configuration
+#    carry NONE of them (the control, so the per-arm claims cannot pass
+#    vacuously); and does the arm set cover all three between them. MEASURED
+#    0.048 s. Red-tested BOTH ways before wiring: renaming a site away gives
+#    MISSING + UNCOVERED → RED, and making the no-define build carry a site
+#    fires UNEXPECTED → RED.
+#
+#    ★ WHAT IT IS NOT, AND WHY THAT IS NOT HEDGING. It never runs
+#    ld(ours)==ld(nasm) and never looks at asm.la's output, so it says NOTHING
+#    about whether the assembler is correct — its own PASS line says so. The
+#    scale comparison needs asm.la's per-arm objects, and those cost ~62 min to
+#    derive (phase 2 ~22 min + VM 26/30/39 min) and are gitignored, so a fresh
+#    tree has none. The three ways to wire that are all bad: deriving in-build
+#    is +62 min per build; skipping when the objects are absent is
+#    green-by-absence, the exact defect the six selfext blocks below were
+#    repaired out of; and committing the objects with a provenance stamp is
+#    honest but reds the build on any asm.la or boot.asm change until someone
+#    spends 62 minutes — a 63rd hard abort firing on unrelated churn. So the
+#    scale half stays on demand, and the verdict it produced on 2026-09-09
+#    (GREEN on all three arms, against real asm.la objects, red-tested on those
+#    same objects) is recorded in BOOTELF.md rather than re-derived per build.
+#    Wiring the cheap half is not a substitute for that; it is the part that can
+#    honestly run every time.
+say "boot.asm arm coverage: the three equ sites are actually assembled (gate_bootelf.sh --coverage-only)"
+if ! command -v nasm >/dev/null 2>&1; then
+    echo "SKIP  bootelf-coverage: nasm not installed"
+else
+    BE_S=.bootelf_cov
+    rm -rf "$BE_S"; mkdir -p "$BE_S" || { echo "FAIL  bootelf-coverage: cannot stage $BE_S"; exit 1; }
+    cp kernel/boot.asm "$BE_S/boot_base.asm" || { echo "FAIL  bootelf-coverage: kernel/boot.asm unreadable"; exit 1; }
+    for BE_F in idt.asm timer.asm kbdirq.asm; do
+        cp "kernel/$BE_F" "$BE_S/" || { echo "FAIL  bootelf-coverage: kernel/$BE_F unreadable"; exit 1; }
+    done
+    # entry.inc and the incbin target are build products, generated here so both
+    # arms of the comparison read one deterministic value; nothing under kernel/
+    # is written.
+    printf 'LA_ENTRY equ 0x400000\n' > "$BE_S/entry.inc"
+    printf 'STUB' > "$BE_S/native_codegen3_out"
+    # A gate FILE is never optional: deleting it must not leave this GREEN.
+    [ -x ./gate_bootelf.sh ] \
+      || { echo "FAIL  bootelf-coverage: gate_bootelf.sh is missing or not executable — a gate file is never optional, so this is a broken checkout rather than a configuration"; exit 1; }
+    ./gate_bootelf.sh --coverage-only "$BE_S" || exit 1
+    rm -rf "$BE_S" .elfobjgate/_bootelfgate
+fi
+
+# ── bootelf PROVENANCE — a COUNTED OBLIGATION, deliberately not a 63rd abort ──
+#    The scale comparison ld(ours)==ld(nasm) runs on demand (~62 min to derive
+#    asm.la's per-arm objects) and its verdict lives in BOOTELF.md. This asserts
+#    that verdict still describes the current sources — ~0.1 s, every build.
+#
+#    ★ WHY IT DOES NOT `exit 1`, AND THE DISTINCTION IS NOT COST (ruling: The
+#    General, 2026-09-09). A provenance mismatch says "nobody has re-derived
+#    since asm.la changed." It CANNOT say the new asm.la is wrong. A correctness
+#    gate says the code is broken; a staleness gate says the evidence is old.
+#    Every `|| exit 1` in this file strands ~50 of the 52 gate invocations behind
+#    it, so putting a staleness red in that chain would give "nobody has spent 62
+#    minutes yet" the power to halt fifty CORRECTNESS gates. That is the wrong
+#    trade at any cost.
+#
+#    ⚠ AND WHAT KEEPS THIS FROM BEING A 50th SKIP IN DISGUISE. A third state that
+#    is merely quiet is green-by-absence wearing a new name — this tree already
+#    has ~49 SKIP paths that report neither PASS nor FAIL and so show nothing
+#    wrong in any tally. Exactly two properties make STALE honest: it is COUNTED
+#    (below), and the count is ASSERTED ZERO where it blocks a release (the
+#    auto-checkpoint at the end of this file refuses to tag `verified-*` while
+#    any obligation stands). Remove either and this has been diluted back into a
+#    SKIP. Do not remove one without removing both, and say so when you do.
+mkdir -p .obligations
+if [ -x ./gate_bootelf.sh ]; then
+    BE_PRC=0; ./gate_bootelf.sh --provenance || BE_PRC=$?
+    case "$BE_PRC" in
+        0) rm -f .obligations/bootelf-stale ;;
+        3) echo "OBLIGATION  bootelf-provenance is STALE — counted, not fatal. The build continues; the auto-checkpoint at the end will REFUSE to tag this commit verified until it is cleared."
+           echo "stale since $(date +%Y-%m-%d): re-derive per BOOTELF.md (~62 min) and update BOOTELF_STAMP in gate_bootelf.sh" > .obligations/bootelf-stale ;;
+        *) echo "FAIL  bootelf-provenance: exited $BE_PRC — that is a broken checkout (missing stamp inputs, unset stamp), not a stale one"; exit 1 ;;
+    esac
+else
+    echo "FAIL  bootelf-provenance: gate_bootelf.sh is missing or not executable"; exit 1
+fi
 
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
@@ -4768,7 +4857,19 @@ for M in discourse coin immune ablate phonseal; do
     *FAIL*) echo "FAIL  $M: a gate failed — $MOUT"; ok=0 ;;
     "")     echo "FAIL  $M: no output (module did not run)"; ok=0 ;;
   esac
+  if [ "$M" = coin ]; then COIN_SEAL_OUT="$MOUT"; fi
 done
+# ★ coin.la's Rule 4 seal (M58 slice 1, ELENCHOS, 2026-09-10). The loop above
+#   fails only on *FAIL* or empty output, so a seal half that silently stopped
+#   printing its rows would still pass. Pin every seal row PRESENT and OK. The
+#   output is captured INSIDE the loop and coin is not re-run: coin now imports
+#   crosscoll.la's populations, so a second run would cost minutes. A coin that
+#   never ran leaves COIN_SEAL_OUT unset, and that is a FAIL here, not a skip.
+rm -f rule4_sealed.scratch
+case "${COIN_SEAL_OUT:-}" in
+  *"| seal-population OK"*"| seal-census-before OK"*"| seal-added OK"*"| seal-reload OK"*"| seal-refuse-class OK"*"| seal-refuse-twin OK"*"| seal-refuse-lineage OK"*"| seal-refuse-reseal OK"*"| seal-refuse-primitive OK"*) : ;;
+  *) echo "FAIL  coin: the Rule 4 seal rows are not all present and OK — got: ${COIN_SEAL_OUT:-<no coin output>}"; ok=0 ;;
+esac
 # ★ Each of the four asserts something the others cannot, so the loop above is
 #   not four copies of one check. Pin the load-bearing measurement of each, so a
 #   silent change of result cannot pass as a silent change of nothing.
@@ -4887,6 +4988,52 @@ case "$IOUT" in
 esac
 if [ "$ok" -eq 1 ]; then
     echo "PASS  lexicon+grammar: 57 codex content words + 18 closed-class categories + 4 ruled re-derivations derived from the nine primitives; 55 of 79 phonyms match the codex's printed IPA (24 diverge — every ▷ entry, 14 content + 10 closed-class, because the codex's printed IPA PREDATES R-D's duration mark; the four vowel-elision divergences are themselves ▷ entries and are ABSORBED into that set, not added to it, which is why it is 24 and not 28); the ten sentence-formation rules discriminate (predication/negation/question/tense/order/double-negation); ★ cross-table monosemy scan on the NORMALISED key now pins EIGHT collisions and ALL EIGHT are aliases the codex declares in its own gloss column — ZERO undeclared collisions remain, so the Monosemic Principle holds throughout the codex's own vocabulary across both tables, which it did not this morning; resolvable only because ⊗ is non-commutative (three of Erik's four rulings need a free form on an operand pair that commuting ⊗ would have denied); discourse reproduces the codex's five worked sentences 5/5 and its dialogue 1/4; coinage is deterministic/recoverable/closed with ⊕ converging and ⊗ correctly not; the immune system's four checkpoints give four distinct signatures and pass a well-formed falsehood by design; the operator census measures ⊂ used 2 times — negation moved off the commutative ⊕ onto ⊂, closing the never-used finding with load-bearing use"
+else
+    exit 1
+fi
+
+
+say "Cross-population concept→form monosemy (crosscoll.la — M22)"
+ok=1
+# ★ opgrammar.la (above) scans the 79 lexicon+grammar entries against EACH
+#   OTHER. Glyphs that carry a concept OUTSIDE those tables were never compared
+#   with them: the First Derivations (LA.tex :4802-4810), the meta-glyphs
+#   (canon.la κ 𝓡 SR_*, metaglyph.la's modes and ∂δγρ𝔄) and the nine
+#   primitives. crosscoll.la compares them under canon.la's NORMK; L×L pairs
+#   stay opgrammar.la's.
+# ★ 12 pairs share a glyph: 6 DECLARED, each with its citation in crosscoll.la
+#   (Truth=SR_ABOUT and Truth=OP_RECOG by E16 §C, 2026-09-10), and 6 OPEN,
+#   pinned EXACTLY. Where each form is fixed is recorded in crosscoll.la,
+#   corrected 2026-09-10 against LA.tex and the white paper (outside the repo):
+#   - Past=Death sets LA.tex against itself. The General ruled them two
+#     distinct concepts (2026-09-10); Death is to be re-derived, so it stays OPEN.
+#   - See=KAPPA and Change=OP_COMP set LA.tex against forms the white paper
+#     states.
+#   - The SR_* pairs set LA.tex against repo-only assignments.
+#   - Warm=OP_INTEG exists only because this branch predates E10.
+#   None of the six is a ruling. The pin exists so that a new collision, or
+#   a fix, turns this RED and must be looked at.
+# ★ F carries First Derivations :4803/:4807 AS RULED by E16 §A (Agency and
+#   Mystery take their glosses' forms), so both repeat an L row and F = 4.
+# ★ The first pin was derived before its first run by an independent
+#   transcription (board, 2026-09-10) and reproduced byte for byte. This pin
+#   (A′) was pre-registered on the board before its run. RED paths, run:
+#   Care re-derived onto REVAL's form ▷(DEPTH,RECOGNITION) turns open-set and
+#   set FAIL, and the OPEN line names Care=REVAL; Agency reverted to ⊗ in F
+#   turns census FAIL at F=5.
+# ⚠ Branch-specific: on kernel-k1, E10 (2cca4b4) makes 𝔄 = Compassion, so
+#   Warm=OP_INTEG goes and a DECLARED Compassion=OP_INTEG comes. Re-derive this
+#   pin at integration (crosscoll.la's header says how).
+# Cost, measured 2026-09-10: 2:43 wall / 37 MB at load ~2 on 24 cores. The
+#   600 s budget is ~3.7x that.
+XCOUT="$(timeout 600 ./tiny_host crosscoll.la 2>&1)" || { echo "FAIL  crosscoll: crosscoll.la did not run to completion (host halted, timed out, or a module is missing) — $XCOUT"; ok=0; }
+case "$XCOUT" in *FAIL*) echo "FAIL  crosscoll: a gate failed — $XCOUT"; ok=0 ;; esac
+case "$XCOUT" in
+  *"| OPEN: Change=OP_COMP See=KAPPA Warm=OP_INTEG Past=Death Ongoing=SR_BY None=SR_FROM | PAIRS:"*) : ;;
+  *) echo "FAIL  crosscoll: the open cross-population collision set changed — got: $XCOUT"; ok=0 ;;
+esac
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  crosscoll: the 79 lexicon+grammar entries against 4 First Derivations + 21 meta-glyphs + 9 primitives under NORMK — 12 shared-glyph pairs, 6 DECLARED with citations and 6 OPEN pinned exactly (See=KAPPA Past=Death Change=OP_COMP Warm=OP_INTEG Ongoing=SR_BY None=SR_FROM), none a ruling"
 else
     exit 1
 fi
@@ -8378,6 +8525,151 @@ say "Substrate invariance — the same LA image is ONE BEING on host and on meta
 bash kernel/gate_with_ok.sh || exit 1   # WITH_OK host_image == metal_image, the eighth self-relation
 # ===KERNEL-HALF-END===
 
+# ── Track C — the tracing debugger (debug_eval.la) ────────────────────────────
+# The evaluator watching itself: DEBUG_EVAL reproduces EVAL's dispatch (it
+# cannot wrap it — EVAL's recursion is internal to its own Z, so a wrapper sees
+# only the outermost node) and emits enter/reduce lines plus, at a breakpoint,
+# the ENVIRONMENT in force and the CALL STACK that reached it. Those two are
+# not the same question — env is lexical (the scope a closure was made in),
+# bt is dynamic (the calls control actually took) — so a closure applied far
+# from where it was defined makes them disagree, and neither is derivable from
+# the other. A reproduced evaluator can DRIFT from the one it
+# claims to trace, and drift is invisible: the trace still looks plausible while
+# describing a reduction that never happened. So the gate's load-bearing
+# assertion is that DEBUG_EVAL and EVAL AGREE on every program's result, with
+# breakpoints armed — observing must not change the answer.
+#
+# Slice 4 makes those two projections DECIDE rather than display: a breakpoint
+# predicate now takes (depth, ast, env, stk), so BRK_CALLER can break at a name
+# ONLY when control reached it through a given frame. Until then the stack was
+# threaded and printed and nothing read it, so a fault in it could only look
+# wrong; now it changes which nodes break. The gate runs the unconditioned
+# predicate on the same program as a control and requires the conditional to
+# fire strictly less often — a conditional that stopped reading the stack still
+# fires, still prints a plausible backtrace, and still agrees.
+#
+# Slice 5 adds STEPPING, and adds no dispatch for it either: a step command is
+# a STOP CONDITION, which is how a real debugger does it — gdb's `next` sets a
+# condition on the current frame and resumes rather than running a second,
+# slower interpreter. step/step-over/step-out are three more predicates over
+# the same signature, and the gate asserts they select strictly NESTED stop
+# sets. They measure the STACK, not the depth: `d` counts every subexpression
+# while only a call pushes a frame, so a step-over written on `d` refuses to
+# look at an argument of the expression you are standing on — the two differ
+# on the test program (7 against 8) and the gate pins them apart by count.
+#
+# Slice 6 is the DRIVER, and it is the first slice to change the evaluator's
+# shape rather than only add a predicate — because it has to. A stop condition
+# is answerable at one node; "where am I, resume from HERE" needs an ordinal,
+# which counts nodes already visited and so flows ACROSS siblings, where depth
+# and stack flow downward. So the dispatch threads a state and returns
+# PAIR(value)(state), with the old tracer DEFINED from it by taking FST — still
+# one dispatch. Note what that costs: the agreement invariant compares the
+# VALUE, so it cannot see a mis-threaded ordinal at all. Measured, not assumed —
+# a red run showed check 1 stays green even when DEBUG_EVAL is replaced by EVAL
+# outright, and only the content checks catch that. The ordinal therefore gets
+# its own oracle, the printed trace, whose k-th ENTER line is node k.
+#
+# Slice 7 is the post-mortem: a fault now reports its ordinal, node kind, frame
+# depth, dynamic backtrace and the environment in force, and THEN still dies.
+# The load-bearing assertion is the non-zero exit — a post-mortem that caught
+# the fault would convert a loud failure into a silent one, which is the one
+# discipline this project is built on. The fault harness is generated from
+# debug_eval.la itself (everything before its MAIN, plus a new MAIN), the same
+# idiom used for the RUN_SM harness above, so there is no second copy of the
+# machinery to drift from what it tests.
+#
+# Slice 8 is INSPECTION — the first slice that ANSWERS rather than reports. The
+# driver can say where you are and BREAK can print what is bound, but neither
+# lets you ask something the debugger was not already going to tell you. The
+# stop record now carries the ENVIRONMENT, and INSPECT evaluates an arbitrary
+# expression in it. The claim is the SCOPE, so the gate asks one expression at
+# two stops where the local differs and requires the answers to DIFFER — a
+# top-level evaluator would answer plausibly for glyph-only expressions and
+# silently wrongly for every local. It also checks that the builtins the
+# kernel-k1 merge added (band, str_at) agree under the debugger, which they do
+# for free because DEBUG_EVAL imports eval.la's builtin table rather than
+# copying it — "for free" being the phrase the check exists to verify.
+#
+# Slice 9 adds WATCHPOINTS, the other axis of debugging: every stop condition
+# before it is POSITIONAL (this name, this frame, this depth), while a watch
+# asks about VALUE and is not expressible positionally at all. It required
+# making inspection TOTAL first — a watch evaluates its expression at every
+# node, and at most nodes that expression is out of scope, where a strict
+# inspector halts. So an unresolvable expression now answers "<unavailable>".
+# The gate's assertion is not a count: watching x over SRC_TWO stops at a node
+# that is NOT an x node and where x is not in scope (it went out of scope), and
+# that stop is the one observation no positional predicate can produce.
+#
+# Slice 10 adds REVERSE STEPPING, which is nearly free here and expensive
+# everywhere else. A conventional debugger stepping backwards needs
+# record/replay, because re-running a process does not reproduce it. This
+# evaluator is a pure function of its input, so re-execution reproduces the
+# identical trace node for node: history can be RECOMPUTED rather than stored,
+# and "step back" is the same deterministic walk keeping the LAST match before
+# a point instead of the first after it. The recorder became a parameter, so
+# there is still ONE dispatch. Note which assertion carries it: NOT the round
+# trip, which passes even if the backward search keeps the first match (from #1
+# the first and last qualifying nodes below it coincide), but a step back from
+# BEYOND the end, where keep-first and keep-last finally differ.
+#
+# Slice 11 repays what slice 10 cost. Recomputing history means every search
+# re-runs the whole program, so an n-step session is n re-executions; the tape
+# walks once and answers from the record. Recomputation stays the DEFINITION
+# and the tape is an OPTIMISATION that must agree with it — the gate compares
+# the two paths rather than testing the tape alone, because an optimisation
+# verified only against itself is not verified, and if they disagree the
+# recompute path is the one that is right. Two vacuity guards matter here: the
+# verdict "SAME" is true when BOTH searches find nothing, so the tape's stop is
+# asserted by VALUE beside it; and the tape's node count is cross-checked
+# against the count check 6 reaches independently by stepping.
+#
+# Slice 12 adds the TRACE BUDGET. Until it, the trace was all-or-nothing, so the
+# debugger could not be pointed at any program large enough to want one. It
+# needs no new state: the ordinal threaded since slice 6 IS a node counter.
+# ★ Truncation is ANNOUNCED, never silent — a trace that simply stops is
+# indistinguishable from a program that finished, and the marker is the only
+# thing separating "this is all that happened" from "this is all I was willing
+# to show". Both halves are asserted: the marker fires when the bound is hit,
+# and does NOT fire when it is not. A regression during this slice is worth
+# knowing: with silence encoded as budget 0, every SILENT search printed a
+# truncation marker into output it was supposed to stay out of, because i=0 on
+# the first node. Silence is -1, where both comparisons are false for every
+# ordinal.
+#
+# Slice 13 points the debugger at an EVALUATOR, which is what this file's own
+# header ("the evaluator watching itself") and CLAUDE.md's Meta-Debug(Meta-Debug)
+# = Debug ask for. ★ What is GATED is one honest level below the literal claim,
+# and the reason is MEASURED: tracing eval.la's own RUN runs past 150 seconds on
+# the host before host==VM doubles it, because the budget bounds what is EMITTED
+# and not what is EXECUTED. The literal self-application lives in debug_meta.la,
+# run by hand and documented, as theourgia_*_live and sigil_live are. The gated
+# check asserts the INTERPRETING, not the answer: "AGREE str:9" is equally true
+# of tracing any program that computes 9, so it asserts a fixed point being tied
+# and a term selecting its handler. Slice 13 also gives debug_eval.la an export
+# list so the capstone IMPORTS the debugger rather than copying it, and the gate
+# exercises that import — a manual capstone depending on an export list is
+# exactly how a gate goes quietly dead.
+#
+# Slice 14 asks whether the defence above is a COVER or a SAMPLE. The argument
+# is that a reproduced evaluator can DRIFT and the answer is agreement across
+# every program tested — but N programs is a SAMPLE of the dispatch, and a
+# branch no program reaches could drift arbitrarily while all N still agree. The
+# tape holds every visited node, so the AST kinds in it ARE the branches that
+# ran. ★ The check's second line is the load-bearing one: a lone string literal
+# must report exactly one branch, because a measure answering "all four" for
+# everything satisfies the positive assertion and means nothing.
+#
+# Invoked as ./gate_debug.sh, NOT `bash gate_debug.sh`, deliberately: its
+# shebang is #!/bin/sh so the audit runs it under dash, which is where a
+# bashism in a FAILURE branch gets caught. Running it under bash would hide
+# exactly the defect that shipped once already here.
+#
+# NOTE it rebuilds logos_secd / logos_program.bin / logos_source.la for its
+# host==VM half and removes them afterwards, so it is placed last, after every
+# step that depends on those fixed paths.
+./gate_debug.sh || exit 1
+
 say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # Reached only when every check above passed (each failure exits 1 earlier),
 # so the audit is clean here. Tag the CURRENT COMMIT as a verified rollback
@@ -8386,7 +8678,18 @@ say "Auto-checkpoint   (tag this commit when the full audit is green)"
 # checkpoint, exactly the trap we hit by hand). Skip if a verified-* tag
 # already marks this commit. A tagging hiccup must never fail a green build,
 # so every fallible step degrades to a NOTE.
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
+# ── THE OBLIGATION ASSERTION — this is what makes a counted STALE honest ─────
+#  A staleness red is kept out of the serial abort chain above (see the bootelf
+#  provenance block) precisely so it cannot strand fifty correctness gates. The
+#  price of that is that it must bite SOMEWHERE, or it is just another silent
+#  SKIP. It bites here: an outstanding obligation blocks the `verified-*`
+#  checkpoint, so evidence that has gone stale can never be labelled verified,
+#  and the obligation accumulates visibly instead of being ignored indefinitely.
+OBLIGATIONS=$(ls .obligations 2>/dev/null | grep -c . || true)
+if [ "${OBLIGATIONS:-0}" -gt 0 ]; then
+    echo "NOTE  auto-tag REFUSED: $OBLIGATIONS outstanding obligation(s) — the audit is green but some of its evidence is stale, so this commit is not a verified checkpoint:"
+    for o in .obligations/*; do [ -e "$o" ] && echo "        $(basename "$o"): $(cat "$o")"; done
+elif ! git rev-parse --git-dir >/dev/null 2>&1; then
     echo "NOTE  auto-tag skipped: not a git repository"
 elif [ -n "$(git status --porcelain)" ]; then
     echo "NOTE  auto-tag skipped: working tree dirty — commit, then re-run to checkpoint"

@@ -47,10 +47,11 @@
 # ── WHICH ENGINES, AND WHY NOT ALL OF THEM ──────────────────────────────────
 # chacha20/poly1305/aead run on the C host AND the native SECD VM (~2 min).
 # hmac/hkdf/hmacdrbg run on the C host ONLY. That is a measured decision, not an
-# oversight: hkdf's codegen leg alone costs 398 s [⚠ UNLOADED -- that figure carries no
-# load and therefore cannot be used to set a budget or to justify a RED; a datum with a
-# stated limitation is worth more than either a fabricated precision or a hole, so it is
-# annotated rather than re-measured or deleted], and the VM leg would add no
+# oversight: hkdf's codegen leg alone costs 398 s (2026-08-22) [⚠ UNLOADED -- that
+# figure carries no load and therefore cannot be used to set a budget or to justify a
+# RED; a datum with a stated limitation is worth more than either a fabricated
+# precision or a hole, so it is annotated rather than re-measured or deleted]; it was
+# RE-MEASURED 2026-09-09 at 1001 s (see THE HOST TIMEOUT below), and the VM leg would add no
 # information — hmac and hkdf are compositions of SHA-256, whose host==VM
 # agreement gate_sha256.sh already establishes, over concat/xor, whose
 # five-engine agreement the BITWISE gate already establishes. Stated rather
@@ -108,6 +109,47 @@ set -uo pipefail
 cd "$(dirname "$0")"
 ok=1
 
+# ── THE HOST TIMEOUT — raised 900 -> 1800 on 2026-09-09, and why ────────────
+#  It was 900 s and hkdf now needs 1001 s, so this gate failed EVERY build with
+#  `FAIL hkdf C host: []`. The empty [] is the timeout's own signature: the
+#  capture below is empty when `timeout` kills the process, so a budget overrun
+#  is indistinguishable from a wrong answer at the point of failure. hkdf was
+#  never wrong — measured untimed, it prints the expected E_HKDF and exits 0.
+#
+#  ★ MEASURED, AND DECOMPOSED, so the next person re-derives instead of guessing
+#  (`/usr/bin/time -v`, isolated dirs, load/core 0.41 on 24 cores — untainted):
+#      documented 2026-08-22 (af730ee)        398.00 s
+#      Aug-22 host + Aug-22 hkdf.la           738.66 s   <- NEITHER had changed
+#      current host + Aug-22 hkdf.la          970.63 s   <- interpreter only
+#      current host + current hkdf.la        1001.02 s   <- source only
+#  Of the 603 s gap: 341 s (56%) the 398 s figure never reproduced on this
+#  hardware AT ALL; 232 s (38%) commit adc80a6 "str_at: O(1) indexed access",
+#  which made hkdf 31% slower on the C host and is a real interpreter
+#  regression affecting every LA compile, not just this gate; 30 s (5%) hkdf.la's
+#  own growth. Runs 2 and 3 differ in tiny_host ONLY (md5-verified).
+#
+#  ⚠ 2400 IS A HANG-CATCHER, NOT A PERFORMANCE BUDGET, and it is 2400 rather
+#  than 1800 because Track A's own note above corrected my arithmetic: this
+#  module's three runs establish a ~64% LOAD SWING (~1200 / ~1610 / 1964 s).
+#  Apply that to hkdf's 1001 s and a contended run reaches ~1642 s — so 1800
+#  would have been ~10% of headroom, not the 80% "1.8x the measured cost"
+#  suggests. A budget set from a quiet-machine number is how a gate acquires a
+#  silent RED-for-load. 2400 clears the contended estimate by ~1.46x. It is not
+#  an assertion that 2400 s is acceptable. Two things this does NOT fix and must not be read as fixing:
+#  the adc80a6 regression is unaddressed, and whether a ~17-minute leg belongs
+#  in build.sh's serial abort chain at all is a separate open question. If this
+#  needs raising again, RE-MEASURE and update the table — a budget raised
+#  without a measurement is how it drifted 2.5x from its documented cost in the
+#  first place.
+#
+#  The VM timeout below is deliberately left at 900: its legs (chacha20,
+#  poly1305, aead) completed inside 900 s in the 2026-09-09 run, so raising it
+#  would be guessing at a budget nobody has measured — the exact defect above.
+#  ★ THE FUNCTION SHAPE BELOW IS TRACK A's, ADOPTED RATHER THAN RE-DERIVED
+#  (kernel-k1, a5b0343). A hit the same wall independently and fixed the half I
+#  had not: capture the exit code and SAY which side failed, so a budget kill is
+#  never again mistaken for a wrong answer. Mine fixed the number, theirs fixed
+#  the diagnosis; the two branches converge here instead of conflicting at merge.
 check_host () {   # name expected [timeout_s, default 900]
     local f rc=0 out
     f="$(mktemp)"
@@ -137,7 +179,7 @@ E_AEAD="aead 2.8.2 ct OK | tag OK | roundtrip OK | forged-tag rejected"
 E_DRBG="hmacdrbg SP800-90A OK"
 
 check_host hmac     "$E_HMAC"
-check_host hkdf     "$E_HKDF"
+check_host hkdf     "$E_HKDF" 2400   # measured 1001 s; see THE HOST TIMEOUT above
 check_host chacha20 "$E_CC20" && check_vm chacha20 "$E_CC20"
 check_host poly1305 "$E_POLY" && check_vm poly1305 "$E_POLY"
 check_host aead     "$E_AEAD" && check_vm aead     "$E_AEAD"
