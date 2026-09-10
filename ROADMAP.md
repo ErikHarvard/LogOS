@@ -2133,8 +2133,13 @@ sovereign learns.
   form, as `selfopt.la` did: tune inside a fixed acceptance test, and trade cost, never correctness.
 - ⚠ **A name collision inside the spec.** The music primitive **Form 𝔣** (`:13163`, sectional structure)
   shares its name with LA's primitive **FORM (g₈)**: two referents under one sign. Resolve it before
-  transcription. The chapter also never states **which LA mode its ⊕ is**. A song is order-sensitive
-  (verse→chorus ≠ chorus→verse), so if it *is* LA's ⊕, commutativity must not be assumed (C9).
+  transcription. The chapter also never states **which LA mode its ⊕ is**, and its ⊕ carries **two referents under
+  one sign**. Simultaneous composition (tracks in a mix, notes in a chord) fits LA's commutative ⊕
+  (LA:2852; `NORMK` sorts ⊕ operands). Ordered chaining (the effect chain `⊕_j e_ij`, `:13170`) does not:
+  commutativity would erase its order, and EQ then compressor ≠ compressor then EQ (C9). Arrangement order
+  already lives elsewhere, in the Form glyph's ordered children (`:13211`) and Track's ordered sequence
+  (`:13161`). **Bifurcate before LF1 is transcribed:** ⊕ for the simultaneous, an order-preserving mode
+  for the chain. *Which* mode is a **ruling owed to the General**; it is named here, not chosen.
 - **Pipeline closure (`thm:music-pipeline`, `:13440`) rests on LogosTube, LogosCrypto and the Eternal
   Library**, and none of them exist. Its monetisation half rides LogosCrypto: **do not build from that
   part** (C13, as for LogosMusic).
