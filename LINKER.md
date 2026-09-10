@@ -1500,3 +1500,48 @@ is identified is still nothing. **The honest next step needs Track D's ACTUAL
 That artifact is in their worktree; filed as a cross-track question rather than
 read.
 
+## Slice 21 — RSS and TIME have different drivers; the blob axis is real but partial (2026-09-09)
+
+Slices 19 and 20 excluded size and four shape dimensions, and left an 18× shortfall
+against the recorded 12.4 GB. POROS and METANOĒ pointed out what every fixture so
+far had in common: **they were all code-shaped.** POROS's real `boot.o` carries an
+`incbin`'d LA image — a large opaque data section — which **my fixtures could not
+have varied.** That is the fixture-cannot-exercise-the-mechanism class, and it was
+mine this time.
+
+| object | bytes | relocs | RSS | time | KB RSS/byte | s/reloc |
+|---|---|---|---|---|---|---|
+| synthetic code | 2,864 | 32 | 40 MB | 82 s | 14.3 | 2.6 |
+| real stub code | 7,104 | 53 | 86 MB | 423 s | 12.4 | 8.0 |
+| code control | 11,792 | 95 | 218 MB | 1107 s | 18.9 | 11.7 |
+| **blob** | **6,960** | **1** | **236 MB** | **18.5 s** | **34.7** | — |
+
+★ **THE TWO CURVES HAVE DIFFERENT INDEPENDENT VARIABLES.**
+- **TIME is driven by RELOCATIONS.** One relocation links in **18.5 s**; ninety-five
+  take **1107 s** — 60× the time for 1.7× the bytes.
+- **RSS is driven by BYTES**, with blob data ~**2.4×** heavier per byte than code
+  (34.7 vs 12–19 KB/byte).
+⇒ Slice 19 observed RSS (k=0.14) and time (k=2.07) diverging and could not say why.
+**This is why.** They are not one phenomenon measured badly; they are two phenomena
+that happen to be reported in one sentence.
+
+⚠ **IT DOES NOT CLOSE THE GAP.** At 34.7 KB/byte the recorded 86 KB case
+extrapolates to **2.9 GB** against **12.4 GB** recorded. The blob narrows the
+shortfall from 18× to ~4×; it does not explain it. **Recorded as partial, because a
+partial explanation reported as a complete one is how three claims went wrong on
+this same day.**
+
+⚠ **A DEFECT IN MY OWN FIXTURE.** The two objects were designed to be the SAME SIZE
+and are not — 6,960 B vs 11,792 B. nasm's output did not match the intent and **I
+did not check before spending 19 minutes linking them.** Per-byte normalisation is
+what rescues the comparison; a same-size pair would have been the cleaner test.
+
+⚠ **THE X-AXIS IS NOT A CONSTANT.** POROS's `boot.o` is **46,352 B at this writing,
+not 86 KB** — it tracks the embedded LA image and moves whenever that image is
+rebuilt. Any future measurement must record WHICH image was embedded, or it is a
+count without its file-time. Build line, for reproducibility:
+`nasm -f elf64 -i kernel/ kernel/boot.asm -o kernel/boot.o` (`kernel/build_k1.sh:21`).
+
+**Still unexplained: ~4×.** Not excluded — superlinearity in blob size (mine was
+6 KB, POROS's ~40 KB), or the `--script` layout path, which no probe here has taken.
+
