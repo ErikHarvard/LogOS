@@ -1598,3 +1598,21 @@ fixed number: `boot.o` tracks the embedded image and was 46,352 B when POROS mea
 **embedded image**, not the code. A kernel with twice the LA image costs ~3× the
 link memory, not 2×.
 
+⚠ **CORRECTED 2026-09-09 by POROS, and my framing was too relaxed.** I wrote
+*"nothing to act on today … before the image doubles"*, which reads as further off
+than it is. Track D measured where the kernel actually sits on this curve:
+
+| artifact | bytes | on my curve |
+|---|---|---|
+| `kernel/boot.o` today (image 27,347 B) | 34,208 | **~3.0 GB** |
+| my largest MEASURED point | 49,968 | 6.2 GB ← measured |
+| `kernel_comp_edit.elf` / HAL.4g image | 86,128 | **~15.4 GB — past every point I measured** |
+
+⇒ **The plain kernel is ALREADY between my 25 KB and 50 KB points, and HAL.4g is
+past my largest measured point entirely.** This is not a future constraint that
+arrives when the image doubles; **the kernel is already on the steep part.**
+★ And it is self-consistent: 86,128 B predicts ~15.4 GB against the **12.4 GB
+originally recorded** — the same neighbourhood, from the other direction.
+Still harmless on a 188 GB machine; the compositor images are the largest LA
+programs in the tree and are the ones that grow. Track D owns the curve.
+
