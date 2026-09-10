@@ -96,18 +96,35 @@ fi
 # So: build on explicit opt-in, and otherwise FAIL LOUDLY. Note this is the
 # opposite of the skip flag build.sh forbids — there is no way to make this gate
 # report success without actually running the kernel.
-if [ ! -f kernel/kernel_comp_edit.elf ]; then
-    if [ "${LOGOS_GATE_BUILD:-0}" = "1" ] && [ -x ./kernel/build_hal4g.sh ]; then
-        echo "NOTE  HAL.4g editable-line: kernel/kernel_comp_edit.elf absent — building it (~49 min (gate_hal_idle.sh:78)) because LOGOS_GATE_BUILD=1"
-        ./kernel/build_hal4g.sh >/dev/null 2>&1 || {
-            echo "FAIL  HAL.4g editable-line gate: ./kernel/build_hal4g.sh failed, so the kernel under test does not exist"; exit 1; }
-    fi
+# ★ ALWAYS REBUILD. This used to build ONLY when the ELF was ABSENT, because a
+# rebuild cost "~49 min" — its own note above. ⇒ AN ELF THAT WAS PRESENT BUT
+# STALE WAS TESTED AS THOUGH IT WERE THE SOURCE, and that is not hypothetical:
+# on 2026-09-09, the first time this gate was ever run, it went RED on a leftover
+# ELF built in July by an older native_codegen3. That binary GP-faulted with
+# `EXCEPTION 0d rip=333333003f333333` — an instruction pointer loaded from ASCII
+# string data. I diagnosed it as a live codegen fault. IT WAS NOT. A fresh build
+# of the SAME UNCHANGED SOURCE is byte-reproducible and PASSES.
+#
+# ⇒ The gate had been fixed for the ABSENT case (it used to SKIP + exit 0, see
+# above) and left open for the STALE case, which is worse: absent is loud, stale
+# is a confident wrong answer. This is ENTELECHEIA's class — an instrument that
+# certifies a stale artifact — and it cost a full misdiagnosis.
+#
+# ⇒ AND THE REASON THE HOLE EXISTED IS GONE. The 49 minutes was the interpreted
+# `./tiny_host native_codegen3.la` compile. Since kernel/ncc3.sh routes every
+# builder through the committed native image, THIS REBUILD TAKES 7 SECONDS
+# (measured). There is no longer any economy in trusting a leftover binary, so
+# the gate always builds what it tests and LOGOS_GATE_BUILD is retired.
+if [ ! -x ./kernel/build_hal4g.sh ]; then
+    echo "FAIL  HAL.4g editable-line gate: ./kernel/build_hal4g.sh is missing, so this gate cannot build what it tests and would otherwise test a leftover binary."
+    exit 1
+fi
+if ! ./kernel/build_hal4g.sh >/dev/null 2>&1; then
+    echo "FAIL  HAL.4g editable-line gate: ./kernel/build_hal4g.sh failed, so the kernel under test does not exist."
+    exit 1
 fi
 if [ ! -f kernel/kernel_comp_edit.elf ]; then
-    echo "FAIL  HAL.4g editable-line gate: kernel/kernel_comp_edit.elf is absent, so this gate tested NOTHING."
-    echo "      It used to report SKIP and exit 0 here, which is indistinguishable from a pass."
-    echo "      Build it out of band (./kernel/build_hal4g.sh, ~49 min (gate_hal_idle.sh:78)),"
-    echo "      or re-run with LOGOS_GATE_BUILD=1 to have this gate build it itself."
+    echo "FAIL  HAL.4g editable-line gate: build reported success but kernel/kernel_comp_edit.elf is absent, so this gate tested NOTHING."
     exit 1
 fi
 

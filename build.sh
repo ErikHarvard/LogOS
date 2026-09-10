@@ -7485,6 +7485,20 @@ bash kernel/gate_hal5b.sh || exit 1   # HAL.5b NIC send + receive — the first 
 #  "failed", which is the same rule this census applied to SKIP and exit 0.
 say "HAL drivers the suite never ran — mouse, wheel, terminal window (~36 min, measured)"
 bash kernel/gate_comp_term_hal4e.sh || exit 1  #   16 s  HAL.4h terminal window on the metal
+# ★ HAL.4g — WIRED 2026-09-09, the day it was first ever RUN. It was committed in
+# a2769b8 as "sources; ELF compiling, gate NOT YET RUN" and sat on disk invoked by
+# nothing: the exact shape the census keeps finding. Two things had to be true
+# before it could be wired, and both became true today:
+#   1. It had to be GREEN. On its first run it was RED — but on a STALE ELF left
+#      from July, built by an older native_codegen3, which GP-faulted with an
+#      instruction pointer loaded from ASCII string data. The SOURCE was always
+#      correct: kernel/editmodel_test.la passes on the host, and a fresh build of
+#      the unchanged source passes on the metal. The gate now ALWAYS REBUILDS, so
+#      it can never again certify a leftover binary.
+#   2. It had to be AFFORDABLE. The gate skipped rebuilding because that cost
+#      "~49 min"; through kernel/ncc3.sh it is 7 SECONDS. The second-toll fix is
+#      what makes wiring this honest rather than a multi-hour tax.
+bash kernel/gate_hal4g.sh || exit 1            #  ~25 s  HAL.4g editable scrolling line (backspace + scroll)
 bash kernel/gate_mouse.sh || exit 1            #  883 s  HAL.2c PS/2 mouse: AUX enable + packet decode
 bash kernel/gate_wheel.sh || exit 1            # 1255 s  HAL.2e scroll wheel: the IMPS-2 knock + Z axis
 
