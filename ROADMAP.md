@@ -2119,15 +2119,21 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       ★ **The per-slice record is `LINKER.md`** (8 linker gates: `gate_link*.sh`).
       This entry summarises; that file is the evidence, and until 2026-09-09 the
       roadmap carried **no pointer to it at all**.
-      ⚠ **NEXT CONSTRAINT — MEASURED 2026-09-09, and it is TIME, not memory.**
-      Slice 19: RSS scales at **k=0.14 (nearly flat)** while time scales at
-      **k=2.07 (quadratic)** — two different curves, so the 2h42m and the 12.4 GB
-      have different causes. ★ **Extrapolated RSS misses the recorded 12.4 GB by
-      193×**, so the memory spike is **not a size effect at all**: it is a
-      threshold/structural one that small objects do not exercise. **Growing
-      inputs will not reproduce it; varying object SHAPE might.** The constraint
-      that genuinely binds as objects grow is the **quadratic time**. See
-      `LINKER.md` slice 19.
+      ⚠ **THE TWO CONSTRAINTS, SOLVED 2026-09-09 (slices 19–22). This line has been
+      revised twice as the measurements came in; this is the settled version.**
+      ★ **TIME is driven by RELOCATIONS** — k≈2.0; one relocation links in 18.5 s,
+      ninety-five in 1107 s.
+      ★ **MEMORY is driven by the `incbin`'d DATA, SUPERLINEARLY — k≈1.67 and
+      rising** (per-byte cost quadruples across one decade of blob size).
+      **It predicts the recorded 12.4 GB**: extrapolating gives 16.0 GB, within
+      1.29×, where a code-shaped model was 18× short.
+      ⇒ **The constraint that binds as the KERNEL grows is the EMBEDDED IMAGE, not
+      the code: twice the LA image costs ~3× the link memory, not 2×.**
+      Excluded by measurement: object size, relocation count/type, section count,
+      symbol count, the `--script` path, and the load address (34 MB identical at
+      `0x1000`/`0x100000`/`0x400000`). See `LINKER.md` slices 19–22.
+      ⚠ Bounds: four points over one decade with a rising local exponent — order
+      and shape, not a fitted constant.
       ⚠ **The canonical copy on `kernel-k1` still reads `[ ]` — unstarted.** That
       is stale by eighteen slices and by the kernel-seam result. Recorded on
       `~/logos-status.md` rather than edited there, per the cross-track rule.
