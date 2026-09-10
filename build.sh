@@ -4472,7 +4472,19 @@ for M in discourse coin immune ablate phonseal; do
     *FAIL*) echo "FAIL  $M: a gate failed — $MOUT"; ok=0 ;;
     "")     echo "FAIL  $M: no output (module did not run)"; ok=0 ;;
   esac
+  if [ "$M" = coin ]; then COIN_SEAL_OUT="$MOUT"; fi
 done
+# ★ coin.la's Rule 4 seal (M58 slice 1, ELENCHOS, 2026-09-10). The loop above
+#   fails only on *FAIL* or empty output, so a seal half that silently stopped
+#   printing its rows would still pass. Pin every seal row PRESENT and OK. The
+#   output is captured INSIDE the loop and coin is not re-run: coin now imports
+#   crosscoll.la's populations, so a second run would cost minutes. A coin that
+#   never ran leaves COIN_SEAL_OUT unset, and that is a FAIL here, not a skip.
+rm -f rule4_sealed.scratch
+case "${COIN_SEAL_OUT:-}" in
+  *"| seal-population OK"*"| seal-census-before OK"*"| seal-added OK"*"| seal-reload OK"*"| seal-refuse-class OK"*"| seal-refuse-twin OK"*"| seal-refuse-lineage OK"*"| seal-refuse-reseal OK"*"| seal-refuse-primitive OK"*) : ;;
+  *) echo "FAIL  coin: the Rule 4 seal rows are not all present and OK — got: ${COIN_SEAL_OUT:-<no coin output>}"; ok=0 ;;
+esac
 # ★ Each of the four asserts something the others cannot, so the loop above is
 #   not four copies of one check. Pin the load-bearing measurement of each, so a
 #   silent change of result cannot pass as a silent change of nothing.
@@ -4574,7 +4586,8 @@ ok=1
 #   (Truth=SR_ABOUT and Truth=OP_RECOG by E16 §C, 2026-09-10), and 6 OPEN,
 #   pinned EXACTLY. Where each form is fixed is recorded in crosscoll.la,
 #   corrected 2026-09-10 against LA.tex and the white paper (outside the repo):
-#   - Past=Death sets LA.tex against itself (E16 §B, HELD for the General).
+#   - Past=Death sets LA.tex against itself. The General ruled them two
+#     distinct concepts (2026-09-10); Death is to be re-derived, so it stays OPEN.
 #   - See=KAPPA and Change=OP_COMP set LA.tex against forms the white paper
 #     states.
 #   - The SR_* pairs set LA.tex against repo-only assignments.

@@ -280,9 +280,12 @@ glyph XCDECL = "I=SELF One=BEING Two=RELATION SR_ABOUT=OP_RECOG Truth=SR_ABOUT T
 #  White Paper.tex" (WP): OUTSIDE this repo, sha256 98beeff4ee45, and the line
 #  numbers are that copy's.
 #   Past=Death       Past LA.tex:5169 >(g7,g6) . Death LA.tex:4806 -- LA x LA.
-#                    Ruled a declared identity in round 2, then HELD: E16 §B
-#                    went back to the General with the codex's own account of
-#                    death (LA:2323, :2331). Open until he rules again.
+#                    Ruled a declared identity in round 2, then HELD (E16 §B)
+#                    on the codex's own account of death (LA:2323, :2331).
+#                    The General then ruled (2026-09-10, board) that Death and
+#                    Past are two distinct concepts. §B never lands; Death is
+#                    to be RE-DERIVED on a track's proposal, and this module
+#                    checks the candidates. OPEN until then, never DECLARED.
 #   See=KAPPA        See LA.tex:5288 >(g2,g8) . kappa WP:3740, "spec-fixed" WP:3745
 #   Change=OP_COMP   Change LA.tex:5237 *(g7,g8) . gamma WP:4909, stated as built
 #   Ongoing=SR_BY    Ongoing LA.tex:5172 m(g7); WP:3582 calls m(BECOMING) the
@@ -337,6 +340,15 @@ glyph XCTAIL = la pairs. la opn. concat(concat(" | OPEN: ")(opn))(concat("| PAIR
 glyph XCREPORT = la nl. la nf. la nm. la np. la fdup. la pairs. la opn.
     print(concat(concat(XCHEAD(nl)(nf)(nm)(np)(fdup))(XCROWS1(nl)(nf)(nm)(np)(fdup)))
                 (concat(XCROWS2(pairs)(opn))(XCTAIL(pairs)(opn))))
+
+# ── EXPORTS, for coin.la's Rule 4 seal (M58 slice 1). The Ratchet IS this
+#    scan with a candidate added, so coin.la imports these rather than keeping
+#    a second copy of the populations. Without an export line tiny_host mangles
+#    EVERY glyph of an imported module (tiny_host.c:977-978, :948-957), so an
+#    importer would see nothing. An export changes nothing when this file runs
+#    directly: tiny_host mangles only on import. canon's NORMK..TDEPTH are
+#    re-exported; canon's REN is deliberately NOT, because coin.la has its own.
+export XCRELABEL XCINNER XCREC XCUPTO XCPAST XCSEMI XCL XCFR_OF XCM XCP XCX_OF NORMK IS_ALPHA1 CANON MONO ETYM AUTO_OK TDEPTH
 
 # MAIN binds every heavy value ONCE (see EVALUATION SHARING above).
 glyph MAIN = (la l. (la fr. (la m. (la p. (la pairs.
