@@ -19,5 +19,5 @@ falsifier is a preference.
 | [E11](E11.md) | is the base labelling's uniqueness defended or published as a bet? | **RULED 2026-09-09** — a bet, already; `[A]` on exactly-five is permanent *as posed* |
 | [E14](E14.md) | in which register does `Meta-X ≡ X` hold? | **CLOSED 2026-09-09** — Ω-totality; 7 exceptions → 0 in that register |
 | [E4](E4.md) | the paradox audit operator (item 8) | **RULED 2026-09-09** — ratified + 2 additions; parallax is a fourth *outcome* |
-| [E5](E5.md) | Identity Adequacy — "six rows, not three" | **RULED 2026-09-09** — **two** open, not six; the bijection is gated in only one direction |
+| [E5](E5.md) | Identity Adequacy — "six rows, not three" | **RULED 2026-09-09** — **two** open, not six; the bijection is gated in only one direction · **AMENDED 2026-09-10** — central claim stale; the gap is population, not direction. |
 | [E3](E3.md) | which type system is the language's? (= M50) | **RULED 2026-09-09** — dependent types over the five modes; OTS retired; **Seal 2 unblocked** |
