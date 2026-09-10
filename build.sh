@@ -2543,6 +2543,28 @@ for G in TRUE FALSE NOT AND OR IF IMPLIES ZC TERM FORM VAL GROUND YIELDS TRIBAR 
 done
 printf '%s\n' "$ML" | grep -q "module VERIFIED" || { echo "FAIL  metalogic: module not verified"; ok=0; }
 [ -f metalogic.la ] || { echo "FAIL  metalogic: metalogic.la was not written"; ok=0; }
+# E15 (rulings/E15.md): META_DEBUG above runs each glyph's tests against the spec's
+# in-memory VALUE, while DEPLOY writes a SEPARATE SRC_* string into metalogic.la —
+# so a broken SRC_NOT still printed "NOT: PASS … module VERIFIED". (The witness
+# further down also runs the deployed module and does catch that one, but only on
+# the rows its law-witnesses reach: a broken SRC_OR on TT,TF passes it.) This gate
+# EXECUTES the DEPLOYED metalogic.la, host and native VM, on every row of NOT/AND/
+# OR/IMPLIES, against tables DERIVED from Codex II Proof Table 4.1 (each sentence
+# must admit exactly one table). Red-pathed both ways the ruling requires: a broken
+# SRC_NOT fails it, and so does a perturbed law sentence.
+if [ ! -x ./gate_metalogic_deployed.sh ]; then
+    echo "FAIL  metalogic: gate_metalogic_deployed.sh is missing or not executable — a gate file is never optional, so this is a broken checkout"; ok=0
+else
+    MLG="$(mktemp)"
+    if ./gate_metalogic_deployed.sh metalogic.la >"$MLG" 2>&1; then
+        grep -E '^(PASS|NOTE)' "$MLG" || true
+    else
+        echo "FAIL  metalogic: the DEPLOYED connectives do not compute the law-derived tables (E15):"
+        grep -E '^(FAIL|NOTE|      )' "$MLG" | sed 's/^/      /' || true
+        ok=0
+    fi
+    rm -f "$MLG"
+fi
 # the logical core, the two relations, the three laws and their wirings carry formal
 # `:: <type>` signatures (the laws OBEY the laws — NC type-checks the law glyphs);
 # the three law term-witnesses are TERM data → trusted.

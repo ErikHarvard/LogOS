@@ -59,6 +59,11 @@
 #  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY writes
 #  metalogic.la, type-checks the generated source, and META_DEBUG verifies every
 #  glyph; the module is accepted only if all pass.
+#  ⚠ (E15, rulings/E15.md) META_DEBUG runs each glyph's tests against the VALUE
+#  in this file, never the SRC_* string DEPLOY writes, and a broken SRC_NOT still
+#  reports VERIFIED. The DEPLOYED connectives are executed, on every row, against
+#  law-derived tables, by gate_metalogic_deployed.sh — build.sh runs it right
+#  after this spec.
 # ═══════════════════════════════════════════════════════════════════════
 
 import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + PAIR/FST/SND/CONS/NIL/Z/IF/TRUE/FALSE/AND/...
