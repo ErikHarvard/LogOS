@@ -2088,7 +2088,7 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       `gate_asmelf.sh` (`asm_elf_r3..r9`).
       *This closes the ASSEMBLER + object writer only.* The boundary is unchanged
       and lives in the SEPARATE items below: the final kernel LINK still runs
-      `ld -T kernel/kernel.ld` (**LA linker**, `[ ]`, Track B), the single-segment
+      `ld -T kernel/kernel.ld` (**LA linker**, `[~]`, Track B), the single-segment
       image layout stays **`asmelf.la`** (`[~]`), and the build **orchestrator**
       still drives foreign tools including nasm 46× elsewhere (**`buildla.la`**,
       `[~]`) — so this is a nasm-free OBJECT step, not yet a nasm+ld-free kernel.
