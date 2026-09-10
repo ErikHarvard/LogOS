@@ -7516,7 +7516,32 @@ bash kernel/gate_mouse.sh || exit 1            #  883 s  HAL.2c PS/2 mouse: AUX 
 bash kernel/gate_wheel.sh || exit 1            # 1255 s  HAL.2e scroll wheel: the IMPS-2 knock + Z axis
 bash kernel/gate_pointer.sh || exit 1          #    4 s  HAL.2d PS/2 pointer: 9-bit delta sign-extension + buttons
 bash kernel/gate_cursor.sh || exit 1           #    6 s  HAL.4h cursor sprite on the LFB (PCI+VBE + PS/2 together)
-bash kernel/gate_alloc_bounded.sh || exit 1    #   30 s  allocator boundedness: 15M iterations peak 3 MB, under the 64 MB floor
+bash kernel/gate_alloc_bounded.sh || exit 1    #   30 s  allocator boundedness: each run must finish and print done; 15M iterations peak 3 MB
+bash kernel/gate_hal4f.sh || exit 1            #   14 s  HAL.4f TYPEWRITER, restored as comp_term_hal4f.la (overwritten, not broken)
+# ── VERDICTS 2026-09-10 — THE THREE THAT WERE RED ON 2026-09-09 ─────────────────
+#   kernel/gate_hal4f.sh   GATE DEFECT, NOT A REGRESSION — WIRED ABOVE. Its source
+#     had been REPLACED: merge e5cefe7 (2026-09-05) took kernel-k1's comp_term.la,
+#     the terminal window gate_comp_term.sh boots, over HAL.4f's typewriter of the
+#     same name, and build_comp_term.sh and build_hal4f.sh both wrote
+#     kernel_comp_term.elf. Restored byte-for-byte from 5b60997 as
+#     kernel/comp_term_hal4f.la, built to its own ELF: PASS, 1143 white + 1737
+#     green px — July's exact screendump. Red path: the same gate on a mutant that
+#     PREPENDS instead of appending FAILs on 'term buf=LOGOS' (serial reads SOGOL).
+#   kernel/gate_hal3d.sh   ENVIRONMENT — STAYS UNWIRED, HELD. QEMU 8.2.2 does not
+#     honour a held SRST: 3/3 boots on 2026-09-10 read "NO WEDGE" (0/4 main and 0/4
+#     control on 2026-08-18). The gate is RIGHT to refuse; check 1 exists for this.
+#     The replacement fault (out-of-range LBA) wedges 6/6 but self-clears 4/4, so
+#     QEMU still models no fault that needs a repair (kernel/SELFREPAIR_3d_DESIGN.md).
+#     Fixed meanwhile: a missing builder or a missing control used to SKIP or merely
+#     NOTE — a control that can vanish silently — and both now FAIL before the boot.
+#   kernel/gate_dinit1.sh  PARKED BY OWNERSHIP — STAYS UNWIRED. rt_reap lives in
+#     ~/logos-dinit1-runtime.patch because native_codegen3_rt.asm and
+#     native_codegen3.la are TRACK A's files (kernel/LOGOSINIT_SCOPE.md:549). The
+#     patch still applies cleanly, and with it applied in a scratch copy this gate
+#     passes all four checks. It now says PARKED first, and no longer judges probe
+#     binaries this tree cannot produce.
+# ── the 2026-09-09 reading, kept as the record. Its hal4f diagnosis was WRONG:
+#    a fresh build of a REPLACED source is still the wrong subject. ──
 # ── THE THREE THAT STAY UNWIRED, RUN 2026-09-09, EACH RED FOR A DIFFERENT REASON ──
 #  Run before judging, per this file's own census rule that structural
 #  classification hands you a red gate to wire. None declares itself expected-red.

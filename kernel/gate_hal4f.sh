@@ -34,10 +34,9 @@
 # touching it, and boot 2 does the capture in its own process. The mechanism was
 # never pinned, which is exactly why the two measurements stay separated.
 #
-# Boots the ALREADY-BUILT ELF and never rebuilds: comp_term.la's native_codegen3
-# compile is very slow (superlinear codegen), so the ELF is an out-of-band
-# artifact built by kernel/build_hal4f.sh, exactly like the heavy K6/K7 kernels.
-# Skips (rc 0) if QEMU is absent.
+# Builds kernel/comp_term_hal4f.la through kernel/build_hal4f.sh on EVERY run —
+# seconds via kernel/ncc3.sh (see ALWAYS REBUILD below; this paragraph used to say
+# it never rebuilt). Skips (rc 0) only if QEMU is absent, which is environment.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -85,10 +84,23 @@ if ! ./kernel/build_hal4f.sh >/dev/null 2>&1; then
     echo "FAIL  HAL.4f typewriter gate: ./kernel/build_hal4f.sh failed, so the kernel under test does not exist."
     exit 1
 fi
-if [ ! -f kernel/kernel_comp_term.elf ]; then
-    echo "FAIL  HAL.4f typewriter gate: build reported success but kernel/kernel_comp_term.elf is absent, so this gate tested NOTHING."
+if [ ! -f kernel/kernel_comp_term_hal4f.elf ]; then
+    echo "FAIL  HAL.4f typewriter gate: build reported success but kernel/kernel_comp_term_hal4f.elf is absent, so this gate tested NOTHING."
     exit 1
 fi
+# ★ 2026-09-10 — THE SUBJECT HAD BEEN REPLACED, AND I CALLED IT A REGRESSION.
+# This gate booted kernel_comp_term.elf, built from kernel/comp_term.la. The merge
+# e5cefe7 (2026-09-05) took kernel-k1's comp_term.la — the terminal window that
+# kernel/build_comp_term.sh ALSO builds into kernel_comp_term.elf, a different
+# program — over HAL.4f's typewriter of the same name. For five days this gate
+# judged the terminal against the typewriter's protocol: no "term buf=", ENTER
+# newlines instead of ending the loop, 90 s timeout, rc 124, 0 white px in the
+# typewriter's text box. On 2026-09-09 (da04585) I read that as "a real HAL.4f
+# regression" — minutes after closing the stale-ELF hole precisely so as not to
+# misread a stale subject. A FRESH build of the WRONG SOURCE is still the wrong
+# subject. The typewriter is restored byte-for-byte from 5b60997 (green
+# 2026-07-18) as kernel/comp_term_hal4f.la, built to its OWN ELF name so no other
+# builder can overwrite what this gate boots.
 
 ok=1
 
@@ -99,7 +111,7 @@ SERF=$(mktemp)
   sleep 0.4; echo "sendkey ret"
   sleep 1.5
 } | timeout 90 qemu-system-x86_64 \
-        -kernel kernel/kernel_comp_term.elf -m 512 \
+        -kernel kernel/kernel_comp_term_hal4f.elf -m 512 \
         -vga std -monitor stdio -serial "file:$SERF" -display none \
         -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
         -no-reboot -no-shutdown >/dev/null 2>&1
@@ -126,7 +138,7 @@ SERF2=$(mktemp); SHOT=$(mktemp -u).ppm
   sleep 0.8; echo "screendump $SHOT"; sleep 1.5
   echo "quit"
 } | timeout 90 qemu-system-x86_64 \
-        -kernel kernel/kernel_comp_term.elf -m 512 \
+        -kernel kernel/kernel_comp_term_hal4f.elf -m 512 \
         -vga std -monitor stdio -serial "file:$SERF2" -display none \
         -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
         -no-reboot -no-shutdown >/dev/null 2>&1

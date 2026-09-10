@@ -23,7 +23,19 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 ok=1
 command -v qemu-system-x86_64 >/dev/null 2>&1 || { echo "SKIP  HAL.3d: qemu absent"; exit 0; }
-[ -x ./kernel/build_hal3d.sh ] || { echo "SKIP  HAL.3d: build_hal3d.sh absent"; exit 0; }
+# ★ 2026-09-10: the builder check said SKIP + exit 0, and a missing control only
+# printed a NOTE after check 2 — so with the control gone this gate could PASS
+# with no red path at all. QEMU is ENVIRONMENT: the machine cannot boot a kernel,
+# and every QEMU gate skips on it. The builder and the control are ARTIFACTS this
+# repo ships (5a2ffed's line), so their absence means the gate could not test its
+# subject, or could not show it discriminates. Both are checked HERE, before the
+# boot: a gate must never skip past its own control.
+[ -x ./kernel/build_hal3d.sh ] || { echo "FAIL  HAL.3d: kernel/build_hal3d.sh is absent, so this gate cannot build what it tests."; exit 1; }
+if [ ! -x ./kernel/build_hal3d_ctrl.sh ] || [ ! -f kernel/ata3d_ctrl.la ]; then
+    echo "FAIL  HAL.3d: its red-path control (kernel/ata3d_ctrl.la + kernel/build_hal3d_ctrl.sh) is absent,"
+    echo "      so it could not show the repair is load-bearing. A gate must never skip past its own control."
+    exit 1
+fi
 
 boot() {
     timeout 60 qemu-system-x86_64 -kernel "$1" \

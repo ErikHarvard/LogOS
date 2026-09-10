@@ -55,6 +55,28 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ok=1
 
+# ── (0) ★ 2026-09-10: IS THE RUNTIME HALF EVEN IN THIS TREE? ────────────────
+#  Checked FIRST, before any probe is judged. rt_reap has never been committed:
+#  0 of 24 branch/stash tips carry an `rt_reap:` label in any .asm (control:
+#  `rt_gc:` is found). It is PARKED by OWNERSHIP — native_codegen3_rt.asm and
+#  native_codegen3.la are TRACK A's files, so the runtime half waits in
+#  ~/logos-dinit1-runtime.patch (kernel/LOGOSINIT_SCOPE.md:549), which still
+#  applies cleanly (git apply --check rc 0, 2026-09-10).
+#  ⇒ Until it lands, the three probe binaries on disk can only have been built
+#  from a PATCHED runtime this tree does not contain, so their passing says
+#  nothing about this tree. This gate used to judge them anyway — silently green
+#  — and then fail at check (4) with "the primitive is gone", which reads as a
+#  regression to hunt. It is not gone. It never landed.
+if ! grep -qE '^[[:space:]]*rt_reap:' native_codegen3_rt.asm; then
+    echo "FAIL  D-INIT.1: rt_reap is not in this tree's native_codegen3_rt.asm — PARKED, not gone."
+    echo "      It has never been committed: native_codegen3_rt.asm and native_codegen3.la are"
+    echo "      TRACK A's files, so the runtime half waits in ~/logos-dinit1-runtime.patch"
+    echo "      (kernel/LOGOSINIT_SCOPE.md:549). This gate cannot go green here until Track A"
+    echo "      lands it. The probe binaries on disk were built from that PATCHED runtime, so"
+    echo "      they prove nothing about this tree and are not judged."
+    exit 1
+fi
+
 need() { [ -f "$1" ] || { echo "FAIL  D-INIT.1: $1 missing — run kernel/build_dinit1.sh first"; exit 1; }; }
 need kernel/native_reap_test.bin
 need kernel/native_respawn_reap.bin
