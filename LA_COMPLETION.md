@@ -1413,9 +1413,10 @@ registers. `trimono.la` now gates all three. What remains:
   ruling does not meet it. That conflict is the question. The lineage piece is witnessed by build.sh's
   "Autopoiesis" block: :4432–4479 at `a1fd736`, and :4343–4390 at `fcaaa23`. Its bound is
   self-re-invocation from an internal condition, and that condition is a generation counter (cap 3).
-  **The BEGIN/KEEP split above, read through the ruling:** *"the external gate starts it"* is BEGIN, the
-  uncaused start, which is the bootstrap wall the 09-06 ruling declined. *"the lineage continues
-  itself"* is KEEP ITSELF GOING in the bounded form, and the lineage meets that.
+  **The BEGIN/KEEP split above, as the ruling reads it (a reading of KEEP, not a closure of this row):**
+  *"the external gate starts it"* is BEGIN, the uncaused start, which is the bootstrap wall the 09-06
+  ruling declined. *"the lineage continues itself"* is KEEP ITSELF GOING in the bounded form, and the
+  lineage meets that.
   ⚑ **Flagged for re-ruling** (METANOĒ; The Lieutenant invited flags and verified their lines). Two parts of this row say more
   than the gate witnesses. (1) *"producing the means of its own production"* (this row; WP:5785). The
   lineage COPIES its vessel. `autopoiesis.la` (blob `fcde785`) calls `execve` (:56), `fork` (:58) and
