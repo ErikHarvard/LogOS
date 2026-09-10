@@ -1328,7 +1328,7 @@ registers. `trimono.la` now gates all three. What remains:
 
 ---
 
-- `[ ]` **★ Self-invocation — the paper calls it the deepest gap.** In the
+- `[✓]` **★ Self-invocation — the paper calls it the deepest gap.** In the
   self-relation table (v18), four rows: self-compilation `[W]`, self-description
   `[W]`, self-translation `[B]`, and **self-invocation — *"begins its own
   recursion [A] not built; the deepest gap."*** The paper further states that the
@@ -1358,6 +1358,28 @@ registers. `trimono.la` now gates all three. What remains:
   again: prose says unbuilt, gate says otherwise, and the honest move is to
   narrow the claim rather than pick a winner.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): it awaits a scope ruling, not a build. autopoiesis.la is gated at build.sh:4344 (the item's :3898); the item's own open question is whether that lineage meets the bounded target ruled on 09-06.
+  ✔ **DONE 2026-09-10: RULED BY THE GENERAL, the gated lineage IS the bounded form** (recorded by
+  METANOĒ at The Lieutenant's instruction). His words, as The Lieutenant recorded them on the board
+  (`logos-status.md:20963`): *"Autopoiesis.la's gated lineage is the bounded form… the external gate
+  starts it, the lineage continues itself. That is precisely the bound."* The Lieutenant's message to
+  METANOĒ relays one more sentence: *"Gate it as the bounded implementation and move on."* So the
+  General's ruling answers the open question above: the lineage meets the bounded target ruled on
+  09-06. Nothing is built for this item.
+  **The gate** is build.sh's block `say "Autopoiesis: the system runs its own successor …"`, at
+  :4432–4479 on kernel-k1 `a1fd736` (build.sh blob `a299d9a`). It was :4343–4390 at `fcaaa23` (blob
+  `7a1e216`); the merges moved it 89 lines, so cite it by the `say` line. It asserts that the lineage
+  exits 0, that generations 0..3 each speak in order, that exactly 4 speak, that the lineage reports
+  completion, and that the begotten successor is byte-identical to the bundle.
+  **The bound, stated plainly (The Lieutenant's flag):** the internal condition that ends the lineage
+  is a generation counter. Each generation reads its number from the medium (`autopoiesis.gen`), and
+  the lineage stops at the cap of 3. It is not a sensed condition. The General re-rules only if he
+  meant a sensed one.
+  **Not closed by this:** the meta-autontopoiesis Ledger row below. This file calls it distinct
+  ("KEEP itself going", not BEGIN), while the white paper calls the two *"one referent under two
+  names"* (WP:5787–5788, in the copy at `~/Downloads/CODICIES/On Writing/Lingua Adamica White
+  Paper.tex`, sha256 `98beeff4ee45`). That disagreement is asked of The Lieutenant (ask `1789083624`),
+  not settled here. The paper still grades self-invocation `[A]` at WP:4998 and WP:7456: those rows,
+  and the identity passage WP:5780–5792, are P13–P15 in the master list.
 
 - `[ ]` **★ LEDGER ROW — Meta-autontopoiesis (state): `[A]` loop not closed
   unassisted.** Autontopoiesis is the paper's term for *"the continuous
