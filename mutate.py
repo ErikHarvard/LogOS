@@ -110,6 +110,14 @@ MUTANTS = [
   "K2's valuation {1} becomes {0}: P true now and false later, which no Kripke model allows. It also "
   'makes WLEM fail on K2 (arm 10); ONLY valuations-persistent is read',
   ['sh','-c','./tiny_host prop.la | grep -oE "valuations-persistent (OK|FAIL)"']),
+ # ── M6's last connective (prop.la GATE 8): → as material implication, E12's ¬A∨B. ONE targeted mutant.
+ ('prop.la', 'implication-read-backwards',
+  'glyph PIMP = la p. la q. POR(PNOT(p))(q)', 'glyph PIMP = la p. la q. POR(p)(PNOT(q))',
+  '→ read as its CONVERSE (¬q∨p, i.e. q→p): the four classical rows go TFTT -> TTFT. Before GATE 8 no gate reached '
+  'PIMP at all (0 users in prop.la or metaprop.la, 0 mutants), so this change was invisible. Nothing else in the '
+  'module reads PIMP, so ONLY implication-is-material can turn red (pre-registered in a model of EV before the row '
+  'existed); that row is read',
+  ['sh','-c','./tiny_host prop.la | grep -oE "implication-is-material (OK|FAIL)"']),
  ('opgrammar.la', 'scan-keys-on-raw-form',
   'glyph K_ = la d. KAN_N(T_(d))', 'glyph K_ = la d. KAN(T_(d))',
   'reverts the scan to the raw derivation string, which is blind to every + collision'),
