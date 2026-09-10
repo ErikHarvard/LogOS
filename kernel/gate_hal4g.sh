@@ -1,4 +1,35 @@
 #!/usr/bin/env bash
+# ⛔ THIS GATE IS CURRENTLY RED, FOR A REAL DEFECT, AND IS DELIBERATELY NOT WIRED
+#    INTO build.sh. Measured 2026-09-09, first time it had EVER been run — it was
+#    committed in a2769b8 as "sources; ELF compiling, gate NOT YET RUN" and sat on
+#    disk, invoked by nothing, until the kernel-only entry point made running the
+#    kernel half cheap enough to notice it.
+#
+#    ★ THE EDIT MODEL IS NOT THE BUG. kernel/editmodel_test.la on the C HOST passes
+#    every assertion this gate makes, including the two it fails on metal:
+#        typed=LOGOS  after_bksp=LOGO  grown=LOGOSABCD
+#        view_short=LOGOS  view_scrolled=GOSABCD  view_len=7
+#    So TAKE/VIEW/BKSP/NEWBUF are CORRECT. There is no off-by-one to find.
+#
+#    ★ THE FAULT IS ON THE METAL, AND ITS SHAPE IS THE FINDING:
+#        edit buf=LOGO / edit view=LOGO
+#        EXCEPTION 0d err=0000000000000000 rip=333333003f333333
+#    EXCEPTION 0d is a GP fault, and rip is ASCII — 33 33 33 00 3f 33 33 33, i.e.
+#    "333\0?333". THE INSTRUCTION POINTER WAS LOADED FROM STRING DATA. Control flow
+#    jumped into a value. That is a codegen/runtime defect, not compositor logic.
+#    It fires after 4-6 keystrokes; exactly which one varies with sendkey timing,
+#    so it is not keyed to a particular character or to MAXCH.
+#
+#    ⚠ REPRODUCE WITH -m 512, NOT -m 256. At 256 MB the failure changes shape
+#    entirely ("native: argument is not a string", exit 33) and the probe pixels
+#    read 0,0,0 instead of 255,255,255 — a different bug, or the same one wearing
+#    a different mask. My first repro used 256 and sent me after the wrong thing.
+#
+#    NOT WIRED ON PURPOSE: build.sh's own census note records that wiring a
+#    known-red gate turns the suite red and that "a census that classifies by
+#    STRUCTURE will hand you a red gate to wire" (kernel/gate_hal_idle.sh is the
+#    precedent). This one is tracked here and on the board instead.
+#
 # LogOS HAL.4g gate — an EDITABLE, SCROLLING LINE on the metal.
 # HAL.4f could type but not un-type, and silently DISCARDED input past 7 chars.
 # This gate proves both of those are gone, by typing a line, DELETING from it,
