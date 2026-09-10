@@ -2,7 +2,11 @@
 # Every gate that touches link.la or link_reloc.la, run sequentially so it does
 # not contend with track A's build. gate_link_reloc first: it is the one that
 # directly exercises the relocation resolver I changed.
-cd "$HOME/logos-b" || exit 1
+# ★ RUN IN THIS SCRIPT'S OWN TREE (2026-09-10). This line was `cd "$HOME/logos-b"`. Once track-b merges into
+#   kernel-k1, the copy in ~/logos would have cd'd into TRACK-B'S worktree and reported ITS gates' verdicts as
+#   the merged tree's: a verdict about an unnamed artifact, ACTIVATED by the merge (integration brief, §ADDENDUM).
+#   Every gate this script runs already uses `cd "$(dirname "$0")"`; now so does the script that runs them.
+cd "$(dirname "$0")" || exit 1
 pass=0; fail=0; skip=0; sick=0
 # ★ gate_link_layout.sh was MISSING from this list until 2026-09-08 — including
 # in the version committed that morning. It is the only build-reachable cover for
