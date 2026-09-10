@@ -7,7 +7,7 @@
 #   the merged tree's: a verdict about an unnamed artifact, ACTIVATED by the merge (integration brief, §ADDENDUM).
 #   Every gate this script runs already uses `cd "$(dirname "$0")"`; now so does the script that runs them.
 cd "$(dirname "$0")" || exit 1
-pass=0; fail=0; skip=0; sick=0
+pass=0; fail=0; skip=0; sick=0; gskip=0
 # ★ gate_link_layout.sh was MISSING from this list until 2026-09-08 — including
 # in the version committed that morning. It is the only build-reachable cover for
 # link_layout.la, and it had never been run by build.sh either, so the module had
@@ -92,7 +92,12 @@ for g in $GATES; do
   if [ "$rc" -eq 0 ] && [ "$f" -gt 0 ]; then
     echo "    ‼ exit 0 WITH a FAIL line — this gate CANNOT GO RED."; sick=$((sick+1))
   fi
-  if [ "$rc" -ne 0 ] && [ "$f" -eq 0 ] && [ $((p+k)) -gt 0 ]; then
+  # ★ EXIT 2 WITH A SKIP LINE AND NOTHING ELSE IS A WHOLE-GATE SKIP, NOT AN ABORT (2026-09-10). gate_link_kernel
+  #   exits 2 when it cannot run at all, because a SKIP is not a PASS. Read as an abort it would be reported as
+  #   "the PASSes above are partial" when there were none. Named, counted, and it keeps this suite from exiting 0.
+  if [ "$rc" -eq 2 ] && [ "$f" -eq 0 ] && [ "$p" -eq 0 ] && [ "$k" -gt 0 ]; then
+    echo "    ⚠ exit 2 — this gate SKIPPED as a whole (its SKIP line says why): nothing it covers was asserted."; gskip=$((gskip+1))
+  elif [ "$rc" -ne 0 ] && [ "$f" -eq 0 ] && [ $((p+k)) -gt 0 ]; then
     echo "    ‼ nonzero exit with no FAIL line — aborted part-way; the PASSes above are partial."; sick=$((sick+1))
   fi
   # ⚠ DO NOT ASSERT ONE KILL CODE, AND DO NOT ENUMERATE THREE EITHER. A budget or
@@ -120,4 +125,6 @@ echo "LINKER REGRESSION: $pass PASS / $fail FAIL / $skip SKIP"
 #   FAIL, which is precisely how a tally shows nothing wrong.
 [ "$skip" -gt 0 ] && echo "  ⚠ $skip SKIP — a skipped assertion proved nothing; read the lines above before calling this green."
 [ "$sick" -gt 0 ] && echo "  ‼ $sick INCONSISTENT ROW(S) — the suite's own reporting is suspect, not just its subject."
+[ "$gskip" -gt 0 ] && echo "  ⚠ $gskip GATE(S) SKIPPED AS A WHOLE — a skipped gate is not a passing one; this suite exits 2."
 { [ "$fail" -eq 0 ] && [ "$sick" -eq 0 ]; } || exit 1
+[ "$gskip" -eq 0 ] || exit 2
