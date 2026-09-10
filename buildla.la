@@ -173,7 +173,10 @@ glyph STEPS =
   CONS(STEP("prop — DNE fails ontologically, holds operationally")("./tiny_host")("prop.la")("dne-fails-ontologically OK"))(
   CONS(STEP("metaprop — the meta-level collapses, not ascends")("./tiny_host")("metaprop.la")("MID=FT-inert-not-distinct OK"))(
   CONS(STEP("ladder — the Semiotic-Ontoglyphic Ladder")("./tiny_host")("ladder.la")("LADDER VERDICT ? YES"))(
-  CONS(STEP("familytree — the derived catalogue is grounded")("./tiny_host")("familytree.la")("FAMILYTREE catalogue=17"))(
+  #  catalogue=21 is DERIVED, not captured: familytree.la prints int_to_str(LEN(CAT)), and CAT is
+  #  17 rows plus the four Theory operators OP_DIFF/OP_BOUND/OP_COMP/OP_INTEG, added by M11a-residue
+  #  (1f9429b). That commit moved familytree and build.sh's pin to 21, and left this marker at 17.
+  CONS(STEP("familytree — the derived catalogue is grounded")("./tiny_host")("familytree.la")("FAMILYTREE catalogue=21 "))(
   NIL))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 # ── a GUARD step: the build's THIRD kind of gate — the EXIT CODE ────────────
