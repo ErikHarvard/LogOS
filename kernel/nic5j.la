@@ -1,0 +1,104 @@
+# =====================================================================
+#  LogOS HAL.5j — an IHL-GENERAL ICMP echo responder over RTL8139, in LA.
+#
+#  What HAL.5i did for the UDP responder, done for the ICMP one. HAL.5g
+#  answered a ping sent TO us, but wrote the reply's ICMP fields at the FIXED
+#  frame offsets 34/36/37 — correct only when the IPv4 header is exactly 20
+#  bytes (IHL=5). Its gate could not see that, because ping_harness.py only ever
+#  sent IHL=5. 5j reads the header length out of the packet:
+#
+#    ihl    = mod(RB(18))(16)        # low nibble of frame byte 14 [ring 18]
+#    L4OFF u = add(14)(mul(ihl)(4))  # 34 when ihl=5, 38 when ihl=6
+#
+#  mod and mul — ARITHMETIC, so no bitwise ops (LA has none).
+#
+#  Unchanged, and why: eth dst/src (frame 0/6) precede the IP header, and ip
+#  src/dst sit at fixed offsets 12/16 *within* it (frame 26/30), so all four are
+#  independent of IHL and keep 5g's constants. Only the ICMP type (frame u) and
+#  the ICMP checksum (frame u+2, u+3) move. The IP header checksum is still
+#  untouched — swapping src/dst is commutative and the options are copied
+#  through unchanged, so the reply's own IHL matches the request's.
+#
+#  The checksum is still ADJUSTED, not recomputed: type 8->0 lowers the
+#  type/code 16-bit word by 0x0800, so the transmitted checksum rises by 0x0800
+#  with end-around carry (EAC). That delta is independent of where the header
+#  sits — only the ADDRESSES it is read from and written to move.
+#
+#  Witness: "nic icmp req ihl=06 type=08 from=<requester MAC>" — ihl is read
+#  from the packet, so the serial PROVES the kernel parsed the header rather
+#  than happening to be right. gate_nic5j.sh runs the SAME kernel against both
+#  ping (IHL=5) and pingopt (IHL=6); HAL.5g's own kernel passes the first and
+#  FAILS the second, which is what makes it a check and not a ceremony.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+glyph HEXD = la d.
+    IF(lt(d)(10))(la _. chr(int_to_str(add(48)(d))))
+                 (la _. chr(int_to_str(add(87)(d))))
+glyph HEX2 = la b. concat(HEXD(div(b)(16)))(HEXD(mod(b)(16)))
+
+glyph ADDR = la dev. la off. add(add(2147483648)(mul(dev)(2048)))(off)
+glyph CFG  = la dev. la off. SEQ(outl(3320)(ADDR(dev)(off)))(inl(3324))
+glyph CFGW = la dev. la off. la val. SEQ(outl(3320)(ADDR(dev)(off)))(outl(3324)(val))
+
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 32)(la _.
+      (la r.
+        IF(int_eq(mod(r)(65536))(4332))(la _.
+          IF(int_eq(div(r)(65536))(33081))(la _. dev)(la _. self(add(dev)(1))))
+        (la _. self(add(dev)(1))))
+      (CFG(dev)(0))))
+
+glyph OB = la base. la off. la v. outb(add(base)(off))(v)
+glyph OW = la base. la off. la v. outw(add(base)(off))(v)
+glyph OL = la base. la off. la v. outl(add(base)(off))(v)
+glyph IB = la base. la off. inb(add(base)(off))
+glyph IL = la base. la off. inl(add(base)(off))
+
+glyph RXBUF = 268435456     # 0x10000000 — 8 KiB RX ring
+glyph TXBUF = 268447744     # 0x10003000 — TX buffer (the ICMP echo reply, TSD0)
+
+# copy n bytes from a peek-able src addr to a poke-able dst addr (bounded, no bitwise)
+glyph COPYN = Z(la self. la dst. la src. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+      SEQ(poke(dst)(peek(src)))(self(add(dst)(1))(add(src)(1))(sub(n)(1)))))
+
+glyph WAITRST = Z(la self. la base.
+    IF(int_eq(mod(div(IB(base)(55))(16))(2))(1))(la _. self(base))(la _. base))
+# wait for TOK (bit15) on a TSD at byte offset off (16=TSD0)
+glyph WAITTX = Z(la self. la base. la off.
+    IF(int_eq(mod(div(IL(base)(off))(32768))(2))(1))(la _. base)(la _. self(base)(off)))
+glyph WAITRX = Z(la self. la base. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+      IF(int_eq(mod(IB(base)(55))(2))(0))(la _. 1)(la _. self(base)(sub(n)(1)))))
+
+# RX packet total length from its 4-byte ring header (bytes 2..3, incl. CRC)
+glyph RXLEN = add(peek(add(RXBUF)(2)))(mul(peek(add(RXBUF)(3)))(256))
+# byte at ring offset off in the received packet (frame byte off-4)
+glyph RB = la off. peek(add(RXBUF)(off))
+# byte at offset off in the reply TX buffer
+glyph TB = la off. peek(add(TXBUF)(off))
+# end-around-carry 16-bit add (for the ICMP checksum delta)
+glyph EAC = la s. IF(lt(s)(65536))(la _. s)(la _. sub(s)(65535))
+
+# HAL.5j: the IP header length, READ FROM THE PACKET rather than assumed.
+glyph IHL   = mod(RB(18))(16)
+glyph L4OFF = add(14)(mul(IHL)(4))
+
+glyph SETUP = la dev. la base.
+    SEQ(CFGW(dev)(4)(7))
+    (SEQ(OB(base)(82)(0))
+    (SEQ(OB(base)(55)(16))
+    (SEQ(WAITRST(base))
+    (SEQ(OL(base)(48)(RXBUF))
+    (SEQ(OW(base)(60)(0))
+    (SEQ(OW(base)(62)(65535))
+    (SEQ(OL(base)(68)(59151))
+    (SEQ(OW(base)(56)(65520))
+    (OB(base)(55)(12))))))))))
+glyph FROMWIT = la u. concat("nic icmp req ihl=")(concat(HEX2(IHL))(concat(" type=")(concat(HEX2(RB(add(u)(4))))(concat(" from=")(concat(HEX2(RB(10)))(concat(HEX2(RB(11)))(concat(HEX2(RB(12)))(concat(HEX2(RB(13)))(concat(HEX2(RB(14)))(HEX2(RB(15))))))))))))
+glyph RESPOND = la base. la framelen. la u. SEQ(COPYN(TXBUF)(add(RXBUF)(4))(framelen))(SEQ(COPYN(TXBUF)(add(RXBUF)(10))(6))(SEQ(COPYN(add(TXBUF)(6))(add(RXBUF)(4))(6))(SEQ(COPYN(add(TXBUF)(26))(add(RXBUF)(34))(4))(SEQ(COPYN(add(TXBUF)(30))(add(RXBUF)(30))(4))(SEQ(poke(add(TXBUF)(u))(0))(SEQ((la nc. SEQ(poke(add(TXBUF)(add(u)(2)))(div(nc)(256)))(poke(add(TXBUF)(add(u)(3)))(mod(nc)(256))))(EAC(add(add(mul(TB(add(u)(2)))(256))(TB(add(u)(3))))(2048))))(SEQ(OL(base)(32)(TXBUF))(SEQ((la tl. OL(base)(16)(tl))(IF(lt(framelen)(60))(la _. 60)(la _. framelen)))(SEQ(WAITTX(base)(16))(SEQ(print("nic icmp reply sent"))(print("nic done"))))))))))))
+glyph MAIN = SEQ(print("nic5j:"))(((la dev. IF(int_eq(dev)(32))(la _. print("nic not found"))(la _. ((la base. SEQ(SETUP(dev)(base))(SEQ(print("nic setup ok"))(IF(int_eq(WAITRX(base)(20000000))(0))(la _. print("nic rx timeout"))(la _. (la u. SEQ(print(FROMWIT(u)))(RESPOND(base)(sub(RXLEN)(4))(u)))(L4OFF)))))(sub(CFG(dev)(16))(mod(CFG(dev)(16))(4))))))(FIND(0))))

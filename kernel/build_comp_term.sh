@@ -14,12 +14,11 @@ cd "$(dirname "$0")/.."
 echo "[1/4] compile comp_term.la"
 cp kernel/comp_term.la native_input.la
 rm -f native_codegen3_out
-if [ -x native_codegen3_selfhost.bin ]; then
-    cp native_codegen3_selfhost.bin /tmp/ct_cc; chmod +x /tmp/ct_cc
-    /tmp/ct_cc >/dev/null; rm -f /tmp/ct_cc
-else
-    ./tiny_host native_codegen3.la >/dev/null
-fi
+# Collapsed onto the shared helper. ★ The form this replaces ran the image as
+# `/tmp/ct_cc >/dev/null` and DISCARDED its exit status; ncc3.sh propagates it, so a
+# failed compile now reaches the caller's `set -e` as well as the [ -s ... ] guard
+# below. It also used a FIXED /tmp name, which two concurrent builds would collide on.
+bash kernel/ncc3.sh >/dev/null
 [ -s native_codegen3_out ] || { echo "FAIL: no native_codegen3_out"; exit 1; }
 ENTRY=$(readelf -h native_codegen3_out | awk '/Entry point/{print $NF}')
 echo "      e_entry (LA prol) = $ENTRY"

@@ -32,13 +32,37 @@ glyph ISSUE = la lba.
     (SEQ(outb(501)(mod(div(lba)(65536))(256)))               # LBA[23:16]
     (outb(503)(32))))))                                       # command: READ SECTORS
 
-# spin on the status port until BSY clears and DRQ sets (data ready)
-glyph WAITDRQ = Z(la self. la _.
+# ── BOUNDED wait for BSY to clear and DRQ to set. Returns 1 ready, 0 timeout.
+#
+#  ★ THIS WAS UNBOUNDED AND IT CRASHED THE KERNEL ON A DEVICE THAT NEVER GETS
+#  READY (found + reproduced 2026-08-18). The old `self("!")` recursed until it
+#  ran off into unmapped memory:
+#      ata:|EXCEPTION 0d err=0000000000000000 rip=0000000007ffffc0
+#  Deterministic over 3 runs, and identical with a present-but-empty CD-ROM
+#  drive — two different real fault modes, one silent crash with no diagnosis
+#  naming the disk. The same latent shape as HAL.5r's WAITRX stack overflow.
+#  No gate could see it because every ATA gate attaches a working disk.
+#
+#  ★ WHICH BRANCH SPINS — MEASURED, and NOT what I first wrote here. I had this
+#  comment claiming a driveless channel floats to 0xFF so BSY reads permanently
+#  SET. The bounded version prints the status byte, and it is 0 with no drive
+#  and 0x41 (ERR|DRDY) with an empty CD-ROM. In BOTH cases BSY is clear and DRQ
+#  is clear, so it is the "neither -> keep waiting" branch that spins, not the
+#  BSY branch. Same crash either way, wrong mechanism. Corrected from the
+#  device's own reported status rather than from what the bus "should" read.
+#
+#  FUEL is 100000: a ready disk answers in far fewer iterations, and the crash
+#  depth measured above is orders of magnitude higher, so this bounds the wait
+#  well inside both limits. A repair that cannot succeed must fail LOUDLY rather
+#  than die namelessly — the HAL.5q/5r discipline applied to the disk organ.
+glyph DRQFUEL = 100000
+glyph WAITDRQ = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.                                # out of fuel -> timeout
     (la st.
-      IF(int_eq(mod(div(st)(128))(2))(1))(la _. self("!"))       # BSY set -> keep waiting
-      (la _. IF(int_eq(mod(div(st)(8))(2))(1))(la _. "!")        # DRQ set -> ready
-             (la _. self("!"))))                                  # neither -> keep waiting
-    (inb(503)))
+      IF(int_eq(mod(div(st)(128))(2))(1))(la _. self(sub(n)(1)))  # BSY set -> keep waiting
+      (la _. IF(int_eq(mod(div(st)(8))(2))(1))(la _. 1)           # DRQ set -> ready
+             (la _. self(sub(n)(1)))))                             # neither -> keep waiting
+    (inb(503))))
 
 # a 32-bit data word -> its 4 bytes as a string, disk order (little-endian)
 glyph B4 = la v.
@@ -55,6 +79,13 @@ glyph READSEC = Z(la self. la n. la acc.
 glyph MAIN =
     SEQ(print("ata:"))
     (SEQ(ISSUE(1))                       # read LBA 1
-    (SEQ(WAITDRQ("!"))                   # wait for the sector to be ready
-    (SEQ(print(READSEC(128)("")))        # read + reconstruct 512 bytes, echo
-    (print("ata done")))))
+    ((la ready.                          # bounded wait -> 1 ready, 0 timed out
+      IF(int_eq(ready)(1))(la _.
+          SEQ(print(READSEC(128)("")))   # read + reconstruct 512 bytes, echo
+          (print("ata done")))
+      (la _.
+          # DIAGNOSE rather than crash: name the organ and show the status byte
+          # that never became ready, so the failure is readable on serial.
+          SEQ(print(concat("ata drq timeout st=")(int_to_str(inb(503)))))
+          (print("ata dead")))
+     )(WAITDRQ(DRQFUEL))))

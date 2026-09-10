@@ -1,0 +1,51 @@
+# Minimal reproducer for the unbounded-heap defect (track D -> track A).
+#
+# A tail-recursive countdown. `sub(n)(1)` and `int_eq(n)(0)` each produce a
+# BOXED int, and every one of those boxes is dead immediately: at any instant
+# THE LIVE SET IS ONE INTEGER. The recursion is in TAIL position and the runtime
+# does TCO, so the stack does not grow -- anything that grows is the HEAP.
+#
+# Therefore peak RSS must be FLAT in the iteration count. 2026-09-10: it IS —
+# 15M and 135M iterations both peak at 4.0 MB (most plausibly f9096e0's rt_gc
+# trigger, 2026-08-22). The July measurements below record the defect this
+# program was written to expose. Measured 2026-07-19, it was not:
+#         1,000 ->   0.75 MB      1,000,000 ->  72 MB
+#       100,000 ->  20 MB         2,000,000 -> 105 MB
+#       250,000 ->  36 MB         5,000,000 -> 170 MB
+#       500,000 ->  52 MB        45,000,000 -> 519 MB
+#                               135,000,000 -> 905 MB
+# The GC reclaims SOMETHING (the 135M run allocates ~3.2 GB of boxes yet peaks
+# at 905 MB) but it does not hold steady.
+#
+# ── THE PORTABLE NUMBER: ~700,000 ITERATIONS IS THE METAL'S WHOLE BUDGET ─────
+# In the small-N regime growth is essentially LINEAR at ~40 BYTES RETAINED PER
+# ITERATION (500k->1M costs 20.7 MB, 1M->2M costs 33 MB). Each iteration
+# allocates two boxed ints = 48 bytes, so roughly 85% of what is allocated is
+# never reclaimed.
+#
+# On bare metal the heap starts at 68.0 MiB and the LA stack's live frames sit
+# just under LA_STACK_TOP = 128 MiB, so there are ~60 MiB to consume. RSS
+# crosses 60 MB between N=500,000 (52 MB) and N=1,000,000 (72 MB) -- so a metal
+# LA program has a total budget of roughly SEVEN HUNDRED THOUSAND allocating
+# iterations, ever, after which it overwrites its own return addresses.
+#
+# That cross-checks the metal observation independently: every HAL.4x compositor
+# dies after ~6 s of idle polling, and 700k/6s = ~117k iterations/sec, which is
+# the right order for an `inb` port read under QEMU (each is a VM exit). Two
+# measurements, taken different ways, agreeing.
+#
+# "Six seconds" is machine-dependent; "700,000 allocating iterations" is not,
+# and it is the number to predict whether any given LA program survives.
+#
+# THE ITERATION COUNT IS READ FROM `churn.n`, not compiled in, so ONE build
+# serves every measurement point. native_codegen3's codegen is the expensive
+# part (~25 s even for a program this small), and a gate that compares TWO
+# workloads would otherwise pay it twice. `churn.n` must hold just the decimal
+# digits with NO trailing newline: str_to_int is strict on every engine and
+# halts loudly on anything else, which is the behaviour wanted here rather than
+# a silently-truncated count.
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph LOOP = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "done")(la _. self(sub(n)(1))))
+glyph MAIN = print(LOOP(str_to_int(read_file("churn.n"))))

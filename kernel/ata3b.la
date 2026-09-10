@@ -25,14 +25,42 @@ glyph IF   = la c. la t. la f. c(t)(f)("!")
 glyph SEQ  = la a. la b. b
 
 # ── spin on status: BSY=bit7=(st/128)mod2, DRQ=bit3=(st/8)mod2 (port 0x1F7=503) ──
-glyph WAITDRQ = Z(la self. la _.
+# ── BOUNDED waits. Both return 1 ready / 0 timed out.
+#
+#  ★ BOTH OF THESE WERE UNBOUNDED, the same latent crash HAL.3c fixed in
+#  ata.la: on a channel that never becomes ready the old `self("!")` recursed
+#  until it ran off into unmapped memory — EXCEPTION 0d, no diagnosis naming
+#  the disk. Reproduced on the read path with no drive attached and again with
+#  a present-but-empty CD-ROM; the status byte is 0 and 0x41 respectively, so
+#  BSY and DRQ are both CLEAR and it is the "neither -> keep waiting" branch
+#  that spins. No gate saw it because every ATA gate attaches a working disk.
+#
+#  The WRITE path is worse exposed than the read path: it waits THREE times
+#  (DRQ before pushing the sector, BSY after the cache flush, DRQ again on the
+#  read-back), so a wedged channel had three ways to kill the kernel instead of
+#  one — and the flush wait sits AFTER 512 bytes have already been pushed, i.e.
+#  at the point where dying without a word is most costly.
+#
+#  A number, not a string: str_eq is not in the kernel builtin subset.
+glyph DRQFUEL = 100000
+glyph BSYFUEL = 100000
+glyph WAITDRQ = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
     (la st.
-      IF(int_eq(mod(div(st)(128))(2))(1))(la _. self("!"))
-      (la _. IF(int_eq(mod(div(st)(8))(2))(1))(la _. "!")
-             (la _. self("!"))))
-    (inb(503)))
-glyph WAITBSY = Z(la self. la _.
-    IF(int_eq(mod(div(inb(503))(128))(2))(1))(la _. self("!"))(la _. "!"))
+      IF(int_eq(mod(div(st)(128))(2))(1))(la _. self(sub(n)(1)))
+      (la _. IF(int_eq(mod(div(st)(8))(2))(1))(la _. 1)
+             (la _. self(sub(n)(1)))))
+    (inb(503))))
+glyph WAITBSY = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+    IF(int_eq(mod(div(inb(503))(128))(2))(1))(la _. self(sub(n)(1)))(la _. 1)))
+
+# Name the organ, the STAGE, and the status byte that never became ready. The
+# stage matters: "which of the three waits gave up" is the difference between a
+# drive that never accepted the write and one that never flushed it.
+glyph DIAG = la what.
+    SEQ(print(concat("ata3b ")(concat(what)(concat(" timeout st=")(int_to_str(inb(503)))))))
+       (print("ata3b dead"))
 
 # ── issue WRITE SECTORS (cmd 0x30=48) / READ SECTORS (cmd 0x20=32) of a 28-bit LBA ──
 glyph LBASET = la lba. la cmd.
@@ -72,16 +100,25 @@ glyph ZEROS = Z(la self. la n.
     IF(int_eq(n)(0))(la _. "")(la _. concat(chr(int_to_str(0)))(self(sub(n)(1)))))
 glyph SIG    = "LOGOS-WROTE-THIS-HAL3B"
 glyph SECTOR = concat(SIG)(ZEROS(490))
-glyph FLUSH  = SEQ(outb(503)(231))(WAITBSY("!"))     # cmd 0xE7 = cache flush, then wait BSY
+glyph FLUSH  = SEQ(outb(503)(231))(WAITBSY(BSYFUEL)) # cmd 0xE7 = cache flush, then bounded wait BSY
 
 glyph MAIN =
     SEQ(print("ata3b:"))
     (SEQ(ISSUEW(2))                     # WRITE SECTORS to LBA 2
-    (SEQ(WAITDRQ("!"))                  # drive ready to accept data
-    (SEQ(WSEC(SECTOR))                  # push the 512-byte sector
-    (SEQ(FLUSH)                         # cache flush + wait BSY clear
-    (SEQ(print("ata write done"))
-    (SEQ(ISSUER(2))                     # read LBA 2 back
-    (SEQ(WAITDRQ("!"))
-    (SEQ(print(concat("ata rb=")(READSEC(128)("")))) # echo the round-trip
-    (print("ata3b done"))))))))))
+    ((la wdrq.                          # (1) drive ready to accept data?
+      IF(int_eq(wdrq)(1))(la _.
+        SEQ(WSEC(SECTOR))               # push the 512-byte sector
+        ((la wbsy.                      # (2) cache flush completed?
+          IF(int_eq(wbsy)(1))(la _.
+            SEQ(print("ata write done"))
+            (SEQ(ISSUER(2))             # read LBA 2 back
+            ((la rdrq.                  # (3) data ready on the read-back?
+              IF(int_eq(rdrq)(1))(la _.
+                SEQ(print(concat("ata rb=")(READSEC(128)(""))))
+                (print("ata3b done")))
+              (la _. DIAG("readback drq"))
+             )(WAITDRQ(DRQFUEL)))))
+          (la _. DIAG("flush bsy"))
+         )(FLUSH)))
+      (la _. DIAG("write drq"))
+     )(WAITDRQ(DRQFUEL))))

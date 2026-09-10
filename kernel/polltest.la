@@ -1,0 +1,21 @@
+# Minimal isolation test: HAL.2/4d's POLL loop ALONE — no compositor, no font.
+# Idles polling the i8042 until ENTER. If THIS faults on idle, the defect is in
+# the shared POLL spin, not in HAL.4e's text rendering.
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+glyph FALSE = la t. la f. f
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph OBF    = la st. int_eq(mod(st)(2))(1)
+glyph NOTAUX = la st. int_eq(mod(div(st)(32))(2))(0)
+glyph READY  = la st. AND(OBF(st))(NOTAUX(st))
+glyph POLL = Z(la self. la _.
+    (la st. IF(READY(st))(la _. inb(96))(la _. self("!")))
+      (inb(100)))
+glyph LOOP = Z(la self. la _.
+    (la sc.
+      IF(int_eq(sc)(28))
+        (la _. print("poll done"))
+        (la _. SEQ(print(concat("poll sc=")(int_to_str(sc))))(self("!"))))
+      (POLL("!")))
+glyph MAIN = SEQ(print("poll ready"))(LOOP("!"))

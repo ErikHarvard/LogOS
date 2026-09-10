@@ -1,0 +1,132 @@
+# =====================================================================
+#  ata_faultprobe.la — DOES A CANDIDATE FAULT ACTUALLY WEDGE? Nothing else.
+#
+#  ★ THIS FILE EXISTS BECAUSE HAL.3d SKIPPED IT. There, a loop, a control, two
+#  build scripts and a gate were written against a fault that turned out to be
+#  INERT: holding SRST did not reliably stop the drive, the one wedge observed
+#  was a race (0/4 on re-measure), and the "repair" was therefore measuring a
+#  drive that comes ready by itself. The fault is the CHEAPEST thing to test
+#  and it gates everything downstream, so it is tested FIRST and ALONE.
+#
+#  PROBE 2 — DOES THE ERR STATE PERSIST? An out-of-range LBA wedges 6/6 with
+#  st=0x41 (DRDY|ERR) err=0x04 (ABRT). That is a reliable FAULT. But a fault
+#  is only worth a REPAIR LOOP if it actually breaks the next operation. ATA
+#  clears ERR when a new command is issued, so the drive may recover BY ITSELF
+#  -- in which case there is nothing to repair and the honest slice is "report
+#  the aborted command", not "self-repairing driver".
+#  This probe issues the bad read, then the REAL read of LBA 1 with NO reset
+#  and NO repair, and reports whether the valid read succeeds anyway.
+#  Original note — CANDIDATE: an out-of-range LBA. The disk image is 1 MiB = 2048 sectors, so
+#  LBA 0x0FFFFFFF is far past the end. A real drive answers by setting ERR in
+#  status and never asserting DRQ -- so the bounded DRQ wait must time out.
+#  This is a DEVICE STATE, not a timing hope, which is exactly why it should
+#  behave the same on every boot where SRST did not.
+#
+#  Grounded in a measurement already taken: HAL.3c saw st=0x41 (ERR|DRDY) from
+#  a present-but-empty CD-ROM and that wedged deterministically.
+#
+#  Prints exactly one verdict line so N boots can be compared by eye.
+#  Derived from HAL.3 (ATA/IDE disk read, Lingua Adamica).
+#
+#  Persistent storage the kernel drives itself. On the thin asm "physics"
+#  of the HAL.1 port-I/O primitives (inb/outb/inl), an LA program at ring 0
+#  reads a sector off the primary IDE disk via ATA PIO — the same sequence
+#  K7b's bootloader proved, now as a driver in the language itself. No new
+#  builtin, no regen, no boot.asm change.
+#
+#  Primary ATA bus, ports (decimal): 0x1F0=496 data, 0x1F2=498 sector count,
+#  0x1F3=499/0x1F4=500/0x1F5=501 = LBA[7:0]/[15:8]/[23:16], 0x1F6=502 drive
+#  (0xE0=224 | LBA[27:24]), 0x1F7=503 status/command. READ SECTORS = 0x20=32.
+#  Status bits (read arithmetically — LA has no bitwise ops): BSY = bit 7 =
+#  (st div 128) mod 2, DRQ = bit 3 = (st div 8) mod 2.
+#
+#  The data register is 16-bit, but a 32-bit `inl` read pulls two consecutive
+#  words, so one sector (512 B) is 128 dword reads; each dword's 4 bytes come
+#  out low-first (disk order) and are recovered by div/mod. Reads LBA 1 and
+#  echoes the sector's bytes over serial. Flat + import-free, like pci/kbd.la.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+# issue a single-sector READ (cmd 0x20) of a 28-bit LBA on the primary master
+glyph ISSUE = la lba.
+    SEQ(outb(502)(add(224)(mod(div(lba)(16777216))(16))))    # drive/head: 0xE0 | LBA[27:24]
+    (SEQ(outb(498)(1))                                        # sector count = 1
+    (SEQ(outb(499)(mod(lba)(256)))                            # LBA[7:0]
+    (SEQ(outb(500)(mod(div(lba)(256))(256)))                 # LBA[15:8]
+    (SEQ(outb(501)(mod(div(lba)(65536))(256)))               # LBA[23:16]
+    (outb(503)(32))))))                                       # command: READ SECTORS
+
+# ── BOUNDED wait for BSY to clear and DRQ to set. Returns 1 ready, 0 timeout.
+#
+#  ★ THIS WAS UNBOUNDED AND IT CRASHED THE KERNEL ON A DEVICE THAT NEVER GETS
+#  READY (found + reproduced 2026-08-18). The old `self("!")` recursed until it
+#  ran off into unmapped memory:
+#      ata:|EXCEPTION 0d err=0000000000000000 rip=0000000007ffffc0
+#  Deterministic over 3 runs, and identical with a present-but-empty CD-ROM
+#  drive — two different real fault modes, one silent crash with no diagnosis
+#  naming the disk. The same latent shape as HAL.5r's WAITRX stack overflow.
+#  No gate could see it because every ATA gate attaches a working disk.
+#
+#  ★ WHICH BRANCH SPINS — MEASURED, and NOT what I first wrote here. I had this
+#  comment claiming a driveless channel floats to 0xFF so BSY reads permanently
+#  SET. The bounded version prints the status byte, and it is 0 with no drive
+#  and 0x41 (ERR|DRDY) with an empty CD-ROM. In BOTH cases BSY is clear and DRQ
+#  is clear, so it is the "neither -> keep waiting" branch that spins, not the
+#  BSY branch. Same crash either way, wrong mechanism. Corrected from the
+#  device's own reported status rather than from what the bus "should" read.
+#
+#  FUEL is 100000: a ready disk answers in far fewer iterations, and the crash
+#  depth measured above is orders of magnitude higher, so this bounds the wait
+#  well inside both limits. A repair that cannot succeed must fail LOUDLY rather
+#  than die namelessly — the HAL.5q/5r discipline applied to the disk organ.
+glyph DRQFUEL = 100000
+glyph WAITDRQ = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.                                # out of fuel -> timeout
+    (la st.
+      IF(int_eq(mod(div(st)(128))(2))(1))(la _. self(sub(n)(1)))  # BSY set -> keep waiting
+      (la _. IF(int_eq(mod(div(st)(8))(2))(1))(la _. 1)           # DRQ set -> ready
+             (la _. self(sub(n)(1)))))                             # neither -> keep waiting
+    (inb(503))))
+
+# a 32-bit data word -> its 4 bytes as a string, disk order (little-endian)
+glyph B4 = la v.
+    concat(chr(int_to_str(mod(v)(256))))
+    (concat(chr(int_to_str(mod(div(v)(256))(256))))
+    (concat(chr(int_to_str(mod(div(v)(65536))(256))))
+            (chr(int_to_str(mod(div(v)(16777216))(256))))))
+
+# drain 128 dwords (= 512 bytes = one sector) from the data port, accumulating
+glyph READSEC = Z(la self. la n. la acc.
+    IF(int_eq(n)(0))(la _. acc)(la _.
+      self(sub(n)(1))(concat(acc)(B4(inl(496))))))
+
+glyph ERRREG = 497
+glyph BADLBA = 268435455
+
+glyph MAIN =
+    SEQ(print("probe2:"))
+    (SEQ(ISSUE(BADLBA))                       # fault: abort the drive
+    ((la wedged.
+      # ★ IF ALREADY FORCES ITS BRANCH — `glyph IF = la c. la t. la f. c(t)(f)("!")`.
+      #   My first cut wrote IF(c)(t)(f)("!"), applying the RESULTING STRING to an
+      #   argument. The kernel printed "probe2:" and stopped dead with a clean exit
+      #   code, so it looked like a silent no-op rather than an error. Let IF pick
+      #   between two prints instead of embedding it in a concat.
+      SEQ(IF(int_eq(wedged)(1))
+            (la _. print(concat("after bad lba: READY st=")
+                        (concat(int_to_str(inb(503)))(concat(" err=")(int_to_str(inb(ERRREG)))))))
+            (la _. print(concat("after bad lba: WEDGED st=")
+                        (concat(int_to_str(inb(503)))(concat(" err=")(int_to_str(inb(ERRREG))))))))
+        # now the REAL read of LBA 1, with NO reset and NO repair in between
+        (SEQ(ISSUE(1))
+        ((la ok2.
+          IF(int_eq(ok2)(1))
+            (la _. SEQ(print("valid read SUCCEEDED with no repair — ERR did NOT persist"))
+                      (print(READSEC(128)(""))))
+            (la _. print(concat("valid read STILL WEDGED st=")
+                        (concat(int_to_str(inb(503)))(concat(" err=")(int_to_str(inb(ERRREG))))))))
+         )(WAITDRQ(DRQFUEL))))
+     )(WAITDRQ(DRQFUEL)))

@@ -1,0 +1,89 @@
+# =====================================================================
+#  LogOS HAL.2c — PS/2 mouse (the AUX device), written in Lingua Adamica.
+#
+#  The pointer twin of HAL.2's keyboard. Same i8042 controller, same
+#  thin-asm "physics" (the HAL.1 port-I/O primitives), but now BOTH
+#  directions: `inb` to read, `outb` to command. An LA program at ring 0
+#  brings the mouse up itself — no new builtin, no boot.asm change, no
+#  IRQ — a polling driver, pure LA, like kbd.la.
+#
+#  The i8042: status/command port 0x64 (=100), data port 0x60 (=96).
+#  Status bit 0 (OBF) set = a byte waits in the output buffer; bit 1 (IBF)
+#  set = the input buffer is still full, so a write must WAIT for it to
+#  clear; bit 5 set = the waiting byte is from the AUX device (mouse) —
+#  the exact opposite of the keyboard, which we skipped in kbd.la.
+#
+#  Bring-up:
+#    0xA8 -> 0x64            enable the auxiliary (mouse) clock
+#    0xD4 -> 0x64 ; 0xF4 -> 0x60    "next byte is for AUX" + ENABLE REPORTING
+#  The mouse ACKs 0xFA on 0x60; we drain it. Only after 0xF4 does QEMU's
+#  ps2 mouse queue motion, so this init is exactly what the gate proves.
+#
+#  A mouse packet is THREE AUX bytes: b0 = flags (bit3 always 1, bit0/1/2
+#  = L/R/M buttons, bit4/5 = X/Y sign), b1 = dx, b2 = dy. LA has no bitwise
+#  ops, so a bit is read arithmetically: bitK = (st div 2^K) mod 2.
+#
+#  BOUNDED BY DESIGN: reads exactly PKTN packets then returns. Every metal
+#  LA program dies of heap exhaustion at ~700k allocating iterations (the
+#  "six-second limit"); a fixed, tiny packet count stays far under it, so
+#  this gate is CORRECT, not merely time-bounded. Flat + import-free.
+# =====================================================================
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph SEQ   = la a. la b. b
+glyph FALSE = la t. la f. f
+glyph AND   = la a. la b. a(b)(FALSE)
+
+# ── i8042 status decode ──
+glyph OBF    = la st. int_eq(mod(st)(2))(1)             # bit 0: output buffer full
+glyph IBF    = la st. int_eq(mod(div(st)(2))(2))(1)     # bit 1: input buffer full
+glyph ISAUX  = la st. int_eq(mod(div(st)(32))(2))(1)    # bit 5: byte is from the mouse
+glyph MREADY = la st. AND(OBF(st))(ISAUX(st))
+
+# spin until the controller's input buffer is clear, so a command write lands
+glyph WAITIN = Z(la self. la _.
+    IF(IBF(inb(100)))(la _. self("!"))(la _. "!"))
+
+# spin on the status port until an AUX (mouse) byte is ready, then read it
+glyph POLLM = Z(la self. la _.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self("!")))
+      (inb(100)))
+
+# ── bring the mouse up: enable AUX, enable data reporting, drain the ACK ──
+# RED-PATH CONTROL: the 0xF4 "enable data reporting" write is REMOVED, but the
+# ACK drain below still waits for its 0xFA. Nothing owes that byte, so the wait
+# can never be satisfied — the unbounded POLLM never returns.
+#   ★ This is a legitimate red path for a BOUND even though it would not be one
+#   for a REPAIR. A bound claims only "this loop terminates"; any never-satisfied
+#   condition tests that. A repair claims the DEVICE was fixed, which needs a
+#   fault that is both realistic and persistent (see SELFREPAIR_3d_DESIGN.md).
+glyph INIT =
+    SEQ(outb(100)(168))                     # 0xA8: enable auxiliary device
+   (SEQ(WAITIN("!"))(SEQ(outb(100)(212))    # 0xD4: address the AUX device
+   (SEQ(WAITIN("!"))
+   (POLLM("!")))))                          # wait for an ACK nobody will send
+
+# read ONE 3-byte packet (flags, dx, dy), in order, and hand it to k
+glyph RDPKT = la k.
+    (la b0.
+      (la b1.
+        (la b2. k(b0)(b1)(b2))
+        (POLLM("!")))
+      (POLLM("!")))
+    (POLLM("!"))
+
+# render one packet as "m <flags> <dx> <dy>"
+glyph PKTSTR = la b0. la b1. la b2.
+    concat(concat(concat("m ")(int_to_str(b0)))
+                 (concat(" ")(int_to_str(b1))))
+          (concat(" ")(int_to_str(b2)))
+
+# ── read exactly n packets, echoing each, then finish ──
+glyph PKTS = Z(la self. la n.
+    IF(int_eq(n)(0))
+      (la _. print("mouse done"))
+      (la _. RDPKT(la b0. la b1. la b2.
+          SEQ(print(PKTSTR(b0)(b1)(b2)))(self(sub(n)(1))))))
+
+glyph MAIN = SEQ(print("mouse:"))(SEQ(INIT)(PKTS(3)))

@@ -812,6 +812,428 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             compile on tiny_host, the font flat-literal lesson: a 41-deep nest took
             >12 min and was killed; the flat form compiles in the normal ~5 min).
             (AegisNet's crypto/onion layer sits far above this bare TX/RX.)
+      > ★ **CORRECTION, 2026-09-08 — "gated" below means WRITTEN, not RUN.**
+      > `HAL.5a` and `HAL.5b` are wired into `build.sh`. **Every entry from `HAL.5c`
+      > to `HAL.5r` is not** — all sixteen `kernel/gate_nic5*.sh` exist, discriminate,
+      > and are invoked by NOTHING. Measured 2026-09-08 with two independently written
+      > instruments that agree (30 of 89 tracked `gate_*.sh` never invoked); the
+      > per-gate disposition is in `build.sh`'s GATE CENSUS block.
+      >
+      > **The "+ gated" claim below is therefore a claim the suite cannot support** —
+      > the same defect `build.sh` records about its own `verified-*` checkpoint tag,
+      > which stamped "Full audit passed clean" while no driver gate had run. Left in
+      > place and corrected here rather than rewritten sixteen times, so the original
+      > wording stays auditable.
+      >
+      > **Why they are unwired is COST, and the cost is the COMPILE, not the run.**
+      > Each gate rebuilds its LA driver through `tiny_host` — ~12 min for 5c, ~51 min
+      > for 5q (both measured below) — while the QEMU timeouts are only 60 s. Sixteen
+      > in the main suite is many hours. The disposition is the `gate_bootelf.sh`
+      > footing: **invoked separately, documented, never opted out of.** They are not
+      > abandoned and not superseded; nothing has run them since 2026-07/08.
+
+      - ⚠ **Re-marked 2026-09-10, ahead of the kernel-k1 merge: HAL.5c–5r below say DRIVER DONE,
+            not "gated".** Their 16 gates (`kernel/gate_nic5*.sh`) exist on track-d, and each block
+            describes what its gate asserts — but `build.sh` invokes none of them, and their runtime
+            since the fast-compiler collapse (18 of 18 `build_nic5*.sh` now compile through
+            `kernel/ncc3.sh`) is unmeasured. track-d's `build.sh:7356–7363` (at `4f8a1c3`) records the
+            gap. Built, not enforced, until a gate is wired.
+      - [x] **HAL.5c — an ICMP ECHO round-trip (ping) — DRIVER DONE
+            (2026-07-20); gate not run by build.sh.** One IP layer above HAL.5b's ARP: the kernel PINGS the
+            SLIRP gateway (10.0.2.2) and receives the echo reply, in Lingua Adamica
+            at ring 0. `kernel/nic5c.la` reuses 5b's NIC bring-up verbatim and
+            stages a 42-byte ICMP echo request with the IP and ICMP **header
+            checksums precomputed offline** (one's-complement 16-bit, baked into
+            the flat decimal string — the reason the driver needs no bitwise ops,
+            which LA lacks). **The load-bearing finding:** a naive single-shot ping
+            FAILS against SLIRP — to unicast the reply SLIRP first ARPs for our MAC
+            (10.0.2.15), so that ARP arrives as the first RX packet (`et=0806`) and
+            the echo reply never comes (we never answer the ARP). The fix is to
+            **seed SLIRP's ARP cache first**: TX a GRATUITOUS ARP REPLY (`GARPDATA`,
+            oper 2, spa=tpa=10.0.2.15/our MAC — SLIRP caches a reply's sender and
+            answers nothing), so afterwards it already knows our MAC and the echo
+            reply arrives as the ONLY RX packet — no ARP responder or ring-advance
+            needed. So: TX gratuitous ARP (TSD0) + TX ICMP echo (TSD1) → poll RX →
+            decode straight out of the DMA ring with `peek`. `gate_nic5c.sh` boots
+            `-m 512 -device rtl8139` on a SLIRP netdev and asserts `nic tx ok` +
+            `nic rx et=0800 proto=01 icmp=00` (IPv4 / IP-proto ICMP / ICMP type 0 =
+            echo reply — an ARP or unsigned decode cannot fake all three) + `nic
+            done`. **Verified live: `nic rx et=0800 proto=01 icmp=00`.** NOTE:
+            native_codegen3 takes ~12 min on this program (NIC-sized, like HAL.4h),
+            so the gate's rebuild is long — build once + run QEMU manually when
+            iterating. A real IP-layer round-trip, driver in the language.
+      - [x] **HAL.5d — a DNS resolution round-trip (UDP) — DRIVER DONE
+            (2026-07-22); gate not run by build.sh.** One transport layer above HAL.5c's ICMP ping: a real
+            UDP/DNS exchange. The kernel sends a DNS **A-query for `dns.google`**
+            to SLIRP's built-in DNS proxy (10.0.2.3:53) and receives the UDP
+            response straight out of the DMA ring — **resolving a hostname at ring
+            0**, in Lingua Adamica, no host OS. `kernel/nic5d.la` reuses 5b/5c's
+            NIC bring-up + the gratuitous-ARP seed verbatim and changes only the
+            payload + reply check. The 70-byte frame is staged flat with the **IPv4
+            header checksum precomputed offline** (`62 a4`) and the **UDP checksum
+            set to 0** (disabled — legal for IPv4), so still no bitwise ops. The
+            SLIRP MAC rule 5c revealed carries over: dst MAC = `52:55:` + the target
+            IP in hex, so 10.0.2.3 → `52 55 0a 00 02 03`. The frame is generated by
+            `kernel/gen_nic5d_frame.py` (regenerable, not hand-arithmetic).
+            `gate_nic5d.sh` asserts `nic tx ok` + `nic rx et=0800 proto=11
+            sport=0035` (IPv4 / IP-proto **17 = UDP** / UDP source port **53** — the
+            DNS server answered; an ICMP/ARP decode cannot fake it) + `nic done`,
+            and prints `anc=` (the DNS answer count) for observation. **Verified
+            live: `nic rx et=0800 proto=11 sport=0035 anc=0002`** — two A records
+            (8.8.8.8 / 8.8.4.4), a genuine resolution. **Six-second-safe:** `WAITRX`
+            only spins on a status byte; a SLIRP-forwarded DNS RTT is tens of ms
+            (~a few thousand poll iters at ~117k/s), far under the ~700k-alloc metal
+            heap wall — it finishes first *honestly*, not by luck. Requires host
+            network egress (the proxy forwards the query); ~12 min compile like 5c.
+      - [x] **HAL.5e — a real ARP RESPONDER + RX-ring advance — DRIVER DONE
+            (2026-07-22); gate not run by build.sh.** The honest de-cheat of 5c/5d, which dodged answering
+            SLIRP's ARP by PRE-SEEDING its cache with a gratuitous reply (a
+            proactive trick, so the wanted reply arrived as the only RX packet —
+            no responder, no ring advance). 5e removes the seed and builds the two
+            mechanisms 5c's note named as missing: (1) a real **ARP responder** —
+            the kernel TXes an ICMP echo request UNSEEDED, RECEIVES SLIRP's ARP
+            REQUEST, verifies it out of the DMA ring (`oper=0001`, `tpa=0a00020f` =
+            "who has 10.0.2.15?" — asking for US), and TXes a proper ARP REPLY in
+            answer; and (2) **RX-ring advancement** — after consuming that first
+            packet it advances the RTL8139 `CAPR` (`off2 = align4(4+size)`,
+            `CAPR := off2-16` for the -0x10 quirk; no bitwise ops — `align4` is
+            `mul(div(add(x)(3))(4))(4)`) so the SECOND packet, the ICMP echo reply
+            SLIRP now unicasts knowing our MAC, is read at its own ring offset.
+            `kernel/nic5e.la` reuses 5b/5c's bring-up verbatim. **Two bugs found +
+            fixed live (both under the ~12-min compile, diagnosed by wire capture
+            + progress markers rather than blind rebuilds):** a stray closing paren
+            in MAIN's deep nesting (caught offline with a paren-balance check;
+            MAIN/RESPOND now generated from matched pieces), and — the real one — the
+            ICMP request was fired on TSD1 while the RTL8139 uses its 4 TX
+            descriptors round-robin from TSD0, so nothing transmitted (empty pcap
+            despite reaching the TX writes); fixed by firing the ICMP request on
+            TSD0 first and the ARP reply on TSD1 second, with a `WAITTX` after each,
+            exactly 5c/5d's proven order. `gate_nic5e.sh` asserts `nic arp req
+            oper=0001 tpa=0a00020f` (SLIRP's request received + decoded — a
+            seeded/proactive run never sees this) + `nic rx et=0800 proto=01
+            icmp=00` (the echo reply, which arrives ONLY because we answered the
+            ARP) + `nic done`. **Fully SLIRP-internal — no host egress, so the gate
+            is deterministic** (stronger than 5d's). Six-second-safe: two bounded
+            RX poll spins, both round-trips internal. Honest scope: the reply is
+            REACTIVE (waits for + verifies the real request — no pre-seeding) with
+            static addressing for the known SLIRP gateway; a fully general responder
+            that echoes the requester's own sender fields is a follow-up (5f).
+      - [x] **HAL.5f — a FULLY GENERAL ARP responder — DRIVER DONE
+            (2026-07-22); gate not run by build.sh.** 5e answered SLIRP's ARP but with STATIC peer-addressing
+            (the reply's dst + target fields hard-coded for the known gateway). 5f
+            makes it general: it READS the requester's own identity out of the
+            received request and builds the reply from it, so it is correct for ANY
+            requester on a real network. From the ARP request in the RX ring it
+            extracts the requester's sender HW addr (sha, ring 26..31) and sender
+            proto addr (spa, ring 32..35) and **`COPYN`s** them (a bounded byte-copy
+            loop, no bitwise ops) into a reply TEMPLATE: sha → reply eth-dst (buf
+            0..5) AND tha (buf 32..37); spa → tpa (buf 38..41). The reply's OWN
+            sender fields (our MAC as eth-src + arp sha, our IP as spa) stay static
+            — they are our fixed identity, not the peer's. `kernel/nic5f.la` reuses
+            5e's proven path otherwise (ICMP on TSD0 first, ARP reply on TSD1, then
+            ring-advance + RX the echo reply). **Built clean on the first attempt —
+            every 5e lesson applied up front** (flat MAIN with the post-ARP logic in
+            a `RESPOND` glyph, TSD0-first descriptor order, `WAITTX` after each fire,
+            paren-safe generation, pre-verified parse). `gate_nic5f.sh` asserts the
+            generality directly: `nic arp from=52550a000202 spa=0a000202` (the
+            requester's MAC + IP READ from the request) + `nic reply
+            dst=52550a000202` (the reply's eth-dst READ BACK after the copy — it
+            EQUALS the requester's sha, so the reply was built from the request, not
+            constants) + `nic rx et=0800 proto=01 icmp=00` (the echo reply, which
+            arrives only because the dynamically-built reply was valid) + `nic done`.
+            **Verified live; wire capture shows all 4 frames**, and reply #3's eth-dst
+            = the requester's MAC from #2. Fully SLIRP-internal → deterministic gate,
+            no egress. Six-second-safe (two bounded RX spins + a 16-byte copy).
+            NOTE: `native_codegen3` took ~37 min here (bigger than 5e — the copy
+            loop + two hex read-back witnesses), near the practical single-image
+            ceiling; build once + run QEMU manually when iterating.
+      - [x] **HAL.5g — an ICMP ECHO RESPONDER — DRIVER DONE (2026-07-23); gate not run by build.sh.** The
+            RECEIVE-side twin of HAL.5c: 5c pinged the gateway and read the reply;
+            5g **answers a ping sent TO us** — the kernel serving the network
+            rather than initiating. SLIRP won't deliver an inbound ICMP, so the
+            guest runs on a QEMU `socket` netdev and a small external pinger
+            (`kernel/ping_harness.py`, the sole L2 peer) unicasts an ICMP echo
+            REQUEST to our MAC. `kernel/nic5g.la` at ring 0 receives it and builds
+            the echo REPLY **from the request** (no static frame): `COPYN` the whole
+            request out of the RX ring, then mutate in place, reading the originals
+            straight from the ring so the swaps need no temporary — eth src↔dst, ip
+            src↔dst, icmp type 8→0, and the ICMP checksum by its one-word delta
+            (`+0x0800` with end-around carry, since type<<8|code drops by 0x0800;
+            f7fd→fffd). The **IP header checksum is unchanged** — swapping src/dst
+            leaves the header sum identical. All arithmetic, no bitwise ops. Reuses
+            5b/5c's bring-up; the NIC's promiscuous RCR (AAP) accepts the unicast
+            without programming the MAC registers. **Gated two ways** (`gate_nic5g.sh`):
+            the guest's own serial (`nic icmp req type=08 from=52550a000202` — the
+            request received + the pinger's MAC read from the ring — then `nic icmp
+            reply sent` / `nic done`) AND the pinger's independent end-to-end check —
+            it receives the reply and **verifies it in full**: IPv4/ICMP, addresses
+            swapped back (src=us, dst=pinger), type 0, and the **ICMP checksum sums
+            to 0xffff** (so the kernel's delta math is proven, not just the type).
+            Fully self-contained — the pinger is the only peer, no host egress,
+            deterministic. Built clean on the first attempt (all 5e/5f lessons
+            applied) and the whole reply/checksum logic was unit-tested against the
+            pinger BEFORE the ~37-min compile (feedback loop made cheap first). Needs
+            -m 512 + python3; near the single-image compile ceiling.
+      - [x] **HAL.5h — a UDP ECHO RESPONDER — DRIVER DONE (2026-07-23); gate not run by build.sh.** The
+            TRANSPORT-layer sibling of 5g: where 5g answered an ICMP echo, 5h answers
+            a **UDP datagram** sent to our echo port (7), returning its payload. Same
+            receive-side shape — `kernel/ping_harness.py` in `udp` mode is the sole L2
+            peer over a QEMU `socket` netdev — and `kernel/nic5h.la` builds the reply
+            **from the request**: `COPYN` the frame out of the RX ring, then swap
+            eth src↔dst, ip src↔dst and the udp ports, reading each original straight
+            from the ring so no temporary is needed. **Simpler than 5g by design:** the
+            UDP checksum is OPTIONAL in IPv4, so the reply sets it to 0 (disabled) and
+            there is no checksum arithmetic at all; the IP header checksum is unchanged
+            because swapping src/dst is commutative. All arithmetic, no bitwise ops.
+            Fires on TSD0 (the 5e lesson — the RTL8139 uses descriptors round-robin
+            from TSD0, and firing on TSD1 produced an empty pcap while every TX write
+            appeared to succeed). **Gated two ways** (`gate_nic5h.sh`): the guest's own
+            serial (`nic udp req proto=11 dport=0007` — IP proto 17 to our echo port,
+            read from the DMA ring — then `nic udp reply sent` / `nic done`) AND the
+            sender's independent end-to-end check — IPv4/UDP, addresses **and ports**
+            swapped back, and the **payload returned byte-for-byte**. Fully
+            self-contained and deterministic; needs -m 512 + python3. The UDP transform
+            was unit-tested against the harness BEFORE the compile (correct output
+            accepted, corrupted payload and wrong port both rejected), so the ~14-min
+            `native_codegen3` build was entered with the logic already proven.
+            **HONEST SCOPE — a fixed-offset assumption the gate cannot see:** the
+            witness reads ring offsets 40/41 = frame bytes 36/37, which is the UDP
+            destination port only when the IP header is exactly 20 bytes (IHL=5, no
+            options). That holds for every datagram the harness sends, so the gate is
+            sound as written — but an options-bearing header would misreport the
+            witness *and* make `RESPOND`, which uses the same fixed offsets, build a
+            malformed reply. **The whole 5x arc shares this assumption**; parsing IHL
+            is the follow-up and needs only division, no bitwise ops.
+      - [x] **HAL.5i — an IHL-GENERAL UDP echo responder — DRIVER DONE
+            (2026-07-23); gate not run by build.sh.** The follow-up 5h's own scope note named, done: the
+            kernel no longer ASSUMES a 20-byte IPv4 header, it **reads the header
+            length out of the packet** — `ihl = mod(RB(18))(16)` (the low nibble of
+            frame byte 14) and `u = 14 + 4*ihl`, so the UDP header is located at 34
+            when IHL=5 and 38 when IHL=6. Extracting the nibble is `mod` and scaling
+            is `mul`, so this stays inside the standing no-bitwise-ops constraint;
+            no new builtin, no regen, zero Track-A impact. **Minimal by
+            construction:** only the three UDP fields move, because the eth
+            addresses precede the IP header and ip src/dst sit at fixed offsets
+            12/16 *within* it — all four are IHL-independent and keep 5h's
+            constants. Substituting `u=34` reproduces 5h's `RESPOND`
+            character-for-character, so at IHL=5 this **is** the already-gated
+            program: a strict generalisation, not a rewrite.
+            **★ The gate had to be made able to fail first.** A gate that only
+            sends IHL=5 passes identically with or without the fix, so the work
+            started at the harness: `ping_harness.py` gains a `udpopt` mode — the
+            same datagram behind a 24-byte header via a 4-byte NOP/NOP/NOP/EOL
+            option block, deliberately semantics-free because the point is to MOVE
+            where the UDP header starts, not to ask the kernel to honour an option.
+            `gate_nic5i.sh` runs the SAME kernel twice (`udp`→ihl=05,
+            `udpopt`→ihl=06) and asserts **the ihl the guest actually parsed**, so
+            the serial proves the kernel read the header rather than happening to
+            be right.
+            **★ Red-path tested against the real prior kernel, not just a model.**
+            HAL.5h's actual ELF was run against a `udpopt` datagram and failed as
+            predicted — and more informatively: it reported `dport=0100`, because
+            with IHL=6 the option bytes `01 01 01 00` occupy frame 34..37 and 5h
+            read bytes 36/37 as the port. **Its serial still said `nic udp reply
+            sent` / `nic done`** — it transmitted a malformed reply and called the
+            run healthy. Only the independent external validator caught it, which
+            is the whole argument for gating on two witnesses: the guest's
+            self-report alone passes a wrong answer.
+            *Honest scope:* no ethertype/proto pre-check (the first frame received
+            is parsed as ours — inherited from 5h/5g, not introduced here), no IHL
+            sanity bound, no IP-total-length cross-check, the UDP checksum still
+            disabled on the reply and unverified on the request, and single-packet
+            (no RX-ring advance — that is 5e's mechanism). **5i fixes the UDP
+            responder only; 5c/5d/5g carry their own fixed-offset assumptions and
+            each would need the same treatment.**
+      - [x] **HAL.5j / 5k / 5l — the IHL series COMPLETED across the arc — DRIVERS
+            DONE (2026-07-23); gates not run by build.sh.** 5i removed the fixed-offset assumption from
+            the UDP responder; these three remove it everywhere else it existed.
+            All share one rule — `ihl = mod(RB(18))(16)`, `L4OFF = 14 + 4*ihl` —
+            expressed once per kernel rather than four transcriptions of a
+            constant, and all arithmetic (`mod`/`mul`), so no bitwise ops, no new
+            builtin, no regen.
+            **5j — ICMP echo RESPONDER (generalises 5g).** The one that mattered:
+            like 5h it BUILT A MALFORMED PACKET under IHL≠5, writing the reply's
+            ICMP type and checksum at frames 34/36/37. The checksum is still
+            *adjusted* (+0x0800, end-around carry) rather than recomputed; the
+            pinger verifies it sums to 0xffff at both header lengths, so the
+            delta math is proven, not just the offsets. Red-path: 5g reports
+            `type=01` — and, exactly as 5h did, still prints `nic icmp reply
+            sent` / `nic done`. **A second independent confirmation, in a
+            different protocol, that a device reporting its own success will
+            report success for a wrong answer.**
+            **5k / 5l — the REQUESTERS (generalise 5c / 5d).** A genuinely
+            WEAKER class, kept labelled as such: these construct nothing from the
+            reply, so they misreported *diagnostics* rather than corrupting the
+            wire — worth fixing because a lying witness is what hides the next
+            bug (5h's defect was found by reading its witness), but not the same
+            defect. Red-path: 5c reports `icmp=01`; 5d reports `sport=0101
+            anc=8180` — the option bytes as the port AND the DNS flags field as
+            the answer count. **Their gates are SINGLE-WITNESS by necessity** —
+            these kernels send no reply, so the RX parse is observable only on
+            their own serial; the harness confirms the kernel TXed, not how it
+            parsed. Each is gated twice regardless (SLIRP round-trip at IHL=5 to
+            preserve real-network interop, plus an INJECTED IHL=6 reply, since
+            SLIRP cannot emit IP options).
+            **★ THE GATE BUG THIS SERIES PAID FOR, worth more than the kernel
+            changes.** 5k's first run FAILED while its serial showed a perfectly
+            correct `ihl=06 icmp=00` parse. With QEMU on `-netdev socket,listen=`
+            and the harness connecting, a REQUESTER kernel transmits within the
+            first few hundred ms of boot and QEMU DROPS frames sent while no peer
+            is attached — so the harness saw nothing and the gate reported a
+            failure that said nothing about the kernel. **The gate was wrong, not
+            the code.** Fixed directionally, not by timing luck: the harness
+            LISTENS, QEMU CONNECTS, and the gate waits for `PINGER: listening`
+            before launching QEMU, so the peer exists before the guest boots and
+            the race is gone by construction. Deleting the check would also have
+            gone green — by lowering the bar. Responder gates are immune (they
+            transmit only after receiving) and were left untouched.
+            *Honest scope, shared by the whole arc and unchanged:* no
+            ethertype/proto pre-check, no IHL sanity bound, no IP-total-length
+            cross-check, single packet (no RX-ring advance). 5e/5f are ARP and
+            never touch the IP header, so they were never affected.
+      - [x] **HAL.5m — a frame-CLASSIFYING ICMP responder with RX-RING ADVANCE
+            — DRIVER DONE (2026-07-23); gate not run by build.sh.** The first 5x kernel that decides
+            whether a received frame is *for it*. Every kernel through 5l did
+            `WAITRX` then parsed whatever landed first as its own protocol,
+            reading ring slot 0 and nothing else — **measured on the shipped 5j
+            before 5m was written**: given an ARP broadcast ahead of a real echo
+            request, 5j printed `nic icmp req ihl=00 type=00`, built a reply out
+            of the ARP frame, **transmitted it**, and never saw the ping. ARP
+            broadcasts are constant on a real LAN, so that is the normal case.
+            Three fixes: **classify** (ethertype 0800 + proto 1); **bound
+            `ihl >= 5`** — without it an ARP frame yields `L4OFF = 14`, an offset
+            pointing back into the Ethernet header, which is precisely the
+            `ihl=00` 5j printed, so this bound is what turns a silent misparse
+            into a rejection; and **advance + retry** — on a non-match move CAPR
+            past the packet and examine the next, reusing 5e's
+            `NEXTOFF(o) = align4(o+4+RXLEN2(o))`, `CAPR := NEXTOFF−16`, with
+            frame byte k of the packet at o read via `RB2(o)(k+4)`. Arithmetic
+            only. **Bounded by FUEL(8)** — a ring full of noise reports
+            `nic no match` and stops; an unbounded retry would have been a new
+            way to hang. **Strict extension:** at o=0 with a matching first
+            packet, `RESPOND` is 5j's construction unchanged, IHL generality
+            included. Composes 5e's ring advance with 5i/5j's responder.
+            **Gate is two-witness** (the kernel transmits, so the pinger verifies
+            independently) **and asserts the DECISION, not the outcome** — the
+            observed trace is `nic skip et=0806` then `nic icmp req ihl=05
+            type=08`, so a kernel that answered correctly *by luck* without
+            classifying would fail on the absent skip witness. Two negative
+            assertions: `nic skip` must NOT appear on a clean ring (a classifier
+            wrongly rejecting a good frame would otherwise hide behind a
+            successful retry), and the literal `ihl=00` must not appear on the
+            noisy one (5j's regression fingerprint). Build 38 min, the largest of
+            the arc.
+            *Honest scope:* no ring WRAP handling (5e carries the same limit).
+            Classification is ethertype + proto + ihl only — it does NOT check
+            the frame is addressed to us (promiscuous RCR accepts anything), nor
+            the ICMP type, nor the IP checksum. **5m covers the ICMP responder
+            only; 5i's UDP responder and the 5k/5l requesters still read slot 0
+            without classifying.**
+      - [x] **HAL.5n / 5o / 5p — frame classification extended across the arc —
+            DRIVERS DONE (2026-07-23); gates not run by build.sh.** 5m's scope note said it covered the ICMP
+            responder only; these close the rest. **5n** generalises the UDP
+            responder (5i), **5o** the ICMP requester (5k), **5p** the DNS
+            requester (5l). Same machinery as 5m verbatim in shape — classify
+            (ethertype 0800 + expected proto), bound `ihl >= 5`, and on a
+            non-match print `nic skip et=XXXX`, advance CAPR past the packet
+            (`align4(o+4+len)−16`), and retry the next ring slot, FUEL(8)-bounded.
+            5n is a strict extension of 5i (its RESPOND reduces to 5i's UDP reply
+            at o=0); 5o/5p keep their IHL-general witnesses but read them at the
+            matched offset. **Red-pathed against 5i's real ELF:** given an ARP
+            broadcast ahead of a UDP datagram it printed `nic udp req ihl=00
+            proto=55 dport=0800` — the ARP frame read as IPv4, ARP bytes taken as
+            proto and port — replied with garbage, and never saw the datagram.
+            5n classifies it out. 5n is two-witness; 5o/5p single-witness (they
+            send no reply). Each noise case asserts the DECISION (`nic skip
+            et=0806`) plus a negative assertion on the `ihl=00` signature; 5o/5p's
+            noise cases carry IHL=6 replies, testing classification and IHL
+            generality together. Classification proven in Python against real
+            2-packet ring images before compiling.
+            *A gate-honesty note recorded because it recurred:* gate_nic5n.sh's
+            PASS line first described `valid_echo_reply`'s ICMP check when the UDP
+            modes run `valid_udp_echo` — a blanket sed had replaced lowercase
+            `icmp` but not `ICMP`. The assertions were always correct; only the
+            claim string lied. Fixed and 5n RE-RUN so the recorded output matches
+            what is tested (the PASS string is the claim). 5o/5p were clean.
+            *Honest scope:* no ring wrap (5e's limit); classification is
+            ethertype+proto+ihl only. **The ORIGINAL pre-IHL kernels (5c/5d/5g/5h)
+            still read slot 0 without classifying** — 5m–5p are their generalised
+            successors; retiring the originals is a separate decision.
+      - [x] **HAL.5q — a SELF-REPAIRING NIC driver (Tier-2b "self-repairing
+            drivers", first instance) — DRIVER DONE (2026-08-03); gate not run by build.sh.** The AATC
+            Sense→Diagnose→Prescribe→Retry loop (`aatc.la`) reinstantiated over a
+            DEVICE organ: the NIC's transmit path. Extends HAL.5m (the
+            frame-classifying ICMP responder) and makes its TX fault-tolerant.
+            **The pre-existing bug it fixes:** every 5x kernel's `WAITTX` was
+            UNBOUNDED — a transmit that never completes (TOK/TSD bit15 never sets)
+            hung the kernel forever. `kernel/nic5q.la` adds `WAITTXB`, fuel-bounded
+            exactly like `WAITRX`, so a wedged TX returns a timeout sentinel
+            instead of spinning. **The fault is real and self-inflicted:** SETUP's
+            first pass deliberately leaves TE (transmit-enable) OFF, so the first
+            transmit genuinely cannot complete. On the bounded timeout the driver
+            SENSES TSD0, DIAGNOSES (`nic tx wedged tsd=003c`), PRESCRIBES (re-enable
+            TE, `CR := TE|RE`), RETRIES bounded, and reports `nic tx recovered` or
+            the loud `nic tx dead` if the retry also times out. **Fault manifestation
+            VERIFIED in QEMU** (the load-bearing unknown the design flagged): QEMU's
+            RTL8139 does withhold TOK with TE off — serial shows `nic tx wedged
+            tsd=003c` (length 0x3c, TOK unset) then `nic tx recovered`, and the
+            pinger (`ping_harness.py`) independently verifies the *repaired*
+            transmit put a correct ICMP echo on the wire. **Red-pathed against
+            `nic5q_ctrl`** (`kernel/nic5q_ctrl.la` + `build_nic5q_ctrl.sh`, the
+            repair branch removed): same fault manifests, but it diagnoses and
+            stops — the pinger gets NO reply (rc=1), so the gate DISCRIMINATES and
+            5q's green is not vacuous. `gate_nic5q.sh` asserts, in order: the fault
+            manifested (`nic tx wedged`, load-bearing), the repair worked (`nic tx
+            recovered` + valid echo, `nic tx dead` absent), and the red-path
+            (control gets no reply). *Gate-honesty note:* the control still prints
+            `nic icmp reply sent` unconditionally (that line is OUTSIDE the transmit
+            branch), so the red-path keys on the PINGER's rc, never that serial
+            line — as the gate does. *Honest scope:* a self-inflicted fault proves
+            the detect→diagnose→repair→retry MECHANISM, not universal
+            fault-tolerance; TX-only (RX-ring-wedge and a real TABT are later
+            slices, 5r+). *Build cost:* RESPOND is a depth-20 / 1095-char SEQ tower
+            → ~51 min via `tiny_host` (~4x HAL.5c's ~12 min). **A refactor into
+            shallow helper glyphs (`HDRSWAP`/`SETCKSUM`/`XMIT`/`TXREPAIR`) was
+            TRIED and REVERTED (2026-08-04):** clean measurement showed only
+            User 44m38s vs 50m52s (~12% faster) but **4.2x the memory** (2.9 GB vs
+            ~700 MB) — so max-depth 20→12 is NOT the bottleneck (cost tracks total
+            node-count, not the deepest glyph), and the memory regression + arc
+            divergence outweighed a 12% gain that still needs the fast path anyway.
+            The real fast path is `native_codegen3_selfhost.bin` (~2s, byte-verified
+            identical to `tiny_host`) — use it for iteration; the authoritative
+            gate stays on `tiny_host`. Do NOT re-attempt the glyph-split refactor.
+            Not wired into `build.sh` (the whole 5x arc runs standalone).
+      - [x] **HAL.5r — a SELF-REPAIRING (RX-side) NIC driver — DRIVER DONE
+            (2026-08-03); gate not run by build.sh.** The RX twin of HAL.5q: same AATC
+            Sense→Diagnose→Prescribe→Retry loop, applied to the NIC's RECEIVE
+            organ. TX is clean (TE on); RX is deliberately faulted — SETUP's first
+            pass leaves RE (receive-enable) OFF (`CR := 4`). **Fixes a real latent
+            bug found while building this:** every prior 5x kernel's `WAITRX` used
+            fuel `20000000`, and on a genuinely stuck RX the native kernel recurses
+            ~20M deep and OVERFLOWS THE STACK — a deterministic `EXCEPTION 0e`
+            (`rip=0x100005`), reproduced, and shown to vanish when the fuel is
+            dropped to `200000` (clean `nic rx timeout`). So the bound is not
+            cosmetic: an unbounded/over-large RX wait *crashes* the kernel on a
+            stuck receiver, exactly as the unbounded `WAITTX` *hung* it (5q).
+            `kernel/nic5r.la` bounds `WAITRX` (`RXFUEL=200000`) and, on the clean
+            timeout, SENSES CR, DIAGNOSES (`nic rx wedged cr=05`), re-enables RE
+            (`CR := TE|RE`), and RETRIES — a `rep` flag bounds it to ONE repair
+            (a second timeout prints the loud `nic rx dead`). Because the pinger
+            sends several requests, one arriving after RE is re-enabled is received
+            and answered (`nic rx recovered` → `nic tx ok` → reply); the pinger
+            independently verified the echo (rc=0). **Red-pathed vs `nic5r_ctrl`**
+            (RX repair removed): same fault manifests, it diagnoses and stops, RE
+            stays off, pinger gets no reply (rc=1) — the gate discriminates.
+            `gate_nic5r.sh` asserts fault-manifested (`nic rx wedged`) /
+            repair-worked (`nic rx recovered` + echo, `nic rx dead` absent) /
+            red-path. *Honest scope:* a self-inflicted RE-off fault proves the
+            detect→diagnose→repair→retry MECHANISM, not universal RX
+            fault-tolerance (a real CAPR/ring wedge that preserves the buffered
+            frame is a later slice); the recovery relies on the peer re-sending,
+            which ICMP ping does. Shares 5q's RESPOND (nested; the glyph-split
+            refactor was tried and reverted — see 5q). Same ~51-min tiny_host build
+            cost; use `native_codegen3_selfhost.bin` (~2s) for iteration.
+            Standalone gate, not in `build.sh`.
       - [x] **HAL.3b — ATA disk WRITE, the write-twin of HAL.3 — DONE + gated
             (2026-07-16).** The kernel now PERSISTS to its own disk. Pure LA on the
             HAL.1 port-I/O primitives — no new builtin, no regen. `kernel/ata3b.la`
@@ -843,6 +1265,84 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             QEMU monitor and asserts the echoed `logos` + `kbd done` + exit 33. So a
             real hardware interrupt path (PIC + IRQ1 + IDT gate) drives input, the LA
             program woken by the keyboard rather than polling it.
+      - [x] **HAL.2c — PS/2 mouse (the AUX device) — DONE + gated (2026-07-20).**
+            The pointer twin of HAL.2, and the first driver to use BOTH port-I/O
+            directions: `kernel/mouse.la` (pure LA, `%ifdef`-free — the default
+            ring-0 boot path, no boot.asm change, no regen) brings the mouse up
+            itself with `outb` — `0xA8` enables the aux clock, then `0xD4`/`0xF4`
+            enable data reporting — drains the `0xFA` ACK, then polls the i8042
+            (status `0x64` bit5 = AUX, the exact complement of HAL.2's keyboard
+            skip / data `0x60`) and decodes 3-byte packets (flags, dx, dy), the
+            bit reads arithmetic (`(st div 2^k) mod 2`) since LA has no bitwise
+            ops. `gate_mouse.sh` injects motion + a click via the QEMU monitor
+            (`mouse_move`/`mouse_button`, the pointer analogue of HAL.2b's
+            `sendkey`) and asserts: every packet carries the flags bit3 sync bit
+            (a keyboard read can't fake it), at least one carries non-zero motion,
+            one carries a button press, and clean exit 33. Because QEMU only
+            queues mouse packets AFTER `0xF4`, a passing gate proves the LA init
+            ran. **BOUNDED BY DESIGN** — reads a fixed 3 packets then returns, so
+            it stays far under the six-second heap wall below (a correct gate, not
+            merely time-bounded; the counter-example to the interactive slices).
+      - [x] **HAL.2d — a POINTER: signed decode + a live cursor — DONE + gated
+            (2026-07-20).** HAL.2c proved the packet stream arrives; HAL.2d turns
+            raw packets into the state a window manager moves things by.
+            `kernel/pointer.la` sign-extends the 9-bit deltas (a raw byte with its
+            flags sign bit — bit4/bit5 — set is `raw - 256`, the same S32 fold
+            `theourgia_input.la` does for evdev, here in one subtraction), reads
+            the button bits (0/1/2 = L/R/M), and accumulates a CURSOR (x,y)
+            **clamped to 640x480**. `gate_pointer.sh` injects a right-then-LEFT
+            move + a click and asserts `seen 1 1` (ng=1: a NEGATIVE dx was decoded,
+            so the sign fold ran — unsigned decode could never set it; bt=1: the
+            left button down) and `cursor 125 100` — x>100 proves the add/clamp
+            ACCUMULATES (a no-op would stay at the 100 origin), in-bounds proves
+            the CLAMP holds — exit 33. **A codegen lesson re-paid (HAL.4e's):** the
+            first cut printed a concat-heavy line per packet and native_codegen3
+            (superlinear in nesting depth) would not finish; flattening the loop
+            body to thread two 0/1 witnesses instead of formatting per-packet made
+            it compile (~4 min). BOUNDED (4 packets), reuses HAL.2c's exact init +
+            poll — no boot.asm change, no regen. The pointer HAL.4x can consume.
+      - [x] **HAL.2e — the SCROLL WHEEL (IntelliMouse / IMPS-2) — DONE + gated
+            (2026-07-20).** A PS/2 mouse reports a Z axis only after the guest
+            performs the IntelliMouse "magic knock": set the sample rate to 200,
+            then 100, then 80 (each `0xF3 <rate>` via the `0xD4` aux prefix). The
+            mouse then switches to device id 3 and every packet grows a FOURTH
+            byte — the signed wheel delta. `kernel/wheel.la` does the knock, reads
+            4-byte packets (`RDPKT4`), and threads a witness `wz` = a non-zero
+            wheel delta was decoded. `gate_wheel.sh` injects `mouse_move dx dy DZ`
+            (QEMU's wheel channel) and asserts `wheel 1` — a non-zero z can ONLY
+            appear if the knock switched the mouse to 4-byte packets (without it a
+            4-byte read desyncs), so a pass proves the knock landed — exit 33.
+            **Codegen lesson, measured twice now:** the first cut drained an ACK
+            with a `POLLM` spin after EACH knock write, inlining the Z-combinator
+            ~6× on top of `RDPKT4` — codegen (superlinear in nesting) ran past a
+            400 s budget and was killed. Fix: SEND all knock bytes with no
+            per-command wait (QEMU clears IBF synchronously), then drain every
+            queued ACK ONCE with `DRAINALL` — one Z, not six — and it compiled
+            (~4 min). BOUNDED (4 packets); no boot.asm change, no regen.
+      - [x] **HAL.4h — a MOUSE CURSOR SPRITE on the framebuffer — DONE + gated
+            (2026-07-20).** The first slice to cross **input × display**: HAL.2d's
+            mouse-driven cursor drawn as a real sprite on HAL.4's linear
+            framebuffer. `kernel/cursor.la` (built `-D HAL4`) brings up BOTH the
+            LFB (PCI-scan the std VGA, read BAR0, set 640×480×32 via the Bochs VBE
+            dispi regs — verbatim from `fb.la`) AND the PS/2 mouse (HAL.2c init),
+            reads a bounded 4 packets, sign-extends the deltas (HAL.2d) into a
+            clamped cursor, draws an 8×8 red sprite AT the cursor with a single
+            FLAT-INDEX loop, then reads the framebuffer BACK with `peek` and
+            reports over serial: `cur 170 100` (mouse drove it off the 100 origin,
+            clamp held), `sp 255` (the sprite's centre pixel reads back RED — drawn
+            at the cursor), `off 0` (a fixed far control pixel stayed 0 — localised,
+            no runaway). Verified by peek-back, NOT a screendump, so it EXITS
+            (exit 33) — fully BOUNDED, no six-second exposure, unlike the `comp_*`
+            interactive compositors. `gate_cursor.sh` asserts all four + exit 33.
+            **Codegen frontier (measured):** this fused fb+mouse+draw program is
+            the heaviest metal LA yet — native_codegen3 took **~11 min**. Two depth
+            fixes were needed to compile it AT ALL: (1) `RUN` returns the cursor as
+            a PAIR and the drawing happens in `MAIN`, so `RECT`'s Z-loop is NOT
+            nested inside `RUN`'s Z (no **Z-in-Z** — the dominant superlinear cost);
+            (2) the background fill was dropped for a single control pixel (one
+            `RECT` inline, not two). Even so ~11 min — the practical ceiling for a
+            single-image fused slice is near here; a richer on-metal pointer UI
+            wants the interpreted-asm / native-backend speedups Track A is building.
       - [x] **HAL.4b — bulk framebuffer fill + memcpy-to-MMIO, the language's
             FIRST TERNARY builtins — DONE + gated (2026-07-16).** HAL.4 drew its
             square with a poke (and a beta-reduction) per byte — 12288 for 64x64,
@@ -928,6 +1428,65 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             same pattern as the heavy kernel ELFs. Item 6 (Display protocol &
             compositor) now has an *interactive* metal realisation; a movable TEXT
             window (a terminal) is the next compositor step.
+      - [x] **HAL.4e — A MOVABLE TEXT WINDOW ON THE METAL — DONE + gated
+            (2026-07-18).** What HAL.4d named as next. `kernel/comp_text.la`
+            fuses HAL.4d's compositor with `theourgia_font.la`'s 8x8 bitmap font
+            (copied in verbatim, not `import`ed — a kernel `.la` must not drag
+            the import-mangler, and the surface path is O(n^2) per row). `DRAWT`
+            walks ONE flat index over NCH*FH*FW pixel-tests and recovers
+            (char,row,col) by div/mod, because codegen is superlinear in nesting
+            depth. Each keystroke moves the window AND its text.
+            `gate_hal4e.sh` reads PAIRED probes — white ON a glyph stroke,
+            green OFF one INSIDE THE SAME CELL — because either alone is passable
+            by a broken renderer (a dead draw leaves both green, a runaway fill
+            leaves both white), plus an independent screendump witness.
+      - [x] **HAL.4f — A TYPEWRITER ON THE METAL — DONE + gated (2026-07-18).**
+            `kernel/comp_term.la` decodes SET-1 scancodes into characters,
+            accumulates them in a live buffer, and re-rasters it every keystroke
+            with a cursor: "LOGOS" is TYPED, not displayed from a constant. New
+            code is only `KEYCH` (a 58-byte flat scancode->char table, packed as
+            ONE string for the same reason `FONTDATA` is) and `DRAWS` (N chars of
+            a RUNTIME string). The keymap bound is load-bearing, not decoration:
+            `DROP` past a string's end returns `""` and `str_head("")` is `""`,
+            so an unbounded lookup would append an EMPTY character and silently
+            corrupt the buffer length.
+      - [~] **HAL.4g — AN EDITABLE, SCROLLING LINE — BUILT, GATE RED
+            (2026-07-19).** `kernel/comp_edit.la` adds BACKSPACE and horizontal
+            SCROLLING (the buffer grows unbounded; the window shows its last
+            MAXCH characters). `n` is DERIVED (`str_len(buf)`) rather than
+            threaded, so the count cannot disagree with the string it counts —
+            which removed a parameter and a nesting level while adding two
+            features. The whole edit model is a pure function of
+            `(scancode, buffer)` and is verified host-side by
+            `kernel/editmodel_test.la` before ever reaching the metal.
+            **The gate is RED for a SUBSTRATE reason, not a compositor one —
+            see the six-second limit below. It is deliberately not worked
+            around.**
+      - [!] **★ THE SIX-SECOND LIMIT — every metal LA program dies of heap
+            exhaustion (found 2026-07-19, NOT fixed).** This bounds every claim
+            in this section. Booted with ZERO input, `polltest.la` (21 lines,
+            HAL.2's poll spin alone — no compositor, no font, no framebuffer)
+            dies in **~5 s**, as do all three HAL.4x compositors. The LA heap
+            grows UP from 68.0 MiB; `alloc24`'s only bound is `HEAP_END` at
+            **16.07 GiB**, unreachable on a 512 MiB machine; the LA stack's live
+            frames sit just under `LA_STACK_TOP` (128 MiB) and TCO keeps them
+            SHALLOW, so a rising heap crosses the unused gap harmlessly and
+            destroys the live frames at the TOP. A return address becomes a heap
+            pointer and control lands in garbage — `comp_text`'s faulting rip is
+            INSIDE the heap.
+            **The portable number is ~700,000 allocating iterations, ever**
+            (~40 bytes retained per iteration against 48 allocated, so ~85% is
+            never reclaimed). That cross-checks the metal independently:
+            700k / 6 s = ~117k iterations/sec, the right order for an `inb` VM
+            exit under QEMU.
+            *Consequence stated plainly:* **the interactive gates above pass only
+            because they FINISH FIRST** (4e ~2 s, 4f ~3.5 s; 4g's 11 keys take
+            ~6.6 s and it dies just short of its ENTER). They are TIME-BOUNDED,
+            not correct. `kernel/gate_hal_idle.sh` and
+            `kernel/gate_alloc_bounded.sh` now assert what none of them did, and
+            are RED. The fix is in `rt_init`/`rt_gc` (`native_codegen3_rt.asm`,
+            track A); clamping `HEAP_END` is a GUARD, not a cure — the collector
+            reclaims partly but never plateaus.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*
@@ -1729,11 +2288,26 @@ core drivers → then the process/memory/service layers → then these). Recorde
 the target is fixed; built when the substrate is there. This is *why* we build the OS
 outward — it is both the usable system and the substrate the next autopoiesis needs.
 
-- [ ] **Self-repairing drivers** — a driver that detects its own device fault
+- [~] **Self-repairing drivers** — a driver that detects its own device fault
       (a wedged NIC ring, a stuck ATA channel, a lost framebuffer) and
       re-initialises itself from its own spec, the AATC repair loop applied to a
       *device* organ rather than a source organ. *Gated on:* the core drivers
       (disk · input · NIC send/recv) running on the metal.
+      **2026-08-18 — the NIC organ is DONE; the item names three and stays [~].**
+      `HAL.5q` (TX) and `HAL.5r` (RX) are committed (`9c20d08`): a bounded wait
+      detects the wedge, the driver SENSES the device register, DIAGNOSES it on
+      serial, re-initialises the faulted path from spec, RETRIES bounded, and
+      RECOVERS — or fails loudly rather than hanging. Each is red-pathed against
+      a no-repair control that gets no reply, so the gates discriminate.
+      Both fix real latent bugs found while building them: `WAITTX` was
+      UNBOUNDED (a stuck TX hung every 5x kernel forever) and `WAITRX`'s 20M fuel
+      recursed deep enough to OVERFLOW THE STACK on a genuinely stuck RX
+      (deterministic `EXCEPTION 0e`). *Honest scope, in the design doc: a
+      SELF-INFLICTED fault proves the MECHANISM, not universal fault-tolerance.*
+      **Still open for [x]:** the stuck ATA channel and the lost framebuffer.
+      `HAL.5s` (a real TABT fault) is **HELD** — `SELFREPAIR_5s_DESIGN.md`
+      records that QEMU raises TOK+TUN and never TABT, so the fault is INERT in
+      emulation; that is a preserved negative finding, not an open task.
 - [ ] **Self-managing memory — the "cull unless active" principle** — the system
       reclaiming what is not in active use without an external allocator policy:
       the frame/heap manager treats every region as *cullable by default* and

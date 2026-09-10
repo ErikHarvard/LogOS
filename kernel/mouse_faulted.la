@@ -1,0 +1,145 @@
+# =====================================================================
+#  LogOS HAL.2c — PS/2 mouse (the AUX device), written in Lingua Adamica.
+#
+#  The pointer twin of HAL.2's keyboard. Same i8042 controller, same
+#  thin-asm "physics" (the HAL.1 port-I/O primitives), but now BOTH
+#  directions: `inb` to read, `outb` to command. An LA program at ring 0
+#  brings the mouse up itself — no new builtin, no boot.asm change, no
+#  IRQ — a polling driver, pure LA, like kbd.la.
+#
+#  The i8042: status/command port 0x64 (=100), data port 0x60 (=96).
+#  Status bit 0 (OBF) set = a byte waits in the output buffer; bit 1 (IBF)
+#  set = the input buffer is still full, so a write must WAIT for it to
+#  clear; bit 5 set = the waiting byte is from the AUX device (mouse) —
+#  the exact opposite of the keyboard, which we skipped in kbd.la.
+#
+#  Bring-up:
+#    0xA8 -> 0x64            enable the auxiliary (mouse) clock
+#    0xD4 -> 0x64 ; 0xF4 -> 0x60    "next byte is for AUX" + ENABLE REPORTING
+#  The mouse ACKs 0xFA on 0x60; we drain it. Only after 0xF4 does QEMU's
+#  ps2 mouse queue motion, so this init is exactly what the gate proves.
+#
+#  A mouse packet is THREE AUX bytes: b0 = flags (bit3 always 1, bit0/1/2
+#  = L/R/M buttons, bit4/5 = X/Y sign), b1 = dx, b2 = dy. LA has no bitwise
+#  ops, so a bit is read arithmetically: bitK = (st div 2^K) mod 2.
+#
+#  BOUNDED BY DESIGN: reads exactly PKTN packets then returns. Every metal
+#  LA program dies of heap exhaustion at ~700k allocating iterations (the
+#  "six-second limit"); a fixed, tiny packet count stays far under it, so
+#  this gate is CORRECT, not merely time-bounded. Flat + import-free.
+# =====================================================================
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph SEQ   = la a. la b. b
+glyph FALSE = la t. la f. f
+glyph AND   = la a. la b. a(b)(FALSE)
+
+# ── i8042 status decode ──
+glyph OBF    = la st. int_eq(mod(st)(2))(1)             # bit 0: output buffer full
+glyph IBF    = la st. int_eq(mod(div(st)(2))(2))(1)     # bit 1: input buffer full
+glyph ISAUX  = la st. int_eq(mod(div(st)(32))(2))(1)    # bit 5: byte is from the mouse
+glyph MREADY = la st. AND(OBF(st))(ISAUX(st))
+
+# ── waits, split by WHO OWES THE RESPONSE (Freeze Audit II, Q3) ─────────────
+#
+#  ★ THE ADJUDICATION THAT DECIDES WHICH LOOPS GET A BOUND:
+#      waiting for a USER is correctly unbounded  -> POLLM, unchanged
+#      waiting for a response the DEVICE OWES is a bug -> WAITINB / POLLMB
+#  A keypress or a mouse movement may never come, and that is normal. A 0xFA ACK
+#  to a command we just issued, or bytes 1-2 of a packet whose byte 0 already
+#  arrived, are OWED — if they never come the device is broken and the kernel
+#  must SAY SO rather than stop existing.
+#
+#  Measured, not assumed: an unbounded wait for an ACK nobody owes does not hang
+#  politely — it recurses until it faults, `EXCEPTION 0e`, 3/3 deterministic
+#  (kernel/mouse_hangprobe.la). Same class as ata.la's 0d and ata3b.la's 06.
+#
+#  Bounded forms return a sentinel rather than a byte: NOBYTE is 256, which no
+#  8-bit port read can produce, so it cannot be confused with real data.
+glyph AUXFUEL = 200000
+glyph NOBYTE  = 256
+
+# unchanged, and deliberately so: this one waits for the USER.
+glyph POLLM = Z(la self. la _.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self("!")))
+      (inb(100)))
+
+# bounded: the controller owes us a clear input buffer. 1 = clear, 0 = timed out.
+glyph WAITINB = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+    IF(IBF(inb(100)))(la _. self(sub(n)(1)))(la _. 1)))
+
+# bounded: the device owes us this byte. Returns the byte, or NOBYTE on timeout.
+glyph POLLMB = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. NOBYTE)(la _.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self(sub(n)(1))))
+      (inb(100))))
+
+# name the organ, the STAGE that stalled, and the controller status
+#  ★ DIAG RETURNS 0 so a caller can BRANCH on it. The first cut only printed,
+#  and MAIN ran `SEQ(INIT)(PKTS(3))` regardless -- so after correctly reporting
+#  "mouse ack timeout" the driver went straight on to read packets from a device
+#  it had just declared dead, and byte 0's (deliberately unbounded) user-wait
+#  recursed until EXCEPTION 03. Caught by gate_mouse_bounded.sh on its first run.
+#  ⇒ A BOUND THAT REPORTS AND THEN CONTINUES HAS MOVED THE CRASH, NOT REMOVED IT.
+glyph DIAG = la what.
+    SEQ(print(concat("mouse ")(concat(what)(concat(" timeout st=")(int_to_str(inb(100)))))))
+       (SEQ(print("mouse dead"))(0))
+
+# ── bring the mouse up: enable AUX, enable data reporting, drain the ACK ──
+#  Each step is now conditional on the previous one having been answered, so a
+#  wedged controller stops the sequence at the stage that stalled instead of
+#  writing commands into a device that is not listening.
+glyph INIT =
+    SEQ(outb(100)(168))                     # 0xA8: enable auxiliary device
+   ((la w1.
+     IF(int_eq(w1)(1))(la _.
+       SEQ(outb(100)(212))                  # 0xD4: address the AUX device
+       ((la w2.
+         IF(int_eq(w2)(1))(la _.
+           # FAULT INJECTED: the 0xF4 "enable data reporting" write is REMOVED,
+           # so nothing owes the 0xFA ACK the next stage waits for.
+           ((la ack.                        # the 0xFA ACK is OWED
+             IF(int_eq(ack)(NOBYTE))(la _. DIAG("ack"))(la _. 1)
+            )(POLLMB(AUXFUEL))))
+         (la _. DIAG("ibf2"))
+        )(WAITINB(AUXFUEL))))
+     (la _. DIAG("ibf1"))
+    )(WAITINB(AUXFUEL)))
+
+# read ONE 3-byte packet (flags, dx, dy), in order, and hand it to k
+#  ★ BYTE 0 IS UNBOUNDED ON PURPOSE — it waits for the user to move the mouse,
+#  which may legitimately never happen. Bytes 1 and 2 are the REST of a packet
+#  that has already started: the device owes them, so they are bounded. Bounding
+#  byte 0 too would make an idle user look like a broken device.
+glyph RDPKT = la k. la onfail.
+    (la b0.
+      (la b1.
+        IF(int_eq(b1)(NOBYTE))(la _. onfail("pkt byte1"))(la _.
+        (la b2.
+          IF(int_eq(b2)(NOBYTE))(la _. onfail("pkt byte2"))(la _. k(b0)(b1)(b2))
+        )(POLLMB(AUXFUEL)))
+      )(POLLMB(AUXFUEL))
+    )(POLLM("!"))
+
+# render one packet as "m <flags> <dx> <dy>"
+glyph PKTSTR = la b0. la b1. la b2.
+    concat(concat(concat("m ")(int_to_str(b0)))
+                 (concat(" ")(int_to_str(b1))))
+          (concat(" ")(int_to_str(b2)))
+
+# ── read exactly n packets, echoing each, then finish ──
+glyph PKTS = Z(la self. la n.
+    IF(int_eq(n)(0))
+      (la _. print("mouse done"))
+      (la _. RDPKT(la b0. la b1. la b2.
+          SEQ(print(PKTSTR(b0)(b1)(b2)))(self(sub(n)(1))))(DIAG)))
+
+#  MAIN now BRANCHES on INIT rather than sequencing past it: if bring-up failed,
+#  the driver stops. Reporting a dead device and then reading from it anyway is
+#  how the diagnosis became a second crash.
+glyph MAIN = SEQ(print("mouse:"))
+    ((la ok.
+      IF(int_eq(ok)(1))(la _. PKTS(3))(la _. print("mouse init failed — not reading packets"))
+     )(INIT))

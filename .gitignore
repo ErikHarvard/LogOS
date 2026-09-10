@@ -152,6 +152,57 @@ watched.la
 /kernel/native_gc.bin
 /kernel/kernel_comp_session.elf
 /kernel/kernel_comp_session_64.elf
+/kernel/kernel_comp_text.elf
+/kernel/kernel_comp_text_64.elf
+/kernel/kernel_comp_term.elf
+/kernel/kernel_comp_term_64.elf
+/kernel/kernel_comp_edit.elf
+/kernel/kernel_comp_edit_64.elf
+/kernel/alloc_churn.bin
+/churn.n
+/kernel/kernel_polltest.elf
+/kernel/kernel_polltest_64.elf
+/kernel/alloc_churn_str.bin
+/kernel/alloc_churn_rare.bin
+# NIC arc (HAL.5b–5r) kernel ELFs — built out of band per the arc convention
+/kernel/kernel_nic5*.elf
+# ── ALL built kernel ELFs, and why this is one broad rule ──────────────────
+# Previously this was a growing list of narrow patterns (kernel_hal3.elf,
+# kernel_hal3b.elf, kernel_nic5*.elf, ...), each added after the fact. NO
+# kernel/kernel_*.elf is tracked -- checked, 0 of them -- so they are build
+# products without exception and the narrow list only ever lagged reality.
+#
+# ★ THIS IS NOT TIDINESS. build.sh gates its auto-checkpoint on
+# `[ -n "$(git status --porcelain)" ]`, which counts UNTRACKED files. So every
+# stray ELF suppresses the `verified-*` tag -- and build.sh's own gates are what
+# produce them. On 2026-08-19 a FULLY GREEN 6-hour run (196 PASS / 0 FAIL, the
+# first green since 07-08) printed "auto-tag skipped: working tree dirty" because
+# of 26 ELFs its own driver gates had just built. The suite was defeating its own
+# checkpoint, and wiring in more gates made it strictly worse.
+/kernel/kernel_*.elf
+
+# Session scratch: run markers, captured gate logs, and the two reproducer dirs
+# referenced from ~/logos-status.md (.diag holds the ata fault probes and the
+# asm.la bisect harness; .kseam holds the kernel-seam comparison).
+/.diag/
+/.kseam/
+/.gate_kernel_frozen.sh
+
+# ★ Liveness markers. A background job writes <name>.RUNNING on start and removes
+# it on exit, so "is it alive?" is a file that exists or does not -- adopted after
+# `ps`-greps misled in BOTH directions in one session (reporting alive when the
+# pattern matched the caller's own command line, dead when the process was real
+# but its command line displayed truncated).
+# ★★ AND THIS LINE EXISTS BECAUSE THAT FIX BROKE SOMETHING ELSE. build.sh gates
+# its auto-checkpoint on `git status --porcelain` being empty. A .RUNNING marker
+# is untracked, so it sat in the tree at the exact moment the tag step ran --
+# and a FULLY GREEN six-hour audit (196 PASS / 0 FAIL, 2026-08-20) printed
+# "auto-tag skipped: working tree dirty" because of the marker tracking that very
+# run. The marker was removed on exit, so the tree looked clean afterwards and the
+# cause was invisible in the aftermath.
+# INSTRUMENTATION IS PART OF THE SYSTEM IT OBSERVES. A probe that changes what it
+# measures is not neutral, and this one silently cost a checkpoint.
+*.RUNNING
 /.asmgate/
 
 # ── scratch from a long uncommitted stretch (2026-08-28) ─────────────────

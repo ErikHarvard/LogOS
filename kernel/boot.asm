@@ -84,6 +84,52 @@
   %define IPC
   %define HH2_PTS
 %endif
+; P2: FAULT ATTRIBUTION AND CONTAINMENT ★ THE KEYSTONE of Erik's ruling. K2's
+; handlers diagnose a vector and HALT the machine. P2 makes them name the OWNER —
+; the current pid — record vector + error code + CR2 into that process's PCB, mark
+; it dead-by-fault, tear its mapping down, and return to P1's scheduler. The machine
+; survives; the process does not, and it must NOT RESUME (a handler that "contains"
+; by mapping the faulting page and resuming passes every other assertion — see R3).
+; Its constants live in their own %ifdef so -dP1 and -dP2_0 objects stay
+; byte-identical: a bare `equ` lands in the object symbol table.
+; P3: LA-DRIVEN PROCESS CREATION (`pspawn`, LogosInit brick 3 of 7). P1 built its
+; three processes AT BOOT, in 32-bit-ish code writing page tables through the low
+; identity map, before any CR3 was a process's. P3 does the same work AT RUNTIME,
+; from ring 3, under a process's CR3 — where that identity map is GONE, so every
+; write goes through the high alias instead. That relocation is the whole brick.
+; The gate's discriminator is DEPTH (a spawned process spawns), because a fourth
+; process on its own is exactly what `P1_NPROC equ 4` would also print — see
+; LOGOSINIT_SCOPE.md §5.0.4.
+%ifdef P3
+  %define P2                            ; containment before creation: a table that
+%endif                                  ;   cannot survive a fault must not grow
+%ifdef P2
+  %define P2_0                          ; a fault must be DELIVERABLE before it can
+  %define P2_ATTRIB                     ;   be attributed — P2.0 is the prerequisite
+%endif
+; P2.0: make the fault path REACHABLE FROM EVERY ADDRESS SPACE — the prerequisite
+; for P2 (fault attribution). MEASURED 2026-09-08: today a ring-3 fault inside a P1
+; process produces NO diagnostic and NO exit code — the machine wedges — because the
+; IDT, the ISR gate offsets and isr_common's string references are all LOW addresses,
+; and a process's PML4 maps only its own 2 MiB page plus the kernel high half. The
+; CPU cannot even read the IDT descriptor, so the fault is undeliverable and it
+; triple-faults. P2.0 relocates all three to the high alias, restoring K2's EXISTING
+; loud failure INSIDE a process. LOUDNESS ONLY — no attribution, no containment —
+; so P2.0 and P2 stay separately gateable.
+%ifdef P2_0
+  %define P1
+  %define P2_HIGHIDT
+%endif
+; P1: THE KERNEL PROCESS TABLE (LogosInit brick 1 of 7). No LA image and no IPC —
+; a real PCB array the kernel owns (pid, CR3, state, entry, stack, exit status,
+; fault cause) plus a scheduler that enters THREE ring-3 processes in turn, each
+; in its OWN PML4. Replaces HH2c's hardcoded two-process/one-stage-byte demo.
+; Needs the high map (the kernel must survive every CR3 switch) and the RING3
+; machinery (user selectors + TSS).
+%ifdef P1
+  %define HH1_HIGHMAP
+  %define RING3
+%endif
 ; K6c (single-process IPC round-trip) and K6c2 (two ring-3 processes) both need
 ; the RING3 machinery and the IPC channel layer (send/recv + the mailbox array).
 ; IPC is defined for either, so the channel storage + send/recv dispatch assemble
@@ -120,6 +166,90 @@ K6C_SLOTSZ  equ 288
 SYS_YIELD   equ 0x302
 PCB_SIZE    equ 128
 
+%ifdef P1
+; ── P1: the kernel process table ────────────────────────────────────────────
+; Guarded, and that guard is not cosmetic: a bare `equ` lands in the object's
+; SYMBOL TABLE, so twelve unguarded constants made every other kernel .o differ
+; while every code and data section stayed byte-identical. The standing rule is
+; byte-identity of the ELF, so the constants live inside %ifdef P1 like the code.
+; THREE, not two, and that is the whole design of the gate: HH2c boots two
+; isolated processes off a hardcoded `hh2c_stage` byte, and a two-process gate
+; cannot tell a table from an if-statement. See kernel/gate_p1.sh.
+P1_NPROC      equ 3
+P1_PCB_SZ     equ 64            ; PCB: pid, cr3, state, entry, stack, exit, fault
+P1_ST_FREE    equ 0             ; state values (blocked=4 is reserved for P4)
+P1_ST_RUN     equ 1             ;   runnable
+P1_ST_CUR     equ 2             ;   running
+P1_ST_DEAD    equ 3             ;   exited (P2 adds dead-by-fault)
+P1_UVA        equ 0x10000000    ; the process's one 2 MiB user page (virtual)
+P1_VAL_VA     equ P1_UVA + 0x100000   ; ★ the SHARED VA the isolation assertion reads
+P1_STK_TOP    equ P1_UVA + 0x1F0000   ; ring-3 stack top, inside that same page
+P1_PBASE      equ 0x08000000    ; process i's frame = P1_PBASE + i*2 MiB (128 MiB up)
+P1_SYS_GETPID equ 39            ; getpid() -> the pid the TABLE holds for "current"
+; Table CAPACITY — a %define, NOT an `equ`, and that is the twelve-constant lesson
+; above applied again: a bare `equ` lands in the object's symbol table, so merely
+; ADDING P3 to this file would make every P1/P2 object differ while every code and
+; data section stayed identical. A %define is a macro and leaves no symbol. Without
+; P3 the capacity IS what boot built, so every bound below is textually unchanged.
+%ifdef P3
+  %define P1_MAXPROC 8
+%else
+  %define P1_MAXPROC P1_NPROC
+%endif
+%endif
+; P3's constants are needed by the HANDLER (%ifdef P3) *and* by the ring-3 PROBE
+; (%ifdef P3_SPAWNPROBE), and R1's baseline builds the probe WITHOUT the handler —
+; so putting them in either one's %ifdef breaks that control at ASSEMBLY time. This
+; is P2's R1' defect, avoided rather than rediscovered: "a control that cannot build
+; is a control that is not running."
+%ifdef P3
+  %define P3_CONSTS
+%endif
+%ifdef P3_SPAWNPROBE
+  %define P3_CONSTS
+%endif
+%ifdef P3_CONSTS
+; ── P3: LA-driven process creation ──────────────────────────────────────────
+P3_SYS_PSPAWN equ 57            ; pspawn() -> the CHILD'S pid, or -1 if the table is
+                                ;   full. Linux's fork number (getpid above is 39,
+                                ;   the same convention), but it is NOT fork: nothing
+                                ;   of the caller is copied. The child is built from
+                                ;   the PRISTINE image — which is exactly what P6's
+                                ;   restart-after-fault needs, since a faulted address
+                                ;   space is corrupt and cannot be resumed.
+P3_BUDGET_VA  equ P1_VAL_VA + 2 ; the spawn budget lives in the CHILD'S OWN address
+                                ;   space, stamped by the kernel at creation. So the
+                                ;   depth assertion also witnesses that the kernel
+                                ;   wrote PER-CHILD content into a frame it had just
+                                ;   built — the same act, read back by ring 3.
+%endif
+%ifdef P3_SPAWNPROBE
+%ifndef P3_SPAWN_DEPTH
+  %define P3_SPAWN_DEPTH 2              ; pid 1 -> child 4 -> child 5. TWO, and the
+%endif                                  ;   second level is the whole discriminator:
+%endif                                  ;   one level proves only that a FOURTH
+                                        ;   process exists, which `P1_NPROC equ 4`
+                                        ;   proves just as well.
+%ifdef P2_ATTRIB
+; ── P2: fault attribution and containment ───────────────────────────────────
+P2_ST_FAULT equ 4               ; PCB state: dead-BY-FAULT (3 = clean exit; the
+                                ;   two are distinguished because a supervision
+                                ;   tree backs off crashes, not clean completions)
+%endif
+; The PROBE's constants belong to the probe, not to the handler. They were first
+; put inside %ifdef P2_ATTRIB, which broke the R1' control: --nofix builds the
+; probe WITHOUT the handler (-dP2_0 -dP2_FAULTPROBE) to get the no-P2 baseline,
+; and P2_FAULT_PID was then undefined. The gate reported it as a build failure
+; rather than skipping it, which is how it was caught.
+%ifdef P2_FAULTPROBE
+P2_PF_VA    equ 0x20000000      ; an UNMAPPED VA (PD[256]; a process maps only
+                                ;   PD[128]) — the #PF shape's target, so CR2 is
+                                ;   a known constant the gate can assert
+%ifndef P2_FAULT_PID
+  %define P2_FAULT_PID 2                ; which process faults; R2 rebuilds with 3
+%endif
+%endif
+
 ; K3b: the LA image's stack top. The native_codegen3 runtime arms a soft stack
 ; guard at STACK_LIMIT = STACK_BASE - 7 MiB (STACK_BASE = the rsp it starts
 ; with), sized for the Linux 8 MiB stack. On the metal we must give it an
@@ -127,7 +257,68 @@ PCB_SIZE    equ 128
 ; the guard misfires immediately. 0x8000000 (128 MiB) is identity-mapped RAM
 ; above the LA image (4 MiB), its GC worklist (~4-68 MiB) and heap use, giving
 ; a full 7 MiB stack with no underflow. (Requires QEMU -m >= 160 or so; the
-; gates use 256.) The 32-bit trampoline still uses the small boot_stack.
+; gates use 256 — gate_hal4e.sh uses 512.) The 32-bit trampoline still uses the
+; small boot_stack.
+;
+; ── WHAT IS *NOT* GUARDED HERE (measured 2026-07-18, from the built ELF's own
+;    PROL, not inferred from source — disassembled at LA_ENTRY) ──────────────
+;   worklist base 0x410be0 (4.06 MiB) | heap base r15 0x4410be0 (68.0 MiB)
+;   HEAP_END      0x404410be0 (16.07 GiB!) | STACK_LIMIT 0x7900000 (121 MiB)
+;
+; The stack guard is ONE-DIRECTIONAL. `cmp rsp,[STACK_LIMIT]` stops the STACK
+; growing DOWN into the heap. NOTHING stops the HEAP growing UP into the stack:
+; alloc24's only bound is `cmp rcx,[HEAP_END]`, and PROL sets HEAP_END to
+; hb + HEAP_SIZE where HEAP_SIZE is 16 GiB — sized for Linux, where it is lazily
+; mapped address space. On the metal that bound sits ~300x beyond the top of a
+; 512 MiB machine, so it is UNREACHABLE and cannot fire.
+;
+; Concretely, as the heap bumps up from 68 MiB it will:
+;   at 121 MiB (STACK_LIMIT) start overwriting the LA stack — SILENTLY;
+;   at 128 MiB pass the stack top;
+;   at 512 MiB leave physical RAM entirely;
+; and `native: heap exhausted` is never reached in any of those cases. The
+; failure mode is a clobbered return address -> control transfers into stack
+; bytes -> whatever they decode to.
+;
+; ── THIS IS NOT LATENT. IT FIRES IN UNDER 90 SECONDS. (corrected 2026-07-18) ──
+; An earlier version of this comment said "~53 MiB of real headroom, so this is
+; latent, not immediate — HAL.4e never got near it". BOTH CLAUSES WERE WRONG.
+; Measured: every HAL.4x ELF, booted and left ALONE with ZERO keystrokes, dies
+; in ABOUT SIX SECONDS — comp_text with #PF at rip=0x04454db8 (which is 346 KB
+; INTO THE HEAP, i.e. a return address overwritten by a heap pointer), comp_term
+; and comp_edit with #UD a few hundred bytes below LA_STACK_TOP.
+;
+; SIX SECONDS EXPLAINS EVERY SYMPTOM THIS TRACK CHASED. The interactive gates
+; pass only because they FINISH FIRST: HAL.4e sends 3 keys (~2 s) and HAL.4f
+; sends 5 (~3.5 s), both under the wire; HAL.4g sends 11 (~6.6 s) and dies just
+; short of its ENTER. Adding a screendump to 4e's gate cost ~1 s and pushed it
+; over — which is the "RED" that was originally blamed on the instrument.
+; Slowing 4g's keys to 2 s each killed it at the third character. One fact, and
+; it had been wearing four different disguises.
+;
+; Two mistakes fed that wrong "latent":
+;   1. I reasoned a rising heap must hit the BOTTOM of the stack region (121
+;      MiB) first, and dismissed the collision because the faulting rip was at
+;      the TOP. But the runtime does TCO, so these loops run at CONSTANT SHALLOW
+;      DEPTH: the live frames are the top few HUNDRED BYTES, and 121 MiB up to
+;      them is unused. A rising heap crosses all of it harmlessly and destroys
+;      the live frames AT THE TOP. The "counter-evidence" was the signature.
+;   2. The headroom is crossed in about a minute because `POLL` BOXES AN INT PER
+;      SPIN ITERATION (`inb` returns a boxed INT), so an idle compositor
+;      allocates hard. That is also why stalling the guest (a screendump) or
+;      slowing the keystrokes always made the crash come SOONER, which had
+;      looked like two unrelated mysteries.
+;
+; So HAL.4e/4f/4g are TIME-BOUNDED, not correct: their gates run ~20 s and pass
+; honestly, but nothing in the suite runs long enough to witness this.
+;
+; The FIX belongs in rt_init, not here: it already discriminates metal from
+; Linux (METAL_FLAG / CPL) and already computes STACK_LIMIT, so it is the one
+; place that can clamp HEAP_END to STACK_LIMIT on the metal path and turn a
+; silent overrun into the loud halt the discipline requires. That file is
+; native_codegen3_rt.asm — TRACK A's, not this track's — so this comment states
+; the hazard where a kernel reader will hit it, and the request is on the board.
+; Do not "fix" it here by shrinking the stack; that hides it without closing it.
 LA_STACK_TOP equ 0x8000000
 
 ; HH1: the higher-half kernel base — the top −2 GiB of the 64-bit canonical space,
@@ -971,6 +1162,216 @@ hh2c_high:
     push    qword 0x20 | 3
     push    qword LA_ENTRY
     iretq
+%elifdef P1
+    ; ===== P1: THE KERNEL PROCESS TABLE — three ring-3 processes from a PCB array =
+    ; HH2c boots two isolated processes off a hardcoded `hh2c_stage` byte: the first
+    ; .sys_exit switches CR3 to B, the second halts. That is an if-statement, not a
+    ; table, and a two-process gate cannot tell the difference. P1 replaces it with a
+    ; real PCB array the kernel owns and a scheduler loop over it. THREE is the
+    ; discriminator: nothing hardcoded for two produces a third.
+    ;
+    ; Each process gets its OWN PML4 mapping ONE 2 MiB user page at the SAME virtual
+    ; address (P1_UVA) onto a DIFFERENT physical frame (P1_PBASE + i*2 MiB), and
+    ; shares the kernel high half via [511] as SUPERVISOR. Each frame carries a
+    ; distinct tag at P1_VAL_VA, so that one VA reads A1/B2/C3 depending only on
+    ; which process is running — HH2's isolation proof, now selected by the CR3 the
+    ; TABLE holds rather than by a hand-written round-trip in boot.
+    mov     ecx, 0xC0000081             ; STAR: sysret -> ring 3 (as K6b/HH2c)
+    xor     eax, eax
+    mov     edx, (0x10 << 16) | 0x08
+    wrmsr
+    mov     rax, HIGH_BASE              ; run the kernel from the high half — it has
+    lea     rbx, [rel p1_high]          ;   to survive every CR3 switch below
+    add     rax, rbx
+    jmp     rax
+p1_high:
+    mov     ecx, 0xC0000082             ; LSTAR -> the HIGH syscall_entry
+    lea     rax, [rel syscall_entry]
+    mov     rdx, rax
+    shr     rdx, 32
+    wrmsr
+
+    ; ── build the three per-process address spaces ──────────────────────────────
+    ;   PML4_i[0]   = pdpt_i | 7   the process's own low half (U=1)
+    ;   PML4_i[511] = pdpt_high|3  the kernel, SUPERVISOR — ring 3 cannot reach it
+    ;   pdpt_i[0]   = pd_i  | 7
+    ;   pd_i[128]   = (P1_PBASE + i*2 MiB) | 0x87   -> VA 0x10000000, 2 MiB, U=1
+    ; Every OTHER pd_i entry stays not-present: a P1 process can address its own
+    ; page and nothing else. Written through the still-live low identity map.
+    xor     ecx, ecx                    ; ecx = i
+.p1_mkas:
+    mov     eax, ecx
+    shl     eax, 12                     ; i * 4096
+    mov     edi, pml4_p
+    add     edi, eax                    ; &pml4_p[i]
+    mov     esi, pdpt_p
+    add     esi, eax                    ; &pdpt_p[i]
+    mov     ebx, pd_p
+    add     ebx, eax                    ; &pd_p[i]
+    mov     eax, esi
+    or      eax, 0x07                   ; present|writable|user
+    mov     [edi], eax
+    mov     dword [edi + 4], 0
+    mov     eax, pdpt_high
+    or      eax, 0x03                   ; present|writable, SUPERVISOR
+    mov     [edi + 511*8], eax
+    mov     dword [edi + 511*8 + 4], 0
+    mov     eax, ebx
+    or      eax, 0x07
+    mov     [esi], eax
+    mov     dword [esi + 4], 0
+    mov     eax, ecx
+    shl     eax, 21                     ; i * 2 MiB
+    add     eax, P1_PBASE
+    or      eax, 0x87                   ; present|writable|user|PS (2 MiB page)
+    mov     [ebx + 128*8], eax          ; PD[128] <-> VA 0x10000000
+    mov     dword [ebx + 128*8 + 4], 0
+    inc     ecx
+    cmp     ecx, P1_NPROC
+    jne     .p1_mkas
+
+    ; ── stamp each process's frame: the payload, and ITS OWN value tag ─────────
+    ; Through the LOW IDENTITY map (still live): frame i is physical P1_PBASE +
+    ; i*2 MiB, so what lands at its offset 0 is what the process sees at P1_UVA,
+    ; and what lands at +1 MiB is what it sees at P1_VAL_VA. Same payload bytes in
+    ; all three; different tag in all three.
+    cld
+    xor     ebx, ebx                    ; ebx = i (rep movsb owns ecx/esi/edi)
+.p1_fill:
+    mov     eax, ebx
+    shl     eax, 21
+    add     eax, P1_PBASE
+    mov     edi, eax                    ; frame i, offset 0        -> VA P1_UVA
+    mov     esi, p1_payload
+    mov     ecx, p1_blob_len
+    rep     movsb
+    mov     eax, ebx
+    shl     eax, 21
+    add     eax, P1_PBASE + 0x100000
+    mov     edi, eax                    ; frame i, offset 1 MiB    -> VA P1_VAL_VA
+    mov     edx, ebx
+    add     dl, 'A'
+    mov     [edi], dl                   ; 'A'+i  ->  A / B / C
+    mov     edx, ebx
+    add     dl, '1'
+    mov     [edi + 1], dl               ; '1'+i  ->  1 / 2 / 3
+%ifdef P3_SPAWNPROBE
+    xor     edx, edx                    ; only process 0 (pid 1) starts with a budget
+    test    ebx, ebx
+    jnz     .p1_nobudget
+    mov     edx, P3_SPAWN_DEPTH
+.p1_nobudget:
+    mov     [edi + 2], dl               ; -> P3_BUDGET_VA in ITS OWN frame. Written
+                                        ;   for EVERY process, not only the one that
+                                        ;   gets a budget: an UNwritten byte would
+                                        ;   make the depth chain depend on whatever
+                                        ;   the firmware happened to leave in RAM.
+%endif
+    inc     ebx
+    cmp     ebx, P1_NPROC
+    jne     .p1_fill
+
+    ; ── build the PCB array — THE TABLE ────────────────────────────────────────
+    ;   +0 pid   +8 cr3   +16 state   +24 entry   +32 stack   +40 exit   +48 fault
+    ; pid is 1-based (codex :18405 makes PID 1 init; P5 puts init there). The fault
+    ; field is written -1 = "no fault" and stays unread until P2, which is the
+    ; brick that fills it with a vector — the field exists now so the table's shape
+    ; does not change under the keystone.
+    xor     ecx, ecx
+.p1_mkpcb:
+    mov     eax, ecx
+    imul    eax, eax, P1_PCB_SZ
+    mov     edi, p1_pcb
+    add     edi, eax                    ; &PCB[i]
+    mov     eax, ecx
+    inc     eax
+    mov     [edi + 0], eax              ; pid = i + 1
+    mov     dword [edi + 4], 0
+%ifdef P1_SHARED
+    ; ★ THE RED CONTROL (build_p1.sh --shared). Every PCB is pointed at process 0's
+    ; PML4, so all three run in ONE address space and read the SAME frame behind
+    ; P1_VAL_VA. gate_p1.sh --red REQUIRES the val assertions to fail here. Note
+    ; what this control does NOT break: the pid still comes from the table, so a
+    ; green pid with a collapsed val says precisely that isolation — and nothing
+    ; else — is what assertion 3 measures.
+    mov     eax, pml4_p
+%else
+    mov     eax, ecx
+    shl     eax, 12
+    add     eax, pml4_p                 ; cr3 = &pml4_p[i], the process's own
+%endif
+    mov     [edi + 8], eax
+    mov     dword [edi + 12], 0
+    mov     dword [edi + 16], P1_ST_RUN ; state = runnable
+    mov     dword [edi + 20], 0
+    mov     dword [edi + 24], P1_UVA    ; entry
+    mov     dword [edi + 28], 0
+    mov     dword [edi + 32], P1_STK_TOP
+    mov     dword [edi + 36], 0
+    mov     dword [edi + 40], 0         ; exit status
+    mov     dword [edi + 44], 0
+    mov     dword [edi + 48], -1        ; fault cause: none (P2 fills this)
+    mov     dword [edi + 52], -1
+    inc     ecx
+    cmp     ecx, P1_NPROC
+    jne     .p1_mkpcb
+%ifdef P3
+    ; ── the rest of the table is FREE, and the pid source starts past it ──────
+    ; boot fills slots 0..P1_NPROC-1; pspawn fills the rest. .bss is zero-filled by
+    ; the loader, so this is already true — but the whole point of a process table is
+    ; that its state is the kernel's own claim, not an assumption inherited from
+    ; whoever loaded the image, so write it.
+    mov     ecx, P1_NPROC
+.p3_mkfree:
+    mov     eax, ecx
+    imul    eax, eax, P1_PCB_SZ
+    mov     edi, p1_pcb
+    add     edi, eax
+    mov     dword [edi + 16], P1_ST_FREE
+    inc     ecx
+    cmp     ecx, P1_MAXPROC
+    jne     .p3_mkfree
+    mov     dword [p3_nextpid], P1_NPROC + 1    ; pids 1..3 are boot's; 4 up are
+%endif                                          ;   pspawn's, and never reused
+
+    ; ── GDT + TSS in the HIGH half ─────────────────────────────────────────────
+    ; A P1 process's low half maps ONLY its own 2 MiB page, so the GDT and the TSS
+    ; at their LOW addresses are unreachable once CR3 is a process's. Give the TSS
+    ; descriptor a HIGH base and load a HIGH GDTR, both reached through the shared
+    ; [511], so every process's iretq and every ring-3 trap resolves under every
+    ; CR3. (HH2c needed this for the same reason.) Written via the low identity map.
+    mov     rax, HIGH_BASE
+    add     rax, k6a_tss
+    mov     word [gdt64 + gdt64.tss], 103
+    mov     word [gdt64 + gdt64.tss + 2], ax
+    shr     rax, 16
+    mov     byte [gdt64 + gdt64.tss + 4], al
+    mov     byte [gdt64 + gdt64.tss + 5], 0x89
+    mov     byte [gdt64 + gdt64.tss + 6], 0
+    shr     rax, 8
+    mov     byte [gdt64 + gdt64.tss + 7], al
+    mov     rax, HIGH_BASE
+    add     rax, k6a_tss
+    shr     rax, 32
+    mov     dword [gdt64 + gdt64.tss + 8], eax
+    mov     dword [gdt64 + gdt64.tss + 12], 0
+    mov     rax, HIGH_BASE
+    add     rax, k6a_kstack_top
+    mov     [k6a_tss + 4], rax          ; rsp0 = the HIGH kernel stack
+    mov     word [k6a_tss + 102], 104
+    mov     ax, [gdt64.ptr]             ; GDT limit
+    mov     [p1_gdtr], ax
+    lea     rax, [rel gdt64]            ; running high -> a HIGH gdt64 base
+    mov     [p1_gdtr + 2], rax
+    lgdt    [p1_gdtr]                   ; GDTR base now HIGH (survives CR3 switches)
+    mov     ax, gdt64.tss
+    ltr     ax
+
+    ; ── run the table ──────────────────────────────────────────────────────────
+    mov     rax, HIGH_BASE              ; the scheduler runs on the HIGH kernel
+    add     rax, k6a_kstack_top         ;   stack — shared by every address space,
+    mov     rsp, rax                    ;   and never a process's own memory
+    jmp     p1_sched
 %else
     ; --- hand off to the Lingua-Adamica kernel image (its prol) ---
     mov     rax, LA_ENTRY
@@ -998,6 +1399,14 @@ syscall_entry:
     cmp     rax, SYS_YIELD
     je      .sys_yield
 %endif
+%ifdef P1
+    cmp     rax, P1_SYS_GETPID
+    je      .sys_getpid
+%endif
+%ifdef P3
+    cmp     rax, P3_SYS_PSPAWN
+    je      .sys_pspawn
+%endif
     ; unknown syscall: return 0, keep going
     xor     rax, rax
     jmp     .ret
@@ -1017,6 +1426,187 @@ syscall_entry:
 .w_done:
     mov     rax, r10
     jmp     .ret
+%ifdef P1
+.sys_getpid:
+    ; getpid() -> the pid the TABLE holds for whoever the scheduler made current.
+    ; The pid is NOT in the process image: all three processes execute the same
+    ; copied bytes, so a correct pid here can only have come from PCB[p1_cur].
+    ; (P2's fault handler needs this same "who is current" to attribute a fault.)
+    mov     eax, [rel p1_cur]
+    imul    eax, eax, P1_PCB_SZ
+    lea     r8, [rel p1_pcb]
+    add     r8, rax
+    mov     rax, [r8]                   ; PCB[cur].pid
+    jmp     .ret
+%endif
+%ifdef P3
+.sys_pspawn:
+    ; ── pspawn() -> the CHILD'S pid, or -1 if the table is full ───────────────
+    ; P1 built its three address spaces AT BOOT, with `mov [edi], eax`, because the
+    ; LOW IDENTITY MAP was still live. It is not live here. The caller's CR3 is a
+    ; PROCESS's: its low half maps exactly ONE 2 MiB page, so pml4_p, the pristine
+    ; payload and the child's frame are all unreachable at their low addresses.
+    ; Every write below therefore goes through the HIGH ALIAS (HIGH_BASE + phys),
+    ; which PML4[511] keeps mapped as SUPERVISOR under every CR3. Same construction,
+    ; addressed differently — and that relocation is the whole of the brick.
+    ;
+    ; It is NOT fork: nothing of the caller is copied. The child is built from the
+    ; pristine image, which is what P6's restart-after-fault needs (a faulted address
+    ; space is corrupt, so restart must rebuild, not resume).
+    push    rcx                         ; sysret's return RIP — `rep movsb` clobbers
+    push    r11                         ;   rcx, and .ret restores RFLAGS from r11.
+                                        ;   (syscall does not switch rsp, so these
+                                        ;   push onto the caller's ring-3 stack —
+                                        ;   the same thing .sys_write's `call` does.)
+%ifdef P3_NODEPTH
+    ; ★ R4's control: only a BOOT-BUILT process may spawn. This suppresses the depth
+    ; assertion — child 4 is created, but 4 cannot create 5 — and it is the ONLY
+    ; control that separates P3 from `P1_NPROC equ 4`, because a fourth process is
+    ; exactly what that one-character change also produces.
+    mov     eax, [rel p1_cur]
+    imul    eax, eax, P1_PCB_SZ
+    lea     r10, [rel p1_pcb]
+    add     r10, rax
+    cmp     qword [r10], P1_NPROC
+    ja      .p3_none
+%endif
+    ; ── find a FREE slot ──────────────────────────────────────────────────────
+    xor     r8d, r8d                    ; r8d = slot
+.p3_findslot:
+    cmp     r8d, P1_MAXPROC
+    jae     .p3_none
+    mov     eax, r8d
+    imul    eax, eax, P1_PCB_SZ
+    lea     r9, [rel p1_pcb]
+    add     r9, rax                     ; r9 = &PCB[slot], via the high alias
+    cmp     dword [r9 + 16], P1_ST_FREE
+    je      .p3_gotslot
+    inc     r8d
+    jmp     .p3_findslot
+.p3_none:
+    ; The table is finite and SAYS SO. Loud, not silent: returning a plausible pid
+    ; for a process that does not exist would hand ring 3 a child it can never see
+    ; die. This is `secd: heap exhausted` at the process table.
+    mov     rax, -1
+    jmp     .p3_out
+.p3_gotslot:
+    ; ── the child's budget comes from the CALLER'S OWN frame ──────────────────
+    ; syscall does not switch CR3, so P3_BUDGET_VA still reads the parent's byte.
+    ; Depth is therefore carried in ADDRESS SPACES, not in kernel state — which is
+    ; what makes "a spawned process spawns" a property of the process rather than of
+    ; a counter the kernel could just as well have hardcoded.
+    movzx   edx, byte [P3_BUDGET_VA]
+%ifdef P3_FLOOD
+    ; ★ R5's control: do NOT decrement, so every child inherits a full budget and the
+    ; table must fill. The assertion is that exhaustion is REPORTED and survived.
+%else
+    test    edx, edx
+    jz      .p3_nodec
+    dec     edx                         ; the child gets one level less than its
+.p3_nodec:                              ;   parent — the chain is finite by
+%endif                                  ;   construction, not by a kernel counter
+    ; ── pid from the MONOTONIC counter, not from the slot ─────────────────────
+    ; A reused slot must get a NEW pid: P6 restarts a faulted process under a new
+    ; identity, and a slot-derived pid would silently reuse the dead one's.
+    mov     r10d, [rel p3_nextpid]
+    inc     dword [rel p3_nextpid]
+    ; ── build the child's address space, ALL of it through the HIGH ALIAS ─────
+    mov     eax, r8d
+    shl     eax, 12
+    mov     r13d, eax
+    add     r13d, pml4_p                ; phys: the child's PML4 (and so its CR3)
+    mov     r14d, eax
+    add     r14d, pdpt_p                ; phys: its PDPT
+    mov     r15d, eax
+    add     r15d, pd_p                  ; phys: its PD
+    mov     ebx, r8d
+    shl     ebx, 21
+    add     ebx, P1_PBASE               ; phys: its one 2 MiB frame
+
+    mov     rdi, HIGH_BASE
+    add     rdi, r13
+    mov     eax, r14d
+    or      eax, 0x07                   ; present|writable|USER — its own low half
+    mov     [rdi], eax
+    mov     dword [rdi + 4], 0
+    mov     eax, pdpt_high
+    or      eax, 0x03                   ; present|writable, SUPERVISOR: the kernel is
+    mov     [rdi + 511*8], eax          ;   shared, and ring 3 still cannot reach it
+    mov     dword [rdi + 511*8 + 4], 0
+
+    mov     rdi, HIGH_BASE
+    add     rdi, r14
+    mov     eax, r15d
+    or      eax, 0x07
+    mov     [rdi], eax
+    mov     dword [rdi + 4], 0
+
+    mov     rdi, HIGH_BASE
+    add     rdi, r15
+    mov     eax, ebx
+    or      eax, 0x87                   ; present|writable|user|PS (2 MiB page)
+    mov     [rdi + 128*8], eax          ; PD[128] <-> VA P1_UVA, as P1's boot loop
+    mov     dword [rdi + 128*8 + 4], 0  ;   wrote it, one entry and no other
+
+    ; ── stamp the frame from the PRISTINE image ───────────────────────────────
+    ; p1_payload reached RIP-relatively from the high-half kernel is ALREADY its high
+    ; alias; the destination is the child's frame at its own. Neither is addressable
+    ; low from here, which is exactly why boot's version of this loop cannot be
+    ; reused unchanged.
+    cld
+    mov     rdi, HIGH_BASE
+    add     rdi, rbx                    ; child frame + 0        -> VA P1_UVA
+    lea     rsi, [rel p1_payload]
+    mov     ecx, p1_blob_len
+    rep     movsb
+    mov     rdi, HIGH_BASE
+    add     rdi, rbx
+    add     rdi, 0x100000               ; child frame + 1 MiB    -> VA P1_VAL_VA
+    mov     eax, r10d
+    add     al, 'A' - 1                 ; tag = 'A'+(pid-1) ...
+    mov     [rdi], al
+    mov     eax, r10d
+    add     al, '1' - 1                 ;   ... and '1'+(pid-1): D4, E5, F6 ...
+    mov     [rdi + 1], al
+    mov     [rdi + 2], dl               ; ... and the budget, at P3_BUDGET_VA
+
+    ; ── fill the PCB — the child is IN THE TABLE, not merely announced ────────
+%ifdef P3_PHANTOM
+    ; ★ R3's control: allocate the pid, return it, and record NOTHING. The PSPAWN
+    ; line still prints and no such process ever runs. P2's "announcing is not
+    ; recording" one station earlier — and at creation it is the lie most easily
+    ; written by accident, because the return value alone cannot tell the two apart.
+%else
+    mov     [r9 + 0], r10               ; pid
+    mov     [r9 + 8], r13               ; cr3 = the PML4 just built
+%ifdef P3_SHAREDCR3
+    ; ★ R2's control: hand the child the PARENT'S CR3 instead of the one just built.
+    ; It then reads the parent's frame through the same P1_VAL_VA and reports val=A1
+    ; rather than D4 — so the per-process value assertion COULD have failed, and a
+    ; runtime-built address space is what makes it pass.
+    mov     eax, [rel p1_cur]
+    imul    eax, eax, P1_PCB_SZ
+    lea     rsi, [rel p1_pcb]
+    add     rsi, rax
+    mov     rax, [rsi + 8]
+    mov     [r9 + 8], rax
+%endif
+    mov     dword [r9 + 16], P1_ST_RUN  ; RUNNABLE — the scheduler enters it when the
+    mov     dword [r9 + 20], 0          ;   caller exits; nothing else is needed
+    mov     dword [r9 + 24], P1_UVA     ; entry
+    mov     dword [r9 + 28], 0
+    mov     dword [r9 + 32], P1_STK_TOP ; stack
+    mov     dword [r9 + 36], 0
+    mov     qword [r9 + 40], 0          ; exit status
+    mov     dword [r9 + 48], -1         ; fault cause: none. P2 fills this; P4 reads
+    mov     dword [r9 + 52], -1         ;   it, and a spawned process must start with
+%endif                                  ;   the same "never faulted" as a booted one
+    mov     rax, r10                    ; -> ring 3: the CHILD'S pid
+.p3_out:
+    pop     r11
+    pop     rcx
+    jmp     .ret
+%endif
 %ifdef IPC
 .sys_send:
     ; send(rdi=chan, rsi=type, rdx=buf, r10=len) -> deposit a typed message into
@@ -1118,6 +1708,23 @@ syscall_entry:
     jmp     k6c2_run
 %endif
 .sys_exit:
+%ifdef P1
+    ; P1: exit(rdi=code) is not the end of the machine — it is the death of ONE
+    ; process. Record the status in ITS PCB, mark it dead, and return to the
+    ; scheduler. HH2c instead flipped a stage byte and hardcoded the next CR3;
+    ; nothing on this path knows how many processes exist. P2 reaches this same
+    ; "the process ends, the run continues" path from a fault handler, with a cause.
+    mov     eax, [rel p1_cur]
+    imul    eax, eax, P1_PCB_SZ
+    lea     r8, [rel p1_pcb]
+    add     r8, rax
+    mov     dword [r8 + 16], P1_ST_DEAD
+    mov     [r8 + 40], rdi              ; exit status, kept in the table
+    mov     rax, HIGH_BASE              ; leave the dying process's stack behind:
+    add     rax, k6a_kstack_top         ;   the scheduler must not run on memory a
+    mov     rsp, rax                    ;   process could have corrupted
+    jmp     p1_sched
+%endif
 %ifdef HH2C
     ; HH2c process scheduler: the FIRST exit is process A finishing (it has already
     ; send()'d into the shared channel) -> switch CR3 to process B and enter it; the
@@ -1270,6 +1877,350 @@ serial_putc:
     pop     rdx
     pop     rax
     ret
+
+%ifdef P1
+; ---------------------------------------------------------------------
+;  p1_sched — THE SCHEDULER OVER THE PROCESS TABLE.
+;
+;  Runs in the high half on the high kernel stack, which every process shares via
+;  PML4[511], so it stays mapped across every CR3 switch. It scans the PCB array
+;  for a RUNNABLE entry, loads that PCB's CR3, and enters the process at ring 3
+;  with ITS entry and ITS stack. When no runnable entry remains, the run is over:
+;  say so and exit 33.
+;
+;  This is what replaces HH2c's `hh2c_stage` byte. Note what is NOT in this loop:
+;  the number of processes. It walks the table, so a third process costs exactly
+;  what the second costs — which is the property a hardcoded stage byte does not
+;  have, and the reason gate_p1.sh asserts three.
+; ---------------------------------------------------------------------
+p1_sched:
+    xor     ecx, ecx                    ; ecx = index into the table
+.p1_scan:
+    cmp     ecx, P1_MAXPROC             ; CAPACITY, not what boot filled: a process
+                                        ;   pspawn'd into a slot above P1_NPROC is
+                                        ;   entered by this same unchanged loop
+    jae     .p1_none
+    mov     eax, ecx
+    imul    eax, eax, P1_PCB_SZ
+    lea     r8, [rel p1_pcb]
+    add     r8, rax                     ; r8 = &PCB[i] (high alias, stays mapped)
+    cmp     dword [r8 + 16], P1_ST_RUN
+    je      .p1_enter
+    inc     ecx
+    jmp     .p1_scan
+
+.p1_enter:
+    mov     [rel p1_cur], ecx           ; who is current — getpid and .sys_exit
+    mov     dword [r8 + 16], P1_ST_CUR  ;   both resolve the pid through this
+    mov     rax, [r8 + 8]               ; CR3 out of the TABLE, not a fixed label
+    mov     cr3, rax
+    push    qword 0x18 | 3              ; SS  = user data, RPL 3
+    push    qword [r8 + 32]             ; RSP = this process's stack top
+    push    qword 0x002                 ; RFLAGS (IF clear — P1 has no timer, so
+    push    qword 0x20 | 3              ;   the transcript order is deterministic)
+    push    qword [r8 + 24]             ; RIP = this process's entry
+    iretq                               ; -> ring 3, in its own address space
+
+.p1_none:
+%ifdef P2_ATTRIB
+    ; ── dump the table before reporting ────────────────────────────────────────
+    ; The gate asserts on THIS, not only on the FAULT line: a handler could print a
+    ; correct diagnosis and record nothing, and every transcript assertion would
+    ; still pass. P4 (pwait) reads exactly these fields. fault=ff is the -1 written
+    ; at table-build time, i.e. "never faulted".
+    xor     ebx, ebx
+.p2_dump:
+    cmp     ebx, P1_MAXPROC
+    jae     .p2_dumped
+    mov     eax, ebx
+    imul    eax, eax, P1_PCB_SZ
+    lea     r12, [rel p1_pcb]
+    add     r12, rax
+%ifdef P3
+    ; A capacity-sized table has slots that were never a process. Skipping them keeps
+    ; the dump a report of what RAN, so the gate asserts an exact set of pids instead
+    ; of filtering noise. Guarded, so P1/P2 transcripts are byte-for-byte unchanged.
+    cmp     dword [r12 + 16], P1_ST_FREE
+    je      .p2_dumpnext
+%endif
+    lea     rsi, [rel p2_pmsg]
+    call    serial_puts
+    mov     rax, [r12 + 0]
+    call    print_hex8
+    lea     rsi, [rel p2_smsg]
+    call    serial_puts
+    mov     rax, [r12 + 16]
+    call    print_hex8
+    lea     rsi, [rel p2_qmsg]
+    call    serial_puts
+    mov     rax, [r12 + 48]
+    call    print_hex8
+    lea     rsi, [rel nl_msg]
+    call    serial_puts
+%ifdef P3
+.p2_dumpnext:                           ; the label too is guarded — a NASM local
+%endif                                  ;   label lands in the object symbol table,
+                                        ;   and an unguarded one would make every
+                                        ;   P1/P2 ELF differ with no byte of code
+                                        ;   changed (the twelve-`equ` lesson again)
+    inc     ebx
+    jmp     .p2_dump
+.p2_dumped:
+%endif
+    ; Every process in the table has exited and the KERNEL is still here to say so.
+    ; That is the point of a table: a process ending is an entry changing state,
+    ; not the end of the run. (P2 makes the same true of a process FAULTING.)
+    lea     r8, [rel p1_done_msg]
+    mov     r9d, p1_done_len
+.p1_dmsg:
+    test    r9, r9
+    jz      .p1_exit
+    mov     dil, [r8]
+    call    serial_putc
+    inc     r8
+    dec     r9
+    jmp     .p1_dmsg
+.p1_exit:
+    mov     al, DBG_OK                  ; QEMU isa-debug-exit -> exit code 33
+    mov     dx, DBG_EXIT
+    out     dx, al
+    cli
+.p1_hang:
+    hlt
+    jmp     .p1_hang
+
+p1_done_msg: db "P1 table drained: every process exited, kernel alive", 10
+p1_done_len  equ $ - p1_done_msg
+
+%ifdef P2_ATTRIB
+; ---------------------------------------------------------------------
+;  p2_fault — FAULT ATTRIBUTION AND CONTAINMENT ★ the keystone.
+;
+;  Entered from isr_common when the saved CS says CPL 3: a PROCESS faulted, not
+;  the kernel. K2 named a vector and stopped the machine; this names the OWNER,
+;  records the cause in that process's PCB, unmaps its address space, and returns
+;  to the scheduler. The machine survives; the process does not.
+;
+;  We are already on the HIGH kernel stack (the CPU loaded TSS.rsp0 on the ring
+;  transition), which is shared through PML4[511] and therefore mapped under every
+;  process CR3 — so none of this touches memory the faulting process could have
+;  corrupted. Nothing is preserved: the process is dead, its registers are refuse.
+; ---------------------------------------------------------------------
+p2_fault:
+    mov     r13, [rsp + 0]              ; vector
+    mov     r14, [rsp + 8]              ; error code
+    mov     r15, cr2                    ; faulting address (#PF; stale otherwise)
+    mov     eax, [rel p1_cur]           ; WHO: the table's current index ...
+    imul    eax, eax, P1_PCB_SZ
+    lea     rbx, [rel p1_pcb]
+    add     rbx, rax                    ;   ... -> &PCB[cur]
+    ; ── announce, with the owner ───────────────────────────────────────────────
+    lea     rsi, [rel p2_fmsg]          ; "FAULT pid="
+    call    serial_puts
+    mov     rax, [rbx]                  ; PCB.pid — attribution is the new fact
+    call    print_hex8
+    lea     rsi, [rel p2_vmsg]          ; " vec="
+    call    serial_puts
+    mov     rax, r13
+    call    print_hex8
+    lea     rsi, [rel err_msg]          ; " err="   (shared with K2's line)
+    call    serial_puts
+    mov     rax, r14
+    call    print_hex64
+    lea     rsi, [rel p2_cmsg]          ; " cr2="
+    call    serial_puts
+    mov     rax, r15
+    call    print_hex64
+    lea     rsi, [rel nl_msg]
+    call    serial_puts
+    ; ── record it IN THE TABLE ─────────────────────────────────────────────────
+    ; Announcing is not recording. P4 (pwait) must be able to ask the table how a
+    ; process died long after the line scrolled past, and a supervision tree backs
+    ; off a CRASH but not a clean exit — so the two states are distinct.
+    mov     dword [rbx + 16], P2_ST_FAULT
+    mov     [rbx + 48], r13             ; fault cause = the vector
+%ifdef P2_MASK_INSTEAD
+    ; ★ R3's RED CONTROL, COMPILED IN — the WRONG implementation, on purpose.
+    ; "Contain" the fault by stepping past the faulting instruction and RESUMING
+    ; the process instead of killing it. Note what it still satisfies: the fault
+    ; was diagnosed, attributed to the right pid, recorded, the siblings run, the
+    ; machine survives and exits 33. Masking is indistinguishable from containment
+    ; on every assertion EXCEPT the marker the resumed process then prints. That
+    ; is why assertion 7 exists, and gate_p2.sh --r3 REQUIRES this build to emit
+    ; the marker — if it does not, assertion 7 is unfalsifiable and measures
+    ; nothing. (#UD is not restartable, so the saved RIP is stepped past the
+    ; 2-byte ud2; this control is the #UD shape only.)
+    add     rsp, 16                     ; drop the stub's vector + error code
+    add     qword [rsp], 2              ; step the saved RIP past the ud2
+    iretq                               ; ... and resume ring 3. WRONG, by design.
+%endif
+    ; ── tear the mapping down ──────────────────────────────────────────────────
+    ; Containment, not masking. Its address space stops existing, so a later
+    ; restart (P6) MUST rebuild from the pristine image under a new pid — it
+    ; cannot resume. The next CR3 load flushes the TLB, so no invlpg is needed.
+    mov     eax, [rel p1_cur]
+    shl     eax, 12
+    lea     rdi, [rel pd_p]
+    add     rdi, rax                    ; &pd_p[cur]
+    mov     qword [rdi + 128*8], 0      ; PD[128] -> not present
+    ; ── back to the scheduler, on a clean kernel stack ─────────────────────────
+    mov     rax, HIGH_BASE
+    add     rax, k6a_kstack_top
+    mov     rsp, rax
+    jmp     p1_sched
+
+p2_fmsg: db "FAULT pid=", 0
+p2_vmsg: db " vec=", 0
+p2_cmsg: db " cr2=", 0
+p2_pmsg: db "P1 pcb pid=", 0
+p2_smsg: db " state=", 0
+p2_qmsg: db " fault=", 0
+%endif
+
+; ---------------------------------------------------------------------
+;  P1 ring-3 process payload — ONE image, run by all three processes.
+;
+;  In .boot32 (identity-mapped low RAM), so p1_payload is a valid physical copy
+;  source. It is copied into each process's own 2 MiB frame and runs at ring 3
+;  from P1_UVA, so it must be position-independent: every message reference is
+;  RIP-relative and the offsets survive the copy.
+;
+;  It prints two facts and neither one is in these bytes:
+;    - its pid, from getpid() -> the kernel's PCB for whoever is current;
+;    - the tag at P1_VAL_VA, a fixed VA that resolves to ITS OWN frame.
+;  Same bytes in all three processes, different output in all three. Identity
+;  comes from the table; content comes from the address space.
+; ---------------------------------------------------------------------
+p1_payload:
+%ifdef P1_FAULTPROBE
+    ; P2.0's micro-gate: fault at ring 3, INSIDE a process address space. Without
+    ; the high-IDT fix this emits NOTHING and the machine wedges (measured: rc 124).
+    ; With it, K2's EXISTING handler diagnoses it — "EXCEPTION 06 err=0 rip=
+    ; 0000000010000000" — and exits 35. The rip is the process's own entry VA, which
+    ; is what proves the fault was taken from ring 3 in the PROCESS address space
+    ; rather than from the kernel (a kernel-CR3 fault reports a 0xffffffff8... rip).
+    ud2
+%endif
+%ifdef P2_FAULTPROBE
+    ; P2's gate: ONLY the process whose pid is P2_FAULT_PID faults, so the gate can
+    ; assert that the SIBLING AFTER it still runs (containment) and that the reported
+    ; pid FOLLOWS the faulting process (R2: rebuild with a different pid, the report
+    ; must change with it). The pid comes from getpid — the table — not the image,
+    ; so all three processes still run identical bytes.
+    mov     eax, P1_SYS_GETPID
+    syscall
+    cmp     eax, P2_FAULT_PID
+    jne     .p2_nofault
+%ifdef P2_FAULT_PF
+    mov     byte [P2_PF_VA], 1          ; #PF (vec 0e): write to an unmapped VA.
+%else                                   ;   err = P0|W1|U1 = 6, CR2 = P2_PF_VA
+    ud2                                 ; #UD (vec 06): no error code
+%endif
+    ; ★ R3 — CONTAINMENT vs MASKING. Control reaches here ONLY if the handler
+    ; "contained" the fault by mapping the page and RESUMING the process. That
+    ; looks identical to real containment on every other assertion, so the gate
+    ; requires this line to NEVER appear. The process must DIE, not be papered over.
+    mov     eax, 1
+    mov     edi, 1
+    lea     rsi, [rel p2_resumed]
+    mov     edx, p2_resumed_len
+    syscall
+.p2_nofault:
+%endif
+%ifdef P3_SPAWNPROBE
+    ; ★ P3's probe: spawn a child if THIS process's OWN FRAME says it may. The budget
+    ; is read from P3_BUDGET_VA — the process's own address space, stamped by the
+    ; kernel at creation — so a child that spawns is a child reading back something
+    ; the kernel wrote into a frame it had just built. A process whose budget is 0
+    ; (boot processes 2 and 3, and the last of the chain) spawns nothing, which is
+    ; what makes the transcript finite without a kernel-side cap.
+    mov     esi, P3_BUDGET_VA
+    movzx   eax, byte [rsi]
+    test    eax, eax
+    jz      .p3_nospawn
+    mov     eax, P1_SYS_GETPID
+    syscall
+    add     al, '0'
+    lea     rbx, [rel p3_ppid]
+    mov     [rbx], al                   ; who is asking ...
+    lea     rbx, [rel p3_noppid]
+    mov     [rbx], al                   ;   ... into both lines, before we know which
+    mov     eax, P3_SYS_PSPAWN
+    syscall                             ; -> rax = the child's pid, or -1
+    test    eax, eax
+    js      .p3_nochild
+    add     al, '0'
+    lea     rbx, [rel p3_cpid]
+    mov     [rbx], al                   ; ... and which child it got. ★ THIS LINE IS
+    mov     eax, 1                      ;   PRINTED BY THE PROCESS, from the syscall's
+    mov     edi, 1                      ;   return value — not by the kernel. A
+    lea     rsi, [rel p3_line]          ;   kernel-printed line would prove creation
+    mov     edx, p3_line_len            ;   but not that LA can DRIVE it, and
+    syscall                             ;   "LA-driven" is the whole title of P3.
+    jmp     .p3_nospawn
+.p3_nochild:
+    mov     eax, 1
+    mov     edi, 1
+    lea     rsi, [rel p3_noline]
+    mov     edx, p3_noline_len
+    syscall
+.p3_nospawn:
+%endif
+    mov     eax, P1_SYS_GETPID
+    syscall                             ; -> rax = PCB[current].pid
+    add     al, '0'                     ; P1 pids are 1..3: one digit
+    lea     rbx, [rel p1_piddigit]
+    mov     [rbx], al
+    mov     esi, P1_VAL_VA              ; the SAME VA in every process ...
+    mov     al, [rsi]                   ; ... a DIFFERENT frame behind it
+    lea     rbx, [rel p1_valtag]
+    mov     [rbx], al
+    mov     al, [rsi + 1]
+    mov     [rbx + 1], al
+    mov     eax, 1                      ; write(fd=1, buf, len) -> COM1 via ring 0
+    mov     edi, 1
+    lea     rsi, [rel p1_line]
+    mov     edx, p1_line_len
+    syscall
+    mov     eax, 60                     ; exit(0) -> the scheduler, not the halt
+    xor     edi, edi
+    syscall
+p1_line:      db "P1 pid="
+p1_piddigit:  db "0"
+              db " val="
+p1_valtag:    db "??"
+              db 10
+p1_line_len   equ $ - p1_line
+%ifdef P3_SPAWNPROBE
+; ★ AFTER p1_line_len, and that is not a stylistic choice. When P2's marker sat
+; between the `db 10` and this `equ`, every process's ORDINARY val-line write ran 33
+; bytes long and emitted the marker as trailing garbage — a transcript that read
+; exactly like the failure the gate was hunting, produced by a string-length bug with
+; nothing to do with the handler. A string added here that is not after the `equ`
+; manufactures the very defect its gate exists to catch.
+p3_line:      db "PSPAWN pid="
+p3_ppid:      db "0"
+              db " -> child "
+p3_cpid:      db "0"
+              db 10
+p3_line_len   equ $ - p3_line
+p3_noline:    db "PSPAWN pid="
+p3_noppid:    db "0"
+              db " -> NO CHILD", 10
+p3_noline_len equ $ - p3_noline
+%endif
+%ifdef P2_FAULTPROBE
+; ★ Placed AFTER p1_line_len is taken, and that placement is load-bearing. When
+; this string sat between `db 10` and the `equ`, `$ - p1_line` swallowed it: every
+; process's ordinary val-line write ran 33 bytes long and emitted the R3 marker as
+; trailing garbage. The transcript then showed "RESUMED" after processes that never
+; faulted — which reads exactly like the masking failure R3 exists to catch, from a
+; string-length bug that has nothing to do with the fault handler.
+p2_resumed:   db "P2 pid=? RESUMED after its fault", 10
+p2_resumed_len equ $ - p2_resumed
+%endif
+p1_blob_len   equ $ - p1_payload
+%endif
 
 %ifdef K6A
 ; ---------------------------------------------------------------------
@@ -1490,6 +2441,26 @@ hh2c_stage: resb 1                      ; 0 = A running, 1 = B (the exit-driven 
 align 8
 hh2c_gdtr:  resb 10                     ; a HIGH-based GDTR (limit:2 + base:8)
 %endif
+%ifdef P1
+align 4096
+pml4_p:  resb P1_MAXPROC * 4096         ; P1: one PML4/PDPT/PD per process — each
+pdpt_p:  resb P1_MAXPROC * 4096         ;   maps its OWN 2 MiB page at P1_UVA and
+pd_p:    resb P1_MAXPROC * 4096         ;   shares the kernel via [511]. Sized by
+                                        ;   CAPACITY, not by what boot fills: P3
+                                        ;   spawns into the slots above P1_NPROC.
+align 8
+p1_pcb:  resb P1_MAXPROC * P1_PCB_SZ    ; ★ THE PROCESS TABLE the kernel owns
+p1_cur:  resd 1                         ; index of the running process
+%ifdef P3
+p3_nextpid: resd 1                      ; MONOTONIC pid source — not the slot index.
+                                        ;   A reused slot must get a NEW pid, which
+                                        ;   is precisely what P6's "restart under a
+                                        ;   new pid" requires; the slot is storage,
+                                        ;   the pid is identity.
+%endif
+align 8
+p1_gdtr: resb 10                        ; a HIGH-based GDTR (limit:2 + base:8)
+%endif
 %ifdef HH2B
 align 4096
 pml4_proc: resb 4096                    ; HH2b: the process's own PML4 ([0]=user low,
@@ -1537,18 +2508,21 @@ k6c2_scratch:                           ; 2 qwords: frees rax + a base reg in .s
 ; zero bytes unless assembled with -dHAL2B, so other kernel ELFs stay identical.
 %include "kbdirq.asm"
 
-; K6a/K6c/K6c2 are payload-based ring-3 probes and HH2 is a ring-0 page-table demo
-; — none jump to the LA image, so the incbin is skipped for them, keeping those
-; builds self-contained.
+; K6a/K6c/K6c2 are payload-based ring-3 probes, HH2 is a ring-0 page-table demo,
+; and P1 runs three copies of its own ring-3 payload out of a process table —
+; none jump to the LA image, so the incbin is skipped for them, keeping those
+; builds self-contained (P1 therefore needs no native_codegen3 and no tiny_host).
 %ifndef K6A
 %ifndef K6C
 %ifndef K6C2
 %ifndef HH2
+%ifndef P1
 section .la_image
 la_image_start:
 incbin "native_codegen3_out"
 la_image_end:
 IMAGE_LEN equ la_image_end - la_image_start   ; HH2c copies this many bytes per process
+%endif
 %endif
 %endif
 %endif
