@@ -1718,3 +1718,53 @@ Two further exclusions, stated rather than quietly dropped:
 - The two fixtures ran at different times under different loads. **RSS is comparable
   across them; wall-clock across fixtures is not**, which is why the time claim above
   rests on *completes vs. does not complete*, not on a ratio.
+
+## 2026-09-10 — THE NINE-GATE SUITE, RUN: 56 PASS / 0 FAIL / 1 SKIP — the entry STAYS `[~]`
+
+Armed 2026-09-09 19:41 with the `[~]`→`[x]` criterion fixed in advance on the board:
+*`[x]` requires all nine gates to reach a VERDICT and zero FAIL — a SKIP is not a verdict.*
+It never reported: the waiter's stdout died with the session. Run 2026-09-10 10:53–11:10,
+alone (0 deep jobs at start; load 1.03 → 3.86 on 24 cores; `logos-hw gate` rc=0 at both
+ends). Trees: track-b `9fbe59a` · kernel-k1 `be69e9a` · track-d `da04585`.
+
+| gate | rc | PASS | FAIL | SKIP | s |
+|---|---|---|---|---|---|
+| `gate_link_reloc` | 0 | 2 | 0 | 0 | 194 |
+| `gate_link_layout` | 0 | 1 | 0 | 0 | 24 |
+| `gate_link_hiaddr` | 0 | 3 | 0 | 0 | 15 |
+| `gate_link` | 0 | 1 | 0 | 0 | 26 |
+| `gate_link_nsec` | 0 | 4 | 0 | 0 | 2 |
+| `gate_link_script` | 0 | 31 | 0 | 0 | 60 |
+| `gate_link_e2e` | 0 | 9 | 0 | 0 | 46 |
+| `gate_seam_asm_link` | 0 | 1 | 0 | 0 | 48 |
+| `gate_link_kernel` | 0 | 4 | 0 | **1** | 477 |
+
+**Against the criterion:** `gate_link_kernel` step 4 — the QEMU boot comparison — SKIPPED:
+`ld`'s OWN control image of the input did not boot (rc=124, empty serial, 90 s), so there was
+nothing to compare against. ⇒ **stays `[~]`, 1 SKIP.**
+
+**Arm 2 — the seam against today's producer:** `gate_seam_asm_link` with `SEAM_ASM` =
+kernel-k1's committed `asm.la` (`0b69cdd3…`, 185,477 B, last changed `750467d`) — **PASS,
+114 s.**
+
+### ⚠ Four things the run found in my own instruments
+1. **The pre-registration was wrong about an input.** It said the seam gate stages `asm.la`
+   from kernel-k1. It prefers a local `.imm64/asm.la` when one exists, and one does: arm 1's
+   seam AND e2e greens consumed track-b's 08-22 `asm.la` (`fe61115f…`, 180,648 B, 119 diff
+   lines behind kernel-k1) — hashed from the gates' OWN staged copies, not inferred. Arm 2
+   covers the seam for today's producer; nothing covers e2e for it (it has no override).
+2. **`751d34b` regressed step 4 from PASS to SKIP.** Slice 14 recorded the boot comparison
+   passing on the realistic object — same serial, same clean exit 33. The locally assembled
+   stub (7,104 B, no LA payload) cannot reach it: its control prints nothing. **Why it is
+   silent is NOT diagnosed** — `boot.asm` writes serial before its `LA_ENTRY` jump, so "no
+   payload" alone does not explain it, and `boot.asm` is Track D's.
+3. **`751d34b`'s "assembled from committed sources" is false.** `boot.asm` `%include`s
+   `entry.inc`, which is in no tree; the gate finds an IGNORED 08-21 stub at
+   `.bootfix2_HH2B/entry.inc` (`LA_ENTRY equ 0x410a9e`). Without it `nasm` exits 1 and the
+   gate falls back to D's uncommitted `boot.o` — the other worktree it claimed to stop reading.
+4. **`run_link_regress.sh` discards each gate's `NOTE`/input lines**, which is why (1) had to
+   be settled from staged copies rather than read off the log.
+
+**NEXT:** make step 4 reachable by default (commit a stub `entry.inc` as a `link_test*`
+fixture, or require the realistic object and SKIP loudly); print the gates' input lines in
+`run_link_regress.sh`.

@@ -2111,9 +2111,13 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       the "linking" a `-f bin` image needs. A real **LA linker (ELF objects +
       relocations + linker script)** — which is what `ld -T kernel/kernel.ld`
       actually does for the kernel — remains genuinely open below.
-- [~] **LA linker — EIGHTEEN SLICES; `ld` REMOVED FROM A REAL KERNEL BUILD (slice 14,
-      2026-08-18). Last slice 18, 2026-09-08 (`track-b`).** Closes the `ld` + linker-script
+- [~] **LA linker — TWENTY-THREE SLICES; `ld` REMOVED FROM A REAL KERNEL BUILD (slice 14,
+      2026-08-18). Last slice 23, 2026-09-09 (`track-b`).** Closes the `ld` + linker-script
       seam. Real objects, symbol resolution, relocation sections.
+      ⚠ **Nine-gate suite RUN 2026-09-10: 56 PASS / 0 FAIL / 1 SKIP → stays `[~]`**, by the
+      criterion pre-registered 09-09 (a SKIP is not a verdict): `gate_link_kernel` step 4, the
+      QEMU boot comparison, skipped — its stub input's `ld` control does not boot, a regression
+      from slice 14's PASS introduced by my `751d34b`. See `LINKER.md`, 2026-09-10.
       `asmelf.la` above closes only the single-source/single-segment image case
       and does not claim this.
       ★ **The per-slice record is `LINKER.md`**. This entry summarises; that file
