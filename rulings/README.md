@@ -13,6 +13,7 @@ falsifier is a preference.
 
 | ruling | question | status |
 |---|---|---|
+| [E17](E17.md) | Anaphēl's memory directives (Anamnemogenesis, Glyphgenesis): which clauses stand? | **RULED 2026-09-10** — Rule 4 next · mint = sealed derivation · U/Δ supersession, checker + NORMK frozen · seal never closes · R1 stands · §13 OS-layer only |
 | [E12](E12.md) | which derivation of the propositional connectives is the language's? | **RULED 2026-09-09** — unblocked M6/W08; opened E15 |
 | [E15](E15.md) | does *"the truth tables are not stipulated"* stand as `[W]`? | **RULED 2026-09-09** — `[A]`, with a path to `[W]`; found a live gate defect |
 | [E13](E13.md) | does the φ target govern sigil morphogenesis, or does φ-absence retire it? | **RULED 2026-09-09** — neither; closes with no build |
