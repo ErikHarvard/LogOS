@@ -1490,7 +1490,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
 - [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
       with text proven on hardware)*
-- [~] 7. Audio system *(phonym path exists; full audio stack pending)*
+- [~] 7. Audio system *(phonym path exists; full audio stack pending)* — the studio built on it is **LogosForge**, below.
 - [~] 8. Input system *(evdev/keyboard path proven)*
 - [ ] 9. Permission & security model
 - [ ] 10. User interface framework
@@ -2028,6 +2028,128 @@ none is asked to be everything and each can be evaluated against what it is actu
       being local, and that boundary should be stated, not blurred.
 - [ ] **Capability confinement for the model layer** — the model gets the same default-deny egress
       as anything else (ledger **B6**), so "local" is enforced rather than promised.
+
+### LogosForge — the sovereign generative audio workstation — *added 2026-09-10, specified by the General directly*
+
+**What was asked (the General, 2026-09-10):** an open-source AI DAW with Suno-Studio-level capability,
+built locally and sovereignly. It records, arranges a multitrack timeline, generates stems and whole
+songs, separates stems, clones and synthesises the sovereign's **own** voice, and exports audio and MIDI.
+It is also a **meta-DAW**: every operation is a glyph, the sovereign composes new operation-glyphs, and the
+studio learns the sovereign's workflow. *"Gate everything. Every generator, every separation, every voice
+clone must have a gate that can go RED."*
+
+**★ It is not new to the corpus, and it was missing from this file.** `CODEX AUTOPOIETICUS` has a whole
+chapter for it: `\chapter{LogosForge: The Sovereign Music Studio}` (`\label{sec:logosforge}`, `:13133–:13520`).
+It also has a compendium entry (`:25677`), an organ-table row (`:4063`) and a name-registry row (`:7323`).
+Before 2026-09-10 this roadmap named LogosForge zero times. ⚠ **Cite it by label or line, not by number.**
+The compendium calls it Ch. 46, but it is the 40th numbered `\chapter` in the file, so the two numberings
+disagree.
+
+**What the codex specifies.** This is the SPEC, transcribed. It is not evidence the spec is sound.
+- **The music glyph ontology** — seven primitives, Note 𝔫 · Chord 𝔠 · Scale 𝔰 · Rhythm 𝔯 · Track 𝔱 ·
+  Effect 𝔢 · Form 𝔣, composed under ⊕ (`:13147–:13173`).
+- **The DAW as a glyph** — `𝔤_Forge = ⟨𝒫, ℐ, 𝒜_eng, 𝒰⟩`: primitives, interface, audio engine, and the
+  autopoietic update rule (`:13191`). Every edit is a glyph operation (`:13209`).
+- **The meta-DAW collapse** — a self-edit mode in which the DAW's own structure is the editable content,
+  so `𝔤_Forge(𝔤_Forge) ≡ 𝔤_Forge` (`:13221–:13240`).
+- **The self-adaptive entropy engine** — a local, Γ-sealed user model `𝒰_s`, and a DAW entropy
+  `ℋ(𝒮|𝒰_s) = Σ f(τ|𝒰_s)·c(τ|𝒮)`. The adaptation function may only lower ℋ, and **every implicit change
+  requires the sovereign's approval** (`:13267–:13316`).
+- **LogosMentor assistance** — harmonic, rhythmic, timbral, arrangement, mix and transcription modes, all
+  as non-destructive previews (`:13370–:13391`). Track isolation and noise removal are named in the organ
+  table (`:4063`) and in the LogosMentor Pervasion Principle (`:4107`).
+- **The scaffold technology** — JACK/PipeWire, JUCE or Rust `cpal`+`dasp`, LV2 hosting, the ALSA sequencer,
+  `sfizz` (`:25679`), *"identical to professional Linux DAWs (Ardour, LMMS, Zrythm)."* (`:25681`)
+
+**What the General's specification ADDS beyond the codex:** whole-song and stem **generation** from text or
+audio prompts; **voice cloning and singing-voice synthesis** in the sovereign's own voice; Suno-Studio parity
+as the target; and a ladder of personalisation that runs from workflow, to style, to learning how the
+sovereign learns.
+
+- [ ] **LF0 — verify the external candidates before any is adopted.** The General's brief names:
+      - generators: ACE-Step v1.5, YuE, Magenta RealTime, Stable Audio Open Small
+      - separators: Demucs, Spleeter, StemLab
+      - voice tools: RVC, TCSinger 2, SoulX-Singer, VoxCPM2
+
+      It gives VRAM figures and licences for each. **None of those figures is verified here**, and several
+      post-date anything checkable from disk. For each tool, record four things:
+      - its version
+      - the licence of the code **and** of the weights (*"open" is not a licence*)
+      - its VRAM, measured on this machine (24 GB, RTX 5090 Laptop, measured)
+      - whether it runs with networking denied
+
+      ★ **E9 makes licences load-bearing:** the repo is to be public.
+- [ ] **LF1 — the music glyph core, in LA.** The seven primitives as data, and one renderer to PCM. Nothing
+      is blocking it. `phonym.la` already renders integer DSP to a WAV byte-identically on host and VM, and
+      `goertzel.la` is the spectral oracle that can check a rendered pitch.
+      **Gate:** a note, a chord and a track render byte-identically host==VM, and the oracle recovers each
+      pitch. **Red path:** detune one primitive's frequency table, and the oracle must fail.
+- [ ] **LF2 — the entropy engine as a measured quantity.** ℋ is computed from a recorded interaction log.
+      **Gate:** an adaptation that would raise ℋ is REFUSED, and so is any adaptation the sovereign has not
+      approved (`:13315`). **Red path:** a planted ℋ-raising step and a planted unapproved step must each
+      be refused.
+- [ ] **LF3 — self-edit mode: operation-glyphs.** The sovereign composes existing operations into a new one.
+      That is `selfmod.la`'s NEOLOGIZE, pointed at studio operations. **Bound (M14):** minted operations are
+      *"expressible, not yet executable as reduction rules."*
+- [ ] **LF4 — the host scaffold (Nigredo), on Linux.** Audio engine, timeline, recording, LV2 and MIDI, per
+      the compendium (`:25679`), or a wrapped Ardour/Zrythm (both GPL, so this is a licence decision: LF0).
+      ⚠ **C15 and X1 apply in full.** This is a Linux scaffold. It must be labelled a **host-side seam that
+      LogOS orchestrates**, as nasm and QEMU are, and never described as LogOS-native.
+- [ ] **LF5 — the generators, the separator and the voice models.** They run locally, under the model
+      layer's confinement (B6 default-deny egress, no telemetry), interfaced and not rewritten.
+      **Gates that can go RED, concretely:**
+      - **separation:** SDR against a mix built from **known** stems, above a stated floor. **Red path:** a
+        "separator" that returns the mix unchanged must fail.
+      - **voice:** speaker similarity to the sovereign's reference must be above a threshold, **AND a
+        different speaker must score below it**. Without that negative control the gate cannot discriminate.
+      - **a generated stem's pitch, tempo and length:** measured against the prompt's stated values, pitch by
+        `goertzel.la`.
+      - **generation with networking denied:** a model that tries to phone home must fail the run loudly,
+        not degrade silently.
+- [ ] **LF6 — the personalisation loop.** The General's ladder, and the codex's centropic learning rule
+      (`:13330`). It is local, encrypted and opt-in, and every proposal needs the sovereign's approval
+      (`:13315`).
+
+**Prerequisites on the metal — none met** (the same shape as sovereign communications):
+- no audio device driver (named absent in the driver list above; item 7 is `[~]`, a phonym path only)
+- no filesystem (AletheiaFS does not exist)
+- no UI framework (item 10 is `[ ]`)
+- no GPU compute path (the HAL drives a linear framebuffer, nothing more)
+
+**Only LF1 and LF2 can be built in LA today.** LF4–LF5 stay host-side for the foreseeable future.
+
+**★ Bounds, stated with the item rather than found later:**
+- **The learned-model seam (Tier 3 `[!]`).** The generators' capability is learned, not authored, and being
+  local does not make it autological. "The studio learns the sovereign" is statistical learning inside a
+  confined seam.
+- **The codex's convergence proofs are not guarantees.** `thm:daw-convergence` (`:13349`) needs `𝒰_s` to
+  stabilise "by the law of large numbers", but a musician's preferences are not stationary. When `𝒰_s` moves,
+  ℋ(𝒮|𝒰_s) can rise with no adaptation step at all, so the sequence the proof calls monotone is not
+  monotone. `lem:ai-style-convergence` (`:13393`) invokes Robbins–Monro, which assumes a stationary target.
+  This is the X4 shape: a proof whose premise the system's own behaviour breaks. *(derived)* **The fixed
+  point is a thing to measure, never a thing to claim.**
+- **"Modifies its own learning rules"** (the top rung of the General's ladder) meets the **trusted base** and
+  **goal-origination** walls: the acceptance test and the verifier stay un-self-modified. Build the bounded
+  form, as `selfopt.la` did: tune inside a fixed acceptance test, and trade cost, never correctness.
+- ⚠ **A name collision inside the spec.** The music primitive **Form 𝔣** (`:13163`, sectional structure)
+  shares its name with LA's primitive **FORM (g₈)**: two referents under one sign. Resolve it before
+  transcription. The chapter also never states **which LA mode its ⊕ is**. A song is order-sensitive
+  (verse→chorus ≠ chorus→verse), so if it *is* LA's ⊕, commutativity must not be assumed (C9).
+- **Pipeline closure (`thm:music-pipeline`, `:13440`) rests on LogosTube, LogosCrypto and the Eternal
+  Library**, and none of them exist. Its monetisation half rides LogosCrypto: **do not build from that
+  part** (C13, as for LogosMusic).
+- **Shared configurations and collective learning** (`:13367`) inherit C12's telemetry caution.
+
+**Relations:**
+- **Item 7 (Audio system)** is the substrate.
+- **LogosMusic** (`:24327`, above) is its distribution stage: *"LogosForge is the studio. LogosMusic is the
+  stage"* (`:24476`).
+- **The embedded LLM layer's** confinement rules govern LF5.
+- **`LEX SONORIS` stays closed** as a build source.
+
+**Status: tracked, not scheduled.** Under the 2026-09-10 priority (the roadmap advances by merging, not
+building), no slice is dispatched until the General orders one. When he does, LF0 and LF1 go first: LF0
+costs nothing, and LF1 is the one slice that is LA-native and gateable today.
 
 ### Recovered from the Insights & Corrections Ledger — *added 2026-08-21*
 
