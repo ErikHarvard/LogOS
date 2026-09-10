@@ -100,6 +100,15 @@
 ; The gate's discriminator is DEPTH (a spawned process spawns), because a fourth
 ; process on its own is exactly what `P1_NPROC equ 4` would also print — see
 ; LOGOSINIT_SCOPE.md §5.0.4.
+; P4: PROCESS DEATH VISIBLE TO INIT (`pwait`, LogosInit brick 4 of 7). P2 records a
+; death in the PCB and P3 creates children, but nothing could WAIT for one: the
+; scheduler runs every process from its entry to completion, so a parent can learn of
+; a death only by BLOCKING until it happens. pwait blocks, a death wakes the parent,
+; and it reports (pid, cause) — EXIT vs FAULT, which a supervision tree needs because
+; it backs off crashes and not completions. See LOGOSINIT_SCOPE.md §P4.
+%ifdef P4
+  %define P3                            ; waits on the children P3 creates and the
+%endif                                  ;   deaths P2 records
 %ifdef P3
   %define P2                            ; containment before creation: a table that
 %endif                                  ;   cannot survive a fault must not grow
@@ -177,7 +186,7 @@ PCB_SIZE    equ 128
 ; cannot tell a table from an if-statement. See kernel/gate_p1.sh.
 P1_NPROC      equ 3
 P1_PCB_SZ     equ 64            ; PCB: pid, cr3, state, entry, stack, exit, fault
-P1_ST_FREE    equ 0             ; state values (blocked=4 is reserved for P4)
+P1_ST_FREE    equ 0             ; state values (4 = P2_ST_FAULT; P4 adds 5 and 6)
 P1_ST_RUN     equ 1             ;   runnable
 P1_ST_CUR     equ 2             ;   running
 P1_ST_DEAD    equ 3             ;   exited (P2 adds dead-by-fault)
@@ -222,6 +231,79 @@ P3_BUDGET_VA  equ P1_VAL_VA + 2 ; the spawn budget lives in the CHILD'S OWN addr
                                 ;   depth assertion also witnesses that the kernel
                                 ;   wrote PER-CHILD content into a frame it had just
                                 ;   built — the same act, read back by ring 3.
+%endif
+; P4's syscall number belongs to the probe as well as the handler: R1's baseline builds
+; the probe WITHOUT the handler (-dP3 -dP4_WAITPROBE), and a constant inside %ifdef P4
+; would then be undefined — P2's R1' lesson and P3's P3_CONSTS, applied a third time.
+%ifdef P4
+  %define P4_CONSTS
+%endif
+%ifdef P4_WAITPROBE
+  %define P4_CONSTS
+%endif
+%ifdef P4_CONSTS
+P4_SYS_PWAIT  equ 61            ; pwait() -> rax = a child's pid | -1 ECHILD,
+                                ;   rdx = the cause (3 EXIT, 4 FAULT), r8 = the detail
+                                ;   (the exit status, or the vector). Linux's wait4
+                                ;   number, as getpid is 39 and pspawn 57.
+%endif
+%ifdef P4
+P4_ST_WAIT    equ 5             ; blocked in pwait (4 is P2_ST_FAULT, so not 4)
+P4_ST_WOKEN   equ 6             ; a child died while it waited: RESUME, never restart
+P4_CTX_SZ     equ 128           ; one saved ring-3 context: K6C2's layout
+P4_DBG_STUCK  equ 0x13          ; -> QEMU exit (0x13<<1)|1 = 39: neither 33 nor 35
+; P4_WAKE_PARENT pcb — BOTH death paths call this once the cause is in PCB[pcb]. If the
+; dead process's parent is blocked in pwait, hand it (pid, cause, detail) now, free the
+; child (a death is reported once), and mark the parent WOKEN. A parent that is not
+; waiting finds the death later, still in the table. %%-labels, so it can expand at
+; both sites. Clobbers rax, rcx, rdx, rsi, r9, r10, r11 — never %1.
+%macro P4_WAKE_PARENT 1
+%ifndef P4_NOWAKE
+    mov     r10, [%1 + 56]              ; the parent's pid
+    test    r10, r10
+    jz      %%done                      ; 0 is the kernel: nobody waits on a boot process
+    xor     ecx, ecx
+%%find:
+    cmp     ecx, P1_MAXPROC
+    jae     %%done
+    mov     eax, ecx
+    imul    eax, eax, P1_PCB_SZ
+    lea     r9, [rel p1_pcb]
+    add     r9, rax
+    cmp     dword [r9 + 16], P1_ST_FREE
+    je      %%next
+    cmp     [r9 + 0], r10
+    je      %%got
+%%next:
+    inc     ecx
+    jmp     %%find
+%%got:
+    cmp     dword [r9 + 16], P4_ST_WAIT
+    jne     %%done                      ; not waiting: the death waits in the table
+    mov     edx, [%1 + 16]              ; the cause: 3 EXIT or 4 FAULT
+    mov     r11, [%1 + 40]              ; the detail: the exit status ...
+    cmp     edx, P2_ST_FAULT
+    jne     %%isexit
+    mov     r11, [%1 + 48]              ;   ... or the vector
+%%isexit:
+%ifdef P4_WRONGCAUSE
+    mov     edx, P1_ST_DEAD             ; ★ R2's control: every death reported as an EXIT
+%endif
+    mov     eax, ecx
+    imul    eax, eax, P4_CTX_SZ
+    lea     rsi, [rel p4_ctx]
+    add     rsi, rax                    ; the PARENT'S saved context
+    mov     rax, [%1 + 0]
+    mov     [rsi + 0], rax              ;   its rax <- the child's pid
+    mov     [rsi + 24], rdx             ;   its rdx <- the cause
+    mov     [rsi + 64], r11             ;   its r8  <- the detail
+    mov     dword [r9 + 16], P4_ST_WOKEN
+%ifndef P4_NOFREE
+    mov     dword [%1 + 16], P1_ST_FREE ; reported once: the slot is free again
+%endif
+%%done:
+%endif
+%endmacro
 %endif
 %ifdef P3_SPAWNPROBE
 %ifndef P3_SPAWN_DEPTH
@@ -1312,6 +1394,10 @@ p1_high:
     mov     dword [edi + 44], 0
     mov     dword [edi + 48], -1        ; fault cause: none (P2 fills this)
     mov     dword [edi + 52], -1
+%ifdef P4
+    mov     dword [edi + 56], 0         ; P4: parent = 0, the kernel — a boot process is
+    mov     dword [edi + 60], 0         ;   nobody's child, so nobody waits on it
+%endif
     inc     ecx
     cmp     ecx, P1_NPROC
     jne     .p1_mkpcb
@@ -1406,6 +1492,10 @@ syscall_entry:
 %ifdef P3
     cmp     rax, P3_SYS_PSPAWN
     je      .sys_pspawn
+%endif
+%ifdef P4
+    cmp     rax, P4_SYS_PWAIT
+    je      .sys_pwait
 %endif
     ; unknown syscall: return 0, keep going
     xor     rax, rax
@@ -1600,12 +1690,128 @@ syscall_entry:
     mov     qword [r9 + 40], 0          ; exit status
     mov     dword [r9 + 48], -1         ; fault cause: none. P2 fills this; P4 reads
     mov     dword [r9 + 52], -1         ;   it, and a spawned process must start with
+%ifdef P4
+    mov     eax, [rel p1_cur]           ; P4: the PARENT is whoever called pspawn, and
+    imul    eax, eax, P1_PCB_SZ         ;   pwait reports a death ONLY to its parent
+    lea     rsi, [rel p1_pcb]
+    add     rsi, rax
+    mov     rax, [rsi + 0]
+    mov     [r9 + 56], rax
+%endif
 %endif                                  ;   the same "never faulted" as a booted one
     mov     rax, r10                    ; -> ring 3: the CHILD'S pid
 .p3_out:
     pop     r11
     pop     rcx
     jmp     .ret
+%endif
+%ifdef P4
+.sys_pwait:
+    ; ── pwait() -> rax child pid | -1 ECHILD (| 0, R4's control only), rdx cause, r8 detail
+    ; Save the caller's FULL ring-3 context FIRST (K6C2's layout and its scratch trick).
+    ; Every way out of pwait — an answer now, ECHILD, or a wake-up after blocking —
+    ; leaves through p4_resume_cur, which reloads this context and sysrets. A fresh
+    ; return and a resumed one are then the same code, and that is what makes a
+    ; blocked parent resumable at all.
+    mov     [rel p4_scratch], r8
+    mov     [rel p4_scratch + 8], rax
+    mov     eax, [rel p1_cur]
+    imul    eax, eax, P4_CTX_SZ
+    lea     r8, [rel p4_ctx]
+    add     r8, rax                     ; r8 = &ctx[cur]
+    mov     rax, [rel p4_scratch + 8]
+    mov     [r8 + 0], rax
+    mov     [r8 + 8], rbx
+    mov     [r8 + 16], rcx              ; resume rip
+    mov     [r8 + 24], rdx
+    mov     [r8 + 32], rsi
+    mov     [r8 + 40], rdi
+    mov     [r8 + 48], rbp
+    mov     [r8 + 56], rsp              ; user rsp — syscall did not switch it
+    mov     rax, [rel p4_scratch]
+    mov     [r8 + 64], rax              ; the caller's own r8
+    mov     [r8 + 72], r9
+    mov     [r8 + 80], r10
+    mov     [r8 + 88], r11              ; resume rflags
+    mov     [r8 + 96], r12
+    mov     [r8 + 104], r13
+    mov     [r8 + 112], r14
+    mov     [r8 + 120], r15
+    ; ── whose children? ─────────────────────────────────────────────────────────
+    mov     eax, [rel p1_cur]
+    imul    eax, eax, P1_PCB_SZ
+    lea     r9, [rel p1_pcb]
+    mov     r10, [r9 + rax]             ; r10 = the caller's pid
+    xor     ecx, ecx                    ; the slot
+    xor     ebx, ebx                    ; ebx = 1 once a LIVE child is seen
+.p4_scan:
+    cmp     ecx, P1_MAXPROC
+    jae     .p4_scanned
+    mov     eax, ecx
+    imul    eax, eax, P1_PCB_SZ
+    lea     rsi, [rel p1_pcb]
+    add     rsi, rax                    ; rsi = &PCB[slot]
+    mov     edx, [rsi + 16]
+    cmp     edx, P1_ST_FREE
+    je      .p4_next
+%ifdef P4_NOPARENT
+    cmp     [rsi + 0], r10              ; ★ R3's control: ANY process but the caller
+    je      .p4_next                    ;   counts — the parent field is ignored
+%else
+    cmp     [rsi + 56], r10             ; only the CALLER'S children count
+    jne     .p4_next
+%endif
+    cmp     edx, P1_ST_DEAD
+    je      .p4_found
+    cmp     edx, P2_ST_FAULT
+    je      .p4_found
+    mov     ebx, 1                      ; alive: RUN, CUR, WAIT or WOKEN
+.p4_next:
+    inc     ecx
+    jmp     .p4_scan
+.p4_found:
+    ; A child that died while this process was NOT waiting. (The green schedule never
+    ; produces one: R3 and R5 are the runs that exercise this path.)
+    mov     r9, [rsi + 0]               ; the child's pid
+    mov     r11, [rsi + 40]             ; the detail: the exit status ...
+    cmp     edx, P2_ST_FAULT
+    jne     .p4_fexit
+    mov     r11, [rsi + 48]             ;   ... or the vector
+.p4_fexit:
+%ifdef P4_WRONGCAUSE
+    mov     edx, P1_ST_DEAD             ; ★ R2's control: every death reported as an EXIT
+%endif
+%ifndef P4_NOFREE
+    mov     dword [rsi + 16], P1_ST_FREE ; reported once: the slot is free again
+%endif
+    mov     [r8 + 0], r9                ; -> rax
+    mov     [r8 + 24], rdx              ; -> rdx
+    mov     [r8 + 64], r11              ; -> r8
+    jmp     p4_resume_cur
+.p4_scanned:
+    test    ebx, ebx
+    jz      .p4_echild
+%ifdef P4_NOBLOCK
+    ; ★ R4's control: the reapnb shape. Children alive, none dead: answer 0 and do NOT
+    ; block. Under run-to-completion the caller then runs on — and exits — before any
+    ; child has run, so it can never observe a death.
+    mov     qword [r8 + 0], 0
+    jmp     p4_resume_cur
+%else
+    ; BLOCK. This process waits, the scheduler runs the others, and a death wakes it.
+    mov     eax, [rel p1_cur]
+    imul    eax, eax, P1_PCB_SZ
+    lea     rsi, [rel p1_pcb]
+    add     rsi, rax
+    mov     dword [rsi + 16], P4_ST_WAIT
+    mov     rax, HIGH_BASE              ; off the caller's stack before scheduling —
+    add     rax, k6a_kstack_top         ;   the same rule as .sys_exit
+    mov     rsp, rax
+    jmp     p1_sched
+%endif
+.p4_echild:
+    mov     qword [r8 + 0], -1          ; ECHILD: no children at all. Never invent one.
+    jmp     p4_resume_cur
 %endif
 %ifdef IPC
 .sys_send:
@@ -1720,6 +1926,9 @@ syscall_entry:
     add     r8, rax
     mov     dword [r8 + 16], P1_ST_DEAD
     mov     [r8 + 40], rdi              ; exit status, kept in the table
+%ifdef P4
+    P4_WAKE_PARENT r8                   ; a parent blocked in pwait learns of it now
+%endif
     mov     rax, HIGH_BASE              ; leave the dying process's stack behind:
     add     rax, k6a_kstack_top         ;   the scheduler must not run on memory a
     mov     rsp, rax                    ;   process could have corrupted
@@ -1798,6 +2007,36 @@ syscall_entry:
     push    r11
     popfq                           ; restore caller rflags
     jmp     rcx                      ; return to instruction after `syscall`
+%endif
+%ifdef P4
+; ---------------------------------------------------------------------
+;  p4_resume_cur — leave pwait, now or after a wake-up. Reload PCB[p1_cur]'s saved
+;  ring-3 context from p4_ctx and sysret into it (k6c2_run's shape). CR3 must already
+;  be the process's own: true on the fast path (syscall never switched it), and set by
+;  p1_sched's WOKEN arm before it jumps here.
+; ---------------------------------------------------------------------
+p4_resume_cur:
+    mov     eax, [rel p1_cur]
+    imul    eax, eax, P4_CTX_SZ
+    lea     r8, [rel p4_ctx]
+    add     r8, rax
+    mov     rsp, [r8 + 56]              ; user rsp
+    mov     rcx, [r8 + 16]              ; resume rip -> sysret target
+    mov     rax, [r8 + 0]
+    mov     rbx, [r8 + 8]
+    mov     rdx, [r8 + 24]
+    mov     rsi, [r8 + 32]
+    mov     rdi, [r8 + 40]
+    mov     rbp, [r8 + 48]
+    mov     r9,  [r8 + 72]
+    mov     r10, [r8 + 80]
+    mov     r11, [r8 + 88]              ; resume rflags -> sysret restores them
+    mov     r12, [r8 + 96]
+    mov     r13, [r8 + 104]
+    mov     r14, [r8 + 112]
+    mov     r15, [r8 + 120]
+    mov     r8,  [r8 + 64]              ; r8 last: it was the base pointer
+    o64     sysret
 %endif
 
 %ifdef K6C2
@@ -1906,6 +2145,10 @@ p1_sched:
     add     r8, rax                     ; r8 = &PCB[i] (high alias, stays mapped)
     cmp     dword [r8 + 16], P1_ST_RUN
     je      .p1_enter
+%ifdef P4
+    cmp     dword [r8 + 16], P4_ST_WOKEN ; a parent whose child died while it waited:
+    je      .p4_resume                   ;   RESUME it — never restart it at its entry
+%endif
     inc     ecx
     jmp     .p1_scan
 
@@ -1920,8 +2163,48 @@ p1_sched:
     push    qword 0x20 | 3              ;   the transcript order is deterministic)
     push    qword [r8 + 24]             ; RIP = this process's entry
     iretq                               ; -> ring 3, in its own address space
+%ifdef P4
+.p4_resume:
+    mov     [rel p1_cur], ecx
+    mov     dword [r8 + 16], P1_ST_CUR
+    mov     rax, [r8 + 8]
+    mov     cr3, rax                    ; its own address space, then its own context
+    jmp     p4_resume_cur
+%endif
 
 .p1_none:
+%ifdef P4
+    ; A process still WAITING when nothing is runnable is a lost wake-up. Say so, and
+    ; exit with neither 33 (success) nor 35 (a kernel fault): a hang and a clean exit
+    ; are both wrong answers here.
+    xor     ebx, ebx
+.p4_stuckscan:
+    cmp     ebx, P1_MAXPROC
+    jae     .p4_nostuck
+    mov     eax, ebx
+    imul    eax, eax, P1_PCB_SZ
+    lea     r12, [rel p1_pcb]
+    add     r12, rax
+    cmp     dword [r12 + 16], P4_ST_WAIT
+    je      .p4_stuck
+    inc     ebx
+    jmp     .p4_stuckscan
+.p4_stuck:
+    lea     rsi, [rel p4_stuckmsg]
+    call    serial_puts
+    mov     rax, [r12 + 0]
+    call    print_hex8
+    lea     rsi, [rel nl_msg]
+    call    serial_puts
+    mov     al, P4_DBG_STUCK
+    mov     dx, DBG_EXIT
+    out     dx, al
+    cli
+.p4_stuckhang:
+    hlt
+    jmp     .p4_stuckhang
+.p4_nostuck:
+%endif
 %ifdef P2_ATTRIB
     ; ── dump the table before reporting ────────────────────────────────────────
     ; The gate asserts on THIS, not only on the FAULT line: a handler could print a
@@ -2054,6 +2337,9 @@ p2_fault:
     add     qword [rsp], 2              ; step the saved RIP past the ud2
     iretq                               ; ... and resume ring 3. WRONG, by design.
 %endif
+%ifdef P4
+    P4_WAKE_PARENT rbx                  ; a parent blocked in pwait learns of the CRASH
+%endif
     ; ── tear the mapping down ──────────────────────────────────────────────────
     ; Containment, not masking. Its address space stops existing, so a later
     ; restart (P6) MUST rebuild from the pristine image under a new pid — it
@@ -2075,6 +2361,9 @@ p2_cmsg: db " cr2=", 0
 p2_pmsg: db "P1 pcb pid=", 0
 p2_smsg: db " state=", 0
 p2_qmsg: db " fault=", 0
+%endif
+%ifdef P4
+p4_stuckmsg: db "P4 STUCK pid=", 0
 %endif
 
 ; ---------------------------------------------------------------------
@@ -2166,6 +2455,147 @@ p1_payload:
     syscall
 .p3_nospawn:
 %endif
+%ifdef P4_WAITPROBE
+    ; ★ P4's probe. ONE image, a ROLE per pid — pids are deterministic (P3's monotonic
+    ; counter, and no timer). pid 1 supervises: it spawns 4 and 5, then pwaits until
+    ; ECHILD. pid 4 spawns 6 and pwaits for it, then exits 7. pid 5 dies by #UD. pid 6
+    ; exits 9. pids 2 and 3 are ordinary. Every PWAIT line is printed BY THE WAITING
+    ; PROCESS from pwait's return registers: a kernel-printed line would prove the
+    ; kernel knew of the death, not that the PARENT learned of it.
+    mov     eax, P1_SYS_GETPID
+    syscall
+    mov     r12, rax                    ; r12 = my pid (pspawn, write and pwait all
+                                        ;   leave it alone; pwait restores it exactly)
+    cmp     r12d, 5
+    jne     .p4_not5
+    ud2                                 ; pid 5: a CRASH (#UD, vector 06)
+.p4_not5:
+    cmp     r12d, 1
+    je      .p4_role1
+    cmp     r12d, 4
+    je      .p4_role4
+    jmp     .p4_roledone
+.p4_role1:
+    mov     eax, P3_SYS_PSPAWN
+    syscall                             ; -> child 4
+    mov     eax, P3_SYS_PSPAWN
+    syscall                             ; -> child 5
+    mov     r13d, 8                     ; a cap, so a broken kernel still ends
+.p4_wait1:
+    mov     eax, P4_SYS_PWAIT
+    syscall
+    call    .p4_report
+    test    rax, rax
+    js      .p4_roledone                ; ECHILD: every child accounted for
+    dec     r13d
+    jnz     .p4_wait1
+    lea     rsi, [rel p4_s_cap]
+    mov     edx, p4_s_cap_len
+    call    .p4_puts
+    jmp     .p4_roledone
+.p4_role4:
+    mov     eax, P3_SYS_PSPAWN
+    syscall                             ; -> child 6
+    mov     eax, P4_SYS_PWAIT
+    syscall
+    call    .p4_report
+    jmp     .p4_roledone
+; .p4_report: "PWAIT pid=<me> -> " then "ECHILD" | "child <c>" [" EXIT xx" | " FAULT xx"].
+; Preserves rax (the caller tests its sign). The results are parked in p4_v first,
+; because every write() clobbers the registers they arrived in.
+.p4_report:
+    lea     rbx, [rel p4_v]
+    mov     [rbx + 0], rax
+    mov     [rbx + 8], rdx
+    mov     [rbx + 16], r8
+    lea     rsi, [rel p4_s_head]
+    mov     edx, p4_s_head_len
+    call    .p4_puts
+    mov     eax, r12d
+    call    .p4_digit
+    lea     rsi, [rel p4_s_arrow]
+    mov     edx, p4_s_arrow_len
+    call    .p4_puts
+    lea     rbx, [rel p4_v]
+    mov     rax, [rbx + 0]
+    test    rax, rax
+    js      .p4_rep_echild
+    lea     rsi, [rel p4_s_child]
+    mov     edx, p4_s_child_len
+    call    .p4_puts
+    lea     rbx, [rel p4_v]
+    mov     rax, [rbx + 0]
+    call    .p4_digit
+    lea     rbx, [rel p4_v]
+    mov     rax, [rbx + 0]
+    test    rax, rax
+    jz      .p4_rep_nl                  ; 0: no death was learned (R1's and R4's shape)
+    mov     rax, [rbx + 8]
+    cmp     eax, 3
+    je      .p4_rep_exit
+    cmp     eax, 4
+    je      .p4_rep_fault
+    lea     rsi, [rel p4_s_cause]       ; neither: say so rather than guess
+    mov     edx, p4_s_cause_len
+    jmp     .p4_rep_cause
+.p4_rep_exit:
+    lea     rsi, [rel p4_s_exit]
+    mov     edx, p4_s_exit_len
+    jmp     .p4_rep_cause
+.p4_rep_fault:
+    lea     rsi, [rel p4_s_fault]
+    mov     edx, p4_s_fault_len
+.p4_rep_cause:
+    call    .p4_puts
+    lea     rbx, [rel p4_v]
+    mov     rax, [rbx + 16]
+    call    .p4_hex2                    ; the detail: the exit status, or the vector
+    jmp     .p4_rep_nl
+.p4_rep_echild:
+    lea     rsi, [rel p4_s_echild]
+    mov     edx, p4_s_echild_len
+    call    .p4_puts
+.p4_rep_nl:
+    lea     rsi, [rel p4_s_nl]
+    mov     edx, 1
+    call    .p4_puts
+    lea     rbx, [rel p4_v]
+    mov     rax, [rbx + 0]
+    ret
+.p4_puts:                               ; write(1, rsi, rdx) -> COM1
+    mov     eax, 1
+    mov     edi, 1
+    syscall
+    ret
+.p4_digit:                              ; al = 0..9 -> one character
+    add     al, '0'
+    lea     rsi, [rel p4_s_ch]
+    mov     [rsi], al
+    mov     edx, 1
+    jmp     .p4_puts
+.p4_hex2:                               ; al -> two hex characters
+    lea     rsi, [rel p4_s_ch]
+    mov     ecx, eax
+    shr     ecx, 4
+    and     ecx, 0x0f
+    add     ecx, '0'
+    cmp     ecx, '9'
+    jbe     .p4_h1
+    add     ecx, 7
+.p4_h1:
+    mov     [rsi], cl
+    mov     ecx, eax
+    and     ecx, 0x0f
+    add     ecx, '0'
+    cmp     ecx, '9'
+    jbe     .p4_h2
+    add     ecx, 7
+.p4_h2:
+    mov     [rsi + 1], cl
+    mov     edx, 2
+    jmp     .p4_puts
+.p4_roledone:
+%endif
     mov     eax, P1_SYS_GETPID
     syscall                             ; -> rax = PCB[current].pid
     add     al, '0'                     ; P1 pids are 1..3: one digit
@@ -2184,6 +2614,16 @@ p1_payload:
     syscall
     mov     eax, 60                     ; exit(0) -> the scheduler, not the halt
     xor     edi, edi
+%ifdef P4_WAITPROBE
+    cmp     r12d, 4                     ; P4's roles exit with a status the parent must
+    jne     .p4_x4                      ;   receive EXACTLY: pid 4 -> 7, pid 6 -> 9
+    mov     edi, 7
+.p4_x4:
+    cmp     r12d, 6
+    jne     .p4_x6
+    mov     edi, 9
+.p4_x6:
+%endif
     syscall
 p1_line:      db "P1 pid="
 p1_piddigit:  db "0"
@@ -2218,6 +2658,29 @@ p3_noline_len equ $ - p3_noline
 ; string-length bug that has nothing to do with the fault handler.
 p2_resumed:   db "P2 pid=? RESUMED after its fault", 10
 p2_resumed_len equ $ - p2_resumed
+%endif
+%ifdef P4_WAITPROBE
+; AFTER p1_line_len, for the reason P2's and P3's strings are: one placed between that
+; line's `db 10` and its `equ` would lengthen every process's ordinary line.
+p4_s_head:      db "PWAIT pid="
+p4_s_head_len   equ $ - p4_s_head
+p4_s_arrow:     db " -> "
+p4_s_arrow_len  equ $ - p4_s_arrow
+p4_s_child:     db "child "
+p4_s_child_len  equ $ - p4_s_child
+p4_s_exit:      db " EXIT "
+p4_s_exit_len   equ $ - p4_s_exit
+p4_s_fault:     db " FAULT "
+p4_s_fault_len  equ $ - p4_s_fault
+p4_s_cause:     db " CAUSE? "
+p4_s_cause_len  equ $ - p4_s_cause
+p4_s_echild:    db "ECHILD"
+p4_s_echild_len equ $ - p4_s_echild
+p4_s_cap:       db "PWAIT CAP: 8 calls and no ECHILD", 10
+p4_s_cap_len    equ $ - p4_s_cap
+p4_s_nl:        db 10
+p4_s_ch:        db "00"
+p4_v:           dq 0, 0, 0
 %endif
 p1_blob_len   equ $ - p1_payload
 %endif
@@ -2457,6 +2920,13 @@ p3_nextpid: resd 1                      ; MONOTONIC pid source — not the slot 
                                         ;   is precisely what P6's "restart under a
                                         ;   new pid" requires; the slot is storage,
                                         ;   the pid is identity.
+%endif
+%ifdef P4
+p4_ctx:     resb P1_MAXPROC * P4_CTX_SZ ; P4: each process's saved ring-3 context while
+                                        ;   it is blocked in pwait (K6C2's layout). A
+                                        ;   separate array, so the 64-byte PCB stride
+                                        ;   every P1-P3 loop walks is unchanged.
+p4_scratch: resq 2                      ; rax / r8 stash while that context is saved
 %endif
 align 8
 p1_gdtr: resb 10                        ; a HIGH-based GDTR (limit:2 + base:8)
