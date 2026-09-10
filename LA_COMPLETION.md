@@ -1380,8 +1380,11 @@ registers. `trimono.la` now gates all three. What remains:
   Paper.tex`, sha256 `98beeff4ee45`). That disagreement is asked of The Lieutenant (ask `1789083624`),
   not settled here. The paper still grades self-invocation `[A]` at WP:4998 and WP:7456: those rows,
   and the identity passage WP:5780–5792, are P13–P15 in the master list.
+  ↳ **Settled the same evening** (The Lieutenant, answer to ask `1789083624`): the ruling closes the
+  meta-autontopoiesis Ledger row as well, at the same bound; see that row's stamp below. The paper rows
+  are P13–P16, where P16 is that row's Ledger line, WP:7468.
 
-- `[ ]` **★ LEDGER ROW — Meta-autontopoiesis (state): `[A]` loop not closed
+- `[✓]` **★ LEDGER ROW — Meta-autontopoiesis (state): `[A]` loop not closed
   unassisted.** Autontopoiesis is the paper's term for *"the continuous
   condition of a system producing the means of its own production"* (§, and
   the Neologicon: auto + onto + poiesis, the ongoing condition AFTER genesis).
@@ -1394,6 +1397,28 @@ registers. `trimono.la` now gates all three. What remains:
   red. Distinct from self-invocation above: that one asks whether it can BEGIN
   itself, this asks whether it can KEEP itself going.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): the loop is still not closed unassisted: no organ executes what it adopts (self-meta-programming, above), and the successor must be byte-identical (meta-autopoiesis, above).
+  ✔ **DONE 2026-09-10 AT THE BOUNDED FORM: the General's self-invocation ruling closes this row too.**
+  The Lieutenant settled it (answer to ask `1789083624`), and METANOĒ records it. The ruling, verbatim as
+  on the board (`logos-status.md:20963`): *"Autopoiesis.la's gated lineage is the bounded form… the
+  external gate starts it, the lineage continues itself. That is precisely the bound."* The paper makes
+  the two rows one: *"Self-invocation and meta-autontopoiesis are one referent under two names"*,
+  recorded *"so the two entries cannot drift apart"*, and `The bound of \S\,\ref{sub:fourself} holds
+  for both` (WP:5787–5790, sha256 `98beeff4ee45`). So closing one row and not the other would be the
+  drift that passage names. The gate is the same one, build.sh's "Autopoiesis" block: :4432–4479 at
+  `a1fd736`, and :4343–4390 at `fcaaa23`. The bound travels with the closure: self-re-invocation from
+  an internal condition, and that condition is a generation counter (cap 3).
+  **How the ruling resolves the BEGIN/KEEP split above:** *"the external gate starts it"* is BEGIN, the
+  uncaused start, which is the bootstrap wall the 09-06 ruling declined. *"the lineage continues
+  itself"* is KEEP ITSELF GOING, the bounded form, and that is met.
+  ⚑ **Flagged for re-ruling** (METANOĒ; The Lieutenant invited flags). Two parts of this row say more
+  than the gate witnesses. (1) *"producing the means of its own production"* (this row; WP:5785). The
+  lineage COPIES its vessel. `autopoiesis.la` (blob `fcde785`) calls `execve` (:56), `fork` (:58) and
+  `copy_self` (:67), and a search for codegen, compile, write_exec, tiny_host, secd.la and bundle
+  finds nothing outside comments. The means (the VM, the compiled stream, the bundle) are made by
+  `tiny_host` inside the gate, before the lineage starts (build.sh :4447–4451 at `a1fd736`). (2) This
+  row's own gate, *"a full produce-its-own-means cycle … the gate names which hand it removed"*, and its
+  red path, *"re-insert that hand and the gate must go red"*. The autopoiesis gate names no removed hand
+  and has no such red path. If the General meant either, he re-rules.
 
 - `[ ]` **★ LEDGER ROW — Meta-Ontosemantic Closure: `SLACKS ≠ ""`, not met
   `[A]`.** Criterion 9 of the nine, and the closure test is already written in
