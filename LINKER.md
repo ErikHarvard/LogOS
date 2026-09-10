@@ -1616,3 +1616,88 @@ originally recorded** — the same neighbourhood, from the other direction.
 Still harmless on a 188 GB machine; the compositor images are the largest LA
 programs in the tree and are the ones that grow. Track D owns the curve.
 
+
+## Slice 23 — the control for slice 22: relocations cost RSS but scale LINEARLY (2026-09-09)
+
+Slice 22 fixed one relocation and grew the blob. **This is the opposite fixture** —
+grow the symbols and relocations, hold the blob near zero — and it is the control
+slice 22's claim needed. It also **corrects a reading of slice 20** that the tail
+summary invites.
+
+### The fixture, measured rather than assumed
+`N` global symbols, one `mov rax, sN` (one `R_X86_64_32S`) each, one `dq` per
+symbol. Composition confirmed with `readelf`, not inferred:
+
+| N | obj B | .text B | metadata B | relocs | syms | metadata share |
+|---|---|---|---|---|---|---|
+| 8 | 1,184 | 153 | 518 | 8 | 12 | 44% |
+| 32 | 2,864 | 585 | 1,765 | 32 | 36 | 62% |
+| 128 | 9,616 | 2,313 | 6,786 | 128 | 132 | 71% |
+| 512 | 36,880 | 9,225 | 27,138 | 512 | 516 | 74% |
+
+⚠ **This fixture is not blob-free**: the `dq`s are 8·N bytes, ~11% of the object at
+the top two points. That matters below — it is why the decomposition is arithmetic
+across two fixtures and not a single-axis measurement.
+
+### Measured — median of completed repeats, 3 attempted per size
+
+| obj B | relocs | peak RSS | KB RSS/byte | pairwise k | time |
+|---|---|---|---|---|---|
+| 1,184 | 8 | 35.6 MB | 30.8 | — | 13.2 s |
+| 2,864 | 32 | 40.4 MB | 14.4 | **0.14** | 82.3 s |
+| 9,616 | 128 | 149.5 MB | 15.9 | **1.08** | ~974 s |
+| 36,880 | 512 | ≥122.9 MB | — | — | **>1800 s, TIMED OUT** |
+
+**Overall k = 0.69 across 1,184 → 9,616 B**, worst pairwise **1.08**.
+Slice 22's blob fixture over a comparable range: **1.52, 1.68, 1.81, overall 1.67.**
+
+⇒ **Same linker, same host, same machine — the exponent is a property of the AXIS.**
+The metadata axis is linear at worst; the blob axis is superlinear and steepening.
+
+### ★★ THE CORRECTION: "not relocation count" meant NOT THE CAUSE, not FREE
+Slice 20 excluded relocation count as the cause of the 150,000×, and that stands.
+But the numbers here say relocations are **not free**, and the tail summary
+("not relocation count or type or section or symbol count") reads as if they were.
+Baseline-subtracting the 1,184 B point (35.6 MB) as the interpreter floor:
+
+- **9,616 B code object** — 113.9 MB above floor, carrying 1,024 B of data + 128 relocs.
+- **6,960 B blob object** (slice 22) — ~200 MB above floor, carrying ~6,700 B of data + 1 reloc.
+- Blob cost ≈ **30.6 KB RSS per data byte** at that size, so the code object's 1,024 B
+  of `dq` explains **at most ~31 MB** (an over-estimate: per-byte cost is *lower* at
+  smaller sizes).
+- **Residual ≈ 83 MB over 120 added relocations ≈ 0.7 MB per relocation.**
+
+⚠ **That decomposition is arithmetic across two fixtures, not a measured single-axis
+result.** It is worth stating because it changes the shape of the claim and not its
+direction: **both axes cost RSS; only the blob axis is superlinear.** At kernel scale
+the blob axis wins by construction — `boot.o` is ~90% one `incbin`'d image with few
+relocations — which is exactly why slice 22's model predicted the 86 KB control to
+within 1.29× while slice 20's code-shaped model missed it by 18×.
+
+### ★ AND IT CONFIRMS SLICE 21 FROM THE OTHER SIDE
+Slice 21 found RSS and TIME have different drivers. Here that is unmissable:
+
+- **36,880 B, 512 relocations** — exceeds **1800 s** and holds only **123 MB**.
+- **49,968 B, 1 relocation** (slice 22) — **completes**, and holds **6,347 MB**.
+
+The larger object is 30 minutes *faster* and **52× more expensive in memory.**
+**Time is bought by relocations; memory is bought by blob bytes.** Two fixtures,
+opposite orderings, one conclusion.
+
+### ⚠ What this run does NOT contain, and why — I stopped it myself
+The planned `N=2048` (~147 KB) arm **never ran. I killed the job at 19:23.** Both
+`N=512` repeats had already hit the 1800 s timeout, so `N=2048` was three more
+half-hour `rc=124` rows that measure nothing — **90 minutes of machine time for zero
+information**, sitting as a third deep job beside Track D's timing-sensitive kernel
+gates. That is the A14 violation that produces false REDs in someone else's suite.
+Killed by PID (never by pattern — that has self-matched three times today).
+
+Two further exclusions, stated rather than quietly dropped:
+- **9,616 B repeat 1 is excluded**: `rc=143`, killed at 62 s by my own `pkill -f`
+  self-match. The two surviving repeats agree to **0.14%**, so the point stands.
+- **Both 36,880 B rows are `rc=124`**: that RSS is the value *at the cutoff*, a
+  **lower bound, not a peak**. It is excluded from the fit and marked `≥` above.
+  Mixing a cutoff reading into a scaling fit is the fixture defect of slice 19.
+- The two fixtures ran at different times under different loads. **RSS is comparable
+  across them; wall-clock across fixtures is not**, which is why the time claim above
+  rests on *completes vs. does not complete*, not on a ratio.
