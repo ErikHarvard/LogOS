@@ -1200,9 +1200,10 @@ registers. `trimono.la` now gates all three. What remains:
   strictly add a κ-class) — same joint, approached from the two sides.
   ★★ **The depth-directed `selfopt` mode is BLOCKED ON M11c**, and this is why:
   𝔇 computed over a hand-listed catalogue measures **the list, not the language**.
-- `[ ]` **Gate G3 — declared and derived catalogues agree**, keyed on NORMK, both
+- `[ ]` **Gate G4 — declared and derived catalogues agree**, keyed on NORMK, both
   directions. **RED on arrival.** Depends on M11c (there is no derived catalogue
   until mints self-register).
+  *(named G3 until 2026-09-10; 1f9429b gave G3 to operator coverage in code)*
 - `[ ]` **κ\* — meta-pattern compression.** When the same compression pattern
   recurs, encode it as a meta-glyph representing the rule of integration.
   Nothing detects or promotes.
