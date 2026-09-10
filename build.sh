@@ -7130,7 +7130,9 @@ fi
 # ===KERNEL-HALF-BEGIN===
 # ★ SENTINEL — DO NOT DELETE. Everything between this marker and
 # ===KERNEL-HALF-END=== is the KERNEL HALF: 65 gate invocations across 52
-# scripts, and 65 of build.sh's 83 hard aborts, in the last 5.6% of the file.
+# scripts AS OF 3ebcb6d (2026-09-09) — a dated count, not a live one; the runner
+# prints the live total every run. (The "83 hard aborts" once here counted an
+# idiom, not the class — 237 non-comment `exit 1` sites plus set -e; 6e2d27a.)
 # kernel/build_kernel_half.sh EXTRACTS this region at run time and executes it
 # verbatim against a prebuilt language half (tiny_host + the committed
 # native_codegen3_selfhost.bin), so kernel work can be verified without first
@@ -7518,6 +7520,7 @@ bash kernel/gate_pointer.sh || exit 1          #    4 s  HAL.2d PS/2 pointer: 9-
 bash kernel/gate_cursor.sh || exit 1           #    6 s  HAL.4h cursor sprite on the LFB (PCI+VBE + PS/2 together)
 bash kernel/gate_alloc_bounded.sh || exit 1    #   30 s  allocator boundedness: each run must finish and print done; 15M iterations peak 3 MB
 bash kernel/gate_hal4f.sh || exit 1            #   14 s  HAL.4f TYPEWRITER, restored as comp_term_hal4f.la (overwritten, not broken)
+bash kernel/gate_builder_outputs.sh || exit 1  #  <1 s  one image path, several builders whose bytes could differ -> FAIL (NOT the e5cefe7 source-collision class)
 # ── VERDICTS 2026-09-10 — THE THREE THAT WERE RED ON 2026-09-09 ─────────────────
 #   kernel/gate_hal4f.sh   GATE DEFECT, NOT A REGRESSION — WIRED ABOVE. Its source
 #     had been REPLACED: merge e5cefe7 (2026-09-05) took kernel-k1's comp_term.la,
