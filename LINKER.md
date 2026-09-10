@@ -1685,12 +1685,29 @@ The larger object is 30 minutes *faster* and **52× more expensive in memory.**
 opposite orderings, one conclusion.
 
 ### ⚠ What this run does NOT contain, and why — I stopped it myself
-The planned `N=2048` (~147 KB) arm **never ran. I killed the job at 19:23.** Both
-`N=512` repeats had already hit the 1800 s timeout, so `N=2048` was three more
-half-hour `rc=124` rows that measure nothing — **90 minutes of machine time for zero
-information**, sitting as a third deep job beside Track D's timing-sensitive kernel
-gates. That is the A14 violation that produces false REDs in someone else's suite.
-Killed by PID (never by pattern — that has self-matched three times today).
+The planned `N=2048` (~147 KB) arm **produced no data.** Both `N=512` repeats had
+already hit the 1800 s timeout, so `N=2048` was three more half-hour `rc=124` rows
+that measure nothing — **90 minutes of machine time for zero information**, sitting
+as a third deep job beside Track D's timing-sensitive kernel gates. That is the A14
+violation that produces false REDs in someone else's suite.
+
+⚠ **CORRECTED — the first sentence of this section said "I killed the job at 19:23"
+and that was not what happened.** At 19:23 I killed the tree I could see from the
+`tiny_host` pid in front of me: the subshell, its `timeout`, its `time`, its
+`tiny_host`. **The launcher was a level above and I never looked.** `linkmem.sh`'s
+outer shell had been running detached under `systemd --user` for 2h09m; killing its
+child only advanced its loop, and thirteen minutes later it was linking again — in
+the temp directory I had just deleted, so the rows it could still produce were
+worthless. It was **stopped for real at 19:36**, parent first so the loop could not
+respawn, and no data row landed in between (the file gained two `Terminated` lines
+and nothing else, which is why the table above is unaffected).
+
+★ **Same class as the three predicate defects this file already records, one level
+up: I verified against the instance in front of me rather than the population.**
+`pgrep` counted the wrong thing; here I *found* the right thing and then acted on
+one member of it. **Kill the job, not the instance** — and the way to know which
+you have is to walk the parent chain before, not after. Killed by PID throughout
+(never by pattern — that has self-matched three times today).
 
 Two further exclusions, stated rather than quietly dropped:
 - **9,616 B repeat 1 is excluded**: `rc=143`, killed at 62 s by my own `pkill -f`
