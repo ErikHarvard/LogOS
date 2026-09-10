@@ -58,6 +58,23 @@ MUTANTS = [
   '(la a. la b. IF(IS_VOID(b))(la _. self(NOT(pol))(a))',
   '(la a. la b. IF(IS_VOID(b))(la _. self(pol)(a))',
   'negation stops inverting; the glut/gap worlds can no longer separate the laws'),
+ ('prop.la', 'glyph-negation-cancels',
+  'glyph PNOT = la p. CONT(p)(VOIDP)',
+  'glyph PNOT = la p. p(la nm. CONT(p)(VOIDP))(la a. la b. CONT(p)(VOIDP))(la a. la b. CONT(p)(VOIDP))(la a. la b. CONT(p)(VOIDP))(la a. la b. IF(IS_VOID(b))(la _. a)(la _. CONT(p)(VOIDP)))(la a. CONT(p)(VOIDP))',
+  'the magma acquires an inverse: a second negation CANCELS the first, so k(~~P) == k(P) while a single ~ '
+  'stays real -- the one leak this row exists for. negation-is-identity above turns this row red too, '
+  'but only by destroying single negation as well, and mutate.py never said WHICH row caught it; so ONLY '
+  'the dne-fails-ontologically row is read here',
+  ['sh','-c','./tiny_host prop.la | grep -oE "dne-fails-ontologically (OK|FAIL)"']),
+ ('prop.la', 'truth-negation-not-involutive',
+  '(la a. la b. IF(IS_VOID(b))(la _. self(NOT(pol))(a))',
+  '(la a. la b. IF(IS_VOID(b))(la _. self(FALSE)(a))',
+  'the truth register loses its involution. Before this mutant NOTHING could turn dne-holds-operationally '
+  'red: negation-is-identity passes it trivially (noted above), polarity-never-flips passes it too, and no '
+  'WORLD can -- TVAL flips polarity, so TVAL(~~X) = TVAL(X) in every world, gluts and gaps included. Over two '
+  'polarities every non-involutive negation is constant and FALSE is the only constant that breaks DNE; the '
+  'laws rows go red with it, which is inherent. ONLY the dne-holds-operationally row is read',
+  ['sh','-c','./tiny_host prop.la | grep -oE "dne-holds-operationally (OK|FAIL)"']),
  ('opgrammar.la', 'scan-keys-on-raw-form',
   'glyph K_ = la d. KAN_N(T_(d))', 'glyph K_ = la d. KAN(T_(d))',
   'reverts the scan to the raw derivation string, which is blind to every + collision'),
