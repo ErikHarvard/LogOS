@@ -289,6 +289,17 @@ glyph IMP_TABLE = concat(TF(TVAL(TS0)(FS0)(PIMP(P_FLOW)(P_FLOW))))
                         (TF(TVAL(TS0)(FS0)(PIMP(P_WVOID)(P_WVOID))))))
 glyph OK_IMP_MATERIAL = str_eq(IMP_TABLE)("TFTT")
 
+# ══ GATE 9 — ∧ IS CO-PRESENCE (⊕), and now a mutant can say otherwise (M6's ∧ sub-part).
+#  The codex gives ∧ one reading, "co-presence" (LA.tex :1207 at kernel-k1 143c116), and ⊕ is ontoconjunction, "the
+#  co-presence of A and B without fusion" (:2845-:2849), COMMUTATIVE by definition (:2852). PAND is CON. Until this
+#  row nothing pinned it: the laws rows reach ∧ only through its truth value, and no mutant had touched it (board
+#  2026-09-10 13:35: "no targeted mutant and no shape pin"). So the GLYPH register pins the reading, written
+#  independently of PAND's source, as OK_ONE_NEG pins ¬: the conjunction of the world's two atoms renders as a ⊕
+#  node, AND it is one glyph in either operand order. A ∧ built as ⊗ fails both halves: ⊗ is non-commutative (:2837)
+#  and NORMK does not sort it (canon.la, REWRITE_SYN).
+glyph AND_KEY = KEY(PAND(P_FLOW)(P_WVOID))
+glyph OK_AND_COPRESENT = AND(str_eq(TAKEN("⊕(")(AND_KEY))("⊕("))(str_eq(AND_KEY)(KEY(PAND(P_WVOID)(P_FLOW))))
+
 # ══ GATE 7 — THE BRIDGE: the glyph register is INTUITIONISTIC, the truth register CLASSICAL,
 #  and the Goedel–Gentzen double-negation translation embeds the second in the first
 #  (Lingua Adamica White Paper, sub:proplayer, sha256 98beeff4 :2393–2399). M6's owed sub-part.
@@ -414,6 +425,6 @@ glyph J   = la a. la b. concat(a)(b)
 glyph ROW = la lbl. la c. J(J(" | ")(lbl))(J(" ")(MK(c)))
 glyph PROP_ROWS = (J(J(J("prop  neg-neg-P(glyph) = ")(KEY(PNOT(PNOT(P_FLOW)))))(J("\n              P(glyph) = ")(KEY(P_FLOW))))(J(ROW("dne-fails-ontologically")(OK_DN_GLYPH))(J(ROW("dne-holds-operationally")(OK_DN_TRUTH))(J(ROW("two-registers")(OK_TWO_ALGEBRAS))(J(ROW("neg-is-real")(OK_NEG_REAL))(J(ROW("incoherent-refused")(OK_INCOHERENT))(J(ROW("false-constructible")(OK_FALSE_OK))(J(ROW("true-obtains")(OK_TRUE_OK))(J(ROW("laws")(OK_LAWS))(J(ROW("laws-separable")(OK_LAWS_SEP))(ROW("one-negation-only")(OK_ONE_NEG))))))))))))
 
-glyph MAIN = print(J(PROP_ROWS)(J(ROW("implication-is-material")(OK_IMP_MATERIAL))(KR_ROWS)))
+glyph MAIN = print(J(PROP_ROWS)(J(ROW("and-is-copresence")(OK_AND_COPRESENT))(J(ROW("implication-is-material")(OK_IMP_MATERIAL))(KR_ROWS))))
 
 export PNOT PAND POR PIMP PRED PROP COHERES TVAL KEY GEQ WATER P_FLOW P_WVOID TS0 FS0 BEING RECOG LOVE SELFP RELN VOIDP BECOM FORMP DEPTHP

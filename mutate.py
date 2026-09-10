@@ -118,6 +118,13 @@ MUTANTS = [
   'module reads PIMP, so ONLY implication-is-material can turn red (pre-registered in a model of EV before the row '
   'existed); that row is read',
   ['sh','-c','./tiny_host prop.la | grep -oE "implication-is-material (OK|FAIL)"']),
+ # ── M6's ∧ (prop.la GATE 9): ∧ built as ⊗ instead of ⊕. ONE targeted mutant.
+ ('prop.la', 'conjunction-as-synthesis',
+  'glyph PAND = la p. la q. CON(p)(q)', 'glyph PAND = la p. la q. SYN(p)(q)',
+  '∧ built as ontosynthesis instead of co-presence: the conjunction renders as a ⊗ node and stops being one glyph in '
+  'either operand order. Before GATE 9 no mutant had touched PAND. It also turns the laws rows, the → row and '
+  'por-is-the-image-not-or red, because ∨ and → are built from ∧ (pre-registered); ONLY and-is-copresence is read',
+  ['sh','-c','./tiny_host prop.la | grep -oE "and-is-copresence (OK|FAIL)"']),
  ('opgrammar.la', 'scan-keys-on-raw-form',
   'glyph K_ = la d. KAN_N(T_(d))', 'glyph K_ = la d. KAN(T_(d))',
   'reverts the scan to the raw derivation string, which is blind to every + collision'),
