@@ -50,9 +50,10 @@
 #     or metaglyph.la, or not exported (ν* is the one rebuilt);
 #   · an equivalence NORMK does not declare (the halting bound canon.la
 #     already states: full semantic equivalence is undecidable);
-#   · ONE concept with TWO forms, the converse property: Agency (:4803
-#     ⊗ vs LEX ▷) and Mystery (:4807 vs LEX) are that shape. Not asserted
-#     here, by ruling; they are a board finding. Same-name pairs are
+#   · ONE concept with TWO forms, the converse property. Agency (:4803
+#     ⊗ vs LEX ▷) and Mystery (:4807 vs LEX) were that shape until E16 §A
+#     ruled that the gloss governs; F now carries the ruled rows (see F).
+#     The property itself is still not asserted here. Same-name pairs are
 #     skipped as one concept;
 #   · a transcription error in the F string, which is typed data;
 #   · a three-operand row read with a different association: F rows are
@@ -75,7 +76,7 @@
 #  its order; derived 2026-09-10 from kernel-k1 0384dab's committed blobs),
 #  so this module goes RED at integration. That is correct: the pin must be
 #  re-derived there, and E10's "it IS Compassion" makes that pair DECLARED
-#  (cite 2cca4b4), which leaves 7 open, not 8.
+#  (cite 2cca4b4), which leaves 5 open, not 6.
 # =====================================================================
 
 import("canon.la")      # first: its PRIM..MC win the shared names (alpha-equal to lexicon.la's)
@@ -137,15 +138,23 @@ glyph XCL = FOLD(la a. la n. la d. la p. concat(a)(XCREC(n)("L")(XCKEYD(d))))(""
 #  (1-9 primitives; * ⊗, + ⊕, > ▷, c ⊂, m ↻). Transcribed from the codex,
 #  not from sigil.la, so the two have independent origins.
 #    :4802 Consciousness      𝔤_Rec ⊗ 𝔤_Self                *24
-#    :4803 Agency             𝔤_Self ⊗ 𝔤_Becoming           *47
+#    :4803 Agency             𝔤_Self ▷ 𝔤_Becoming           >47   AS RULED, E16 §A
 #    :4804 Truth              ↻(𝔤_Rec)                       m2
 #    :4805 Beauty             𝔤_Form ⊗ 𝔤_Love               *83
 #    :4806 Death              𝔤_Becoming ▷ 𝔤_Void           >76
-#    :4807 Mystery            𝔤_Depth ⊗ 𝔤_Void              *96
+#    :4807 Mystery            𝔤_Void ⊗ 𝔤_Depth              *69   AS RULED, E16 §A
 #    :4808 Compassion         𝔤_Love ⊗ 𝔤_Rec                *32
 #    :4809 Intersubjectivity  𝔤_Self ⊗ 𝔤_Rel ⊗ 𝔤_Rec        **452 (left-associated)
 #    :4810 Being² (≡ Being)   EXCLUDED — see the header
-glyph XCF_SRC = "Consciousness|*24;Agency|*47;Truth|m2;Beauty|*83;Death|>76;Mystery|*96;Compassion|*32;Intersubjectivity|**452;"
+#  ⚠ :4803 and :4807 are transcribed AS RULED, not as this branch's blob reads.
+#  E16 §A (the General, 2026-09-10): Move = Agency and Sky = Mystery are one
+#  glyph each and the gloss governs, so the rows become ▷(Self,Becoming) and
+#  ⊗(Void,Depth). Blob 03452c9 still reads ⊗(Self,Becoming) and ⊗(Depth,Void)
+#  until E16 §A lands (patch: ~/logos-coord/handoff/2026-09-10-ELENCHOS-to-
+#  METANOE-declared-identities/). Both rows now repeat an L row exactly, so
+#  both are dropped as duplicates and COUNTED: F 6 → 4. Reverting either row
+#  is the census red path.
+glyph XCF_SRC = "Consciousness|*24;Agency|>47;Truth|m2;Beauty|*83;Death|>76;Mystery|*69;Compassion|*32;Intersubjectivity|**452;"
 # ★ EVALUATION SHARING. tiny_host re-evaluates a glyph body at EVERY reference
 #   (tiny_host.c:893-894, no value cache), so a glyph naming XCL inside a FOLD
 #   recomputes all 79 keys once per F row. The heavy values are therefore
@@ -235,7 +244,7 @@ glyph OK_XCBRIDGE = XCAND(str_eq(XCKEYD(">28"))(NORMK(KAPPA)))(XCNOT(str_eq(XCKE
 # ── ★ THE CENSUS, pinned, so a population that silently shrinks is RED
 #    rather than a smaller scan reporting fewer pairs.
 glyph OK_XCCENSUS_OF = la nl. la nf. la nm. la np. la fdup.
-    XCAND(int_eq(nl)(79))(XCAND(int_eq(nf)(6))(XCAND(int_eq(nm)(21))(XCAND(int_eq(np)(9))(str_eq(fdup)("Consciousness Beauty ")))))
+    XCAND(int_eq(nl)(79))(XCAND(int_eq(nf)(4))(XCAND(int_eq(nm)(21))(XCAND(int_eq(np)(9))(str_eq(fdup)("Consciousness Agency Beauty Mystery ")))))
 
 # ── ★ THE SET, pinned in BOTH directions ─────────────────────────────
 #  First hand-derived by the session that wrote this file; RE-DERIVED
@@ -256,7 +265,13 @@ glyph OK_XCSET_OF = la pairs. str_eq(pairs)(XCEXPECT)
 #   Two=RELATION       LA.tex:5336  g5 "Two ... Relation: the pair"
 #   SR_ABOUT=OP_RECOG  metaglyph.la:173-189, ruled INTENDED by Erik 2026-08-18;
 #                      asserted positively at metaglyph.la:228
-glyph XCDECL = "I=SELF One=BEING Two=RELATION SR_ABOUT=OP_RECOG "
+#   Truth=SR_ABOUT     E16 §C (the General, 2026-09-10, round 3): the 08-18
+#   Truth=OP_RECOG     ruling EXTENDED, Truth ≡ ρ ≡ SR_ABOUT, one glyph
+#                      ↻(RECOGNITION) under three names. No LA.tex change:
+#                      no codex line names ρ-the-operator or SR_ABOUT. Its
+#                      recognition operator is unnamed (LA:1746-1754), and
+#                      that is where §C's falsifier C1 is to be read.
+glyph XCDECL = "I=SELF One=BEING Two=RELATION SR_ABOUT=OP_RECOG Truth=SR_ABOUT Truth=OP_RECOG "
 
 # ── ★ THE OPEN SET, pinned EXACTLY. None is a ruling; each waits for one.
 #  WHERE EACH FORM IS FIXED -- corrected 2026-09-10 (ELENCHOS). The first cut
@@ -264,13 +279,12 @@ glyph XCDECL = "I=SELF One=BEING Two=RELATION SR_ABOUT=OP_RECOG "
 #  sources are LA.tex (blob 03452c9) and the white paper, "Lingua Adamica
 #  White Paper.tex" (WP): OUTSIDE this repo, sha256 98beeff4ee45, and the line
 #  numbers are that copy's.
-#   Past=Death       Past LA.tex:5169 >(g7,g6) . Death LA.tex:4806 -- LA x LA
+#   Past=Death       Past LA.tex:5169 >(g7,g6) . Death LA.tex:4806 -- LA x LA.
+#                    Ruled a declared identity in round 2, then HELD: E16 §B
+#                    went back to the General with the codex's own account of
+#                    death (LA:2323, :2331). Open until he rules again.
 #   See=KAPPA        See LA.tex:5288 >(g2,g8) . kappa WP:3740, "spec-fixed" WP:3745
 #   Change=OP_COMP   Change LA.tex:5237 *(g7,g8) . gamma WP:4909, stated as built
-#   Truth=OP_RECOG   Truth LA.tex:4804 m(Rec) . rho WP:4910, stated as built
-#   Truth=SR_ABOUT   the same form . SR_ABOUT canon_spec.la:108; WP:3082-3090
-#                    records its identity with rho. The 08-18 ruling names rho
-#                    and SR_ABOUT, not Truth.
 #   Ongoing=SR_BY    Ongoing LA.tex:5172 m(g7); WP:3582 calls m(BECOMING) the
 #                    imperfective, "ongoing" . SR_BY canon_spec.la:110, repo only
 #   None=SR_FROM     None LA.tex:5176 m(g6) . SR_FROM canon_spec.la:111, repo
@@ -278,17 +292,19 @@ glyph XCDECL = "I=SELF One=BEING Two=RELATION SR_ABOUT=OP_RECOG "
 #   Warm=OP_INTEG    Warm LA.tex:5318 *(g3,g1) . A is *(LOVE,BEING) on THIS
 #                    branch, which E10 (2cca4b4, kernel-k1) ruled a code error:
 #                    WP:1455 and :4911 give *(LOVE,RECOGNITION)
-#  metaglyph.la:168 calls the OP_* forms "not spec-fixed", while E10 treated
-#  the WP as the specification for A. Which document governs gamma and rho is
-#  part of the ruling. No declaration was found for any of the eight by a
-#  same-line search over LA.tex, the five .la sources, LA_COMPLETION.md and
-#  MODULES.md; its positive control (rho = SR_ABOUT) did hit. A no-hit is not
-#  an absence proof.
-#  The "open-codex" row below asserts the two pairs E5's amendment names
-#  (rulings/E5.md:161-165 @ kernel-k1 9afc30b). Its label predates this
-#  correction. It is output, so it is renamed at the next verifying run.
-glyph XCOPEN_CODEX  = "See=KAPPA Past=Death "
-glyph XCOPEN_EXPECT = "Change=OP_COMP See=KAPPA Warm=OP_INTEG Past=Death Ongoing=SR_BY None=SR_FROM Truth=SR_ABOUT Truth=OP_RECOG "
+#  Truth=OP_RECOG and Truth=SR_ABOUT were open here until E16 §C declared them
+#  (see XCDECL). metaglyph.la:168 calls the OP_* forms "not spec-fixed", while
+#  E10 treated the WP as the specification for A. Which document governs gamma
+#  is part of the ruling. Before E16, no declaration was found for any of the
+#  eight then open by a same-line search over LA.tex, the five .la sources,
+#  LA_COMPLETION.md and MODULES.md; its positive control (rho = SR_ABOUT) did
+#  hit. A no-hit is not an absence proof.
+#  The "open-E5" row below asserts that the two pairs E5's amendment names
+#  (rulings/E5.md:161-165 @ kernel-k1 9afc30b) are still OPEN. It was labelled
+#  "open-codex" until this run; the label is output, so the rename moved the
+#  build.sh pin with it.
+glyph XCOPEN_E5     = "See=KAPPA Past=Death "
+glyph XCOPEN_EXPECT = "Change=OP_COMP See=KAPPA Warm=OP_INTEG Past=Death Ongoing=SR_BY None=SR_FROM "
 
 # the pairs of `s` that are NOT tokens of `dec` (dec space-bounded: " a=b c=d ")
 glyph XCKEEP = XCZ(la self. la dec. la s.
@@ -315,7 +331,7 @@ glyph XCROWS1 = la nl. la nf. la nm. la np. la fdup.
     concat(concat(XCROW("scan-proved-it-looked")(OK_XCSAW))(XCROW("identity-is-NORMK")(OK_XCNORM)))
           (concat(XCROW("bridge")(OK_XCBRIDGE))(XCROW("census")(OK_XCCENSUS_OF(nl)(nf)(nm)(np)(fdup))))
 glyph XCROWS2 = la pairs. la opn.
-    concat(concat(XCROW("declared-present")(XCALLIN(XCDECL)(pairs)))(XCROW("open-codex")(XCALLIN(XCOPEN_CODEX)(opn))))
+    concat(concat(XCROW("declared-present")(XCALLIN(XCDECL)(pairs)))(XCROW("open-E5")(XCALLIN(XCOPEN_E5)(opn))))
           (concat(XCROW("open-set")(str_eq(opn)(XCOPEN_EXPECT)))(XCROW("set")(OK_XCSET_OF(pairs))))
 glyph XCTAIL = la pairs. la opn. concat(concat(" | OPEN: ")(opn))(concat("| PAIRS: ")(pairs))
 glyph XCREPORT = la nl. la nf. la nm. la np. la fdup. la pairs. la opn.
