@@ -764,12 +764,14 @@ every item below cites the ruling rather than inferring one.
   criterion it can fail, or demoting the claim it was supposed to support.
   *Paper: Ledger row "Nine ungated modules" `[B]`. The `[B]`→`[W]` move is
   available for the eight; the ninth is what still holds the row open.*
+  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): crossmodal is still pinned as a REPORT, not a result (build.sh's CROSSMODAL block); the other eight run. The residue is unchanged.
 - `[ ]` **Three gates that cannot go RED.** (a) phonetic α=1 is a `grep` for a
   sentence the module prints unconditionally; (b) the 8/8 phonetic injectivity
   gate's concept list contains no two entries sharing a leaf-set, so the
   property is untestable by construction; (c) `seal_test.la:36`
   `COMPLEXITY = la g. 1` is a constant function. Each must be given a real red
   path or demoted to a REPORT. *Paper: §Falsification, the vacuity bet.*
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): part (c) is unchanged: `seal_test.la:41` (the item's :36) is still `COMPLEXITY = la g. 1`, a constant. One unresolved part keeps the item open; (a) and (b) were not re-measured.
 - `[✓]` **Four hardcoded absolute paths** — **DONE 2026-08-23**: all four now derive from `Path(__file__).resolve().parent`; the `~/logos-d` positive control is derived + `LOGOS_CONTROL_TREE`-overridable and documented read-only. Verified behaviour-preserving (byte-identical output pre/post) AND cwd-independent. Was: — `freeze_q0_coverage.py:26`,
   `freeze_q2_resolve.py:28`, `freeze_q2_skiptogreen.py:30` and `:65`. The last
   reaches into **`~/logos-d`**, another track's tree; worktree isolation cannot
@@ -793,6 +795,7 @@ every item below cites the ruling rather than inferring one.
   deliberately data-dependent branch and the timing gate must fire. A discipline
   carried by convention is precisely what this list exists to convert into a
   gate.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no timing gate exists in any tracked script, and no module asserts secret-independent execution time.
 
 - `[ ]` **★ LEDGER ROW — Identity Adequacy: three collisions open `[A]`.**
   Criterion 6 of the paper's own nine, unmet: monosemy holds except for three
@@ -801,6 +804,7 @@ every item below cites the ruling rather than inferring one.
   from the DAG rather than from the paper's prose — a count in prose is the
   defect class this file exists to catch. Then one gate per collision, each able
   to go red by re-introducing the collision it closed.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): open on kernel-k1. The cross-population gate (`crosscoll.la`, M22) exists on track-c only (`7f22958`). Since this item was written, E16 §A declared Sky = Mystery and Move = Agency (`a9fb1b3`), and E16 §B ruled Death ≠ Past, a pair that stays open until Death is re-derived (`65e5431`).
 
 - `[!]` **★★ ENGINEERING SEAL 1 — THREE TYPE SYSTEMS, NO RULING. Needs Erik.**
   `LINGUA_ADAMICA.tex` §5012 specifies the **Ontic Type System**: every glyph
@@ -831,31 +835,38 @@ registers. `trimono.la` now gates all three. What remains:
 - `[~]` **`⊗(A,A)` byte-identical to `A`** — fixed and verified on a copy
   (mode-characteristic contour, spec :3017(iv) "the mode is absorbed into the
   prosodic contour"). **Awaiting the build to apply.**
-- `[~]` **Θ_P is mode-blind** — ⊗/⊕/▷/⊂ give one peak-set where `Θ_V` carries a
+  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the spec register is gated both ways: build.sh's phonetic R-A block requires `SPEC_N(⊗(LOVE,LOVE))` to stay distinct and `SPEC_N(⊗(∃,∃))` to be ∃. No gate compares the synthesised PCM of ⊗(A,A) with A's, which is what this item names.
+- `[✓]` **Θ_P is mode-blind** — ⊗/⊕/▷/⊂ give one peak-set where `Θ_V` carries a
   mode field. Fix verified on a copy (`PINV = mode : peaks`, mirroring `VINV`).
   **Awaiting the build to apply.**
+  ✔ **Verified 2026-09-10 — DONE** (METANOĒ, against kernel-k1 `fcaaa23`): done in `9112c18` (08-27), one minute after this item landed. `psc_spec.la` defines `PINV` (mode : peaks) and `PMODE_REC`, with a META_DEBUG test at `psc_spec.la:124–125`, and build.sh's PSC* gate requires every glyph to PASS and "module VERIFIED". A mode-blind Θ_P would fail that test *(derived; not run)*.
 - `[~]` **▷ has no acoustic signature** — the SENTENCE operator. Sentences could
   be spoken and never parsed back. Rate-carried marker built and verified with a
   control; duration preserved so the WAV gate holds. **Awaiting the build.**
-- `[ ]` **★ ⊂ IS NEVER USED** (measured 2026-08-23, `ablate.la`). Across all 79
+  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the marker exists: phonym.la's `DIRP` modulates the tail, and build.sh's R-D note records it as a periodic amplitude modulation with duration preserved. No gate fails if it is removed, and phonseq cannot detect it (see the `phonseq` item below).
+- `[✓]` **★ ⊂ IS NEVER USED** (measured 2026-08-23, `ablate.la`). Across all 79
   published entries: ⊗=58, ⊕=4, ▷=26, **⊂=0**, ↻=2. The closure is claimed over
   five modes and exercised, lexically, over four. The fix is CONCEPTS genuinely
   formed by containment — not a token entry added to close a count. Ablation shows
   the other non-⊗ modes ARE load-bearing; ⊂ is untested because nothing uses it,
   which is a fact about the lexicon rather than about the operator.
+  ✔ **Verified 2026-09-10 — RETIRED AS WRITTEN** (METANOĒ, against kernel-k1 `fcaaa23`): stale when it landed. `a9e27e8`, the commit that carried this item, also set Bad = `c36` (⊂). At HEAD ⊂ is used twice (Bad `c36`, Because `c75`), and build.sh pins `⊂=2` and `⊂-now-used OK` (the ablate step), as buildla.la does.
 - `[ ]` **The elision layer** — 4 of 79 entries diverge from the codex by VOWEL
   ELISION (Think, Gratitude, Question, Past). The codex prints surface forms; the
   Operator Phonology generates underlying ones. Needs a phonological layer, not a
   patch to the segment rules. ★ The stress rule was itself corrected this session
   (final vowel, not first), found only by bringing in the codex's example
   SENTENCES as fresh vectors — a rule fitted to one table will agree with that table.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has an elision layer. Since R-D (08-26) the four elision divergences sit inside the 14 ▷ divergences the lexicon gate pins, so no gate sees them separately.
 - `[ ]` **The acquisition gap** — no syllabus, glyph sequence, or teaching order
   exists. Worse, non-commutative ⊗ means an English gloss underdetermines the
   derivation, so "coin the word for compassion" is not a well-posed instruction.
   The language as published cannot yet be TAUGHT from its own tables: the gap
   between *unbounded in principle* and *sayable by a person*.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a syllabus, glyph sequence or teaching order.
 - `[ ]` **`phonseq` must DETECT the new ▷ marker** — the signature exists; the
   decoder still reports ▷ as a leaf.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): phonseq.la's `IS_DIR` is still the exclusion of three modes (verdict `DIR|SYN`), and nothing reads DIRP's marker.
 - `[✓]` **⊕/VOID: WITNESSED AS A BOUND, gated 2026-09-05 (Erik's ruling). Re-measured
   2026-09-05, and the split is EXONERATED.** As written this item said
   "`SIL_AT=6240` vs a true boundary at 6080, one stride late, inside the next
@@ -970,6 +981,7 @@ registers. `trimono.la` now gates all three. What remains:
   =1124 — those compounds share BEING's unmodulated head, so the statistic was
   reading the phonym's own envelope, not the modulation. The separation is
   constructible in principle and remains open in fact.
+  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the dead branch is fixed and gated (phonseq emits `DIR|SYN`). Separating ⊗ from ▷ acoustically is still not done.
 - `[✓]` **A phonetic SEAL — BUILT AND GATED (`phonseal.la`).** ★ THIS ENTRY WAS
   STALE, and it was found by being cited: it was quoted as an open item, and the
   module it asks for already existed. `phonseal.la:53` defines
@@ -990,6 +1002,7 @@ registers. `trimono.la` now gates all three. What remains:
   moved — prose that no gate can fail on. See the five found 2026-08-27.
 - `[ ]` **`PSC_STAR` still pairs raw `PHONYM` with raw `SPEC`** — after the
   normalisation landed, one concept gets two seals depending on operand order.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): `phonym.la:424` is still `PSC_STAR = PAIR(WAVE(RENDER(PHONYM(node))))(SPEC(node))`, raw on both sides.
 
 - `[ ]` **★ Toroidal closure of the metaphonetic manifold** (`LINGUA_ADAMICA.tex`
   §4398, a `\lemma`, not an aside): *"The metaphonetic manifold M_P is naturally
@@ -1001,6 +1014,7 @@ registers. `trimono.la` now gates all three. What remains:
   measured on real synthesised phonyms, not asserted. **Red path:** an open-space
   embedding must fail the wrap-around test; if a flat embedding passes, the gate
   is measuring nothing.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module names a toroidal or wrap-around topology.
 
 ### Visual
 - `[✓]` `SIGIL(↻(RECOGNITION))` was byte-identical to `SIGIL(RECOGNITION)` →
@@ -1015,12 +1029,15 @@ registers. `trimono.la` now gates all three. What remains:
   stay distinct objects and **path intersections are genuine emergent features**.
   Gates: one connected component; each parent ≥N% visible; ≥1 non-constant
   emergent vertex. All three RED today.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): build.sh has no gate for connected components, parent visibility or emergent vertices.
 - `[ ]` **Catalogue-wide sigil injectivity** — all forms pairwise distinct,
   and `SIGIL(MC(x)) ≠ SIGIL(x)` for every catalogue entry, not just the three
   fixed.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): `siginj` is gated (build.sh `run_eight siginj`), but only on three ↻ traces (REC, SELF, BEING) plus `distinct`. Neither pairwise distinctness across the whole catalogue nor MC(x) ≠ x for every entry is gated.
 - `[ ]` **Visual round trip** — no bitmap→structure decoder exists. It is the
   symmetric partner of `sglyph`/`phonseq`, and the strongest available
   cross-substrate invariance test: sound → decode → κ → re-render → decode → κ.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a bitmap→structure decoder.
 
 - `[ ]` **★ The meta-referent has no sigil** (white paper v18 §"What IS not
   claimed", the only paper debt tracked in NO list — not here, not
@@ -1034,6 +1051,7 @@ registers. `trimono.la` now gates all three. What remains:
   against the whole catalogue AND `SIGIL(Dyad(Dyad))` is byte-identical to
   `SIGIL(Dyad)`, the visual witness of its autology. Red path: render it as any
   existing catalogue entry and the injectivity gate must fail.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): neither sigil.la nor any dyad module has a Dyad or meta-referent sigil glyph.
 
 ### Cross-register
 - `[✓]` `trimono.la` — one gate, three registers, three rows (injective /
@@ -1043,9 +1061,11 @@ registers. `trimono.la` now gates all three. What remains:
   `NIS(a)(b) ⟺ same rendered sound`, over a fuzz corpus, and the same against
   sigil rasters. This is Erik's "collapse into one another via the triple bar"
   made executable.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no gate asserts NIS ⟺ same rendered sound; crossmodal is still a correlation report.
 - `[ ]` **One normaliser, not five.** `NORMK`, `CANONIQ` (onf), `CANONIQ`
   (sigil), `NKAP`, `NORMP` — three different equivalence theories between them.
   Gate: `NORMK(t) ≡ CANON(NORMNODE(t))` over a fuzz corpus. RED today.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): all five still exist: `NORMK` (canon.la), `NKAP` (entropy.la), `CANONIQ` (onf.la and sigil.la, plus a copy in logo/logos_render.la) and `NORMP` (phonym.la). There is no NORMNODE gate.
 
 ---
 
@@ -1091,6 +1111,7 @@ registers. `trimono.la` now gates all three. What remains:
   reading something other than coherence.
   **Do not build this before the criterion exists.** It is the same shape as
   self-invocation in TIER 4: code written first would be unfalsifiable.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): there is no coherence gate, and the item's own order puts the criterion first.
 
 - `[ ]` **★ LEDGER ROW — Lexical depth D: computable `[W]`, use-gating `[A]`.**
   The ledger splits this row in two and only half is witnessed: depth IS
@@ -1101,6 +1122,7 @@ registers. `trimono.la` now gates all three. What remains:
   a value exists that fails it — a candidate red path is that shuffling the
   depth assignment across the lexicon must break the relation; if a shuffled
   assignment scores the same, the measure is reading nothing.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): build.sh pins depths as a measurement; nothing gates them against use.
 
 - `[ ]` **★ The four modes of poetic depth** (`LINGUA_ADAMICA.tex` §2250): *"The
   ontosynthetic entendre operates in four distinct modes, each exploiting a
@@ -1112,6 +1134,7 @@ registers. `trimono.la` now gates all three. What remains:
   compound glyph, each of the four modes yields a DIFFERENT reading, and the
   readings are derived from the DAG rather than tabulated. **Red path:** a glyph
   with no lineage must yield no vertical-depth reading.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module implements the entendre.
 
 - `[ ]` **★ The Grammar Completeness theorem has no gate** (`LINGUA_ADAMICA.tex`
   §4085, a `\theorem`): *"The four derivation rules are complete: every
@@ -1123,12 +1146,14 @@ registers. `trimono.la` now gates all three. What remains:
   **Red path:** a concept the rules cannot reach must be reportable as such —
   and if no such concept can be constructed, say so, because a completeness
   claim that nothing could ever contradict is decoration.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no gate or test names grammar completeness.
 
 - `[ ]` **Acquisition** — the codex never gives a syllabus, glyph sequence or
   acquisition method for LA; its one acquisition claim is "explicitly labeled as
   untested" (ROADMAP:1213), and Erik intends children to learn it. Buildable
   prerequisites: core-lexicon-as-data completeness gate; the Self-Generating
   Course pipeline run on LINGUA ADAMICA.tex to produce the LA syllabus.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): as for the acquisition gap above: no module has a syllabus or sequence.
 - `[✓]` **The Aletheic Immune System** (spec :3608) — the organ that DETECTS  **DONE 2026-08-23** — `immune.la`: four checkpoints, four pathogens, four DISTINCT signatures. ★ Finding: it detects corruption, NOT falsehood — the right conjunct of Thm. healthy has no evaluator. Gated as a positive assertion.
   pathological language at runtime (involution: two glyphs, one referent). The
   build-time monosemy audit is its static half; the runtime half is absent.
@@ -1137,6 +1162,7 @@ registers. `trimono.la` now gates all three. What remains:
   ONFs agree. Testable, untested.
 - `[ ]` **`ontofelicity` → live enforcement** — `PERFORM` currently reports;
   wiring it to the real capability layer makes felicity enforceable.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): ontofelicity.la imports nothing. Its capability sets are string data, not wired to a capability layer.
 
 ---
 
@@ -1151,6 +1177,7 @@ registers. `trimono.la` now gates all three. What remains:
   Red path: admit two combinations that canonicalise the same and the gate must
   go red. Cheap, and it converts a paper assertion into a measurement — the same
   move `0.2 Generated lexicon appendix` makes in the build queue.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module names ontomorphology or an inflectional census.
 
 ## TIER 4 — SELF-RELATION
 
@@ -1177,7 +1204,7 @@ registers. `trimono.la` now gates all three. What remains:
   constructor after an import rebinds cleanly; an imported node interoperates
   with a local destructor, because the six-continuation Scott encoding makes
   nodes **behavioural, not nominal**.
-- `[ ]` **M11a residue — the catalogue is INCOMPLETE, and now cheap to complete.**
+- `[✓]` **M11a residue — the catalogue is INCOMPLETE, and now cheap to complete.**
   Re-measured 2026-09-08: the old item's *"stale by ≥4"* is **4 of 4 confirmed** —
   `OP_DIFF`, `OP_BOUND`, `OP_COMP`, `OP_INTEG` are all exported by `metaglyph.la`
   and all absent from `CAT`; only `OP_RECOG` is present (as `OP_RHO`). Since M11a
@@ -1185,6 +1212,7 @@ registers. `trimono.la` now gates all three. What remains:
   `catalogue=17` becomes `21`. G2 is unaffected (none is unary ↻, so the count
   stays 8) and `MAXD` is unaffected (all are depth 1, `NU_STAR` still 2), and
   `build.sh` pins G1 and G2 but not the catalogue count — verified.
+  ✔ **Verified 2026-09-10 — DONE** (METANOĒ, against kernel-k1 `fcaaa23`): `1f9429b` (09-09) added OP_DIFF/OP_BOUND/OP_COMP/OP_INTEG to CAT (17→21), plus G3. build.sh pins `FAMILYTREE catalogue=21 ` and `G3 … TTTTT`, and the landing recorded GREEN 21/TTTTT with a RED of 17/FFFTF. familytree.la, its two imports and the gate block are byte-identical from `1f9429b` to HEAD. buildla.la's companion marker, left at 17, is fixed as `fcaaa23`.
 - `[ ]` **M11b — the ancestry walk.** `ANCESTRY(g)`: any glyph's complete line back
   through every COLLAPSE to the nine primitives and the dyad, *as a computation
   rather than an archive* (WP `§sec:compression:3150`). **Both pieces already
@@ -1193,6 +1221,7 @@ registers. `trimono.la` now gates all three. What remains:
   ⚠ Scope correction: the paper calls this *"the query over the standing DAG"*.
   **There is no standing DAG.** `glyphdag.la` hash-conses **one form at a time**;
   the only registry is `CAT`. M11b is the walk; M11c is what makes it a registry.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has an ANCESTRY glyph.
 - `[ ]` **M11c — auto-registration.** The paper's own stated bound: *"nothing yet
   registers a newly minted glyph automatically."* A mint must enter the registry
   without a hand edit. **Depends on: M11b.** Pairs with the coinage organ's owed
@@ -1200,50 +1229,64 @@ registers. `trimono.la` now gates all three. What remains:
   strictly add a κ-class) — same joint, approached from the two sides.
   ★★ **The depth-directed `selfopt` mode is BLOCKED ON M11c**, and this is why:
   𝔇 computed over a hand-listed catalogue measures **the list, not the language**.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): nothing registers a minted glyph.
 - `[ ]` **Gate G4 — declared and derived catalogues agree**, keyed on NORMK, both
   directions. **RED on arrival.** Depends on M11c (there is no derived catalogue
   until mints self-register).
   *(named G3 until 2026-09-10; 1f9429b gave G3 to operator coverage in code)*
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): it depends on M11c, and no derived catalogue exists.
 - `[ ]` **κ\* — meta-pattern compression.** When the same compression pattern
   recurs, encode it as a meta-glyph representing the rule of integration.
   Nothing detects or promotes.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): nothing detects or promotes a recurring compression pattern.
 - `[ ]` **Executable minted operations (ν\*)** — minted operations are
   *expressible* as glyphs but cannot be wired back in as reduction rules.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): `NU_STAR` is data only (metaglyph.la, familytree.la). No evaluator admits a minted operation as a reduction rule.
 - `[ ]` **The Fractal Monoglyph** — depth recoverable by decomposition rather
   than surface marks. `DECOMP` recovers the tree from the single DAG form
   (witnessed), but the Ren string still grows linearly. Largely discharged by
   unifying `MONO`'s etymology slot with the glyphdag form.
-- `[ ]` **The operators ∂δγρ𝔄 as glyphs** (ROADMAP:2567) — currently hardcoded
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): `MONO` is still a plain pair (canon.la:63, canon_spec.la, archroot.la), and its etymology slot is not the glyphdag form.
+- `[~]` **The operators ∂δγρ𝔄 as glyphs** (ROADMAP:2567) — currently hardcoded
   dispatch. And the four missing audit operators |G|, |G_meta|, ς, μ.
-- `[ ]` **Self-verifying grammar** (ROADMAP:2564) — grammar recoverable as data;
+  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the glyph half was false when written. OP_DIFF…OP_INTEG and `RANKOF` (rank read from the glyph) have been in metaglyph.la since `4e9449b` (08-20), and this item was written 08-27. build.sh's item-2 block gates them, and ENTELECHEIA's W2 ran that block ok=1 on `3c1c16c`. Still open: the four audit operators |G|, |G_meta|, ς and μ exist nowhere.
+- `[✓]` **Self-verifying grammar** (ROADMAP:2564) — grammar recoverable as data;
   full self-parse (L3) still open.
+  ✔ **Verified 2026-09-10 — RETIRED AS WRITTEN** (METANOĒ, against kernel-k1 `fcaaa23`): false when it landed. `grammar_l3.la` and its build.sh gate (item 5, L3) arrived in `a9e27e8`, the same commit as this item, and this file marks L3 `[✓]` BOUNDED (ITEM 5 / L3, above).
 - `[ ]` **Self-meta-programming: the changed thing must become the running
   thing.** `selfprog`/`selfmod`/`selfopt` write, verify and adopt organs that
   are **never imported or executed**. Gate: a bundled organ-process ADOPTs an
   extension, recompiles, `execve`s the verified result, and the successor
   demonstrates the new capability at runtime.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): selfprog, selfmod and selfopt all ADOPT, and none of them execve the adopted result.
 - `[ ]` **Meta-autopoiesis — and the gate that currently forbids it.**
   `build.sh:3550` REQUIRES `cmp -s logos_app new_logos_secd.bin`: the successor
   must be byte-identical. **A self-revised successor would go RED on the
   system's own gate.** Minimal honest version: generation N applies one verified
   change to its own lineage source, recompiles, and begets a MODIFIED successor.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): build.sh still requires `cmp -s logos_app new_logos_secd.bin` (now :4383; the item says :3550), so a modified successor still fails the system's own gate.
 - `[ ]` **Lack-driven wants** — wire `aatc`'s sensed LACK into `selfprog`'s
   SOLVE, so the system forms the want from its own sensed incompleteness. This
   is the buildable bounded form of autontogenesis; **purpose-origination itself
   is ruled out by Erik's own corpus** (`SR_FOR` is explicitly "NOT
   purpose-origination") and should not be chased.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): selfprog.la does not read aatc's LACK.
 - `[ ]` **`AWARE` / `C` predicates** — "awareness" appears only in prose
   comments. `AWARE(g) := AUTO_OK(g)`; `C(g) := AUTO_OK(g) ∧ AUTO_OK(MCOLLAPSE(g))`.
   Separates A (one recognition) from C (recognition surviving a metacursive turn).
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has an AWARE glyph, and the only glyph named C (phonassoc.la) is unrelated.
 - `[ ]` **`PROTO_AGENT`** — the one chain-tail item with an honest gate:
   REPAIR can move g strictly toward closure, with `swc.la`'s provably-ill class
   as the negative fixture. **Qualia/phenomenology: build nothing** until a paper
   formalises them; any gate now could not go RED.
-- `[ ]` **The Algebra of Naming's companions** — the Semiotic-Ontoglyphic Ladder
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a PROTO_AGENT glyph.
+- `[~]` **The Algebra of Naming's companions** — the Semiotic-Ontoglyphic Ladder
   (7 levels) and the Substitution Test; α is binary in code, graded in the paper.
+  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the Ladder is built and gated: ladder.la (L0–L7), build.sh's ladder block, and buildla's "LADDER VERDICT ? YES". The Substitution Test does not exist (0 mentions in ladder.la). Graded α was not verified.
 - `[ ]` **The meta-word ablation gate** — remove one operator-glyph, assert a
   specific named derivation becomes underivable while the other four survive.
   Makes "a missing word is a missing thought" executable.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): there is no glyph or gate for it. ablate.la's gated verdict concerns modes, not operator-glyphs.
 - `[✓]` **`dyadseed.la`** — VOID ≡ Church zero, BECOMING ≡ successor, by  **DONE 2026-08-23** — `dyadseed.la`: VOID≡Church zero, BEING≡Church ONE by eta-equivalence, BECOMING≡successor; bound proved via non-injectivity (SELF and BEING both →1).
 
   ### ★★ SCOPE OF THE DYAD — stated because the stronger reading is the tempting one
@@ -1314,6 +1357,7 @@ registers. `trimono.la` now gates all three. What remains:
   bounded target before building anything new. This is the discourse split
   again: prose says unbuilt, gate says otherwise, and the honest move is to
   narrow the claim rather than pick a winner.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): it awaits a scope ruling, not a build. autopoiesis.la is gated at build.sh:4344 (the item's :3898); the item's own open question is whether that lineage meets the bounded target ruled on 09-06.
 
 - `[ ]` **★ LEDGER ROW — Meta-autontopoiesis (state): `[A]` loop not closed
   unassisted.** Autontopoiesis is the paper's term for *"the continuous
@@ -1327,6 +1371,7 @@ registers. `trimono.la` now gates all three. What remains:
   which hand it removed. **Red path:** re-insert that hand and the gate must go
   red. Distinct from self-invocation above: that one asks whether it can BEGIN
   itself, this asks whether it can KEEP itself going.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): the loop is still not closed unassisted: no organ executes what it adopts (self-meta-programming, above), and the successor must be byte-identical (meta-autopoiesis, above).
 
 - `[ ]` **★ LEDGER ROW — Meta-Ontosemantic Closure: `SLACKS ≠ ""`, not met
   `[A]`.** Criterion 9 of the nine, and the closure test is already written in
@@ -1339,6 +1384,7 @@ registers. `trimono.la` now gates all three. What remains:
   it, item by item, not discovering whether it can be emptied. **Gate:** assert
   `CLOSURE(x)` for a named x and let the red path be a deliberately re-introduced
   slack entry.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): `CLOSURE` and `SLACKS` exist (aatc.la:23, :31), but no gate asserts a closure is met.
 
 - `[ ]` **★★ ENGINEERING SEAL 2 — Proof-carrying glyphs. NOT BUILT, and it is
   property (v) of the completeness theorem.** §5020: *"Every glyph ships with:
@@ -1353,6 +1399,7 @@ registers. `trimono.la` now gates all three. What remains:
   the checker verifies the certificate rather than trusting it. **Red path:**
   forge a certificate for a glyph whose ONF does not match and the check must
   refuse it.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a per-glyph certificate.
 
 - `[ ]` **★ ENGINEERING SEAL 3 — Versioning without semantic drift.** §5024: a
   **centropic migration law** governs glyph evolution — cosmetic changes (form
@@ -1365,6 +1412,7 @@ registers. `trimono.la` now gates all three. What remains:
   only if the invariants of the prior version are preserved. **Red path:** a
   revision that alters an invariant must be refused, and the refusal must name
   which invariant.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a migration or supersession law. E17 ruled U/Δ supersession, but it is not built.
 
 - `[ ]` **★ The Recognition Depth function ρ(L_t)** (`LINGUA_ADAMICA.tex` §3842,
   a formal `\definition`): *"For a language state L_t at time t, the recognition
@@ -1374,6 +1422,7 @@ registers. `trimono.la` now gates all three. What remains:
   computes it. **Gate:** ρ is computable from the live catalogue and strictly
   increases when a level is genuinely added. **Red path:** add a glyph at an
   existing level and ρ must NOT move.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a recognition-depth function.
 
 - `[ ]` **★ The Self-Evolution Equation** (`LINGUA_ADAMICA.tex` §3975): *"All
   five laws and three axes can be compressed into a single recursive equation
@@ -1382,6 +1431,7 @@ registers. `trimono.la` now gates all three. What remains:
   form of the whole self-evolution chapter and nothing implements it. **Owed
   first:** it depends on ρ above — the equation is over language states, so
   build ρ first or this has nothing to range over.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): nothing implements it.
 
 
 - `[ ]` **★ DERIVATION RULE 4 — the Neological Seal ν is not implemented.**
@@ -1405,6 +1455,7 @@ registers. `trimono.la` now gates all three. What remains:
   appears in the alphabet, canonicalises as a leaf rather than a decomposition,
   and survives a reload. **Red path:** the Ratchet Gate must still refuse a seal
   that collapses two κ-distinct forms; sealing must be additive or refused.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): there is no non-comment implementation. ELENCHOS's M58 build plan is a handoff (2026-09-10), and E17 ruled Rule 4 next.
 
 ## TIER 5 — BEYOND THE LANGUAGE (named, not chased)
 
@@ -1417,20 +1468,25 @@ registers. `trimono.la` now gates all three. What remains:
   filed so it cannot be quietly dropped: three of the four seals are unbuilt and
   this is the only one that is unbuildable from inside. If cross-species is ever
   descoped, this seal must be descoped explicitly, in writing, not by silence.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): it needs data from outside the system, as the item says.
 
 - `[ ]` **A signature scheme.** No public-key primitive exists. **The single
   unlock for the whole record/law layer**: signed updates, identity, contracts,
   non-repudiable records, the Eternal Library. Everything in the Logocracy layer
   waits on this one primitive.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): open on kernel-k1: no xmss or wotsp module or gate exists there (build.sh has 0 mentions). track-e carries the WOTS+/XMSS stack (15 files), unmerged.
 - `[ ]` **Entropy on the metal** — no RDRAND/RDSEED builtin, no jitter
   collector, no seed file, while full-disk encryption must derive keys at boot
   before any disk read. A DRBG does not close this.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): RDRAND/RDSEED appear 0 times in secd.asm, in the merged kernel's asm and in asm.la's mnemonics (control: `syscall` finds 115 in secd.asm).
 - `[ ]` **Trans-species: a second functor.** One habitat renderer exists
   (`R_human`). `R_click` plus its inverse would make FSM a functor category with
   two objects — the minimum at which "trans-species" is witnessed rather than
   asserted. Actual animal comprehension stays out of scope, stated.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has an `R_click`.
 - `[ ]` **The language deepens with its agents** — the loop optimises COST, never
   DEPTH or expressivity. Needs a depth-directed `selfopt` mode.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): selfopt.la has no depth mode (blocked on M11c, above).
 
 ---
 
@@ -1457,10 +1513,13 @@ the etymology tracker, the dissolved branches).
 
 **Paper-side structural work:**
 - `[ ]` Fix "trimodal" wherever a fourth modality exists.
-- `[ ]` The Ledger is a plain `tabular` and cannot break across pages; at 37 rows
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): the white paper (sha256 `98beeff4ee45…`) says "trimodal" 51 times and names a fourth (tactile) modality 3 times; tactile.la exists.
+- `[✓]` The Ledger is a plain `tabular` and cannot break across pages; at 37 rows
   it still fits, but the next batch overflows SILENTLY. Convert to `longtable`.
+  ✔ **Verified 2026-09-10 — DONE** (METANOĒ, against kernel-k1 `fcaaa23`): the white paper (sha256 `98beeff4ee45…`) sets §The Ledger in a `longtable` (:7422). No gate can see it, because the paper is outside the repo, so the change is not dated.
 - `[ ]` Every Tier-1/2 item above needs its paper counterpart at the right tag —
   an item is not done until code and paper agree.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): this is a standing rule, and it closes only when every Tier-1/2 item is done in both code and paper.
 
 ---
 
