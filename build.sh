@@ -4491,6 +4491,27 @@ case "$PROUT" in
   *) echo "FAIL  prop: the three laws no longer fail SEPARATELY (FTT/TFT/TTF) — three laws that fail together are one law wearing three names — got: $PROUT"; ok=0 ;;
 esac
 case "$PROUT" in *FAIL*) echo "FAIL  prop: a gate failed — $PROUT"; ok=0 ;; esac
+# ── ★ GATE 7 — the Goedel–Gentzen bridge (M6). The glyph register is INTUITIONISTIC, the
+#  truth register CLASSICAL, and the double-negation translation embeds the second in the
+#  first (WP sub:proplayer :2393–2399). prop.la evaluates its OWN propositions on a Kripke
+#  family C1/K2/V3 with a PRIMITIVE disjunction named apart from POR -- POR is its GG image,
+#  and over the glyph fragment the two logics coincide (Glivenko), so without the primitive
+#  nothing could tell them apart. The table is PINNED to what prop_bridge_model.py predicted
+#  before the LA existed, and the model's own pre-registered arms are re-run here, so a change
+#  on either side has to be agreed by the other.
+case "$PROUT" in
+  *"kripke C1/K2/V3: LEM=TFF WLEM=TTF LNC=TTT DNE=TFF POR-LEM=TTT"*) : ;;
+  *) echo "FAIL  prop: the Kripke table is not the one prop_bridge_model.py predicted (LEM=TFF WLEM=TTF LNC=TTT DNE=TFF POR-LEM=TTT) — got: $PROUT"; ok=0 ;;
+esac
+case "$PROUT" in
+  *"classical-frame OK"*"lem-fails-intuitionistically OK"*"dne-fails-intuitionistically OK"*"wlem-fails-only-at-V3 OK"*"lnc-holds-everywhere OK"*"gg-embeds-classical OK"*"por-is-the-image-not-or OK"*"valuations-persistent OK"*) : ;;
+  *) echo "FAIL  prop: the Goedel–Gentzen bridge (GATE 7) changed — got: $PROUT"; ok=0 ;;
+esac
+if command -v python3 >/dev/null && [ -f prop_bridge_model.py ]; then
+    python3 prop_bridge_model.py >/dev/null 2>&1 || { echo "FAIL  prop: prop_bridge_model.py's pre-registered arms no longer hold — the witness the Kripke table is pinned to has moved"; ok=0; }
+else
+    echo "SKIP  prop: python3 or prop_bridge_model.py absent — the table pin stands, the model behind it was not re-run"
+fi
 # ★ COHERES vs OBTAINS, witnessed by EXIT CODE rather than by report.
 #  §XVII's falsification is exactly this pair: a structurally incoherent
 #  proposition the constructors ACCEPT, or a merely false one they REFUSE,
@@ -4770,7 +4791,9 @@ say "The mutation lever, extended past the 2 gates it could reach (mutate.py)"
 #  cross-module check it never performed. Both fixed; the mutant is CAUGHT
 #  now, verified by re-running rather than assumed.
 #  SPLIT, and the skip ANNOUNCES ITSELF: prop.la's mutants run here (~1s
-#  each); opgrammar.la's cost ~250s each and are OUT OF BAND. A flag that
+#  each until GATE 7 landed; ~4-5s each since -- 4.46s per run at load 4.0,
+#  its ten mutants in 83s, measured 2026-09-10); opgrammar.la's cost ~250s
+#  each and are OUT OF BAND. A flag that
 #  silently narrows coverage while still printing a confident PASS is the
 #  same failure mode as a check that cannot go red.
 if command -v python3 >/dev/null && [ -f mutate.py ]; then
@@ -4803,7 +4826,7 @@ if command -v python3 >/dev/null && [ -f mutate.py ]; then
         fi
     done
     [ "$MUTOK" -eq 1 ] || exit 1
-    echo "PASS  mutate: 22 implementation-perturbing mutants all CAUGHT, none died of the wrong cause — prop.la 5 (two of them TARGETED, one per register, each reading only its own row: glyph-negation-cancels turns only the glyph register red, truth-negation-not-involutive only the truth register; before the second, no mutant in the set could turn dne-holds-operationally red, so the truth half had never been shown able to fail), selfext6.la 2 (the search budget ignored; a module emitted on exhaustion), selfext1.la 5 (each of the revision arm's four conjuncts forced true, plus the reproduction arm) selfext2.la 2 (an unverified extension reaching execution; a MAIN that hardcodes the answer, visible ONLY to the parent control) selfext2b.la 1 (the organ exec'ing the GENERIC VM LOADER — the cheapest test of the most expensive mistake in this repo, since the guard is static and needs no vessel rebuild) and ratchet.py 3 (α-normalisation disabled, strict-increase weakened, collapse-check removed — the last of which SURVIVED at first and exposed a non-discriminating fixture, not a gate defect) and stage 4's 2 (an overfit fixture that is secretly honest; held-out probes replaced by the probe the synthesiser already saw) — the first of THOSE also survived at first, and exposed a TD_IMPL/TD_SRC split inside the organ rather than a blind gate) and stage 5's 2 (the VM leg silently falling back to the host; the VM reusing a stale stream. ★ The harness's own FAIL classifier was substring-matching and read stage 5's PASS prose (\"a FAILURE, not a note\") as a failure; the line-start fix then missed the LA modules' inline \"| name FAIL\" and turned 8 CAUGHT into SURVIVED, caught only by re-running every set. Now whole-word. Each red is reported as a RATIO of the green baseline, because a red arriving in a small fraction of it is the shape of a mutant that died before reaching the check; and the harness REFUSES to run unless the unmutated tree is green first, since otherwise every CAUGHT is meaningless. NOT RUN HERE: opgrammar.la's 2 mutants, ~250 s each; run out of band with 'MUT_BUDGET=1200 python3 mutate.py opgrammar.la' (both CAUGHT as of 2026-08-24)"
+    echo "PASS  mutate: 27 implementation-perturbing mutants all CAUGHT, none died of the wrong cause — prop.la 10 (two of them TARGETED, one per register, each reading only its own row: glyph-negation-cancels turns only the glyph register red, truth-negation-not-involutive only the truth register; before the second, no mutant in the set could turn dne-holds-operationally red, so the truth half had never been shown able to fail; and five for GATE 7, the Goedel-Gentzen bridge, one per claim, each reading only its own row: Kripke negation made successor-blind, primitive disjunction collapsed into its own GG image, atoms left bare by the translation, the V-frame losing a future, a non-persistent valuation), selfext6.la 2 (the search budget ignored; a module emitted on exhaustion), selfext1.la 5 (each of the revision arm's four conjuncts forced true, plus the reproduction arm) selfext2.la 2 (an unverified extension reaching execution; a MAIN that hardcodes the answer, visible ONLY to the parent control) selfext2b.la 1 (the organ exec'ing the GENERIC VM LOADER — the cheapest test of the most expensive mistake in this repo, since the guard is static and needs no vessel rebuild) and ratchet.py 3 (α-normalisation disabled, strict-increase weakened, collapse-check removed — the last of which SURVIVED at first and exposed a non-discriminating fixture, not a gate defect) and stage 4's 2 (an overfit fixture that is secretly honest; held-out probes replaced by the probe the synthesiser already saw) — the first of THOSE also survived at first, and exposed a TD_IMPL/TD_SRC split inside the organ rather than a blind gate) and stage 5's 2 (the VM leg silently falling back to the host; the VM reusing a stale stream. ★ The harness's own FAIL classifier was substring-matching and read stage 5's PASS prose (\"a FAILURE, not a note\") as a failure; the line-start fix then missed the LA modules' inline \"| name FAIL\" and turned 8 CAUGHT into SURVIVED, caught only by re-running every set. Now whole-word. Each red is reported as a RATIO of the green baseline, because a red arriving in a small fraction of it is the shape of a mutant that died before reaching the check; and the harness REFUSES to run unless the unmutated tree is green first, since otherwise every CAUGHT is meaningless. NOT RUN HERE: opgrammar.la's 2 mutants, ~250 s each; run out of band with 'MUT_BUDGET=1200 python3 mutate.py opgrammar.la' (both CAUGHT as of 2026-08-24)"
 else
     echo "SKIP  mutate: python3 or mutate.py absent"
 fi

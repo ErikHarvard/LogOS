@@ -272,8 +272,131 @@ glyph OK_LAWS_SEP = AND(OK_LAW_ID)(AND(OK_LAW_NC)(OK_LAW_EM))
 #  about another module's rule has to reference that rule.
 glyph OK_ONE_NEG = str_eq(KEY(PNOT(P_FLOW)))(concat("⊂(")(concat(KEY(P_FLOW))(",VOID)")))
 
+# ══ GATE 7 — THE BRIDGE: the glyph register is INTUITIONISTIC, the truth register CLASSICAL,
+#  and the Goedel–Gentzen double-negation translation embeds the second in the first
+#  (Lingua Adamica White Paper, sub:proplayer, sha256 98beeff4 :2393–2399). M6's owed sub-part.
+#  ★ WHY A PRIMITIVE DISJUNCTION, NAMED APART FROM POR. Over this module's own fragment
+#    (¬ as ⊂-with-Void, ∧ as ⊕, POR = ¬(¬a ∧ ¬b)) classical and intuitionistic VALIDITY
+#    COINCIDE (Glivenko): POR(P)(PNOT(P)) is intuitionistically valid, so nothing built from
+#    PNOT/PAND/POR can tell the registers apart. POR is the GG IMAGE of disjunction, not
+#    disjunction. E12 rules ∨ primitive; the Kripke register carries it as KR_DET --
+#    determination, the WP's reading (:2235) -- a FORMULA constructor, not a glyph mode:
+#    which mode would carry ∨ is a language ruling this module does not make.
+#  ★ WHY THE V-FRAME. Every frame with a top element validates weak excluded middle
+#    ¬P ∨ ¬¬P, so the 2-chain K2 cannot be its red path; only two incomparable futures (V3)
+#    break it. A family without V3 would certify an intermediate logic as intuitionistic.
+#  ★ DNE AS EQUIVALENCE, NOT AS A FORMULA. E12 gives no primitive →, and ¬¬P → P read as
+#    ¬¬¬P ∨ P collapses into excluded middle intuitionistically. So DNE is read as "¬¬P and P
+#    are forced at the same worlds": on K2 they are not -- the Kripke witness of GATE 1 --
+#    and on C1, the classical frame, they are -- GATE 2's register.
+#  Every row, and every bridge mutant's row-set, was PRE-REGISTERED in Python before this LA
+#  existed (prop_bridge_model.py; every arm matched on its first run). The evaluator is
+#  BOTTOM-UP -- a formula's forcing SET per valuation, each subformula's set computed once --
+#  because a top-down forcing recursion measured 6.10 s: negation depth d over V3 costs ~3^d.
+#  HONEST SCOPE: ONE atom (a valuation is the set of worlds where P_FLOW holds, so a formula
+#  with two distinct atoms would conflate them) and a FAMILY of three frames: "valid" means
+#  valid on C1, K2 and V3, which is what the rows claim and all they claim.
+glyph KR_ATOM = la s. la at. la ng. la an. la dt. at(s)
+glyph KR_NEG  = la a. la at. la ng. la an. la dt. ng(a)
+glyph KR_AND  = la a. la b. la at. la ng. la an. la dt. an(a)(b)
+glyph KR_DET  = la a. la b. la at. la ng. la an. la dt. dt(a)(b)
+glyph KR_POR  = la a. la b. KR_NEG(KR_AND(KR_NEG(a))(KR_NEG(b)))
+
+glyph KR_NIL    = la n. la c. n
+glyph KR_CONS   = la h. la t. la n. la c. c(h)(t)
+glyph KR_ALL    = Z(la self. la p. la l. l(TRUE)(la h. la t. AND(p(h))(self(p)(t))))
+glyph KR_ANY    = Z(la self. la p. la l. l(FALSE)(la h. la t. OR(p(h))(self(p)(t))))
+glyph KR_FILTER = Z(la self. la p. la l. l(KR_NIL)(la h. la t.
+    IF(p(h))(la _. KR_CONS(h)(self(p)(t)))(la _. self(p)(t))))
+glyph KR_MEM    = la w. la l. KR_ANY(la v. int_eq(v)(w))(l)
+glyph KR_BEQ    = la x. la y. x(y)(NOT(y))
+glyph KR_L1 = la a. KR_CONS(a)(KR_NIL)
+glyph KR_L2 = la a. la b. KR_CONS(a)(KR_L1(b))
+glyph KR_L3 = la a. la b. la c. KR_CONS(a)(KR_L2(b)(c))
+glyph KR_L5 = la a. la b. la c. la d. la e. KR_CONS(a)(KR_CONS(b)(KR_L3(c)(d)(e)))
+
+# a frame: its worlds · each world's successors (reflexive-transitive, written out) · the
+# UPWARD-CLOSED valuations of the one atom
+glyph KR_FR = la ws. la sc. la vs. la k. k(ws)(sc)(vs)
+glyph KR_WS = la fr. fr(la ws. la sc. la vs. ws)
+glyph KR_SC = la fr. fr(la ws. la sc. la vs. sc)
+glyph KR_VS = la fr. fr(la ws. la sc. la vs. vs)
+glyph KR_C1 = KR_FR(KR_L1(0))(la w. KR_L1(0))(KR_L2(KR_NIL)(KR_L1(0)))
+glyph KR_K2 = KR_FR(KR_L2(0)(1))
+                   (la w. IF(int_eq(w)(0))(la _. KR_L2(0)(1))(la _. KR_L1(1)))
+                   (KR_L3(KR_NIL)(KR_L1(1))(KR_L2(0)(1)))
+glyph KR_V3 = KR_FR(KR_L3(0)(1)(2))
+                   (la w. IF(int_eq(w)(0))(la _. KR_L3(0)(1)(2))(la _. KR_L1(w)))
+                   (KR_L5(KR_NIL)(KR_L1(1))(KR_L1(2))(KR_L2(1)(2))(KR_L3(0)(1)(2)))
+
+# forcing, BOTTOM-UP: the set of worlds forcing f, under one valuation
+glyph KR_FSET = la fr. la val. Z(la self. la f.
+    f (la s. val)
+      (la a. (la S. KR_FILTER(la w. KR_ALL(la v. NOT(KR_MEM(v)(S)))(KR_SC(fr)(w)))(KR_WS(fr)))(self(a)))
+      (la a. la b. (la Sa. la Sb. KR_FILTER(la w. KR_MEM(w)(Sb))(Sa))(self(a))(self(b)))
+      (la a. la b. (la Sa. la Sb. KR_FILTER(la w. OR(KR_MEM(w)(Sa))(KR_MEM(w)(Sb)))(KR_WS(fr)))(self(a))(self(b))))
+glyph KR_VALID = la fr. la f.
+    KR_ALL(la val. (la S. KR_ALL(la w. KR_MEM(w)(S))(KR_WS(fr)))(KR_FSET(fr)(val)(f)))(KR_VS(fr))
+glyph KR_SAME = la fr. la f. la g.
+    KR_ALL(la val. (la Sf. la Sg. KR_ALL(la w. KR_BEQ(KR_MEM(w)(Sf))(KR_MEM(w)(Sg)))(KR_WS(fr)))
+                   (KR_FSET(fr)(val)(f))(KR_FSET(fr)(val)(g)))(KR_VS(fr))
+glyph KR_PERSIST = la fr. KR_ALL(la val.
+    KR_ALL(la w. IF(KR_MEM(w)(val))(la _. KR_ALL(la v. KR_MEM(v)(val))(KR_SC(fr)(w)))(la _. TRUE))(KR_WS(fr)))(KR_VS(fr))
+
+# the Goedel–Gentzen translation: atoms double-negated, disjunction sent to its image
+glyph KR_GG = Z(la self. la f.
+    f (la s. KR_NEG(KR_NEG(KR_ATOM(s))))
+      (la a. KR_NEG(self(a)))
+      (la a. la b. KR_AND(self(a))(self(b)))
+      (la a. la b. KR_POR(self(a))(self(b))))
+
+# this module's glyph propositions → formulas, over EV's own case structure
+# (PRIM SYN CON DIR CONT MC): ⊂-with-Void is ¬, ⊕ is ∧, everything else an atom
+glyph KR_TOF = Z(la self. la n.
+    n (la nm. KR_ATOM(nm))
+      (la a. la b. KR_ATOM(NORMK(SYN(a)(b))))
+      (la a. la b. KR_AND(self(a))(self(b)))
+      (la a. la b. KR_ATOM(NORMK(DIR(a)(b))))
+      (la a. la b. IF(IS_VOID(b))(la _. KR_NEG(self(a)))(la _. KR_ATOM(NORMK(CONT(a)(b)))))
+      (la a. KR_ATOM(NORMK(MC(a)))))
+
+glyph KR_P    = KR_TOF(P_FLOW)
+glyph KR_NNP  = KR_TOF(PNOT(PNOT(P_FLOW)))
+glyph KR_PLEM = KR_TOF(POR(P_FLOW)(PNOT(P_FLOW)))
+glyph KR_LEM  = KR_DET(KR_P)(KR_NEG(KR_P))
+glyph KR_WLEM = KR_DET(KR_NEG(KR_P))(KR_NEG(KR_NEG(KR_P)))
+glyph KR_LNC  = KR_NEG(KR_AND(KR_P)(KR_NEG(KR_P)))
+glyph KR_ALL3 = la chk. AND(chk(KR_C1))(AND(chk(KR_K2))(chk(KR_V3)))
+glyph KR_ANY3 = la chk. OR(chk(KR_C1))(OR(chk(KR_K2))(chk(KR_V3)))
+
+glyph OK_KR_CLASSICAL = AND(KR_VALID(KR_C1)(KR_LEM))(AND(KR_VALID(KR_C1)(KR_WLEM))
+                       (AND(KR_VALID(KR_C1)(KR_LNC))(KR_SAME(KR_C1)(KR_NNP)(KR_P))))
+glyph OK_KR_LEM_FAILS = KR_ANY3(la fr. NOT(KR_VALID(fr)(KR_LEM)))
+glyph OK_KR_DNE_FAILS = KR_ANY3(la fr. NOT(KR_SAME(fr)(KR_NNP)(KR_P)))
+glyph OK_KR_WLEM_V3   = AND(KR_VALID(KR_C1)(KR_WLEM))(AND(KR_VALID(KR_K2)(KR_WLEM))(NOT(KR_VALID(KR_V3)(KR_WLEM))))
+glyph OK_KR_LNC       = KR_ALL3(la fr. KR_VALID(fr)(KR_LNC))
+glyph OK_KR_GG        = KR_ALL3(la fr. AND(KR_VALID(fr)(KR_GG(KR_LEM)))(AND(KR_VALID(fr)(KR_GG(KR_WLEM)))
+                       (AND(KR_VALID(fr)(KR_GG(KR_LNC)))(KR_SAME(fr)(KR_GG(KR_NNP))(KR_GG(KR_P))))))
+glyph OK_KR_POR_IMAGE = AND(KR_ALL3(la fr. KR_VALID(fr)(KR_PLEM)))(KR_ANY3(la fr. NOT(KR_VALID(fr)(KR_LEM))))
+glyph OK_KR_PERSIST   = KR_ALL3(KR_PERSIST)
+
+# the per-frame table -- printed, and PINNED by build.sh against the Python model's prediction
+glyph KR_TFS   = la chk. concat(TF(chk(KR_C1)))(concat(TF(chk(KR_K2)))(TF(chk(KR_V3))))
+glyph KR_TABLE = concat("\n      kripke C1/K2/V3: LEM=")(concat(KR_TFS(la fr. KR_VALID(fr)(KR_LEM)))
+    (concat(" WLEM=")(concat(KR_TFS(la fr. KR_VALID(fr)(KR_WLEM)))
+    (concat(" LNC=")(concat(KR_TFS(la fr. KR_VALID(fr)(KR_LNC)))
+    (concat(" DNE=")(concat(KR_TFS(la fr. KR_SAME(fr)(KR_NNP)(KR_P)))
+    (concat(" POR-LEM=")(KR_TFS(la fr. KR_VALID(fr)(KR_PLEM)))))))))))
+glyph KR_ROWS = J(KR_TABLE)(J(ROW("classical-frame")(OK_KR_CLASSICAL))
+    (J(ROW("lem-fails-intuitionistically")(OK_KR_LEM_FAILS))(J(ROW("dne-fails-intuitionistically")(OK_KR_DNE_FAILS))
+    (J(ROW("wlem-fails-only-at-V3")(OK_KR_WLEM_V3))(J(ROW("lnc-holds-everywhere")(OK_KR_LNC))
+    (J(ROW("gg-embeds-classical")(OK_KR_GG))(J(ROW("por-is-the-image-not-or")(OK_KR_POR_IMAGE))
+    (ROW("valuations-persistent")(OK_KR_PERSIST)))))))))
+
 glyph J   = la a. la b. concat(a)(b)
 glyph ROW = la lbl. la c. J(J(" | ")(lbl))(J(" ")(MK(c)))
-glyph MAIN = print(J(J(J("prop  neg-neg-P(glyph) = ")(KEY(PNOT(PNOT(P_FLOW)))))(J("\n              P(glyph) = ")(KEY(P_FLOW))))(J(ROW("dne-fails-ontologically")(OK_DN_GLYPH))(J(ROW("dne-holds-operationally")(OK_DN_TRUTH))(J(ROW("two-registers")(OK_TWO_ALGEBRAS))(J(ROW("neg-is-real")(OK_NEG_REAL))(J(ROW("incoherent-refused")(OK_INCOHERENT))(J(ROW("false-constructible")(OK_FALSE_OK))(J(ROW("true-obtains")(OK_TRUE_OK))(J(ROW("laws")(OK_LAWS))(J(ROW("laws-separable")(OK_LAWS_SEP))(ROW("one-negation-only")(OK_ONE_NEG))))))))))))
+glyph PROP_ROWS = (J(J(J("prop  neg-neg-P(glyph) = ")(KEY(PNOT(PNOT(P_FLOW)))))(J("\n              P(glyph) = ")(KEY(P_FLOW))))(J(ROW("dne-fails-ontologically")(OK_DN_GLYPH))(J(ROW("dne-holds-operationally")(OK_DN_TRUTH))(J(ROW("two-registers")(OK_TWO_ALGEBRAS))(J(ROW("neg-is-real")(OK_NEG_REAL))(J(ROW("incoherent-refused")(OK_INCOHERENT))(J(ROW("false-constructible")(OK_FALSE_OK))(J(ROW("true-obtains")(OK_TRUE_OK))(J(ROW("laws")(OK_LAWS))(J(ROW("laws-separable")(OK_LAWS_SEP))(ROW("one-negation-only")(OK_ONE_NEG))))))))))))
+
+glyph MAIN = print(J(PROP_ROWS)(KR_ROWS))
 
 export PNOT PAND POR PIMP PRED PROP COHERES TVAL KEY GEQ WATER P_FLOW P_WVOID TS0 FS0 BEING RECOG LOVE SELFP RELN VOIDP BECOM FORMP DEPTHP

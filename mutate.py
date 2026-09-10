@@ -75,6 +75,41 @@ MUTANTS = [
   'polarities every non-involutive negation is constant and FALSE is the only constant that breaks DNE; the '
   'laws rows go red with it, which is inherent. ONLY the dne-holds-operationally row is read',
   ['sh','-c','./tiny_host prop.la | grep -oE "dne-holds-operationally (OK|FAIL)"']),
+ # ── the Goedel-Gentzen bridge (prop.la GATE 7): one TARGETED mutant per claim. Each one's FULL
+ #    row-set was pre-registered in prop_bridge_model.py before the LA existed (arms 5, 6, 7, 9, 10);
+ #    each gate command reads ONLY its own row.
+ ('prop.la', 'kripke-negation-successor-blind',
+  "(la a. (la S. KR_FILTER(la w. KR_ALL(la v. NOT(KR_MEM(v)(S)))(KR_SC(fr)(w)))(KR_WS(fr)))(self(a)))",
+  "(la a. (la S. KR_FILTER(la w. NOT(KR_MEM(w)(S)))(KR_WS(fr)))(self(a)))",
+  'Kripke negation stops looking at the future: w forces ~a iff w alone fails a -- classical '
+  'negation -- so ~~P and P get one forcing set and the intuitionistic register collapses into the '
+  'classical one. It also turns lem/wlem/por red (model arm 5); ONLY dne-fails-intuitionistically, '
+  'the Kripke witness of GATE 1, is read',
+  ['sh','-c','./tiny_host prop.la | grep -oE "dne-fails-intuitionistically (OK|FAIL)"']),
+ ('prop.la', 'determination-is-its-own-image',
+  'glyph KR_DET  = la a. la b. la at. la ng. la an. la dt. dt(a)(b)',
+  'glyph KR_DET  = la a. la b. KR_POR(a)(b)',
+  'primitive disjunction becomes its Goedel-Gentzen image: the two referents E12 and the M6 ruling '
+  'name apart collapse into one sign, and excluded middle turns intuitionistically valid. It also '
+  'turns lem/wlem red (arm 6); ONLY por-is-the-image-not-or is read',
+  ['sh','-c','./tiny_host prop.la | grep -oE "por-is-the-image-not-or (OK|FAIL)"']),
+ ('prop.la', 'gg-leaves-atoms-bare',
+  '(la s. KR_NEG(KR_NEG(KR_ATOM(s))))', '(la s. KR_ATOM(s))',
+  'the translation stops double-negating atoms, so the image of DNE is DNE itself and fails on K2: '
+  'the embedding stops embedding. GG(LEM) stays valid under it (Glivenko), so this row is the ONLY '
+  'one it can turn red (arm 7) -- gg-embeds-classical is read',
+  ['sh','-c','./tiny_host prop.la | grep -oE "gg-embeds-classical (OK|FAIL)"']),
+ ('prop.la', 'v-frame-loses-a-future',
+  'IF(int_eq(w)(0))(la _. KR_L3(0)(1)(2))', 'IF(int_eq(w)(0))(la _. KR_L2(0)(1))',
+  "V3's root stops seeing its second future, so no frame in the family has two incomparable "
+  'futures and weak excluded middle holds everywhere: a family certifying an intermediate logic as '
+  'intuitionistic. Only this row goes red (arm 9); wlem-fails-only-at-V3 is read',
+  ['sh','-c','./tiny_host prop.la | grep -oE "wlem-fails-only-at-V3 (OK|FAIL)"']),
+ ('prop.la', 'valuation-not-persistent',
+  '(KR_L3(KR_NIL)(KR_L1(1))(KR_L2(0)(1)))', '(KR_L3(KR_NIL)(KR_L1(0))(KR_L2(0)(1)))',
+  "K2's valuation {1} becomes {0}: P true now and false later, which no Kripke model allows. It also "
+  'makes WLEM fail on K2 (arm 10); ONLY valuations-persistent is read',
+  ['sh','-c','./tiny_host prop.la | grep -oE "valuations-persistent (OK|FAIL)"']),
  ('opgrammar.la', 'scan-keys-on-raw-form',
   'glyph K_ = la d. KAN_N(T_(d))', 'glyph K_ = la d. KAN(T_(d))',
   'reverts the scan to the raw derivation string, which is blind to every + collision'),
