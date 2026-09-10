@@ -1,0 +1,72 @@
+--- .bootfix/asm.la	2026-08-20 22:36:35.820384710 -0600
++++ .imm64/asm.la	2026-08-21 10:23:04.309548388 -0600
+@@ -1154,6 +1154,23 @@
+                 (concat(B(add(mul(digit)(8))(5)))(IMMW(w)(n)))))
+           (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(FALSE))
+                 (concat(B(129))(concat(MODRMD(digit)(r))(IMMW(w)(n))))))))
++#   ★ A LABEL IMMEDIATE MUST TAKE THE imm32 FORM UNCONDITIONALLY, never the
++#   sign-extended imm8 short form — for two independent reasons, and the second
++#   is the one that bites.
++#     1. nasm does: `add rax, tgt` is `48 05 imm32`, `add rbx, tgt` is
++#        `48 81 C3 imm32` — measured, even where the address fits a byte.
++#     2. A label's value is NOT KNOWN IN PASS 1. If the encoding could shrink to
++#        the imm8 form for a small address, SIZEL would answer one length before
++#        the label table is built and ENC1 another after — the pass-1/pass-2
++#        disagreement the hardcoded-10 MOVLBL bug already cost once. This form's
++#        length is INDEPENDENT of the immediate, so the two cannot drift.
++#   The relocation the linker overwrites lands in that imm32 field; see RELLINE.
++glyph G1IMM32 = la digit. la w. la r. la n. la force. la mode.
++    IF(int_eq(r)(0))
++      (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(0)(FALSE))
++            (concat(B(add(mul(digit)(8))(5)))(IMMW(w)(n)))))
++      (la _. concat(P66M(mode)(w))(concat(REXOPT(w)(0)(r)(FALSE))
++            (concat(B(129))(concat(MODRMD(digit)(r))(IMMW(w)(n))))))
+ #   ★ The DESTINATION may be MEMORY: `or dword [pml4], 0x04` (11 uses in
+ #   boot.asm). The opcodes are the SAME as the register forms — the only
+ #   difference is that ModRM/SIB/disp come from MEMTAIL, with the group digit
+@@ -1189,7 +1206,7 @@
+         (la _. RROP(add(mul(digit)(8))(1))(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
+         (la _. IF(ISVAL(b))
+                  (la _. G1IMM(digit)(w)(REGNUM(a))(EVAL(labs)(b))(RFORCE(a))(BITSMODE(labs)))
+-                 (la _. error(concat("asm: unsupported ALU operand: ")(b))))))
++                 (la _. G1IMM32(digit)(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a))(BITSMODE(labs))))))
+ glyph G1DIG = la op.
+     IF(str_eq(op)("add"))(la _. 0)(la _.
+     IF(str_eq(op)("or"))(la _. 1)(la _.
+@@ -1662,7 +1679,10 @@
+     IF(str_eq(op)("align"))(la _. ALIGNPAD(off)(NUMV(NTH(1)(ts))))(la _.
+     IF(str_eq(op)("times"))(la _. mul(EVAL(labs)(TIMESCOUNT(TL2(ts))("")))(SIZEL(labs)(off)(TIMESREST(TL2(ts)))))(la _.
+     IF(ISNOARG(op))(la _. LENOF(NOARG(op)))(la _.
+-    IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b))))(la _.
++    IF(ISG1(op))(la _. WITHOPS(ts)(la w. la a. la b.
++      IF(AND(BISLBL(b))(NOT(ISMEM(a))))
++        (la _. LENOF(G1IMM32(G1DIG(op))(w)(REGNUM(a))(0)(RFORCE(a))(BITSMODE(labs))))
++        (la _. LENOF(G1ENC(labs)(G1DIG(op))(w)(a)(b)))))(la _.
+     IF(ISSH(op))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(SHENC(SHDIG(op))(BITSMODE(labs))(w)(a)(b))))(la _.
+     IF(str_eq(op)("inc"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(0)(w)(a)(BITSMODE(labs)))))(la _.
+     IF(str_eq(op)("dec"))(la _. WITHOPS(ts)(la w. la a. la b. LENOF(IDENC(1)(w)(a)(BITSMODE(labs)))))(la _.
+@@ -2746,6 +2766,15 @@
+     (la op.
+       (la linelen.
+        APPEND(PCRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMRIPRELS(locs)(xs)(secoff)(linelen)(st))(APPEND(FARRELS(locs)(xs)(mode)(secoff)(linelen)(op)(st))(APPEND(MEMDRELS(mlabs)(locs)(xs)(mode)(secoff)(linelen)(st))(
++        IF(ISG1(op))
++          (la _. (la a. (la b.
++                   IF(AND(BISLBL(b))(NOT(ISMEM(a))))
++                     (la _. CONS(RD(add(secoff)(sub(linelen)(4)))(TSYM(b)(locs)(xs))
++                                   (IF(int_eq(RWIDTH(a))(8))(la _. 11)(la _. 10))
++                                   (TADD(b)(locs)(xs)))(NIL))
++                     (la _. NIL))
++                 (A2(st)))(A1(st)))
++        (la _.
+         IF(str_eq(op)("mov"))
+           (la _. (la a. (la b.
+                    IF(BISLBL(b))
+@@ -2758,7 +2787,7 @@
+                  (A2(st)))(A1(st)))
+           (la _. IF(AND(ISDATA(op))(NOT(int_eq(DWIDTH(op))(1))))
+             (la _. DATARELS(locs)(xs)(secoff)(DWIDTH(op))(JOINEXPR(TL2(st)))(0))
+-            (la _. NIL)))))))
++            (la _. NIL))))))))
+       (SIZEL(WITHBITS(mlabs)(mode))(secoff)(ts)))
+     (LOWER(HD(st))))
+   (STRIPLAB(ts))

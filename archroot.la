@@ -51,7 +51,7 @@ glyph YN    = la b. IF(b)(la _. "YES")(la _. "no")
 glyph BEING       = la s. s
 glyph RELATION    = la a. la b. la f. f(a)(b)
 glyph RECOGNITION = la x. RELATION(x)(x)
-glyph LOVE        = la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))
+glyph LOVE        = la x. RELATION(x)(BECOMING(x))
 glyph SELF        = BEING(BEING)
 glyph VOID        = la a. la b. b
 glyph BECOMING    = la n. la f. la x. f(n(f)(x))
@@ -75,8 +75,22 @@ glyph ARCHE_OK = str_eq(SELF("∃"))(BEING("∃"))                 # ∃(∃) �
 glyph DV_SELF = AND(str_eq(DEPTH(BEING)("∃"))(SELF("∃")))(str_eq(SELF("x"))(BEING("x")))
 # RECOGNITION ⟵ RELATION : the reflexive relation. REC(a) reduces to REL(a)(a). (= ρ)
 glyph DV_REC  = str_eq(RECOGNITION("∃")(PAIR))(RELATION("∃")("∃")(PAIR))
-# LOVE ⟵ RELATION : the symmetrized relation. LOVE(a)(b) reduces to ⟨a,b⟩⟨b,a⟩.
-glyph DV_LOVE = str_eq(LOVE("a")("b")(PROBE))(concat("⟨a,b⟩")("⟨b,a⟩"))
+# LOVE ⟵ RELATION : the generator. LOVE(x) reduces to REL(x)(BECOMING(x)) —
+#   x held with what x becomes (codex: Love(x) = (x, new(x))). Rederived
+#   2026-09-06; the old witness asserted the SYMMETRIZED relation, which is a
+#   different concept and now lives in denote.la as ⊕'s own denotation.
+#   Same idiom as DV_REC: the derived form must equal its RELATION expansion,
+#   so this asserts the DERIVATION, not a hardcoded rendering.
+#   ★ WITNESSED AT TWO ARGUMENTS, and the second is not optional. new = BECOMING
+#   is the SUCCESSOR, so its argument must be a numeral (VOID is the zero). But a
+#   witness at VOID ALONE is VACUOUS against a CONSTANT new: with x = VOID,
+#   BECOMING(x) and the constant BECOMING(VOID) are the SAME TERM, so a LOVE that
+#   ignores x passes. Measured, not anticipated — the one-argument version of this
+#   line reported "derives? YES" with a constant new planted. The second witness,
+#   at ONE, is what makes the conjunction able to go RED.
+glyph LPROBE  = la p. la q. concat(p(la s. concat("f")(s))("x"))(q(la s. concat("f")(s))("x"))
+glyph DV_LOVE = AND(str_eq(LOVE(VOID)(LPROBE))(RELATION(VOID)(BECOMING(VOID))(LPROBE)))
+                   (str_eq(LOVE(BECOMING(VOID))(LPROBE))(RELATION(BECOMING(VOID))(BECOMING(BECOMING(VOID)))(LPROBE)))
 
 # ═══ CO-PRIMITIVE ATOMS — their irreducible action exhibited (autology) ══
 glyph AT_BEING = str_eq(BEING("∃"))("∃")                       # ∃   — Being face
@@ -105,10 +119,12 @@ glyph REN  = la g. g(la r. la e. r)
 glyph ETYM = la g. g(la r. la e. e)
 glyph SEAL = la et. MONO(CANON(et))(et)
 # the etymologies: SELF = ↻(∃) (Being self-applied); RECOGNITION = ↻(Relation)
-# (Relation reflexive, = ρ); LOVE = ⊕(⊗(a,b),⊗(b,a)) (Relation symmetrized).
+# (Relation reflexive, = ρ); LOVE = ⊗(Relation,Becoming) (the link between a
+# thing and what it becomes). Reseal 2026-09-06: the old ⊕(⊗(a,b),⊗(b,a))
+# sealed the symmetrized relation, which LOVE no longer denotes.
 glyph SEAL_SELF = SEAL(MC(PRIM("∃")))
 glyph SEAL_REC  = SEAL(MC(PRIM("Relation")))
-glyph SEAL_LOVE = SEAL(CON(SYN(PRIM("a"))(PRIM("b")))(SYN(PRIM("b"))(PRIM("a"))))
+glyph SEAL_LOVE = SEAL(SYN(PRIM("Relation"))(PRIM("Becoming")))
 # the root meta-Ren names itself — autological: ren IS the canon of its own etym.
 glyph SEAL_ARCHE = MONO("∃(∃)≡∃")(MC(PRIM("∃")))
 # Sealing property: each sealed form's etymology is RECOVERABLE (ren = canon(etym)).
@@ -124,7 +140,7 @@ glyph L2  = print(concat("root identity ∃(∃) ≡ ∃ holds ? ")(YN(ARCHE_OK)
 glyph L3  = print("-- DERIVATIONS from the root, verified by reduction --")
 glyph L4  = print(concat("SELF        <- BEING     (self-application ∃(∃); SELF=DEPTH(BEING)=BEING)  derives? ")(concat(YN(DV_SELF))(concat("  seal ")(REN(SEAL_SELF)))))
 glyph L5  = print(concat("RECOGNITION <- RELATION  (operator rho: reflexive relation)                derives? ")(concat(YN(DV_REC))(concat("  seal ")(REN(SEAL_REC)))))
-glyph L6  = print(concat("LOVE        <- RELATION  (symmetrized relation, reciprocity)               derives? ")(concat(YN(DV_LOVE))(concat("  seal ")(REN(SEAL_LOVE)))))
+glyph L6  = print(concat("LOVE        <- RELATION  (generator: x with what x becomes)                derives? ")(concat(YN(DV_LOVE))(concat("  seal ")(REN(SEAL_LOVE)))))
 glyph L7  = print("-- CO-PRIMITIVE atoms (irreducible; none forced into the chain) --")
 glyph L8  = print(concat("BEING  RELATION  DEPTH   = B&B's three faces (Being/Structure/Self-Application)  autology? ")(YN(AND(AT_BEING)(AND(AT_REL)(AT_DEPTH)))))
 glyph L9  = print(concat("VOID   FORM      BECOMING = further atoms (no derivation in corpus or code)       autology? ")(YN(AND(AT_VOID)(AND(AT_FORM)(AT_BEC)))))

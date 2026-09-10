@@ -1210,7 +1210,17 @@ say "Spec pipeline: the nine LA primitives via import(\"specpipe.la\")"
 # is the deliberate exception — DEPTH(DEPTH) is the infinite descent Ω — so its
 # META_DEBUG tests metacursion on halting args, and its divergence is asserted
 # below via timeout, on both engines.
-PR="$(./tiny_host primitives_spec.la 2>/dev/null)"
+# ★ THE CAPTURES BELOW ARE `|| true`-GUARDED, AND THAT IS LOAD-BEARING, 2026-09-08.
+# Under `set -euo pipefail`, `VAR="$(cmd)"` ABORTS THE SCRIPT when cmd exits
+# non-zero — so every FAIL line below it is DEAD CODE ON EXACTLY THE PATH IT
+# EXISTS TO REPORT. MEASURED, not reasoned: denote.la with a defect planted in
+# its LOVE leaf exits rc=1, and the denote section died at its capture having
+# printed NO `FAIL  denote:` line at all. The build still went red — but mutely,
+# and a consumer grepping '^FAIL' saw nothing. Same class as Track A's
+# gate_rss.sh (which could not report a red) and Track D's gate_p1.sh (which
+# could never go green): a gate that cannot SPEAK tests as little as one that
+# cannot FAIL. The guard lets the assertion do the reporting, which is its job.
+PR="$(./tiny_host primitives_spec.la 2>/dev/null || true)"
 ok=1
 for G in BEING Z RELATION RECOGNITION LOVE SELF VOID BECOMING FORM DEPTH DEPTH_Z; do
     printf '%s\n' "$PR" | grep -qx "  $G: PASS" || { echo "FAIL  primitives: $G autology not verified"; ok=0; }
@@ -1238,7 +1248,7 @@ glyph IF  = la c. la t. la f. c(t)(f)("!")
 glyph MAIN =
   print(concat(SND(RELATION(RELATION)("a")))(
         concat(FST(FST(RECOGNITION(RECOGNITION))("b")))(
-        concat(FST(FST(FST(FST(LOVE(LOVE)(LOVE)))("c")("z"))))(
+        concat(FST(FST(LOVE(LOVE))("c")))(
         concat(SELF(SELF)("d"))(
         concat(VOID(VOID)("e"))(
         concat(BECOMING(BECOMING)(la _. "f")("z"))(
@@ -1247,13 +1257,13 @@ glyph MAIN =
         DEPTH_Z(la self. la n. IF(int_eq(n)(0))(la _. "i")(la _. self(sub(n)(1))))(3))))))))))
 LA
 PRIM_EXPECT="abcdefghi"
-PRH="$(./tiny_host /tmp/primtest.la 2>/dev/null)"
+PRH="$(./tiny_host /tmp/primtest.la 2>/dev/null || true)"
 [ "$PRH" = "$PRIM_EXPECT" ] || { echo "FAIL  primitives: autology witnesses wrong on host"; printf '%s\n' "$PRH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp /tmp/primtest.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-PRV="$(./logos_secd 2>/dev/null)"
+PRV="$(./logos_secd 2>/dev/null || true)"
 [ "$PRV" = "$PRIM_EXPECT" ] || { echo "FAIL  primitives: autology witnesses wrong on native VM"; printf '%s\n' "$PRV"; ok=0; }
 rm -f /tmp/primtest.la logos_secd logos_program.bin logos_source.la
 # DEPTH autology is non-termination (Ω). Assert DEPTH(DEPTH) never returns on
@@ -1319,6 +1329,28 @@ grep -qF 'glyph IS_ALPHA1 = la d. str_eq(CANON(d))(NORMK(d))' canon.la || { echo
 for ANUM in ALPHA_VAL ALPHA_SCORE ALPHA_DEG ALPHA_NUM ALPHA_LEVEL; do
     grep -qE "^glyph $ANUM" canon.la && { echo "FAIL  canon α: glyph '$ANUM' is defined — α is being made NUMERIC inside the identity register. That is the two-register category error the ATT note names: alignment is identity (1.0 by nature), instantiation fidelity is the measured one and lives in FIDELITY.md under its own name"; ok=0; }
 done
+# ═══ BEHAVIOURAL DRIFT GATE — the κ-normaliser copies must AGREE ═══════════
+# The export fix landed in 9112c18 but specpipe.la records it was "inert until a
+# consumer is converted" — eleven generated modules, 313 glyphs, imported by
+# nothing. The conversion never happened, so the re-implementations remain: 14
+# distinct sites re-declare canon's κ machinery (M76). This gate does not remove
+# them; it makes their DISAGREEMENT impossible to miss, which is the M67 ruling
+# generalised — a gated copy and no copy are equivalent with respect to drift.
+#
+# ⚠ BEHAVIOURAL, NOT TEXTUAL. The check two blocks up greps canon.la for a glyph
+#   body; a source diff is a static analyser and passes on two copies that are
+#   byte-identical and WRONG. This runs each normaliser and compares OUTPUT.
+# ★ It CAUGHT ONE, live, on 2026-09-09: entropy.la:NKAP lacked REWRITE_MC, so
+#   MC(BEING) normalised to ↻(BEING) where canon gives SELF — one copy carrying a
+#   declared rewrite and its twin not, i.e. build.sh:928's shape found by
+#   measurement. Fixed in the same commit; --selftest R3 reproduces it on demand.
+say "behavioural drift: every κ-normaliser agrees with canon.la:NORMK (gate_normdrift.sh)"
+bash gate_normdrift.sh . || exit 1
+# ★ the gate's own red paths, run every build so it cannot rot into a green stamp:
+#   R1 output literal · R2 comparator inversion · R3 the real 2026-09-09 defect.
+#   Three sites, three idioms — a sweep searches an idiom, not a class.
+bash gate_normdrift.sh --selftest . || { echo "FAIL  normdrift: a RED PATH NO LONGER FIRES — the gate can no longer fail"; exit 1; }
+
 # ★★ THE SEMIOTIC-ONTOGLYPHIC LADDER (ladder.la) — the 7 levels as data, and the
 #   ORDINAL discipline made mechanical. The Science of Naming ranks signs by
 #   structural alignment: Noise, Sign, Icon, Index, Glyph, Neoglyph, Ontoglyph, and
@@ -2610,6 +2642,106 @@ PYC
     fi
 fi
 [ "$ok" -eq 1 ] || exit 1
+
+say "LA linker: N objects -> a running ET_EXEC, no ld (link.la, track B)"
+# The LA-native LINKER. asmelf.la already emitted a runnable ELF, but from ONE
+# source at ONE load address -- `org` made every label absolute, which is all a
+# -f bin image needs. This consumes ET_REL OBJECTS: N inputs from a manifest,
+# sections merged by name, UNDEFINED symbols resolved across translation units,
+# and relocations APPLIED once addresses are known.
+#
+# Verification splits by whether the answer is FORCED or CHOSEN. A relocated
+# instruction is forced -- `call greet` at 0x401001 targeting 0x401010 has
+# exactly one correct rel32 -- so those bytes are diffed against ld. File layout
+# and padding are ld's own choices, so readelf/nm judge those instead. And the
+# last check is not a diff: the emitted binary is RUN, because one can diff
+# correctly and still segfault.
+#
+# gate_link_script.sh is the third: the layout is no longer the linker's choice
+# at all -- it is read from a LINKER SCRIPT, and `ld -T <the same file>` is the
+# witness, so the addresses are neither linker's invention and can be compared
+# exactly rather than excluded as ld's own habits.
+#
+# All three self-skip with a SKIP line when nasm/ld/readelf/objcopy/gcc are
+# absent, and carry per-run timeouts, so they cannot wedge a build.
+./gate_link.sh        || ok=0
+./gate_link_reloc.sh  || ok=0
+./gate_link_script.sh || ok=0
+# gate_link_nsec.sh: the DEFAULT (no-script) layout places an ARBITRARY
+# allocatable section by its SHF flags -- exec->RX, writable->RW, else->R, as
+# ld groups by permission. The known five stay byte-identical to ld (the three
+# gates above); this covers a section name the linker cannot know (.mydata),
+# proving it is placed, mapped, readable at run time, and W^X is preserved.
+./gate_link_nsec.sh   || ok=0
+# gate_link_e2e.sh is the convergence check: .asm --asm.la--> object
+# --link.la--> executable, with NO nasm and NO ld anywhere in the chain. It
+# takes track A's producer from A's published branch (read-only) and SKIPs
+# rather than failing when that half is absent or refuses a fixture — B does
+# not own the assembler, and an unattended session must not go red for another
+# track's move. It works in its own .e2egate/ directory, so it does not race
+# the three gates above over the worktree's link_inputs.txt.
+./gate_link_e2e.sh    || ok=0
+# gate_link_layout.sh — WIRED 2026-09-08, and it had NEVER been run by a build.
+# ★ MEASURED, not inferred — but NOT the way an earlier draft of this comment
+# said. `git log -S` is the WRONG instrument for "was this ever wired": it
+# reports only commits where the occurrence COUNT changes, and it does not
+# examine merge diffs at all unless asked. The linker gates were wired inside a
+# merge (0184d14 "Merge kernel-k1 into track-b, and wire the linker gates into
+# build.sh"), so plain `-S` reports NOTHING for gate_link.sh and
+# gate_link_reloc.sh — both of which have been wired and running for weeks.
+# A false NEVER, on this very file. The sound test is a direct presence scan:
+#   for c in $(git rev-list --all -- build.sh); do
+#     git show "$c:build.sh" | grep -q '^\./gate_link_layout.sh' && echo "$c"
+#   done
+# That returns exactly ONE revision across all 236 build.sh revisions on ALL
+# branches: the commit that added this line. So it was never wired — the
+# conclusion held, the earlier reasoning for it did not.
+# And it is the ONLY build-reachable cover for
+# `link_layout.la`: nothing imports the module, and at the time it was wired
+# exactly two gates exercised it — this one and gate_link_kernel.sh
+# (deliberately on-demand, ~36 min). gate_link_hiaddr.sh, added below the same
+# day, is now a third. So a
+# committed 9 KB module had ZERO enforcement in the build — a regression in it
+# would have landed silently and green. (A bare `grep -l link_layout.la *.sh`
+# returns four scripts; the other two, gate_seam_asm_link.sh:25 and night3.sh:52,
+# only `cp` the file into a scratch dir and assert nothing — see LINKER.md.)
+# ★ It is not a weak gate; it is a gate nobody ran. Red path re-verified here
+# 2026-09-08 rather than taken from LINKER.md's record of it: perturbing
+# `link_layout.la:65` TEXT_BASE by ONE (4198400 -> 4198401) gives
+#   FAIL  link_layout.la: _start should be 4198400 (ld says 0x...401000);
+#         got: obj1 _start = 4198401
+# then restored and re-proved byte-identical to HEAD by hash. It discriminates
+# at single-byte resolution AND names the offending address.
+# Costs 23 s measured alone, 38 s under two concurrent builds — cheap either way.
+./gate_link_layout.sh || ok=0
+# gate_link_hiaddr.sh — the 32-BIT WINDOW, enforced rather than declared.
+# ★ link.la reads the LOW 4 bytes of each 8-byte ELF64 field, and its header has
+# always said the high word is "checked where it costs nothing so the failure is
+# loud rather than silent". It was NOT: SYM_VHIGH was defined AND exported and
+# called by NOTHING, and STAB captured ST_VHI without ever reading it. Wired the
+# same day it was found (2026-09-08), because a guard nobody calls is this
+# morning's finding in a different costume.
+# ★★ The read-side hole DEFEATED the write-side guard: FITS32 refuses a value too
+# big for a 4-byte field, but a truncated read yields a SMALL number
+# (0x1_0000_0000 reads as 0) which FITS32 accepts. Both directions or neither.
+# ★★★ RED PATH MEASURED, and the gate re-verified against the pre-guard linker:
+# it exits 0 and prints "resolved greet -> 4198416" — a symbol genuinely at
+# 0x100000000 linked to 0x401010, plausible and wrong and green. The gate carries
+# a CONTROL too (an ordinary sub-4 GB link must NOT be refused), because a guard
+# that fires on everything and one that fires on nothing look identical from the
+# red case alone. Costs 15 s.
+./gate_link_hiaddr.sh || ok=0
+# gate_seam_asm_link.sh is deliberately NOT wired here, and this note exists so
+# that stays a DECISION rather than the accident gate_link_layout.sh was. It is
+# green (68 s), but its producer half is track A's asm.la: it stages
+# `kernel-k1:asm.la` read-only and FAILS — it does not SKIP — if that half
+# regresses. Wiring it would turn B's unattended build red on another track's
+# move, which is the same reason gate_link_e2e.sh documents its SKIP fallback
+# above. It runs from run_link_regress.sh instead, on demand, as
+# gate_link_kernel.sh does. Found 2026-09-08: it was invoked by NOTHING and the
+# exclusion was undocumented — my own gate_link*.sh sweep glob had missed it.
+[ "$ok" -eq 1 ] || exit 1
+
 
 say "Spec pipeline: the three laws of thought — metalogical ontosyntax (metalogic_spec.la)"
 # metalogic_spec.la writes the THREE LAWS OF THOUGHT as first-class glyphs and
@@ -4681,6 +4813,27 @@ case "$PROUT" in
   *) echo "FAIL  prop: the three laws no longer fail SEPARATELY (FTT/TFT/TTF) — three laws that fail together are one law wearing three names — got: $PROUT"; ok=0 ;;
 esac
 case "$PROUT" in *FAIL*) echo "FAIL  prop: a gate failed — $PROUT"; ok=0 ;; esac
+# ── ★ GATE 7 — the Goedel–Gentzen bridge (M6). The glyph register is INTUITIONISTIC, the
+#  truth register CLASSICAL, and the double-negation translation embeds the second in the
+#  first (WP sub:proplayer :2393–2399). prop.la evaluates its OWN propositions on a Kripke
+#  family C1/K2/V3 with a PRIMITIVE disjunction named apart from POR -- POR is its GG image,
+#  and over the glyph fragment the two logics coincide (Glivenko), so without the primitive
+#  nothing could tell them apart. The table is PINNED to what prop_bridge_model.py predicted
+#  before the LA existed, and the model's own pre-registered arms are re-run here, so a change
+#  on either side has to be agreed by the other.
+case "$PROUT" in
+  *"kripke C1/K2/V3: LEM=TFF WLEM=TTF LNC=TTT DNE=TFF POR-LEM=TTT"*) : ;;
+  *) echo "FAIL  prop: the Kripke table is not the one prop_bridge_model.py predicted (LEM=TFF WLEM=TTF LNC=TTT DNE=TFF POR-LEM=TTT) — got: $PROUT"; ok=0 ;;
+esac
+case "$PROUT" in
+  *"classical-frame OK"*"lem-fails-intuitionistically OK"*"dne-fails-intuitionistically OK"*"wlem-fails-only-at-V3 OK"*"lnc-holds-everywhere OK"*"gg-embeds-classical OK"*"por-is-the-image-not-or OK"*"valuations-persistent OK"*) : ;;
+  *) echo "FAIL  prop: the Goedel–Gentzen bridge (GATE 7) changed — got: $PROUT"; ok=0 ;;
+esac
+if command -v python3 >/dev/null && [ -f prop_bridge_model.py ]; then
+    python3 prop_bridge_model.py >/dev/null 2>&1 || { echo "FAIL  prop: prop_bridge_model.py's pre-registered arms no longer hold — the witness the Kripke table is pinned to has moved"; ok=0; }
+else
+    echo "SKIP  prop: python3 or prop_bridge_model.py absent — the table pin stands, the model behind it was not re-run"
+fi
 # ★ COHERES vs OBTAINS, witnessed by EXIT CODE rather than by report.
 #  §XVII's falsification is exactly this pair: a structurally incoherent
 #  proposition the constructors ACCEPT, or a merely false one they REFUSE,
@@ -4969,7 +5122,9 @@ say "The mutation lever, extended past the 2 gates it could reach (mutate.py)"
 #  cross-module check it never performed. Both fixed; the mutant is CAUGHT
 #  now, verified by re-running rather than assumed.
 #  SPLIT, and the skip ANNOUNCES ITSELF: prop.la's mutants run here (~1s
-#  each); opgrammar.la's cost ~250s each and are OUT OF BAND. A flag that
+#  each until GATE 7 landed; ~4-5s each since -- 4.46s per run at load 4.0,
+#  its ten mutants in 83s, measured 2026-09-10); opgrammar.la's cost ~250s
+#  each and are OUT OF BAND. A flag that
 #  silently narrows coverage while still printing a confident PASS is the
 #  same failure mode as a check that cannot go red.
 if command -v python3 >/dev/null && [ -f mutate.py ]; then
@@ -5002,7 +5157,7 @@ if command -v python3 >/dev/null && [ -f mutate.py ]; then
         fi
     done
     [ "$MUTOK" -eq 1 ] || exit 1
-    echo "PASS  mutate: 20 implementation-perturbing mutants all CAUGHT, none died of the wrong cause — prop.la 3, selfext1.la 5 (each of the revision arm's four conjuncts forced true, plus the reproduction arm) selfext2.la 2 (an unverified extension reaching execution; a MAIN that hardcodes the answer, visible ONLY to the parent control) selfext2b.la 1 (the organ exec'ing the GENERIC VM LOADER — the cheapest test of the most expensive mistake in this repo, since the guard is static and needs no vessel rebuild) and ratchet.py 3 (α-normalisation disabled, strict-increase weakened, collapse-check removed — the last of which SURVIVED at first and exposed a non-discriminating fixture, not a gate defect) and stage 4's 2 (an overfit fixture that is secretly honest; held-out probes replaced by the probe the synthesiser already saw) — the first of THOSE also survived at first, and exposed a TD_IMPL/TD_SRC split inside the organ rather than a blind gate) and stage 5's 2 (the VM leg silently falling back to the host; the VM reusing a stale stream. ★ The harness's own FAIL classifier was substring-matching and read stage 5's PASS prose (\"a FAILURE, not a note\") as a failure; the line-start fix then missed the LA modules' inline \"| name FAIL\" and turned 8 CAUGHT into SURVIVED, caught only by re-running every set. Now whole-word. Each red is reported as a RATIO of the green baseline, because a red arriving in a small fraction of it is the shape of a mutant that died before reaching the check; and the harness REFUSES to run unless the unmutated tree is green first, since otherwise every CAUGHT is meaningless. NOT RUN HERE: opgrammar.la's 2 mutants, ~250 s each; run out of band with 'MUT_BUDGET=1200 python3 mutate.py opgrammar.la' (both CAUGHT as of 2026-08-24)"
+    echo "PASS  mutate: 27 implementation-perturbing mutants all CAUGHT, none died of the wrong cause — prop.la 10 (two of them TARGETED, one per register, each reading only its own row: glyph-negation-cancels turns only the glyph register red, truth-negation-not-involutive only the truth register; before the second, no mutant in the set could turn dne-holds-operationally red, so the truth half had never been shown able to fail; and five for GATE 7, the Goedel-Gentzen bridge, one per claim, each reading only its own row: Kripke negation made successor-blind, primitive disjunction collapsed into its own GG image, atoms left bare by the translation, the V-frame losing a future, a non-persistent valuation), selfext6.la 2 (the search budget ignored; a module emitted on exhaustion), selfext1.la 5 (each of the revision arm's four conjuncts forced true, plus the reproduction arm) selfext2.la 2 (an unverified extension reaching execution; a MAIN that hardcodes the answer, visible ONLY to the parent control) selfext2b.la 1 (the organ exec'ing the GENERIC VM LOADER — the cheapest test of the most expensive mistake in this repo, since the guard is static and needs no vessel rebuild) and ratchet.py 3 (α-normalisation disabled, strict-increase weakened, collapse-check removed — the last of which SURVIVED at first and exposed a non-discriminating fixture, not a gate defect) and stage 4's 2 (an overfit fixture that is secretly honest; held-out probes replaced by the probe the synthesiser already saw) — the first of THOSE also survived at first, and exposed a TD_IMPL/TD_SRC split inside the organ rather than a blind gate) and stage 5's 2 (the VM leg silently falling back to the host; the VM reusing a stale stream. ★ The harness's own FAIL classifier was substring-matching and read stage 5's PASS prose (\"a FAILURE, not a note\") as a failure; the line-start fix then missed the LA modules' inline \"| name FAIL\" and turned 8 CAUGHT into SURVIVED, caught only by re-running every set. Now whole-word. Each red is reported as a RATIO of the green baseline, because a red arriving in a small fraction of it is the shape of a mutant that died before reaching the check; and the harness REFUSES to run unless the unmutated tree is green first, since otherwise every CAUGHT is meaningless. NOT RUN HERE: opgrammar.la's 2 mutants, ~250 s each; run out of band with 'MUT_BUDGET=1200 python3 mutate.py opgrammar.la' (both CAUGHT as of 2026-08-24)"
 else
     echo "SKIP  mutate: python3 or mutate.py absent"
 fi
@@ -5758,6 +5913,58 @@ done
 # repaired: two names were found to name ONE meaning. Changing ρ's decomposition to
 # "fix" a distinctness complaint would DESTROY the identity — the RED path for this
 # gate is exactly that change, and it fires.
+# ★ M67 [~] PARTIAL — the ρ ≡ SR_ABOUT identity, GATED ACROSS THE MODULE BOUNDARY.
+# ⚠ THIS IS AN INTERIM. It stands in for M67's mechanism (metaglyph.la importing
+#   canon.la so SR_ABOUT has ONE definition), which is DEFERRED, not delivered.
+#   ⇒ M67 IS NOT DONE. Do not mark it [x] because this gate is green.
+#   WHAT IT DELIVERS: M67's PURPOSE. "Copy-drift surface" means UNDETECTED drift;
+#   a copy carrying a red-witnessed gate has none, so a gated copy and no copy are
+#   equivalent with respect to drift. They differ in maintenance cost, not exposure.
+#   WHAT IT DEFERS: the copy itself. RETIRED BY M0a / roadmap item 0.
+#   WHY DEFERRED (measured 2026-09-09): the import costs codegen 260.13s -> 1145.15s
+#   (x4.40) and stream +40.2% PER IMPORTER; familytree.la and denote.la each pay it.
+#   ⚠ Whether that amortises under M0a is UNMEASURED — see M76.
+# ★ M67 (design 2) — the ρ ≡ SR_ABOUT identity, GATED ACROSS THE MODULE BOUNDARY
+# without metaglyph.la importing canon.la.
+# metaglyph.la keeps a LOCAL SR_ABOUT_HERE. Until 2026-09-09 nothing checked it
+# against canon.la at all: canon.la's SR_ABOUT could be changed to MC(PRIM("SELF"))
+# and metaglyph still reported YES — it compared two local terms. This gate makes
+# that copy honest by comparing the two modules' κ-forms directly, and REQUIRES
+# them to diverge under a mutation.
+# ⚠ Probes are written to a mktemp dir, not the repo: no new tracked files, and
+# canon+metaglyph both export CANON so a single module importing both would
+# collide (the reason build.sh:1281 uses the cp-and-append idiom elsewhere).
+MP="$(mktemp -d)"
+cp canon.la metaglyph.la tiny_host "$MP/"
+printf 'import("canon.la")\nglyph MAIN = print(CANON(SR_ABOUT))\n'          > "$MP/p_canon.la"
+printf 'import("metaglyph.la")\nglyph MAIN = print(CANON(SR_ABOUT_HERE))\n' > "$MP/p_meta.la"
+M67_C="$( cd "$MP" && ./tiny_host p_canon.la 2>/dev/null || true )"
+M67_M="$( cd "$MP" && ./tiny_host p_meta.la  2>/dev/null || true )"
+[ -n "$M67_C" ] || { echo "FAIL  M67: the canon.la probe produced nothing — the check never ran"; ok=0; }
+[ "$M67_C" = "$M67_M" ] \
+  || { echo "FAIL  M67: metaglyph.la's SR_ABOUT_HERE ($M67_M) has DRIFTED from canon.la's SR_ABOUT ($M67_C)"; ok=0; }
+# ★ RED PATH, exercised every run: mutate canon.la and REQUIRE the probes to diverge.
+# Without this the check above passes on two files that are both wrong, and on a
+# metaglyph that cannot see canon.la at all — which is the state this gate exists to end.
+# ⚠ Mutate by REPLACING WHATEVER SR_ABOUT CURRENTLY IS, not a literal form. A
+# literal sed cannot match an already-drifted canon.la, and then this red path
+# emits two further failures blaming the probe for a drift the check above has
+# already named — three diagnostics, one fault, two of them pointing at the
+# instrument. The sentinel is chosen to differ from the value just observed.
+M67_MUT='MC(PRIM("BECOMING"))'
+case "$M67_C" in *BECOMING*) M67_MUT='MC(PRIM("VOID"))' ;; esac
+sed -i "s|^glyph SR_ABOUT = .*|glyph SR_ABOUT = $M67_MUT|" "$MP/canon.la"
+grep -qF "glyph SR_ABOUT = $M67_MUT" "$MP/canon.la" \
+  || { echo "FAIL  M67: could not apply the canon.la mutation — the red path never ran, so the green above means nothing"; ok=0; }
+M67_C2="$( cd "$MP" && ./tiny_host p_canon.la 2>/dev/null || true )"
+# ⚠ Compare against canon's OWN pre-mutation value, not against metaglyph's. Comparing
+# to metaglyph makes this fire a second, WRONG diagnostic whenever metaglyph has drifted
+# to whatever the mutation happens to produce — blaming the probe for the drift the check
+# above already named. What must be true is narrower and exact: mutating canon.la changes
+# what the canon probe reports, i.e. the probe is genuinely reading that file.
+[ "$M67_C2" != "$M67_C" ] \
+  || { echo "FAIL  M67: canon.la was mutated and its own probe did not change — the probe is not reading canon.la, so the agreement above proves nothing"; ok=0; }
+rm -rf "$MP"
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp metaglyph.la logos_source.la
@@ -5765,11 +5972,11 @@ cp metaglyph.la logos_source.la
 MG_V="$(./logos_secd 2>/dev/null)"
 [ "$MG_H" = "$MG_V" ] || { echo "FAIL  item2: host != VM"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
-[ "$ok" -eq 1 ] && echo "PASS  item2: ∂δγρ𝔄 are glyphs the language can INSPECT, COMPOSE and OPERATE ON (not dispatch data above it); ρ ≡ SR_ABOUT asserted positively; rank read FROM the glyph; byte-identical host==VM" || exit 1
+[ "$ok" -eq 1 ] && echo "PASS  item2: ∂δγρ𝔄 are glyphs the language can INSPECT, COMPOSE and OPERATE ON (not dispatch data above it); ρ ≡ SR_ABOUT asserted positively AND gated across the module boundary (canon.la mutated, witness required to flip); rank read FROM the glyph; byte-identical host==VM" || exit 1
 
 say "LA arc items 3+4: denotational morphology (γ_g, r_D) + the glyphic combination law (denote.la)"
 ok=1
-DN_H="$(./tiny_host denote.la 2>/dev/null)"
+DN_H="$(./tiny_host denote.la 2>/dev/null || true)"
 for w in "ITEM3 reduction ⟦γ_Λ(a,b)⟧=r_D(⟦a⟧,⟦b⟧):T" \
          "violation(▷ operand-swap) CAUGHT:T" \
          "⊥ not undefined (PM disjoint):T" \
@@ -5796,7 +6003,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp denote.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-DN_V="$(./logos_secd 2>/dev/null)"
+DN_V="$(./logos_secd 2>/dev/null || true)"
 [ "$DN_H" = "$DN_V" ] || { echo "FAIL  items3/4: host != VM"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 [ "$ok" -eq 1 ] && echo "PASS  items3/4: γ_g and r_D are real LA operators; the reduction ⟦γ_Λ(a,b)⟧=r_D(⟦a⟧,⟦b⟧) holds and FAILS on a constructed violation; ⊥ is a total false-everywhere function, never a stuck term; the combination law is a PREDICATE with a constructible violation; byte-identical host==VM" || exit 1
@@ -5993,20 +6200,41 @@ say "Denotational COMPOSE: the meaning of a compound as a FUNCTION of its parts 
 # reduces to SELF denotationally — syntax-rewrite and semantic-reduction agree (Frege).
 # Pure λ, byte-identical on the C host and the native VM.
 ok=1
-DEN_EXPECT="DENOTE ⊗-recovers-both[BEING,VOID]:pq | ↻(BEING)≡SELF-denotationally:T | nested-⊗(↻BEING,VOID):rs"
+# ★ TWO WITNESSES ADDED 2026-09-08 (⊕-symmetric-both-orders, LOVE-leaf-is-the-
+# generator). The LOVE realignment moved the symmetrization out of LOVE and INTO
+# D_CON, and D_CON — ⊕'s whole denotation — was covered by NO assertion here:
+# the three witnesses were ⊗, ↻ and nested-⊗.
+#
+# ★ WHAT WAS ACTUALLY MEASURED, since the first draft of this comment guessed and
+# guessed WRONG. Five D_CON defects were planted. FOUR of them (denotes-⊗,
+# lost-symmetry either way, halves-swapped) make the module produce NO OUTPUT AT
+# ALL, so the three-witness gate went red on them too — the fourth witness is not
+# what catches those, and claiming it was would have been a fabricated red path.
+# The FIFTH was silent: `D_CON = LOVE(a)(b)`, the pre-realignment spelling, left
+# all three original witnesses byte-identical.
+#
+# ★ AND THE FIFTH WAS SILENT FOR A REASON THAT WAS A REAL BUG, NOT A TEST
+# ARTEFACT: denote.la:41 still defined the RETRACTED binary LOVE, so that
+# spelling was still literally the old symmetrization. denote.la's primitive
+# block is declared "canonical in primitives.la" and had drifted from it —
+# LOOKUP was denoting a concept the rest of the arc had retracted. Fixed in the
+# same change. W_LOVE re-asks primitives_spec.la's own three LOVE tests of
+# denote.la's LOOKUP, so the two modules cannot disagree again unseen; it is the
+# witness that goes red on the silent defect.
+DEN_EXPECT="DENOTE ⊗-recovers-both[BEING,VOID]:pq | ↻(BEING)≡SELF-denotationally:T | nested-⊗(↻BEING,VOID):rs | ⊕-symmetric-both-orders[BEING,VOID]:pqrs | LOVE-leaf-is-the-generator:qfxffx"
 # ★ FIRST LINE, exact. denote.la grew items 3 and 4 (γ_g / r_D and the combination
 # law), so its output is now three lines and a whole-output equality test against
 # this one-line constant fails — correctly. It is NOT loosened to a substring
 # match: this gate still exact-matches ITS OWN line, and the item 3/4 lines are
 # exact-matched by the LA-arc gate above. Each assertion owns what it asserts.
-DENALL="$(./tiny_host denote.la 2>/dev/null)"
+DENALL="$(./tiny_host denote.la 2>/dev/null || true)"
 DENH="$(printf '%s\n' "$DENALL" | head -1)"
 [ "$DENH" = "$DEN_EXPECT" ] || { echo "FAIL  denote: host verdict wrong (got: $DENH)"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp denote.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-DENVALL="$(./logos_secd 2>/dev/null)"
+DENVALL="$(./logos_secd 2>/dev/null || true)"
 DENV="$(printf '%s\n' "$DENVALL" | head -1)"
 [ "$DENV" = "$DEN_EXPECT" ] || { echo "FAIL  denote: native VM verdict wrong (got: $DENV)"; ok=0; }
 # host==VM compares the FULL output, not just the first line — the byte-identity
@@ -6228,7 +6456,7 @@ say "Arch root: ∃(∃)≡∃ as the root ontomonoglyph + the honest primitive-
 # gives THREE co-constitutive faces of the Archē (Being/Structure/Self-Application = BEING/
 # RELATION/DEPTH) and says the operator chain ∂→δ→γ→ρ→𝔄 is a PROCESS not a catalogue — so
 # the nine are NOT forced into the chain. Result: 3 derive (SELF⟵BEING, RECOGNITION⟵RELATION
-# =ρ, LOVE⟵RELATION), 6 UNDERIVED; etymology sealed + recoverable.
+# =ρ, LOVE⟵RELATION as the generator), 6 UNDERIVED; etymology sealed + recoverable.
 # ★ RE-TAGGED 2026-08-26 per Erik's ruling of 2026-08-24 (LA_ARC_NEXT R-C): the six were
 # formerly reported here as "co-primitive", which read as a SETTLED FINDING. They are THE
 # GAP — an incompleteness to close, not a fact to report. Each of the six must end as
@@ -6241,25 +6469,25 @@ check_arch () {  # $1 = engine label, $2 = output file
     grep -qF 'root identity ∃(∃) ≡ ∃ holds ? YES' "$2"                              || { echo "FAIL  archroot($1): the root identity ∃(∃)≡∃ does not hold"; ok=0; }
     grep -qF 'derives? YES  seal ↻(∃)' "$2"                                          || { echo "FAIL  archroot($1): SELF⟵BEING derivation (∃(∃)) not verified"; ok=0; }
     grep -qF 'derives? YES  seal ↻(Relation)' "$2"                                   || { echo "FAIL  archroot($1): RECOGNITION⟵RELATION (ρ, reflexive) not verified"; ok=0; }
-    grep -qF 'derives? YES  seal ⊕(⊗(a,b),⊗(b,a))' "$2"                              || { echo "FAIL  archroot($1): LOVE⟵RELATION (symmetrized) not verified"; ok=0; }
+    grep -qF 'derives? YES  seal ⊗(Relation,Becoming)' "$2"                          || { echo "FAIL  archroot($1): LOVE⟵RELATION (the generator) not verified"; ok=0; }
     grep -qF "BEING  RELATION  DEPTH   = B&B's three faces (Being/Structure/Self-Application)  autology? YES" "$2" || { echo "FAIL  archroot($1): the three underived faces (BEING/RELATION/DEPTH) not exhibited"; ok=0; }
     grep -qF 'etymology contained & recoverable from each sealed derived glyph ? YES' "$2" || { echo "FAIL  archroot($1): sealed etymology not recoverable (Sealing broken)"; ok=0; }
     grep -qF 'only rho fits a glyph (RECOGNITION) ? YES' "$2"                         || { echo "FAIL  archroot($1): operator-chain honesty (ρ→RECOGNITION) not exhibited"; ok=0; }
     grep -qF 'VERDICT: 3 of 9 derive (SELF, RECOGNITION, LOVE); 6 UNDERIVED' "$2"  || { echo "FAIL  archroot($1): the 3-derive/6-UNDERIVED(THE GAP) verdict missing"; ok=0; }
 }
 rm -f arch_host.out arch_vm.out
-./tiny_host archroot.la > arch_host.out 2>/dev/null
+./tiny_host archroot.la > arch_host.out 2>/dev/null || true
 check_arch "C host" arch_host.out
 rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp archroot.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > arch_vm.out 2>/dev/null
+./logos_secd > arch_vm.out 2>/dev/null || true
 check_arch "native VM" arch_vm.out
 cmp -s arch_host.out arch_vm.out || { echo "FAIL  archroot: native derivation != C host derivation"; ok=0; }
 rm -f arch_host.out arch_vm.out logos_secd logos_program.bin logos_source.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  archroot: ∃(∃)≡∃ (I AM THAT I AM) established as the root ontomonoglyph (autological meta-Ren); the primitive-derivation chain verified BY REDUCTION — 3 of 9 genuinely derive (SELF⟵BEING via self-application, RECOGNITION⟵RELATION = operator ρ, LOVE⟵RELATION symmetrized), 6 are UNDERIVED — THE GAP per Erik's ruling 2026-08-24, not a settled result (BEING/RELATION/DEPTH = B&B's three faces of the Archē, + VOID/FORM/BECOMING); derivation from the root IS attempted — in archderive.la, in this same build: BEING resolves as the root itself and the other five are AXIOMS with the seam stated; etymology sealed + recoverable; the operator chain ∂→δ→γ→ρ→𝔄 is a process not a catalogue (not forced); byte-identical on host and native VM"
+    echo "PASS  archroot: ∃(∃)≡∃ (I AM THAT I AM) established as the root ontomonoglyph (autological meta-Ren); the primitive-derivation chain verified BY REDUCTION — 3 of 9 genuinely derive (SELF⟵BEING via self-application, RECOGNITION⟵RELATION = operator ρ, LOVE⟵RELATION as the codex generator x ↦ (x, becoming x) — realigned 2026-09-06 from the symmetrized reading, which was a different concept and now lives in denote.la as ⊕'s own denotation), 6 are UNDERIVED — THE GAP per Erik's ruling 2026-08-24, not a settled result (BEING/RELATION/DEPTH = B&B's three faces of the Archē, + VOID/FORM/BECOMING); derivation from the root IS attempted — in archderive.la, in this same build: BEING resolves as the root itself and the other five are AXIOMS with the seam stated; etymology sealed + recoverable; the operator chain ∂→δ→γ→ρ→𝔄 is a process not a catalogue (not forced); byte-identical on host and native VM"
 else
     exit 1
 fi
@@ -6296,7 +6524,7 @@ check_arcd () {  # $1 = engine label, $2 = output file
     grep -qF 'VERDICT: of the six, BEING is the root itself' "$2"                || { echo "FAIL  archderive($1): verdict line absent — the module HALTED mid-run, so every check above passed on a partial file"; ok=0; }
 }
 rm -f arcd_host.out arcd_vm.out
-./tiny_host archderive.la > arcd_host.out 2>&1; ARCD_RC=$?
+ARCD_RC=0; ./tiny_host archderive.la > arcd_host.out 2>&1 || ARCD_RC=$?
 [ "$ARCD_RC" = "0" ] || { echo "FAIL  archderive: host run exited $ARCD_RC (want 0); last line: $(tail -1 arcd_host.out)"; ok=0; }
 check_arcd "C host" arcd_host.out
 # Sovereign: the same attempt on the native VM, byte-identical.

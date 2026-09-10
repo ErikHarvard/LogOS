@@ -137,6 +137,240 @@ instruments need this standard at least as much as the subjects do.
 
 ---
 
+### A THIRD ROT: a module's comment claiming another file is canonical — 2026-09-08
+The two axes above are about instruments reading their subjects. This one is a
+subject **asserting its own provenance** and being believed.
+
+`denote.la`'s primitive block is headed *"the nine primitive MEANINGS (the closed
+algebra; **canonical in primitives.la**)"*. That comment is a claim of
+derivation — this copy tracks that file — and **nothing checked it**. It had
+drifted: after LOVE was ruled back to the codex's unary generator
+`Love(x) ≡ (x, new(x))`, `denote.la:41` still defined the retracted **binary**
+symmetrisation, and `:78 LOOKUP` maps the *name* `"LOVE"` to it. So `denote.la`
+was **denoting a concept the rest of the arc had retracted** — code disagreeing
+with code, inside a single change, with no gate on either side of it.
+
+★ **IT WAS FOUND BY RED-PATHING, NOT BY READING — and only because one planted
+defect refused to go red.** Five `D_CON` defects were planted. Four crash the
+module, so they prove nothing about coverage. The fifth, `D_CON = LOVE(a)(b)`
+(the pre-realignment spelling), left all three witnesses **byte-identical** with
+a clean exit. **It was silent because it was still TRUE:** that spelling was
+still literally the old symmetrisation, sitting at line 41. A silent red path is
+not a weak test result — it is a pointer at the thing the test cannot see.
+
+★★ **THE MEASURED CHAIN, and the middle step is the load-bearing one:**
+
+| witnesses | on the silent defect |
+|---|---|
+| 3 (⊗, ↻, nested-⊗) | **GREEN** |
+| 4 (`W_CON` added — ⊕'s own denotation) | **STILL GREEN** |
+| 5 (`W_LOVE` + the realignment) | **RED** |
+
+**`W_CON` alone would not have caught it.** Recorded explicitly because the
+obvious reading — "the changed line was uncovered, so cover the changed line" —
+produces `W_CON` and stops, and `W_CON` does not close this. What closes it is
+`W_LOVE`, which re-asks `primitives_spec.la`'s **own three LOVE tests** of
+`denote.la`'s `LOOKUP`: the two modules can no longer disagree without a gate
+going red. A copy that declares itself canonical-elsewhere must be **tested
+against that elsewhere**, not merely annotated with it.
+
+⚠ **The rule this yields:** a comment naming another file as the source of truth
+is an **absence-claim about drift**, and by this document's own standard it must
+be able to show it looked. Grep the corpus for such claims; each one either gets
+a differential against the file it names, or the comment is a decoration.
+(Audited the same day: `denote.la` was the only module binding the retracted
+form — `dyadseed.la` and `archderive.la` copy the primitive block but define no
+`LOVE`.)
+
+★★ **THE RULE FOUND A SECOND INSTANCE THE SAME HOUR — measured, not suspected.**
+Grepping the corpus for source-of-truth claims returned two more:
+
+* `phonym.la:355` — *"THE REWRITES, IN VERBATIM PARITY WITH canon.la's
+  REWRITE_MC"*. **HOLDS**: `NORMP` and `NORMK` agree on all 15 probes.
+* `onf.la:46` — *"κ + canonicalization (verbatim parity with canon.la NORMK /
+  sigil.la CANONIQ)"*. **HALF FALSE.** Parity with `sigil.la`'s `CANONIQ` holds
+  (identical on all 15). Parity with `canon.la`'s `NORMK` **does not**, on the
+  whole metacursion-fixed-point family.
+
+  > ⚠⚠ **READ THIS BEFORE TOUCHING ITEM 2. `canon.la` IS THE FILE THAT IS
+  > WRONG HERE, NOT THE OTHER FOUR.** The obvious execution — *"canon.la is
+  > canonical, make the others match"* — pushes an **over-collapse** into the
+  > visual and acoustic registers, which currently have the codex's behaviour
+  > RIGHT. `onf.la`/`sigil.la` are not behind; `NORMK` is not ahead. Anyone
+  > working from a one-line summary of this item would do the wrong thing at
+  > speed, and it would look like progress. Build the one normaliser **arm by
+  > arm from the declared theory, each arm carrying its citation** — see the
+  > attribution below.
+  >
+  > ⚠⚠ **AND THE MECHANISM ITSELF IS A SEPARATE, LARGER DIVERGENCE** — only one
+  > of the two is about `↻`. "Assemble the normaliser arm by arm from the
+  > declared theory" is the right execution only if **a rewrite set is the right
+  > mechanism, and the codex says it is not** (*The mechanism divergence*,
+  > below). That makes the naive execution worse, not better: hand-declaring
+  > more equivalences moves further from the spec, however well each is cited.
+
+  | probe | `canon.la` NORMK | `onf.la` CANONIQ |
+  |---|---|---|
+  | `↻(↻(LOVE))` | `↻(LOVE)` | `↻(↻(LOVE))` |
+  | `↻(▷(DEPTH,RECOGNITION))` = ↻(𝓡) | `▷(DEPTH,RECOGNITION)` | `↻(▷(DEPTH,RECOGNITION))` |
+  | `↻(⊕(SELF,SELF))` | `⊕(SELF,SELF)` | `↻(⊕(SELF,SELF))` |
+  | `↻(↻(↻(VOID)))` | `↻(VOID)` | `↻(↻(↻(VOID)))` |
+
+  `NORMK`'s `REWRITE_MC` carries three fixed points (`↻`-prefix idempotence,
+  `↻(𝓡) → 𝓡`, `⊕(SELF,SELF)`) that `onf.la` and `sigil.la` never had. So κ and
+  the phonology call `↻(↻(LOVE))` and `↻(LOVE)` **one concept**, while the
+  visual register renders them as **two different sigils** — two forms, one
+  concept. That is polysemy through the visual door: **the identical failure
+  `onf.la`'s own R-A comment records having been caught once already for
+  `⊗(A,A)`, one rewrite family later.**
+
+  Closing it is **item 2 (One normaliser, not five)**, not this change; recorded
+  here with the measurement so the item starts from a witnessed divergence
+  rather than from the claim that one exists. `NKAP` (`entropy.la`) is a third
+  theory again — no Archē `⊗` collapse and no `↻(BEING) → SELF` at all.
+
+★★ **AND THE CODEX SETTLES WHICH SIDE IS WRONG — AGAINST THE ONE NAMED
+"CANONICAL".** Checked against `LINGUA_ADAMICA.tex` itself, not against the
+comment claiming parity with it:
+
+* **`:4810`** — `↻(g_∃) ≡ Being² ≡ Being`, and the phonym is **unchanged**:
+  *"The pronunciation does not change: /ɑ/ spoken once is the same as /ɑ/ spoken
+  to itself."* So `↻(Being)` genuinely collapses, in both registers.
+* **But every OTHER `↻` entry the codex spells out REDUPLICATES**, and is a
+  distinct concept with a distinct name: `↻(g_Rec)` = **Truth** = `/ʃiʃi/`
+  (`:4810`); `↻(g_7)` = **Ongoing** = `/vuvu/`; `↻(g_6)` = **No/None** =
+  `/hɒhɒ/` (`:5176`).
+  *Transcription, because it survives into a formant target and thence into
+  `goertzel.la`'s spectral oracle:* Void's macro is `\textturnscripta` = **ɒ**,
+  open back **rounded** (`:4728`, `:5070`, `:5176`; the prose says "open back
+  vowel"), so Void is `/hɒ/` and None `/hɒhɒ/` — **not** `ɐ`. Being's is
+  `\textscripta` = **ɑ**, open back **unrounded** (`:4271`, `:5065`). ⚠ The
+  codex is internally inconsistent about Being: `:4628` calls the same `/ɑ/`
+  "open central" where `:4271`/`:5065` call it "open back unrounded". Recorded,
+  not resolved.
+* **`↻(↻(…))` appears ZERO times in the whole 7,423-line codex** (control: the
+  single-`↻` forms above are found by the same grep, so the file reads and the
+  absence is real). General metacursion idempotence is **never stated**. The
+  idempotence the codex does assert is about *identity* (Lem. Idempotence of
+  Identity, `:1788`), about the *runtime* `𝓡(𝓡) ≡ 𝓡` (`:1334`), and about the
+  meta-process fixed point Δ\* (`:3476`) — not about `↻` in general.
+
+`NORMK`'s `REWRITE_MC` has four arms. Arm 1 (`↻(BEING) → SELF`) is `:4810`. Arm 3
+(`↻(𝓡) → 𝓡`) is `:1334`. **Arm 2 — `HAS_PREFIX(x)("↻(")`, i.e. `↻(↻(y)) → ↻(y)`
+for EVERY y — has no primary source, and it is the arm the whole divergence
+rides on** (probes 08 and 15). Under it `↻(↻(VOID))` collapses to `↻(VOID)` =
+**None**, asserting an identity the codex never grants for a family it
+deliberately spells out as reduplicating.
+
+⚠ **SO ITEM 2 MUST NOT SIMPLY PROPAGATE `NORMK` OUTWARD.** The obvious execution
+— "canon.la is canonical, make the other four match it" — would push an
+**over-collapse** into the visual and acoustic registers, which currently have
+the codex's behaviour right for the reduplicating family. The single normaliser
+has to be built from the *declared* theory, arm by arm, with each arm carrying
+its citation; `onf.la`/`sigil.la` are not simply behind, and `NORMK` is not
+simply ahead. **Per this repo's own rule, that is a code↔codex divergence to
+RECORD, not to resolve in either direction** — Erik's ruling, as the LOVE and
+discourse entries were.
+
+⚠ **`LINGUA_ADAMICA.tex` IS NOT ON `track-b`.** It exists only on `kernel-k1`;
+`CLAUDE.md` states it is at repo root, and on this branch it is not. The
+citations above were read from the shared object store
+(`git show kernel-k1:LINGUA_ADAMICA.tex`), never from another worktree. Anyone
+adjudicating κ from `track-b` alone cannot open the authority — which is the
+exact condition `CLAUDE.md` records the LOVE ruling having been made under, and
+the reason the file was brought into the repo in the first place.
+
+#### The mechanism divergence — κ is a rewrite set where the codex specifies none
+
+Separate from arm 2, and larger. `LINGUA_ADAMICA.tex` §*Gap 2: Normalization
+Confluence and Termination* (`:5635`):
+
+* **`:5652`** — *"**Rather than relying on a rewrite system with potential
+  confluence issues**, we **directly compute a unique canonical form** for any
+  concept graph using a deterministic algorithm. The method is the
+  **Weisfeiler–Lehman (WL) algorithm** (color refinement), adapted for labeled,
+  directed, typed graphs."*
+* **`:5672`** — *"Confluence is **trivial** because we are not using a rewrite
+  system with multiple possible reduction paths… a **deterministic function**
+  that maps each graph to exactly one canonical form… confluence is guaranteed
+  by construction."* Termination unconditional, `O(|V|·|E|)`.
+* **`:5676` `def:onf-alg`** — `ONF(C) = Canonicalize(Graph(C))`, Canonicalize
+  being WL.
+
+★ **AND `:5652` IS THE CODEX REPAIRING ITSELF, WHICH IS THE PART THAT SETTLES
+IT.** `:5464` §*The Normalization Engine* does sketch *"a set of equivalence
+rules (commutativity, associativity, idempotence, etc.) until a fixed point is
+reached — **a rewrite system in the classical sense**"*, and that is the passage
+our implementation matches. But it is precisely what the section **titled
+"Gap 2"** exists to replace: the codex poses the rewrite engine, names its
+confluence and termination gap, and resolves it by specifying WL instead. So
+this is **not** two inconsistent passages to choose between — **`canon.la`
+implements the version the codex itself flagged as the gap, and never received
+the repair.**
+
+**Four central results rest on the repaired version**, so it is load-bearing,
+not an appendix: Non-Contradiction (`:1697`, *"the confluence of the
+normalization algorithm (Definition def:onf-alg)"*), completeness over
+well-founded propositions (`:1722`), the uniqueness half of Unique Canonical
+Glyph (`:3346`, *"`Norm(FG(C))` is unique (by confluence, Definition
+def:onf-alg)"*), and canonical labeling (`:5740`).
+
+★ **This EXPLAINS arm 2 rather than merely accompanying it.** Under a rewrite
+set every equivalence must be **declared by hand**, and each declaration is an
+assertion someone has to author — which is exactly how an unsourced
+`↻(↻(y)) → ↻(y)` gets written. Under WL canonicalisation **nobody can author
+one**, because equivalence is *computed from graph structure* rather than
+asserted. Arm 2 is a symptom of the mechanism, not an isolated slip.
+
+**What this does NOT settle:** what `↻(↻(VOID))` actually canonicalises to. That
+falls out of the graph, and computing it needs the WL machinery **nobody has
+built** — `onf.la` extracts graph *features* but performs no colour refinement.
+So item 2's true shape may be far larger than reconciling five normalisers: it
+may be that four registers are hand-rolling equivalences the specified mechanism
+would decide. **Recorded, not ruled on** — Erik's, with the citations above.
+
+★ **And the self-correction, since it is the same failure one level up:** a
+`build.sh` comment written earlier *in this very change* claimed the fourth
+witness was what caught the ⊗ cases. Measurement showed those cases crash the
+module, so the three-witness gate went red on them anyway. The comment was
+rewritten to what was measured. **A comment that survives its own disproof is
+the quietest kind of unwitnessed claim** — it is the `denote.la:41` failure in
+miniature, and it appeared while fixing `denote.la:41`.
+
+### A FOURTH: the gate that could not SPEAK — same day, found the same way
+The rot above is a defect a gate **could not see**. Its mirror is a gate that
+sees fine and **cannot say so**, and this file's own sections had it.
+
+`build.sh` runs `set -euo pipefail`. Under it, `VAR="$(cmd)"` **aborts the
+script** when `cmd` exits non-zero — so every `FAIL` line below the capture is
+**dead code on exactly the path it exists to report**. Measured: `denote.la`
+with a defect planted in its `LOVE` leaf exits `rc=1`, and the denote section
+died at its capture having printed **no `FAIL  denote:` line at all**. The build
+still went red, but **mutely** — a consumer grepping `^FAIL` saw nothing.
+
+★ **AND IT INVALIDATED THE RED-PATH EVIDENCE COLLECTED FOR THIS VERY CHANGE.**
+The four planted `D_CON` defects were all reported RED — but those verdicts were
+obtained by running `./tiny_host` directly and grepping, **not by running the
+gate section**. So what had been verified was that the *assertion* goes red,
+never that the *gate* says so. The right question is not "does it pass?" but
+**"what does it print when it fails, and have I watched it print that?"** — and
+the wrong process had been watched printing.
+
+Guarded (`|| true`) at 10 capture sites in the five sections this change
+touches, so the assertion does the reporting; the build still exits 1, the gate
+merely names what failed. One of the ten was the bare-command form
+`cmd > out 2>&1; RC=$?`, where `set -e` kills the script before `RC` is ever
+assigned — the return code is dead on the failing path.
+
+⚠ **Scope, stated because it is a real gap:** `build.sh` has ~239 such captures
+across every track's sections and only these five were guarded. The tell is
+`VAR="$(...)"`, or a bare `cmd > out`, on a line whose failure a later assertion
+is supposed to report. **Three gates on three tracks carried an exit-status
+defect the same day** — one that could never go green (`gate_p1.sh`), one that
+could never report a red (`gate_rss.sh`), and these, which went red without
+saying why. A gate that cannot SPEAK tests about as much as one that cannot
+FAIL, and neither is visible from reading the assertion.
+
 ---
 
 ## OBSCURANTISM — COINED 2026-08-27. `[~]` MODULE GREEN, GATE PENDING.
@@ -486,15 +720,35 @@ every item below cites the ruling rather than inferring one.
 
 ## TIER 1 — ROOT CAUSES (fixing these prevents whole defect classes)
 
-- `[ ]` **The spec pipeline emits no `export`.** Every generated module —
-  `canon`, `aatc`, `metalogic`, `swc`, `glyphdag`, `pragmatics`, `deixis`, `psc`,
-  `topoembed` — is **unreachable by `import`**. Verified: `import("canon.la")`
-  then `CANON(...)` gives `unbound variable`. This is why ⊗ was sorted in FIVE
-  places instead of one, why `denote.la` and `metaglyph.la` re-declare, and why
-  `entropy.la` had to re-implement κ. **The single highest-leverage fix in this
-  document.** Gate: a module importing `canon.la` resolves `CANON`; and a
-  drift gate asserting every re-implementation agrees with its source.
-  *Paper: §Limitations, [B].*
+- `[✓]` **The spec pipeline emits no `export` — RETIRED AS WRITTEN, re-measured
+  2026-09-09.** The defect was real and is **fixed**; this entry outlived it by
+  long enough to dispatch a track onto retired work, which is why it is corrected
+  here rather than deleted.
+  **Measured:** all nine modules emit an export line today — `canon` 49 names,
+  `aatc` 47, `metalogic` 51, `swc` 20, `glyphdag` 47, `pragmatics` 15, `deixis`
+  15, `psc` 21, `topoembed` 19. **The stated symptom does not reproduce**:
+  `import("canon.la")` then `CANON(SR_ABOUT)` returns `↻(RECOGNITION)`, rc=0 —
+  with a **negative control in the same probe** printing `unbound variable
+  'NO_SUCH_GLYPH'`, so the test can fail and did not. The generator emits it at
+  `specpipe.la:74`; fixed in **`9112c18`**, and `specpipe.la`'s own comment now
+  records the symptom in the **past tense**.
+  **Both gates this item asked for now exist:** (a) a module importing `canon.la`
+  resolving `CANON` — `build.sh:1203`, a live execution not a grep; (b) the drift
+  gate — `gate_normdrift.sh`, landed **`7a4e76d`**, behavioural (runs each
+  normaliser and compares OUTPUT, since a source diff is a static analyser).
+  ★ **THE CAUSAL ARGUMENT ABOVE STILL HOLDS AND STILL NAMES OPEN WORK.** The fix
+  was *"inert until a consumer is converted"* (`specpipe.la`) — eleven generated
+  modules, 313 glyphs, imported by **nothing** — and **the conversion never
+  happened**. Measured 2026-09-09: **14 distinct sites** still re-declare canon's
+  κ machinery (`m76_kappa_census.sh`, filed **M76**). So ⊗-sorted-in-five-places
+  is still true; its **cause** is fixed and its **debris** is not.
+  ⚠ Conversion is **priced and deferred**, not forgotten: importing `canon.la`
+  costs codegen ~quadratically-and-steepening in glyph count, **per build**
+  (pilot on `denote.la`: +121.79 s, +45%, and it is codegen'd twice per build).
+  The obstacle is **name collision**, not cost — canon exports 49 names and 5
+  collided with denote's own. **A gated copy and no copy are equivalent with
+  respect to drift**; (b) removes the exposure at zero recurring cost.
+  *Paper: §Limitations, [B] — the paper still asserts this and owes the same edit.*
 - `[~]` **Nine modules built but never gated — STALE AS WRITTEN, re-measured
   2026-09-05.** The claim was "Zero occurrences in `build.sh`". Measured now,
   every one of the nine appears: `sglyph` 1, `sglyph_gate` 2, `phonseq` 2,

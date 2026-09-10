@@ -38,7 +38,16 @@ glyph NOT    = la b. b(FALSEc)(TRUEc)
 glyph BEING       = la self. self
 glyph RELATION    = la a. la b. la f. f(a)(b)
 glyph RECOGNITION = la x. RELATION(x)(x)
-glyph LOVE        = la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))
+# ★ REALIGNED 2026-09-08. This block is declared "canonical in primitives.la"
+# and had DRIFTED FROM IT: LOVE was still the binary symmetrised relation after
+# primitives.la/primitives_spec.la/archroot.la moved to the codex's UNARY
+# generator Love(x) = (x, new(x)). LOOKUP below maps the NAME "LOVE" to this
+# glyph, so denote.la was DENOTING a concept the rest of the arc had retracted —
+# code disagreeing with code, inside one change. Found by red-pathing D_CON: the
+# planted defect `D_CON = LOVE(a)(b)` was SILENT, because that spelling was still
+# literally the old symmetrization sitting here. W_LOVE below pins the two
+# modules together so this cannot drift back unseen.
+glyph LOVE        = la x. RELATION(x)(BECOMING(x))
 glyph SELF        = BEING(BEING)
 glyph VOID        = la a. la b. b
 glyph BECOMING    = la n. la f. la x. f(n(f)(x))
@@ -47,12 +56,16 @@ glyph DEPTH       = la g. g(g)
 
 # ── COMPOSE: the five modes DENOTED as operations on meanings (grounded roles) ──
 #   ⊗ interpenetration  : the two-place link — both present, each recoverable (RELATION)
-#   ⊕ co-presence       : reciprocal — RELATION symmetrised (LOVE); distinct from ⊗
+#   ⊕ co-presence       : reciprocal — RELATION symmetrised; distinct from ⊗.
+#     (2026-09-06: this was spelled LOVE(a)(b). LOVE is now the codex's UNARY
+#      generator Love(x)=(x,new(x)), a different concept — so ⊕ carries the
+#      symmetrization directly. ⊕'s denotation is byte-for-byte unchanged;
+#      only its provenance is, since the symmetrization was always ⊕'s content.)
 #   ▷ directional       : a acts on b (application)
 #   ⊂ containment       : a sealed in a FORM, b the accessor  (FORM(a)(b) = b(a))
 #   ↻ metacursion       : self-fold a(a) (DEPTH)
 glyph D_SYN  = la a. la b. RELATION(a)(b)
-glyph D_CON  = la a. la b. LOVE(a)(b)
+glyph D_CON  = la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))
 glyph D_DIR  = la a. la b. a(b)
 glyph D_CONT = la a. la b. FORM(a)(b)
 glyph D_MC   = la a. DEPTH(a)
@@ -98,6 +111,32 @@ glyph W_MC   = BSTR(str_eq(C_MC("z"))(SELF("z")))                  # both "z" �
 # subtree as SELF and still recovers both parts.
 glyph C_NEST = MEANING(SYN(MC(PRIM("BEING")))(PRIM("VOID")))
 glyph W_NEST = concat(C_NEST(FST)("r"))(C_NEST(SND)("x")("s"))     # SELF→"r", VOID→"s" ⇒ "rs"
+# W_CON — ⊕ is COMPOSITIONAL and SYMMETRIC, and this is ⊕'s OWN denotation.
+#   ★ ADDED 2026-09-08 WITH THE LOVE REALIGNMENT, and it is the reason the
+#   realignment is gateable at all. D_CON used to be spelled LOVE(a)(b); LOVE is
+#   now the codex's UNARY generator Love(x)=(x,new(x)), so the symmetrization
+#   moved INTO D_CON, where it was always ⊕'s content. ★ MEASURED: that edit
+#   changed a line NO ASSERTION COVERED — this module's three witnesses are ⊗, ↻
+#   and nested-⊗, and none of them is ⊕ — so D_CON could have been left wrong in
+#   either direction and the gate would have stayed green. A green that cannot
+#   see the line that changed is not evidence about it.
+#   ⊕(BEING,VOID) denotes ⟨⟨B,V⟩,⟨V,B⟩⟩: BOTH orderings present, all four leaves
+#   recoverable — which is exactly reciprocity, and is what distinguishes ⊕ from
+#   ⊗ (whose denotation is the single ordered pair ⟨B,V⟩).
+glyph C_CON  = MEANING(CON(PRIM("BEING"))(PRIM("VOID")))
+glyph W_CON  = concat(C_CON(FST)(FST)("p"))(concat(C_CON(FST)(SND)("x")("q"))(
+               concat(C_CON(SND)(FST)("x")("r"))(C_CON(SND)(SND)("s"))))   # ⇒ "pqrs"
+# W_LOVE — the LEAF denotation of LOVE, pinned to primitives.la's generator.
+#   These are primitives_spec.la's OWN three LOVE tests, re-asked of denote.la's
+#   LOOKUP, so the two modules cannot disagree about what LOVE means without a
+#   gate going red. Witness 3 is the load-bearing one: with a CONSTANT new,
+#   witnesses 1 and 2 both still pass (measured in primitives_spec.la, and again
+#   here), because at the zero the constant and the real successor coincide.
+glyph SUCCF  = la s. concat("f")(s)
+glyph C_LOVE = MEANING(PRIM("LOVE"))
+glyph W_LOVE = concat(C_LOVE(VOID)(FST)("p")("q"))(                # x itself  ⇒ "q"
+               concat(C_LOVE(VOID)(SND)(SUCCF)("x"))(              # new(0)=1  ⇒ "fx"
+                      C_LOVE(BECOMING(VOID))(SND)(SUCCF)("x")))    # new(1)=2  ⇒ "ffx"
 
 # ═══════════════════════════════════════════════════════════════════
 #  ITEM 3 — DENOTATIONAL MORPHOLOGY: γ_g, r_D, and the reduction check
@@ -326,6 +365,8 @@ glyph MAIN = print(
     concat("DENOTE ⊗-recovers-both[BEING,VOID]:")(concat(W_SYN)(
     concat(" | ↻(BEING)≡SELF-denotationally:")(concat(W_MC)(
     concat(" | nested-⊗(↻BEING,VOID):")(concat(W_NEST)(
+    concat(" | ⊕-symmetric-both-orders[BEING,VOID]:")(concat(W_CON)(
+    concat(" | LOVE-leaf-is-the-generator:")(concat(W_LOVE)(
     concat("\nITEM3 reduction ⟦γ_Λ(a,b)⟧=r_D(⟦a⟧,⟦b⟧):")(concat(RED_OK)(
     concat(" | violation(▷ operand-swap) CAUGHT:")(concat(VIOL_CAUGHT)(
     concat(" | ⊥ not undefined (PM disjoint):")(concat(BOT_OK)(
@@ -336,4 +377,4 @@ glyph MAIN = print(
     concat(" | violation CONSTRUCTIBLE (not type-enforced):")(concat(VIOL_EXISTS)(
     concat(" | law applies to its OWN statement (structural):")(concat(LAW_SELF)(
     concat(" | denotational retention (known arity):")(concat(DEN_RETAINS)(
-    concat(" | law's own glyph κ=")(LAW_SELF_CANON))))))))))))))))))))))))))))
+    concat(" | law's own glyph κ=")(LAW_SELF_CANON))))))))))))))))))))))))))))))))

@@ -1,0 +1,1902 @@
+# =====================================================================
+#  link_reloc.la — SLICE 3: APPLYING THE RELOCATIONS.
+#
+#  Slice 2 computed where everything lands. This PATCHES the code so it points
+#  there: the bytes a relocation reserved are overwritten with the resolved
+#  address, which is the act that turns two independent objects into one
+#  coherent program.
+#
+#  ── WHY BYTE-IDENTITY IS LEGITIMATE HERE, HAVING BEEN REFUSED TWICE ─────────
+#  slice 1 and slice 2 both refused to diff against `ld`, for a real reason:
+#  ld's FILE carries choices that are ld's own (build-id, section ordering,
+#  padding), so a whole-file diff measures the wrong thing.
+#
+#  A relocated instruction is different in kind. Given the same addresses, the
+#  patched bytes are DETERMINED — `call greet` at 0x401001 targeting 0x401010
+#  has exactly one correct rel32, and ld has no freedom about it. So each
+#  object's patched .text is diffed BYTE-FOR-BYTE against the corresponding
+#  span of ld's .text. Where the answer is forced, demand identity; where it is
+#  a choice, use an independent witness. That distinction is the whole
+#  verification strategy of this linker.
+#
+#  The one place we do keep a choice is the ALIGNMENT GAP between the two
+#  objects' .text. ld fills it with a 2-byte nop (66 90); this pads with 0x90
+#  single-byte nops. Both are correct and neither is reachable (control leaves
+#  A via `call`), so the gate compares the two CODE SPANS and deliberately does
+#  not compare the gap. That is stated rather than hidden, because a gate that
+#  quietly skipped a region would be worth nothing.
+#
+#  ── THE TWO RELOCATION KINDS, AND WHY P MATTERS ─────────────────────────────
+#    R_X86_64_PC32  (2)  value = S + A - P     4 bytes
+#    R_X86_64_PLT32 (4)  value = S + A - P     4 bytes  (static: same as PC32)
+#    R_X86_64_64    (1)  value = S + A         8 bytes
+#
+#  P — the address OF THE PATCH SITE — is what makes PC32 relative, and it is
+#  the field with nowhere to hide: S and A come straight out of the object,
+#  but P must be derived from the layout. Get the layout wrong and PC32 is
+#  wrong while the absolute relocation still looks fine, which is exactly the
+#  asymmetry this fixture pair was built to catch (A uses PC32, B uses 64).
+#
+#  A's `call greet` sits at .text+1, so P = 0x401000 + 1, S = 0x401010,
+#  A = -4, giving 11 — and ld emits e8 0b 00 00 00. The addend is negative
+#  because the CPU measures rel32 from the END of the instruction; folding it
+#  into unsigned range before splitting into bytes is the same discipline
+#  asm.la uses for backward jumps (LA's div/mod on a negative is unreliable).
+# =====================================================================
+
+import("link.la")
+import("link_script.la")
+# SYM_VALUE64 (full 8-byte st_value) is exported by link.la for the ABS path.
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph AND  = la a. la b. a(b)(FALSE)
+glyph NOT  = la b. b(FALSE)(TRUE)
+glyph OR   = la a. la b. a(TRUE)(b)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph NIL  = la n. la c. n
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph REV  = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(CONS(h)(acc))))
+glyph CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph NL   = "\n"
+
+glyph TEXT_BASE = 4198400        # 0x401000 — the load base; the SCRIPT packs
+                                 # every segment upward from here (see MKPLAN)
+
+glyph ALIGNUP = la n. la a.
+    IF(int_eq(a)(0))
+      (la _. n)
+      (la _. IF(int_eq(mod(n)(a))(0))
+               (la _. n)
+               (la _. add(n)(sub(a)(mod(n)(a)))))
+
+# ── byte-string surgery ─────────────────────────────────────────────────────
+glyph DROPS = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
+glyph TAKES = Z(la self. la n. la s.
+    IF(int_eq(n)(0))(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
+glyph B1 = la n. chr(int_to_str(mod(n)(256)))
+#   Little-endian split, explicit. FOLD32 is why negatives never enter div/mod.
+glyph FOLD32 = la n. IF(lt(n)(0))(la _. add(n)(4294967296))(la _. n)
+glyph LE4 = la v. (la n. CAT(CONS(B1(n))(CONS(B1(div(n)(256)))(
+                             CONS(B1(div(n)(65536)))(CONS(B1(div(n)(16777216)))(NIL))))))
+                  (FOLD32(v))
+#   The upper word is zero for every address this linker produces (see the
+#   32-bit window note in link.la); emitting it explicitly keeps the field the
+#   8 bytes the format demands rather than silently short-writing.
+glyph LE8 = la v. concat(LE4(v))(CAT(CONS(B1(0))(CONS(B1(0))(
+                                     CONS(B1(0))(CONS(B1(0))(NIL))))))
+
+glyph PATCH = la s. la off. la width. la bytes.
+    CAT(CONS(TAKES(off)(s))(CONS(bytes)(CONS(DROPS(add(off)(width))(s))(NIL))))
+
+glyph SECBYTES = la f. la sec. TAKES(SH_SIZE(f)(sec))(DROPS(SH_OFF(f)(sec))(f))
+
+# ── the relocation value ────────────────────────────────────────────────────
+#   S, the symbol's address. An UNDEFINED symbol is the cross-object case and
+#   goes to the resolver; everything else — including a SECTION symbol, whose
+#   st_value is 0 — is its section's base plus its offset, so one rule covers
+#   both without a special case.
+#   ★ PLT32 IS PC32 HERE, and that is a statement about static linking rather
+#   than a shortcut. R_X86_64_PLT32 asks for the address of the symbol's
+#   PROCEDURE LINKAGE TABLE entry — the indirection a dynamic linker needs when
+#   the target may live in another shared object and is only bound at load
+#   time. This linker produces a static, self-contained image: the callee is in
+#   the very .text being emitted, its final address is already known, so the
+#   PLT entry it would jump through would be a stub that immediately jumps to
+#   an address we can just write directly. Resolving it as PC32 is what `ld`
+#   does for a static link too. It is NOT correct for a dynamic one, and if
+#   shared objects ever arrive here this must become a real PLT.
+glyph ISPCREL = la ty. OR(int_eq(ty)(2))(int_eq(ty)(4))
+
+#   R_X86_64_32 (10) and 32S (11): ABSOLUTE, four bytes. They differ only in how
+#   the CPU extends the value — 32 zero-extends, 32S sign-extends — which for
+#   this linker is the same arithmetic (S + A) and the same width. gcc -fno-pic
+#   emits 32S for static data addressing; nasm emits 32 for `mov eax, label`.
+#   Handling only PC32/PLT32/64 meant ordinary non-PIC compiled code was refused.
+glyph ISABS32 = la ty. OR(int_eq(ty)(10))(int_eq(ty)(11))
+
+#   R_X86_64_REX_GOTPCRELX (42): a PIC/PIE object loading an external symbol's
+#   ADDRESS through the GOT — `mov sym@GOTPCREL(%rip), %reg` (REX.W 8b /r, then a
+#   PC-relative disp32 that would point at the GOT slot). For a static image the
+#   symbol's final address is known, so no GOT is needed: RELAX the instruction
+#   to `lea sym(%rip), %reg` (opcode 8b→8d) and resolve the disp32 as a plain
+#   PC32 to the symbol — byte-for-byte what ld emits (it too drops the .got). The
+#   opcode byte to rewrite sits at (reloc offset − 2); SBYTE reads it so a form
+#   this relaxation does not model (call/jmp-via-GOT, a non-mov) is REFUSED, not
+#   silently mis-rewritten.
+#   ★ TYPE 9 (plain R_X86_64_GOTPCREL) RELAXES IDENTICALLY, and ld proves it
+#   rather than the ABI implying it. Assembling `mov rax, [rel s wrt ..gotpc]`
+#   gives `48 8b 05 disp32` with a type-9 reloc; ld emits
+#   `48 8d 05 f9 1f 00 00` = `lea 0x1ff9(%rip),%rax` resolving to s itself.
+#   Same 8b->8d rewrite, same PC32-to-symbol resolution as 42 — so this is one
+#   more type on an existing arm, not new machinery.
+#   42 is the assembler's "I promise this is relaxable" marker; 9 is the classic
+#   form. In a STATIC link the symbol is never preemptible, so the promise holds
+#   either way — which is why ld relaxes both here.
+#   The SBYTE opcode guard below still applies: a form this relaxation does not
+#   model is REFUSED, not silently mis-rewritten. That guard is what makes
+#   widening the type set safe rather than hopeful.
+#   Found because link_test_got32.asm was the first fixture to emit a type 9 at
+#   all — the linker had halted "unsupported relocation type 9" since inception.
+glyph ISGOTX = la ty. OR(int_eq(ty)(42))(int_eq(ty)(9))
+glyph SBYTE  = la s. la o. str_to_int(ord(DROPS(o)(s)))
+
+#   ── REAL GOT — the forms ld genuinely KEEPS a .got for ──────────────────────
+#   ld relaxes the mov/call GOTPCREL forms away (see ISGOTX), so those need no
+#   GOT. But three relocation types reference the GOT as DATA / by its BASE and
+#   CANNOT be relaxed — ld synthesises a real .got for them, and so must this
+#   linker:
+#     R_X86_64_GOT64 (27) / GOT32 (3): a symbol's GOT-SLOT OFFSET from the GOT
+#       base, stored as 8/4 data bytes (`.quad sym@GOT`). Forces a slot for sym.
+#     R_X86_64_GOTPC32 (26): the GOT BASE taken PC-relatively — the reloc on
+#       `lea _GLOBAL_OFFSET_TABLE_(%rip), %reg`. Needs only that the base exist;
+#       it resolves exactly like a PC32 to the synthetic _GLOBAL_OFFSET_TABLE_.
+#   One 8-byte slot is allocated per DISTINCT GOT64/GOT32 symbol; each holds the
+#   symbol's absolute address. Our GOT base is the START of .got (slots at
+#   non-negative offsets), where ld's base sits past its slots (negative offsets)
+#   — a different but self-consistent convention, so ours RUNS with ld's exit
+#   rather than byte-matching ld's .got (a layout choice, like the segment order).
+glyph ISGOT64   = la ty. int_eq(ty)(27)
+glyph ISGOT32   = la ty. int_eq(ty)(3)
+glyph ISGOTPC   = la ty. int_eq(ty)(26)
+glyph ISGOTSLOT = la ty. OR(ISGOT64(ty))(ISGOT32(ty))
+
+#   ★ A 4-byte absolute that does not FIT is truncated silently by LE4 — the
+#   image links, and the program jumps or loads somewhere plausible and wrong.
+#   This layout puts everything near 0x401000, far inside 32 bits, so the guard
+#   never fires today; it exists because the failure it prevents is invisible,
+#   and because a linker script or a high load address would make it reachable.
+glyph FITS32 = la v. AND(NOT(lt(v)(0)))(lt(v)(4294967296))
+
+#   ★ A symbol living in a DROPPED section has no address. VAOF returns -1 for
+#   an unplaced section, and add(-1)(value) would be a plausible-looking wrong
+#   address — exactly the silent failure dropping was supposed to avoid. Refuse
+#   instead, naming the symbol.
+#   A WEAK symbol resolves the same way whether or not it is defined here: a
+#   STRONG definition elsewhere OVERRIDES it (so w1's own reference to its weak
+#   `helper` must reach w2's strong one), and with no strong def it falls back to
+#   a weak one. So route BOTH undefined and weak-defined symbols through
+#   `resolve` (strong-then-weak, globally); only a strong/local/section symbol
+#   uses its in-object address directly.
+#   ★ THE 32-BIT WINDOW, GUARDED ON THE THIRD ADDRESS SITE — added 2026-09-08,
+#   hours after STADDR and SYMADDR, because those two were not enough and
+#   MEASUREMENT said so. This is the RELOCATION-APPLICATION path: a defined
+#   local/section symbol never goes through the cross-object resolver, so
+#   STADDR's guard never sees it. A local symbol at 0x100000000 targeted by an
+#   R_X86_64_64 linked with rc=0 and its high word discarded.
+#   ★★ AND THIS IS THE VERY FAILURE THE FIRST FIX DESCRIBED. Two address sites
+#   were found, both were real, both were fixed — and finding them ENDED the
+#   search before it reached the third. A guard that is correct where it fires
+#   is the most effective way to stop an audit early; that is the same mechanism
+#   as FITS32 being wired and right while the read-side hole sat behind it.
+#   Grep for every reader of the field, not for whether A guard exists.
+glyph SYMVAL = la f. la ss. la va. la resolve. la i.
+    IF(OR(SYM_IS_UNDEF(f)(ss)(i))(SYM_IS_WEAK(SYM_INFO(f)(ss)(i))))
+      (la _. (la r.
+               IF(NOT(lt(r)(0)))
+                 (la _. r)
+                 (la _. IF(SYM_IS_WEAK(SYM_INFO(f)(ss)(i)))
+                          (la _. 0)
+                          (la _. error(concat("link: unresolved symbol: ")(SYMNAME(f)(ss)(i))))))
+             (resolve(SYMNAME(f)(ss)(i))))
+      (la _. (la base.
+               IF(lt(base)(0))
+                 (la _. error(CAT(CONS("link: symbol lives in a section this layout does not place: ")(
+                                  CONS(SYMNAME(f)(ss)(i))(NIL)))))
+                 (la _. IF(int_eq(SYM_VHIGH(f)(ss)(i))(0))
+                          (la _. add(base)(SYM_VALUE(f)(ss)(i)))
+                          (la _. error(concat("link: symbol value above 4 GB (32-bit window): ")(SYMNAME(f)(ss)(i))))))
+             (va(SYM_SHNDX(f)(ss)(i))))
+
+#   Apply every relocation of one object's .text, folding over the list so each
+#   patch sees the previous one's result.
+glyph APPLYRELS = la f. la ss. la rs. la va. la resolve. la secva. la gotbase. la gotnames. la bytes.
+  IF(lt(rs)(0))
+    (la _. bytes)
+    (la _. (Z(la self. la i. la acc.
+      IF(int_eq(i)(REL_COUNT(f)(rs)))
+        (la _. acc)
+        (la _.
+          (la off. (la ty. (la s. (la a.
+            (la v.
+              self(add(i)(1))
+                  (IF(int_eq(ty)(1))
+                     (la _. PATCH(acc)(off)(8)(LE8(v)))
+                     (la _. IF(OR(ISPCREL(ty))(ISGOTPC(ty)))
+                              (la _. PATCH(acc)(off)(4)(LE4(v)))
+                              (la _. IF(ISABS32(ty))
+                                       (la _. IF(FITS32(v))
+                                                (la _. PATCH(acc)(off)(4)(LE4(v)))
+                                                (la _. error(CAT(CONS("link: 32-bit absolute does not fit: ")(
+                                                                 CONS(int_to_str(v))(NIL))))))
+                                       (la _. IF(ISGOTX(ty))
+                                                (la _. IF(int_eq(SBYTE(acc)(sub(off)(2)))(139))
+                                                         (la _. PATCH(PATCH(acc)(sub(off)(2))(1)(chr("141")))(off)(4)(LE4(v)))
+                                                         (la _. error(concat("link: GOTPCRELX form not modelled (opcode 0x")(concat(int_to_str(SBYTE(acc)(sub(off)(2))))(" is not mov 8b; only mov->lea relaxation is supported)")))))
+                                                (la _. IF(ISGOT64(ty))
+                                                         (la _. PATCH(acc)(off)(8)(LE8(add(mul(8)(GOTIDX(gotnames)(SYMNAME(f)(ss)(REL_SYM(f)(rs)(i)))))(a))))
+                                                         (la _. IF(ISGOT32(ty))
+                                                                  (la _. PATCH(acc)(off)(4)(LE4(add(mul(8)(GOTIDX(gotnames)(SYMNAME(f)(ss)(REL_SYM(f)(rs)(i)))))(a))))
+                                                                  (la _. error(concat("link: unsupported relocation type ")(int_to_str(ty))))))))))
+            )(IF(OR(OR(ISPCREL(ty))(ISGOTX(ty)))(ISGOTPC(ty)))
+                (la _. sub(add(s)(a))(add(secva)(off)))
+                (la _. add(s)(a)))
+          )(REL_ADDEND(f)(rs)(i))
+          )(SYMVAL(f)(ss)(va)(resolve)(REL_SYM(f)(rs)(i)))
+          )(REL_TYPE(f)(rs)(i))
+          )(REL_OFFSET(f)(rs)(i)))))(0)(bytes))
+
+#   Pad with single-byte nops — see the header on why this is our choice and
+#   why the gate does not diff it.
+#   ★ PADDING IS BUILT BY DOUBLING, not one byte at a time.
+#   The obvious form -- concat(ch)(self(n-1)) -- is n concats, each copying the
+#   whole accumulator, so building k bytes costs O(k^2). Profiling put ~17.5 s
+#   of a 34.8 s link in EMISSION, and the .rodata gap alone is ~4000 bytes of
+#   padding: about 8 million character copies to produce 4 KB of zeros.
+#
+#   Doubling halves the count each step and concatenates the result with
+#   itself, so the total copying is ~2k rather than k^2/2. Track A hit exactly
+#   this in asm.la (`REPB repeats by doubling -- 12x on reserved space`), which
+#   is the same shape one layer down: both of us were generating large runs of
+#   a constant byte the naive way.
+#
+#   Measured before changing anything, because the plausible culprit was DROP's
+#   O(n) walk and the profile said otherwise -- read 0.81 s, plan 3.9 s,
+#   relocation 10.2 s, regions 2.2 s, emission 17.5 s.
+glyph REPCH = la ch. (Z(la self. la n.
+    IF(int_eq(n)(0))
+      (la _. "")
+      (la _. (la half.
+               IF(int_eq(mod(n)(2))(0))
+                 (la _. concat(half)(half))
+                 (la _. concat(ch)(concat(half)(half))))
+             (self(div(n)(2))))))
+glyph NOPS  = la n. REPCH(chr("144"))(n)
+glyph ZEROS = la n. REPCH(chr("0"))(n)
+glyph LE2 = la v. concat(B1(v))(B1(div(v)(256)))
+
+# ── SLICE 4: EMITTING THE EXECUTABLE ────────────────────────────────────────
+#   The patched bytes are correct; this wraps them in the ELF a kernel will
+#   load. Two PT_LOAD segments, because .text and .rodata need DIFFERENT
+#   permissions — R+X and R. Emitting one RWX segment would be simpler and
+#   would still run, which is exactly why it is not done: W^X is a property the
+#   kernel in this project enforces on itself (ROADMAP K4c), and a linker that
+#   quietly produced writable code would undercut it.
+#
+#   ★ THE CONSTRAINT THAT DICTATES THE FILE LAYOUT: for each segment the kernel
+#   requires p_offset ≡ p_vaddr (mod page size) — it maps whole pages, so the
+#   file offset and the virtual address must agree on where they sit within a
+#   page. Both bases here are page-aligned (0x1000, 0x2000 in the file;
+#   0x401000, 0x402000 in memory), which satisfies it in the simplest way and
+#   is why the file carries padding it does not strictly "need". Violate this
+#   and execve fails with ENOEXEC, or the program loads with its code at the
+#   wrong address — a failure that looks like a corrupt binary, not a layout
+#   bug.
+glyph PAGE = 4096
+glyph TEXT_FILEOFF = 4096
+glyph RODATA_FILEOFF = 8192
+glyph EHSIZE = 64
+glyph PHENTSIZE = 56
+
+#   e_ident: magic, ELFCLASS64, ELFDATA2LSB (little-endian), EV_CURRENT,
+#   SysV ABI, then 8 zero bytes.
+glyph EIDENT = CAT(CONS(chr("127"))(CONS("ELF")(CONS(B1(2))(CONS(B1(1))(
+                   CONS(B1(1))(CONS(ZEROS(9))(NIL)))))))
+
+#   ET_EXEC (2), EM_X86_64 (62). e_shoff/e_shnum/e_shstrndx are 0: section
+#   headers are for linkers and debuggers, not for the loader, and this
+#   produces none. The program runs without them.
+glyph EHDR = la entry. la nph. la shoff. la shnum. la shstrndx. CAT(
+    CONS(EIDENT)(
+    CONS(LE2(2))(
+    CONS(LE2(62))(
+    CONS(LE4(1))(
+    CONS(LE8(entry))(
+    CONS(LE8(EHSIZE))(
+    CONS(LE8(shoff))(
+    CONS(LE4(0))(
+    CONS(LE2(EHSIZE))(
+    CONS(LE2(PHENTSIZE))(
+    CONS(LE2(nph))(
+    CONS(LE2(SHENTSIZE))(
+    CONS(LE2(shnum))(
+    CONS(LE2(shstrndx))(
+    NIL)))))))))))))))
+
+#   PT_LOAD. p_memsz equals p_filesz here — nothing in these fixtures needs
+#   zero-fill beyond the file (no .bss), and claiming more memory than the file
+#   supplies would be a silent lie about what gets mapped.
+#   p_filesz and p_memsz are now DISTINCT. They were equal for every section
+#   whose bytes live in the file; a NOBITS section (.bss) has filesz 0 and a
+#   non-zero memsz, and the kernel zero-fills the difference. Passing one size
+#   for both was correct only as long as no such section existed.
+glyph PHDR = la flags. la off. la vaddr. la fsz. la msz. CAT(
+    CONS(LE4(1))(
+    CONS(LE4(flags))(
+    CONS(LE8(off))(
+    CONS(LE8(vaddr))(
+    CONS(LE8(vaddr))(
+    CONS(LE8(fsz))(
+    CONS(LE8(msz))(
+    CONS(LE8(PAGE))(
+    NIL)))))))))
+
+# ── resolution (slice 2's rule, restated over the two objects) ──────────────
+#   The strong-definition predicate is now the record-level `DEFINES_R`, folded
+#   over the memoised STAB rather than re-derived per index — see the
+#   resolution-predicates block just after STAB below.
+#   ★ DUPLICATE DEFINITIONS MUST BE REFUSED, and this was a real gap: LOOKUP
+#   returns the FIRST match, so two objects both defining `greet` would have
+#   linked silently and one definition would have been chosen by input order.
+#   That is not a stylistic complaint — it is the "multiple definition" error
+#   every real linker raises, and the failure it prevents is vicious: the
+#   program links, runs, and calls whichever copy happened to come first, so
+#   the bug presents as the wrong behaviour rather than as a link failure.
+#
+#   Checked BEFORE anything is emitted, so a rejected link writes no output at
+#   all. A linker that refuses but leaves a stale executable behind invites the
+#   next command to run yesterday's binary.
+#   ★ REFUSE SECTIONS WE CANNOT PLACE, rather than ignoring them.
+#   The layout knows exactly two allocatable sections, .text and .rodata. An
+#   object carrying a third — .bss and .eh_frame are the ordinary cases, and
+#   every gcc object has both — was previously handled by NOT LOOKING: those
+#   sections were skipped, and any symbol defined in one resolved against a
+#   base that was never assigned. That is silent wrong addresses, which is
+#   strictly worse than refusing, because the program links and then misbehaves
+#   far from the cause.
+#
+#   SHF_ALLOC (bit 1, value 2) is exactly the right test: it means "this
+#   section occupies memory at run time", so it is precisely the set the layout
+#   must have an answer for. Non-alloc sections (.symtab, .strtab, .comment,
+#   .note*) are metadata the loader never maps, and ignoring those is correct.
+#   .eh_frame IS NOW PLACED (own page, R-only). It carries its own relocation
+#   section (.rela.eh_frame, a PC32 in each FDE's initial_location pointing at
+#   the .text function it describes). MKPATCHED applies every placed section's
+#   relocations, so those FDEs are patched to point at the right code — the
+#   reason it was dropped ("only .rela.text applied") no longer holds. A symbol
+#   living in .eh_frame therefore RESOLVES (via SYMVAL) rather than being
+#   refused. HONEST SCOPE, recorded so it is not mistaken for more: the objects'
+#   .eh_frame sections are CONCATENATED, not merged — no CIE deduplication and
+#   no 0-length terminator, so ours is larger than ld's and is NOT a spec-valid
+#   mergeable unwind table. The FDEs are individually correct; a full merge
+#   (dedup + terminator + .eh_frame_hdr + PT_GNU_EH_FRAME) is deferred. These
+#   are static binaries that never unwind, so nothing reads it either way; what
+#   changed is that placing-and-relocating is the honest general behaviour, not
+#   a silent drop of an allocatable section.
+#
+#   ★ STILL DELIBERATELY DROPPED — decided, not ignored:
+#   .note.gnu.property  ISA/security metadata (CET/IBT). The loader consults it
+#                       via PT_NOTE, which this linker does not emit; omitting
+#                       it yields a binary without those opt-in properties,
+#                       which is what a minimal static exec has anyway.
+#
+#   Dropping is a CHOICE and is recorded as one. A symbol defined in a dropped
+#   section is refused rather than resolved (see SYMVAL), so the choice cannot
+#   silently produce a wrong address.
+#   ── /DISCARD/ — the drop list is now the SCRIPT's, not a private constant ──
+#   `.note.gnu.property` stays a built-in drop because a script that says
+#   nothing about it still cannot place it. Anything the script's /DISCARD/
+#   names is dropped as well, matched with the SAME matcher the placement uses
+#   (so `*(.note*)` means the same thing in both directions). A symbol defined
+#   in a dropped section is still refused BY NAME in SYMVAL rather than
+#   resolved, so discarding cannot silently produce a wrong address.
+glyph MATCHANY = la pats. la n. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(MATCHSEC(h)(n))(la _. TRUE)(la _. self(t)))))(pats)
+glyph DROPPABLE = la disc. la n.
+    OR(str_eq(n)(".note.gnu.property"))(MATCHANY(disc)(n))
+
+glyph SEC_IS_ALLOC = la h. int_eq(mod(div(SEC_FLAGS(h))(2))(2))(1)
+
+#   ── OUTPUT-SECTION MAPPING — merge .text.* into .text, etc. ─────────────────
+#   `gcc -ffunction-sections -fdata-sections` (the input to `--gc-sections` dead-
+#   code elimination) splits code into .text.compute, .text.helper, and data
+#   into .rodata.<sym> / .data.<sym>. A linker MERGES each family into its
+#   standard OUTPUT section, exactly as it already merges one object's .text with
+#   another's. OUTNAME maps an input section name to its output section; a name
+#   qualifies by being the standard name itself or the standard name followed by
+#   `.` (so .text.foo → .text, but a stray .textual would NOT match). Everything
+#   downstream is already keyed by (object, section INDEX), so placing several
+#   .text.* of one object needs no new plumbing beyond the placement walk itself.
+glyph STARTSW = la s. la pre. str_eq(TAKES(str_to_int(str_len(pre)))(s))(pre)
+glyph OUTNAME = la n.
+    IF(OR(str_eq(n)(".text"))(STARTSW(n)(".text.")))(la _. ".text")(la _.
+    IF(OR(str_eq(n)(".rodata"))(STARTSW(n)(".rodata.")))(la _. ".rodata")(la _.
+    IF(OR(str_eq(n)(".data"))(STARTSW(n)(".data.")))(la _. ".data")(la _.
+    IF(OR(str_eq(n)(".bss"))(STARTSW(n)(".bss.")))(la _. ".bss")(la _.
+    IF(OR(str_eq(n)(".eh_frame"))(STARTSW(n)(".eh_frame.")))(la _. ".eh_frame")(la _. n)))))
+#   ★ WHAT COUNTS AS PLACEABLE IS NOW READ OFF THE SCRIPT, not a second list.
+#   It used to be a hard-coded five-name test that happened to agree with the
+#   built-in layout; with the layout coming from a file those two could
+#   disagree, and the disagreement would be silent in the dangerous direction —
+#   a section the script never places would pass the check and then resolve
+#   against an unassigned base. A name is placeable iff some segment asks for
+#   it, so the check cannot drift from the layout it is checking.
+#   ── ONE MATCHER, SHARED WITH THE PARSER ────────────────────────────────────
+#   A script pattern matches an input section if it matches the name outright
+#   (this is where `*(.note*)` and `*(.eh_frame*)` earn their keep) or matches
+#   its OUTPUT name — which is what merges `.text.compute` into `.text` for
+#   -ffunction-sections. MATCHPAT itself is imported from link_script.la rather
+#   than re-implemented here: two copies of "what a pattern means" is precisely
+#   how a parser and its consumer drift apart.
+glyph MATCHSEC = la pat. la n. OR(MATCHPAT(pat)(n))(MATCHPAT(pat)(OUTNAME(n)))
+glyph ISOUT = la segs. la n. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(MATCHANY(SEG_NAMES(h))(n))(la _. TRUE)(la _. self(t)))))(segs)
+glyph PLACEABLE = la segs. la n. ISOUT(segs)(n)
+glyph CHECKSECS = la segs. la disc. la st. la tag. (Z(la self. la l.
+    l("ok")(la h. la t.
+      IF(AND(SEC_IS_ALLOC(h))
+            (AND(NOT(PLACEABLE(segs)(SEC_NAME(h))))(NOT(DROPPABLE(disc)(SEC_NAME(h))))))
+        (la _. error(CAT(CONS("link: ")(CONS(tag)(CONS(
+                 " has an allocatable section this layout cannot place: ")(
+                 CONS(SEC_NAME(h))(NIL)))))))
+        (la _. self(t)))))(st)
+
+# ── THE PLACEMENT PLAN — step 1 of generalising the layout ──────────────────
+#   The layout used to be hard-coded: three binders (t1sec/t2sec/r2sec) and two
+#   per-object lambdas mapping a section index to an address. That shape cannot
+#   grow — a third section or a third object means more binders, and the
+#   addresses live in the binder chain where nothing can iterate over them.
+#
+#   A PLAN is a list of (object, section index, virtual address). It is computed
+#   by following the SCRIPT (see below): for each segment, page-align the cursor
+#   and pack every object's copy of each of the segment's sections in input
+#   order, each aligned up to its own sh_addralign.
+#
+#   The gates are the proof: ld's addresses are the independent witness, and a
+#   section-for-section match with readelf says the packing is right.
+# ── THE LINKER SCRIPT — a declarative, packed, permission-grouped layout ─────
+#   The layout used to be hard-coded ONE PAGE PER SECTION: BASEOF gave each
+#   section a fixed base a page apart, so each became its own PT_LOAD (five
+#   segments). ld does not do that — it GROUPS sections by permission into one
+#   loadable segment each, page-aligns each segment, and packs the sections
+#   CONTIGUOUSLY within it: .rodata + .eh_frame share the R segment, .data +
+#   .bss share the R+W segment.
+#
+#   A SCRIPT is a list of segments, each a (permission, section-name list). The
+#   layout FOLLOWS it with ONE running cursor — page-align at each segment
+#   start, then pack every section of the segment from the cursor — so the
+#   addresses become ld's addresses and ld stays the independent witness
+#   (readelf agrees section-for-section). Adding a section is adding a name to a
+#   segment's list; adding a segment is one more SEG.
+#
+#   ── THE SCRIPT IS NOW DATA THAT CAN COME FROM A FILE ───────────────────────
+#   A segment carries WHERE it starts as well as what goes in it: `mode` is
+#   SM_ABS (the value IS the address) or SM_ALIGN (align the running cursor up
+#   to it). That is exactly what a `. = 0x100000;` / `. = ALIGN(4096);` pair of
+#   assignments says in a real linker script, so the built-in default below and
+#   a script parsed by link_script.la are ONE structure travelling ONE code
+#   path — the default is re-expressed in the new form rather than kept as a
+#   second mechanism that could drift from it.
+#   ── PLACEMENT AND GROUPING ARE NOW SEPARATE ────────────────────────────────
+#   ★ A SEGMENT USED TO BE "ONE `. =` GROUP". kernel.ld breaks that on sight:
+#   `.boot` and `.bss` are BOTH `:boot` with a `. = ALIGN(4096)` between them —
+#   ONE PT_LOAD spanning both, which is the ordinary shape of a kernel image
+#   (file size covers the code, memory size extends over the bss). So the ITEM
+#   list drives the cursor in script order, and a SEGMENT is a group of section
+#   patterns with permissions, formed by the parser from the `:phdr` names (or,
+#   with no PHDRS block, one per `. =` assignment — the old rule, preserved).
+#   Two structures, both from one parse, both fed to the folds below.
+glyph F_RX = 5
+glyph F_R  = 4
+glyph F_RW = 6
+glyph SEG       = la flags. la names. PAIR(flags)(names)
+glyph SEG_FLAGS = la s. FST(s)
+glyph SEG_NAMES = la s. SND(s)
+
+#   The built-in layout, expressed in the SAME two structures a parsed script
+#   produces, so the default travels the new code path rather than a private
+#   one that could drift from it. The gate's no-script regression is what keeps
+#   that claim honest.
+#   ★ ONE ITEM PER OUTPUT SECTION, not one per segment. The three-item form
+#   placed identically (the cursor runs through a segment's names in order
+#   either way), but an output section is what a section HEADER describes, so
+#   the built-in layout has to name its output sections for the same reason a
+#   script does.
+#   ── N-SECTION: the default layout GROUPED BY SHF FLAGS, not a fixed name list ─
+#   ld's no-script default puts allocatable sections into one PT_LOAD per
+#   permission (RX / R / RW). The known five keep their canonical slots, so a
+#   link with no arbitrary sections stays byte-identical to before (the
+#   regression gate proves it); any OTHER allocatable output-section is appended
+#   to the segment its SHF flags select — exec→RX, writable→RW, else→R. Within
+#   RW, PROGBITS precede NOBITS so p_filesz<=p_memsz stays honest (a writable
+#   NOBITS placed before a PROGBITS would put file bytes past the zero-fill gap).
+glyph SEC_IS_WRITE  = la h. int_eq(mod(SEC_FLAGS(h))(2))(1)          # SHF_WRITE bit0
+glyph SEC_IS_EXEC   = la h. int_eq(mod(div(SEC_FLAGS(h))(4))(2))(1)  # SHF_EXECINSTR bit2
+glyph SEC_IS_NOBITS = la h. int_eq(SEC_TYPE(h))(SH_NOBITS)
+#   The six output names the canonical skeleton already carries; an ARBITRARY
+#   section is one whose OUTPUT name (post-OUTNAME) is none of these.
+glyph KNOWN_ONAME = la n.
+    OR(str_eq(n)(".text"))(OR(str_eq(n)(".rodata"))(OR(str_eq(n)(".eh_frame"))
+      (OR(str_eq(n)(".data"))(OR(str_eq(n)(".bss"))(str_eq(n)(".got"))))))
+glyph NMEM = la names. la n. (Z(la self. la l.
+    l(FALSE)(la h. la t. IF(str_eq(h)(n))(la _. TRUE)(la _. self(t)))))(names)
+glyph NADD = la names. la n.
+    IF(NMEM(names)(n))(la _. names)(la _. APPL(names)(CONS(n)(NIL)))
+#   The four buckets, threaded through the section fold as a 4-tuple: RX, R,
+#   writable-PROGBITS, writable-NOBITS — each a first-seen-ordered, deduped list.
+glyph B_RX  = la s. FST(s)
+glyph B_R   = la s. FST(SND(s))
+glyph B_RWP = la s. FST(SND(SND(s)))
+glyph B_RWN = la s. SND(SND(SND(s)))
+glyph MKB   = la rx. la r. la rwp. la rwn. PAIR(rx)(PAIR(r)(PAIR(rwp)(rwn)))
+glyph BUCKET_ADD = la s. la nm. la h.
+    IF(SEC_IS_EXEC(h))
+      (la _. MKB(NADD(B_RX(s))(nm))(B_R(s))(B_RWP(s))(B_RWN(s)))
+      (la _. IF(SEC_IS_WRITE(h))
+               (la _. IF(SEC_IS_NOBITS(h))
+                        (la _. MKB(B_RX(s))(B_R(s))(B_RWP(s))(NADD(B_RWN(s))(nm)))
+                        (la _. MKB(B_RX(s))(B_R(s))(NADD(B_RWP(s))(nm))(B_RWN(s))))
+               (la _. MKB(B_RX(s))(NADD(B_R(s))(nm))(B_RWP(s))(B_RWN(s))))
+#   Fold every object's every allocatable, non-droppable, non-known output
+#   section into the four buckets. `.note.gnu.property` is skipped exactly as
+#   DROPPABLE skips it under the fixed layout.
+#   One object's sections folded into the running buckets `a`.
+glyph ARB_OBJ = la a. la o.
+    (Z(la self. la sl. la acc.
+      sl(acc)(la h. la t.
+        (la nm.
+          IF(OR(NOT(SEC_IS_ALLOC(h)))
+               (OR(KNOWN_ONAME(nm))(str_eq(nm)(".note.gnu.property"))))
+            (la _. self(t)(acc))
+            (la _. self(t)(BUCKET_ADD(acc)(nm)(h))))
+          (OUTNAME(SEC_NAME(h))))))
+    (O_SECTAB(o))(a)
+#   Every object, threaded left to right.
+glyph ARBSECS = la objs.
+    (Z(la self. la ol. la acc.
+      ol(acc)(la o. la ot. self(ot)(ARB_OBJ(acc)(o)))))
+    (objs)(MKB(NIL)(NIL)(NIL)(NIL))
+#   Skeleton ++ this link's arbitrary names; NOBITS last within RW. With empty
+#   buckets these are exactly the old fixed lists — the regression is by construction.
+glyph DEFRX = la B. CONS(".text")(B_RX(B))
+glyph DEFR  = la B. CONS(".rodata")(CONS(".eh_frame")(CONS(".got")(B_R(B))))
+glyph DEFRW = la B. CONS(".data")(APPL(B_RWP(B))(CONS(".bss")(B_RWN(B))))
+glyph MKSECITEMS = la key. la names. (Z(la self. la l.
+    l(NIL)(la h. la t. CONS(MKISEC(h)(key)(FALSE)(CONS(h)(NIL)))(self(t)))))(names)
+glyph DEFITEMS = la objs. (la B.
+    CONS(MKIADDR(SM_ABS)(TEXT_BASE))(
+    APPL(MKSECITEMS("#1")(DEFRX(B)))(
+    CONS(MKIADDR(SM_ALIGN)(PAGE))(
+    APPL(MKSECITEMS("#2")(DEFR(B)))(
+    CONS(MKIADDR(SM_ALIGN)(PAGE))(
+    APPL(MKSECITEMS("#3")(DEFRW(B)))(
+    NIL)))))))
+  (ARBSECS(objs))
+glyph DEFSEGS = la objs. (la B.
+    CONS(SEG(F_RX)(DEFRX(B)))(
+    CONS(SEG(F_R)(DEFR(B)))(
+    CONS(SEG(F_RW)(DEFRW(B)))(
+    NIL))))
+  (ARBSECS(objs))
+
+#   ── PERMISSIONS: DECLARED, OR DERIVED ──────────────────────────────────────
+#   A PHDRS block STATES the flags, so `FLAGS(7)` is honoured as written — that
+#   is how kernel.ld gets its RWX segments, and it matters that it is a request
+#   in the script rather than something the linker worked out. With no PHDRS
+#   block there is nothing to state them, so they are derived from what the
+#   segment holds (read always, +X for code, +W for writable data) and a
+#   segment that would need W+X is REFUSED: W^X is a property the kernel
+#   enforces on itself (K4c), and a linker that quietly INFERS an RWX segment
+#   has removed a guarantee nobody asked it to remove. Asking is allowed;
+#   inferring is not.
+glyph ANYNAME = la names. la pred. (Z(la self. la l.
+    l(FALSE)(la h. la t. IF(pred(h))(la _. TRUE)(la _. self(t)))))(names)
+glyph ISEXEC = la n. str_eq(n)(".text")
+glyph ISWRIT = la n. OR(str_eq(n)(".data"))(str_eq(n)(".bss"))
+glyph SEGFLAGS = la names.
+    (la x. (la w.
+       IF(AND(x)(w))
+         (la _. error("link script: a segment holding both executable and writable sections would need W+X; refused — declare it in a PHDRS block if that is really wanted"))
+         (la _. add(4)(add(IF(x)(la _. 1)(la _. 0))(IF(w)(la _. 2)(la _. 0)))))
+     (ANYNAME(names)(ISWRIT)))(ANYNAME(names)(ISEXEC))
+
+#   A parsed script's GROUPS become the linker's segments. GR_FLAGS is -1 when
+#   the script declared no PHDRS, meaning "derive them".
+glyph FROMGROUPS = la sc. (Z(la self. la l.
+    l(NIL)(la h. la t.
+      CONS(SEG(IF(lt(GR_FLAGS(h))(0))
+                 (la _. SEGFLAGS(GR_NAMES(h)))
+                 (la _. GR_FLAGS(h)))
+              (GR_NAMES(h)))
+          (self(t)))))(SC_GROUPS(sc))
+
+#   ── (NOLOAD) ───────────────────────────────────────────────────────────────
+#   An output section marked (NOLOAD) occupies memory and no file bytes. For
+#   `.bss` that coincides with its inputs already being NOBITS, which is why it
+#   is easy to think the attribute is decorative — it is not: it is the script
+#   ASSERTING the property, and a PROGBITS input placed in a NOLOAD section
+#   must lose its file bytes too, or the image gains contents the script said
+#   it would not have.
+glyph NOLOADPATS = la items. (Z(la self. la l.
+    l(NIL)(la h. la t.
+      IF(int_eq(IT_KIND(h))(IK_SEC))
+        (la _. IF(IT_NOLOAD(h))
+                 (la _. APPL(IT_NAMES(h))(self(t)))
+                 (la _. self(t)))
+        (la _. self(t)))))(items)
+
+glyph MKE   = la o. la s. la a. PAIR(o)(PAIR(s)(a))
+glyph E_OBJ = la e. FST(e)
+glyph E_SEC = la e. FST(SND(e))
+glyph E_ADDR= la e. SND(SND(e))
+
+#   Place EVERY non-empty section of one object whose OUTPUT name is `oname`, in
+#   section-index order, each aligned to its own sh_addralign, from the cursor.
+#   With -ffunction-sections an object has several .text.* sections that all map
+#   to output .text; without it, exactly one .text — so an ordinary object packs
+#   identically to before (one match). A section is skipped when `keep` rejects
+#   it (--gc-sections dead-section elimination); with gc off `keep` is always
+#   TRUE, so placement is unchanged. Returns PAIR(entries)(cursor).
+#   Folds over the object's memoised SECTAB (list in section-index order),
+#   threading the index i, so the per-section reads are cheap list accesses
+#   rather than deep header DROPs. Same placement as before.
+glyph PSTEP = la keep. la st. la o. la oname. la acc. la cur.
+    (Z(la self. la l. la i. la a. la c.
+       l(PAIR(a)(c))(la h. la t.
+         IF(AND(AND(MATCHSEC(oname)(SEC_NAME(h)))
+                   (NOT(int_eq(SEC_SIZE(h))(0))))
+               (keep(o)(i)))
+           (la _. (la aa. self(t)(add(i)(1))(CONS(MKE(o)(i)(aa))(a))(add(aa)(SEC_SIZE(h))))
+                  (ALIGNUP(c)(SEC_ALIGN(h))))
+           (la _. self(t)(add(i)(1))(a)(c)))))
+    (st)(0)(acc)(cur)
+
+#   ── N OBJECTS ──────────────────────────────────────────────────────────────
+#   An OBJECT is (index, contents). The index is what plan entries and symbol
+#   lookups refer to, so it must be stable and 1-based to match the diagnostics.
+#
+#   PSTEP already placed ONE object's copy of one section; PNAME just called it
+#   exactly twice. Folding it over an object list is the whole change: the
+#   number of inputs stops being written into the code and becomes the length
+#   of a list. Two objects still produce byte-identical output, which is what
+#   makes this safe to do as a refactor rather than a rewrite.
+# ── MEMOISED SECTION TABLE — read the header table ONCE by cursor-threading ──
+#   Every SH_*/SECNAME/FIND_SEC took (file)(index) and re-DROPped from file
+#   offset 0 to the field — but DROP copies (str_tail is O(n)), and the section
+#   headers + name table live near the END of the file, so each field read was
+#   O(offset·filesize) and FIND_SEC (a SECNAME per section) was O(sections²).
+#   SECTAB walks the header table with ONE deep DROP (to E_SHOFF), then STEPS 64
+#   bytes per entry carrying the tail `sh`, reading each field at a SHALLOW
+#   offset within the small remaining tail, and the name from a once-dropped
+#   .shstrtab tail. Built ONCE per object (stored in its record); the _M readers
+#   below are then plain list walks with cheap comparisons, no deep DROP.
+glyph MKSEC = la name. la ty. la flags. la off. la size. la align.
+    PAIR(name)(PAIR(ty)(PAIR(flags)(PAIR(off)(PAIR(size)(align)))))
+glyph SEC_NAME  = la s. FST(s)
+glyph SEC_TYPE  = la s. FST(SND(s))
+glyph SEC_FLAGS = la s. FST(SND(SND(s)))
+glyph SEC_OFF   = la s. FST(SND(SND(SND(s))))
+glyph SEC_SIZE  = la s. FST(SND(SND(SND(SND(s)))))
+glyph SEC_ALIGN = la s. SND(SND(SND(SND(SND(s)))))
+glyph SECTAB = la f. (la n. (la shstrtail.
+    (Z(la self. la i. la sh.
+       IF(int_eq(i)(n))
+         (la _. NIL)
+         (la _. CONS(MKSEC(CSTR(shstrtail)(U32(sh)(0)))(U32(sh)(4))(LOW4(sh)(8))
+                          (LOW4(sh)(24))(LOW4(sh)(32))(LOW4(sh)(48)))
+                     (self(add(i)(1))(DROP(64)(sh))))))
+     (0)(DROP(E_SHOFF(f))(f)))
+   (DROP(SHSTR_OFF(f))(f)))
+  (E_SHNUM(f))
+glyph NTHREC = Z(la self. la l. la i.
+    l(NIL)(la h. la t. IF(int_eq(i)(0))(la _. h)(la _. self(t)(sub(i)(1)))))
+glyph SECNAME_M  = la st. la i. SEC_NAME(NTHREC(st)(i))
+glyph SH_TYPE_M  = la st. la i. SEC_TYPE(NTHREC(st)(i))
+glyph SH_FLAGS_M = la st. la i. SEC_FLAGS(NTHREC(st)(i))
+glyph SH_OFF_M   = la st. la i. SEC_OFF(NTHREC(st)(i))
+glyph SH_SIZE_M  = la st. la i. SEC_SIZE(NTHREC(st)(i))
+glyph SH_ALIGN_M = la st. la i. SEC_ALIGN(NTHREC(st)(i))
+glyph FIND_SEC_M = la st. la want. (Z(la self. la l. la i.
+    l(sub(0)(1))(la h. la t.
+      IF(str_eq(SEC_NAME(h))(want))(la _. i)(la _. self(t)(add(i)(1))))))(st)(0)
+
+#   An OBJECT now carries its memoised SECTAB as a fourth field.
+glyph OBJ   = la idx. la f. la ss. la st. PAIR(idx)(PAIR(f)(PAIR(ss)(st)))
+glyph O_IDX = la o. FST(o)
+glyph O_F   = la o. FST(SND(o))
+glyph O_SS  = la o. FST(SND(SND(o)))
+glyph O_SECTAB = la o. SND(SND(SND(o)))
+
+#   All objects' copies of ONE section name, packed from the cursor in input
+#   order. Returns PAIR(entries)(cursor) so the next name continues where this
+#   ended — the cursor now THREADS across names and segments, which is exactly
+#   what makes sections share a page instead of each taking its own.
+glyph PNAME = la keep. la objs. la name. la acc. la cur.
+    (Z(la self. la l. la a. la c.
+        l(PAIR(a)(c))(la h. la t.
+          (la r. self(t)(FST(r))(SND(r)))
+          (PSTEP(keep)(O_SECTAB(h))(O_IDX(h))(name)(a)(c)))))
+      (objs)(acc)(cur)
+
+#   .eh_frame is placed as ONE merged entry (object 0, size = merged size), not
+#   per-object, because ld merges it (dedup CIE). Aligned to 8 like the section.
+#   If nothing carries .eh_frame the merged size is 0 and no entry is placed. The
+#   accumulated plan-so-far (`acc`) already holds the .text placement (the R+X
+#   segment is planned before the R segment), so EHMSIZE consults it to size out
+#   the FDEs of any gc-dropped function — keeping .eh_frame's planned size equal
+#   to what EHMERGE actually emits.
+glyph PEH = la gcon. la objs. la acc. la cur. (la sz.
+    IF(int_eq(sz)(0))
+      (la _. PAIR(acc)(cur))
+      (la _. (la a. PAIR(CONS(MKE(0)(sz)(a))(acc))(add(a)(sz)))(ALIGNUP(cur)(8))))
+    (EHMSIZE(objs)(gcon)(acc))
+
+#   All section names of ONE segment, packed contiguously from the cursor. Every
+#   section packs per-object except .eh_frame, which is placed once, merged.
+glyph SNAMES = la keep. la gcon. la objs. la gotsz. la names. la acc. la cur.
+    (Z(la self. la l. la a. la c.
+        l(PAIR(a)(c))(la h. la t.
+          (la r. self(t)(FST(r))(SND(r)))
+#   ★ The two synthesised sections are recognised by MATCHING, not by string
+#   equality, so a script that writes `*(.eh_frame*)` still reaches the MERGED
+#   placement. Equality would have sent it to the ordinary per-object path,
+#   which links and runs while duplicating every CIE — wrong unwind data in a
+#   binary that looks fine.
+          (IF(MATCHSEC(h)(".eh_frame"))
+             (la _. PEH(gcon)(objs)(a)(c))
+             (la _. IF(MATCHSEC(h)(".got"))
+                      (la _. PGOT(gotsz)(a)(c))
+                      (la _. PNAME(keep)(objs)(h)(a)(c)))))))
+      (names)(acc)(cur)
+
+#   The plan: fold the script's ITEMS with one running cursor, in script order.
+#   An address item MOVES the cursor (absolutely, or aligned up); a section item
+#   PACKS its patterns from wherever the cursor is. `keep` is the gc-sections
+#   liveness predicate (always TRUE when gc is off). REV because entries
+#   accumulate with CONS; without it link order — and thus packing — inverts.
+#   ★ Nothing here page-aligns on its own any more. Alignment is whatever the
+#   script's `. = ALIGN(...)` items ask for, which is the only way `.boot` and
+#   `.bss` can share a segment across an alignment: the old code started a new
+#   segment at every assignment precisely BECAUSE it aligned there.
+glyph MKPLAN = la items. la keep. la gcon. la objs. la gotsz.
+    REV(FST((Z(la self. la l. la acc. la cur.
+        l(PAIR(acc)(cur))(la h. la t.
+          IF(int_eq(IT_KIND(h))(IK_ADDR))
+            (la _. self(t)(acc)(IF(int_eq(IT_MODE(h))(SM_ABS))
+                                  (la _. IT_VAL(h))
+                                  (la _. ALIGNUP(cur)(IT_VAL(h)))))
+            (la _. (la r. self(t)(FST(r))(SND(r)))
+                   (SNAMES(keep)(gcon)(objs)(gotsz)(IT_NAMES(h))(acc)(cur))))))
+      (items)(NIL)(0)))(NIL)
+
+#   Address of a given object's given section, or -1 if it was not placed.
+glyph VAOF = la plan. la o. la sec. (Z(la self. la l.
+    l(sub(0)(1))(la h. la t.
+      IF(AND(int_eq(E_OBJ(h))(o))(int_eq(E_SEC(h))(sec)))
+        (la _. E_ADDR(h))
+        (la _. self(t)))))(plan)
+
+# ── SYNTHETIC .got — a real Global Offset Table ─────────────────────────────
+#   Unlike every other output section, .got is not read from an input object —
+#   the linker SYNTHESISES it: one 8-byte slot per distinct symbol referenced by
+#   a GOT64/GOT32 relocation, each slot holding that symbol's resolved absolute
+#   address. It is placed like the merged .eh_frame — a single plan entry under a
+#   sentinel object id (GOTOBJ) whose ENAME/ESIZE/ETYPE/EBYTES are answered
+#   specially — and lives in the R (read-only) segment: its slots are resolved at
+#   link time and never written at run time, so R-only is correct and W^X-clean
+#   (ld keeps it in a RELRO segment, likewise read-only after load).
+glyph GOTOBJ = sub(0)(2)                        # -2: real objects are >=1, eh is 0
+glyph GOTENTRY = la e. int_eq(E_OBJ(e))(GOTOBJ)
+glyph MEMNAME = la names. la nm. (Z(la self. la l.
+    l(FALSE)(la h. la t. IF(str_eq(h)(nm))(la _. TRUE)(la _. self(t)))))(names)
+glyph APPL = Z(la self. la a. la b. a(b)(la h. la t. CONS(h)(self(t)(b))))
+glyph SNOC = la l. la x. (Z(la self. la ll.
+    ll(CONS(x)(NIL))(la h. la t. CONS(h)(self(t)))))(l)
+glyph ADDNAME = la names. la nm.
+    IF(MEMNAME(names)(nm))(la _. names)(la _. SNOC(names)(nm))
+#   The slot index of a GOT symbol: its position in the collected order, which is
+#   the SAME order the slots are emitted in (GOTBYTES), so index and byte agree.
+glyph GOTIDX = la names. la nm. (Z(la self. la l. la i.
+    l(sub(0)(1))(la h. la t.
+      IF(str_eq(h)(nm))(la _. i)(la _. self(t)(add(i)(1))))))(names)(0)
+#   Collect one plan entry's GOT-slot symbols (GOT64/GOT32 relocs of its section).
+#   Skips the merged .eh_frame (object 0) and the .got itself (GOTOBJ), which have
+#   no input relocations of their own.
+glyph GOTNAMES_E = la objs. la e. la acc.
+    IF(OR(GOTENTRY(e))(int_eq(E_OBJ(e))(0)))(la _. acc)(la _.
+    (la rec. (la f. (la rs.
+       IF(lt(rs)(0))
+         (la _. acc)
+         (la _. (Z(la self. la i. la a.
+                    IF(int_eq(i)(REL_COUNT(f)(rs)))
+                      (la _. a)
+                      (la _. IF(ISGOTSLOT(REL_TYPE(f)(rs)(i)))
+                               (la _. self(add(i)(1))(ADDNAME(a)(SYMNAME(f)(O_SS(rec))(REL_SYM(f)(rs)(i)))))
+                               (la _. self(add(i)(1))(a)))))
+                (0)(acc)))
+       (FIND_SEC_M(O_SECTAB(rec))(concat(".rela")(SECNAME_M(O_SECTAB(rec))(E_SEC(e))))))
+      (O_F(rec)))(FINDREC(objs)(E_OBJ(e))))
+#   Every GOT-slot symbol across the whole (got-less) plan, deduped in order.
+glyph GOTNAMES = la objs. la plan. (Z(la self. la l. la acc.
+    l(acc)(la h. la t. self(t)(GOTNAMES_E(objs)(h)(acc)))))(plan)(NIL)
+#   Place the synthetic .got: one entry, size 8*nslots, object GOTOBJ, aligned 8.
+glyph PGOT = la gotsz. la acc. la cur.
+    IF(int_eq(gotsz)(0))
+      (la _. PAIR(acc)(cur))
+      (la _. (la a. PAIR(CONS(MKE(GOTOBJ)(gotsz)(a))(acc))(add(a)(gotsz)))
+             (ALIGNUP(cur)(8)))
+#   The GOT base = the .got entry's address (start of the table), or -1 if none.
+glyph GOTBASE = la plan. (Z(la self. la l.
+    l(sub(0)(1))(la h. la t.
+      IF(int_eq(E_OBJ(h))(GOTOBJ))(la _. E_ADDR(h))(la _. self(t)))))(plan)
+#   The GOT bytes: each slot = the symbol's absolute address, in collected order.
+glyph GOTBYTES = la gotnames. la resolve. (Z(la self. la l.
+    l("")(la h. la t.
+      (la v. IF(lt(v)(0))
+               (la _. error(concat("link: GOT symbol unresolved: ")(h)))
+               (la _. concat(LE8(v))(self(t))))
+      (resolve(h)))))(gotnames)
+
+# ── REGIONS — one PT_LOAD per SCRIPT SEGMENT ────────────────────────────────
+#   A REGION is one loadable segment: its permission flags, its page-aligned
+#   virtual base, its file bytes, and its memory size. There is exactly ONE per
+#   non-empty SCRIPT segment, so the segment COUNT is the number of permission
+#   groups the inputs actually populate (≤ 3), not one per section name.
+#
+#   ★ PERMISSIONS ARE PER-SEGMENT — W^X by construction. The R+X segment holds
+#   .text, the R segment .rodata + .eh_frame, the R+W segment .data + .bss;
+#   never R+W+X. A segment's flags come straight from its SEG in the SCRIPT, so
+#   the permission grouping IS the layout policy, not a name-keyed lookup.
+
+#   The bytes a plan entry contributes: the RELOCATED text for a .text section,
+#   the raw section otherwise. Relocations are applied to .text only here, so
+#   this is where patched and raw meet.
+#   ★ THIS is where "exactly two objects" really lived: every helper branched
+#   IF(E_OBJ == 1) ... ELSE ..., which is a two-way switch that cannot grow.
+#   Looking the object up by index in the list removes the branch entirely, and
+#   with it the arity assumption — the helpers stop knowing how many inputs
+#   there are.
+glyph FINDREC = la objs. la idx. (Z(la self. la l.
+    l(NIL)(la h. la t. IF(int_eq(O_IDX(h))(idx))(la _. h)(la _. self(t)))))(objs)
+glyph FINDOBJ = la objs. la idx. O_F(FINDREC(objs)(idx))
+glyph E_F   = la objs. la e. FINDOBJ(objs)(E_OBJ(e))
+glyph E_SECTAB = la objs. la e. O_SECTAB(FINDREC(objs)(E_OBJ(e)))
+#   Plan entries are (object, section, address). The MERGED .eh_frame is the one
+#   entry with object 0 (no real object is 0 — they are 1-based); its "section"
+#   slot carries the merged SIZE (computed once by PEH, so ESIZE never recomputes
+#   it — the perf fix). ENAME/ESIZE/ETYPE answer for it WITHOUT an object lookup:
+#   a PROGBITS ".eh_frame" of that size. Every real entry defers to its header.
+glyph EHENTRY = la e. int_eq(E_OBJ(e))(0)
+glyph ENAME = la objs. la e.
+    IF(GOTENTRY(e))(la _. ".got")(la _.
+    IF(EHENTRY(e))(la _. ".eh_frame")(la _. SECNAME_M(E_SECTAB(objs)(e))(E_SEC(e))))
+glyph ESIZE = la objs. la e.
+    IF(GOTENTRY(e))(la _. E_SEC(e))(la _.
+    IF(EHENTRY(e))(la _. E_SEC(e))(la _. SH_SIZE_M(E_SECTAB(objs)(e))(E_SEC(e))))
+glyph SH_NOBITS = 8
+glyph ETYPE = la objs. la e.
+    IF(GOTENTRY(e))(la _. 1)(la _.
+    IF(EHENTRY(e))(la _. 1)(la _. SH_TYPE_M(E_SECTAB(objs)(e))(E_SEC(e))))
+
+glyph EALIGN = la objs. la e.
+    IF(GOTENTRY(e))(la _. 8)(la _.
+    IF(EHENTRY(e))(la _. 8)(la _. SH_ALIGN_M(E_SECTAB(objs)(e))(E_SEC(e))))
+#   An entry's own ELF section flags. The two SYNTHESISED sections have no input
+#   to read them from: both hold link-time-resolved, never-written data, so both
+#   are plain SHF_ALLOC.
+glyph EFLAGS = la objs. la e.
+    IF(GOTENTRY(e))(la _. 2)(la _.
+    IF(EHENTRY(e))(la _. 2)(la _. SH_FLAGS_M(E_SECTAB(objs)(e))(E_SEC(e))))
+#   No bitwise operators in this language, so a flag test is arithmetic:
+#   SHF_WRITE is bit 0, SHF_EXECINSTR is bit 2.
+glyph HAS_W = la f. int_eq(mod(f)(2))(1)
+glyph HAS_X = la f. int_eq(mod(div(f)(4))(2))(1)
+
+# ── THE SECTION HEADER TABLE ────────────────────────────────────────────────
+#   ★ WHY THIS EXISTS, AND WHY IT WAS FOUND LATE. The linker emitted no section
+#   headers at all: `e_shnum` 0. Every gate passed, because every gate asked
+#   what the LOADER sees — and the loader reads program headers, not section
+#   headers. Then the real kernel image was linked byte-identically to ld's and
+#   the build's NEXT line, `objcopy -O elf32-i386`, refused it outright: "the
+#   input file has no sections". Nothing about the bytes was wrong; the
+#   container simply could not be spoken to by the tools that come after. Run
+#   the real consumer's next step, not only your own criterion.
+#
+#   One header per OUTPUT SECTION of the script (which is why the parser now
+#   keeps the output name), spanning that section's plan entries, plus the
+#   mandatory NULL header and a `.shstrtab` holding the names. No symbol table
+#   yet — `nm` still says "no symbols" — but `objcopy`, `readelf -S` and
+#   `objdump -h` all work on the output now.
+glyph SHT_PROGBITS = 1
+glyph SHT_STRTAB   = 3
+glyph SHENTSIZE    = 64
+
+#   A section's extent over the plan: (lo, hi, all-nobits, max-align). `lo` is
+#   -1 when the script named an output section nothing matched — an empty
+#   section gets no header rather than a zero-length one at address 0.
+glyph OS_LO = la x. FST(x)
+glyph OS_HI = la x. FST(SND(x))
+glyph OS_NB = la x. FST(SND(SND(x)))
+glyph OS_AL = la x. FST(SND(SND(SND(x))))
+glyph OS_FL = la x. SND(SND(SND(SND(x))))
+glyph OSEXT = la objs. la pats. la plan. (Z(la self. la l. la lo. la hi. la nb. la al. la fl.
+    l(PAIR(lo)(PAIR(hi)(PAIR(nb)(PAIR(al)(fl)))))(la h. la t.
+      IF(MATCHANY(pats)(ENAME(objs)(h)))
+        (la _. self(t)(IF(lt(lo)(0))(la _. E_ADDR(h))(la _. lo))
+                      (add(E_ADDR(h))(ESIZE(objs)(h)))
+                      (AND(nb)(int_eq(ETYPE(objs)(h))(SH_NOBITS)))
+                      (IF(lt(al)(EALIGN(objs)(h)))(la _. EALIGN(objs)(h))(la _. al))
+                      (ORFLAGS(fl)(EFLAGS(objs)(h))))
+        (la _. self(t)(lo)(hi)(nb)(al)(fl)))))(plan)(sub(0)(1))(0)(TRUE)(1)(2)
+#   The OR of two flag words, spelled out because there are no bitwise ops: the
+#   only bits that can appear here are ALLOC (always set), WRITE and EXECINSTR.
+glyph ORFLAGS = la a. la b.
+    add(2)(add(IF(OR(HAS_W(a))(HAS_W(b)))(la _. 1)(la _. 0))
+              (IF(OR(HAS_X(a))(HAS_X(b)))(la _. 4)(la _. 0)))
+
+#   ★ A SECTION'S FLAGS COME FROM ITS INPUT SECTIONS, NOT FROM ITS SEGMENT.
+#   The first version read them off the segment's PERMISSIONS, which looks
+#   equivalent and is not: kernel.ld declares `FLAGS(7)`, so every section came
+#   out `WAX` where ld emits `A`, `WA`, `A` — the segment says what the LOADER
+#   may do with the page, the section says what the CONTENT is. ld ORs the
+#   inputs, and doing the same reproduces its table exactly (the kernel's
+#   `.boot` is `A` because `.multiboot`/`.boot32`/`.rodata` are all `A`).
+#   ★ The gate compared name, address and size and used the flags column only to
+#   FILTER for allocatable — so it would have passed this. It compares flags now.
+
+#   A section's file offset: found through the REGION that contains it, so it
+#   cannot disagree with the segment the loader will map it from.
+glyph OFFOF = la roffs. la addr. (Z(la self. la l.
+    l(0)(la h. la t.
+      (la r. IF(AND(NOT(lt(addr)(R_BASE(r))))(lt(addr)(add(R_BASE(r))(R_MEMSZ(r)))))
+               (la _. add(ROFF(h))(sub(addr)(R_BASE(r))))
+               (la _. self(t)))
+      (RREG(h)))))(roffs)
+
+#   .shstrtab: a NUL, then every name NUL-terminated. A name's sh_name is its
+#   byte offset into it, computed by the same walk that builds it so the two
+#   cannot drift.
+glyph STRTAB_BYTES = la names. concat(B1(0))((Z(la self. la l.
+    l("")(la h. la t. concat(concat(h)(B1(0)))(self(t)))))(names))
+glyph STRTAB_OFF = la names. la nm. (Z(la self. la l. la off.
+    l(0)(la h. la t.
+      IF(str_eq(h)(nm))(la _. off)(la _. self(t)(add(off)(add(LENS(h))(1)))))))(names)(1)
+glyph LENS = la s. str_to_int(str_len(s))
+
+#   The output sections that actually got placed, in script order.
+glyph PLACEDSECS = la items. la objs. la plan. (Z(la self. la l.
+    l(NIL)(la h. la t.
+      IF(int_eq(IT_KIND(h))(IK_SEC))
+        (la _. IF(lt(OS_LO(OSEXT(objs)(IT_NAMES(h))(plan)))(0))
+                 (la _. self(t))
+                 (la _. CONS(h)(self(t))))
+        (la _. self(t)))))(items)
+
+# ── .symtab / .strtab — so `nm` can speak about what we emit ────────────────
+#   The section table (item 12) made the container readable by objcopy and
+#   objdump; `nm` still said "no symbols", because a symbol table is a separate
+#   thing. This adds one: every DEFINED, NAMED symbol of every input object, at
+#   its FINAL address.
+#
+#   ★ ELF REQUIRES ALL LOCAL SYMBOLS BEFORE ALL NON-LOCAL ONES, and `sh_info`
+#   must be the index of the first non-local. That is not a convention to
+#   imitate — readers use sh_info to find the globals without scanning, so
+#   getting it wrong makes a table that parses and lies.
+glyph SHT_SYMTAB  = 2
+glyph SYMENTSIZE  = 24
+glyph SHN_ABS     = 65521
+glyph SYM_TYPE_OF = la info. mod(info)(16)
+glyph SYM_IS_FILE = la info. int_eq(SYM_TYPE_OF(info))(4)
+
+glyph MKSYM   = la nm. la vlo. la vhi. la sx. la g.
+    PAIR(nm)(PAIR(vlo)(PAIR(vhi)(PAIR(sx)(g))))
+glyph SY_NAME = la y. FST(y)
+glyph SY_VLO  = la y. FST(SND(y))
+glyph SY_VHI  = la y. FST(SND(SND(y)))
+glyph SY_SHX  = la y. FST(SND(SND(SND(y))))
+glyph SY_GLB  = la y. SND(SND(SND(SND(y))))
+
+#   Each placed output section's (lo, hi), computed ONCE and threaded, rather
+#   than re-walking the plan per symbol per section.
+glyph SECEXTS = la objs. la secs. la plan. (Z(la self. la l.
+    l(NIL)(la h. la t. CONS(OSEXT(objs)(IT_NAMES(h))(plan))(self(t)))))(secs)
+#   Which output section (1-based header index) contains an address. Called on
+#   a symbol's SECTION BASE, never its final value: an end-of-section marker
+#   (`la_image_end` = base + size = the section's exclusive `hi`) matches no
+#   section under a strict `addr < hi` and returned the -1 sentinel, which
+#   LE2(-1) then fed to `chr` — a crash the fixture never reached because it
+#   has no such symbol. The base is always a real in-section byte address, so
+#   the lookup is unambiguous and the marker gets the section it ends, as ld's.
+glyph SECIDX = la exts. la addr. (Z(la self. la l. la i.
+    l(sub(0)(1))(la h. la t.
+      IF(AND(NOT(lt(addr)(OS_LO(h))))(lt(addr)(OS_HI(h))))
+        (la _. i)
+        (la _. self(t)(add(i)(1))))))(exts)(1)
+
+#   One object's contribution. A symbol is skipped when it is a SECTION or FILE
+#   entry (structural, and `nm` does not show them), when it is UNDEFINED (it
+#   has no address here), when it is nameless, or when its section was not
+#   placed — a --gc-sections casualty must not appear at a fabricated address.
+#   An ABS symbol (`MSGLEN equ $-msg`) keeps its value and SHN_ABS: it belongs
+#   to no section, and running it through the placement would either error or
+#   invent an address for a constant.
+#   ── STAB: the symbol table read ONCE, the way SECTAB reads the headers ──────
+#   ★ MEASURED, not guessed: emitting the symtab cost ~12 s of a 54 s link for
+#   EIGHT symbols, because every SYM_* accessor recomputed SYMOFF = SH_OFF + i*24
+#   and SH_OFF is an un-memoised deep DROP from file start — ~6 per symbol, each
+#   O(offset). SECTAB fixed exactly this for section headers; the symbol reads
+#   were never given the same treatment. STAB DROPs to the symtab base once,
+#   steps 24 bytes/entry carrying the tail (O(1) amortised per symbol), and reads
+#   each field at a shallow offset within the current record; names come from a
+#   once-DROPped .strtab tail, as SECTAB's names come from a once-DROPped
+#   .shstrtab tail. The five fields are exactly what the emitter and the filter
+#   need — nothing is read that OSYMS would not have read anyway.
+glyph STREC  = la nm. la info. la shndx. la vlo. la vhi.
+    PAIR(nm)(PAIR(info)(PAIR(shndx)(PAIR(vlo)(vhi))))
+glyph ST_NM   = la r. FST(r)
+glyph ST_INFO = la r. FST(SND(r))
+glyph ST_SHX  = la r. FST(SND(SND(r)))
+glyph ST_VLO  = la r. FST(SND(SND(SND(r))))
+glyph ST_VHI  = la r. SND(SND(SND(SND(r))))
+#   ★ A SYMBOL'S ADDRESS, WITH THE 32-BIT WINDOW ENFORCED. STAB already CAPTURES
+#   the high word of st_value (ST_VHI) — it was simply never looked at, so a
+#   symbol at or above 4 GB linked to its low word: a plausible wrong address,
+#   silently. link.la's header claims the high word is checked "so the failure
+#   is loud rather than silent"; SYM_VHIGH, the accessor written for that, was
+#   exported and called by NOTHING until 2026-09-08.
+#   ★★ Guarding the WRITE side alone was not enough. FITS32 (above) refuses a
+#   value too big for a 4-byte field, but a truncated READ produces a SMALL
+#   number — 0x1_0000_0000 reads as 0 — which FITS32 then accepts. The two
+#   guards are the same limit from opposite directions and only both together
+#   close it.
+#   Latent today (this layout sits near 0x401000 and kernel.ld at 0x100000) and
+#   reachable the moment anything links high — a higher-half kernel at
+#   0xffffffff80000000 is the obvious one.
+glyph STADDR = la r. la va.
+    IF(int_eq(ST_VHI(r))(0))
+      (la _. add(va(ST_SHX(r)))(ST_VLO(r)))
+      (la _. error(concat("link: symbol value above 4 GB (32-bit window): ")(ST_NM(r))))
+glyph STAB = la f. la ss. la st.
+    (la n. (la strtail.
+      (Z(la self. la i. la sy.
+         IF(int_eq(i)(n))
+           (la _. NIL)
+           (la _. CONS(STREC(CSTR(strtail)(U32(sy)(0)))(BYTE(sy)(4))(U16(sy)(6))
+                            (U32(sy)(8))(U32(sy)(12)))
+                       (self(add(i)(1))(DROP(24)(sy))))))
+       (0)(DROP(SH_OFF_M(st)(ss))(f)))
+      (DROP(SH_OFF_M(st)(SH_LINK(f)(ss)))(f)))
+    (div(SH_SIZE_M(st)(ss))(24))
+
+#   Predicates over a STAB record, replacing the per-index SYM_* deep reads.
+glyph R_TYPE  = la r. mod(ST_INFO(r))(16)
+glyph R_GLB   = la r. int_eq(div(ST_INFO(r))(16))(1)
+glyph R_SEC   = la r. int_eq(R_TYPE(r))(3)
+glyph R_FILE  = la r. int_eq(R_TYPE(r))(4)
+glyph R_UNDEF = la r. int_eq(ST_SHX(r))(0)
+glyph R_NAMED = la r. NOT(int_eq(str_to_int(str_len(ST_NM(r))))(0))
+#   ── resolution predicates over a STAB record (the memoised path) ────────────
+#   The per-index HASDEF/DUPPAIR/LOOKUP/DEFIDX below each rescanned the symtab
+#   with SYM_* accessors — every one an O(offset) deep DROP (SYMOFF = SH_OFF+i*24
+#   re-walked from file start). They now fold over RSTAB, the symbol table read
+#   ONCE per object, and read each record's fields shallow — the win OSYMS took,
+#   applied to the resolution band (~3.5 s). ST_NM is the plain .strtab name (no
+#   SECTION-name synthesis), which is exactly right here: every predicate below
+#   excludes section symbols (NOT R_SEC), so a name is only ever compared for a
+#   real named symbol. ST_VLO == SYM_VALUE (LOW4 ≡ U32), so LOOKUP's address is
+#   byte-identical.
+glyph SYM_IS_WEAK    = la info. int_eq(div(info)(16))(2)   # binding (st_info>>4) == STB_WEAK; SYM_BIND is link.la-private
+glyph DEFINES_R      = la r. AND(R_GLB(r))(AND(NOT(R_UNDEF(r)))(NOT(R_SEC(r))))
+glyph R_WEAK         = la r. SYM_IS_WEAK(ST_INFO(r))
+glyph DEFINES_WEAK_R = la r. AND(R_WEAK(r))(AND(NOT(R_UNDEF(r)))(NOT(R_SEC(r))))
+glyph RSTAB          = la rec. STAB(O_F(rec))(O_SS(rec))(O_SECTAB(rec))
+#   OSYMS now folds over STAB(f)(ss)(sectab) — one memoised pass — and each
+#   record's fields are shallow reads, not a deep DROP apiece.
+glyph OSYMS = la objs. la plan. la exts. la rec.
+    (Z(la self. la l. la acc.
+      l(REV(acc)(NIL))(la r. la t.
+        IF(OR(R_SEC(r))(OR(R_FILE(r))(OR(R_UNDEF(r))(NOT(R_NAMED(r))))))
+          (la _. self(t)(acc))
+          (la _. SYMREC(objs)(plan)(exts)(rec)(r)(self)(t)(acc)))))
+    (STAB(O_F(rec))(O_SS(rec))(O_SECTAB(rec)))(NIL)
+glyph SYMREC = la objs. la plan. la exts. la rec. la r. la self. la t. la acc.
+    IF(int_eq(ST_SHX(r))(SHN_ABS))
+      (la _. self(t)(CONS(MKSYM(ST_NM(r))(ST_VLO(r))(ST_VHI(r))
+                               (SHN_ABS)(R_GLB(r)))(acc)))
+      (la _. (la base.
+               IF(lt(base)(0))
+                 (la _. self(t)(acc))
+                 (la _. self(t)
+                            (CONS(MKSYM(ST_NM(r))(add(base)(ST_VLO(r)))(0)
+                                       (SECIDX(exts)(base))(R_GLB(r)))(acc))))
+             (VAOF(plan)(O_IDX(rec))(ST_SHX(r))))
+glyph ALLSYMS = la objs. la plan. la exts. (Z(la self. la l.
+    l(NIL)(la h. la t. APPL(OSYMS(objs)(plan)(exts)(h))(self(t)))))(objs)
+glyph SYMSBY = la syms. la want. (Z(la self. la l.
+    l(NIL)(la h. la t.
+      IF(int_eq(IF(SY_GLB(h))(la _. 1)(la _. 0))(want))
+        (la _. CONS(h)(self(t)))
+        (la _. self(t)))))(syms)
+#   Locals first, then globals — the ELF ordering rule, applied once here so
+#   nothing downstream has to remember it.
+glyph SORTSYMS = la syms. APPL(SYMSBY(syms)(0))(SYMSBY(syms)(1))
+glyph NLOCAL   = la syms. add(LENL(SYMSBY(syms)(0)))(1)   # +1 for the NULL entry
+
+glyph SYMENT = la nameoff. la info. la shndx. la vlo. la vhi. CAT(
+    CONS(LE4(nameoff))(
+    CONS(B1(info))(
+    CONS(B1(0))(
+    CONS(LE2(shndx))(
+    CONS(concat(LE4(vlo))(LE4(vhi)))(
+    CONS(LE8(0))(
+    NIL)))))))
+glyph SYMBYTES = la syms. la names. concat(ZEROS(SYMENTSIZE))((Z(la self. la l.
+    l("")(la h. la t.
+      concat(SYMENT(STRTAB_OFF(names)(SY_NAME(h)))
+                   (IF(SY_GLB(h))(la _. 16)(la _. 0))
+                   (SY_SHX(h))(SY_VLO(h))(SY_VHI(h)))
+            (self(t)))))(syms))
+
+#   sh_link / sh_info / sh_entsize are parameters, not zeros: a .symtab whose
+#   sh_link does not point at its string table is a table no reader can use,
+#   and sh_info is how a reader finds the first non-local without scanning.
+glyph SHDR = la nameoff. la ty. la flags. la addr. la off. la size. la align.
+             la lnk. la inf. la ent. CAT(
+    CONS(LE4(nameoff))(
+    CONS(LE4(ty))(
+    CONS(LE8(flags))(
+    CONS(LE8(addr))(
+    CONS(LE8(off))(
+    CONS(LE8(size))(
+    CONS(LE4(lnk))(
+    CONS(LE4(inf))(
+    CONS(LE8(align))(
+    CONS(LE8(ent))(
+    NIL)))))))))))
+glyph NULLSHDR = ZEROS(SHENTSIZE)
+
+glyph SHDRS = la secs. la names. la objs. la segs. la plan. la roffs.
+              la symoff. la symsz. la stroff. la strsz. la shstroff. la shstrsz. la nloc.
+    (la nsec.
+     CAT(CONS(NULLSHDR)(CONS((Z(la self. la l.
+      l("")(la h. la t.
+        (la x. concat(SHDR(STRTAB_OFF(names)(IT_ONAME(h)))
+                          (IF(OS_NB(x))(la _. SH_NOBITS)(la _. SHT_PROGBITS))
+                          (OS_FL(x))
+                          (OS_LO(x))
+                          (OFFOF(roffs)(OS_LO(x)))
+                          (sub(OS_HI(x))(OS_LO(x)))
+                          (OS_AL(x))(0)(0)(0))
+                     (self(t)))
+        (OSEXT(objs)(IT_NAMES(h))(plan)))))(secs))(
+     CONS(SHDR(STRTAB_OFF(names)(".symtab"))(SHT_SYMTAB)(0)(0)
+              (symoff)(symsz)(8)(add(nsec)(2))(nloc)(SYMENTSIZE))(
+     CONS(SHDR(STRTAB_OFF(names)(".strtab"))(SHT_STRTAB)(0)(0)
+              (stroff)(strsz)(1)(0)(0)(0))(
+     CONS(SHDR(STRTAB_OFF(names)(".shstrtab"))(SHT_STRTAB)(0)(0)
+              (shstroff)(shstrsz)(1)(0)(0)(0))(
+     NIL)))))))
+    (LENL(secs))
+
+#   ★ RELOCATIONS ARE APPLIED TO EVERY PLACED SECTION, not only .text.
+#   Applying just `.rela.text` was a CONFIRMED silent-wrongness bug: an object
+#   with `msgptr: dq msg` carries a `.rela.data`, and its `.data` was placed but
+#   never patched, so the pointer kept its unrelocated value of 0. The link
+#   succeeded, every gate passed (none exercised `.rela.data`), and the program
+#   wrote from a null pointer — printing nothing and exiting 0. Measured against
+#   ld: ours held 0000000000000000 where ld's held 0x402000.
+#
+#   Patched bytes are therefore keyed by (object, section) rather than one
+#   blob per object, and a section's relocation table is found by name:
+#   `.rela` ++ the section's own name.
+glyph PATCH_OF = la patched. la o. la s. (Z(la self. la l.
+    l("")(la h. la t.
+      IF(AND(int_eq(FST(FST(h)))(o))(int_eq(SND(FST(h)))(s)))
+        (la _. SND(h))
+        (la _. self(t)))))(patched)
+glyph HASPATCH = la patched. la o. la s. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(AND(int_eq(FST(FST(h)))(o))(int_eq(SND(FST(h)))(s)))
+        (la _. TRUE)
+        (la _. self(t)))))(patched)
+
+glyph EBYTES = la objs. la patched. la e.
+    IF(int_eq(ETYPE(objs)(e))(SH_NOBITS))
+      (la _. "")
+      (la _. IF(HASPATCH(patched)(E_OBJ(e))(E_SEC(e)))
+               (la _. PATCH_OF(patched)(E_OBJ(e))(E_SEC(e)))
+               (la _. SECBYTES(E_F(objs)(e))(E_SEC(e))))
+
+#   Is a section one of this segment's? By the shared matcher, so .text.compute
+#   groups into the .text segment alongside a plain .text, and `.note*` groups
+#   a whole family.
+glyph INSEG = la names. la name. MATCHANY(names)(name)
+
+#   Does the plan place ANY section of this segment? An empty permission group
+#   costs no segment rather than an empty PT_LOAD.
+glyph SEGHAS = la objs. la names. la plan. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(INSEG(names)(ENAME(objs)(h)))(la _. TRUE)(la _. self(t)))))(plan)
+
+#   A segment's page-aligned base is the address of its FIRST placed section:
+#   the plan is in ascending placed order and the page-align dominates every
+#   section align, so that first entry sits exactly on the page boundary.
+glyph SEGBASE = la objs. la names. la plan. (Z(la self. la l.
+    l(sub(0)(1))(la h. la t.
+      IF(INSEG(names)(ENAME(objs)(h)))(la _. E_ADDR(h))(la _. self(t)))))(plan)
+
+#   A segment's MEMORY size runs to where its last placed section ends — for a
+#   trailing NOBITS (.bss) that is past its file bytes; the kernel zero-fills
+#   that tail and it never appears in the file (see REGBYTES / BODY).
+glyph SEGEND = la objs. la names. la plan. la base. (Z(la self. la l. la end.
+    l(end)(la h. la t.
+      IF(INSEG(names)(ENAME(objs)(h)))
+        (la _. self(t)(add(E_ADDR(h))(ESIZE(objs)(h))))
+        (la _. self(t)(end)))))(plan)(base)
+
+#   Concatenate a segment's placed sections in ascending order, padding each gap
+#   so bytes land where the plan says. A code gap pads with nops (stays
+#   executable if reached), others with zeros. A NOBITS section (.bss) is
+#   SKIPPED for file bytes — it contributes memory size only, so the segment's
+#   file bytes stop at its last real section rather than padding out to .bss.
+#   ★ A section in a (NOLOAD) output section is skipped for file bytes too —
+#   that is what the attribute MEANS, and for a PROGBITS input it is the only
+#   thing that makes it true (a NOBITS input would have been skipped anyway,
+#   which is what makes (NOLOAD) look decorative until it is not).
+glyph REGBYTES = la objs. la nolo. la patched. la seg. la base. la plan.
+    (Z(la self. la l. la cur. la acc.
+      l(acc)(la h. la t.
+        IF(AND(INSEG(SEG_NAMES(seg))(ENAME(objs)(h)))
+              (NOT(OR(int_eq(ETYPE(objs)(h))(SH_NOBITS))
+                     (MATCHANY(nolo)(ENAME(objs)(h))))))
+          (la _. (la gap. self(t)(add(E_ADDR(h))(ESIZE(objs)(h)))
+                        (CAT(CONS(acc)(CONS(IF(int_eq(SEG_FLAGS(seg))(F_RX))
+                                              (la _. NOPS(gap))(la _. ZEROS(gap)))(
+                             CONS(EBYTES(objs)(patched)(h))(NIL))))))
+                 (sub(E_ADDR(h))(cur)))
+          (la _. self(t)(cur)(acc)))))
+    (plan)(base)("")
+
+#   A region's file offset is fixed by the loader's rule p_offset ≡ p_vaddr
+#   (mod page); deriving it from the page-aligned base keeps that congruence
+#   true by construction, for any number of page-separated segments.
+glyph LENL    = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+#   ★ FILE OFFSETS ARE PACKED, NOT DERIVED FROM THE ADDRESS. Deriving them
+#   (offset = PAGE + vaddr − image base) satisfies the congruence and is what
+#   this did — until a script put two segments 3 MB apart, and the file grew to
+#   3 MB to hold ONE byte of payload. It ran, every address was right, and the
+#   image was unusable as a kernel. The general rule is to pack each region
+#   after the previous one and then restore the congruence by adding
+#   `vaddr mod PAGE`, which is what ld does (it put the second segment at file
+#   offset 0x2000 for vaddr 0x400000). ROFFS computes the offsets ONCE, paired
+#   with their regions, so the phdrs and the body cannot disagree about where a
+#   segment's bytes are — a disagreement the loader would resolve by running
+#   the wrong bytes.
+#   Where the loadable image ends in the FILE — the section-name table and the
+#   section headers go after it, so nothing the loader reads moves when they
+#   are added (the gate asserts exactly that).
+#   ★ A REGION WITH NO FILE BYTES IS SKIPPED, exactly as BODY skips it. It has
+#   an assigned offset, and that offset can sit PAST the last byte anyone wrote
+#   — BODY deliberately emits nothing for it. Counting it made this answer a
+#   position no byte occupies, so the section table was written at an offset
+#   the file never reached and `readelf` read past EOF: "Reading 320 bytes
+#   extends past end of file". Two places computing "where the body ends" must
+#   use one rule, and the rule is BODY's.
+glyph BODYEND = la roffs. (Z(la self. la l. la end.
+    l(end)(la h. la t.
+      (la n. IF(int_eq(n)(0))
+               (la _. self(t)(end))
+               (la _. (la e. self(t)(IF(lt(end)(e))(la _. e)(la _. end)))
+                      (add(ROFF(h))(n))))
+      (str_to_int(str_len(R_BYTES(RREG(h))))))))(roffs)(0)
+glyph SYMNAMES = la syms. (Z(la self. la l.
+    l(NIL)(la h. la t. CONS(SY_NAME(h))(self(t)))))(syms)
+glyph SECNAMES = la secs. (Z(la self. la l.
+    l(NIL)(la h. la t. CONS(IT_ONAME(h))(self(t)))))(secs)
+glyph ROFF    = la ro. SND(ro)
+glyph RREG    = la ro. FST(ro)
+glyph ROFFS   = la regs. REV((Z(la self. la l. la cur. la acc.
+    l(acc)(la h. la t.
+      (la off. self(t)(add(off)(str_to_int(str_len(R_BYTES(h)))))(CONS(PAIR(h)(off))(acc)))
+      (add(ALIGNUP(cur)(PAGE))(mod(R_BASE(h))(PAGE))))))
+  (regs)(PAGE)(NIL))(NIL)
+glyph MKREG   = la flags. la base. la bytes. la memsz.
+    PAIR(flags)(PAIR(base)(PAIR(bytes)(memsz)))
+glyph R_FLAGS = la r. FST(r)
+glyph R_BASE  = la r. FST(SND(r))
+glyph R_BYTES = la r. FST(SND(SND(r)))
+glyph R_MEMSZ = la r. SND(SND(SND(r)))
+
+#   One region per non-empty SCRIPT segment, in SCRIPT order. `base` is bound
+#   once (SEGBASE) and threaded to the bytes, the memsz, and the phdr.
+glyph MKREGIONS = la segs. la objs. la nolo. la patched. la plan.
+    (Z(la self. la l.
+      l(NIL)(la h. la t.
+        IF(SEGHAS(objs)(SEG_NAMES(h))(plan))
+          (la _. (la base.
+                   CONS(MKREG(SEG_FLAGS(h))(base)
+                            (REGBYTES(objs)(nolo)(patched)(h)(base)(plan))
+                            (sub(SEGEND(objs)(SEG_NAMES(h))(plan)(base))(base)))
+                       (self(t)))
+                 (SEGBASE(objs)(SEG_NAMES(h))(plan)))
+          (la _. self(t)))))(segs)
+
+#   ── A SEGMENT MUST BE ONE CONTIGUOUS RUN OF THE PLAN ───────────────────────
+#   A region is described to the loader by ONE (base, filesz, memsz) triple, so
+#   a group whose sections are interleaved with another group's cannot be
+#   expressed — SEGBASE would take the first and SEGEND the last, and the two
+#   segments would overlap in the file while every individual address stayed
+#   correct. `ld` reports that as a section-overlap error; this refuses it by
+#   name instead of emitting an image whose segments quietly claim each other's
+#   bytes. (0 = not started, 1 = inside the run, 2 = the run has ended.)
+glyph CONTIG = la objs. la names. la plan. la tag. (Z(la self. la l. la st.
+    l("ok")(la h. la t.
+      IF(INSEG(names)(ENAME(objs)(h)))
+        (la _. IF(int_eq(st)(2))
+                 (la _. error(concat("link script: this segment's sections are not contiguous — another segment is placed inside it: ")(tag)))
+                 (la _. self(t)(1)))
+        (la _. self(t)(IF(int_eq(st)(1))(la _. 2)(la _. st))))))(plan)(0)
+glyph CHECKCONTIG = la segs. la objs. la plan. (Z(la self. la l. la i.
+    l("ok")(la h. la t.
+      SEQ(CONTIG(objs)(SEG_NAMES(h))(plan)(concat("segment ")(int_to_str(i))))
+         (self(t)(add(i)(1))))))(segs)(1)
+
+glyph PHDRS = la roffs. (Z(la self. la l.
+    l("")(la h. la t.
+      (la r. concat(PHDR(R_FLAGS(r))(ROFF(h))(R_BASE(r))
+                        (str_to_int(str_len(R_BYTES(r))))(R_MEMSZ(r)))(self(t)))
+      (RREG(h)))))(roffs)
+
+#   The image body: pad from wherever we are to each region's file offset,
+#   then its bytes. One fold, so the number of segments is data.
+#   ★ A REGION WITH NO FILE BYTES CONSUMES NO FILE SPACE. Padding up to a
+#   .bss segment's offset wrote 16 KB of zeros to hold nothing — the file grew
+#   to 0x4000 for a program with 54 bytes of code. The loader never reads a
+#   segment whose p_filesz is 0, so the padding bought exactly nothing. Its
+#   p_offset stays as computed and stays congruent with p_vaddr, which is all
+#   the format requires.
+glyph BODY = la roffs. (Z(la self. la l. la cur.
+    l("")(la h. la t.
+      (la b.
+        IF(int_eq(str_to_int(str_len(b)))(0))
+          (la _. self(t)(cur))
+          (la _. (la off.
+                   CAT(CONS(ZEROS(sub(off)(cur)))(CONS(b)(
+                       CONS(self(t)(add(off)(str_to_int(str_len(b)))))(NIL)))))
+                 (ROFF(h))))
+      (R_BYTES(RREG(h))))))(roffs)
+
+#   ── N INPUTS ───────────────────────────────────────────────────────────────
+#   The object list comes from a MANIFEST — link_inputs.txt, one path per line
+#   — rather than two fixed names. This is the last place the number two
+#   survived, and it is why the previous stages were worth doing separately:
+#   with placement, lookup and resolution already folding over a list, the
+#   manifest only has to produce a longer list.
+#   ★ REV is not cosmetic. The walk accumulates with CONS, so without it the
+#   manifest comes back REVERSED — and that is link ORDER, which decides
+#   section packing, which object a duplicate is reported against, and where
+#   the entry point lands. The first version linked and RAN correctly with the
+#   order inverted (_start at 0x401020 instead of 0x401000), which is the
+#   silent-wrongness shape: a passing happy path over an incorrect layout.
+glyph SPLITLINES = la s. REV(
+    (Z(la self. la rest. la cur. la acc.
+      IF(int_eq(str_to_int(str_len(rest)))(0))
+        (la _. IF(int_eq(str_to_int(str_len(cur)))(0))(la _. acc)(la _. CONS(cur)(acc)))
+        (la _. IF(str_eq(str_head(rest))(NL))
+                 (la _. self(str_tail(rest))("")
+                        (IF(int_eq(str_to_int(str_len(cur)))(0))(la _. acc)(la _. CONS(cur)(acc))))
+                 (la _. self(str_tail(rest))(concat(cur)(str_head(rest)))(acc)))))
+    (s)("")(NIL))(NIL)
+
+#   Objects are numbered from 1 in manifest order, which is also link order —
+#   the order duplicate diagnostics and section packing refer to.
+glyph MKOBJS = la paths.
+    REV((Z(la self. la l. la i. la acc.
+        l(acc)(la h. la t.
+          (la f. (la st.
+                   self(t)(add(i)(1))(CONS(OBJ(i)(f)(FIND_SEC_M(st)(".symtab"))(st))(acc)))
+                 (SECTAB(f)))
+          (read_file(h)))))
+      (paths)(1)(NIL))(NIL)
+
+#   Each object's relocated .text, keyed by index — the list form of what p1
+#   and p2 were as separate binders.
+#   One entry per PLAN ENTRY — i.e. per placed section of each object — with
+#   that section's own relocations applied if it has a `.rela.<name>`.
+glyph PATCHSEC = la objs. la plan. la resolve. la gotbase. la gotnames. la e.
+    (la rec. (la f.
+      (la raw.
+        (la rs. IF(lt(rs)(0))
+                  (la _. raw)
+                  (la _. APPLYRELS(f)(O_SS(rec))(rs)
+                                  (la sec. VAOF(plan)(E_OBJ(e))(sec))(resolve)
+                                  (E_ADDR(e))(gotbase)(gotnames)(raw)))
+        (FIND_SEC_M(O_SECTAB(rec))(concat(".rela")(SECNAME_M(O_SECTAB(rec))(E_SEC(e))))))
+      (IF(int_eq(SH_TYPE_M(O_SECTAB(rec))(E_SEC(e)))(SH_NOBITS))
+         (la _. "")
+         (la _. SECBYTES(f)(E_SEC(e)))))
+     (O_F(rec)))
+    (FINDREC(objs)(E_OBJ(e)))
+
+#   The object-0 entry is the MERGED .eh_frame — it is patched by
+#   EHMERGE (dedup CIE, rewrite FDE CIE-pointers, relocate FDEs at their merged
+#   positions), keyed like any other patched section so EBYTES picks it up
+#   unchanged. Every real (object, section) goes through PATCHSEC as before.
+glyph MKPATCHED = la objs. la plan. la resolve. la gotnames. la gotbase.
+    (Z(la self. la l.
+      l(NIL)(la h. la t.
+        CONS(PAIR(PAIR(E_OBJ(h))(E_SEC(h)))
+                 (IF(int_eq(E_OBJ(h))(0))
+                    (la _. EHMERGE(objs)(plan)(resolve)(E_ADDR(h)))
+                    (la _. IF(int_eq(E_OBJ(h))(GOTOBJ))
+                             (la _. GOTBYTES(gotnames)(resolve))
+                             (la _. PATCHSEC(objs)(plan)(resolve)(gotbase)(gotnames)(h)))))
+            (self(t)))))
+    (plan)
+
+# ── .eh_frame MERGE — dedup the shared CIE, one merged relocated table ───────
+#   ld does NOT concatenate objects' .eh_frame — it MERGES: keep ONE copy of the
+#   (byte-identical) CIE, then every FDE, each with its CIE_pointer rewritten to
+#   the kept CIE's distance and its initial_location relocated at the FDE's NEW
+#   position. This makes ours byte-identical to ld's .eh_frame (the .rodata/eh
+#   base already matches ld). A .eh_frame is a sequence of length-prefixed CFI
+#   records: `len4`, then a 4-byte id — 0 marks a CIE, non-zero an FDE (the id
+#   being the FDE's backward distance to its CIE). Objects here carry no
+#   terminator (the linker would add one; ld here does not, so neither do we).
+glyph EHMARK    = sub(0)(2)                          # sentinel section id for the merged entry
+glyph REC_TOTAL = la eh. la o. add(4)(U32(eh)(o))    # bytes of the record at offset o
+glyph REC_IS_CIE= la eh. la o. int_eq(U32(eh)(add(o)(4)))(0)
+
+#   The kept CIE = record 0 of the first .eh_frame-bearing object, "" if none.
+glyph FIRST_CIE = la objs. (Z(la self. la l.
+    l("")(la h. la t.
+      (la ehsec.
+        IF(lt(ehsec)(0))
+          (la _. self(t))
+          (la _. (la eh. TAKES(REC_TOTAL(eh)(0))(eh))(SECBYTES(O_F(h))(ehsec))))
+      (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))(objs)
+
+#   Sum of every object's FDE bytes = eh_size − its CIE size (one CIE per object).
+#   Is an FDE KEPT? Its initial_location relocation targets the .text SECTION of
+#   the function it describes; if that section was placed (VAOF >= 0) the FDE is
+#   live, else --gc-sections dropped the function and the FDE is pruned too (it
+#   could not be relocated against an unplaced section anyway). With gc off every
+#   section is placed, so every FDE is kept and .eh_frame is unchanged.
+glyph FDE_KEPT = la plan. la rec. la eh. la ofde. (la f. (la rs.
+    NOT(lt(VAOF(plan)(O_IDX(rec))
+              (SYM_SHNDX(f)(O_SS(rec))(REL_SYM(f)(rs)(EH_RELIDX(f)(rs)(add(ofde)(8))))))(0)))
+    (FIND_SEC_M(O_SECTAB(rec))(".rela.eh_frame")))(O_F(rec))
+
+#   Sum of one object's KEPT FDE bytes (records whose target function survived gc).
+glyph EH_KEPTSZ = la plan. la rec. (la f. (la eh.
+    (Z(la self. la o. la a.
+       IF(int_eq(o)(str_to_int(str_len(eh))))
+         (la _. a)
+         (la _. (la tot.
+                  IF(REC_IS_CIE(eh)(o))
+                    (la _. self(add(o)(tot))(a))
+                    (la _. IF(FDE_KEPT(plan)(rec)(eh)(o))
+                             (la _. self(add(o)(tot))(add(a)(tot)))
+                             (la _. self(add(o)(tot))(a))))
+                (REC_TOTAL(eh)(o)))))
+     (0)(0))
+    (SECBYTES(f)(FIND_SEC_M(O_SECTAB(rec))(".eh_frame"))))(O_F(rec))
+
+glyph EH_KEPTALL = la objs. la plan. (Z(la self. la l.
+    l(0)(la h. la t.
+      (la ehsec.
+        IF(lt(ehsec)(0))
+          (la _. self(t))
+          (la _. add(EH_KEPTSZ(plan)(h))(self(t))))
+      (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))(objs)
+
+#   The CHEAP full-size path: every object's FDE bytes = eh_size − its CIE size,
+#   from SH_SIZE arithmetic with NO byte extraction. Used when gc is off (nothing
+#   is pruned) so an ordinary .eh_frame-bearing link does not pay the record walk.
+glyph EH_FDEBYTES = la objs. la cie. (Z(la self. la l.
+    l(0)(la h. la t.
+      (la ehsec.
+        IF(lt(ehsec)(0))
+          (la _. self(t))
+          (la _. add(sub(SH_SIZE_M(O_SECTAB(h))(ehsec))(str_to_int(str_len(cie))))(self(t))))
+      (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))(objs)
+
+#   Merged size = one CIE + FDE bytes. When gc is ON, EH_KEPTALL walks the CFI
+#   records to size out gc-dropped functions' FDEs (keeping the planned size equal
+#   to what EHMERGE emits). When gc is OFF nothing is pruned, so the cheap
+#   SH_SIZE-only EH_FDEBYTES gives the same answer WITHOUT walking bytes — the
+#   perf path (EH_KEPTALL's SECBYTES walk is O(offset·filesize) via DROP). 0 when
+#   nothing carries .eh_frame.
+glyph EHMSIZE = la objs. la gcon. la plan. (la cie.
+    IF(int_eq(str_to_int(str_len(cie)))(0))
+      (la _. 0)
+      (la _. add(str_to_int(str_len(cie)))
+                (IF(gcon)(la _. EH_KEPTALL(objs)(plan))(la _. EH_FDEBYTES(objs)(cie)))))
+    (FIRST_CIE(objs))
+
+#   REFUSE differing CIEs — this merge dedups a single shared CIE. Objects built
+#   the same way share one; a genuinely different CIE would need multiple kept
+#   CIEs (not built), so halt loudly rather than emit a table pointing FDEs at
+#   the wrong CIE.
+glyph EH_CIE_OK = la objs. la cie. (Z(la self. la l.
+    l("ok")(la h. la t.
+      (la ehsec.
+        IF(lt(ehsec)(0))
+          (la _. self(t))
+          (la _. (la eh.
+                   IF(str_eq(TAKES(REC_TOTAL(eh)(0))(eh))(cie))
+                     (la _. self(t))
+                     (la _. error("link: .eh_frame merge: objects have differing CIEs (unsupported)")))
+                 (SECBYTES(O_F(h))(ehsec))))
+      (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))(objs)
+
+#   The .rela.eh_frame reloc index whose r_offset == want (the FDE's
+#   initial_location field), or −1.
+glyph EH_RELIDX = la f. la rs. la want. (Z(la self. la i.
+    IF(int_eq(i)(REL_COUNT(f)(rs)))
+      (la _. sub(0)(1))
+      (la _. IF(int_eq(REL_OFFSET(f)(rs)(i))(want))
+               (la _. i)
+               (la _. self(add(i)(1))))))(0)
+
+#   One FDE, rewritten: CIE_pointer := (its field offset − the CIE at 0) = moff+4,
+#   initial_location := target_pc − (mbase + moff + 8), the PC-relative encoding
+#   at the FDE's MERGED position. target_pc = S + A from the FDE's own reloc.
+glyph FDE_OUT = la rec. la plan. la resolve. la eh. la ofde. la mbase. la moff.
+  (la f. (la rs.
+    (la raw.
+      (la ridx.
+        (la tgt.
+          (la p1.
+             PATCH(p1)(8)(4)(LE4(sub(tgt)(add(mbase)(add(moff)(8))))))
+          (PATCH(raw)(4)(4)(LE4(add(moff)(4)))))
+        (add(SYMVAL(f)(O_SS(rec))(la sec. VAOF(plan)(O_IDX(rec))(sec))(resolve)(REL_SYM(f)(rs)(ridx)))
+             (REL_ADDEND(f)(rs)(ridx))))
+      (EH_RELIDX(f)(rs)(add(ofde)(8))))
+    (TAKES(REC_TOTAL(eh)(ofde))(DROPS(ofde)(eh))))
+   (FIND_SEC_M(O_SECTAB(rec))(".rela.eh_frame")))(O_F(rec))
+
+#   Walk one object's records, appending each FDE's rewritten bytes (skipping the
+#   CIE), threading the running merged offset. Returns PAIR(bytes-acc)(moff).
+glyph EH_OBJ = la rec. la plan. la resolve. la mbase. la acc. la moff.
+  (la eh.
+    (Z(la self. la o. la a. la m.
+       IF(int_eq(o)(str_to_int(str_len(eh))))
+         (la _. PAIR(a)(m))
+         (la _. (la tot.
+                  IF(REC_IS_CIE(eh)(o))
+                    (la _. self(add(o)(tot))(a)(m))
+                    (la _. IF(FDE_KEPT(plan)(rec)(eh)(o))
+                             (la _. self(add(o)(tot))
+                                         (concat(a)(FDE_OUT(rec)(plan)(resolve)(eh)(o)(mbase)(m)))
+                                         (add(m)(tot)))
+                             (la _. self(add(o)(tot))(a)(m))))
+                (REC_TOTAL(eh)(o)))))
+     (0)(acc)(moff))
+  (SECBYTES(O_F(rec))(FIND_SEC_M(O_SECTAB(rec))(".eh_frame")))
+
+#   The merged, relocated .eh_frame: kept CIE, then every object's FDEs in link
+#   order, each rewritten at its merged position. mbase is where .eh_frame is
+#   placed (its plan address), so the PC-relative FDE fields are exact.
+glyph EHMERGE = la objs. la plan. la resolve. la mbase. (la cie.
+    SEQ(EH_CIE_OK(objs)(cie))(
+    FST((Z(la self. la l. la a. la m.
+        l(PAIR(a)(m))(la h. la t.
+          (la ehsec.
+            IF(lt(ehsec)(0))
+              (la _. self(t)(a)(m))
+              (la _. (la r. self(t)(FST(r))(SND(r)))
+                     (EH_OBJ(h)(plan)(resolve)(mbase)(a)(m))))
+          (FIND_SEC_M(O_SECTAB(h))(".eh_frame")))))
+      (objs)(cie)(str_to_int(str_len(cie))))))
+    (FIRST_CIE(objs))
+
+glyph CHECKALL = la segs. la disc. la objs. (Z(la self. la l.
+    l("ok")(la h. la t.
+      SEQ(CHECKSECS(segs)(disc)(O_SECTAB(h))(concat("input ")(int_to_str(O_IDX(h)))))(self(t)))))(objs)
+
+glyph HASDEF = la rec. la want. (Z(la self. la l.
+    l(FALSE)(la r. la t.
+      IF(AND(DEFINES_R(r))(str_eq(ST_NM(r))(want)))
+        (la _. TRUE)
+        (la _. self(t)))))(RSTAB(rec))
+
+#   One ordered pair: every global b defines that a also defines is a clash.
+glyph DUPPAIR = la a. la b. (Z(la self. la l.
+    l("ok")(la r. la t.
+      IF(AND(DEFINES_R(r))(HASDEF(a)(ST_NM(r))))
+        (la _. error(concat("link: duplicate symbol: ")(ST_NM(r))))
+        (la _. self(t)))))(RSTAB(b))
+
+#   Every object against every LATER object — each unordered pair once, which
+#   is what two objects did by hand and N objects needs a nested walk to do.
+glyph DUPCHECK = la objs. (Z(la self. la l.
+    l("ok")(la h. la t.
+      SEQ((Z(la inner. la l2.
+            l2("ok")(la h2. la t2. SEQ(DUPPAIR(h)(h2))(inner(t2)))))(t))
+         (self(t)))))(objs)
+
+#   A WEAK definition (binding 2) is a fallback: it satisfies a reference only
+#   when no STRONG (global) definition of the name exists anywhere — a strong
+#   definition always overrides it, and two weak definitions do not clash (the
+#   first wins), exactly as ld resolves `__attribute__((weak))` and the weak
+#   symbols C++ emits for inline functions/templates. `DEFINES` (strong only)
+#   stays the criterion for DUPLICATE detection, so a weak+strong pair is not a
+#   multiple-definition error.
+#   The weak-definition predicate is the record-level `DEFINES_WEAK_R` (STB_WEAK
+#   bind, defined, non-section) in the resolution-predicates block above.
+
+#   Look a name up in one object under a given definition predicate (strong or
+#   weak); returns its address or -1.
+glyph LOOKUP_P = la dfn. la rec. la va. la want. (Z(la self. la l.
+    l(sub(0)(1))(la r. la t.
+      IF(AND(dfn(r))(str_eq(ST_NM(r))(want)))
+        (la _. STADDR(r)(va))
+        (la _. self(t)))))(RSTAB(rec))
+glyph LOOKUP = LOOKUP_P(DEFINES_R)
+
+#   First object that defines `want` under `dfn`, as an address, or -1 (no
+#   error). The NIL branch is a plain -1, so — unlike the two-pass RESOLVE_L —
+#   it needs no thunking; there is nothing to fire eagerly.
+glyph FIND_DEF = la dfn. la objs. la plan. la want.
+    (Z(la self. la l.
+      l(sub(0)(1))
+       (la h. la t.
+         (la a. IF(NOT(lt(a)(0)))(la _. a)(la _. self(t)))
+         (LOOKUP_P(dfn)(h)(la sec. VAOF(plan)(O_IDX(h))(sec))(want)))))
+    (objs)
+
+#   Resolve a name: a STRONG definition first, then a WEAK one, else unresolved.
+#   NON-FATAL: a STRONG definition first, then a WEAK one, else -1. It does not
+#   error on failure — the caller decides, because the right answer depends on
+#   the REFERENCE: an undefined WEAK reference resolves to 0 (ld's behaviour for
+#   `if (&optional_fn) …` feature probing), while an undefined STRONG reference
+#   is the loud "unresolved symbol" (raised in SYMVAL, which knows the binding),
+#   and a missing ENTRY is its own error (ENTRYOF).
+glyph RESOLVE_L = la objs. la plan. la want.
+    (la strong.
+       IF(NOT(lt(strong)(0)))
+         (la _. strong)
+         (la _. FIND_DEF(DEFINES_WEAK_R)(objs)(plan)(want)))
+    (FIND_DEF(DEFINES_R)(objs)(plan)(want))
+
+#   The entry `_start` MUST resolve — RESOLVE_L is non-fatal now, so this keeps
+#   the loud halt (a binary with no entry is not linkable, as ld's "no entry"
+#   error says), rather than silently emitting an entry of -1.
+glyph ENTRYOF = la entry. la resolve.
+    (la e. IF(lt(e)(0))
+             (la _. error(concat("link: no entry symbol ")(entry)))
+             (la _. e))
+    (resolve(entry))
+
+#   The merged .text, pulled back out of the regions. Collapsing MAIN's binders
+#   dropped the write of this file, and the byte-identity-against-ld check —
+#   the strongest assertion in the suite — then had no input and failed loudly.
+#   It is emitted for the gate, not for the linker: the executable carries the
+#   same bytes inside it.
+#   The merged .text pulled back out of the regions — it is the R+X segment,
+#   the only executable one. Emitted to link_text.bin for the byte-identity-vs-ld
+#   gate, not for the linker (the executable carries the same bytes inside it).
+glyph TEXTBYTES = la regs. (Z(la self. la l.
+    l("")(la h. la t. IF(int_eq(R_FLAGS(h))(F_RX))(la _. R_BYTES(h))(la _. self(t)))))(regs)
+
+# ── --gc-sections — drop unreferenced sections (opt-in) ─────────────────────
+#   A `--gc-sections` directive line in link_inputs.txt turns on dead-section
+#   elimination: only sections REACHABLE from the entry (_start) survive. A
+#   section is live if it is a root or a live section relocates to a symbol
+#   DEFINED in it; the live set is the fixpoint of that closure over the
+#   relocation graph. Default (no directive) keeps everything — matching ld's
+#   default and this suite's deliberately-unreferenced `bump`. `keep` is the
+#   predicate the plan consults; .eh_frame is always kept but the FDEs of dropped
+#   functions are pruned by the merge (checking the plan), so no liveness threads
+#   there.
+glyph HASGC = la lines. (Z(la self. la l.
+    l(FALSE)(la h. la t. IF(str_eq(h)("--gc-sections"))(la _. TRUE)(la _. self(t)))))(lines)
+
+# ── --script=<path> — the layout comes from a file ──────────────────────────
+#   Same directive shape as --gc-sections: a line in link_inputs.txt, stripped
+#   from the object list by NODIRS. Absent, the built-in DEFSCRIPT is used and
+#   nothing about a link changes — which is what makes the regression gate
+#   meaningful: the default path must stay byte-identical.
+glyph SCRIPTARG = la lines. (Z(la self. la l.
+    l("")(la h. la t.
+      IF(STARTSW(h)("--script="))(la _. DROPS(9)(h))(la _. self(t)))))(lines)
+glyph HASSCRIPT = la lines. NOT(int_eq(str_to_int(str_len(SCRIPTARG(lines))))(0))
+#   Parsed ONCE in MAIN's binder chain and threaded; the entry symbol and the
+#   segment list are both read off this one parse.
+glyph SCPAIR = la lines.
+    IF(HASSCRIPT(lines))
+      (la _. PARSE_SCRIPT(read_file(SCRIPTARG(lines))))
+      (la _. "")
+glyph NODIRS = la lines. (Z(la self. la l.
+    l(NIL)(la h. la t. IF(STARTSW(h)("--"))(la _. self(t))(la _. CONS(h)(self(t))))))(lines)
+
+#   The st_shndx of a DEFINED symbol named `want` in one object, or -1. (Folds
+#   over RSTAB and returns the section index directly — FINDDEF needed only the
+#   shndx the old DEFIDX+SYM_SHNDX pair recovered from the index.)
+glyph DEFSHNDX = la rec. la want. (Z(la self. la l.
+    l(sub(0)(1))(la r. la t.
+      IF(AND(DEFINES_R(r))(str_eq(ST_NM(r))(want)))
+        (la _. ST_SHX(r))
+        (la _. self(t)))))(RSTAB(rec))
+
+#   The (object index, section index) that DEFINES a global `want`, or (-1,-1).
+glyph FINDDEF = la objs. la want. (Z(la self. la l.
+    l(PAIR(sub(0)(1))(sub(0)(1)))(la h. la t.
+      (la sh.
+        IF(lt(sh)(0))
+          (la _. self(t))
+          (la _. PAIR(O_IDX(h))(sh)))
+      (DEFSHNDX(h)(want)))))(objs)
+
+#   The (object, section) defining symbol `si` of object `oidx`: a symbol defined
+#   here (st_shndx a real section < 0xff00) resolves in place; an UNDEF (shndx 0)
+#   is a global defined in another object; a reserved shndx (COMMON/ABS) has no
+#   section and is returned as (-1,-1), ignored by the closure.
+glyph DEFSEC = la objs. la oidx. la si. (la rec. (la f. (la ss.
+    (la sh.
+      IF(AND(NOT(int_eq(sh)(0)))(lt(sh)(65280)))
+        (la _. PAIR(oidx)(sh))
+        (la _. IF(int_eq(sh)(0))
+                 (la _. FINDDEF(objs)(SYMNAME(f)(ss)(si)))
+                 (la _. PAIR(sub(0)(1))(sub(0)(1)))))
+    (SYM_SHNDX(f)(ss)(si)))
+   (O_SS(rec)))(O_F(rec)))(FINDREC(objs)(oidx))
+
+glyph MEMLS = la live. la o. la s. (Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(AND(int_eq(FST(h))(o))(int_eq(SND(h))(s)))(la _. TRUE)(la _. self(t)))))(live)
+glyph ADDLS = la live. la o. la s.
+    IF(OR(lt(s)(0))(MEMLS(live)(o)(s)))(la _. live)(la _. CONS(PAIR(o)(s))(live))
+
+#   Add the defining section of every relocation of live section (oidx, sec).
+glyph SECNEIGH = la objs. la oidx. la sec. la live. (la rec. (la f. (la rs.
+    IF(lt(rs)(0))
+      (la _. live)
+      (la _. (Z(la self. la i. la acc.
+                IF(int_eq(i)(REL_COUNT(f)(rs)))
+                  (la _. acc)
+                  (la _. (la d. self(add(i)(1))(ADDLS(acc)(FST(d))(SND(d))))
+                         (DEFSEC(objs)(oidx)(REL_SYM(f)(rs)(i))))))
+             (0)(live)))
+    (FIND_SEC_M(O_SECTAB(rec))(concat(".rela")(SECNAME_M(O_SECTAB(rec))(sec)))))
+   (O_F(rec)))
+  (FINDREC(objs)(oidx))
+
+#   One expansion pass: union the neighbours of every currently-live section.
+glyph EXPAND = la objs. la live. (Z(la self. la l. la acc.
+    l(acc)(la h. la t. self(t)(SECNEIGH(objs)(FST(h))(SND(h))(acc)))))(live)(live)
+
+#   Fixpoint: expand until the live set stops growing (it grows monotonically and
+#   is bounded by the total section count, so this terminates).
+glyph CLOSE = Z(la self. la objs. la live.
+    (la nx.
+       IF(int_eq(LENL(nx))(LENL(live)))
+         (la _. live)
+         (la _. self(objs)(nx)))
+    (EXPAND(objs)(live)))
+
+#   Roots = the section that defines the entry symbol `_start`.
+glyph ROOTS = la entry. la objs. (la d.
+    IF(lt(FST(d))(0))(la _. NIL)(la _. CONS(d)(NIL)))
+    (FINDDEF(objs)(entry))
+
+glyph LIVESET = la entry. la objs. CLOSE(objs)(ROOTS(entry)(objs))
+
+#   The `keep` predicate the plan consults: with gc off everything is kept; with
+#   gc on only sections in the live set (computed once, bound in `ls`).
+glyph KEEPFN = la entry. la objs. la gcon.
+    IF(gcon)(la _. (la ls. la o. la s. MEMLS(ls)(o)(s))(LIVESET(entry)(objs)))
+            (la _. la o. la s. TRUE)
+
+glyph MAIN =
+  (la lines.
+  (la sc.
+  (la objs.
+  (la items.
+  (la segs.
+  (la nolo.
+  (la disc.
+  (la entry.
+  (la gcon.
+  (la _chk.
+  (la keep.
+  (la gotnames.
+  (la gotsz.
+  (la plan.
+  (la _ctg.
+  (la gotbase.
+  (la resolve.
+  (la patched.
+  (la regs.
+  (la roffs.
+  (la nph.
+  (la secs.
+  (la exts.
+  (la syms.
+  (la symnames.
+  (la strtab.
+  (la shnames.
+  (la shstrtab.
+  (la symoff.
+  (la stroff.
+  (la shstroff.
+  (la shoff.
+    SEQ(DUPCHECK(objs))(
+    SEQ(write_file("link_text.bin")(TEXTBYTES(regs)))(
+    SEQ(write_exec("link_out")(CAT(
+          CONS(EHDR(ENTRYOF(entry)(resolve))(nph)(shoff)(add(LENL(secs))(4))
+                   (add(LENL(secs))(3)))(
+          CONS(PHDRS(roffs))(
+          CONS(BODY(roffs)(add(EHSIZE)(mul(nph)(PHENTSIZE))))(
+          CONS(ZEROS(sub(symoff)(BODYEND(roffs))))(
+          CONS(SYMBYTES(syms)(symnames))(
+          CONS(strtab)(
+          CONS(shstrtab)(
+          CONS(ZEROS(sub(shoff)(add(shstroff)(LENS(shstrtab)))))(
+          CONS(SHDRS(secs)(shnames)(objs)(segs)(plan)(roffs)
+                    (symoff)(mul(add(LENL(syms))(1))(SYMENTSIZE))
+                    (stroff)(LENS(strtab))(shstroff)(LENS(shstrtab))(NLOCAL(syms)))(
+          NIL))))))))))))(
+    print(CAT(
+      CONS("linked ")(
+      CONS(int_to_str(LENL(objs)))(
+      CONS(" objects into ")(
+      CONS(int_to_str(LENL(regs)))(
+      CONS(" segments, entry ")(
+      CONS(int_to_str(ENTRYOF(entry)(resolve)))(
+      CONS(NL)(
+      NIL))))))))))))
+  )(ALIGNUP(add(shstroff)(LENS(shstrtab)))(8))
+  )(add(stroff)(LENS(strtab)))
+  )(add(symoff)(mul(add(LENL(syms))(1))(SYMENTSIZE)))
+  )(ALIGNUP(BODYEND(roffs))(8))
+  )(STRTAB_BYTES(shnames))
+  )(APPL(SECNAMES(secs))(CONS(".symtab")(CONS(".strtab")(CONS(".shstrtab")(NIL)))))
+  )(STRTAB_BYTES(symnames))
+  )(SYMNAMES(syms))
+  )(SORTSYMS(ALLSYMS(objs)(plan)(exts)))
+  )(SECEXTS(objs)(secs)(plan))
+  )(PLACEDSECS(items)(objs)(plan))
+  )(LENL(regs))
+  )(ROFFS(regs))
+  )(MKREGIONS(segs)(objs)(nolo)(patched)(plan))
+  )(MKPATCHED(objs)(plan)(resolve)(gotnames)(gotbase))
+  )(la want. IF(str_eq(want)("_GLOBAL_OFFSET_TABLE_"))
+               (la _. gotbase)
+               (la _. RESOLVE_L(objs)(plan)(want)))
+  )(GOTBASE(plan))
+  )(CHECKCONTIG(segs)(objs)(plan))
+  )(MKPLAN(items)(keep)(gcon)(objs)(gotsz))
+  )(mul(8)(LENL(gotnames)))
+  )(GOTNAMES(objs)(MKPLAN(items)(keep)(gcon)(objs)(0)))
+  )(KEEPFN(entry)(objs)(gcon))
+  )(CHECKALL(segs)(disc)(objs))
+  )(HASGC(lines))
+  )(IF(HASSCRIPT(lines))(la _. SC_ENTRY(sc))(la _. "_start"))
+  )(IF(HASSCRIPT(lines))(la _. SC_DISCARD(sc))(la _. NIL))
+  )(IF(HASSCRIPT(lines))(la _. NOLOADPATS(SC_ITEMS(sc)))(la _. NIL))
+  )(IF(HASSCRIPT(lines))(la _. FROMGROUPS(sc))(la _. DEFSEGS(objs)))
+  )(IF(HASSCRIPT(lines))(la _. SC_ITEMS(sc))(la _. DEFITEMS(objs)))
+  )(MKOBJS(NODIRS(lines)))
+  )(SCPAIR(lines))
+  )(SPLITLINES(read_file("link_inputs.txt")))
+
+glyph SEQ = la a. la b. b

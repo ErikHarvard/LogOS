@@ -2694,7 +2694,7 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       `gate_asmelf.sh` (`asm_elf_r3..r9`).
       *This closes the ASSEMBLER + object writer only.* The boundary is unchanged
       and lives in the SEPARATE items below: the final kernel LINK still runs
-      `ld -T kernel/kernel.ld` (**LA linker**, `[ ]`, Track B), the single-segment
+      `ld -T kernel/kernel.ld` (**LA linker**, `[~]`, Track B), the single-segment
       image layout stays **`asmelf.la`** (`[~]`), and the build **orchestrator**
       still drives foreign tools including nasm 46× elsewhere (**`buildla.la`**,
       `[~]`) — so this is a nasm-free OBJECT step, not yet a nasm+ld-free kernel.
@@ -2717,9 +2717,113 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       the "linking" a `-f bin` image needs. A real **LA linker (ELF objects +
       relocations + linker script)** — which is what `ld -T kernel/kernel.ld`
       actually does for the kernel — remains genuinely open below.
-- [ ] **LA linker** — closes the `ld` + linker-script seam. Real objects, symbol
-      resolution, relocation sections. `asmelf.la` above closes only the
-      single-source/single-segment image case and does not claim this.
+- [~] **LA linker — TWENTY-THREE SLICES; `ld` REMOVED FROM A REAL KERNEL BUILD (slice 14,
+      2026-08-18). Last slice 23, 2026-09-09 (`track-b`).** Closes the `ld` + linker-script
+      seam. Real objects, symbol resolution, relocation sections.
+      ⚠ **Nine-gate suite RUN 2026-09-10: 56 PASS / 0 FAIL / 1 SKIP → stays `[~]`**, by the
+      criterion pre-registered 09-09 (a SKIP is not a verdict): `gate_link_kernel` step 4, the
+      QEMU boot comparison, skipped — its stub input's `ld` control does not boot, a regression
+      from slice 14's PASS introduced by my `751d34b`. See `LINKER.md`, 2026-09-10.
+      `asmelf.la` above closes only the single-source/single-segment image case
+      and does not claim this.
+      ★ **The per-slice record is `LINKER.md`**. This entry summarises; that file
+      is the evidence, and until 2026-09-09 the roadmap carried **no pointer to it
+      at all**.
+      ⚠ **NINE linker gates, and `run_link_regress.sh` IS the list — do not rebuild
+      it from a glob.** This line said "8 linker gates: `gate_link*.sh`" and both
+      halves were wrong in the same way: `gate_seam_asm_link.sh` does not match
+      that prefix, which is exactly why it was invoked by NOTHING until
+      2026-09-08 — and on 2026-09-09 the same glob cost me the same gate a second
+      time, when I composed "the linker gate suite" from `ls gate_link*.sh` and
+      got eight. Seven of the nine run in `build.sh`; `gate_seam_asm_link.sh` and
+      `gate_link_kernel.sh` are on-demand for stated reasons (see `build.sh`).
+      ⚠ **THE TWO CONSTRAINTS, SOLVED 2026-09-09 (slices 19–23). This line has been
+      revised three times as the measurements came in; this is the settled version.**
+      ★ **TIME is driven by RELOCATIONS** — k≈2.0; one relocation links in 18.5 s,
+      ninety-five in 1107 s.
+      ★ **MEMORY is driven by the `incbin`'d DATA, SUPERLINEARLY — k≈1.67 and
+      rising** (per-byte cost quadruples across one decade of blob size).
+      **It predicts the recorded 12.4 GB**: extrapolating gives 16.0 GB, within
+      1.29×, where a code-shaped model was 18× short.
+      ⇒ **The constraint that binds as the KERNEL grows is the EMBEDDED IMAGE, not
+      the code: twice the LA image costs ~3× the link memory, not 2×.**
+      Excluded **as the cause of the superlinearity** by measurement: object size,
+      relocation count/type, section count, symbol count, the `--script` path, and
+      the load address (34 MB identical at `0x1000`/`0x100000`/`0x400000`).
+      ⚠ **"Excluded" means NOT THE CAUSE — it does not mean FREE**, and an earlier
+      version of this line read as if it did. Slice 23 ran the opposite fixture
+      (grow relocations, hold the blob near zero) and measured **k = 0.69 overall,
+      worst pairwise 1.08** against the blob axis's 1.52/1.68/1.81: relocations
+      cost roughly **0.7 MB of RSS each** but scale at worst LINEARLY. **Both axes
+      cost; only the blob axis is superlinear** — which is why it dominates at
+      kernel scale, where `boot.o` is ~90% one `incbin`'d image with few
+      relocations. See `LINKER.md` slices 19–23.
+      ⚠ Bounds: four points over one decade with a rising local exponent — order
+      and shape, not a fitted constant. Slice 23's decomposition is arithmetic
+      across two fixtures, not a single-axis measurement, and says so.
+      ⚠ **The canonical copy on `kernel-k1` still reads `[ ]` — unstarted.** That
+      is stale by eighteen slices and by the kernel-seam result. Recorded on
+      `~/logos-status.md` rather than edited there, per the cross-track rule.
+      - [x] **slice 1 — the READER** (`link.la`, `ed4f284`). Parses a real
+        `nasm -f elf64` object: section headers, symbol table, relocations. The
+        project's first **recognition** tool — every LA tool before it only ever
+        generated bytes. Gated against `readelf` (values read off it at gate
+        time), plus two negative gates (ET_EXEC and non-ELF must be refused).
+      - [x] **slice 2 — CROSS-OBJECT RESOLUTION** (`link_layout.la`, `c20d1e7`).
+        A symbol defined in one object and referenced from another resolves —
+        the threshold that makes this a linker rather than a reader. Layout
+        adopts ld's policy so **ld's own addresses are the witness**, read from
+        `nm` at gate time: `_start` 0x401000, `greet` 0x401010 (aligned up from
+        0x40100e), `.rodata` 0x402000. Negative gate: an unresolved symbol must
+        HALT naming it, never link as 0.
+      - [x] **slice 3 — RELOCATIONS APPLIED** (`link_reloc.la`, `8f13884`).
+        `R_X86_64_PC32` and `R_X86_64_64` both patched **byte-identical to ld**.
+        Byte-identity is legitimate *here* though slices 1-2 refused it: a
+        relocated instruction is DETERMINED by its addresses, where a whole file
+        carries ld's own choices. The 2-byte alignment gap stays a choice
+        (ours `90 90`, ld's `66 90`) and the gate says so rather than hiding it.
+      - [x] **slice 4 — ELF EMISSION, and the OS runs it** (`7094101`). Two
+        objects in, one `ET_EXEC` out; it prints `I AM THAT I AM`, exit 0,
+        identical to ld's binary from the same inputs. **The proof is not a
+        diff — the gate executes it** and compares stdout and exit code (the
+        `asmelf.la` standard; a binary can diff correctly and still segfault).
+        Two `PT_LOAD` segments on purpose — one RWX would be simpler and would
+        still run, but **W^X** is a property the kernel enforces on itself
+        (K4c), so the gate asserts an R+X segment exists and no RWE one does.
+        Also asserts the loader's rule `p_offset ≡ p_vaddr (mod page)`, which
+        is why the file carries padding it does not obviously need.
+      - [x] **duplicate definitions refused** (`9ef6056`) — ld's "multiple
+        definition". `LOOKUP` took the first match, so two objects defining the
+        same global linked silently and one won by input order; the program
+        then calls the wrong copy, presenting as wrong behaviour rather than a
+        link error. Refused before anything is written, and the gate asserts no
+        output survives a refusal.
+      - [x] **`.data` and `.bss`** (`5fb0b5f`, `5968a94`) — three and then four
+        section kinds, per-segment permissions (`.text` R+X, `.rodata` R,
+        `.data`/`.bss` R+W, never R+W+X), and `p_memsz > p_filesz` for `.bss`
+        with no file space spent. `.data` was the first genuinely writable
+        segment, which is what made the W^X assertion mean anything: before it,
+        "no RWE" passed in a world where RWE was unreachable.
+      - [x] **N objects** (`8a933dc`) — a manifest, `link_inputs.txt`, one path
+        per line; manifest order IS link order. A third object needed no code
+        change and landed exactly where `ld` put it. `MAIN` went from thirteen
+        binders to six, every one derived from the object list.
+      - [x] **beyond: real gcc objects — STALE AS WRITTEN, re-measured 2026-09-09.**
+        Every element this item named is done, and each was checked by RUNNING it
+        rather than by reading the code:
+        • `.eh_frame` + `.note.gnu.property` are **NOT refused** — `link.la` reads
+          all 12 sections of a `gcc -c -nostdlib` object, matching `readelf`
+          exactly, and `link_reloc.la` **links it and the output RUNS (exit 0)**.
+        • `R_X86_64_32` — measured present in a gcc object alongside `_64` and
+          `_PC32`; all three link and the result runs.
+        • `R_X86_64_32S` — handled, `link_reloc.la:116-119`, which documents why
+          32 vs 32S differ and that gcc emits 32S for static data addressing.
+        • the **linker script** exists and is gated: `link_script.la` (28 KB),
+          `gate_link_script.sh` — *"the layout comes from a LINKER SCRIPT, and
+          `ld -T` on the SAME FILE is the witness."*
+        ⚠ **Left as a checked box rather than deleted**, so the next reader can see
+        what was claimed open and what retired it. This was the SIXTH stale record
+        found on 2026-09-09 — and the only one inside Track B's own territory.
 - [ ] **LA-native debugger** — the system inspecting its own execution. Deep
       closure: the system observing itself (today: `qemu -d int` + foreign tools).
 - [~] **LA build orchestrator (`buildla.la`) — FIRST REAL SLICE DONE (2026-07-16).**

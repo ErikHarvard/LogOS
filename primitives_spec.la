@@ -22,7 +22,7 @@
 #    Z            fixpoint combinator                          (support)
 #    RELATION     the bare two-place link (a stands to b)
 #    RECOGNITION  the reflexive relation, T ≡ R
-#    LOVE         reciprocity (symmetric union)
+#    LOVE         the generator — Love(x) = (x, new(x)); new = BECOMING
 #    SELF         ∃(∃) — Being's own self-application
 #    VOID         the empty selector (NIL / FALSE / ZERO)
 #    BECOMING     the successor — engine of becoming
@@ -31,7 +31,8 @@
 #    DEPTH_Z      guarded metacursion = Z (productive fixed point)
 #
 #  The set is a closed algebra: SELF = DEPTH(BEING); RECOGNITION = the diagonal
-#  of RELATION; LOVE = RELATION symmetrised; FORM∘BECOMING∘VOID generates number.
+#  of RELATION; LOVE = the relation of x to its successor; FORM∘BECOMING∘VOID
+#  generates number.
 #
 #  AUTOLOGY, summarised: seven of the eight terminate on self-application and are
 #  checked here by META_DEBUG. BECOMING(BECOMING) terminates to a higher-order
@@ -46,7 +47,7 @@ import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + PAIR/FST/SND/CONS/NIL
 glyph BEING       = la self. self
 glyph RELATION    = la a. la b. la f. f(a)(b)
 glyph RECOGNITION = la x. RELATION(x)(x)
-glyph LOVE        = la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))
+glyph LOVE        = la x. RELATION(x)(BECOMING(x))
 glyph SELF        = BEING(BEING)
 glyph VOID        = la a. la b. b
 glyph BECOMING    = la n. la f. la x. f(n(f)(x))
@@ -59,7 +60,7 @@ glyph SRC_BEING = "la self. self"
 glyph SRC_Z     = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
 glyph SRC_REL   = "la a. la b. la f. f(a)(b)"
 glyph SRC_REC   = "la x. RELATION(x)(x)"
-glyph SRC_LOVE  = "la a. la b. RELATION(RELATION(a)(b))(RELATION(b)(a))"
+glyph SRC_LOVE  = "la x. RELATION(x)(BECOMING(x))"
 glyph SRC_SELF  = "BEING(BEING)"
 glyph SRC_VOID  = "la a. la b. b"
 glyph SRC_BEC   = "la n. la f. la x. f(n(f)(x))"
@@ -68,6 +69,10 @@ glyph SRC_DEPTH = "la g. g(g)"
 glyph SRC_DEPTHZ = "Z"
 
 # ── test scaffolding (spec-file-local; NOT part of the generated module) ──────
+# SUCCF — a visible successor step, so a Church numeral can be WITNESSED as a
+# string: n(SUCCF)("x") prints one "f" per unit. Test-only; GENERATE writes
+# only the SRC_* strings, so this never enters primitives.la.
+glyph SUCCF = la s. concat("f")(s)
 glyph TC  = la probe. la expected. PAIR(probe)(expected)
 glyph T1L = la a. CONS(a)(NIL)
 glyph T2L = la a. la b. CONS(a)(CONS(b)(NIL))
@@ -93,10 +98,10 @@ glyph PRIM_SPEC =
         T3L(TC(la g. FST(g("A")))("A"))
            (TC(la g. SND(g("A")))("A"))                             # recognizer ≡ recognized
            (TC(la g. FST(FST(g(g))("M")))("M"))))(                  # autology: ρ(ρ) = pair(ρ,ρ); left is ρ
-  CONS(E("LOVE")(":: a -> b -> ((p -> q -> r) -> r)")(SRC_LOVE)(LOVE)(
-        T3L(TC(la g. FST(FST(g("A")("B"))))("A"))
-           (TC(la g. FST(SND(g("A")("B"))))("B"))                   # reciprocity: second pairing is (B,A)
-           (TC(la g. FST(FST(FST(FST(g(g)(g)))("A")("B"))))("A"))))(  # autology: LOVE(LOVE)(LOVE) terminates
+  CONS(E("LOVE")(":: a -> ((a -> b -> c) -> c)")(SRC_LOVE)(LOVE)(
+        T3L(TC(la g. FST(g(VOID))("p")("q"))("q"))
+           (TC(la g. SND(g(VOID))(SUCCF)("x"))("fx"))              # child is NEW: new(VOID)=ONE, not VOID
+           (TC(la g. SND(g(BECOMING(VOID)))(SUCCF)("x"))("ffx"))))( # new DEPENDS on x: new(ONE)=TWO, so new is not constant
   CONS(E("SELF")("a -> a   (∃(∃) ≡ ∃ — point-free BEING(BEING), so untyped/trusted)")(SRC_SELF)(SELF)(
         T2L(TC(la g. g("only"))("only"))
            (TC(la g. g(g)("only"))("only"))))(                      # autology: SELF(SELF) ≡ SELF

@@ -1,0 +1,107 @@
+--- .bootelf/asm.la	2026-08-20 21:29:30.534719304 -0600
++++ .imm64/asm.la	2026-08-20 22:31:53.013823102 -0600
+@@ -382,13 +382,18 @@
+ #   below (an immediate fitting unsigned 32 bits takes the zero-extending
+ #   32-bit form, so REX.W is dropped) — which is why width 8 routes through the
+ #   width-4 encoder here rather than having a case of its own.
++#   LE1 exists for the same reason LE2 and LE4 do: an imm8 may be NEGATIVE, and
++#   `B` calls chr() which rejects anything outside 0..255. `mov al, -1` used to
++#   halt the assembler with "chr: value -1 out of byte range" — a loud failure
++#   rather than a silent one, but a failure on valid NASM source.
++glyph LE1 = la n0. B(IF(lt(n0)(0))(la _. add(256)(n0))(la _. n0))
+ glyph LE2 = la n0.
+     (la n. concat(B(mod(n)(256)))(B(mod(div(n)(256))(256))))
+     (IF(lt(n0)(0))(la _. add(65536)(n0))(la _. n0))
+ glyph MOVIMM = la w. la dst. la n. la force. la mode.
+     IF(int_eq(w)(1))
+       (la _. concat(REXOPT(1)(0)(dst)(force))
+-            (concat(B(add(176)(mod(dst)(8))))(B(n))))
++            (concat(B(add(176)(mod(dst)(8))))(LE1(n))))
+       (la _. IF(int_eq(w)(2))
+         (la _. concat(P66M(mode)(2))(concat(REXOPT(2)(0)(dst)(FALSE))
+               (concat(B(add(184)(mod(dst)(8))))(LE2(n)))))
+@@ -402,7 +407,28 @@
+ #   necessity: matching it means distinguishing the two SYNTACTICALLY (all
+ #   digits -> number; otherwise -> label), which also lets SIZEL know the size
+ #   before any label address is known.
+-glyph LE8 = la n. concat(LE4(mod(n)(4294967296)))(LE4(div(n)(4294967296)))
++#   ★ LE8 must do TWO'S COMPLEMENT AT 64 BITS, not at 32. LE4 already
++#   normalises a negative by adding 2^32, so LE8's LOW word came out right by
++#   accident while its HIGH word came from `div(n)(2^32)` — which truncates
++#   toward zero, giving 0 instead of -1. `mov rax, -2147483649` therefore
++#   assembled as movabs 0x000000007FFFFFFF instead of 0xFFFFFFFF7FFFFFFF.
++#   2^64 + n cannot be formed directly (it overflows the host integer), so the
++#   two words are derived from m = -n:
++#       m = mhigh*2^32 + mlow
++#       mlow = 0 : low = 0,           high = 2^32 - mhigh
++#       else     : low = 2^32 - mlow, high = 2^32 - 1 - mhigh
++glyph LE8 = la n.
++    IF(lt(n)(0))
++      (la _. (la m.
++               (la ml.
++                 (la mh.
++                   IF(int_eq(ml)(0))
++                     (la _. concat(LE4(0))(LE4(sub(4294967296)(mh))))
++                     (la _. concat(LE4(sub(4294967296)(ml)))(LE4(sub(4294967295)(mh)))))
++                 (div(m)(4294967296)))
++               (mod(m)(4294967296)))
++             (sub(0)(n)))
++      (la _. concat(LE4(mod(n)(4294967296)))(LE4(div(n)(4294967296))))
+ glyph INSTR = Z(la self. la c. la s.
+     IF(str_eq(s)(""))(la _. FALSE)
+       (la _. IF(str_eq(str_head(s))(c))(la _. TRUE)(la _. self(c)(str_tail(s)))))
+@@ -465,6 +491,35 @@
+     concat(B(add(72)(IF(lt(r)(8))(la _. 0)(la _. 1))))
+    (concat(B(add(184)(mod(r)(8))))(LE8(n)))
+ 
++#   ★ NASM HAS THREE `mov r64, imm` FORMS, NOT TWO, and the third is chosen by
++#   SIGN — which is why it stayed invisible: every immediate the no-flag build
++#   assembles is non-negative.
++#
++#       0 <= n < 2^32       b8+r imm32          5 B   zero-extends
++#       -2^31 <= n < 0      REX.W c7 /0 imm32   7 B   SIGN-extends
++#       otherwise           REX.W b8+r imm64   10 B   movabs
++#
++#   `HIGH_BASE equ 0xFFFFFFFF80000000` is the higher-half kernel base. It exceeds
++#   2^63, so as a signed integer it IS -2147483648 — the middle case. The old
++#   dispatch asked only `n >= 2^32`, which is FALSE for a negative n, so the
++#   value fell through to the 5-byte form and `mov rax, HIGH_BASE` assembled as
++#   `mov eax, 0x80000000`: rax = 0x0000000080000000, the high half silently
++#   dropped. EVERY negative immediate to a 64-bit register was wrong the same
++#   way — `mov rax, -1` zero-extended to 0xFFFFFFFF, `mov rax, -2147483649`
++#   truncated to 0x7FFFFFFF.
++#
++#   The predicate is FITS-UNSIGNED-32, never "looks like a big symbolic
++#   constant": METAL_FLAG_ABS (a low vaddr, rt offset + 0x400078) satisfies it
++#   and is CORRECT in the 5-byte form at all four of its sites. Widening this to
++#   all symbolic immediates would regress them.
++#
++#   SIZEL cannot drift: MOVSIZE's value branch is LENOF(MOVENC(...)), i.e. it
++#   measures this same encoder rather than restating the rule.
++glyph MOVI32S = la r. la n.
++    concat(B(add(72)(IF(lt(r)(8))(la _. 0)(la _. 1))))
++   (concat(B(199))(concat(B(add(192)(mod(r)(8))))(LE4(n))))
++glyph IMIN32 = sub(0)(2147483648)
++
+ #   `push qword 0` — an IMMEDIATE, not a register. 6A + imm8 when it fits a
+ #   signed byte, else 68 + imm32; the `qword` keyword does not add a REX, the
+ #   push is 64-bit by default in long mode. idt.asm's ISR stubs push the vector
+@@ -1045,8 +1100,16 @@
+         (la _. IF(ISREG(b))
+           (la _. RROP(137)(w)(REGNUM(a))(REGNUM(b))(OR(RFORCE(a))(RFORCE(b)))(BITSMODE(labs)))
+           (la _. IF(ISVAL(b))
+-            (la _. (la n. IF(AND(int_eq(w)(8))(OR(NOT(lt(n)(4294967296)))(EXPRHASLAB(b))))
+-                            (la _. MOVABS(REGNUM(a))(n))
++            (la _. (la n. IF(int_eq(w)(8))
++                            (la _. IF(EXPRHASLAB(b))
++                                     (la _. MOVABS(REGNUM(a))(n))
++                                     (la _. IF(lt(n)(0))
++                                              (la _. IF(lt(n)(IMIN32))
++                                                       (la _. MOVABS(REGNUM(a))(n))
++                                                       (la _. MOVI32S(REGNUM(a))(n)))
++                                              (la _. IF(lt(n)(4294967296))
++                                                       (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))(BITSMODE(labs)))
++                                                       (la _. MOVABS(REGNUM(a))(n)))))
+                             (la _. MOVIMM(w)(REGNUM(a))(n)(RFORCE(a))(BITSMODE(labs))))
+                    (EVAL(labs)(b)))
+             (la _. IF(int_eq(w)(8))(la _. MOVABS(REGNUM(a))(LABADDR(b)(labs)))(la _. MOVIMM(w)(REGNUM(a))(LABADDR(b)(labs))(RFORCE(a))(BITSMODE(labs)))))))))))

@@ -89,13 +89,35 @@ glyph KAP = Z(la self. la n.
 
 # κ normalised — ONLY ⊕ is commutative (tex:2854: that commutativity IS "the
 # fundamental distinction between ⊕ and ⊗"). ⊗, ▷ and ⊂ are all order-bearing.
+# ── CONFORMANCE FIX 2026-09-09 — NKAP adopts metacursion-idempotence ──────
+#  ↻(BEING) ≡ SELF is a property of the glyph algebra 𝒢, declared [W] in the
+#  white paper's algebra table beside Closure, Commutativity and the rest — not
+#  a canon.la convention. canon.la:88 marks its REWRITE_MC "SHAPE-keyed not
+#  name-keyed", and the line BELOW it scopes the OTHER rewrite explicitly
+#  ("REWRITE_SYN — DECLARED for the Archē alone"), so canon itself distinguishes
+#  a scoped rewrite from an unscoped one. This one is unscoped.
+#
+#  ⚠ WHY THIS WAS A DEFECT AND NOT A DIFFERENCE. Every NKAP call site asks the
+#  κ question — do two structures share a canonical form: :104 sorts operands by
+#  NKAP key, :127 detects two names sharing one form (synonymy), :162 asserts
+#  NORM idempotence by NKAP equality, :167 compares BAD against GRIEF. Without
+#  the rewrite, any pair differing only by ↻(BEING) vs SELF was judged DIFFERENT
+#  where the algebra says identical ⇒ NKAP UNDER-REPORTED IDENTITY: :127 could
+#  miss a real synonymy and :162 could report a non-idempotence that is not real.
+#  Caught by gate_normdrift.sh, not by reading.
+# written in entropy's OWN boolean idiom — it has Z/IF/AND/NOT but no TRUE/FALSE
+# glyphs, and uses str_eq(x)(x) for true (see :74-76). Importing canon's spelling
+# here would have added names this module does not use.
+glyph HAS_PREFIX = Z(la self. la s. la p. IF(str_eq(p)(""))(la _. str_eq("")(""))(la _. IF(str_eq(s)(""))(la _. NOT(str_eq("")("")))(la _. IF(str_eq(str_head(s))(str_head(p)))(la _. self(str_tail(s))(str_tail(p)))(la _. NOT(str_eq("")(""))))))
+glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. IF(HAS_PREFIX(x)("↻("))(la _. x)(la _. IF(str_eq(x)("▷(DEPTH,RECOGNITION)"))(la _. x)(la _. IF(str_eq(x)("⊕(SELF,SELF)"))(la _. x)(la _. concat("↻(")(concat(x)(")"))))))
+
 glyph NKAP = Z(la self. la n.
     n (la nm. nm)
       (la a. la b. BIN("⊗")(self(a))(self(b)))
       (la a. la b. SORT2("⊕")(self(a))(self(b)))
       (la a. la b. BIN("▷")(self(a))(self(b)))
       (la a. la b. BIN("⊂")(self(a))(self(b)))
-      (la a. concat("↻(")(concat(self(a))(")"))))
+      (la a. REWRITE_MC(self(a))))
 
 # tree → tree normaliser, so idempotence is a statement about NORM itself
 glyph NORM = Z(la self. la n.
