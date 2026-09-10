@@ -69,6 +69,16 @@ for g in $GATES; do
   printf '%-24s rc=%-3s PASS=%-3s FAIL=%-3s SKIP=%-3s %ss\n' "$g" "$rc" "$p" "$f" "$k" "$(( $(date +%s)-s ))"
   [ "$f" -gt 0 ] && printf '%s\n' "$out" | grep '^FAIL' | head -3 | sed 's/^/    /'
   [ "$k" -gt 0 ] && printf '%s\n' "$out" | grep '^SKIP' | head -3 | sed 's/^/    /'
+  # ★ SHOW THE INPUTS, NOT JUST THE VERDICT (2026-09-10). This loop kept counts and the first FAIL/SKIP
+  #   lines and DISCARDED every statement of input — so the 09-10 suite's log could not say which asm.la
+  #   its seam and e2e greens consumed (an 08-21 copy, recovered only by hashing the gates' staged files by
+  #   hand). A verdict without its input is a claim about an unnamed artifact.
+  #   The idioms the nine listed gates use to state an input, measured at 3802ccb: `NOTE ...` lines
+  #   (reloc 7, e2e 6, kernel 4, seam 1) and gate_link_kernel's indented `input: ...` line. A gate with a
+  #   NEW idiom is missed. Five gates — layout, hiaddr, link, nsec, script — state no input at all, and
+  #   that is printed on their row rather than left looking like nothing.
+  ins=$(printf '%s\n' "$out" | grep -E '^NOTE|^[[:space:]]+input:')
+  if [ -n "$ins" ]; then sed 's/^[[:space:]]*/    · /' <<< "$ins"; else echo "    · (this gate states no input)"; fi
   # ★ A ROW WITH NO VERDICT IS NOT A GREEN ROW, and a tally is exactly where that
   #   hides. Counting only PASS and FAIL makes a gate that printed NEITHER add
   #   0 to both and vanish. Three pathologies, each named rather than summed:
