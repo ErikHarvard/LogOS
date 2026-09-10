@@ -77,18 +77,24 @@ Build a kernel ELF that draws entropy on the metal (QEMU) and prints it; assert 
 | **R5 SEED-NOT-WIRED** | M48 draws, but the DRBG still uses its fixed `ENTROPY` vector | step 5 FAILs — DRBG output identical across two boots; proves the seam |
 | **R6 ★ WEAK-SEED-SILENT** | no source, but return a zero/fixed seed and exit 33 instead of halting | the loud-failure discipline: the gate asserts a non-33 exit + named diagnostic. **The catastrophic case for FDE — a weak seed that looks healthy.** |
 
-## 4. The cross-track seam — named, not built
+## 4. The cross-track seam — SETTLED BY PRECEDENT (The Lieutenant, 2026-09-10)
 
-- **If the primitive is an LA runtime BUILTIN** (`entropy(n)` callable from a `.la` program), it lives
-  in **`native_codegen3_rt.asm` — TRACK A's file** (`~/logos-tracks.conf:64`). Track D cannot add it;
-  Track D posts a **NEEDS** and Track A implements it, the way the VM's `random`/getrandom builtin was
-  added to `secd.asm`.
-- **If it is a kernel-resident routine** that seeds FDE at boot in inline asm (no LA program calls it),
-  it lives in `boot.asm` / a K-stage ELF — **Track D's**, and M48 builds it here.
-- **The scope call** (which of the two) is the General's/Lieutenant's: "entropy on the metal for FDE
-  key derivation" leans kernel-inline (Track D); "an LA program needs `entropy(n)`" is the Track-A
-  builtin seam. **The consumer `hmacdrbg.la` is Track A's regardless**, so wiring M48's seed into
-  `INSTANTIATE` is a NEEDS, not a Track-D edit.
+Not escalated: the HAL seam already answers it. Instruction-level primitives are thin runtime
+builtins **appended at `native_codegen3_rt.asm`'s EOF** so no existing `RT_*` address moves —
+precedent: HAL.1's `inb`/`outb`, HAL.4's `outw`/`inw`, HAL.4b's `rt_fill`/`rt_memcpy`. The logic
+built on them is LA. Therefore:
+
+- **The RDRAND/RDSEED/rdtsc primitive → a NEEDS to Track A** (`native_codegen3_rt.asm`, EOF append).
+  **Cost, named:** `RTLEN` shifts and the self-host fixed point must be regenerated, as HAL.4 did.
+  **Sequenced AFTER METANOĒ's parked `dinit1` regen, never beside it** (both move the runtime image).
+- **The source LOGIC is an LA kernel module and Track D's (MINE):** the CF-failure retry, the
+  *labelled* jitter fallback, the loud failure, and feeding `hmacdrbg.la`'s `INSTANTIATE`.
+- **Wiring the seed into `hmacdrbg.la` → a second NEEDS to Track A** (its file).
+- **Kernel-inline asm in `boot.asm` is warranted ONLY if a consumer needs entropy BEFORE the LA image
+  runs.** None is named — FDE key derivation runs *in the LA kernel*, before any disk read, so it does
+  not qualify. Absent such a consumer, there is no kernel-inline path. *(The General may overrule; the
+  Lieutenant will tell him it was settled by precedent.)*
+- **The build is tomorrow's.** The two NEEDS are filed now so Track A can sequence them after `dinit1`.
 
 **Honest scope:** RDRAND/RDSEED are a CPU-vendor RNG; a purist wants an independent physical source or
 a jitter-mixed pool. This spec targets *a real seed on the metal, loudly-failing rather than silently
