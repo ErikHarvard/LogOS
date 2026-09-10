@@ -272,6 +272,23 @@ glyph OK_LAWS_SEP = AND(OK_LAW_ID)(AND(OK_LAW_NC)(OK_LAW_EM))
 #  about another module's rule has to reference that rule.
 glyph OK_ONE_NEG = str_eq(KEY(PNOT(P_FLOW)))(concat("⊂(")(concat(KEY(P_FLOW))(",VOID)")))
 
+# ══ GATE 8 — → IS MATERIAL IMPLICATION, and now something sees it (M6's last connective).
+#  E12 (rulings/E12.md, ruled 2026-09-09) makes → DEFINED, ¬A ∨ B, and PIMP is exactly that. Until this row NO gate
+#  reached it: 0 users in this module or metaprop.la, 0 mutants -- while PNOT had 11 users and 4 mutants (a walk of
+#  the reference graph from MAIN, 2026-09-10). A connective no gate reaches is a claim nobody witnessed.
+#  The four classical rows, in the TRUTH register (where E12's → lives), over the world's own two atoms: P_FLOW is
+#  TRUE (in TS0) and P_WVOID FALSE (in FS0), disjoint and covering both, so this world is classical for them.
+#  PIMP is DERIVED -- ¬, then ∨ as ¬(¬·∧¬·) -- so the row also carries PNOT, PAND and POR through the truth register.
+#  PRE-REGISTERED in a model of EV before this row existed: TFTT here; TTFT for the converse; and three EXISTING
+#  mutants turn it red too, because → is built from ¬ (negation-is-identity TFFF, polarity-never-flips TFFF,
+#  truth-negation-not-involutive FTTT), while glyph-negation-cancels leaves it TFTT: cancelling ¬¬ changes the
+#  GLYPH, not the truth -- the two-register claim again, seen from this row.
+glyph IMP_TABLE = concat(TF(TVAL(TS0)(FS0)(PIMP(P_FLOW)(P_FLOW))))
+                 (concat(TF(TVAL(TS0)(FS0)(PIMP(P_FLOW)(P_WVOID))))
+                 (concat(TF(TVAL(TS0)(FS0)(PIMP(P_WVOID)(P_FLOW))))
+                        (TF(TVAL(TS0)(FS0)(PIMP(P_WVOID)(P_WVOID))))))
+glyph OK_IMP_MATERIAL = str_eq(IMP_TABLE)("TFTT")
+
 # ══ GATE 7 — THE BRIDGE: the glyph register is INTUITIONISTIC, the truth register CLASSICAL,
 #  and the Goedel–Gentzen double-negation translation embeds the second in the first
 #  (Lingua Adamica White Paper, sub:proplayer, sha256 98beeff4 :2393–2399). M6's owed sub-part.
@@ -397,6 +414,6 @@ glyph J   = la a. la b. concat(a)(b)
 glyph ROW = la lbl. la c. J(J(" | ")(lbl))(J(" ")(MK(c)))
 glyph PROP_ROWS = (J(J(J("prop  neg-neg-P(glyph) = ")(KEY(PNOT(PNOT(P_FLOW)))))(J("\n              P(glyph) = ")(KEY(P_FLOW))))(J(ROW("dne-fails-ontologically")(OK_DN_GLYPH))(J(ROW("dne-holds-operationally")(OK_DN_TRUTH))(J(ROW("two-registers")(OK_TWO_ALGEBRAS))(J(ROW("neg-is-real")(OK_NEG_REAL))(J(ROW("incoherent-refused")(OK_INCOHERENT))(J(ROW("false-constructible")(OK_FALSE_OK))(J(ROW("true-obtains")(OK_TRUE_OK))(J(ROW("laws")(OK_LAWS))(J(ROW("laws-separable")(OK_LAWS_SEP))(ROW("one-negation-only")(OK_ONE_NEG))))))))))))
 
-glyph MAIN = print(J(PROP_ROWS)(KR_ROWS))
+glyph MAIN = print(J(PROP_ROWS)(J(ROW("implication-is-material")(OK_IMP_MATERIAL))(KR_ROWS)))
 
 export PNOT PAND POR PIMP PRED PROP COHERES TVAL KEY GEQ WATER P_FLOW P_WVOID TS0 FS0 BEING RECOG LOVE SELFP RELN VOIDP BECOM FORMP DEPTHP
