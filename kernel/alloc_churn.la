@@ -5,7 +5,10 @@
 # THE LIVE SET IS ONE INTEGER. The recursion is in TAIL position and the runtime
 # does TCO, so the stack does not grow -- anything that grows is the HEAP.
 #
-# Therefore peak RSS must be FLAT in the iteration count. Measured, it is not:
+# Therefore peak RSS must be FLAT in the iteration count. 2026-09-10: it IS —
+# 15M and 135M iterations both peak at 4.0 MB (most plausibly f9096e0's rt_gc
+# trigger, 2026-08-22). The July measurements below record the defect this
+# program was written to expose. Measured 2026-07-19, it was not:
 #         1,000 ->   0.75 MB      1,000,000 ->  72 MB
 #       100,000 ->  20 MB         2,000,000 -> 105 MB
 #       250,000 ->  36 MB         5,000,000 -> 170 MB

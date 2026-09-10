@@ -7302,6 +7302,10 @@ bash kernel/gate_k5b2.sh || exit 1
 #      on purpose" — and it genuinely exits FAIL (3x work costs ~1.74x memory; the
 #      GC reclaims but never plateaus). SAME CLASS AS gate_hal3d: wiring it turns
 #      this suite red for a known, recorded defect. NOT WIRED, deliberately.
+#      ★ SUPERSEDED 2026-09-10 — no longer red. Since the rt_gc fix (most plausibly
+#      f9096e0) 15M and 135M iterations both peak at 4.0 MB, and it is wired below.
+#      It now also refuses a run that did not print its own `done`: before that it
+#      PASSED a program that exited 3 having done nothing.
 #      It ALSO carried the skip-to-green defect and is fixed (2026-09-08): its
 #      absent-tiny_host path said SKIP + exit 0 and now FAILs. ★ The line drawn
 #      there is ENVIRONMENT vs ARTIFACT — skipping on an absent /usr/bin/time is
