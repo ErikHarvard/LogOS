@@ -53,10 +53,16 @@ fi
 [ "$DN" -eq 0 ] && echo "# front clear (0 deep jobs) at $(date '+%H:%M')" \
                 || echo "# ⚠ OVERRIDDEN: running beside $DN deep job(s) — a RED here may be contention"
 
+BUDGET=3600
+# timeout(1)'s give-up code, read from the tool rather than hardcoded: a shape
+# change (busybox timeout, a wrapper) moves it, and a hardcoded number would then
+# silently classify a real budget kill as an ordinary failure.
+TMO_RC=$( timeout 1 sleep 5 >/dev/null 2>&1; echo $? )
+
 for g in $GATES; do
   [ -x "$g" ] || { echo "SKIP  $g (not executable)"; skip=$((skip+1)); continue; }
   s=$(date +%s)
-  out=$(timeout 3600 ./"$g" 2>&1)
+  out=$(timeout "$BUDGET" ./"$g" 2>&1)
   rc=$?
   p=$(printf '%s\n' "$out" | grep -c '^PASS'); f=$(printf '%s\n' "$out" | grep -c '^FAIL')
   k=$(printf '%s\n' "$out" | grep -c '^SKIP')
@@ -75,7 +81,22 @@ for g in $GATES; do
   if [ "$rc" -ne 0 ] && [ "$f" -eq 0 ] && [ $((p+k)) -gt 0 ]; then
     echo "    ‼ nonzero exit with no FAIL line — aborted part-way; the PASSes above are partial."; sick=$((sick+1))
   fi
-  [ "$rc" -eq 124 ] && { echo "    ‼ rc=124 — TIMED OUT at 3600 s, not a verdict."; sick=$((sick+1)); }
+  # ⚠ DO NOT ASSERT ONE KILL CODE, AND DO NOT ENUMERATE THREE EITHER. A budget or
+  #   external kill surfaces as timeout's own give-up code, or as 128+signo for
+  #   whatever signal actually landed — SIGKILL, SIGTERM, SIGSEGV, SIGINT — so a
+  #   list of three members is the same defect with more members. Test the CLASS
+  #   (killed by a signal at all) and PRINT the number.
+  #   (~/logos-hexis.sh caught the single-code form in 6216aa6 minutes after it
+  #   shipped; its rule then matched my replacement's PROSE, "rc=124" inside an
+  #   echo, which is a sweep matching an idiom rather than the class — so the
+  #   messages below say "exit N" and the test is arithmetic, not a literal.)
+  if [ "$rc" -gt 128 ]; then
+    echo "    ‼ exit $rc — killed by signal $(( rc - 128 )) ($(kill -l $(( rc - 128 )) 2>/dev/null || echo unknown)). Not a verdict."
+    sick=$((sick+1))
+  elif [ "$rc" -eq "$TMO_RC" ]; then
+    echo "    ‼ exit $rc — the ${BUDGET}s budget expired before the gate reached a verdict."
+    sick=$((sick+1))
+  fi
   pass=$((pass+p)); fail=$((fail+f)); skip=$((skip+k))
 done
 echo "----------------------------------------"
