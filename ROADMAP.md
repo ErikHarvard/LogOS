@@ -2116,11 +2116,19 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       seam. Real objects, symbol resolution, relocation sections.
       `asmelf.la` above closes only the single-source/single-segment image case
       and does not claim this.
-      ★ **The per-slice record is `LINKER.md`** (8 linker gates: `gate_link*.sh`).
-      This entry summarises; that file is the evidence, and until 2026-09-09 the
-      roadmap carried **no pointer to it at all**.
-      ⚠ **THE TWO CONSTRAINTS, SOLVED 2026-09-09 (slices 19–22). This line has been
-      revised twice as the measurements came in; this is the settled version.**
+      ★ **The per-slice record is `LINKER.md`**. This entry summarises; that file
+      is the evidence, and until 2026-09-09 the roadmap carried **no pointer to it
+      at all**.
+      ⚠ **NINE linker gates, and `run_link_regress.sh` IS the list — do not rebuild
+      it from a glob.** This line said "8 linker gates: `gate_link*.sh`" and both
+      halves were wrong in the same way: `gate_seam_asm_link.sh` does not match
+      that prefix, which is exactly why it was invoked by NOTHING until
+      2026-09-08 — and on 2026-09-09 the same glob cost me the same gate a second
+      time, when I composed "the linker gate suite" from `ls gate_link*.sh` and
+      got eight. Seven of the nine run in `build.sh`; `gate_seam_asm_link.sh` and
+      `gate_link_kernel.sh` are on-demand for stated reasons (see `build.sh`).
+      ⚠ **THE TWO CONSTRAINTS, SOLVED 2026-09-09 (slices 19–23). This line has been
+      revised three times as the measurements came in; this is the settled version.**
       ★ **TIME is driven by RELOCATIONS** — k≈2.0; one relocation links in 18.5 s,
       ninety-five in 1107 s.
       ★ **MEMORY is driven by the `incbin`'d DATA, SUPERLINEARLY — k≈1.67 and
@@ -2129,11 +2137,20 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       1.29×, where a code-shaped model was 18× short.
       ⇒ **The constraint that binds as the KERNEL grows is the EMBEDDED IMAGE, not
       the code: twice the LA image costs ~3× the link memory, not 2×.**
-      Excluded by measurement: object size, relocation count/type, section count,
-      symbol count, the `--script` path, and the load address (34 MB identical at
-      `0x1000`/`0x100000`/`0x400000`). See `LINKER.md` slices 19–22.
+      Excluded **as the cause of the superlinearity** by measurement: object size,
+      relocation count/type, section count, symbol count, the `--script` path, and
+      the load address (34 MB identical at `0x1000`/`0x100000`/`0x400000`).
+      ⚠ **"Excluded" means NOT THE CAUSE — it does not mean FREE**, and an earlier
+      version of this line read as if it did. Slice 23 ran the opposite fixture
+      (grow relocations, hold the blob near zero) and measured **k = 0.69 overall,
+      worst pairwise 1.08** against the blob axis's 1.52/1.68/1.81: relocations
+      cost roughly **0.7 MB of RSS each** but scale at worst LINEARLY. **Both axes
+      cost; only the blob axis is superlinear** — which is why it dominates at
+      kernel scale, where `boot.o` is ~90% one `incbin`'d image with few
+      relocations. See `LINKER.md` slices 19–23.
       ⚠ Bounds: four points over one decade with a rising local exponent — order
-      and shape, not a fitted constant.
+      and shape, not a fitted constant. Slice 23's decomposition is arithmetic
+      across two fixtures, not a single-axis measurement, and says so.
       ⚠ **The canonical copy on `kernel-k1` still reads `[ ]` — unstarted.** That
       is stale by eighteen slices and by the kernel-seam result. Recorded on
       `~/logos-status.md` rather than edited there, per the cross-track rule.
