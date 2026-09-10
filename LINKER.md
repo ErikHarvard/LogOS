@@ -1545,3 +1545,56 @@ count without its file-time. Build line, for reproducibility:
 **Still unexplained: ~4×.** Not excluded — superlinearity in blob size (mine was
 6 KB, POROS's ~40 KB), or the `--script` layout path, which no probe here has taken.
 
+## Slice 22 — FOUND IT: RSS is superlinear in the incbin'd DATA, k≈1.67 (2026-09-09)
+
+Slices 19–21 excluded size, four code-shape dimensions, and left ~4×. Two more
+candidates remained. **One is refuted and the other is the cause.**
+
+### Refuted first: the `--script` layout path and the LOAD ADDRESS
+Same 560 B object, three scripts differing only in load address:
+
+| script | peak RSS | time | link_out |
+|---|---|---|---|
+| `. = 0x1000` | 34 MB | 1.2 s | 4,528 B |
+| `. = 0x100000` | 34 MB | 1.2 s | 4,528 B |
+| `. = 0x400000` | 34 MB | 1.3 s | 4,528 B |
+
+**Identical in all three.** `link.la` uses file offsets correctly and does **not**
+materialise the gap between load address and file start. ⇒ Neither `--script` nor
+the high `0x400000` load address of `kernel.ld` contributes anything.
+
+### ★★ THE CAUSE: RSS grows SUPERLINEARLY IN THE BLOB, and the per-byte cost RISES
+
+Held at **exactly one relocation** throughout; only the `incbin`'d data grows:
+
+| object bytes | RSS | KB RSS/byte | pairwise k |
+|---|---|---|---|
+| 6,960 | 236 MB | 34.7 | — |
+| 13,104 | 616 MB | 48.1 | 1.52 |
+| 25,392 | 1,870 MB | 75.4 | 1.68 |
+| 49,968 | **6,347 MB** | 130.1 | **1.81** |
+
+**Overall k = 1.67, and rising** — the same steepening shape the codegen curve
+showed. **Per-byte cost nearly quadruples across one decade of blob size.**
+
+### ★★★ AND IT PREDICTS THE CONTROL, WHICH NOTHING ELSE DID
+Extrapolated to the recorded 86 KB case: **16.0 GB** against **12.4 GB** recorded —
+**within 1.29×.**
+Slice 20's code-shaped model predicted **0.70 GB**: 18× short. **The control is now
+reproduced from the other side**, on the axis the earlier fixtures could not vary.
+
+⇒ **The 150,000× is a DATA-SECTION effect, superlinear in blob bytes.** It is not
+size (slice 19), not relocation count or type or section or symbol count (slice 20),
+not the linker script and not the load address (above). **The `boot.o` that blew up
+is ~90% one `incbin`'d LA image, and that is the whole of it.**
+
+⚠ **Honest bounds.** Four points over one decade with a *rising* local exponent, so
+1.67 is an average across a curve that steepens — the same caveat that made slice 19's
+endpoint fit an artifact. Predicting 16.0 GB against a recorded 12.4 GB is agreement
+in ORDER and shape, not a fitted constant. And the recorded 86 KB is itself not a
+fixed number: `boot.o` tracks the embedded image and was 46,352 B when POROS measured.
+
+**Consequence for the linker:** the constraint that binds as the kernel grows is the
+**embedded image**, not the code. A kernel with twice the LA image costs ~3× the
+link memory, not 2×.
+
