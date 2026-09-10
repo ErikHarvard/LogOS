@@ -4562,6 +4562,43 @@ else
 fi
 
 
+say "Cross-population concept→form monosemy (crosscoll.la — M22)"
+ok=1
+# ★ opgrammar.la (above) scans the 79 lexicon+grammar entries against EACH
+#   OTHER. Glyphs that carry a concept OUTSIDE those tables were never compared
+#   with them: the First Derivations (LA.tex :4802-4810), the meta-glyphs
+#   (canon.la κ 𝓡 SR_*, metaglyph.la's modes and ∂δγρ𝔄) and the nine
+#   primitives. crosscoll.la compares them under canon.la's NORMK; L×L pairs
+#   stay opgrammar.la's.
+# ★ 12 pairs share a glyph: 4 DECLARED, each with its citation in crosscoll.la,
+#   and 8 OPEN, pinned EXACTLY in two classes. Two are codex×codex (See=KAPPA,
+#   Past=Death). Six pit a codex word against a REPO-ASSIGNED meta-glyph form
+#   (OP_* are "principled proposals, not spec-fixed", metaglyph.la:168; SR_*
+#   are canon_spec.la:108-111 assignments). None of the eight is a ruling. The
+#   pin exists so that a new collision, or a fix, turns this RED and must be
+#   looked at.
+# ★ Derived before its first run by an independent transcription (board,
+#   2026-09-10), and the first run reproduced it byte for byte. RED path, run:
+#   Care re-derived onto REVAL's form ▷(DEPTH,RECOGNITION) turns open-set and
+#   set FAIL, and the OPEN line names Care=REVAL.
+# ⚠ Branch-specific: on kernel-k1, E10 (2cca4b4) makes 𝔄 = Compassion, so
+#   Warm=OP_INTEG goes and a DECLARED Compassion=OP_INTEG comes. Re-derive this
+#   pin at integration (crosscoll.la's header says how).
+# Cost, measured 2026-09-10: 2:43 wall / 37 MB at load ~2 on 24 cores. The
+#   600 s budget is ~3.7x that.
+XCOUT="$(timeout 600 ./tiny_host crosscoll.la 2>&1)" || { echo "FAIL  crosscoll: crosscoll.la did not run to completion (host halted, timed out, or a module is missing) — $XCOUT"; ok=0; }
+case "$XCOUT" in *FAIL*) echo "FAIL  crosscoll: a gate failed — $XCOUT"; ok=0 ;; esac
+case "$XCOUT" in
+  *"| OPEN: Change=OP_COMP See=KAPPA Warm=OP_INTEG Past=Death Ongoing=SR_BY None=SR_FROM Truth=SR_ABOUT Truth=OP_RECOG | PAIRS:"*) : ;;
+  *) echo "FAIL  crosscoll: the open cross-population collision set changed — got: $XCOUT"; ok=0 ;;
+esac
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  crosscoll: the 79 lexicon+grammar entries against 6 First Derivations + 21 meta-glyphs + 9 primitives under NORMK — 12 shared-glyph pairs, 4 DECLARED with citations and 8 OPEN pinned exactly: 2 codex×codex (See=KAPPA, Past=Death) and 6 codex×proposal (Change=OP_COMP Warm=OP_INTEG Ongoing=SR_BY None=SR_FROM Truth=SR_ABOUT Truth=OP_RECOG), none a ruling"
+else
+    exit 1
+fi
+
+
 say "Self-extension stage 0 — the measured baseline, as a tripwire (gate_selfext0.py)"
 # ── ★ THE STARTING POINT AS A MEASUREMENT, NOT A MEMORY ──────────────────
 #  The self-* organs WRITE adopted artifacts (grown.la, opt.la, organ.la) and
