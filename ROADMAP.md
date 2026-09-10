@@ -832,8 +832,14 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
       > footing: **invoked separately, documented, never opted out of.** They are not
       > abandoned and not superseded; nothing has run them since 2026-07/08.
 
-      - [x] **HAL.5c — an ICMP ECHO round-trip (ping) — DONE + gated
-            (2026-07-20).** One IP layer above HAL.5b's ARP: the kernel PINGS the
+      - ⚠ **Re-marked 2026-09-10, ahead of the kernel-k1 merge: HAL.5c–5r below say DRIVER DONE,
+            not "gated".** Their 16 gates (`kernel/gate_nic5*.sh`) exist on track-d, and each block
+            describes what its gate asserts — but `build.sh` invokes none of them, and their runtime
+            since the fast-compiler collapse (18 of 18 `build_nic5*.sh` now compile through
+            `kernel/ncc3.sh`) is unmeasured. track-d's `build.sh:7356–7363` (at `4f8a1c3`) records the
+            gap. Built, not enforced, until a gate is wired.
+      - [x] **HAL.5c — an ICMP ECHO round-trip (ping) — DRIVER DONE
+            (2026-07-20); gate not run by build.sh.** One IP layer above HAL.5b's ARP: the kernel PINGS the
             SLIRP gateway (10.0.2.2) and receives the echo reply, in Lingua Adamica
             at ring 0. `kernel/nic5c.la` reuses 5b's NIC bring-up verbatim and
             stages a 42-byte ICMP echo request with the IP and ICMP **header
@@ -856,8 +862,8 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             native_codegen3 takes ~12 min on this program (NIC-sized, like HAL.4h),
             so the gate's rebuild is long — build once + run QEMU manually when
             iterating. A real IP-layer round-trip, driver in the language.
-      - [x] **HAL.5d — a DNS resolution round-trip (UDP) — DONE + gated
-            (2026-07-22).** One transport layer above HAL.5c's ICMP ping: a real
+      - [x] **HAL.5d — a DNS resolution round-trip (UDP) — DRIVER DONE
+            (2026-07-22); gate not run by build.sh.** One transport layer above HAL.5c's ICMP ping: a real
             UDP/DNS exchange. The kernel sends a DNS **A-query for `dns.google`**
             to SLIRP's built-in DNS proxy (10.0.2.3:53) and receives the UDP
             response straight out of the DMA ring — **resolving a hostname at ring
@@ -879,8 +885,8 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             (~a few thousand poll iters at ~117k/s), far under the ~700k-alloc metal
             heap wall — it finishes first *honestly*, not by luck. Requires host
             network egress (the proxy forwards the query); ~12 min compile like 5c.
-      - [x] **HAL.5e — a real ARP RESPONDER + RX-ring advance — DONE + gated
-            (2026-07-22).** The honest de-cheat of 5c/5d, which dodged answering
+      - [x] **HAL.5e — a real ARP RESPONDER + RX-ring advance — DRIVER DONE
+            (2026-07-22); gate not run by build.sh.** The honest de-cheat of 5c/5d, which dodged answering
             SLIRP's ARP by PRE-SEEDING its cache with a gratuitous reply (a
             proactive trick, so the wanted reply arrived as the only RX packet —
             no responder, no ring advance). 5e removes the seed and builds the two
@@ -912,8 +918,8 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             REACTIVE (waits for + verifies the real request — no pre-seeding) with
             static addressing for the known SLIRP gateway; a fully general responder
             that echoes the requester's own sender fields is a follow-up (5f).
-      - [x] **HAL.5f — a FULLY GENERAL ARP responder — DONE + gated
-            (2026-07-22).** 5e answered SLIRP's ARP but with STATIC peer-addressing
+      - [x] **HAL.5f — a FULLY GENERAL ARP responder — DRIVER DONE
+            (2026-07-22); gate not run by build.sh.** 5e answered SLIRP's ARP but with STATIC peer-addressing
             (the reply's dst + target fields hard-coded for the known gateway). 5f
             makes it general: it READS the requester's own identity out of the
             received request and builds the reply from it, so it is correct for ANY
@@ -941,7 +947,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             NOTE: `native_codegen3` took ~37 min here (bigger than 5e — the copy
             loop + two hex read-back witnesses), near the practical single-image
             ceiling; build once + run QEMU manually when iterating.
-      - [x] **HAL.5g — an ICMP ECHO RESPONDER — DONE + gated (2026-07-23).** The
+      - [x] **HAL.5g — an ICMP ECHO RESPONDER — DRIVER DONE (2026-07-23); gate not run by build.sh.** The
             RECEIVE-side twin of HAL.5c: 5c pinged the gateway and read the reply;
             5g **answers a ping sent TO us** — the kernel serving the network
             rather than initiating. SLIRP won't deliver an inbound ICMP, so the
@@ -968,7 +974,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             applied) and the whole reply/checksum logic was unit-tested against the
             pinger BEFORE the ~37-min compile (feedback loop made cheap first). Needs
             -m 512 + python3; near the single-image compile ceiling.
-      - [x] **HAL.5h — a UDP ECHO RESPONDER — DONE + gated (2026-07-23).** The
+      - [x] **HAL.5h — a UDP ECHO RESPONDER — DRIVER DONE (2026-07-23); gate not run by build.sh.** The
             TRANSPORT-layer sibling of 5g: where 5g answered an ICMP echo, 5h answers
             a **UDP datagram** sent to our echo port (7), returning its payload. Same
             receive-side shape — `kernel/ping_harness.py` in `udp` mode is the sole L2
@@ -998,8 +1004,8 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             witness *and* make `RESPOND`, which uses the same fixed offsets, build a
             malformed reply. **The whole 5x arc shares this assumption**; parsing IHL
             is the follow-up and needs only division, no bitwise ops.
-      - [x] **HAL.5i — an IHL-GENERAL UDP echo responder — DONE + gated
-            (2026-07-23).** The follow-up 5h's own scope note named, done: the
+      - [x] **HAL.5i — an IHL-GENERAL UDP echo responder — DRIVER DONE
+            (2026-07-23); gate not run by build.sh.** The follow-up 5h's own scope note named, done: the
             kernel no longer ASSUMES a 20-byte IPv4 header, it **reads the header
             length out of the packet** — `ihl = mod(RB(18))(16)` (the low nibble of
             frame byte 14) and `u = 14 + 4*ihl`, so the UDP header is located at 34
@@ -1038,8 +1044,8 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             (no RX-ring advance — that is 5e's mechanism). **5i fixes the UDP
             responder only; 5c/5d/5g carry their own fixed-offset assumptions and
             each would need the same treatment.**
-      - [x] **HAL.5j / 5k / 5l — the IHL series COMPLETED across the arc — DONE
-            + gated (2026-07-23).** 5i removed the fixed-offset assumption from
+      - [x] **HAL.5j / 5k / 5l — the IHL series COMPLETED across the arc — DRIVERS
+            DONE (2026-07-23); gates not run by build.sh.** 5i removed the fixed-offset assumption from
             the UDP responder; these three remove it everywhere else it existed.
             All share one rule — `ihl = mod(RB(18))(16)`, `L4OFF = 14 + 4*ihl` —
             expressed once per kernel rather than four transcriptions of a
@@ -1086,7 +1092,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             cross-check, single packet (no RX-ring advance). 5e/5f are ARP and
             never touch the IP header, so they were never affected.
       - [x] **HAL.5m — a frame-CLASSIFYING ICMP responder with RX-RING ADVANCE
-            — DONE + gated (2026-07-23).** The first 5x kernel that decides
+            — DRIVER DONE (2026-07-23); gate not run by build.sh.** The first 5x kernel that decides
             whether a received frame is *for it*. Every kernel through 5l did
             `WAITRX` then parsed whatever landed first as its own protocol,
             reading ring slot 0 and nothing else — **measured on the shipped 5j
@@ -1124,7 +1130,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             only; 5i's UDP responder and the 5k/5l requesters still read slot 0
             without classifying.**
       - [x] **HAL.5n / 5o / 5p — frame classification extended across the arc —
-            DONE + gated (2026-07-23).** 5m's scope note said it covered the ICMP
+            DRIVERS DONE (2026-07-23); gates not run by build.sh.** 5m's scope note said it covered the ICMP
             responder only; these close the rest. **5n** generalises the UDP
             responder (5i), **5o** the ICMP requester (5k), **5p** the DNS
             requester (5l). Same machinery as 5m verbatim in shape — classify
@@ -1154,7 +1160,7 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             still read slot 0 without classifying** — 5m–5p are their generalised
             successors; retiring the originals is a separate decision.
       - [x] **HAL.5q — a SELF-REPAIRING NIC driver (Tier-2b "self-repairing
-            drivers", first instance) — DONE + gated (2026-08-03).** The AATC
+            drivers", first instance) — DRIVER DONE (2026-08-03); gate not run by build.sh.** The AATC
             Sense→Diagnose→Prescribe→Retry loop (`aatc.la`) reinstantiated over a
             DEVICE organ: the NIC's transmit path. Extends HAL.5m (the
             frame-classifying ICMP responder) and makes its TX fault-tolerant.
@@ -1197,8 +1203,8 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             identical to `tiny_host`) — use it for iteration; the authoritative
             gate stays on `tiny_host`. Do NOT re-attempt the glyph-split refactor.
             Not wired into `build.sh` (the whole 5x arc runs standalone).
-      - [x] **HAL.5r — a SELF-REPAIRING (RX-side) NIC driver — DONE + gated
-            (2026-08-03).** The RX twin of HAL.5q: same AATC
+      - [x] **HAL.5r — a SELF-REPAIRING (RX-side) NIC driver — DRIVER DONE
+            (2026-08-03); gate not run by build.sh.** The RX twin of HAL.5q: same AATC
             Sense→Diagnose→Prescribe→Retry loop, applied to the NIC's RECEIVE
             organ. TX is clean (TE on); RX is deliberately faulted — SETUP's first
             pass leaves RE (receive-enable) OFF (`CR := 4`). **Fixes a real latent
