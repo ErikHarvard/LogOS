@@ -258,22 +258,35 @@ glyph OK_XCSET_OF = la pairs. str_eq(pairs)(XCEXPECT)
 #                      asserted positively at metaglyph.la:228
 glyph XCDECL = "I=SELF One=BEING Two=RELATION SR_ABOUT=OP_RECOG "
 
-# ── ★ THE OPEN SET, pinned EXACTLY, in two classes. Neither is a ruling.
-#  CODEX x CODEX -- both forms fixed by the codex:
-#   See=KAPPA      See LA.tex:5288 >(g2,g8); kappa codex-fixed (metaglyph.la:168-169)
-#   Past=Death     Past LA.tex:5169 >(g7,g6); Death LA.tex:4806 >(Becoming,Void)
-#  CODEX x PROPOSAL -- a codex word against a REPO-ASSIGNED meta-glyph form.
-#  OP_* are "PRINCIPLED PROPOSALS, NOT SPEC-FIXED" (metaglyph.la:168); SR_* are
-#  canon_spec.la:108-111 assignments. No declaration was found for any of them
-#  by a same-line search over LA.tex, the five .la sources, LA_COMPLETION.md
-#  and MODULES.md, whose positive control (rho = SR_ABOUT) it did find. A
-#  no-hit is not an absence proof. These wait for a ruling, not for this gate:
-#   Change=OP_COMP   Change  LA.tex:5237 *(g7,g8) . gamma metaglyph.la:194
-#   Warm=OP_INTEG    Warm    LA.tex:5318 *(g3,g1) . A     metaglyph.la:196
-#   Ongoing=SR_BY    Ongoing LA.tex:5172 m(g7)    . canon_spec.la:110
-#   None=SR_FROM     None    LA.tex:5176 m(g6)    . canon_spec.la:111
-#   Truth=SR_ABOUT   Truth   LA.tex:4804 m(Rec)   . canon_spec.la:108
-#   Truth=OP_RECOG   the same form; the 08-18 ruling names rho and SR_ABOUT, not Truth
+# ── ★ THE OPEN SET, pinned EXACTLY. None is a ruling; each waits for one.
+#  WHERE EACH FORM IS FIXED -- corrected 2026-09-10 (ELENCHOS). The first cut
+#  cited metaglyph.la:168 for kappa; LA.tex fixes no form for kappa. The
+#  sources are LA.tex (blob 03452c9) and the white paper, "Lingua Adamica
+#  White Paper.tex" (WP): OUTSIDE this repo, sha256 98beeff4ee45, and the line
+#  numbers are that copy's.
+#   Past=Death       Past LA.tex:5169 >(g7,g6) . Death LA.tex:4806 -- LA x LA
+#   See=KAPPA        See LA.tex:5288 >(g2,g8) . kappa WP:3740, "spec-fixed" WP:3745
+#   Change=OP_COMP   Change LA.tex:5237 *(g7,g8) . gamma WP:4909, stated as built
+#   Truth=OP_RECOG   Truth LA.tex:4804 m(Rec) . rho WP:4910, stated as built
+#   Truth=SR_ABOUT   the same form . SR_ABOUT canon_spec.la:108; WP:3082-3090
+#                    records its identity with rho. The 08-18 ruling names rho
+#                    and SR_ABOUT, not Truth.
+#   Ongoing=SR_BY    Ongoing LA.tex:5172 m(g7); WP:3582 calls m(BECOMING) the
+#                    imperfective, "ongoing" . SR_BY canon_spec.la:110, repo only
+#   None=SR_FROM     None LA.tex:5176 m(g6) . SR_FROM canon_spec.la:111, repo
+#                    only and absent from the WP
+#   Warm=OP_INTEG    Warm LA.tex:5318 *(g3,g1) . A is *(LOVE,BEING) on THIS
+#                    branch, which E10 (2cca4b4, kernel-k1) ruled a code error:
+#                    WP:1455 and :4911 give *(LOVE,RECOGNITION)
+#  metaglyph.la:168 calls the OP_* forms "not spec-fixed", while E10 treated
+#  the WP as the specification for A. Which document governs gamma and rho is
+#  part of the ruling. No declaration was found for any of the eight by a
+#  same-line search over LA.tex, the five .la sources, LA_COMPLETION.md and
+#  MODULES.md; its positive control (rho = SR_ABOUT) did hit. A no-hit is not
+#  an absence proof.
+#  The "open-codex" row below asserts the two pairs E5's amendment names
+#  (rulings/E5.md:161-165 @ kernel-k1 9afc30b). Its label predates this
+#  correction. It is output, so it is renamed at the next verifying run.
 glyph XCOPEN_CODEX  = "See=KAPPA Past=Death "
 glyph XCOPEN_EXPECT = "Change=OP_COMP See=KAPPA Warm=OP_INTEG Past=Death Ongoing=SR_BY None=SR_FROM Truth=SR_ABOUT Truth=OP_RECOG "
 

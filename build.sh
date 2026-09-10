@@ -4571,12 +4571,16 @@ ok=1
 #   primitives. crosscoll.la compares them under canon.la's NORMK; L×L pairs
 #   stay opgrammar.la's.
 # ★ 12 pairs share a glyph: 4 DECLARED, each with its citation in crosscoll.la,
-#   and 8 OPEN, pinned EXACTLY in two classes. Two are codex×codex (See=KAPPA,
-#   Past=Death). Six pit a codex word against a REPO-ASSIGNED meta-glyph form
-#   (OP_* are "principled proposals, not spec-fixed", metaglyph.la:168; SR_*
-#   are canon_spec.la:108-111 assignments). None of the eight is a ruling. The
-#   pin exists so that a new collision, or a fix, turns this RED and must be
-#   looked at.
+#   and 8 OPEN, pinned EXACTLY. Where each form is fixed is recorded in
+#   crosscoll.la, corrected 2026-09-10 against LA.tex and the white paper
+#   (outside the repo):
+#   - Past=Death sets LA.tex against itself.
+#   - See=KAPPA, Change=OP_COMP and Truth=OP_RECOG set LA.tex against forms
+#     the white paper states.
+#   - The SR_* pairs set LA.tex against repo-only assignments.
+#   - Warm=OP_INTEG exists only because this branch predates E10.
+#   None of the eight is a ruling. The pin exists so that a new collision, or
+#   a fix, turns this RED and must be looked at.
 # ★ Derived before its first run by an independent transcription (board,
 #   2026-09-10), and the first run reproduced it byte for byte. RED path, run:
 #   Care re-derived onto REVAL's form ▷(DEPTH,RECOGNITION) turns open-set and
@@ -4593,7 +4597,7 @@ case "$XCOUT" in
   *) echo "FAIL  crosscoll: the open cross-population collision set changed — got: $XCOUT"; ok=0 ;;
 esac
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  crosscoll: the 79 lexicon+grammar entries against 6 First Derivations + 21 meta-glyphs + 9 primitives under NORMK — 12 shared-glyph pairs, 4 DECLARED with citations and 8 OPEN pinned exactly: 2 codex×codex (See=KAPPA, Past=Death) and 6 codex×proposal (Change=OP_COMP Warm=OP_INTEG Ongoing=SR_BY None=SR_FROM Truth=SR_ABOUT Truth=OP_RECOG), none a ruling"
+    echo "PASS  crosscoll: the 79 lexicon+grammar entries against 6 First Derivations + 21 meta-glyphs + 9 primitives under NORMK — 12 shared-glyph pairs, 4 DECLARED with citations and 8 OPEN pinned exactly (See=KAPPA Past=Death Change=OP_COMP Warm=OP_INTEG Ongoing=SR_BY None=SR_FROM Truth=SR_ABOUT Truth=OP_RECOG), none a ruling"
 else
     exit 1
 fi
