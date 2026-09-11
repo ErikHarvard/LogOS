@@ -5001,39 +5001,41 @@ ok=1
 #   (canon.la κ 𝓡 SR_*, metaglyph.la's modes and ∂δγρ𝔄) and the nine
 #   primitives. crosscoll.la compares them under canon.la's NORMK; L×L pairs
 #   stay opgrammar.la's.
-# ★ 12 pairs share a glyph: 6 DECLARED, each with its citation in crosscoll.la
-#   (Truth=SR_ABOUT and Truth=OP_RECOG by E16 §C, 2026-09-10), and 6 OPEN,
+# ★ 11 pairs share a glyph: 7 DECLARED, each with its citation in crosscoll.la
+#   (Truth=SR_ABOUT and Truth=OP_RECOG by E16 §C; Compassion=OP_INTEG by E10),
+#   and 4 OPEN,
 #   pinned EXACTLY. Where each form is fixed is recorded in crosscoll.la,
 #   corrected 2026-09-10 against LA.tex and the white paper (outside the repo):
-#   - Past=Death sets LA.tex against itself. The General ruled them two
-#     distinct concepts (2026-09-10); Death is to be re-derived, so it stays OPEN.
+#   - Past=Death is gone: the General ruled Death = ⊂(𝔤₆,𝔤₇), c67 (E16 §B′),
+#     which forms no pair. Past keeps >76.
 #   - See=KAPPA and Change=OP_COMP set LA.tex against forms the white paper
 #     states.
 #   - The SR_* pairs set LA.tex against repo-only assignments.
-#   - Warm=OP_INTEG exists only because this branch predates E10.
-#   None of the six is a ruling. The pin exists so that a new collision, or
+#   - Warm=OP_INTEG does not form here: E10 moved 𝔄 to ⊗(LOVE,RECOGNITION).
+#   None of the four is a ruling. The pin exists so that a new collision, or
 #   a fix, turns this RED and must be looked at.
 # ★ F carries First Derivations :4803/:4807 AS RULED by E16 §A (Agency and
-#   Mystery take their glosses' forms), so both repeat an L row and F = 4.
+#   Mystery take their glosses' forms), so both repeat an L row and F = 4;
+#   and :4806 AS RULED by E16 §B′ (Death = c67).
 # ★ The first pin was derived before its first run by an independent
 #   transcription (board, 2026-09-10) and reproduced byte for byte. This pin
 #   (A′) was pre-registered on the board before its run. RED paths, run:
 #   Care re-derived onto REVAL's form ▷(DEPTH,RECOGNITION) turns open-set and
 #   set FAIL, and the OPEN line names Care=REVAL; Agency reverted to ⊗ in F
-#   turns census FAIL at F=5.
-# ⚠ Branch-specific: on kernel-k1, E10 (2cca4b4) makes 𝔄 = Compassion, so
-#   Warm=OP_INTEG goes and a DECLARED Compassion=OP_INTEG comes. Re-derive this
-#   pin at integration (crosscoll.la's header says how).
+#   turns census FAIL at F=5. B′ (Death = c67): the A′ pin FAILs on the B′
+#   tree, because Past=Death has left the OPEN set.
+# ⚠ Branch-specific: this is kernel-k1's pin, with E10 (2cca4b4) carried. A tree
+#   without E10 forms Warm=OP_INTEG and no Compassion pair (track-c's pin).
 # Cost, measured 2026-09-10: 2:43 wall / 37 MB at load ~2 on 24 cores. The
 #   600 s budget is ~3.7x that.
 XCOUT="$(timeout 600 ./tiny_host crosscoll.la 2>&1)" || { echo "FAIL  crosscoll: crosscoll.la did not run to completion (host halted, timed out, or a module is missing) — $XCOUT"; ok=0; }
 case "$XCOUT" in *FAIL*) echo "FAIL  crosscoll: a gate failed — $XCOUT"; ok=0 ;; esac
 case "$XCOUT" in
-  *"| OPEN: Change=OP_COMP See=KAPPA Warm=OP_INTEG Past=Death Ongoing=SR_BY None=SR_FROM | PAIRS:"*) : ;;
+  *"| OPEN: Change=OP_COMP See=KAPPA Ongoing=SR_BY None=SR_FROM | PAIRS:"*) : ;;
   *) echo "FAIL  crosscoll: the open cross-population collision set changed — got: $XCOUT"; ok=0 ;;
 esac
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  crosscoll: the 79 lexicon+grammar entries against 4 First Derivations + 21 meta-glyphs + 9 primitives under NORMK — 12 shared-glyph pairs, 6 DECLARED with citations and 6 OPEN pinned exactly (See=KAPPA Past=Death Change=OP_COMP Warm=OP_INTEG Ongoing=SR_BY None=SR_FROM), none a ruling"
+    echo "PASS  crosscoll: the 79 lexicon+grammar entries against 4 First Derivations + 21 meta-glyphs + 9 primitives under NORMK — 11 shared-glyph pairs, 7 DECLARED with citations and 4 OPEN pinned exactly (See=KAPPA Change=OP_COMP Ongoing=SR_BY None=SR_FROM), none a ruling"
 else
     exit 1
 fi
