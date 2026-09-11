@@ -512,7 +512,7 @@ every item below cites the ruling rather than inferring one.
 
 ### RULED 2026-08-24 — FINAL, AND EACH CREATES WORK
 
-- `[!→]` **A. `⊗(A,A) ≡ A` HOLDS ONLY FOR THE ARCHĒ.** For every other A,
+- `[~]` **A. `⊗(A,A) ≡ A` HOLDS ONLY FOR THE ARCHĒ.** For every other A,
   `⊗(A,A)` is a **distinct compound**. This is a *principled choice and must be
   documented as one*, because the current behaviour is otherwise indistinguishable
   from a rendering accident: `⊗(A,A)` used to be byte-identical to `A` in sound —
@@ -522,6 +522,24 @@ every item below cites the ruling rather than inferring one.
   **WORK:** state the Archē exception explicitly in `canon.la`'s rewrite set and
   in the paper; gate it in BOTH registers (glyphic and phonetic); assert the
   general case stays distinct. A rule that holds by accident is not a rule.
+  ◐ **PARTIAL 2026-09-11: two of the WORK's three clauses are witnessed (canon's rewrite set; the gates,
+  with the general case asserted distinct). The paper clause is not (P17). The row reaches `[✓]` only
+  when the paper states the exception (The Lieutenant, ask `1789086184`).**
+  A's DONE record is below ("A — DONE 2026-08-26"). build.sh now gates R-A in THREE registers, not the
+  two that record's heading names. **Glyphic:** canon.la's REWRITE_SYN, with `RA general-set : YES` over 9
+  non-Archē witnesses (build.sh :1400). **Phonetic:** phonym.la's SYNNORM, with `RAP general-set: DISTINCT`
+  over the same 9 (:1432). **Visual:** sigil.la's CANONIQ, with `RAV general: DIFFERENT` on LOVE only
+  (:1474). Each visual witness costs a full SIGIL render, so widening it is a cost decision left open.
+  Until this commit the general case was witnessed on LOVE alone in every register, so a rewrite that
+  collapsed ⊗(A,A) only for compound A passed every arm. ELENCHOS's run (board :23020) shows that
+  mutant MISSED by the old gate and CAUGHT by the widened one, both glyphic (Mc) and phonetic (Mcp).
+  ⊗(BEING,BEING) is deliberately not a witness: whether PRIM("BEING") IS the Archē is unsettled.
+  **The paper:** the WORK asks for the exception to be stated "in the paper", and the white paper (sha256
+  `98beeff4ee45`) does not state it. METANOĒ and The Lieutenant searched it on 2026-09-10, independently and
+  across line breaks. Of the 14 lines naming the Archē (`Arch[eē]`, `Arch\=e`), none is within 3 lines of
+  ⊗ or `\otimes`. No ∃⊗∃, ⊗(A,A) or A⊗A form appears, and no line says "distinct compound". No
+  idempotence line is within 3 lines of an Archē line, and the 3 near a ⊗ (:2897, :9278, :9362) concern κ
+  and ↻. Blind spots: the Archē named only by glyph or number, and ⊗ written in words. That clause is P17 in the master list.
 
 - `[!→]` **B. IMPLICATURE IS BANNED AT THE SEMANTIC LAYER.** LA encodes literal
   compositional meaning. Implicature **arises in use but is not a property of the

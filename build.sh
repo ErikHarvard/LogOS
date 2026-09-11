@@ -1395,13 +1395,25 @@ glyph L1 = print(concat("RA arche-idem  : ")(YN(NIS(SYN(ARCHE)(ARCHE))(ARCHE))))
 glyph L2 = print(concat("RA general-dist: ")(YN(NOT(NIS(SYN(PRIM("LOVE"))(PRIM("LOVE")))(PRIM("LOVE"))))))
 glyph L3 = print(concat("RA norm-arche  : ")(NORMK(SYN(ARCHE)(ARCHE))))
 glyph L4 = print(concat("RA norm-general: ")(NORMK(SYN(PRIM("LOVE"))(PRIM("LOVE")))))
-glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(L4)))
+glyph GW = la a. NOT(NIS(SYN(a)(a))(a))
+glyph GSET = AND(AND(AND(GW(PRIM("SELF")))(GW(PRIM("VOID"))))(AND(GW(PRIM("RECOGNITION")))(GW(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))))(AND(AND(GW(CON(PRIM("VOID"))(PRIM("LOVE"))))(GW(DIR(PRIM("BECOMING"))(PRIM("VOID")))))(AND(AND(GW(CONT(PRIM("RELATION"))(PRIM("FORM"))))(GW(MC(PRIM("RECOGNITION")))))(GW(SYN(ARCHE)(PRIM("LOVE"))))))
+glyph L5 = print(concat("RA general-set : ")(YN(GSET)))
+glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(L5))))
 RALA
 RAOUT="$(./tiny_host /tmp/ra_gate.la 2>&1)"
 printf '%s\n' "$RAOUT" | grep -qx "RA arche-idem  : YES"        || { echo "FAIL  canon R-A: ⊗(∃,∃) ≡ ∃ does not hold — the Archē's declared idempotence is gone (got: $RAOUT)"; ok=0; }
 printf '%s\n' "$RAOUT" | grep -qx "RA general-dist: YES"        || { echo "FAIL  canon R-A: ⊗(LOVE,LOVE) COLLAPSED to LOVE — the general case must stay DISTINCT; this is the arm that was missing when the phonetic renderer silently collapsed an infinite family of glyphs (got: $RAOUT)"; ok=0; }
 printf '%s\n' "$RAOUT" | grep -qx "RA norm-arche  : ∃"          || { echo "FAIL  canon R-A: NORMK(⊗(∃,∃)) is not ∃ (got: $RAOUT)"; ok=0; }
 printf '%s\n' "$RAOUT" | grep -qx "RA norm-general: ⊗(LOVE,LOVE)" || { echo "FAIL  canon R-A: NORMK(⊗(LOVE,LOVE)) is not ⊗(LOVE,LOVE) (got: $RAOUT)"; ok=0; }
+# ★ R-A's FALSE arm, WIDENED (ELENCHOS, 2026-09-10, at the Lieutenant's ruling). The ruling
+#   quantifies over EVERY other A. A FALSE arm witnessed on LOVE alone cannot see a
+#   REWRITE_SYN that collapses ⊗(A,A) only for COMPOUND A: such a mutant passed every arm
+#   above (measured). L5 covers primitives and one compound per mode:
+#   SELF, VOID, RECOGNITION, ⊗(LOVE,RECOGNITION), ⊕(VOID,LOVE), ▷(BECOMING,VOID), ⊂(RELATION,FORM), ↻(RECOGNITION), ⊗(∃,LOVE).
+#   Deliberately NOT witnesses: BEING, because whether PRIM("BEING") IS the Archē is not
+#   settled here (REWRITE_SYN keys "∃"); and any A ≡ ∃, such as ⊗(∃,∃), which collapses by
+#   the rule itself. The new pins read a here-string, not a pipe, so they carry no SIGPIPE shape.
+grep -qx "RA general-set : YES" <<< "$RAOUT" || { echo "FAIL  canon R-A: ⊗(A,A) COLLAPSED for a non-Archē witness beyond LOVE — the ruling covers EVERY other A, primitives and compounds (got: $RAOUT)"; ok=0; }
 rm -f /tmp/ra_gate.la
 # ── R-A, PHONETIC REGISTER. The ruling requires the SAME pair in BOTH registers, and
 #   they DISAGREED until 2026-08-26: NORMK collapsed ⊗(∃,∃)→∃ while NORMP left it as
@@ -1414,11 +1426,19 @@ import("phonym.la")
 glyph SEQ = la a. la b. b
 glyph L1 = print(concat("RAP arche  : ")(SPEC_N(SYN(PRIM("∃"))(PRIM("∃")))))
 glyph L2 = print(concat("RAP general: ")(SPEC_N(SYN(PRIM("LOVE"))(PRIM("LOVE")))))
-glyph MAIN = SEQ(L1)(L2)
+glyph POR = la p. la q. p(p)(q)
+glyph PW = la a. str_eq(SPEC_N(SYN(a)(a)))(SPEC_N(a))
+glyph PANY = POR(POR(POR(PW(PRIM("SELF")))(PW(PRIM("VOID"))))(POR(PW(PRIM("RECOGNITION")))(PW(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))))(POR(POR(PW(CON(PRIM("VOID"))(PRIM("LOVE"))))(PW(DIR(PRIM("BECOMING"))(PRIM("VOID")))))(POR(POR(PW(CONT(PRIM("RELATION"))(PRIM("FORM"))))(PW(MC(PRIM("RECOGNITION")))))(PW(SYN(PRIM("∃"))(PRIM("LOVE"))))))
+glyph L3 = print(concat("RAP general-set: ")(PANY("COLLAPSED")("DISTINCT")))
+glyph MAIN = SEQ(L1)(SEQ(L2)(L3))
 RAPH
 RAPOUT="$(./tiny_host /tmp/ra_phon.la 2>&1)"
 printf '%s\n' "$RAPOUT" | grep -qx "RAP arche  : ∃"             || { echo "FAIL  phonym R-A: SPEC_N(⊗(∃,∃)) is not ∃ — the phonetic register no longer agrees with the glyphic one on the Archē (got: $RAPOUT)"; ok=0; }
 printf '%s\n' "$RAPOUT" | grep -qx "RAP general: ⊗(LOVE,LOVE)"  || { echo "FAIL  phonym R-A: SPEC_N(⊗(LOVE,LOVE)) COLLAPSED — the general case must stay DISTINCT in SOUND too; this is the register where a weighted blend of identical parents once gave (2g+g)/3 = g and silently merged an infinite family of glyphs (got: $RAPOUT)"; ok=0; }
+# ★ The same widening in the PHONETIC register (SPEC_N), with the same witness set. The VISUAL
+#   register below keeps LOVE alone: each extra witness is a full SIGIL grid render, and that
+#   block already needs 900 s for two. Widening it is a cost decision, flagged to the Lieutenant.
+grep -qx "RAP general-set: DISTINCT" <<< "$RAPOUT" || { echo "FAIL  phonym R-A: SPEC_N(⊗(A,A)) COLLAPSED for a non-Archē witness beyond LOVE — primitives and compounds must stay DISTINCT in the phonetic register too (got: $RAPOUT)"; ok=0; }
 rm -f /tmp/ra_phon.la
 # ── R-A, VISUAL REGISTER — the THIRD one, added 2026-08-26 after Erik ruled that
 #   the Archē is `∃` EVERYWHERE and `LOGOS` is merely its drawn form's LABEL.
