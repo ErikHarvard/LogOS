@@ -564,7 +564,7 @@ glyph GENALL = Z(la self. la l.
 #  step:
 #   1. It needs a real PID namespace, which build.sh SKIPS gracefully where
 #      unprivileged userns is unavailable. So this PROBES first (`unshare …
-#      /bin/true`, rc 0?) and reports PASS(skipped) rather than turning a
+#      /bin/true`, rc 0?) and reports SKIP (not a PASS) rather than turning a
 #      skippable environment into BUILD RED — the honest analogue of build.sh's
 #      `if unshare … true; then … else echo (skipped); fi`.
 #   2. The program must run as PID 1, so it is given its OWN VESSEL exactly as a
@@ -592,7 +592,7 @@ glyph USTAGE = la _.
               (RUN("/usr/bin/unshare")("-rpf --mount-proc ./logos_app")("/tmp/buildla_uns_out.txt"))))
            (la _. SEQ(print("  FAIL  ns  bundle failed, unshare not run"))(FALSE)))
        (RUN("./tiny_host")("bundle.la")("/tmp/buildla_uns_bundle.txt")))))))
-    (la _. SEQ(print("  PASS  ns  (skipped) unprivileged PID namespace unavailable"))(TRUE))
+    (la _. SEQ(print("  SKIP  ns  unprivileged PID namespace unavailable"))(TRUE))
 
 # ── the FIFTH kind of gate — a QEMU stage (the kernel on the metal) ──
 #  build.sh's kernel gates boot a real kernel ELF in QEMU and assert the Word on
@@ -617,7 +617,7 @@ glyph USTAGE = la _.
 glyph QCMD = "30 qemu-system-x86_64 -kernel kernel/kernel.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
 glyph QSTAGE = la _.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       SEQ(RUN("/usr/bin/bash")("kernel/build_k2.sh")("/tmp/buildla_q_build.txt"))
       ((la code.
@@ -643,7 +643,7 @@ glyph QSTAGE = la _.
 glyph QK2CMD = "30 qemu-system-x86_64 -kernel kernel/kernel_fault.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
 glyph K2STAGE = la _.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       (la code.
         (la out.
@@ -672,10 +672,10 @@ glyph K2STAGE = la _.
 glyph QK3CMD = "30 qemu-system-x86_64 -kernel kernel/kernel_pmm.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
 glyph K3STAGE = la _.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       IF(str_eq(str_head(stat("kernel/kernel_pmm.elf")))("-"))
-        (la _. SEQ(print("  PASS  vm  (skipped) kernel_pmm.elf not pre-built (run kernel/build_k3b.sh)"))(TRUE))
+        (la _. SEQ(print("  SKIP  vm  kernel_pmm.elf not pre-built (run kernel/build_k3b.sh)"))(TRUE))
         (la _.
           (la code.
             (la out.
@@ -704,10 +704,10 @@ glyph K3STAGE = la _.
 glyph QK4CMD = "30 qemu-system-x86_64 -kernel kernel/kernel_paging.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
 glyph K4STAGE = la _.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       IF(str_eq(str_head(stat("kernel/kernel_paging.elf")))("-"))
-        (la _. SEQ(print("  PASS  vm  (skipped) kernel_paging.elf not pre-built (run kernel/build_k4b.sh)"))(TRUE))
+        (la _. SEQ(print("  SKIP  vm  kernel_paging.elf not pre-built (run kernel/build_k4b.sh)"))(TRUE))
         (la _.
           (la code.
             (la out.
@@ -734,10 +734,10 @@ glyph K4STAGE = la _.
 glyph QK4WXCMD = "30 qemu-system-x86_64 -kernel kernel/kernel_wx.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
 glyph K4CWXSTAGE = la _.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       IF(str_eq(str_head(stat("kernel/kernel_wx.elf")))("-"))
-        (la _. SEQ(print("  PASS  vm  (skipped) kernel_wx.elf not pre-built (run kernel/build_k4c_wx.sh)"))(TRUE))
+        (la _. SEQ(print("  SKIP  vm  kernel_wx.elf not pre-built (run kernel/build_k4c_wx.sh)"))(TRUE))
         (la _.
           (la code.
             (la out.
@@ -762,10 +762,10 @@ glyph K4CWXSTAGE = la _.
 glyph QK4NXCMD = "30 qemu-system-x86_64 -kernel kernel/kernel_nx.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
 glyph K4CNXSTAGE = la _.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       IF(str_eq(str_head(stat("kernel/kernel_nx.elf")))("-"))
-        (la _. SEQ(print("  PASS  vm  (skipped) kernel_nx.elf not pre-built (run kernel/build_k4c_nx.sh)"))(TRUE))
+        (la _. SEQ(print("  SKIP  vm  kernel_nx.elf not pre-built (run kernel/build_k4c_nx.sh)"))(TRUE))
         (la _.
           (la code.
             (la out.
@@ -794,10 +794,10 @@ glyph K4CNXSTAGE = la _.
 glyph QK5CMD = "30 qemu-system-x86_64 -kernel kernel/kernel_timer.elf -m 256 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
 glyph K5STAGE = la _.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       IF(str_eq(str_head(stat("kernel/kernel_timer.elf")))("-"))
-        (la _. SEQ(print("  PASS  vm  (skipped) kernel_timer.elf not pre-built (run kernel/build_k5a.sh)"))(TRUE))
+        (la _. SEQ(print("  SKIP  vm  kernel_timer.elf not pre-built (run kernel/build_k5a.sh)"))(TRUE))
         (la _.
           (la code.
             (la out.
@@ -829,10 +829,10 @@ glyph K5STAGE = la _.
 glyph QK5B2CMD = "45 qemu-system-x86_64 -kernel kernel/kernel_preempt.elf -m 1024 -serial stdio -display none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -no-reboot -no-shutdown"
 glyph K5B2STAGE = la _.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       IF(str_eq(str_head(stat("kernel/kernel_preempt.elf")))("-"))
-        (la _. SEQ(print("  PASS  vm  (skipped) kernel_preempt.elf not pre-built (run kernel/build_k5b2.sh)"))(TRUE))
+        (la _. SEQ(print("  SKIP  vm  kernel_preempt.elf not pre-built (run kernel/build_k5b2.sh)"))(TRUE))
         (la _.
           (la code.
             (la out.
@@ -863,7 +863,7 @@ glyph K5B2STAGE = la _.
 glyph QK5B1CMD = "15 ./kernel/native_pingpong.bin"
 glyph K5B1STAGE = la _.
   IF(str_eq(str_head(stat("kernel/native_pingpong.bin")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) native_pingpong.bin not pre-built (run kernel/build_k5b1.sh)"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  native_pingpong.bin not pre-built (run kernel/build_k5b1.sh)"))(TRUE))
     (la _.
       (la code.
         (la out.
@@ -883,7 +883,7 @@ glyph K5B1STAGE = la _.
 glyph QK5B1BCMD = "90 ./kernel/native_gc.bin"
 glyph K5B1BSTAGE = la _.
   IF(str_eq(str_head(stat("kernel/native_gc.bin")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) native_gc.bin not pre-built (run kernel/build_k5b1.sh)"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  native_gc.bin not pre-built (run kernel/build_k5b1.sh)"))(TRUE))
     (la _.
       (la code.
         (la out.
@@ -898,7 +898,7 @@ glyph K5B1BSTAGE = la _.
 #  exit code + marker(s). Rather than eight-more lambda layers, this factors the
 #  QEMU-gate shape once and the K6 slices become a flat table (K6ALL below).
 #  QGATE(elf)(cmd)(code)(chk)(label): the SAFE stat() probe (qemu absent OR ELF
-#  not pre-built → PASS-skip), else RUN2 the `timeout N qemu …` cmd, capture to
+#  not pre-built → SKIP, not a PASS), else RUN2 the `timeout N qemu …` cmd, capture to
 #  one shared file (the slices run SEQUENTIALLY in K6ALL's left-to-right AND, so
 #  each reads its output before the next overwrites), and pass iff exit==code AND
 #  chk(out). `chk` is a PREDICATE on the captured output (la o. …) so a slice can
@@ -908,10 +908,10 @@ glyph K5B1BSTAGE = la _.
 glyph QOUT = "/tmp/buildla_k6_out.txt"
 glyph QGATE = la elf. la cmd. la code. la chk. la label.
   IF(str_eq(str_head(stat("/usr/bin/qemu-system-x86_64")))("-"))
-    (la _. SEQ(print("  PASS  vm  (skipped) qemu-system-x86_64 not installed"))(TRUE))
+    (la _. SEQ(print("  SKIP  vm  qemu-system-x86_64 not installed"))(TRUE))
     (la _.
       IF(str_eq(str_head(stat(elf)))("-"))
-        (la _. SEQ(print(concat("  PASS  vm  (skipped) not pre-built: ")(elf)))(TRUE))
+        (la _. SEQ(print(concat("  SKIP  vm  not pre-built: ")(elf)))(TRUE))
         (la _.
           (la rc.
             (la out.

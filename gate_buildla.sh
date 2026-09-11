@@ -23,6 +23,19 @@
 #      trivially true of a run that printed nothing, which is exactly how a gate
 #      comes to certify silence. This is the non-vacuity guard, and it is the
 #      point of the whole gate.
+#
+# ── ★ A SKIP IS NOT A PASS (METANOĒ, 2026-09-11; owed since POROS's board :20988 and :21193) ──
+# buildla.la used to print a skipped stage as "  PASS  vm  (skipped) <reason>", and this gate
+# counted every "  PASS  " line toward MINPASS. In a fresh export, with no pre-built ELFs, the
+# 8 QEMU stages that skip were counted as passes, so "110 steps" overstated coverage by 8 and a
+# run whose stages mostly skipped could still clear the non-vacuity guard. buildla.la now prints
+# "  SKIP  <kind>  <reason>". This gate counts only REAL passes toward MINPASS and reports skips
+# as their own number, with their reasons. It still counts the old "(skipped)" spelling as a
+# skip, so a stale buildla.la cannot fold skips back into passes.
+# The PASS line keeps "ran N steps with M failures", with N = passed + skipped as before, because
+# kernel/buildla_verdict.sh parses exactly that phrase; the split follows it.
+# ── OFFLINE MODE, for this gate's own red paths: GATE_BUILDLA_OUT=<file> judges a recorded buildla
+#    output (with GATE_BUILDLA_RC, default 0) and builds and runs nothing.
 set -u
 cd "$(dirname "$0")" || exit 1
 # ★ 91 IS MEASURED, NOT GUESSED. The first passing run reported exactly 91 steps,
@@ -33,29 +46,35 @@ cd "$(dirname "$0")" || exit 1
 #  Raise this as buildla grows. A DROP must be explained, not accommodated: if a
 #  legitimate refactor merges steps, change the number in the same commit that
 #  merges them, so the reduction is a stated decision rather than a silent one.
+#  Since 2026-09-11 it is compared with REAL passes only (skips excluded): 102 in a fresh export.
 MINPASS="${MINPASS:-91}"
 
-[ -f buildla.la ] || { echo "SKIP  buildla: buildla.la absent"; exit 0; }
-[ -x ./tiny_host ] || { echo "SKIP  buildla: tiny_host not built"; exit 0; }
+if [ -n "${GATE_BUILDLA_OUT:-}" ]; then
+    [ -r "$GATE_BUILDLA_OUT" ] || { echo "FAIL  buildla: GATE_BUILDLA_OUT=$GATE_BUILDLA_OUT is not readable"; exit 1; }
+    OUT=$(cat "$GATE_BUILDLA_OUT"); rc="${GATE_BUILDLA_RC:-0}"
+else
+    [ -f buildla.la ] || { echo "SKIP  buildla: buildla.la absent"; exit 0; }
+    [ -x ./tiny_host ] || { echo "SKIP  buildla: tiny_host not built"; exit 0; }
 
-# ── ★ IT MUST RUN ON THE VM, NOT tiny_host ─────────────────────────────────
-# The first version of this gate ran `./tiny_host buildla.la` and got
-# `eval error: unbound variable 'fork'` in 11 milliseconds. That was MY error,
-# not a defect in buildla.la: it orchestrates a build, so it needs fork/execv/
-# dup2/waitpid, and those live in the SECD VM (secd.asm has all four) while
-# tiny_host has NONE of them. An orchestrator cannot run on an interpreter that
-# cannot spawn a process.
-#   The non-vacuity guard below is what caught it: 3 lines of output, so the gate
-#   refused to draw any verdict rather than reporting "0 FAILs". That is exactly
-#   what it was written for, and it earned its place on the first run.
-rm -f logos_secd logos_program.bin logos_source.la
-./tiny_host secd.la >/dev/null 2>&1
-[ -x ./logos_secd ] || { echo "SKIP  buildla: could not build logos_secd from secd.la"; exit 0; }
-cp buildla.la logos_source.la
-./tiny_host codegen.la >/dev/null 2>&1
-[ -s logos_program.bin ] || { echo "FAIL  buildla: codegen produced no program from buildla.la"; exit 1; }
-OUT=$(timeout 3600 ./logos_secd 2>&1); rc=$?
-rm -f logos_secd logos_program.bin logos_source.la
+    # ── ★ IT MUST RUN ON THE VM, NOT tiny_host ─────────────────────────────────
+    # The first version of this gate ran `./tiny_host buildla.la` and got
+    # `eval error: unbound variable 'fork'` in 11 milliseconds. That was MY error,
+    # not a defect in buildla.la: it orchestrates a build, so it needs fork/execv/
+    # dup2/waitpid, and those live in the SECD VM (secd.asm has all four) while
+    # tiny_host has NONE of them. An orchestrator cannot run on an interpreter that
+    # cannot spawn a process.
+    #   The non-vacuity guard below is what caught it: 3 lines of output, so the gate
+    #   refused to draw any verdict rather than reporting "0 FAILs". That is exactly
+    #   what it was written for, and it earned its place on the first run.
+    rm -f logos_secd logos_program.bin logos_source.la
+    ./tiny_host secd.la >/dev/null 2>&1
+    [ -x ./logos_secd ] || { echo "SKIP  buildla: could not build logos_secd from secd.la"; exit 0; }
+    cp buildla.la logos_source.la
+    ./tiny_host codegen.la >/dev/null 2>&1
+    [ -s logos_program.bin ] || { echo "FAIL  buildla: codegen produced no program from buildla.la"; exit 1; }
+    OUT=$(timeout 3600 ./logos_secd 2>&1); rc=$?
+    rm -f logos_secd logos_program.bin logos_source.la
+fi
 
 lines=$(printf '%s\n' "$OUT" | grep -c .)
 if [ "$lines" -lt 5 ]; then
@@ -65,7 +84,11 @@ if [ "$lines" -lt 5 ]; then
     exit 1
 fi
 
-npass=$(printf '%s\n' "$OUT" | grep -c '  PASS  ')
+npass_all=$(printf '%s\n' "$OUT" | grep -c '  PASS  ')
+nskip_old=$(printf '%s\n' "$OUT" | grep '  PASS  ' | grep -c '(skipped)')
+nskip_new=$(printf '%s\n' "$OUT" | grep -c '^  SKIP  ')
+npass=$((npass_all - nskip_old))
+nskip=$((nskip_new + nskip_old))
 nfail=$(printf '%s\n' "$OUT" | grep -c '  FAIL  ')
 
 ok=1
@@ -75,10 +98,14 @@ if [ "$nfail" -ne 0 ]; then
     ok=0
 fi
 if [ "$npass" -lt "$MINPASS" ]; then
-    echo "FAIL  buildla: only $npass PASS lines, expected at least $MINPASS — 'zero FAILs'"
-    echo "      is trivially true of a run that printed nothing. Raise MINPASS as buildla"
-    echo "      grows; never lower it to make a run go green."
+    echo "FAIL  buildla: only $npass REAL PASS lines ($nskip skipped, which do not count), expected at"
+    echo "      least $MINPASS — 'zero FAILs' is trivially true of a run that printed nothing, and"
+    echo "      a skip is not a pass. Raise MINPASS as buildla grows; never lower it to make a run go green."
     ok=0
 fi
+if [ "$nskip" -gt 0 ]; then
+    echo "      skipped, not passed ($nskip):"
+    printf '%s\n' "$OUT" | grep -e '^  SKIP  ' -e '  PASS  .*(skipped)' | head -20 | sed 's/^ */        /'
+fi
 
-[ "$ok" = 1 ] && echo "PASS  buildla: the LA build driver ran $npass steps with 0 failures (rc=$rc) — marker, cross-engine, guard, namespace and QEMU kinds, including its own negative steps asserting the VM halts loudly on an unbound variable, a non-function application, chr out of range and a non-string argument. Honest scope: this gates that buildla REPORTS a clean run of the stages it currently drives; it does not assert how many of build.sh's stages it has reached." || { echo "buildla gate RED"; exit 1; }
+[ "$ok" = 1 ] && echo "PASS  buildla: the LA build driver ran $((npass + nskip)) steps with 0 failures (rc=$rc): $npass passed, $nskip skipped (a skip is not a pass) — marker, cross-engine, guard, namespace and QEMU kinds, including its own negative steps asserting the VM halts loudly on an unbound variable, a non-function application, chr out of range and a non-string argument. Honest scope: this gates that buildla REPORTS a clean run of the stages it currently drives; it does not assert how many of build.sh's stages it has reached." || { echo "buildla gate RED"; exit 1; }
