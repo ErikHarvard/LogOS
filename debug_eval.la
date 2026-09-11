@@ -1,0 +1,1109 @@
+# ═════════════════════════════════════════════════════════════════════
+#  debug_eval.la — the tracing debugger: the evaluator watching itself.
+#
+#  DEBUG_EVAL mirrors EVAL's dispatch and emits one line per node entered
+#  and one per node reduced, indented by depth:
+#
+#      -> APP
+#        -> VAR
+#        <- VAR = bi:concat
+#        ...
+#      <- APP = str:hello
+#
+#  ── WHY IT MIRRORS EVAL RATHER THAN WRAPPING IT ─────────────────────
+#  EVAL's recursion is INTERNAL: it is Z(la self. …) and every recursive
+#  step goes through its own `self`. An outer wrapper therefore sees only
+#  the OUTERMOST call — the one node you already knew about — and nothing
+#  underneath. To trace every step, the tracer must BE the self that EVAL
+#  would have used, so the dispatch is reproduced here.
+#
+#  ── AND WHY THAT IS THE DANGEROUS PART ──────────────────────────────
+#  A reproduced evaluator can DRIFT from the one it claims to trace, and
+#  drift is invisible: the trace still looks plausible while describing a
+#  reduction that never happened. So the gate's central assertion is not
+#  "the trace looks right" — it is that DEBUG_EVAL and EVAL AGREE on the
+#  RESULT for every program tested. Tracing must not change the answer.
+#  This file imports eval.la rather than copying its helpers, so only the
+#  dispatch is duplicated, and the duplication is what the gate watches.
+#
+#  ── THE TWO PROJECTIONS AT A BREAKPOINT ─────────────────────────────
+#  A breakpoint reports both of the things a debugger is asked for, and
+#  they are not the same thing:
+#      env:  what is bound here  — LEXICAL, the scope a closure was made in
+#      bt:   how control got here — DYNAMIC, the chain of calls taken
+#  For a closure applied far from where it was defined the two genuinely
+#  disagree, and neither can be derived from the other. That is why the
+#  stack is threaded rather than reconstructed from the environment, and
+#  why the gate asserts the disagreement on a program built to force it.
+# ═════════════════════════════════════════════════════════════════════
+
+import("eval.la")
+
+# ── THE DEBUGGER'S PUBLIC SURFACE ────────────────────────────────────
+#   Slice 13 makes this file a MODULE as well as a program. It still runs
+#   standalone — MAIN is untouched — but another file can now import the
+#   debugger instead of copying it, which is what debug_meta.la needs and
+#   what a debugger ought to be. Everything not listed stays private and
+#   is alpha-renamed away in an importer, so the internals (ST_VISIT, the
+#   recorders, the record accessors' shape) remain free to change.
+export DEBUG_RUN DEBUG_RUN_BRK DEBUG_RUN_BUD AGREES AGREES_BRK AGREES_BUD
+export BRK_NONE BRK_VAR BRK_DEPTH BRK_CALLER BRK_WHEN BRK_WATCH
+export STEP_INTO STEP_OVER STEP_OUT CMD_RUNTO
+export FIND_STOP FIND_STOP_BACK SESSION RUN_SESSION SESSION_ASK RUN_ASK
+export SESSION_WATCH RUN_WATCH TAPE TAPE_FIND TAPE_FIND_BACK INSPECT
+export STOP_I STOP_N STOP_S STOP_E STOP_A STOP_K STOP_D
+export BUDGET_ALL BUDGET_NONE
+
+# ── the node kind, read off the AST's own dispatch ───────────────────
+#   The AST is Scott-encoded: applying it to four handlers IS the case
+#   analysis. VAR and STR carry one payload, LAM and APP carry two, which
+#   is why the arities differ — they match EVAL's own handlers exactly.
+glyph AST_KIND = la ast.
+    ast (la _. "VAR")
+        (la _. la _. "LAM")
+        (la _. la _. "APP")
+        (la _. "STR")
+
+# ── the VAR node's own name, read off the same dispatch ──────────────
+#   Only the VAR branch carries a name; the other three return "" so a
+#   name-matching breakpoint simply never fires on them. Reading the name
+#   through the AST's own Scott dispatch is the same discipline AST_KIND
+#   uses — there is no separate accessor to fall out of step with.
+glyph AST_VARNAME = la ast.
+    ast (la n. n)
+        (la _. la _. "")
+        (la _. la _. "")
+        (la _. "")
+
+# ── a value, rendered short ──────────────────────────────────────────
+#   A closure prints its PARAMETER, not its body: a body is an AST and
+#   rendering it would bury the trace in source. The param is what tells
+#   you which closure you are looking at.
+glyph SHOW_VAL = la v.
+    v (la s. concat("str:")(s))
+      (la p. la b. la e. concat("clo:")(p))
+      (la n. concat("bi:")(n))
+      (la n. la pv. concat("pa:")(n))
+      (la i. concat("int:")(int_to_str(i)))
+
+# ── the local environment, rendered ──────────────────────────────────
+#   env is eval.la's list of PAIR(name)(value): NIL = PAIR(FALSE)(""),
+#   CONS h t = PAIR(TRUE)(PAIR(h)(t)). So the emptiness flag is FST, the
+#   head is FST(SND) and the tail SND(SND) — destructured here rather
+#   than imported, because eval.la keeps its list helpers private.
+#
+#   ★ INNERMOST FIRST. APP conses the new binding onto the front, and
+#   LIST_FIND takes the FIRST match, so the render's left-to-right order
+#   IS lookup order. Under shadowing that is the whole answer: the
+#   binding that wins is the one printed first.
+#
+#   Values go through SHOW_VAL, so a closure shows its parameter and not
+#   its captured environment — otherwise one breakpoint on a recursive
+#   program would print the entire chain of frames beneath it.
+glyph ENV_MORE = la env. FST(env)
+glyph ENV_HEAD = la env. FST(SND(env))
+glyph ENV_TAIL = la env. SND(SND(env))
+
+glyph SHOW_BINDING = la e. concat(FST(e))(concat("=")(SHOW_VAL(SND(e))))
+
+glyph SHOW_ENV = Z(la self. la env.
+    IF(ENV_MORE(env))(la _.
+        (la rest.
+            IF(ENV_MORE(rest))(la _.
+                concat(SHOW_BINDING(ENV_HEAD(env)))(concat(", ")(self(rest)))
+            )(la _.
+                SHOW_BINDING(ENV_HEAD(env))
+            )
+        )(ENV_TAIL(env))
+    )(la _. "<empty>"))
+
+# ── the CALL STACK, rendered ─────────────────────────────────────────
+#   ★ THE QUESTION THE ENVIRONMENT CANNOT ANSWER. env is LEXICAL: under
+#   APP the body runs in CONS(binding)(e) where `e` is the CLOSURE's
+#   captured environment — the scope it was DEFINED in. The call stack is
+#   DYNAMIC: it is the chain of calls control actually took to get here.
+#   For a closure applied far from where it was made, those two genuinely
+#   disagree, and neither is derivable from the other. That disagreement
+#   is what slice 3 asserts, because a "backtrace" quietly rendered from
+#   the environment would look right on every program where they happen
+#   to coincide.
+#
+#   A frame is pushed by the two acts that ARE calls — entering a glyph
+#   body (frame = the glyph name) and entering a closure body (frame =
+#   the parameter). Evaluating a function or an argument is not a call
+#   and pushes nothing.
+#
+#   Innermost first, the same order as SHOW_ENV, so the two lines of one
+#   breakpoint read down the same axis. ENV_MORE/ENV_HEAD/ENV_TAIL are
+#   the generic CONS-list accessors — a frame list is a list of plain
+#   strings, so it needs no SHOW_BINDING.
+glyph SHOW_STK = Z(la self. la stk.
+    IF(ENV_MORE(stk))(la _.
+        (la rest.
+            IF(ENV_MORE(rest))(la _.
+                concat(ENV_HEAD(stk))(concat(" <- ")(self(rest)))
+            )(la _.
+                ENV_HEAD(stk)
+            )
+        )(ENV_TAIL(stk))
+    )(la _. "<empty>"))
+
+# ── indentation by depth ─────────────────────────────────────────────
+glyph IND = Z(la self. la n.
+    IF(int_eq(n)(0))(la _. "")(la _. concat("  ")(self(sub(n)(1)))))
+
+glyph ENTER = la d. la ast.
+    print(concat(IND(d))(concat("-> ")(AST_KIND(ast))))
+
+glyph LEAVE = la d. la ast. la result.
+    print(concat(IND(d))(concat("<- ")(concat(AST_KIND(ast))(concat(" = ")(SHOW_VAL(result))))))
+
+# ── the breakpoint line ──────────────────────────────────────────────
+#   A tracer answers "what ran". A debugger has to answer "what was it
+#   bound to WHEN it ran" — so a breakpoint reports the ENVIRONMENT that
+#   was in force at the node, which the trace lines never show.
+#   TWO LINES, not one merged line: the env assertion slice 2 already
+#   rests on stays byte-identical, so slice 3 cannot silently invalidate
+#   the check that guards slice 2.
+glyph BREAK = la d. la ast. la env. la stk.
+    SEQ(
+    print(concat(IND(d))(concat("!! BREAK ")(concat(AST_KIND(ast))(concat(" env: ")(SHOW_ENV(env)))))))(
+    print(concat(IND(d))(concat("!! BREAK ")(concat(AST_KIND(ast))(concat(" bt: ")(SHOW_STK(stk)))))))
+
+# ── breakpoint predicates — (depth -> ast -> Church bool) ────────────
+#   The tracer takes the predicate as a parameter, so a new kind of
+#   breakpoint is a new predicate and NOT a second copy of the dispatch.
+#   That matters more here than it usually would: this file exists
+#   because a duplicated evaluator can drift from the one it traces, and
+#   forking the dispatch per breakpoint kind would reintroduce exactly
+#   the hazard the gate is watching for.
+#   ★ SLICE 4 WIDENS THE PREDICATE FROM (d, ast) TO (d, ast, env, stk).
+#   Until now the stack was DISPLAY: it was threaded and printed and nothing
+#   decided on it, so a bug in it could only ever produce a wrong-looking
+#   line. Feeding it to the predicate makes it DECIDE — a wrong stack now
+#   changes WHICH nodes break, which is a behavioural fault the agreement
+#   and count checks can catch. The same applies to env. Both projections a
+#   breakpoint reports are now also inputs it can be conditioned on.
+glyph BRK_NONE  = la d. la ast. la env. la stk. FALSE
+glyph BRK_VAR   = la name. la d. la ast. la env. la stk. str_eq(AST_VARNAME(ast))(name)
+glyph BRK_DEPTH = la n.    la d. la ast. la env. la stk. int_eq(d)(n)
+
+# ── is a frame anywhere on the call stack? ───────────────────────────
+glyph STK_HAS = la f. Z(la self. la stk.
+    IF(ENV_MORE(stk))(la _.
+        IF(str_eq(ENV_HEAD(stk))(f))(la _. TRUE)(la _. self(ENV_TAIL(stk)))
+    )(la _. FALSE))
+
+# ── CONDITIONAL breakpoints — the point of the slice ─────────────────
+#   BRK_CALLER is the one only slice 3 makes possible: break at a name
+#   ONLY when control reached it through a given frame. The SAME node,
+#   reached two ways, breaks once. A predicate that ignored the stack
+#   would fire on both and would be indistinguishable from BRK_VAR — so
+#   the gate runs BRK_VAR on the same program as the control and requires
+#   it to fire MORE often.
+glyph BRK_CALLER = la name. la f. la d. la ast. la env. la stk.
+    IF(str_eq(AST_VARNAME(ast))(name))(la _. STK_HAS(f)(stk))(la _. FALSE)
+
+#   BRK_WHEN is the env-conditional counterpart: break at a name only when
+#   it is BOUND to a given value. The comparison goes through SHOW_VAL, the
+#   same renderer AGREES compares, rather than a second destructuring that
+#   could fall out of step with it.
+glyph BRK_WHEN = la name. la val. la d. la ast. la env. la stk.
+    IF(str_eq(AST_VARNAME(ast))(name))(la _.
+        (la found.
+            IF(IS_SOME(found))(la _.
+                str_eq(SHOW_VAL(R_VAL(found)))(concat("str:")(val))
+            )(la _. FALSE)
+        )(LIST_FIND(name)(env))
+    )(la _. FALSE)
+
+# ── DEBUG_EVAL — EVAL's dispatch, with the two trace lines around it ──
+#   ★ ORDER IS STRUCTURE, NOT STATEMENT SEQUENCE. `(la result. …)(body)`
+#   evaluates `body` FIRST because arguments are evaluated on application
+#   — which is exactly what is wanted here: enter, reduce, then report
+#   the value. Writing the LEAVE line "after" the body in the source
+#   would not have ordered it; the binder does.
+# ── THE STATE THREADED THROUGH THE ONE DISPATCH — slice 6 ────────────
+#   ★ WHY THIS SLICE CHANGES THE EVALUATOR'S SHAPE, when 4 and 5 refused
+#   to. A stop CONDITION is a predicate: answerable from (d, ast, env,
+#   stk) at one node. "Where am I, resume from HERE" is not. An ordinal
+#   counts nodes ALREADY VISITED, so it flows left-to-right across
+#   siblings, while d and stk flow DOWNWARD — a downward parameter cannot
+#   count what its earlier siblings did. No predicate closes that gap,
+#   which is why slice 5 could only offer "the successive firings ARE the
+#   successive stops" instead of a real resume.
+#
+#   It is still ONE dispatch: DEBUG_EVAL_BRK is DEFINED from this one by
+#   taking FST, exactly as slice 1's tracer is defined from the
+#   parameterised one. A second evaluator carrying the ordinal would
+#   reintroduce the drift hazard this whole file exists to watch.
+#
+#   ★ AND AGREEMENT DOES NOT COVER THE NEW PART — measured, not assumed.
+#   Agreement compares the VALUE, which is FST, so a mis-threaded ordinal
+#   leaves it green. A red run before this slice went further: replacing
+#   DEBUG_EVAL with EVAL outright ALSO leaves check 1 green, and only the
+#   content checks (2-6) catch it. So the ordinal gets its own oracle —
+#   the printed trace. ENTER emits one line per node in visit order, so
+#   the k-th ENTER line IS node k, and the gate checks the ordinals a
+#   session reports against that independently produced sequence.
+#   eval.la keeps SOME/NONE PRIVATE — they are not on its export list, so
+#   the import mangles them away and only IS_SOME/R_VAL come through. The
+#   option is therefore rebuilt here from PAIR, in the SHAPE those two
+#   accessors expect (IS_SOME = FST, R_VAL = FST . SND), rather than
+#   reaching for a name the module deliberately does not offer.
+#   A budget larger than any program traced here, and silence.
+#   ★ SILENCE IS -1, NOT 0, AND THE REASON IS A REGRESSION THIS GATE CAUGHT.
+#   With 0, `i = budget` holds at the very first node, so every SILENT search
+#   — and the driver runs one per session step — printed a truncation marker
+#   into the middle of the output it was supposed to stay out of. At -1 both
+#   `i < budget` and `i = budget` are false for every ordinal, so silence is
+#   genuinely silent. Caught by check 10, a watchpoint check, which is the
+#   coupling working in the right direction for once.
+glyph BUDGET_ALL  = 1000000
+glyph BUDGET_NONE = sub(0)(1)
+
+glyph OPT_NONE = PAIR(FALSE)("")
+glyph OPT_SOME = la v. PAIR(TRUE)(PAIR(v)(""))
+
+glyph ST_MK = la i. la f. PAIR(i)(f)
+glyph ST_I  = la st. FST(st)
+glyph ST_F  = la st. SND(st)
+
+#   A stop carries what the NEXT command needs — its ordinal, to resume
+#   after; its FRAME depth, which is the n0 a step command is relative to
+#   — plus a rendered line for the reader.
+#   ★ SLICE 8 ADDS THE ENVIRONMENT TO THE RECORD. Until now a stop carried
+#   only what the DRIVER needed to resume — ordinal and frame depth — plus a
+#   rendered line for the reader. That is enough to say where you are and to
+#   print what is bound, but not enough to ASK anything: an inspection has to
+#   evaluate in the scope that was in force AT THE STOP, and that scope was
+#   discarded the moment the line was rendered.
+glyph STOP_REC = la i. la d. la ast. la env. la stk.
+    (la n.
+    (la head.
+    (la tail.
+        PAIR(i)(PAIR(n)(PAIR(concat(head)(tail))(PAIR(env)(PAIR(ast)(PAIR(stk)(d))))))
+    )(concat(concat(" frame")(int_to_str(n)))(concat(" bt: ")(SHOW_STK(stk))))
+    )(concat(concat("#")(int_to_str(i)))(concat(" ")(AST_KIND(ast))))
+    )(STK_LEN(stk))
+#   ★ SLICE 11 WIDENS THE RECORD TO EVERYTHING A PREDICATE NEEDS. Until now
+#   a stop carried what a READER needs — ordinal, frame depth, a rendered
+#   line — plus the env slice 8 added for inspection. A materialised tape has
+#   to carry what a PREDICATE needs, because the whole point is to ask the
+#   same questions of a recorded node that were previously asked of a live
+#   one: (d, ast, env, stk) is exactly the breakpoint signature.
+glyph STOP_I = la r. FST(r)
+glyph STOP_N = la r. FST(SND(r))
+glyph STOP_S = la r. FST(SND(SND(r)))
+glyph STOP_E = la r. FST(SND(SND(SND(r))))
+glyph STOP_A = la r. FST(SND(SND(SND(SND(r)))))
+glyph STOP_K = la r. FST(SND(SND(SND(SND(SND(r))))))
+glyph STOP_D = la r. SND(SND(SND(SND(SND(SND(r))))))
+
+#   The FIRST match strictly after `after` is kept and later ones ignored:
+#   that is what makes it "the NEXT stop" rather than "a stop".
+#   ★ SLICE 10 MAKES THE RECORDER PLUGGABLE, which is the whole mechanism of
+#   reverse stepping. Going FORWARD keeps the FIRST match after a point.
+#   Going BACKWARD keeps the LAST match before one — the same walk, the same
+#   dispatch, a different rule for which match survives. Passing the recorder
+#   in rather than adding a second traversal keeps the one-dispatch discipline
+#   this file has held since slice 1.
+glyph REC_FIRST = la after. la fired. la i. la d. la ast. la env. la stk. la old.
+    IF(fired)(la _.
+        IF(IS_SOME(old))(la _. old)(la _.
+        IF(lt(after)(i))(la _. OPT_SOME(STOP_REC(i)(d)(ast)(env)(stk)))(la _. old))
+    )(la _. old)
+
+#   Keep OVERWRITING while below the bound, so what survives the walk is the
+#   last qualifying node — the stop immediately before where you stand.
+glyph REC_LAST = la before. la fired. la i. la d. la ast. la env. la stk. la old.
+    IF(fired)(la _.
+        IF(lt(i)(before))(la _. OPT_SOME(STOP_REC(i)(d)(ast)(env)(stk)))(la _. old)
+    )(la _. old)
+
+#   One node visit: emit, decide, advance. `tr` silences the trace — a
+#   session runs the evaluation once per command, and printing the whole
+#   trace once per command would bury the stops it is reporting.
+#   ★ SLICE 12 TURNS `tr` FROM A FLAG INTO A BUDGET, and needs no new state
+#   to do it: the ordinal threaded since slice 6 IS a node counter, so
+#   "emit while i < budget" is already expressible. Until now the trace was
+#   all-or-nothing, which means the debugger could not be pointed at any
+#   program large enough to want a debugger.
+#
+#   ★ AND TRUNCATION IS ANNOUNCED, NEVER SILENT. A trace that simply stops
+#   is indistinguishable from a program that finished — the reader cannot
+#   tell "this is all that happened" from "this is all I was willing to
+#   show you". The marker fires exactly once, at i = budget, which is the
+#   one node where the counter crosses the bound.
+glyph ST_VISIT = la bud. la rec. la brk. la d. la ast. la env. la stk. la st.
+    (la i.
+    (la fired.
+        SEQ(IF(lt(i)(bud))(la _. ENTER(d)(ast))(la _.
+            IF(int_eq(i)(bud))(la _.
+                print(concat("... trace truncated after ")(concat(int_to_str(bud))(" nodes")))
+            )(la _. "")))(
+        SEQ(IF(fired)(la _. IF(lt(i)(bud))(la _. BREAK(d)(ast)(env)(stk))(la _. ""))(la _. ""))(
+        ST_MK(add(i)(1))(rec(fired)(i)(d)(ast)(env)(stk)(ST_F(st)))))
+    )(brk(d)(ast)(env)(stk))
+    )(ST_I(st))
+
+# ── THE FAULT REPORT — the post-mortem, slice 7 ──────────────────────
+#   ★ THE DEBUGGER WAS USELESS AT EXACTLY THE MOMENT YOU WOULD REACH FOR
+#   ONE. Every dispatch branch that cannot proceed called `error` and the
+#   process died with one line: the message. Not WHERE, not HOW CONTROL
+#   GOT THERE, not what was bound. Slice 6 threaded an ordinal, so all the
+#   material for a real post-mortem was already in hand and simply thrown
+#   away at the fault.
+#
+#   ★ IT REPORTS AND THEN STILL DIES, and the order is the whole design.
+#   SEQ forces the prints before `error` is reached, so the report reaches
+#   stdout even though the process is about to halt non-zero. A debugger
+#   that CAUGHT the fault and continued would be worse than none: it would
+#   convert a loud failure into a silent one, which is the discipline this
+#   whole project is built on. The gate asserts the non-zero exit for
+#   precisely that reason.
+#
+#   The location line is rendered by STOP_REC — the SAME renderer the
+#   driver uses for a stop — so a fault reads in the same coordinates as a
+#   breakpoint, and there is no second formatter to drift from it.
+glyph FAULT = la msg. la i. la d. la ast. la env. la stk.
+    SEQ(print(concat("!! FAULT ")(msg)))(
+    SEQ(print(concat("!! FAULT at ")(STOP_S(STOP_REC(i)(d)(ast)(env)(stk)))))(
+    SEQ(print(concat("!! FAULT env: ")(SHOW_ENV(env))))(
+    error(msg))))
+
+glyph DEBUG_EVAL_ST = la bud. la rec. la brk. Z(la self. la st0. la d. la ast. la env. la stk. la gl.
+    (la st.
+        (la rp.
+            SEQ(IF(lt(ST_I(st0))(bud))(la _. LEAVE(d)(ast)(FST(rp)))(la _. ""))(rp)
+        )(
+            ast
+                # ── VAR(name) — local env, then glyph table, then builtins ──
+                (la name.
+                    (la local.
+                        IF(IS_SOME(local))(la _.
+                            PAIR(R_VAL(local))(st)
+                        )(la _.
+                        (la g.
+                            IF(IS_SOME(g))(la _.
+                                self(st)(add(d)(1))(R_VAL(g))(NIL)(CONS(name)(stk))(gl)
+                            )(la _.
+                            IF(IS_BI_NAME(name))(la _.
+                                PAIR(VAL_BI(name))(st)
+                            )(la _.
+                                FAULT(concat("debug_eval: unbound variable: ")(name))(ST_I(st0))(d)(ast)(env)(stk)
+                            ))
+                        )(LIST_FIND(name)(gl)))
+                    )(LIST_FIND(name)(env))
+                )
+                # ── LAM(param, body) — capture the environment ──
+                (la param. la body.
+                    PAIR(VAL_CLO(param)(body)(env))(st)
+                )
+                # ── APP(func, arg) — state threads func, THEN arg, THEN body ──
+                #   ★ THE THREADING ORDER IS THE EVALUATION ORDER, and it is
+                #   written out rather than inferred because the VALUE cannot
+                #   reveal a mistake in it: feed the arg's state to the func
+                #   and the answer stays right while every ordinal from here
+                #   on is wrong. That is the case the trace oracle exists for.
+                (la func. la arg.
+                    (la rf.
+                        (la fval. la stf.
+                            fval
+                                (la s.
+                                    FAULT(concat("debug_eval: cannot apply string: ")(s))(ST_I(st0))(d)(ast)(env)(stk)
+                                )
+                                (la p. la b. la e.
+                                    (la ra.
+                                        self(SND(ra))(add(d)(1))(b)(CONS(PAIR(p)(FST(ra)))(e))(CONS(p)(stk))(gl)
+                                    )(self(stf)(add(d)(1))(arg)(env)(stk)(gl))
+                                )
+                                (la biname.
+                                    (la ra.
+                                        PAIR(APPLY_BI(biname)(FST(ra)))(SND(ra))
+                                    )(self(stf)(add(d)(1))(arg)(env)(stk)(gl))
+                                )
+                                (la paname. la pv.
+                                    (la ra.
+                                        PAIR(APPLY_BI2(paname)(pv)(FST(ra)))(SND(ra))
+                                    )(self(stf)(add(d)(1))(arg)(env)(stk)(gl))
+                                )
+                                (la n.
+                                    FAULT(concat("debug_eval: cannot apply integer: ")(int_to_str(n)))(ST_I(st0))(d)(ast)(env)(stk)
+                                )
+                        )(FST(rf))(SND(rf))
+                    )(self(st)(add(d)(1))(func)(env)(stk)(gl))
+                )
+                # ── STR(val) — a value already ──
+                (la val. PAIR(VAL_STR(val))(st))
+        )
+    )(ST_VISIT(bud)(rec)(brk)(d)(ast)(env)(stk)(st0))
+)
+
+#   The slice 1-5 tracer, DEFINED from the threaded one rather than kept as
+#   a second copy: trace on, and the state discarded.
+glyph DEBUG_EVAL_BRK = la brk. la d. la ast. la env. la stk. la gl.
+    FST(DEBUG_EVAL_ST(BUDGET_ALL)(REC_FIRST(sub(0)(1)))(brk)(ST_MK(0)(OPT_NONE))(d)(ast)(env)(stk)(gl))
+
+# ── slice 1's tracer IS the parameterised one with no breakpoint ─────
+#   Defined by application, not by a second definition, so "tracing with
+#   breakpoints off" cannot diverge from "tracing" — there is nothing to
+#   keep in step.
+glyph DEBUG_EVAL = DEBUG_EVAL_BRK(BRK_NONE)
+
+# ── the runner: trace a named glyph from a parsed program ────────────
+glyph DEBUG_RUN_BRK = la brk. la name. la gl.
+    (la found.
+        IF(IS_SOME(found))(la _.
+            DEBUG_EVAL_BRK(brk)(0)(R_VAL(found))(NIL)(CONS(name)(NIL))(gl)
+        )(la _.
+            error(concat("debug_eval: no glyph: ")(name))
+        )
+    )(LIST_FIND(name)(gl))
+
+glyph DEBUG_RUN_GLYPH = DEBUG_RUN_BRK(BRK_NONE)
+glyph DEBUG_RUN = la gl. DEBUG_RUN_GLYPH("MAIN")(gl)
+
+# ── AGREEMENT — the assertion this whole file rests on ───────────────
+#   Tracing must not change the answer. Compares the RENDERED values, so
+#   a divergence in kind (str vs int vs closure) or in content both show.
+glyph AGREES_BRK = la brk. la src.
+    (la gl.
+        (la traced.
+            (la plain.
+                IF(str_eq(SHOW_VAL(traced))(SHOW_VAL(plain)))(la _.
+                    concat("AGREE ")(SHOW_VAL(plain))
+                )(la _.
+                    concat(concat("DIVERGED traced=")(SHOW_VAL(traced)))(concat(" plain=")(SHOW_VAL(plain)))
+                )
+            )(RUN(gl))
+        )(DEBUG_RUN_BRK(brk)("MAIN")(gl))
+    )(PARSE_PROGRAM(src))
+
+#   ★ AND THIS IS THE SLICE-2 ASSERTION. Slice 1 proved TRACING does not
+#   change the answer. A breakpoint reads the environment and prints — it
+#   must not change it either, so every breakpoint program below is run
+#   through the same agreement check, with the breakpoint ARMED.
+glyph AGREES = AGREES_BRK(BRK_NONE)
+
+glyph SRC_STR = "glyph MAIN = \"hello\""
+glyph SRC_APP = "glyph MAIN = concat(\"ab\")(\"cd\")"
+glyph SRC_LAM = "glyph MAIN = (la x. x)(\"id\")"
+glyph SRC_INT = "glyph MAIN = int_to_str(add(2)(3))"
+glyph SRC_NEST = "glyph K = la a. la b. a\nglyph MAIN = K(\"kept\")(\"dropped\")"
+
+glyph MAIN_TRACE = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- trace: STR ---"))(
+    print(AGREES(SRC_STR))))(
+    print("--- trace: APP (curried builtin) ---")))(
+    print(AGREES(SRC_APP))))(
+    print("--- trace: LAM applied ---")))(
+    print(AGREES(SRC_LAM))))(
+    print("--- trace: INT arithmetic ---")))(
+    print(AGREES(SRC_INT))))(
+    print("--- trace: nested glyph reference ---")))(
+    print(AGREES(SRC_NEST)))
+
+# ── slice 2 programs ─────────────────────────────────────────────────
+#   SRC_BIND binds x to a value the render must show verbatim.
+#   SRC_SHADOW binds x TWICE. That is the case a trace alone cannot
+#   answer: both bindings are live, the trace shows only which VALUE came
+#   back, and only the environment shows WHY — the inner frame is in
+#   front, so LIST_FIND reaches it first.
+glyph SRC_BIND   = "glyph MAIN = (la x. concat(x)(\"!\"))(\"VALUE\")"
+glyph SRC_SHADOW = "glyph MAIN = (la x. (la x. x)(\"inner\"))(\"outer\")"
+
+glyph MAIN_BREAK = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- break: VAR x, env must show the binding ---"))(
+    print(AGREES_BRK(BRK_VAR("x"))(SRC_BIND))))(
+    print("--- break: VAR nosuchvar, must NOT fire ---")))(
+    print(AGREES_BRK(BRK_VAR("nosuchvar"))(SRC_BIND))))(
+    print("--- break: shadowed x, innermost binding first ---")))(
+    print(AGREES_BRK(BRK_VAR("x"))(SRC_SHADOW))))(
+    print("--- break: at depth 1 ---")))(
+    print(AGREES_BRK(BRK_DEPTH(1))(SRC_BIND)))
+
+# ── slice 3 programs — the call stack ────────────────────────────────
+#   ★ SRC_DYN IS THE WHOLE SLICE. It is built so the environment and the
+#   call stack must disagree, because that is the only way to prove the
+#   backtrace is not the environment wearing a different label:
+#
+#       glyph MK   = la v. la q. v      MK captures v and returns a closure
+#       glyph USE  = la f. f("arg")     USE applies whatever it is handed
+#       glyph MAIN = USE(MK("cap"))
+#
+#   At `v` inside the innermost body, the two projections are:
+#       env: q=str:arg, v=str:cap       — v came LEXICALLY from MK
+#       bt:  q <- f <- MAIN             — control came DYNAMICALLY via USE
+#
+#   `v` is bound and visible, yet neither `v` nor `MK` is on the stack:
+#   MK ran, returned its closure and left, and the closure was applied
+#   somewhere it never mentions. A backtrace derived from the env chain
+#   would name MK here; this one must not, and the gate asserts the
+#   absence as well as the presence.
+glyph SRC_DYN = "glyph MK = la v. la q. v\nglyph USE = la f. f(\"arg\")\nglyph MAIN = USE(MK(\"cap\"))"
+
+glyph MAIN_STACK = SEQ(SEQ(SEQ(
+    print("--- stack: lexical env vs dynamic call chain ---"))(
+    print(AGREES_BRK(BRK_VAR("v"))(SRC_DYN))))(
+    #   The must-not-invent half, the counterpart of slice 2's
+    #   must-not-fire: at depth 0 of a program that calls nothing, the
+    #   stack is exactly the one glyph the runner entered. A frame count
+    #   that drifts up shows here and nowhere else.
+    print("--- stack: no calls, exactly one frame ---")))(
+    print(AGREES_BRK(BRK_DEPTH(0))(SRC_STR)))
+
+# ── slice 4 programs — conditional breakpoints ───────────────────────
+#   ★ SRC_TWO REACHES ONE NODE BY TWO ROUTES. ID's body is a single
+#   `VAR x`, and it is entered twice — once through A, once through B:
+#
+#       glyph ID   = la x. x
+#       glyph A    = ID("from-a")
+#       glyph B    = ID("from-b")
+#       glyph MAIN = concat(A)(B)
+#
+#   So `VAR x` breaks with bt `x <- A <- MAIN` on one visit and
+#   `x <- B <- MAIN` on the other. That is what makes the conditional
+#   testable at all: a predicate that reads the stack fires ONCE, one that
+#   ignores it fires TWICE, and the two are otherwise identical. The gate
+#   runs plain BRK_VAR("x") on the SAME program as the control and
+#   requires it to fire strictly more often — without that control, a
+#   BRK_CALLER that had silently degraded to BRK_VAR would still look
+#   right on a program where the name happened to occur once.
+glyph SRC_TWO = "glyph ID = la x. x\nglyph A = ID(\"from-a\")\nglyph B = ID(\"from-b\")\nglyph MAIN = concat(A)(B)"
+
+glyph MAIN_COND = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+    #   The control: unconditioned, fires on BOTH visits.
+    print("--- cond: BRK_VAR x, the control — must fire on BOTH routes ---"))(
+    print(AGREES_BRK(BRK_VAR("x"))(SRC_TWO))))(
+    #   Stack-conditional: the same node, only the route through A.
+    print("--- cond: BRK_CALLER x via A — same node, one route ---")))(
+    print(AGREES_BRK(BRK_CALLER("x")("A"))(SRC_TWO))))(
+    #   The must-not-fire half: a frame that is never on the stack.
+    print("--- cond: BRK_CALLER x via NOSUCH — must NOT fire ---")))(
+    print(AGREES_BRK(BRK_CALLER("x")("NOSUCH"))(SRC_TWO))))(
+    #   Env-conditional: the same node, only the visit where x is from-b.
+    print("--- cond: BRK_WHEN x = from-b — same node, one binding ---")))(
+    print(AGREES_BRK(BRK_WHEN("x")("from-b"))(SRC_TWO)))
+
+# ── STEPPING — step / step-over / step-out ───────────────────────────
+#   ★ A STEP COMMAND IS A STOP CONDITION, NOT AN EXECUTION MODE, and that
+#   is why this slice adds no dispatch. It is how a real debugger does it:
+#   gdb's `next` does not switch to a second, slower interpreter — it sets
+#   a condition on the FRAME the program is in and resumes. So stepping
+#   here is three more predicates over the (d, ast, env, stk) signature
+#   slice 4 opened, and the successive firings of one predicate ARE the
+#   successive stops of pressing that key repeatedly.
+#
+#   ★ IT MEASURES THE STACK, NOT THE DEPTH, and that is the content of the
+#   slice rather than an implementation detail. `d` counts every
+#   subexpression — a function position, an argument — while only a CALL
+#   pushes a frame. "Step over" means "do not descend into a CALL", so a
+#   step-over written on `d` would also refuse to look at an argument of
+#   the very expression you are standing on, which is not what the command
+#   means. n = STK_LEN(stk) is the frame depth. The two are not the same
+#   number on any program with a nested call, and the gate pins them apart
+#   by count rather than trusting the argument just made.
+glyph STK_LEN = Z(la self. la stk.
+    IF(ENV_MORE(stk))(la _. add(1)(self(ENV_TAIL(stk))))(la _. 0))
+
+glyph LE = la a. la b. IF(lt(a)(b))(la _. TRUE)(la _. int_eq(a)(b))
+
+#   INTO — the next node, whatever it is; a call is descended into.
+#   ★ n0 IS GENUINELY UNUSED HERE, and deliberately so rather than
+#   overlooked: single-step stops everywhere, so the condition is TRUE.
+#   Keeping the parameter gives the three commands ONE shape, which is
+#   what lets a driver hold "the current step mode" as a single value.
+glyph STEP_INTO = la n0. la d. la ast. la env. la stk. TRUE
+#   OVER — this frame or shallower; the insides of a call are skipped.
+glyph STEP_OVER = la n0. la d. la ast. la env. la stk. LE(STK_LEN(stk))(n0)
+#   OUT — only once this frame is gone: strictly shallower.
+glyph STEP_OUT  = la n0. la d. la ast. la env. la stk. lt(STK_LEN(stk))(n0)
+
+#   ★ SRC_STEP IS BUILT TO SEPARATE ALL THREE, which the earlier programs
+#   cannot do. It needs nodes at three different FRAME depths: MAIN's own
+#   frame, F's, and G's nested inside F. With the origin at frame 2 (you
+#   are stopped inside F) each command then selects a strictly different
+#   set — INTO everything, OVER everything but G's insides, OUT only what
+#   is left after F itself has returned. A program with one call would
+#   make OUT empty, and an empty set satisfies "strictly fewer" while
+#   asserting nothing.
+glyph SRC_STEP = "glyph G = la z. z\nglyph F = la y. G(y)\nglyph MAIN = F(\"in\")"
+
+glyph MAIN_STEP = SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- step: INTO from frame 2, descends into calls ---"))(
+    print(AGREES_BRK(STEP_INTO(2))(SRC_STEP))))(
+    print("--- step: OVER frame 2, a call is skipped ---")))(
+    print(AGREES_BRK(STEP_OVER(2))(SRC_STEP))))(
+    print("--- step: OUT of frame 2, only once the frame is gone ---")))(
+    print(AGREES_BRK(STEP_OUT(2))(SRC_STEP)))
+
+# ── THE DRIVER — resume, and a session of commands ───────────────────
+#   FIND_STOP runs the evaluation QUIETLY and returns the first stop
+#   strictly after `after`. That is the resume slice 5 could not express:
+#   a predicate says WHERE a command may stop, `after` says from where.
+glyph FIND_STOP = la brk. la after. la gl.
+    (la g.
+        IF(IS_SOME(g))(la _.
+            ST_F(SND(DEBUG_EVAL_ST(BUDGET_NONE)(REC_FIRST(after))(brk)(ST_MK(0)(OPT_NONE))(0)(R_VAL(g))(NIL)(CONS("MAIN")(NIL))(gl)))
+        )(la _.
+            error("debug_eval: no glyph: MAIN")
+        )
+    )(LIST_FIND("MAIN")(gl))
+
+#   ★ A SESSION IS A FOLD, AND SLICE 5 IS WHY IT CAN BE. Each command is
+#   already a function from a frame depth to a predicate — that is the one
+#   shape STEP_INTO/OVER/OUT were given, including STEP_INTO's unused n0 —
+#   so the list of commands needs no wrapper and no dispatch. The fold
+#   carries the two things a resume needs: `after`, the ordinal last
+#   stopped at, and `n0`, the FRAME depth there, which is what the next
+#   step command is relative to. That is the whole difference between a
+#   stop condition and a debugger: the condition is now computed FROM
+#   where you are standing.
+glyph CMD_RUNTO = la name. la n0. BRK_VAR(name)
+
+glyph SESSION = la cmds. la gl.
+    Z(la self. la cs. la after. la n0.
+        IF(ENV_MORE(cs))(la _.
+            (la stop.
+                IF(IS_SOME(stop))(la _.
+                    (la r.
+                        SEQ(print(concat("  stop ")(STOP_S(r))))(
+                        self(ENV_TAIL(cs))(STOP_I(r))(STOP_N(r)))
+                    )(R_VAL(stop))
+                )(la _.
+                    print("  (no further stop -- the run completed)")
+                )
+            )(FIND_STOP(ENV_HEAD(cs)(n0))(after)(gl))
+        )(la _.
+            print("  -- session end --")
+        )
+    )(cmds)(sub(0)(1))(1)
+
+glyph RUN_SESSION = la cmds. la src. SESSION(cmds)(PARSE_PROGRAM(src))
+
+#   Four sessions over SRC_STEP. The middle TWO are the point: identical
+#   first command, one differing second command, and they must land in
+#   DIFFERENT places — INTO inside G (frame 3), OVER past it (frame 2).
+#   A driver that ignored the command would give the same answer twice.
+glyph SESS_ORACLE = CONS(STEP_INTO)(CONS(STEP_INTO)(CONS(STEP_INTO)(CONS(STEP_INTO)(NIL))))
+glyph SESS_IN     = CONS(CMD_RUNTO("G"))(CONS(STEP_INTO)(CONS(STEP_OUT)(NIL)))
+glyph SESS_OVER   = CONS(CMD_RUNTO("G"))(CONS(STEP_OVER)(NIL))
+glyph SESS_END    = CONS(CMD_RUNTO("z"))(CONS(STEP_OUT)(NIL))
+
+glyph MAIN_DRIVE = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- drive: INTO x4 from the start, the ordinal oracle ---"))(
+    RUN_SESSION(SESS_ORACLE)(SRC_STEP)))(
+    print("--- drive: run to G, then INTO, then OUT ---")))(
+    RUN_SESSION(SESS_IN)(SRC_STEP)))(
+    print("--- drive: run to G, then OVER, same start one command differs ---")))(
+    RUN_SESSION(SESS_OVER)(SRC_STEP)))(
+    print("--- drive: run to z, then OUT, which runs off the end ---")))(
+    RUN_SESSION(SESS_END)(SRC_STEP))
+
+# ── INSPECTION — asking a question at a stop, slice 8 ────────────────
+#   ★ EVERY SLICE SO FAR REPORTS; THIS ONE ANSWERS. The driver can say
+#   where you are (#5 VAR frame2), and BREAK can print what is bound
+#   (x=str:from-a). Neither lets you ask something the debugger was not
+#   already planning to tell you — "what is concat(x)(\"!\") here?" had no
+#   expression to evaluate it with.
+#
+#   ★ IT MUST EVALUATE IN THE STOPPED SCOPE, AND THAT IS THE WHOLE CLAIM.
+#   Evaluating in the top-level environment would still produce a
+#   plausible-looking value for any expression mentioning only glyphs, and
+#   would silently answer the WRONG question for every expression that
+#   mentions a local. So the gate asks the SAME expression at two stops of
+#   one program where the local differs, and requires the two answers to
+#   DIFFER — the discriminator, not a spot check.
+#
+#   The expression is parsed by wrapping it as a one-glyph program and
+#   looking the glyph back up. That reuses PARSE_PROGRAM, which eval.la
+#   exports, rather than reaching for a bare expression parser it keeps
+#   private — the same reasoning that rebuilt the option from PAIR.
+#   ★ SLICE 9 MAKES INSPECTION TOTAL, and that is a prerequisite rather
+#   than a polish. A watchpoint has to evaluate its expression at EVERY
+#   node to see when the value changes — but at most nodes the expression's
+#   variables are not in scope, and a strict inspector HALTS there. Slice
+#   8's red path already showed the shape of this: dropping the stopped env
+#   did not produce a wrong answer, it killed the run. An inspector you
+#   cannot point at an arbitrary node is not one a watchpoint can use.
+#
+#   So an expression whose free variables are not all resolvable answers
+#   "<unavailable>" instead of halting. FREE_OK walks the expression
+#   tracking its own binders, and asks of each free name only what EVAL
+#   would ask: is it in the local environment, the glyph table, or the
+#   builtins.
+glyph FREE_OK = la env. la gl. Z(la self. la bound. la ast.
+    ast
+        (la name.
+            IF(STK_HAS(name)(bound))(la _. TRUE)(la _.
+            IF(IS_SOME(LIST_FIND(name)(env)))(la _. TRUE)(la _.
+            IF(IS_SOME(LIST_FIND(name)(gl)))(la _. TRUE)(la _.
+            IS_BI_NAME(name)))))
+        (la p. la b. self(CONS(p)(bound))(b))
+        (la f. la a. IF(self(bound)(f))(la _. self(bound)(a))(la _. FALSE))
+        (la v. TRUE))
+
+glyph UNAVAIL = "<unavailable>"
+
+glyph INSPECT = la gl. la env. la src.
+    (la parsed.
+        (la found.
+            IF(IS_SOME(found))(la _.
+                (la ast.
+                    IF(FREE_OK(env)(gl)(NIL)(ast))(la _.
+                        SHOW_VAL(EVAL(ast)(env)(gl))
+                    )(la _.
+                        UNAVAIL
+                    )
+                )(R_VAL(found))
+            )(la _.
+                error(concat("inspect: expression did not parse: ")(src))
+            )
+        )(LIST_FIND("__Q")(parsed))
+    )(PARSE_PROGRAM(concat("glyph __Q = ")(src)))
+
+#   ── WATCHPOINTS — stop when the VALUE changes, not when a node is reached
+#   ★ THE OTHER AXIS OF DEBUGGING. Every stop condition so far is about
+#   POSITION: this name, this frame, this depth. A watchpoint asks about
+#   VALUE — "stop wherever this becomes something else" — and cannot be
+#   expressed positionally at all. It is the composition of slice 6 (find
+#   the next node after here) and slice 8 (evaluate in that node's scope),
+#   which is why it could not have been built before either.
+glyph BRK_WATCH = la gl. la expr. la old. la d. la ast. la env. la stk.
+    IF(str_eq(INSPECT(gl)(env)(expr))(old))(la _. FALSE)(la _. TRUE)
+
+#   The driver, with a question asked at every stop. Identical to SESSION
+#   except for the inspection, and deliberately NOT a second copy of the
+#   fold: it calls the same FIND_STOP, so a divergence in resumption
+#   cannot appear here without appearing there.
+glyph SESSION_ASK = la cmds. la expr. la gl.
+    Z(la self. la cs. la after. la n0.
+        IF(ENV_MORE(cs))(la _.
+            (la stop.
+                IF(IS_SOME(stop))(la _.
+                    (la r.
+                        SEQ(print(concat(concat("  stop ")(STOP_S(r)))(concat(concat("  |  ")(concat(expr)(" = ")))(INSPECT(gl)(STOP_E(r))(expr)))))(
+                        self(ENV_TAIL(cs))(STOP_I(r))(STOP_N(r)))
+                    )(R_VAL(stop))
+                )(la _.
+                    print("  (no further stop -- the run completed)")
+                )
+            )(FIND_STOP(ENV_HEAD(cs)(n0))(after)(gl))
+        )(la _.
+            print("  -- session end --")
+        )
+    )(cmds)(sub(0)(1))(1)
+
+glyph RUN_ASK = la cmds. la expr. la src. SESSION_ASK(cmds)(expr)(PARSE_PROGRAM(src))
+
+#   SRC_TWO reaches ONE node by two routes with `x` bound differently on
+#   each — the program slice 4 built for the conditional control, reused
+#   here because it is exactly what separates stopped-scope from
+#   top-level-scope evaluation.
+glyph SESS_ASK = CONS(CMD_RUNTO("x"))(CONS(CMD_RUNTO("x"))(NIL))
+
+glyph MAIN_ASK = SEQ(SEQ(SEQ(SEQ(
+    print("--- ask: concat(x)(!) at two stops, same expression ---"))(
+    RUN_ASK(SESS_ASK)("concat(x)(\"!\")")(SRC_TWO)))(
+    print("--- ask: an expression naming a GLYPH, resolved through gl ---")))(
+    RUN_ASK(CONS(CMD_RUNTO("x"))(NIL))("ID(\"probe\")")(SRC_TWO)))(
+    print("--- ask: end ---"))
+
+# ── the merged builtins, under the debugger ──────────────────────────
+#   The kernel-k1 merge brought str_at and the bitwise ops to all five
+#   engines. DEBUG_EVAL resolves builtins through eval.la's IS_BI_NAME and
+#   APPLY_BI, which it IMPORTS rather than copies, so it should have gained
+#   them for free — "should" being the word the gate exists to remove.
+glyph SRC_BAND  = "glyph MAIN = int_to_str(band(12)(10))"
+glyph SRC_STRAT = "glyph MAIN = str_at(\"abc\")(1)"
+
+glyph MAIN_MERGED = SEQ(SEQ(
+    print("--- merged: builtins that arrived with kernel-k1 ---"))(
+    print(AGREES(SRC_BAND))))(
+    print(AGREES(SRC_STRAT)))
+
+#   A watch session: report each CHANGE of the expression's value, in order,
+#   resuming after each. `old` starts at UNAVAIL because that is genuinely
+#   the value before anything binds it — the first change is therefore the
+#   binding itself, which is what a watchpoint is expected to catch.
+glyph SESSION_WATCH = la expr. la steps. la gl.
+    Z(la self. la after. la old. la n.
+        IF(int_eq(n)(0))(la _.
+            print("  -- watch budget spent --")
+        )(la _.
+            (la stop.
+                IF(IS_SOME(stop))(la _.
+                    (la r.
+                    (la now.
+                        SEQ(print(concat(concat("  watch ")(STOP_S(r)))(concat(concat("  |  ")(concat(expr)(" = ")))(now))))(
+                        self(STOP_I(r))(now)(sub(n)(1)))
+                    )(INSPECT(gl)(STOP_E(r))(expr))
+                    )(R_VAL(stop))
+                )(la _.
+                    print("  (no further change)")
+                )
+            )(FIND_STOP(BRK_WATCH(gl)(expr)(old))(after)(gl))
+        )
+    )(sub(0)(1))(UNAVAIL)(steps)
+
+glyph RUN_WATCH = la expr. la steps. la src. SESSION_WATCH(expr)(steps)(PARSE_PROGRAM(src))
+
+glyph MAIN_WATCH = SEQ(SEQ(SEQ(SEQ(
+    print("--- watch: x over SRC_TWO, value changes only ---"))(
+    RUN_WATCH("x")(6)(SRC_TWO)))(
+    print("--- watch: an expression never in scope stays unavailable ---")))(
+    RUN_WATCH("nosuchvar")(3)(SRC_TWO)))(
+    print("--- watch: end ---"))
+
+# ── REVERSE STEPPING — slice 10 ──────────────────────────────────────
+#   ★ WHY THIS IS ALMOST FREE HERE AND EXPENSIVE EVERYWHERE ELSE. A real
+#   debugger stepping backwards needs record/replay: it must have STORED
+#   the history, because re-running a process does not reproduce it. This
+#   evaluator is a pure function of its input, so re-execution reproduces
+#   the identical trace, node for node and ordinal for ordinal. History
+#   therefore does not need storing — it can be RECOMPUTED. "Step back" is
+#   the same deterministic walk with a different rule about which match
+#   survives: the LAST one before where you stand, instead of the first
+#   one after it.
+glyph FIND_STOP_BACK = la brk. la before. la gl.
+    (la g.
+        IF(IS_SOME(g))(la _.
+            ST_F(SND(DEBUG_EVAL_ST(BUDGET_NONE)(REC_LAST(before))(brk)(ST_MK(0)(OPT_NONE))(0)(R_VAL(g))(NIL)(CONS("MAIN")(NIL))(gl)))
+        )(la _.
+            error("debug_eval: no glyph: MAIN")
+        )
+    )(LIST_FIND("MAIN")(gl))
+
+glyph SHOW_STOP = la label. la o.
+    IF(IS_SOME(o))(la _.
+        print(concat(label)(STOP_S(R_VAL(o))))
+    )(la _.
+        print(concat(label)("(none)"))
+    )
+
+#   Two forward steps, then one back — the back must land EXACTLY on the
+#   first, which is the round trip. And a step back from beyond the end
+#   must give the LAST qualifying node, not the first: a REC_LAST that had
+#   quietly behaved like REC_FIRST would return the same stop as the
+#   forward search, and every other assertion here would still pass.
+glyph BK_GL   = PARSE_PROGRAM(SRC_STEP)
+glyph BK_F1   = FIND_STOP(STEP_OVER(2))(sub(0)(1))(BK_GL)
+glyph BK_F2   = FIND_STOP(STEP_OVER(2))(STOP_I(R_VAL(BK_F1)))(BK_GL)
+glyph BK_B1   = FIND_STOP_BACK(STEP_OVER(2))(STOP_I(R_VAL(BK_F2)))(BK_GL)
+glyph BK_LAST = FIND_STOP_BACK(STEP_OVER(2))(99)(BK_GL)
+
+glyph MAIN_BACK = SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- back: two steps forward, one back ---"))(
+    SHOW_STOP("  fwd1 ")(BK_F1)))(
+    SHOW_STOP("  fwd2 ")(BK_F2)))(
+    SHOW_STOP("  back ")(BK_B1)))(
+    SHOW_STOP("  last ")(BK_LAST)))(
+    print("--- back: end ---"))
+
+# ── THE MATERIALISED TAPE — slice 11 ─────────────────────────────────
+#   ★ THE COST SLICE 10 MADE UNAVOIDABLE. Recomputing history instead of
+#   storing it is what made reverse stepping nearly free — but every search,
+#   forward or backward, re-runs the WHOLE program, so an n-step session is
+#   n full re-executions, and a watchpoint re-runs it once per change while
+#   evaluating its expression at every node of every run. Correct, and
+#   quadratic.
+#
+#   The tape is the other half of that trade: walk once, keep every visit,
+#   and answer afterwards from the record. Recomputation stays the
+#   DEFINITION — it needs no storage and cannot go stale — while the tape is
+#   an optimisation that must AGREE with it. Which is exactly why the gate
+#   asserts agreement between the two rather than testing the tape alone: an
+#   optimisation checked only against itself is not checked.
+glyph REC_ALL = la fired. la i. la d. la ast. la env. la stk. la old.
+    CONS(STOP_REC(i)(d)(ast)(env)(stk))(old)
+
+glyph REV = Z(la self. la l. la acc.
+    IF(ENV_MORE(l))(la _.
+        self(ENV_TAIL(l))(CONS(ENV_HEAD(l))(acc))
+    )(la _.
+        acc
+    ))
+
+glyph TAPE = la gl.
+    (la g.
+        IF(IS_SOME(g))(la _.
+            REV(ST_F(SND(DEBUG_EVAL_ST(BUDGET_NONE)(REC_ALL)(BRK_NONE)(ST_MK(0)(NIL))(0)(R_VAL(g))(NIL)(CONS("MAIN")(NIL))(gl))))(NIL)
+        )(la _.
+            error("debug_eval: no glyph: MAIN")
+        )
+    )(LIST_FIND("MAIN")(gl))
+
+#   The same two searches, over the record instead of the run. A tape entry
+#   carries (d, ast, env, stk), so the SAME predicate applies unchanged —
+#   no second predicate language, nothing to keep in step.
+glyph TAPE_FIND = la brk. la after. Z(la self. la t.
+    IF(ENV_MORE(t))(la _.
+        (la r.
+            IF(lt(after)(STOP_I(r)))(la _.
+                IF(brk(STOP_D(r))(STOP_A(r))(STOP_E(r))(STOP_K(r)))(la _.
+                    OPT_SOME(r)
+                )(la _. self(ENV_TAIL(t)))
+            )(la _. self(ENV_TAIL(t)))
+        )(ENV_HEAD(t))
+    )(la _. OPT_NONE))
+
+glyph TAPE_FIND_BACK = la brk. la before. la t.
+    Z(la self. la l. la best.
+        IF(ENV_MORE(l))(la _.
+            (la r.
+                IF(lt(STOP_I(r))(before))(la _.
+                    IF(brk(STOP_D(r))(STOP_A(r))(STOP_E(r))(STOP_K(r)))(la _.
+                        self(ENV_TAIL(l))(OPT_SOME(r))
+                    )(la _. self(ENV_TAIL(l))(best))
+                )(la _. self(ENV_TAIL(l))(best))
+            )(ENV_HEAD(l))
+        )(la _. best)
+    )(t)(OPT_NONE)
+
+glyph SAME_STOP = la a. la b.
+    IF(IS_SOME(a))(la _.
+        IF(IS_SOME(b))(la _.
+            IF(str_eq(STOP_S(R_VAL(a)))(STOP_S(R_VAL(b))))(la _. "SAME")(la _. "DIFFER")
+        )(la _. "DIFFER")
+    )(la _.
+        IF(IS_SOME(b))(la _. "DIFFER")(la _. "SAME")
+    )
+
+glyph TP = TAPE(BK_GL)
+
+#   ★ "SAME" ALONE HAS A VACUITY HOLE: SAME_STOP reports SAME when BOTH
+#   sides are empty, so two searches that each found nothing would agree
+#   perfectly. The tape's own stop is therefore printed beside the verdict,
+#   and the gate asserts the VALUE as well as the agreement — the same
+#   reason check 3 counts breakpoints rather than trusting that they fired.
+glyph SHOW_OPT = la o.
+    IF(IS_SOME(o))(la _. STOP_S(R_VAL(o)))(la _. "(none)")
+
+glyph TP_F1 = TAPE_FIND(STEP_OVER(2))(sub(0)(1))(TP)
+glyph TP_F2 = TAPE_FIND(STEP_OVER(2))(STOP_I(R_VAL(BK_F1)))(TP)
+glyph TP_BK = TAPE_FIND_BACK(STEP_OVER(2))(99)(TP)
+
+glyph MAIN_TAPE = SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- tape: recompute vs materialised ---"))(
+    print(concat(concat("  fwd1 ")(SAME_STOP(BK_F1)(TP_F1)))(concat("  ")(SHOW_OPT(TP_F1))))))(
+    print(concat(concat("  fwd2 ")(SAME_STOP(BK_F2)(TP_F2)))(concat("  ")(SHOW_OPT(TP_F2))))))(
+    print(concat(concat("  back ")(SAME_STOP(BK_LAST)(TP_BK)))(concat("  ")(SHOW_OPT(TP_BK))))))(
+    print(concat("  nodes on tape ")(int_to_str(STK_LEN(TP))))))(
+    print("--- tape: end ---"))
+
+#   Tracing under a budget, and the agreement check run through it. The
+#   ★ invariant slice 1 established — observing must not change the answer —
+#   has to survive being BOUNDED as well: a truncated trace is still an
+#   observation, and if stopping the trace early changed the result then the
+#   emitter would be doing more than emitting.
+glyph DEBUG_RUN_BUD = la bud. la name. la gl.
+    (la found.
+        IF(IS_SOME(found))(la _.
+            FST(DEBUG_EVAL_ST(bud)(REC_FIRST(sub(0)(1)))(BRK_NONE)(ST_MK(0)(OPT_NONE))(0)(R_VAL(found))(NIL)(CONS(name)(NIL))(gl))
+        )(la _.
+            error(concat("debug_eval: no glyph: ")(name))
+        )
+    )(LIST_FIND(name)(gl))
+
+glyph AGREES_BUD = la bud. la src.
+    (la gl.
+        (la traced.
+            (la plain.
+                IF(str_eq(SHOW_VAL(traced))(SHOW_VAL(plain)))(la _.
+                    concat("AGREE ")(SHOW_VAL(plain))
+                )(la _.
+                    concat(concat("DIVERGED traced=")(SHOW_VAL(traced)))(concat(" plain=")(SHOW_VAL(plain)))
+                )
+            )(RUN(gl))
+        )(DEBUG_RUN_BUD(bud)("MAIN")(gl))
+    )(PARSE_PROGRAM(src))
+
+glyph MAIN_BUDGET = SEQ(SEQ(SEQ(SEQ(SEQ(
+    print("--- budget: 4 nodes, truncation must be ANNOUNCED ---"))(
+    print(AGREES_BUD(4)(SRC_STEP))))(
+    print("--- budget: 1000 nodes, no truncation expected ---")))(
+    print(AGREES_BUD(1000)(SRC_STEP))))(
+    print("--- budget: end ---")))(
+    print(""))
+
+# ── THE DEBUGGER WATCHING AN EVALUATOR — slice 13 ────────────────────
+#   This file's header claims it is "the evaluator watching itself", and
+#   CLAUDE.md's Debugging Principle asks for Meta-Debug(Meta-Debug) =
+#   Debug. Until slice 12 that could not even be attempted: the trace was
+#   unbounded, so pointing the debugger at anything evaluator-sized
+#   produced output nobody could read.
+#
+#   ★ AND THE LITERAL VERSION IS MEASURED, NOT ASSUMED, TO BE TOO
+#   EXPENSIVE TO GATE. Tracing eval.la's own RUN over a two-glyph program
+#   runs past 150 SECONDS on the host before the host==VM half doubles it.
+#   The budget bounds what is EMITTED, not what is EXECUTED, so the whole
+#   meta-evaluation still happens. That measurement is why the literal
+#   self-application lives in debug_meta.la, run by hand, exactly as this
+#   project already treats its expensive capstones (the theourgia *_live
+#   renderers, sigil_live) — and why what is GATED is the affordable core.
+#
+#   SRC_MINI is an evaluator in its own right, not a stand-in for one: a
+#   Scott-encoded expression language (LIT / ADD), a fixed point built
+#   with its OWN Z, and a recursive evaluator that dispatches on the term.
+#   Tracing it shows an evaluator being constructed and then running —
+#   the knot tied (clo:f -> clo:self -> clo:t) and a term selecting its
+#   handler (clo:l) — which is the thing being claimed, one honest level
+#   below the literal self-application.
+glyph SRC_MINI = "glyph MZ = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))\nglyph LIT = la n. la l. la a. l(n)\nglyph ADD = la x. la y. la l. la a. a(x)(y)\nglyph EV = MZ(la self. la t. t(la n. n)(la x. la y. add(self(x))(self(y))))\nglyph MAIN = int_to_str(EV(ADD(LIT(2))(ADD(LIT(3))(LIT(4)))))"
+
+glyph MAIN_META = SEQ(SEQ(
+    print("--- meta: the debugger tracing an evaluator ---"))(
+    print(AGREES_BUD(24)(SRC_MINI))))(
+    print("--- meta: end ---"))
+
+# ── DISPATCH COVERAGE — slice 14 ─────────────────────────────────────
+#   ★ THE DEFENCE THIS FILE RESTS ON IS A SAMPLE, AND NOTHING SAID SO.
+#   The header's whole argument is that a reproduced evaluator can DRIFT
+#   from the one it traces, and the answer is that DEBUG_EVAL and EVAL
+#   AGREE on every program tested. But 23 programs is a SAMPLE of the
+#   dispatch, not a cover of it: a branch no test program reaches could
+#   drift arbitrarily and all 23 would still agree. "We test 23 programs"
+#   and "those programs exercise every branch" are different claims, and
+#   only the first was ever established.
+#
+#   The tape makes the second one measurable — it holds every visited
+#   node, so the set of AST kinds it contains IS the set of dispatch
+#   branches that ran.
+glyph KIND_HAS = la s. la k. IF(STK_HAS(k)(s))(la _. "y")(la _. "n")
+
+glyph KIND_SET = la tape.
+    Z(la self. la t. la acc.
+        IF(ENV_MORE(t))(la _.
+            (la k.
+                IF(STK_HAS(k)(acc))(la _.
+                    self(ENV_TAIL(t))(acc)
+                )(la _.
+                    self(ENV_TAIL(t))(CONS(k)(acc))
+                )
+            )(AST_KIND(STOP_A(ENV_HEAD(t))))
+        )(la _. acc)
+    )(tape)(NIL)
+
+#   Rendered by MEMBERSHIP rather than by listing, so the answer does not
+#   depend on traversal order and reads the same way for every program.
+glyph SHOW_KINDS = la s.
+    concat(concat("VAR")(KIND_HAS(s)("VAR")))(
+    concat(concat(" LAM")(KIND_HAS(s)("LAM")))(
+    concat(concat(" APP")(KIND_HAS(s)("APP")))(
+    concat(" STR")(KIND_HAS(s)("STR")))))
+
+glyph COVER_OF = la src. SHOW_KINDS(KIND_SET(TAPE(PARSE_PROGRAM(src))))
+
+#   ★ THE SECOND LINE IS THE DISCRIMINATOR AND IS NOT DECORATION. A
+#   coverage measure that answered "all four" for everything would satisfy
+#   the first line and mean nothing. SRC_STR is a single string literal —
+#   one branch, three untouched — so it must report three n's. Without it,
+#   an always-yes measure passes.
+glyph MAIN_COVER = SEQ(SEQ(SEQ(
+    print("--- cover: which dispatch branches the suite actually runs ---"))(
+    print(concat("  SRC_STEP  ")(COVER_OF(SRC_STEP)))))(
+    print(concat("  SRC_STR   ")(COVER_OF(SRC_STR)))))(
+    print("--- cover: end ---"))
+
+glyph MAIN = SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(MAIN_TRACE)(MAIN_BREAK))(MAIN_STACK))(MAIN_COND))(MAIN_STEP))(MAIN_DRIVE))(MAIN_ASK))(MAIN_MERGED))(MAIN_WATCH))(MAIN_BACK))(MAIN_TAPE))(MAIN_BUDGET))(MAIN_META))(MAIN_COVER)

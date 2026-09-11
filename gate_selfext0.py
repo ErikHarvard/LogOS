@@ -58,6 +58,20 @@ def exec_refs(arts, src_of):
         if name in ORGANS:           # an organ naming its own output is not execution
             continue
         for i, line in enumerate(s.split('\n'), 1):
+            # ★ COMMENTS ARE NOT EXECUTION. build.sh:73 is a prose line naming
+            # `organ.la` and `logos_program.bin` in one sentence about the cleanin
+            # gate's scope. The word-boundary test passes and `logos_program` is an
+            # EXEC_MARKER, so the scan reported organ.la as newly ON an execution
+            # path -- while nothing compiles, imports, bundles or execs it. Both
+            # FAILs were one false positive seen from two sides: organ.la appearing
+            # to JOIN the exec set and therefore to LEAVE the read-only set.
+            # Re-pinning on that would have written a false state into the ledger
+            # and spent this tripwire on a comment, so that the real event -- when
+            # an adopted artifact genuinely becomes runnable -- would arrive with
+            # the alarm already disarmed. Same root as the substring bug above:
+            # the matcher was reading the wrong surface.
+            if line.lstrip().startswith('#'):
+                continue
             for a in arts:
                 # ★ WORD-BOUNDARY, NOT SUBSTRING. `selfopt.la` CONTAINS `opt.la`,
                 # so a substring test reported the organ's own gate as an

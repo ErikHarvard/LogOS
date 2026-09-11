@@ -1,0 +1,45 @@
+# ═════════════════════════════════════════════════════════════════════
+#  debug_meta.la — the literal self-application, run BY HAND.
+#
+#  ── WHY THIS IS NOT IN THE GATE, and the number that decided it ─────
+#  CLAUDE.md's Debugging Principle asks for Meta-Debug(Meta-Debug) =
+#  Debug, and debug_eval.la's header claims it is "the evaluator watching
+#  itself". This file is that claim taken literally: DEBUG_EVAL tracing
+#  eval.la's own RUN as it evaluates a program.
+#
+#  It is not gated because it was MEASURED, not guessed: past 150 seconds
+#  on the host, before the host==VM half doubles it. Slice 12's budget
+#  bounds what is EMITTED, not what is EXECUTED — the whole meta-
+#  evaluation still runs, so a budget cannot make this cheap. That is a
+#  property of the thing, not a defect in it.
+#
+#  The gated check (debug 14) traces a small evaluator instead — an
+#  honest level below this one, affordable at ~11s, asserting the same
+#  shape: a fixed point built, a term dispatched, the answer unchanged.
+#
+#  ── RUN IT ──────────────────────────────────────────────────────────
+#      ./tiny_host debug_meta.la
+#  Expect minutes, and a trace bounded to the budget below. Raise the
+#  budget to see more; the run time does not change with it.
+#
+#  This follows the project's existing precedent for expensive capstones
+#  (theourgia_*_live.la, sigil_live.la): the gate verifies the affordable
+#  core, the capstone is run by hand and documented.
+# ═════════════════════════════════════════════════════════════════════
+
+#   Imports the DEBUGGER, not a copy of it. Slice 13 gave debug_eval.la an
+#   export list for exactly this: a capstone that duplicated the machinery
+#   would be testing its own copy, which is the drift hazard that whole file
+#   exists to watch.
+import("debug_eval.la")
+
+#   The object program IS an evaluator: it imports eval.la and calls RUN
+#   on a program it parses at run time. Tracing it therefore traces the
+#   self-hosted parser AND the self-hosted evaluator, which is what makes
+#   it expensive and also what makes it the literal claim.
+glyph SRC_SELF = "import(\"eval.la\")\nglyph MAIN = RUN_GLYPH(\"X\")(PARSE_PROGRAM(\"glyph X = concat(\\\"a\\\")(\\\"b\\\")\"))"
+
+glyph MAIN = SEQ(SEQ(
+    print("--- meta capstone: DEBUG_EVAL tracing eval.la's own evaluator ---"))(
+    print(AGREES_BUD(40)(SRC_SELF))))(
+    print("--- meta capstone: end (agreement above is the assertion) ---"))

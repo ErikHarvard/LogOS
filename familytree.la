@@ -39,7 +39,8 @@
 #  threshold is therefore ARBITRARY and needs no grounding.
 # ═══════════════════════════════════════════════════════════════════
 
-import("metaglyph.la")     # CANON + the κ-node constructors
+import("canon.la")         # M11a: the self-relations FROM SOURCE — KAPPA REVAL SR_*
+import("metaglyph.la")     # CANON + the κ-node constructors + MODE_* + OP_RECOG
 
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")
@@ -67,27 +68,37 @@ glyph CONT = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
 glyph MC   = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
 
 # ── THE REAL CATALOGUE (canon.la's self-relations + metaglyph's modes) ────
-# Transcribed: canon.la has no export line, so its glyphs cannot be imported —
-# the same re-inlining metalogic_spec and sigil/denote already do.
+# ★ M11a, 2026-09-08: IMPORTED, no longer transcribed. The old note here read
+# "canon.la has no export line, so its glyphs cannot be imported" — true when
+# written, FALSE at HEAD: canon.la:100 exports 49 names including all ten
+# self-relations, and import("canon.la") resolves them. Sixteen of the seventeen
+# entries are now the SOURCE GLYPHS rather than a hand copy of their bodies, so
+# the catalogue cannot drift from what it catalogues. NU_STAR is the seventeenth
+# and stays constructed here because metaglyph.la does not export it — named,
+# not hidden. Output is pinned unchanged by this refactor.
 glyph CAT =
-  CONS(PAIR("KAPPA")(DIR(PRIM("RECOGNITION"))(PRIM("FORM"))))(
-  CONS(PAIR("REVAL")(DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))))(
-  CONS(PAIR("SR_TO")(MC(PRIM("DEPTH"))))(
-  CONS(PAIR("SR_ABOUT")(MC(PRIM("RECOGNITION"))))(
-  CONS(PAIR("SR_AS")(MC(PRIM("FORM"))))(
-  CONS(PAIR("SR_BY")(MC(PRIM("BECOMING"))))(
-  CONS(PAIR("SR_FROM")(MC(PRIM("VOID"))))(
-  CONS(PAIR("SR_THROUGH")(MC(PRIM("RELATION"))))(
-  CONS(PAIR("SR_FOR")(MC(PRIM("LOVE"))))(
-  CONS(PAIR("SR_WITH")(CON(PRIM("SELF"))(PRIM("SELF"))))(
-  CONS(PAIR("MODE_SYN")(DIR(PRIM("LOVE"))(PRIM("RELATION"))))(
-  CONS(PAIR("MODE_CON")(CONT(PRIM("RELATION"))(PRIM("FORM"))))(
-  CONS(PAIR("MODE_DIR")(SYN(PRIM("BECOMING"))(PRIM("RELATION"))))(
-  CONS(PAIR("MODE_CONT")(DIR(PRIM("DEPTH"))(PRIM("FORM"))))(
-  CONS(PAIR("MODE_MC")(MC(PRIM("SELF"))))(
-  CONS(PAIR("OP_RHO")(MC(PRIM("RECOGNITION"))))(
+  CONS(PAIR("KAPPA")(KAPPA))(
+  CONS(PAIR("REVAL")(REVAL))(
+  CONS(PAIR("SR_TO")(SR_TO))(
+  CONS(PAIR("SR_ABOUT")(SR_ABOUT))(
+  CONS(PAIR("SR_AS")(SR_AS))(
+  CONS(PAIR("SR_BY")(SR_BY))(
+  CONS(PAIR("SR_FROM")(SR_FROM))(
+  CONS(PAIR("SR_THROUGH")(SR_THROUGH))(
+  CONS(PAIR("SR_FOR")(SR_FOR))(
+  CONS(PAIR("SR_WITH")(SR_WITH))(
+  CONS(PAIR("MODE_SYN")(MODE_SYN))(
+  CONS(PAIR("MODE_CON")(MODE_CON))(
+  CONS(PAIR("MODE_DIR")(MODE_DIR))(
+  CONS(PAIR("MODE_CONT")(MODE_CONT))(
+  CONS(PAIR("MODE_MC")(MODE_MC))(
+  CONS(PAIR("OP_RHO")(OP_RECOG))(
+  CONS(PAIR("OP_DIFF")(OP_DIFF))(
+  CONS(PAIR("OP_BOUND")(OP_BOUND))(
+  CONS(PAIR("OP_COMP")(OP_COMP))(
+  CONS(PAIR("OP_INTEG")(OP_INTEG))(
   CONS(PAIR("NU_STAR")(SYN(DIR(PRIM("LOVE"))(PRIM("RELATION")))(MC(PRIM("SELF")))))(
-  NIL)))))))))))))))))
+  NIL)))))))))))))))))))))
 
 # ── the nine primitives ──
 glyph IS9 = la n.
@@ -134,6 +145,19 @@ glyph NUNARY = LEN(UNARIES)
 # ONCE — which is the identity showing up as data rather than as an argument.
 glyph G2OK = BSTR(int_eq(NUNARY)(8))
 
+# ── G3 — OPERATOR COVERAGE (M11a-residue): all five Theory operators ∂δγρ𝔄 are IN
+#    the catalogue, looked up BY CANONICAL FORM, never by name — so ρ is found via
+#    SR_ABOUT/OP_RHO, the ρ ≡ SR_ABOUT identity showing up as COVERAGE as G2 makes
+#    it show up as a COUNT. Per-operator witness so a RED path NAMES which one left.
+glyph INCAT = la g. Z(la self. la l.
+    l(FALSE)(la h. la t.
+      IF(str_eq(CANON(SND(h)))(CANON(g)))(la _. TRUE)(la _. self(t))))(CAT)
+glyph G3 = concat(BSTR(INCAT(OP_DIFF)))(
+           concat(BSTR(INCAT(OP_BOUND)))(
+           concat(BSTR(INCAT(OP_COMP)))(
+           concat(BSTR(INCAT(OP_RECOG)))(
+                  BSTR(INCAT(OP_INTEG))))))
+
 # ── R1 — DEPTH REPORT. NOT A GATE. Never fails the build. ──
 glyph DEPTHOF = Z(la self. la node.
     node (la nm. 0)
@@ -149,7 +173,8 @@ glyph MAIN = print(
     concat(" | G1 grounding (every leaf one of the nine):")(concat(G1OK)(
     concat(IF(str_eq(G1)(""))(la _. "")(la _. concat(" OFFENDER=")(G1)))(
     concat(" | G2 distinct ↻ forms=")(concat(int_to_str(NUNARY))(concat(" expected 8:")(concat(G2OK)(
+    concat(" | G3 ops ∂δγρ𝔄 in catalogue=")(concat(G3)(
     concat(" | R1 max lineage depth=")(concat(int_to_str(MAXD))(
     concat(" (REPORT ONLY — never fails the build)")(
     concat("\n>2-parent check DELIBERATELY NOT BUILT: unconstructible by the Scott encoding")(
-           " — the dyadic law is enforced by the DATA TYPE, which is stronger than a gate"))))))))))))))
+           " — the dyadic law is enforced by the DATA TYPE, which is stronger than a gate"))))))))))))))))

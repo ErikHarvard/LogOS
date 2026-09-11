@@ -41,15 +41,29 @@
 #  add(2,3) = 5 yet add(2,3) ≢ 5; TRIBAR ⟹ YIELDS but YIELDS ⇏ TRIBAR.
 #
 #  ── κ MACHINERY IS INLINED, NOT IMPORTED ───────────────────────────────
-#  canon.la has no `export` line and nothing import()s it; modules that walk
-#  κ-nodes (sigil, denote, metaglyph) each re-inline the constructors. This
-#  follows suit — the node constructors, CANON, MONO/REN/ETYM and AUTO_OK are
-#  inlined verbatim from canon_spec.la — which also sidesteps the codegen /
-#  mangling risk entirely.
+#  The node constructors, CANON, MONO/REN/ETYM and AUTO_OK are inlined verbatim
+#  from canon_spec.la. ★ THE REASON IS THE CODEGEN / MANGLING RISK — that this
+#  is a SPEC, whose text is re-emitted by GENERATE and re-parsed by DEPLOY, so
+#  an import here has to survive a round trip the ordinary modules never take.
+#
+#  ⚠ CORRECTED 2026-09-09 (M67). An earlier note gave a SECOND reason that no
+#  longer holds and has been retired rather than restated: canon.la is in fact
+#  importable and is in fact imported. It carries an export line at canon.la:100
+#  naming 49 glyphs (CANON, NORMK and SR_ABOUT among them), and four modules
+#  import it today — prop.la, specpipe.la, metaprop.la, obscurantism.la — with
+#  metaglyph.la joining them as of M67. So the inlining here stands on the
+#  round-trip risk ALONE, which is a narrower claim than the one it replaced.
+#  Anyone collapsing these copies under roadmap item 0 should know the old
+#  justification is gone and only the codegen one is left to answer.
 #
 #  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY writes
 #  metalogic.la, type-checks the generated source, and META_DEBUG verifies every
 #  glyph; the module is accepted only if all pass.
+#  ⚠ (E15, rulings/E15.md) META_DEBUG runs each glyph's tests against the VALUE
+#  in this file, never the SRC_* string DEPLOY writes, and a broken SRC_NOT still
+#  reports VERIFIED. The DEPLOYED connectives are executed, on every row, against
+#  law-derived tables, by gate_metalogic_deployed.sh — build.sh runs it right
+#  after this spec.
 # ═══════════════════════════════════════════════════════════════════════
 
 import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + PAIR/FST/SND/CONS/NIL/Z/IF/TRUE/FALSE/AND/...

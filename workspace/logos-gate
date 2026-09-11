@@ -1,0 +1,64 @@
+#!/bin/bash
+# logos-gate — run a gate serialized across every track.
+#
+# WHY
+# 37 gate scripts launch QEMU and 30 wrap it in a timeout under 60s
+# (22 x `timeout 30`, 5 x `timeout 20`, 3 x `timeout 40`). Nothing in the
+# repo serializes them -- `flock` appears zero times. Two tracks reaching
+# QEMU at the same moment contend for CPU inside a fixed 30s budget, and
+# the gate reports FAIL for a reason that has nothing to do with the code.
+# A red gate that means "the machine was busy" is worse than a crash: it
+# looks exactly like a real defect and costs an hour to disprove.
+#
+# WHERE THE LOCK GOES, AND WHY IT MATTERS
+# The lock wraps the WHOLE GATE, outside the timeout. Locking inside would
+# be worse than nothing: `timeout 30 qemu ...` starts its clock first, so a
+# gate that waited 25s for the lock would have 5s left and fail -- the lock
+# itself would manufacture the false red it exists to prevent.
+#
+# The lock file lives in $HOME, not /tmp. Each logos-agent runs with a
+# private tmpfs on /tmp, so a lock there is invisible to every other track.
+#
+# USAGE
+#   ~/logos-gate ./gate_link.sh            # serialized
+#   ~/logos-gate --wait 1800 ./build.sh    # custom max wait (default 3600s)
+#   ~/logos-gate --status                  # who holds it, if anyone
+
+LOCK="$HOME/.logos/gate.lock"
+mkdir -p "$(dirname "$LOCK")"
+WAIT=3600
+
+case "${1:-}" in
+    --status)
+        if flock -n 9 9>"$LOCK" 2>/dev/null; then
+            echo "gate lock: FREE"
+        else
+            echo "gate lock: HELD"
+            [ -f "$LOCK.owner" ] && echo "  by: $(cat "$LOCK.owner")"
+        fi
+        exit 0 ;;
+    --wait) WAIT="$2"; shift 2 ;;
+esac
+
+[ $# -ge 1 ] || { echo "usage: logos-gate [--wait SECS] <command...>" >&2; exit 2; }
+
+start=$(date +%s)
+exec 9>"$LOCK"
+if ! flock -w "$WAIT" 9; then
+    echo "logos-gate: could not acquire the gate lock within ${WAIT}s." >&2
+    echo "  Another track is running a timing-sensitive gate. NOT running" >&2
+    echo "  yours -- a contended run would report a red that means nothing." >&2
+    [ -f "$LOCK.owner" ] && echo "  holder: $(cat "$LOCK.owner")" >&2
+    exit 75          # EX_TEMPFAIL: retry later, not a gate failure
+fi
+
+waited=$(( $(date +%s) - start ))
+[ "$waited" -gt 2 ] && echo "logos-gate: waited ${waited}s for the lock." >&2
+printf '%s pid=%s wt=%s cmd=%s\n' "$(date +%H:%M:%S)" "$$" \
+    "${LOGOS_AGENT_WT:-<no-worktree>}" "$*" > "$LOCK.owner"
+trap 'rm -f "$LOCK.owner"' EXIT
+
+# LOGOS_GATE_LOCKED tells the qemu shim the lock is already held, so it
+# does not try to take it again.
+export LOGOS_GATE_LOCKED=1
+"$@"

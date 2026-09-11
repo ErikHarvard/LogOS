@@ -140,7 +140,7 @@ glyph STEPS =
   CONS(STEP("acoustic oracle — formants measured")("./tiny_host")("goertzel.la")("formants>50x-control: 3/3"))(
   CONS(STEP("meta-alphabet — the evaluator is a glyph")("./tiny_host")("metaglyph.la")("𝓡(𝓡) ≡ 𝓡 ? YES"))(
   CONS(STEP("denotational semantics (compositional)")("./tiny_host")("denote.la")("↻(BEING)≡SELF-denotationally:T"))(
-  CONS(STEP("monosemy — no polysemy")("./tiny_host")("monosemy_test.la")("distinct? YES (no polysemy)"))(
+  CONS(STEP("monosemy — no polysemy")("./tiny_host")(MONO_IN)("distinct? YES (no polysemy)"))(
   CONS(STEP("ONF graph features (automorphism)")("./tiny_host")("onf.la")("0/1/0/1/Y/SELF,SELF,"))(
   CONS(STEP("Cycle of Being — 3 beats observed")("./tiny_host")("cob.la")("[3 leaves survive+injective]: YES"))(
   CONS(STEP("archroot — the chain does NOT generate the nine")("./tiny_host")("archroot.la")("The chain does NOT generate the nine."))(
@@ -173,7 +173,10 @@ glyph STEPS =
   CONS(STEP("prop — DNE fails ontologically, holds operationally")("./tiny_host")("prop.la")("dne-fails-ontologically OK"))(
   CONS(STEP("metaprop — the meta-level collapses, not ascends")("./tiny_host")("metaprop.la")("MID=FT-inert-not-distinct OK"))(
   CONS(STEP("ladder — the Semiotic-Ontoglyphic Ladder")("./tiny_host")("ladder.la")("LADDER VERDICT ? YES"))(
-  CONS(STEP("familytree — the derived catalogue is grounded")("./tiny_host")("familytree.la")("FAMILYTREE catalogue=17"))(
+  #  catalogue=21 is DERIVED, not captured: familytree.la prints int_to_str(LEN(CAT)), and CAT is
+  #  17 rows plus the four Theory operators OP_DIFF/OP_BOUND/OP_COMP/OP_INTEG, added by M11a-residue
+  #  (1f9429b). That commit moved familytree and build.sh's pin to 21, and left this marker at 17.
+  CONS(STEP("familytree — the derived catalogue is grounded")("./tiny_host")("familytree.la")("FAMILYTREE catalogue=21 "))(
   NIL))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 # ── a GUARD step: the build's THIRD kind of gate — the EXIT CODE ────────────
@@ -315,7 +318,7 @@ glyph XMARK = la s. s(la a. la b. la c. c)
 glyph XSTEPS =
   CONS(XSTEP("meta-alphabet 𝓜")("metaglyph.la")("𝓡(𝓡) ≡ 𝓡 ? YES"))(
   CONS(XSTEP("denotational semantics")("denote.la")("↻(BEING)≡SELF-denotationally:T"))(
-  CONS(XSTEP("monosemy — no polysemy")("monosemy_test.la")("distinct? YES (no polysemy)"))(
+  CONS(XSTEP("monosemy — no polysemy")(MONO_IN)("distinct? YES (no polysemy)"))(
   CONS(XSTEP("evdev decode (signed)")("theourgia_input.la")("rel x: type=2 code=0 value=-3"))(
   NIL))))
 
@@ -513,8 +516,24 @@ glyph RUN1 = la s.
 glyph ALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la r. AND(r)(self(t)))(RUN1(h))))
 
+# ── MONO_IN: the monosemy audit's input, staged the way build.sh stages it ──
+#  monosemy_test.la is REPORT-ONLY. Since 8ef8860 (07-20, "derive κ from
+#  canon.la, not a copy") it carries no κ of its own and calls canon.la's
+#  constructors, so build.sh runs it as `cat canon.la monosemy_test.la >
+#  mono_combined.la` (build.sh:6411). Both monosemy steps here are older
+#  (1a1c3ff, c7e1afd) and kept running the file BARE, which halts
+#  `eval error: unbound variable 'CON'` — so neither step could pass.
+#  ★ track-d's gate_buildla passed all 91 steps on 08-19 (c3ca4ea) because that
+#  branch's monosemy_test.la still defined CON (9354f37d05). The κ-less copy
+#  reached track-d later, and the unchanged step went red under it: a step can
+#  break without being touched, when its INPUT changes shape on another branch.
+#  COREFIX writes this file. MAIN runs GENALL(COREFIX) before ALL(STEPS), and
+#  ALL(STEPS) before XALL(XSTEPS), so both steps read it.
+glyph MONO_IN = "/tmp/buildla_mono_combined.la"
+
 # ── language-core fixtures: the .la programs (and two data files) that the
-#    first nine marker steps run. A fixture is (path, content); FIX(GEN) writes
+#    first nine marker steps run, plus the monosemy steps' input (MONO_IN,
+#    above). A fixture is (path, content); FIX(GEN) writes
 #    it. GENALL folds the list, forcing each write for effect (like ALL forces
 #    RUN1) before the marker steps read the files back. \n is a real newline in
 #    an .la string literal, exactly as the guard fixtures rely on.
@@ -531,7 +550,8 @@ glyph COREFIX =
   CONS(FIX("/tmp/buildla_core_wf.la")("glyph MAIN = print(write_file(\"/tmp/buildla_wf_output.txt\")(\"written by LogOS\"))\n"))(
   CONS(FIX("/tmp/buildla_rt_src.txt")("round trip data"))(
   CONS(FIX("/tmp/buildla_core_rt.la")("glyph SEQ = la a. la b. b\nglyph MAIN = SEQ(write_file(\"/tmp/buildla_rt_dst.txt\")(read_file(\"/tmp/buildla_rt_src.txt\")))(print(read_file(\"/tmp/buildla_rt_dst.txt\")))\n"))(
-  NIL)))))))))))
+  CONS(FIX(MONO_IN)(concat(read_file("canon.la"))(read_file("monosemy_test.la"))))(
+  NIL))))))))))))
 
 glyph GENALL = Z(la self. la l.
   l(TRUE)(la h. la t. (la _. self(t))(h(GEN))))

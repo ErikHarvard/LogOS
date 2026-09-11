@@ -1,0 +1,52 @@
+#!/bin/bash
+# timeout shim — the gate lock's real enforcement point.
+#
+# WHY HERE AND NOT IN THE QEMU SHIM
+# The 36 QEMU gate sites all look like `timeout 30 qemu-system-x86_64 ...`.
+# `timeout` is what starts the clock, so acquiring the lock in the QEMU shim
+# would be too late: the countdown is already running and waiting for the
+# lock would spend the gate's own budget, turning contention into a FAIL that
+# has nothing to do with the code. Acquiring it HERE -- before the real
+# timeout is exec'd -- means a track can wait as long as it needs and still
+# get its full 30 seconds once it starts.
+#
+# ONLY QEMU IS SERIALIZED. `timeout` also wraps ./tiny_host 49 times and a
+# handful of other binaries; serializing those would throttle every track for
+# no benefit, since they are not the contended resource.
+
+REAL=/usr/bin/timeout
+LOCK="$HOME/.logos/gate.lock"
+MAXWAIT=900
+
+is_qemu=0
+for a in "$@"; do
+    case "${a##*/}" in qemu-system-*) is_qemu=1; break ;; esac
+done
+
+# Not a QEMU run, or the whole gate is already locked by ~/logos-gate.
+if [ "$is_qemu" -eq 0 ] || [ -n "${LOGOS_GATE_LOCKED:-}" ]; then
+    exec "$REAL" "$@"
+fi
+
+# Never let an unwritable lock path stop a gate from running.
+if ! mkdir -p "$(dirname "$LOCK")" 2>/dev/null || ! : >>"$LOCK" 2>/dev/null; then
+    exec "$REAL" "$@"
+fi
+
+exec 9>>"$LOCK"
+start=$(date +%s)
+if flock -w "$MAXWAIT" 9; then
+    waited=$(( $(date +%s) - start ))
+    if [ "$waited" -gt 2 ]; then
+        echo "logos gate lock: waited ${waited}s for another track's QEMU." >&2
+        echo "  The timeout starts NOW -- this gate gets its full budget." >&2
+    fi
+    printf '%s pid=%s wt=%s cmd=%s\n' "$(date +%H:%M:%S)" "$$" \
+        "${LOGOS_AGENT_WT:-<no-worktree>}" "$*" > "$LOCK.owner" 2>/dev/null
+    export LOGOS_GATE_LOCKED=1
+    exec "$REAL" "$@"          # fd 9 survives exec; lock held for the run
+fi
+
+echo "logos gate lock: NOT acquired after ${MAXWAIT}s -- running anyway." >&2
+echo "  A red from this gate may be contention, not a defect." >&2
+exec "$REAL" "$@"

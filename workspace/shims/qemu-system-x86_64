@@ -1,0 +1,49 @@
+#!/bin/bash
+# QEMU shim — makes unserialized gate runs VISIBLE. It never blocks.
+#
+# `logos-gate` is the correct way to run a timing-sensitive gate, but a
+# gate invoked directly (an agent that forgets, a script that calls another
+# script) would silently contend with another track. This shim cannot fix
+# that safely -- blocking here would eat the caller's `timeout 30` budget
+# and produce the very false red the lock exists to prevent -- so instead
+# it makes the condition impossible to miss in the gate's own output.
+#
+#   lock already held by logos-gate  -> run, silent (the normal path)
+#   lock free                        -> take it, run serialized, silent
+#   lock held by another track       -> run ANYWAY, with a loud warning
+#
+# The warning is the point. A red gate whose output carries this line is
+# diagnosable in one second instead of an hour.
+
+REAL=/usr/bin/qemu-system-x86_64
+LOCK="$HOME/.logos/gate.lock"
+
+[ -x "$REAL" ] || { echo "qemu shim: $REAL missing" >&2; exit 127; }
+
+if [ -n "${LOGOS_GATE_LOCKED:-}" ]; then
+    exec "$REAL" "$@"
+fi
+
+# NOTE: never put `2>/dev/null` on a bare `exec` redirection -- with no
+# command, exec applies it to the REST OF THE SCRIPT, which silently
+# discarded the warning below. Probe writability separately instead.
+if ! mkdir -p "$(dirname "$LOCK")" 2>/dev/null || ! : >>"$LOCK" 2>/dev/null; then
+    exec "$REAL" "$@"                    # cannot lock: never block qemu
+fi
+exec 9>>"$LOCK"
+if flock -n 9; then
+    exec "$REAL" "$@"                    # got it: serialized, quiet
+fi
+
+cat >&2 <<'WARN'
+
+  ================================================================
+  UNSERIALIZED QEMU RUN — another track holds the gate lock.
+  This gate is competing for CPU with another track's QEMU right
+  now. If it reports FAIL, suspect contention BEFORE suspecting
+  the code: re-run it under  ~/logos-gate <gate.sh>  and compare.
+  A red produced here is not yet evidence of a defect.
+  ================================================================
+
+WARN
+exec "$REAL" "$@"

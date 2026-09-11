@@ -1,0 +1,282 @@
+# =====================================================================
+#  coin.la — THE COINAGE ORGAN, and the cost the ⊗ correction imposed on
+#  Theorem gen-complete.
+#
+#  The lexicon is supposed to be UNBOUNDED: "new concepts are coined by new
+#  combinations, not by arbitrary stipulation" (:5429). Every table in the
+#  codex is a finished list; nothing in the running system took a concept
+#  and PRODUCED a glyph for it. Coinage was a property the language was
+#  said to have, and no code path performed it.
+#
+#  ── WHAT COINAGE IS, AND WHAT IT MUST NOT BE ────────────────────────
+#  COIN takes a mode and two existing glyphs and returns a new one whose
+#  Ren IS its etymology. Three things must hold or it is stipulation
+#  wearing coinage's name:
+#    (1) DETERMINISM  — the same input always yields the same glyph.
+#    (2) RECOVERABILITY — the constituents and the mode are readable back
+#        out of the result, so the coined glyph carries its own derivation.
+#    (3) CLOSURE — the result is itself coinable, without limit.
+#
+#  ── ★★ THE FINDING: THE ⊗ CORRECTION HAS A PRICE, AND IT LANDS HERE ─
+#  Thm. gen-complete claims: "Two speakers constructing the same concept
+#  independently will arrive at the same phonym." That was cheap while ⊗
+#  commuted — operand order was free, so both speakers converged whichever
+#  order they chose. Making ⊗ non-commutative (LA.tex:2837, corrected
+#  across five normalisers and two renderers) removes that freedom:
+#
+#        ⊗(LOVE,RECOGNITION)  and  ⊗(RECOGNITION,LOVE)
+#
+#  are now two glyphs, and nothing in the phrase "the concept of
+#  compassion" tells a second speaker which one to build.
+#
+#  ★ The resolution is not to weaken ⊗ back. It is that operand ORDER IS
+#  PART OF THE CONCEPT: 'Being-recognizing' and 'the being of recognition'
+#  are genuinely two concepts, which is exactly why :2837 says what it
+#  says. So convergence still holds — but the theorem's phrase "the same
+#  concept" is now carrying weight it was not carrying before, and a
+#  speaker who has only an English gloss does not have enough to coin
+#  from. That is a real and unclosed gap in the acquisition story, and it
+#  is recorded here rather than hidden by a commutativity that the
+#  specification forbids.
+#
+#  Both halves are gated below: ⊕ converges under either order (co-presence
+#  is symmetric) and ⊗ does NOT (synthesis is directed). A module that
+#  asserted only the first would be describing the language as it was
+#  before the correction.
+# =====================================================================
+
+import("lexicon.la")   # PARSE PH KAN PRIM SYN CON DIR CONT MC PHN NAM
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph AND  = la p. la q. p(q)(p)
+glyph NOT  = la p. la t. la f. p(f)(t)
+glyph TRUE = la t. la f. t
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+
+glyph T_ = la d. FST(PARSE(d))
+
+# ── THE ORGAN. A coined glyph is a triple: its canonical Ren, its phonym,
+#    and the tree it came from. The Ren is COMPUTED from the tree, never
+#    supplied — that is what makes it autological rather than a label.
+glyph COIN     = la mode. la a. la b. mode(a)(b)
+glyph COIN_MC  = la a. MC(a)
+glyph REN      = la g. KAN(g)
+glyph SAY      = la g. PH(g)
+
+# ── (1) DETERMINISM ─────────────────────────────────────────────────
+glyph C1 = COIN(SYN)(T_("3"))(T_("2"))
+glyph C2 = COIN(SYN)(T_("3"))(T_("2"))
+glyph OK_DETERMINISTIC = AND(str_eq(REN(C1))(REN(C2)))(str_eq(SAY(C1))(SAY(C2)))
+
+# ── (2) RECOVERABILITY — the constituents and the mode are readable out
+#    of the coined Ren. A coinage whose parents vanished would be
+#    stipulation: the glyph would mean whatever we said it meant.
+glyph HASVOW2 = la x. x
+glyph SUBSTR = Z(la self. la n. la h.
+    IF(str_eq(h)(""))(la _. NOT(TRUE))(la _.
+    IF(str_eq(n)(PREFIX(n)(h)))(la _. TRUE)(la _. self(n)(str_tail(h)))))
+glyph PREFIX = Z(la self. la n. la h.
+    IF(str_eq(n)(""))(la _. "")(la _.
+    IF(str_eq(h)(""))(la _. "")(la _. concat(str_head(h))(self(str_tail(n))(str_tail(h))))))
+glyph OK_RECOVERABLE = AND(SUBSTR("LOVE")(REN(C1)))
+                          (AND(SUBSTR("RECOGNITION")(REN(C1)))(SUBSTR("*(")(REN(C1))))
+
+# ── (3) CLOSURE — a coined glyph is an operand for the next coinage, and
+#    the depth keeps growing. Coinage that could not consume its own
+#    output would bottom out at level 2 and the lexicon would be finite.
+glyph D1 = COIN(SYN)(C1)(T_("1"))
+glyph D2 = COIN(CON)(D1)(COIN_MC(C1))
+glyph OK_CLOSURE = AND(NOT(str_eq(REN(D1))(REN(C1))))
+                      (AND(NOT(str_eq(REN(D2))(REN(D1))))
+                          (AND(SUBSTR("LOVE")(REN(D2)))(SUBSTR("RECOGNITION")(REN(D2)))))
+
+# ── ★ CONVERGENCE, both halves ──────────────────────────────────────
+#  ⊕ is co-presence and symmetric: two speakers who pick opposite orders
+#  coin the SAME glyph. This is the half the theorem always had.
+glyph CON_AB = COIN(CON)(T_("3"))(T_("2"))
+glyph CON_BA = COIN(CON)(T_("2"))(T_("3"))
+# ★ Convergence is a claim about the CONCEPT, so it is tested on the
+#   NORMALISED phonym -- the sound of a concept is the sound of its
+#   canonical form. Tested on the raw renderer it fails, and that failure
+#   is what revealed this module's missing normalisation layer.
+glyph SAY_N = la g. PH_N(g)
+glyph OK_CONVERGE_CON = AND(str_eq(SAY_N(CON_AB))(SAY_N(CON_BA)))
+                           (NOT(str_eq(SAY(CON_AB))(SAY(CON_BA))))
+
+#  ⊗ is directed: opposite orders coin DIFFERENT glyphs. This is the half
+#  the correction created, and asserting its negation is what the old
+#  sigil gate did.
+glyph SYN_AB = COIN(SYN)(T_("3"))(T_("2"))
+glyph SYN_BA = COIN(SYN)(T_("2"))(T_("3"))
+glyph OK_DIVERGE_SYN = AND(NOT(str_eq(REN(SYN_AB))(REN(SYN_BA))))
+                          (NOT(str_eq(SAY_N(SYN_AB))(SAY_N(SYN_BA))))
+
+#  ★★ and the two must not be the same rule wearing two names: if ⊕ and ⊗
+#  behaved alike, one of the two gates above would be vacuous.
+glyph OK_MODES_DIFFER = NOT(str_eq(REN(CON_AB))(REN(SYN_AB)))
+
+# ── ★ COINAGE IS NOT STIPULATION: the coined glyph's phonym is DERIVED,
+#    so a speaker who knows the parents can pronounce a word they have
+#    never heard. That is the whole claim of a generative lexicon, and it
+#    is checkable: Compassion is Love ⊗ Recognition, and its phonym must
+#    be exactly the two parents' phonyms fused, with nothing added.
+glyph OK_PRONOUNCEABLE = AND(str_eq(SAY(C1))("lushi"))
+                            (AND(str_eq(SAY(T_("3")))("lu"))(str_eq(SAY(T_("2")))("shi")))
+
+glyph MK = la c. IF(c)(la _. "OK")(la _. "FAIL")
+glyph COIN_LINE = (
+  concat(concat(concat(concat("coin ren=")(REN(C1)))(concat(" say=")(SAY(C1))))
+                (concat(concat(" | deterministic ")(MK(OK_DETERMINISTIC)))
+                       (concat(" | recoverable ")(MK(OK_RECOVERABLE)))))
+        (concat(concat(concat(" | closure ")(MK(OK_CLOSURE)))
+                      (concat(" | converge-⊕ ")(MK(OK_CONVERGE_CON))))
+               (concat(concat(concat(" | diverge-⊗ ")(MK(OK_DIVERGE_SYN)))
+                             (concat(" | modes-differ ")(MK(OK_MODES_DIFFER))))
+                      (concat(" | pronounceable ")(MK(OK_PRONOUNCEABLE))))))
+
+# =====================================================================
+#  ★ RULE 4 — THE NEOLOGICAL SEAL  (M58 slice 1 · ELENCHOS · 2026-09-10)
+#
+#  LA:4076-4082: E ∈ L_A, d(E) > 0 ⟹ ν(E) ∈ 𝒜. "The sealed glyph is added
+#  to 𝒜 as a new primitive … the distinction between 'primitive' and
+#  'derived' is historical." COIN (above) mints a decomposition; SEAL makes
+#  one a primitive that keeps its lineage. One lifecycle, so one organ.
+#
+#  ── SETTLED by The Lieutenant, 2026-09-10 (board; the handoff plan's §6) ─
+#   · The alphabet changes ONLY by appended rows (U/Δ supersession): nothing
+#     is edited or deleted in place.
+#   · Option (a): a lineage must be α=1 (canon.la's IS_ALPHA1), or it is
+#     REFUSED, naming its ALPHA1. Then REN ≡ NORMK(ETYM) ≡ CANON(ETYM), and
+#     canon.la's AUTO_OK holds unchanged: one autology predicate, not two.
+#   · THE RATCHET: ADDED iff NORMK(etym) is a NEW class. It is crosscoll's
+#     scan with the candidate added. A record of another NAME in L, F, M or P
+#     blocks it; the candidate's own same-named record does not, as crosscoll
+#     skips same-name pairs. ANY sealed row with the same REN blocks it,
+#     whatever its name: re-sealing is never additive. A refusal names what
+#     the candidate would join, and returns the table unchanged.
+#   · d(E) > 0, from the rule itself: a bare primitive is not sealed again.
+#   · The table is DATA, in rule4_sealed.tbl: read here, never written. The
+#     gate seals into a SCRATCH file in the cwd (rule4_sealed.scratch,
+#     git-ignored, removed by build.sh). A gate that wrote a tracked file
+#     would dirty the tree on every run, and build.sh tags only a clean tree.
+#  Row: NAME|ETYM|REN|PROVENANCE;  ETYM is in lexicon.la's prefix notation.
+#  REN is stored so that a reload can re-check it.
+#
+#  THE CENSUS is the nine primitives plus the sealed rows (9 → 10 here).
+#  primitives.la's 11 includes Z and DEPTH_Z, which are not concepts.
+#
+#  NOT IN THIS SLICE, named: rendering sealed primitives (sigil/phonym via
+#  ETYM); a notation token so lexicon.la can WRITE a tenth primitive;
+#  archroot's pins; crosscoll's P population; M11c's registry; supersession
+#  by a later same-named row.
+# =====================================================================
+import("crosscoll.la")  # AFTER every glyph above, so first match keeps coin's REN (= KAN); canon's REN stays inside crosscoll
+
+glyph SL_TABLE   = "rule4_sealed.tbl"
+glyph SL_SCRATCH = "rule4_sealed.scratch"
+glyph SL_PROV    = "Rule 4 LA:4076-4082, M58 slice 1 gate"
+
+# a lineage in lexicon.la's prefix notation, as a canon-named tree
+glyph SL_TREE = la d. XCRELABEL(FST(PARSE(d)))
+
+# a row, and its fields (w is one row without its ";")
+glyph SL_ROW = la n. la d. la r. la pv.
+    concat(concat(concat(n)("|"))(concat(d)("|")))(concat(concat(r)("|"))(concat(pv)(";")))
+glyph SL_F1 = la w. XCUPTO("|")(w)
+glyph SL_F2 = la w. XCUPTO("|")(XCPAST("|")(w))
+glyph SL_F3 = la w. XCUPTO("|")(XCPAST("|")(XCPAST("|")(w)))
+
+# the names of every sealed row whose REN is k, whatever its name
+glyph SL_SEALEDAS = Z(la self. la k. la t.
+    IF(str_eq(t)(""))(la _. "")(la _.
+      (la w. (la rest.
+         IF(str_eq(SL_F3(w))(k))
+           (la _. concat(concat(SL_F1(w))(" "))(self(k)(rest)))
+           (la _. self(k)(rest)))
+       (XCPAST(";")(t)))
+      (XCUPTO(";")(t))))
+
+# ── THE SEAL. SEAL(t)(pop)(name)(etym)(prov) -> PAIR(verdict)(t'). A refusal
+#    returns t unchanged: additive or refused, never a partial write.
+glyph SL_SEAL = la t. la pop. la n. la d. la pv.
+  (la tr. (la k.
+    IF(NOT(lt(0)(TDEPTH(tr))))
+      (la _. PAIR(concat("REFUSED depth-0 ")(k))(t))
+      (la _. IF(NOT(IS_ALPHA1(tr)))
+        (la _. PAIR(concat("REFUSED not-alpha1 ALPHA1=")(k))(t))
+        (la _. (la sd. IF(NOT(str_eq(sd)("")))
+          (la _. PAIR(concat("REFUSED already-sealed ")(sd))(t))
+          (la _. (la bl. IF(NOT(str_eq(bl)("")))
+            (la _. PAIR(concat("REFUSED joins ")(bl))(t))
+            (la _. PAIR(concat("ADDED ")(k))(concat(t)(SL_ROW(n)(d)(k)(pv)))))
+           (XCINNER(n)(k)(pop))))
+         (SL_SEALEDAS(k)(t)))))
+   (NORMK(tr)))
+  (SL_TREE(d))
+
+# the alphabet census: the nine primitives, plus every sealed row
+glyph SL_CENSUS = la p. la t. add(XCSEMI(0)(p))(XCSEMI(0)(t))
+
+# every row: stored REN ≡ NORMK(ETYM), the lineage is α=1, and canon's AUTO_OK holds
+glyph SL_ROWS_OK = Z(la self. la t.
+    IF(str_eq(t)(""))(la _. TRUE)(la _.
+      (la w. (la tr.
+         AND(AND(str_eq(SL_F3(w))(NORMK(tr)))(IS_ALPHA1(tr)))
+            (AND(AUTO_OK(MONO(SL_F3(w))(tr)))(self(XCPAST(";")(t)))))
+       (SL_TREE(SL_F2(w))))
+      (XCUPTO(";")(t))))
+
+glyph SL_OKROW   = la lab. la c. concat(concat(" | ")(lab))(concat(" ")(MK(c)))
+glyph SL_REFUSED = la r. la want. la t1. AND(str_eq(FST(r))(want))(str_eq(SND(r))(t1))
+glyph SL_POP_OK  = la l. la fr. la m. la p.
+    AND(AND(int_eq(XCSEMI(0)(l))(79))(int_eq(XCSEMI(0)(fr))(4)))(AND(int_eq(XCSEMI(0)(m))(21))(int_eq(XCSEMI(0)(p))(9)))
+glyph SL_WANT_REN = "⊗(⊗(SELF,RELATION),RECOGNITION)"
+glyph SL_WANT_ADD = concat("ADDED ")(SL_WANT_REN)
+glyph SL_WANT_ROW = SL_ROW("Intersubjectivity")("**452")(SL_WANT_REN)(SL_PROV)
+
+# ── THE GATE'S ROWS. The candidate is Intersubjectivity (LA:4809): α=1,
+#    depth 2, and its class holds only its own F row on track-c AND on
+#    kernel-k1. Compassion would not be branch-robust: E10 puts OP_INTEG in
+#    its class on kernel-k1. Each refusal below is a separate red path.
+glyph SL_REP_A = la l. la fr. la m. la p. la t0. la s1. la t1.
+    concat(concat(SL_OKROW("seal-population")(SL_POP_OK(l)(fr)(m)(p)))
+                 (SL_OKROW("seal-census-before")(int_eq(SL_CENSUS(p)(t0))(9))))
+          (SL_OKROW("seal-added")(AND(str_eq(FST(s1))(SL_WANT_ADD))(str_eq(t1)(concat(t0)(SL_WANT_ROW)))))
+glyph SL_REP_B = la p. la t1. la t1r. la r1. la r2.
+    concat(SL_OKROW("seal-reload")(AND(AND(str_eq(t1r)(t1))(int_eq(SL_CENSUS(p)(t1r))(10)))(SL_ROWS_OK(t1r))))
+          (concat(SL_OKROW("seal-refuse-class")(SL_REFUSED(r1)("REFUSED joins Truth=SR_ABOUT Truth=OP_RECOG ")(t1)))
+                 (SL_OKROW("seal-refuse-twin")(SL_REFUSED(r2)("REFUSED joins PROBE_TWIN=Three ")(t1))))
+glyph SL_REP_C = la t1. la r3. la r4. la r5.
+    concat(concat(SL_OKROW("seal-refuse-lineage")(SL_REFUSED(r3)("REFUSED not-alpha1 ALPHA1=⊕(LOVE,RELATION)")(t1)))
+                 (SL_OKROW("seal-refuse-reseal")(SL_REFUSED(r4)("REFUSED already-sealed Intersubjectivity ")(t1))))
+          (SL_OKROW("seal-refuse-primitive")(SL_REFUSED(r5)("REFUSED depth-0 LOVE")(t1)))
+glyph SL_REP_V = la s1. la r1. la r2. la r3. la r4. la r5.
+    concat(concat(concat(" | seal verdicts: ")(FST(s1)))(concat(" / ")(FST(r1))))
+          (concat(concat(concat(" / ")(FST(r2)))(concat(" / ")(FST(r3))))(concat(concat(" / ")(FST(r4)))(concat(" / ")(FST(r5)))))
+glyph SL_REPORT = la l. la fr. la m. la p. la t0. la s1. la t1. la t1r. la r1. la r2. la r3. la r4. la r5.
+    concat(concat(SL_REP_A(l)(fr)(m)(p)(t0)(s1)(t1))(SL_REP_B(p)(t1)(t1r)(r1)(r2)))
+          (concat(SL_REP_C(t1)(r3)(r4)(r5))(SL_REP_V(s1)(r1)(r2)(r3)(r4)(r5)))
+
+# ★ EVALUATION SHARING, as in crosscoll.la: tiny_host re-evaluates a glyph
+#   body at every reference, so every heavy value is bound ONCE by
+#   application and passed on as a parameter.
+glyph SL_RUN = la l. la fr. la m. la p. la pop. la t0.
+    (la s1. SL_RUN2(l)(fr)(m)(p)(pop)(t0)(s1)(SND(s1)))
+    (SL_SEAL(t0)(pop)("Intersubjectivity")("**452")(SL_PROV))
+# the reload: write the scratch table, THEN read it back (the argument runs first)
+glyph SL_RUN2 = la l. la fr. la m. la p. la pop. la t0. la s1. la t1.
+    SL_RUN3(l)(fr)(m)(p)(pop)(t0)(s1)(t1)((la w. read_file(SL_SCRATCH))(write_file(SL_SCRATCH)(t1)))
+glyph SL_RUN3 = la l. la fr. la m. la p. la pop. la t0. la s1. la t1. la t1r.
+    print(concat(COIN_LINE)(SL_REPORT(l)(fr)(m)(p)(t0)(s1)(t1)(t1r)
+      (SL_SEAL(t1)(pop)("Truth")("m2")(SL_PROV))
+      (SL_SEAL(t1)(pop)("PROBE_TWIN")("+15")(SL_PROV))
+      (SL_SEAL(t1)(pop)("PROBE_LINEAGE")("+53")(SL_PROV))
+      (SL_SEAL(t1)(pop)("Intersubjectivity")("**452")(SL_PROV))
+      (SL_SEAL(t1)(pop)("LOVE")("3")(SL_PROV))))
+
+glyph MAIN = (la l. (la fr. (la m. (la p.
+      SL_RUN(l)(fr)(m)(p)(concat(l)(XCX_OF(fr)(m)(p)))(read_file(SL_TABLE)))
+    (XCP))(XCM))(XCFR_OF(l)))(XCL)

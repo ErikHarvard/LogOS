@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# logos-agent — launch a Claude session in an isolated LogOS worktree.
+#
+# WHY THIS EXISTS
+#
+# LogOS's build hardcodes absolute /tmp paths: ~481 references in build.sh,
+# 74 in buildla.la, more in kernel/*.sh. They are not worktree-local, so two
+# concurrent sessions cross the streams — one session's gate can read another
+# session's artifact and judge it. That is worse than a crash: it silently
+# converts byte-identity verification into "some bytes matched some file".
+# This was observed for real — an asm.la gate reported FAIL at byte 19 while
+# another session was building; two clean re-runs passed.
+#
+# 550-odd paths cannot be covered by a rule in a CLAUDE.md, and an unattended
+# automode agent will eventually skip a rule anyway. So the isolation is
+# MECHANICAL: each agent runs in its own mount namespace with a fresh tmpfs
+# on /tmp. Collisions become impossible rather than forbidden.
+#
+# VERIFIED BEFORE SHIPPING (2026-07-18, this machine):
+#   - a file written inside the namespace is owned by uid 1000 OUTSIDE it,
+#     so artifacts and git are unaffected
+#   - git status/commit work inside
+#   - /dev/kvm is readable+writable inside
+#   - a full QEMU gate runs correctly inside: -kernel boot, serial capture,
+#     -vga std, -monitor stdio, screendump and sendkey all behave
+#   - claude itself starts inside
+#   - /tmp does NOT leak: a marker written inside is absent from the real /tmp
+#
+# WHAT THIS DOES NOT ISOLATE — the honest boundary:
+#   - CPU and RAM. 24 cores here, so 3 agents are comfortable, but a
+#     timing-sensitive gate (D's HAL gates use fixed sleeps and a 90s timeout)
+#     can still go falsely RED under heavy load from another agent.
+#   - The shared git object store. Per-worktree indexes make concurrent
+#     add/commit safe; concurrent `git gc` or `git push` is not. Pushing stays
+#     human-gated.
+#   - Real hardware: the DRM/framebuffer display is exclusive. Only the
+#     worktree that owns the compositor may drive it.
+#
+# USAGE
+#   logos-agent a          # ~/logos    (kernel-k1) — the assembler
+#   logos-agent c          # ~/logos-c  (track-c)   — the debugger
+#   logos-agent d          # ~/logos-d  (track-d)   — the kernel / HAL
+#   logos-agent e          # ~/logos-e  (track-e)   — the signature layer
+#   logos-agent d --model opus     # extra args are passed through to claude
+
+set -euo pipefail
+
+usage() {
+    cat >&2 <<'EOF'
+usage: logos-agent {a|b|c|d|e} [claude args...]
+
+  a  ~/logos     branch kernel-k1
+  b  ~/logos-b   branch track-b
+  c  ~/logos-c   branch track-c
+  d  ~/logos-d   branch track-d
+  e  ~/logos-e   branch track-e
+
+Launches claude in that worktree with a private /tmp so concurrent
+sessions cannot collide on the build's hardcoded /tmp paths.
+EOF
+    exit 2
+}
+
+[ $# -ge 1 ] || usage
+
+case "${1:-}" in
+    a|A) WT="$HOME/logos"   ;;
+    b|B) WT="$HOME/logos-b" ;;
+    c|C) WT="$HOME/logos-c" ;;
+    d|D) WT="$HOME/logos-d" ;;
+    e|E) WT="$HOME/logos-e" ;;
+    -h|--help) usage ;;
+    *) echo "logos-agent: unknown worktree '$1'" >&2; usage ;;
+esac
+shift
+
+[ -d "$WT" ] || { echo "logos-agent: no worktree at $WT" >&2; exit 1; }
+command -v unshare >/dev/null || { echo "logos-agent: unshare(1) not found" >&2; exit 1; }
+
+# Refuse to launch if this shell is ALREADY inside a logos-agent namespace —
+# nesting would give a private /tmp inside a private /tmp, and the inner
+# session would silently lose the outer one's scratch files.
+if [ -n "${LOGOS_AGENT_WT:-}" ]; then
+    echo "logos-agent: already inside a logos-agent session for $LOGOS_AGENT_WT" >&2
+    echo "             open a NEW terminal instead of nesting." >&2
+    exit 1
+fi
+
+echo "logos-agent: $WT  (branch $(git -C "$WT" branch --show-current 2>/dev/null || echo '?'))"
+echo "logos-agent: private /tmp — this session cannot collide with the others."
+
+# -r  map our uid to root inside, which is what makes an unprivileged mount
+#     namespace possible at all. Files still land as uid 1000 outside.
+# -m  new mount namespace, so the tmpfs below is ours alone.
+# --propagation private  keeps the mount from propagating back to the host.
+exec unshare -rm --propagation private bash -c '
+    mount -t tmpfs tmpfs /tmp || {
+        echo "logos-agent: could not mount a private /tmp" >&2; exit 1; }
+    # A few tools expect these to exist in a fresh tmpfs.
+    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp
+    cd "$1" || exit 1
+    export LOGOS_AGENT_WT="$1"
+    # Gate serialization: the qemu shim goes first in PATH so every
+    # QEMU launch is seen, whichever script makes it. The shim never
+    # blocks -- it serializes when the lock is free and warns loudly
+    # when another track holds it. Run gates via ~/logos-gate.
+    export PATH="$HOME/.logos/shims:$PATH"
+    shift
+    exec claude "$@"
+' -- "$WT" "$@"

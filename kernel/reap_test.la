@@ -1,0 +1,63 @@
+# ===================================================================
+#  D-INIT.1 — reap() semantics probe.
+#
+#  reap("!") makes task death visible to LA and reclaims the TCB slot.
+#    >= 1  the index of a task that finished; its slot is now free
+#     0    other tasks are live, none dead right now
+#    -1    no other task exists at all
+#
+#  PART A — one service, the basic lifecycle:
+#    r0  before any spawn           -> -1  (no tasks at all)
+#    r1  after spawn, before yield  ->  0  (the service is LIVE, not dead)
+#    r2  after it ran               ->  1  (TCB[1] reaped)
+#    r3  immediately after          -> -1  (slot freed, nothing left)
+#
+#  r1 is a negative control INSIDE the probe. A reap that ignored TCB_STATE, or
+#  returned the first non-current slot, would report 1 here while the service is
+#  still running — and a supervisor would "restart" a live service.
+#
+#  PART B — the case a real supervisor actually hits: SEVERAL services, only
+#  one of which dies, and the LIVE one sits at a LOWER index than the dead one.
+#    LIVE (TCB[1]) yields once and stays runnable; DIE (TCB[2]) runs to
+#    completion. Then:
+#    r4  -> 2   the DEAD one is found PAST the live one (not 0, and not 1)
+#    r5  -> 0   only the live one remains; nothing dead
+#    r6  -> 1   after LIVE finishes too
+#    r7  -> -1  drained
+#
+#  r4 is the assertion that matters in Part B: a scan that stopped at the first
+#  non-current slot would return 1 (a live service), and a scan that gave up on
+#  meeting a live task would return 0 (death goes unnoticed, the service is
+#  never restarted). Only a full scan that distinguishes STATE==2 gets 2.
+#
+#  Native-only (spawn/yield/reap touch the runtime task table); Linux-hosted,
+#  no QEMU needed, exactly like task_pingpong.la.
+# ===================================================================
+
+glyph SEQ = la a. la b. b
+
+glyph SERVICE = la _. print("svc-ran")
+
+# Stays alive across one scheduling round: yields back, finishes later.
+glyph LIVE = la _. SEQ(yield("!"))(print("live-done"))
+glyph DIE  = la _. print("die-ran")
+
+glyph SHOW = la tag. la v. print(concat(tag)(int_to_str(v)))
+
+glyph MAIN =
+    # ── Part A: one service, full lifecycle ──
+    SEQ(SHOW("r0=")(reap("!")))(
+    SEQ(spawn(SERVICE))(
+    SEQ(SHOW("r1=")(reap("!")))(
+    SEQ(yield("!"))(
+    SEQ(SHOW("r2=")(reap("!")))(
+    SEQ(SHOW("r3=")(reap("!")))(
+    # ── Part B: a live service BELOW a dead one ──
+    SEQ(spawn(LIVE))(
+    SEQ(spawn(DIE))(
+    SEQ(yield("!"))(
+    SEQ(SHOW("r4=")(reap("!")))(
+    SEQ(SHOW("r5=")(reap("!")))(
+    SEQ(yield("!"))(
+    SEQ(SHOW("r6=")(reap("!")))(
+        SHOW("r7=")(reap("!")))))))))))))))

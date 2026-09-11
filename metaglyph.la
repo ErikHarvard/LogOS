@@ -193,12 +193,37 @@ glyph OP_DIFF  = DIR(PRIM("VOID"))(PRIM("RELATION"))        # ∂ differentiate 
 glyph OP_BOUND = CONT(PRIM("FORM"))(PRIM("DEPTH"))          # δ bound        (2)
 glyph OP_COMP  = SYN(PRIM("BECOMING"))(PRIM("FORM"))        # γ compose      (3)
 glyph OP_RECOG = MC(PRIM("RECOGNITION"))                    # ρ recognize    (4)  ≡ SR_ABOUT
-glyph OP_INTEG = SYN(PRIM("LOVE"))(PRIM("BEING"))           # 𝔄 integrate    (5)
+glyph OP_INTEG = SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))     # 𝔄 integrate    (5)  ≡ COMPASSION
 
-# canon.la is not importable (no export line), so SR_ABOUT is re-stated here the
-# same way metalogic_spec re-inlines the κ machinery. If canon.la's definition
-# ever changed, the positive identity assertion below goes RED — which is the
-# point: the identity is gated, not assumed.
+# ── M67 — STATUS [~] PARTIAL. This copy is GATED, not removed. ───────────────
+# SR_ABOUT is re-stated here rather than imported from canon.la. Two claims that
+# used to justify that are retired, both tested on 2026-09-09:
+#   (1) canon.la IS importable — export line at canon.la:100, 49 names, and five
+#       modules import it (specpipe, prop, metaprop, obscurantism, + others).
+#   (2) This copy was NOT gated, though the note here claimed it was. MEASURED:
+#       canon.la's SR_ABOUT was changed to MC(PRIM("SELF")) and RHO_IS_ABOUT
+#       below still reported YES — it compared two LOCAL terms and could not see
+#       canon.la at all. The assertion was true of itself.
+#
+# ★ IT IS GATED NOW, EXTERNALLY. build.sh's M67 probe runs canon.la's SR_ABOUT
+#   and this glyph through κ and requires them EQUAL, then mutates canon.la and
+#   requires them to DIVERGE. So THE TRAP note above — "a merely tolerated
+#   identity is indistinguishable from a collision nobody noticed" — is no longer
+#   a comment asserting an identity; it is a gate witnessing one. That is the
+#   whole standard of this project applied to the line that states it.
+#
+# ⚠ WHAT THIS STANDS IN FOR, AND WHAT WOULD RETIRE IT (do not mark M67 done):
+#   The probe removes the drift SURFACE — drift here cannot happen unobserved.
+#   It does NOT remove the COPY. M67's mechanism (import canon.la, one definition)
+#   is DEFERRED, not delivered, and this comment is the record of that debt.
+#   RETIRED BY: M0a / roadmap item 0, when the ~20 duplicated κ-declarations are
+#   collapsed together. Measured reason for deferring: importing canon.la here
+#   costs codegen 260.13s -> 1145.15s (x4.40) and stream +40.2% for EVERY importer
+#   (familytree.la and denote.la both pay it) — a price M0a is expected to make
+#   unnecessary by paying it once for a real deduplication.
+#   ⚠ That expectation is itself UNMEASURED: if the import cost multiplies per
+#   importer rather than amortising, M0a may not be reachable by the import
+#   mechanism at all. See the marginal-importer measurement filed with M76.
 glyph SR_ABOUT_HERE = MC(PRIM("RECOGNITION"))
 
 # ── rank READ FROM THE GLYPH, not from a table above the language ─────────
@@ -227,6 +252,16 @@ glyph OPS_DISTINCT =
 #    decomposition to MC(SELF) and this fires) ──
 glyph RHO_IS_ABOUT = str_eq(CANON(OP_RECOG))(CANON(SR_ABOUT_HERE))
 glyph RHO_CANON_OK = str_eq(CANON(OP_RECOG))("↻(RECOGNITION)")
+
+# ── ★ THE SECOND INTENDED IDENTITY (Erik's ruling 2026-09-08). Correcting 𝔄 to the
+#    specification's ⊗(LOVE,RECOGNITION) makes it the SAME TERM as Compassion
+#    (build.sh:1405 defines COMPASSION = SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))).
+#    That is not a collision to repair — it is the ρ ≡ SR_ABOUT situation again:
+#    two names found to name ONE meaning. Per the note above, a merely tolerated
+#    identity is indistinguishable from a collision nobody noticed, so it is
+#    asserted POSITIVELY here. RED path: revert 𝔄 to ⊗(LOVE,BEING) and this fires.
+glyph COMPASSION_HERE     = SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))
+glyph INTEG_IS_COMPASSION = str_eq(CANON(OP_INTEG))(CANON(COMPASSION_HERE))
 
 # ── OPERATE-ON: the capability the dispatch form cannot express. Feed an
 #    operator as an OPERAND to a mode and canonicalize the result. ──
@@ -270,6 +305,7 @@ glyph MAIN =
     SEQ(print(concat("five operators pairwise distinct ? ")(YN(OPS_DISTINCT))))(
     SEQ(print(concat("★ ρ ≡ SR_ABOUT (intended identity) ? ")(YN(RHO_IS_ABOUT))))(
     SEQ(print(concat("★ κ(ρ) = ↻(RECOGNITION) ? ")(YN(RHO_CANON_OK))))(
+    SEQ(print(concat("★ 𝔄 ≡ COMPASSION (intended identity) ? ")(YN(INTEG_IS_COMPASSION))))(
     SEQ(print(concat("OPERATE-ON ⊗(∂,δ) = ")(OP_AS_OPERAND)))(
     SEQ(print(concat("COMPOSE  γ∘ρ      = ")(OP_COMPOSED)))(
-        print(concat("rank ∂<δ<γ<ρ<𝔄 read FROM the glyph ? ")(YN(RANK_ORDER)))))))))))))))))))))))))))))))
+        print(concat("rank ∂<δ<γ<ρ<𝔄 read FROM the glyph ? ")(YN(RANK_ORDER))))))))))))))))))))))))))))))))

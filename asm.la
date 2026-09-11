@@ -61,28 +61,62 @@
 #  existing `jmp near L` sources stay byte-identical.
 #
 #  ── HONEST SCOPE ────────────────────────────────────────────────────────────
-#  A REAL SUBSET, every instruction of it verified byte-identical against NASM:
-#  mov/add/sub/xor (r64,r64), mov (r64,imm32), push/pop (r64), syscall, ret,
-#  nop, r8-r15 via REX, labels and control flow (jmp/call/jz/je/jnz/jne) with
-#  NASM's short/near selection reproduced via a fixed point, `org` + labels as
-#  immediates (movabs), `db` (strings and bytes) so a source carries its own data,
-#  and MEMORY OPERANDS for mov in both directions — [base], [base+disp],
-#  [base-disp], with the rbp/r13 and rsp/r12 quirks and disp8/disp32 promotion.
-#  elf.la's whole write+exit entry is inside it, as is any branching routine
-#  over registers and the stack.
+#  ★ THIS BLOCK WAS STALE, AND BECAUSE IT WAS COPIED IT BECAME THE PROJECT'S
+#    "named open gap". Corrected 2026-09-08. It listed as MISSING five things
+#    the code below it had already gained — sections, the data directives,
+#    `equ`, index/scale and RIP-relative memory, and all but four jcc arms —
+#    and CLAUDE.md reproduced that list verbatim as the work still to do.
+#    Anyone scoping from either would have built what already exists. That is
+#    the 2026-08-28 stale-note failure again: the cost of a wrong scope note is
+#    not misinformation, it is LABOUR. A scope note is load-bearing; re-derive
+#    it or delete it. (Stated as what IS, never by quoting the retracted claim,
+#    so a grep for the old wording cannot match a corrected file.)
 #
-#  What it is NOT, stated plainly:
-#    - memory operands cover a BASE + DISPLACEMENT only: no index/scale
-#      ([rax+rcx*4]), no RIP-relative, and only for `mov` — add/sub/xor stay
-#      register-to-register;
-#    - directives are `bits`/`org`/`db` only — no sections, no dw/dd/dq, no
-#      resb, no equ, no paging/GDT/IDT/segment forms, no immediates to memory;
-#    - jcc covers jz/je/jnz/jne only — not the signed/unsigned comparison set
-#      (jl/jg/jle/jge/jb/ja/...), which is the same encoding + a condition
-#      nibble and is mechanical to extend.
-#  So it CANNOT yet assemble boot.asm or secd.asm, and NASM remains in the
-#  kernel build. The seam is closed for what is here and honestly open beyond
-#  it; the byte-identity gate extends to each increment.
+#  VERIFIED BYTE-IDENTICAL against `nasm -f bin` by the 26-fixture gate in
+#  build.sh — no partial credit, shared rule 1. The fixture naming each area:
+#    - ALU + data movement, r8-r15 via REX .......... asm_test, _alu, _misc
+#    - control flow: jmp/call with NASM's short/near selection reproduced via
+#      a fixed point; local `.labels`; the far jump .. _labels, _short, _far,
+#                                                      _local, _promote
+#    - memory operands both directions: [base], [base+disp], [base-disp],
+#      [base+index], [base+index*scale(+disp)], RIP-relative `[rel sym]`,
+#      absolute [disp32], the rbp/r13 + rsp/r12 quirks, disp8/disp32
+#      promotion, and a label AS the address ......... _mem, _memlbl, _movlbl
+#    - BASELESS index forms `[index*scale(+disp)]` and a label base with a
+#      register index, both reproducing NASM's fold (scale 1 -> plain base,
+#      scale 2 -> base+index, scales 4/8 -> SIB base=none) ...... _sibnb
+#    - directives: bits/org/db/dw/dd/dq/resb/resq/align; equ including the
+#      address-valued `$ - label` form; section/global/incbin  _data, _equ,
+#                                                      _equ2, _sect, _org
+#    - 64-bit expression evaluation with C precedence, incl. |/&/^ over shifts
+#      past bit 31 (the GDT-descriptor class) ......... _expr, _expr2, _expr3,
+#                                                      _bits64, _comma, _xsize
+#    - the preprocessor: %define (flag AND value-carrying), %ifdef/%ifndef/
+#      %elifdef/%else/%endif, %include, %macro ......... _pp, _macro
+#    - control + segment registers ..................... _ctrlseg
+#  Separately, `-f elf64` relocatable objects with R_X86_64_32/32S/PC32
+#  relocations and extern symbols are gated by gate_asmelf.sh; the full 20-arm
+#  jcc set (the signed and unsigned comparison arms, not just jz/je/jnz/jne)
+#  and every one of the 48 mnemonics and 7 preprocessor directives that
+#  kernel/boot.asm uses are implemented. elf.la's whole write+exit entry is
+#  inside this subset, as is any branching routine over registers and the stack.
+#
+#  What it is NOT — MEASURED 2026-09-08 against the real assembler, not recalled:
+#    - PERFORMANCE IS THE BINDING LIMIT, not the instruction set. Given
+#      kernel/boot.asm (1555 lines) with a 300 s budget it produced nothing at
+#      all (rc=124); `nasm -f elf64` on that same file takes ~0.00 s. The
+#      largest fixture it does handle is 38 lines. THIS is what still keeps
+#      NASM in the kernel build — not a missing mnemonic, since every mnemonic
+#      and directive boot.asm uses is listed above as present.
+#    - No CLI/env interface: the sole input is read_file("asm_in.asm"), so the
+#      kernel's 28 distinct `-D` symbols cannot arrive as flags. This is NOT a
+#      blocker — a driver can prepend `%define` lines, verified byte-identical
+#      to nasm for both the flag and value-carrying forms.
+#    - Descriptor-table READS (sgdt/sidt) and much of the wider ISA are absent.
+#      An unknown mnemonic HALTS LOUDLY rather than emitting a guess, so the
+#      absence is always visible rather than silently wrong.
+#  The seam is closed for what is here and honestly open beyond it; the
+#  byte-identity gate extends to each increment.
 #
 #  Pure generation (chr/concat/int arithmetic), so it is byte-identical on the
 #  C host and the native VM, like elf.la.
@@ -592,15 +626,27 @@ glyph IDXSCAN = Z(la self. la s.
                  (la _. tok)
                  (la _. self(AFTERPLUS(s))))
              (UPTOSIGN(s)(""))))
-glyph MEMIDXTOK = la t. IDXSCAN(AFTERPLUS(STRIPBRK(t)))
+#   ★ AN INDEX NEED NOT FOLLOW A BASE. This scanned only PAST the first '+'
+#   (`IDXSCAN(AFTERPLUS(...))`), which silently assumes term one is a base
+#   register. When there is NO base the index IS the first term, so `[rcx*4]`
+#   found no index at all, fell through to the absolute-address path, and
+#   emitted SIB 0x25 (index=none) — DROPPING the register and the scale, so
+#   `mov rax,[rcx*4]` assembled at the correct length as `mov rax,[0x0]`.
+#   Only a byte comparison could see it. Scan the whole operand when term one
+#   is not a register, past it when it is, so a base is never read as an index.
+glyph MEMBASEREG = la t. ISREG(UPTOSIGN(STRIPBRK(t))(""))
+glyph MEMIDXTOK = la t.
+    IF(MEMBASEREG(t))
+      (la _. IDXSCAN(AFTERPLUS(STRIPBRK(t))))
+      (la _. IDXSCAN(STRIPBRK(t)))
 glyph MEMIDXREG = la t. UPTOSTAR(MEMIDXTOK(t))("")
 glyph MEMHASIDX = la t. ISREG(MEMIDXREG(t))
-glyph MEMIDX = la t. IF(MEMHASIDX(t))(la _. REGNUM(MEMIDXREG(t)))(la _. sub(0)(1))
+glyph MEMIDX0 = la t. IF(MEMHASIDX(t))(la _. REGNUM(MEMIDXREG(t)))(la _. sub(0)(1))
 glyph SCALEB = la n.
     IF(int_eq(n)(1))(la _. 0)(la _. IF(int_eq(n)(2))(la _. 1)(la _.
     IF(int_eq(n)(4))(la _. 2)(la _. IF(int_eq(n)(8))(la _. 3)
     (la _. error(concat("asm: invalid SIB scale (must be 1/2/4/8): ")(int_to_str(n)))))))
-glyph MEMSCALEB = la t.
+glyph MEMSCALEB0 = la t.
     (la a. IF(str_eq(a)(""))(la _. 0)(la _. SCALEB(NUMV(a))))(AFTERSTAR(MEMIDXTOK(t)))
 # ── RIP-relative `[rel label]` ──────────────────────────────────────────────
 #   The tokenizer strips the space, so `[rel METAL_FLAG]` -> inner "relMETAL_FLAG".
@@ -623,10 +669,33 @@ glyph RIPDISP = la labs. la t. sub(EVAL(labs)(RIPLAB(t)))(RIPNEXT(labs))
 #   the sentinel for that shape; REXOPT already treats it correctly, since
 #   lt(-1)(8) leaves REX.B clear, which is right — there is no base to extend.
 glyph MEMABS   = la t. NOT(ISREG(FST(SPLITFIRST(STRIPBRK(t))("")))) 
-glyph MEMBASE  = la t.
+glyph MEMBASE0 = la t.
     IF(MEMRIP(t))(la _. sub(0)(2))
     (la _. IF(MEMABS(t))(la _. sub(0)(1))
                  (la _. REGNUM(FST(SPLITFIRST(STRIPBRK(t))("")))))
+#   ★ NASM FOLDS A BASELESS scale-1/2 INDEX INTO A BASE, so byte-identity
+#   must fold it too. With no base register NASM never chooses the SIB form for
+#   scale 1 or 2 — it rewrites `[rcx*1]` as `[rcx]` (3 bytes) and `[rcx*2]` as
+#   `[rcx+rcx*1]` (4), both SHORTER than SIB+disp32 (8). Scales 4 and 8 have no
+#   such rewrite and DO use SIB base=5(none)+disp32, which MRMLBLD already emits.
+#   ★ The same fold is what a LABEL base needs, which is the second face of this
+#   one bug: `[FREEBLOB+r8]` is a baseless scale-1 index, and NASM emits
+#   `[r8+disp32]` (7 bytes) where the unfolded form emits SIB+disp32 (8). That
+#   one differs in LENGTH, so SIZEL and ENC1 still agreed with each other and
+#   SIZEDRIFT stayed silent — it was simply not NASM.
+#   Folding in the ACCESSORS rather than the encoder means all ~20 encoder call
+#   sites receive consistent base/index/scale with no call-site change, and
+#   MOFFSOK's "absolute with no index" test becomes correct for free (before, an
+#   indexed operand reported MEMIDX=-1 and could take the moffs path).
+glyph MEMFOLD = la t.
+    AND(int_eq(MEMBASE0(t))(sub(0)(1)))
+      (AND(MEMHASIDX(t))(NOT(lt(1)(MEMSCALEB0(t)))))
+glyph MEMBASE  = la t. IF(MEMFOLD(t))(la _. MEMIDX0(t))(la _. MEMBASE0(t))
+glyph MEMIDX = la t.
+    IF(MEMFOLD(t))
+      (la _. IF(int_eq(MEMSCALEB0(t))(1))(la _. MEMIDX0(t))(la _. sub(0)(1)))
+      (la _. MEMIDX0(t))
+glyph MEMSCALEB = la t. IF(MEMFOLD(t))(la _. 0)(la _. MEMSCALEB0(t))
 #   ★ A LABEL may BE the address: `mov [pml4], eax` — 136 such uses in
 #   boot.asm. Resolving it needs the label table, which MEMDISP did not have,
 #   so this threads `labs` through the memory-operand path.

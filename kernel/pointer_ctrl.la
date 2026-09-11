@@ -1,0 +1,76 @@
+# =====================================================================
+#  LogOS HAL.2d — a POINTER: signed mouse decode + a live cursor, in LA.
+#
+#  HAL.2c proved the AUX packet stream reaches an LA driver. HAL.2d turns
+#  raw packets into a real pointer the compositor can consume: it
+#  sign-extends the 9-bit deltas, reads the button state, and accumulates
+#  a CURSOR position clamped to a 640x480 screen — the state a window
+#  manager actually moves things by.
+#
+#  A packet's flags byte b0 carries, besides the buttons, the deltas'
+#  SIGN bits: bit4 = X sign, bit5 = Y sign. dx/dy are 9-bit signed, so a
+#  raw byte with its sign bit set is `raw - 256` (the top half of 0..255
+#  folded below zero) — the same S32 fold theourgia_input.la does for
+#  evdev, here in one subtraction. Buttons are bits 0/1/2 = L/R/M. LA has
+#  no bitwise ops, so every bit is `(b0 div 2^k) mod 2`.
+#
+#  FLAT BY NECESSITY: native_codegen3 is superlinear in nesting depth (the
+#  HAL.4e lesson), so the loop body must stay shallow. Instead of printing
+#  a concat-heavy line per packet (which blew up codegen), the loop threads
+#  two 0/1 witnesses — `ng` (a negative dx was decoded, i.e. the sign fold
+#  ran) and `bt` (the left button was down) — and prints ONE summary plus
+#  the final cursor at the end.
+#
+#  BOUNDED BY DESIGN, like HAL.2c: reads a fixed 4 packets then returns —
+#  far under the six-second heap wall, so a correct gate, not a merely
+#  time-bounded one. Reuses HAL.2c's exact init and poll (no boot.asm
+#  change, no regen). Flat + import-free.
+# =====================================================================
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph SEQ   = la a. la b. b
+glyph FALSE = la t. la f. f
+glyph AND   = la a. la b. a(b)(FALSE)
+
+# ── i8042 status decode (identical to HAL.2c) ──
+glyph OBF    = la st. int_eq(mod(st)(2))(1)
+glyph ISAUX  = la st. int_eq(mod(div(st)(32))(2))(1)
+glyph MREADY = la st. AND(OBF(st))(ISAUX(st))
+glyph IBF    = la st. int_eq(mod(div(st)(2))(2))(1)
+glyph WAITIN = Z(la self. la _. IF(IBF(inb(100)))(la _. self("!"))(la _. "!"))
+glyph POLLM  = Z(la self. la _.
+    (la st. IF(MREADY(st))(la _. inb(96))(la _. self("!")))
+      (inb(100)))
+glyph INIT =
+    SEQ(outb(100)(168))
+   (SEQ(WAITIN("!"))(SEQ(outb(100)(212))
+   (SEQ(WAITIN("!"))
+   (POLLM("!")))))
+glyph RDPKT = la k.
+    (la b0. (la b1. (la b2. k(b0)(b1)(b2)) (POLLM("!"))) (POLLM("!"))) (POLLM("!"))
+
+# ── decode helpers ──
+glyph BIT  = la b. la k. mod(div(b)(k))(2)            # bit at weight k (1,2,4,16,32)
+glyph SGN  = la raw. la s. IF(int_eq(s)(1))(la _. sub(raw)(256))(la _. raw)  # 9-bit signed
+glyph CLAMP = la v. la lo. la hi.
+    IF(lt(v)(lo))(la _. lo)(la _. IF(lt(hi)(v))(la _. hi)(la _. v))
+glyph NEG  = la v. IF(lt(v)(0))(la _. 1)(la _. 0)     # 1 if v<0 else 0
+glyph MX   = la a. la b. IF(int_eq(a)(1))(la _. 1)(la _. b)   # OR of two 0/1 flags
+
+# ── read 4 packets, threading cursor (x,y) + witnesses (ng,bt); print once ──
+glyph RUN = Z(la self. la n. la x. la y. la ng. la bt.
+    IF(int_eq(n)(0))
+      (la _. SEQ(print(concat(concat("cursor ")(int_to_str(x)))(concat(" ")(int_to_str(y)))))
+                (print(concat(concat("seen ")(int_to_str(ng)))(concat(" ")(int_to_str(bt))))))
+      (la _. RDPKT(la b0. la b1. la b2.
+        (la sdx. la sdy.
+          self(sub(n)(1))
+              (CLAMP(add(x)(sdx))(0)(639))
+              (CLAMP(add(y)(sdy))(0)(479))
+              (MX(ng)(NEG(sdx)))
+              (MX(bt)(BIT(b0)(1))))
+        (SGN(b1)(BIT(b0)(16)))
+        (SGN(b2)(BIT(b0)(32))))))
+
+glyph MAIN = SEQ(print("ptr:"))(SEQ(INIT)(RUN(4)(100)(100)(0)(0)))

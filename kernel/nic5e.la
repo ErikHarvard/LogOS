@@ -1,0 +1,115 @@
+# =====================================================================
+#  LogOS HAL.5e — a real ARP RESPONDER + RX-ring advance, over RTL8139, in LA.
+#
+#  HAL.5c/5d avoided answering SLIRP's ARP by PRE-SEEDING its cache with a
+#  gratuitous ARP reply (a proactive cheat) so the wanted reply arrived as the
+#  ONLY RX packet — no responder, no ring advance. 5e removes that cheat and
+#  builds the two mechanisms 5c's note named as missing:
+#    (1) a real ARP RESPONDER — we RX SLIRP's ARP REQUEST, verify it asks for
+#        OUR IP (10.0.2.15), and TX a proper ARP REPLY in answer; and
+#    (2) RX-RING ADVANCE — after consuming that first packet we advance the
+#        RTL8139 CAPR past it, so the SECOND packet (the ICMP echo reply that
+#        SLIRP now unicasts, knowing our MAC) is read at its own ring offset.
+#
+#  Flow (no gratuitous ARP): TX an ICMP echo request to the gateway 10.0.2.2
+#  (5c's frame, unseeded) -> SLIRP wants to reply, so it ARPs for 10.0.2.15 ->
+#  we RX that ARP REQUEST (et=0806, oper=1, tpa=10.0.2.15) -> we TX an ARP REPLY
+#  (oper=2, sha=our MAC) -> we ADVANCE CAPR past the request -> we RX the ICMP
+#  echo REPLY as the second ring packet (et=0800, proto=01, icmp type 0).
+#
+#  Honest scope: the reply is REACTIVE (we wait for and verify the actual
+#  request before answering — no pre-seeding), with static peer-addressing for
+#  the known SLIRP gateway (a fully general responder that echoes the requester's
+#  sender fields is a follow-up). Fully SLIRP-internal — no host egress needed,
+#  so the gate is deterministic. Reuses 5b/5c's NIC bring-up verbatim; flat +
+#  import-free; needs -m 512 (DMA buffers at 256 MiB).
+#
+#  Six-second budget: two bounded RX poll spins (each on a status byte); both
+#  SLIRP round-trips are internal (fast), a few thousand poll iters total, far
+#  under the ~700k-alloc metal heap wall.
+#
+#  Ring math: first packet at ring offset 0 (RX header 0..3 = status,size;
+#  frame at 4). size (bytes 2..3, incl. 4-byte CRC) -> next packet offset
+#  off2 = align4(4 + size); CAPR := off2 - 16 (the RTL8139 -0x10 quirk, as the
+#  initial CAPR is 0xFFF0). Small frames (ARP req ~64B) -> off2 ~68, no wrap.
+# =====================================================================
+
+glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF   = la c. la t. la f. c(t)(f)("!")
+glyph SEQ  = la a. la b. b
+
+glyph HEXD = la d.
+    IF(lt(d)(10))(la _. chr(int_to_str(add(48)(d))))
+                 (la _. chr(int_to_str(add(87)(d))))
+glyph HEX2 = la b. concat(HEXD(div(b)(16)))(HEXD(mod(b)(16)))
+
+glyph ADDR = la dev. la off. add(add(2147483648)(mul(dev)(2048)))(off)
+glyph CFG  = la dev. la off. SEQ(outl(3320)(ADDR(dev)(off)))(inl(3324))
+glyph CFGW = la dev. la off. la val. SEQ(outl(3320)(ADDR(dev)(off)))(outl(3324)(val))
+
+glyph FIND = Z(la self. la dev.
+    IF(int_eq(dev)(32))(la _. 32)(la _.
+      (la r.
+        IF(int_eq(mod(r)(65536))(4332))(la _.
+          IF(int_eq(div(r)(65536))(33081))(la _. dev)(la _. self(add(dev)(1))))
+        (la _. self(add(dev)(1))))
+      (CFG(dev)(0))))
+
+glyph OB = la base. la off. la v. outb(add(base)(off))(v)
+glyph OW = la base. la off. la v. outw(add(base)(off))(v)
+glyph OL = la base. la off. la v. outl(add(base)(off))(v)
+glyph IB = la base. la off. inb(add(base)(off))
+glyph IL = la base. la off. inl(add(base)(off))
+
+glyph RXBUF = 268435456     # 0x10000000 — 8 KiB RX ring
+glyph TXBUF = 268447744     # 0x10003000 — TX buffer 0 (ICMP echo request, TSD0)
+glyph TXBUF2 = 268451840    # 0x10004000 — TX buffer 1 (ARP reply, TSD1)
+
+# ── the 42-byte ICMP echo request to gateway 10.0.2.2 (5c's frame, no seed) ──
+glyph FRAMEDATA = "82 85 10 0 2 2 82 84 0 18 52 86 8 0 69 0 0 28 0 0 0 0 64 1 98 209 10 0 2 15 10 0 2 2 8 0 247 253 0 1 0 1"
+# ── the ARP REPLY we answer SLIRP's request with (oper 2, sha=our MAC) ──
+#   eth dst=gw MAC | src=our MAC | 0806 | htype 1 ptype 0800 hlen6 plen4 oper2
+#   sha=our MAC spa=10.0.2.15 | tha=gw MAC tpa=10.0.2.2
+glyph ARPREPLY = "82 85 10 0 2 2 82 84 0 18 52 86 8 6 0 1 8 0 6 4 0 2 82 84 0 18 52 86 10 0 2 15 82 85 10 0 2 2 10 0 2 2"
+
+glyph D2I = la c. sub(str_to_int(ord(c)))(48)
+glyph PUTBYTES = Z(la self. la addr. la s. la acc.
+    IF(str_eq(s)(""))(la _. SEQ(poke(addr)(acc))(add(addr)(1)))(la _.
+      (la c.
+        IF(str_eq(c)(" "))(la _. SEQ(poke(addr)(acc))(self(add(addr)(1))(str_tail(s))(0)))
+        (la _. self(addr)(str_tail(s))(add(mul(acc)(10))(D2I(c)))))
+      (str_head(s))))
+
+glyph WAITRST = Z(la self. la base.
+    IF(int_eq(mod(div(IB(base)(55))(16))(2))(1))(la _. self(base))(la _. base))
+# wait for TOK (bit15) on a TSD at byte offset off (16=TSD0, 20=TSD1)
+glyph WAITTX = Z(la self. la base. la off.
+    IF(int_eq(mod(div(IL(base)(off))(32768))(2))(1))(la _. base)(la _. self(base)(off)))
+glyph WAITRX = Z(la self. la base. la n.
+    IF(int_eq(n)(0))(la _. 0)(la _.
+      IF(int_eq(mod(IB(base)(55))(2))(0))(la _. 1)(la _. self(base)(sub(n)(1)))))
+
+glyph ALIGN4 = la x. mul(div(add(x)(3))(4))(4)
+# RX packet total length from its 4-byte ring header (bytes 2..3, incl. CRC)
+glyph RXLEN = add(peek(add(RXBUF)(2)))(mul(peek(add(RXBUF)(3)))(256))
+
+# byte at ring offset off in the FIRST packet (frame byte off-4)
+glyph RB = la off. peek(add(RXBUF)(off))
+# byte at offset off within a packet based at ring offset o2 (frame byte off-4)
+glyph RB2 = la o2. la off. peek(add(add(RXBUF)(o2))(off))
+
+glyph SETUP = la dev. la base.
+    SEQ(CFGW(dev)(4)(7))
+    (SEQ(OB(base)(82)(0))
+    (SEQ(OB(base)(55)(16))
+    (SEQ(WAITRST(base))
+    (SEQ(OL(base)(48)(RXBUF))
+    (SEQ(OW(base)(60)(0))
+    (SEQ(OW(base)(62)(65535))
+    (SEQ(OL(base)(68)(59151))
+    (SEQ(OW(base)(56)(65520))
+    (OB(base)(55)(12))))))))))
+
+glyph ARPWIT = concat("nic arp req oper=")(concat(HEX2(RB(24)))(concat(HEX2(RB(25)))(concat(" tpa=")(concat(HEX2(RB(42)))(concat(HEX2(RB(43)))(concat(HEX2(RB(44)))(HEX2(RB(45)))))))))
+glyph RESPOND = la base. la off2. SEQ(OL(base)(36)(TXBUF2))(SEQ(OL(base)(20)(60))(SEQ(WAITTX(base)(20))(SEQ(OW(base)(56)(sub(off2)(16)))(IF(int_eq(WAITRX(base)(20000000))(0))(la _. print("nic rx timeout"))(la _. SEQ(print(concat("nic rx et=")(concat(HEX2(RB2(off2)(16)))(concat(HEX2(RB2(off2)(17)))(concat(" proto=")(concat(HEX2(RB2(off2)(27)))(concat(" icmp=")(HEX2(RB2(off2)(38))))))))))(print("nic done")))))))
+glyph MAIN = SEQ(print("nic5e:"))(((la dev. IF(int_eq(dev)(32))(la _. print("nic not found"))(la _. ((la base. SEQ(SETUP(dev)(base))(SEQ(print("nic setup ok"))(SEQ(PUTBYTES(TXBUF)(FRAMEDATA)(0))(SEQ(PUTBYTES(TXBUF2)(ARPREPLY)(0))(SEQ(OL(base)(32)(TXBUF))(SEQ(OL(base)(16)(60))(SEQ(WAITTX(base)(16))(SEQ(print("nic tx icmp"))(IF(int_eq(WAITRX(base)(20000000))(0))(la _. print("nic arp timeout"))(la _. SEQ(print(ARPWIT))(RESPOND(base)(ALIGN4(add(4)(RXLEN))))))))))))))(sub(CFG(dev)(16))(mod(CFG(dev)(16))(4))))))(FIND(0))))
