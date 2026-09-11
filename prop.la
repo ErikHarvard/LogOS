@@ -34,25 +34,23 @@
 #  that they are true IN DIFFERENT REGISTERS, so the gate has to catch
 #  either one leaking into the other.
 #
-#  ── NEGATION IS NOT A PRIMITIVE ─────────────────────────────────────
-#  LA.tex:1210 reads the connectives ontologically: ∧ is CO-PRESENCE,
-#  ∨ is DETERMINATION, → is GENERATION, ¬ is EXCLUSION -- "identify a
-#  region of Being as absent, belonging to the Void". So ¬ is built,
-#  not stipulated: ¬P = ⊗(VOID,P), exclusion as VOID-composition. ∧ is
-#  ⊕, ontoconjunction being co-presence by definition (:2854). ∨ and →
-#  are DERIVED from those two rather than declared, because "nothing is
-#  stipulated; everything is derived" (Thm. gen-complete) applies to the
-#  logical vocabulary or it applies to nothing.
+#  ── NEGATION IS NOT A PRIMITIVE SIGN ────────────────────────────────
+#  LA.tex:1207–1210 reads the connectives ontologically: ∧ is
+#  CO-PRESENCE, ∨ is DETERMINATION, → is GENERATION, ¬ is EXCLUSION --
+#  "to identify a region of Being as absent" (:1210). So ¬ is built,
+#  not stipulated: ¬P = ⊂(P,VOID), P framed by the Void, under Erik's
+#  ruling of 2026-08-23 (its history is at THE CONNECTIVES below). ∧ is
+#  ⊕, ontoconjunction being co-presence by definition (:2845–2849).
+#  → is DERIVED, as ¬A ∨ B. ∨ is PRIMITIVE (E12, ruled 2026-09-09): the
+#  Kripke register carries it as KR_DET (GATE 7), while the glyph
+#  register builds only its Goedel–Gentzen image, POR, from ¬ and ∧.
+#  Which glyph mode would carry ∨ itself is a language ruling this
+#  module does not make.
 #
-#  ★ AND A LIVE TENSION, STATED NOT BURIED. Erik's ruling of 2026-08-23
-#  moved SENTENCE negation off ⊕ onto ⊂ (opgrammar.la's R_NEG), because
-#  commutative ⊕ made every ¬X identical to the co-presence X⊕Void.
-#  This module's PROPOSITIONAL negation is ⊗(VOID,·) per the volume's
-#  exclusion reading. Two negations is a monosemy question one level up,
-#  and it is measured here rather than decided: NEG_AGREE reports whether
-#  the two registers give one glyph or two. It is a REPORT, not a gate --
-#  a gate would be this module ruling on the language, which is not its
-#  place.
+#  (Corrected 2026-09-11. Until then this header described the module's
+#  first negation, a two-negation tension the 08-23 ruling closed, and a
+#  report this module's code does not contain. The code and THE
+#  CONNECTIVES below were already right, and nothing here gates.)
 # =====================================================================
 
 import("canon.la")   # PRIM SYN CON DIR CONT MC CANON NORMK NIS Z IF TRUE FALSE NOT AND
