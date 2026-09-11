@@ -32,12 +32,12 @@
 #  add/sub/mul/div/mod, int_eq/lt/str_eq (-> Church TRUE/FALSE closures),
 #  concat/str_head/str_tail/int_to_str/str_to_int, print. Anything else
 #  (unbound name, builtin used as a value, cyclic glyph) halts LOUDLY.
-#  HONEST LIMITS (deferred): no GC yet (a tail loop is ultimately HEAP-bounded
-#  until Stage 3b adds the collector), and a deep NON-tail recursion still
-#  grows the native stack and faults via raw CPU-stack overflow (SIGSEGV,
-#  nonzero exit) rather than a clean diagnostic — a native stack guard is
-#  deferred to 3b (where the runtime is reworked for GC). The module system
-#  (import/export) and chr/ord/str_len are not handled here.
+#  HONEST LIMITS, AS WRITTEN AT STAGE 3a: this header describes the file at Stage 3a
+#  and was not rewritten as Stages 3b–3d landed (ROADMAP :52–:54). Since then the
+#  runtime is native_codegen3_rt.asm, with 3b's mark-sweep GC and 3b.4's native stack
+#  guard (STACK_LIMIT_ADDR); chr/ord/str_len/error are in the builtin dispatch (RT_CHR,
+#  RT_ORD, RT_STR_LEN, RT_ERROR); and import/export resolve at parse time (the Stage 3d
+#  section, IS_KEYWORD). Corrected 2026-09-11 by METANOĒ (board :22935), comment only.
 #
 #  INPUT : native_input.la   OUTPUT : native_codegen3_out (0755 ELF64).
 #  Additive: secd.asm / nativert.asm / native_codegen_rt.asm / native_codegen2*
