@@ -42,6 +42,13 @@
 import("canon.la")         # M11a: the self-relations FROM SOURCE — KAPPA REVAL SR_*
 import("metaglyph.la")     # CANON + the κ-node constructors + MODE_* + OP_RECOG
 
+# ── EXPORTED for registry_tracker.la (M11c, Option A, ruled 2026-09-11): the checks, each
+#    taking the catalogue as a parameter, and the list constructors that build one. It
+#    imports them and never copies them. Run as MAIN this line is inert: tiny_host applies an
+#    export set only on import (tiny_host.c:961-984), and codegen keeps only the glyph table
+#    (codegen.la:179). C0 re-witnesses that: host == VM == the output pinned before this line.
+export CAT CONS NIL PAIR FST SND LEN G1GO UNARIES_OF INCAT_IN MAXD_OF G3_OF DEPTHOF
+
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")
 glyph TRUE = la t. la f. t
@@ -137,7 +144,9 @@ glyph UGO = Z(la self. la node. la acc.
          (la a. la b. self(b)(self(a)(acc)))
          (la a. la b. self(b)(self(a)(acc)))
          (la a. (la k. IF(MEMB(k)(acc))(la _. self(a)(acc))(la _. self(a)(CONS(k)(acc))))(CANON(node))))
-glyph UNARIES = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(UGO(SND(h))(acc))))(CAT)(NIL)
+# The census over ANY catalogue list (M11c); UNARIES is it applied to CAT.
+glyph UNARIES_OF = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(UGO(SND(h))(acc))))
+glyph UNARIES = UNARIES_OF(CAT)(NIL)
 glyph LEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
 glyph NUNARY = LEN(UNARIES)
 # DECLARED expectation: ↻DEPTH ↻RECOGNITION ↻FORM ↻BECOMING ↻VOID ↻RELATION ↻LOVE ↻SELF
@@ -149,14 +158,16 @@ glyph G2OK = BSTR(int_eq(NUNARY)(8))
 #    the catalogue, looked up BY CANONICAL FORM, never by name — so ρ is found via
 #    SR_ABOUT/OP_RHO, the ρ ≡ SR_ABOUT identity showing up as COVERAGE as G2 makes
 #    it show up as a COUNT. Per-operator witness so a RED path NAMES which one left.
-glyph INCAT = la g. Z(la self. la l.
+# Coverage over ANY catalogue list c (M11c); G3 is it applied to CAT.
+glyph INCAT_IN = la c. la g. Z(la self. la l.
     l(FALSE)(la h. la t.
-      IF(str_eq(CANON(SND(h)))(CANON(g)))(la _. TRUE)(la _. self(t))))(CAT)
-glyph G3 = concat(BSTR(INCAT(OP_DIFF)))(
-           concat(BSTR(INCAT(OP_BOUND)))(
-           concat(BSTR(INCAT(OP_COMP)))(
-           concat(BSTR(INCAT(OP_RECOG)))(
-                  BSTR(INCAT(OP_INTEG))))))
+      IF(str_eq(CANON(SND(h)))(CANON(g)))(la _. TRUE)(la _. self(t))))(c)
+glyph G3_OF = la c. concat(BSTR(INCAT_IN(c)(OP_DIFF)))(
+           concat(BSTR(INCAT_IN(c)(OP_BOUND)))(
+           concat(BSTR(INCAT_IN(c)(OP_COMP)))(
+           concat(BSTR(INCAT_IN(c)(OP_RECOG)))(
+                  BSTR(INCAT_IN(c)(OP_INTEG))))))
+glyph G3 = G3_OF(CAT)
 
 # ── R1 — DEPTH REPORT. NOT A GATE. Never fails the build. ──
 glyph DEPTHOF = Z(la self. la node.
@@ -166,7 +177,9 @@ glyph DEPTHOF = Z(la self. la node.
          (la a. la b. add(1)(MAXI(self(a))(self(b))))
          (la a. la b. add(1)(MAXI(self(a))(self(b))))
          (la a. add(1)(self(a))))
-glyph MAXD = Z(la self. la l. l(0)(la h. la t. MAXI(DEPTHOF(SND(h)))(self(t))))(CAT)
+# The depth report over ANY catalogue list (M11c); MAXD is it applied to CAT.
+glyph MAXD_OF = Z(la self. la l. l(0)(la h. la t. MAXI(DEPTHOF(SND(h)))(self(t))))
+glyph MAXD = MAXD_OF(CAT)
 
 glyph MAIN = print(
     concat("FAMILYTREE catalogue=")(concat(int_to_str(LEN(CAT)))(
