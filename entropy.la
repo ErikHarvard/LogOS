@@ -94,8 +94,10 @@ glyph KAP = Z(la self. la n.
 #  white paper's algebra table beside Closure, Commutativity and the rest — not
 #  a canon.la convention. canon.la:88 marks its REWRITE_MC "SHAPE-keyed not
 #  name-keyed", and the line BELOW it scopes the OTHER rewrite explicitly
-#  ("REWRITE_SYN — DECLARED for the Archē alone"), so canon itself distinguishes
-#  a scoped rewrite from an unscoped one. This one is unscoped.
+#  ("REWRITE_SYN — DECLARED for the Archē alone"), and those two kinds differ:
+#  one applies to every shape, the other only inside its scope. That is NOT a
+#  reason to leave the scoped one out, because a scoped rewrite still applies
+#  inside its scope. NKAP now carries it too (R-A, 2026-09-10, below).
 #
 #  ⚠ WHY THIS WAS A DEFECT AND NOT A DIFFERENCE. Every NKAP call site asks the
 #  κ question — do two structures share a canonical form: :104 sorts operands by
@@ -111,9 +113,18 @@ glyph KAP = Z(la self. la n.
 glyph HAS_PREFIX = Z(la self. la s. la p. IF(str_eq(p)(""))(la _. str_eq("")(""))(la _. IF(str_eq(s)(""))(la _. NOT(str_eq("")("")))(la _. IF(str_eq(str_head(s))(str_head(p)))(la _. self(str_tail(s))(str_tail(p)))(la _. NOT(str_eq("")(""))))))
 glyph REWRITE_MC = la x. IF(str_eq(x)("BEING"))(la _. "SELF")(la _. IF(HAS_PREFIX(x)("↻("))(la _. x)(la _. IF(str_eq(x)("▷(DEPTH,RECOGNITION)"))(la _. x)(la _. IF(str_eq(x)("⊕(SELF,SELF)"))(la _. x)(la _. concat("↻(")(concat(x)(")"))))))
 
+# ── CONFORMANCE FIX 2026-09-10 — NKAP adopts R-A, ⊗(A,A) ≡ A for the Archē alone ──
+#  canon.la's REWRITE_SYN (canon.la:91), transplanted: its body verbatim, with
+#  entropy's BIN in place of canon's WRAP2 (both render "⊗(a,b)"). NKAP entered in
+#  cfbbb64 (08-22) and R-A in a9e27e8 (08-27), so the omission was drift by
+#  chronology (ENTELECHEIA, 2026-09-10). The criterion above condemns it the same
+#  way: without R-A, NKAP judged ⊗(∃,∃) and ∃ DIFFERENT where the algebra says
+#  identical, so it UNDER-REPORTED IDENTITY. gate_normdrift.sh caught it once
+#  ⊗(∃,∃) became one of its inputs.
+glyph REWRITE_SYN = la a. la b. IF(AND(str_eq(a)(b))(str_eq(a)("∃")))(la _. a)(la _. BIN("⊗")(a)(b))
 glyph NKAP = Z(la self. la n.
     n (la nm. nm)
-      (la a. la b. BIN("⊗")(self(a))(self(b)))
+      (la a. la b. REWRITE_SYN(self(a))(self(b)))
       (la a. la b. SORT2("⊕")(self(a))(self(b)))
       (la a. la b. BIN("▷")(self(a))(self(b)))
       (la a. la b. BIN("⊂")(self(a))(self(b)))

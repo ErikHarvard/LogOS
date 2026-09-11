@@ -1347,8 +1347,8 @@ done
 say "behavioural drift: every κ-normaliser agrees with canon.la:NORMK (gate_normdrift.sh)"
 bash gate_normdrift.sh . || exit 1
 # ★ the gate's own red paths, run every build so it cannot rot into a green stamp:
-#   R1 output literal · R2 comparator inversion · R3 the real 2026-09-09 defect.
-#   Three sites, three idioms — a sweep searches an idiom, not a class.
+#   R1 output literal · R2 comparator inversion · R3 the real 2026-09-09 defect (three idioms: a sweep searches an
+#   idiom, not a class) · R4 an EXPECTED-OPEN pair made to conform · R5 one moved to another wrong answer (v2, 09-11).
 bash gate_normdrift.sh --selftest . || { echo "FAIL  normdrift: a RED PATH NO LONGER FIRES — the gate can no longer fail"; exit 1; }
 
 # ★★ THE SEMIOTIC-ONTOGLYPHIC LADDER (ladder.la) — the 7 levels as data, and the
