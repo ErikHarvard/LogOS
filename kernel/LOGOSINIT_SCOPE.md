@@ -489,18 +489,122 @@ feature. All P2.0 edits are `%ifdef P2_HIGHIDT`; the message loads go through a
 `LOADMSG` macro that expands to the identical `mov` when it is not defined.
 `gate_p1.sh`, `gate_p1.sh --red` and `gate_k2.sh` all still pass.
 
-### P3 — LA-driven process creation (`pspawn`)
+### P3 — LA-driven process creation (`pspawn`) — **BUILT + GATED, 5 REDS WITNESSED (2026-09-08, `4d21464`)**
+*(Heading corrected 2026-09-10. The gate and all five reds passed again in the kernel half
+at `4f8a1c3`: six invocations, all PASS.)*
 Today entry into a process is an `iretq` hardcoded in `boot.asm`. Init must
 create children itself: a syscall that allocates a pid, builds a per-process
 PML4 from a pristine image, maps it `U=1`, shares the kernel `[511]` as
 supervisor, and enqueues it runnable. **The largest brick** — HH2b did all of
 this once, by hand, at boot.
 
-### P4 — process death visible to init (`pwait`)
+### P4 — process death visible to init (`pwait`) — **SPECIFIED 2026-09-10, not yet built**
 The process-level analogue of D-INIT.1's `reap`, and it must return **more**:
 `(pid, cause)`, where cause distinguishes a **clean exit** from a **fault** (and
 which fault). The codex requires the distinction — a supervision tree applies
 backoff to crashes, not to a service that finished its work.
+
+#### What the code already gives P4 — read from `boot.asm` at `d37afba`, not from this file
+- **Death is already recorded, in the PCB, at both sites.** The PCB is 64 bytes:
+  `+0` pid · `+8` cr3 · `+16` state · `+24` entry · `+32` stack · `+40` exit status ·
+  `+48` fault vector (`-1` means never faulted).
+  - A clean exit (`.sys_exit`) writes state 3 and `+40` (`:1721–1722`).
+  - A ring-3 fault writes state 4 (`P2_ST_FAULT`) and `+48` (`:2040–2041`).
+  - Both then drop to the scheduler on the kernel stack. *(traced)*
+- ⚠ **Nothing records a parent.** `pspawn` writes pid, cr3, RUN, entry, stack, exit and
+  fault (`:1580–1602`). `+56..63` is the only unused PCB space. *(traced)*
+- ⚠ **Nothing can wait.** The scheduler starts each RUN process fresh at its entry
+  (`iretq`, `:1917–1922`) and runs it to completion (no timer, IF clear), with no saved
+  context and no resume. So a **non-blocking** `pwait` (D-INIT.1's `reapnb` shape) is
+  **unobservable**: a parent calling it while its child is RUN always gets "none dead
+  yet", and the child runs only after the parent has exited. **P4 must block.**
+  *(traced / derived)*
+- ⚠ P1's constant comment "blocked=4 is reserved for P4" (`:180`) is stale: 4 is
+  `P2_ST_FAULT` (`:235`). P4 uses 5 and 6. *(traced)*
+
+#### The syscall
+`pwait()` is syscall **61**, Linux's `wait4`. That follows P3's convention (`getpid` 39,
+`pspawn` 57), and 61 is unused in `syscall_entry` (`:1387–1412`). *(traced)* It returns
+**rax** = the child's pid, **rdx** = the cause (3 = EXIT, 4 = FAULT), and **r8** = the
+detail (exit status for EXIT, the vector for FAULT).
+1. If the CALLER has a dead child (parent == caller, state 3 or 4) not yet reported, it
+   reports that child and marks its slot FREE. A death is reported once, and pids are
+   never reused (P3's monotonic counter).
+2. Otherwise, if the caller has a LIVE child (state 1/2/5/6), it **blocks**: it saves the
+   caller's ring-3 context, sets state **5 WAIT**, and drops to the scheduler on the
+   kernel stack.
+3. Otherwise it returns rax = **−1 (ECHILD)**. It never invents a child.
+
+**Waking.** After recording a death, both death paths check the dying process's
+parent. If that parent is WAIT, they fill its saved rax/rdx/r8, mark the child FREE,
+and set the parent to **6 WOKEN**. The scheduler resumes a WOKEN process from its
+saved context via `sysret` (the K6C2 `k6c2_run` pattern), not from its entry.
+**New state, all under `%ifdef P4`:**
+- the parent pid at PCB `+56`: 0, meaning the kernel, for boot processes, and the
+  caller for anything `pspawn` creates;
+- a **separate** `p4_ctx[P1_MAXPROC]` save area using K6C2's 128-byte layout, so the
+  64-byte PCB stride that every P1–P3 loop walks does not change;
+- states 5 and 6.
+
+**Loud, not silent.** If the scheduler finds no RUN or WOKEN entry while any entry is
+still WAIT, it prints `P4 STUCK pid=NN` and exits **non-33**. A hang and a clean 33 are
+both wrong answers there.
+
+#### The probe: one image, a role per pid
+Pids are deterministic (a monotonic counter, and no timer).
+- **pid 1** spawns 4 and 5, then calls `pwait` until ECHILD (capped at 8 calls, so a
+  broken kernel still ends), printing each result.
+- **pid 4** spawns 6, calls `pwait` for it, then exits with status 7.
+- **pid 5** executes `ud2` (#UD, vector 06).
+- **pid 6** exits with status 9.
+- **pids 2 and 3**, the boot-built ones, print their ordinary P1 line and exit 0.
+
+**The expected green transcript, DERIVED IN ADVANCE from the scheduler's scan order:**
+1. pid 1 spawns 4 and 5, then blocks.
+2. pids 2 and 3 run and exit.
+3. pid 4 spawns 6, then blocks.
+4. pid 5 faults and wakes pid 1.
+5. The scan restarts at slot 0, so pid 1 resumes, reports 5, and blocks again.
+6. pid 6 exits and wakes pid 4, which reports 6 and exits 7.
+7. That wakes pid 1, which reports 4, then gets ECHILD.
+
+So the order the gate asserts is:
+```
+FAULT pid=05 vec=06 …                  (P2's own line)
+PWAIT pid=1 -> child 5 FAULT 06
+PWAIT pid=4 -> child 6 EXIT 09
+PWAIT pid=1 -> child 4 EXIT 07
+PWAIT pid=1 -> ECHILD
+P1 table drained … (exit 33)
+```
+The gate also asserts:
+- **no** `PWAIT pid=1 -> child 6` anywhere, because 6 is 4's child, not 1's;
+- each child is reported **exactly once**;
+- `P1 pcb pid=04/05/06` is **absent** from the drain dump, because a reported child is
+  freed;
+- no `P4 STUCK`.
+
+If the run's order differs from the list above, this derivation is wrong, and that is
+itself a finding.
+
+#### Pre-registered reds
+Each red must fail the green assertions in the way stated. Each one md5s its ELF and
+fails if the perturbation was absorbed, as P3's reds do.
+
+| red | the perturbation | the expected shape |
+|---|---|---|
+| `--red` R1 BASELINE | the probe without the handler; syscall 61 returns 0 | `PWAIT pid=1 -> child 0`, no death learned, **exit 33**: green by exit code, wrong by content, as in P3's R1 |
+| `--r2` CAUSE | the fault path wakes the parent with state 3 | `child 5 EXIT` where green says `FAULT 06`, so a supervision tree would back off nothing |
+| `--r3` ★ ATTRIBUTION | ignore `+56` and report any death to any waiter | pid 1 receives grandchild 6, or pid 4 never does. This is the only control separating a parent-scoped `pwait` from "somebody died" |
+| `--r4` ★ BLOCKING HAS POWER | never block; return 0 while children are alive (the `reapnb` shape) | pid 1 exits before any child dies, and no `PWAIT pid=1 -> child 4/5` appears. Under run-to-completion, only a blocking `pwait` can observe a death |
+| `--r5` REPORT ONCE | do not free a reported slot | `child 5` reported more than once, and the probe's cap is reached; the dump still shows `pcb pid=05` |
+| `--r6` LOST WAKE-UP | the death paths never wake the parent | `P4 STUCK pid=01` and a **non-33** exit, never rc 124 (a hang) and never a clean 33 |
+
+#### Cost, and the deep step
+The build is `nasm` + `ld`: seconds, and not deep. The gate and its six reds boot QEMU,
+which is deep. **Their duration is unmeasured.** The nearest proxy, `gate_p3.sh` and its
+five reds, has no recorded duration either. The first leased run measures it, and the
+figure is posted before anything is claimed.
 
 ### P5 — init as PID 1, in LA
 Codex :18405. The kernel starts **exactly one** process — init — and init spawns
