@@ -82,12 +82,12 @@ glyph KAPPA  = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))
 # evaluating eval.la — realised by the fixed-point rewrite ↻(𝓡)→𝓡 (see REWRITE_MC).
 glyph REVAL  = DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))
 
-# ── The eight self-relations of the Logos (Being & Becoming): the Logos to / about
-# / as / for / by / through / with / from itself. Each is a MODE OF SELF-RELATION,
-# the reflexive turn ↻ of the concept that anchors its computational capability,
-# and a metacursive FIXED POINT — SELFREL(SELFREL) ≡ SELFREL (Criterion 7: the
-# self-addressing address yields the address) — realised by the ↻(SR)→SR rewrite in
-# REWRITE_MC, exactly as the evaluator 𝓡 is. All eight are instantiated here
+# ── The eight self-relations of the Logos: the Logos to / about / as / for / by / through / with / from itself. Each is a
+# MODE OF SELF-RELATION, the reflexive turn ↻ of the concept anchoring its capability, TREATED here as a metacursive FIXED
+# POINT, SELFREL(SELFREL) ≡ SELFREL, via REWRITE_MC's ↻(SR)→SR rewrite, as 𝓡 is. ⚠ NO CODEX SOURCE (METANOĒ 2026-09-11,
+# board :22519): neither the codex criterion nor the list of eight once cited here was found; LA.tex's seventh criterion
+# is ontosyntactic coherence (:6640). The seven ↻(prim) rest on ↻² = ↻ (Being & Becoming :5176–:5180, not LA.tex), and
+# SR_WITH = ⊕(SELF,SELF) is a CODE-LEVEL ASSIGNMENT: both await the General (11:46 batch, item 4). All eight are instantiated here
 # (the capability each names is built elsewhere):
 #   TO      self-application / evaluation   = ↻(DEPTH)        ← REVAL / eval.la
 #   ABOUT   self-description (𝓜 ⊂ 𝒜)         = ↻(RECOGNITION)  ← metaglyph.la
