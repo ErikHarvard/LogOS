@@ -240,12 +240,14 @@ done < "$K/segs.txt"
 
 # ── 4. the step every previous claim stopped short of ──────────────────────
 #   ★ A NAMED SKIP ON THE STUB (2026-09-10). The committed input links 256 zero bytes where the LA image goes, and
-#   LA_ENTRY points far past them, so ld's own image of it has no program to reach: on 09-10 10:53 this step spent
-#   two 90 s QEMU timeouts to report "ld's own image did not boot cleanly here (rc=124 serial=[])" — true, costly,
-#   and it blamed the boot when the cause is the INPUT. Until a realistic boot.o has a committed route, step 4
-#   boots only the caller's explicit LOGOS_D_BOOTO object. The comparison itself is unchanged.
+#   LA_ENTRY points far past them. On 09-10 10:53 ld's OWN image of that stub did not boot cleanly (rc=124, empty
+#   serial, after a 90 s QEMU timeout), so there was no control to compare against, and two timeouts were spent to
+#   learn it. ⚠ WHY it is silent is NOT diagnosed (LINKER.md, 2026-09-10): boot.asm writes serial before its
+#   LA_ENTRY jump, so "no LA program" alone does not explain it. (Corrected the same evening: 7f0fe11's wording
+#   here named the stub INPUT as the cause — asserted, never measured.) Until a realistic boot.o has a committed
+#   route, step 4 boots only the caller's explicit LOGOS_D_BOOTO object. The comparison itself is unchanged.
 if [ -z "${LOGOS_D_BOOTO:-}" ]; then
-    echo "SKIP  link_kernel 4: the boot comparison needs a REALISTIC object — the committed input links 256 zero bytes where the LA image goes, so ld's own image of it has no program to boot. No committed route to a realistic boot.o exists yet; LOGOS_D_BOOTO=<path> runs this step by hand"
+    echo "SKIP  link_kernel 4: the boot comparison needs a REALISTIC object — on the committed stub (256 zero bytes where the LA image goes) ld's own image did not boot cleanly (09-10: a QEMU timeout, empty serial; why is NOT diagnosed), so there is no control to compare. No committed route to a realistic boot.o exists yet; LOGOS_D_BOOTO=<path> runs this step by hand"
 elif ! command -v qemu-system-x86_64 >/dev/null 2>&1; then
     echo "SKIP  link_kernel 4: qemu-system-x86_64 absent"
 else

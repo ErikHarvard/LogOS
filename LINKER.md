@@ -1768,3 +1768,35 @@ kernel-k1's committed `asm.la` (`0b69cdd3…`, 185,477 B, last changed `750467d`
 **NEXT:** make step 4 reachable by default (commit a stub `entry.inc` as a `link_test*`
 fixture, or require the realistic object and SKIP loudly); print the gates' input lines in
 `run_link_regress.sh`.
+
+## 2026-09-10 (evening) — `7f0fe11`: the gate's object comes ONLY from committed sources; step 4 is a NAMED SKIP
+
+This closes items 3 and 4 above, and both halves of that NEXT. It does **not** close item 2:
+step 4 still needs a realistic `boot.o` by a committed route, so the entry stays `[~]`.
+
+- **The input.** `link_test_kseam_entry.inc` is tracked (`LA_ENTRY equ 0x410a9e`, the same
+  line as the ignored 08-21 stub). The incbin'd LA image is 256 zero bytes, generated into a
+  PRIVATE `mktemp -d` that a trap removes. Measured before any run: `entry.inc` alone fails at
+  `boot.asm:1549`, the incbin. The object is 7,104 B, sha256 `d4c3b2c411739f83`,
+  byte-identical to the old ignored-file object.
+- **The fallback into track D's worktree is deleted.** `LOGOS_D_BOOTO=<path>` stays as the
+  caller's explicit choice, never a default.
+- **A cwd shadow is refused by name.** NASM 2.16 searches the cwd before every `-i` path
+  (measured), so an untracked `./entry.inc`, `./native_codegen3_out`, `./idt.asm`,
+  `./timer.asm` or `./kbdirq.asm` would replace what `boot.asm` pulls in.
+- **Step 4 is a named SKIP** unless `LOGOS_D_BOOTO` is set, and qemu is required only then.
+  Every whole-gate SKIP exits 2. `run_link_regress.sh` names an exit-2 row a SKIP, not an
+  abort, and exits 2 if any gate skipped. `a3bffcf` prints each gate's input lines, and
+  `467cf58` runs the suite from its own tree.
+- **Verified** 16:39–16:45, in scratch exports of `467cf58` plus the change as a patch, under
+  strace. GREEN: steps 1–3 PASS, step 4 the named SKIP, rc 0, 306 s. Three red arms, one per
+  claim (the fixture removed; a planted `./native_codegen3_out`; a planted `./entry.inc`):
+  each a named SKIP, rc 2, no PASS. 0 paths under `~/logos-d` were touched. Merged to
+  kernel-k1 as `67a99a9`.
+
+⚠ **A correction to `7f0fe11`'s own comment.** Its step-4 comment named the stub INPUT as the
+cause of the silent control. That cause was asserted, never measured, and item 2 above says
+the opposite: why the stub's control is silent is NOT diagnosed. The comment, the SKIP
+message and the fixture's header now say only what was measured (a QEMU timeout, empty
+serial) and point here. Corrected on track-b the same evening, in comment and message text
+only.

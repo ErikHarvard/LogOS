@@ -2851,6 +2851,11 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       criterion pre-registered 09-09 (a SKIP is not a verdict): `gate_link_kernel` step 4, the
       QEMU boot comparison, skipped — its stub input's `ld` control does not boot, a regression
       from slice 14's PASS introduced by my `751d34b`. See `LINKER.md`, 2026-09-10.
+      ✔ **`7f0fe11` (2026-09-10 evening): the gate's local object now comes ONLY from committed
+      sources** (a tracked `entry.inc` fixture + 256 generated zero bytes; the fallback into track
+      D's worktree deleted; a cwd shadow refused by name; every whole-gate SKIP exits 2), and step
+      4 is a NAMED SKIP on that stub. The entry stays `[~]`: step 4 needs a realistic `boot.o` by a
+      committed route, and why the stub's control is silent is still NOT diagnosed.
       `asmelf.la` above closes only the single-source/single-segment image case
       and does not claim this.
       ★ **The per-slice record is `LINKER.md`**. This entry summarises; that file
