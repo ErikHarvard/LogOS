@@ -1,0 +1,111 @@
+# ══════════════════════════════════════════════════════════════════
+#  ancestry_gate.la — M11b's GATE. Pre-registered on the board 2026-09-10 before any code
+#  (and amended, before any run: the KAPPA chain's depth is 4, not 3).
+#
+#  ancestry.la walks a node; THIS file supplies what the generated module must not copy:
+#  canon's CANON as the renderer, and the FORM step, DECOMP(DAG(g)), from glyphdag.la.
+#  familytree.la has no export line, so its CAT and DEPTHOF cannot be imported
+#  (tiny_host.c:928-941); these fixtures are chosen for what they must be able to EXPRESS:
+#  all six constructor arms, uneven leaf depths, the dyad compound, and a DCOLLAPSE
+#  self-chain whose DAG is small while its unfolded tree is exponential (sharing).
+#
+#  Rows (a build.sh block matches each name; each prints OK or FAIL):
+#    A0-shipped    the spec's own cases, re-run on the GENERATED module. specpipe's META_DEBUG
+#                  tests the VALUES and never the src it ships; this is the check on the src.
+#    A1-from-form  the walk over DECOMP(DAG(g)) equals the walk over g — the one compressing
+#                  form carries the whole lineage. Control: F6's form vs F7 must DIFFER.
+#    A2-complete   the entries of ANC_GENS(g) sum to TSIZE(g): every COLLAPSE visited.
+#    A3-grounded   every leaf is one of the nine; a planted PRIM("NOT_A_PRIMITIVE") is NAMED.
+#    A4-depth      generations − 1 equals each fixture's hand depth.
+#    A5-dyad       the dyad line equals each fixture's hand value.
+#  REPORT, never a gate: parent counts by arity. A 3-parent node is unconstructible.
+#  ★ Every local glyph is AG_-prefixed: lookup is first-match and imports come first, so a
+#    local name equal to an import's export would be silently dead.
+# ══════════════════════════════════════════════════════════════════
+
+import("canon.la")       # first: its PRIM..MC, Z/IF/TRUE/FALSE/AND/OR win the shared names
+import("metaglyph.la")   # (KAPPA: canon's wins, and it is the same term)
+import("glyphdag.la")    # DAG DECOMP DCOLLAPSE TSIZE SYN_S (its PRIM..MC are alpha-equal to canon's)
+import("ancestry.la")    # ANCESTRY ANC_GENS LEAVES DYAD + ZA IFA CONSA NILA MAPA LENA JOINA HASNAME
+
+glyph AG_MODE = la n. n(la nm. nm)(la a. la b. "⊗")(la a. la b. "⊕")(la a. la b. "▷")(la a. la b. "⊂")(la a. "↻")
+glyph AG_ROW  = la lbl. la c. concat(" | ")(concat(lbl)(concat(" ")(IFA(c)(la _. "OK")(la _. "FAIL"))))
+glyph AG_ALL  = ZA(la self. la p. la l. l(TRUE)(la h. la t. AND(p(h))(self(p)(t))))
+glyph AG_SUM  = ZA(la self. la l. l(0)(la h. la t. add(h)(self(t))))
+
+# ── the fixtures ──────────────────────────────────────────────────────
+glyph AG_F1 = PRIM("SELF")
+glyph AG_F2 = SYN(PRIM("VOID"))(PRIM("BEING"))
+glyph AG_F3 = KAPPA
+glyph AG_F4 = CON(PRIM("RELATION"))(PRIM("FORM"))
+glyph AG_F5 = CONT(PRIM("VOID"))(PRIM("BECOMING"))
+glyph AG_F6 = SYN(DIR(PRIM("LOVE"))(PRIM("RELATION")))(MC(PRIM("SELF")))
+glyph AG_F7 = SYN(PRIM("LOVE"))(DIR(PRIM("SELF"))(PRIM("VOID")))
+glyph AG_K0 = DAG(KAPPA)
+glyph AG_K1 = DCOLLAPSE(SYN_S)(AG_K0)(AG_K0)
+glyph AG_K2 = DCOLLAPSE(SYN_S)(AG_K1)(AG_K1)
+glyph AG_K3 = DCOLLAPSE(SYN_S)(AG_K2)(AG_K2)
+glyph AG_F8 = DECOMP(AG_K3)
+glyph AG_BAD = PRIM("NOT_A_PRIMITIVE")
+
+# (name, node, hand depth, hand dyad line)
+glyph AG_T  = la nm. la n. la d. la dy. la k. k(nm)(n)(d)(dy)
+glyph AG_N  = la x. x(la nm. la n. la d. la dy. n)
+glyph AG_D  = la x. x(la nm. la n. la d. la dy. d)
+glyph AG_DY = la x. x(la nm. la n. la d. la dy. dy)
+glyph AG_FX =
+  CONSA(AG_T("F1")(AG_F1)(0)("—"))(
+  CONSA(AG_T("F2")(AG_F2)(1)("VOID,BEING"))(
+  CONSA(AG_T("F3")(AG_F3)(1)("—"))(
+  CONSA(AG_T("F4")(AG_F4)(1)("—"))(
+  CONSA(AG_T("F5")(AG_F5)(1)("VOID"))(
+  CONSA(AG_T("F6")(AG_F6)(2)("—"))(
+  CONSA(AG_T("F7")(AG_F7)(2)("VOID"))(
+  CONSA(AG_T("F8")(AG_F8)(4)("—"))(
+  NILA))))))))
+
+# ── A0: the spec's cases, on the SHIPPED src ──────────────────────────
+glyph AG_A0 = AND(str_eq(ANCESTRY(AG_MODE)(AG_F6))("0:⊗[2] / 1:▷[2], ↻[1] / 2:LOVE[0], RELATION[0], SELF[0] :: dyad —"))(
+              AND(str_eq(ANCESTRY(AG_MODE)(AG_F1))("0:SELF[0] :: dyad —"))(
+              AND(str_eq(ANCESTRY(AG_MODE)(AG_F2))("0:⊗[2] / 1:VOID[0], BEING[0] :: dyad VOID,BEING"))(
+              AND(str_eq(JOINA(",")(LEAVES(AG_F6)))("LOVE,RELATION,SELF"))(
+                  str_eq(DYAD(AG_F5))("VOID")))))
+
+# ── A1: read from the form ────────────────────────────────────────────
+glyph AG_FORMWALK = la n. ANCESTRY(CANON)(DECOMP(DAG(n)))
+glyph AG_A1 = AND(AG_ALL(la x. str_eq(AG_FORMWALK(AG_N(x)))(ANCESTRY(CANON)(AG_N(x))))(AG_FX))
+                 (NOT(str_eq(AG_FORMWALK(AG_F6))(ANCESTRY(CANON)(AG_F7))))
+
+# ── A2: complete — entries sum to the unfolded tree ───────────────────
+glyph AG_ENT = la n. AG_SUM(MAPA(LENA)(ANC_GENS(n)))
+glyph AG_A2 = AG_ALL(la x. int_eq(AG_ENT(AG_N(x)))(TSIZE(AG_N(x))))(AG_FX)
+
+# ── A3: grounded — every leaf is one of the nine; the planted offender is NAMED ──
+glyph AG_NINE = CONSA("BEING")(CONSA("RECOGNITION")(CONSA("LOVE")(CONSA("SELF")(CONSA("RELATION")(
+                CONSA("VOID")(CONSA("BECOMING")(CONSA("FORM")(CONSA("DEPTH")(NILA)))))))))
+glyph AG_FIRSTBAD = ZA(la self. la l. l("")(la h. la t. IFA(HASNAME(h)(AG_NINE))(la _. self(t))(la _. h)))
+glyph AG_OFF = la n. AG_FIRSTBAD(LEAVES(n))
+glyph AG_A3 = AND(AG_ALL(la x. str_eq(AG_OFF(AG_N(x)))(""))(AG_FX))(str_eq(AG_OFF(AG_BAD))("NOT_A_PRIMITIVE"))
+
+# ── A4: depth; A5: the dyad ───────────────────────────────────────────
+glyph AG_A4 = AG_ALL(la x. int_eq(sub(LENA(ANC_GENS(AG_N(x))))(1))(AG_D(x)))(AG_FX)
+glyph AG_A5 = AG_ALL(la x. str_eq(DYAD(AG_N(x)))(AG_DY(x)))(AG_FX)
+
+# ── REPORT: parent counts across every fixture's walk (never a gate) ──
+glyph AG_ALLN = ZA(la self. la l. l(NILA)(la h. la t. APPA(ZA(la s2. la gs. gs(NILA)(la g. la r. APPA(g)(s2(r))))(ANC_GENS(AG_N(h))))(self(t))))(AG_FX)
+glyph AG_PC   = la k. LENA(ZA(la self. la l. l(NILA)(la h. la t. IFA(int_eq(PCOUNT(h))(k))(la _. CONSA(h)(self(t)))(la _. self(t))))(AG_ALLN))
+
+glyph MAIN = print(
+    concat("ancestry (M11b): the walk back through every COLLAPSE to the nine and the dyad")(
+    concat(AG_ROW("A0-shipped")(AG_A0))(
+    concat(AG_ROW("A1-from-form")(AG_A1))(
+    concat(AG_ROW("A2-complete")(AG_A2))(
+    concat(concat(AG_ROW("A3-grounded")(AG_A3))(concat(" (planted offender named: ")(concat(AG_OFF(AG_BAD))(")"))))(
+    concat(AG_ROW("A4-depth")(AG_A4))(
+    concat(AG_ROW("A5-dyad")(AG_A5))(
+    concat("\n  report (never a gate): parent counts over every walk — [2]=")(concat(int_to_str(AG_PC(2)))(
+    concat(" [1]=")(concat(int_to_str(AG_PC(1)))(concat(" [0]=")(concat(int_to_str(AG_PC(0)))(
+    concat(" — a 3-parent node is unconstructible (six Scott arms), so no gate can be built on it")(
+    concat("\n  F6 NU_STAR: ")(concat(ANCESTRY(CANON)(AG_F6))(
+    concat("\n  F2 the dyad: ")(concat(ANCESTRY(CANON)(AG_F2))(
+    concat("\n  F7 uneven: ")(ANCESTRY(CANON)(AG_F7)))))))))))))))))))))

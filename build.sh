@@ -3104,6 +3104,36 @@ else
     exit 1
 fi
 
+# ── M11b ANCESTRY BLOCK BEGIN ────────────────────────────────────────────────────────────────
+say "M11b — the ancestry walk (ancestry_spec.la → ancestry.la; gated by ancestry_gate.la)"
+# ANCESTRY(render)(node): any glyph's complete line back through every COLLAPSE to the nine
+# primitives and the dyad, as ONE walk (WP sec:compression :3138-3141; LA_COMPLETION M11b).
+# ancestry.la is REGENERATED here from its SPEC (no drift) and META_DEBUG verifies all 23 entries.
+# The gate then checks the SHIPPED module: A0 the spec's own cases re-run on the generated src
+# (META_DEBUG tests the values, never the src it ships), A1 the walk over DECOMP(DAG(g)) equals
+# the walk over g, A2 entries == TSIZE, A3 every leaf is one of the nine (a planted offender is
+# NAMED), A4 depth, A5 the dyad (VOID = 0, BEING = 1). Pre-registered on the board 2026-09-10.
+ok=1
+ANS="$(timeout 900 ./tiny_host ancestry_spec.la 2>/dev/null || true)"
+grep -q "RESULT: module VERIFIED" <<< "$ANS" || { echo "FAIL  ancestry: the SPEC did not DEPLOY a verified module"; ok=0; }
+[ -f ancestry.la ] || { echo "FAIL  ancestry: ancestry.la was not written"; ok=0; }
+for G in ZA PCOUNT KIDS NEXTGEN GENS ANC_GENS LEAVES DYAD WALKSTR ANCESTRY; do
+    grep -qx "  $G: PASS" <<< "$ANS" || { echo "FAIL  ancestry: $G not verified"; ok=0; }
+done
+ANG="$(timeout 900 ./tiny_host ancestry_gate.la 2>&1 || true)"
+for R in A0-shipped A1-from-form A2-complete A3-grounded A4-depth A5-dyad; do
+    case "$ANG" in *"| $R OK"*) : ;; *) echo "FAIL  ancestry: row $R is not OK — got: $ANG"; ok=0 ;; esac
+done
+case "$ANG" in *FAIL*) echo "FAIL  ancestry: a row failed — $ANG"; ok=0 ;; esac
+case "$ANG" in *"planted offender named: NOT_A_PRIMITIVE"*) : ;; *) echo "FAIL  ancestry: A3's planted offender was not NAMED — $ANG"; ok=0 ;; esac
+if [ "$ok" -eq 1 ]; then
+    echo "PASS  ancestry (M11b): the SPEC DEPLOYs ancestry.la (23 entries VERIFIED); the walk reads the whole lineage OFF the one DAG form, visits every COLLAPSE (entries == TSIZE), grounds every leaf in the nine, and names the dyad"
+else
+    printf '%s\n' "$ANG"
+    exit 1
+fi
+# ── M11b ANCESTRY BLOCK END ──────────────────────────────────────────────────────────────────
+
 say "Spec pipeline: static SWC checker — ill-foundedness + operator-order (swc_spec.la)"
 # swc_spec.la writes a CONSERVATIVE static checker and GENERATEs + DEPLOYs swc.la
 # (REGENERATED here). It enforces two constraints BEFORE evaluation:
@@ -5291,7 +5321,7 @@ say "The mutation lever, extended past the 2 gates it could reach (mutate.py)"
 #  same failure mode as a check that cannot go red.
 if command -v python3 >/dev/null && [ -f mutate.py ]; then
     MUTOK=1
-    for MUTMOD in prop.la selfext1.la selfext2.la selfext2b.la ratchet.py selfext4.la gate_selfext4.sh gate_selfext5.sh selfext6.la; do
+    for MUTMOD in prop.la selfext1.la selfext2.la selfext2b.la ratchet.py selfext4.la gate_selfext4.sh gate_selfext5.sh selfext6.la ancestry.la; do
         MUTRC=0
         MUTOUT="$(MUT_BUDGET=300 python3 mutate.py "$MUTMOD" 2>&1)" || MUTRC=$?
         printf '%s\n' "$MUTOUT"
@@ -5319,7 +5349,7 @@ if command -v python3 >/dev/null && [ -f mutate.py ]; then
         fi
     done
     [ "$MUTOK" -eq 1 ] || exit 1
-    echo "PASS  mutate: 29 implementation-perturbing mutants all CAUGHT, none died of the wrong cause — prop.la 12 (two of them TARGETED, one per register, each reading only its own row: glyph-negation-cancels turns only the glyph register red, truth-negation-not-involutive only the truth register; before the second, no mutant in the set could turn dne-holds-operationally red, so the truth half had never been shown able to fail; and five for GATE 7, the Goedel-Gentzen bridge, one per claim, each reading only its own row: Kripke negation made successor-blind, primitive disjunction collapsed into its own GG image, atoms left bare by the translation, the V-frame losing a future, a non-persistent valuation; one for GATE 8, → read as its converse, the first mutant ever to reach PIMP; and one for GATE 9, ∧ built as ⊗ instead of ⊕, the first ever to touch PAND), selfext6.la 2 (the search budget ignored; a module emitted on exhaustion), selfext1.la 5 (each of the revision arm's four conjuncts forced true, plus the reproduction arm) selfext2.la 2 (an unverified extension reaching execution; a MAIN that hardcodes the answer, visible ONLY to the parent control) selfext2b.la 1 (the organ exec'ing the GENERIC VM LOADER — the cheapest test of the most expensive mistake in this repo, since the guard is static and needs no vessel rebuild) and ratchet.py 3 (α-normalisation disabled, strict-increase weakened, collapse-check removed — the last of which SURVIVED at first and exposed a non-discriminating fixture, not a gate defect) and stage 4's 2 (an overfit fixture that is secretly honest; held-out probes replaced by the probe the synthesiser already saw) — the first of THOSE also survived at first, and exposed a TD_IMPL/TD_SRC split inside the organ rather than a blind gate) and stage 5's 2 (the VM leg silently falling back to the host; the VM reusing a stale stream. ★ The harness's own FAIL classifier was substring-matching and read stage 5's PASS prose (\"a FAILURE, not a note\") as a failure; the line-start fix then missed the LA modules' inline \"| name FAIL\" and turned 8 CAUGHT into SURVIVED, caught only by re-running every set. Now whole-word. Each red is reported as a RATIO of the green baseline, because a red arriving in a small fraction of it is the shape of a mutant that died before reaching the check; and the harness REFUSES to run unless the unmutated tree is green first, since otherwise every CAUGHT is meaningless. NOT RUN HERE: opgrammar.la's 2 mutants, ~250 s each; run out of band with 'MUT_BUDGET=1200 python3 mutate.py opgrammar.la' (both CAUGHT as of 2026-08-24)"
+    echo "PASS  mutate: 32 implementation-perturbing mutants all CAUGHT, none died of the wrong cause — prop.la 12 (two of them TARGETED, one per register, each reading only its own row: glyph-negation-cancels turns only the glyph register red, truth-negation-not-involutive only the truth register; before the second, no mutant in the set could turn dne-holds-operationally red, so the truth half had never been shown able to fail; and five for GATE 7, the Goedel-Gentzen bridge, one per claim, each reading only its own row: Kripke negation made successor-blind, primitive disjunction collapsed into its own GG image, atoms left bare by the translation, the V-frame losing a future, a non-persistent valuation; one for GATE 8, → read as its converse, the first mutant ever to reach PIMP; and one for GATE 9, ∧ built as ⊗ instead of ⊕, the first ever to touch PAND), selfext6.la 2 (the search budget ignored; a module emitted on exhaustion), ancestry.la 3 (M11b's walk: a right parent lost, a walk one generation short, a dyad claimed everywhere, each read by its own ancestry_gate row), selfext1.la 5 (each of the revision arm's four conjuncts forced true, plus the reproduction arm) selfext2.la 2 (an unverified extension reaching execution; a MAIN that hardcodes the answer, visible ONLY to the parent control) selfext2b.la 1 (the organ exec'ing the GENERIC VM LOADER — the cheapest test of the most expensive mistake in this repo, since the guard is static and needs no vessel rebuild) and ratchet.py 3 (α-normalisation disabled, strict-increase weakened, collapse-check removed — the last of which SURVIVED at first and exposed a non-discriminating fixture, not a gate defect) and stage 4's 2 (an overfit fixture that is secretly honest; held-out probes replaced by the probe the synthesiser already saw) — the first of THOSE also survived at first, and exposed a TD_IMPL/TD_SRC split inside the organ rather than a blind gate) and stage 5's 2 (the VM leg silently falling back to the host; the VM reusing a stale stream. ★ The harness's own FAIL classifier was substring-matching and read stage 5's PASS prose (\"a FAILURE, not a note\") as a failure; the line-start fix then missed the LA modules' inline \"| name FAIL\" and turned 8 CAUGHT into SURVIVED, caught only by re-running every set. Now whole-word. Each red is reported as a RATIO of the green baseline, because a red arriving in a small fraction of it is the shape of a mutant that died before reaching the check; and the harness REFUSES to run unless the unmutated tree is green first, since otherwise every CAUGHT is meaningless. NOT RUN HERE: opgrammar.la's 2 mutants, ~250 s each; run out of band with 'MUT_BUDGET=1200 python3 mutate.py opgrammar.la' (both CAUGHT as of 2026-08-24)"
 else
     echo "SKIP  mutate: python3 or mutate.py absent"
 fi

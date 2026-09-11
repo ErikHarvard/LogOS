@@ -1,0 +1,123 @@
+# ══════════════════════════════════════════════════════════════════
+#  ancestry_spec.la — M11b, THE ANCESTRY WALK, written as a SPEC and produced by the
+#  spec→implementation pipeline (import("specpipe.la")); DEPLOY writes ancestry.la.
+#
+#  "The Glyphic Etymology Tree names the query layer over it: any sigil's complete
+#  ancestry, back through every COLLAPSE to the nine primitives and the dyad, as a
+#  computation rather than an archive. Every lineage IS a walk." (WP sha 98beeff4,
+#  :3138-3141; LA_COMPLETION.md M11b at kernel-k1 143c116 :1216-1224.)
+#
+#  ANCESTRY(render)(node) walks ANY six-continuation Scott node (canon's, glyphdag's
+#  and this spec's test constructors share the shape) generation by generation, from
+#  the glyph back to its leaves, tagging each node with its PARENT COUNT, then names
+#  which leaves ARE the dyad: VOID (Church zero) and BEING (Church one), WP
+#  sub:zeroone :2853-2859. The nine are co-primitive, so no path below them is
+#  invented; the dyadic law ("every derived glyph IS two parents in one sigil",
+#  :2837-2838) shows at every step as the [2].
+#
+#  ★ THE RENDERER IS AN ARGUMENT, and the form step lives in the gate. specpipe's
+#    GENERATE emits no import lines, so a generated module that needed DECOMP or a
+#    κ-renderer would have to COPY them — the duplication class measured 2026-09-09.
+#    ancestry_gate.la supplies canon's CANON and does DECOMP(DAG(g)) itself.
+#  ★ ONE SOURCE OF TRUTH. Every value below and its SRC string were emitted from the
+#    same line of .regress/ancestry_values.la by .regress/mk_ancestry_spec.py, so the
+#    code META_DEBUG tests and the code GENERATE ships are the same text.
+#    ancestry_gate.la's row A0 re-runs these cases on the SHIPPED module anyway.
+#  M11c (auto-registration) is NOT here: M11b is the walk, M11c makes it a registry.
+# ══════════════════════════════════════════════════════════════════
+
+import("specpipe.la")   # GENERATE / DEPLOY / META_DEBUG + TRIPLE DEF PAIR CONS NIL
+
+# ── implementation VALUES (what META_DEBUG runs) ──
+glyph ZA = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRA = la t. la f. t
+glyph FAA = la t. la f. f
+glyph IFA = la c. la t. la f. c(t)(f)("!")
+glyph NILA = la n. la c. n
+glyph CONSA = la h. la t. la n. la c. c(h)(t)
+glyph ISNILA = la l. l(TRA)(la h. la t. FAA)
+glyph APPA = ZA(la self. la a. la b. a(b)(la h. la t. CONSA(h)(self(t)(b))))
+glyph MAPA = la f. ZA(la self. la l. l(NILA)(la h. la t. CONSA(f(h))(self(t))))
+glyph LENA = ZA(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph JOINA = la sep. ZA(la self. la l. l("")(la h. la t. t(h)(la h2. la t2. concat(h)(concat(sep)(self(t))))))
+glyph PCOUNT = la n. n(la nm. 0)(la a. la b. 2)(la a. la b. 2)(la a. la b. 2)(la a. la b. 2)(la a. 1)
+glyph KIDS = la n. n(la nm. NILA)(la a. la b. CONSA(a)(CONSA(b)(NILA)))(la a. la b. CONSA(a)(CONSA(b)(NILA)))(la a. la b. CONSA(a)(CONSA(b)(NILA)))(la a. la b. CONSA(a)(CONSA(b)(NILA)))(la a. CONSA(a)(NILA))
+glyph NEXTGEN = ZA(la self. la l. l(NILA)(la h. la t. APPA(KIDS(h))(self(t))))
+glyph GENS = ZA(la self. la l. l(NILA)(la h. la t. CONSA(l)(self(NEXTGEN(l)))))
+glyph ANC_GENS = la n. GENS(CONSA(n)(NILA))
+glyph LEAVES = ZA(la self. la n. n(la nm. CONSA(nm)(NILA))(la a. la b. APPA(self(a))(self(b)))(la a. la b. APPA(self(a))(self(b)))(la a. la b. APPA(self(a))(self(b)))(la a. la b. APPA(self(a))(self(b)))(la a. self(a)))
+glyph HASNAME = ZA(la self. la x. la l. l(FAA)(la h. la t. IFA(str_eq(h)(x))(la _. TRA)(la _. self(x)(t))))
+glyph DYAD = la n. (la ls. (la v. la b. IFA(v)(la _. IFA(b)(la _. "VOID,BEING")(la _. "VOID"))(la _. IFA(b)(la _. "BEING")(la _. "—")))(HASNAME("VOID")(ls))(HASNAME("BEING")(ls)))(LEAVES(n))
+glyph ENTRY = la render. la n. concat(render(n))(concat("[")(concat(int_to_str(PCOUNT(n)))("]")))
+glyph GENLINE = la render. la k. la l. concat(int_to_str(k))(concat(":")(JOINA(", ")(MAPA(ENTRY(render))(l))))
+glyph WALKSTR = la render. ZA(la self. la k. la gs. gs("")(la h. la t. concat(GENLINE(render)(k)(h))(t("")(la h2. la t2. concat(" / ")(self(add(k)(1))(t))))))
+glyph ANCESTRY = la render. la n. concat(WALKSTR(render)(0)(ANC_GENS(n)))(concat(" :: dyad ")(DYAD(n)))
+
+# ── the SAME text as SRC strings (what GENERATE ships) ──
+glyph SRC_ZA = "la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))"
+glyph SRC_TRA = "la t. la f. t"
+glyph SRC_FAA = "la t. la f. f"
+glyph SRC_IFA = "la c. la t. la f. c(t)(f)(\"!\")"
+glyph SRC_NILA = "la n. la c. n"
+glyph SRC_CONSA = "la h. la t. la n. la c. c(h)(t)"
+glyph SRC_ISNILA = "la l. l(TRA)(la h. la t. FAA)"
+glyph SRC_APPA = "ZA(la self. la a. la b. a(b)(la h. la t. CONSA(h)(self(t)(b))))"
+glyph SRC_MAPA = "la f. ZA(la self. la l. l(NILA)(la h. la t. CONSA(f(h))(self(t))))"
+glyph SRC_LENA = "ZA(la self. la l. l(0)(la h. la t. add(1)(self(t))))"
+glyph SRC_JOINA = "la sep. ZA(la self. la l. l(\"\")(la h. la t. t(h)(la h2. la t2. concat(h)(concat(sep)(self(t))))))"
+glyph SRC_PCOUNT = "la n. n(la nm. 0)(la a. la b. 2)(la a. la b. 2)(la a. la b. 2)(la a. la b. 2)(la a. 1)"
+glyph SRC_KIDS = "la n. n(la nm. NILA)(la a. la b. CONSA(a)(CONSA(b)(NILA)))(la a. la b. CONSA(a)(CONSA(b)(NILA)))(la a. la b. CONSA(a)(CONSA(b)(NILA)))(la a. la b. CONSA(a)(CONSA(b)(NILA)))(la a. CONSA(a)(NILA))"
+glyph SRC_NEXTGEN = "ZA(la self. la l. l(NILA)(la h. la t. APPA(KIDS(h))(self(t))))"
+glyph SRC_GENS = "ZA(la self. la l. l(NILA)(la h. la t. CONSA(l)(self(NEXTGEN(l)))))"
+glyph SRC_ANC_GENS = "la n. GENS(CONSA(n)(NILA))"
+glyph SRC_LEAVES = "ZA(la self. la n. n(la nm. CONSA(nm)(NILA))(la a. la b. APPA(self(a))(self(b)))(la a. la b. APPA(self(a))(self(b)))(la a. la b. APPA(self(a))(self(b)))(la a. la b. APPA(self(a))(self(b)))(la a. self(a)))"
+glyph SRC_HASNAME = "ZA(la self. la x. la l. l(FAA)(la h. la t. IFA(str_eq(h)(x))(la _. TRA)(la _. self(x)(t))))"
+glyph SRC_DYAD = "la n. (la ls. (la v. la b. IFA(v)(la _. IFA(b)(la _. \"VOID,BEING\")(la _. \"VOID\"))(la _. IFA(b)(la _. \"BEING\")(la _. \"—\")))(HASNAME(\"VOID\")(ls))(HASNAME(\"BEING\")(ls)))(LEAVES(n))"
+glyph SRC_ENTRY = "la render. la n. concat(render(n))(concat(\"[\")(concat(int_to_str(PCOUNT(n)))(\"]\")))"
+glyph SRC_GENLINE = "la render. la k. la l. concat(int_to_str(k))(concat(\":\")(JOINA(\", \")(MAPA(ENTRY(render))(l))))"
+glyph SRC_WALKSTR = "la render. ZA(la self. la k. la gs. gs(\"\")(la h. la t. concat(GENLINE(render)(k)(h))(t(\"\")(la h2. la t2. concat(\" / \")(self(add(k)(1))(t))))))"
+glyph SRC_ANCESTRY = "la render. la n. concat(WALKSTR(render)(0)(ANC_GENS(n)))(concat(\" :: dyad \")(DYAD(n)))"
+
+# ── test-only helpers: NOT entries, so GENERATE never ships them ──────────────
+glyph TC  = la probe. la expected. PAIR(probe)(expected)
+glyph E   = la name. la sig. la src. la val. la tests. TRIPLE(name)(DEF(sig)(src)(val))(tests)
+# six-continuation Scott constructors (canon.la's shape) and a mode renderer, for the cases
+glyph tP = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph tS = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph tC = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fc(a)(b)
+glyph tD = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fd(a)(b)
+glyph tO = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fo(a)(b)
+glyph tM = la a. la fp. la fs. la fc. la fd. la fo. la fm. fm(a)
+glyph tR = la n. n(la nm. nm)(la a. la b. "⊗")(la a. la b. "⊕")(la a. la b. "▷")(la a. la b. "⊂")(la a. "↻")
+glyph tJ = la l. JOINA(",")(MAPA(tR)(l))
+glyph tNU = tS(tD(tP("LOVE"))(tP("RELATION")))(tM(tP("SELF")))
+glyph tDY = tS(tP("VOID"))(tP("BEING"))
+
+# ── THE SPEC: every entry carries its executable contract ──
+glyph ANCESTRY_SPEC =
+  CONS(E("ZA")("fixpoint combinator (call-by-value Z)")(SRC_ZA)(ZA)(CONS(TC(la g. g(la self. la s. IFA(str_eq(s)(""))(la _. "")(la _. concat("|")(self(str_tail(s)))))("abc"))("|||"))(NIL)))(
+  CONS(E("TRA")("Church true")(SRC_TRA)(TRA)(CONS(TC(la g. g("t")("f"))("t"))(NIL)))(
+  CONS(E("FAA")("Church false")(SRC_FAA)(FAA)(CONS(TC(la g. g("t")("f"))("f"))(NIL)))(
+  CONS(E("IFA")("conditional over thunked branches")(SRC_IFA)(IFA)(CONS(TC(la g. g(TRA)(la _. "yes")(la _. "no"))("yes"))(CONS(TC(la g. g(FAA)(la _. "yes")(la _. "no"))("no"))(NIL))))(
+  CONS(E("NILA")("the empty list")(SRC_NILA)(NILA)(CONS(TC(la g. g("EMPTY")(la h. la t. "NO"))("EMPTY"))(NIL)))(
+  CONS(E("CONSA")("list cons")(SRC_CONSA)(CONSA)(CONS(TC(la g. g("h")(NILA)("EMPTY")(la h. la t. h))("h"))(NIL)))(
+  CONS(E("ISNILA")("is the list empty")(SRC_ISNILA)(ISNILA)(CONS(TC(la g. g(NILA)("T")("F"))("T"))(CONS(TC(la g. g(CONSA("x")(NILA))("T")("F"))("F"))(NIL))))(
+  CONS(E("APPA")("append two lists")(SRC_APPA)(APPA)(CONS(TC(la g. JOINA(",")(g(CONSA("a")(NILA))(CONSA("b")(CONSA("c")(NILA)))))("a,b,c"))(NIL)))(
+  CONS(E("MAPA")("map a function over a list")(SRC_MAPA)(MAPA)(CONS(TC(la g. JOINA(",")(g(la s. concat(s)("!"))(CONSA("a")(CONSA("b")(NILA)))))("a!,b!"))(NIL)))(
+  CONS(E("LENA")("list length")(SRC_LENA)(LENA)(CONS(TC(la g. int_to_str(g(CONSA("a")(CONSA("b")(NILA)))))("2"))(CONS(TC(la g. int_to_str(g(NILA)))("0"))(NIL))))(
+  CONS(E("JOINA")("join a list of strings with a separator")(SRC_JOINA)(JOINA)(CONS(TC(la g. g("-")(CONSA("a")(CONSA("b")(CONSA("c")(NILA)))))("a-b-c"))(CONS(TC(la g. g(",")(NILA))(""))(NIL))))(
+  CONS(E("PCOUNT")("node -> its parent count: 0 primitive, 2 binary mode, 1 metacursion (the dyadic law)")(SRC_PCOUNT)(PCOUNT)(CONS(TC(la g. int_to_str(g(tP("A"))))("0"))(CONS(TC(la g. int_to_str(g(tO(tP("A"))(tP("B")))))("2"))(CONS(TC(la g. int_to_str(g(tM(tP("A")))))("1"))(NIL)))))(
+  CONS(E("KIDS")("node -> the list of its parents, in order")(SRC_KIDS)(KIDS)(CONS(TC(la g. tJ(g(tD(tP("A"))(tP("B")))))("A,B"))(CONS(TC(la g. tJ(g(tM(tP("C")))))("C"))(CONS(TC(la g. tJ(g(tP("A"))))(""))(NIL)))))(
+  CONS(E("NEXTGEN")("a generation -> the next one back (every parent of every node, in order)")(SRC_NEXTGEN)(NEXTGEN)(CONS(TC(la g. tJ(g(CONSA(tS(tP("A"))(tP("B")))(CONSA(tM(tP("C")))(NILA)))))("A,B,C"))(NIL)))(
+  CONS(E("GENS")("a generation -> it and every generation behind it, down to the leaves")(SRC_GENS)(GENS)(CONS(TC(la g. int_to_str(LENA(g(CONSA(tNU)(NILA)))))("3"))(CONS(TC(la g. int_to_str(LENA(g(NILA))))("0"))(NIL))))(
+  CONS(E("ANC_GENS")("node -> its generations, the glyph first")(SRC_ANC_GENS)(ANC_GENS)(CONS(TC(la g. int_to_str(LENA(g(tP("A")))))("1"))(CONS(TC(la g. int_to_str(LENA(g(tNU))))("3"))(NIL))))(
+  CONS(E("LEAVES")("node -> the names of its leaves, left to right")(SRC_LEAVES)(LEAVES)(CONS(TC(la g. JOINA(",")(g(tNU)))("LOVE,RELATION,SELF"))(CONS(TC(la g. JOINA(",")(g(tP("X"))))("X"))(NIL))))(
+  CONS(E("HASNAME")("name -> list of names -> is it there")(SRC_HASNAME)(HASNAME)(CONS(TC(la g. g("B")(CONSA("A")(CONSA("B")(NILA)))("T")("F"))("T"))(CONS(TC(la g. g("Z")(CONSA("A")(NILA))("T")("F"))("F"))(NIL))))(
+  CONS(E("DYAD")("node -> which of its leaves ARE the dyad (VOID = 0, BEING = 1; WP sub:zeroone), or an em dash")(SRC_DYAD)(DYAD)(CONS(TC(la g. g(tDY))("VOID,BEING"))(CONS(TC(la g. g(tNU))("—"))(CONS(TC(la g. g(tP("BEING")))("BEING"))(CONS(TC(la g. g(tO(tP("VOID"))(tP("FORM"))))("VOID"))(NIL))))))(
+  CONS(E("ENTRY")("renderer -> node -> the node rendered, with its parent count")(SRC_ENTRY)(ENTRY)(CONS(TC(la g. g(tR)(tS(tP("A"))(tP("B"))))("⊗[2]"))(CONS(TC(la g. g(tR)(tP("A")))("A[0]"))(NIL))))(
+  CONS(E("GENLINE")("renderer -> index -> generation -> one line of the walk")(SRC_GENLINE)(GENLINE)(CONS(TC(la g. g(tR)(1)(CONSA(tP("A"))(CONSA(tM(tP("B")))(NILA))))("1:A[0], ↻[1]"))(NIL)))(
+  CONS(E("WALKSTR")("renderer -> first index -> generations -> the walk, generation by generation")(SRC_WALKSTR)(WALKSTR)(CONS(TC(la g. g(tR)(0)(ANC_GENS(tNU)))("0:⊗[2] / 1:▷[2], ↻[1] / 2:LOVE[0], RELATION[0], SELF[0]"))(NIL)))(
+  CONS(E("ANCESTRY")("renderer -> node -> the complete line back to the nine and the dyad, as ONE walk (M11b)")(SRC_ANCESTRY)(ANCESTRY)(CONS(TC(la g. g(tR)(tNU))("0:⊗[2] / 1:▷[2], ↻[1] / 2:LOVE[0], RELATION[0], SELF[0] :: dyad —"))(CONS(TC(la g. g(tR)(tP("SELF")))("0:SELF[0] :: dyad —"))(CONS(TC(la g. g(tR)(tDY))("0:⊗[2] / 1:VOID[0], BEING[0] :: dyad VOID,BEING"))(NIL)))))(
+  NIL)))))))))))))))))))))))
+
+glyph MAIN = print(DEPLOY(ANCESTRY_SPEC)("ancestry.la"))
