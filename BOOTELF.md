@@ -94,6 +94,26 @@ site sits at file offset `0x183` in `asm.la`'s object against `0x447` in nasm's:
 identical semantics, which is exactly why the standard is `ld(ours)==ld(nasm)` and not `.o`
 byte-identity.
 
+## Verdict, 2026-09-11 — re-derived on kernel-k1 `d6aae6c`, and it is GREEN
+
+The provenance stamp went STALE when track-d's changes to `kernel/boot.asm` and `kernel/idt.asm` reached kernel-k1
+after the 09-09 verdict. The per-arm cycle was re-run on `d6aae6c` from a scratch `git archive` export (ELENCHOS,
+slot 5 of the 2026-09-11 dispatch; runner sha256 `28c1f47e8fb2`), with the boot source staged exactly as build.sh stages it.
+
+| arm | ours.o | symbols | relocs | equ sites in BOTH objects | `ld(ours)==ld(nasm)` |
+|---|---|---|---|---|---|
+| NONE | 6820 B | 104 | 53 | none — the control | **GREEN** |
+| HH1 | 7378 B | 111 | 60 | `hh_msg_len` | **GREEN** |
+| HH2 | 8337 B | 116 | 84 | `hh2_ok_len`, `hh2_bad_len` | **GREEN** |
+
+★ **Red-tested on these same objects:** planting the defect class in `ours_HH1.o` (ours_HH1.o offset 0x185: imm32 4 -> 5) turns HH1
+**RED** (`boot_ref.elf boot_ours.elf differ: char 4754, line 2`) while NONE and HH2 stay GREEN.
+
+**Cost on this box, 24 cores:** `logos_secd` 32.44 s wall, 109596 KB maxrss · `codegen.la` 1064.54 s wall, 9589340 KB maxrss · per arm, in parallel:
+NONE 1685.83 s wall, 1440000 KB maxrss · HH1 1914.12 s wall, 1440000 KB maxrss · HH2 2491.20 s wall, 1439808 KB maxrss. Load: 3.04 2.61 3.18 at the cycle's start, 4.24 17.40 15.22 at its end, 4.24 17.40 15.22 now.
+
+**The stamp:** `BOOTELF_VERDICT_COMMIT=d6aae6c`, `BOOTELF_VERDICT_DATE=2026-09-11`, `BOOTELF_STAMP=d668fae6b8563e0b8f101199bfbb9eee813a8eea8cef5ca7abd007cc66037cc7`.
+
 ## Measured cost, 2026-09-09 — the documented figures do not reproduce
 
 The `~12 min` / `~5 GB` above is the 2026-07-23 figure and it was never re-derived.

@@ -132,9 +132,9 @@ die() { echo "gate_bootelf: $*" >&2; exit 1; }
 #  track-d f701984), which solved the same shape for the committed selfhost
 #  compiler: an expensive derived artifact plus a gate that detects drift, with
 #  the one exclusion asserted BY NAME so the carve-out cannot go stale.
-BOOTELF_VERDICT_COMMIT=d7be3be
-BOOTELF_VERDICT_DATE=2026-09-09
-BOOTELF_STAMP=c8fa4b9c2d8e0484836096a29f4009c2cf3848d7c76e1dfe65d191cfdc25c536
+BOOTELF_VERDICT_COMMIT=d6aae6c
+BOOTELF_VERDICT_DATE=2026-09-11
+BOOTELF_STAMP=d668fae6b8563e0b8f101199bfbb9eee813a8eea8cef5ca7abd007cc66037cc7
 #  What the stamp covers: every input whose change can invalidate the recorded
 #  verdict without changing nasm's reference — i.e. the assembler itself — plus
 #  the boot source, so a boot.asm edit is reported as STALE with a name rather
