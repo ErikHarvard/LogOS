@@ -202,6 +202,12 @@ MUTANTS = [
   '    if lost:\n', '    if []:\n',
   'a coinage may destroy a previously kappa-distinct parent form unnoticed',
   ['sh','gate_ratchet.sh']),
+ ('ratchet.py', 'malformed-check-removed',
+  '        if why:\n', '        if []:\n',
+  'a glyph with an unclosed paren is counted as a new kappa-class -- the ratchet '
+  'turns on malformed input. Arm D alone must catch it: the extension adds a class '
+  'and loses none, so the strict-increase and collapse checks both pass it.',
+  ['sh','gate_ratchet.sh']),
  ('selfext4.la', 'overfit-mode-is-secretly-honest',
   'glyph TD_IMPL = IF(OVERFIT)(la _. OVERFIT_I)(la _. HONEST_I)\nglyph TD_SRC  = IF(OVERFIT)(la _. "la x. 12")(la _. "la x. TRIPLEN(DEC(x))")',
   'glyph TD_IMPL = IF(OVERFIT)(la _. HONEST_I)(la _. HONEST_I)\nglyph TD_SRC  = IF(OVERFIT)(la _. "la x. TRIPLEN(DEC(x))")(la _. "la x. TRIPLEN(DEC(x))")',

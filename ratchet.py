@@ -38,6 +38,16 @@ same function, so the ratchet can be fooled by a rename that is not literal --
 `la x. mul(x)(3)` versus `la x. add(mul(x)(2))(x)`. It catches the rename, not
 every redundancy. Stage 4's held-out acceptance is the answer to the rest, and
 saying which is which is the point of stating this.
+
+── WELL-FORMEDNESS IS CHECKED BEFORE ANYTHING IS COUNTED ────────────────────
+A malformed glyph still tokenises, so without this check it α-normalises into
+a "new" κ-class and ratchets: `glyph BROKEN = la y. mul(y)(3` adds one class,
+loses none, and passes both conditions. So every glyph of BOTH files is checked
+first -- its ( and ) tokens balance, every `la` binds a name and a `.`, and no
+body is empty -- and a malformed glyph is refused by name, with rc 1, before a
+single class is counted. Parens are counted over TOK tokens, so a paren inside
+a string literal belongs to one string token and is never counted:
+`print("(")` is well-formed.
 """
 import re, sys, os
 
@@ -90,6 +100,28 @@ def glyphs(path):
 def kclasses(path):
     return {alpha(b) for b in glyphs(path).values()}
 
+def malformed(path):
+    """None if every glyph of the file is well-formed, else why the first one is not."""
+    for name, body in glyphs(path).items():
+        toks = TOK.findall(body)
+        if not toks:
+            return 'glyph %s is MALFORMED (an empty body)' % name
+        depth = 0
+        for t in toks:
+            if t == '(':
+                depth += 1
+            elif t == ')':
+                depth -= 1
+                if depth < 0:
+                    return 'glyph %s is MALFORMED (a ) with no ( open)' % name
+        if depth:
+            return 'glyph %s is MALFORMED (%d unclosed ()' % (name, depth)
+        for i, t in enumerate(toks):
+            if t == 'la' and not (i + 2 < len(toks) and toks[i+2] == '.'
+                                  and toks[i+1] not in ('(', ')', '.') and not toks[i+1].startswith('"')):
+                return 'glyph %s is MALFORMED (a la with no binder and .)' % name
+    return None
+
 def selftest():
     cases = [
         ('la x. mul(x)(3)',   'la y. mul(y)(3)',   True,  'a pure rename'),
@@ -119,6 +151,11 @@ def main():
     for f in (p, c):
         if not os.path.exists(f):
             print('FAIL  ratchet: %s absent — an empty comparison is not a verdict' % f)
+            return 1
+    for f in (p, c):
+        why = malformed(f)
+        if why:
+            print('FAIL  ratchet: %s: %s' % (f, why))
             return 1
     kp, kc = kclasses(p), kclasses(c)
     if not kp:

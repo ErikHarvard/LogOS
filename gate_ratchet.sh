@@ -10,11 +10,15 @@
 #  child prints 12 for it quite happily. A renamed copy satisfies stages 1, 2
 #  and 2b completely. Only a κ-class count sees that nothing was gained.
 #
-#  Three arms, because one PASS proves only that the instrument can say yes:
+#  Five arms, because one PASS proves only that the instrument can say yes:
 #     A  genuine extension   -> PASS   (κ-classes strictly increase)
 #     B  rename-only         -> FAIL   (α-equivalent copy: no new class)
 #     C  collapse            -> FAIL   (a parent κ-class lost)
+#     D  malformed glyph     -> FAIL   (the well-formedness check, and nothing else)
+#     E  paren in a string   -> PASS   (the control: D counts tokens, not characters)
 #  B is the failure mode the stage exists for. C is the ratchet's other pawl.
+#  D is input ratchet.py must refuse before it counts anything; E keeps D from
+#  being a character count that would refuse legitimate text.
 set -u
 cd "$(dirname "$0")" || exit 1
 ok=1
@@ -23,7 +27,7 @@ ok=1
 # meaningless, so it proves itself before anything is judged
 python3 ratchet.py --selftest || { echo "FAIL  ratchet: the α-normaliser failed its own self-test"; exit 1; }
 
-rm -f sx2_parent.la sx2_child.la .rat_rename.la .rat_collapse.la
+rm -f sx2_parent.la sx2_child.la .rat_rename.la .rat_collapse.la .rat_malformed.la .rat_strparen.la
 printf 'ok' > .sx2mode
 timeout 900 ./tiny_host selfext2.la >/dev/null 2>&1
 [ -f sx2_parent.la ] && [ -f sx2_child.la ] \
@@ -59,10 +63,35 @@ if python3 ratchet.py sx2_parent.la .rat_collapse.la >/dev/null 2>&1; then
     ok=0
 fi
 
-rm -f .rat_rename.la .rat_collapse.la sx2_parent.la sx2_child.la .sx2mode
+# ── ARM D: MALFORMED. The parent plus ONE glyph whose parens do not balance,
+#    and nothing else. It adds one κ-class and loses none, so it satisfies BOTH
+#    conditions above: only the well-formedness check can refuse it, which is
+#    the isolation arm C's comment demands. And the refusal must be THAT check's:
+#    a refusal for any other reason is a red for the wrong reason
+#    (verdict-without-reason, named 2026-09-11), so the arm asserts the line.
+cp sx2_parent.la .rat_malformed.la
+echo 'glyph BROKEN = la y. mul(y)(3' >> .rat_malformed.la
+if D_OUT="$(python3 ratchet.py sx2_parent.la .rat_malformed.la 2>&1)"; then
+    echo "FAIL  ratchet(D): a MALFORMED extension was ACCEPTED — a glyph with an unclosed ( was counted as a new κ-class"
+    ok=0
+else
+    case "$D_OUT" in
+        *'glyph BROKEN is MALFORMED (1 unclosed ('*) : ;;
+        *) echo "FAIL  ratchet(D): the malformed extension was refused, but not by the well-formedness check — a red for the wrong reason (got: $D_OUT)"; ok=0 ;;
+    esac
+fi
+
+# ── ARM E: THE CONTROL FOR D. A well-formed glyph whose string literal holds an
+#    unbalanced paren. A check counting CHARACTERS would refuse it; one counting
+#    TOKENS (a string literal is one token) must accept it, since it adds a class.
+cp sx2_parent.la .rat_strparen.la
+echo 'glyph PAREN = print("(")' >> .rat_strparen.la
+python3 ratchet.py sx2_parent.la .rat_strparen.la >/dev/null 2>&1 || { echo "FAIL  ratchet(E): a well-formed glyph with a paren INSIDE a string literal was refused — the well-formedness check is counting characters, not tokens"; ok=0; }
+
+rm -f .rat_rename.la .rat_collapse.la .rat_malformed.la .rat_strparen.la sx2_parent.la sx2_child.la .sx2mode
 
 if [ "$ok" -eq 1 ]; then
-  echo "PASS  ratchet: κ-classes strictly increase on a genuine extension (3 -> 4); a RENAME-ONLY extension (α-equivalent copy under a fresh name and fresh bound variable) is REJECTED, and so is a COLLAPSE that destroys a previously κ-distinct parent form. The α-normaliser self-tests on four pairs first, including same-names/different-binding, because a normaliser that only stripped names would call every rebinding a rename. BOUND: α-equivalence is decidable, behavioural equivalence is not — a non-literal restatement of an existing capability still passes here, and that is stage 4's job"
+  echo "PASS  ratchet: κ-classes strictly increase on a genuine extension (3 -> 4); a RENAME-ONLY extension (α-equivalent copy under a fresh name and fresh bound variable) is REJECTED, and so is a COLLAPSE that destroys a previously κ-distinct parent form. A MALFORMED extension (a glyph with an unclosed paren, which adds a class and loses none) is refused by the well-formedness check and by nothing else, while a paren inside a string literal is not refused: that check counts tokens, not characters. The α-normaliser self-tests on four pairs first, including same-names/different-binding, because a normaliser that only stripped names would call every rebinding a rename. BOUND: α-equivalence is decidable, behavioural equivalence is not — a non-literal restatement of an existing capability still passes here, and that is stage 4's job"
   exit 0
 fi
 exit 1
