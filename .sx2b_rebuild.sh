@@ -1,5 +1,5 @@
 #!/bin/sh
-# ★ WORKTREE-RELATIVE, NOT ABSOLUTE. This read `cd /home/erikxanderharvard/logos`.
+# ★ WORKTREE-RELATIVE, NOT ABSOLUTE. This read `cd /home/<user>/logos`.
 # Untracked that was merely wrong; TRACKED it would be a cross-tree gate: a fresh
 # clone running this would build in ANOTHER worktree and leave itself without the
 # vessel, silently. Same defect gate_rss.sh was held back for. The path default
