@@ -1,0 +1,82 @@
+# ═══════════════════════════════════════════════════════════════════
+#  syllabus.la — ACQUISITION: the teaching order derived from the language itself
+#  (LA_COMPLETION.md "Acquisition" / "The acquisition gap": the codex gives no syllabus, glyph
+#  sequence or method; Erik intends children to learn it.)
+#
+#  The method the language already implies: a glyph can be learned only after its constituents,
+#  because its form CONTAINS them (Vertical Depth, tex §2250) — so the syllabus is a topological
+#  order of the published lexicon by derivation depth: the nine primitives first (depth 0), then
+#  every depth-1 combination, then depth 2, and so on; within a depth, the fewer leaves the earlier.
+#  The order is DERIVED from the 79 published rows (lexicon LEX+RULED, opgrammar GRAM+GRULED) by
+#  parsing each derivation — nothing is tabulated.
+#  GATE: (1) the order is CONSTITUENT-FIRST: for every entry, every proper sub-derivation that is
+#  itself an entry appears EARLIER (0 violations); (2) depths are non-decreasing along the order;
+#  (3) the lesson count by depth is exact (derived independently first); RED PATH: the REVERSED
+#  order violates constituent-first with the count of violations NAMED; a mutant that sorts by
+#  name instead of depth turns (2) RED.
+#  ★ THE BOUND, said plainly: this is the syllabus the STRUCTURE implies, not a measured acquisition
+#  method — no learner has been observed (the ledger's "empirical gap"). [B] It is what a child would
+#  be shown in what order; whether children learn it that way is untested and is said to be.
+#  ★ EVIDENTIAL: [W] the order and its two invariants, the red path; [B] the corpus is the
+#     published tables; [A] "fewer leaves earlier" as the within-depth rule.
+# ═══════════════════════════════════════════════════════════════════
+import("lexicon.la")       # FOLD LEX RULED PARSE KAN NAM
+import("opgrammar.la")     # GRAM GRULED
+
+export SYLLABUS SY_ROWS SY_ORDER
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph SY_SEQ  = la a. la b. b
+glyph SY_BSTR = la b. b("T")("F")
+glyph SY_NIL  = la n. la c. n
+glyph SY_CONS = la h. la t. la n. la c. c(h)(t)
+glyph SY_PAIR = la a. la b. la f. f(a)(b)
+glyph SY_FST  = la p. p(la a. la b. a)
+glyph SY_SND  = la p. p(la a. la b. b)
+glyph SY_LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph SY_CAT  = la a. la b. Z(la self. la l. l(b)(la h. la t. SY_CONS(h)(self(t))))(a)
+glyph SY_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph SY_MAX = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+
+# rows (name, code) and their measures: depth, leaves
+glyph SY_ROWS_OF = la s. FOLD(la acc. la nm. la dv. la ph. SY_CONS(SY_PAIR(nm)(dv))(acc))(SY_NIL)(s)
+glyph SY_ROWS = SY_CAT(SY_ROWS_OF(LEX))(SY_CAT(SY_ROWS_OF(RULED))(SY_CAT(SY_ROWS_OF(GRAM))(SY_ROWS_OF(GRULED))))
+glyph SY_NODE = la dv. SY_FST(PARSE(dv))
+glyph SY_DEPTH = Z(la self. la t. t(la d. 0)(la a. la b. add(1)(SY_MAX(self(a))(self(b))))(la a. la b. add(1)(SY_MAX(self(a))(self(b))))(la a. la b. add(1)(SY_MAX(self(a))(self(b))))(la a. la b. add(1)(SY_MAX(self(a))(self(b))))(la a. add(1)(self(a))))
+glyph SY_LEAVES = Z(la self. la t. t(la d. 1)(la a. la b. add(self(a))(self(b)))(la a. la b. add(self(a))(self(b)))(la a. la b. add(self(a))(self(b)))(la a. la b. add(self(a))(self(b)))(la a. self(a)))
+# lesson = (name, code, depth, leaves, κ) ; key = depth*100 + leaves
+glyph SY_LESSON = la r. (la t. SY_PAIR(SY_FST(r))(SY_PAIR(SY_SND(r))(SY_PAIR(SY_DEPTH(t))(SY_PAIR(SY_LEAVES(t))(KAN(t))))))(SY_NODE(SY_SND(r)))
+glyph L_NAME = la l. SY_FST(l)
+glyph L_CODE = la l. SY_FST(SY_SND(l))
+glyph L_DEPTH = la l. SY_FST(SY_SND(SY_SND(l)))
+glyph L_LEAVES = la l. SY_FST(SY_SND(SY_SND(SY_SND(l))))
+glyph L_KAN = la l. SY_SND(SY_SND(SY_SND(SY_SND(l))))
+glyph L_KEY = la l. add(mul(100)(L_DEPTH(l)))(L_LEAVES(l))
+glyph SY_INSERT = la x. Z(la self. la l. l(SY_CONS(x)(SY_NIL))(la h. la t. IF(lt(L_KEY(h))(L_KEY(x)))(la _. SY_CONS(h)(self(t)))(la _. SY_CONS(x)(l))))
+glyph SY_SORT = Z(la self. la l. l(SY_NIL)(la h. la t. SY_INSERT(h)(self(t))))
+glyph SY_LESSONS = la rows. Z(la self. la l. l(SY_NIL)(la r. la t. SY_CONS(SY_LESSON(r))(self(t))))(rows)
+glyph SY_ORDER = la rows. SY_SORT(SY_LESSONS(rows))
+
+# invariants
+glyph SY_MONOTONE = Z(la self. la l. l(TRUE)(la h. la t. t(TRUE)(la h2. la t2. AND(NOT(lt(L_DEPTH(h2))(L_DEPTH(h))))(self(t)))))
+# constituent-first: every proper sub-derivation of an entry that is ITSELF an entry (by κ) appears earlier
+glyph SY_SUBS = Z(la self. la t. t(la d. SY_NIL)(la a. la b. SY_CONS(KAN(a))(SY_CONS(KAN(b))(SY_CAT(self(a))(self(b)))))(la a. la b. SY_CONS(KAN(a))(SY_CONS(KAN(b))(SY_CAT(self(a))(self(b)))))(la a. la b. SY_CONS(KAN(a))(SY_CONS(KAN(b))(SY_CAT(self(a))(self(b)))))(la a. la b. SY_CONS(KAN(a))(SY_CONS(KAN(b))(SY_CAT(self(a))(self(b)))))(la a. SY_CONS(KAN(a))(self(a))))
+glyph SY_MEMB = Z(la self. la k. la l. l(FALSE)(la h. la t. IF(str_eq(L_KAN(h))(k))(la _. TRUE)(la _. self(k)(t))))
+glyph SY_MEMK = Z(la self. la k. la l. l(FALSE)(la h. la t. IF(str_eq(h)(k))(la _. TRUE)(la _. self(k)(t))))
+# walk the order with the "seen" list; a sub-derivation that is an entry (in ALL) but not yet seen = violation
+glyph SY_VIOL = la order. la all. Z(la self. la l. la seen. la n. l(n)(la h. la t.
+    self(t)(SY_CONS(h)(seen))(add(n)(Z(la s2. la subs. subs(0)(la k. la kt. add(IF(AND(SY_MEMB(k)(all))(NOT(SY_MEMB(k)(seen))))(la _. 1)(la _. 0))(s2(kt))))(SY_SUBS(SY_NODE(L_CODE(h))))))))(order)(SY_NIL)(0)
+glyph SY_REV = Z(la self. la l. la acc. l(acc)(la h. la t. self(t)(SY_CONS(h)(acc))))
+glyph SY_BYDEPTH = la d. la order. Z(la self. la l. l(0)(la h. la t. add(IF(int_eq(L_DEPTH(h))(d))(la _. 1)(la _. 0))(self(t))))(order)
+glyph SY_NAMES = la n. Z(la self. la l. la k. l("")(la h. la t. IF(int_eq(k)(0))(la _. "")(la _. SY_C3(L_NAME(h))(" ")(self(t)(sub(k)(1))))))
+glyph SY_FIRST12 = la order. SY_NAMES(12)(order)(12)
+
+glyph LINE1 = la order. la all.
+    SY_C3("SYLLABUS lessons=")(int_to_str(SY_LEN(order)))(SY_C3(" by depth d0=")(int_to_str(SY_BYDEPTH(0)(order)))(SY_C3(" d1=")(int_to_str(SY_BYDEPTH(1)(order)))(SY_C3(" d2=")(int_to_str(SY_BYDEPTH(2)(order)))(SY_C3(" d3=")(int_to_str(SY_BYDEPTH(3)(order)))(SY_C3(" | depth non-decreasing:")(SY_BSTR(SY_MONOTONE(order)))(SY_C3(" | constituent-first violations=")(int_to_str(SY_VIOL(order)(all)))(SY_C3(" (0 required):")(SY_BSTR(int_eq(SY_VIOL(order)(all))(0)))(SY_C3(" | reversed order violations=")(int_to_str(SY_VIOL(SY_REV(order)(SY_NIL))(all)))(" (red path, must be >0)")))))))))
+glyph LINE2 = la order. SY_C3("SYLLABUS first lessons: ")(SY_FIRST12(order))(" | BOUND: the order the STRUCTURE implies; no learner measured (empirical gap, stated)")
+glyph MAIN = (la all. (la order. SY_SEQ(print(LINE1(order)(all)))(print(LINE2(order))))(SY_SORT(all)))(SY_LESSONS(SY_ROWS))

@@ -1,0 +1,80 @@
+# ═══════════════════════════════════════════════════════════════════
+#  lexdepth.la — LEXICAL DEPTH D, USE-GATED (LA_COMPLETION.md ledger row "Lexical depth D: computable
+#  [W], use-gating [A]"): "depth IS computable from the DAG, but nothing gates depth against USE.
+#  Owed first, before code: say what use-gating asserts … a candidate red path is that shuffling the
+#  depth assignment across the lexicon must break the relation."
+#
+#  WHAT USE-GATING ASSERTS HERE (stated before the code was written, numbers derived in python from
+#  the same tables first): USE of an entry = how many times its κ occurs as a CONSTITUENT of other
+#  published entries (the lexicon's internal use — the only use signal the language carries without
+#  speakers). The claim: entries that are USED as constituents are SHALLOWER than entries that are
+#  not — depth predicts constituent use. On the 79 rows: 12 entries are used (mean depth 0.75), 67
+#  are not (mean depth 1.18): the used are shallower by a factor. THE RED PATH: rotate the depth
+#  assignment across the lexicon by k (a deterministic shuffle) and the relation must break — if a
+#  shuffled assignment scored the same, the measure would be reading nothing.
+#  Means are carried as hundredths (integers): 75 vs 117.
+#  ★ THE BOUND: "use" is constituent use inside the published tables, not speakers' use — the
+#  empirical half stays open and says so. [B] One rotation as the shuffle, k=1 and k=7.
+#  ★ EVIDENTIAL: [W] the inequality and its red path; [B] internal use only.
+# ═══════════════════════════════════════════════════════════════════
+import("lexicon.la")       # FOLD LEX RULED PARSE KAN NAM NORMT KAN_N
+import("opgrammar.la")     # GRAM GRULED
+
+export LD_USE LD_DEPTH
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph AND   = la a. la b. a(b)(FALSE)
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph LD_SEQ  = la a. la b. b
+glyph LD_BSTR = la b. b("T")("F")
+glyph LD_NIL  = la n. la c. n
+glyph LD_CONS = la h. la t. la n. la c. c(h)(t)
+glyph LD_PAIR = la a. la b. la f. f(a)(b)
+glyph LD_FST  = la p. p(la a. la b. a)
+glyph LD_SND  = la p. p(la a. la b. b)
+glyph LD_LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph LD_CAT  = la a. la b. Z(la self. la l. l(b)(la h. la t. LD_CONS(h)(self(t))))(a)
+glyph LD_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph LD_MAX = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph LD_ROWS_OF = la s. FOLD(la acc. la nm. la dv. la ph. LD_CONS(LD_PAIR(nm)(dv))(acc))(LD_NIL)(s)
+glyph LD_ROWS = LD_CAT(LD_ROWS_OF(LEX))(LD_CAT(LD_ROWS_OF(RULED))(LD_CAT(LD_ROWS_OF(GRAM))(LD_ROWS_OF(GRULED))))
+glyph LD_NODE = la dv. LD_FST(PARSE(dv))
+glyph LD_DEPTH_T = Z(la self. la t. t(la d. 0)(la a. la b. add(1)(LD_MAX(self(a))(self(b))))(la a. la b. add(1)(LD_MAX(self(a))(self(b))))(la a. la b. add(1)(LD_MAX(self(a))(self(b))))(la a. la b. add(1)(LD_MAX(self(a))(self(b))))(la a. add(1)(self(a))))
+glyph LD_DEPTH = la r. LD_DEPTH_T(LD_NODE(LD_SND(r)))
+# constituent κ's of a tree (normalised), all proper subtrees
+glyph LD_SUBS = Z(la self. la t. t(la d. LD_NIL)(la a. la b. LD_CONS(KAN_N(a))(LD_CONS(KAN_N(b))(LD_CAT(self(a))(self(b)))))(la a. la b. LD_CONS(KAN_N(a))(LD_CONS(KAN_N(b))(LD_CAT(self(a))(self(b)))))(la a. la b. LD_CONS(KAN_N(a))(LD_CONS(KAN_N(b))(LD_CAT(self(a))(self(b)))))(la a. la b. LD_CONS(KAN_N(a))(LD_CONS(KAN_N(b))(LD_CAT(self(a))(self(b)))))(la a. LD_CONS(KAN_N(a))(self(a))))
+glyph LD_ALLSUBS = la rows. Z(la self. la l. l(LD_NIL)(la r. la t. LD_CAT(LD_SUBS(LD_NODE(LD_SND(r))))(self(t))))(rows)
+glyph LD_COUNT = la k. la l. Z(la self. la l. l(0)(la h. la t. add(IF(str_eq(h)(k))(la _. 1)(la _. 0))(self(t))))(l)
+# entries as (name, depth, use) computed ONCE
+glyph LD_ENTRIES = la rows. (la subs. Z(la self. la l. l(LD_NIL)(la r. la t. LD_CONS(LD_PAIR(LD_FST(r))(LD_PAIR(LD_DEPTH(r))(LD_COUNT(KAN_N(LD_NODE(LD_SND(r))))(subs))))(self(t))))(rows))(LD_ALLSUBS(rows))
+glyph E_DEPTH = la e. LD_FST(LD_SND(e))
+glyph E_USE   = la e. LD_SND(LD_SND(e))
+glyph LD_USE = E_USE
+# mean depth ×100 over entries satisfying pred
+glyph LD_MEAN100 = la pred. la es. (la n. la s. IF(int_eq(n)(0))(la _. 0)(la _. div(mul(100)(s))(n)))(Z(la self. la l. l(0)(la e. la t. add(IF(pred(e))(la _. 1)(la _. 0))(self(t))))(es))(Z(la self. la l. l(0)(la e. la t. add(IF(pred(e))(la _. E_DEPTH(e))(la _. 0))(self(t))))(es))
+glyph LD_NUSED = la es. Z(la self. la l. l(0)(la e. la t. add(IF(lt(0)(E_USE(e)))(la _. 1)(la _. 0))(self(t))))(es)
+# the shuffle: rotate the depth column by k (deterministic), keep the use column
+glyph LD_NTH = la l. la i. Z(la self. la l. la i. l(0)(la h. la t. IF(int_eq(i)(0))(la _. h)(la _. self(t)(sub(i)(1)))))(l)(i)
+glyph LD_DEPTHS = la es. Z(la self. la l. l(LD_NIL)(la e. la t. LD_CONS(E_DEPTH(e))(self(t))))(es)
+glyph LD_ROTATE = la k. la es. (la ds. la n. Z(la self. la l. la i. l(LD_NIL)(la e. la t. LD_CONS(LD_PAIR(LD_FST(e))(LD_PAIR(LD_NTH(ds)(mod(add(i)(k))(n)))(E_USE(e))))(self(t)(add(i)(1)))))(es)(0))(LD_DEPTHS(es))(LD_LEN(es))
+glyph LD_HOLDS = la es. lt(LD_MEAN100(la e. lt(0)(E_USE(e)))(es))(LD_MEAN100(la e. int_eq(E_USE(e))(0))(es))
+# the rotation census: how many of the 78 non-trivial rotations still "hold" — chance is ~39
+glyph LD_ROTCOUNT = la es. (la n. Z(la self. la k. IF(int_eq(k)(n))(la _. 0)(la _. add(IF(LD_HOLDS(LD_ROTATE(k)(es)))(la _. 1)(la _. 0))(self(add(k)(1)))))(1))(LD_LEN(es))
+# the adversarial assignment: the used entries receive the DEEPEST depths available
+glyph LD_SORTDESC = la l. Z(la self. la l. l(LD_NIL)(la h. la t. (la rest. Z(la ins. la x. la m. m(LD_CONS(x)(LD_NIL))(la y. la ys. IF(lt(y)(x))(la _. LD_CONS(x)(m))(la _. LD_CONS(y)(ins(x)(ys)))))(h)(rest))(self(t))))(l)
+glyph LD_ADV = la es. (la deep. la nu. Z(la self. la l. la i. la j. l(LD_NIL)(la e. la t. IF(lt(0)(E_USE(e)))(la _. LD_CONS(LD_PAIR(LD_FST(e))(LD_PAIR(LD_NTH(deep)(i))(E_USE(e))))(self(t)(add(i)(1))(j)))(la _. LD_CONS(LD_PAIR(LD_FST(e))(LD_PAIR(LD_NTH(deep)(add(nu)(j)))(E_USE(e))))(self(t)(i)(add(j)(1))))))(es)(0)(0))(LD_SORTDESC(LD_DEPTHS(es)))(LD_NUSED(es))
+glyph LD_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph LINE1 = la es. LD_JOIN(
+    LD_CONS("LEXDEPTH entries=")(LD_CONS(int_to_str(LD_LEN(es)))(
+    LD_CONS(" used-as-constituent=")(LD_CONS(int_to_str(LD_NUSED(es)))(
+    LD_CONS(" mean depth×100 used=")(LD_CONS(int_to_str(LD_MEAN100(la e. lt(0)(E_USE(e)))(es)))(
+    LD_CONS(" unused=")(LD_CONS(int_to_str(LD_MEAN100(la e. int_eq(E_USE(e))(0))(es)))(
+    LD_CONS(" | used shallower:")(LD_CONS(LD_BSTR(LD_HOLDS(es)))(
+    LD_CONS(" | rotations of the depth column still holding=")(LD_CONS(int_to_str(LD_ROTCOUNT(es)))(
+    LD_CONS("/78 (chance≈39) | adversarial (used get the deepest) holds:")(LD_CONS(LD_BSTR(LD_HOLDS(LD_ADV(es))))(
+    LD_CONS(" (must be F)")(LD_NIL))))))))))))))))
+glyph LINE2 = la es. LD_C3("LEXDEPTH VERDICT: ")(IF(lt(LD_ROTCOUNT(es))(20))(la _. "WITNESSED — shuffling the depth column breaks the relation")(la _. "NOT WITNESSED — a shuffled depth assignment holds about as often as the real one, so on the internal-use signal the measure is reading nothing; the ledger row stays [A]"))(" | BOUND: use = constituent use inside the published tables; speakers' use is the empirical gap")
+glyph MAIN = (la es. LD_SEQ(print(LINE1(es)))(print(LINE2(es))))(LD_ENTRIES(LD_ROWS))

@@ -42,6 +42,13 @@ honestly in the distance.
 - [x] Visual modality — sigils via structural derivation (`sigil.la`)
 - [x] Phonetic modality — phonyms via the phonosemantic compiler
 
+### The Register Stack — built, standalone-gated (Track F, 2026-09-15; see `REGISTERS.md`)
+- [~] Twelve registers coherent (`registers.la`): five new — etymological `lineage.la`, prosodic `prosody.la`, topological `topology.la`, evidential `evidential.la`, affective `texture.la` [B] — each with a RED path that names its offender; NORMTREE ≡ NORMK differentially
+- [~] Δ_M mode genesis (`modegenesis.la`) and Δ_R register genesis (`regenesis.la`): four sub-gates, one fixture per letter, idempotent admission
+- [~] The antonym structure (`complement.la`, `opposite.la`): ¬¬C ≠ C as glyphs, ≡ C in truth; two identities explicit; the dyadic pole a refusing involution
+- [ ] Wire `gate_registers.sh` into `build.sh` (architect's call); rulings pending in `REGISTERS.md` §8
+- [~] Second commit (afternoon): `textcoherence.la` — whole-text coherence (referent store + linked utterance graph + components, orphans named) [B: sharing + ¬/opposite contrast only]; Δ_B `branchgenesis.la`, `derive_closure.la` (composes archroot/archderive/archclosure/familytree into ONE bounded verdict), `ontoargument.la` (Gödel's argument as a finite S5 model-check tied to the lexicon's □/◇ glyphs), `ontomorph.la` (the inflectional census, LA_COMPLETION:1187, injective 71/71, 8 overloads reported), `gramcomplete.la` (Grammar Completeness gated in its honest form, LA_COMPLETION:1157: 79/79 derived with traces, R4 seal witnessed and refused at d=0, unreachable fixtures name their rule) — built, gate re-running
+
 ### Performance — in progress
 - [~] Native x86-64 backend (compile to machine code, off the SECD interpreter)
   - [x] Stage 0 — runtime carving

@@ -1,0 +1,227 @@
+# ═══════════════════════════════════════════════════════════════════
+#  textcoherence.la — COHERENCE ACROSS A WHOLE TEXT: the discourse-referent store,
+#  the connective-linked utterance graph, and the coherence reading
+#  (the OPEN half of "discourse", LA_COMPLETION.md:1116; directive 2026-09-15)
+#
+#  WHAT. discourse.la witnesses TURN-LINKING against ONE dialogue (:5400) and was
+#  narrowed to that on 2026-09-06. The two pieces that entry named and never built
+#  are built here. A TEXT is a list of propositions, each a decomposition node.
+#    (1) THE REFERENT STORE. A proposition's REFERENTS are its compound sub-glyphs
+#        (the proposition itself always included), keyed on NORMK — never on a name,
+#        because the canonical form IS the anaphor (discourse.la §6). The store is
+#        the list of distinct referents in first-mention order with the index of
+#        the proposition that introduced each; a mention is GIVEN if its key is
+#        already in the store, NEW otherwise.
+#    (2) THE UTTERANCE GRAPH. Vertices = propositions. Proposition i links to an
+#        earlier j when they SHARE a referent (κ-equal constituent: "share"), or a
+#        referent of one is the COMPLEMENT ¬ (complement.la NOTG) of a referent of
+#        the other ("contrast:¬"), or the DYADIC OPPOSITE (opposite.la OPP) of one
+#        ("contrast:opp"). An edge carries every relation that fires, "+"-joined.
+#    (3) THE READING. components = connected components of the graph; the text is
+#        COHERENT iff components=1; plus given/new, the max link distance, and the
+#        ORPHANS (vertices with no edge), each NAMED by its κ.
+#
+#  ★ THE CRITERION THAT CAN FAIL (LA_COMPLETION:1126 demanded it before code).
+#    Two readings, one order-blind and one order-sensitive, and both are printed:
+#    components does NOT change under shuffling (a text's referent structure is a set
+#    — the directive's gate (e)); the max link distance DOES (a shuffled text spreads
+#    its links: 3 → 4 on the vector below — the strictly-worse score :1128 asked for,
+#    on one vector, not a law). The falsifier that is gated: one unrelated proposition
+#    injected into a coherent text reads components=2 coherent:F and is NAMED.
+#
+#  ★ THE CODEX HAS NO TEXT-LEVEL APPARATUS. Its "coherence" is trimodal (tex:431),
+#    ontosyntactic (tex:6640) and the coherence theory of truth (tex:912); the phrase
+#    "coherence across a whole text" is the white paper's (v18). The lexicon glyphs used
+#    for the vector are the codex's own: You = 𝔤₄▷𝔤₂, We = 𝔤₄⊗𝔤₅, Question = 𝔤₂▷𝔤₆,
+#    Past = 𝔤₇▷𝔤₆, Future = 𝔤₆▷𝔤₇, Ongoing = ↻(𝔤₇) (tex:5160-5175); the propositions
+#    are predications X▷Y of those glyphs (rule (i)).
+#
+#  GATE  gate_textcoherence —
+#    (a) text(a), 5 predications: components=1 coherent:T, edges listed with labels;
+#    (b) text(a) + ⊂(FORM,DEPTH): components=2 coherent:F OFFENDER=⊂(FORM,DEPTH);
+#    (c) (Past,Future) links through "contrast:opp" ALONE; (Self,¬Self) through
+#        "contrast:¬" ALONE — each label proven to fire, in-file fixtures;
+#    (d) the referent store of text(a): 11 distinct referents with first-mention
+#        index, 14 mentions, given=3 new=11;
+#    (e) shuffle [3,1,5,4,2] of text(a): components=1 (order-independent), maxdist 4
+#        against the original 3 (order-sensitive) — both printed.
+#    RED PATHS (one-line mutants, run from the scratchpad): TC_SHARE1 → FALSE: text(a)
+#    components=3 and TWO orphans named; TC_OPP1 → FALSE: (c) opp label missing AND
+#    text(a) splits to components=2 with NO orphan (the ▷-reversal link is load-bearing,
+#    and the components reading catches a split the orphan list cannot); TC_NEG1 →
+#    FALSE: (c) ¬ label missing — text(a) stays green, so ¬ is witnessed by the fixture
+#    ALONE, not by the vector; that is stated, not hidden.
+#
+#  ★ EVIDENTIAL:
+#    [W] (a)-(e) above, exact witnesses, mutants red.
+#    [B] "coherence" here IS constituent-sharing plus ¬/opposite contrast — nothing
+#        else. ARGUMENTATIVE STRUCTURE and NARRATIVE FORM are OUT OF SCOPE: not built,
+#        not faked, not claimed. One small test vector (5 propositions); a shuffle
+#        witnessed on that vector only. The pole structure is opposite.la's bound.
+#    [A] a primitive LEAF inside a compound is not a referent: the nine primitives are
+#        the alphabet every text is given in advance ("nothing is stipulated; everything
+#        is derived", tex:5435); the utterance itself is always a referent, so a bare
+#        primitive proposition (I = SELF) still refers. Without this ruling every ▷-
+#        reversal and every ¬ would also "share" its operands and the contrast labels
+#        could never fire alone — the [A] is what makes gate (c) a gate.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")        # PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO ETYM IF TRUE FALSE AND OR NOT Z
+import("complement.la")   # NOTG (¬g = ⊕(VOID,g) sealed)
+import("opposite.la")     # OPP HAS_POLE (▷(a,b) → ▷(b,a) sealed, ⊥ when no pole)
+
+export TC_REFS TC_STORE TC_EDGES TC_NCOMP TC_ORPHANS TC_MAXDIST TC_LABEL
+
+glyph TC_SEQ  = la a. la b. b
+glyph TC_BSTR = la b. b("T")("F")
+glyph TC_P    = la nm. PRIM(nm)
+glyph TC_SEAL = la et. MONO(CANON(et))(et)
+
+# ── lists and pairs (Scott) ──
+glyph TC_NIL  = la n. la c. n
+glyph TC_CONS = la h. la t. la n. la c. c(h)(t)
+glyph TC_PAIR = la a. la b. la f. f(a)(b)
+glyph TC_FST  = la p. p(la a. la b. a)
+glyph TC_SND  = la p. p(la a. la b. b)
+glyph TC_T3   = la a. la b. la c. la f. f(a)(b)(c)
+glyph TC_T3A  = la t. t(la a. la b. la c. a)
+glyph TC_T3B  = la t. t(la a. la b. la c. b)
+glyph TC_T3C  = la t. t(la a. la b. la c. c)
+glyph TC_LEN    = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph TC_NTH    = Z(la self. la l. la i. l("?")(la h. la t. IF(int_eq(i)(1))(la _. h)(la _. self(t)(sub(i)(1)))))
+glyph TC_APPEND = Z(la self. la a. la b. a(b)(la h. la t. TC_CONS(h)(self(t)(b))))
+glyph TC_MAP    = Z(la self. la f. la l. l(TC_NIL)(la h. la t. TC_CONS(f(h))(self(f)(t))))
+glyph TC_FOLD   = Z(la self. la f. la acc. la l. l(acc)(la h. la t. self(f)(f(acc)(h))(t)))
+glyph TC_ANY    = la p. Z(la self. la l. l(FALSE)(la h. la t. IF(p(h))(la _. TRUE)(la _. self(t))))
+glyph TC_FILTER = la p. Z(la self. la l. l(TC_NIL)(la h. la t. IF(p(h))(la _. TC_CONS(h)(self(t)))(la _. self(t))))
+glyph TC_JOIN   = la sep. Z(la self. la l. l("")(la h. la t. t(h)(la h2. la t2. concat(h)(concat(sep)(self(t))))))
+glyph TC_IOTA   = Z(la self. la i. la n. IF(lt(n)(i))(la _. TC_NIL)(la _. TC_CONS(i)(self(add(i)(1))(n))))
+glyph TC_SET    = Z(la self. la l. la k. la v. l(TC_NIL)(la h. la t. IF(int_eq(k)(1))(la _. TC_CONS(v)(t))(la _. TC_CONS(h)(self(t)(sub(k)(1))(v)))))
+glyph TC_MIN    = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
+glyph TC_MAX    = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+# iterate with a 1-based index: f(acc)(i)(item)
+glyph TC_ITER   = Z(la self. la f. la acc. la i. la l. l(acc)(la h. la t. self(f)(f(acc)(i)(h))(add(i)(1))(t)))
+
+# ── (1) REFERENTS: compound sub-glyphs, root first; a bare primitive refers to itself ──
+glyph TC_SUBS = Z(la self. la node. node
+    (la nm. TC_NIL)
+    (la a. la b. TC_CONS(node)(TC_APPEND(self(a))(self(b))))
+    (la a. la b. TC_CONS(node)(TC_APPEND(self(a))(self(b))))
+    (la a. la b. TC_CONS(node)(TC_APPEND(self(a))(self(b))))
+    (la a. la b. TC_CONS(node)(TC_APPEND(self(a))(self(b))))
+    (la a. TC_CONS(node)(self(a))))
+glyph TC_REFS = la node. node
+    (la nm. TC_CONS(node)(TC_NIL))
+    (la a. la b. TC_SUBS(node)) (la a. la b. TC_SUBS(node))
+    (la a. la b. TC_SUBS(node)) (la a. la b. TC_SUBS(node))
+    (la a. TC_SUBS(node))
+# keyed referent = T3(key, ¬key, oppkey): key = NORMK; ¬key = NORMK of NOTG; oppkey = NORMK of OPP, "" when no pole
+glyph TC_KEY1 = la n. (la g. TC_T3(NORMK(n))(NORMK(ETYM(NOTG(g))))(IF(HAS_POLE(g))(la _. NORMK(ETYM(OPP(g))))(la _. "")))(TC_SEAL(n))
+glyph TC_KREFS = la node. TC_MAP(TC_KEY1)(TC_REFS(node))
+
+# ── THE STORE: T3(store, given, new); store = list of PAIR(key)(first-mention index) ──
+glyph TC_HAS = la store. la key. TC_ANY(la e. str_eq(TC_FST(e))(key))(store)
+glyph TC_STORE_STEP = la st. la i. la node. TC_FOLD(la acc. la kr.
+    IF(TC_HAS(TC_T3A(acc))(TC_T3A(kr)))
+      (la _. TC_T3(TC_T3A(acc))(add(TC_T3B(acc))(1))(TC_T3C(acc)))
+      (la _. TC_T3(TC_APPEND(TC_T3A(acc))(TC_CONS(TC_PAIR(TC_T3A(kr))(i))(TC_NIL)))(TC_T3B(acc))(add(TC_T3C(acc))(1))))
+    (st)(TC_KREFS(node))
+glyph TC_STORE = la text. TC_ITER(TC_STORE_STEP)(TC_T3(TC_NIL)(0)(0))(1)(text)
+glyph TC_RENDER_STORE = la st. TC_JOIN(" ")(TC_MAP(la e. concat(TC_FST(e))(concat("@")(int_to_str(TC_SND(e)))))(TC_T3A(st)))
+
+# ── (2) THE LINKS: three relations on keyed referents a, b ──
+glyph TC_SHARE1 = la a. la b. str_eq(TC_T3A(a))(TC_T3A(b))
+glyph TC_NEG1   = la a. la b. OR(str_eq(TC_T3B(a))(TC_T3A(b)))(str_eq(TC_T3B(b))(TC_T3A(a)))
+glyph TC_OPP1   = la a. la b. str_eq(TC_T3C(a))(TC_T3A(b))
+# (OPP is an involution, opposite.la: one direction is complete; "" never equals a key)
+glyph TC_ANY2 = la rel. la ri. la rj. TC_ANY(la a. TC_ANY(la b. rel(a)(b))(rj))(ri)
+# the label of the pair: "" when unlinked
+glyph TC_LABEL = la ri. la rj. TC_JOIN("+")(TC_FILTER(la s. NOT(str_eq(s)("")))(
+    TC_CONS(IF(TC_ANY2(TC_SHARE1)(ri)(rj))(la _. "share")(la _. ""))(
+    TC_CONS(IF(TC_ANY2(TC_NEG1)(ri)(rj))(la _. "contrast:¬")(la _. ""))(
+    TC_CONS(IF(TC_ANY2(TC_OPP1)(ri)(rj))(la _. "contrast:opp")(la _. ""))(TC_NIL)))))
+# props = list of PAIR(index)(krefs); edges = list of T3(i)(j)(label), i>j, i asc then j asc
+glyph TC_PROPS = la text. TC_ITER(la acc. la i. la node. TC_APPEND(acc)(TC_CONS(TC_PAIR(i)(TC_KREFS(node)))(TC_NIL)))(TC_NIL)(1)(text)
+glyph TC_EDGES = la text. (la props. TC_FOLD(la acc. la p. TC_APPEND(acc)(
+    TC_FOLD(la acc2. la q. IF(lt(TC_FST(q))(TC_FST(p)))
+        (la _. (la lab. IF(str_eq(lab)(""))(la _. acc2)(la _. TC_APPEND(acc2)(TC_CONS(TC_T3(TC_FST(p))(TC_FST(q))(lab))(TC_NIL))))
+               (TC_LABEL(TC_SND(p))(TC_SND(q))))
+        (la _. acc2))(TC_NIL)(props)))(TC_NIL)(props))(TC_PROPS(text))
+glyph TC_RENDER_EDGES = la edges. TC_JOIN(" ")(TC_MAP(la e. concat(int_to_str(TC_T3A(e)))(concat("-")(concat(int_to_str(TC_T3B(e)))(concat(":")(TC_T3C(e))))))(edges))
+
+# ── (3) THE READING ──
+# components by min-label propagation, n rounds; a component's root is the k with comp[k]=k
+glyph TC_RELAX1 = la comp. la e. (la m. TC_SET(TC_SET(comp)(TC_T3A(e))(m))(TC_T3B(e))(m))
+                                 (TC_MIN(TC_NTH(comp)(TC_T3A(e)))(TC_NTH(comp)(TC_T3B(e))))
+glyph TC_ROUNDS = Z(la self. la edges. la comp. la k. IF(int_eq(k)(0))(la _. comp)(la _. self(edges)(TC_FOLD(TC_RELAX1)(comp)(edges))(sub(k)(1))))
+glyph TC_COMP = la n. la edges. TC_ROUNDS(edges)(TC_IOTA(1)(n))(n)
+glyph TC_NCOMP = la n. la edges. (la comp. TC_LEN(TC_FILTER(la k. int_eq(TC_NTH(comp)(k))(k))(TC_IOTA(1)(n))))(TC_COMP(n)(edges))
+glyph TC_TOUCHES = la edges. la k. TC_ANY(la e. OR(int_eq(TC_T3A(e))(k))(int_eq(TC_T3B(e))(k)))(edges)
+glyph TC_ORPHANS = la text. la edges. TC_FILTER(la k. NOT(TC_TOUCHES(edges)(k)))(TC_IOTA(1)(TC_LEN(text)))
+glyph TC_MAXDIST = la edges. TC_FOLD(la m. la e. TC_MAX(m)(sub(TC_T3A(e))(TC_T3B(e))))(0)(edges)
+# ★ THE COHERENCE SCORE — the criterion LA_COMPLETION.md:1126 demands: a measure over the
+# utterance graph that scores a deliberately SHUFFLED text STRICTLY LOWER. Components cannot
+# (a set is order-blind — the audit found that the first draft's only measure was therefore
+# "reading something other than coherence" by the ledger's own words). The score is locality:
+# each link contributes 100/distance, so a text whose links are near coheres more than the
+# same links spread apart. Shuffling keeps the links and lengthens the distances, so the score
+# falls — and a distance-blind mutant (100 per link) reads the two equal and turns the gate RED.
+glyph TC_SCORE = la edges. TC_FOLD(la acc. la e. add(acc)(div(100)(sub(TC_T3A(e))(TC_T3B(e)))))(0)(edges)
+glyph TC_NAME_ORPHANS = la text. la orph. IF(int_eq(TC_LEN(orph))(0))(la _. "none")
+    (la _. concat("OFFENDER=")(TC_JOIN(",")(TC_MAP(la k. CANON(TC_NTH(text)(k)))(orph))))
+# one line per text; edges computed ONCE by the caller (tiny_host re-evaluates a glyph per reference)
+glyph TC_READE = la tag. la text. la edges. (la n. (la nc.
+    concat(tag)(concat(" n=")(concat(int_to_str(n))(
+    concat(" edges=[")(concat(TC_RENDER_EDGES(edges))(
+    concat("] components=")(concat(int_to_str(nc))(
+    concat(" coherent:")(concat(TC_BSTR(int_eq(nc)(1)))(
+    concat(" maxdist=")(concat(int_to_str(TC_MAXDIST(edges)))(
+    concat(" orphans:")(TC_NAME_ORPHANS(text)(TC_ORPHANS(text)(edges)))))))))))))))
+    (TC_NCOMP(n)(edges)))(TC_LEN(text))
+glyph TC_READ = la tag. la text. TC_READE(tag)(text)(TC_EDGES(text))
+
+# ── THE VECTOR: the codex's lexicon glyphs (tex:5160-5175), predicated by rule (i) ──
+glyph TC_YOU      = DIR(TC_P("SELF"))(TC_P("RECOGNITION"))
+glyph TC_WE       = SYN(TC_P("SELF"))(TC_P("RELATION"))
+glyph TC_QUESTION = DIR(TC_P("RECOGNITION"))(TC_P("VOID"))
+glyph TC_PAST     = DIR(TC_P("BECOMING"))(TC_P("VOID"))
+glyph TC_FUTURE   = DIR(TC_P("VOID"))(TC_P("BECOMING"))
+glyph TC_ONGOING  = MC(TC_P("BECOMING"))
+glyph TC_P1 = DIR(TC_P("SELF"))(TC_YOU)        # I ▷ you
+glyph TC_P2 = DIR(TC_YOU)(TC_PAST)             # you ▷ past
+glyph TC_P3 = DIR(TC_WE)(TC_FUTURE)            # we ▷ future
+glyph TC_P4 = DIR(TC_QUESTION)(TC_WE)          # question ▷ we
+glyph TC_P5 = DIR(TC_ONGOING)(TC_FUTURE)       # ongoing ▷ future
+glyph TC_TEXT_A = TC_CONS(TC_P1)(TC_CONS(TC_P2)(TC_CONS(TC_P3)(TC_CONS(TC_P4)(TC_CONS(TC_P5)(TC_NIL)))))
+glyph TC_STRANGER = CONT(TC_P("FORM"))(TC_P("DEPTH"))
+glyph TC_TEXT_B = TC_APPEND(TC_TEXT_A)(TC_CONS(TC_STRANGER)(TC_NIL))
+glyph TC_TEXT_S = TC_CONS(TC_P3)(TC_CONS(TC_P1)(TC_CONS(TC_P5)(TC_CONS(TC_P4)(TC_CONS(TC_P2)(TC_NIL)))))
+
+# ── (c) contrast fixtures, in-file: each label must fire ALONE ──
+glyph TC_LAB_PF = TC_LABEL(TC_KREFS(TC_FUTURE))(TC_KREFS(TC_PAST))
+glyph TC_NOTSELF = ETYM(NOTG(TC_SEAL(TC_P("SELF"))))
+glyph TC_LAB_NS = TC_LABEL(TC_KREFS(TC_NOTSELF))(TC_KREFS(TC_P("SELF")))
+glyph TC_EACH_FIRES = AND(str_eq(TC_LAB_PF)("contrast:opp"))(str_eq(TC_LAB_NS)("contrast:¬"))
+
+glyph LINE1 = TC_READ("TEXTCOHERENCE text(a)")(TC_TEXT_A)
+glyph LINE2 = (la st.
+    concat("TEXTCOHERENCE store(a): ")(concat(TC_RENDER_STORE(st))(
+    concat(" | referents=")(concat(int_to_str(TC_LEN(TC_T3A(st))))(
+    concat(" mentions=")(concat(int_to_str(add(TC_T3B(st))(TC_T3C(st))))(
+    concat(" given=")(concat(int_to_str(TC_T3B(st)))(
+    concat(" new=")(int_to_str(TC_T3C(st))))))))))))(TC_STORE(TC_TEXT_A))
+glyph LINE3 = TC_READ("TEXTCOHERENCE text(b)=a+⊂(FORM,DEPTH)")(TC_TEXT_B)
+glyph LINE4 =
+    concat("TEXTCOHERENCE contrast fixtures: (Future,Past) label=")(concat(TC_LAB_PF)(
+    concat(" | (¬Self,Self) label=")(concat(TC_LAB_NS)(
+    concat(" | each label fires alone:")(TC_BSTR(TC_EACH_FIRES))))))
+glyph LINE5 = (la ea. la es.
+    concat(TC_READE("TEXTCOHERENCE shuffle[3,1,5,4,2]")(TC_TEXT_S)(es))(
+    concat(" | components order-independent:")(concat(TC_BSTR(int_eq(TC_NCOMP(5)(ea))(TC_NCOMP(5)(es))))(
+    concat(" maxdist original=")(concat(int_to_str(TC_MAXDIST(ea)))(
+    concat(" shuffled=")(int_to_str(TC_MAXDIST(es)))))))))(TC_EDGES(TC_TEXT_A))(TC_EDGES(TC_TEXT_S))
+glyph LINE6 = (la ea. la es. (la so. la ss.
+    concat("TEXTCOHERENCE score (Σ 100/link-distance) original=")(concat(int_to_str(so))(
+    concat(" shuffled=")(concat(int_to_str(ss))(
+    concat(" | shuffled strictly lower:")(TC_BSTR(lt(ss)(so))))))))(TC_SCORE(ea))(TC_SCORE(es)))(TC_EDGES(TC_TEXT_A))(TC_EDGES(TC_TEXT_S))
+glyph MAIN = TC_SEQ(print(LINE1))(TC_SEQ(print(LINE2))(TC_SEQ(print(LINE3))(TC_SEQ(print(LINE4))(TC_SEQ(print(LINE5))(print(LINE6))))))

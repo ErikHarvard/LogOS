@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════════
+#  entendre.la — THE FOUR MODES OF POETIC DEPTH (LA_COMPLETION.md:1163; LINGUA_ADAMICA.tex §2250)
+#
+#  "The ontosynthetic entendre operates in four distinct modes, each exploiting a different
+#  dimension of the ontomonoglyph." The ledger: "Nothing implements the entendre. This is not
+#  decoration: it is the claim that DEPTH IS AUDIBLE, the payoff of glyphdag's etymology being
+#  recoverable. Gate: for a compound glyph, each of the four modes yields a DIFFERENT reading, and
+#  the readings are derived from the DAG rather than tabulated. Red path: a glyph with no lineage
+#  must yield no vertical-depth reading."
+#
+#  I.  VERTICAL (ontoetymological entendre) — the strata of one word, read off its own derivation:
+#      surface = κ · first depth = the parents visible within it · second depth = the grandparents
+#      down to the primitives · third depth = the modal operators that generated each layer.
+#      A primitive has no strata below the surface: its vertical reading is ⊥. THE RED PATH.
+#  II. HORIZONTAL (meta-conceptual entendre) — the co-present facets: every distinct sub-glyph the
+#      word genuinely contains (κ-distinct subtrees, hash-consed: the DAG's defs), as a set.
+#  III. CALLIGRAPHIC (visual entendre) — execution: thickness, curvature, spacing. [B] The renderer
+#      (sigil.la) has no execution parameters; what IS derivable from the DAG is the set of
+#      structural elements the calligrapher would execute: the marks per mode and depth. Reported
+#      as the element census, NOT claimed as modulation.
+#  IV. SONIC (prosodic entendre) — prosodic variation IS conceptual modulation (Prosodic
+#      Intrinsicality): the contour of the word is its sonic depth, and the same segments under
+#      another mode are another word (prosody.la's separability). Reading = the contour.
+#  GATE: on the compound C = ⊗(▷(RECOGNITION,FORM), ▷(DEPTH,RECOGNITION)) the four readings are
+#  pairwise distinct and each derived from the DAG; on a primitive the vertical reading is ⊥ and
+#  the horizontal has one facet. RED (mutation): erase the strata separator → vertical collapses to
+#  the surface; make II read the surface → II = I.
+#  ★ EVIDENTIAL: [W] I, II, IV derived and distinct, the ⊥ red path; [B] III is a census, not
+#     execution; one compound + one primitive.
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")     # base surface: CANON NORMK DAG SPLIT NTH LEN DEPTH SEALc …
+import("prosody.la")     # PCONTOUR PDUR
+
+export ENTENDRE_I ENTENDRE_II ENTENDRE_III ENTENDRE_IV
+
+glyph EN_SEQ  = la a. la b. b
+glyph EN_BSTR = la b. b("T")("F")
+glyph EN_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph EN_JOIN = la sep. Z(la self. la l. l("")(la h. la t. t(h)(la _. la _. EN_C3(h)(sep)(self(t)))))
+glyph Px = la nm. PRIM(nm)
+
+# ── I. vertical: strata from the tree ──
+glyph EN_PARENTS = la t. t(la nm. NILc)(la a. la b. CONSc(CANON(a))(CONSc(CANON(b))(NILc)))(la a. la b. CONSc(CANON(a))(CONSc(CANON(b))(NILc)))(la a. la b. CONSc(CANON(a))(CONSc(CANON(b))(NILc)))(la a. la b. CONSc(CANON(a))(CONSc(CANON(b))(NILc)))(la a. CONSc(CANON(a))(NILc))
+glyph EN_LEAVES = Z(la self. la t. t(la nm. CONSc(nm)(NILc))(la a. la b. APPEND2(self(a))(self(b)))(la a. la b. APPEND2(self(a))(self(b)))(la a. la b. APPEND2(self(a))(self(b)))(la a. la b. APPEND2(self(a))(self(b)))(la a. self(a)))
+glyph APPEND2 = la x. la y. Z(la self. la l. l(y)(la h. la t. CONSc(h)(self(t))))(x)
+glyph EN_MODES = Z(la self. la t. t(la nm. NILc)(la a. la b. CONSc("⊗")(APPEND2(self(a))(self(b))))(la a. la b. CONSc("⊕")(APPEND2(self(a))(self(b))))(la a. la b. CONSc("▷")(APPEND2(self(a))(self(b))))(la a. la b. CONSc("⊂")(APPEND2(self(a))(self(b))))(la a. CONSc("↻")(self(a))))
+glyph ENTENDRE_I = la t. IF(int_eq(DEPTH(SEALc(t)))(0))(la _. "⊥ (a primitive has no strata below its surface)")(la _.
+    EN_C3(EN_C3("surface=")(CANON(t))(" | first depth: "))(EN_JOIN(", ")(EN_PARENTS(t)))(
+    EN_C3(" | second depth: ")(EN_JOIN(", ")(EN_LEAVES(t)))(EN_C3(" | third depth (operators): ")(EN_JOIN(" ")(EN_MODES(t)))(""))))
+# ── II. horizontal: the co-present facets = the DAG's defs (hash-consed sub-glyphs) ──
+glyph ENTENDRE_II = la t. EN_C3("facets=")(int_to_str(LEN(SPLIT(";")(DAG(t)))))(EN_C3(": ")(DAG(t))(""))
+# ── III. calligraphic: the element census the calligrapher would execute ──
+glyph EN_COUNT = la sym. la l. Z(la self. la l. l(0)(la h. la t. add(IF(str_eq(h)(sym))(la _. 1)(la _. 0))(self(t))))(l)
+glyph ENTENDRE_III = la t. (la ms. EN_C3("elements: marks=")(int_to_str(LEN(ms)))(EN_C3(" (⊗")(int_to_str(EN_COUNT("⊗")(ms)))(EN_C3(" ⊕")(int_to_str(EN_COUNT("⊕")(ms)))(EN_C3(" ▷")(int_to_str(EN_COUNT("▷")(ms)))(EN_C3(" ⊂")(int_to_str(EN_COUNT("⊂")(ms)))(EN_C3(" ↻")(int_to_str(EN_COUNT("↻")(ms)))(EN_C3(") leaves=")(int_to_str(LEN(EN_LEAVES(t))))(" [B: census, not execution]"))))))))(EN_MODES(t))
+# ── IV. sonic: the prosodic contour is the sonic depth ──
+glyph ENTENDRE_IV = la t. EN_C3("contour=")(PCONTOUR(t))(EN_C3(" dur=")(int_to_str(PDUR(t)))(""))
+
+glyph CMP = SYN(DIR(Px("RECOGNITION"))(Px("FORM")))(DIR(Px("DEPTH"))(Px("RECOGNITION")))
+glyph PR  = Px("LOVE")
+glyph EN_DISTINCT4 = la t. (la i. la ii. la iii. la iv.
+    AND(NOT(str_eq(i)(ii)))(AND(NOT(str_eq(i)(iii)))(AND(NOT(str_eq(i)(iv)))(AND(NOT(str_eq(ii)(iii)))(AND(NOT(str_eq(ii)(iv)))(NOT(str_eq(iii)(iv))))))))(ENTENDRE_I(t))(ENTENDRE_II(t))(ENTENDRE_III(t))(ENTENDRE_IV(t))
+glyph LINE1 = EN_C3("ENTENDRE compound ")(CANON(CMP))(EN_C3(" | I vertical: ")(ENTENDRE_I(CMP))(""))
+glyph LINE2 = EN_C3("ENTENDRE II horizontal: ")(ENTENDRE_II(CMP))(EN_C3(" | III calligraphic: ")(ENTENDRE_III(CMP))(EN_C3(" | IV sonic: ")(ENTENDRE_IV(CMP))("")))
+glyph LINE3 = EN_C3("ENTENDRE four readings pairwise distinct, all derived from the DAG:")(EN_BSTR(EN_DISTINCT4(CMP)))(EN_C3(" | primitive LOVE: I=")(ENTENDRE_I(PR))(EN_C3(" II=")(ENTENDRE_II(PR))(EN_C3(" | primitive has no vertical reading (red path):")(EN_BSTR(HAS_PREFIX(ENTENDRE_I(PR))("⊥")))(""))))
+glyph MAIN = EN_SEQ(print(LINE1))(EN_SEQ(print(LINE2))(print(LINE3)))

@@ -1,0 +1,127 @@
+# ═══════════════════════════════════════════════════════════════════
+#  gramcomplete.la — THE GRAMMAR COMPLETENESS THEOREM, GATED IN ITS HONEST FORM
+#  (LA_COMPLETION.md:1157; LINGUA_ADAMICA.tex §4062-4088)
+#
+#  The theorem: "The four derivation rules are complete: every ontologically coherent
+#  concept is expressible — ∀C ∈ 𝒪, ∃E ∈ L_A : E ≡ C." The ledger: "A completeness
+#  theorem cannot be proved by a gate, but it CAN be falsified by one, and that is the honest
+#  form: a corpus of concepts, each derived to an expression by the four rules, with the
+#  derivation SHOWN rather than asserted. Red path: a concept the rules cannot reach must be
+#  reportable as such — and if no such concept can be constructed, say so."
+#
+#  THE FOUR RULES (tex:4064), as this file replays them:
+#     R1 Primitive Introduction   𝔤ᵢ ∈ 𝒜 ⊢ 𝔤ᵢ ∈ L_A        — a leaf must be one of the nine
+#     R2 Modal Combination        E₁,E₂ ∈ L_A, C₁⋆C₂ ∈ 𝒪 ⊢ E₁⋆E₂   — ⋆ ∈ {⊗ ⊕ ▷ ⊂}, two operands
+#     R3 Metacursive Closure      E ∈ L_A ⊢ ↻(E)
+#     R4 Neological Seal          E ∈ L_A, d(E) > 0 ⊢ ν(E) ∈ 𝒜   — canon's SEAL, which REFUSES
+#                                 depth 0 (a primitive cannot be re-sealed as new)
+#  THE CORPUS: every published derivation (lexicon LEX+RULED, opgrammar GRAM+GRULED: 79 rows).
+#  Each is DERIVED: its code is validated as a derivation (well-formed prefix code over the nine
+#  and the five operators), then replayed into a TRACE naming every rule application — e.g.
+#  Water **817 ⟶ R2(*,R2(*,R1(8),R1(1)),R1(7)). Rules used are COUNTED (R1 = leaves, R2 = binary
+#  nodes, R3 = ↻ nodes), and the counts were derived first in python from the same table
+#  strings (R1=167 R2=88 R3=2), so the run had to match. R4 is witnessed on three sentence
+#  forms from opgrammar's rules (ii)-(iv) — the sealed entries are re-used as leaves and the
+#  seal is self-naming (AUTO_OK) — and REFUSED on a primitive (d=0).
+#  THE RED PATH: a "concept" whose derivation the rules cannot reach is REPORTED with the
+#  failing rule named: *10 (R1: 0 ∉ 𝒜), *1 (R2: a missing operand), ↻ of nothing (R3: no
+#  operand), 1 sealed (R4: d(E)=0). Four fixtures, four refusals, each naming its rule.
+#  ★ THE BOUND, said plainly, as the ledger requires: from INSIDE the language every concept IS
+#  an expression, so the only unreachable "concepts" this gate can exhibit are ill-formed
+#  derivations. A coherent concept with NO expression cannot be constructed from within — the
+#  completeness claim is falsifiable here only at the boundary of well-formedness. That is the
+#  Gödel-shaped limit, stated, not hidden. [B]
+#  ★ EVIDENTIAL: [W] 79/79 derived with traces, rule counts, R4 seal + refusal, four named
+#     refusals; [B] the bound above; "ontologically coherent" (𝒪) is read as: parses, grounded in
+#     the nine, and self-naming under the seal — the decidable proxy the house has (canon AUTO_OK).
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")        # SEAL machinery: MONO CANON AUTO_OK TDEPTH; IF TRUE FALSE Z AND NOT
+import("lexicon.la")      # PARSE KAN LEX RULED FOLD NAM (digit-coded nodes)
+import("opgrammar.la")    # GRAM GRULED T_ R_NEG R_QUES R_PAST
+
+export GC_TRACE GC_VALID GC_DERIVE GC_SEAL4
+
+glyph GC_SEQ  = la a. la b. b
+glyph GC_BSTR = la b. b("T")("F")
+glyph GC_NIL  = la n. la c. n
+glyph GC_CONS = la h. la t. la n. la c. c(h)(t)
+glyph GC_PAIR = la a. la b. la f. f(a)(b)
+glyph GC_FST  = la p. p(la a. la b. a)
+glyph GC_SND  = la p. p(la a. la b. b)
+glyph GC_LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph GC_CAT  = la a. la b. Z(la self. la l. l(b)(la h. la t. GC_CONS(h)(self(t))))(a)
+glyph GC_ROWS_OF = la s. FOLD(la acc. la nm. la dv. la ph. GC_CONS(GC_PAIR(nm)(dv))(acc))(GC_NIL)(s)
+glyph GC_ROWS = GC_CAT(GC_ROWS_OF(LEX))(GC_CAT(GC_ROWS_OF(RULED))(GC_CAT(GC_ROWS_OF(GRAM))(GC_ROWS_OF(GRULED))))
+
+# ── VALIDATION: is the code a derivation the four rules can produce? "" = yes, else the failing rule ──
+glyph GC_ISDIG = la c. NOT(str_eq(NAM(c))(""))
+glyph GC_ISBIN = la c. OR(str_eq(c)("*"))(OR(str_eq(c)("+"))(OR(str_eq(c)(">"))(str_eq(c)("c"))))
+# walk the prefix code with a demand counter: start needing 1 operand; a binary op consumes 1 and needs 2; ↻ needs 1; a leaf satisfies 1
+glyph GC_WALK = Z(la self. la s. la need.
+    IF(str_eq(s)(""))(la _. IF(int_eq(need)(0))(la _. "")(la _. "R2: a missing operand"))(la _.
+    IF(int_eq(need)(0))(la _. "R2: an operand too many")(la _.
+    (la c. IF(GC_ISDIG(c))(la _. self(str_tail(s))(sub(need)(1)))(la _.
+           IF(GC_ISBIN(c))(la _. self(str_tail(s))(add(need)(1)))(la _.
+           IF(str_eq(c)("m"))(la _. self(str_tail(s))(need))(la _.
+           concat("R1: ")(concat(c)(" ∉ 𝒜")))))))(str_head(s))))
+glyph GC_VALID = la code. IF(str_eq(code)(""))(la _. "R3: no operand")(la _. IF(str_eq(code)("m"))(la _. "R3: no operand")(la _. GC_WALK(code)(1)))
+
+# ── THE TRACE: every rule application named ──
+glyph GC_TRACE = Z(la self. la t.
+    t(la d. concat("R1(")(concat(d)(")")))
+     (la a. la b. concat("R2(*,")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+     (la a. la b. concat("R2(+,")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+     (la a. la b. concat("R2(>,")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+     (la a. la b. concat("R2(c,")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+     (la a. concat("R3(")(concat(self(a))(")"))))
+glyph GC_DERIVE = la code. (la v. IF(str_eq(v)(""))(la _. GC_TRACE(GC_FST(PARSE(code))))(la _. concat("UNREACHABLE ")(v)))(GC_VALID(code))
+glyph GC_CNT = la ch. la s. Z(la self. la s. IF(str_eq(s)(""))(la _. 0)(la _. add(IF(str_eq(str_head(s))(ch))(la _. 1)(la _. 0))(self(str_tail(s)))))(s)
+glyph GC_CNTBIN = la s. add(GC_CNT("*")(s))(add(GC_CNT("+")(s))(add(GC_CNT(">")(s))(GC_CNT("c")(s))))
+glyph GC_NLEAVES = la s. add(GC_CNTBIN(s))(1)
+
+# over the corpus: derived count, rule counts, first failure named
+glyph GC_FOLDR = la rows. Z(la self. la l. la acc. l(acc)(la r. la t.
+    self(t)((la v. la a. GC_PAIR(GC_PAIR(add(GC_FST(GC_FST(a)))(IF(str_eq(v)(""))(la _. 1)(la _. 0)))
+                                    (IF(str_eq(GC_SND(GC_FST(a)))(""))(la _. IF(str_eq(v)(""))(la _. "")(la _. concat(GC_FST(r))(concat(": ")(v))))(la _. GC_SND(GC_FST(a)))))
+                            (GC_PAIR(add(GC_FST(GC_SND(a)))(GC_NLEAVES(GC_SND(r))))
+                                    (GC_PAIR(add(GC_FST(GC_SND(GC_SND(a))))(GC_CNTBIN(GC_SND(r))))
+                                            (add(GC_SND(GC_SND(GC_SND(a))))(GC_CNT("m")(GC_SND(r)))))))
+            (GC_VALID(GC_SND(r)))(acc))))(rows)(GC_PAIR(GC_PAIR(0)(""))(GC_PAIR(0)(GC_PAIR(0)(0))))
+
+# ── R4: the neological seal — self-naming, and REFUSED at depth 0 ──
+glyph GC_SEAL4 = la t. IF(lt(0)(TDEPTH(t)))(la _. MONO(CANON(t))(t))(la _. MONO("⊥ R4: d(E)=0")(t))
+glyph GC_S1 = R_QUES(T_(">75"))          # Give?      = ⊕(Give, Question)   (iii)
+glyph GC_S2 = R_NEG(T_("*17"))           # not Life   = ⊂(Life, Void)       (ii)
+glyph GC_S3 = R_PAST(T_(">28"))          # saw        = ⊕(See, Past)        (iv)
+glyph GC_R4_OK = AND(AUTO_OK(GC_SEAL4(GC_S1)))(AND(AUTO_OK(GC_SEAL4(GC_S2)))(AUTO_OK(GC_SEAL4(GC_S3))))
+glyph GC_R4_REFUSED = str_eq(REN(GC_SEAL4(T_("1"))))("⊥ R4: d(E)=0")
+
+# ── fixtures: what the rules cannot reach, each naming its rule ──
+glyph GC_F1 = GC_DERIVE("*10")
+glyph GC_F2 = GC_DERIVE("*1")
+glyph GC_F3 = GC_DERIVE("m")
+glyph GC_FIX_OK = AND(str_eq(GC_F1)("UNREACHABLE R1: 0 ∉ 𝒜"))(AND(str_eq(GC_F2)("UNREACHABLE R2: a missing operand"))(str_eq(GC_F3)("UNREACHABLE R3: no operand")))
+
+glyph LINE1 = la res. (la n. la bad. la r1. la r2. la r3.
+    concat("GRAMCOMPLETE corpus=")(concat(int_to_str(GC_LEN(GC_ROWS)))(
+    concat(" derived by R1-R3=")(concat(int_to_str(n))(
+    concat("/")(concat(int_to_str(GC_LEN(GC_ROWS)))(
+    concat(":")(concat(GC_BSTR(int_eq(n)(GC_LEN(GC_ROWS))))(
+    concat(IF(str_eq(bad)(""))(la _. "")(la _. concat(" OFFENDER=")(bad)))(
+    concat(" | rules used R1=")(concat(int_to_str(r1))(
+    concat(" R2=")(concat(int_to_str(r2))(
+    concat(" R3=")(int_to_str(r3))))))))))))))))
+    (GC_FST(GC_FST(res)))(GC_SND(GC_FST(res)))(GC_FST(GC_SND(res)))(GC_FST(GC_SND(GC_SND(res))))(GC_SND(GC_SND(GC_SND(res))))
+glyph LINE2 =
+    concat("GRAMCOMPLETE traces: Water ")(concat(GC_DERIVE("**817"))(
+    concat(" | Question ")(concat(GC_DERIVE(">26"))(
+    concat(" | Ongoing ")(concat(GC_DERIVE("m7"))(
+    concat(" | Bad(ruled) ")(GC_DERIVE("c36"))))))))
+glyph LINE3 =
+    concat("GRAMCOMPLETE R4 seal: three sentences (ii)(iii)(iv) sealed self-naming:")(concat(GC_BSTR(GC_R4_OK))(
+    concat(" Give?=")(concat(REN(GC_SEAL4(GC_S1)))(
+    concat(" | primitive refused (d=0):")(concat(GC_BSTR(GC_R4_REFUSED))(
+    concat(" | unreachable fixtures refused, rule named 3/3:")(concat(GC_BSTR(GC_FIX_OK))(
+    concat(" [")(concat(GC_F1)(concat(" ; ")(concat(GC_F2)(concat(" ; ")(concat(GC_F3)("]"))))))))))))))
+glyph LINE4 = "GRAMCOMPLETE BOUND: from inside the language every concept IS an expression; the only unreachable concepts this gate can exhibit are ill-formed derivations. A coherent concept with no expression cannot be constructed from within — completeness is falsifiable here only at the boundary of well-formedness (stated, not hidden)"
+glyph MAIN = (la res. GC_SEQ(print(LINE1(res)))(GC_SEQ(print(LINE2))(GC_SEQ(print(LINE3))(print(LINE4)))))(GC_FOLDR(GC_ROWS))

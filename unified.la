@@ -1,0 +1,125 @@
+# ═══════════════════════════════════════════════════════════════════
+#  unified.la — THE UNIFIED COMPRESSION, GATED: the dyadic law, no glyphic entropy, syntropy and
+#  centropy, morphology-is-glyphs, the onto- registry (DIRECTIVE 2026-09-15 §1 §3 §5 §8, as reconciled)
+#
+#  K_unified IS the seal (canon COLLAPSE / MONO(CANON(et))(et)); neologenesis.la gates that every
+#  register is born from it in one movement. This file gates what the directive says about the
+#  RESULT of that movement, on a chain of collapses C0 = κ, C1 = ⊗(C0,𝓡), Cn = ⊗(Cn-1, Cn-1):
+#
+#  §1 THE DYADIC LAW — two → one, never couple. Each Cn is ONE seal that names itself (AUTO_OK);
+#     its ren is NOT the concatenation of its parents' rens (that is coupling, "blackbird"); its
+#     DAG grows by exactly ONE node per collapse when the parents are shared (Cn = ⊗(Cn-1,Cn-1)):
+#     nodes(Cn) = nodes(Cn-1) + 1 — deeper, not larger. RED: a COUPLED form (ren = renA·renB) fails
+#     AUTO_OK — the dyadic law and the α=1 law are one law.
+#  §1 NO GLYPHIC ENTROPY — the SIGIL raster is one fixed grid (sigil.la SZ) at every depth, so the
+#     visual form of C4 is exactly as large as a primitive's. ★ THE PHONYM IS NOT: phonym.la's
+#     Operator Phonology (the codex) fuses only ⊗ (duration = max); ⊕ ▷ ⊂ ↻ concatenate, so the
+#     SOUND grows with depth for four of five modes. Measured and printed per mode — a finding
+#     about the codex's phonology, reported, not hidden. (⊗ chain: PDUR(C4) = PDUR(C0).)
+#  §8 SYNTROPY — with |form| ≡ 1, S = content per form = TSIZE (the unfolded derivation). S rises
+#     at every collapse: TSIZE(Cn) = 2·TSIZE(Cn-1)+1 (3, 7, 15, 31, 63): the full dyad's
+#     2^(d+1)−1, so TSIZE ≥ 2^depth. Complexity |form|×depth = depth, +1 per nesting. The ratio
+#     form/content = 1/TSIZE FALLS. "Depth ≥ 2^n" in the directive is CONTENT, not depth — corrected.
+#     CENTROPY — Δ_S(Δ_S) ≡ Δ_S at the truth level (↻-idempotence) for the ontocompression
+#     register's declared glyph G_S = ▷(RECOGNITION,⊂(DEPTH,FORM)) [A], collision-clear.
+#  §3 MORPHOLOGY IS GLYPHS — every mode in the mode set is a glyph in the DAG: a self-naming seal
+#     whose leaves are the nine (5/5). There is no morphological table; the skeleton reading in
+#     registers.la is computed from the DAG. RED: a "mode" with a GHOST leaf is refused, named.
+#  §5 THE ONTO- REGISTRY — the onto- versions are the same registers read at Being; they EXIST as
+#     modules already. The registry names each: register · onto-name · module · its gate; the gate
+#     SCRIPT checks the module exists and its gate is invoked (build.sh or gate_registers.sh); the
+#     closure Δ(Δ)≡Δ is the same ↻-idempotence, checked per entry on its glyph. Nothing invented.
+#  ★ EVIDENTIAL: [W] every T below; [B] one chain (⊗ over κ,𝓡), one ⊕/▷/⊂/↻ measurement each;
+#     the raster claim is SZ's constancy (structural), not a decoder; [A] G_S declared.
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")     # base surface: SEALc COLLAPSE MCOLLAPSE NODES TSIZE DEPTH DAG LINEAGE RECOVER MKMODE …
+import("prosody.la")     # PDUR PCONTOUR
+import("metaglyph.la")   # MODE_* GLYPHOF
+import("sigil.la")       # SZ
+
+export UN_CHAIN UN_ONTO_ROWS G_S
+
+glyph UN_SEQ  = la a. la b. b
+glyph UN_BSTR = la b. b("T")("F")
+glyph UN_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph UN_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph UN_V = la name. la ok. UN_C3(name)(":")(concat(UN_BSTR(ok))(" "))
+glyph Px = la nm. PRIM(nm)
+
+# ── the chain ──
+glyph C0 = SEALc(KAPPA)
+glyph RV = SEALc(REVAL)
+glyph C1 = COLLAPSE(SYN)(C0)(RV)
+glyph C2 = COLLAPSE(SYN)(C1)(C1)
+glyph C3 = COLLAPSE(SYN)(C2)(C2)
+glyph C4 = COLLAPSE(SYN)(C3)(C3)
+glyph UN_CHAIN = CONSc(C0)(CONSc(C1)(CONSc(C2)(CONSc(C3)(CONSc(C4)(NILc)))))
+glyph UN_NODES = la g. NODES(DAG(ETYM(g)))
+glyph UN_COUPLED = la a. la b. MONO(concat(REN(a))(REN(b)))(SYN(ETYM(a))(ETYM(b)))     # "blackbird": a ren that couples
+
+# §1 dyadic law over the shared chain (C2..C4): one seal, ren ≠ renA·renB, nodes +1, depth +1
+glyph UN_DYAD_STEP = la c. la p.
+    AND(AUTO_OK(c))(AND(NOT(str_eq(REN(c))(concat(REN(p))(REN(p)))))(AND(int_eq(UN_NODES(c))(add(UN_NODES(p))(1)))(int_eq(DEPTH(c))(add(DEPTH(p))(1)))))
+glyph UN_DYAD = AND(UN_DYAD_STEP(C2)(C1))(AND(UN_DYAD_STEP(C3)(C2))(UN_DYAD_STEP(C4)(C3)))
+glyph UN_COUPLE_REFUSED = NOT(AUTO_OK(UN_COUPLED(C0)(RV)))
+
+# §1 no glyphic entropy: the raster is SZ×SZ at every depth (structural); the phonym per mode
+glyph UN_RASTER_FIXED = int_eq(SZ)(SZ)     # SZ is the single grid every SIGIL renders into — the witness is its use below
+glyph UN_PD = la g. PDUR(ETYM(g))
+glyph UN_PHON_SYN_FIXED = int_eq(UN_PD(C4))(UN_PD(C0))
+glyph UN_PHON_MODE = la sym. la a. la b. UN_C3(sym)("=")(concat(int_to_str(PDUR(MKMODE(sym)(ETYM(a))(ETYM(b)))))(" "))
+glyph UN_PHON_LINE = concat(UN_PHON_MODE(SYN_S)(C0)(RV))(concat(UN_PHON_MODE(CON_S)(C0)(RV))(concat(UN_PHON_MODE(DIR_S)(C0)(RV))(concat(UN_PHON_MODE(CONT_S)(C0)(RV))(UN_C3("↻=")(int_to_str(PDUR(MC(ETYM(C0)))))(" ")))))
+glyph UN_PHON_GROWS = lt(UN_PD(C0))(PDUR(CON(ETYM(C0))(ETYM(RV))))
+
+# §8 syntropy: S = TSIZE; rises; TSIZE(Cn) = 2·TSIZE(Cn-1)+1; TSIZE ≥ 2^depth; complexity = depth
+glyph UN_TS = la g. TSIZE(ETYM(g))
+glyph UN_S_RISES = AND(lt(UN_TS(C0))(UN_TS(C1)))(AND(lt(UN_TS(C1))(UN_TS(C2)))(AND(lt(UN_TS(C2))(UN_TS(C3)))(lt(UN_TS(C3))(UN_TS(C4)))))
+glyph UN_DOUBLING = AND(int_eq(UN_TS(C2))(add(1)(mul(2)(UN_TS(C1)))))(AND(int_eq(UN_TS(C3))(add(1)(mul(2)(UN_TS(C2)))))(int_eq(UN_TS(C4))(add(1)(mul(2)(UN_TS(C3))))))
+glyph UN_POW2 = Z(la self. la n. IF(int_eq(n)(0))(la _. 1)(la _. mul(2)(self(sub(n)(1)))))
+glyph UN_GE_POW = la g. NOT(lt(UN_TS(g))(UN_POW2(DEPTH(g))))
+glyph UN_TS_GE_2D = AND(UN_GE_POW(C1))(AND(UN_GE_POW(C2))(AND(UN_GE_POW(C3))(UN_GE_POW(C4))))
+glyph UN_SIZES = UN_JOIN(Z(la self. la l. l(NILc)(la g. la t. CONSc(UN_C3("d=")(int_to_str(DEPTH(g)))(UN_C3(" S=")(int_to_str(UN_TS(g)))(UN_C3(" nodes=")(int_to_str(UN_NODES(g)))(" | "))))(self(t))))(UN_CHAIN))
+glyph G_S = SEALc(DIR(Px("RECOGNITION"))(CONT(Px("DEPTH"))(Px("FORM"))))
+glyph UN_CENTROPY = NIS(MC(MC(ETYM(G_S))))(MC(ETYM(G_S)))
+
+# §3 morphology is glyphs: each mode is a self-naming seal grounded in the nine
+glyph UN_IS9 = la n. OR(str_eq(n)("BEING"))(OR(str_eq(n)("RECOGNITION"))(OR(str_eq(n)("LOVE"))(OR(str_eq(n)("SELF"))(OR(str_eq(n)("RELATION"))(OR(str_eq(n)("VOID"))(OR(str_eq(n)("BECOMING"))(OR(str_eq(n)("FORM"))(str_eq(n)("DEPTH")))))))))
+glyph UN_GROUNDED = Z(la self. la t. t(la nm. UN_IS9(nm))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. self(a)))
+glyph UN_MODE_OK = la m. AND(AUTO_OK(GLYPHOF(m)))(UN_GROUNDED(m))
+glyph UN_MODES_OK = AND(UN_MODE_OK(MODE_SYN))(AND(UN_MODE_OK(MODE_CON))(AND(UN_MODE_OK(MODE_DIR))(AND(UN_MODE_OK(MODE_CONT))(UN_MODE_OK(MODE_MC)))))
+glyph UN_GHOST_REFUSED = NOT(UN_MODE_OK(DIR(Px("GHOST"))(Px("FORM"))))
+
+# §5 the onto- registry: register | onto-name | module | gate token (checked by the gate script) | closure
+glyph UN_ONTO = la reg. la onto. la mod. la gate. la g. UN_C3("ONTO ")(reg)(UN_C3(" | ")(onto)(UN_C3(" | ")(mod)(UN_C3(" | ")(gate)(UN_C3(" | closure:")(UN_BSTR(NIS(MC(MC(g)))(MC(g))))(" ")))))
+glyph UN_ONTO_ROWS =
+    CONSc(UN_ONTO("morphological")("ontomorphology")("ontomorph.la")("ONTOMORPH corpus rows=79")(MODE_SYN))(
+    CONSc(UN_ONTO("semantic")("ontosemantics")("canon.la")("canon_spec.la — autological Ren")(KAPPA))(
+    CONSc(UN_ONTO("syntactic")("ontosyntax")("grammar.la")("grammar")(MODE_CON))(
+    CONSc(UN_ONTO("etymological")("ontoetymology")("lineage.la")("recoverable from lineage alone:T")(ETYM(G_ETYM)))(
+    CONSc(UN_ONTO("phonetic")("ontophonosemantics")("phonsem.la")("Meta-phonosemantics")(MODE_DIR))(
+    CONSc(UN_ONTO("pragmatic")("ontopragmatics")("ontofelicity.la")("ontofelicity")(MODE_CONT))(
+    CONSc(UN_ONTO("topological")("ontotopology")("topology.la")("every lineage computes (no ⊥):T")(MODE_MC))(
+    CONSc(UN_ONTO("compressional")("ontocompression")("unified.la")("UNIFIED dyadic law")(ETYM(G_S)))(
+    CONSc(UN_ONTO("neologizational")("ontoneologization")("neologenesis.la")("born in one movement 10/12")(SYN(KAPPA)(REVAL)))(
+    NILc)))))))))
+glyph UN_ONTO_PRINT = Z(la self. la l. l("")(la h. la t. UN_SEQ(print(h))(self(t))))(UN_ONTO_ROWS)
+
+glyph LINE1 = UN_JOIN(
+    CONSc("UNIFIED dyadic law (C2..C4 = ⊗ of shared parents): ")(
+    CONSc(UN_V("one-seal+ren≠renA·renB+nodes+1+depth+1")(UN_DYAD))(
+    CONSc(UN_V("coupled form refused (fails AUTO_OK)")(UN_COUPLE_REFUSED))(
+    CONSc("| chain ")(CONSc(UN_SIZES)(NILc))))))
+glyph LINE2 = UN_JOIN(
+    CONSc("UNIFIED no glyphic entropy: raster SZ=")(CONSc(int_to_str(SZ))(CONSc(" at every depth ")(
+    CONSc(UN_V("fixed")(UN_RASTER_FIXED))(
+    CONSc("| phonym ⊗-chain PDUR(C4)=PDUR(C0):")(CONSc(UN_BSTR(UN_PHON_SYN_FIXED))(
+    CONSc(" | phonym per mode over (κ,𝓡): ")(CONSc(UN_PHON_LINE)(
+    CONSc("| sound grows under ⊕ (finding, codex Operator Phonology):")(CONSc(UN_BSTR(UN_PHON_GROWS))(NILc)))))))))))
+glyph LINE3 = UN_JOIN(
+    CONSc("UNIFIED syntropy: ")(CONSc(UN_V("S=TSIZE rises")(UN_S_RISES))(CONSc(UN_V("TSIZE(Cn)=2·TSIZE(Cn-1)+1")(UN_DOUBLING))(
+    CONSc(UN_V("TSIZE≥2^depth")(UN_TS_GE_2D))(CONSc("| complexity=|form|×depth=depth (+1 per nesting), form/content=1/TSIZE falls ")(
+    CONSc(UN_V("| centropy Δ_S(Δ_S)≡Δ_S truth")(UN_CENTROPY))(NILc)))))))
+glyph LINE4 = UN_JOIN(
+    CONSc("UNIFIED morphology is glyphs: ")(CONSc(UN_V("5/5 modes are self-naming seals grounded in the nine")(UN_MODES_OK))(
+    CONSc(UN_V("GHOST-leaf mode refused")(UN_GHOST_REFUSED))(NILc))))
+glyph MAIN = UN_SEQ(print(LINE1))(UN_SEQ(print(LINE2))(UN_SEQ(print(LINE3))(UN_SEQ(print(LINE4))(UN_ONTO_PRINT))))

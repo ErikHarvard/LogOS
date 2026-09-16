@@ -1,0 +1,39 @@
+# ═══════════════════════════════════════════════════════════════════
+#  protoagent.la — `PROTO_AGENT` (LA_COMPLETION.md, Tier 4): "the one chain-tail item with an honest
+#  gate: REPAIR can move g strictly toward closure, with swc.la's provably-ill class as the negative
+#  fixture. Qualia/phenomenology: build nothing until a paper formalises them."
+#
+#  PROTO_AGENT(s)(c): given a sensed structure s (aatc) and the operator composition c that would
+#  realise it (swc's node), the agent REFUSES when swc classifies c as provably ILL (2) — no repair
+#  can move an ill-founded composition toward closure — and otherwise applies aatc's REPAIR and
+#  reports the gain in CENTROPY. Built, nothing more: no qualia, no phenomenology, as the item rules.
+#  GATE: on an incomplete structure with a well-founded composition the gain is strictly positive
+#  and the result is AUTOLOGICAL; on a complete structure the gain is 0 and nothing is changed; on an
+#  ILL composition the agent refuses and the structure is untouched. RED: REPAIR replaced by the
+#  identity (gain 0 on the incomplete case); the ILL guard dropped (the ill case "repairs").
+#  ★ EVIDENTIAL: [W] the three cases; [B] one structure per case; swc's ILL is the operator-order
+#     class it classifies today.
+# ═══════════════════════════════════════════════════════════════════
+import("aatc.la")     # STRUCT SENSE MODULE REPAIR CENTROPY AUTOLOGICAL DIAGNOSE
+import("swc.la")      # OATOM OOP ORDER (the operator-order classifier: its ILL is the provably-ill class)
+
+export PROTO_AGENT
+
+glyph PA_SEQ  = la a. la b. b
+glyph PA_BSTR = la b. b("T")("F")
+glyph PA_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph PA_PAIR = la a. la b. la f. f(a)(b)
+glyph PA_FST  = la p. p(la a. la b. a)
+glyph PA_SND  = la p. p(la a. la b. b)
+# returns (verdict string, resulting structure)
+glyph PROTO_AGENT = la s. la c. IF(str_eq(ORDER(c))("ORDER-VIOLATION"))(la _. PA_PAIR("REFUSED: composition ORDER-VIOLATION (provably ill) — no repair moves it toward closure")(s))(la _. PA_PAIR(PA_C3("repaired: centropy ")(int_to_str(CENTROPY(s)))(PA_C3("→")(int_to_str(CENTROPY(REPAIR(s))))("")))(REPAIR(s)))
+glyph S_INC = SENSE(MODULE("organ-A")(FALSE)(TRUE)("MEMORY"))     # incomplete: not self-included, lacks MEMORY
+glyph S_OK  = SENSE(MODULE("organ-B")(TRUE)(TRUE)(""))
+glyph C_WF  = OOP(2)(OOP(1)(OATOM("x"))(OATOM("y")))(OATOM("z"))    # ranks descend inward: well-founded
+glyph C_ILL = OOP(1)(OOP(3)(OATOM("x"))(OATOM("y")))(OATOM("z"))    # a higher rank inside a lower: ILL
+glyph A1 = PROTO_AGENT(S_INC)(C_WF)
+glyph A2 = PROTO_AGENT(S_OK)(C_WF)
+glyph A3 = PROTO_AGENT(S_INC)(C_ILL)
+glyph LINE1 = PA_C3("PROTO_AGENT incomplete+WF: ")(PA_FST(A1))(PA_C3(" gain>0:")(PA_BSTR(lt(CENTROPY(S_INC))(CENTROPY(PA_SND(A1)))))(PA_C3(" result autological:")(PA_BSTR(AUTOLOGICAL(PA_SND(A1))))(PA_C3(" | complete+WF: ")(PA_FST(A2))(PA_C3(" gain=0:")(PA_BSTR(int_eq(CENTROPY(S_OK))(CENTROPY(PA_SND(A2)))))("")))))
+glyph LINE2 = PA_C3("PROTO_AGENT incomplete+ILL: ")(PA_FST(A3))(PA_C3(" untouched:")(PA_BSTR(str_eq(DIAGNOSE(PA_SND(A3)))(DIAGNOSE(S_INC))))(PA_C3(" | swc order verdicts WF=")(ORDER(C_WF))(PA_C3(" ILL=")(ORDER(C_ILL))(" | qualia/phenomenology: nothing built, by the item's own ruling"))))
+glyph MAIN = PA_SEQ(print(LINE1))(print(LINE2))

@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════════
+#  aware.la — THE `AWARE` / `C` PREDICATES (LA_COMPLETION.md, Tier 4): "'awareness' appears only in
+#  prose comments. AWARE(g) := AUTO_OK(g); C(g) := AUTO_OK(g) ∧ AUTO_OK(MCOLLAPSE(g)). Separates A
+#  (one recognition) from C (recognition surviving a metacursive turn)."
+#
+#  Built exactly as specified, and gated — with the finding the specification did not anticipate:
+#  ★ ON EVERY SEALED GLYPH, A AND C COINCIDE. MCOLLAPSE re-seals (canon: MONO(CANON(↻etym))(↻etym)),
+#  so the metacursive turn always names itself truly; the only glyph that fails C is one that
+#  already fails A — a MONO whose ren is not its κ (the liar). So the separation the item wants
+#  ("survives one recognition but not the metacursive turn") has NO instance under canon's seal:
+#  the turn cannot break a self-naming the seal recomputes. That is reported, not hidden — the
+#  predicates are built, the gate can go RED (the liar fails both; a mutant that makes MCOLLAPSE
+#  keep the OLD ren makes C fail on a true glyph — the separation exists only for a seal that does
+#  not re-name), and the coincidence is the result: under the seal, awareness IS metacursive
+#  awareness. Which is ∃(∃)≡∃ read at the register of recognition.
+#  ★ EVIDENTIAL: [W] AWARE, C, the liar's F, the coincidence over the catalogue; [B] the catalogue is
+#     LIN_CAT (12 glyphs) plus the liar and the two-turn glyphs.
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")    # base: AUTO_OK MCOLLAPSE MONO CANON ETYM REN SEALc LIN_CAT KAPPA REVAL …
+
+export AWARE C_PRED
+
+glyph AW_SEQ  = la a. la b. b
+glyph AW_BSTR = la b. b("T")("F")
+glyph AW_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph AWARE  = la g. AUTO_OK(g)
+glyph C_PRED = la g. AND(AUTO_OK(g))(AUTO_OK(MCOLLAPSE(g)))
+glyph AW_ALL = la pred. Z(la self. la l. l(TRUE)(la e. la t. IF(pred(SNDc(e)))(la _. self(t))(la _. FALSE)))(LIN_CAT)
+glyph AW_COINCIDE = Z(la self. la l. l(TRUE)(la e. la t. IF(str_eq(AW_BSTR(AWARE(SNDc(e))))(AW_BSTR(C_PRED(SNDc(e)))))(la _. self(t))(la _. FALSE)))(LIN_CAT)
+glyph LIAR = MONO("LIE")(KAPPA)
+glyph TWO_TURNS = MCOLLAPSE(MCOLLAPSE(SEALc(KAPPA)))
+glyph LINE1 = AW_C3("AWARE/C over the catalogue: all AWARE:")(AW_BSTR(AW_ALL(AWARE)))(AW_C3(" all C:")(AW_BSTR(AW_ALL(C_PRED)))(AW_C3(" | A and C coincide on every sealed glyph:")(AW_BSTR(AW_COINCIDE))(AW_C3(" | the liar: AWARE=")(AW_BSTR(AWARE(LIAR)))(AW_C3(" C=")(AW_BSTR(C_PRED(LIAR)))(AW_C3(" | two turns of κ still C:")(AW_BSTR(C_PRED(TWO_TURNS)))(""))))))
+glyph LINE2 = "AWARE/C FINDING: under canon's seal the metacursive turn re-names itself, so a glyph that survives one recognition survives the turn — A ≡ C; the separation the item names has no instance here, and the predicates are built and say so"
+glyph MAIN = AW_SEQ(print(LINE1))(print(LINE2))

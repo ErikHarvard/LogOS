@@ -1,0 +1,147 @@
+# ═══════════════════════════════════════════════════════════════════
+#  neologenesis.la — THE BIRTH OF AN ONTOMONOGLYPH AS ONE COMPRESSIVE MOVEMENT
+#  (the Involution Theorem read at every register; Erik's question of 2026-09-15)
+#
+#  registers.la gates that twelve readings agree on any glyph AT REST. This gates the
+#  COLLAPSE AS AN EVENT: two parents and a mode, one seal (ν, Rule 4), and every register's
+#  reading of the newborn produced from the PARENTS' readings by ONE composition law per
+#  register — the twelve-fold collapse happening, not merely holding.
+#
+#  For each birth ν = COLLAPSE(⋆)(A)(B) (or MCOLLAPSE(A) for ↻) the gate asserts:
+#     FORM   one seal, self-naming (AUTO_OK); the child's DAG is exactly the predicted DAG
+#            (parents' lineages merged under ⋆, hash-consed) and adds AT MOST one node past
+#            their union — "deeper, not larger" (tex, Involution)
+#     DEPTH  d(ν) = 1 + max(d(A), d(B))
+#     ROUTE  the child's identity is recoverable from its lineage alone (lineage.la)
+#     BORN   per register i, R_i(ν) == COMPOSE_i(⋆, readings of A and B):
+#              phonetic       segments concatenate (⊕: in κ-sorted order)
+#              glyphic        DCOLLAPSE of the parents' DAG readings, normalised
+#              semantic       NORMK's string law on the parents' κ (⊕ sorts, ↻ rewrites)
+#              morphological  ⋆ over the parents' skeletons
+#              syntactic      ⋆[κA|κB]
+#              pragmatic      (A) composes as ∧; (Γ) is PREDICTED to compose — see FINDING
+#              operational    ⋆ over the parents' TEMPLATES poured (metaglyph SHAPE) — a law on
+#                             the parents' trees, not on their action strings: flagged "tree-law"
+#              etymological   DCOLLAPSE of the parents' lineages (the route, un-normalised)
+#              prosodic       phonym.la's mode contour + duration law over the parents' contours
+#              evidential     PREDICTED ⊥ — see FINDING
+#              affective      texture of the predicted glyphic DAG
+#              topological    invariants of the predicted glyphic DAG
+#            so the glyphic prediction DRIVES the affective and topological ones: one movement.
+#
+#  ★ THE FINDING THIS WAS BUILT TO REVEAL (pre-registered before the first run): eleven registers
+#  are born in the movement; the EVIDENTIAL register is NOT — a newborn has no declaration, it
+#  reads ⊥ until a gate assigns W/B/A/I. How a glyph is KNOWN is not born with it. That also
+#  breaks the pragmatic (Γ) conjunct, which reads "witnessed" off the evidential entry. The gate
+#  prints 10/12 with the two named, and the two are the finding, not a defect.
+#  ★ AND THE SECOND FINDING: when the seal REWRITES (↻(⊕(SELF,SELF)) ≡ ⊕(SELF,SELF), canon's
+#  ↻-idempotence), the child IS its parent — a birth that is not a birth. The string laws of the
+#  morphological/syntactic/phonetic registers then do NOT compose (they would predict a ↻ shape
+#  that the seal absorbed) while identity still holds. Printed as its own birth, expected F's named.
+#  ★ EVIDENTIAL: [W] the laws above on three births + the rewrite birth; [B] three births, not a
+#     fuzz corpus; the semantic law is NORMK RESTATED on strings (a third statement of one law,
+#     gated against the child's actual reading so drift is caught, as NORMTREE is).
+#  Table bound: imports registers.la alone (~860 of 1024). Do not add imports.
+# ═══════════════════════════════════════════════════════════════════
+import("registers.la")
+
+export BORN BIRTH_LINE
+
+glyph NG_SEQ  = la a. la b. b
+glyph NG_BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph NG_MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+
+# ── list helpers: a verdict is a list of "name:T " items joined; no deep concat chains ──
+glyph NG_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph NG_V = la name. la ok. concat(name)(concat(":")(concat(NG_BSTR(ok))(" ")))
+glyph NG_L1 = la a. CONSc(a)(NILc)
+glyph NG_L2 = la a. la b. CONSc(a)(CONSc(b)(NILc))
+glyph NG_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph NG_C5 = la a. la b. la c. la d. la e. concat(a)(concat(b)(concat(c)(concat(d)(e))))
+
+# ── the string laws ──
+glyph NG_SORTED = la ka. la kb. LE(ka)(kb)                       # ⊕ operand order = κ-sorted
+glyph NG_WRAP = la sym. la a. la b. concat(sym)(concat("(")(concat(a)(concat(",")(concat(b)(")")))))
+glyph NG_SEMC = la sym. la a. la b.
+    IF(str_eq(sym)(CON_S))(la _. IF(NG_SORTED(a)(b))(la _. NG_WRAP(sym)(a)(b))(la _. NG_WRAP(sym)(b)(a)))(la _.
+    IF(AND(str_eq(sym)(SYN_S))(AND(str_eq(a)(b))(str_eq(a)("∃"))))(la _. a)(la _. NG_WRAP(sym)(a)(b)))
+glyph NG_SEMU = la a.
+    IF(str_eq(a)("BEING"))(la _. "SELF")(la _.
+    IF(HAS_PREFIX(a)("↻("))(la _. a)(la _.
+    IF(str_eq(a)("▷(DEPTH,RECOGNITION)"))(la _. a)(la _.
+    IF(str_eq(a)("⊕(SELF,SELF)"))(la _. a)(la _. concat("↻(")(concat(a)(")"))))))
+# order the two parents as the seal will (⊕ sorts by κ); f receives them in that order
+glyph NG_ORDER = la sym. la a. la b. la f. IF(AND(str_eq(sym)(CON_S))(NOT(NG_SORTED(R_SEM(a))(R_SEM(b)))))(la _. f(b)(a))(la _. f(a)(b))
+glyph NG_PROSC = la sym. la ca. la cb. la da. la db.
+    IF(str_eq(sym)(SYN_S))(la _. PAIRc(NG_C5("{")(ca)("+")(cb)("}~64"))(NG_MAXI(da)(db)))(la _.
+    IF(str_eq(sym)(CON_S))(la _. PAIRc(NG_C5("(")(ca)(")·ʔ·(")(cb)(")"))(add(add(da)(960))(db)))(la _.
+    IF(str_eq(sym)(DIR_S))(la _. PAIRc(NG_C5("(")(ca)(")´-(")(cb)(")~128"))(add(da)(db)))(la _.
+    PAIRc(NG_C3(NG_C3("(")(cb)(")["))(ca)(NG_C3("](")(cb)(")")))(add(add(db)(da))(db)))))
+glyph NG_PROS_STR = la p. concat(FSTc(p))(concat("/")(int_to_str(SNDc(p))))
+
+# ── a birth ──
+glyph NG_CHILD = la sym. la a. la b. COLLAPSE(MKMODE(sym))(a)(b)
+glyph NG_PRED_GLYPH = la sym. la a. la b. DAG(NORMTREE(MKMODE(sym)(DECOMP(R_GLYPH(a)))(DECOMP(R_GLYPH(b)))))
+glyph NG_PRAG_OK = la r. str_eq(r)("A=T Γ=T B=n/a")
+
+# the twelve laws for a binary birth, each a (name, ok) verdict item; a,b arrive seal-ordered
+glyph NG_ITEMS2 = la sym. la a. la b. la c. la gp.
+    CONSc(NG_V("phonetic")(str_eq(R_PHON(c))(concat(R_PHON(a))(concat(",")(R_PHON(b))))))(
+    CONSc(NG_V("glyphic")(str_eq(R_GLYPH(c))(gp)))(
+    CONSc(NG_V("semantic")(str_eq(R_SEM(c))(NG_SEMC(sym)(R_SEM(a))(R_SEM(b)))))(
+    CONSc(NG_V("morphological")(str_eq(R_MORPH(c))(NG_WRAP(sym)(R_MORPH(a))(R_MORPH(b)))))(
+    CONSc(NG_V("syntactic")(str_eq(R_SYN(c))(concat(sym)(concat("[")(concat(R_SEM(a))(concat("|")(concat(R_SEM(b))("]"))))))))(
+    CONSc(NG_V("pragmatic")(str_eq(R_PRAG(c))(IF(AND(NG_PRAG_OK(R_PRAG(a)))(NG_PRAG_OK(R_PRAG(b))))(la _. "A=T Γ=T B=n/a")(la _. "A=F Γ=F B=n/a"))))(
+    CONSc(NG_V("operational(tree-law)")(str_eq(R_OPER(c))(CANON(MKMODE(sym)(SHAPE(NT(a))(Px("A")))(SHAPE(NT(b))(Px("B")))))))(
+    CONSc(NG_V("etymological")(str_eq(R_ETYM(c))(DCOLLAPSE(sym)(LINEAGE(a))(LINEAGE(b)))))(
+    CONSc(NG_V("prosodic")(str_eq(R_PROS(c))(NG_PROS_STR(NG_PROSC(sym)(PCONTOUR(NT(a)))(PCONTOUR(NT(b)))(PDUR(NT(a)))(PDUR(NT(b)))))))(
+    CONSc(NG_V("evidential")(NOT(str_eq(R_EVID(c))("⊥"))))(
+    CONSc(NG_V("affective")(str_eq(R_AFF(c))(TEXTURE(gp))))(
+    CONSc(NG_V("topological")(str_eq(R_TOP(c))(TOPO(gp))))(
+    NILc))))))))))))
+glyph NG_BORN2 = la sym. la a0. la b0. NG_ORDER(sym)(a0)(b0)(la a. la b. NG_JOIN(NG_ITEMS2(sym)(a)(b)(NG_CHILD(sym)(a0)(b0))(NG_PRED_GLYPH(sym)(a)(b))))
+glyph NG_COUNT_T = Z(la self. la s. IF(str_eq(s)(""))(la _. 0)(la _. add(IF(AND(str_eq(str_head(s))(":"))(str_eq(str_head(str_tail(s)))("T")))(la _. 1)(la _. 0))(self(str_tail(s)))))
+glyph NG_FORM_ITEMS = la a. la b. la c.
+    CONSc(NG_V("one-seal(AUTO_OK)")(AUTO_OK(c)))(
+    CONSc(concat("nodes=")(concat(int_to_str(NODES(R_GLYPH(c))))(" ")))(
+    CONSc(NG_V("nodes≤|A|+|B|+1")(NOT(lt(add(add(NODES(R_GLYPH(a)))(NODES(R_GLYPH(b))))(1))(NODES(R_GLYPH(c))))))(
+    CONSc(NG_V("depth=1+max")(int_eq(DEPTH(c))(add(1)(NG_MAXI(DEPTH(a))(DEPTH(b))))))(
+    CONSc(NG_V("content=TSIZE(A)+TSIZE(B)+1")(int_eq(TSIZE(ETYM(c)))(add(1)(add(TSIZE(ETYM(a)))(TSIZE(ETYM(b)))))))(
+    CONSc(NG_V("route-recoverable")(str_eq(RECOVER(LINEAGE(c)))(NORMK(ETYM(c)))))(
+    NILc))))))
+glyph BIRTH_LINE = la label. la sym. la a. la b. (la born. (la c.
+    NG_C5("BIRTH ")(label)(": born in one movement ")(int_to_str(NG_COUNT_T(born)))(NG_C3("/12 — ")(born)(concat("| form: ")(NG_JOIN(NG_FORM_ITEMS(a)(b)(c))))))(NG_CHILD(sym)(a)(b)))(NG_BORN2(sym)(a)(b))
+# ── the unary (↻) birth, including the REWRITE case ──
+glyph NG_ITEMS1 = la a. la c. la gp.
+    CONSc(NG_V("phonetic")(str_eq(R_PHON(c))(concat(R_PHON(a))(concat(",")(R_PHON(a))))))(
+    CONSc(NG_V("glyphic")(str_eq(R_GLYPH(c))(gp)))(
+    CONSc(NG_V("semantic")(str_eq(R_SEM(c))(NG_SEMU(R_SEM(a)))))(
+    CONSc(NG_V("morphological")(str_eq(R_MORPH(c))(concat("↻(")(concat(R_MORPH(a))(")")))))(
+    CONSc(NG_V("syntactic")(str_eq(R_SYN(c))(concat("↻[")(concat(R_SEM(a))("]")))))(
+    CONSc(NG_V("pragmatic")(str_eq(R_PRAG(c))(R_PRAG(a))))(
+    CONSc(NG_V("operational(tree-law)")(str_eq(R_OPER(c))(CANON(MC(SHAPE(NT(a))(Px("A")))))))(
+    CONSc(NG_V("etymological")(str_eq(R_ETYM(c))(DAG(MC(DECOMP(LINEAGE(a)))))))(
+    CONSc(NG_V("prosodic")(str_eq(R_PROS(c))(NG_PROS_STR(PAIRc(NG_C5("(")(PCONTOUR(NT(a)))(")(")(PCONTOUR(NT(a)))(")"))(mul(PDUR(NT(a)))(2))))))(
+    CONSc(NG_V("evidential")(NOT(str_eq(R_EVID(c))("⊥"))))(
+    CONSc(NG_V("affective")(str_eq(R_AFF(c))(TEXTURE(gp))))(
+    CONSc(NG_V("topological")(str_eq(R_TOP(c))(TOPO(gp))))(
+    NILc))))))))))))
+glyph NG_BORN1 = la a. NG_JOIN(NG_ITEMS1(a)(MCOLLAPSE(a))(DAG(NORMTREE(MC(DECOMP(R_GLYPH(a)))))))
+glyph BIRTH1_LINE = la label. la a. (la born. (la c.
+    NG_C5("BIRTH ")(label)(": born in one movement ")(int_to_str(NG_COUNT_T(born)))(NG_C3("/12 — ")(born)(concat("| form: ")(NG_JOIN(
+      CONSc(NG_V("one-seal(AUTO_OK)")(AUTO_OK(c)))(
+      CONSc(NG_V("child≡parent(rewrite)")(NIS(ETYM(c))(ETYM(a))))(
+      CONSc(NG_V("depth=1+d(A)")(int_eq(DEPTH(c))(add(1)(DEPTH(a)))))(
+      NILc))))))))(MCOLLAPSE(a)))(NG_BORN1(a))
+glyph KAPPA_G = SEALc(KAPPA)
+glyph REVAL_G = SEALc(REVAL)
+glyph WITH_G  = SEALc(SR_WITH)
+glyph BORN = NG_BORN2(SYN_S)(KAPPA_G)(REVAL_G)
+glyph MAIN =
+    NG_SEQ(print(BIRTH_LINE("⊗(κ,𝓡)")(SYN_S)(KAPPA_G)(REVAL_G)))(
+    NG_SEQ(print(BIRTH_LINE("⊕(𝓡,κ) [κ-sorted]")(CON_S)(REVAL_G)(KAPPA_G)))(
+    NG_SEQ(print(BIRTH_LINE("▷(κ,SELF⊕SELF)")(DIR_S)(KAPPA_G)(WITH_G)))(
+    NG_SEQ(print(BIRTH1_LINE("↻(κ)")(KAPPA_G)))(
+    NG_SEQ(print(BIRTH1_LINE("↻(SELF⊕SELF) [the seal REWRITES: a birth that is not a birth]")(WITH_G)))(
+           print("NEOLOGENESIS FINDING: the evidential register is not born with the glyph — a newborn reads ⊥ until a gate assigns W/B/A/I; how a glyph is KNOWN is assigned, not inherited. The pragmatic Γ conjunct reads that entry and inherits the gap. Every other register is produced from the parents' readings by one law per register: the twelve-fold collapse as an event."))))))

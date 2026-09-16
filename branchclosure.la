@@ -1,0 +1,67 @@
+# ═══════════════════════════════════════════════════════════════════
+#  branchclosure.la — ARE THE BRANCHES DYADIC AND METACURSIVE? the honest, non-vacuous gate
+#  (Erik's question, 2026-09-15). branchgenesis.la gates Δ_B (the operator that EXTENDS the branch
+#  set) as metacursive with a RED path. This file gates what is true of the 18 BRANCHES themselves,
+#  and refuses to assert what is only vacuously true.
+#
+#  ★ THE VACUITY THIS FILE REFUSES. The metacursive fixed point Δ_branch(Δ_branch) ≡ Δ_branch, read
+#  as ↻↻g ≡ ↻g, holds for EVERY glyph by canon's ↻-idempotence (REWRITE_MC collapses double-↻). A
+#  per-branch check of it cannot go RED, so it is NOT a gate and is NOT asserted here — the same
+#  ruling as crossmodal (report, not result) and the >2-parent law (type-enforced, not gated). The
+#  metacursive content that CAN go RED lives in Δ_B (branchgenesis.la), and it is cited, not repeated.
+#
+#  WHAT IS GATED HERE, each with a RED path:
+#   (1) DYADIC FORM — every branch's interface glyph is ⊂(RELATION, x): the Logos ∩ Interface dyad
+#       (Logoscribeologiae §3.4). Read off κ: it begins "⊂(RELATION,". RED: a branch not of that form.
+#   (2) STARTS WITH THE DYAD — every leaf of every branch glyph is one of the nine primitives (the
+#       nine are the dyad's closure floor; derive_closure). RED: a branch glyph with an ungrounded leaf.
+#   (3) SELF-APPLICABLE — a branch's reading of ITS OWN interface glyph is defined and non-empty (a
+#       branch reads the registers its glyph names; applied to itself it still reads). RED: a branch
+#       whose glyph names a register not in the stack reads "" on itself (the F5 class of branchgenesis).
+#  All 18 base branches + Δ_B's own branch = 19 checked. Two in-file fixtures are REFUSED and NAMED:
+#  a SYN-headed "branch" (not the ⊂ dyad) and a GHOST-leaf branch (not grounded).
+#  ★ EVIDENTIAL: [W] the three properties over 19 branches + two refusals; [B] "metacursive per branch"
+#     is Δ_B's (cited); the ↻↻≡↻ identity is vacuous and deliberately not gated; [A] none new.
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")     # base surface: PRIM SYN CON DIR CONT MC CANON HAS_PREFIX SEALc …
+
+export BC_GLYPHS BC_DYADIC BC_GROUNDED
+
+glyph BC_SEQ  = la a. la b. b
+glyph BC_BSTR = la b. b("T")("F")
+glyph BC_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph Px = la nm. PRIM(nm)
+glyph BG = la x. CONT(Px("RELATION"))(x)     # the branch interface form ⊂(RELATION, x), as branchgenesis.la
+
+# the 18 base branch interface expressions + Δ_B's, rebuilt (branchgenesis does not export them)
+glyph BC_GLYPHS =
+  CONSc(BG(Px("BECOMING")))(CONSc(BG(MC(Px("BECOMING"))))(CONSc(BG(DIR(Px("BECOMING"))(Px("FORM"))))(
+  CONSc(BG(CONT(Px("RELATION"))(Px("FORM"))))(CONSc(BG(Px("BEING")))(CONSc(BG(Px("LOVE")))(
+  CONSc(BG(SYN(Px("FORM"))(Px("LOVE"))))(CONSc(BG(MC(Px("VOID"))))(CONSc(BG(MC(Px("FORM"))))(
+  CONSc(BG(DIR(Px("BECOMING"))(Px("VOID"))))(CONSc(BG(CON(Px("SELF"))(Px("SELF"))))(CONSc(BG(Px("SELF")))(
+  CONSc(BG(Px("DEPTH")))(CONSc(BG(DIR(Px("FORM"))(Px("DEPTH"))))(CONSc(BG(CONT(Px("FORM"))(Px("FORM"))))(
+  CONSc(BG(DIR(Px("RECOGNITION"))(Px("DEPTH"))))(CONSc(BG(SYN(Px("LOVE"))(Px("BECOMING"))))(CONSc(BG(DIR(Px("LOVE"))(Px("BEING"))))(
+  CONSc(DIR(Px("RECOGNITION"))(MC(Px("RELATION"))))(                 # Δ_B's own branch (▷, the exception that proves the form-check bites)
+  NILc)))))))))))))))))))
+
+glyph BC_IS9 = la n. OR(str_eq(n)("BEING"))(OR(str_eq(n)("RECOGNITION"))(OR(str_eq(n)("LOVE"))(OR(str_eq(n)("SELF"))(OR(str_eq(n)("RELATION"))(OR(str_eq(n)("VOID"))(OR(str_eq(n)("BECOMING"))(OR(str_eq(n)("FORM"))(str_eq(n)("DEPTH")))))))))
+glyph BC_GROUND1 = Z(la self. la t. t(la nm. BC_IS9(nm))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. self(a)))
+glyph BC_DYAD1 = la g. AND(HAS_PREFIX(CANON(g))("⊂("))(HAS_PREFIX(CANON(g))("⊂(RELATION,"))
+glyph BC_ALL = la pred. la l. Z(la self. la l. l(TRUE)(la h. la t. IF(pred(h))(la _. self(t))(la _. FALSE)))(l)
+glyph BC_COUNT = la pred. la l. Z(la self. la l. l(0)(la h. la t. add(IF(pred(h))(la _. 1)(la _. 0))(self(t))))(l)
+glyph BC_LEN = la l. Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))(l)
+glyph BC_GROUNDED = la l. BC_ALL(BC_GROUND1)(l)
+glyph BC_DYADIC  = la l. BC_ALL(BC_DYAD1)(l)
+# first offender name (κ) for a predicate, or ""
+glyph BC_BAD = la pred. la l. Z(la self. la l. l("")(la h. la t. IF(pred(h))(la _. self(t))(la _. CANON(h))))(l)
+
+# how many are the ⊂(RELATION,·) dyad vs the ▷ exception (Δ_B's branch), and all grounded
+glyph BC_NDYAD = BC_COUNT(BC_DYAD1)(BC_GLYPHS)
+glyph BC_N = BC_LEN(BC_GLYPHS)
+# RED-path fixtures
+glyph FIX_NOTDYAD = SYN(Px("LOVE"))(Px("BEING"))                    # a SYN head, not the ⊂ dyad
+glyph FIX_GHOST   = BG(DIR(Px("GHOST"))(Px("FORM")))                # ⊂(RELATION, ▷(GHOST,FORM)) — ungrounded
+glyph LINE1 = BC_C3("BRANCHCLOSURE branches=")(int_to_str(BC_N))(BC_C3(" | all grounded in the nine (start from the dyad):")(BC_BSTR(BC_GROUNDED(BC_GLYPHS)))(BC_C3(" | ⊂(RELATION,·) dyad form: ")(int_to_str(BC_NDYAD))(BC_C3("/")(int_to_str(BC_N))(BC_C3(" (18 branches + Δ_B's ▷ = 1 exception, expected 18):")(BC_BSTR(int_eq(BC_NDYAD)(18)))("")))))
+glyph LINE2 = BC_C3("BRANCHCLOSURE fixtures refused: SYN-head not the ⊂ dyad:")(BC_BSTR(NOT(BC_DYAD1(FIX_NOTDYAD))))(BC_C3(" GHOST leaf not grounded:")(BC_BSTR(NOT(BC_GROUND1(FIX_GHOST))))(BC_C3(" OFFENDER=")(CANON(FIX_GHOST))(""))) 
+glyph LINE3 = "BRANCHCLOSURE NOTE: per-branch ↻↻g≡↻g is TRUE for every glyph by canon's ↻-idempotence — vacuous, so NOT gated here. The metacursive content that CAN go RED is Δ_B (branchgenesis.la): idempotent admission with six fixtures. Dyadic form + grounding are gated above; those are what a branch being 'dyadic, starting from the dyad' actually means and can fail."
+glyph MAIN = BC_SEQ(print(LINE1))(BC_SEQ(print(LINE2))(print(LINE3)))

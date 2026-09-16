@@ -789,7 +789,14 @@ every item below cites the ruling rather than inferring one.
   property is untestable by construction; (c) `seal_test.la:36`
   `COMPLEXITY = la g. 1` is a constant function. Each must be given a real red
   path or demoted to a REPORT. *Paper: §Falsification, the vacuity bet.*
-  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): part (c) is unchanged: `seal_test.la:41` (the item's :36) is still `COMPLEXITY = la g. 1`, a constant. One unresolved part keeps the item open; (a) and (b) were not re-measured.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): part (c) is unchanged: `seal_test.la:41` (the item's :36) is still `COMPLEXITY = la g. 1`, a constant.
+  ⚑ **2026-09-15, Track F — part (c) is RESOLVED BY DEMOTION, and the claim now has a real red path
+  elsewhere.** `seal_test.la`'s own header marks COMPLEXITY `[S]` structural — "build.sh reports this
+  line; it gates nothing" (build.sh:7044-7059 prints it as a report) — so it is no longer a gate that
+  cannot go RED; it is a report. The claim it stood for (complexity-one) is now GATED with a red path
+  in `unified.la`: a COUPLED form (ren = renA·renB, the "blackbird") is REFUSED because it fails
+  AUTO_OK; nodes grow by exactly one per shared collapse; the mutant that seals the coupling instead
+  reads F. Parts (a) and (b) are phonym-side (Track A) and remain open. One unresolved part keeps the item open; (a) and (b) were not re-measured.
 - `[✓]` **Four hardcoded absolute paths** — **DONE 2026-08-23**: all four now derive from `Path(__file__).resolve().parent`; the `~/logos-d` positive control is derived + `LOGOS_CONTROL_TREE`-overridable and documented read-only. Verified behaviour-preserving (byte-identical output pre/post) AND cwd-independent. Was: — `freeze_q0_coverage.py:26`,
   `freeze_q2_resolve.py:28`, `freeze_q2_skiptogreen.py:30` and `:65`. The last
   reaches into **`~/logos-d`**, another track's tree; worktree isolation cannot
@@ -1080,10 +1087,20 @@ registers. `trimono.la` now gates all three. What remains:
   sigil rasters. This is Erik's "collapse into one another via the triple bar"
   made executable.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no gate asserts NIS ⟺ same rendered sound; crossmodal is still a correlation report.
+  ⚑ **2026-09-15, Track F — RELATED, NOT CLOSED:** `registers.la` gates that all twelve register
+  IDENTITY-PROJECTIONS agree on NIS-equal glyphs (the twelve-fold collapse at the identity level).
+  It does not assert NIS ⟺ same rendered sound / same raster; that remains this entry's gap.
 - `[ ]` **One normaliser, not five.** `NORMK`, `CANONIQ` (onf), `CANONIQ`
   (sigil), `NKAP`, `NORMP` — three different equivalence theories between them.
   Gate: `NORMK(t) ≡ CANON(NORMNODE(t))` over a fuzz corpus. RED today.
-  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): all five still exist: `NORMK` (canon.la), `NKAP` (entropy.la), `CANONIQ` (onf.la and sigil.la, plus a copy in logo/logos_render.la) and `NORMP` (phonym.la). There is no NORMNODE gate.
+  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): all five still exist: `NORMK` (canon.la), `NKAP` (entropy.la), `CANONIQ` (onf.la and sigil.la, plus a copy in logo/logos
+  ⚑ **2026-09-15, Track F — the gate this entry names now EXISTS, and a SIXTH normaliser with it.**
+  `registers.la` defines `NORMTREE` (tree-level, mirrors NORMK rule for rule) and gates
+  `NORMK(t) ≡ CANON(NORMTREE(t))` over its probe pairs and LIN_CAT — the exact form asked for
+  here, over a probe set rather than a fuzz corpus (that widening is owed). It is honest to say
+  this ADDS a normaliser; the reconciliation this entry wants (one normaliser) is for the
+  architect: either NORMK becomes tree-level and NORMTREE is retired into it, or NORMTREE stays
+  as the differential witness. Recorded in REGISTERS.md §10._render.la) and `NORMP` (phonym.la). There is no NORMNODE gate.
 
 ---
 
@@ -1129,6 +1146,14 @@ registers. `trimono.la` now gates all three. What remains:
   reading something other than coherence.
   **Do not build this before the criterion exists.** It is the same shape as
   self-invocation in TIER 4: code written first would be unfalsifiable.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending the register-stack landing.** `textcoherence.la`:
+  a referent store keyed on NORMK with first-mention indices (11 referents / 14 mentions / given 3
+  on the 5-proposition vector), a connective-linked utterance graph (share · contrast:¬ via
+  `complement.la` · contrast:opp via `opposite.la`), components with orphans NAMED (an injected
+  ⊂(FORM,DEPTH) reads components=2), and THE CRITERION THIS ENTRY DEMANDED: the coherence score
+  Σ 100/link-distance scores the shuffled text strictly lower (383 → 191); a distance-blind
+  mutant reads them equal and turns RED. Bound: sharing + ¬/opposite contrast only; no
+  argumentative or narrative structure; one vector. `gate_registers.sh` §12.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): there is no coherence gate, and the item's own order puts the criterion first.
 
 - `[ ]` **★ LEDGER ROW — Lexical depth D: computable `[W]`, use-gating `[A]`.**
@@ -1153,6 +1178,13 @@ registers. `trimono.la` now gates all three. What remains:
   readings are derived from the DAG rather than tabulated. **Red path:** a glyph
   with no lineage must yield no vertical-depth reading.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module implements the entendre.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing.** `entendre.la`: I vertical (surface /
+  parents / primitives / operators, read off the tree — a primitive reads ⊥: the red path), II
+  horizontal (the co-present facets = the hash-consed DAG's defs), III calligraphic **[B]** (the
+  element census the calligrapher would execute — the renderer has no execution parameters, so
+  modulation is not claimed), IV sonic (the prosodic contour, per Prosodic Intrinsicality). On the
+  compound ⊗(κ,𝓡) the four readings are pairwise distinct and derived, not tabulated. Mutants: two
+  modes reading the same → RED; a primitive given a vertical reading → RED. `gate_registers.sh` §21.
 
 - `[ ]` **★ The Grammar Completeness theorem has no gate** (`LINGUA_ADAMICA.tex`
   §4085, a `\theorem`): *"The four derivation rules are complete: every
@@ -1165,6 +1197,11 @@ registers. `trimono.la` now gates all three. What remains:
   and if no such concept can be constructed, say so, because a completeness
   claim that nothing could ever contradict is decoration.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no gate or test names grammar completeness.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing.** `gramcomplete.la`: the 79 published
+  derivations validated and replayed as rule traces (R1=167 R2=88 R3=2, derived independently
+  first); R4 witnessed on three sentence forms and refused at d=0; three unreachable fixtures
+  refused with the failing rule named. Bound stated in-file: falsifiable only at the boundary of
+  well-formedness — a coherent concept with no expression cannot be constructed from within.
 
 - `[ ]` **Acquisition** — the codex never gives a syllabus, glyph sequence or
   acquisition method for LA; its one acquisition claim is "explicitly labeled as
@@ -1172,6 +1209,13 @@ registers. `trimono.la` now gates all three. What remains:
   prerequisites: core-lexicon-as-data completeness gate; the Self-Generating
   Course pipeline run on LINGUA ADAMICA.tex to produce the LA syllabus.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): as for the acquisition gap above: no module has a syllabus or sequence.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing; the EMPIRICAL half stays open.**
+  `syllabus.la` derives the teaching order from the 79 published rows: primitives first, then by
+  derivation depth (d0=3 d1=64 d2=12 — derived independently first), fewer leaves earlier. Gated:
+  depth non-decreasing; constituent-first (every sub-derivation that is itself an entry precedes
+  its compound: 0 violations; the REVERSED order has 72 — the red path); a mutant sorting by leaves
+  alone loses depth order. Bound stated in-file: the order the STRUCTURE implies; no learner
+  measured. `gate_registers.sh` §23.
 - `[✓]` **The Aletheic Immune System** (spec :3608) — the organ that DETECTS  **DONE 2026-08-23** — `immune.la`: four checkpoints, four pathogens, four DISTINCT signatures. ★ Finding: it detects corruption, NOT falsehood — the right conjunct of Thm. healthy has no evaluator. Gated as a positive assertion.
   pathological language at runtime (involution: two glyphs, one referent). The
   build-time monosemy audit is its static half; the runtime half is absent.
@@ -1181,6 +1225,12 @@ registers. `trimono.la` now gates all three. What remains:
 - `[ ]` **`ontofelicity` → live enforcement** — `PERFORM` currently reports;
   wiring it to the real capability layer makes felicity enforceable.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): ontofelicity.la imports nothing. Its capability sets are string data, not wired to a capability layer.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing.** `felicitylive.la` imports `logoscap.la`
+  and `ontofelicity.la`: condition (B) is now the Morris sealer — a capability is the needed verb
+  sealed under the granting realm; the speaker holds it iff its UNSEAL opens the box. Authorized
+  realm performs; foreign realm refused (TFT, world byte-identical); forged probe refused; the string
+  PERFORM and the live PERFORM agree on the authorized case. RED: a bypass that unseals with the
+  granting realm lets the foreign speaker perform. `gate_registers.sh` §22. [B] one verb, two realms.
 
 ---
 
@@ -1196,6 +1246,10 @@ registers. `trimono.la` now gates all three. What remains:
   go red. Cheap, and it converts a paper assertion into a measurement — the same
   move `0.2 Generated lexicon appendix` makes in the build queue.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module names ontomorphology or an inflectional census.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing.** `ontomorph.la`: census over the 79
+  published rows (10 skeletons, operator uses ⊗59 ▷24 ⊕3 ⊂2 ↻2), 71 combinations → 71 κ-images
+  INJECTIVE, the ⊕(3,6)/⊕(6,3) fixture refused and named; numbers derived independently first.
+  Reports (does not gate) the 8 one-κ-two-names overloads for the architect. `gate_registers.sh` §16.
 
 ## TIER 4 — SELF-RELATION
 
@@ -1265,6 +1319,11 @@ registers. `trimono.la` now gates all three. What remains:
   (witnessed), but the Ren string still grows linearly. Largely discharged by
   unifying `MONO`'s etymology slot with the glyphdag form.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): `MONO` is still a plain pair (canon.la:63, canon_spec.la, archroot.la), and its etymology slot is not the glyphdag form.
+  ⚑ **MEASURED 2026-09-15, Track F — the fix is Track A's and is REQUESTED.** `fractal.la` on the
+  collapse chain: the Ren (surface κ) is 49 → 104 → 214 → 434 (it DOUBLES, not linear — ⊗(C,C)
+  writes C twice) while the hash-consed DAG form is 6 → 7 → 8 → 9 (+1 per collapse) and the tree is
+  recoverable from the DAG alone at every depth. So MONO's etymology slot AS the DAG form makes the
+  stored monoglyph linear in depth: decidable now, canon.la's to change. `gate_registers.sh` §28.
 - `[~]` **The operators ∂δγρ𝔄 as glyphs** (ROADMAP:2567) — currently hardcoded
   dispatch. And the four missing audit operators |G|, |G_meta|, ς, μ.
   ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the glyph half was false when written. OP_DIFF…OP_INTEG and `RANKOF` (rank read from the glyph) have been in metaglyph.la since `4e9449b` (08-20), and this item was written 08-27. build.sh's item-2 block gates them, and ENTELECHEIA's W2 ran that block ok=1 on `3c1c16c`. Still open: the four audit operators |G|, |G_meta|, ς and μ exist nowhere.
@@ -1289,15 +1348,29 @@ registers. `trimono.la` now gates all three. What remains:
   is ruled out by Erik's own corpus** (`SR_FOR` is explicitly "NOT
   purpose-origination") and should not be chased.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): selfprog.la does not read aatc's LACK.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing, bounded.** `wants.la`: the want is FORMED from
+  aatc's sensed lack (organ-A lacks MEMORY → want=MEMORY; a complete organ → ⊥) and RESOLVED by the
+  structure's own closure move (SLACKS empties, CENTROPY 3→4). Handed to SOLVE as data; the
+  behavioural synthesis is NOT done, because a lack carries no tests — stated. RED: a want for a
+  complete organ. `gate_registers.sh` §26.
 - `[ ]` **`AWARE` / `C` predicates** — "awareness" appears only in prose
   comments. `AWARE(g) := AUTO_OK(g)`; `C(g) := AUTO_OK(g) ∧ AUTO_OK(MCOLLAPSE(g))`.
   Separates A (one recognition) from C (recognition surviving a metacursive turn).
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has an AWARE glyph, and the only glyph named C (phonassoc.la) is unrelated.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing, with a finding.** `aware.la` defines
+  AWARE and C exactly as written and gates them over the catalogue: A ≡ C on EVERY sealed glyph,
+  because MCOLLAPSE re-seals with CANON and so the metacursive turn always names itself truly; the
+  only glyph failing C already fails A (the liar). The separation the item wants has no instance
+  under canon's seal — reported. RED: a turn that keeps the old ren makes C fail on true glyphs.
 - `[ ]` **`PROTO_AGENT`** — the one chain-tail item with an honest gate:
   REPAIR can move g strictly toward closure, with `swc.la`'s provably-ill class
   as the negative fixture. **Qualia/phenomenology: build nothing** until a paper
   formalises them; any gate now could not go RED.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a PROTO_AGENT glyph.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing.** `protoagent.la`: on an incomplete structure
+  with a well-ordered composition REPAIR raises centropy 2→4 and the result is autological; on a
+  complete one the gain is 0; on swc's ORDER-VIOLATION (the provably-ill class) the agent REFUSES and
+  the structure is untouched. Nothing built for qualia. RED: the ill guard dropped. §27.
 - `[~]` **The Algebra of Naming's companions** — the Semiotic-Ontoglyphic Ladder
   (7 levels) and the Substitution Test; α is binary in code, graded in the paper.
   ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the Ladder is built and gated: ladder.la (L0–L7), build.sh's ladder block, and buildla's "LADDER VERDICT ? YES". The Substitution Test does not exist (0 mentions in ladder.la). Graded α was not verified.
@@ -1305,6 +1378,10 @@ registers. `trimono.la` now gates all three. What remains:
   specific named derivation becomes underivable while the other four survive.
   Makes "a missing word is a missing thought" executable.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): there is no glyph or gate for it. ablate.la's gated verdict concerns modes, not operator-glyphs.
+  ⚑ **BUILT 2026-09-15, Track F — `[~]` pending landing.** `ablateop.la`: derivability from an
+  operator set read off κ containment; ablate ∂ → ⊗(∂,δ) underivable while ⊗(γ,ρ) and the other
+  four survive; ablate γ → the mirror; ablate 𝔄 (the control) → both survive. RED: a containment
+  that always says yes collapses the control. `gate_registers.sh` §25.
 - `[✓]` **`dyadseed.la`** — VOID ≡ Church zero, BECOMING ≡ successor, by  **DONE 2026-08-23** — `dyadseed.la`: VOID≡Church zero, BEING≡Church ONE by eta-equivalence, BECOMING≡successor; bound proved via non-injectivity (SELF and BEING both →1).
 
   ### ★★ SCOPE OF THE DYAD — stated because the stronger reading is the tempting one

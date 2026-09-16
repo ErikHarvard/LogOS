@@ -1,0 +1,230 @@
+# ═══════════════════════════════════════════════════════════════════
+#  ontoargument.la — GÖDEL'S ONTOLOGICAL ARGUMENT AS A CHECKABLE OBJECT
+#                    (finite S5 model check, honestly bounded; directive 2026-09-15)
+#
+#  WHAT. Gödel's argument (Scott's version) is here neither asserted nor proved: it is
+#  EXHIBITED. Its five axioms, its two definitions, its three theorems and Sobel's
+#  modal collapse are each computed on a FINITE S5 KRIPKE MODEL and printed as T/F,
+#  every F NAMING the offending property/world/individual. The house's metalogic
+#  (metalogic.la) gives the three laws as glyphs — identity REN ≡ κ(ETYM), non-
+#  contradiction as arity inhabitation, excluded middle as WELLFORMED: no silent third
+#  value. This file keeps that voice: every verdict is a Church boolean printed T or F,
+#  never a prose "holds"; the conclusion's own glyph is sealed and passes LAW_IDENTITY.
+#
+#  THE MODEL (all [A], declared).  Worlds w0 w1 w2, S5 = every world sees every world.
+#  Individuals a b c. A property is PAIR(name)(table): a 9-byte string, cell x*3+w,
+#  x-major ("a:w0 w1 w2 | b:… | c:…"). Base GOOD WISE TALL; the list is closed under
+#  ¬ (LINGUA_ADAMICA.tex §Logic as Ontology: negation = exclusion to the Void; its glyph
+#  form is RULED ⊂(X,VOID), opgrammar.la R_NEG, Erik 2026-08-23 — see GLYPHS below);
+#  G and NE are COMPUTED extensionally and appended with their negations.
+#  Positivity P is a declared name-list, one 3-byte string per name = positive at w
+#  (so A4 "P(φ) → □P(φ)" is a real, RED-capable check, not a tautology of encoding).
+#     G(x)@w   ≡ ∀φ∈L [P_w(φ) → φ(x)@w]                                   (Def 1)
+#     φ ess x@w ≡ φ(x)@w ∧ ∀ψ∈L [ψ(x)@w → □∀y(φ(y) → ψ(y))]              (Def 2)
+#     NE(x)@w  ≡ ∀φ∈L [φ ess x@w → □∃y φ(y)]                             (Def 3)
+#  STRATIFICATION [B]: G0 over base∪¬base; NE over base∪¬base∪{G0}; G := G0∧NE
+#  (P(NE) permitting); full list L = base∪¬base∪{G,¬G,NE,¬NE}. Two witnesses print
+#  whether G and NE are STABLE when re-quantified over the full L (fixpoint check).
+#
+#  CHECKS [W]  A1 P(φ)⊻P(¬φ) · A2 P closed under □∀x(φ→ψ) · A3 P(G) · A4 P→□P ·
+#              A5 P(NE) · T1 ◇∃x G(x) · T2 G ess x for every God-like x · T3 □∃x G(x)
+#              · COLLAPSE ∀φ∀x(φ(x)→□φ(x)) with the FIRST contingent truth named.
+#  THREE RUNS  [M]    the declared model (bounded comprehension = the declared list)
+#              [M+λ]  the same tables, list CLOSED under proposition-properties λy.φ(x)
+#                     (Sobel's premise: "p" as a property), P([φ(x)])@w := φ(x)@w [A]
+#              [M♭+λ] constant-table variant of the same, closed the same way.
+#  Sobel's theorem: A1–A5 ⊢ ∀p(p→□p). On a finite model the checker can only show
+#  which of {axioms, collapse} gives way once λy.p is in the list. That is the finding.
+#
+#  THE BOUND [B] — stated here and printed: this is a FINITE-MODEL CHECK, not a proof in
+#  higher-order modal logic. The axioms are checked on ONE model (three variants).
+#  Comprehension for "all properties" is the declared list. VALIDITY of the argument is
+#  NOT established here; axioms and conclusion are exhibited as jointly satisfiable (or
+#  not) on a model, and the modal collapse is exhibited (or not).
+#
+#  GLYPHS [A] from the lexicon (LINGUA_ADAMICA.tex, Modality/Quantifiers/Negation):
+#     □ Must/Necessary = ⊗(BEING,FORM)   ◇ Can/Possible = ⊗(BECOMING,FORM)
+#     ∀ All/Every      = ⊗(BEING,DEPTH)  ∃ Some         = ⊗(FORM,DEPTH)
+#     ¬ Not            = ⊂(X,VOID) — "X framed by Void" (RULED, opgrammar.la:245-259 R_NEG,
+#                        complement.la; the tex's ⊕(VOID,X) collided grammar-wide since ⊕ is
+#                        commutative). Rendered here as ⊂(·,VOID); ¬G = ⊂(G,VOID).
+#     The four above are USES of published lexicon entries, not declarations: collide.py
+#     resolves them to Must / Change+γ / Totality+All / Some (the tex's own rows).
+#     P "positive"     = ⊗(LOVE,FORM)  DECLARED: Love fused with Form — a form good as such
+#                        (not ▷(LOVE,FORM)="Should", which is Love DIRECTED at Form).
+#     G "God-like"     = ⊗(∀,P) = ⊗(⊗(BEING,DEPTH),⊗(LOVE,FORM))  DECLARED: the one in whom
+#                        every positive form is total. NOT ↻(BEING) (canon rewrites it to
+#                        SELF); NIS-distinct from SELF, κ, 𝓡 and every SR_* — checked below.
+#     COLLISION CHECK (scratchpad/collide.py, lexicon+opgrammar+canon+metaglyph, corpus 86):
+#     P, G, ¬-rule, T1 and T3 compositions all `clear` (rc 0) — recorded in the report.
+#  RED PATHS (run from the scratchpad on a sed-mutated copy; recorded in the report):
+#     flip a table cell → A2 red naming φ⊨ψ@w, T1/T3 F;  P(GOOD)→FFF → A1 red GOOD@w0;
+#     P(NE)→FFF → A5 red NE@w0 (T3 stays T: G is antitone in P, so T3 is exhibited by the
+#     tables, not derived — exactly the bound).
+#  Pure strings + Church data ⇒ byte-identical on the C host and the SECD VM.
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")      # Z TRUE FALSE NOT AND OR IF PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM AUTO_OK KAPPA REVAL SR_*
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph OA_P = la nm. PRIM(nm)
+
+# ── Church data ──
+glyph OA_NIL  = la n. la c. n
+glyph OA_CONS = la h. la t. la n. la c. c(h)(t)
+glyph OA_ONE  = la h. OA_CONS(h)(OA_NIL)
+glyph OA_PAIR = la a. la b. la f. f(a)(b)
+glyph OA_FST  = la p. p(la a. la b. a)
+glyph OA_SND  = la p. p(la a. la b. b)
+glyph OA_APP  = Z(la self. la l. la m. l(m)(la h. la t. OA_CONS(h)(self(t)(m))))
+glyph OA_MAP  = Z(la self. la f. la l. l(OA_NIL)(la h. la t. OA_CONS(f(h))(self(f)(t))))
+glyph OA_FLAT = Z(la self. la ll. ll(OA_NIL)(la h. la t. OA_APP(h)(self(t))))
+glyph OA_CAT  = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph OA_LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph OA_PRINTL = Z(la self. la l. l("")(la h. la t. SEQ(print(h))(self(t))))
+glyph OA_IMP  = la a. la b. OR(NOT(a))(b)
+glyph OA_XOR  = la a. la b. OR(AND(a)(NOT(b)))(AND(NOT(a))(b))
+# FIRST: f(h) is "" (ok) or the offender string; the first offender, or "" — short-circuits
+glyph OA_FIRST = Z(la self. la f. la l. l("")(la h. la t. (la r. IF(str_eq(r)(""))(la _. self(f)(t))(la _. r))(f(h))))
+glyph OA_ALL = la pred. la l. str_eq(OA_FIRST(la h. IF(pred(h))(la _. "")(la _. "x"))(l))("")
+glyph OA_ANY = la pred. la l. NOT(OA_ALL(la h. NOT(pred(h)))(l))
+# index-aware twins: f(i)(h)
+glyph OA_FIRSTI = la f. la l. Z(la self. la l. la i. l("")(la h. la t. (la r. IF(str_eq(r)(""))(la _. self(t)(add(i)(1)))(la _. r))(f(i)(h))))(l)(0)
+glyph OA_ALLI = la pred. la l. str_eq(OA_FIRSTI(la i. la h. IF(pred(i)(h))(la _. "")(la _. "x"))(l))("")
+
+# ── the frame: three worlds, three individuals, S5 (□ = every world, ◇ = some world) ──
+glyph OA_IX = OA_CONS(0)(OA_CONS(1)(OA_ONE(2)))
+glyph OA_WN = la w. concat("w")(int_to_str(w))
+glyph OA_XN = la x. str_at("abc")(x)
+glyph OA_AT = la p. la x. la w. str_eq(str_at(OA_SND(p))(add(mul(x)(3))(w)))("T")
+glyph OA_ROW = la f. la x. concat(BSTR(f(x)(0)))(concat(BSTR(f(x)(1)))(BSTR(f(x)(2))))
+glyph OA_TAB = la f. concat(OA_ROW(f)(0))(concat(OA_ROW(f)(1))(OA_ROW(f)(2)))
+glyph OA_NEG = la p. OA_PAIR(concat("¬")(OA_FST(p)))(OA_TAB(la x. la w. NOT(OA_AT(p)(x)(w))))
+# P_w(name): positive at world w, by name; a name absent from P is not positive
+glyph OA_POS = la P. la w. la nm. Z(la self. la l. l(FALSE)(la h. la t. IF(str_eq(OA_FST(h))(nm))(la _. str_eq(str_at(OA_SND(h))(w))("T"))(la _. self(t))))(P)
+
+# ── the modal-logical vocabulary, computed on the frame ──
+glyph OA_ENTAILS = la f. la g. OA_ALL(la w. OA_ALL(la x. OA_IMP(OA_AT(f)(x)(w))(OA_AT(g)(x)(w)))(OA_IX))(OA_IX)   # □∀y(φ(y)→ψ(y))
+glyph OA_NECEX   = la f. OA_ALL(la w. OA_ANY(la x. OA_AT(f)(x)(w))(OA_IX))(OA_IX)                                  # □∃y φ(y)
+# per-list matrices, computed ONCE per list (world-independent facts): ent[i,j] = φi ⊨ φj ; nex[i] = □∃y φi(y) ; pos[i,w] = P_w(φi)
+glyph OA_ENTM = la L. OA_CAT(OA_MAP(la f. OA_CAT(OA_MAP(la g. BSTR(OA_ENTAILS(f)(g)))(L)))(L))
+glyph OA_ENT  = la n. la ent. la i. la j. str_eq(str_at(ent)(add(mul(i)(n))(j)))("T")
+glyph OA_NEXM = la L. OA_CAT(OA_MAP(la f. BSTR(OA_NECEX(f)))(L))
+glyph OA_NEX  = la nex. la i. str_eq(str_at(nex)(i))("T")
+glyph OA_POSM = la L. la P. OA_CAT(OA_MAP(la f. OA_ROW(la _. la w. OA_POS(P)(w)(OA_FST(f)))(0))(L))
+glyph OA_POSI = la pos. la i. la w. str_eq(str_at(pos)(add(mul(i)(3))(w)))("T")
+glyph OA_ESS  = la L. la n. la ent. la i. la f. la x. la w. IF(OA_AT(f)(x)(w))(la _. OA_ALLI(la j. la g. OA_IMP(OA_AT(g)(x)(w))(OA_ENT(n)(ent)(i)(j)))(L))(la _. FALSE)
+glyph OA_NEFN = la L. la n. la ent. la nex. la x. la w. OA_ALLI(la i. la f. OA_IMP(OA_ESS(L)(n)(ent)(i)(f)(x)(w))(OA_NEX(nex)(i)))(L)
+glyph OA_GFN  = la L. la pos. la x. la w. OA_ALLI(la i. la f. OA_IMP(OA_POSI(pos)(i)(w))(OA_AT(f)(x)(w)))(L)
+glyph OA_NETAB = la L. (la n. OA_TAB(OA_NEFN(L)(n)(OA_ENTM(L))(OA_NEXM(L))))(OA_LEN(L))
+glyph OA_GTAB  = la L. la P. OA_TAB(OA_GFN(L)(OA_POSM(L)(P)))
+
+# ── build a model: (base, P) ↦ PAIR(L)(PAIR(G)(NE)), stratified as the header says ──
+glyph OA_MODEL = la base. la P.
+  (la L0.
+  (la G0.
+  (la NE.
+  (la G. OA_PAIR(OA_APP(L0)(OA_CONS(G)(OA_CONS(OA_NEG(G))(OA_CONS(NE)(OA_ONE(OA_NEG(NE)))))))(OA_PAIR(G)(NE))
+  )(OA_PAIR("G")(OA_GTAB(OA_APP(L0)(OA_ONE(NE)))(P)))
+  )(OA_PAIR("NE")(OA_NETAB(OA_APP(L0)(OA_ONE(G0)))))
+  )(OA_PAIR("G")(OA_GTAB(L0)(P)))
+  )(OA_APP(base)(OA_MAP(OA_NEG)(base)))
+
+# ── the axioms as gates: "" or the OFFENDER ──
+glyph OA_FINDNEGI = la L. la p. (la nt. OA_FIRSTI(la j. la h. IF(str_eq(OA_SND(h))(nt))(la _. int_to_str(j))(la _. ""))(L))(OA_SND(OA_NEG(p)))
+glyph OA_A1 = la L. la pos. OA_FIRST(la w. OA_FIRSTI(la i. la f. (la r.
+    IF(str_eq(r)(""))(la _. concat("¬")(concat(OA_FST(f))(" absent from list")))
+      (la _. IF(OA_XOR(OA_POSI(pos)(i)(w))(OA_POSI(pos)(str_to_int(r))(w)))(la _. "")(la _. concat(OA_FST(f))(concat("@")(OA_WN(w))))))
+    (OA_FINDNEGI(L)(f)))(L))(OA_IX)
+glyph OA_A2 = la L. la n. la ent. la pos. OA_FIRSTI(la i. la f. OA_FIRSTI(la j. la g.
+    IF(OA_ENT(n)(ent)(i)(j))
+      (la _. OA_FIRST(la w. IF(OA_IMP(OA_POSI(pos)(i)(w))(OA_POSI(pos)(j)(w)))(la _. "")
+                (la _. concat(OA_FST(f))(concat("⊨")(concat(OA_FST(g))(concat("@")(OA_WN(w)))))))(OA_IX))
+      (la _. ""))(L))(L)
+glyph OA_A3 = la P. OA_FIRST(la w. IF(OA_POS(P)(w)("G"))(la _. "")(la _. concat("G@")(OA_WN(w))))(OA_IX)
+glyph OA_A5 = la P. OA_FIRST(la w. IF(OA_POS(P)(w)("NE"))(la _. "")(la _. concat("NE@")(OA_WN(w))))(OA_IX)
+glyph OA_A4 = la L. la pos. OA_FIRSTI(la i. la f. OA_FIRST(la w. OA_FIRST(la v.
+    IF(OA_IMP(OA_POSI(pos)(i)(w))(OA_POSI(pos)(i)(v)))(la _. "")
+      (la _. concat(OA_FST(f))(concat("@")(concat(OA_WN(w))(concat("↛")(OA_WN(v)))))))(OA_IX))(OA_IX))(L)
+
+# ── the theorems, computed ──
+glyph OA_T1 = la G. OA_ANY(la w. OA_ANY(la x. OA_AT(G)(x)(w))(OA_IX))(OA_IX)
+glyph OA_T3 = la G. OA_NECEX(G)
+glyph OA_T2 = la L. la n. la ent. la iG. la G. OA_FIRST(la w. OA_FIRST(la x.
+    IF(OA_IMP(OA_AT(G)(x)(w))(OA_ESS(L)(n)(ent)(iG)(G)(x)(w)))(la _. "")(la _. concat(OA_XN(x))(concat("@")(OA_WN(w)))))(OA_IX))(OA_IX)
+glyph OA_GODLIKE = la G. OA_CAT(OA_MAP(la w. OA_CAT(OA_MAP(la x.
+    IF(OA_AT(G)(x)(w))(la _. concat(OA_XN(x))(concat("@")(concat(OA_WN(w))(" "))))(la _. ""))(OA_IX)))(OA_IX))
+# Sobel: ∀φ∀x(φ(x)@w → φ(x)@v); the FIRST contingent truth is named
+glyph OA_COLLAPSE = la L. OA_FIRST(la f. OA_FIRST(la x. OA_FIRST(la w. OA_FIRST(la v.
+    IF(OA_IMP(OA_AT(f)(x)(w))(OA_AT(f)(x)(v)))(la _. "")
+      (la _. concat(OA_FST(f))(concat("(")(concat(OA_XN(x))(concat(")@")(concat(OA_WN(w))(concat("¬@")(OA_WN(v)))))))))(OA_IX))(OA_IX))(OA_IX))(L)
+
+# ── closure under proposition-properties λy.φ(x) (Sobel's premise), with P([φ(x)])@w := φ(x)@w [A] ──
+glyph OA_PPN = la f. la x. concat("[")(concat(OA_FST(f))(concat("(")(concat(OA_XN(x))(")]"))))
+glyph OA_CLOSE  = la base. OA_APP(base)(OA_FLAT(OA_MAP(la f. OA_MAP(la x. OA_PAIR(OA_PPN(f)(x))(OA_TAB(la y. la w. OA_AT(f)(x)(w))))(OA_IX))(base)))
+glyph OA_PCLOSE = la base. la P. OA_APP(P)(OA_FLAT(OA_MAP(la f. OA_FLAT(OA_MAP(la x.
+    OA_CONS(OA_PAIR(OA_PPN(f)(x))(OA_ROW(OA_AT(f))(x)))(OA_ONE(OA_PAIR(concat("¬")(OA_PPN(f)(x)))(OA_ROW(OA_AT(OA_NEG(f)))(x)))))(OA_IX)))(base)))
+
+# ── THE DECLARED MODEL [A] (cells x-major: a:w0w1w2 b:w0w1w2 c:w0w1w2) ──
+glyph OA_BASE = OA_CONS(OA_PAIR("GOOD")("TTTTFFFFF"))(OA_CONS(OA_PAIR("WISE")("TTTTTTFTF"))(OA_ONE(OA_PAIR("TALL")("FFFFFTTTT"))))
+glyph OA_BASEF = OA_CONS(OA_PAIR("GOOD")("TTTTTTFFF"))(OA_CONS(OA_PAIR("WISE")("TTTFFFTTT"))(OA_ONE(OA_PAIR("TALL")("FFFTTTTTT"))))
+glyph OA_PSET = OA_CONS(OA_PAIR("GOOD")("TTT"))(OA_CONS(OA_PAIR("WISE")("TTT"))(OA_CONS(OA_PAIR("¬TALL")("TTT"))(OA_CONS(OA_PAIR("G")("TTT"))(OA_ONE(OA_PAIR("NE")("TTT"))))))
+
+# ── report lines ──
+glyph OA_V = la lbl. la off. concat(lbl)(concat(":")(IF(str_eq(off)(""))(la _. "T")(la _. concat("F OFFENDER=")(off))))
+glyph OA_LINEA = la tag. la L. la P. la G. la NE. la n. la ent. la pos. OA_CAT(
+    OA_CONS(tag)(OA_CONS(" ")(
+    OA_CONS(OA_V("A1 P(φ)⊻P(¬φ)")(OA_A1(L)(pos)))(OA_CONS(" ")(
+    OA_CONS(OA_V("A2 P⊨-closed")(OA_A2(L)(n)(ent)(pos)))(OA_CONS(" ")(
+    OA_CONS(OA_V("A3 P(G)")(OA_A3(P)))(OA_CONS(" ")(
+    OA_CONS(OA_V("A4 P(φ)→□P(φ)")(OA_A4(L)(pos)))(OA_CONS(" ")(
+    OA_CONS(OA_V("A5 P(NE)")(OA_A5(P)))(
+    OA_CONS(" | G fixpoint over full L:")(OA_CONS(BSTR(str_eq(OA_TAB(OA_GFN(L)(pos)))(OA_SND(G))))(
+    OA_CONS(" NE stable over full L:")(OA_ONE(BSTR(str_eq(OA_TAB(OA_NEFN(L)(n)(ent)(OA_NEXM(L))))(OA_SND(NE)))))))))))))))))))
+glyph OA_LINEB = la tag. la L. la G. la NE. la n. la ent. OA_CAT(
+    OA_CONS(tag)(OA_CONS(" T1 ◇∃x G(x):")(OA_CONS(BSTR(OA_T1(G)))(OA_CONS(" ")(
+    OA_CONS(OA_V("T2 G ess x ∀God-like x")(OA_T2(L)(n)(ent)(sub(n)(4))(G)))(
+    OA_CONS(" T3 □∃x G(x):")(OA_CONS(BSTR(OA_T3(G)))(
+    OA_CONS(" God-like=")(OA_CONS(OA_GODLIKE(G))(
+    OA_CONS("G=")(OA_CONS(OA_SND(G))(OA_CONS(" NE=")(OA_CONS(OA_SND(NE))(
+    OA_CONS(" |L|=")(OA_CONS(int_to_str(n))(
+    OA_CONS(" | ")(OA_ONE(OA_V("collapse ∀φ∀x(φ(x)→□φ(x))")(OA_COLLAPSE(L))))))))))))))))))))
+glyph OA_LINES = la tag. la base. la P. (la m. (la L. la G. la NE. (la n. la ent. la pos.
+    OA_CONS(OA_LINEA(tag)(L)(P)(G)(NE)(n)(ent)(pos))(OA_ONE(OA_LINEB(tag)(L)(G)(NE)(n)(ent))))
+    (OA_LEN(L))(OA_ENTM(L))(OA_POSM(L)(P)))
+    (OA_FST(m))(OA_FST(OA_SND(m)))(OA_SND(OA_SND(m))))(OA_MODEL(base)(P))
+
+# ── the glyphs [A]: the modalities and quantifiers are the lexicon's own ──
+glyph OA_BOX  = SYN(OA_P("BEING"))(OA_P("FORM"))
+glyph OA_DIA  = SYN(OA_P("BECOMING"))(OA_P("FORM"))
+glyph OA_ALLQ = SYN(OA_P("BEING"))(OA_P("DEPTH"))
+glyph OA_EXQ  = SYN(OA_P("FORM"))(OA_P("DEPTH"))
+glyph OA_NOTG = la g. CONT(g)(OA_P("VOID"))   # RULED ⊂(X,VOID), not ⊕(VOID,X)
+glyph OA_POSG = SYN(OA_P("LOVE"))(OA_P("FORM"))
+glyph OA_GODG = SYN(OA_ALLQ)(OA_POSG)
+glyph OA_T3G  = SYN(OA_BOX)(SYN(OA_EXQ)(OA_GODG))
+glyph OA_T1G  = SYN(OA_DIA)(SYN(OA_EXQ)(OA_GODG))
+glyph OA_SEAL = la et. MONO(CANON(et))(et)
+glyph OA_SELFRELS = OA_CONS(MC(OA_P("BEING")))(OA_CONS(KAPPA)(OA_CONS(REVAL)(OA_CONS(SR_TO)(OA_CONS(SR_ABOUT)(OA_CONS(SR_AS)(OA_CONS(SR_BY)(OA_CONS(SR_FROM)(OA_CONS(SR_THROUGH)(OA_CONS(SR_FOR)(OA_ONE(SR_WITH)))))))))))
+glyph OA_DISTINCT = la g. OA_ALL(la n. NOT(NIS(g)(n)))(OA_SELFRELS)
+glyph OA_GLYPHLINE = OA_CAT(
+    OA_CONS("OA GLYPHS □=")(OA_CONS(CANON(OA_BOX))(OA_CONS(" ◇=")(OA_CONS(CANON(OA_DIA))(
+    OA_CONS(" ¬=")(OA_CONS(CANON(OA_NOTG(OA_P("·"))))(OA_CONS(" ∀=")(OA_CONS(CANON(OA_ALLQ))(
+    OA_CONS(" ∃=")(OA_CONS(CANON(OA_EXQ))(OA_CONS(" P[A]=")(OA_CONS(CANON(OA_POSG))(
+    OA_CONS(" G[A]=⊗(∀,P)=")(OA_CONS(CANON(OA_GODG))(
+    OA_CONS(" | G,P NIS-distinct from SELF/κ/𝓡/SR_*:")(OA_CONS(BSTR(AND(OA_DISTINCT(OA_GODG))(AND(OA_DISTINCT(OA_POSG))(NOT(NIS(OA_GODG)(OA_POSG))))))(
+    OA_CONS(" | T3 □∃x G(x) ≡ ")(OA_CONS(CANON(OA_T3G))(
+    OA_CONS(" LAW_IDENTITY(sealed T3):")(OA_CONS(BSTR(AUTO_OK(OA_SEAL(OA_T3G))))(
+    OA_CONS(" | T1 ◇∃x G(x) ≡ ")(OA_CONS(CANON(OA_T1G))(OA_CONS(" | ¬G ≡ ")(OA_ONE(CANON(OA_NOTG(OA_GODG)))))))))))))))))))))))))))
+glyph OA_SHOWBASE = la base. OA_CAT(OA_MAP(la p. concat(" ")(concat(OA_FST(p))(concat("=")(OA_SND(p)))))(base))
+glyph OA_HDR = OA_CAT(
+    OA_CONS("OA MODEL[A] worlds=w0,w1,w2 (S5: every world sees every world) individuals=a,b,c | cells x-major a:w0w1w2 b:w0w1w2 c:w0w1w2 | [M] base")(
+    OA_CONS(OA_SHOWBASE(OA_BASE))(OA_CONS(" | [M♭] base")(OA_CONS(OA_SHOWBASE(OA_BASEF))(
+    OA_CONS(" | list=base,¬base,G,¬G,NE,¬NE | P={GOOD,WISE,¬TALL,G,NE}@every world | +λ: list closed under λy.φ(x), P([φ(x)])@w:=φ(x)@w")(OA_NIL))))))
+glyph OA_BOUND = "OA BOUND[B] finite S5 model check, NOT a proof in higher-order modal logic: axioms checked on ONE declared model (+two variants); comprehension for ∀φ/∀ψ = the declared list; G,NE stratified (G0 → NE → G); validity NOT established — axioms and conclusion exhibited as jointly satisfiable (or not); modal collapse exhibited (or not); [M] alone lacks λy.p so Sobel's premise is absent there by the bound, not refuted"
+glyph MAIN = OA_PRINTL(
+    OA_CONS(OA_HDR)(
+    OA_APP(OA_LINES("OA[M]")(OA_BASE)(OA_PSET))(
+    OA_APP(OA_LINES("OA[M+λ]")(OA_CLOSE(OA_BASE))(OA_PCLOSE(OA_BASE)(OA_PSET)))(
+    OA_APP(OA_LINES("OA[M♭+λ]")(OA_CLOSE(OA_BASEF))(OA_PCLOSE(OA_BASEF)(OA_PSET)))(
+    OA_CONS(OA_GLYPHLINE)(OA_ONE(OA_BOUND)))))))

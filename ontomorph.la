@@ -1,0 +1,127 @@
+# ═══════════════════════════════════════════════════════════════════
+#  ontomorph.la — ONTOMORPHOLOGY: the inflectional census, gated (LA_COMPLETION.md:1187)
+#
+#  The white paper (v18, §on ontopragmasemantics) owes the build this: "No gate checks
+#  ontomorphology as such, and the census of which operator combinations constitute this
+#  language's inflectional system IS owed to the build." The ledger's instruction: emit the
+#  operator-combination census from the published tables, and gate that every combination
+#  the census admits has a κ-image distinct from every other; red path: two combinations
+#  that canonicalise the same must turn it RED.
+#
+#  WHAT IS COUNTED. The corpus is every published derivation: lexicon.la's LEX (57) and
+#  RULED (2), opgrammar.la's GRAM (18) and GRULED (2) — 79 rows, each NAME|DERIV|PHONYM in
+#  the digit code (1..9 = the nine, * + > c m = ⊗ ⊕ ▷ ⊂ ↻). For each row:
+#     combination = the raw derivation as written (its KAN string, operand order kept)
+#     skeleton    = the combination with its leaves erased — the INFLECTIONAL SHAPE
+#                   (the same reading registers.la's morphological register takes)
+#     κ-image     = KAN_N: the derivation NORMALISED by the language's own equivalence —
+#                   ⊕ commutes (tex:2854), which is exactly the class that produced the
+#                   Bad/Grief collision and Erik's 2026-08-23 negation ruling
+#  THE GATE. (1) INJECTIVITY: distinct combinations → distinct κ-images. Two combinations
+#  with one κ (⊕(a,b) and ⊕(b,a)) would be one inflection wearing two shapes. The corpus
+#  passes today; the in-file fixture (+36 vs +63) is REFUSED and NAMES the pair — that is
+#  the red path the ledger asked for, witnessed every run. (2) THE CENSUS ITSELF, exact:
+#  skeletons with counts, operator uses, distinct combinations. Every number below was
+#  DERIVED INDEPENDENTLY in python from the same table strings before this file first ran
+#  (scratchpad, 2026-09-15) and the run had to match it — expected values derived, never
+#  captured.
+#  THE REPORT (not gated): ENTRY OVERLOADS — one κ carrying two NAMES. Eight today
+#  (Large/Substance, Bond/Friendship, All/Totality, Mystery/Sky, Agency/Move, Beauty/Good,
+#  Here/This, That/There). Two of them are the codex's own "This / Here" and "That / There"
+#  rows (one concept, two English words); the rest are the codex's overloads that Tier 0's
+#  rulings (C9/C10) began to resolve. They are the ARCHITECT'S to rule, so they are
+#  reported with names, never asserted away and never turned into a gate here.
+#  ★ EVIDENTIAL: [W] injectivity + census + fixture refusal; [B] the corpus is the
+#     published tables only (79 rows), not coinage; [I] the overload list is a reading of
+#     the tables, pending rulings.
+# ═══════════════════════════════════════════════════════════════════
+import("lexicon.la")       # FOLD LEX RULED PARSE KAN KAN_N NORMT (digit-coded nodes)
+import("opgrammar.la")     # GRAM GRULED
+
+export OM_SKEL OM_CLASH OM_COMBOS_RAW OM_KAPPAS OM_ROWS
+
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph TRUE  = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph NOT   = la b. b(FALSE)(TRUE)
+glyph IF    = la c. la t. la f. c(t)(f)("!")
+glyph OM_SEQ  = la a. la b. b
+glyph OM_BSTR = la b. b("T")("F")
+glyph OM_NIL  = la n. la c. n
+glyph OM_CONS = la h. la t. la n. la c. c(h)(t)
+glyph OM_PAIR = la a. la b. la f. f(a)(b)
+glyph OM_FST  = la p. p(la a. la b. a)
+glyph OM_SND  = la p. p(la a. la b. b)
+glyph OM_LEN  = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph OM_MEMB = Z(la self. la s. la l. l(FALSE)(la h. la t. IF(str_eq(h)(s))(la _. TRUE)(la _. self(s)(t))))
+
+# ── rows: (name, deriv) over the four tables ──
+glyph OM_ROWS_OF = la s. FOLD(la acc. la nm. la dv. la ph. OM_CONS(OM_PAIR(nm)(dv))(acc))(OM_NIL)(s)
+glyph OM_CAT = la a. la b. Z(la self. la l. l(b)(la h. la t. OM_CONS(h)(self(t))))(a)
+glyph OM_ROWS = OM_CAT(OM_ROWS_OF(LEX))(OM_CAT(OM_ROWS_OF(RULED))(OM_CAT(OM_ROWS_OF(GRAM))(OM_ROWS_OF(GRULED))))
+glyph OM_NODE = la dv. OM_FST(PARSE(dv))
+glyph OM_SKEL = Z(la self. la t.
+    t(la d. "·")
+     (la a. la b. concat("*(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+     (la a. la b. concat("+(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+     (la a. la b. concat(">(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+     (la a. la b. concat("c(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+     (la a. concat("m(")(concat(self(a))(")"))))
+
+# ── counted census: list of (key, count), insertion-ordered ──
+glyph OM_BUMP = la k. Z(la self. la l. l(OM_CONS(OM_PAIR(k)(1))(OM_NIL))(la h. la t.
+    IF(str_eq(OM_FST(h))(k))(la _. OM_CONS(OM_PAIR(k)(add(OM_SND(h))(1)))(t))(la _. OM_CONS(h)(self(t)))))
+glyph OM_COUNT = la keyof. la rows. Z(la self. la l. la acc. l(acc)(la r. la t. self(t)(OM_BUMP(keyof(r))(acc))))(rows)(OM_NIL)
+# ★ COST NOTE. tiny_host re-evaluates a glyph body at EVERY reference (no memoisation), so a
+# census that names OM_ROWS in each line re-parses the four tables each time, and a report that
+# names OM_KAPPAS(OM_ROWS) inside a loop over OM_KAPPAS(OM_ROWS) is quadratic in table parses.
+# The first draft ran past two minutes for that reason. Every reading below takes the rows (and
+# the κ list) as PARAMETERS; MAIN binds each ONCE. Same discipline as branchgenesis/ontoargument.
+glyph OM_SKELS = la rows. OM_COUNT(la r. OM_SKEL(OM_NODE(OM_SND(r))))(rows)
+glyph OM_RENDER = Z(la self. la l. l("")(la h. la t. concat(OM_FST(h))(concat("=")(concat(int_to_str(OM_SND(h)))(t(" ")(la _. la _. concat(" ")(self(t))))))))
+glyph OM_CNT = la ch. Z(la self. la s. IF(str_eq(s)(""))(la _. 0)(la _. add(IF(str_eq(str_head(s))(ch))(la _. 1)(la _. 0))(self(str_tail(s)))))
+glyph OM_CHARS = la ch. la rows. Z(la self. la l. l(0)(la r. la t. add(OM_CNT(ch)(OM_SND(r)))(self(t))))(rows)
+glyph OM_OPS = la rows. concat("*=")(concat(int_to_str(OM_CHARS("*")(rows)))(concat(" >=")(concat(int_to_str(OM_CHARS(">")(rows)))(concat(" +=")(concat(int_to_str(OM_CHARS("+")(rows)))(concat(" c=")(concat(int_to_str(OM_CHARS("c")(rows)))(concat(" m=")(int_to_str(OM_CHARS("m")(rows)))))))))))
+
+# ── INJECTIVITY: distinct raw combinations → distinct κ-images. Returns "" or "combo1/combo2". ──
+glyph OM_DISTINCT = la keyof. la rows. Z(la self. la l. la acc. l(acc)(la r. la t. (la k. IF(OM_MEMB(k)(acc))(la _. self(t)(acc))(la _. self(t)(OM_CONS(k)(acc))))(keyof(r))))(rows)(OM_NIL)
+glyph OM_COMBOS_RAW = la rows. OM_DISTINCT(la r. OM_SND(r))(rows)          # raw digit-code strings, as written
+glyph OM_KAPPAS = la rows. OM_DISTINCT(la r. KAN_N(OM_NODE(OM_SND(r))))(rows)
+glyph OM_KOF = la combo. KAN_N(OM_FST(PARSE(combo)))
+# the offending pair: two distinct raw combos with one κ (first found); combos carry their κ once
+glyph OM_CLASH = la combos. (la ks. Z(la self. la l. l("")(la c. la t.
+    (la hit. IF(str_eq(hit)(""))(la _. self(t))(la _. concat(OM_FST(c))(concat("/")(hit))))
+    (Z(la s2. la l2. l2("")(la c2. la t2. IF(str_eq(OM_SND(c2))(OM_SND(c)))(la _. OM_FST(c2))(la _. s2(t2))))(t))))(ks))
+    (Z(la self. la l. l(OM_NIL)(la c. la t. OM_CONS(OM_PAIR(c)(OM_KOF(c)))(self(t))))(combos))
+# RED-PATH FIXTURE: ⊕(3,6) and ⊕(6,3) — two combinations, one κ (⊕ commutes) — must be REFUSED, pair named
+glyph OM_FIX = OM_ROWS_OF("Grief|+36|x;Ghost|+63|y;")
+
+# ── REPORT: entry overloads — one κ, two names (the architect's to rule) ──
+# rows are tagged (name, κ) once; the report groups by κ.
+glyph OM_TAGGED = la rows. Z(la self. la l. l(OM_NIL)(la r. la t. OM_CONS(OM_PAIR(OM_FST(r))(KAN_N(OM_NODE(OM_SND(r)))))(self(t))))(rows)
+glyph OM_NAMES_AT = la k. la tagged. Z(la self. la l. l("")(la r. la t.
+    IF(str_eq(OM_SND(r))(k))(la _. concat(OM_FST(r))(concat("/")(self(t))))(la _. self(t))))(tagged)
+glyph OM_SLASHES = Z(la self. la s. IF(str_eq(s)(""))(la _. 0)(la _. add(IF(str_eq(str_head(s))("/"))(la _. 1)(la _. 0))(self(str_tail(s)))))
+glyph OM_OVERLOADS = la kappas. la tagged. Z(la self. la l. l(OM_NIL)(la k. la t.
+    (la nm. IF(lt(1)(OM_SLASHES(nm)))(la _. OM_CONS(concat(k)(concat(":")(nm)))(self(t)))(la _. self(t)))
+    (OM_NAMES_AT(k)(tagged))))(kappas)
+glyph OM_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(concat(" ")(self(t)))))
+
+glyph LINE1 = la rows. (la sk.
+    concat("ONTOMORPH corpus rows=")(concat(int_to_str(OM_LEN(rows)))(
+    concat(" (LEX+RULED+GRAM+GRULED) | skeletons=")(concat(int_to_str(OM_LEN(sk)))(
+    concat(": ")(concat(OM_RENDER(sk))(
+    concat(" | operator uses ")(OM_OPS(rows)))))))))(OM_SKELS(rows))
+glyph LINE2_BODY = la kappas. la combos. la clash. la fix.
+    concat("ONTOMORPH combinations=")(concat(int_to_str(OM_LEN(combos)))(
+    concat(" κ-images=")(concat(int_to_str(OM_LEN(kappas)))(
+    concat(" | injective (distinct combinations → distinct κ):")(concat(OM_BSTR(str_eq(clash)("")))(
+    concat(IF(str_eq(clash)(""))(la _. "")(la _. concat(" OFFENDER=")(clash)))(
+    concat(" | fixture +36/+63 refused:")(concat(OM_BSTR(NOT(str_eq(fix)(""))))(
+    concat(" OFFENDER=")(fix))))))))))
+glyph LINE2 = la rows. la kappas. (la combos. LINE2_BODY(kappas)(combos)(OM_CLASH(combos))(OM_CLASH(OM_COMBOS_RAW(OM_FIX))))(OM_COMBOS_RAW(rows))
+glyph LINE3 = la rows. la kappas. (la ov.
+    concat("ONTOMORPH REPORT entry overloads (one κ, two names; the architect's to rule)=")(concat(int_to_str(OM_LEN(ov)))(
+    concat(": ")(OM_JOIN(ov)))))(OM_OVERLOADS(kappas)(OM_TAGGED(rows)))
+glyph MAIN = (la rows. (la kappas.
+    OM_SEQ(print(LINE1(rows)))(OM_SEQ(print(LINE2(rows)(kappas)))(print(LINE3(rows)(kappas)))))(OM_KAPPAS(rows)))(OM_ROWS)

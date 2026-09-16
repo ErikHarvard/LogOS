@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════════
+#  fractal.la — THE FRACTAL MONOGLYPH, MEASURED (LA_COMPLETION.md, Tier 4): "depth recoverable by
+#  decomposition rather than surface marks. DECOMP recovers the tree from the single DAG form
+#  (witnessed), but the Ren string still grows linearly. Largely discharged by unifying MONO's
+#  etymology slot with the glyphdag form." Verified 09-10: MONO is still a plain pair; its etymology
+#  slot is not the glyphdag form.
+#
+#  What Track F can do without touching canon.la (Track A's): MEASURE the two forms side by side on
+#  the collapse chain C0=κ, C1=⊗(κ,𝓡), Cn=⊗(Cn-1,Cn-1) and gate the inequality the item names:
+#     the REN (κ string, the surface) grows — and not linearly: it DOUBLES, because ⊗(C,C) writes C
+#     twice; the DAG form (the fractal, hash-consed) grows by ONE def per collapse.
+#  So the surface is exponential in depth while the fractal form is linear: str_len(REN(Cn)) ≈
+#  2·str_len(REN(Cn-1)) and NODES(DAG(Cn)) = NODES(DAG(Cn-1))+1 — and the tree is recoverable from
+#  the DAG alone (RECOVER). That is the measurement that makes the item's proposal decidable: MONO's
+#  etymology slot AS the DAG form would make the monoglyph's stored form linear in depth. The change
+#  itself is canon.la's and is REQUESTED, not made here.
+#  GATE: the doubling of the surface, the +1 of the fractal, recoverability at every depth; RED: a
+#  DAG that is not hash-consed (the unfolded TSIZE) grows like the surface — a mutant that reads
+#  TSIZE where NODES is read turns the +1 witness RED.
+#  ★ EVIDENTIAL: [W] the measurements; [B] one chain, five depths; the fix is a request to Track A.
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")     # SEALc COLLAPSE REN ETYM DAG NODES TSIZE RECOVER LINEAGE NORMK KAPPA REVAL SYN
+
+export FR_CHAIN
+
+glyph FR_SEQ  = la a. la b. b
+glyph FR_BSTR = la b. b("T")("F")
+glyph FR_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph FR_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph C0 = SEALc(KAPPA)
+glyph C1 = COLLAPSE(SYN)(C0)(SEALc(REVAL))
+glyph C2 = COLLAPSE(SYN)(C1)(C1)
+glyph C3 = COLLAPSE(SYN)(C2)(C2)
+glyph C4 = COLLAPSE(SYN)(C3)(C3)
+glyph FR_CHAIN = CONSc(C1)(CONSc(C2)(CONSc(C3)(CONSc(C4)(NILc))))
+glyph FR_SURF = la g. str_to_int(str_len(REN(g)))
+glyph FR_FRAC = la g. NODES(DAG(ETYM(g)))
+glyph FR_ROW = la g. FR_C3("surface=")(int_to_str(FR_SURF(g)))(FR_C3(" fractal=")(int_to_str(FR_FRAC(g)))(" | "))
+glyph FR_STEP = la c. la p. AND(lt(mul(2)(FR_SURF(p)))(add(FR_SURF(c))(1)))(int_eq(FR_FRAC(c))(add(FR_FRAC(p))(1)))
+glyph FR_OK = AND(FR_STEP(C2)(C1))(AND(FR_STEP(C3)(C2))(FR_STEP(C4)(C3)))
+glyph FR_REC = la g. str_eq(RECOVER(LINEAGE(g)))(NORMK(ETYM(g)))
+glyph FR_REC_ALL = AND(FR_REC(C1))(AND(FR_REC(C2))(AND(FR_REC(C3))(FR_REC(C4))))
+glyph LINE1 = FR_C3("FRACTAL chain: ")(FR_JOIN(Z(la self. la l. l(NILc)(la g. la t. CONSc(FR_ROW(g))(self(t))))(FR_CHAIN)))(FR_C3("surface doubles while the fractal form grows by one:")(FR_BSTR(FR_OK))(FR_C3(" | tree recoverable from the DAG alone at every depth:")(FR_BSTR(FR_REC_ALL))("")))
+glyph LINE2 = "FRACTAL REQUEST (Track A, canon.la): MONO's etymology slot AS the hash-consed DAG form would make the stored monoglyph linear in depth; the surface κ string is exponential. Measured here, not changed here."
+glyph MAIN = FR_SEQ(print(LINE1))(print(LINE2))

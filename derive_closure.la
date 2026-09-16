@@ -1,0 +1,181 @@
+# ═══════════════════════════════════════════════════════════════════
+#  derive_closure.la — THE DERIVATION-CLOSURE COMPOSER: one verdict, three strata.
+#
+#  WHAT. The architect's directive: "a script that, starting from the dyad and the
+#  nine primitives, derives the entire current lexicon — and can go RED if any glyph
+#  cannot be derived. If the derivation closes, the claim is proven. If it does not,
+#  the claim is bounded — the dyad generates most of the lexicon, and the exceptions
+#  are the finding." The pieces already exist as separate Track-A modules. THIS
+#  module COMPOSES their exported witnesses into ONE verdict and RE-DERIVES NOTHING:
+#  every T below is read from an import's export, then counted, joined and printed.
+#
+#  THE THREE STRATA (each with its own token and its own RED path):
+#   (1) ROOT → NINE      archroot.la  (DV_SELF DV_REC DV_LOVE, ARCHE_OK)
+#                        archderive.la (ROOT_IS_I DERIV_BEING AX_* AXIOMS_OK CLOSURE_OK)
+#                        archclosure.la (BASE_OK STEP_OK SHAPES_OK CLOSURE_ALL TRAVERSE_OK)
+#       derived = the count of derivation witnesses that hold (BEING as the root itself,
+#       SELF RECOGNITION LOVE by reduction); axioms = the count of seam witnesses that
+#       hold (VOID=weakening, DEPTH/BECOMING=contraction, FORM/RELATION=exchange);
+#       closure{I} = archderive's depth-4 trees AND archclosure's mechanised induction.
+#   (2) NINE → LEXICON   familytree.la G1GO over CAT: every leaf of every catalogue
+#       glyph is one of the nine. grounded=k/n is COUNTED per entry (G1GO on each
+#       singleton) and the whole-catalogue G1GO must name no offender. An in-file
+#       fixture with a GHOST leaf must be REFUSED, and its shape-twin with a SELF leaf
+#       must be ACCEPTED, so the refusal is about the leaf and not the shape.
+#   (3) DYAD STRATUM     dyadseed.la exports VOID BECOMING VAL ITER — its check glyphs
+#       are NOT exported — so its five facts are recomputed here FROM ITS EXPORTED
+#       PROBE (VAL) and generator (ITER). Reported as a SEPARATE stratum, per Erik's
+#       ruling 2026-08-24: the arithmetic beneath the nine is a DIFFERENT claim from
+#       "the nine derive from the root", never a link in the chain.
+#
+#  GATE. The verdict line has THREE branches and all three are live:
+#     RED      — any stratum's token is F (the failing stratum is named)
+#     CLOSED   — every token T AND derived = 9   (reachable only by a mutant today)
+#     BOUNDED  — every token T AND derived < 9   (the green run; THE FINDING)
+#
+#  RED PATHS (mutants, run from the scratchpad, never committed):
+#   (a) DC_LEXCAT = DC_HAUNTED          → "grounded=21/22:F OFFENDER=PHANTOM/GHOST", verdict RED
+#   (a') DC_FIX_EXPECT = ""             → "ungrounded fixture refused:F", verdict RED
+#   (b) an AX_ conjunct → DC_FALSE      → "axioms=4/5:F [...] UNWITNESSED=RELATION", verdict RED
+#   (c) DC_NDERIVED = 9                 → "derived=9/9" and the verdict reads CLOSED
+#
+#  THE BOUND. derived=4/9 is what the imports witness; 5 are AXIOMS with the seam
+#  stated (archderive: the root is I, which is linear; the five are exactly the
+#  structural rules it lacks). This module cannot make the chain close and does not
+#  try: a composer that re-derived would be the stipulation the ruling forbids.
+#
+#  EVIDENTIAL TAGS.
+#   [W] every token — each is an imported export or a count over imported exports,
+#       and each stratum has a mutant that turns it F.
+#   [B] "closure{I}" is observational up to archclosure's probe set (its own bound).
+#   [B] the dyad line witnesses BEING=1 through the literal root term la s. s — the
+#       one term written here rather than imported, since no module exports BEING.
+#  Pure strings + Church/Scott data ⇒ byte-identical on the C host and the SECD VM.
+# ═══════════════════════════════════════════════════════════════════
+
+import("archroot.la")      # ARCHE_OK DV_SELF DV_REC DV_LOVE SEAL_SELF SEAL_REC SEAL_LOVE REN ETYM
+import("archderive.la")    # ROOT_IS_I CLOSURE_OK DERIV_BEING AX_VOID AX_DEPTH AX_FORM AX_REL AX_BEC AXIOMS_OK
+import("archclosure.la")   # CLOSURE_ALL SHAPES_OK STEP_OK BASE_OK NSHAPES TRAVERSE_OK
+import("dyadseed.la")      # VOID BECOMING VAL ITER   (no check glyph is exported)
+import("familytree.la")    # CAT CONS NIL PAIR FST SND LEN G1GO UNARIES_OF INCAT_IN MAXD_OF G3_OF DEPTHOF
+
+# ── foundations (DC_-prefixed; every import keeps its own privately) ──
+glyph DC_SEQ   = la a. la b. b
+glyph DC_TRUE  = la t. la f. t
+glyph DC_FALSE = la t. la f. f
+glyph DC_IF    = la c. la t. la f. c(t)(f)("!")
+glyph DC_AND   = la a. la b. a(b)(DC_FALSE)
+glyph DC_NOT   = la b. b(DC_FALSE)(DC_TRUE)
+glyph DC_TF    = la b. b("T")("F")
+glyph DC_Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph DC_FOLD  = DC_Z(la self. la f. la z. la l. l(z)(la h. la t. f(h)(self(f)(z)(t))))
+glyph DC_JOIN  = la sep. la l. DC_FOLD(la h. la acc. DC_IF(str_eq(acc)(""))(la _. h)(la _. concat(h)(concat(sep)(acc))))("")(l)
+glyph DC_STR   = la l. DC_JOIN("")(l)
+
+# ── flagged names: a list of PAIR(flag)(name); count / all / the held / the missed ──
+glyph DC_COUNT  = la l. DC_FOLD(la h. la acc. DC_IF(FST(h))(la _. add(1)(acc))(la _. acc))(0)(l)
+glyph DC_ALL    = la l. DC_FOLD(la h. la acc. DC_AND(FST(h))(acc))(DC_TRUE)(l)
+glyph DC_HELD   = la l. DC_JOIN(" ")(DC_FOLD(la h. la acc. DC_IF(FST(h))(la _. CONS(SND(h))(acc))(la _. acc))(NIL)(l))
+glyph DC_MISSED = la l. DC_JOIN(" ")(DC_FOLD(la h. la acc. DC_IF(FST(h))(la _. acc)(la _. CONS(SND(h))(acc)))(NIL)(l))
+glyph DC_TOKENS = la l. DC_JOIN(" ")(DC_FOLD(la h. la acc. CONS(concat(SND(h))(concat(":")(DC_TF(FST(h)))))(acc))(NIL)(l))
+
+# ═══ STRATUM 1 — ROOT → NINE ═════════════════════════════════════════
+# derivations: BEING is the root itself (archderive), SELF RECOGNITION LOVE by reduction (archroot)
+glyph DC_DERIVED = CONS(PAIR(DC_AND(DERIV_BEING)(ROOT_IS_I))("BEING"))(
+                   CONS(PAIR(DV_SELF)("SELF"))(
+                   CONS(PAIR(DV_REC)("RECOGNITION"))(
+                   CONS(PAIR(DV_LOVE)("LOVE"))(
+                   NIL))))
+# axioms: each seam witnessed in archderive; the AND below is the composed conjunction (mutant (b) hits a conjunct here)
+glyph DC_AXIOMS  = CONS(PAIR(AX_VOID)("VOID"))(
+                   CONS(PAIR(AX_DEPTH)("DEPTH"))(
+                   CONS(PAIR(AX_BEC)("BECOMING"))(
+                   CONS(PAIR(AX_FORM)("FORM"))(
+                   CONS(PAIR(AX_REL)("RELATION"))(
+                   NIL)))))
+# the seam, read off the same witnesses: a structural rule is listed only if its witnesses hold
+glyph DC_SEAMS   = CONS(PAIR(AX_VOID)("weakening"))(
+                   CONS(PAIR(DC_AND(AX_DEPTH)(AX_BEC))("contraction"))(
+                   CONS(PAIR(DC_AND(AX_FORM)(AX_REL))("exchange"))(
+                   NIL)))
+glyph DC_NDERIVED = DC_COUNT(DC_DERIVED)
+glyph DC_NAXIOMS  = DC_COUNT(DC_AXIOMS)
+# closure of {I}: archderive's depth-4 trees AND archclosure's base/step/cover/all/trav —
+# each export read ONCE (tiny_host does not memoise; archclosure enumerates 65 shapes)
+glyph DC_CLOSW = (la d4. la b. la s. la c. la a. la t. la n. la k.
+    k(DC_AND(d4)(DC_AND(DC_AND(b)(s))(DC_AND(DC_AND(c)(a))(t))))
+     (DC_STR(CONS("depth-4 trees:")(CONS(DC_TF(d4))(CONS(" | mechanised shapes=")(CONS(int_to_str(n))(
+             CONS(" base:")(CONS(DC_TF(b))(CONS(" step:")(CONS(DC_TF(s))(CONS(" cover:")(CONS(DC_TF(c))(
+             CONS(" all:")(CONS(DC_TF(a))(CONS(" trav:")(CONS(DC_TF(t))(NIL)))))))))))))))))
+  (CLOSURE_OK)(BASE_OK)(STEP_OK)(SHAPES_OK)(CLOSURE_ALL)(TRAVERSE_OK)(NSHAPES)
+# the stratum: k(ok)(line)(closure-detail)
+glyph DC_S1 = (la nd. la na. la dv. la ax. la cw. cw(la cok. la cdet.
+    (la ok. la line. la k. k(ok)(line)(cdet))
+      (DC_AND(DC_AND(dv)(ax))(cok))
+      (DC_STR(CONS("root→nine: root ∃(∃)≡∃:")(CONS(DC_TF(ARCHE_OK))(
+              CONS(" derived=")(CONS(int_to_str(nd))(CONS("/9:")(CONS(DC_TF(dv))(
+              CONS(" [")(CONS(DC_HELD(DC_DERIVED))(CONS("]")(
+              CONS(DC_IF(dv)(la _. "")(la _. concat(" UNDERIVED=")(DC_MISSED(DC_DERIVED))))(
+              CONS(" axioms=")(CONS(int_to_str(na))(CONS("/5:")(CONS(DC_TF(ax))(
+              CONS(" [")(CONS(DC_HELD(DC_AXIOMS))(CONS("]")(
+              CONS(DC_IF(ax)(la _. "")(la _. concat(" UNWITNESSED=")(DC_MISSED(DC_AXIOMS))))(
+              CONS(" seam=")(CONS(DC_JOIN("/")(DC_FOLD(la h. la acc. DC_IF(FST(h))(la _. CONS(SND(h))(acc))(la _. acc))(NIL)(DC_SEAMS)))(
+              CONS(" closure{I}:")(CONS(DC_TF(cok))(NIL)))))))))))))))))))))))))
+  )(DC_NDERIVED)(DC_NAXIOMS)(DC_ALL(DC_DERIVED))(DC_AND(DC_ALL(DC_AXIOMS))(AXIOMS_OK))(DC_CLOSW)
+
+# ═══ STRATUM 2 — NINE → LEXICON ══════════════════════════════════════
+glyph DC_LEXCAT = CAT
+# κ-node constructors: the same six-arm Scott encoding familytree/canon use, so a node built
+# here is the same TERM the imported G1GO walks (familytree exports G1GO, not PRIM/SYN).
+glyph DC_PRIM6 = la nm. la fp. la fs. la fc. la fd. la fo. la fm. fp(nm)
+glyph DC_SYN6  = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph DC_GHOST    = PAIR("PHANTOM")(DC_SYN6(DC_PRIM6("BEING"))(DC_PRIM6("GHOST")))
+glyph DC_GHOSTCAT = CONS(DC_GHOST)(NIL)
+glyph DC_HAUNTED  = CONS(DC_GHOST)(CAT)
+glyph DC_CTRLCAT  = CONS(PAIR("PHANTOM")(DC_SYN6(DC_PRIM6("BEING"))(DC_PRIM6("SELF"))))(NIL)
+glyph DC_FIX_EXPECT = concat(FST(DC_GHOST))("/GHOST")
+glyph DC_GCOUNT = la c. DC_FOLD(la h. la acc. DC_IF(str_eq(G1GO(CONS(h)(NIL)))(""))(la _. add(1)(acc))(la _. acc))(0)(c)
+# the stratum: k(ok)(line) — n, k, offender, fixture, control each computed ONCE
+glyph DC_S2 = (la n. la cnt. la off. la fix. la ctrl.
+    (la gok. la fok. la k. k(DC_AND(gok)(fok))
+      (DC_STR(CONS("nine→lexicon: grounded=")(CONS(int_to_str(cnt))(CONS("/")(CONS(int_to_str(n))(CONS(":")(CONS(DC_TF(gok))(
+              CONS(DC_IF(str_eq(off)(""))(la _. "")(la _. concat(" OFFENDER=")(off)))(
+              CONS("\n  ungrounded fixture refused:")(CONS(DC_TF(str_eq(fix)(DC_FIX_EXPECT)))(CONS(" OFFENDER=")(CONS(fix)(
+              CONS(" | fixture control (same shape, leaf SELF) accepted:")(CONS(DC_TF(str_eq(ctrl)("")))(NIL))))))))))))))))
+      (DC_AND(str_eq(off)(""))(int_eq(cnt)(n)))
+      (DC_AND(str_eq(fix)(DC_FIX_EXPECT))(str_eq(ctrl)("")))
+  )(LEN(DC_LEXCAT))(DC_GCOUNT(DC_LEXCAT))(G1GO(DC_LEXCAT))(G1GO(DC_GHOSTCAT))(G1GO(DC_CTRLCAT))
+
+# ═══ STRATUM 3 — THE DYAD, a separate stratum ════════════════════════
+glyph DC_I    = la s. s
+glyph DC_BARS = DC_Z(la self. la k. DC_IF(int_eq(k)(0))(la _. "")(la _. concat("|")(self(sub(k)(1)))))
+glyph DC_DYAD = CONS(PAIR(str_eq(VAL(VOID))(""))("VOID=0"))(
+                CONS(PAIR(DC_AND(str_eq(VAL(BECOMING(VOID)))("|"))(str_eq(VAL(BECOMING(BECOMING(VOID))))("||")))("BECOMING=succ"))(
+                CONS(PAIR(DC_AND(str_eq(VAL(ITER(5)))(DC_BARS(5)))(str_eq(VAL(ITER(9)))(DC_BARS(9))))("naturals(ITER 5,9)"))(
+                CONS(PAIR(str_eq(VAL(DC_I))(VAL(ITER(1))))("BEING=1"))(
+                CONS(PAIR(DC_AND(str_eq(VAL(DC_I(DC_I)))(VAL(DC_I)))(DC_NOT(str_eq(VAL(DC_I(DC_I)))(VAL(VOID)))))("bound(projection-not-injective)"))(
+                NIL)))))
+glyph DC_S3 = (la ok. la toks. la k. k(ok)
+    (DC_STR(CONS("dyad stratum (arithmetic beneath the nine): ")(CONS(toks)(
+            CONS(" — a DIFFERENT claim, not a link in the chain")(NIL)))))
+  )(DC_ALL(DC_DYAD))(DC_TOKENS(DC_DYAD))
+
+# ═══ THE VERDICT — three live branches ═══════════════════════════════
+glyph DC_VERDICT = la ok1. la ok2. la ok3. la nd. la na.
+    DC_IF(DC_AND(DC_AND(ok1)(ok2))(ok3))
+      (la _. DC_IF(int_eq(nd)(9))
+         (la _. "DERIVATION CLOSURE VERDICT: CLOSED — every one of the nine derives from the root by application; every lexicon glyph grounds in the nine; the dyad grounds the arithmetic stratum. The chain closes.")
+         (la _. DC_STR(CONS("DERIVATION CLOSURE VERDICT: BOUNDED — the root generates ")(CONS(int_to_str(nd))(CONS(" of 9 by application; ")(CONS(int_to_str(na))(
+                        CONS(" are axioms with the structural-rule seam; every lexicon glyph grounds in the nine; the dyad grounds the arithmetic stratum. The chain does NOT close from the dyad to the nine, and that is the finding.")(NIL))))))))
+      (la _. DC_STR(CONS("DERIVATION CLOSURE VERDICT: RED — a stratum failed: root→nine:")(CONS(DC_TF(ok1))(CONS(" nine→lexicon:")(CONS(DC_TF(ok2))(
+                    CONS(" dyad:")(CONS(DC_TF(ok3))(CONS(" — no verdict on the claim until the failing witness is read.")(NIL)))))))))
+
+glyph MAIN = (la s1. la s2. la s3.
+    s1(la ok1. la line1. la cdet. s2(la ok2. la line2. s3(la ok3. la line3.
+      DC_SEQ(print(line1))(
+      DC_SEQ(print(concat("  closure detail: ")(cdet)))(
+      DC_SEQ(print(line2))(
+      DC_SEQ(print(line3))(
+             print(DC_VERDICT(ok1)(ok2)(ok3)(DC_NDERIVED)(DC_NAXIOMS))))))
+    )))
+  )(DC_S1)(DC_S2)(DC_S3)

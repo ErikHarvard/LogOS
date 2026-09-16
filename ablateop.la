@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════════════════════
+#  ablateop.la — THE META-WORD ABLATION GATE (LA_COMPLETION.md, Tier 4): "remove one operator-glyph,
+#  assert a specific named derivation becomes underivable while the other four survive. Makes 'a
+#  missing word is a missing thought' executable." (ablate.la's verdict concerns MODES; this is the
+#  operator-glyph half.)
+#
+#  The five Theory operators ∂ δ γ ρ 𝔄 are glyphs (metaglyph.la OP_DIFF OP_BOUND OP_COMP OP_RECOG
+#  OP_INTEG). A derivation stated OVER the operators — metaglyph's own OP_AS_OPERAND = ⊗(∂,δ) and
+#  OP_COMPOSED = ⊗(γ,ρ) sealed — is DERIVABLE from an operator set S iff every operator it contains
+#  (as a κ-subterm) is in S. Ablate one operator and exactly the derivations that contain it become
+#  underivable; the rest survive. Nothing is tabulated: containment is read off the κ strings.
+#  GATE: with all five, both derivations derive; ablate ∂ → ⊗(∂,δ) underivable, ⊗(γ,ρ) survives, the
+#  other four operators' own glyphs survive; ablate γ → the mirror; ablate 𝔄 (used by neither) → both
+#  survive (the control: ablation is specific, not global). RED (mutation): a containment test that
+#  reads NAMES instead of κ (ρ ≡ SR_ABOUT would still be found) — or one that always says "contains"
+#  — turns the control RED.
+#  ★ EVIDENTIAL: [W] the six assertions; [B] two named derivations, the ones metaglyph exhibits.
+# ═══════════════════════════════════════════════════════════════════
+import("metaglyph.la")     # OP_* GLYPHOF COLLAPSE CANON REN ETYM (canon's PRIM SYN … shadowed identically)
+
+export DERIVABLE_FROM ABLATE
+
+glyph AB_SEQ  = la a. la b. b
+glyph AB_TRUE = la t. la f. t
+glyph AB_FALSE= la t. la f. f
+glyph AB_IF   = la c. la t. la f. c(t)(f)("!")
+glyph AB_AND  = la a. la b. a(b)(AB_FALSE)
+glyph AB_NOT  = la b. b(AB_FALSE)(AB_TRUE)
+glyph AB_Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph AB_BSTR = la b. b("T")("F")
+glyph AB_NIL  = la n. la c. n
+glyph AB_CONS = la h. la t. la n. la c. c(h)(t)
+glyph AB_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph AB_STARTS = AB_Z(la self. la p. la s. AB_IF(str_eq(p)(""))(la _. AB_TRUE)(la _. AB_IF(str_eq(s)(""))(la _. AB_FALSE)(la _. AB_IF(str_eq(str_head(p))(str_head(s)))(la _. self(str_tail(p))(str_tail(s)))(la _. AB_FALSE))))
+glyph AB_CONTAINS = AB_Z(la self. la s. la sub. AB_IF(AB_STARTS(sub)(s))(la _. AB_TRUE)(la _. AB_IF(str_eq(s)(""))(la _. AB_FALSE)(la _. self(str_tail(s))(sub))))
+
+# the operator set as (name, κ) pairs; ABLATE removes one by name
+glyph AB_PAIR = la a. la b. la f. f(a)(b)
+glyph AB_FST  = la p. p(la a. la b. a)
+glyph AB_SND  = la p. p(la a. la b. b)
+glyph OPS5 = AB_CONS(AB_PAIR("∂")(CANON(OP_DIFF)))(AB_CONS(AB_PAIR("δ")(CANON(OP_BOUND)))(AB_CONS(AB_PAIR("γ")(CANON(OP_COMP)))(AB_CONS(AB_PAIR("ρ")(CANON(OP_RECOG)))(AB_CONS(AB_PAIR("𝔄")(CANON(OP_INTEG)))(AB_NIL)))))
+glyph ABLATE = la name. la set. AB_Z(la self. la l. l(AB_NIL)(la h. la t. AB_IF(str_eq(AB_FST(h))(name))(la _. self(t))(la _. AB_CONS(h)(self(t)))))(set)
+# a derivation D (a κ string) is derivable from S iff every operator κ that D contains is in S
+glyph AB_INSET = la k. la set. AB_Z(la self. la l. l(AB_FALSE)(la h. la t. AB_IF(str_eq(AB_SND(h))(k))(la _. AB_TRUE)(la _. self(t))))(set)
+glyph DERIVABLE_FROM = la d. la set. AB_Z(la self. la l. l(AB_TRUE)(la h. la t.
+    AB_IF(AB_CONTAINS(d)(AB_SND(h)))(la _. AB_AND(AB_INSET(AB_SND(h))(set))(self(t)))(la _. self(t))))(OPS5)
+# metaglyph does not export its two composed derivations or the mode constructors; the Scott
+# encoding is structural, so the same terms are rebuilt here and metaglyph's CANON walks them.
+glyph AB_SYN = la a. la b. la fp. la fs. la fc. la fd. la fo. la fm. fs(a)(b)
+glyph D1 = CANON(AB_SYN(OP_DIFF)(OP_BOUND))                              # ⊗(∂,δ)   = metaglyph's OP_AS_OPERAND
+glyph D2 = REN(COLLAPSE(AB_SYN)(GLYPHOF(OP_COMP))(GLYPHOF(OP_RECOG)))    # ⊗(γ,ρ)   = metaglyph's OP_COMPOSED
+glyph S_NO_DIFF = ABLATE("∂")(OPS5)
+glyph S_NO_COMP = ABLATE("γ")(OPS5)
+glyph S_NO_INTEG = ABLATE("𝔄")(OPS5)
+glyph AB_OTHERS_SURVIVE = la set. la gone. AB_Z(la self. la l. l(AB_TRUE)(la h. la t. AB_IF(str_eq(AB_FST(h))(gone))(la _. self(t))(la _. AB_AND(DERIVABLE_FROM(AB_SND(h))(set))(self(t)))))(OPS5)
+glyph LINE1 = AB_C3("ABLATEOP D1=")(D1)(AB_C3(" D2=")(D2)(AB_C3(" | all five: D1:")(AB_BSTR(DERIVABLE_FROM(D1)(OPS5)))(AB_C3(" D2:")(AB_BSTR(DERIVABLE_FROM(D2)(OPS5)))(""))))
+glyph LINE2 = AB_C3("ABLATEOP ablate ∂: D1 underivable:")(AB_BSTR(AB_NOT(DERIVABLE_FROM(D1)(S_NO_DIFF))))(AB_C3(" D2 survives:")(AB_BSTR(DERIVABLE_FROM(D2)(S_NO_DIFF)))(AB_C3(" other four survive:")(AB_BSTR(AB_OTHERS_SURVIVE(S_NO_DIFF)("∂")))(AB_C3(" | ablate γ: D2 underivable:")(AB_BSTR(AB_NOT(DERIVABLE_FROM(D2)(S_NO_COMP))))(AB_C3(" D1 survives:")(AB_BSTR(DERIVABLE_FROM(D1)(S_NO_COMP)))(AB_C3(" other four survive:")(AB_BSTR(AB_OTHERS_SURVIVE(S_NO_COMP)("γ")))(AB_C3(" | ablate 𝔄 (control): D1:")(AB_BSTR(DERIVABLE_FROM(D1)(S_NO_INTEG)))(AB_C3(" D2:")(AB_BSTR(DERIVABLE_FROM(D2)(S_NO_INTEG)))(""))))))))
+glyph MAIN = AB_SEQ(print(LINE1))(print(LINE2))

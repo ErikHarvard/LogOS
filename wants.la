@@ -1,0 +1,37 @@
+# ═══════════════════════════════════════════════════════════════════
+#  wants.la — LACK-DRIVEN WANTS (LA_COMPLETION.md, Tier 4): "wire aatc's sensed LACK into selfprog's
+#  SOLVE, so the system forms the want from its own sensed incompleteness. This is the buildable
+#  bounded form of autontogenesis; purpose-origination itself is ruled out by Erik's own corpus."
+#
+#  aatc.la SENSES a structure (name, scope, self-application, LACK) and diagnoses it; its T_CLOSE
+#  transform is the move that supplies the lacked name to the scope. Here the WANT is FORMED from
+#  the sensed lack — not from a stated purpose: WANT(s) = the name s lacks, or ⊥ when nothing is
+#  lacked — and the want is then RESOLVED by the structure's own closure move, after which SLACKS
+#  reads "" and CENTROPY has risen. The want carries what selfprog's SOLVE takes (a path, a name,
+#  tests): the name is the lack; the test is "after adoption the lack is gone".
+#  ★ THE BOUND: SOLVE's SYNTHESIS needs tests that specify the lacked glyph's BEHAVIOUR, which a lack
+#  (a missing NAME) does not carry; so the want is formed and resolved at the level aatc can close
+#  (scope), and handed to SOLVE as data — the behavioural synthesis is not faked. [B]
+#  GATE: an organ that lacks forms a want naming exactly its lack; a complete organ forms none (⊥);
+#  resolving the want empties SLACKS and raises CENTROPY strictly; RED: a mutant that forms a want
+#  for a complete organ, or a resolve that does not close, turns the witness RED.
+#  ★ EVIDENTIAL: [W] the three assertions; [B] scope-level closure, synthesis stated as not done.
+# ═══════════════════════════════════════════════════════════════════
+import("aatc.la")     # STRUCT SNAME SINSCOPE SSELFAPP SLACKS CLOSURE CENTROPY T_CLOSE DIAGNOSE MODULE SENSE
+
+export WANT RESOLVE
+
+glyph WN_SEQ  = la a. la b. b
+glyph WN_BSTR = la b. b("T")("F")
+glyph WN_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph WANT = la s. IF(str_eq(SLACKS(s))(""))(la _. "⊥")(la _. SLACKS(s))
+glyph RESOLVE = la s. IF(str_eq(SLACKS(s))(""))(la _. s)(la _. T_CLOSE(s))
+# two organs, sensed the way aatc senses modules: one lacks "MEMORY", one lacks nothing
+glyph ORG_LACKING  = SENSE(MODULE("organ-A")(TRUE)(TRUE)("MEMORY"))
+glyph ORG_COMPLETE = SENSE(MODULE("organ-B")(TRUE)(TRUE)(""))
+glyph W1 = WANT(ORG_LACKING)
+glyph W2 = WANT(ORG_COMPLETE)
+glyph R1 = RESOLVE(ORG_LACKING)
+glyph LINE1 = WN_C3("WANTS organ-A lacks MEMORY → want=")(W1)(WN_C3(" names the lack:")(WN_BSTR(str_eq(W1)("MEMORY")))(WN_C3(" | organ-B complete → want=")(W2)(WN_C3(" (⊥ required):")(WN_BSTR(str_eq(W2)("⊥")))(""))))
+glyph LINE2 = WN_C3("WANTS resolve(organ-A): lack after=")(SLACKS(R1))(WN_C3(" closed:")(WN_BSTR(str_eq(SLACKS(R1))("")))(WN_C3(" centropy before=")(int_to_str(CENTROPY(ORG_LACKING)))(WN_C3(" after=")(int_to_str(CENTROPY(R1)))(WN_C3(" strictly rises:")(WN_BSTR(lt(CENTROPY(ORG_LACKING))(CENTROPY(R1))))(" | handed to SOLVE as (path, MEMORY, test: lack gone) — behavioural synthesis NOT done [B]")))))
+glyph MAIN = WN_SEQ(print(LINE1))(print(LINE2))

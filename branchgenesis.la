@@ -1,0 +1,208 @@
+# ═══════════════════════════════════════════════════════════════════
+#  branchgenesis.la — Δ_B, THE BRANCH-GENESIS OPERATOR (directive 2026-09-15, "the sibling of Δ_M and Δ_R")
+#
+#  WHAT. Logoscribeologiae §3.4 (quoted in pragmatics_spec.la): every branch of the
+#  science of the Word is  Branch = Logos ∩ Interface  (PRAGMATICS = Logos ∩ Use).
+#  Made checkable: a BRANCH is a record (name, interface-glyph, registers-read) — its
+#  domain of discourse is WHICH registers of the twelve-register stack (registers.la)
+#  it reads, and its READING of a glyph is the concatenation of those registers'
+#  readings, looked up in STACK by RNAME. The taxonomy of branches must be subject to
+#  the same operation as primitives, modes and registers: an operator that ADMITS a
+#  new branch when a genuinely new domain is recognised and REFUSES a preference.
+#  Same four conditions as Δ_M (modegenesis.la) and Δ_R (regenesis.la):
+#     IRR  irreducible  — c's register-set is not an existing branch's register-set
+#                         (as SETS of names: a permutation is the same domain) AND c's
+#                         reading is not a PROJECTION of a single existing branch's:
+#                         on every probe glyph, c's reading is not a substring of that
+#                         branch's reading (depth-1, contiguous: BOUNDED, stated)
+#     NOV  novel        — c's interface glyph is not already in the set (NIS): an
+#                         α-copy of an existing branch's glyph is refused
+#     AUT  autological  — c's glyph names itself truly (AUTO_OK, ren ≡ κ(etym)) AND
+#                         every register c reads EXISTS in STACK — a branch that reads
+#                         a register the stack does not have is refused
+#     CON  contributing — c reads at least one register AND its reading is not
+#                         constant over the probes: it distinguishes something
+#  ADMIT_B(set)(c): the extended set, or the set unchanged (⊥) — never silently.
+#
+#  THE POSITIVE CANDIDATE IS Δ_B'S OWN BRANCH: "branch-genesis", the branch that reads
+#  a glyph at the {evidential, topological, affective} interface — how a glyph is
+#  witnessed, how it is shaped, how it is textured — a domain no declared branch reads.
+#  Glyph G_DB = ▷(RECOGNITION, ↻(RELATION)) — recognition directed at self-relation
+#  (the branch of branching) — DECLARED [A]. It passes TTTT and the set grows 13→14.
+#  FIXED POINT  Δ_B(Δ_B) ≡ Δ_B: offering the admitted branch again is ⊥ (IRR and NOV
+#  both fail: FFTT), so the set is closed under its own extension — witnessed as
+#  idempotent admission, ADMIT_B(ADMIT_B(S,c),c) = ADMIT_B(S,c).
+#
+#  THE BASE SET — eighteen branches (thirteen standard + grammatology, grapholinguistics, hermeneutics, poetics, ethics — the 2026-09-15 unified-compression directive §6; the codex names ontohermeneutics, logopoetics, ontoethics as strata), each DECLARED [A] with (i) the registers
+#  it reads and (ii) an interface glyph ⊂(RELATION, x): the Word's relation CONTAINED
+#  at one interface x (∩ read as ⊂), distinct x per branch. The architect ratifies:
+#     phonetics        → phonetic                    x = BECOMING
+#     phonology        → phonetic+semantic           x = ↻(BECOMING)      (system of contrasts)
+#     morphology       → morphological              x = ▷(BECOMING,FORM)  (word-formation: the becoming of form)
+#     syntax           → syntactic                  x = ⊂(RELATION,FORM)
+#     semantics        → semantic                   x = BEING
+#     pragmatics       → pragmatic                  x = LOVE              (Use)
+#     discourse        → syntactic+pragmatic        x = ⊗(FORM,LOVE)
+#     etymology        → etymological               x = ↻(VOID)           (Logos FROM itself)
+#     semiotics        → glyphic+semantic           x = ↻(FORM)           (dissolves: sign ≡ referent)
+#     historical       → etymological+evidential    x = ▷(BECOMING,VOID)  (Past, opposite.la)
+#     sociolinguistics → evidential+pragmatic       x = ⊕(SELF,SELF)      (Logos WITH itself)
+#     psycholinguistics→ affective+evidential       x = SELF
+#     computational    → operational                x = DEPTH
+#  All thirteen κ are pairwise NIS-distinct (witnessed in-file: NOV can only work if so).
+#  ★ COLLISION CHECK (scratchpad/collide.py vs the lexicon, opgrammar's table, canon and
+#  metaglyph): all 14 declared κ (thirteen branches + G_DB) come back CLEAR — after one
+#  re-declaration: morphology was first ⊂(RELATION,FORM), which IS MODE_CON (⊕'s own glyph);
+#  now ⊂(RELATION,▷(BECOMING,FORM)). G_DB is also distinct from every ▷(RECOGNITION,·) of the
+#  stack (glyphic now ▷(RECOGNITION,↻(FORM))) and from G_DR. The six fixture glyphs (a
+#  ⊂(VOID,·) family, refused by construction) were checked too: clear.
+#  ★ CAVEAT [B]: the base set is DECLARED, not admitted, and it is NOT pairwise
+#  irreducible under its own IRR — phonetics is a projection of phonology, syntax of
+#  discourse, etymology of historical. Self-admission is ORDER-DEPENDENT (a projection
+#  admitted BEFORE its superset passes; after, it is refused). Witnessed: phonetics
+#  re-offered against the other twelve reads FTTT. That is a finding for the architect,
+#  not hidden by the gate.
+#
+#  GATE  gate_branch_genesis — Δ_B's branch passes all four (TTTT, 13→14); six fixtures
+#        FAIL and are refused with the sub-gate NAMED: F1 (permuted domain of discourse:
+#        same SET) FTTT · F2 (α-copy of semantics' glyph, new domain) TFTT · F3 (lying
+#        ren) TTFT · F4 (reads no register) TTTF · F5 (reads a register not in the
+#        stack) TTFT · F6 (projection: reads evidential alone ⊂ historical) FTTT.
+#        Each letter can go RED; the two conjuncts of IRR are exercised separately
+#        (F1 by set-equality, F6 by the substring search).
+#  ★ EVIDENTIAL: [W]→[B] the four sub-gates + admission + idempotence (host run; to be
+#     wired into gate_registers.sh); [B] IRR/CON are decided over a FINITE probe set
+#     (four glyphs: κ, ⊕(SELF,SELF), ⊕(𝓡,κ), ↻BEING) and IRR's projection search is
+#     depth-1 contiguous substring (bounded verification, Gödel II); [A] G_DB, the
+#     thirteen mappings and the thirteen interface glyphs are declared.
+#  COST NOTE: tiny_host re-evaluates a glyph body at every reference (no memoisation). The
+#  twelve registers' readings over the four probes are therefore taken ONCE as a matrix M
+#  (48 readings), and every branch's or candidate's reading over the probes is a lookup in
+#  M by register name joined with ‖ — the same lookup-by-RNAME the definition states. The
+#  SET is (M, entries) with each entry (branch, its readings); the substring scan stops when
+#  the haystack is shorter than the needle. The first draft recomputed the thirteen branches'
+#  80 live readings at every reference and ran >7 min; the second built them once in 49 s.
+#  Table bound (directive §8): imports registers.la ALONE (~812 of 1024); no other import.
+# ═══════════════════════════════════════════════════════════════════
+import("registers.la")    # the stack + base surface (table-bound: 864 of 1024)
+
+export ADMIT_B VERDICT_B BRANCH BNAME BGLYPH BREGS BREAD BASE_BRANCHES BASE_TABLE ENTRY MATRIX G_DB C_DB
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph ANYL = la pred. la l. Z(la self. la l. l(FALSE)(la h. la t. IF(pred(h))(la _. TRUE)(la _. self(t))))(l)
+glyph ALLL = la pred. la l. Z(la self. la l. l(TRUE)(la h. la t. IF(pred(h))(la _. self(t))(la _. FALSE)))(l)
+glyph ALL2 = la pred. Z(la self. la a. la b. a(TRUE)(la ha. la ta. b(TRUE)(la hb. la tb. IF(pred(ha)(hb))(la _. self(ta)(tb))(la _. FALSE))))
+glyph MAPL = la f. Z(la self. la l. l(NILc)(la h. la t. CONSc(f(h))(self(t))))
+glyph MEMS = la s. la l. ANYL(la x. str_eq(x)(s))(l)
+glyph SETEQ = la a. la b. AND(ALLL(la x. MEMS(x)(b))(a))(ALLL(la x. MEMS(x)(a))(b))
+glyph SLEN = la s. str_to_int(str_len(s))
+glyph CONTAINS = Z(la self. la s. la sub. IF(lt(SLEN(s))(SLEN(sub)))(la _. FALSE)(la _. IF(HAS_PREFIX(s)(sub))(la _. TRUE)(la _. self(str_tail(s))(sub))))
+glyph NL1 = la a. CONSc(a)(NILc)
+glyph NL2 = la a. la b. CONSc(a)(CONSc(b)(NILc))
+glyph NL3 = la a. la b. la c. CONSc(a)(CONSc(b)(CONSc(c)(NILc)))
+
+# ── the stack, looked up by register NAME ──
+glyph REG_EXISTS = la nm. ANYL(la r. str_eq(RNAME(r))(nm))(STACK)
+glyph REG_READ = la st. la nm. la g. Z(la self. la l. l("⊥")(la r. la t. IF(str_eq(RNAME(r))(nm))(la _. RREAD(r)(g))(la _. self(t))))(st)
+
+# ── the branch record: name, interface glyph, registers read (list of names) ──
+glyph BRANCH = la n. la g. la rs. la f. f(n)(g)(rs)
+glyph BNAME  = la b. b(la n. la g. la rs. n)
+glyph BGLYPH = la b. b(la n. la g. la rs. g)
+glyph BREGS  = la b. b(la n. la g. la rs. rs)
+# the branch's reading of g: its registers' readings joined by ‖ ; a branch reading nothing reads ∅
+# (st = the stack, passed in so it is built once per reading, not once per lookup; each register read once)
+glyph JOIN_READ = la st. la g. Z(la self. la l. l("∅")(la h. la t. (la r. t(r)(la _. la _. concat(r)(concat(" ‖ ")(self(t)))))(REG_READ(st)(h)(g))))
+glyph BREAD = la b. la g. JOIN_READ(STACK)(g)(BREGS(b))
+
+# ── THE BASE SET (declared [A]: mapping and interface glyph ⊂(RELATION,x) per branch) ──
+glyph BG = la x. SEALc(CONT(Px("RELATION"))(x))
+glyph BASE_BRANCHES =
+  CONSc(BRANCH("phonetics")        (BG(Px("BECOMING")))                    (NL1("phonetic")))(
+  CONSc(BRANCH("phonology")        (BG(MC(Px("BECOMING"))))                (NL2("phonetic")("semantic")))(
+  CONSc(BRANCH("morphology")       (BG(DIR(Px("BECOMING"))(Px("FORM"))))   (NL1("morphological")))(
+  CONSc(BRANCH("syntax")           (BG(CONT(Px("RELATION"))(Px("FORM"))))  (NL1("syntactic")))(
+  CONSc(BRANCH("semantics")        (BG(Px("BEING")))                       (NL1("semantic")))(
+  CONSc(BRANCH("pragmatics")       (BG(Px("LOVE")))                        (NL1("pragmatic")))(
+  CONSc(BRANCH("discourse")        (BG(SYN(Px("FORM"))(Px("LOVE"))))       (NL2("syntactic")("pragmatic")))(
+  CONSc(BRANCH("etymology")        (BG(MC(Px("VOID"))))                    (NL1("etymological")))(
+  CONSc(BRANCH("semiotics")        (BG(MC(Px("FORM"))))                    (NL2("glyphic")("semantic")))(
+  CONSc(BRANCH("historical")       (BG(DIR(Px("BECOMING"))(Px("VOID"))))   (NL2("etymological")("evidential")))(
+  CONSc(BRANCH("sociolinguistics") (BG(CON(Px("SELF"))(Px("SELF"))))       (NL2("evidential")("pragmatic")))(
+  CONSc(BRANCH("psycholinguistics")(BG(Px("SELF")))                        (NL2("affective")("evidential")))(
+  CONSc(BRANCH("computational")    (BG(Px("DEPTH")))                       (NL1("operational")))(
+  CONSc(BRANCH("grammatology")     (BG(DIR(Px("FORM"))(Px("DEPTH"))))      (NL2("glyphic")("etymological")))(
+  CONSc(BRANCH("grapholinguistics")(BG(CONT(Px("FORM"))(Px("FORM"))))     (NL2("glyphic")("syntactic")))(
+  CONSc(BRANCH("hermeneutics")     (BG(DIR(Px("RECOGNITION"))(Px("DEPTH"))))(NL3("semantic")("pragmatic")("evidential")))(
+  CONSc(BRANCH("poetics")          (BG(SYN(Px("LOVE"))(Px("BECOMING"))))    (NL2("morphological")("semantic")))(
+  CONSc(BRANCH("ethics")           (BG(DIR(Px("LOVE"))(Px("BEING"))))       (NL2("pragmatic")("affective")))(
+  NILc))))))))))))))))))
+
+# ── THE PROBE CATALOGUE: four glyphs (one canonical, one shared, one composite, one route-bearing) ──
+glyph CATG = CONSc(SEALc(KAPPA))(CONSc(SEALc(SR_WITH))(CONSc(SEALc(CON(REVAL)(KAPPA)))(CONSc(SEALc(MC(Px("BEING"))))(NILc))))
+# THE MATRIX: for each probe, an assoc list (register name, its reading) over the whole stack
+glyph MATRIX = (la st. MAPL(la g. MAPL(la r. PAIRc(RNAME(r))(RREAD(r)(g)))(st))(CATG))(STACK)
+glyph M_READ = la row. la nm. Z(la self. la l. l("⊥")(la p. la t. IF(str_eq(FSTc(p))(nm))(la _. SNDc(p))(la _. self(t))))(row)
+glyph M_JOIN = la row. Z(la self. la l. l("∅")(la h. la t. (la r. t(r)(la _. la _. concat(r)(concat(" ‖ ")(self(t)))))(M_READ(row)(h))))
+glyph READS = la M. la b. MAPL(la row. M_JOIN(row)(BREGS(b)))(M)
+# the SET is (M, entries), each entry (branch, its readings over the probes) — computed once
+glyph ENTRY = la M. la b. PAIRc(b)(READS(M)(b))
+glyph EB = la e. FSTc(e)
+glyph ER = la e. SNDc(e)
+glyph TM = la T. FSTc(T)
+glyph TE = la T. SNDc(T)
+glyph TLEN = la T. LEN(TE(T))
+glyph BASE_TABLE = (la M. PAIRc(M)(MAPL(ENTRY(M))(BASE_BRANCHES)))(MATRIX)
+glyph FIND_B = la nm. la T. Z(la self. la l. l(BRANCH("")(G_DB)(NILc))(la e. la t. IF(str_eq(BNAME(EB(e)))(nm))(la _. EB(e))(la _. self(t))))(TE(T))
+glyph WITHOUT = la nm. la T. PAIRc(TM(T))(Z(la self. la l. l(NILc)(la e. la t. IF(str_eq(BNAME(EB(e)))(nm))(la _. self(t))(la _. CONSc(e)(self(t)))))(TE(T)))
+# pairwise NIS-distinct κ across the set (NOV presupposes it)
+glyph DISTINCT_K = la T. Z(la self. la l. l(TRUE)(la h. la t. AND(NOT(ANYL(la e. NIS(ETYM(BGLYPH(EB(h))))(ETYM(BGLYPH(EB(e)))))(t)))(self(t))))(TE(T))
+
+# ── the four sub-gates (cr = the candidate's readings over the probes, computed once) ──
+glyph SAME_DOMAIN = la T. la c. ANYL(la e. SETEQ(BREGS(EB(e)))(BREGS(c)))(TE(T))
+glyph PROJECTION = la T. la cr. ANYL(la e. ALL2(CONTAINS)(ER(e))(cr))(TE(T))     # c's reading ⊂ b's on every probe
+glyph IRR = la T. la c. la cr. AND(NOT(SAME_DOMAIN(T)(c)))(NOT(PROJECTION(T)(cr)))
+glyph NOV = la T. la c. NOT(ANYL(la e. NIS(ETYM(BGLYPH(EB(e))))(ETYM(BGLYPH(c))))(TE(T)))
+glyph AUT = la c. AND(AUTO_OK(BGLYPH(c)))(ALLL(REG_EXISTS)(BREGS(c)))
+glyph CON_ = la c. la cr. AND(lt(0)(LEN(BREGS(c))))(cr(FALSE)(la first. la rest. NOT(ALLL(la r. str_eq(r)(first))(rest))))
+glyph VERDICT_B = la T. la c. (la cr. concat(BSTR(IRR(T)(c)(cr)))(concat(BSTR(NOV(T)(c)))(concat(BSTR(AUT(c)))(BSTR(CON_(c)(cr))))))(READS(TM(T))(c))
+glyph ADMIT_B = la T. la c. IF(str_eq(VERDICT_B(T)(c))("TTTT"))(la _. PAIRc(TM(T))(CONSc(ENTRY(TM(T))(c))(TE(T))))(la _. T)
+glyph ADMITTED = la T. la c. lt(TLEN(T))(TLEN(ADMIT_B(T)(c)))
+
+# ── Δ_B's own branch: recognition directed at self-relation, reading witness/shape/texture ──
+glyph G_DB = SEALc(DIR(Px("RECOGNITION"))(MC(Px("RELATION"))))
+glyph C_DB = BRANCH("branch-genesis")(G_DB)(NL3("evidential")("topological")("affective"))
+
+# ── fixtures ──
+glyph RB = la x. SEALc(CONT(Px("VOID"))(x))    # the fixtures' glyph family (clear of every declared κ)
+glyph F1 = BRANCH("discourse-permuted")(RB(Px("LOVE")))(NL2("pragmatic")("syntactic"))                      # same SET as discourse
+glyph F2 = BRANCH("meaning-copy")(MONO(REN(BG(Px("BEING"))))(ETYM(BG(Px("BEING")))))(NL2("phonetic")("topological"))   # semantics' glyph, α-copy
+glyph F3 = BRANCH("liar")(MONO("LIE")(ETYM(RB(Px("FORM")))))(NL2("prosodic")("evidential"))                # false ren
+glyph F4 = BRANCH("empty")(RB(MC(Px("LOVE"))))(NILc)                                                       # reads no register
+glyph F5 = BRANCH("phantom")(RB(Px("VOID")))(NL2("phonetic")("nonexistent"))                               # reads a register not in the stack
+glyph F6 = BRANCH("witness-only")(RB(Px("DEPTH")))(NL1("evidential"))                                      # a projection of historical
+glyph IDEMP = la S14. int_eq(TLEN(ADMIT_B(S14)(C_DB)))(TLEN(S14))
+glyph PHONETICS_LATE = la T. VERDICT_B(WITHOUT("phonetics")(T))(FIND_B("phonetics")(T))
+
+glyph LINE1 = la T. la S14.
+    concat("BRANCHGENESIS base=")(concat(int_to_str(TLEN(T)))(
+    concat(" distinct-κ:")(concat(BSTR(DISTINCT_K(T)))(
+    concat(" | Δ_B branch IRR/NOV/AUT/CON=")(concat(VERDICT_B(T)(C_DB))(
+    concat(" admitted:")(concat(BSTR(ADMITTED(T)(C_DB)))(
+    concat(" set=")(concat(int_to_str(TLEN(S14)))(
+    concat(" | F1 permuted domain=")(concat(VERDICT_B(T)(F1))(
+    concat(" | F2 α-copy=")(concat(VERDICT_B(T)(F2))(
+    concat(" | F3 false ren=")(concat(VERDICT_B(T)(F3))(
+    concat(" | F4 no register=")(concat(VERDICT_B(T)(F4))(
+    concat(" | F5 unknown register=")(concat(VERDICT_B(T)(F5))(
+    concat(" | F6 projection=")(concat(VERDICT_B(T)(F6))(
+    concat(" | all six refused:")(BSTR(NOT(OR(ADMITTED(T)(F1))(OR(ADMITTED(T)(F2))(OR(ADMITTED(T)(F3))(OR(ADMITTED(T)(F4))(OR(ADMITTED(T)(F5))(ADMITTED(T)(F6)))))))))))))))))))))))))))))))
+glyph LINE2 = la T. la S14.
+    concat("BRANCHGENESIS fixed point: re-admit verdict=")(concat(VERDICT_B(S14)(C_DB))(
+    concat(" Δ_B(Δ_B)≡Δ_B idempotent:")(concat(BSTR(IDEMP(S14)))(
+    concat(" | G_DB=")(concat(REN(G_DB))(
+    concat(" reads κ as ")(concat(BREAD(C_DB)(SEALc(KAPPA)))(
+    concat(" | phonetics re-offered against the other twelve=")(concat(PHONETICS_LATE(T))(" (a projection of phonology: base self-admission is order-dependent [B])"))))))))))
+glyph MAIN = (la T. (la S14. SEQ(print(LINE1(T)(S14)))(print(LINE2(T)(S14))))(ADMIT_B(T)(C_DB)))(BASE_TABLE)
