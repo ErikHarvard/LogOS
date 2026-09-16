@@ -337,6 +337,10 @@ GX_SELF="$(printf '%s\n' 'OUT="$(timeout 600 ./control_target_exec 2>&1)"' \
           | grep -hoE '\./[A-Za-z0-9_][A-Za-z0-9_.-]*' | sed 's#^\./##')"
 [ "$GX_SELF" = "control_target_exec" ] \
   || { echo "FAIL  cleanin: the gate-prerequisite extractor failed its own self-test (got [$GX_SELF], expected control_target_exec) — the SCAN is broken, not the tree"; ok=0; }
+gate_made () {   # produced by the GATE that names it (e.g. `ld -o link_nsec_ref`): rf_made reads build.sh and .la only
+    e=$(printf '%s' "$1" | sed 's/[].[^$\\*\/]/\\&/g')
+    printf '%s\n' "$gsrc" | grep -qE "(rm -f[^|;&]*|> *|-o +|cp +[^ ]+ +)$e( |\$|;)"
+}
 GX_BAD=""; GX_N=0
 for g in $(git ls-files 'gate_*.sh' 'kernel/gate_*.sh'); do
   gsrc="$(sed -e 's/[[:space:]]*#.*$//' "$g")"
@@ -345,7 +349,8 @@ for g in $(git ls-files 'gate_*.sh' 'kernel/gate_*.sh'); do
     GX_N=$((GX_N+1))
     git ls-files --error-unmatch "$x" >/dev/null 2>&1 && continue
     rf_made "$x" && continue
-    gxb=$(printf '%s\n' "$gsrc" | grep -E "^[[:space:]]*$x\)" | grep -oE '(sh|bash) +[^ ]+\.sh' | awk '{print $2}' | head -1)
+    gate_made "$x" && continue
+    gxb=$(printf '%s\n' "$gsrc" | grep -E "^[[:space:]]*$x\)" | grep -oE '(sh|bash) +[^ ]+\.sh' | awk '{print $2}' | head -1 || true)
     [ -n "$gxb" ] && git ls-files --error-unmatch "$gxb" >/dev/null 2>&1 && continue
     if [ -n "$gxb" ]; then GX_BAD="$GX_BAD $x(builder $gxb untracked)"; else GX_BAD="$GX_BAD $x(in $g)"; fi
   done
