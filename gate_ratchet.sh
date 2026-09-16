@@ -12,13 +12,15 @@
 #
 #  Five arms, because one PASS proves only that the instrument can say yes:
 #     A  genuine extension   -> PASS   (κ-classes strictly increase)
-#     B  rename-only         -> FAIL   (α-equivalent copy: no new class)
-#     C  collapse            -> FAIL   (a parent κ-class lost)
+#     B  rename-only         -> FAIL   (α-equivalent copy: no new class; the strict-increase check ALONE)
+#     C  collapse            -> FAIL   (a parent κ-class lost; the collapse check ALONE)
 #     D  malformed glyph     -> FAIL   (the well-formedness check, and nothing else)
 #     E  paren in a string   -> PASS   (the control: D counts tokens, not characters)
 #  B is the failure mode the stage exists for. C is the ratchet's other pawl.
 #  D is input ratchet.py must refuse before it counts anything; E keeps D from
 #  being a character count that would refuse legitimate text.
+#  B, C and D each ASSERT which check refused them (verdict-without-reason, named
+#  2026-09-11): a refusal by another guard is a red for the wrong reason, not a pass.
 set -u
 cd "$(dirname "$0")" || exit 1
 ok=1
@@ -40,9 +42,16 @@ python3 ratchet.py sx2_parent.la sx2_child.la || { echo "FAIL  ratchet(A): a gen
 #    variable. Everything about it is legal; it simply adds no κ-class.
 cp sx2_parent.la .rat_rename.la
 echo 'glyph TRIPLEN2 = la y. mul(y)(3)' >> .rat_rename.la
-if python3 ratchet.py sx2_parent.la .rat_rename.la >/dev/null 2>&1; then
+if B_OUT="$(python3 ratchet.py sx2_parent.la .rat_rename.la 2>&1)"; then
     echo "FAIL  ratchet(B): a RENAME-ONLY extension was ACCEPTED — an α-equivalent copy of a capability the organ already had counts as growth, so the ratchet is not ratcheting"
     ok=0
+else
+    B_1="$(printf '%s\n' "$B_OUT" | sed -n 1p)"
+    case "$B_OUT" in
+        *COLLAPSED*) echo "FAIL  ratchet(B): the rename-only extension was refused, but the refusal names COLLAPSED, which a rename cannot cause — arm B must be refused by the strict-increase check alone (got: $B_1)"; ok=0 ;;
+        *'did not STRICTLY increase'*) : ;;
+        *) echo "FAIL  ratchet(B): the rename-only extension was refused, but not by the strict-increase check — a red for the wrong reason (got: $B_1)"; ok=0 ;;
+    esac
 fi
 
 # ── ARM C: COLLAPSE, AND IT MUST ISOLATE THE COLLAPSE CONDITION.
@@ -55,12 +64,21 @@ fi
 #    its four conjuncts and this arm had quietly skipped.
 #    So the fixture now collapses a class AND adds a fresh one, leaving the
 #    count STRICTLY HIGHER than the parent's. The strict-increase check is
-#    satisfied; only the collapse check can refuse it.
+#    satisfied; only the collapse check can refuse it. That isolation is now
+#    ASSERTED, not only constructed: the refusal must name COLLAPSED and must
+#    not name the strict-increase check.
 sed 's/^glyph DEC = la x. sub(x)(1)$/glyph DEC = la x. mul(x)(3)/' sx2_child.la > .rat_collapse.la
 echo 'glyph FRESH = la q. add(q)(7)' >> .rat_collapse.la
-if python3 ratchet.py sx2_parent.la .rat_collapse.la >/dev/null 2>&1; then
+if C_OUT="$(python3 ratchet.py sx2_parent.la .rat_collapse.la 2>&1)"; then
     echo "FAIL  ratchet(C): a COLLAPSE was ACCEPTED — two previously κ-distinct forms became one and the gate did not notice"
     ok=0
+else
+    C_1="$(printf '%s\n' "$C_OUT" | sed -n 1p)"
+    case "$C_OUT" in
+        *'did not STRICTLY increase'*) echo "FAIL  ratchet(C): the collapse was refused, but the refusal names the strict-increase check, which this fixture's strictly higher count cannot trip — arm C must be refused by the collapse check alone (got: $C_1)"; ok=0 ;;
+        *COLLAPSED*) : ;;
+        *) echo "FAIL  ratchet(C): the collapse was refused, but not by the collapse check — a red for the wrong reason (got: $C_1)"; ok=0 ;;
+    esac
 fi
 
 # ── ARM D: MALFORMED. The parent plus ONE glyph whose parens do not balance,
@@ -91,7 +109,7 @@ python3 ratchet.py sx2_parent.la .rat_strparen.la >/dev/null 2>&1 || { echo "FAI
 rm -f .rat_rename.la .rat_collapse.la .rat_malformed.la .rat_strparen.la sx2_parent.la sx2_child.la .sx2mode
 
 if [ "$ok" -eq 1 ]; then
-  echo "PASS  ratchet: κ-classes strictly increase on a genuine extension (3 -> 4); a RENAME-ONLY extension (α-equivalent copy under a fresh name and fresh bound variable) is REJECTED, and so is a COLLAPSE that destroys a previously κ-distinct parent form. A MALFORMED extension (a glyph with an unclosed paren, which adds a class and loses none) is refused by the well-formedness check and by nothing else, while a paren inside a string literal is not refused: that check counts tokens, not characters. The α-normaliser self-tests on four pairs first, including same-names/different-binding, because a normaliser that only stripped names would call every rebinding a rename. BOUND: α-equivalence is decidable, behavioural equivalence is not — a non-literal restatement of an existing capability still passes here, and that is stage 4's job"
+  echo "PASS  ratchet: κ-classes strictly increase on a genuine extension (3 -> 4); a RENAME-ONLY extension (α-equivalent copy under a fresh name and fresh bound variable) is REJECTED by the strict-increase check alone, and a COLLAPSE that destroys a previously κ-distinct parent form by the collapse check alone. A MALFORMED extension (a glyph with an unclosed paren, which adds a class and loses none) is refused by the well-formedness check and by nothing else, while a paren inside a string literal is not refused: that check counts tokens, not characters. The α-normaliser self-tests on four pairs first, including same-names/different-binding, because a normaliser that only stripped names would call every rebinding a rename. BOUND: α-equivalence is decidable, behavioural equivalence is not — a non-literal restatement of an existing capability still passes here, and that is stage 4's job"
   exit 0
 fi
 exit 1
