@@ -303,8 +303,16 @@ red bc_m1 "GHOST leaf not grounded:F" "branchclosure RED(grounding disabled: an 
 sed 's|^glyph BC_DYAD1 = la g. AND(HAS_PREFIX(CANON(g))("⊂("))(HAS_PREFIX(CANON(g))("⊂(RELATION,"))|glyph BC_DYAD1 = la g. TRUE|' branchclosure.la > "$T/bc_m2.la"; host "$T/bc_m2.la" bc_m2
 red bc_m2 "SYN-head not the ⊂ dyad:F" "branchclosure RED(dyad-form check disabled: a non-dyad branch passes)"
 
+
+# ═══ 30. gapcensus — the autological completion instrument (Erik, 2026-09-15) ══════
+host gapcensus.la gp
+want gp "GAPCENSUS instrument (gate_registers.sh) present with proven RED paths + PASS line:T | seed items=6 self-closable=3 ceiling=2 external=1 | all consistent (declared==computed):T" gapcensus
+want gp "miscategorisation fixture (vacuous claim declared self-closable) caught:T OFFENDER=FIXTURE: vacuous claim mislabelled self-closable" gapcensus
+sed 's|^glyph GC_DISCRIMINATES = la pred. la good. la bad. NOT(str_eq(GC_BSTR(pred(good)))(GC_BSTR(pred(bad))))|glyph GC_DISCRIMINATES = la pred. la good. la bad. TRUE|' gapcensus.la > "$T/gp_m1.la"; host "$T/gp_m1.la" gp_m1
+red gp_m1 "all consistent (declared==computed):F" "gapcensus RED(discriminator always-true: the two ceilings misread as self-closable)"
+
 # ═══ 10. the table bound (directive §8): every module's import closure fits 1024 ══
-for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la; do
+for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la; do
     n=$(python3 - "$m" <<'PY'
 import re,sys,os
 IMP=re.compile(r'import\("([^"]+)"\)'); GLY=re.compile(r'^glyph\s+[A-Za-z0-9_]+',re.M)

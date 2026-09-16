@@ -368,6 +368,16 @@ fixed point ↻↻g ≡ ↻g, which holds for every glyph by canon's ↻-idempot
 the vacuous-gate class this project catches. The metacursive content that CAN go RED is Δ_B
 (`branchgenesis.la`), cited. Host <1 s; census 146.
 
+**`gapcensus.la` — the autological completion instrument (Erik's "use its self to name the unnamed"; W/B).**
+Reads its own gate suite (confirms `gate_registers.sh` is present and carries proven RED paths + the
+PASS line) and classifies gaps by a COMPUTABLE discriminator: a self-closable gap's witness predicate
+DISCRIMINATES good from bad; a ceiling's is VACUOUS (↻↻g≡↻g, a completeness universal, a constant).
+6 seed items (3 self-closable, 2 ceiling, 1 external), computed category == declared for all; the
+miscategorisation fixture (a vacuous claim mislabelled self-closable) is caught and named; a mutant
+that makes the discriminator always-true misreads the ceilings and turns it RED. **[B]** the full
+54-item classification is data in LA_COMPLETION.md / the plan; this engine proves the discriminator
+and catches a mislabel — it names gaps, it does not fill them. Host <1 s; census 164.
+
 ## §10 The audit Erik asked for (2026-09-15, after the build) — what it found and changed
 
 He asked four things: is it all in the language; was any of it already coded; does it follow the

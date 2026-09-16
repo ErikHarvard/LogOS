@@ -1,0 +1,102 @@
+# ═══════════════════════════════════════════════════════════════════
+#  gapcensus.la — THE AUTOLOGICAL GAP CENSUS: the completion instrument (Erik, 2026-09-15)
+#
+#  "Use the language itself to name what is still unnamed." The honest form: the language cannot
+#  self-FILL every gap (the closure is bounded 4/9; Gödel-shaped limits are stated throughout), but it
+#  CAN read its own instrument and CLASSIFY each gap by a COMPUTABLE property, and it can go RED when a
+#  gap is miscategorised. This is that instrument — a REPORT with a checkable core, not a gate that
+#  claims to have closed anything.
+#
+#  IT READS ITS OWN GATE SUITE. read_file("gate_registers.sh"): the instrument must be present and
+#  carry proven RED paths (the marker "\nred ") and its PASS line — a census that could not see the
+#  gate is worthless. Bounded search (early exit), so it is cheap.
+#
+#  THE FOUR CATEGORIES, and the DISCRIMINATOR that decides self-closable vs ceiling WITHOUT a table:
+#    · SELF-CLOSABLE — its witness predicate DISCRIMINATES: pred(good) ≠ pred(bad). A real gate exists.
+#    · CEILING       — its witness predicate is VACUOUS: pred(good) = pred(bad) for all inputs. No gate
+#                      can fire (↻↻g≡↻g, a completeness universal, a constant). Bounded, not closable.
+#    · OWNED         — self-closable in kind, but its files belong to another track (declared).
+#    · EXTERNAL      — needs an input the system does not have (a speaker, a channel); exempt from the
+#                      discriminator, declared, with the absent input NAMED.
+#  CATEGORY is COMPUTED from the predicate (discriminating/vacuous); the census compares it to the
+#  DECLARED category and NAMES any disagreement. THE RED PATH: a fixture that declares a vacuous item
+#  "self-closable" (or a discriminating one "ceiling") is caught — the computed category disagrees.
+#  ★ EVIDENTIAL: [W] the discriminator + the miscategorisation RED path + the self-read of the gate;
+#     [B] a SEED of real instances with their true predicates, not all 54 (the full tags live in
+#     LA_COMPLETION.md / LA_COMPLETION_PLAN-trackF.md, the architect's classification, as data).
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")     # AUTO_OK NIS MC MONO CANON SEALc KAPPA REVAL SR_WITH PRIM DIR CONT SYN HAS_PREFIX
+
+export GC_CAT GC_CHECK GC_ITEMS
+
+glyph GC_SEQ  = la a. la b. b
+glyph GC_BSTR = la b. b("T")("F")
+glyph GC_C3 = la a. la b. la c. concat(a)(concat(b)(c))
+glyph GC_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph Px = la nm. PRIM(nm)
+
+# ── read the gate suite: present, carries RED paths, carries its PASS line ──
+glyph GC_CONTAINS = Z(la self. la s. la sub. IF(HAS_PREFIX(s)(sub))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(sub))))
+glyph GC_GATE = read_file("gate_registers.sh")
+glyph GC_HAS_RED  = GC_CONTAINS(GC_GATE)("\nred ")
+glyph GC_HAS_PASS = GC_CONTAINS(GC_GATE)("PASS  registers:")
+glyph GC_INSTRUMENT_OK = AND(lt(0)(str_to_int(str_len(GC_GATE))))(AND(GC_HAS_RED)(GC_HAS_PASS))
+
+# ── the discriminator: a predicate DISCRIMINATES iff pred(good) ≠ pred(bad) ──
+glyph GC_DISCRIMINATES = la pred. la good. la bad. NOT(str_eq(GC_BSTR(pred(good)))(GC_BSTR(pred(bad))))
+glyph GC_COMPUTED = la pred. la good. la bad. IF(GC_DISCRIMINATES(pred)(good)(bad))(la _. "self-closable")(la _. "ceiling")
+
+# ── a gap item = (name, declared-category, pred, good, bad) ; EXTERNAL/OWNED carry a note in bad ──
+glyph GC_ITEM = la nm. la decl. la pred. la good. la bad. la f. f(nm)(decl)(pred)(good)(bad)
+glyph I_NAME = la i. i(la n. la d. la p. la g. la b. n)
+glyph I_DECL = la i. i(la n. la d. la p. la g. la b. d)
+glyph I_PRED = la i. i(la n. la d. la p. la g. la b. p)
+glyph I_GOOD = la i. i(la n. la d. la p. la g. la b. g)
+glyph I_BAD  = la i. i(la n. la d. la p. la g. la b. b)
+
+# real predicates from tonight's work
+glyph GC_GROUND1 = Z(la self. la t. t(la nm. OR(str_eq(nm)("BEING"))(OR(str_eq(nm)("RECOGNITION"))(OR(str_eq(nm)("LOVE"))(OR(str_eq(nm)("SELF"))(OR(str_eq(nm)("RELATION"))(OR(str_eq(nm)("VOID"))(OR(str_eq(nm)("BECOMING"))(OR(str_eq(nm)("FORM"))(str_eq(nm)("DEPTH"))))))))))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. la b. AND(self(a))(self(b)))(la a. self(a)))
+glyph P_SELFNAME = la g. AUTO_OK(g)
+glyph P_METACURSE = la g. NIS(MC(MC(ETYM(g))))(MC(ETYM(g)))
+glyph P_GROUNDED = la g. GC_GROUND1(ETYM(g))
+glyph P_CONST = la g. TRUE
+glyph GLIAR = MONO("LIE")(KAPPA)
+glyph GTRUE = SEALc(KAPPA)
+glyph GGHOST = SEALc(DIR(Px("GHOST"))(Px("FORM")))
+
+# the seed census — declared categories, each with its true predicate + good/bad probes
+glyph GC_ITEMS =
+  CONSc(GC_ITEM("α=1 self-naming gates (complement, aware, unified)")("self-closable")(P_SELFNAME)(GTRUE)(GLIAR))(
+  CONSc(GC_ITEM("dyadic grounding (branchclosure, familytree)")("self-closable")(P_GROUNDED)(GTRUE)(GGHOST))(
+  CONSc(GC_ITEM("per-branch ↻↻g≡↻g metacursion")("ceiling")(P_METACURSE)(GTRUE)(SEALc(SR_WITH)))(
+  CONSc(GC_ITEM("grammar completeness (universal over all concepts)")("ceiling")(P_CONST)(GTRUE)(GLIAR))(
+  CONSc(GC_ITEM("acquisition empirical half — needs a SPEAKER")("external")(P_CONST)(GTRUE)(GTRUE))(
+  CONSc(GC_ITEM("phonetic/visual items — Track A's phonym.la/sigil.la")("owned")(P_SELFNAME)(GTRUE)(GLIAR))(
+  NILc))))))
+# the MISCATEGORISED fixture: a vacuous predicate declared self-closable — must be caught
+glyph GC_FIX = GC_ITEM("FIXTURE: vacuous claim mislabelled self-closable")("self-closable")(P_METACURSE)(GTRUE)(SEALc(SR_WITH))
+
+# CHECK one item: declared self-closable/owned ⇒ pred must discriminate; ceiling ⇒ must be vacuous;
+# external ⇒ exempt (declared). Returns "" if consistent, else the offending name.
+glyph GC_EXPECT = la decl. IF(str_eq(decl)("ceiling"))(la _. "ceiling")(la _. IF(str_eq(decl)("external"))(la _. "external")(la _. "self-closable"))
+glyph GC_CAT = la i. IF(str_eq(I_DECL(i))("external"))(la _. "external")(la _. GC_COMPUTED(I_PRED(i))(I_GOOD(i))(I_BAD(i)))
+glyph GC_CHECK = la i. IF(str_eq(GC_CAT(i))(GC_EXPECT(I_DECL(i))))(la _. "")(la _. I_NAME(i))
+glyph GC_FIRSTBAD = Z(la self. la l. l("")(la h. la t. IF(str_eq(GC_CHECK(h))(""))(la _. self(t))(la _. I_NAME(h))))
+glyph GC_BAD = GC_FIRSTBAD(GC_ITEMS)
+glyph GC_LEN = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph GC_COUNT = la want. Z(la self. la l. l(0)(la h. la t. add(IF(str_eq(GC_CAT(h))(want))(la _. 1)(la _. 0))(self(t))))
+glyph GC_NSELF = GC_COUNT("self-closable")(GC_ITEMS)
+glyph GC_NCEIL = GC_COUNT("ceiling")(GC_ITEMS)
+glyph GC_NEXT  = GC_COUNT("external")(GC_ITEMS)
+
+glyph LINE1 = GC_JOIN(
+  CONSc("GAPCENSUS instrument (gate_registers.sh) present with proven RED paths + PASS line:")(
+  CONSc(GC_BSTR(GC_INSTRUMENT_OK))(
+  CONSc(" | seed items=")(CONSc(int_to_str(GC_LEN(GC_ITEMS)))(
+  CONSc(" self-closable=")(CONSc(int_to_str(GC_NSELF))(
+  CONSc(" ceiling=")(CONSc(int_to_str(GC_NCEIL))(
+  CONSc(" external=")(CONSc(int_to_str(GC_NEXT))(
+  CONSc(" | all consistent (declared==computed):")(CONSc(GC_BSTR(str_eq(GC_BAD)("")))(
+  CONSc(IF(str_eq(GC_BAD)(""))(la _. "")(la _. concat(" OFFENDER=")(GC_BAD)))(NILc))))))))))))))
+glyph LINE2 = GC_C3("GAPCENSUS miscategorisation fixture (vacuous claim declared self-closable) caught:")(GC_BSTR(NOT(str_eq(GC_CHECK(GC_FIX))(""))))(GC_C3(" OFFENDER=")(GC_CHECK(GC_FIX))(" | full 54-item classification is data in LA_COMPLETION.md / LA_COMPLETION_PLAN-trackF.md; this engine PROVES the self-closable/ceiling discriminator and catches a mislabel [B]"))
+glyph MAIN = GC_SEQ(print(LINE1))(print(LINE2))
