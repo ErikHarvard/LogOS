@@ -1,0 +1,82 @@
+# ═══════════════════════════════════════════════════════════════════
+#  opposite.la — THE DYADIC OPPOSITE: the true antonym (antonym directive, 2026-09-15)
+#
+#  Hot/cold are not not-hot: cold is a positive concept, the OPPOSING POLE of a
+#  dialectical structure. The complement (complement.la) exists for every glyph; the
+#  pole exists only where the region HAS a pole. So OPP must be able to REFUSE.
+#
+#  ★ WHERE THE POLE STRUCTURE COMES FROM — the corpus, not a table of my own.
+#  The lexicon's documented opposed pairs are DIRECTION REVERSALS:
+#     Past   = 𝔤₇ ▷ 𝔤₆  (Becoming directed into Void)      tex:5169
+#     Future = 𝔤₆ ▷ 𝔤₇  (Void directed into Becoming)      tex:5170
+#     This/Here = 𝔤₈ ▷ 𝔤₁, That/There = 𝔤₈ ▷ 𝔤₆           tex:5163-5164 (a shared head, a
+#                                                          swapped tail: not a reversal)
+#  and the corpus DENIES the one pole a table-writer would reach for first:
+#     "Void is the shadow of Being: NOT ITS OPPOSITE but its internal differentiation"
+#                                                          tex:4720
+#  So the pole structure built here is the one the corpus exhibits: a glyph has a
+#  dyadic opposite iff its head is the DIRECTED mode ▷ with two distinct operands,
+#  and the opposite is the reversed direction. Primitives have no pole (Void is not
+#  Being's); ⊕ commutes, so it has none; ⊗ is order-bearing but the corpus records
+#  no ⊗-reversal as an opposition, so none is claimed. [B] — the pole structure is
+#  bounded to what the corpus exhibits; the architect extends it.
+#
+#  GATE  gate_opposite — OPP(Past) ≡ Future; OPP is an INVOLUTION at the glyph level
+#        (OPP(OPP(Past)) = Past — unlike ¬, which is not); OPP REFUSES a primitive
+#        (Being), a commutative head (⊕), and a symmetric ▷(x,x); the refusal is ⊥,
+#        never a silent value. RED PATH: a mutant that reverses ⊕ too admits ⊕.
+#  META  A(A): the pole-finder applied to its own glyph. G_OPP = ▷(RELATION,VOID)
+#        (a relation directed at what it lacks — DECLARED [A]); OPP(G_OPP) exists and
+#        ≠ G_OPP; OPP(OPP(G_OPP)) = G_OPP. The metacursive closure fails at the glyph
+#        level for ONE application and holds for TWO — an involution, not a fixed point.
+#        The directive's finding stands: A(A) ≠ A; the meta-antonym is a relation on
+#        the operator space, not a closed-form operation.
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")
+
+export OPP HAS_POLE G_OPP PAST FUTURE SEALo
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph SEALo = la et. MONO(CANON(et))(et)
+glyph BOT = la et. MONO("⊥")(et)
+
+glyph HAS_POLE = la g. ETYM(g) (la nm. FALSE) (la a. la b. FALSE) (la a. la b. FALSE)
+    (la a. la b. NOT(NIS(a)(b))) (la a. la b. FALSE) (la a. FALSE)
+glyph OPP = la g. ETYM(g) (la nm. BOT(ETYM(g))) (la a. la b. BOT(ETYM(g))) (la a. la b. BOT(ETYM(g)))
+    (la a. la b. IF(NIS(a)(b))(la _. BOT(ETYM(g)))(la _. SEALo(DIR(b)(a)))) (la a. la b. BOT(ETYM(g))) (la a. BOT(ETYM(g)))
+glyph IS_BOT = la g. str_eq(REN(g))("⊥")
+
+glyph PAST   = SEALo(DIR(Px("BECOMING"))(Px("VOID")))
+glyph FUTURE = SEALo(DIR(Px("VOID"))(Px("BECOMING")))
+glyph W_PAST_FUTURE = NIS(ETYM(OPP(PAST)))(ETYM(FUTURE))
+glyph W_INVOLUTION  = str_eq(REN(OPP(OPP(PAST))))(REN(PAST))
+glyph W_NOT_SELF    = NOT(str_eq(REN(OPP(PAST)))(REN(PAST)))
+glyph W_REF_PRIM    = IS_BOT(OPP(SEALo(Px("BEING"))))
+glyph W_REF_CON     = IS_BOT(OPP(SEALo(CON(Px("LOVE"))(Px("VOID")))))
+glyph W_REF_SYM     = IS_BOT(OPP(SEALo(DIR(Px("FORM"))(Px("FORM")))))
+glyph W_HAS_POLE    = AND(HAS_POLE(PAST))(NOT(HAS_POLE(SEALo(Px("BEING")))))
+glyph G_OPP = SEALo(DIR(Px("RELATION"))(Px("VOID")))
+glyph AA = OPP(G_OPP)
+glyph W_AA_EXISTS = NOT(IS_BOT(AA))
+glyph W_AA_NEQ_A  = NOT(str_eq(REN(AA))(REN(G_OPP)))
+glyph W_AAA_IS_A  = str_eq(REN(OPP(AA)))(REN(G_OPP))
+
+glyph LINE1 =
+    concat("OPPOSITE Past=")(concat(REN(PAST))(concat(" OPP(Past)=")(concat(REN(OPP(PAST)))(
+    concat(" ≡Future:")(concat(BSTR(W_PAST_FUTURE))(
+    concat(" | involution OPP(OPP(Past))=Past:")(concat(BSTR(W_INVOLUTION))(
+    concat(" OPP(Past)≠Past:")(concat(BSTR(W_NOT_SELF))(
+    concat(" | refuses primitive(Being):")(concat(BSTR(W_REF_PRIM))(
+    concat(" ⊕:")(concat(BSTR(W_REF_CON))(
+    concat(" ▷(x,x):")(concat(BSTR(W_REF_SYM))(
+    concat(" | HAS_POLE Past:T Being:F ->")(BSTR(W_HAS_POLE))))))))))))))))))
+glyph LINE2 =
+    concat("OPPOSITE meta: G_OPP=")(concat(REN(G_OPP))(
+    concat(" A(A)=")(concat(REN(AA))(
+    concat(" exists:")(concat(BSTR(W_AA_EXISTS))(
+    concat(" A(A)≠A:")(concat(BSTR(W_AA_NEQ_A))(
+    concat(" A(A(A))=A:")(concat(BSTR(W_AAA_IS_A))(
+           " | the pole-finder is an involution, not a fixed point: A(A)≠A stands"))))))))))
+glyph MAIN = SEQ(print(LINE1))(print(LINE2))

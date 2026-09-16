@@ -1,0 +1,121 @@
+# ═══════════════════════════════════════════════════════════════════
+#  modegenesis.la — Δ_M, THE MORPHOLOGICAL AUTOPOIESIS OPERATOR (directive 2026-09-15 §5)
+#
+#  WHAT. The five modes ⊗⊕▷⊂↻ are the base metamorphology — the word-formation
+#  rules of the language. metaglyph.la already MINTS a new mode from modes
+#  (ν* = ⊗(⊗-glyph, ↻-glyph)) and lifts any sealed operator-glyph into a usable
+#  combinator (MKOP). What it never had is the ADMISSION TEST: when is a minted
+#  glyph a MODE and not a preference? Δ_M is that test, and the mode set becomes
+#  extensible by its own operation.
+#
+#  A candidate c (a sealed glyph whose parents are existing modes) is a MODE iff:
+#     IRR  irreducible  — its action (MKOP c) is not pointwise equal, over the
+#                         probe pairs, to any single existing mode's action
+#     NOV  novel        — its κ is not already in the set (NIS): a rename / α-copy
+#                         of an existing mode is refused (the ratchet's lesson)
+#     AUT  autological  — the glyph names itself truly: AUTO_OK (ren ≡ κ(etym)),
+#                         the house's α=1 test for an operator
+#     CON  contributing — it enables a reading previously unavailable: its action
+#                         depends on its operands (not constant) AND the set of
+#                         κ-classes reachable from the probes in one step strictly
+#                         grows (the ratchet's pawl)
+#  ADMIT(set)(c) returns the extended set, or ⊥ (the set unchanged) — never silently.
+#
+#  FIXED POINT  Δ_M(Δ_M) ≡ Δ_M: admitting an admitted candidate again is ⊥ (NOV
+#  fails), so the set is closed under its own extension — witnessed as
+#  ADMIT(ADMIT(S,c),c) = ADMIT(S,c). Δ_M's own glyph IS ν* (metaglyph.la: "ν* — a new
+#  mode from modes", meta-ontoneologization): the operator that makes modes is a mode.
+#
+#  GATE  gate_mode_genesis — ν* passes all four and is admitted (set 5→6); four
+#        fixtures each FAIL and are refused, with the four-letter verdict NAMING which
+#        sub-gate fired: F1 (action ≡ ⊗) FTTF · F2 (α-copy of ⊗'s glyph) FFTF ·
+#        F3 (lying ren) TTFT · F4 (constant action) TTTF. Each letter can go RED.
+#  ★ EVIDENTIAL: [W]→[B] the four sub-gates + admission + idempotence (gate_registers.sh);
+#     [B] IRR/CON are decided over a FINITE probe set (bounded verification, Gödel II);
+#     [W] Δ_M's glyph = ν* (metaglyph.la, gated in build.sh "Metaglyph: 𝓜 ⊂ 𝒜").
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")
+import("metaglyph.la")    # MODE_* GLYPHOF COLLAPSE MKOP APPLYOP (CANON REN ETYM shadow canon's identically)
+
+export ADMIT VERDICT MODEREC MNAME MGLYPH MCOMB BASE_MODES NU_STAR_C
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph LENL = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph Px = la nm. PRIM(nm)
+
+# ── the mode record: name, sealed glyph, combinator (node → node → node) ──
+glyph MODEREC = la n. la g. la c. la f. f(n)(g)(c)
+glyph MNAME  = la r. r(la n. la g. la c. n)
+glyph MGLYPH = la r. r(la n. la g. la c. g)
+glyph MCOMB  = la r. r(la n. la g. la c. c)
+glyph BASE_MODES =
+  CONS(MODEREC("⊗")(GLYPHOF(MODE_SYN))(SYN))(
+  CONS(MODEREC("⊕")(GLYPHOF(MODE_CON))(CON))(
+  CONS(MODEREC("▷")(GLYPHOF(MODE_DIR))(DIR))(
+  CONS(MODEREC("⊂")(GLYPHOF(MODE_CONT))(CONT))(
+  CONS(MODEREC("↻")(GLYPHOF(MODE_MC))(la a. la b. MC(a)))(
+  NIL)))))
+glyph NU_STAR_C = COLLAPSE(SYN)(GLYPHOF(MODE_SYN))(GLYPHOF(MODE_MC))   # ν*, rebuilt from its parents
+glyph CAND = la g. MODEREC(REN(g))(g)(MKOP(g))
+
+# ── probes ──
+glyph PA = Px("A")
+glyph PB = Px("B")
+glyph PROBES = CONS(PAIR(PA)(PB))(CONS(PAIR(PB)(PA))(CONS(PAIR(PA)(PA))(CONS(PAIR(KAPPA)(PB))(NIL))))
+glyph ACT = la comb. la p. CANON(comb(FST(p))(SND(p)))
+glyph ALLP = la pred. Z(la self. la l. l(TRUE)(la h. la t. IF(pred(h))(la _. self(t))(la _. FALSE)))(PROBES)
+glyph ANYM = la pred. la set. Z(la self. la l. l(FALSE)(la h. la t. IF(pred(h))(la _. TRUE)(la _. self(t))))(set)
+glyph SAME_ACTION = la c1. la c2. ALLP(la p. str_eq(ACT(c1)(p))(ACT(c2)(p)))
+
+# ── the four sub-gates ──
+glyph IRR = la set. la c. NOT(ANYM(la m. SAME_ACTION(MCOMB(m))(MCOMB(c)))(set))
+glyph NOV = la set. la c. NOT(ANYM(la m. NIS(ETYM(MGLYPH(m)))(ETYM(MGLYPH(c))))(set))
+glyph AUT = la c. AUTO_OK(MGLYPH(c))
+# reachable κ-classes from the probes in one step, for a set of modes
+glyph MEMB = Z(la self. la s. la l. l(FALSE)(la h. la t. IF(str_eq(h)(s))(la _. TRUE)(la _. self(s)(t))))
+glyph ADDC = la s. la acc. IF(MEMB(s)(acc))(la _. acc)(la _. CONS(s)(acc))
+glyph CLASSES = la set. Z(la self. la ms. la acc. ms(acc)(la m. la t.
+    self(t)(Z(la self2. la ps. la acc2. ps(acc2)(la p. la pt. self2(pt)(ADDC(ACT(MCOMB(m))(p))(acc2))))(PROBES)(acc))))(set)(NIL)
+glyph NCLASSES = la set. LENL(CLASSES(set))
+glyph DEPENDS = la c. NOT(ALLP(la p. str_eq(ACT(MCOMB(c))(p))(ACT(MCOMB(c))(PAIR(PA)(PB)))))
+glyph CON_ = la set. la c. AND(DEPENDS(c))(lt(NCLASSES(set))(NCLASSES(CONS(c)(set))))
+
+glyph VERDICT = la set. la c. concat(BSTR(IRR(set)(c)))(concat(BSTR(NOV(set)(c)))(concat(BSTR(AUT(c)))(BSTR(CON_(set)(c)))))
+glyph ADMIT = la set. la c. IF(str_eq(VERDICT(set)(c))("TTTT"))(la _. CONS(c)(set))(la _. set)
+glyph ADMITTED = la set. la c. lt(LENL(set))(LENL(ADMIT(set)(c)))
+
+# ── ν* and the four fixtures ──
+glyph C_NU = CAND(NU_STAR_C)
+glyph F1 = CAND(GLYPHOF(SYN(Px("VOID"))(Px("FORM"))))                     # new κ, but its action IS ⊗'s
+glyph F2 = CAND(MONO(REN(GLYPHOF(MODE_SYN)))(ETYM(GLYPHOF(MODE_SYN))))    # α-copy of ⊗'s glyph
+glyph F3 = CAND(MONO("LIE")(ETYM(NU_STAR_C)))                             # ν*'s etym under a false name
+glyph F4 = CAND(GLYPHOF(Px("VOID")))                                      # constant action
+glyph SET6 = ADMIT(BASE_MODES)(C_NU)
+glyph IDEMP = int_eq(LENL(ADMIT(SET6)(C_NU)))(LENL(SET6))
+glyph SELF_VERDICT = VERDICT(SET6)(C_NU)                                    # Δ_M(Δ_M): ν* re-offered → NOV fails
+
+glyph LINE1 =
+    concat("MODEGENESIS base=")(concat(int_to_str(LENL(BASE_MODES)))(
+    concat(" | ν* IRR/NOV/AUT/CON=")(concat(VERDICT(BASE_MODES)(C_NU))(
+    concat(" admitted:")(concat(BSTR(ADMITTED(BASE_MODES)(C_NU)))(
+    concat(" set=")(concat(int_to_str(LENL(SET6)))(
+    concat(" | F1 action≡⊗ =")(concat(VERDICT(BASE_MODES)(F1))(
+    concat(" refused:")(concat(BSTR(NOT(ADMITTED(BASE_MODES)(F1))))(
+    concat(" | F2 α-copy =")(concat(VERDICT(BASE_MODES)(F2))(
+    concat(" refused:")(concat(BSTR(NOT(ADMITTED(BASE_MODES)(F2))))(
+    concat(" | F3 false ren =")(concat(VERDICT(BASE_MODES)(F3))(
+    concat(" refused:")(concat(BSTR(NOT(ADMITTED(BASE_MODES)(F3))))(
+    concat(" | F4 constant =")(concat(VERDICT(BASE_MODES)(F4))(
+    concat(" refused:")(BSTR(NOT(ADMITTED(BASE_MODES)(F4))))))))))))))))))))))))))
+glyph LINE2 =
+    concat("MODEGENESIS fixed point: re-admit ν* verdict=")(concat(SELF_VERDICT)(
+    concat(" Δ_M(Δ_M)≡Δ_M idempotent:")(concat(BSTR(IDEMP))(
+    concat(" | Δ_M glyph = ν* = ")(concat(REN(NU_STAR_C))(
+    concat(" | ν* action on (A,B): ")(ACT(MCOMB(C_NU))(PAIR(PA)(PB)))))))))
+glyph MAIN = SEQ(print(LINE1))(print(LINE2))

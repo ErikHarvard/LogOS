@@ -1,0 +1,141 @@
+# ═══════════════════════════════════════════════════════════════════
+#  evidential.la — THE EVIDENTIAL REGISTER (register stack §2.3, directive 2026-09-15)
+#
+#  WHAT. The paper carries W/B/A tags at its meta-level (LA_CLAIM_INDEX.md: [W] 192,
+#  [B] 253, [A] 74). The language had no evidential register of its own. Here every
+#  catalogue glyph carries HOW IT IS KNOWN, inside the language:
+#     W  witnessed   — a build.sh gate asserts it   (cite = a substring of that gate's say-line)
+#     B  bounded     — gated, but by a standalone gate not yet in build.sh, or within a stated limit
+#     A  aspirational— declared, no gate
+#     I  inferred    — a derived claim, not directly gated
+#  An entry is EVG(tag)(cite)(glyph). The reading EVID(g) finds the entry BY MONOSEMIC
+#  IDENTITY (NORMK — so ⊕(a,b) and ⊕(b,a), ↻↻x and ↻x read ONE tag), never by name (the standing invariant: ρ and SR_ABOUT are one glyph), and
+#  reads "" (⊥) for a glyph with no declaration.
+#
+#  GATES  gate_evidential_present — every catalogue entry declares a tag; every tag
+#         is one of the four; two entries with ONE κ never carry two tags (evidential
+#         monosemy); an undeclared glyph reads ⊥. RED PATHS in-file: an empty tag, a
+#         tag "Q", and a same-κ/different-tag pair are each REFUSED, and the refusal is
+#         printed. ★ The gate SCRIPT closes the loop the module cannot: for every
+#         W-tagged entry it greps build.sh for the cited say-line — a W whose gate is
+#         not in build.sh is RED. (It checks the gate EXISTS, not that it asserts this
+#         glyph; that stronger check is named, not claimed.)
+#  POLICY. Which claims get W/B/A is the ARCHITECT'S (directive §7). This file
+#         enforces presence, validity, consistency and citation; the assignments below
+#         are a first pass for him to ratify.
+#  META-REGISTER  meta_evidential: the register's own glyph G_EV is in the catalogue
+#         (tag B — gated here, not yet in build.sh), so the reading applied to itself is
+#         defined; Δ_Ev(Δ_Ev) ≡ Δ_Ev at the truth level, distinct at the glyph level.
+#  ★ EVIDENTIAL TAGS ON THIS FILE: [W]→[B] presence/validity/consistency (gate_registers.sh);
+#     [A] G_EV = ▷(RECOGNITION, ↻(RECOGNITION)) — DECLARED (recognition of recognition:
+#         how the sign is known; ↻(RECOGNITION) is ρ, the house's "recognize").
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")
+import("metaglyph.la")    # MODE_* OP_* (CANON etc. shadowed identically)
+
+export EVID EVG TAG CITE EGLYPH VALID_TAG EV_CAT G_EV
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph P = la nm. PRIM(nm)
+glyph SEALc = la et. MONO(CANON(et))(et)
+glyph G_EV = SEALc(DIR(P("RECOGNITION"))(MC(P("RECOGNITION"))))
+
+# ── the record ──
+glyph EVG    = la tag. la cite. la g. la f. f(tag)(cite)(g)
+glyph TAG    = la e. e(la t. la c. la g. t)
+glyph CITE   = la e. e(la t. la c. la g. c)
+glyph EGLYPH = la e. e(la t. la c. la g. g)
+glyph VALID_TAG = la t. OR(str_eq(t)("W"))(OR(str_eq(t)("B"))(OR(str_eq(t)("A"))(str_eq(t)("I"))))
+
+# ── THE CATALOGUE (first pass; the architect ratifies). cite = substring of a build.sh say-line for W. ──
+glyph EV_CAT =
+  CONS(EVG("W")("canon_spec.la — autological Ren")(SEALc(KAPPA)))(
+  CONS(EVG("W")("Metaglyph: 𝓜 ⊂ 𝒜")(SEALc(REVAL)))(
+  CONS(EVG("W")("Family-tree graph test")(SEALc(SR_TO)))(
+  CONS(EVG("W")("Family-tree graph test")(SEALc(SR_ABOUT)))(
+  CONS(EVG("W")("Family-tree graph test")(SEALc(SR_AS)))(
+  CONS(EVG("W")("Family-tree graph test")(SEALc(SR_BY)))(
+  CONS(EVG("W")("Family-tree graph test")(SEALc(SR_FROM)))(
+  CONS(EVG("W")("Family-tree graph test")(SEALc(SR_THROUGH)))(
+  CONS(EVG("W")("Family-tree graph test")(SEALc(SR_FOR)))(
+  CONS(EVG("W")("Family-tree graph test")(SEALc(SR_WITH)))(
+  CONS(EVG("W")("Metaglyph: 𝓜 ⊂ 𝒜")(GLYPHOF(MODE_SYN)))(
+  CONS(EVG("W")("Metaglyph: 𝓜 ⊂ 𝒜")(GLYPHOF(MODE_CON)))(
+  CONS(EVG("W")("Metaglyph: 𝓜 ⊂ 𝒜")(GLYPHOF(MODE_DIR)))(
+  CONS(EVG("W")("Metaglyph: 𝓜 ⊂ 𝒜")(GLYPHOF(MODE_CONT)))(
+  CONS(EVG("W")("Metaglyph: 𝓜 ⊂ 𝒜")(GLYPHOF(MODE_MC)))(
+  CONS(EVG("W")("LA arc item 2: the five operators")(GLYPHOF(OP_DIFF)))(
+  CONS(EVG("W")("LA arc item 2: the five operators")(GLYPHOF(OP_BOUND)))(
+  CONS(EVG("W")("LA arc item 2: the five operators")(GLYPHOF(OP_COMP)))(
+  CONS(EVG("W")("LA arc item 2: the five operators")(GLYPHOF(OP_INTEG)))(
+  CONS(EVG("I")("minted from modes (ν*); its MODE-hood is not gated until Δ_M admits it")(COLLAPSE(SYN)(GLYPHOF(MODE_SYN))(GLYPHOF(MODE_MC))))(
+  CONS(EVG("B")("gate_registers.sh (lineage) — not yet in build.sh")(SEALc(DIR(P("RECOGNITION"))(CONT(P("BECOMING"))(P("DEPTH"))))))(
+  CONS(EVG("B")("gate_registers.sh (topology) — not yet in build.sh")(SEALc(DIR(P("RECOGNITION"))(CONT(P("FORM"))(P("DEPTH"))))))(
+  CONS(EVG("B")("gate_registers.sh (prosody) — not yet in build.sh")(SEALc(DIR(P("RECOGNITION"))(MC(P("BECOMING"))))))(
+  CONS(EVG("B")("gate_registers.sh (evidential) — not yet in build.sh")(G_EV))(
+  CONS(EVG("A")("declared 2026-09-15; no gate")(SEALc(DIR(P("RECOGNITION"))(MC(P("SELF"))))))(
+  NIL)))))))))))))))))))))))))
+
+# ── the reading: BY CANONICAL FORM. "" = ⊥ (undeclared). ──
+glyph EVID_IN = la cat. la g. Z(la self. la l. l("")(la h. la t.
+    IF(str_eq(NORMK(ETYM(EGLYPH(h))))(NORMK(ETYM(g))))(la _. TAG(h))(la _. self(t))))(cat)
+glyph EVID = EVID_IN(EV_CAT)
+
+# ── the checks; each names its offender ──
+glyph FIRST = la pred. la l. Z(la self. la l. l("")(la h. la t. IF(pred(h))(la _. self(t))(la _. REN(EGLYPH(h)))))(l)
+glyph DECLARED = la e. NOT(str_eq(TAG(e))(""))
+glyph VALID    = la e. VALID_TAG(TAG(e))
+glyph BAD_DECL = FIRST(DECLARED)(EV_CAT)
+glyph BAD_VALID= FIRST(VALID)(EV_CAT)
+# evidential monosemy: an entry whose κ also appears with a DIFFERENT tag
+glyph CONFLICT_IN = la cat. la e. Z(la self. la l. l(FALSE)(la h. la t.
+    IF(AND(str_eq(NORMK(ETYM(EGLYPH(h))))(NORMK(ETYM(EGLYPH(e)))))(NOT(str_eq(TAG(h))(TAG(e)))))(la _. TRUE)(la _. self(t))))(cat)
+glyph CONSISTENT_IN = la cat. FIRST(la e. NOT(CONFLICT_IN(cat)(e)))(cat)
+glyph BAD_CONS = CONSISTENT_IN(EV_CAT)
+glyph LENL = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph COUNT_TAG = la t. Z(la self. la l. l(0)(la h. la tl. add(IF(str_eq(TAG(h))(t))(la _. 1)(la _. 0))(self(tl))))(EV_CAT)
+
+# ── RED-PATH FIXTURES, refused in-file ──
+glyph FIX_EMPTY = CONS(EVG("")("no tag")(SEALc(KAPPA)))(NIL)
+glyph FIX_BAD   = CONS(EVG("Q")("not a tag")(SEALc(KAPPA)))(NIL)
+glyph FIX_CONF  = CONS(EVG("W")("x")(SEALc(SR_ABOUT)))(CONS(EVG("A")("y")(GLYPHOF(OP_RECOG)))(NIL))   # ρ ≡ SR_ABOUT, two tags
+glyph EMPTY_REFUSED = NOT(str_eq(FIRST(DECLARED)(FIX_EMPTY))(""))
+glyph BAD_REFUSED   = NOT(str_eq(FIRST(VALID)(FIX_BAD))(""))
+glyph CONF_REFUSED  = NOT(str_eq(CONSISTENT_IN(FIX_CONF))(""))
+glyph UNDECLARED    = EVID(SEALc(SYN(P("VOID"))(P("VOID"))))       # not in the catalogue → ⊥
+
+# ── meta ──
+glyph SELF_TAG = EVID(G_EV)
+glyph MCG = MC(ETYM(G_EV))
+glyph FIX_TRUTH = NIS(MC(MCG))(MCG)
+glyph FIX_GLYPH = str_eq(CANON(MC(MCG)))(CANON(MCG))
+
+# one line per entry, for the gate script's build.sh cross-check
+glyph ROWS = Z(la self. la l. l("")(la h. la t.
+    SEQ(print(concat("EV ")(concat(TAG(h))(concat(" | ")(concat(REN(EGLYPH(h)))(concat(" | ")(CITE(h))))))))(self(t))))(EV_CAT)
+
+glyph LINE1 =
+    concat("EVIDENTIAL catalogue=")(concat(int_to_str(LENL(EV_CAT)))(
+    concat(" | all declared:")(concat(BSTR(str_eq(BAD_DECL)("")))(
+    concat(IF(str_eq(BAD_DECL)(""))(la _. "")(la _. concat(" OFFENDER=")(BAD_DECL)))(
+    concat(" | all tags valid:")(concat(BSTR(str_eq(BAD_VALID)("")))(
+    concat(IF(str_eq(BAD_VALID)(""))(la _. "")(la _. concat(" OFFENDER=")(BAD_VALID)))(
+    concat(" | one κ one tag:")(concat(BSTR(str_eq(BAD_CONS)("")))(
+    concat(IF(str_eq(BAD_CONS)(""))(la _. "")(la _. concat(" OFFENDER=")(BAD_CONS)))(
+    concat(" | undeclared reads ⊥:")(concat(BSTR(str_eq(UNDECLARED)("")))(
+    concat(" | empty-tag refused:")(concat(BSTR(EMPTY_REFUSED))(
+    concat(" | bad-tag refused:")(concat(BSTR(BAD_REFUSED))(
+    concat(" | same-κ-two-tags refused:")(concat(BSTR(CONF_REFUSED))(
+    concat(" | W=")(concat(int_to_str(COUNT_TAG("W")))(
+    concat(" B=")(concat(int_to_str(COUNT_TAG("B")))(
+    concat(" A=")(concat(int_to_str(COUNT_TAG("A")))(
+    concat(" I=")(int_to_str(COUNT_TAG("I"))))))))))))))))))))))))))))
+glyph LINE2 =
+    concat("EVIDENTIAL meta: G_EV=")(concat(REN(G_EV))(
+    concat(" reads itself as:")(concat(SELF_TAG)(
+    concat(" | Δ_Ev(Δ_Ev)≡Δ_Ev truth:")(concat(BSTR(FIX_TRUTH))(
+    concat(" glyph:")(BSTR(FIX_GLYPH))))))))
+glyph MAIN = SEQ(ROWS)(SEQ(print(LINE1))(print(LINE2)))

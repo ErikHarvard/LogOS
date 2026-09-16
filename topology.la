@@ -1,0 +1,120 @@
+# ═══════════════════════════════════════════════════════════════════
+#  topology.la — THE TOPOLOGICAL REGISTER (register stack §2.5, directive 2026-09-15)
+#
+#  WHAT. The invariants of a glyph's derivation graph, read from the lineage
+#  (glyphdag's hash-consed DAG form) — not a new data structure, a new reading of
+#  the existing one. For the def list D of a lineage:
+#     V        = |D|                      (defs = graph vertices)
+#     E        = Σ arity(def)             (parent pointers = edges)
+#     conn     = every def reachable from the root      (b0 = 1 iff conn)
+#     b1       = E − V + 1  when conn     (cycle rank of the underlying undirected
+#                graph = the number of independent SHARINGS; a tree has b1 = 0)
+#     depth    = longest root→leaf path
+#     leaves   = arity-0 defs;  anchors = leaves that are one of the NINE
+#     grounded = every leaf is one of the nine   (anchor connectivity)
+#  Homology ranks are H0 = b0, H1 = b1 (a graph is 1-dimensional: nothing higher);
+#  cohomology ranks are the same numbers for a finite graph — they are NOT a
+#  separate computation here and are not claimed as one. GENUS (minimum embedding
+#  surface) is NOT computed; it is named as absent. That is the bound.
+#  ★ topoembed.la already carries Θ_V, the VISUAL invariant signature (mode + leaf-set)
+#  with mode recoverability gated; psc.la its phonetic twin. Those are invariants of the
+#  RENDERING under compression; these are invariants of the derivation GRAPH. Cited, not
+#  repeated; a later pass may add Θ_V as a row of this reading.
+#
+#  GATE  gate_topology_computes — every invariant is computed for every catalogue
+#        lineage; on a CORRUPTED DAG (a def whose parent does not precede it) the
+#        reading is ⊥, never a number. RED PATH: the fixture "BEING;⊗0.7" reads ⊥
+#        in-file; a mutant that skips the validity check reads a number instead.
+#  META-REGISTER  meta_topology: the register's own glyph G_TOP has a computable
+#        reading; MetaTop(MetaTop) ≡ MetaTop at the truth level (↻-idempotence),
+#        distinct at the glyph level — reported both ways.
+#  ★ EVIDENTIAL TAGS: [W] the seven invariants + ⊥ on corruption — gated below.
+#     [B] b0/b1 are graph Betti numbers, not manifold invariants; genus absent.
+#     [A] G_TOP = ▷(RECOGNITION, ⊂(FORM,DEPTH)) — DECLARED (recognition directed at
+#         the bound: OP_BOUND δ = ⊂(FORM,DEPTH) is the house's "bound" operator).
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")     # the base surface: LINEAGE LINEAGE_OK SEALc LIN_CAT + canon/glyphdag re-exports (table-bound, see lineage.la)
+
+export TOPO TOPO_OF G_TOP V_OF E_OF B1_OF DEPTH_OF LEAVES_OF ANCHORS_OF GROUNDED_OF
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph P = la nm. PRIM(nm)
+glyph G_TOP = SEALc(DIR(P("RECOGNITION"))(CONT(P("FORM"))(P("DEPTH"))))
+
+# ── per-def structure ──
+glyph ARITY = la def. (la h3. IF(IS_BIN(h3))(la _. 2)(la _. IF(str_eq(h3)(MC_S))(la _. 1)(la _. 0)))(HEAD3(def))
+glyph PAR1 = la def. str_to_int(UPTO(".")(DROP3(def)))       # binary: left parent, unary: the parent
+glyph PAR2 = la def. str_to_int(AFTERC(".")(DROP3(def)))
+glyph PARU = la def. str_to_int(DROP3(def))
+glyph IS9 = la n.
+    IF(str_eq(n)("BEING"))(la _. TRUE)(la _. IF(str_eq(n)("RECOGNITION"))(la _. TRUE)(la _.
+    IF(str_eq(n)("LOVE"))(la _. TRUE)(la _. IF(str_eq(n)("SELF"))(la _. TRUE)(la _.
+    IF(str_eq(n)("RELATION"))(la _. TRUE)(la _. IF(str_eq(n)("VOID"))(la _. TRUE)(la _.
+    IF(str_eq(n)("BECOMING"))(la _. TRUE)(la _. IF(str_eq(n)("FORM"))(la _. TRUE)(la _.
+    IF(str_eq(n)("DEPTH"))(la _. TRUE)(la _. FALSE)))))))))
+
+# ── the invariants over a def list ──
+glyph SUMBY = la f. Z(la self. la l. l(0)(la h. la t. add(f(h))(self(t))))
+glyph V_OF = la ds. LEN(ds)
+glyph E_OF = la ds. SUMBY(ARITY)(ds)
+glyph LEAVES_OF = la ds. SUMBY(la d. IF(int_eq(ARITY(d))(0))(la _. 1)(la _. 0))(ds)
+glyph ANCHORS_OF = la ds. SUMBY(la d. IF(AND(int_eq(ARITY(d))(0))(IS9(d)))(la _. 1)(la _. 0))(ds)
+glyph GROUNDED_OF = la ds. int_eq(LEAVES_OF(ds))(ANCHORS_OF(ds))
+# depth of def i (longest path to a leaf), by index
+glyph DEPTHI = la ds. Z(la self. la i. (la d.
+    IF(int_eq(ARITY(d))(2))(la _. add(1)(MAXI(self(PAR1(d)))(self(PAR2(d)))))(la _.
+    IF(int_eq(ARITY(d))(1))(la _. add(1)(self(PARU(d))))(la _. 0)))(NTH(ds)(i)))
+glyph DEPTH_OF = la ds. DEPTHI(ds)(sub(LEN(ds))(1))
+# reachability from the root: mark indices; count marked
+glyph MEMB = Z(la self. la x. la l. l(FALSE)(la h. la t. IF(int_eq(h)(x))(la _. TRUE)(la _. self(x)(t))))
+glyph MARK = la ds. Z(la self. la i. la acc.
+    IF(MEMB(i)(acc))(la _. acc)(la _. (la d. (la acc1.
+        IF(int_eq(ARITY(d))(2))(la _. self(PAR2(d))(self(PAR1(d))(acc1)))(la _.
+        IF(int_eq(ARITY(d))(1))(la _. self(PARU(d))(acc1))(la _. acc1)))(CONSc(i)(acc)))(NTH(ds)(i))))
+glyph REACHED_OF = la ds. LEN(MARK(ds)(sub(LEN(ds))(1))(NILc))
+glyph CONN_OF = la ds. int_eq(REACHED_OF(ds))(LEN(ds))
+glyph B1_OF = la ds. add(sub(E_OF(ds))(V_OF(ds)))(1)
+
+# ── THE READING. ⊥ on a corrupted lineage — validity is checked FIRST. ──
+glyph TOPO_STR = la ds.
+    concat("V=")(concat(int_to_str(V_OF(ds)))(
+    concat(" E=")(concat(int_to_str(E_OF(ds)))(
+    concat(" b0=")(concat(IF(CONN_OF(ds))(la _. "1")(la _. ">1"))(
+    concat(" b1=")(concat(IF(CONN_OF(ds))(la _. int_to_str(B1_OF(ds)))(la _. "⊥"))(
+    concat(" depth=")(concat(int_to_str(DEPTH_OF(ds)))(
+    concat(" leaves=")(concat(int_to_str(LEAVES_OF(ds)))(
+    concat(" anchors=")(concat(int_to_str(ANCHORS_OF(ds)))(
+    concat(" grounded=")(BSTR(GROUNDED_OF(ds)))))))))))))))))
+glyph TOPO = la form. IF(str_eq(LINEAGE_OK(form))(""))(la _. TOPO_STR(SPLIT(";")(form)))(la _. "⊥")
+glyph TOPO_OF = la g. TOPO(LINEAGE(g))
+
+# ── witnesses ──
+glyph FIRSTBOT = Z(la self. la l. l("")(la h. la t. IF(str_eq(TOPO_OF(SNDc(h)))("⊥"))(la _. FSTc(h))(la _. self(t))))
+glyph BAD_TOPO = FIRSTBOT(LIN_CAT)
+glyph SHARED_T = SYN(KAPPA)(KAPPA)                       # ⊗(κ,κ): one sharing ⇒ b1 = 1
+glyph SHARED_R = TOPO(DAG(SHARED_T))
+glyph TREE_R   = TOPO(DAG(KAPPA))                         # a tree ⇒ b1 = 0
+glyph SWAP_OK  = str_eq(TOPO(DAG(CON(KAPPA)(REVAL))))(TOPO(DAG(CON(REVAL)(KAPPA))))   # ⊕-order invariant
+glyph CORRUPT  = TOPO("BEING;⊗0.7")
+glyph MCG  = MC(ETYM(G_TOP))
+glyph MMCG = MC(MCG)
+glyph FIX_TRUTH = NIS(MMCG)(MCG)
+glyph FIX_GLYPH = str_eq(CANON(MMCG))(CANON(MCG))
+
+glyph LINE1 =
+    concat("TOPOLOGY catalogue=")(concat(int_to_str(LEN(LIN_CAT)))(
+    concat(" | every lineage computes (no ⊥):")(concat(BSTR(str_eq(BAD_TOPO)("")))(
+    concat(IF(str_eq(BAD_TOPO)(""))(la _. "")(la _. concat(" OFFENDER=")(BAD_TOPO)))(
+    concat(" | corrupted DAG reads ⊥:")(concat(BSTR(str_eq(CORRUPT)("⊥")))(
+    concat(" | ⊕-order invariant:")(concat(BSTR(SWAP_OK))(
+    concat(" | κ tree: ")(concat(TREE_R)(
+    concat(" | ⊗(κ,κ) shared: ")(SHARED_R))))))))))))
+glyph LINE2 =
+    concat("TOPOLOGY meta: G_TOP=")(concat(REN(G_TOP))(
+    concat(" reading: ")(concat(TOPO_OF(G_TOP))(
+    concat(" | MetaTop(MetaTop)≡MetaTop truth:")(concat(BSTR(FIX_TRUTH))(
+    concat(" glyph:")(concat(BSTR(FIX_GLYPH))(
+           " | genus NOT computed (named absent); H0=b0 H1=b1, cohomology = same ranks (graph)"))))))))
+glyph MAIN = SEQ(print(LINE1))(print(LINE2))

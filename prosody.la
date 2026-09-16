@@ -1,0 +1,136 @@
+# ═══════════════════════════════════════════════════════════════════
+#  prosody.la — THE PROSODIC REGISTER (register stack §2.2, directive 2026-09-15)
+#
+#  WHAT. LINGUA_ADAMICA.tex §"Prosodic Identity" (Principle: Prosodic Intrinsicality,
+#  tex:588): a glyph's phonological form includes its PROSODIC CONTOUR — pitch
+#  pattern, rhythmic structure, dynamic envelope — and altered prosody is a
+#  DIFFERENT GLYPH. phonym.la realises that inside the renderer, folded into the
+#  PCM. Here the contour is EXTRACTED as a first-class Prosody value — a (contour,
+#  duration) pair read from the same κ-decomposition the phonym walks — WITHOUT
+#  touching phonym.la. The phonym renders it; it is not identical to it.
+#
+#  The reading mirrors phonym.la's documented Operator Phonology (phonym.la:225-230):
+#     ⊗ SYN   one fused unit, mode contour period 64, duration max(nA,nB)  (SYNP)
+#     ⊕ CON   A · glottal pause /ʔ/ (960) · B, duration nA+960+nB           (CONP)
+#     ▷ DIR   stress-link ÁB, tail rate-marker period 128, duration nA+nB    (DIRP)
+#     ⊂ CONT  containment B[A]B, duration nB+nA+nB                          (CONTP)
+#     ↻ MC    reduplication AA, duration 2n                                  (MCP)
+#  Primitive durations and f0 targets are phonym.la's own numbers (PHON_PRIM,
+#  PH_*: BEING 6080/120 … DEPTH 6000/90,135→50). ★ THEY ARE CROSS-CHECKED, NOT
+#  TRUSTED: prosody_xcheck.la imports phonym.la and asserts FST(PHONYM(t)) ==
+#  PDUR(t) for the nine primitives and the five modes, on the host (phonym.la is
+#  kept OUT of this module so the VM leg stays fast). A drift in phonym.la turns
+#  that check RED.
+#
+#  GATE  gate_prosody_separable — five forms over the SAME two segments (⊗ ⊕ ▷ ⊂
+#        and ▷ reversed) have ONE segmental reading and FIVE prosodic readings.
+#        The segments-only reading is printed as the CONTROL: it is what "prosody
+#        collapsed back into segmental content" reads, and it separates nothing.
+#        RED PATH: a mutant that makes two modes share a contour drops the count.
+#  META-REGISTER  meta_prosody — ↻ reduplicates the contour of its argument: the
+#        system modulating its own modulation. ↻↻x and ↻x have DIFFERENT contours
+#        (AAAA vs AA) and ONE identity (NIS, ↻-idempotence) — the two registers.
+#  ★ EVIDENTIAL: [W] separability + duration cross-check (gated);
+#     [B] contour = a symbolic reading of the renderer's rules, not a signal measure;
+#     [A] G_PROS = ▷(RECOGNITION, ↻(BECOMING)) — DECLARED (lexicon: Ongoing = ↻(𝔤₇),
+#         tex:5171; prosody is the temporal register).
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")
+
+export PROSODY PCONTOUR PDUR SEGMENTS G_PROS DUR9 F09 DISTINCT
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph PAIR = la a. la b. la f. f(a)(b)
+glyph FST  = la p. p(la a. la b. a)
+glyph SND  = la p. p(la a. la b. b)
+glyph NIL  = la n. la c. n
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph P = la nm. PRIM(nm)
+glyph SEALc = la et. MONO(CANON(et))(et)
+glyph G_PROS = SEALc(DIR(P("RECOGNITION"))(MC(P("BECOMING"))))
+
+# ── phonym.la's own numbers (cross-checked by prosody_xcheck.la) ──
+glyph DUR9 = la n.
+    IF(str_eq(n)("BEING"))(la _. 6080)(la _. IF(str_eq(n)("RECOGNITION"))(la _. 6720)(la _.
+    IF(str_eq(n)("LOVE"))(la _. 6560)(la _. IF(str_eq(n)("SELF"))(la _. 6560)(la _.
+    IF(str_eq(n)("RELATION"))(la _. 6720)(la _. IF(str_eq(n)("VOID"))(la _. 6880)(la _.
+    IF(str_eq(n)("BECOMING"))(la _. 6400)(la _. IF(str_eq(n)("FORM"))(la _. 6160)(la _.
+    IF(str_eq(n)("DEPTH"))(la _. 6000)(la _. 0)))))))))
+glyph F09 = la n.
+    IF(str_eq(n)("BEING"))(la _. "120")(la _. IF(str_eq(n)("RECOGNITION"))(la _. "140")(la _.
+    IF(str_eq(n)("LOVE"))(la _. "130")(la _. IF(str_eq(n)("SELF"))(la _. "120")(la _.
+    IF(str_eq(n)("RELATION"))(la _. "120")(la _. IF(str_eq(n)("VOID"))(la _. "120→85")(la _.
+    IF(str_eq(n)("BECOMING"))(la _. "95→220")(la _. IF(str_eq(n)("FORM"))(la _. "120")(la _.
+    IF(str_eq(n)("DEPTH"))(la _. "90,135→50")(la _. "?")))))))))
+
+# ── THE PROSODY VALUE: PAIR(contour)(duration), read from the decomposition ──
+glyph PROSODY = Z(la self. la node.
+    node
+      (la nm. PAIR(concat(nm)(concat("/")(F09(nm))))(DUR9(nm)))
+      (la a. la b. (la pa. la pb. PAIR(concat("{")(concat(FST(pa))(concat("+")(concat(FST(pb))("}~64")))))
+                                       (MAXI(SND(pa))(SND(pb))))(self(a))(self(b)))
+      (la a. la b. (la pa. la pb. PAIR(concat("(")(concat(FST(pa))(concat(")·ʔ·(")(concat(FST(pb))(")")))))
+                                       (add(add(SND(pa))(960))(SND(pb))))(self(a))(self(b)))
+      (la a. la b. (la pa. la pb. PAIR(concat("(")(concat(FST(pa))(concat(")´-(")(concat(FST(pb))(")~128")))))
+                                       (add(SND(pa))(SND(pb))))(self(a))(self(b)))
+      (la a. la b. (la pa. la pb. PAIR(concat("(")(concat(FST(pb))(concat(")[")(concat(FST(pa))(concat("](")(concat(FST(pb))(")")))))))
+                                       (add(add(SND(pb))(SND(pa)))(SND(pb))))(self(a))(self(b)))
+      (la a. (la pa. PAIR(concat("(")(concat(FST(pa))(concat(")(")(concat(FST(pa))(")")))))(mul(SND(pa))(2)))(self(a))))
+glyph PCONTOUR = la node. FST(PROSODY(node))
+glyph PDUR     = la node. SND(PROSODY(node))
+
+# ── THE CONTROL: segmental content only (sorted leaf multiset) — what collapsing
+#    prosody back into segments would read. ──
+glyph INSERT = Z(la self. la x. la l. l(CONS(x)(NIL))(la h. la t. IF(LE(x)(h))(la _. CONS(x)(l))(la _. CONS(h)(self(x)(t)))))
+glyph LEAVES = Z(la self. la node. la acc.
+    node (la nm. INSERT(nm)(acc))
+         (la a. la b. self(b)(self(a)(acc))) (la a. la b. self(b)(self(a)(acc)))
+         (la a. la b. self(b)(self(a)(acc))) (la a. la b. self(b)(self(a)(acc)))
+         (la a. self(a)(acc)))
+glyph JOINL = Z(la self. la l. l("")(la h. la t. t(h)(la _. la _. concat(h)(concat(",")(self(t))))))
+glyph SEGMENTS = la node. JOINL(LEAVES(node)(NIL))
+
+# ── distinct-count over a list of strings ──
+glyph MEMB = Z(la self. la s. la l. l(FALSE)(la h. la t. IF(str_eq(h)(s))(la _. TRUE)(la _. self(s)(t))))
+glyph DISTINCT = Z(la self. la l. la acc. l(acc)(la h. la t. IF(MEMB(h)(acc))(la _. self(t)(acc))(la _. self(t)(CONS(h)(acc)))))
+glyph LENL = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph NDISTINCT = la l. LENL(DISTINCT(l)(NIL))
+
+# ── the five same-segment forms ──
+glyph A = P("LOVE")
+glyph B = P("RECOGNITION")
+glyph FORMS = CONS(SYN(A)(B))(CONS(CON(A)(B))(CONS(DIR(A)(B))(CONS(CONT(A)(B))(CONS(DIR(B)(A))(NIL)))))
+glyph MAPL = la f. Z(la self. la l. l(NIL)(la h. la t. CONS(f(h))(self(t))))
+glyph N_SEG  = NDISTINCT(MAPL(SEGMENTS)(FORMS))
+glyph N_PROS = NDISTINCT(MAPL(PCONTOUR)(FORMS))
+glyph SEPARABLE = AND(int_eq(N_SEG)(1))(int_eq(N_PROS)(5))
+
+# ── meta-prosody ──
+glyph MCA  = MC(A)
+glyph MMCA = MC(MCA)
+glyph META_CONTOUR_EQ = str_eq(PCONTOUR(MMCA))(PCONTOUR(MCA))
+glyph META_TRUTH      = NIS(MMCA)(MCA)
+glyph MCG  = MC(ETYM(G_PROS))
+glyph FIX_TRUTH = NIS(MC(MCG))(MCG)
+glyph FIX_GLYPH = str_eq(CANON(MC(MCG)))(CANON(MCG))
+
+glyph LINE1 =
+    concat("PROSODY 5 same-segment forms: segments distinct=")(concat(int_to_str(N_SEG))(
+    concat(" prosody distinct=")(concat(int_to_str(N_PROS))(
+    concat(" separable:")(concat(BSTR(SEPARABLE))(
+    concat(" | ⊗:")(concat(PCONTOUR(SYN(A)(B)))(
+    concat(" dur=")(concat(int_to_str(PDUR(SYN(A)(B))))(
+    concat(" | ⊕ dur=")(concat(int_to_str(PDUR(CON(A)(B))))(
+    concat(" | ▷ dur=")(concat(int_to_str(PDUR(DIR(A)(B))))(
+    concat(" | ⊂ dur=")(concat(int_to_str(PDUR(CONT(A)(B))))(
+    concat(" | ↻ dur=")(int_to_str(PDUR(MC(A))))))))))))))))))))
+glyph LINE2 =
+    concat("PROSODY meta: ↻↻x vs ↻x contour equal:")(concat(BSTR(META_CONTOUR_EQ))(
+    concat(" identity (NIS):")(concat(BSTR(META_TRUTH))(
+    concat(" | G_PROS=")(concat(REN(G_PROS))(
+    concat(" contour=")(concat(PCONTOUR(ETYM(G_PROS)))(
+    concat(" | Δ_P(Δ_P)≡Δ_P truth:")(concat(BSTR(FIX_TRUTH))(
+    concat(" glyph:")(BSTR(FIX_GLYPH))))))))))))
+glyph MAIN = SEQ(print(LINE1))(print(LINE2))

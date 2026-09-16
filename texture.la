@@ -1,0 +1,96 @@
+# ═══════════════════════════════════════════════════════════════════
+#  texture.la — THE AFFECTIVE REGISTER (register stack §2.4, directive 2026-09-15)
+#
+#  WHAT. "If feeling is the texture of being, every glyph has a texture." The
+#  directive derives Texture from invocation count, anchor density and recency —
+#  "the same quantities the memory layer already tracks … a reading of existing
+#  measurements at a new register."
+#
+#  ★ THE BOUND, STATED FIRST. There is NO memory layer INSIDE the language that
+#  tracks invocation counts or recency (grep of every .la: none). The quantities
+#  that DO exist in-language live in the lineage DAG, and they are read here:
+#     m  invocation multiplicity  = 100·E/(V−1): how often a sub-derivation is
+#                                   re-invoked within the glyph (a tree reads 100;
+#                                   a shared subterm reads more)
+#     a  anchor density           = 100·leaves/V: how much of the glyph is primitive ground
+#     r  recency                  = 100/(1+depth): how near the root its ground lies
+#  This is a SUBSTITUTION of the directive's memory quantities by the language's own,
+#  under the directive's own rule (existing measurements, new register). Tagged [B];
+#  the architect rules whether it stands or the register waits for a memory layer.
+#
+#  GATE  gate_texture_varies — texture varies across the catalogue (distinct ≥ 3 of
+#        12) and is IDENTICAL for identical identity (⊕-order). RED PATH: a mutant
+#        that returns a constant reads distinct = 1. ⊥ on a corrupted lineage.
+#  META-REGISTER  meta_texture: the texture of the register's own glyph; Δ_A(Δ_A) ≡
+#        Δ_A at the truth level, distinct at the glyph level.
+#  ★ EVIDENTIAL: [B] the three quantities (in-language substitutes); [W]→[B] variation +
+#     ⊕-invariance (gated); [A] G_AFF = ▷(RECOGNITION, ↻(SELF)) — DECLARED (how it feels
+#     from inside: recognition directed at pure metacursion, ↻(SELF) being the house's
+#     "↻ is the grammatical expression of Self"). ★ The first declaration ▷(RECOGNITION,SELF)
+#     COLLIDED with the lexicon's Witness (">24") — caught by collide.py; re-declared.
+#  ★ depthreport.la already REPORTS lineage depth (never gated, by Erik's ruling); r here
+#     is a reading of the same measurement at a new register, and is likewise never a gate.
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")     # base surface (table-bound, see lineage.la)
+
+export TEXTURE TEXTURE_OF G_AFF
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph MAXI = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph Px = la nm. PRIM(nm)
+glyph G_AFF = SEALc(DIR(Px("RECOGNITION"))(MC(Px("SELF"))))
+
+glyph TARITY = la def. (la h3. IF(IS_BIN(h3))(la _. 2)(la _. IF(str_eq(h3)(MC_S))(la _. 1)(la _. 0)))(HEAD3(def))
+glyph TPAR1 = la def. str_to_int(UPTO(".")(DROP3(def)))
+glyph TPAR2 = la def. str_to_int(AFTERC(".")(DROP3(def)))
+glyph TPARU = la def. str_to_int(DROP3(def))
+glyph TSUM = la f. Z(la self. la l. l(0)(la h. la t. add(f(h))(self(t))))
+glyph TV = la ds. LEN(ds)
+glyph TE = la ds. TSUM(TARITY)(ds)
+glyph TLEAVES = la ds. TSUM(la d. IF(int_eq(TARITY(d))(0))(la _. 1)(la _. 0))(ds)
+glyph TDEPTHI = la ds. Z(la self. la i. (la d.
+    IF(int_eq(TARITY(d))(2))(la _. add(1)(MAXI(self(TPAR1(d)))(self(TPAR2(d)))))(la _.
+    IF(int_eq(TARITY(d))(1))(la _. add(1)(self(TPARU(d))))(la _. 0)))(NTH(ds)(i)))
+glyph TDEPTHDS = la ds. TDEPTHI(ds)(sub(LEN(ds))(1))
+glyph MULT = la ds. IF(int_eq(TV(ds))(1))(la _. 100)(la _. div(mul(100)(TE(ds)))(sub(TV(ds))(1)))
+glyph DENS = la ds. div(mul(100)(TLEAVES(ds)))(TV(ds))
+glyph RECN = la ds. div(100)(add(1)(TDEPTHDS(ds)))
+glyph TEXTURE_STR = la ds.
+    concat("m=")(concat(int_to_str(MULT(ds)))(
+    concat(" a=")(concat(int_to_str(DENS(ds)))(
+    concat(" r=")(int_to_str(RECN(ds)))))))
+glyph TEXTURE = la form. IF(str_eq(LINEAGE_OK(form))(""))(la _. TEXTURE_STR(SPLIT(";")(form)))(la _. "⊥")
+glyph TEXTURE_OF = la g. TEXTURE(LINEAGE(g))
+
+# ── witnesses ──
+glyph MEMB = Z(la self. la s. la l. l(FALSE)(la h. la t. IF(str_eq(h)(s))(la _. TRUE)(la _. self(s)(t))))
+glyph DISTINCT = Z(la self. la l. la acc. l(acc)(la h. la t. IF(MEMB(h)(acc))(la _. self(t)(acc))(la _. self(t)(CONSc(h)(acc)))))
+glyph TEXTS = Z(la self. la l. l(NILc)(la h. la t. CONSc(TEXTURE_OF(SNDc(h)))(self(t))))(LIN_CAT)
+glyph NDIST = LEN(DISTINCT(TEXTS)(NILc))
+glyph VARIES = lt(2)(NDIST)
+glyph ANYBOT = MEMB("⊥")(TEXTS)
+glyph SWAP_OK = str_eq(TEXTURE(DAG(CON(KAPPA)(REVAL))))(TEXTURE(DAG(CON(REVAL)(KAPPA))))
+glyph SHARED_T = TEXTURE(DAG(SYN(KAPPA)(KAPPA)))
+glyph TREE_T   = TEXTURE(DAG(KAPPA))
+glyph CORRUPT  = TEXTURE("BEING;⊗0.7")
+glyph MCG = MC(ETYM(G_AFF))
+glyph FIX_TRUTH = NIS(MC(MCG))(MCG)
+glyph FIX_GLYPH = str_eq(CANON(MC(MCG)))(CANON(MCG))
+
+glyph LINE1 =
+    concat("TEXTURE catalogue=")(concat(int_to_str(LEN(LIN_CAT)))(
+    concat(" distinct textures=")(concat(int_to_str(NDIST))(
+    concat(" varies:")(concat(BSTR(VARIES))(
+    concat(" | none ⊥:")(concat(BSTR(NOT(ANYBOT)))(
+    concat(" | ⊕-order invariant:")(concat(BSTR(SWAP_OK))(
+    concat(" | corrupted reads ⊥:")(concat(BSTR(str_eq(CORRUPT)("⊥")))(
+    concat(" | κ: ")(concat(TREE_T)(
+    concat(" | ⊗(κ,κ): ")(SHARED_T)))))))))))))))
+glyph LINE2 =
+    concat("TEXTURE meta: G_AFF=")(concat(REN(G_AFF))(
+    concat(" texture: ")(concat(TEXTURE_OF(G_AFF))(
+    concat(" | Δ_A(Δ_A)≡Δ_A truth:")(concat(BSTR(FIX_TRUTH))(
+    concat(" glyph:")(concat(BSTR(FIX_GLYPH))(
+           " | BOUND: in-language substitutes for the memory layer's quantities (architect rules)"))))))))
+glyph MAIN = SEQ(print(LINE1))(print(LINE2))

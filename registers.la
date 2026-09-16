@@ -1,0 +1,173 @@
+# ═══════════════════════════════════════════════════════════════════
+#  registers.la — THE TWELVE-REGISTER STACK and its COHERENCE (directive 2026-09-15 §4)
+#
+#     glyphic ≡ semantic ≡ phonetic ≡ morphological ≡ syntactic ≡ pragmatic ≡
+#     operational ≡ etymological ≡ prosodic ≡ evidential ≡ affective ≡ topological
+#
+#  "One structure, twelve readings." Made checkable: a REGISTER is a record
+#  (name, glyph, reading, identity-projection). Every reading is a function of the
+#  glyph's decomposition; COHERENCE means every register's identity-projection
+#  agrees on glyphs that ARE one glyph (NIS-equal: ⊕(a,b)/⊕(b,a), ↻↻x/↻x, ↻BEING/SELF,
+#  ↻𝓡/𝓡, ↻(SELF⊕SELF)/(SELF⊕SELF)) — the route may differ, the identity may not.
+#
+#  ★ HOW THE READINGS RESPECT IDENTITY: they are taken on NORMTREE(etym), a TREE
+#  normaliser that mirrors canon.la's string normaliser NORMK rule for rule. That is a
+#  second implementation of one law, so it is GATED DIFFERENTIALLY against the first:
+#  CANON(NORMTREE(t)) == NORMK(t) on every probe (gate_normdrift's discipline).
+#  ★ THE ETYMOLOGICAL REGISTER KEEPS THE ROUTE (that is its content), so its reading
+#  differs on ↻↻x vs ↻x by design; its IDENTITY-PROJECTION (RECOVER∘LINEAGE) agrees.
+#  That is the two-register structure appearing BETWEEN registers, not a defect.
+#
+#  GATE  gate_register_coherence — all twelve identity-projections agree on every
+#        NIS-equal probe pair; the semantic register distinguishes NIS-distinct forms
+#        (⊗ is order-bearing); NORMTREE agrees with NORMK. RED PATH in-file: a
+#        thirteenth "RAW" register that reads the un-normalised route is REFUSED,
+#        and the refusal NAMES it. Per-register witness string so a RED names which.
+#  ★ EVIDENTIAL: [W]→[B] coherence + differential (gate_registers.sh);
+#     [B] pragmatic reading: (A) well-formed+grounded, (Γ) witnessed; (B) capability is
+#         the security model's (ontofelicity.la) and is NOT read at the glyph level;
+#     [A] the seven pre-existing registers' glyphs, DECLARED as ▷(RECOGNITION, ·) —
+#         a register is a recognition directed at one aspect (κ = ▷(RECOGNITION,FORM)
+#         is the house's own instance). ★ glyphic was first declared AS κ's form, which
+#         is also the lexicon's See (">28"): one form, three names — polysemy. Re-declared
+#         ▷(RECOGNITION,↻(FORM)) (SR_AS = ↻(FORM): "sign IS referent", α=1, the sigil's
+#         own principle). Every declared form passed regcollide.py against the
+#         lexicon, opgrammar's table, canon and metaglyph. The architect ratifies.
+#  ★ modality.la already renders ONE glyph FOUR ways (sigil, phonym, tactile, explain) from
+#     one ONF structure; that is the trimodal coherence at the RENDER level. This module is
+#     the coherence of twelve READINGS at the identity level; it cites, and does not repeat.
+#  Table bound (directive §8): this module loads ~830 of tiny_host's 1024 glyphs via
+#  lineage.la's base surface; census in regcensus.py. Do not add imports here.
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")      # base surface + LINEAGE RECOVER LIN_CAT G_ETYM SEALc
+import("topology.la")     # TOPO GROUNDED_OF G_TOP
+import("texture.la")      # TEXTURE G_AFF
+import("prosody.la")      # PCONTOUR PDUR F09 G_PROS DISTINCT
+import("evidential.la")   # EVID G_EV
+import("metaglyph.la")    # APPLYOP MODE_CON
+
+# ★ RE-EXPORTS for regenesis.la (table-bound: it imports THIS module alone; see lineage.la).
+export STACK REG RNAME RGLYPH RREAD RID NORMTREE READ_ALL COHERENT_OVER STACK_NAMES SEALc LIN_CAT Z TRUE FALSE NOT AND OR IF PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM AUTO_OK HAS_PREFIX KAPPA REVAL SR_WITH DAG SPLIT LEN NTH NILc CONSc PAIRc FSTc SNDc TOPO R_SEM DECOMP DCOLLAPSE NODES TSIZE MKMODE DEPTH TDEPTH PCONTOUR PDUR EVID TEXTURE LINEAGE RECOVER GROUNDED_OF APPLYOP SHAPE COLLAPSE MCOLLAPSE LE MAX SYN_S CON_S DIR_S CONT_S MC_S R_PHON R_GLYPH R_MORPH R_SYN R_PRAG R_OPER R_ETYM R_PROS R_EVID R_AFF R_TOP NT
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+
+# ── NORMTREE: canon.la's NORMK, rule for rule, on trees ──
+glyph NORMTREE = Z(la self. la node.
+    node
+      (la nm. PRIM(nm))
+      (la a. la b. (la x. la y. IF(AND(str_eq(CANON(x))(CANON(y)))(str_eq(CANON(x))("∃")))(la _. x)(la _. SYN(x)(y)))(self(a))(self(b)))
+      (la a. la b. (la x. la y. IF(LE(CANON(x))(CANON(y)))(la _. CON(x)(y))(la _. CON(y)(x)))(self(a))(self(b)))
+      (la a. la b. DIR(self(a))(self(b)))
+      (la a. la b. CONT(self(a))(self(b)))
+      (la a. (la x. (la k.
+          IF(str_eq(k)("BEING"))(la _. PRIM("SELF"))(la _.
+          IF(HAS_PREFIX(k)("↻("))(la _. x)(la _.
+          IF(str_eq(k)("▷(DEPTH,RECOGNITION)"))(la _. x)(la _.
+          IF(str_eq(k)("⊕(SELF,SELF)"))(la _. x)(la _. MC(x))))))(CANON(x)))(self(a))))
+glyph NT = la g. NORMTREE(ETYM(g))
+
+# ── the register record ──
+glyph REG    = la name. la g. la read. la idp. la f. f(name)(g)(read)(idp)
+glyph RNAME  = la r. r(la n. la g. la rd. la ip. n)
+glyph RGLYPH = la r. r(la n. la g. la rd. la ip. g)
+glyph RREAD  = la r. r(la n. la g. la rd. la ip. rd)
+glyph RID    = la r. r(la n. la g. la rd. la ip. ip)
+
+# ── the twelve readings (each: MONO glyph → string) ──
+glyph LEAVES_IN = Z(la self. la node. node
+    (la nm. concat(nm)(concat("/")(F09(nm))))
+    (la a. la b. concat(self(a))(concat(",")(self(b)))) (la a. la b. concat(self(a))(concat(",")(self(b))))
+    (la a. la b. concat(self(a))(concat(",")(self(b)))) (la a. la b. concat(self(a))(concat(",")(self(b))))
+    (la a. concat(self(a))(concat(",")(self(a)))))
+glyph MORPH = Z(la self. la node. node
+    (la nm. "·")
+    (la a. la b. concat("⊗(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+    (la a. la b. concat("⊕(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+    (la a. la b. concat("▷(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+    (la a. la b. concat("⊂(")(concat(self(a))(concat(",")(concat(self(b))(")")))))
+    (la a. concat("↻(")(concat(self(a))(")"))))
+glyph HEAD = la node. node
+    (la nm. concat("atom:")(nm))
+    (la a. la b. concat("⊗[")(concat(CANON(a))(concat("|")(concat(CANON(b))("]")))))
+    (la a. la b. concat("⊕[")(concat(CANON(a))(concat("|")(concat(CANON(b))("]")))))
+    (la a. la b. concat("▷[")(concat(CANON(a))(concat("|")(concat(CANON(b))("]")))))
+    (la a. la b. concat("⊂[")(concat(CANON(a))(concat("|")(concat(CANON(b))("]")))))
+    (la a. concat("↻[")(concat(CANON(a))("]")))
+glyph R_PHON  = la g. LEAVES_IN(NT(g))
+glyph R_GLYPH = la g. DAG(NT(g))
+glyph R_SEM   = la g. CANON(NT(g))
+glyph R_MORPH = la g. MORPH(NT(g))
+glyph R_SYN   = la g. HEAD(NT(g))
+glyph R_PRAG  = la g. concat("A=")(concat(BSTR(AND(AUTO_OK(g))(GROUNDED_OF(SPLIT(";")(DAG(NT(g)))))))(concat(" Γ=")(concat(BSTR(NOT(str_eq(EVID(g))(""))))(" B=n/a"))))
+glyph R_OPER  = la g. CANON(APPLYOP(NT(g))(Px("A"))(Px("B")))
+glyph R_ETYM  = la g. LINEAGE(g)
+glyph R_PROS  = la g. concat(PCONTOUR(NT(g)))(concat("/")(int_to_str(PDUR(NT(g)))))
+glyph R_EVID  = la g. (la t. IF(str_eq(t)(""))(la _. "⊥")(la _. t))(EVID(g))
+glyph R_AFF   = la g. TEXTURE(DAG(NT(g)))
+glyph R_TOP   = la g. TOPO(DAG(NT(g)))
+glyph ID_ETYM = la g. RECOVER(LINEAGE(g))
+
+# ── THE STACK: name, glyph (▷(RECOGNITION,·) declared for the seven pre-existing), reading, identity-projection ──
+glyph RG = la x. SEALc(DIR(Px("RECOGNITION"))(x))
+glyph STACK =
+  CONSc(REG("phonetic")     (RG(Px("BECOMING")))                 (R_PHON) (R_PHON))(
+  CONSc(REG("glyphic")      (RG(MC(Px("FORM"))))                 (R_GLYPH)(R_GLYPH))(
+  CONSc(REG("semantic")     (RG(Px("BEING")))                    (R_SEM)  (R_SEM))(
+  CONSc(REG("morphological")(RG(Px("RELATION")))                 (R_MORPH)(R_MORPH))(
+  CONSc(REG("syntactic")    (RG(CONT(Px("RELATION"))(Px("FORM"))))(R_SYN) (R_SYN))(
+  CONSc(REG("pragmatic")    (RG(Px("LOVE")))                     (R_PRAG) (R_PRAG))(
+  CONSc(REG("operational")  (RG(Px("DEPTH")))                    (R_OPER) (R_OPER))(
+  CONSc(REG("etymological") (G_ETYM)                             (R_ETYM) (ID_ETYM))(
+  CONSc(REG("prosodic")     (G_PROS)                             (R_PROS) (R_PROS))(
+  CONSc(REG("evidential")   (G_EV)                               (R_EVID) (R_EVID))(
+  CONSc(REG("affective")    (G_AFF)                              (R_AFF)  (R_AFF))(
+  CONSc(REG("topological")  (G_TOP)                              (R_TOP)  (R_TOP))(
+  NILc))))))))))))
+glyph STACK_NAMES = Z(la self. la l. l("")(la h. la t. t(RNAME(h))(la _. la _. concat(RNAME(h))(concat(" ")(self(t))))))(STACK)
+
+# ── the RED-path fixture: a register that reads the RAW route (not normalised) ──
+glyph RAW = REG("RAW")(RG(Px("VOID")))(la g. CANON(ETYM(g)))(la g. CANON(ETYM(g)))
+
+# ── probes ──
+glyph PAIRP = la a. la b. PAIRc(SEALc(a))(SEALc(b))
+glyph SAME_PAIRS =
+  CONSc(PAIRP(CON(KAPPA)(REVAL))(CON(REVAL)(KAPPA)))(
+  CONSc(PAIRP(MC(MC(Px("LOVE"))))(MC(Px("LOVE"))))(
+  CONSc(PAIRP(MC(Px("BEING")))(Px("SELF")))(
+  CONSc(PAIRP(MC(REVAL))(REVAL))(
+  CONSc(PAIRP(MC(SR_WITH))(SR_WITH))(
+  CONSc(PAIRP(MC(MC(DIR(KAPPA)(Px("VOID")))))(MC(DIR(KAPPA)(Px("VOID")))))(
+  NILc))))))
+glyph DIFF_PAIR = PAIRP(SYN(KAPPA)(REVAL))(SYN(REVAL)(KAPPA))     # ⊗ is order-bearing: distinct glyphs
+
+# per register: agrees on every same-pair?  → "T"/"F"; string over the stack
+glyph AGREES = la r. Z(la self. la l. l(TRUE)(la p. la t.
+    IF(str_eq(RID(r)(FSTc(p)))(RID(r)(SNDc(p))))(la _. self(t))(la _. FALSE)))(SAME_PAIRS)
+glyph COHERENT_OVER = la stack. Z(la self. la l. l("")(la r. la t. concat(BSTR(AGREES(r)))(self(t))))(stack)
+glyph COH = COHERENT_OVER(STACK)
+glyph ALL_T = Z(la self. la s. IF(str_eq(s)(""))(la _. TRUE)(la _. IF(str_eq(str_head(s))("T"))(la _. self(str_tail(s)))(la _. FALSE)))
+glyph COH_OK = ALL_T(COH)
+glyph RAW_REFUSED = NOT(AGREES(RAW))
+glyph SEM_DISTINGUISHES = NOT(str_eq(R_SEM(FSTc(DIFF_PAIR)))(R_SEM(SNDc(DIFF_PAIR))))
+# differential: NORMTREE vs NORMK on every probe side
+glyph NT_AGREE = la g. str_eq(CANON(NT(g)))(NORMK(ETYM(g)))
+glyph NT_OK = Z(la self. la l. l(TRUE)(la p. la t.
+    IF(AND(NT_AGREE(FSTc(p)))(NT_AGREE(SNDc(p))))(la _. self(t))(la _. FALSE)))(CONSc(DIFF_PAIR)(SAME_PAIRS))
+glyph NT_CAT = Z(la self. la l. l(TRUE)(la e. la t. IF(NT_AGREE(SNDc(e)))(la _. self(t))(la _. FALSE)))(LIN_CAT)
+# the twelve readings of one glyph, printed
+glyph READ_ALL = la g. Z(la self. la l. l("")(la r. la t.
+    SEQ(print(concat("  ")(concat(RNAME(r))(concat(": ")(RREAD(r)(g))))))(self(t))))(STACK)
+glyph NREG = LEN(STACK)
+
+glyph LINE1 =
+    concat("REGISTERS stack=")(concat(int_to_str(NREG))(
+    concat(" [")(concat(STACK_NAMES)(
+    concat("] | coherence per register=")(concat(COH)(
+    concat(" all:")(concat(BSTR(COH_OK))(
+    concat(" | raw-route register refused:")(concat(BSTR(RAW_REFUSED))(
+    concat(" | semantic distinguishes ⊗(a,b)/⊗(b,a):")(concat(BSTR(SEM_DISTINGUISHES))(
+    concat(" | NORMTREE==NORMK probes:")(concat(BSTR(NT_OK))(
+    concat(" catalogue:")(BSTR(NT_CAT))))))))))))))))
+glyph MAIN = SEQ(print(LINE1))(SEQ(print("REGISTERS twelve readings of κ:"))(READ_ALL(SEALc(KAPPA))))

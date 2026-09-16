@@ -1,0 +1,123 @@
+# ═══════════════════════════════════════════════════════════════════
+#  complement.la — NEGATION AS A GLYPH: the complement, the double complement, and
+#  the TWO REGISTERS of identity (antonym directive, 2026-09-15)
+#
+#  MONOSEMY: no synonyms (injectivity), no polysemy, antonyms PERMITTED — two forms,
+#  two meanings. "Antonym" is two things; this file builds the first, the COMPLEMENT
+#  ¬C derived from Void, which exists for EVERY glyph by construction. opposite.la
+#  builds the second (the dyadic pole), which exists only where a pole exists.
+#
+#  ★ THE FORM OF ¬ — RULED, not chosen here. The codex writes negation as 𝔤₆ ⊕ X
+#  (tex:5166, :5212) and the directive writes ⊂(𝔤₆, C). Neither is the language's
+#  current law. ERIK RULED 2026-08-23 (opgrammar.la:245-259, LA_COMPLETION.md:497):
+#  ⊕ is COMMUTATIVE (tex:2854), so ⊕(VOID,X) IS ⊕(X,VOID) — every negation collided
+#  with the co-presence of X and Void, a grammar-wide collision first seen as Bad/Grief.
+#  Negation moved to ⊂: "X framed by Void, the thing enclosed by absence", operand
+#  order (X, VOID) — chosen by MEASUREMENT (ablate.la's census: ⊂ had zero lexical
+#  uses, so it can collide with nothing). opgrammar.la's R_NEG = CONT(x)(VOID) and its
+#  gate OK_NEG_IS_CONT pin that shape. BUILT HERE: ¬C = ⊂(C, VOID) — the same rule in
+#  canon's naming universe (opgrammar names primitives by digit, canon by name, so the
+#  rule is re-stated, not imported; the first witness line asserts the SHAPE equals
+#  opgrammar's NEG_SHAPE pattern). The directive's ⊂(𝔤₆, C) has the operands REVERSED
+#  against the ruling; the first draft of this file used ⊕ per the tex and was corrected
+#  by the audit Erik asked for ("correct it against the meta-framework itself").
+#  (Also noted, not mine to fix: tex:1210 numbers Void 𝔤₈ while tex:4598 numbers it 𝔤₆.)
+#
+#  THE TWO REGISTERS, made explicit in the type:
+#     GLYPH_ID(g) = ren(g)                 — the route: intuitionistic, ¬¬C ≠ C
+#     TRUTH_ID(g) = NORMK(CANCEL(etym g))   — what obtains: classical,  ¬¬C ≡ C
+#  where CANCEL removes ⊂(⊂(x,VOID),VOID) → x on the tree — that exact nesting and
+#  no other, since ⊂ is NOT commutative. Everything else NORMK already does. A glyph has BOTH identities
+#  and they are NOT always the same — that is what the type says, and the gate checks.
+#
+#  GATES  gate_complement — ¬C is a sealed, self-naming glyph (AUTO_OK) with VOID as
+#         a parent; ¬C ≠ C at both levels; ¬¬C ≠ ¬C at both levels.
+#         gate_double_complement_distinct — ¬¬C ≠ C as glyphs; ¬¬C ≡ C in truth.
+#         gate_two_registers_explicit — GLYPH_ID and TRUTH_ID are distinct projections:
+#         they DIFFER on ¬¬C and COINCIDE on a primitive. RED PATH: a system that
+#         conflated them (TRUTH_ID := GLYPH_ID) would answer F to "¬¬C ≡ C"; that
+#         reading is printed as the control, and a mutant CANCEL turns the gate RED.
+#  META  A(A): the complement operator's glyph G_NOT = ⊂(FORM,VOID) (FORM = the hole).
+#         A(A) = ¬G_NOT: ≠ A at the glyph level; at the truth level it cancels to the
+#         bare hole FORM — A(A) ≡ id in truth, exactly the directive's Reading 1.
+#  ★ EVIDENTIAL: [W]→[B] all four gates (gate_registers.sh); [W] NEG_MODE = ⊂(X,VOID) is
+#     Erik's ruling, gated in opgrammar.la (OK_NEG_IS_CONT) and shape-checked here.
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")
+
+export NOTG DNEG GLYPH_ID TRUTH_ID CANCEL NEG_MODE G_NOT SEALn
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph SEALn = la et. MONO(CANON(et))(et)
+
+glyph NEG_MODE = CONT                                    # ⊂, per the 2026-08-23 ruling (opgrammar.la R_NEG)
+glyph NOTG = la g. COLLAPSE(NEG_MODE)(g)(GLYPH("VOID"))  # ¬C = ⊂(C, VOID), sealed
+glyph DNEG = la g. NOTG(NOTG(g))
+
+glyph IS_VOID = la node. str_eq(CANON(node))("VOID")
+# CANCEL: ⊂(⊂(x, VOID), VOID) → x, bottom-up. ⊂ is not commutative: only this nesting.
+# INNER(node)(k): if node is ⊂(x, VOID) call k(TRUE)(x), else k(FALSE)(node).
+glyph INNER = la node. la k. node (la nm. k(FALSE)(node)) (la a. la b. k(FALSE)(node)) (la a. la b. k(FALSE)(node))
+    (la a. la b. k(FALSE)(node))
+    (la a. la b. IF(IS_VOID(b))(la _. k(TRUE)(a))(la _. k(FALSE)(node)))
+    (la a. k(FALSE)(node))
+glyph CANCEL = Z(la self. la node.
+    node (la nm. PRIM(nm))
+         (la a. la b. SYN(self(a))(self(b)))
+         (la a. la b. CON(self(a))(self(b)))
+         (la a. la b. DIR(self(a))(self(b)))
+         (la a. la b. (la x. la y.
+             IF(IS_VOID(y))(la _. INNER(x)(la hit. la z. IF(hit)(la _. z)(la _. CONT(x)(y))))(la _. CONT(x)(y)))(self(a))(self(b)))
+         (la a. MC(self(a))))
+glyph GLYPH_ID = la g. REN(g)
+glyph TRUTH_ID = la g. NORMK(CANCEL(ETYM(g)))
+glyph HAS_VOID = Z(la self. la node. node (la nm. str_eq(nm)("VOID"))
+    (la a. la b. OR(self(a))(self(b))) (la a. la b. OR(self(a))(self(b)))
+    (la a. la b. OR(self(a))(self(b))) (la a. la b. OR(self(a))(self(b))) (la a. self(a)))
+
+# ── the subject: C = κ ──
+glyph C  = SEALn(KAPPA)
+glyph NC = NOTG(C)
+glyph NNC = DNEG(C)
+glyph NNNC = NOTG(NNC)
+glyph W_WF     = AND(AUTO_OK(NC))(HAS_VOID(ETYM(NC)))
+glyph W_NEQ_G  = NOT(str_eq(GLYPH_ID(NC))(GLYPH_ID(C)))
+glyph W_NEQ_T  = NOT(str_eq(TRUTH_ID(NC))(TRUTH_ID(C)))
+glyph W_NN_NEQ_N_G = NOT(str_eq(GLYPH_ID(NNC))(GLYPH_ID(NC)))
+glyph W_NN_NEQ_N_T = NOT(str_eq(TRUTH_ID(NNC))(TRUTH_ID(NC)))
+glyph W_DD_GLYPH = NOT(str_eq(GLYPH_ID(NNC))(GLYPH_ID(C)))        # ¬¬C ≠ C  (glyph)
+glyph W_DD_TRUTH = str_eq(TRUTH_ID(NNC))(TRUTH_ID(C))             # ¬¬C ≡ C  (truth)
+glyph W_TRIPLE   = str_eq(TRUTH_ID(NNNC))(TRUTH_ID(NC))           # ¬¬¬C ≡ ¬C (truth)
+glyph W_TWO_DIFFER   = NOT(str_eq(GLYPH_ID(NNC))(TRUTH_ID(NNC)))  # the two projections differ on ¬¬C
+glyph W_TWO_COINCIDE = str_eq(GLYPH_ID(C))(TRUTH_ID(C))           # and coincide on C
+glyph CONFLATED_READS = str_eq(GLYPH_ID(NNC))(GLYPH_ID(C))        # what a conflated system answers to ¬¬C ≡ C
+
+# ── meta: A(A) ──
+glyph G_NOT = SEALn(CONT(Px("FORM"))(Px("VOID")))
+glyph AA = NOTG(G_NOT)
+glyph W_AA_NEQ_A  = NOT(str_eq(GLYPH_ID(AA))(GLYPH_ID(G_NOT)))
+glyph W_AA_IS_ID  = str_eq(TRUTH_ID(AA))("FORM")
+
+glyph LINE1 =
+    concat("COMPLEMENT ¬X = ")(concat(CANON(NEG_MODE(Px("X"))(Px("VOID"))))(concat(" (ruling 2026-08-23) shape==opgrammar NEG_SHAPE:")(concat(BSTR(str_eq(CANON(ETYM(NOTG(GLYPH("BECOMING")))))("⊂(BECOMING,VOID)")))(
+    concat(" | ¬κ=")(concat(GLYPH_ID(NC))(
+    concat(" sealed+VOID-parent:")(concat(BSTR(W_WF))(
+    concat(" | ¬C≠C glyph:")(concat(BSTR(W_NEQ_G))(concat(" truth:")(concat(BSTR(W_NEQ_T))(
+    concat(" | ¬¬C≠¬C glyph:")(concat(BSTR(W_NN_NEQ_N_G))(concat(" truth:")(concat(BSTR(W_NN_NEQ_N_T))(
+    concat(" | ¬¬C≠C glyph:")(concat(BSTR(W_DD_GLYPH))(
+    concat(" ¬¬C≡C truth:")(concat(BSTR(W_DD_TRUTH))(
+    concat(" ¬¬¬C≡¬C truth:")(BSTR(W_TRIPLE))))))))))))))))))))))
+glyph LINE2 =
+    concat("COMPLEMENT two registers explicit: differ on ¬¬C:")(concat(BSTR(W_TWO_DIFFER))(
+    concat(" coincide on C:")(concat(BSTR(W_TWO_COINCIDE))(
+    concat(" | conflated system would read ¬¬C≡C as:")(concat(BSTR(CONFLATED_READS))(
+    concat(" | TRUTH_ID(¬¬κ)=")(concat(TRUTH_ID(NNC))(
+    concat(" GLYPH_ID(¬¬κ)=")(GLYPH_ID(NNC))))))))))
+glyph LINE3 =
+    concat("COMPLEMENT meta: G_NOT=")(concat(GLYPH_ID(G_NOT))(
+    concat(" A(A)=")(concat(GLYPH_ID(AA))(
+    concat(" | A(A)≠A glyph:")(concat(BSTR(W_AA_NEQ_A))(
+    concat(" | A(A)≡id truth (cancels to the hole FORM):")(BSTR(W_AA_IS_ID))))))))
+glyph MAIN = SEQ(print(LINE1))(SEQ(print(LINE2))(print(LINE3)))

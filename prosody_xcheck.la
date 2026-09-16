@@ -1,0 +1,24 @@
+# prosody_xcheck.la — HOST-SIDE cross-check: the prosodic register's durations are
+# phonym.la's durations. Imports the renderer and asserts FST(PHONYM(t)) == PDUR(t)
+# for the nine primitives and one compound per mode. Kept out of prosody.la so that
+# module's VM leg does not carry phonym.la's codegen cost. A failure NAMES the form.
+import("phonym.la")      # PHONYM PHON_PRIM PRIM SYN CON DIR CONT MC FST
+import("prosody.la")     # PROSODY PDUR PCONTOUR
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph BSTR = la b. b("T")("F")
+glyph NILx  = la n. la c. n
+glyph CONSx = la h. la t. la n. la c. c(h)(t)
+glyph Px = la nm. PRIM(nm)
+glyph LV = Px("LOVE")
+glyph RC = Px("RECOGNITION")
+glyph PROBES =
+  CONSx(Px("BEING"))(CONSx(Px("RECOGNITION"))(CONSx(Px("LOVE"))(CONSx(Px("SELF"))(CONSx(Px("RELATION"))(
+  CONSx(Px("VOID"))(CONSx(Px("BECOMING"))(CONSx(Px("FORM"))(CONSx(Px("DEPTH"))(
+  CONSx(SYN(LV)(RC))(CONSx(CON(LV)(RC))(CONSx(DIR(LV)(RC))(CONSx(CONT(LV)(RC))(CONSx(MC(LV))(NILx))))))))))))))
+glyph AGREE = la t. int_eq(FST(PHONYM(t)))(PDUR(t))
+glyph FIRSTBAD = Z(la self. la l. l("")(la h. la t. IF(AGREE(h))(la _. self(t))(la _.
+    concat(SPEC(h))(concat(" phonym=")(concat(int_to_str(FST(PHONYM(h))))(concat(" prosody=")(int_to_str(PDUR(h)))))))))
+glyph BAD = FIRSTBAD(PROBES)
+glyph N = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))(PROBES)
+glyph MAIN = print(concat("PROSODY-XCHECK phonym durations agree ")(concat(int_to_str(N))(concat("/")(concat(int_to_str(N))(concat(":")(concat(BSTR(str_eq(BAD)("")))(IF(str_eq(BAD)(""))(la _. "")(la _. concat(" OFFENDER=")(BAD)))))))))

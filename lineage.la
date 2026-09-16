@@ -1,0 +1,119 @@
+# ═══════════════════════════════════════════════════════════════════
+#  lineage.la — THE ETYMOLOGICAL REGISTER (register stack §2.1, directive 2026-09-15)
+#
+#  WHAT. Every glyph already carries its derivation (MONO = ren + etym). Here the
+#  derivation becomes a FIRST-CLASS OBJECT of its own register: a Lineage is the
+#  flat hash-consed def list glyphdag.la already computes (DAG), with its own
+#  canonicalization (the def string) and its own validity predicate. Nothing is
+#  rebuilt: glyphdag's DAG/DECOMP are the mechanism; this file NAMES the register
+#  and GATES it.
+#
+#  GATE  gate_lineage_recoverable — for every catalogue glyph the identity is
+#        recovered FROM THE LINEAGE ALONE: NORMK(DECOMP(DAG(etym))) == NORMK(etym).
+#        RED PATH: LINEAGE_OK refuses a lineage whose def points at a parent that
+#        does not precede it (a broken parent pointer) and NAMES the def. The
+#        fixture "BEING;⊗0.7" is refused in-file, so the refusal is witnessed
+#        every run, not assumed.
+#
+#  META-REGISTER  lineage_of_lineage: the register's own glyph G_ETYM has a valid,
+#        recoverable lineage (the register applied to itself), and Δ_E(Δ_E) ≡ Δ_E
+#        holds AT THE TRUTH LEVEL (NIS: ↻↻G ≡ ↻G by canon's ↻-idempotence) while
+#        ↻↻G and ↻G stay DISTINCT AT THE GLYPH LEVEL (CANON keeps the route).
+#        Both are printed; the two-register structure is the finding, not a defect.
+#
+#  ★ EVIDENTIAL TAGS ON THIS FILE'S OWN CLAIMS (the evidential register applied here):
+#     [W] recoverability + refusal      — gated below, RED path in-file
+#     [A] G_ETYM = ▷(RECOGNITION,⊂(BECOMING,DEPTH)) — DECLARED ("recognition directed at
+#         becoming held in depth": the derivation history). ★ The first declaration,
+#         ▷(RECOGNITION,VOID), COLLIDED with the lexicon's Question (opgrammar.la GRAM
+#         ">26") — caught by regcollide.py; monosemy forbids it. The architect
+#         ratifies; every gate here holds for any distinct, collision-free choice.
+#  ★ NOT A DUPLICATE OF ancestry.la (M11b): that module WALKS a node generation by
+#     generation and names the dyad among the leaves; this one makes the flat hash-consed
+#     lineage a first-class object with a validity predicate and a recoverability gate.
+#     Both read the same six-constructor nodes; neither re-implements the other.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ═══════════════════════════════════════════════════════════════════
+import("canon.la")      # PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM GLYPH IF TRUE FALSE AND
+import("glyphdag.la")   # DAG DECOMP NODES TSIZE SPLIT HEAD3 DROP3 UPTO AFTERC IS_BIN MC_S LEN NTH NILc CONSc PAIRc FSTc SNDc
+
+# ★ RE-EXPORTS (the base surface). tiny_host loads every import OCCURRENCE's whole tree
+#   into a FIXED 1024-entry glyph table (tiny_host.c:332; registry_tracker hit it at 1043,
+#   status board 2026-09-11). So the registers above this one import lineage.la ALONE and
+#   take canon/glyphdag through it, instead of each loading canon+glyphdag again.
+#   Directive §8 asked for exactly this check before adding registers. Census: regcensus.py.
+export LINEAGE RECOVER LINEAGE_OK G_ETYM SEALc LIN_CAT Z TRUE FALSE NOT AND OR IF PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE LE MAX AUTO_OK HAS_PREFIX DEPTH TDEPTH MKMODE DCOLLAPSE KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH SR_FOR SR_WITH DAG DECOMP NODES TSIZE SPLIT HEAD3 DROP3 UPTO AFTERC IS_BIN MC_S SYN_S CON_S DIR_S CONT_S LEN NTH LAST NILc CONSc PAIRc FSTc SNDc JOIN APPEND
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph SEALc = la et. MONO(CANON(et))(et)
+glyph P = la nm. PRIM(nm)
+
+# ── the register's own glyph (declared, [A]) ──
+glyph G_ETYM = SEALc(DIR(P("RECOGNITION"))(CONT(P("BECOMING"))(P("DEPTH"))))
+
+# ── THE LINEAGE OBJECT and its recovery ──
+glyph LINEAGE = la g. DAG(ETYM(g))                 # def0;def1;…;root — hash-consed
+glyph RECOVER = la form. NORMK(DECOMP(form))       # identity from the lineage ALONE
+
+# ── VALIDITY: every parent pointer precedes its def. Returns "" or the OFFENDING def. ──
+glyph PARENT_OK = la i. la s. lt(str_to_int(s))(i)
+glyph DEF_OK = la i. la def. (la h3.
+    IF(IS_BIN(h3))(la _. (la body. AND(PARENT_OK(i)(UPTO(".")(body)))(PARENT_OK(i)(AFTERC(".")(body))))(DROP3(def)))
+   (la _. IF(str_eq(h3)(MC_S))(la _. PARENT_OK(i)(DROP3(def)))(la _. TRUE)))(HEAD3(def))
+glyph LINEAGE_OK = la form. Z(la self. la ds. la i.
+    ds("")(la h. la t. IF(DEF_OK(i)(h))(la _. self(t)(add(i)(1)))(la _. h)))(SPLIT(";")(form))(0)
+
+# ── THE CATALOGUE: canon's self-relations + κ + 𝓡 + this register's own glyph ──
+glyph LIN_CAT =
+  CONSc(PAIRc("KAPPA")(SEALc(KAPPA)))(
+  CONSc(PAIRc("REVAL")(SEALc(REVAL)))(
+  CONSc(PAIRc("SR_TO")(SEALc(SR_TO)))(
+  CONSc(PAIRc("SR_ABOUT")(SEALc(SR_ABOUT)))(
+  CONSc(PAIRc("SR_AS")(SEALc(SR_AS)))(
+  CONSc(PAIRc("SR_BY")(SEALc(SR_BY)))(
+  CONSc(PAIRc("SR_FROM")(SEALc(SR_FROM)))(
+  CONSc(PAIRc("SR_THROUGH")(SEALc(SR_THROUGH)))(
+  CONSc(PAIRc("SR_FOR")(SEALc(SR_FOR)))(
+  CONSc(PAIRc("SR_WITH")(SEALc(SR_WITH)))(
+  CONSc(PAIRc("SHARED")(SEALc(SYN(KAPPA)(KAPPA))))(
+  CONSc(PAIRc("G_ETYM")(G_ETYM))(
+  NILc))))))))))))
+
+# per-entry: recoverable? valid?  — a failure NAMES the entry
+glyph REC1 = la e. str_eq(RECOVER(LINEAGE(SNDc(e))))(NORMK(ETYM(SNDc(e))))
+glyph VAL1 = la e. str_eq(LINEAGE_OK(LINEAGE(SNDc(e))))("")
+glyph FIRSTBAD = la pred. Z(la self. la l. l("")(la h. la t. IF(pred(h))(la _. self(t))(la _. FSTc(h))))
+glyph BAD_REC = FIRSTBAD(REC1)(LIN_CAT)
+glyph BAD_VAL = FIRSTBAD(VAL1)(LIN_CAT)
+
+# ── RED-PATH FIXTURE, refused in-file: a def whose parent index (7) does not precede it ──
+glyph BROKEN = "BEING;⊗0.7"
+glyph BROKEN_OFF = LINEAGE_OK(BROKEN)
+
+# ── sharing is visible in the register: the DAG is smaller than the unfolded tree ──
+glyph SHARED_T = SYN(KAPPA)(KAPPA)
+glyph SHARING = AND(lt(NODES(DAG(SHARED_T)))(TSIZE(SHARED_T)))(int_eq(NODES(DAG(SHARED_T)))(4))
+
+# ── META-REGISTER: Δ_E applied to itself ──
+glyph MCG  = MC(ETYM(G_ETYM))
+glyph MMCG = MC(MCG)
+glyph FIX_TRUTH = NIS(MMCG)(MCG)                            # ↻↻G ≡ ↻G   (identity level)
+glyph FIX_GLYPH = str_eq(CANON(MMCG))(CANON(MCG))           # ↻↻G = ↻G ? (glyph level: F, route kept)
+
+glyph LINE1 =
+    concat("LINEAGE catalogue=")(concat(int_to_str(LEN(LIN_CAT)))(
+    concat(" | recoverable from lineage alone:")(concat(BSTR(str_eq(BAD_REC)("")))(
+    concat(IF(str_eq(BAD_REC)(""))(la _. "")(la _. concat(" OFFENDER=")(BAD_REC)))(
+    concat(" | every parent precedes its def:")(concat(BSTR(str_eq(BAD_VAL)("")))(
+    concat(IF(str_eq(BAD_VAL)(""))(la _. "")(la _. concat(" OFFENDER=")(BAD_VAL)))(
+    concat(" | broken-parent fixture refused:")(concat(BSTR(str_eq(BROKEN_OFF)("⊗0.7")))(
+    concat(" OFFENDER=")(concat(BROKEN_OFF)(
+    concat(" | sharing visible (DAG<tree, 4 defs):")(BSTR(SHARING))))))))))))))
+glyph LINE2 =
+    concat("LINEAGE meta: G_ETYM=")(concat(REN(G_ETYM))(
+    concat(" lineage=")(concat(LINEAGE(G_ETYM))(
+    concat(" | Δ_E(Δ_E)≡Δ_E truth:")(concat(BSTR(FIX_TRUTH))(
+    concat(" glyph:")(concat(BSTR(FIX_GLYPH))(
+           " (distinct routes, one identity: the two-register structure)"))))))))
+glyph MAIN = SEQ(print(LINE1))(print(LINE2))

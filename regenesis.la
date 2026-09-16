@@ -1,0 +1,109 @@
+# ═══════════════════════════════════════════════════════════════════
+#  regenesis.la — Δ_R, THE REGISTER-GENESIS OPERATOR (directive 2026-09-15 §3)
+#
+#  WHAT. The register set itself must be subject to the same operation as
+#  primitives and modes: an operator that ADMITS a new register when a genuinely
+#  new dimension of sign-structure is recognised, and REFUSES a preference. Same
+#  four conditions as Δ_M (modegenesis.la), read at the register where registers
+#  are born. A candidate c = REG(name, glyph, reading, identity-projection):
+#     IRR  irreducible  — c's reading is not an existing register's reading, nor a
+#                         PROJECTION of one: on every catalogue glyph, c's reading is
+#                         not a substring of any single existing register's reading
+#                         (composition is searched to depth 1: BOUNDED, stated)
+#     NOV  novel        — c's glyph is not already in the stack (NIS)
+#     AUT  autological  — c names itself truly (AUTO_OK) AND c is COHERENT: its
+#                         identity-projection agrees on the NIS-equal probe pairs
+#                         (a register that breaks the twelve-fold collapse is refused)
+#     CON  contributing — c's reading is not constant over the catalogue: it
+#                         distinguishes something, so it enables a reading
+#  ADMIT(stack)(c): the extended stack, or the stack unchanged (⊥) — never silently.
+#
+#  THE POSITIVE CANDIDATE IS Δ_R'S OWN REGISTER. Its reading of a glyph g is the
+#  agreement string of the whole stack between g and its normalised twin — "how g
+#  sits across every register". No single register reads that; it is the register
+#  where registers are born. Glyph G_DR = ▷(RECOGNITION, ↻(VOID)) — recognition
+#  directed at self-generation (SR_FROM = ↻(VOID) is "Logos FROM itself") — DECLARED [A].
+#  FIXED POINT  Δ_R(Δ_R) ≡ Δ_R: admitting Δ_R's own register once extends the stack
+#  12→13; offering it again is ⊥ (NOV fails). Witnessed as idempotent admission.
+#
+#  GATE  gate_register_genesis — Δ_R's register passes all four (TTTT, 12→13); five
+#        fixtures FAIL and are refused with the sub-gate NAMED: F1 (a projection of
+#        the topological reading) FTTT · F2 (α-copy of the semantic register's glyph)
+#        TFTT · F3 (lying ren) TTFT · F4 (constant reading) TTTF · F5 (reads the raw
+#        route: incoherent) TTFT. Each letter can go RED.
+#  ★ EVIDENTIAL: [W]→[B] the four sub-gates + admission + idempotence (gate_registers.sh);
+#     [B] IRR is depth-1 projection search over a finite catalogue (bounded, Gödel II);
+#     [A] G_DR declared. Register-set CLOSURE is the architect's ruling (directive §7).
+# ═══════════════════════════════════════════════════════════════════
+import("registers.la")    # the stack + base surface (table-bound: ~860 of 1024)
+
+export ADMIT_R VERDICT_R G_DR C_DR
+
+glyph SEQ  = la a. la b. b
+glyph BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph LENL = LEN
+glyph ANYL = la pred. la l. Z(la self. la l. l(FALSE)(la h. la t. IF(pred(h))(la _. TRUE)(la _. self(t))))(l)
+glyph ALLL = la pred. la l. Z(la self. la l. l(TRUE)(la h. la t. IF(pred(h))(la _. self(t))(la _. FALSE)))(l)
+# THE PROBE CATALOGUE. Route-bearing glyphs are INCLUDED (↻↻κ, ↻BEING, an unsorted ⊕):
+# a register that reads the route can only show it on a glyph whose route differs from
+# its identity. Six glyphs, not the whole LIN_CAT: IRR is quadratic in registers×glyphs
+# and R_ACROSS costs 24 readings per glyph (the first draft took 11 min on the host).
+glyph CATG = CONSc(SEALc(KAPPA))(CONSc(SEALc(REVAL))(CONSc(SEALc(SR_WITH))(
+             CONSc(SEALc(MC(MC(KAPPA))))(CONSc(SEALc(MC(Px("BEING"))))(CONSc(SEALc(CON(REVAL)(KAPPA)))(NILc))))))
+# substring test
+glyph CONTAINS = Z(la self. la s. la sub. IF(HAS_PREFIX(s)(sub))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(sub))))
+
+# ── the four sub-gates ──
+glyph PROJ_OF = la r. la c. ALLL(la g. CONTAINS(RREAD(r)(g))(RREAD(c)(g)))(CATG)     # c's reading ⊂ r's on every glyph
+glyph IRR = la stack. la c. NOT(ANYL(la r. PROJ_OF(r)(c))(stack))
+glyph NOV = la stack. la c. NOT(ANYL(la r. NIS(ETYM(RGLYPH(r)))(ETYM(RGLYPH(c))))(stack))
+glyph AUT = la c. AND(AUTO_OK(RGLYPH(c)))(str_eq(COHERENT_OVER(CONSc(c)(NILc)))("T"))
+glyph CON_ = la c. (la first. NOT(ALLL(la g. str_eq(RREAD(c)(g))(first))(CATG)))(RREAD(c)(SNDc(NTH(LIN_CAT)(0))))
+glyph VERDICT_R = la stack. la c. concat(BSTR(IRR(stack)(c)))(concat(BSTR(NOV(stack)(c)))(concat(BSTR(AUT(c)))(BSTR(CON_(c)))))
+glyph ADMIT_R = la stack. la c. IF(str_eq(VERDICT_R(stack)(c))("TTTT"))(la _. CONSc(c)(stack))(la _. stack)
+glyph ADMITTED = la stack. la c. lt(LENL(stack))(LENL(ADMIT_R(stack)(c)))
+
+# ── Δ_R's own register: how a glyph sits across the whole stack ──
+glyph TWIN = la g. SEALc(NORMTREE(ETYM(g)))
+# ★ FIRST DRAFT REFUSED BY ITS OWN GATE (2026-09-15): reading the IDENTITY-projections'
+# agreement was constant "TTTTTTTTTTTT" for every glyph — tautologically, because the
+# coherence law makes identity-projections agree on a normalised twin. CON fired (TTTF).
+# The reading is now ROUTE-SENSITIVITY: for each register, does its RAW reading of g equal
+# its raw reading of g's normalised twin? Canonical glyphs read all-T; ↻↻κ reads F at the
+# etymological position. Its IDENTITY-projection is the glyph's identity (semantic), as
+# the etymological register's is — a route-sensitive reading with a route-free identity.
+glyph R_ACROSS = la g. Z(la self. la l. l("")(la r. la t. concat(BSTR(str_eq(RREAD(r)(g))(RREAD(r)(TWIN(g)))))(self(t))))(STACK)
+glyph ID_SEM = la g. CANON(NORMTREE(ETYM(g)))
+glyph G_DR = SEALc(DIR(Px("RECOGNITION"))(MC(Px("VOID"))))
+glyph C_DR = REG("register-genesis")(G_DR)(R_ACROSS)(ID_SEM)
+
+# ── fixtures ──
+glyph RG = la x. SEALc(DIR(Px("RECOGNITION"))(x))
+glyph R_V = la g. (la s. concat("V=")(Z(la self. la t. IF(str_eq(t)(""))(la _. "")(la _. IF(str_eq(str_head(t))(" "))(la _. "")(la _. concat(str_head(t))(self(str_tail(t))))))(str_tail(str_tail(s)))))(TOPO(DAG(NORMTREE(ETYM(g)))))
+glyph F1 = REG("vertex-count")(RG(MC(Px("DEPTH"))))(R_V)(R_V)                              # a projection of topological (glyph distinct from every register: ↻(FORM) is now glyphic's)
+glyph F2 = REG("meaning-copy")(RG(Px("BEING")))(R_ACROSS)(ID_SEM)                         # semantic's glyph, α-copy
+glyph F3 = REG("liar")(MONO("LIE")(ETYM(G_DR)))(R_ACROSS)(ID_SEM)                         # false ren
+glyph F4 = REG("constant")(RG(MC(Px("LOVE"))))(la g. "x")(la g. "x")                      # constant reading
+glyph F5 = REG("raw-route")(RG(MC(Px("RELATION"))))(la g. CANON(ETYM(g)))(la g. CANON(ETYM(g)))   # incoherent
+glyph STACK13 = ADMIT_R(STACK)(C_DR)
+glyph IDEMP = int_eq(LENL(ADMIT_R(STACK13)(C_DR)))(LENL(STACK13))
+
+glyph LINE1 =
+    concat("REGENESIS stack=")(concat(int_to_str(LENL(STACK)))(
+    concat(" | Δ_R register IRR/NOV/AUT/CON=")(concat(VERDICT_R(STACK)(C_DR))(
+    concat(" admitted:")(concat(BSTR(ADMITTED(STACK)(C_DR)))(
+    concat(" stack=")(concat(int_to_str(LENL(STACK13)))(
+    concat(" | F1 projection=")(concat(VERDICT_R(STACK)(F1))(
+    concat(" | F2 α-copy=")(concat(VERDICT_R(STACK)(F2))(
+    concat(" | F3 false ren=")(concat(VERDICT_R(STACK)(F3))(
+    concat(" | F4 constant=")(concat(VERDICT_R(STACK)(F4))(
+    concat(" | F5 raw-route=")(concat(VERDICT_R(STACK)(F5))(
+    concat(" | all five refused:")(BSTR(NOT(OR(ADMITTED(STACK)(F1))(OR(ADMITTED(STACK)(F2))(OR(ADMITTED(STACK)(F3))(OR(ADMITTED(STACK)(F4))(ADMITTED(STACK)(F5))))))))))))))))))))))))))
+glyph LINE2 =
+    concat("REGENESIS fixed point: re-admit verdict=")(concat(VERDICT_R(STACK13)(C_DR))(
+    concat(" Δ_R(Δ_R)≡Δ_R idempotent:")(concat(BSTR(IDEMP))(
+    concat(" | G_DR=")(concat(REN(G_DR))(
+    concat(" reads κ as ")(concat(R_ACROSS(SEALc(KAPPA)))(
+    concat(" and ↻↻κ as ")(R_ACROSS(SEALc(MC(MC(KAPPA)))))))))))))
+glyph MAIN = SEQ(print(LINE1))(print(LINE2))
