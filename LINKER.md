@@ -29,7 +29,30 @@ cross-track request to track A, and it would make the chain LA end to end.
 | `link_test_abs.asm` | `R_X86_64_32` — a 32-bit absolute (`mov esi, msg`). |
 | `link_test_s32.asm` | entry for the `32S` case; links against a **real gcc** object and exits 30 = `table[2]`. |
 | `link_test_start.asm` | entry for the mixed asm + C link; exits 43 = `compute(21)`. |
-| `link_test_odd.asm` | `.weird`, `SHF_ALLOC` — a section the layout must REFUSE. |
+
+> ⚠ **HONEST COVERAGE NOTE, 2026-09-17 — the three rows above (`abs`, `s32`, `start`) claimed coverage that was NOT
+> being obtained, and the correction is worth more than the fix.** `gate_link_reloc.sh` assembled 8 fixture objects and
+> consumed 12: **`link_test_abs.o`, `link_test_s32.o`, `link_test_start.o` and `link_test_odd.o` had no producing `nasm`
+> line anywhere in the repo.** Their `.asm` are all tracked; their `.o` are git-ignored build products, so in a worktree
+> they survived as **2026-07-18** leftovers and this gate passed for two months, while in the clean checkout an audit
+> runs they were ABSENT. Fixed by `aea9d81` (four `nasm` lines + a fixture precondition that names a missing fixture
+> instead of dying silently under `set -e`).
+>
+> **What that cost, stated per site rather than in aggregate, because the sites differ in KIND:**
+> - `abs` (:426) and `s32` (:433) reach `ld` through `cmp_text_against_ld`, whose `ld … || { echo "SKIP …"; return 0; }`
+>   turns a **missing input** into *"ld could not link the pair"* — which reads as a tool limitation. So the
+>   `R_X86_64_32` and `R_X86_64_32S` byte-identity assertions **had never once run in a clean checkout.** They are the
+>   assertions whose own comment (`:424`) says why they exist: *"a wrong base address reads four plausible bytes and the
+>   program exits CLEANLY with the wrong number; byte-identity catches that, 'it ran' would not."* For two months the
+>   guard against a clean-looking wrong answer was producing a clean-looking non-answer.
+> - `odd` (:453) was an unguarded `cp`: under `set -e` it exited with **no FAIL line**, which is what killed the
+>   2026-09-17 full audit at 117 PASS / 0 FAIL — a false green at the verdict layer, caught only by the runner's rc file.
+> - `start` has 13 sites, the first unguarded one a bare `ld` at **:495** — 42 lines past `odd`, i.e. the next abort.
+>
+> **First real execution: 2026-09-17, rc=0, 278 s, PASS 2 / FAIL 0 / SKIP 0** on a fresh `git archive` checkout with no
+> leftover `.o`, running the committed bytes (`69cba7a9791d4c6f`). The two SKIPs became real assertions and they PASS —
+> the gate's own PASS line now names `32/32S` among the relocation types it proves byte-identical to `ld`.
+| `link_test_odd.asm` | `.weird`, `SHF_ALLOC` read-only — a section the layout must **PLACE BY ITS FLAGS**, into the R segment. ⚠ **Corrected 2026-09-17: this row previously described the layout as REJECTING such a section — retired behaviour, documented as current. The retracted wording is deliberately not reproduced here, so a scan for it cannot match this corrected row.** The old default layout refused any allocatable section it could not name; it now groups allocatable sections by PERMISSION (RX/R/RW) as `ld` does, so `.weird` is placed, not refused (`gate_link_reloc.sh:472` and its assertion at `:495`). The refusal MECHANISM is not lost, it moved to where it is still correct: with an explicit `--script`, a section no segment names is still refused (`gate_link_script`, `.note.mine`), and by-flags placement is proven end to end in `gate_link_nsec` (`.mydata`, RW). |
 | `link_test_plt.asm` | same as A but `wrt ..plt`, so nasm emits PLT32 — what real toolchains actually produce. |
 | `link_test_dup.asm` | defines BOTH `_start` and `greet`, so linking it against B is a duplicate and *nothing else*. |
 | `link_test_script.ld` | a real linker script, base **0x500000** — deliberately not the built-in 0x401000, so a default-address image cannot pass by accident. |
