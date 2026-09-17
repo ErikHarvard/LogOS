@@ -20,6 +20,25 @@
 > at `faeb963` it holds 47 open items and 13 M11 mentions, register-stack 47 and 12, **track-e 48 and 0**.
 > The three ledgers differ in their ITEM SETS, not just their pins. Full table, predicates and the
 > instrument's own false-verdict retraction: `~/logos-coord/handoff/2026-09-17-METANOE-repin47/REPIN47.md`.
+>
+> ⚑ **THE CLOSED SET WAS THEN RE-DERIVED TOO, 2026-09-17** (METANOĒ, dispatched; same read-only bound,
+> ELENCHOS holding the deep lease). **12 of its 13 verification lines hold**, several to the exact line
+> they cite — `psc_spec.la:124–125` still carries the `PMODE_REC` test, `build.sh` still pins
+> `⊂=2`/`⊂-now-used OK` and `G3 ops ∂δγρ𝔄 in catalogue=TTTTT`, `ladder.la` still has 0 mentions of the
+> Substitution Test, and the white paper still matches its cited sha `98beeff4ee45` with The Ledger set
+> as a `longtable` at its cited `:7422`. **One citation had drifted** and is corrected: the
+> self-invocation ruling's board reference, :20963 → **:20964**, re-located by text. **One line is now
+> marked SUPERSEDED**: that item's ⚑ "OPEN" reason sits directly above the ✔ ruling that resolved it —
+> the append-never-rewrite convention working, but unmarked it read as live.
+>
+> ★★ **AND THE REAL FINDING OF THE CLOSED SET IS AN ABSENCE, NOT A DRIFT: 31 of the 43 closed items
+> carry NO verification line at all.** By box: **25 of 31 `[✓]`**, 1 of 7 `[~]`, **all 3 `[!→]`**, and
+> **both `[!]`**. Against 47 of 47 open items that carry one. So this ledger's evidence convention was
+> applied almost exclusively where the risk is LOWEST: a stale reason on an open item under-claims
+> (the work may already be done — that is how M11b was found), while a `[✓]` with no recorded check
+> **over**-claims, and a false completion is the costlier direction by far. **No checkbox was flipped
+> and none should be flipped from a static read** — reopening an item is a ruling, and 25 of these
+> would need a gate run behind them before anyone could say which way they go.
 
 Everything still required for the language to be complete **by Erik's own stated
 criteria**, ordered so that each tier unblocks the next. Assembled from: five
@@ -803,7 +822,7 @@ every item below cites the ruling rather than inferring one.
   criterion it can fail, or demoting the claim it was supposed to support.
   *Paper: Ledger row "Nine ungated modules" `[B]`. The `[B]`→`[W]` move is
   available for the eight; the ninth is what still holds the row open.*
-  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): crossmodal is still pinned as a REPORT, not a result (build.sh's CROSSMODAL block); the other eight run. The residue is unchanged.
+  ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — PARTIAL** (METANOĒ, against kernel-k1 `faeb963`): crossmodal is still pinned as a REPORT, not a result (build.sh's CROSSMODAL block); the other eight run. The residue is unchanged.
 - `[ ]` **Three gates that cannot go RED.** (a) phonetic α=1 is a `grep` for a
   sentence the module prints unconditionally; (b) the 8/8 phonetic injectivity
   gate's concept list contains no two entries sharing a leaf-set, so the
@@ -874,22 +893,22 @@ registers. `trimono.la` now gates all three. What remains:
 - `[~]` **`⊗(A,A)` byte-identical to `A`** — fixed and verified on a copy
   (mode-characteristic contour, spec :3017(iv) "the mode is absorbed into the
   prosodic contour"). **Awaiting the build to apply.**
-  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the spec register is gated both ways: build.sh's phonetic R-A block requires `SPEC_N(⊗(LOVE,LOVE))` to stay distinct and `SPEC_N(⊗(∃,∃))` to be ∃. No gate compares the synthesised PCM of ⊗(A,A) with A's, which is what this item names.
+  ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — PARTIAL** (METANOĒ, against kernel-k1 `faeb963`): the spec register is gated both ways: build.sh's phonetic R-A block requires `SPEC_N(⊗(LOVE,LOVE))` to stay distinct and `SPEC_N(⊗(∃,∃))` to be ∃. No gate compares the synthesised PCM of ⊗(A,A) with A's, which is what this item names.
 - `[✓]` **Θ_P is mode-blind** — ⊗/⊕/▷/⊂ give one peak-set where `Θ_V` carries a
   mode field. Fix verified on a copy (`PINV = mode : peaks`, mirroring `VINV`).
   **Awaiting the build to apply.**
-  ✔ **Verified 2026-09-10 — DONE** (METANOĒ, against kernel-k1 `fcaaa23`): done in `9112c18` (08-27), one minute after this item landed. `psc_spec.la` defines `PINV` (mode : peaks) and `PMODE_REC`, with a META_DEBUG test at `psc_spec.la:124–125`, and build.sh's PSC* gate requires every glyph to PASS and "module VERIFIED". A mode-blind Θ_P would fail that test *(derived; not run)*.
+  ✔ **Verified 2026-09-10, re-derived 2026-09-17 — DONE** (METANOĒ, against kernel-k1 `faeb963`): done in `9112c18` (08-27), one minute after this item landed. `psc_spec.la` defines `PINV` (mode : peaks) and `PMODE_REC`, with a META_DEBUG test at `psc_spec.la:124–125`, and build.sh's PSC* gate requires every glyph to PASS and "module VERIFIED". A mode-blind Θ_P would fail that test *(derived; not run)*.
 - `[~]` **▷ has no acoustic signature** — the SENTENCE operator. Sentences could
   be spoken and never parsed back. Rate-carried marker built and verified with a
   control; duration preserved so the WAV gate holds. **Awaiting the build.**
-  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the marker exists: phonym.la's `DIRP` modulates the tail, and build.sh's R-D note records it as a periodic amplitude modulation with duration preserved. No gate fails if it is removed, and phonseq cannot detect it (see the `phonseq` item below).
+  ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — PARTIAL** (METANOĒ, against kernel-k1 `faeb963`): the marker exists: phonym.la's `DIRP` modulates the tail, and build.sh's R-D note records it as a periodic amplitude modulation with duration preserved. No gate fails if it is removed, and phonseq cannot detect it (see the `phonseq` item below).
 - `[✓]` **★ ⊂ IS NEVER USED** (measured 2026-08-23, `ablate.la`). Across all 79
   published entries: ⊗=58, ⊕=4, ▷=26, **⊂=0**, ↻=2. The closure is claimed over
   five modes and exercised, lexically, over four. The fix is CONCEPTS genuinely
   formed by containment — not a token entry added to close a count. Ablation shows
   the other non-⊗ modes ARE load-bearing; ⊂ is untested because nothing uses it,
   which is a fact about the lexicon rather than about the operator.
-  ✔ **Verified 2026-09-10 — RETIRED AS WRITTEN** (METANOĒ, against kernel-k1 `fcaaa23`): stale when it landed. `a9e27e8`, the commit that carried this item, also set Bad = `c36` (⊂). At HEAD ⊂ is used twice (Bad `c36`, Because `c75`), and build.sh pins `⊂=2` and `⊂-now-used OK` (the ablate step), as buildla.la does.
+  ✔ **Verified 2026-09-10, re-derived 2026-09-17 — RETIRED AS WRITTEN** (METANOĒ, against kernel-k1 `faeb963`): stale when it landed. `a9e27e8`, the commit that carried this item, also set Bad = `c36` (⊂). At HEAD ⊂ is used twice (Bad `c36`, Because `c75`), and build.sh pins `⊂=2` and `⊂-now-used OK` (the ablate step), as buildla.la does.
 - `[ ]` **The elision layer** — 4 of 79 entries diverge from the codex by VOWEL
   ELISION (Think, Gratitude, Question, Past). The codex prints surface forms; the
   Operator Phonology generates underlying ones. Needs a phonological layer, not a
@@ -1020,7 +1039,7 @@ registers. `trimono.la` now gates all three. What remains:
   =1124 — those compounds share BEING's unmodulated head, so the statistic was
   reading the phonym's own envelope, not the modulation. The separation is
   constructible in principle and remains open in fact.
-  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the dead branch is fixed and gated (phonseq emits `DIR|SYN`). Separating ⊗ from ▷ acoustically is still not done.
+  ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — PARTIAL** (METANOĒ, against kernel-k1 `faeb963`): the dead branch is fixed and gated (phonseq emits `DIR|SYN`). Separating ⊗ from ▷ acoustically is still not done.
 - `[✓]` **A phonetic SEAL — BUILT AND GATED (`phonseal.la`).** ★ THIS ENTRY WAS
   STALE, and it was found by being cited: it was quoted as an open item, and the
   module it asks for already existed. `phonseal.la:53` defines
@@ -1251,7 +1270,7 @@ registers. `trimono.la` now gates all three. What remains:
   `catalogue=17` becomes `21`. G2 is unaffected (none is unary ↻, so the count
   stays 8) and `MAXD` is unaffected (all are depth 1, `NU_STAR` still 2), and
   `build.sh` pins G1 and G2 but not the catalogue count — verified.
-  ✔ **Verified 2026-09-10 — DONE** (METANOĒ, against kernel-k1 `fcaaa23`): `1f9429b` (09-09) added OP_DIFF/OP_BOUND/OP_COMP/OP_INTEG to CAT (17→21), plus G3. build.sh pins `FAMILYTREE catalogue=21 ` and `G3 … TTTTT`, and the landing recorded GREEN 21/TTTTT with a RED of 17/FFFTF. familytree.la, its two imports and the gate block are byte-identical from `1f9429b` to HEAD. buildla.la's companion marker, left at 17, is fixed as `fcaaa23`.
+  ✔ **Verified 2026-09-10, re-derived 2026-09-17 — DONE** (METANOĒ, against kernel-k1 `faeb963`): `1f9429b` (09-09) added OP_DIFF/OP_BOUND/OP_COMP/OP_INTEG to CAT (17→21), plus G3. build.sh pins `FAMILYTREE catalogue=21 ` and `G3 … TTTTT`, and the landing recorded GREEN 21/TTTTT with a RED of 17/FFFTF. familytree.la, its two imports and the gate block are byte-identical from `1f9429b` to HEAD. buildla.la's companion marker, left at 17, is fixed as `fcaaa23`.
 - `[ ]` **M11b — the ancestry walk.** `ANCESTRY(g)`: any glyph's complete line back
   through every COLLAPSE to the nine primitives and the dyad, *as a computation
   rather than an archive* (WP `§sec:compression:3150`). **Both pieces already
@@ -1301,10 +1320,10 @@ registers. `trimono.la` now gates all three. What remains:
   ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — OPEN** (METANOĒ, against kernel-k1 `faeb963`): `MONO` is still a plain pair (canon.la:63, canon_spec.la, archroot.la), and its etymology slot is not the glyphdag form.
 - `[~]` **The operators ∂δγρ𝔄 as glyphs** (ROADMAP:2567) — currently hardcoded
   dispatch. And the four missing audit operators |G|, |G_meta|, ς, μ.
-  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the glyph half was false when written. OP_DIFF…OP_INTEG and `RANKOF` (rank read from the glyph) have been in metaglyph.la since `4e9449b` (08-20), and this item was written 08-27. build.sh's item-2 block gates them, and ENTELECHEIA's W2 ran that block ok=1 on `3c1c16c`. Still open: the four audit operators |G|, |G_meta|, ς and μ exist nowhere.
+  ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — PARTIAL** (METANOĒ, against kernel-k1 `faeb963`): the glyph half was false when written. OP_DIFF…OP_INTEG and `RANKOF` (rank read from the glyph) have been in metaglyph.la since `4e9449b` (08-20), and this item was written 08-27. build.sh's item-2 block gates them, and ENTELECHEIA's W2 ran that block ok=1 on `3c1c16c`. Still open: the four audit operators |G|, |G_meta|, ς and μ exist nowhere.
 - `[✓]` **Self-verifying grammar** (ROADMAP:2564) — grammar recoverable as data;
   full self-parse (L3) still open.
-  ✔ **Verified 2026-09-10 — RETIRED AS WRITTEN** (METANOĒ, against kernel-k1 `fcaaa23`): false when it landed. `grammar_l3.la` and its build.sh gate (item 5, L3) arrived in `a9e27e8`, the same commit as this item, and this file marks L3 `[✓]` BOUNDED (ITEM 5 / L3, above).
+  ✔ **Verified 2026-09-10, re-derived 2026-09-17 — RETIRED AS WRITTEN** (METANOĒ, against kernel-k1 `faeb963`): false when it landed. `grammar_l3.la` and its build.sh gate (item 5, L3) arrived in `a9e27e8`, the same commit as this item, and this file marks L3 `[✓]` BOUNDED (ITEM 5 / L3, above).
 - `[ ]` **Self-meta-programming: the changed thing must become the running
   thing.** `selfprog`/`selfmod`/`selfopt` write, verify and adopt organs that
   are **never imported or executed**. Gate: a bundled organ-process ADOPTs an
@@ -1334,7 +1353,7 @@ registers. `trimono.la` now gates all three. What remains:
   ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — OPEN** (METANOĒ, against kernel-k1 `faeb963`): no module has a PROTO_AGENT glyph.
 - `[~]` **The Algebra of Naming's companions** — the Semiotic-Ontoglyphic Ladder
   (7 levels) and the Substitution Test; α is binary in code, graded in the paper.
-  ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the Ladder is built and gated: ladder.la (L0–L7), build.sh's ladder block, and buildla's "LADDER VERDICT ? YES". The Substitution Test does not exist (0 mentions in ladder.la). Graded α was not verified.
+  ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — PARTIAL** (METANOĒ, against kernel-k1 `faeb963`): the Ladder is built and gated: ladder.la (L0–L7), build.sh's ladder block, and buildla's "LADDER VERDICT ? YES". The Substitution Test does not exist (0 mentions in ladder.la). Graded α was not verified.
 - `[ ]` **The meta-word ablation gate** — remove one operator-glyph, assert a
   specific named derivation becomes underivable while the other four survive.
   Makes "a missing word is a missing thought" executable.
@@ -1409,10 +1428,11 @@ registers. `trimono.la` now gates all three. What remains:
   bounded target before building anything new. This is the discourse split
   again: prose says unbuilt, gate says otherwise, and the honest move is to
   narrow the claim rather than pick a winner.
-  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): it awaits a scope ruling, not a build. autopoiesis.la is gated at build.sh:4344 (the item's :3898); the item's own open question is whether that lineage meets the bounded target ruled on 09-06.
+  ⚑ **SUPERSEDED — was: Verified 2026-09-10 — OPEN** (METANOĒ; re-derived 2026-09-17 against kernel-k1 `faeb963`, and RESOLVED by the ✔ ruling on the next line, which is where this item's status actually lives): it awaited a scope ruling, not a build. autopoiesis.la is gated at build.sh:4344 (the item's :3898); the item's own open question is whether that lineage meets the bounded target ruled on 09-06.
   ✔ **DONE 2026-09-10: RULED BY THE GENERAL, the gated lineage IS the bounded form** (recorded by
   METANOĒ at The Lieutenant's instruction). The General's words, as The Lieutenant recorded them on the board
-  (`logos-status.md:20963`): *"Autopoiesis.la's gated lineage is the bounded form… the external gate
+  (`logos-status.md:20964` — re-located BY TEXT on 2026-09-17; the line cited until then, :20963,
+  had drifted to an unrelated entry, because the board grows above any line number): *"Autopoiesis.la's gated lineage is the bounded form… the external gate
   starts it, the lineage continues itself. That is precisely the bound."* The Lieutenant's message to
   METANOĒ relays one more sentence: *"Gate it as the bounded implementation and move on."* So the
   General's ruling answers the open question above: the lineage meets the bounded target ruled on
@@ -1619,7 +1639,7 @@ the etymology tracker, the dissolved branches).
   ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — OPEN** (METANOĒ, against kernel-k1 `faeb963`): the white paper (sha256 `98beeff4ee45…`) says "trimodal" 51 times and names a fourth (tactile) modality 3 times; tactile.la exists.
 - `[✓]` The Ledger is a plain `tabular` and cannot break across pages; at 37 rows
   it still fits, but the next batch overflows SILENTLY. Convert to `longtable`.
-  ✔ **Verified 2026-09-10 — DONE** (METANOĒ, against kernel-k1 `fcaaa23`): the white paper (sha256 `98beeff4ee45…`) sets §The Ledger in a `longtable` (:7422). No gate can see it, because the paper is outside the repo, so the change is not dated.
+  ✔ **Verified 2026-09-10, re-derived 2026-09-17 — DONE** (METANOĒ, against kernel-k1 `faeb963`): the white paper (sha256 `98beeff4ee45…`) sets §The Ledger in a `longtable` (:7422). No gate can see it, because the paper is outside the repo, so the change is not dated.
 - `[ ]` Every Tier-1/2 item above needs its paper counterpart at the right tag —
   an item is not done until code and paper agree.
   ⚑ **Verified 2026-09-10, re-derived 2026-09-17 — OPEN** (METANOĒ, against kernel-k1 `faeb963`): this is a standing rule, and it closes only when every Tier-1/2 item is done in both code and paper.
