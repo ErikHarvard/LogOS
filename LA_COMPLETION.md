@@ -1239,7 +1239,18 @@ registers. `trimono.la` now gates all three. What remains:
   ⚠ Scope correction: the paper calls this *"the query over the standing DAG"*.
   **There is no standing DAG.** `glyphdag.la` hash-conses **one form at a time**;
   the only registry is `CAT`. M11b is the walk; M11c is what makes it a registry.
-  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has an ANCESTRY glyph.
+  ⚑ **Re-verified 2026-09-17 — OPEN, on a CORRECTED reason** (METANOĒ, against kernel-k1 `faeb963`):
+  the previous reason — *"no module has an ANCESTRY glyph"*, true of `fcaaa23` (09-10) — is **false at
+  this tip**, 66 commits and 7 merges later. `585d9f5` merged M11b (`04005ab` is an ancestor of
+  `faeb963`); `ancestry.la` has 23 glyphs with `glyph ANCESTRY` at :47, exported at :48; `build.sh`
+  wires the block at :3132–:3160 (`ancestry_gate.la` at :3148). Found by ENTELECHEIA (Track B) and
+  re-derived here from git rather than taken on its word. **Still OPEN, and the reason is now the RUN,
+  not the absence:** every fact above is STATIC PRESENCE, and no witness of `ancestry_gate.la` on this
+  tip exists — the re-witness on the merged commit is owed (REQUESTS rows 50 and 207, "6a″") and the
+  full audit is what supplies it. Presence refutes an absence claim at its own register; it does not
+  license `[x]`. ⚠ The same pin is stale far more widely: all 47 open items in this file cite
+  `fcaaa23` across 49 citations, so other stated reasons may also have been falsified since. A pass
+  over the 47 against `faeb963` is owed and is scoped to the Lieutenant, not done here.
 - `[ ]` **M11c — auto-registration.** The paper's own stated bound: *"nothing yet
   registers a newly minted glyph automatically."* A mint must enter the registry
   without a hand edit. **Depends on: M11b.** Pairs with the coinage organ's owed
