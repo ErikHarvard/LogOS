@@ -77,6 +77,13 @@ cmp_text_against_ld() {   # $1=obj1 $2=obj2 $3=label
     rm -f cmp_ref cmp_ld.bin
 }
 
+# ★ set +e FOR THE FIXTURE BLOCK ONLY (ENTELECHEIA, 2026-09-17), restored immediately after it. Under errexit a
+#   failing `nasm` (a missing or broken .asm) kills this gate AT THE NASM LINE, with no FAIL line — the same
+#   invisible death as the cp that killed the 2026-09-17 audit, one layer earlier. Found by red-testing the
+#   precondition block below against a hidden source: the guard never ran, because nasm had already aborted.
+#   With errexit off here, every nasm failure still prints its own error, AND the precondition names every
+#   missing fixture at once with a FAIL line an instrument can see.
+set +e
 nasm -f elf64 link_test_a.asm -o link_test_a.o
 nasm -f elf64 link_test_dup.asm -o link_test_dup.o
 nasm -f elf64 link_test_plt.asm -o link_test_plt.o
@@ -85,6 +92,27 @@ nasm -f elf64 link_test_bss.asm -o link_test_bss.o
 nasm -f elf64 link_test_c.asm -o link_test_c.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
 nasm -f elf64 link_test_reldata.asm -o link_test_reldata.o
+# ★ ADDED 2026-09-17 (ENTELECHEIA) — four fixtures this gate CONSUMES had no producing line anywhere in the repo.
+#   Their .asm are all tracked; their .o are git-ignored build products (.gitignore:246 for odd). In a worktree they
+#   survived as 2026-07-18 leftovers, so the gate passed here for two months; in the clean checkout an audit runs
+#   they are ABSENT. The 2026-09-17 full audit died on the first of them. A consumer was committed without its producer.
+nasm -f elf64 link_test_odd.asm   -o link_test_odd.o
+nasm -f elf64 link_test_abs.asm   -o link_test_abs.o
+nasm -f elf64 link_test_s32.asm   -o link_test_s32.o
+nasm -f elf64 link_test_start.asm -o link_test_start.o
+set -e
+# ★ FIXTURE PRECONDITION — every .o this gate consumes must exist BEFORE any consumer touches it, and a missing one
+#   must NAME ITSELF. Why a block and not a comment: on 2026-09-17 the full audit died at :453's bare
+#   `cp link_test_odd.o link_in2.o`. Under `set -e` (:15) a failing cp exits with NO FAIL LINE, build.sh:2693 caught
+#   it with `|| ok=0`, and the designed `[ $ok -eq 1 ] || exit 1` ended the run rc=1 SEVENTY-FIVE lines later — so
+#   every ^FAIL-shaped instrument read the run as 0 FAIL. That is a false green at the verdict layer, and the run's
+#   rc file was the only thing that caught it. The two consumers inside cmp_text_against_ld were worse: its
+#   `ld … || { echo "SKIP …"; return 0; }` (:37) turns a missing INPUT into "ld could not link the pair", which reads
+#   as a tool limitation. This block converts all of it into one FAIL line at the cause.
+for _fx in a dup plt rw bss c b reldata odd abs s32 start; do
+    [ -f "link_test_$_fx.o" ] || { echo "FAIL  gate_link_reloc: fixture link_test_$_fx.o absent (source link_test_$_fx.asm: $( [ -f "link_test_$_fx.asm" ] && echo present || echo MISSING )) — a consumer with no producer"; _fxbad=1; }
+done
+[ "${_fxbad:-0}" -eq 0 ] || { echo "FAIL  gate_link_reloc: fixture preconditions unmet; refusing to run consumers against absent inputs"; exit 1; }
 ld -o link_ref link_test_a.o link_test_b.o
 objcopy -O binary --only-section=.text link_ref ldtext.bin
 
