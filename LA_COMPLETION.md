@@ -1,5 +1,26 @@
 # Lingua Adamica — the completion list
 
+> ⚑ **THE OPEN SET WAS RE-DERIVED AT `faeb963` ON 2026-09-17** (METANOĒ, dispatched; read-only, F held
+> the deep lease). All 47 `[ ]` items carried one verification line pinned to `fcaaa23` (2026-09-10),
+> 66 commits and 7 merges behind the tip, so every stated REASON was re-checked against committed
+> blobs. **41 reasons hold unchanged** — several confirmed verbatim at the line the item itself quotes.
+> **3 changed and are corrected in place**: M11b (`679b50c`), Identity Adequacy's "track-c only" clause,
+> and ν\*'s "data only" clause. **1 citation re-pinned** (the `cmp -s logos_app` line, drifted twice).
+> **3 are not settleable read-only** and say so: Rule 4 (needs the codex's definition, not a grep),
+> the calibration loop (needs outside data), and the standing paper-parity rule.
+> The 43 unchanged lines were **not** rewritten to say `faeb963`: this is a shared file whose own hook
+> says keep the edit small, `register-stack` has a pending merge that touches it, and a date-only
+> rewrite of 43 lines would bury the 3 real changes. This note is the pin for all of them.
+>
+> ★ **The finding that outweighs the re-pin: 12 of the 47 hold ONLY because Track F's work is
+> unmerged.** `syllabus.la`, `textcoherence.la`, `lexdepth.la`, `entendre.la`, `gramcomplete.la`,
+> `felicitylive.la`, `ontomorph.la`, `aware.la`, `protoagent.la`, `ablateop.la` sit on `register-stack`
+> — five of them with gates already written — and track-e carries the WOTS+/XMSS stack. A merge closes
+> or rewrites a dozen of these items, and this ledger cannot show that, because it is written per branch:
+> at `faeb963` it holds 47 open items and 13 M11 mentions, register-stack 47 and 12, **track-e 48 and 0**.
+> The three ledgers differ in their ITEM SETS, not just their pins. Full table, predicates and the
+> instrument's own false-verdict retraction: `~/logos-coord/handoff/2026-09-17-METANOE-repin47/REPIN47.md`.
+
 Everything still required for the language to be complete **by Erik's own stated
 criteria**, ordered so that each tier unblocks the next. Assembled from: five
 Fable sweeps of the codices, the phonetic/glyphic parity audit, the
@@ -822,7 +843,7 @@ every item below cites the ruling rather than inferring one.
   from the DAG rather than from the paper's prose — a count in prose is the
   defect class this file exists to catch. Then one gate per collision, each able
   to go red by re-introducing the collision it closed.
-  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): open on kernel-k1. The cross-population gate (`crosscoll.la`, M22) exists on track-c only (`7f22958`). Since this item was written, E16 §A declared Sky = Mystery and Move = Agency (`a9fb1b3`), and E16 §B ruled Death ≠ Past, a pair that stays open until Death is re-derived (`65e5431`).
+  ⚑ **Re-verified 2026-09-17 — OPEN, on a CORRECTED reason** (METANOĒ, against kernel-k1 `faeb963`): the item stays open, but the clause *"the cross-population gate (`crosscoll.la`, M22) exists on track-c only (`7f22958`)"* is **false at this tip** — `crosscoll.la` is present on kernel-k1 **and invoked by `build.sh`** at :5051 and :5086, brought by a merge since `fcaaa23`. What keeps the item open is the three collisions themselves, not the gate's absence. E16 §A declared Sky = Mystery and Move = Agency (`a9fb1b3`), and E16 §B ruled Death ≠ Past, a pair that stays open until Death is re-derived (`65e5431`).
 
 - `[!]` **★★ ENGINEERING SEAL 1 — THREE TYPE SYSTEMS, NO RULING. Needs Erik.**
   `LINGUA_ADAMICA.tex` §5012 specifies the **Ontic Type System**: every glyph
@@ -1270,7 +1291,7 @@ registers. `trimono.la` now gates all three. What remains:
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): nothing detects or promotes a recurring compression pattern.
 - `[ ]` **Executable minted operations (ν\*)** — minted operations are
   *expressible* as glyphs but cannot be wired back in as reduction rules.
-  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): `NU_STAR` is data only (metaglyph.la, familytree.la). No evaluator admits a minted operation as a reduction rule.
+  ⚑ **Re-verified 2026-09-17 — OPEN, one of its two clauses CORRECTED** (METANOĒ, against kernel-k1 `faeb963`): the old reason made two claims and **the first is false**. *"`NU_STAR` is data only"* — no: `metaglyph.la:119` is `MKOP = la g. APPLYOP(ETYM(g))  # operator-glyph → combinator` and `:123` is `NU_OP = MKOP(NU_STAR)  # ν* as a usable mode`, so a minted mode is already reachable **as a combinator**. The **second** clause is what keeps the item open and it still holds: **no evaluator admits a minted operation as a *reduction rule*.** Being applicable as a combinator is not being a rule of the reduction relation, and only the latter is what this item asks for.
 - `[ ]` **The Fractal Monoglyph** — depth recoverable by decomposition rather
   than surface marks. `DECOMP` recovers the tree from the single DAG form
   (witnessed), but the Ren string still grows linearly. Largely discharged by
@@ -1293,7 +1314,7 @@ registers. `trimono.la` now gates all three. What remains:
   must be byte-identical. **A self-revised successor would go RED on the
   system's own gate.** Minimal honest version: generation N applies one verified
   change to its own lineage source, recompiles, and begets a MODIFIED successor.
-  ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): build.sh still requires `cmp -s logos_app new_logos_secd.bin` (now :4383; the item says :3550), so a modified successor still fails the system's own gate.
+  ⚑ **Re-verified 2026-09-17 — OPEN, reason unchanged, CITATION re-pinned** (METANOĒ, against kernel-k1 `faeb963`): build.sh still requires `cmp -s logos_app new_logos_secd.bin`, so a modified successor still fails the system's own gate. The line is now **`build.sh:4527`** — it has drifted twice (the item said :3550, the 09-10 pass said :4383), which is why the reason is stated by its CONTENT and the line number is given as the perishable part.
 - `[ ]` **Lack-driven wants** — wire `aatc`'s sensed LACK into `selfprog`'s
   SOLVE, so the system forms the want from its own sensed incompleteness. This
   is the buildable bounded form of autontogenesis; **purpose-origination itself
