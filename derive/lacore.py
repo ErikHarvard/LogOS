@@ -132,3 +132,18 @@ def proper_subterms(t):
 # the eight self-relations (CLAUDE.md, canon.la section): seven ↻(anchor) + SR_WITH = ⊕(SELF,SELF)
 SR = {"SR_TO": MC(P("DEPTH")), "SR_ABOUT": MC(P("RECOGNITION")), "SR_AS": MC(P("FORM")), "SR_BY": MC(P("BECOMING")),
       "SR_FROM": MC(P("VOID")), "SR_THROUGH": MC(P("RELATION")), "SR_FOR": MC(P("LOVE")), "SR_WITH": CON(P("SELF"), P("SELF"))}
+
+# ── operator glyphs as usable combinators (metaglyph.la:91-99, the WRITTEN rule) ──
+# "read the minted operator's ETYMOLOGY as a TEMPLATE. Its base-mode structure is scaffolding; its primitive slots are
+#  OPERAND-HOLES. SHAPE pours one operand into every primitive slot of a sub-template, preserving the mode skeleton;
+#  APPLYOP pours operand a down the left sub-template and b down the right (unary top ↻ takes only a)."
+# A bare primitive has no sub-template to pour into: its action is CONSTANT (modegenesis F4's stated purpose).
+MODE_GLYPH = {"SYN": DIR(P("LOVE"), P("RELATION")), "CON": CONT(P("RELATION"), P("FORM")), "DIR": SYN(P("BECOMING"), P("RELATION")),
+              "CONT": DIR(P("DEPTH"), P("FORM")), "MC": MC(P("SELF"))}          # CLAUDE.md / metaglyph.la: the five mode glyphs
+def shape(x, tpl):
+    if tpl[0] == "P": return x
+    return (tpl[0],) + tuple(shape(x, c) for c in tpl[1:])
+def applyop(etym, a, b):
+    if etym[0] == "P": return etym
+    if etym[0] == "MC": return MC(shape(a, etym[1]))
+    return (etym[0], shape(a, etym[1]), shape(b, etym[2]))
