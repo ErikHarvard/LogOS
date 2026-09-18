@@ -3,11 +3,16 @@
 #  (Erik's Gate 3)
 #
 #  ★ ONE CORRECTION TO THE REQUEST, CHECKED IN THE CODE FIRST. Erik wrote *"Void = zero, Being = one,
-#  Becoming = successor."*  Void and Becoming are right; **Being is NOT one.** `primitives.la` has
-#  `BEING = la self. self` — the IDENTITY combinator, arity 1 — while Church one is `la f. la x. f(x)`,
-#  arity 2. One is not a primitive at all: **one = BECOMING(VOID)**, the successor applied to zero, which
-#  is the more interesting fact — unity is DERIVED, not posited. (It is also why `SELF = BEING(BEING)`
-#  is a fixed point rather than a numeral.)
+#  Becoming = successor."*  Void and Becoming are right. Being and one: `primitives.la` has
+#  `BEING = la self. self` — the IDENTITY combinator, one binder — while one = BECOMING(VOID) normalizes to
+#  `la f. la x. f(x)`, two binders. One is not a primitive at all: **one = BECOMING(VOID)**, the successor
+#  applied to zero — unity is DERIVED, not posited.
+#  ⚖ CORRECTED 2026-09-18 (FREEZE-TRACKF.md F26, by Erik's F5 ruling "η-equivalence is identity in the TRUTH
+#  register only"): the 09-17 text said "Being is NOT one", and gated only the one-half. The two registers
+#  disagree, and both are now gated: in FORM (β-normal terms up to α) BEING and one are DISTINCT — gate §47
+#  `lf`, a normalizer over primitives.la; in TRUTH they are EQUAL — λf.λx.f(x) η-reduces to λf.f ≡ BEING,
+#  and here BEING decoded as a numeral is 1 and agrees with one applied to a probe. So Erik's "Being = one"
+#  holds in truth; "Being is not one" holds in form.
 #
 #  WHAT IS GATED.
 #  (1) THE DERIVATION. Zero is `VOID = la a. la b. b` (Church zero exactly), the successor is
@@ -35,9 +40,9 @@
 #        RED PATHS: (1) the successor made the identity — the numerals stop counting and the derivation
 #        fails; (2) the non-injectivity probes made κ-IDENTICAL — the exhibit stops exhibiting, which is
 #        the guard on the guard: an exhibit of a collapse must show forms that are genuinely DISTINCT.
-#  ★ EVIDENTIAL: [W] all three — ⚖ EXCEPT: "BEING is not one" is PRINTED TEXT [F26; per Erik's F5 ruling: distinct in form, equal in truth], and the measure horizon + the numeral-only collapse are DEFINITIONAL [A, F32: the numeral IS tree size]; [B] the non-injectivity is exhibited on a four-form family, which
+#  ★ EVIDENTIAL: [W] all three, and the F26 correction in both registers (form: §47 lf; truth: this module) — ⚖ EXCEPT: the measure horizon + the numeral-only collapse are DEFINITIONAL [A, F32: the numeral IS tree size]; [B] the non-injectivity is exhibited on a four-form family, which
 #     establishes that the projection is not injective — it does not measure how badly.
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 3 · exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 3 [A: witnesses its constructor, not the claim — a size-only seal collapses equal sizes; the numeral IS tree size; tree arithmetic of a ⊗-doubling chain] · cannot-fail 1 [UNWITNESSED — F26 (the BEING half is printed text)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 6 pinned witnesses (after F26, 2026-09-18) — red-proven 5 · exact & independently DERIVED 6 (derive/s47_numderive.py, from primitives.la's definitions + lacore) · construction-true 3 [A: witnesses its constructor, not the claim — a size-only seal collapses equal sizes; the numeral IS tree size; tree arithmetic of a ⊗-doubling chain] · cannot-fail 0 (was 1: "BEING is not one" as printed text — now gated in both registers; the FORM register's 3 static witnesses `lf` are all red-proven). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure integers + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # TSIZE NORMK the κ constructors + the base surface
@@ -58,9 +63,12 @@ glyph ND_TONUM = la n. n(la k. add(k)(1))(0)
 glyph ND_NTH = Z(la self. la k. IF(int_eq(k)(0))(la _. ND_ZERO)(la _. ND_SUCC(self(sub(k)(1)))))
 glyph ND_SEQ = Z(la self. la k. IF(int_eq(k)(6))(la _. "")(la _. concat(int_to_str(ND_TONUM(ND_NTH(k))))(concat(" ")(self(add(k)(1))))))
 glyph ND_OK = Z(la self. la k. IF(int_eq(k)(6))(la _. TRUE)(la _. AND(int_eq(ND_TONUM(ND_NTH(k)))(k))(self(add(k)(1)))))
-# BEING is the identity combinator, not one — checked, not asserted
-glyph ND_BEING = la self. self
+# BEING and one — the TRUTH register (F26, by the F5 ruling). The FORM register (distinct terms) is gate §47 lf.
+glyph ND_BEING = la self. self                                 # primitives.la: glyph BEING
 glyph ND_ONE_IS_SUCC_ZERO = int_eq(ND_TONUM(ND_SUCC(ND_ZERO)))(1)
+glyph ND_BAR = la s. concat(s)("|")
+glyph ND_BEING_ONE_NUM = int_eq(ND_TONUM(ND_BEING))(ND_TONUM(ND_SUCC(ND_ZERO)))
+glyph ND_BEING_ONE_EXT = str_eq(ND_BEING(ND_BAR)("a"))(ND_SUCC(ND_ZERO)(ND_BAR)("a"))
 
 # ── (2) the formula: the ⊗-self-collapse chain measures 2^(d+2)−1 ──
 glyph ND_POW2 = Z(la self. la n. IF(int_eq(n)(0))(la _. 1)(la _. mul(2)(self(sub(n)(1)))))
@@ -102,8 +110,20 @@ glyph REPORT =
   CONSc(ND_SEQ(0))(
   CONSc("— decode correctly 0..5:")(
   CONSc(ND_B(ND_OK(0)))(
-  CONSc(" | ★ CORRECTION: BEING is the IDENTITY combinator, not one — one = BECOMING(VOID):")(
+  CONSc(" | one = BECOMING(VOID) decodes to 1:")(
   CONSc(ND_B(ND_ONE_IS_SUCC_ZERO))(
+  CONSc(" | ★ CORRECTED (F26, by the F5 ruling): BEING and one are DISTINCT FORMS — λself.self vs λf.λx.f(x), gated in §47 lf — and EQUAL IN TRUTH: BEING decoded as a numeral:")(
+  CONSc(int_to_str(ND_TONUM(ND_BEING)))(
+  CONSc(" one decoded:")(
+  CONSc(int_to_str(ND_TONUM(ND_SUCC(ND_ZERO))))(
+  CONSc(" equal:")(
+  CONSc(ND_B(ND_BEING_ONE_NUM))(
+  CONSc(" | applied to (s ↦ s|) and a — BEING:")(
+  CONSc(ND_BEING(ND_BAR)("a"))(
+  CONSc(" one:")(
+  CONSc(ND_SUCC(ND_ZERO)(ND_BAR)("a"))(
+  CONSc(" agree:")(
+  CONSc(ND_B(ND_BEING_ONE_EXT))(
   CONSc("\nNUMDERIVE (2) the ⊗-self-collapse chain measures: ")(
   CONSc(ND_SIZES(0))(
   CONSc("— equals 2^(d+2)−1 at depths 0..5:")(
@@ -123,5 +143,5 @@ glyph REPORT =
   CONSc(ND_B(ND_HORIZON))(
   CONSc(" ★ NAMED: THE MEASURE HORIZON — arithmetic's reach within this framework stops where the mode begins. Anything downstream of a numeral inherits it: measure can say HOW BIG a form is and never WHICH form it is. [W] sealed as a property of the projection, not a defect.")(
   CONSc(" ★ THE MODE IS INVISIBLE TO THE COUNT. Size is a homomorphic image that forgets the mode, so number can MEASURE a form but cannot IDENTIFY one, and anything built on “the numeral of a glyph” inherits that blindness. [B] exhibited on a four-form family: establishes non-injectivity, does not measure how badly")(
-  NILc))))))))))))))))))))))))))))
+  NILc))))))))))))))))))))))))))))))))))))))))
 glyph MAIN = print(REPORT)

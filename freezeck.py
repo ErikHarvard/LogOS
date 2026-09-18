@@ -48,7 +48,10 @@ if '--selftest' in sys.argv:
         ('exact: a derivation that does not exist', 'exact:s01', 'exact:s99', 1, 'has no derive/s99_'),
         ('an UNREVIEWED ignored parameter', None, 'GLYPH:glyph ZZ_IGN = la q. la w. concat(w)(w)', 1, 'ZZ_IGN ignores its parameter'),
     ]
-    need = set(re.findall(r'^host ([A-Za-z_0-9]+\.la) ', open('gate_registers.sh', encoding='utf-8').read(), re.M))
+    _g = open('gate_registers.sh', encoding='utf-8').read()
+    need = set(re.findall(r'^host ([A-Za-z_0-9]+\.la) ', _g, re.M))
+    need |= set(re.findall(r"' ([A-Za-z_0-9]+\.la) > ", _g))                       # every file a mutant sed reads (F26: primitives.la)
+    need |= set(re.findall(r'^static \S+ \S+ ([A-Za-z_0-9]+\.la)', _g, re.M))     # every static witness's root
     for m in list(need):
         for i in re.findall(r'import\("([^"]+)"\)', open(m, encoding='utf-8').read()): need.add(i)
     fails = 0

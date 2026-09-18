@@ -1908,8 +1908,10 @@ or in a full suite on HEAD yet (FREEZE-TRACKF.md). Each item says exactly how fa
    rests, by discarding — CONVERGENCE AND RETENTION ARE IN TENSION.
 4. The cross-branch collapse holds BY CONSTRUCTION (one sealer), not convergence (§46) — over 19 branches, not 28.
 5. Logic, algorithm and syntax are pairwise SEPARATE (§43); the true relation is the neologizing dyad.
-6. ⚠ **CORRECTED (F26, 09-18):** §47 witnesses only one = BECOMING(VOID); "BEING is not one" is PRINTED TEXT (ND_BEING unused).
-   Decoded as a numeral BEING IS one. Per the F5 ruling: BEING and ONE are distinct FORMS (ungated as yet) and EQUAL IN TRUTH.
+6. ⚖ **RESTATED (F26, 09-18):** not "BEING is not one" (that was printed text) but, by the F5 ruling, **BEING and one are
+   DISTINCT IN FORM and EQUAL IN TRUTH** — λself.self vs one = nf(BECOMING(VOID)) = λf.λx.f(x): different β-normal terms
+   (§47 `lf`, run static), η-equal (`lf`), and BEING decodes to 1 and agrees with one on a probe (§47 `nd`, derived; its
+   run waits on the lease). One is still DERIVED (successor on zero), not posited. Erik's "Being = one" holds in truth.
 7. ⚠ **DEFINITIONAL (F32, 09-18):** the measure horizon (§47): four κ-distinct forms share one numeral — true because the
    numeral is DEFINED as tree size, which cannot see a mode label. Bound it to "measure = node count"; not a discovery.
 8. No Shannon noise in the computational register (§42); the real bound is the RENDERER's (sigil.la walks the unfolded
