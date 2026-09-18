@@ -86,3 +86,18 @@ The papers' own counts: MCL "twenty-eight" (:1217, :1374) with 36 listed; Glosso
 4. **The five deferred branches:** each needs its operand x of ⊂(RELATION,x) — and first, the file-20 ruling on
    whether a branch is `∃ ∩ Interface` (the codex's formula) or `⊂(RELATION, x)` (branchgenesis's).
 5. **Meta-Rosettology's two definitions** — cross-species (codex) or between registers (MCL).
+
+## E. DERIVED, NOT ENUMERATED (Directive 3, 2026-09-18 — `derive/branchrank.py`, ledger F37)
+
+Operations = LA's own ⊕ (addition), ⊗ (merge), ↻ (recursion), with NORMK's equivalences. Inventory = branchgenesis.la's 18 + Δ_B.
+
+| reading of "derived" | derived branches | rank (the count) |
+|---|---|---|
+| closure under the operations | — | **infinite** (⊗ idempotent for ∃ alone) ⇒ a finite count must be a RANK |
+| branch glyphs ⊂(RELATION,x) | none — the operations never produce a ⊂/▷ head | 19, by construction |
+| interfaces x, FORM register (F4 (c)) | phonology = ↻(phonetics) · sociolinguistics = ⊕(psycholinguistics,psycholinguistics) · poetics = ⊗(pragmatics,phonetics) | **16** |
+| interfaces x, TRUTH register | the three above + psycholinguistics = ↻(semantics) | 15 |
+| register-sets under union | phonology, discourse, hermeneutics, poetics | 15 |
+
+Each minimal generating set is unique (checked). The codex's 28/36/38 cannot be derived: its formulas are prose, its audit's
+inputs are not written, and Tier 6 is open by declaration. Proposed ruling: interface form, FORM register ⇒ **16**.
