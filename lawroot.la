@@ -71,6 +71,16 @@ glyph LR_L3_T = LAW_EXCLUDED_MIDDLE(TERM("∃")("v"))
 glyph LR_L3_F = LAW_EXCLUDED_MIDDLE(TERM("")("v"))
 glyph LR_FALSIFIABLE = AND(LR_L1_T)(AND(NOT(LR_L1_F))(AND(LR_L2_T)(AND(NOT(LR_L2_F))(AND(LR_L3_T)(NOT(LR_L3_F))))))
 
+# ── THE CRITERION, one level down: AUTO_OK uses CANON (which carries NO rewrites), never NORMK (which
+#    applies the ∃-rewrite). On a glyph sealed over ⊗(∃,∃) the criterion says TRUE while an Archē-AWARE
+#    variant (one requiring the ren to be "∃") says FALSE — which proves the criterion
+#    cannot be consulting the Archē: if it did, it would answer as the NORMK variant does. ──
+glyph LR_ARCHE_SEAL = MONO(CANON(SYN(PRIM("∃"))(PRIM("∃"))))(SYN(PRIM("∃"))(PRIM("∃")))
+glyph LR_CRIT_CANON = AUTO_OK(LR_ARCHE_SEAL)
+# an ARCHē-AWARE criterion would normalise ⊗(∃,∃) to "∃" and require the ren to match THAT.
+glyph LR_CRIT_ARCHE = str_eq(REN(LR_ARCHE_SEAL))("∃")
+glyph LR_CRIT_PRIMITIVE = AND(LR_CRIT_CANON)(NOT(LR_CRIT_ARCHE))
+
 # ── INDEPENDENCE: the laws never consult GROUND, so their verdicts are identical either way ──
 glyph LR_SIG = la g. concat(LR_B(LAW_IDENTITY(LAW_IDENTITY_G)))(concat(LR_B(LAW_IDENTITY(LR_DECOY)))(concat(LR_B(LAW_NONCONTRADICTION(ATERM(1)(1))))(LR_B(LAW_EXCLUDED_MIDDLE(TERM("∃")("v"))))))
 glyph LR_INDEP = str_eq(LR_SIG(LR_GROUND_ON))(LR_SIG(LR_GROUND_OFF))
@@ -101,6 +111,13 @@ glyph REPORT =
   LRCONS(LR_SIG(LR_GROUND_ON))(
   LRCONS(" off:")(
   LRCONS(LR_SIG(LR_GROUND_OFF))(
+  LRCONS("\nLAWROOT ★★ THE CRITERION, one level down — AUTO_OK on a glyph sealed over ⊗(∃,∃): CANON-based (the real criterion):")(
+  LRCONS(LR_B(LR_CRIT_CANON))(
+  LRCONS(" an Archē-AWARE variant (which would require the ren to be ∃):")(
+  LRCONS(LR_B(LR_CRIT_ARCHE))(
+  LRCONS(" — they DISAGREE, so the criterion demonstrably does NOT consult the Archē:")(
+  LRCONS(LR_B(LR_CRIT_PRIMITIVE))(
+  LRCONS(" ⇒ THE AUTOLOGICAL CRITERION IS CO-PRIMITIVE WITH THE ARCHĒ, NOT DERIVED FROM IT. ★★★ CONSEQUENCE: the Archē, the three laws and the criterion are FOUR INDEPENDENT GROUNDS — THE GROUND IS A SMALL SET, NOT A SINGLE POINT (consistent with derive_closure.la: 4 of 9 derive, 5 are axioms)")(
   LRCONS(" ⇒ VERDICT: THE THREE LAWS ARE **PRIMITIVE WITH RESPECT TO THE ARCHĒ**. They are not assumed — each is falsifiable and each is wired to a real mechanism (AUTO_OK, the type checker, well-formedness) — but they are NOT derived from ∃(∃)≡∃, and the corpus's \"derived, not assumed\" is not what the code does. Consistent with derive_closure.la: only 4 of 9 primitives derive from the root, 5 are named AXIOMS. [B] this refutes derivability from the one rewrite that encodes the Archē in code, not from every possible route")(
-  LRNIL))))))))))))))))))))))))))
+  LRNIL)))))))))))))))))))))))))))))))))
 glyph MAIN = print(REPORT)

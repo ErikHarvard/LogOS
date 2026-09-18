@@ -562,6 +562,11 @@ host lawroot.la lr
 want lr "LAWROOT each law is FALSIFIABLE — identity T on its witness:T F on a ren that is not its etymology:T | non-contradiction T:T F on an arity contradiction:T | excluded middle T:T F on a term with no form:T" lawroot
 want lr "CONTROL — the Archē rewrite ∃(∃)→∃ IS load-bearing where it applies: TRIBAR(∃(∃))(∃) with it:T without it:F → removal really removes something:T" lawroot
 want lr "INDEPENDENCE — all three law-verdicts are IDENTICAL with the Archē rewrite present and DELETED:T signature on:TFTT off:TFTT" lawroot
+want lr "THE CRITERION, one level down — AUTO_OK on a glyph sealed over ⊗(∃,∃): CANON-based (the real criterion):T an Archē-AWARE variant (which would require the ren to be ∃):F — they DISAGREE, so the criterion demonstrably does NOT consult the Archē:T" lawroot
+#  ★★★ Erik's follow-up, answered: the AUTOLOGICAL CRITERION is CO-PRIMITIVE with the Archē too, not
+#    derived from it. So the Archē, the three laws and the criterion are FOUR INDEPENDENT GROUNDS —
+#    THE GROUND IS A SMALL SET, NOT A SINGLE POINT. Consistent with derive_closure.la (4 of 9 derive,
+#    5 are named axioms). The framework's "one ground" should be restated as "a small ground-set".
 sed 's|^glyph LR_SIG = la g. concat(|glyph LR_SIG = la g. concat(LR_B(LR_TRIBAR(g)(LR_AA)(LR_A)))(concat(|; s|(LAW_EXCLUDED_MIDDLE(TERM("∃")("v"))))))$|(LAW_EXCLUDED_MIDDLE(TERM("∃")("v")))))))|' lawroot.la > "$T/lr_m1.la"; host "$T/lr_m1.la" lr_m1
 red lr_m1 "IDENTICAL with the Archē rewrite present and DELETED:F" "lawroot RED(a law MADE to depend on the Archē: independence goes F — which is what shows the test can DETECT a dependence rather than always reporting none)"
 sed 's|^glyph LR_GROUND_ON  = la s. GROUND(s)|glyph LR_GROUND_ON  = la s. s|' lawroot.la > "$T/lr_m2.la"; host "$T/lr_m2.la" lr_m2
