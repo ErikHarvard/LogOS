@@ -1,0 +1,162 @@
+#  ⚠⚠ STATUS 2026-09-17: WRITTEN, NOT VERIFIED, NOT GATED.
+#  Its first host run exceeded the 550 s bound taken before the hot path below was threaded, and the
+#  deep-job lease then went to the FULL AUDIT, so it could not be re-run. NOTHING in this file is
+#  claimed: it is absent from gate_registers.sh and no LA_COMPLETION.md row was moved for it. The
+#  threading fix below is REASONED from the evaluator's behaviour, NOT MEASURED.
+#  FIRST ACTION NEXT SESSION: take a lease, run it, derive its witnesses independently, then gate
+#  it at gate_registers.sh §33 — and only then move the Seal 2 row.
+# ════════════════════════════════════════════════════════════════
+#  certify.la — PROOF-CARRYING GLYPHS: ENGINEERING SEAL 2  (LA_COMPLETION.md Tier 4;
+#  LINGUA_ADAMICA.tex §5020: "every glyph ships with (a) a type derivation, (b) an equivalence
+#  certificate linking it to its ONF, (c) a reality witness — the glyph is not merely a symbol, it is a
+#  CERTIFIED COMPUTATIONAL ARTIFACT". It is property (v), Self-Validation, of the Operational
+#  Completeness Theorem. The ledger: "No per-glyph certificate exists anywhere — the pieces are
+#  scattered and nothing binds them to the glyph as a shipped artifact."  This binds them.
+#
+#  THE LEDGER'S GATE, VERBATIM: "every entry in the catalogue carries all three, and THE CHECKER VERIFIES
+#  THE CERTIFICATE RATHER THAN TRUSTING IT. Red path: forge a certificate for a glyph whose ONF does not
+#  match and the check must refuse it."  That distinction is the whole design: a certificate that merely
+#  RESTATES a value is trusted; a certificate that carries a DERIVATION the checker can REPLAY is verified.
+#
+#  A CERTIFICATE IS A FOUR-TUPLE (name, arity-derivation, lineage, gate-token) and each field is
+#  RE-DERIVED from the glyph and compared — never read back as an assertion:
+#    (a) TYPE DERIVATION — the arity spine: the constructor arity (0 leaf, 1 metacursive, 2 binary) of
+#        every node of the form in κ's own traversal order, carried as a string. VERIFY recomputes the
+#        spine from the form and compares. A forged spine is refused and NAMED.
+#    (b) ONF EQUIVALENCE — NOT the ONF string (that would be trusting the answer) but the hash-consed
+#        DEF LIST, glyphdag's lineage: a step-by-step reconstruction of the form. VERIFY REPLAYS it
+#        (RECOVER = NORMK ∘ DECOMP) and checks the replay lands on the glyph's ONF, NORMK(ETYM(g)).
+#        A certificate carrying ANOTHER glyph's lineage replays to the wrong ONF and is refused and NAMED.
+#    (c) REALITY WITNESS — a gate token that must OCCUR AS A LINE PREFIX in gate_registers.sh, the
+#        suite that actually asserts this class of glyph. The file is read once and split into lines, so
+#        the check is a line membership, not a scan of 36 KB per glyph. A token no line carries is
+#        refused and NAMED — a glyph cannot claim a test that does not exist.
+#  COVERAGE is itself checked: every entry of the live catalogue (recdepth's RD_CAT) must have a
+#  certificate. An uncertified glyph is named, so the suite cannot pass by certifying a convenient subset.
+#
+#  ★★ THE WALL, NAMED NOT PAPERED OVER. Field (a) is "a type derivation — in whichever type system is
+#  the real one", and the ledger's ENGINEERING SEAL 1 row is `[!]` NEEDS ERIK: the tex §5012 specifies an
+#  Ontic Type System (τ ∈ {Object, Process, Relation, Value, Constraint}) with ZERO occurrences in the
+#  code; TYPE_SYSTEM_SPEC.md proposes a different, mode-indexed dependent system and adds no code; what is
+#  actually built is arrow-arity checking in DEPLOY, a lambda-calculus discipline, not an ontological one.
+#  Three type systems, one implemented, none ruled. **This module does NOT rule it.** Field (a) is filled
+#  with the ONE discipline that exists in code — a structural ARITY derivation — and the certificate's
+#  shape is fixed so that the ontic τ lands in the same slot the day Erik rules. What is witnessed here is
+#  that the certificate is CHECKED, not that the type system is settled. [A-blocked on Seal 1]
+#
+#  GATE (gate_registers.sh §33)  every catalogue entry carries a certificate and all three fields verify;
+#        coverage is complete; and each of the three forgeries is refused BY NAME.
+#        RED PATHS: (1) VERIFY_B made to compare the certificate against ITSELF instead of replaying the
+#        lineage — the forged-ONF fixture then passes and the printed refusal goes F (this is the exact
+#        trusting-vs-verifying failure the ledger's red path is aimed at); (2) the coverage check made
+#        vacuous — the uncertified-glyph fixture is no longer named.
+#  ★ EVIDENTIAL: [W] the three verifications, the three forgery refusals, and the coverage check;
+#     [A-blocked] field (a)'s type system, per Seal 1 above; [B] the reality witness is per-CLASS (the
+#     gate section that asserts the class), because the gates assert classes, not individual glyphs.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # the live catalogue RD_CAT + the base surface re-exported through it
+
+export CERT VERIFY_A VERIFY_B VERIFY_C VERIFY SWEEP MINT CT_SPINE CT_LINES CT_ANYLINE
+
+glyph CT_SEQ = la a. la b. b
+
+# ── (a) the arity spine: κ's own traversal, one digit per node ──
+glyph CT_SPINE = Z(la self. la f. f(la nm. "0")(la a. la b. concat("2")(concat(self(a))(self(b))))(la a. la b. concat("2")(concat(self(a))(self(b))))(la a. la b. concat("2")(concat(self(a))(self(b))))(la a. la b. concat("2")(concat(self(a))(self(b))))(la a. concat("1")(self(a))))
+
+# ── a certificate and its fields ──
+glyph CERT = la nm. la spine. la lin. la tok. la f. f(nm)(spine)(lin)(tok)
+glyph C_NAME  = la c. c(la n. la s. la l. la t. n)
+glyph C_SPINE = la c. c(la n. la s. la l. la t. s)
+glyph C_LIN   = la c. c(la n. la s. la l. la t. l)
+glyph C_TOK   = la c. c(la n. la s. la l. la t. t)
+
+# ── the gate suite, read ONCE and split into lines: the reality witness is a line prefix ──
+#  ★ THREADED, NOT GLOBAL. CT_LINES is bound ONCE in the report's binding chain and passed down.
+#  As a named global glyph it was re-evaluated at every reference — tiny_host has no memoisation — so a
+#  36 KB read_file plus a character-by-character SPLIT ran once PER CATALOGUE ENTRY PER CHECK. That alone
+#  cost minutes. Measured elsewhere today: the same shape cost 107 s (recdepth) and 98 s (selfevo) once the
+#  work moved under one binding. This is the hot path the memoising evaluator on the Track F list is for.
+glyph CT_LINES = SPLIT("\n")(read_file("gate_registers.sh"))
+glyph CT_ANYLINE = la lines. la tok. RD_FOLD(la l. la acc. OR(acc)(HAS_PREFIX(l)(tok)))(FALSE)(lines)
+
+# ── THE CHECKER. Each field is RE-DERIVED from the glyph g and compared to what the certificate carries.
+#    VERIFY_B REPLAYS the carried lineage rather than comparing a stored ONF string to itself. ──
+glyph VERIFY_A = la g. la c. str_eq(C_SPINE(c))(CT_SPINE(ETYM(g)))
+glyph VERIFY_B = la g. la c. str_eq(RECOVER(C_LIN(c)))(NORMK(ETYM(g)))
+glyph VERIFY_C = la lines. la g. la c. CT_ANYLINE(lines)(C_TOK(c))
+glyph VERIFY = la lines. la g. la c. AND(VERIFY_A(g)(c))(AND(VERIFY_B(g)(c))(VERIFY_C(lines)(g)(c)))
+# which field failed — an instrument must say what it saw
+glyph WHICH = la lines. la g. la c. IF(NOT(VERIFY_A(g)(c)))(la _. "(a) arity derivation")(la _. IF(NOT(VERIFY_B(g)(c)))(la _. "(b) ONF equivalence")(la _. IF(NOT(VERIFY_C(lines)(g)(c)))(la _. "(c) reality witness")(la _. "")))
+
+# ── the certificates. Each is MINTED from its glyph (that is what shipping one means) and then
+#    VERIFIED by re-derivation; the gate token is the class's, chosen per class and checked. ──
+glyph MINT = la nm. la tok. la g. CERT(nm)(CT_SPINE(ETYM(g)))(LINEAGE(g))(tok)
+glyph TOK_PRIM = "want rd "
+glyph TOK_CANON = "want lin "
+glyph TOK_META = "want se "
+glyph CERTS = RD_FOLD(la e. la acc. CONSc(PAIRc(FSTc(e))(MINT(FSTc(e))(IF(HAS_PREFIX(FSTc(e))("MODE_"))(la _. TOK_META)(la _. IF(HAS_PREFIX(FSTc(e))("OP_"))(la _. TOK_META)(la _. IF(HAS_PREFIX(FSTc(e))("SR_"))(la _. TOK_CANON)(la _. TOK_PRIM))))(SNDc(e))))(acc))(NILc)(RD_CAT)
+
+# ── ONE PASS over the catalogue: mint, verify, and record. tiny_host re-evaluates a glyph body at
+#    every reference, so the certificate list is built ONCE inside a binding and threaded through —
+#    a named CERTS glyph referenced from two checks would re-mint all 35 certificates each time. ──
+glyph SWEEP = la lines. la cat. RD_FOLD(la e. la acc. (la c. PAIRc(CONSc(PAIRc(FSTc(e))(c))(FSTc(acc)))(IF(NOT(str_eq(SNDc(acc))("")))(la _. SNDc(acc))(la _. IF(VERIFY(lines)(SNDc(e))(c))(la _. "")(la _. concat(FSTc(e))(concat(" — ")(WHICH(lines)(SNDc(e))(c)))))))(MINT(FSTc(e))(TOKOF(FSTc(e)))(SNDc(e))))(PAIRc(NILc)(""))(cat)
+glyph TOKOF = la nm. IF(HAS_PREFIX(nm)("MODE_"))(la _. TOK_META)(la _. IF(HAS_PREFIX(nm)("OP_"))(la _. TOK_META)(la _. IF(HAS_PREFIX(nm)("SR_"))(la _. TOK_CANON)(la _. TOK_PRIM)))
+# COVERAGE. ★ The sweep certifies every entry it SEES, so checking its output against the same list it
+# swept can never fail — that was the first version and it was a VACUOUS gate. The check is only worth
+# anything against a list that CAN be short, so an in-file FIXTURE sweeps a catalogue with one entry
+# deliberately withheld, and the coverage check must NAME the withheld glyph. The refusal is then
+# witnessed on every run rather than assumed, exactly as the three forgeries are.
+glyph DROP1 = la nm. RD_FOLD(la e. la acc. IF(str_eq(FSTc(e))(nm))(la _. acc)(la _. CONSc(e)(acc)))(NILc)(RD_CAT)
+glyph COVER_BAD = la certs. RD_FOLD(la e. la acc. IF(NOT(str_eq(acc)("")))(la _. acc)(la _. IF(RD_FOLD(la pr. la a2. OR(a2)(str_eq(FSTc(pr))(FSTc(e))))(FALSE)(certs))(la _. "")(la _. FSTc(e))))("")(RD_CAT)
+
+# ── THE THREE FORGERIES, refused in-file so the refusal is witnessed on every run ──
+glyph SUBJ = SEALc(KAPPA)
+glyph OTHER = SEALc(SR_WITH)
+glyph FORGE_A = CERT("forged-arity")(concat("2")(CT_SPINE(ETYM(SUBJ))))(LINEAGE(SUBJ))(TOK_CANON)
+glyph FORGE_B = CERT("forged-ONF")(CT_SPINE(ETYM(SUBJ)))(LINEAGE(OTHER))(TOK_CANON)
+glyph FORGE_C = CERT("forged-witness")(CT_SPINE(ETYM(SUBJ)))(LINEAGE(SUBJ))("want NOSUCHGATE ")
+glyph R_A = la lines. WHICH(lines)(SUBJ)(FORGE_A)
+glyph R_B = la lines. WHICH(lines)(SUBJ)(FORGE_B)
+glyph R_C = la lines. WHICH(lines)(SUBJ)(FORGE_C)
+glyph GOOD = MINT("KAPPA")(TOK_CANON)(SUBJ)
+
+glyph REPORT = (la gl. (la sw. (la cb. (la cov. (la ver. 
+  RD_JOIN(
+  CONSc("CERTIFY catalogue=")(
+  CONSc(int_to_str(LEN(RD_CAT)))(
+  CONSc(" certificates=")(
+  CONSc(int_to_str(LEN(FSTc(sw))))(
+  CONSc(" | every glyph certified:")(
+  CONSc(RD_BSTR(str_eq(cb)("")))(
+  CONSc(cov)(
+  CONSc(" | coverage fixture (one entry withheld from the sweep) is caught:")(
+  CONSc(RD_BSTR(str_eq(COVER_BAD(FSTc(SWEEP(gl)(DROP1("KAPPA")))))("KAPPA")))(
+  CONSc(" OFFENDER=")(
+  CONSc(COVER_BAD(FSTc(SWEEP(gl)(DROP1("KAPPA")))))(
+  CONSc(" | all three fields verify by re-derivation:")(
+  CONSc(RD_BSTR(str_eq(SNDc(sw))("")))(
+  CONSc(ver)(
+  CONSc("\nCERTIFY forged (a) arity refused:")(
+  CONSc(RD_BSTR(str_eq(R_A(gl))("(a) arity derivation")))(
+  CONSc(" | forged (b) ONF refused:")(
+  CONSc(RD_BSTR(str_eq(R_B(gl))("(b) ONF equivalence")))(
+  CONSc(" OFFENDER=")(
+  CONSc(R_B(gl))(
+  CONSc(" | forged (c) reality witness refused:")(
+  CONSc(RD_BSTR(str_eq(R_C(gl))("(c) reality witness")))(
+  CONSc(" | the honest certificate verifies:")(
+  CONSc(RD_BSTR(VERIFY(gl)(SUBJ)(GOOD)))(
+  CONSc(" (the checker REPLAYS the lineage, it does not compare a stored ONF to itself)")(
+  CONSc("\nCERTIFY κ spine of ")(
+  CONSc(REN(SUBJ))(
+  CONSc("=")(
+  CONSc(CT_SPINE(ETYM(SUBJ)))(
+  CONSc(" | replayed lineage → ONF ")(
+  CONSc(RECOVER(LINEAGE(SUBJ)))(
+  CONSc(" matches NORMK:")(
+  CONSc(RD_BSTR(str_eq(RECOVER(LINEAGE(SUBJ)))(NORMK(ETYM(SUBJ)))))(
+  CONSc(" | field (a)'s TYPE SYSTEM IS NOT RULED — arity is the one discipline in code; the ontic τ of tex §5012 awaits Erik's Seal-1 ruling [A-blocked]")(
+  NILc)))))))))))))))))))))))))))))))))))
+  )(IF(str_eq(SNDc(sw))(""))(la _. "")(la _. concat(" OFFENDER=")(SNDc(sw)))))(IF(str_eq(cb)(""))(la _. "")(la _. concat(" UNCERTIFIED=")(cb))))(COVER_BAD(FSTc(sw))))(SWEEP(gl)(RD_CAT)))(CT_LINES)
+glyph MAIN = print(REPORT)

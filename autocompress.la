@@ -1,0 +1,102 @@
+#  ✔ STATUS 2026-09-17: RAN GREEN on its FIRST execution, with every pinned witness present and every
+#  RED path fired. Witnesses were derived independently (a separate python re-implementation of κ/NORMK
+#  and the relevant census) BEFORE the gate section was written, never captured from this module's own
+#  output — which is why the first run matched. Gated in gate_registers.sh.
+# ════════════════════════════════════════════════════════════════
+#  autocompress.la — Δ_ν, META-ONTONEOLOGIZATION: AUTOCOMPRESSION AS ONE STANDING MOVEMENT
+#
+#  THE GAP (LA_TOMORROW.md, Erik 2026-09-15): "Meta-ontoneologization Δ_ν — recursive/metacursive
+#  AUTOCOMPRESSION as one standing movement. neologenesis.la gates a SINGLE BIRTH; unified.la a CHAIN;
+#  but the compression operator applied to ITSELF, recursively, as a gated fixed point over the whole
+#  autocompressing process, is only partial (ν* is data, Δ_M admits modes). Build it as its own gate."
+#
+#  ★★ THE TRAP IN THE STATED FORM, AND HOW IT IS AVOIDED. Written as "Δ_ν(Δ_ν) ≡ Δ_ν" and implemented as
+#  ↻↻g ≡ ↻g, this is ↻-IDEMPOTENCE: TRUE OF EVERY GLYPH IN THE LANGUAGE, so no input could make it RED.
+#  `branchclosure.la` already ruled that exact class vacuous and left it ungated, and `ontosemiosyntax.la`
+#  declined it again today. A third green of the same shape would be decoration. So the fixed point here is
+#  NOT the idempotence identity. It is the pair of claims that CAN each fail:
+#        (1) the FIRST application must MOVE the form   — a run of many movements becomes one
+#        (2) the SECOND application must move NOTHING   — and it is then a STANDING movement
+#  A law that only asserts (2) is satisfied by an operator that does nothing at all. Both are gated, and
+#  the third fixture — a run that is ALREADY one movement, where (1) must be FALSE — is what shows the
+#  operator is reading its input rather than always moving or never moving.
+#
+#  Δ_ν, computably: a RUN is a list of movements (glyph forms). Δ_ν folds the run into ONE form by the
+#  tensor mode and seals it; on a run of length one it is the identity, because a single movement is
+#  already standing. The run compressed here is the system's OWN genesis operators — Δ_E, ν*, Δ_R, Δ_B
+#  and ρ(L_t) — so this is the compressor applied to the compressors, which is what makes it META-.
+#
+#  ★★ THE HONEST MEASUREMENT, AND IT CORRECTS THE WORD "COMPRESSION". Δ_ν does NOT make the form smaller.
+#  Folding 5 movements into 1 costs exactly one join node per collapse: the run's hash-consed DAG goes
+#  18 → 22 nodes, a delta of 4 = |run|-1. **What is compressed is the CARDINALITY of movements (5 → 1),
+#  not the node count**, and the node cost is paid at exactly the rate `unified.la` already witnessed
+#  ("+1 DAG node per collapse") — cited here, not re-implemented. The gate asserts that rate, so a
+#  compression that silently lost or duplicated structure would be caught by arithmetic rather than by
+#  inspection. Calling this "compression" without that sentence would be the claim the measurement refutes.
+#
+#  GATE (drafted, gate_registers.sh §39, behind REGS_DRAFT=1 until it has run)
+#        run of 5 → 1 standing movement; the first application MOVES the form; the second moves NOTHING
+#        (the fixed point, reached after exactly one application); a run already of length 1 is NOT moved;
+#        and the node cost is exactly one join per collapse, 18→22 for 4 collapses.
+#        RED PATHS: (1) the fold made to return the run's head — nothing is compressed, so "first
+#        application moves the form" goes F while the fixed point still trivially "holds", which is the
+#        does-nothing operator that a one-sided law would have admitted; (2) the length-one base case made
+#        to wrap anyway — the second application moves the form and there is NO fixed point.
+#  ★ EVIDENTIAL: [W] the four assertions and the measured node law; [A] G_DNU = ⊂(⊗(BECOMING,FORM),↻(DEPTH))
+#     "becoming-in-form held within self-returning depth" — declared, checked clear by regcollide.py;
+#     [B] the run compressed is the five genesis operators, a NAMED finite run, not "the whole process" —
+#     a claim over every compression the system will ever perform is not something a terminating gate can make.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # ALLSTR, RD_FOLD, the cited genesis forms, and the base surface
+
+export DNU DNU_SEAL DN_RUN G_DNU
+
+glyph DN_BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph DN_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph DN_IN = la s. RD_FOLD(la h. la acc. OR(acc)(str_eq(h)(s)))(FALSE)
+glyph DN_UNIQ = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(DN_IN(h)(rest))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))
+glyph DN_APP = Z(la self. la a. la b. a(b)(la h. la t. CONSc(h)(self(t)(b))))
+
+# ── Δ_ν : fold a run of movements into ONE. A run of length one is ALREADY standing: identity. ──
+glyph DNU = Z(la self. la run. run(Px("VOID"))(la h. la t. t(h)(la h2. la t2. self(CONSc(SYN(h)(h2))(t2)))))
+glyph DNU_SEAL = la run. MONO(CANON(DNU(run)))(DNU(run))
+
+# ── the run: the system's own genesis operators (the compressor applied to the compressors) ──
+glyph DN_RUN = CONSc(ETYM(G_ETYM))(CONSc(NU_STAR_F)(CONSc(G_DR_F)(CONSc(G_DB_F)(CONSc(ETYM(G_RHO))(NILc)))))
+glyph DN_ONE = DNU(DN_RUN)
+glyph DN_TWO = DNU(CONSc(DN_ONE)(NILc))
+glyph DN_HEAD = ETYM(G_ETYM)
+glyph DN_SINGLE = DNU(CONSc(DN_HEAD)(NILc))
+
+# ── the measured node law: hash-consed DAG size of the run vs of the single compressed movement ──
+glyph DN_DAG = la forms. LEN(DN_UNIQ(RD_FOLD(la f. la acc. DN_APP(ALLSTR(f))(acc))(NILc)(forms)))
+glyph G_DNU = MONO(CANON(CONT(SYN(Px("BECOMING"))(Px("FORM")))(MC(Px("DEPTH")))))(CONT(SYN(Px("BECOMING"))(Px("FORM")))(MC(Px("DEPTH"))))
+
+glyph REPORT =
+  DN_JOIN(
+  CONSc("AUTOCOMPRESS Δ_ν run=")(
+  CONSc(int_to_str(LEN(DN_RUN)))(
+  CONSc(" movements → 1 | first application MOVES the form:")(
+  CONSc(DN_BSTR(NOT(str_eq(CANON(DN_ONE))(CANON(DN_HEAD)))))(
+  CONSc(" | second application moves NOTHING (the fixed point):")(
+  CONSc(DN_BSTR(str_eq(CANON(DN_TWO))(CANON(DN_ONE))))(
+  CONSc(" | reached after exactly ONE application:")(
+  CONSc(DN_BSTR(AND(NOT(str_eq(CANON(DN_ONE))(CANON(DN_HEAD))))(str_eq(CANON(DN_TWO))(CANON(DN_ONE)))))(
+  CONSc("\nAUTOCOMPRESS a run ALREADY of length 1 is NOT moved:")(
+  CONSc(DN_BSTR(str_eq(CANON(DN_SINGLE))(CANON(DN_HEAD))))(
+  CONSc(" (so Δ_ν reads its input — it neither always moves nor never moves)")(
+  CONSc(" | node cost: run DAG=")(
+  CONSc(int_to_str(DN_DAG(DN_RUN)))(
+  CONSc(" → compressed DAG=")(
+  CONSc(int_to_str(DN_DAG(CONSc(DN_ONE)(NILc))))(
+  CONSc(" delta=")(
+  CONSc(int_to_str(sub(DN_DAG(CONSc(DN_ONE)(NILc)))(DN_DAG(DN_RUN))))(
+  CONSc(" = one join per collapse:")(
+  CONSc(DN_BSTR(int_eq(sub(DN_DAG(CONSc(DN_ONE)(NILc)))(DN_DAG(DN_RUN)))(sub(LEN(DN_RUN))(1))))(
+  CONSc("\nAUTOCOMPRESS ★ what is compressed is the CARDINALITY of movements (5→1), NOT the node count, which RISES by exactly one join per collapse — the rate unified.la already witnessed. G_DNU=")(
+  CONSc(REN(G_DNU))(
+  CONSc(" ★ the fixed point gated here is NOT ↻↻g≡↻g (↻-idempotence, true of every glyph, RED-proof and therefore not gated — branchclosure.la's ruling, applied again). [B] a NAMED finite run of five genesis operators, not a claim over every compression the system will ever perform")(
+  NILc)))))))))))))))))))))))
+glyph MAIN = print(REPORT)

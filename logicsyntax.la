@@ -1,0 +1,103 @@
+# ════════════════════════════════════════════════════════════════
+#  logicsyntax.la — THE LOGIC / ALGORITHM / SYNTAX COLLAPSE, GATED
+#
+#  THE CLAIM (Erik, 2026-09-17): "the system's logic is its algorithm, its algorithm is its syntax, and its
+#  syntax is its logic — verify this." And: "the language should be computational, meta-computational,
+#  algorithmic and meta-algorithmic, as we collapse all of them into one."
+#
+#  ★ WHAT THE CORPUS ACTUALLY SAYS, checked before building: `codices/OUTLINE.md` §19.4 does NOT state a
+#  three-way cycle. It states ONE COMPOUND — **"Classical logic = Reality's METALOGICAL META-ALGORITHMIC
+#  ONTOSYNTAX"**, the formal grammar by which Being structures itself — and glosses "meta-algorithmic" as
+#  logic being *"not merely a set of rules (algorithmic) but the SELF-RECOGNIZING STRUCTURE OF
+#  RULE-APPLICATION itself."* That phrasing is testable in a way the cycle is not: it says logic IS the
+#  composition of the meta-algorithmic and the ontosyntactic, not a third thing standing beside them.
+#
+#  THE THREE, and TWO OF THEM ARE CITED, NOT DECLARED — they already exist in `canon.la`:
+#    SYNTAX    = κ = ▷(RECOGNITION, FORM)      recognition OF FORM — the ontosyntax, the canonicaliser
+#    ALGORITHM = 𝓡 = ▷(DEPTH, RECOGNITION)     recursion ON recognition — rule-application, the evaluator
+#    LOGIC     = ⊗(𝓡, κ)                      "meta-algorithmic ontosyntax" as ONE neologization ( ⊗ ≡ 𝔑 )
+#  Only LOGIC is new, and it is checked clear by `regcollide.py` against a corpus of 86.
+#
+#  ★★ THE RESULT, AND IT SPLITS THE CLAIM IN TWO. Run through the ground/locus relation of `identity.la`
+#  (§41), the three are **PAIRWISE SEPARATE** — no two of them are one being. So the STRONG reading, that
+#  logic IS algorithm IS syntax, is **FALSE, and this gate refuses it.** (It was already half-refused:
+#  `canon.la` asserts 𝓡 ≢ κ explicitly, as meta-monosemy — two names for one operation would be polysemy.)
+#  But the dyad **RETAINS BOTH PARENTS as proper sub-forms**, so LOGIC is not an aggregate sitting next to
+#  them either: it is ONE glyph, one compressive movement, out of which both are recoverable.
+#      ⇒ **THE COLLAPSE IS COMPOSITIONAL, NOT IDENTIFICATORY.**
+#  That is exactly "collapses all of them into one movement" — and it is the honest form of it. A collapse
+#  that made them identical would be the merger drift Erik named in the §41 objection; a relation that left
+#  them merely adjacent would be no collapse at all. Retention-with-distinctness is the third thing.
+#
+#  ★ AND IT IS A NEOLOGIZATION, not an annotation: ⊗ ≡ 𝔑 (Def. neologo), so LOGIC is BORN from its two
+#  parents by the same single movement `neologenesis.la` gates, at the cost `unified.la` and
+#  `compressbound.la` measured — exactly +1 DAG node per collapse. That cost is measured here too, so the
+#  "one singular movement" is a number, not a manner of speaking.
+#
+#  ★ WHAT IS DELIBERATELY **NOT** GATED. ↻(LOGIC) ≡ LOGIC at the truth level is ↻-IDEMPOTENCE — true of
+#  EVERY glyph in the language, so no input makes it RED. `branchclosure.la` ruled that class vacuous;
+#  `ontosemiosyntax.la` and `autocompress.la` declined it; this is the FOURTH refusal and it is deliberate.
+#  Also NOT claimed: that these three κ-forms are the RIGHT readings of logic/algorithm/syntax. κ and 𝓡 are
+#  canon's own and carry its meanings; LOGIC's ⊗ form is [A], declared, for the architect to ratify.
+#  ★ ALSO NOT CLOSED: the corpus says the Three Laws are *"derived from ∃(∃) ≡ ∃, not assumed."*
+#  `metalogic.la` gates them as falsifiable and autological but does NOT derive them from the Archē, and
+#  `derive_closure.la` derives only 4 of the 9 primitives from the root (5 named axioms). That derivation
+#  is a SEPARATE, still-open claim and nothing here closes it.
+#
+#  GATE (gate_registers.sh §43)  the three pairwise verdicts, all SEPARATE; the dyad recovers BOTH parents;
+#        the compositional-not-identificatory verdict as one computed conjunction; and the +1 node cost.
+#        RED PATHS: (1) a PARENT-DROPPING combiner ⊗(𝓡,𝓡) — SYNTAX is no longer recoverable, so the "one
+#        movement retains both" claim fails (the shape `denote.la` uses for its combination law);
+#        (2) SYNTAX made equal to ALGORITHM — the three-fold degenerates and pairwise-separateness goes F,
+#        which is the monism for this triad.
+#  ★ EVIDENTIAL: [W] the verdicts, the retention, the cost; [A] LOGIC's form; [B] the scope notes above.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("identity.la")   # the §41 ground/locus relation + the base surface re-exported through it
+
+export LS_SYNTAX LS_ALGORITHM LS_LOGIC LS_RETAINS
+
+glyph LS_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+# ★ CITED from canon.la, not re-declared: κ and 𝓡 are canon's own glyphs and carry its meanings.
+glyph LS_SYNTAX    = KAPPA                       # ▷(RECOGNITION,FORM)  — the ontosyntax
+glyph LS_ALGORITHM = REVAL                       # ▷(DEPTH,RECOGNITION) — rule-application
+glyph LS_LOGIC     = SYN(LS_ALGORITHM)(LS_SYNTAX)  # ⊗ ≡ 𝔑: meta-algorithmic ontosyntax, ONE neologization [A]
+
+# ── retention: are BOTH parents recoverable as PROPER sub-forms of the dyad? ──
+glyph LS_RETAINS = la d. AND(ID_IN(NORMK(LS_ALGORITHM))(ID_SUBS(d)))(ID_IN(NORMK(LS_SYNTAX))(ID_SUBS(d)))
+glyph LS_SEP = la a. la b. str_eq(VERDICT(a)(b))("SEPARATE (two beings)")
+glyph LS_ALLSEP = AND(LS_SEP(LS_LOGIC)(LS_ALGORITHM))(AND(LS_SEP(LS_LOGIC)(LS_SYNTAX))(LS_SEP(LS_ALGORITHM)(LS_SYNTAX)))
+# the cost of the one movement, in retained nodes
+glyph LS_N = la et. NODES(DAG(et))
+
+glyph REPORT =
+  LS_JOIN(
+  CONSc("LOGICSYNTAX SYNTAX κ=")(
+  CONSc(CANON(LS_SYNTAX))(
+  CONSc(" ALGORITHM 𝓡=")(
+  CONSc(CANON(LS_ALGORITHM))(
+  CONSc(" LOGIC ⊗(𝓡,κ)=")(
+  CONSc(CANON(LS_LOGIC))(
+  CONSc("\nLOGICSYNTAX pairwise through the §41 relation — LOGIC vs ALGORITHM: ")(
+  CONSc(VERDICT(LS_LOGIC)(LS_ALGORITHM))(
+  CONSc(" | LOGIC vs SYNTAX: ")(
+  CONSc(VERDICT(LS_LOGIC)(LS_SYNTAX))(
+  CONSc(" | ALGORITHM vs SYNTAX: ")(
+  CONSc(VERDICT(LS_ALGORITHM)(LS_SYNTAX))(
+  CONSc(" | all three pairwise SEPARATE:")(
+  CONSc(ID_BSTR(LS_ALLSEP))(
+  CONSc(" ★ so the STRONG reading (logic IS algorithm IS syntax) is FALSE and this gate refuses it")(
+  CONSc("\nLOGICSYNTAX but the dyad RETAINS BOTH parents as proper sub-forms:")(
+  CONSc(ID_BSTR(LS_RETAINS(LS_LOGIC)))(
+  CONSc(" | cost of the one movement: parts ")(
+  CONSc(int_to_str(LS_N(LS_ALGORITHM)))(
+  CONSc("+")(
+  CONSc(int_to_str(LS_N(LS_SYNTAX)))(
+  CONSc(" retained nodes → dyad ")(
+  CONSc(int_to_str(LS_N(LS_LOGIC)))(
+  CONSc(" (+1 per collapse, the rate unified.la and compressbound.la measured)")(
+  CONSc("\nLOGICSYNTAX ★★ VERDICT: pairwise separate AND both retained ⇒ THE COLLAPSE IS COMPOSITIONAL, NOT IDENTIFICATORY:")(
+  CONSc(ID_BSTR(AND(LS_ALLSEP)(LS_RETAINS(LS_LOGIC))))(
+  CONSc(" — logic is not identical to algorithm or syntax (that would be the merger drift of §41), nor merely adjacent to them (that would be no collapse at all): it is ONE glyph born of both by ⊗ ≡ 𝔑, out of which both are recoverable. ↻(LOGIC)≡LOGIC is ↻-idempotence, true of every glyph, and is NOT gated — the fourth such refusal. [B] the Three Laws' derivation FROM ∃(∃)≡∃ remains a separate open claim; metalogic.la gates them, it does not derive them")(
+  NILc))))))))))))))))))))))))))))
+glyph MAIN = print(REPORT)

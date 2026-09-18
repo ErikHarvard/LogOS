@@ -1,0 +1,114 @@
+# ════════════════════════════════════════════════════════════════
+#  compressbound.la — DOES NEOLOGIZATION DROWN THE ETYMOLOGY IN NOISE? THE MEASURED ANSWER.
+#
+#  THE QUESTION (Erik, 2026-09-17): "As the glyphic structure collapses into one another to form a new
+#  sigil, the complexity increases until the etymological recognition of the glyph is completely drowned
+#  out in noise. Makes me think of Shannon. Solve this using the Archē and the meta-framework."
+#
+#  ★★ THE ANSWER SPLITS IN TWO, AND ONLY ONE HALF IS A REAL BOUND.
+#
+#  (1) IN THE COMPUTATIONAL REGISTER THERE IS NO NOISE, AND THIS IS NOT A HOPE — IT IS GATED BELOW.
+#      Shannon noise requires a NOISY CHANNEL. The glyph DAG is a UNIQUELY DECODABLE CODE: `DECOMP` is an
+#      exact inverse of `DAG`, so `RECOVER(DAG(etym)) ≡ NORMK(etym)` at EVERY depth. Nothing is lost, so
+#      nothing is drowned. What EXPLODES is only the UNFOLDED PRESENTATION — the tree doubles at each
+#      collapse (3,7,15,31,63,127) while the RETAINED hash-consed form grows by exactly +1 node per
+#      collapse. The tree is the expansion of the code, not the code. Confusing the two is the whole of
+#      the worry, and the two are measured side by side below.
+#
+#  (2) THE REAL BOUND IS THE RENDERER'S CHANNEL CAPACITY, AND IT IS A DESIGN CHOICE, NOT A LAW.
+#      A 32×32 1-bit sigil carries 1024 bits — 128 bytes of form. Measured here:
+#        · the UNFOLDED canonical string passes 128 bytes at **k=3** (210 bytes = 1680 bits; k=2 is 102).
+#          ⚠ UNITS: `str_len` counts BYTES and the mode sigils ⊗⊕▷⊂↻ are 3 bytes each in UTF-8, so the
+#          byte figures run ~15% above a character count. My independent derivation said 180 because it
+#          counted CHARACTERS; the module counts bytes. The crossover depth k=3 is the same either way,
+#          but the discrepancy is recorded rather than quietly reconciled — it is a units difference, and
+#          a raster carries BITS, so bytes are the right unit for a capacity claim.
+#        · the HASH-CONSED DAG form grows +1 def per collapse, so it would not reach 128 defs until ~k=125.
+#      **`sigil.la` walks the unfolded decomposition** (the same Scott nodes `CANON` walks), so it inherits
+#      the exponential bound and etymological legibility from the raster dies around depth 2. A renderer
+#      that encoded the DAG instead would survive roughly FORTY TIMES deeper. That is the actionable
+#      finding, and it is about the RENDERER, not about the language.
+#
+#  ★★ THE ARCHĒ IS THE TERMINATOR, AND THAT IS ITS STRUCTURAL ROLE HERE.
+#      `canon.la`'s `REWRITE_SYN` grants ⊗-idempotence to the ARCHĒ ALONE (Erik's ruling, 2026-08-24):
+#      ⊗(∃,∃) → ∃. So the ∃ chain is CONSTANT at every depth — normalised length 1, forever — while every
+#      ordinary glyph's meaning-string doubles. ∃(∃) ≡ ∃ is not decoration: it is the ONE fixed point at
+#      which repeated self-collapse adds NOTHING, and the gate below measures that contrast directly.
+#      Complexity is bounded by the EQUIVALENCE THEORY (the rewrite set), and entropy accumulates exactly
+#      to the extent that theory is incomplete — which is why the rewrite set, not the renderer, is the
+#      knob that matters.
+#
+#  GATE (gate_registers.sh §42)
+#      · the unfolded tree DOUBLES and the retained DAG form grows by EXACTLY +1, over six depths;
+#      · RECOVERY IS EXACT AT EVERY DEPTH — the no-noise claim, checked, not asserted;
+#      · every depth is κ-DISTINCT from every other, so the normalisation loses nothing either;
+#      · the Archē chain is CONSTANT while the κ chain doubles — the fixed point measured against a control;
+#      · the capacity numbers, printed.
+#      RED PATHS: (1) sharing broken (the retained count made the tree count) — growth is no longer linear
+#      and the +1 law fails; (2) recovery broken — the etymology really IS drowned, and the gate says so.
+#  ★ Growth is asserted as a LAW (+1 per collapse, doubling) rather than as pinned counts, so the gate
+#     stays true if the chain is lengthened. The capacity bytes ARE pinned; they are properties of κ.
+#  ★ EVIDENTIAL: [W] all five assertions; [B] the capacity figure is for the CURRENT 32×32 1-bit sigil —
+#     a different raster is a different number, and the bound is the renderer's, never the language's.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # DAG DECOMP NODES TSIZE NORMK RECOVER CANON + the base surface
+
+export CB_CHAIN CB_TREE CB_KEPT CB_REC CB_DAG
+
+glyph CB_BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph CB_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+# ★ LOCAL ALIASES so a mutant has something in THIS file to break: a later definition does NOT shadow an
+#   imported glyph (tiny_host returns the FIRST definition), so a mutant redefining DAG/NODES would be inert.
+glyph CB_DAG   = la et. DAG(et)
+glyph CB_KEPT  = la et. NODES(CB_DAG(et))      # the RETAINED hash-consed form
+glyph CB_TREE  = la et. TSIZE(et)              # the UNFOLDED presentation
+glyph CB_REC   = la et. str_eq(RECOVER(CB_DAG(et)))(NORMK(et))
+
+# ── the worst case for growth: repeated SELF-collapse g_{k+1} = ⊗(g_k,g_k) ──
+glyph CB_STEP = la et. SYN(et)(et)
+glyph CB_CHAIN = la seed. la n. Z(la self. la k. la et. la acc.
+  IF(int_eq(k)(0))(la _. CONSc(et)(acc))(la _. self(sub(k)(1))(CB_STEP(et))(CONSc(et)(acc))))(n)(seed)(NILc)
+glyph CB_REV = Z(la self. la l. l(NILc)(la h. la t. RD_FOLD(la x. la a. CONSc(x)(a))(CONSc(h)(NILc))(self(t))))
+glyph K_CHAIN = CB_REV(CB_CHAIN(KAPPA)(5))
+glyph A_CHAIN = CB_REV(CB_CHAIN(Px("∃"))(5))
+
+# ── the three laws, as PROPERTIES over consecutive depths (true however long the chain) ──
+glyph CB_PAIRS = Z(la self. la l. l(TRUE)(la h. la t. t(TRUE)(la h2. la t2. AND(int_eq(CB_KEPT(h2))(add(CB_KEPT(h))(1)))(self(t)))))
+glyph CB_DOUBLES = Z(la self. la l. l(TRUE)(la h. la t. t(TRUE)(la h2. la t2. AND(int_eq(CB_TREE(h2))(add(mul(2)(CB_TREE(h)))(1)))(self(t)))))
+glyph CB_ALLREC = RD_FOLD(la et. la acc. AND(acc)(CB_REC(et)))(TRUE)
+glyph CB_CONST = Z(la self. la l. l(TRUE)(la h. la t. t(TRUE)(la h2. la t2. AND(int_eq(str_to_int(str_len(NORMK(h2))))(str_to_int(str_len(NORMK(h)))))(self(t)))))
+glyph CB_DISTINCT = Z(la self. la l. l(TRUE)(la h. la t. AND(RD_FOLD(la o. la acc. AND(acc)(NOT(str_eq(NORMK(o))(NORMK(h)))))(TRUE)(t))(self(t))))
+glyph CB_LENS = la l. RD_FOLD(la et. la acc. concat(int_to_str(str_to_int(str_len(NORMK(et)))))(concat(" ")(acc)))("")(l)
+glyph CB_NUMS = la f. la l. RD_FOLD(la et. la acc. concat(int_to_str(f(et)))(concat(" ")(acc)))("")(l)
+
+glyph REPORT =
+  CB_JOIN(
+  CONSc("COMPRESSBOUND κ chain ⊗(g,g)×5 | UNFOLDED tree: ")(
+  CONSc(CB_NUMS(CB_TREE)(K_CHAIN))(
+  CONSc("| RETAINED hash-consed: ")(
+  CONSc(CB_NUMS(CB_KEPT)(K_CHAIN))(
+  CONSc("| tree DOUBLES:")(
+  CONSc(CB_BSTR(CB_DOUBLES(K_CHAIN)))(
+  CONSc(" retained grows by EXACTLY +1:")(
+  CONSc(CB_BSTR(CB_PAIRS(K_CHAIN)))(
+  CONSc("\nCOMPRESSBOUND ★ NO NOISE: etymology recovers EXACTLY at every depth:")(
+  CONSc(CB_BSTR(CB_ALLREC(K_CHAIN)))(
+  CONSc(" | every depth κ-distinct (normalisation loses nothing either):")(
+  CONSc(CB_BSTR(CB_DISTINCT(K_CHAIN)))(
+  CONSc(" — DECOMP is an exact inverse of DAG, so the code is uniquely decodable and Shannon noise has no channel to enter by")(
+  CONSc("\nCOMPRESSBOUND ★ THE ARCHĒ IS THE TERMINATOR: ⊗(∃,∃)→∃ (⊗-idempotence for the Archē ALONE). meaning-string length — ∃ chain: ")(
+  CONSc(CB_LENS(A_CHAIN))(
+  CONSc("(constant:")(
+  CONSc(CB_BSTR(CB_CONST(A_CHAIN)))(
+  CONSc(") vs κ chain: ")(
+  CONSc(CB_LENS(K_CHAIN))(
+  CONSc("(constant:")(
+  CONSc(CB_BSTR(CB_CONST(K_CHAIN)))(
+  CONSc(") — repeated self-collapse adds NOTHING at the fixed point and doubles everywhere else")(
+  CONSc("\nCOMPRESSBOUND capacity: a 32×32 1-bit sigil carries 1024 bits = 128 bytes of form. The UNFOLDED string passes it at k=3 (")(
+  CONSc(int_to_str(str_to_int(str_len(NORMK(SYN(SYN(SYN(KAPPA)(KAPPA))(SYN(KAPPA)(KAPPA)))(SYN(SYN(KAPPA)(KAPPA))(SYN(KAPPA)(KAPPA))))))))(
+  CONSc(" bytes); the RETAINED form grows +1/collapse and would not reach 128 defs until ~k=125. ★ sigil.la walks the UNFOLDED decomposition, so it inherits the exponential bound — a renderer encoding the DAG instead would survive ~40× deeper. [B] the bound is the RENDERER'S, not the language's")(
+  NILc))))))))))))))))))))))))))
+glyph MAIN = print(REPORT)

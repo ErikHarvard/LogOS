@@ -1,0 +1,219 @@
+# ════════════════════════════════════════════════════════════════
+#  recdepth.la — THE RECOGNITION DEPTH FUNCTION ρ(L_t)  (LA_COMPLETION.md Tier 4;
+#  LINGUA_ADAMICA.tex def:rec-depth §3842: "for a language state L_t at time t, the recognition depth
+#  ρ(L_t) is the number of distinct levels at which the language can describe itself — ρ=0 names objects
+#  in reality, ρ=1 its own operations, ρ=2 the operations that govern those, ρ=k its own k-th order
+#  self-description". The ledger: "Nothing computes it."  Now something does.
+#
+#  COMPUTED FROM THE LIVE CATALOGUE, NOT DECLARED. A glyph's ORDER is CATALOGUE-RELATIVE:
+#     ORDER(g) = 0                                      when ETYM(g) is a primitive leaf (it names reality)
+#     ORDER(g) = 1 + max{ORDER(h) : h ∈ L_t, ETYM(h) a PROPER sub-form of ETYM(g)}   otherwise
+#  (a max over nothing is 0, so a compound built only over leaves has order 1). ρ(L_t) = max ORDER over L_t.
+#  "The language contains a glyph for its n-th order operations" is read literally: g is (n+1)-th order
+#  when its form is BUILT OVER a catalogued n-th order glyph's form.
+#
+#  ★ ρ IS NOT TREE DEPTH. The ledger asks that it be distinct from DEPTH (g₉) and from lexical depth D.
+#  A form of tree depth 3 over primitives alone has order 1, because no catalogued glyph sits inside it:
+#  recognition depth measures THE LANGUAGE STATE (what it has already named), not a glyph's shape. Witnessed
+#  twice below — the deep unregistered probe, and ν* read against the catalogue with and without the modes.
+#
+#  ★ Κ-KEYED, NEVER NAME-KEYED (the standing invariant): sub-form identity is NORMK equality, so
+#  ρ ≡ SR_ABOUT is one entry, not two, and a renamed glyph cannot inflate the count.
+#
+#  THE CATALOGUE L_t: the nine primitives (order 0); κ, ℛ, the eight self-relations, the five mode glyphs
+#  of ᵍ (metaglyph.la), the operators ∂δγ𝔄 (ρ ≡ SR_ABOUT, counted once), G_ETYM (order 1);
+#  ⊗(κ,κ), ν* = Δ_M's glyph, Δ_R, Δ_B, and this function's own glyph G_RHO (order 2).
+#  Forms owned by other modules are CITED by their declaration line and the citation is READ BACK from the
+#  module file on every run, so a drift in the source turns the witness RED — cite, do not re-implement
+#  (those modules' ~860-glyph closures would not fit tiny_host's 1024-entry table beside this one).
+#
+#  ORDERS ARE COMPUTED BY BOUNDED RELAXATION, not by a recursion that re-descends the catalogue: four
+#  passes of one law. The pass count is PRINTED, so an under-relaxed run is visible instead of silently low.
+#
+#  GATE (gate_registers.sh §31)  ρ is computable from the catalogue (=2 today); adding ↻(ν*) — Δ* viewed
+#        as an object, the tex's level 3 — raises ρ strictly 2→3; adding ⊕(BEING,LOVE) at an existing
+#        level leaves ρ at 2 (the ledger's own red path); adding a tree-depth-3 form with no catalogued
+#        sub-form leaves ρ at 2 and reads order 1.
+#        RED PATHS: (1) SUBSTRS made to return the WHOLE form's string set (proper-ness dropped) — every
+#        glyph becomes its own sub-form, orders run away and the printed ρ is no longer 2; (2) ORDER_IN
+#        replaced by TDEPTH — the deep unregistered probe then moves ρ, and the "not tree depth" witness
+#        goes F. Each mutant fails a printed exact value.
+#  ★ EVIDENTIAL: [W] the four assertions + the citation read-back; [A] G_RHO = ▷(DEPTH,↻(RECOGNITION))
+#     "depth directed at self-recognition" — declared, checked clear by regcollide.py, the architect
+#     ratifies; [B] the catalogue is the register stack's published surface, not every glyph in every
+#     module — ρ over a larger catalogue can only be ≥ this value (ORDER is monotone under ⊆).
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("lineage.la")     # the base surface: PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM GLYPH SEALc KAPPA REVAL SR_* TDEPTH MAX HAS_PREFIX Z IF AND OR NOT + the Scott lists
+
+# ★ RE-EXPORTS (the base surface). tiny_host loads every import OCCURRENCE's whole tree into a FIXED
+#   1024-entry glyph table, so a module above this one imports recdepth.la ALONE and takes
+#   lineage/canon/glyphdag through it instead of loading them a second time.
+export ORDER RHO ORDER_IN ORDS_N RHO_ORDS RHO_OF G_RHO RD_CAT SUBFORM PROPER ALLSTR SUBSTRS INLIST NENT NORMCAT N_DISTINCT N_ADD N_COUNT N_MEMBER E_NAME E_STR E_FORM E_SUBS IS_LEAF LOOKUP RD_FOLD RD_JOIN RD_APP RD_BSTR RD_CONTAINS Px MODE_SYN_F MODE_CON_F MODE_DIR_F MODE_CONT_F MODE_MC_F OP_DIFF_F OP_BOUND_F OP_COMP_F OP_RECOG_F OP_INTEG_F NU_STAR_F G_DR_F G_DB_F DSTAR_F LINEAGE RECOVER LINEAGE_OK G_ETYM SEALc LIN_CAT Z TRUE FALSE NOT AND OR IF PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE LE MAX AUTO_OK HAS_PREFIX DEPTH TDEPTH MKMODE DCOLLAPSE KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH SR_FOR SR_WITH DAG DECOMP NODES TSIZE SPLIT HEAD3 DROP3 UPTO AFTERC IS_BIN MC_S SYN_S CON_S DIR_S CONT_S LEN NTH LAST NILc CONSc PAIRc FSTc SNDc JOIN APPEND
+
+glyph RD_BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph RD_FOLD = Z(la self. la f. la z. la l. l(z)(la h. la t. f(h)(self(f)(z)(t))))
+glyph RD_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph RD_CONTAINS = Z(la self. la s. la sub. IF(HAS_PREFIX(s)(sub))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(sub))))
+
+# ── sub-form structure over the six-constructor κ nodes; every comparison is on NORMK strings ──
+glyph IS_LEAF = la f. f(la nm. TRUE)(la a. la b. FALSE)(la a. la b. FALSE)(la a. la b. FALSE)(la a. la b. FALSE)(la a. FALSE)
+glyph RD_APP = Z(la self. la a. la b. a(b)(la h. la t. CONSc(h)(self(t)(b))))
+glyph ALLSTR = Z(la self. la f. CONSc(NORMK(f))(f(la nm. NILc)(la x. la y. RD_APP(self(x))(self(y)))(la x. la y. RD_APP(self(x))(self(y)))(la x. la y. RD_APP(self(x))(self(y)))(la x. la y. RD_APP(self(x))(self(y)))(la x. self(x))))
+glyph SUBSTRS = la f. f(la nm. NILc)(la x. la y. RD_APP(ALLSTR(x))(ALLSTR(y)))(la x. la y. RD_APP(ALLSTR(x))(ALLSTR(y)))(la x. la y. RD_APP(ALLSTR(x))(ALLSTR(y)))(la x. la y. RD_APP(ALLSTR(x))(ALLSTR(y)))(la x. ALLSTR(x))
+glyph INLIST = la ns. RD_FOLD(la h. la acc. OR(acc)(str_eq(h)(ns)))(FALSE)
+glyph SUBFORM = la s. la f. INLIST(NORMK(s))(ALLSTR(f))
+glyph PROPER  = la s. la f. INLIST(NORMK(s))(SUBSTRS(f))
+
+# ── a catalogue entry prepared once: (name, κ-string, form, the κ-strings of its PROPER sub-forms) ──
+glyph NENT = la nm. la et. PAIRc(nm)(PAIRc(NORMK(et))(PAIRc(et)(SUBSTRS(et))))
+glyph E_NAME = la e. FSTc(e)
+glyph E_STR  = la e. FSTc(SNDc(e))
+glyph E_FORM = la e. FSTc(SNDc(SNDc(e)))
+glyph E_SUBS = la e. SNDc(SNDc(SNDc(e)))
+glyph NORMCAT = la cat. RD_FOLD(la p. la acc. CONSc(NENT(FSTc(p))(ETYM(SNDc(p))))(acc))(NILc)(cat)
+
+# ── ORDER by bounded relaxation of one law; orders keyed by κ-string ──
+glyph LOOKUP = la ns. RD_FOLD(la o. la acc. IF(str_eq(FSTc(o))(ns))(la _. SNDc(o))(la _. acc))(0)
+glyph ORDER_STEP = la ords. la ncat. la e. IF(IS_LEAF(E_FORM(e)))(la _. 0)(la _. add(1)(RD_FOLD(la e2. la acc. MAX(acc)(IF(INLIST(E_STR(e2))(E_SUBS(e)))(la _. LOOKUP(E_STR(e2))(ords))(la _. 0)))(0)(ncat)))
+glyph PASS = la ncat. la ords. RD_FOLD(la e. la acc. CONSc(PAIRc(E_STR(e))(ORDER_STEP(ords)(ncat)(e)))(acc))(NILc)(ncat)
+glyph RELAX = la ncat. la n. Z(la self. la k. la ords. IF(int_eq(k)(0))(la _. ords)(la _. self(sub(k)(1))(PASS(ncat)(ords))))(n)(NILc)
+glyph RD_PASSES = 4
+glyph ORDS_N = la ncat. RELAX(ncat)(RD_PASSES)
+glyph RHO_ORDS = RD_FOLD(la o. la acc. MAX(acc)(SNDc(o)))(0)
+glyph ORDER_IN = la ords. la ncat. la f. IF(IS_LEAF(f))(la _. 0)(la _. (la subs. add(1)(RD_FOLD(la e2. la acc. MAX(acc)(IF(INLIST(E_STR(e2))(subs))(la _. LOOKUP(E_STR(e2))(ords))(la _. 0)))(0)(ncat)))(SUBSTRS(f)))
+glyph ORDER = la cat. la f. (la nc. ORDER_IN(ORDS_N(nc))(nc)(f))(NORMCAT(cat))
+glyph RHO   = la cat. RHO_ORDS(ORDS_N(NORMCAT(cat)))
+
+# ── the cited forms (declaration lines read back below) ──
+glyph MODE_SYN_F  = DIR(Px("LOVE"))(Px("RELATION"))             # metaglyph.la  ⊗
+glyph MODE_CON_F  = CONT(Px("RELATION"))(Px("FORM"))            # metaglyph.la  ⊕
+glyph MODE_DIR_F  = SYN(Px("BECOMING"))(Px("RELATION"))         # metaglyph.la  ▷
+glyph MODE_CONT_F = DIR(Px("DEPTH"))(Px("FORM"))                # metaglyph.la  ⊂
+glyph MODE_MC_F   = MC(Px("SELF"))                              # metaglyph.la  ↻
+glyph OP_DIFF_F   = DIR(Px("VOID"))(Px("RELATION"))             # metaglyph.la  ∂
+glyph OP_BOUND_F  = CONT(Px("FORM"))(Px("DEPTH"))               # metaglyph.la  δ
+glyph OP_COMP_F   = SYN(Px("BECOMING"))(Px("FORM"))             # metaglyph.la  γ
+glyph OP_RECOG_F  = MC(Px("RECOGNITION"))                       # metaglyph.la  ρ ≡ SR_ABOUT (one entry)
+glyph OP_INTEG_F  = SYN(Px("LOVE"))(Px("RECOGNITION"))          # metaglyph.la  𝔄
+glyph NU_STAR_F   = SYN(MODE_SYN_F)(MODE_MC_F)                  # modegenesis.la ν* = Δ_M's glyph
+glyph G_DR_F      = DIR(Px("RECOGNITION"))(MC(Px("VOID")))      # regenesis.la   Δ_R
+glyph G_DB_F      = DIR(Px("RECOGNITION"))(MC(Px("RELATION")))  # branchgenesis.la Δ_B
+glyph G_RHO = SEALc(DIR(Px("DEPTH"))(MC(Px("RECOGNITION"))))    # this function's own glyph [A]
+
+glyph RD_CAT =
+  CONSc(PAIRc("BEING")(GLYPH("BEING")))(
+  CONSc(PAIRc("RECOGNITION")(GLYPH("RECOGNITION")))(
+  CONSc(PAIRc("LOVE")(GLYPH("LOVE")))(
+  CONSc(PAIRc("SELF")(GLYPH("SELF")))(
+  CONSc(PAIRc("RELATION")(GLYPH("RELATION")))(
+  CONSc(PAIRc("VOID")(GLYPH("VOID")))(
+  CONSc(PAIRc("BECOMING")(GLYPH("BECOMING")))(
+  CONSc(PAIRc("FORM")(GLYPH("FORM")))(
+  CONSc(PAIRc("DEPTH")(GLYPH("DEPTH")))(
+  CONSc(PAIRc("KAPPA")(SEALc(KAPPA)))(
+  CONSc(PAIRc("REVAL")(SEALc(REVAL)))(
+  CONSc(PAIRc("SR_TO")(SEALc(SR_TO)))(
+  CONSc(PAIRc("SR_ABOUT")(SEALc(SR_ABOUT)))(
+  CONSc(PAIRc("SR_AS")(SEALc(SR_AS)))(
+  CONSc(PAIRc("SR_BY")(SEALc(SR_BY)))(
+  CONSc(PAIRc("SR_FROM")(SEALc(SR_FROM)))(
+  CONSc(PAIRc("SR_THROUGH")(SEALc(SR_THROUGH)))(
+  CONSc(PAIRc("SR_FOR")(SEALc(SR_FOR)))(
+  CONSc(PAIRc("SR_WITH")(SEALc(SR_WITH)))(
+  CONSc(PAIRc("MODE_SYN")(SEALc(MODE_SYN_F)))(
+  CONSc(PAIRc("MODE_CON")(SEALc(MODE_CON_F)))(
+  CONSc(PAIRc("MODE_DIR")(SEALc(MODE_DIR_F)))(
+  CONSc(PAIRc("MODE_CONT")(SEALc(MODE_CONT_F)))(
+  CONSc(PAIRc("MODE_MC")(SEALc(MODE_MC_F)))(
+  CONSc(PAIRc("OP_DIFF")(SEALc(OP_DIFF_F)))(
+  CONSc(PAIRc("OP_BOUND")(SEALc(OP_BOUND_F)))(
+  CONSc(PAIRc("OP_COMP")(SEALc(OP_COMP_F)))(
+  CONSc(PAIRc("OP_RECOG")(SEALc(OP_RECOG_F)))(
+  CONSc(PAIRc("OP_INTEG")(SEALc(OP_INTEG_F)))(
+  CONSc(PAIRc("G_ETYM")(G_ETYM))(
+  CONSc(PAIRc("SHARED")(SEALc(SYN(KAPPA)(KAPPA))))(
+  CONSc(PAIRc("NU_STAR")(SEALc(NU_STAR_F)))(
+  CONSc(PAIRc("G_DR")(SEALc(G_DR_F)))(
+  CONSc(PAIRc("G_DB")(SEALc(G_DB_F)))(
+  CONSc(PAIRc("G_RHO")(G_RHO))(
+  NILc)))))))))))))))))))))))))))))))))))
+
+# ── κ-keyed distinctness: an entry survives only if no earlier entry carries its κ-string ──
+glyph N_MEMBER = la ns. RD_FOLD(la e. la acc. OR(acc)(str_eq(E_STR(e))(ns)))(FALSE)
+glyph N_DISTINCT = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(N_MEMBER(E_STR(h))(rest))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))
+glyph N_COUNT = la ords. la n. RD_FOLD(la o. la acc. add(acc)(IF(int_eq(SNDc(o))(n))(la _. 1)(la _. 0)))(0)(ords)
+glyph N_ADD = la nm. la et. la ncat. CONSc(NENT(nm)(et))(ncat)
+glyph N_DROP_MODES = Z(la self. la l. l(NILc)(la h. la t. IF(HAS_PREFIX(E_NAME(h))("MODE_"))(la _. self(t))(la _. CONSc(h)(self(t)))))
+glyph RHO_OF = la nc. RHO_ORDS(ORDS_N(nc))
+
+# ── the three probes: a genuine new level, an existing level, an unregistered deep tree ──
+glyph DSTAR_F = MC(NU_STAR_F)                                                        # Δ* as an object: level 3
+glyph SAME_F  = CON(Px("BEING"))(Px("LOVE"))                                         # a new glyph at level 1
+glyph DEEP_F  = CONT(CONT(CONT(Px("BEING"))(Px("BEING")))(Px("BEING")))(Px("BEING")) # tree depth 3, nothing catalogued inside
+
+# ── citation read-back: each cited declaration line must still be in its module ──
+glyph CITE_OK =
+  AND(RD_CONTAINS(read_file("regenesis.la"))("glyph G_DR = SEALc(DIR(Px(\"RECOGNITION\"))(MC(Px(\"VOID\"))))"))(
+  AND(RD_CONTAINS(read_file("branchgenesis.la"))("glyph G_DB = SEALc(DIR(Px(\"RECOGNITION\"))(MC(Px(\"RELATION\"))))"))(
+  AND(RD_CONTAINS(read_file("modegenesis.la"))("glyph NU_STAR_C = COLLAPSE(SYN)(GLYPHOF(MODE_SYN))(GLYPHOF(MODE_MC))"))(
+  AND(RD_CONTAINS(read_file("metaglyph.la"))("glyph MODE_SYN  = DIR(PRIM(\"LOVE\"))(PRIM(\"RELATION\"))"))(
+  AND(RD_CONTAINS(read_file("metaglyph.la"))("glyph MODE_MC   = MC(PRIM(\"SELF\"))"))(
+      RD_CONTAINS(read_file("metaglyph.la"))("glyph OP_RECOG = MC(PRIM(\"RECOGNITION\"))"))))))
+
+# everything below is computed ONCE under one binding chain: tiny_host re-evaluates a glyph
+# body at every reference, so a named intermediate would be recomputed each time it is printed.
+glyph REPORT = (la c0. (la ords. (la rho. (la rD. (la rS. (la rP. (la nuw. 
+  RD_JOIN(
+  CONSc("RECDEPTH catalogue entries=")(
+  CONSc(int_to_str(LEN(RD_CAT)))(
+  CONSc(" κ-distinct=")(
+  CONSc(int_to_str(LEN(c0)))(
+  CONSc(" | orders n0=")(
+  CONSc(int_to_str(N_COUNT(ords)(0)))(
+  CONSc(" n1=")(
+  CONSc(int_to_str(N_COUNT(ords)(1)))(
+  CONSc(" n2=")(
+  CONSc(int_to_str(N_COUNT(ords)(2)))(
+  CONSc(" n3=")(
+  CONSc(int_to_str(N_COUNT(ords)(3)))(
+  CONSc(" | ρ(L_t)=")(
+  CONSc(int_to_str(rho))(
+  CONSc(" | cited forms read back from their modules:")(
+  CONSc(RD_BSTR(CITE_OK))(
+  CONSc("\nRECDEPTH add ↻(ν*) — Δ* as an object, the tex's level 3: ρ ")(
+  CONSc(int_to_str(rho))(
+  CONSc("→")(
+  CONSc(int_to_str(rD))(
+  CONSc(" strictly rises:")(
+  CONSc(RD_BSTR(lt(rho)(rD)))(
+  CONSc(" | add ⊕(BEING,LOVE) at an existing level: ρ→")(
+  CONSc(int_to_str(rS))(
+  CONSc(" unmoved:")(
+  CONSc(RD_BSTR(int_eq(rS)(rho)))(
+  CONSc(" | add ⊂(⊂(⊂(BEING,BEING),BEING),BEING), tree depth ")(
+  CONSc(int_to_str(TDEPTH(DEEP_F)))(
+  CONSc(" with nothing catalogued inside: order=")(
+  CONSc(int_to_str(ORDER_IN(ords)(c0)(DEEP_F)))(
+  CONSc(" ρ→")(
+  CONSc(int_to_str(rP))(
+  CONSc(" unmoved:")(
+  CONSc(RD_BSTR(int_eq(rP)(rho)))(
+  CONSc(" (ρ is NOT tree depth)")(
+  CONSc("\nRECDEPTH ρ is the STATE's: ν* order with the five mode glyphs catalogued=")(
+  CONSc(int_to_str(ORDER_IN(ords)(c0)(NU_STAR_F)))(
+  CONSc(" without them=")(
+  CONSc(int_to_str(nuw))(
+  CONSc(" state-relative:")(
+  CONSc(RD_BSTR(lt(nuw)(ORDER_IN(ords)(c0)(NU_STAR_F))))(
+  CONSc(" | relaxation passes=")(
+  CONSc(int_to_str(RD_PASSES))(
+  CONSc(" | G_RHO=")(
+  CONSc(REN(G_RHO))(
+  CONSc(" order=")(
+  CONSc(int_to_str(ORDER_IN(ords)(c0)(ETYM(G_RHO))))(
+  CONSc(" [A] declared, collision-checked")(
+  NILc)))))))))))))))))))))))))))))))))))))))))))))))))
+  )(ORDER_IN(ORDS_N(N_DROP_MODES(c0)))(N_DROP_MODES(c0))(NU_STAR_F)))(RHO_OF(N_ADD("DEEP")(DEEP_F)(c0))))(RHO_OF(N_ADD("SAME")(SAME_F)(c0))))(RHO_OF(N_ADD("DSTAR")(DSTAR_F)(c0))))(RHO_ORDS(ords)))(ORDS_N(c0)))(N_DISTINCT(NORMCAT(RD_CAT)))
+glyph MAIN = print(REPORT)

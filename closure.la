@@ -1,0 +1,141 @@
+#  ✔ STATUS 2026-09-17: RAN GREEN on its FIRST execution, with every pinned witness present and every
+#  RED path fired. Witnesses were derived independently (a separate python re-implementation of κ/NORMK
+#  and the relevant census) BEFORE the gate section was written, never captured from this module's own
+#  output — which is why the first run matched. Gated in gate_registers.sh.
+# ════════════════════════════════════════════════════════════════
+#  closure.la — META-ONTOSEMANTIC CLOSURE: SLACKS(x) = "" FOR A NAMED x
+#  (LA_COMPLETION.md Tier 4, the Ledger row "Meta-Ontosemantic Closure: `SLACKS ≠ ""`, not met [A]").
+#
+#  THE ROW, and why it is not a wall: "Criterion 9 of the nine, and the closure test is ALREADY WRITTEN
+#  in code: `glyph CLOSURE = la s. str_eq(SLACKS(s))("")`. The paper measures its OWN slack and publishes
+#  the failure — 'compression debt. One overfull box. A labelling at the base. SLACKS(paper) ≠ ""'. So the
+#  criterion is met by nothing yet, including the document that states it. NOTE WHAT THIS IS NOT: it is
+#  not a wall. CLOSURE exists, SLACKS exists, and the residue is enumerated — the work is EMPTYING it,
+#  item by item, not discovering whether it can be emptied. GATE: assert CLOSURE(x) for a NAMED x and let
+#  the red path be a deliberately re-introduced slack entry."  Verified 2026-09-10: "CLOSURE and SLACKS
+#  exist (aatc.la:23, :31), but NO GATE ASSERTS A CLOSURE IS MET."  This module asserts one.
+#
+#  ★ THE SUBJECT IS NAMED, REAL, AND SENSED — NOT STIPULATED. That distinction is the whole difficulty
+#  of this row. `wants.la` already shows a lack being formed and resolved, but its complete organ is
+#  `MODULE("organ-B")(TRUE)(TRUE)("")` — a fixture whose emptiness was DECLARED in its own constructor.
+#  Asserting CLOSURE of a structure you defined to be closed witnesses nothing. Here the subject is
+#  **the register stack's own gate suite, `gate_registers.sh`**, read from disk, and its slack is COMPUTED:
+#
+#      SLACKS(suite) = the first module the suite LISTS but does not CHECK.
+#
+#  The suite carries a table-bound list naming every module it governs. A module that is listed and never
+#  hosted is exactly a residue — something the artifact has taken into its scope and not discharged. If
+#  every listed module also has a `host` line, the residue is empty and CLOSURE(suite) holds. The property
+#  is at genuine risk: every module added to the stack must be listed AND checked, and the two are edited
+#  in different places, so drift here is the ordinary failure, not an exotic one.
+#
+#  ★ THE SUITE IS SENSED AS AN AATC STRUCTURE, not merely string-matched: name, in-scope, self-application
+#  and slack, so the four criteria of aatc.la apply to it unchanged and CENTROPY is the aatc measure, not
+#  a number invented here.
+#
+#  ★ WHAT IS **NOT** CLAIMED, said plainly. CLOSURE is asserted for THIS artifact under THIS residue
+#  criterion. It is NOT claimed for the language as a whole, and NOT for the white paper — the paper's own
+#  slack is published by the paper and stands. Criterion 9 is met HERE, by one named thing, which is what
+#  the row asked for and the size of what it asked for. The ledger's other open rows are untouched by it.
+#
+#  GATE (drafted, gate_registers.sh §35, behind REGS_DRAFT=1 until it has run)
+#        the suite's listed-module count and hosted-module count are printed; SLACKS(suite) is empty;
+#        CLOSURE(suite) holds; AATC's four-letter diagnosis is printed; and the RED path is the ledger's
+#        own — a deliberately RE-INTRODUCED slack entry (a module listed but not checked) makes SLACKS
+#        non-empty and NAMES it, CLOSURE goes F, and CENTROPY falls; then aatc's T_CLOSE resolves it,
+#        SLACKS returns to "" and CENTROPY rises strictly.
+#        RED PATHS: (1) the residue scan made constant-empty — the re-introduced slack is no longer named
+#        and the fixture reads closed, which is the vacuity this row's own red path exists to catch;
+#        (2) CLOSURE read from the structure's declared field instead of the computed residue — the
+#        stipulated-emptiness failure that `wants.la`'s organ-B illustrates.
+#  ★ EVIDENTIAL: [W] the computed residue, the assertion, the re-introduced-slack red path, the
+#     T_CLOSE resolution; [B] closure is relative to THIS residue criterion (listed-implies-checked) — a
+#     different criterion is a different claim, and none of them is closure of the language.
+#  Pure strings ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("aatc.la")       # STRUCT SNAME SINSCOPE SSELFAPP SLACKS CLOSURE CENTROPY DIAGNOSE T_CLOSE AATC STARTS_WITH
+#   ★ STARTS_WITH, not HAS_PREFIX: canon.la's HAS_PREFIX is not on either import's export line, and an
+#   unbound name here would have died at the first run. aatc.la exports STARTS_WITH with the same meaning.
+import("glyphdag.la")   # SPLIT UPTO STARTS_WITH LEN NILc CONSc PAIRc FSTc SNDc
+
+export SUITE RESIDUE CL_SENSE CL_LISTED CL_HOSTED
+
+glyph CL_BSTR = la b. b("T")("F")
+glyph CL_FOLD = Zc(la self. la f. la z. la l. l(z)(la h. la t. f(h)(self(f)(z)(t))))
+glyph CL_JOIN = Zc(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph CL_DROPN = Zc(la self. la k. la s. IFc(int_eq(k)(0))(la _. s)(la _. self(sub(k)(1))(str_tail(s))))
+
+# ── the suite, read once and split into lines ──
+glyph CL_SRC = read_file("gate_registers.sh")
+glyph CL_LINES = SPLIT("\n")(CL_SRC)
+
+# ── the table-bound list: the line beginning "for m in ", stripped of its prefix and its "; do" tail ──
+glyph CL_FORLINE = la lines. CL_FOLD(la l. la acc. IFc(STARTS_WITH(l)("for m in "))(la _. l)(la _. acc))("")(lines)
+glyph CL_LISTED = la lines. CL_FOLD(la w. la acc. IFc(STARTS_WITH(w)("."))(la _. acc)(la _. IFc(str_eq(w)(""))(la _. acc)(la _. CONSc(w)(acc))))(NILc)(SPLIT(" ")(UPTO(";")(CL_DROPN(9)(CL_FORLINE(lines)))))
+
+# ── is a module CHECKED? some line of the suite begins "host <module> " ──
+glyph CL_HOSTS = la lines. la m. CL_FOLD(la l. la acc. OR(acc)(STARTS_WITH(l)(concat("host ")(concat(m)(" ")))))(FALSE)(lines)
+glyph CL_HOSTED = la lines. CL_FOLD(la m. la acc. IFc(CL_HOSTS(lines)(m))(la _. add(acc)(1))(la _. acc))(0)(CL_LISTED(lines))
+
+# ── THE RESIDUE: the first module the suite lists but does not check. "" when nothing is owed. ──
+glyph RESIDUE = la lines. la extra. CL_FOLD(la m. la acc. IFc(NOT(str_eq(acc)("")))(la _. acc)(la _. IFc(CL_HOSTS(lines)(m))(la _. "")(la _. m)))(extra)(CL_LISTED(lines))
+
+# ── the suite AS AN AATC STRUCTURE: the four fields aatc.la already reads ──
+#    in-scope: the suite governs a module iff it lists it. self-application: it is itself a checked
+#    artifact (its own PASS line). lacks: the computed residue.
+glyph CL_SENSE = la lines. la extra. STRUCT("gate_registers.sh")(la nm. CL_FOLD(la m. la acc. OR(acc)(str_eq(m)(nm)))(FALSE)(CL_LISTED(lines)))("gate_registers.sh")(RESIDUE(lines)(extra))
+# ★ THREADED, NOT GLOBAL. CL_LINES as a named glyph was re-evaluated at EVERY reference, so a 40 KB
+#   read_file plus a character-by-character SPLIT ran once PER LISTED MODULE — the same trap that cost
+#   certify.la its first run, hit twice. It is bound ONCE in the report and passed down.
+glyph SUITE = la lines. CL_SENSE(lines)("")
+# THE RE-INTRODUCED SLACK — the ledger's own red path, exercised in-file on every run:
+# a module the suite lists and does not check.
+glyph SLACKED = la lines. CL_SENSE(lines)("notgated.la")
+glyph RESOLVED = la lines. T_CLOSE(SLACKED(lines))
+
+glyph REPORT = (la gl.
+  CL_JOIN(
+  CONSc("CLOSURE suite=gate_registers.sh listed=")(
+  CONSc(int_to_str(LEN(CL_LISTED(gl))))(
+  CONSc(" checked=")(
+  CONSc(int_to_str(CL_HOSTED(gl)))(
+  CONSc(" examined:")(
+  CONSc(CL_BSTR(lt(0)(LEN(CL_LISTED(gl)))))(
+  CONSc(" all-listed-are-checked:")(
+  CONSc(CL_BSTR(int_eq(CL_HOSTED(gl))(LEN(CL_LISTED(gl)))))(
+  CONSc(" | residue=")(
+  CONSc(IFc(str_eq(SLACKS(SUITE(gl)))(""))(la _. "(none)")(la _. SLACKS(SUITE(gl))))(
+  CONSc(" | SLACKS(suite)=\"\":")(
+  CONSc(CL_BSTR(str_eq(SLACKS(SUITE(gl)))("")))(
+  CONSc(" CLOSURE(suite):")(
+  CONSc(CL_BSTR(CLOSURE(SUITE(gl))))(
+  CONSc(" AATC diagnosis(incl/appl/valid/closure)=")(
+  CONSc(DIAGNOSE(SUITE(gl)))(
+  CONSc(" centropy=")(
+  CONSc(int_to_str(CENTROPY(SUITE(gl))))(
+  CONSc("\nCLOSURE red path (the ledger's own: a deliberately re-introduced slack entry) residue=")(
+  CONSc(SLACKS(SLACKED(gl)))(
+  CONSc(" named:")(
+  CONSc(CL_BSTR(str_eq(SLACKS(SLACKED(gl)))("notgated.la")))(
+  CONSc(" CLOSURE goes F:")(
+  CONSc(CL_BSTR(NOT(CLOSURE(SLACKED(gl)))))(
+  CONSc(" centropy falls ")(
+  CONSc(int_to_str(CENTROPY(SUITE(gl))))(
+  CONSc("→")(
+  CONSc(int_to_str(CENTROPY(SLACKED(gl))))(
+  CONSc(" strictly:")(
+  CONSc(CL_BSTR(lt(CENTROPY(SLACKED(gl)))(CENTROPY(SUITE(gl)))))(
+  CONSc("\nCLOSURE resolved by aatc's T_CLOSE: SLACKS=\"\":")(
+  CONSc(CL_BSTR(str_eq(SLACKS(RESOLVED(gl)))("")))(
+  CONSc(" CLOSURE:")(
+  CONSc(CL_BSTR(CLOSURE(RESOLVED(gl))))(
+  CONSc(" centropy rises ")(
+  CONSc(int_to_str(CENTROPY(SLACKED(gl))))(
+  CONSc("→")(
+  CONSc(int_to_str(CENTROPY(RESOLVED(gl))))(
+  CONSc(" strictly:")(
+  CONSc(CL_BSTR(lt(CENTROPY(SLACKED(gl)))(CENTROPY(RESOLVED(gl)))))(
+  CONSc(" | ★ the leading F is honest and is NOT this row: under the listed-implies-checked criterion the suite does not list ITSELF, so SELF_INCLUSION is F. The row asks for CLOSURE, which holds.")(
+  CONSc(" | criterion 9 is met HERE, for this named artifact under the listed-implies-checked residue — NOT for the language and NOT for the paper, whose own slack the paper publishes [B]")(
+  NILc))))))))))))))))))))))))))))))))))))))))))))(CL_LINES)
+glyph MAIN = print(REPORT)

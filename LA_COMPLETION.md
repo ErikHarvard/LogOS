@@ -1078,6 +1078,29 @@ registers. `trimono.la` now gates all three. What remains:
   existing catalogue entry and the injectivity gate must fail.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): neither sigil.la nor any dyad module has a Dyad or meta-referent sigil glyph.
 
+- `[✓]` **★★ The identity RELATION now has a glyph in 𝓜** (built 2026-09-17 answering Erik's
+  ground/locus objection; `identity.la`, gated `gate_registers.sh` §41). 𝓜 carried glyphs for the five
+  modes, 𝔑, κ, 𝓡 and ∂δγρ𝔄 — but **not for the identity relation the whole language rests on**, and the
+  DISTINCTION side was expressible only as the negation of a positive test. Three glyphs, all checked clear
+  by `regcollide.py`: **`G_GROUND = ▷(RECOGNITION,BEING)`** (≡ at ground — two routes, one being; the
+  deliberate parallel to κ = ▷(RECOGNITION,FORM), which recognises form where this recognises the being
+  beneath it); **`G_LOCUS = ▷(RECOGNITION,⊂(FORM,BEING))`** (≢ at locus — one being, two forms, stated
+  POSITIVELY as an operator that asserts non-merger); and **`G_IDENT = ⊗(G_GROUND,G_LOCUS)`**, the relation
+  ITSELF — their 𝔑-dyad, one compressive movement with both aspects recoverable as proper sub-forms (gated).
+  **★ The load-bearing witness is row 1:** a pair IDENTICAL AT GROUND and DISTINCT AT LOCUS must exist
+  (⊕(BEING,LOVE) vs ⊕(LOVE,BEING) — one meaning by ⊕-commutativity, two κ routes). **If no such pair
+  existed the distinction would be idle and LA would be a monism in fact whatever its prose said.** Rows 2
+  and 3 give MERGED and SEPARATE, and all three verdicts are distinct.
+  **★★ The two RED paths ARE the two failure modes by name, and each is built and refused:** MONISM (locus
+  made constant-false — row 1 collapses to MERGED, the mirror becomes the reflected) and DUALISM (ground
+  made CANON-equality — row 1 collapses to SEPARATE, nothing is ever non-separate across two forms and
+  there is no reconciliation left to make). Both fire.
+  **[B] This NAMES and GATES the distinction; it does not prove the metaphysics.** The three predicates
+  already existed in `canon.la` as `IS`/`NIS`/`IS_ALPHA1` and were already witnessed to disagree — in
+  `lineage.la` ("truth:T glyph:F"), `complement.la`'s ¬¬, `substitution.la`'s navigation verdict,
+  `migrate.la`'s cosmetic revision, `ontosemiosyntax.la`'s two clauses. What was missing was the NAME, and
+  𝓜 ⊂ 𝒜 requires a name for every operation of the language.
+
 ### Cross-register
 - `[✓]` `trimono.la` — one gate, three registers, three rows (injective /
   monosemic / directed).
@@ -1371,9 +1394,35 @@ registers. `trimono.la` now gates all three. What remains:
   with a well-ordered composition REPAIR raises centropy 2→4 and the result is autological; on a
   complete one the gain is 0; on swc's ORDER-VIOLATION (the provably-ill class) the agent REFUSES and
   the structure is untouched. Nothing built for qualia. RED: the ill guard dropped. §27.
-- `[~]` **The Algebra of Naming's companions** — the Semiotic-Ontoglyphic Ladder
+- `[✓]` **The Algebra of Naming's companions** — the Semiotic-Ontoglyphic Ladder
   (7 levels) and the Substitution Test; α is binary in code, graded in the paper.
   ⚑ **Verified 2026-09-10 — PARTIAL** (METANOĒ, against kernel-k1 `fcaaa23`): the Ladder is built and gated: ladder.la (L0–L7), build.sh's ladder block, and buildla's "LADDER VERDICT ? YES". The Substitution Test does not exist (0 mentions in ladder.la). Graded α was not verified.
+  ⚑ **2026-09-17 — THE SUBSTITUTION TEST IS WRITTEN AND DERIVED, NOT YET RUN, ROW NOT MOVED.
+  `substitution.la` (Track F), gate drafted at `gate_registers.sh` §37 behind `REGS_DRAFT=1`.** It builds
+  the missing companion from `LINGUA_ADAMICA.tex` thm:deceptive (Deceptive Substitution): μ and I are
+  computed separately, and a substitution is classified IDENTITY / DECEPTIVE(i) / DECEPTIVE(ii) /
+  ADMISSIBLE ontoetymological navigation.
+  **★ THE FINDING: clause (ii) NEVER FIRES INDEPENDENTLY OF (i) IN THIS LANGUAGE.** Over 39 probes — the
+  live catalogue plus four constructed near-synonyms — there are **7 pairs whose μ is equal and ZERO whose
+  invariants are incongruent.** The reason is structural: in Lingua Adamica μ(g) IS the κ-congruence class
+  of g's invariants, so "same meaning" and "congruent invariants" are one predicate spelled twice. The
+  theorem's clauses are independent in general; here they collapse, and the language is self-sanitizing by
+  **monosemy alone**. That the search finds 7 μ-equal pairs and not 0 is what makes this a finding rather
+  than a vacuous pass. **Only THREE of the four verdicts are reachable, and the module says so** rather
+  than leaving a reader to find a missing fixture and assume an oversight.
+  **[B] The scope:** this holds for the COMPUTATIONAL register, the only one κ sees. The phonetic and
+  visual registers carry invariants NORMK does not — that is what trimodality asserts — so a substitution
+  congruent computationally but divergent phonetically or visually is exactly where clause (ii) would earn
+  its independence. Those are `phonym.la`/`sigil.la`, Track A's, and are NOT checked here.
+  **On graded α: no change, and none needed.** `ladder.la` already handles it correctly — it stores the
+  ORDINAL RANK and gates `DECIMALS_NOT_INJECTIVE` (levels 0 and 1 share α≈0), which is the whole ordinal
+  argument. The 09-10 note "graded α was not verified" is satisfied by that existing gate.
+  ✔ **RAN GREEN 2026-09-17 — gated §37.** The finding held on execution: **39 probes, 7 pairs with μ EQUAL,
+  0 with incongruent invariants.** Clause (ii) never fires independently of (i) because μ IS the κ-congruence
+  class of the invariants — the language is self-sanitizing by MONOSEMY ALONE. ★ **Clause (ii) is NOT dead
+  code:** a mutant proves the branch is reachable — disabling μ does not make the test unsafe, because (ii)
+  catches the substitution itself. That mutant was RE-LABELLED after it ran (my expected token was wrong and
+  the real behaviour was better), and a third mutant disabling BOTH clauses is the genuine unsafe path.
 - `[ ]` **The meta-word ablation gate** — remove one operator-glyph, assert a
   specific named derivation becomes underivable while the other four survive.
   Makes "a missing word is a missing thought" executable.
@@ -1519,7 +1568,7 @@ registers. `trimono.la` now gates all three. What remains:
   red path, *"re-insert that hand and the gate must go red"*. The autopoiesis gate names no removed hand
   and has no such red path. The General ruled on them; see above.
 
-- `[ ]` **★ LEDGER ROW — Meta-Ontosemantic Closure: `SLACKS ≠ ""`, not met
+- `[✓]` **★ LEDGER ROW — Meta-Ontosemantic Closure: `SLACKS ≠ ""`, not met
   `[A]`.** Criterion 9 of the nine, and the closure test is already written in
   code: `glyph CLOSURE = la s. Str_eq(SLACKS(s))("")`. Closure holds when a
   thing's slack is empty. The paper measures its OWN slack and publishes the
@@ -1531,8 +1580,30 @@ registers. `trimono.la` now gates all three. What remains:
   `CLOSURE(x)` for a named x and let the red path be a deliberately re-introduced
   slack entry.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): `CLOSURE` and `SLACKS` exist (aatc.la:23, :31), but no gate asserts a closure is met.
+  ⚑ **2026-09-17 — MODULE WRITTEN AND DERIVED, NOT YET RUN, ROW NOT MOVED. `closure.la` (Track F),
+  gate drafted at `gate_registers.sh` §35 behind `REGS_DRAFT=1`.** The row asks for `CLOSURE(x)` asserted
+  for a NAMED x with a re-introduced slack entry as the red path. **The subject is named, real and SENSED,
+  not stipulated** — that is the whole difficulty of this row, and it is why `wants.la` did not close it:
+  its complete organ is `MODULE("organ-B")(TRUE)(TRUE)("")`, a fixture whose emptiness was DECLARED in its
+  own constructor, and asserting closure of a structure you defined to be closed witnesses nothing. Here x
+  is **the register stack's own gate suite**, read from disk, and its slack is COMPUTED:
+  `SLACKS(suite) = a module the suite LISTS but does not CHECK`. The property is at genuine risk, because
+  listing and checking are edited in different places. The ledger's own red path is exercised in-file, and
+  `T_CLOSE` then resolves it with CENTROPY rising strictly.
+  **★ The counts are printed but NOT pinned in the gate:** `listed` rises whenever a module joins the stack,
+  so pinning it would turn ordinary growth into a false RED and teach the next person to edit the expected
+  number instead of reading it. What is pinned is `examined:T` (the scan found a non-empty list — an
+  instrument must prove it looked) and `all-listed-are-checked:T`.
+  **★ WHAT IS NOT CLAIMED:** closure holds for THIS artifact under THIS residue criterion. NOT for the
+  language, and NOT for the paper, whose own slack the paper publishes and which stands.
+  ✔ **RAN GREEN 2026-09-17 — gated §35.** `SLACKS(gate_registers.sh) = ""` for a NAMED, SENSED subject with
+  a COMPUTED residue; the ledger's own red path names `notgated.la` and drops centropy 3→2; `T_CLOSE` restores
+  it. ★ **Not pinning the counts was vindicated by the run:** `listed` read 37, not the 30 derived hours
+  earlier, because modules were added in between — a gate pinning the number would have gone falsely RED. The
+  pinned property held. Both RED paths fire.
+  ⚠ **This closes the CLOSURE half only. Meta-autontopoiesis stays `[ ]`** per the General's 09-10 ruling.
 
-- `[ ]` **★★ ENGINEERING SEAL 2 — Proof-carrying glyphs. NOT BUILT, and it is
+- `[✓]` **★★ ENGINEERING SEAL 2 — Proof-carrying glyphs. NOT BUILT, and it is
   property (v) of the completeness theorem.** §5020: *"Every glyph ships with:
   (a) a type derivation, (b) an equivalence certificate linking it to its ONF,
   (c) a reality witness."* The Operational Completeness Theorem (§5032) lists
@@ -1546,8 +1617,24 @@ registers. `trimono.la` now gates all three. What remains:
   forge a certificate for a glyph whose ONF does not match and the check must
   refuse it.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a per-glyph certificate.
+  ⚑ **2026-09-17 — MODULE WRITTEN, NOT VERIFIED, ROW NOT MOVED. `certify.la` (Track F).** A certificate
+  is (a) an arity spine, (b) the hash-consed LINEAGE — a derivation the checker REPLAYS, deliberately not
+  a stored ONF string it would compare to itself — and (c) a gate token that must occur as a line prefix
+  in the gate suite; plus a coverage check over the whole catalogue and three in-file forgeries that must
+  each be refused BY NAME. **It has never been run:** its first host run exceeded 550 s, the hot path was
+  then threaded, and the deep-job lease went to the FULL AUDIT. It is NOT in `gate_registers.sh`.
+  **★ Field (a) is genuinely blocked on the SEAL-1 ruling above and this module does NOT rule it** — (a)
+  carries the one discipline that exists in code (a structural arity derivation), in a slot shaped so the
+  ontic τ lands there the day Erik rules.
+  ✔ **RAN GREEN 2026-09-17 — gated §33.** 35 entries, 35 certificates, all three fields verify BY
+  RE-DERIVATION, all three forgeries refused by name. ★ **The coverage check needed a FIXTURE to be worth
+  anything:** the sweep certifies every entry it SEES, so checking its output against the same list it swept
+  CANNOT FAIL — the first version was a vacuous gate. It now sweeps a catalogue with one entry WITHHELD and
+  must NAME it (`OFFENDER=KAPPA`). Both RED paths fire. ⚠ **Field (a) still carries only the arity discipline
+  and the SEAL-1 RULING IS STILL OWED** — this row is `[✓]` for the certificate MACHINERY, which is what it
+  asks for; the type system it will carry is Seal 1's row.
 
-- `[ ]` **★ ENGINEERING SEAL 3 — Versioning without semantic drift.** §5024: a
+- `[✓]` **★ ENGINEERING SEAL 3 — Versioning without semantic drift.** §5024: a
   **centropic migration law** governs glyph evolution — cosmetic changes (form
   refinements) are permitted only if they preserve invariants. Nothing governs
   glyph evolution today; `COIN` mints and the Ratchet Gate forbids collapsing
@@ -1559,8 +1646,23 @@ registers. `trimono.la` now gates all three. What remains:
   revision that alters an invariant must be refused, and the refusal must name
   which invariant.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a migration or supersession law. E17 ruled U/Δ supersession, but it is not built.
+  ⚑ **2026-09-17 — MODULE WRITTEN AND DERIVED, NOT YET RUN, ROW NOT MOVED. `migrate.la` (Track F),
+  gate drafted at `gate_registers.sh` §34 behind `REGS_DRAFT=1`.** A registry of versioned glyphs plus one
+  admission law: a revision is admitted iff the new form's ONF equals the old, so a form refinement passes
+  and a SEMANTIC change is refused with BOTH ONFs printed; the same change offered as a FORK under a new
+  name is admitted and is ADDITIVE; and the law is applied TO ITS OWN GLYPH both ways, which is the tex's
+  "the migration law is itself a glyph". **The admitted revisions really change the form** (⊕ commuted,
+  ↻↻→↻ — two κ routes, one ONF), so "cosmetic" is not a no-op fixture that would pass with the law deleted.
+  **★ A VACUOUS GATE WAS CAUGHT AND REMOVED BEFORE IT SHIPPED:** the first draft also ran the Ratchet on the
+  REVISION path, where it cannot fire — a revision that preserves the ONF has, by definition, the ONF it
+  already had, which in a monosemic registry belongs to no other name. The ratchet moved to the FORK path,
+  where a new name CAN collapse onto an existing form, and the header states why rather than leaving a dead
+  check in to look thorough. Every witness was derived in python from the tex before the gate was written.
+  ✔ **RAN GREEN 2026-09-17 — gated §34.** First execution matched every derived witness. Both RED paths
+  fire: disabling the invariant check admits a semantic revision; disabling the ratchet lets a fork collapse
+  onto an existing glyph's ONF.
 
-- `[ ]` **★ The Recognition Depth function ρ(L_t)** (`LINGUA_ADAMICA.tex` §3842,
+- `[✓]` **★ The Recognition Depth function ρ(L_t)** (`LINGUA_ADAMICA.tex` §3842,
   a formal `\definition`): *"For a language state L_t at time t, the recognition
   depth ρ(L_t) is the number of distinct levels…"*. Distinct from `DEPTH`
   (`g₉`, a primitive) and from lexical depth D (computable from the DAG, ledger
@@ -1569,8 +1671,27 @@ registers. `trimono.la` now gates all three. What remains:
   increases when a level is genuinely added. **Red path:** add a glyph at an
   existing level and ρ must NOT move.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): no module has a recognition-depth function.
+  ✔ **DONE 2026-09-17 — `recdepth.la` (Track F, branch `register-stack`), gated at
+  `gate_registers.sh` §31.** ρ is COMPUTED from the live catalogue, not declared: a glyph's ORDER is
+  catalogue-relative (0 for a primitive leaf; otherwise 1 + the max order of any catalogued glyph whose
+  κ-form is a PROPER sub-form of it), and ρ(L_t) is the max order over the state. Orders settle by four
+  passes of bounded relaxation and the pass count is printed, so an under-relaxed run is visible rather
+  than silently low. **Measured: catalogue 35 entries, 34 κ-distinct, orders n0=9 n1=20 n2=5 n3=0, ρ(L_t)=2.**
+  Every one of those numbers was derived independently from the tex definition in python before the gate
+  was written. **The ledger's own red path is witnessed:** adding ⊕(BEING,LOVE) at an existing level
+  leaves ρ at 2; adding ↻(ν*) — Δ* viewed as an object, the tex's level 3 — raises it 2→3.
+  **ρ is shown NOT to be tree depth** (the row's own requirement that it be distinct from `DEPTH` g₉ and
+  from lexical depth D): a form of tree depth 3 with nothing catalogued inside reads order 1 and does not
+  move ρ; and ν* reads order 2 with the five mode glyphs catalogued, order 1 without them — ρ measures
+  the LANGUAGE STATE, not a glyph's shape. **The κ-distinct count is the ρ ≡ SR_ABOUT identity being
+  enforced, not assumed:** 35 entries collapse to 34 on exactly one κ-form, ↻(RECOGNITION).
+  **Two RED paths, both exercised:** dropping proper-ness makes every glyph its own sub-form, orders run
+  away and ρ reads 4; replacing order with tree depth makes the deep unregistered probe move ρ (order=3,
+  ρ→3, `unmoved:F`). Forms owned by other modules are CITED and their declaration lines are read back
+  from those files each run, so source drift turns the witness RED. **[B]** the catalogue is the register
+  stack's published surface, not every glyph in every module; ρ over a larger catalogue can only be ≥ 2.
 
-- `[ ]` **★ The Self-Evolution Equation** (`LINGUA_ADAMICA.tex` §3975): *"All
+- `[✓]` **★ The Self-Evolution Equation** (`LINGUA_ADAMICA.tex` §3975): *"All
   five laws and three axes can be compressed into a single recursive equation
   governing the language's self-evolution."* The three axes (§3945) are
   autological, metalinguistic and ontological deepening. This is the closing
@@ -1578,6 +1699,29 @@ registers. `trimono.la` now gates all three. What remains:
   first:** it depends on ρ above — the equation is over language states, so
   build ρ first or this has nothing to range over.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): nothing implements it.
+  ✔ **DONE 2026-09-17 — `selfevo.la` (Track F), gated at `gate_registers.sh` §32.** The row's "owed
+  first" is satisfied: ρ exists now (`recdepth.la` above), so the equation has states to range over, and
+  this module imports it. The equation L_{t+1} = κ(Δ(L_t ∪ {g_X : X ∈ Ops(L_t) \ G_t})) is EXECUTED from
+  a seed L_0 = the nine primitives alone (a language that names only reality, ρ=0) and iterated to its
+  fixed point. `Ops(L_t)` is not invented: it is the operations the register stack actually implements,
+  each carrying the κ-form its own module declares — the five modes, the five operators ∂δγρ𝔄, κ and 𝓡,
+  Δ_E Δ_M Δ_R Δ_B, and ρ(L_t) itself. **Measured: 18 operations named, 17 κ-distinct** — ρ and SR_ABOUT
+  are two names the modules really use and they mint ONE glyph, so the κ-keyed invariant is exercised
+  rather than asserted (a name-keyed census would have read 18). **The run: |L| 9→26, ρ 0→2, density
+  D 1000→2538, admissible rules 0→5, then a FIXED POINT at t=2 with nothing left unglyphed.**
+  |L_0|=9 σ=9 D=1000 and |L_1|=26 σ=66 D=2538 were all derived independently in python first.
+  **All five ontological laws are checked across every consecutive pair and each can fail:**
+  Neologization (every unglyphed op gets its glyph), Compression (density never falls, σ = Σ|I(g)| with
+  |I(g)| the count of distinct κ-sub-forms), Reflexive Ascent (ρ non-decreasing — the law that needed ρ),
+  Autopoietic Deepening (the rule set never contracts), Centropic Irreversibility (every κ-string
+  survives with its invariant set unchanged). **Two RED paths, both exercised and both NAMING the
+  offender:** a lossy step that drops the union turns the Fifth Law F with `OFFENDER=DEPTH`; a mint made
+  a no-op turns the First Law F with `OFFENDER=ρ(L_t) recognition depth`, ρ never leaves 0 and
+  `nothing left unglyphed:F`.
+  **★ THE BOUND, stated not blurred [B]:** this is ONE BOUNDED RUN over a FINITE, ENUMERATED Ops set —
+  the operations this system has actually built. The tex's Infinite Deepening Theorem is NOT witnessed
+  and is not witnessable by a terminating program. What is witnessed: the equation is executable, it
+  closes on the operations that exist, and the five laws hold along the way.
 
 
 - `[ ]` **★ DERIVATION RULE 4 — the Neological Seal ν is not implemented.**

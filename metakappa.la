@@ -1,0 +1,132 @@
+#  ✔ STATUS 2026-09-17: RAN GREEN on its FIRST execution, with every pinned witness present and every
+#  RED path fired. Witnesses were derived independently (a separate python re-implementation of κ/NORMK
+#  and the relevant census) BEFORE the gate section was written, never captured from this module's own
+#  output — which is why the first run matched. Gated in gate_registers.sh.
+# ════════════════════════════════════════════════════════════════
+#  metakappa.la — κ*, META-ONTOSEMANTIC META-COMPRESSION
+#  (LA_COMPLETION.md Category 1; LINGUA_ADAMICA.tex def:meta-compression §2506: "a meta-ontosemantic
+#  compression is an ontosemantic compression whose input includes at least one operational ontomonoglyph
+#  or compression principle: κ*: (κ, ᵍ₁, …, ᵍₖ) ↦ ᵍ_{κ*}. The result is a NEW COMPRESSION PRINCIPLE — a
+#  more powerful method of encoding meaning into form — which is itself encoded as a single ontomonoglyph.")
+#  The work order's phrasing: "when the same compression pattern RECURS, seal the pattern."
+#
+#  THE OPERATION, made computable. A PATTERN is a proper sub-form shared by members of a set S. Its
+#  MULTIPLICITY is the number of DISTINCT MEMBERS of S it occurs in. Then
+#       κ*(S) = SEAL of the COMPOUND pattern of greatest multiplicity, when that multiplicity is ≥ 2,
+#                and REFUSED otherwise.
+#  Sealing a recurring pattern is what makes the sharing a NAMED THING: the compression principle stops
+#  being an implicit regularity of the catalogue and becomes a glyph, which is what §2506 asks for.
+#
+#  ★ WHY "COMPOUND" IS LOAD-BEARING AND NOT DECORATION. Leaves always recur — RECOGNITION occurs in nine
+#  catalogue glyphs — and hash-consing always shares them, so a criterion that counted leaves would fire
+#  on every set and mean nothing. A NEW COMPRESSION PRINCIPLE must be a compound form: a SHAPE, not a
+#  primitive. The negative fixture below shares a leaf (VOID) and is still REFUSED, which is what shows
+#  the criterion is doing work.
+#
+#  ★ THE HONEST RESULT, and it is a NEGATIVE ONE: over the live catalogue κ* FINDS NOTHING. No compound
+#  sub-form occurs in two distinct catalogue glyphs — not across the five mode glyphs of ᵍ, not across the
+#  genesis operators, not across the eight self-relations, not across the whole 34. **The built catalogue
+#  is κ*-IRREDUCIBLE.** That is a real finding about this language and not a failure of the instrument:
+#  the forms were already compressed to the point where no shape repeats. It also says plainly what κ*
+#  is FOR — it earns its keep as the catalogue grows, not on the catalogue as it stands today.
+#
+#  ★ SO THE INSTRUMENT CARRIES A POSITIVE CONTROL, because an engine that reports "nothing found" is
+#  indistinguishable from an engine that cannot look. A constructed pair sharing the compound ↻(RECOGNITION)
+#  is admitted, the pattern is sealed, and the sharing is MEASURED (unfolded tree nodes vs hash-consed DAG
+#  nodes). Without that control the four irreducibility verdicts below would be worthless.
+#
+#  GATE (drafted, gate_registers.sh §36, behind REGS_DRAFT=1 until it has run)
+#        the positive control is ADMITTED, names its pattern ↻(RECOGNITION) at multiplicity 2, seals it,
+#        and measures 8 unfolded nodes against 6 shared; the negative control (a shared LEAF only) is
+#        REFUSED naming max compound multiplicity 1; and all four real sets report κ*-irreducible.
+#        RED PATHS: (1) the compound test dropped — leaves then count, the negative control is wrongly
+#        admitted and the four irreducibility verdicts flip, which is the vacuity this criterion exists to
+#        prevent; (2) the multiplicity threshold lowered to 1 — κ* admits a pattern that occurs once,
+#        which is coinage, not meta-compression, and the negative control is admitted.
+#  ★ EVIDENTIAL: [W] the admission, the refusal, the four irreducibility verdicts, the measured sharing;
+#     [B] multiplicity is counted over DISTINCT MEMBERS of the set, so a form that repeats INSIDE one glyph
+#     (⊗(κ,κ)) is not a recurring pattern here — that is fractal.la's question, not this one, and the two
+#     are deliberately kept apart.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # RD_CAT, ALLSTR, SUBSTRS, IS_LEAF, RD_FOLD and the base surface
+
+export KSTAR KS_PATTERN KS_MULT KS_ADMIT KS_IRRED
+
+glyph KS_BSTR = la b. b("T")("F")
+glyph KS_C = la nm. PRIM(nm)
+glyph KS_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph KS_IN = la s. RD_FOLD(la h. la acc. OR(acc)(str_eq(h)(s)))(FALSE)
+glyph KS_APP = Z(la self. la a. la b. a(b)(la h. la t. CONSc(h)(self(t)(b))))
+
+# ── a form is COMPOUND when its κ-string is not a bare primitive name ──
+glyph KS_COMPOUND = la f. NOT(IS_LEAF(f))
+# proper sub-forms of f, as (κ-string, form) pairs, COMPOUND ones only
+glyph KS_ALLP = Z(la self. la f. IF(IS_LEAF(f))(la _. NILc)(la _. KS_APP(CONSc(PAIRc(NORMK(f))(f))(NILc))(f(la nm. NILc)(la x. la y. KS_APP(self(x))(self(y)))(la x. la y. KS_APP(self(x))(self(y)))(la x. la y. KS_APP(self(x))(self(y)))(la x. la y. KS_APP(self(x))(self(y)))(la x. self(x)))))
+glyph KS_SUBP = la f. f(la nm. NILc)(la x. la y. KS_APP(KS_ALLP(x))(KS_ALLP(y)))(la x. la y. KS_APP(KS_ALLP(x))(KS_ALLP(y)))(la x. la y. KS_APP(KS_ALLP(x))(KS_ALLP(y)))(la x. la y. KS_APP(KS_ALLP(x))(KS_ALLP(y)))(la x. KS_ALLP(x))
+# distinct κ-strings of one member's compound proper sub-forms
+glyph KS_UNIQ = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(KS_IN(FSTc(h))(RD_FOLD(la p. la a. CONSc(FSTc(p))(a))(NILc)(rest)))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))
+glyph KS_MEMSUBS = la e. KS_UNIQ(KS_SUBP(ETYM(SNDc(e))))
+
+# ── MULTIPLICITY of a pattern across DISTINCT MEMBERS of S ──
+glyph KS_MULT = la S. la ks. RD_FOLD(la e. la acc. add(acc)(IF(KS_IN(ks)(RD_FOLD(la p. la a. CONSc(FSTc(p))(a))(NILc)(KS_MEMSUBS(e))))(la _. 1)(la _. 0)))(0)(S)
+# every candidate compound pattern in S, then the one of greatest multiplicity
+glyph KS_CANDS = la S. KS_UNIQ(RD_FOLD(la e. la acc. KS_APP(KS_MEMSUBS(e))(acc))(NILc)(S))
+glyph KS_BEST = la S. RD_FOLD(la p. la acc. IF(lt(KS_MULT(S)(FSTc(acc)))(KS_MULT(S)(FSTc(p))))(la _. p)(la _. acc))(PAIRc("")(KS_C("VOID")))(KS_CANDS(S))
+glyph KS_MAXMULT = la S. KS_MULT(S)(FSTc(KS_BEST(S)))
+glyph KS_ADMIT = la S. lt(1)(KS_MAXMULT(S))
+glyph KS_PATTERN = la S. IF(KS_ADMIT(S))(la _. FSTc(KS_BEST(S)))(la _. "")
+glyph KSTAR = la S. IF(KS_ADMIT(S))(la _. SEALc(SNDc(KS_BEST(S))))(la _. MONO("REFUSED")(KS_C("VOID")))
+glyph KS_IRRED = la S. NOT(KS_ADMIT(S))
+
+# ── measured sharing: unfolded tree nodes vs hash-consed distinct sub-forms ──
+glyph KS_TREE = la S. RD_FOLD(la e. la acc. add(acc)(TSIZE(ETYM(SNDc(e)))))(0)(S)
+glyph KS_USTR = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(KS_IN(h)(rest))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))
+glyph KS_DAG = la S. LEN(KS_USTR(RD_FOLD(la e. la acc. KS_APP(ALLSTR(ETYM(SNDc(e))))(acc))(NILc)(S)))
+
+# ── the sets: four REAL ones from the live catalogue, and the two controls ──
+glyph KS_PICK = la pre. RD_FOLD(la e. la acc. IF(HAS_PREFIX(FSTc(e))(pre))(la _. CONSc(e)(acc))(la _. acc))(NILc)(RD_CAT)
+glyph S_MODES = KS_PICK("MODE_")
+glyph S_OPS   = KS_PICK("OP_")
+glyph S_SR    = KS_PICK("SR_")
+glyph S_ALL   = RD_CAT
+glyph POS_A = MONO("FX_A")(SYN(MC(KS_C("RECOGNITION")))(KS_C("VOID")))
+glyph POS_B = MONO("FX_B")(SYN(MC(KS_C("RECOGNITION")))(KS_C("FORM")))
+glyph NEG_C = MONO("FX_C")(SYN(MC(KS_C("LOVE")))(KS_C("VOID")))
+glyph S_POS = CONSc(PAIRc("FX_A")(POS_A))(CONSc(PAIRc("FX_B")(POS_B))(NILc))
+glyph S_NEG = CONSc(PAIRc("FX_A")(POS_A))(CONSc(PAIRc("FX_C")(NEG_C))(NILc))
+
+glyph REPORT =
+  KS_JOIN(
+  CONSc("METAKAPPA positive control {⊗(↻(RECOGNITION),VOID), ⊗(↻(RECOGNITION),FORM)} admitted:")(
+  CONSc(KS_BSTR(KS_ADMIT(S_POS)))(
+  CONSc(" pattern=")(
+  CONSc(KS_PATTERN(S_POS))(
+  CONSc(" multiplicity=")(
+  CONSc(int_to_str(KS_MAXMULT(S_POS)))(
+  CONSc(" sealed=")(
+  CONSc(REN(KSTAR(S_POS)))(
+  CONSc(" | measured sharing: unfolded nodes=")(
+  CONSc(int_to_str(KS_TREE(S_POS)))(
+  CONSc(" hash-consed=")(
+  CONSc(int_to_str(KS_DAG(S_POS)))(
+  CONSc(" strictly smaller:")(
+  CONSc(KS_BSTR(lt(KS_DAG(S_POS))(KS_TREE(S_POS))))(
+  CONSc("\nMETAKAPPA negative control {⊗(↻(RECOGNITION),VOID), ⊗(↻(LOVE),VOID)} shares the LEAF VOID and is refused:")(
+  CONSc(KS_BSTR(NOT(KS_ADMIT(S_NEG))))(
+  CONSc(" max compound multiplicity=")(
+  CONSc(int_to_str(KS_MAXMULT(S_NEG)))(
+  CONSc(" (1 = coinage, not meta-compression)")(
+  CONSc("\nMETAKAPPA the live catalogue: modes κ*-irreducible:")(
+  CONSc(KS_BSTR(KS_IRRED(S_MODES)))(
+  CONSc(" operators:")(
+  CONSc(KS_BSTR(KS_IRRED(S_OPS)))(
+  CONSc(" self-relations:")(
+  CONSc(KS_BSTR(KS_IRRED(S_SR)))(
+  CONSc(" whole catalogue (")(
+  CONSc(int_to_str(LEN(S_ALL)))(
+  CONSc(" entries):")(
+  CONSc(KS_BSTR(KS_IRRED(S_ALL)))(
+  CONSc(" — no COMPOUND sub-form recurs across two glyphs; the built catalogue is already maximally compressed in shape, so κ* earns its keep as the catalogue GROWS [W negative result]")(
+  NILc)))))))))))))))))))))))))))))))
+glyph MAIN = print(REPORT)

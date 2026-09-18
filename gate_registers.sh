@@ -311,8 +311,315 @@ want gp "miscategorisation fixture (vacuous claim declared self-closable) caught
 sed 's|^glyph GC_DISCRIMINATES = la pred. la good. la bad. NOT(str_eq(GC_BSTR(pred(good)))(GC_BSTR(pred(bad))))|glyph GC_DISCRIMINATES = la pred. la good. la bad. TRUE|' gapcensus.la > "$T/gp_m1.la"; host "$T/gp_m1.la" gp_m1
 red gp_m1 "all consistent (declared==computed):F" "gapcensus RED(discriminator always-true: the two ceilings misread as self-closable)"
 
+# ═══ 31. recdepth — the Recognition Depth function ρ(L_t) (LA_COMPLETION Tier 4; tex def:rec-depth) ═══
+#  Every witness below was derived independently (a python re-implementation of the tex definition over
+#  the same catalogue) BEFORE this gate was written, never pasted from the module's own run.
+host recdepth.la rd
+want rd "RECDEPTH catalogue entries=35 κ-distinct=34 | orders n0=9 n1=20 n2=5 n3=0 | ρ(L_t)=2 | cited forms read back from their modules:T" recdepth
+want rd "add ↻(ν*) — Δ* as an object, the tex's level 3: ρ 2→3 strictly rises:T" recdepth
+want rd "add ⊕(BEING,LOVE) at an existing level: ρ→2 unmoved:T" recdepth
+want rd "tree depth 3 with nothing catalogued inside: order=1 ρ→2 unmoved:T (ρ is NOT tree depth)" recdepth
+want rd "ν* order with the five mode glyphs catalogued=2 without them=1 state-relative:T | relaxation passes=4" recdepth
+#  κ-distinct=34 from 35 entries IS the ρ ≡ SR_ABOUT identity, counted once because the census is keyed
+#  on the canonical form and never on the name (the standing invariant).
+sed 's|^glyph SUBSTRS = la f. f(la nm. NILc).*|glyph SUBSTRS = la f. ALLSTR(f)|' recdepth.la > "$T/rd_m1.la"; host "$T/rd_m1.la" rd_m1
+red rd_m1 "ρ(L_t)=4" "recdepth RED(proper-ness dropped: every glyph becomes its own sub-form, orders run away)"
+red rd_m1 "strictly rises:F" "recdepth RED(proper-ness dropped: the level-3 addition no longer moves ρ)"
+sed 's|^glyph ORDER_STEP = .*|glyph ORDER_STEP = la ords. la ncat. la e. TDEPTH(E_FORM(e))|; s|^glyph ORDER_IN = .*|glyph ORDER_IN = la ords. la ncat. la f. TDEPTH(f)|' recdepth.la > "$T/rd_m2.la"; host "$T/rd_m2.la" rd_m2
+red rd_m2 "tree depth 3 with nothing catalogued inside: order=3 ρ→3 unmoved:F" "recdepth RED(order := tree depth: the deep unregistered probe moves ρ)"
+red rd_m2 "state-relative:F" "recdepth RED(order := tree depth: ρ stops depending on the language state)"
+
+# ═══ 32. selfevo — the Self-Evolution Equation, run to its fixed point (LA_COMPLETION Tier 4; tex def:self-evo-eq) ═══
+#  Every number below was derived independently (a python re-implementation of κ, |I(g)| and the density
+#  formula over the same seed and the same Ops list) BEFORE this gate was written: |L_0|=9 σ=9 D=1000;
+#  |L_1|=26 σ=66 D=2538; 18 operations named, 17 κ-distinct.
+host selfevo.la se
+want se "SELFEVO seed |L_0|=9 ρ=0 D=1000 rules=0 | Ops named=18 κ-distinct=17 (ρ and SR_ABOUT are one κ-form: κ-keyed; a name-keyed census would read 18)" selfevo
+want se "SELFEVO t=0→1 |L|=9→26 ρ 0→2 D 1000→2538 rules 0→5 | five laws hold:T" selfevo
+want se "SELFEVO t=1→2 |L|=26→26 ρ 2→2 D 2538→2538 | five laws hold:T | FIXED POINT L_2=L_1:T nothing left unglyphed:T" selfevo
+sed 's|^glyph SE_STEP = la st. N_DISTINCT(SE_MINT(st))|glyph SE_STEP = la st. N_DISTINCT(SE_MINT(NILc))|' selfevo.la > "$T/se_m1.la"; host "$T/se_m1.la" se_m1
+red se_m1 "five laws hold:F OFFENDER=DEPTH" "selfevo RED(lossy step: the union is dropped, the Fifth Law names the glyph that lost its meaning)"
+sed 's|^glyph SE_MINT = la st. RD_FOLD.*|glyph SE_MINT = la st. st|' selfevo.la > "$T/se_m2.la"; host "$T/se_m2.la" se_m2
+red se_m2 "five laws hold:F OFFENDER=ρ(L_t) recognition depth" "selfevo RED(mint made a no-op: the First Law names the operation left unglyphed)"
+red se_m2 "ρ 0→0" "selfevo RED(mint made a no-op: ρ never leaves 0, the fixed point is reached vacuously)"
+red se_m2 "nothing left unglyphed:F" "selfevo RED(mint made a no-op: the closure claim itself goes false)"
+
+# ── Sections 33–40 were drafted before they could be run (the deep lease was with the full audit) and
+#    sat behind a REGS_DRAFT guard until 2026-09-17, when every one of them ran: 33 pinned witnesses
+#    present, 19 RED paths fired, none dead. The guard is removed because it has served its purpose —
+#    it existed so a derived-but-unexecuted check could not join the green suite silently.
+# ═══ 33. certify — Engineering Seal 2, proof-carrying glyphs (LA_COMPLETION Tier 4; tex §5020) ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution, after the gate-file read was threaded out of the per-entry
+#  path — as a named glyph it was re-read and re-split once per catalogue entry). Witnesses derived independently: 35 catalogue entries (the same RD_CAT recdepth and
+#  ontosemiosyntax census), κ's arity spine "200" (a binary node over two leaves) and its ONF.
+#  ★ The checker VERIFIES rather than trusts: field (b) carries the hash-consed LINEAGE and the checker
+#  REPLAYS it, instead of comparing a stored ONF string against itself.
+host certify.la ce
+want ce "CERTIFY catalogue=35 certificates=35 | every glyph certified:T | coverage fixture (one entry withheld from the sweep) is caught:T OFFENDER=KAPPA | all three fields verify by re-derivation:T" certify
+want ce "CERTIFY forged (a) arity refused:T | forged (b) ONF refused:T OFFENDER=(b) ONF equivalence | forged (c) reality witness refused:T | the honest certificate verifies:T" certify
+want ce "CERTIFY κ spine of ▷(RECOGNITION,FORM)=200 | replayed lineage → ONF ▷(RECOGNITION,FORM) matches NORMK:T" certify
+sed 's|^glyph VERIFY_B = la g. la c. str_eq(RECOVER(C_LIN(c)))(NORMK(ETYM(g)))|glyph VERIFY_B = la g. la c. str_eq(C_SPINE(c))(C_SPINE(c))|' certify.la > "$T/ce_m1.la"; host "$T/ce_m1.la" ce_m1
+red ce_m1 "forged (b) ONF refused:F" "certify RED(the certificate is compared against ITSELF instead of the lineage being replayed: the forged-ONF certificate passes — the exact trusting-vs-verifying failure this ledger row names)"
+sed 's|^glyph COVER_BAD = la certs. .*|glyph COVER_BAD = la certs. ""|' certify.la > "$T/ce_m2.la"; host "$T/ce_m2.la" ce_m2
+red ce_m2 "coverage fixture (one entry withheld from the sweep) is caught:F" "certify RED(coverage check made vacuous: the withheld glyph is no longer named, so the suite could pass by certifying a convenient subset)"
+#  ★ The coverage check needed a FIXTURE to be worth anything: the sweep certifies every entry it SEES,
+#  so checking its output against the same list it swept CANNOT FAIL. The first version did exactly that
+#  and was a vacuous gate. It now sweeps a catalogue with one entry deliberately WITHHELD and must NAME it.
+
+# ═══ 34. migrate — Engineering Seal 3, versioning without semantic drift (LA_COMPLETION Tier 4; tex §5024) ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution). Every witness below was DERIVED in a separate python re-implementation of κ/NORMK from the tex
+#  BEFORE this section was written — none is captured from the module. Run it, confirm, then move the row.
+host migrate.la mig
+want mig "MIGRATE registry=4 | cosmetic ⊕(BEING,LOVE)→⊕(LOVE,BEING) form changed:T ONF held ⊕(BEING,LOVE) admitted:T" migrate
+want mig "MIGRATE semantic ⊂(BEING,LOVE)→⊂(LOVE,BEING) refused:T REFUSED HOLD: invariant ONF changed ⊂(BEING,LOVE) -> ⊂(LOVE,BEING) (semantic change: fork it under a new name)" migrate
+want mig "MIGRATE same change as a FORK under a new name: admitted:T additive 4→5 old form still present:T" migrate
+want mig "MIGRATE ratchet on the fork path: a new name NEWK offered on ▷(RECOGNITION,FORM) refused:T REFUSED fork: ONF already names KAPPA" migrate
+want mig "G_MIG=⊂(BECOMING,↻(RECOGNITION)) | its cosmetic refinement ⊂(BECOMING,↻(↻(RECOGNITION))) admitted:T | its semantic revision ⊂(↻(RECOGNITION),BECOMING) refused:T" migrate
+#  the admitted revisions really CHANGE THE FORM (two distinct κ routes, one ONF), so "cosmetic" is not a
+#  no-op fixture that would pass with the law deleted — that is what "form changed:T" witnesses.
+sed 's|^glyph ADMIT = la nm. la form. str_eq(MG_ONF(MG_LOOK(nm)))(MG_ONF(form))|glyph ADMIT = la nm. la form. TRUE|' migrate.la > "$T/mig_m1.la"; host "$T/mig_m1.la" mig_m1
+red mig_m1 "refused:F" "migrate RED(invariant check disabled: a semantic revision is admitted and drift enters through revision)"
+sed 's|^glyph RATCHET = la nm. la form. .*|glyph RATCHET = la nm. la form. ""|' migrate.la > "$T/mig_m2.la"; host "$T/mig_m2.la" mig_m2
+red mig_m2 "offered on ▷(RECOGNITION,FORM) refused:F" "migrate RED(ratchet disabled: a fork collapses onto an existing glyph's ONF and monosemy is lost)"
+
+# ═══ 35. closure — Meta-Ontosemantic Closure, SLACKS(x)="" for a NAMED x (LA_COMPLETION Tier 4 Ledger row) ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution). The aatc diagnosis FTTT and the
+#  centropy values 3→2→3 were derived by an independent shell+python reading of gate_registers.sh
+#  BEFORE this section was written. The listed/checked COUNTS are printed by the module but are
+#  deliberately NOT pinned here: they rise as the stack grows, and pinning them would turn ordinary
+#  growth into a false RED. The pinned property is examined:T + all-listed-are-checked:T.
+host closure.la cl
+want cl "examined:T all-listed-are-checked:T | residue=(none) | SLACKS(suite)=\"\":T CLOSURE(suite):T AATC diagnosis(incl/appl/valid/closure)=FTTT centropy=3" closure
+want cl "CLOSURE red path (the ledger's own: a deliberately re-introduced slack entry) residue=notgated.la named:T CLOSURE goes F:T centropy falls 3→2 strictly:T" closure
+want cl "CLOSURE resolved by aatc's T_CLOSE: SLACKS=\"\":T CLOSURE:T centropy rises 2→3 strictly:T" closure
+sed 's|^glyph RESIDUE = la lines. la extra. .*|glyph RESIDUE = la lines. la extra. ""|' closure.la > "$T/cl_m1.la"; host "$T/cl_m1.la" cl_m1
+red cl_m1 "residue= named:F" "closure RED(residue scan made constant-empty: the re-introduced slack is no longer named and the fixture reads closed)"
+sed 's|^glyph CL_FORLINE = la lines. .*|glyph CL_FORLINE = la lines. ""|' closure.la > "$T/cl_m2.la"; host "$T/cl_m2.la" cl_m2
+red cl_m2 "listed=0 checked=0" "closure RED(the module list was never found: a residue scan that examined nothing would otherwise read CLOSED — an instrument must prove it looked)"
+
+# ═══ 36. metakappa — κ*, meta-ontosemantic meta-compression (LA_COMPLETION Category 1; tex §2506) ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution). Pattern, multiplicities, the 8-vs-6
+#  node measurement and all four irreducibility verdicts were derived by an independent python sub-form
+#  census BEFORE this section was written.
+#  ★ THE RESULT IS A NEGATIVE ONE and that is why the POSITIVE CONTROL is gated first: an engine that
+#  reports "nothing found" is indistinguishable from an engine that cannot look.
+host metakappa.la ks
+want ks "METAKAPPA positive control {⊗(↻(RECOGNITION),VOID), ⊗(↻(RECOGNITION),FORM)} admitted:T pattern=↻(RECOGNITION) multiplicity=2 sealed=↻(RECOGNITION) | measured sharing: unfolded nodes=8 hash-consed=6 strictly smaller:T" metakappa
+want ks "METAKAPPA negative control {⊗(↻(RECOGNITION),VOID), ⊗(↻(LOVE),VOID)} shares the LEAF VOID and is refused:T max compound multiplicity=1 (1 = coinage, not meta-compression)" metakappa
+want ks "METAKAPPA the live catalogue: modes κ*-irreducible:T operators:T self-relations:T whole catalogue (35 entries):T" metakappa
+sed 's|IF(IS_LEAF(f))(la _. NILc)(la _. KS_APP|IF(FALSE)(la _. NILc)(la _. KS_APP|' metakappa.la > "$T/ks_m1.la"; host "$T/ks_m1.la" ks_m1
+red ks_m1 "modes κ*-irreducible:F" "metakappa RED(compound test dropped: leaves count, so every set 'recurs' and the criterion means nothing)"
+red ks_m1 "is refused:F" "metakappa RED(compound test dropped: the leaf-sharing negative control is wrongly admitted)"
+sed 's|^glyph KS_ADMIT = la S. lt(1)(KS_MAXMULT(S))|glyph KS_ADMIT = la S. lt(0)(KS_MAXMULT(S))|' metakappa.la > "$T/ks_m2.la"; host "$T/ks_m2.la" ks_m2
+red ks_m2 "whole catalogue (35 entries):F" "metakappa RED(multiplicity threshold lowered to 1: κ* admits a pattern that occurs once, which is coinage, not meta-compression)"
+
+# ═══ 37. substitution — the Substitution Test (the Algebra of Naming's missing companion; tex thm:deceptive) ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution). The verdicts, the probe count 39 and
+#  the two search counts (7 μ-equal pairs, 0 clause-(ii) cases) were derived by an independent python
+#  re-implementation BEFORE this section was written.
+#  ★ Only THREE of the theorem's four verdicts are reachable. The fourth, DECEPTIVE(ii), is unreachable in
+#  this language, and that IS the finding — the gate asserts the count is 0 over 7 real μ-equal pairs, so
+#  it is a measured result and not a missing fixture.
+host substitution.la sb
+want sb "SUBSTITUTION ⊕(BEING,LOVE) := ⊕(LOVE,BEING) → ADMISSIBLE ontoetymological navigation" substitution
+want sb "⊂(BEING,LOVE) := ⊂(LOVE,BEING) → DECEPTIVE(i) meaning differs" substitution
+want sb "↻↻(RECOGNITION) := ↻(RECOGNITION) → ADMISSIBLE ontoetymological navigation" substitution
+want sb "⊕(BEING,LOVE) := itself → IDENTITY (no substitution)" substitution
+want sb "SUBSTITUTION the three REACHABLE verdicts are pairwise distinct:T" substitution
+want sb "structural search over 39 probes: pairs with μ EQUAL=7 of those with invariants INCONGRUENT (clause ii alone)=0 | clause (ii) never fires independently of (i):T" substitution
+sed 's|^glyph MU  = la f. NORMK(f)|glyph MU  = la f. ""|' substitution.la > "$T/sb_m1.la"; host "$T/sb_m1.la" sb_m1
+red sb_m1 "⊂(BEING,LOVE) := ⊂(LOVE,BEING) → DECEPTIVE(ii) invariants not congruent" "substitution: clause (ii) is LIVE CODE and CAN fire — with μ disabled the invariant clause catches the deceptive substitution, so the branch is reachable, not dead"
+sed 's|IF(str_eq(CANON(gR))(CANON(ge)))|IF(TRUE)|' substitution.la > "$T/sb_m2.la"; host "$T/sb_m2.la" sb_m2
+red sb_m2 "⊕(BEING,LOVE) := ⊕(LOVE,BEING) → IDENTITY (no substitution)" "substitution RED(raw-form comparison dropped: a genuine navigation is misreported as IDENTITY, so the instrument stops noticing a substitution happened at all)"
+# ★ m1 above is NOT a "the test broke" mutant and was RE-LABELLED after it ran: disabling μ does NOT make
+#   the test unsafe, because clause (ii) catches the substitution instead. That is worth gating in its own
+#   right — it proves clause (ii) is implemented and reachable rather than dead code, which is exactly the
+#   doubt the module's own finding ("clause (ii) never fires independently of (i)") would otherwise invite.
+#   The genuine stops-sanitizing path needs BOTH clauses disabled, which is m3:
+sed -e 's|^glyph MU  = la f. NORMK(f)|glyph MU  = la f. ""|' -e 's|^glyph INV_CONG = la a. la b. .*|glyph INV_CONG = la a. la b. TRUE|' substitution.la > "$T/sb_m3.la"; host "$T/sb_m3.la" sb_m3
+red sb_m3 "⊂(BEING,LOVE) := ⊂(LOVE,BEING) → ADMISSIBLE" "substitution RED(both clauses disabled: a meaning-changing substitution reads admissible and the test sanitizes nothing)"
+
+# ═══ 38. ontosemiosyntax — the OSS stratum, gated rather than doctrinal (CODEX_ARCHE §8θ.4–§8θ.6) ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution). The 35/35 counts and both fixture
+#  verdicts were derived by an independent python pass BEFORE this section was written.
+#  ★ Erik's line was "gate each stratum as a module with a RED path, OR DEMOTE THE CLAIM". This gates it.
+#  ★ Note the SECOND fixture: without it the Being=Meaning clause could be deleted and everything would
+#  still pass. A conjunction whose second half never decides anything is one gate wearing two names.
+host ontosemiosyntax.la os
+want os "ONTOSEMIOSYNTAX catalogue=35 Being=Form 35/35 Being=Meaning 35/35 stratum holds:T" ontosemiosyntax
+want os "liar MONO(\"LIE\")(κ) refused:T clause=FORM≠BEING" ontosemiosyntax
+want os "non-normal ⊕(LOVE,BEING) sealed — Being=Form:T but refused:T clause=BEING≠MEANING" ontosemiosyntax
+want os "self-application: G_OSS=⊗(BEING,⊗(RECOGNITION,FORM)) OSS(G_OSS):T" ontosemiosyntax
+sed 's|^glyph OSS_BF = la g. str_eq(OSS_BEING(g))(OSS_FORM(g))|glyph OSS_BF = la g. TRUE|' ontosemiosyntax.la > "$T/os_m1.la"; host "$T/os_m1.la" os_m1
+red os_m1 "liar MONO(\"LIE\")(κ) refused:F" "ontosemiosyntax RED(Being=Form made constant-true: the liar passes and the stratum stops distinguishing a literal surface from a canonical one)"
+sed 's|^glyph OSS_BM = la g. str_eq(OSS_BEING(g))(OSS_MEANING(g))|glyph OSS_BM = la g. TRUE|' ontosemiosyntax.la > "$T/os_m2.la"; host "$T/os_m2.la" os_m2
+red os_m2 "but refused:F" "ontosemiosyntax RED(Being=Meaning made constant-true: the non-normal glyph passes, which is exactly the clause that would otherwise be decoration)"
+
+# ═══ 39. autocompress — Δ_ν, meta-ontoneologization as one standing movement ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution). The run length, both directions of the
+#  fixed point, and the 18→22 node law were derived by an independent python pass BEFORE this was written.
+#  ★ The fixed point gated here is deliberately NOT ↻↻g≡↻g. That identity is true of EVERY glyph, so no
+#  input makes it RED; branchclosure.la ruled the class vacuous and this is the third time it is declined.
+#  What is gated is two-sided: the FIRST application must move the form, the SECOND must not. A law
+#  asserting only the second is satisfied by an operator that does nothing, and mutant 1 is exactly that.
+host autocompress.la dn
+want dn "AUTOCOMPRESS Δ_ν run=5 movements → 1 | first application MOVES the form:T | second application moves NOTHING (the fixed point):T | reached after exactly ONE application:T" autocompress
+want dn "AUTOCOMPRESS a run ALREADY of length 1 is NOT moved:T" autocompress
+want dn "node cost: run DAG=18 → compressed DAG=22 delta=4 = one join per collapse:T" autocompress
+sed 's|^glyph DNU = Z(la self. la run. .*|glyph DNU = la run. run(PRIM("VOID"))(la h. la t. h)|' autocompress.la > "$T/dn_m1.la"; host "$T/dn_m1.la" dn_m1
+red dn_m1 "first application MOVES the form:F" "autocompress RED(fold returns the head: nothing is compressed, yet a one-sided fixed-point law would still have read green — this is the do-nothing operator)"
+sed 's|(la h. la t. t(h)(la h2. la t2. self(CONSc(SYN(h)(h2))(t2))))|(la h. la t. t(MC(h))(la h2. la t2. self(CONSc(SYN(h)(h2))(t2))))|' autocompress.la > "$T/dn_m2.la"; host "$T/dn_m2.la" dn_m2
+red dn_m2 "second application moves NOTHING (the fixed point):F" "autocompress RED(length-one base case wraps anyway: the movement never comes to a stand and there is no fixed point)"
+
+# ═══ 40. phonometa — the metacursive phonosemantic-topology level ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution). All peak counts and verdicts were
+#  derived by an independent python re-implementation of psc.la's list semantics BEFORE this was written.
+#  ★ AND THE READING OF THE DEPENDENCY IS CROSS-CHECKED, not assumed: the module recomputes build.sh's own
+#  pinned psc witness (build.sh:1583 "LRd|300,870,2240,270,2300,3000,|dur=6720|i"). If this module's
+#  reading of psc.la's semantics were wrong, that line goes RED instead of passing quietly. psc.la is
+#  GENERATED by specpipe.la and is READ here, never edited.
+#  ★ (1) and (3) are TWO-SIDED on purpose: idempotence alone is satisfied by the identity function, so
+#  "it stands" is only a law when paired with "it moved first".
+host phonometa.la pm
+want pm "PHONOMETA (1) Θ_P two-sided: raw peaks=6 → Θ_P peaks=3 it MOVED:T and then STANDS (idempotent):T" phonometa
+want pm "(2) the level is CLOSED one step up: SYN_INV(SYN_INV(a)(b))(c) = SYN_INV(a)(SYN_INV(b)(c)):T peaks=9" phonometa
+want pm "(3) METACURSIVE FIXED POINT SYN_INV(a)(a)=Θ_P(a):T" phonometa
+want pm "(4) constituent law survives: LOVE⊆:T REC⊆:T non-constituent DEPTH⊆:F" phonometa
+want pm "the mode is NOT recoverable from the phonetic invariant ALONE: with psc.la's prepended label the strings differ:T but bare invariants differ:F" phonometa
+want pm "pinned witness: LRd|300,870,2240,270,2300,3000,|dur=6720|i matches:T" phonometa
+sed 's|^glyph PM_THETA = THETA_P|glyph PM_THETA = la l. l|' phonometa.la > "$T/pm_m1.la"; host "$T/pm_m1.la" pm_m1
+red pm_m1 "it MOVED:F" "phonometa RED(Θ_P made the identity: it removes nothing, so the two-sided law fails — a one-sided idempotence law would still have read green here)"
+red pm_m1 "METACURSIVE FIXED POINT SYN_INV(a)(a)=Θ_P(a):F" "phonometa RED(Θ_P made the identity: the level no longer comes to a stand)"
+sed 's|^glyph PM_SUB   = PRESERVES|glyph PM_SUB   = la parent. la comp. TRUE|' phonometa.la > "$T/pm_m2.la"; host "$T/pm_m2.la" pm_m2
+red pm_m2 "non-constituent DEPTH⊆:T" "phonometa RED(containment made constant-true: psc.la's own non-constituent control reads as preserved and the constituent law stops discriminating)"
+
+# ═══ 41. identity — the identity relation itself, as a glyph in 𝓜 ═══
+#  ✔ RAN GREEN 2026-09-17 (first execution). Built to answer Erik's objection: if ≡ collapses sign and
+#  referent at every level you get merger drift, and what you have built is a monism, not a reconciliation.
+#  𝓜 had glyphs for the modes, 𝔑, κ, 𝓡 and ∂δγρ𝔄 — but none for the identity relation, and the DISTINCTION
+#  side was expressible only as the negation of a positive test. Three glyphs close that, all collision-clear.
+#  ★ ROW 1 IS THE WHOLE ARGUMENT: a pair IDENTICAL AT GROUND and DISTINCT AT LOCUS must EXIST. If none did,
+#  the distinction would be idle and the language would be a monism in fact whatever its prose said.
+#  ★★ THE TWO RED PATHS ARE THE TWO FAILURE MODES BY NAME, and the gate builds each and refuses it.
+host identity.la id
+want id "IDENTITY 𝓜 gains three glyphs — ≡@ground=▷(RECOGNITION,BEING) ≢@locus=▷(RECOGNITION,⊂(FORM,BEING)) | the relation ITSELF (their ⊗ dyad)=⊗(▷(RECOGNITION,BEING),▷(RECOGNITION,⊂(FORM,BEING)))" identity
+want id "IDENTITY row1 ⊕(BEING,LOVE) vs ⊕(LOVE,BEING): ground≡:T locus≢:T → NON-SEPARATE AND NON-MERGED" identity
+want id "row2 ⊕(BEING,LOVE) vs itself: ground≡:T locus≢:F → MERGED (one locus) | row3 ⊂(BEING,LOVE) vs ⊂(LOVE,BEING): ground≡:F locus≢:T → SEPARATE (two beings) | all three verdicts distinct:T" identity
+want id "the two aspects do NOT collapse into each other: ground≡(≡,≢):F (must be F) | the dyad differs from both:T | and RECOVERS both as proper sub-forms (one compressive movement, parents retained):T" identity
+sed 's|^glyph REL_LOCUS  = la a. la b. NOT(str_eq(CANON(a))(CANON(b)))|glyph REL_LOCUS  = la a. la b. FALSE|' identity.la > "$T/id_m1.la"; host "$T/id_m1.la" id_m1
+red id_m1 "row1 ⊕(BEING,LOVE) vs ⊕(LOVE,BEING): ground≡:T locus≢:F → MERGED (one locus)" "identity RED(MONISM: locus distinction made constant-false — the load-bearing row collapses to MERGED, the mirror becomes the reflected)"
+sed 's|^glyph REL_GROUND = la a. la b. str_eq(NORMK(a))(NORMK(b))|glyph REL_GROUND = la a. la b. str_eq(CANON(a))(CANON(b))|' identity.la > "$T/id_m2.la"; host "$T/id_m2.la" id_m2
+red id_m2 "row1 ⊕(BEING,LOVE) vs ⊕(LOVE,BEING): ground≡:F locus≢:T → SEPARATE (two beings)" "identity RED(DUALISM: ground identity made canon-equality — identity holds only where the routes already match, so nothing is ever non-separate across two forms and there is no reconciliation left to make)"
+
+# ═══ 42. compressbound — does neologization drown the etymology in noise? (Erik, 2026-09-17) ═══
+#  ✔ RAN GREEN 2026-09-17. ★ The growth laws are asserted as LAWS (+1 per collapse, tree doubles) rather
+#  than pinned counts, so the gate stays true if the chain is lengthened. The byte figures are computed live.
+#  ★ THE ANSWER SPLITS: no noise in the computational register (DECOMP is an exact inverse of DAG, so the
+#  code is uniquely decodable and recovery is EXACT at every depth — gated); the only real bound is the
+#  RENDERER's channel capacity, and sigil.la walks the UNFOLDED decomposition so it inherits the exponential
+#  one. ★ The Archē is the terminator: ⊗(∃,∃)→∃ makes its chain CONSTANT while every other glyph doubles.
+host compressbound.la cb
+want cb "COMPRESSBOUND κ chain ⊗(g,g)×5 | UNFOLDED tree: 3 7 15 31 63 127 | RETAINED hash-consed: 3 4 5 6 7 8 | tree DOUBLES:T retained grows by EXACTLY +1:T" compressbound
+want cb "NO NOISE: etymology recovers EXACTLY at every depth:T | every depth κ-distinct (normalisation loses nothing either):T" compressbound
+want cb "THE ARCHĒ IS THE TERMINATOR: ⊗(∃,∃)→∃ (⊗-idempotence for the Archē ALONE). meaning-string length — ∃ chain: 3 3 3 3 3 3 (constant:T) vs κ chain: 21 48 102 210 426 858 (constant:F)" compressbound
+sed 's|^glyph CB_KEPT  = la et. NODES(CB_DAG(et))|glyph CB_KEPT  = la et. TSIZE(et)|' compressbound.la > "$T/cb_m1.la"; host "$T/cb_m1.la" cb_m1
+red cb_m1 "retained grows by EXACTLY +1:F" "compressbound RED(structure sharing broken — the retained form now tracks the unfolded tree, growth stops being linear, and the compression claim is gone)"
+sed 's|^glyph CB_DAG   = la et. DAG(et)|glyph CB_DAG   = la et. DAG(Px("BEING"))|' compressbound.la > "$T/cb_m2.la"; host "$T/cb_m2.la" cb_m2
+red cb_m2 "recovers EXACTLY at every depth:F" "compressbound RED(the code loses the message — the channel carries a constant instead of the form, so the etymology really IS drowned and the gate says so)"
+#  ⚠ The first cb_m2 (CANON vs NORMK) did NOT fire and was replaced: on this chain CANON and NORMK AGREE,
+#    because ⊗-idempotence is granted to the Archē alone, so that mutant broke nothing. A mutant that does
+#    not mutate is a RED path that cannot fire — it was caught by checking the mutant's actual output.
+
+# ═══ 43. logicsyntax — the logic / algorithm / syntax collapse (Erik's Gate 1) ═══
+#  ✔ RAN GREEN 2026-09-17. ★ THE RESULT SPLITS THE CLAIM: the three are PAIRWISE SEPARATE, so the strong
+#  reading (logic IS algorithm IS syntax) is FALSE and this gate refuses it — but the dyad RETAINS BOTH
+#  parents, so logic is not merely adjacent to them either. THE COLLAPSE IS COMPOSITIONAL, NOT
+#  IDENTIFICATORY. κ and 𝓡 are CITED from canon.la, not re-declared; only LOGIC's ⊗ form is new [A].
+#  ★ Erik's test, met: collapse logic→algorithm and collapse algorithm→syntax, and show what breaks. Both
+#  break something, so the relation is load-bearing and the glyph is earned.
+host logicsyntax.la ls
+want ls "LOGICSYNTAX SYNTAX κ=▷(RECOGNITION,FORM) ALGORITHM 𝓡=▷(DEPTH,RECOGNITION) LOGIC ⊗(𝓡,κ)=⊗(▷(DEPTH,RECOGNITION),▷(RECOGNITION,FORM))" logicsyntax
+want ls "LOGIC vs ALGORITHM: SEPARATE (two beings) | LOGIC vs SYNTAX: SEPARATE (two beings) | ALGORITHM vs SYNTAX: SEPARATE (two beings) | all three pairwise SEPARATE:T" logicsyntax
+want ls "but the dyad RETAINS BOTH parents as proper sub-forms:T | cost of the one movement: parts 3+3 retained nodes → dyad 6" logicsyntax
+want ls "VERDICT: pairwise separate AND both retained ⇒ THE COLLAPSE IS COMPOSITIONAL, NOT IDENTIFICATORY:T" logicsyntax
+sed 's|^glyph LS_LOGIC     = SYN(LS_ALGORITHM)(LS_SYNTAX)|glyph LS_LOGIC     = LS_ALGORITHM|' logicsyntax.la > "$T/ls_m1.la"; host "$T/ls_m1.la" ls_m1
+red ls_m1 "LOGIC vs ALGORITHM: MERGED (one locus)" "logicsyntax RED(logic collapsed INTO algorithm: the pair merges)"
+red ls_m1 "RETAINS BOTH parents as proper sub-forms:F" "logicsyntax RED(logic collapsed into algorithm: syntax is no longer recoverable, so the one-movement-retains-both claim fails too)"
+sed 's|^glyph LS_ALGORITHM = REVAL|glyph LS_ALGORITHM = KAPPA|' logicsyntax.la > "$T/ls_m2.la"; host "$T/ls_m2.la" ls_m2
+red ls_m2 "ALGORITHM vs SYNTAX: MERGED (one locus)" "logicsyntax RED(algorithm collapsed into syntax: the three-fold degenerates and pairwise separateness fails — canon.la's own 𝓡 ≢ κ meta-monosemy is what this protects)"
+
+# ═══ 44. lawroot — are the Three Laws derived from the Archē? (Erik's Gate 2) ═══
+#  ✔ RAN GREEN 2026-09-17. ★★ THE ANSWER IS NO, AND THE METHOD IS REMOVAL: if a conclusion survives the
+#  deletion of its putative premise, it was never derived from it. The Archē rewrite ∃(∃)→∃ (metalogic's
+#  GROUND) is replaced by the identity function and every law is recomputed — all three verdicts are
+#  IDENTICAL (signature TFTT either way). ★ And the test is NOT vacuous: the CONTROL shows the rewrite IS
+#  load-bearing where it applies (TRIBAR(∃(∃))(∃) is T with it, F without), so removal removes something.
+#  ⇒ THE THREE LAWS ARE PRIMITIVE WITH RESPECT TO THE ARCHĒ. They are not assumed — each is falsifiable and
+#  each is wired to a real mechanism (AUTO_OK, the type checker, well-formedness) — but the corpus's
+#  "derived from ∃(∃)≡∃, not assumed" (OUTLINE.md §19.4) is NOT what the code does. Per Erik's ruling:
+#  state it and stop tagging them as derived. Consistent with derive_closure.la (4 of 9 derive, 5 axioms).
+host lawroot.la lr
+want lr "LAWROOT each law is FALSIFIABLE — identity T on its witness:T F on a ren that is not its etymology:T | non-contradiction T:T F on an arity contradiction:T | excluded middle T:T F on a term with no form:T" lawroot
+want lr "CONTROL — the Archē rewrite ∃(∃)→∃ IS load-bearing where it applies: TRIBAR(∃(∃))(∃) with it:T without it:F → removal really removes something:T" lawroot
+want lr "INDEPENDENCE — all three law-verdicts are IDENTICAL with the Archē rewrite present and DELETED:T signature on:TFTT off:TFTT" lawroot
+sed 's|^glyph LR_SIG = la g. concat(|glyph LR_SIG = la g. concat(LR_B(LR_TRIBAR(g)(LR_AA)(LR_A)))(concat(|; s|(LAW_EXCLUDED_MIDDLE(TERM("∃")("v"))))))$|(LAW_EXCLUDED_MIDDLE(TERM("∃")("v")))))))|' lawroot.la > "$T/lr_m1.la"; host "$T/lr_m1.la" lr_m1
+red lr_m1 "IDENTICAL with the Archē rewrite present and DELETED:F" "lawroot RED(a law MADE to depend on the Archē: independence goes F — which is what shows the test can DETECT a dependence rather than always reporting none)"
+sed 's|^glyph LR_GROUND_ON  = la s. GROUND(s)|glyph LR_GROUND_ON  = la s. s|' lawroot.la > "$T/lr_m2.la"; host "$T/lr_m2.la" lr_m2
+red lr_m2 "TRIBAR(∃(∃))(∃) with it:F" "lawroot RED(the control removed: the rewrite reads idle, so the whole removal test would be vacuous — this is the guard on the guard)"
+
+# ═══ 45. archeunique — ⊗-idempotence belongs to the Archē ALONE (Erik's Gate 4) ═══
+#  ✔ RAN GREEN 2026-09-17. TWO halves, because a one-sided version proves nothing: the Archē IS
+#  ⊗-idempotent, AND the count of ordinary glyphs that are is ZERO of 16 (the nine primitives, κ, 𝓡, and
+#  the five mode glyphs). Half (1) alone would pass if everything were idempotent; half (2) alone if
+#  nothing were. This is the ruling `compressbound.la` §42 leans on when it calls ∃ the terminator.
+host archeunique.la ti
+want ti "ARCHEUNIQUE (1) the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:T | (2) ordinary glyphs that are ⊗-idempotent: 0 of 16 — must be ZERO:T" archeunique
+want ti "BOTH halves together: the uniqueness is EARNED:T" archeunique
+sed 's|^glyph TI_IDEM = la f. str_eq(TI_NORM(SYN(f)(f)))(TI_NORM(f))|glyph TI_IDEM = la f. str_eq(TI_NORM(f))(TI_NORM(f))|' archeunique.la > "$T/ti_m1.la"; host "$T/ti_m1.la" ti_m1
+red ti_m1 "ordinary glyphs that are ⊗-idempotent: 16 of 16 — must be ZERO:F" "archeunique RED(the test made to compare a form with ITSELF: every ordinary glyph reads idempotent and the Archē's uniqueness collapses)"
+sed 's|^glyph TI_ARCHE = TI_IDEM(Px("∃"))|glyph TI_ARCHE = TI_IDEM(Px("BEING"))|' archeunique.la > "$T/ti_m2.la"; host "$T/ti_m2.la" ti_m2
+red ti_m2 "the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:F" "archeunique RED(the positive half broken: the gate cannot pass merely by finding idempotence nowhere)"
+
+# ═══ 46. crossbranch — the cross-branch compression collapse, κ_B ≡ κ_B' (Erik's cross-branch gate) ═══
+#  ✔ RAN GREEN 2026-09-17, but the VERDICT IS [B], NOT [W], and two premises of the request FAILED:
+#  (i) there are NOT 28 branches — branchgenesis gates base=18, set=19 with Δ_B, and the other names in
+#      that file are its six REFUSAL FIXTURES. Liminal and Anamnetic (two of the six dimensions the
+#      request requires) do NOT EXIST anywhere in the tree and are BLOCKED on a definition not on disk.
+#  (ii) there is ONE sealer (branchgenesis.la:121 `SEALc`), so the collapse is true BY CONSTRUCTION, not
+#      by convergence. Saying "all 18 agree" without saying that would be a vacuous green.
+#  ★ What makes it a real gate is the two in-file FIXTURES, both firing on every run: compression by
+#  CONVENTION (a stipulated ren — not canonicalizable, named) and compression by DELETION (▷ drops a
+#  parent instead of ⊗ merging — κ-distinct). Without them the 153 agreeing pairs would mean nothing.
+host crossbranch.la xb
+want xb "CROSSBRANCH branches BUILT=18" crossbranch
+want xb "κ-IDENTICAL pairs: 153 DIFFERING pairs: 0 | all pairs collapse:T" crossbranch
+want xb "PATH A (compression by CONVENTION — a stipulated ren, not a structural operation): extractable:F (must be F) OFFENDER=FIXTURE-convention" crossbranch
+want xb "PATH B (compression by DELETION — ▷ drops a parent instead of ⊗ merging): κ form=⊗(BECOMING,RELATION) vs merging branches’ ▷(LOVE,RELATION) differs:T" crossbranch
+sed 's|^glyph XB_EXTRACT = la g. IF(AUTO_OK(g))(la _. NORMK(ETYM(g)))(la _. "")|glyph XB_EXTRACT = la g. NORMK(ETYM(g))|' crossbranch.la > "$T/xb_m1.la"; host "$T/xb_m1.la" xb_m1
+red xb_m1 "extractable:T (must be F)" "crossbranch RED(the canonicalizability check dropped: a branch whose compression is a mere CONVENTION is accepted as a structural operation, and Path A stops firing)"
+sed 's|^glyph XB_DELETE = MONO(CANON(MODE_DIR_F))(MODE_DIR_F)|glyph XB_DELETE = MONO(CANON(MODE_SYN_F))(MODE_SYN_F)|' crossbranch.la > "$T/xb_m2.la"; host "$T/xb_m2.la" xb_m2
+red xb_m2 "differs:F" "crossbranch RED(the deletion fixture made a merge: the comparison can no longer distinguish two genuinely different compression operations, and the 153 agreeing pairs become unfalsifiable)"
+
+# ═══ 47. numderive — number from the nine, the 2^(d+2)−1 formula, the non-injectivity bound (Gate 3) ═══
+#  ✔ RAN GREEN 2026-09-17. ★ ONE CORRECTION to the request, checked in the code first: Void and Becoming
+#  are right, but BEING IS NOT ONE — it is `la self. self`, the identity combinator (arity 1), where
+#  Church one is `la f. la x. f(x)` (arity 2). One is BECOMING(VOID): unity is DERIVED, not posited.
+#  ★ zero and the successor are CITED and READ BACK from primitives.la, because importing primitives
+#  beside canon would COLLIDE on `DEPTH` (both export it, with different meanings).
+#  ★★ THE BOUND IS EXHIBITED, NOT ASSERTED: four κ-distinct forms share one numeral, so the mode is
+#  invisible to the count — size is a homomorphic image that forgets it.
+host numderive.la nd
+want nd "NUMDERIVE (1) zero=VOID, successor=BECOMING, both read back from primitives.la:T | numerals GENERATED by iterating the successor on zero: 0 1 2 3 4 5 — decode correctly 0..5:T" numderive
+want nd "CORRECTION: BEING is the IDENTITY combinator, not one — one = BECOMING(VOID):T" numderive
+want nd "NUMDERIVE (2) the ⊗-self-collapse chain measures: 3 7 15 31 63 127 — equals 2^(d+2)−1 at depths 0..5:T" numderive
+want nd "⊗(BEING,VOID) ⊕(BEING,VOID) ▷(BEING,VOID) ⊂(BEING,VOID) are pairwise κ-DISTINCT:T yet all four measure 3 — four forms, ONE numeral:T" numderive
+sed 's|^glyph ND_SUCC = la n. la f. la x. f(n(f)(x))|glyph ND_SUCC = la n. n|' numderive.la > "$T/nd_m1.la"; host "$T/nd_m1.la" nd_m1
+red nd_m1 "iterating the successor on zero: 0 0 0 0 0 0" "numderive RED(the successor made the identity: the numerals stop counting and the derivation of number fails)"
+sed 's|^glyph P2 = CON(Px("BEING"))(Px("VOID"))|glyph P2 = SYN(Px("BEING"))(Px("VOID"))|' numderive.la > "$T/nd_m2.la"; host "$T/nd_m2.la" nd_m2
+red nd_m2 "are pairwise κ-DISTINCT:F" "numderive RED(two probes made κ-identical: the exhibit stops exhibiting — a demonstration that distinct forms share a numeral must use forms that are genuinely distinct)"
+
 # ═══ 10. the table bound (directive §8): every module's import closure fits 1024 ══
-for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la; do
+for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la recdepth.la selfevo.la certify.la migrate.la closure.la metakappa.la substitution.la ontosemiosyntax.la autocompress.la phonometa.la identity.la compressbound.la logicsyntax.la lawroot.la archeunique.la crossbranch.la numderive.la; do
     n=$(python3 - "$m" <<'PY'
 import re,sys,os
 IMP=re.compile(r'import\("([^"]+)"\)'); GLY=re.compile(r'^glyph\s+[A-Za-z0-9_]+',re.M)
@@ -337,7 +644,7 @@ done
 if [ "${REGS_VM:-1}" != 0 ]; then
     rm -f logos_secd logos_program.bin logos_source.la
     ./tiny_host secd.la >/dev/null 2>&1 || { echo "FAIL  registers/vm: secd.la did not emit the VM"; ok=0; }
-    vmlist="lineage.la topology.la texture.la prosody.la evidential.la complement.la opposite.la modegenesis.la textcoherence.la derive_closure.la ontoargument.la ontomorph.la gramcomplete.la unified.la"
+    vmlist="lineage.la topology.la texture.la prosody.la evidential.la complement.la opposite.la modegenesis.la textcoherence.la derive_closure.la ontoargument.la ontomorph.la gramcomplete.la unified.la recdepth.la selfevo.la"
     [ "${REGS_VM:-1}" = 2 ] && vmlist="$vmlist registers.la regenesis.la branchgenesis.la neologenesis.la"
     for m in $vmlist; do
         b=${m%.la}

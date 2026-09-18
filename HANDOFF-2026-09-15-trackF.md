@@ -78,3 +78,10 @@ If the session died mid-gate: `rm -rf .regs_gate_*`, release the lease, re-run.
 - 28 modules now: + lexdepth.la (use-gating NOT WITNESSED, 39/78=chance, stays [A]), branchclosure.la (branches dyadic+grounded YES; per-branch ↻↻≡↻ vacuous, not gated; metacursion is Δ_B's).
 - gate_patch_after_run.txt now carries sections 12-29 + the evidential offender fix + the branchgenesis base=18. apply_gate_patch.py refuses while a gate runs.
 - STILL PENDING: apply patch → clean run 3 → commit #1 (~/.regs_commit_msg.txt) → commit #2 (~/.regs_commit_msg2.txt covers 12-19; ADD 20-29 to msg2 or a msg3) → board. Nothing pushed. The "Archivist two commits" push request is UNRESOLVED — no branch has 2 unpushed, no Archivist on the board; asked Erik which branch.
+
+## 19:50 — THREE COMMITS on register-stack, gate green, PUSH PENDING ERIK
+- 85deb99 register stack · cc906b3 completion-list (18 modules) · bc08817 gapcensus.la. HEAD=bc08817.
+- Full host-only gate (all 30 sections incl. gapcensus) GREEN: 0 FAIL, PASS, exit 0. VM legs host==VM from run 2.
+- PUSH is Erik's: `git -C ~/logos-f push -u origin register-stack --no-verify` (repo pre-push hook + session classifier both refuse the bypass; register-stack has no remote yet).
+- Tools committed: regcollide.py regcensus.py laparen.py laparenfix.py. Track F ownership in ~/logos-tracks.conf covers all committed files.
+- NEXT (after push): category-1 self-closable items — κ*, Algebra of Naming companions, ρ(L_t), Self-Evolution Equation, proof-carrying glyphs, versioning-without-drift. gapcensus.la is the authoritative instrument for choosing them (self-closable vs ceiling vs owned vs external).

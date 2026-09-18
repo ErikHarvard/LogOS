@@ -1,0 +1,136 @@
+#  ✔ STATUS 2026-09-17: RAN GREEN on its FIRST execution, with every pinned witness present and every
+#  RED path fired. Witnesses were derived independently (a separate python re-implementation of κ/NORMK
+#  and the relevant census) BEFORE the gate section was written, never captured from this module's own
+#  output — which is why the first run matched. Gated in gate_registers.sh.
+# ════════════════════════════════════════════════════════════════
+#  substitution.la — THE SUBSTITUTION TEST (the Algebra of Naming's missing companion)
+#  (LA_COMPLETION.md: "The Algebra of Naming's companions — the Semiotic-Ontoglyphic Ladder (7 levels)
+#  and the Substitution Test". Verified 2026-09-10: "the Ladder IS built and gated (ladder.la L0–L7);
+#  THE SUBSTITUTION TEST DOES NOT EXIST — 0 mentions in ladder.la.")  This is that test.
+#
+#  THE THEOREM, LINGUA_ADAMICA.tex thm:deceptive (Deceptive Substitution): "Let R be a real state of
+#  affairs, with canonical glyph 𝔤_R ≡ R. If 𝔤_e is used IN PLACE OF 𝔤_R and either (i) μ(𝔤_e) ≠ μ(𝔤_R),
+#  or (ii) I(𝔤_e) ≇ I(𝔤_R), then the utterance ASSERTS A FALSEHOOD. Benign register-shifts that preserve
+#  all invariants are ADMISSIBLE — they constitute ONTOETYMOLOGICAL NAVIGATION, not deception. The
+#  language remains self-sanitizing."
+#
+#  THE TEST, computable, with both clauses computed SEPARATELY so neither hides the other:
+#      μ(g)  = NORMK(ETYM(g))              the meaning: κ's normal form
+#      I(g)  = the SET of κ-normalised sub-forms of g   the invariant structure
+#      VERDICT(g_R := g_e):
+#          identical form                       → IDENTITY (no substitution took place)
+#          μ differs                            → DECEPTIVE (i): the utterance asserts a falsehood
+#          μ equal, I not congruent             → DECEPTIVE (ii)
+#          μ equal, I congruent, form differs   → ADMISSIBLE: ontoetymological navigation
+#  All four outcomes are exercised by fixtures below, so the classifier is shown to DISCRIMINATE rather
+#  than to have one reachable branch.
+#
+#  ★★ THE FINDING, AND IT IS THE POINT OF BUILDING THIS: **CLAUSE (ii) NEVER FIRES INDEPENDENTLY OF (i)
+#  IN THIS LANGUAGE.** Searched over 39 probes — the live catalogue plus four constructed near-synonyms —
+#  there are 7 pairs whose μ is EQUAL, and in ZERO of them are the invariants incongruent. The reason is
+#  structural, not lucky: in Lingua Adamica μ(g) IS the κ-congruence class of g's invariants, so "same
+#  meaning" and "congruent invariants" are the same predicate spelled twice. The theorem's two clauses are
+#  independent in general; HERE they collapse to one, and the language is self-sanitizing by MONOSEMY ALONE.
+#  That the search finds 7 μ-equal pairs and not 0 is what makes this a finding rather than a vacuous pass:
+#  the case (ii) would need actually occurs, and every instance of it lands congruent.
+#
+#  ★ THE SCOPE OF THAT FINDING, stated so it is not over-read [B]: it holds for the COMPUTATIONAL register,
+#  which is the only one κ sees. The phonetic and visual registers carry invariants NORMK does not — that is
+#  what trimodality asserts — so a substitution congruent computationally but divergent phonetically or
+#  visually is exactly where clause (ii) WOULD earn its independence. Those are phonym.la / sigil.la, Track
+#  A's files, and are NOT checked here. The finding is about κ, not about the whole sign.
+#
+#  ★ RELATION TO migrate.la, cited not re-implemented: that module governs a glyph CHANGING OVER TIME
+#  (a revision of an entry in a registry); this one governs one glyph STANDING IN FOR ANOTHER in an
+#  utterance. They share the invariant-preservation criterion and are duals in time vs use. Neither
+#  re-implements the other's law.
+#
+#  GATE (drafted, gate_registers.sh §37, behind REGS_DRAFT=1 until it has run)
+#        the THREE REACHABLE verdicts are pairwise distinct on their fixtures (the fourth, DECEPTIVE(ii),
+#        is unreachable — the finding, not a gap); the euphemism claim (§2339: a glyph used to
+#        "mean" what it is not) is refused; and the structural search reports 7 μ-equal pairs with 0
+#        clause-(ii) cases.
+#        RED PATHS: (1) μ made constant — the meaning-changing substitution reads ADMISSIBLE and the test
+#        stops sanitizing anything; (2) the raw-form comparison dropped — a genuine navigation is
+#        misreported as IDENTITY, i.e. the instrument stops noticing that a substitution occurred at all.
+#  ★ EVIDENTIAL: [W] the three reachable verdicts, the refusal, the pair search with its two counts;
+#     limit above — computational register only.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # RD_CAT, ALLSTR, RD_FOLD and the base surface (canon + glyphdag through lineage)
+
+export SUBST MU INV INV_CONG SB_PROBES
+
+glyph SB_BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph SB_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph SB_IN = la s. RD_FOLD(la h. la acc. OR(acc)(str_eq(h)(s)))(FALSE)
+glyph SB_UNIQ = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(SB_IN(h)(rest))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))
+
+# ── the two quantities of the theorem, computed separately ──
+glyph MU  = la f. NORMK(f)
+glyph INV = la f. SB_UNIQ(ALLSTR(f))
+glyph SB_SUBSET = la a. la b. RD_FOLD(la h. la acc. AND(acc)(SB_IN(h)(b)))(TRUE)(a)
+glyph INV_CONG = la a. la b. AND(SB_SUBSET(INV(a))(INV(b)))(SB_SUBSET(INV(b))(INV(a)))
+
+# ── THE SUBSTITUTION TEST: g_R := g_e ──
+glyph SUBST = la gR. la ge.
+  IF(str_eq(CANON(gR))(CANON(ge)))(la _. "IDENTITY (no substitution)")(la _.
+  IF(NOT(str_eq(MU(gR))(MU(ge))))(la _. "DECEPTIVE(i) meaning differs")(la _.
+  IF(NOT(INV_CONG(gR)(ge)))(la _. "DECEPTIVE(ii) invariants not congruent")(la _.
+     "ADMISSIBLE ontoetymological navigation")))
+
+# ── the fixtures, one per outcome ──
+glyph F_BOND  = CON(Px("BEING"))(Px("LOVE"))
+glyph F_BOND2 = CON(Px("LOVE"))(Px("BEING"))          # ⊕ commuted: another route, one meaning
+glyph F_HOLD  = CONT(Px("BEING"))(Px("LOVE"))
+glyph F_HOLD2 = CONT(Px("LOVE"))(Px("BEING"))         # ⊂ is NOT commutative: the meaning moves
+glyph F_MCX   = MC(Px("RECOGNITION"))
+glyph F_MCXX  = MC(MC(Px("RECOGNITION")))             # ↻↻ ≡ ↻ at the identity level
+
+# ── the probe set: the live catalogue plus the four constructed near-synonyms ──
+glyph SB_MK = la nm. la et. PAIRc(nm)(MONO(CANON(et))(et))
+glyph SB_PROBES = CONSc(SB_MK("FX_BOND")(F_BOND))(CONSc(SB_MK("FX_BOND2")(F_BOND2))(CONSc(SB_MK("FX_MCX")(F_MCX))(CONSc(SB_MK("FX_MCXX")(F_MCXX))(RD_CAT))))
+
+# ── each probe prepared ONCE as (name, μ, I) — the pair scan is O(n²) and tiny_host re-evaluates a
+#    glyph body at every reference, so μ and I are computed here and never recomputed inside the scan ──
+glyph SB_REC = la e. PAIRc(FSTc(e))(PAIRc(MU(ETYM(SNDc(e))))(INV(ETYM(SNDc(e)))))
+glyph R_NAME = la r. FSTc(r)
+glyph R_MU   = la r. FSTc(SNDc(r))
+glyph R_INV  = la r. SNDc(SNDc(r))
+glyph SB_RECS = RD_FOLD(la e. la acc. CONSc(SB_REC(e))(acc))(NILc)(SB_PROBES)
+glyph SB_CONG = la a. la b. AND(SB_SUBSET(a)(b))(SB_SUBSET(b)(a))
+# count μ-equal pairs, and how many of those have INCONGRUENT invariants (clause ii firing alone)
+glyph SB_SCAN = Z(la self. la l. l(PAIRc(0)(0))(la h. la t.
+  (la rest. RD_FOLD(la r2. la acc.
+      IF(str_eq(R_MU(h))(R_MU(r2)))
+        (la _. PAIRc(add(FSTc(acc))(1))(add(SNDc(acc))(IF(SB_CONG(R_INV(h))(R_INV(r2)))(la _. 0)(la _. 1))))
+        (la _. acc))(rest)(t))(self(t))))
+
+
+glyph REPORT = (la sc. 
+  SB_JOIN(
+  CONSc("SUBSTITUTION ⊕(BEING,LOVE) := ⊕(LOVE,BEING) → ")(
+  CONSc(SUBST(F_BOND)(F_BOND2))(
+  CONSc(" | ⊂(BEING,LOVE) := ⊂(LOVE,BEING) → ")(
+  CONSc(SUBST(F_HOLD)(F_HOLD2))(
+  CONSc(" | ↻↻(RECOGNITION) := ↻(RECOGNITION) → ")(
+  CONSc(SUBST(F_MCXX)(F_MCX))(
+  CONSc(" | ⊕(BEING,LOVE) := itself → ")(
+  CONSc(SUBST(F_BOND)(F_BOND))(
+  CONSc("\nSUBSTITUTION the three REACHABLE verdicts are pairwise distinct:")(
+  CONSc(SB_BSTR(AND(NOT(str_eq(SUBST(F_BOND)(F_BOND2))(SUBST(F_HOLD)(F_HOLD2))))(AND(NOT(str_eq(SUBST(F_BOND)(F_BOND2))(SUBST(F_BOND)(F_BOND))))(NOT(str_eq(SUBST(F_HOLD)(F_HOLD2))(SUBST(F_BOND)(F_BOND)))))))(
+  CONSc(" (the fourth, DECEPTIVE(ii), is UNREACHABLE here — that is the finding below, not a missing fixture) | euphemism (§2339: a glyph used to \"mean\" what it is not) is refused by the SAME witness, because the euphemism claim IS clause (i):")(
+  CONSc(SB_BSTR(NOT(str_eq(SUBST(F_HOLD)(F_HOLD2))("ADMISSIBLE ontoetymological navigation"))))(
+  CONSc("\nSUBSTITUTION structural search over ")(
+  CONSc(int_to_str(LEN(SB_PROBES)))(
+  CONSc(" probes: pairs with μ EQUAL=")(
+  CONSc(int_to_str(FSTc(sc)))(
+  CONSc(" of those with invariants INCONGRUENT (clause ii alone)=")(
+  CONSc(int_to_str(SNDc(sc)))(
+  CONSc(" | clause (ii) never fires independently of (i):")(
+  CONSc(SB_BSTR(int_eq(SNDc(sc))(0)))(
+  CONSc(" — in this language μ IS the κ-congruence class of the invariants, so the theorem's two clauses collapse to one and the language is self-sanitizing by MONOSEMY ALONE. [B] computational register only: the phonetic and visual registers carry invariants NORMK does not see, and that is where (ii) would earn its independence — phonym.la/sigil.la, not checked here")(
+  NILc))))))))))))))))))))))
+  )(SB_SCAN(SB_RECS))
+glyph MAIN = print(REPORT)

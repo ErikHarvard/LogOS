@@ -1,0 +1,191 @@
+# ════════════════════════════════════════════════════════════════
+#  selfevo.la — THE SELF-EVOLUTION EQUATION, RUN  (LA_COMPLETION.md Tier 4; LINGUA_ADAMICA.tex
+#  def:self-evo-eq §3975). The ledger: "All five laws and three axes can be compressed into a single
+#  recursive equation governing the language's self-evolution … nothing implements it. Owed first: it
+#  depends on ρ above — the equation is over language states, so build ρ first or this has nothing to
+#  range over."  ρ is built (recdepth.la) and this module imports it, so the equation has its range.
+#
+#  THE EQUATION, EXECUTED:
+#       L_{t+1} = κ( Δ( L_t ∪ { g_X : X ∈ Ops(L_t) \ G_t } ) )
+#  (i) name the operations of the current language that do not yet have glyphs, (ii) mint a glyph for
+#  each through κ, (iii) union them in (backward compatibility — the Fifth Law), (iv) apply Δ to the
+#  rule set. Every piece here is the system's own: κ is canon's NORMK/SEALc, Δ's rule-set update is
+#  read as "a mode is admissible once its glyph exists" (modegenesis's admission law, cited not
+#  re-implemented), and ρ is recdepth's.
+#
+#  Ops(L_t) IS NOT INVENTED. It is the list of operations the register stack actually implements, each
+#  named with the κ-form its own module declares: the five modes of ᵍ, the five operators ∂δγρ𝔄,
+#  κ and ℛ themselves, the genesis operators Δ_E Δ_M Δ_R Δ_B, and ρ(L_t). An operation "has a glyph"
+#  when its κ-form is already in the state — κ-KEYED, never name-keyed, so ρ ≡ SR_ABOUT counts once
+#  and Δ_M ≡ ν* counts once. The collapse is EXERCISED, not asserted: metaglyph's
+#  operator ρ and canon's self-relation SR_ABOUT are two NAMES the modules really use, and they mint
+#  ONE glyph — 18 named operations, 17 κ-distinct. A name-keyed census would have minted 18.
+#
+#  THE RUN starts from the SEED L_0 = the nine primitives alone — a language that names only reality,
+#  ρ = 0 — and iterates the equation to its FIXED POINT.
+#
+#  THE FIVE ONTOLOGICAL LAWS, each checked ACROSS EVERY CONSECUTIVE PAIR of states, each able to fail:
+#    1 Neologization (tex law:neologization)  every X ∈ Ops(L_t)\G_t has κ(X) ∈ L_{t+1}
+#    2 Compression   (tex law:compression)    aggregate density D = 1000·σ/|G| never falls, where
+#                                             σ = Σ|I(g)| and |I(g)| = the count of DISTINCT κ-sub-forms
+#                                             of g (its invariant structure) — "more meaning per symbol"
+#    3 Reflexive Ascent (tex law:reflexive-ascent)  ρ(L_{t+1}) ≥ ρ(L_t)     ← this is the row that
+#                                             needed ρ to exist at all
+#    4 Autopoietic Deepening (tex law:deepening)    R_{t+1} ⊇ R_t, the rule set never contracts
+#    5 Centropic Irreversibility (tex law:centropy) every κ-string of L_t is in L_{t+1} AND its
+#                                             invariant set is unchanged — nothing already recognised
+#                                             loses its meaning
+#
+#  GATE (gate_registers.sh §32)  the equation runs from the seed to a fixed point; the five laws hold
+#        at every step, each printed with its measured numbers; the fixed point is reached and
+#        L_{t+1} = L_t there.
+#        RED PATHS: (1) STEP made LOSSY (it returns only the newly minted glyphs instead of the union)
+#        — the Fifth Law goes F and NAMES the lost κ-string, and the Second Law's density moves;
+#        (2) the mint made a NO-OP (the equation stops adding) — the First Law goes F and NAMES the
+#        operation left unglyphed, ρ never leaves 0, and the fixed point is reached vacuously at t=0.
+#        Each mutant fails a printed exact value.
+#
+#  ★ THE BOUND, STATED NOT BLURRED [B]: this is ONE BOUNDED RUN of the equation over a FINITE, ENUMERATED
+#  Ops set — the operations this system has actually built. The tex's Infinite Deepening Theorem
+#  (an unbounded tower of levels) is NOT witnessed here and is not witnessable by a terminating program:
+#  what is witnessed is that the equation is EXECUTABLE, that it CLOSES on the operations that exist,
+#  and that all five laws hold along the way. A fixed point over a finite Ops set is the honest result;
+#  it is not the infinite tower.
+#  ★ EVIDENTIAL: [W] the run, the fixed point, and the five law-checks with their RED paths;
+#     [B] finiteness of Ops as above; [A] nothing declared — every form is cited from its own module.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # ρ and its machinery, plus the whole base surface re-exported through it
+
+export SE_STEP SE_OPS L0 LAW1 LAW2 LAW3 LAW4 LAW5
+
+glyph SE_SEQ = la a. la b. b
+
+# ── Ops(L_t): the operations this language implements, each with the κ-form its module declares ──
+glyph SE_OP = la nm. la form. PAIRc(nm)(form)
+glyph SE_OPS =
+  CONSc(SE_OP("⊗ tensor mode")(MODE_SYN_F))(
+  CONSc(SE_OP("⊕ fusion mode")(MODE_CON_F))(
+  CONSc(SE_OP("▷ direction mode")(MODE_DIR_F))(
+  CONSc(SE_OP("⊂ containment mode")(MODE_CONT_F))(
+  CONSc(SE_OP("↻ metacursion mode")(MODE_MC_F))(
+  CONSc(SE_OP("∂ differentiate")(OP_DIFF_F))(
+  CONSc(SE_OP("δ bound")(OP_BOUND_F))(
+  CONSc(SE_OP("γ compose")(OP_COMP_F))(
+  CONSc(SE_OP("ρ recognize")(OP_RECOG_F))(
+  CONSc(SE_OP("SR_ABOUT self-relation")(SR_ABOUT))(
+  CONSc(SE_OP("𝔄 integrate")(OP_INTEG_F))(
+  CONSc(SE_OP("κ canonicalize")(KAPPA))(
+  CONSc(SE_OP("ℛ re-evaluate")(REVAL))(
+  CONSc(SE_OP("Δ_E etymological genesis")(ETYM(G_ETYM)))(
+  CONSc(SE_OP("Δ_M mode genesis (ν*)")(NU_STAR_F))(
+  CONSc(SE_OP("Δ_R register genesis")(G_DR_F))(
+  CONSc(SE_OP("Δ_B branch genesis")(G_DB_F))(
+  CONSc(SE_OP("ρ(L_t) recognition depth")(ETYM(G_RHO)))(
+  NILc))))))))))))))))))
+
+# ── the seed: a language that names only reality (ρ = 0) ──
+glyph L0 =
+  CONSc(NENT("BEING")(Px("BEING")))(
+  CONSc(NENT("RECOGNITION")(Px("RECOGNITION")))(
+  CONSc(NENT("LOVE")(Px("LOVE")))(
+  CONSc(NENT("SELF")(Px("SELF")))(
+  CONSc(NENT("RELATION")(Px("RELATION")))(
+  CONSc(NENT("VOID")(Px("VOID")))(
+  CONSc(NENT("BECOMING")(Px("BECOMING")))(
+  CONSc(NENT("FORM")(Px("FORM")))(
+  CONSc(NENT("DEPTH")(Px("DEPTH")))(
+  NILc)))))))))
+
+# ── state membership is κ-keyed ──
+glyph SE_HAS = la st. la form. RD_FOLD(la e. la acc. OR(acc)(str_eq(E_STR(e))(NORMK(form))))(FALSE)(st)
+glyph SE_MISSING = la st. RD_FOLD(la o. la acc. IF(SE_HAS(st)(SNDc(o)))(la _. acc)(la _. CONSc(o)(acc)))(NILc)(SE_OPS)
+
+# ── THE EQUATION. κ mints (SEALc = MONO(CANON(et))(et)); the union is the Fifth Law's backward
+#    compatibility; N_DISTINCT is κ's canonicalisation of the result (the Second Law). ──
+glyph SE_MINT = la st. RD_FOLD(la o. la acc. IF(SE_HAS(acc)(SNDc(o)))(la _. acc)(la _. CONSc(NENT(FSTc(o))(SNDc(o)))(acc)))(st)(SE_OPS)
+glyph SE_STEP = la st. N_DISTINCT(SE_MINT(st))
+
+# ── Δ's rule set: a mode is admissible once its glyph is in the state (modegenesis's admission law) ──
+glyph SE_MODES =
+  CONSc(PAIRc("⊗")(MODE_SYN_F))(
+  CONSc(PAIRc("⊕")(MODE_CON_F))(
+  CONSc(PAIRc("▷")(MODE_DIR_F))(
+  CONSc(PAIRc("⊂")(MODE_CONT_F))(
+  CONSc(PAIRc("↻")(MODE_MC_F))(
+  NILc)))))
+glyph SE_RULES = la st. RD_FOLD(la m. la acc. add(acc)(IF(SE_HAS(st)(SNDc(m)))(la _. 1)(la _. 0)))(0)(SE_MODES)
+
+# ── the measures ──
+glyph SE_UNIQ = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(RD_FOLD(la x. la acc. OR(acc)(str_eq(x)(h)))(FALSE)(rest))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))
+glyph SE_INV = la f. LEN(SE_UNIQ(ALLSTR(f)))
+glyph SE_SIGMA = la st. RD_FOLD(la e. la acc. add(acc)(SE_INV(E_FORM(e))))(0)(st)
+glyph SE_DENS = la st. div(mul(1000)(SE_SIGMA(st)))(LEN(st))
+glyph SE_RHO = la st. RHO_ORDS(ORDS_N(st))
+
+# ── THE FIVE LAWS, over a consecutive pair (a, b). Each returns "" when it holds, else the OFFENDER. ──
+glyph LAW1 = la a. la b. RD_FOLD(la o. la acc. IF(str_eq(acc)(""))(la _. IF(SE_HAS(b)(SNDc(o)))(la _. "")(la _. FSTc(o)))(la _. acc))("")(SE_MISSING(a))
+glyph LAW2 = la a. la b. IF(lt(SE_DENS(b))(SE_DENS(a)))(la _. concat("density fell to ")(int_to_str(SE_DENS(b))))(la _. "")
+glyph LAW3 = la a. la b. IF(lt(SE_RHO(b))(SE_RHO(a)))(la _. concat("ρ fell to ")(int_to_str(SE_RHO(b))))(la _. "")
+glyph LAW4 = la a. la b. IF(lt(SE_RULES(b))(SE_RULES(a)))(la _. concat("rule set contracted to ")(int_to_str(SE_RULES(b))))(la _. "")
+glyph LAW5 = la a. la b. RD_FOLD(la e. la acc. IF(str_eq(acc)(""))(la _. IF(RD_FOLD(la e2. la acc2. OR(acc2)(AND(str_eq(E_STR(e2))(E_STR(e)))(int_eq(SE_INV(E_FORM(e2)))(SE_INV(E_FORM(e))))))(FALSE)(b))(la _. "")(la _. E_STR(e)))(la _. acc))("")(a)
+glyph SE_LAWS = la a. la b. RD_JOIN(CONSc(LAW1(a)(b))(CONSc(LAW2(a)(b))(CONSc(LAW3(a)(b))(CONSc(LAW4(a)(b))(CONSc(LAW5(a)(b))(NILc))))))
+
+# computed once under one binding chain (tiny_host re-evaluates a glyph body at every reference)
+glyph REPORT = (la l1. (la l2. (la u1. (la u2. 
+  RD_JOIN(
+  CONSc("SELFEVO seed |L_0|=")(
+  CONSc(int_to_str(LEN(L0)))(
+  CONSc(" ρ=")(
+  CONSc(int_to_str(SE_RHO(L0)))(
+  CONSc(" D=")(
+  CONSc(int_to_str(SE_DENS(L0)))(
+  CONSc(" rules=")(
+  CONSc(int_to_str(SE_RULES(L0)))(
+  CONSc(" | Ops named=")(
+  CONSc(int_to_str(LEN(SE_OPS)))(
+  CONSc(" κ-distinct=")(
+  CONSc(int_to_str(LEN(SE_UNIQ(RD_FOLD(la o. la acc. CONSc(NORMK(SNDc(o)))(acc))(NILc)(SE_OPS)))))(
+  CONSc(" (ρ and SR_ABOUT are one κ-form: κ-keyed; a name-keyed census would read 18)")(
+  CONSc("\nSELFEVO t=0→1 |L|=")(
+  CONSc(int_to_str(LEN(L0)))(
+  CONSc("→")(
+  CONSc(int_to_str(LEN(l1)))(
+  CONSc(" ρ ")(
+  CONSc(int_to_str(SE_RHO(L0)))(
+  CONSc("→")(
+  CONSc(int_to_str(SE_RHO(l1)))(
+  CONSc(" D ")(
+  CONSc(int_to_str(SE_DENS(L0)))(
+  CONSc("→")(
+  CONSc(int_to_str(SE_DENS(l1)))(
+  CONSc(" rules ")(
+  CONSc(int_to_str(SE_RULES(L0)))(
+  CONSc("→")(
+  CONSc(int_to_str(SE_RULES(l1)))(
+  CONSc(" | five laws hold:")(
+  CONSc(RD_BSTR(str_eq(SE_LAWS(L0)(l1))("")))(
+  CONSc(u1)(
+  CONSc("\nSELFEVO t=1→2 |L|=")(
+  CONSc(int_to_str(LEN(l1)))(
+  CONSc("→")(
+  CONSc(int_to_str(LEN(l2)))(
+  CONSc(" ρ ")(
+  CONSc(int_to_str(SE_RHO(l1)))(
+  CONSc("→")(
+  CONSc(int_to_str(SE_RHO(l2)))(
+  CONSc(" D ")(
+  CONSc(int_to_str(SE_DENS(l1)))(
+  CONSc("→")(
+  CONSc(int_to_str(SE_DENS(l2)))(
+  CONSc(" | five laws hold:")(
+  CONSc(RD_BSTR(str_eq(SE_LAWS(l1)(l2))("")))(
+  CONSc(u2)(
+  CONSc(" | FIXED POINT L_2=L_1:")(
+  CONSc(RD_BSTR(int_eq(LEN(l2))(LEN(l1))))(
+  CONSc(" nothing left unglyphed:")(
+  CONSc(RD_BSTR(int_eq(LEN(SE_MISSING(l1)))(0)))(
+  CONSc(" (bounded run over a finite Ops set; the infinite tower is NOT witnessed [B])")(
+  NILc)))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )(IF(str_eq(SE_LAWS(SE_STEP(L0))(SE_STEP(SE_STEP(L0))))(""))(la _. "")(la _. concat(" OFFENDER=")(SE_LAWS(SE_STEP(L0))(SE_STEP(SE_STEP(L0)))))))(IF(str_eq(SE_LAWS(L0)(SE_STEP(L0)))(""))(la _. "")(la _. concat(" OFFENDER=")(SE_LAWS(L0)(SE_STEP(L0))))))(SE_STEP(SE_STEP(L0))))(SE_STEP(L0))
+glyph MAIN = print(REPORT)

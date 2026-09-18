@@ -1,0 +1,137 @@
+# ════════════════════════════════════════════════════════════════
+#  identity.la — THE IDENTITY RELATION ITSELF, AS A GLYPH IN 𝓜
+#
+#  THE GAP. 𝓜 carries glyphs for the five modes, 𝔑, κ, ℛ and the five operators ∂δγρ𝔄 — but NOT for
+#  the identity relation, the one the whole language rests on. Worse, the DISTINCTION side was expressible
+#  only as the NEGATION of a positive test, never as an operator in its own right. Erik put the objection
+#  exactly: "If ≡ collapses sign and referent into one thing at every level, you get MERGER DRIFT — the
+#  mirror becomes the reflected, the map becomes the territory. If ≡ holds IDENTITY IN GROUND and
+#  DISTINCTION IN LOCUS, it is coherent. Sign and referent are non-separate in ∃, non-merged in σ. The
+#  triple bar has to do BOTH. If it only does one, it is either dualism (distinction only) or monism
+#  (identity only). Does your LA formally distinguish ground-identity from locus-identity, or does ≡ do all
+#  the work? If it does all the work, you have built a monism, and the mind-body collapse is a REDUCTION,
+#  not a reconciliation."
+#
+#  THE ANSWER THIS MODULE MAKES FORMAL: ≡ does NOT do all the work, and now it does not have to do it
+#  ANONYMOUSLY either. Three glyphs, collision-checked clear against the whole corpus:
+#
+#    G_GROUND = ▷(RECOGNITION, BEING)                 — ≡ AT GROUND: two routes, ONE BEING.
+#        The deliberate parallel to κ = ▷(RECOGNITION, FORM): κ recognises FORM; ground-identity recognises
+#        the BEING BENEATH form. Realised by NORMK-equality — identity that survives a change of route.
+#    G_LOCUS  = ▷(RECOGNITION, ⊂(FORM, BEING))         — ≢ AT LOCUS: one being, TWO FORMS.
+#        Recognition directed at form-held-WITHIN-being: the locus is where the forms stand apart INSIDE the
+#        shared ground. Realised by CANON-INEQUALITY, and stated POSITIVELY — it is an operator that
+#        ASSERTS non-merger, not the absence of a match.
+#    G_IDENT  = ⊗(G_GROUND, G_LOCUS)                   — THE IDENTITY RELATION ITSELF.
+#        Not a third thing beside the two: the ⊗ (𝔑, neologization) of them — ONE COMPRESSIVE MOVEMENT with
+#        both aspects recoverable as proper sub-forms (asserted below). Identity in ground AND distinction
+#        in locus, carried by one glyph, which is what "the triple bar has to do both" demands.
+#
+#  ★★ THE LOAD-BEARING ROW, and it is the whole argument. A three-row table is computed, and row 1 is the
+#  one that must exist: a pair that is IDENTICAL AT GROUND AND DISTINCT AT LOCUS — ⊕(BEING,LOVE) against
+#  ⊕(LOVE,BEING), one meaning by ⊕-commutativity, two κ routes. **If no such pair existed, the distinction
+#  would be idle and the language WOULD be a monism in fact whatever it said in prose.** Row 2 (a form
+#  against itself) is MERGED, row 3 (⊂ swapped, ⊂ being non-commutative) is SEPARATE. All three verdicts are
+#  distinct, so the relation discriminates rather than having one reachable branch.
+#
+#  ★★ THE TWO RED PATHS ARE THE TWO FAILURE MODES BY NAME — the gate literally builds each and refuses it:
+#    MONISM  (§41 mutant 1): the locus relation is made constant-FALSE, so nothing is ever distinct at
+#            locus. Row 1 collapses to MERGED. The mirror becomes the reflected.
+#    DUALISM (§41 mutant 2): the ground relation is made CANON-equality, so identity holds only where the
+#            routes are already identical. Row 1 collapses to SEPARATE. Nothing is ever non-separate across
+#            two forms, and there is no reconciliation left to make — only two things side by side.
+#  A gate that could not fire on either of those would be decoration; both fire, and each names its mode.
+#
+#  ★ WHAT IS **NOT** CLAIMED [B]. This makes the ground/locus distinction FIRST-CLASS and NAMED; it does
+#  not prove the metaphysics. The three predicates it glyphs (NORMK-equality, CANON-inequality, their dyad)
+#  already existed in `canon.la` as IS / NIS / IS_ALPHA1 and were already witnessed to disagree — in
+#  `lineage.la` ("truth:T glyph:F"), in `complement.la`'s ¬¬, in `substitution.la`'s navigation verdict, in
+#  `migrate.la`'s cosmetic revision, in `ontosemiosyntax.la`'s two clauses. What was missing was the NAME,
+#  and a name is what 𝓜 ⊂ 𝒜 requires of every operation of the language. That is the gap closed here.
+#  ★ Also not claimed: that ⊗ is the right mode for the dyad rather than ⊂ or ⊕ — [A], declared, the
+#  architect ratifies; ⊗ is chosen because 𝔑 ≡ ⊗ (Def. neologo) and this IS a neologization of two aspects
+#  into one movement. Every gate below holds for any distinct, collision-free choice.
+#
+#  GATE (gate_registers.sh §41)  the three rows with their three distinct verdicts; the two aspects do not
+#        collapse into each other; the dyad differs from both AND recovers both as proper sub-forms (one
+#        compressive movement, parents retained); and the relation applied to its OWN glyphs.
+#        RED PATHS: monism and dualism, as above.
+#  ★ EVIDENTIAL: [W] the table, the non-collapse, the sub-form recovery, both RED paths; [A] the three
+#     forms are declared and collision-checked (regcollide.py, clear against a corpus of 86).
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # CANON NORMK ALLSTR RD_FOLD and the base surface
+
+# ★ RE-EXPORTS: a module building ON the identity relation imports THIS file alone and takes the base
+#   surface through it, rather than importing recdepth.la a second time into the 1024-entry table.
+export REL_GROUND REL_LOCUS VERDICT G_GROUND G_LOCUS G_IDENT ID_BSTR ID_IN ID_SUBS LINEAGE RECOVER LINEAGE_OK G_ETYM SEALc Z TRUE FALSE NOT AND OR IF PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM GLYPH COLLAPSE MCOLLAPSE LE MAX AUTO_OK HAS_PREFIX DEPTH TDEPTH KAPPA REVAL SR_TO SR_ABOUT SR_AS SR_BY SR_FROM SR_THROUGH SR_FOR SR_WITH DAG DECOMP NODES TSIZE SPLIT UPTO AFTERC LEN NTH LAST NILc CONSc PAIRc FSTc SNDc JOIN APPEND ALLSTR SUBSTRS RD_FOLD RD_JOIN RD_BSTR Px RD_CAT
+
+glyph ID_BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph ID_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph ID_IN = la s. RD_FOLD(la h. la acc. OR(acc)(str_eq(h)(s)))(FALSE)
+
+# ── the two aspects, as RELATIONS. Each is routed through its own named glyph so a mutant can reach it. ──
+glyph REL_GROUND = la a. la b. str_eq(NORMK(a))(NORMK(b))          # ≡ at ground: two routes, one being
+glyph REL_LOCUS  = la a. la b. NOT(str_eq(CANON(a))(CANON(b)))     # ≢ at locus: one being, two forms
+# THE IDENTITY RELATION ITSELF — both aspects at once, which is what the objection demands of ≡
+glyph VERDICT = la a. la b.
+  IF(REL_GROUND(a)(b))
+    (la _. IF(REL_LOCUS(a)(b))(la _. "NON-SEPARATE AND NON-MERGED")(la _. "MERGED (one locus)"))
+    (la _. "SEPARATE (two beings)")
+
+# ── the three glyphs of 𝓜 this module adds ──
+glyph G_GROUND = DIR(Px("RECOGNITION"))(Px("BEING"))
+glyph G_LOCUS  = DIR(Px("RECOGNITION"))(CONT(Px("FORM"))(Px("BEING")))
+glyph G_IDENT  = SYN(G_GROUND)(G_LOCUS)
+
+# ── the three rows ──
+glyph R1A = CON(Px("BEING"))(Px("LOVE"))
+glyph R1B = CON(Px("LOVE"))(Px("BEING"))      # ⊕ is commutative: one meaning, another route
+glyph R3A = CONT(Px("BEING"))(Px("LOVE"))
+glyph R3B = CONT(Px("LOVE"))(Px("BEING"))     # ⊂ is NOT commutative: the meaning moves
+
+# ── the dyad retains BOTH parents as proper sub-forms (one compressive movement, nothing lost) ──
+glyph ID_SUBS = la f. f(la nm. NILc)(la x. la y. RD_FOLD(la h. la acc. CONSc(h)(acc))(ALLSTR(y))(ALLSTR(x)))(la x. la y. NILc)(la x. la y. NILc)(la x. la y. NILc)(la x. NILc)
+glyph ID_RETAINS = AND(ID_IN(NORMK(G_GROUND))(ID_SUBS(G_IDENT)))(ID_IN(NORMK(G_LOCUS))(ID_SUBS(G_IDENT)))
+
+glyph REPORT =
+  ID_JOIN(
+  CONSc("IDENTITY 𝓜 gains three glyphs — ≡@ground=")(
+  CONSc(CANON(G_GROUND))(
+  CONSc(" ≢@locus=")(
+  CONSc(CANON(G_LOCUS))(
+  CONSc(" | the relation ITSELF (their ⊗ dyad)=")(
+  CONSc(CANON(G_IDENT))(
+  CONSc("\nIDENTITY row1 ⊕(BEING,LOVE) vs ⊕(LOVE,BEING): ground≡:")(
+  CONSc(ID_BSTR(REL_GROUND(R1A)(R1B)))(
+  CONSc(" locus≢:")(
+  CONSc(ID_BSTR(REL_LOCUS(R1A)(R1B)))(
+  CONSc(" → ")(
+  CONSc(VERDICT(R1A)(R1B))(
+  CONSc(" ★ THIS ROW IS THE ARGUMENT: if no pair were identical at ground AND distinct at locus, the distinction would be idle and LA would be a monism in fact")(
+  CONSc("\nIDENTITY row2 ⊕(BEING,LOVE) vs itself: ground≡:")(
+  CONSc(ID_BSTR(REL_GROUND(R1A)(R1A)))(
+  CONSc(" locus≢:")(
+  CONSc(ID_BSTR(REL_LOCUS(R1A)(R1A)))(
+  CONSc(" → ")(
+  CONSc(VERDICT(R1A)(R1A))(
+  CONSc(" | row3 ⊂(BEING,LOVE) vs ⊂(LOVE,BEING): ground≡:")(
+  CONSc(ID_BSTR(REL_GROUND(R3A)(R3B)))(
+  CONSc(" locus≢:")(
+  CONSc(ID_BSTR(REL_LOCUS(R3A)(R3B)))(
+  CONSc(" → ")(
+  CONSc(VERDICT(R3A)(R3B))(
+  CONSc(" | all three verdicts distinct:")(
+  CONSc(ID_BSTR(AND(NOT(str_eq(VERDICT(R1A)(R1B))(VERDICT(R1A)(R1A))))(AND(NOT(str_eq(VERDICT(R1A)(R1B))(VERDICT(R3A)(R3B))))(NOT(str_eq(VERDICT(R1A)(R1A))(VERDICT(R3A)(R3B)))))))(
+  CONSc("\nIDENTITY the two aspects do NOT collapse into each other: ground≡(≡,≢):")(
+  CONSc(ID_BSTR(REL_GROUND(G_GROUND)(G_LOCUS)))(
+  CONSc(" (must be F) | the dyad differs from both:")(
+  CONSc(ID_BSTR(AND(NOT(REL_GROUND(G_IDENT)(G_GROUND)))(NOT(REL_GROUND(G_IDENT)(G_LOCUS)))))(
+  CONSc(" | and RECOVERS both as proper sub-forms (one compressive movement, parents retained):")(
+  CONSc(ID_BSTR(ID_RETAINS))(
+  CONSc(" | applied to its own glyph: ")(
+  CONSc(VERDICT(G_IDENT)(G_IDENT))(
+  CONSc(" — ≡ now holds identity in ground and distinction in locus UNDER ONE NAME, which is what 𝓜 ⊂ 𝒜 requires of every operation of the language. [B] this names and gates the distinction; it does not prove the metaphysics")(
+  NILc)))))))))))))))))))))))))))))))))))))
+glyph MAIN = print(REPORT)

@@ -1,0 +1,119 @@
+#  ✔ STATUS 2026-09-17: RAN GREEN on its FIRST execution, with every pinned witness present and every
+#  RED path fired. Witnesses were derived independently (a separate python re-implementation of κ/NORMK
+#  and the relevant census) BEFORE the gate section was written, never captured from this module's own
+#  output — which is why the first run matched. Gated in gate_registers.sh.
+# ════════════════════════════════════════════════════════════════
+#  ontosemiosyntax.la — THE OSS STRATUM, GATED RATHER THAN DOCTRINAL
+#
+#  THE GAP (LA_TOMORROW.md, Erik 2026-09-15): "ontosemiosyntax — A NAMED STRATUM WITH NO MODULE AND NO
+#  GATE. Same for ontosemiosis as a stratum. The codex's strata were claimed 'built as doctrine'; GATE
+#  EACH AS A MODULE WITH A RED PATH, OR DEMOTE THE CLAIM."  This gates it.
+#
+#  ★ THE DEFINITION IS THE CODEX'S, NOT INVENTED. The term does not occur in LINGUA_ADAMICA.tex at all;
+#  it is defined in `~/logos/codices/CODEX_ARCHE_ABSOLUTUM_METACURSIVE.md` §8θ.4–§8θ.6:
+#      Ontosemiosyntax = Onto + Semio + Syntax = THE UNITY OF BEING-MEANING-FORM
+#      "Not three things combined, but ONE thing under three aspects:  O = S₁ = S₂ = ∃"
+#      with  S₁ = Meaning = Being|expressed,  S₂ = Form = Being|structured
+#      The Ontosemiosyntactic Principle (§8θ.6): "What IS, MEANS what it IS, IN THE FORM of what it IS."
+#  A stratum built as doctrine is a claim; the claim here is made CHECKABLE by computing the three
+#  aspects BY THREE DIFFERENT ROUTES and asserting they coincide.
+#
+#  THE THREE ASPECTS, each computed differently so the identity is a claim and not a restatement:
+#      BEING(g)   = CANON(ETYM(g))   what it IS      — rendered FROM THE DERIVATION
+#      FORM(g)    = REN(g)           its form        — the surface the glyph actually CARRIES
+#      MEANING(g) = NORMK(ETYM(g))   what it MEANS   — the κ-NORMAL form, a different walk from CANON
+#  OSS(g) holds when BEING = FORM and BEING = MEANING.
+#
+#  ★ BOTH CLAUSES ARE SEPARATELY LOAD-BEARING, and each has its OWN fixture, because a conjunction whose
+#  second half never decides anything is one gate wearing two names:
+#    · THE LIAR breaks the first: MONO("LIE")(κ) carries a literal surface, so FORM ≠ BEING. Refused, named.
+#    · THE NON-NORMAL glyph breaks the SECOND ONLY: a properly sealed glyph over ⊕(LOVE,BEING) has
+#      FORM = BEING (it is sealed) but BEING ≠ MEANING, because ⊕ is commutative and NORMK sorts its
+#      operands while CANON keeps the route. Refused, named. Without this fixture the Meaning clause
+#      could be deleted and every test would still pass.
+#
+#  MEASURED OVER THE LIVE CATALOGUE: 35 entries, Being = Form 35/35, Being = Meaning 35/35. The stratum
+#  HOLDS. It holds because every catalogued derivation is already κ-normal — which is a fact about the
+#  catalogue, not a tautology, and the non-normal fixture is the proof that it could have been otherwise.
+#
+#  SELF-APPLICATION. The stratum's own glyph G_OSS = ⊗(BEING,⊗(RECOGNITION,FORM)) — Being tensored with
+#  the recognition of form — is sealed and put through the same predicate that refuses the liar.
+#
+#  ★ WHAT IS DELIBERATELY **NOT** GATED, and why. The codex's Meta-OSS collapse, "Metaⁿ-OSS = OSS", written
+#  as ↻↻g ≡ ↻g, is ↻-IDEMPOTENCE: it holds for EVERY glyph in the language, so no input makes it go RED.
+#  `branchclosure.la` already ruled exactly this class VACUOUS and deliberately left it ungated, and the
+#  same ruling is applied here rather than quietly collecting a green that means nothing. What IS gated is
+#  the non-vacuous half: the stratum's predicate applied to the stratum's own glyph, which CAN fail and does
+#  fail for the liar. [[the vacuous-gate tally]]
+#
+#  GATE (drafted, gate_registers.sh §38, behind REGS_DRAFT=1 until it has run)
+#        35/35 on both clauses; the liar refused naming FORM≠BEING; the non-normal glyph refused naming
+#        BEING≠MEANING; OSS holds of its own glyph.
+#        RED PATHS: (1) the Being=Form clause made constant-true — the liar passes; (2) the Being=Meaning
+#        clause made constant-true — the non-normal glyph passes, which is what shows clause two is doing
+#        work rather than riding along.
+#  ★ EVIDENTIAL: [W] the census, both refusals, the self-application; [A] G_OSS declared, checked clear by
+#     regcollide.py, the architect ratifies; [B] this gates ONE stratum. `ontosemiosis` as a stratum is
+#     still ungated and the LA_TOMORROW line covering it stays open.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # RD_CAT + the base surface (canon + glyphdag through lineage)
+
+export OSS OSS_BEING OSS_FORM OSS_MEANING G_OSS
+
+glyph OS_BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph OS_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+
+# ── the three aspects, three different routes ──
+glyph OSS_BEING   = la g. CANON(ETYM(g))
+glyph OSS_FORM    = la g. REN(g)
+glyph OSS_MEANING = la g. NORMK(ETYM(g))
+glyph OSS_BF = la g. str_eq(OSS_BEING(g))(OSS_FORM(g))
+glyph OSS_BM = la g. str_eq(OSS_BEING(g))(OSS_MEANING(g))
+glyph OSS = la g. AND(OSS_BF(g))(OSS_BM(g))
+glyph OSS_WHY = la g. IF(NOT(OSS_BF(g)))(la _. "FORM≠BEING")(la _. IF(NOT(OSS_BM(g)))(la _. "BEING≠MEANING")(la _. ""))
+
+# ── the census over the live catalogue; a failure NAMES the entry and the clause ──
+glyph OS_COUNT = la pred. RD_FOLD(la e. la acc. add(acc)(IF(pred(SNDc(e)))(la _. 1)(la _. 0)))(0)(RD_CAT)
+glyph OS_FIRSTBAD = RD_FOLD(la e. la acc. IF(NOT(str_eq(acc)("")))(la _. acc)(la _. IF(OSS(SNDc(e)))(la _. "")(la _. concat(FSTc(e))(concat(" — ")(OSS_WHY(SNDc(e)))))))("")(RD_CAT)
+
+# ── the two fixtures, each breaking exactly ONE clause ──
+glyph FX_LIAR = MONO("LIE")(KAPPA)                                   # a literal surface: FORM ≠ BEING
+glyph NN = CON(Px("LOVE"))(Px("BEING"))
+glyph FX_NONNORM = MONO(CANON(NN))(NN)                               # sealed, but ⊕ is commutative: BEING ≠ MEANING
+glyph G_OSS = MONO(CANON(SYN(Px("BEING"))(SYN(Px("RECOGNITION"))(Px("FORM")))))(SYN(Px("BEING"))(SYN(Px("RECOGNITION"))(Px("FORM"))))
+
+glyph REPORT =
+  OS_JOIN(
+  CONSc("ONTOSEMIOSYNTAX catalogue=")(
+  CONSc(int_to_str(LEN(RD_CAT)))(
+  CONSc(" Being=Form ")(
+  CONSc(int_to_str(OS_COUNT(OSS_BF)))(
+  CONSc("/")(
+  CONSc(int_to_str(LEN(RD_CAT)))(
+  CONSc(" Being=Meaning ")(
+  CONSc(int_to_str(OS_COUNT(OSS_BM)))(
+  CONSc("/")(
+  CONSc(int_to_str(LEN(RD_CAT)))(
+  CONSc(" stratum holds:")(
+  CONSc(OS_BSTR(str_eq(OS_FIRSTBAD)("")))(
+  CONSc(IF(str_eq(OS_FIRSTBAD)(""))(la _. "")(la _. concat(" OFFENDER=")(OS_FIRSTBAD)))(
+  CONSc("\nONTOSEMIOSYNTAX liar MONO(\"LIE\")(κ) refused:")(
+  CONSc(OS_BSTR(NOT(OSS(FX_LIAR))))(
+  CONSc(" clause=")(
+  CONSc(OSS_WHY(FX_LIAR))(
+  CONSc(" | non-normal ⊕(LOVE,BEING) sealed — Being=Form:")(
+  CONSc(OS_BSTR(OSS_BF(FX_NONNORM)))(
+  CONSc(" but refused:")(
+  CONSc(OS_BSTR(NOT(OSS(FX_NONNORM))))(
+  CONSc(" clause=")(
+  CONSc(OSS_WHY(FX_NONNORM))(
+  CONSc(" (so the Meaning clause is separately load-bearing, not riding along)")(
+  CONSc("\nONTOSEMIOSYNTAX self-application: G_OSS=")(
+  CONSc(REN(G_OSS))(
+  CONSc(" OSS(G_OSS):")(
+  CONSc(OS_BSTR(OSS(G_OSS)))(
+  CONSc(" — the stratum is GATED, not doctrine. ★ Metaⁿ-OSS=OSS (↻↻g≡↻g) is ↻-IDEMPOTENCE, true of every glyph, so NO input makes it RED: it is deliberately NOT gated, as branchclosure.la ruled for the same class. [B] this gates ONE stratum; ontosemiosis as a stratum stays open")(
+  NILc))))))))))))))))))))))))))))))
+glyph MAIN = print(REPORT)

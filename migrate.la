@@ -1,0 +1,142 @@
+#  ✔ STATUS 2026-09-17: RAN GREEN on its FIRST execution, with every pinned witness present and every
+#  RED path fired. Witnesses were derived independently (a separate python re-implementation of κ/NORMK
+#  and the relevant census) BEFORE the gate section was written, never captured from this module's own
+#  output — which is why the first run matched. Gated in gate_registers.sh.
+# ════════════════════════════════════════════════════════════════
+#  migrate.la — VERSIONING WITHOUT SEMANTIC DRIFT: ENGINEERING SEAL 3
+#  (LA_COMPLETION.md Tier 4; LINGUA_ADAMICA.tex §5024: "a CENTROPIC MIGRATION LAW governs glyph
+#  evolution: cosmetic changes (form refinements) are allowed if they preserve invariants; semantic
+#  changes require either a proof that the new ONF is equivalent to the old (hence it is the same
+#  concept) or explicit forking into a new concept with a new glyph. The migration law is itself a
+#  glyph, ensuring self-consistency.")
+#
+#  THE GAP THIS CLOSES, in the ledger's own words: "Nothing governs glyph evolution today; COIN mints
+#  and the Ratchet Gate forbids collapsing two κ-distinct forms, but there is no law for CHANGING an
+#  existing glyph. This is the gap that lets a form drift while its Ren stays put — the exact failure
+#  the monosemy discipline exists to prevent, arriving through the back door of REVISION rather than
+#  coinage."  A registry of versioned glyphs plus one admission law is what was missing.
+#
+#  THE LAW. A proposed revision of an EXISTING name is admitted iff BOTH hold:
+#    (i)  INVARIANT PRESERVATION — the new form's ONF equals the old form's ONF. The ONF (here NORMK,
+#         κ's normal form) IS the invariant: it is what survives a form refinement. A revision that
+#         changes it is a SEMANTIC change and is REFUSED, and the refusal prints BOTH ONFs, so the
+#         drift is visible rather than merely denied.
+#    (ii) THE RATCHET — the new ONF must not already belong to a DIFFERENT name. A revision that
+#         collapses two κ-distinct forms onto one is refused and NAMES the glyph it collided with.
+#         (The ledger's red path for this row: "a revision that alters an invariant must be refused,
+#         and the refusal must name which invariant.")
+#  A semantic change is not forbidden — it is forbidden AS A REVISION. Offered as a FORK under a NEW
+#  name it is admitted, and the fork is ADDITIVE: the registry grows and the old form is still there.
+#  That is the centropic direction — order accumulates, nothing already recognised is overwritten.
+#
+#  ★ COSMETIC IS NOT A NO-OP, which is what makes (i) a real test. The admitted revisions below really
+#  change the FORM: ⊕(BEING,LOVE) → ⊕(LOVE,BEING) is a different κ route (⊕ is commutative, so CANON
+#  differs while NORMK does not), and ↻↻x → ↻x is canon's metacursion-idempotence. Both print their
+#  two distinct CANON routes beside their one shared ONF. A gate whose "cosmetic" case were a literal
+#  no-op would pass with the law deleted.
+#
+#  ★ SELF-CONSISTENCY, as the tex demands ("the migration law is itself a glyph"): G_MIG is in the
+#  registry and the law is applied TO ITS OWN REVISIONS — a cosmetic refinement of G_MIG is admitted,
+#  a semantic one refused. The law governs its own evolution or it is not a law.
+#
+#  GATE (drafted, gate_registers.sh §34)  cosmetic admitted (form changed, ONF held); semantic refused
+#        naming both ONFs; the same change admitted as an additive fork; the ratchet collision refused
+#        BY NAME; and the law self-applied to G_MIG both ways.
+#        RED PATHS: (1) the ONF check made constant-true — the semantic revision is admitted and drift
+#        enters through revision, exactly the failure this row names; (2) the ratchet check removed —
+#        the colliding revision is admitted and monosemy is lost. Each mutant fails a printed value.
+#  ★ EVIDENTIAL: [W] the five admissions/refusals and the two RED paths; [A] G_MIG =
+#     ⊂(BECOMING,↻(RECOGNITION)) "change held within self-recognition" — declared, checked clear by
+#     regcollide.py, the architect ratifies; [B] the ONF is taken as THE invariant, which is true for
+#     κ-structural invariants and is NOT a claim about extra-structural meaning.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("lineage.la")    # canon + glyphdag surface: PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM SEALc + the Scott lists
+
+export PROPOSE FORK ADMIT RATCHET MG_REG G_MIG MG_ONF
+
+glyph MG_BSTR = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph MG_FOLD = Z(la self. la f. la z. la l. l(z)(la h. la t. f(h)(self(f)(z)(t))))
+glyph MG_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+
+# ── a registry entry is (name, form). The ONF of an entry is its κ normal form. ──
+glyph MG_ONF = la f. NORMK(f)
+glyph G_MIG = CONT(Px("BECOMING"))(MC(Px("RECOGNITION")))     # the migration law's own glyph [A]
+glyph MG_REG =
+  CONSc(PAIRc("BOND")(CON(Px("BEING"))(Px("LOVE"))))(
+  CONSc(PAIRc("HOLD")(CONT(Px("BEING"))(Px("LOVE"))))(
+  CONSc(PAIRc("KAPPA")(DIR(Px("RECOGNITION"))(Px("FORM"))))(
+  CONSc(PAIRc("G_MIG")(G_MIG))(
+  NILc))))
+glyph MG_LOOK = la nm. MG_FOLD(la e. la acc. IF(str_eq(FSTc(e))(nm))(la _. SNDc(e))(la _. acc))(Px("VOID"))(MG_REG)
+glyph MG_KNOWN = la nm. MG_FOLD(la e. la acc. OR(acc)(str_eq(FSTc(e))(nm)))(FALSE)(MG_REG)
+
+# ── (ii) THE RATCHET: does this ONF already belong to a DIFFERENT name? returns that name or "" ──
+glyph RATCHET = la nm. la form. MG_FOLD(la e. la acc. IF(NOT(str_eq(acc)("")))(la _. acc)(la _. IF(AND(NOT(str_eq(FSTc(e))(nm)))(str_eq(MG_ONF(SNDc(e)))(MG_ONF(form))))(la _. FSTc(e))(la _. "")))("")(MG_REG)
+
+# ── (i) INVARIANT PRESERVATION: the ONF is what a form refinement must not move ──
+glyph ADMIT = la nm. la form. str_eq(MG_ONF(MG_LOOK(nm)))(MG_ONF(form))
+
+# ── PROPOSE a REVISION of an existing name: "" when admitted, else the named refusal ──
+#  REVISION: check (i) only. See the note above on why the ratchet cannot fire here.
+glyph PROPOSE = la nm. la form.
+  IF(NOT(MG_KNOWN(nm)))(la _. concat("no such glyph to revise: ")(nm))(la _.
+  IF(NOT(ADMIT(nm)(form)))(la _. MG_JOIN(CONSc("REFUSED ")(CONSc(nm)(CONSc(": invariant ONF changed ")(CONSc(MG_ONF(MG_LOOK(nm)))(CONSc(" -> ")(CONSc(MG_ONF(form))(CONSc(" (semantic change: fork it under a new name)")(NILc)))))))))(la _. ""))
+
+# ── FORK a semantic change under a NEW name: additive, and still ratchet-checked ──
+glyph FORK = la nm. la form. IF(MG_KNOWN(nm))(la _. concat("REFUSED fork: name already taken: ")(nm))(la _. IF(NOT(str_eq(RATCHET(nm)(form))("")))(la _. concat("REFUSED fork: ONF already names ")(RATCHET(nm)(form)))(la _. ""))
+glyph FORKED = la nm. la form. CONSc(PAIRc(nm)(form))(MG_REG)
+
+# ── THE FIXTURES, every one of them derived before the module was written ──
+glyph F_COS  = CON(Px("LOVE"))(Px("BEING"))                    # BOND revised: ⊕ operands swapped
+glyph F_SEM  = CONT(Px("LOVE"))(Px("BEING"))                   # HOLD revised: ⊂ is NOT commutative
+glyph F_COL  = DIR(Px("RECOGNITION"))(Px("FORM"))              # BOND revised onto KAPPA's form
+glyph F_MCOS = CONT(Px("BECOMING"))(MC(MC(Px("RECOGNITION"))))  # G_MIG refined: ↻↻ ≡ ↻ at the identity level
+glyph F_MSEM = CONT(MC(Px("RECOGNITION")))(Px("BECOMING"))     # G_MIG revised: operands swapped
+
+glyph REPORT =
+  MG_JOIN(
+  CONSc("MIGRATE registry=")(
+  CONSc(int_to_str(LEN(MG_REG)))(
+  CONSc(" | cosmetic ⊕(BEING,LOVE)→")(
+  CONSc(CANON(F_COS))(
+  CONSc(" form changed:")(
+  CONSc(MG_BSTR(NOT(str_eq(CANON(F_COS))(CANON(MG_LOOK("BOND"))))))(
+  CONSc(" ONF held ")(
+  CONSc(MG_ONF(F_COS))(
+  CONSc(" admitted:")(
+  CONSc(MG_BSTR(str_eq(PROPOSE("BOND")(F_COS))("")))(
+  CONSc("\nMIGRATE semantic ⊂(BEING,LOVE)→")(
+  CONSc(CANON(F_SEM))(
+  CONSc(" refused:")(
+  CONSc(MG_BSTR(NOT(str_eq(PROPOSE("HOLD")(F_SEM))(""))))(
+  CONSc(" ")(
+  CONSc(PROPOSE("HOLD")(F_SEM))(
+  CONSc("\nMIGRATE same change as a FORK under a new name: admitted:")(
+  CONSc(MG_BSTR(str_eq(FORK("HOLD2")(F_SEM))("")))(
+  CONSc(" additive ")(
+  CONSc(int_to_str(LEN(MG_REG)))(
+  CONSc("→")(
+  CONSc(int_to_str(LEN(FORKED("HOLD2")(F_SEM))))(
+  CONSc(" old form still present:")(
+  CONSc(MG_BSTR(str_eq(MG_ONF(MG_LOOK("HOLD")))("⊂(BEING,LOVE)")))(
+  CONSc("\nMIGRATE ratchet on the fork path: a new name NEWK offered on ")(
+  CONSc(MG_ONF(F_COL))(
+  CONSc(" refused:")(
+  CONSc(MG_BSTR(NOT(str_eq(FORK("NEWK")(F_COL))(""))))(
+  CONSc(" ")(
+  CONSc(FORK("NEWK")(F_COL))(
+  CONSc("\nMIGRATE self-consistency (the law is itself a glyph): G_MIG=")(
+  CONSc(CANON(G_MIG))(
+  CONSc(" | its cosmetic refinement ")(
+  CONSc(CANON(F_MCOS))(
+  CONSc(" admitted:")(
+  CONSc(MG_BSTR(str_eq(PROPOSE("G_MIG")(F_MCOS))("")))(
+  CONSc(" | its semantic revision ")(
+  CONSc(CANON(F_MSEM))(
+  CONSc(" refused:")(
+  CONSc(MG_BSTR(NOT(str_eq(PROPOSE("G_MIG")(F_MSEM))(""))))(
+  CONSc(" — the law governs its own evolution")(
+  NILc))))))))))))))))))))))))))))))))))))))))))
+glyph MAIN = print(REPORT)

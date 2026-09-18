@@ -1,0 +1,83 @@
+# ════════════════════════════════════════════════════════════════
+#  archeunique.la — ⊗-IDEMPOTENCE BELONGS TO THE ARCHĒ ALONE. GATED, NOT ASSERTED. (Erik's Gate 4)
+#
+#  THE CLAIM. `canon.la`'s `REWRITE_SYN` grants ⊗-idempotence to the Archē and to nothing else — Erik's
+#  own ruling of 2026-08-24, written into the normaliser as a literal guard on the name "∃". Everything
+#  downstream leans on it: it is why `compressbound.la` can call ∃ the TERMINATOR of collapse-growth, and
+#  it is the mechanism behind the white paper's claim that the dyad is the only glyph surviving
+#  self-application. **A ruling that load-bearing should be measured, not trusted.**
+#
+#  THE TEST, and it has TWO halves because a one-sided version proves nothing:
+#    (1) ⊗(∃,∃) ≡ ∃ — the Archē IS idempotent. Without this the claim is empty.
+#    (2) For EVERY ordinary glyph in a named set — the nine primitives, κ, 𝓜, and the five mode glyphs of
+#        𝓜 — ⊗(g,g) ≢ g. The count of ordinary glyphs that are idempotent must be **ZERO**.
+#  Half (1) alone would pass if everything were idempotent; half (2) alone would pass if nothing were.
+#  Erik's instruction: *"If it holds for some ordinary glyph, the claim is false and should be corrected.
+#  If it holds for none, the gate is green and the Archē's uniqueness is earned."*
+#
+#  ★ WHY THIS IS NOT A TAUTOLOGY ABOUT A `str_eq` ON A NAME. The guard keys on the STRING "∃", so one
+#  might object that the gate merely re-reads the guard. It does not: the test runs the FULL normaliser
+#  over real κ-forms and asks whether the normal form of ⊗(g,g) equals that of g — a question about
+#  NORMK's behaviour on 16 real inputs, not about the source text of one rewrite. The mutants below break
+#  the test in each direction to show it can answer either way.
+#
+#  GATE (gate_registers.sh §45)  the Archē is idempotent; the ordinary-idempotent count is 0 of 16; and the
+#        two are reported together so neither half can carry the other.
+#        RED PATHS: (1) the idempotence test made to compare a form with ITSELF — every ordinary glyph then
+#        reads idempotent and the uniqueness collapses (the count goes to 16); (2) the Archē's own case
+#        broken — the positive half goes F, so the gate cannot pass by finding nothing anywhere.
+#  ★ EVIDENTIAL: [W] both halves and both RED paths; [B] the set is 16 NAMED glyphs, not every form in the
+#     language — a universal quantification over an infinite form-space is not something a gate can witness,
+#     and this one does not pretend to.
+#  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")   # NORMK, the mode/operator forms, and the base surface
+
+export TI_IDEM TI_ORDINARY TI_ARCHE
+
+glyph TI_B = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph TI_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+# ★ local alias so a mutant has something in THIS file to break (an imported glyph cannot be shadowed)
+glyph TI_NORM = la f. NORMK(f)
+glyph TI_IDEM = la f. str_eq(TI_NORM(SYN(f)(f)))(TI_NORM(f))
+
+glyph TI_ARCHE = TI_IDEM(Px("∃"))
+glyph TI_SET =
+  CONSc(PAIRc("BEING")(Px("BEING")))(
+  CONSc(PAIRc("RECOGNITION")(Px("RECOGNITION")))(
+  CONSc(PAIRc("LOVE")(Px("LOVE")))(
+  CONSc(PAIRc("SELF")(Px("SELF")))(
+  CONSc(PAIRc("RELATION")(Px("RELATION")))(
+  CONSc(PAIRc("VOID")(Px("VOID")))(
+  CONSc(PAIRc("BECOMING")(Px("BECOMING")))(
+  CONSc(PAIRc("FORM")(Px("FORM")))(
+  CONSc(PAIRc("DEPTH")(Px("DEPTH")))(
+  CONSc(PAIRc("KAPPA")(KAPPA))(
+  CONSc(PAIRc("REVAL")(REVAL))(
+  CONSc(PAIRc("MODE_SYN")(MODE_SYN_F))(
+  CONSc(PAIRc("MODE_CON")(MODE_CON_F))(
+  CONSc(PAIRc("MODE_DIR")(MODE_DIR_F))(
+  CONSc(PAIRc("MODE_CONT")(MODE_CONT_F))(
+  CONSc(PAIRc("MODE_MC")(MODE_MC_F))(
+  NILc))))))))))))))))
+glyph TI_COUNT = RD_FOLD(la e. la acc. add(acc)(IF(TI_IDEM(SNDc(e)))(la _. 1)(la _. 0)))(0)(TI_SET)
+glyph TI_FIRST = RD_FOLD(la e. la acc. IF(NOT(str_eq(acc)("")))(la _. acc)(la _. IF(TI_IDEM(SNDc(e)))(la _. FSTc(e))(la _. "")))("")(TI_SET)
+glyph TI_ORDINARY = int_eq(TI_COUNT)(0)
+
+glyph REPORT =
+  TI_JOIN(
+  CONSc("ARCHEUNIQUE (1) the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:")(
+  CONSc(TI_B(TI_ARCHE))(
+  CONSc(" | (2) ordinary glyphs that are ⊗-idempotent: ")(
+  CONSc(int_to_str(TI_COUNT))(
+  CONSc(" of ")(
+  CONSc(int_to_str(LEN(TI_SET)))(
+  CONSc(" — must be ZERO:")(
+  CONSc(TI_B(TI_ORDINARY))(
+  CONSc(IF(str_eq(TI_FIRST)(""))(la _. "")(la _. concat(" OFFENDER=")(TI_FIRST)))(
+  CONSc("\nARCHEUNIQUE ★ BOTH halves together: the uniqueness is EARNED:")(
+  CONSc(TI_B(AND(TI_ARCHE)(TI_ORDINARY)))(
+  CONSc(" — half (1) alone would pass if EVERYTHING were idempotent; half (2) alone would pass if NOTHING were. ⊗-idempotence is the Archē’s and no one else’s, which is what makes ∃ the terminator of collapse-growth (compressbound.la §42) and the only glyph surviving self-application. [B] 16 NAMED glyphs, not a universal over an infinite form-space")(
+  NILc)))))))))))))
+glyph MAIN = print(REPORT)
