@@ -35,7 +35,7 @@
 #  is admitted, the pattern is sealed, and the sharing is MEASURED (unfolded tree nodes vs hash-consed DAG
 #  nodes). Without that control the four irreducibility verdicts below would be worthless.
 #
-#  GATE (drafted, gate_registers.sh §36, behind REGS_DRAFT=1 until it has run)
+#  GATE (gate_registers.sh §36 — ran green 2026-09-17, REGS_DRAFT guard removed; SECD VM leg not yet run)
 #        the positive control is ADMITTED, names its pattern ↻(RECOGNITION) at multiplicity 2, seals it,
 #        and measures 8 unfolded nodes against 6 shared; the negative control (a shared LEAF only) is
 #        REFUSED naming max compound multiplicity 1; and all four real sets report κ*-irreducible.

@@ -23,7 +23,7 @@
 import("lexicon.la")       # FOLD LEX RULED PARSE KAN NAM
 import("opgrammar.la")     # GRAM GRULED
 
-export SYLLABUS SY_ROWS SY_ORDER
+export SY_ROWS SY_ORDER
 
 glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph TRUE  = la t. la f. t

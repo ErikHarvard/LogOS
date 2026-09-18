@@ -26,6 +26,62 @@ want() { if grep -qF -- "$2" "$T/$1"; then :; else echo "FAIL  registers/$3: mis
 # red(mutfile, token, label) — the mutant's output must NOT carry the green witness and must carry the red one
 red() { if grep -qF -- "$2" "$T/$1"; then :; else echo "FAIL  registers/$3: the RED path did not fire — mutant still reads green: $(head -c 200 "$T/$1")"; ok=0; fi; }
 
+# ── the VM leg (§11), defined up here so REGS_VM_CHUNK can run it ALONE ──────────────────
+#  REGS_VM=1 (default) the 33 light modules · 2 adds registers.la and regenesis.la (and two more),
+#  whose ~830-glyph closures make codegen take on the order of an hour each under fleet load.
+vm_list() {
+    vmlist="lineage.la topology.la texture.la prosody.la evidential.la complement.la opposite.la modegenesis.la textcoherence.la derive_closure.la ontoargument.la ontomorph.la gramcomplete.la unified.la recdepth.la selfevo.la"
+    # the Category-1 + framework modules (§33–§49): all 47–213-glyph closures, all pass nameck --vm.
+    # Until 2026-09-18 only recdepth/selfevo were here, so REGS_VM=1 went green without touching these 17.
+    vmlist="$vmlist certify.la migrate.la closure.la metakappa.la substitution.la ontosemiosyntax.la autocompress.la phonometa.la identity.la compressbound.la logicsyntax.la lawroot.la archeunique.la crossbranch.la numderive.la divergent.la adequacy.la"
+    [ "${REGS_VM:-1}" = 2 ] && vmlist="$vmlist registers.la regenesis.la branchgenesis.la neologenesis.la"
+    echo "$vmlist"
+}
+# vm_leg <module...> — host == VM byte for byte for each. Sets vm_done to the number actually COMPARED,
+# so a caller can require it equals what it asked for. One TIME line per module: the leg's wall was
+# never measured, and chunk sizes should be chosen from these numbers, not reasoned.
+vm_leg() {
+    vm_done=0
+    rm -f logos_secd logos_program.bin logos_source.la
+    ./tiny_host secd.la >/dev/null 2>&1 || { echo "FAIL  registers/vm: secd.la did not emit the VM"; ok=0; }
+    for m in "$@"; do
+        b=${m%.la}
+        cp "$m" logos_source.la
+        t0=$(date +%s)
+        timeout 7200 ./tiny_host codegen.la >/dev/null 2>&1 || { echo "FAIL  registers/vm: codegen failed on $m"; ok=0; continue; }
+        t1=$(date +%s)
+        timeout 3600 ./logos_secd > "$T/$b.vm" 2>&1
+        t2=$(date +%s)
+        ./tiny_host "$m" > "$T/$b.host" 2>&1
+        t3=$(date +%s)
+        echo "TIME  registers/vm: $m codegen=$((t1-t0))s vm=$((t2-t1))s host=$((t3-t2))s"
+        if cmp -s "$T/$b.vm" "$T/$b.host"; then :; else echo "FAIL  registers/vm: $m host != VM"; ok=0; fi
+        vm_done=$((vm_done+1))
+        rm -f logos_program.bin logos_source.la
+    done
+    rm -f logos_secd
+}
+
+# ── REGS_VM_CHUNK=k/n — run ONLY the k-th of n contiguous slices of the VM list, and NOTHING ELSE:
+#  §1–§10 are skipped, so a chunk fits a short deep slot. Its PASS line names the chunk and every module
+#  it compared; it is NOT the gate's PASS line and must never be read as one. The n chunks together cover
+#  the list exactly once. REGS_VM_PLAN=1 prints the chunk's modules and exits without running anything.
+if [ -n "${REGS_VM_CHUNK:-}" ]; then
+    ck=${REGS_VM_CHUNK%/*}; cn=${REGS_VM_CHUNK#*/}
+    case "$REGS_VM_CHUNK" in */*) ;; *) echo "REFUSE registers/vm: REGS_VM_CHUNK=$REGS_VM_CHUNK is not k/n"; exit 2;; esac
+    case "$ck:$cn" in :*|*:|*[!0-9:]*) echo "REFUSE registers/vm: REGS_VM_CHUNK=$REGS_VM_CHUNK is not k/n"; exit 2;; esac
+    [ "${REGS_VM:-1}" != 0 ] || { echo "REFUSE registers/vm: REGS_VM=0 skips the leg REGS_VM_CHUNK asks to run"; exit 2; }
+    cN=$(vm_list | wc -w)
+    { [ "$ck" -ge 1 ] && [ "$ck" -le "$cn" ] && [ "$cn" -le "$cN" ]; } || { echo "REFUSE registers/vm: need 1 <= k <= n <= $cN, got $REGS_VM_CHUNK"; exit 2; }
+    cmods=$(vm_list | awk -v k="$ck" -v n="$cn" '{for(i=1;i<=NF;i++) a[++N]=$i} END{for(i=1;i<=N;i++) if(i>int((k-1)*N/n) && i<=int(k*N/n)) printf "%s ", a[i]}')
+    cwant=$(echo $cmods | wc -w)
+    if [ "${REGS_VM_PLAN:-0}" = 1 ]; then echo "PLAN  registers/vm chunk $ck/$cn: $cwant of $cN: $cmods"; exit 0; fi
+    vm_leg $cmods
+    [ "$vm_done" -eq "$cwant" ] || { echo "FAIL  registers/vm chunk $ck/$cn: compared $vm_done of the $cwant modules it was given"; ok=0; }
+    [ "$ok" -eq 1 ] && echo "PASS  registers/vm chunk $ck/$cn (REGS_VM=${REGS_VM:-1}): $vm_done of $cN modules host == VM byte for byte: $cmods— a CHUNK, not the gate: §1–§10 and the other chunks did not run here" || exit 1
+    exit 0
+fi
+
 # ═══ 1. lineage — the etymological register ═══════════════════════════════
 host lineage.la lin
 want lin "recoverable from lineage alone:T" lineage
@@ -587,11 +643,18 @@ red lr_m2 "TRIBAR(∃(∃))(∃) with it:F" "lawroot RED(the control removed: th
 #  ⊗-idempotent, AND the count of ordinary glyphs that are is ZERO of 16 (the nine primitives, κ, 𝓡, and
 #  the five mode glyphs). Half (1) alone would pass if everything were idempotent; half (2) alone if
 #  nothing were. This is the ruling `compressbound.la` §42 leans on when it calls ∃ the terminator.
+#  ⚠ (3) ADDED 2026-09-18 — WRITTEN + DERIVED, NOT YET RUN: the codex's Contradiction(C)=C (Llogoscribeologiae
+#  12987), C = Love ∧ Bad in prop.la's own ¬/∧, must NOT be ⊗-idempotent. Expected values derived in python first.
 host archeunique.la ti
 want ti "ARCHEUNIQUE (1) the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:T | (2) ordinary glyphs that are ⊗-idempotent: 0 of 16 — must be ZERO:T" archeunique
 want ti "BOTH halves together: the uniqueness is EARNED:T" archeunique
+want ti "C = p∧¬p with p=LOVE (Love ∧ Bad): ⊕(LOVE,⊂(LOVE,VOID)) | ⊗(C,C)≡C:F" archeunique
+#  (3) drift guard: the fixture copies prop.la's ¬ and ∧ locally (a mutant cannot shadow an import), so the
+#  gate REFUSES if prop.la's definitions move and the copy would silently test a stale logic.
+grep -qxF 'glyph PNOT = la p. CONT(p)(VOIDP)' prop.la && grep -qxF 'glyph PAND = la p. la q. CON(p)(q)' prop.la || { echo "FAIL  registers/archeunique: prop.la's PNOT/PAND changed — the (3) contradiction fixture copies them and must be re-derived"; ok=0; }
 sed 's|^glyph TI_IDEM = la f. str_eq(TI_NORM(SYN(f)(f)))(TI_NORM(f))|glyph TI_IDEM = la f. str_eq(TI_NORM(f))(TI_NORM(f))|' archeunique.la > "$T/ti_m1.la"; host "$T/ti_m1.la" ti_m1
 red ti_m1 "ordinary glyphs that are ⊗-idempotent: 16 of 16 — must be ZERO:F" "archeunique RED(the test made to compare a form with ITSELF: every ordinary glyph reads idempotent and the Archē's uniqueness collapses)"
+red ti_m1 "p=LOVE (Love ∧ Bad): ⊕(LOVE,⊂(LOVE,VOID)) | ⊗(C,C)≡C:T" "archeunique RED(the same mutant turns the contradiction line T: (3) goes through the live idempotence test, not a constant)"
 sed 's|^glyph TI_ARCHE = TI_IDEM(Px("∃"))|glyph TI_ARCHE = TI_IDEM(Px("BEING"))|' archeunique.la > "$T/ti_m2.la"; host "$T/ti_m2.la" ti_m2
 red ti_m2 "the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:F" "archeunique RED(the positive half broken: the gate cannot pass merely by finding idempotence nowhere)"
 
@@ -699,24 +762,12 @@ PY
 done
 
 # ═══ 11. VM leg: host == native SECD VM, byte for byte ═══════════════════════
-#  REGS_VM=0 skips · 1 (default) the eight light modules · 2 adds registers.la and
-#  regenesis.la, whose ~830-glyph closures make codegen take on the order of an hour
-#  each under fleet load. The heavy two are a separate switch so the light leg stays runnable.
+#  REGS_VM=0 skips · 1 (default) the 33 light modules · 2 adds the four heavy ones (list and
+#  runner: vm_list / vm_leg, top of file). REGS_VM_CHUNK=k/n runs one slice ALONE — see there.
 if [ "${REGS_VM:-1}" != 0 ]; then
-    rm -f logos_secd logos_program.bin logos_source.la
-    ./tiny_host secd.la >/dev/null 2>&1 || { echo "FAIL  registers/vm: secd.la did not emit the VM"; ok=0; }
-    vmlist="lineage.la topology.la texture.la prosody.la evidential.la complement.la opposite.la modegenesis.la textcoherence.la derive_closure.la ontoargument.la ontomorph.la gramcomplete.la unified.la recdepth.la selfevo.la"
-    [ "${REGS_VM:-1}" = 2 ] && vmlist="$vmlist registers.la regenesis.la branchgenesis.la neologenesis.la"
-    for m in $vmlist; do
-        b=${m%.la}
-        cp "$m" logos_source.la
-        timeout 7200 ./tiny_host codegen.la >/dev/null 2>&1 || { echo "FAIL  registers/vm: codegen failed on $m"; ok=0; continue; }
-        timeout 3600 ./logos_secd > "$T/$b.vm" 2>&1
-        ./tiny_host "$m" > "$T/$b.host" 2>&1
-        if cmp -s "$T/$b.vm" "$T/$b.host"; then :; else echo "FAIL  registers/vm: $m host != VM"; ok=0; fi
-        rm -f logos_program.bin logos_source.la
-    done
-    rm -f logos_secd
+    set -- $(vm_list)
+    vm_leg "$@"
+    [ "$vm_done" -eq "$#" ] || { echo "FAIL  registers/vm: compared $vm_done of the $# listed modules"; ok=0; }
 fi
 
 [ "$ok" -eq 1 ] && echo "PASS  registers: the twelve-register stack — five new registers (etymological, prosodic, topological, evidential, affective) each gated with a RED path that NAMES its offender; twelve-fold coherence (all identity-projections agree on NIS-equal glyphs, NORMTREE ≡ NORMK differentially); Δ_M and Δ_R each with four sub-gates, one fixture per letter, idempotent admission; the antonym structure (¬ from Void, ¬¬C ≠ C as glyphs and ≡ C in truth, two identities explicit, the dyadic pole as a refusing involution); every W-tag cites a gate that exists in build.sh; every import closure under the 1024-glyph table" || exit 1

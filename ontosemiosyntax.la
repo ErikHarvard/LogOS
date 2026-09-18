@@ -46,7 +46,7 @@
 #  the non-vacuous half: the stratum's predicate applied to the stratum's own glyph, which CAN fail and does
 #  fail for the liar. [[the vacuous-gate tally]]
 #
-#  GATE (drafted, gate_registers.sh §38, behind REGS_DRAFT=1 until it has run)
+#  GATE (gate_registers.sh §38 — ran green 2026-09-17, REGS_DRAFT guard removed; SECD VM leg not yet run)
 #        35/35 on both clauses; the liar refused naming FORM≠BEING; the non-normal glyph refused naming
 #        BEING≠MEANING; OSS holds of its own glyph.
 #        RED PATHS: (1) the Being=Form clause made constant-true — the liar passes; (2) the Being=Meaning

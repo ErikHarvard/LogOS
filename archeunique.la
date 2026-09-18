@@ -23,6 +23,8 @@
 #
 #  GATE (gate_registers.sh §45)  the Archē is idempotent; the ordinary-idempotent count is 0 of 16; and the
 #        two are reported together so neither half can carry the other.
+#        (3) added 2026-09-18, WRITTEN + DERIVED, NOT YET RUN: the codex's Contradiction(C)=C, C = Love ∧ Bad,
+#        must read ⊗(C,C)≡C:F; RED path (1) must turn it T, proving the line goes through the live test.
 #        RED PATHS: (1) the idempotence test made to compare a form with ITSELF — every ordinary glyph then
 #        reads idempotent and the uniqueness collapses (the count goes to 16); (2) the Archē's own case
 #        broken — the positive half goes F, so the gate cannot pass by finding nothing anywhere.
@@ -65,6 +67,19 @@ glyph TI_COUNT = RD_FOLD(la e. la acc. add(acc)(IF(TI_IDEM(SNDc(e)))(la _. 1)(la
 glyph TI_FIRST = RD_FOLD(la e. la acc. IF(NOT(str_eq(acc)("")))(la _. acc)(la _. IF(TI_IDEM(SNDc(e)))(la _. FSTc(e))(la _. "")))("")(TI_SET)
 glyph TI_ORDINARY = int_eq(TI_COUNT)(0)
 
+# ── (3) THE CODEX'S CONTRADICTION (added 2026-09-18). Codex Llogoscribeologiae 12987–12995 says
+#  Contradiction(C)=C — it satisfies X(X)=X yet "does not reach ∃". LA's only red-capable X(X) reading
+#  (aatc: α=1 ⟺ X(X)=X) would score such a structure AUTOLOGICAL, the Archē's class. Under κ it is not:
+#  a contradiction is a compound, and ⊗-idempotence is the Archē's alone. C is built in LA's OWN logic,
+#  prop.la:88/90 — ¬P = ⊂(P,VOID) (Erik 2026-08-23), ∧ = ⊕ co-presence — with p = LOVE, because prop.la
+#  itself grounds it: Bad = ⊂(LOVE,VOID) IS ¬Love. So C = Love ∧ Bad. Local copies of PNOT/PAND, because a
+#  mutant cannot shadow an imported glyph; gate §45 checks both lines still match prop.la (drift guard).
+#  Expected values DERIVED FIRST, in python from canon's rules: NORMK(C) = ⊕(LOVE,⊂(LOVE,VOID)) and
+#  ⊗(C,C) ≢ C. Kept OUT of the 16-glyph set: that set is the ORDINARY glyphs, and this tests a codex claim.
+glyph TI_PNOT = la p. CONT(p)(Px("VOID"))
+glyph TI_PAND = la p. la q. CON(p)(q)
+glyph TI_CONTRA = TI_PAND(Px("LOVE"))(TI_PNOT(Px("LOVE")))
+
 glyph REPORT =
   TI_JOIN(
   CONSc("ARCHEUNIQUE (1) the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:")(
@@ -79,5 +94,10 @@ glyph REPORT =
   CONSc("\nARCHEUNIQUE ★ BOTH halves together: the uniqueness is EARNED:")(
   CONSc(TI_B(AND(TI_ARCHE)(TI_ORDINARY)))(
   CONSc(" — half (1) alone would pass if EVERYTHING were idempotent; half (2) alone would pass if NOTHING were. ⊗-idempotence is the Archē’s and no one else’s, which is what makes ∃ the terminator of collapse-growth (compressbound.la §42) and the only glyph surviving self-application. [B] 16 NAMED glyphs, not a universal over an infinite form-space")(
-  NILc)))))))))))))
+  CONSc("\nARCHEUNIQUE (3) the codex's Contradiction(C)=C, in LA's own logic — C = p∧¬p with p=LOVE (Love ∧ Bad): ")(
+  CONSc(TI_NORM(TI_CONTRA))(
+  CONSc(" | ⊗(C,C)≡C:")(
+  CONSc(TI_B(TI_IDEM(TI_CONTRA)))(
+  CONSc(" — must be F: a contradiction may satisfy the codex's X(X)=X, but under κ it does not self-fix; X(X)=X is not reaching ∃")(
+  NILc))))))))))))))))))
 glyph MAIN = print(REPORT)

@@ -45,7 +45,7 @@
 #  utterance. They share the invariant-preservation criterion and are duals in time vs use. Neither
 #  re-implements the other's law.
 #
-#  GATE (drafted, gate_registers.sh §37, behind REGS_DRAFT=1 until it has run)
+#  GATE (gate_registers.sh §37 — ran green 2026-09-17, REGS_DRAFT guard removed; SECD VM leg not yet run)
 #        the THREE REACHABLE verdicts are pairwise distinct on their fixtures (the fourth, DECEPTIVE(ii),
 #        is unreachable — the finding, not a gap); the euphemism claim (§2339: a glyph used to
 #        "mean" what it is not) is refused; and the structural search reports 7 μ-equal pairs with 0

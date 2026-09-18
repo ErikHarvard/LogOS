@@ -34,7 +34,7 @@
 #  compression that silently lost or duplicated structure would be caught by arithmetic rather than by
 #  inspection. Calling this "compression" without that sentence would be the claim the measurement refutes.
 #
-#  GATE (drafted, gate_registers.sh §39, behind REGS_DRAFT=1 until it has run)
+#  GATE (gate_registers.sh §39 — ran green 2026-09-17, REGS_DRAFT guard removed; SECD VM leg not yet run)
 #        run of 5 → 1 standing movement; the first application MOVES the form; the second moves NOTHING
 #        (the fixed point, reached after exactly one application); a run already of length 1 is NOT moved;
 #        and the node cost is exactly one join per collapse, 18→22 for 4 collapses.

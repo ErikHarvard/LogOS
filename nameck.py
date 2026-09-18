@@ -25,7 +25,8 @@ import re,sys,os
 # then reports a real name as unbound (or, worse, stops reporting a fake one). HOST = tiny_host.c's
 # is_builtin table; VM = secd.asm's name table. The VM set is a SUPERSET in the syscall direction:
 # fork/execve/open/... exist on the VM and NOT on the C host, which is why autopoiesis.la and the
-# driver modules cannot run under tiny_host at all. Pass --host to check only against the C host.
+# driver modules cannot run under tiny_host at all. Pass --host to check only against the C host,
+# --vm to check only against the VM (see the exit-status note at the bottom).
 def _from_source(path, pat):
     import re, io, os
     if not os.path.exists(path): return set()
@@ -89,6 +90,16 @@ def check(path):
             if tok in ('la','glyph','import','export'): continue
             if tok not in avail: bad.setdefault(tok,ln)
     return bad
-for f in sys.argv[1:]:
+# --host / --vm check against ONE side's builtins only. --vm is the pre-flight for a VM leg: a module
+# that uses a host-only builtin (typeof) passes the default check and then fails on the SECD VM.
+# ★ EXIT STATUS: 1 if any module has an unbound name, else 0. Until 2026-09-18 it exited 0 always, so
+# `nameck.py f.la || echo FAIL` could never fire and a sweep reported clean over five flagged files.
+args=sys.argv[1:]
+if '--host' in args: BUILTIN=HOST_BUILTIN
+if '--vm' in args:   BUILTIN=VM_BUILTIN
+rc=0
+for f in [a for a in args if a not in ('--host','--vm')]:
     bad=check(f)
+    if bad: rc=1
     print('%-16s %s' % (f, 'OK' if not bad else 'UNBOUND: '+', '.join('%s(line %d)'%(k,v) for k,v in sorted(bad.items()))))
+sys.exit(rc)

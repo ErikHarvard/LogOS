@@ -49,7 +49,7 @@
 #  have; LA_TOMORROW files it Category 3, external, and it stays there. What a closed, standing topology
 #  buys is the PRECONDITION for such a functor, not the functor.
 #
-#  GATE (drafted, gate_registers.sh §40, behind REGS_DRAFT=1 until it has run)
+#  GATE (gate_registers.sh §40 — ran green 2026-09-17, REGS_DRAFT guard removed; SECD VM leg not yet run)
 #        the four assertions above, the negative mode-recovery finding, and — as a check on THIS module's
 #        reading of its dependency — a recomputation of build.sh's own pinned psc witness.
 #        RED PATHS: (1) LDEDUP made the identity — Θ_P removes nothing, so the "it moved" half of (1) and

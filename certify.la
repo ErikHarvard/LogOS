@@ -1,10 +1,8 @@
-#  ⚠⚠ STATUS 2026-09-17: WRITTEN, NOT VERIFIED, NOT GATED.
-#  Its first host run exceeded the 550 s bound taken before the hot path below was threaded, and the
-#  deep-job lease then went to the FULL AUDIT, so it could not be re-run. NOTHING in this file is
-#  claimed: it is absent from gate_registers.sh and no LA_COMPLETION.md row was moved for it. The
-#  threading fix below is REASONED from the evaluator's behaviour, NOT MEASURED.
-#  FIRST ACTION NEXT SESSION: take a lease, run it, derive its witnesses independently, then gate
-#  it at gate_registers.sh §33 — and only then move the Seal 2 row.
+#  ✔ STATUS (corrected 2026-09-18): HOST-VERIFIED + GATED — ran green 2026-09-17 at gate_registers.sh §33,
+#  witnesses derived independently, two RED paths (self-compared ONF; vacuous coverage). The threading
+#  fix below was then MEASURED (>550 s → 4m25s). NOT run on the SECD VM (in the REGS_VM list since
+#  09-18, never executed). Field (a) carries the arity spine only: ruling E3 (~/logos/rulings/E3.md,
+#  09-09, awaiting Erik's ratification) picked dependent types over the five modes — not built.
 # ════════════════════════════════════════════════════════════════
 #  certify.la — PROOF-CARRYING GLYPHS: ENGINEERING SEAL 2  (LA_COMPLETION.md Tier 4;
 #  LINGUA_ADAMICA.tex §5020: "every glyph ships with (a) a type derivation, (b) an equivalence

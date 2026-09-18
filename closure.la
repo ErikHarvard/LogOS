@@ -38,7 +38,7 @@
 #  slack is published by the paper and stands. Criterion 9 is met HERE, by one named thing, which is what
 #  the row asked for and the size of what it asked for. The ledger's other open rows are untouched by it.
 #
-#  GATE (drafted, gate_registers.sh §35, behind REGS_DRAFT=1 until it has run)
+#  GATE (gate_registers.sh §35 — ran green 2026-09-17, REGS_DRAFT guard removed; SECD VM leg not yet run)
 #        the suite's listed-module count and hosted-module count are printed; SLACKS(suite) is empty;
 #        CLOSURE(suite) holds; AATC's four-letter diagnosis is printed; and the RED path is the ledger's
 #        own — a deliberately RE-INTRODUCED slack entry (a module listed but not checked) makes SLACKS
