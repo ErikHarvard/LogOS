@@ -1883,8 +1883,9 @@ or in a full suite on HEAD yet (FREEZE-TRACKF.md). Each item says exactly how fa
   is κ\*-irreducible (no compound sub-form recurs across two glyphs). A POSITIVE CONTROL proves the instrument can
   look (a planted recurring ↻(RECOGNITION) is found and sealed). A result about THIS catalogue, not about the operator;
   a larger catalogue could change it.
-- **Δ_ν is a fixed point, and the fixed point costs structure** [W, §39]: a run of 5 movements folds to 1 on the first
-  application; the second moves nothing. Node count RISES 18 → 22, one join per collapse. It compresses the NUMBER OF
+- **Δ_ν folds, and the fold costs structure** [W, §39]: a run of 5 movements folds to 1. ⚠ **"the second application moves
+  nothing" is DEFINITIONAL (F32, 09-18)** — Δ_ν is a left fold, and a fold of a one-element list returns it (autocompress.la:63);
+  do NOT present the fixed point as a finding. Node count RISES 18 → 22, one join per collapse. It compresses the NUMBER OF
   MOVEMENTS, not the size of the form. With §48 below: rest is bought with loss.
 - **The gate could pass what it was built to catch** [B, method finding — the kin of "the monosemy check was running
   in one register out of three"]: exit codes were written and never read, so a module that printed its witnesses and
@@ -1895,7 +1896,9 @@ or in a full suite on HEAD yet (FREEZE-TRACKF.md). Each item says exactly how fa
 *The nine corrections from 2026-09-17, carried here from RESUME-2026-09-18.md so the paper track can see them* [W, each gated]:
 1. ⚠ **UNWITNESSED (F25, 09-18):** "The Three Laws are NOT derived from the Archē" — §44's removal test is VACUOUS (its
    signature function never uses the GROUND it is handed, so nothing was removed). May hold by inspection; not yet shown.
-2. ⚠ *(suspect, F29: §44's criterion witness may disagree by construction)* The autological criterion is CO-PRIMITIVE with the Archē too (§44) — the ground is a SMALL SET of four, not a point;
+2. ⚠ **DEFINITIONAL (F32, 09-18):** AUTO_OK compares a ren with CANON, which applies no rewrite — so it cannot consult the
+   Archē BY DEFINITION; §44 t4's "they DISAGREE" is guaranteed by the fixture. True, but by inspection, not a discovery.
+   The criterion is CO-PRIMITIVE with the Archē too (§44) — the ground is a SMALL SET of four, not a point;
    consistent with derive_closure's 4 of 9.
 3. Divergent compressions do NOT converge on κ (§48): six compressions, six outputs, five never rest; only deletion
    rests, by discarding — CONVERGENCE AND RETENTION ARE IN TENSION.
@@ -1903,7 +1906,8 @@ or in a full suite on HEAD yet (FREEZE-TRACKF.md). Each item says exactly how fa
 5. Logic, algorithm and syntax are pairwise SEPARATE (§43); the true relation is the neologizing dyad.
 6. ⚠ **CORRECTED (F26, 09-18):** §47 witnesses only one = BECOMING(VOID); "BEING is not one" is PRINTED TEXT (ND_BEING unused).
    Decoded as a numeral BEING IS one. Per the F5 ruling: BEING and ONE are distinct FORMS (ungated as yet) and EQUAL IN TRUTH.
-7. The measure horizon (§47): four κ-distinct forms share one numeral — arithmetic says how big, never which.
+7. ⚠ **DEFINITIONAL (F32, 09-18):** the measure horizon (§47): four κ-distinct forms share one numeral — true because the
+   numeral is DEFINED as tree size, which cannot see a mode label. Bound it to "measure = node count"; not a discovery.
 8. No Shannon noise in the computational register (§42); the real bound is the RENDERER's (sigil.la walks the unfolded
    form — a DAG renderer would survive ~40× deeper).
 9. The three collisions named on 09-17 do not exist (§49).
