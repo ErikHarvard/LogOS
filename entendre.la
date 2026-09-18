@@ -27,6 +27,7 @@
 #  the surface; make II read the surface → II = I.
 #  ★ EVIDENTIAL: [W] I, II, IV derived and distinct, the ⊥ red path; [B] III is a census, not
 #     execution; one compound + one primitive.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · exact & independently derived 2 · cannot-fail 1 [UNWITNESSED — F23 (labelled strings)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # base surface: CANON NORMK DAG SPLIT NTH LEN DEPTH SEALc …
 import("prosody.la")     # PCONTOUR PDUR

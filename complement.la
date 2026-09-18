@@ -42,6 +42,7 @@
 #         bare hole FORM — A(A) ≡ id in truth, exactly the directive's Reading 1.
 #  ★ EVIDENTIAL: [W]→[B] all four gates (gate_registers.sh); [W] NEG_MODE = ⊂(X,VOID) is
 #     Erik's ruling, gated in opgrammar.la (OK_NEG_IS_CONT) and shape-checked here.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 1 · fixture-backed 1 · exact & independently derived 4. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("canon.la")
 

@@ -37,9 +37,10 @@
 #        RED PATHS: (1) a law MADE to depend on the Archē — the independence witness must then go F, which
 #        is what shows the test can DETECT a dependence rather than always reporting one; (2) the
 #        load-bearing control removed — the rewrite reads idle and the whole removal test becomes vacuous.
-#  ★ EVIDENTIAL: [W] falsifiability, independence, the control; [B] this tests derivability from the ONE
+#  ★ EVIDENTIAL: [W] falsifiability, the control; ⚖ [W→UNWITNESSED, F25] independence — LR_SIG never uses the GROUND it is handed, so nothing was removed; [B] this tests derivability from the ONE
 #     rewrite that encodes the Archē in code (`GROUND`). A derivation by some other route is not refuted
 #     by this — only the claim that the laws as BUILT rest on ∃(∃)≡∃.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · fixture-backed 1 · construction-true 1 [A: witnesses its constructor, not the claim — AUTO_OK uses CANON, so it cannot consult the Archē — by definition] · cannot-fail 1 [UNWITNESSED — F25 (LR_SIG never uses its GROUND argument)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("metalogic.la")   # TERM FORM VAL GROUND TRIBAR AUTO_OK LAW_* and their glyph witnesses

@@ -16,6 +16,7 @@
 #  resolving the want empties SLACKS and raises CENTROPY strictly; RED: a mutant that forms a want
 #  for a complete organ, or a resolve that does not close, turns the witness RED.
 #  ★ EVIDENTIAL: [W] the three assertions; [B] scope-level closure, synthesis stated as not done.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("aatc.la")     # STRUCT SNAME SINSCOPE SSELFAPP SLACKS CLOSURE CENTROPY T_CLOSE DIAGNOSE MODULE SENSE
 

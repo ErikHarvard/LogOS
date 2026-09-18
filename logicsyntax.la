@@ -51,6 +51,7 @@
 #        (2) SYNTAX made equal to ALGORITHM — the three-fold degenerates and pairwise-separateness goes F,
 #        which is the monism for this triad.
 #  ★ EVIDENTIAL: [W] the verdicts, the retention, the cost; [A] LOGIC's form; [B] the scope notes above.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 3 · exact & independently derived 2 · entailed 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("identity.la")   # the §41 ground/locus relation + the base surface re-exported through it

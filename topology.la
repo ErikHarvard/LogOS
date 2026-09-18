@@ -32,6 +32,7 @@
 #     [B] b0/b1 are graph Betti numbers, not manifold invariants; genus absent.
 #     [A] G_TOP = ▷(RECOGNITION, ⊂(FORM,DEPTH)) — DECLARED (recognition directed at
 #         the bound: OP_BOUND δ = ⊂(FORM,DEPTH) is the house's "bound" operator).
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 1 · exact & independently derived 2 · construction-true 1 [A: witnesses its constructor, not the claim — ↻↻≡↻] · cannot-fail 1 [UNWITNESSED — F21 (the ⊕-order part)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # the base surface: LINEAGE LINEAGE_OK SEALc LIN_CAT + canon/glyphdag re-exports (table-bound, see lineage.la)
 

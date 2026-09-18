@@ -31,6 +31,7 @@
 #  ★ EVIDENTIAL: [W] both halves and both RED paths; [B] the set is 16 NAMED glyphs, not every form in the
 #     language — a universal quantification over an infinite form-space is not something a gate can witness,
 #     and this one does not pretend to.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 2 · entailed 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # NORMK, the mode/operator forms, and the base surface

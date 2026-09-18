@@ -58,6 +58,7 @@
 #        RED PATHS: monism and dualism, as above.
 #  ★ EVIDENTIAL: [W] the table, the non-collapse, the sub-form recovery, both RED paths; [A] the three
 #     forms are declared and collision-checked (regcollide.py, clear against a corpus of 86).
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · exact & independently derived 2. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # CANON NORMK ALLSTR RD_FOLD and the base surface

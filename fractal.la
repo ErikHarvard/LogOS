@@ -18,6 +18,7 @@
 #  DAG that is not hash-consed (the unfolded TSIZE) grows like the surface — a mutant that reads
 #  TSIZE where NODES is read turns the +1 witness RED.
 #  ★ EVIDENTIAL: [W] the measurements; [B] one chain, five depths; the fix is a request to Track A.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 1 pinned witnesses — red-proven 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # SEALc COLLAPSE REN ETYM DAG NODES TSIZE RECOVER LINEAGE NORMK KAPPA REVAL SYN
 

@@ -47,6 +47,7 @@
 #     [B] multiplicity is counted over DISTINCT MEMBERS of the set, so a form that repeats INSIDE one glyph
 #     (⊗(κ,κ)) is not a recurring pattern here — that is fractal.la's question, not this one, and the two
 #     are deliberately kept apart.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 2 · fixture-backed 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # RD_CAT, ALLSTR, SUBSTRS, IS_LEAF, RD_FOLD and the base surface

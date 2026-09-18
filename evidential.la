@@ -1,5 +1,6 @@
 # ═══════════════════════════════════════════════════════════════════
 #  evidential.la — THE EVIDENTIAL REGISTER (register stack §2.3, directive 2026-09-15)
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — ↻↻≡↻]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #
 #  WHAT. The paper carries W/B/A tags at its meta-level (LA_CLAIM_INDEX.md: [W] 192,
 #  [B] 253, [A] 74). The language had no evidential register of its own. Here every

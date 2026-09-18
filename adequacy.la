@@ -48,6 +48,7 @@
 #     distinct and distinct from the eight originals, and the resolution count is 8/8; [A] the SEVEN new
 #     forms and the ONE declaration are rulings — each is one line to reverse, and the reason is stated
 #     beside it; [B] full-corpus clearance is `regcollide.py`'s (committed, 0 collisions over 86 forms).
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · cannot-fail 1 [UNWITNESSED — F28 (overloads=8 is a table length)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")

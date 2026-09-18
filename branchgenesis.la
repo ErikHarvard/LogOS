@@ -75,6 +75,7 @@
 #     (four glyphs: κ, ⊕(SELF,SELF), ⊕(𝓡,κ), ↻BEING) and IRR's projection search is
 #     depth-1 contiguous substring (bounded verification, Gödel II); [A] G_DB, the
 #     thirteen mappings and the thirteen interface glyphs are declared.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · construction-true 1 [A: witnesses its constructor, not the claim — re-admission]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  COST NOTE: tiny_host re-evaluates a glyph body at every reference (no memoisation). The
 #  twelve registers' readings over the four probes are therefore taken ONCE as a matrix M
 #  (48 readings), and every branch's or candidate's reading over the probes is a lookup in

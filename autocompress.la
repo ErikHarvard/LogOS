@@ -42,10 +42,11 @@
 #        application moves the form" goes F while the fixed point still trivially "holds", which is the
 #        does-nothing operator that a one-sided law would have admitted; (2) the length-one base case made
 #        to wrap anyway — the second application moves the form and there is NO fixed point.
-#  ★ EVIDENTIAL: [W] the four assertions and the measured node law; [A] G_DNU = ⊂(⊗(BECOMING,FORM),↻(DEPTH))
+#  ★ EVIDENTIAL: [W] the four assertions and the measured node law — ⚖ the fixed-point assertions are the fold's BASE CASE, DNU([x])=x [A, F32]; the 5→1 fold and the node law stand; [A] G_DNU = ⊂(⊗(BECOMING,FORM),↻(DEPTH))
 #     "becoming-in-form held within self-returning depth" — declared, checked clear by regcollide.py;
 #     [B] the run compressed is the five genesis operators, a NAMED finite run, not "the whole process" —
 #     a claim over every compression the system will ever perform is not something a terminating gate can make.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 2 [A: witnesses its constructor, not the claim — the fixed point is the fold base case; the fold base case DNU([x])=x]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # ALLSTR, RD_FOLD, the cited genesis forms, and the base surface

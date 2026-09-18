@@ -34,6 +34,7 @@
 #  ★ EVIDENTIAL: [W] 79/79 derived with traces, rule counts, R4 seal + refusal, four named
 #     refusals; [B] the bound above; "ontologically coherent" (𝒪) is read as: parses, grounded in
 #     the nine, and self-naming under the seal — the decidable proxy the house has (canon AUTO_OK).
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 1 · exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — sealed self-naming = AUTO_OK of a seal]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("canon.la")        # SEAL machinery: MONO CANON AUTO_OK TDEPTH; IF TRUE FALSE Z AND NOT
 import("lexicon.la")      # PARSE KAN LEX RULED FOLD NAM (digit-coded nodes)

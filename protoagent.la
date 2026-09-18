@@ -13,6 +13,7 @@
 #  identity (gain 0 on the incomplete case); the ILL guard dropped (the ill case "repairs").
 #  ★ EVIDENTIAL: [W] the three cases; [B] one structure per case; swc's ILL is the operator-order
 #     class it classifies today.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("aatc.la")     # STRUCT SENSE MODULE REPAIR CENTROPY AUTOLOGICAL DIAGNOSE
 import("swc.la")      # OATOM OOP ORDER (the operator-order classifier: its ILL is the provably-ill class)

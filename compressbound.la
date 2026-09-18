@@ -50,6 +50,7 @@
 #     stays true if the chain is lengthened. The capacity bytes ARE pinned; they are properties of κ.
 #  ★ EVIDENTIAL: [W] all five assertions; [B] the capacity figure is for the CURRENT 32×32 1-bit sigil —
 #     a different raster is a different number, and the bound is the renderer's, never the language's.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 2 · exact & independently derived 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # DAG DECOMP NODES TSIZE NORMK RECOVER CANON + the base surface

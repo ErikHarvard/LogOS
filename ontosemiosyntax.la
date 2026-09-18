@@ -55,6 +55,7 @@
 #  ★ EVIDENTIAL: [W] the census, both refusals, the self-application; [A] G_OSS declared, checked clear by
 #     regcollide.py, the architect ratifies; [B] this gates ONE stratum. `ontosemiosis` as a stratum is
 #     still ungated and the LA_TOMORROW line covering it stays open.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — AUTO_OK of seals: Being=Form 35/35]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # RD_CAT + the base surface (canon + glyphdag through lineage)

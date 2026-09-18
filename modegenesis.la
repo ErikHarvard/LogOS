@@ -33,6 +33,7 @@
 #  ★ EVIDENTIAL: [W]→[B] the four sub-gates + admission + idempotence (gate_registers.sh);
 #     [B] IRR/CON are decided over a FINITE probe set (bounded verification, Gödel II);
 #     [W] Δ_M's glyph = ν* (metaglyph.la, gated in build.sh "Metaglyph: 𝓜 ⊂ 𝒜").
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 1 · exact & independently derived 2 · construction-true 1 [A: witnesses its constructor, not the claim — re-admission: a member equals itself]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("canon.la")
 import("metaglyph.la")    # MODE_* GLYPHOF COLLAPSE MKOP APPLYOP (CANON REN ETYM shadow canon's identically)

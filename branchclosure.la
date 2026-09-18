@@ -22,6 +22,7 @@
 #  a SYN-headed "branch" (not the ⊂ dyad) and a GHOST-leaf branch (not grounded).
 #  ★ EVIDENTIAL: [W] the three properties over 19 branches + two refusals; [B] "metacursive per branch"
 #     is Δ_B's (cited); the ↻↻≡↻ identity is vacuous and deliberately not gated; [A] none new.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — reads back its own ⊂(RELATION,x) constructor]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # base surface: PRIM SYN CON DIR CONT MC CANON HAS_PREFIX SEALc …
 

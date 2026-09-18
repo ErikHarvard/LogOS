@@ -21,6 +21,7 @@
 #  witness must be byte-identical host==VM, so realms are branded with fixed secrets.
 #  ★ EVIDENTIAL: [W] the four assertions; [B] one verb, two realms; logoscap's sealer is the
 #     Morris object-capability model (exact in λ), not an OS ACL.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · fixture-backed 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("logoscap.la")       # SEAL UNSEAL BRAND GRANT_SEND GRANT_RECV SOME NONE
 import("ontofelicity.la")   # UTT CTX PERFORM FELICITY DIAG COND_A COND_G HAS WRAP

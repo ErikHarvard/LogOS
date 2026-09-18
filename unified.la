@@ -31,6 +31,7 @@
 #     closure Δ(Δ)≡Δ is the same ↻-idempotence, checked per entry on its glyph. Nothing invented.
 #  ★ EVIDENTIAL: [W] every T below; [B] one chain (⊗ over κ,𝓡), one ⊕/▷/⊂/↻ measurement each;
 #     the raster claim is SZ's constancy (structural), not a decoder; [A] G_S declared.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 2 · fixture-backed 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 5 [A: witnesses its constructor, not the claim — AUTO_OK of a seal; sound grows under ⊕ restates the duration law; the dyadic step; tree arithmetic; ↻↻≡↻] · cannot-fail 1 [UNWITNESSED — F28 (raster int_eq(SZ)(SZ))]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # base surface: SEALc COLLAPSE MCOLLAPSE NODES TSIZE DEPTH DAG LINEAGE RECOVER MKMODE …
 import("prosody.la")     # PDUR PCONTOUR

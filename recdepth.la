@@ -42,6 +42,7 @@
 #     "depth directed at self-recognition" — declared, checked clear by regcollide.py, the architect
 #     ratifies; [B] the catalogue is the register stack's published surface, not every glyph in every
 #     module — ρ over a larger catalogue can only be ≥ this value (ORDER is monotone under ⊆).
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 3 · exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · cannot-fail 1 [UNWITNESSED — F31 (passes=4 is the constant bound)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("lineage.la")     # the base surface: PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO REN ETYM GLYPH SEALc KAPPA REVAL SR_* TDEPTH MAX HAS_PREFIX Z IF AND OR NOT + the Scott lists

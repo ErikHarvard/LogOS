@@ -49,6 +49,7 @@
 #     Against the Codex Llogoscribeologiae's own list (App B): fifteen of its twenty-eight are not among
 #     the 18 built — the overlap is its 13 Tier-5 branches. The five deferred branches now HAVE definitions
 #     (codex ~4120–4175, corrected 2026-09-18); what is still owed is each one's interface operand x.** The ledger row stays [B] with that bound, not [W].
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · exact & independently derived 2 · construction-true 1 [A: witnesses its constructor, not the claim — all 18 branches are assigned ONE operation]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # NORMK CANON AUTO_OK MONO the mode forms + the base surface

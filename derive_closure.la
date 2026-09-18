@@ -45,6 +45,7 @@
 #  try: a composer that re-derived would be the stipulation the ruling forbids.
 #
 #  EVIDENTIAL TAGS.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 3 · exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #   [W] every token — each is an imported export or a count over imported exports,
 #       and each stratum has a mutant that turns it F.
 #   [B] "closure{I}" is observational up to archclosure's probe set (its own bound).

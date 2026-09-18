@@ -34,6 +34,7 @@
 #     [B] contour = a symbolic reading of the renderer's rules, not a signal measure;
 #     [A] G_PROS = ▷(RECOGNITION, ↻(BECOMING)) — DECLARED (lexicon: Ongoing = ↻(𝔤₇),
 #         tex:5171; prosody is the temporal register).
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 2 [A: witnesses its constructor, not the claim — ↻↻≡↻; ↻↻≡↻ + reduplication rule]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("canon.la")
 

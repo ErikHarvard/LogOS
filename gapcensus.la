@@ -24,6 +24,7 @@
 #  ★ EVIDENTIAL: [W] the discriminator + the miscategorisation RED path + the self-read of the gate;
 #     [B] a SEED of real instances with their true predicates, not all 54 (the full tags live in
 #     LA_COMPLETION.md / LA_COMPLETION_PLAN-trackF.md, the architect's classification, as data).
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · fixture-backed 1 · cannot-fail 1 [UNWITNESSED — F31 ("proven RED paths" = two substrings)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # AUTO_OK NIS MC MONO CANON SEALc KAPPA REVAL SR_WITH PRIM DIR CONT SYN HAS_PREFIX
 

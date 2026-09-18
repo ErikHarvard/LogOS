@@ -64,6 +64,7 @@
 #        primitive proposition (I = SELF) still refers. Without this ruling every ▷-
 #        reversal and every ¬ would also "share" its operands and the contrast labels
 #        could never fire alone — the [A] is what makes gate (c) a gate.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 6 pinned witnesses — red-proven 2 · fixture-backed 1 · exact but CAPTURED 3 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ═══════════════════════════════════════════════════════════════════
 import("canon.la")        # PRIM SYN CON DIR CONT MC CANON NORMK NIS MONO ETYM IF TRUE FALSE AND OR NOT Z

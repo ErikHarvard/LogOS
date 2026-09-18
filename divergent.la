@@ -43,6 +43,7 @@
 #  ★ EVIDENTIAL: [W] all four; [B] the iteration is bounded at 8 steps — "never reaches a fixed point" is
 #     witnessed as "does not within 8, while growing monotonically", which is evidence and not a proof of
 #     non-termination.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 2 · exact & independently derived 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")

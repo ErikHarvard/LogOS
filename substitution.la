@@ -55,6 +55,7 @@
 #        misreported as IDENTITY, i.e. the instrument stops noticing that a substitution occurred at all.
 #  ★ EVIDENTIAL: [W] the three reachable verdicts, the refusal, the pair search with its two counts;
 #     limit above — computational register only.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 6 pinned witnesses — red-proven 3 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — ↻↻≡↻] · entailed 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # RD_CAT, ALLSTR, RD_FOLD and the base surface (canon + glyphdag through lineage)

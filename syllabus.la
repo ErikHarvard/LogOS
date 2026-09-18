@@ -19,6 +19,7 @@
 #  be shown in what order; whether children learn it that way is untested and is said to be.
 #  ★ EVIDENTIAL: [W] the order and its two invariants, the red path; [B] the corpus is the
 #     published tables; [A] "fewer leaves earlier" as the within-depth rule.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — depth-monotone + violations=0 follow from the sort]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lexicon.la")       # FOLD LEX RULED PARSE KAN NAM
 import("opgrammar.la")     # GRAM GRULED

@@ -51,6 +51,7 @@
 #  ★ EVIDENTIAL: [W] the computed residue, the assertion, the re-introduced-slack red path, the
 #     T_CLOSE resolution; [B] closure is relative to THIS residue criterion (listed-implies-checked) — a
 #     different criterion is a different claim, and none of them is closure of the language.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · cannot-fail 1 [UNWITNESSED — F27 (the fold seed short-circuits)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("aatc.la")       # STRUCT SNAME SINSCOPE SSELFAPP SLACKS CLOSURE CENTROPY DIAGNOSE T_CLOSE AATC STARTS_WITH

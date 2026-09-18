@@ -53,6 +53,7 @@
 #  it is not the infinite tower.
 #  ★ EVIDENTIAL: [W] the run, the fixed point, and the five law-checks with their RED paths;
 #     [B] finiteness of Ops as above; [A] nothing declared — every form is cited from its own module.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 2 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — fixed point compared by LENGTH, and laws at a fixed point compare a state with itself]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # ρ and its machinery, plus the whole base surface re-exported through it

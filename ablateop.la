@@ -15,6 +15,7 @@
 #  reads NAMES instead of κ (ρ ≡ SR_ABOUT would still be found) — or one that always says "contains"
 #  — turns the control RED.
 #  ★ EVIDENTIAL: [W] the six assertions; [B] two named derivations, the ones metaglyph exhibits.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · exact & independently derived 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("metaglyph.la")     # OP_* GLYPHOF COLLAPSE CANON REN ETYM (canon's PRIM SYN … shadowed identically)
 

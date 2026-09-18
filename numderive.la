@@ -35,8 +35,9 @@
 #        RED PATHS: (1) the successor made the identity — the numerals stop counting and the derivation
 #        fails; (2) the non-injectivity probes made κ-IDENTICAL — the exhibit stops exhibiting, which is
 #        the guard on the guard: an exhibit of a collapse must show forms that are genuinely DISTINCT.
-#  ★ EVIDENTIAL: [W] all three; [B] the non-injectivity is exhibited on a four-form family, which
+#  ★ EVIDENTIAL: [W] all three — ⚖ EXCEPT: "BEING is not one" is PRINTED TEXT [F26; per Erik's F5 ruling: distinct in form, equal in truth], and the measure horizon + the numeral-only collapse are DEFINITIONAL [A, F32: the numeral IS tree size]; [B] the non-injectivity is exhibited on a four-form family, which
 #     establishes that the projection is not injective — it does not measure how badly.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 3 · exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 3 [A: witnesses its constructor, not the claim — a size-only seal collapses equal sizes; the numeral IS tree size; tree arithmetic of a ⊗-doubling chain] · cannot-fail 1 [UNWITNESSED — F26 (the BEING half is printed text)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure integers + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # TSIZE NORMK the κ constructors + the base surface

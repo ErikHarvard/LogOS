@@ -34,6 +34,7 @@
 #  ★ EVIDENTIAL: [W] injectivity + census + fixture refusal; [B] the corpus is the
 #     published tables only (79 rows), not coinage; [I] the overload list is a reading of
 #     the tables, pending rulings.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 1 · exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lexicon.la")       # FOLD LEX RULED PARSE KAN KAN_N NORMT (digit-coded nodes)
 import("opgrammar.la")     # GRAM GRULED

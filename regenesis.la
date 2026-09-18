@@ -34,6 +34,7 @@
 #  ★ EVIDENTIAL: [W]→[B] the four sub-gates + admission + idempotence (gate_registers.sh);
 #     [B] IRR is depth-1 projection search over a finite catalogue (bounded, Gödel II);
 #     [A] G_DR declared. Register-set CLOSURE is the architect's ruling (directive §7).
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 2 [A: witnesses its constructor, not the claim — re-admission; κ is its own twin]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("registers.la")    # the stack + base surface (table-bound: ~860 of 1024)
 

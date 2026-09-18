@@ -2,6 +2,7 @@
 # phonym.la's durations. Imports the renderer and asserts FST(PHONYM(t)) == PDUR(t)
 # for the nine primitives and one compound per mode. Kept out of prosody.la so that
 # module's VM leg does not carry phonym.la's codegen cost. A failure NAMES the form.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 1 pinned witnesses — red-proven 1. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 import("phonym.la")      # PHONYM PHON_PRIM PRIM SYN CON DIR CONT MC FST
 import("prosody.la")     # PROSODY PDUR PCONTOUR
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))

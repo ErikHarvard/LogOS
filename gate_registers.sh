@@ -320,10 +320,10 @@ sed 's|^glyph GC_SEAL4 = la t. IF(lt(0)(TDEPTH(t)))|glyph GC_SEAL4 = la t. IF(TR
 red gc_m2 "primitive refused (d=0):F" "gramcomplete RED(R4 precondition dropped)"
 # ═══ 18. neologenesis — the birth as one compressive movement (K_unified = the seal) ═══
 host neologenesis.la ng
-want ng "BIRTH ⊗(κ,𝓡): born in one movement 10/12 — phonetic:T glyphic:T semantic:T morphological:T syntactic:T pragmatic:F operational(tree-law):T etymological:T prosodic:T evidential:F affective:T topological:T | form: one-seal(AUTO_OK):T nodes=6 nodes≤|A|+|B|+1:T depth=1+max:T content=TSIZE(A)+TSIZE(B)+1:T route-recoverable:T" neologenesis  #@ turns-red: red:ng_m1
-want ng "BIRTH ⊕(𝓡,κ) [κ-sorted]: born in one movement 10/12" neologenesis  #@ turns-red: red:ng_m1
-want ng "BIRTH ↻(κ): born in one movement 10/12" neologenesis  #@ turns-red: red:ng_m1
-want ng "BIRTH ↻(SELF⊕SELF) [the seal REWRITES: a birth that is not a birth]: born in one movement 7/12 — phonetic:F glyphic:T semantic:T morphological:F syntactic:F pragmatic:T operational(tree-law):F etymological:T prosodic:F evidential:T affective:T topological:T | form: one-seal(AUTO_OK):T child≡parent(rewrite):T depth=1+d(A):T" neologenesis  #@ turns-red: red:ng_m1
+want ng "BIRTH ⊗(κ,𝓡): born in one movement 10/12 — phonetic:T glyphic:T semantic:T morphological:T syntactic:T pragmatic:F operational(tree-law):T etymological:T prosodic:T evidential:F affective:T topological:T | form: one-seal(AUTO_OK):T nodes=6 nodes≤|A|+|B|+1:T depth=1+max:T content=TSIZE(A)+TSIZE(B)+1:T route-recoverable:T" neologenesis  #@ turns-red: red:ng_m1; construction:the one-seal(AUTO_OK) law on a COLLAPSE child (F32)
+want ng "BIRTH ⊕(𝓡,κ) [κ-sorted]: born in one movement 10/12" neologenesis  #@ turns-red: red:ng_m1; construction:the one-seal(AUTO_OK) law on a COLLAPSE child (F32)
+want ng "BIRTH ↻(κ): born in one movement 10/12" neologenesis  #@ turns-red: red:ng_m1; construction:the one-seal(AUTO_OK) law on a COLLAPSE child (F32)
+want ng "BIRTH ↻(SELF⊕SELF) [the seal REWRITES: a birth that is not a birth]: born in one movement 7/12 — phonetic:F glyphic:T semantic:T morphological:F syntactic:F pragmatic:T operational(tree-law):F etymological:T prosodic:F evidential:T affective:T topological:T | form: one-seal(AUTO_OK):T child≡parent(rewrite):T depth=1+d(A):T" neologenesis  #@ turns-red: red:ng_m1; construction:the one-seal(AUTO_OK) law on a COLLAPSE child (F32)
 sed 's|^glyph NG_CHILD = la sym. la a. la b. COLLAPSE(MKMODE(sym))(a)(b)|glyph NG_CHILD = la sym. la a. la b. COLLAPSE(MKMODE(sym))(a)(a)|' neologenesis.la > "$T/ng_m1.la"; host "$T/ng_m1.la" ng_m1
 red ng_m1 "BIRTH ⊗(κ,𝓡): born in one movement 2/12" "neologenesis RED(child sealed from the wrong parents: every law but evidential fails)"
 # ═══ 19. unified — the dyadic law, no glyphic entropy, syntropy/centropy, morphology-is-glyphs, onto-registry ═
