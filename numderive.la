@@ -77,6 +77,22 @@ glyph ND_DISTINCT = Z(la self. la l. l(TRUE)(la h. la t. AND(RD_FOLD(la o. la ac
 glyph ND_ONESIZE = RD_FOLD(la e. la acc. AND(acc)(int_eq(TSIZE(SNDc(e)))(3)))(TRUE)(ND_PROBES)
 glyph ND_NONINJ = AND(ND_DISTINCT(ND_PROBES))(ND_ONESIZE)
 
+# ── ★★ THE BLINDNESS IS INHERITED, AND THAT IS THE BOUND ON ARITHMETIC'S REACH (Erik: "seal the
+#    blindness; it is not a defect, it is a property of the projection — name it").
+#    A NUMERIC SEAL builds a glyph from a form's NUMERAL ALONE — exactly what "the numeral of a glyph"
+#    means. Because the four probes share one numeral, their numeric seals are ONE GLYPH: everything κ
+#    distinguishes about the mode is gone. The κ-seal of the same four keeps them four, which is the
+#    contrast that shows the loss is the NUMERAL's and not the sealing's.
+#    ★ NAMED: **THE MEASURE HORIZON** — arithmetic's reach within this framework stops where the mode
+#    begins. Any construct downstream of a numeral inherits it; measure can say HOW BIG a form is and
+#    never WHICH form it is. Not a defect: a homomorphic image forgets, and this names what it forgets.
+glyph ND_NFORM = Z(la self. la n. IF(int_eq(n)(0))(la _. Px("BEING"))(la _. CONT(Px("BEING"))(self(sub(n)(1)))))
+glyph ND_NSEAL = la f. NORMK(ND_NFORM(TSIZE(f)))          # a glyph built from the NUMERAL alone
+glyph ND_KSEAL = la f. NORMK(f)                            # the κ-seal, for contrast
+glyph ND_ALLSAME = la s. RD_FOLD(la e. la acc. AND(acc)(str_eq(s(SNDc(e)))(s(P1))))(TRUE)(ND_PROBES)
+glyph ND_ALLDIFF = la s. Z(la self. la l. l(TRUE)(la h. la t. AND(RD_FOLD(la o. la acc. AND(acc)(NOT(str_eq(s(SNDc(o)))(s(SNDc(h))))))(TRUE)(t))(self(t))))(ND_PROBES)
+glyph ND_HORIZON = AND(ND_ALLSAME(ND_NSEAL))(ND_ALLDIFF(ND_KSEAL))
+
 glyph REPORT =
   ND_JOIN(
   CONSc("NUMDERIVE (1) zero=VOID, successor=BECOMING, both read back from primitives.la:")(
@@ -98,6 +114,13 @@ glyph REPORT =
   CONSc(int_to_str(TSIZE(P1)))(
   CONSc(" — four forms, ONE numeral:")(
   CONSc(ND_B(ND_NONINJ))(
+  CONSc("\nNUMDERIVE ★★ THE BLINDNESS IS INHERITED — a glyph built from the NUMERAL alone collapses all four probes to ONE:")(
+  CONSc(ND_B(ND_ALLSAME(ND_NSEAL)))(
+  CONSc(" while the κ-seal of the same four keeps them FOUR:")(
+  CONSc(ND_B(ND_ALLDIFF(ND_KSEAL)))(
+  CONSc(" → the loss is the NUMERAL's, not the sealing's:")(
+  CONSc(ND_B(ND_HORIZON))(
+  CONSc(" ★ NAMED: THE MEASURE HORIZON — arithmetic's reach within this framework stops where the mode begins. Anything downstream of a numeral inherits it: measure can say HOW BIG a form is and never WHICH form it is. [W] sealed as a property of the projection, not a defect.")(
   CONSc(" ★ THE MODE IS INVISIBLE TO THE COUNT. Size is a homomorphic image that forgets the mode, so number can MEASURE a form but cannot IDENTIFY one, and anything built on “the numeral of a glyph” inherits that blindness. [B] exhibited on a four-form family: establishes non-injectivity, does not measure how badly")(
-  NILc)))))))))))))))))))))
+  NILc))))))))))))))))))))))))))))
 glyph MAIN = print(REPORT)

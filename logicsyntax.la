@@ -70,6 +70,32 @@ glyph LS_ALLSEP = AND(LS_SEP(LS_LOGIC)(LS_ALGORITHM))(AND(LS_SEP(LS_LOGIC)(LS_SY
 # the cost of the one movement, in retained nodes
 glyph LS_N = la et. NODES(DAG(et))
 
+# ── THE POSITIVE RELATION (Erik: "state it positively; if it has the same structure as §41, say so").
+#    §41 built G_IDENT = ⊗(G_GROUND, G_LOCUS). This module built LOGIC = ⊗(𝓡, κ). The claim is that these
+#    are THE SAME STRUCTURE, and the claim is checked on three clauses rather than asserted by analogy:
+#      (a) the head mode is ⊗ ≡ 𝔑 in both  — it is a NEOLOGIZATION, not a pairing or a containment;
+#      (b) the two parents are κ-DISTINCT in both — a dyad of one thing with itself is not a dyad;
+#      (c) BOTH parents are recoverable as proper sub-forms in both — nothing is dropped.
+#    ⚠ HONEST NOTE ON CLAUSE INDEPENDENCE, found by mutating: the three clauses are NOT independent on
+#    the ⊂ fixture. §41's ID_SUBS extracts proper sub-forms only for the ⊗ case and returns the empty list
+#    otherwise, so a ⊂-candidate fails clause (c) as well as (a). Dropping clause (a) therefore does NOT
+#    make the ⊂ fixture pass. The clause that is independently load-bearing here is (c): the
+#    parent-dropping ⊗(𝓜,𝓜) has the right MODE and DISTINCT parents and fails ONLY on retention, so that is
+#    what the RED path targets. Said rather than left for a reader to discover.
+#    A structure satisfying all three is what this module NAMES **the NEOLOGIZING DYAD**: 𝔑(A,B) with
+#    A ≢ B and both recoverable. That is the positive relation, and it is the [W] replacement for the
+#    [B] refusal of the strong reading.
+glyph LS_MODE = la f. f(la nm. "leaf")(la a. la b. "⊗")(la a. la b. "⊕")(la a. la b. "▷")(la a. la b. "⊂")(la a. "↻")
+glyph LS_DYADIC = la f. la l. la r. AND(str_eq(LS_MODE(f))("⊗"))(AND(NOT(str_eq(NORMK(l))(NORMK(r))))(AND(ID_IN(NORMK(l))(ID_SUBS(f)))(ID_IN(NORMK(r))(ID_SUBS(f)))))
+#    (§41 declares G_GROUND/G_LOCUS/G_IDENT as raw κ NODES, not sealed monoglyphs, so they are used
+#     directly here — ETYM would be an arity error on a node.
+glyph LS_IDENT_DYAD = LS_DYADIC(G_IDENT)(G_GROUND)(G_LOCUS)
+glyph LS_LOGIC_DYAD = LS_DYADIC(LS_LOGIC)(LS_ALGORITHM)(LS_SYNTAX)
+glyph LS_SAME_STRUCTURE = AND(LS_IDENT_DYAD)(LS_LOGIC_DYAD)
+# the contrast that keeps the check honest: a ⊂-dyad and a parent-dropping ⊗ both FAIL it
+glyph LS_CONT_DYAD = LS_DYADIC(CONT(LS_ALGORITHM)(LS_SYNTAX))(LS_ALGORITHM)(LS_SYNTAX)
+glyph LS_DROP_DYAD = LS_DYADIC(SYN(LS_ALGORITHM)(LS_ALGORITHM))(LS_ALGORITHM)(LS_SYNTAX)
+
 glyph REPORT =
   LS_JOIN(
   CONSc("LOGICSYNTAX SYNTAX κ=")(
@@ -96,8 +122,20 @@ glyph REPORT =
   CONSc(" retained nodes → dyad ")(
   CONSc(int_to_str(LS_N(LS_LOGIC)))(
   CONSc(" (+1 per collapse, the rate unified.la and compressbound.la measured)")(
+  CONSc("\nLOGICSYNTAX ★★ THE POSITIVE RELATION: §41's identity dyad is a NEOLOGIZING DYAD:")(
+  CONSc(ID_BSTR(LS_IDENT_DYAD))(
+  CONSc(" and so is LOGIC:")(
+  CONSc(ID_BSTR(LS_LOGIC_DYAD))(
+  CONSc(" → SAME STRUCTURE:")(
+  CONSc(ID_BSTR(LS_SAME_STRUCTURE))(
+  CONSc(" | the check discriminates — a ⊂-dyad over the same parents:")(
+  CONSc(ID_BSTR(LS_CONT_DYAD))(
+  CONSc(" a parent-dropping ⊗:")(
+  CONSc(ID_BSTR(LS_DROP_DYAD))(
+  CONSc(" (both must be F)")(
+  CONSc(" ⇒ NAMED: LOGIC stands to ALGORITHM and SYNTAX exactly as the identity relation stands to ground-identity and locus-distinction — 𝔑(A,B) with A ≢ B and both recoverable. One movement, two κ-distinct parents, nothing dropped. [W] this replaces the [B] refusal of the strong reading")(
   CONSc("\nLOGICSYNTAX ★★ VERDICT: pairwise separate AND both retained ⇒ THE COLLAPSE IS COMPOSITIONAL, NOT IDENTIFICATORY:")(
   CONSc(ID_BSTR(AND(LS_ALLSEP)(LS_RETAINS(LS_LOGIC))))(
   CONSc(" — logic is not identical to algorithm or syntax (that would be the merger drift of §41), nor merely adjacent to them (that would be no collapse at all): it is ONE glyph born of both by ⊗ ≡ 𝔑, out of which both are recoverable. ↻(LOGIC)≡LOGIC is ↻-idempotence, true of every glyph, and is NOT gated — the fourth such refusal. [B] the Three Laws' derivation FROM ∃(∃)≡∃ remains a separate open claim; metalogic.la gates them, it does not derive them")(
-  NILc))))))))))))))))))))))))))))
+  NILc))))))))))))))))))))))))))))))))))))))))
 glyph MAIN = print(REPORT)

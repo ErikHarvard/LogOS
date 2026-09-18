@@ -542,6 +542,9 @@ want ls "LOGICSYNTAX SYNTAX κ=▷(RECOGNITION,FORM) ALGORITHM 𝓡=▷(DEPTH,RE
 want ls "LOGIC vs ALGORITHM: SEPARATE (two beings) | LOGIC vs SYNTAX: SEPARATE (two beings) | ALGORITHM vs SYNTAX: SEPARATE (two beings) | all three pairwise SEPARATE:T" logicsyntax
 want ls "but the dyad RETAINS BOTH parents as proper sub-forms:T | cost of the one movement: parts 3+3 retained nodes → dyad 6" logicsyntax
 want ls "VERDICT: pairwise separate AND both retained ⇒ THE COLLAPSE IS COMPOSITIONAL, NOT IDENTIFICATORY:T" logicsyntax
+want ls "THE POSITIVE RELATION: §41's identity dyad is a NEOLOGIZING DYAD:T and so is LOGIC:T → SAME STRUCTURE:T | the check discriminates — a ⊂-dyad over the same parents:F a parent-dropping ⊗:F" logicsyntax
+sed 's|(AND(ID_IN(NORMK(l))(ID_SUBS(f)))(ID_IN(NORMK(r))(ID_SUBS(f))))|(TRUE)|' logicsyntax.la > "$T/ls_m3.la"; host "$T/ls_m3.la" ls_m3
+red ls_m3 "a parent-dropping ⊗:T" "logicsyntax RED(the RETENTION clause dropped: a dyad of one parent with itself passes as a neologizing dyad — retention is the clause that is independently load-bearing here, since a ⊂-candidate already fails on it too)"
 sed 's|^glyph LS_LOGIC     = SYN(LS_ALGORITHM)(LS_SYNTAX)|glyph LS_LOGIC     = LS_ALGORITHM|' logicsyntax.la > "$T/ls_m1.la"; host "$T/ls_m1.la" ls_m1
 red ls_m1 "LOGIC vs ALGORITHM: MERGED (one locus)" "logicsyntax RED(logic collapsed INTO algorithm: the pair merges)"
 red ls_m1 "RETAINS BOTH parents as proper sub-forms:F" "logicsyntax RED(logic collapsed into algorithm: syntax is no longer recoverable, so the one-movement-retains-both claim fails too)"
@@ -618,6 +621,12 @@ want nd "NUMDERIVE (1) zero=VOID, successor=BECOMING, both read back from primit
 want nd "CORRECTION: BEING is the IDENTITY combinator, not one — one = BECOMING(VOID):T" numderive
 want nd "NUMDERIVE (2) the ⊗-self-collapse chain measures: 3 7 15 31 63 127 — equals 2^(d+2)−1 at depths 0..5:T" numderive
 want nd "⊗(BEING,VOID) ⊕(BEING,VOID) ▷(BEING,VOID) ⊂(BEING,VOID) are pairwise κ-DISTINCT:T yet all four measure 3 — four forms, ONE numeral:T" numderive
+want nd "THE BLINDNESS IS INHERITED — a glyph built from the NUMERAL alone collapses all four probes to ONE:T while the κ-seal of the same four keeps them FOUR:T → the loss is the NUMERAL's, not the sealing's:T" numderive
+sed 's|^glyph ND_NSEAL = la f. NORMK(ND_NFORM(TSIZE(f)))|glyph ND_NSEAL = la f. concat(NORMK(f))(NORMK(ND_NFORM(TSIZE(f))))|' numderive.la > "$T/nd_m3.la"; host "$T/nd_m3.la" nd_m3
+red nd_m3 "collapses all four probes to ONE:F" "numderive RED(the numeric seal made to carry the form as well: the four stop collapsing, which is what shows the gate DETECTS the inherited blindness rather than always reporting it)"
+#  ★ NAMED: THE MEASURE HORIZON — arithmetic's reach stops where the mode begins. Anything downstream of
+#    a numeral inherits it: measure can say HOW BIG a form is and never WHICH form it is. [W] a property
+#    of the projection, not a defect.
 sed 's|^glyph ND_SUCC = la n. la f. la x. f(n(f)(x))|glyph ND_SUCC = la n. n|' numderive.la > "$T/nd_m1.la"; host "$T/nd_m1.la" nd_m1
 red nd_m1 "iterating the successor on zero: 0 0 0 0 0 0" "numderive RED(the successor made the identity: the numerals stop counting and the derivation of number fails)"
 sed 's|^glyph P2 = CON(Px("BEING"))(Px("VOID"))|glyph P2 = SYN(Px("BEING"))(Px("VOID"))|' numderive.la > "$T/nd_m2.la"; host "$T/nd_m2.la" nd_m2
