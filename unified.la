@@ -31,7 +31,7 @@
 #     closure Δ(Δ)≡Δ is the same ↻-idempotence, checked per entry on its glyph. Nothing invented.
 #  ★ EVIDENTIAL: [W] every T below; [B] one chain (⊗ over κ,𝓡), one ⊕/▷/⊂/↻ measurement each;
 #     the raster claim is SZ's constancy (structural), not a decoder; [A] G_S declared.
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 2 · fixture-backed 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 5 [A: witnesses its constructor, not the claim — AUTO_OK of a seal; sound grows under ⊕ restates the duration law; the dyadic step; tree arithmetic; ↻↻≡↻] · cannot-fail 1 [UNWITNESSED — F28 (raster int_eq(SZ)(SZ))]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 5 pinned witnesses — red-proven 2 · fixture-backed 1 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 5 [A: witnesses its constructor, not the claim — AUTO_OK of a seal; sound grows under ⊕ restates the duration law; the dyadic step; tree arithmetic; ↻↻≡↻] · cannot-fail 0 (was 1 until 2026-09-18: F28c — "fixed:T" compared SZ with itself; the fact is definitional and now printed as [A]; the line's phonym values are DERIVED, s19). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # base surface: SEALc COLLAPSE MCOLLAPSE NODES TSIZE DEPTH DAG LINEAGE RECOVER MKMODE …
 import("prosody.la")     # PDUR PCONTOUR
@@ -65,7 +65,9 @@ glyph UN_DYAD = AND(UN_DYAD_STEP(C2)(C1))(AND(UN_DYAD_STEP(C3)(C2))(UN_DYAD_STEP
 glyph UN_COUPLE_REFUSED = NOT(AUTO_OK(UN_COUPLED(C0)(RV)))
 
 # §1 no glyphic entropy: the raster is SZ×SZ at every depth (structural); the phonym per mode
-glyph UN_RASTER_FIXED = int_eq(SZ)(SZ)     # SZ is the single grid every SIGIL renders into — the witness is its use below
+# (F28c, 2026-09-18: UN_RASTER_FIXED = int_eq(SZ)(SZ) compared SZ with itself and printed "fixed:T". The fact is
+#  DEFINITIONAL — a SIGIL is an r→c→bool predicate sampled on the one SZ grid, so no per-glyph size exists to grow —
+#  and it is now printed as [A], by construction, not as a computed verdict.)
 glyph UN_PD = la g. PDUR(ETYM(g))
 glyph UN_PHON_SYN_FIXED = int_eq(UN_PD(C4))(UN_PD(C0))
 glyph UN_PHON_MODE = la sym. la a. la b. UN_C3(sym)("=")(concat(int_to_str(PDUR(MKMODE(sym)(ETYM(a))(ETYM(b)))))(" "))
@@ -112,7 +114,7 @@ glyph LINE1 = UN_JOIN(
     CONSc("| chain ")(CONSc(UN_SIZES)(NILc))))))
 glyph LINE2 = UN_JOIN(
     CONSc("UNIFIED no glyphic entropy: raster SZ=")(CONSc(int_to_str(SZ))(CONSc(" at every depth ")(
-    CONSc(UN_V("fixed")(UN_RASTER_FIXED))(
+    CONSc("fixed [A: by construction — every SIGIL is a predicate sampled on the one SZ grid; no per-glyph size exists to grow] ")(
     CONSc("| phonym ⊗-chain PDUR(C4)=PDUR(C0):")(CONSc(UN_BSTR(UN_PHON_SYN_FIXED))(
     CONSc(" | phonym per mode over (κ,𝓡): ")(CONSc(UN_PHON_LINE)(
     CONSc("| sound grows under ⊕ (finding, codex Operator Phonology):")(CONSc(UN_BSTR(UN_PHON_GROWS))(NILc)))))))))))

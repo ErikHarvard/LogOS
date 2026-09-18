@@ -352,7 +352,7 @@ red ng_m1 "BIRTH ⊗(κ,𝓡): born in one movement 2/12" "neologenesis RED(chil
 # ═══ 19. unified — the dyadic law, no glyphic entropy, syntropy/centropy, morphology-is-glyphs, onto-registry ═
 host unified.la un
 want un "UNIFIED dyadic law (C2..C4 = ⊗ of shared parents): one-seal+ren≠renA·renB+nodes+1+depth+1:T coupled form refused (fails AUTO_OK):T | chain d=1 S=3 nodes=3 | d=2 S=7 nodes=6 | d=3 S=15 nodes=7 | d=4 S=31 nodes=8 | d=5 S=63 nodes=9 |" unified  #@ turns-red: red:un_m1; construction:the dyadic step (F32)
-want un "raster SZ=32 at every depth fixed:T | phonym ⊗-chain PDUR(C4)=PDUR(C0):T | phonym per mode over (κ,𝓡): ⊗=12880 ⊕=26560 ▷=25600 ⊂=38320 ↻=25760 | sound grows under ⊕ (finding, codex Operator Phonology):T" unified  #@ turns-red: cannot-fail:F28 (raster int_eq(SZ)(SZ)); exact:captured; construction:sound grows under ⊕ restates the duration law (F32)
+want un "raster SZ=32 at every depth fixed [A: by construction — every SIGIL is a predicate sampled on the one SZ grid; no per-glyph size exists to grow] | phonym ⊗-chain PDUR(C4)=PDUR(C0):T | phonym per mode over (κ,𝓡): ⊗=12880 ⊕=26560 ▷=25600 ⊂=38320 ↻=25760 | sound grows under ⊕ (finding, codex Operator Phonology):T" unified  #@ turns-red: construction:the raster is the one SZ grid, printed as [A] (F28c); exact:s19; construction:sound grows under ⊕ restates the duration law (F32)
 want un "UNIFIED syntropy: S=TSIZE rises:T TSIZE(Cn)=2·TSIZE(Cn-1)+1:T TSIZE≥2^depth:T" unified  #@ turns-red: red:un_m2; construction:tree arithmetic (F32)
 want un "centropy Δ_S(Δ_S)≡Δ_S truth:T" unified  #@ turns-red: construction:↻↻≡↻ (F4)
 want un "UNIFIED morphology is glyphs: 5/5 modes are self-naming seals grounded in the nine:T GHOST-leaf mode refused:T" unified  #@ turns-red: construction:AUTO_OK of a seal (F32); fixture:GHOST-leaf mode refused
@@ -628,13 +628,19 @@ want pm "PHONOMETA (1) Θ_P two-sided: raw peaks=6 → Θ_P peaks=3 it MOVED:T a
 want pm "(2) the level is CLOSED one step up: SYN_INV(SYN_INV(a)(b))(c) = SYN_INV(a)(SYN_INV(b)(c)):T peaks=9" phonometa  #@ turns-red: construction:union is associative (F32)
 want pm "(3) METACURSIVE FIXED POINT SYN_INV(a)(a)=Θ_P(a):T" phonometa  #@ turns-red: red:pm_m1
 want pm "(4) constituent law survives: LOVE⊆:T REC⊆:T non-constituent DEPTH⊆:F" phonometa  #@ turns-red: red:pm_m2; construction:constituents ⊆ their union (F32)
-want pm "the mode is NOT recoverable from the phonetic invariant ALONE: with psc.la's prepended label the strings differ:T but bare invariants differ:F" phonometa  #@ turns-red: cannot-fail:F28 (PM_MODE_BARE compares X with X)
+want pm "the mode is NOT recoverable from the phonetic invariant ALONE: with psc.la's prepended label the strings differ:T but bare invariants differ:F" phonometa  #@ turns-red: red:pm_m3; construction:psc.la's SYN_INV takes no mode, so the bare invariants agree for every mode (F28a, F32)
 want pm "pinned witness: LRd|300,870,2240,270,2300,3000,|dur=6720|i matches:T" phonometa  #@ turns-red: exact:cross-checked against build.sh psc pin
 sed 's|^glyph PM_THETA = THETA_P|glyph PM_THETA = la l. l|' phonometa.la > "$T/pm_m1.la"; host "$T/pm_m1.la" pm_m1
 red pm_m1 "it MOVED:F" "phonometa RED(Θ_P made the identity: it removes nothing, so the two-sided law fails — a one-sided idempotence law would still have read green here)"
 red pm_m1 "METACURSIVE FIXED POINT SYN_INV(a)(a)=Θ_P(a):F" "phonometa RED(Θ_P made the identity: the level no longer comes to a stand)"
 sed 's|^glyph PM_SUB   = PRESERVES|glyph PM_SUB   = la parent. la comp. TRUE|' phonometa.la > "$T/pm_m2.la"; host "$T/pm_m2.la" pm_m2
 red pm_m2 "non-constituent DEPTH⊆:T" "phonometa RED(containment made constant-true: psc.la's own non-constituent control reads as preserved and the constituent law stops discriminating)"
+#  F28a (2026-09-18): the bare comparison compared an expression with ITSELF. It now strips the label from PINV's actual
+#  output per mode. pm_m3 feeds a psc whose PINV carries the mode INSIDE the invariant (the prosody_mut pattern above):
+#  the bare invariants must then differ — the comparison reads PINV, not a copy of one side.
+sed 's|^glyph PINV = la sym. la a. la b. concat(sym)(concat(":")(LREN(SYN_INV(a)(b))))|glyph PINV = la sym. la a. la b. concat(sym)(concat(":")(concat(sym)(LREN(SYN_INV(a)(b)))))|' psc.la > psc_mut.la
+sed 's|import("psc.la")|import("psc_mut.la")|' phonometa.la > "$T/pm_m3.la"; host "$T/pm_m3.la" pm_m3; rm -f psc_mut.la
+red pm_m3 "but bare invariants differ:T" "phonometa RED(an invariant that carries the mode: the bare comparison now sees it — so it reads PINV's output, not X against X)"
 
 # ═══ 41. identity — the identity relation itself, as a glyph in 𝓜 ═══
 #  ✔ RAN GREEN 2026-09-17 (first execution). Built to answer Erik's objection: if ≡ collapses sign and
@@ -853,7 +859,7 @@ red dv_m2 "distinct κ-outputs: 5 of 6 — NO agreement at the output level:F" "
 #  ★ It RULES and VERIFIES; it does NOT edit lexicon.la / opgrammar.la — the published vocabulary is the
 #  architect's to apply, and this makes that application mechanical and pre-checked.
 host adequacy.la ad
-want ad "ADEQUACY the REAL overloads=8 | both names of every pair read back from lexicon.la + opgrammar.la:T | rulings: All=Totality Large→⊗(DEPTH,FORM) Good→⊗(BEING,LOVE) Bond→⊂(RELATION,BEING) Sky→⊂(VOID,FORM) Here→▷(FORM,RELATION) There→⊂(VOID,RELATION) Move→▷(BECOMING,FORM)" adequacy  #@ turns-red: cannot-fail:F28 (overloads=8 is a table length); exact:captured
+want ad "ADEQUACY the REAL overloads=8 | both names of every pair read back from lexicon.la + opgrammar.la:T | rulings: All=Totality Large→⊗(DEPTH,FORM) Good→⊗(BEING,LOVE) Bond→⊂(RELATION,BEING) Sky→⊂(VOID,FORM) Here→▷(FORM,RELATION) There→⊂(VOID,RELATION) Move→▷(BECOMING,FORM)" adequacy  #@ turns-red: cannot-fail:F28 (overloads=8 is a table length — and STALE: derive/overloads.py reads the live census as 1, all 7 re-derivations already applied); exact:captured
 want ad "ADEQUACY declarations=1 re-derivations=7 | every new form distinct from the others AND from all eight originals:T | resolved 8/8 — applying these drives the one-κ-two-name count to ZERO:T" adequacy  #@ turns-red: red:ad_m1
 sed 's|AD_R("⊗(FORM,BEING)")("Substance")("Large")("REDERIVE")("⊗(DEPTH,FORM)")|AD_R("⊗(FORM,BEING)")("Substance")("Large")("REDERIVE")("⊗(FORM,LOVE)")|' adequacy.la > "$T/ad_m1.la"; host "$T/ad_m1.la" ad_m1
 red ad_m1 "distinct from the others AND from all eight originals:F" "adequacy RED(a proposed re-derivation made to collide with an existing overloaded form: the distinctness check catches it, so a ruling cannot silently reintroduce the collision it was meant to remove)"
