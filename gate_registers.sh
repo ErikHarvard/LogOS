@@ -8,6 +8,14 @@
 #     2  RED     a MUTANT of the module (one rule broken by sed) must turn the witness
 #                RED and NAME the offender — an instrument must prove it looked
 #     3  VM      host == native SECD VM, byte for byte (REGS_VM=0 skips; it is the slow leg)
+#  ★ THE STANDING RULE (FREEZE-TRACKF.md F33, Erik 2026-09-18): EVERY `want` DECLARES HOW IT TURNS RED, as a trailing
+#    `#@ turns-red: <clause>; <clause>…` — inert to sh (a comment), checked by `python3 freezeck.py` (sweep D, rc 1 on
+#    any error). Clauses: red:<mutant,…> (a RED line on a mutant of THIS module) · exact:<sNN|captured|…> (a pinned exact
+#    value; sNN = derived independently in derive/) · fixture:<what> (an in-file bad input the module must refuse) ·
+#    construction:<constructor> (true by construction — it witnesses the constructor, NOT the claim) · entailed:<tag>.<k>
+#    · cannot-fail:<Fnn> / unproven:<Fnn> (a known defect, tracked by an OPEN ledger item). Adding a witness without a
+#    declaration fails the checker. Measured when the rule arrived: 7% of witnesses contained a part that could not
+#    fail and 15% were construction-true — "which assertions cannot go RED?" is now asked of every line, not once.
 #  Plus the loop the modules cannot close themselves: every W-tagged evidential entry
 #  cites a build.sh gate; the cited say-line must EXIST in build.sh.
 #  Scratch lives INSIDE the worktree (never /tmp: the launcher's private tmpfs is
@@ -124,11 +132,11 @@ fi
 
 # ═══ 1. lineage — the etymological register ═══════════════════════════════
 host lineage.la lin
-want lin "recoverable from lineage alone:T" lineage
-want lin "every parent precedes its def:T" lineage
-want lin "broken-parent fixture refused:T OFFENDER=⊗0.7" lineage
-want lin "sharing visible (DAG<tree, 4 defs):T" lineage
-want lin "Δ_E(Δ_E)≡Δ_E truth:T glyph:F" lineage
+want lin "recoverable from lineage alone:T" lineage  #@ turns-red: red:lin_m1
+want lin "every parent precedes its def:T" lineage  #@ turns-red: construction:DAG builder emits children first — the BEING;⊗0.7 fixture on the next line is the real check
+want lin "broken-parent fixture refused:T OFFENDER=⊗0.7" lineage  #@ turns-red: red:lin_m2
+want lin "sharing visible (DAG<tree, 4 defs):T" lineage  #@ turns-red: exact:s01
+want lin "Δ_E(Δ_E)≡Δ_E truth:T glyph:F" lineage  #@ turns-red: construction:↻↻≡↻, true except at BEING (F4)
 sed 's|^glyph RECOVER = la form. NORMK(DECOMP(form))|glyph RECOVER = la form. form|' lineage.la > "$T/lin_m1.la"; host "$T/lin_m1.la" lin_m1
 red lin_m1 "recoverable from lineage alone:F OFFENDER=KAPPA" "lineage RED(recovery bypassed)"
 sed 's|^glyph PARENT_OK = la i. la s. lt(str_to_int(s))(i)|glyph PARENT_OK = la i. la s. TRUE|' lineage.la > "$T/lin_m2.la"; host "$T/lin_m2.la" lin_m2
@@ -136,24 +144,24 @@ red lin_m2 "broken-parent fixture refused:F" "lineage RED(parent check disabled)
 
 # ═══ 2. prosody — the prosodic register (+ the phonym cross-check) ═════════
 host prosody.la pro
-want pro "segments distinct=1 prosody distinct=5 separable:T" prosody
-want pro "⊕ dur=14240 | ▷ dur=13280 | ⊂ dur=20000 | ↻ dur=13120" prosody
-want pro "↻↻x vs ↻x contour equal:F identity (NIS):T" prosody
-want pro "Δ_P(Δ_P)≡Δ_P truth:T glyph:F" prosody
+want pro "segments distinct=1 prosody distinct=5 separable:T" prosody  #@ turns-red: red:pro_m1
+want pro "⊕ dur=14240 | ▷ dur=13280 | ⊂ dur=20000 | ↻ dur=13120" prosody  #@ turns-red: exact:captured
+want pro "↻↻x vs ↻x contour equal:F identity (NIS):T" prosody  #@ turns-red: construction:↻↻≡↻ (F4) + reduplication rule
+want pro "Δ_P(Δ_P)≡Δ_P truth:T glyph:F" prosody  #@ turns-red: construction:↻↻≡↻ (F4)
 sed 's|PAIR(concat("(")(concat(FST(pb))(concat(")\[")(concat(FST(pa))(concat("](")(concat(FST(pb))(")")))))))|PAIR(concat("(")(concat(FST(pa))(concat(")·ʔ·(")(concat(FST(pb))(")")))))|' prosody.la > "$T/pro_m1.la"; host "$T/pro_m1.la" pro_m1
 red pro_m1 "prosody distinct=4 separable:F" "prosody RED(⊂ contour collapsed onto ⊕)"
 host prosody_xcheck.la prx
-want prx "PROSODY-XCHECK phonym durations agree 14/14:T" prosody_xcheck
+want prx "PROSODY-XCHECK phonym durations agree 14/14:T" prosody_xcheck  #@ turns-red: red:prx_m1
 sed 's|(la _. 6080)|(la _. 6081)|' prosody.la > prosody_mut.la
 sed 's|import("prosody.la")|import("prosody_mut.la")|' prosody_xcheck.la > "$T/prx_m1.la"; host "$T/prx_m1.la" prx_m1; rm -f prosody_mut.la
 red prx_m1 "agree 14/14:F OFFENDER=BEING phonym=6080 prosody=6081" "prosody_xcheck RED(duration drift named)"
 
 # ═══ 3. topology — the topological register ════════════════════════════════
 host topology.la top
-want top "every lineage computes (no ⊥):T | corrupted DAG reads ⊥:T | ⊕-order invariant:T" topology
-want top "κ tree: V=3 E=2 b0=1 b1=0 depth=1 leaves=2 anchors=2 grounded=T" topology
-want top "⊗(κ,κ) shared: V=4 E=4 b0=1 b1=1 depth=2 leaves=2 anchors=2 grounded=T" topology
-want top "MetaTop(MetaTop)≡MetaTop truth:T glyph:F" topology
+want top "every lineage computes (no ⊥):T | corrupted DAG reads ⊥:T | ⊕-order invariant:T" topology  #@ turns-red: red:top_m1,top_m2; cannot-fail:F21 (the ⊕-order part)
+want top "κ tree: V=3 E=2 b0=1 b1=0 depth=1 leaves=2 anchors=2 grounded=T" topology  #@ turns-red: exact:s03
+want top "⊗(κ,κ) shared: V=4 E=4 b0=1 b1=1 depth=2 leaves=2 anchors=2 grounded=T" topology  #@ turns-red: exact:s03
+want top "MetaTop(MetaTop)≡MetaTop truth:T glyph:F" topology  #@ turns-red: construction:↻↻≡↻ (F4)
 sed 's|^glyph TOPO = la form. IF(str_eq(LINEAGE_OK(form))(""))|glyph TOPO = la form. IF(TRUE)|' topology.la > "$T/top_m1.la"; host "$T/top_m1.la" top_m1
 red top_m1 "corrupted DAG reads ⊥:F" "topology RED(validity skipped)"
 sed 's|^glyph TOPO = la form. IF(str_eq(LINEAGE_OK(form))(""))|glyph TOPO = la form. IF(FALSE)|' topology.la > "$T/top_m2.la"; host "$T/top_m2.la" top_m2
@@ -161,8 +169,8 @@ red top_m2 "every lineage computes (no ⊥):F OFFENDER=KAPPA" "topology RED(all 
 
 # ═══ 4. evidential — the evidential register (+ the build.sh citation loop) ═
 host evidential.la evd
-want evd "all declared:T | all tags valid:T | one κ one tag:T | undeclared reads ⊥:T | empty-tag refused:T | bad-tag refused:T | same-κ-two-tags refused:T" evidential
-want evd "reads itself as:B | Δ_Ev(Δ_Ev)≡Δ_Ev truth:T glyph:F" evidential
+want evd "all declared:T | all tags valid:T | one κ one tag:T | undeclared reads ⊥:T | empty-tag refused:T | bad-tag refused:T | same-κ-two-tags refused:T" evidential  #@ turns-red: red:evd_m1,evd_m2
+want evd "reads itself as:B | Δ_Ev(Δ_Ev)≡Δ_Ev truth:T glyph:F" evidential  #@ turns-red: exact:captured; construction:↻↻≡↻ (F4)
 sed 's|CONS(EVG("W")("Metaglyph: 𝓜 ⊂ 𝒜")(SEALc(REVAL)))(|CONS(EVG("")("Metaglyph: 𝓜 ⊂ 𝒜")(SEALc(REVAL)))(|' evidential.la > "$T/evd_m1.la"; host "$T/evd_m1.la" evd_m1
 red evd_m1 "all declared:F OFFENDER=▷(DEPTH,RECOGNITION)" "evidential RED(undeclared entry named)"
 sed 's|CONS(EVG("A")("declared 2026-09-15; no gate")|CONS(EVG("Q")("declared 2026-09-15; no gate")|' evidential.la > "$T/evd_m2.la"; host "$T/evd_m2.la" evd_m2
@@ -180,17 +188,17 @@ EOF2
 
 # ═══ 5. texture — the affective register ════════════════════════════════════
 host texture.la tex
-want tex "distinct textures=5 varies:T | none ⊥:T | ⊕-order invariant:T | corrupted reads ⊥:T | κ: m=100 a=66 r=50 | ⊗(κ,κ): m=133 a=50 r=33" texture
-want tex "Δ_A(Δ_A)≡Δ_A truth:T glyph:F" texture
+want tex "distinct textures=5 varies:T | none ⊥:T | ⊕-order invariant:T | corrupted reads ⊥:T | κ: m=100 a=66 r=50 | ⊗(κ,κ): m=133 a=50 r=33" texture  #@ turns-red: red:tex_m1; cannot-fail:F21 (texture ⊕-order, same class)
+want tex "Δ_A(Δ_A)≡Δ_A truth:T glyph:F" texture  #@ turns-red: construction:↻↻≡↻ (F4)
 sed 's|^glyph TEXTURE = la form. IF(str_eq(LINEAGE_OK(form))(""))(la _. TEXTURE_STR(SPLIT(";")(form)))(la _. "⊥")|glyph TEXTURE = la form. "m=100 a=50 r=50"|' texture.la > "$T/tex_m1.la"; host "$T/tex_m1.la" tex_m1
 red tex_m1 "distinct textures=1 varies:F" "texture RED(constant)"
 
 # ═══ 6. registers — the twelve-fold coherence ═══════════════════════════════
 host registers.la reg
-want reg "REGISTERS stack=12 [phonetic glyphic semantic morphological syntactic pragmatic operational etymological prosodic evidential affective topological]" registers
-want reg "coherence per register=TTTTTTTTTTTT all:T | raw-route register refused:T | semantic distinguishes ⊗(a,b)/⊗(b,a):T | NORMTREE==NORMK probes:T catalogue:T" registers
-want reg "  evidential: W" registers
-want reg "  topological: V=3 E=2 b0=1 b1=0 depth=1 leaves=2 anchors=2 grounded=T" registers
+want reg "REGISTERS stack=12 [phonetic glyphic semantic morphological syntactic pragmatic operational etymological prosodic evidential affective topological]" registers  #@ turns-red: exact:captured
+want reg "coherence per register=TTTTTTTTTTTT all:T | raw-route register refused:T | semantic distinguishes ⊗(a,b)/⊗(b,a):T | NORMTREE==NORMK probes:T catalogue:T" registers  #@ turns-red: red:reg_m1,reg_m2; construction:raw-route refused: every probe pair is two routes (F32)
+want reg "  evidential: W" registers  #@ turns-red: exact:captured
+want reg "  topological: V=3 E=2 b0=1 b1=0 depth=1 leaves=2 anchors=2 grounded=T" registers  #@ turns-red: exact:s03
 sed 's|      (la a. la b. (la x. la y. IF(LE(CANON(x))(CANON(y)))(la _. CON(x)(y))(la _. CON(y)(x)))(self(a))(self(b)))|      (la a. la b. CON(self(a))(self(b)))|' registers.la > "$T/reg_m1.la"; host "$T/reg_m1.la" reg_m1
 red reg_m1 "coherence per register=FFFTFTTTFTTT all:F" "registers RED(⊕-sort removed: five registers named)"
 red reg_m1 "NORMTREE==NORMK probes:F" "registers RED(differential)"
@@ -199,59 +207,59 @@ red reg_m2 "coherence per register=TTTTTTTFTTTT all:F" "registers RED(etymologic
 
 # ═══ 7. modegenesis — Δ_M, four sub-gates ════════════════════════════════════
 host modegenesis.la mg
-want mg "ν* IRR/NOV/AUT/CON=TTTT admitted:T set=6 | F1 action≡⊗ =FTTF refused:T | F2 α-copy =FFTF refused:T | F3 false ren =TTFT refused:T | F4 constant =TTTF refused:T" modegenesis
-want mg "re-admit ν* verdict=FFTF Δ_M(Δ_M)≡Δ_M idempotent:T" modegenesis
-want mg "ν* action on (A,B): ⊗(▷(A,A),↻(B))" modegenesis
+want mg "ν* IRR/NOV/AUT/CON=TTTT admitted:T set=6 | F1 action≡⊗ =FTTF refused:T | F2 α-copy =FFTF refused:T | F3 false ren =TTFT refused:T | F4 constant =TTTF refused:T" modegenesis  #@ turns-red: red:mg_m1
+want mg "re-admit ν* verdict=FFTF Δ_M(Δ_M)≡Δ_M idempotent:T" modegenesis  #@ turns-red: exact:s07; construction:re-admission: a member equals itself (F32)
+want mg "ν* action on (A,B): ⊗(▷(A,A),↻(B))" modegenesis  #@ turns-red: exact:s07
 # each sub-gate's RED path is a fixture above (one letter apiece); the operator itself:
 sed 's|^glyph ADMIT = la set. la c. IF(str_eq(VERDICT(set)(c))("TTTT"))|glyph ADMIT = la set. la c. IF(TRUE)|' modegenesis.la > "$T/mg_m1.la"; host "$T/mg_m1.la" mg_m1
 red mg_m1 "F1 action≡⊗ =FTTF refused:F" "modegenesis RED(admission ignores the verdict)"
 
 # ═══ 8. regenesis — Δ_R, four sub-gates ══════════════════════════════════════
 host regenesis.la rg
-want rg "Δ_R register IRR/NOV/AUT/CON=TTTT admitted:T stack=13 | F1 projection=FTTT | F2 α-copy=TFTT | F3 false ren=TTFT | F4 constant=TTTF | F5 raw-route=TTFT | all five refused:T" regenesis
-want rg "re-admit verdict=FFTT Δ_R(Δ_R)≡Δ_R idempotent:T" regenesis
-want rg "reads κ as TTTTTTTTTTTT and ↻↻κ as TTTTTTTFTTTT" regenesis
+want rg "Δ_R register IRR/NOV/AUT/CON=TTTT admitted:T stack=13 | F1 projection=FTTT | F2 α-copy=TFTT | F3 false ren=TTFT | F4 constant=TTTF | F5 raw-route=TTFT | all five refused:T" regenesis  #@ turns-red: red:rg_m1
+want rg "re-admit verdict=FFTT Δ_R(Δ_R)≡Δ_R idempotent:T" regenesis  #@ turns-red: construction:re-admission (F32)
+want rg "reads κ as TTTTTTTTTTTT and ↻↻κ as TTTTTTTFTTTT" regenesis  #@ turns-red: construction:κ is its own twin (F32); exact:captured
 sed 's|^glyph ADMIT_R = la stack. la c. IF(str_eq(VERDICT_R(stack)(c))("TTTT"))|glyph ADMIT_R = la stack. la c. IF(TRUE)|' regenesis.la > "$T/rg_m1.la"; host "$T/rg_m1.la" rg_m1
 red rg_m1 "all five refused:F" "regenesis RED(admission ignores the verdict)"
 
 # ═══ 9. complement + opposite — the antonym structure, four gates ═════════════
 host complement.la cmp
-want cmp "COMPLEMENT ¬X = ⊂(X,VOID) (ruling 2026-08-23) shape==opgrammar NEG_SHAPE:T" complement
-want cmp "sealed+VOID-parent:T | ¬C≠C glyph:T truth:T | ¬¬C≠¬C glyph:T truth:T | ¬¬C≠C glyph:T ¬¬C≡C truth:T ¬¬¬C≡¬C truth:T" complement
-want cmp "two registers explicit: differ on ¬¬C:T coincide on C:T | conflated system would read ¬¬C≡C as:F" complement
-want cmp "G_NOT=⊂(FORM,VOID) A(A)=⊂(⊂(FORM,VOID),VOID)" complement
-want cmp "A(A)≠A glyph:T | A(A)≡id truth (cancels to the hole FORM):T" complement
+want cmp "COMPLEMENT ¬X = ⊂(X,VOID) (ruling 2026-08-23) shape==opgrammar NEG_SHAPE:T" complement  #@ turns-red: exact:s09
+want cmp "sealed+VOID-parent:T | ¬C≠C glyph:T truth:T | ¬¬C≠¬C glyph:T truth:T | ¬¬C≠C glyph:T ¬¬C≡C truth:T ¬¬¬C≡¬C truth:T" complement  #@ turns-red: red:cmp_m1,cmp_m2
+want cmp "two registers explicit: differ on ¬¬C:T coincide on C:T | conflated system would read ¬¬C≡C as:F" complement  #@ turns-red: exact:s09; fixture:the conflated-register control reads F
+want cmp "G_NOT=⊂(FORM,VOID) A(A)=⊂(⊂(FORM,VOID),VOID)" complement  #@ turns-red: exact:s09
+want cmp "A(A)≠A glyph:T | A(A)≡id truth (cancels to the hole FORM):T" complement  #@ turns-red: exact:s09
 sed 's|^glyph TRUTH_ID = la g. NORMK(CANCEL(ETYM(g)))|glyph TRUTH_ID = la g. NORMK(ETYM(g))|' complement.la > "$T/cmp_m1.la"; host "$T/cmp_m1.la" cmp_m1
 red cmp_m1 "¬¬C≡C truth:F" "complement RED(double complement not cancelled)"
 sed 's|^glyph NOTG = la g. COLLAPSE(NEG_MODE)(g)(GLYPH("VOID"))|glyph NOTG = la g. COLLAPSE(NEG_MODE)(g)(GLYPH("FORM"))|' complement.la > "$T/cmp_m2.la"; host "$T/cmp_m2.la" cmp_m2
 red cmp_m2 "sealed+VOID-parent:F" "complement RED(¬ without Void)"
 host opposite.la opp
-want opp "OPP(Past)=▷(VOID,BECOMING) ≡Future:T | involution OPP(OPP(Past))=Past:T OPP(Past)≠Past:T | refuses primitive(Being):T ⊕:T ▷(x,x):T | HAS_POLE Past:T Being:F ->T" opposite
-want opp "A(A)=▷(VOID,RELATION) exists:T A(A)≠A:T A(A(A))=A:T" opposite
+want opp "OPP(Past)=▷(VOID,BECOMING) ≡Future:T | involution OPP(OPP(Past))=Past:T OPP(Past)≠Past:T | refuses primitive(Being):T ⊕:T ▷(x,x):T | HAS_POLE Past:T Being:F ->T" opposite  #@ turns-red: exact:s09; fixture:refuses Being / ⊕ / ▷(x,x); cannot-fail:F24 (HAS_POLE per-case values are literal text)
+want opp "A(A)=▷(VOID,RELATION) exists:T A(A)≠A:T A(A(A))=A:T" opposite  #@ turns-red: exact:s09
 sed 's|glyph OPP = la g. ETYM(g) (la nm. BOT(ETYM(g))) (la a. la b. BOT(ETYM(g))) (la a. la b. BOT(ETYM(g)))|glyph OPP = la g. ETYM(g) (la nm. BOT(ETYM(g))) (la a. la b. BOT(ETYM(g))) (la a. la b. SEALo(CON(b)(a)))|' opposite.la > "$T/opp_m1.la"; host "$T/opp_m1.la" opp_m1
 red opp_m1 "⊕:F" "opposite RED(⊕ given a pole)"
 
 # ═══ 12. textcoherence — whole-text coherence (the open discourse item) ═══════
 host textcoherence.la tc
-want tc "TEXTCOHERENCE text(a) n=5 edges=[2-1:share 3-2:contrast:opp 4-3:share 5-2:contrast:opp 5-3:share] components=1 coherent:T maxdist=3 orphans:none" textcoherence
-want tc "referents=11 mentions=14 given=3 new=11" textcoherence
-want tc "components=2 coherent:F maxdist=3 orphans:OFFENDER=⊂(FORM,DEPTH)" textcoherence
-want tc "each label fires alone:T" textcoherence
-want tc "components order-independent:T maxdist original=3 shuffled=4" textcoherence
+want tc "TEXTCOHERENCE text(a) n=5 edges=[2-1:share 3-2:contrast:opp 4-3:share 5-2:contrast:opp 5-3:share] components=1 coherent:T maxdist=3 orphans:none" textcoherence  #@ turns-red: exact:captured
+want tc "referents=11 mentions=14 given=3 new=11" textcoherence  #@ turns-red: exact:captured
+want tc "components=2 coherent:F maxdist=3 orphans:OFFENDER=⊂(FORM,DEPTH)" textcoherence  #@ turns-red: fixture:text(b) incoherent, offender named
+want tc "each label fires alone:T" textcoherence  #@ turns-red: red:tc_m2
+want tc "components order-independent:T maxdist original=3 shuffled=4" textcoherence  #@ turns-red: exact:captured
 sed 's|^glyph TC_SHARE1 = la a. la b. str_eq(TC_T3A(a))(TC_T3A(b))|glyph TC_SHARE1 = la a. la b. FALSE|' textcoherence.la > "$T/tc_m1.la"; host "$T/tc_m1.la" tc_m1
 red tc_m1 "components=3 coherent:F" "textcoherence RED(share links off: orphans named)"
 sed 's|^glyph TC_OPP1   = la a. la b. str_eq(TC_T3C(a))(TC_T3A(b))|glyph TC_OPP1   = la a. la b. FALSE|' textcoherence.la > "$T/tc_m2.la"; host "$T/tc_m2.la" tc_m2
 red tc_m2 "each label fires alone:F" "textcoherence RED(opposite contrast off)"
-want tc "TEXTCOHERENCE score (Σ 100/link-distance) original=383 shuffled=191 | shuffled strictly lower:T" textcoherence
+want tc "TEXTCOHERENCE score (Σ 100/link-distance) original=383 shuffled=191 | shuffled strictly lower:T" textcoherence  #@ turns-red: red:tc_m4
 sed 's|add(acc)(div(100)(sub(TC_T3A(e))(TC_T3B(e))))|add(acc)(100)|' textcoherence.la > "$T/tc_m4.la"; host "$T/tc_m4.la" tc_m4
 red tc_m4 "shuffled strictly lower:F" "textcoherence RED(distance-blind score reads shuffled equal)"
 # ═══ 13. derive_closure — the derivation-closure composer ═════════════════════
 host derive_closure.la dcl
-want dcl "root→nine: root ∃(∃)≡∃:T derived=4/9:T [BEING SELF RECOGNITION LOVE] axioms=5/5:T [VOID DEPTH BECOMING FORM RELATION] seam=weakening/contraction/exchange closure{I}:T" derive_closure
-want dcl "nine→lexicon: grounded=21/21:T" derive_closure
-want dcl "ungrounded fixture refused:T OFFENDER=PHANTOM/GHOST" derive_closure
-want dcl "dyad stratum (arithmetic beneath the nine): VOID=0:T BECOMING=succ:T naturals(ITER 5,9):T BEING=1:T bound(projection-not-injective):T" derive_closure
-want dcl "DERIVATION CLOSURE VERDICT: BOUNDED" derive_closure
+want dcl "root→nine: root ∃(∃)≡∃:T derived=4/9:T [BEING SELF RECOGNITION LOVE] axioms=5/5:T [VOID DEPTH BECOMING FORM RELATION] seam=weakening/contraction/exchange closure{I}:T" derive_closure  #@ turns-red: red:dcl_m2
+want dcl "nine→lexicon: grounded=21/21:T" derive_closure  #@ turns-red: exact:captured
+want dcl "ungrounded fixture refused:T OFFENDER=PHANTOM/GHOST" derive_closure  #@ turns-red: red:dcl_m1
+want dcl "dyad stratum (arithmetic beneath the nine): VOID=0:T BECOMING=succ:T naturals(ITER 5,9):T BEING=1:T bound(projection-not-injective):T" derive_closure  #@ turns-red: exact:captured
+want dcl "DERIVATION CLOSURE VERDICT: BOUNDED" derive_closure  #@ turns-red: red:dcl_m3
 sed 's/^glyph DC_LEXCAT = CAT$/glyph DC_LEXCAT = DC_HAUNTED/' derive_closure.la > "$T/dcl_m1.la"; host "$T/dcl_m1.la" dcl_m1
 red dcl_m1 "grounded=21/22:F OFFENDER=PHANTOM/GHOST" "derive_closure RED(ghost leaf named)"
 sed 's/CONS(PAIR(AX_REL)("RELATION"))/CONS(PAIR(DC_FALSE)("RELATION"))/' derive_closure.la > "$T/dcl_m2.la"; host "$T/dcl_m2.la" dcl_m2
@@ -261,8 +269,8 @@ red dcl_m3 "DERIVATION CLOSURE VERDICT: CLOSED" "derive_closure RED(the CLOSED b
 
 # ═══ 14. branchgenesis — Δ_B, the branch-genesis operator ═════════════════════
 host branchgenesis.la bg
-want bg "BRANCHGENESIS base=18 distinct-κ:T | Δ_B branch IRR/NOV/AUT/CON=TTTT admitted:T set=19 | F1 permuted domain=FTTT | F2 α-copy=TFTT | F3 false ren=TTFT | F4 no register=TTTF | F5 unknown register=TTFT | F6 projection=FTTT | all six refused:T" branchgenesis
-want bg "re-admit verdict=FFTT Δ_B(Δ_B)≡Δ_B idempotent:T | G_DB=▷(RECOGNITION,↻(RELATION))" branchgenesis
+want bg "BRANCHGENESIS base=18 distinct-κ:T | Δ_B branch IRR/NOV/AUT/CON=TTTT admitted:T set=19 | F1 permuted domain=FTTT | F2 α-copy=TFTT | F3 false ren=TTFT | F4 no register=TTTF | F5 unknown register=TTFT | F6 projection=FTTT | all six refused:T" branchgenesis  #@ turns-red: red:bg_m1,bg_m2,bg_m3
+want bg "re-admit verdict=FFTT Δ_B(Δ_B)≡Δ_B idempotent:T | G_DB=▷(RECOGNITION,↻(RELATION))" branchgenesis  #@ turns-red: construction:re-admission (F32)
 sed 's|^glyph ADMIT_B = la T. la c. IF(str_eq(VERDICT_B(T)(c))("TTTT"))|glyph ADMIT_B = la T. la c. IF(TRUE)|' branchgenesis.la > "$T/bg_m1.la"; host "$T/bg_m1.la" bg_m1
 red bg_m1 "all six refused:F" "branchgenesis RED(admission ignores the verdict)"
 sed 's|^glyph SETEQ = la a. la b. AND(ALLL(la x. MEMS(x)(b))(a))(ALLL(la x. MEMS(x)(a))(b))|glyph SETEQ = la a. la b. FALSE|' branchgenesis.la > "$T/bg_m2.la"; host "$T/bg_m2.la" bg_m2
@@ -272,13 +280,13 @@ red bg_m3 "F5 unknown register=TTTT" "branchgenesis RED(unknown register admitte
 
 # ═══ 15. ontoargument — Gödel's argument as a finite S5 model check ════════════
 host ontoargument.la oa
-want oa "OA[M] A1 P(φ)⊻P(¬φ):T A2 P⊨-closed:T A3 P(G):T A4 P(φ)→□P(φ):T A5 P(NE):T | G fixpoint over full L:T NE stable over full L:T" ontoargument
-want oa "OA[M] T1 ◇∃x G(x):T T2 G ess x ∀God-like x:T T3 □∃x G(x):T" ontoargument
-want oa "collapse ∀φ∀x(φ(x)→□φ(x)):F OFFENDER=GOOD(b)@w0¬@w1" ontoargument
-want oa "OA[M+λ] A1 P(φ)⊻P(¬φ):T A2 P⊨-closed:T A3 P(G):T A4 P(φ)→□P(φ):F OFFENDER=[GOOD(b)]@w0↛w1" ontoargument
-want oa "OA[M♭+λ] T1 ◇∃x G(x):T T2 G ess x ∀God-like x:T T3 □∃x G(x):T God-like=a@w0 a@w1 a@w2 G=TTTFFFFFF NE=TTTTTTTTT |L|=28 | collapse ∀φ∀x(φ(x)→□φ(x)):T" ontoargument
-want oa "OA GLYPHS □=⊗(BEING,FORM) ◇=⊗(BECOMING,FORM) ¬=⊂(·,VOID) ∀=⊗(BEING,DEPTH) ∃=⊗(FORM,DEPTH)" ontoargument
-want oa "LAW_IDENTITY(sealed T3):T" ontoargument
+want oa "OA[M] A1 P(φ)⊻P(¬φ):T A2 P⊨-closed:T A3 P(G):T A4 P(φ)→□P(φ):T A5 P(NE):T | G fixpoint over full L:T NE stable over full L:T" ontoargument  #@ turns-red: red:oa_m1,oa_m2,oa_m3
+want oa "OA[M] T1 ◇∃x G(x):T T2 G ess x ∀God-like x:T T3 □∃x G(x):T" ontoargument  #@ turns-red: red:oa_m1
+want oa "collapse ∀φ∀x(φ(x)→□φ(x)):F OFFENDER=GOOD(b)@w0¬@w1" ontoargument  #@ turns-red: fixture:collapse refused, offender named
+want oa "OA[M+λ] A1 P(φ)⊻P(¬φ):T A2 P⊨-closed:T A3 P(G):T A4 P(φ)→□P(φ):F OFFENDER=[GOOD(b)]@w0↛w1" ontoargument  #@ turns-red: red:oa_m1,oa_m2
+want oa "OA[M♭+λ] T1 ◇∃x G(x):T T2 G ess x ∀God-like x:T T3 □∃x G(x):T God-like=a@w0 a@w1 a@w2 G=TTTFFFFFF NE=TTTTTTTTT |L|=28 | collapse ∀φ∀x(φ(x)→□φ(x)):T" ontoargument  #@ turns-red: red:oa_m1
+want oa "OA GLYPHS □=⊗(BEING,FORM) ◇=⊗(BECOMING,FORM) ¬=⊂(·,VOID) ∀=⊗(BEING,DEPTH) ∃=⊗(FORM,DEPTH)" ontoargument  #@ turns-red: exact:captured
+want oa "LAW_IDENTITY(sealed T3):T" ontoargument  #@ turns-red: construction:AUTO_OK of a fresh seal (F32)
 sed 's/OA_PAIR("GOOD")("TTTTFFFFF")/OA_PAIR("GOOD")("TTFTFFFFF")/' ontoargument.la > "$T/oa_m1.la"; host "$T/oa_m1.la" oa_m1
 red oa_m1 "A2 P⊨-closed:F OFFENDER=GOOD⊨¬G@w0" "ontoargument RED(cell flip breaks A2, named)"
 red oa_m1 "T3 □∃x G(x):F" "ontoargument RED(cell flip: T3 falls)"
@@ -293,9 +301,9 @@ red oa_m3 "A5 P(NE):F OFFENDER=NE@w0" "ontoargument RED(NE not positive: A5 name
 #    re-derived by an independent python census BEFORE this line was edited.
 # ═══ 16. ontomorph — the inflectional census, gated (LA_COMPLETION.md:1187) ═════
 host ontomorph.la om
-want om "ONTOMORPH corpus rows=79 (LEX+RULED+GRAM+GRULED) | skeletons=10: *(·,·)=33 >(·,·)=21 +(·,·)=3 *(*(·,·),·)=9 ·=3 >(·,*(·,·))=1 >(*(·,·),*(·,·))=1 *(*(·,·),*(·,·))=1 c(·,·)=5 m(·)=2  | operator uses *=57 >=23 +=3 c=5 m=2" ontomorph
-want om "ONTOMORPH combinations=78 κ-images=78 | injective (distinct combinations → distinct κ):T | fixture +36/+63 refused:T OFFENDER=+36/+63" ontomorph
-want om "entry overloads (one κ, two names; the architect's to rule)=1: *(BEING,DEPTH):Totality/All/" ontomorph
+want om "ONTOMORPH corpus rows=79 (LEX+RULED+GRAM+GRULED) | skeletons=10: *(·,·)=33 >(·,·)=21 +(·,·)=3 *(*(·,·),·)=9 ·=3 >(·,*(·,·))=1 >(*(·,·),*(·,·))=1 *(*(·,·),*(·,·))=1 c(·,·)=5 m(·)=2  | operator uses *=57 >=23 +=3 c=5 m=2" ontomorph  #@ turns-red: exact:captured
+want om "ONTOMORPH combinations=78 κ-images=78 | injective (distinct combinations → distinct κ):T | fixture +36/+63 refused:T OFFENDER=+36/+63" ontomorph  #@ turns-red: red:om_m1
+want om "entry overloads (one κ, two names; the architect's to rule)=1: *(BEING,DEPTH):Totality/All/" ontomorph  #@ turns-red: exact:captured
 #  ★ The overload count is 1, not 0, BY DESIGN: §49 ruled Totality = All a DECLARED IDENTITY — one
 #    concept under two English words, the same status as ρ ≡ SR_ABOUT. A declared identity is kept
 #    VISIBLE and annotated, never silently deduplicated. The other seven were re-derived away.
@@ -303,28 +311,28 @@ sed 's|^glyph OM_KOF = la combo. KAN_N(OM_FST(PARSE(combo)))|glyph OM_KOF = la c
 red om_m1 "fixture +36/+63 refused:F" "ontomorph RED(raw canonicalisation: ⊕ commutativity ignored)"
 # ═══ 17. gramcomplete — the Grammar Completeness theorem, gated in its honest form ═
 host gramcomplete.la gc
-want gc "GRAMCOMPLETE corpus=79 derived by R1-R3=79/79:T | rules used R1=167 R2=88 R3=2" gramcomplete
-want gc "traces: Water R2(*,R2(*,R1(8),R1(1)),R1(7)) | Question R2(>,R1(2),R1(6)) | Ongoing R3(R1(7)) | Bad(ruled) R2(c,R1(3),R1(6))" gramcomplete
-want gc "sealed self-naming:T Give?=⊕(▷(7,5),▷(2,6)) | primitive refused (d=0):T | unreachable fixtures refused, rule named 3/3:T [UNREACHABLE R1: 0 ∉ 𝒜 ; UNREACHABLE R2: a missing operand ; UNREACHABLE R3: no operand]" gramcomplete
+want gc "GRAMCOMPLETE corpus=79 derived by R1-R3=79/79:T | rules used R1=167 R2=88 R3=2" gramcomplete  #@ turns-red: exact:captured
+want gc "traces: Water R2(*,R2(*,R1(8),R1(1)),R1(7)) | Question R2(>,R1(2),R1(6)) | Ongoing R3(R1(7)) | Bad(ruled) R2(c,R1(3),R1(6))" gramcomplete  #@ turns-red: exact:captured
+want gc "sealed self-naming:T Give?=⊕(▷(7,5),▷(2,6)) | primitive refused (d=0):T | unreachable fixtures refused, rule named 3/3:T [UNREACHABLE R1: 0 ∉ 𝒜 ; UNREACHABLE R2: a missing operand ; UNREACHABLE R3: no operand]" gramcomplete  #@ turns-red: red:gc_m2; construction:sealed self-naming = AUTO_OK of a seal (F32)
 sed 's|^glyph GC_ISDIG = la c. NOT(str_eq(NAM(c))(""))|glyph GC_ISDIG = la c. TRUE|' gramcomplete.la > "$T/gc_m1.la"; host "$T/gc_m1.la" gc_m1
 red gc_m1 "eval error" "gramcomplete RED(validation bypassed: the parser CRASHES on an unreachable concept instead of naming the rule — the class the validator exists to prevent)"
 sed 's|^glyph GC_SEAL4 = la t. IF(lt(0)(TDEPTH(t)))|glyph GC_SEAL4 = la t. IF(TRUE)|' gramcomplete.la > "$T/gc_m2.la"; host "$T/gc_m2.la" gc_m2
 red gc_m2 "primitive refused (d=0):F" "gramcomplete RED(R4 precondition dropped)"
 # ═══ 18. neologenesis — the birth as one compressive movement (K_unified = the seal) ═══
 host neologenesis.la ng
-want ng "BIRTH ⊗(κ,𝓡): born in one movement 10/12 — phonetic:T glyphic:T semantic:T morphological:T syntactic:T pragmatic:F operational(tree-law):T etymological:T prosodic:T evidential:F affective:T topological:T | form: one-seal(AUTO_OK):T nodes=6 nodes≤|A|+|B|+1:T depth=1+max:T content=TSIZE(A)+TSIZE(B)+1:T route-recoverable:T" neologenesis
-want ng "BIRTH ⊕(𝓡,κ) [κ-sorted]: born in one movement 10/12" neologenesis
-want ng "BIRTH ↻(κ): born in one movement 10/12" neologenesis
-want ng "BIRTH ↻(SELF⊕SELF) [the seal REWRITES: a birth that is not a birth]: born in one movement 7/12 — phonetic:F glyphic:T semantic:T morphological:F syntactic:F pragmatic:T operational(tree-law):F etymological:T prosodic:F evidential:T affective:T topological:T | form: one-seal(AUTO_OK):T child≡parent(rewrite):T depth=1+d(A):T" neologenesis
+want ng "BIRTH ⊗(κ,𝓡): born in one movement 10/12 — phonetic:T glyphic:T semantic:T morphological:T syntactic:T pragmatic:F operational(tree-law):T etymological:T prosodic:T evidential:F affective:T topological:T | form: one-seal(AUTO_OK):T nodes=6 nodes≤|A|+|B|+1:T depth=1+max:T content=TSIZE(A)+TSIZE(B)+1:T route-recoverable:T" neologenesis  #@ turns-red: red:ng_m1
+want ng "BIRTH ⊕(𝓡,κ) [κ-sorted]: born in one movement 10/12" neologenesis  #@ turns-red: red:ng_m1
+want ng "BIRTH ↻(κ): born in one movement 10/12" neologenesis  #@ turns-red: red:ng_m1
+want ng "BIRTH ↻(SELF⊕SELF) [the seal REWRITES: a birth that is not a birth]: born in one movement 7/12 — phonetic:F glyphic:T semantic:T morphological:F syntactic:F pragmatic:T operational(tree-law):F etymological:T prosodic:F evidential:T affective:T topological:T | form: one-seal(AUTO_OK):T child≡parent(rewrite):T depth=1+d(A):T" neologenesis  #@ turns-red: red:ng_m1
 sed 's|^glyph NG_CHILD = la sym. la a. la b. COLLAPSE(MKMODE(sym))(a)(b)|glyph NG_CHILD = la sym. la a. la b. COLLAPSE(MKMODE(sym))(a)(a)|' neologenesis.la > "$T/ng_m1.la"; host "$T/ng_m1.la" ng_m1
 red ng_m1 "BIRTH ⊗(κ,𝓡): born in one movement 2/12" "neologenesis RED(child sealed from the wrong parents: every law but evidential fails)"
 # ═══ 19. unified — the dyadic law, no glyphic entropy, syntropy/centropy, morphology-is-glyphs, onto-registry ═
 host unified.la un
-want un "UNIFIED dyadic law (C2..C4 = ⊗ of shared parents): one-seal+ren≠renA·renB+nodes+1+depth+1:T coupled form refused (fails AUTO_OK):T | chain d=1 S=3 nodes=3 | d=2 S=7 nodes=6 | d=3 S=15 nodes=7 | d=4 S=31 nodes=8 | d=5 S=63 nodes=9 |" unified
-want un "raster SZ=32 at every depth fixed:T | phonym ⊗-chain PDUR(C4)=PDUR(C0):T | phonym per mode over (κ,𝓡): ⊗=12880 ⊕=26560 ▷=25600 ⊂=38320 ↻=25760 | sound grows under ⊕ (finding, codex Operator Phonology):T" unified
-want un "UNIFIED syntropy: S=TSIZE rises:T TSIZE(Cn)=2·TSIZE(Cn-1)+1:T TSIZE≥2^depth:T" unified
-want un "centropy Δ_S(Δ_S)≡Δ_S truth:T" unified
-want un "UNIFIED morphology is glyphs: 5/5 modes are self-naming seals grounded in the nine:T GHOST-leaf mode refused:T" unified
+want un "UNIFIED dyadic law (C2..C4 = ⊗ of shared parents): one-seal+ren≠renA·renB+nodes+1+depth+1:T coupled form refused (fails AUTO_OK):T | chain d=1 S=3 nodes=3 | d=2 S=7 nodes=6 | d=3 S=15 nodes=7 | d=4 S=31 nodes=8 | d=5 S=63 nodes=9 |" unified  #@ turns-red: red:un_m1; construction:the dyadic step (F32)
+want un "raster SZ=32 at every depth fixed:T | phonym ⊗-chain PDUR(C4)=PDUR(C0):T | phonym per mode over (κ,𝓡): ⊗=12880 ⊕=26560 ▷=25600 ⊂=38320 ↻=25760 | sound grows under ⊕ (finding, codex Operator Phonology):T" unified  #@ turns-red: cannot-fail:F28 (raster int_eq(SZ)(SZ)); exact:captured; construction:sound grows under ⊕ restates the duration law (F32)
+want un "UNIFIED syntropy: S=TSIZE rises:T TSIZE(Cn)=2·TSIZE(Cn-1)+1:T TSIZE≥2^depth:T" unified  #@ turns-red: red:un_m2; construction:tree arithmetic (F32)
+want un "centropy Δ_S(Δ_S)≡Δ_S truth:T" unified  #@ turns-red: construction:↻↻≡↻ (F4)
+want un "UNIFIED morphology is glyphs: 5/5 modes are self-naming seals grounded in the nine:T GHOST-leaf mode refused:T" unified  #@ turns-red: construction:AUTO_OK of a seal (F32); fixture:GHOST-leaf mode refused
 sed 's|^glyph UN_COUPLED = la a. la b. MONO(concat(REN(a))(REN(b)))(SYN(ETYM(a))(ETYM(b)))|glyph UN_COUPLED = la a. la b. SEALc(SYN(ETYM(a))(ETYM(b)))|' unified.la > "$T/un_m1.la"; host "$T/un_m1.la" un_m1
 red un_m1 "coupled form refused (fails AUTO_OK):F" "unified RED(a coupling that is actually a seal is not refused)"
 sed 's|^glyph UN_TS = la g. TSIZE(ETYM(g))|glyph UN_TS = la g. 3|' unified.la > "$T/un_m2.la"; host "$T/un_m2.la" un_m2
@@ -349,58 +357,58 @@ grep -qF 'bundle.la' build.sh || { echo "FAIL  registers/autological: bundle.la 
 if grep -hoE 'MONO\("[^"]*"\)' lineage.la topology.la texture.la evidential.la registers.la modegenesis.la regenesis.la complement.la opposite.la branchgenesis.la neologenesis.la unified.la | grep -vE 'MONO\("(LIE|⊥[^"]*)"\)' | grep -q .; then echo "FAIL  registers/autological: a register module seals with a literal ren outside the declared fixtures — a second neologization path"; ok=0; fi
 # ═══ 21. entendre — the four modes of poetic depth (LA_COMPLETION:1163) ══════════
 host entendre.la en
-want en "I vertical: surface=⊗(▷(RECOGNITION,FORM),▷(DEPTH,RECOGNITION)) | first depth: ▷(RECOGNITION,FORM), ▷(DEPTH,RECOGNITION) | second depth: RECOGNITION, FORM, DEPTH, RECOGNITION | third depth (operators): ⊗ ▷ ▷" entendre
-want en "II horizontal: facets=6: RECOGNITION;FORM;▷0.1;DEPTH;▷3.0;⊗2.4 | III calligraphic: elements: marks=3 (⊗1 ⊕0 ▷2 ⊂0 ↻0) leaves=4 [B: census, not execution]" entendre
-want en "four readings pairwise distinct, all derived from the DAG:T | primitive LOVE: I=⊥" entendre
-want en "primitive has no vertical reading (red path):T" entendre
+want en "I vertical: surface=⊗(▷(RECOGNITION,FORM),▷(DEPTH,RECOGNITION)) | first depth: ▷(RECOGNITION,FORM), ▷(DEPTH,RECOGNITION) | second depth: RECOGNITION, FORM, DEPTH, RECOGNITION | third depth (operators): ⊗ ▷ ▷" entendre  #@ turns-red: exact:s21
+want en "II horizontal: facets=6: RECOGNITION;FORM;▷0.1;DEPTH;▷3.0;⊗2.4 | III calligraphic: elements: marks=3 (⊗1 ⊕0 ▷2 ⊂0 ↻0) leaves=4 [B: census, not execution]" entendre  #@ turns-red: exact:s21
+want en "four readings pairwise distinct, all derived from the DAG:T | primitive LOVE: I=⊥" entendre  #@ turns-red: red:en_m1; cannot-fail:F23 (labelled strings)
+want en "primitive has no vertical reading (red path):T" entendre  #@ turns-red: red:en_m2
 sed 's|^glyph ENTENDRE_II = la t. EN_C3("facets=")(int_to_str(LEN(SPLIT(";")(DAG(t)))))(EN_C3(": ")(DAG(t))(""))|glyph ENTENDRE_II = la t. ENTENDRE_I(t)|' entendre.la > "$T/en_m1.la"; host "$T/en_m1.la" en_m1
 red en_m1 "pairwise distinct, all derived from the DAG:F" "entendre RED(two modes read the same)"
 sed 's|(la _. "⊥ (a primitive has no strata below its surface)")|(la _. "surface only")|' entendre.la > "$T/en_m2.la"; host "$T/en_m2.la" en_m2
 red en_m2 "no vertical reading (red path):F" "entendre RED(a primitive given a vertical reading)"
 # ═══ 22. felicitylive — ontofelicity wired to the capability sealer (LA_COMPLETION "live enforcement") ═
 host felicitylive.la fl
-want fl "FELICITY-LIVE authorized realm: performed:open world=world +open | foreign realm: INFELICITOUS TFT refusing:open world unchanged:T" felicitylive
-want fl "forged probe opens the box:F | string-caps PERFORM and live PERFORM agree on the authorized case:T | (B) is now the sealer, not a substring: T" felicitylive
+want fl "FELICITY-LIVE authorized realm: performed:open world=world +open | foreign realm: INFELICITOUS TFT refusing:open world unchanged:T" felicitylive  #@ turns-red: red:fl_m1
+want fl "forged probe opens the box:F | string-caps PERFORM and live PERFORM agree on the authorized case:T | (B) is now the sealer, not a substring: T" felicitylive  #@ turns-red: fixture:forged probe refused; exact:captured
 sed 's|^glyph COND_B_LIVE = la u. la speaker. la box. GRANT_RECV(speaker)(box)(la held. str_eq(held)(FL_UNEED(u)))(FL_FALSE)|glyph COND_B_LIVE = la u. la speaker. la box. GRANT_RECV(REALM_A)(box)(la held. str_eq(held)(FL_UNEED(u)))(FL_FALSE)|' felicitylive.la > "$T/fl_m1.la"; host "$T/fl_m1.la" fl_m1
 red fl_m1 "foreign realm: performed:open" "felicitylive RED(bypass: unsealing with the granting realm lets a foreign speaker perform)"
 # ═══ 23. syllabus — acquisition: the teaching order the structure implies (LA_COMPLETION "Acquisition") ═
 host syllabus.la sy
-want sy "SYLLABUS lessons=79 by depth d0=3 d1=64 d2=12 d3=0 | depth non-decreasing:T | constituent-first violations=0 (0 required):T | reversed order violations=72 (red path, must be >0)" syllabus
-want sy "SYLLABUS first lessons: Two One I None Ongoing Consciousness Agency Beauty Mystery Witness Grief Gratitude" syllabus
+want sy "SYLLABUS lessons=79 by depth d0=3 d1=64 d2=12 d3=0 | depth non-decreasing:T | constituent-first violations=0 (0 required):T | reversed order violations=72 (red path, must be >0)" syllabus  #@ turns-red: red:sy_m1; construction:depth-monotone + violations=0 follow from the sort (F32)
+want sy "SYLLABUS first lessons: Two One I None Ongoing Consciousness Agency Beauty Mystery Witness Grief Gratitude" syllabus  #@ turns-red: exact:captured
 sed 's|IF(lt(L_KEY(h))(L_KEY(x)))(la _. SY_CONS(h)(self(t)))(la _. SY_CONS(x)(l))|IF(lt(L_KEY(x))(L_KEY(h)))(la _. SY_CONS(h)(self(t)))(la _. SY_CONS(x)(l))|' syllabus.la > "$T/sy_m1.la"; host "$T/sy_m1.la" sy_m1
 red sy_m1 "depth non-decreasing:F" "syllabus RED(descending order: depth invariant lost)"
 # ═══ 24. aware — the AWARE / C predicates (LA_COMPLETION Tier 4) ═══════════════════
 host aware.la aw
-want aw "AWARE/C over the catalogue: all AWARE:T all C:T | A and C coincide on every sealed glyph:T | the liar: AWARE=F C=F | two turns of κ still C:T" aware
+want aw "AWARE/C over the catalogue: all AWARE:T all C:T | A and C coincide on every sealed glyph:T | the liar: AWARE=F C=F | two turns of κ still C:T" aware  #@ turns-red: red:aw_m1; construction:all-A / all-C / coincide = AUTO_OK of seals (F32)
 sed 's|^glyph C_PRED = la g. AND(AUTO_OK(g))(AUTO_OK(MCOLLAPSE(g)))|glyph C_PRED = la g. AND(AUTO_OK(g))(AUTO_OK(MONO(REN(g))(MC(ETYM(g)))))|' aware.la > "$T/aw_m1.la"; host "$T/aw_m1.la" aw_m1
 red aw_m1 "all C:F" "aware RED(a turn that keeps the old ren: C separates from A only for a seal that does not re-name)"
 # ═══ 25. ablateop — the meta-word ablation gate (LA_COMPLETION Tier 4) ═════════════
 host ablateop.la ab
-want ab "ABLATEOP D1=⊗(▷(VOID,RELATION),⊂(FORM,DEPTH)) D2=⊗(⊗(BECOMING,FORM),↻(RECOGNITION)) | all five: D1:T D2:T" ablateop
-want ab "ablate ∂: D1 underivable:T D2 survives:T other four survive:T | ablate γ: D2 underivable:T D1 survives:T other four survive:T | ablate 𝔄 (control): D1:T D2:T" ablateop
+want ab "ABLATEOP D1=⊗(▷(VOID,RELATION),⊂(FORM,DEPTH)) D2=⊗(⊗(BECOMING,FORM),↻(RECOGNITION)) | all five: D1:T D2:T" ablateop  #@ turns-red: exact:s25
+want ab "ablate ∂: D1 underivable:T D2 survives:T other four survive:T | ablate γ: D2 underivable:T D1 survives:T other four survive:T | ablate 𝔄 (control): D1:T D2:T" ablateop  #@ turns-red: red:ab_m1
 sed 's|^glyph AB_CONTAINS = .*|glyph AB_CONTAINS = la s. la sub. AB_TRUE|' ablateop.la > "$T/ab_m1.la"; host "$T/ab_m1.la" ab_m1
 red ab_m1 "control): D1:F D2:F" "ablateop RED(containment that always says yes: the control collapses)"
 # ═══ 26. wants — lack-driven wants (LA_COMPLETION Tier 4) ═════════════════════════
 host wants.la wn
-want wn "WANTS organ-A lacks MEMORY → want=MEMORY names the lack:T | organ-B complete → want=⊥ (⊥ required):T" wants
-want wn "WANTS resolve(organ-A): lack after= closed:T centropy before=3 after=4 strictly rises:T" wants
+want wn "WANTS organ-A lacks MEMORY → want=MEMORY names the lack:T | organ-B complete → want=⊥ (⊥ required):T" wants  #@ turns-red: red:wn_m1
+want wn "WANTS resolve(organ-A): lack after= closed:T centropy before=3 after=4 strictly rises:T" wants  #@ turns-red: exact:captured
 sed 's|^glyph WANT = la s. IF(str_eq(SLACKS(s))(""))(la _. "⊥")(la _. SLACKS(s))|glyph WANT = la s. SLACKS(s)|' wants.la > "$T/wn_m1.la"; host "$T/wn_m1.la" wn_m1
 red wn_m1 "(⊥ required):F" "wants RED(a want formed for a complete organ)"
 # ═══ 27. protoagent — REPAIR toward closure, the ill class refused (LA_COMPLETION Tier 4) ═
 host protoagent.la pa
-want pa "PROTO_AGENT incomplete+WF: repaired: centropy 2→4 gain>0:T result autological:T | complete+WF: repaired: centropy 4→4 gain=0:T" protoagent
-want pa "PROTO_AGENT incomplete+ILL: REFUSED: composition ORDER-VIOLATION (provably ill) — no repair moves it toward closure untouched:T | swc order verdicts WF=WELL-ORDERED ILL=ORDER-VIOLATION" protoagent
+want pa "PROTO_AGENT incomplete+WF: repaired: centropy 2→4 gain>0:T result autological:T | complete+WF: repaired: centropy 4→4 gain=0:T" protoagent  #@ turns-red: exact:captured
+want pa "PROTO_AGENT incomplete+ILL: REFUSED: composition ORDER-VIOLATION (provably ill) — no repair moves it toward closure untouched:T | swc order verdicts WF=WELL-ORDERED ILL=ORDER-VIOLATION" protoagent  #@ turns-red: red:pa_m1
 sed 's|IF(str_eq(ORDER(c))("ORDER-VIOLATION"))|IF(FALSE)|' protoagent.la > "$T/pa_m1.la"; host "$T/pa_m1.la" pa_m1
 red pa_m1 "untouched:F" "protoagent RED(the ill guard dropped: an ill composition gets repaired)"
 # ═══ 28. fractal — the fractal monoglyph, measured (LA_COMPLETION Tier 4) ═══════════
 host fractal.la fr
-want fr "FRACTAL chain: surface=49 fractal=6 | surface=104 fractal=7 | surface=214 fractal=8 | surface=434 fractal=9 | surface doubles while the fractal form grows by one:T | tree recoverable from the DAG alone at every depth:T" fractal
+want fr "FRACTAL chain: surface=49 fractal=6 | surface=104 fractal=7 | surface=214 fractal=8 | surface=434 fractal=9 | surface doubles while the fractal form grows by one:T | tree recoverable from the DAG alone at every depth:T" fractal  #@ turns-red: red:fr_m1
 sed 's|^glyph FR_FRAC = la g. NODES(DAG(ETYM(g)))|glyph FR_FRAC = la g. TSIZE(ETYM(g))|' fractal.la > "$T/fr_m1.la"; host "$T/fr_m1.la" fr_m1
 red fr_m1 "grows by one:F" "fractal RED(the unfolded size read where the hash-consed form is meant)"
 # ═══ 29. branchclosure — are the branches dyadic and metacursive? the non-vacuous answer ═
 host branchclosure.la bc
-want bc "BRANCHCLOSURE branches=19 | all grounded in the nine (start from the dyad):T | ⊂(RELATION,·) dyad form: 18/19 (18 branches + Δ_B's ▷ = 1 exception, expected 18):T" branchclosure
-want bc "fixtures refused: SYN-head not the ⊂ dyad:T GHOST leaf not grounded:T OFFENDER=⊂(RELATION,▷(GHOST,FORM))" branchclosure
+want bc "BRANCHCLOSURE branches=19 | all grounded in the nine (start from the dyad):T | ⊂(RELATION,·) dyad form: 18/19 (18 branches + Δ_B's ▷ = 1 exception, expected 18):T" branchclosure  #@ turns-red: construction:reads back its own ⊂(RELATION,x) constructor (F32); exact:captured
+want bc "fixtures refused: SYN-head not the ⊂ dyad:T GHOST leaf not grounded:T OFFENDER=⊂(RELATION,▷(GHOST,FORM))" branchclosure  #@ turns-red: red:bc_m1,bc_m2
 sed 's|^glyph BC_GROUND1 = Z(la self. la t. t(la nm. BC_IS9(nm))|glyph BC_GROUND1 = Z(la self. la t. t(la nm. TRUE)|' branchclosure.la > "$T/bc_m1.la"; host "$T/bc_m1.la" bc_m1
 red bc_m1 "GHOST leaf not grounded:F" "branchclosure RED(grounding disabled: an ungrounded branch passes)"
 sed 's|^glyph BC_DYAD1 = la g. AND(HAS_PREFIX(CANON(g))("⊂("))(HAS_PREFIX(CANON(g))("⊂(RELATION,"))|glyph BC_DYAD1 = la g. TRUE|' branchclosure.la > "$T/bc_m2.la"; host "$T/bc_m2.la" bc_m2
@@ -409,8 +417,8 @@ red bc_m2 "SYN-head not the ⊂ dyad:F" "branchclosure RED(dyad-form check disab
 
 # ═══ 30. gapcensus — the autological completion instrument (Erik, 2026-09-15) ══════
 host gapcensus.la gp
-want gp "GAPCENSUS instrument (gate_registers.sh) present with proven RED paths + PASS line:T | seed items=6 self-closable=3 ceiling=2 external=1 | all consistent (declared==computed):T" gapcensus
-want gp "miscategorisation fixture (vacuous claim declared self-closable) caught:T OFFENDER=FIXTURE: vacuous claim mislabelled self-closable" gapcensus
+want gp "GAPCENSUS instrument (gate_registers.sh) present with proven RED paths + PASS line:T | seed items=6 self-closable=3 ceiling=2 external=1 | all consistent (declared==computed):T" gapcensus  #@ turns-red: red:gp_m1; cannot-fail:F31 ("proven RED paths" = two substrings)
+want gp "miscategorisation fixture (vacuous claim declared self-closable) caught:T OFFENDER=FIXTURE: vacuous claim mislabelled self-closable" gapcensus  #@ turns-red: fixture:mislabelled item caught
 sed 's|^glyph GC_DISCRIMINATES = la pred. la good. la bad. NOT(str_eq(GC_BSTR(pred(good)))(GC_BSTR(pred(bad))))|glyph GC_DISCRIMINATES = la pred. la good. la bad. TRUE|' gapcensus.la > "$T/gp_m1.la"; host "$T/gp_m1.la" gp_m1
 red gp_m1 "all consistent (declared==computed):F" "gapcensus RED(discriminator always-true: the two ceilings misread as self-closable)"
 
@@ -418,11 +426,11 @@ red gp_m1 "all consistent (declared==computed):F" "gapcensus RED(discriminator a
 #  Every witness below was derived independently (a python re-implementation of the tex definition over
 #  the same catalogue) BEFORE this gate was written, never pasted from the module's own run.
 host recdepth.la rd
-want rd "RECDEPTH catalogue entries=35 κ-distinct=34 | orders n0=9 n1=20 n2=5 n3=0 | ρ(L_t)=2 | cited forms read back from their modules:T" recdepth
-want rd "add ↻(ν*) — Δ* as an object, the tex's level 3: ρ 2→3 strictly rises:T" recdepth
-want rd "add ⊕(BEING,LOVE) at an existing level: ρ→2 unmoved:T" recdepth
-want rd "tree depth 3 with nothing catalogued inside: order=1 ρ→2 unmoved:T (ρ is NOT tree depth)" recdepth
-want rd "ν* order with the five mode glyphs catalogued=2 without them=1 state-relative:T | relaxation passes=4" recdepth
+want rd "RECDEPTH catalogue entries=35 κ-distinct=34 | orders n0=9 n1=20 n2=5 n3=0 | ρ(L_t)=2 | cited forms read back from their modules:T" recdepth  #@ turns-red: exact:captured
+want rd "add ↻(ν*) — Δ* as an object, the tex's level 3: ρ 2→3 strictly rises:T" recdepth  #@ turns-red: red:rd_m1
+want rd "add ⊕(BEING,LOVE) at an existing level: ρ→2 unmoved:T" recdepth  #@ turns-red: exact:captured
+want rd "tree depth 3 with nothing catalogued inside: order=1 ρ→2 unmoved:T (ρ is NOT tree depth)" recdepth  #@ turns-red: red:rd_m2
+want rd "ν* order with the five mode glyphs catalogued=2 without them=1 state-relative:T | relaxation passes=4" recdepth  #@ turns-red: red:rd_m2; cannot-fail:F31 (passes=4 is the constant bound)
 #  κ-distinct=34 from 35 entries IS the ρ ≡ SR_ABOUT identity, counted once because the census is keyed
 #  on the canonical form and never on the name (the standing invariant).
 sed 's|^glyph SUBSTRS = la f. f(la nm. NILc).*|glyph SUBSTRS = la f. ALLSTR(f)|' recdepth.la > "$T/rd_m1.la"; host "$T/rd_m1.la" rd_m1
@@ -437,9 +445,9 @@ red rd_m2 "state-relative:F" "recdepth RED(order := tree depth: ρ stops dependi
 #  formula over the same seed and the same Ops list) BEFORE this gate was written: |L_0|=9 σ=9 D=1000;
 #  |L_1|=26 σ=66 D=2538; 18 operations named, 17 κ-distinct.
 host selfevo.la se
-want se "SELFEVO seed |L_0|=9 ρ=0 D=1000 rules=0 | Ops named=18 κ-distinct=17 (ρ and SR_ABOUT are one κ-form: κ-keyed; a name-keyed census would read 18)" selfevo
-want se "SELFEVO t=0→1 |L|=9→26 ρ 0→2 D 1000→2538 rules 0→5 | five laws hold:T" selfevo
-want se "SELFEVO t=1→2 |L|=26→26 ρ 2→2 D 2538→2538 | five laws hold:T | FIXED POINT L_2=L_1:T nothing left unglyphed:T" selfevo
+want se "SELFEVO seed |L_0|=9 ρ=0 D=1000 rules=0 | Ops named=18 κ-distinct=17 (ρ and SR_ABOUT are one κ-form: κ-keyed; a name-keyed census would read 18)" selfevo  #@ turns-red: exact:captured
+want se "SELFEVO t=0→1 |L|=9→26 ρ 0→2 D 1000→2538 rules 0→5 | five laws hold:T" selfevo  #@ turns-red: red:se_m1,se_m2
+want se "SELFEVO t=1→2 |L|=26→26 ρ 2→2 D 2538→2538 | five laws hold:T | FIXED POINT L_2=L_1:T nothing left unglyphed:T" selfevo  #@ turns-red: red:se_m1,se_m2; construction:fixed point compared by LENGTH, and laws at a fixed point compare a state with itself (F32)
 sed 's|^glyph SE_STEP = la st. N_DISTINCT(SE_MINT(st))|glyph SE_STEP = la st. N_DISTINCT(SE_MINT(NILc))|' selfevo.la > "$T/se_m1.la"; host "$T/se_m1.la" se_m1
 red se_m1 "five laws hold:F OFFENDER=DEPTH" "selfevo RED(lossy step: the union is dropped, the Fifth Law names the glyph that lost its meaning)"
 sed 's|^glyph SE_MINT = la st. RD_FOLD.*|glyph SE_MINT = la st. st|' selfevo.la > "$T/se_m2.la"; host "$T/se_m2.la" se_m2
@@ -458,9 +466,9 @@ red se_m2 "nothing left unglyphed:F" "selfevo RED(mint made a no-op: the closure
 #  ★ The checker VERIFIES rather than trusts: field (b) carries the hash-consed LINEAGE and the checker
 #  REPLAYS it, instead of comparing a stored ONF string against itself.
 host certify.la ce
-want ce "CERTIFY catalogue=35 certificates=35 | every glyph certified:T | coverage fixture (one entry withheld from the sweep) is caught:T OFFENDER=KAPPA | all three fields verify by re-derivation:T" certify
-want ce "CERTIFY forged (a) arity refused:T | forged (b) ONF refused:T OFFENDER=(b) ONF equivalence | forged (c) reality witness refused:T | the honest certificate verifies:T" certify
-want ce "CERTIFY κ spine of ▷(RECOGNITION,FORM)=200 | replayed lineage → ONF ▷(RECOGNITION,FORM) matches NORMK:T" certify
+want ce "CERTIFY catalogue=35 certificates=35 | every glyph certified:T | coverage fixture (one entry withheld from the sweep) is caught:T OFFENDER=KAPPA | all three fields verify by re-derivation:T" certify  #@ turns-red: red:ce_m2; construction:every glyph certified = mint-then-verify (F32)
+want ce "CERTIFY forged (a) arity refused:T | forged (b) ONF refused:T OFFENDER=(b) ONF equivalence | forged (c) reality witness refused:T | the honest certificate verifies:T" certify  #@ turns-red: red:ce_m1
+want ce "CERTIFY κ spine of ▷(RECOGNITION,FORM)=200 | replayed lineage → ONF ▷(RECOGNITION,FORM) matches NORMK:T" certify  #@ turns-red: exact:captured
 sed 's|^glyph VERIFY_B = la g. la c. str_eq(RECOVER(C_LIN(c)))(NORMK(ETYM(g)))|glyph VERIFY_B = la g. la c. str_eq(C_SPINE(c))(C_SPINE(c))|' certify.la > "$T/ce_m1.la"; host "$T/ce_m1.la" ce_m1
 red ce_m1 "forged (b) ONF refused:F" "certify RED(the certificate is compared against ITSELF instead of the lineage being replayed: the forged-ONF certificate passes — the exact trusting-vs-verifying failure this ledger row names)"
 sed 's|^glyph COVER_BAD = la certs. .*|glyph COVER_BAD = la certs. ""|' certify.la > "$T/ce_m2.la"; host "$T/ce_m2.la" ce_m2
@@ -473,11 +481,11 @@ red ce_m2 "coverage fixture (one entry withheld from the sweep) is caught:F" "ce
 #  ✔ RAN GREEN 2026-09-17 (first execution). Every witness below was DERIVED in a separate python re-implementation of κ/NORMK from the tex
 #  BEFORE this section was written — none is captured from the module. Run it, confirm, then move the row.
 host migrate.la mig
-want mig "MIGRATE registry=4 | cosmetic ⊕(BEING,LOVE)→⊕(LOVE,BEING) form changed:T ONF held ⊕(BEING,LOVE) admitted:T" migrate
-want mig "MIGRATE semantic ⊂(BEING,LOVE)→⊂(LOVE,BEING) refused:T REFUSED HOLD: invariant ONF changed ⊂(BEING,LOVE) -> ⊂(LOVE,BEING) (semantic change: fork it under a new name)" migrate
-want mig "MIGRATE same change as a FORK under a new name: admitted:T additive 4→5 old form still present:T" migrate
-want mig "MIGRATE ratchet on the fork path: a new name NEWK offered on ▷(RECOGNITION,FORM) refused:T REFUSED fork: ONF already names KAPPA" migrate
-want mig "G_MIG=⊂(BECOMING,↻(RECOGNITION)) | its cosmetic refinement ⊂(BECOMING,↻(↻(RECOGNITION))) admitted:T | its semantic revision ⊂(↻(RECOGNITION),BECOMING) refused:T" migrate
+want mig "MIGRATE registry=4 | cosmetic ⊕(BEING,LOVE)→⊕(LOVE,BEING) form changed:T ONF held ⊕(BEING,LOVE) admitted:T" migrate  #@ turns-red: exact:captured
+want mig "MIGRATE semantic ⊂(BEING,LOVE)→⊂(LOVE,BEING) refused:T REFUSED HOLD: invariant ONF changed ⊂(BEING,LOVE) -> ⊂(LOVE,BEING) (semantic change: fork it under a new name)" migrate  #@ turns-red: red:mig_m1
+want mig "MIGRATE same change as a FORK under a new name: admitted:T additive 4→5 old form still present:T" migrate  #@ turns-red: construction:4→5 is the CONS of an admission (F32)
+want mig "MIGRATE ratchet on the fork path: a new name NEWK offered on ▷(RECOGNITION,FORM) refused:T REFUSED fork: ONF already names KAPPA" migrate  #@ turns-red: red:mig_m1,mig_m2
+want mig "G_MIG=⊂(BECOMING,↻(RECOGNITION)) | its cosmetic refinement ⊂(BECOMING,↻(↻(RECOGNITION))) admitted:T | its semantic revision ⊂(↻(RECOGNITION),BECOMING) refused:T" migrate  #@ turns-red: red:mig_m1
 #  the admitted revisions really CHANGE THE FORM (two distinct κ routes, one ONF), so "cosmetic" is not a
 #  no-op fixture that would pass with the law deleted — that is what "form changed:T" witnesses.
 sed 's|^glyph ADMIT = la nm. la form. str_eq(MG_ONF(MG_LOOK(nm)))(MG_ONF(form))|glyph ADMIT = la nm. la form. TRUE|' migrate.la > "$T/mig_m1.la"; host "$T/mig_m1.la" mig_m1
@@ -492,9 +500,9 @@ red mig_m2 "offered on ▷(RECOGNITION,FORM) refused:F" "migrate RED(ratchet dis
 #  deliberately NOT pinned here: they rise as the stack grows, and pinning them would turn ordinary
 #  growth into a false RED. The pinned property is examined:T + all-listed-are-checked:T.
 host closure.la cl
-want cl "examined:T all-listed-are-checked:T | residue=(none) | SLACKS(suite)=\"\":T CLOSURE(suite):T AATC diagnosis(incl/appl/valid/closure)=FTTT centropy=3" closure
-want cl "CLOSURE red path (the ledger's own: a deliberately re-introduced slack entry) residue=notgated.la named:T CLOSURE goes F:T centropy falls 3→2 strictly:T" closure
-want cl "CLOSURE resolved by aatc's T_CLOSE: SLACKS=\"\":T CLOSURE:T centropy rises 2→3 strictly:T" closure
+want cl "examined:T all-listed-are-checked:T | residue=(none) | SLACKS(suite)=\"\":T CLOSURE(suite):T AATC diagnosis(incl/appl/valid/closure)=FTTT centropy=3" closure  #@ turns-red: exact:captured
+want cl "CLOSURE red path (the ledger's own: a deliberately re-introduced slack entry) residue=notgated.la named:T CLOSURE goes F:T centropy falls 3→2 strictly:T" closure  #@ turns-red: cannot-fail:F27 (the fold seed short-circuits)
+want cl "CLOSURE resolved by aatc's T_CLOSE: SLACKS=\"\":T CLOSURE:T centropy rises 2→3 strictly:T" closure  #@ turns-red: exact:captured
 sed 's|^glyph RESIDUE = la lines. la extra. .*|glyph RESIDUE = la lines. la extra. ""|' closure.la > "$T/cl_m1.la"; host "$T/cl_m1.la" cl_m1
 red cl_m1 "residue= named:F" "closure RED(residue scan made constant-empty: the re-introduced slack is no longer named and the fixture reads closed)"
 sed 's|^glyph CL_FORLINE = la lines. .*|glyph CL_FORLINE = la lines. ""|' closure.la > "$T/cl_m2.la"; host "$T/cl_m2.la" cl_m2
@@ -507,9 +515,9 @@ red cl_m2 "listed=0 checked=0" "closure RED(the module list was never found: a r
 #  ★ THE RESULT IS A NEGATIVE ONE and that is why the POSITIVE CONTROL is gated first: an engine that
 #  reports "nothing found" is indistinguishable from an engine that cannot look.
 host metakappa.la ks
-want ks "METAKAPPA positive control {⊗(↻(RECOGNITION),VOID), ⊗(↻(RECOGNITION),FORM)} admitted:T pattern=↻(RECOGNITION) multiplicity=2 sealed=↻(RECOGNITION) | measured sharing: unfolded nodes=8 hash-consed=6 strictly smaller:T" metakappa
-want ks "METAKAPPA negative control {⊗(↻(RECOGNITION),VOID), ⊗(↻(LOVE),VOID)} shares the LEAF VOID and is refused:T max compound multiplicity=1 (1 = coinage, not meta-compression)" metakappa
-want ks "METAKAPPA the live catalogue: modes κ*-irreducible:T operators:T self-relations:T whole catalogue (35 entries):T" metakappa
+want ks "METAKAPPA positive control {⊗(↻(RECOGNITION),VOID), ⊗(↻(RECOGNITION),FORM)} admitted:T pattern=↻(RECOGNITION) multiplicity=2 sealed=↻(RECOGNITION) | measured sharing: unfolded nodes=8 hash-consed=6 strictly smaller:T" metakappa  #@ turns-red: fixture:positive control (a planted recurrence must be found)
+want ks "METAKAPPA negative control {⊗(↻(RECOGNITION),VOID), ⊗(↻(LOVE),VOID)} shares the LEAF VOID and is refused:T max compound multiplicity=1 (1 = coinage, not meta-compression)" metakappa  #@ turns-red: red:ks_m1
+want ks "METAKAPPA the live catalogue: modes κ*-irreducible:T operators:T self-relations:T whole catalogue (35 entries):T" metakappa  #@ turns-red: red:ks_m1,ks_m2
 sed 's|IF(IS_LEAF(f))(la _. NILc)(la _. KS_APP|IF(FALSE)(la _. NILc)(la _. KS_APP|' metakappa.la > "$T/ks_m1.la"; host "$T/ks_m1.la" ks_m1
 red ks_m1 "modes κ*-irreducible:F" "metakappa RED(compound test dropped: leaves count, so every set 'recurs' and the criterion means nothing)"
 red ks_m1 "is refused:F" "metakappa RED(compound test dropped: the leaf-sharing negative control is wrongly admitted)"
@@ -524,12 +532,12 @@ red ks_m2 "whole catalogue (35 entries):F" "metakappa RED(multiplicity threshold
 #  this language, and that IS the finding — the gate asserts the count is 0 over 7 real μ-equal pairs, so
 #  it is a measured result and not a missing fixture.
 host substitution.la sb
-want sb "SUBSTITUTION ⊕(BEING,LOVE) := ⊕(LOVE,BEING) → ADMISSIBLE ontoetymological navigation" substitution
-want sb "⊂(BEING,LOVE) := ⊂(LOVE,BEING) → DECEPTIVE(i) meaning differs" substitution
-want sb "↻↻(RECOGNITION) := ↻(RECOGNITION) → ADMISSIBLE ontoetymological navigation" substitution
-want sb "⊕(BEING,LOVE) := itself → IDENTITY (no substitution)" substitution
-want sb "SUBSTITUTION the three REACHABLE verdicts are pairwise distinct:T" substitution
-want sb "structural search over 39 probes: pairs with μ EQUAL=7 of those with invariants INCONGRUENT (clause ii alone)=0 | clause (ii) never fires independently of (i):T" substitution
+want sb "SUBSTITUTION ⊕(BEING,LOVE) := ⊕(LOVE,BEING) → ADMISSIBLE ontoetymological navigation" substitution  #@ turns-red: red:sb_m2,sb_m3
+want sb "⊂(BEING,LOVE) := ⊂(LOVE,BEING) → DECEPTIVE(i) meaning differs" substitution  #@ turns-red: red:sb_m1,sb_m3
+want sb "↻↻(RECOGNITION) := ↻(RECOGNITION) → ADMISSIBLE ontoetymological navigation" substitution  #@ turns-red: construction:↻↻≡↻ (F4)
+want sb "⊕(BEING,LOVE) := itself → IDENTITY (no substitution)" substitution  #@ turns-red: red:sb_m2
+want sb "SUBSTITUTION the three REACHABLE verdicts are pairwise distinct:T" substitution  #@ turns-red: entailed:sb.1,sb.2,sb.4
+want sb "structural search over 39 probes: pairs with μ EQUAL=7 of those with invariants INCONGRUENT (clause ii alone)=0 | clause (ii) never fires independently of (i):T" substitution  #@ turns-red: exact:captured
 sed 's|^glyph MU  = la f. NORMK(f)|glyph MU  = la f. ""|' substitution.la > "$T/sb_m1.la"; host "$T/sb_m1.la" sb_m1
 red sb_m1 "⊂(BEING,LOVE) := ⊂(LOVE,BEING) → DECEPTIVE(ii) invariants not congruent" "substitution: clause (ii) is LIVE CODE and CAN fire — with μ disabled the invariant clause catches the deceptive substitution, so the branch is reachable, not dead"
 sed 's|IF(str_eq(CANON(gR))(CANON(ge)))|IF(TRUE)|' substitution.la > "$T/sb_m2.la"; host "$T/sb_m2.la" sb_m2
@@ -549,10 +557,10 @@ red sb_m3 "⊂(BEING,LOVE) := ⊂(LOVE,BEING) → ADMISSIBLE" "substitution RED(
 #  ★ Note the SECOND fixture: without it the Being=Meaning clause could be deleted and everything would
 #  still pass. A conjunction whose second half never decides anything is one gate wearing two names.
 host ontosemiosyntax.la os
-want os "ONTOSEMIOSYNTAX catalogue=35 Being=Form 35/35 Being=Meaning 35/35 stratum holds:T" ontosemiosyntax
-want os "liar MONO(\"LIE\")(κ) refused:T clause=FORM≠BEING" ontosemiosyntax
-want os "non-normal ⊕(LOVE,BEING) sealed — Being=Form:T but refused:T clause=BEING≠MEANING" ontosemiosyntax
-want os "self-application: G_OSS=⊗(BEING,⊗(RECOGNITION,FORM)) OSS(G_OSS):T" ontosemiosyntax
+want os "ONTOSEMIOSYNTAX catalogue=35 Being=Form 35/35 Being=Meaning 35/35 stratum holds:T" ontosemiosyntax  #@ turns-red: construction:AUTO_OK of seals: Being=Form 35/35 (F32)
+want os "liar MONO(\"LIE\")(κ) refused:T clause=FORM≠BEING" ontosemiosyntax  #@ turns-red: red:os_m1
+want os "non-normal ⊕(LOVE,BEING) sealed — Being=Form:T but refused:T clause=BEING≠MEANING" ontosemiosyntax  #@ turns-red: red:os_m2
+want os "self-application: G_OSS=⊗(BEING,⊗(RECOGNITION,FORM)) OSS(G_OSS):T" ontosemiosyntax  #@ turns-red: exact:captured
 sed 's|^glyph OSS_BF = la g. str_eq(OSS_BEING(g))(OSS_FORM(g))|glyph OSS_BF = la g. TRUE|' ontosemiosyntax.la > "$T/os_m1.la"; host "$T/os_m1.la" os_m1
 red os_m1 "liar MONO(\"LIE\")(κ) refused:F" "ontosemiosyntax RED(Being=Form made constant-true: the liar passes and the stratum stops distinguishing a literal surface from a canonical one)"
 sed 's|^glyph OSS_BM = la g. str_eq(OSS_BEING(g))(OSS_MEANING(g))|glyph OSS_BM = la g. TRUE|' ontosemiosyntax.la > "$T/os_m2.la"; host "$T/os_m2.la" os_m2
@@ -566,9 +574,9 @@ red os_m2 "but refused:F" "ontosemiosyntax RED(Being=Meaning made constant-true:
 #  What is gated is two-sided: the FIRST application must move the form, the SECOND must not. A law
 #  asserting only the second is satisfied by an operator that does nothing, and mutant 1 is exactly that.
 host autocompress.la dn
-want dn "AUTOCOMPRESS Δ_ν run=5 movements → 1 | first application MOVES the form:T | second application moves NOTHING (the fixed point):T | reached after exactly ONE application:T" autocompress
-want dn "AUTOCOMPRESS a run ALREADY of length 1 is NOT moved:T" autocompress
-want dn "node cost: run DAG=18 → compressed DAG=22 delta=4 = one join per collapse:T" autocompress
+want dn "AUTOCOMPRESS Δ_ν run=5 movements → 1 | first application MOVES the form:T | second application moves NOTHING (the fixed point):T | reached after exactly ONE application:T" autocompress  #@ turns-red: red:dn_m1,dn_m2; construction:the fixed point is the fold base case (F32)
+want dn "AUTOCOMPRESS a run ALREADY of length 1 is NOT moved:T" autocompress  #@ turns-red: construction:the fold base case DNU([x])=x (F32)
+want dn "node cost: run DAG=18 → compressed DAG=22 delta=4 = one join per collapse:T" autocompress  #@ turns-red: exact:captured
 sed 's|^glyph DNU = Z(la self. la run. .*|glyph DNU = la run. run(PRIM("VOID"))(la h. la t. h)|' autocompress.la > "$T/dn_m1.la"; host "$T/dn_m1.la" dn_m1
 red dn_m1 "first application MOVES the form:F" "autocompress RED(fold returns the head: nothing is compressed, yet a one-sided fixed-point law would still have read green — this is the do-nothing operator)"
 sed 's|(la h. la t. t(h)(la h2. la t2. self(CONSc(SYN(h)(h2))(t2))))|(la h. la t. t(MC(h))(la h2. la t2. self(CONSc(SYN(h)(h2))(t2))))|' autocompress.la > "$T/dn_m2.la"; host "$T/dn_m2.la" dn_m2
@@ -584,12 +592,12 @@ red dn_m2 "second application moves NOTHING (the fixed point):F" "autocompress R
 #  ★ (1) and (3) are TWO-SIDED on purpose: idempotence alone is satisfied by the identity function, so
 #  "it stands" is only a law when paired with "it moved first".
 host phonometa.la pm
-want pm "PHONOMETA (1) Θ_P two-sided: raw peaks=6 → Θ_P peaks=3 it MOVED:T and then STANDS (idempotent):T" phonometa
-want pm "(2) the level is CLOSED one step up: SYN_INV(SYN_INV(a)(b))(c) = SYN_INV(a)(SYN_INV(b)(c)):T peaks=9" phonometa
-want pm "(3) METACURSIVE FIXED POINT SYN_INV(a)(a)=Θ_P(a):T" phonometa
-want pm "(4) constituent law survives: LOVE⊆:T REC⊆:T non-constituent DEPTH⊆:F" phonometa
-want pm "the mode is NOT recoverable from the phonetic invariant ALONE: with psc.la's prepended label the strings differ:T but bare invariants differ:F" phonometa
-want pm "pinned witness: LRd|300,870,2240,270,2300,3000,|dur=6720|i matches:T" phonometa
+want pm "PHONOMETA (1) Θ_P two-sided: raw peaks=6 → Θ_P peaks=3 it MOVED:T and then STANDS (idempotent):T" phonometa  #@ turns-red: red:pm_m1
+want pm "(2) the level is CLOSED one step up: SYN_INV(SYN_INV(a)(b))(c) = SYN_INV(a)(SYN_INV(b)(c)):T peaks=9" phonometa  #@ turns-red: construction:union is associative (F32)
+want pm "(3) METACURSIVE FIXED POINT SYN_INV(a)(a)=Θ_P(a):T" phonometa  #@ turns-red: red:pm_m1
+want pm "(4) constituent law survives: LOVE⊆:T REC⊆:T non-constituent DEPTH⊆:F" phonometa  #@ turns-red: red:pm_m2; construction:constituents ⊆ their union (F32)
+want pm "the mode is NOT recoverable from the phonetic invariant ALONE: with psc.la's prepended label the strings differ:T but bare invariants differ:F" phonometa  #@ turns-red: cannot-fail:F28 (PM_MODE_BARE compares X with X)
+want pm "pinned witness: LRd|300,870,2240,270,2300,3000,|dur=6720|i matches:T" phonometa  #@ turns-red: exact:cross-checked against build.sh psc pin
 sed 's|^glyph PM_THETA = THETA_P|glyph PM_THETA = la l. l|' phonometa.la > "$T/pm_m1.la"; host "$T/pm_m1.la" pm_m1
 red pm_m1 "it MOVED:F" "phonometa RED(Θ_P made the identity: it removes nothing, so the two-sided law fails — a one-sided idempotence law would still have read green here)"
 red pm_m1 "METACURSIVE FIXED POINT SYN_INV(a)(a)=Θ_P(a):F" "phonometa RED(Θ_P made the identity: the level no longer comes to a stand)"
@@ -605,10 +613,10 @@ red pm_m2 "non-constituent DEPTH⊆:T" "phonometa RED(containment made constant-
 #  the distinction would be idle and the language would be a monism in fact whatever its prose said.
 #  ★★ THE TWO RED PATHS ARE THE TWO FAILURE MODES BY NAME, and the gate builds each and refuses it.
 host identity.la id
-want id "IDENTITY 𝓜 gains three glyphs — ≡@ground=▷(RECOGNITION,BEING) ≢@locus=▷(RECOGNITION,⊂(FORM,BEING)) | the relation ITSELF (their ⊗ dyad)=⊗(▷(RECOGNITION,BEING),▷(RECOGNITION,⊂(FORM,BEING)))" identity
-want id "IDENTITY row1 ⊕(BEING,LOVE) vs ⊕(LOVE,BEING): ground≡:T locus≢:T → NON-SEPARATE AND NON-MERGED" identity
-want id "row2 ⊕(BEING,LOVE) vs itself: ground≡:T locus≢:F → MERGED (one locus) | row3 ⊂(BEING,LOVE) vs ⊂(LOVE,BEING): ground≡:F locus≢:T → SEPARATE (two beings) | all three verdicts distinct:T" identity
-want id "the two aspects do NOT collapse into each other: ground≡(≡,≢):F (must be F) | the dyad differs from both:T | and RECOVERS both as proper sub-forms (one compressive movement, parents retained):T" identity
+want id "IDENTITY 𝓜 gains three glyphs — ≡@ground=▷(RECOGNITION,BEING) ≢@locus=▷(RECOGNITION,⊂(FORM,BEING)) | the relation ITSELF (their ⊗ dyad)=⊗(▷(RECOGNITION,BEING),▷(RECOGNITION,⊂(FORM,BEING)))" identity  #@ turns-red: exact:s41
+want id "IDENTITY row1 ⊕(BEING,LOVE) vs ⊕(LOVE,BEING): ground≡:T locus≢:T → NON-SEPARATE AND NON-MERGED" identity  #@ turns-red: red:id_m1,id_m2
+want id "row2 ⊕(BEING,LOVE) vs itself: ground≡:T locus≢:F → MERGED (one locus) | row3 ⊂(BEING,LOVE) vs ⊂(LOVE,BEING): ground≡:F locus≢:T → SEPARATE (two beings) | all three verdicts distinct:T" identity  #@ turns-red: red:id_m1,id_m2
+want id "the two aspects do NOT collapse into each other: ground≡(≡,≢):F (must be F) | the dyad differs from both:T | and RECOVERS both as proper sub-forms (one compressive movement, parents retained):T" identity  #@ turns-red: exact:s41
 sed 's|^glyph REL_LOCUS  = la a. la b. NOT(str_eq(CANON(a))(CANON(b)))|glyph REL_LOCUS  = la a. la b. FALSE|' identity.la > "$T/id_m1.la"; host "$T/id_m1.la" id_m1
 red id_m1 "row1 ⊕(BEING,LOVE) vs ⊕(LOVE,BEING): ground≡:T locus≢:F → MERGED (one locus)" "identity RED(MONISM: locus distinction made constant-false — the load-bearing row collapses to MERGED, the mirror becomes the reflected)"
 sed 's|^glyph REL_GROUND = la a. la b. str_eq(NORMK(a))(NORMK(b))|glyph REL_GROUND = la a. la b. str_eq(CANON(a))(CANON(b))|' identity.la > "$T/id_m2.la"; host "$T/id_m2.la" id_m2
@@ -622,9 +630,9 @@ red id_m2 "row1 ⊕(BEING,LOVE) vs ⊕(LOVE,BEING): ground≡:F locus≢:T → S
 #  RENDERER's channel capacity, and sigil.la walks the UNFOLDED decomposition so it inherits the exponential
 #  one. ★ The Archē is the terminator: ⊗(∃,∃)→∃ makes its chain CONSTANT while every other glyph doubles.
 host compressbound.la cb
-want cb "COMPRESSBOUND κ chain ⊗(g,g)×5 | UNFOLDED tree: 3 7 15 31 63 127 | RETAINED hash-consed: 3 4 5 6 7 8 | tree DOUBLES:T retained grows by EXACTLY +1:T" compressbound
-want cb "NO NOISE: etymology recovers EXACTLY at every depth:T | every depth κ-distinct (normalisation loses nothing either):T" compressbound
-want cb "THE ARCHĒ IS THE TERMINATOR: ⊗(∃,∃)→∃ (⊗-idempotence for the Archē ALONE). meaning-string length — ∃ chain: 3 3 3 3 3 3 (constant:T) vs κ chain: 21 48 102 210 426 858 (constant:F)" compressbound
+want cb "COMPRESSBOUND κ chain ⊗(g,g)×5 | UNFOLDED tree: 3 7 15 31 63 127 | RETAINED hash-consed: 3 4 5 6 7 8 | tree DOUBLES:T retained grows by EXACTLY +1:T" compressbound  #@ turns-red: red:cb_m1
+want cb "NO NOISE: etymology recovers EXACTLY at every depth:T | every depth κ-distinct (normalisation loses nothing either):T" compressbound  #@ turns-red: red:cb_m2
+want cb "THE ARCHĒ IS THE TERMINATOR: ⊗(∃,∃)→∃ (⊗-idempotence for the Archē ALONE). meaning-string length — ∃ chain: 3 3 3 3 3 3 (constant:T) vs κ chain: 21 48 102 210 426 858 (constant:F)" compressbound  #@ turns-red: exact:s42
 sed 's|^glyph CB_KEPT  = la et. NODES(CB_DAG(et))|glyph CB_KEPT  = la et. TSIZE(et)|' compressbound.la > "$T/cb_m1.la"; host "$T/cb_m1.la" cb_m1
 red cb_m1 "retained grows by EXACTLY +1:F" "compressbound RED(structure sharing broken — the retained form now tracks the unfolded tree, growth stops being linear, and the compression claim is gone)"
 sed 's|^glyph CB_DAG   = la et. DAG(et)|glyph CB_DAG   = la et. DAG(Px("BEING"))|' compressbound.la > "$T/cb_m2.la"; host "$T/cb_m2.la" cb_m2
@@ -641,11 +649,11 @@ red cb_m2 "recovers EXACTLY at every depth:F" "compressbound RED(the code loses 
 #  ★ Erik's test, met: collapse logic→algorithm and collapse algorithm→syntax, and show what breaks. Both
 #  break something, so the relation is load-bearing and the glyph is earned.
 host logicsyntax.la ls
-want ls "LOGICSYNTAX SYNTAX κ=▷(RECOGNITION,FORM) ALGORITHM 𝓡=▷(DEPTH,RECOGNITION) LOGIC ⊗(𝓡,κ)=⊗(▷(DEPTH,RECOGNITION),▷(RECOGNITION,FORM))" logicsyntax
-want ls "LOGIC vs ALGORITHM: SEPARATE (two beings) | LOGIC vs SYNTAX: SEPARATE (two beings) | ALGORITHM vs SYNTAX: SEPARATE (two beings) | all three pairwise SEPARATE:T" logicsyntax
-want ls "but the dyad RETAINS BOTH parents as proper sub-forms:T | cost of the one movement: parts 3+3 retained nodes → dyad 6" logicsyntax
-want ls "VERDICT: pairwise separate AND both retained ⇒ THE COLLAPSE IS COMPOSITIONAL, NOT IDENTIFICATORY:T" logicsyntax
-want ls "THE POSITIVE RELATION: §41's identity dyad is a NEOLOGIZING DYAD:T and so is LOGIC:T → SAME STRUCTURE:T | the check discriminates — a ⊂-dyad over the same parents:F a parent-dropping ⊗:F" logicsyntax
+want ls "LOGICSYNTAX SYNTAX κ=▷(RECOGNITION,FORM) ALGORITHM 𝓡=▷(DEPTH,RECOGNITION) LOGIC ⊗(𝓡,κ)=⊗(▷(DEPTH,RECOGNITION),▷(RECOGNITION,FORM))" logicsyntax  #@ turns-red: exact:s43
+want ls "LOGIC vs ALGORITHM: SEPARATE (two beings) | LOGIC vs SYNTAX: SEPARATE (two beings) | ALGORITHM vs SYNTAX: SEPARATE (two beings) | all three pairwise SEPARATE:T" logicsyntax  #@ turns-red: red:ls_m1,ls_m2
+want ls "but the dyad RETAINS BOTH parents as proper sub-forms:T | cost of the one movement: parts 3+3 retained nodes → dyad 6" logicsyntax  #@ turns-red: red:ls_m1
+want ls "VERDICT: pairwise separate AND both retained ⇒ THE COLLAPSE IS COMPOSITIONAL, NOT IDENTIFICATORY:T" logicsyntax  #@ turns-red: entailed:ls.2,ls.3; exact:s43
+want ls "THE POSITIVE RELATION: §41's identity dyad is a NEOLOGIZING DYAD:T and so is LOGIC:T → SAME STRUCTURE:T | the check discriminates — a ⊂-dyad over the same parents:F a parent-dropping ⊗:F" logicsyntax  #@ turns-red: red:ls_m3
 sed 's|(AND(ID_IN(NORMK(l))(ID_SUBS(f)))(ID_IN(NORMK(r))(ID_SUBS(f))))|(TRUE)|' logicsyntax.la > "$T/ls_m3.la"; host "$T/ls_m3.la" ls_m3
 red ls_m3 "a parent-dropping ⊗:T" "logicsyntax RED(the RETENTION clause dropped: a dyad of one parent with itself passes as a neologizing dyad — retention is the clause that is independently load-bearing here, since a ⊂-candidate already fails on it too)"
 sed 's|^glyph LS_LOGIC     = SYN(LS_ALGORITHM)(LS_SYNTAX)|glyph LS_LOGIC     = LS_ALGORITHM|' logicsyntax.la > "$T/ls_m1.la"; host "$T/ls_m1.la" ls_m1
@@ -665,10 +673,10 @@ red ls_m2 "ALGORITHM vs SYNTAX: MERGED (one locus)" "logicsyntax RED(algorithm c
 #  "derived from ∃(∃)≡∃, not assumed" (OUTLINE.md §19.4) is NOT what the code does. Per Erik's ruling:
 #  state it and stop tagging them as derived. Consistent with derive_closure.la (4 of 9 derive, 5 axioms).
 host lawroot.la lr
-want lr "LAWROOT each law is FALSIFIABLE — identity T on its witness:T F on a ren that is not its etymology:T | non-contradiction T:T F on an arity contradiction:T | excluded middle T:T F on a term with no form:T" lawroot
-want lr "CONTROL — the Archē rewrite ∃(∃)→∃ IS load-bearing where it applies: TRIBAR(∃(∃))(∃) with it:T without it:F → removal really removes something:T" lawroot
-want lr "INDEPENDENCE — all three law-verdicts are IDENTICAL with the Archē rewrite present and DELETED:T signature on:TFTT off:TFTT" lawroot
-want lr "THE CRITERION, one level down — AUTO_OK on a glyph sealed over ⊗(∃,∃): CANON-based (the real criterion):T an Archē-AWARE variant (which would require the ren to be ∃):F — they DISAGREE, so the criterion demonstrably does NOT consult the Archē:T" lawroot
+want lr "LAWROOT each law is FALSIFIABLE — identity T on its witness:T F on a ren that is not its etymology:T | non-contradiction T:T F on an arity contradiction:T | excluded middle T:T F on a term with no form:T" lawroot  #@ turns-red: fixture:each law reads F on a bad term
+want lr "CONTROL — the Archē rewrite ∃(∃)→∃ IS load-bearing where it applies: TRIBAR(∃(∃))(∃) with it:T without it:F → removal really removes something:T" lawroot  #@ turns-red: red:lr_m1,lr_m2
+want lr "INDEPENDENCE — all three law-verdicts are IDENTICAL with the Archē rewrite present and DELETED:T signature on:TFTT off:TFTT" lawroot  #@ turns-red: red:lr_m1; cannot-fail:F25 (LR_SIG never uses its GROUND argument)
+want lr "THE CRITERION, one level down — AUTO_OK on a glyph sealed over ⊗(∃,∃): CANON-based (the real criterion):T an Archē-AWARE variant (which would require the ren to be ∃):F — they DISAGREE, so the criterion demonstrably does NOT consult the Archē:T" lawroot  #@ turns-red: construction:AUTO_OK uses CANON, so it cannot consult the Archē — by definition (F32)
 #  ★★★ Erik's follow-up, answered: the AUTOLOGICAL CRITERION is CO-PRIMITIVE with the Archē too, not
 #    derived from it. So the Archē, the three laws and the criterion are FOUR INDEPENDENT GROUNDS —
 #    THE GROUND IS A SMALL SET, NOT A SINGLE POINT. Consistent with derive_closure.la (4 of 9 derive,
@@ -686,9 +694,9 @@ red lr_m2 "TRIBAR(∃(∃))(∃) with it:F" "lawroot RED(the control removed: th
 #  ⚠ (3) ADDED 2026-09-18 — WRITTEN + DERIVED, NOT YET RUN: the codex's Contradiction(C)=C (Llogoscribeologiae
 #  12987), C = Love ∧ Bad in prop.la's own ¬/∧, must NOT be ⊗-idempotent. Expected values derived in python first.
 host archeunique.la ti
-want ti "ARCHEUNIQUE (1) the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:T | (2) ordinary glyphs that are ⊗-idempotent: 0 of 16 — must be ZERO:T" archeunique
-want ti "BOTH halves together: the uniqueness is EARNED:T" archeunique
-want ti "C = p∧¬p with p=LOVE (Love ∧ Bad): ⊕(LOVE,⊂(LOVE,VOID)) | ⊗(C,C)≡C:F" archeunique
+want ti "ARCHEUNIQUE (1) the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:T | (2) ordinary glyphs that are ⊗-idempotent: 0 of 16 — must be ZERO:T" archeunique  #@ turns-red: red:ti_m1,ti_m2
+want ti "BOTH halves together: the uniqueness is EARNED:T" archeunique  #@ turns-red: entailed:ti.1
+want ti "C = p∧¬p with p=LOVE (Love ∧ Bad): ⊕(LOVE,⊂(LOVE,VOID)) | ⊗(C,C)≡C:F" archeunique  #@ turns-red: red:ti_m1
 #  (3) drift guard: the fixture copies prop.la's ¬ and ∧ locally (a mutant cannot shadow an import), so the
 #  gate REFUSES if prop.la's definitions move and the copy would silently test a stale logic.
 grep -qxF 'glyph PNOT = la p. CONT(p)(VOIDP)' prop.la && grep -qxF 'glyph PAND = la p. la q. CON(p)(q)' prop.la || { echo "FAIL  registers/archeunique: prop.la's PNOT/PAND changed — the (3) contradiction fixture copies them and must be re-derived"; ok=0; }
@@ -709,10 +717,10 @@ red ti_m2 "the Archē IS ⊗-idempotent — ⊗(∃,∃)≡∃:F" "archeunique R
 #  CONVENTION (a stipulated ren — not canonicalizable, named) and compression by DELETION (▷ drops a
 #  parent instead of ⊗ merging — κ-distinct). Without them the 153 agreeing pairs would mean nothing.
 host crossbranch.la xb
-want xb "CROSSBRANCH branches BUILT=18" crossbranch
-want xb "κ-IDENTICAL pairs: 153 DIFFERING pairs: 0 | all pairs collapse:T" crossbranch
-want xb "PATH A (compression by CONVENTION — a stipulated ren, not a structural operation): extractable:F (must be F) OFFENDER=FIXTURE-convention" crossbranch
-want xb "PATH B (compression by DELETION — ▷ drops a parent instead of ⊗ merging): κ form=⊗(BECOMING,RELATION) vs merging branches’ ▷(LOVE,RELATION) differs:T" crossbranch
+want xb "CROSSBRANCH branches BUILT=18" crossbranch  #@ turns-red: exact:s46
+want xb "κ-IDENTICAL pairs: 153 DIFFERING pairs: 0 | all pairs collapse:T" crossbranch  #@ turns-red: exact:s46; construction:all 18 branches are assigned ONE operation (F32)
+want xb "PATH A (compression by CONVENTION — a stipulated ren, not a structural operation): extractable:F (must be F) OFFENDER=FIXTURE-convention" crossbranch  #@ turns-red: red:xb_m1
+want xb "PATH B (compression by DELETION — ▷ drops a parent instead of ⊗ merging): κ form=⊗(BECOMING,RELATION) vs merging branches’ ▷(LOVE,RELATION) differs:T" crossbranch  #@ turns-red: red:xb_m2
 sed 's|^glyph XB_EXTRACT = la g. IF(AUTO_OK(g))(la _. NORMK(ETYM(g)))(la _. "")|glyph XB_EXTRACT = la g. NORMK(ETYM(g))|' crossbranch.la > "$T/xb_m1.la"; host "$T/xb_m1.la" xb_m1
 red xb_m1 "extractable:T (must be F)" "crossbranch RED(the canonicalizability check dropped: a branch whose compression is a mere CONVENTION is accepted as a structural operation, and Path A stops firing)"
 sed 's|^glyph XB_DELETE = MONO(CANON(MODE_DIR_F))(MODE_DIR_F)|glyph XB_DELETE = MONO(CANON(MODE_SYN_F))(MODE_SYN_F)|' crossbranch.la > "$T/xb_m2.la"; host "$T/xb_m2.la" xb_m2
@@ -727,11 +735,11 @@ red xb_m2 "differs:F" "crossbranch RED(the deletion fixture made a merge: the co
 #  ★★ THE BOUND IS EXHIBITED, NOT ASSERTED: four κ-distinct forms share one numeral, so the mode is
 #  invisible to the count — size is a homomorphic image that forgets it.
 host numderive.la nd
-want nd "NUMDERIVE (1) zero=VOID, successor=BECOMING, both read back from primitives.la:T | numerals GENERATED by iterating the successor on zero: 0 1 2 3 4 5 — decode correctly 0..5:T" numderive
-want nd "CORRECTION: BEING is the IDENTITY combinator, not one — one = BECOMING(VOID):T" numderive
-want nd "NUMDERIVE (2) the ⊗-self-collapse chain measures: 3 7 15 31 63 127 — equals 2^(d+2)−1 at depths 0..5:T" numderive
-want nd "⊗(BEING,VOID) ⊕(BEING,VOID) ▷(BEING,VOID) ⊂(BEING,VOID) are pairwise κ-DISTINCT:T yet all four measure 3 — four forms, ONE numeral:T" numderive
-want nd "THE BLINDNESS IS INHERITED — a glyph built from the NUMERAL alone collapses all four probes to ONE:T while the κ-seal of the same four keeps them FOUR:T → the loss is the NUMERAL's, not the sealing's:T" numderive
+want nd "NUMDERIVE (1) zero=VOID, successor=BECOMING, both read back from primitives.la:T | numerals GENERATED by iterating the successor on zero: 0 1 2 3 4 5 — decode correctly 0..5:T" numderive  #@ turns-red: red:nd_m1
+want nd "CORRECTION: BEING is the IDENTITY combinator, not one — one = BECOMING(VOID):T" numderive  #@ turns-red: cannot-fail:F26 (the BEING half is printed text); exact:captured
+want nd "NUMDERIVE (2) the ⊗-self-collapse chain measures: 3 7 15 31 63 127 — equals 2^(d+2)−1 at depths 0..5:T" numderive  #@ turns-red: construction:tree arithmetic of a ⊗-doubling chain (F32); exact:captured
+want nd "⊗(BEING,VOID) ⊕(BEING,VOID) ▷(BEING,VOID) ⊂(BEING,VOID) are pairwise κ-DISTINCT:T yet all four measure 3 — four forms, ONE numeral:T" numderive  #@ turns-red: red:nd_m2; construction:the numeral IS tree size (F32)
+want nd "THE BLINDNESS IS INHERITED — a glyph built from the NUMERAL alone collapses all four probes to ONE:T while the κ-seal of the same four keeps them FOUR:T → the loss is the NUMERAL's, not the sealing's:T" numderive  #@ turns-red: red:nd_m3; construction:a size-only seal collapses equal sizes (F32)
 sed 's|^glyph ND_NSEAL = la f. NORMK(ND_NFORM(TSIZE(f)))|glyph ND_NSEAL = la f. concat(NORMK(f))(NORMK(ND_NFORM(TSIZE(f))))|' numderive.la > "$T/nd_m3.la"; host "$T/nd_m3.la" nd_m3
 red nd_m3 "collapses all four probes to ONE:F" "numderive RED(the numeric seal made to carry the form as well: the four stop collapsing, which is what shows the gate DETECTS the inherited blindness rather than always reporting it)"
 #  ★ NAMED: THE MEASURE HORIZON — arithmetic's reach stops where the mode begins. Anything downstream of
@@ -755,9 +763,9 @@ red nd_m2 "are pairwise κ-DISTINCT:F" "numderive RED(two probes made κ-identic
 #  ★ The CONTROL keeps (2) from being an artefact: the sealer is NOT fixed-point-free — it rests at the
 #  Archē, which §45 gates as ∃'s alone.
 host divergent.la dv
-want dv "DIVERGENT six constructed compressions over one parent pair — distinct κ-outputs: 6 of 6 — NO agreement at the output level:T" divergent
-want dv "reach a FIXED POINT: 1 of 6 | the ONLY one that comes to rest is DELETION ★ and it rests by THROWING THE SECOND PARENT AWAY:T" divergent
-want dv "CONTROL — the sealer is NOT fixed-point-free: ⊗(∃,∃)→∃ rests at the Archē:T" divergent
+want dv "DIVERGENT six constructed compressions over one parent pair — distinct κ-outputs: 6 of 6 — NO agreement at the output level:T" divergent  #@ turns-red: red:dv_m2
+want dv "reach a FIXED POINT: 1 of 6 | the ONLY one that comes to rest is DELETION ★ and it rests by THROWING THE SECOND PARENT AWAY:T" divergent  #@ turns-red: red:dv_m1
+want dv "CONTROL — the sealer is NOT fixed-point-free: ⊗(∃,∃)→∃ rests at the Archē:T" divergent  #@ turns-red: exact:s48
 sed 's|^glyph DV_STABLE = la op. NOT(str_eq(DV_FIX(op))(""))|glyph DV_STABLE = la op. TRUE|' divergent.la > "$T/dv_m1.la"; host "$T/dv_m1.la" dv_m1
 red dv_m1 "reach a FIXED POINT: 6 of 6" "divergent RED(the fixed-point detector made constant-true: everything 'stabilises' and the whole finding evaporates)"
 sed 's|CONSc(PAIRc("SWAP")(la a. la b. SYN(b)(a)))|CONSc(PAIRc("SWAP")(la a. la b. SYN(a)(b)))|' divergent.la > "$T/dv_m2.la"; host "$T/dv_m2.la" dv_m2
@@ -775,8 +783,8 @@ red dv_m2 "distinct κ-outputs: 5 of 6 — NO agreement at the output level:F" "
 #  ★ It RULES and VERIFIES; it does NOT edit lexicon.la / opgrammar.la — the published vocabulary is the
 #  architect's to apply, and this makes that application mechanical and pre-checked.
 host adequacy.la ad
-want ad "ADEQUACY the REAL overloads=8 | both names of every pair read back from lexicon.la + opgrammar.la:T | rulings: All=Totality Large→⊗(DEPTH,FORM) Good→⊗(BEING,LOVE) Bond→⊂(RELATION,BEING) Sky→⊂(VOID,FORM) Here→▷(FORM,RELATION) There→⊂(VOID,RELATION) Move→▷(BECOMING,FORM)" adequacy
-want ad "ADEQUACY declarations=1 re-derivations=7 | every new form distinct from the others AND from all eight originals:T | resolved 8/8 — applying these drives the one-κ-two-name count to ZERO:T" adequacy
+want ad "ADEQUACY the REAL overloads=8 | both names of every pair read back from lexicon.la + opgrammar.la:T | rulings: All=Totality Large→⊗(DEPTH,FORM) Good→⊗(BEING,LOVE) Bond→⊂(RELATION,BEING) Sky→⊂(VOID,FORM) Here→▷(FORM,RELATION) There→⊂(VOID,RELATION) Move→▷(BECOMING,FORM)" adequacy  #@ turns-red: cannot-fail:F28 (overloads=8 is a table length); exact:captured
+want ad "ADEQUACY declarations=1 re-derivations=7 | every new form distinct from the others AND from all eight originals:T | resolved 8/8 — applying these drives the one-κ-two-name count to ZERO:T" adequacy  #@ turns-red: red:ad_m1
 sed 's|AD_R("⊗(FORM,BEING)")("Substance")("Large")("REDERIVE")("⊗(DEPTH,FORM)")|AD_R("⊗(FORM,BEING)")("Substance")("Large")("REDERIVE")("⊗(FORM,LOVE)")|' adequacy.la > "$T/ad_m1.la"; host "$T/ad_m1.la" ad_m1
 red ad_m1 "distinct from the others AND from all eight originals:F" "adequacy RED(a proposed re-derivation made to collide with an existing overloaded form: the distinctness check catches it, so a ruling cannot silently reintroduce the collision it was meant to remove)"
 sed 's|AD_R("⊗(VOID,DEPTH)")("Mystery")("Sky")("REDERIVE")("⊂(VOID,FORM)")|AD_R("⊗(VOID,DEPTH)")("Mystery")("Sky")("REDERIVE")("")|' adequacy.la > "$T/ad_m2.la"; host "$T/ad_m2.la" ad_m2

@@ -17,7 +17,9 @@ it answers the questions that need no lease, so the lease is spent only on what 
   R  SHORT RED TOKENS — red tokens under 10 chars; each must be proven ABSENT from the green output
      (needs a run: see checkreds.py), or the RED path can pass without the mutant changing anything.
 
-  Exit status: 1 if M or S (divergent) finds anything, else 0. H, V and R are reports, not verdicts.
+  D  THE STANDING RULE (F33) — every `want` carries `#@ turns-red: <clauses>`; see the D sweep for the grammar.
+
+  Exit status: 1 if M, S (divergent) or D finds anything, else 0. H, V and R are reports, not verdicts.
 
 VALIDATED BOTH WAYS before it was trusted (2026-09-18): M flags a fixture mutant whose pattern matches
 nothing (changed=0) and passes a real one; S flags a fixture that redefines an imported NORMK and is
@@ -122,6 +124,60 @@ for mod in mods:
 print('== V  gated modules in no vmlist')
 vm = set(re.findall(r'([A-Za-z_0-9]+\.la)', ' '.join(re.findall(r'vmlist="([^"]*)"', GATE))))
 print('  ' + (' '.join(m for m in mods if m not in vm) or 'none'))
+
+print('== D  THE STANDING RULE (F33): every pinned witness declares how it turns red  (#@ turns-red: …)')
+#  clause kinds — red:<mutant,…> (a RED line on a mutant of THIS module) · exact:<sNN|captured|…> (a pinned exact value:
+#  any change to the computation turns it red; sNN = independently derived in derive/) · fixture:<what> (an in-file bad
+#  input the module must refuse) · construction:<constructor> (true by construction: witnesses the constructor, not the
+#  claim) · entailed:<tag>.<k>,… (follows from other witnesses) · cannot-fail:<Fnn> / unproven:<Fnn> (a known defect,
+#  tracked by an OPEN ledger item). A witness with no declaration, or a declaration that points at nothing, FAILS.
+import glob as _glob
+_ledger = open('FREEZE-TRACKF.md', encoding='utf-8').read() if os.path.exists('FREEZE-TRACKF.md') else ''
+def _open_fid(f):
+    m = re.search(r'^\| %s \| (.*)$' % re.escape(f), _ledger, re.M)
+    return bool(m) and 'CLOSED' not in m.group(1).split('|')[-2]
+_hosttags = set(re.findall(r'(?:^|; )host \S+ ([a-z_0-9]+)', GATE, re.M))
+_redtags = set(re.findall(r'^red ([a-z_0-9]+) ', GATE, re.M))
+_wants_by_tag = {}
+for _t in re.findall(r'^want ([a-z_0-9]+) ', GATE, re.M): _wants_by_tag[_t] = _wants_by_tag.get(_t, 0) + 1
+dflag = 0; counts = {}; weak = []; defect = []
+for i, l in enumerate(GATE.split('\n'), 1):
+    m = re.match(r'^want ([a-z_0-9]+) "(?:[^"\\]|\\.)*" [A-Za-z_0-9]+(.*)$', l)
+    if not m: continue
+    tag, tail = m.group(1), m.group(2)
+    d = re.search(r'#@ turns-red: (.+)$', tail)
+    if not d: print('  L%-4d %-5s NO DECLARATION  <== CHECK' % (i, tag)); dflag += 1; continue
+    kinds = set()
+    for cl in [c.strip() for c in d.group(1).split('; ') if c.strip()]:
+        k, _, v = cl.partition(':'); k = k.strip(); v = v.strip(); kinds.add(k)
+        err = ''
+        if k == 'red':
+            for rt in v.split(','):
+                if re.sub(r'_m\d+$', '', rt) != tag: err = 'red:%s is not a mutant of %s' % (rt, tag)
+                elif rt not in _hosttags: err = 'red:%s has no host line' % rt
+                elif rt not in _redtags: err = 'red:%s has no red line' % rt
+        elif k == 'exact':
+            if re.match(r'^s\d\d$', v) and not _glob.glob(os.path.join('derive', v + '_*.py')): err = 'exact:%s has no derive/%s_*.py' % (v, v)
+            if not v: err = 'exact: empty'
+        elif k == 'entailed':
+            for e in v.split(','):
+                t2, _, kk = e.partition('.')
+                if not kk.isdigit() or _wants_by_tag.get(t2, 0) < int(kk): err = 'entailed:%s points at no witness' % e
+        elif k in ('cannot-fail', 'unproven'):
+            f = v.split()[0] if v else ''
+            if not _open_fid(f): err = '%s:%s is not an OPEN ledger item' % (k, f)
+            else: defect.append((i, tag, cl))
+        elif k in ('fixture', 'construction'):
+            if not v: err = '%s: empty' % k
+        else: err = 'unknown clause kind "%s"' % k
+        if err: print('  L%-4d %-5s %s  <== CHECK' % (i, tag, err)); dflag += 1
+        counts[k] = counts.get(k, 0) + 1
+    if not (kinds & {'red', 'fixture'}) and not any(c.startswith('exact:s') for c in d.group(1).split('; ')):
+        weak.append((i, tag))
+print('  clauses: ' + '  '.join('%s=%d' % kv for kv in sorted(counts.items())))
+print('  witnesses carrying a KNOWN DEFECT clause (cannot-fail / unproven): %d' % len(defect))
+print('  witnesses with NO red path, NO fixture and NO independent derivation (exact:captured / construction / entailed only): %d' % len(weak))
+print('  declaration errors: %d' % dflag); bad += dflag
 
 print('== R  short red tokens (<10 chars) — prove ABSENT from green output after a run')
 for t, k in re.findall(r'^red ([a-z_0-9]+) "((?:[^"\\]|\\.)*)"', GATE, re.M):
