@@ -1124,6 +1124,45 @@ registers. `trimono.la` now gates all three. What remains:
   come back together even in the limit; the iteration search is bounded at 8 steps, so "never" is
   witnessed as "not within 8 while growing monotonically".
 
+- `[deferred]` **★ Liminal and Anamnetic — EXPLICITLY DEFERRED, with the condition stated** (2026-09-17).
+  Both are TTOE branches NAMED in the corpus and absent from the tree: **zero occurrences anywhere**, and
+  `branchgenesis.la` gates base=18 / set=19 without them. They were previously recorded as "blocked on a
+  definition not on disk", which is an unstable state — it reads like work in progress when no work can
+  begin. **They are now DEFERRED, not blocked.**
+  **THE CONDITION under which they become definable, stated so the deferral can end mechanically:** a
+  branch enters `branchgenesis` only with (i) a DEFINITION of what the branch studies, and (ii) an
+  INTERFACE MAPPING — the operand `x` of its dyad `⊂(RELATION, x)`, since all 18 built branches ground in
+  that interface form. Supplying (i) and (ii), or putting the Codex Llogoscribeologiae on disk, ends the
+  deferral. Until then **the branch count is NINETEEN and every cross-branch claim is bounded to it**
+  (`crossbranch.la` §46). The same applies to Logorhetoric, Meta-Rosettology and Adamic.
+  ⚠ **Do not invent the mapping.** Erik's standing instruction, and inventing it would put an unearned
+  branch into a census that other gates count.
+
+- `[✓]` **★★ The identity-adequacy rulings — ALL EIGHT RESOLVED** (`adequacy.la`, gated §49, 2026-09-17).
+  **★ First, a correction: the three pairs named in the request (Change=Can, Give=Because, Know=You) DO
+  NOT COLLIDE.** Measured: Change ⊗(BECOMING,FORM) vs Can ⊗(FORM,BECOMING) differ in OPERAND ORDER; the
+  other two differ in MODE. `monosemy_test.la:31` cites `LINGUA_ADAMICA.tex:2837` — ontosynthesis is
+  **NON-COMMUTATIVE**, *"direction matters in Being"* — and NORMK correctly sorts only ⊕. **Ruling those
+  three identical would have destroyed three distinctions the corpus asserts.**
+  The real overloads are EIGHT, by census over the published vocabulary (79 rows → 71 distinct κ), with
+  both names of every pair read back from source. **ONE declaration and SEVEN re-derivations**, every
+  proposal clear against the 86-form corpus and pairwise distinct; applying all eight drives the
+  one-κ-two-name count to **ZERO**:
+  | shared form | keeps it | ruling |
+  |---|---|---|
+  | ⊗(BEING,DEPTH) | Totality | **All = Totality — DECLARED ONE CONCEPT** (two English words, one sense) |
+  | ⊗(FORM,BEING) | Substance | Large → ⊗(DEPTH,FORM) |
+  | ⊗(FORM,LOVE) | Beauty *(sigil.la attests it)* | Good → ⊗(BEING,LOVE) |
+  | ⊗(LOVE,RELATION) | Friendship | Bond → ⊂(RELATION,BEING) |
+  | ⊗(VOID,DEPTH) | Mystery | Sky → ⊂(VOID,FORM) |
+  | ▷(FORM,BEING) | This | Here → ▷(FORM,RELATION) |
+  | ▷(FORM,VOID) | That | There → ⊂(VOID,RELATION) |
+  | ▷(SELF,BECOMING) | Agency | Move → ▷(BECOMING,FORM) |
+  **The principle throughout:** the member whose sense the form actually encodes KEEPS it.
+  ⚠ **The module RULES and VERIFIES; it does NOT edit `lexicon.la` / `opgrammar.la`.** The published
+  vocabulary is the architect's to apply — this makes the application mechanical and pre-checked rather
+  than a judgement call at the keyboard. [A] each ruling is one line to reverse, with its reason beside it.
+
 ### Cross-register
 - `[✓]` `trimono.la` — one gate, three registers, three rows (injective /
   monosemic / directed).

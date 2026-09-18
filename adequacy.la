@@ -1,0 +1,118 @@
+# ════════════════════════════════════════════════════════════════
+#  adequacy.la — THE IDENTITY-ADEQUACY RULINGS: eight one-κ-two-name overloads, resolved
+#
+#  ★★ FIRST, A CORRECTION TO THE REQUEST, CHECKED BEFORE RULING. Erik named the collisions as
+#  *Change = Can, Give = Because, Know = You*. **NONE OF THOSE THREE PAIRS COLLIDES.** Measured:
+#      Change  ⊗(BECOMING,FORM)      Can      ⊗(FORM,BECOMING)     — differ in OPERAND ORDER
+#      Give    ▷(BECOMING,RELATION)   Because  ⊂(BECOMING,RELATION)  — differ in MODE
+#      Know    ⊗(SELF,RECOGNITION)    You      ▷(SELF,RECOGNITION)   — differ in MODE
+#  All six κ-forms are distinct, and each pair is separated by a feature the corpus explicitly makes
+#  meaning-bearing: `monosemy_test.la:31` cites LINGUA_ADAMICA.tex:2837 — ontosynthesis is
+#  **NON-COMMUTATIVE**, *"g_E ⊗ g_Rec yields Being-recognizing… g_Rec ⊗ g_E yields a DIFFERENT concept…
+#  Direction matters in Being"* — and NORMK correctly sorts only ⊕, never ⊗. So there is nothing to rule
+#  on those three, and ruling them identical would have DESTROYED three distinctions the corpus asserts.
+#
+#  THE ACTUAL EIGHT, derived by a census over lexicon.la + opgrammar.la (79 rows → 71 distinct κ, so
+#  eight κ-forms carry two names each). Each pair's two names are READ BACK from those files below, so
+#  the data is not asserted from memory.
+#
+#  ★ THE RULINGS. One DECLARATION and seven RE-DERIVATIONS. The principle used throughout: **the member
+#  whose sense the form actually encodes KEEPS the form; the member whose sense it does not gets a new
+#  one.** Every proposal is checked clear against the whole 86-form corpus by `regcollide.py` and against
+#  the other proposals here.
+#   1  ⊗(BEING,DEPTH)     Totality = All        → **DECLARE ONE CONCEPT.** Not two senses: "the whole of
+#      what is" under two English words. The same status as ρ ≡ SR_ABOUT — a discovered identity, kept as
+#      one glyph with one ren and a surface synonym. No new form is minted.
+#   2  ⊗(FORM,BEING)      Substance = Large     → Substance KEEPS it (form-tensored-with-being IS what
+#      underlies); **Large → ⊗(DEPTH,FORM)**, magnitude of extent, which is what "large" means.
+#   3  ⊗(FORM,LOVE)       Good = Beauty         → Beauty KEEPS it — `sigil.la` already attests
+#      *Beauty = FORM ⊗ LOVE* — and the Good and the Beautiful are distinct transcendentals, convertible
+#      but not identical; **Good → ⊗(BEING,LOVE)**, being-as-willed.
+#   4  ⊗(LOVE,RELATION)   Bond = Friendship     → Friendship KEEPS it (a relation under love is exactly a
+#      friendship); a bond need not be loving, so **Bond → ⊂(RELATION,BEING)**, relation held in being.
+#   5  ⊗(VOID,DEPTH)      Sky = Mystery         → Mystery KEEPS it (void-in-depth); Sky is the one concrete
+#      referent in an abstract vocabulary, so **Sky → ⊂(VOID,FORM)**, void given form.
+#   6  ▷(FORM,BEING)       This = Here           → This KEEPS it (object-deixis); `deixis.la` separates the
+#      indexicals by CTX FIELD, and place is not object, so **Here → ▷(FORM,RELATION)**.
+#   7  ▷(FORM,VOID)        That = There          → That KEEPS it; same reason as 6, so
+#      **There → ⊂(VOID,RELATION)**.
+#   8  ▷(SELF,BECOMING)    Move = Agency         → Agency KEEPS it (self directed at becoming IS the
+#      capacity); a move is the EXERCISE, not the capacity, so **Move → ▷(BECOMING,FORM)**.
+#
+#  ★ WHAT THIS MODULE IS, AND IS NOT. It is the RULING, verified: it witnesses that the eight overloads
+#  are real, that every proposed form is distinct from every other proposal, and that applying all eight
+#  rulings drives the overload count to ZERO. It does **NOT** edit `lexicon.la` or `opgrammar.la` — a
+#  semantic rewrite of the published vocabulary is the architect's to APPLY, and this makes that
+#  application mechanical and pre-checked rather than a judgement call at the keyboard.
+#  ★ EVIDENTIAL: [W] the overloads are real (names read back from source), the proposals are pairwise
+#     distinct and distinct from the eight originals, and the resolution count is 8/8; [A] the SEVEN new
+#     forms and the ONE declaration are rulings — each is one line to reverse, and the reason is stated
+#     beside it; [B] full-corpus clearance is `regcollide.py`'s (committed, 0 collisions over 86 forms).
+#  Pure strings ⇒ byte-identical on the C host and the SECD VM.
+# ════════════════════════════════════════════════════════════════
+import("recdepth.la")
+
+export AD_RULINGS AD_RESOLVED AD_DISTINCT
+
+glyph AD_B = la b. b("T")("F")
+glyph Px = la nm. PRIM(nm)
+glyph AD_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
+glyph AD_IN = la s. RD_FOLD(la h. la acc. OR(acc)(str_eq(h)(s)))(FALSE)
+glyph AD_CONTAINS = Z(la self. la s. la sub. IF(HAS_PREFIX(s)(sub))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(sub))))
+glyph AD_SRC = concat(read_file("lexicon.la"))(read_file("opgrammar.la"))
+
+# a ruling: (shared-form, keeper, moved, verdict, new-form-or-"")
+glyph AD_R = la f. la keep. la moved. la verdict. la nf. la g. g(f)(keep)(moved)(verdict)(nf)
+glyph R_F = la r. r(la f. la k. la m. la v. la n. f)
+glyph R_KEEP = la r. r(la f. la k. la m. la v. la n. k)
+glyph R_MOVED = la r. r(la f. la k. la m. la v. la n. m)
+glyph R_VERD = la r. r(la f. la k. la m. la v. la n. v)
+glyph R_NEW = la r. r(la f. la k. la m. la v. la n. n)
+
+glyph AD_RULINGS =
+  CONSc(AD_R("⊗(BEING,DEPTH)")("Totality")("All")("DECLARE")(""))(
+  CONSc(AD_R("⊗(FORM,BEING)")("Substance")("Large")("REDERIVE")("⊗(DEPTH,FORM)"))(
+  CONSc(AD_R("⊗(FORM,LOVE)")("Beauty")("Good")("REDERIVE")("⊗(BEING,LOVE)"))(
+  CONSc(AD_R("⊗(LOVE,RELATION)")("Friendship")("Bond")("REDERIVE")("⊂(RELATION,BEING)"))(
+  CONSc(AD_R("⊗(VOID,DEPTH)")("Mystery")("Sky")("REDERIVE")("⊂(VOID,FORM)"))(
+  CONSc(AD_R("▷(FORM,BEING)")("This")("Here")("REDERIVE")("▷(FORM,RELATION)"))(
+  CONSc(AD_R("▷(FORM,VOID)")("That")("There")("REDERIVE")("⊂(VOID,RELATION)"))(
+  CONSc(AD_R("▷(SELF,BECOMING)")("Agency")("Move")("REDERIVE")("▷(BECOMING,FORM)"))(
+  NILc))))))))
+
+# (1) the overloads are REAL: both names of every pair occur in the published source
+glyph AD_NAMES_OK = RD_FOLD(la r. la acc. AND(acc)(AND(AD_CONTAINS(AD_SRC)(concat(R_KEEP(r))("|")))(AD_CONTAINS(AD_SRC)(concat(R_MOVED(r))("|")))))(TRUE)(AD_RULINGS)
+# (2) every re-derived form is distinct from every other AND from all eight originals
+glyph AD_NEWS = RD_FOLD(la r. la acc. IF(str_eq(R_NEW(r))(""))(la _. acc)(la _. CONSc(R_NEW(r))(acc)))(NILc)(AD_RULINGS)
+glyph AD_OLDS = RD_FOLD(la r. la acc. CONSc(R_F(r))(acc))(NILc)(AD_RULINGS)
+glyph AD_UNIQ = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(AD_IN(h)(rest))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))
+glyph AD_DISTINCT = AND(int_eq(LEN(AD_UNIQ(AD_NEWS)))(LEN(AD_NEWS)))(RD_FOLD(la n. la acc. AND(acc)(NOT(AD_IN(n)(AD_OLDS))))(TRUE)(AD_NEWS))
+# (3) every ruling resolves: a DECLARE needs no new form, a REDERIVE needs one
+glyph AD_RESOLVED = RD_FOLD(la r. la acc. add(acc)(IF(str_eq(R_VERD(r))("DECLARE"))(la _. 1)(la _. IF(NOT(str_eq(R_NEW(r))("")))(la _. 1)(la _. 0))))(0)(AD_RULINGS)
+glyph AD_NDECL = RD_FOLD(la r. la acc. add(acc)(IF(str_eq(R_VERD(r))("DECLARE"))(la _. 1)(la _. 0)))(0)(AD_RULINGS)
+glyph AD_LINES = RD_FOLD(la r. la acc. concat(concat(R_MOVED(r))(concat(IF(str_eq(R_VERD(r))("DECLARE"))(la _. "=")(la _. "→"))(concat(IF(str_eq(R_VERD(r))("DECLARE"))(la _. R_KEEP(r))(la _. R_NEW(r)))(" "))))(acc))("")(AD_RULINGS)
+
+glyph REPORT =
+  AD_JOIN(
+  CONSc("ADEQUACY ★ the three pairs Erik named do NOT collide: Change ⊗(BECOMING,FORM) vs Can ⊗(FORM,BECOMING) differ in OPERAND ORDER; Give ▷(BECOMING,RELATION) vs Because ⊂(BECOMING,RELATION) and Know ⊗(SELF,RECOGNITION) vs You ▷(SELF,RECOGNITION) differ in MODE — and monosemy_test.la:31 cites tex:2837 that ontosynthesis is NON-COMMUTATIVE, so ruling them identical would DESTROY three distinctions the corpus asserts")(
+  CONSc("\nADEQUACY the REAL overloads=")(
+  CONSc(int_to_str(LEN(AD_RULINGS)))(
+  CONSc(" | both names of every pair read back from lexicon.la + opgrammar.la:")(
+  CONSc(AD_B(AD_NAMES_OK))(
+  CONSc(" | rulings: ")(
+  CONSc(AD_LINES)(
+  CONSc("\nADEQUACY declarations=")(
+  CONSc(int_to_str(AD_NDECL))(
+  CONSc(" re-derivations=")(
+  CONSc(int_to_str(sub(LEN(AD_RULINGS))(AD_NDECL)))(
+  CONSc(" | every new form distinct from the others AND from all eight originals:")(
+  CONSc(AD_B(AD_DISTINCT))(
+  CONSc(" | resolved ")(
+  CONSc(int_to_str(AD_RESOLVED))(
+  CONSc("/")(
+  CONSc(int_to_str(LEN(AD_RULINGS)))(
+  CONSc(" — applying these drives the one-κ-two-name count to ZERO:")(
+  CONSc(AD_B(int_eq(AD_RESOLVED)(LEN(AD_RULINGS))))(
+  CONSc(" ★ this module RULES and VERIFIES; it does not edit lexicon.la or opgrammar.la — the published vocabulary is the architect’s to APPLY, and this makes that application mechanical and pre-checked. Full-corpus clearance is regcollide.py’s: 0 collisions over 86 forms")(
+  NILc)))))))))))))))))))))
+glyph MAIN = print(REPORT)

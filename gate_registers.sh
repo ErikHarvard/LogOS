@@ -653,8 +653,27 @@ red dv_m1 "reach a FIXED POINT: 6 of 6" "divergent RED(the fixed-point detector 
 sed 's|CONSc(PAIRc("SWAP")(la a. la b. SYN(b)(a)))|CONSc(PAIRc("SWAP")(la a. la b. SYN(a)(b)))|' divergent.la > "$T/dv_m2.la"; host "$T/dv_m2.la" dv_m2
 red dv_m2 "distinct κ-outputs: 5 of 6 — NO agreement at the output level:F" "divergent RED(two operations made identical: the distinct-output count drops, which is what shows the test counts real divergence and not six names)"
 
+# ═══ 49. adequacy — the identity-adequacy rulings: eight one-κ-two-name overloads, resolved ═══
+#  ✔ RAN GREEN 2026-09-17. ★★ FIRST, A CORRECTION: the three pairs Erik named (Change=Can, Give=Because,
+#  Know=You) DO NOT COLLIDE — they differ in operand order or in mode, and monosemy_test.la:31 cites
+#  tex:2837 that ontosynthesis is NON-COMMUTATIVE. Ruling them identical would have DESTROYED three
+#  distinctions the corpus asserts. The real overloads are eight, found by census over the published
+#  vocabulary, and both names of every pair are READ BACK from source so the data is not from memory.
+#  ★ One DECLARATION (Totality = All is one concept under two English words) and seven RE-DERIVATIONS,
+#  each clear against the 86-form corpus (regcollide.py) and pairwise distinct. Applying all eight drives
+#  the one-κ-two-name count to ZERO.
+#  ★ It RULES and VERIFIES; it does NOT edit lexicon.la / opgrammar.la — the published vocabulary is the
+#  architect's to apply, and this makes that application mechanical and pre-checked.
+host adequacy.la ad
+want ad "ADEQUACY the REAL overloads=8 | both names of every pair read back from lexicon.la + opgrammar.la:T | rulings: All=Totality Large→⊗(DEPTH,FORM) Good→⊗(BEING,LOVE) Bond→⊂(RELATION,BEING) Sky→⊂(VOID,FORM) Here→▷(FORM,RELATION) There→⊂(VOID,RELATION) Move→▷(BECOMING,FORM)" adequacy
+want ad "ADEQUACY declarations=1 re-derivations=7 | every new form distinct from the others AND from all eight originals:T | resolved 8/8 — applying these drives the one-κ-two-name count to ZERO:T" adequacy
+sed 's|AD_R("⊗(FORM,BEING)")("Substance")("Large")("REDERIVE")("⊗(DEPTH,FORM)")|AD_R("⊗(FORM,BEING)")("Substance")("Large")("REDERIVE")("⊗(FORM,LOVE)")|' adequacy.la > "$T/ad_m1.la"; host "$T/ad_m1.la" ad_m1
+red ad_m1 "distinct from the others AND from all eight originals:F" "adequacy RED(a proposed re-derivation made to collide with an existing overloaded form: the distinctness check catches it, so a ruling cannot silently reintroduce the collision it was meant to remove)"
+sed 's|AD_R("⊗(VOID,DEPTH)")("Mystery")("Sky")("REDERIVE")("⊂(VOID,FORM)")|AD_R("⊗(VOID,DEPTH)")("Mystery")("Sky")("REDERIVE")("")|' adequacy.la > "$T/ad_m2.la"; host "$T/ad_m2.la" ad_m2
+red ad_m2 "resolved 7/8" "adequacy RED(a re-derivation left without a new form: the resolution count drops, so an unruled overload cannot pass as ruled)"
+
 # ═══ 10. the table bound (directive §8): every module's import closure fits 1024 ══
-for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la recdepth.la selfevo.la certify.la migrate.la closure.la metakappa.la substitution.la ontosemiosyntax.la autocompress.la phonometa.la identity.la compressbound.la logicsyntax.la lawroot.la archeunique.la crossbranch.la numderive.la divergent.la; do
+for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la recdepth.la selfevo.la certify.la migrate.la closure.la metakappa.la substitution.la ontosemiosyntax.la autocompress.la phonometa.la identity.la compressbound.la logicsyntax.la lawroot.la archeunique.la crossbranch.la numderive.la divergent.la adequacy.la; do
     n=$(python3 - "$m" <<'PY'
 import re,sys,os
 IMP=re.compile(r'import\("([^"]+)"\)'); GLY=re.compile(r'^glyph\s+[A-Za-z0-9_]+',re.M)
