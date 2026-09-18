@@ -1101,6 +1101,29 @@ registers. `trimono.la` now gates all three. What remains:
   `migrate.la`'s cosmetic revision, `ontosemiosyntax.la`'s two clauses. What was missing was the NAME, and
   𝓜 ⊂ 𝒜 requires a name for every operation of the language.
 
+- `[B]` **★★ Cross-branch compression collapse — BOUNDED TO THE SEALER, and the bound is PRINCIPLED**
+  (`crossbranch.la` §46 + `divergent.la` §48, 2026-09-17). Two premises of the original claim failed and
+  are recorded rather than built around: **there are 19 branches, not 28** (branchgenesis gates base=18,
+  set=19 with Δ_B; the rest of that file is its six refusal fixtures), and **Liminal and Anamnetic do not
+  exist anywhere in the tree**, blocked on a definition not on disk. And **there is ONE sealer**
+  (`branchgenesis.la:121`), so κ_B ≡ κ_B' across the built branches is true BY CONSTRUCTION — 18 branches
+  calling one function, not 28 independent operations agreeing. Measured: 153 κ-identical pairs, 0
+  differing, with two in-file fixtures (compression by CONVENTION, compression by DELETION) firing every
+  run so the green is a real comparison.
+  **★★ Erik then chose to BUILD THE DIVERGENT BRANCHES rather than accept the design reading, and the
+  answer is NEGATIVE.** Six constructed compressions over one parent pair give **six distinct κ-outputs**;
+  under iteration **five of the six never reach a fixed point**; and the one that does is **DELETION**,
+  which rests only by discarding the second parent. **The divergent operations do NOT converge on κ.**
+  The control keeps that honest: the sealer is not fixed-point-free — it rests at the Archē, which §45
+  gates as ∃'s alone.
+  **★★★ THE DEEPER RESULT: CONVERGENCE AND RETENTION ARE IN TENSION.** Every operation that RETAINS both
+  parents fails to come to rest; the only one that rests DISCARDS. §42 measured why — retention costs +1
+  node per collapse, forever. **Rest is bought with loss.** So "one movement" is a fact about this
+  system's single sealer, not a convergence theorem about compression in general.
+  **[B] The bound:** the collapse holds for the 18 BUILT branches, by construction; alternatives do not
+  come back together even in the limit; the iteration search is bounded at 8 steps, so "never" is
+  witnessed as "not within 8 while growing monotonically".
+
 ### Cross-register
 - `[✓]` `trimono.la` — one gate, three registers, three rows (injective /
   monosemic / directed).

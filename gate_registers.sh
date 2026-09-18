@@ -632,8 +632,29 @@ red nd_m1 "iterating the successor on zero: 0 0 0 0 0 0" "numderive RED(the succ
 sed 's|^glyph P2 = CON(Px("BEING"))(Px("VOID"))|glyph P2 = SYN(Px("BEING"))(Px("VOID"))|' numderive.la > "$T/nd_m2.la"; host "$T/nd_m2.la" nd_m2
 red nd_m2 "are pairwise κ-DISTINCT:F" "numderive RED(two probes made κ-identical: the exhibit stops exhibiting — a demonstration that distinct forms share a numeral must use forms that are genuinely distinct)"
 
+# ═══ 48. divergent — do genuinely different compressions converge on κ? NO. (Erik's cross-branch option B) ═══
+#  ✔ RAN GREEN 2026-09-17. §46 found the cross-branch collapse true BY CONSTRUCTION (18 branches calling
+#  one sealer); Erik chose to build the divergent branches that could earn the interesting claim instead.
+#  ★★ THE ANSWER IS NEGATIVE, in three parts: six constructed compressions give SIX DISTINCT κ-outputs on
+#  the same parents; under iteration FIVE OF SIX NEVER REACH A FIXED POINT; and the ONE that does is
+#  DELETION, which rests only by throwing the second parent away.
+#  ⇒ THE COLLAPSE IS BOUNDED TO THE SEALER, and §46's [B] is principled rather than incidental.
+#  ★★★ THE DEEPER RESULT: CONVERGENCE AND RETENTION ARE IN TENSION — every operation that RETAINS both
+#  parents fails to come to rest; the only one that rests DISCARDS. §42 measured why: retention costs +1
+#  node per collapse, forever. Rest is bought with loss.
+#  ★ The CONTROL keeps (2) from being an artefact: the sealer is NOT fixed-point-free — it rests at the
+#  Archē, which §45 gates as ∃'s alone.
+host divergent.la dv
+want dv "DIVERGENT six constructed compressions over one parent pair — distinct κ-outputs: 6 of 6 — NO agreement at the output level:T" divergent
+want dv "reach a FIXED POINT: 1 of 6 | the ONLY one that comes to rest is DELETION ★ and it rests by THROWING THE SECOND PARENT AWAY:T" divergent
+want dv "CONTROL — the sealer is NOT fixed-point-free: ⊗(∃,∃)→∃ rests at the Archē:T" divergent
+sed 's|^glyph DV_STABLE = la op. NOT(str_eq(DV_FIX(op))(""))|glyph DV_STABLE = la op. TRUE|' divergent.la > "$T/dv_m1.la"; host "$T/dv_m1.la" dv_m1
+red dv_m1 "reach a FIXED POINT: 6 of 6" "divergent RED(the fixed-point detector made constant-true: everything 'stabilises' and the whole finding evaporates)"
+sed 's|CONSc(PAIRc("SWAP")(la a. la b. SYN(b)(a)))|CONSc(PAIRc("SWAP")(la a. la b. SYN(a)(b)))|' divergent.la > "$T/dv_m2.la"; host "$T/dv_m2.la" dv_m2
+red dv_m2 "distinct κ-outputs: 5 of 6 — NO agreement at the output level:F" "divergent RED(two operations made identical: the distinct-output count drops, which is what shows the test counts real divergence and not six names)"
+
 # ═══ 10. the table bound (directive §8): every module's import closure fits 1024 ══
-for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la recdepth.la selfevo.la certify.la migrate.la closure.la metakappa.la substitution.la ontosemiosyntax.la autocompress.la phonometa.la identity.la compressbound.la logicsyntax.la lawroot.la archeunique.la crossbranch.la numderive.la; do
+for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la recdepth.la selfevo.la certify.la migrate.la closure.la metakappa.la substitution.la ontosemiosyntax.la autocompress.la phonometa.la identity.la compressbound.la logicsyntax.la lawroot.la archeunique.la crossbranch.la numderive.la divergent.la; do
     n=$(python3 - "$m" <<'PY'
 import re,sys,os
 IMP=re.compile(r'import\("([^"]+)"\)'); GLY=re.compile(r'^glyph\s+[A-Za-z0-9_]+',re.M)
