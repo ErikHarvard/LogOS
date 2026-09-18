@@ -81,6 +81,11 @@ glyph ORDER_STEP = la ords. la ncat. la e. IF(IS_LEAF(E_FORM(e)))(la _. 0)(la _.
 glyph PASS = la ncat. la ords. RD_FOLD(la e. la acc. CONSc(PAIRc(E_STR(e))(ORDER_STEP(ords)(ncat)(e)))(acc))(NILc)(ncat)
 glyph RELAX = la ncat. la n. Z(la self. la k. la ords. IF(int_eq(k)(0))(la _. ords)(la _. self(sub(k)(1))(PASS(ncat)(ords))))(n)(NILc)
 glyph RD_PASSES = 4
+# ── SETTLED (F31, 2026-09-18): pass k yields min(true order, k), so RD_PASSES passes are exact iff no order exceeds
+#    RD_PASSES; the witness is that ONE MORE PASS CHANGES NOTHING. Until 2026-09-18 only the constant was printed. ──
+glyph ORDS_EQ = Z(la self. la a. la b. a(b(TRUE)(la h. la t. FALSE))(la ha. la ta. b(FALSE)(la hb. la tb. AND(AND(str_eq(FSTc(ha))(FSTc(hb)))(int_eq(SNDc(ha))(SNDc(hb))))(self(ta)(tb)))))
+glyph RD_SETTLED = la nc. la ords. ORDS_EQ(PASS(nc)(ords))(ords)
+glyph RD_RHO_SET = la nc. (la o. PAIRc(RHO_ORDS(o))(RD_SETTLED(nc)(o)))(ORDS_N(nc))
 glyph ORDS_N = la ncat. RELAX(ncat)(RD_PASSES)
 glyph RHO_ORDS = RD_FOLD(la o. la acc. MAX(acc)(SNDc(o)))(0)
 glyph ORDER_IN = la ords. la ncat. la f. IF(IS_LEAF(f))(la _. 0)(la _. (la subs. add(1)(RD_FOLD(la e2. la acc. MAX(acc)(IF(INLIST(E_STR(e2))(subs))(la _. LOOKUP(E_STR(e2))(ords))(la _. 0)))(0)(ncat)))(SUBSTRS(f)))
@@ -165,7 +170,7 @@ glyph CITE_OK =
 
 # everything below is computed ONCE under one binding chain: tiny_host re-evaluates a glyph
 # body at every reference, so a named intermediate would be recomputed each time it is printed.
-glyph REPORT = (la c0. (la ords. (la rho. (la rD. (la rS. (la rP. (la nuw. 
+glyph REPORT = (la c0. (la ords. (la rho. (la pD. (la rS. (la rP. (la nuw. 
   RD_JOIN(
   CONSc("RECDEPTH catalogue entries=")(
   CONSc(int_to_str(LEN(RD_CAT)))(
@@ -186,9 +191,9 @@ glyph REPORT = (la c0. (la ords. (la rho. (la rD. (la rS. (la rP. (la nuw.
   CONSc("\nRECDEPTH add ↻(ν*) — Δ* as an object, the tex's level 3: ρ ")(
   CONSc(int_to_str(rho))(
   CONSc("→")(
-  CONSc(int_to_str(rD))(
+  CONSc(int_to_str(FSTc(pD)))(
   CONSc(" strictly rises:")(
-  CONSc(RD_BSTR(lt(rho)(rD)))(
+  CONSc(RD_BSTR(lt(rho)(FSTc(pD))))(
   CONSc(" | add ⊕(BEING,LOVE) at an existing level: ρ→")(
   CONSc(int_to_str(rS))(
   CONSc(" unmoved:")(
@@ -210,11 +215,15 @@ glyph REPORT = (la c0. (la ords. (la rho. (la rD. (la rS. (la rP. (la nuw.
   CONSc(RD_BSTR(lt(nuw)(ORDER_IN(ords)(c0)(NU_STAR_F))))(
   CONSc(" | relaxation passes=")(
   CONSc(int_to_str(RD_PASSES))(
+  CONSc(" — settled (one more pass changes nothing): base:")(
+  CONSc(RD_BSTR(RD_SETTLED(c0)(ords)))(
+  CONSc(" with Δ*:")(
+  CONSc(RD_BSTR(SNDc(pD)))(
   CONSc(" | G_RHO=")(
   CONSc(REN(G_RHO))(
   CONSc(" order=")(
   CONSc(int_to_str(ORDER_IN(ords)(c0)(ETYM(G_RHO))))(
   CONSc(" [A] declared, collision-checked")(
-  NILc)))))))))))))))))))))))))))))))))))))))))))))))))
-  )(ORDER_IN(ORDS_N(N_DROP_MODES(c0)))(N_DROP_MODES(c0))(NU_STAR_F)))(RHO_OF(N_ADD("DEEP")(DEEP_F)(c0))))(RHO_OF(N_ADD("SAME")(SAME_F)(c0))))(RHO_OF(N_ADD("DSTAR")(DSTAR_F)(c0))))(RHO_ORDS(ords)))(ORDS_N(c0)))(N_DISTINCT(NORMCAT(RD_CAT)))
+  NILc)))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )(ORDER_IN(ORDS_N(N_DROP_MODES(c0)))(N_DROP_MODES(c0))(NU_STAR_F)))(RHO_OF(N_ADD("DEEP")(DEEP_F)(c0))))(RHO_OF(N_ADD("SAME")(SAME_F)(c0))))(RD_RHO_SET(N_ADD("DSTAR")(DSTAR_F)(c0))))(RHO_ORDS(ords)))(ORDS_N(c0)))(N_DISTINCT(NORMCAT(RD_CAT)))
 glyph MAIN = print(REPORT)

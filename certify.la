@@ -51,7 +51,7 @@
 #  ★ EVIDENTIAL: [W] the three verifications, the three forgery refusals, and the coverage check;
 #     [A-blocked] field (a)'s type system, per Seal 1 above; [B] the reality witness is per-CLASS (the
 #     gate section that asserts the class), because the gates assert classes, not individual glyphs.
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — red-proven 2 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — every glyph certified = mint-then-verify]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses (4 after F36, 2026-09-18: the cross-class forgery fixture, red via ce_m3 — field (c) now binds the token to the certificate's own class) — red-proven 2 · exact but CAPTURED 1 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · construction-true 1 [A: witnesses its constructor, not the claim — every glyph certified = mint-then-verify]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # the live catalogue RD_CAT + the base surface re-exported through it
@@ -83,7 +83,11 @@ glyph CT_ANYLINE = la lines. la tok. RD_FOLD(la l. la acc. OR(acc)(HAS_PREFIX(l)
 #    VERIFY_B REPLAYS the carried lineage rather than comparing a stored ONF string to itself. ──
 glyph VERIFY_A = la g. la c. str_eq(C_SPINE(c))(CT_SPINE(ETYM(g)))
 glyph VERIFY_B = la g. la c. str_eq(RECOVER(C_LIN(c)))(NORMK(ETYM(g)))
-glyph VERIFY_C = la lines. la g. la c. CT_ANYLINE(lines)(C_TOK(c))
+# (c) F36, 2026-09-18: until today (c) only checked that the carried token EXISTS in the suite, so a certificate carrying
+#     ANOTHER class's real token passed. Tokens are per CLASS (TOKOF: MODE_/OP_ → se, SR_ → lin, else rd), so the binding
+#     that exists is: the token must be THE CERTIFICATE'S OWN CLASS TOKEN, and exist. g itself is bound by (a) and (b)
+#     (spine and lineage re-derived from g); [B] the certificate's NAME is bound to its entry by MINT, not re-checked here.
+glyph VERIFY_C = la lines. la g. la c. AND(CT_ANYLINE(lines)(C_TOK(c)))(str_eq(C_TOK(c))(TOKOF(C_NAME(c))))
 glyph VERIFY = la lines. la g. la c. AND(VERIFY_A(g)(c))(AND(VERIFY_B(g)(c))(VERIFY_C(lines)(g)(c)))
 # which field failed — an instrument must say what it saw
 glyph WHICH = la lines. la g. la c. IF(NOT(VERIFY_A(g)(c)))(la _. "(a) arity derivation")(la _. IF(NOT(VERIFY_B(g)(c)))(la _. "(b) ONF equivalence")(la _. IF(NOT(VERIFY_C(lines)(g)(c)))(la _. "(c) reality witness")(la _. "")))
@@ -118,7 +122,11 @@ glyph FORGE_C = CERT("forged-witness")(CT_SPINE(ETYM(SUBJ)))(LINEAGE(SUBJ))("wan
 glyph R_A = la lines. WHICH(lines)(SUBJ)(FORGE_A)
 glyph R_B = la lines. WHICH(lines)(SUBJ)(FORGE_B)
 glyph R_C = la lines. WHICH(lines)(SUBJ)(FORGE_C)
-glyph GOOD = MINT("KAPPA")(TOK_CANON)(SUBJ)
+# the CROSS-CLASS forgery (F36): SR_WITH's own spine and lineage — (a) and (b) pass — but PRIM's real token "want rd ",
+# which EXISTS in the suite. The old (c) passed it.
+glyph FORGE_C2 = CERT("SR_WITH")(CT_SPINE(ETYM(OTHER)))(LINEAGE(OTHER))(TOK_PRIM)
+glyph R_C2 = la lines. WHICH(lines)(OTHER)(FORGE_C2)
+glyph GOOD = MINT("KAPPA")(TOKOF("KAPPA"))(SUBJ)        # honest = minted with ITS class token (was TOK_CANON, another class's, until F36)
 
 glyph REPORT = (la gl. (la sw. (la cb. (la cov. (la ver. 
   RD_JOIN(
@@ -147,6 +155,8 @@ glyph REPORT = (la gl. (la sw. (la cb. (la cov. (la ver.
   CONSc(" | the honest certificate verifies:")(
   CONSc(RD_BSTR(VERIFY(gl)(SUBJ)(GOOD)))(
   CONSc(" (the checker REPLAYS the lineage, it does not compare a stored ONF to itself)")(
+  CONSc(" | forged (c2) another class's REAL gate token refused:")(
+  CONSc(RD_BSTR(str_eq(R_C2(gl))("(c) reality witness")))(
   CONSc("\nCERTIFY κ spine of ")(
   CONSc(REN(SUBJ))(
   CONSc("=")(
@@ -156,6 +166,6 @@ glyph REPORT = (la gl. (la sw. (la cb. (la cov. (la ver.
   CONSc(" matches NORMK:")(
   CONSc(RD_BSTR(str_eq(RECOVER(LINEAGE(SUBJ)))(NORMK(ETYM(SUBJ)))))(
   CONSc(" | field (a)'s TYPE SYSTEM IS NOT RULED — arity is the one discipline in code; the ontic τ of tex §5012 awaits Erik's Seal-1 ruling [A-blocked]")(
-  NILc)))))))))))))))))))))))))))))))))))
+  NILc)))))))))))))))))))))))))))))))))))))
   )(IF(str_eq(SNDc(sw))(""))(la _. "")(la _. concat(" OFFENDER=")(SNDc(sw)))))(IF(str_eq(cb)(""))(la _. "")(la _. concat(" UNCERTIFIED=")(cb))))(COVER_BAD(FSTc(sw))))(SWEEP(gl)(RD_CAT)))(CT_LINES)
 glyph MAIN = print(REPORT)

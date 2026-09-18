@@ -442,10 +442,14 @@ red bc_m2 "SYN-head not the ⊂ dyad:F" "branchclosure RED(dyad-form check disab
 
 # ═══ 30. gapcensus — the autological completion instrument (Erik, 2026-09-15) ══════
 host gapcensus.la gp
-want gp "GAPCENSUS instrument (gate_registers.sh) present with proven RED paths + PASS line:T | seed items=6 self-closable=3 ceiling=2 external=1 | all consistent (declared==computed):T" gapcensus  #@ turns-red: red:gp_m1; cannot-fail:F31 ("proven RED paths" = two substrings)
+want gp "GAPCENSUS instrument (gate_registers.sh) present, carries RED lines (a substring check — WIRED, not PROVEN; checkreds proves them) + its PASS line:T | seed items=6 self-closable=3 ceiling=2 external=1 | all consistent (declared==computed):T" gapcensus  #@ turns-red: red:gp_m1,gp_m2
 want gp "miscategorisation fixture (vacuous claim declared self-closable) caught:T OFFENDER=FIXTURE: vacuous claim mislabelled self-closable" gapcensus  #@ turns-red: fixture:mislabelled item caught
 sed 's|^glyph GC_DISCRIMINATES = la pred. la good. la bad. NOT(str_eq(GC_BSTR(pred(good)))(GC_BSTR(pred(bad))))|glyph GC_DISCRIMINATES = la pred. la good. la bad. TRUE|' gapcensus.la > "$T/gp_m1.la"; host "$T/gp_m1.la" gp_m1
 red gp_m1 "all consistent (declared==computed):F" "gapcensus RED(discriminator always-true: the two ceilings misread as self-closable)"
+#  F31 (2026-09-18): the instrument line claimed "proven RED paths" from a substring search for "\nred ". Reworded to what
+#  it checks. gp_m2 searches for a marker the suite does not carry: the instrument must then read F.
+sed 's|^glyph GC_HAS_RED  = GC_CONTAINS(GC_GATE)("\\nred ")|glyph GC_HAS_RED  = GC_CONTAINS(GC_GATE)("\\nred_absent ")|' gapcensus.la > "$T/gp_m2.la"; host "$T/gp_m2.la" gp_m2
+red gp_m2 "(a substring check — WIRED, not PROVEN; checkreds proves them) + its PASS line:F" "gapcensus RED(no red lines found: the instrument reads F — the census would refuse a suite that carries no red paths)"
 
 # ═══ 31. recdepth — the Recognition Depth function ρ(L_t) (LA_COMPLETION Tier 4; tex def:rec-depth) ═══
 #  Every witness below was derived independently (a python re-implementation of the tex definition over
@@ -455,7 +459,8 @@ want rd "RECDEPTH catalogue entries=35 κ-distinct=34 | orders n0=9 n1=20 n2=5 n
 want rd "add ↻(ν*) — Δ* as an object, the tex's level 3: ρ 2→3 strictly rises:T" recdepth  #@ turns-red: red:rd_m1
 want rd "add ⊕(BEING,LOVE) at an existing level: ρ→2 unmoved:T" recdepth  #@ turns-red: exact:captured
 want rd "tree depth 3 with nothing catalogued inside: order=1 ρ→2 unmoved:T (ρ is NOT tree depth)" recdepth  #@ turns-red: red:rd_m2
-want rd "ν* order with the five mode glyphs catalogued=2 without them=1 state-relative:T | relaxation passes=4" recdepth  #@ turns-red: red:rd_m2; cannot-fail:F31 (passes=4 is the constant bound)
+want rd "ν* order with the five mode glyphs catalogued=2 without them=1 state-relative:T | relaxation passes=4" recdepth  #@ turns-red: red:rd_m2,rd_m3
+want rd "relaxation passes=4 — settled (one more pass changes nothing): base:T with Δ*:T" recdepth  #@ turns-red: red:rd_m3
 #  κ-distinct=34 from 35 entries IS the ρ ≡ SR_ABOUT identity, counted once because the census is keyed
 #  on the canonical form and never on the name (the standing invariant).
 sed 's|^glyph SUBSTRS = la f. f(la nm. NILc).*|glyph SUBSTRS = la f. ALLSTR(f)|' recdepth.la > "$T/rd_m1.la"; host "$T/rd_m1.la" rd_m1
@@ -464,6 +469,13 @@ red rd_m1 "strictly rises:F" "recdepth RED(proper-ness dropped: the level-3 addi
 sed 's|^glyph ORDER_STEP = .*|glyph ORDER_STEP = la ords. la ncat. la e. TDEPTH(E_FORM(e))|; s|^glyph ORDER_IN = .*|glyph ORDER_IN = la ords. la ncat. la f. TDEPTH(f)|' recdepth.la > "$T/rd_m2.la"; host "$T/rd_m2.la" rd_m2
 red rd_m2 "tree depth 3 with nothing catalogued inside: order=3 ρ→3 unmoved:F" "recdepth RED(order := tree depth: the deep unregistered probe moves ρ)"
 red rd_m2 "state-relative:F" "recdepth RED(order := tree depth: ρ stops depending on the language state)"
+#  F31 (2026-09-18): "passes=4" was the constant bound, printed; nothing checked that the relaxation had SETTLED. Pass k
+#  yields min(true order, k) — derived from the pass law — so 4 passes are exact while ρ ≤ 4 (base ρ=2, with Δ* ρ=3):
+#  one more pass must change nothing, base:T with Δ*:T. rd_m3 cuts the bound to 2: the base (ρ=2) still settles, the
+#  Δ* catalogue (ρ=3) does NOT — under-relaxation is now visible instead of a quietly low ρ.
+sed 's|^glyph RD_PASSES = 4|glyph RD_PASSES = 2|' recdepth.la > "$T/rd_m3.la"; host "$T/rd_m3.la" rd_m3
+red rd_m3 "base:T with Δ*:F" "recdepth RED(bound cut to 2 passes: the Δ* catalogue, order 3, is under-relaxed and the settledness witness says so)"
+red rd_m3 "relaxation passes=2" "recdepth RED(… and the printed bound is the one actually used)"
 
 # ═══ 32. selfevo — the Self-Evolution Equation, run to its fixed point (LA_COMPLETION Tier 4; tex def:self-evo-eq) ═══
 #  Every number below was derived independently (a python re-implementation of κ, |I(g)| and the density
@@ -498,6 +510,12 @@ sed 's|^glyph VERIFY_B = la g. la c. str_eq(RECOVER(C_LIN(c)))(NORMK(ETYM(g)))|g
 red ce_m1 "forged (b) ONF refused:F" "certify RED(the certificate is compared against ITSELF instead of the lineage being replayed: the forged-ONF certificate passes — the exact trusting-vs-verifying failure this ledger row names)"
 sed 's|^glyph COVER_BAD = la certs. .*|glyph COVER_BAD = la certs. ""|' certify.la > "$T/ce_m2.la"; host "$T/ce_m2.la" ce_m2
 red ce_m2 "coverage fixture (one entry withheld from the sweep) is caught:F" "certify RED(coverage check made vacuous: the withheld glyph is no longer named, so the suite could pass by certifying a convenient subset)"
+want ce "forged (c2) another class's REAL gate token refused:T" certify  #@ turns-red: red:ce_m3; fixture:SR_WITH certificate carrying PRIM's real token "want rd "
+#  F36 (2026-09-18): (c) checked only that the token EXISTS, ignoring the glyph — sweep G found it (the LR_SIG shape).
+#  It now requires the certificate's OWN class token (TOKOF). ce_m3 restores the existence-only check: the cross-class
+#  forgery (correct spine and lineage, another class's REAL token) must then pass, and the refusal reads F.
+sed 's|^glyph VERIFY_C = la lines. la g. la c. .*|glyph VERIFY_C = la lines. la g. la c. CT_ANYLINE(lines)(C_TOK(c))|' certify.la > "$T/ce_m3.la"; host "$T/ce_m3.la" ce_m3
+red ce_m3 "forged (c2) another class's REAL gate token refused:F" "certify RED(existence-only (c): a certificate carrying another class's real token is accepted — the F36 defect, restored)"
 #  ★ The coverage check needed a FIXTURE to be worth anything: the sweep certifies every entry it SEES,
 #  so checking its output against the same list it swept CANNOT FAIL. The first version did exactly that
 #  and was a vacuous gate. It now sweeps a catalogue with one entry deliberately WITHHELD and must NAME it.

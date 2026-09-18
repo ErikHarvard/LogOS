@@ -8,7 +8,7 @@
 #  claims to have closed anything.
 #
 #  IT READS ITS OWN GATE SUITE. read_file("gate_registers.sh"): the instrument must be present and
-#  carry proven RED paths (the marker "\nred ") and its PASS line — a census that could not see the
+#  carry RED lines (the marker "\nred " — WIRED, not proven: F31) and its PASS line — a census that could not see the
 #  gate is worthless. Bounded search (early exit), so it is cheap.
 #
 #  THE FOUR CATEGORIES, and the DISCRIMINATOR that decides self-closable vs ceiling WITHOUT a table:
@@ -24,7 +24,7 @@
 #  ★ EVIDENTIAL: [W] the discriminator + the miscategorisation RED path + the self-read of the gate;
 #     [B] a SEED of real instances with their true predicates, not all 54 (the full tags live in
 #     LA_COMPLETION.md / LA_COMPLETION_PLAN-trackF.md, the architect's classification, as data).
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · fixture-backed 1 · cannot-fail 1 [UNWITNESSED — F31 ("proven RED paths" = two substrings)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · fixture-backed 1 · cannot-fail 0 (was 1 until 2026-09-18: F31 — "proven RED paths" was two substring checks; reworded to what is checked, red via gp_m2). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # AUTO_OK NIS MC MONO CANON SEALc KAPPA REVAL SR_WITH PRIM DIR CONT SYN HAS_PREFIX
 
@@ -39,7 +39,7 @@ glyph Px = la nm. PRIM(nm)
 # ── read the gate suite: present, carries RED paths, carries its PASS line ──
 glyph GC_CONTAINS = Z(la self. la s. la sub. IF(HAS_PREFIX(s)(sub))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(sub))))
 glyph GC_GATE = read_file("gate_registers.sh")
-glyph GC_HAS_RED  = GC_CONTAINS(GC_GATE)("\nred ")
+glyph GC_HAS_RED  = GC_CONTAINS(GC_GATE)("\nred ")   # F31 (2026-09-18): says the suite CARRIES red lines — not that they fire (checkreds.py does)
 glyph GC_HAS_PASS = GC_CONTAINS(GC_GATE)("PASS  registers:")
 glyph GC_INSTRUMENT_OK = AND(lt(0)(str_to_int(str_len(GC_GATE))))(AND(GC_HAS_RED)(GC_HAS_PASS))
 
@@ -91,7 +91,7 @@ glyph GC_NCEIL = GC_COUNT("ceiling")(GC_ITEMS)
 glyph GC_NEXT  = GC_COUNT("external")(GC_ITEMS)
 
 glyph LINE1 = GC_JOIN(
-  CONSc("GAPCENSUS instrument (gate_registers.sh) present with proven RED paths + PASS line:")(
+  CONSc("GAPCENSUS instrument (gate_registers.sh) present, carries RED lines (a substring check — WIRED, not PROVEN; checkreds proves them) + its PASS line:")(
   CONSc(GC_BSTR(GC_INSTRUMENT_OK))(
   CONSc(" | seed items=")(CONSc(int_to_str(GC_LEN(GC_ITEMS)))(
   CONSc(" self-closable=")(CONSc(int_to_str(GC_NSELF))(

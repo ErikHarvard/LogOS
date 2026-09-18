@@ -249,7 +249,7 @@ print('== G  IGNORED PARAMETERS — a glyph that takes an argument and never use
 #  item, or `harmless:` with the reason. An unreviewed hit fails the check. Validated: catches LR_SIG (F25).
 REVIEWED_IGNORED = {
     ('lawroot.la', 'LR_SIG', 'g'): 'harmless: the INDEPENDENCE witness it feeds is declared construction-true; the claim is witnessed statically by lrs (F25, 2026-09-18)',
-    ('certify.la', 'VERIFY_C', 'g'): 'F36',
+    ('certify.la', 'VERIFY_C', 'g'): 'harmless: (c) binds the token to the certificate\'s own class (TOKOF of its name); g is bound by fields (a) and (b) — F36, 2026-09-18',
     ('syllabus.la', 'SY_NAMES', 'n'): 'harmless: a dead limit parameter — the same 12 is passed again as k',
 }
 _ID = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
