@@ -1893,14 +1893,16 @@ or in a full suite on HEAD yet (FREEZE-TRACKF.md). Each item says exactly how fa
   the last (F20, open).
 
 *The nine corrections from 2026-09-17, carried here from RESUME-2026-09-18.md so the paper track can see them* [W, each gated]:
-1. The Three Laws are NOT derived from the Archē (§44, tested by removal with a control).
-2. The autological criterion is CO-PRIMITIVE with the Archē too (§44) — the ground is a SMALL SET of four, not a point;
+1. ⚠ **UNWITNESSED (F25, 09-18):** "The Three Laws are NOT derived from the Archē" — §44's removal test is VACUOUS (its
+   signature function never uses the GROUND it is handed, so nothing was removed). May hold by inspection; not yet shown.
+2. ⚠ *(suspect, F29: §44's criterion witness may disagree by construction)* The autological criterion is CO-PRIMITIVE with the Archē too (§44) — the ground is a SMALL SET of four, not a point;
    consistent with derive_closure's 4 of 9.
 3. Divergent compressions do NOT converge on κ (§48): six compressions, six outputs, five never rest; only deletion
    rests, by discarding — CONVERGENCE AND RETENTION ARE IN TENSION.
 4. The cross-branch collapse holds BY CONSTRUCTION (one sealer), not convergence (§46) — over 19 branches, not 28.
 5. Logic, algorithm and syntax are pairwise SEPARATE (§43); the true relation is the neologizing dyad.
-6. BEING is not ONE (§47): BEING is the identity combinator; one = BECOMING(VOID) — **in form; see F5 above for truth.**
+6. ⚠ **CORRECTED (F26, 09-18):** §47 witnesses only one = BECOMING(VOID); "BEING is not one" is PRINTED TEXT (ND_BEING unused).
+   Decoded as a numeral BEING IS one. Per the F5 ruling: BEING and ONE are distinct FORMS (ungated as yet) and EQUAL IN TRUTH.
 7. The measure horizon (§47): four κ-distinct forms share one numeral — arithmetic says how big, never which.
 8. No Shannon noise in the computational register (§42); the real bound is the RENDERER's (sigil.la walks the unfolded
    form — a DAG renderer would survive ~40× deeper).
