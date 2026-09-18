@@ -191,11 +191,18 @@ red oa_m2 "A1 P(φ)⊻P(¬φ):F OFFENDER=GOOD@w0" "ontoargument RED(P flip break
 sed 's/OA_PAIR("NE")("TTT")/OA_PAIR("NE")("FFF")/' ontoargument.la > "$T/oa_m3.la"; host "$T/oa_m3.la" oa_m3
 red oa_m3 "A5 P(NE):F OFFENDER=NE@w0" "ontoargument RED(NE not positive: A5 named)"
 
+#  ⚠ COUNTS MOVED 2026-09-17 when the identity-adequacy rulings (§49) were APPLIED to lexicon.la and
+#    opgrammar.la: seven overloaded entries were re-derived, so combinations went 71 → 78 and three
+#    skeleton counts shifted (⊗ −2, ▷ −1, ⊂ +3). Rows are unchanged at 79. Every new number was
+#    re-derived by an independent python census BEFORE this line was edited.
 # ═══ 16. ontomorph — the inflectional census, gated (LA_COMPLETION.md:1187) ═════
 host ontomorph.la om
-want om "ONTOMORPH corpus rows=79 (LEX+RULED+GRAM+GRULED) | skeletons=10: *(·,·)=35 >(·,·)=22 +(·,·)=3 *(*(·,·),·)=9 ·=3 >(·,*(·,·))=1 >(*(·,·),*(·,·))=1 *(*(·,·),*(·,·))=1 c(·,·)=2 m(·)=2  | operator uses *=59 >=24 +=3 c=2 m=2" ontomorph
-want om "ONTOMORPH combinations=71 κ-images=71 | injective (distinct combinations → distinct κ):T | fixture +36/+63 refused:T OFFENDER=+36/+63" ontomorph
-want om "entry overloads (one κ, two names; the architect's to rule)=8:" ontomorph
+want om "ONTOMORPH corpus rows=79 (LEX+RULED+GRAM+GRULED) | skeletons=10: *(·,·)=33 >(·,·)=21 +(·,·)=3 *(*(·,·),·)=9 ·=3 >(·,*(·,·))=1 >(*(·,·),*(·,·))=1 *(*(·,·),*(·,·))=1 c(·,·)=5 m(·)=2  | operator uses *=57 >=23 +=3 c=5 m=2" ontomorph
+want om "ONTOMORPH combinations=78 κ-images=78 | injective (distinct combinations → distinct κ):T | fixture +36/+63 refused:T OFFENDER=+36/+63" ontomorph
+want om "entry overloads (one κ, two names; the architect's to rule)=1: *(BEING,DEPTH):Totality/All/" ontomorph
+#  ★ The overload count is 1, not 0, BY DESIGN: §49 ruled Totality = All a DECLARED IDENTITY — one
+#    concept under two English words, the same status as ρ ≡ SR_ABOUT. A declared identity is kept
+#    VISIBLE and annotated, never silently deduplicated. The other seven were re-derived away.
 sed 's|^glyph OM_KOF = la combo. KAN_N(OM_FST(PARSE(combo)))|glyph OM_KOF = la combo. KAN(OM_FST(PARSE(combo)))|' ontomorph.la > "$T/om_m1.la"; host "$T/om_m1.la" om_m1
 red om_m1 "fixture +36/+63 refused:F" "ontomorph RED(raw canonicalisation: ⊕ commutativity ignored)"
 # ═══ 17. gramcomplete — the Grammar Completeness theorem, gated in its honest form ═

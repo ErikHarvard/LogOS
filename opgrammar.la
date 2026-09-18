@@ -75,7 +75,7 @@ glyph K_ = la d. KAN_N(T_(d))
 glyph GRAM = concat(concat(
     "You|>42|m'ashi;We|*45|mara;This|>81|t'aa;That|>86|t'aha;Question|>26|sh'a;")
    ("Past|>76|v'a;Future|>67|h'avu;Ongoing|m7|vuvu;All|*19|ado;Some|*89|tado;None|m6|haha;"))
-   ("Must|*18|ata;Should|>38|l'uta;Or|+56|ra.ha;IfThen|>57|r'avu;I|4|ma;Here|>81|t'aa;There|>86|t'aha;")
+   ("Must|*18|ata;Should|>38|l'uta;Or|+56|ra.ha;IfThen|>57|r'avu;I|4|ma;Here|>85|t'ara;There|c65|ra[ha]ra;")
 
 # ── GRULED — the closed-class entry Erik re-derived, 2026-08-23 ──────
 #  Because  c(BECOMING,RELATION) -- the becoming held WITHIN the

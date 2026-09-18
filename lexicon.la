@@ -218,10 +218,10 @@ glyph KAN_N = la t. KAN(NORMT(t))
 # The PHONYM column is the codex's printed IPA, romanised. It is NOT
 # produced by PH. If it were, every check below would be vacuous.
 glyph LEX = concat(concat(concat(
-    "Substance|*81|taa;Change|*78|vuta;Appearance|*28|shita;Bond|*35|lura;Body|*48|mata;Attention|*23|shilu;Totality|*19|ado;Absence|*68|hata;Life|*17|avu;Silence|*16|aha;")
-   ("Water|**817|taavu;Stone|**819|taado;Air|**816|taaha;Fire|**783|vutalu;Light|**812|taashi;Sky|*69|hado;Plant|**178|avuta;Animal|**174|avuma;Human|**17*24|avushima;Place|**815|taara;"))
-   (concat("Give|>75|v'ura;Make|>74|v'uma;See|>28|sh'ita;Move|>47|m'avu;Care|>34|l'uma;Desire|>43|m'alu;Alter|>87|t'avu;Think|>22|sh'shi;Eat|>*48*81|mat'ataa;Speak|>4*35|m'alura;")
-          ("Good|*83|talu;Large|*81|taa;Small|*86|taha;New|*71|vua;Old|*67|havu;Warm|*31|lua;Cold|*63|halu;True|*21|shia;False|*26|shiha;")))
+    "Substance|*81|taa;Change|*78|vuta;Appearance|*28|shita;Bond|c51|a[ra]a;Body|*48|mata;Attention|*23|shilu;Totality|*19|ado;Absence|*68|hata;Life|*17|avu;Silence|*16|aha;")
+   ("Water|**817|taavu;Stone|**819|taado;Air|**816|taaha;Fire|**783|vutalu;Light|**812|taashi;Sky|c68|ta[ha]ta;Plant|**178|avuta;Animal|**174|avuma;Human|**17*24|avushima;Place|**815|taara;"))
+   (concat("Give|>75|v'ura;Make|>74|v'uma;See|>28|sh'ita;Move|>78|v'uta;Care|>34|l'uma;Desire|>43|m'alu;Alter|>87|t'avu;Think|>22|sh'shi;Eat|>*48*81|mat'ataa;Speak|>4*35|m'alura;")
+          ("Good|*13|alu;Large|*98|dota;Small|*86|taha;New|*71|vua;Old|*67|havu;Warm|*31|lua;Cold|*63|halu;True|*21|shia;False|*26|shiha;")))
    (concat("One|1|a;Two|5|ra;Three|+51|ra.a;Four|*55|rara;Many|*59|rado;")
           ("Friendship|*35|lura;Kindness|*34|luma;Community|**453|maralu;Understanding|*25|shira;Promise|>45|m'ara;Loneliness|*65|hara;Gratitude|>31|l'a;Grief|+36|lu.ha;Witness|>24|sh'ima;Mystery|*69|hado;Beauty|*83|talu;Agency|>47|m'avu;Consciousness|*24|shima;"))
 
