@@ -17,8 +17,24 @@ leaves = tsize(C) - len(marks)
 form = dag(C)
 print("WANT %s II horizontal: facets=%d: %s | III calligraphic: elements: marks=%d (⊗%d ⊕%d ▷%d ⊂%d ↻%d) leaves=%d [B: census, not execution]"
       % (T, len(form.split(";")), form, len(marks), *(marks.count(s) for s in "⊗⊕▷⊂↻"), leaves))
-# "four readings pairwise distinct": entendre compares the four LABELLED strings (surface= / facets= / elements: / contour=),
-# which differ by their labels whatever their content — so the verdict is T by construction.
-print("WANT %s four readings pairwise distinct, all derived from the DAG:T | primitive LOVE: I=⊥" % T)
-print("NOTE %s 'four readings pairwise distinct' compares LABELLED strings (surface= / facets= / elements: / contour=) — distinct by their labels alone, so it cannot fail (F23)" % T)
+# "four readings pairwise distinct" — by CONTENT since F23 (2026-09-18): each reading's payload without labels.
+# IV's payload is the prosodic reading, from prosody.la's STATED table and mode rules (F09 contour, DUR9 duration;
+# ⊗ {a+b}~64 dur max · ⊕ (a)·ʔ·(b) dur a+960+b · ▷ (a)´-(b)~128 dur a+b · ⊂ (b)[a](b) dur 2b+a · ↻ (a)(a) dur 2a).
+F09 = {"RECOGNITION": "140", "FORM": "120", "DEPTH": "90,135→50"}
+DUR9 = {"RECOGNITION": 6720, "FORM": 6160, "DEPTH": 6000}
+def pros(u):
+    if u[0] == "P": return u[1] + "/" + F09[u[1]], DUR9[u[1]]
+    if u[0] == "MC": a, da = pros(u[1]); return "(%s)(%s)" % (a, a), 2 * da
+    (a, da), (b, db) = pros(u[1]), pros(u[2])
+    return {"SYN": ("{%s+%s}~64" % (a, b), max(da, db)), "CON": ("(%s)·ʔ·(%s)" % (a, b), da + 960 + db),
+            "DIR": ("(%s)´-(%s)~128" % (a, b), da + db), "CONT": ("(%s)[%s](%s)" % (b, a, b), 2 * db + da)}[u[0]]
+def allleaves(u): return [u] if u[0] == "P" else [g for c in u[1:] for g in allleaves(c)]   # EN_LEAVES: every primitive leaf, left to right
+leafs = allleaves(C)
+pay_i = "%s / %s / %s / %s" % (canon(C), ", ".join(first), ", ".join(canon(g) for g in leafs), " ".join(ops))
+pay_ii = form
+pay_iii = " ".join(str(x) for x in [len(marks)] + [marks.count(s_) for s_ in "⊗⊕▷⊂↻"] + [leaves])
+ct, du = pros(C); pay_iv = "%s %d" % (ct, du)
+pays = [pay_i, pay_ii, pay_iii, pay_iv]
+print("WANT %s four readings pairwise distinct by CONTENT (labels stripped), all derived from the DAG:%s | primitive LOVE: I=⊥" % (T, B(len(set(pays)) == 4)))
+print("NOTE %s the four payloads: I=[%s] II=[%s] III=[%s] IV=[%s]" % (T, pay_i, pay_ii, pay_iii, pay_iv))
 print("WANT %s primitive has no vertical reading (red path):%s" % (T, B(tsize(P("LOVE")) == 1)))

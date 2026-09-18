@@ -51,7 +51,7 @@
 #  ★ EVIDENTIAL: [W] the computed residue, the assertion, the re-introduced-slack red path, the
 #     T_CLOSE resolution; [B] closure is relative to THIS residue criterion (listed-implies-checked) — a
 #     different criterion is a different claim, and none of them is closure of the language.
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · cannot-fail 1 [UNWITNESSED — F27 (the fold seed short-circuits)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 3 pinned witnesses — exact but CAPTURED 2 [B: the value is pinned, not derived — a regression turns it red; its correctness is unwitnessed] · cannot-fail 0 (was 1 until 2026-09-18: F27 — the slack was the fold's seed and short-circuited; it is now appended to the list and judged by CL_HOSTS, red via cl_m1 and cl_m3). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("aatc.la")       # STRUCT SNAME SINSCOPE SSELFAPP SLACKS CLOSURE CENTROPY DIAGNOSE T_CLOSE AATC STARTS_WITH
@@ -78,8 +78,13 @@ glyph CL_LISTED = la lines. CL_FOLD(la w. la acc. IFc(STARTS_WITH(w)("."))(la _.
 glyph CL_HOSTS = la lines. la m. CL_FOLD(la l. la acc. OR(acc)(STARTS_WITH(l)(concat("host ")(concat(m)(" ")))))(FALSE)(lines)
 glyph CL_HOSTED = la lines. CL_FOLD(la m. la acc. IFc(CL_HOSTS(lines)(m))(la _. add(acc)(1))(la _. acc))(0)(CL_LISTED(lines))
 
-# ── THE RESIDUE: the first module the suite lists but does not check. "" when nothing is owed. ──
-glyph RESIDUE = la lines. la extra. CL_FOLD(la m. la acc. IFc(NOT(str_eq(acc)("")))(la _. acc)(la _. IFc(CL_HOSTS(lines)(m))(la _. "")(la _. m)))(extra)(CL_LISTED(lines))
+# ── THE RESIDUE: a module the suite lists but does not check (the LAST in list order — CL_FOLD folds from the
+#    right). "" when nothing is owed. `extra` is a slack entry INJECTED INTO THE LIST (appended), never the fold's
+#    seed: until 2026-09-18 it WAS the seed, and any non-empty accumulator short-circuits, so RESIDUE(lines)(x)
+#    returned x without reading the suite at all (FREEZE-TRACKF.md F27). Now the slack is judged by CL_HOSTS
+#    against the suite's own host lines, like every listed module.
+glyph CL_APPEND1 = la l. la x. CL_FOLD(la h. la acc. CONSc(h)(acc))(CONSc(x)(NILc))(l)
+glyph RESIDUE = la lines. la extra. CL_FOLD(la m. la acc. IFc(NOT(str_eq(acc)("")))(la _. acc)(la _. IFc(CL_HOSTS(lines)(m))(la _. "")(la _. m)))("")(IFc(str_eq(extra)(""))(la _. CL_LISTED(lines))(la _. CL_APPEND1(CL_LISTED(lines))(extra)))
 
 # ── the suite AS AN AATC STRUCTURE: the four fields aatc.la already reads ──
 #    in-scope: the suite governs a module iff it lists it. self-application: it is itself a checked

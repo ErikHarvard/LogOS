@@ -31,9 +31,10 @@ PAST, FUTURE = DIR(P("BECOMING"), V), DIR(V, P("BECOMING"))
 T = "opp"
 op = OPP(PAST)
 refuse = OPP(P("BEING")) is None, OPP(CON(P("BEING"), P("LOVE"))) is None, OPP(DIR(P("LOVE"), P("LOVE"))) is None
-has_pole = OPP(PAST) is not None and OPP(P("BEING")) is None
-print("WANT %s OPP(Past)=%s ≡Future:%s | involution OPP(OPP(Past))=Past:%s OPP(Past)≠Past:%s | refuses primitive(Being):%s ⊕:%s ▷(x,x):%s | HAS_POLE Past:T Being:F ->%s"
-      % (T, canon(op), B(normk(op) == normk(FUTURE)), B(normk(OPP(op)) == normk(PAST)), B(normk(op) != normk(PAST)), *(B(x) for x in refuse), B(has_pole)))
-print("NOTE %s 'HAS_POLE Past:T Being:F' is LITERAL text in opposite.la:74; only the '->T' is computed — if a case flipped, the output would still print the two per-case values unchanged (F24)" % T)
+def HAS_POLE(g): return g[0] == "DIR" and normk(g[1]) != normk(g[2])   # opposite.la's stated rule: only a ▷ of two distinct parts has a pole
+hp_past, hp_being = HAS_POLE(PAST), HAS_POLE(P("BEING"))
+print("WANT %s OPP(Past)=%s ≡Future:%s | involution OPP(OPP(Past))=Past:%s OPP(Past)≠Past:%s | refuses primitive(Being):%s ⊕:%s ▷(x,x):%s | HAS_POLE Past:%s Being:%s ->%s"
+      % (T, canon(op), B(normk(op) == normk(FUTURE)), B(normk(OPP(op)) == normk(PAST)), B(normk(op) != normk(PAST)), *(B(x) for x in refuse),
+         B(hp_past), B(hp_being), B(hp_past and not hp_being)))
 GO = DIR(P("RELATION"), V); GOO = OPP(GO)
 print("WANT %s A(A)=%s exists:%s A(A)≠A:%s A(A(A))=A:%s" % (T, canon(GOO), B(GOO is not None), B(normk(GOO) != normk(GO)), B(normk(OPP(GOO)) == normk(GO))))

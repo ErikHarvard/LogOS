@@ -20,4 +20,5 @@ print("WANT %s MetaTop(MetaTop)≡MetaTop truth:%s glyph:%s" % (T, B(truth), B(g
 # ★ does "⊕-order invariant:T" DISCRIMINATE? The reading's numbers are symmetric in a node's two children, so the
 #   same swap under the DIRECTIONAL ▷ must be checked too: if it is ALSO invariant, the witness cannot tell ⊕ from ▷.
 dswap = topo(dag(DIR(KAPPA, REVAL))) == topo(dag(DIR(REVAL, KAPPA)))
-print("NOTE %s ⊕-order invariant would ALSO read T under the directional ▷ (swap invariant: %s) — the witness cannot fail on a commutativity bug" % (T, B(dswap)) if dswap else "NOTE %s ⊕-swap discriminates from ▷-swap" % T)
+print("WANT %s (▷-order ALSO invariant:%s — the reading is ORDER-BLIND, so this is no ⊕ property; [B] topology cannot see direction)" % (T, B(dswap)))
+print("NOTE %s F21: the ⊕ line holds because the reading forgets child order under every mode (▷ swap invariant: %s) — it witnesses that topology never splits ⊕-synonyms, not ⊕'s commutativity" % (T, B(dswap)))

@@ -32,7 +32,7 @@
 #        The directive's finding stands: A(A) ≠ A; the meta-antonym is a relation on
 #        the operator space, not a closed-form operation.
 # ═══════════════════════════════════════════════════════════════════
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — fixture-backed 1 · exact & independently derived 2 · cannot-fail 1 [UNWITNESSED — F24 (HAS_POLE per-case values are literal text)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — fixture-backed 1 · exact & independently derived 2 · cannot-fail 0 (was 1 until 2026-09-18: F24 — the HAS_POLE per-case values were literal text; now computed, red via opp_m2). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 import("canon.la")
 
 export OPP HAS_POLE G_OPP PAST FUTURE SEALo
@@ -72,7 +72,7 @@ glyph LINE1 =
     concat(" | refuses primitive(Being):")(concat(BSTR(W_REF_PRIM))(
     concat(" ⊕:")(concat(BSTR(W_REF_CON))(
     concat(" ▷(x,x):")(concat(BSTR(W_REF_SYM))(
-    concat(" | HAS_POLE Past:T Being:F ->")(BSTR(W_HAS_POLE))))))))))))))))))
+    concat(" | HAS_POLE Past:")(concat(BSTR(HAS_POLE(PAST)))(concat(" Being:")(concat(BSTR(HAS_POLE(SEALo(Px("BEING")))))(concat(" ->")(BSTR(W_HAS_POLE))))))))))))))))))))))
 glyph LINE2 =
     concat("OPPOSITE meta: G_OPP=")(concat(REN(G_OPP))(
     concat(" A(A)=")(concat(REN(AA))(

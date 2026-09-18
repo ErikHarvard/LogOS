@@ -28,7 +28,7 @@
 #     from inside: recognition directed at pure metacursion, ↻(SELF) being the house's
 #     "↻ is the grammatical expression of Self"). ★ The first declaration ▷(RECOGNITION,SELF)
 #     COLLIDED with the lexicon's Witness (">24") — caught by collide.py; re-declared.
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · construction-true 1 [A: witnesses its constructor, not the claim — ↻↻≡↻] · cannot-fail 1 [UNWITNESSED — F21 (texture ⊕-order, same class)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 2 pinned witnesses — red-proven 1 · construction-true 1 [A: witnesses its constructor, not the claim — ↻↻≡↻] · cannot-fail 0 (was 1 until 2026-09-18: F21 — the ⊕-order line could not fail; now red-able via tex_m2 and restated: the reading is ORDER-BLIND, a new derived witness (s05) states it as a [B] bound). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  ★ depthreport.la already REPORTS lineage depth (never gated, by Erik's ruling); r here
 #     is a reading of the same measurement at a new register, and is likewise never a gate.
 # ═══════════════════════════════════════════════════════════════════
@@ -72,6 +72,7 @@ glyph NDIST = LEN(DISTINCT(TEXTS)(NILc))
 glyph VARIES = lt(2)(NDIST)
 glyph ANYBOT = MEMB("⊥")(TEXTS)
 glyph SWAP_OK = str_eq(TEXTURE(DAG(CON(KAPPA)(REVAL))))(TEXTURE(DAG(CON(REVAL)(KAPPA))))
+glyph DSWAP_OK = str_eq(TEXTURE(DAG(DIR(KAPPA)(REVAL))))(TEXTURE(DAG(DIR(REVAL)(KAPPA))))   # ▷-order ALSO invariant: ORDER-BLIND (F21)
 glyph SHARED_T = TEXTURE(DAG(SYN(KAPPA)(KAPPA)))
 glyph TREE_T   = TEXTURE(DAG(KAPPA))
 glyph CORRUPT  = TEXTURE("BEING;⊗0.7")
@@ -87,7 +88,9 @@ glyph LINE1 =
     concat(" | ⊕-order invariant:")(concat(BSTR(SWAP_OK))(
     concat(" | corrupted reads ⊥:")(concat(BSTR(str_eq(CORRUPT)("⊥")))(
     concat(" | κ: ")(concat(TREE_T)(
-    concat(" | ⊗(κ,κ): ")(SHARED_T)))))))))))))))
+    concat(" | ⊗(κ,κ): ")(concat(SHARED_T)(
+    concat(" | ▷-order ALSO invariant:")(concat(BSTR(DSWAP_OK))(
+    " — the reading is ORDER-BLIND, so ⊕-order invariance is no ⊕ property; [B] texture cannot see direction"))))))))))))))))))
 glyph LINE2 =
     concat("TEXTURE meta: G_AFF=")(concat(REN(G_AFF))(
     concat(" texture: ")(concat(TEXTURE_OF(G_AFF))(

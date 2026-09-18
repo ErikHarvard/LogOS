@@ -27,7 +27,7 @@
 #  the surface; make II read the surface → II = I.
 #  ★ EVIDENTIAL: [W] I, II, IV derived and distinct, the ⊥ red path; [B] III is a census, not
 #     execution; one compound + one primitive.
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · exact & independently derived 2 · cannot-fail 1 [UNWITNESSED — F23 (labelled strings)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · exact & independently derived 2 · cannot-fail 0 (was 1 until 2026-09-18: F23 — distinctness compared LABELLED strings; it now compares each reading's payload, and en_m1 gives II reading I's content under II's own label). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # base surface: CANON NORMK DAG SPLIT NTH LEN DEPTH SEALc …
 import("prosody.la")     # PCONTOUR PDUR
@@ -49,7 +49,7 @@ glyph ENTENDRE_I = la t. IF(int_eq(DEPTH(SEALc(t)))(0))(la _. "⊥ (a primitive 
     EN_C3(EN_C3("surface=")(CANON(t))(" | first depth: "))(EN_JOIN(", ")(EN_PARENTS(t)))(
     EN_C3(" | second depth: ")(EN_JOIN(", ")(EN_LEAVES(t)))(EN_C3(" | third depth (operators): ")(EN_JOIN(" ")(EN_MODES(t)))(""))))
 # ── II. horizontal: the co-present facets = the DAG's defs (hash-consed sub-glyphs) ──
-glyph ENTENDRE_II = la t. EN_C3("facets=")(int_to_str(LEN(SPLIT(";")(DAG(t)))))(EN_C3(": ")(DAG(t))(""))
+glyph ENTENDRE_II = la t. EN_C3("facets=")(int_to_str(LEN(SPLIT(";")(EN_PAY_II(t)))))(EN_C3(": ")(EN_PAY_II(t))(""))
 # ── III. calligraphic: the element census the calligrapher would execute ──
 glyph EN_COUNT = la sym. la l. Z(la self. la l. l(0)(la h. la t. add(IF(str_eq(h)(sym))(la _. 1)(la _. 0))(self(t))))(l)
 glyph ENTENDRE_III = la t. (la ms. EN_C3("elements: marks=")(int_to_str(LEN(ms)))(EN_C3(" (⊗")(int_to_str(EN_COUNT("⊗")(ms)))(EN_C3(" ⊕")(int_to_str(EN_COUNT("⊕")(ms)))(EN_C3(" ▷")(int_to_str(EN_COUNT("▷")(ms)))(EN_C3(" ⊂")(int_to_str(EN_COUNT("⊂")(ms)))(EN_C3(" ↻")(int_to_str(EN_COUNT("↻")(ms)))(EN_C3(") leaves=")(int_to_str(LEN(EN_LEAVES(t))))(" [B: census, not execution]"))))))))(EN_MODES(t))
@@ -58,9 +58,17 @@ glyph ENTENDRE_IV = la t. EN_C3("contour=")(PCONTOUR(t))(EN_C3(" dur=")(int_to_s
 
 glyph CMP = SYN(DIR(Px("RECOGNITION"))(Px("FORM")))(DIR(Px("DEPTH"))(Px("RECOGNITION")))
 glyph PR  = Px("LOVE")
+# ── F23 (2026-09-18): the four readings are compared by CONTENT — each reading's PAYLOAD, built from the same parts
+#    it prints, without its labels. Until 2026-09-18 EN_DISTINCT4 compared the LABELLED strings, which differ by
+#    "surface=" / "facets=" / "elements:" / "contour=" alone, whatever they carry — so it could not fail. II is
+#    printed FROM its payload; I, III and IV share their parts (EN_PARENTS/LEAVES/MODES, PCONTOUR/PDUR) with it.
+glyph EN_PAY_I   = la t. EN_C3(CANON(t))(" / ")(EN_C3(EN_JOIN(", ")(EN_PARENTS(t)))(" / ")(EN_C3(EN_JOIN(", ")(EN_LEAVES(t)))(" / ")(EN_JOIN(" ")(EN_MODES(t)))))
+glyph EN_PAY_II  = la t. DAG(t)
+glyph EN_PAY_III = la t. (la ms. EN_C3(int_to_str(LEN(ms)))(" ")(EN_C3(int_to_str(EN_COUNT("⊗")(ms)))(" ")(EN_C3(int_to_str(EN_COUNT("⊕")(ms)))(" ")(EN_C3(int_to_str(EN_COUNT("▷")(ms)))(" ")(EN_C3(int_to_str(EN_COUNT("⊂")(ms)))(" ")(EN_C3(int_to_str(EN_COUNT("↻")(ms)))(" ")(int_to_str(LEN(EN_LEAVES(t))))))))))(EN_MODES(t))
+glyph EN_PAY_IV  = la t. EN_C3(PCONTOUR(t))(" ")(int_to_str(PDUR(t)))
 glyph EN_DISTINCT4 = la t. (la i. la ii. la iii. la iv.
-    AND(NOT(str_eq(i)(ii)))(AND(NOT(str_eq(i)(iii)))(AND(NOT(str_eq(i)(iv)))(AND(NOT(str_eq(ii)(iii)))(AND(NOT(str_eq(ii)(iv)))(NOT(str_eq(iii)(iv))))))))(ENTENDRE_I(t))(ENTENDRE_II(t))(ENTENDRE_III(t))(ENTENDRE_IV(t))
+    AND(NOT(str_eq(i)(ii)))(AND(NOT(str_eq(i)(iii)))(AND(NOT(str_eq(i)(iv)))(AND(NOT(str_eq(ii)(iii)))(AND(NOT(str_eq(ii)(iv)))(NOT(str_eq(iii)(iv))))))))(EN_PAY_I(t))(EN_PAY_II(t))(EN_PAY_III(t))(EN_PAY_IV(t))
 glyph LINE1 = EN_C3("ENTENDRE compound ")(CANON(CMP))(EN_C3(" | I vertical: ")(ENTENDRE_I(CMP))(""))
 glyph LINE2 = EN_C3("ENTENDRE II horizontal: ")(ENTENDRE_II(CMP))(EN_C3(" | III calligraphic: ")(ENTENDRE_III(CMP))(EN_C3(" | IV sonic: ")(ENTENDRE_IV(CMP))("")))
-glyph LINE3 = EN_C3("ENTENDRE four readings pairwise distinct, all derived from the DAG:")(EN_BSTR(EN_DISTINCT4(CMP)))(EN_C3(" | primitive LOVE: I=")(ENTENDRE_I(PR))(EN_C3(" II=")(ENTENDRE_II(PR))(EN_C3(" | primitive has no vertical reading (red path):")(EN_BSTR(HAS_PREFIX(ENTENDRE_I(PR))("⊥")))(""))))
+glyph LINE3 = EN_C3("ENTENDRE four readings pairwise distinct by CONTENT (labels stripped), all derived from the DAG:")(EN_BSTR(EN_DISTINCT4(CMP)))(EN_C3(" | primitive LOVE: I=")(ENTENDRE_I(PR))(EN_C3(" II=")(ENTENDRE_II(PR))(EN_C3(" | primitive has no vertical reading (red path):")(EN_BSTR(HAS_PREFIX(ENTENDRE_I(PR))("⊥")))(""))))
 glyph MAIN = EN_SEQ(print(LINE1))(EN_SEQ(print(LINE2))(print(LINE3)))

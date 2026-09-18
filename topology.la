@@ -29,10 +29,15 @@
 #        reading; MetaTop(MetaTop) ≡ MetaTop at the truth level (↻-idempotence),
 #        distinct at the glyph level — reported both ways.
 #  ★ EVIDENTIAL TAGS: [W] the seven invariants + ⊥ on corruption — gated below.
+#     ⚖ (F21, 2026-09-18) the reading is ORDER-BLIND: every invariant is symmetric in a node's two children, so
+#     swapping operands leaves it unchanged under ANY mode — ▷ included. So "⊕-order invariant" is not a ⊕
+#     property (⊕'s commutativity is κ's, gated in monosemy); what it witnesses is that topology never SPLITS
+#     two ⊕-synonyms, and it holds BECAUSE the reading forgets order. Both lines are gated and red-able (top_m3
+#     makes the reading order-sensitive). [B] topology cannot see direction.
 #     [B] b0/b1 are graph Betti numbers, not manifold invariants; genus absent.
 #     [A] G_TOP = ▷(RECOGNITION, ⊂(FORM,DEPTH)) — DECLARED (recognition directed at
 #         the bound: OP_BOUND δ = ⊂(FORM,DEPTH) is the house's "bound" operator).
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 1 · exact & independently derived 2 · construction-true 1 [A: witnesses its constructor, not the claim — ↻↻≡↻] · cannot-fail 1 [UNWITNESSED — F21 (the ⊕-order part)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 1 · exact & independently derived 2 · construction-true 1 [A: witnesses its constructor, not the claim — ↻↻≡↻] · cannot-fail 0 (was 1 until 2026-09-18: F21 — the ⊕-order line could not fail; it is now red-able via top_m3 and restated: it holds because the reading is ORDER-BLIND, which a new derived witness states as a [B] bound). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")     # the base surface: LINEAGE LINEAGE_OK SEALc LIN_CAT + canon/glyphdag re-exports (table-bound, see lineage.la)
 
@@ -98,6 +103,7 @@ glyph SHARED_T = SYN(KAPPA)(KAPPA)                       # ⊗(κ,κ): one shari
 glyph SHARED_R = TOPO(DAG(SHARED_T))
 glyph TREE_R   = TOPO(DAG(KAPPA))                         # a tree ⇒ b1 = 0
 glyph SWAP_OK  = str_eq(TOPO(DAG(CON(KAPPA)(REVAL))))(TOPO(DAG(CON(REVAL)(KAPPA))))   # ⊕-order invariant
+glyph DSWAP_OK = str_eq(TOPO(DAG(DIR(KAPPA)(REVAL))))(TOPO(DAG(DIR(REVAL)(KAPPA))))   # ▷-order ALSO invariant: the reading is ORDER-BLIND (F21)
 glyph CORRUPT  = TOPO("BEING;⊗0.7")
 glyph MCG  = MC(ETYM(G_TOP))
 glyph MMCG = MC(MCG)
@@ -110,8 +116,10 @@ glyph LINE1 =
     concat(IF(str_eq(BAD_TOPO)(""))(la _. "")(la _. concat(" OFFENDER=")(BAD_TOPO)))(
     concat(" | corrupted DAG reads ⊥:")(concat(BSTR(str_eq(CORRUPT)("⊥")))(
     concat(" | ⊕-order invariant:")(concat(BSTR(SWAP_OK))(
+    concat(" (▷-order ALSO invariant:")(concat(BSTR(DSWAP_OK))(
+    concat(" — the reading is ORDER-BLIND, so this is no ⊕ property; [B] topology cannot see direction)")(
     concat(" | κ tree: ")(concat(TREE_R)(
-    concat(" | ⊗(κ,κ) shared: ")(SHARED_R))))))))))))
+    concat(" | ⊗(κ,κ) shared: ")(SHARED_R)))))))))))))))
 glyph LINE2 =
     concat("TOPOLOGY meta: G_TOP=")(concat(REN(G_TOP))(
     concat(" reading: ")(concat(TOPO_OF(G_TOP))(

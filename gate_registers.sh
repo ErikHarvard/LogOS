@@ -166,7 +166,8 @@ red prx_m1 "agree 14/14:F OFFENDER=BEING phonym=6080 prosody=6081" "prosody_xche
 
 # ═══ 3. topology — the topological register ════════════════════════════════
 host topology.la top
-want top "every lineage computes (no ⊥):T | corrupted DAG reads ⊥:T | ⊕-order invariant:T" topology  #@ turns-red: red:top_m1,top_m2; cannot-fail:F21 (the ⊕-order part)
+want top "every lineage computes (no ⊥):T | corrupted DAG reads ⊥:T | ⊕-order invariant:T" topology  #@ turns-red: red:top_m1,top_m2,top_m3; exact:s03
+want top "(▷-order ALSO invariant:T — the reading is ORDER-BLIND, so this is no ⊕ property; [B] topology cannot see direction)" topology  #@ turns-red: red:top_m3; exact:s03
 want top "κ tree: V=3 E=2 b0=1 b1=0 depth=1 leaves=2 anchors=2 grounded=T" topology  #@ turns-red: exact:s03
 want top "⊗(κ,κ) shared: V=4 E=4 b0=1 b1=1 depth=2 leaves=2 anchors=2 grounded=T" topology  #@ turns-red: exact:s03
 want top "MetaTop(MetaTop)≡MetaTop truth:T glyph:F" topology  #@ turns-red: construction:↻↻≡↻ (F4)
@@ -174,6 +175,12 @@ sed 's|^glyph TOPO = la form. IF(str_eq(LINEAGE_OK(form))(""))|glyph TOPO = la f
 red top_m1 "corrupted DAG reads ⊥:F" "topology RED(validity skipped)"
 sed 's|^glyph TOPO = la form. IF(str_eq(LINEAGE_OK(form))(""))|glyph TOPO = la form. IF(FALSE)|' topology.la > "$T/top_m2.la"; host "$T/top_m2.la" top_m2
 red top_m2 "every lineage computes (no ⊥):F OFFENDER=KAPPA" "topology RED(all ⊥ named)"
+#  F21 (2026-09-18): the ⊕-order line could not fail — the reading is symmetric in a node's children under EVERY mode. top_m3
+#  makes the reading ORDER-SENSITIVE (it prefixes the first def's first byte), and both lines must then go F: the ⊕ line
+#  (topology would split two ⊕-synonyms) and the ▷ line (the reading would no longer be order-blind).
+sed 's|(la _. TOPO_STR(SPLIT(";")(form)))|(la _. concat(str_head(form))(TOPO_STR(SPLIT(";")(form))))|' topology.la > "$T/top_m3.la"; host "$T/top_m3.la" top_m3
+red top_m3 "⊕-order invariant:F" "topology RED(an order-sensitive reading splits the ⊕-synonyms ⊕(κ,𝓡) and ⊕(𝓡,κ))"
+red top_m3 "(▷-order ALSO invariant:F" "topology RED(… and the order-blindness bound is gone: ▷(κ,𝓡) and ▷(𝓡,κ) now read differently)"
 
 # ═══ 4. evidential — the evidential register (+ the build.sh citation loop) ═
 host evidential.la evd
@@ -196,10 +203,16 @@ EOF2
 
 # ═══ 5. texture — the affective register ════════════════════════════════════
 host texture.la tex
-want tex "distinct textures=5 varies:T | none ⊥:T | ⊕-order invariant:T | corrupted reads ⊥:T | κ: m=100 a=66 r=50 | ⊗(κ,κ): m=133 a=50 r=33" texture  #@ turns-red: red:tex_m1; cannot-fail:F21 (texture ⊕-order, same class)
+want tex "distinct textures=5 varies:T | none ⊥:T | ⊕-order invariant:T | corrupted reads ⊥:T | κ: m=100 a=66 r=50 | ⊗(κ,κ): m=133 a=50 r=33" texture  #@ turns-red: red:tex_m1,tex_m2
+want tex "▷-order ALSO invariant:T — the reading is ORDER-BLIND, so ⊕-order invariance is no ⊕ property; [B] texture cannot see direction" texture  #@ turns-red: red:tex_m2; exact:s05
 want tex "Δ_A(Δ_A)≡Δ_A truth:T glyph:F" texture  #@ turns-red: construction:↻↻≡↻ (F4)
 sed 's|^glyph TEXTURE = la form. IF(str_eq(LINEAGE_OK(form))(""))(la _. TEXTURE_STR(SPLIT(";")(form)))(la _. "⊥")|glyph TEXTURE = la form. "m=100 a=50 r=50"|' texture.la > "$T/tex_m1.la"; host "$T/tex_m1.la" tex_m1
 red tex_m1 "distinct textures=1 varies:F" "texture RED(constant)"
+#  F21 (2026-09-18), as §3: the reading is symmetric in a node's children under EVERY mode. tex_m2 makes it ORDER-SENSITIVE
+#  (the first def's first byte prefixed); the ⊕ line and the ▷ line must then both go F.
+sed 's|(la _. TEXTURE_STR(SPLIT(";")(form)))|(la _. concat(str_head(form))(TEXTURE_STR(SPLIT(";")(form))))|' texture.la > "$T/tex_m2.la"; host "$T/tex_m2.la" tex_m2
+red tex_m2 "⊕-order invariant:F" "texture RED(an order-sensitive reading splits the ⊕-synonyms ⊕(κ,𝓡) and ⊕(𝓡,κ))"
+red tex_m2 "▷-order ALSO invariant:F" "texture RED(… and the order-blindness bound is gone)"
 
 # ═══ 6. registers — the twelve-fold coherence ═══════════════════════════════
 host registers.la reg
@@ -242,10 +255,12 @@ red cmp_m1 "¬¬C≡C truth:F" "complement RED(double complement not cancelled)"
 sed 's|^glyph NOTG = la g. COLLAPSE(NEG_MODE)(g)(GLYPH("VOID"))|glyph NOTG = la g. COLLAPSE(NEG_MODE)(g)(GLYPH("FORM"))|' complement.la > "$T/cmp_m2.la"; host "$T/cmp_m2.la" cmp_m2
 red cmp_m2 "sealed+VOID-parent:F" "complement RED(¬ without Void)"
 host opposite.la opp
-want opp "OPP(Past)=▷(VOID,BECOMING) ≡Future:T | involution OPP(OPP(Past))=Past:T OPP(Past)≠Past:T | refuses primitive(Being):T ⊕:T ▷(x,x):T | HAS_POLE Past:T Being:F ->T" opposite  #@ turns-red: exact:s09; fixture:refuses Being / ⊕ / ▷(x,x); cannot-fail:F24 (HAS_POLE per-case values are literal text)
+want opp "OPP(Past)=▷(VOID,BECOMING) ≡Future:T | involution OPP(OPP(Past))=Past:T OPP(Past)≠Past:T | refuses primitive(Being):T ⊕:T ▷(x,x):T | HAS_POLE Past:T Being:F ->T" opposite  #@ turns-red: exact:s09; fixture:refuses Being / ⊕ / ▷(x,x); red:opp_m2
 want opp "A(A)=▷(VOID,RELATION) exists:T A(A)≠A:T A(A(A))=A:T" opposite  #@ turns-red: exact:s09
 sed 's|glyph OPP = la g. ETYM(g) (la nm. BOT(ETYM(g))) (la a. la b. BOT(ETYM(g))) (la a. la b. BOT(ETYM(g)))|glyph OPP = la g. ETYM(g) (la nm. BOT(ETYM(g))) (la a. la b. BOT(ETYM(g))) (la a. la b. SEALo(CON(b)(a)))|' opposite.la > "$T/opp_m1.la"; host "$T/opp_m1.la" opp_m1
 red opp_m1 "⊕:F" "opposite RED(⊕ given a pole)"
+sed 's|^glyph HAS_POLE = la g. ETYM(g) (la nm. FALSE)|glyph HAS_POLE = la g. ETYM(g) (la nm. TRUE)|' opposite.la > "$T/opp_m2.la"; host "$T/opp_m2.la" opp_m2
+red opp_m2 "HAS_POLE Past:T Being:T ->F" "opposite RED(a primitive given a pole: the per-case value is COMPUTED now, so it flips — F24; it was literal text until 2026-09-18)"
 
 # ═══ 12. textcoherence — whole-text coherence (the open discourse item) ═══════
 host textcoherence.la tc
@@ -367,10 +382,12 @@ if grep -hoE 'MONO\("[^"]*"\)' lineage.la topology.la texture.la evidential.la r
 host entendre.la en
 want en "I vertical: surface=⊗(▷(RECOGNITION,FORM),▷(DEPTH,RECOGNITION)) | first depth: ▷(RECOGNITION,FORM), ▷(DEPTH,RECOGNITION) | second depth: RECOGNITION, FORM, DEPTH, RECOGNITION | third depth (operators): ⊗ ▷ ▷" entendre  #@ turns-red: exact:s21
 want en "II horizontal: facets=6: RECOGNITION;FORM;▷0.1;DEPTH;▷3.0;⊗2.4 | III calligraphic: elements: marks=3 (⊗1 ⊕0 ▷2 ⊂0 ↻0) leaves=4 [B: census, not execution]" entendre  #@ turns-red: exact:s21
-want en "four readings pairwise distinct, all derived from the DAG:T | primitive LOVE: I=⊥" entendre  #@ turns-red: red:en_m1; cannot-fail:F23 (labelled strings)
+want en "four readings pairwise distinct by CONTENT (labels stripped), all derived from the DAG:T | primitive LOVE: I=⊥" entendre  #@ turns-red: red:en_m1; exact:s21
 want en "primitive has no vertical reading (red path):T" entendre  #@ turns-red: red:en_m2
-sed 's|^glyph ENTENDRE_II = la t. EN_C3("facets=")(int_to_str(LEN(SPLIT(";")(DAG(t)))))(EN_C3(": ")(DAG(t))(""))|glyph ENTENDRE_II = la t. ENTENDRE_I(t)|' entendre.la > "$T/en_m1.la"; host "$T/en_m1.la" en_m1
-red en_m1 "pairwise distinct, all derived from the DAG:F" "entendre RED(two modes read the same)"
+#  F23 (2026-09-18): en_m1 gives reading II reading I's CONTENT under II's OWN label ("facets=…"). The old comparison of
+#  LABELLED strings reads T on exactly this mutant (the labels differ); the content comparison must read F.
+sed 's|^glyph EN_PAY_II  = la t. DAG(t)|glyph EN_PAY_II  = la t. EN_PAY_I(t)|' entendre.la > "$T/en_m1.la"; host "$T/en_m1.la" en_m1
+red en_m1 "pairwise distinct by CONTENT (labels stripped), all derived from the DAG:F" "entendre RED(two readings carry the same content under different labels — caught only because the labels are stripped)"
 sed 's|(la _. "⊥ (a primitive has no strata below its surface)")|(la _. "surface only")|' entendre.la > "$T/en_m2.la"; host "$T/en_m2.la" en_m2
 red en_m2 "no vertical reading (red path):F" "entendre RED(a primitive given a vertical reading)"
 # ═══ 22. felicitylive — ontofelicity wired to the capability sealer (LA_COMPLETION "live enforcement") ═
@@ -509,10 +526,17 @@ red mig_m2 "offered on ▷(RECOGNITION,FORM) refused:F" "migrate RED(ratchet dis
 #  growth into a false RED. The pinned property is examined:T + all-listed-are-checked:T.
 host closure.la cl
 want cl "examined:T all-listed-are-checked:T | residue=(none) | SLACKS(suite)=\"\":T CLOSURE(suite):T AATC diagnosis(incl/appl/valid/closure)=FTTT centropy=3" closure  #@ turns-red: exact:captured
-want cl "CLOSURE red path (the ledger's own: a deliberately re-introduced slack entry) residue=notgated.la named:T CLOSURE goes F:T centropy falls 3→2 strictly:T" closure  #@ turns-red: cannot-fail:F27 (the fold seed short-circuits)
+want cl "CLOSURE red path (the ledger's own: a deliberately re-introduced slack entry) residue=notgated.la named:T CLOSURE goes F:T centropy falls 3→2 strictly:T" closure  #@ turns-red: red:cl_m1,cl_m3; exact:captured
 want cl "CLOSURE resolved by aatc's T_CLOSE: SLACKS=\"\":T CLOSURE:T centropy rises 2→3 strictly:T" closure  #@ turns-red: exact:captured
 sed 's|^glyph RESIDUE = la lines. la extra. .*|glyph RESIDUE = la lines. la extra. ""|' closure.la > "$T/cl_m1.la"; host "$T/cl_m1.la" cl_m1
 red cl_m1 "residue= named:F" "closure RED(residue scan made constant-empty: the re-introduced slack is no longer named and the fixture reads closed)"
+red cl_m1 "named:F CLOSURE goes F:F" "closure RED(… and CLOSURE no longer goes F on the slacked suite)"
+#  F27 (2026-09-18): the slack was the fold's SEED, and a non-empty accumulator short-circuits, so the red path returned
+#  "notgated.la" without reading the suite. It is now APPENDED to the listed modules and judged by CL_HOSTS like them.
+#  cl_m3 makes CL_HOSTS always TRUE: the old code still named the slack under it (verified by simulation 2026-09-18);
+#  the fixed code must not — the red path now depends on the suite's own host lines.
+sed 's|^glyph CL_HOSTS = la lines. la m. .*|glyph CL_HOSTS = la lines. la m. TRUE|' closure.la > "$T/cl_m3.la"; host "$T/cl_m3.la" cl_m3
+red cl_m3 "named:F CLOSURE goes F:F" "closure RED(every module read as hosted: the injected slack is no longer named — the red path reads the suite, F27)"
 sed 's|^glyph CL_FORLINE = la lines. .*|glyph CL_FORLINE = la lines. ""|' closure.la > "$T/cl_m2.la"; host "$T/cl_m2.la" cl_m2
 red cl_m2 "listed=0 checked=0" "closure RED(the module list was never found: a residue scan that examined nothing would otherwise read CLOSED — an instrument must prove it looked)"
 
