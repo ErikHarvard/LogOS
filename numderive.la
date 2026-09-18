@@ -44,7 +44,7 @@ import("recdepth.la")   # TSIZE NORMK the κ constructors + the base surface
 export ND_ZERO ND_SUCC ND_TONUM ND_POW2 ND_CITED
 
 glyph ND_B = la b. b("T")("F")
-glyph Px = la nm. PRIM(nm)
+# Px comes from recdepth.la (a local copy was dead under tiny_host — FREEZE-TRACKF.md F8, removed 2026-09-18)
 glyph ND_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 glyph ND_CONTAINS = Z(la self. la s. la sub. IF(HAS_PREFIX(s)(sub))(la _. TRUE)(la _. IF(str_eq(s)(""))(la _. FALSE)(la _. self(str_tail(s))(sub))))
 

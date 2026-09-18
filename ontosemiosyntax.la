@@ -62,7 +62,7 @@ import("recdepth.la")   # RD_CAT + the base surface (canon + glyphdag through li
 export OSS OSS_BEING OSS_FORM OSS_MEANING G_OSS
 
 glyph OS_BSTR = la b. b("T")("F")
-glyph Px = la nm. PRIM(nm)
+# Px comes from recdepth.la (a local copy was dead under tiny_host — FREEZE-TRACKF.md F8, removed 2026-09-18)
 glyph OS_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 
 # ── the three aspects, three different routes ──

@@ -1,0 +1,196 @@
+# ❄ FREEZE — TRACK F (`register-stack`), declared 2026-09-18 ~13:15 at Erik's direction
+
+**The rule (Erik, 2026-08-19, [[logos-freeze-before-milestone]]):** secure the milestone before building the next
+thing on it. "Zero bugs" is not verifiable; what is: **zero KNOWN defects, plus a bounded search that would have
+found them.** The decisive question is not "did it pass?" but **"which assertions cannot go RED?"**
+
+**While frozen:** NO new Track F building — no Category-2 items, no new modules, no new rulings implemented. Closing
+work IS allowed: fixing a ledger defect (red-first), running the owed runs, correcting stale claims.
+
+**Scope:** Track F's own work since it branched from `kernel-k1` at `801f006` (2026-09-11):
+**11 commits, 51 LA modules** (48 new + `lexicon.la`/`opgrammar.la` edited + `lexdepth.la`), plus tools and docs.
+Out of scope: `kernel-k1` history before `801f006` (today's full audit covers it) and tracks b/c/d/e (their owners).
+
+**EXIT — the freeze lifts only when ALL hold, each with its evidence recorded below:**
+1. the full host suite `gate_registers.sh` runs end-to-end GREEN on the frozen HEAD, output captured;
+2. every `want` token found in its output, and every `red` token found in its MUTANT output AND ABSENT from the
+   GREEN output — the absence half is what proves a RED path is not vacuous. The gate's `red()` now checks both
+   halves on every run, and `checkwants.py`/`checkreds.py --dir` re-check a kept run offline (F16–F18, closed);
+3. host == SECD VM byte-for-byte for every module in the VM list, and a WRITTEN reason for each module not in it;
+4. `build.sh`'s lexicon gate (the one Track F's 09-17 edit can move) green, or re-pinned with a derivation;
+5. every defect below CLOSED (fixed red-first + re-run) or explicitly RULED out of scope by Erik;
+6. `freezeck.py` rc 0;
+7. every module PASSED V1–V8 below, each with its run recorded (§7). ⇒ then tag `trackf-secured-<date>` on the frozen HEAD.
+
+**★ AND THEN VERIFY BY RUNNING (Erik, 2026-09-18):** *"Nothing is proven as correct until it's actually verifiably
+proven to run, and that it actually works without crashing … test runs in various methods … if anything comes up, we
+should be able to pinpoint exactly where it's going wrong."* Debugging and tracking get us to "no KNOWN bugs"; the
+freeze does not lift on that. It lifts when every module has PASSED every method below, each run recorded in §7:
+
+| method | what it proves | exists? |
+|---|---|---|
+| **V1 host run** | each module runs on `tiny_host` and prints its exact derived witnesses | yes (`host`/`want`) |
+| **V2 no crash, no hang** | every green run exits 0; a timeout is reported AS a timeout | instrument ready (F19 closed); not yet run |
+| **V3 mutation** | every RED path fires in the mutant AND is absent from green (not vacuous) | yes, both halves since F18 |
+| **V4 second engine** | host == SECD VM byte-for-byte, AND both exit 0 | instrument ready (F19 closed); never run (F13) |
+| **V5 determinism** | the same module run twice gives byte-identical output (no hidden state, /tmp, ordering) | instrument ready: `REGS_TWICE=1` (4/4 fixture cases; the first fixture was itself wrong and was caught) |
+| **V6 clean checkout** | the suite passes on a fresh export of the COMMIT, not on the dirty tree ([[committed-state-vs-working-tree]]) | procedure written (§5 step 2b); all 74 files the suite needs ARE in the commit |
+| **V7 independent oracle** | the pinned values were DERIVED independently (python/tex), not captured from a run | **recorded: 17 of 49 claim it, 30 captured, scripts lost — F20** |
+| **V8 pinpoint** | any failure names module · section · witness · output snippet; outputs kept; ONE section re-runnable alone | instrument ready: `sh gate_section.sh N [N…]` (slices verbatim; stub run PASS/FAIL both ways; refusals rc 2) |
+
+**Status right now (13:15):** exit criteria 1–4 **NOT MET — nothing has run** (the deep lease is the kernel audit's
+until ~17:00, then POROS P5a, then ENTELECHEIA M11c). Criterion 6 **MET** (static). Criterion 5: 13 open items (F1–F5, F9–F15, F20); F6–F8, F16–F19 CLOSED (static, validated). V2/V3/V4/V5/V8 instruments ready; V6 procedure written; V7 gap = F20. Verification phase V1–V8: none passed yet.
+
+---
+
+## 1. THE COMMITS (what each did · what verified it at the time · what is owed now)
+
+| commit | date | what | verified then | owed now |
+|---|---|---|---|---|
+| `85deb99` | 09-15 | register stack: 11 modules (§1–§12) | host, standalone gate | full suite on HEAD; VM leg (10 of 11 listed; `prosody_xcheck` not) |
+| `cc906b3` | 09-15 | 18 completion modules (§13–§29) | host, standalone gate | full suite; VM (8 of 18 not listed); `syllabus` export bug (fixed 1d6740f) |
+| `bc08817` | 09-15 | `gapcensus.la` | host | full suite; not in VM list; census entangled with F3 |
+| `86eac04` | 09-17 | Category 1 + framework, 17 modules (§31–§45) | per-module host + mutants, witnesses derived first | full suite; VM leg (never) |
+| `f812d29` | 09-17 | lawroot extended | per-module | full suite; VM |
+| `5f1f7ec` | 09-17 | logicsyntax, numderive | per-module | full suite; VM |
+| `2b1de12` | 09-17 | divergent (§48) | per-module | full suite; VM |
+| `0cab0b5` | 09-17 | adequacy (§49) | per-module | full suite; VM |
+| `ec12042` | 09-17 | 8 adequacy rulings applied to lexicon/opgrammar | dependents re-checked (per RESUME) | **`build.sh` lexicon gate never run (F1)**; 5 dependents |
+| `93c13f3` | 09-17 | docs + checkwants/checkreds | — | — |
+| `1d6740f` | 09-18 | nameck rc, VM list +17, chunk switch, archeunique (3), headers | static + stub binaries only | **everything: nothing in it has run** |
+
+**The single honest line:** every module ran green on the host at least once, individually; **the suite has never
+run end-to-end on this HEAD, and no module has a recorded SECD VM run.**
+
+## 2. THE MODULES (51) — counts generated by `python3 freezeck.py --table`; status columns kept by hand
+
+| § | module | born | wants | reds | host green on HEAD | VM list | VM ever run | notes |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `lineage.la` | 85deb99 | 5 | 2 | not run on HEAD | yes | no |  |
+| 2 | `prosody.la` | 85deb99 | 4 | 1 | not run on HEAD | yes | no |  |
+| 2 | `prosody_xcheck.la` | 85deb99 | 1 | 1 | not run on HEAD | **no** | no |  |
+| 3 | `topology.la` | 85deb99 | 4 | 2 | not run on HEAD | yes | no |  |
+| 4 | `evidential.la` | 85deb99 | 2 | 2 | not run on HEAD | yes | no |  |
+| 5 | `texture.la` | 85deb99 | 2 | 1 | not run on HEAD | yes | no |  |
+| 6 | `registers.la` | 85deb99 | 4 | 3 | not run on HEAD | yes | no |  |
+| 7 | `modegenesis.la` | 85deb99 | 3 | 1 | not run on HEAD | yes | no |  |
+| 8 | `regenesis.la` | 85deb99 | 3 | 1 | not run on HEAD | yes | no |  |
+| 9 | `complement.la` | 85deb99 | 5 | 2 | not run on HEAD | yes | no |  |
+| 9 | `opposite.la` | 85deb99 | 2 | 1 | not run on HEAD | yes | no |  |
+| 12 | `textcoherence.la` | cc906b3 | 6 | 3 | not run on HEAD | yes | no |  |
+| 13 | `derive_closure.la` | cc906b3 | 5 | 3 | not run on HEAD | yes | no |  |
+| 14 | `branchgenesis.la` | cc906b3 | 2 | 3 | not run on HEAD | yes | no |  |
+| 15 | `ontoargument.la` | cc906b3 | 7 | 4 | not run on HEAD | yes | no |  |
+| 16 | `ontomorph.la` | cc906b3 | 3 | 1 | not run on HEAD | yes | no | depends on 09-17 lexicon edit |
+| 17 | `gramcomplete.la` | cc906b3 | 3 | 2 | not run on HEAD | yes | no | depends on 09-17 lexicon edit |
+| 18 | `neologenesis.la` | cc906b3 | 4 | 1 | not run on HEAD | yes | no |  |
+| 19 | `unified.la` | cc906b3 | 5 | 2 | not run on HEAD | yes | no |  |
+| 21 | `entendre.la` | cc906b3 | 4 | 2 | not run on HEAD | **no** | no |  |
+| 22 | `felicitylive.la` | cc906b3 | 2 | 1 | not run on HEAD | **no** | no |  |
+| 23 | `syllabus.la` | cc906b3 | 2 | 1 | not run on HEAD | **no** | no | changed in 1d6740f; depends on 09-17 lexicon edit |
+| 24 | `aware.la` | cc906b3 | 1 | 1 | not run on HEAD | **no** | no |  |
+| 25 | `ablateop.la` | cc906b3 | 2 | 1 | not run on HEAD | **no** | no |  |
+| 26 | `wants.la` | cc906b3 | 2 | 1 | not run on HEAD | **no** | no |  |
+| 27 | `protoagent.la` | cc906b3 | 2 | 1 | not run on HEAD | **no** | no |  |
+| 28 | `fractal.la` | cc906b3 | 1 | 1 | not run on HEAD | **no** | no |  |
+| 29 | `branchclosure.la` | cc906b3 | 2 | 2 | not run on HEAD | **no** | no |  |
+| 30 | `gapcensus.la` | bc08817 | 2 | 1 | not run on HEAD | **no** | no | reads gate_registers.sh |
+| 31 | `recdepth.la` | 86eac04 | 5 | 4 | not run on HEAD | yes | no |  |
+| 32 | `selfevo.la` | 86eac04 | 3 | 4 | not run on HEAD | yes | no |  |
+| 33 | `certify.la` | 86eac04 | 3 | 2 | not run on HEAD | yes | no | reads gate_registers.sh |
+| 34 | `migrate.la` | 86eac04 | 5 | 2 | not run on HEAD | yes | no |  |
+| 35 | `closure.la` | 86eac04 | 3 | 2 | not run on HEAD | yes | no | reads gate_registers.sh |
+| 36 | `metakappa.la` | 86eac04 | 3 | 3 | not run on HEAD | yes | no |  |
+| 37 | `substitution.la` | 86eac04 | 6 | 3 | not run on HEAD | yes | no |  |
+| 38 | `ontosemiosyntax.la` | 86eac04 | 4 | 2 | not run on HEAD | yes | no |  |
+| 39 | `autocompress.la` | 86eac04 | 3 | 2 | not run on HEAD | yes | no |  |
+| 40 | `phonometa.la` | 86eac04 | 6 | 3 | not run on HEAD | yes | no |  |
+| 41 | `identity.la` | 86eac04 | 4 | 2 | not run on HEAD | yes | no |  |
+| 42 | `compressbound.la` | 86eac04 | 3 | 2 | not run on HEAD | yes | no |  |
+| 43 | `logicsyntax.la` | 86eac04 | 5 | 4 | not run on HEAD | yes | no |  |
+| 44 | `lawroot.la` | 86eac04 | 4 | 2 | not run on HEAD | yes | no |  |
+| 45 | `archeunique.la` | 86eac04 | 3 | 3 | not run on HEAD | yes | no | changed in 1d6740f |
+| 46 | `crossbranch.la` | 86eac04 | 4 | 2 | not run on HEAD | yes | no |  |
+| 47 | `numderive.la` | 86eac04 | 5 | 3 | not run on HEAD | yes | no |  |
+| 48 | `divergent.la` | 2b1de12 | 3 | 2 | not run on HEAD | yes | no |  |
+| 49 | `adequacy.la` | 0cab0b5 | 2 | 2 | not run on HEAD | yes | no | depends on 09-17 lexicon edit |
+| — | `lexdepth.la` | cc906b3 | 0 | 0 | NOT GATED here | **no** | no | depends on 09-17 lexicon edit |
+| — | `lexicon.la` | ec12042 | 0 | 0 | NOT GATED here | **no** | no |  |
+| — | `opgrammar.la` | ec12042 | 0 | 0 | NOT GATED here | **no** | no |  |
+
+`wants`/`reds` = pinned witness lines / RED-path lines in `gate_registers.sh`. **VM list "no" = 11 gated modules**
+(ablateop aware branchclosure entendre felicitylive fractal gapcensus prosody_xcheck protoagent syllabus wants) **with
+no recorded reason** — each needs either adding or a written reason (F9). `canon.la` sits under 39 of the 51, so an
+upstream NORMK change (F4) can move pinned values across most of this table.
+
+## 3. THE DEFECT LEDGER — every known open item (IDs are stable; close, never delete)
+
+| id | sev | kind | item | evidence | closes when |
+|---|---|---|---|---|---|
+| F1 | HIGH | SUSPECT | `build.sh:4875` lexicon gate pins `diverge=14 [… Move …]`; `ec12042` re-derived Move's phonym | pin read vs commit diff; gate not run since | run it; if RED, re-derive + re-pin (derivation first) |
+| F2 | HIGH | UNRUN | the full suite has never run end-to-end on HEAD; `1d6740f` has never run at all | `.fullgate.log` = one PASS line predating §43–§49 | exit criterion 1 |
+| F3 | MED | DEFECT | `branchclosure.la:7,:24` and `gapcensus.la:71` say ↻↻g≡↻g holds for every glyph (vacuous); FALSE at BEING (F4). gapcensus's pinned `ceiling=2 … consistent:T` holds only because its probe skips BEING | code trace, file 20 §1 | after F4 is ruled: fix the claim OR the probe, red-first |
+| F4 | HIGH | DEFECT, **upstream** | NORMK: ↻(↻(BEING)) → `↻(SELF)` but ↻(BEING) → `SELF` — ↻² fails at BEING; `WGEN` tests only a fresh Y | code trace of `canon_spec.la` (NOT run) | 1-s probe confirms; owner of canon_spec + Erik rule what ↻(SELF) is; fix in the SPEC |
+| F5 | MED | CONFLICT | `lexicon.la:346 ONE_IS_BEING` prints One=Being (ungated) vs numderive §47 GATES "BEING is not one" | both read | Erik rules; the loser changes, red-first |
+| F6 | LOW | STALE | `migrate.la:42` header "GATE (drafted …)" — ran green 09-17 | freezeck H | ✔ CLOSED 09-18: header corrected to "ran green 2026-09-17; SECD VM leg not yet run" (comment only) |
+| F7 | LOW | STALE | `crossbranch.la:49` prose: "Nine of the claimed twenty-eight do not exist" — codex App B: 15 absent; and "Liminal and Anamnetic are blocked on a definition" — the codex defines them | file 20 §2 | ✔ CLOSED 09-18: prose corrected to 15 absent / overlap 13 and "definitions exist, operand x owed" (comment only; pinned BUILT=18 unchanged) |
+| F8 | LOW | DEAD CODE | 10 modules define a local `Px` shadowed by `recdepth.la`'s (identical bodies; a future mutant on Px would silently not fire) | freezeck S | ✔ CLOSED 09-18: the 10 dead `Px` copies removed (behaviour-preserving: identical to the imported recdepth Px); freezeck S now reports no shadowed locals; nameck + laparen clean on all 10 |
+| F9 | MED | COVERAGE | 11 gated modules in no VM list, no reason recorded | freezeck V | add each, or write why not (e.g. closure size, host-only builtin) |
+| F10 | MED | COVERAGE | `lexdepth.la` not gated at all (39→44 of 78 after the lexicon edit; verdict "chance") | RESUME item 6 | gate it, or record why it is a report not a gate |
+| F11 | MED | COVERAGE | `lexicon.la`/`opgrammar.la` (edited 09-17) are gated only via build.sh (F1) and indirectly via 5 dependents | dependency scan | F1 closed + dependents green on HEAD |
+| F12 | MED | RISK | 6 red tokens < 10 chars (`⊕:F`, `all C:F`, `ρ(L_t)=4`, `ρ 0→0`, `refused:F`, `differs:F`) — if present in the GREEN output, their RED path passes vacuously | freezeck R | checkreds on real output shows each ABSENT from green |
+| F13 | HIGH | UNRUN | no SECD VM run recorded for ANY Track F module | handoffs; old VM leg printed nothing on success, so no log could show it | exit criterion 3 (chunked: `REGS_VM_CHUNK=k/n`) |
+| F14 | LOW | STALE, not ours | `prop.la` (older kernel-k1 copy in this worktree) header says ¬P=⊗(VOID,P); code is ⊂(P,VOID) | read | resolves on sync with kernel-k1; note only |
+| F15 | — | OTHER TRACK | `debug_meta.la` unbound `SEQ` (Track C) | probe rc 1 | reported on BOARD 11:23; Track C's |
+| F19 | HIGH | INSTRUMENT | **exit codes are never asserted.** `host()` writes `$T/<tag>.rc` (gate_registers.sh:26) and NOTHING reads it: a module that prints its witnesses and then CRASHES, or hangs to the 1800 s timeout (rc 124), PASSES. The VM leg compares outputs, never exit codes, and its host run has no timeout — an identical crash on both engines reads "host == VM" | grep: the only `.rc` reference is the writer | ✔ CLOSED 09-18 (static; validated both ways): a GREEN run must exit 0 — ANY other rc fails and is printed; WHETHER THE BUDGET STOPPED IT IS DECIDED BY THE CLOCK (elapsed ≥ budget), never by matching 124/137/143 (★ my first version did match kill codes; `logos-hexis.sh` refused the commit under the sealed class hardcoded-kill-code — rewritten, and it now also labels a module that exits 124 BY ITSELF as a crash, which the code-matching version called a timeout). Mutants' rc recorded, not asserted. VM leg asserts BOTH rcs, times out its host run, names the first differing byte. Fixtures: crash-after-witness FAILS (the OLD gate passed it), hang FAILS as STOPPED BY THE BUDGET, self-124 FAILS as a crash; VM rc 1 and identical crash on BOTH engines FAIL. hexis `check` clean on all batch files, with a positive control proving it reads the file. ⚠ A green module that exits non-zero BY DESIGN will surface on the first run — then its expected rc is declared, never waved through |
+| F20 | HIGH | ORACLE (V7) | **30 of 49 sections pin values CAPTURED from a green run, with no independent derivation recorded** — §1–§9, §12, §14, §17–§30, §41–§43, §46, §48 (§10, §11 pin no module output). A bug present at capture time is pinned as the expected answer and no run can catch it ([[expected-values-derived-not-captured]]). The 17 sections that DO record a derivation (§13, §15, §16, §31–§40, §44, §45, §47, §49) record it only as a comment: the python derivations lived in session scratchpads and are gone, so none can be re-checked | gate header :5–7 ("pre-registered from a green run"); per-section comment scan 09-18 | derive each captured value independently, keep the derivation scripts IN THE REPO (`derive/`), and re-check the 17; or Erik rules a section's capture acceptable with its reason |
+| F16 | HIGH | INSTRUMENT | `checkreds.py` checks a red token is IN the mutant output, never that it is ABSENT from the green output (so it cannot catch F12's vacuous class); and it silently SKIPS a mutant with no captured output (`continue`) — "0 DID NOT FIRE", rc 0, over nothing | read | ✔ CLOSED 09-18 (static; validated both ways): absence-in-green half + MISSING-is-failure + no-selection-is-failure; 6/6 fixture cases right (genuine / vacuous / not fired / mutant missing / green missing / empty selection); `--dir` reads a REGS_KEEP dir |
+| F17 | MED | INSTRUMENT | `checkwants.py` prints "NO OUTPUT" for an unrun module but does not count it — rc 0 with nothing checked | read | ✔ CLOSED 09-18 (static; validated both ways): NO OUTPUT now UNCHECKED and rc 1; 3/3 fixture cases right; `--dir` added |
+| F18 | HIGH | INSTRUMENT | the gate's own `red()` has no absence-in-green check either; and `trap 'rm -rf "$T"' EXIT` deletes every output, so no gate run leaves anything for checkwants/checkreds (their `.mut/`, `.runout/` were filled by a manual 09-17 run) | read | ✔ CLOSED 09-18 (static; validated both ways): `red()` refuses a token present in the base tag's GREEN output, and a missing/empty green output — 5/5 cases right under dash, using the gate's own extracted definitions; `REGS_KEEP=<dir>` keeps $T (stub run: 8 files kept; none without it, no temp dir left) |
+
+## 4. STATIC SWEEPS DONE (no lease) — each validated against a KNOWN defect before its result was trusted
+
+| sweep | tool | result | validated both ways? |
+|---|---|---|---|
+| unbound names, host + VM builtin sets | `nameck.py`, `--vm` | 0 of 51 | yes (09-18: known defect + mutant) |
+| paren balance per definition | `laparen.py` | 0 of 51 | (tool from 09-17) |
+| every mutant actually mutates (88) | `freezeck.py` M | 88/88 change ≥1 line; 0 shadowed | yes — fixture that matches nothing is flagged |
+| shadowed locals (dead under tiny_host) | `freezeck.py` S | 10 identical `Px` copies (F8); 0 divergent | yes — planted divergent NORMK is flagged |
+| duplicate gate output tags | grep sweep | 0 | (known-defect sweep from 09-17) |
+| header status claims | `freezeck.py` H | found F6; F3's `branchclosure.la:24` | advisory only |
+| modules not in any VM list | `freezeck.py` V | 11 (F9) | — |
+| short red tokens | `freezeck.py` R | 6 (F12) | needs a run to decide |
+| runtime readers of gate_registers.sh | read of closure/certify/gapcensus | unaffected by 1d6740f's edits (static) | confirm on the run |
+
+## 5. THE RUN QUEUE — needs the deep lease; in this order, each closes named items
+
+0. ✔ **DONE 09-18: the instruments F16/F17/F18 fixed**, each validated both ways on a fixture. (Their first read of
+   the stale 09-17 captures: archeunique half (3)'s witness and RED are UNWITNESSED — correct, it has never run.)
+1. **NORMK probe** (1 s): `import("canon.la")` · `print(NORMK(MC(MC(PRIM("BEING")))))` → expect `↻(SELF)`. Confirms/refutes F4.
+2. **Full host suite** on the frozen HEAD, keeping every output:
+   `REGS_VM=0 REGS_KEEP=.freeze-out sh gate_registers.sh 2>&1 | tee .freeze-host.log`, then
+   `python3 checkwants.py --dir .freeze-out` and `python3 checkreds.py --dir .freeze-out` — both must exit 0.
+   Closes F2, F12 (the gate's `red()` now refuses a vacuous RED itself); re-confirms 1d6740f.
+2b. **V6 clean checkout** (after committing — an export holds only what is committed):
+   `C=$(git -C ~/logos-f rev-parse --short HEAD); D=$HOME/logos-verify/trackf-$C; rm -rf "$D"; mkdir -p "$D"`
+   `git -C ~/logos-f archive "$C" | tar -x -C "$D" && cd "$D" && REGS_VM=0 REGS_KEEP=.freeze-out sh gate_registers.sh`
+   then both checkers `--dir .freeze-out`, and `diff -r` its `.freeze-out` against the worktree run's: identical.
+2c. **V5 determinism**: `REGS_VM=0 REGS_TWICE=1 sh gate_registers.sh` (doubles host time — can share a run with 2).
+3. **build.sh lexicon gate** alone (≤300 s). Closes or confirms F1; with (2) closes F11.
+4. **VM leg in chunks**: `REGS_VM_CHUNK=1/8 sh gate_registers.sh` first — read its TIME lines, size the rest. Closes F13.
+5. Fix phase: each open defect red-first, then re-run the sections it touches. Rulings F4, F5 go to Erik.
+
+## 6. RULINGS THIS FREEZE NEEDS FROM ERIK
+- **F4** — what is ↻(SELF)? (↻(SELF)→SELF restores ↻² everywhere and moves normal forms corpus-wide; leaving it makes
+  ↻↻g≡↻g a DISCRIMINATING law that fails at BEING.) Also who owns the fix to `canon_spec.la`.
+- **F5** — is ONE ≡ BEING (lexicon.la, and the codex) or is BEING the identity combinator and one = BECOMING(VOID)
+  (numderive §47)?
+- **F9/F10** — accept "not on the VM" / "report, not gate" as written reasons, or require them.
+
+**Ledger discipline:** regenerate §2's counts with `python3 freezeck.py --table` (status columns are hand-kept); add a
+defect the moment it is known; close an item only with its evidence (a run log line or a commit hash).
+
+## 7. VERIFICATION RUN LOG — one line per run, appended; nothing here is claimed without its log
+| when | commit | method | scope | command | result | log/output kept at |
+|---|---|---|---|---|---|---|
+| — | — | — | — | *(no verification run yet — the deep lease is the kernel audit's until ~17:00)* | — | — |

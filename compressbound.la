@@ -57,7 +57,7 @@ import("recdepth.la")   # DAG DECOMP NODES TSIZE NORMK RECOVER CANON + the base 
 export CB_CHAIN CB_TREE CB_KEPT CB_REC CB_DAG
 
 glyph CB_BSTR = la b. b("T")("F")
-glyph Px = la nm. PRIM(nm)
+# Px comes from recdepth.la (a local copy was dead under tiny_host — FREEZE-TRACKF.md F8, removed 2026-09-18)
 glyph CB_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 # ★ LOCAL ALIASES so a mutant has something in THIS file to break: a later definition does NOT shadow an
 #   imported glyph (tiny_host returns the FIRST definition), so a mutant redefining DAG/NODES would be inert.

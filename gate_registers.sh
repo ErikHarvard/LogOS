@@ -16,15 +16,48 @@ set -u
 cd "$(dirname "$0")" || exit 1
 ok=1
 T=$(mktemp -d ./.regs_gate_XXXXXX) || exit 1
-trap 'rm -rf "$T" logos_source.la logos_program.bin' EXIT
+# REGS_KEEP=<dir> keeps every output — green, mutant, VM — for offline re-checking with `checkwants.py --dir` and
+# `checkreds.py --dir` (FREEZE-TRACKF.md F18: without it the trap below deleted all evidence of a run). Keep the
+# dir INSIDE the worktree (e.g. .freeze-out), for the same reason $T is.
+trap 'if [ -n "${REGS_KEEP:-}" ]; then mkdir -p "$REGS_KEEP" && cp -p "$T"/* "$REGS_KEEP"/ 2>/dev/null; fi; rm -rf "$T" logos_source.la logos_program.bin' EXIT
 [ -x ./tiny_host ] || gcc -O2 -Wall -Wextra -o tiny_host tiny_host.c || { echo "FAIL  registers: no tiny_host"; exit 1; }
 
-# host(module, out) — run on the host into $T/out; rc recorded
-host() { timeout 1800 ./tiny_host "$1" > "$T/$2" 2>&1; echo $? > "$T/$2.rc"; }
+# host(module, out) — run on the host into $T/out; rc recorded AND ASSERTED for a GREEN run (FREEZE-TRACKF.md F19:
+#   until 2026-09-18 the rc was written and never read, so a module that printed its witnesses and then crashed, or
+#   hung to the timeout, PASSED). A green run must exit 0; ANY other rc fails and is PRINTED. Whether the budget
+#   stopped it is decided by the CLOCK (elapsed >= budget), never by matching a kill code — a budget kill surfaces
+#   as different codes by invocation shape (the sealed class hardcoded-kill-code). A MUTANT (tag *_mN) may exit
+#   non-zero: its rc is recorded and red() judges it. REGS_HOST_TIMEOUT overrides the 1800 s budget (tests use 2 s).
+# rcsay(what, rc, elapsed, budget) — one FAIL line that says which fact happened
+rcsay() { if [ "$3" -ge "$4" ]; then echo "$1 was STOPPED BY THE ${4} s BUDGET after ${3} s (rc $2) — a timeout, not a logic failure; output may be partial"; else echo "$1 exited rc $2 after ${3} s — it crashed or errored"; fi; }
+host() {
+    hb=${REGS_HOST_TIMEOUT:-1800}; hs=$(date +%s)
+    timeout "$hb" ./tiny_host "$1" > "$T/$2" 2>&1; hrc=$?; he=$(($(date +%s) - hs)); echo "$hrc" > "$T/$2.rc"
+    case "$2" in
+        *_m[0-9]*) : ;;
+        *) if [ "$hrc" -ne 0 ]; then echo "FAIL  registers/$2: $(rcsay "$1" "$hrc" "$he" "$hb"): $(tail -c 200 "$T/$2")"; ok=0
+           # V5 DETERMINISM (FREEZE-TRACKF.md V5), opt-in because it doubles host time: REGS_TWICE=1 runs every green
+           # module a second time; output AND rc must be byte-identical, or it depends on hidden state (/tmp, time,
+           # file order, a stale generated module). Named with the first differing byte, so it can be pinpointed.
+           elif [ "${REGS_TWICE:-0}" = 1 ]; then
+               timeout "$hb" ./tiny_host "$1" > "$T/$2.twice" 2>&1; h2=$?
+               if [ "$h2" -ne "$hrc" ]; then echo "FAIL  registers/$2: NONDETERMINISTIC — $1 exited rc $hrc then rc $h2"; ok=0
+               elif ! cmp -s "$T/$2" "$T/$2.twice"; then echo "FAIL  registers/$2: NONDETERMINISTIC — $1 printed different output on a second run: $(cmp "$T/$2" "$T/$2.twice" 2>&1 | head -1)"; ok=0; fi
+           fi ;;
+    esac
+}
 # want(out, token, label) — exact witness present
 want() { if grep -qF -- "$2" "$T/$1"; then :; else echo "FAIL  registers/$3: missing witness [$2] — got: $(head -c 300 "$T/$1")"; ok=0; fi; }
 # red(mutfile, token, label) — the mutant's output must NOT carry the green witness and must carry the red one
-red() { if grep -qF -- "$2" "$T/$1"; then :; else echo "FAIL  registers/$3: the RED path did not fire — mutant still reads green: $(head -c 200 "$T/$1")"; ok=0; fi; }
+#   … AND the token must be ABSENT from the GREEN output of the same module (base tag = the mutant tag minus _mN;
+#   every red tag in this file has that form, checked by freezeck). A token already in the green output fires
+#   whether or not the mutant changed anything — a VACUOUS RED (FREEZE-TRACKF.md F18). No green output is a failure.
+red() {
+    if grep -qF -- "$2" "$T/$1"; then :; else echo "FAIL  registers/$3: the RED path did not fire — mutant still reads green: $(head -c 200 "$T/$1")"; ok=0; fi
+    rb=${1%_m[0-9]*}
+    if [ "$rb" = "$1" ] || [ ! -s "$T/$rb" ]; then echo "FAIL  registers/$3: no GREEN output [$rb] to prove the RED token absent from"; ok=0
+    elif grep -qF -- "$2" "$T/$rb"; then echo "FAIL  registers/$3: VACUOUS RED — the token is already in the GREEN output of $rb, so it fires whether or not the mutant changed anything: [$2]"; ok=0; fi
+}
 
 # ── the VM leg (§11), defined up here so REGS_VM_CHUNK can run it ALONE ──────────────────
 #  REGS_VM=1 (default) the 33 light modules · 2 adds registers.la and regenesis.la (and two more),
@@ -48,14 +81,21 @@ vm_leg() {
         b=${m%.la}
         cp "$m" logos_source.la
         t0=$(date +%s)
-        timeout 7200 ./tiny_host codegen.la >/dev/null 2>&1 || { echo "FAIL  registers/vm: codegen failed on $m"; ok=0; continue; }
+        timeout 7200 ./tiny_host codegen.la >/dev/null 2>&1; crc=$?
         t1=$(date +%s)
-        timeout 3600 ./logos_secd > "$T/$b.vm" 2>&1
+        if [ "$crc" -ne 0 ]; then
+            echo "FAIL  registers/vm: $(rcsay "codegen on $m" "$crc" "$((t1-t0))" 7200)"; ok=0; rm -f logos_program.bin logos_source.la; continue
+        fi
+        timeout 3600 ./logos_secd > "$T/$b.vm" 2>&1; vrc=$?; echo "$vrc" > "$T/$b.vm.rc"
         t2=$(date +%s)
-        ./tiny_host "$m" > "$T/$b.host" 2>&1
+        hb=${REGS_HOST_TIMEOUT:-1800}
+        timeout "$hb" ./tiny_host "$m" > "$T/$b.host" 2>&1; hrc=$?; echo "$hrc" > "$T/$b.host.rc"
         t3=$(date +%s)
-        echo "TIME  registers/vm: $m codegen=$((t1-t0))s vm=$((t2-t1))s host=$((t3-t2))s"
-        if cmp -s "$T/$b.vm" "$T/$b.host"; then :; else echo "FAIL  registers/vm: $m host != VM"; ok=0; fi
+        echo "TIME  registers/vm: $m codegen=$((t1-t0))s vm=$((t2-t1))s host=$((t3-t2))s rc vm=$vrc host=$hrc"
+        # F19: identical output is not enough — an identical CRASH on both engines used to read "host == VM".
+        [ "$vrc" -eq 0 ] || { echo "FAIL  registers/vm: $(rcsay "$m on the SECD VM" "$vrc" "$((t2-t1))" 3600)"; ok=0; }
+        [ "$hrc" -eq 0 ] || { echo "FAIL  registers/vm: $(rcsay "$m on the host" "$hrc" "$((t3-t2))" "$hb")"; ok=0; }
+        if cmp -s "$T/$b.vm" "$T/$b.host"; then :; else echo "FAIL  registers/vm: $m host != VM — first differing byte: $(cmp "$T/$b.vm" "$T/$b.host" 2>&1 | head -1)"; ok=0; fi
         vm_done=$((vm_done+1))
         rm -f logos_program.bin logos_source.la
     done

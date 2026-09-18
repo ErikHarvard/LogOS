@@ -46,8 +46,9 @@
 #        discrimination is witnessed on EVERY run, not assumed).
 #  ★ EVIDENTIAL: [W] the extraction, the pairwise identity, both failure paths; [B] **the collapse is
 #     gated for the 18 BUILT branches only, and it holds BY CONSTRUCTION (one sealer), not by convergence.
-#     Nine of the claimed twenty-eight do not exist; Liminal and Anamnetic are blocked on a definition
-#     Erik owes.** The ledger row stays [B] with that bound, not [W].
+#     Against the Codex Llogoscribeologiae's own list (App B): fifteen of its twenty-eight are not among
+#     the 18 built — the overlap is its 13 Tier-5 branches. The five deferred branches now HAVE definitions
+#     (codex ~4120–4175, corrected 2026-09-18); what is still owed is each one's interface operand x.** The ledger row stays [B] with that bound, not [W].
 #  Pure strings + κ walks ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("recdepth.la")   # NORMK CANON AUTO_OK MONO the mode forms + the base surface
@@ -55,7 +56,7 @@ import("recdepth.la")   # NORMK CANON AUTO_OK MONO the mode forms + the base sur
 export XB_EXTRACT XB_BUILT XB_ALL XB_PAIRS XB_SAME
 
 glyph XB_B = la b. b("T")("F")
-glyph Px = la nm. PRIM(nm)
+# Px comes from recdepth.la (a local copy was dead under tiny_host — FREEZE-TRACKF.md F8, removed 2026-09-18)
 glyph XB_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 
 # ── a branch record: (name, compression-operator glyph). EXTRACTION returns "" when the operator cannot

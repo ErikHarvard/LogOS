@@ -62,7 +62,7 @@ import("recdepth.la")   # RD_CAT, ALLSTR, RD_FOLD and the base surface (canon + 
 export SUBST MU INV INV_CONG SB_PROBES
 
 glyph SB_BSTR = la b. b("T")("F")
-glyph Px = la nm. PRIM(nm)
+# Px comes from recdepth.la (a local copy was dead under tiny_host — FREEZE-TRACKF.md F8, removed 2026-09-18)
 glyph SB_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 glyph SB_IN = la s. RD_FOLD(la h. la acc. OR(acc)(str_eq(h)(s)))(FALSE)
 glyph SB_UNIQ = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(SB_IN(h)(rest))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))

@@ -53,7 +53,7 @@ import("recdepth.la")   # ALLSTR, RD_FOLD, the cited genesis forms, and the base
 export DNU DNU_SEAL DN_RUN G_DNU
 
 glyph DN_BSTR = la b. b("T")("F")
-glyph Px = la nm. PRIM(nm)
+# Px comes from recdepth.la (a local copy was dead under tiny_host — FREEZE-TRACKF.md F8, removed 2026-09-18)
 glyph DN_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 glyph DN_IN = la s. RD_FOLD(la h. la acc. OR(acc)(str_eq(h)(s)))(FALSE)
 glyph DN_UNIQ = Z(la self. la l. l(NILc)(la h. la t. (la rest. IF(DN_IN(h)(rest))(la _. rest)(la _. CONSc(h)(rest)))(self(t))))

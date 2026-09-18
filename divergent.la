@@ -50,7 +50,7 @@ import("recdepth.la")
 export DV_OPS DV_FIX DV_STABLE
 
 glyph DV_B = la b. b("T")("F")
-glyph Px = la nm. PRIM(nm)
+# Px comes from recdepth.la (a local copy was dead under tiny_host — FREEZE-TRACKF.md F8, removed 2026-09-18)
 glyph DV_JOIN = Z(la self. la l. l("")(la h. la t. concat(h)(self(t))))
 glyph DV_A = KAPPA
 glyph DV_P = REVAL

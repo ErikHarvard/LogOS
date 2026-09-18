@@ -39,7 +39,7 @@
 #  registry and the law is applied TO ITS OWN REVISIONS — a cosmetic refinement of G_MIG is admitted,
 #  a semantic one refused. The law governs its own evolution or it is not a law.
 #
-#  GATE (drafted, gate_registers.sh §34)  cosmetic admitted (form changed, ONF held); semantic refused
+#  GATE (gate_registers.sh §34 — ran green 2026-09-17; SECD VM leg not yet run)  cosmetic admitted (form changed, ONF held); semantic refused
 #        naming both ONFs; the same change admitted as an additive fork; the ratchet collision refused
 #        BY NAME; and the law self-applied to G_MIG both ways.
 #        RED PATHS: (1) the ONF check made constant-true — the semantic revision is admitted and drift
