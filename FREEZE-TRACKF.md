@@ -35,11 +35,11 @@ freeze does not lift on that. It lifts when every module has PASSED every method
 | **V4 second engine** | host == SECD VM byte-for-byte, AND both exit 0 | instrument ready (F19 closed); never run (F13) |
 | **V5 determinism** | the same module run twice gives byte-identical output (no hidden state, /tmp, ordering) | instrument ready: `REGS_TWICE=1` (4/4 fixture cases; the first fixture was itself wrong and was caught) |
 | **V6 clean checkout** | the suite passes on a fresh export of the COMMIT, not on the dirty tree ([[committed-state-vs-working-tree]]) | procedure written (§5 step 2b); all 74 files the suite needs ARE in the commit |
-| **V7 independent oracle** | the pinned values were DERIVED independently (python/tex), not captured from a run | **recorded: 17 of 49 claim it, 30 captured, scripts lost — F20** |
+| **V7 independent oracle** | the pinned values were DERIVED independently (python/tex), not captured from a run | mechanism ready (`derive/check.py`); **§3 done (4/4)**; 29 captured + 17 lost to go — F20 |
 | **V8 pinpoint** | any failure names module · section · witness · output snippet; outputs kept; ONE section re-runnable alone | instrument ready: `sh gate_section.sh N [N…]` (slices verbatim; stub run PASS/FAIL both ways; refusals rc 2) |
 
 **Status right now (13:15):** exit criteria 1–4 **NOT MET — nothing has run** (the deep lease is the kernel audit's
-until ~17:00, then POROS P5a, then ENTELECHEIA M11c). Criterion 6 **MET** (static). Criterion 5: 13 open items (F1–F5, F9–F15, F20); F6–F8, F16–F19 CLOSED (static, validated). V2/V3/V4/V5/V8 instruments ready; V6 procedure written; V7 gap = F20. Verification phase V1–V8: none passed yet.
+until ~17:00, then POROS P5a, then ENTELECHEIA M11c). Criterion 6 **MET** (static). Criterion 5: 14 open items (F1–F5, F9–F15, F20, F21); F6–F8, F16–F19 CLOSED; F4/F5 RULED, pending implementation. V2/V3/V4/V5/V8 instruments ready; V6 procedure written; V7 gap = F20. Verification phase V1–V8: none passed yet.
 
 ---
 
@@ -130,8 +130,8 @@ upstream NORMK change (F4) can move pinned values across most of this table.
 | F1 | HIGH | SUSPECT | `build.sh:4875` lexicon gate pins `diverge=14 [… Move …]`; `ec12042` re-derived Move's phonym | pin read vs commit diff; gate not run since | run it; if RED, re-derive + re-pin (derivation first) |
 | F2 | HIGH | UNRUN | the full suite has never run end-to-end on HEAD; `1d6740f` has never run at all | `.fullgate.log` = one PASS line predating §43–§49 | exit criterion 1 |
 | F3 | MED | DEFECT | `branchclosure.la:7,:24` and `gapcensus.la:71` say ↻↻g≡↻g holds for every glyph (vacuous); FALSE at BEING (F4). gapcensus's pinned `ceiling=2 … consistent:T` holds only because its probe skips BEING | code trace, file 20 §1 | after F4 is ruled: fix the claim OR the probe, red-first |
-| F4 | HIGH | DEFECT, **upstream** | NORMK: ↻(↻(BEING)) → `↻(SELF)` but ↻(BEING) → `SELF` — ↻² fails at BEING; `WGEN` tests only a fresh Y | code trace of `canon_spec.la` (NOT run) | 1-s probe confirms; owner of canon_spec + Erik rule what ↻(SELF) is; fix in the SPEC |
-| F5 | MED | CONFLICT | `lexicon.la:346 ONE_IS_BEING` prints One=Being (ungated) vs numderive §47 GATES "BEING is not one" | both read | Erik rules; the loser changes, red-first |
+| F4 | HIGH | DEFECT, **upstream** | NORMK: ↻(↻(BEING)) → `↻(SELF)` but ↻(BEING) → `SELF` — ↻² fails at BEING; `WGEN` tests only a fresh Y | code trace of `canon_spec.la` (NOT run) | RULED (c) 09-18 — pending the cross-track implementation after the freeze; the 1-s probe waits for the lease |
+| F5 | MED | CONFLICT | `lexicon.la:346 ONE_IS_BEING` prints One=Being (ungated) vs numderive §47 GATES "BEING is not one" | both read | RULED 09-18 (η in the truth register only) — pending the wording alignment in lexicon.la / numderive, values derived first |
 | F6 | LOW | STALE | `migrate.la:42` header "GATE (drafted …)" — ran green 09-17 | freezeck H | ✔ CLOSED 09-18: header corrected to "ran green 2026-09-17; SECD VM leg not yet run" (comment only) |
 | F7 | LOW | STALE | `crossbranch.la:49` prose: "Nine of the claimed twenty-eight do not exist" — codex App B: 15 absent; and "Liminal and Anamnetic are blocked on a definition" — the codex defines them | file 20 §2 | ✔ CLOSED 09-18: prose corrected to 15 absent / overlap 13 and "definitions exist, operand x owed" (comment only; pinned BUILT=18 unchanged) |
 | F8 | LOW | DEAD CODE | 10 modules define a local `Px` shadowed by `recdepth.la`'s (identical bodies; a future mutant on Px would silently not fire) | freezeck S | ✔ CLOSED 09-18: the 10 dead `Px` copies removed (behaviour-preserving: identical to the imported recdepth Px); freezeck S now reports no shadowed locals; nameck + laparen clean on all 10 |
@@ -143,7 +143,8 @@ upstream NORMK change (F4) can move pinned values across most of this table.
 | F14 | LOW | STALE, not ours | `prop.la` (older kernel-k1 copy in this worktree) header says ¬P=⊗(VOID,P); code is ⊂(P,VOID) | read | resolves on sync with kernel-k1; note only |
 | F15 | — | OTHER TRACK | `debug_meta.la` unbound `SEQ` (Track C) | probe rc 1 | reported on BOARD 11:23; Track C's |
 | F19 | HIGH | INSTRUMENT | **exit codes are never asserted.** `host()` writes `$T/<tag>.rc` (gate_registers.sh:26) and NOTHING reads it: a module that prints its witnesses and then CRASHES, or hangs to the 1800 s timeout (rc 124), PASSES. The VM leg compares outputs, never exit codes, and its host run has no timeout — an identical crash on both engines reads "host == VM" | grep: the only `.rc` reference is the writer | ✔ CLOSED 09-18 (static; validated both ways): a GREEN run must exit 0 — ANY other rc fails and is printed; WHETHER THE BUDGET STOPPED IT IS DECIDED BY THE CLOCK (elapsed ≥ budget), never by matching 124/137/143 (★ my first version did match kill codes; `logos-hexis.sh` refused the commit under the sealed class hardcoded-kill-code — rewritten, and it now also labels a module that exits 124 BY ITSELF as a crash, which the code-matching version called a timeout). Mutants' rc recorded, not asserted. VM leg asserts BOTH rcs, times out its host run, names the first differing byte. Fixtures: crash-after-witness FAILS (the OLD gate passed it), hang FAILS as STOPPED BY THE BUDGET, self-124 FAILS as a crash; VM rc 1 and identical crash on BOTH engines FAIL. hexis `check` clean on all batch files, with a positive control proving it reads the file. ⚠ A green module that exits non-zero BY DESIGN will surface on the first run — then its expected rc is declared, never waved through |
-| F20 | HIGH | ORACLE (V7) | **30 of 49 sections pin values CAPTURED from a green run, with no independent derivation recorded** — §1–§9, §12, §14, §17–§30, §41–§43, §46, §48 (§10, §11 pin no module output). A bug present at capture time is pinned as the expected answer and no run can catch it ([[expected-values-derived-not-captured]]). The 17 sections that DO record a derivation (§13, §15, §16, §31–§40, §44, §45, §47, §49) record it only as a comment: the python derivations lived in session scratchpads and are gone, so none can be re-checked | gate header :5–7 ("pre-registered from a green run"); per-section comment scan 09-18 | derive each captured value independently, keep the derivation scripts IN THE REPO (`derive/`), and re-check the 17; or Erik rules a section's capture acceptable with its reason |
+| F20 | HIGH | ORACLE (V7) | **30 of 49 sections pin values CAPTURED from a green run, with no independent derivation recorded** — §1–§9, §12, §14, §17–§30, §41–§43, §46, §48 (§10, §11 pin no module output). A bug present at capture time is pinned as the expected answer and no run can catch it ([[expected-values-derived-not-captured]]). The 17 sections that DO record a derivation (§13, §15, §16, §31–§40, §44, §45, §47, §49) record it only as a comment: the python derivations lived in session scratchpads and are gone, so none can be re-checked | gate header :5–7 ("pre-registered from a green run"); per-section comment scan 09-18 | IN PROGRESS 09-18 — mechanism built + validated: `derive/lacore.py` (an independent model from the DOCUMENTED definitions, importing nothing from the repo), one `derive/sNN_*.py` per section printing its expected tokens, and `derive/check.py` (pinned == derived, exactly; validated both ways: tampered value → MISMATCH rc 1, unpinned derived token → rc 1, empty selection → rc 1). **§3 topology: 4/4 pinned tokens reproduced.** 29 captured sections to go; the 17 whose derivations were lost need re-deriving into derive/ too. Found F21 on the first section |
+| F21 | MED | VACUOUS WITNESS | §3's `⊕-order invariant:T` cannot fail on a commutativity bug: the topological reading is symmetric in a node's two children, so swapping operands under the DIRECTIONAL ▷ is invariant too (derived: `derive/s03_topology.py` NOTE). The witness proves nothing about ⊕ | found by the F20 derivation, 09-18 | replace with a reading that is NOT child-symmetric (e.g. compare κ-forms, where ▷ swap differs), derived first, red-first |
 | F16 | HIGH | INSTRUMENT | `checkreds.py` checks a red token is IN the mutant output, never that it is ABSENT from the green output (so it cannot catch F12's vacuous class); and it silently SKIPS a mutant with no captured output (`continue`) — "0 DID NOT FIRE", rc 0, over nothing | read | ✔ CLOSED 09-18 (static; validated both ways): absence-in-green half + MISSING-is-failure + no-selection-is-failure; 6/6 fixture cases right (genuine / vacuous / not fired / mutant missing / green missing / empty selection); `--dir` reads a REGS_KEEP dir |
 | F17 | MED | INSTRUMENT | `checkwants.py` prints "NO OUTPUT" for an unrun module but does not count it — rc 0 with nothing checked | read | ✔ CLOSED 09-18 (static; validated both ways): NO OUTPUT now UNCHECKED and rc 1; 3/3 fixture cases right; `--dir` added |
 | F18 | HIGH | INSTRUMENT | the gate's own `red()` has no absence-in-green check either; and `trap 'rm -rf "$T"' EXIT` deletes every output, so no gate run leaves anything for checkwants/checkreds (their `.mut/`, `.runout/` were filled by a manual 09-17 run) | read | ✔ CLOSED 09-18 (static; validated both ways): `red()` refuses a token present in the base tag's GREEN output, and a missing/empty green output — 5/5 cases right under dash, using the gate's own extracted definitions; `REGS_KEEP=<dir>` keeps $T (stub run: 8 files kept; none without it, no temp dir left) |
@@ -180,11 +181,52 @@ upstream NORMK change (F4) can move pinned values across most of this table.
 4. **VM leg in chunks**: `REGS_VM_CHUNK=1/8 sh gate_registers.sh` first — read its TIME lines, size the rest. Closes F13.
 5. Fix phase: each open defect red-first, then re-run the sections it touches. Rulings F4, F5 go to Erik.
 
+## 6a. F4 IS A FOUR-WAY IMPOSSIBILITY, NOT A CODE BUG (worked out 2026-09-18 from the code; nothing run)
+
+Four properties the language currently asserts cannot all hold:
+- **(i)** ↻(BEING) ≡ SELF — `REWRITE_MC`'s declared rewrite; also TRUE in meaning: BEING = `la self. self` (I), SELF = BEING(BEING) = I, ⟦↻⟧ = DEPTH = `la g. g(g)`, so ⟦↻⟧(BEING) = I(I) = I (denote.la W_MC).
+- **(ii)** ↻(↻Y) ≡ ↻Y for EVERY Y — the MTC, as `canon_spec.la`'s comment claims.
+- **(iii)** congruence — equal parts give equal wholes. Holds BY CONSTRUCTION: NORMK is bottom-up.
+- **(iv)** the ↻ operator's own glyph, **MODE_MC = ↻(SELF)** (`metaglyph.la:69`), is a DIFFERENT glyph from the primitive SELF — meta-monosemy (recdepth counts it κ-distinct in its 35/34 catalogue).
+
+**Proof:** (i)+(iii) ⇒ ↻(↻BEING) ≡ ↻(SELF); (ii)+(i) ⇒ ↻(↻BEING) ≡ ↻(BEING) ≡ SELF; so ↻(SELF) ≡ SELF, contradicting (iv). ∎
+Today's code gives up (ii) at exactly BEING — that is F4. Every fix is a choice of which property to give up:
+
+| option | gives up | what it means | cost (to measure before deciding) |
+|---|---|---|---|
+| (a) ↻(SELF)→SELF | (iv) | the ↻ operator's glyph collapses into the primitive SELF — true in MEANING (SELF(SELF) = I), a meta-polysemy in FORM | recdepth's 34-distinct, archeunique's 16-set, metaglyph distinctness, every normal form with ↻(SELF) |
+| (b) keep it, record it | (ii) at BEING | ↻↻g≡↻g becomes a DISCRIMINATING law, false at the one input the declared rewrite touches | branchclosure :7/:24 + gapcensus :71 corrected; gapcensus's pinned census moves |
+| (c) move (i) to the truth register | (i) in the GLYPH register only | ↻(BEING) stays its own FORM; ↻(BEING) ≡ SELF lives where denote.la already proves it, in MEANING — the two-register discipline (cf. ¬¬C ≠ C as glyphs, ≡ C in truth) | the one documented glyph rewrite goes: monosemy_test's collapse, denote.la's "commutes with κ" witness, every normal form containing ↻(BEING) |
+| "scoped" fold on the raw tree | (iii) | X ≡ Y would no longer give ↻X ≡ ↻Y — **worse than F4; rejected** | — |
+
+**★ No option is free — there is a FIFTH property.** (v) **form-level monosemy**: two forms with one meaning collapse
+to one glyph. That is what the rewrite (i) is FOR (`build.sh:7008` asserts "rewrite collapsed"). So (a) gives up (iv),
+(b) gives up (ii) at BEING, and **(c) gives up (v) for the one pair ↻(BEING)/SELF** — a declared synonym pair in form.
+**What favours (c) is PRECEDENT, not freedom:** `complement.la` already gates ¬¬C and C as DISTINCT GLYPHS that are
+EQUAL IN TRUTH. Today the language is inconsistent with itself — it keeps ¬¬C/C apart in form but collapses
+↻(BEING)/SELF. (c) makes the two cases one rule; (a) and (b) would each break something with no precedent.
+
+**The reach of (c), measured statically 2026-09-18 [B — a python re-implementation of REWRITE_MC, not an LA run]:**
+under (c) ↻(BEING)→↻(BEING), ↻(↻(BEING))→↻(BEING) (↻² holds), ↻(SELF) stays distinct. The rewrite can fire in 14
+files, only 4 of them Track F's (registers, regenesis, lawroot, branchgenesis); the rest are core (metalogic_spec ×8,
+denote, canon_spec, sigil, obscurantism, modality, explain, crosscoll, cob). **At least five build.sh gates assert the
+rewrite outright** and must be restated, each with its new expected value derived first: canon W7 (:1505),
+topoderive DSIGIL(↻(BEING)) = DSIGIL(SELF) (:5858), cob's control (:5877), denote's "commutes with κ" (:6436),
+monosemy "rewrite collapsed" (:7008). ⇒ **(c) is a change to kernel-k1's core, owned by canon_spec's owner — not a
+Track F fix, and it cannot land inside this freeze.** gate_registers.sh pins no witness naming ↻(BEING); whether any
+pinned SELF value derives from the rewrite only a run can say (the suite run twice, with and without it).
+After (c) lands, ↻↻g≡↻g holds for EVERY glyph again, so the three "vacuous" records become TRUE again rather than
+needing correction (under (b) they must be corrected).
+
+**What the sources say (the reflection's question 4):** the SPEC titles 𝔤₁ **"Being — The Archē"** and writes "Being (∃)"
+(LINGUA_ADAMICA.tex:4616, :317); today's WHITE PAPER says "Whether BEING IS the Archē IS left open"; and `archeunique`
+§45 GATES BEING as ordinary (⊗(BEING,BEING) ≢ BEING, counted among the 16). Spec, paper and gate disagree on the
+very question F4 turns on. (Related, F5: BEING = I and one = BECOMING(VOID) = `λf.λx.f x`, which is η-equal to I —
+lexicon.la's One=Being holds up to η, numderive's "BEING is not one" holds without η. F5 is the ruling "is η-equivalence identity in LA?")
+
 ## 6. RULINGS THIS FREEZE NEEDS FROM ERIK
-- **F4** — what is ↻(SELF)? (↻(SELF)→SELF restores ↻² everywhere and moves normal forms corpus-wide; leaving it makes
-  ↻↻g≡↻g a DISCRIMINATING law that fails at BEING.) Also who owns the fix to `canon_spec.la`.
-- **F5** — is ONE ≡ BEING (lexicon.la, and the codex) or is BEING the identity combinator and one = BECOMING(VOID)
-  (numderive §47)?
+- ✔ **F4 RULED by Erik 2026-09-18: (c)** — ↻(BEING) ≡ SELF moves to the TRUTH register; ↻(BEING) keeps its own form (monosemy given up for this one pair, as ¬¬C/C already is). Implemented AFTER the freeze and the kernel audit, by/with canon_spec's owner, restating the five build.sh gates (§6a) with new values derived first.
+- ✔ **F5 RULED by Erik 2026-09-18: η-equivalence is identity in the TRUTH register only** — ONE and BEING are distinct forms, equal in truth under η. Both lexicon.la (One=Being) and numderive §47 ("not one") stay, with their wording aligned to say which register each speaks in; the pinned witnesses that change get new values derived first.
 - **F9/F10** — accept "not on the VM" / "report, not gate" as written reasons, or require them.
 
 **Ledger discipline:** regenerate §2's counts with `python3 freezeck.py --table` (status columns are hand-kept); add a

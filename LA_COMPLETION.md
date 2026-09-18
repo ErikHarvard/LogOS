@@ -1863,6 +1863,54 @@ the etymology tracker, the dissolved branches).
 - The ▷ signature, and *why a level cue cannot work* (the parents' intrinsic
   amplitude normalises it away).
 
+**Owed by the paper — the Track F freeze write-up, 2026-09-18.** Evidence tags: **[W]** a gate witnessed it on
+tiny_host (per-module, 09-17) · **[B]** bounded or reasoned from the code, not run · none of it has run on the SECD VM
+or in a full suite on HEAD yet (FREEZE-TRACKF.md). Each item says exactly how far it reaches — no further.
+
+*Today's results:*
+- **F4 — five properties the language asserted cannot all hold** [B, proven from the code; the confirming run waits for
+  the lease]: (i) ↻(BEING) ≡ SELF, (ii) ↻(↻Y) ≡ ↻Y for every Y, (iii) congruence, (iv) the ↻ operator's glyph
+  ↻(SELF) ≠ SELF, (v) form-level monosemy. (i)+(iii) and (ii)+(i) force ↻(SELF) ≡ SELF, against (iv). The code gave up
+  (ii) at BEING — ↻(↻(BEING)) normalised to ↻(SELF), not SELF — while three records called ↻↻g≡↻g "true of every
+  glyph". **Ruled (Erik, 2026-09-18): (c)** — ↻(BEING) ≡ SELF moves to the TRUTH register (it was always true in
+  meaning: BEING = I, SELF = I(I) = I, ⟦↻⟧ = λg.g(g)), and ↻(BEING) keeps its own form; this gives up (v) for one
+  pair, exactly as ¬¬C/C already does. Pending implementation in core after the freeze. **The paper must not say ↻² holds
+  everywhere until that lands, and must say which register every identity it states lives in.**
+- **F5 — η-equivalence is identity in the TRUTH register only** (ruled 2026-09-18). ONE = BECOMING(VOID) = λf.λx.f x is
+  η-equal to BEING = λx.x: equal in truth, distinct in form. This REFINES the 09-17 correction "BEING is not one"
+  (below): it is not one IN FORM; it is one IN TRUTH under η.
+- **κ\* finds nothing to compress** [W, §36]: the live catalogue — modes, operators, self-relations, all 35 entries —
+  is κ\*-irreducible (no compound sub-form recurs across two glyphs). A POSITIVE CONTROL proves the instrument can
+  look (a planted recurring ↻(RECOGNITION) is found and sealed). A result about THIS catalogue, not about the operator;
+  a larger catalogue could change it.
+- **Δ_ν is a fixed point, and the fixed point costs structure** [W, §39]: a run of 5 movements folds to 1 on the first
+  application; the second moves nothing. Node count RISES 18 → 22, one join per collapse. It compresses the NUMBER OF
+  MOVEMENTS, not the size of the form. With §48 below: rest is bought with loss.
+- **The gate could pass what it was built to catch** [B, method finding — the kin of "the monosemy check was running
+  in one register out of three"]: exit codes were written and never read, so a module that printed its witnesses and
+  then crashed PASSED; an identical crash on host and VM read "host == VM"; no check proved a RED token absent from
+  the green output; and 30 of 49 sections pin values captured from a run rather than derived. Fixed in 6f16740 except
+  the last (F20, open).
+
+*The nine corrections from 2026-09-17, carried here from RESUME-2026-09-18.md so the paper track can see them* [W, each gated]:
+1. The Three Laws are NOT derived from the Archē (§44, tested by removal with a control).
+2. The autological criterion is CO-PRIMITIVE with the Archē too (§44) — the ground is a SMALL SET of four, not a point;
+   consistent with derive_closure's 4 of 9.
+3. Divergent compressions do NOT converge on κ (§48): six compressions, six outputs, five never rest; only deletion
+   rests, by discarding — CONVERGENCE AND RETENTION ARE IN TENSION.
+4. The cross-branch collapse holds BY CONSTRUCTION (one sealer), not convergence (§46) — over 19 branches, not 28.
+5. Logic, algorithm and syntax are pairwise SEPARATE (§43); the true relation is the neologizing dyad.
+6. BEING is not ONE (§47): BEING is the identity combinator; one = BECOMING(VOID) — **in form; see F5 above for truth.**
+7. The measure horizon (§47): four κ-distinct forms share one numeral — arithmetic says how big, never which.
+8. No Shannon noise in the computational register (§42); the real bound is the RENDERER's (sigil.la walks the unfolded
+   form — a DAG renderer would survive ~40× deeper).
+9. The three collisions named on 09-17 do not exist (§49).
+
+*Paper-vs-gate conflicts found in the finished papers and the Codex Llogoscribeologiae* — every paper swept repeats at
+least one claim the gates refute (one axiom as the ground, convergence on the Archē, 28 branches, associativity,
+"encryption impossible", g(g)=g for every glyph): the full list with line numbers is `sweeps/19-FINISHED-PAPERS-SWEEP.md` §4
+and `sweeps/20-LLOGOSCRIBEOLOGIAE-SWEEP.md` §4–§5.
+
 **Paper-side structural work:**
 - `[ ]` Fix "trimodal" wherever a fourth modality exists.
   ⚑ **Verified 2026-09-10 — OPEN** (METANOĒ, against kernel-k1 `fcaaa23`): the white paper (sha256 `98beeff4ee45…`) says "trimodal" 51 times and names a fourth (tactile) modality 3 times; tactile.la exists.
