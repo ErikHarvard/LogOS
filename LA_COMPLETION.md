@@ -1894,8 +1894,12 @@ or in a full suite on HEAD yet (FREEZE-TRACKF.md). Each item says exactly how fa
   the last (F20, open).
 
 *The nine corrections from 2026-09-17, carried here from RESUME-2026-09-18.md so the paper track can see them* [W, each gated]:
-1. ⚠ **UNWITNESSED (F25, 09-18):** "The Three Laws are NOT derived from the Archē" — §44's removal test is VACUOUS (its
-   signature function never uses the GROUND it is handed, so nothing was removed). May hold by inspection; not yet shown.
+1. ✔ **WITNESSED, STATICALLY (F25 closed 09-18):** "The Three Laws are NOT derived from the Archē" HOLDS. §44's runtime
+   removal test was vacuous (its signature function never used the GROUND it was handed), so the witness is now the
+   reference graph itself: over lawroot's whole import closure, no law reaches GROUND, TRIBAR, VERDICT or any NORMK
+   rewrite by any chain of references (gate §44 `lrs`, derive/lawreach.py; 3 red paths). [B] the laws AS IMPLEMENTED vs
+   the rewrites AS IMPLEMENTED — a derivation by a route the code does not contain is not refuted. Paper wording: "the
+   laws do not depend on the Archē in the implementation", not "cannot be derived from it".
 2. ⚠ **DEFINITIONAL (F32, 09-18):** AUTO_OK compares a ren with CANON, which applies no rewrite — so it cannot consult the
    Archē BY DEFINITION; §44 t4's "they DISAGREE" is guaranteed by the fixture. True, but by inspection, not a discovery.
    The criterion is CO-PRIMITIVE with the Archē too (§44) — the ground is a SMALL SET of four, not a point;

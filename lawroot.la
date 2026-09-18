@@ -15,14 +15,19 @@
 #        LAW_IDENTITY(g)             = AUTO_OK(g)                       — canon's AUTOLOGICAL criterion
 #        LAW_NONCONTRADICTION(t)     = INHABITS(DECL_ARITY)(BODY_ARITY) — the TYPE CHECKER
 #        LAW_EXCLUDED_MIDDLE(t)      = WELLFORMED(t)                    — well-formedness / total verdict
-#  — each is grounded in a DIFFERENT mechanism, and none of the three is the Archē. The removal test below
-#  confirms it mechanically rather than by reading: all three verdicts are BYTE-IDENTICAL with `GROUND`
-#  present and with `GROUND` deleted.
+#  — each is grounded in a DIFFERENT mechanism, and none of the three is the Archē. ⚖ F25 (2026-09-18): the
+#  removal test below does NOT confirm this — LR_SIG never uses the GROUND it is handed, so its "deleted" run
+#  deletes nothing. What confirms it is the gate's STATIC witness `lrs` (derive/lawreach.py, §44): over this
+#  module's whole import closure, no law reaches GROUND, TRIBAR, VERDICT or any NORMK rewrite by any chain of
+#  references. That is the removal test done where it can bite — a law that reaches no rewrite cannot change
+#  when the rewrite is deleted — and it goes RED on three mutants of metalogic.la.
 #
 #  ★ AND THE TEST IS NOT VACUOUS, which is the half that matters: `GROUND` is NOT idle in the system.
 #  On a term that MENTIONS the Archē, it is load-bearing — TRIBAR(∃(∃))(∃) is TRUE with the rewrite and
 #  FALSE without it. So the removal genuinely removes something; it simply removes nothing the laws use.
 #  Without that control, "the laws did not change" would be consistent with a test that changed nothing.
+#  ⚖ (F25) The control is real (lr_m2) but shows only that GROUND bites in TRIBAR — not that the laws were ever
+#  run without it; the laws' independence rests on the static reach witness above.
 #
 #  ★★ VERDICT: **THE THREE LAWS ARE PRIMITIVE WITH RESPECT TO THE ARCHĒ.** They are not assumed — each is
 #  falsifiable and each is wired to a real mechanism, which is what `metalogic.la` earned — but they are
@@ -37,10 +42,10 @@
 #        RED PATHS: (1) a law MADE to depend on the Archē — the independence witness must then go F, which
 #        is what shows the test can DETECT a dependence rather than always reporting one; (2) the
 #        load-bearing control removed — the rewrite reads idle and the whole removal test becomes vacuous.
-#  ★ EVIDENTIAL: [W] falsifiability, the control; ⚖ [W→UNWITNESSED, F25] independence — LR_SIG never uses the GROUND it is handed, so nothing was removed; [B] this tests derivability from the ONE
+#  ★ EVIDENTIAL: [W] falsifiability, the control; [W] independence — by the gate's STATIC witness lrs (no law reaches an Archē rewrite; 3 red paths), NOT by this module's removal test, which is [A] (LR_SIG ignores the GROUND it is handed — F25, closed 2026-09-18); [B] this tests derivability from the ONE
 #     rewrite that encodes the Archē in code (`GROUND`). A derivation by some other route is not refuted
 #     by this — only the claim that the laws as BUILT rest on ∃(∃)≡∃.
-#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · fixture-backed 1 · construction-true 1 [A: witnesses its constructor, not the claim — AUTO_OK uses CANON, so it cannot consult the Archē — by definition] · cannot-fail 1 [UNWITNESSED — F25 (LR_SIG never uses its GROUND argument)]. A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
+#  ⚖ RECLASSIFIED 2026-09-18 against the standing rule (FREEZE-TRACKF.md F35): of this module's 4 pinned witnesses — red-proven 2 · fixture-backed 1 · construction-true 2 [A: witnesses its constructor, not the claim — AUTO_OK uses CANON, so it cannot consult the Archē — by definition; and the INDEPENDENCE removal test — LR_SIG ignores GROUND] · cannot-fail 0 (was 1 until F25 closed 2026-09-18: the independence CLAIM is now witnessed by the gate's static `lrs`, 2 witnesses, 3 mutants). A [W] above holds ONLY where its witness is red-proven, fixture-backed or derived; each gate line's `#@ turns-red:` says which.
 #  Pure strings ⇒ byte-identical on the C host and the SECD VM.
 # ════════════════════════════════════════════════════════════════
 import("metalogic.la")   # TERM FORM VAL GROUND TRIBAR AUTO_OK LAW_* and their glyph witnesses

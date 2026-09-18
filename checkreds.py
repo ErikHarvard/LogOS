@@ -15,6 +15,7 @@ args = sys.argv[1:]; kdir = None
 if args[:1] == ['--dir']: kdir = args[1]; args = args[2:]
 only = set(args) or None
 host = dict((m.group(2), m.group(1)) for m in re.finditer(r'^host\s+(\S+?)\.la\s+(\w+)\s*$', gate, re.M))
+host.update((m.group(1), m.group(2)) for m in re.finditer(r'^static\s+(\w+)\s+\S+\s+(\S+?)\.la\b', gate, re.M))   # static witnesses (F25)
 def path_for(tag, green):
     if kdir: return os.path.join(kdir, tag)
     return ('.runout/%s.out' % host.get(tag, tag)) if green else ('.mut/%s.out' % tag)

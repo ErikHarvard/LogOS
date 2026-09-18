@@ -54,6 +54,14 @@ host() {
            fi ;;
     esac
 }
+# static(out, script, args…) — a STATIC witness (FREEZE-TRACKF.md F25): a python check over module SOURCE, no tiny_host.
+#   Output in $T/out and rc recorded, exactly as host(); a GREEN static run must exit 0, a mutant's (tag *_mN) rc is
+#   recorded and red() judges it. want/red read its output the same way; checkwants/checkreds/freezeck know the form.
+static() {
+    so=$1; shift
+    python3 "$@" > "$T/$so" 2>&1; src=$?; echo "$src" > "$T/$so.rc"
+    case "$so" in *_m[0-9]*) : ;; *) [ "$src" -eq 0 ] || { echo "FAIL  registers/$so: static check [$*] exited rc $src: $(tail -c 200 "$T/$so")"; ok=0; } ;; esac
+}
 # want(out, token, label) — exact witness present
 want() { if grep -qF -- "$2" "$T/$1"; then :; else echo "FAIL  registers/$3: missing witness [$2] — got: $(head -c 300 "$T/$1")"; ok=0; fi; }
 # red(mutfile, token, label) — the mutant's output must NOT carry the green witness and must carry the red one
@@ -675,7 +683,26 @@ red ls_m2 "ALGORITHM vs SYNTAX: MERGED (one locus)" "logicsyntax RED(algorithm c
 host lawroot.la lr
 want lr "LAWROOT each law is FALSIFIABLE — identity T on its witness:T F on a ren that is not its etymology:T | non-contradiction T:T F on an arity contradiction:T | excluded middle T:T F on a term with no form:T" lawroot  #@ turns-red: fixture:each law reads F on a bad term
 want lr "CONTROL — the Archē rewrite ∃(∃)→∃ IS load-bearing where it applies: TRIBAR(∃(∃))(∃) with it:T without it:F → removal really removes something:T" lawroot  #@ turns-red: red:lr_m1,lr_m2
-want lr "INDEPENDENCE — all three law-verdicts are IDENTICAL with the Archē rewrite present and DELETED:T signature on:TFTT off:TFTT" lawroot  #@ turns-red: red:lr_m1; cannot-fail:F25 (LR_SIG never uses its GROUND argument)
+want lr "INDEPENDENCE — all three law-verdicts are IDENTICAL with the Archē rewrite present and DELETED:T signature on:TFTT off:TFTT" lawroot  #@ turns-red: red:lr_m1; construction:LR_SIG never uses its GROUND argument, so on and off agree by construction — the claim is witnessed by lrs below (F25)
+#  ★ F25's REAL WITNESS (FREEZE-TRACKF.md F25, 2026-09-18). The runtime removal test above cannot remove anything: LR_SIG
+#    ignores the GROUND it is handed, and the laws, defined in metalogic.la, name no GROUND parameter to rebind. What the
+#    claim means in LA is a fact about the REFERENCE GRAPH — no law reaches, through any chain of glyph references, a
+#    glyph that applies an Archē rewrite — and if none does, deleting the rewrite changes no law, which is the removal
+#    test done where it can bite. derive/lawreach.py computes that closure over lawroot.la's whole import closure,
+#    sound for absence (same-named glyphs take the UNION of their bodies). RED: two mutants of metalogic.la route a law
+#    through the Archē (LAW_EXCLUDED_MIDDLE via TRIBAR; LAW_IDENTITY via GROUND), fed in with --swap, and the offender
+#    must be NAMED with its path. [B] the implemented laws vs the implemented rewrites — a route the code lacks is not refuted.
+static lrs derive/lawreach.py lawroot.la
+want lrs "LAWREACH no law reaches an Archē rewrite:T" lawroot  #@ turns-red: red:lrs_m1,lrs_m2
+want lrs "laws checked: LAW_IDENTITY LAW_NONCONTRADICTION LAW_EXCLUDED_MIDDLE" lawroot  #@ turns-red: red:lrs_m3
+sed 's|^glyph LAW_EXCLUDED_MIDDLE = la term. WELLFORMED(term)$|glyph LAW_EXCLUDED_MIDDLE = la term. TRIBAR(term)(term)|' metalogic.la > "$T/lrs1_mut.la"; static lrs_m1 derive/lawreach.py lawroot.la --swap metalogic.la="$T/lrs1_mut.la"
+red lrs_m1 "no law reaches an Archē rewrite:F" "lawroot RED(excluded middle made to decide through TRIBAR: the reach check sees the law now consults the Archē)"
+red lrs_m1 "LAW_EXCLUDED_MIDDLE reaches GROUND via LAW_EXCLUDED_MIDDLE -> TRIBAR -> GROUND" "lawroot RED(… and NAMES the offender with its whole path, two references deep)"
+sed 's|^glyph LAW_IDENTITY = la g. AUTO_OK(g)$|glyph LAW_IDENTITY = la g. str_eq(GROUND(REN(g)))(REN(g))|' metalogic.la > "$T/lrs2_mut.la"; static lrs_m2 derive/lawreach.py lawroot.la --swap metalogic.la="$T/lrs2_mut.la"
+red lrs_m2 "no law reaches an Archē rewrite:F" "lawroot RED(identity made to ground its name through the Archē rewrite: the verdict flips)"
+red lrs_m2 "LAW_IDENTITY reaches GROUND via LAW_IDENTITY -> GROUND" "lawroot RED(… and the offender is named, one reference deep)"
+sed 's|^glyph LAW_NONCONTRADICTION = |glyph LAW_NC_RENAMED = |' metalogic.la > "$T/lrs3_mut.la"; static lrs_m3 derive/lawreach.py lawroot.la --swap metalogic.la="$T/lrs3_mut.la"
+red lrs_m3 "ERROR: law(s) not defined in the import closure of lawroot.la: LAW_NONCONTRADICTION" "lawroot RED(a law vanishes from the closure: the check REFUSES instead of reporting none for the two it can still see — absence must prove it looked)"
 want lr "THE CRITERION, one level down — AUTO_OK on a glyph sealed over ⊗(∃,∃): CANON-based (the real criterion):T an Archē-AWARE variant (which would require the ren to be ∃):F — they DISAGREE, so the criterion demonstrably does NOT consult the Archē:T" lawroot  #@ turns-red: construction:AUTO_OK uses CANON, so it cannot consult the Archē — by definition (F32)
 #  ★★★ Erik's follow-up, answered: the AUTOLOGICAL CRITERION is CO-PRIMITIVE with the Archē too, not
 #    derived from it. So the Archē, the three laws and the criterion are FOUR INDEPENDENT GROUNDS —

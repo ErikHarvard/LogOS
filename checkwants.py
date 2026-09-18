@@ -14,6 +14,8 @@ if args[:1] == ['--dir']: kdir = args[1]; args = args[2:]
 only = set(args) or None
 # tag -> module, from the `host <module>.la <tag>` lines
 host = dict((m.group(2), m.group(1)) for m in re.finditer(r'^host\s+(\S+?)\.la\s+(\w+)\s*$', gate, re.M))
+# a STATIC witness (`static <tag> <script> <root>.la …`, F25) is filed under its root module
+host.update((m.group(1), m.group(2)) for m in re.finditer(r'^static\s+(\w+)\s+\S+\s+(\S+?)\.la\b', gate, re.M))
 wants = {}
 for m in re.finditer(r'^want\s+(\w+)\s+"((?:[^"\\]|\\.)*)"', gate, re.M):
     tag, tok = m.group(1), m.group(2).replace('\\"', '"').replace('\\\\', '\\')

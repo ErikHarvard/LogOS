@@ -41,8 +41,8 @@ if '--selftest' in sys.argv:
         ('red: another module\'s mutant', 'turns-red: red:lin_m1', 'turns-red: red:top_m1', 1, 'is not a mutant of lin'),
         ('red: a mutant that does not exist', 'turns-red: red:lin_m1', 'turns-red: red:lin_m9', 1, 'lin_m9 has no host line'),
         ('red: real mutant, NOT TIED to this witness', '(DAG<tree, 4 defs):T" lineage  #@ turns-red: exact:s01', '(DAG<tree, 4 defs):T" lineage  #@ turns-red: red:lin_m1', 1, 'NOT TIED'),
-        ('cannot-fail citing a CLOSED item', 'cannot-fail:F25', 'cannot-fail:F6', 1, 'F6 is not an OPEN ledger item'),
-        ('cannot-fail citing an unknown item', 'cannot-fail:F25', 'cannot-fail:F999', 1, 'F999 is not an OPEN ledger item'),
+        ('cannot-fail citing a CLOSED item', 'cannot-fail:F28', 'cannot-fail:F6', 1, 'F6 is not an OPEN ledger item'),
+        ('cannot-fail citing an unknown item', 'cannot-fail:F28', 'cannot-fail:F999', 1, 'F999 is not an OPEN ledger item'),
         ('unknown clause kind', 'turns-red: red:lin_m1', 'turns-red: maybe:lin_m1', 1, 'unknown clause kind'),
         ('entailed pointing at no witness', 'entailed:ti.1', 'entailed:ti.9', 1, 'points at no witness'),
         ('exact: a derivation that does not exist', 'exact:s01', 'exact:s99', 1, 'has no derive/s99_'),
@@ -178,7 +178,7 @@ _ledger = open('FREEZE-TRACKF.md', encoding='utf-8').read() if os.path.exists('F
 def _open_fid(f):
     m = re.search(r'^\| %s \| (.*)$' % re.escape(f), _ledger, re.M)
     return bool(m) and 'CLOSED' not in m.group(1).split('|')[-2]
-_hosttags = set(re.findall(r'(?:^|; )host \S+ ([a-z_0-9]+)', GATE, re.M))
+_hosttags = set(re.findall(r'(?:^|; )(?:host \S+|static) ([a-z_0-9]+)', GATE, re.M))   # static: F25's source-level witnesses
 _redtags = set(re.findall(r'^red ([a-z_0-9]+) ', GATE, re.M))
 _wants_by_tag = {}
 for _t in re.findall(r'^want ([a-z_0-9]+) ', GATE, re.M): _wants_by_tag[_t] = _wants_by_tag.get(_t, 0) + 1
@@ -213,7 +213,7 @@ for i, l in enumerate(GATE.split('\n'), 1):
         if k == 'red':
             for rt in v.split(','):
                 if re.sub(r'_m\d+$', '', rt) != tag: err = 'red:%s is not a mutant of %s' % (rt, tag)
-                elif rt not in _hosttags: err = 'red:%s has no host line' % rt
+                elif rt not in _hosttags: err = 'red:%s has no host line (nor static line)' % rt
                 elif rt not in _redtags: err = 'red:%s has no red line' % rt
                 elif not any(_tied(_wtok(i), r) for r in _redtoks.get(rt, [])):
                     err = 'red:%s is NOT TIED to this witness — none of its red tokens overlaps the witness text' % rt
@@ -245,7 +245,7 @@ print('== G  IGNORED PARAMETERS — a glyph that takes an argument and never use
 #  selectors (>=3 handlers, one applied) are excluded. Every remaining hit must be REVIEWED below — citing an OPEN ledger
 #  item, or `harmless:` with the reason. An unreviewed hit fails the check. Validated: catches LR_SIG (F25).
 REVIEWED_IGNORED = {
-    ('lawroot.la', 'LR_SIG', 'g'): 'F25',
+    ('lawroot.la', 'LR_SIG', 'g'): 'harmless: the INDEPENDENCE witness it feeds is declared construction-true; the claim is witnessed statically by lrs (F25, 2026-09-18)',
     ('certify.la', 'VERIFY_C', 'g'): 'F36',
     ('syllabus.la', 'SY_NAMES', 'n'): 'harmless: a dead limit parameter — the same 12 is passed again as k',
 }
