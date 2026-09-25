@@ -32,8 +32,9 @@
 #       the collapsed DAG grows as d+3, so compression → ∞ with depth. For DISTINCT content (the 18
 #       branches) the ratio stays bounded: no operator compresses arbitrary content without limit.
 #       "Infinite compression" is exactly the metacursive (self-similar) case — stated, not hidden.
-#  ★ EVIDENTIAL: [W] every T below; [A] L1 and L2 — the paper's boxed claims, applied as a layer,
-#     RATIFICATION OWED; the mode-glyph collision list is for Erik to rule.
+#  ★ EVIDENTIAL: [W] every T below. L1 and L2 RATIFIED by Erik 2026-09-25 (FREEZE-TRACKF.md F44); they stay a
+#     layer here until they move into NORMK via canon_spec.la after the freeze (derive/l1l2_ripple.py: 2 keys move,
+#     one collision — syntax = MODE_CON, ruling R-SP4 owed).
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")        # PRIM SYN CON DIR CONT MC CANON NORMK SEALc AUTO_OK RECOVER DAG NODES TSIZE NILc CONSc …
 import("branchclosure.la")  # BC_GLYPHS — the 18 base branches + Δ_B's, declared independently of this file

@@ -35,7 +35,7 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 | S0b | onecollapse on the SECD VM | OPEN | host==VM byte-identity | F13 codegen cost |
 | S1 | **one normaliser, one κ, three renderers** — WP:3274 calls it "the first item of the roadmap"; today NORMK, NKAP, CANONIQ×2, NORMP, NORMTREE, and now OC_NF | OPEN | fuzz corpus: all normalisers agree; RED = a mutant rewrite in one | F4(c) lands first; R-NORMTREE |
 | S2 | the triple bar as a biconditional: NIS ⟺ same sound ⟺ same raster | OPEN | RED = ⊕-associativity (one sound, two concepts, F:952) | S1 |
-| S3 | ratify L1 + L2 into canon (today a layer) | RULING | removing either law reds (m3, m4) | R-SP2 |
+| S3 | L1 + L2 into NORMK — **RATIFIED 2026-09-25 (F44)**; ripple derived: 2 keys move, 1 collision | OPEN | removing either law reds (m3, m4) | after the freeze with F4(c); R-SP4 |
 | S4 | syntax ≡ MODE_CON under L1 — ⊂(RELATION,⊂(RELATION,FORM)) normalises to ⊕'s own mode glyph | RULING | printed by onecollapse (3) | R-SP4 |
 | S5 | branches in Erik's list not in the 19: Lexicology, Lexicography, Stylistics (+ the deferred five) | OPEN | Δ_B admission TTTT, then onecollapse's generator count rises | R-B1, R-B2 |
 | S6 | emergent (not concatenated) branch reading — BREAD is JOIN_READ today (branchgenesis.la:119) | OPEN | RED = a BREAD that is JOIN_READ | — |
@@ -66,18 +66,16 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 
 | id | question | unblocks |
 |---|---|---|
-| R-SP2 | ratify L1 Λ(Λx)≡Λx and L2 Λ(a⊕b)≡Λa⊕Λb into canon (today a layer in onecollapse.la) | S3, S1 |
-| R-SP4 | syntax ≡ ⊕'s mode glyph under L1 — accept (syntax IS co-presence) or re-derive syntax's interface | S4 |
+| R-SP4 | **now blocking S3**: under the ratified L1, syntax ≡ ⊕'s mode glyph — accept (syntax IS co-presence) or re-derive syntax's interface | S3, S4 |
 | R-SP1 | the Hexary Fusion's sixth member: Discourse (MCL:1303) or Semiosis (codex 9096–9128) | S3 |
 | R-SP3 | the phonym grows under ⊕ ▷ ⊂ ↻: a ruled [B] bound, or require phonological fusion | S8 |
 | R-B1 / R-B2 | the deferred branches' interface x; do Lexicology / Lexicography / Stylistics / Tier 6–7 count | S5 |
-| F39b | move Here / There (re-derived IN opgrammar's GRAM, computed phonyms) to GRULED, as F39 did for LEX | — |
 | R-S1 | Seal 1: which type system (E3 ruled 09-09; ratification owed — unverified) | Seal 2 (a) |
 | R-P1 | ⊕-associativity is phonetically invisible: a bracketing marker, or a bound | S2 |
 | F28d · F37 · F38 · F9/F10 · F30 | freeze rulings (Z §6) | freeze exit |
 | R-NORMTREE | NORMK goes tree-level and NORMTREE retires, or NORMTREE stays as the differential witness | S1 |
 | R-α · R-𝒩 · R-meta-referent · R-empty-names | S19 §3.4–3.8 | sigil of the meta-referent |
-| ✔ ruled | F4(c) · F5 · F39 (c190968) · **F40: the 09-17 re-derivation supersedes E16 §A** | — |
+| ✔ ruled | F4(c) · F5 · F39 (c190968) · F39b · **F40: the 09-17 re-derivation supersedes E16 §A** · **F44: L1 + L2 ratified** | — |
 
 ## 3. EVERYTHING ELSE, BY CATEGORY
 
