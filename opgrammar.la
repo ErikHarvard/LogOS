@@ -75,7 +75,7 @@ glyph K_ = la d. KAN_N(T_(d))
 glyph GRAM = concat(concat(
     "You|>42|m'ashi;We|*45|mara;This|>81|t'aa;That|>86|t'aha;Question|>26|sh'a;")
    ("Past|>76|v'a;Future|>67|h'avu;Ongoing|m7|vuvu;All|*19|ado;Some|*89|tado;None|m6|haha;"))
-   ("Must|*18|ata;Should|>38|l'uta;Or|+56|ra.ha;IfThen|>57|r'avu;I|4|ma;Here|>85|t'ara;There|c65|ra[ha]ra;")
+   ("Must|*18|ata;Should|>38|l'uta;Or|+56|ra.ha;IfThen|>57|r'avu;I|4|ma;")
 
 # ── GRULED — the closed-class entry Erik re-derived, 2026-08-23 ──────
 #  Because  c(BECOMING,RELATION) -- the becoming held WITHIN the
@@ -101,7 +101,13 @@ glyph GRAM = concat(concat(
 #           would have been no free form on this operand pair at all,
 #           and the collision would have been unresolvable without
 #           abandoning one of the two concepts.
-glyph GRULED = "Because|c75|ra[vu]ra;Can|*87|tavu;"
+#  ── RULED 2026-09-17 (adequacy.la, applied in ec12042), MOVED HERE 2026-09-25 (F39b) ──
+#  Here >85 ▷(FORM,RELATION) and There c65 ⊂(VOID,RELATION): two of the eight
+#  one-κ-two-names overloads (This=Here, That=There), re-derived. ec12042 wrote
+#  them IN GRAM with computed phonyms, so the codex-agreement statistic compared
+#  two computed values with themselves. Erik ruled 2026-09-25: they move here,
+#  as lexicon.la's five did (F39).
+glyph GRULED = "Because|c75|ra[vu]ra;Can|*87|tavu;Here|>85|t'ara;There|c65|ra[ha]ra;"
 
 glyph ALL_ = concat(concat(LEX)(GRAM))(concat(RULED)(GRULED))
 
@@ -215,7 +221,12 @@ glyph COLLISIONS = SCAN(KEYED)
 # now for the opposite reason -- Bad was re-derived onto ⊂ and the scan
 # CAN see ⊕. absent-because-invisible and absent-because-fixed look
 # identical in a list, so OK_NORM asserts the ⊕ sensitivity separately.
-glyph OK_COLLSET = str_eq(COLLISIONS)("Substance=Large Bond=Friendship Totality=All Sky=Mystery Move=Agency Good=Beauty This=Here That=There ")
+# ★ RE-DERIVED 2026-09-25 (F43). The eight-pair list above predates adequacy.la's rulings
+# (ec12042, 09-17), which re-derived seven of the eight; from then this printed "collset FAIL"
+# and build.sh's grammar gate was RED unseen. derive/overloads.py (independent of this file)
+# derives ONE live overload, the DECLARED Totality/All. Exact equality also asserts every
+# re-derived pair ABSENT in either table order, which is the check on the rulings.
+glyph OK_COLLSET = str_eq(COLLISIONS)("Totality=All ")
 
 # and the three undeclared ones are individually present, so a partial
 # edit cannot quietly drop one while the total count stays plausible

@@ -4894,7 +4894,10 @@ case "$GRAMOUT" in
   # not merely inside the module.
   *"Change=Can"*|*"Give=Because"*|*"Know=You"*)
       echo "FAIL  grammar: a RULED collision is back (Change=Can / Give=Because / Know=You) — the Monosemic Principle no longer holds across the codex's own two tables — got: $GRAMOUT"; ok=0 ;;
-  *"Substance=Large"*"That=There"*) : ;;
+  # ★ RE-PINNED 2026-09-25 (F43): adequacy.la's rulings (ec12042, 09-17) re-derived seven of the
+  #   eight shared forms; the one live overload left is the DECLARED Totality/All — derived by
+  #   derive/overloads.py, independent of opgrammar.la. The old list reddened this gate unseen.
+  *"COLLISIONS: Totality=All ") : ;;   # anchored at the END: a reverted ruling appends a pair and fails
   *) echo "FAIL  grammar: the cross-table collision set changed — got: $GRAMOUT"; ok=0 ;;
 esac
 # ★ The `|| true` here used to swallow the host's exit status, and the two arms
@@ -5395,11 +5398,12 @@ say "The lexicon appendix, EMITTED BY THE LEXICON (lexappendix.la)"
 #  no IPA because it never wrote this derivation down, so the phonym is
 #  derived and is NOT a check; saying so is the point).
 rm -f la_lexicon_appendix.tex
-# ★ RE-PINNED 2026-09-25 (F39): five LEX rows moved to RULED — DERIVED 57-5=52,
-#   ruled = RULED 7 + GRULED 2 = 9, total unchanged 79.
+# ★ RE-PINNED 2026-09-25 (F39 + F39b): five LEX rows to RULED, Here/There from GRAM to
+#   GRULED — DERIVED: content 57-5=52, closed-class 18-2=16, ruled = RULED 7 + GRULED 4 = 11,
+#   total unchanged 79.
 LAPP="$(timeout 2400 ./tiny_host lexappendix.la 2>&1 || true)"
 case "$LAPP" in
-  *"content=52 closed-class=18 ruled=9 total=79"*) : ;;
+  *"content=52 closed-class=16 ruled=11 total=79"*) : ;;
   *) echo "FAIL  lexappendix: the census changed — got: $LAPP"; ok=0 ;;
 esac
 # ★ one emitted row per entry. A row lost to an escaping bug fails HERE
@@ -5426,9 +5430,12 @@ grep -q 'begin{longtable}' la_lexicon_appendix.tex || { echo "FAIL  lexappendix:
 #   not 28, and is the arithmetic a captured number would have hidden.
 #   ⚠ The codex is not wrong; it is older than the cue. Whether its printed
 #   forms should be reissued to carry ":" is Erik's call, NOT decided here.
+# ★ RE-DERIVED 2026-09-25: the rule above is unchanged; its terms moved. There left ▷ (ec12042,
+#   09-17 — 23, never re-pinned), Move left LEX (F39 — 22) and Here left GRAM (F39b), so the ▷
+#   entries still in the two codex tables are 13 (lexicon.la's div list) + 8 (opgrammar.la's).
 LDIV="$(grep -c 'codex\*' la_lexicon_appendix.tex)"
-[ "$LDIV" -eq 24 ] || { echo "FAIL  lexappendix: expected 24 codex-divergent rows shown inline (every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA), found $LDIV"; ok=0; }
-echo "PASS  lexappendix: the appendix is EMITTED from the lexicon (57 content + 18 closed-class + 4 ruled = 79 rows, one per entry, counts embedded in the file), so the paper's census cannot drift from the thing it counts; each row carries its provenance and the TWENTY-FOUR codex divergences are shown INLINE with both values — every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA; the four vowel-elision divergences are ▷ entries too and are absorbed into that set; longtable so 79 rows cannot overflow silently"
+[ "$LDIV" -eq 21 ] || { echo "FAIL  lexappendix: expected 21 codex-divergent rows shown inline (every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA), found $LDIV"; ok=0; }
+echo "PASS  lexappendix: the appendix is EMITTED from the lexicon (52 content + 16 closed-class + 11 ruled = 79 rows, one per entry, counts embedded in the file), so the paper's census cannot drift from the thing it counts; each row carries its provenance and the TWENTY-FOUR codex divergences are shown INLINE with both values — every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA; the four vowel-elision divergences are ▷ entries too and are absorbed into that set; longtable so 79 rows cannot overflow silently"
 
 say "Phonetic collision at lexicon scale — the bijection gate in the register that was never checked (phoncoll.la)"
 # ── ★ THE FOURTH ENGINEERING SEAL: PERCEPTUAL DISCRIMINABILITY ───────────
