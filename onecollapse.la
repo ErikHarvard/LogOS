@@ -1,0 +1,179 @@
+# ═══════════════════════════════════════════════════════════════════
+#  onecollapse.la — THE ONE COLLAPSE: every branch is ONE operator at one interface, and the
+#  branches collapse TOGETHER, as one movement (Erik, 2026-09-25: "every branch of linguistics
+#  should collapse as one unit thus allowing for infinite compression ... algebraic, computational,
+#  and even mathematical").
+#
+#  SOURCE. Metacursive_Collapse_of_Language.tex §IX, the Master Collapse Table:
+#     "All branches collapse into the same form:  B(B) = B = Λ ∩ Interface_B"
+#     Hexary Fusion: Phon ⊕ Morph ⊕ Syn ⊕ Sem ⊕ Prag ⊕ Disc = Ontosemiosyntax = ∃(∃) ≡ ∃
+#  Made computable: Λ = λx. ⊂(RELATION, x) — the Logos CONTAINED at an interface (∩ read as ⊂, as
+#  branchgenesis.la reads it). A branch is Λ(x); the branch set is Λ applied to the interfaces.
+#
+#  THE TWO LAWS (a LAYER over NORMK, not an edit to canon — cf. lexicon.la's PH_N; nothing else in
+#  the language moves until the laws are ratified):
+#     L1  Λ(Λx) ≡ Λx            B(B) = B — the branch applied to itself is itself
+#     L2  Λ(a ⊕ b) ≡ Λa ⊕ Λb    the hexary fusion: a fusion of branches IS the branch of the fused interfaces
+#  OC_NF is the fully DISTRIBUTED form (Λ pushed to the leaves); OC_COLLAPSE / OC_FACT is the fully
+#  FACTORED form (Λ pulled out to one). Truth (OC_EQ) is equality of distributed forms.
+#
+#  WHAT IS GATED, each with a RED path (gate_registers.sh §oc):
+#   (1) ONE GENERATOR — every declared branch (branchclosure.la BC_GLYPHS, an independent list) is
+#       Λ of its interface; Δ_B's ▷-branch is not Λ-form and is refused BY NAME.
+#   (2) JOINT COLLAPSE — ⊕ of all 18 branches collapses to ONE Λ; lossless at truth (OC_EQ) and at
+#       etymology (RECOVER from the DAG); it changes the form (not vacuous); it is idempotent; a
+#       foreign member makes it refuse, unchanged.
+#   (3) THE LAWS BITE AND DO NOT OVER-REACH — L1 and L2 hold; Λ is not erased; the 18 stay pairwise
+#       distinct; collisions with the five mode glyphs are LISTED (a finding, not hidden).
+#   (4) COMPRESSION, per register, against a formula DERIVED here, never captured: semantic (κ string)
+#       saves (n−1)·W; morphetic (tree nodes) saves 2(n−1); glyphic (DAG nodes) saves n−1.
+#   (5) HEXARY FUSION — the six collapse to one self-naming seal: ONTOSEMIOSYNTAX, DERIVED (not declared).
+#   (6) ★ UNBOUNDED IFF SELF-SIMILAR — S_d = Λ(S_{d−1}) ⊕ Λ(S_{d−1}): the tree grows as 6·2^d−5 while
+#       the collapsed DAG grows as d+3, so compression → ∞ with depth. For DISTINCT content (the 18
+#       branches) the ratio stays bounded: no operator compresses arbitrary content without limit.
+#       "Infinite compression" is exactly the metacursive (self-similar) case — stated, not hidden.
+#  ★ EVIDENTIAL: [W] every T below; [A] L1 and L2 — the paper's boxed claims, applied as a layer,
+#     RATIFICATION OWED; the mode-glyph collision list is for Erik to rule.
+# ═══════════════════════════════════════════════════════════════════
+import("lineage.la")        # PRIM SYN CON DIR CONT MC CANON NORMK SEALc AUTO_OK RECOVER DAG NODES TSIZE NILc CONSc …
+import("branchclosure.la")  # BC_GLYPHS — the 18 base branches + Δ_B's, declared independently of this file
+import("metaglyph.la")      # MODE_SYN MODE_CON MODE_DIR MODE_CONT MODE_MC
+
+export OC_L OC_ISL OC_UNL OC_STRIP OC_COLLAPSE OC_NF OC_EQ OC_FACT
+
+glyph OC_SEQ = la a. la b. b
+glyph OC_SLEN = la s. str_to_int(str_len(s))
+glyph OC_B   = la b. b("T")("F")
+glyph OC_C3  = la a. la b. la c. concat(a)(concat(b)(c))
+glyph OC_REL = PRIM("RELATION")
+glyph OC_L   = la x. CONT(OC_REL)(x)                                  # Λ
+glyph OC_ISREL = la a. str_eq(CANON(a))("RELATION")
+glyph OC_ISL = la t. t(la nm. FALSE)(la a. la b. FALSE)(la a. la b. FALSE)(la a. la b. FALSE)(la a. la b. OC_ISREL(a))(la a. FALSE)
+glyph OC_UNL = la t. t(la nm. t)(la a. la b. t)(la a. la b. t)(la a. la b. t)(la a. la b. IF(OC_ISREL(a))(la _. b)(la _. t))(la a. t)
+
+# ── the ⊕-spine: is every member Λ-form? strip one Λ from each member ──
+glyph OC_ALLL = Z(la self. la t. t(la nm. FALSE)(la a. la b. FALSE)(la a. la b. AND(self(a))(self(b)))(la a. la b. FALSE)(la a. la b. OC_ISREL(a))(la a. FALSE))
+glyph OC_STRIP = Z(la self. la t. t(la nm. PRIM(nm))(la a. la b. SYN(a)(b))(la a. la b. CON(self(a))(self(b)))(la a. la b. DIR(a)(b))(la a. la b. IF(OC_ISREL(a))(la _. b)(la _. CONT(a)(b)))(la a. MC(a)))
+glyph OC_COLLAPSE = la t. IF(OC_ALLL(t))(la _. OC_L(OC_STRIP(t)))(la _. t)
+
+# ── the distributed normal form (L1 + L2) ──
+# OC_LNF(nf)(b): Λ applied to an already-normal b
+glyph OC_LNF = la nf. la b. b
+    (la nm. OC_L(b))
+    (la a. la c. OC_L(b))
+    (la p. la q. CON(nf(OC_L(p)))(nf(OC_L(q))))
+    (la a. la c. OC_L(b))
+    (la a. la c. IF(OC_ISREL(a))(la _. b)(la _. OC_L(b)))
+    (la a. OC_L(b))
+glyph OC_NF = Z(la self. la t. t
+    (la nm. PRIM(nm))
+    (la a. la b. SYN(self(a))(self(b)))
+    (la a. la b. CON(self(a))(self(b)))
+    (la a. la b. DIR(self(a))(self(b)))
+    (la a. la b. IF(OC_ISREL(a))(la _. OC_LNF(self)(self(b)))(la _. CONT(self(a))(self(b))))
+    (la a. MC(self(a))))
+glyph OC_K  = la t. NORMK(OC_NF(t))
+glyph OC_EQ = la a. la b. str_eq(OC_K(a))(OC_K(b))
+
+# ── the deep factored form: Λ pulled out everywhere it can be (bottom-up) ──
+glyph OC_FACT = Z(la self. la t. t
+    (la nm. PRIM(nm))
+    (la a. la b. SYN(self(a))(self(b)))
+    (la a. la b. (la x. la y. IF(AND(OC_ISL(x))(OC_ISL(y)))(la _. OC_L(CON(OC_UNL(x))(OC_UNL(y))))(la _. CON(x)(y)))(self(a))(self(b)))
+    (la a. la b. DIR(self(a))(self(b)))
+    (la a. la b. IF(OC_ISREL(a))(la _. (la y. IF(OC_ISL(y))(la _. y)(la _. OC_L(y)))(self(b)))(la _. CONT(self(a))(self(b))))
+    (la a. MC(self(a))))
+
+# ── lists ──
+glyph OC_FILTER = la p. Z(la self. la l. l(NILc)(la h. la t. IF(p(h))(la _. CONSc(h)(self(t)))(la _. self(t))))
+glyph OC_COUNT  = la p. Z(la self. la l. l(0)(la h. la t. add(IF(p(h))(la _. 1)(la _. 0))(self(t))))
+glyph OC_ALL    = la p. Z(la self. la l. l(TRUE)(la h. la t. AND(p(h))(self(t))))
+glyph OC_LEN    = Z(la self. la l. l(0)(la h. la t. add(1)(self(t))))
+glyph OC_TAKE   = Z(la self. la n. la l. IF(int_eq(n)(0))(la _. NILc)(la _. l(NILc)(la h. la t. CONSc(h)(self(sub(n)(1))(t)))))
+glyph OC_AT     = Z(la self. la i. la l. l(PRIM("VOID"))(la h. la t. IF(int_eq(i)(0))(la _. h)(la _. self(sub(i)(1))(t))))
+glyph OC_MAP    = la f. Z(la self. la l. l(NILc)(la h. la t. CONSc(f(h))(self(t))))
+glyph OC_FUSE   = Z(la self. la l. l(PRIM("VOID"))(la h. la t. t(h)(la h2. la t2. CON(h)(self(t)))))
+glyph OC_NAMES  = la l. Z(la self. la l. l("")(la h. la t. concat(CANON(h))(concat(" ")(self(t)))))(l)
+glyph OC_NOTL   = la g. NOT(AND(OC_ISL(g))(str_eq(CANON(OC_L(OC_UNL(g))))(CANON(g))))
+
+# ── (1) one generator ──
+glyph OC_LINE1 = la br. la base.
+  OC_C3("ONECOLLAPSE generator Λ=⊂(RELATION,·): branches=")(int_to_str(OC_LEN(br)))(
+  OC_C3(" Λ-generated=")(int_to_str(OC_COUNT(la g. NOT(OC_NOTL(g)))(br)))(
+  OC_C3(" | refused, not Λ-form: ")(OC_NAMES(OC_FILTER(OC_NOTL)(br)))("")))
+
+# ── (2) joint collapse ──
+glyph OC_FIX_FOREIGN = la base. la br. CON(OC_FUSE(base))(OC_AT(18)(br))
+glyph OC_LINE2 = la u. la c. la fx.
+  OC_C3("ONECOLLAPSE joint collapse n=18: lossless NF(⊕Λx)≡NF(Λ⊕x):")(OC_B(OC_EQ(u)(c)))(
+  OC_C3(" etymology recovered from the DAG:")(OC_B(str_eq(RECOVER(DAG(c)))(NORMK(c))))(
+  OC_C3(" | changes the form:")(OC_B(NOT(str_eq(CANON(u))(CANON(c)))))(
+  OC_C3(" idempotent:")(OC_B(str_eq(CANON(OC_COLLAPSE(c)))(CANON(c))))(
+  OC_C3(" | foreign member refused:")(OC_B(str_eq(CANON(OC_COLLAPSE(fx)))(CANON(fx))))("")))))
+
+# ── (3) the laws bite, and do not over-reach ──
+glyph OC_X = PRIM("DEPTH")
+glyph OC_Y = SYN(PRIM("FORM"))(PRIM("LOVE"))
+glyph OC_L1 = OC_EQ(OC_L(OC_L(OC_X)))(OC_L(OC_X))
+glyph OC_L2 = OC_EQ(OC_L(CON(OC_X)(OC_Y)))(CON(OC_L(OC_X))(OC_L(OC_Y)))
+glyph OC_KEPT = la g. NOT(str_eq(OC_K(g))(OC_K(OC_UNL(g))))
+glyph OC_PAIRS = Z(la self. la l. l(0)(la h. la t. add(OC_COUNT(la s. str_eq(s)(h))(t))(self(t))))
+glyph OC_MODES = CONSc(MODE_SYN)(CONSc(MODE_CON)(CONSc(MODE_DIR)(CONSc(MODE_CONT)(CONSc(MODE_MC)(NILc)))))
+glyph OC_MODEHIT = la mk. la g. (la k. Z(la self. la l. l(FALSE)(la h. la t. OR(str_eq(h)(k))(self(t))))(mk))(OC_K(g))
+glyph OC_LINE3 = la base. la ks. la mk.
+  OC_C3("ONECOLLAPSE laws [A: MCL §IX, a layer over NORMK]: L1 Λ(Λx)≡Λx:")(OC_B(OC_L1))(
+  OC_C3(" L2 Λ(a⊕b)≡Λa⊕Λb:")(OC_B(OC_L2))(
+  OC_C3(" | Λ not erased:")(int_to_str(OC_COUNT(OC_KEPT)(base)))(
+  OC_C3("/")(int_to_str(OC_LEN(base)))(
+  OC_C3(" absorbed by L1 (interface already Λ-form): ")(OC_NAMES(OC_FILTER(la g. NOT(OC_KEPT(g)))(base)))(
+  OC_C3(" | branches colliding under the laws: ")(int_to_str(OC_PAIRS(ks)))(
+  OC_C3(" | collide with a MODE glyph: ")(OC_NAMES(OC_FILTER(OC_MODEHIT(mk))(base)))("")))))))
+
+# ── (4) compression per register, against the derived formula ──
+glyph OC_W = sub(OC_SLEN(CANON(OC_L(OC_X))))(OC_SLEN(CANON(OC_X)))
+glyph OC_W2 = sub(OC_SLEN(CANON(OC_L(OC_Y))))(OC_SLEN(CANON(OC_Y)))
+glyph OC_FORMULA = la base. la w. Z(la self. la n. IF(lt(18)(n))(la _. TRUE)(la _.
+    (la u. (la c. AND(AND(int_eq(sub(OC_SLEN(CANON(u)))(OC_SLEN(CANON(c))))(mul(sub(n)(1))(w)))
+                          (int_eq(sub(TSIZE(u))(TSIZE(c)))(mul(2)(sub(n)(1)))))
+                      (self(add(n)(1))))(OC_COLLAPSE(u)))(OC_FUSE(OC_TAKE(n)(base)))))(1)
+glyph OC_LINE4 = la base. la u. la c. (la w.
+  OC_C3("ONECOLLAPSE compression n=1..18 vs the derived formula: semantic κ saved=(n−1)·W, W=")(int_to_str(w))(
+  OC_C3(" constant:")(OC_B(int_eq(w)(OC_W2)))(
+  OC_C3(" | morphetic nodes saved=2(n−1) — both, every n:")(OC_B(OC_FORMULA(base)(w)))(
+  OC_C3(" | glyphic DAG nodes saved at n=18: ")(int_to_str(sub(NODES(DAG(u)))(NODES(DAG(c)))))(
+  OC_C3(" (=n−1:")(OC_B(int_eq(sub(NODES(DAG(u)))(NODES(DAG(c))))(17)))(")"))))))(OC_W)
+
+# ── (5) the hexary fusion ──
+glyph OC_HEX = la base. OC_FUSE(CONSc(OC_AT(0)(base))(CONSc(OC_AT(2)(base))(CONSc(OC_AT(3)(base))(CONSc(OC_AT(4)(base))(CONSc(OC_AT(5)(base))(CONSc(OC_AT(6)(base))(NILc)))))))
+glyph OC_LINE5 = la hx. (la s.
+  OC_C3("ONECOLLAPSE hexary fusion Phon⊕Morph⊕Syn⊕Sem⊕Prag⊕Disc → ONE Λ:")(OC_B(AND(OC_ISL(ETYM(s)))(OC_EQ(hx)(ETYM(s)))))(
+  OC_C3(" ONTOSEMIOSYNTAX = ")(REN(s))(
+  OC_C3(" | one seal names itself:")(OC_B(AUTO_OK(s)))(""))))(SEALc(OC_COLLAPSE(hx)))
+
+# ── (6) unbounded iff self-similar ──
+glyph OC_S = Z(la self. la d. IF(int_eq(d)(0))(la _. PRIM("SELF"))(la _. (la s. CON(OC_L(s))(OC_L(s)))(self(sub(d)(1)))))
+glyph OC_POW2 = Z(la self. la d. IF(int_eq(d)(0))(la _. 1)(la _. mul(2)(self(sub(d)(1)))))
+glyph OC_DEEP = Z(la self. la d. IF(lt(6)(d))(la _. PAIRc(TRUE)(""))(la _.
+    (la s. (la f. (la ts. (la nd. (la rest.
+        PAIRc(AND(AND(AND(int_eq(ts)(sub(mul(6)(OC_POW2(d)))(5)))(int_eq(nd)(add(d)(3))))(OC_EQ(s)(f)))(FSTc(rest)))
+             (concat(concat(int_to_str(ts))(concat("/")(int_to_str(nd))))(concat(" ")(SNDc(rest)))))
+      (self(add(d)(1))))(NODES(DAG(f))))(TSIZE(s)))(OC_FACT(s)))(OC_S(d))))
+glyph OC_TMAX = Z(la self. la l. l(0)(la h. la t. (la a. la b. IF(lt(a)(b))(la _. b)(la _. a))(TSIZE(OC_UNL(h)))(self(t))))
+glyph OC_LINE6 = la u. la c. la tm. (la r. (la dts. (la dnd.
+  OC_C3("ONECOLLAPSE unbounded iff self-similar: d=1..6 TSIZE=6·2^d−5, DAG nodes=d+3, lossless:")(OC_B(FSTc(r)))(
+  OC_C3(" | tree/DAG ratio by depth: ")(SNDc(r))(
+  OC_C3("| distinct content n=18: ")(concat(int_to_str(dts))(concat("/")(int_to_str(dnd))))(
+  OC_C3(" DAG ≥ 2n+1 (information floor):")(OC_B(NOT(lt(dnd)(37))))(
+  OC_C3(" ratio < (T+3)/2 for EVERY n, T=max interface size=")(int_to_str(tm))(
+  OC_C3(":")(OC_B(lt(mul(2)(dts))(mul(dnd)(add(tm)(3)))))(
+  OC_C3(" | self-similar exceeds that bound from d=3:")(OC_B((la s3. lt(mul(NODES(DAG(OC_FACT(s3))))(add(tm)(3)))(mul(2)(TSIZE(s3))))(OC_S(3))))(""))))))))
+  (NODES(DAG(c))))(TSIZE(u)))(OC_DEEP(1))
+
+glyph MAIN = (la br. (la base. (la u. (la c. (la ks.
+    OC_SEQ(print(OC_LINE1(br)(base)))(
+    OC_SEQ(print(OC_LINE2(u)(c)(OC_FIX_FOREIGN(base)(br))))(
+    OC_SEQ(print(OC_LINE3(base)(ks)(OC_MAP(OC_K)(OC_MODES))))(
+    OC_SEQ(print(OC_LINE4(base)(u)(c)))(
+    OC_SEQ(print(OC_LINE5(OC_HEX(base))))(
+    print(OC_LINE6(u)(c)(OC_TMAX(base)))))))))
+  (OC_MAP(OC_K)(base)))(OC_COLLAPSE(u)))(OC_FUSE(base)))(OC_FILTER(OC_ISL)(br)))(BC_GLYPHS)
