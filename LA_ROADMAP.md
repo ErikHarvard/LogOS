@@ -47,6 +47,8 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 
 ## 1. NOW — the order of work
 
+> **Tomorrow (09-26): `RESUME-2026-09-26.md`** — the full host suite first (freeze exit), then the meta-architecture items.
+
 1. **Freeze exit** (Z §5 run queue, in order): NORMK probe → full host suite (F2) → V6 clean checkout → V5 determinism →
    build.sh lexicon gate (F1 — its re-pin is derived and CONFIRMED BY RUNNING 09-25, c190968) → VM chunks (F13) → fix phase.
    Done 09-25: §33 certify PASS (F36 confirmed); §23 re-pinned to 73 WITH `derive/s23_syllabus.py` (F41). Open: §35 needs >1800 s (F42).
