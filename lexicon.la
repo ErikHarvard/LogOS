@@ -218,10 +218,10 @@ glyph KAN_N = la t. KAN(NORMT(t))
 # The PHONYM column is the codex's printed IPA, romanised. It is NOT
 # produced by PH. If it were, every check below would be vacuous.
 glyph LEX = concat(concat(concat(
-    "Substance|*81|taa;Change|*78|vuta;Appearance|*28|shita;Bond|c51|a[ra]a;Body|*48|mata;Attention|*23|shilu;Totality|*19|ado;Absence|*68|hata;Life|*17|avu;Silence|*16|aha;")
-   ("Water|**817|taavu;Stone|**819|taado;Air|**816|taaha;Fire|**783|vutalu;Light|**812|taashi;Sky|c68|ta[ha]ta;Plant|**178|avuta;Animal|**174|avuma;Human|**17*24|avushima;Place|**815|taara;"))
-   (concat("Give|>75|v'ura;Make|>74|v'uma;See|>28|sh'ita;Move|>78|v'uta;Care|>34|l'uma;Desire|>43|m'alu;Alter|>87|t'avu;Think|>22|sh'shi;Eat|>*48*81|mat'ataa;Speak|>4*35|m'alura;")
-          ("Good|*13|alu;Large|*98|dota;Small|*86|taha;New|*71|vua;Old|*67|havu;Warm|*31|lua;Cold|*63|halu;True|*21|shia;False|*26|shiha;")))
+    "Substance|*81|taa;Change|*78|vuta;Appearance|*28|shita;Body|*48|mata;Attention|*23|shilu;Totality|*19|ado;Absence|*68|hata;Life|*17|avu;Silence|*16|aha;")
+   ("Water|**817|taavu;Stone|**819|taado;Air|**816|taaha;Fire|**783|vutalu;Light|**812|taashi;Plant|**178|avuta;Animal|**174|avuma;Human|**17*24|avushima;Place|**815|taara;"))
+   (concat("Give|>75|v'ura;Make|>74|v'uma;See|>28|sh'ita;Care|>34|l'uma;Desire|>43|m'alu;Alter|>87|t'avu;Think|>22|sh'shi;Eat|>*48*81|mat'ataa;Speak|>4*35|m'alura;")
+          ("Small|*86|taha;New|*71|vua;Old|*67|havu;Warm|*31|lua;Cold|*63|halu;True|*21|shia;False|*26|shiha;")))
    (concat("One|1|a;Two|5|ra;Three|+51|ra.a;Four|*55|rara;Many|*59|rado;")
           ("Friendship|*35|lura;Kindness|*34|luma;Community|**453|maralu;Understanding|*25|shira;Promise|>45|m'ara;Loneliness|*65|hara;Gratitude|>31|l'a;Grief|+36|lu.ha;Witness|>24|sh'ima;Mystery|*69|hado;Beauty|*83|talu;Agency|>47|m'avu;Consciousness|*24|shima;"))
 
@@ -254,7 +254,16 @@ glyph LEX = concat(concat(concat(
 #            declaration that + is commutative (:2854) is the SAME glyph
 #            as Grief +(LOVE,VOID). Grief keeps +: its gloss is verbatim
 #            +'s definition ("Love co-present with Void").
-glyph RULED = "Know|*42|mashi;Bad|c36|ha[lu]ha;"
+#  ── RULED 2026-09-17 (adequacy.la, applied in ec12042), MOVED HERE 2026-09-25 (F39) ──
+#  Bond c51, Sky c68, Move >78, Good *13, Large *98 -- five of the eight
+#  one-κ-two-names overloads, re-derived (adequacy.la names each pair and
+#  its reason). ec12042 first rewrote them IN PLACE in LEX, with computed
+#  phonyms: the count stayed 57, so the pin below could not see it, and
+#  four self-comparisons sat inside agree=43. Erik ruled 2026-09-25: they
+#  move here, as Know and Bad did. Their distinctness from the concepts
+#  they collided with is gated by adequacy.la (ad: "every new form
+#  distinct ... from all eight originals").
+glyph RULED = "Know|*42|mashi;Bad|c36|ha[lu]ha;Bond|c51|a[ra]a;Sky|c68|ta[ha]ta;Move|>78|v'uta;Good|*13|alu;Large|*98|dota;"
 
 # ── field/record splitting ──────────────────────────────────────────
 glyph UPTO = Z(la self. la d. la s.
@@ -354,11 +363,16 @@ glyph ONE_IS_BEING = AND(str_eq(KOF("1"))("BEING"))(str_eq(P_("1"))("a"))
 # remain are still Think and Gratitude, the vowel-elision class. If a
 # re-derivation had been folded back into LEX instead, agree would rise
 # by a self-comparison and this pin would catch it.
+# 52, not 57 (2026-09-25, F39): Bond Sky Move Good Large left LEX for RULED.
+# Four were agreeing rows and Move a ▷ (diverging) row, so agree 43→39 and
+# diverge 14→13 -- derived before the run. NOTE the 08-23 claim above held
+# only for ADDED rows: a re-derivation written OVER a codex row keeps the
+# count, and only the RULED-vs-LEX discipline itself prevents it.
 # ★ AGREE is likewise DERIVED: every entry agrees with the codex EXCEPT the ▷
 # ones. `55` was the pre-R-D constant and went stale the same way.
 glyph DIRCOUNT = FOLD(la a. la n. la d. la p.
     IF(HASCH(">")(KAN(FST(PARSE(d)))))(la _. add(a)(1))(la _. a))(0)(LEX)
-glyph OK_TOTAL = AND(int_eq(COUNT)(57))(int_eq(AGREE)(sub(COUNT)(DIRCOUNT)))
+glyph OK_TOTAL = AND(int_eq(COUNT)(52))(int_eq(AGREE)(sub(COUNT)(DIRCOUNT)))
 
 # ── 8. ★★ THE NORMALISER IS A LAYER, NOT AN EDIT ───────────────────
 #    Three checks, and the middle one is the load-bearing one. Normalised

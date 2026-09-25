@@ -4870,9 +4870,13 @@ ok=1
 #   on ▷ entries. The codex is not wrong; it is older than the cue. Whether the
 #   codex's printed forms should be reissued to carry ":" is Erik's call and is
 #   NOT decided here.
+# ★ RE-PINNED 2026-09-25 (F39, Erik's ruling): Bond Sky Move Good Large left LEX
+#   for RULED (ec12042 had rewritten them IN LEX with computed phonyms). DERIVED:
+#   57-5=52 entries; four agreeing rows + one ▷ row (Move) leave, so agree 43-4=39,
+#   diverge 14-1=13, and Move drops out of the ▷ list — the rule is unchanged.
 LEXOUT="$(timeout 300 ./tiny_host lexicon.la 2>&1 || true)"
 case "$LEXOUT" in
-  *"entries=57 agree=43 diverge=14 [Give Make See Move Care Desire Alter Think Eat Speak Promise Gratitude Witness Agency ]"*) : ;;
+  *"entries=52 agree=39 diverge=13 [Give Make See Care Desire Alter Think Eat Speak Promise Gratitude Witness Agency ]"*) : ;;
   *) echo "FAIL  lexicon: phonym derivation vs codex transcription changed — got: $LEXOUT"; ok=0 ;;
 esac
 case "$LEXOUT" in
@@ -5391,9 +5395,11 @@ say "The lexicon appendix, EMITTED BY THE LEXICON (lexappendix.la)"
 #  no IPA because it never wrote this derivation down, so the phonym is
 #  derived and is NOT a check; saying so is the point).
 rm -f la_lexicon_appendix.tex
+# ★ RE-PINNED 2026-09-25 (F39): five LEX rows moved to RULED — DERIVED 57-5=52,
+#   ruled = RULED 7 + GRULED 2 = 9, total unchanged 79.
 LAPP="$(timeout 2400 ./tiny_host lexappendix.la 2>&1 || true)"
 case "$LAPP" in
-  *"content=57 closed-class=18 ruled=4 total=79"*) : ;;
+  *"content=52 closed-class=18 ruled=9 total=79"*) : ;;
   *) echo "FAIL  lexappendix: the census changed — got: $LAPP"; ok=0 ;;
 esac
 # ★ one emitted row per entry. A row lost to an escaping bug fails HERE

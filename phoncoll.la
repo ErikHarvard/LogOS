@@ -226,7 +226,7 @@ glyph OK_SAW  = AND(SAW_POS)(SAW_NEG)
 #  ★ COST, STATED: the derived phonym for every ▷ entry now DIFFERS from
 #  the codex's printed IPA, which predates the cue. lexicon.la's codex
 #  concordance moved from `agree=55 diverge=2 [Think Gratitude]` to
-#  `agree=43 diverge=14`, and the divergent set is EXACTLY the fourteen
+#  `agree=43 diverge=14` (39/13 since 2026-09-25, F39: five rows moved to RULED), and the divergent set is EXACTLY the fourteen
 #  LEX entries whose canonical form contains ▷ -- verified against an
 #  independent census, not read off the new output. That is a PRINCIPLED
 #  divergence (every ▷ entry, by construction) rather than a number that
