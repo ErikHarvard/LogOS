@@ -9,6 +9,11 @@
 # a claim nothing keeps true"). LA_CLAIM_INDEX.md supplies the mapping; this
 # gate is what keeps it from rotting the same way.
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
+# ★ THE KEY IS DERIVED IN UTF-8, WHATEVER THE CALLER'S LOCALE (2026-09-18). audit_run.sh exports LC_ALL=C,
+#   and under C the character class in norm_keys matches BYTES: ⊗ ▷ ⊕ were split, the derived key was
+#   mangled, and 4 items that ARE indexed (rows 7, 12, 14, 18) read "not indexed" — the full audit's only FAIL
+#   was 27 keys of which those 4 were false. C.UTF-8 ranges are by codepoint, not collation.
+export LC_ALL=C.UTF-8
 C=LA_COMPLETION.md; X=LA_CLAIM_INDEX.md
 for f in "$C" "$X"; do
     [ -f "$f" ] || { echo "FAIL  claimindex: $f missing — a broken checkout, not a configuration"; exit 1; }
@@ -36,7 +41,13 @@ norm_keys () {  # title -> the same 6-word key the index was generated with
       | sed 's/[*`★—–]/ /g; s/[^a-z0-9 /_+⊂⊕⊗▷↻κν∂δγρ𝔄]/ /g' \
       | tr -s ' ' | sed 's/^ //' | cut -d' ' -f1-6
 }
-grep '`\[ \]`' "$C" | grep -v 'Status key:' | norm_keys | sed 's/ *$//' | sort -u > "$CKEYS"
+# ★ A LOCALE THAT DID NOT TAKE FAILS LOUDLY, never silently: normalise a known ⊗ title and require the ⊗ back.
+[ "$(printf '%s\n' '- `[ ]` **⊗ renders as juxtaposition**' | norm_keys | sed 's/ *$//')" = "⊗ renders as juxtaposition" ] \
+    || { echo "FAIL  claimindex: this host cannot normalise ⊗ (no C.UTF-8?) — every symbol-titled key would be mangled, so the scan is refused"; exit 1; }
+# ★ LIST ITEMS ONLY (2026-09-18). This grepped ANY line containing `[ ]`, so prose that MENTIONS the status —
+#   LA_COMPLETION.md:4 ("All 47 `[ ]` items…"), :1457 ("`[ ]` again, and its stamp…"), :1488 — became three
+#   phantom "unbuilt items". An item is a list entry that STARTS with its status box, nothing else.
+grep -E '^[[:space:]]*[-*] `\[ \]`' "$C" | norm_keys | sed 's/ *$//' | sort -u > "$CKEYS"
 grep -oE '^\| [0-9]+ \| `[^`]+`' "$X" | sed 's/.*`\(.*\)`/\1/' | sort -u > "$XKEYS"
 NITEMS=$(wc -l < "$CKEYS"); NROWS=$(wc -l < "$XKEYS")
 
