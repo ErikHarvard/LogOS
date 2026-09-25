@@ -398,7 +398,7 @@ sed 's|^glyph COND_B_LIVE = la u. la speaker. la box. GRANT_RECV(speaker)(box)(l
 red fl_m1 "foreign realm: performed:open" "felicitylive RED(bypass: unsealing with the granting realm lets a foreign speaker perform)"
 # ═══ 23. syllabus — acquisition: the teaching order the structure implies (LA_COMPLETION "Acquisition") ═
 host syllabus.la sy
-want sy "SYLLABUS lessons=79 by depth d0=3 d1=64 d2=12 d3=0 | depth non-decreasing:T | constituent-first violations=0 (0 required):T | reversed order violations=72 (red path, must be >0)" syllabus  #@ turns-red: red:sy_m1; construction:depth-monotone + violations=0 follow from the sort (F32)
+want sy "SYLLABUS lessons=79 by depth d0=3 d1=64 d2=12 d3=0 | depth non-decreasing:T | constituent-first violations=0 (0 required):T | reversed order violations=73 (red path, must be >0)" syllabus  #@ turns-red: red:sy_m1; exact:s23; construction:depth-monotone + violations=0 follow from the sort (F32)
 want sy "SYLLABUS first lessons: Two One I None Ongoing Consciousness Agency Beauty Mystery Witness Grief Gratitude" syllabus  #@ turns-red: exact:captured
 sed 's|IF(lt(L_KEY(h))(L_KEY(x)))(la _. SY_CONS(h)(self(t)))(la _. SY_CONS(x)(l))|IF(lt(L_KEY(x))(L_KEY(h)))(la _. SY_CONS(h)(self(t)))(la _. SY_CONS(x)(l))|' syllabus.la > "$T/sy_m1.la"; host "$T/sy_m1.la" sy_m1
 red sy_m1 "depth non-decreasing:F" "syllabus RED(descending order: depth invariant lost)"
@@ -884,8 +884,49 @@ red ad_m1 "distinct from the others AND from all eight originals:F" "adequacy RE
 sed 's|AD_R("⊗(VOID,DEPTH)")("Mystery")("Sky")("REDERIVE")("⊂(VOID,FORM)")|AD_R("⊗(VOID,DEPTH)")("Mystery")("Sky")("REDERIVE")("")|' adequacy.la > "$T/ad_m2.la"; host "$T/ad_m2.la" ad_m2
 red ad_m2 "resolved 7/8" "adequacy RED(a re-derivation left without a new form: the resolution count drops, so an unruled overload cannot pass as ruled)"
 
+# ═══ 50. onecollapse — THE ONE COLLAPSE: every branch is Λ at one interface; all collapse as one (Erik 2026-09-25) ═══
+#  Λ = λx.⊂(RELATION,x) with L1 Λ(Λx)≡Λx and L2 Λ(a⊕b)≡Λa⊕Λb (RATIFIED 2026-09-25, F44; a layer until NORMK takes them).
+#  Every number below is computed IN THE MODULE against a formula stated there (compression, the self-similar
+#  6·2^d−5 over d+3, the (T+3)/2 bound); the branch set is branchclosure.la's, declared independently of it.
+host onecollapse.la oc
+want oc "branches=19 Λ-generated=18 | refused, not Λ-form: ▷(RECOGNITION,↻(RELATION))" onecollapse  #@ turns-red: red:oc_m1; fixture:Δ_B's ▷-branch refused by name
+want oc "joint collapse n=18: lossless NF(⊕Λx)≡NF(Λ⊕x):T etymology recovered from the DAG:T | changes the form:T idempotent:T | foreign member refused:T" onecollapse  #@ turns-red: red:oc_m2,oc_m6,oc_m8; fixture:a foreign member (Δ_B's branch) in the fusion
+want oc "L1 Λ(Λx)≡Λx:T L2 Λ(a⊕b)≡Λa⊕Λb:T | Λ not erased:17/18 absorbed by L1 (interface already Λ-form): ⊂(RELATION,⊂(RELATION,FORM))" onecollapse  #@ turns-red: red:oc_m3,oc_m4,oc_m5
+want oc "branches colliding under the laws: 0 | collide with a MODE glyph: ⊂(RELATION,⊂(RELATION,FORM)) = the DECLARED set (syntax ≡ MODE_CON, R-SP4 ruled 2026-09-25):T" onecollapse  #@ turns-red: red:oc_m9; exact:derive/l1l2_ripple.py (one new collision, syntax = MODE_CON)
+want oc "semantic κ saved=(n−1)·W, W=14 constant:T | morphetic nodes saved=2(n−1) — both, every n:T | glyphic DAG nodes saved at n=18: 17 (=n−1:T)" onecollapse  #@ turns-red: red:oc_m8; construction:formula stated in-file (each Λ wrapper is one CONT node + one RELATION leaf)
+want oc "hexary fusion Phon⊕Morph⊕Syn⊕Sem⊕Prag⊕Disc → ONE Λ:T ONTOSEMIOSYNTAX = ⊂(RELATION,⊕(BECOMING,⊕(▷(BECOMING,FORM),⊕(⊂(RELATION,FORM),⊕(BEING,⊕(LOVE,⊗(FORM,LOVE))))))) | one seal names itself:T" onecollapse  #@ turns-red: red:oc_m2; construction:AUTO_OK of a seal (F32)
+want oc "d=1..6 TSIZE=6·2^d−5, DAG nodes=d+3, lossless:T | tree/DAG ratio by depth: 7/4 19/5 43/6 91/7 187/8 379/9 | distinct content n=18: 94/40 DAG ≥ 2n+1 (information floor):T ratio < (T+3)/2 for EVERY n, T=max interface size=3:T | self-similar exceeds that bound from d=3:T" onecollapse  #@ turns-red: red:oc_m7; construction:formula stated in-file (tree recurrence s_d=2s_{d−1}+5, one shared node per level)
+sed 's|^glyph OC_REL = PRIM("RELATION")|glyph OC_REL = PRIM("VOID")|' onecollapse.la > "$T/oc_m1.la"; host "$T/oc_m1.la" oc_m1
+red oc_m1 "Λ-generated=0" "onecollapse RED(Λ built on the wrong primitive regenerates no branch)"
+sed 's|(la a. la b. CON(self(a))(self(b)))(la a. la b. DIR(a)(b))|(la a. la b. self(a))(la a. la b. DIR(a)(b))|' onecollapse.la > "$T/oc_m2.la"; host "$T/oc_m2.la" oc_m2
+red oc_m2 "lossless NF(⊕Λx)≡NF(Λ⊕x):F" "onecollapse RED(a collapse that drops members is caught as lossy)"
+red oc_m2 "ONE Λ:F" "onecollapse RED(a lossy collapse no longer fuses the hexary six to one Λ)"
+sed 's|(la a. la c. IF(OC_ISREL(a))(la _. b)(la _. OC_L(b)))|(la a. la c. IF(FALSE)(la _. b)(la _. OC_L(b)))|' onecollapse.la > "$T/oc_m3.la"; host "$T/oc_m3.la" oc_m3
+red oc_m3 "L1 Λ(Λx)≡Λx:F" "onecollapse RED(L1 removed from the normaliser)"
+sed 's|(la p. la q. CON(nf(OC_L(p)))(nf(OC_L(q))))|(la p. la q. OC_L(b))|' onecollapse.la > "$T/oc_m4.la"; host "$T/oc_m4.la" oc_m4
+red oc_m4 "L2 Λ(a⊕b)≡Λa⊕Λb:F" "onecollapse RED(L2 removed from the normaliser)"
+sed 's|IF(OC_ISREL(a))(la _. OC_LNF(self)(self(b)))|IF(OC_ISREL(a))(la _. self(b))|' onecollapse.la > "$T/oc_m5.la"; host "$T/oc_m5.la" oc_m5
+red oc_m5 "Λ not erased:0/18" "onecollapse RED(an over-reaching normaliser that erases Λ)"
+sed 's|^glyph OC_ALLL = Z(.*|glyph OC_ALLL = la t. TRUE|' onecollapse.la > "$T/oc_m6.la"; host "$T/oc_m6.la" oc_m6
+red oc_m6 "foreign member refused:F" "onecollapse RED(a collapse that accepts a non-Λ member)"
+sed 's|IF(AND(OC_ISL(x))(OC_ISL(y)))(la _. OC_L(CON(OC_UNL(x))(OC_UNL(y))))|IF(FALSE)(la _. OC_L(CON(OC_UNL(x))(OC_UNL(y))))|' onecollapse.la > "$T/oc_m7.la"; host "$T/oc_m7.la" oc_m7
+red oc_m7 "DAG nodes=d+3, lossless:F" "onecollapse RED(no factoring: the self-similar DAG no longer grows by one per level)"
+sed 's|^glyph OC_COLLAPSE = .*|glyph OC_COLLAPSE = la t. t|' onecollapse.la > "$T/oc_m8.la"; host "$T/oc_m8.la" oc_m8
+red oc_m8 "changes the form:F" "onecollapse RED(an identity 'collapse' is vacuous and is caught)"
+red oc_m8 "both, every n:F" "onecollapse RED(no collapse, no saving: the derived compression formula fails)"
+sed 's|^glyph OC_MODES = CONSc(MODE_SYN)|glyph OC_MODES = CONSc(CONT(PRIM("RELATION"))(PRIM("SELF")))(CONSc(MODE_SYN)|; s|(CONSc(MODE_MC)(NILc)))))$|(CONSc(MODE_MC)(NILc))))))|' onecollapse.la > "$T/oc_m9.la"; host "$T/oc_m9.la" oc_m9
+red oc_m9 "(syntax ≡ MODE_CON, R-SP4 ruled 2026-09-25):F" "onecollapse RED(an UNDECLARED branch/mode collision — psycholinguistics — is caught)"
+
+# ═══ 51. nameck --bind — the identity law at code level: no name bound twice to DIFFERENT terms (F45, 2026-09-25) ═══
+#  tiny_host keeps the FIRST binding in file order, imports included, and says nothing: a later glyph of the same name
+#  is dead. Measured by running (dup → first wins; local after an import → import wins; local before → local wins).
+#  It hid ablate/lexappendix/phoncoll's own P_ = PH_N behind opgrammar's raw P_ — the appendix's sound column was raw
+#  while its κ column was normalised. Same / α-equal / REVIEWED double bindings are reported, not failed.
+#  Validated both ways: a planted DIFFERENT binding → rc 1; α-equal → rc 0; lexappendix.la at 70ca27c → rc 1.
+python3 nameck.py --bind *.la > "$T/bind" 2>&1 || { echo "FAIL  registers/bind: a name is bound twice to DIFFERENT terms — tiny_host silently keeps the first: $(grep -o '[A-Za-z0-9_]*[( ][^;]*★ DIFFERENT[^;]*' "$T/bind" | head -3)"; ok=0; }
+
 # ═══ 10. the table bound (directive §8): every module's import closure fits 1024 ══
-for m in lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la recdepth.la selfevo.la certify.la migrate.la closure.la metakappa.la substitution.la ontosemiosyntax.la autocompress.la phonometa.la identity.la compressbound.la logicsyntax.la lawroot.la archeunique.la crossbranch.la numderive.la divergent.la adequacy.la; do
+for m in onecollapse.la lineage.la prosody.la topology.la evidential.la texture.la registers.la modegenesis.la regenesis.la complement.la opposite.la textcoherence.la derive_closure.la branchgenesis.la ontoargument.la ontomorph.la gramcomplete.la neologenesis.la unified.la gapcensus.la entendre.la felicitylive.la aware.la ablateop.la wants.la protoagent.la fractal.la branchclosure.la recdepth.la selfevo.la certify.la migrate.la closure.la metakappa.la substitution.la ontosemiosyntax.la autocompress.la phonometa.la identity.la compressbound.la logicsyntax.la lawroot.la archeunique.la crossbranch.la numderive.la divergent.la adequacy.la; do
     n=$(python3 - "$m" <<'PY'
 import re,sys,os
 IMP=re.compile(r'import\("([^"]+)"\)'); GLY=re.compile(r'^glyph\s+[A-Za-z0-9_]+',re.M)

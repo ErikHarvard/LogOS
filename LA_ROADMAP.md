@@ -31,12 +31,12 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 **Still open on the spine:**
 | # | item | status | gate (how it can go RED) | blocker |
 |---|---|---|---|---|
-| S0 | wire `onecollapse.la` into gate_registers.sh (want lines + the 8 mutants) | OPEN | the 8 mutants, already proven | gate file free of runs |
+| S0 | `onecollapse.la` wired as gate **§50** — first run PASS, 9/9 witnesses, 12/12 RED paths fire | DONE | 9 mutants | — |
 | S0b | onecollapse on the SECD VM | OPEN | host==VM byte-identity | F13 codegen cost |
 | S1 | **one normaliser, one κ, three renderers** — WP:3274 calls it "the first item of the roadmap"; today NORMK, NKAP, CANONIQ×2, NORMP, NORMTREE, and now OC_NF | OPEN | fuzz corpus: all normalisers agree; RED = a mutant rewrite in one | F4(c) lands first; R-NORMTREE |
 | S2 | the triple bar as a biconditional: NIS ⟺ same sound ⟺ same raster | OPEN | RED = ⊕-associativity (one sound, two concepts, F:952) | S1 |
-| S3 | L1 + L2 into NORMK — **RATIFIED 2026-09-25 (F44)**; ripple derived: 2 keys move, 1 collision | OPEN | removing either law reds (m3, m4) | after the freeze with F4(c); R-SP4 |
-| S4 | syntax ≡ MODE_CON under L1 — ⊂(RELATION,⊂(RELATION,FORM)) normalises to ⊕'s own mode glyph | RULING | printed by onecollapse (3) | R-SP4 |
+| S3 | L1 + L2 into NORMK — **RATIFIED 2026-09-25 (F44)**; ripple derived: 2 keys move, 1 collision, now DECLARED (R-SP4) | OPEN | removing either law reds (m3, m4) | after the freeze, with F4(c) |
+| S4 | syntax ≡ MODE_CON under L1 — **DECLARED an identity (R-SP4, 2026-09-25)** | DONE | onecollapse (3) asserts the collision set = the declared one; RED oc_m9 | — |
 | S5 | branches in Erik's list not in the 19: Lexicology, Lexicography, Stylistics (+ the deferred five) | OPEN | Δ_B admission TTTT, then onecollapse's generator count rises | R-B1, R-B2 |
 | S6 | emergent (not concatenated) branch reading — BREAD is JOIN_READ today (branchgenesis.la:119) | OPEN | RED = a BREAD that is JOIN_READ | — |
 | S7 | linear stored monoglyph — MONO's etym slot AS the DAG (Ren doubles per collapse, fractal.la) | PARTIAL (measured) | NODES(stored Cn)=+1; RED in G§28 | canon.la owner |
@@ -49,7 +49,7 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 
 1. **Freeze exit** (Z §5 run queue, in order): NORMK probe → full host suite (F2) → V6 clean checkout → V5 determinism →
    build.sh lexicon gate (F1 — its re-pin is derived and CONFIRMED BY RUNNING 09-25, c190968) → VM chunks (F13) → fix phase.
-   Plus: re-pin §23 to 73 WITH `derive/s23_syllabus.py` (F41); §35 needs >1800 s (F42); §33 certify unconfirmed (F36).
+   Done 09-25: §33 certify PASS (F36 confirmed); §23 re-pinned to 73 WITH `derive/s23_syllabus.py` (F41). Open: §35 needs >1800 s (F42).
 2. **The merge** register-stack → kernel-k1 (merge plan: verified base tag · freeze lifted · LA_COMPLETION resolved BY ITEM).
    Closes ~22 stale main-line markers (§6). E16 §A gets its superseded note (F40, ruled 09-25).
 3. **F4(c) in core**, then F5's wording (canon_spec owner; five build.sh gates restated with values derived first).
@@ -66,7 +66,6 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 
 | id | question | unblocks |
 |---|---|---|
-| R-SP4 | **now blocking S3**: under the ratified L1, syntax ≡ ⊕'s mode glyph — accept (syntax IS co-presence) or re-derive syntax's interface | S3, S4 |
 | R-SP1 | the Hexary Fusion's sixth member: Discourse (MCL:1303) or Semiosis (codex 9096–9128) | S3 |
 | R-SP3 | the phonym grows under ⊕ ▷ ⊂ ↻: a ruled [B] bound, or require phonological fusion | S8 |
 | R-B1 / R-B2 | the deferred branches' interface x; do Lexicology / Lexicography / Stylistics / Tier 6–7 count | S5 |
@@ -75,7 +74,7 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 | F28d · F37 · F38 · F9/F10 · F30 | freeze rulings (Z §6) | freeze exit |
 | R-NORMTREE | NORMK goes tree-level and NORMTREE retires, or NORMTREE stays as the differential witness | S1 |
 | R-α · R-𝒩 · R-meta-referent · R-empty-names | S19 §3.4–3.8 | sigil of the meta-referent |
-| ✔ ruled | F4(c) · F5 · F39 (c190968) · F39b · **F40: the 09-17 re-derivation supersedes E16 §A** · **F44: L1 + L2 ratified** | — |
+| ✔ ruled | F4(c) · F5 · F39 (c190968) · F39b · **F40: the 09-17 re-derivation supersedes E16 §A** · **F44: L1 + L2 ratified** · **R-SP4: syntax ≡ MODE_CON declared** | — |
 
 ## 3. EVERYTHING ELSE, BY CATEGORY
 
@@ -84,8 +83,7 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 (§35) · ontosemiosyntax stratum (§38) · Δ_ν (§39, fixed point definitional) · phonometa (§40) · identity glyph (§41) ·
 adequacy rulings (§49) · crossbranch / divergent (§46 §48) · textcoherence · entendre · ontomorph · felicitylive · wants ·
 aware · protoagent · ablateop · syllabus (structural half) · **onecollapse (2026-09-25)**.
-OPEN: ontosemiosis as a stratum (T:130) · the audit operators \|G\| \|G_meta\| ς μ · a duplicate/shadowed-glyph check
-(static, the cheapest item — tiny_host keeps the FIRST binding) · lexdepth gated or reported (F10) · ν\* as reduction rules
+OPEN: ontosemiosis as a stratum (T:130) · the audit operators \|G\| \|G_meta\| ς μ · ~~a duplicate/shadowed-glyph check~~ **DONE 09-25: `nameck.py --bind`, gated §51 — it found F45 (three modules silently on raw phonyms)** · lexdepth gated or reported (F10) · ν\* as reduction rules
 (unclassified; touches the evaluator).
 
 **Cat 2 — owned by another track.** Track A (phonetic/visual): ▷ acoustic signature (PARTIAL) · elision layer · phonseq

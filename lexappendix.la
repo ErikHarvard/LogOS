@@ -44,9 +44,11 @@ import("opgrammar.la")  # GRAM GRULED
 glyph Z    = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF   = la c. la t. la f. c(t)(f)("!")
 glyph FST  = la p. p(la a. la b. a)
-glyph T_ = la d. FST(PARSE(d))
-glyph K_ = la d. KAN_N(T_(d))
-glyph P_ = la d. PH_N(T_(d))
+# (T_/K_ come from opgrammar.la — a local copy here was DEAD: tiny_host keeps the first binding; removed 2026-09-25, nameck --bind)
+# (T_/K_ come from opgrammar.la — a local copy here was DEAD: tiny_host keeps the first binding; removed 2026-09-25, nameck --bind)
+# ★ PN_, not P_: opgrammar.la exports P_ = PH(T_(d)), the RAW phonym, and it binds FIRST — this module's own
+#   P_ = PH_N(T_(d)) was dead, so it silently ran on raw phonyms (found by nameck --bind, 2026-09-25).
+glyph PN_ = la d. PH_N(T_(d))
 
 # LaTeX-escape the one construct the derivations contain that TeX eats.
 glyph ESC = Z(la self. la s.
@@ -57,11 +59,11 @@ glyph ESC = Z(la self. la s.
 # ── one row. The phonym column shows BOTH values when they differ, so
 #    a divergence is visible in the appendix rather than only in a gate.
 glyph J    = la a. la b. concat(a)(b)
-glyph NOTE = la d. la p. IF(str_eq(P_(d))(p))(la _. "")(la _. J(" \\textit{(codex: ")(J(ESC(p))(")}")))
-glyph ROW  = la prov. la n. la d. la p. J(ESC(n))(J(" & \\texttt{")(J(ESC(d))(J("} & \\texttt{")(J(ESC(K_(d)))(J("} & ")(J(ESC(P_(d)))(J(NOTE(d)(p))(J(" & ")(J(prov)(" \\\\\n"))))))))))
+glyph NOTE = la d. la p. IF(str_eq(PN_(d))(p))(la _. "")(la _. J(" \\textit{(codex: ")(J(ESC(p))(")}")))
+glyph ROW  = la prov. la n. la d. la p. J(ESC(n))(J(" & \\texttt{")(J(ESC(d))(J("} & \\texttt{")(J(ESC(K_(d)))(J("} & ")(J(ESC(PN_(d)))(J(NOTE(d)(p))(J(" & ")(J(prov)(" \\\\\n"))))))))))
 
 glyph ROWS = la prov. la tbl. FOLD(la a. la n. la d. la p.
-    concat(a)(ROW(IF(str_eq(P_(d))(p))(la _. prov)(la _. concat(prov)("*")))(n)(d)(p)))("")(tbl)
+    concat(a)(ROW(IF(str_eq(PN_(d))(p))(la _. prov)(la _. concat(prov)("*")))(n)(d)(p)))("")(tbl)
 
 glyph CNT = la tbl. FOLD(la a. la n. la d. la p. add(a)(1))(0)(tbl)
 

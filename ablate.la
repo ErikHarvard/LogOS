@@ -30,8 +30,10 @@ glyph AND  = la p. la q. p(q)(p)
 glyph NOT  = la p. la t. la f. p(f)(t)
 glyph TRUE = la t. la f. t
 glyph FST  = la p. p(la a. la b. a)
-glyph T_   = la d. FST(PARSE(d))
-glyph P_   = la d. PH_N(T_(d))
+# (T_/K_ come from opgrammar.la — a local copy here was DEAD: tiny_host keeps the first binding; removed 2026-09-25, nameck --bind)
+# ★ PN_, not P_: opgrammar.la exports P_ = PH(T_(d)), the RAW phonym, and it binds FIRST — this module's own
+#   P_ = PH_N(T_(d)) was dead, so it silently ran on raw phonyms (found by nameck --bind, 2026-09-25).
+glyph PN_   = la d. PH_N(T_(d))
 
 # ★ THE CENSUS MUST RANGE OVER THE WHOLE VOCABULARY, NOT THE CODEX
 # TABLES. When Erik's rulings (2026-08-23) moved Bad and Because onto ⊂,

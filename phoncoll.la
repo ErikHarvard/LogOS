@@ -74,9 +74,11 @@ glyph PAST = Z(la self. la d. la s.
     IF(str_eq(str_head(s))(d))(la _. str_tail(s))
       (la _. self(d)(str_tail(s)))))
 
-glyph T_ = la d. FST(PARSE(d))
-glyph K_ = la d. KAN_N(T_(d))
-glyph P_ = la d. PH_N(T_(d))
+# (T_/K_ come from opgrammar.la — a local copy here was DEAD: tiny_host keeps the first binding; removed 2026-09-25, nameck --bind)
+# (T_/K_ come from opgrammar.la — a local copy here was DEAD: tiny_host keeps the first binding; removed 2026-09-25, nameck --bind)
+# ★ PN_, not P_: opgrammar.la exports P_ = PH(T_(d)), the RAW phonym, and it binds FIRST — this module's own
+#   P_ = PH_N(T_(d)) was dead, so it silently ran on raw phonyms (found by nameck --bind, 2026-09-25).
+glyph PN_ = la d. PH_N(T_(d))
 
 # ── strip the stress mark: the declared confusability metric ─────────
 glyph STRIP = Z(la self. la s.
@@ -88,7 +90,7 @@ glyph ALL_ = concat(concat(LEX)(GRAM))(concat(RULED)(GRULED))
 
 # ── the keyed table: NAME|CANONICAL|PHONYM, computed once per entry ──
 glyph KP = FOLD(la a. la n. la d. la p.
-    concat(a)(concat(n)(concat("|")(concat(K_(d))(concat("|")(concat(P_(d))(";")))))))("")(ALL_)
+    concat(a)(concat(n)(concat("|")(concat(K_(d))(concat("|")(concat(PN_(d))(";")))))))("")(ALL_)
 
 # ── field accessors over one NAME|K|P record ─────────────────────────
 glyph F_NAME = la r. UPTO("|")(r)
@@ -264,12 +266,12 @@ glyph CB = "*46"
 #  the two canonical forms would satisfy the bound arm for the wrong
 #  reason — agreement by identity rather than by homophony.
 glyph OK_NEST_TWOTERMS = NOT(str_eq(K_(NA))(K_(NB)))
-glyph OK_NEST_BOUND    = str_eq(P_(NA))(P_(NB))
+glyph OK_NEST_BOUND    = str_eq(PN_(NA))(PN_(NB))
 # ★ THE LIVE ARM. R-D genuinely works when the operand is UNMARKED, and
 #  this is the arm that reds if the duration cue is ever removed or the
 #  stress cue regresses. Without it the block would only pin a defect and
 #  would assert nothing that must stay true.
-glyph OK_NEST_CONTROL  = NOT(str_eq(P_(CA))(P_(CB)))
+glyph OK_NEST_CONTROL  = NOT(str_eq(PN_(CA))(PN_(CB)))
 
 glyph MK  = la c. IF(c)(la _. "OK")(la _. "FAIL")
 glyph J   = la a. la b. concat(a)(b)

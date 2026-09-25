@@ -5433,8 +5433,12 @@ grep -q 'begin{longtable}' la_lexicon_appendix.tex || { echo "FAIL  lexappendix:
 # ★ RE-DERIVED 2026-09-25: the rule above is unchanged; its terms moved. There left ▷ (ec12042,
 #   09-17 — 23, never re-pinned), Move left LEX (F39 — 22) and Here left GRAM (F39b), so the ▷
 #   entries still in the two codex tables are 13 (lexicon.la's div list) + 8 (opgrammar.la's).
+#   ★ +1 (2026-09-25, F45): lexappendix's own P_ = PH_N was DEAD (opgrammar's raw P_ bound first), so its
+#   phonym column was RAW while its κ column was normalised. Live now, one ⊕ row changes: Three +51 =
+#   ⊕(RELATION,BEING) sorts to a.ra against the codex's ra.a. Grief ⊕(LOVE,VOID) and Or ⊕(RELATION,VOID)
+#   are already in byte order, so they do not. 13 + 8 + 1 = 22.
 LDIV="$(grep -c 'codex\*' la_lexicon_appendix.tex)"
-[ "$LDIV" -eq 21 ] || { echo "FAIL  lexappendix: expected 21 codex-divergent rows shown inline (every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA), found $LDIV"; ok=0; }
+[ "$LDIV" -eq 22 ] || { echo "FAIL  lexappendix: expected 22 codex-divergent rows shown inline (every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA), found $LDIV"; ok=0; }
 echo "PASS  lexappendix: the appendix is EMITTED from the lexicon (52 content + 16 closed-class + 11 ruled = 79 rows, one per entry, counts embedded in the file), so the paper's census cannot drift from the thing it counts; each row carries its provenance and the TWENTY-FOUR codex divergences are shown INLINE with both values — every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA; the four vowel-elision divergences are ▷ entries too and are absorbed into that set; longtable so 79 rows cannot overflow silently"
 
 say "Phonetic collision at lexicon scale — the bijection gate in the register that was never checked (phoncoll.la)"

@@ -34,7 +34,7 @@
 #       "Infinite compression" is exactly the metacursive (self-similar) case — stated, not hidden.
 #  ★ EVIDENTIAL: [W] every T below. L1 and L2 RATIFIED by Erik 2026-09-25 (FREEZE-TRACKF.md F44); they stay a
 #     layer here until they move into NORMK via canon_spec.la after the freeze (derive/l1l2_ripple.py: 2 keys move,
-#     one collision — syntax = MODE_CON, ruling R-SP4 owed).
+#     one collision — syntax = MODE_CON, DECLARED an identity by Erik 2026-09-25, R-SP4).
 # ═══════════════════════════════════════════════════════════════════
 import("lineage.la")        # PRIM SYN CON DIR CONT MC CANON NORMK SEALc AUTO_OK RECOVER DAG NODES TSIZE NILc CONSc …
 import("branchclosure.la")  # BC_GLYPHS — the 18 base branches + Δ_B's, declared independently of this file
@@ -98,7 +98,7 @@ glyph OC_NAMES  = la l. Z(la self. la l. l("")(la h. la t. concat(CANON(h))(conc
 glyph OC_NOTL   = la g. NOT(AND(OC_ISL(g))(str_eq(CANON(OC_L(OC_UNL(g))))(CANON(g))))
 
 # ── (1) one generator ──
-glyph OC_LINE1 = la br. la base.
+glyph OC_LINE1 = la br.
   OC_C3("ONECOLLAPSE generator Λ=⊂(RELATION,·): branches=")(int_to_str(OC_LEN(br)))(
   OC_C3(" Λ-generated=")(int_to_str(OC_COUNT(la g. NOT(OC_NOTL(g)))(br)))(
   OC_C3(" | refused, not Λ-form: ")(OC_NAMES(OC_FILTER(OC_NOTL)(br)))("")))
@@ -119,6 +119,9 @@ glyph OC_L1 = OC_EQ(OC_L(OC_L(OC_X)))(OC_L(OC_X))
 glyph OC_L2 = OC_EQ(OC_L(CON(OC_X)(OC_Y)))(CON(OC_L(OC_X))(OC_L(OC_Y)))
 glyph OC_KEPT = la g. NOT(str_eq(OC_K(g))(OC_K(OC_UNL(g))))
 glyph OC_PAIRS = Z(la self. la l. l(0)(la h. la t. add(OC_COUNT(la s. str_eq(s)(h))(t))(self(t))))
+# R-SP4 (Erik, 2026-09-25): under the ratified L1 the syntax branch IS ⊕'s mode glyph — a DECLARED identity,
+# like Totality = All. Any OTHER branch meeting a mode glyph is undeclared and reds line 3.
+glyph OC_DECL = "⊂(RELATION,⊂(RELATION,FORM)) "
 glyph OC_MODES = CONSc(MODE_SYN)(CONSc(MODE_CON)(CONSc(MODE_DIR)(CONSc(MODE_CONT)(CONSc(MODE_MC)(NILc)))))
 glyph OC_MODEHIT = la mk. la g. (la k. Z(la self. la l. l(FALSE)(la h. la t. OR(str_eq(h)(k))(self(t))))(mk))(OC_K(g))
 glyph OC_LINE3 = la base. la ks. la mk.
@@ -128,7 +131,8 @@ glyph OC_LINE3 = la base. la ks. la mk.
   OC_C3("/")(int_to_str(OC_LEN(base)))(
   OC_C3(" absorbed by L1 (interface already Λ-form): ")(OC_NAMES(OC_FILTER(la g. NOT(OC_KEPT(g)))(base)))(
   OC_C3(" | branches colliding under the laws: ")(int_to_str(OC_PAIRS(ks)))(
-  OC_C3(" | collide with a MODE glyph: ")(OC_NAMES(OC_FILTER(OC_MODEHIT(mk))(base)))("")))))))
+  OC_C3(" | collide with a MODE glyph: ")(OC_NAMES(OC_FILTER(OC_MODEHIT(mk))(base)))(
+  OC_C3("= the DECLARED set (syntax ≡ MODE_CON, R-SP4 ruled 2026-09-25):")(OC_B(str_eq(OC_NAMES(OC_FILTER(OC_MODEHIT(mk))(base)))(OC_DECL)))(""))))))))
 
 # ── (4) compression per register, against the derived formula ──
 glyph OC_W = sub(OC_SLEN(CANON(OC_L(OC_X))))(OC_SLEN(CANON(OC_X)))
@@ -171,7 +175,7 @@ glyph OC_LINE6 = la u. la c. la tm. (la r. (la dts. (la dnd.
   (NODES(DAG(c))))(TSIZE(u)))(OC_DEEP(1))
 
 glyph MAIN = (la br. (la base. (la u. (la c. (la ks.
-    OC_SEQ(print(OC_LINE1(br)(base)))(
+    OC_SEQ(print(OC_LINE1(br)))(
     OC_SEQ(print(OC_LINE2(u)(c)(OC_FIX_FOREIGN(base)(br))))(
     OC_SEQ(print(OC_LINE3(base)(ks)(OC_MAP(OC_K)(OC_MODES))))(
     OC_SEQ(print(OC_LINE4(base)(u)(c)))(
