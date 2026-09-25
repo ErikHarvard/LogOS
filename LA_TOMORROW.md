@@ -1,5 +1,7 @@
 # LA — WHAT REMAINS
 
+> **2026-09-25: the place to start is now `LA_ROADMAP.md`** (one reconciled page, led by the one-collapse spine). This file is kept as history.
+
 ## ▶ STATE 2026-09-17 (read this first)
 **★★ CATEGORY 1 IS COMPLETE AND VERIFIED. All ten items have a module, and ALL TEN HAVE RUN GREEN.**
 33 pinned witnesses present, 0 missing. 19 RED paths fired, 0 dead. The `REGS_DRAFT` guard is removed and
