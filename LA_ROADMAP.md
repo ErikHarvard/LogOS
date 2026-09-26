@@ -51,7 +51,8 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 
 ## 1. NOW — the order of work
 
-> **Tomorrow (09-26): `RESUME-2026-09-26.md`** — the full host suite first (freeze exit), then the meta-architecture items.
+> **Next session: `RESUME-2026-09-27.md`** — the exact pick-up order (item-4 verdict → hook-edit commit → F28(d) host run →
+> V6 / V5 / VM chunks). 09-26 closed: the full host suite ran GREEN (F2 met), F46 closed, 49 → 19 weak pins.
 
 1. **Freeze exit** (Z §5 run queue, in order): NORMK probe → full host suite (F2) → V6 clean checkout → V5 determinism →
    build.sh lexicon gate (F1 — its re-pin is derived and CONFIRMED BY RUNNING 09-25, c190968) → VM chunks (F13) → fix phase.
@@ -74,7 +75,9 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 |---|---|---|
 | R-SP1 | ✔ RULED 2026-09-26 (Erik; LA_RULINGS_BRIEF-2026-09-26.md): (1) the CLASSICAL six, Discourse sixth — as built; (2) the seal carries its Ren only, no English label ("HEXAD" as a plain descriptor); (3) Phon = phonetics (BASE_BRANCHES 0) — as built. Label change to onecollapse.la + its §50 pin: after runner6 | S3 |
 | R-SP3 | ⏸ DEFERRED 2026-09-26 (Erik): a sealed rendering is new scope; unified.la's measured phonym growth stands as correct for ANALYTIC speech (LA.tex operator phonology) | S8 |
-| R-B1 / R-B2 | the deferred branches' interface x; do Lexicology / Lexicography / Stylistics / Tier 6–7 count | S5 |
+| R-B D1 | OPEN — which branch list is canonical: the codex contradicts ITSELF — "28 … in 6 tiers" (App B title :4043, audit seal :4293–4295, App C :4884, checklist :6722) vs "38 branches. 7 tiers." (App B's closing :4454); Tier 6's intro (:4361–4363) calls its ten "not additions … proofs". A choice between two of the codex's own statements. Grounding: LA_RULINGS_BRIEF §D1 + addendum | S5 |
+| R-B D3 | OPEN — the six LA-only branches (grammatology, grapholinguistics, hermeneutics, poetics, ethics, Δ_B): keep as LA's own additions to the codex list, or remove. Grounding: `sweeps/21-BRANCH-RECONCILIATION.md` §B, §D.3 | S5 |
+| R-B D4 | OPEN — the deferred branches' interface x (Λ = ⊂(RELATION, x)): Liminalinguistics, Logorhetoric, Anamnetic, Adamic need Erik's CONTENT (no source gives an interface glyph; each independent); Meta-Rosettology's x WAITS ON F38(3), since its Formula Recognition(Recognition) = ↻(RECOGNITION) = ρ's κ = LA.tex:4804's Truth. Grounding: LA_RULINGS_BRIEF §D4 | S5 |
 | R-B D2 · D5 | ✔ RULED 2026-09-26 (Erik): D2 **different** — Tier-5 Meta-X are X passed through Tiers 0–4, not LA's plain Logos ∩ Interface branches; D5 **cross-species** — Meta-Rosettology per the codex (:1654 :1860–1862 :4169–4173), MCL:1237 compatible | S5 |
 | R-S1 | Seal 1: which type system (E3 ruled 09-09; ratification owed — unverified) | Seal 2 (a) |
 | R-P1 | ⊕-associativity is phonetically invisible: a bracketing marker, or a bound | S2 |
@@ -82,10 +85,16 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 | F38(1–2) | ✔ RULED 2026-09-26 (Erik): Change (verb) YES — ▷(FORM,BECOMING) its own entry (LA.tex:5293); Speak FOLLOWS — ▷(SELF,⊂(RELATION,BEING)). Not yet built (lexicon ripple) | freeze exit |
 | F38(4) | ✔ RULED 2026-09-26 (Erik): NO CONFLICT — SoN's "Enables" column is a capability, not a derivation; LA.tex:5160 I = g₄ stands; nothing changes | freeze exit |
 | F38(5) | ✔ RULED 2026-09-26 (Erik): Intersubjectivity is LEFT-nested — ⊗(⊗(SELF,RELATION),RECOGNITION) = ⊗(We, Recognition) (LA.tex:5162 We; the right-nesting's inner term is in no table) | freeze exit |
-| F37 · F38(3, 6) · F9 · F30 | freeze rulings (Z §6) — still open | freeze exit |
+| F38(3) | OPEN by Erik's choice — Truth: four readings (LA.tex:4804 ↻(Rec) = ρ's κ · SoN:252/:88 T ≡ Reality · SoN:528 "True" enables γ · SoN:450 γ as syntax); declaring Truth ≡ ρ would ALSO bind ρ ≡ Reality via T ≡ R. Blocks R-B D4's Meta-Rosettology | freeze exit |
+| F38(6) | OPEN — κ for Lexicon / Word / Name / Glyph: no source line gives one; needs Erik's CONTENT | freeze exit |
+| F37 · F9 · F30 | freeze rulings (Z §6) — still open | freeze exit |
 | R-NORMTREE | NORMK goes tree-level and NORMTREE retires, or NORMTREE stays as the differential witness | S1 |
 | R-α · R-𝒩 · R-meta-referent · R-empty-names | S19 §3.4–3.8 | sigil of the meta-referent |
 | ✔ ruled | F4(c) · F5 · F39 (c190968) · F39b · **F40: the 09-17 re-derivation supersedes E16 §A** · **F44: L1 + L2 ratified** · **R-SP4: syntax ≡ MODE_CON declared** | — |
+
+**F45 ROLLOUT — RULED "roll it out now" (Erik, 2026-09-26), SCHEDULED** for the next working day's first lease turn per
+track (routed by the Lieutenant): patches + README in `~/logos-coord/handoff/2026-09-26-F45-rollout/` (kernel-k1 and tracks
+b–e); each track's lexappendix pin goes 24 → 25. Track F already carries the fix (bbe91d6).
 
 ## 3. EVERYTHING ELSE, BY CATEGORY
 

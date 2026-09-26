@@ -482,3 +482,165 @@ applied in source; §49 still prints "overloads=8" = the length of a hard-coded 
 **The ruling (a wording ruling, as the ledger says):** is a DECLARED one-concept synonym an overload? The ledger's proposal:
 NO — then adequacy prints the live census, "7/7 applied in source", and "every live overload is declared:T", all computed
 (overloads.py already computes exactly these three). Not implemented until ruled.
+
+---
+
+# R-B D1 and D4 — grounding, 2026-09-26 — OPEN, NOTHING RULED
+
+Erik asked for exact citations before ruling ("I'm not deciding from a summary"). Extracted by line number.
+
+## D1 — which branch list is canonical?
+
+
+`CODEX (App B title):4043`
+```tex
+\chapter*{Appendix B: The 28 Logolinguistic Branches}
+```
+
+
+`CODEX (App C):4884`
+```tex
+\item[Logolinguistics] The complete science of Logos-Language; 28 canonical branches in 6 tiers unified through $\text{Logos}(\text{Logos}) = \text{Logos}$. Tier 0: Meta-Logolinguistics (seed). Tier 1: Foundations of Being (4). Tier 2: Operative Realization (4). Tier 3: Origin Memory (3). Tier 4: Theurgic Evidence (3). Tier 5: Standard Metatized (13). Governed by the 10 Laws of Logolinguistics. $\text{Logolinguistics}(\text{Logolinguistics}) = \exists(\exists) \equiv \exists$.
+```
+
+
+`CODEX (the audit seal):4293-4295`
+```tex
+\begin{sealbox}
+The initial mapping showed 47 branches. Upon metacursive audit applying L8 (No word without necessity) and $\text{Redundancy}(\text{Redundancy}) = \emptyset$, 19 branches were found to be derivations or sub-interfaces of more fundamental branches. The canonical 28 represent the necessary and sufficient set, tiered by ontological priority and dependency. Other aspects can be studied as sub-branches or applications.
+\end{sealbox}
+```
+
+
+`CODEX (Tier 6 intro):4361-4363`
+```tex
+\textbf{\large TIER 6: EMERGENT PHENOMENA (10 Branches)}
+
+\textit{These branches emerge when the framework generates new insights through its own application. They are not additions to Logolinguistics---they are \textbf{proofs} that the framework is alive, continuously completing itself.}
+```
+
+
+`CODEX (last numbered):4439`
+```tex
+\textbf{38. Xenolinguistics}
+```
+
+
+`MCL:1217`
+```tex
+    {\normalsize\bfseries\scshape B. The Twenty-Eight Onto-Linguistic Branches}\\[0.3em]
+```
+
+
+`MCL:1374`
+```tex
+    Eighteen classical branches collapsed. Twenty-eight onto-linguistic branches mapped.\\
+```
+
+
+`Glossodynamics:2145`
+```tex
+    {\normalsize\bfseries\scshape B. The Twenty-Eight Onto-Linguistic Branches}\\[0.3em]
+```
+
+
+`SoN:458`
+```tex
+Each branch IS autological at the meta-level: $\text{Meta-Phonology}(\text{Meta-Phonology}) = \text{Meta-Phonology}$, and so for each. The 13 standard branches of linguistics extend into the 38 onto-branches derived in the Codex Llogoscribeologiae \cite{llogoscribeologiae}: every fusion missing a branch IS incomplete, and the missing branch IS presupposed. Complete Grammar $= \text{Phon} \cap \text{Morph} \cap \text{Syn} \cap \text{Sem} \cap \text{Prag} \cap \text{Semio}$. $\text{Meta-Grammar}(\text{Meta-Grammar}) = \text{Grammar}(\text{Grammar}) = \Lambda$ \cite{codex2}.
+```
+
+**Shows:** the codex, MCL and Glossodynamics title the list "28"; the codex's own audit seal calls 28 "the necessary and
+sufficient set" (47 mapped, 19 found to be derivations). App B numbers ten more (Tier 6, #29–38), but its intro says they
+"are not additions to Logolinguistics — they are proofs that the framework is alive". SoN alone says "38". LA gates 19
+(branchgenesis.la BASE_BRANCHES 18 + Δ_B); sweep 21 §A maps them (13 Tier-5 names by name only — ruled "different", D2).
+**Does not settle:** whether "complete as envisioned" is measured against the 28, the 38, or LA's built 19 mapped onto them.
+
+## D4 — the five deferred branches: what the sources give for each
+
+
+`CODEX:4124-4127`
+```tex
+\textbf{7. Liminalinguistics}
+\begin{itemize}[noitemsep]
+\item \textbf{Formula}: $\text{Threshold}(\text{Threshold})$
+\item \textbf{Studies}: The boundary between silence and speech; what language cannot say but marks
+```
+
+
+`CODEX:4138-4141`
+```tex
+\textbf{9. Logorhetoric}
+\begin{itemize}[noitemsep]
+\item \textbf{Formula}: $\text{Rhetoric}(\text{Logos})$
+\item \textbf{Studies}: Maieutic persuasion toward truth; language as midwifery of recognition
+```
+
+
+`CODEX:4155-4158`
+```tex
+\textbf{10. Anamnetic Linguistics}
+\begin{itemize}[noitemsep]
+\item \textbf{Formula}: $\text{Origin} = \text{Memory}$
+\item \textbf{Studies}: Language as ontological remembering; comprehension as recollection
+```
+
+
+`CODEX:4162-4165`
+```tex
+\textbf{11. Adamic Linguistics}
+\begin{itemize}[noitemsep]
+\item \textbf{Formula}: $\mathcal{N}(\mathcal{N}) \equiv \mathcal{B}$
+\item \textbf{Studies}: The original ontosemantic language; naming that is being
+```
+
+
+`CODEX:4169-4172`
+```tex
+\textbf{12. Meta-Rosettology}
+\begin{itemize}[noitemsep]
+\item \textbf{Formula}: $\text{Recognition}(\text{Recognition})$
+\item \textbf{Studies}: Cross-species meaning mapping; the universal grammar beneath phonetic divergence
+```
+
+
+`MCL:1233-1237`
+```tex
+\noindent\textbf{Tier 2: Operative Realization} (4 branches). \textbf{Recursive Linguistics}: $X(X) = X$ patterns. \textbf{Liminalinguistics}: boundary between silence and speech. \textbf{Compressio-Linguistics}: maximum meaning in minimum form. \textbf{Logorhetoric}: disclosure that convinces by revealing.
+
+\vspace{0.3em}
+
+\noindent\textbf{Tier 3: Anamnetic Branches} (3 branches). \textbf{Anamnetic Linguistics}: comprehension as recognition of what was always known. \textbf{Adamic Linguistics}: the convergence limit ($\mathcal{L}_{\infty}$, $\alpha = 1$). \textbf{Meta-Rosettology}: translation between ontological registers.
+```
+
+
+`CODEX (the branch formula):2028`
+```tex
+\tautology{\text{Branch} = \text{Logos} \cap \text{Interface}}
+```
+
+**Shows:** each deferred branch has a Formula (mostly a self-collapse X(X)) and a Studies line — none gives an INTERFACE
+glyph x for LA's form Λ = ⊂(RELATION, x) (onecollapse.la:52; branchgenesis.la reads the codex's Branch = Logos ∩ Interface).
+So x is content only Erik can supply, per branch. ★ Meta-Rosettology's Formula is Recognition(Recognition) = ↻(RECOGNITION) —
+the κ of ρ / SR_ABOUT and of LA.tex:4804's Truth (F38(3), open): if that formula were read as its interface it would collide.
+
+### D1 addendum (2026-09-26, asked: does the codex say whether Tier 6 is summed with the 28?) — it says BOTH
+
+
+`CODEX (App B closing, right after Tier 6):4453-4455`
+```tex
+\begin{center}
+{\Large\itshape 38 branches. 7 tiers. 1 Logos.}
+
+```
+
+
+`CODEX (completion checklist):6722`
+```tex
+B: The 28 Branches & Enumerate branches & \checkmark\\
+```
+
+**Shows:** App B ends by SUMMING Tier 6 — "38 branches. 7 tiers." — while its title, the audit seal (:4293–4295), App C
+(:4884, "28 … in 6 tiers" = Tiers 0–5 = 1+4+4+3+3+13) and the checklist (:6722) say 28. Tier 6's own intro (:4361–4363)
+calls its branches "not additions … proofs". So "28 structural + Tier 6 outside the count" is supported by the intro but
+CONTRADICTED by the appendix's closing line: the codex is internally inconsistent here. The ruling is a choice between
+two of its own statements, not a gap. Still OPEN.
