@@ -31,7 +31,12 @@ owed); F10 not yet built.
 - **F38(4) I: NO CONFLICT** (Erik, 2026-09-26) — SoN's "Operator | Enables" column (SoN:524–530) states the CAPABILITY a
   word enables in a subject, not its derivation; "I → δ" therefore does not contradict LA.tex:5160 "I / Self = g₄".
   Nothing in the lexicon changes.
-- **F38(3) Truth · (5) Intersubjectivity nesting · (6) κ for Lexicon/Word/Name/Glyph: OPEN, NOT RULED.**
+- **F38(5) Intersubjectivity: LEFT** (Erik, 2026-09-26) — ⊗(⊗(SELF,RELATION),RECOGNITION) = ⊗(We, Recognition). The inner term
+  is the attested word We (LA.tex:5162 "We & g₄ ⊗ g₅", corpus opgrammar `We|*45`); the right-nesting's inner ⊗(RELATION,
+  RECOGNITION) is in no table (Understanding, LA.tex:5358, is `*25` = ⊗(RECOGNITION,RELATION) — reversed, and ⊗ is
+  non-commutative). ⚠ The phonym /mɑ ʁa ʃi/ does NOT discriminate the two nestings (⊗ concatenates): not evidence.
+  lexinv.py's left-nesting is now ruled, no longer an implementation artifact.
+- **F38(3) Truth · (6) κ for Lexicon/Word/Name/Glyph: OPEN, NOT RULED.**
   (3) note: SoN has no γ derivation of Truth; γ has three roles in three tables (:193, :450, :528) and SoN:252 states T ≡ R.
 Not yet built: both entries ripple (ontomorph's census, derive/overloads.py, lexicon's pinned counts, build.sh's lexicon
 gate) — each value derived first, as the ledger requires.

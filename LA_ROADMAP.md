@@ -81,7 +81,8 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 | F28d · F10 | ✔ RULED 2026-09-26 (Erik): F28(d) **No** — a declared one-concept synonym is not an overload (§49 prints the live census); F10 **gate as report** (lexdepth NOT WITNESSED; demote its [W]) | freeze exit |
 | F38(1–2) | ✔ RULED 2026-09-26 (Erik): Change (verb) YES — ▷(FORM,BECOMING) its own entry (LA.tex:5293); Speak FOLLOWS — ▷(SELF,⊂(RELATION,BEING)). Not yet built (lexicon ripple) | freeze exit |
 | F38(4) | ✔ RULED 2026-09-26 (Erik): NO CONFLICT — SoN's "Enables" column is a capability, not a derivation; LA.tex:5160 I = g₄ stands; nothing changes | freeze exit |
-| F37 · F38(3, 5, 6) · F9 · F30 | freeze rulings (Z §6) — still open | freeze exit |
+| F38(5) | ✔ RULED 2026-09-26 (Erik): Intersubjectivity is LEFT-nested — ⊗(⊗(SELF,RELATION),RECOGNITION) = ⊗(We, Recognition) (LA.tex:5162 We; the right-nesting's inner term is in no table) | freeze exit |
+| F37 · F38(3, 6) · F9 · F30 | freeze rulings (Z §6) — still open | freeze exit |
 | R-NORMTREE | NORMK goes tree-level and NORMTREE retires, or NORMTREE stays as the differential witness | S1 |
 | R-α · R-𝒩 · R-meta-referent · R-empty-names | S19 §3.4–3.8 | sigil of the meta-referent |
 | ✔ ruled | F4(c) · F5 · F39 (c190968) · F39b · **F40: the 09-17 re-derivation supersedes E16 §A** · **F44: L1 + L2 ratified** · **R-SP4: syntax ≡ MODE_CON declared** | — |
