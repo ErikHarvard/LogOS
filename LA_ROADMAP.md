@@ -72,9 +72,12 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 | R-SP1 | ✔ RULED 2026-09-26 (Erik; LA_RULINGS_BRIEF-2026-09-26.md): (1) the CLASSICAL six, Discourse sixth — as built; (2) the seal carries its Ren only, no English label ("HEXAD" as a plain descriptor); (3) Phon = phonetics (BASE_BRANCHES 0) — as built. Label change to onecollapse.la + its §50 pin: after runner6 | S3 |
 | R-SP3 | ⏸ DEFERRED 2026-09-26 (Erik): a sealed rendering is new scope; unified.la's measured phonym growth stands as correct for ANALYTIC speech (LA.tex operator phonology) | S8 |
 | R-B1 / R-B2 | the deferred branches' interface x; do Lexicology / Lexicography / Stylistics / Tier 6–7 count | S5 |
+| R-B D2 · D5 | ✔ RULED 2026-09-26 (Erik): D2 **different** — Tier-5 Meta-X are X passed through Tiers 0–4, not LA's plain Logos ∩ Interface branches; D5 **cross-species** — Meta-Rosettology per the codex (:1654 :1860–1862 :4169–4173), MCL:1237 compatible | S5 |
 | R-S1 | Seal 1: which type system (E3 ruled 09-09; ratification owed — unverified) | Seal 2 (a) |
 | R-P1 | ⊕-associativity is phonetically invisible: a bracketing marker, or a bound | S2 |
-| F28d · F37 · F38 · F9/F10 · F30 | freeze rulings (Z §6) | freeze exit |
+| F28d · F10 | ✔ RULED 2026-09-26 (Erik): F28(d) **No** — a declared one-concept synonym is not an overload (§49 prints the live census); F10 **gate as report** (lexdepth NOT WITNESSED; demote its [W]) | freeze exit |
+| F38(1–2) | ✔ RULED 2026-09-26 (Erik): Change (verb) YES — ▷(FORM,BECOMING) its own entry (LA.tex:5293); Speak FOLLOWS — ▷(SELF,⊂(RELATION,BEING)). Not yet built (lexicon ripple) | freeze exit |
+| F37 · F38(3–6) · F9 · F30 | freeze rulings (Z §6) — still open | freeze exit |
 | R-NORMTREE | NORMK goes tree-level and NORMTREE retires, or NORMTREE stays as the differential witness | S1 |
 | R-α · R-𝒩 · R-meta-referent · R-empty-names | S19 §3.4–3.8 | sigil of the meta-referent |
 | ✔ ruled | F4(c) · F5 · F39 (c190968) · F39b · **F40: the 09-17 re-derivation supersedes E16 §A** · **F44: L1 + L2 ratified** · **R-SP4: syntax ≡ MODE_CON declared** | — |

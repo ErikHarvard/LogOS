@@ -10,6 +10,29 @@
   speech (LA.tex operator phonology).
 Implementation (onecollapse.la's label + its §50 pin + LA_ROADMAP.md §2) is the Track F session's — NOT done here.
 
+## ★ RULED by Erik, 2026-09-26 (second batch, plain text, after reading the grounded cards below; confirmed to the Track F session)
+> F28(d) No · F10 gate as report · D2 different · D5 cross-species
+- **F28(d) No** — a DECLARED one-concept synonym (Totality/All) is NOT an overload. With 7/7 re-derivations applied in
+  source, the 8-row hard-coded list measured the wrong thing; §49 prints the LIVE census instead (the ledger's proposal).
+- **F10 gate as report** — `lexdepth.la`'s own verdict prints NOT WITNESSED (44/78 vs chance ≈ 39): gate it as a REPORT
+  and demote its [W]; do not treat it as proven.
+- **R-B D2 different** — the codex (App B) and MCL both describe Tier 5 "Meta-X" as a transformation through Tiers 0–4,
+  not identity with LA's plain Logos ∩ Interface branches: the 13 name matches are NOT the same branches.
+- **R-B D5 cross-species** — Meta-Rosettology is cross-species: three codex citations converge (:1654, :1860–1862,
+  :4169–4173); MCL:1237's "between ontological registers" is compatible, not contradictory.
+Recorded in FREEZE-TRACKF.md (F28, F10) and LA_ROADMAP.md §2 by the Track F session. F28(d) written as a patch (host run
+owed); F10 not yet built.
+
+## ★ RULED by Erik, 2026-09-26 (third batch: F38 items 1 and 2 ONLY; confirmed to the Track F session)
+- **F38(1) Change (verb): YES** — enter ▷(FORM,BECOMING) as its OWN word (LA.tex:5293, "Change (verb)" under Actions and
+  Processes), separate from the noun ⊗(BECOMING,FORM) at :5237.
+- **F38(2) Speak: FOLLOW** — a NAMED operand follows its re-derivation: Speak becomes ▷(SELF,⊂(RELATION,BEING)); the stale
+  κ ▷(SELF,⊗(LOVE,RELATION)) — the OLD Bond, now Friendship's κ — is not kept.
+- **F38(3) Truth · (4) I · (5) Intersubjectivity nesting · (6) κ for Lexicon/Word/Name/Glyph: OPEN, NOT RULED.**
+  (3) note: SoN has no γ derivation of Truth; γ has three roles in three tables (:193, :450, :528) and SoN:252 states T ≡ R.
+Not yet built: both entries ripple (ontomorph's census, derive/overloads.py, lexicon's pinned counts, build.sh's lexicon
+gate) — each value derived first, as the ledger requires.
+
 ---
 The text below is the decision aid as it was before the rulings.
 Every excerpt below was extracted with `sed -n` from the source file at the stated lines — quoted, not paraphrased.
@@ -279,3 +302,175 @@ between **ontological** registers. ★ Correction: sweeps 19/21 quoted MCL as "b
 identifies LA's 12 registers with MCL's "ontological registers"; that claim is withdrawn.
 **Does not settle:** whether the two conflict — "the universal grammar beneath phonetic divergence" can be read as
 translation between registers of one ontology.
+
+---
+
+# F38 — the lexicon-extension rulings: grounding, 2026-09-26 — OPEN, NOTHING RULED
+
+The ledger row (FREEZE-TRACKF.md F38, 09-18) lists six rulings. Source lines below were extracted by line number;
+`derive/lexinv.py` located the tex rows (today: ENTERED 81, ENTERED-DIFFERENT 12, NOT ENTERED **5** — "If…then" is new
+since the 09-18 row, which says 4).
+
+## (1) "Change's two derivations" — the tex marks the second as a VERB
+
+
+`LA:5237`
+```tex
+$\mathfrak{g}_7 \otimes \mathfrak{g}_8$ & Change & /vut\textscripta/ & Becoming-Form: alteration of form \\
+```
+
+
+`LA:5293`
+```tex
+$\mathfrak{g}_8 \triangleright \mathfrak{g}_7$ & Change (verb) & /t\'\textscripta vu/ & Form toward Becoming: altering \\
+```
+
+**Shows:** L5237 is the Level-1 noun ("Intermediate Concepts", :5225); L5293 is "Change (verb)" under "Actions and
+Processes" (:5275). Two words, not two derivations of one. The corpus holds only the noun (`change` = ⊗(BECOMING,FORM), LEX).
+**The ruling becomes:** enter "Change (verb)" = ▷(FORM,BECOMING) as its own entry, or not.
+
+## (2) Speak — does a re-derivation propagate to its dependents?
+
+
+`LA:5296`
+```tex
+$\mathfrak{g}_4 \triangleright$ Bond & Speak / Address & /m\'\textscripta\; lu\textinvscr a/ & Self toward Bond: reaching through relation \\
+```
+
+
+`LA (Bond as written):5239`
+```tex
+$\mathfrak{g}_3 \otimes \mathfrak{g}_5$ & Bond & /lu\textinvscr a/ & Love-Relation: caring connection \\
+```
+
+**Shows:** the tex writes Speak with Bond as a NAMED operand ("Self toward Bond"). Bond was re-derived by ruling
+(RULED: ⊂(RELATION,BEING)); the corpus still carries Speak = ▷(SELF,⊗(LOVE,RELATION)) — the OLD Bond, which after the
+re-derivation is the κ of Friendship. **The ruling:** a named operand follows its re-derivation (Speak → ▷(SELF,⊂(RELATION,BEING))),
+or Speak keeps the old κ written out.
+
+## (3) Truth ≡ ρ, or re-derive
+
+
+`LA:4804`
+```tex
+$\circlearrowleft(\mathfrak{g}_{Rec})$ & Truth & /\textesh i\textesh i/ \\
+```
+
+
+`SoN (meta-words):521-531`
+```tex
+The five meta-words \cite{codex2, codex3}:
+
+{\small
+\noindent\begin{tabular}{@{} l @{\hspace{0.3em}} l @{\hspace{0.3em}} l @{}}
+\textbf{Meta-word} & \textbf{Operator} & \textbf{Enables} \\[0.2em]
+``I'' & $\delta$ (bound) & Self-distinction: the subject marks itself as distinct from its field \\[0.15em]
+``Know'' & $\rho$ (recognize) & Epistemic access: the subject can register structure \\[0.15em]
+``True'' & $\gamma$ (compress) & Alethic evaluation: the subject can assess alignment \\[0.15em]
+``Not'' & $\partial$ (differentiate) & Negation: the subject can draw distinctions \\[0.15em]
+``Why'' & $\mathfrak{A}$ (integrate) & Teleological integration: the subject can ask for ground \\[0.15em]
+\end{tabular}
+```
+
+**Shows:** LA.tex derives Truth = ↻(Recognition) — the κ-form of ρ / SR_ABOUT (`canon.la:43` SR_ABOUT = MC(PRIM("RECOGNITION"))).
+SoN assigns ρ to "Know", and γ (compress) to "True". So the tex and SoN disagree about which word ρ belongs to.
+
+## (4) I = Self (LA.tex) vs I → δ (SoN)
+
+
+`LA:5160`
+```tex
+I / Self & $\mathfrak{g}_4$ & /m\textscripta/ & Primitive. \\
+```
+
+(SoN :526, in the table above.)
+
+**Shows:** LA.tex gives I's GLYPH (g₄ Self). SoN's column header is "Operator | Enables" — the operation the word
+ENABLES in a subject (δ: "the subject marks itself as distinct"). These may be two kinds of statement (a glyph vs an
+enabled operation), not a contradiction — the ruling is whether SoN's column is a derivation at all.
+
+## (5) Intersubjectivity's nesting
+
+
+`LA:4809`
+```tex
+$\mathfrak{g}_{Self} \otimes \mathfrak{g}_{Rel} \otimes \mathfrak{g}_{Rec}$ & Intersubjectivity & /m\textscripta\,\textinvscr a\,\textesh i/ \\
+```
+
+**Shows:** written flat, g_Self ⊗ g_Rel ⊗ g_Rec; ⊗ is non-associative (ruling E1), so the tex does not fix
+⊗(⊗(Self,Rel),Rec) vs ⊗(Self,⊗(Rel,Rec)). lexinv.py reads it left-nested; nothing in the source chooses.
+
+## (6) κ for Lexicon / Word / Name / Glyph — no source line gives one (the codex gives only Lexicon(Lexicon)=Lexicon).
+This one needs content from Erik, not a pick.
+
+---
+
+# F10 — `lexdepth.la`: gate it, or record it as a report? — grounding, 2026-09-26 — OPEN, NOTHING RULED
+
+
+`lexdepth.la:8-13`
+```text
+#  the same tables first): USE of an entry = how many times its κ occurs as a CONSTITUENT of other
+#  published entries (the lexicon's internal use — the only use signal the language carries without
+#  speakers). The claim: entries that are USED as constituents are SHALLOWER than entries that are
+#  not — depth predicts constituent use. On the 79 rows: 12 entries are used (mean depth 0.75), 67
+#  are not (mean depth 1.18): the used are shallower by a factor. THE RED PATH: rotate the depth
+#  assignment across the lexicon by k (a deterministic shuffle) and the relation must break — if a
+```
+
+
+`lexdepth.la:18`
+```text
+#  ★ EVIDENTIAL: [W] the inequality and its red path; [B] internal use only.
+```
+
+
+`lexdepth.la:79-79`
+```text
+glyph LINE2 = la es. LD_C3("LEXDEPTH VERDICT: ")(IF(lt(LD_ROTCOUNT(es))(20))(la _. "WITNESSED — shuffling the depth column breaks the relation")(la _. "NOT WITNESSED — a shuffled depth assignment holds about as often as the real one, so on the internal-use signal the measure is reading nothing; the ledger row stays [A]"))(" | BOUND: use = constituent use inside the published tables; speakers' use is the empirical gap")
+```
+
+**Recomputed today** (python replica of LD_ENTRIES/LD_HOLDS/LD_ROTCOUNT over the four tables, read-only; it reproduces the
+ledger's 44/78, so it reads the module right): entries 79 · used-as-constituent 10 · mean depth×100 used **70** vs unused
+**117** (the inequality holds) · rotations of the depth column still holding **44/78** (chance ≈ 39).
+**Why it is chance:** depth histogram {0: 3, 1: 64, 2: 12} — almost no variance. The three depth-0 entries (One u23, Two u19,
+I u17) are all heavily used; the other seven used entries are depth 1. "Used entries are shallower" reduces to "the
+most basic words are reused as constituents".
+**A defect regardless of the ruling:** the header (line 18) declares "[W] the inequality and its red path"; the module's own
+LINE2 prints "NOT WITNESSED" whenever ≥ 20 rotations hold — so the header claims what the module refutes.
+**The ruling:** (a) gate it as a REPORT that pins the NOT-WITNESSED verdict (and fix the header to [B]/[A]); (b) retire the
+claim; (c) require a stronger use signal (the header itself says speakers' use is the empirical half, still open).
+
+---
+
+# F28(d) — adequacy's "the REAL overloads=8": grounding, 2026-09-26 — OPEN, NOTHING RULED
+
+`adequacy.la:74-81` (the hard-coded table whose LENGTH is printed)
+```text
+  CONSc(AD_R("⊗(BEING,DEPTH)")("Totality")("All")("DECLARE")(""))(
+  CONSc(AD_R("⊗(FORM,BEING)")("Substance")("Large")("REDERIVE")("⊗(DEPTH,FORM)"))(
+  CONSc(AD_R("⊗(FORM,LOVE)")("Beauty")("Good")("REDERIVE")("⊗(BEING,LOVE)"))(
+  CONSc(AD_R("⊗(LOVE,RELATION)")("Friendship")("Bond")("REDERIVE")("⊂(RELATION,BEING)"))(
+  CONSc(AD_R("⊗(VOID,DEPTH)")("Mystery")("Sky")("REDERIVE")("⊂(VOID,FORM)"))(
+  CONSc(AD_R("▷(FORM,BEING)")("This")("Here")("REDERIVE")("▷(FORM,RELATION)"))(
+  CONSc(AD_R("▷(FORM,VOID)")("That")("There")("REDERIVE")("⊂(VOID,RELATION)"))(
+  CONSc(AD_R("▷(SELF,BECOMING)")("Agency")("Move")("REDERIVE")("▷(BECOMING,FORM)"))(
+```
+
+`gate_registers.sh:880` (the pinned witness)
+```text
+want ad "ADEQUACY the REAL overloads=8 | both names of every pair read back from lexicon.la + opgrammar.la:T | rulings: All=Totality Large→⊗(DEPTH,FORM) Good→⊗(BEING,LOVE) Bond→⊂(RELATION,BEING) Sky→⊂(VOID,FORM) Here→▷(FORM,RELATION) There→⊂(VOID,RELATION) Move→▷(BECOMING,FORM)" adequacy  #@ turns-red: cannot-fail:F28 (overloads=8 is a table length — and STALE: derive/overloads.py reads the live c …
+```
+
+`python3 derive/overloads.py` — run today (static; reproduces ontomorph's 79 rows)
+```text
+OVERLOADS corpus rows=79 | live entry overloads (one κ, two names)=1: ⊗(BEING,DEPTH):Totality/All
+OVERLOADS re-derivations APPLIED in source (moved name carries its new form, kept name its original): 7/7
+OVERLOADS every live overload is a DECLARED one-concept synonym:T
+```
+
+**Shows:** the published tables carry ONE live overload (Totality/All, the declared synonym) and all 7 re-derivations are
+applied in source; §49 still prints "overloads=8" = the length of a hard-coded list, and "resolved 8/8 → ZERO:T".
+**The ruling (a wording ruling, as the ledger says):** is a DECLARED one-concept synonym an overload? The ledger's proposal:
+NO — then adequacy prints the live census, "7/7 applied in source", and "every live overload is declared:T", all computed
+(overloads.py already computes exactly these three). Not implemented until ruled.
