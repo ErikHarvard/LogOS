@@ -43,7 +43,10 @@
 #  not) on a model, and the modal collapse is exhibited (or not).
 #
 #  GLYPHS [A] from the lexicon (LINGUA_ADAMICA.tex, Modality/Quantifiers/Negation):
-#     □ Must/Necessary = ⊗(BEING,FORM)   ◇ Can/Possible = ⊗(BECOMING,FORM)
+#     □ Must/Necessary = ⊗(BEING,FORM)   ◇ Can/Possible = ⊗(FORM,BECOMING)
+#     ★ ◇ FOLLOWS THE CAN RULING (Erik, 2026-09-26, F46): Can was ruled ⊗(FORM,BECOMING) in opgrammar.la
+#       GRULED (a9e27e8, 2026-08-27) — ⊗(BECOMING,FORM) is CHANGE. Until 09-26 ◇ carried the pre-ruling
+#       form, i.e. Change's glyph; derive/s15_ontoargument.py reads it from the published table and caught it.
 #     ∀ All/Every      = ⊗(BEING,DEPTH)  ∃ Some         = ⊗(FORM,DEPTH)
 #     ¬ Not            = ⊂(X,VOID) — "X framed by Void" (RULED, opgrammar.la:245-259 R_NEG,
 #                        complement.la; the tex's ⊕(VOID,X) collided grammar-wide since ⊕ is
@@ -197,7 +200,7 @@ glyph OA_LINES = la tag. la base. la P. (la m. (la L. la G. la NE. (la n. la ent
 
 # ── the glyphs [A]: the modalities and quantifiers are the lexicon's own ──
 glyph OA_BOX  = SYN(OA_P("BEING"))(OA_P("FORM"))
-glyph OA_DIA  = SYN(OA_P("BECOMING"))(OA_P("FORM"))
+glyph OA_DIA  = SYN(OA_P("FORM"))(OA_P("BECOMING"))       # Can, as RULED (F46)
 glyph OA_ALLQ = SYN(OA_P("BEING"))(OA_P("DEPTH"))
 glyph OA_EXQ  = SYN(OA_P("FORM"))(OA_P("DEPTH"))
 glyph OA_NOTG = la g. CONT(g)(OA_P("VOID"))   # RULED ⊂(X,VOID), not ⊕(VOID,X)
