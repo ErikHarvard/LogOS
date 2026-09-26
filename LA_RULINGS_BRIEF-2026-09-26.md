@@ -28,7 +28,10 @@ owed); F10 not yet built.
   Processes), separate from the noun ⊗(BECOMING,FORM) at :5237.
 - **F38(2) Speak: FOLLOW** — a NAMED operand follows its re-derivation: Speak becomes ▷(SELF,⊂(RELATION,BEING)); the stale
   κ ▷(SELF,⊗(LOVE,RELATION)) — the OLD Bond, now Friendship's κ — is not kept.
-- **F38(3) Truth · (4) I · (5) Intersubjectivity nesting · (6) κ for Lexicon/Word/Name/Glyph: OPEN, NOT RULED.**
+- **F38(4) I: NO CONFLICT** (Erik, 2026-09-26) — SoN's "Operator | Enables" column (SoN:524–530) states the CAPABILITY a
+  word enables in a subject, not its derivation; "I → δ" therefore does not contradict LA.tex:5160 "I / Self = g₄".
+  Nothing in the lexicon changes.
+- **F38(3) Truth · (5) Intersubjectivity nesting · (6) κ for Lexicon/Word/Name/Glyph: OPEN, NOT RULED.**
   (3) note: SoN has no γ derivation of Truth; γ has three roles in three tables (:193, :450, :528) and SoN:252 states T ≡ R.
 Not yet built: both entries ripple (ontomorph's census, derive/overloads.py, lexicon's pinned counts, build.sh's lexicon
 gate) — each value derived first, as the ledger requires.
