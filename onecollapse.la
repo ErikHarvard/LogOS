@@ -27,7 +27,9 @@
 #       distinct; collisions with the five mode glyphs are LISTED (a finding, not hidden).
 #   (4) COMPRESSION, per register, against a formula DERIVED here, never captured: semantic (κ string)
 #       saves (n−1)·W; morphetic (tree nodes) saves 2(n−1); glyphic (DAG nodes) saves n−1.
-#   (5) HEXARY FUSION — the six collapse to one self-naming seal: ONTOSEMIOSYNTAX, DERIVED (not declared).
+#   (5) HEXARY FUSION — the six collapse to one self-naming seal, DERIVED (not declared), named by its Ren ALONE:
+#       R-SP1 (Erik, 2026-09-26) — the classical six (Disc sixth), Phon = phonetics, and NO English label
+#       ("Ontosemiosyntax" is the codex's name for its triad, :2507); the report prints the plain descriptor HEXAD.
 #   (6) ★ UNBOUNDED IFF SELF-SIMILAR — S_d = Λ(S_{d−1}) ⊕ Λ(S_{d−1}): the tree grows as 6·2^d−5 while
 #       the collapsed DAG grows as d+3, so compression → ∞ with depth. For DISTINCT content (the 18
 #       branches) the ratio stays bounded: no operator compresses arbitrary content without limit.
@@ -152,7 +154,7 @@ glyph OC_LINE4 = la base. la u. la c. (la w.
 glyph OC_HEX = la base. OC_FUSE(CONSc(OC_AT(0)(base))(CONSc(OC_AT(2)(base))(CONSc(OC_AT(3)(base))(CONSc(OC_AT(4)(base))(CONSc(OC_AT(5)(base))(CONSc(OC_AT(6)(base))(NILc)))))))
 glyph OC_LINE5 = la hx. (la s.
   OC_C3("ONECOLLAPSE hexary fusion Phon⊕Morph⊕Syn⊕Sem⊕Prag⊕Disc → ONE Λ:")(OC_B(AND(OC_ISL(ETYM(s)))(OC_EQ(hx)(ETYM(s)))))(
-  OC_C3(" ONTOSEMIOSYNTAX = ")(REN(s))(
+  OC_C3(" HEXAD ")(REN(s))(
   OC_C3(" | one seal names itself:")(OC_B(AUTO_OK(s)))(""))))(SEALc(OC_COLLAPSE(hx)))
 
 # ── (6) unbounded iff self-similar ──
