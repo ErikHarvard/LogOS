@@ -182,3 +182,100 @@ Should phonym.la gain a sealed rendering (new scope), and if so, is trace-only r
 ### Outside review received (2026-09-26; ADVICE, not a ruling)
 Defer R-SP3: a sealed rendering is new scope, not closing existing scope, unless something blocked depends on it.
 (Checked: nothing on LA_ROADMAP.md §1 depends on it except S8/S9, which are the phonetic items themselves.)
+
+---
+
+# R-B (the branch list) — D2 and D5 grounding, 2026-09-26 — OPEN, NOTHING RULED
+
+Erik held a 4-question batch (D1 D2 D3 D5) because D2 and D5 had no source text behind them. This is that text,
+extracted by line. D1/D3/D4 are grounded in `sweeps/21-BRANCH-RECONCILIATION.md` §A–§D.
+
+## D2 — are the codex's Tier-5 "Meta-X" the same branches as LA's gated X?
+
+
+`CODEX:4211-4213`
+```tex
+\textbf{\large TIER 5: STANDARD BRANCHES METATIZED (13 Branches)}
+
+\textit{Traditional linguistics, transformed by passing through Tiers 0--4.}
+```
+
+
+`CODEX:4222-4224`
+```tex
+16 & Meta-Phonetics & Sound production/recognition\\
+17 & Meta-Phonology & Sound patterns/recognition\\
+18 & Meta-Morphology & Word-form/recognition\\
+```
+
+
+`MCL:1245`
+```tex
+\noindent\textbf{Tier 5: Standard Branches Metatized} (13 branches). Each of the sixteen classical branches (minus the three already in Tier 1), passed through Tiers 0--4, yielding: Meta-Phonetics, Meta-Phonology, Meta-Morphology, Meta-Syntax, Meta-Semantics, Meta-Pragmatics, Meta-Semiotics, Meta-Etymology, Meta-Discourse, Meta-Sociolinguistics, Meta-Psycholinguistics, Meta-Historical, Meta-Computational. Each collapses: $\text{Meta-X}(\text{Meta-X}) = \text{Meta-X}$.
+```
+
+
+`CODEX (plain branch formula):2028`
+```tex
+\tautology{\text{Branch} = \text{Logos} \cap \text{Interface}}
+```
+
+
+`CODEX (classical table):2136-2139`
+```tex
+
+Every linguistic branch X collapses:
+
+\tautology{X(X) = X = \text{Logos} \cap \text{Interface}_X}
+```
+
+
+`branchgenesis.la:4-5`
+```text
+#  WHAT. Logoscribeologiae §3.4 (quoted in pragmatics_spec.la): every branch of the
+#  science of the Word is  Branch = Logos ∩ Interface  (PRAGMATICS = Logos ∩ Use).
+```
+
+**Shows:** both sources define Meta-X as the classical X *transformed by passing through Tiers 0–4* ("X/recognition");
+LA's gates implement the PLAIN `Logos ∩ Interface` form. On the text, LA gates the classical branches; the Meta-
+versions are a further step. Nothing in any source says the two are the same — sweep 21's "13 matches" rest on names.
+**Does not settle:** what "passing through Tiers 0–4" means as a form — no source defines it computationally.
+
+## D5 — Meta-Rosettology's two definitions
+
+
+`CODEX (App B):4169-4173`
+```tex
+\textbf{12. Meta-Rosettology}
+\begin{itemize}[noitemsep]
+\item \textbf{Formula}: $\text{Recognition}(\text{Recognition})$
+\item \textbf{Studies}: Cross-species meaning mapping; the universal grammar beneath phonetic divergence
+\item \textbf{Collapse}: $\text{Rosettology}(\text{Rosettology}) = \text{Rosettology}$
+```
+
+
+`MCL:1237`
+```tex
+\noindent\textbf{Tier 3: Anamnetic Branches} (3 branches). \textbf{Anamnetic Linguistics}: comprehension as recognition of what was always known. \textbf{Adamic Linguistics}: the convergence limit ($\mathcal{L}_{\infty}$, $\alpha = 1$). \textbf{Meta-Rosettology}: translation between ontological registers.
+```
+
+
+`CODEX (cross-species substrate):1860-1862`
+```tex
+\textbf{The Cross-Species Substrate}
+
+The Meta-Rosetta Stone is a universal language independent of the voicebox.
+```
+
+
+`CODEX (contents):1654`
+```tex
+The Codex & The Meta-Rosetta Stone; birdsong in human glyphs\\
+```
+
+**Shows:** the codex reads it cross-species, and backs that elsewhere (:1654, :1860–1862); MCL reads it as translation
+between **ontological** registers. ★ Correction: sweeps 19/21 quoted MCL as "between registers" (the word
+"ontological" dropped), and a question put to Erik on 09-26 added "buildable over the 12-register stack" — no source
+identifies LA's 12 registers with MCL's "ontological registers"; that claim is withdrawn.
+**Does not settle:** whether the two conflict — "the universal grammar beneath phonetic divergence" can be read as
+translation between registers of one ontology.
