@@ -6,6 +6,9 @@
 Paper). A status rests on a module + a gate section, a commit, or a run log — never on a marker alone.
 **Status:** OPEN · PARTIAL · BUILT (module + gate on register-stack, not merged) · ON-MAIN · CEILING · RULING.
 **Keep it true:** when an item moves, change its line here in the same commit, with the evidence.
+**SCOPE — RULED by Erik 2026-09-26:** `Orthographia.tex` and the Master Neolexicon are NOT LA sources for this roadmap or
+the completion standard ("adjacent writing"). **STYLOMETRY is out of scope entirely — never add it to any completion list.**
+STYLISTICS stays (S5, below), waiting on R-B1/R-B2.
 
 ---
 
@@ -38,7 +41,7 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 | S2 | the triple bar as a biconditional: NIS ⟺ same sound ⟺ same raster | OPEN | RED = ⊕-associativity (one sound, two concepts, F:952) | S1 |
 | S3 | L1 + L2 into NORMK — **RATIFIED 2026-09-25 (F44)**; ripple derived: 2 keys move, 1 collision, now DECLARED (R-SP4) | OPEN | removing either law reds (m3, m4) | after the freeze, with F4(c) |
 | S4 | syntax ≡ MODE_CON under L1 — **DECLARED an identity (R-SP4, 2026-09-25)** | DONE | onecollapse (3) asserts the collision set = the declared one; RED oc_m9 | — |
-| S5 | branches in Erik's list not in the 19: Lexicology, Lexicography, Stylistics (+ the deferred five) | OPEN | Δ_B admission TTTT, then onecollapse's generator count rises | R-B1, R-B2 |
+| S5 | branches in Erik's list not in the 19: Lexicology, Lexicography, Stylistics (+ the deferred five). Stylistics sourced from MCL:1197/1333, Glossodynamics:2125, codex :5788/:8646 (checked 09-26); Stylometry is OUT (ruled 09-26) | OPEN | Δ_B admission TTTT, then onecollapse's generator count rises | R-B1, R-B2 |
 | S6 | emergent (not concatenated) branch reading — BREAD is JOIN_READ today (branchgenesis.la:119) | OPEN | RED = a BREAD that is JOIN_READ | — |
 | S7 | linear stored monoglyph — MONO's etym slot AS the DAG (Ren doubles per collapse, fractal.la) | PARTIAL (measured) | NODES(stored Cn)=+1; RED in G§28 | canon.la owner |
 | S8 | **phonetic compression**: the phonym grows with depth under ⊕ ▷ ⊂ ↻ (unified.la:14) — the phonetic register does not yet collapse | OPEN | PDUR bounded per mode, or a ruled [B] bound | R-SP3 |
