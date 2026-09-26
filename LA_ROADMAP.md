@@ -23,7 +23,8 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 - one generator: 18 of 19 declared branches ARE Λ(interface); Δ_B's ▷-branch refused by name
 - all 18 collapse JOINTLY to one Λ: lossless (truth + etymology from the DAG), not vacuous, idempotent, refuses a foreign member
 - compression against formulas derived in-file: semantic 14(n−1) bytes, morphetic 2(n−1) nodes, glyphic n−1 DAG nodes
-- the hexary fusion collapses to ONE self-naming seal, ONTOSEMIOSYNTAX, derived rather than declared
+- the hexary fusion collapses to ONE self-naming seal, derived rather than declared, and named by its Ren ALONE
+  (R-SP1 ruled 2026-09-26: not "Ontosemiosyntax", which the codex keeps for its triad, :2507; a report may say "HEXAD")
 - **unbounded iff self-similar**: tree 6·2^d−5 over DAG d+3 (ratio 379/9 at d=6, rising), while distinct content stays
   under (T+3)/2 for every n. This is the honest form of "infinite compression"; the White Paper reaches it too
   (WP:8952, "structure sharing has a Shannon floor").
@@ -68,8 +69,8 @@ L1 Λ(Λx) ≡ Λx and L2 Λ(a⊕b) ≡ Λa ⊕ Λb. Run on the host: rc 0, ever
 
 | id | question | unblocks |
 |---|---|---|
-| R-SP1 | the Hexary Fusion's sixth member: Discourse (MCL:1303) or Semiosis (codex 9096–9128) | S3 |
-| R-SP3 | the phonym grows under ⊕ ▷ ⊂ ↻: a ruled [B] bound, or require phonological fusion | S8 |
+| R-SP1 | ✔ RULED 2026-09-26 (Erik; LA_RULINGS_BRIEF-2026-09-26.md): (1) the CLASSICAL six, Discourse sixth — as built; (2) the seal carries its Ren only, no English label ("HEXAD" as a plain descriptor); (3) Phon = phonetics (BASE_BRANCHES 0) — as built. Label change to onecollapse.la + its §50 pin: after runner6 | S3 |
+| R-SP3 | ⏸ DEFERRED 2026-09-26 (Erik): a sealed rendering is new scope; unified.la's measured phonym growth stands as correct for ANALYTIC speech (LA.tex operator phonology) | S8 |
 | R-B1 / R-B2 | the deferred branches' interface x; do Lexicology / Lexicography / Stylistics / Tier 6–7 count | S5 |
 | R-S1 | Seal 1: which type system (E3 ruled 09-09; ratification owed — unverified) | Seal 2 (a) |
 | R-P1 | ⊕-associativity is phonetically invisible: a bracketing marker, or a bound | S2 |

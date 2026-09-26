@@ -1,6 +1,17 @@
 # R-SP1 / R-SP3 — ruling brief (2026-09-26)
 
-A DECISION AID, NOT A RULING. Nothing here is ruled: both items stay open in `LA_ROADMAP.md` §2 until Erik rules.
+## ★ RULED by Erik, 2026-09-26 (answered in session, after reading this brief)
+- **R-SP1 (1)** the hexary fusion fuses the **CLASSICAL six**: Phon ⊕ Morph ⊕ Syn ⊕ Sem ⊕ Prag ⊕ **Disc** — as built.
+- **R-SP1 (2)** the hexad's seal is **NOT "Ontosemiosyntax"** (the codex keeps that name for its triad, :2507). It carries
+  **its Ren only** — no English label; it is named by its κ-string, as every sealed monoglyph is. A report may print the
+  plain descriptor "HEXAD".
+- **R-SP1 (3)** "Phon" = **phonetics** (BASE_BRANCHES index 0) — as built; now a ruling, not an implicit choice.
+- **R-SP3** **DEFERRED** — the sealed rendering is new scope; `unified.la`'s measured growth stands as correct for ANALYTIC
+  speech (LA.tex operator phonology).
+Implementation (onecollapse.la's label + its §50 pin + LA_ROADMAP.md §2) is the Track F session's — NOT done here.
+
+---
+The text below is the decision aid as it was before the rulings.
 Every excerpt below was extracted with `sed -n` from the source file at the stated lines — quoted, not paraphrased.
 Sources: MCL = `~/Downloads/CODICIES/Papers/Metacursive_Collapse_of_Language.tex` · CODEX = `~/logos/codices/Codex Llogoscribeologiae.tex`
 (the gitignored copy; `~/logos_codices_preserved/` holds another) · LA = `~/logos-f/LINGUA_ADAMICA.tex`.
