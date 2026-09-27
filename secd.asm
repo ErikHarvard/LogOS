@@ -390,7 +390,7 @@ _start:
     je      .apply
     cmp     al, 5
     je      .ret
-    jmp     .halt
+    jmp     .badstream           ; unknown opcode: malformed stream, halt LOUDLY (was: silent exit 0)
 
 .pushs:                          ; rbx → NUL-terminated literal (NUL-free)
     mov     rsi, rbx
@@ -1207,7 +1207,7 @@ _start:
     je      .bi_reapnb
     cmp     r11, 57
     je      .mkpa                ; poll is curried: poll(fds)(timeout)
-    jmp     .halt
+    jmp     .badstream           ; unknown builtin id: malformed stream, halt LOUDLY (was: silent exit 0)
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
     add     r15, 8
@@ -1290,7 +1290,7 @@ _start:
     je      .bi_dup22
     cmp     r10, 59
     je      .bi_execv2
-    jmp     .halt
+    jmp     .badstream           ; unknown curried-builtin id: malformed stream, halt LOUDLY (was: silent exit 0)
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
 .bi_print:                       ; r9 = STR descriptor; or an INT → its decimal
