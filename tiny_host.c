@@ -129,9 +129,25 @@ static void gc_mark(Node *n) {            /* mark + enqueue for tracing */
     }
     gc_work[gc_work_n++] = n;
 }
+/* Conservative root scan of the C stack. This is undefined behaviour BY
+ * CONSTRUCTION: it reads every word of [lo, hi) as a possible pointer, and
+ * those words are not objects of type uintptr_t as far as the C abstract
+ * machine is concerned (they are other frames' locals, spills, padding, and
+ * red zones). Every conservative collector (Boehm's included) does exactly
+ * this. Two consequences: (1) the sanitizers must not instrument this one
+ * function, or every collection reports "load with insufficient space for an
+ * object" (UBSan) / stack-redzone reads (ASan) and the host cannot be
+ * sanitizer-tested at all; (2) each word is read through memcpy rather than
+ * by dereferencing a uintptr_t*, so no typed lvalue is formed over memory
+ * that is not a uintptr_t. The scan itself is correct: it only ever compares
+ * candidate words against the registered-node set (gc_known). */
+__attribute__((no_sanitize("address", "undefined")))
 static void gc_scan(uintptr_t lo, uintptr_t hi) {   /* conservative root scan */
-    for (uintptr_t *p = (uintptr_t *)lo; p < (uintptr_t *)hi; p++)
-        if (gc_known((Node *)*p)) gc_mark((Node *)*p);
+    for (uintptr_t a = lo; a + sizeof(uintptr_t) <= hi; a += sizeof(uintptr_t)) {
+        uintptr_t w;
+        memcpy(&w, (const void *)a, sizeof w);
+        if (gc_known((Node *)w)) gc_mark((Node *)w);
+    }
 }
 
 static Node *new_node(NType t) {
@@ -143,24 +159,24 @@ static Node *new_node(NType t) {
     return n;
 }
 
-static Node *mkvar(const char *name)            { Node *n = new_node(N_VAR); n->s = strdup(name); return n; }
+static Node *mkvar(const char *name)            { char *s = strdup(name); Node *n = new_node(N_VAR); n->s = s; return n; }
 /* mkstrn: a binary-safe string of exactly `len` bytes (may contain NULs).
  * A trailing '\0' is kept past the end so the buffer is still printable as a
  * C string for the text-only paths, but `len` is the authority. */
 static Node *mkstrn(const char *bytes, size_t len) {
-    Node *n = new_node(N_STR);
     char *buf = malloc(len + 1);
     if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
     if (len) memcpy(buf, bytes, len);
     buf[len] = '\0';
+    Node *n = new_node(N_STR);   /* may collect: bytes are already copied */
     n->s = buf; n->len = len;
     return n;
 }
 static Node *mkstr(const char *val)             { return mkstrn(val, strlen(val)); }
 static Node *mkint(long v)                      { Node *n = new_node(N_INT); n->i = v; return n; }
-static Node *mklam(const char *param, Node *bd) { Node *n = new_node(N_LAM); n->s = strdup(param); n->a = bd; return n; }
+static Node *mklam(const char *param, Node *bd) { char *s = strdup(param); Node *n = new_node(N_LAM); n->s = s; n->a = bd; return n; }
 static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->a = f; n->b = x; return n; }
-static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL); n->s = strdup(nm); n->a = a; return n; }
+static Node *mkpartial(const char *nm, Node *a)  { char *s = strdup(nm); Node *n = new_node(N_PARTIAL); n->s = s; n->a = a; return n; }
 
 static Node *copy_node(Node *e) {
     check_stack();
