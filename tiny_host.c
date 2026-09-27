@@ -159,24 +159,24 @@ static Node *new_node(NType t) {
     return n;
 }
 
-static Node *mkvar(const char *name)            { Node *n = new_node(N_VAR); n->s = strdup(name); return n; }
+static Node *mkvar(const char *name)            { char *s = strdup(name); Node *n = new_node(N_VAR); n->s = s; return n; }
 /* mkstrn: a binary-safe string of exactly `len` bytes (may contain NULs).
  * A trailing '\0' is kept past the end so the buffer is still printable as a
  * C string for the text-only paths, but `len` is the authority. */
 static Node *mkstrn(const char *bytes, size_t len) {
-    Node *n = new_node(N_STR);
     char *buf = malloc(len + 1);
     if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
     if (len) memcpy(buf, bytes, len);
     buf[len] = '\0';
+    Node *n = new_node(N_STR);   /* may collect: bytes are already copied */
     n->s = buf; n->len = len;
     return n;
 }
 static Node *mkstr(const char *val)             { return mkstrn(val, strlen(val)); }
 static Node *mkint(long v)                      { Node *n = new_node(N_INT); n->i = v; return n; }
-static Node *mklam(const char *param, Node *bd) { Node *n = new_node(N_LAM); n->s = strdup(param); n->a = bd; return n; }
+static Node *mklam(const char *param, Node *bd) { char *s = strdup(param); Node *n = new_node(N_LAM); n->s = s; n->a = bd; return n; }
 static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->a = f; n->b = x; return n; }
-static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL); n->s = strdup(nm); n->a = a; return n; }
+static Node *mkpartial(const char *nm, Node *a)  { char *s = strdup(nm); Node *n = new_node(N_PARTIAL); n->s = s; n->a = a; return n; }
 
 static Node *copy_node(Node *e) {
     check_stack();
