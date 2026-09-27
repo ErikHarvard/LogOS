@@ -129,9 +129,25 @@ static void gc_mark(Node *n) {            /* mark + enqueue for tracing */
     }
     gc_work[gc_work_n++] = n;
 }
+/* Conservative root scan of the C stack. This is undefined behaviour BY
+ * CONSTRUCTION: it reads every word of [lo, hi) as a possible pointer, and
+ * those words are not objects of type uintptr_t as far as the C abstract
+ * machine is concerned (they are other frames' locals, spills, padding, and
+ * red zones). Every conservative collector (Boehm's included) does exactly
+ * this. Two consequences: (1) the sanitizers must not instrument this one
+ * function, or every collection reports "load with insufficient space for an
+ * object" (UBSan) / stack-redzone reads (ASan) and the host cannot be
+ * sanitizer-tested at all; (2) each word is read through memcpy rather than
+ * by dereferencing a uintptr_t*, so no typed lvalue is formed over memory
+ * that is not a uintptr_t. The scan itself is correct: it only ever compares
+ * candidate words against the registered-node set (gc_known). */
+__attribute__((no_sanitize("address", "undefined")))
 static void gc_scan(uintptr_t lo, uintptr_t hi) {   /* conservative root scan */
-    for (uintptr_t *p = (uintptr_t *)lo; p < (uintptr_t *)hi; p++)
-        if (gc_known((Node *)*p)) gc_mark((Node *)*p);
+    for (uintptr_t a = lo; a + sizeof(uintptr_t) <= hi; a += sizeof(uintptr_t)) {
+        uintptr_t w;
+        memcpy(&w, (const void *)a, sizeof w);
+        if (gc_known((Node *)w)) gc_mark((Node *)w);
+    }
 }
 
 static Node *new_node(NType t) {
