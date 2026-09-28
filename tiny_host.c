@@ -43,6 +43,20 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+/* Checked allocation: every malloc/strdup in the host goes through these so an
+ * allocation failure halts loudly ("out of memory", exit 1) instead of
+ * returning NULL into code that dereferences it (SIGSEGV). */
+static void *xmalloc(size_t n) {
+    void *p = malloc(n);
+    if (!p) { fprintf(stderr, "out of memory\n"); exit(1); }
+    return p;
+}
+static char *xstrdup(const char *s) {
+    char *p = strdup(s);
+    if (!p) { fprintf(stderr, "out of memory\n"); exit(1); }
+    return p;
+}
+
 /* ------------------------------------------------------------------ AST -- */
 
 typedef enum { N_VAR, N_LAM, N_APP, N_STR, N_INT, N_PARTIAL } NType;
@@ -159,12 +173,12 @@ static Node *new_node(NType t) {
     return n;
 }
 
-static Node *mkvar(const char *name)            { char *s = strdup(name); Node *n = new_node(N_VAR); n->s = s; return n; }
+static Node *mkvar(const char *name)            { char *s = xstrdup(name); Node *n = new_node(N_VAR); n->s = s; return n; }
 /* mkstrn: a binary-safe string of exactly `len` bytes (may contain NULs).
  * A trailing '\0' is kept past the end so the buffer is still printable as a
  * C string for the text-only paths, but `len` is the authority. */
 static Node *mkstrn(const char *bytes, size_t len) {
-    char *buf = malloc(len + 1);
+    char *buf = xmalloc(len + 1);
     if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
     if (len) memcpy(buf, bytes, len);
     buf[len] = '\0';
@@ -174,9 +188,9 @@ static Node *mkstrn(const char *bytes, size_t len) {
 }
 static Node *mkstr(const char *val)             { return mkstrn(val, strlen(val)); }
 static Node *mkint(long v)                      { Node *n = new_node(N_INT); n->i = v; return n; }
-static Node *mklam(const char *param, Node *bd) { char *s = strdup(param); Node *n = new_node(N_LAM); n->s = s; n->a = bd; return n; }
+static Node *mklam(const char *param, Node *bd) { char *s = xstrdup(param); Node *n = new_node(N_LAM); n->s = s; n->a = bd; return n; }
 static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->a = f; n->b = x; return n; }
-static Node *mkpartial(const char *nm, Node *a)  { char *s = strdup(nm); Node *n = new_node(N_PARTIAL); n->s = s; n->a = a; return n; }
+static Node *mkpartial(const char *nm, Node *a)  { char *s = xstrdup(nm); Node *n = new_node(N_PARTIAL); n->s = s; n->a = a; return n; }
 
 static Node *copy_node(Node *e) {
     check_stack();
@@ -225,7 +239,7 @@ static void lex(void) {
         case '=': P++; curtok = T_EQ;  return;
         case '"': {
             P++;
-            char  *buf = malloc(strlen(P) + 1);
+            char  *buf = xmalloc(strlen(P) + 1);
             size_t i = 0;
             while (*P && *P != '"') {
                 char c = *P++;
@@ -274,7 +288,7 @@ static void lex(void) {
         const char *start = P;
         while (is_ident_char((unsigned char)*P)) P++;
         size_t len = (size_t)(P - start);
-        char  *txt = malloc(len + 1);
+        char  *txt = xmalloc(len + 1);
         memcpy(txt, start, len);
         txt[len] = '\0';
         if      (strcmp(txt, "glyph")  == 0) { curtok = T_GLYPH;  free(txt); }
@@ -329,7 +343,7 @@ static Node *parse_expr(void) {
     if (curtok == T_LA) {
         advance();
         expect(T_IDENT, "lambda parameter");
-        char *param = strdup(curstr);
+        char *param = xstrdup(curstr);
         advance();
         expect(T_DOT, "'.'");
         advance();
@@ -352,7 +366,7 @@ static void add_glyph(const char *name, Node *body) {
     if (nglyphs >= sizeof glyphs / sizeof glyphs[0]) {
         fprintf(stderr, "too many glyphs\n"); exit(1);
     }
-    glyphs[nglyphs].name = strdup(name);
+    glyphs[nglyphs].name = xstrdup(name);
     glyphs[nglyphs].body = body;
     nglyphs++;
 }
@@ -420,7 +434,7 @@ static void add_export(const char *name) {
     if (cur_nexports >= sizeof cur_exports / sizeof cur_exports[0]) {
         fprintf(stderr, "too many exports\n"); exit(1);
     }
-    cur_exports[cur_nexports++] = strdup(name);
+    cur_exports[cur_nexports++] = xstrdup(name);
 }
 
 static void do_import(const char *path);   /* defined after slurp_file/subst */
@@ -432,7 +446,7 @@ static void parse_program(void) {
             advance();
             expect(T_LP, "'(' after import"); advance();
             expect(T_STR, "an import path string");
-            char *path = malloc(curlen + 1);
+            char *path = xmalloc(curlen + 1);
             memcpy(path, curstr, curlen); path[curlen] = '\0';
             advance();
             expect(T_RP, "')'"); advance();
@@ -445,7 +459,7 @@ static void parse_program(void) {
             expect(T_GLYPH, "'glyph', 'import', or 'export'");
             advance();
             expect(T_IDENT, "glyph name");
-            char *name = strdup(curstr);
+            char *name = xstrdup(curstr);
             advance();
             expect(T_EQ, "'='");
             advance();
@@ -475,7 +489,7 @@ static char *gensym(void) {
     static unsigned long counter = 0;
     char buf[32];
     snprintf(buf, sizeof buf, "_g%lu", counter++);
-    return strdup(buf);
+    return xstrdup(buf);
 }
 
 /* subst(e, var, val) = e[var := val], renaming bound names as needed so no
@@ -608,7 +622,7 @@ static char *do_copy_self(void) {
     fclose(out);
     chmod(target, 0755);
     fprintf(stderr, "copy_self: replicated -> %s\n", target);
-    return strdup(target);
+    return xstrdup(target);
 }
 
 static Node *eval(Node *e);
@@ -628,7 +642,7 @@ static char *slurp_file(const char *path, size_t *out_len) {
        a non-seekable read_file identically (exit 1) rather than corrupting memory. */
     if (len < 0) { fprintf(stderr, "read_file: '%s' is not a seekable file\n", path); exit(1); }
     fseek(f, 0, SEEK_SET);
-    char *buf = malloc((size_t)len + 1);
+    char *buf = xmalloc((size_t)len + 1);
     if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
     size_t got = fread(buf, 1, (size_t)len, f);
     buf[got] = '\0';
@@ -665,7 +679,7 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
             fprintf(stderr, "concat: arguments must be strings\n"); exit(1);
         }
         size_t l1 = arg1->len, l2 = arg2->len;
-        char *buf = malloc(l1 + l2 + 1);
+        char *buf = xmalloc(l1 + l2 + 1);
         if (l1) memcpy(buf, arg1->s, l1);
         if (l2) memcpy(buf + l1, arg2->s, l2);
         buf[l1 + l2] = '\0';
@@ -969,7 +983,7 @@ static void mangle_privates(size_t start, size_t end,
         for (size_t j = start; j < end; j++)                        /* rewrite refs */
             glyphs[j].body = subst(glyphs[j].body, glyphs[i].name, ref);
         free(glyphs[i].name);
-        glyphs[i].name = strdup(mangled);
+        glyphs[i].name = xstrdup(mangled);
     }
 }
 
