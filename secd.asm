@@ -325,12 +325,90 @@ _start:
     mov     rdi, rbp
     syscall
 .booted:
+    ; HEAP-MMAP: the two semispaces are reserved HERE, by one mmap(MAP_NORESERVE),
+    ; not in the ELF p_memsz (which used to carry 1.5 GiB of heap, so exec — and
+    ; valgrind — had to map it all up front). Size per semispace: LOGOS_HEAP_MB
+    ; (MiB) from envp, default 768 (unchanged). rsp still points at argc here:
+    ; nothing above has pushed. Bounds go to heap_lo/heap_mid/heap_hi, which the
+    ; GC trigger, the concat/str_tail guards, gc and gc_scan read instead of the
+    ; old fixed heap/semimid/progbuf addresses.
+    mov     r8, 768                  ; default MiB per semispace
+    mov     rcx, [rsp]               ; argc
+    lea     rsi, [rsp + rcx*8 + 16]  ; envp[0]
+.hm_env:
+    mov     rdi, [rsi]
+    test    rdi, rdi
+    jz      .hm_map
+    add     rsi, 8
+    mov     rdx, hm_key
+    mov     ecx, hm_keylen
+.hm_cmp:
+    mov     al, [rdi]
+    cmp     al, [rdx]
+    jne     .hm_env
+    inc     rdi
+    inc     rdx
+    dec     ecx
+    jnz     .hm_cmp
+    xor     r8d, r8d
+    xor     ecx, ecx
+.hm_dig:
+    movzx   eax, byte [rdi]
+    test    al, al
+    jz      .hm_got
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .hm_bad
+    imul    r8, r8, 10
+    add     r8, rax
+    cmp     r8, 0x1000000            ; 16 TiB ceiling: rejects overflow/absurd sizes
+    ja      .hm_bad
+    inc     rdi
+    inc     ecx
+    jmp     .hm_dig
+.hm_got:
+    test    ecx, ecx
+    jz      .hm_bad
+    cmp     r8, 128                  ; floor: a semispace must exceed the 65 MiB margin
+    jb      .hm_bad
+.hm_map:
+    shl     r8, 20                   ; MiB -> bytes (one semispace)
+    lea     rsi, [r8 + r8]           ; both semispaces
+    mov     rbp, r8
+    mov     eax, 9                   ; mmap
+    xor     edi, edi
+    mov     edx, 3                   ; PROT_READ|PROT_WRITE
+    mov     r10d, 0x4022             ; MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE
+    mov     r8, -1
+    xor     r9d, r9d
+    syscall
+    cmp     rax, -4095
+    jae     .hm_fail
+    mov     [heap_lo], rax
+    mov     r15, rax
+    add     rax, rbp
+    mov     [heap_mid], rax
+    add     rax, rbp
+    mov     [heap_hi], rax
     mov     rbx, bootstrap
     mov     r12, ostack
     xor     r13, r13
     mov     r14, dstack
-    mov     r15, heap
     jmp     .loop
+.hm_bad:
+    mov     rsi, hm_badmsg
+    mov     rdx, hm_badmsg_len
+    jmp     .hm_die
+.hm_fail:
+    mov     rsi, hm_mapmsg
+    mov     rdx, hm_mapmsg_len
+.hm_die:
+    mov     rax, 1
+    mov     rdi, 2
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
 .openfail:                       ; logos_program.bin missing/unreadable — halt LOUDLY
     mov     rax, 1               ;   (was: bare exit 1 with no diagnostic)
     mov     rdi, 2
@@ -343,21 +421,21 @@ _start:
 
 .loop:
     ; GC trigger + heap-exhaustion guard. The bump heap is two semispaces:
-    ; low [heap, semimid), high [semimid, progbuf). `space_end` is the end of
+    ; low [heap_lo, heap_mid), high [heap_mid, heap_hi) — the startup mmap. `space_end` is the end of
     ; the one r15 is in. When r15 comes within `margin` of it (margin covers
     ; the largest single allocation — read_file's 64 MiB), run a copying GC.
     ; If r15 is STILL within margin after collecting, the live set itself
     ; doesn't fit: the heap is genuinely exhausted → halt loudly.
-    mov     rax, progbuf
-    mov     rcx, semimid
+    mov     rax, [heap_hi]
+    mov     rcx, [heap_mid]
     cmp     r15, rcx
     cmovb   rax, rcx
     sub     rax, margin
     cmp     r15, rax
     jb      .nogc
     call    gc
-    mov     rax, progbuf
-    mov     rcx, semimid
+    mov     rax, [heap_hi]
+    mov     rcx, [heap_mid]
     cmp     r15, rcx
     cmovb   rax, rcx
     sub     rax, margin
@@ -1406,8 +1484,8 @@ _start:
     mov     rax, rcx
     add     rax, r15
     add     rax, 24
-    mov     r10, progbuf         ; space_end = semimid (low half) or progbuf (high)
-    mov     r11, semimid
+    mov     r10, [heap_hi]       ; space_end = heap_mid (low half) or heap_hi (high)
+    mov     r11, [heap_mid]
     cmp     r15, r11
     cmovb   r10, r11
     cmp     rax, r10
@@ -2103,8 +2181,8 @@ _start:
     add     rax, [r9]
     add     rax, r15
     add     rax, 24              ; bytes + STRDESC (8 header + 16 fields)
-    mov     rcx, progbuf         ; space_end = semimid (low) or progbuf (high)
-    mov     rdx, semimid
+    mov     rcx, [heap_hi]       ; space_end = heap_mid (low) or heap_hi (high)
+    mov     rdx, [heap_mid]
     cmp     r15, rdx
     cmovb   rcx, rdx
     cmp     rax, rcx
@@ -3727,13 +3805,13 @@ _start:
 ;  copy (sharing preserved, no duplication, no divergence on the DAG).
 ; ═══════════════════════════════════════════════════════════════════
 gc:
-    mov     rax, semimid         ; tospace = the semispace r15 is NOT in
+    mov     rax, [heap_mid]      ; tospace = the semispace r15 is NOT in
     cmp     r15, rax
     jb      .to_high
-    mov     rax, heap            ; r15 in high → tospace = low
+    mov     rax, [heap_lo]       ; r15 in high → tospace = low
     jmp     .to_set
 .to_high:
-    mov     rax, semimid         ; r15 in low  → tospace = high
+    mov     rax, [heap_mid]      ; r15 in low  → tospace = high
 .to_set:
     mov     [gc_tofree], rax
     mov     rax, gcwork
@@ -3867,12 +3945,12 @@ gc_scan:
     test    rcx, rcx
     je      .sc_ret              ; empty string: ptr unused
     mov     rdx, [rsi+8]
-    mov     rax, heap
+    mov     rax, [heap_lo]
     cmp     rdx, rax
-    jb      .sc_ret              ; below heap → static, leave
-    mov     rax, progbuf
+    jb      .sc_ret              ; below the heap mapping → static / progbuf, leave
+    mov     rax, [heap_hi]
     cmp     rdx, rax
-    jae     .sc_ret              ; in progbuf → leave (PUSHS literal)
+    jae     .sc_ret              ; above it → leave (the mmap is not ordered vs progbuf)
     push    rsi
     mov     rdi, [gc_tofree]
     mov     [rsi+8], rdi         ; STRDESC.ptr := new data location
@@ -4051,6 +4129,15 @@ drm_nomodemsg_len  equ $ - drm_nomodemsg
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect
+heap_lo:       dq 0              ; HEAP-MMAP: low semispace base (the startup mmap)
+heap_mid:      dq 0              ; boundary: low [heap_lo, heap_mid), high [heap_mid, heap_hi)
+heap_hi:       dq 0              ; end of the high semispace
+hm_key:        db "LOGOS_HEAP_MB="
+hm_keylen      equ $ - hm_key
+hm_badmsg:     db "secd: LOGOS_HEAP_MB: not a valid size", 10
+hm_badmsg_len  equ $ - hm_badmsg
+hm_mapmsg:     db "secd: heap: mmap failed", 10
+hm_mapmsg_len  equ $ - hm_mapmsg
 gc_wktop:      dq 0              ; GC: worklist stack top (into gcwork)
 ; DRM/KMS scanout state, shared between drm_mode() and present().
 drm_fd:        dq 0              ; /dev/dri/card0 fd
@@ -4079,18 +4166,13 @@ stackmargin equ 0x1000               ; halt this many bytes (256 frames) before
 fsbuf    equ pathbuf + 0x1000
 gcwork   equ fsbuf   + 0x1000        ; GC worklist: 16 MiB = 1 Mi (kind,ptr) entries
 gcwork_end equ gcwork + 0x1000000
-; The bump heap is split into two equal semispaces for a copying collector.
-; Allocation bumps r15 inside the active half; at a collect the live set is
-; copied into the other half (see gc). 768 MiB each — ~703 MiB usable before
-; the GC/exhaustion margin: a single semispace matches the old non-GC bump
-; heap's capacity, so any workload that fit before GC still fits in one half
-; even with zero reclamation (compiling secd.la peaks at ~320 MiB live; the
-; earlier 384 MiB split left only ~319 MiB usable and exhausted at that peak).
-; All regions are lazily mapped, so the larger reservation costs nothing until
-; touched.
-heap     equ gcwork_end              ; semispaces: low [heap, semimid), high [semimid, progbuf)
-semimid  equ heap    + 0x30000000    ; 768 MiB: boundary between the two semispaces
-progbuf  equ heap    + 0x60000000    ; 1536 MiB total; program stream loads at progbuf
+; The bump heap — two equal semispaces for the copying collector — is no longer
+; part of this layout: _start reserves it with one mmap(MAP_NORESERVE) sized by
+; LOGOS_HEAP_MB (default 768 MiB per semispace, the old fixed size) and records
+; its bounds in heap_lo/heap_mid/heap_hi. Everything below stays static, so the
+; ELF p_memsz covers only the stacks, buffers, worklist, program region and DRM
+; scratch (~53 MiB, lazily mapped) instead of ~1.55 GiB.
+progbuf  equ gcwork_end              ; the program stream loads at progbuf
 progcap  equ 0x500000                ; 5 MiB mapped for the program stream (matches the
                                      ; phdr p_memsz tail); the loader fills up to here
 progend  equ progbuf + progcap       ; mapped end of the program region; bounds the
