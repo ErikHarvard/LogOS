@@ -3363,23 +3363,41 @@ _start:
     jmp     .loop
 
 .bi_inttostr:                    ; r9 = INT payload → decimal STR (via push_dec)
+    cmp     r8, 4                ; INT only (see .inttype)
+    jne     .inttype
     mov     rax, r9
     call    push_dec
     jmp     .loop
 
 .bi_add2:                        ; rbp = a1 int, r9 = a2 int (Ontodirection ▷)
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     add     rax, r9
     jmp     .push_int
 .bi_sub2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     sub     rax, r9
     jmp     .push_int
 .bi_mul2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     imul    rax, r9
     jmp     .push_int
 .bi_div2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     test    r9, r9
     je      .int_divzero
     mov     rax, rbp
@@ -3387,6 +3405,10 @@ _start:
     idiv    r9
     jmp     .push_int
 .bi_mod2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     test    r9, r9
     je      .int_divzero
     mov     rax, rbp
@@ -3395,18 +3417,34 @@ _start:
     mov     rax, rdx
     jmp     .push_int
 .bi_band2:                       ; rbp & r9 — two's complement, matches tiny_host
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     and     rax, r9
     jmp     .push_int
 .bi_bor2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     or      rax, r9
     jmp     .push_int
 .bi_bxor2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     xor     rax, r9
     jmp     .push_int
 .bi_bshl2:                       ; count outside 0..63 -> 0 (see header: x86
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     r9, 63               ; MASKS the count to 6 bits and ARM does not,
     ja      .bi_shift_zero       ; so the range check suppresses that accident;
     mov     rcx, r9              ; `ja` also catches negatives as unsigned-large
@@ -3414,6 +3452,10 @@ _start:
     shl     rax, cl
     jmp     .push_int
 .bi_bshr2:                       ; LOGICAL (shr), never arithmetic (sar)
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     r9, 63
     ja      .bi_shift_zero
     mov     rcx, r9
@@ -3424,6 +3466,8 @@ _start:
     xor     rax, rax
     jmp     .push_int
 .bi_bnot:                        ; UNARY: r9 = arg
+    cmp     r8, 4                ; INT only (see .inttype)
+    jne     .inttype
     mov     rax, r9
     not     rax
     jmp     .push_int
@@ -3432,16 +3476,33 @@ _start:
     mov     [r12+8], rax
     add     r12, 16
     jmp     .loop
+.inttype:                        ; an integer builtin given a non-INT (tag != 4):
+    mov     rax, 1               ;   the payload would be used as the number
+    mov     rdi, 2
+    mov     rsi, inttypemsg
+    mov     rdx, inttypemsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
 .int_divzero:
     mov     rax, 60              ; div/mod by zero — halt (matches the C host)
     mov     rdi, 1
     syscall
 
 .bi_lt2:                         ; rbp < r9 (signed) → Church bool closure
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     rbp, r9
     jl      .int_true
     jmp     .int_false
 .bi_inteq2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     rbp, r9
     je      .int_true
     jmp     .int_false
@@ -3828,6 +3889,8 @@ strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "secd: not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+inttypemsg:    db "secd: argument is not an integer", 10
+inttypemsg_len equ $ - inttypemsg
 pollmsg:       db "secd: too many poll fds", 10
 pollmsg_len    equ $ - pollmsg
 bootstrap:     db 2, "MAIN", 0, 0
