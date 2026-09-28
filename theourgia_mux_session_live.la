@@ -171,13 +171,20 @@ glyph SHOW_TEST_PATTERN = la dims.
 # poll every device, fold all ready events into st via DRAIN_STEP, build the
 # full-screen frame from st's (x,y), scan it out — then recurse (tail position →
 # bounded dump under TCO).
-glyph LIVE_READ = la fd. read(fd)("24")
+# LIVE_READ — one evdev record from a ready fd. A device that is unplugged (or a
+# peer that closes) makes poll report it ready (POLLHUP) on EVERY call, and read
+# then returns "" (EOF; the VM also returns "" for a read ERROR). Decoded, "" is
+# type=0 code=0 value=0 — a plausible EV_SYN — so the loop spun at 100% CPU
+# forever on a dead fd (audit2 #20). Anything but a whole 24-byte record halts
+# LOUDLY instead, naming the fd (the loud-failure discipline; OPEN_OR_DIE is the
+# same rule at open time).
+glyph LIVE_READ = la fd. (la e. IF(str_eq(str_len(e))("24"))(la _. e)(la _. error(concat("theourgia: input fd ")(concat(fd)(concat(" hung up or failed (read gave ")(concat(str_len(e))(" bytes, not one 24-byte event)")))))))(read(fd)("24"))
 glyph LIVE = Z(la self. la st. la dims. la fds.
     (la st2.
-        SEQ(present(st2(la x. la y.
+        (la _. self(st2)(dims)(fds))
+            (present(st2(la x. la y.
                 FRAME(D_W(dims))(D_H(dims))(D_P(dims))
-                     (x)(y)(WINW)(WINH)(BG_BLUE)(WIN_RED))))
-            (self(st2)(dims)(fds)))
+                     (x)(y)(WINW)(WINH)(BG_BLUE)(WIN_RED)))))
     (DRAIN_STEP(LIVE_READ)(st)(SPLIT(poll(JOIN(fds))("-1")))))
 
 # ── Auto-detection: find a device's eventN by name in /proc/bus/input/devices ──

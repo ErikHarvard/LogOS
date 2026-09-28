@@ -104,10 +104,10 @@ glyph SHOWSIG = la w. la h. la pitch. la name. la sig.
 
 # ── Cycle the three forever (tail self-call → bounded dump under TCO) ──
 glyph CYCLE = Z(la self. la w. la h. la pitch.
-    SEQ(SHOWSIG(w)(h)(pitch)("Love  (the flame)")(S_LOVE))(
-    SEQ(SHOWSIG(w)(h)(pitch)("Recognition  (the eye)")(S_RECOG))(
-    SEQ(SHOWSIG(w)(h)(pitch)("Compassion = Love (X) Recognition  [ONE fused sigil]")(S_COMP))(
-        self(w)(h)(pitch)))))
+    (la _. (la _. (la _. self(w)(h)(pitch))
+        (SHOWSIG(w)(h)(pitch)("Compassion = Love (X) Recognition  [ONE fused sigil]")(S_COMP)))
+        (SHOWSIG(w)(h)(pitch)("Recognition  (the eye)")(S_RECOG)))
+        (SHOWSIG(w)(h)(pitch)("Love  (the flame)")(S_LOVE)))
 
 # ── MAIN: take the screen, then cycle ──
 glyph MAIN =

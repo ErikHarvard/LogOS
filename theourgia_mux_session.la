@@ -143,13 +143,20 @@ glyph TO_FB = la surf. la screen_h. la pitch.
 # → bounded dump under TCO). Open the devices and start it, e.g.:
 #     (la d. LIVE(PAIR(4)(4))(SPLIT(d))(CONS(kbd)(CONS(mouse)(NIL))))(drm_mode("!"))
 # Never reached by MAIN, so the VM-only builtins stay unresolved on the C host.
-glyph LIVE_READ = la fd. read(fd)("24")
+# LIVE_READ — one evdev record from a ready fd. A device that is unplugged (or a
+# peer that closes) makes poll report it ready (POLLHUP) on EVERY call, and read
+# then returns "" (EOF; the VM also returns "" for a read ERROR). Decoded, "" is
+# type=0 code=0 value=0 — a plausible EV_SYN — so the loop spun at 100% CPU
+# forever on a dead fd (audit2 #20). Anything but a whole 24-byte record halts
+# LOUDLY instead, naming the fd (the loud-failure discipline; OPEN_OR_DIE is the
+# same rule at open time).
+glyph LIVE_READ = la fd. (la e. IF(str_eq(str_len(e))("24"))(la _. e)(la _. error(concat("theourgia: input fd ")(concat(fd)(concat(" hung up or failed (read gave ")(concat(str_len(e))(" bytes, not one 24-byte event)")))))))(read(fd)("24"))
 glyph LIVE = Z(la self. la st. la dims. la fds.
     (la st2.
-        SEQ(present(TO_FB(RENDER_SURFACE(st2))
+        (la _. self(st2)(dims)(fds))
+            (present(TO_FB(RENDER_SURFACE(st2))
                 (str_to_int(LIST_HD(LIST_TL(dims))))
-                (str_to_int(LIST_HD(LIST_TL(LIST_TL(dims)))))))
-            (self(st2)(dims)(fds)))
+                (str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))))))
     (DRAIN_STEP(LIVE_READ)(st)(SPLIT(poll(JOIN(fds))("-1")))))
 
 # ── The testable demo: ONE multiplexed cycle folds two devices into the scene ──

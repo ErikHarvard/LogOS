@@ -78,7 +78,14 @@ glyph SHOW = la label. la e.
 # order poll reported; POLL_READY recognises poll's answer as a list; MULTIPLEX
 # is the endless loop — its self(fds) call is in tail position, and the VM does
 # TCO, so it runs in bounded dump depth indefinitely.
-glyph LIVE_READ = la fd. read(fd)("24")
+# LIVE_READ — one evdev record from a ready fd. A device that is unplugged (or a
+# peer that closes) makes poll report it ready (POLLHUP) on EVERY call, and read
+# then returns "" (EOF; the VM also returns "" for a read ERROR). Decoded, "" is
+# type=0 code=0 value=0 — a plausible EV_SYN — so the loop spun at 100% CPU
+# forever on a dead fd (audit2 #20). Anything but a whole 24-byte record halts
+# LOUDLY instead, naming the fd (the loud-failure discipline; OPEN_OR_DIE is the
+# same rule at open time).
+glyph LIVE_READ = la fd. (la e. IF(str_eq(str_len(e))("24"))(la _. e)(la _. error(concat("theourgia: input fd ")(concat(fd)(concat(" hung up or failed (read gave ")(concat(str_len(e))(" bytes, not one 24-byte event)")))))))(read(fd)("24"))
 glyph DRAIN = Z(la self. la ready.
     IF(IS_CONS(ready))(la _.
         (la fd. SEQ(SHOW(concat("fd ")(fd))(LIVE_READ(fd)))
@@ -86,7 +93,7 @@ glyph DRAIN = Z(la self. la ready.
     (la _. "drained"))
 glyph POLL_READY = la fds. SPLIT(poll(JOIN(fds))("-1"))
 glyph MULTIPLEX = Z(la self. la fds.
-    SEQ(DRAIN(POLL_READY(fds)))(self(fds)))
+    (la _. self(fds))(DRAIN(POLL_READY(fds))))
 
 # ── Open-or-die: a failed open returns -errno (a STR starting with "-"), and a
 # negative fd handed to poll would be reported POLLNVAL — read off it forever,
