@@ -1,0 +1,228 @@
+# DRAFT — .github/workflows/build.yml for LogOS. NOT committed.
+#
+# What it would run on every push and pull request:
+#   1. build      — compile the host, run the full ./build.sh audit
+#   2. sanitizers — ASan+UBSan and UBSan-only sweep of every MAIN-bearing .la
+#   3. fuzz       — a short (5-minute) VM stream fuzz; the invariant is "no
+#                   crash and no silent exit-0 on a corrupted stream"
+#   4. gates      — the standalone gate_*.sh scripts, so a red gate is visible
+#                   even before build.sh hooks them
+#   5. lint       — shellcheck on the scripts, cppcheck on tiny_host.c
+#
+# WHAT MUST CHANGE BEFORE THIS CAN PASS (in order of necessity):
+#
+#  (a) THE 16 GiB HEAP. Every binary native_codegen3.la emits has a 16 GiB
+#      PT_LOAD memsz (HEAP_SIZE = 17179869184 at native_codegen3.la:419), and
+#      the Stage-4 self-host check gates on >= 12000 MiB free. GitHub's hosted
+#      ubuntu-latest runner has 7 GB RAM (16 GB on the larger runners, still
+#      not 16 GiB *mappable* under heuristic overcommit). Stage 3a therefore
+#      SIGSEGVs at exec on any hosted runner exactly as on the 15 GiB cloud box
+#      (23 FAILs). Until the heap is a per-program parameter or reserved on
+#      demand, `build.sh` cannot go green in CI. A self-hosted runner with
+#      >= 24 GB RAM is the only alternative.
+#
+#  (b) RUN TIME. The full build takes ~100 minutes on 4 CPUs (the k1 tree; it
+#      was 20 minutes at 965e734). GitHub's default job timeout is 360 minutes,
+#      so it fits, but a 100-minute PR check is slow; the sanitizer sweep is
+#      another ~60 minutes (eval.la alone needs > 14 GB RSS under ASan and is
+#      excluded below). Consider splitting build.sh into a fast tier (host +
+#      VM + generated modules, ~20 min) run on PRs and a full tier run nightly.
+#
+#  (c) DEPENDENCIES build.sh assumes but never states: gcc, nasm (2.16 — the
+#      drift guards are silently skipped without it), python3, gdb (some gates),
+#      GNU coreutils (stat -c, timeout, free -m), git (the auto-tag step). All
+#      are installable on ubuntu-latest and are listed below.
+#
+#  (d) SIDE EFFECTS. build.sh writes into the repository directory and, on a
+#      clean tree + green run, creates an annotated `verified-<date>-<sha>` tag.
+#      In CI the checkout is read-only in spirit: the tag step should be
+#      skipped (it only fires on a clean tree, and the CI tree is clean, so it
+#      WOULD fire). Until build.sh has a --no-tag flag, the job below runs the
+#      build in a copy of the checkout so the tag lands on a throwaway repo.
+#
+#  (e) FIXED /tmp PATHS. build.sh uses ~150 fixed /tmp names; two jobs on one
+#      runner would collide. Each job below runs in its own container, so this
+#      is safe here, but `matrix` fan-out on one machine would not be.
+#
+#  (f) SUDO/DRM/INPUT. The live capstones are not built by build.sh; the DRM
+#      test skips when no DISPLAY is set (always, in CI). Nothing to do, but
+#      note that this means the compositor's live path has NO CI coverage.
+
+name: build
+
+on:
+  push:
+  pull_request:
+
+# One run per branch at a time; a new push cancels the in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    name: full build.sh audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # build.sh inspects tags and HEAD for the auto-tag step
+      - name: toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc nasm python3 gdb git coreutils
+          nasm -v; gcc --version | head -1
+      - name: memory available (Stage 3a/4 need ~16 GiB mappable — see note (a))
+        run: |
+          free -m
+          cat /proc/sys/vm/overcommit_memory
+      - name: run build.sh in a throwaway copy (keeps the auto-tag off the checkout — note (d))
+        run: |
+          set -o pipefail
+          cp -a . /tmp/logos-build
+          cd /tmp/logos-build
+          ./build.sh 2>&1 | tee build.log
+      - name: PASS/FAIL tally (always, even on failure)
+        if: always()
+        run: |
+          L=/tmp/logos-build/build.log
+          echo "PASS=$(grep -c '^PASS' $L || true) FAIL=$(grep -c '^FAIL' $L || true)"
+          grep '^FAIL' $L || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: /tmp/logos-build/build.log
+
+  sanitizers:
+    name: ASan/UBSan sweep of every MAIN program
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc
+      - name: build sanitizer hosts
+        run: |
+          gcc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined -o th_asan tiny_host.c
+          gcc -O2 -g -fsanitize=undefined -fno-sanitize-recover=undefined -o th_ubsan tiny_host.c
+          gcc -O2 -o tiny_host tiny_host.c
+      - name: sweep
+        # ASan's fake stack MUST be off: it moves locals off the real stack and
+        # blinds the host's conservative GC scanner (false use-after-free reports).
+        env:
+          ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=0
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          cp kernel.la logos_source.la; ./tiny_host codegen.la >/dev/null 2>&1 || true
+          cp logos_program.bin kernel_stream.bin 2>/dev/null || true
+          fail=0
+          for f in *.la; do
+            grep -q '^glyph MAIN' "$f" || continue
+            p=${f%.la}
+            case "$p" in *_live|eval) continue;; esac   # eval.la: >14 GB RSS under ASan
+            for V in asan ubsan; do
+              cp kernel_stream.bin logos_program.bin 2>/dev/null || true
+              rc=0; timeout 1500 ./th_$V "$f" >/dev/null 2>logs/$p.$V.err || rc=$?
+              if grep -q 'runtime error\|ERROR: AddressSanitizer' logs/$p.$V.err; then
+                echo "SANITIZER REPORT: $p ($V)"; head -20 logs/$p.$V.err; fail=1
+              fi
+              rm -f new_logos_gen*.bin
+            done
+          done
+          exit $fail
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sanitizer-logs
+          path: logs/
+
+  fuzz:
+    name: VM stream fuzz (5 min, no crash, no silent exit-0 except opcode 0x00)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc python3 gdb
+      - name: build host, emit VM, compile seeds
+        run: |
+          gcc -O2 -o tiny_host tiny_host.c
+          ./tiny_host secd.la >/dev/null
+          for p in kernel greetapp app theourgia; do
+            cp $p.la logos_source.la && ./tiny_host codegen.la >/dev/null 2>&1 && cp logos_program.bin seed_$p.bin
+          done
+      - name: fuzz
+        run: |
+          python3 - <<'EOF'
+          import random, subprocess, glob, time, hashlib, os
+          random.seed(int(os.environ.get("GITHUB_RUN_ID", "1")))
+          seeds=[open(f,'rb').read() for f in glob.glob('seed_*.bin')]
+          special=[b'\x00',b'\x01',b'\x02',b'\x03',b'\x04',b'\x05',b'\x06',b'\xff',b'MAIN',b'print',b'\x05\x05\x05']
+          def mutate(b):
+              b=bytearray(b)
+              for _ in range(random.randint(1,6)):
+                  n=len(b)
+                  if n==0: b+=b'\x00'; continue
+                  i=random.randrange(n); m=random.randint(0,5)
+                  if m==0: b[i]=random.randrange(256)
+                  elif m==1: del b[i:i+random.randint(1,32)]
+                  elif m==2: b[i:i]=random.choice(special)*random.randint(1,8)
+                  elif m==3: b=b[:i]
+                  elif m==4: j=random.randrange(n); b[i:i]=b[j:j+random.randint(1,64)]
+                  else: b[i:i]=bytes(random.randrange(256) for _ in range(random.randint(1,8)))
+              return bytes(b)
+          crashes=0; silent=[]; t0=time.time(); runs=0
+          while time.time()-t0 < 300:
+              m=mutate(random.choice(seeds)); open('logos_program.bin','wb').write(m); runs+=1
+              r=subprocess.run(['timeout','5','./logos_secd'],capture_output=True)
+              if r.returncode>128: crashes+=1; open(f'crash_{hashlib.md5(m).hexdigest()[:8]}.bin','wb').write(m)
+              elif r.returncode==0 and not r.stdout.strip(): silent.append(m)
+          # every silent exit-0 must be the by-design opcode-0x00 HALT: verify with gdb on a sample
+          bad=0
+          for m in silent[:25]:
+              open('logos_program.bin','wb').write(m)
+              g=subprocess.run(['gdb','-q','-batch','-ex','break *0x403176','-ex','run','-ex','printf "op=%02x\\n", *(unsigned char*)($rbx-1)','./logos_secd'],capture_output=True,text=True)
+              # NOTE: 0x403176 is .halt's address in the CURRENT image; derive it from a
+              # nasm listing (nasm -l) in the real version of this step instead of hard-coding.
+              if 'op=00' not in g.stdout: bad+=1
+          print(f"runs={runs} crashes={crashes} silent={len(silent)} silent_not_opcode0_in_sample={bad}")
+          raise SystemExit(1 if crashes or bad else 0)
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-crashes
+          path: crash_*.bin
+
+  gates:
+    name: standalone gate scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc
+      - name: run every gate that needs no hardware
+        run: |
+          fail=0
+          for g in gate_vm_loudhalt.sh gate_vm_guards.sh gate_host_asan.sh gate_host_alloc.sh gate_sha256.sh gate_crypto.sh; do
+            [ -x "$g" ] || { echo "SKIP $g (missing)"; continue; }
+            echo "== $g"; ./$g || fail=1
+          done
+          exit $fail
+
+  lint:
+    name: shellcheck + cppcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck cppcheck
+      # -S warning: notes (SC2015/SC2086/SC2016) are reported but do not fail the job yet;
+      # tighten to -S style once the 43 SC2164 `cd` sites are fixed (see LogOS_static_analysis.md).
+      - run: shellcheck -S warning *.sh kernel/*.sh
+      - run: cppcheck --enable=warning,performance,portability --error-exitcode=1 --std=c11 --suppress=missingIncludeSystem tiny_host.c
