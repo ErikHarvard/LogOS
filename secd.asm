@@ -1156,6 +1156,7 @@ _start:
     mov     rbx, [r11+8]
     jmp     .loop
 .apply_bi:
+    mov     [bi_cur], r11        ; which builtin is running — named by .bidie's diagnostics
     cmp     r11, 1
     je      .mkpa
     cmp     r11, 4
@@ -1304,6 +1305,7 @@ _start:
     jmp     .loop
 .apply_pa:
     mov     r10, [r11]
+    mov     [bi_cur], r10        ; curried builtin's id (see .bidie)
     mov     rbp, [r11+16]
     cmp     r10, 1
     je      .bi_concat2
@@ -1572,14 +1574,9 @@ _start:
     mov     rax, 3
     mov     rdi, rbp
     syscall
-    mov     rax, 1
-    mov     rdi, 2
-    mov     rsi, rfmsg
+    mov     rsi, rfmsg   
     mov     rdx, rfmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 .rf_nofile:
     ; A file that cannot be opened is an error on every engine: the C host halts
     ; with "read_file: cannot open '<path>': <strerror>". Returning "" here was a
@@ -3603,32 +3600,17 @@ _start:
     add     r12, 16
     jmp     .loop
 .inttype:                        ; an integer builtin given a non-INT (tag != 4):
-    mov     rax, 1               ;   the payload would be used as the number
-    mov     rdi, 2
-    mov     rsi, inttypemsg
+    mov     rsi, inttypemsg    ;   the payload would be used as the number
     mov     rdx, inttypemsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 .int_divovf:                     ; LONG_MIN / -1 — idiv would trap (SIGFPE); halt LOUDLY
-    mov     rax, 1               ;   like the C host's "div: overflow (LONG_MIN / -1)"
-    mov     rdi, 2
-    mov     rsi, divovfmsg
+    mov     rsi, divovfmsg    ;   like the C host's "div: overflow (LONG_MIN / -1)"
     mov     rdx, divovfmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 .int_divzero:                    ; div/mod by zero — halt LOUDLY (the C host prints
-    mov     rax, 1               ;   "div: division by zero"; was: bare exit 1)
-    mov     rdi, 2
-    mov     rsi, divzeromsg
+    mov     rsi, divzeromsg    ;   "div: division by zero"; was: bare exit 1)
     mov     rdx, divzeromsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .bi_lt2:                         ; rbp < r9 (signed) → Church bool closure
     cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
@@ -3686,6 +3668,48 @@ _start:
     xor     rdi, rdi
     syscall
 
+.bidie:
+    ; One diagnostic shape for every builtin-attributable error, matching the
+    ; other engines: "secd: <builtin>: <message>", rc 1. rsi/rdx = the bare
+    ; message (newline-terminated). The builtin is the one .apply_bi/.apply_pa
+    ; last dispatched (bi_cur, an id into bi_nametab); an out-of-range id (-1:
+    ; no builtin dispatched yet) prints "secd: <message>".
+    push    rdx
+    push    rsi
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, secdpfx
+    mov     rdx, 6
+    syscall
+    mov     rax, [bi_cur]
+    cmp     rax, BI_COUNT
+    jae     .bd_msg
+    mov     rsi, [bi_nametab + rax*8]
+    xor     edx, edx
+.bd_len:
+    cmp     byte [rsi + rdx], 0
+    je      .bd_name
+    inc     rdx
+    jmp     .bd_len
+.bd_name:
+    mov     rax, 1
+    mov     rdi, 2
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, colonsp
+    mov     rdx, 2
+    syscall
+.bd_msg:
+    pop     rsi
+    pop     rdx
+    mov     rax, 1
+    mov     rdi, 2
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 .heapfull:                       ; bump heap would overrun progbuf — halt loudly
     mov     rax, 1
     mov     rdi, 2               ; stderr
@@ -3707,24 +3731,14 @@ _start:
     syscall
 
 .pathlong:                       ; a path/fstype arg ≥ 4 KiB would overrun the buffer
-    mov     rax, 1
-    mov     rdi, 2               ; stderr
     mov     rsi, pathmsg
     mov     rdx, pathmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .poll_toomany:                   ; more poll fds than the pollfd buffer (pathbuf) holds
-    mov     rax, 1
-    mov     rdi, 2               ; stderr
     mov     rsi, pollmsg
     mov     rdx, pollmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .unbound:                        ; a name resolved as neither env, glyph, nor builtin
     mov     rax, 1               ; — halt loudly (exit 1), like the C host / eval.la /
@@ -3777,34 +3791,19 @@ _start:
     syscall
 
 .chrrange:                       ; chr argument outside 0..255
-    mov     rax, 1
-    mov     rdi, 2
     mov     rsi, chrmsg
     mov     rdx, chrmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .strtype:                        ; chr/ord given a non-string (would deref a non-ptr)
-    mov     rax, 1
-    mov     rdi, 2
     mov     rsi, strtypemsg
     mov     rdx, strtypemsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .notint:                         ; str_to_int given a non-decimal string
-    mov     rax, 1
-    mov     rdi, 2
     mov     rsi, notintmsg
     mov     rdx, notintmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 ; ═══════════════════════════════════════════════════════════════════
 ;  Copying garbage collector — two semispaces over [heap, progbuf):
@@ -4022,7 +4021,7 @@ heapmsg:       db "secd: heap exhausted", 10
 heapmsg_len    equ $ - heapmsg
 stackmsg:      db "secd: stack overflow", 10
 stackmsg_len   equ $ - stackmsg
-pathmsg:       db "secd: path too long", 10
+pathmsg:       db "path too long", 10
 pathmsg_len    equ $ - pathmsg
 unboundmsg:    db "secd: unbound variable", 10
 unboundmsg_len equ $ - unboundmsg
@@ -4034,23 +4033,23 @@ readmsg:       db "secd: read error", 10
 readmsg_len    equ $ - readmsg
 badstrmsg:     db "secd: malformed program", 10
 badstrmsg_len  equ $ - badstrmsg
-chrmsg:        db "secd: chr out of range", 10
+chrmsg:        db "value out of byte range 0..255", 10
 chrmsg_len     equ $ - chrmsg
-strtypemsg:    db "secd: argument is not a string", 10
+strtypemsg:    db "argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
-notintmsg:     db "secd: not a decimal integer", 10
+notintmsg:     db "not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
-divzeromsg:    db "secd: division by zero", 10
+divzeromsg:    db "division by zero", 10
 divzeromsg_len equ $ - divzeromsg
 openmsg:       db "secd: cannot open logos_program.bin", 10
 openmsg_len    equ $ - openmsg
-divovfmsg:     db "secd: div overflow (LONG_MIN / -1)", 10
+divovfmsg:     db "overflow (LONG_MIN / -1)", 10
 divovfmsg_len  equ $ - divovfmsg
-rfmsg:         db "secd: read_file: read failed", 10
+rfmsg:         db "read failed", 10
 rfmsg_len      equ $ - rfmsg
-inttypemsg:    db "secd: argument is not an integer", 10
+inttypemsg:    db "argument is not an integer", 10
 inttypemsg_len equ $ - inttypemsg
-pollmsg:       db "secd: too many poll fds", 10
+pollmsg:       db "too many fds", 10
 pollmsg_len    equ $ - pollmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
@@ -4128,7 +4127,7 @@ str_poll:      db "poll", 0
 str_dup2:      db "dup2", 0
 str_execv:     db "execv", 0
 drm_card:      db "/dev/dri/card0", 0
-drm_pfx:           db "secd: drm "
+drm_pfx:           db "secd: drm_mode: "
 drm_pfx_len        equ $ - drm_pfx
 drm_failed:        db " failed: "
 drm_failed_len     equ $ - drm_failed
@@ -4146,9 +4145,9 @@ dn_mmap:           db "mmap"
 dn_mmap_len        equ $ - dn_mmap
 dn_setcrtc:        db "SETCRTC"
 dn_setcrtc_len     equ $ - dn_setcrtc
-drm_noconnmsg:     db "secd: drm no connected display", 10
+drm_noconnmsg:     db "secd: drm_mode: no connected display", 10
 drm_noconnmsg_len  equ $ - drm_noconnmsg
-drm_nomodemsg:     db "secd: present before drm_mode", 10
+drm_nomodemsg:     db "secd: present: called before drm_mode", 10
 drm_nomodemsg_len  equ $ - drm_nomodemsg
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
@@ -4159,6 +4158,78 @@ heap_hi:       dq 0              ; end of the high semispace
 rfopenmsg:     db "secd: read_file: cannot open '"
 rfopenmsg_len  equ $ - rfopenmsg
 rfopenend:     db "'", 10
+bi_cur:        dq -1             ; id of the builtin last dispatched (see .bidie)
+BI_COUNT       equ 67
+bi_nametab:                      ; id -> NUL-terminated name, derived from .pv_builtin's chain
+               dq str_print
+               dq str_concat
+               dq str_strhead
+               dq str_strtail
+               dq str_streq
+               dq str_readfile
+               dq str_writefile
+               dq str_copyself
+               dq str_chr
+               dq str_ord
+               dq str_writeexec
+               dq str_write
+               dq str_open
+               dq str_close
+               dq str_mount
+               dq str_fork
+               dq str_execve
+               dq str_waitpid
+               dq str_exit
+               dq str_strtoint
+               dq str_inttostr
+               dq str_add
+               dq str_sub
+               dq str_mul
+               dq str_div
+               dq str_mod
+               dq str_lt
+               dq str_inteq
+               dq str_reap
+               dq str_sleep
+               dq str_error
+               dq str_pipe
+               dq str_read
+               dq str_strlen
+               dq str_drmmode
+               dq str_present
+               dq str_clockgettime
+               dq str_socket
+               dq str_bind
+               dq str_listen
+               dq str_accept
+               dq str_connect
+               dq str_send
+               dq str_recv
+               dq str_unlink
+               dq str_random
+               dq str_mkdir
+               dq str_rmdir
+               dq str_rename
+               dq str_stat
+               dq str_chmod
+               dq str_lseek
+               dq str_kill
+               dq str_sigprocmask
+               dq str_signalfd
+               dq str_getpid
+               dq str_reapnb
+               dq str_poll
+               dq str_dup2
+               dq str_execv
+               dq str_band
+               dq str_bor
+               dq str_bxor
+               dq str_bshl
+               dq str_bshr
+               dq str_bnot
+               dq str_strat
+secdpfx:       db "secd: "
+colonsp:       db ": "
 hm_key:        db "LOGOS_HEAP_MB="
 hm_keylen      equ $ - hm_key
 hm_badmsg:     db "secd: LOGOS_HEAP_MB: not a valid size", 10

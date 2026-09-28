@@ -255,8 +255,8 @@ glyph GVMARK = la s. s(la a. la b. la c. la d. d)
 glyph GVSTEPS =
   CONS(GVSTEP("VM: unbound variable halts loudly")("glyph MAIN = undefined_glyph_xyz\n")("1")("secd: unbound variable"))(
   CONS(GVSTEP("VM: apply a non-function halts loudly")("glyph MAIN = \"hello\"(\"world\")\n")("1")("secd: attempt to apply a non-function"))(
-  CONS(GVSTEP("VM: chr out of range halts loudly")("glyph MAIN = chr(\"300\")\n")("1")("secd: chr out of range"))(
-  CONS(GVSTEP("VM: argument is not a string halts loudly")("glyph MAIN = str_len(5)\n")("1")("secd: argument is not a string"))(
+  CONS(GVSTEP("VM: chr out of range halts loudly")("glyph MAIN = chr(\"300\")\n")("1")("secd: chr: value out of byte range 0..255"))(
+  CONS(GVSTEP("VM: argument is not a string halts loudly")("glyph MAIN = str_len(5)\n")("1")("secd: str_len: argument is not a string"))(
   NIL))))
 
 glyph GVRUN1 = la s.

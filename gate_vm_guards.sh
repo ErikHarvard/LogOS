@@ -36,14 +36,15 @@ run_la() {
     fi
 }
 LMIN='glyph LMIN = sub(sub(0)(9223372036854775807))(1)'
-run_la "int builtin on STR"   'glyph MAIN = print(int_to_str(add("3")(4)))'               1 "secd: argument is not an integer"
-run_la "int_to_str on STR"    'glyph MAIN = print(int_to_str("x"))'                       1 "secd: argument is not an integer"
-run_la "error(5)"             'glyph MAIN = print(error(5))'                              1 "secd: argument is not a string"
+run_la "int builtin on STR"   'glyph MAIN = print(int_to_str(add("3")(4)))'               1 "secd: add: argument is not an integer"
+run_la "int_to_str on STR"    'glyph MAIN = print(int_to_str("x"))'                       1 "secd: int_to_str: argument is not an integer"
+run_la "error(5)"             'glyph MAIN = print(error(5))'                              1 "secd: error: argument is not a string"
 run_la "read_file directory"  'glyph MAIN = print(str_len(read_file("/")))'               1 "secd: read_file: read failed"
-run_la "LONG_MIN / -1"        "$LMIN"$'\n''glyph MAIN = print(int_to_str(div(LMIN)(sub(0)(1))))' 1 "secd: div overflow (LONG_MIN / -1)"
+run_la "LONG_MIN / -1"        "$LMIN"$'\n''glyph MAIN = print(int_to_str(div(LMIN)(sub(0)(1))))' 1 "secd: div: overflow (LONG_MIN / -1)"
 run_la "LONG_MIN mod -1"      "$LMIN"$'\n''glyph MAIN = print(int_to_str(mod(LMIN)(sub(0)(1))))' 0 "" "0"
-run_la "div by zero"          'glyph MAIN = print(int_to_str(div(1)(0)))'                 1 "secd: division by zero"
+run_la "div by zero"          'glyph MAIN = print(int_to_str(div(1)(0)))'                 1 "secd: div: division by zero"
 run_la "read_file missing file" 'glyph MAIN = print(concat("[")(concat(read_file("no_such_file"))("]")))' 1 "secd: read_file: cannot open 'no_such_file'"
+run_la "mod by zero"          'glyph MAIN = print(int_to_str(mod(1)(0)))'                 1 "secd: mod: division by zero"
 run_la "control: 6*7"         'glyph MAIN = print(int_to_str(mul(6)(7)))'                 0 "" "42"
 
 # missing program stream

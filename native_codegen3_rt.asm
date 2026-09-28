@@ -289,7 +289,7 @@ rt_apply:
     syscall
 
 ; ── slot 4: rt_print(rax=value) -> writes value + newline; preserves rax ──
-rt_print:
+rt_print_body:
     push    rax
     mov     rcx, [rax]
     test    rcx, rcx            ; tag 0 = STR
@@ -349,14 +349,14 @@ rt_print:
 .badprint:
     mov     rax, 1
     mov     rdi, 2              ; stderr
-    mov     rsi, printbad
-    mov     rdx, printbadlen
+    mov     rsi, printbad_u
+    mov     rdx, printbad_ulen
     syscall
     pop     rax                 ; FIX #4: return the arg unchanged; exit code stays 0 (match host)
     ret
 
 ; ── slot 5: rt_add(rsi=A, rax=B) -> boxed INT A+B ──
-rt_add:
+rt_add_body:
     call    chk_int2            ; FIX #3: both operands must be boxed INT (tag 4), else loud halt rc1
     mov     rcx, [rsi+8]
     add     rcx, [rax+8]
@@ -364,7 +364,7 @@ rt_add:
     jmp     rt_box_int
 
 ; ── slot 6: rt_sub -> A-B ──
-rt_sub:
+rt_sub_body:
     call    chk_int2            ; FIX #3
     mov     rcx, [rsi+8]
     sub     rcx, [rax+8]
@@ -372,7 +372,7 @@ rt_sub:
     jmp     rt_box_int
 
 ; ── slot 7: rt_mul -> A*B ──
-rt_mul:
+rt_mul_body:
     call    chk_int2            ; FIX #3
     mov     rcx, [rsi+8]
     imul    rcx, [rax+8]
@@ -380,7 +380,7 @@ rt_mul:
     jmp     rt_box_int
 
 ; ── slot 8: rt_div -> A/B (signed) ──
-rt_div:
+rt_div_body:
     call    chk_int2            ; FIX #3
     mov     rcx, [rax+8]        ; B (divisor)
     mov     rax, [rsi+8]        ; A (dividend)
@@ -397,7 +397,7 @@ rt_div:
     jmp     rt_box_int
 
 ; ── slot 9: rt_mod -> A%B (signed) ──
-rt_mod:
+rt_mod_body:
     call    chk_int2            ; FIX #3
     mov     rcx, [rax+8]        ; B
     mov     rax, [rsi+8]        ; A
@@ -417,7 +417,7 @@ rt_mod:
     jmp     rt_box_int
 
 ; ── slot 10: rt_int_eq(A,B) -> TRUE/FALSE value ──
-rt_int_eq:
+rt_int_eq_body:
     call    chk_int2            ; FIX #3
     mov     rcx, [rsi+8]
     cmp     rcx, [rax+8]
@@ -429,7 +429,7 @@ rt_int_eq:
     ret
 
 ; ── slot 11: rt_lt(A,B) -> TRUE if A<B ──
-rt_lt:
+rt_lt_body:
     call    chk_int2            ; FIX #3
     mov     rcx, [rsi+8]
     cmp     rcx, [rax+8]
@@ -441,7 +441,7 @@ rt_lt:
     ret
 
 ; ── slot 12: rt_str_eq(A,B) -> TRUE/FALSE value ──
-rt_str_eq:
+rt_str_eq_body:
     cmp     qword [rsi], 0      ; freeze-day #2: arg A must be STR (tag 0), else loud halt
     jne     rt_not_string
     cmp     qword [rax], 0      ; arg B must be STR
@@ -473,7 +473,7 @@ rt_str_eq:
 ;   blob via alloc_blob (size-class bucket) + desc/box via alloc24. Sources A/B
 ;   kept live in r14/r13 as GC roots across allocs (non-moving, so their bytes
 ;   stay put); lens re-read from the boxes after any GC.
-rt_concat:
+rt_concat_body:
     cmp     qword [rsi], 0      ; freeze-day #2: arg A must be STR (tag 0), else loud halt
     jne     rt_not_string
     cmp     qword [rax], 0      ; arg B must be STR
@@ -535,7 +535,7 @@ rt_concat:
     ret
 
 ; ── slot 14: rt_str_head(rax=STR) -> boxed STR (first byte or empty) ──
-rt_str_head:
+rt_str_head_body:
     cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     mov     rcx, [rax+8]        ; desc
@@ -551,7 +551,7 @@ rt_str_head:
     jmp     rt_make_str
 
 ; ── slot 15: rt_str_tail(rax=STR) -> boxed STR (rest or empty) ──
-rt_str_tail:
+rt_str_tail_body:
     cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     mov     rcx, [rax+8]
@@ -568,7 +568,7 @@ rt_str_tail:
     jmp     rt_make_str
 
 ; ── slot 16: rt_int_to_str(rax=INT) -> boxed STR decimal ──
-rt_int_to_str:
+rt_int_to_str_body:
     cmp     qword [rax], 4      ; FIX #3: arg must be boxed INT (tag 4), else loud halt rc1
     jne     rt_not_int
     mov     rax, [rax+8]
@@ -608,7 +608,7 @@ rt_int_to_str_raw:
     jmp     rt_make_str
 
 ; ── slot 17: rt_str_to_int(rax=STR) -> boxed INT (decimal, optional '-') ──
-rt_str_to_int:
+rt_str_to_int_body:
     cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     mov     rcx, [rax+8]        ; desc
@@ -1129,7 +1129,7 @@ rt_stack_overflow:
 ;   via rt_int_to_str_raw — faithful to the host, which returns strings).
 ;
 ; ── str_len(STR) -> decimal STR of byte length ──
-rt_str_len:
+rt_str_len_body:
     cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     mov     rcx, [rax+8]        ; descriptor body
@@ -1137,7 +1137,7 @@ rt_str_len:
     jmp     rt_int_to_str_raw
 ;
 ; ── ord(STR) -> decimal STR of the first byte (empty -> "0") ──
-rt_ord:
+rt_ord_body:
     cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     mov     rcx, [rax+8]        ; descriptor body
@@ -1153,7 +1153,7 @@ rt_ord:
 ; ── chr(decimal STR) -> one-byte STR ──
 ;   minimal unsigned base-10 atoi (chr codes are 0..255, no sign), then make a
 ;   1-byte string from the static numbuf (make_str copies it out immediately).
-rt_chr:
+rt_chr_body:
     cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     mov     rcx, [rax+8]        ; descriptor body
@@ -1185,7 +1185,7 @@ rt_chr:
 ;   f_τ with both other engines (msg bytes + newline to fd 2, exit code 1).
 ;   Appended after rt_chr / before the data area, so the 3c.1 routine addresses
 ;   and every RT_* entry stay UNCHANGED; only the data globals shift.
-rt_error:
+rt_error_body:
     mov     rcx, [rax+8]        ; descriptor body
     mov     rsi, [rcx+8]        ; msg bytes
     mov     rdx, [rcx]          ; msg length
@@ -1214,7 +1214,7 @@ rt_error:
 ;   so an existing non-exec file still becomes 0755 (the host does an explicit
 ;   chmod). Appended after rt_error / before the data area: all RT_* + 3c.1/3c.2
 ;   routine addresses stay UNCHANGED; only the data globals shift.
-rt_write_exec:
+rt_write_exec_body:
     cmp     qword [rax], 0      ; freeze-day #2: content arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     cmp     qword [rsi], 0      ; path arg must be STR
@@ -1273,16 +1273,16 @@ rt_write_exec:
 .toolong:
     mov     rax, 1
     mov     rdi, 2
-    mov     rsi, welong
-    mov     rdx, welonglen
+    mov     rsi, welong_u
+    mov     rdx, welong_ulen
     syscall
     jmp     .die
 .openfail:
 .writefail:
     mov     rax, 1
     mov     rdi, 2
-    mov     rsi, wefail
-    mov     rdx, wefaillen
+    mov     rsi, wefail_u
+    mov     rdx, wefail_ulen
     syscall
 .die:
     mov     rax, 60
@@ -1295,7 +1295,7 @@ rt_write_exec:
 ;   data file, matching the host's fopen(path,"wb"). IS_BUILTIN2 + RT_BIN now route
 ;   "write_file" here (its OWN RT_BIN case, BEFORE the rt_write_exec fall-through, so
 ;   it is never silently chmod'd executable). Local labels are scoped to this routine.
-rt_write_file:
+rt_write_file_body:
     cmp     qword [rax], 0      ; content arg must be STR (tag 0)
     jne     rt_not_string
     cmp     qword [rsi], 0      ; path arg must be STR
@@ -1350,16 +1350,16 @@ rt_write_file:
 .toolong:
     mov     rax, 1
     mov     rdi, 2
-    mov     rsi, wflong
-    mov     rdx, wflonglen
+    mov     rsi, wflong_u
+    mov     rdx, wflong_ulen
     syscall
     jmp     .die
 .openfail:
 .writefail:
     mov     rax, 1
     mov     rdi, 2
-    mov     rsi, wffail
-    mov     rdx, wffaillen
+    mov     rsi, wffail_u
+    mov     rdx, wffail_ulen
     syscall
 .die:
     mov     rax, 60
@@ -1373,7 +1373,7 @@ rt_write_file:
 ;   r12=fd, r13=size(=len), r14=blob body (GC root across the read). Loud halt on
 ;   open failure, matching the host (the SECD VM returns "" instead — we follow the
 ;   host so native==host on the c3 gate). The capstone kernel's SOURCE needs this.
-rt_read_file:
+rt_read_file_body:
     cmp     qword [rax], 0      ; freeze-day #2: path arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     mov     rcx, [rax+8]        ; path descriptor body
@@ -1446,8 +1446,8 @@ rt_read_file:
 .toolong:
     mov     rax, 1
     mov     rdi, 2
-    mov     rsi, welong         ; reuse the "path too long" message
-    mov     rdx, welonglen
+    mov     rsi, welong_u         ; reuse the "path too long" message
+    mov     rdx, welong_ulen
     syscall
     jmp     .die
 .openfail:
@@ -1476,7 +1476,7 @@ rt_read_file:
 ;   so allocation resumes there afterwards. Returns the target path as a STR via
 ;   rt_make_str. The argument (in rax) is ignored (the caller evaluated it for
 ;   ordering). This is what makes a compiled kernel.la self-replicate.
-rt_copy_self:
+rt_copy_self_body:
     mov     rax, 2              ; open /proc/self/exe RDONLY
     mov     rdi, proc_self_exe
     xor     rsi, rsi
@@ -1567,14 +1567,13 @@ rt_copy_self:
 ;   string" to stderr) like the C host and the SECD VM, rather than crashing. The
 ;   cardinal invariant: native exit code matches the host's clean rc 1, not rc 139.
 rt_not_string:
-    mov     rax, 1
-    mov     rdi, 2              ; stderr
-    mov     rsi, argnstr
-    mov     rdx, argnstrlen
-    syscall
-    mov     rax, 60
-    mov     rdi, 1              ; exit 1 (match the host)
-    syscall
+    ; UNIFORM WORDING: "native: <builtin>: <message>" via rt_bidie (appended at
+    ; EOF). Same 39-byte footprint as before (20 bytes + 19 nop), so no later
+    ; runtime address moves.
+    mov     rsi, argnstr_u
+    mov     rdx, argnstr_ulen
+    jmp     near rt_bidie
+    times 19 nop
 
 ; ── freeze-day #3: chr argument out of byte range ──
 ;   chr(decimal STR) must denote a byte 0..255. rt_chr's atoi stored only the low
@@ -1585,8 +1584,8 @@ rt_not_string:
 rt_chr_range:
     mov     rax, 1
     mov     rdi, 2              ; stderr
-    mov     rsi, chrrange
-    mov     rdx, chrrangelen
+    mov     rsi, chrrange_u
+    mov     rdx, chrrange_ulen
     syscall
     mov     rax, 60
     mov     rdi, 1              ; exit 1 (match the host)
@@ -1625,8 +1624,8 @@ rt_div_zero:
 rt_mod_zero:
     mov     rax, 1
     mov     rdi, 2              ; stderr
-    mov     rsi, modzero
-    mov     rdx, modzerolen
+    mov     rsi, modzero_u
+    mov     rdx, modzero_ulen
     syscall
     mov     rax, 60
     mov     rdi, 1              ; exit 1 (match the host)
@@ -1637,14 +1636,13 @@ rt_mod_zero:
 ;   the value tag, so a STR/closure arg was read as a raw int and printed as a garbage
 ;   pointer (exit 0). The host halts loudly (exit 1); these guards match that behavior.
 rt_not_int:
-    mov     rax, 1
-    mov     rdi, 2              ; stderr
-    mov     rsi, argnint
-    mov     rdx, argnintlen
-    syscall
-    mov     rax, 60
-    mov     rdi, 1              ; exit 1 (match the host)
-    syscall
+    ; UNIFORM WORDING: "native: <builtin>: <message>" via rt_bidie (appended at
+    ; EOF). Same 39-byte footprint as before (20 bytes + 19 nop), so no later
+    ; runtime address moves.
+    mov     rsi, argnint_u
+    mov     rdx, argnint_ulen
+    jmp     near rt_bidie
+    times 19 nop
 ; chk_int2: both operands (rsi=A, rax=B) must be boxed INT (tag 4); else rt_not_int.
 ;   Reads only [rsi]/[rax] and flags, so the caller's rsi/rax survive. Used by the binops.
 chk_int2:
@@ -1661,28 +1659,28 @@ chk_int2:
 ; explicitly -- x86 masks cl to 6 bits, so `shl rax, cl` with count 64 would
 ; otherwise leave rax UNCHANGED, and ARM would give 0.  The check makes all
 ; five engines agree instead of inheriting the host CPU's accident.
-rt_band:
+rt_band_body:
     call    chk_int2
     mov     rcx, [rsi+8]
     and     rcx, [rax+8]
     mov     rax, rcx
     jmp     rt_box_int
 
-rt_bor:
+rt_bor_body:
     call    chk_int2
     mov     rcx, [rsi+8]
     or      rcx, [rax+8]
     mov     rax, rcx
     jmp     rt_box_int
 
-rt_bxor:
+rt_bxor_body:
     call    chk_int2
     mov     rcx, [rsi+8]
     xor     rcx, [rax+8]
     mov     rax, rcx
     jmp     rt_box_int
 
-rt_bshl:
+rt_bshl_body:
     call    chk_int2
     mov     rcx, [rax+8]        ; count (B) -- read BEFORE rax is overwritten
     mov     rax, [rsi+8]        ; value (A)
@@ -1694,7 +1692,7 @@ rt_bshl:
     xor     eax, eax
     jmp     rt_box_int
 
-rt_bshr:
+rt_bshr_body:
     call    chk_int2
     mov     rcx, [rax+8]
     mov     rax, [rsi+8]
@@ -1706,7 +1704,7 @@ rt_bshr:
     xor     eax, eax
     jmp     rt_box_int
 
-rt_bnot:
+rt_bnot_body:
     cmp     qword [rax], 4      ; no chk_int1 exists; inline the tag check
     jne     rt_not_int
     mov     rax, [rax+8]
@@ -1792,7 +1790,7 @@ cs_target:     db "new_logos_native.bin", 0  ; 3e copy_self target (native linea
 ;   physical addresses; the metal path is verified in QEMU, not host==native).
 ;   Appended AFTER the data area so only LITERAL_BASE shifts — no other fixed
 ;   runtime/data address moves. Arg is an INT (tag 4); anything else halts loud.
-rt_peek:
+rt_peek_body:
     cmp     qword [rax], 4      ; arg must be a boxed INT (an address), else loud halt
     jne     rt_not_int
     mov     rax, [rax+8]        ; the raw address integer
@@ -1810,7 +1808,7 @@ rt_peek:
 ;   (0..255) boxed, symmetric with peek so a poke;peek round-trip composes.
 ;   Native-only, like peek. Appended after rt_peek so only LITERAL_BASE shifts —
 ;   no other fixed runtime/data address moves.
-rt_poke:
+rt_poke_body:
     call    chk_int2            ; both args boxed INT (tag 4), else loud halt rc1
     mov     rcx, [rsi+8]        ; addr  (first arg)
     mov     rdx, [rax+8]        ; byte  (second arg)
@@ -2057,7 +2055,7 @@ METAL_FLAG: dq 0
 ;   the typing layer stays independent of the transport.
 ; rt_send(rsi=chan boxed INT, rax=msg boxed STR) -> returns msg. Copies the msg
 ;   string's bytes into kernel channel[chan].
-rt_send:
+rt_send_body:
     mov     rdi, [rsi+8]        ; chan int (arg A)
     mov     rcx, [rax+8]        ; msg descriptor (arg B)
     push    rax                 ; save boxed msg (return value)
@@ -2070,7 +2068,7 @@ rt_send:
     ret
 ; rt_recv(rax=chan boxed INT) -> boxed STR withdrawn from kernel channel[chan]
 ;   (empty string on -errno / empty channel).
-rt_recv:
+rt_recv_body:
     mov     rdi, [rax+8]        ; chan int
     mov     rsi, recv_buf       ; outbuf
     mov     edx, 256            ; maxlen
@@ -2103,7 +2101,7 @@ recv_buf: times 256 db 0
 ;  exactly as peek/poke do — and each returns a boxed INT so it composes.
 
 ; ── rt_inb(INT port) -> INT byte read from that I/O port ──
-rt_inb:
+rt_inb_body:
     cmp     qword [rax], 4      ; arg must be a boxed INT (the port number)
     jne     rt_not_int
     mov     rdx, [rax+8]        ; port -> DX (in uses DX for a variable port)
@@ -2113,7 +2111,7 @@ rt_inb:
 
 ; ── rt_inl(INT port) -> INT dword read from that I/O port ──
 ;   32-bit read for PCI config data (0xCFC) and other dword registers.
-rt_inl:
+rt_inl_body:
     cmp     qword [rax], 4
     jne     rt_not_int
     mov     rdx, [rax+8]        ; port -> DX
@@ -2122,7 +2120,7 @@ rt_inl:
 
 ; ── rt_outb(INT port)(INT byte) -> INT byte written ──
 ;   Binary builtin: rsi = port (arg A), rax = value (arg B), both boxed INT.
-rt_outb:
+rt_outb_body:
     call    chk_int2            ; both args boxed INT (tag 4), else loud halt rc1
     mov     rdx, [rsi+8]        ; port -> DX
     mov     rcx, [rax+8]        ; value
@@ -2133,7 +2131,7 @@ rt_outb:
 
 ; ── rt_outl(INT port)(INT dword) -> INT dword written ──
 ;   32-bit write for PCI config address (0xCF8) and other dword registers.
-rt_outl:
+rt_outl_body:
     call    chk_int2
     mov     rdx, [rsi+8]        ; port -> DX
     mov     rcx, [rax+8]        ; value
@@ -2145,7 +2143,7 @@ rt_outl:
 ; ── rt_inw(INT port) -> INT word read from that I/O port ──
 ;   16-bit read (HAL.4: the Bochs VBE dispi data port 0x1CF, and other word
 ;   registers legacy hardware exposes). Completes the port-I/O width set.
-rt_inw:
+rt_inw_body:
     cmp     qword [rax], 4
     jne     rt_not_int
     mov     rdx, [rax+8]        ; port -> DX
@@ -2157,7 +2155,7 @@ rt_inw:
 ;   16-bit write — the VBE dispi index/data ports (0x1CE/0x1CF) that a linear-
 ;   framebuffer mode-set needs; the register is 16-bit, so byte or dword writes
 ;   would not land it correctly. Binary builtin: rsi = port, rax = value.
-rt_outw:
+rt_outw_body:
     call    chk_int2
     mov     rdx, [rsi+8]        ; port -> DX
     mov     rcx, [rax+8]        ; value
@@ -2190,7 +2188,7 @@ chk_int3:
 ;   Writes raw identity-mapped/MMIO memory, never the heap — so no GC interplay.
 ;   Native-only, like peek/poke. Appended at EOF so every existing RT_* address
 ;   is unchanged; only LITERAL_BASE shifts.
-rt_fill:
+rt_fill_body:
     call    chk_int3            ; all three args boxed INT (tag 4), else halt rc1
     mov     r8,  [rdi+8]        ; dst   (arg1)
     mov     rcx, [rsi+8]        ; count (arg2), in dwords
@@ -2212,7 +2210,7 @@ rt_fill:
 ;   composes with any pitch/alignment; forward-only, so it is a true copy, not
 ;   an overlap-safe move — dst below src within one buffer would trail itself.
 ;   Returns the byte count copied, boxed.
-rt_memcpy:
+rt_memcpy_body:
     call    chk_int3            ; all three args boxed INT (tag 4), else halt rc1
     mov     r8,  [rdi+8]        ; dst (arg1)
     mov     r9,  [rsi+8]        ; src (arg2)
@@ -2356,3 +2354,230 @@ hm_badmsg:  db "native: LOGOS_HEAP_MB: not a valid size", 10
 hm_badlen   equ $ - hm_badmsg
 hm_mapmsg:  db "native: heap: mmap failed", 10
 hm_maplen   equ $ - hm_mapmsg
+
+; ── UNIFORM ERROR WORDING: "native: <builtin>: <message>", rc 1 ────────────────
+;   The ruling: one diagnostic shape on every engine (host / secd / native).
+;   Type errors are raised by SHARED routines (rt_not_string, rt_not_int via
+;   chk_int2/chk_int3) that cannot tell which builtin called them, so each
+;   builtin's public entry is now a stub here that records its name in CUR_BI
+;   and jumps to the unchanged body (renamed rt_X_body). Everything is appended:
+;   no existing runtime address moves except the stubbed entry points, which
+;   derive_consts re-derives into native_codegen3.la like any other RT_*.
+rt_bidie:                               ; rsi = bare message (ends \n), rdx = its length
+    push    rdx
+    push    rsi
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel bd_pfx]
+    mov     edx, 8
+    syscall
+    mov     rsi, [rel CUR_BI]
+    test    rsi, rsi
+    jz      .msg
+    xor     edx, edx
+.len:
+    cmp     byte [rsi + rdx], 0
+    je      .name
+    inc     rdx
+    jmp     .len
+.name:
+    mov     eax, 1
+    mov     edi, 2
+    syscall
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel bd_sep]
+    mov     edx, 2
+    syscall
+.msg:
+    pop     rsi
+    pop     rdx
+    mov     eax, 1
+    mov     edi, 2
+    syscall
+    mov     eax, 60
+    mov     edi, 1
+    syscall
+
+rt_print:
+    mov     qword [rel CUR_BI], bn_print
+    jmp     rt_print_body
+rt_add:
+    mov     qword [rel CUR_BI], bn_add
+    jmp     rt_add_body
+rt_sub:
+    mov     qword [rel CUR_BI], bn_sub
+    jmp     rt_sub_body
+rt_mul:
+    mov     qword [rel CUR_BI], bn_mul
+    jmp     rt_mul_body
+rt_div:
+    mov     qword [rel CUR_BI], bn_div
+    jmp     rt_div_body
+rt_mod:
+    mov     qword [rel CUR_BI], bn_mod
+    jmp     rt_mod_body
+rt_int_eq:
+    mov     qword [rel CUR_BI], bn_int_eq
+    jmp     rt_int_eq_body
+rt_lt:
+    mov     qword [rel CUR_BI], bn_lt
+    jmp     rt_lt_body
+rt_str_eq:
+    mov     qword [rel CUR_BI], bn_str_eq
+    jmp     rt_str_eq_body
+rt_concat:
+    mov     qword [rel CUR_BI], bn_concat
+    jmp     rt_concat_body
+rt_str_head:
+    mov     qword [rel CUR_BI], bn_str_head
+    jmp     rt_str_head_body
+rt_str_tail:
+    mov     qword [rel CUR_BI], bn_str_tail
+    jmp     rt_str_tail_body
+rt_int_to_str:
+    mov     qword [rel CUR_BI], bn_int_to_str
+    jmp     rt_int_to_str_body
+rt_str_to_int:
+    mov     qword [rel CUR_BI], bn_str_to_int
+    jmp     rt_str_to_int_body
+rt_chr:
+    mov     qword [rel CUR_BI], bn_chr
+    jmp     rt_chr_body
+rt_ord:
+    mov     qword [rel CUR_BI], bn_ord
+    jmp     rt_ord_body
+rt_str_len:
+    mov     qword [rel CUR_BI], bn_str_len
+    jmp     rt_str_len_body
+rt_error:
+    mov     qword [rel CUR_BI], bn_error
+    jmp     rt_error_body
+rt_write_exec:
+    mov     qword [rel CUR_BI], bn_write_exec
+    jmp     rt_write_exec_body
+rt_write_file:
+    mov     qword [rel CUR_BI], bn_write_file
+    jmp     rt_write_file_body
+rt_read_file:
+    mov     qword [rel CUR_BI], bn_read_file
+    jmp     rt_read_file_body
+rt_copy_self:
+    mov     qword [rel CUR_BI], bn_copy_self
+    jmp     rt_copy_self_body
+rt_band:
+    mov     qword [rel CUR_BI], bn_band
+    jmp     rt_band_body
+rt_bor:
+    mov     qword [rel CUR_BI], bn_bor
+    jmp     rt_bor_body
+rt_bxor:
+    mov     qword [rel CUR_BI], bn_bxor
+    jmp     rt_bxor_body
+rt_bshl:
+    mov     qword [rel CUR_BI], bn_bshl
+    jmp     rt_bshl_body
+rt_bshr:
+    mov     qword [rel CUR_BI], bn_bshr
+    jmp     rt_bshr_body
+rt_bnot:
+    mov     qword [rel CUR_BI], bn_bnot
+    jmp     rt_bnot_body
+rt_fill:
+    mov     qword [rel CUR_BI], bn_fill
+    jmp     rt_fill_body
+rt_memcpy:
+    mov     qword [rel CUR_BI], bn_memcpy
+    jmp     rt_memcpy_body
+rt_peek:
+    mov     qword [rel CUR_BI], bn_peek
+    jmp     rt_peek_body
+rt_poke:
+    mov     qword [rel CUR_BI], bn_poke
+    jmp     rt_poke_body
+rt_inb:
+    mov     qword [rel CUR_BI], bn_inb
+    jmp     rt_inb_body
+rt_inl:
+    mov     qword [rel CUR_BI], bn_inl
+    jmp     rt_inl_body
+rt_outb:
+    mov     qword [rel CUR_BI], bn_outb
+    jmp     rt_outb_body
+rt_outl:
+    mov     qword [rel CUR_BI], bn_outl
+    jmp     rt_outl_body
+rt_inw:
+    mov     qword [rel CUR_BI], bn_inw
+    jmp     rt_inw_body
+rt_outw:
+    mov     qword [rel CUR_BI], bn_outw
+    jmp     rt_outw_body
+rt_send:
+    mov     qword [rel CUR_BI], bn_send
+    jmp     rt_send_body
+rt_recv:
+    mov     qword [rel CUR_BI], bn_recv
+    jmp     rt_recv_body
+
+CUR_BI:       dq 0                      ; name of the builtin last entered (0 = none)
+bd_pfx:       db "native: "
+bd_sep:       db ": "
+argnstr_u:    db "argument is not a string", 10
+argnstr_ulen  equ $ - argnstr_u
+argnint_u:    db "argument is not an integer", 10
+argnint_ulen  equ $ - argnint_u
+chrrange_u:   db "native: chr: value out of byte range 0..255", 10
+chrrange_ulen equ $ - chrrange_u
+modzero_u:    db "native: mod: division by zero", 10
+modzero_ulen  equ $ - modzero_u
+printbad_u:   db "native: print: argument is not a string or integer", 10
+printbad_ulen equ $ - printbad_u
+welong_u:     db "native: write_exec: path too long", 10
+welong_ulen   equ $ - welong_u
+wflong_u:     db "native: write_file: path too long", 10
+wflong_ulen   equ $ - wflong_u
+wefail_u:     db "native: write_exec: write failed", 10
+wefail_ulen   equ $ - wefail_u
+wffail_u:     db "native: write_file: write failed", 10
+wffail_ulen   equ $ - wffail_u
+bn_print:       db "print", 0
+bn_add:         db "add", 0
+bn_sub:         db "sub", 0
+bn_mul:         db "mul", 0
+bn_div:         db "div", 0
+bn_mod:         db "mod", 0
+bn_int_eq:      db "int_eq", 0
+bn_lt:          db "lt", 0
+bn_str_eq:      db "str_eq", 0
+bn_concat:      db "concat", 0
+bn_str_head:    db "str_head", 0
+bn_str_tail:    db "str_tail", 0
+bn_int_to_str:  db "int_to_str", 0
+bn_str_to_int:  db "str_to_int", 0
+bn_chr:         db "chr", 0
+bn_ord:         db "ord", 0
+bn_str_len:     db "str_len", 0
+bn_error:       db "error", 0
+bn_write_exec:  db "write_exec", 0
+bn_write_file:  db "write_file", 0
+bn_read_file:   db "read_file", 0
+bn_copy_self:   db "copy_self", 0
+bn_band:        db "band", 0
+bn_bor:         db "bor", 0
+bn_bxor:        db "bxor", 0
+bn_bshl:        db "bshl", 0
+bn_bshr:        db "bshr", 0
+bn_bnot:        db "bnot", 0
+bn_fill:        db "fill", 0
+bn_memcpy:      db "memcpy", 0
+bn_peek:        db "peek", 0
+bn_poke:        db "poke", 0
+bn_inb:         db "inb", 0
+bn_inl:         db "inl", 0
+bn_outb:        db "outb", 0
+bn_outl:        db "outl", 0
+bn_inw:         db "inw", 0
+bn_outw:        db "outw", 0
+bn_send:        db "send", 0
+bn_recv:        db "recv", 0

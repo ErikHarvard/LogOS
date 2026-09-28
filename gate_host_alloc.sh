@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gate_host_alloc.sh — the C host must halt loudly ("out of memory", rc 1) when
+# gate_host_alloc.sh — the C host must halt loudly ("host: out of memory", rc 1) when
 # an allocation fails, never dereference a NULL from malloc/strdup (SIGSEGV).
 #
 # WHAT IT GUARDS. tiny_host.c had four unchecked malloc sites and ten unchecked
@@ -57,10 +57,10 @@ check() {   # $1 label, then the command (run in $T)
     label=$1; shift
     rc=0; err=$( cd "$T" && "$@" 2>&1 >/dev/null ) || rc=$?
     rm -f "$T"/new_logos_gen*
-    if [ "$rc" = 1 ] && [ "$err" = "out of memory" ]; then
-        echo "PASS  host alloc gate ($label): 'out of memory', rc 1"
+    if [ "$rc" = 1 ] && [ "$err" = "host: out of memory" ]; then
+        echo "PASS  host alloc gate ($label): 'host: out of memory', rc 1"
     else
-        echo "FAIL  host alloc gate ($label): rc=$rc stderr='$err' (want rc 1 + 'out of memory'; rc 139 = NULL dereference regression)"; ok=0
+        echo "FAIL  host alloc gate ($label): rc=$rc stderr='$err' (want rc 1 + 'host: out of memory'; rc 139 = NULL dereference regression)"; ok=0
     fi
 }
 check "strdup always fails"      env LD_PRELOAD=./failstrdup.so ./tiny_host kernel.la

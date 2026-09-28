@@ -600,8 +600,8 @@ runnable and checked by `build.sh`.
     silent `b_τ ≡ f_τ` divergence: the C host's `strtol` parsed a lenient prefix
     (`str_to_int("12x")` → `12`, `"abc"` → `0`) while the VM's `desc_atoi` ran
     *every* byte through `(c-'0')` and produced a different wrong number
-    (`"12x"` → `1923`). Now the host halts with `str_to_int: not a decimal
-    integer` and the VM with `secd: not a decimal integer`; `build.sh` checks both
+    (`"12x"` → `1923`). Now the host halts with `host: str_to_int: not a decimal
+    integer` and the VM with `secd: str_to_int: not a decimal integer`; `build.sh` checks both
     engines reject the same malformed inputs and accept `42`/`-5`/`0`. (Integer
     literals always desugar to clean digit strings, so this only ever fires on an
     explicit malformed `str_to_int` call. `desc_atoi` itself stays lenient — it
@@ -645,14 +645,14 @@ the substrate primitive an **unforgeable capability nonce** needs: `logoscap.la`
 "no randomness source yet" gap). Integers cross
 the LA boundary as decimal strings. Each path/fstype argument is copied into a fixed 4 KiB
 buffer (`pathbuf`/`fsbuf`); the copy is **bounds-checked** — a path ≥ 4096 bytes
-halts loudly with `secd: path too long` rather than overrunning the buffer into
+halts loudly with `secd: <builtin>: path too long` rather than overrunning the buffer into
 `fsbuf` and the GC worklist.
 
 It lowers a **Tier-0 filesystem layer** (VM-only) over the same conventions —
 paths as binary-safe strings (copied into `pathbuf`/`fsbuf`, bounds-checked like
 the rest), integer args as decimal strings, every call returning `0`/the result
 value or `-errno` as a decimal string, and a non-string argument halting loudly
-with `secd: argument is not a string`: `mkdir(path)(mode)` (syscall 83),
+with `secd: <builtin>: argument is not a string`: `mkdir(path)(mode)` (syscall 83),
 `rmdir(path)` (84), `rename(old)(new)` (82, old in `pathbuf`, new in `fsbuf` like
 `mount`'s two paths), `chmod(path)(mode)` (90), `lseek(fd)(offset)` (8, whence
 fixed to `SEEK_SET` — the common case; returns the new offset), and
@@ -714,7 +714,7 @@ also surfaces — the loop reads it and sees EOF), the **empty string** on a
 timeout with none ready, or `-errno` on error. The pollfd array is built in
 `pathbuf` (8 bytes each), **capped at 512 fds** — more halts loudly with `secd:
 too many poll fds` rather than overrunning the buffer; a non-string `fds`/`timeout`
-argument halts loudly with `secd: argument is not a string`, like the other
+argument halts loudly with `secd: <builtin>: argument is not a string`, like the other
 guarded builtins. `build.sh` exercises it on the native VM with two signalfds:
 an idle poll times out to `""`, then after raising SIGUSR1, polling BOTH fds
 returns *only* the ready one (multiplex + selectivity), plus the non-string
@@ -1767,6 +1767,17 @@ Practically:
   live, so the GC cannot shrink it) — it now halts cleanly at the guard instead
   of corrupting.
 
+**One diagnostic format on every engine.** Every builtin-attributable error
+is `<engine>: <builtin>: <message>` with exit 1, where `<engine>` is `host`
+(`tiny_host.c`), `secd` (the VM) or `native` (`native_codegen3`); engine-level
+errors (heap exhausted, stack overflow, unbound variable, malformed program,
+lex/parse errors, out of memory) are `<engine>: <message>`. The VM names the
+builtin from `bi_cur` (set at `.apply_bi`/`.apply_pa`) through one shared tail
+`.bidie`; the native runtime records it in `CUR_BI` from per-builtin entry stubs
+and prints through `rt_bidie`. The text of an `error(msg)` call stays the
+program's own. `gate_error_format.sh` checks the same three faults on all three
+engines for an exact match.
+
 **Loud failure on bad input (June 2026 audit).** Beyond the GC / stack / path
 guards above, the native VM and the C host were driven to halt *loudly* — a
 diagnostic on stderr and a nonzero exit — on every malformed-input path, rather
@@ -1783,9 +1794,9 @@ emits:
 - `secd: malformed program` — the control pointer `rbx`, or a `skipbody` scan,
   ran past the mapped program (a truncated or unbalanced body); it used to walk
   the zero-fill tail into unmapped memory and SIGSEGV;
-- `secd: chr out of range` — a `chr` argument outside `0..255`, matching the C
+- `secd: chr: value out of byte range 0..255` — a `chr` argument outside `0..255`, matching the C
   host's loud reject instead of silently truncating mod 256.
-- `secd: argument is not a string` — a string builtin given a non-string
+- `secd: <builtin>: argument is not a string` — a string builtin given a non-string
   argument. Every string builtin reads its argument as a descriptor `[len][ptr]`;
   since native integers, an int literal `n` desugars to `str_to_int("n")`, so e.g.
   `str_len(5)` would pass an `INT` value whose payload is the integer itself, not
@@ -1793,7 +1804,7 @@ emits:
   the value tag (`STR` = 0) at the top of every string builtin —
   `chr`/`ord`/`str_head`/`str_tail`/`str_len`/`str_to_int`/`read_file` and both
   positions of the curried `concat`/`str_eq`/`write_file`/`write_exec` — and halts
-  loudly, matching the C host's `<builtin>: argument is not a string`. The one
+  loudly, matching the C host's `host: <builtin>: argument is not a string`. The one
   exception is `print`, which **coerces** an `INT` to its decimal and prints it
   (so `print(5)` → `5`), exactly as the C host's `print` does — preserving
   `b_τ ≡ f_τ` rather than rejecting. (Correct use of the rest still wraps an int
@@ -1805,17 +1816,17 @@ emits:
   derefed its payload (the integer itself) as a `[len][ptr]` descriptor and
   SIGSEGV'd. Each now checks the value tag at entry (`r8` for the last arg, the
   PA record's `[r11+8]` for the first arg of a curried builtin) and halts loudly
-  with `secd: argument is not a string`, closing the last unguarded
+  with `secd: <builtin>: argument is not a string`, closing the last unguarded
   non-string-deref path. (`fork`/`reap`/`pipe` take an ignored `"!"` and never
   deref it; `present`/the string builtins were already guarded.)
 
 The C host gained the matching guard for its own recursion: deeply-nested input
-halts with `error: expression nesting too deep (C stack guard)`, armed 512 KB
+halts with `host: expression nesting too deep (C stack guard)`, armed 512 KB
 below `RLIMIT_STACK` so it fires only where the C stack (parser / `eval` /
 `subst` / `occurs_free` / `copy_node`) would otherwise overflow — every
 legitimate program, including the deep self-hosting recursion, is untouched.
 These join the pre-existing `secd: heap exhausted` / `secd: stack overflow` /
-`secd: path too long` guards, so no engine now fails silently on bad input.
+`secd: <builtin>: path too long` guards, so no engine now fails silently on bad input.
 `build.sh` **regression-tests the VM guard set directly** (each feeds a broken
 program and asserts non-zero exit + the specific `secd:` diagnostic): `unbound
 variable`, `attempt to apply a non-function`, `chr out of range`, `too many poll
