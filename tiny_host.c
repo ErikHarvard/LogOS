@@ -76,7 +76,7 @@ static size_t    gc_next = 250000;        /* collect when the registry reaches t
 static uintptr_t gc_stack_base = 0;       /* highest stack address (set in main) */
 static uintptr_t stack_floor = 0;         /* recursion guard: bail below this address */
 
-/* The parser, eval, subst, occurs_free and copy_node recurse on expression
+/* The parser, eval, subst and occurs_free recurse on expression
  * depth; a pathologically nested program would otherwise overrun the C stack
  * and SIGSEGV. check_stack() compares the current frame against a floor set
  * 512 KB below the real RLIMIT_STACK, so deep nesting halts loudly instead of
@@ -162,18 +162,7 @@ static Node *mklam(const char *param, Node *bd) { Node *n = new_node(N_LAM); n->
 static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->a = f; n->b = x; return n; }
 static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL); n->s = strdup(nm); n->a = a; return n; }
 
-static Node *copy_node(Node *e) {
-    check_stack();
-    switch (e->t) {
-        case N_VAR: return mkvar(e->s);
-        case N_STR: return mkstrn(e->s, e->len);
-        case N_INT: return mkint(e->i);
-        case N_LAM: return mklam(e->s, copy_node(e->a));
-        case N_APP:     return mkapp(copy_node(e->a), copy_node(e->b));
-        case N_PARTIAL: return mkpartial(e->s, copy_node(e->a));
-    }
-    return NULL;
-}
+/* copy_node() removed 2026-09-18: subst() was its only caller, and subst now shares nodes. */
 
 /* -------------------------------------------------------------- lexer --- */
 
@@ -465,21 +454,31 @@ static char *gensym(void) {
 /* subst(e, var, val) = e[var := val], renaming bound names as needed so no
  * free variable of `val` is accidentally captured. */
 static Node *subst(Node *e, const char *var, Node *val) {
+    /* SHARE, DON'T COPY (2026-09-18). Nodes are never mutated after construction
+     * (the only later write anywhere is the GC mark bit), so an unchanged subtree
+     * and the substituted value can be SHARED rather than deep-copied. The old
+     * version copied the whole body on every beta-reduction and deep-copied the
+     * argument (strings included) at every occurrence, which made a parser that
+     * threads the remaining source through its continuations pay O(source) per
+     * token. Capture-avoiding renaming is unchanged. */
     check_stack();
     switch (e->t) {
-        case N_STR:     return copy_node(e);
-        case N_INT:     return copy_node(e);
-        case N_PARTIAL: return copy_node(e);
-        case N_VAR:     return strcmp(e->s, var) == 0 ? copy_node(val) : copy_node(e);
-        case N_APP:     return mkapp(subst(e->a, var, val), subst(e->b, var, val));
+        case N_STR:     return e;
+        case N_INT:     return e;
+        case N_PARTIAL: return e;
+        case N_VAR:     return strcmp(e->s, var) == 0 ? val : e;
+        case N_APP: {
+            Node *a2 = subst(e->a, var, val);
+            Node *b2 = subst(e->b, var, val);
+            return (a2 == e->a && b2 == e->b) ? e : mkapp(a2, b2);
+        }
         case N_LAM:
             if (strcmp(e->s, var) == 0)         /* var is shadowed here */
-                return copy_node(e);
+                return e;
+            if (!occurs_free(var, e->a))        /* nothing to substitute, so nothing to capture */
+                return e;
             if (occurs_free(e->s, val)) {        /* would capture — alpha-rename */
                 char *fresh   = gensym();
-                /* the fresh name must occur free in neither the body nor the
-                 * argument, else the rename would conflate it with an existing
-                 * free variable (a program may legitimately use `_gN` names). */
                 while (occurs_free(fresh, e->a) || occurs_free(fresh, val)) {
                     free(fresh);
                     fresh = gensym();
@@ -490,7 +489,10 @@ static Node *subst(Node *e, const char *var, Node *val) {
                 free(fresh);
                 return lam;
             }
-            return mklam(e->s, subst(e->a, var, val));
+            {
+                Node *b2 = subst(e->a, var, val);
+                return b2 == e->a ? e : mklam(e->s, b2);
+            }
     }
     return NULL;
 }
