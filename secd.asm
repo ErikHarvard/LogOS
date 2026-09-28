@@ -3416,6 +3416,12 @@ _start:
     jne     .inttype
     test    r9, r9
     je      .int_divzero
+    cmp     r9, -1               ; LONG_MIN / -1 overflows: idiv traps → halt loudly instead
+    jne     .div_go
+    mov     rax, 0x8000000000000000
+    cmp     rbp, rax
+    je      .int_divovf
+.div_go:
     mov     rax, rbp
     cqo
     idiv    r9
@@ -3427,6 +3433,14 @@ _start:
     jne     .inttype
     test    r9, r9
     je      .int_divzero
+    cmp     r9, -1               ; LONG_MIN mod -1 is 0 mathematically; idiv would trap,
+    jne     .mod_go              ;   so answer 0 directly (matches the C host)
+    mov     rax, 0x8000000000000000
+    cmp     rbp, rax
+    jne     .mod_go
+    xor     rax, rax
+    jmp     .push_int
+.mod_go:
     mov     rax, rbp
     cqo
     idiv    r9
@@ -3497,6 +3511,15 @@ _start:
     mov     rdi, 2
     mov     rsi, inttypemsg
     mov     rdx, inttypemsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+.int_divovf:                     ; LONG_MIN / -1 — idiv would trap (SIGFPE); halt LOUDLY
+    mov     rax, 1               ;   like the C host's "div: overflow (LONG_MIN / -1)"
+    mov     rdi, 2
+    mov     rsi, divovfmsg
+    mov     rdx, divovfmsg_len
     syscall
     mov     rax, 60
     mov     rdi, 1
@@ -3905,6 +3928,8 @@ strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "secd: not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+divovfmsg:     db "secd: div overflow (LONG_MIN / -1)", 10
+divovfmsg_len  equ $ - divovfmsg
 rfmsg:         db "secd: read_file: read failed", 10
 rfmsg_len      equ $ - rfmsg
 inttypemsg:    db "secd: argument is not an integer", 10
