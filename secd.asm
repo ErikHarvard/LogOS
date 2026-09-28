@@ -2476,6 +2476,8 @@ _start:
     ; input) fails loudly instead of degrading. Prints msg + newline to stderr
     ; and exits non-zero — the VM analogue of the host's `error` builtin, so the
     ; same Lingua Adamica source halts the same way on the native engine.
+    test    r8, r8               ; STR only: error(5) used to deref the INT payload (SIGSEGV)
+    jnz     .strtype
     mov     rsi, [r9+8]          ; msg bytes
     mov     rdx, [r9]            ; msg length
     mov     rax, 1
