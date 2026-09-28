@@ -1469,6 +1469,8 @@ _start:
     mov     rsi, r15
     mov     rdx, 0x4000000
     syscall
+    test    rax, rax             ; read failed (-errno, e.g. -EISDIR on a directory)?
+    js      .rf_fail             ;   was: added -errno to r15 → heap pointer moved BACKWARDS
     mov     rdx, rax             ; bytes read (preserved across close)
     add     r15, rax
     mov     rax, 3
@@ -1483,6 +1485,18 @@ _start:
     add     r12, 16
     add     r15, 16
     jmp     .loop
+.rf_fail:                        ; read(2) returned -errno: close the fd, halt LOUDLY
+    mov     rax, 3
+    mov     rdi, rbp
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rfmsg
+    mov     rdx, rfmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
 .rf_empty:
     mov     qword [r15], 0       ; STRDESC GC fwd header
     add     r15, 8
@@ -3891,6 +3905,8 @@ strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "secd: not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+rfmsg:         db "secd: read_file: read failed", 10
+rfmsg_len      equ $ - rfmsg
 inttypemsg:    db "secd: argument is not an integer", 10
 inttypemsg_len equ $ - inttypemsg
 pollmsg:       db "secd: too many poll fds", 10
