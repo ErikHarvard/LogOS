@@ -37,6 +37,32 @@ case_logosinit_forkfail() {
     fi
 }
 
-CASES="${*:-logosinit_forkfail}"
+# ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
+# Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
+# return -32, so no program can recognise a dead peer. Fixed: -32, execution
+# continues. Covers send (socket, MSG_NOSIGNAL) and write (pipe, SIG_IGN).
+case_sigpipe() {
+    cat > t_sigpipe.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph P = "gate_sigpipe.sock"
+glyph MAIN =
+  (la srv. SEQ(unlink(P))(SEQ(bind(srv)(P))(SEQ(listen(srv))(
+  (la cli. SEQ(connect(cli)(P))(
+  (la conn. SEQ(close(conn))(
+    SEQ(print(concat("send=")(send(cli)("hello"))))(
+    (la p. (la rfd. (la wfd. SEQ(close(rfd))(SEQ(print(concat("write=")(write(wfd)("x"))))(print("survived"))))(str_tail(str_tail(p))))(str_head(p)))(pipe("!"))))
+  )(accept(srv)))
+  )(socket("!"))))))(socket("!"))
+LAEOF
+    vmc t_sigpipe.la || { fail "sigpipe: codegen"; return; }
+    local out rc=0; out=$(timeout 20 ./logos_secd 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = "$(printf 'send=-32\nwrite=-32\nsurvived')" ]; then
+        pass "VM: send/write to a dead peer return -32 (EPIPE) and the program continues"
+    else
+        fail "VM: dead-peer send/write — rc=$rc out=[$(echo "$out" | tr '\n' '|')] (want -32/-32/survived, rc 0)"
+    fi
+}
+
+CASES="${*:-logosinit_forkfail sigpipe}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
