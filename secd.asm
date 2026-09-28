@@ -331,7 +331,12 @@ _start:
     mov     r14, dstack
     mov     r15, heap
     jmp     .loop
-.openfail:
+.openfail:                       ; logos_program.bin missing/unreadable — halt LOUDLY
+    mov     rax, 1               ;   (was: bare exit 1 with no diagnostic)
+    mov     rdi, 2
+    mov     rsi, openmsg
+    mov     rdx, openmsg_len
+    syscall
     mov     rax, 60
     mov     rdi, 1
     syscall
@@ -390,7 +395,7 @@ _start:
     je      .apply
     cmp     al, 5
     je      .ret
-    jmp     .halt
+    jmp     .badstream           ; unknown opcode: malformed stream, halt LOUDLY (was: silent exit 0)
 
 .pushs:                          ; rbx → NUL-terminated literal (NUL-free)
     mov     rsi, rbx
@@ -1207,7 +1212,7 @@ _start:
     je      .bi_reapnb
     cmp     r11, 57
     je      .mkpa                ; poll is curried: poll(fds)(timeout)
-    jmp     .halt
+    jmp     .badstream           ; unknown builtin id: malformed stream, halt LOUDLY (was: silent exit 0)
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
     add     r15, 8
@@ -1290,7 +1295,7 @@ _start:
     je      .bi_dup22
     cmp     r10, 59
     je      .bi_execv2
-    jmp     .halt
+    jmp     .badstream           ; unknown curried-builtin id: malformed stream, halt LOUDLY (was: silent exit 0)
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
 .bi_print:                       ; r9 = STR descriptor; or an INT → its decimal
@@ -1469,6 +1474,8 @@ _start:
     mov     rsi, r15
     mov     rdx, 0x4000000
     syscall
+    test    rax, rax             ; read failed (-errno, e.g. -EISDIR on a directory)?
+    js      .rf_fail             ;   was: added -errno to r15 → heap pointer moved BACKWARDS
     mov     rdx, rax             ; bytes read (preserved across close)
     add     r15, rax
     mov     rax, 3
@@ -1483,6 +1490,18 @@ _start:
     add     r12, 16
     add     r15, 16
     jmp     .loop
+.rf_fail:                        ; read(2) returned -errno: close the fd, halt LOUDLY
+    mov     rax, 3
+    mov     rdi, rbp
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rfmsg
+    mov     rdx, rfmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
 .rf_empty:
     mov     qword [r15], 0       ; STRDESC GC fwd header
     add     r15, 8
@@ -2476,6 +2495,8 @@ _start:
     ; input) fails loudly instead of degrading. Prints msg + newline to stderr
     ; and exits non-zero — the VM analogue of the host's `error` builtin, so the
     ; same Lingua Adamica source halts the same way on the native engine.
+    test    r8, r8               ; STR only: error(5) used to deref the INT payload (SIGSEGV)
+    jnz     .strtype
     mov     rsi, [r9+8]          ; msg bytes
     mov     rdx, [r9]            ; msg length
     mov     rax, 1
@@ -3363,50 +3384,102 @@ _start:
     jmp     .loop
 
 .bi_inttostr:                    ; r9 = INT payload → decimal STR (via push_dec)
+    cmp     r8, 4                ; INT only (see .inttype)
+    jne     .inttype
     mov     rax, r9
     call    push_dec
     jmp     .loop
 
 .bi_add2:                        ; rbp = a1 int, r9 = a2 int (Ontodirection ▷)
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     add     rax, r9
     jmp     .push_int
 .bi_sub2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     sub     rax, r9
     jmp     .push_int
 .bi_mul2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     imul    rax, r9
     jmp     .push_int
 .bi_div2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     test    r9, r9
     je      .int_divzero
+    cmp     r9, -1               ; LONG_MIN / -1 overflows: idiv traps → halt loudly instead
+    jne     .div_go
+    mov     rax, 0x8000000000000000
+    cmp     rbp, rax
+    je      .int_divovf
+.div_go:
     mov     rax, rbp
     cqo
     idiv    r9
     jmp     .push_int
 .bi_mod2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     test    r9, r9
     je      .int_divzero
+    cmp     r9, -1               ; LONG_MIN mod -1 is 0 mathematically; idiv would trap,
+    jne     .mod_go              ;   so answer 0 directly (matches the C host)
+    mov     rax, 0x8000000000000000
+    cmp     rbp, rax
+    jne     .mod_go
+    xor     rax, rax
+    jmp     .push_int
+.mod_go:
     mov     rax, rbp
     cqo
     idiv    r9
     mov     rax, rdx
     jmp     .push_int
 .bi_band2:                       ; rbp & r9 — two's complement, matches tiny_host
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     and     rax, r9
     jmp     .push_int
 .bi_bor2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     or      rax, r9
     jmp     .push_int
 .bi_bxor2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     xor     rax, r9
     jmp     .push_int
 .bi_bshl2:                       ; count outside 0..63 -> 0 (see header: x86
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     r9, 63               ; MASKS the count to 6 bits and ARM does not,
     ja      .bi_shift_zero       ; so the range check suppresses that accident;
     mov     rcx, r9              ; `ja` also catches negatives as unsigned-large
@@ -3414,6 +3487,10 @@ _start:
     shl     rax, cl
     jmp     .push_int
 .bi_bshr2:                       ; LOGICAL (shr), never arithmetic (sar)
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     r9, 63
     ja      .bi_shift_zero
     mov     rcx, r9
@@ -3424,6 +3501,8 @@ _start:
     xor     rax, rax
     jmp     .push_int
 .bi_bnot:                        ; UNARY: r9 = arg
+    cmp     r8, 4                ; INT only (see .inttype)
+    jne     .inttype
     mov     rax, r9
     not     rax
     jmp     .push_int
@@ -3432,16 +3511,47 @@ _start:
     mov     [r12+8], rax
     add     r12, 16
     jmp     .loop
-.int_divzero:
-    mov     rax, 60              ; div/mod by zero — halt (matches the C host)
+.inttype:                        ; an integer builtin given a non-INT (tag != 4):
+    mov     rax, 1               ;   the payload would be used as the number
+    mov     rdi, 2
+    mov     rsi, inttypemsg
+    mov     rdx, inttypemsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+.int_divovf:                     ; LONG_MIN / -1 — idiv would trap (SIGFPE); halt LOUDLY
+    mov     rax, 1               ;   like the C host's "div: overflow (LONG_MIN / -1)"
+    mov     rdi, 2
+    mov     rsi, divovfmsg
+    mov     rdx, divovfmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+.int_divzero:                    ; div/mod by zero — halt LOUDLY (the C host prints
+    mov     rax, 1               ;   "div: division by zero"; was: bare exit 1)
+    mov     rdi, 2
+    mov     rsi, divzeromsg
+    mov     rdx, divzeromsg_len
+    syscall
+    mov     rax, 60
     mov     rdi, 1
     syscall
 
 .bi_lt2:                         ; rbp < r9 (signed) → Church bool closure
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     rbp, r9
     jl      .int_true
     jmp     .int_false
 .bi_inteq2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     rbp, r9
     je      .int_true
     jmp     .int_false
@@ -3828,6 +3938,16 @@ strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "secd: not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+divzeromsg:    db "secd: division by zero", 10
+divzeromsg_len equ $ - divzeromsg
+openmsg:       db "secd: cannot open logos_program.bin", 10
+openmsg_len    equ $ - openmsg
+divovfmsg:     db "secd: div overflow (LONG_MIN / -1)", 10
+divovfmsg_len  equ $ - divovfmsg
+rfmsg:         db "secd: read_file: read failed", 10
+rfmsg_len      equ $ - rfmsg
+inttypemsg:    db "secd: argument is not an integer", 10
+inttypemsg_len equ $ - inttypemsg
 pollmsg:       db "secd: too many poll fds", 10
 pollmsg_len    equ $ - pollmsg
 bootstrap:     db 2, "MAIN", 0, 0
