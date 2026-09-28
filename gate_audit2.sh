@@ -124,6 +124,11 @@ case_nc3_shadow() {      # #9: a user glyph shadows a builtin of the same name
     elif [ "$NRC" = 139 ] && [ -z "$NOUT" ]; then echo "SKIP  nc3_shadow: native binary cannot exec here (p_memsz > RAM+swap)"
     else fail "native_codegen3 shadow: native rc=$NRC out=[$NOUT] (host prints SHADOW)"; fi
 }
-CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup nc3_shadow}"
+case_nc3_error_int() {   # #11: error(<INT>) prints the decimal and exits 1, like the host
+    printf 'glyph MAIN = error(5)\n' > t_err5.la; nc3 t_err5.la
+    if [ "$NRC" = 1 ] && [ "$NERR" = 5 ]; then pass "native_codegen3: error(5) prints 5 to stderr, rc 1 (was SIGSEGV)"
+    else fail "native_codegen3 error(5): rc=$NRC stderr=[$NERR] (want '5', rc 1)"; fi
+}
+CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup nc3_shadow nc3_error_int}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }

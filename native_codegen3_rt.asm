@@ -1185,7 +1185,9 @@ rt_chr:
 ;   f_τ with both other engines (msg bytes + newline to fd 2, exit code 1).
 ;   Appended after rt_chr / before the data area, so the 3c.1 routine addresses
 ;   and every RT_* entry stay UNCHANGED; only the data globals shift.
-rt_error:
+;   (audit2 #11: RT_ERROR now points at the tag-checking `rt_error` appended at
+;   EOF; this body is its STR case.)
+rt_error_str:
     mov     rcx, [rax+8]        ; descriptor body
     mov     rsi, [rcx+8]        ; msg bytes
     mov     rdx, [rcx]          ; msg length
@@ -2224,3 +2226,29 @@ rt_memcpy:
     rep     movsb
     mov     rax, r10            ; -> the byte count actually copied
     jmp     rt_box_int          ; -> boxed INT
+
+; ── audit2 #11: rt_error(v) — the tag check error() lacked ──────────────────
+;   error() is the loud-halt primitive, yet it read [rax+8] as a STR descriptor
+;   whatever the tag: error(5) dereferenced address 5+8 and died SIGSEGV (rc
+;   139) with no message. The host prints an INT's decimal, and
+;   "(non-string error message)" for anything else, then exits 1; this matches
+;   it. Appended at EOF so every existing RT_* / data address is unchanged; only
+;   RT_ERROR (now this entry), LITERAL_BASE and RTLEN move.
+rt_error:
+    cmp     qword [rax], 0      ; STR -> the original body
+    je      rt_error_str
+    cmp     qword [rax], 4      ; INT -> its decimal, as the host prints it
+    jne     .nonstr
+    call    rt_int_to_str       ; boxed INT -> boxed STR (tag already checked)
+    jmp     rt_error_str
+.nonstr:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, errnonstr
+    mov     rdx, errnonstrlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (match the host)
+    syscall
+errnonstr:    db "(non-string error message)", 10
+errnonstrlen: equ $ - errnonstr
