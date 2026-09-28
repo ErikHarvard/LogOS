@@ -129,6 +129,12 @@ case_nc3_error_int() {   # #11: error(<INT>) prints the decimal and exits 1, lik
     if [ "$NRC" = 1 ] && [ "$NERR" = 5 ]; then pass "native_codegen3: error(5) prints 5 to stderr, rc 1 (was SIGSEGV)"
     else fail "native_codegen3 error(5): rc=$NRC stderr=[$NERR] (want '5', rc 1)"; fi
 }
-CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup nc3_shadow nc3_error_int}"
+case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of SIGSEGV
+    printf 'glyph MAIN = print(str_len(read_file("/tmp")))\n' > t_rdir.la; nc3 t_rdir.la
+    if [ "$NRC" = 1 ] && [ "$NERR" = "native: read_file: is a directory" ]; then pass "native_codegen3: read_file(dir) halts loudly, rc 1 (was SIGSEGV)"
+    else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
+}
+
+CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
