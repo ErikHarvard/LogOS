@@ -89,6 +89,26 @@ LAEOF
     [ $bad = 0 ] && pass "live loops: all eight forever-loops recurse in tail (binder) position; binder control reaches 1.2M iterations"
 }
 
-CASES="${*:-logosinit_forkfail sigpipe tail_loops}"
+# ── #20 live input: a hung-up device halts loudly instead of busy-spinning ───
+# poll reports a closed peer ready (POLLHUP) on every call and read() returns
+# ""; decoded, "" is a zero event, so MULTIPLEX spun at 100% CPU forever. The
+# pipe here carries one real 24-byte KEY_A event, then its writer closes.
+case_pollhup() {
+    sed '/^glyph MAIN =/,$d' theourgia_poll.la > t_hup.la
+    cat >> t_hup.la <<'LAEOF'
+glyph EV24 = concat("0123456789abcdef")(concat(chr("1"))(concat(chr("0"))(concat(chr("30"))(concat(chr("0"))(concat(chr("1"))(concat(chr("0"))(concat(chr("0"))(chr("0")))))))))
+glyph MAIN = (la p. (la rfd. (la wfd. SEQ(write(wfd)(EV24))(SEQ(close(wfd))(MULTIPLEX(CONS(rfd)(NIL)))))(str_tail(str_tail(p))))(str_head(p)))(pipe("!"))
+LAEOF
+    vmc t_hup.la || { fail "pollhup: codegen"; return; }
+    local out rc=0; out=$(timeout 20 ./logos_secd 2>&1) || rc=$?
+    if [ "$rc" = 1 ] && [ "$(sed -n 1p <<< "$out")" = "fd 3: type=1 code=30 value=1" ] \
+       && grep -q 'hung up or failed (read gave 0 bytes' <<< "$out" && [ "$(wc -l <<< "$out")" = 2 ]; then
+        pass "live input: the real event decodes, then the hung-up fd halts loudly (no busy-spin)"
+    else
+        fail "live input POLLHUP: rc=$rc, $(wc -l <<< "$out") lines, first: $(head -2 <<< "$out" | tr '\n' '|')"
+    fi
+}
+
+CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
