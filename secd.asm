@@ -3658,6 +3658,17 @@ _start:
     jmp     .loop
 
 .halt:
+    ; HALT (opcode 0) is valid ONLY as the final byte of `bootstrap` — the byte
+    ; after `PUSHV MAIN`, reached when MAIN's body RETs with the dump empty. The
+    ; program stream itself never contains a HALT opcode (codegen emits 00 only
+    ; as a string/name terminator or the table-end sentinel, neither of which
+    ; is ever dispatched), so a 00 dispatched from anywhere else means control
+    ; ran into a sentinel, zero-fill or corrupt bytes with work left undone.
+    ; That used to exit 0 silently; it is a malformed program (rc 1).
+    cmp     rbx, bootstrap + 7   ; rbx is already past the opcode byte
+    jne     .badstream
+    cmp     r14, dstack          ; and nothing is left on the dump
+    jne     .badstream
     mov     rax, 60
     xor     rdi, rdi
     syscall

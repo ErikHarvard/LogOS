@@ -18,6 +18,12 @@
 #   (3) MAIN = "hi" then opcode 0xFF             -> must halt loudly
 #   (4) MAIN = "hi" then opcode 0x06             -> must halt loudly (the first
 #                                                   unassigned opcode)
+#   (5) a stray HALT (00) mid-body: print("hi") never applied -> must halt loudly
+#   (6) 00 where MAIN's RET belongs                           -> must halt loudly
+#   (7) 00 inside a glyph that MAIN calls (dump non-empty)    -> must halt loudly
+# (5)-(7): HALT is valid ONLY as the final byte of the VM's own bootstrap
+# (after MAIN returns with an empty dump); anywhere else it used to exit 0
+# silently with the program unfinished.
 # The two unknown-builtin-id paths cannot be reached from a stream (ids are
 # assigned internally after a successful name lookup), so they are covered by
 # code inspection + the fuzz count, not by a fixture here.
@@ -57,6 +63,18 @@ for op in '\007' '\377' '\006'; do
         echo "PASS  vm loud-halt gate: unknown opcode (octal $op) -> 'secd: malformed program', rc 1"
     else
         echo "FAIL  vm loud-halt gate: unknown opcode $op — rc=$rc out='$out' err='$err' (want rc 1 + 'secd: malformed program'; rc 0 = the silent .halt regression)"; ok=0
+    fi
+done
+
+# (5)-(7) a HALT byte anywhere but the bootstrap's final byte is malformed
+for c in 'stray 00 mid-body|MAIN\0\002print\0\001hi\0\000\004\005\0' \
+         '00 where RET belongs|MAIN\0\001hi\0\000\0' \
+         '00 inside a called glyph|F\0\001x\0\000\005MAIN\0\002print\0\002F\0\004\005\0'; do
+    label=${c%%|*}; run_stream "${c#*|}"
+    if [ "$rc" = 1 ] && [ "$err" = "secd: malformed program" ] && [ -z "$out" ]; then
+        echo "PASS  vm loud-halt gate: $label -> 'secd: malformed program', rc 1"
+    else
+        echo "FAIL  vm loud-halt gate: $label — rc=$rc out='$out' err='$err' (want rc 1 + 'secd: malformed program'; rc 0 = mid-stream HALT accepted silently)"; ok=0
     fi
 done
 
