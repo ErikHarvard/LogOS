@@ -319,13 +319,16 @@ glyph INLINE = Z(la self. la node. la table. la bound. la seen.
         IF(str_eq(tag)("VAR"))(la _.
             (la nm.
                 IF(STR_MEM(nm)(bound))(la _. AST_VAR(nm))(la _.
-                IF(IS_BUILTIN(nm))(la _. AST_VAR(nm))(la _.
+                # audit2 #9: a user glyph SHADOWS a builtin of the same name, as on
+                # the host (tiny_host.c looks glyphs up first). The builtin test used
+                # to come first, so `glyph concat = ...` was silently ignored.
                 (la g.
                     IF(IS_SOME(g))(la _.
                         IF(STR_MEM(nm)(seen))(la _. error(concat("native_codegen3: cyclic glyph reference: ")(nm)))(la _.
                             self(OPT_VAL(g))(table)(NIL)(CONS(nm)(seen))))
-                    (la _. error(concat("native_codegen3: unbound name: ")(nm))))
-                (LOOKUP_GLYPH(nm)(table)))))
+                    (la _. IF(IS_BUILTIN(nm))(la _. AST_VAR(nm))
+                        (la _. error(concat("native_codegen3: unbound name: ")(nm)))))
+                (LOOKUP_GLYPH(nm)(table))))
             (VAR_NM(node)))(la _.
         IF(str_eq(tag)("LAM"))(la _.
             AST_LAM(LAM_P(node))(self(LAM_B(node))(table)(CONS(LAM_P(node))(bound))(seen)))(la _.

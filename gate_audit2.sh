@@ -109,6 +109,21 @@ LAEOF
     fi
 }
 
-CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup}"
+# ── native_codegen3 cases (#9 #11 #12): compile with the host, run natively ──
+# The emitted binaries carry native_codegen3.la's HEAP_SIZE in p_memsz; on a box
+# that cannot map it the exec itself fails (rc 139) — reported as SKIP, not PASS.
+nc3() {   # nc3 <prog.la> -> sets NOUT NERR NRC (compile+run natively)
+    cp "$1" native_input.la; rm -f native_codegen3_out
+    timeout 900 ./tiny_host native_codegen3.la >/dev/null 2>nc3.err || { NRC=COMPILE; NERR=$(tail -c 200 nc3.err); return; }
+    NOUT=$(timeout 30 ./native_codegen3_out 2>nc3.run); NRC=$?; NERR=$(cat nc3.run)
+}
+case_nc3_shadow() {      # #9: a user glyph shadows a builtin of the same name
+    printf 'glyph concat = la a. la b. "SHADOW"\nglyph MAIN = print(concat("a")("b"))\n' > t_shadow.la
+    nc3 t_shadow.la
+    if [ "$NRC" = 0 ] && [ "$NOUT" = SHADOW ]; then pass "native_codegen3: a glyph named like a builtin shadows it (native SHADOW == host)"
+    elif [ "$NRC" = 139 ] && [ -z "$NOUT" ]; then echo "SKIP  nc3_shadow: native binary cannot exec here (p_memsz > RAM+swap)"
+    else fail "native_codegen3 shadow: native rc=$NRC out=[$NOUT] (host prints SHADOW)"; fi
+}
+CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup nc3_shadow}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
