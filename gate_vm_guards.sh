@@ -29,10 +29,11 @@ run_la() {
     ( cd "$T" && timeout 120 ./tiny_host codegen.la >/dev/null 2>&1 ) || { echo "FAIL  vm guards gate ($1): codegen failed"; ok=0; return; }
     rc=0; out=$( cd "$T" && timeout 20 ./logos_secd 2>"$T/err" ) || rc=$?
     err=$(cat "$T/err")
+    sfx=""; [ -z "${5:-}" ] || sfx=", stdout '${5}'"
     if [ "$rc" = "$3" ] && [ "$err" = "$4" ] && [ "$out" = "${5:-}" ]; then
-        echo "PASS  vm guards gate ($1): rc $rc, '${4:-<no stderr>}'${5:+, stdout '$5'}"
+        echo "PASS  vm guards gate ($1): rc $rc, '${4:-<no stderr>}'$sfx"
     else
-        echo "FAIL  vm guards gate ($1): rc=$rc out='$out' err='$err' (want rc $3, stderr '$4'${5:+, stdout '$5'}; rc 139/136 = crash regression, rc 0 = silent wrong answer)"; ok=0
+        echo "FAIL  vm guards gate ($1): rc=$rc out='$out' err='$err' (want rc $3, stderr '$4'$sfx; rc 139/136 = crash regression, rc 0 = silent wrong answer)"; ok=0
     fi
 }
 LMIN='glyph LMIN = sub(sub(0)(9223372036854775807))(1)'

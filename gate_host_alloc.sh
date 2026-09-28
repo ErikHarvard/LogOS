@@ -25,7 +25,7 @@ bare=$(grep -nE '(^|[^a-z_])(malloc|strdup)\(' "$T/nocomment.c" | grep -vE 'stat
 if [ -z "$bare" ]; then
     echo "PASS  host alloc gate: every malloc/strdup goes through xmalloc/xstrdup"
 else
-    echo "FAIL  host alloc gate: unchecked allocation call(s):"; echo "$bare" | sed 's/^/      /'; ok=0
+    echo "FAIL  host alloc gate: unchecked allocation call(s):"; while IFS= read -r l; do echo "      $l"; done <<< "$bare"; ok=0
 fi
 
 # (2) dynamic: injected allocation failures must halt loudly, not crash

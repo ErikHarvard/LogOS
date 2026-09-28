@@ -42,6 +42,7 @@ cp "$ROOT/secd.la" "$T/"
 ok=1
 # run_stream <printf-format bytes> -> sets rc, out, err
 run_stream() {
+    # shellcheck disable=SC2059  # $1 IS the format: it carries the stream's octal escapes
     printf "$1" > "$T/logos_program.bin"
     rc=0
     out=$( cd "$T" && ./logos_secd 2>"$T/err" ) || rc=$?
