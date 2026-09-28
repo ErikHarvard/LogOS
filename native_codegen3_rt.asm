@@ -2224,3 +2224,135 @@ rt_memcpy:
     rep     movsb
     mov     rax, r10            ; -> the byte count actually copied
     jmp     rt_box_int          ; -> boxed INT
+
+; ── HEAP-MMAP: the heap is reserved at startup, not in the ELF memsz ────────────
+;   Before this, PROL's static layout (worklist | 16 GiB heap | bitmap) was baked
+;   into the single PT_LOAD's p_memsz, so every emitted binary asked the kernel
+;   for ~16.3 GiB at exec. Under the default heuristic overcommit a machine with
+;   less than that refused the exec outright (SIGSEGV before _start). Now, on
+;   Linux, PROL calls rt_heapmap BEFORE rt_init and rt_heapfix AFTER it:
+;
+;     rt_heapmap  size N = LOGOS_HEAP_MB (MiB, from envp) or, absent, PROL's own
+;                 static size (HEAP_END-HEAP_BASE = the .la's HEAP_SIZE, so the
+;                 default is unchanged). One mmap(PRIVATE|ANONYMOUS|NORESERVE):
+;                   [ worklist WL_SIZE | heap N | task stacks 64 MiB | bitmap N/64 ]
+;                 NORESERVE: untouched pages cost nothing and are not charged at
+;                 map time. Sets WORKLIST_BASE / HEAP_BASE / r15, and HEAP_END
+;                 TEMPORARILY to heap+N+64 MiB, so rt_init's unchanged
+;                   BITMAP_BASE = TASK_STACK_TOP = HEAP_END
+;                 lands the bitmap after the task-stack band and the task stacks
+;                 grow down into their OWN band, never into heap objects (before,
+;                 they shared the heap's top 56 MiB — harmless at 16 GiB, a
+;                 collision at a small heap).
+;     rt_heapfix  lowers HEAP_END to heap+N, the real allocation limit.
+;
+;   Metal (METAL_FLAG set, or CPL 0) skips both: there the heap is the RAM after
+;   the image, exactly as before, and syscall 9 is not Linux's mmap.
+;   A malformed / too-small LOGOS_HEAP_MB, or a failed mmap, halts loudly (rc 1).
+%define HM_TASKBAND 0x4000000           ; 64 MiB = MAXTASK(8) * TASK_STACK_SIZE(8 MiB)
+%define HM_MIN_MB   64                  ; floor: GC_INTERVAL (4 MiB) budget + headroom
+%define HM_MAX_MB   0x1000000           ; 16 TiB ceiling: rejects absurd / overflowing values
+rt_heapmap:
+    cmp     byte [rel METAL_FLAG], 0
+    jnz     .ret
+    mov     ax, cs
+    and     ax, 3
+    jz      .ret                        ; ring 0: metal kernel image
+    mov     r8, [HEAP_END]
+    sub     r8, [HEAP_BASE]             ; default N = PROL's static size (HEAP_SIZE)
+    mov     rsi, [STACK_BASE]           ; -> argc (PROL stored the entry rsp)
+    mov     rcx, [rsi]
+    lea     rsi, [rsi + rcx*8 + 16]     ; -> envp[0]
+.env:
+    mov     rdi, [rsi]
+    test    rdi, rdi
+    jz      .map                        ; end of envp: keep the default
+    add     rsi, 8
+    lea     rdx, [rel hm_key]
+    mov     ecx, hm_keylen
+.cmp:
+    mov     al, [rdi]
+    cmp     al, [rdx]
+    jne     .env
+    inc     rdi
+    inc     rdx
+    dec     ecx
+    jnz     .cmp
+    xor     r8d, r8d                    ; parse the decimal MiB count
+    xor     ecx, ecx
+.dig:
+    movzx   eax, byte [rdi]
+    test    al, al
+    jz      .gotn
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .bad
+    imul    r8, r8, 10
+    add     r8, rax
+    cmp     r8, HM_MAX_MB
+    ja      .bad
+    inc     rdi
+    inc     ecx
+    jmp     .dig
+.gotn:
+    test    ecx, ecx
+    jz      .bad                        ; "LOGOS_HEAP_MB=" with no digits
+    cmp     r8, HM_MIN_MB
+    jb      .bad
+    shl     r8, 20                      ; MiB -> bytes
+.map:
+    mov     rsi, r8
+    shr     rsi, 6                      ; bitmap: 1 bit per 8-byte granule = N/64
+    add     rsi, r8
+    add     rsi, WL_SIZE + HM_TASKBAND  ; length = WL + N + band + N/64
+    push    r8
+    mov     eax, 9                      ; mmap
+    xor     edi, edi
+    mov     edx, 3                      ; PROT_READ|PROT_WRITE
+    mov     r10d, 0x4022                ; MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE
+    mov     r8, -1
+    xor     r9d, r9d
+    syscall
+    pop     r8
+    cmp     rax, -4095
+    jae     .mfail                      ; -errno
+    mov     [WORKLIST_BASE], rax
+    add     rax, WL_SIZE
+    mov     [HEAP_BASE], rax
+    mov     r15, rax                    ; the bump frontier starts at the heap base
+    add     rax, r8
+    mov     [HEAPMAP_END], rax          ; the real limit, installed by rt_heapfix
+    add     rax, HM_TASKBAND
+    mov     [HEAP_END], rax             ; temporary: rt_init derives bitmap/stacks from it
+.ret:
+    ret
+.bad:
+    lea     rsi, [rel hm_badmsg]
+    mov     edx, hm_badlen
+    jmp     .die
+.mfail:
+    lea     rsi, [rel hm_mapmsg]
+    mov     edx, hm_maplen
+.die:
+    mov     eax, 1
+    mov     edi, 2
+    syscall
+    mov     eax, 60
+    mov     edi, 1
+    syscall
+
+rt_heapfix:
+    mov     rax, [HEAPMAP_END]
+    test    rax, rax
+    jz      .ret                        ; metal (or no mmap): nothing to install
+    mov     [HEAP_END], rax
+.ret:
+    ret
+
+HEAPMAP_END: dq 0
+hm_key:     db "LOGOS_HEAP_MB="
+hm_keylen   equ $ - hm_key
+hm_badmsg:  db "native: LOGOS_HEAP_MB: not a valid size", 10
+hm_badlen   equ $ - hm_badmsg
+hm_mapmsg:  db "native: heap: mmap failed", 10
+hm_maplen   equ $ - hm_mapmsg

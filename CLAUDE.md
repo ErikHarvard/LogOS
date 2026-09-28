@@ -489,7 +489,7 @@ runnable and checked by `build.sh`.
 
   **Stage 2 is a working native compiler**, not a baked blob:
 
-  - The VM (`secd.asm`, 13775 bytes) is a fixed binary. At startup it reads a
+  - The VM (`secd.asm`, 15826 bytes) is a fixed binary. At startup it reads a
     compiled instruction stream from `logos_program.bin` and executes it, so
     arbitrary programs run on it natively (threaded SECD). It carries a **glyph
     table** (`PUSHV` resolves a name in `E`, then the glyph table — entering the
@@ -1736,7 +1736,17 @@ Practically:
   (the pre-GC bump heap exhausts on the same program). Each semispace is sized
   at 768 MiB (1.5 GiB total, lazily mapped) — equal to the old single bump
   heap — so any workload that fit before the GC still fits in one half even with
-  zero reclamation (compiling `secd.la` peaks at ~320 MiB genuinely-live data,
+  zero reclamation. **The heap is reserved at startup, not in the ELF header:**
+  `_start` maps both semispaces with one `mmap(MAP_NORESERVE)` sized by the
+  `LOGOS_HEAP_MB` environment variable (MiB per semispace, default 768, floor
+  128; a malformed or too-small value halts with `secd: LOGOS_HEAP_MB: not a
+  valid size`, a failed map with `secd: heap: mmap failed`), so `p_memsz` covers
+  only the static stacks/buffers/program region (~53 MiB) and the VM runs under
+  valgrind and a `ulimit -v`. The native backend (`native_codegen3.la`) does the
+  same: `rt_heapmap` maps worklist | heap | 64 MiB task-stack band | bitmap,
+  `LOGOS_HEAP_MB` = the heap in MiB (default 16384 = `HEAP_SIZE`, floor 64), and
+  an emitted binary's `p_memsz` is just its file size. (Children started by the
+  VM's `execve`/`execv` get an empty environment, hence the default size) (compiling `secd.la` peaks at ~320 MiB genuinely-live data,
   retained by the VM's non-tail recursion). If the live set itself still doesn't
   fit after a collection, or the worklist overflows, the dispatch loop halts
   loudly with `secd: heap exhausted` rather than corrupting the program stream.

@@ -14,7 +14,8 @@ WHY smaps CANNOT DO THIS
 ------------------------
 native_codegen3 reserves ONE giant RWX mapping and sublets it:
 
-    [ image ][ worklist 64 MiB ][ heap 16 GiB ][ bitmap 256 MiB ]
+    [ image ]   [ worklist 64 MiB ][ heap 16 GiB ][ task stacks 64 MiB ][ bitmap 256 MiB ]
+    (HEAP-MMAP: the arena is now a separate anonymous mapping from the image)
 
 Every region shares one VMA, so smaps reports a single number for all four and
 cannot say which one grew.  /proc/PID/pagemap is per-PAGE: bit 63 is "present",
@@ -149,13 +150,19 @@ PAGE = 4096
 WORKLIST_SIZE = 64 * 1024 * 1024
 HEAP_SIZE = 16 * 1024 * 1024 * 1024
 BITMAP_SIZE = HEAP_SIZE // 64          # 1 bit per 8-byte granule
+# HEAP-MMAP: the arena is now its own anonymous mapping (rt_heapmap), laid out
+# worklist | heap | task-stack band | bitmap. The band (MAXTASK x 8 MiB) keeps
+# spawned-task stacks out of the heap. These sizes are the DEFAULT arena
+# (LOGOS_HEAP_MB unset); a subject run with a different LOGOS_HEAP_MB has a
+# differently-sized mapping and is reported NotAnArena rather than mis-carved.
+TASKBAND_SIZE = 64 * 1024 * 1024
 
 # bit 63 of each 8-byte pagemap entry is "present"; byte 7 is its high byte, so
 # a byte-wise translate+count over every 8th byte is the whole population count.
 _TBL = bytes(1 if (i & 0x80) else 0 for i in range(256))
 
 
-ARENA_SIZE = WORKLIST_SIZE + HEAP_SIZE + BITMAP_SIZE
+ARENA_SIZE = WORKLIST_SIZE + HEAP_SIZE + TASKBAND_SIZE + BITMAP_SIZE
 
 
 class Dead(RuntimeError):
@@ -245,12 +252,14 @@ def regions(pid):
     """Sub-ranges of the arena, derived from its END so they cannot drift."""
     lo, hi = giant_mapping(pid)
     bitmap_lo = hi - BITMAP_SIZE
-    heap_lo = bitmap_lo - HEAP_SIZE
+    band_lo = bitmap_lo - TASKBAND_SIZE
+    heap_lo = band_lo - HEAP_SIZE
     worklist_lo = heap_lo - WORKLIST_SIZE
     return [
-        ("image", lo, worklist_lo),
+        ("image", lo, worklist_lo),          # empty now: the image is a separate mapping
         ("worklist", worklist_lo, heap_lo),
-        ("heap", heap_lo, bitmap_lo),
+        ("heap", heap_lo, band_lo),
+        ("taskstacks", band_lo, bitmap_lo),
         ("bitmap", bitmap_lo, hi),
     ]
 

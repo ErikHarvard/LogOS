@@ -53,6 +53,7 @@ LABELS = {
     "RT_BNOT": "rt_bnot",
     "RT_FILL": "rt_fill", "RT_MEMCPY": "rt_memcpy",
     "RT_STACK_OVERFLOW": "rt_stack_overflow",
+    "RT_HEAPMAP": "rt_heapmap", "RT_HEAPFIX": "rt_heapfix",
     "HEAP_BASE_ADDR": "HEAP_BASE", "NEXT_GC_ADDR": "NEXT_GC",
     "STACK_BASE_ADDR": "STACK_BASE", "WORKLIST_BASE_ADDR": "WORKLIST_BASE",
     "HEAP_END_ADDR": "HEAP_END", "BITMAP_BASE_ADDR": "BITMAP_BASE",
