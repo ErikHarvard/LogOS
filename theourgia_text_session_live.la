@@ -246,11 +246,12 @@ glyph SHOW_TEST_PATTERN = la dims.
 glyph LIVE_READ = la fd. read(fd)("24")
 glyph LIVE = Z(la self. la st. la dims. la fds.
     (la ready_str.
-        SEQ(print(concat("poll-wake ready=[")(concat(ready_str)("]"))))(
+        (la _.
         (la st2.
-            SEQ(present(st2(la x. la y. RENDER_FRAME(dims)(x)(y))))
-                (self(st2)(dims)(fds)))
-        (DRAIN_STEP(LIVE_READ)(st)(SPLIT(ready_str)))))
+            (la _. self(st2)(dims)(fds))
+                (present(st2(la x. la y. RENDER_FRAME(dims)(x)(y)))))
+        (DRAIN_STEP(LIVE_READ)(st)(SPLIT(ready_str))))
+        (print(concat("poll-wake ready=[")(concat(ready_str)("]")))))
     (poll(JOIN(fds))("-1")))
 
 # ── Auto-detection: find a device's eventN by name in /proc/bus/input/devices ──

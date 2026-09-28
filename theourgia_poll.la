@@ -105,7 +105,7 @@ glyph DRAIN = Z(la self. la reader. la ready.
 glyph POLL_READY = la fds. la timeout. SPLIT(poll(JOIN(fds))(timeout))
 glyph LIVE_READ  = la fd. read(fd)("24")
 glyph MULTIPLEX  = Z(la self. la fds.
-    SEQ(DRAIN(LIVE_READ)(POLL_READY(fds)("-1")))(self(fds)))
+    (la _. self(fds))(DRAIN(LIVE_READ)(POLL_READY(fds)("-1"))))
 
 # ── BYTES: space-separated decimals → the binary they denote (as in elf.la) ──
 glyph BYTES = la s.

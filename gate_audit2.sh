@@ -63,6 +63,32 @@ LAEOF
     fi
 }
 
-CASES="${*:-logosinit_forkfail sigpipe}"
+# ── #21 live loops: every "forever" loop's self-call is a TAIL call ──────────
+# The VM's TCO fires only when APPLY is followed by RET. `SEQ(work)(self(...))`
+# puts self(...) in ARGUMENT position (its APPLY is followed by SEQ's APPLY), so
+# each iteration leaked a dump frame + its env; the loop halted `secd: heap
+# exhausted` after ~800k iterations. The binder form `(la _. self(...))(work)`
+# (logosinit's shape) runs forever. Checked on the SOURCE of each loop glyph
+# (tailpos.py: a self-call is tail only through applied-lambda bodies and IF
+# thunks), plus a VM control: the binder form reaches 1.2M iterations.
+case_tail_loops() {
+    local bad=0 fg
+    for fg in theourgia_poll_live.la:MULTIPLEX theourgia_poll.la:MULTIPLEX \
+              theourgia_mux_session.la:LIVE theourgia_mux_session_live.la:LIVE \
+              theourgia_text_session_live.la:LIVE theourgia_text_live.la:HOLD \
+              sigil_live.la:HOLD sigil_seal_live.la:CYCLE; do
+        python3 "$REPO/tailpos.py" "${fg%%:*}" "${fg##*:}" >tp.out 2>&1 || { fail "tail loops: $(tr '\n' ' ' < tp.out)"; bad=1; }
+    done
+    cat > t_bind.la <<'LAEOF'
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph LOOP = Z(la self. la n. IF(int_eq(n)(1200000))(la _. print("reached"))(la _. (la _. self(add(n)(1)))(n)))
+glyph MAIN = LOOP(0)
+LAEOF
+    vmc t_bind.la && [ "$(timeout 120 ./logos_secd 2>&1)" = reached ] || { fail "tail loops: binder-form control loop did not reach 1.2M on the VM"; bad=1; }
+    [ $bad = 0 ] && pass "live loops: all eight forever-loops recurse in tail (binder) position; binder control reaches 1.2M iterations"
+}
+
+CASES="${*:-logosinit_forkfail sigpipe tail_loops}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }

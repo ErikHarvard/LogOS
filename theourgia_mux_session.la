@@ -146,10 +146,10 @@ glyph TO_FB = la surf. la screen_h. la pitch.
 glyph LIVE_READ = la fd. read(fd)("24")
 glyph LIVE = Z(la self. la st. la dims. la fds.
     (la st2.
-        SEQ(present(TO_FB(RENDER_SURFACE(st2))
+        (la _. self(st2)(dims)(fds))
+            (present(TO_FB(RENDER_SURFACE(st2))
                 (str_to_int(LIST_HD(LIST_TL(dims))))
-                (str_to_int(LIST_HD(LIST_TL(LIST_TL(dims)))))))
-            (self(st2)(dims)(fds)))
+                (str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))))))
     (DRAIN_STEP(LIVE_READ)(st)(SPLIT(poll(JOIN(fds))("-1")))))
 
 # ── The testable demo: ONE multiplexed cycle folds two devices into the scene ──

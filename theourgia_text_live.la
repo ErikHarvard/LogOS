@@ -121,7 +121,7 @@ glyph FRAME_TEXT = la w. la h. la pitch.
            (REPEAT2(sub(h)(add(WY)(WH)))(SOLID_ROW(w)(pitch)(BG_BLUE))))))
 
 # ── Hold the image on screen (tail loop → bounded dump under TCO); Ctrl+C ends it ──
-glyph HOLD = Z(la self. la _. SEQ(sleep("1"))(self("!")))
+glyph HOLD = Z(la self. la _. (la _. self("!"))(sleep("1")))
 
 # ── MAIN: take the screen, present the frame, hold ──
 glyph MAIN =
