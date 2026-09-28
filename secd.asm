@@ -1544,7 +1544,7 @@ _start:
     xor     rdx, rdx
     syscall
     test    rax, rax
-    js      .rf_empty
+    js      .rf_nofile           ; open failed: halt loudly (was: return "" silently)
     mov     rbp, rax
     mov     r10, r15             ; content start
     mov     rax, 0
@@ -1580,16 +1580,29 @@ _start:
     mov     rax, 60
     mov     rdi, 1
     syscall
-.rf_empty:
-    mov     qword [r15], 0       ; STRDESC GC fwd header
-    add     r15, 8
-    mov     qword [r15], 0       ; len 0
-    mov     [r15+8], r15
-    mov     qword [r12], 0
-    mov     [r12+8], r15
-    add     r12, 16
-    add     r15, 16
-    jmp     .loop
+.rf_nofile:
+    ; A file that cannot be opened is an error on every engine: the C host halts
+    ; with "read_file: cannot open '<path>': <strerror>". Returning "" here was a
+    ; silent success — a missing import compiled as an empty module, a missing
+    ; input read as empty data. Write "secd: read_file: cannot open '<path>'\n".
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rfopenmsg
+    mov     rdx, rfopenmsg_len
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, pathbuf
+    mov     rdx, [r9]            ; the path's length (r9 = its descriptor, preserved)
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rfopenend
+    mov     rdx, 2
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
 
 .bi_copyself:                    ; replicate /proc/self/exe → new_logos_secd.bin
     mov     rax, 2
@@ -4143,6 +4156,9 @@ gc_tofree:     dq 0              ; GC: bump pointer within tospace during a coll
 heap_lo:       dq 0              ; HEAP-MMAP: low semispace base (the startup mmap)
 heap_mid:      dq 0              ; boundary: low [heap_lo, heap_mid), high [heap_mid, heap_hi)
 heap_hi:       dq 0              ; end of the high semispace
+rfopenmsg:     db "secd: read_file: cannot open '"
+rfopenmsg_len  equ $ - rfopenmsg
+rfopenend:     db "'", 10
 hm_key:        db "LOGOS_HEAP_MB="
 hm_keylen      equ $ - hm_key
 hm_badmsg:     db "secd: LOGOS_HEAP_MB: not a valid size", 10

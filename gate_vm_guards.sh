@@ -8,6 +8,7 @@
 #   read_file on a directory     → heap pointer moved backwards, then SIGSEGV
 #   div(LONG_MIN)(-1)            → SIGFPE (rc 136);  mod(LONG_MIN)(-1) → SIGFPE
 #   div by zero                  → rc 1 with NO message
+#   read_file of a missing file  → returned "" with rc 0 (host halts; silent success)
 #   missing logos_program.bin    → rc 1 with NO message
 # Each case is a tiny .la program compiled by codegen.la and run on the VM
 # emitted from the committed secd.la; the expected stderr is matched exactly.
@@ -42,6 +43,7 @@ run_la "read_file directory"  'glyph MAIN = print(str_len(read_file("/")))'     
 run_la "LONG_MIN / -1"        "$LMIN"$'\n''glyph MAIN = print(int_to_str(div(LMIN)(sub(0)(1))))' 1 "secd: div overflow (LONG_MIN / -1)"
 run_la "LONG_MIN mod -1"      "$LMIN"$'\n''glyph MAIN = print(int_to_str(mod(LMIN)(sub(0)(1))))' 0 "" "0"
 run_la "div by zero"          'glyph MAIN = print(int_to_str(div(1)(0)))'                 1 "secd: division by zero"
+run_la "read_file missing file" 'glyph MAIN = print(concat("[")(concat(read_file("no_such_file"))("]")))' 1 "secd: read_file: cannot open 'no_such_file'"
 run_la "control: 6*7"         'glyph MAIN = print(int_to_str(mul(6)(7)))'                 0 "" "42"
 
 # missing program stream
