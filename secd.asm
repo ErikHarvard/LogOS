@@ -331,7 +331,12 @@ _start:
     mov     r14, dstack
     mov     r15, heap
     jmp     .loop
-.openfail:
+.openfail:                       ; logos_program.bin missing/unreadable — halt LOUDLY
+    mov     rax, 1               ;   (was: bare exit 1 with no diagnostic)
+    mov     rdi, 2
+    mov     rsi, openmsg
+    mov     rdx, openmsg_len
+    syscall
     mov     rax, 60
     mov     rdi, 1
     syscall
@@ -3524,8 +3529,13 @@ _start:
     mov     rax, 60
     mov     rdi, 1
     syscall
-.int_divzero:
-    mov     rax, 60              ; div/mod by zero — halt (matches the C host)
+.int_divzero:                    ; div/mod by zero — halt LOUDLY (the C host prints
+    mov     rax, 1               ;   "div: division by zero"; was: bare exit 1)
+    mov     rdi, 2
+    mov     rsi, divzeromsg
+    mov     rdx, divzeromsg_len
+    syscall
+    mov     rax, 60
     mov     rdi, 1
     syscall
 
@@ -3928,6 +3938,10 @@ strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "secd: not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+divzeromsg:    db "secd: division by zero", 10
+divzeromsg_len equ $ - divzeromsg
+openmsg:       db "secd: cannot open logos_program.bin", 10
+openmsg_len    equ $ - openmsg
 divovfmsg:     db "secd: div overflow (LONG_MIN / -1)", 10
 divovfmsg_len  equ $ - divovfmsg
 rfmsg:         db "secd: read_file: read failed", 10
