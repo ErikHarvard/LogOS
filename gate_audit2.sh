@@ -63,6 +63,29 @@ case_logosinit_sigfd() {
     logosinit_spin "read(sigfd) errors" 'glyph read = la fd. la n. ""' 'logosinit: signalfd read failed'
 }
 
+# ── #73 strutil: an empty separator/pattern must not loop forever ─────────────
+# STARTS_WITH("") is always TRUE and DROP("") is the identity, so SPLIT("") and
+# REPLACE("") recursed on the same rest until a resource guard. Checked on both
+# the implementation VALUES (the spec with its MAIN swapped) and the SOURCE the
+# pipeline DEPLOYs (the generated module), each under a 60 s timeout.
+# Unfixed: both time out (rc 124). Fixed: [abc] and abc, instantly.
+case_strutil_empty() {
+    local probe='glyph SEQ = la a. la b. b
+glyph MAIN = print(concat(JOIN("|")(SPLIT("")("abc")))(concat("/")(REPLACE("")("X")("abc"))))'
+    { grep -v '^glyph MAIN\|^    SEQ(print(concat("=== GENERATE\|^       (print(DEPLOY' strutil_spec.la; echo "$probe" | sed 1d; } > t_suval.la   # probe minus its SEQ: specpipe defines it
+    local v rc=0; v=$(timeout 60 ./tiny_host t_suval.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$v" = "abc/abc" ]; then pass "strutil values: SPLIT(\"\")/REPLACE(\"\") return at once"
+    else fail "strutil values: rc=$rc out=[$v] (want abc/abc)"; fi
+    rm -f strutil_generated.la
+    local su; su=$(timeout 300 ./tiny_host strutil_spec.la 2>/dev/null)
+    if ! printf '%s\n' "$su" | grep -q "module VERIFIED" || [ ! -f strutil_generated.la ]; then
+        fail "strutil: spec not VERIFIED / module not written"; return; fi
+    { cat strutil_generated.la; echo "$probe"; } > t_sumod.la
+    rc=0; v=$(timeout 60 ./tiny_host t_sumod.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$v" = "abc/abc" ]; then pass "strutil generated module: SPLIT(\"\")/REPLACE(\"\") return at once"
+    else fail "strutil generated module: rc=$rc out=[$(printf '%s' "$v" | head -c 200)] (want abc/abc)"; fi
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -161,6 +184,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
