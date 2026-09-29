@@ -211,6 +211,25 @@ case_tofb_pitch() {
     else fail "theourgia TO_FB control: rc=$rc out=[$out] (want 24)"; fi
 }
 
+# ── #66 phonym: an unknown primitive halts loudly; an empty range is empty PCM ─
+# PHON_PRIM fell back to a silent PAIR(0)(…) for any unknown name; RENDER then
+# ran BUILD on (0,0), whose only base case is a length-1 range, so it recursed
+# forever (C-stack guard / secd stack overflow — an unrelated diagnostic).
+# Fixed: 'phonym: unknown primitive BOGUS', rc 1; BUILD/PCM of an empty range
+# is "" (unfixed: recursed forever too — a second red path). Control inside the
+# same run: BEING renders 6080 samples x 2 bytes (ENC16) = 12160 bytes.
+# Host only — a VM compile of a phonym importer is ~6 min.
+case_phonym_unknown() {
+    printf 'import("phonym.la")\nglyph MAIN = print(str_len(RENDER(PHONYM(PRIM("BOGUS")))))\n' > t_pbog.la
+    printf 'import("phonym.la")\nglyph MAIN = print(concat(str_len(RENDER(PHONYM(PRIM("BEING")))))(concat("/")(str_len(PCM(la i. 0)(0)))))\n' > t_pctl.la
+    local out rc=0; out=$(timeout 120 ./tiny_host t_pbog.la 2>&1) || rc=$?
+    if [ "$rc" = 1 ] && grep -qF 'phonym: unknown primitive BOGUS' <<< "$out"; then pass "phonym: unknown primitive halts loudly, rc 1"
+    else fail "phonym unknown primitive: rc=$rc out=[$(printf '%s' "$out" | head -c 200)]"; fi
+    rc=0; out=$(timeout 300 ./tiny_host t_pctl.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = "12160/0" ]; then pass "phonym: empty-range PCM = 0 bytes (was unbounded recursion); BEING still 12160 bytes (control)"
+    else fail "phonym control: rc=$rc out=[$(printf '%s' "$out" | head -c 200)] (want 12160/0)"; fi
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -309,6 +328,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip tofb_pitch}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip tofb_pitch phonym_unknown}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
