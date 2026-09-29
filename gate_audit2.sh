@@ -114,6 +114,85 @@ case_import_cycle() {
     else fail "host diamond import (control): rc=$rc out=[$out] (want dd)"; fi
 }
 
+# ── #74/#78/#79 theourgia COMPOSE clips to the destination ────────────────────
+# Unclipped, ox<0 recursed forever in TAKE (resource-guard crash), a right
+# overhang lengthened rows (skewed raster, rc 0), and oy<0 shifted the source
+# instead of clipping it. DRAW_TEXT and the session's RENDER_SURFACE go through
+# COMPOSE, so a long string or an off-screen window hit the same paths. dst is a
+# 3x2 surface of pixel 1; src is 2x1 [2 3] or 1x2 [2;3]. Expected rows derived
+# by hand: (-1,0) → 3 1 1 / 1 1 1 · (2,0) → 1 1 2 / 1 1 1 · column at (0,-1)
+# → 3 1 1 / 1 1 1 · (5,5) and (-9,0) → unchanged. Control: the stock scene is
+# byte-identical to HEAD's theourgia.la.
+case_compose_clip() {
+    # src surfaces are built from SOLID + an in-bounds COMPOSE, the module's own shape
+    cat > t_clip.la <<'LAEOF'
+import("theourgia.la")
+import("theourgia_text.la")
+glyph SEQ = la a. la b. b
+glyph P   = la n. PX(n)(n)(n)
+glyph D   = SOLID(3)(2)(P(1))
+glyph SH  = COMPOSE(SOLID(2)(1)(P(2)))(SOLID(1)(1)(P(3)))(1)(0)
+glyph SV  = COMPOSE(SOLID(1)(2)(P(2)))(SOLID(1)(1)(P(3)))(0)(1)
+glyph MAIN = SEQ(write_file("c1.ppm")(PPM(COMPOSE(D)(SH)(sub(0)(1))(0))))(
+             SEQ(write_file("c2.ppm")(PPM(COMPOSE(D)(SH)(2)(0))))(
+             SEQ(write_file("c3.ppm")(PPM(COMPOSE(D)(SV)(0)(sub(0)(1)))))(
+             SEQ(write_file("c4.ppm")(PPM(COMPOSE(D)(SH)(5)(5))))(
+             SEQ(write_file("c5.ppm")(PPM(COMPOSE(D)(SH)(sub(0)(9))(0))))(
+             SEQ(write_file("t1.ppm")(PPM(DRAW_TEXT(SOLID(24)(12)(P(0)))("HELLO")(0)(0)(P(255))(P(0)))))(
+             SEQ(write_file("t2.ppm")(PPM(DRAW_TEXT(SOLID(24)(12)(P(0)))("HI")(sub(0)(3))(0)(P(255))(P(0)))))(
+             print("clip-done"))))))))
+LAEOF
+    rm -f c?.ppm t?.ppm
+    local rc=0 out; out=$(timeout 300 ./tiny_host t_clip.la 2>&1) || rc=$?
+    if [ "$rc" != 0 ] || [ "$out" != "clip-done" ]; then
+        fail "compose clip: program rc=$rc out=[$(printf '%s' "$out" | head -c 200)]"; return; fi
+    local r; r=$(python3 - <<'PYEOF'
+import os
+def px(f):
+    b=open(f,'rb').read(); hdr=b'P6\n3 2\n255\n'
+    if not b.startswith(hdr): return 'badhdr:%r'%b[:16]
+    b=b[len(hdr):]
+    if len(b)!=18: return 'len%d'%len(b)
+    return ' '.join(str(b[i]) for i in range(0,18,3))
+want={'c1':'3 1 1 1 1 1','c2':'1 1 2 1 1 1','c3':'3 1 1 1 1 1','c4':'1 1 1 1 1 1','c5':'1 1 1 1 1 1'}
+bad=[f'{k}=[{px(k+".ppm")}] want [{v}]' for k,v in want.items() if px(k+'.ppm')!=v]
+for t in ('t1','t2'):
+    n=os.path.getsize(t+'.ppm')
+    if n!=len(b'P6\n24 12\n255\n')+24*12*3: bad.append(f'{t} is {n} bytes, want 877')
+print('; '.join(bad) or 'OK')
+PYEOF
+)
+    if [ "$r" = OK ]; then pass "theourgia COMPOSE clips on every edge; DRAW_TEXT wider than / left of the surface keeps its size"
+    else fail "theourgia COMPOSE clip: $r"; fi
+    # the native VM must produce the same seven rasters, byte for byte
+    mkdir -p clip_host && mv c?.ppm t?.ppm clip_host/
+    if ! vmc t_clip.la; then fail "compose clip (VM): codegen"
+    else
+        rc=0; out=$(timeout 300 ./logos_secd 2>&1) || rc=$?
+        local f d=0; for f in clip_host/*.ppm; do cmp -s "$f" "${f#clip_host/}" || d=$((d+1)); done
+        if [ "$rc" = 0 ] && [ "$out" = "clip-done" ] && [ "$d" = 0 ]; then pass "theourgia COMPOSE clip: native VM rasters byte-identical to the host's"
+        else fail "compose clip (VM): rc=$rc out=[$(printf '%s' "$out" | head -c 120)] $d raster(s) differ"; fi
+    fi
+    # control: every in-bounds scene is byte-identical to HEAD's (unclipped)
+    # COMPOSE — theourgia.la itself and the four modules that import it. Each
+    # MAIN runs in a HEAD tree and in this tree; stdout and raster must match.
+    local m o same=0 diff_list=""
+    mkdir -p headtree && cp "$REPO"/*.la headtree/ && cp tiny_host headtree/
+    for m in theourgia.la theourgia_fb.la theourgia_session.la theourgia_text.la theourgia_mux_session.la; do
+        git -C "$REPO" show "HEAD:$m" > "headtree/$m"; done
+    for m in theourgia.la:canvas.ppm theourgia_fb.la:framebuffer.bin theourgia_session.la:session.ppm \
+             theourgia_text.la:text.ppm theourgia_mux_session.la:mux_session.ppm; do
+        o=${m#*:}; m=${m%%:*}
+        rm -f "$o" "headtree/$o"
+        timeout 300 ./tiny_host "$m" > "ctl_new.out" 2>&1
+        ( cd headtree && timeout 300 ./tiny_host "$m" > ctl_head.out 2>&1 )
+        if [ -s "$o" ] && cmp -s "$o" "headtree/$o" && cmp -s ctl_new.out headtree/ctl_head.out; then same=$((same+1))
+        else diff_list="$diff_list $m"; fi
+    done
+    if [ "$same" = 5 ]; then pass "theourgia (control): 5/5 in-bounds scenes byte-identical to HEAD (theourgia, fb, session, text, mux_session)"
+    else fail "theourgia (control): differs from HEAD:$diff_list"; fi
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -212,6 +291,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
