@@ -86,6 +86,34 @@ glyph MAIN = print(concat(JOIN("|")(SPLIT("")("abc")))(concat("/")(REPLACE("")("
     else fail "strutil generated module: rc=$rc out=[$(printf '%s' "$v" | head -c 200)] (want abc/abc)"; fi
 }
 
+# ── #85 host: an import cycle halts loudly instead of SIGSEGV ─────────────────
+# do_import → parse_program → do_import had no cycle check and no stack guard:
+# a first-form self-import SIGSEGV'd (rc 139, no diagnostic); a glyph before it
+# died 'too many glyphs'; a two-file cycle SIGSEGV'd. Fixed: 'import cycle: …',
+# rc 1. Control: a diamond (A imports B and C, both import D) still runs.
+case_import_cycle() {
+    mkdir -p cyc && ( cd cyc
+    printf 'import("selfA.la")\nglyph MAIN = print("x")\n' > selfA.la
+    printf 'glyph Y = "y"\nimport("selfB.la")\nglyph MAIN = print("x")\n' > selfB.la
+    printf 'import("cycB.la")\nglyph MAIN = print("x")\n' > cycA.la
+    printf 'import("cycA.la")\nglyph BV = "b"\nexport BV\n' > cycB.la
+    printf 'glyph DV = "d"\nexport DV\n' > D.la
+    printf 'import("D.la")\nglyph BV = DV\nexport BV\n' > B.la
+    printf 'import("D.la")\nglyph CV = DV\nexport CV\n' > C.la
+    printf 'import("B.la")\nimport("C.la")\nglyph MAIN = print(concat(BV)(CV))\n' > A.la )
+    local f want out rc
+    for f in "selfA.la|import cycle: selfA.la -> selfA.la" "selfB.la|import cycle: selfB.la -> selfB.la" \
+             "cycA.la|import cycle: cycA.la -> cycB.la -> cycA.la"; do
+        want=${f#*|}; f=${f%%|*}; rc=0
+        out=$(cd cyc && timeout 60 ../tiny_host "$f" 2>&1) || rc=$?
+        if [ "$rc" = 1 ] && [ "$out" = "$want" ]; then pass "host import cycle $f: halts loudly, rc 1"
+        else fail "host import cycle $f: rc=$rc out=[$(printf '%s' "$out" | head -c 200)] (want [$want], rc 1)"; fi
+    done
+    rc=0; out=$(cd cyc && timeout 60 ../tiny_host A.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = "dd" ]; then pass "host diamond import (control): still runs"
+    else fail "host diamond import (control): rc=$rc out=[$out] (want dd)"; fi
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -184,6 +212,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }

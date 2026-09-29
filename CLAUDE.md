@@ -217,8 +217,9 @@ both isolation directions on every engine. The LogosIPC VM test now
 `import`s `logosipc.la` for real (resolved by `codegen.la` running *as*
 `compiler.bin` on the VM), retiring the old inline-the-module workaround.
 
-*Honest remaining limits:* no import-cycle detection (a circular import loops,
-as it does on the C host); a module imported twice (diamond) is mangled to the
+*Honest remaining limits:* no import-cycle detection in the `.la` engines (a
+circular import loops there; the C host halts loudly with `import cycle: a.la ->
+b.la -> a.la`); a module imported twice (diamond) is mangled to the
 same names and merged twice (harmless — the duplicates are identical), rather
 than as distinct sibling sets; and this teaches each engine's *own* top-level
 parser to import — it does not make `import` work for a program *meta-evaluated
