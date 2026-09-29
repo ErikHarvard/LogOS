@@ -325,34 +325,117 @@ _start:
     mov     rdi, rbp
     syscall
 .booted:
+    ; HEAP-MMAP: the two semispaces are reserved HERE, by one mmap(MAP_NORESERVE),
+    ; not in the ELF p_memsz (which used to carry 1.5 GiB of heap, so exec — and
+    ; valgrind — had to map it all up front). Size per semispace: LOGOS_HEAP_MB
+    ; (MiB) from envp, default 768 (unchanged). rsp still points at argc here:
+    ; nothing above has pushed. Bounds go to heap_lo/heap_mid/heap_hi, which the
+    ; GC trigger, the concat/str_tail guards, gc and gc_scan read instead of the
+    ; old fixed heap/semimid/progbuf addresses.
+    mov     r8, 768                  ; default MiB per semispace
+    mov     rcx, [rsp]               ; argc
+    lea     rsi, [rsp + rcx*8 + 16]  ; envp[0]
+.hm_env:
+    mov     rdi, [rsi]
+    test    rdi, rdi
+    jz      .hm_map
+    add     rsi, 8
+    mov     rdx, hm_key
+    mov     ecx, hm_keylen
+.hm_cmp:
+    mov     al, [rdi]
+    cmp     al, [rdx]
+    jne     .hm_env
+    inc     rdi
+    inc     rdx
+    dec     ecx
+    jnz     .hm_cmp
+    xor     r8d, r8d
+    xor     ecx, ecx
+.hm_dig:
+    movzx   eax, byte [rdi]
+    test    al, al
+    jz      .hm_got
+    sub     eax, '0'
+    cmp     eax, 9
+    ja      .hm_bad
+    imul    r8, r8, 10
+    add     r8, rax
+    cmp     r8, 0x1000000            ; 16 TiB ceiling: rejects overflow/absurd sizes
+    ja      .hm_bad
+    inc     rdi
+    inc     ecx
+    jmp     .hm_dig
+.hm_got:
+    test    ecx, ecx
+    jz      .hm_bad
+    cmp     r8, 128                  ; floor: a semispace must exceed the 65 MiB margin
+    jb      .hm_bad
+.hm_map:
+    shl     r8, 20                   ; MiB -> bytes (one semispace)
+    lea     rsi, [r8 + r8]           ; both semispaces
+    mov     rbp, r8
+    mov     eax, 9                   ; mmap
+    xor     edi, edi
+    mov     edx, 3                   ; PROT_READ|PROT_WRITE
+    mov     r10d, 0x4022             ; MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE
+    mov     r8, -1
+    xor     r9d, r9d
+    syscall
+    cmp     rax, -4095
+    jae     .hm_fail
+    mov     [heap_lo], rax
+    mov     r15, rax
+    add     rax, rbp
+    mov     [heap_mid], rax
+    add     rax, rbp
+    mov     [heap_hi], rax
     mov     rbx, bootstrap
     mov     r12, ostack
     xor     r13, r13
     mov     r14, dstack
-    mov     r15, heap
     jmp     .loop
-.openfail:
+.hm_bad:
+    mov     rsi, hm_badmsg
+    mov     rdx, hm_badmsg_len
+    jmp     .hm_die
+.hm_fail:
+    mov     rsi, hm_mapmsg
+    mov     rdx, hm_mapmsg_len
+.hm_die:
+    mov     rax, 1
+    mov     rdi, 2
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+.openfail:                       ; logos_program.bin missing/unreadable — halt LOUDLY
+    mov     rax, 1               ;   (was: bare exit 1 with no diagnostic)
+    mov     rdi, 2
+    mov     rsi, openmsg
+    mov     rdx, openmsg_len
+    syscall
     mov     rax, 60
     mov     rdi, 1
     syscall
 
 .loop:
     ; GC trigger + heap-exhaustion guard. The bump heap is two semispaces:
-    ; low [heap, semimid), high [semimid, progbuf). `space_end` is the end of
+    ; low [heap_lo, heap_mid), high [heap_mid, heap_hi) — the startup mmap. `space_end` is the end of
     ; the one r15 is in. When r15 comes within `margin` of it (margin covers
     ; the largest single allocation — read_file's 64 MiB), run a copying GC.
     ; If r15 is STILL within margin after collecting, the live set itself
     ; doesn't fit: the heap is genuinely exhausted → halt loudly.
-    mov     rax, progbuf
-    mov     rcx, semimid
+    mov     rax, [heap_hi]
+    mov     rcx, [heap_mid]
     cmp     r15, rcx
     cmovb   rax, rcx
     sub     rax, margin
     cmp     r15, rax
     jb      .nogc
     call    gc
-    mov     rax, progbuf
-    mov     rcx, semimid
+    mov     rax, [heap_hi]
+    mov     rcx, [heap_mid]
     cmp     r15, rcx
     cmovb   rax, rcx
     sub     rax, margin
@@ -390,7 +473,7 @@ _start:
     je      .apply
     cmp     al, 5
     je      .ret
-    jmp     .halt
+    jmp     .badstream           ; unknown opcode: malformed stream, halt LOUDLY (was: silent exit 0)
 
 .pushs:                          ; rbx → NUL-terminated literal (NUL-free)
     mov     rsi, rbx
@@ -1073,6 +1156,7 @@ _start:
     mov     rbx, [r11+8]
     jmp     .loop
 .apply_bi:
+    mov     [bi_cur], r11        ; which builtin is running — named by .bidie's diagnostics
     cmp     r11, 1
     je      .mkpa
     cmp     r11, 4
@@ -1207,7 +1291,7 @@ _start:
     je      .bi_reapnb
     cmp     r11, 57
     je      .mkpa                ; poll is curried: poll(fds)(timeout)
-    jmp     .halt
+    jmp     .badstream           ; unknown builtin id: malformed stream, halt LOUDLY (was: silent exit 0)
 .mkpa:
     mov     qword [r15], 0       ; GC fwd header
     add     r15, 8
@@ -1221,6 +1305,7 @@ _start:
     jmp     .loop
 .apply_pa:
     mov     r10, [r11]
+    mov     [bi_cur], r10        ; curried builtin's id (see .bidie)
     mov     rbp, [r11+16]
     cmp     r10, 1
     je      .bi_concat2
@@ -1290,7 +1375,7 @@ _start:
     je      .bi_dup22
     cmp     r10, 59
     je      .bi_execv2
-    jmp     .halt
+    jmp     .badstream           ; unknown curried-builtin id: malformed stream, halt LOUDLY (was: silent exit 0)
 
 ; ── builtins (string values are descriptors [len][ptr]) ──
 .bi_print:                       ; r9 = STR descriptor; or an INT → its decimal
@@ -1401,8 +1486,8 @@ _start:
     mov     rax, rcx
     add     rax, r15
     add     rax, 24
-    mov     r10, progbuf         ; space_end = semimid (low half) or progbuf (high)
-    mov     r11, semimid
+    mov     r10, [heap_hi]       ; space_end = heap_mid (low half) or heap_hi (high)
+    mov     r11, [heap_mid]
     cmp     r15, r11
     cmovb   r10, r11
     cmp     rax, r10
@@ -1461,7 +1546,7 @@ _start:
     xor     rdx, rdx
     syscall
     test    rax, rax
-    js      .rf_empty
+    js      .rf_nofile           ; open failed: halt loudly (was: return "" silently)
     mov     rbp, rax
     mov     r10, r15             ; content start
     mov     rax, 0
@@ -1469,6 +1554,8 @@ _start:
     mov     rsi, r15
     mov     rdx, 0x4000000
     syscall
+    test    rax, rax             ; read failed (-errno, e.g. -EISDIR on a directory)?
+    js      .rf_fail             ;   was: added -errno to r15 → heap pointer moved BACKWARDS
     mov     rdx, rax             ; bytes read (preserved across close)
     add     r15, rax
     mov     rax, 3
@@ -1483,16 +1570,36 @@ _start:
     add     r12, 16
     add     r15, 16
     jmp     .loop
-.rf_empty:
-    mov     qword [r15], 0       ; STRDESC GC fwd header
-    add     r15, 8
-    mov     qword [r15], 0       ; len 0
-    mov     [r15+8], r15
-    mov     qword [r12], 0
-    mov     [r12+8], r15
-    add     r12, 16
-    add     r15, 16
-    jmp     .loop
+.rf_fail:                        ; read(2) returned -errno: close the fd, halt LOUDLY
+    mov     rax, 3
+    mov     rdi, rbp
+    syscall
+    mov     rsi, rfmsg   
+    mov     rdx, rfmsg_len
+    jmp     .bidie
+.rf_nofile:
+    ; A file that cannot be opened is an error on every engine: the C host halts
+    ; with "read_file: cannot open '<path>': <strerror>". Returning "" here was a
+    ; silent success — a missing import compiled as an empty module, a missing
+    ; input read as empty data. Write "secd: read_file: cannot open '<path>'\n".
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rfopenmsg
+    mov     rdx, rfopenmsg_len
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, pathbuf
+    mov     rdx, [r9]            ; the path's length (r9 = its descriptor, preserved)
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rfopenend
+    mov     rdx, 2
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
 
 .bi_copyself:                    ; replicate /proc/self/exe → new_logos_secd.bin
     mov     rax, 2
@@ -2084,8 +2191,8 @@ _start:
     add     rax, [r9]
     add     rax, r15
     add     rax, 24              ; bytes + STRDESC (8 header + 16 fields)
-    mov     rcx, progbuf         ; space_end = semimid (low) or progbuf (high)
-    mov     rdx, semimid
+    mov     rcx, [heap_hi]       ; space_end = heap_mid (low) or heap_hi (high)
+    mov     rdx, [heap_mid]
     cmp     r15, rdx
     cmovb   rcx, rdx
     cmp     rax, rcx
@@ -2476,6 +2583,8 @@ _start:
     ; input) fails loudly instead of degrading. Prints msg + newline to stderr
     ; and exits non-zero — the VM analogue of the host's `error` builtin, so the
     ; same Lingua Adamica source halts the same way on the native engine.
+    test    r8, r8               ; STR only: error(5) used to deref the INT payload (SIGSEGV)
+    jnz     .strtype
     mov     rsi, [r9+8]          ; msg bytes
     mov     rdx, [r9]            ; msg length
     mov     rax, 1
@@ -3363,50 +3472,102 @@ _start:
     jmp     .loop
 
 .bi_inttostr:                    ; r9 = INT payload → decimal STR (via push_dec)
+    cmp     r8, 4                ; INT only (see .inttype)
+    jne     .inttype
     mov     rax, r9
     call    push_dec
     jmp     .loop
 
 .bi_add2:                        ; rbp = a1 int, r9 = a2 int (Ontodirection ▷)
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     add     rax, r9
     jmp     .push_int
 .bi_sub2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     sub     rax, r9
     jmp     .push_int
 .bi_mul2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     imul    rax, r9
     jmp     .push_int
 .bi_div2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     test    r9, r9
     je      .int_divzero
+    cmp     r9, -1               ; LONG_MIN / -1 overflows: idiv traps → halt loudly instead
+    jne     .div_go
+    mov     rax, 0x8000000000000000
+    cmp     rbp, rax
+    je      .int_divovf
+.div_go:
     mov     rax, rbp
     cqo
     idiv    r9
     jmp     .push_int
 .bi_mod2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     test    r9, r9
     je      .int_divzero
+    cmp     r9, -1               ; LONG_MIN mod -1 is 0 mathematically; idiv would trap,
+    jne     .mod_go              ;   so answer 0 directly (matches the C host)
+    mov     rax, 0x8000000000000000
+    cmp     rbp, rax
+    jne     .mod_go
+    xor     rax, rax
+    jmp     .push_int
+.mod_go:
     mov     rax, rbp
     cqo
     idiv    r9
     mov     rax, rdx
     jmp     .push_int
 .bi_band2:                       ; rbp & r9 — two's complement, matches tiny_host
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     and     rax, r9
     jmp     .push_int
 .bi_bor2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     or      rax, r9
     jmp     .push_int
 .bi_bxor2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     mov     rax, rbp
     xor     rax, r9
     jmp     .push_int
 .bi_bshl2:                       ; count outside 0..63 -> 0 (see header: x86
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     r9, 63               ; MASKS the count to 6 bits and ARM does not,
     ja      .bi_shift_zero       ; so the range check suppresses that accident;
     mov     rcx, r9              ; `ja` also catches negatives as unsigned-large
@@ -3414,6 +3575,10 @@ _start:
     shl     rax, cl
     jmp     .push_int
 .bi_bshr2:                       ; LOGICAL (shr), never arithmetic (sar)
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     r9, 63
     ja      .bi_shift_zero
     mov     rcx, r9
@@ -3424,6 +3589,8 @@ _start:
     xor     rax, rax
     jmp     .push_int
 .bi_bnot:                        ; UNARY: r9 = arg
+    cmp     r8, 4                ; INT only (see .inttype)
+    jne     .inttype
     mov     rax, r9
     not     rax
     jmp     .push_int
@@ -3432,16 +3599,32 @@ _start:
     mov     [r12+8], rax
     add     r12, 16
     jmp     .loop
-.int_divzero:
-    mov     rax, 60              ; div/mod by zero — halt (matches the C host)
-    mov     rdi, 1
-    syscall
+.inttype:                        ; an integer builtin given a non-INT (tag != 4):
+    mov     rsi, inttypemsg    ;   the payload would be used as the number
+    mov     rdx, inttypemsg_len
+    jmp     .bidie
+.int_divovf:                     ; LONG_MIN / -1 — idiv would trap (SIGFPE); halt LOUDLY
+    mov     rsi, divovfmsg    ;   like the C host's "div: overflow (LONG_MIN / -1)"
+    mov     rdx, divovfmsg_len
+    jmp     .bidie
+.int_divzero:                    ; div/mod by zero — halt LOUDLY (the C host prints
+    mov     rsi, divzeromsg    ;   "div: division by zero"; was: bare exit 1)
+    mov     rdx, divzeromsg_len
+    jmp     .bidie
 
 .bi_lt2:                         ; rbp < r9 (signed) → Church bool closure
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     rbp, r9
     jl      .int_true
     jmp     .int_false
 .bi_inteq2:
+    cmp     qword [r11+8], 4     ; both args INT only (see .inttype)
+    jne     .inttype
+    cmp     r8, 4
+    jne     .inttype
     cmp     rbp, r9
     je      .int_true
     jmp     .int_false
@@ -3470,8 +3653,61 @@ _start:
     jmp     .loop
 
 .halt:
+    ; HALT (opcode 0) is valid ONLY as the final byte of `bootstrap` — the byte
+    ; after `PUSHV MAIN`, reached when MAIN's body RETs with the dump empty. The
+    ; program stream itself never contains a HALT opcode (codegen emits 00 only
+    ; as a string/name terminator or the table-end sentinel, neither of which
+    ; is ever dispatched), so a 00 dispatched from anywhere else means control
+    ; ran into a sentinel, zero-fill or corrupt bytes with work left undone.
+    ; That used to exit 0 silently; it is a malformed program (rc 1).
+    cmp     rbx, bootstrap + 7   ; rbx is already past the opcode byte
+    jne     .badstream
+    cmp     r14, dstack          ; and nothing is left on the dump
+    jne     .badstream
     mov     rax, 60
     xor     rdi, rdi
+    syscall
+
+.bidie:
+    ; One diagnostic shape for every builtin-attributable error, matching the
+    ; other engines: "secd: <builtin>: <message>", rc 1. rsi/rdx = the bare
+    ; message (newline-terminated). The builtin is the one .apply_bi/.apply_pa
+    ; last dispatched (bi_cur, an id into bi_nametab); an out-of-range id (-1:
+    ; no builtin dispatched yet) prints "secd: <message>".
+    push    rdx
+    push    rsi
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, secdpfx
+    mov     rdx, 6
+    syscall
+    mov     rax, [bi_cur]
+    cmp     rax, BI_COUNT
+    jae     .bd_msg
+    mov     rsi, [bi_nametab + rax*8]
+    xor     edx, edx
+.bd_len:
+    cmp     byte [rsi + rdx], 0
+    je      .bd_name
+    inc     rdx
+    jmp     .bd_len
+.bd_name:
+    mov     rax, 1
+    mov     rdi, 2
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, colonsp
+    mov     rdx, 2
+    syscall
+.bd_msg:
+    pop     rsi
+    pop     rdx
+    mov     rax, 1
+    mov     rdi, 2
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
     syscall
 
 .heapfull:                       ; bump heap would overrun progbuf — halt loudly
@@ -3495,24 +3731,14 @@ _start:
     syscall
 
 .pathlong:                       ; a path/fstype arg ≥ 4 KiB would overrun the buffer
-    mov     rax, 1
-    mov     rdi, 2               ; stderr
     mov     rsi, pathmsg
     mov     rdx, pathmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .poll_toomany:                   ; more poll fds than the pollfd buffer (pathbuf) holds
-    mov     rax, 1
-    mov     rdi, 2               ; stderr
     mov     rsi, pollmsg
     mov     rdx, pollmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .unbound:                        ; a name resolved as neither env, glyph, nor builtin
     mov     rax, 1               ; — halt loudly (exit 1), like the C host / eval.la /
@@ -3565,34 +3791,19 @@ _start:
     syscall
 
 .chrrange:                       ; chr argument outside 0..255
-    mov     rax, 1
-    mov     rdi, 2
     mov     rsi, chrmsg
     mov     rdx, chrmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .strtype:                        ; chr/ord given a non-string (would deref a non-ptr)
-    mov     rax, 1
-    mov     rdi, 2
     mov     rsi, strtypemsg
     mov     rdx, strtypemsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 .notint:                         ; str_to_int given a non-decimal string
-    mov     rax, 1
-    mov     rdi, 2
     mov     rsi, notintmsg
     mov     rdx, notintmsg_len
-    syscall
-    mov     rax, 60
-    mov     rdi, 1
-    syscall
+    jmp     .bidie
 
 ; ═══════════════════════════════════════════════════════════════════
 ;  Copying garbage collector — two semispaces over [heap, progbuf):
@@ -3617,13 +3828,13 @@ _start:
 ;  copy (sharing preserved, no duplication, no divergence on the DAG).
 ; ═══════════════════════════════════════════════════════════════════
 gc:
-    mov     rax, semimid         ; tospace = the semispace r15 is NOT in
+    mov     rax, [heap_mid]      ; tospace = the semispace r15 is NOT in
     cmp     r15, rax
     jb      .to_high
-    mov     rax, heap            ; r15 in high → tospace = low
+    mov     rax, [heap_lo]       ; r15 in high → tospace = low
     jmp     .to_set
 .to_high:
-    mov     rax, semimid         ; r15 in low  → tospace = high
+    mov     rax, [heap_mid]      ; r15 in low  → tospace = high
 .to_set:
     mov     [gc_tofree], rax
     mov     rax, gcwork
@@ -3757,12 +3968,12 @@ gc_scan:
     test    rcx, rcx
     je      .sc_ret              ; empty string: ptr unused
     mov     rdx, [rsi+8]
-    mov     rax, heap
+    mov     rax, [heap_lo]
     cmp     rdx, rax
-    jb      .sc_ret              ; below heap → static, leave
-    mov     rax, progbuf
+    jb      .sc_ret              ; below the heap mapping → static / progbuf, leave
+    mov     rax, [heap_hi]
     cmp     rdx, rax
-    jae     .sc_ret              ; in progbuf → leave (PUSHS literal)
+    jae     .sc_ret              ; above it → leave (the mmap is not ordered vs progbuf)
     push    rsi
     mov     rdi, [gc_tofree]
     mov     [rsi+8], rdi         ; STRDESC.ptr := new data location
@@ -3810,7 +4021,7 @@ heapmsg:       db "secd: heap exhausted", 10
 heapmsg_len    equ $ - heapmsg
 stackmsg:      db "secd: stack overflow", 10
 stackmsg_len   equ $ - stackmsg
-pathmsg:       db "secd: path too long", 10
+pathmsg:       db "path too long", 10
 pathmsg_len    equ $ - pathmsg
 unboundmsg:    db "secd: unbound variable", 10
 unboundmsg_len equ $ - unboundmsg
@@ -3822,13 +4033,23 @@ readmsg:       db "secd: read error", 10
 readmsg_len    equ $ - readmsg
 badstrmsg:     db "secd: malformed program", 10
 badstrmsg_len  equ $ - badstrmsg
-chrmsg:        db "secd: chr out of range", 10
+chrmsg:        db "value out of byte range 0..255", 10
 chrmsg_len     equ $ - chrmsg
-strtypemsg:    db "secd: argument is not a string", 10
+strtypemsg:    db "argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
-notintmsg:     db "secd: not a decimal integer", 10
+notintmsg:     db "not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
-pollmsg:       db "secd: too many poll fds", 10
+divzeromsg:    db "division by zero", 10
+divzeromsg_len equ $ - divzeromsg
+openmsg:       db "secd: cannot open logos_program.bin", 10
+openmsg_len    equ $ - openmsg
+divovfmsg:     db "overflow (LONG_MIN / -1)", 10
+divovfmsg_len  equ $ - divovfmsg
+rfmsg:         db "read failed", 10
+rfmsg_len      equ $ - rfmsg
+inttypemsg:    db "argument is not an integer", 10
+inttypemsg_len equ $ - inttypemsg
+pollmsg:       db "too many fds", 10
 pollmsg_len    equ $ - pollmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
@@ -3906,7 +4127,7 @@ str_poll:      db "poll", 0
 str_dup2:      db "dup2", 0
 str_execv:     db "execv", 0
 drm_card:      db "/dev/dri/card0", 0
-drm_pfx:           db "secd: drm "
+drm_pfx:           db "secd: drm_mode: "
 drm_pfx_len        equ $ - drm_pfx
 drm_failed:        db " failed: "
 drm_failed_len     equ $ - drm_failed
@@ -3924,13 +4145,97 @@ dn_mmap:           db "mmap"
 dn_mmap_len        equ $ - dn_mmap
 dn_setcrtc:        db "SETCRTC"
 dn_setcrtc_len     equ $ - dn_setcrtc
-drm_noconnmsg:     db "secd: drm no connected display", 10
+drm_noconnmsg:     db "secd: drm_mode: no connected display", 10
 drm_noconnmsg_len  equ $ - drm_noconnmsg
-drm_nomodemsg:     db "secd: present before drm_mode", 10
+drm_nomodemsg:     db "secd: present: called before drm_mode", 10
 drm_nomodemsg_len  equ $ - drm_nomodemsg
 TRUE_BODY:     db 3, "f", 0, 2, "t", 0, 5, 5
 FALSE_BODY:    db 3, "f", 0, 2, "f", 0, 5, 5
 gc_tofree:     dq 0              ; GC: bump pointer within tospace during a collect
+heap_lo:       dq 0              ; HEAP-MMAP: low semispace base (the startup mmap)
+heap_mid:      dq 0              ; boundary: low [heap_lo, heap_mid), high [heap_mid, heap_hi)
+heap_hi:       dq 0              ; end of the high semispace
+rfopenmsg:     db "secd: read_file: cannot open '"
+rfopenmsg_len  equ $ - rfopenmsg
+rfopenend:     db "'", 10
+bi_cur:        dq -1             ; id of the builtin last dispatched (see .bidie)
+BI_COUNT       equ 67
+bi_nametab:                      ; id -> NUL-terminated name, derived from .pv_builtin's chain
+               dq str_print
+               dq str_concat
+               dq str_strhead
+               dq str_strtail
+               dq str_streq
+               dq str_readfile
+               dq str_writefile
+               dq str_copyself
+               dq str_chr
+               dq str_ord
+               dq str_writeexec
+               dq str_write
+               dq str_open
+               dq str_close
+               dq str_mount
+               dq str_fork
+               dq str_execve
+               dq str_waitpid
+               dq str_exit
+               dq str_strtoint
+               dq str_inttostr
+               dq str_add
+               dq str_sub
+               dq str_mul
+               dq str_div
+               dq str_mod
+               dq str_lt
+               dq str_inteq
+               dq str_reap
+               dq str_sleep
+               dq str_error
+               dq str_pipe
+               dq str_read
+               dq str_strlen
+               dq str_drmmode
+               dq str_present
+               dq str_clockgettime
+               dq str_socket
+               dq str_bind
+               dq str_listen
+               dq str_accept
+               dq str_connect
+               dq str_send
+               dq str_recv
+               dq str_unlink
+               dq str_random
+               dq str_mkdir
+               dq str_rmdir
+               dq str_rename
+               dq str_stat
+               dq str_chmod
+               dq str_lseek
+               dq str_kill
+               dq str_sigprocmask
+               dq str_signalfd
+               dq str_getpid
+               dq str_reapnb
+               dq str_poll
+               dq str_dup2
+               dq str_execv
+               dq str_band
+               dq str_bor
+               dq str_bxor
+               dq str_bshl
+               dq str_bshr
+               dq str_bnot
+               dq str_strat
+secdpfx:       db "secd: "
+colonsp:       db ": "
+hm_key:        db "LOGOS_HEAP_MB="
+hm_keylen      equ $ - hm_key
+hm_badmsg:     db "secd: LOGOS_HEAP_MB: not a valid size", 10
+hm_badmsg_len  equ $ - hm_badmsg
+hm_mapmsg:     db "secd: heap: mmap failed", 10
+hm_mapmsg_len  equ $ - hm_mapmsg
 gc_wktop:      dq 0              ; GC: worklist stack top (into gcwork)
 ; DRM/KMS scanout state, shared between drm_mode() and present().
 drm_fd:        dq 0              ; /dev/dri/card0 fd
@@ -3959,18 +4264,13 @@ stackmargin equ 0x1000               ; halt this many bytes (256 frames) before
 fsbuf    equ pathbuf + 0x1000
 gcwork   equ fsbuf   + 0x1000        ; GC worklist: 16 MiB = 1 Mi (kind,ptr) entries
 gcwork_end equ gcwork + 0x1000000
-; The bump heap is split into two equal semispaces for a copying collector.
-; Allocation bumps r15 inside the active half; at a collect the live set is
-; copied into the other half (see gc). 768 MiB each — ~703 MiB usable before
-; the GC/exhaustion margin: a single semispace matches the old non-GC bump
-; heap's capacity, so any workload that fit before GC still fits in one half
-; even with zero reclamation (compiling secd.la peaks at ~320 MiB live; the
-; earlier 384 MiB split left only ~319 MiB usable and exhausted at that peak).
-; All regions are lazily mapped, so the larger reservation costs nothing until
-; touched.
-heap     equ gcwork_end              ; semispaces: low [heap, semimid), high [semimid, progbuf)
-semimid  equ heap    + 0x30000000    ; 768 MiB: boundary between the two semispaces
-progbuf  equ heap    + 0x60000000    ; 1536 MiB total; program stream loads at progbuf
+; The bump heap — two equal semispaces for the copying collector — is no longer
+; part of this layout: _start reserves it with one mmap(MAP_NORESERVE) sized by
+; LOGOS_HEAP_MB (default 768 MiB per semispace, the old fixed size) and records
+; its bounds in heap_lo/heap_mid/heap_hi. Everything below stays static, so the
+; ELF p_memsz covers only the stacks, buffers, worklist, program region and DRM
+; scratch (~53 MiB, lazily mapped) instead of ~1.55 GiB.
+progbuf  equ gcwork_end              ; the program stream loads at progbuf
 progcap  equ 0x500000                ; 5 MiB mapped for the program stream (matches the
                                      ; phdr p_memsz tail); the loader fills up to here
 progend  equ progbuf + progcap       ; mapped end of the program region; bounds the

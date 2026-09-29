@@ -43,6 +43,20 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+/* Checked allocation: every malloc/strdup in the host goes through these so an
+ * allocation failure halts loudly ("out of memory", exit 1) instead of
+ * returning NULL into code that dereferences it (SIGSEGV). */
+static void *xmalloc(size_t n) {
+    void *p = malloc(n);
+    if (!p) { fprintf(stderr, "host: out of memory\n"); exit(1); }
+    return p;
+}
+static char *xstrdup(const char *s) {
+    char *p = strdup(s);
+    if (!p) { fprintf(stderr, "host: out of memory\n"); exit(1); }
+    return p;
+}
+
 /* ------------------------------------------------------------------ AST -- */
 
 typedef enum { N_VAR, N_LAM, N_APP, N_STR, N_INT, N_PARTIAL } NType;
@@ -86,7 +100,7 @@ static uintptr_t stack_floor = 0;         /* recursion guard: bail below this ad
 static void check_stack(void) {
     char probe;
     if (stack_floor && (uintptr_t)&probe < stack_floor) {
-        fprintf(stderr, "error: expression nesting too deep (C stack guard)\n");
+        fprintf(stderr, "host: expression nesting too deep (C stack guard)\n");
         exit(1);
     }
 }
@@ -102,7 +116,7 @@ static void gc_register(Node *n) {
     if (gc_n == gc_cap) {
         gc_cap = gc_cap ? gc_cap * 2 : 4096;
         gc_all = realloc(gc_all, gc_cap * sizeof *gc_all);
-        if (!gc_all) { fprintf(stderr, "gc: out of memory\n"); exit(1); }
+        if (!gc_all) { fprintf(stderr, "host: out of memory\n"); exit(1); }
     }
     gc_all[gc_n++] = n;
 }
@@ -125,42 +139,58 @@ static void gc_mark(Node *n) {            /* mark + enqueue for tracing */
     if (gc_work_n == gc_work_cap) {
         gc_work_cap = gc_work_cap ? gc_work_cap * 2 : 4096;
         gc_work = realloc(gc_work, gc_work_cap * sizeof *gc_work);
-        if (!gc_work) { fprintf(stderr, "gc: out of memory\n"); exit(1); }
+        if (!gc_work) { fprintf(stderr, "host: out of memory\n"); exit(1); }
     }
     gc_work[gc_work_n++] = n;
 }
+/* Conservative root scan of the C stack. This is undefined behaviour BY
+ * CONSTRUCTION: it reads every word of [lo, hi) as a possible pointer, and
+ * those words are not objects of type uintptr_t as far as the C abstract
+ * machine is concerned (they are other frames' locals, spills, padding, and
+ * red zones). Every conservative collector (Boehm's included) does exactly
+ * this. Two consequences: (1) the sanitizers must not instrument this one
+ * function, or every collection reports "load with insufficient space for an
+ * object" (UBSan) / stack-redzone reads (ASan) and the host cannot be
+ * sanitizer-tested at all; (2) each word is read through memcpy rather than
+ * by dereferencing a uintptr_t*, so no typed lvalue is formed over memory
+ * that is not a uintptr_t. The scan itself is correct: it only ever compares
+ * candidate words against the registered-node set (gc_known). */
+__attribute__((no_sanitize("address", "undefined")))
 static void gc_scan(uintptr_t lo, uintptr_t hi) {   /* conservative root scan */
-    for (uintptr_t *p = (uintptr_t *)lo; p < (uintptr_t *)hi; p++)
-        if (gc_known((Node *)*p)) gc_mark((Node *)*p);
+    for (uintptr_t a = lo; a + sizeof(uintptr_t) <= hi; a += sizeof(uintptr_t)) {
+        uintptr_t w;
+        memcpy(&w, (const void *)a, sizeof w);
+        if (gc_known((Node *)w)) gc_mark((Node *)w);
+    }
 }
 
 static Node *new_node(NType t) {
     if (gc_n >= gc_next) gc();
     Node *n = calloc(1, sizeof *n);
-    if (!n) { fprintf(stderr, "out of memory\n"); exit(1); }
+    if (!n) { fprintf(stderr, "host: out of memory\n"); exit(1); }
     n->t = t;
     gc_register(n);
     return n;
 }
 
-static Node *mkvar(const char *name)            { Node *n = new_node(N_VAR); n->s = strdup(name); return n; }
+static Node *mkvar(const char *name)            { char *s = xstrdup(name); Node *n = new_node(N_VAR); n->s = s; return n; }
 /* mkstrn: a binary-safe string of exactly `len` bytes (may contain NULs).
  * A trailing '\0' is kept past the end so the buffer is still printable as a
  * C string for the text-only paths, but `len` is the authority. */
 static Node *mkstrn(const char *bytes, size_t len) {
-    Node *n = new_node(N_STR);
-    char *buf = malloc(len + 1);
-    if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
+    char *buf = xmalloc(len + 1);
+    if (!buf) { fprintf(stderr, "host: out of memory\n"); exit(1); }
     if (len) memcpy(buf, bytes, len);
     buf[len] = '\0';
+    Node *n = new_node(N_STR);   /* may collect: bytes are already copied */
     n->s = buf; n->len = len;
     return n;
 }
 static Node *mkstr(const char *val)             { return mkstrn(val, strlen(val)); }
 static Node *mkint(long v)                      { Node *n = new_node(N_INT); n->i = v; return n; }
-static Node *mklam(const char *param, Node *bd) { Node *n = new_node(N_LAM); n->s = strdup(param); n->a = bd; return n; }
+static Node *mklam(const char *param, Node *bd) { char *s = xstrdup(param); Node *n = new_node(N_LAM); n->s = s; n->a = bd; return n; }
 static Node *mkapp(Node *f, Node *x)            { Node *n = new_node(N_APP); n->a = f; n->b = x; return n; }
-static Node *mkpartial(const char *nm, Node *a)  { Node *n = new_node(N_PARTIAL); n->s = strdup(nm); n->a = a; return n; }
+static Node *mkpartial(const char *nm, Node *a)  { char *s = xstrdup(nm); Node *n = new_node(N_PARTIAL); n->s = s; n->a = a; return n; }
 
 static Node *copy_node(Node *e) {
     check_stack();
@@ -209,7 +239,7 @@ static void lex(void) {
         case '=': P++; curtok = T_EQ;  return;
         case '"': {
             P++;
-            char  *buf = malloc(strlen(P) + 1);
+            char  *buf = xmalloc(strlen(P) + 1);
             size_t i = 0;
             while (*P && *P != '"') {
                 char c = *P++;
@@ -226,7 +256,7 @@ static void lex(void) {
                 buf[i++] = c;
             }
             if (*P == '"') P++;
-            else { fprintf(stderr, "lex error: unterminated string\n"); exit(1); }
+            else { fprintf(stderr, "host: lex error: unterminated string\n"); exit(1); }
             buf[i] = '\0';
             curstr = buf;
             curlen = i;
@@ -248,7 +278,7 @@ static void lex(void) {
             if (v > (unsigned long long)LONG_MAX) overflow = 1;
             P++;
         }
-        if (overflow) { fprintf(stderr, "lex error: integer literal exceeds LONG_MAX\n"); exit(1); }
+        if (overflow) { fprintf(stderr, "host: lex error: integer literal exceeds LONG_MAX\n"); exit(1); }
         curint = (long)v;
         curtok = T_INT;
         return;
@@ -258,7 +288,7 @@ static void lex(void) {
         const char *start = P;
         while (is_ident_char((unsigned char)*P)) P++;
         size_t len = (size_t)(P - start);
-        char  *txt = malloc(len + 1);
+        char  *txt = xmalloc(len + 1);
         memcpy(txt, start, len);
         txt[len] = '\0';
         if      (strcmp(txt, "glyph")  == 0) { curtok = T_GLYPH;  free(txt); }
@@ -269,7 +299,7 @@ static void lex(void) {
         return;
     }
 
-    fprintf(stderr, "lex error: unexpected character '%c' (0x%02x)\n",
+    fprintf(stderr, "host: lex error: unexpected character '%c' (0x%02x)\n",
             *P, (unsigned char)*P);
     exit(1);
 }
@@ -277,7 +307,7 @@ static void lex(void) {
 static void advance(void) { lex(); }
 
 static void expect(Tok t, const char *what) {
-    if (curtok != t) { fprintf(stderr, "parse error: expected %s\n", what); exit(1); }
+    if (curtok != t) { fprintf(stderr, "host: parse error: expected %s\n", what); exit(1); }
 }
 
 /* -------------------------------------------------------------- parser -- */
@@ -291,7 +321,7 @@ static Node *parse_primary(void) {
     if (curtok == T_STR)   { Node *n = mkstrn(curstr, curlen); advance(); return n; }
     if (curtok == T_INT)   { Node *n = mkint(curint); advance(); return n; }
     if (curtok == T_LP)    { advance(); Node *e = parse_expr(); expect(T_RP, "')'"); advance(); return e; }
-    fprintf(stderr, "parse error: expected a variable, string, or '('\n");
+    fprintf(stderr, "host: parse error: expected a variable, string, or '('\n");
     exit(1);
 }
 
@@ -313,7 +343,7 @@ static Node *parse_expr(void) {
     if (curtok == T_LA) {
         advance();
         expect(T_IDENT, "lambda parameter");
-        char *param = strdup(curstr);
+        char *param = xstrdup(curstr);
         advance();
         expect(T_DOT, "'.'");
         advance();
@@ -334,9 +364,9 @@ static size_t nglyphs = 0;
 
 static void add_glyph(const char *name, Node *body) {
     if (nglyphs >= sizeof glyphs / sizeof glyphs[0]) {
-        fprintf(stderr, "too many glyphs\n"); exit(1);
+        fprintf(stderr, "host: too many glyphs\n"); exit(1);
     }
-    glyphs[nglyphs].name = strdup(name);
+    glyphs[nglyphs].name = xstrdup(name);
     glyphs[nglyphs].body = body;
     nglyphs++;
 }
@@ -360,7 +390,7 @@ static void gc(void) {
     if (cap > gc_set_cap) {
         free(gc_set);
         gc_set = calloc(cap, sizeof *gc_set);
-        if (!gc_set) { fprintf(stderr, "gc: out of memory\n"); exit(1); }
+        if (!gc_set) { fprintf(stderr, "host: out of memory\n"); exit(1); }
         gc_set_cap = cap;
     } else {
         memset(gc_set, 0, gc_set_cap * sizeof *gc_set);
@@ -402,9 +432,9 @@ static size_t cur_nexports = 0;
 
 static void add_export(const char *name) {
     if (cur_nexports >= sizeof cur_exports / sizeof cur_exports[0]) {
-        fprintf(stderr, "too many exports\n"); exit(1);
+        fprintf(stderr, "host: too many exports\n"); exit(1);
     }
-    cur_exports[cur_nexports++] = strdup(name);
+    cur_exports[cur_nexports++] = xstrdup(name);
 }
 
 static void do_import(const char *path);   /* defined after slurp_file/subst */
@@ -416,7 +446,7 @@ static void parse_program(void) {
             advance();
             expect(T_LP, "'(' after import"); advance();
             expect(T_STR, "an import path string");
-            char *path = malloc(curlen + 1);
+            char *path = xmalloc(curlen + 1);
             memcpy(path, curstr, curlen); path[curlen] = '\0';
             advance();
             expect(T_RP, "')'"); advance();
@@ -429,7 +459,7 @@ static void parse_program(void) {
             expect(T_GLYPH, "'glyph', 'import', or 'export'");
             advance();
             expect(T_IDENT, "glyph name");
-            char *name = strdup(curstr);
+            char *name = xstrdup(curstr);
             advance();
             expect(T_EQ, "'='");
             advance();
@@ -459,7 +489,7 @@ static char *gensym(void) {
     static unsigned long counter = 0;
     char buf[32];
     snprintf(buf, sizeof buf, "_g%lu", counter++);
-    return strdup(buf);
+    return xstrdup(buf);
 }
 
 /* subst(e, var, val) = e[var := val], renaming bound names as needed so no
@@ -579,20 +609,20 @@ static char *do_copy_self(void) {
     snprintf(target, sizeof target, "new_logos_gen%d_pid%d.bin", child, (int)getpid());
 
     FILE *in = fopen("/proc/self/exe", "rb");
-    if (!in) { perror("copy_self: open /proc/self/exe"); exit(1); }
+    if (!in) { perror("host: copy_self: open /proc/self/exe"); exit(1); }
     FILE *out = fopen(target, "wb");
-    if (!out) { perror("copy_self: open target"); fclose(in); exit(1); }
+    if (!out) { perror("host: copy_self: open target"); fclose(in); exit(1); }
 
     char   buf[1 << 16];
     size_t n;
     while ((n = fread(buf, 1, sizeof buf, in)) > 0)
-        if (fwrite(buf, 1, n, out) != n) { perror("copy_self: write"); exit(1); }
+        if (fwrite(buf, 1, n, out) != n) { perror("host: copy_self: write"); exit(1); }
 
     fclose(in);
     fclose(out);
     chmod(target, 0755);
     fprintf(stderr, "copy_self: replicated -> %s\n", target);
-    return strdup(target);
+    return xstrdup(target);
 }
 
 static Node *eval(Node *e);
@@ -602,7 +632,7 @@ static Node *eval(Node *e);
  * embedded NULs round-trip faithfully. */
 static char *slurp_file(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
-    if (!f) { fprintf(stderr, "read_file: cannot open '%s': ", path); perror(NULL); exit(1); }
+    if (!f) { fprintf(stderr, "host: read_file: cannot open '%s': ", path); perror(NULL); exit(1); }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     /* freeze-day #12: a non-seekable file (pipe/FIFO/char device) makes fseek/ftell
@@ -610,10 +640,10 @@ static char *slurp_file(const char *path, size_t *out_len) {
        fread(SIZE_MAX) overflows the buffer. Halt loudly instead — and the native
        backend's rt_read_file guards the same lseek failure, so both engines reject
        a non-seekable read_file identically (exit 1) rather than corrupting memory. */
-    if (len < 0) { fprintf(stderr, "read_file: '%s' is not a seekable file\n", path); exit(1); }
+    if (len < 0) { fprintf(stderr, "host: read_file: '%s' is not a seekable file\n", path); exit(1); }
     fseek(f, 0, SEEK_SET);
-    char *buf = malloc((size_t)len + 1);
-    if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
+    char *buf = xmalloc((size_t)len + 1);
+    if (!buf) { fprintf(stderr, "host: out of memory\n"); exit(1); }
     size_t got = fread(buf, 1, (size_t)len, f);
     buf[got] = '\0';
     fclose(f);
@@ -623,10 +653,10 @@ static char *slurp_file(const char *path, size_t *out_len) {
 
 static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
     if (strcmp(name, "write_file") == 0) {
-        if (arg1->t != N_STR) { fprintf(stderr, "write_file: filename is not a string\n"); exit(1); }
-        if (arg2->t != N_STR) { fprintf(stderr, "write_file: content is not a string\n"); exit(1); }
+        if (arg1->t != N_STR) { fprintf(stderr, "host: write_file: filename is not a string\n"); exit(1); }
+        if (arg2->t != N_STR) { fprintf(stderr, "host: write_file: content is not a string\n"); exit(1); }
         FILE *f = fopen(arg1->s, "wb");
-        if (!f) { fprintf(stderr, "write_file: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
+        if (!f) { fprintf(stderr, "host: write_file: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
         fwrite(arg2->s, 1, arg2->len, f);
         fclose(f);
         return arg2;
@@ -635,10 +665,10 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         /* write_file's sibling, but mark the result executable (0755). This is
          * the primitive that lets a .la program emit a runnable native binary:
          * arg2 is binary-safe content (ELF bytes, NULs and all). */
-        if (arg1->t != N_STR) { fprintf(stderr, "write_exec: filename is not a string\n"); exit(1); }
-        if (arg2->t != N_STR) { fprintf(stderr, "write_exec: content is not a string\n"); exit(1); }
+        if (arg1->t != N_STR) { fprintf(stderr, "host: write_exec: filename is not a string\n"); exit(1); }
+        if (arg2->t != N_STR) { fprintf(stderr, "host: write_exec: content is not a string\n"); exit(1); }
         FILE *f = fopen(arg1->s, "wb");
-        if (!f) { fprintf(stderr, "write_exec: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
+        if (!f) { fprintf(stderr, "host: write_exec: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
         fwrite(arg2->s, 1, arg2->len, f);
         fclose(f);
         chmod(arg1->s, 0755);
@@ -646,10 +676,10 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
     }
     if (strcmp(name, "concat") == 0) {
         if (arg1->t != N_STR || arg2->t != N_STR) {
-            fprintf(stderr, "concat: arguments must be strings\n"); exit(1);
+            fprintf(stderr, "host: concat: arguments must be strings\n"); exit(1);
         }
         size_t l1 = arg1->len, l2 = arg2->len;
-        char *buf = malloc(l1 + l2 + 1);
+        char *buf = xmalloc(l1 + l2 + 1);
         if (l1) memcpy(buf, arg1->s, l1);
         if (l2) memcpy(buf + l1, arg2->s, l2);
         buf[l1 + l2] = '\0';
@@ -659,7 +689,7 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
     }
     if (strcmp(name, "str_eq") == 0) {
         if (arg1->t != N_STR || arg2->t != N_STR) {
-            fprintf(stderr, "str_eq: arguments must be strings\n"); exit(1);
+            fprintf(stderr, "host: str_eq: arguments must be strings\n"); exit(1);
         }
         if (arg1->len == arg2->len && memcmp(arg1->s, arg2->s, arg1->len) == 0)
             return mklam("t", mklam("f", mkvar("t")));  /* TRUE */
@@ -680,10 +710,10 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
          *              as str_head and str_tail already are on "".
          * A type error still halts loudly, as every other string builtin does. */
         if (arg1->t != N_STR) {
-            fprintf(stderr, "str_at: first argument is not a string\n"); exit(1);
+            fprintf(stderr, "host: str_at: first argument is not a string\n"); exit(1);
         }
         if (arg2->t != N_INT) {
-            fprintf(stderr, "str_at: index is not an integer\n"); exit(1);
+            fprintf(stderr, "host: str_at: index is not an integer\n"); exit(1);
         }
         long i = arg2->i;
         if (i < 0 || (unsigned long)i >= (unsigned long)arg1->len) return mkstrn("", 0);
@@ -691,7 +721,7 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
     }
     if (is_int_binop(name)) {
         if (arg1->t != N_INT || arg2->t != N_INT) {
-            fprintf(stderr, "%s: arguments must be integers\n", name); exit(1);
+            fprintf(stderr, "host: %s: arguments must be integers\n", name); exit(1);
         }
         long x = arg1->i, y = arg2->i;
         /* defined two's-complement wrap (via unsigned) — signed overflow is UB,
@@ -701,8 +731,8 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         if (strcmp(name, "sub") == 0) return mkint((long)((unsigned long)x - (unsigned long)y));
         if (strcmp(name, "mul") == 0) return mkint((long)((unsigned long)x * (unsigned long)y));
         if (strcmp(name, "div") == 0) {
-            if (y == 0) { fprintf(stderr, "div: division by zero\n"); exit(1); }
-            if (x == LONG_MIN && y == -1) { fprintf(stderr, "div: overflow (LONG_MIN / -1)\n"); exit(1); }
+            if (y == 0) { fprintf(stderr, "host: div: division by zero\n"); exit(1); }
+            if (x == LONG_MIN && y == -1) { fprintf(stderr, "host: div: overflow (LONG_MIN / -1)\n"); exit(1); }
             return mkint(x / y);
         }
         if (strcmp(name, "band") == 0)
@@ -724,7 +754,7 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
             return mkint((long)((unsigned long)x >> (unsigned long)y));
         }
         if (strcmp(name, "mod") == 0) {
-            if (y == 0) { fprintf(stderr, "mod: modulo by zero\n"); exit(1); }
+            if (y == 0) { fprintf(stderr, "host: mod: division by zero\n"); exit(1); }
             if (x == LONG_MIN && y == -1) return mkint(0);  /* mathematically 0; avoids the SIGFPE */
             return mkint(x % y);
         }
@@ -734,7 +764,7 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         return truth ? mklam("t", mklam("f", mkvar("t")))   /* TRUE  */
                      : mklam("t", mklam("f", mkvar("f")));  /* FALSE */
     }
-    fprintf(stderr, "unknown builtin2: %s\n", name);
+    fprintf(stderr, "host: unknown builtin2: %s\n", name);
     exit(1);
 }
 
@@ -743,7 +773,7 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         Node *v = eval(argexpr);
         if (v->t == N_STR)      { fwrite(v->s, 1, v->len, stdout); putchar('\n'); }
         else if (v->t == N_INT) { printf("%ld\n", v->i); }
-        else                    fprintf(stderr, "print: argument is not a string or integer\n");
+        else                    fprintf(stderr, "host: print: argument is not a string or integer\n");
         return v;
     }
     if (strcmp(name, "copy_self") == 0) {
@@ -755,7 +785,7 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
     }
     if (strcmp(name, "read_file") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "read_file: argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: read_file: argument is not a string\n"); exit(1); }
         size_t flen;
         char *contents = slurp_file(v->s, &flen);
         Node *r = mkstrn(contents, flen);
@@ -764,53 +794,53 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
     }
     if (strcmp(name, "write_file") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "write_file: filename is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: write_file: filename is not a string\n"); exit(1); }
         return mkpartial("write_file", v);
     }
     if (strcmp(name, "write_exec") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "write_exec: filename is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: write_exec: filename is not a string\n"); exit(1); }
         return mkpartial("write_exec", v);
     }
     if (strcmp(name, "concat") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "concat: first argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: concat: first argument is not a string\n"); exit(1); }
         return mkpartial("concat", v);
     }
     if (strcmp(name, "str_head") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "str_head: argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: str_head: argument is not a string\n"); exit(1); }
         return mkstrn(v->s, v->len ? 1 : 0);   /* first byte, or "" if empty */
     }
     if (strcmp(name, "str_tail") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "str_tail: argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: str_tail: argument is not a string\n"); exit(1); }
         return v->len ? mkstrn(v->s + 1, v->len - 1) : mkstrn("", 0);
     }
     if (strcmp(name, "str_eq") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "str_eq: first argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: str_eq: first argument is not a string\n"); exit(1); }
         return mkpartial("str_eq", v);
     }
     if (strcmp(name, "str_at") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "str_at: first argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: str_at: first argument is not a string\n"); exit(1); }
         return mkpartial("str_at", v);
     }
     if (strcmp(name, "chr") == 0) {
         /* decimal-string -> one byte. The way a .la program spells an arbitrary
          * byte (0..255), including NUL, so it can assemble binary like ELF. */
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "chr: argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: chr: argument is not a string\n"); exit(1); }
         long n = strtol(v->s, NULL, 10);
-        if (n < 0 || n > 255) { fprintf(stderr, "chr: value %ld out of byte range 0..255\n", n); exit(1); }
+        if (n < 0 || n > 255) { fprintf(stderr, "host: chr: value %ld out of byte range 0..255\n", n); exit(1); }
         char b = (char)(unsigned char)n;
         return mkstrn(&b, 1);
     }
     if (strcmp(name, "ord") == 0) {
         /* first byte -> decimal string (inverse of chr). */
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "ord: argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: ord: argument is not a string\n"); exit(1); }
         int b = v->len ? (unsigned char)v->s[0] : 0;
         char buf[16];
         snprintf(buf, sizeof buf, "%d", b);
@@ -821,25 +851,25 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
          * carry their length, so this is O(1); computing it in Lingua Adamica
          * would be O(n) str_tail walks. The bundler needs it to patch p_filesz. */
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "str_len: argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: str_len: argument is not a string\n"); exit(1); }
         char buf[32];
         snprintf(buf, sizeof buf, "%zu", v->len);
         return mkstr(buf);
     }
     if (is_int_binop(name)) {
         Node *v = eval(argexpr);
-        if (v->t != N_INT) { fprintf(stderr, "%s: first argument is not an integer\n", name); exit(1); }
+        if (v->t != N_INT) { fprintf(stderr, "host: %s: first argument is not an integer\n", name); exit(1); }
         return mkpartial(name, v);
     }
     if (strcmp(name, "bnot") == 0) {
         Node *v = eval(argexpr);
-        if (v->t != N_INT) { fprintf(stderr, "bnot: argument is not an integer\n"); exit(1); }
+        if (v->t != N_INT) { fprintf(stderr, "host: bnot: argument is not an integer\n"); exit(1); }
         return mkint((long)(~(unsigned long)v->i));
     }
     if (strcmp(name, "int_to_str") == 0) {
         /* native integer -> its decimal string (for printing / observability) */
         Node *v = eval(argexpr);
-        if (v->t != N_INT) { fprintf(stderr, "int_to_str: argument is not an integer\n"); exit(1); }
+        if (v->t != N_INT) { fprintf(stderr, "host: int_to_str: argument is not an integer\n"); exit(1); }
         char buf[32];
         snprintf(buf, sizeof buf, "%ld", v->i);
         return mkstr(buf);
@@ -851,11 +881,11 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
          * matching the VM's .bi_strtoint — b_τ ≡ f_τ on bad input, instead of
          * strtol silently parsing a prefix ("12x"->12) or yielding 0 ("abc"). */
         Node *v = eval(argexpr);
-        if (v->t != N_STR) { fprintf(stderr, "str_to_int: argument is not a string\n"); exit(1); }
+        if (v->t != N_STR) { fprintf(stderr, "host: str_to_int: argument is not a string\n"); exit(1); }
         size_t i = (v->len && v->s[0] == '-') ? 1 : 0;
-        if (i >= v->len) { fprintf(stderr, "str_to_int: not a decimal integer\n"); exit(1); }
+        if (i >= v->len) { fprintf(stderr, "host: str_to_int: not a decimal integer\n"); exit(1); }
         for (size_t k = i; k < v->len; k++)
-            if (v->s[k] < '0' || v->s[k] > '9') { fprintf(stderr, "str_to_int: not a decimal integer\n"); exit(1); }
+            if (v->s[k] < '0' || v->s[k] > '9') { fprintf(stderr, "host: str_to_int: not a decimal integer\n"); exit(1); }
         return mkint(strtol(v->s, NULL, 10));
     }
     if (strcmp(name, "typeof") == 0) {
@@ -875,7 +905,7 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         fputc('\n', stderr);
         exit(1);
     }
-    fprintf(stderr, "unknown builtin: %s\n", name);
+    fprintf(stderr, "host: unknown builtin: %s\n", name);
     exit(1);
 }
 
@@ -893,7 +923,7 @@ static Node *eval(Node *e) {
             Node *g = lookup_glyph(e->s);
             if (g)                  return eval(g);
             if (is_builtin(e->s))   return e;   /* builtin used as a value */
-            fprintf(stderr, "eval error: unbound variable '%s'\n", e->s);
+            fprintf(stderr, "host: unbound variable '%s'\n", e->s);
             exit(1);
         }
 
@@ -910,7 +940,7 @@ static Node *eval(Node *e) {
             }
             if (f->t == N_VAR && is_builtin(f->s))
                 return apply_builtin(f->s, e->b);
-            fprintf(stderr, "eval error: attempt to apply a non-function\n");
+            fprintf(stderr, "host: attempt to apply a non-function\n");
             exit(1);
         }
     }
@@ -940,7 +970,7 @@ static void mangle_privates(size_t start, size_t end,
         for (size_t i = start; i < end; i++)
             if (strcmp(glyphs[i].name, exports[e]) == 0) { found = 1; break; }
         if (!found) {
-            fprintf(stderr, "import: module exports '%s' but does not define it\n",
+            fprintf(stderr, "host: import: module exports '%s' but does not define it\n",
                     exports[e]);
             exit(1);
         }
@@ -953,7 +983,7 @@ static void mangle_privates(size_t start, size_t end,
         for (size_t j = start; j < end; j++)                        /* rewrite refs */
             glyphs[j].body = subst(glyphs[j].body, glyphs[i].name, ref);
         free(glyphs[i].name);
-        glyphs[i].name = strdup(mangled);
+        glyphs[i].name = xstrdup(mangled);
     }
 }
 
@@ -1005,7 +1035,7 @@ int main(int argc, char **argv) {
     parse_program();
 
     Node *main_glyph = lookup_glyph("MAIN");
-    if (!main_glyph) { fprintf(stderr, "no MAIN glyph found in %s\n", path); return 1; }
+    if (!main_glyph) { fprintf(stderr, "host: no MAIN glyph found in %s\n", path); return 1; }
 
     eval(main_glyph);
     return 0;

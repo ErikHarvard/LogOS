@@ -4085,7 +4085,7 @@ say "Theourgia: DRM/KMS scanout builtins (Stage 2, native VM)"
 # mode, allocate+map a 32-bpp dumb framebuffer, SETCRTC) and present() (blit a
 # framebuffer image into the scanned-out buffer). Real scanout needs DRM master,
 # which only a bare VT grants; under a running compositor the kernel refuses
-# SETCRTC and the builtin halts LOUDLY (e.g. "secd: drm SETCRTC failed: -13", exit 1) without
+# SETCRTC and the builtin halts LOUDLY (e.g. "secd: drm_mode: SETCRTC failed: -13", exit 1) without
 # touching the display. That loud, safe failure is what we assert here: the
 # builtins are wired (no "unbound variable") and the full DRM sequence runs and
 # fails cleanly. Actual painting is verified manually from a VT (see
@@ -4106,7 +4106,7 @@ if [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ]; then
         # fails loudly naming itself and its -errno (e.g. -13 EACCES). Asserting
         # the SETCRTC line proves the whole prior sequence ran AND that .drm_fail
         # reports the specific failing call, not a generic message.
-        grep -qE "secd: drm SETCRTC failed: -[0-9]+" /tmp/drm_err.txt || { echo "FAIL  theourgia drm: expected loud 'secd: drm SETCRTC failed: -<errno>' under a compositor, got [$(cat /tmp/drm_err.txt)] rc=$drm_rc"; ok=0; }
+        grep -qE "secd: drm_mode: SETCRTC failed: -[0-9]+" /tmp/drm_err.txt || { echo "FAIL  theourgia drm: expected loud 'secd: drm_mode: SETCRTC failed: -<errno>' under a compositor, got [$(cat /tmp/drm_err.txt)] rc=$drm_rc"; ok=0; }
         [ "$drm_rc" -eq 1 ] || { echo "FAIL  theourgia drm: expected exit 1 (loud fail), got rc=$drm_rc"; ok=0; }
         rm -f logos_secd logos_program.bin logos_source.la /tmp/drm_out.txt /tmp/drm_err.txt
         if [ "$ok" -eq 1 ]; then
@@ -6951,10 +6951,10 @@ python3 -c "open('/tmp/t_path.la','w').write('glyph MAIN = read_file(\"/'+('a'*5
 cp /tmp/t_path.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
 prc=0; PERR="$(./runner 2>&1 1>/dev/null)" || prc=$?
 rm -f /tmp/t_path.la
-if [ "$prc" -ne 0 ] && printf '%s\n' "$PERR" | grep -qF "secd: path too long"; then
-    echo "PASS  path-length guard: a >4 KiB path halts loudly (rc $prc, 'secd: path too long')"
+if [ "$prc" -ne 0 ] && printf '%s\n' "$PERR" | grep -qF "secd: read_file: path too long"; then
+    echo "PASS  path-length guard: a >4 KiB path halts loudly (rc $prc, 'secd: read_file: path too long')"
 else
-    echo "FAIL  path guard: rc=$prc stderr='$PERR' (want non-zero + 'secd: path too long')"; exit 1
+    echo "FAIL  path guard: rc=$prc stderr='$PERR' (want non-zero + 'secd: read_file: path too long')"; exit 1
 fi
 
 # ── Malformed-input halt: codegen aborts via `error`, no silent truncation ──
@@ -6992,7 +6992,7 @@ gok=1
 guard_loud() {                                   # $1 = label, $2 = MAIN body
     guard_compile "$2"
     grc=0; gerr="$(./runner 2>&1 1>/dev/null)" || grc=$?
-    if [ "$grc" -eq 1 ] && printf '%s\n' "$gerr" | grep -qF "secd: argument is not a string"; then
+    if [ "$grc" -eq 1 ] && printf '%s\n' "$gerr" | grep -qE "secd: [a-z_0-9]+: argument is not a string"; then
         : # loud halt as required
     else
         echo "FAIL  type guard ($1): rc=$grc stderr='$gerr' (want rc 1 + 'argument is not a string'; rc 139 = SIGSEGV regression)"; gok=0
@@ -7052,7 +7052,7 @@ sti_reject() {                                   # $1 = the string passed to str
         || { echo "FAIL  str_to_int reject ('$1') on C host: rc=$hrc err='$herr'"; gok=0; }
     guard_compile "$sbody"
     vrc=0; verr="$(./runner 2>&1 1>/dev/null)" || vrc=$?
-    { [ "$vrc" -eq 1 ] && printf '%s' "$verr" | grep -qF "secd: not a decimal integer"; } \
+    { [ "$vrc" -eq 1 ] && printf '%s' "$verr" | grep -qF "secd: str_to_int: not a decimal integer"; } \
         || { echo "FAIL  str_to_int reject ('$1') on VM: rc=$vrc err='$verr'"; gok=0; }
 }
 sti_accept() {                                   # $1 = string, $2 = expected decimal
@@ -7100,11 +7100,11 @@ vmguard "unbound variable"     'undefined_glyph_xyz' "secd: unbound variable"
 # apply a non-function: a STR/INT value in function position.
 vmguard "apply a non-function" '"hello"("world")'    "secd: attempt to apply a non-function"
 # chr out of range: an argument outside 0..255 (VM side; the C host rejects too).
-vmguard "chr out of range"     'chr("300")'          "secd: chr out of range"
+vmguard "chr out of range"     'chr("300")'          "secd: chr: value out of byte range 0..255"
 # too many poll fds: more than the 512-fd pollfd cap (built in pathbuf) must halt,
 # not overrun the buffer into fsbuf / the GC worklist.
 POLLFDS="$(printf '0 %.0s' $(seq 1 513))"
-vmguard "too many poll fds"    "poll(\"$POLLFDS\")(\"0\")" "secd: too many poll fds"
+vmguard "too many poll fds"    "poll(\"$POLLFDS\")(\"0\")" "secd: poll: too many fds"
 # program too large: a stream past progcap (5 MiB) is bounds-checked at LOAD, not
 # truncated. Fed as a raw oversized stream (the generic VM loads it directly).
 head -c 6291456 /dev/zero > logos_program.bin
