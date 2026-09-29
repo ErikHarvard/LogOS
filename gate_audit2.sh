@@ -37,6 +37,199 @@ case_logosinit_forkfail() {
     fi
 }
 
+# ── #39 logosinit: a failed/erroring signalfd is not a 128-byte siginfo ───────
+# The VM's raw read maps every error to "", and ord("") = "0" is taken as the
+# SIGCHLD arm, so a signalfd that failed (-errno) or a read that errors spins
+# the supervision loop at 100% CPU forever. Two shadows: signalfd returns
+# -EMFILE ("-24"); signalfd works but every read of it errors (""). Unfixed:
+# still spinning after 2.5 s, only the boot line printed. Fixed: a loud halt,
+# rc != 0, naming the cause.
+logosinit_spin() {   # <label> <shadow glyph line> <expected stderr fragment>
+    { echo "$2"; cat logosinit.la; } > t_spin.la
+    vmc t_spin.la || { fail "logosinit $1: codegen"; return; }
+    sleep 10 | ./logos_secd > spin.out 2>&1 &
+    local p=$! t=0
+    while [ $t -lt 25 ] && kill -0 $p 2>/dev/null; do sleep 0.1; t=$((t+1)); done
+    if kill -0 $p 2>/dev/null; then
+        kill -KILL "$(pgrep -P $p -x logos_secd 2>/dev/null || echo $p)" 2>/dev/null; wait $p 2>/dev/null
+        fail "logosinit $1: still running after 2.5 s (spin) — got: $(tr '\n' '|' < spin.out)"; return
+    fi
+    local rc=0; wait $p || rc=$?
+    if [ "$rc" != 0 ] && grep -qF "$3" spin.out; then pass "logosinit $1: halts loudly (rc $rc), no spin"
+    else fail "logosinit $1: rc=$rc — got: $(tr '\n' '|' < spin.out)"; fi
+}
+case_logosinit_sigfd() {
+    logosinit_spin "signalfd=-EMFILE" 'glyph signalfd = la m. "-24"' 'logosinit: signalfd failed (-24)'
+    logosinit_spin "read(sigfd) errors" 'glyph read = la fd. la n. ""' 'logosinit: signalfd read failed'
+}
+
+# ── #73 strutil: an empty separator/pattern must not loop forever ─────────────
+# STARTS_WITH("") is always TRUE and DROP("") is the identity, so SPLIT("") and
+# REPLACE("") recursed on the same rest until a resource guard. Checked on both
+# the implementation VALUES (the spec with its MAIN swapped) and the SOURCE the
+# pipeline DEPLOYs (the generated module), each under a 60 s timeout.
+# Unfixed: both time out (rc 124). Fixed: [abc] and abc, instantly.
+case_strutil_empty() {
+    local probe='glyph SEQ = la a. la b. b
+glyph MAIN = print(concat(JOIN("|")(SPLIT("")("abc")))(concat("/")(REPLACE("")("X")("abc"))))'
+    { grep -v '^glyph MAIN\|^    SEQ(print(concat("=== GENERATE\|^       (print(DEPLOY' strutil_spec.la; echo "$probe" | sed 1d; } > t_suval.la   # probe minus its SEQ: specpipe defines it
+    local v rc=0; v=$(timeout 60 ./tiny_host t_suval.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$v" = "abc/abc" ]; then pass "strutil values: SPLIT(\"\")/REPLACE(\"\") return at once"
+    else fail "strutil values: rc=$rc out=[$v] (want abc/abc)"; fi
+    rm -f strutil_generated.la
+    local su; su=$(timeout 300 ./tiny_host strutil_spec.la 2>/dev/null)
+    if ! printf '%s\n' "$su" | grep -q "module VERIFIED" || [ ! -f strutil_generated.la ]; then
+        fail "strutil: spec not VERIFIED / module not written"; return; fi
+    { cat strutil_generated.la; echo "$probe"; } > t_sumod.la
+    rc=0; v=$(timeout 60 ./tiny_host t_sumod.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$v" = "abc/abc" ]; then pass "strutil generated module: SPLIT(\"\")/REPLACE(\"\") return at once"
+    else fail "strutil generated module: rc=$rc out=[$(printf '%s' "$v" | head -c 200)] (want abc/abc)"; fi
+}
+
+# ── #85 host: an import cycle halts loudly instead of SIGSEGV ─────────────────
+# do_import → parse_program → do_import had no cycle check and no stack guard:
+# a first-form self-import SIGSEGV'd (rc 139, no diagnostic); a glyph before it
+# died 'too many glyphs'; a two-file cycle SIGSEGV'd. Fixed: 'import cycle: …',
+# rc 1. Control: a diamond (A imports B and C, both import D) still runs.
+case_import_cycle() {
+    mkdir -p cyc && ( cd cyc
+    printf 'import("selfA.la")\nglyph MAIN = print("x")\n' > selfA.la
+    printf 'glyph Y = "y"\nimport("selfB.la")\nglyph MAIN = print("x")\n' > selfB.la
+    printf 'import("cycB.la")\nglyph MAIN = print("x")\n' > cycA.la
+    printf 'import("cycA.la")\nglyph BV = "b"\nexport BV\n' > cycB.la
+    printf 'glyph DV = "d"\nexport DV\n' > D.la
+    printf 'import("D.la")\nglyph BV = DV\nexport BV\n' > B.la
+    printf 'import("D.la")\nglyph CV = DV\nexport CV\n' > C.la
+    printf 'import("B.la")\nimport("C.la")\nglyph MAIN = print(concat(BV)(CV))\n' > A.la )
+    local f want out rc
+    for f in "selfA.la|import cycle: selfA.la -> selfA.la" "selfB.la|import cycle: selfB.la -> selfB.la" \
+             "cycA.la|import cycle: cycA.la -> cycB.la -> cycA.la"; do
+        want=${f#*|}; f=${f%%|*}; rc=0
+        out=$(cd cyc && timeout 60 ../tiny_host "$f" 2>&1) || rc=$?
+        if [ "$rc" = 1 ] && [ "$out" = "$want" ]; then pass "host import cycle $f: halts loudly, rc 1"
+        else fail "host import cycle $f: rc=$rc out=[$(printf '%s' "$out" | head -c 200)] (want [$want], rc 1)"; fi
+    done
+    rc=0; out=$(cd cyc && timeout 60 ../tiny_host A.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = "dd" ]; then pass "host diamond import (control): still runs"
+    else fail "host diamond import (control): rc=$rc out=[$out] (want dd)"; fi
+}
+
+# ── #74/#78/#79 theourgia COMPOSE clips to the destination ────────────────────
+# Unclipped, ox<0 recursed forever in TAKE (resource-guard crash), a right
+# overhang lengthened rows (skewed raster, rc 0), and oy<0 shifted the source
+# instead of clipping it. DRAW_TEXT and the session's RENDER_SURFACE go through
+# COMPOSE, so a long string or an off-screen window hit the same paths. dst is a
+# 3x2 surface of pixel 1; src is 2x1 [2 3] or 1x2 [2;3]. Expected rows derived
+# by hand: (-1,0) → 3 1 1 / 1 1 1 · (2,0) → 1 1 2 / 1 1 1 · column at (0,-1)
+# → 3 1 1 / 1 1 1 · (5,5) and (-9,0) → unchanged. Control: the stock scene is
+# byte-identical to HEAD's theourgia.la.
+case_compose_clip() {
+    # src surfaces are built from SOLID + an in-bounds COMPOSE, the module's own shape
+    cat > t_clip.la <<'LAEOF'
+import("theourgia.la")
+import("theourgia_text.la")
+glyph SEQ = la a. la b. b
+glyph P   = la n. PX(n)(n)(n)
+glyph D   = SOLID(3)(2)(P(1))
+glyph SH  = COMPOSE(SOLID(2)(1)(P(2)))(SOLID(1)(1)(P(3)))(1)(0)
+glyph SV  = COMPOSE(SOLID(1)(2)(P(2)))(SOLID(1)(1)(P(3)))(0)(1)
+glyph MAIN = SEQ(write_file("c1.ppm")(PPM(COMPOSE(D)(SH)(sub(0)(1))(0))))(
+             SEQ(write_file("c2.ppm")(PPM(COMPOSE(D)(SH)(2)(0))))(
+             SEQ(write_file("c3.ppm")(PPM(COMPOSE(D)(SV)(0)(sub(0)(1)))))(
+             SEQ(write_file("c4.ppm")(PPM(COMPOSE(D)(SH)(5)(5))))(
+             SEQ(write_file("c5.ppm")(PPM(COMPOSE(D)(SH)(sub(0)(9))(0))))(
+             SEQ(write_file("t1.ppm")(PPM(DRAW_TEXT(SOLID(24)(12)(P(0)))("HELLO")(0)(0)(P(255))(P(0)))))(
+             SEQ(write_file("t2.ppm")(PPM(DRAW_TEXT(SOLID(24)(12)(P(0)))("HI")(sub(0)(3))(0)(P(255))(P(0)))))(
+             print("clip-done"))))))))
+LAEOF
+    rm -f c?.ppm t?.ppm
+    local rc=0 out; out=$(timeout 300 ./tiny_host t_clip.la 2>&1) || rc=$?
+    if [ "$rc" != 0 ] || [ "$out" != "clip-done" ]; then
+        fail "compose clip: program rc=$rc out=[$(printf '%s' "$out" | head -c 200)]"; return; fi
+    local r; r=$(python3 - <<'PYEOF'
+import os
+def px(f):
+    b=open(f,'rb').read(); hdr=b'P6\n3 2\n255\n'
+    if not b.startswith(hdr): return 'badhdr:%r'%b[:16]
+    b=b[len(hdr):]
+    if len(b)!=18: return 'len%d'%len(b)
+    return ' '.join(str(b[i]) for i in range(0,18,3))
+want={'c1':'3 1 1 1 1 1','c2':'1 1 2 1 1 1','c3':'3 1 1 1 1 1','c4':'1 1 1 1 1 1','c5':'1 1 1 1 1 1'}
+bad=[f'{k}=[{px(k+".ppm")}] want [{v}]' for k,v in want.items() if px(k+'.ppm')!=v]
+for t in ('t1','t2'):
+    n=os.path.getsize(t+'.ppm')
+    if n!=len(b'P6\n24 12\n255\n')+24*12*3: bad.append(f'{t} is {n} bytes, want 877')
+print('; '.join(bad) or 'OK')
+PYEOF
+)
+    if [ "$r" = OK ]; then pass "theourgia COMPOSE clips on every edge; DRAW_TEXT wider than / left of the surface keeps its size"
+    else fail "theourgia COMPOSE clip: $r"; fi
+    # the native VM must produce the same seven rasters, byte for byte
+    mkdir -p clip_host && mv c?.ppm t?.ppm clip_host/
+    if ! vmc t_clip.la; then fail "compose clip (VM): codegen"
+    else
+        rc=0; out=$(timeout 300 ./logos_secd 2>&1) || rc=$?
+        local f d=0; for f in clip_host/*.ppm; do cmp -s "$f" "${f#clip_host/}" || d=$((d+1)); done
+        if [ "$rc" = 0 ] && [ "$out" = "clip-done" ] && [ "$d" = 0 ]; then pass "theourgia COMPOSE clip: native VM rasters byte-identical to the host's"
+        else fail "compose clip (VM): rc=$rc out=[$(printf '%s' "$out" | head -c 120)] $d raster(s) differ"; fi
+    fi
+    # control: every in-bounds scene is byte-identical to HEAD's (unclipped)
+    # COMPOSE — theourgia.la itself and the four modules that import it. Each
+    # MAIN runs in a HEAD tree and in this tree; stdout and raster must match.
+    local m o same=0 diff_list=""
+    mkdir -p headtree && cp "$REPO"/*.la headtree/ && cp tiny_host headtree/
+    for m in theourgia.la theourgia_fb.la theourgia_session.la theourgia_text.la theourgia_mux_session.la; do
+        git -C "$REPO" show "HEAD:$m" > "headtree/$m"; done
+    for m in theourgia.la:canvas.ppm theourgia_fb.la:framebuffer.bin theourgia_session.la:session.ppm \
+             theourgia_text.la:text.ppm theourgia_mux_session.la:mux_session.ppm; do
+        o=${m#*:}; m=${m%%:*}
+        rm -f "$o" "headtree/$o"
+        timeout 300 ./tiny_host "$m" > "ctl_new.out" 2>&1
+        ( cd headtree && timeout 300 ./tiny_host "$m" > ctl_head.out 2>&1 )
+        if [ -s "$o" ] && cmp -s "$o" "headtree/$o" && cmp -s ctl_new.out headtree/ctl_head.out; then same=$((same+1))
+        else diff_list="$diff_list $m"; fi
+    done
+    if [ "$same" = 5 ]; then pass "theourgia (control): 5/5 in-bounds scenes byte-identical to HEAD (theourgia, fb, session, text, mux_session)"
+    else fail "theourgia (control): differs from HEAD:$diff_list"; fi
+}
+
+# ── #76 theourgia TO_FB: a surface wider than the pitch halts loudly ──────────
+# FB_ROW pads with ZEROS(pitch - w*4); REPEAT stopped only at 0, so w*4 > pitch
+# recursed forever (C-stack guard / heap exhausted, an unrelated diagnostic).
+# Fixed: a loud TO_FB error naming both widths. Control: a 2x3 surface into a
+# 2-row, 12-byte-pitch screen is 24 bytes (the tall surface clipped to 2 rows).
+case_tofb_pitch() {
+    sed '/^glyph MAIN =/,$d' theourgia_fb.la > t_fbw.la; cp t_fbw.la t_fbc.la
+    echo 'glyph MAIN = print(str_len(TO_FB(SOLID(4)(2)(PX(1)(2)(3)))(2)(8)))' >> t_fbw.la
+    echo 'glyph MAIN = print(str_len(TO_FB(SOLID(2)(3)(PX(1)(2)(3)))(2)(12)))' >> t_fbc.la
+    local out rc=0; out=$(timeout 120 ./tiny_host t_fbw.la 2>&1) || rc=$?
+    if [ "$rc" = 1 ] && grep -qF 'TO_FB: surface is 4 px wide = 16 bytes, more than the pitch of 8 bytes' <<< "$out"; then
+        pass "theourgia TO_FB: surface wider than the pitch halts loudly, rc 1"
+    else fail "theourgia TO_FB wide: rc=$rc out=[$(printf '%s' "$out" | head -c 200)]"; fi
+    rc=0; out=$(timeout 120 ./tiny_host t_fbc.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = 24 ]; then pass "theourgia TO_FB (control): fitting surface, tall rows clipped — 24 bytes"
+    else fail "theourgia TO_FB control: rc=$rc out=[$out] (want 24)"; fi
+}
+
+# ── #66 phonym: an unknown primitive halts loudly; an empty range is empty PCM ─
+# PHON_PRIM fell back to a silent PAIR(0)(…) for any unknown name; RENDER then
+# ran BUILD on (0,0), whose only base case is a length-1 range, so it recursed
+# forever (C-stack guard / secd stack overflow — an unrelated diagnostic).
+# Fixed: 'phonym: unknown primitive BOGUS', rc 1; BUILD/PCM of an empty range
+# is "" (unfixed: recursed forever too — a second red path). Control inside the
+# same run: BEING renders 6080 samples x 2 bytes (ENC16) = 12160 bytes.
+# Host only — a VM compile of a phonym importer is ~6 min.
+case_phonym_unknown() {
+    printf 'import("phonym.la")\nglyph MAIN = print(str_len(RENDER(PHONYM(PRIM("BOGUS")))))\n' > t_pbog.la
+    printf 'import("phonym.la")\nglyph MAIN = print(concat(str_len(RENDER(PHONYM(PRIM("BEING")))))(concat("/")(str_len(PCM(la i. 0)(0)))))\n' > t_pctl.la
+    local out rc=0; out=$(timeout 120 ./tiny_host t_pbog.la 2>&1) || rc=$?
+    if [ "$rc" = 1 ] && grep -qF 'phonym: unknown primitive BOGUS' <<< "$out"; then pass "phonym: unknown primitive halts loudly, rc 1"
+    else fail "phonym unknown primitive: rc=$rc out=[$(printf '%s' "$out" | head -c 200)]"; fi
+    rc=0; out=$(timeout 300 ./tiny_host t_pctl.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = "12160/0" ]; then pass "phonym: empty-range PCM = 0 bytes (was unbounded recursion); BEING still 12160 bytes (control)"
+    else fail "phonym control: rc=$rc out=[$(printf '%s' "$out" | head -c 200)] (want 12160/0)"; fi
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -135,6 +328,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip tofb_pitch phonym_unknown}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }

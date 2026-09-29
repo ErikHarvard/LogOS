@@ -188,12 +188,14 @@ glyph ENC16 = la s.
     (mod(add(mod(s)(65536))(65536))(65536))
 
 # BUILD(gen)(lo)(hi) — the PCM of samples gen(lo..hi-1), assembled by halving the
-# range (balanced concat ⇒ O(n log n), not the O(n²) of a left fold).
+# range (balanced concat ⇒ O(n log n), not the O(n²) of a left fold). An empty
+# range is empty PCM: without that base case hi = lo recursed on (lo,lo) forever.
 glyph BUILD = Z(la self. la gen. la lo. la hi.
+    IF(lt(sub(hi)(lo))(1))(la _. "")(la _.
     IF(int_eq(sub(hi)(lo))(1))
         (la _. ENC16(CLAMP(gen(lo))))
         (la _. (la mid. concat(self(gen)(lo)(mid))(self(gen)(mid)(hi)))
-               (div(add(lo)(hi))(2))))
+               (div(add(lo)(hi))(2)))))
 glyph PCM = la gen. la n. BUILD(gen)(0)(n)
 
 # REPEAT2 — O(log n) builder for identical bytes (used for the silence gaps).
@@ -230,7 +232,9 @@ glyph WAVE = la pcm. concat(HEADER(str_to_int(str_len(pcm))))(pcm)
 # Lineage encoding (Def. meta-syllable): the child's gen embeds each parent's
 # gen, so a parent phonym is audibly present within the compound.
 
-# PHON_PRIM(name) → PAIR(length)(gen) for a primitive phonym.
+# PHON_PRIM(name) → PAIR(length)(gen) for a primitive phonym. Any other name is
+# a loud error — it used to become a silent 0-length phonym that RENDER then
+# recursed on forever (and SPEC certified).
 glyph PHON_PRIM = la nm.
     IF(str_eq(nm)("BEING"))      (la _. PAIR(6080)(PH_BEING))(la _.
     IF(str_eq(nm)("RECOGNITION"))(la _. PAIR(6720)(PH_RECOGNITION))(la _.
@@ -241,7 +245,7 @@ glyph PHON_PRIM = la nm.
     IF(str_eq(nm)("BECOMING"))   (la _. PAIR(6400)(PH_BECOMING))(la _.
     IF(str_eq(nm)("FORM"))       (la _. PAIR(6160)(PH_FORM))(la _.
     IF(str_eq(nm)("DEPTH"))      (la _. PAIR(6000)(PH_DEPTH))(la _.
-    PAIR(0)(la i. 0))))))))))
+    error(concat("phonym: unknown primitive ")(nm)))))))))))
 
 # ⊗ TOPOLOGICAL SYNTHESIS (𝔑 — neologistic compression). Not concatenation (which
 # would be the sum of durations, both parents in full but uncompressed) and not the
