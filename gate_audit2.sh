@@ -193,6 +193,24 @@ PYEOF
     else fail "theourgia (control): differs from HEAD:$diff_list"; fi
 }
 
+# ── #76 theourgia TO_FB: a surface wider than the pitch halts loudly ──────────
+# FB_ROW pads with ZEROS(pitch - w*4); REPEAT stopped only at 0, so w*4 > pitch
+# recursed forever (C-stack guard / heap exhausted, an unrelated diagnostic).
+# Fixed: a loud TO_FB error naming both widths. Control: a 2x3 surface into a
+# 2-row, 12-byte-pitch screen is 24 bytes (the tall surface clipped to 2 rows).
+case_tofb_pitch() {
+    sed '/^glyph MAIN =/,$d' theourgia_fb.la > t_fbw.la; cp t_fbw.la t_fbc.la
+    echo 'glyph MAIN = print(str_len(TO_FB(SOLID(4)(2)(PX(1)(2)(3)))(2)(8)))' >> t_fbw.la
+    echo 'glyph MAIN = print(str_len(TO_FB(SOLID(2)(3)(PX(1)(2)(3)))(2)(12)))' >> t_fbc.la
+    local out rc=0; out=$(timeout 120 ./tiny_host t_fbw.la 2>&1) || rc=$?
+    if [ "$rc" = 1 ] && grep -qF 'TO_FB: surface is 4 px wide = 16 bytes, more than the pitch of 8 bytes' <<< "$out"; then
+        pass "theourgia TO_FB: surface wider than the pitch halts loudly, rc 1"
+    else fail "theourgia TO_FB wide: rc=$rc out=[$(printf '%s' "$out" | head -c 200)]"; fi
+    rc=0; out=$(timeout 120 ./tiny_host t_fbc.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = 24 ]; then pass "theourgia TO_FB (control): fitting surface, tall rows clipped — 24 bytes"
+    else fail "theourgia TO_FB control: rc=$rc out=[$out] (want 24)"; fi
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -291,6 +309,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip tofb_pitch}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }

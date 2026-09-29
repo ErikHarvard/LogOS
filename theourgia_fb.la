@@ -52,7 +52,7 @@ glyph LIST_TL = la l. SND(SND(l))
 # ── Byte helpers ──
 glyph DROP   = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
     self(sub(n)(1))(str_tail(s))))
-glyph REPEAT = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+glyph REPEAT = Z(la self. la n. la s. IF(lt(n)(1))(la _. "")(la _.
     concat(s)(self(sub(n)(1))(s))))
 glyph BYTE   = la n. chr(int_to_str(n))
 glyph NUL    = BYTE(0)
@@ -80,7 +80,10 @@ glyph FB_ROW = la srow. la pitch. la sw.
 # ── TO_FB(surface)(screen_h)(pitch) → a screen_h*pitch XRGB8888 image ──
 # Walk screen rows 0..screen_h-1: each surface row becomes an FB_ROW; rows
 # beyond the surface (screen_h > surface height) are blank (pitch zero bytes),
-# so a small scene sits letterboxed at the top of a larger screen.
+# so a small scene sits letterboxed at the top of a larger screen. A surface
+# taller than screen_h is clipped to its top screen_h rows. A surface wider than
+# the pitch holds (w*4 > pitch) cannot be laid out: TO_FB halts loudly (the pad
+# count would be negative — REPEAT used to recurse on it forever).
 glyph BUILD = Z(la self. la rows. la r. la screen_h. la pitch. la sw.
     IF(lt(r)(screen_h))(la _.
         concat
@@ -90,7 +93,9 @@ glyph BUILD = Z(la self. la rows. la r. la screen_h. la pitch. la sw.
                 (add(r)(1))(screen_h)(pitch)(sw)))
     (la _. ""))
 glyph TO_FB = la surf. la screen_h. la pitch.
-    BUILD(S_ROWS(surf))(0)(screen_h)(pitch)(S_W(surf))
+    IF(lt(pitch)(mul(S_W(surf))(4)))
+        (la _. error(concat("TO_FB: surface is ")(concat(int_to_str(S_W(surf)))(concat(" px wide = ")(concat(int_to_str(mul(S_W(surf))(4)))(concat(" bytes, more than the pitch of ")(concat(int_to_str(pitch))(" bytes"))))))))
+        (la _. BUILD(S_ROWS(surf))(0)(screen_h)(pitch)(S_W(surf)))
 
 # ── The scene (rebuilt from the imported surface core) and the bridge demo ──
 # A 32x24 desktop: blue background, red window at (4,4), green window at
