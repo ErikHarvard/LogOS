@@ -37,6 +37,32 @@ case_logosinit_forkfail() {
     fi
 }
 
+# ── #39 logosinit: a failed/erroring signalfd is not a 128-byte siginfo ───────
+# The VM's raw read maps every error to "", and ord("") = "0" is taken as the
+# SIGCHLD arm, so a signalfd that failed (-errno) or a read that errors spins
+# the supervision loop at 100% CPU forever. Two shadows: signalfd returns
+# -EMFILE ("-24"); signalfd works but every read of it errors (""). Unfixed:
+# still spinning after 2.5 s, only the boot line printed. Fixed: a loud halt,
+# rc != 0, naming the cause.
+logosinit_spin() {   # <label> <shadow glyph line> <expected stderr fragment>
+    { echo "$2"; cat logosinit.la; } > t_spin.la
+    vmc t_spin.la || { fail "logosinit $1: codegen"; return; }
+    sleep 10 | ./logos_secd > spin.out 2>&1 &
+    local p=$! t=0
+    while [ $t -lt 25 ] && kill -0 $p 2>/dev/null; do sleep 0.1; t=$((t+1)); done
+    if kill -0 $p 2>/dev/null; then
+        kill -KILL "$(pgrep -P $p -x logos_secd 2>/dev/null || echo $p)" 2>/dev/null; wait $p 2>/dev/null
+        fail "logosinit $1: still running after 2.5 s (spin) — got: $(tr '\n' '|' < spin.out)"; return
+    fi
+    local rc=0; wait $p || rc=$?
+    if [ "$rc" != 0 ] && grep -qF "$3" spin.out; then pass "logosinit $1: halts loudly (rc $rc), no spin"
+    else fail "logosinit $1: rc=$rc — got: $(tr '\n' '|' < spin.out)"; fi
+}
+case_logosinit_sigfd() {
+    logosinit_spin "signalfd=-EMFILE" 'glyph signalfd = la m. "-24"' 'logosinit: signalfd failed (-24)'
+    logosinit_spin "read(sigfd) errors" 'glyph read = la fd. la n. ""' 'logosinit: signalfd read failed'
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -135,6 +161,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
