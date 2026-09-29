@@ -5371,7 +5371,10 @@ grep -q 'begin{longtable}' la_lexicon_appendix.tex || { echo "FAIL  lexappendix:
 #   ⚠ The codex is not wrong; it is older than the cue. Whether its printed
 #   forms should be reissued to carry ":" is Erik's call, NOT decided here.
 LDIV="$(grep -c 'codex\*' la_lexicon_appendix.tex)"
-[ "$LDIV" -eq 24 ] || { echo "FAIL  lexappendix: expected 24 codex-divergent rows shown inline (every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA), found $LDIV"; ok=0; }
+# ★ F45 (2026-09-26, Erik: roll out to all tracks): lexappendix's local P_ = PH_N was DEAD (opgrammar's raw P_ bound
+#   first); live now, exactly ONE row changes — Three +51 = ⊕(RELATION,BEING) sorts to a.ra against the codex's ra.a —
+#   derived over THIS track's four tables (only Three's tree changes under NORMT). 24 + 1 = 25.
+[ "$LDIV" -eq 25 ] || { echo "FAIL  lexappendix: expected 25 codex-divergent rows shown inline (every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA), found $LDIV"; ok=0; }
 echo "PASS  lexappendix: the appendix is EMITTED from the lexicon (57 content + 18 closed-class + 4 ruled = 79 rows, one per entry, counts embedded in the file), so the paper's census cannot drift from the thing it counts; each row carries its provenance and the TWENTY-FOUR codex divergences are shown INLINE with both values — every ▷ entry, since the romanised ▷ duration mark postdates the codex's printed IPA; the four vowel-elision divergences are ▷ entries too and are absorbed into that set; longtable so 79 rows cannot overflow silently"
 
 say "Phonetic collision at lexicon scale — the bijection gate in the register that was never checked (phoncoll.la)"
