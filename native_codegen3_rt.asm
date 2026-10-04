@@ -607,44 +607,9 @@ rt_int_to_str_raw:
     jmp     rt_make_str
 
 ; ── slot 17: rt_str_to_int(rax=STR) -> boxed INT (decimal, optional '-') ──
-rt_str_to_int_body:
-    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
-    jne     rt_not_string
-    mov     rcx, [rax+8]        ; desc
-    mov     rsi, [rcx+8]        ; ptr
-    mov     rdx, [rcx]          ; len
-    xor     rax, rax            ; acc
-    xor     r8, r8              ; i
-    xor     r9, r9              ; neg flag
-    test    rdx, rdx
-    jz      .bad                ; freeze-day #4: empty string is not a decimal integer
-    cmp     byte [rsi], '-'
-    jne     .digits
-    mov     r9, 1
-    inc     r8
-    cmp     r8, rdx
-    jae     .bad                ; freeze-day #4: a lone '-' is not a decimal integer
-.digits:
-    cmp     r8, rdx
-    jae     .done
-    movzx   r10, byte [rsi+r8]
-    cmp     r10, '0'            ; freeze-day #4: every remaining byte must be a digit
-    jb      .bad
-    cmp     r10, '9'
-    ja      .bad
-    sub     r10, '0'
-    imul    rax, rax, 10
-    add     rax, r10
-    inc     r8
-    jmp     .digits
-.done:
-    test    r9, r9
-    jz      .pos
-    neg     rax
-.pos:
-    jmp     rt_box_int
-.bad:
-    jmp     rt_not_decimal
+rt_str_to_int_body:             ; strict + overflow-checked parse lives in rt_sti_checked
+    jmp     rt_sti_checked      ;   (appended); padded to the old 110-byte footprint so
+    times 110 - ($ - rt_str_to_int_body) nop  ; no later runtime address moves
 
 ; ── slot 18: rt_make_str(rsi=src, rdx=len) -> rax = boxed STR ──
 ;   blob via alloc_blob + desc/box via alloc24. The source box (rax at entry,
@@ -2670,3 +2635,65 @@ rt_chr_strict:
     jmp     rt_bidie
 notdec_b:   db "not a decimal integer", 10
 notdec_blen equ $ - notdec_b
+
+; ── str_to_int: the value must fit a signed 64-bit integer ──────────────────────
+;   The old loop wrapped, so "9223372036854775808" was LONG_MIN here and LONG_MAX
+;   on the host, which saturates (gate_decimal_strict.sh). Same strict format
+;   check as before (empty, lone '-', or a non-digit -> rt_not_decimal), then the
+;   value is accumulated NEGATIVELY (acc = acc*10 - d) so LONG_MIN, whose
+;   magnitude has no positive twin, parses exactly; any overflow -> "native:
+;   str_to_int: integer out of range" via rt_bidie (CUR_BI set by the entry stub).
+rt_sti_checked:
+    cmp     qword [rax], 0      ; arg must be STR (tag 0)
+    jne     rt_not_string
+    mov     rcx, [rax+8]        ; desc
+    mov     rsi, [rcx+8]        ; ptr
+    mov     rdx, [rcx]          ; len
+    xor     r8, r8              ; i
+    xor     r9, r9              ; negative flag
+    test    rdx, rdx
+    jz      rt_not_decimal
+    cmp     byte [rsi], '-'
+    jne     .chk
+    mov     r9, 1
+    inc     r8
+    cmp     r8, rdx
+    jae     rt_not_decimal      ; lone '-'
+.chk:
+    mov     r11, r8             ; first digit index
+.c1:
+    cmp     r8, rdx
+    jae     .val
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    cmp     r10, 9
+    ja      rt_not_decimal
+    inc     r8
+    jmp     .c1
+.val:
+    mov     r8, r11
+    xor     rax, rax
+.v1:
+    cmp     r8, rdx
+    jae     .sign
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    imul    rax, rax, 10
+    jo      .range
+    sub     rax, r10
+    jo      .range
+    inc     r8
+    jmp     .v1
+.sign:
+    test    r9, r9
+    jnz     .box
+    neg     rax                 ; positive result; -LONG_MIN overflows
+    jo      .range
+.box:
+    jmp     rt_box_int
+.range:
+    lea     rsi, [rel intrange_b]
+    mov     edx, intrange_blen
+    jmp     rt_bidie
+intrange_b:   db "integer out of range", 10
+intrange_blen equ $ - intrange_b

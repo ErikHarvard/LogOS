@@ -613,6 +613,13 @@ runnable and checked by `build.sh`.
     literals always desugar to clean digit strings, so this only ever fires on an
     explicit malformed `str_to_int` call. `desc_atoi` itself stays lenient — it
     also parses syscall-arg decimals the VM formats itself, always well-formed.)
+    The value must also **fit a signed 64-bit integer**: out of range halts with
+    `<engine>: str_to_int: integer out of range` on every engine. Before, host's
+    `strtol` saturated (`"9223372036854775808"` → `9223372036854775807`) while the VM
+    and native wrapped (→ `-9223372036854775808`, and a 20-digit string could wrap
+    to a plausible small number). The VM and native now accumulate negatively with
+    an overflow check, so both boundaries, `9223372036854775807` and
+    `-9223372036854775808`, still parse exactly (`gate_decimal_strict.sh`).
   - **`codegen.la` `PARSE_PROGRAM` now halts on malformed input** (fixed). It
     used to treat a `NONE` from `PARSE_GLYPH` as end-of-program — silently
     truncating the source and emitting a corrupt stream. It now ends cleanly

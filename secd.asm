@@ -3492,8 +3492,36 @@ _start:
     inc     rsi
     dec     rcx
     jnz     .sti_dig
-    mov     rdi, r9
-    call    desc_atoi
+    ; value, overflow-checked: accumulate NEGATIVELY (acc = acc*10 - d) so that
+    ; LONG_MIN, whose magnitude has no positive twin, parses exactly, then negate
+    ; unless the input was negative. Any jo -> "integer out of range". desc_atoi
+    ; wrapped silently, so "9223372036854775808" was LONG_MIN here and LONG_MAX on
+    ; the host (gate_decimal_strict.sh).
+    mov     rsi, [r9+8]
+    mov     rcx, [r9]
+    xor     r10, r10             ; r10 = 1 if negative
+    cmp     byte [rsi], 45
+    jne     .sti_acc0
+    mov     r10, 1
+    inc     rsi
+    dec     rcx
+.sti_acc0:
+    xor     rax, rax
+.sti_acc:
+    movzx   rdx, byte [rsi]
+    sub     rdx, 48
+    imul    rax, rax, 10
+    jo      .intrange
+    sub     rax, rdx
+    jo      .intrange
+    inc     rsi
+    dec     rcx
+    jnz     .sti_acc
+    test    r10, r10
+    jnz     .sti_done
+    neg     rax                  ; positive result; -LONG_MIN overflows
+    jo      .intrange
+.sti_done:
     mov     qword [r12], 4
     mov     [r12+8], rax
     add     r12, 16
@@ -3828,6 +3856,10 @@ _start:
     mov     rdx, strtypemsg_len
     jmp     .bidie
 
+.intrange:                       ; str_to_int value does not fit a signed 64-bit int
+    mov     rsi, intrangemsg
+    mov     rdx, intrangemsg_len
+    jmp     .bidie
 .chr_bad:                        ; chr's format check failed with rsi/rcx still pushed
     add     rsp, 16
     jmp     .notint
@@ -4070,6 +4102,8 @@ strtypemsg:    db "argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+intrangemsg:   db "integer out of range", 10
+intrangemsg_len equ $ - intrangemsg
 divzeromsg:    db "division by zero", 10
 divzeromsg_len equ $ - divzeromsg
 openmsg:       db "secd: cannot open logos_program.bin", 10

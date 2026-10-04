@@ -897,7 +897,13 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         if (i >= v->len) { fprintf(stderr, "host: str_to_int: not a decimal integer\n"); exit(1); }
         for (size_t k = i; k < v->len; k++)
             if (v->s[k] < '0' || v->s[k] > '9') { fprintf(stderr, "host: str_to_int: not a decimal integer\n"); exit(1); }
-        return mkint(strtol(v->s, NULL, 10));
+        /* Must fit a signed 64-bit integer. strtol SATURATES out of range while
+         * the VM and native wrapped, so "9223372036854775808" was LONG_MAX here
+         * and LONG_MIN there (gate_decimal_strict.sh); every engine now halts. */
+        errno = 0;
+        long n = strtol(v->s, NULL, 10);
+        if (errno == ERANGE) { fprintf(stderr, "host: str_to_int: integer out of range\n"); exit(1); }
+        return mkint(n);
     }
     if (strcmp(name, "typeof") == 0) {
         /* a value's Form as a tag: "int" | "str" | "fun". Functions (lambdas),

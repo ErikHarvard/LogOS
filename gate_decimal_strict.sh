@@ -5,7 +5,9 @@
 # WHAT IT GUARDS. Differential fuzzing (host vs native vs secd, 2026-10-04) found:
 #   * chr of a non-decimal string succeeded silently, with DIFFERENT bytes per
 #     engine: host strtol gave chr("x") = "\0", chr("7x") = "\a"; the VM and native
-#     ran every byte through (c-'0') and gave "H" and byte 216.
+#     ran every byte through (c-'0') and gave "H" and byte 216;
+#   * str_to_int of an out-of-range decimal saturated on host and wrapped on the
+#     VM and native (see the second block of cases below).
 # THE RULE: an optional '-' then one or more digits, else
 #   "<engine>: <builtin>: not a decimal integer", rc 1 (str_to_int already did this);
 # chr's value must be 0..255, overflow included, else the range message.
@@ -59,5 +61,17 @@ case_ 'chr("-1")' 'print(chr(concat("-")("1")))' "" 1 \
     "host: chr: value -1 out of byte range 0..255" \
     "secd: chr: value out of byte range 0..255" "native: chr: value out of byte range 0..255"
 case_ 'chr("065")' 'print(chr(concat("06")("5")))' "A" 0 "" "" ""
+
+# str_to_int must fit a signed 64-bit integer: host saturated ("9223372036854775808"
+# -> 9223372036854775807) while the VM and native wrapped (-> -9223372036854775808,
+# and a 20-digit string could wrap to a plausible small number). Both boundaries
+# are representable and must parse exactly.
+oor() { case_ "$1" "$2" "" 1 "host: str_to_int: integer out of range" "secd: str_to_int: integer out of range" "native: str_to_int: integer out of range"; }
+oor 'str_to_int(LONG_MAX+1)' 'print(str_to_int(concat("922337203685477")("5808")))'
+oor 'str_to_int(LONG_MIN-1)' 'print(str_to_int(concat("-922337203685477")("5809")))'
+oor 'str_to_int(20 digits)'  'print(str_to_int(concat("9999999999")("9999999999")))'
+case_ 'str_to_int(LONG_MAX)' 'print(str_to_int(concat("922337203685477")("5807")))' "9223372036854775807" 0 "" "" ""
+case_ 'str_to_int(LONG_MIN)' 'print(str_to_int(concat("-922337203685477")("5808")))' "-9223372036854775808" 0 "" "" ""
+case_ 'str_to_int("-007")'   'print(str_to_int(concat("-00")("7")))' "-7" 0 "" "" ""
 
 [ "$ok" = 1 ] || exit 1
