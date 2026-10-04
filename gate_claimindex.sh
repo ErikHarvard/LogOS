@@ -9,6 +9,11 @@
 # a claim nothing keeps true"). LA_CLAIM_INDEX.md supplies the mapping; this
 # gate is what keeps it from rotting the same way.
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
+# ★ THE VERDICT MUST NOT DEPEND ON THE CALLER'S LOCALE. Keys carry multibyte
+# glyphs (⊂ ⊕ ∂ 𝔄 …). Under LC_ALL=C — a bare CI shell, a container — `tr`/`sed`
+# split them into bytes, the key no longer matches the row generated under UTF-8,
+# and 6 rows that ARE indexed went RED (measured 2026-10-04: 28 reported, 22 real).
+export LC_ALL=C.UTF-8
 C=LA_COMPLETION.md; X=LA_CLAIM_INDEX.md
 for f in "$C" "$X"; do
     [ -f "$f" ] || { echo "FAIL  claimindex: $f missing — a broken checkout, not a configuration"; exit 1; }
