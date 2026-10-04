@@ -283,10 +283,9 @@ rt_apply:
     mov     [rax+16], rdx       ; parent
     lea     rdi, [rax+8]        ; env body
     jmp     [rcx]               ; tail into body; its ret returns to our caller
-.bad:
-    mov     rax, 60
-    mov     rdi, 70             ; exit 70 = applied a non-function
-    syscall
+.bad:                           ; applied a non-function: rt_nonfn (appended) says
+    jmp     rt_nonfn            ;   so on stderr, then exits 70 as before. Padded to the
+    times 12 - ($ - .bad) nop   ;   old 12-byte footprint so no later address moves.
 
 ; ── slot 4: rt_print(rax=value) -> writes value + newline; preserves rax ──
 rt_print_body:
@@ -2610,3 +2609,20 @@ rt_rf_openfail:
 rfo_pfx:    db "native: read_file: cannot open '"
 rfo_pfxlen  equ $ - rfo_pfx
 rfo_sfx:    db "'", 10
+
+; ── rt_apply: say "applied a non-function" instead of exiting 70 in silence ────
+;   host and secd both print "<engine>: attempt to apply a non-function"; native
+;   exited 70 with nothing on stderr (found by differential fuzzing, 2026-10-04).
+;   Same shape as the GC-exhaustion / stack-overflow exits above: message, then
+;   the existing distinctive code (70), which the kernel debug path still reads.
+rt_nonfn:
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel nonfn_msg]
+    mov     edx, nonfn_len
+    syscall
+    mov     eax, 60
+    mov     edi, 70
+    syscall
+nonfn_msg:  db "native: attempt to apply a non-function", 10
+nonfn_len   equ $ - nonfn_msg
