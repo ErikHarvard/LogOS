@@ -1450,13 +1450,9 @@ rt_read_file_body:
     mov     rdx, welong_ulen
     syscall
     jmp     .die
-.openfail:
-    mov     rax, 1
-    mov     rdi, 2
-    mov     rsi, rferr
-    mov     rdx, rferrlen
-    syscall
-    jmp     .die
+.openfail:                      ; names the path, like host + secd: rt_rf_openfail
+    jmp     rt_rf_openfail      ;   is appended, so this keeps the old 29-byte
+    times 29 - ($ - .openfail) nop  ; footprint and no later runtime address moves
 .seekfail:                      ; freeze-day #12: lseek on a non-seekable fd failed
     mov     rax, 1
     mov     rdi, 2
@@ -2581,3 +2577,36 @@ bn_inw:         db "inw", 0
 bn_outw:        db "outw", 0
 bn_send:        db "send", 0
 bn_recv:        db "recv", 0
+
+; ── read_file: name the file that could not be opened ──────────────────────────
+;   host and secd both say which path failed; native said only "cannot open file".
+;   rt_read_file_body has left the NUL-terminated path in pathbuf. Appended here
+;   so no existing runtime address moves (see the .openfail redirect).
+rt_rf_openfail:
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel rfo_pfx]
+    mov     edx, rfo_pfxlen
+    syscall
+    mov     rsi, pathbuf
+    xor     edx, edx
+.len:
+    cmp     byte [rsi + rdx], 0
+    je      .path
+    inc     rdx
+    jmp     .len
+.path:
+    mov     eax, 1
+    mov     edi, 2
+    syscall
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel rfo_sfx]
+    mov     edx, 2
+    syscall
+    mov     eax, 60
+    mov     edi, 1
+    syscall
+rfo_pfx:    db "native: read_file: cannot open '"
+rfo_pfxlen  equ $ - rfo_pfx
+rfo_sfx:    db "'", 10
