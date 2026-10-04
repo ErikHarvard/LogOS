@@ -117,7 +117,14 @@ Expressions:
 - `chr(n)` — decimal-*string* `n` (0..255) → a one-byte string; how a program
   spells an arbitrary byte (including NUL) to assemble binary. The argument must
   be a string: an int literal (e.g. `chr(65)`) desugars to an `INT` value and is
-  rejected loudly on every engine — wrap it as `chr(int_to_str(n))`.
+  rejected loudly on every engine — wrap it as `chr(int_to_str(n))`. The string
+  is parsed **strictly**, by the same rule as `str_to_int` (an optional `-` then
+  one or more digits): anything else, including `""`, halts with `<engine>: chr:
+  not a decimal integer`, and a value outside 0..255 (overflow included) halts
+  with the range message. Before this, host's `strtol` read a prefix (`"7x"` → 7,
+  `"x"` → 0) while the VM and native read every byte as `c-'0'` (`"x"` → `H`), so a
+  malformed argument silently gave a different byte per engine
+  (`gate_decimal_strict.sh`).
 - `ord(s)` — first byte of `s` → its decimal string (inverse of `chr`).
 - `str_len(s)` — byte length of `s` as a decimal string. O(1) (strings carry
   their length), so it is cheap on multi-MiB binaries where an LA `str_tail`

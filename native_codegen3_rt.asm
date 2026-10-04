@@ -1152,31 +1152,9 @@ rt_ord_body:
 ; ── chr(decimal STR) -> one-byte STR ──
 ;   minimal unsigned base-10 atoi (chr codes are 0..255, no sign), then make a
 ;   1-byte string from the static numbuf (make_str copies it out immediately).
-rt_chr_body:
-    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
-    jne     rt_not_string
-    mov     rcx, [rax+8]        ; descriptor body
-    mov     rsi, [rcx+8]        ; blob ptr
-    mov     rdx, [rcx]          ; len
-    xor     rax, rax            ; acc
-    xor     r8, r8              ; i
-.d:
-    cmp     r8, rdx
-    jae     .e
-    movzx   r10, byte [rsi+r8]
-    sub     r10, '0'
-    imul    rax, rax, 10
-    add     rax, r10
-    inc     r8
-    jmp     .d
-.e:
-    cmp     rax, 255            ; freeze-day #3: chr code must be 0..255 (digit loop is
-    ja      rt_chr_range        ;   unsigned, so a negative is impossible) -> loud halt
-    mov     [numbuf], al        ; the one byte
-    mov     rsi, numbuf
-    mov     rdx, 1
-    xor     rax, rax            ; r14 GC root = 0 (source is static numbuf)
-    jmp     rt_make_str
+rt_chr_body:                    ; strict decimal parse lives in rt_chr_strict (appended);
+    jmp     rt_chr_strict       ;   padded to the old 95-byte footprint so no later
+    times 95 - ($ - rt_chr_body) nop  ; runtime address moves
 
 ; ── 3c.2 error(STR): loud halt — print msg + newline to stderr, exit 1 ──
 ;   The native analogue of the host/VM `error` builtin: a compiled program that
@@ -2626,3 +2604,69 @@ rt_nonfn:
     syscall
 nonfn_msg:  db "native: attempt to apply a non-function", 10
 nonfn_len   equ $ - nonfn_msg
+
+; ── chr: strict decimal argument, like str_to_int and like host / secd ──────────
+;   Every byte used to be read as (c-'0'), so chr("x") gave "H" here and "\0" on
+;   the host, with no error (gate_decimal_strict.sh). Now: optional '-' then one
+;   or more digits, checked over the WHOLE string first, else "native: chr: not a
+;   decimal integer" (rt_bidie names chr from CUR_BI). The value leaves the loop
+;   as soon as it passes 255, so a long digit string cannot overflow into range;
+;   only -0 is a negative in range.
+rt_chr_strict:
+    cmp     qword [rax], 0      ; arg must be STR (tag 0)
+    jne     rt_not_string
+    mov     rcx, [rax+8]        ; descriptor body
+    mov     rsi, [rcx+8]        ; blob ptr
+    mov     rdx, [rcx]          ; len
+    xor     r8, r8              ; i
+    xor     r9, r9              ; negative flag
+    test    rdx, rdx
+    jz      .bad
+    cmp     byte [rsi], '-'
+    jne     .chk
+    mov     r9, 1
+    inc     r8
+    cmp     r8, rdx
+    jae     .bad                ; lone '-'
+.chk:
+    mov     r11, r8             ; first digit index
+.c1:
+    cmp     r8, rdx
+    jae     .val
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    cmp     r10, 9
+    ja      .bad
+    inc     r8
+    jmp     .c1
+.val:
+    mov     r8, r11
+    xor     rax, rax
+.v1:
+    cmp     r8, rdx
+    jae     .sign
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    imul    rax, rax, 10
+    add     rax, r10
+    cmp     rax, 255
+    ja      rt_chr_range
+    inc     r8
+    jmp     .v1
+.sign:
+    test    r9, r9
+    jz      .ok
+    test    rax, rax
+    jnz     rt_chr_range
+.ok:
+    mov     [numbuf], al        ; the one byte
+    mov     rsi, numbuf
+    mov     rdx, 1
+    xor     rax, rax            ; r14 GC root = 0 (source is static numbuf)
+    jmp     rt_make_str
+.bad:
+    lea     rsi, [rel notdec_b]
+    mov     edx, notdec_blen
+    jmp     rt_bidie
+notdec_b:   db "not a decimal integer", 10
+notdec_blen equ $ - notdec_b

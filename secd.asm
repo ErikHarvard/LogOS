@@ -1675,22 +1675,50 @@ _start:
     jnz     .strtype             ; INT (tag 4), whose payload IS the value, not a
                                  ; pointer — would deref it as a descriptor →
                                  ; SIGSEGV. Halt loudly like the C host instead.
+    ; strict, like str_to_int: optional '-' then >=1 digits, checked over the
+    ; WHOLE string first (as the host does), else "chr: not a decimal integer".
+    ; Every byte used to be read as (c-'0'), so chr("x") silently gave "H" here
+    ; and "\0" on the host (gate_decimal_strict.sh).
     mov     rsi, [r9+8]
     mov     rcx, [r9]
-    xor     rax, rax
-.chr_loop:
+    xor     r10, r10             ; r10 = 1 if negative
     test    rcx, rcx
-    je      .chr_done
+    jz      .notint              ; empty
+    cmp     byte [rsi], 45       ; leading '-'?
+    jne     .chr_chk0
+    mov     r10, 1
+    inc     rsi
+    dec     rcx
+    jz      .notint              ; lone "-"
+.chr_chk0:
+    push    rsi
+    push    rcx
+.chr_chk:
     movzx   rdx, byte [rsi]
+    sub     rdx, 48
+    cmp     rdx, 9
+    ja      .chr_bad             ; not '0'..'9'
+    inc     rsi
+    dec     rcx
+    jnz     .chr_chk
+    pop     rcx
+    pop     rsi
+    xor     rax, rax
+.chr_loop:                       ; value; leaves as soon as it passes 255, so a
+    movzx   rdx, byte [rsi]      ; long digit string can never overflow into range
     sub     rdx, 48
     imul    rax, rax, 10
     add     rax, rdx
+    cmp     rax, 255
+    ja      .chrrange
     inc     rsi
     dec     rcx
-    jmp     .chr_loop
+    jnz     .chr_loop
+    test    r10, r10             ; negative: only -0 is in range
+    jz      .chr_done
+    test    rax, rax
+    jnz     .chrrange
 .chr_done:
-    cmp     rax, 255             ; chr expects 0..255 — halt loudly out of range,
-    ja      .chrrange            ; like the C host (was: silent low-byte truncation)
     mov     [r15], al            ; DATA blob: 1 raw byte (no header)
     mov     rbp, r15
     inc     r15
@@ -3800,7 +3828,10 @@ _start:
     mov     rdx, strtypemsg_len
     jmp     .bidie
 
-.notint:                         ; str_to_int given a non-decimal string
+.chr_bad:                        ; chr's format check failed with rsi/rcx still pushed
+    add     rsp, 16
+    jmp     .notint
+.notint:                         ; str_to_int / chr given a non-decimal string
     mov     rsi, notintmsg
     mov     rdx, notintmsg_len
     jmp     .bidie

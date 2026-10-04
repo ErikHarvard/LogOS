@@ -33,6 +33,7 @@
  */
 
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -832,7 +833,17 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
          * byte (0..255), including NUL, so it can assemble binary like ELF. */
         Node *v = eval(argexpr);
         if (v->t != N_STR) { fprintf(stderr, "host: chr: argument is not a string\n"); exit(1); }
+        /* Strict, like str_to_int: optional '-' then one or more digits. strtol
+         * used to parse a prefix ("7x" -> 7, "x" -> 0) while the VM and native
+         * read every byte as (c-'0'), so a malformed argument gave a DIFFERENT
+         * byte on each engine with no error (gate_decimal_strict.sh). */
+        size_t i = (v->len && v->s[0] == '-') ? 1 : 0;
+        if (i >= v->len) { fprintf(stderr, "host: chr: not a decimal integer\n"); exit(1); }
+        for (size_t k = i; k < v->len; k++)
+            if (v->s[k] < '0' || v->s[k] > '9') { fprintf(stderr, "host: chr: not a decimal integer\n"); exit(1); }
+        errno = 0;
         long n = strtol(v->s, NULL, 10);
+        if (errno == ERANGE) { fprintf(stderr, "host: chr: value %.*s out of byte range 0..255\n", (int)v->len, v->s); exit(1); }
         if (n < 0 || n > 255) { fprintf(stderr, "host: chr: value %ld out of byte range 0..255\n", n); exit(1); }
         char b = (char)(unsigned char)n;
         return mkstrn(&b, 1);
