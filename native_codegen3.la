@@ -410,7 +410,17 @@ glyph BETA = Z(la self. la node.
     (NODE_TAG(node)))
 
 # ── string-literal collection + pool (after runtime; LITERAL_BASE fixed) ──
-glyph IS_INT_LIT = la node. AND(str_eq(NODE_TAG(node))("APP"))(AND(str_eq(NODE_TAG(APP_F(node)))("VAR"))(AND(str_eq(VAR_NM(APP_F(node)))("str_to_int"))(str_eq(NODE_TAG(APP_A(node)))("STR"))))
+# A FOLDABLE int literal: str_to_int applied to a string that is a well-formed
+# decimal of at most 18 digits, so folding it at compile time cannot overflow and
+# gives exactly what the runtime would. Folding calls str_to_int INSIDE the
+# compiler, so before this check a malformed literal ("12x") halted the COMPILER:
+# a program host and the VM run was refused when the literal sat on a branch never
+# taken, and effects before a reached one were lost (gate_native_fold.sh). Anything
+# else stays a runtime call, and its string goes to the pool like any other.
+glyph ALL_DIGITS = Z(la self. la s. IF(str_eq(s)(""))(la _. TRUE)(la _. AND(IS_DIGIT(str_head(s)))(self(str_tail(s)))))
+glyph FOLDABLE_DEC = la s. (la d. AND(NOT(str_eq(d)("")))(AND(ALL_DIGITS(d))(lt(STRLEN_INT(d))(19))))(IF(str_eq(str_head(s))("-"))(la _. str_tail(s))(la _. s))
+glyph INT_LIT_ARG = la a. IF(str_eq(NODE_TAG(a))("STR"))(la _. FOLDABLE_DEC(STR_V(a)))(la _. FALSE)
+glyph IS_INT_LIT = la node. IF(AND(str_eq(NODE_TAG(node))("APP"))(AND(str_eq(NODE_TAG(APP_F(node)))("VAR"))(str_eq(VAR_NM(APP_F(node)))("str_to_int"))))(la _. INT_LIT_ARG(APP_A(node)))(la _. FALSE)
 glyph APPEND = Z(la self. la xs. la ys. IF(IS_CONS(xs))(la _. CONS(HD(xs))(self(TL(xs))(ys)))(la _. ys))
 glyph COLLECT = Z(la self. la node.
     (la tag.
@@ -681,7 +691,7 @@ glyph CG_BIN = la rec. la nm. la a1. la a2. la cenv. la tail. la pool.
     )(rec(a2)(cenv)(FALSE)(SND(r1))))(rec(a1)(cenv)(FALSE)(pool)))
 
 glyph CG_UN = la rec. la nm. la a. la cenv. la tail. la pool.
-    IF(AND(str_eq(nm)("str_to_int"))(str_eq(NODE_TAG(a))("STR")))(la _.
+    IF(AND(str_eq(nm)("str_to_int"))(INT_LIT_ARG(a)))(la _.
         PAIR(TAILED(tail)(concat(MOV_RAX_IMM(str_to_int(STR_V(a))))(CALLR(RT_BOX_INT))))(pool))(la _.
     (la r. PAIR(TAILED(tail)(concat(FST(r))(CALLR(RT_UN(nm)))))(SND(r)))(rec(a)(cenv)(FALSE)(pool)))
 
