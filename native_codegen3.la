@@ -152,13 +152,19 @@ glyph TOKENIZE = Z(la self. la s.
     )(str_head(s))))
 
 # ── parser (lambda, primary, left-assoc application) ───────────────
+# The token after the parameter must BE the dot. It used to be dropped unchecked
+# (TL(TL(rest))), so `la t junk la f. t` parsed as `la t. la f. t` where host and
+# the VM compiler reject it (found by differential fuzzing, gate_native_parse.sh).
+# Keywords are refused as parameters exactly as host's lexer refuses them.
 glyph P_LAMBDA = la pexpr. la rest.
     IF(str_eq(T_TYPE(HD(rest)))("name"))(la _.
-    IF(OR(str_eq(T_VAL(HD(rest)))("la"))(str_eq(T_VAL(HD(rest)))("glyph")))(la _.
+    IF(IS_KEYWORD(T_VAL(HD(rest))))(la _.
         error("native_codegen3: expected lambda parameter"))(la _.
+    IF(str_eq(T_TYPE(HD(TL(rest))))("dot"))(la _.
     (la param. (la afterdot.
         (la bd. PAIR(AST_LAM(param)(FST(bd)))(SND(bd)))(pexpr(afterdot))
-    )(TL(TL(rest))))(T_VAL(HD(rest)))))
+    )(TL(TL(rest))))(T_VAL(HD(rest))))
+    (la _. error("native_codegen3: expected '.' after lambda parameter"))))
     (la _. error("native_codegen3: expected lambda parameter"))
 
 glyph P_PRIMARY = la pexpr. la toks.
@@ -277,11 +283,15 @@ glyph PARSE_MOD_LOOP = Z(la self. la toks.
     IF(str_eq(T_TYPE(HD(toks)))("name"))(la _.
         (la kw.
         IF(str_eq(kw)("glyph"))(la _.
+            # the glyph NAME must be a non-keyword name token, as on host (a keyword or
+            # a string literal here used to be taken as the name without a check)
+            IF(AND(str_eq(T_TYPE(HD(TL(toks))))("name"))(NOT(IS_KEYWORD(T_VAL(HD(TL(toks)))))))(la _.
             (la nm. (la aftername.
                 IF(str_eq(T_TYPE(HD(aftername)))("eq"))(la _.
                     (la r. (la recp. PAIR(CONS(PAIR(nm)(FST(r)))(FST(recp)))(SND(recp)))(self(SND(r))))(P_EXPR(TL(aftername))))
                 (la _. error("native_codegen3: expected = in glyph definition")))
             (TL(TL(toks))))(T_VAL(HD(TL(toks)))))
+            (la _. error("native_codegen3: expected glyph name")))
         (la _.
         IF(str_eq(kw)("import"))(la _.
             (la ip. (la modp. (la mangled. (la recp.
