@@ -1,6 +1,6 @@
-# LA CLAIM INDEX — the 38 unbuilt items mapped to the paper's Ledger
+# LA CLAIM INDEX — the unbuilt items mapped to the paper's Ledger (the count is the gate's to report, not this title's)
 
-Built 2026-09-05. **This file IS `LA_COMPLETION.md:770`**, which reads
+Built 2026-09-05. Rows 39–60 added 2026-10-04 for items filed after the build (d8e9dc2, e9f2a77, 9df29b0), each filled ONLY from the citation the item itself carries — the PDF was not to hand, so `INFERRED` there means *Ledger row unchecked*, not a concept match. **This file IS `LA_COMPLETION.md:770`**, which reads
 `[ ] Every Tier-1/2 item above needs its paper counterpart at the right tag`.
 
 ## Why it was needed
@@ -84,6 +84,28 @@ Tag census over the whole paper: **[A] 74, [B] 253, [W] 192, [S] 0**; control
 | 36 | `fix trimodal wherever a fourth modality` | fix "trimodal" where a 4th modality exists | Trimodal identity **vs** Fourth modality (haptic) | both `[W]` | ⚠ **TWO [W] ROWS CONTRADICT** | EXACT (both rows present) |
 | 37 | `the ledger is a plain tabular` | Ledger `tabular` can't break across pages | the Ledger itself | — | typesetting | EXACT |
 | 38 | `every tier 1/2 item above needs` | every item needs its paper counterpart | — | — | **THIS FILE closes it** | EXACT |
+| 39 | `ledger row constant time execution a` | Constant-time execution: `[A]` not held | Constant-time execution (§XIII) | `[A]` | `[A]`→`[W]` via a timing gate | EXACT — item names the Ledger row and tag |
+| 40 | `ledger row identity adequacy three collisions` | Identity Adequacy: three κ-collisions | Identity Adequacy (criterion 6 of 9) | `[A]` | closes criterion 6 | EXACT — item names the Ledger row and tag |
+| 41 | `toroidal closure of the metaphonetic manifold` | toroidal closure of M_P | LINGUA_ADAMICA.tex §4398 (\lemma) | — | a topology the phonetic register asserts | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 42 | `the meta referent has no sigil` | the meta-referent has no sigil | WP v18 §"What IS not claimed" | — | renders the dyad's sigil under gates | EXACT — item quotes the paper's own debt |
+| 43 | `text level coherence the half of` | text-level coherence (discourse past the turn pair) | WP discourse claim (*structure above the sentence*) | — | narrows or pays the discourse claim | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 44 | `ledger row lexical depth d computable` | Lexical depth D: use-gating | Lexical depth D | `[W]` computable / `[A]` use-gating | `[A]` half → `[W]` | EXACT — item names the Ledger row and tags |
+| 45 | `the four modes of poetic depth` | four modes of poetic depth (entendre) | LINGUA_ADAMICA.tex §2250 | — | depth made audible, derived from the DAG | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 46 | `the grammar completeness theorem has no` | Grammar Completeness theorem ungated | LINGUA_ADAMICA.tex §4085 (\theorem) | — | a falsifying gate for the theorem | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 47 | `no gate checks ontomorphology and the` | ontomorphology + inflectional census | WP v18 §ontopragmasemantics | — | census emitted and gated injective | EXACT — item quotes the paper's own debt |
+| 48 | `m11a residue the catalogue is incomplete` | M11a residue: 4 operators missing from CAT | WP §sec:compression (catalogue) | — | `catalogue=17`→`21` (behaviour change) | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 49 | `m11b the ancestry walk ancestry g` | M11b: ANCESTRY(g) | WP §sec:compression:3150 | — | ancestry as computation, not archive | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 50 | `m11c auto registration the paper s` | M11c: auto-registration of mints | WP bound *nothing yet registers a newly minted glyph* | — | unblocks G3 and depth-directed selfopt | EXACT — item quotes the paper's stated bound |
+| 51 | `gate g3 declared and derived catalogues` | Gate G3: declared ≡ derived catalogue | follows M11c (no separate paper §) | — | RED on arrival; depends on M11c | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 52 | `self invocation the paper calls it` | self-invocation (the deepest gap) | WP v18 self-relation table | `[A]` | ruled BOUNDED 2026-09-06 | EXACT — item quotes the row and tag |
+| 53 | `ledger row meta autontopoiesis state a` | Meta-autontopoiesis: loop not closed unassisted | Meta-autontopoiesis (state) | `[A]` | `[A]`→`[W]` when a hand is removed | EXACT — item names the Ledger row and tag |
+| 54 | `ledger row meta ontosemantic closure slacks` | Meta-Ontosemantic Closure: SLACKS ≠ "" | Meta-Ontosemantic Closure (criterion 9 of 9) | `[A]` | closes criterion 9 | EXACT — item names the Ledger row and tag |
+| 55 | `engineering seal 2 proof carrying glyphs` | Engineering Seal 2: proof-carrying glyphs | §5020; completeness theorem §5032 property (v) | — | blocked on the Seal-1 ruling | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 56 | `engineering seal 3 versioning without semantic` | Engineering Seal 3: versioning without drift | §5024 (centropic migration law) | — | a law for revising a glyph | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 57 | `the recognition depth function ρ l_t` | recognition depth ρ(L_t) | LINGUA_ADAMICA.tex §3842 (\definition) | — | ρ computed over the live catalogue | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 58 | `the self evolution equation lingua_adamica tex` | the Self-Evolution Equation | LINGUA_ADAMICA.tex §3975 | — | depends on ρ(L_t) | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 59 | `derivation rule 4 the neological seal` | Derivation Rule 4: the Neological Seal ν | LINGUA_ADAMICA.tex §4062 | — | a coined glyph sealed into 𝒜 | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
+| 60 | `engineering seal 4 empirical calibration loops` | Engineering Seal 4: empirical calibration | §5028 (cross-species datasets) | — | needs outside data; descope only in writing | INFERRED — § cited by the item; Ledger row unchecked (paper PDF not in repo) |
 
 ---
 
