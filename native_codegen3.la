@@ -791,7 +791,18 @@ glyph EPILOGUE = concat(BYTES("184 60 0 0 0"))(concat(BYTES("72 49 255"))(BYTES(
 #   where bi' = body(gi) with each gj-ref (j in G) rewritten to __LRSELF(PROJ_j),
 #   PROJ_j = la __p0..__p(k-1). __pj ; and each member gi := __bundle_g0(PROJ_i).
 #   __LRSELF/__LRSEL are FRESH (members already bind `self` via Z — bare `self`
-#   would be captured). Needs Z in scope (the E-chain already uses it).
+#   would be captured).
+#   TWO FIXES (differential fuzzing vs host/secd, gate_native_letrec.sh):
+#   (1) the fixpoint is the compiler's OWN __LRZ (injected below only when a
+#       group exists), not whatever the program calls `Z` — a program with no
+#       Z failed "unbound name: Z", and one whose Z is something else got it
+#       applied as a combinator;
+#   (2) each member body is a THUNK `la __LRU. bi'` and every reference forces
+#       it with ("!"), so a member is evaluated BY NAME, when used, as on host.
+#       `__LRSEL b0' b1' ..` used to evaluate EVERY body whenever ANY member was
+#       projected, so a non-lambda member (a data glyph like TBL = PAIR(F)(..))
+#       re-entered the bundle forever: native stack overflow where host and
+#       secd return the value.
 glyph SETLEN = Z(la self. la s. IF(IS_CONS(s))(la _. add(1)(self(TL(s))))(la _. 0))
 glyph SET_ADD = la x. la s. IF(STR_MEM(x)(s))(la _. s)(la _. CONS(x)(s))
 glyph SET_UNION = Z(la self. la a. la b. IF(IS_CONS(a))(la _. self(TL(a))(SET_ADD(HD(a))(b)))(la _. b))
@@ -857,14 +868,15 @@ glyph SUBSTREFS = la substmap. Z(la self. la node. la bound.
         IF(str_eq(tag)("APP"))(la _. AST_APP(self(APP_F(node))(bound))(self(APP_A(node))(bound)))(la _.
         node))))
     (NODE_TAG(node)))
+glyph FORCE = la thunk. AST_APP(thunk)(AST_STR("!"))
 glyph MKSUBSTMAP = la group. la k. Z(la self. la gs.
-    IF(IS_CONS(gs))(la _. CONS(PAIR(HD(gs))(AST_APP(AST_VAR("__LRSELF"))(MKPROJ(k)(INDEXOF(HD(gs))(group)))))(self(TL(gs))))(la _. NIL))(group)
+    IF(IS_CONS(gs))(la _. CONS(PAIR(HD(gs))(FORCE(AST_APP(AST_VAR("__LRSELF"))(MKPROJ(k)(INDEXOF(HD(gs))(group))))))(self(TL(gs))))(la _. NIL))(group)
 glyph MKBODIES = la table. la substmap. Z(la self. la gs.
-    IF(IS_CONS(gs))(la _. CONS(SUBSTREFS(substmap)(BODYOF(table)(HD(gs)))(NIL))(self(TL(gs))))(la _. NIL))
+    IF(IS_CONS(gs))(la _. CONS(AST_LAM("__LRU")(SUBSTREFS(substmap)(BODYOF(table)(HD(gs)))(NIL)))(self(TL(gs))))(la _. NIL))
 glyph BUNDLENAME = la group. concat("__bundle_")(HD(group))
 glyph MKBUNDLE = la table. la group. la k.
     (la substmap. (la bodies.
-        AST_APP(AST_VAR("Z"))(AST_LAM("__LRSELF")(AST_LAM("__LRSEL")(APPALL(AST_VAR("__LRSEL"))(bodies))))
+        AST_APP(AST_VAR("__LRZ"))(AST_LAM("__LRSELF")(AST_LAM("__LRSEL")(APPALL(AST_VAR("__LRSEL"))(bodies))))
     )(MKBODIES(table)(substmap)(group)))(MKSUBSTMAP(group)(k))
 glyph BUNDLE_DEFS = la table. la rtab. la allnames. Z(la self. la names.
     IF(IS_CONS(names))(la _.
@@ -876,14 +888,19 @@ glyph BUNDLE_DEFS = la table. la rtab. la allnames. Z(la self. la names.
 glyph REWRITE_DEFS = la table. la rtab. la allnames. Z(la self. la tbl.
     IF(IS_CONS(tbl))(la _.
         (la g. IF(IS_REC(rtab)(g))
-            (la _. CONS(PAIR(FST(HD(tbl)))(AST_APP(AST_VAR(BUNDLENAME(g)))(MKPROJ(SETLEN(g))(INDEXOF(FST(HD(tbl)))(g)))))(self(TL(tbl))))
+            (la _. CONS(PAIR(FST(HD(tbl)))(FORCE(AST_APP(AST_VAR(BUNDLENAME(g)))(MKPROJ(SETLEN(g))(INDEXOF(FST(HD(tbl)))(g))))))(self(TL(tbl))))
             (la _. CONS(HD(tbl))(self(TL(tbl)))))
         (GROUPOFT(rtab)(allnames)(FST(HD(tbl)))))
     (la _. NIL))(table)
+# the CBV Z combinator over fresh names, the bundles' private fixpoint (fix (1))
+glyph LRZ_HALF = AST_LAM("__lrx")(AST_APP(AST_VAR("__lrf"))(AST_LAM("__lrv")(AST_APP(AST_APP(AST_VAR("__lrx"))(AST_VAR("__lrx")))(AST_VAR("__lrv")))))
+glyph LRZ_AST = AST_LAM("__lrf")(AST_APP(LRZ_HALF)(LRZ_HALF))
 glyph COLLAPSE_RECGROUPS = la table.
-    (la allnames. (la rtab.
-        APPEND(BUNDLE_DEFS(table)(rtab)(allnames))(REWRITE_DEFS(table)(rtab)(allnames))
-    )(MKREACHTAB(MKDREFTAB(table)(allnames))(allnames)))(GNAMES(table))
+    (la allnames. (la rtab. (la bundles.
+        IF(IS_CONS(bundles))
+            (la _. CONS(PAIR("__LRZ")(LRZ_AST))(APPEND(bundles)(REWRITE_DEFS(table)(rtab)(allnames))))
+            (la _. REWRITE_DEFS(table)(rtab)(allnames))
+    )(BUNDLE_DEFS(table)(rtab)(allnames)))(MKREACHTAB(MKDREFTAB(table)(allnames))(allnames)))(GNAMES(table))
 
 glyph MAIN =
     (la table. (la main_ast. (la poolpair. (la pool. (la litmap. (la plen.
