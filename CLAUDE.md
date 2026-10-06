@@ -1679,6 +1679,12 @@ print is printed (`gate_unbound_load.sh`). A builtin of another engine that is
 actually *reached* halts there at run time, as before; on native that is
 `native: <name>: not supported on this engine`, rc 1.
 
+**A builtin is a first-class value on every engine.** Passed, stored, or
+partially applied (`FOLDR(concat)("")`, `TIMES(str_head)(3)`, `concat("-")` as an
+argument), it means the same thing on host, the VM and native; native compiles
+such a use as the builtin's eta-expansion, so a program that only calls builtins
+directly compiles to the same bytes as before (`gate_builtin_value.sh`).
+
 Sequencing of effects uses `SEQ = la a. la b. b`: naming `a` forces its
 effects before `b` is produced, so `SEQ(print(WORD))(copy_self(SELF))` speaks
 the Word and *then* replicates.

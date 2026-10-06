@@ -31,7 +31,8 @@
 #  SUPPORTED: lambdas, application/currying, variables, int/string literals,
 #  add/sub/mul/div/mod, int_eq/lt/str_eq (-> Church TRUE/FALSE closures),
 #  concat/str_head/str_tail/int_to_str/str_to_int, print. Anything else
-#  (unbound name, builtin used as a value, cyclic glyph) halts LOUDLY.
+#  (unbound name, cyclic glyph) halts LOUDLY; a builtin used as a value compiles
+#  as its eta-expansion (ETA_BUILTIN), as host and the VM treat it as a value.
 #  HONEST LIMITS (deferred): no GC yet (a tail loop is ultimately HEAP-bounded
 #  until Stage 3b adds the collector), and a deep NON-tail recursion still
 #  grows the native stack and faults via raw CPU-stack overflow (SIGSEGV,
@@ -766,12 +767,28 @@ glyph CG_APP = la rec. la node. la cenv. la tail. la pool.
 # litmap/textbase are closed over once (not re-derived per node), so the whole
 # pipeline runs ONCE — tiny_host glyphs are macros (re-evaluated on each reference),
 # so the layout below threads every stage through let-bindings instead.
+# A builtin used as a value (passed, stored, or partially applied, e.g.
+# FOLDR(concat)("") or int_eq(ord)) reaches MK_CG's VAR arm only when no
+# head-position pattern in CG_APP consumed it. Host and the VM treat a builtin as
+# a first-class value, so it compiles as its eta-expansion: la a. b(a) for arity
+# 1, la a. la b. b(a)(b) for 2, three binders for fill/memcpy. The body is a
+# full head-position call, which CG_APP compiles as before; a program that never
+# uses a builtin as a value compiles to the same bytes as before. Each arity
+# test appears once (native inlines every glyph at each use, so a second
+# IS_BUILTIN here would be a second copy in the self-hosted image).
+glyph ETA_BUILTIN = la nm.
+    IF(IS_BUILTIN1(nm))(la _. AST_LAM("__eta_a")(AST_APP(AST_VAR(nm))(AST_VAR("__eta_a"))))(la _.
+    IF(IS_BUILTIN2(nm))(la _. AST_LAM("__eta_a")(AST_LAM("__eta_b")(AST_APP(AST_APP(AST_VAR(nm))(AST_VAR("__eta_a")))(AST_VAR("__eta_b")))))(la _.
+    IF(IS_BUILTIN3(nm))(la _. AST_LAM("__eta_a")(AST_LAM("__eta_b")(AST_LAM("__eta_c")(AST_APP(AST_APP(AST_APP(AST_VAR(nm))(AST_VAR("__eta_a")))(AST_VAR("__eta_b")))(AST_VAR("__eta_c"))))))(la _.
+    error(concat("native_codegen3: free variable: ")(nm)))))
+
 glyph MK_CG = la litmap. la textbase.
     Z(la self. la node. la cenv. la tail. la pool.
         (la tag.
             IF(str_eq(tag)("STR"))(la _. PAIR(TAILED(tail)(STRLIT_CODE(litmap)(STR_V(node))))(pool))(la _.
             IF(str_eq(tag)("VAR"))(la _.
-                (la opt. IF(IS_SOME(opt))(la _. PAIR(TAILED(tail)(VARCODE(OPT_VAL(opt))))(pool))(la _. error(concat("native_codegen3: free variable (builtin used as value?): ")(VAR_NM(node)))))(VAR_LOOKUP(VAR_NM(node))(cenv)(0)))(la _.
+                (la opt. IF(IS_SOME(opt))(la _. PAIR(TAILED(tail)(VARCODE(OPT_VAL(opt))))(pool))(la _.
+                    self(ETA_BUILTIN(VAR_NM(node)))(cenv)(tail)(pool)))(VAR_LOOKUP(VAR_NM(node))(cenv)(0)))(la _.
             IF(str_eq(tag)("LAM"))(la _. CG_LAM(self)(textbase)(LAM_P(node))(LAM_B(node))(cenv)(tail)(pool))(la _.
             CG_APP(self)(node)(cenv)(tail)(pool)
             ))))
