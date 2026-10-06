@@ -896,11 +896,11 @@ glyph REWRITE_DEFS = la table. la rtab. la allnames. Z(la self. la tbl.
 glyph LRZ_HALF = AST_LAM("__lrx")(AST_APP(AST_VAR("__lrf"))(AST_LAM("__lrv")(AST_APP(AST_APP(AST_VAR("__lrx"))(AST_VAR("__lrx")))(AST_VAR("__lrv")))))
 glyph LRZ_AST = AST_LAM("__lrf")(AST_APP(LRZ_HALF)(LRZ_HALF))
 glyph COLLAPSE_RECGROUPS = la table.
-    (la allnames. (la rtab. (la bundles.
+    (la allnames. (la rtab. (la bundles. (la rewritten.
         IF(IS_CONS(bundles))
-            (la _. CONS(PAIR("__LRZ")(LRZ_AST))(APPEND(bundles)(REWRITE_DEFS(table)(rtab)(allnames))))
-            (la _. REWRITE_DEFS(table)(rtab)(allnames))
-    )(BUNDLE_DEFS(table)(rtab)(allnames)))(MKREACHTAB(MKDREFTAB(table)(allnames))(allnames)))(GNAMES(table))
+            (la _. CONS(PAIR("__LRZ")(LRZ_AST))(APPEND(bundles)(rewritten)))
+            (la _. rewritten)
+    )(REWRITE_DEFS(table)(rtab)(allnames)))(BUNDLE_DEFS(table)(rtab)(allnames)))(MKREACHTAB(MKDREFTAB(table)(allnames))(allnames)))(GNAMES(table))
 
 glyph MAIN =
     (la table. (la main_ast. (la poolpair. (la pool. (la litmap. (la plen.
