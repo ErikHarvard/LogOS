@@ -1676,7 +1676,8 @@ scope, a glyph, or a builtin of **any** engine (82 names), so a program that
 mentions a VM-only builtin on a path it does not take still loads on the host.
 Otherwise `host: unbound variable '<name>'`, rc 1, and nothing the program would
 print is printed (`gate_unbound_load.sh`). A builtin of another engine that is
-actually *reached* halts there at run time, as before.
+actually *reached* halts there at run time, as before; on native that is
+`native: <name>: not supported on this engine`, rc 1.
 
 Sequencing of effects uses `SEQ = la a. la b. b`: naming `a` forces its
 effects before `b` is produced, so `SEQ(print(WORD))(copy_self(SELF))` speaks
