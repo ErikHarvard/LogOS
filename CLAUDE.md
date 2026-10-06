@@ -1810,9 +1810,12 @@ diagnostic on stderr and a nonzero exit — on every malformed-input path, rathe
 than silently corrupting state or exiting `0` with a wrong result. The VM now
 emits:
 
-- `secd: unbound variable` — a name resolving to neither an environment entry, a
-  glyph, nor a builtin (it used to fall through to the normal `exit(0)`, so a
-  typo'd name *silently succeeded* with empty output);
+- `secd: unbound variable '<name>'` — at **load time**, before anything runs: a
+  name, in a glyph reachable from `MAIN`, that is neither a `CLOSE` parameter in
+  scope, a glyph, nor a builtin of any engine (`checkunbound`, the same rule as
+  the host and native). A builtin of another engine that is *reached* still
+  halts at run time with `secd: unbound variable` (it used to fall through to
+  the normal `exit(0)`, so a typo'd name *silently succeeded* with empty output);
 - `secd: program too large` / `secd: read error` — the loader drains the whole
   instruction stream into the 5 MiB mapped region (`progcap`, tied to the phdr
   `p_memsz`) and bounds-checks it, instead of the old single 1 MiB `read` whose

@@ -134,6 +134,203 @@ skipbody:
     jnz     .sb
     ret
 
+; ── checkunbound: the load-time unbound-name check ──
+; All three engines accept and reject the same programs, and host and the VM
+; reject an unbound name at load time, as native_codegen3 does at compile time:
+; a typo on a branch that is never taken used to run here and fail to compile
+; there. The rule is native's: every glyph reachable from MAIN is checked (an
+; unused glyph is not), and each PUSHV name must be a CLOSE parameter in scope,
+; a glyph, or a builtin of ANY engine (`anybi`), in that order — the order PUSHV
+; resolves names at run time. Otherwise halt before running:
+; "secd: unbound variable '<name>'", rc 1. An opcode outside 1..5 inside a body
+; is "secd: malformed program" here, as the dispatch loop would say at run time.
+; The glyph table is indexed once, so a lookup is one strcmp per glyph rather
+; than a skipbody over every earlier body. Scratch lives in gcwork, which
+; nothing touches until the first collection. No MAIN: nothing to check (the run
+; halts on the bootstrap's PUSHV as before).
+;   regs: rbx walk, r8/r9 queue read/write, r11 binder top, r14 index end.
+checkunbound:
+    mov     r10, progbuf
+    mov     r9, cu_index
+.ix:
+    cmp     r10, progend
+    jae     _start.badstream
+    cmp     byte [r10], 0
+    je      .ixdone
+    cmp     r9, cu_index + cu_ixcap
+    jae     _start.progbig
+    mov     [r9], r10
+    add     r9, 8
+.ixname:
+    cmp     r10, progend
+    jae     _start.badstream
+    mov     al, [r10]
+    inc     r10
+    test    al, al
+    jnz     .ixname
+    call    skipbody
+    jmp     .ix
+.ixdone:
+    mov     r14, r9
+    mov     rdi, cu_seen         ; one seen byte per index slot, all clear
+    mov     rcx, r14
+    sub     rcx, cu_index
+    shr     rcx, 3
+    xor     eax, eax
+    rep     stosb
+    mov     r8, cu_queue
+    mov     r9, cu_queue
+    mov     rbp, bootstrap + 1   ; "MAIN", 0
+    call    .find
+    test    rax, rax
+    jz      .done
+    call    .mark
+.next:
+    cmp     r8, r9
+    je      .done
+    mov     rax, [r8]
+    add     r8, 8
+    mov     rbx, [rax]           ; the glyph entry: NAME 00 <body> 05
+.skipname:
+    mov     al, [rbx]
+    inc     rbx
+    test    al, al
+    jnz     .skipname
+    mov     r11, cu_bind         ; no CLOSE parameter in scope
+.op:
+    cmp     rbx, progend
+    jae     _start.badstream
+    movzx   eax, byte [rbx]
+    inc     rbx
+    cmp     al, 1
+    je      .str
+    cmp     al, 2
+    je      .var
+    cmp     al, 3
+    je      .close
+    cmp     al, 4
+    je      .op
+    cmp     al, 5
+    je      .ret
+    jmp     _start.badstream
+.close:                          ; CLOSE p: p is in scope until the matching RET
+    cmp     r11, cu_bindend
+    jae     _start.progbig
+    mov     [r11], rbx
+    add     r11, 8
+.str:                            ; skip a NUL-terminated literal or parameter
+    cmp     rbx, progend
+    jae     _start.badstream
+    mov     al, [rbx]
+    inc     rbx
+    test    al, al
+    jnz     .str
+    jmp     .op
+.ret:
+    cmp     r11, cu_bind
+    je      .next                ; the glyph body's own RET: glyph done
+    sub     r11, 8
+    jmp     .op
+.var:
+    mov     rbp, rbx
+.vskip:
+    cmp     rbx, progend
+    jae     _start.badstream
+    mov     al, [rbx]
+    inc     rbx
+    test    al, al
+    jnz     .vskip
+    mov     rdx, r11             ; (1) a CLOSE parameter in scope, innermost first
+.bnd:
+    cmp     rdx, cu_bind
+    je      .glyph
+    sub     rdx, 8
+    mov     rsi, rbp
+    mov     rdi, [rdx]
+    call    strcmp
+    test    eax, eax
+    je      .op
+    jmp     .bnd
+.glyph:                          ; (2) a glyph: reached, so queue it
+    call    .find
+    test    rax, rax
+    jz      .bi
+    call    .mark
+    jmp     .op
+.bi:                             ; (3) a builtin of any engine
+    mov     rdi, anybi
+.biloop:
+    cmp     byte [rdi], 0
+    je      .unbound
+    mov     rsi, rbp
+    mov     rdx, rdi
+    call    strcmp
+    test    eax, eax
+    je      .op
+    mov     rdi, rdx
+.binext:
+    mov     al, [rdi]
+    inc     rdi
+    test    al, al
+    jnz     .binext
+    jmp     .biloop
+.unbound:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, cu_msg
+    mov     rdx, cu_msg_len
+    syscall
+    mov     rsi, rbp
+    xor     edx, edx
+.ulen:
+    cmp     byte [rsi + rdx], 0
+    je      .uname
+    inc     rdx
+    jmp     .ulen
+.uname:
+    mov     rax, 1
+    mov     rdi, 2
+    syscall
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, cu_tail
+    mov     rdx, cu_tail_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+.done:
+    ret
+.find:                           ; rbp = name → rax = its index slot (first match), or 0
+    mov     r10, cu_index
+.fl:
+    cmp     r10, r14
+    je      .fnone
+    mov     rsi, rbp
+    mov     rdi, [r10]
+    call    strcmp
+    test    eax, eax
+    je      .fhit
+    add     r10, 8
+    jmp     .fl
+.fhit:
+    mov     rax, r10
+    ret
+.fnone:
+    xor     eax, eax
+    ret
+.mark:                           ; rax = index slot → queue it unless already queued
+    mov     rcx, rax
+    sub     rcx, cu_index
+    shr     rcx, 3
+    cmp     byte [cu_seen + rcx], 0
+    jne     .mret
+    mov     byte [cu_seen + rcx], 1
+    mov     [r9], rax
+    add     r9, 8
+.mret:
+    ret
+
 ; ── desc_atoi(rdi = STR descriptor) → rax (signed integer) ──
 ; Syscall args/results (fd, flags, pid, status, errno) cross the LA boundary
 ; as decimal strings, since the VM has no integer value.
@@ -325,6 +522,7 @@ _start:
     mov     rdi, rbp
     syscall
 .booted:
+    call    checkunbound         ; reject an unbound name before anything runs
     ; HEAP-MMAP: the two semispaces are reserved HERE, by one mmap(MAP_NORESERVE),
     ; not in the ELF p_memsz (which used to carry 1.5 GiB of heap, so exec — and
     ; valgrind — had to map it all up front). Size per semispace: LOGOS_HEAP_MB
@@ -4086,6 +4284,26 @@ stackmsg:      db "secd: stack overflow", 10
 stackmsg_len   equ $ - stackmsg
 pathmsg:       db "path too long", 10
 pathmsg_len    equ $ - pathmsg
+cu_msg:        db "secd: unbound variable '"
+cu_msg_len     equ $ - cu_msg
+cu_tail:       db "'", 10
+cu_tail_len    equ $ - cu_tail
+; anybi: every builtin of ANY engine (host, VM, native) — the names a program
+; may mention on a path it does not take (checkunbound). A builtin added to an
+; engine must be added here, or the VM refuses to load a program that uses it.
+anybi:         db "accept",0,"add",0,"band",0,"bind",0,"bnot",0,"bor",0,"bshl",0,"bshr",0
+               db "bxor",0,"chmod",0,"chr",0,"clock_gettime",0,"close",0,"concat",0
+               db "connect",0,"copy_self",0,"div",0,"drm_mode",0,"dup2",0,"error",0
+               db "exec_at",0,"execv",0,"execve",0,"exit",0,"fill",0,"fork",0,"getpid",0
+               db "inb",0,"inl",0,"int_eq",0,"int_to_str",0,"inw",0,"kill",0,"listen",0
+               db "lseek",0,"lt",0,"memcpy",0,"mkdir",0,"mod",0,"mount",0,"mul",0,"open",0
+               db "ord",0,"outb",0,"outl",0,"outw",0,"peek",0,"pipe",0,"poke",0,"poll",0
+               db "present",0,"print",0,"random",0,"read",0,"read_file",0,"reap",0
+               db "reapnb",0,"recv",0,"rename",0,"rmdir",0,"send",0,"set_cr3",0,"signalfd",0
+               db "sigprocmask",0,"sleep",0,"socket",0,"spawn",0,"stat",0,"str_at",0
+               db "str_eq",0,"str_head",0,"str_len",0,"str_tail",0,"str_to_int",0,"sub",0
+               db "typeof",0,"unlink",0,"waitpid",0,"write",0,"write_exec",0,"write_file",0
+               db "yield",0,0
 unboundmsg:    db "secd: unbound variable", 10
 unboundmsg_len equ $ - unboundmsg
 notfuncmsg:    db "secd: attempt to apply a non-function", 10
@@ -4329,6 +4547,13 @@ stackmargin equ 0x1000               ; halt this many bytes (256 frames) before
 fsbuf    equ pathbuf + 0x1000
 gcwork   equ fsbuf   + 0x1000        ; GC worklist: 16 MiB = 1 Mi (kind,ptr) entries
 gcwork_end equ gcwork + 0x1000000
+; checkunbound's scratch, inside gcwork (it runs before the first collection):
+cu_index   equ gcwork                 ; glyph-entry pointers, 8 B each
+cu_ixcap   equ 0x400000               ;   up to 512 Ki glyphs
+cu_seen    equ gcwork + 0x400000      ; one byte per index slot
+cu_queue   equ gcwork + 0x480000      ; reached index slots, 8 B each
+cu_bind    equ gcwork + 0x880000      ; CLOSE parameters in scope, 8 B each
+cu_bindend equ gcwork_end
 ; The bump heap — two equal semispaces for the copying collector — is no longer
 ; part of this layout: _start reserves it with one mmap(MAP_NORESERVE) sized by
 ; LOGOS_HEAP_MB (default 768 MiB per semispace, the old fixed size) and records
