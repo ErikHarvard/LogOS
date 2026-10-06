@@ -1667,6 +1667,17 @@ an inner binder, that binder is alpha-renamed to a fresh `_gN` name first.
 Glyph names resolve against the global table; `print`/`copy_self` resolve as
 built-ins if not shadowed by a glyph.
 
+**Unbound names are rejected at load time, before `MAIN` runs** — the same rule
+on every engine, so all three accept and reject the same programs (native
+`native_codegen3` rejects at compile time; the host checks after parsing; the VM
+checks when it loads the stream). Every glyph reachable from `MAIN` is checked
+(an unused glyph is not), and a name is bound if it is a lambda parameter in
+scope, a glyph, or a builtin of **any** engine (82 names), so a program that
+mentions a VM-only builtin on a path it does not take still loads on the host.
+Otherwise `host: unbound variable '<name>'`, rc 1, and nothing the program would
+print is printed (`gate_unbound_load.sh`). A builtin of another engine that is
+actually *reached* halts there at run time, as before.
+
 Sequencing of effects uses `SEQ = la a. la b. b`: naming `a` forces its
 effects before `b` is produced, so `SEQ(print(WORD))(copy_self(SELF))` speaks
 the Word and *then* replicates.

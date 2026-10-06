@@ -1034,6 +1034,80 @@ static void do_import(const char *path) {
 
 /* --------------------------------------------------------------- main --- */
 
+/* ------------------------------------------- load-time unbound check -- */
+/* All three engines accept and reject the same programs. native_codegen3
+ * rejects an unbound name at compile time, so host does too, at load time,
+ * before MAIN runs: a typo on a branch that is never taken used to be a valid
+ * program here and a compile error there. The rule is native's: every glyph
+ * reachable from MAIN is checked (an unused glyph is not), and a name is bound
+ * if it is a lambda parameter in scope, a glyph, or a builtin of ANY engine —
+ * so a program that mentions a VM-only builtin (ipc_demo.la) still loads. */
+static int is_other_engine_builtin(const char *name) {
+    static const char *const names[] = {   /* the VM's and native's, less host's */
+        "accept", "bind", "chmod", "clock_gettime", "close", "connect",
+        "drm_mode", "dup2", "exec_at", "execv", "execve", "exit", "fill",
+        "fork", "getpid", "inb", "inl", "inw", "kill", "listen", "lseek",
+        "memcpy", "mkdir", "mount", "open", "outb", "outl", "outw", "peek",
+        "pipe", "poke", "poll", "present", "random", "read", "reap", "reapnb",
+        "recv", "rename", "rmdir", "send", "set_cr3", "signalfd",
+        "sigprocmask", "sleep", "socket", "spawn", "stat", "unlink",
+        "waitpid", "write", "yield",
+    };
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
+        if (strcmp(names[i], name) == 0) return 1;
+    return 0;
+}
+
+typedef struct Scope { const char *name; const struct Scope *up; } Scope;
+
+static long glyph_index(const char *name) {
+    for (size_t i = 0; i < nglyphs; i++)
+        if (strcmp(glyphs[i].name, name) == 0) return (long)i;
+    return -1;
+}
+
+/* Returns the first unbound name in e, or NULL; pushes each glyph e references
+ * that is not yet seen onto work[]. */
+static const char *scan_unbound(Node *e, const Scope *sc,
+                                unsigned char *seen, size_t *work, size_t *nwork) {
+    for (;;) {
+        check_stack();
+        switch (e->t) {
+            case N_VAR: {
+                for (const Scope *s = sc; s; s = s->up)
+                    if (strcmp(s->name, e->s) == 0) return NULL;
+                long g = glyph_index(e->s);
+                if (g >= 0) {
+                    if (!seen[g]) { seen[g] = 1; work[(*nwork)++] = (size_t)g; }
+                    return NULL;
+                }
+                if (is_builtin(e->s) || is_other_engine_builtin(e->s)) return NULL;
+                return e->s;
+            }
+            case N_LAM: { Scope s = { e->s, sc }; return scan_unbound(e->a, &s, seen, work, nwork); }
+            case N_APP: {
+                const char *u = scan_unbound(e->a, sc, seen, work, nwork);
+                if (u) return u;
+                e = e->b; continue;
+            }
+            default: return NULL;
+        }
+    }
+}
+
+static void check_unbound(long main_idx) {
+    unsigned char *seen = xmalloc(nglyphs ? nglyphs : 1);
+    size_t *work = xmalloc((nglyphs ? nglyphs : 1) * sizeof *work), nwork = 0;
+    memset(seen, 0, nglyphs);
+    seen[main_idx] = 1; work[nwork++] = (size_t)main_idx;
+    while (nwork) {
+        size_t g = work[--nwork];
+        const char *u = scan_unbound(glyphs[g].body, NULL, seen, work, &nwork);
+        if (u) { fprintf(stderr, "host: unbound variable '%s'\n", u); exit(1); }
+    }
+    free(seen); free(work);
+}
+
 int main(int argc, char **argv) {
     gc_stack_base = (uintptr_t)&argc;   /* highest app-stack address; roots live below it */
     {                                   /* arm the recursion guard 512 KB below RLIMIT_STACK */
@@ -1053,6 +1127,7 @@ int main(int argc, char **argv) {
 
     Node *main_glyph = lookup_glyph("MAIN");
     if (!main_glyph) { fprintf(stderr, "host: no MAIN glyph found in %s\n", path); return 1; }
+    check_unbound(glyph_index("MAIN"));
 
     eval(main_glyph);
     return 0;
