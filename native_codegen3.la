@@ -332,20 +332,22 @@ glyph STR_MEM = Z(la self. la x. la lst. IF(IS_CONS(lst))(la _. IF(str_eq(x)(HD(
 glyph OTHER_ENGINE_BUILTINS = CONS("accept")(CONS("bind")(CONS("chmod")(CONS("clock_gettime")(CONS("close")(CONS("connect")(CONS("drm_mode")(CONS("dup2")(CONS("execv")(CONS("execve")(CONS("exit")(CONS("fork")(CONS("getpid")(CONS("kill")(CONS("listen")(CONS("lseek")(CONS("mkdir")(CONS("mount")(CONS("open")(CONS("pipe")(CONS("poll")(CONS("present")(CONS("random")(CONS("read")(CONS("reap")(CONS("reapnb")(CONS("rename")(CONS("rmdir")(CONS("signalfd")(CONS("sigprocmask")(CONS("sleep")(CONS("socket")(CONS("stat")(CONS("str_at")(CONS("typeof")(CONS("unlink")(CONS("waitpid")(CONS("write")(NIL))))))))))))))))))))))))))))))))))))))
 
 # ── glyph inlining (produce one closed lambda term over builtins) ──
+# A name resolves in scope, then the glyph table, then the builtins: the order
+# host and the VM use, so a glyph named like a builtin wins over the builtin.
 glyph INLINE = Z(la self. la node. la table. la bound. la seen.
     (la tag.
         IF(str_eq(tag)("VAR"))(la _.
             (la nm.
                 IF(STR_MEM(nm)(bound))(la _. AST_VAR(nm))(la _.
-                IF(IS_BUILTIN(nm))(la _. AST_VAR(nm))(la _.
                 (la g.
                     IF(IS_SOME(g))(la _.
                         IF(STR_MEM(nm)(seen))(la _. error(concat("native_codegen3: cyclic glyph reference: ")(nm)))(la _.
                             self(OPT_VAL(g))(table)(NIL)(CONS(nm)(seen))))
-                    (la _. IF(STR_MEM(nm)(OTHER_ENGINE_BUILTINS))
+                    (la _. IF(IS_BUILTIN(nm))(la _. AST_VAR(nm))(la _.
+                        IF(STR_MEM(nm)(OTHER_ENGINE_BUILTINS))
                         (la _. AST_APP(AST_VAR("error"))(AST_STR(concat("native: ")(concat(nm)(": not supported on this engine")))))
-                        (la _. error(concat("native_codegen3: unbound name: ")(nm)))))
-                (LOOKUP_GLYPH(nm)(table)))))
+                        (la _. error(concat("native_codegen3: unbound name: ")(nm))))))
+                (LOOKUP_GLYPH(nm)(table))))
             (VAR_NM(node)))(la _.
         IF(str_eq(tag)("LAM"))(la _.
             AST_LAM(LAM_P(node))(self(LAM_B(node))(table)(CONS(LAM_P(node))(bound))(seen)))(la _.
