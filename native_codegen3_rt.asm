@@ -386,10 +386,10 @@ rt_div_body:
     test    rcx, rcx            ; freeze-day #5: B==0 -> idiv SIGFPE; halt loudly (host exit 1)
     jz      rt_div_zero
     cmp     rcx, -1             ; freeze-day #5: LONG_MIN / -1 also SIGFPEs (quotient overflows);
-    jne     .ok                 ;   the host halts loudly on it too -> route to the same loud exit
+    jne     .ok                 ;   the host halts loudly on it too, saying overflow: rt_div_ovf
     mov     rdx, 0x8000000000000000
     cmp     rax, rdx
-    je      rt_div_zero
+    je      rt_div_ovf
 .ok:
     cqo
     idiv    rcx
@@ -2697,3 +2697,19 @@ rt_sti_checked:
     jmp     rt_bidie
 intrange_b:   db "integer out of range", 10
 intrange_blen equ $ - intrange_b
+
+; ── div: LONG_MIN / -1 is an overflow, not a division by zero ──────────────────
+;   It shared rt_div_zero, so native said "div: division by zero" where host and
+;   the VM say "div: overflow (LONG_MIN / -1)" (differential fuzzing round 5,
+;   2026-10-07; gate_native_divovf.sh). Appended, so no earlier address moves.
+rt_div_ovf:
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel divovf_msg]
+    mov     edx, divovf_len
+    syscall
+    mov     eax, 60
+    mov     edi, 1
+    syscall
+divovf_msg: db "native: div: overflow (LONG_MIN / -1)", 10
+divovf_len  equ $ - divovf_msg
