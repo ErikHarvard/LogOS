@@ -1428,6 +1428,17 @@ Nobody had looked for these. They are design decisions, not gaps, and both are d
   *impossible*, against *"revocation cascades downward"* at `:2736`. **B1** above fixes the
   direction with per-recipient wrapping — but both claims still stand in the codex and will
   collide again when Ch. 14 is edited.
+- **C4 — Is an integer literal atomic, or `str_to_int("n")`?** *(surfaced 2026-10-07 by
+  differential testing; queued for Erik's ruling, deliberately not fixed.)* `CLAUDE.md` documents
+  that an integer literal `n` desugars to `str_to_int("n")`. The self-hosted parsers do exactly
+  that (`codegen.la` for the VM, `native_codegen3.la`), but the C host parses a literal as an
+  atomic `INT`. The two only disagree when a lambda parameter is *named* `str_to_int`: on the
+  VM and native it then captures every literal in its scope. Witness:
+  `H = Z(la self. la str_to_int. la n. IF(lt(n)(1))(la _. add(str_to_int("5"))(1))(la _. self(str_to_int)(sub(n)(1))))`,
+  `print(H(la s. 100)(3))` gives **host 101, native 6, VM 200**. Making literals unshadowable
+  (or rejecting a binder of that name) changes the documented desugaring, so it is a design
+  decision. Native keeps its old meaning for this one name (`FREE_IN` exempts `str_to_int`,
+  commit `2115168`) so the case stays a wrong answer rather than becoming a compile error.
 
 ### The embedded LLM layer — *added 2026-08-21, specified by Erik directly*
 
