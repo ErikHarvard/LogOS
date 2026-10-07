@@ -738,11 +738,21 @@ glyph CG_GENAPP = la rec. la f. la a. la cenv. la tail. la pool.
         )(concat(FST(rf))(concat(PUSH_RAX)(concat(FST(ra))(concat(MOV_R11_RAX)(POP_R10)))))
     )(rec(a)(cenv)(FALSE)(SND(rf))))(rec(f)(cenv)(FALSE)(pool))
 
+# FREE_IN(nm)(cenv): nm is not a lambda parameter in scope. CG_APP compiles a
+# head-position builtin call only for a FREE builtin name; a parameter that
+# happens to be named like a builtin (la concat. concat("a")("b")) is an
+# ordinary variable, as on host and the VM. str_to_int is exempt: an integer
+# literal n is parsed as str_to_int("n"), and the literal pool keys on that name,
+# so a parameter named str_to_int keeps its old (divergent) meaning rather than
+# turning a valid program into "literal not in pool" (open question: host keeps
+# a literal atomic, the self-hosted parsers let such a parameter capture it).
+glyph FREE_IN = la nm. la cenv. NOT(IS_SOME(VAR_LOOKUP(nm)(cenv)(0)))
+
 glyph CG_APP = la rec. la node. la cenv. la tail. la pool.
     (la f. (la a.
         IF(str_eq(NODE_TAG(f))("APP"))(la _.
             (la g.
-                IF(AND(str_eq(NODE_TAG(g))("VAR"))(IS_BUILTIN2(VAR_NM(g))))(la _.
+                IF(AND(AND(str_eq(NODE_TAG(g))("VAR"))(IS_BUILTIN2(VAR_NM(g))))(FREE_IN(VAR_NM(g))(cenv)))(la _.
                     CG_BIN(rec)(VAR_NM(g))(APP_A(f))(a)(cenv)(tail)(pool))
                 (la _.
                 # HAL.4b: a ternary builtin is APP(APP(APP(VAR nm,a1),a2),a3), so
@@ -752,14 +762,14 @@ glyph CG_APP = la rec. la node. la cenv. la tail. la pool.
                 # (the same trap INT_LIT_SAFE documents).
                 IF(str_eq(NODE_TAG(g))("APP"))(la _.
                     (la h.
-                        IF(AND(str_eq(NODE_TAG(h))("VAR"))(IS_BUILTIN3(VAR_NM(h))))(la _.
+                        IF(AND(AND(str_eq(NODE_TAG(h))("VAR"))(IS_BUILTIN3(VAR_NM(h))))(FREE_IN(VAR_NM(h))(cenv)))(la _.
                             CG_TER(rec)(VAR_NM(h))(APP_A(g))(APP_A(f))(a)(cenv)(tail)(pool))
                         (la _. CG_GENAPP(rec)(f)(a)(cenv)(tail)(pool)))
                     (APP_F(g)))
                 (la _. CG_GENAPP(rec)(f)(a)(cenv)(tail)(pool))))
             (APP_F(f)))(la _.
         IF(str_eq(NODE_TAG(f))("VAR"))(la _.
-            IF(IS_BUILTIN1(VAR_NM(f)))(la _.
+            IF(AND(IS_BUILTIN1(VAR_NM(f)))(OR(str_eq(VAR_NM(f))("str_to_int"))(FREE_IN(VAR_NM(f))(cenv))))(la _.
                 CG_UN(rec)(VAR_NM(f))(a)(cenv)(tail)(pool))
             (la _. CG_GENAPP(rec)(f)(a)(cenv)(tail)(pool)))
         (la _. CG_GENAPP(rec)(f)(a)(cenv)(tail)(pool)))
