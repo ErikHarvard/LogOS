@@ -1428,7 +1428,10 @@ Nobody had looked for these. They are design decisions, not gaps, and both are d
   *impossible*, against *"revocation cascades downward"* at `:2736`. **B1** above fixes the
   direction with per-recipient wrapping — but both claims still stand in the codex and will
   collide again when Ch. 14 is edited.
-- **C4 — Is an integer literal atomic, or `str_to_int("n")`?** *(surfaced 2026-10-07 by
+
+### Reconciliation queue — *design decisions queued for Erik's ruling*
+
+- **R1 — Is an integer literal atomic, or `str_to_int("n")`?** *(surfaced 2026-10-07 by
   differential testing; queued for Erik's ruling, deliberately not fixed.)* `CLAUDE.md` documents
   that an integer literal `n` desugars to `str_to_int("n")`. The self-hosted parsers do exactly
   that (`codegen.la` for the VM, `native_codegen3.la`), but the C host parses a literal as an
