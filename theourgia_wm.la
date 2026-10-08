@@ -124,14 +124,15 @@ glyph WM_WINS = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. l
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
     (la C0. la C1. la nojob.
-      LET(la id. la term. la sh. la k. k(id)(term)(sh)(nojob)(nil)("")(nil)(C0))(la mkwin.
-      LET(la w. w(la id. la a. la b. la c. la d. la e. la f. la g. id))(la win_id.
+      LET(la id. la term. la sh. la k. k(id)(term)(sh)(nojob)(nil)("")(nil)(C0)(la n. la s. n(n)))(la mkwin.
+      LET(la id. la term. la sh. la app. la k. k(id)(term)(sh)(nojob)(nil)("")(nil)(C0)(la n. la s. s(app)))(la mkapp.
+      LET(la w. w(la id. la a. la b. la c. la d. la e. la f. la g. la h. id))(la win_id.
       LET(la wins. la id. find(la w. int_eq(win_id(w))(id))(wins))(la find_win.
       LET(la wins. la w. (la id. map(la v. int_eq(win_id(v))(id)(la _. w)(la _. v)(C0))(wins))(win_id(w)))(la put_win.
       LET(la wins. la id. filter(la v. int_eq(win_id(v))(id)(la _. la t. la f. f)(la _. la t. la f. t)(C0))(wins))(la del_win.
-      LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
-              la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(add(ver)(C1))))(la touch.
-        la s. s(mkwin)(win_id)(find_win)(put_win)(del_win)(touch))))))))
+      LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
+              la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(add(ver)(C1))(app)))(la touch.
+        la s. s(mkwin)(win_id)(find_win)(put_win)(del_win)(touch)(mkapp)))))))))
     (0)(1)(la n. la j. n(n))))
 
 
@@ -170,23 +171,23 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal.
             la s. s(iw)(div(iw)(cw))(div(sub(iw)(mul(C2)(PAD)))(cw))(div(avail)(cw))(mod(avail)(cw)))
           (sub(sub(sub(th)(mul(C2)(BW)))(add(cw)(C4)))(mul(C2)(PAD))))
         (sub(tw)(mul(C2)(BW))))(la geom.
-    LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+    LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         job(la _. concat(" ")(concat(int_to_str(id))(concat("  ")(sh_prompt(sh)))))
            (la pid. la rfd. la cmd. concat(" ")(concat(int_to_str(id))(concat("  [running] ")(cmd))))))(la title.
-    LET(la w. la focused. la tw. la th. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+    LET(la w. la focused. la tw. la th. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         concat(int_to_str(tw))(concat("x")(concat(int_to_str(th))
           (concat(focused(la _. "f")(la _. "u")(C0))(int_to_str(ver)))))))(la tkey.
     # draw(focused)(w)(tw)(th)(key): render the tile, uncached
     LET(la focused. la w. la tw. la th. la k0.
       geom(tw)(th)(la iw. la tcols. la ccols. la nrows. la filler.
-      w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+      w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         (la bcol. la barc. la bst.
           lt(nrows)(C1)(la _. la k. k(solid(tw)(th)(bcol))(w))(la _.
           lt(ccols)(C1)(la _. la k. k(solid(tw)(th)(bcol))(w))(la _.
             (la texts.
               bands(st_text)(bc)(texts)(ccols)(la blist. la bc2.
                 (la brow. la barrow. la padrow. la tl. la tr2. la cl. la cr.
-                  (la rows. la k. k(rows)(la k2. k2(id)(term)(sh)(job)(bc2)(k0)(rows)(ver)))
+                  (la rows. la k. k(rows)(la k2. k2(id)(term)(sh)(job)(bc2)(k0)(rows)(ver)(app)))
                   (append(nrep(BW)(brow))
                   (append(nrep(C2)(barrow))
                   (append(frame(tl)(tr2)(cons(band(bst)(title(w))(tcols))(nil)))
@@ -208,7 +209,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal.
         (focused(la _. bar_f)(la _. bar_u)(C0))
         (focused(la _. st_bar_f)(la _. st_bar_u)(C0)))))(la draw.
       la focused. la w. la tw. la th.
-        (la k0. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+        (la k0. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
             str_eq(k0)(tk)(la _. la k. k(tr)(w))(la _. draw(focused)(w)(tw)(th)(k0))(C0)))
         (tkey(w)(focused)(tw)(th))))))))))
   (0)(1)(2)(4)(8)(2)(4)(la t. la f. t)(la t. la f. f)))))))
@@ -230,7 +231,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
   T(la t_new. la t_write. la t_flush. la t_key. la t_back. la t_kill. la t_submit.
     la t_prev. la t_next. la t_clear. la t_prompt. la t_rows. la t_keychar.
   SH(la sh_new. la sh_prompt. la sh_run. la sh_finish. la sh_int. la sh_hup.
-  W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch.
+  W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
   cfg(la sw. la sh0. la gap. la cwd0.
   (la C0. la C1. la C2. la C3. la C12. la C50. la C85. la C240. la C255. la TRUE. la FALSE.
     LET(la a. la b. b)(la seq.
@@ -261,8 +262,8 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
     # put(st)(w): store window w (bumping its version) and mark the frame dirty
     LET(la st. la w. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
         mkst(tree)(focus)(put_win(wins)(touch(w)))(nid)(mask)(quit)(TRUE)))(la put.
-    LET(la st. la w. la term2. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
-        put(st)(la k. k(id)(term2)(sh)(job)(bc)(tk)(tr)(ver))))(la set_term.
+    LET(la st. la w. la term2. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
+        put(st)(la k. k(id)(term2)(sh)(job)(bc)(tk)(tr)(ver)(app))))(la set_term.
     LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
         (la sh. (la term.
             (la _. mkst(tl_insert(tree)(focus)(nid)(auto_dir(tree)(focus)))(nid)
@@ -271,7 +272,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
           (t_new(sh_prompt(sh))))
         (sh_new(cwd0))))(la open_win.
     LET(la st. la id. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        find_win(wins)(id)(la _. st)(la w. w(la wid. la term. la sh. la job. la bc. la tk. la tr. la ver.
+        find_win(wins)(id)(la _. st)(la w. w(la wid. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
           (la _. (la _.
               mkst(tl_remove(tree)(id))
                   (int_eq(id)(focus)
@@ -284,21 +285,21 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
     # with_focus(st)(f): f(w) for the focused window w, or st when there is none
     LET(la st. la f. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
         find_win(wins)(focus)(la _. st)(f)))(la with_focus.
-    LET(la st. with_focus(st)(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+    LET(la st. with_focus(st)(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         job(la _. st)(la pid. la rfd. la cmd. seq(sh_int(pid))(st)))))(la interrupt.
     # submit: the line goes to the shell; its output and action land in the window
-    LET(la st. la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+    LET(la st. la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         t_submit(term)(la line. la term2.
           (la _. sh_run(sh)(line)(la sh2. la out. la action.
             (la term3.
               action
-                (la _. put(st)(la k. k(id)(t_prompt(term3)(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)))
-                (la _. put(st)(la k. k(id)(t_prompt(t_clear(term3))(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)))
+                (la _. put(st)(la k. k(id)(t_prompt(term3)(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
+                (la _. put(st)(la k. k(id)(t_prompt(t_clear(term3))(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
                 (la _. close_win(st)(id))
-                (la pid. la rfd. put(st)(la k. k(id)(term3)(sh2)(la n. la j. j(pid)(rfd)(line))(bc)(tk)(tr)(ver))))
+                (la pid. la rfd. put(st)(la k. k(id)(term3)(sh2)(la n. la j. j(pid)(rfd)(line))(bc)(tk)(tr)(ver)(app))))
             (t_write(term2)(out))))
           (print(concat("wm: [")(concat(int_to_str(id))(concat("] $ ")(line))))))))(la submit.
-    LET(la st. la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+    LET(la st. la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         int_eq(code)(K_ENTER)(la _. submit(st)(w))(la _.
         int_eq(code)(K_BS)(la _. set_term(st)(w)(t_back(term)))(la _.
         int_eq(code)(K_UP)(la _. set_term(st)(w)(t_prev(term)))(la _.
@@ -306,7 +307,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
           (la ch. str_eq(ch)("")(la _. st)(la _. set_term(st)(w)(t_key(term)(ch)))(C0))
           (t_keychar(code)(shift)))(C0))(C0))(C0))(C0)))(la edit.
     LET(la st. la code. la shift. la ctrl. with_focus(st)(la w.
-        w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+        w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
           job(la _.
                 ctrl(la _. int_eq(code)(K_L)(la _. set_term(st)(w)(t_clear(term)))(la _.
                            int_eq(code)(K_U)(la _. set_term(st)(w)(t_kill(term)))(la _. st)(C0))(C0))
@@ -368,30 +369,30 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
     LET(la snap. la st. la type. la code. la value.
         int_eq(type)(C1)(la _. key_event(st)(code)(value))
           (la _. int_eq(type)(C85)(la _. snap(st)(code))(la _. st)(C0))(C0))(la handle.
-    LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+    LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         job(la _. FALSE)(la p. la r. la c. TRUE)))(la has_job.
     LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        map(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+        map(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               job(la _. "")(la p. la r. la c. r)))(filter(has_job)(wins))))(la job_fds.
     # a job's output: append it; at end of file reap the job and show the prompt
     LET(la st. la fd. la chunk. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        find(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+        find(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
                 job(la _. FALSE)(la p. la r. la c. str_eq(r)(fd))))(wins)
           (la _. st)
-          (la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+          (la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               job(la _. st)(la pid. la rfd. la cmd.
                 str_eq(chunk)("")
                   (la _. (la _. sh_finish(sh)(pid)(la sh2. la text.
                         (la _. put(st)(la k. k(id)(t_prompt(t_write(t_flush(term))(text))(sh_prompt(sh2)))
-                                              (sh2)(NOJOB)(bc)(tk)(tr)(ver)))
+                                              (sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
                         (print(concat("wm: [")(concat(int_to_str(id))("] done"))))))
                       (close(rfd)))
-                  (la _. put(st)(la k. k(id)(t_write(term)(chunk))(sh)(job)(bc)(tk)(tr)(ver)))
+                  (la _. put(st)(la k. k(id)(t_write(term)(chunk))(sh)(job)(bc)(tk)(tr)(ver)(app)))
                   (C0))))))(la on_output.
     LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        map(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+        map(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               job(la _. C0)(la pid. la rfd. la cmd. seq(sh_hup(pid))(seq(close(rfd))(sh_finish(sh)(pid))))))(wins)))(la shutdown.
-    LET(la st. with_focus(st)(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver.
+    LET(la st. with_focus(st)(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         set_term(st)(w)(t_write(term)(concat(
           "LogOS - the Theourgia tiling window manager, written in Lingua Adamica.\n")(concat(
           "  MOD+Enter  new terminal      MOD+q        close the window\n")(concat(
@@ -415,7 +416,7 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
   R(la px. la run. la style. la band. la bands. la solid. la join. la compose.
   TL(la tl_empty. la tl_insert. la tl_remove. la tl_layout. la tl_nb. la tl_swap.
      la tl_resize. la tl_toggle. la tl_leaves. la tl_next. la tl_has. la tl_count. la tl_show.
-  W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch.
+  W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
   cfg(la sw. la sh0. la pitch. la gap. la desk.
   (la C2. la FALSE.
     LET(sub(sw)(mul(C2)(gap)))(la aw. LET(sub(sh0)(mul(C2)(gap)))(la ah.
