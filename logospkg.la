@@ -81,20 +81,25 @@
 #     its installed versions are walked as well, so a cycle that would close
 #     through an installed package (update yy 1.1 needing xx, whose installed
 #     version needs yy) is refused too: remove could never break it.
-#  2. Each planned package is unpacked into staging/pkg-<name>, and its
-#     SELF-TEST is run: its files and the files of all its dependencies
-#     (planned or installed; not their own self-tests) are written to
-#     staging/test-<name> with compiler.bin as
+#  2. Each planned package's SELF-TEST is run, in plan order: its files and
+#     the files of all its dependencies (planned or installed; not their own
+#     self-tests) are written to staging/test-<name> with compiler.bin as
 #     logos_program.bin and the test as logos_source.la; then twice
 #     fork + dup2 (stdout and stderr to files, stdin /dev/null) + execv of
 #     `env -C <that dir> <vm>`: the first run compiles the test, the second
 #     runs it. The run must exit 0 and its stdout must equal T.expected byte
-#     for byte. The test directory is then removed.
-#  3. Only when EVERY planned package passed: the staged directories are
-#     renamed into pkgs/, `installed` is rewritten and each current/<name> is
-#     written (each file through a temporary and rename, so each switch is
-#     atomic), and the lock is released. On any failure the staged files are
-#     unlinked and the lock released: the installation is exactly as it was.
+#     for byte. The test directory is then removed. After each test the
+#     installation is compared with a snapshot taken before the first one
+#     (every file its records name: `installed`, each current/<name>, each
+#     installed version's .archive and files): a file the test changed or
+#     deleted is put back and the install refused.
+#  3. Only when EVERY planned package passed: each is written, from its
+#     verified archive, into staging/pkg-<name>, a directory made only now (it
+#     must not exist yet). These are renamed into pkgs/, `installed` is
+#     rewritten and each current/<name> is written (each file through a
+#     temporary and rename, so each switch is atomic), and the lock is
+#     released. On any failure the staged files are unlinked and the lock
+#     released: the installation is exactly as it was.
 #
 #  ── STYLE ────────────────────────────────────────────────────────────
 #  Kit style (WM_DESIGN.md, "How fast the VM is"): every builtin is a
@@ -113,9 +118,16 @@
 #  - The commit is a sequence of atomic renames, not one transaction: a crash
 #    in the middle of it can leave a version in pkgs/ before `installed` lists
 #    it, or `installed` updated before current/. Check failures never get there.
-#  - A self-test may only write files it is told about: anything else it
-#    creates in its directory stops that directory being removed, and the
-#    install then fails naming staging/.
+#  - A self-test runs with the full authority of the user running logospkg:
+#    there is no sandbox builtin, and logossec's confine (one module, no
+#    imports) is not applied to it. What logospkg guarantees is narrower: the
+#    bytes it commits are the verified archive's (written after every test
+#    has run, into directories that must not exist yet), and every file the
+#    installation's records name is checked after each test, put back and
+#    the install refused if it changed. A test can still create NEW files
+#    wherever the user may write (in its own directory or staging/ that keeps
+#    the lock in place, and is reported), change files outside the
+#    installation, or leave a background process that acts after the checks.
 #  - The lock covers the installation only. list and advise take none, so
 #    during another operation's commit they can see it half done (list then
 #    halts). publish does not lock the repository: two publishes at the same
@@ -458,18 +470,45 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
   LET(la recs. fold(la acc. la r. append(acc)(filter(la f. (la n. str_eq(n)(rtest(r))(FF)
       (str_eq(n)(concat(rtest(r))(".expected"))(FF)(TT)))(fname(f)))(rfiles(r))))(nil)(recs))(la payload.
 
+  # ── guarding the installation from the self-tests ───────────────────
+  # A self-test runs with the user's full authority (there is no sandbox), so
+  # the installation is checked around it. snapshot(inst)(ients)(irs): every
+  # file the records name (installed, each current/<name>, each installed
+  # version's .archive and files), as la k. k(path)(present)(bytes).
+  LET(la p. exists(p)(la _. (la b. la k. k(p)(TT)(b))(read_file(p)))(la _. la k. k(p)(FF)(""))(""))(la snapf.
+  LET(la inst. la ients. la irs. map(snapf)(cons(path(inst)("installed"))
+      (append(map(la n. path(path(inst)("current"))(n))(names(ients)))
+        (fold(la acc. la ir. ir(la e. la r. (la pd. append(acc)(cons(path(pd)(".archive"))(map(la f. path(pd)(fname(f)))(rfiles(r)))))
+                (path(pkgdir(inst)(ename(e)))(ever(e)))))(nil)(irs)))))(la snapshot.
+  LET(la it. it(la p. la pr. la b. exists(p)(la _. pr(la _. str_eq(read_file(p))(b))(la _. FF)(""))
+      (la _. pr(la _. FF)(la _. TT)(""))("")))(la unchanged.
+  # restore(it): unlink what is there now (it may be a link a test planted), then put the bytes back
+  LET(la it. it(la p. la pr. la b. (la u. pr(la _. put(p)(b))
+      (la _. exists(p)(la _. err(concat("cannot remove ")(p)))(la _. ok(p))(""))(""))(unlink(p))))(la restore.
+  # guard(tag)(snap): ok("") when every file is as snapshot found it; else each
+  # changed one is put back and the operation refused, naming the first
+  LET(la tag. la snap. filter(la it. unchanged(it)(FF)(TT))(snap)(la _. ok(""))(la h. la t.
+      (la how. err(concat(tag)(concat(": its self-test changed ")(concat(h(la p. la pr. la b. p))(how)))))
+      (each(restore)(cons(h)(t))(la m. " (it could not be put back)")(la v. " (put back)"))))(la guard.
+
   # ── staging and commit ──────────────────────────────────────────────
-  # stage1(S)(get)(cbytes)(it): unpack it into S/pkg-<name>, then its self-test
-  LET(la S. la get. la cbytes. la it. it(la name. la version. la id. la rec. la arc.
-      (la pdir. bind(ensure(pdir))(la _.
-        bind(each(la f. put(path(pdir)(fname(f)))(fbytes(f)))(rfiles(rec)))(la _.
-        bind(put(path(pdir)(".archive"))(arc))(la _.
-        bind(closure(get)(rdeps(rec))(cons(name)(nil))(nil))(la drecs.
-          (la fs. clash(fs)
-             (la _. err(concat(nv(name)(version))(": a file name is in this package and a dependency")))
-             (la _. selftest(path(S)(concat("test-")(name)))(rec)(fs)(cbytes))(""))
-          (append(rfiles(rec))(payload(drecs))))))))
-      (path(S)(concat("pkg-")(name)))))(la stage1.
+  # testone(S)(get)(cbytes)(snap)(it): its self-test, beside its dependencies'
+  # files; then the guard: the test must have left the installation alone
+  LET(la S. la get. la cbytes. la snap. la it. it(la name. la version. la id. la rec. la arc.
+      bind(closure(get)(rdeps(rec))(cons(name)(nil))(nil))(la drecs.
+        (la fs. clash(fs)
+           (la _. err(concat(nv(name)(version))(": a file name is in this package and a dependency")))
+           (la _. (la r. bind(guard(nv(name)(version))(snap))(la _. r))
+                     (selftest(path(S)(concat("test-")(name)))(rec)(fs)(cbytes)))(""))
+        (append(rfiles(rec))(payload(drecs))))))(la testone.
+  # stageone(S)(it): S/pkg-<name>, made only once every self-test has run (so
+  # it must not exist yet), filled from the verified archive, plus .archive
+  LET(la S. la it. it(la name. la version. la id. la rec. la arc. (la pdir.
+      str_eq(mkdir(pdir)("493"))("0")
+        (la _. bind(each(la f. put(path(pdir)(fname(f)))(fbytes(f)))(rfiles(rec)))(la _. put(path(pdir)(".archive"))(arc)))
+        (la _. exists(pdir)(la _. err(concat(pdir)(" appeared while the self-tests ran")))
+                           (la _. err(concat("cannot create ")(pdir)))(""))(""))
+      (path(S)(concat("pkg-")(name)))))(la stageone.
   # unstage(S)(items): remove every staged file (S itself goes with the lock)
   LET(la S. la items. (la _. "")
       (map(la it. it(la n. la v. la i. la rec. la a.
@@ -507,7 +546,7 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
         (mkdir(S)("493")))(path(inst)("staging")))
       (la _. err(concat(inst)(" is not a directory")))(""))(la locked.
   # deploy(inst)(S)(repo)(index)(ients)(root)(force), under the lock S: plan,
-  # stage + test all, commit all
+  # test all, stage all, commit all
   LET(la inst. la S. la repo. la index. la ients. la root. la force.
     bind(precheck(inst))(la cbytes.
     bind(irecs(inst)(ients))(la irs.
@@ -517,7 +556,7 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
                 (la _. err(concat(path(pkgdir(inst)(iname(it)))(iver(it)))(" already exists")))
                 (la _. ok(""))(""))(items))(la _.
         (la get. (la r. r(la m. (la _. err(m))(unstage(S)(items)))(la _. commit(inst)(S)(ients)(items)))
-                 (each(stage1(S)(get)(cbytes))(items)))
+                 (bind(each(testone(S)(get)(cbytes)(snapshot(inst)(ients)(irs)))(items))(la _. each(stageone(S))(items))))
           (la d. any(la it. str_eq(iname(it))(d))(items)
              (la _. fold(la acc. la it. str_eq(iname(it))(d)(la _. ok(irec(it)))(la _. acc)(""))(err(d))(items))
              (la _. instrec(inst)(d))("")))))))))(la deploy.
@@ -579,5 +618,5 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
           mapr(la n. bind(curver(inst)(n))(la v. lookup(ients)(n)(v)))(names(ients)))))(la list.
 
     la s. s(pack)(unpack)(publish)(install)(remove)(advise)(update)(rollback)(list)
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   )(0)(1)(2)(4)(5)(10)(32)(45)(46)(48)(57)(64)(65)(90)(95)(97)(102)(122)(129)(16384)(32768)(61440)))

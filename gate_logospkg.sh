@@ -43,6 +43,12 @@
 #               with three versions, 1.2 -> 1.1 -> 1.0 (the previous, not
 #               the lowest), then update rolls forward to 1.2
 #    list       the installed packages with their current versions and ids
+#    selftest   runs with the user's authority (no sandbox), so: a test that
+#               writes into what will be installed changes nothing (the files
+#               are staged from the verified archive after every test), one
+#               that makes that directory itself is refused, and one that
+#               empties `installed`, rewrites another package's file or
+#               deletes a current/ entry is refused with the file put back
 #  SELF-APPLICATION. logospkg.la itself is packaged (1.0 = the module under
 #  test, 1.1 one comment newer, 1.2 with a real bug: unpack accepts trailing
 #  bytes) and installed by logospkg; then a program that imports ONLY the
@@ -53,7 +59,7 @@
 # CRYPTOGRAPHY. PKG_KIT takes the crypt record as a parameter. CRYPT_REF in
 # this driver took 198 s for ONE sha256 of a 491-byte archive (it names its
 # builtins on every step, each a walk of the whole program) and cannot hash
-# logospkg.la's own 40 KB archive, so the gate hands PKG_KIT gate_lincrypt.la:
+# logospkg.la's own ~45 KB archive, so the gate hands PKG_KIT gate_lincrypt.la:
 # the same contract, kit style, checked here against hashlib/hmac first.
 #
 # ISOLATION: private temp dir (gate_wm_common.sh). VM only. A few minutes.
@@ -70,7 +76,7 @@ cat > "$T/gate_lincrypt.la" <<'LAEOF'
 # names its builtins on every step, and in a program that also holds
 # logospkg.la the VM resolves each name by walking the whole program: one
 # sha256 of a 491-byte archive took 198 s there, and it re-walks the remaining
-# message with str_tail, so logospkg.la's own 40 KB archive would not finish.
+# message with str_tail, so logospkg.la's own ~45 KB archive would not finish.
 # hkdf, seal and open halt loudly: the package manager never calls them. The
 # gate checks this record against hashlib/hmac (the SHA-256 padding
 # boundaries, a key longer than a block) and every id and signature it
@@ -312,6 +318,15 @@ def gen(D, module):
                  '     (la _. (la fd. SEQ(dup2(fd)("1"))(SEQ(execv("/usr/bin/env")("env -C %s/drv2 %s/logos_secd"))(exit("127"))))\n'
                  '            (open("%s/drv2/out.txt")("577")))\n'
                  '     (la _. SEQ(waitpid(pid))(print(XR)))("!"))(fork("!"))))\n') % (D, D, D, D, D))
+    # self-tests that reach out of their directory (cwd = <inst>/staging/test-<name>)
+    def reach(name, act, out):
+        simple(name, "1.0", None, expected="hi\n", extra={"data.txt": "original\n"},
+               main='glyph MAIN = SEQ(LOG("%s 1.0\\n"))(SEQ(%s)(print("%s")))\n' % (name, act, out))
+    reach("esc", 'write_file("../pkg-esc/data.txt")("TAMPERED\\n")', "hi")
+    reach("plant", 'SEQ(mkdir("../pkg-plant")("493"))(write_file("../pkg-plant/data.txt")("TAMPERED\\n"))', "hi")
+    reach("vandal", 'write_file("../../installed")("")', "wrong")
+    reach("vandal2", 'write_file("../../pkgs/esc/1.0/data.txt")("TAMPERED\\n")', "hi")
+    reach("vandal3", 'unlink("../../current/esc")', "hi")
     # the package manager as a package
     src = open(module, "rb").read()
     test = r'''import("logospkg.la")
@@ -492,8 +507,9 @@ pk okdep 1.0 -; pk bad 1.0 okdep; pk nocompile 1.0 -; pk exit3 1.0 -; pk clash 1
 pk cyca 1.0 cycb; pk cycb 1.0 cyca; pk orphan 1.0 nosuch; pk delta 1.0 -
 pk long 1.0 -; pk short 1.0 -; pk vv 1.9 -; pk vv 1.10 -; pk vv 1.2 -
 pk rr 1.0 -; pk rr 1.1 -; pk rr 1.2 -; pk rr 9.0 -; pk upa 1.0 -; pk upb 1.0 upa; pk upa 1.1 upb; pk xr 1.0 -; pk yr 1.0 xr
+pk esc 1.0 -; pk plant 1.0 -; pk vandal 1.0 -; pk vandal2 1.0 -; pk vandal3 1.0 -
 pk logospkg 1.0 -; pk logospkg 1.1 -; pk logospkg 1.2 -
-[ "$(echo $packed | wc -w)" = 31 ] && pass "pack: 31 archives, each byte-identical to the format (incl. logospkg.la's own, $(stat -c %s arc/logospkg-1.0) bytes)"
+[ "$(echo $packed | wc -w)" = 36 ] && pass "pack: 36 archives, each byte-identical to the format (incl. logospkg.la's own, $(stat -c %s arc/logospkg-1.0) bytes)"
 s unpack arc/gamma-1.0 out
 expect "unpack: gamma's header fields and file list" \
   "ok name=gamma version=1.0 deps=beta,alpha test=gamma_test.la files=blob.bin:$(stat -c %s src/gamma-1.0/blob.bin),empty.txt:0,gamma.la:$(stat -c %s src/gamma-1.0/gamma.la),gamma_test.la:$(stat -c %s src/gamma-1.0/gamma_test.la),gamma_test.la.expected:$(stat -c %s src/gamma-1.0/gamma_test.la.expected)"
@@ -713,6 +729,24 @@ if [ "$a" = "ok yr 1.0" ] && [ "$b" = "err $T/inst7/staging exists: another logo
     pass "a remove of xr started DURING the install of yr (which needs it) is refused by the lock; both stay installed and list is consistent"
 else fail "remove during an install" "install: $a" "remove: $b" "list: $c"; fi
 
+# ── 5c. a self-test changes neither what is installed nor the installation ─
+for p in esc plant vandal vandal2 vandal3; do s publish repo4 key.bin "arc/$p-1.0"; done
+mkdir inst6
+s install inst6 repo4 key.bin esc
+if [ "$R" = "ok esc 1.0" ] && cmp -s inst6/pkgs/esc/1.0/data.txt src/esc-1.0/data.txt && cmp -s inst6/pkgs/esc/1.0/.archive arc/esc-1.0; then
+    pass "install: esc's self-test writes ../pkg-esc/data.txt, yet the installed files are the verified archive's (staged after the tests)"
+else fail "install esc: the installed bytes" "$R" "$(head -c 40 inst6/pkgs/esc/1.0/data.txt)"; fi
+refuse_in inst6 "install refused: a self-test that makes staging/pkg-plant itself (to plant a file in what would be installed)" \
+       "err inst6/staging/pkg-plant appeared while the self-tests ran" pkgcfg install inst6 repo4 key.bin plant
+refuse_in inst6 "install refused: a failing self-test that empties ../../installed: it is put back, the tree is unchanged" \
+       "err vandal 1.0: its self-test changed inst6/installed (put back)" pkgcfg install inst6 repo4 key.bin vandal
+refuse_in inst6 "install refused: a PASSING self-test that rewrites another installed package's file: put back" \
+       "err vandal2 1.0: its self-test changed inst6/pkgs/esc/1.0/data.txt (put back)" pkgcfg install inst6 repo4 key.bin vandal2
+refuse_in inst6 "install refused: a passing self-test that deletes current/esc: put back" \
+       "err vandal3 1.0: its self-test changed inst6/current/esc (put back)" pkgcfg install inst6 repo4 key.bin vandal3
+s list inst6
+expect "list: after the refusals only esc is installed" "ok esc 1.0 $(O sha arc/esc-1.0)"
+
 # ── 6. self-application: logospkg installs and updates itself ──────────
 mkdir inst2
 t0=$(now); s publish repo2 key.bin arc/logospkg-1.0; T_PUB40=$(dt "$t0" "$(now)")
@@ -750,6 +784,6 @@ expect "self: the installed 1.1 refuses 1.2, whose own self-test fails (its unpa
 snapeq "self: ... and its own installation is untouched" inst2 inst2.snap
 
 echo "      (VM times: driver compile ${T_COMPILE} s; install of 3 packages with 3 self-tests ${T_INSTALL3} s;"
-echo "       publish of logospkg's 40 KB archive ${T_PUB40} s; its install with self-test ${T_SELFINST} s;"
+echo "       publish of logospkg's $(( $(stat -c %s arc/logospkg-1.0) / 1024 )) KB archive ${T_PUB40} s; its install with self-test ${T_SELFINST} s;"
 echo "       compiling the program that imports the installed copy ${T_SELFCC} s; the self-update ${T_SELFUPD} s)"
 [ "$ok" = 1 ] || exit 1
