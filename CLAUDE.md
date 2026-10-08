@@ -117,7 +117,14 @@ Expressions:
 - `chr(n)` — decimal-*string* `n` (0..255) → a one-byte string; how a program
   spells an arbitrary byte (including NUL) to assemble binary. The argument must
   be a string: an int literal (e.g. `chr(65)`) desugars to an `INT` value and is
-  rejected loudly on every engine — wrap it as `chr(int_to_str(n))`.
+  rejected loudly on every engine — wrap it as `chr(int_to_str(n))`. The string
+  is parsed **strictly**, by the same rule as `str_to_int` (an optional `-` then
+  one or more digits): anything else, including `""`, halts with `<engine>: chr:
+  not a decimal integer`, and a value outside 0..255 (overflow included) halts
+  with the range message. Before this, host's `strtol` read a prefix (`"7x"` → 7,
+  `"x"` → 0) while the VM and native read every byte as `c-'0'` (`"x"` → `H`), so a
+  malformed argument silently gave a different byte per engine
+  (`gate_decimal_strict.sh`).
 - `ord(s)` — first byte of `s` → its decimal string (inverse of `chr`).
 - `str_len(s)` — byte length of `s` as a decimal string. O(1) (strings carry
   their length), so it is cheap on multi-MiB binaries where an LA `str_tail`
@@ -606,6 +613,13 @@ runnable and checked by `build.sh`.
     literals always desugar to clean digit strings, so this only ever fires on an
     explicit malformed `str_to_int` call. `desc_atoi` itself stays lenient — it
     also parses syscall-arg decimals the VM formats itself, always well-formed.)
+    The value must also **fit a signed 64-bit integer**: out of range halts with
+    `<engine>: str_to_int: integer out of range` on every engine. Before, host's
+    `strtol` saturated (`"9223372036854775808"` → `9223372036854775807`) while the VM
+    and native wrapped (→ `-9223372036854775808`, and a 20-digit string could wrap
+    to a plausible small number). The VM and native now accumulate negatively with
+    an overflow check, so both boundaries, `9223372036854775807` and
+    `-9223372036854775808`, still parse exactly (`gate_decimal_strict.sh`).
   - **`codegen.la` `PARSE_PROGRAM` now halts on malformed input** (fixed). It
     used to treat a `NONE` from `PARSE_GLYPH` as end-of-program — silently
     truncating the source and emitting a corrupt stream. It now ends cleanly
@@ -687,17 +701,21 @@ transport the LogosIPC bus can route over instead of a single `pipe`:
 `pathbuf`, `sun_path` bounds-checked ≤ 107 bytes), `listen(fd)` (backlog 16),
 `accept(fd)` (→ a fresh per-connection fd), `send(fd)(data)` (`sendto`, → bytes
 sent) and `recv(fd)(maxbytes)` (`recvfrom`, → the bytes as a binary-safe string,
-clamped to 64 MiB like `read`). fds cross as decimal strings; every call returns
-`-errno` as a decimal string on failure (e.g. `connect` to a dead path → `-2`)
-rather than halting, so a program can **recognise** a dead peer — but a
-non-string fd/path/data argument halts loudly with `secd: argument is not a
-string`, like the other guarded builtins. A minimal server binds + listens
+clamped to 64 MiB like `read`). fds cross as decimal strings; every call except
+`recv` returns `-errno` as a decimal string on failure (e.g. `connect` to a dead
+path → `-2`) rather than halting, so a program can **recognise** a dead peer;
+`recv` returns `""` on error or end of stream — but a non-string fd/path/data
+argument halts loudly with `secd: <builtin>: argument is not a string`, like
+the other guarded builtins. A minimal server binds + listens
 **before** `fork`ing so the child's `connect` can't race ahead of `accept`;
 `build.sh` runs exactly that client→server message pass on the native VM,
 plus the two failure paths. *Honest limits:* AF_UNIX only (no IP/TCP yet),
 pathname sockets only (no abstract namespace, so a stale socket file must be
-unlinked before re-`bind` — the VM has no `unlink` builtin yet), and no
-partial-send/EINTR retry loop.
+unlinked before re-`bind`, which `logosipc.la`'s `CHANNEL` does with the
+`unlink` builtin), and no partial-send/EINTR retry loop. `send`/`recv` mean
+these sockets only: on native they are another engine's builtins (reaching one
+halts `native: send: not supported on this engine`), and native's bare-metal
+kernel channel is a different pair, `chan_send(chan)(msg)` / `chan_recv(chan)`.
 
 It also lowers **`poll(fds)(timeout)`** (poll, 7) — the **fd-multiplexing**
 primitive that ties the signal, socket, and input layers into ONE event loop. A
@@ -1653,6 +1671,24 @@ an inner binder, that binder is alpha-renamed to a fresh `_gN` name first.
 Glyph names resolve against the global table; `print`/`copy_self` resolve as
 built-ins if not shadowed by a glyph.
 
+**Unbound names are rejected at load time, before `MAIN` runs** — the same rule
+on every engine, so all three accept and reject the same programs (native
+`native_codegen3` rejects at compile time; the host checks after parsing; the VM
+checks when it loads the stream). Every glyph reachable from `MAIN` is checked
+(an unused glyph is not), and a name is bound if it is a lambda parameter in
+scope, a glyph, or a builtin of **any** engine (84 names), so a program that
+mentions a VM-only builtin on a path it does not take still loads on the host.
+Otherwise `host: unbound variable '<name>'`, rc 1, and nothing the program would
+print is printed (`gate_unbound_load.sh`). A builtin of another engine that is
+actually *reached* halts there at run time, as before; on native that is
+`native: <name>: not supported on this engine`, rc 1.
+
+**A builtin is a first-class value on every engine.** Passed, stored, or
+partially applied (`FOLDR(concat)("")`, `TIMES(str_head)(3)`, `concat("-")` as an
+argument), it means the same thing on host, the VM and native; native compiles
+such a use as the builtin's eta-expansion, so a program that only calls builtins
+directly compiles to the same bytes as before (`gate_builtin_value.sh`).
+
 Sequencing of effects uses `SEQ = la a. la b. b`: naming `a` forces its
 effects before `b` is produced, so `SEQ(print(WORD))(copy_self(SELF))` speaks
 the Word and *then* replicates.
@@ -1784,9 +1820,12 @@ diagnostic on stderr and a nonzero exit — on every malformed-input path, rathe
 than silently corrupting state or exiting `0` with a wrong result. The VM now
 emits:
 
-- `secd: unbound variable` — a name resolving to neither an environment entry, a
-  glyph, nor a builtin (it used to fall through to the normal `exit(0)`, so a
-  typo'd name *silently succeeded* with empty output);
+- `secd: unbound variable '<name>'` — at **load time**, before anything runs: a
+  name, in a glyph reachable from `MAIN`, that is neither a `CLOSE` parameter in
+  scope, a glyph, nor a builtin of any engine (`checkunbound`, the same rule as
+  the host and native). A builtin of another engine that is *reached* still
+  halts at run time with `secd: unbound variable` (it used to fall through to
+  the normal `exit(0)`, so a typo'd name *silently succeeded* with empty output);
 - `secd: program too large` / `secd: read error` — the loader drains the whole
   instruction stream into the 5 MiB mapped region (`progcap`, tied to the phdr
   `p_memsz`) and bounds-checks it, instead of the old single 1 MiB `read` whose

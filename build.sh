@@ -716,8 +716,9 @@ else
 fi
 
 say "LogosIPC: typed message layer (import + decode)"
-# The transport is now pipe-based (SEND/RECV use the VM-only pipe/read/write
-# syscalls — the live channel runs on the native VM, see the LogosInit section).
+# The transport is a named AF_UNIX socket (CHANNEL/CONNECT/ACCEPT/SEND/RECV use
+# the VM-only socket builtins — the live channel runs on the native VM, see the
+# LogosInit section).
 # This host demo exercises the engine-independent part: ipc_demo.la imports the
 # module and decodes a wire message (TYPE <NUL> BODY) with MSG_TYPE/MSG_BODY,
 # then MSG_OK-dispatches on the type.
@@ -6439,7 +6440,8 @@ say "Sockets: socket/bind/listen/accept/connect/send/recv (AF_UNIX, native VM)"
 # (client) connects and sends one message, the parent (server) accepts, recvs,
 # and reaps. Then two failure paths: a connect to a path with no listener must
 # return a negative errno (not crash), and a non-string fd must halt loudly
-# (secd: argument is not a string), matching the loud-on-bad-input discipline.
+# (secd: <builtin>: argument is not a string), matching the loud-on-bad-input
+# discipline.
 SOCKP="/tmp/logos_sock_test.$$"
 rm -f "$SOCKP"
 cat > /tmp/t_socket.la <<LAEOF

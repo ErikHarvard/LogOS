@@ -3,8 +3,8 @@
 # a TYPED message through a kernel channel.
 # Boot kernel_k6c3b.elf in QEMU. ipc2.la (compiled by native_codegen3) runs at CPL
 # 3 and spawns two LA tasks via the runtime scheduler: task A ENCODEs a typed
-# message ("greet"<NUL>"HELLO", the logosipc.la wire format) and send(0)s it into
-# kernel channel 0, then yields; the scheduler runs task B, which recv(0)s it back
+# message ("greet"<NUL>"HELLO", the logosipc.la wire format) and chan_send(0)s it into
+# kernel channel 0, then yields; the scheduler runs task B, which chan_recv(0)s it back
 # and decodes it with MSG_TYPE / MSG_BODY, printing both. Asserts:
 #   - "B rx type=greet" — task B recovered the TYPE from the wire message (the typed
 #     layer travelled through the kernel channel intact);
@@ -39,5 +39,5 @@ printf '%s' "$CLEAN" | grep -qF 'B rx type=greet' || { echo "FAIL  K6c3b: 'B rx 
 printf '%s' "$CLEAN" | grep -qF 'B rx body=HELLO' || { echo "FAIL  K6c3b: 'B rx body=HELLO' not on serial — task B did not recover the BODY through the kernel channel (rc=$RC, got: $seen)"; ok=0; }
 [ "$RC" -eq 33 ] || { echo "FAIL  K6c3b: exit code != 33 (got $RC — a fault in a task, the scheduler at ring 3, or the IPC syscalls)"; ok=0; }
 
-[ "$ok" -eq 1 ] && echo "PASS  K6c3b MILESTONE: two ring-3 LA tasks exchanged a TYPED message through a kernel channel — task A ENCODEd 'greet'<NUL>'HELLO' and send(0)'d it into kernel channel 0 then yielded; the runtime scheduled task B, which recv(0)'d it and decoded MSG_TYPE='greet' / MSG_BODY='HELLO'; both from compiled Lingua Adamica at CPL 3. LogosIPC's typed layer now rides the kernel channel between two LA tasks — the K6c 'nervous system' gate is green."
+[ "$ok" -eq 1 ] && echo "PASS  K6c3b MILESTONE: two ring-3 LA tasks exchanged a TYPED message through a kernel channel — task A ENCODEd 'greet'<NUL>'HELLO' and chan_send(0)'d it into kernel channel 0 then yielded; the runtime scheduled task B, which chan_recv(0)'d it and decoded MSG_TYPE='greet' / MSG_BODY='HELLO'; both from compiled Lingua Adamica at CPL 3. LogosIPC's typed layer now rides the kernel channel between two LA tasks — the K6c 'nervous system' gate is green."
 [ "$ok" -eq 1 ]

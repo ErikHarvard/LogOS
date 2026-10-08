@@ -283,10 +283,9 @@ rt_apply:
     mov     [rax+16], rdx       ; parent
     lea     rdi, [rax+8]        ; env body
     jmp     [rcx]               ; tail into body; its ret returns to our caller
-.bad:
-    mov     rax, 60
-    mov     rdi, 70             ; exit 70 = applied a non-function
-    syscall
+.bad:                           ; applied a non-function: rt_nonfn (appended) says
+    jmp     rt_nonfn            ;   so on stderr, then exits 70 as before. Padded to the
+    times 12 - ($ - .bad) nop   ;   old 12-byte footprint so no later address moves.
 
 ; ── slot 4: rt_print(rax=value) -> writes value + newline; preserves rax ──
 rt_print_body:
@@ -387,10 +386,10 @@ rt_div_body:
     test    rcx, rcx            ; freeze-day #5: B==0 -> idiv SIGFPE; halt loudly (host exit 1)
     jz      rt_div_zero
     cmp     rcx, -1             ; freeze-day #5: LONG_MIN / -1 also SIGFPEs (quotient overflows);
-    jne     .ok                 ;   the host halts loudly on it too -> route to the same loud exit
+    jne     .ok                 ;   the host halts loudly on it too, saying overflow: rt_div_ovf
     mov     rdx, 0x8000000000000000
     cmp     rax, rdx
-    je      rt_div_zero
+    je      rt_div_ovf
 .ok:
     cqo
     idiv    rcx
@@ -608,44 +607,9 @@ rt_int_to_str_raw:
     jmp     rt_make_str
 
 ; ── slot 17: rt_str_to_int(rax=STR) -> boxed INT (decimal, optional '-') ──
-rt_str_to_int_body:
-    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
-    jne     rt_not_string
-    mov     rcx, [rax+8]        ; desc
-    mov     rsi, [rcx+8]        ; ptr
-    mov     rdx, [rcx]          ; len
-    xor     rax, rax            ; acc
-    xor     r8, r8              ; i
-    xor     r9, r9              ; neg flag
-    test    rdx, rdx
-    jz      .bad                ; freeze-day #4: empty string is not a decimal integer
-    cmp     byte [rsi], '-'
-    jne     .digits
-    mov     r9, 1
-    inc     r8
-    cmp     r8, rdx
-    jae     .bad                ; freeze-day #4: a lone '-' is not a decimal integer
-.digits:
-    cmp     r8, rdx
-    jae     .done
-    movzx   r10, byte [rsi+r8]
-    cmp     r10, '0'            ; freeze-day #4: every remaining byte must be a digit
-    jb      .bad
-    cmp     r10, '9'
-    ja      .bad
-    sub     r10, '0'
-    imul    rax, rax, 10
-    add     rax, r10
-    inc     r8
-    jmp     .digits
-.done:
-    test    r9, r9
-    jz      .pos
-    neg     rax
-.pos:
-    jmp     rt_box_int
-.bad:
-    jmp     rt_not_decimal
+rt_str_to_int_body:             ; strict + overflow-checked parse lives in rt_sti_checked
+    jmp     rt_sti_checked      ;   (appended); padded to the old 110-byte footprint so
+    times 110 - ($ - rt_str_to_int_body) nop  ; no later runtime address moves
 
 ; ── slot 18: rt_make_str(rsi=src, rdx=len) -> rax = boxed STR ──
 ;   blob via alloc_blob + desc/box via alloc24. The source box (rax at entry,
@@ -1153,31 +1117,9 @@ rt_ord_body:
 ; ── chr(decimal STR) -> one-byte STR ──
 ;   minimal unsigned base-10 atoi (chr codes are 0..255, no sign), then make a
 ;   1-byte string from the static numbuf (make_str copies it out immediately).
-rt_chr_body:
-    cmp     qword [rax], 0      ; freeze-day #2: arg must be STR (tag 0), else loud halt
-    jne     rt_not_string
-    mov     rcx, [rax+8]        ; descriptor body
-    mov     rsi, [rcx+8]        ; blob ptr
-    mov     rdx, [rcx]          ; len
-    xor     rax, rax            ; acc
-    xor     r8, r8              ; i
-.d:
-    cmp     r8, rdx
-    jae     .e
-    movzx   r10, byte [rsi+r8]
-    sub     r10, '0'
-    imul    rax, rax, 10
-    add     rax, r10
-    inc     r8
-    jmp     .d
-.e:
-    cmp     rax, 255            ; freeze-day #3: chr code must be 0..255 (digit loop is
-    ja      rt_chr_range        ;   unsigned, so a negative is impossible) -> loud halt
-    mov     [numbuf], al        ; the one byte
-    mov     rsi, numbuf
-    mov     rdx, 1
-    xor     rax, rax            ; r14 GC root = 0 (source is static numbuf)
-    jmp     rt_make_str
+rt_chr_body:                    ; strict decimal parse lives in rt_chr_strict (appended);
+    jmp     rt_chr_strict       ;   padded to the old 95-byte footprint so no later
+    times 95 - ($ - rt_chr_body) nop  ; runtime address moves
 
 ; ── 3c.2 error(STR): loud halt — print msg + newline to stderr, exit 1 ──
 ;   The native analogue of the host/VM `error` builtin: a compiled program that
@@ -1450,13 +1392,9 @@ rt_read_file_body:
     mov     rdx, welong_ulen
     syscall
     jmp     .die
-.openfail:
-    mov     rax, 1
-    mov     rdi, 2
-    mov     rsi, rferr
-    mov     rdx, rferrlen
-    syscall
-    jmp     .die
+.openfail:                      ; names the path, like host + secd: rt_rf_openfail
+    jmp     rt_rf_openfail      ;   is appended, so this keeps the old 29-byte
+    times 29 - ($ - .openfail) nop  ; footprint and no later runtime address moves
 .seekfail:                      ; freeze-day #12: lseek on a non-seekable fd failed
     mov     rax, 1
     mov     rdi, 2
@@ -2045,7 +1983,9 @@ TASK_TABLE: times (MAXTASK * TCB_SIZE / 8) dq 0
 ; image, so that path is byte-for-byte unchanged.
 METAL_FLAG: dq 0
 
-; ── K6c.3: kernel IPC builtins (metal-only, appended at EOF so existing RT_*
+; ── K6c.3: kernel IPC builtins, chan_send(chan)(msg) / chan_recv(chan) in LA
+;   (named send/recv until 2026-10-08; bare send/recv are the VM's sockets)
+;   (metal-only, appended at EOF so existing RT_*
 ;   addresses are unchanged; only RTLEN/LITERAL_BASE shift). They issue the
 ;   LogOS-native SYS_SEND(0x300)/SYS_RECV(0x301) syscalls the kernel services
 ;   (boot.asm, %ifdef IPC). Like peek/poke/set_cr3, they are never called on the
@@ -2093,7 +2033,7 @@ recv_buf: times 256 db 0
 ;  `in`/`out` instructions are privileged (CPL <= IOPL); the LA image runs at
 ;  ring 0 on the K1 boot path, so they execute directly with no syscall.
 ;
-;  Metal-only, like peek/poke/send/recv: appended at EOF so every existing RT_*
+;  Metal-only, like peek/poke/chan_send/chan_recv: appended at EOF so every existing RT_*
 ;  address is UNCHANGED (only RTLEN/LITERAL_BASE shift + the four new labels).
 ;  Under the Linux self-host these are never called (no compiled program on the
 ;  host issues port I/O), so the self-host image stays byte-for-byte unaffected.
@@ -2581,3 +2521,197 @@ bn_inw:         db "inw", 0
 bn_outw:        db "outw", 0
 bn_send:        db "send", 0
 bn_recv:        db "recv", 0
+
+; ── read_file: name the file that could not be opened ──────────────────────────
+;   host and secd both say which path failed; native said only "cannot open file".
+;   rt_read_file_body has left the NUL-terminated path in pathbuf. Appended here
+;   so no existing runtime address moves (see the .openfail redirect).
+rt_rf_openfail:
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel rfo_pfx]
+    mov     edx, rfo_pfxlen
+    syscall
+    mov     rsi, pathbuf
+    xor     edx, edx
+.len:
+    cmp     byte [rsi + rdx], 0
+    je      .path
+    inc     rdx
+    jmp     .len
+.path:
+    mov     eax, 1
+    mov     edi, 2
+    syscall
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel rfo_sfx]
+    mov     edx, 2
+    syscall
+    mov     eax, 60
+    mov     edi, 1
+    syscall
+rfo_pfx:    db "native: read_file: cannot open '"
+rfo_pfxlen  equ $ - rfo_pfx
+rfo_sfx:    db "'", 10
+
+; ── rt_apply: say "applied a non-function" instead of exiting 70 in silence ────
+;   host and secd both print "<engine>: attempt to apply a non-function"; native
+;   exited 70 with nothing on stderr (found by differential fuzzing, 2026-10-04).
+;   Same shape as the GC-exhaustion / stack-overflow exits above: message, then
+;   the existing distinctive code (70), which the kernel debug path still reads.
+rt_nonfn:
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel nonfn_msg]
+    mov     edx, nonfn_len
+    syscall
+    mov     eax, 60
+    mov     edi, 70
+    syscall
+nonfn_msg:  db "native: attempt to apply a non-function", 10
+nonfn_len   equ $ - nonfn_msg
+
+; ── chr: strict decimal argument, like str_to_int and like host / secd ──────────
+;   Every byte used to be read as (c-'0'), so chr("x") gave "H" here and "\0" on
+;   the host, with no error (gate_decimal_strict.sh). Now: optional '-' then one
+;   or more digits, checked over the WHOLE string first, else "native: chr: not a
+;   decimal integer" (rt_bidie names chr from CUR_BI). The value leaves the loop
+;   as soon as it passes 255, so a long digit string cannot overflow into range;
+;   only -0 is a negative in range.
+rt_chr_strict:
+    cmp     qword [rax], 0      ; arg must be STR (tag 0)
+    jne     rt_not_string
+    mov     rcx, [rax+8]        ; descriptor body
+    mov     rsi, [rcx+8]        ; blob ptr
+    mov     rdx, [rcx]          ; len
+    xor     r8, r8              ; i
+    xor     r9, r9              ; negative flag
+    test    rdx, rdx
+    jz      .bad
+    cmp     byte [rsi], '-'
+    jne     .chk
+    mov     r9, 1
+    inc     r8
+    cmp     r8, rdx
+    jae     .bad                ; lone '-'
+.chk:
+    mov     r11, r8             ; first digit index
+.c1:
+    cmp     r8, rdx
+    jae     .val
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    cmp     r10, 9
+    ja      .bad
+    inc     r8
+    jmp     .c1
+.val:
+    mov     r8, r11
+    xor     rax, rax
+.v1:
+    cmp     r8, rdx
+    jae     .sign
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    imul    rax, rax, 10
+    add     rax, r10
+    cmp     rax, 255
+    ja      rt_chr_range
+    inc     r8
+    jmp     .v1
+.sign:
+    test    r9, r9
+    jz      .ok
+    test    rax, rax
+    jnz     rt_chr_range
+.ok:
+    mov     [numbuf], al        ; the one byte
+    mov     rsi, numbuf
+    mov     rdx, 1
+    xor     rax, rax            ; r14 GC root = 0 (source is static numbuf)
+    jmp     rt_make_str
+.bad:
+    lea     rsi, [rel notdec_b]
+    mov     edx, notdec_blen
+    jmp     rt_bidie
+notdec_b:   db "not a decimal integer", 10
+notdec_blen equ $ - notdec_b
+
+; ── str_to_int: the value must fit a signed 64-bit integer ──────────────────────
+;   The old loop wrapped, so "9223372036854775808" was LONG_MIN here and LONG_MAX
+;   on the host, which saturates (gate_decimal_strict.sh). Same strict format
+;   check as before (empty, lone '-', or a non-digit -> rt_not_decimal), then the
+;   value is accumulated NEGATIVELY (acc = acc*10 - d) so LONG_MIN, whose
+;   magnitude has no positive twin, parses exactly; any overflow -> "native:
+;   str_to_int: integer out of range" via rt_bidie (CUR_BI set by the entry stub).
+rt_sti_checked:
+    cmp     qword [rax], 0      ; arg must be STR (tag 0)
+    jne     rt_not_string
+    mov     rcx, [rax+8]        ; desc
+    mov     rsi, [rcx+8]        ; ptr
+    mov     rdx, [rcx]          ; len
+    xor     r8, r8              ; i
+    xor     r9, r9              ; negative flag
+    test    rdx, rdx
+    jz      rt_not_decimal
+    cmp     byte [rsi], '-'
+    jne     .chk
+    mov     r9, 1
+    inc     r8
+    cmp     r8, rdx
+    jae     rt_not_decimal      ; lone '-'
+.chk:
+    mov     r11, r8             ; first digit index
+.c1:
+    cmp     r8, rdx
+    jae     .val
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    cmp     r10, 9
+    ja      rt_not_decimal
+    inc     r8
+    jmp     .c1
+.val:
+    mov     r8, r11
+    xor     rax, rax
+.v1:
+    cmp     r8, rdx
+    jae     .sign
+    movzx   r10, byte [rsi+r8]
+    sub     r10, '0'
+    imul    rax, rax, 10
+    jo      .range
+    sub     rax, r10
+    jo      .range
+    inc     r8
+    jmp     .v1
+.sign:
+    test    r9, r9
+    jnz     .box
+    neg     rax                 ; positive result; -LONG_MIN overflows
+    jo      .range
+.box:
+    jmp     rt_box_int
+.range:
+    lea     rsi, [rel intrange_b]
+    mov     edx, intrange_blen
+    jmp     rt_bidie
+intrange_b:   db "integer out of range", 10
+intrange_blen equ $ - intrange_b
+
+; ── div: LONG_MIN / -1 is an overflow, not a division by zero ──────────────────
+;   It shared rt_div_zero, so native said "div: division by zero" where host and
+;   the VM say "div: overflow (LONG_MIN / -1)" (differential fuzzing round 5,
+;   2026-10-07; gate_native_divovf.sh). Appended, so no earlier address moves.
+rt_div_ovf:
+    mov     eax, 1
+    mov     edi, 2
+    lea     rsi, [rel divovf_msg]
+    mov     edx, divovf_len
+    syscall
+    mov     eax, 60
+    mov     edi, 1
+    syscall
+divovf_msg: db "native: div: overflow (LONG_MIN / -1)", 10
+divovf_len  equ $ - divovf_msg
