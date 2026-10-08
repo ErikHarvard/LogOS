@@ -1,0 +1,544 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_render.la — text bands, colour styles and the frame
+#  compositor of the tiling window manager (Theourgia Stage 10).
+#
+#  The window manager draws every frame from scratch: each window is a tile
+#  of scanlines (a title bar and the terminal's rows of text), and the frame
+#  is the tiles laid out on a background, one XRGB8888 string that `present`
+#  scans out. This module turns text into scanlines and scanlines into the
+#  frame. It is the hottest code in the system, so it is built around what
+#  the SECD VM actually charges for (WM_DESIGN.md "How fast the VM is").
+#
+#  USE. RENDER_KIT takes its builtins, then the font and the text scale:
+#      RENDER_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)
+#                (add)(sub)(mul)(div)(int_eq)(lt)(band)(str_eq)(error)
+#                (font)(scale)
+#  where font is TF_DECODE's 768-byte table (theourgia_termfont.la) and scale
+#  a positive integer (a glyph is 8*scale pixels square). It returns the
+#  record (destructure it positionally, in THIS order):
+#      la sel. sel(px)(run)(style)(band)(bands)(solid)(join)(compose)
+#  The operations, as WM_DESIGN.md specifies them:
+#    px(r)(g)(b)          one pixel: the 4 bytes B, G, R, 0 (ints 0..255)
+#    run(n)(s)            n copies of s, by doubling ("" when n <= 0)
+#    style(fg)(bg)        a text style; fg and bg are pixels (from px). Every
+#                         glyph's 8 rows are drawn once, here, in these colours
+#    band(st)(s)(cols)    Scott list of 8*scale scanlines, each cols*8*scale
+#                         pixels: the first min(len s, cols) characters of s,
+#                         the rest padded with the style's background. A byte
+#                         outside 32..127 draws as '?'; 127 is the cursor block
+#    bands(st)(cache)(texts)(cols)
+#                         la k. k(list of bands)(cache'): band for each text,
+#                         reusing any band in cache whose text matches (the
+#                         very same strings come back). cache' holds exactly
+#                         the texts used: it is the Scott list, one entry per
+#                         text in texts and in that order, of la k. k(text)(band).
+#                         A text repeated within one call is drawn once. Start
+#                         with NIL, and pass NIL again when cols or the style
+#                         changes (the cache does not record them)
+#    solid(w)(h)(p)       h scanlines of w pixels of colour p: ONE string, h
+#                         times in the list (nothing is copied h times)
+#    join(list)           balanced concatenation of a Scott list of strings
+#    compose(W)(H)(pitch)(bg)(tiles)
+#                         the frame, H*pitch bytes. tiles is a Scott list of
+#                         la k. k(x)(y)(w)(h)(rows), rows a Scott list of h
+#                         scanlines of 4*w bytes; uncovered pixels are bg; each
+#                         scanline is zero-padded from 4*W to pitch bytes
+#
+#  WHAT THE CONTRACT LEAVES OPEN, DEFINED HERE (the gate checks them):
+#    - compose fails LOUDLY (error, exit 1) instead of drawing a wrong frame
+#      when a tile breaks its contract: a tile outside the screen (x, y, w or
+#      h negative, x+w > W, y+h > H), two tiles overlapping, a rows list
+#      shorter or longer than h (a tile of height 0 must have no rows), or a
+#      row that is not 4*w bytes; also when pitch < 4*W. H <= 0 gives "".
+#    - Tiles may come in any order: compose sorts them by x, and at the same
+#      x the narrower first, so a zero-width tile where another tile starts is
+#      fine (one strictly inside another tile on its rows counts as overlap).
+#    - band with cols <= 0 gives 8*scale empty scanlines. A line longer than
+#      4095 characters halts (no screen is that wide).
+#    - join of NIL is "".
+#
+#  HOW IT IS FAST. Measured costs on the VM (callgrind, instructions): a
+#  builtin call ~850; finding a name ~13 per environment cell walked; and
+#  CLOSE rescans the body of every lambda it builds, so a curried function
+#  of k parameters rescans its body k-1 times per call and a Z-recursive
+#  call rescans it again. concat copies 8 instructions a byte, which is
+#  1.5 ns a byte. So:
+#    - Kit style. Every builtin and constant is a parameter or bound once;
+#      the per-character and per-row code is built from small UNARY closures
+#      (applying one costs no rescan), each defined right after the names it
+#      uses so they are found a few cells away. Nothing names a glyph or a
+#      builtin after RENDER_KIT returns.
+#    - style draws the 16 nibble strips once (4 pixels each), every glyph row
+#      as two of them, and the 96 glyphs into a code tree: 8 levels over all
+#      256 byte values, every node a closure  la n. lt(n)(T)(L)(R); bytes
+#      outside 32..127 lie in shared constant subtrees that return the '?'
+#      glyph, so there is no range test. A lookup is the unrolled walk
+#      tree(c)(c)(c)(c)(c)(c)(c)(c): no Z, no counter. A leaf holds the
+#      glyph's 8 scanline strips (8*scale pixels each) as a 3-level pair tree.
+#    - band looks every character up ONCE, into a balanced line tree of
+#      closures  la s. concat(L(s))(R(s))  (blocks of 2^k characters, built
+#      level by level without Z), then runs the tree once per glyph row with a
+#      selector s that picks that row from each leaf (three boolean steps).
+#      The padding is ONE run of background, shared by all 8 rows. Each glyph
+#      row is listed scale times: the same string, not a copy.
+#    - compose first cuts the screen, from the tile geometry alone, into
+#      horizontal spans in which the set of tiles does not change, and builds
+#      a join PLAN: a range of rows inside one blank span is one run of the
+#      blank row (doubling: 2 copies, not log2(n)); a range inside one tiled
+#      span is a balanced tree shared by size (O(log n) nodes built); any other
+#      range splits in half. So the H rows are joined balanced and every byte
+#      is copied about log2(H)+1 times, the floor for a frame built by concat
+#      (95% of compose's instructions are concat's byte copying). The tiled
+#      rows come from a stream stepped by a stepper made for each span (one
+#      tile, two, or more): a row costs a few small closures, not a recursion.
+#      Each tile row is copied ONCE to attach what follows it on the screen:
+#      the gap to the next tile, or after the last tile the tail, the pitch
+#      padding and the NEXT row's leading gap (a span's first row gets its
+#      leading gap in front instead), so gaps cost no extra copy of the tiles.
+#  The numbers (1920x1080, scale 2) are in gate_wm_render.sh's header.
+#
+#  ENGINES. Pure Lingua Adamica over strings and ints, so the bytes are the
+#  same on the C host and the native VM. The host is a substitution
+#  interpreter, far too slow for the kit beyond tiny cases (building one
+#  style there ran 11 minutes and was killed out of memory), so the gate
+#  checks the VM against an independent Python model of every operation, and
+#  compares host and VM on the operations that need no style (px, run, join,
+#  solid, compose).
+#
+#  OUT OF SCOPE (honestly): no proportional or Unicode text (one byte, one
+#  8x8 cell; UTF-8 is the terminal's business), no colour per character
+#  within a band (a band has one style), no clipping (tiles must lie inside
+#  the screen), no damage tracking: compose rebuilds the whole frame, so its
+#  cost is set by the screen size, not by what changed. A faster frame is
+#  possible only outside pure LA: written piece by piece to a tmpfs file
+#  (open, write, read_file, all VM-only) the same 1920x1080 frame takes about
+#  10 ms instead of about 100 ms; that is an I/O design decision for the
+#  window manager, not part of this kit.
+# ═══════════════════════════════════════════════════════════════════
+
+export RENDER_KIT
+
+glyph RENDER_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la int_to_str. la concat.
+    la add. la sub. la mul. la div. la int_eq. la lt. la band. la str_eq. la error.
+    la font. la scale.
+ (la LET. la Z.
+  LET(0)(la C0. LET(1)(la C1. LET(2)(la C2. LET(3)(la C3. LET(4)(la C4. LET(5)(la C5.
+  LET(6)(la C6. LET(7)(la C7. LET(8)(la C8. LET(15)(la C15. LET(16)(la C16. LET(31)(la C31. LET(32)(la C32.
+  LET(128)(la C128. LET(256)(la C256. LET(2048)(la C2048.
+  LET(C0)(la D. LET("")(la E.
+  LET(la t. la f. t)(la TT. LET(la t. la f. f)(la FF.
+  LET(la n. la c. n(n))(la NIL.
+  LET(la h. la t. la n. la c. c(h)(t))(la CONS.
+  LET(la a. la b. la k. k(a)(b))(la PAIR.
+  LET(la a. la b. la c. la k. k(a)(b)(c))(la TRIPLE.
+  LET(chr(int_to_str(C0)))(la Z0.
+
+  # ── px, run, repl, solid, join ───────────────────────────────────
+  LET((la ch. la is. la cc. la Z0. la r. la g. la b.
+        cc(cc(ch(is(b)))(ch(is(g))))(cc(ch(is(r)))(Z0)))
+      (chr)(int_to_str)(concat)(Z0))(la px.
+
+  # run(n)(s): halve n, double the half, add one s when n is odd.
+  LET((la cc. la ie. la lt. la bd. la dv. la C0. la C1. la C2. la D. la E. la n. la s.
+        Z(la self. la m.
+          lt(m)(C2)
+            (la _. ie(m)(C1)(la _. s)(la _. E)(D))
+            (la _. (la h. (la hh. ie(bd(m)(C1))(C0)(la _. hh)(la _. cc(hh)(s))(D))(cc(h)(h)))
+                   (self(dv(m)(C2))))
+            (D))(n))
+      (concat)(int_eq)(lt)(band)(div)(C0)(C1)(C2)(D)(E))(la run.
+
+  # repl(n)(x)(t): n copies of x consed onto the list t.
+  LET((la lt. la sb. la C1. la CONS. la D. la n. la x.
+        Z(la self. la m. la t. lt(m)(C1)(la _. t)(la _. self(sb(m)(C1))(CONS(x)(t)))(D))(n))
+      (lt)(sub)(C1)(CONS)(D))(la repl.
+
+  LET(la w. la h. la p. repl(h)(run(w)(p))(NIL))(la solid.
+
+  # LEN(l)(n): n + the length of l.
+  LET((la ad. la C1. Z(la self. la l. la n. l(la _. n)(la h. la t. self(t)(ad(n)(C1)))))
+      (add)(C1))(la LEN.
+
+  # JN(n)(l) = la k. k(the first n strings of l joined, halving)(the rest).
+  LET((la cc. la ie. la sb. la dv. la C1. la C2. la D. la PAIR.
+        la ERR. Z(la self. la n. la l.
+          ie(n)(C1)
+            (la _. l(ERR)(la h. la t. PAIR(h)(t)))
+            (la _. (la m. self(m)(l)(la a. la r. self(sb(n)(m))(r)(la b. la r2. PAIR(cc(a)(b))(r2))))
+                   (dv(n)(C2)))
+            (D)))
+      (concat)(int_eq)(sub)(div)(C1)(C2)(D)(PAIR)
+      (la _. error("render: join: the list is shorter than its count")))(la JN.
+
+  LET(la l. (la n. lt(n)(C1)(la _. E)(la _. JN(n)(l)(la s. la r. s))(D))(LEN(l)(C0)))(la join.
+
+  # ── style: the 96 glyphs drawn once, in a code tree ──────────────
+  # A leaf is the pair tree ((s0,s1),(s2,s3)),((s4,s5),(s6,s7)) of a glyph's
+  # 8 row strips; row r is leaf(b2)(b1)(b0), b = TT for a 0 bit of r.
+  LET((la lt. la T. la L. la R. la n. lt(n)(T)(L)(R))(lt))(la NODE.
+
+  LET(la fg. la bg.
+    (la F. la B.
+      (la PB.
+        (la STRIP.
+          (la LEAF.
+            (la QL.
+              (la KD.
+                (la tree. la k. k(tree)(run(C8)(B)))
+                (Z(la self. la lo. la sz. la d.
+                   (la hi.
+                     lt(lo)(C128)
+                       (la _. lt(C32)(hi)
+                          (la _. int_eq(sz)(C1)
+                             (la _. LEAF(sub(lo)(C32)))
+                             (la _. (la half. (la d1.
+                                       NODE(add(lo)(half))(self(lo)(half)(d1))(self(add(lo)(half))(half)(d1)))
+                                       (sub(d)(C1)))
+                                    (div(sz)(C2)))
+                             (D))
+                          (la _. KD(d))
+                          (D))
+                       (la _. KD(d))
+                       (D))
+                   (add(lo)(sz)))(C0)(C256)(C8)))
+              # KD(d): a constant subtree of depth d whose every walk ends at QL
+              (Z(la self. la d. int_eq(d)(C0)(la _. QL)(la _. (la k. la n. k)(self(sub(d)(C1))))(D))))
+            (LEAF(C31)))
+          (la g. (la rb.
+                   PAIR(PAIR(PAIR(STRIP(rb(C0)))(STRIP(rb(C1))))(PAIR(STRIP(rb(C2)))(STRIP(rb(C3)))))
+                       (PAIR(PAIR(STRIP(rb(C4)))(STRIP(rb(C5))))(PAIR(STRIP(rb(C6)))(STRIP(rb(C7))))))
+                 ((la base. la r. str_to_int(ord(str_at(font)(add(base)(r)))))(mul(g)(C8)))))
+        # STRIP(b): the 8 pixels of row byte b, bit 0 leftmost, each scale
+        # wide: the low nibble's 4 pixels, then the high nibble's, both from
+        # a 16-entry tree of nibble strips drawn once per style
+        ((la NT. la b. concat(NT(band(b)(C15)))(NT(div(b)(C16))))
+          ((la t. la v. t(v)(v)(v)(v))
+            (Z(la self. la lo. la sz.
+               int_eq(sz)(C1)
+                 (la _. concat(concat(PB(lo)(C1))(PB(lo)(C2)))(concat(PB(lo)(C4))(PB(lo)(C8))))
+                 (la _. (la half. NODE(add(lo)(half))(self(lo)(half))(self(add(lo)(half))(half)))
+                        (div(sz)(C2)))
+                 (D))(C0)(C16)))))
+      (la b. la m. int_eq(band(b)(m))(C0)(B)(F)))
+    (run(scale)(fg))(run(scale)(bg)))(la style.
+
+  # ── band: the line tree, run once per glyph row ──────────────────
+  LET((la cc. la L. la R. la s. cc(L(s))(R(s)))(concat))(la N.
+  LET((la cc. la P. la Q. la s. cc(s(P))(s(Q)))(concat))(la N1.
+  LET(la P. la s. s(P))(la W1.
+  LET(la p. la s. p)(la PADL.
+  LET((la T. la F. la P. P(T)(T)(T))(TT)(FF))(la S0.
+  LET((la T. la F. la P. P(T)(T)(F))(TT)(FF))(la S1.
+  LET((la T. la F. la P. P(T)(F)(T))(TT)(FF))(la S2.
+  LET((la T. la F. la P. P(T)(F)(F))(TT)(FF))(la S3.
+  LET((la T. la F. la P. P(F)(T)(T))(TT)(FF))(la S4.
+  LET((la T. la F. la P. P(F)(T)(F))(TT)(FF))(la S5.
+  LET((la T. la F. la P. P(F)(F)(T))(TT)(FF))(la S6.
+  LET((la T. la F. la P. P(F)(F)(F))(TT)(FF))(la S7.
+  # MLF(tree)(s)(i): the leaf of character i of s
+  LET((la sa. la od. la si. la tree. la s. la i.
+        (la c. tree(c)(c)(c)(c)(c)(c)(c)(c))(si(od(sa(s)(i)))))
+      (str_at)(ord)(str_to_int))(la MLF.
+  # blocks of 1, 2, then 2w from two blocks of w
+  LET((la W1. la lf. la i. W1(lf(i)))(W1))(la MB0.
+  LET((la ad. la C1. la N1. la lf. la i. N1(lf(i))(lf(ad(i)(C1))))(add)(C1)(N1))(la MB1.
+  LET((la ad. la N. la f. la w. la i. N(f(i))(f(ad(i)(w))))(add)(N))(la LV.
+  # LEVELS(lf): Scott list of PAIR(block)(width), widest (2048) first
+  LET((la ie. la ad. la CONS. la PAIR. la NIL. la C1. la C2. la CMAX. la D. la LV. la MB0. la MB1. la lf.
+        Z(la self. la b. la w. la acc.
+           ie(w)(CMAX)
+             (la _. CONS(PAIR(b)(w))(acc))
+             (la _. self(LV(b)(w))(ad(w)(w))(CONS(PAIR(b)(w))(acc)))
+             (D))(MB1(lf))(C2)(CONS(PAIR(MB0(lf))(C1))(NIL)))
+      (int_eq)(add)(CONS)(PAIR)(NIL)(C1)(C2)(C2048)(D)(LV)(MB0)(MB1))(la LEVELS.
+  # DEC(hp)(pad)(levels)(pos)(rem): the line tree of characters [pos, pos+rem),
+  # then the padding leaf when hp; the binary digits of rem pick the blocks
+  LET((la ie. la lt. la ad. la sb. la C0. la D. la N. la PADL.
+        la ERR. la hp. la pad.
+        Z(la self. la lv. la pos. la rem.
+           lv(ERR)(la e. la more. e(la B. la w.
+             lt(rem)(w)
+               (la _. self(more)(pos)(rem))
+               (la _. (la r2. (la blk.
+                         ie(r2)(C0)
+                           (la _. hp(la _. N(blk)(PADL(pad)))(la _. blk)(D))
+                           (la _. N(blk)(self(more)(ad(pos)(w))(r2)))
+                           (D))
+                       (B(pos)))
+                      (sb(rem)(w)))
+               (D)))))
+      (int_eq)(lt)(add)(sub)(C0)(D)(N)(PADL)
+      (la _. error("render: band: the line is longer than 4095 characters")))(la DEC.
+  # RP(x)(t): x listed scale times in front of t
+  LET(repl(scale))(la RP.
+
+  LET((la si. la sl. la ie. la lt. la sb. la C0. la D. la NIL. la run. la RP. la DEC. la LEVELS. la MLF.
+       la S0. la S1. la S2. la S3. la S4. la S5. la S6. la S7.
+       la st. la s. la cols.
+       st(la tree. la bgs.
+         (la len. (la n. (la pad.
+            ie(n)(C0)
+              (la _. RP(pad)(RP(pad)(RP(pad)(RP(pad)(RP(pad)(RP(pad)(RP(pad)(RP(pad)(NIL)))))))))
+              (la _. (la line.
+                       RP(line(S0))(RP(line(S1))(RP(line(S2))(RP(line(S3))(
+                       RP(line(S4))(RP(line(S5))(RP(line(S6))(RP(line(S7))(NIL)))))))))
+                     (DEC(lt(n)(cols))(pad)(LEVELS(MLF(tree)(s)))(C0)(n)))
+              (D))
+           (run(sb(cols)(n))(bgs)))
+           (lt(len)(cols)(len)(lt(cols)(C0)(C0)(cols))))
+           (si(sl(s)))))
+      (str_to_int)(str_len)(int_eq)(lt)(sub)(C0)(D)(NIL)(run)(RP)(DEC)(LEVELS)(MLF)
+      (S0)(S1)(S2)(S3)(S4)(S5)(S6)(S7))(la tband.
+
+  # ── bands: one band per text, reusing a cache ────────────────────
+  # FIND(t)(l): la n. la s. n(D) when no entry of l has text t, else
+  # s(that entry's band)(the entries after it).
+  LET((la seq. la D. la t.
+        Z(la self. la l.
+          l(la _. la n. la s. n(D))
+           (la h. la tl. h(la ht. la hb. seq(t)(ht)(la _. la n. la s. s(hb)(tl))(la _. self(tl))(D)))))
+      (str_eq)(D))(la FIND.
+
+  LET(la st. la cache. la texts. la cols.
+    (la BAND.
+      Z(la self. la ts. la ptr. la fresh.
+        ts(la _. PAIR(NIL)(NIL))
+          (la t. la rest.
+             (FIND(t)(ptr)
+                (la _. FIND(t)(cache)
+                   (la _. FIND(t)(fresh)
+                      (la _. (la b. TRIPLE(b)(ptr)(CONS(PAIR(t)(b))(fresh)))(BAND(t)))
+                      (la b. la r. TRIPLE(b)(ptr)(fresh)))
+                   (la b. la r. TRIPLE(b)(r)(fresh)))
+                (la b. la r. TRIPLE(b)(r)(fresh)))
+             (la b. la p2. la f2.
+                self(rest)(p2)(f2)(la bs. la cs. PAIR(CONS(b)(bs))(CONS(PAIR(t)(b))(cs))))))
+        (texts)(cache)(NIL))
+    (la t. tband(st)(t)(cols)))(la bands.
+
+  # ── compose ──────────────────────────────────────────────────────
+  # The frame is joined by a PLAN built from the tile geometry alone (no row
+  # is looked at to build it): rows that lie in one blank span are one run of
+  # the blank row; a range inside one tiled span is a shared balanced tree
+  # TP(n) of row pulls; any other range splits in half. The tiled rows come
+  # from a STREAM, a closure st with st(K) = K(next row)(st'). In a span the
+  # stream steps the active tiles' row lists with a stepper made for that span
+  # (one tile, two, or more); each tile row goes through its unit function,
+  # which checks it is 4*w bytes and puts behind it what follows it on the
+  # screen: the gap to the next tile, or after the last tile the tail, the
+  # pitch padding AND the next row's leading gap. So every tile row is copied
+  # once to attach its gaps (not once per gap); the span's first row gets its
+  # leading gap in front instead, and its last row ends at the tail.
+  LET((la cc. la L. la R. la st. la K. L(st)(la a. la s1. R(s1)(la b. la s2. K(cc(a)(b))(s2))))
+      (concat))(la PNODE.
+  LET(la st. st)(la PROW.
+  # TPP(n) = PAIR(TP(n))(TP(n+1)), TP(n) the plan of n tiled rows (first half
+  # floor(n/2)); O(log n) nodes are built, the rest are shared
+  LET((la ie. la bd. la dv. la C0. la C1. la C2. la D. la PAIR. la PNODE. la PROW.
+        Z(la self. la n.
+          ie(n)(C1)
+            (la _. PAIR(PROW)(PNODE(PROW)(PROW)))
+            (la _. self(dv(n)(C2))(la a. la b.
+                     ie(bd(n)(C1))(C0)
+                       (la _. PAIR(PNODE(a)(a))(PNODE(a)(b)))
+                       (la _. PAIR(PNODE(a)(b))(PNODE(b)(b)))
+                       (D)))
+            (D)))
+      (int_eq)(band)(div)(C0)(C1)(C2)(D)(PAIR)(PNODE)(PROW))(la TPP.
+
+  # steppers: step(s)(last)(K) = K(the next row)(s'): s the span's tile row
+  # lists; last is TRUE on the span's last row, where the last tile's unit
+  # function differs (no next row's gap behind it)
+  LET(la _. error("render: compose: a tile has fewer rows than its height"))(la ERRS.
+  LET((la ES. la Um. la Ul. la l. la last. la K. l(ES)(la x. la xt. K(last(Ul)(Um)(x))(xt)))
+      (ERRS))(la STEP1.
+  LET((la cc. la PAIR. la ES. la U1. la Um. la Ul. la s. la last. la K.
+        s(la l1. la l2. l1(ES)(la x. la xt. l2(ES)(la y. la yt. K(cc(U1(x))(last(Ul)(Um)(y)))(PAIR(xt)(yt))))))
+      (concat)(PAIR)(ERRS))(la STEP2.
+  # POPN(units)(lists)(K) = K(the units of the next row)(the advanced lists)
+  LET((la CONS. la NIL. la ES.
+        Z(la self. la us. la ls. la K.
+          us(la _. K(NIL)(NIL))
+            (la u. la ur. ls(ES)(la l. la lr. l(ES)(la x. la xt.
+               self(ur)(lr)(la a. la b. K(CONS(u(x))(a))(CONS(xt)(b))))))))
+      (CONS)(NIL)(ERRS))(la POPN.
+  LET((la POPN. la JN. la k. la USm. la USl. la ls. la last. la K.
+        POPN(last(USl)(USm))(ls)(la us. la ls2. K(JN(k)(us)(la a. la b. a))(ls2)))
+      (POPN)(JN))(la STEPN.
+  # STEPFOR(units of the middle rows)(units of the last row)(K) =
+  # K(step)(pack)(unpack): the span's stepper, and the conversions between a
+  # list of row lists and the stepper's state
+  LET((la CONS. la NIL. la PAIR. la LEN. la C0. la STEP1. la STEP2. la STEPN.
+        la ERR. la um. la ul. la K.
+        um(ERR)(la u1. la r1. ul(ERR)(la l1. la q1.
+          r1(la _. K(STEP1(u1)(l1))(la ls. ls(ERR)(la a. la r. a))(la s. CONS(s)(NIL)))
+            (la u2. la r2. q1(ERR)(la l2. la q2.
+              r2(la _. K(STEP2(u1)(u2)(l2))
+                       (la ls. ls(ERR)(la a. la r. r(ERR)(la b. la r3. PAIR(a)(b))))
+                       (la s. s(la a. la b. CONS(a)(CONS(b)(NIL)))))
+                (la _. la _. K(STEPN(LEN(um)(C0))(um)(ul))(la ls. ls)(la s. s)))))))
+      (CONS)(NIL)(PAIR)(LEN)(C0)(STEP1)(STEP2)(STEPN)
+      (la _. error("render: compose: internal: a span with no tile")))(la STEPFOR.
+
+  # MKST(step)(rest)(c)(s): the stream of a span's c remaining rows, from
+  # lists s; after the last it goes on as rest(the advanced lists)
+  LET((la ie. la sb. la C1. la D. la step. la rest.
+        Z(la self. la c. la s. la K.
+          (la last. step(s)(last)(la row. la s2. K(row)(last(la _. rest(s2))(la _. self(sb(c)(C1))(s2))(D))))
+          (ie(c)(C1))))
+      (int_eq)(sub)(C1)(D))(la MKST.
+  # FIRST(G0)(st): st with G0 in front of its first row
+  LET((la si. la sl. la ie. la cc. la C0. la G0. la st.
+        ie(si(sl(G0)))(C0)(st)(la K. st(la row. la st2. K(cc(G0)(row))(st2))))
+      (str_to_int)(str_len)(int_eq)(concat)(C0))(la FIRST.
+
+  # MAP, EXTRACT(g)(codes): the entries of g whose code is not 0;
+  # MERGE(g)(codes)(adv): code 0 keeps g's entry, 1 takes the next of adv,
+  # 2 (the tile's last span) takes it after checking it is used up
+  LET((la CONS. la NIL. Z(la self. la f. la l. l(la _. NIL)(la h. la t. CONS(f(h))(self(f)(t)))))
+      (CONS)(NIL))(la MAP.
+  LET((la ie. la C0. la CONS. la NIL. la D.
+        Z(la self. la g. la cs.
+          g(la _. NIL)(la x. la gr. cs(la _. NIL)(la c. la cr.
+            ie(c)(C0)(la _. self(gr)(cr))(la _. CONS(x)(self(gr)(cr)))(D)))))
+      (int_eq)(C0)(CONS)(NIL)(D))(la EXTRACT.
+  LET((la ie. la C0. la C1. la CONS. la NIL. la D. la ERRI. la ERRL.
+        Z(la self. la g. la cs. la adv.
+          g(la _. NIL)(la x. la gr. cs(la _. NIL)(la c. la cr.
+            ie(c)(C0)
+              (la _. CONS(x)(self(gr)(cr)(adv)))
+              (la _. adv(ERRI)(la a. la ar.
+                       ie(c)(C1)
+                         (la _. CONS(a)(self(gr)(cr)(ar)))
+                         (la _. a(la _. CONS(NIL)(self(gr)(cr)(ar)))(ERRL))
+                         (D)))
+              (D)))))
+      (int_eq)(C0)(C1)(CONS)(NIL)(D)
+      (la _. error("render: compose: internal: lists out of step"))
+      (la _. la _. error("render: compose: a tile has more rows than its height")))(la MERGE.
+
+  # SORT: tiles by x, and at the same x the narrower first, so a zero-width
+  # tile never sorts after a tile it touches (insertion sort; a screen holds
+  # tens of tiles)
+  LET((la lt. la ad. la mu. la CONS. la NIL. la D. la CX.
+        (la TX. (la INS. Z(la self. la l. l(la _. NIL)(la h. la r. INS(h)(self(r)))))
+          (Z(la self. la t. la l. l(la _. CONS(t)(NIL))
+              (la h. la r. lt(TX(h))(TX(t))(la _. CONS(h)(self(t)(r)))(la _. CONS(t)(l))(D)))))
+        (la t. t(la x. la y. la w. la h. la rows. ad(mu(x)(CX))(w))))
+      (lt)(add)(mul)(CONS)(NIL)(D)(1048576))(la SORT.
+
+  # UNITF(A)(w4): the unit function r -> r A, after checking r is w4 bytes
+  LET((la si. la sl. la ie. la cc. la C0. la D. la ERRW. la A. la w4.
+        (la F. la r. ie(si(sl(r)))(w4)(la _. F(r))(ERRW)(D))
+        (ie(si(sl(A)))(C0)(la r. r)(la r. cc(r)(A))))
+      (str_to_int)(str_len)(int_eq)(concat)(C0)(D)
+      (la _. error("render: compose: a tile row is not 4*w bytes")))(la UNITF.
+
+  LET(la W. la H. la pitch. la bg. la tiles.
+    (la zp.
+      lt(zp)(C0)
+        (la _. error("render: compose: pitch is less than 4*W"))
+        (la _. (la zpad. (la blank.
+          # OKT(t): t itself, or a loud halt if it leaves the screen
+          (la OKT.
+            (la ts.
+              # SCAN(y) = la k. k(the tiles active at y, in order)(the next row
+              # where that set changes)
+              (la SCAN.
+                # SPANS(y): Scott list of la k. k(y0)(y1)(active tiles), y..H
+                (la SPANS.
+                  # UNITS(active) = la k. k(the leading gap G0)(the unit
+                  # functions of the span's middle rows)(those of its last row)
+                  (la UNITS.
+                    # CODES(y0)(y1): per tile 0 off, 1 on, 2 on and ending at y1
+                    (la CODES.
+                      (la spans.
+                        # STREAM(spans)(g): the stream of the tiled rows; g holds
+                        # every tile's remaining rows, in tile order
+                        (la STREAM.
+                          # PB(lo)(hi): the plan of rows lo..hi-1
+                          (la PB.
+                            lt(H)(C1)
+                              (la _. E)
+                              (la _. PB(C0)(H)(STREAM(spans)(MAP(la t. t(la x. la y. la w. la h. la rows. rows))(ts)))
+                                       (la s. la st. s))
+                              (D))
+                          (Z(la self. la lo. la hi.
+                             Z(la find. la sp. sp(la _. error("render: compose: internal: no span"))
+                                (la s. la more. s(la y0. la y1. la act.
+                                  lt(lo)(y1)
+                                    (la _. lt(y1)(hi)
+                                       (la _. (la m. PNODE(self(lo)(m))(self(m)(hi)))(add(lo)(div(sub(hi)(lo))(C2))))
+                                       (la _. act(la _. la st. la K. K(run(sub(hi)(lo))(blank))(st))
+                                                 (la _. la _. TPP(sub(hi)(lo))(la a. la b. a)))
+                                       (D))
+                                    (la _. find(more))
+                                    (D))))(spans))))
+                        (Z(la self. la sp. la g.
+                           sp(la _. la K. error("render: compose: internal: past the last row"))
+                             (la s. la more. s(la y0. la y1. la act.
+                                act(la _. self(more)(g))
+                                   (la _. la _. (la codes. UNITS(act)(la G0. la um. la ul.
+                                      STEPFOR(um)(ul)(la step. la pack. la unpack.
+                                        FIRST(G0)(MKST(step)(la sf. self(more)(MERGE(g)(codes)(unpack(sf))))
+                                                     (sub(y1)(y0))(pack(EXTRACT(g)(codes)))))))
+                                    (CODES(y0)(y1))))))))
+                      (SPANS(C0)))
+                    (la y0. la y1. MAP(la t. t(la x. la ty. la w. la h. la rows.
+                        (la te. lt(y0)(ty)(C0)(lt(y0)(te)(int_eq(te)(y1)(C2)(C1))(C0)))(add(ty)(h))))(ts)))
+                  (la act. act(la _. error("render: compose: internal: a span with no tile"))
+                     (la t1. la r1. t1(la x1. la y1. la w1. la h1. la rows1.
+                       (la G0.
+                         Z(la self. la l. l(la _. TRIPLE(G0)(NIL)(NIL))
+                           (la t. la rest. t(la x. la ty. la w. la h. la rows.
+                             (la end. (la w4.
+                               rest(la _. (la tail.
+                                       lt(tail)(C0)
+                                         (la _. error("render: compose: tiles overlap"))
+                                         (la _. (la T. TRIPLE(G0)(CONS(UNITF(concat(T)(G0))(w4))(NIL))(CONS(UNITF(T)(w4))(NIL)))
+                                                (concat(run(tail)(bg))(zpad)))
+                                         (D))
+                                     (sub(W)(end)))
+                                   (la n. la nr. n(la nx. la ny. la nw. la nh. la nrows.
+                                     (la gap.
+                                       lt(gap)(C0)
+                                         (la _. error("render: compose: tiles overlap"))
+                                         (la _. (la U. self(rest)(la g0. la um. la ul. TRIPLE(g0)(CONS(U)(um))(CONS(U)(ul))))
+                                                (UNITF(run(gap)(bg))(w4)))
+                                         (D))
+                                     (sub(nx)(end)))))
+                             (mul(w)(C4)))
+                             (add(x)(w)))))(act))
+                       (run(x1)(bg))))))
+                (Z(la self. la y.
+                   lt(y)(H)
+                     (la _. SCAN(y)(la act. la e. CONS(la k. k(y)(e)(act))(self(e))))
+                     (la _. NIL)
+                     (D))))
+              (la y. Z(la self. la l.
+                 l(la _. PAIR(NIL)(H))
+                  (la t. la rest. self(rest)(la act. la e. t(la x. la ty. la w. la h. la rows.
+                     lt(y)(ty)
+                       (la _. PAIR(act)(lt(ty)(e)(ty)(e)))
+                       (la _. (la te. lt(y)(te)
+                                 (la _. PAIR(CONS(t)(act))(lt(te)(e)(te)(e)))
+                                 (la _. PAIR(act)(e))
+                                 (D))
+                              (add(ty)(h)))
+                       (D)))))(ts)))
+            (SORT(MAP(OKT)(tiles))))
+          (la t. t(la x. la y. la w. la h. la rows.
+             (la BAD.
+               lt(x)(C0)(BAD)(la _. lt(y)(C0)(BAD)(la _. lt(w)(C0)(BAD)(la _. lt(h)(C0)(BAD)(la _.
+               lt(W)(add(x)(w))(BAD)(la _. lt(H)(add(y)(h))(BAD)(la _.
+               int_eq(h)(C0)(la _. rows(la _. t)(la _. la _. error("render: compose: a tile has more rows than its height")))
+                            (la _. t)(D))(D))(D))(D))(D))(D))(D))
+             (la _. error("render: compose: a tile lies outside the screen")))))
+        (concat(run(W)(bg))(zpad)))(run(zp)(Z0)))
+        (D))
+    (sub(pitch)(mul(W)(C4))))(la compose.
+
+  la sel. sel(px)(run)(style)(tband)(bands)(solid)(join)(compose)
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+ (la d. la f. f(d))
+ (la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v))))
