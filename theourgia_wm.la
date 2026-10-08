@@ -611,7 +611,8 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
 # while no command runs, renders only on request (type-85 records), and stops
 # when its input is exhausted and nothing is running.
 # Each pass: poll the input fds and every running command's pipe at once, fold
-# whatever is ready, and (live) present a new frame if anything changed. The
+# whatever is ready, and (live) present a new frame if anything changed. Live,
+# the first frame is presented before the first poll. The
 # recursive call is in tail position, so the VM's TCO keeps the dump bounded.
 glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
   B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
@@ -664,7 +665,10 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
                          (jobs)))
                (job_fds(st)))
             (C0))))(la loop.
-      la st. loop(st)(FALSE)))))))))
+      # live, the first frame (the welcome terminal) is presented before the
+      # first poll, which blocks until a key or a program's output arrives
+      la st. sim(la _. loop(st)(FALSE))
+                (la _. frame(st)(la bytes. la st2. (la _. loop(st2)(FALSE))(display(bytes))))(C0)))))))))
   (0)(la t. la f. t)(la t. la f. f)))))))
 
 # ── Wiring ────────────────────────────────────────────────────────────────
