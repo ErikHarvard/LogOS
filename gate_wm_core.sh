@@ -91,14 +91,15 @@ glyph X = la s. s(la a. la b. "")(la a. la b. "")(la fd. fd)(print)(write_file)(
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph STARTS = Z(la self. la s. la p. str_eq(p)("")(la _. la t. la f. t)(la _. str_eq(s)("")(la _. la t. la f. f)(la _. str_eq(str_head(s))(str_head(p))(la _. self(str_tail(s))(str_tail(p)))(la _. la t. la f. f)("!"))("!"))("!"))
 glyph DROPN = Z(la self. la n. la s. int_eq(n)(0)(la _. s)(la _. self(sub(n)(1))(str_tail(s)))("!"))
-# a stub shell: state = cwd; echo, exit, clear, cd <dir>, anything else is echoed back
+# a stub shell: state = cwd; echo, exit, clear, cd <dir>, anything else is echoed back.
+# Its actions are encoded as logosh.la's: the selected branch, unapplied.
 glyph SHSTUB = la s. s(la cwd. cwd)(la sh. concat("logos:")(concat(sh)("$ ")))
    (la sh. la line. la k.
-      STARTS(line)("echo ")(la _. k(sh)(concat(DROPN(5)(line))("\n"))(la n. la c. la e. la j. n(n)))(la _.
-      str_eq(line)("exit")(la _. k(sh)("")(la n. la c. la e. la j. e(e)))(la _.
-      str_eq(line)("clear")(la _. k(sh)("")(la n. la c. la e. la j. c(c)))(la _.
-      STARTS(line)("cd ")(la _. k(DROPN(3)(line))("")(la n. la c. la e. la j. n(n)))(la _.
-      k(sh)(concat("stub: ")(concat(line)("\n")))(la n. la c. la e. la j. n(n)))("!"))("!"))("!"))("!"))
+      STARTS(line)("echo ")(la _. k(sh)(concat(DROPN(5)(line))("\n"))(la n. la c. la e. la j. n))(la _.
+      str_eq(line)("exit")(la _. k(sh)("")(la n. la c. la e. la j. e))(la _.
+      str_eq(line)("clear")(la _. k(sh)("")(la n. la c. la e. la j. c))(la _.
+      STARTS(line)("cd ")(la _. k(DROPN(3)(line))("")(la n. la c. la e. la j. n))(la _.
+      k(sh)(concat("stub: ")(concat(line)("\n")))(la n. la c. la e. la j. n))("!"))("!"))("!"))("!"))
    (la sh. la pid. la k. k(sh)(""))(la pid. pid)(la pid. pid)
 glyph OK  = la x. la err. la ok. ok(x)
 glyph ERR = la x. la err. la ok. err(x)

@@ -351,7 +351,8 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
                 (la _. put(st)(la k. k(id)(t_prompt(term3)(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
                 (la _. put(st)(la k. k(id)(t_prompt(t_clear(term3))(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
                 (la _. close_win(st)(id))
-                (la pid. la rfd. put(st)(la k. k(id)(term3)(sh2)(la n. la j. j(pid)(rfd)(line))(bc)(tk)(tr)(ver)(app))))
+                (la pid. la rfd. la _. put(st)(la k. k(id)(term3)(sh2)(la n. la j. j(pid)(rfd)(line))(bc)(tk)(tr)(ver)(app)))
+                (C0))
             (t_write(term2)(out))))
           (print(concat("wm: [")(concat(int_to_str(id))(concat("] $ ")(line))))))))(la submit.
     # app_step(w)(code)(shift): a key for an app window, as an option of the
