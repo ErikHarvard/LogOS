@@ -50,8 +50,16 @@ glyph LOGIN_APP = la B. la L. la nodes. la sess.
     LET(la name. la pass. la phase. la note. la k. k(name)(pass)(phase)(note))(la mk.
     LET(la s. str_to_int(str_len(s)))(la slen.
     LET(Z(la stars. la n. lt(C0)(n)(la _. concat("*")(stars(sub(n)(C1))))(la _. "")(C0)))(la stars.
-    LET(Z(la last. la s. str_eq(str_tail(s))("")(la _. s)(la _. last(str_tail(s)))(C0)))(la last.
-    LET(Z(la droplast. la s. str_eq(str_tail(s))("")(la _. "")(la _. concat(str_head(s))(droplast(str_tail(s))))(C0)))(la droplast.
+    # seg(s)(i)(j): bytes i..j-1 of s, joined by halves. last and droplast use
+    # only parameters (str_at, concat, ...): naming a builtin at run time walks
+    # the whole program on the VM, once per character in the old recursion.
+    LET(add(C1)(C1))(la C2.
+    LET(Z(la seg. la s. la i. la j. lt(i)(j)
+        (la _. int_eq(add(i)(C1))(j)(la _. str_at(s)(i))
+                 (la _. (la m. concat(seg(s)(i)(m))(seg(s)(m)(j)))(div(add(i)(j))(C2)))(C0))
+        (la _. "")(C0)))(la seg.
+    LET(la s. (la n. lt(C0)(n)(la _. str_at(s)(sub(n)(C1)))(la _. "")(C0))(slen(s)))(la last.
+    LET(la s. (la n. lt(C0)(n)(la _. seg(s)(C0)(sub(n)(C1)))(la _. "")(C0))(slen(s)))(la droplast.
     LET(mk("")("")(FRESH)(""))(la init.
     # attempt(st): log in (fresh) or unlock (locked) with the typed passphrase;
     # either way the passphrase is forgotten
@@ -89,5 +97,5 @@ glyph LOGIN_APP = la B. la L. la nodes. la sess.
         # in every phase the passphrase is forgotten; an open session is locked
         phase(la _. mk(name)("")(phase)(note))(la l. mk(name)("")(phase)(note))
              (la s. mk(name)("")(LOCKED(s_lock(s)))("Locked."))))(la lock.
-      la s. s(init)(view)(update)(theme)("Log in")(done)(lock)))))))))))))))))
+      la s. s(init)(view)(update)(theme)("Log in")(done)(lock)))))))))))))))))))
   (0)(1)(la t. la f. t)(la t. la f. f)))))

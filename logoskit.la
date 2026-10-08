@@ -82,7 +82,15 @@ glyph LK_KIT = la B. la L. la R. la scale. la pal.
   R(la px. la run. la style. la band. la bands. la solid. la join. la compose.
   pal(la st_normal. la st_focused. la st_title. la st_dim.
   (la C0. la C1. la C2. la C3. la C4. la C12. la TRUE. la FALSE.
+    # Z as a parameter: every Z(...) below runs while the program runs, and the
+    # module's own glyph Z would be looked up by name each time
+    LET(Z)(la Z.
     LET(la s. str_to_int(str_len(s)))(la slen.
+    # seg(s)(i)(j): bytes i..j-1 of s, joined by halves (no builtin named)
+    LET(Z(la seg. la s. la i. la j. lt(i)(j)
+        (la _. int_eq(add(i)(C1))(j)(la _. str_at(s)(i))
+                 (la _. (la m. concat(seg(s)(i)(m))(seg(s)(m)(j)))(div(add(i)(j))(C2)))(C0))
+        (la _. "")(C0)))(la seg.
     LET(la a. la b. lt(a)(b)(la _. b)(la _. a)(C0))(la maxi.
     LET(la a. la b. str_eq(a)(b))(la streq.
     LET(Z(la rep. la n. la s. lt(C0)(n)(la _. concat(s)(rep(sub(n)(C1))(s)))(la _. "")(C0)))(la rep.
@@ -191,7 +199,7 @@ glyph LK_KIT = la B. la L. la R. la scale. la pal.
              (la id. la lab. la v.
                 int_eq(code)(K_ENTER)(la _. la k. k(focus)(some(msg(id)("submit")(v))))(la _.
                 int_eq(code)(K_BS)(la _. la k. k(focus)(some(msg(id)("edit")(
-                    Z(la drop_last. la s. str_eq(str_tail(s))("")(la _. "")(la _. concat(str_head(s))(drop_last(str_tail(s))))(C0))(v)))))(la _.
+                    (la n. lt(C0)(n)(la _. seg(v)(C0)(sub(n)(C1)))(la _. "")(C0))(slen(v))))))(la _.
                 str_eq(ch)("")(la _. la k. k(focus)(none))(la _. la k. k(focus)(some(msg(id)("edit")(concat(v)(ch)))))(C0))(C0))(C0))
              (la id. la lab. la on.
                 (la hit. hit(la _. la k. k(focus)(some(msg(id)("toggle")(on("0")("1")))))(la _. la k. k(focus)(none))(C0))
@@ -227,5 +235,5 @@ glyph LK_KIT = la B. la L. la R. la scale. la pal.
         Z(la go. la l. l(la _. nil)(la r. la rest. append(render_row(r)(cols))(go(rest))))(rows))(la render.
       la s. s(la k. k(LK_TEXT)(LK_BUTTON)(LK_FIELD)(LK_TOGGLE)(LK_LIST)(LK_ROW)(LK_COL)(LK_PANEL)(LK_SPACE))
              (measure)(paint)(a11y)(focusables)(key)(render)
-    )))))))))))))))))))))))))))))
+    )))))))))))))))))))))))))))))))
   (0)(1)(2)(3)(4)(12)(la t. la f. t)(la t. la f. f)))))
