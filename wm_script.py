@@ -13,6 +13,9 @@ delivers: a 16-byte timeval (zero here), then type (u16), code (u16) and value
     ctrl <NAME>        the key with LEFTCTRL held
     mod <NAME>         the key with LEFTMETA (Super) held; "mod Shift+E" holds
                        LEFTSHIFT too
+    down <NAME>        only press the key (value 1), as a held key starts
+    repeat <NAME> [N]  N autorepeats of a held key (value 2; N defaults to 1)
+    up <NAME>          only release the key (value 0)
     snap <N>           ask the simulator to write frame N (type 85, code N)
     # comment          ignored, as are blank lines
 
@@ -111,6 +114,11 @@ def compile_script(lines):
             if name.lower().startswith("shift+"):
                 mods, name = [LEFTMETA, LEFTSHIFT], name[6:]
             out += held(mods, keycode(name))
+        elif cmd in ("down", "repeat", "up"):
+            name, _, count = arg.strip().partition(" ")
+            value = {"down": 1, "repeat": 2, "up": 0}[cmd]
+            for _ in range(int(count) if cmd == "repeat" and count else 1):
+                out += rec(EV_KEY, keycode(name), value) + rec(EV_SYN, 0, 0)
         elif cmd == "snap":
             out += rec(EV_SNAP, int(arg), 0)
         else:

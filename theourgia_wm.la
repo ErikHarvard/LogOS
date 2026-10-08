@@ -55,8 +55,10 @@
 #  ── STATE ───────────────────────────────────────────────────────────
 #  st  = la k. k(tree)(focus)(wins)(nextid)(mask)(quit)(dirty)(lock)
 #  lock = la n. la s. n(n)  (no lock screen)  |  la n. la s. s(la k. k(login)
-#         (lw)(showing)): the login app's record, the window (id 0) that holds
-#         it, and whether the screen is locked now
+#         (lw)(showing)(held)): the login app's record, the window (id 0) that
+#         holds it, whether the screen is locked now, and the code of the key
+#         that unlocked it while that key is still held (0 = none): its
+#         autorepeats belong to the login panel's keystroke and are dropped
 #  win = la k. k(id)(term)(sh)(job)(bcache)(tkey)(trows)(ver)(app)
 #  bcache = la k. k(cols)(cache): the renderer's band cache and the width
 #        (in cells) it was drawn at; at any other width it starts again
@@ -88,7 +90,7 @@ glyph WM_CONS = la h. la t. la n. la c. c(h)(t)
 # option, the state) is built only through these constructors. A glyph runs in
 # an empty environment, so they capture nothing but their own fields; each kit
 # binds them once at startup with WM_MK(la mkw. la pair. la triple. la some.
-# la mkjob. la mkst8. ...).
+# la mkjob. la mkst8. la quad. ...).
 glyph WM_MK = la s. s
   (la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app. la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(app))
   (la a. la b. la k. k(a)(b))
@@ -96,6 +98,7 @@ glyph WM_MK = la s. s
   (la x. la n. la y. y(x))
   (la pid. la rfd. la cmd. la n. la j. j(pid)(rfd)(cmd))
   (la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock. la k. k(tree)(focus)(wins)(nid)(mask)(quit)(dirty)(lock))
+  (la a. la b. la c. la d. la k. k(a)(b)(c)(d))
 
 # ── List helpers (Scott lists) ─────────────────────────────────────────
 glyph WM_LISTS = la B. B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
@@ -160,7 +163,7 @@ glyph WM_FOLD = la B. B(la str_at. la ord. la str_to_int. la int_to_str. la conc
 glyph WM_WINS = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
-  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8.
+  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8. la quad.
     (la C0. la C1. la nojob.
       # bc, the band cache, is la k. k(cols)(cache): the renderer's cache is only
       # good for the width it was drawn at. (nojob also serves as the empty app
@@ -203,7 +206,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
   SH(la sh_new. la sh_prompt. la sh_run. la sh_finish. la sh_int. la sh_hup.
   pal(la border_f. la border_u. la bar_f. la bar_u. la termbg. la st_text. la st_bar_f. la st_bar_u.
   ui(la lk_light. la lk_dark. la lk_light2. la lk_dark2. la bg_light. la bg_dark.
-  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8.
+  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8. la quad.
   (la C0. la C1. la C2. la C4. la C8. la BW. la PAD. la TRUE. la FALSE.
     LET(mul(C8)(scale))(la cw.
     # each(left)(right)(band): the band's scanlines, each framed left ++ s ++ right
@@ -313,7 +316,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
   W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
   ui(la lk_key. la lk_focusables. la settings. la lockui.
   cfg(la sw. la sh0. la gap. la cwd0.
-  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8.
+  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8. la quad.
   (la C0. la C1. la C2. la C3. la C12. la C50. la C85. la C240. la C255. la TRUE. la FALSE.
     LET(la a. la b. b)(la seq.
     LET(la x. int_eq(x)(C0)(FALSE)(TRUE))(la nz.
@@ -335,7 +338,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
                          (lk_focusables(lg_view(lgst))(la _. "")(la h. la t. h)))))(la lock_win.
     LET(lockui(la _. la n. la s. n(n))
               (la lu. lu(la login. la start. login(la i. la v. la u. la th. la ti. la d. la l.
-                 la n. la s. s(la k. k(login)(lock_win(login)(i))(start))))))(la lock0.
+                 la n. la s. s(la k. k(login)(lock_win(login)(i))(start)(C0))))))(la lock0.
     LET(la k. k(tl_empty)(C0)(nil)(C1)(C0)(FALSE)(TRUE)(lock0))(la empty.
     LET(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         la k. k(tree)(focus)(wins)(nid)(mask)(quit)(dirty)(lock))(la mkst.
@@ -440,27 +443,27 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     # lock_now(st): MOD+Esc. The login app's own lock keeps the user's name and
     # locks the session; the screen then shows only the login panel.
     LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
-        lock(la _. st)(la l. l(la login. la lw. la showing.
+        lock(la _. st)(la l. l(la login. la lw. la showing. la held.
           lw(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
             app(la _. st)(la a. a(la lkapp. la ast. la af.
               login(la i. la v. la u. la th. la ti. la done. la lk.
                 (la _. mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)
-                          (some(triple(login)(touch(lock_win(login)(lk(ast))))(TRUE))))
+                          (some(quad(login)(touch(lock_win(login)(lk(ast))))(TRUE)(C0))))
                 (print("wm: locked"))))))))))(la lock_now.
     # lock_key(st)(code)(shift): while locked, every key goes to the login panel;
     # once the login app reports done, the screen unlocks (and, with no windows
     # yet, the first terminal opens with the welcome text)
     LET(la st. la code. la shift. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
-        lock(la _. st)(la l. l(la login. la lw. la showing.
+        lock(la _. st)(la l. l(la login. la lw. la showing. la held.
           app_step(lw)(code)(shift)(la _. st)(la lw2.
             lw2(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               app(la _. st)(la a. a(la lkapp. la ast. la af.
                 login(la i. la v. la u. la th. la ti. la done. la lk.
                   done(ast)
                     (la _. (la _. (la st2. wins(la _. welcome(open_win(st2)))(la h. la t. st2))
-                                  (mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(some(triple(login)(touch(lw2))(FALSE)))))
+                                  (mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(some(quad(login)(touch(lw2))(FALSE)(code)))))
                            (print("wm: unlocked")))
-                    (la _. mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(some(triple(login)(touch(lw2))(TRUE))))
+                    (la _. mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(some(quad(login)(touch(lw2))(TRUE)(C0))))
                     (C0))))))))))(la lock_key.
     # dirkey(code)(not_a_direction)(direction d): Left/h 0, Right/l 1, Up/k 2, Down/j 3
     LET(la code. la nd. la yd.
@@ -508,13 +511,23 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
             lock(la _. modk(la _. binding(st)(code)(shift))(la _. typing(st)(code)(shift)(ctrl))(C0))
                 # locked: a key with Ctrl or MOD held means nothing (it must not type
                 # its letter into the login panel)
-                (la l. l(la login. la lw. la showing. showing
+                (la l. l(la login. la lw. la showing. la held. showing
                    (la _. modk(la _. st)(la _. ctrl(la _. st)(la _. lock_key(st)(code)(shift))(C0))(C0))
                    (la _. modk(la _. binding(st)(code)(shift))(la _. typing(st)(code)(shift)(ctrl))(C0))(C0))))
         (nz(band(mask)(C3)))(nz(band(mask)(C12)))(nz(band(mask)(C240)))))(la press.
+    # key_event(st)(code)(value): value 1 is a press, 2 an autorepeat, 0 a release.
+    # The repeats of the key that unlocked the screen are dropped: that key was
+    # pressed for the login panel. Its release, or a new press, ends that.
     LET(la st. la code. la value.
         (la bit. int_eq(bit)(C0)
-            (la _. int_eq(value)(C0)(la _. st)(la _. press(st)(code))(C0))
+            (la _. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
+                (la ordinary. lock(ordinary)(la l. l(la login. la lw. la showing. la held.
+                    int_eq(held)(code)
+                      (la _. int_eq(value)(C2)(la _. st)
+                         (la _. (la st2. int_eq(value)(C0)(la _. st2)(la _. press(st2)(code))(C0))
+                                (mkst(tree)(focus)(wins)(nid)(mask)(quit)(dirty)(some(quad(login)(lw)(showing)(C0)))))(C0))
+                      (ordinary)(C0))))
+                (la _. int_eq(value)(C0)(la _. st)(la _. press(st)(code))(C0))))
             (la _. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
                 mkst(tree)(focus)(wins)(nid)
                     (int_eq(value)(C1)(la _. bor(mask)(bit))
@@ -565,7 +578,7 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
      la tl_resize. la tl_toggle. la tl_leaves. la tl_next. la tl_has. la tl_count. la tl_show.
   W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
   cfg(la sw. la sh0. la pitch. la gap. la desk. la lockw. la lockh.
-  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8.
+  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8. la quad.
   (la C2. la TRUE. la FALSE.
     LET(sub(sw)(mul(C2)(gap)))(la aw. LET(sub(sh0)(mul(C2)(gap)))(la ah.
     # go(focus)(rects)(tiles)(wins) -> la k. k(tiles)(wins'), one tile per rectangle
@@ -577,11 +590,11 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
                    (la win. tile(int_eq(id)(focus))(win)(w)(h)(la rows. la win2.
                        go(focus)(rest)(cons(la k. k(x)(y)(w)(h)(rows))(tiles))(put_win(wins)(win2))))))))(la go.
       la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
-        (la normal. lock(normal)(la l. l(la login. la lw. la showing. showing
+        (la normal. lock(normal)(la l. l(la login. la lw. la showing. la held. showing
             (la _. tile(TRUE)(lw)(lockw)(lockh)(la rows. la lw2.
                 la k. k(compose(sw)(sh0)(pitch)(desk)
                           (cons(la k3. k3(div(sub(sw)(lockw))(C2))(div(sub(sh0)(lockh))(C2))(lockw)(lockh)(rows))(nil)))
-                       (mkst8(tree)(focus)(wins)(nid)(mask)(quit)(FALSE)(some(triple(login)(lw2)(showing))))))
+                       (mkst8(tree)(focus)(wins)(nid)(mask)(quit)(FALSE)(some(quad(login)(lw2)(showing)(held))))))
             (normal)(FALSE))))
         (la _. go(focus)(tl_layout(tree)(gap)(gap)(aw)(ah)(gap))(nil)(wins)(la tiles. la wins2.
           la k. k(compose(sw)(sh0)(pitch)(desk)(tiles))

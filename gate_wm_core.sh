@@ -139,7 +139,7 @@ glyph MAIN = (la L. (la TL. (la T.
                                           (la a. a(la lkapp. la ast. la afocus. lkapp(la i. la v. la u. la th. la ttl. la z.
                                              (la _. PRINTALL(a11y(v(ast))(afocus)))(print(concat("    theme ")(th(ast)("dark")("light")))))))))
               (print(concat("  window ")(concat(int_to_str(id))(concat(" ver ")(int_to_str(ver)))))))))(wins)))
-        ((la _. lock(la _. print("snap: no lock screen"))(la l. l(la login. la lw. la showing.
+        ((la _. lock(la _. print("snap: no lock screen"))(la l. l(la login. la lw. la showing. la held.
            showing(la _. lw(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
                       app(la _. "")(la a. a(la lkapp. la ast. la af. lkapp(la i. la v. la u. la th. la ttl. la z.
                          (la _. PRINTALL(a11y(v(ast))(af)))(print(concat("  LOCKED, focus ")(af))))))))
