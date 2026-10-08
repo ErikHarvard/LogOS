@@ -21,7 +21,8 @@
 #               either; and again on an EMPTY installation, which stays
 #               empty), output longer than .expected, output shorter, a test
 #               that does not compile, a test that exits 3,
-#               a dependency cycle, a missing dependency, a file clash, a
+#               a dependency cycle (and, on update, one that closes through
+#               an installed package), a missing dependency, a file clash, a
 #               tampered archive (id mismatch), a signed index entry naming
 #               another package's archive, a tampered index, a tampered or
 #               missing signature, a wrong key, an interrupted earlier
@@ -296,6 +297,8 @@ def gen(D, module):
     for ver in ("1.0", "1.1", "1.2"):
         simple("rr", ver, "rr " + ver)
     simple("rr", "9.0", "rr 9.0", extra={"evil.txt": "attacker\n"})
+    # upa 1.1 needs upb, and the INSTALLED upb 1.0 needs upa: updating upa would close a cycle
+    simple("upa", "1.0", "upa 1.0"); simple("upb", "1.0", "upb"); simple("upa", "1.1", "upa 1.1")
     # the package manager as a package
     src = open(module, "rb").read()
     test = r'''import("logospkg.la")
@@ -475,9 +478,9 @@ pk alpha 1.0 -; pk alpha 1.1 -; pk beta 1.0 alpha; pk gamma 1.0 beta,alpha; pk e
 pk okdep 1.0 -; pk bad 1.0 okdep; pk nocompile 1.0 -; pk exit3 1.0 -; pk clash 1.0 alpha
 pk cyca 1.0 cycb; pk cycb 1.0 cyca; pk orphan 1.0 nosuch; pk delta 1.0 -
 pk long 1.0 -; pk short 1.0 -; pk vv 1.9 -; pk vv 1.10 -; pk vv 1.2 -
-pk rr 1.0 -; pk rr 1.1 -; pk rr 1.2 -; pk rr 9.0 -
+pk rr 1.0 -; pk rr 1.1 -; pk rr 1.2 -; pk rr 9.0 -; pk upa 1.0 -; pk upb 1.0 upa; pk upa 1.1 upb
 pk logospkg 1.0 -; pk logospkg 1.1 -; pk logospkg 1.2 -
-[ "$(echo $packed | wc -w)" = 26 ] && pass "pack: 26 archives, each byte-identical to the format (incl. logospkg.la's own, $(stat -c %s arc/logospkg-1.0) bytes)"
+[ "$(echo $packed | wc -w)" = 29 ] && pass "pack: 29 archives, each byte-identical to the format (incl. logospkg.la's own, $(stat -c %s arc/logospkg-1.0) bytes)"
 s unpack arc/gamma-1.0 out
 expect "unpack: gamma's header fields and file list" \
   "ok name=gamma version=1.0 deps=beta,alpha test=gamma_test.la files=blob.bin:$(stat -c %s src/gamma-1.0/blob.bin),empty.txt:0,gamma.la:$(stat -c %s src/gamma-1.0/gamma.la),gamma_test.la:$(stat -c %s src/gamma-1.0/gamma_test.la),gamma_test.la.expected:$(stat -c %s src/gamma-1.0/gamma_test.la.expected)"
@@ -669,6 +672,15 @@ cp repo4/index repo4.index.save; id9=$(O sha arc/rr-9.0); cp arc/rr-9.0 "repo4/p
 refuse_in inst4 "update refused: an index line added without re-signing (its archive is well formed and matches its id)" \
        "err the repository index fails its signature" pkgcfg update inst4 repo4 key.bin rr
 cp repo4.index.save repo4/index; rm "repo4/pkg/$id9"
+# a cycle that closes through an INSTALLED package
+s publish repo4 key.bin arc/upa-1.0; s publish repo4 key.bin arc/upb-1.0
+mkdir inst3; s install inst3 repo4 key.bin upb
+expect "install upb (needs upa): upa 1.0 first" "ok upa 1.0,upb 1.0"
+s publish repo4 key.bin arc/upa-1.1
+refuse_in inst3 "update refused: upa 1.1 needs upb, whose installed version needs upa (a cycle through an installed package)" \
+       "err dependency cycle: upa -> upb -> upa" pkgcfg update inst3 repo4 key.bin upa
+s remove inst3 upb; a=$R; s remove inst3 upa; b=$R
+[ "$a|$b" = "ok upb|ok upa" ] && pass "remove: ... so both stay removable (upb, then upa)" || fail "remove after the refused update" "$a|$b"
 
 # ── 6. self-application: logospkg installs and updates itself ──────────
 mkdir inst2

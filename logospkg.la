@@ -71,6 +71,10 @@
 #     newest version of each missing package: each archive is read, its sha256
 #     compared with its id, unpacked, and its dependencies planned before it. A
 #     package met again on the current path is a cycle (an error naming it).
+#     An installed dependency is not planned again, but the dependencies of
+#     its installed versions are walked as well, so a cycle that would close
+#     through an installed package (update yy 1.1 needing xx, whose installed
+#     version needs yy) is refused too: remove could never break it.
 #  2. staging/ is created inside the installation. Each planned package is
 #     unpacked into staging/pkg-<name>, and its SELF-TEST is run: its files and
 #     the files of all its dependencies (planned or installed; not their own
@@ -343,6 +347,13 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
       vversion(v)(la _. ok(v))(la _. err(concat("current/")(concat(n)(" is malformed"))))("")))(la curver.
   LET(la inst. la n. bind(curver(inst)(n))(la v.
       bind(readx(path(path(pkgdir(inst)(n))(v))(".archive")))(la a. unpack(a))))(la instrec.
+  # irecs(inst)(ients): ok(la k. k(entry)(record)) for every installed version, from its .archive
+  LET(la inst. la ients. mapr(la e. bind(readx(path(path(pkgdir(inst)(ename(e)))(ever(e)))(".archive")))(la a.
+      bind(unpack(a))(la r. ok(la k. k(e)(r)))))(ients))(la irecs.
+  # ideps(irs)(name): the dependencies of every installed version of name (the
+  # edges remove honours: it refuses while ANY installed version needs a name)
+  LET(la irs. la n. fold(la acc. la ir. ir(la e. la r. str_eq(ename(e))(n)(la _. append(acc)(rdeps(r)))(la _. acc)("")))
+      (nil)(irs))(la ideps.
 
   # ── the repository ──────────────────────────────────────────────────
   # vindex(repo)(K): ok(the index entries) only when index.sig verifies
@@ -406,20 +417,27 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
   LET(la it. it(la n. la v. la i. la r. la a. v))(la iver.
   LET(la it. it(la n. la v. la i. la r. la a. r))(la irec.
   LET(la it. it(la n. la v. la i. la r. la a. entry(n)(v)(i)))(la ientry.
-  # visit(ctx)(names)(path)(force)(plan): ok(plan extended by each name and its
-  # missing dependencies, dependencies first). ctx = la k. k(repo)(index)(installed names).
-  # An installed name is skipped unless force (update's root). path: the names
-  # being visited, innermost first, for the cycle check.
-  LET(Z(la va. la ctx. la ds. la path. la force. la plan.
-      ds(la _. ok(plan))(la name. la rest. ctx(la repo. la index. la inames.
+  # visit(ctx)(names)(path)(force)(st): ok(st extended by each name and its
+  # missing dependencies, dependencies first); st = la q. q(plan)(seen), seen
+  # the names already planned or walked. ctx = la k. k(repo)(index)(installed
+  # names)(idep), idep(name) the dependencies of its installed versions. An
+  # installed name (unless force: update's root) is not planned, but its
+  # installed dependencies are walked, so a cycle that closes through an
+  # installed package is found as well. path: the names being visited,
+  # innermost first, for the cycle check.
+  LET(Z(la va. la ctx. la ds. la path. la force. la st.
+      ds(la _. ok(st))(la name. la rest. ctx(la repo. la index. la inames. la idep. st(la plan. la seen.
         bind(member(name)(path)
           (la _. err(concat("dependency cycle: ")(join(" -> ")(rev(cons(name)(path))))))
-          (la _. any(la it. str_eq(iname(it))(name))(plan)(TT)(member(name)(inames)(force(FF)(TT))(FF))
-             (la _. ok(plan))
-             (la _. bind(newest(index)(name))(la e. bind(fetch(repo)(e))(la fr. fr(la rec. la arc.
-                 bind(va(ctx)(rdeps(rec))(cons(name)(path))(FF)(plan))(la plan2.
-                   ok(append(plan2)(cons(la k. k(name)(ever(e))(eid(e))(rec)(arc))(nil))))))))(""))(""))
-        (la plan3. va(ctx)(rest)(path)(force)(plan3))))))(la visit.
+          (la _. member(name)(seen)
+             (la _. ok(st))
+             (la _. (la down. member(name)(inames)(force(FF)(TT))(FF)
+                 (la _. bind(down(idep(name)))(la s2. s2(la p2. la n2. ok(la q. q(p2)(cons(name)(n2))))))
+                 (la _. bind(newest(index)(name))(la e. bind(fetch(repo)(e))(la fr. fr(la rec. la arc.
+                     bind(down(rdeps(rec)))(la s2. s2(la p2. la n2.
+                       ok(la q. q(append(p2)(cons(la k. k(name)(ever(e))(eid(e))(rec)(arc))(nil)))(cons(name)(n2)))))))))(""))
+               (la ds2. va(ctx)(ds2)(cons(name)(path))(FF)(st)))(""))(""))
+        (la st3. va(ctx)(rest)(path)(force)(st3)))))))(la visit.
   # closure(get)(todo)(seen)(acc): ok(the records of todo's transitive dependencies)
   LET(Z(la cl. la get. la todo. la seen. la acc. todo(la _. ok(acc))(la d. la rest.
       member(d)(seen)(la _. cl(get)(rest)(seen)(acc))
@@ -464,8 +482,9 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
   # deploy(inst)(repo)(index)(ients)(root)(force): plan, stage + test all, commit all
   LET(la inst. la repo. la index. la ients. la root. la force.
     bind(precheck(inst))(la cbytes.
-    bind(visit(la k. k(repo)(index)(names(ients)))(cons(root)(nil))(nil)(force)(nil))(la items.
-    items(la _. ok(nil))(la h0. la t0. (la S. exists(S)
+    bind(irecs(inst)(ients))(la irs.
+    bind(visit(la k. k(repo)(index)(names(ients))(ideps(irs)))(cons(root)(nil))(nil)(force)(la q. q(nil)(nil)))(la st.
+    st(la items. la seen. items(la _. ok(nil))(la h0. la t0. (la S. exists(S)
       (la _. err(concat(S)(" exists: an earlier install was interrupted")))
       (la _. bind(each(la it. exists(path(pkgdir(inst)(iname(it)))(iver(it)))
                 (la _. err(concat(path(pkgdir(inst)(iname(it)))(iver(it)))(" already exists")))
@@ -477,7 +496,7 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
                     (la _. fold(la acc. la it. str_eq(iname(it))(d)(la _. ok(irec(it)))(la _. acc)(""))(err(d))(items))
                     (la _. instrec(inst)(d))("")))
           (la _. err(concat("cannot create ")(S)))("")))(""))
-      (path(inst)("staging"))))))(la deploy.
+      (path(inst)("staging"))))))))(la deploy.
 
   # ── the operations ──────────────────────────────────────────────────
   LET(la repo. la K. la arc. bind(unpack(arc))(la rec. (la ip. (la sp.
@@ -496,8 +515,7 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
       (la _. err(concat(name)(" is already installed (update installs a newer version)")))
       (la _. bind(vindex(repo)(K))(la index. deploy(inst)(repo)(index)(ients)(name)(FF)))("")))(la install.
   LET(la inst. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
-      (la _. bind(mapr(la e. bind(readx(path(path(pkgdir(inst)(ename(e)))(ever(e)))(".archive")))(la a.
-                  bind(unpack(a))(la r. ok(la k. k(e)(r)))))(ients))(la prs.
+      (la _. bind(irecs(inst)(ients))(la prs.
           (la needers. needers
               (la _. (la mine.
                   bind(atomic(inst)("installed")(showentries(filter(la e. str_eq(ename(e))(name)(FF)(TT))(ients))))(la _.
@@ -537,5 +555,5 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
           mapr(la n. bind(curver(inst)(n))(la v. lookup(ients)(n)(v)))(names(ients)))))(la list.
 
     la s. s(pack)(unpack)(publish)(install)(remove)(advise)(update)(rollback)(list)
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   )(0)(1)(2)(4)(5)(10)(32)(45)(46)(48)(57)(64)(65)(90)(95)(97)(102)(122)(129)(16384)(32768)(61440)))
