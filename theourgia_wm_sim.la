@@ -7,11 +7,16 @@
 #  screen is a frame file written whenever the input asks for one. So a whole
 #  session runs, and is checked, with no VT, no GPU and no keyboard.
 #
-#  CONFIGURATION: wm_sim.cfg, one line, "W H SCALE CWD EVENTS":
+#  CONFIGURATION: wm_sim.cfg, one line, "W H SCALE CWD EVENTS [async]":
 #    W H     the frame size in pixels (the pitch is 4*W)
 #    SCALE   the text scale (a character cell is 8*SCALE pixels square)
 #    CWD     the directory new shells start in
 #    EVENTS  the event file; wm_script.py writes one from a readable script
+#    async   optional: read input whenever it arrives, as the live WM does,
+#            instead of only while no command runs. Frames are still written
+#            only on request. For a test that drives the WM through a FIFO
+#            with real timing, e.g. MOD+c or MOD+q while a program runs; such a
+#            session is only as deterministic as its timing.
 #  A record of type 85 and code N writes frame N to wm_shot_N.bin (H rows of
 #  4*W bytes, B G R 0 per pixel); wm_shot.py turns it into a PNG and wm_ocr.py
 #  reads its text back.
@@ -49,7 +54,8 @@ glyph CFG = la k. (la words. words(la _. error("wm_sim: wm_sim.cfg is empty"))
     (la w1. la r1. r1(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w2. la r2. r2(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w3. la r3. r3(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
-    (la w4. la r4. k(str_to_int(w0))(str_to_int(w1))(str_to_int(w2))(w3)(w4)))))))
+    (la w4. la r4. k(str_to_int(w0))(str_to_int(w1))(str_to_int(w2))(w3)(w4)
+       (r4(la _. la t. la f. t)(la w5. la r5. str_eq(w5)("async")(la t. la f. f)(la t. la f. t)))))))))
   (WM_SPLIT(B)(WM_LISTS(B))(STRIP_NL(read_file("wm_sim.cfg"))))
 # The lock screen's session layer, a stand-in until logossession.la is wired
 # in: one user, adam, passphrase logos; a session is "S:<name>" and a locked
@@ -65,7 +71,7 @@ glyph STRIP_NL = Z(la self. la s.
       (la c. str_eq(c)("\n")(la _. self(str_tail(s)))(la _. concat(c)(self(str_tail(s))))("!"))
       (str_head(s)))("!"))
 
-glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS.
+glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC.
   (la fd.
     (la _.
       WM_BUILD(B)(X)
@@ -76,7 +82,7 @@ glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS.
           (read_file)(stat)(mkdir)(rmdir)(unlink)(rename)(getpid)(pipe)(fork)(dup2)(open)(close)(execv)(exit)(sigprocmask)(waitpid)(kill)(poll))
         (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. s(la k. k(LOGIN_APP)(SIM_SESS)(la t. la f. f))))
         (la s. s(W)(H)(mul(W)(4))(SCALE)(CWD))
-        (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))("24")(la t. la f. t)))
+        (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))("24")(SYNC)))
     (print(concat("wm: headless ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))
         (concat(" scale ")(concat(int_to_str(SCALE))(concat(", events from ")(EVENTS))))))))))
   (open(EVENTS)("0")))
