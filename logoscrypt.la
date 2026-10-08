@@ -1,0 +1,552 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logoscrypt.la — CRYPT_FAST, the fast crypt record (OS_LAYERS_DESIGN.md).
+#
+#  WHAT. The OS layers above the kernel take their cryptography as ONE
+#  record, never by importing the primitives:
+#
+#      crypt = la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)
+#        sha256(msg)                   32 raw bytes                 (FIPS 180-4)
+#        hmac(key)(msg)                32 raw bytes, HMAC-SHA256    (RFC 2104)
+#        hkdf(salt)(ikm)(info)(len)    len raw bytes, HKDF-SHA256   (RFC 5869)
+#        seal(key)(nonce)(aad)(pt)     ciphertext ++ 16-byte tag    (RFC 8439)
+#        open(key)(nonce)(aad)(sealed) la none. la some. ...: none(none) when
+#                                      the tag does not verify, some(pt)
+#        hex(raw)                      lowercase hex
+#
+#  crypt_ref.la's CRYPT_REF builds that record from the RFC-verified modules
+#  (sha256.la, hmac.la, hkdf.la, chacha20.la, poly1305.la, aead.la). It is
+#  the reference, and slow on the VM. CRYPT_FAST has the same contract and is
+#  a drop-in for it, with one exception where the reference is wrong (WHERE
+#  IT IS NOT CRYPT_REF'S TWIN, below). gate_logoscrypt.sh checks it against
+#  the published answers, an independent oracle, and CRYPT_REF itself.
+#
+#  MEASURED on the VM, timed inside the program by gate_logoscrypt.sh on a
+#  loaded 4-core machine: sha256 of 1 KB 8 ms (CRYPT_REF 258 s, 31784x), of
+#  10 KB 69 ms (CRYPT_REF 2195 s); seal of 1 KB 8 ms (CRYPT_REF 66 s, 7879x),
+#  of 10 KB 126 ms (CRYPT_REF 669 s). Building the record takes about 3 ms.
+#  Under heavier load all of these roughly double; the factors hold.
+#
+#  HOW IT IS USED. Build it ONCE at startup, with the builtins it needs:
+#
+#      import("logoscrypt.la")
+#      ... CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
+#                    (error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)
+#                    (bshl)(bshr) ...
+#
+#  and pass the record on as a value, exactly as CRYPT_REF is passed.
+#
+#  WHY IT IS FAST. On the SECD VM (WM_DESIGN.md, "How fast the VM is"):
+#   - naming a builtin or a glyph walks the program, so no hot code names
+#     one: every function below is a glyph whose PARAMETERS are the builtins,
+#     constants and helpers it uses, applied once when CRYPT_FAST is built;
+#   - an application of a builtin costs ~50 ns, but a let (la x. REST)(e)
+#     costs ~200 ns, because CLOSE scans REST, and a curried function of n
+#     arguments scans its body n-1 times. So the hot functions are small,
+#     take few arguments, bind few names, and recompute an addition rather
+#     than bind it (measured; the QR below is the fastest of four shapes);
+#   - 32-bit words live in 64-bit integers WITHOUT a mask after every add:
+#     the low 32 bits of a sum or xor depend only on the low 32 bits of the
+#     operands, so junk above bit 31 is harmless until a rotation, and every
+#     rotation masks its input first. A rotation is one multiply and one
+#     shift: for a clean word w, D = w * (2^32 + 1) holds w in both halves,
+#     and rotr(w, n) is the low 32 bits of D >> n;
+#   - bytes are read with str_at (O(1)) and written through a 256-byte table
+#     T256 (one str_at per byte); strings are joined by balanced halving.
+#
+#  THE PITFALLS THE ALGORITHMS RECORD, AND WHERE THEY ARE HANDLED
+#   - SHA-256 padding: the 0x80 byte and the 64-bit bit length are not
+#     copied into the message; the final block's words are read past the end
+#     (str_at gives "" there, which reads as 0) with 0x80 OR-ed into its word.
+#   - HMAC: a key longer than 64 bytes is hashed first (RFC 2104). The inner
+#     digest goes into the outer hash as WORDS, never as hex.
+#   - HKDF: an empty salt is 32 zero bytes (RFC 5869 2.2). HMAC pads its key
+#     with zeros to 64 bytes, so "" and 32 zero bytes are the same key; the
+#     gate checks it. len must be 0..8160 (255 blocks), else a loud error.
+#   - ChaCha20-Poly1305: the one-time Poly1305 key is block 0, the keystream
+#     starts at counter 1; mac_data is aad, pad16, ct, pad16, len(aad) and
+#     len(ct) as 64-bit little-endian; r is clamped (folded into the limb
+#     masks); the final reduction subtracts p only when h >= p; + s carries
+#     across the four 32-bit words. Poly1305 runs in five 26-bit limbs (the
+#     largest intermediate is below 2^58).
+#   - open verifies BEFORE it decrypts and never releases unauthenticated
+#     bytes: the tag is recomputed over aad and the ciphertext as they stand
+#     in `sealed`, compared as four words OR-ed together (no early exit), and
+#     only on a match is the keystream generated. A sealed string shorter
+#     than 16 bytes is none.
+#
+#  ENGINES. Pure Lingua Adamica over band/bor/bxor/bshl/bshr: the native SECD
+#  VM (its engine) and the C host give the same bytes (the gate checks the
+#  host on a small program); the host is far too slow for anything but tiny
+#  inputs (about a minute for sha256, HMAC, HKDF and one short seal).
+#
+#  WHERE IT IS NOT CRYPT_REF'S TWIN. CRYPT_REF's sha256 is wrong for message
+#  lengths of 55 (mod 64): sha256.la's PADLEN pads them with 64 zero bytes,
+#  where FIPS 180-4 pads none (L + 1 + 0 + 8 = 64), so it hashes one block too
+#  many. CRYPT_FAST follows FIPS (hashlib agrees); the two records give
+#  different sha256 -- and so HMAC and HKDF -- results at those lengths only.
+#  gate_logoscrypt.sh names the reference's digest there exactly.
+#
+#  HONESTLY OUT OF SCOPE
+#   - Constant time. The tag comparison has no early exit, and ChaCha20 and
+#     Poly1305 have no data-dependent branches, but the VM allocates and
+#     interprets: no timing claim is made about this engine.
+#   - Stricter than CRYPT_REF on misuse: seal/open halt with an error when the
+#     key is not 32 bytes or the nonce not 12 (CRYPT_REF silently reads a short
+#     key as zero-padded), and hkdf halts when len is outside 0..8160
+#     (CRYPT_REF halts above 8160 too, but loops forever on a negative len).
+#   - Nonce uniqueness is the caller's duty, as in aead.la.
+#   - No PBKDF2 or precomputed-key HMAC in the record (the contract has none);
+#     internally hkdf reuses one HMAC key schedule for all its blocks.
+# ═══════════════════════════════════════════════════════════════════
+
+export CRYPT_FAST
+
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+# ── bytes ──────────────────────────────────────────────────────────────
+# sa = str_at(s), partially applied once per string. A byte past the end is
+# "" and reads as 0, which is how every reader below zero-fills.
+# Big- and little-endian 32-bit words at byte offset o; u = mul(256).
+glyph RD_BE = la ord. la si. la p. la C1. la C2. la C3. la u. la sa. la o.
+  p(u(p(u(p(u(si(ord(sa(o)))))(si(ord(sa(p(o)(C1)))))))(si(ord(sa(p(o)(C2)))))))(si(ord(sa(p(o)(C3)))))
+glyph RD_LE = la ord. la si. la p. la C1. la C2. la C3. la u. la sa. la o.
+  p(si(ord(sa(o))))(u(p(si(ord(sa(p(o)(C1)))))(u(p(si(ord(sa(p(o)(C2)))))(u(si(ord(sa(p(o)(C3))))))))))
+# a clean word as 4 bytes; T = str_at(T256), n = band(255)
+glyph WR_BE = la concat. la s. la C8. la C16. la C24. la n. la T. la w.
+  concat(concat(T(s(w)(C24)))(T(n(s(w)(C16)))))(concat(T(n(s(w)(C8))))(T(n(w))))
+glyph WR_LE = la concat. la s. la C8. la C16. la C24. la n. la T. la w.
+  concat(concat(T(n(w)))(T(n(s(w)(C8)))))(concat(T(n(s(w)(C16))))(T(s(w)(C24))))
+
+# span(f)(lo)(hi): f(lo) ++ ... ++ f(hi-1), joined by halving; "" when lo >= hi
+glyph SPAN = la concat. la add. la sub. la lt. la bshr. la C0. la C1. la f.
+  Z(la sp. la lo. la hi.
+    lt(add(lo)(C1))(hi)
+      (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(bshr(add(lo)(hi))(C1)))
+      (la _. lt(lo)(hi)(la _. f(lo))(la _. "")(C0))
+      (C0))
+
+# ── SHA-256 (FIPS 180-4) ───────────────────────────────────────────────
+# Σ0/Σ1: three rotations of the doubled word, xored (junk above bit 31 left).
+glyph SHA_SIGMA = la r. la x. la m. la s. la A. la B. la C. la e.
+  (la D. x(x(s(D)(A))(s(D)(B)))(s(D)(C)))(r(m(e)))
+# σ0/σ1: two rotations and a plain shift of the clean word
+glyph SHA_SIG = la r. la x. la m. la s. la A. la B. la C. la w.
+  (la v. x(x(s(r(v))(A))(s(r(v))(B)))(s(v)(C)))(m(w))
+glyph SHA_CH = la x. la n. la e. la f. la g. x(g)(n(e)(x(f)(g)))
+glyph SHA_MAJ = la o. la n. la a. la b. la c. o(n(a)(b))(n(c)(o(a)(b)))
+
+# One round on a state record la k. k(a)(b)(c)(d)(e)(f)(g)(h); w = K[t] + W[t].
+# The new record's a and e fields are computed when the next round reads
+# them; every state record is read exactly once.
+glyph SHA_ROUND = la S0. la S1. la CH. la MJ. la p. la st. la w.
+  st(la a. la b. la c. la d. la e. la f. la g. la h.
+    (la t. la k. k(p(t)(p(S0(a))(MJ(a)(b)(c))))(a)(b)(c)(p(d)(t))(e)(f)(g))
+    (p(p(h)(S1(e)))(p(CH(e)(f)(g))(w))))
+
+# The schedule and the round constants travel as QUADS, la s. s(w0)(w1)(w2)(w3):
+# a step of the schedule then binds only the words it reads, instead of
+# rebinding a 16-word window per word (measured: a quarter faster per block).
+# A quad is read several times, so its words are always computed before it
+# is built, never inside it.
+#
+# W[i] = σ1(W[i-2]) + W[i-7] + σ0(W[i-15]) + W[i-16]
+glyph SHA_NW = la s0. la s1. la p. la q. la j. la b. la a. p(p(s1(q))(j))(p(s0(b))(a))
+# NEXTQ(q0)(q1)(q2)(q3): from the window W[t..t+15] the next quad W[t+16..t+19]
+# (the last two need the first two). h1 picks a quad's first word.
+glyph SHA_NEXTQ = la nw. la h1.
+  la q0. la q1. la q2. la q3.
+  q0(la a. la b. la c. la d. q2(la e. la f. la g. la h. q3(la i. la j. la k. la l.
+    (la X. la Y. (la Z. la W. la s. s(X)(Y)(Z)(W))(nw(X)(h)(d)(c))(nw(Y)(i)(q1(h1))(d)))
+    (nw(k)(f)(b)(a))(nw(l)(g)(c)(b)))))
+# the 16 quads of the schedule as a Scott list: 12 steps, then the last window
+glyph SHA_SCHED = la nx. la sub. la ie. la C1. la C0. la nil. la cons.
+  Z(la go. la n. la q0. la q1. la q2. la q3.
+     cons(q0)(ie(n)(C0)
+               (la _. cons(q1)(cons(q2)(cons(q3)(nil))))
+               (la _. go(sub(n)(C1))(q1)(q2)(q3)(nx(q0)(q1)(q2)(q3)))
+               (C0)))
+# the 64 rounds, four per step, over the schedule quads and the K quads
+glyph SHA_ROUNDS = la p. la R.
+  Z(la go. la st. la ql. la kl.
+     ql(la _. st)(la q. la qt. kl(la _. st)(la K. la kt.
+       go(q(la a. la b. la c. la d. K(la e. la f. la g. la h.
+            R(R(R(R(st)(p(e)(a)))(p(f)(b)))(p(g)(c)))(p(h)(d)))))
+         (qt)(kt))))
+
+# H + S, masked: the feed-forward that ends a compression
+glyph SHA_ADD8 = la p. la m. la A. la B.
+  A(la a. la b. la c. la d. la e. la f. la g. la h. B(la i. la j. la K. la l. la M. la N. la o. la P.
+    la k. k(m(p(a)(i)))(m(p(b)(j)))(m(p(c)(K)))(m(p(d)(l)))(m(p(e)(M)))(m(p(f)(N)))(m(p(g)(o)))(m(p(h)(P)))))
+
+# A block, la f. f(q0)(q1)(q2)(q3): words 0..13 from g(byte offset), 14 and
+# 15 are x and y. Q builds a quad from four computed words.
+glyph SHA_MKBLK = la Q. la C0. la C4. la C8. la C12. la C16. la C20. la C24. la C28.
+   la C32. la C36. la C40. la C44. la C48. la C52. la g. la x. la y.
+  la f. f(Q(g(C0))(g(C4))(g(C8))(g(C12)))(Q(g(C16))(g(C20))(g(C24))(g(C28)))
+         (Q(g(C32))(g(C36))(g(C40))(g(C44)))(Q(g(C48))(g(C52))(x)(y))
+
+# ── ChaCha20 (RFC 8439 2.3) ─────────────────────────────────────────────
+# The quarter round on (a, b, c, d), returning la k. k(a')(b')(c')(d'). Inputs
+# may carry junk above bit 31; m masks before every rotation (r doubles,
+# s shifts right by 32-n). W X Y V are 25 24 20 16 (rotl 7 8 12 16).
+glyph CC_QR = la W. la X. la Y. la V. la r. la s. la x. la p. la m.
+  la a. la b. la c. la d.
+  (la D. (la B. (la A. (la E. (la C.
+      la k. k(A)(s(r(m(x(B)(C))))(W))(C)(E))
+    (p(p(c)(D))(E)))
+    (s(r(m(x(D)(A))))(X)))
+    (p(p(a)(b))(B)))
+    (s(r(m(x(b)(p(c)(D)))))(Y)))
+  (s(r(m(x(d)(p(a)(b)))))(V))
+
+# One double round. The state is la k. k(col0)(col1)(col2)(col3), column j
+# being (x_j, x_4+j, x_8+j, x_12+j). Column round, regroup into diagonals
+# (x0 x5 x10 x15) (x1 x6 x11 x12) (x2 x7 x8 x13) (x3 x4 x9 x14), diagonal
+# round, regroup back into columns.
+glyph CC_DR = la q.
+  (la diag. la st. st(la p. la t. la u. la v. diag(p(q))(t(q))(u(q))(v(q))))
+  ((la cols. la p. la t. la u. la v.
+     p(la a0. la b0. la c0. la d0. t(la a1. la b1. la c1. la d1. u(la a2. la b2. la c2. la d2. v(la a3. la b3. la c3. la d3.
+       cols(q(a0)(b1)(c2)(d3))(q(a1)(b2)(c3)(d0))(q(a2)(b3)(c0)(d1))(q(a3)(b0)(c1)(d2)))))))
+   (la p. la t. la u. la v.
+     p(la a0. la b1. la c2. la d3. t(la a1. la b2. la c3. la d0. u(la a2. la b3. la c0. la d1. v(la a3. la b0. la c1. la d2.
+       la k. k(la k. k(a0)(b0)(c0)(d0))(la k. k(a1)(b1)(c1)(d1))(la k. k(a2)(b2)(c2)(d2))(la k. k(a3)(b3)(c3)(d3))))))))
+
+# Twenty rounds, then hand the 16 keystream words (final + initial, masked)
+# to f in order x0..x15. The key words, nonce words and counter are the
+# initial state.
+glyph CC_BLOCK = la p. la m. la X0. la X1. la X2. la X3. la dr.
+  la k0. la k1. la k2. la k3. la k4. la k5. la k6. la k7. la n0. la n1. la n2. la ctr. la f.
+  dr(dr(dr(dr(dr(dr(dr(dr(dr(dr(
+     la k. k(la k. k(X0)(k0)(k4)(ctr))(la k. k(X1)(k1)(k5)(n0))(la k. k(X2)(k2)(k6)(n1))(la k. k(X3)(k3)(k7)(n2))))))))))))
+  (la P. la T. la U. la V.
+    P(la a0. la b0. la c0. la d0. T(la a1. la b1. la c1. la d1. U(la a2. la b2. la c2. la d2. V(la a3. la b3. la c3. la d3.
+      f(m(p(a0)(X0)))(m(p(a1)(X1)))(m(p(a2)(X2)))(m(p(a3)(X3)))
+       (m(p(b0)(k0)))(m(p(b1)(k1)))(m(p(b2)(k2)))(m(p(b3)(k3)))
+       (m(p(c0)(k4)))(m(p(c1)(k5)))(m(p(c2)(k6)))(m(p(c3)(k7)))
+       (m(p(d0)(ctr)))(m(p(d1)(n0)))(m(p(d2)(n1)))(m(p(d3)(n2))))))))
+
+# 64 bytes of keystream XOR the word reader g (g(i) = the LE word at chunk
+# byte offset i), as a string: the 16 words, joined by halving.
+glyph CC_XOR64 = la concat. la x. la wr. la C0. la C4. la C8. la C12. la C16. la C20. la C24. la C28.
+   la C32. la C36. la C40. la C44. la C48. la C52. la C56. la C60. la g.
+  la w0. la w1. la w2. la w3. la w4. la w5. la w6. la w7. la w8. la w9. la wa. la wb. la wc. la wd. la we. la wf.
+  concat(concat(concat(concat(wr(x(w0)(g(C0))))(wr(x(w1)(g(C4)))))(concat(wr(x(w2)(g(C8))))(wr(x(w3)(g(C12))))))
+                (concat(concat(wr(x(w4)(g(C16))))(wr(x(w5)(g(C20)))))(concat(wr(x(w6)(g(C24))))(wr(x(w7)(g(C28)))))))
+        (concat(concat(concat(wr(x(w8)(g(C32))))(wr(x(w9)(g(C36)))))(concat(wr(x(wa)(g(C40))))(wr(x(wb)(g(C44))))))
+                (concat(concat(wr(x(wc)(g(C48))))(wr(x(wd)(g(C52)))))(concat(wr(x(we)(g(C56))))(wr(x(wf)(g(C60)))))))
+
+
+# ── Poly1305 (RFC 8439 2.5) ─────────────────────────────────────────────
+# Absorb one 16-byte block into h = la k. k(h0)(h1)(h2)(h3)(h4), five 26-bit
+# limbs: h := (h + m) * r mod 2^130 - 5. The block is four clean LE words
+# t0..t3 and always carries the high bit 2^128 (HB = 2^24 in limb 4): in the
+# AEAD every block is a whole one, pad16 makes it so. r0..r4 are the clamped
+# key limbs, q1..q4 = 5*r1..5*r4 (2^130 = 5 mod p folds the wrap into the
+# multiply). n = band(2^26 - 1), i = mul(5). The products stay below 2^58.
+# After the carry, limbs 0, 2, 3, 4 are below 2^26 and limb 1 just above,
+# as in poly1305.la, which P_FINAL relies on.
+glyph P_ABS = la C26. la C6. la C20. la C12. la C14. la C18. la C8. la HB. la i. la n. la o. la sl. la sr. la p. la mu.
+   la r0. la r1. la r2. la r3. la r4. la q1. la q2. la q3. la q4.
+   la h. la t0. la t1. la t2. la t3.
+  h(la h0. la h1. la h2. la h3. la h4.
+    (la a0. la a1. la a2. la a3. la a4.
+       (la d0. la d1. la d2. la d3. la d4.
+          (la x1. (la x2. (la x3. (la x4. (la f0.
+               la k. k(n(f0))(p(n(x1))(sr(f0)(C26)))(n(x2))(n(x3))(n(x4)))
+             (p(n(d0))(i(sr(x4)(C26)))))
+             (p(d4)(sr(x3)(C26))))
+             (p(d3)(sr(x2)(C26))))
+             (p(d2)(sr(x1)(C26))))
+           (p(d1)(sr(d0)(C26))))
+        (p(p(p(p(mu(a0)(r0))(mu(a1)(q4)))(mu(a2)(q3)))(mu(a3)(q2)))(mu(a4)(q1)))
+        (p(p(p(p(mu(a0)(r1))(mu(a1)(r0)))(mu(a2)(q4)))(mu(a3)(q3)))(mu(a4)(q2)))
+        (p(p(p(p(mu(a0)(r2))(mu(a1)(r1)))(mu(a2)(r0)))(mu(a3)(q4)))(mu(a4)(q3)))
+        (p(p(p(p(mu(a0)(r3))(mu(a1)(r2)))(mu(a2)(r1)))(mu(a3)(r0)))(mu(a4)(q4)))
+        (p(p(p(p(mu(a0)(r4))(mu(a1)(r3)))(mu(a2)(r2)))(mu(a3)(r1)))(mu(a4)(r0))))
+     (p(h0)(n(t0)))
+     (p(h1)(n(o(sr(t0)(C26))(sl(t1)(C6)))))
+     (p(h2)(n(o(sr(t1)(C20))(sl(t2)(C12)))))
+     (p(h3)(n(o(sr(t2)(C14))(sl(t3)(C18)))))
+     (p(h4)(o(sr(t3)(C8))(HB))))
+
+# The tag: carry fully, keep h - p when it does not go negative (h was in
+# [p, 2^130)), pack into four 32-bit words, add s = s0..s3 mod 2^128 with
+# the carry rippling up, and hand the four tag words to f. Transcribed step
+# for step from poly1305.la's FINAL.
+glyph P_FINAL = la C0. la C5. la C6. la C8. la C12. la C14. la C18. la C20. la C32. la C2_26. la C26.
+   la lt. la sub. la i. la o. la sl. la m. la n. la sr. la p.
+   la s0. la s1. la s2. la s3. la h. la f.
+  h(la a0. la a1. la a2. la a3. la a4.
+    (la b2. (la b3. (la b4. (la b0.
+      (la f0. la f1. la f2. la f3. la f4.
+        (la g0. (la g1. (la g2. (la g3. (la g4.
+          (la e.
+            (la p0. la p1. la p2. la p3. la p4.
+              (la w0. la w1. la w2. la w3.
+                (la u0. (la u1. (la u2.
+                    f(m(u0))(m(u1))(m(u2))(m(p(p(w3)(s3))(sr(u2)(C32)))))
+                  (p(p(w2)(s2))(sr(u1)(C32))))
+                  (p(p(w1)(s1))(sr(u0)(C32))))
+                  (p(w0)(s0)))
+              (m(o(p0)(sl(p1)(C26))))
+              (m(o(sr(p1)(C6))(sl(p2)(C20))))
+              (m(o(sr(p2)(C12))(sl(p3)(C14))))
+              (m(o(sr(p3)(C18))(sl(p4)(C8)))))
+            (e(f0)(n(g0)))(e(f1)(n(g1)))(e(f2)(n(g2)))(e(f3)(n(g3)))(e(f4)(g4)))
+          (la x. la y. lt(g4)(C0)(la _. x)(la _. y)(C0)))
+        (sub(p(f4)(sr(g3)(C26)))(C2_26)))
+        (p(f3)(sr(g2)(C26))))
+        (p(f2)(sr(g1)(C26))))
+        (p(f1)(sr(g0)(C26))))
+        (p(f0)(C5)))
+      (n(b0))(p(n(a1))(sr(b0)(C26)))(n(b2))(n(b3))(n(b4)))
+    (p(a0)(i(sr(b4)(C26)))))
+    (p(a4)(sr(b3)(C26))))
+    (p(a3)(sr(b2)(C26))))
+    (p(a2)(sr(a1)(C26))))
+
+# Poly1305 over the first L bytes of a string (sa = str_at of it), zero-padded
+# to 16: whole blocks read directly; the last partial block's words are masked
+# to the bytes that belong to the segment, because in `open` the bytes after
+# the ciphertext are the tag, not zeros.
+glyph P_SEG = la rle. la lt. la add. la sub. la mul. la bshl. la band. la M32. la C0. la C1. la C4. la C8. la C12. la C15. la C16.
+   la abs. la sa. la L. la h.
+  (la mw.
+    Z(la go. la h. la o.
+      lt(add(o)(C15))(L)
+        (la _. go(abs(h)(rle(sa)(o))(rle(sa)(add(o)(C4)))(rle(sa)(add(o)(C8)))(rle(sa)(add(o)(C12))))(add(o)(C16)))
+        (la _. lt(o)(L)
+                 (la _. abs(h)(mw(o))(mw(add(o)(C4)))(mw(add(o)(C8)))(mw(add(o)(C12))))
+                 (la _. h)
+                 (C0))
+        (C0))
+    (h)(C0))
+  (la q. (la v. band(rle(sa)(q))
+                     (lt(v)(C4)
+                        (la _. lt(v)(C1)(la _. C0)(la _. sub(bshl(C1)(mul(v)(C8)))(C1))(C0))
+                        (la _. M32)
+                        (C0)))
+         (sub(L)(q)))
+
+# ── the record ─────────────────────────────────────────────────────────
+glyph LET = la v. la k. k(v)
+
+# The SHA-256 round constants K[0..63] (FIPS 180-4 4.2.2) as a Scott list
+# of 16 quads, built once. An integer literal is str_to_int("..."), so the
+# parameter of that name makes each one an environment lookup instead of a
+# walk of the whole program to the builtin.
+glyph SHA_K = la str_to_int. la Q. la nil. la cons.
+  cons(Q(1116352408)(1899447441)(3049323471)(3921009573))(cons(Q(961987163)(1508970993)(2453635748)(2870763221))(
+  cons(Q(3624381080)(310598401)(607225278)(1426881987))(cons(Q(1925078388)(2162078206)(2614888103)(3248222580))(
+  cons(Q(3835390401)(4022224774)(264347078)(604807628))(cons(Q(770255983)(1249150122)(1555081692)(1996064986))(
+  cons(Q(2554220882)(2821834349)(2952996808)(3210313671))(cons(Q(3336571891)(3584528711)(113926993)(338241895))(
+  cons(Q(666307205)(773529912)(1294757372)(1396182291))(cons(Q(1695183700)(1986661051)(2177026350)(2456956037))(
+  cons(Q(2730485921)(2820302411)(3259730800)(3345764771))(cons(Q(3516065817)(3600352804)(4094571909)(275423344))(
+  cons(Q(430227734)(506948616)(659060556)(883997877))(cons(Q(958139571)(1322822218)(1537002063)(1747873779))(
+  cons(Q(1955562222)(2024104815)(2227730452)(2361852424))(cons(Q(2428436474)(2756734187)(3204031479)(3329325298))(nil))))))))))))))))
+
+# CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
+#           (add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#   -> la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)
+# Everything below the parameter list runs once, when the record is built:
+# the constants, the byte table, the helpers applied to their dependencies.
+glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la error.
+    la add. la sub. la mul. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+ (la C0. la C1. la C4. la C5. la C6. la C8. la C12. la C14. la C16. la C18. la C20. la C26.
+  la C31. la C32. la C56. la C60. la C63. la C64. la C768. la C2_31. la C8160. la M32.
+  LET(band(M32))(la m.
+  LET(mul(4294967297))(la r.
+  LET(band(255))(la n8.
+  LET(band(67108863))(la n26.
+  LET(la n. la c. n(n))(la nil.
+  LET(la h. la t. la n. la c. c(h)(t))(la cons.
+  LET(la s. str_to_int(str_len(s)))(la len.
+  LET(SPAN(concat)(add)(sub)(lt)(bshr)(C0)(C1))(la span.
+  # T: byte n as a one-byte string, through the table of all 256 bytes
+  LET(str_at(span(la i. chr(int_to_str(i)))(C0)(256)))(la T.
+  LET(RD_BE(ord)(str_to_int)(add)(C1)(2)(3)(mul(256)))(la rbe.
+  LET(RD_LE(ord)(str_to_int)(add)(C1)(2)(3)(mul(256)))(la rle.
+  LET(WR_BE(concat)(bshr)(C8)(C16)(24)(n8)(T))(la wbe.
+  LET(WR_LE(concat)(bshr)(C8)(C16)(24)(n8)(T))(la wle.
+  # take(k)(s): the first k bytes of s
+  LET(la k. la s. span(str_at(s))(C0)(k))(la take.
+
+  # ── hex ──
+  LET((la H. la n4. la raw.
+         (la sa. span(la i. (la b. concat(H(bshr(b)(C4)))(H(n4(b))))(str_to_int(ord(sa(i)))))(C0)(len(raw)))
+         (str_at(raw)))
+      (str_at("0123456789abcdef"))(band(15)))(la hex.
+
+  # ── SHA-256 ──
+  LET(SHA_SIGMA(r)(bxor)(m)(bshr)(2)(13)(22))(la S0.
+  LET(SHA_SIGMA(r)(bxor)(m)(bshr)(C6)(11)(25))(la S1.
+  LET(SHA_SIG(r)(bxor)(m)(bshr)(7)(C18)(3))(la s0.
+  LET(SHA_SIG(r)(bxor)(m)(bshr)(17)(19)(10))(la s1.
+  LET(SHA_ROUND(S0)(S1)(SHA_CH(bxor)(band))(SHA_MAJ(bor)(band))(add))(la R.
+  LET(SHA_ROUNDS(add)(R))(la rounds.
+  LET(la a. la b. la c. la d. la s. s(a)(b)(c)(d))(la Q.
+  LET(SHA_SCHED(SHA_NEXTQ(SHA_NW(s0)(s1)(add))(la a. la b. la c. la d. a))
+                (sub)(int_eq)(C1)(C0)(nil)(cons)(C12))(la sched.
+  LET(SHA_ADD8(add)(m))(la add8.
+  LET(SHA_MKBLK(Q)(C0)(C4)(C8)(C12)(C16)(C20)(24)(28)(C32)(36)(40)(44)(48)(52))(la mk.
+  LET(SHA_K(str_to_int)(Q)(nil)(cons))(la K.
+  LET(la H. la blk. add8(H)(rounds(H)(blk(sched))(K)))(la compress.
+  LET((la a. la b. la c. la d. la e. la f. la g. la h. la k. k(a)(b)(c)(d)(e)(f)(g)(h))
+        (1779033703)(3144134277)(1013904242)(2773480762)(1359893119)(2600822924)(528734635)(1541459225))(la H0.
+  # hfrom(H)(pre)(msg): absorb msg into the state H, pre bytes having gone
+  # before it; whole blocks straight from the string, then the final block(s):
+  # the tail read past the end (as zeros) with 0x80 OR-ed into its word, and
+  # the bit length (pre + len) * 8 in the last two words.
+  LET((la C3. la C24. la C128.
+       la H. la pre. la msg.
+        (la sa. la L.
+          (la g.
+            Z(la go. la H. la o.
+               lt(add(o)(C63))(L)
+                 (la _. go(compress(H)(mk(g(o))(g(o)(C56))(g(o)(C60))))(add(o)(C64)))
+                 (la _. (la rem. la bits.
+                    (la gt.
+                       lt(rem)(C56)
+                         (la _. compress(H)(mk(gt)(bshr(bits)(C32))(band(bits)(M32))))
+                         (la _. compress(compress(H)(mk(gt)(gt(C56))(gt(C60))))
+                                        (mk(la i. C0)(bshr(bits)(C32))(band(bits)(M32))))
+                         (C0))
+                    (la i. bor(g(o)(i))
+                              (int_eq(i)(sub(rem)(band(rem)(C3)))
+                                (la _. bshl(C128)(sub(C24)(mul(C8)(band(rem)(C3)))))
+                                (la _. C0)
+                                (C0))))
+                  (sub(L)(o))(mul(add(pre)(L))(C8)))
+                 (C0))
+             (H)(C0))
+          (la o. la i. rbe(sa)(add(o)(i))))
+        (str_at(msg))(len(msg)))
+      (3)(24)(128))(la hfrom.
+  LET(la D. D(la a. la b. la c. la d. la e. la f. la g. la h.
+        concat(concat(concat(wbe(a))(wbe(b)))(concat(wbe(c))(wbe(d))))
+              (concat(concat(wbe(e))(wbe(f)))(concat(wbe(g))(wbe(h))))))(la out32.
+  LET(la msg. out32(hfrom(H0)(C0)(msg)))(la sha256.
+
+  # ── HMAC-SHA256 ──
+  # hsched(kw): from the 16 key words, the states after the ipad and the opad
+  # blocks, la k. k(inner)(outer), computed once per key.
+  LET((la IP. la OP.
+       la kw. kw(la q0. la q1. la q2. la q3.
+         (la x. (la hi. la ho. la k. k(hi)(ho))(compress(H0)(x(IP)))(compress(H0)(x(OP))))
+         (la v. (la y. la f. f(y(q0))(y(q1))(y(q2))(y(q3)))
+                (la q. q(la a. la b. la c. la d. Q(bxor(a)(v))(bxor(b)(v))(bxor(c)(v))(bxor(d)(v)))))))
+      (909522486)(1549556828))(la hsched.
+  # a digest's 8 words as key words (32 key bytes, zero-padded to 64)
+  LET(la D. D(la a. la b. la c. la d. la e. la f. la g. la h.
+        (la z. la k. k(Q(a)(b)(c)(d))(Q(e)(f)(g)(h))(z)(z))(Q(C0)(C0)(C0)(C0))))(la d2kw.
+  # a digest's 8 words as the outer hash's second block: 0x80, (64+32)*8 bits
+  LET(la D. D(la a. la b. la c. la d. la e. la f. la g. la h.
+        la k. k(Q(a)(b)(c)(d))(Q(e)(f)(g)(h))(Q(C2_31)(C0)(C0)(C0))(Q(C0)(C0)(C0)(C768))))(la d2blk.
+  # a key longer than the 64-byte block is hashed first (RFC 2104)
+  LET(la key. hsched(lt(C64)(len(key))
+                       (la _. d2kw(hfrom(H0)(C0)(key)))
+                       (la _. (la sa. mk(rbe(sa))(rbe(sa)(C56))(rbe(sa)(C60)))(str_at(key)))
+                       (C0)))(la hkey.
+  LET(la hk. la msg. hk(la hi. la ho. compress(ho)(d2blk(hfrom(hi)(C64)(msg)))))(la hmacw.
+  LET(la key. la msg. out32(hmacw(hkey(key))(msg)))(la hmac.
+
+  # ── HKDF-SHA256 ──
+  # PRK = HMAC(salt, ikm); T(i) = HMAC(PRK, T(i-1) ++ info ++ byte i). An empty
+  # salt is 32 zero bytes, which as an HMAC key (zero-padded) is the same key.
+  LET(la salt. la ikm. la info. la L.
+    lt(L)(C0)(la _. error("logoscrypt: hkdf: len must be 0..8160"))(la _.
+    lt(C8160)(L)(la _. error("logoscrypt: hkdf: len must be 0..8160"))(la _.
+    int_eq(L)(C0)(la _. "")(la _.
+      (la hk. la N.
+         Z(la go. la prev. la i.
+            (la t. int_eq(i)(N)
+                     (la _. take(sub(L)(mul(C32)(sub(N)(C1))))(t))
+                     (la _. concat(t)(go(t)(add(i)(C1))))
+                     (C0))
+            (out32(hmacw(hk)(concat(concat(prev)(info))(T(i))))))
+         ("")(C1))
+      (hsched(d2kw(hmacw(hkey(salt))(ikm))))
+      (bshr(add(L)(C31))(5)))
+    (C0))(C0))(C0))(la hkdf.
+
+  # ── ChaCha20-Poly1305 ──
+  LET(CC_DR(CC_QR(25)(24)(C20)(C16)(r)(bshr)(bxor)(add)(m)))(la dr.
+  LET(CC_BLOCK(add)(m)(1634760805)(857760878)(2036477234)(1797285236)(dr))(la blk.
+  LET(CC_XOR64(concat)(bxor)(wle)(C0)(C4)(C8)(C12)(C16)(C20)(24)(28)(C32)(36)(40)(44)(48)(52)(C56)(C60))(la x64.
+  LET(P_ABS(C26)(C6)(C20)(C12)(C14)(C18)(C8)(16777216)(mul(C5))(n26)(bor)(bshl)(bshr)(add)(mul))(la pabs.
+  LET(P_FINAL(C0)(C5)(C6)(C8)(C12)(C14)(C18)(C20)(C32)(67108864)(C26)(lt)(sub)(mul(C5))(bor)(bshl)(m)(n26)(bshr)(add))(la pfin.
+  LET(P_SEG(rle)(lt)(add)(sub)(mul)(bshl)(band)(M32)(C0)(C1)(C4)(C8)(C12)(15)(C16))(la pseg.
+  LET(la k. k(C0)(C0)(C0)(C0)(C0))(la HZ.
+  # setup(who)(key)(nonce)(F): F gets this message's block function bf,
+  # bf(counter)(f) -> f(x0)..(x15). A key that is not 32 bytes or a nonce that
+  # is not 12 is a caller's error, and halts.
+  LET(la who. la key. la nonce. la F.
+    int_eq(len(key))(C32)
+      (la _. int_eq(len(nonce))(C12)
+         (la _. (la ka. la na.
+                   F(blk(rle(ka)(C0))(rle(ka)(C4))(rle(ka)(C8))(rle(ka)(C12))
+                        (rle(ka)(C16))(rle(ka)(C20))(rle(ka)(24))(rle(ka)(28))
+                        (rle(na)(C0))(rle(na)(C4))(rle(na)(C8))))
+                (str_at(key))(str_at(nonce)))
+         (la _. error(concat(who)(": nonce must be 12 bytes")))
+         (C0))
+      (la _. error(concat(who)(": key must be 32 bytes")))
+      (C0))(la setup.
+  # pkey(bf): the one-time Poly1305 key is block 0 (counter 0): r = its first
+  # 16 bytes, clamped (the clamp is folded into the limb masks), s = the next
+  # 16. Returns la k. k(abs)(fin) closed over this message's r and s.
+  LET(la bf. bf(C0)(la x0. la x1. la x2. la x3. la x4. la x5. la x6. la x7.
+                    la x8. la x9. la xa. la xb. la xc. la xd. la xe. la xf.
+        (la r0. la r1. la r2. la r3. la r4.
+           (la a. la f. la k. k(a)(f))
+           (pabs(r0)(r1)(r2)(r3)(r4)(mul(r1)(C5))(mul(r2)(C5))(mul(r3)(C5))(mul(r4)(C5)))
+           (pfin(x4)(x5)(x6)(x7)))
+        (band(x0)(67108863))
+        (band(bor(bshr(x0)(C26))(bshl(x1)(C6)))(67108611))
+        (band(bor(bshr(x1)(C20))(bshl(x2)(C12)))(67092735))
+        (band(bor(bshr(x2)(C14))(bshl(x3)(C18)))(66076671))
+        (band(bshr(x3)(C8))(1048575))))(la pkey.
+  # tagw(pk)(aad)(ca)(Lc)(f): f gets the four tag words over mac_data = aad,
+  # pad16, the first Lc bytes of the string ca reads, pad16, len(aad), Lc
+  LET(la pk. la aad. la ca. la Lc. la f.
+     pk(la abs. la fin.
+       (la La. fin(abs(pseg(abs)(ca)(Lc)(pseg(abs)(str_at(aad))(La)(HZ)))
+                      (band(La)(M32))(bshr(La)(C32))(band(Lc)(M32))(bshr(Lc)(C32)))
+                  (f))
+       (len(aad))))(la tagw.
+  # xs(bf)(sa)(L): the first L bytes of the string sa reads, XOR the keystream
+  # from counter 1, in 64-byte chunks joined by halving; the last chunk cut to L
+  LET(la bf. la sa. la L.
+     span(la c. (la o. (la ch. lt(add(o)(C63))(L)(la _. ch)(la _. take(sub(L)(o))(ch))(C0))
+                        (bf(add(c)(C1))(x64(la i. rle(sa)(add(o)(i))))))
+                (mul(c)(C64)))
+         (C0)(bshr(add(L)(C63))(C6)))(la xs.
+  LET(la key. la nonce. la aad. la pt.
+     setup("logoscrypt: seal")(key)(nonce)(la bf.
+       (la ct. tagw(pkey(bf))(aad)(str_at(ct))(len(ct))
+                 (la u0. la u1. la u2. la u3.
+                    concat(ct)(concat(concat(wle(u0))(wle(u1)))(concat(wle(u2))(wle(u3))))))
+       (xs(bf)(str_at(pt))(len(pt)))))(la seal.
+  # open: recompute the tag over aad and the ciphertext as they stand in
+  # sealed, compare all four words at once, and only then decrypt.
+  LET(la key. la nonce. la aad. la sealed.
+     setup("logoscrypt: open")(key)(nonce)(la bf.
+       (la ss. la Ls.
+          lt(Ls)(C16)
+            (la _. la none. la some. none(none))
+            (la _. (la Lc.
+                tagw(pkey(bf))(aad)(ss)(Lc)(la u0. la u1. la u2. la u3.
+                  int_eq(bor(bor(bxor(u0)(rle(ss)(Lc)))(bxor(u1)(rle(ss)(add(Lc)(C4)))))
+                            (bor(bxor(u2)(rle(ss)(add(Lc)(C8))))(bxor(u3)(rle(ss)(add(Lc)(C12))))))
+                        (C0)
+                    (la _. (la pt. la none. la some. some(pt))(xs(bf)(ss)(Lc)))
+                    (la _. la none. la some. none(none))
+                    (C0)))
+              (sub(Ls)(C16)))
+            (C0))
+       (str_at(sealed))(len(sealed))))(la open.
+
+    la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))
+ (0)(1)(4)(5)(6)(8)(12)(14)(16)(18)(20)(26)(31)(32)(56)(60)(63)(64)(768)(2147483648)(8160)(4294967295)
