@@ -21,7 +21,9 @@
 #      listing what it names) and, the SELF-APPLICATION of confine,
 #      logossec.la itself against an empty grant list (ok).
 #   2. tokens (VM, CRYPT_REF): mint and attenuate give Python's tokens byte for
-#      byte; malformed ids, caveats and root keys are errors; verify accepts
+#      byte (attenuate's as a bare string, as the contract says, and no token
+#      at all for a malformed token or caveat); malformed ids, caveats and
+#      root keys are mint errors; verify accepts
 #      within every caveat kind (res, ops, until at its boundary) and their
 #      intersection, and refuses outside each one; attenuation never widens
 #      (requests tried on a token and on its attenuations: whatever an
@@ -38,6 +40,9 @@
 #      needs a token for sec/policy with op a, a revoked token is then refused,
 #      and — the SELF-APPLICATION of the guard — the policy protects itself:
 #      an administrator that revokes its own id can revoke nothing more.
+#   4. stub crypt (VM, no HMAC: every signature is 64 zeros): attenuate's
+#      result is a token string that verify and attenuate take as they are,
+#      and a malformed attenuation is no token, which verify refuses.
 #
 # COST. Every acceptance and every signature failure costs (caveats + 1)
 # HMACs, and with CRYPT_REF on the VM one HMAC takes about a minute of CPU
@@ -181,13 +186,58 @@ PYEOF
 printf all > "$T/pure_part.txt"
 s=$(date +%s); wm_vm pure.la "$T/pure_vm.txt"; PURE_VM_S=$(( $(date +%s) - s ))
 if [ "$vrc" = 0 ]; then check "$T/pure_expect.txt" "$T/pure_vm.txt" "pure (VM)"
-else fail "pure (VM): rc=$vrc"; tail -3 "$T/vce" "$T/vre" 2>/dev/null; fi
+else fail "pure (VM): rc=$vrc"; tail -n 3 "$T/vce" "$T/vre" 2>/dev/null; fi
 # the host checks four within cases, in the background while the VM shards
 # run (building the kit there takes minutes, and each within about one)
 printf host > "$T/pure_part.txt"
 ( s=$(date +%s); WM_HOST_TIMEOUT=$SEC_SHARD_TIMEOUT wm_host pure.la "$T/pure_host.txt"
   echo "$hrc" > "$T/pure_host.rc"; echo $(( $(date +%s) - s )) > "$T/pure_host.secs" ) &
 HOSTJOB=$!
+
+# ── 4. stub crypt (VM): attenuate as a consumer of the contract uses it ───
+# A stub crypt record whose hmac returns its message and whose hex is always
+# 64 zeros: every signature is 64 zeros, so a token is accepted exactly when
+# its caveats hold and the cases cost no HMAC. What is checked here is not the
+# cryptography (sections 2 and 3 check that against Python) but the shape of
+# the results: attenuate gives a bare token string that verify takes as it is.
+cat > "$T/stub.la" <<'LAEOF'
+import("logossec.la")
+glyph NIL = la n. la c. n(n)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph SEQ = la a. la b. b
+glyph Z64 = "0000000000000000000000000000000000000000000000000000000000000000"
+glyph STUB = la s. s(la m. m)(la k. la m. m)(la a. a)(la a. a)(la a. a)(la b. Z64)
+glyph KEY = "0123456789abcdef0123"
+glyph R = la r. r(la m. concat("err ")(m))(la v. concat("ok ")(v))
+glyph BR = la t. concat("token [")(concat(t)("]"))
+glyph KIT = la bx. SEC_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)
+    (add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bx)(STUB)
+glyph MAIN = KIT(bxor)(la mint. la attenuate. la verify. la within. la confine.
+  mint(KEY)("st")(CONS("res=obj")(NIL))(la m. print(concat("mint failed: ")(m)))(la t0.
+  SEQ(print(BR(attenuate(t0)("ops=r"))))
+  (SEQ(print(BR(attenuate(t0)("nokey"))))
+  (SEQ(print(BR(attenuate("garbage")("ops=r"))))
+  (SEQ(print(BR(attenuate("")("ops=r"))))
+  (SEQ(print(R(verify(KEY)(NIL)(attenuate(t0)("ops=r"))("obj/1")("r")(0))))
+  (SEQ(print(R(verify(KEY)(NIL)(attenuate(t0)("ops=r"))("obj/1")("w")(0))))
+  (SEQ(print(R(verify(KEY)(NIL)(attenuate(attenuate(t0)("ops=r"))("res=obj/1"))("obj/2")("r")(0))))
+  (SEQ(print(R(verify(KEY)(NIL)(attenuate(t0)("nokey"))("obj/1")("r")(0))))
+  (print("end")))))))))))
+LAEOF
+Z64=0000000000000000000000000000000000000000000000000000000000000000
+cat > "$T/stub_expect.txt" <<EOF
+attenuate returns the bare token string	token [st|res=obj|ops=r|$Z64]
+attenuate with a malformed caveat gives no token	token []
+attenuate of a malformed token gives no token	token []
+attenuate of no token gives no token again	token []
+verify takes attenuate's result as it is: granted within it	ok st
+verify takes attenuate's result as it is: the added ops=r refuses w	err caveat not met: ops=r
+attenuate of attenuate's result: the second caveat holds too	err caveat not met: res=obj/1
+verify of a malformed attenuation refuses it (fails closed)	err malformed token: no signature
+EOF
+s=$(date +%s); wm_vm stub.la "$T/stub_vm.txt"; STUB_VM_S=$(( $(date +%s) - s ))
+if [ "$vrc" = 0 ]; then check "$T/stub_expect.txt" "$T/stub_vm.txt" "stub (VM)"
+else fail "stub (VM): rc=$vrc"; check "$T/stub_expect.txt" "$T/stub_vm.txt" "stub (VM)"; tail -n 3 "$T/vce" "$T/vre" 2>/dev/null; fi
 
 # ── 2 and 3. tokens and the guard: one driver, four shards ────────────────
 # The driver reads cases.txt: one operation per line, the command word and
@@ -225,7 +275,7 @@ glyph OP = la sec. la hex. la cmd. la a. la g.
   sec(la mint. la attenuate. la verify. la within. la confine.
   g(la gread. la gwrite. la gspawn. la gconnect. la grevoke. la grevoked.
   str_eq(cmd)("mint")(la _. PAIR(RES(mint(NTH(a)(0))(NTH(a)(1))(DROPL(a)(2))))(g))(la _.
-  str_eq(cmd)("att")(la _. PAIR(RES(attenuate(NTH(a)(0))(NTH(a)(1))))(g))(la _.
+  str_eq(cmd)("att")(la _. PAIR(concat("token [")(concat(attenuate(NTH(a)(0))(NTH(a)(1)))("]")))(g))(la _.
   str_eq(cmd)("verify")(la _. PAIR(RES(verify(NTH(a)(0))(DROPL(a)(5))(NTH(a)(2))(NTH(a)(3))(NTH(a)(4))
                                       (str_to_int(NTH(a)(1)))))(g))(la _.
   str_eq(cmd)("within")(la _. PAIR(within(NTH(a)(0))(NTH(a)(1))("T")("F"))(g))(la _.
@@ -290,8 +340,8 @@ IN, OUT = "fs/home/alice/notes", "fs/etc/passwd"
 
 # shard 1: mint and attenuate give Python's tokens; their errors; each caveat
 mint(1, "mint: a 64-char id over every id character, two caveats = Python's token", K, ID64, ["res=fs/home/alice", "ops=rw"], "ok " + TM)
-att(1, "attenuate(res token)(ops=r) = Python's token", Tr, "ops=r", "ok " + Tro)
-att(1, "attenuate(res token)(res=fs), an attempt to widen = Python's token", Tr, "res=fs", "ok " + Tw)
+att(1, "attenuate(res token)(ops=r) = Python's token, a bare string", Tr, "ops=r", "token [" + Tro + "]")
+att(1, "attenuate(res token)(res=fs), an attempt to widen = Python's token", Tr, "res=fs", "token [" + Tw + "]")
 mint(1, "mint refuses an id with |", K, "bad|id", [], "err mint: bad id: bad|id")
 mint(1, "mint refuses an empty id", K, "", [], "err mint: bad id: ")
 mint(1, "mint refuses a 65-char id", K, ID64 + "x", [], "err mint: bad id: " + ID64 + "x")
@@ -301,8 +351,8 @@ mint(1, "mint refuses a caveat with an empty key", K, "ok", ["=v"], "err mint: b
 mint(1, "mint refuses a caveat with |", K, "ok", ["res=a", "a=b|c"], "err mint: bad caveat: a=b|c")
 mint(1, "mint refuses a caveat with a newline", K, "ok", ["a=b\nc"], "err mint: bad caveat: a=b\\nc")
 mint(1, "mint refuses a 15-byte root key", K[:15], "ok", [], "err mint: bad root key")
-att(1, "attenuate refuses a malformed caveat", Tr, "nokey", "err attenuate: bad caveat: nokey")
-att(1, "attenuate refuses a malformed token", "garbage", "res=x", "err malformed token: no signature")
+att(1, "attenuate with a malformed caveat narrows to nothing (no token)", Tr, "nokey", "token []")
+att(1, "attenuate of a malformed token narrows to nothing (no token)", "garbage", "res=x", "token []")
 verify(1, "res: a request within the prefix is granted (any op)", Tr, IN, "r", "ok tr")
 verify(1, "res: the same token grants w there too", Tr, IN, "w", "ok tr")
 verify(1, "res: a request outside the prefix is refused", Tr, OUT, "r", "err caveat not met: res=fs/home/alice")
@@ -387,7 +437,7 @@ PYEOF
 # compile the driver once
 cp "$T/drv.la" "$T/logos_source.la"; cp "$T/compiler.bin" "$T/logos_program.bin"
 s=$(date +%s)
-( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/dce" ) || { fail "driver: did not compile"; tail -3 "$T/dce"; exit 1; }
+( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/dce" ) || { fail "driver: did not compile"; tail -n 3 "$T/dce"; exit 1; }
 COMPILE_S=$(( $(date +%s) - s ))
 
 # the connect shard's server: one connection, everything it receives, to a file
@@ -427,11 +477,11 @@ wait "$SERVER" 2>/dev/null
 
 wait "$HOSTJOB"
 if [ "$(cat "$T/pure_host.rc" 2>/dev/null)" = 0 ]; then check "$T/pure_expect_host.txt" "$T/pure_host.txt" "pure (host)"
-else fail "pure (host): rc=$(cat "$T/pure_host.rc" 2>/dev/null)"; tail -3 "$T/hre"; fi
+else fail "pure (host): rc=$(cat "$T/pure_host.rc" 2>/dev/null)"; tail -n 3 "$T/hre"; fi
 for sh in 1 2 3 4; do
     d="$T/s$sh"
     if [ "$(cat "$d/rc" 2>/dev/null)" != 0 ]; then
-        fail "shard $sh: rc=$(cat "$d/rc" 2>/dev/null) (124 = SEC_SHARD_TIMEOUT)"; tail -3 "$d/err.txt"
+        fail "shard $sh: rc=$(cat "$d/rc" 2>/dev/null) (124 = SEC_SHARD_TIMEOUT)"; tail -n 3 "$d/err.txt"
     fi
     check "$d/expect.txt" "$d/out.txt" "shard $sh"
 done
@@ -451,5 +501,6 @@ if [ "$(cat "$T/server.txt" 2>/dev/null)" = "1 $(printf 'ping\000hello' | od -An
 else fail "guard: the server saw: $(cat "$T/server.txt" 2>/dev/null)"; fi
 
 echo "TIME  pure: VM ${PURE_VM_S}s (compile + run, within and confine, incl. confining logossec.la); host $(cat "$T/pure_host.secs" 2>/dev/null)s (kit + four within)"
+echo "TIME  stub crypt: VM ${STUB_VM_S}s (compile + run)"
 echo "TIME  driver compile ${COMPILE_S}s; shards (run, parallel): 1 $(cat "$T/s1/secs" 2>/dev/null)s, 2 $(cat "$T/s2/secs" 2>/dev/null)s, 3 $(cat "$T/s3/secs" 2>/dev/null)s, 4 $(cat "$T/s4/secs" 2>/dev/null)s"
 [ "$ok" = 1 ] || exit 1

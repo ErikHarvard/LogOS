@@ -39,10 +39,13 @@
 #  A token with no caveats grants everything; only K_root's holder mints.
 #
 #  mint(K_root)(id)(caveats)     ok(token) | err   (caveats: a Scott list)
-#  attenuate(token)(caveat)      ok(token') | err  — the contract says "the
-#                                token with one more caveat"; it is a result
-#                                like mint's so that a malformed token or
-#                                caveat yields no token at all
+#  attenuate(token)(caveat)      the token with one more caveat, a string, as
+#      the contract says (no key is needed: the new signature is keyed with the
+#      old one, which the token carries). A malformed token or caveat has no
+#      such token, so it narrows to nothing: the result is "", which is not a
+#      token. verify refuses it ("malformed token: no signature") and
+#      attenuating it again gives "" again, so a mistake can only take
+#      authority away, and a caller need not check the result to stay safe.
 #  verify(K_root)(revoked)(token)(res)(op)(now)    ok(id) | err(reason)
 #      checks, in order: K_root is at least 16 bytes ("bad root key"; a short
 #      root key is refused rather than trusted), res is a well-formed
@@ -393,11 +396,13 @@ glyph SEC_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la 
               (la c. err(concat("mint: bad caveat: ")(c))))
            (la _. err(concat("mint: bad id: ")(id)))(C0))
         (la _. err("mint: bad root key"))(C0))(la mint.
+  # attenuate(tok)(c): the token string with c added; "" (no token) when tok
+  # or c is malformed
   LET(la tok. la c.
-      parse(tok)(err)(la p. p(la id. la cavs. la sh. la pre.
+      parse(tok)(la m. "")(la p. p(la id. la cavs. la sh. la pre.
         cavok(c)
-          (la _. okr(concat(pre)(concat("|")(concat(c)(concat("|")(hex(hmac(fromhex(sh))(c))))))))
-          (la _. err(concat("attenuate: bad caveat: ")(c)))(C0))))(la attenuate.
+          (la _. concat(pre)(concat("|")(concat(c)(concat("|")(hex(hmac(fromhex(sh))(c)))))))
+          (la _. "")(C0))))(la attenuate.
   LET(la v. (la n. lt(C0)(n)(la _. lt(C18)(n)(la _. F)(la _. allc(digit)(v))(C0))(la _. F)(C0))(len(v)))(la numok.
   # holds(c)(res)(op)(now) -> ok | err(reason); res and op are already well formed
   LET(la c. la res. la op. la now.
