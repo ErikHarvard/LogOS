@@ -14,7 +14,9 @@
 #            (rc 1, the message) before anything starts; so is a channel
 #            path that cannot be bound (a directory there), for the manager,
 #            time and ledger alike, and time and ledger refuse a channel
-#            another live server holds (which keeps its path)
+#            another live server holds (which keeps its path); a service log
+#            that cannot be opened stops the manager before ANY service
+#            starts (no orphan is left running)
 #   signals  SIGTERM to the manager stops everything, rc 0, nothing left;
 #            `stop logosservices` does the same through the channel
 #   main     ten services (one is listed before the service it depends on):
@@ -90,6 +92,10 @@ cat > "$T/ok0.la" <<'LAEOF'
 # a service that ends cleanly after 1 s
 glyph MAIN = (la _. (la _. exit("0"))(sleep("1")))(print(concat("ok0: start ")(clock_gettime("1"))))
 LAEOF
+cat > "$T/quiet.la" <<'LAEOF'
+# a quiet long-running service: writes nothing (so it cannot die of SIGPIPE), sleeps
+glyph MAIN = (la _. exit("0"))(sleep("1000"))
+LAEOF
 cat > "$T/slow3.la" <<'LAEOF'
 # a service that fails after a stable run of 11 s
 glyph MAIN = (la _. (la _. exit("3"))(sleep("11")))(print(concat("slow3: start ")(clock_gettime("1"))))
@@ -124,6 +130,9 @@ glyph CYCLESET =
   CONS(SVC("b")(P("ok0"))("ok0")(CONS("c")(NIL))("never"))(
   CONS(SVC("c")(P("ok0"))("ok0")(CONS("a")(NIL))("never"))(
   CONS(SVC("d")(P("ok0"))("ok0")(NIL)("never"))(NIL))))
+glyph BADLOGSET =
+  CONS(SVC("a")(P("quiet"))("quiet")(NIL)("always"))(
+  CONS(SVC("b")(P("ok0"))("ok0")(CONS("a")(NIL))("never"))(NIL))
 glyph MISSINGSET =
   CONS(SVC("a")(P("ok0"))("ok0")(NIL)("never"))(
   CONS(SVC("b")(P("ok0"))("ok0")(CONS("a")(CONS("nosuch")(NIL)))("never"))(NIL))
@@ -132,7 +141,8 @@ glyph MAIN = (la mode. la chan. SVC_KIT(B)(X)(la manager.
     str_eq(mode)("term")(la _. manager(TIMESET)(chan)("logs2"))(la _.
     str_eq(mode)("cycle")(la _. manager(CYCLESET)(chan)("logs3"))(la _.
     str_eq(mode)("badchan")(la _. manager(TIMESET)(chan)("logs6"))(la _.
-      manager(MISSINGSET)(chan)("logs4"))("!"))("!"))("!"))("!")))
+    str_eq(mode)("badlog")(la _. manager(BADLOGSET)(chan)("logs5"))(la _.
+      manager(MISSINGSET)(chan)("logs4"))("!"))("!"))("!"))("!"))("!")))
   (read_file("mgr.mode"))(read_file("mgr.chan"))
 LAEOF
 
@@ -143,7 +153,7 @@ compile_one() {
     ( cd "$d" && cp compiler.bin logos_program.bin && cp "$1.la" logos_source.la \
         && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$d/err" && cp logos_program.bin "$T/$1.bin" )
 }
-PROGS="logosledger mgr logostime svcctl fail3 ok0 slow3 bundle"
+PROGS="logosledger mgr logostime svcctl fail3 ok0 slow3 quiet bundle"
 t0=$(date +%s)
 for p in $PROGS; do compile_one "$p" & done
 wait
@@ -155,7 +165,7 @@ bundle_one() {   # stream name -> $R/name
         && ./logos_secd >/dev/null 2>&1 && mv logos_app "$R/$2" )
 }
 for pair in mgr:logosservices logostime:logostime logosledger:logosledger svcctl:svcctl \
-            fail3:fail3 ok0:ok0 slow3:slow3; do
+            fail3:fail3 ok0:ok0 slow3:slow3 quiet:quiet; do
     bundle_one "${pair%%:*}" "${pair##*:}" || { fail "bundle ${pair##*:}"; exit 1; }
 done
 echo "      (compiled and bundled in $(( $(date +%s) - t0 )) s)"
@@ -208,6 +218,19 @@ for m in cycle missing; do
         "a $m is a loud error before anything starts (rc 1, \"$want\", no log dir, no process)" \
         "rc=$erc stderr=$(head -c 200 "$T/mgr_$m.err") dir=$(ls -d "$R/$dir" 2>/dev/null) left=$(left)"
 done
+
+# a service log that cannot be opened (here b's, a directory): a loud error
+# before the FIRST service starts, so a, started before b, is not left running
+mkdir -p "$R/logs5/b.log"
+printf badlog > "$R/mgr.mode"; printf '%s' "${CHAN}c" > "$R/mgr.chan"
+( cd "$R" && timeout 10 "$R/logosservices" ) > "$T/mgr_badlog.out" 2> "$T/mgr_badlog.err"; erc=$?
+sleep 0.3
+want="logosservices: cannot open the log of b (-21)"
+check "$([ "$erc" = 1 ] && [ "$(cat "$T/mgr_badlog.err")" = "$want" ] && [ -z "$(left)" ] && [ ! -e "/tmp/logosipc-${CHAN}c" ] \
+         && ! grep -q " start " "$R/logs5/logosservices.log" && echo 1)" \
+    "a log that cannot be opened is a loud error before any service starts (rc 1, \"$want\", no orphan, no socket)" \
+    "rc=$erc stderr=$(head -c 200 "$T/mgr_badlog.err") left=$(left) log=$(tr '\n' '|' < "$R/logs5/logosservices.log")"
+pkill -KILL -f "$R/" 2>/dev/null; rm -f "/tmp/logosipc-${CHAN}c"
 
 # a channel whose path cannot be taken: a loud error, never a running manager
 # or service that nobody can reach (bind fails on a directory: EADDRINUSE)

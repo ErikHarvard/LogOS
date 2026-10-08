@@ -16,7 +16,8 @@
 #  The manager
 #    1. checks the descriptors and orders them by dependency. A cycle, a
 #       missing dependency, a duplicate or malformed name or an unknown policy
-#       is a loud error (exit 1) before anything starts;
+#       is a loud error (exit 1) before anything starts, as is a log file that
+#       cannot be opened (every log is opened before the first service starts);
 #    2. starts the services in that order: pipe + fork; the child resets its
 #       signal mask, takes /dev/null as stdin and the pipe as stdout AND
 #       stderr, closes every other fd, and execv's the program. A failed
@@ -350,8 +351,9 @@ glyph SV_CORE = la B. la X. la L. la T. la ipc.
   (0)(1)(2)(3)(4)(9)(17)(30)(49)(256)(1000)(1000000)(la t. la f. t)(la t. la f. f))))))
 
 # ── The running manager ───────────────────────────────────────────────────
-# SV_RUN(B)(X)(L)(T)(ipc)(core) -> la order. la sock. la sfd. la mfd. la lfd. la channel. la logdir.
-# starts the services of `order` and runs the supervision loop; never returns.
+# SV_RUN(B)(X)(L)(T)(ipc)(core) -> la recs. la sock. la sfd. la mfd. la lfd. la channel. la logdir.
+# starts the services of `recs` (in order, each a stopped record whose log is
+# already open) and runs the supervision loop; never returns.
 glyph SV_RUN = la B. la X. la L. la T. la ipc. la core.
   B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
@@ -364,7 +366,7 @@ glyph SV_RUN = la B. la X. la L. la T. la ipc. la core.
   core(la now. la mk. la dname. la rname. la rstate. la rpid. la rrfd. la dead. la drain.
        la closeall. la child. la topo. la waitdead. la must. la listen. la selfpath.
   (la C0. la C1. la C2. la C3. la C5. la C1000. la STABLE. la TRUE. la FALSE.
-   la order. la sock. la sfd. la mfd. la lfd. la channel. la logdir.
+   la recs0. la sock. la sfd. la mfd. la lfd. la channel. la logdir.
     LET("logosservices")(la MGR.
     LET(la text. write(mfd)(concat(int_to_str(now(C0)))(concat(" ")(concat(text)("\n")))))(la mlog.
     LET(getpid("!"))(la mypid.
@@ -501,10 +503,7 @@ glyph SV_RUN = la B. la X. la L. la T. la ipc. la core.
                    (now(C0)))(C0))
         (words(poll(joinsp(cons(lfd)(cons(sfd)
               (map(rrfd)(filter(la x. str_eq(rrfd(x))("")(la _. FALSE)(la _. TRUE)(C0))(recs))))))("100")))))(la loop.
-      (la _. loop(map(la d.
-                (la lfd2. spawn(mk(d)("stopped")("0")(C0)("")(lfd2)(C0)(C0))(C0))
-                (must(open(concat(logdir)(concat("/")(concat(dname(d))(".log"))))("1089"))
-                     (concat("the log of ")(dname(d)))))(order)))
+      (la _. loop(map(la rec. spawn(rec)(C0))(recs0)))
       (mlog(concat("up ")(concat(mypid)(concat(" ")(channel)))))
     ))))))))))))))))))))
   (0)(1)(2)(3)(5)(1000)(10000)(la t. la f. t)(la t. la f. f)))))))
@@ -514,8 +513,10 @@ glyph SV_RUN = la B. la X. la L. la T. la ipc. la core.
 # every check that can fail loudly runs BEFORE anything is started — the
 # descriptors and their order, the channel name, /proc, the log directory —
 # then the signals are blocked and read off a signalfd (before any fork, as in
-# logosinit.la), the manager's own log is opened, the channel is served, and
-# SV_RUN takes over.
+# logosinit.la), the manager's own log and every service's log are opened (a
+# log that cannot be opened is a loud error while nothing runs yet, so no
+# service is left behind as an orphan), the channel is served, and SV_RUN
+# takes over.
 glyph SV_MGR = la B. la X. la L. la T. la ipc.
   (la core. (la run.
     B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
@@ -523,6 +524,7 @@ glyph SV_MGR = la B. la X. la L. la T. la ipc.
     X(la fork. la execv. la dup2. la pipe. la open. la close. la read. la write. la poll.
       la kill. la waitpid. la clock_gettime. la getpid. la sigprocmask. la signalfd. la socket.
       la sbind. la slisten. la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
+    L(la nil. la cons. la map. la filter. la find. la all. la len. la rev.
     T(la slice. la words. la joinsp. la joinnl. la member. la digits. la okname. la nth.
     core(la now. la mk. la dname. la rname. la rstate. la rpid. la rrfd. la dead. la drain.
          la closeall. la child. la topo. la waitdead. la must. la listen. la selfpath.
@@ -530,8 +532,11 @@ glyph SV_MGR = la B. la X. la L. la T. la ipc.
       la s. s(la descs. la channel. la logdir.
         (la order. (la sock.
           (la _. (la _. (la _. (la _.
-            (la sfd. (la mfd. (la lfd. run(order)(sock)(sfd)(mfd)(lfd)(channel)(logdir))
-                (listen(channel)(sock)))
+            (la sfd. (la mfd. (la recs. (la lfd. run(recs)(sock)(sfd)(mfd)(lfd)(channel)(logdir))
+                  (listen(channel)(sock)))
+                (map(la d. mk(d)("stopped")("0")(C0)("")
+                             (must(open(concat(logdir)(concat("/")(concat(dname(d))(".log"))))("1089"))
+                                  (concat("the log of ")(dname(d))))(C0)(C0))(order)))
               (must(open(concat(logdir)("/logosservices.log"))("1089"))("the manager log")))
             (must(signalfd("16386"))("a signalfd")))
           # blocked: SIGINT (bit 1) + SIGPIPE (bit 12) + SIGTERM (bit 14); SIGINT
@@ -545,7 +550,7 @@ glyph SV_MGR = la B. la X. la L. la T. la ipc.
         (concat("/tmp/logosipc-")(channel)))
         (okname(channel)(la _. topo(descs))
            (la _. error(concat("logosservices: bad channel name: ")(channel)))(C0))))
-    (0))))))
+    (0)))))))
   (SV_RUN(B)(X)(L)(T)(ipc)(core)))
   (SV_CORE(B)(X)(L)(T)(ipc))
 
