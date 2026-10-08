@@ -1,0 +1,66 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_wm_sim.la — the tiling window manager, headless.
+#
+#  The same window manager as theourgia_wm_live.la — the same WM_BUILD, the
+#  same poll loop, real shells, real child processes — with the two devices
+#  replaced by files: the keyboard is a file of 24-byte evdev records, and the
+#  screen is a frame file written whenever the input asks for one. So a whole
+#  session runs, and is checked, with no VT, no GPU and no keyboard.
+#
+#  CONFIGURATION: wm_sim.cfg, one line, "W H SCALE CWD EVENTS":
+#    W H     the frame size in pixels (the pitch is 4*W)
+#    SCALE   the text scale (a character cell is 8*SCALE pixels square)
+#    CWD     the directory new shells start in
+#    EVENTS  the event file; wm_script.py writes one from a readable script
+#  A record of type 85 and code N writes frame N to wm_shot_N.bin (H rows of
+#  4*W bytes, B G R 0 per pixel); wm_shot.py turns it into a PNG and wm_ocr.py
+#  reads its text back.
+#
+#  DETERMINISM: input is read one event at a time and only while no command is
+#  running, so "type ls, press Enter, take a frame" always shows ls's output.
+#  The run ends when the events are exhausted and nothing is running, or on
+#  MOD+Shift+e. Everything the WM does is logged on stdout ("wm: ...").
+#
+#  Run: put wm_sim.cfg and the event file beside the modules, compile this file
+#  with the VM's compiler (codegen.la running as compiler.bin) and run it on the
+#  VM. gate_wm_session.sh does exactly that.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia_tile.la")
+import("theourgia_term.la")
+import("theourgia_render.la")
+import("logosh.la")
+import("theourgia_wm.la")
+import("theourgia_termfont.la")
+
+glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
+                (add)(sub)(mul)(div)(mod)(lt)(int_eq)(band)(bor)
+glyph X = la s. s(poll)(read)(close)(print)(write_file)(exit)
+
+# the five words of wm_sim.cfg (a trailing newline is dropped)
+glyph CFG = la k. (la words. words(la _. error("wm_sim: wm_sim.cfg is empty"))
+    (la w0. la r0. r0(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
+    (la w1. la r1. r1(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
+    (la w2. la r2. r2(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
+    (la w3. la r3. r3(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
+    (la w4. la r4. k(str_to_int(w0))(str_to_int(w1))(str_to_int(w2))(w3)(w4)))))))
+  (WM_SPLIT(B)(WM_LISTS(B))(STRIP_NL(read_file("wm_sim.cfg"))))
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph STRIP_NL = Z(la self. la s.
+    str_eq(s)("")(la _. "")(la _.
+      (la c. str_eq(c)("\n")(la _. self(str_tail(s)))(la _. concat(c)(self(str_tail(s))))("!"))
+      (str_head(s)))("!"))
+
+glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS.
+  (la fd.
+    (la _.
+      WM_BUILD(B)(X)
+        (TILE_KIT(add)(sub)(mul)(div)(lt)(int_eq)(concat)(int_to_str))
+        (@TERM_KIT@)
+        (@RENDER_KIT@(TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(TF_HEX))(SCALE))
+        (@SHELL_KIT@)
+        (la s. s(W)(H)(mul(W)(4))(SCALE)(CWD))
+        (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))("24")(la t. la f. t)))
+    (print(concat("wm: headless ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))
+        (concat(" scale ")(concat(int_to_str(SCALE))(concat(", events from ")(EVENTS))))))))))
+  (open(EVENTS)("0")))

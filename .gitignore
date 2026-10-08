@@ -201,3 +201,6 @@ vm_seed
 # Track A's local asm-gate scratch (per-test .out captures). Referenced by
 # nothing in the tree; it is working state, not source.
 .asmgate_local/
+# Theourgia Stage 10 window manager: generated at run time
+/logos_wm.cwd
+/wm_sim.cfg
