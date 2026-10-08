@@ -12,8 +12,9 @@
 #    SCALE   the text scale (a character cell is 8*SCALE pixels square)
 #    CWD     the directory new shells start in
 #    EVENTS  the event file; wm_script.py writes one from a readable script
-#    async   optional: read input whenever it arrives, as the live WM does,
-#            instead of only while no command runs. Frames are still written
+#    async   optional: read input whenever it arrives, as the live WM does
+#            (up to 100 events per read, as the live WM reads them), instead
+#            of one at a time and only while no command runs. Frames are still written
 #            only on request. For a test that drives the WM through a FIFO
 #            with real timing, e.g. MOD+c or MOD+q while a program runs; such a
 #            session is only as deterministic as its timing.
@@ -82,7 +83,7 @@ glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC.
           (read_file)(stat)(mkdir)(rmdir)(unlink)(rename)(getpid)(pipe)(fork)(dup2)(open)(close)(execv)(exit)(sigprocmask)(waitpid)(kill)(poll))
         (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. s(la k. k(LOGIN_APP)(SIM_SESS)(la t. la f. f))))
         (la s. s(W)(H)(mul(W)(4))(SCALE)(CWD))
-        (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))("24")(SYNC)))
+        (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))(SYNC("24")("2400"))(SYNC)))
     (print(concat("wm: headless ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))
         (concat(" scale ")(concat(int_to_str(SCALE))(concat(", events from ")(EVENTS))))))))))
   (open(EVENTS)("0")))
