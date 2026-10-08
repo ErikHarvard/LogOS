@@ -19,14 +19,14 @@
 #      the tree (unchanged).
 #   2. MODEL (VM). A Python reference model of the same tree, written from the
 #      contract, drives a seeded random sequence of a few hundred operations
-#      (insert in both directions and with bad focus/duplicate/non-positive
-#      ids, remove, swap, resize with positive and negative deltas past both
-#      clamps, toggle, neighbour in all four directions and a bad one, next,
-#      has) over up to 10 windows, drained to EMPTY twice. An LA program
-#      applies the same sequence; after every step it prints the query answer,
-#      show(t), count, leaves and the layout in five areas (odd sizes, gap
-#      larger than the area, gap 0, negative width, negative height). Compared
-#      line by line.
+#      (insert side by side, stacked, with dir 2 and -1 (both stacked), and
+#      with bad focus/duplicate/non-positive ids, remove, swap, resize with
+#      positive and negative deltas past both clamps, toggle, neighbour in all
+#      four directions and a bad one, next, has) over up to 10 windows,
+#      drained to EMPTY twice. An LA program applies the same sequence; after
+#      every step it prints the query answer, show(t), count, leaves and the
+#      layout in five areas (odd sizes, gap larger than the area, gap 0,
+#      negative width, negative height). Compared line by line.
 #      The model also counts how often the sequence reaches each case (both
 #      clamps, a neighbour tie, each direction found and none, absent ids,
 #      the last window removed, ...); the gate fails if any count is zero, so
@@ -153,6 +153,8 @@ show(insert(t3)(2)(3)(0)) => H500(L1,V500(L2,L3))
 show(insert(t3)(2)(0)(0)) => H500(L1,V500(L2,L3))
 show(insert(t3)(2)(sub(0)(3))(0)) => H500(L1,V500(L2,L3))
 show(insert(t3)(2)(4)(7)) => H500(L1,V500(V500(L2,L4),L3))
+show(insert(t1)(1)(2)(sub(0)(1))) => V500(L1,L2)
+show(insert(t3)(3)(4)(sub(0)(7))) => H500(L1,V500(L2,V500(L3,L4)))
 show(insert(t3)(1)(4)(0)) => H500(H500(L1,L4),V500(L2,L3))
 show(insert(empty)(42)(5)(1)) => L5
 show(insert(empty)(42)(0)(1)) => E
@@ -380,7 +382,7 @@ def apply(t, op):
 
 def generate(seed, steps):
     rng = random.Random(seed)
-    t, nid, ops, seen = E, 1, [], set()
+    t, nid, ops, seen, n2 = E, 1, [], set(), 0
     drains = [steps // 3, (2 * steps) // 3]
     while len(ops) < steps:
         ids = leaves(t)
@@ -401,7 +403,10 @@ def generate(seed, steps):
             elif q < 0.09: i = rng.choice([0, -3])              # not positive: unchanged
             elif q < 0.18 and absent[:-2]: i = rng.choice(absent[:-2])   # reuse a closed id
             else: i = nid; nid += 1
-            op = (1, f, i, rng.choice([0, 1, 0, 1, 2]))
+            d = rng.choice([0, 1, 0, 1, 2])
+            if d == 2:                                  # every other one -1: also stacked
+                n2 += 1; d = 2 if n2 % 2 else -1
+            op = (1, f, i, d)
         elif r < 0.34: op = (8, rng.choice(ids + absent[-2:]))
         elif r < 0.46: op = (2, some())
         elif r < 0.56: op = (3, some(), some())
@@ -431,7 +436,7 @@ def coverage(ops):
     """How often the sequence reaches each case the gate claims to cover."""
     c = dict.fromkeys(["clamp_lo", "clamp_hi", "grow_second", "shrink", "nb_found_0", "nb_found_1",
                        "nb_found_2", "nb_found_3", "nb_none", "nb_tie", "nb_bad_dir", "absent_id",
-                       "dup_insert", "bad_id", "stacked_insert", "dir2_insert", "last_removed",
+                       "dup_insert", "bad_id", "stacked_insert", "dir2_insert", "dirneg_insert", "last_removed",
                        "op_on_empty", "toggle", "swap", "next_wrap", "has_true", "has_false"], 0)
     t = E
     for op in ops:
@@ -444,7 +449,8 @@ def coverage(ops):
         if k == 1 and op[2] <= 0: c["bad_id"] += 1
         if k == 1 and op[3] != 0 and op[1] in ids and 0 < op[2] and op[2] not in ids:
             c["stacked_insert"] += 1
-            if op[3] != 1: c["dir2_insert"] += 1
+            if op[3] > 1: c["dir2_insert"] += 1
+            if op[3] < 0: c["dirneg_insert"] += 1
         if k == 4 and path_to(t, op[1]):
             p = path_to(t, op[1]); par = at(t, p[:-1])
             share = par[2] if p[-1] == 3 else 1000 - par[2]
