@@ -91,7 +91,7 @@ glyph MAIN =
                   (la s. s(la bytes. present(bytes))(WM_CONS(fd)(WM_NIL))("2400")(FALSE)))
               (print(concat("wm: live ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))
                   (concat(", keyboard /dev/input/event")(kbd))))))))
-            (str_to_int(w0))(str_to_int(w1))(str_to_int(w2)))))))
+            (str_to_int(w0))(str_to_int(w1))(str_to_int(w2))))))
           (WM_SPLIT(B)(WM_LISTS(B))(drm_mode("!"))))
         ((la c. IF(str_eq(c)(""))(la _. "/")(la _. c))(STRIP_NL(read_file("logos_wm.cwd")))))
         (OPEN_OR_DIE(concat("/dev/input/event")(kbd)))))
