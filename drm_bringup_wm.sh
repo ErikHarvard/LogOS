@@ -27,7 +27,9 @@
 # into a WM terminal (say `rm x` + Enter) would sit in that buffer and be run by
 # your login shell after the session ends. So this script turns tty echo off for
 # the session and FLUSHES the tty's pending input on every exit path, before
-# your shell can read it.
+# your shell can read it. It also turns the tty's suspend key off for the
+# session: Ctrl+Z would stop the VM and this script with the greeter stopped,
+# skip the restore, and hand later keystrokes to the login shell.
 #
 #   DRYRUN=1 ./drm_bringup_wm.sh   build and compile only (safe from anywhere)
 set -u
@@ -82,6 +84,7 @@ restore() {
 trap restore EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
+trap '' TSTP
 
 echo "== stopping $GREETER to free the GPU =="
 sudo systemctl stop "$GREETER" 2>/dev/null
@@ -91,7 +94,7 @@ LOGF="/tmp/logos_wm_$(date +%s).log"
 echo
 echo "== LIVE: the LogOS tiling window manager =="
 echo "   log -> $LOGF   (MOD+Shift+e or Ctrl+C to stop)"
-stty -echo 2>/dev/null
+stty -echo susp undef 2>/dev/null
 sudo ./logos_secd >"$LOGF" 2>&1
 echo "   VM exit=$?"
 flush_tty
