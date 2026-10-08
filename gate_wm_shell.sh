@@ -64,6 +64,11 @@
 #      pid namespace that still sees the outer /proc (no --mount-proc): there
 #      /proc/<job pid> is some other process, so finish must fall back to
 #      waitpid (/bin/echo hi, /bin/false -> [exit 1]) instead of polling it.
+#   2c. The driver as uid 65534 running setuid-root programs (root only; SKIP
+#      otherwise, or on a nosuid mount), whose exit status the kernel hides in
+#      /proc/<pid>/stat from a reader that may not ptrace them: id -u prints
+#      0 (setuid works here), false -> [exit 1], expr a + 1 -> its message and
+#      [exit 2] (from bash), expr 1 + 2 -> 3, and /bin/false as a control.
 #   3. The filesystem afterwards: what the session made and removed in $T.
 #   4. Measured VM timings (INFO, not pass/fail).
 #
@@ -733,7 +738,8 @@ import os, sys
 out = open(sys.argv[1], encoding='utf-8', errors='replace').read().split('\n')
 exp = open(sys.argv[2]).read()
 for k, v in (('@W@', 'W'), ('@LS_ERR@', 'ls_err'), ('@LS_ST@', 'ls_st'), ('@SEQN@', 'seq_n'),
-             ('@LONGX@', 'LONGX'), ('@MANYA@', 'MANYA'), ('@LONGY@', 'LONGY')):
+             ('@LONGX@', 'LONGX'), ('@MANYA@', 'MANYA'), ('@LONGY@', 'LONGY'),
+             ('@SU@', 'SU'), ('@XERR@', 'xerr'), ('@XST@', 'xst')):
     if k in exp:
         exp = exp.replace(k, os.environ[v].strip())
 exp = exp.replace('@SP@', ' ')         # a trailing space, spelled out
@@ -834,6 +840,46 @@ else
             pass "pid namespace, outer /proc (VM): finish falls back to waitpid ([exit 1]; the WM was pid ${nme:-?} there)"
         else
             fail "pid namespace, outer /proc (VM): driver rc=$nrc; $res"
+        fi
+    fi
+
+    # ── 2c. setuid programs, the WM not root ────────────────────────────────
+    # The kernel prints the exit-status field of /proc/<pid>/stat as 0 to a
+    # reader that may not ptrace the process: a setuid-root program run by a
+    # WM that is not root. The driver runs here as uid/gid 65534; the programs
+    # are setuid-root copies of id, false and expr (harmless as root),
+    # executable only by root and group 65534, in a directory only group 65534
+    # may enter. Needs root (to make them) and a mount that honours setuid.
+    SU="$T/su"
+    if [ "$(id -u)" != 0 ]; then
+        echo "SKIP  shell: not root: the setuid-program check did not run"
+    else
+        mkdir "$SU"
+        cp "$T/logos_secd" "$SU/"; cp "$T/drv.bin" "$SU/logos_program.bin"
+        cp /usr/bin/id "$SU/suid"; cp /bin/false "$SU/sufalse"; cp /usr/bin/expr "$SU/suexpr"
+        chown root:65534 "$SU" "$SU/suid" "$SU/sufalse" "$SU/suexpr"
+        chmod 4750 "$SU/suid" "$SU/sufalse" "$SU/suexpr"
+        chmod 750 "$SU"; chmod 711 "$T"
+        if [ "$(setpriv --reuid=65534 --regid=65534 --clear-groups "$SU/suid" -u 2>/dev/null)" != 0 ]; then
+            echo "SKIP  shell: setuid has no effect here (a nosuid mount, or no setpriv): the setuid-program check did not run"
+        else
+            # the oracle for expr's message: the same command from bash
+            xerr=$(env -i /usr/bin/env -C "$SU" "$SU/suexpr" a + 1 </dev/null 2>&1); xst=$?
+            export SU xerr xst
+            printf '%s\n' "cd $SU" './suid -u' './sufalse' './suexpr a + 1' './suexpr 1 + 2' '/bin/false' \
+                > "$SU/script.txt"
+            printf '%s\n' 'logos:/$ cd @SU@' 'logos:@SU@$ ./suid -u' '0' \
+                'logos:@SU@$ ./sufalse' '[exit 1]' '? 1' \
+                'logos:@SU@$ ./suexpr a + 1' '@XERR@' '[exit @XST@]' '? @XST@' \
+                'logos:@SU@$ ./suexpr 1 + 2' '3' 'logos:@SU@$ /bin/false' '[exit 1]' '? 1' '<end>' \
+                > "$T/su.expect"
+            src=$(python3 "$T/rundrv.py" "$SU" 60 65534)
+            res=$(python3 "$T/cmpout.py" "$SU/session.out" "$T/su.expect")
+            if [ "$src" = 0 ] && [ "$res" = OK ]; then
+                pass "setuid programs, WM as uid 65534 (VM): [exit 1] and [exit $xst] although /proc hides their status, nothing for exit 0"
+            else
+                fail "setuid programs, WM as uid 65534 (VM): driver rc=$src; $res"
+            fi
         fi
     fi
 fi

@@ -95,10 +95,14 @@
 #  by SIGTERM reports 0, as exit 0 does), so finish reads the zombie's
 #  /proc/<pid>/stat first: its last field is the raw wait status. It polls that
 #  file (poll("")(ms), backing off 1..64 ms) until the state is Z, takes the
-#  status, then reaps with waitpid. Without /proc, with a /proc that belongs
-#  to another pid namespace (/proc/self/stat does not name getpid; there
-#  /proc/<pid> is some other process), or for a pid that is not this
-#  process's child, it falls back to waitpid (and a signal shows as exit 0).
+#  status, then reaps with waitpid. The kernel prints that field as 0 to a
+#  reader that may not ptrace the process (a setuid program, when the WM is not
+#  root), so a 0 there is replaced by waitpid's answer: such a program's exit
+#  code is right, but a signal that killed it shows as exit 0. Without /proc,
+#  with a /proc that belongs to another pid namespace (/proc/self/stat does
+#  not name getpid; there /proc/<pid> is some other process), or for a pid
+#  that is not this process's child, it falls back to waitpid (and a signal
+#  shows as exit 0).
 #  A pid that SAFETY below refuses is never waited for: finish returns "" (a
 #  wait for pid 0 or -1 would reap some other job and take its status).
 #
@@ -501,7 +505,8 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
   # ── waiting ──
   # WAITRAW(pid): the raw wait status. Polls /proc/<pid>/stat (backing off
   # 1..64 ms) until the process is a zombie, takes the status (the last field,
-  # number 52, i.e. field 49 after the state), then reaps it with waitpid. No
+  # number 52, i.e. field 49 after the state), then reaps it with waitpid; a
+  # status the kernel hid (shown as 0, see WAITING) is waitpid's * 256. No
   # /proc entry, not this process's child, or a /proc that is not this pid
   # namespace's (/proc/self/stat does not start with getpid: there /proc/<pid>
   # is some other process, maybe one that never becomes a zombie): waitpid's
@@ -514,7 +519,8 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
                 (la _. (la p. (la state.
                     int_eq(NUM(TOKEN(s)(p)(C1)))(me)
                       (la _. str_eq(state)("Z")(TT)(str_eq(state)("X"))
-                          (la _. (la raw. SEQ(waitpid(pid))(raw))(NUM(TOKEN(s)(p)(C49))))
+                          (la _. (la raw. (la w. lt(C0)(raw)(la _. raw)(la _. mul(str_to_int(w))(C256))(C0))
+                                   (waitpid(pid)))(NUM(TOKEN(s)(p)(C49))))
                           (la _. (la _. wait(lt(ms)(C50)(add(ms)(ms))(ms)))(poll("")(int_to_str(ms))))(C0))
                       (la _. fallback(C0))(C0))
                   (TOKEN(s)(p)(C0)))(add(LASTCH(s)(")"))(C2)))(C0))
