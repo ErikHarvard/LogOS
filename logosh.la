@@ -97,14 +97,17 @@
 #  file (poll("")(ms), backing off 1..64 ms) until the state is Z, takes the
 #  status, then reaps with waitpid. Without /proc, or for a pid that is not
 #  this process's child, it falls back to waitpid (and a signal shows as exit
-#  0); a pid of 0 or less is never waited for.
+#  0). A pid that SAFETY below refuses is never waited for: finish returns ""
+#  (a wait for pid 0 or -1 would reap some other job and take its status).
 #
 #  SAFETY. Every path handed to a VM builtin is shorter than 4096 bytes (the
 #  VM halts the whole process on a longer one: here that would be the WM);
 #  execv's argument string stays under 2048 bytes and 200 words (its limits).
-#  interrupt and hangup refuse a pid that is not a positive decimal ("-3") or
-#  is the WM's own ("-1"): kill(0) or kill(-1) would signal the WM's process
-#  group or every process.
+#  interrupt and hangup refuse ("-3") a pid that is not 1 to 18 digits with a
+#  value in 1 .. 2^31-1, and refuse the WM's own ("-1"): the VM passes the
+#  number to the kernel as 64 bits and the kernel reads the low 32 as a signed
+#  pid_t, so "0", "4294967296" (pid 0) or "4294967295" (pid -1) would signal
+#  the WM's process group or every process.
 #
 #  WHERE THIS DEPARTS FROM WM_DESIGN.md (all measured on the VM):
 #    - The design's execv("/usr/bin/env")("env -C <cwd> <path> <args...>")
@@ -252,7 +255,7 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
   LET(16)(la C16. LET(36)(la C36. LET(48)(la C48. LET(49)(la C49. LET(50)(la C50.
   LET(64)(la C64. LET(126)(la C126. LET(127)(la C127. LET(128)(la C128.
   LET(200)(la C200. LET(256)(la C256. LET(2048)(la C2048. LET(4096)(la C4096.
-  LET(1048576)(la CMAXCAT.
+  LET(1048576)(la CMAXCAT. LET(19)(la C19. LET(2147483648)(la CPIDLIM.
   LET(sub(0)(1))(la CM1.
 
   # ── small tools ──
@@ -267,17 +270,23 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
         CONS(h)(tl(la _. NIL)(la a. la b. CONS(" ")(go(tl)))))))(la SPACED.
   # LASTOF(l)(d): the last element of l, d if l is empty.
   LET(Y(la last. la l. la d. l(la _. d)(la h. la tl. last(tl)(h))))(la LASTOF.
-  # NUM(s): a non-empty all-digit string as an int, else -1. (str_to_int halts
-  # the whole VM on a malformed string; NUM is for text the shell did not make.)
-  LET(la s. (la n. int_eq(n)(C0)
-        (la _. CM1)
+  # NUM(s): a string of 1 to 18 digits as an int, else -1. (str_to_int halts
+  # the whole VM on a malformed string; NUM is for text the shell did not make.
+  # 18 digits cannot overflow the VM's 64-bit ints; 20 could wrap to anything.)
+  LET(la s. (la n. lt(C0)(n)(lt(n)(C19))(FF)
         (la _. Y(la go. la i. la acc.
             lt(i)(n)
               (la _. (la d. lt(d)(C0)(TT)(lt(C9)(d))
                   (la _. CM1)
                   (la _. go(add(i)(C1))(add(mul(acc)(C10))(d)))(C0))
                 (sub(str_to_int(ord(str_at(s)(i))))(C48)))
-              (la _. acc)(C0))(C0)(C0))(C0))(LEN(s)))(la NUM.
+              (la _. acc)(C0))(C0)(C0))
+        (la _. CM1)(C0))(LEN(s)))(la NUM.
+  # PIDNUM(s): NUM(s) if the kernel reads it as that same positive pid, else -1.
+  # The VM hands a pid string to the syscall as a 64-bit number and the kernel
+  # takes the low 32 bits as a signed pid_t: 4294967296 would be pid 0 (the
+  # WM's process group) and 4294967295 pid -1 (every process). 1 .. 2^31-1.
+  LET(la s. (la n. lt(C0)(n)(lt(n)(CPIDLIM))(FF)(la _. n)(la _. CM1)(C0))(NUM(s)))(la PIDNUM.
   # LASTCH(s)(c): the last index of byte c in s, else -1.
   LET(la s. la c. Y(la go. la i.
         lt(i)(C0)
@@ -510,15 +519,15 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
                  (mod(div(raw)(C256))(C256)))
           (la _. la k. k(SETST(sh)(add(C128)(sig)))(concat("[signal ")(concat(int_to_str(sig))("]\n"))))(C0))
       (mod(raw)(C128)))
-    ((la n. lt(C0)(n)(la _. (la r. lt(r)(C0)(C0)(r))(WAITRAW(pid)))(la _. C0)(C0))(NUM(pid))))(la FINISH.
-  # SIGNAL(pid)(sig): kill, but never pid <= 0 (the WM's group, or every
-  # process) and never the WM itself.
+    ((la n. lt(C0)(n)(la _. (la r. lt(r)(C0)(C0)(r))(WAITRAW(pid)))(la _. C0)(C0))(PIDNUM(pid))))(la FINISH.
+  # SIGNAL(pid)(sig): kill, but never a pid the kernel would read as <= 0
+  # (the WM's group, or every process; see PIDNUM) and never the WM itself.
   LET(la pid. la sig. (la n. lt(C0)(n)
         (la _. int_eq(n)(NUM(getpid("!")))(la _. "-1")(la _. kill(pid)(sig))(C0))
-        (la _. "-3")(C0))(NUM(pid)))(la SIGNAL.
+        (la _. "-3")(C0))(PIDNUM(pid)))(la SIGNAL.
   LET(la pid. SIGNAL(pid)("2"))(la INTERRUPT.
   LET(la pid. (la r. SEQ(SIGNAL(pid)("18"))(r))(SIGNAL(pid)("15")))(la HANGUP.
   LET(la cwd. SH(NORM("/")(cwd))(C0))(la NEW.
   LET(la sh. concat("logos:")(concat(CWD(sh))("$ ")))(la PROMPT.
   la sel. sel(NEW)(PROMPT)(RUN)(FINISH)(INTERRUPT)(HANGUP)
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

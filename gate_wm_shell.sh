@@ -47,11 +47,20 @@
 #      finishes, then the first is read and finished; a kept /bin/sleep 30
 #      hung up after another job ran; output larger than a pipe's buffer
 #      (seq 1 20000, byte count from bash); the signal guards (pid "0", "",
-#      a non-number, the WM's own pid: "-3 -3 -3 -1", never a kill) and
-#      finish of a pid that is not a child or is 0 (returns, ""); and the
-#      inputs that would otherwise halt the whole VM (a path of 5000 bytes to
-#      cd, cat, mkdir, mv and as a program; an execv line over 2048 bytes or
-#      over 200 words), each refused with a message.
+#      a non-number, the WM's own pid: "-3 -3 -3 -1", never a kill; and
+#      "4294967296", "8589934592", "18446744073709551616", which the kernel
+#      would read as pid 0, the WM's process group: "-3") and finish of a pid
+#      that is not a child, is 0, or is "4294967295" / "4294967296" (pid -1 /
+#      0 to the kernel: wait4 would reap ANY child) — each returns "" at once,
+#      and a job kept running across them (/bin/false) is still there for
+#      @fg to report [exit 1]; and the inputs that would otherwise halt the
+#      whole VM (a path of 5000 bytes to cd, cat, mkdir, mv and as a program;
+#      an execv line over 2048 bytes or over 200 words), each refused with a
+#      message.
+#   2b. In a pid namespace (unshare; SKIP if there is none), where kill(-1)
+#      reaches only the namespace: interrupt and hangup of "4294967295" and
+#      "18446744073709551615" (pid -1 to the kernel) are refused, and the kept
+#      /bin/sleep 30 they would have killed is still there to hang up.
 #   3. The filesystem afterwards: what the session made and removed in $T.
 #   4. Measured VM timings (INFO, not pass/fail).
 #
@@ -339,7 +348,9 @@ cd ..
 /bin/echo still
 @fghup
 @count seq 1 20000
+@bg /bin/false
 @sigcheck
+@fg
 /bin/echo @LONGX@
 /bin/echo @MANYA@
 cd @LONGY@
@@ -545,7 +556,12 @@ still
 ? 143
 logos:@W@$ seq 1 20000
 <count @SEQN@>
-<sig -3 -3 -3 -1 [] []>
+logos:@W@$ /bin/false
+<bg>
+<sig -3 -3 -3 -1 -3 -3 -3 -3 [] [] [] []>
+<fg /bin/false>
+[exit 1]
+? 1
 logos:@W@$ /bin/echo @LONGX@
 logosh: /bin/echo: command line too long
 ? 1
@@ -591,10 +607,13 @@ glyph SPLITNL = la s. (la n. Z(la go. la i. la lo.
            (la _. CONS(SUB(s)(lo)(i))(go(add(i)(1))(add(i)(1))))
            (la _. go(add(i)(1))(lo))("!"))
        (la _. lt(lo)(n)(la _. CONS(SUB(s)(lo)(n))(NIL))(la _. NIL)("!"))("!"))(0)(0))(LEN(s))
+glyph JOINSP = la l. l(la _. "")(la h. la t. t(la _. h)(la a. la b. concat(h)(concat(" ")(JOINSP(t)))))
+glyph BR = la s. concat("[")(concat(s)("]"))
 # "@MODE CMD": MODE is int / hup (run CMD, wait 300 ms, interrupt / hang it
 # up), bg (start CMD, keep the job), count (report only the byte count of its
 # output); "@fg" / "@fghup" finish the newest kept job (hanging it up first);
-# "@sigcheck" prints the signal guards' answers. Any other line is a command.
+# "@sigcheck" prints the signal guards' answers; "@kill PID" prints what
+# interrupt(PID) and hangup(PID) return. Any other line is a command.
 glyph MODE = la line. str_eq(str_at(line)(0))("@")(la _. SUB(line)(1)(FINDSP(line)(0)))(la _. "job")("!")
 glyph CMDOF = la line. str_eq(str_at(line)(0))("@")(la _. SUB(line)(add(FINDSP(line)(0))(1))(LEN(line)))(la _. line)("!")
 glyph DRAIN = la rfd. Z(la go. la u. (la d. str_eq(d)("")(la _. "")(la _. SEQ(write("1")(d))(go("!")))("!"))(read(rfd)("4096")))("!")
@@ -618,10 +637,17 @@ glyph MAIN =
         (la _. print("<end>"))
         (la line. la rest. (la mode. la cmd.
           str_eq(mode)("sigcheck")
-            (la _. SEQ(print(concat("<sig ")(concat(interrupt("0"))(concat(" ")(concat(hangup("abc"))
-                     (concat(" ")(concat(interrupt(""))(concat(" ")(concat(interrupt(getpid("!")))
-                     (concat(" [")(concat(finish(sh)("1")(la s2. la t. t))(concat("] [")
-                     (concat(finish(sh)("0")(la s2. la t. t))("]>"))))))))))))))
+            (la _. SEQ(print(concat("<sig ")(concat(JOINSP(
+                     CONS(interrupt("0"))(CONS(hangup("abc"))(CONS(interrupt(""))(CONS(interrupt(getpid("!")))
+                     (CONS(interrupt("4294967296"))(CONS(hangup("4294967296"))(CONS(hangup("8589934592"))
+                     (CONS(interrupt("18446744073709551616"))
+                     (CONS(BR(finish(sh)("1")(la s2. la t. t)))(CONS(BR(finish(sh)("0")(la s2. la t. t)))
+                     (CONS(BR(finish(sh)("4294967295")(la s2. la t. t)))
+                     (CONS(BR(finish(sh)("4294967296")(la s2. la t. t)))(NIL))))))))))))))(">"))))
+                   (loop(sh)(bg)(rest)))
+            (la _. str_eq(mode)("kill")
+            (la _. SEQ(print(concat("<kill ")(concat(cmd)(concat(" ")(concat(interrupt(cmd))
+                     (concat(" ")(concat(hangup(cmd))(">"))))))))
                    (loop(sh)(bg)(rest)))
             (la _. str_eq(SUB(mode)(0)(2))("fg")
               (la _. bg(la _. SEQ(print("<no kept job>"))(loop(sh)(bg)(rest)))
@@ -646,7 +672,7 @@ glyph MAIN =
                                   (la _. SEQ(poll("")("300"))(interrupt(pid)))
                                   (la _. str_eq(mode)("hup")(la _. SEQ(poll("")("300"))(hangup(pid)))(la _. "")("!"))("!"))(
                             REAP(sh2)(pid)(rfd)(mode)(cmd)(t0)(la sh3. loop(sh3)(bg)(rest))))("!"))
-                     ("!"))))(now("!"))))(now("!"))))("!"))("!"))
+                     ("!"))))(now("!"))))(now("!"))))("!"))("!"))("!"))
           (MODE(line))(CMDOF(line))))
       (new("/"))(NIL)(SPLITNL(read_file("script.txt")))))))
     (la sh. la pid. la rfd. la mode. la cmd. la t0. la k.
@@ -668,24 +694,26 @@ glyph MAIN =
      (waitpid)(kill)(poll))
 EOF
 
-cp "$T/drv.la" "$T/logos_source.la"
-cp "$T/compiler.bin" "$T/logos_program.bin"
-crc=0
-( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/vce" ) || crc=$?
-if [ "$crc" != 0 ]; then
-    fail "session: the driver did not compile ($(head -c 200 "$T/vce"))"
-else
-    drc=$(python3 - "$T" <<'PYEOF'
+# rundrv.py DIR TIMEOUT [UID]: run the compiled driver in DIR the way a WM is
+# started: SIGINT/SIGTERM at their defaults (a gate started in the background
+# would otherwise pass them on IGNORED, and an ignored signal survives execve),
+# stdin a FIFO that never ends, its own session, as UID if given (setpriv), and
+# its process group killed afterwards so no job outlives a failure. Writes
+# DIR/session.out and DIR/session.err and prints the driver's exit status.
+cat > "$T/rundrv.py" <<'PYEOF'
 import os, signal, subprocess, sys
-T = sys.argv[1]
+D, TO = sys.argv[1], float(sys.argv[2])
 for s in (signal.SIGINT, signal.SIGTERM, signal.SIGQUIT):
     signal.signal(s, signal.SIG_DFL)
-os.mkfifo(T + '/stdin.fifo')
-fd = os.open(T + '/stdin.fifo', os.O_RDWR)   # never reaches EOF and never has data
-p = subprocess.Popen(['./logos_secd'], cwd=T, stdin=fd, start_new_session=True,
-                     stdout=open(T + '/session.out', 'wb'), stderr=open(T + '/session.err', 'wb'))
+os.mkfifo(D + '/stdin.fifo')
+fd = os.open(D + '/stdin.fifo', os.O_RDWR)   # never reaches EOF and never has data
+cmd = ['./logos_secd']
+if len(sys.argv) > 3:
+    cmd = ['setpriv', '--reuid=' + sys.argv[3], '--regid=' + sys.argv[3], '--clear-groups'] + cmd
+p = subprocess.Popen(cmd, cwd=D, stdin=fd, start_new_session=True,
+                     stdout=open(D + '/session.out', 'wb'), stderr=open(D + '/session.err', 'wb'))
 try:
-    rc = p.wait(timeout=300)
+    rc = p.wait(timeout=TO)
 except subprocess.TimeoutExpired:
     rc = 'timeout'
 try:
@@ -694,14 +722,17 @@ except ProcessLookupError:
     pass
 print(rc)
 PYEOF
-)
-    res=$(python3 - "$T/session.out" "$T/session.expect" <<'PYEOF'
+# cmpout.py OUT EXPECT: the transcript (lines not starting with #) against the
+# expected text, @NAME@ markers filled in from the environment; prints OK or
+# the first difference.
+cat > "$T/cmpout.py" <<'PYEOF'
 import os, sys
 out = open(sys.argv[1], encoding='utf-8', errors='replace').read().split('\n')
 exp = open(sys.argv[2]).read()
 for k, v in (('@W@', 'W'), ('@LS_ERR@', 'ls_err'), ('@LS_ST@', 'ls_st'), ('@SEQN@', 'seq_n'),
              ('@LONGX@', 'LONGX'), ('@MANYA@', 'MANYA'), ('@LONGY@', 'LONGY')):
-    exp = exp.replace(k, os.environ[v].strip())
+    if k in exp:
+        exp = exp.replace(k, os.environ[v].strip())
 exp = exp.replace('@SP@', ' ')         # a trailing space, spelled out
 exp = exp.split('\n')
 me = [l[4:] for l in out if l.startswith('#me ')]
@@ -726,7 +757,18 @@ for j, e in enumerate(exp):
     i += 1
 print('OK' if i == len(act) else 'extra output after the transcript: %r' % act[i:i + 3])
 PYEOF
-)
+
+cp "$T/drv.la" "$T/logos_source.la"
+cp "$T/compiler.bin" "$T/logos_program.bin"
+crc=0
+( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/vce" ) || crc=$?
+if [ "$crc" != 0 ]; then
+    fail "session: the driver did not compile ($(head -c 200 "$T/vce"))"
+else
+    # a copy of the compiled driver for the runs below, in directories of their own
+    cp "$T/logos_program.bin" "$T/drv.bin"
+    drc=$(python3 "$T/rundrv.py" "$T" 300)
+    res=$(python3 "$T/cmpout.py" "$T/session.out" "$T/session.expect")
     if [ "$drc" = 0 ] && [ "$res" = OK ]; then
         pass "session (VM): $(grep -c '^logos:' "$T/session.out") command lines, the transcript matches"
     else
@@ -746,6 +788,33 @@ PYEOF
         pass "session (VM): a second job starts and finishes ($((b_us / 1000)) ms) while the first still runs"
     else
         fail "session (VM): the second job took ${b_us:-?} us (the first job sleeps 2 s)"
+    fi
+
+    # ── 2b. in a pid namespace ──────────────────────────────────────────────
+    # kill(-1) signals every process the sender may signal, so the guard
+    # against a pid the kernel reads as -1 is tested only inside a pid
+    # namespace, where -1 reaches nothing but the namespace's own processes: a
+    # kept /bin/sleep 30 must still be alive for @fghup to hang it up.
+    NS=""
+    if unshare -pf --mount-proc true 2>/dev/null; then NS="unshare -pf"
+    elif unshare -rpf --mount-proc true 2>/dev/null; then NS="unshare -rpf"; fi
+    if [ -z "$NS" ]; then
+        echo "SKIP  shell: no pid namespaces here (unshare -pf / -rpf): the pid -1 check did not run"
+    else
+        mkdir "$T/nsk"
+        cp "$T/logos_secd" "$T/nsk/"; cp "$T/drv.bin" "$T/nsk/logos_program.bin"
+        printf '%s\n' '@bg /bin/sleep 30' '@kill 4294967295' '@kill 18446744073709551615' '@fghup' \
+            > "$T/nsk/script.txt"
+        printf '%s\n' 'logos:/$ /bin/sleep 30' '<bg>' '<kill 4294967295 -3 -3>' \
+            '<kill 18446744073709551615 -3 -3>' '<fg /bin/sleep 30>' '[signal 15]' '? 143' '<end>' \
+            > "$T/nsk.expect"
+        nrc=$($NS --mount-proc python3 "$T/rundrv.py" "$T/nsk" 60)
+        res=$(python3 "$T/cmpout.py" "$T/nsk/session.out" "$T/nsk.expect")
+        if [ "$nrc" = 0 ] && [ "$res" = OK ]; then
+            pass "pid namespace (VM): interrupt and hangup refuse \"4294967295\" (the kernel's pid -1): -3, and the kept job is still there to hang up"
+        else
+            fail "pid namespace (VM): driver rc=$nrc; $res"
+        fi
     fi
 fi
 
