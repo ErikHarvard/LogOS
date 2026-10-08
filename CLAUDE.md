@@ -711,11 +711,11 @@ string`, like the other guarded builtins. A minimal server binds + listens
 `build.sh` runs exactly that client→server message pass on the native VM,
 plus the two failure paths. *Honest limits:* AF_UNIX only (no IP/TCP yet),
 pathname sockets only (no abstract namespace, so a stale socket file must be
-unlinked before re-`bind` — the VM has no `unlink` builtin yet), and no
-partial-send/EINTR retry loop. `send`/`recv` mean these sockets only: on native
-they are another engine's builtins (reaching one halts `native: send: not
-supported on this engine`), and native's bare-metal kernel channel is a different
-pair, `chan_send(chan)(msg)` / `chan_recv(chan)`.
+unlinked before re-`bind`, which `logosipc.la`'s `CHANNEL` does with the
+`unlink` builtin), and no partial-send/EINTR retry loop. `send`/`recv` mean
+these sockets only: on native they are another engine's builtins (reaching one
+halts `native: send: not supported on this engine`), and native's bare-metal
+kernel channel is a different pair, `chan_send(chan)(msg)` / `chan_recv(chan)`.
 
 It also lowers **`poll(fds)(timeout)`** (poll, 7) — the **fd-multiplexing**
 primitive that ties the signal, socket, and input layers into ONE event loop. A
