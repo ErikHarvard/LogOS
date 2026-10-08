@@ -1,0 +1,284 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logosledger.la — the GlyphLedger, the system's hash-chained event log
+#  (Citrinitas layer 13: a service run by logosservices.la).
+#
+#  WHAT. A service: its own LA program in its own process. It keeps an
+#  append-only log in the file glyphledger.txt (in its working directory),
+#  one entry per line, entry i (from 1) being
+#
+#      i|<unix seconds>|<hex sha256 of entry i-1's line, or 64 zeros>|<text>
+#
+#  so every entry carries the hash of the one before it: editing any entry
+#  changes the hash its successor recorded. The newest entry is anchored the
+#  same way: glyphledger.head holds "<n> <hex sha256 of entry n>", rewritten
+#  atomically (head.tmp, then rename) after every append, so the last entry,
+#  and the number of entries, are covered too. The service keeps (n, head) in
+#  memory and checks the file against them.
+#
+#  It serves typed logosipc requests on the channel `ledger`
+#  (/tmp/logosipc-ledger); the reply's type is the first word below:
+#      append <text>  -> ok <n>        the new entry's number (text: one line)
+#      verify         -> ok <n>        every entry well-formed, numbered in
+#                                      order, and every link and the head match
+#                     -> broken <i>    the first entry that does not hold
+#      tail <k>       -> ok <the last k entries, one per line>
+#      anything else  -> err <why>
+#
+#  BROKEN <i>, exactly. Walking i = 1, 2, …: entry i is broken when it is not
+#  of the form above with number i (entry 1's link must be 64 zeros), or when
+#  its line does not hash to what the chain recorded for it — the link field of
+#  entry i+1, or the head for the newest. A changed line breaks the link INTO
+#  it only if its own link field changed, but always the link OUT of it; so
+#  when the link out of i fails, i+1 is blamed instead of i only if i+1 is
+#  itself malformed or its own outgoing link fails too. One edited entry is
+#  thus reported at its own number, whichever field was edited. Entries
+#  missing at the end (n below the head's count) report the first missing
+#  number; entries the head does not cover report the first such one.
+#
+#  WHY. The Codex names the GlyphLedger the system's signed event log: what
+#  happened, in order, such that a record cannot be quietly changed after the
+#  fact. A hash chain is the part of that which needs no key.
+#
+#  CRYPTOGRAPHY comes in as the crypt record (OS_LAYERS_DESIGN.md): MAIN passes
+#  CRYPT_REF (crypt_ref.la), whose sha256 is correct and slow on the VM (about
+#  8.5 s per 64-byte block, so ~17 s per entry); CRYPT_FAST (logoscrypt.la) is a
+#  drop-in. verify hashes every entry, so it costs n hashes.
+#
+#  HOW IT RUNS. Bundle it (bundle.la) and name the bundle in a service
+#  descriptor; the manager runs it with stdout and stderr in logdir/ledger.log.
+#  As logostime.la: poll on the socket and a signalfd; SIGTERM/SIGINT remove
+#  the socket and exit 0; SIGPIPE is blocked; a client silent for 2 s is
+#  dropped. A ledger file with no head file is refused at startup (fail
+#  closed: an unanchored ledger is not extended). VM only.
+#
+#  STYLE. LG_KIT(B)(X)(crypt) holds everything that walks the file's bytes,
+#  in kit style (builtins as parameters); the request loop is per request.
+#
+#  HONEST SCOPE. The chain is unkeyed: it makes any edit visible to verify,
+#  but someone able to rewrite the file, every later link and the head file
+#  while the service is down could forge a consistent ledger (a keyed chain,
+#  hmac under a key the service holds, is the next step; the Codex's "signed"
+#  needs a key). No fsync: a crash between the line and the head leaves a
+#  ledger that verify reports broken (fail closed). One request at a time.
+# ═══════════════════════════════════════════════════════════════════
+
+import("logosipc.la")
+import("crypt_ref.la")
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# LG_KIT(B)(X)(crypt) -> la s. s(load)(append)(verify)(tail)
+#   B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
+#               (add)(sub)(div)(lt)(int_eq)
+#   X = la s. s(open)(close)(write)(read_file)(stat)(rename)(clock_gettime)(error)
+#   load(_)           -> la k. k(n)(head), from glyphledger.head
+#   append(n)(h)(txt) -> la k. k(reply type)(reply body)(n')(h')
+#   verify(n)(h)      -> la k. k(reply type)(reply body)
+#   tail(k)           -> la k. k(reply type)(reply body)
+glyph LG_KIT = la B. la X. la crypt.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la div. la lt. la int_eq.
+  X(la open. la close. la write. la read_file. la stat. la rename. la clock_gettime. la error.
+  crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
+  (la C0. la C1. la C2. la C10. la C48. la C57. la C64. la C97. la C102. la TRUE. la FALSE.
+   la nil. la cons.
+    LET("glyphledger.txt")(la LEDGER.
+    LET("glyphledger.head")(la HEAD.
+    LET("glyphledger.head.tmp")(la HEADTMP.
+    LET("0000000000000000000000000000000000000000000000000000000000000000")(la ZEROS.
+    LET(sub(C0)(C1))(la NEG1.
+    LET(la s. str_to_int(str_len(s)))(la len.
+    LET(Z(la slice. la s. la lo. la hi.
+        lt(lo)(hi)
+          (la _. int_eq(sub(hi)(lo))(C1)
+                   (la _. str_at(s)(lo))
+                   (la _. (la mid. concat(slice(s)(lo)(mid))(slice(s)(mid)(hi)))(div(add(lo)(hi))(C2)))(C0))
+          (la _. "")(C0)))(la slice.
+    # lines(s): the lines of s, each ended by "\n" (an unterminated tail is a line too)
+    LET(Z(la go. la s. la n. la i. la start.
+        int_eq(i)(n)
+          (la _. lt(start)(n)(la _. cons(slice(s)(start)(n))(nil))(la _. nil)(C0))
+          (la _. str_eq(str_at(s)(i))("\n")
+                   (la _. cons(slice(s)(start)(i))(go(s)(n)(add(i)(C1))(add(i)(C1))))
+                   (la _. go(s)(n)(add(i)(C1))(start))(C0))(C0)))(la lgo.
+    LET(la s. lgo(s)(len(s))(C0)(C0))(la lines.
+    LET(Z(la llen. la l. l(la _. C0)(la h. la t. add(C1)(llen(t)))))(la llen.
+    LET(Z(la ldrop. la k. la l. lt(C0)(k)(la _. l(la _. nil)(la h. la t. ldrop(sub(k)(C1))(t)))(la _. l)(C0)))(la ldrop.
+    LET(Z(la ltake. la k. la l. lt(C0)(k)(la _. l(la _. nil)(la h. la t. cons(h)(ltake(sub(k)(C1))(t))))(la _. nil)(C0)))(la ltake.
+    # joinnl(l)(n): the n lines of l joined by "\n", halving the list
+    LET(Z(la joinnl. la l. la n.
+        lt(n)(C2)
+          (la _. l(la _. "")(la h. la t. h))
+          (la _. (la m. concat(joinnl(ltake(m)(l))(m))(concat("\n")(joinnl(ldrop(m)(l))(sub(n)(m)))))
+                 (div(n)(C2)))(C0)))(la joinnl.
+    LET(Z(la every. la p. la s. la i. la n.
+        int_eq(i)(n)(la _. TRUE)
+          (la _. p(str_to_int(ord(str_at(s)(i))))(la _. every(p)(s)(add(i)(C1))(n))(la _. FALSE)(C0))(C0)))(la every.
+    LET(la lo. la hi. la c. lt(c)(lo)(FALSE)(lt(hi)(c)(FALSE)(TRUE)))(la within.
+    LET(la s. lt(C0)(len(s))(la _. every(within(C48)(C57))(s)(C0)(len(s)))(la _. FALSE)(C0))(la digits.
+    LET(la s. int_eq(len(s))(C64)
+        (la _. every(la c. within(C48)(C57)(c)(TRUE)(within(C97)(C102)(c)))(s)(C0)(C64))
+        (la _. FALSE)(C0))(la hex64.
+    # index(s)(n)(i)(ch): the first index >= i of the one-byte string ch, or -1
+    LET(Z(la index. la s. la n. la i. la ch.
+        int_eq(i)(n)(la _. NEG1)
+          (la _. str_eq(str_at(s)(i))(ch)(la _. i)(la _. index(s)(n)(add(i)(C1))(ch))(C0))(C0)))(la index.
+    # fields(e): option of la k. k(number)(seconds)(link)(text), cut at the first three '|'
+    LET(la e. (la n. (la p1.
+        lt(p1)(C0)(la _. la none. la some. none(none))(la _. (la p2.
+        lt(p2)(C0)(la _. la none. la some. none(none))(la _. (la p3.
+        lt(p3)(C0)(la _. la none. la some. none(none))(la _.
+          la none. la some. some(la k. k(slice(e)(C0)(p1))(slice(e)(add(p1)(C1))(p2))
+                                       (slice(e)(add(p2)(C1))(p3))(slice(e)(add(p3)(C1))(n))))(C0))
+        (index(e)(n)(add(p2)(C1))("|")))(C0))
+        (index(e)(n)(add(p1)(C1))("|")))(C0))
+      (index(e)(n)(C0)("|")))(len(e)))(la fields.
+    LET(la i. la e. fields(e)(la _. FALSE)(la f. f(la num. la sec. la link. la text.
+        str_eq(num)(int_to_str(i))
+          (la _. digits(sec)
+                   (la _. hex64(link)(la _. int_eq(i)(C1)(la _. str_eq(link)(ZEROS))(la _. TRUE)(C0))(la _. FALSE)(C0))
+                   (la _. FALSE)(C0))
+          (la _. FALSE)(C0))))(la wellformed.
+    LET(la e. fields(e)(la _. "")(la f. f(la num. la sec. la link. la text. link)))(la linkof.
+    LET(la e. hex(sha256(e)))(la H.
+    LET(la k. la n. la r. r(k)(int_to_str(n)))(la answer.
+    # load(_): (n, head) from the head file; no head is fine only for an empty ledger
+    LET(la _.
+        str_eq(str_at(stat(HEAD))(C0))("-")
+          (la _. (la st. str_eq(str_at(st)(C0))("-")(la _. la k. k(C0)(ZEROS))
+                   (la _. (la sp. str_eq(slice(st)(add(sp)(C1))(len(st)))("0")
+                             (la _. la k. k(C0)(ZEROS))
+                             (la _. error("logosledger: glyphledger.txt has no glyphledger.head; refusing an unanchored ledger"))(C0))
+                          (index(st)(len(st))(C0)(" ")))(C0))
+                 (stat(LEDGER)))
+          (la _. (la hc. (la sp.
+                    lt(sp)(C0)(la _. error("logosledger: glyphledger.head is malformed"))(la _.
+                      (la a. la b. digits(a)(hex64(b))(FALSE)
+                          (la _. la k. k(str_to_int(a))(b))
+                          (la _. error("logosledger: glyphledger.head is malformed"))(C0))
+                      (slice(hc)(C0)(sp))(slice(hc)(add(sp)(C1))(len(hc))))(C0))
+                   (index(hc)(len(hc))(C0)(" ")))
+                 (read_file(HEAD)))(C0))(la load.
+    # append(n)(h)(text): write entry n+1, then the head (atomically)
+    LET(la n. la h. la text.
+        every(la c. int_eq(c)(C10)(FALSE)(TRUE))(text)(C0)(len(text))
+          (la _. (la n1. (la ts. (la line. (la fd.
+              digits(fd)
+                (la _. (la w. (la _.
+                    str_eq(w)(int_to_str(add(len(line))(C1)))
+                      (la _. (la h1. (la tfd.
+                          digits(tfd)
+                            (la _. (la w2. (la _. (la rr.
+                                str_eq(rr)("0")
+                                  (la _. la k. k("ok")(int_to_str(n1))(n1)(h1))
+                                  (la _. la k. k("err")("logosledger: the head was not replaced")(n1)(h1))(C0))
+                                (rename(HEADTMP)(HEAD)))(close(tfd)))
+                              (write(tfd)(concat(int_to_str(n1))(concat(" ")(h1)))))
+                            (la _. la k. k("err")("logosledger: cannot write the head")(n1)(h1))(C0))
+                        (open(HEADTMP)("577")))
+                        (H(line)))
+                      (la _. la k. k("err")("logosledger: the entry was not written")(n)(h))(C0))
+                  (close(fd)))
+                  (write(fd)(concat(line)("\n"))))
+                (la _. la k. k("err")("logosledger: cannot open glyphledger.txt")(n)(h))(C0))
+              (open(LEDGER)("1089")))
+              (concat(int_to_str(n1))(concat("|")(concat(ts)(concat("|")(concat(h)(concat("|")(text))))))))
+              ((la t. slice(t)(C0)(index(t)(len(t))(C0)(" ")))(clock_gettime("0"))))
+              (add(n)(C1)))
+          (la _. la k. k("err")("logosledger: an entry is one line")(n)(h))(C0))(la append.
+    # verify(hn)(hh): the file against the chain and the head (n, hash)
+    LET(la hn. la hh.
+        (la ls. (la m.
+          (la ok. la broken.
+            (la attested.
+              ls(la _. int_eq(hn)(C0)(la _. ok(C0))(la _. broken(C1))(C0))
+                (la e1. la rest1. int_eq(hn)(C0)(la _. broken(C1))(la _.
+                  Z(la walk. la i. la cur. la rest.
+                    wellformed(i)(cur)
+                      (la _. (la h.
+                          rest
+                            (la _. int_eq(m)(hn)
+                                     (la _. str_eq(h)(hh)(la _. ok(m))(la _. broken(m))(C0))
+                                     (la _. broken(add(m)(C1)))(C0))
+                            (la nxt. la rest2.
+                              int_eq(i)(hn)
+                                (la _. str_eq(h)(hh)(la _. broken(add(hn)(C1)))(la _. broken(hn))(C0))
+                                (la _. str_eq(linkof(nxt))(h)
+                                         (la _. walk(add(i)(C1))(nxt)(rest2))
+                                         (la _. (la j. wellformed(j)(nxt)
+                                                  (la _. attested(j)(rest2)(H(nxt))(la _. broken(i))(la _. broken(j))(C0))
+                                                  (la _. broken(j))(C0))
+                                                (add(i)(C1)))(C0))(C0)))
+                        (H(cur)))
+                      (la _. broken(i))(C0))
+                    (C1)(e1)(rest1))(C0)))
+            # attested(j)(after)(hj): does what follows entry j agree with its hash
+            # hj? (no evidence after the last uncovered entry counts as agreement)
+            (la j. la after. la hj.
+                after(la _. int_eq(j)(hn)(la _. str_eq(hj)(hh))(la _. TRUE)(C0))
+                     (la e. la r. str_eq(linkof(e))(hj))))
+          (answer("ok"))(answer("broken")))
+          (llen(ls)))
+        (lines(str_eq(str_at(stat(LEDGER))(C0))("-")(la _. "")(la _. read_file(LEDGER))(C0))))(la verify.
+    # tail(k): the last k entries
+    LET(la k. digits(k)
+        (la _. (la ls. (la m. (la kk.
+            la r. r("ok")(joinnl(ldrop(sub(m)(kk))(ls))(kk)))
+            (lt(m)(str_to_int(k))(la _. m)(la _. str_to_int(k))(C0)))
+            (llen(ls)))
+          (lines(str_eq(str_at(stat(LEDGER))(C0))("-")(la _. "")(la _. read_file(LEDGER))(C0))))
+        (la _. la r. r("err")("logosledger: tail needs a count"))(C0))(la tail.
+      la s. s(load)(append)(verify)(tail)))))))))))))))))))))))))))))
+  (0)(1)(2)(10)(48)(57)(64)(97)(102)(la t. la f. t)(la t. la f. f)
+  (la n. la c. n(n))(la h. la t. la n. la c. c(h)(t)))))
+
+# ── the service ───────────────────────────────────────────────────────────
+glyph LG_CHAN  = "ledger"
+glyph LG_SOCK  = "/tmp/logosipc-ledger"
+glyph LG_BLOCK = "20482"
+glyph LG_SIGS  = "16386"
+
+# LG_HANDLE(K)(msg)(n)(h) -> la k. k(reply on the wire)(n')(h')
+glyph LG_HANDLE = la K. la msg. la n. la h. K(la load. la append. la verify. la tail.
+    (la type. la body.
+        str_eq(type)("append")
+          (la _. append(n)(h)(body)(la rt. la rb. la n2. la h2. la k. k(ENCODE(rt)(rb))(n2)(h2)))
+          (la _. (la r. la k. k(r)(n)(h))
+                 (str_eq(type)("verify")(la _. verify(n)(h)(la rt. la rb. ENCODE(rt)(rb)))(la _.
+                  str_eq(type)("tail")(la _. tail(body)(la rt. la rb. ENCODE(rt)(rb)))(la _.
+                    ENCODE("err")(concat("logosledger: unknown request ")(type)))("!"))("!")))("!"))
+    (MSG_TYPE(msg))(MSG_BODY(msg)))
+
+glyph LG_STOP = la _. (la _. (la _. exit("0"))(print("logosledger: stopped")))(unlink(LG_SOCK))
+
+# LG_LOOP(K)(lfd)(fds)(n)(h): serve until SIGTERM/SIGINT; tail calls only
+glyph LG_LOOP = la K. la lfd. la fds. Z(la loop. la n. la h.
+    (la ready.
+        str_eq(ready)(lfd)
+          (la _. (la c.
+              str_eq(str_head(c))("-")(la _. loop(n)(h))(la _.
+                str_eq(poll(c)("2000"))("")
+                  (la _. (la _. loop(n)(h))(close(c)))
+                  (la _. LG_HANDLE(K)(RECV(c))(n)(h)(la wire. la n2. la h2.
+                           (la _. (la _. loop(n2)(h2))(close(c)))(send(c)(wire))))("!"))("!"))
+                 (ACCEPT(lfd)))
+          (la _. str_eq(ready)("")(la _. loop(n)(h))(la _.
+                 str_eq(str_head(ready))("-")(la _. loop(n)(h))(la _. LG_STOP("!"))("!"))("!"))("!"))
+    (poll(fds)("-1")))
+
+glyph MAIN =
+  (la K. K(la load. la append. la verify. la tail.
+    (la _. (la sfd. (la lfd.
+        str_eq(str_head(stat(LG_SOCK)))("-")
+          (la _. error("logosledger: cannot listen on the channel ledger"))
+          (la _. load("!")(la n. la h.
+                   (la _. LG_LOOP(K)(lfd)(concat(lfd)(concat(" ")(sfd)))(n)(h))
+                   (print(concat("logosledger: serving append, verify and tail on the channel ledger; entries: ")
+                                (int_to_str(n))))))("!"))
+      (CHANNEL(LG_CHAN)))(signalfd(LG_SIGS)))
+    (sigprocmask("0")(LG_BLOCK))))
+  (LG_KIT(la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
+                 (add)(sub)(div)(lt)(int_eq))
+         (la s. s(open)(close)(write)(read_file)(stat)(rename)(clock_gettime)(error))
+         (CRYPT_REF))

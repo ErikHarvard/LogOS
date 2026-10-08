@@ -1,0 +1,83 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logostime.la — LogosTime, the system's time service (Citrinitas layer 13).
+#
+#  WHAT. A service: its own LA program, run as its own process by the service
+#  manager (logosservices.la). It serves two typed requests on the logosipc
+#  channel `time` (the AF_UNIX rendezvous /tmp/logosipc-time):
+#
+#      now   -> ok "<sec> <nsec>"    the realtime clock (CLOCK_REALTIME, Unix time)
+#      mono  -> ok "<sec> <nsec>"    the monotonic clock (CLOCK_MONOTONIC)
+#      anything else -> err "logostime: unknown request <type>"
+#
+#  Messages are logosipc's typed wire form, TYPE <NUL> BODY; a reply's type is
+#  `ok` or `err`. One request per connection: the client connects, sends one
+#  message, and reads until the service closes the connection.
+#
+#  WHY. The Codex's LogosServices layer names time first among the background
+#  services. A program that wants the time without the clock builtin, or one
+#  confined to what it is handed (logossec.la's confine), asks this service.
+#
+#  HOW IT RUNS. Bundle it (bundle.la: VM + compiled stream in one ELF) and name
+#  the bundle in a service descriptor; the manager forks and execv's it with
+#  stdout and stderr on a pipe into logdir/time.log. The loop polls the
+#  listening socket and a signalfd together: SIGTERM or SIGINT (blocked, so
+#  they arrive on the signalfd) removes the socket file and exits 0, which is
+#  how the manager's stop and shutdown end it cleanly. SIGPIPE is blocked, so
+#  a client that hangs up before the reply cannot kill the service. A client
+#  that connects but sends nothing for 2 s is dropped. VM only (socket, poll,
+#  clock_gettime and the signal builtins exist only there).
+#
+#  HONEST SCOPE. This serves the host's clocks; it does not discipline them
+#  (no NTP, no drift correction). One connection is served at a time. A request
+#  is read with one recv, which is enough for these few-byte messages.
+# ═══════════════════════════════════════════════════════════════════
+
+import("logosipc.la")
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+# The channel and its rendezvous path (logosipc.la's SOCKPATH convention).
+glyph TIME_CHAN = "time"
+glyph TIME_SOCK = "/tmp/logosipc-time"
+
+# Blocked: SIGINT (bit 1) + SIGPIPE (bit 12) + SIGTERM (bit 14) = 2+4096+16384.
+# Read off the signalfd: SIGINT + SIGTERM = 16386.
+glyph TIME_BLOCK = "20482"
+glyph TIME_SIGS  = "16386"
+
+# TIME_ANSWER(msg) -> the reply on the wire.
+glyph TIME_ANSWER = la msg. (la type.
+    str_eq(type)("now")(la _. ENCODE("ok")(clock_gettime("0")))(la _.
+    str_eq(type)("mono")(la _. ENCODE("ok")(clock_gettime("1")))(la _.
+      ENCODE("err")(concat("logostime: unknown request ")(type)))("!"))("!"))
+  (MSG_TYPE(msg))
+
+# TIME_SERVE(lfd): accept one client, answer its one request, close.
+glyph TIME_SERVE = la lfd. (la c.
+    str_eq(str_head(c))("-")(la _. c)(la _.
+      str_eq(poll(c)("2000"))("")
+        (la _. close(c))
+        (la _. (la m. (la _. close(c))(send(c)(TIME_ANSWER(m))))(RECV(c)))("!"))("!"))
+  (ACCEPT(lfd))
+
+# TIME_STOP: the clean exit for SIGTERM/SIGINT.
+glyph TIME_STOP = la _. (la _. (la _. exit("0"))(print("logostime: stopped")))(unlink(TIME_SOCK))
+
+# TIME_LOOP(lfd)(fds): wait on the socket and the signalfd; the self-call is in
+# tail position, so the loop runs in bounded dump depth.
+glyph TIME_LOOP = la lfd. la fds. Z(la loop. la _.
+    (la ready.
+        str_eq(ready)(lfd)(la _. (la _. loop("!"))(TIME_SERVE(lfd)))(la _.
+        str_eq(ready)("")(la _. loop("!"))(la _.
+        str_eq(str_head(ready))("-")(la _. loop("!"))(la _.
+          TIME_STOP("!"))("!"))("!"))("!"))
+    (poll(fds)("-1")))("!")
+
+glyph MAIN =
+    (la _. (la sfd. (la lfd.
+        str_eq(str_head(stat(TIME_SOCK)))("-")
+          (la _. error("logostime: cannot listen on the channel time"))
+          (la _. (la _. TIME_LOOP(lfd)(concat(lfd)(concat(" ")(sfd))))
+                 (print(concat("logostime: serving now and mono on the channel ")(TIME_CHAN))))("!"))
+      (CHANNEL(TIME_CHAN)))(signalfd(TIME_SIGS)))
+    (sigprocmask("0")(TIME_BLOCK))

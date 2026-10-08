@@ -1,0 +1,548 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logosservices.la — LogosServices, the service manager (Citrinitas layer 13).
+#
+#  WHAT. SVC_KIT(B)(X) returns la s. s(manager). manager(descs)(channel)(logdir)
+#  runs the supervisor of the system's background services, each its own LA
+#  program in its own process (OS_LAYERS_DESIGN.md, "logosservices.la"):
+#
+#    desc = la k. k(name)(path)(args)(deps)(restart)
+#      name     1-64 characters of [A-Za-z0-9_.-]; its log is logdir/<name>.log
+#      path     the executable (a bundle: VM + compiled stream, bundle.la)
+#      args     its whole argv as one space-separated string, argv[0] first
+#      deps     a Scott list of the names it needs started first (the
+#               manager's own name, logosservices, is always satisfied)
+#      restart  "always" | "on-failure" | "never"
+#
+#  The manager
+#    1. checks the descriptors and orders them by dependency. A cycle, a
+#       missing dependency, a duplicate or malformed name or an unknown policy
+#       is a loud error (exit 1) before anything starts;
+#    2. starts the services in that order: pipe + fork; the child resets its
+#       signal mask, takes /dev/null as stdin and the pipe as stdout AND
+#       stderr, closes every other fd, and execv's the program. A failed
+#       execv writes its error into the log and exits 127 (logosinit.la's
+#       guard against a child continuing as a second manager);
+#    3. then loops, one pass per wake-up of ONE poll over the control socket,
+#       a signalfd and every service's pipe (100 ms tick):
+#         - output ready on a pipe is appended to that service's log;
+#         - exits are reaped without blocking (see REAPING below);
+#         - an exited service is restarted per its policy after a backoff
+#           that doubles from 1 s (1, 2, 4, 8, 16 s). After 5 restarts in a
+#           row it is given up and marked `failed`. A run that lasted 10 s
+#           or more ends the row: the count starts again from 0;
+#         - when poll says the control socket is ready (and only then), one
+#           client is accepted and its one typed logosipc request served;
+#         - SIGTERM or SIGINT (blocked, read off the signalfd) shuts down.
+#
+#  CONTROL. Requests are logosipc typed messages (TYPE <NUL> BODY) on the
+#  channel `channel` (the AF_UNIX path /tmp/logosipc-<channel>); the reply's
+#  type is `ok` or `err`, and the connection is closed after it.
+#      status            one line per service, "name state pid restarts",
+#                        the manager itself first as "logosservices running
+#                        <its pid> 0". States: running, backoff (waiting to be
+#                        restarted), stopped, exited (ended with status 0 and
+#                        not restarted), failed. pid is 0 when none runs.
+#      stop <name>       SIGTERM, wait up to 3 s, then SIGKILL; reaped before
+#                        the reply. A stopped service is not restarted.
+#      start <name>      start it now (cancelling any backoff); the restart
+#                        count starts again from 0.
+#      restart <name>    stop if running, then start.
+#      shutdown          stop every service, last started first; reply; exit 0.
+#  `restarts` in a status line counts the restarts in the current row.
+#  SELF-APPLICATION. The manager is itself a service of the manager: it is
+#  listed as `logosservices`, keeps its own log beside theirs
+#  (logdir/logosservices.log, every event it acts on, stamped with monotonic
+#  milliseconds), `stop logosservices` is shutdown, and `restart
+#  logosservices` stops everything and re-executes its own program (argv[0]
+#  when that is a path, else /proc/self/exe) — the same pid becomes a fresh
+#  manager, which starts every service again.
+#
+#  WHY. The Codex's layer 13: "Background processes: time sync, DNS
+#  resolution, power management …" and "LogosServices services itself (system
+#  services are services managed by the service manager)". logosinit.la
+#  supervises one shell; this supervises any number of LA programs, in order,
+#  with logs, policies and a control channel.
+#
+#  USE. A manager program builds the two records and the descriptors and calls
+#  the manager once (it never returns):
+#      import("logosservices.la")
+#      glyph MAIN = SVC_KIT(<B>)(<X>)(la manager.
+#          manager(CONS(<time desc>)(CONS(<ledger desc>)(NIL)))("services")("logs"))
+#  logostime.la and logosledger.la are the two system services;
+#  gate_logosservices.sh runs a ten-service set and is the reference use.
+#  Measured on the VM: an idle pass costs ~0.3 ms of CPU (one service); a
+#  control request answers in ~3 ms (~16 ms with the client VM's own start);
+#  stop is ~120 ms (the service's SIGTERM handling and the reap); start ~20 ms.
+#
+#  REAPING. This VM's reapnb returns a pid but throws the exit status away, and
+#  waitpid blocks. So each pass reads /proc/<pid>/stat of every running service:
+#  a process in state Z has exited, field 52 of that line is its raw wait status
+#  (exit code << 8, or the signal), and waitpid on a zombie returns at once. The
+#  state is found after the LAST ')' of the line, so a process that renames
+#  itself cannot fake an exit. /proc must be mounted; the manager checks it at
+#  startup. "failure" is any non-zero raw status (non-zero exit or a signal).
+#
+#  ARGV. This VM's execv(path)(args) puts `path` in argv[0] itself and makes
+#  argv[1..] from `args`, so the manager passes `args` without its first word.
+#
+#  STYLE. Kit style (WM_DESIGN.md "How fast the VM is"): every builtin arrives in
+#  the records B and X, SVC_KIT applies them once, and the running loop finds
+#  every name in its environment. Its own messages are decoded with logosipc's
+#  MSG_TYPE/MSG_BODY, which walk only the few-byte type tag.
+#    B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
+#                (add)(sub)(mul)(div)(mod)(lt)(int_eq)(bshl)
+#    X = la s. s(fork)(execv)(dup2)(pipe)(open)(close)(read)(write)(poll)(kill)
+#                (waitpid)(clock_gettime)(getpid)(sigprocmask)(signalfd)(socket)
+#                (connect)(unlink)(read_file)(stat)(mkdir)(exit)(error)
+#  VM only: fork, execv, pipe, poll, sockets and signals exist only there.
+#
+#  HONEST SCOPE. A service's own children are not tracked: no process groups or
+#  cgroups (the VM has no setsid), so stop signals the service's pid only. There
+#  is no readiness protocol — dependency order is start order. One control
+#  request is served at a time, read with one recv (a request is a few bytes;
+#  a client silent for 2 s is dropped). A second manager is refused a channel
+#  that a live manager already serves.
+# ═══════════════════════════════════════════════════════════════════
+
+import("logosipc.la")
+
+export SVC_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# ── Scott lists ───────────────────────────────────────────────────────────
+# SV_LISTS(B) -> la s. s(nil)(cons)(map)(filter)(find)(all)(len)(rev)
+# map applies f in list order (call-by-value evaluates cons's head first).
+glyph SV_LISTS = la B. B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
+  (la C0. la C1. la TRUE. la FALSE. la nil. la cons.
+    LET(Z(la map. la f. la l. l(la _. nil)(la h. la t. cons(f(h))(map(f)(t)))))(la map.
+    LET(Z(la filter. la p. la l.
+        l(la _. nil)(la h. la t. p(h)(la _. cons(h)(filter(p)(t)))(la _. filter(p)(t))(C0))))(la filter.
+    LET(Z(la find. la p. la l.
+        l(la _. la none. la some. none(none))
+         (la h. la t. p(h)(la _. la none. la some. some(h))(la _. find(p)(t))(C0))))(la find.
+    LET(Z(la all. la p. la l.
+        l(la _. TRUE)(la h. la t. p(h)(la _. all(p)(t))(la _. FALSE)(C0))))(la all.
+    LET(Z(la len. la l. l(la _. C0)(la h. la t. add(C1)(len(t)))))(la len.
+    LET(Z(la rev. la acc. la l. l(la _. acc)(la h. la t. rev(cons(h)(acc))(t))))(la revacc.
+      la s. s(nil)(cons)(map)(filter)(find)(all)(len)(revacc(nil)))))))))
+  (0)(1)(la t. la f. t)(la t. la f. f)(la n. la c. n(n))(la h. la t. la n. la c. c(h)(t)))
+
+# ── Text ──────────────────────────────────────────────────────────────────
+# SV_TEXT(B)(L) -> la s. s(slice)(words)(joinsp)(joinnl)(member)(digits)(okname)(nth)
+#   slice(s)(lo)(hi)  bytes lo..hi-1, joined by halving (O(n log n))
+#   words(s)          the space-separated words of s (empty words dropped)
+#   joinsp / joinnl   join a list with " " / "\n"
+#   member(x)(l)      is the string x in the list l
+#   digits(s)         s is one or more decimal digits
+#   okname(s)         1-64 characters of [A-Za-z0-9_.-], not "." or ".."
+#   nth(k)(l)         option: the k-th element (from 0)
+glyph SV_TEXT = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
+  L(la nil. la cons. la map. la filter. la find. la all. la len. la rev.
+  (la C0. la C1. la C2. la C45. la C46. la C48. la C57. la C64. la C65. la C90. la C95.
+   la C97. la C122. la TRUE. la FALSE.
+    LET(Z(la slice. la s. la lo. la hi.
+        lt(lo)(hi)
+          (la _. int_eq(sub(hi)(lo))(C1)
+                   (la _. str_at(s)(lo))
+                   (la _. (la mid. concat(slice(s)(lo)(mid))(slice(s)(mid)(hi)))(div(add(lo)(hi))(C2)))(C0))
+          (la _. "")(C0)))(la slice.
+    LET(Z(la go. la s. la n. la i. la start.
+        int_eq(i)(n)
+          (la _. lt(start)(i)(la _. cons(slice(s)(start)(i))(nil))(la _. nil)(C0))
+          (la _. (la i1. str_eq(str_at(s)(i))(" ")
+                    (la _. lt(start)(i)(la _. cons(slice(s)(start)(i))(go(s)(n)(i1)(i1)))
+                                       (la _. go(s)(n)(i1)(i1))(C0))
+                    (la _. go(s)(n)(i1)(start))(C0))
+                 (add(i)(C1)))(C0)))(la wgo.
+    LET(la s. wgo(s)(str_to_int(str_len(s)))(C0)(C0))(la words.
+    LET(la sep. Z(la join. la l.
+        l(la _. "")(la h. la t. t(la _. h)(la h2. la t2. concat(h)(concat(sep)(join(t)))))))(la joinby.
+    LET(joinby(" "))(la joinsp.
+    LET(joinby("\n"))(la joinnl.
+    LET(la x. la l. find(la y. str_eq(y)(x))(l)(la _. FALSE)(la y. TRUE))(la member.
+    # every(p)(s)(i)(n): p holds for the byte value of each of s[i..n-1]
+    LET(Z(la every. la p. la s. la i. la n.
+        int_eq(i)(n)(la _. TRUE)
+          (la _. p(str_to_int(ord(str_at(s)(i))))(la _. every(p)(s)(add(i)(C1))(n))(la _. FALSE)(C0))(C0)))(la every.
+    LET(la lo. la hi. la c. lt(c)(lo)(FALSE)(lt(hi)(c)(FALSE)(TRUE)))(la within.
+    LET(la s. (la n. lt(C0)(n)(la _. every(within(C48)(C57))(s)(C0)(n))(la _. FALSE)(C0))
+        (str_to_int(str_len(s))))(la digits.
+    LET(la c. within(C48)(C57)(c)(TRUE)(within(C65)(C90)(c)(TRUE)(within(C97)(C122)(c)(TRUE)(
+        int_eq(c)(C45)(TRUE)(int_eq(c)(C46)(TRUE)(int_eq(c)(C95)))))))(la namechar.
+    LET(la s. (la n.
+        lt(C0)(n)
+          (la _. lt(C64)(n)(la _. FALSE)(la _.
+                   str_eq(s)(".")(la _. FALSE)(la _.
+                   str_eq(s)("..")(la _. FALSE)(la _. every(namechar)(s)(C0)(n))(C0))(C0))(C0))
+          (la _. FALSE)(C0))
+        (str_to_int(str_len(s))))(la okname.
+    LET(Z(la nth. la k. la l.
+        l(la _. la none. la some. none(none))
+         (la h. la t. int_eq(k)(C0)(la _. la none. la some. some(h))(la _. nth(sub(k)(C1))(t))(C0))))(la nth.
+      la s. s(slice)(words)(joinsp)(joinnl)(member)(digits)(okname)(nth)))))))))))))))
+  (0)(1)(2)(45)(46)(48)(57)(64)(65)(90)(95)(97)(122)(la t. la f. t)(la t. la f. f)))
+
+# ── The manager's static parts ────────────────────────────────────────────
+# SV_CORE(B)(X)(L)(T)(ipc) -> la s. s(now)(mk)(dname)(rname)(rstate)(rpid)(rrfd)
+#                                    (dead)(drain)(closeall)(child)(topo)(waitdead)(must)(listen)
+#                                    (selfpath)
+# A supervised service is rec = la k. k(desc)(state)(pid)(restarts)(rfd)(lfd)(due)(t0):
+# rfd the read end of its output pipe ("" when closed), lfd its log fd, due the
+# monotonic ms at which a backoff restart is due, t0 when it last started.
+glyph SV_CORE = la B. la X. la L. la T. la ipc.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
+  X(la fork. la execv. la dup2. la pipe. la open. la close. la read. la write. la poll.
+    la kill. la waitpid. la clock_gettime. la getpid. la sigprocmask. la signalfd. la socket.
+    la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
+  L(la nil. la cons. la map. la filter. la find. la all. la len. la rev.
+  T(la slice. la words. la joinsp. la joinnl. la member. la digits. la okname. la nth.
+  ipc(la CHANNEL. la ACCEPT. la SEND. la RECV. la MSG_TYPE. la MSG_BODY.
+  (la C0. la C1. la C2. la C3. la C4. la C9. la C17. la C30. la C49. la C256. la C1000. la C1000000.
+   la TRUE. la FALSE.
+    LET("logosservices")(la MGR.
+    LET(sub(C0)(C1))(la NEG1.
+    # now(_): the monotonic clock in milliseconds
+    LET(la _. (la w. w(la _. C0)(la s. la r. r(la _. mul(str_to_int(s))(C1000))
+          (la ns. la r2. add(mul(str_to_int(s))(C1000))(div(str_to_int(ns))(C1000000)))))
+        (words(clock_gettime("1"))))(la now.
+    LET(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0.
+        la k. k(d)(st)(pid)(r)(rfd)(lfd)(due)(t0))(la mk.
+    LET(la d. d(la name. la path. la args. la deps. la restart. name))(la dname.
+    LET(la rec. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0. dname(d)))(la rname.
+    LET(la rec. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0. st))(la rstate.
+    LET(la rec. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0. pid))(la rpid.
+    LET(la rec. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0. rfd))(la rrfd.
+    # lastparen(s)(i): the index of the last ")" at or before i, or -1
+    LET(Z(la lp. la s. la i.
+        lt(i)(C0)(la _. NEG1)
+          (la _. str_eq(str_at(s)(i))(")")(la _. i)(la _. lp(s)(sub(i)(C1)))(C0))(C0)))(la lastparen.
+    LET(Z(la fs. la s. la n. la i.
+        int_eq(i)(n)(la _. n)
+          (la _. str_eq(str_at(s)(i))("/")(la _. i)(la _. fs(s)(n)(add(i)(C1)))(C0))(C0)))(la firstslash.
+    # dead(pid): none while the process runs; some(raw wait status) once it is a
+    # zombie (-1 if the status field cannot be read, which counts as a failure).
+    # The line is "<pid> (<name>) <state> ..."; the state is the first field
+    # after the LAST ')', and the kernel keeps a name to 15 bytes, so that ')'
+    # is at most at index len(pid)+17: the scan back starts there, not at the
+    # end of the ~300-byte line (this check runs for every service every pass).
+    LET(la pid. (la st. (la n. (la p.
+          lt(p)(C0)(la _. la none. la some. none(none))(la _.
+          lt(add(p)(C2))(n)
+            (la _. str_eq(str_at(st)(add(p)(C2)))("Z")
+              (la _. (la end.
+                  nth(C49)(words(slice(st)(add(p)(C2))(end)))
+                    (la _. la none. la some. some(NEG1))
+                    (la f. la none. la some. some(digits(f)(la _. str_to_int(f))(la _. NEG1)(C0))))
+                (str_eq(str_at(st)(sub(n)(C1)))("\n")(la _. sub(n)(C1))(la _. n)(C0)))
+              (la _. la none. la some. none(none))(C0))
+            (la _. la none. la some. none(none))(C0))(C0))
+        (lt(n)(C4)(la _. NEG1)
+           (la _. (la top. lastparen(st)(lt(top)(n)(la _. top)(la _. sub(n)(C1))(C0)))
+                  (add(str_to_int(str_len(pid)))(C17)))(C0)))
+      (str_to_int(str_len(st))))
+      (read_file(concat("/proc/")(concat(pid)("/stat")))))(la dead.
+    # drain(rfd)(lfd): copy what is left in a dead service's pipe into its log,
+    # never blocking (poll with timeout 0 before each read), then close it
+    LET(Z(la drain. la rfd. la lfd.
+        str_eq(rfd)("")(la _. C0)(la _.
+          str_eq(poll(rfd)("0"))("")
+            (la _. close(rfd))
+            (la _. (la data. str_eq(data)("")
+                      (la _. close(rfd))
+                      (la _. (la _. drain(rfd)(lfd))(write(lfd)(data)))(C0))
+                   (read(rfd)("65536")))(C0))(C0)))(la drain.
+    LET(Z(la ca. la i. lt(i)(C256)(la _. (la _. ca(add(i)(C1)))(close(int_to_str(i))))(la _. C0)(C0)))(la closeall.
+    # this VM's execv puts path in argv[0] itself: pass args without its first word
+    LET(la args. words(args)(la _. "")(la h. la t. joinsp(t)))(la argtail.
+    # child(wfd)(path)(args): the forked side of a start; never returns
+    LET(la wfd. la path. la args.
+        (la _.
+          (la _.
+            (la _.
+              (la _.
+                (la _.
+                  (la e. (la _. exit("127"))
+                         (write("2")(concat("logosservices: execv ")(concat(path)(concat(" failed: ")(concat(e)("\n")))))))
+                  (execv(path)(argtail(args))))
+                (closeall(C3)))
+              (dup2(wfd)("2")))
+            (dup2(wfd)("1")))
+          ((la nf. dup2(nf)("0"))(open("/dev/null")("0"))))
+        (sigprocmask("2")("0")))(la child.
+    # kahn(remaining)(started names)(order so far, reversed)
+    LET(Z(la kahn. la rem. la done. la out.
+        rem(la _. rev(out))
+           (la h. la t.
+              find(la d. d(la name. la path. la args. la deps. la restart. all(la x. member(x)(done))(deps)))(rem)
+                (la _. error(concat("logosservices: dependency cycle among: ")(joinsp(map(dname)(rem)))))
+                (la d. (la n. kahn(filter(la e. str_eq(dname(e))(n)(la _. FALSE)(la _. TRUE)(C0))(rem))
+                                  (cons(n)(done))(cons(d)(out)))
+                       (dname(d))))))(la kahn.
+    # topo(descs): check every descriptor, then the start order. The manager
+    # counts as started: a service may depend on logosservices itself.
+    LET(la descs. (la names.
+        (la _. kahn(descs)(cons(MGR)(nil))(nil))
+        (map(la d. d(la name. la path. la args. la deps. la restart.
+            (la _. (la _. (la _.
+                map(la x. member(x)(cons(MGR)(names))(la _. C0)
+                      (la _. error(concat("logosservices: ")(concat(name)(concat(": missing dependency ")(x)))))(C0))(deps))
+              (str_eq(restart)("always")(la _. C0)(la _. str_eq(restart)("on-failure")(la _. C0)(la _.
+               str_eq(restart)("never")(la _. C0)(la _.
+                 error(concat("logosservices: ")(concat(name)(concat(": unknown restart policy ")(restart)))))(C0))(C0))(C0)))
+              (lt(C1)(len(filter(la m. str_eq(m)(name))(names)))
+                 (la _. error(concat("logosservices: duplicate service ")(name)))(la _. C0)(C0)))
+            (okname(name)
+               (la _. str_eq(name)(MGR)
+                        (la _. error(concat("logosservices: the name ")(concat(MGR)(" is the manager's own"))))
+                        (la _. C0)(C0))
+               (la _. error(concat("logosservices: bad service name: ")(name)))(C0))))(descs)))
+      (map(dname)(descs)))(la topo.
+    # waitdead(pid)(i): reap pid after a SIGTERM, waiting up to 30 x 100 ms,
+    # then SIGKILL; returns the raw status
+    LET(Z(la waitdead. la pid. la i.
+        dead(pid)
+          (la _. lt(i)(C30)
+                   (la _. (la _. waitdead(pid)(add(i)(C1)))(poll("")("100")))
+                   (la _. (la _. (la _. C9)(waitpid(pid)))(kill(pid)("9")))(C0))
+          (la raw. (la _. raw)(waitpid(pid)))))(la waitdead.
+    # selfpath(_): what `restart logosservices` re-executes: argv[0] when it is
+    # a path that exists (so the new image keeps its name in ps), else
+    # /proc/self/exe
+    LET(Z(la go. la s. la n. la i.
+        int_eq(i)(n)(la _. n)
+          (la _. int_eq(str_to_int(ord(str_at(s)(i))))(C0)(la _. i)(la _. go(s)(n)(add(i)(C1)))(C0))(C0)))(la firstnul.
+    LET(la _. (la cl. (la a0.
+          (la n0. (la hasslash.
+              hasslash(la _. str_eq(str_at(stat(a0))(C0))("-")(la _. "/proc/self/exe")(la _. a0)(C0))
+                      (la _. "/proc/self/exe")(C0))
+            (lt(C0)(n0)(la _. lt(firstslash(a0)(n0)(C0))(n0))(la _. FALSE)(C0)))
+          (str_to_int(str_len(a0))))
+        (slice(cl)(C0)(firstnul(cl)(str_to_int(str_len(cl)))(C0))))
+      (read_file("/proc/self/cmdline")))(la selfpath.
+    LET(la fd. la what. digits(fd)(la _. fd)
+        (la _. error(concat("logosservices: cannot open ")(concat(what)(concat(" (")(concat(fd)(")"))))))(C0))(la must.
+    # listen(channel)(sock): refuse a channel a live server answers on, then
+    # CHANNEL it and check the socket exists
+    LET(la channel. la sock. (la probe. (la r. (la _.
+          str_eq(r)("0")
+            (la _. error(concat("logosservices: the channel ")(concat(channel)(" is already served"))))
+            (la _. (la lfd. str_eq(str_at(stat(sock))(C0))("-")
+                      (la _. error(concat("logosservices: cannot listen on the channel ")(channel)))
+                      (la _. lfd)(C0))
+                   (CHANNEL(channel)))(C0))
+          (close(probe)))(connect(probe)(sock)))(socket("!")))(la listen.
+      la s. s(now)(mk)(dname)(rname)(rstate)(rpid)(rrfd)(dead)(drain)(closeall)(child)(topo)(waitdead)(must)(listen)
+             (selfpath)
+    ))))))))))))))))))))))))
+  (0)(1)(2)(3)(4)(9)(17)(30)(49)(256)(1000)(1000000)(la t. la f. t)(la t. la f. f))))))
+
+# ── The running manager ───────────────────────────────────────────────────
+# SV_RUN(B)(X)(L)(T)(ipc)(core) -> la order. la sock. la sfd. la mfd. la lfd. la channel. la logdir.
+# starts the services of `order` and runs the supervision loop; never returns.
+glyph SV_RUN = la B. la X. la L. la T. la ipc. la core.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
+  X(la fork. la execv. la dup2. la pipe. la open. la close. la read. la write. la poll.
+    la kill. la waitpid. la clock_gettime. la getpid. la sigprocmask. la signalfd. la socket.
+    la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
+  L(la nil. la cons. la map. la filter. la find. la all. la len. la rev.
+  T(la slice. la words. la joinsp. la joinnl. la member. la digits. la okname. la nth.
+  ipc(la CHANNEL. la ACCEPT. la SEND. la RECV. la MSG_TYPE. la MSG_BODY.
+  core(la now. la mk. la dname. la rname. la rstate. la rpid. la rrfd. la dead. la drain.
+       la closeall. la child. la topo. la waitdead. la must. la listen. la selfpath.
+  (la C0. la C1. la C2. la C3. la C5. la C1000. la STABLE. la TRUE. la FALSE.
+   la order. la sock. la sfd. la mfd. la lfd. la channel. la logdir.
+    LET("logosservices")(la MGR.
+    LET(la text. write(mfd)(concat(int_to_str(now(C0)))(concat(" ")(concat(text)("\n")))))(la mlog.
+    LET(getpid("!"))(la mypid.
+    # spawn(rec)(r): start rec's program with restart count r
+    LET(la rec. la r. rec(la d. la st0. la pid0. la r0. la rfd0. la lfd. la due0. la t00.
+        d(la name. la path. la args. la deps. la restart.
+          (la failed. (la pp.
+              words(pp)(la _. failed(concat("pipe ")(pp)))(la prd. la t1.
+                t1(la _. failed(concat("pipe ")(pp)))(la pwr. la t2.
+                  (la cpid.
+                    str_eq(cpid)("0")
+                      (la _. child(pwr)(path)(args))
+                      (la _. digits(cpid)
+                          (la _. (la _. (la _. mk(d)("running")(cpid)(r)(prd)(lfd)(C0)(now(C0)))
+                                   (mlog(concat("start ")(concat(name)(concat(" ")(concat(cpid)(concat(" ")(int_to_str(r)))))))))
+                                 (close(pwr)))
+                          (la _. (la _. (la _. failed(concat("fork ")(cpid)))(close(pwr)))(close(prd)))(C0))(C0))
+                  (fork("!")))))
+            (pipe("!")))
+          (la why. (la _. mk(d)("failed")("0")(r)("")(lfd)(C0)(C0))
+                   (mlog(concat("failed ")(concat(name)(concat(": ")(why)))))))))(la spawn.
+    # onexit(rec)(raw): a reaped service; schedule its restart or end it. The
+    # clock is read after its pipe is drained, so the backoff runs from here.
+    LET(la rec. la raw. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0.
+        d(la name. la path. la args. la deps. la restart.
+          (la _. (la t. (la _.
+            (la fail. (la r1. (la gone.
+                str_eq(restart)("always")(la _. TRUE)(la _. str_eq(restart)("on-failure")(la _. fail)(la _. FALSE)(C0))(C0)
+                  (la _. lt(r1)(C5)
+                           (la _. (la delay. (la _. mk(d)("backoff")("0")(r1)("")(lfd)(add(t)(delay))(t0))
+                                             (mlog(concat("backoff ")(concat(name)(concat(" ")(int_to_str(delay)))))))
+                                  (bshl(C1000)(r1)))
+                           (la _. gone("failed")(concat(" after ")(concat(int_to_str(r1))(" restarts"))))(C0))
+                  (la _. fail(la _. gone("failed")(""))(la _. gone("exited")(""))(C0))(C0))
+              (la st2. la why. (la _. mk(d)(st2)("0")(r1)("")(lfd)(C0)(t0))
+                               (mlog(concat(st2)(concat(" ")(concat(name)(why)))))))
+             (lt(sub(t)(t0))(STABLE)(la _. r)(la _. C0)(C0)))
+            (int_eq(raw)(C0)(la _. FALSE)(la _. TRUE)(C0)))
+            (mlog(concat("exit ")(concat(name)(concat(" ")(concat(pid)(concat(" ")(int_to_str(raw)))))))))
+            (now(C0)))
+          (drain(rfd)(lfd)))))(la onexit.
+    # stop(rec): stop a running service synchronously; a backoff is cancelled
+    LET(la rec. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0.
+        str_eq(st)("running")
+          (la _. (la _. (la raw. (la _. (la _. mk(d)("stopped")("0")(C0)("")(lfd)(C0)(t0))
+                                       (mlog(concat("stopped ")(concat(dname(d))(concat(" ")(int_to_str(raw)))))))
+                                (drain(rfd)(lfd)))
+                        (waitdead(pid)(C0)))
+                 (kill(pid)("15")))
+          (la _. (la _. mk(d)("stopped")("0")(C0)("")(lfd)(C0)(t0))(mlog(concat("stopped ")(dname(d)))))(C0)))(la stop.
+    LET(la recs. rev(map(stop)(rev(recs))))(la stopall.
+    LET(la t. la rec. str_eq(rstate(rec))("backoff")
+        (la _. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0.
+                 lt(t)(due)(la _. rec)(la _. spawn(rec)(add(r)(C1)))(C0)))
+        (la _. rec)(C0))(la wake.
+    LET(la ready. la rec. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0.
+        str_eq(rfd)("")(la _. rec)(la _.
+          member(rfd)(ready)
+            (la _. (la data. str_eq(data)("")
+                      (la _. (la _. mk(d)(st)(pid)(r)("")(lfd)(due)(t0))(close(rfd)))
+                      (la _. (la _. rec)(write(lfd)(data)))(C0))
+                   (read(rfd)("65536")))
+            (la _. rec)(C0))(C0)))(la pump.
+    LET(la t. la rec. str_eq(rstate(rec))("running")
+        (la _. dead(rpid(rec))(la _. rec)(la raw. (la _. onexit(rec)(raw))(waitpid(rpid(rec)))))
+        (la _. rec)(C0))(la reapcheck.
+    LET(la recs. joinnl(cons(concat(MGR)(concat(" running ")(concat(mypid)(" 0"))))
+        (map(la rec. rec(la d. la st. la pid. la r. la rfd. la lfd. la due. la t0.
+            concat(dname(d))(concat(" ")(concat(st)(concat(" ")(concat(pid)(concat(" ")(int_to_str(r)))))))))
+           (recs))))(la status.
+    LET(la recs. la rec2. map(la x. str_eq(rname(x))(rname(rec2))(la _. rec2)(la _. x)(C0))(recs))(la replace.
+    # verb(type)(rec) -> la k. k(reply type)(reply body)(rec')
+    LET(la type. la rec. (la name. la running.
+        str_eq(type)("stop")
+          (la _. running(TRUE)(str_eq(rstate(rec))("backoff"))
+                   (la _. (la rec2. la k. k("ok")(concat("stopped ")(name))(rec2))(stop(rec)))
+                   (la _. la k. k("err")(concat(name)(concat(" is ")(rstate(rec))))(rec))(C0))
+          (la _. str_eq(type)("start")
+            (la _. running
+                     (la _. la k. k("err")(concat(name)(" is already running"))(rec))
+                     (la _. (la rec2. la k. k("ok")(concat("started ")(concat(name)(concat(" ")(rpid(rec2)))))(rec2))
+                            (spawn(rec)(C0)))(C0))
+            (la _. (la rec2. la k. k("ok")(concat("restarted ")(concat(name)(concat(" ")(rpid(rec2)))))(rec2))
+                   (spawn(running(la _. stop(rec))(la _. rec)(C0))(C0)))(C0))(C0))
+      (rname(rec))(str_eq(rstate(rec))("running")))(la verb.
+    LET(la x. str_eq(x)("")(la _. "")(la _. okname(x)(la _. x)(la _. "?")(C0))(C0))(la safe.
+    # request(recs)(msg) -> la k. k(reply type)(reply body)(recs')(next):
+    # next 0 = carry on, 1 = exit, 2 = re-execute the manager
+    LET(la recs. la msg. (la type. la body.
+        (la _.
+          str_eq(type)("status")(la _. la k. k("ok")(status(recs))(recs)(C0))(la _.
+          str_eq(type)("shutdown")(la _. (la recs2. la k. k("ok")("shutdown")(recs2)(C1))(stopall(recs)))(la _.
+            str_eq(type)("stop")(TRUE)(str_eq(type)("start")(TRUE)(str_eq(type)("restart")))
+              (la _. str_eq(body)(MGR)
+                 (la _. str_eq(type)("stop")
+                          (la _. (la recs2. la k. k("ok")("shutdown")(recs2)(C1))(stopall(recs)))
+                          (la _. str_eq(type)("restart")
+                                   (la _. (la recs2. la k. k("ok")(concat("restarting ")(MGR))(recs2)(C2))(stopall(recs)))
+                                   (la _. la k. k("err")(concat(MGR)(" is already running"))(recs)(C0))(C0))(C0))
+                 (la _. find(la x. str_eq(rname(x))(body))(recs)
+                          (la _. la k. k("err")(concat("no service ")(body))(recs)(C0))
+                          (la rec. verb(type)(rec)(la rt. la rb. la rec2. la k. k(rt)(rb)(replace(recs)(rec2))(C0))))(C0))
+              (la _. la k. k("err")(concat("unknown request ")(type))(recs)(C0))(C0))(C0))(C0))
+        # a client's bytes reach the log only as a name, so no request can
+        # write a line of its own into the manager's log
+        (mlog(concat("request ")(concat(safe(type))(concat(" ")(safe(body)))))))
+      (MSG_TYPE(msg))(MSG_BODY(msg)))(la request.
+    # serve(recs)(k): accept one client and answer it; k(recs')(next)
+    LET(la recs. la k. (la c.
+        digits(c)
+          (la _. str_eq(poll(c)("2000"))("")
+                   (la _. (la _. k(recs)(C0))(close(c)))
+                   (la _. request(recs)(RECV(c))(la rt. la rb. la recs2. la nxt.
+                            (la _. (la _. k(recs2)(nxt))(close(c)))(SEND(c)(rt)(rb))))(C0))
+          (la _. k(recs)(C0))(C0))
+      (ACCEPT(lfd)))(la serve.
+    LET(la _. (la _. (la _. (la _. exit("0"))(mlog("exit 0")))(unlink(sock)))(close(lfd)))(la finish.
+    LET(la _. (la self. (la _. (la _. (la _. (la _.
+          (la e. (la _. exit("1"))(write("2")(concat("logosservices: re-exec failed: ")(concat(e)("\n")))))
+          (execv(self)("")))
+        (closeall(C3)))(mlog(concat("re-exec ")(self))))(unlink(sock)))(close(lfd)))(selfpath(C0)))(la reexec.
+    # one pass per poll wake-up; every way back into loop is a tail call
+    LET(Z(la loop. la recs.
+        (la ready.
+          member(sfd)(ready)
+            (la _. (la _. (la _. (la _. finish(C0))(stopall(recs)))(mlog("signal: shutting down")))(read(sfd)("128")))
+            (la _. (la t. (la recs2.
+                      member(lfd)(ready)
+                        (la _. serve(recs2)(la recs3. la nxt.
+                                 int_eq(nxt)(C0)(la _. loop(recs3))
+                                   (la _. int_eq(nxt)(C1)(la _. finish(C0))(la _. reexec(C0))(C0))(C0)))
+                        (la _. loop(recs2))(C0))
+                    (map(wake(t))(map(reapcheck(t))(map(pump(ready))(recs)))))
+                   (now(C0)))(C0))
+        (words(poll(joinsp(cons(lfd)(cons(sfd)
+              (map(rrfd)(filter(la x. str_eq(rrfd(x))("")(la _. FALSE)(la _. TRUE)(C0))(recs))))))("100")))))(la loop.
+      (la _. loop(map(la d.
+                (la lfd2. spawn(mk(d)("stopped")("0")(C0)("")(lfd2)(C0)(C0))(C0))
+                (must(open(concat(logdir)(concat("/")(concat(dname(d))(".log"))))("1089"))
+                     (concat("the log of ")(dname(d)))))(order)))
+      (mlog(concat("up ")(concat(mypid)(concat(" ")(channel)))))
+    ))))))))))))))))))))
+  (0)(1)(2)(3)(5)(1000)(10000)(la t. la f. t)(la t. la f. f)))))))
+
+# ── The entry ─────────────────────────────────────────────────────────────
+# SV_MGR(B)(X)(L)(T)(ipc) -> la s. s(manager). manager(descs)(channel)(logdir):
+# every check that can fail loudly runs BEFORE anything is started — the
+# descriptors and their order, the channel name, /proc, the log directory —
+# then the signals are blocked and read off a signalfd (before any fork, as in
+# logosinit.la), the manager's own log is opened, the channel is served, and
+# SV_RUN takes over.
+glyph SV_MGR = la B. la X. la L. la T. la ipc.
+  (la core. (la run.
+    B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+      la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
+    X(la fork. la execv. la dup2. la pipe. la open. la close. la read. la write. la poll.
+      la kill. la waitpid. la clock_gettime. la getpid. la sigprocmask. la signalfd. la socket.
+      la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
+    T(la slice. la words. la joinsp. la joinnl. la member. la digits. la okname. la nth.
+    core(la now. la mk. la dname. la rname. la rstate. la rpid. la rrfd. la dead. la drain.
+         la closeall. la child. la topo. la waitdead. la must. la listen. la selfpath.
+    (la C0.
+      la s. s(la descs. la channel. la logdir.
+        (la order. (la sock.
+          (la _. (la _. (la _. (la _.
+            (la sfd. (la mfd. (la lfd. run(order)(sock)(sfd)(mfd)(lfd)(channel)(logdir))
+                (listen(channel)(sock)))
+              (must(open(concat(logdir)("/logosservices.log"))("1089"))("the manager log")))
+            (must(signalfd("16386"))("a signalfd")))
+          # blocked: SIGINT (bit 1) + SIGPIPE (bit 12) + SIGTERM (bit 14); SIGINT
+          # and SIGTERM (16386) are read off the signalfd
+          (sigprocmask("0")("20482")))
+          (str_eq(str_at(stat(logdir))(C0))("-")
+             (la _. error(concat("logosservices: no log directory ")(logdir)))(la _. C0)(C0)))
+          (mkdir(logdir)("493")))
+          (str_eq(read_file("/proc/self/stat"))("")
+             (la _. error("logosservices: /proc is not mounted; cannot supervise"))(la _. C0)(C0)))
+        (concat("/tmp/logosipc-")(channel)))
+        (okname(channel)(la _. topo(descs))
+           (la _. error(concat("logosservices: bad channel name: ")(channel)))(C0))))
+    (0))))))
+  (SV_RUN(B)(X)(L)(T)(ipc)(core)))
+  (SV_CORE(B)(X)(L)(T)(ipc))
+
+# SVC_KIT(B)(X) -> la s. s(manager): every part built once, here.
+glyph SVC_KIT = la B. la X.
+  (la L. (la T. SV_MGR(B)(X)(L)(T)(la s. s(CHANNEL)(ACCEPT)(SEND)(RECV)(MSG_TYPE)(MSG_BODY)))
+         (SV_TEXT(B)(L)))
+  (SV_LISTS(B))
