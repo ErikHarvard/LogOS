@@ -716,8 +716,9 @@ else
 fi
 
 say "LogosIPC: typed message layer (import + decode)"
-# The transport is now pipe-based (SEND/RECV use the VM-only pipe/read/write
-# syscalls — the live channel runs on the native VM, see the LogosInit section).
+# The transport is a named AF_UNIX socket (CHANNEL/CONNECT/ACCEPT/SEND/RECV use
+# the VM-only socket builtins — the live channel runs on the native VM, see the
+# LogosInit section).
 # This host demo exercises the engine-independent part: ipc_demo.la imports the
 # module and decodes a wire message (TYPE <NUL> BODY) with MSG_TYPE/MSG_BODY,
 # then MSG_OK-dispatches on the type.
