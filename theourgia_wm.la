@@ -623,6 +623,11 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
     LET(Z(la each. la st. la done. la ready.
         ready(la _. la k. k(st)(done))
              (la fd. la rest. one(st)(done)(fd)(la st2. la done2. each(st2)(done2)(rest)))))(la each.
+    # A pass services the ready job pipes first and the input fds last. Input can
+    # close a window's pipe (MOD+q) and start a program in another (Enter), and
+    # pipe() reuses the lowest free fd number: had poll also reported the old
+    # pipe ready, reading "it" after the input would block on the new, empty one.
+    LET(la ready. append(filter(la fd. is_input(fd)(FALSE)(TRUE))(ready))(filter(is_input)(ready)))(la order.
     LET(Z(la loop. la st. la done.
         st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
           quit
@@ -632,7 +637,7 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
                     fds(la _. (la _. st)(print("wm: input finished and nothing is running")))
                        (la f1. la frest.
                           (la ready.
-                              each(st)(done)(ready)(la st2. la done2.
+                              each(st)(done)(order(ready))(la st2. la done2.
                                  sim(la _. loop(st2)(done2))
                                     (la _. st2(la t. la f. la w. la n. la m. la q. la dirty2. la lk.
                                          dirty2(la _. frame(st2)(la bytes. la st3.
@@ -644,7 +649,7 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
                          (jobs)))
                (job_fds(st)))
             (C0))))(la loop.
-      la st. loop(st)(FALSE))))))))
+      la st. loop(st)(FALSE)))))))))
   (0)(la t. la f. t)(la t. la f. f)))))))
 
 # ── Wiring ────────────────────────────────────────────────────────────────
