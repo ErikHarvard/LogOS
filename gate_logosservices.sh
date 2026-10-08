@@ -28,7 +28,8 @@
 #            failed after 5 restarts; a run of 10 s or more ends the row;
 #            time answers now and mono; stop/start/restart; ledger append,
 #            verify, tail and `broken <i>` after the gate edits the file (a
-#            text field, a link field, a deleted last entry); append refuses
+#            text field, a link field, a deleted last entry, the newest
+#            entry's text, which only the head covers); append refuses
 #            a file that does not end at its entry n; a stop during an
 #            append (SIGKILLed mid-hash) leaves file and head unchanged, and
 #            an entry written without its head is anchored at the next
@@ -353,6 +354,14 @@ PYEOF
     cp "$R/glyphledger.txt" "$LC/v4.txt"
     lreq append "past the end" ag
     cmp -s "$R/glyphledger.txt" "$LC/v4.txt" && : > "$LC/ag_same"
+    # the newest entry's text: no link out of it, only the head can tell
+    python3 - "$LC/orig.txt" "$R/glyphledger.txt" <<'PYEOF'
+import sys
+lines = open(sys.argv[1]).read().split("\n")
+f = lines[2].split("|", 3); f[3] = "omega|pipX"; lines[2] = "|".join(f)
+open(sys.argv[2], "w").write("\n".join(lines))
+PYEOF
+    lreq verify "" v5
     cp "$LC/orig.txt" "$R/glyphledger.txt"
     lreq append "two
 lines" an
@@ -475,6 +484,8 @@ check "$([ "$(rv t2)" = "$want_t2" ] && echo 1)" "ledger: tail 2 is the last two
 check "$([ "$(rv v2)" = "broken 2" ] && [ "$(rv v3)" = "broken 3" ] && [ "$(rv v4)" = "broken 3" ] && echo 1)" \
     "ledger: verify reports the edited entry — text of entry 2 -> broken 2, link of entry 3 -> broken 3, entry 3 deleted -> broken 3" \
     "$(rv v2) | $(rv v3) | $(rv v4)"
+check "$([ "$(rv v5)" = "broken 3" ] && echo 1)" \
+    "ledger: verify reports an edited NEWEST entry (text of entry 3, caught only by the head) -> broken 3" "$(rv v5)"
 check "$([ "$(rv an)" = "err logosledger: an entry is one line" ] && [ "$(rv tk)" = "err logosledger: tail needs a count" ] && echo 1)" \
     "ledger: a two-line entry and a non-numeric tail are refused" "$(rv an) | $(rv tk)"
 check "$([ "$(rv ag)" = "err logosledger: glyphledger.txt does not end at entry 3; not extending it" ] && [ -e "$LC/ag_same" ] && echo 1)" \
