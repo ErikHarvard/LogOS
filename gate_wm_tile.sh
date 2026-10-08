@@ -39,13 +39,18 @@
 #   4. HOST = VM. The C host runs a shorter random sequence (60 steps,
 #      WM_TILE_HOST_STEPS; the host's substitution makes the full one take
 #      about 4 minutes) and must print exactly what the VM and the model do.
+#   5. SHOW ON DEEP TREES (VM, and the host on the smaller ones). show of
+#      40- and 256-window chains (depth n-1) and balanced trees, with a concat
+#      that reports every string it builds: the text must be the model's, and
+#      the bytes concat copies must stay within the bound the module states.
 #
 # The random sequence is fixed (seed 20261008) so a failure is reproducible;
 # WM_TILE_SEED overrides it for exploration.
 #
 # ISOLATION: a private temporary directory (gate_wm_common.sh); touches no
-# tracked file. About 2 minutes: about 50 s for the checks (three VM compiles,
-# the host's known answers and its 60 steps) plus building the toolchain.
+# tracked file. About 2 to 3 minutes: under 2 minutes for the checks (four VM
+# compiles and runs, the host's known answers, its 60 steps and the two
+# 40-window show cases) plus building the toolchain.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
@@ -703,6 +708,97 @@ if [ "$hrc" = 0 ] && [ "$hvrc" = 0 ] && [ -s "$T/hseq_host.txt" ] && cmp -s "$T/
     echo "PASS  tile host = VM: on a $WM_TILE_HOST_STEPS-step sequence the C host prints the same $(wc -l < "$T/hseq_host.txt") lines as the VM and the model"
 else
     echo "FAIL  tile host = VM: host rc=$hrc, VM rc=$hvrc; host and VM (or the model) differ on the $WM_TILE_HOST_STEPS-step sequence"; ok=0
+fi
+
+# ═══ 5. show on deep trees: the text, and the bytes it copies ═══════
+# show of a chain (window i splits window i-1, the newest: depth n-1, the
+# shape that MOD+Enter on the newest window again and again builds) and of a
+# balanced tree (window i splits window i/2), with 40 and 256 windows, run
+# with a concat that prints the length of every string it builds: their sum
+# is the number of bytes concat copied (WM_DESIGN.md rule 5). The text must be
+# the model's, and the copies must stay within the bound the module's header
+# states: a byte produced at depth d (d splits above the node it belongs to)
+# is copied at most 3d + 4 times. The first version nested the concats the
+# other way round and copied the second child's text 6 times a level, about
+# three times the bound on a chain. The host runs the 40-window cases and
+# must print the same texts and the same totals.
+cat > "$T/show_cost.py" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[2])
+import model
+
+CASES = [("chain", 40), ("bal", 40), ("chain", 256), ("bal", 256)]
+HOST_CASES = CASES[:2]
+
+def build(shape, n):              # the same sequence the LA program performs
+    t = model.insert(model.E, 0, 1, 0)
+    for i in range(2, n + 1):
+        t = model.insert(t, i - 1 if shape == "chain" else i // 2, i, i % 2)
+    return t
+
+def bound(t, d=0):                # sum over the text's bytes of 3d + 4
+    if t[0] == "L": return len("L%d" % t[1]) * (3 * d + 4)
+    own = len("%s%d(" % ("H" if t[1] == 0 else "V", t[2])) + 2      # head, "," and ")"
+    return own * (3 * d + 4) + bound(t[3], d + 1) + bound(t[4], d + 1)
+
+def program(cases, path):
+    chain = 'print("# end")'
+    for shape, n in reversed(cases):
+        focus = "sub(i)(1)" if shape == "chain" else "div(i)(2)"
+        chain = ('SEQ(print("# %s %d"))(SEQ(print(concat("= ")(show(BUILD(la i. %s)(%d)))))(%s))'
+                 % (shape, n, focus, n, chain))
+    open(path, "w").write('''import("theourgia_tile.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph SEQ = la a. la b. b
+glyph CC = la a. la b. (la r. SEQ(print(str_len(r)))(r))(concat(a)(b))
+glyph MAIN = TILE_KIT(add)(sub)(mul)(div)(lt)(int_eq)(CC)(int_to_str)
+  (la empty. la insert. la remove. la layout. la neighbour. la swap. la resize. la toggle.
+   la leaves. la next. la has. la count. la show.
+   (la BUILD. CHAIN)
+   (la focus. la n. Z(la b. la i. la t. lt(n)(i)(la _. t)
+        (la _. b(add(i)(1))(insert(t)(focus(i))(i)(sub(i)(mul(div(i)(2))(2)))))(0))(2)(insert(empty)(0)(1)(0))))
+'''.replace("CHAIN", chain))
+
+def parse(path):                  # [(case, text, bytes copied)]
+    res, cur, tot = [], None, 0
+    for line in open(path).read().splitlines():
+        if line.startswith("# "): cur, tot = line[2:], 0
+        elif line.startswith("= "): res.append((cur, line[2:], tot))
+        else: tot += int(line)
+    return res
+
+if sys.argv[1] == "prog":         # prog T: the VM and the host programs
+    program(CASES, sys.argv[2] + "/showcost.la"); program(HOST_CASES, sys.argv[2] + "/hshowcost.la")
+elif sys.argv[1] == "check":      # check T OUT: one line per case, "ok ..." or "bad ..."
+    got = parse(sys.argv[3])
+    if [g[0] for g in got] != ["%s %d" % c for c in CASES]:
+        print("bad output: cases %s" % [g[0] for g in got]); sys.exit()
+    for (shape, n), (case, text, copied) in zip(CASES, got):
+        t = build(shape, n); want = model.show(t); b = bound(t)
+        if text != want: print("bad %s: text differs from the model at byte %d" % (case,
+            next(i for i in range(min(len(text), len(want)) + 1) if text[i:i+1] != want[i:i+1])))
+        elif copied > b: print("bad %s: copied %d bytes for %d of text, %.1f a byte; the bound is %d (%.1f a byte)"
+                               % (case, copied, len(text), copied / len(text), b, b / len(text)))
+        else: print("ok %s: %d bytes of text, %d copied (%.1f a byte, bound %.1f)"
+                    % (case, len(text), copied, copied / len(text), b / len(text)))
+elif sys.argv[1] == "same":       # same T HOSTOUT VMOUT: the host's cases agree with the VM's
+    h, v = parse(sys.argv[3]), parse(sys.argv[4])
+    print("ok" if h and h == v[:len(h)] else "bad")
+PYEOF
+python3 "$T/show_cost.py" prog "$T"
+wm_vm showcost.la "$T/showcost_vm.txt"
+sc=$(python3 "$T/show_cost.py" check "$T" "$T/showcost_vm.txt" 2>&1)
+if [ "$vrc" = 0 ] && [ -n "$sc" ] && ! echo "$sc" | grep -qv '^ok'; then
+    echo "PASS  tile show cost (VM): deep and balanced trees, the model's text, bytes copied within sum(3d + 4)"
+    echo "$sc" | sed 's/^ok /      /'
+else
+    echo "FAIL  tile show cost (VM): rc=$vrc"; echo "$sc" | sed 's/^/      /'; ok=0
+fi
+wm_host hshowcost.la "$T/showcost_host.txt"
+if [ "$hrc" = 0 ] && [ "$(python3 "$T/show_cost.py" same "$T" "$T/showcost_host.txt" "$T/showcost_vm.txt" 2>&1)" = ok ]; then
+    echo "PASS  tile show cost host = VM: the 40-window texts and byte totals agree"
+else
+    echo "FAIL  tile show cost host = VM: host rc=$hrc; the host's texts or byte totals differ from the VM's"; ok=0
 fi
 
 [ "$ok" = 1 ] || exit 1

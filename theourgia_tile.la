@@ -77,14 +77,28 @@
 #  function is let-bound (LET and Z are named only while the kit is being
 #  built), so after TILE_KIT returns, no operation names a glyph or a builtin.
 #  Booleans are applied straight to values or to thunks and a dummy. Every
-#  operation is one to three linear walks of the tree (insert = has + rebuild,
+#  operation is one to three walks of the tree (insert = has + rebuild,
 #  neighbour = layout + find + scan), and the trees are small (a screen holds
-#  tens of windows, not thousands). Measured on the VM with 10 windows in the
-#  deepest shape: layout 0.14 ms, neighbour 0.34 ms, insert+remove 0.12 ms,
-#  swap 0.09 ms, show 0.04 ms, the rest under 0.06 ms; with 30 windows layout
-#  0.38 ms and neighbour 0.86 ms. A gdb trap on the VM's glyph-table lookup
-#  counts the same names for 1 and 5 rounds of every operation: only the
-#  kit's own construction reaches the table.
+#  tens of windows, not thousands). Every operation but show does a constant
+#  amount of work per node. show does one walk too, but concat copies both its
+#  operands (WM_DESIGN.md rule 5), so each level copies the text built below
+#  it again: a byte that lies d splits deep is copied 2 or 3 times a level, at
+#  most 3d + 4 times in all (the gate checks this bound). That is O(n log n)
+#  bytes on a balanced tree and O(n²) on a chain, the shape that splitting
+#  the newest window again and again builds. It is NOT a balanced join, on
+#  purpose: on this VM a list of pieces costs about a microsecond of closure
+#  work per piece, more than the copying it saves on any tree a screen holds.
+#  Measured (CPU time a call; a pairwise join of the text's pieces in
+#  brackets): a 30-window chain 0.10 ms (0.22), 160 windows 0.85 ms (1.29),
+#  320 windows 2.4 ms (2.3); a 320-window balanced tree 1.2 to 1.7 ms (2.9).
+#  The window manager does not call show; it is the canonical form for tests.
+#  Measured on the VM (CPU time a call, 10 and 30 windows, chain and balanced
+#  alike): layout 0.09 and 0.30 ms, neighbour 0.21 and 0.65 ms, insert+remove
+#  0.09 and 0.29 ms, swap, resize, toggle 0.05 and 0.10 to 0.16 ms, show 0.03
+#  and 0.10 ms, next, has, leaves, count under 0.03 and 0.10 ms. A gdb trap on
+#  the VM's glyph-table lookup counts the same names for 1 and 5 rounds of
+#  every operation (and for 0 and 40 rounds of show): only the kit's own
+#  construction reaches the table.
 #
 #  Pure Lingua Adamica: byte-identical on the C host and the native VM. The
 #  host is much slower here (tens of ms an operation: its substitution copies
@@ -133,13 +147,18 @@ glyph TILE_KIT = la add. la sub. la mul. la div. la lt. la int_eq. la concat. la
   LET(Z(la go. la t. la acc.
         t(la _. acc)(la i. CONS(i)(acc))(la d. la r. la a. la b. go(a)(go(b)(acc)))))(la LVS.
   LET(la t. LVS(t)(NIL))(la LEAVES.
+  # SHOW: ((head ++ (show(a) ++ ",")) ++ (show(b) ++ ")")). concat copies both
+  # operands, so the order matters: this copies the second child's text twice
+  # and the first child's three times per level (nesting the other way round,
+  # concat(head)(concat(show(a))(concat(",")(...))), copies them 6 and 4
+  # times). See PERFORMANCE in the header for why it is not a balanced join.
   LET(Z(la show. la t.
         t(la _. "E")
          (la i. concat("L")(int_to_str(i)))
          (la d. la r. la a. la b.
-            concat(int_eq(d)(C0)("H")("V"))
-              (concat(int_to_str(r))
-                (concat("(")(concat(show(a))(concat(",")(concat(show(b))(")")))))))))(la SHOW.
+            concat(concat(concat(int_eq(d)(C0)("H")("V"))(concat(int_to_str(r))("(")))
+                         (concat(show(a))(",")))
+                  (concat(show(b))(")")))))(la SHOW.
   # NX(first)(id)(l): the element after id in l, first if id is last, id if absent.
   LET(Z(la nx. la first. la id. la l.
         l(la _. id)
