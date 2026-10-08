@@ -1,0 +1,225 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logoskit.la — LogosKit, the UI framework (Citrinitas layer 10).
+#
+#  The Codex's law for every interface in LogOS is ontoglyphic:
+#  Meaning(e) ≡ Structure(e) ≡ State(e) — an interface element is GENERATED
+#  FROM STATE, not assigned to it. So a LogosKit program never builds or edits
+#  widgets: its view is a function from its state to an element tree, rebuilt
+#  whenever the state changes, and everything the user perceives is derived
+#  from that one tree:
+#    - what is drawn: the tree is laid out in character cells (paint) and
+#      rastered with theourgia_render.la's text bands (render);
+#    - what is SPOKEN: the accessible description (a11y) — each element's role,
+#      label, state and focus — is derived from the same tree by the same walk,
+#      so no element can be on the screen without being in the description.
+#      That is the Codex's accessibility invariant 𝔄_acc, made structural: there
+#      is no separate annotation to forget.
+#    - what a key does (key): Tab / Shift+Tab move the focus through the
+#      focusable elements in tree order; Enter, Space, Up/Down, Backspace and
+#      typed characters become MESSAGES for the program's update function.
+#  A program is therefore (init, view, update), as in the Elm architecture,
+#  and the toolkit holds no state of its own besides the focus.
+#
+#  ── ELEMENTS ────────────────────────────────────────────────────────
+#    TEXT(s)                       a label
+#    BUTTON(id)(label)             focusable; Enter or Space -> press
+#    FIELD(id)(label)(value)       focusable text field; typing -> edit
+#    TOGGLE(id)(label)(on)         focusable check box; Enter/Space -> toggle
+#    LIST(id)(items)(sel)          focusable list; Up/Down -> select
+#    ROW(children) / COL(children) layout: side by side (one cell apart) /
+#                                  stacked
+#    PANEL(title)(child)           a framed box with a title
+#    SPACE(w)(h)                   empty cells
+#  ids are strings. A message is la k. k(id)(kind)(payload) with kind
+#  "press", "toggle" (payload "1"/"0", the NEW value), "select" (the new
+#  index), "edit" (the new value) or "submit" (Enter in a field: its value).
+#
+#  ── USE ─────────────────────────────────────────────────────────────
+#  LK_KIT(B)(L)(R)(scale)(pal) -> la s. s(nodes)(measure)(paint)(a11y)
+#                                        (focusables)(key)(render)
+#    B, L   the builtin and list records of theourgia_wm.la
+#    R      theourgia_render.la's record; pal = la s. s(normal)(focused)
+#           (title)(dim): four text styles made with R's style
+#    nodes  la s. s(TEXT)(BUTTON)(FIELD)(TOGGLE)(LIST)(ROW)(COL)(PANEL)(SPACE)
+#    measure(el)         la k. k(w)(h), in cells
+#    paint(el)(focus)    h rows of runs; a run is la k. k(col)(text)(style)
+#                        (style 0 normal, 1 focused, 2 title, 3 dim)
+#    a11y(el)(focus)     the accessible description: a list of lines
+#    focusables(el)      the focusable ids in order
+#    key(el)(focus)(code)(shift)(ch)   la k. k(focus')(msg option); ch is the
+#                        character the key types ("" if none), from the
+#                        terminal's keychar
+#    render(rows)(cols)  the rows' scanlines (8*scale per row, cols cells wide)
+#  The kit's constructors and operations come in through the record, so a
+#  program's view names no glyph while it runs (WM_DESIGN.md, kit style).
+#
+#  Pure Lingua Adamica apart from rendering, which goes through R.
+#  gate_logoskit.sh checks paint, a11y, focus and keys against hand-derived
+#  answers; the WM's gates check rendering through OCR.
+# ═══════════════════════════════════════════════════════════════════
+
+export LK_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# ── Element nodes (Scott, nine cases) ──────────────────────────────────────
+glyph LK_TEXT   = la s. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. text(s)
+glyph LK_BUTTON = la id. la lab. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. button(id)(lab)
+glyph LK_FIELD  = la id. la lab. la v. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. field(id)(lab)(v)
+glyph LK_TOGGLE = la id. la lab. la on. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. toggle(id)(lab)(on)
+glyph LK_LIST   = la id. la items. la sel. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. list(id)(items)(sel)
+glyph LK_ROW    = la cs. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. row(cs)
+glyph LK_COL    = la cs. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. col(cs)
+glyph LK_PANEL  = la t. la c. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. panel(t)(c)
+glyph LK_SPACE  = la w. la h. la text. la button. la field. la toggle. la list. la row. la col. la panel. la space. space(w)(h)
+
+glyph LK_KIT = la B. la L. la R. la scale. la pal.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
+  L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
+  R(la px. la run. la style. la band. la bands. la solid. la join. la compose.
+  pal(la st_normal. la st_focused. la st_title. la st_dim.
+  (la C0. la C1. la C2. la C3. la C4. la C12. la TRUE. la FALSE.
+    LET(la s. str_to_int(str_len(s)))(la slen.
+    LET(la a. la b. lt(a)(b)(la _. b)(la _. a)(C0))(la maxi.
+    LET(la a. la b. str_eq(a)(b))(la streq.
+    LET(Z(la rep. la n. la s. lt(C0)(n)(la _. concat(s)(rep(sub(n)(C1))(s)))(la _. "")(C0)))(la rep.
+    # pad(s)(n): s padded with spaces to n characters (never truncated)
+    LET(la s. la n. concat(s)(rep(sub(n)(slen(s)))(" ")))(la pad.
+    LET(la col. la text. la st. la k. k(col)(text)(st))(la mkrun.
+    LET(la dx. la r. r(la col. la text. la st. mkrun(add(col)(dx))(text)(st)))(la shift.
+    LET(la focus. la id. la yes. la no. str_eq(focus)(id)(yes)(no))(la isfocus.
+    # ── measure ──
+    LET(Z(la measure. la el.
+        el(la s. la k. k(slen(s))(C1))
+          (la id. la lab. la k. k(add(slen(lab))(C4))(C1))
+          (la id. la lab. la v. la k. k(add(add(slen(lab))(C4))(maxi(slen(v))(C12)))(C1))
+          (la id. la lab. la on. la k. k(add(slen(lab))(C4))(C1))
+          (la id. la items. la sel. la k. k(add(C2)(Z(la mx. la l. l(la _. C0)(la h. la t. maxi(slen(h))(mx(t))))(items)))(len(items)))
+          (la cs. Z(la go. la l. la w. la h. l(la _. la k. k(w)(h))
+                    (la c. la rest. measure(c)(la cw. la ch.
+                       go(rest)(add(w)(add(cw)(lt(C0)(w)(la _. C1)(la _. C0)(C0))))(maxi(h)(ch)))))(cs)(C0)(C0))
+          (la cs. Z(la go. la l. la w. la h. l(la _. la k. k(w)(h))
+                    (la c. la rest. measure(c)(la cw. la ch. go(rest)(maxi(w)(cw))(add(h)(ch)))))(cs)(C0)(C0))
+          (la t. la c. measure(c)(la cw. la ch. la k. k(add(maxi(cw)(add(slen(t))(C2)))(C4))(add(ch)(C2))))
+          (la w. la h. la k. k(w)(h))))(la measure.
+    # ── paint: h rows, each a list of runs ──
+    LET(Z(la paint. la el. la focus.
+        el(la s. cons(cons(mkrun(C0)(s)(C0))(nil))(nil))
+          (la id. la lab.
+             cons(cons(mkrun(C0)(concat("[ ")(concat(lab)(" ]")))(isfocus(focus)(id)(C1)(C0)))(nil))(nil))
+          (la id. la lab. la v.
+             cons(cons(mkrun(C0)(concat(lab)(": "))(C0))
+                 (cons(mkrun(add(slen(lab))(C2))(concat("[")(concat(pad(v)(C12))("]")))(isfocus(focus)(id)(C1)(C0)))(nil)))(nil))
+          (la id. la lab. la on.
+             cons(cons(mkrun(C0)(concat(on("[x] ")("[ ] "))(lab))(isfocus(focus)(id)(C1)(C0)))(nil))(nil))
+          (la id. la items. la sel.
+             measure(el)(la w. la h.
+               Z(la go. la l. la i. l(la _. nil)(la it. la rest.
+                   cons(cons(mkrun(C0)(concat(int_eq(i)(sel)(la _. "> ")(la _. "  ")(C0))(pad(it)(sub(w)(C2))))
+                                 (int_eq(i)(sel)(la _. isfocus(focus)(id)(C1)(C3))(la _. C0)(C0)))(nil))
+                       (go(rest)(add(i)(C1)))))(items)(C0)))
+          (la cs.
+             # side by side: row r of the result joins row r of every child, shifted
+             measure(el)(la w. la h.
+               (la zip. Z(la go. la l. la x. la acc. l(la _. acc)(la c. la rest.
+                    measure(c)(la cw. la ch.
+                      go(rest)(add(x)(add(cw)(C1)))(zip(x)(acc)(paint(c)(focus))))))(cs)(C0)(nrep(h)(nil)))
+               # zip(x)(acc)(rows): append each child row (shifted by x) to the matching acc row
+               (Z(la zip. la x. la acc. la rows. acc(la _. nil)(la a. la arest.
+                   rows(la _. cons(a)(zip(x)(arest)(nil)))
+                       (la r. la rrest. cons(append(a)(map(shift(x))(r)))(zip(x)(arest)(rrest))))))))
+          (la cs. Z(la go. la l. l(la _. nil)(la c. la rest. append(paint(c)(focus))(go(rest))))(cs))
+          (la t. la c.
+             measure(el)(la w. la h.
+               (la inner.
+                 cons(cons(mkrun(C0)(concat("+- ")(concat(t)(concat(" ")(concat(rep(sub(w)(add(slen(t))(5)))("-"))("+")))))(C2))(nil))
+                 (append(map(la r. cons(mkrun(C0)("|")(C0))(append(map(shift(C2))(r))(cons(mkrun(sub(w)(C1))("|")(C0))(nil))))(inner))
+                 (cons(cons(mkrun(C0)(concat("+")(concat(rep(sub(w)(C2))("-"))("+")))(C0))(nil))(nil))))
+               (paint(c)(focus))))
+          (la w. la h. nrep(h)(nil))))(la paint.
+    # ── a11y: the accessible description, from the same tree ──
+    LET(la focus. la id. str_eq(focus)(id)(la _. ", focused")(la _. "")(C0))(la fmark.
+    LET(Z(la a11y. la el. la focus. la ind.
+        el(la s. cons(concat(ind)(concat("text: ")(s)))(nil))
+          (la id. la lab. cons(concat(ind)(concat("button ")(concat(lab)(fmark(focus)(id)))))(nil))
+          (la id. la lab. la v. cons(concat(ind)(concat("text field ")(concat(lab)(concat(": ")(concat(v)(fmark(focus)(id)))))))(nil))
+          (la id. la lab. la on. cons(concat(ind)(concat("check box ")(concat(lab)(concat(on(": checked")(": not checked"))(fmark(focus)(id))))))(nil))
+          (la id. la items. la sel.
+             cons(concat(ind)(concat("list, item ")(concat(int_to_str(add(sel)(C1)))(concat(" of ")(concat(int_to_str(len(items)))
+               (concat(": ")(concat(Z(la nth. la l. la i. l(la _. "")(la h. la t. int_eq(i)(C0)(la _. h)(la _. nth(t)(sub(i)(C1)))(C0)))(items)(sel))(fmark(focus)(id)))))))))(nil))
+          (la cs. Z(la go. la l. l(la _. nil)(la c. la rest. append(a11y(c)(focus)(ind))(go(rest))))(cs))
+          (la cs. Z(la go. la l. l(la _. nil)(la c. la rest. append(a11y(c)(focus)(ind))(go(rest))))(cs))
+          (la t. la c. cons(concat(ind)(concat("panel ")(t)))(a11y(c)(focus)(concat(ind)("  "))))
+          (la w. la h. nil)))(la a11y_in.
+    LET(la el. la focus. a11y_in(el)(focus)(""))(la a11y.
+    # ── focusables, and finding an element by id ──
+    LET(Z(la fs. la el.
+        el(la s. nil)(la id. la lab. cons(id)(nil))(la id. la lab. la v. cons(id)(nil))
+          (la id. la lab. la on. cons(id)(nil))(la id. la items. la sel. cons(id)(nil))
+          (la cs. Z(la go. la l. l(la _. nil)(la c. la rest. append(fs(c))(go(rest))))(cs))
+          (la cs. Z(la go. la l. l(la _. nil)(la c. la rest. append(fs(c))(go(rest))))(cs))
+          (la t. la c. fs(c))(la w. la h. nil)))(la focusables.
+    # byid(el)(id) -> option of the element
+    LET(Z(la byid. la el. la id.
+        (la leaf. la kids.
+          el(la s. leaf(""))(la i. la lab. leaf(i))(la i. la lab. la v. leaf(i))(la i. la lab. la on. leaf(i))
+            (la i. la items. la sel. leaf(i))(kids)(kids)(la t. la c. byid(c)(id))(la w. la h. leaf("")))
+        (la i. str_eq(i)(id)(la _. la none. la some. some(el))(la _. la none. la some. none(none))(C0))
+        (la cs. Z(la go. la l. l(la _. la none. la some. none(none))
+                   (la c. la rest. byid(c)(id)(la _. go(rest))(la e. la none. la some. some(e))))(cs))))(la byid.
+    # neighbour in the focus order (dir 1 next, 0 previous), wrapping
+    LET(la el. la focus. la fwd.
+        (la ids. ids(la _. focus)(la first. la rest.
+           Z(la go. la l. la prev. l(la _. fwd(la _. first)(la _. prev)(C0))
+              (la h. la t. str_eq(h)(focus)
+                 (la _. fwd(la _. t(la _. first)(la n. la r. n))(la _. str_eq(prev)("")(la _. Z(la last. la l. l(la _. first)(la a. la b. b(la _. a)(la c. la d. last(b))))(ids))(la _. prev)(C0))(C0))
+                 (la _. go(t)(h))(C0)))(ids)("")))
+        (focusables(el)))(la step_focus.
+    LET(la id. la kind. la payload. la k. k(id)(kind)(payload))(la msg.
+    # ── keys ── codes: TAB 15, ENTER 28, SPACE 57, BACKSPACE 14, UP 103, DOWN 108
+    LET(15)(la K_TAB. LET(28)(la K_ENTER. LET(57)(la K_SPACE. LET(14)(la K_BS. LET(103)(la K_UP. LET(108)(la K_DOWN.
+    LET(la el. la focus. la code. la shift. la ch.
+        (la none. la some.
+          int_eq(code)(K_TAB)(la _. la k. k(step_focus(el)(focus)(shift(FALSE)(TRUE)))(none))(la _.
+          byid(el)(focus)(la _. la k. k(focus)(none))(la e.
+            e(la s. la k. k(focus)(none))
+             (la id. la lab. int_eq(code)(K_ENTER)(la _. la k. k(focus)(some(msg(id)("press")(""))))(la _.
+                              int_eq(code)(K_SPACE)(la _. la k. k(focus)(some(msg(id)("press")(""))))(la _. la k. k(focus)(none))(C0))(C0))
+             (la id. la lab. la v.
+                int_eq(code)(K_ENTER)(la _. la k. k(focus)(some(msg(id)("submit")(v))))(la _.
+                int_eq(code)(K_BS)(la _. la k. k(focus)(some(msg(id)("edit")(
+                    Z(la drop_last. la s. str_eq(str_tail(s))("")(la _. "")(la _. concat(str_head(s))(drop_last(str_tail(s))))(C0))(v)))))(la _.
+                str_eq(ch)("")(la _. la k. k(focus)(none))(la _. la k. k(focus)(some(msg(id)("edit")(concat(v)(ch)))))(C0))(C0))(C0))
+             (la id. la lab. la on.
+                (la hit. hit(la _. la k. k(focus)(some(msg(id)("toggle")(on("0")("1")))))(la _. la k. k(focus)(none))(C0))
+                (int_eq(code)(K_ENTER)(TRUE)(int_eq(code)(K_SPACE))))
+             (la id. la items. la sel.
+                int_eq(code)(K_UP)(la _. la k. k(focus)(some(msg(id)("select")(int_to_str(lt(C0)(sel)(la _. sub(sel)(C1))(la _. sel)(C0))))))(la _.
+                int_eq(code)(K_DOWN)(la _. la k. k(focus)(some(msg(id)("select")(int_to_str(lt(add(sel)(C1))(len(items))(la _. add(sel)(C1))(la _. sel)(C0))))))
+                  (la _. la k. k(focus)(none))(C0))(C0))
+             (la cs. la k. k(focus)(none))(la cs. la k. k(focus)(none))
+             (la t. la c. la k. k(focus)(none))(la w. la h. la k. k(focus)(none))))(C0))
+        (la none. la some. none(none))(la x. la none. la some. some(x)))(la key.
+    # ── render: a row of runs -> 8*scale scanlines, cols cells wide ──
+    LET(la s. int_eq(s)(C0)(la _. st_normal)(la _. int_eq(s)(C1)(la _. st_focused)(la _.
+            int_eq(s)(C2)(la _. st_title)(la _. st_dim)(C0))(C0))(C0))(la style_of.
+    # zipcat(a)(b): scanline-wise concatenation of two bands
+    LET(Z(la zc. la a. la b. a(la _. b)(la x. la xs. b(la _. a)(la y. la ys. cons(concat(x)(y))(zc(xs)(ys))))))(la zipcat.
+    LET(la rowruns. la cols.
+        Z(la go. la runs. la at. la acc.
+            runs(la _. lt(at)(cols)(la _. zipcat(acc)(band(st_normal)("")(sub(cols)(at))))(la _. acc)(C0))
+                (la r. la rest. r(la col. la text. la st.
+                   (la gap. (la w.
+                      go(rest)(add(col)(w))
+                        (zipcat(zipcat(acc)(lt(C0)(gap)(la _. band(st_normal)("")(gap))(la _. nil)(C0)))
+                               (band(style_of(st))(text)(w))))
+                    (slen(text)))(sub(col)(at)))))
+          (rowruns)(C0)(nil))(la render_row.
+    LET(la rows. la cols.
+        Z(la go. la l. l(la _. nil)(la r. la rest. append(render_row(r)(cols))(go(rest))))(rows))(la render.
+      la s. s(la k. k(LK_TEXT)(LK_BUTTON)(LK_FIELD)(LK_TOGGLE)(LK_LIST)(LK_ROW)(LK_COL)(LK_PANEL)(LK_SPACE))
+             (measure)(paint)(a11y)(focusables)(key)(render)
+    )))))))))))))))))))))))))))))
+  (0)(1)(2)(3)(4)(12)(la t. la f. t)(la t. la f. f)))))
