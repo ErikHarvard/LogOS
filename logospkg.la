@@ -1,0 +1,541 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logospkg.la — LogosPkg, Citrinitas layer 12: the package manager.
+#
+#  Codex: "Autoteloscriptic packages (self-verifying, b_τ ≡ f_τ). Advisory
+#  Update Protocol. Content-addressed distribution"; "LogosPkg updates itself
+#  (the package manager is a package managed by the package manager)."
+#  OS_LAYERS_DESIGN.md, section "logospkg.la", is the contract; this module
+#  implements it on the native SECD VM.
+#
+#  ── WHAT A PACKAGE IS ────────────────────────────────────────────────
+#  One archive string, binary-safe:
+#      logospkg1\n  name=N\n  version=V\n  deps=D1,D2\n  test=T\n
+#      file <name> <length>\n<bytes>\n      (once per file)
+#      end\n
+#  N and every dependency are 1..64 bytes of [A-Za-z0-9_.-], not starting
+#  with '.'; V is dotted decimals ("1.10" is newer than "1.9"; a component is
+#  1..9 digits with no leading zero); a file name is like a package name (up to
+#  128 bytes) and is not logos_program.bin or logos_source.la (the names the
+#  self-test uses). The files must include T, the self-test program, and
+#  T.expected, its exact expected stdout. The archive's ID is
+#  hex(sha256(archive)): a package is addressed by its content.
+#
+#  A REPOSITORY is a directory: pkg/<id> holds the archives, `index` the lines
+#  "name version id", and `index.sig` = hex(hmac(K_repo)(index)). Every read of
+#  the index checks the signature first (in constant time) and every archive is
+#  hashed and compared with its id before it is unpacked. The key is
+#  symmetric: there are no public-key signatures in LA yet.
+#
+#  AN INSTALLATION is a directory: pkgs/<name>/<version>/ holds the files (plus
+#  `.archive`, the archive they came from, which is how remove knows the file
+#  list and the dependencies), current/<name> holds the active version, and
+#  `installed` the lines "name version id" of every version present.
+#
+#  ── HOW IT IS USED ───────────────────────────────────────────────────
+#      PKG_KIT(concat)(str_len)(str_at)(str_eq)(ord)(str_to_int)(int_to_str)
+#             (add)(sub)(div)(lt)(int_eq)(band)(bor)(bxor)
+#             (read_file)(stat)(mkdir)(rmdir)(rename)(unlink)(open)(write)
+#             (close)(fork)(dup2)(execv)(waitpid)(exit)(error)
+#             (crypt)(cfg)
+#        -> la s. s(pack)(unpack)(publish)(install)(remove)(advise)(update)
+#                   (rollback)(list)
+#  crypt is the crypt record (crypt_ref.la); only sha256, hmac and hex are
+#  used. cfg = la s. s(vm)(compiler): the ABSOLUTE path of the VM binary and
+#  the path of compiler.bin. Results are `la err. la ok.`, lists Scott lists.
+#
+#    pack(name)(version)(deps)(test)(files)   the archive; deps a list of
+#                                             names, files a list of
+#                                             la k. k(name)(bytes)
+#    unpack(archive)        ok(la k. k(name)(version)(deps)(test)(files))
+#    publish(repo)(K)(archive)   ok(id): checks the archive and the existing
+#                           index's signature, adds pkg/<id>, re-signs
+#    install(inst)(repo)(K)(name)   ok(list of "name version" installed, in
+#                           order): the newest version and, first, its missing
+#                           dependencies, in topological order
+#    remove(inst)(name)     ok(name); refused while any installed version of
+#                           another package depends on it
+#    advise(inst)(repo)(K)  ok(list of la k. k(name)(installed)(available)),
+#                           only where the repository is newer; changes nothing
+#    update(inst)(repo)(K)(name)   ok(list as install): the newest version,
+#                           same checks; the old one stays in pkgs/. If that
+#                           version is already in pkgs/ (after a rollback),
+#                           current/ is switched to it. ok(nil): up to date
+#    rollback(inst)(name)   ok(version): current/<name> back to the highest
+#                           installed version below the current one
+#    list(inst)             the installed packages, la k. k(name)(version)(id)
+#                           with the current version (halts on a corrupt
+#                           installation, which only a crash or a hand can make)
+#
+#  ── INSTALL, STEP BY STEP ────────────────────────────────────────────
+#  1. The index signature verifies; the plan is built depth-first from the
+#     newest version of each missing package: each archive is read, its sha256
+#     compared with its id, unpacked, and its dependencies planned before it. A
+#     package met again on the current path is a cycle (an error naming it).
+#  2. staging/ is created inside the installation. Each planned package is
+#     unpacked into staging/pkg-<name>, and its SELF-TEST is run: its files and
+#     the files of all its dependencies (planned or installed; not their own
+#     self-tests) are written to staging/test-<name> with compiler.bin as
+#     logos_program.bin and the test as logos_source.la; then twice
+#     fork + dup2 (stdout and stderr to files, stdin /dev/null) + execv of
+#     `env -C <that dir> <vm>`: the first run compiles the test, the second
+#     runs it. The run must exit 0 and its stdout must equal T.expected byte
+#     for byte. The test directory is then removed.
+#  3. Only when EVERY planned package passed: the staged directories are
+#     renamed into pkgs/, `installed` is rewritten and each current/<name> is
+#     written (each file through a temporary and rename, so each switch is
+#     atomic), and staging/ is removed. On any failure the staged files are
+#     unlinked and staging/ removed: the installation is exactly as it was.
+#
+#  ── STYLE ────────────────────────────────────────────────────────────
+#  Kit style (WM_DESIGN.md, "How fast the VM is"): every builtin is a
+#  parameter and every helper is let-bound inside PKG_KIT, so after the one
+#  call at startup nothing names a glyph or a builtin. Booleans are applied to
+#  two thunks and a dummy; strings are joined by balanced concatenation.
+#
+#  ── ENGINES ──────────────────────────────────────────────────────────
+#  pack and unpack are pure (host and VM). Everything else needs the VM's file
+#  and process builtins. gate_logospkg.sh checks it all on the VM.
+#
+#  ── HONEST SCOPE ─────────────────────────────────────────────────────
+#  - The repository key is symmetric (HMAC): whoever can verify can sign.
+#  - Dependencies name packages, not versions: any installed version satisfies
+#    one, and updating a package does not re-run its dependents' self-tests.
+#  - The commit is a sequence of atomic renames, not one transaction: a crash
+#    in the middle of it can leave a version in pkgs/ before `installed` lists
+#    it, or `installed` updated before current/. Check failures never get there.
+#  - A self-test may only write files it is told about: anything else it
+#    creates in its directory stops that directory being removed, and the
+#    install then fails naming staging/.
+#  - On this branch's VM waitpid returns WEXITSTATUS, so a self-test killed by
+#    a signal reads as status 0; its stdout must still match exactly. There is
+#    no time limit: a self-test that never ends holds the install.
+#  - The installation directory must exist; file modes are not recorded (an
+#    installed file is 0644).
+#  - Paths are passed to execv, which splits on spaces, so the installation
+#    path and the VM path may not contain spaces (checked).
+#  - There is no directory listing builtin: removal unlinks the files the
+#    archive names, so a stray file in pkgs/<name>/<version> stops remove.
+# ═══════════════════════════════════════════════════════════════════
+
+export PKG_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_int.
+    la int_to_str. la add. la sub. la div. la lt. la int_eq. la band. la bor. la bxor.
+    la read_file. la stat. la mkdir. la rmdir. la rename. la unlink. la open. la write.
+    la close. la fork. la dup2. la execv. la waitpid. la exit. la error.
+    la crypt. la cfg.
+  crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
+  cfg(la vm. la compiler.
+  (la C0. la C1. la C2. la C4. la C5. la C10. la C32. la C45. la C46. la C48. la C57.
+      la C64. la C65. la C90. la C95. la C97. la C102. la C122. la C129.
+      la C16384. la C32768. la C61440.
+
+  # ── booleans, results, lists ────────────────────────────────────────
+  LET(la t. la f. t)(la TT.
+  LET(la t. la f. f)(la FF.
+  LET(la v. la e. la o. o(v))(la ok.
+  LET(la m. la e. la o. e(m))(la err.
+  LET(la r. la f. r(err)(f))(la bind.
+  LET(la n. la c. n(n))(la nil.
+  LET(la h. la t. la n. la c. c(h)(t))(la cons.
+  LET(Z(la rv. la l. la acc. l(la _. acc)(la h. la t. rv(t)(cons(h)(acc)))))(la revonto.
+  LET(la l. revonto(l)(nil))(la rev.
+  LET(Z(la app. la a. la b. a(la _. b)(la h. la t. cons(h)(app(t)(b)))))(la append.
+  LET(Z(la map. la f. la l. l(la _. nil)(la h. la t. cons(f(h))(map(f)(t)))))(la map.
+  LET(Z(la filter. la p. la l.
+      l(la _. nil)(la h. la t. p(h)(la _. cons(h)(filter(p)(t)))(la _. filter(p)(t))(""))))(la filter.
+  LET(Z(la any. la p. la l. l(la _. FF)(la h. la t. p(h)(la _. TT)(la _. any(p)(t))(""))))(la any.
+  LET(Z(la all. la p. la l. l(la _. TT)(la h. la t. p(h)(la _. all(p)(t))(la _. FF)(""))))(la all.
+  LET(la x. la l. any(la y. str_eq(x)(y))(l))(la member.
+  LET(Z(la fold. la f. la acc. la l. l(la _. acc)(la h. la t. fold(f)(f(acc)(h))(t))))(la fold.
+  LET(Z(la ll. la l. l(la _. C0)(la h. la t. add(C1)(ll(t)))))(la llen.
+  # each(f)(l): f(x) for each x in order, each a result; stops at the first err
+  LET(Z(la each. la f. la l. l(la _. ok(""))(la h. la t. bind(f(h))(la _. each(f)(t)))))(la each.
+  # mapr(f)(l): ok(the list of f's ok values) or f's first err
+  LET(Z(la mapr. la f. la l.
+      l(la _. ok(nil))(la h. la t. bind(f(h))(la v. bind(mapr(f)(t))(la vs. ok(cons(v)(vs)))))))(la mapr.
+
+  # ── strings ─────────────────────────────────────────────────────────
+  LET(la s. str_to_int(str_len(s)))(la len.
+  LET(la s. la i. str_to_int(ord(str_at(s)(i))))(la byte.
+  # span(s)(lo)(hi): bytes lo..hi-1, joined by halving (each byte copied log n times)
+  LET(Z(la span. la s. la lo. la hi.
+      lt(add(lo)(C1))(hi)
+        (la _. (la mid. concat(span(s)(lo)(mid))(span(s)(mid)(hi)))(div(add(lo)(hi))(C2)))
+        (la _. lt(lo)(hi)(la _. str_at(s)(lo))(la _. "")(""))("")))(la span.
+  # idx(s)(n)(i)(c): the first j >= i whose byte is the 1-byte string c, else n
+  LET(Z(la idx. la s. la n. la i. la c.
+      lt(i)(n)(la _. str_eq(str_at(s)(i))(c)(la _. i)(la _. idx(s)(n)(add(i)(C1))(c))(""))
+              (la _. n)("")))(la idx.
+  # at(s)(n)(i)(lit): s (of length n) holds lit at offset i
+  LET(la s. la n. la i. la lit.
+      (la j. lt(n)(j)(la _. FF)(la _. str_eq(span(s)(i)(j))(lit))(""))(add(i)(len(lit))))(la at.
+  # split(c)(s): the pieces between the bytes c; split(c)("") is [""]
+  LET(Z(la go. la c. la s. la n. la i.
+      (la j. cons(span(s)(i)(j))(lt(j)(n)(la _. go(c)(s)(n)(add(j)(C1)))(la _. nil)("")))
+      (idx(s)(n)(i)(c))))(la splitgo.
+  LET(la c. la s. splitgo(c)(s)(len(s))(C0))(la split.
+  # cat(list): balanced concatenation; join(sep)(list)
+  LET(Z(la pairs. la l. l(la _. nil)(la h. la t.
+      t(la _. cons(h)(nil))(la h2. la t2. cons(concat(h)(h2))(pairs(t2))))))(la pairs.
+  LET(Z(la cat. la l. l(la _. "")(la h. la t. t(la _. h)(la h2. la t2. cat(pairs(l))))))(la cat.
+  LET(Z(la pre. la sep. la l. l(la _. nil)(la h. la t. cons(sep)(cons(h)(pre(sep)(t))))))(la prepall.
+  LET(la sep. la l. l(la _. "")(la h. la t. cat(cons(h)(prepall(sep)(t)))))(la join.
+  # cteq(a)(b): equal strings, compared without an early exit
+  LET(Z(la go. la a. la b. la n. la i. la acc.
+      lt(i)(n)(la _. go(a)(b)(n)(add(i)(C1))(bor(acc)(bxor(byte(a)(i))(byte(b)(i)))))
+              (la _. int_eq(acc)(C0))("")))(la cteqgo.
+  LET(la a. la b. (la n. int_eq(n)(len(b))(la _. cteqgo(a)(b)(n)(C0)(C0))(la _. FF)(""))(len(a)))(la cteq.
+  # a syscall's decimal answer is a failure when it is negative (or empty)
+  LET(la s. lt(C0)(len(s))(la _. str_eq(str_at(s)(C0))("-"))(la _. TT)(""))(la isneg.
+
+  # ── names, versions, ids ────────────────────────────────────────────
+  LET(la b. la lo. la hi. lt(b)(lo)(FF)(lt(hi)(b)(FF)(TT)))(la inr.
+  LET(la b. inr(b)(C48)(C57))(la isdig.
+  LET(la b. isdig(b)(TT)(inr(b)(C97)(C102)))(la ishex.
+  LET(la b. isdig(b)(TT)(inr(b)(C65)(C90)(TT)(inr(b)(C97)(C122)(TT)
+      (int_eq(b)(C95)(TT)(int_eq(b)(C46)(TT)(int_eq(b)(C45)))))))(la namech.
+  LET(Z(la go. la p. la s. la n. la i.
+      lt(i)(n)(la _. p(byte(s)(i))(la _. go(p)(s)(n)(add(i)(C1)))(la _. FF)(""))(la _. TT)("")))(la allbgo.
+  LET(la p. la s. allbgo(p)(s)(len(s))(C0))(la allb.
+  # ident(max)(s): 1..max-1 bytes of [A-Za-z0-9_.-], not starting with '.'
+  LET(la max. la s. (la n. lt(C0)(n)
+      (la _. lt(n)(max)(la _. int_eq(byte(s)(C0))(C46)(la _. FF)(la _. allb(namech)(s))(""))(la _. FF)(""))
+      (la _. FF)(""))(len(s)))(la ident.
+  LET(la s. ident(C65)(s))(la vname.
+  LET(la s. ident(C129)(s)(str_eq(s)("logos_program.bin")(FF)(str_eq(s)("logos_source.la")(FF)(TT)))(FF))(la vfile.
+  # vdec(c): 1..9 digits, no leading zero unless it is "0" (a version component, a length)
+  LET(la c. (la n. lt(C0)(n)
+      (la _. lt(n)(C10)(la _. allb(isdig)(c)
+          (la _. lt(C1)(n)(la _. int_eq(byte(c)(C0))(C48)(FF)(TT))(la _. TT)(""))(la _. FF)(""))(la _. FF)(""))
+      (la _. FF)(""))(len(c)))(la vdec.
+  LET(la v. lt(len(v))(C65)(la _. all(vdec)(split(".")(v)))(la _. FF)(""))(la vversion.
+  LET(la s. int_eq(len(s))(C64)(la _. allb(ishex)(s))(la _. FF)(""))(la vid.
+  LET(la s. allb(la b. int_eq(b)(C32)(FF)(TT))(s))(la nospace.
+  # vlt(a)(b): version a is older than version b
+  LET(Z(la lexlt. la x. la y. y(la _. FF)(la yh. la yt. x(la _. TT)(la xh. la xt.
+      lt(xh)(yh)(la _. TT)(la _. lt(yh)(xh)(la _. FF)(la _. lexlt(xt)(yt))(""))("")))))(la lexlt.
+  LET(la a. la b. lexlt(map(str_to_int)(split(".")(a)))(map(str_to_int)(split(".")(b))))(la vlt.
+
+  # ── index and `installed` lines: la k. k(name)(version)(id) ─────────
+  LET(la n. la v. la i. la k. k(n)(v)(i))(la entry.
+  LET(la e. e(la n. la v. la i. n))(la ename.
+  LET(la e. e(la n. la v. la i. v))(la ever.
+  LET(la e. e(la n. la v. la i. i))(la eid.
+  LET(la e. la f. str_eq(ename(f))(ename(e))(str_eq(ever(f))(ever(e)))(FF))(la samenv.
+  LET(la line. (la bad. split(" ")(line)(la _. bad)(la n. la r1. r1(la _. bad)(la v. la r2.
+        r2(la _. bad)(la i. la r3. r3(la _. vname(n)(vversion(v)(vid(i))(FF))(FF)
+            (la _. ok(entry(n)(v)(i)))(la _. bad)(""))(la x. la y. bad)))))
+      (err(concat("malformed line: ")(line))))(la pline.
+  LET(Z(la pe. la ls. ls(la _. ok(nil))(la h. la t.
+      t(la _. str_eq(h)("")(la _. ok(nil))(la _. err("no final newline"))(""))
+       (la h2. la t2. bind(pline(h))(la e. bind(pe(t))(la rest. ok(cons(e)(rest))))))))(la pelines.
+  LET(la text. bind(pelines(split("\n")(text)))(la es.
+      any(la e. lt(C1)(llen(filter(samenv(e))(es))))(es)
+        (la _. err("a name and version listed twice"))(la _. ok(es))("")))(la pentries.
+  LET(la es. cat(map(la e. cat(cons(ename(e))(cons(" ")(cons(ever(e))(cons(" ")
+      (cons(eid(e))(cons("\n")(nil))))))))(es)))(la showentries.
+  LET(la es. la name. fold(la best. la e. str_eq(ename(e))(name)
+        (la _. best(la m. ok(e))(la b. vlt(ever(b))(ever(e))(la _. ok(e))(la _. best)(""))) (la _. best)(""))
+      (err(concat(name)(": not in the repository")))(es))(la newest.
+  LET(la es. la name. la v. fold(la r. la e. samenv(entry(name)(v)(""))(e)(la _. ok(e))(la _. r)(""))
+      (err(concat(name)(concat(" ")(concat(v)(" is not listed")))))(es))(la lookup.
+  LET(la es. rev(fold(la acc. la e. member(ename(e))(acc)(la _. acc)(la _. cons(ename(e))(acc))(""))(nil)(es)))(la names.
+  LET(la n. la v. concat(n)(concat(" ")(v)))(la nv.
+
+  # ── archives ────────────────────────────────────────────────────────
+  LET(la f. f(la n. la b. n))(la fname.
+  LET(la f. f(la n. la b. b))(la fbytes.
+  LET(la r. r(la n. la v. la d. la t. la f. n))(la rname.
+  LET(la r. r(la n. la v. la d. la t. la f. v))(la rver.
+  LET(la r. r(la n. la v. la d. la t. la f. d))(la rdeps.
+  LET(la r. r(la n. la v. la d. la t. la f. t))(la rtest.
+  LET(la r. r(la n. la v. la d. la t. la f. f))(la rfiles.
+  LET(la name. la version. la deps. la test. la files.
+      cat(cons("logospkg1\nname=")(cons(name)(cons("\nversion=")(cons(version)(cons("\ndeps=")
+        (cons(join(",")(deps))(cons("\ntest=")(cons(test)(cons("\n")
+        (append(fold(la acc. la f. append(acc)(cons("file ")(cons(fname(f))(cons(" ")
+                  (cons(str_len(fbytes(f)))(cons("\n")(cons(fbytes(f))(cons("\n")(nil)))))))))(nil)(files))
+          (cons("end\n")(nil)))))))))))))(la pack.
+  # field(a)(n)(i)(key): "key=value\n" at i -> ok(la k. k(value)(next offset))
+  LET(la a. la n. la i. la key. at(a)(n)(i)(key)
+      (la _. (la s. (la e. lt(e)(n)
+            (la _. ok(la k. k(span(a)(s)(e))(add(e)(C1))))
+            (la _. err(concat("unpack: unterminated ")(key)))(""))
+          (idx(a)(n)(s)("\n")))(add(i)(len(key))))
+      (la _. err(concat("unpack: expected ")(key)))(""))(la field.
+  LET(la s. str_eq(s)("")(la _. ok(nil))(la _. (la ds. all(vname)(ds)
+        (la _. any(la d. lt(C1)(llen(filter(la x. str_eq(x)(d))(ds))))(ds)
+            (la _. err("unpack: a dependency listed twice"))(la _. ok(ds))(""))
+        (la _. err(concat("unpack: bad deps: ")(s)))(""))(split(",")(s)))(""))(la pdeps.
+  # pfiles(a)(n)(i)(acc): the file entries from offset i up to "end\n" at the very end
+  LET(Z(la files. la a. la n. la i. la acc.
+      at(a)(n)(i)("end\n")
+        (la _. int_eq(add(i)(C4))(n)(la _. ok(rev(acc)))(la _. err("unpack: bytes after end"))(""))
+        (la _. at(a)(n)(i)("file ")
+          (la _. (la s. (la sp. (la nl. (la nm. (la ls.
+                lt(nl)(n)(vdec(ls)(vfile(nm))(FF))(FF)
+                  (la _. any(la f. str_eq(fname(f))(nm))(acc)
+                     (la _. err(concat("unpack: file listed twice: ")(nm)))
+                     (la _. (la b. (la e. lt(e)(n)(la _. str_eq(str_at(a)(e))("\n"))(la _. FF)("")
+                          (la _. files(a)(n)(add(e)(C1))(cons(la k. k(nm)(span(a)(b)(e)))(acc)))
+                          (la _. err(concat("unpack: truncated file ")(nm)))(""))
+                        (add(b)(str_to_int(ls))))(add(nl)(C1)))(""))
+                  (la _. err("unpack: bad file line"))(""))
+              (span(a)(add(sp)(C1))(nl)))(span(a)(s)(sp)))(idx(a)(n)(sp)("\n")))(idx(a)(n)(s)(" ")))
+              (add(i)(C5)))
+          (la _. err("unpack: expected a file or end"))(""))("")))(la pfiles.
+  LET(la a. (la n. at(a)(n)(C0)("logospkg1\n")
+      (la _. bind(field(a)(n)(C10)("name="))(la r1. r1(la name. la i1.
+             bind(field(a)(n)(i1)("version="))(la r2. r2(la version. la i2.
+             bind(field(a)(n)(i2)("deps="))(la r3. r3(la depstr. la i3.
+             bind(field(a)(n)(i3)("test="))(la r4. r4(la test. la i4.
+             vname(name)(la _. vversion(version)(la _. vfile(test)
+               (la _. bind(pdeps(depstr))(la deps. bind(pfiles(a)(n)(i4)(nil))(la files.
+                 (la has. has(test)(has(concat(test)(".expected")))(FF)
+                    (la _. ok(la k. k(name)(version)(deps)(test)(files)))
+                    (la _. err(concat("unpack: the archive lacks ")(concat(test)(" or its .expected"))))(""))
+                 (la f. any(la g. str_eq(fname(g))(f))(files)))))
+               (la _. err(concat("unpack: bad test file name: ")(test)))(""))
+             (la _. err(concat("unpack: bad version: ")(version)))(""))
+             (la _. err(concat("unpack: bad name: ")(name)))(""))))))))))
+      (la _. err("unpack: not a logospkg1 archive"))(""))(len(a)))(la unpack.
+
+  # ── files ───────────────────────────────────────────────────────────
+  LET(la a. la b. concat(a)(concat("/")(b)))(la path.
+  LET(la st. (la mode. int_eq(band(str_to_int(mode))(C61440)))(span(st)(C0)(idx(st)(len(st))(C0)(" "))))(la stkind.
+  LET(la p. isneg(stat(p))(FF)(TT))(la exists.
+  LET(la p. (la st. isneg(st)(la _. FF)(la _. stkind(st)(C16384))(""))(stat(p)))(la isdir.
+  LET(la p. (la st. isneg(st)(la _. FF)(la _. stkind(st)(C32768))(""))(stat(p)))(la isfile.
+  # put(p)(bytes): create or truncate p and write bytes; ok(p) or err
+  LET(la p. la bytes. (la fd. isneg(fd)
+        (la _. err(concat("cannot create ")(p)))
+        (la _. (la w. (la c. int_eq(str_to_int(w))(len(bytes))(la _. ok(p))(la _. err(concat("short write to ")(p)))(""))
+                 (close(fd)))(write(fd)(bytes)))(""))
+      (open(p)("577")))(la put.
+  # atomic(dir)(base)(bytes): write dir/.base.tmp, rename it onto dir/base
+  LET(la dir. la base. la bytes. (la tmp. bind(put(tmp)(bytes))(la _.
+        str_eq(rename(tmp)(path(dir)(base)))("0")(la _. ok(base))
+          (la _. (la _. err(concat("cannot rename onto ")(path(dir)(base))))(unlink(tmp)))("")))
+      (path(dir)(concat(".")(concat(base)(".tmp")))))(la atomic.
+  LET(la p. isdir(p)(la _. ok(p))
+      (la _. str_eq(mkdir(p)("493"))("0")(la _. ok(p))(la _. err(concat("cannot create directory ")(p)))(""))(""))(la ensure.
+  LET(la p. exists(p)(la _. ok(read_file(p)))(la _. err(concat("missing ")(p)))(""))(la readx.
+  # wipe(dir)(names): unlink dir/name for each name, then rmdir dir (nothing to do if it is absent)
+  LET(la dir. la names. exists(dir)
+      (la _. (la _. str_eq(rmdir(dir))("0")(la _. ok(""))(la _. err(concat("cannot remove ")(dir)))(""))
+             (map(la nm. unlink(path(dir)(nm)))(names)))
+      (la _. ok(""))(""))(la wipe.
+  LET(la files. la nm. fold(la r. la f. str_eq(fname(f))(nm)(la _. ok(fbytes(f)))(la _. r)(""))
+      (err(concat("no file ")(nm)))(files))(la lookfile.
+  LET(la fs. any(la f. lt(C1)(llen(filter(la g. str_eq(fname(g))(fname(f)))(fs))))(fs))(la clash.
+
+  # ── the installation's records ──────────────────────────────────────
+  LET(la inst. la n. path(path(inst)("pkgs"))(n))(la pkgdir.
+  LET(la inst. isdir(inst)
+      (la _. (la ip. exists(ip)(la _. bind(pentries(read_file(ip)))(la es. ok(es)))(la _. ok(nil))(""))
+               (path(inst)("installed")))
+      (la _. err(concat(inst)(" is not a directory")))(""))(la readinst.
+  LET(la inst. la n. bind(readx(path(path(inst)("current"))(n)))(la v.
+      vversion(v)(la _. ok(v))(la _. err(concat("current/")(concat(n)(" is malformed"))))("")))(la curver.
+  LET(la inst. la n. bind(curver(inst)(n))(la v.
+      bind(readx(path(path(pkgdir(inst)(n))(v))(".archive")))(la a. unpack(a))))(la instrec.
+
+  # ── the repository ──────────────────────────────────────────────────
+  # vindex(repo)(K): ok(the index entries) only when index.sig verifies
+  LET(la repo. la K. (la ip. (la sp. exists(ip)(exists(sp))(FF)
+      (la _. (la text. cteq(hex(hmac(K)(text)))(read_file(sp))
+          (la _. pentries(text)(la m. err(concat("index: ")(m)))(la es. ok(es)))
+          (la _. err("the repository index fails its signature"))(""))(read_file(ip)))
+      (la _. err("the repository has no signed index"))(""))(path(repo)("index.sig")))(path(repo)("index")))(la vindex.
+  # fetch(repo)(e): read pkg/<id>, check sha256 = id, unpack, check name and version
+  LET(la repo. la e. (la tag. (la p. exists(p)
+      (la _. (la arc. cteq(hex(sha256(arc)))(eid(e))
+          (la _. bind(unpack(arc))(la rec.
+              str_eq(rname(rec))(ename(e))(str_eq(rver(rec))(ever(e)))(FF)
+                (la _. ok(la k. k(rec)(arc)))
+                (la _. err(concat(tag)(": the archive names a different package")))("")))
+          (la _. err(concat(tag)(": the archive does not match its id")))(""))(read_file(p)))
+      (la _. err(concat(tag)(": the archive is missing from the repository")))(""))
+    (path(path(repo)("pkg"))(eid(e))))(nv(ename(e))(ever(e))))(la fetch.
+
+  # ── running a self-test on the VM ───────────────────────────────────
+  # runvm(dir)(out)(errf): a child runs `env -C dir vm` with stdin /dev/null,
+  # stdout to out, stderr to errf; the parent waits and returns its status
+  LET(la dir. la out. la ef.
+      (la pid. str_eq(pid)("0")
+         (la _. (la z. (la o. (la e. isneg(z)(TT)(isneg(o)(TT)(isneg(e)))
+                (la _. exit("126"))
+                (la _. (la _. (la _. (la _. (la _. exit("127"))
+                    (execv("/usr/bin/env")(concat("env -C ")(concat(dir)(concat(" ")(vm))))))
+                    (dup2(e)("2")))(dup2(o)("1")))(dup2(z)("0")))(""))
+              (open(ef)("577")))(open(out)("577")))(open("/dev/null")("0")))
+         (la _. isneg(pid)(la _. "fork failed")(la _. waitpid(pid))(""))(""))
+      (fork("!")))(la runvm.
+  LET(cons("logos_program.bin")(cons("logos_source.la")(cons(".compile.out")(cons(".compile.err")
+      (cons(".test.out")(cons(".test.err")(nil)))))))(la scratch.
+  # selftest(tdir)(rec)(files)(cbytes): write files, compile and run rec's test
+  # in tdir; ok("") when it exits 0 and prints exactly <test>.expected. tdir is
+  # always removed afterwards.
+  LET(la tdir. la rec. la files. la cbytes.
+      rec(la name. la version. la deps. la test. la own. (la tag. (la run.
+        (la r. bind(wipe(tdir)(append(map(fname)(files))(scratch)))(la _. r))
+        (bind(ensure(tdir))(la _.
+         bind(each(la f. put(path(tdir)(fname(f)))(fbytes(f)))(files))(la _.
+         bind(put(path(tdir)("logos_program.bin"))(cbytes))(la _.
+         bind(lookfile(own)(test))(la tsrc.
+         bind(lookfile(own)(concat(test)(".expected")))(la want.
+         bind(put(path(tdir)("logos_source.la"))(tsrc))(la _.
+           (la cst. str_eq(cst)("0")
+              (la _. (la st. str_eq(st)("0")
+                  (la _. str_eq(read_file(path(tdir)(".test.out")))(want)
+                      (la _. ok(""))
+                      (la _. err(concat(tag)(concat(": self-test output differs from ")(concat(test)(".expected")))))(""))
+                  (la _. err(concat(tag)(concat(": self-test exited with status ")(st))))(""))(run(".test")))
+              (la _. err(concat(tag)(concat(": self-test did not compile (status ")(concat(cst)(")")))))(""))
+           (run(".compile"))))))))))
+      (la base. runvm(tdir)(path(tdir)(concat(base)(".out")))(path(tdir)(concat(base)(".err")))))
+      (nv(name)(version))))(la selftest.
+
+  # ── planning ────────────────────────────────────────────────────────
+  # a plan item: la k. k(name)(version)(id)(rec)(archive)
+  LET(la it. it(la n. la v. la i. la r. la a. n))(la iname.
+  LET(la it. it(la n. la v. la i. la r. la a. v))(la iver.
+  LET(la it. it(la n. la v. la i. la r. la a. r))(la irec.
+  LET(la it. it(la n. la v. la i. la r. la a. entry(n)(v)(i)))(la ientry.
+  # visit(ctx)(names)(path)(force)(plan): ok(plan extended by each name and its
+  # missing dependencies, dependencies first). ctx = la k. k(repo)(index)(installed names).
+  # An installed name is skipped unless force (update's root). path: the names
+  # being visited, innermost first, for the cycle check.
+  LET(Z(la va. la ctx. la ds. la path. la force. la plan.
+      ds(la _. ok(plan))(la name. la rest. ctx(la repo. la index. la inames.
+        bind(member(name)(path)
+          (la _. err(concat("dependency cycle: ")(join(" -> ")(rev(cons(name)(path))))))
+          (la _. any(la it. str_eq(iname(it))(name))(plan)(TT)(member(name)(inames)(force(FF)(TT))(FF))
+             (la _. ok(plan))
+             (la _. bind(newest(index)(name))(la e. bind(fetch(repo)(e))(la fr. fr(la rec. la arc.
+                 bind(va(ctx)(rdeps(rec))(cons(name)(path))(FF)(plan))(la plan2.
+                   ok(append(plan2)(cons(la k. k(name)(ever(e))(eid(e))(rec)(arc))(nil))))))))(""))(""))
+        (la plan3. va(ctx)(rest)(path)(force)(plan3))))))(la visit.
+  # closure(get)(todo)(seen)(acc): ok(the records of todo's transitive dependencies)
+  LET(Z(la cl. la get. la todo. la seen. la acc. todo(la _. ok(acc))(la d. la rest.
+      member(d)(seen)(la _. cl(get)(rest)(seen)(acc))
+        (la _. bind(get(d))(la r. cl(get)(append(rdeps(r))(rest))(cons(d)(seen))(cons(r)(acc))))(""))))(la closure.
+  # a dependency's files beside a test: all but its own self-test and .expected
+  LET(la recs. fold(la acc. la r. append(acc)(filter(la f. (la n. str_eq(n)(rtest(r))(FF)
+      (str_eq(n)(concat(rtest(r))(".expected"))(FF)(TT)))(fname(f)))(rfiles(r))))(nil)(recs))(la payload.
+
+  # ── staging and commit ──────────────────────────────────────────────
+  # stage1(S)(get)(cbytes)(it): unpack it into S/pkg-<name>, then its self-test
+  LET(la S. la get. la cbytes. la it. it(la name. la version. la id. la rec. la arc.
+      (la pdir. bind(ensure(pdir))(la _.
+        bind(each(la f. put(path(pdir)(fname(f)))(fbytes(f)))(rfiles(rec)))(la _.
+        bind(put(path(pdir)(".archive"))(arc))(la _.
+        bind(closure(get)(rdeps(rec))(cons(name)(nil))(nil))(la drecs.
+          (la fs. clash(fs)
+             (la _. err(concat(nv(name)(version))(": a file name is in this package and a dependency")))
+             (la _. selftest(path(S)(concat("test-")(name)))(rec)(fs)(cbytes))(""))
+          (append(rfiles(rec))(payload(drecs))))))))
+      (path(S)(concat("pkg-")(name)))))(la stage1.
+  # unstage(S)(items): remove every staged file and S itself
+  LET(la S. la items. (la _. rmdir(S))
+      (map(la it. it(la n. la v. la i. la rec. la a.
+          wipe(path(S)(concat("pkg-")(n)))(cons(".archive")(map(fname)(rfiles(rec))))))(items)))(la unstage.
+  LET(la inst. la S. la ients. la items.
+      bind(ensure(path(inst)("pkgs")))(la _. bind(ensure(path(inst)("current")))(la _.
+      bind(each(la it. it(la n. la v. la i. la r. la a. (la pd. bind(ensure(pd))(la _.
+               str_eq(rename(path(S)(concat("pkg-")(n)))(path(pd)(v)))("0")
+                 (la _. ok(""))(la _. err(concat("cannot move into ")(path(pd)(v))))("")))
+             (pkgdir(inst)(n))))(items))(la _.
+      bind(atomic(inst)("installed")(showentries(append(ients)(map(ientry)(items)))))(la _.
+      bind(each(la it. atomic(path(inst)("current"))(iname(it))(iver(it)))(items))(la _.
+      (la _. ok(map(la it. nv(iname(it))(iver(it)))(items)))(rmdir(S))))))))(la commit.
+  # precheck(inst): ok(compiler.bin's bytes) when a self-test can be run at all
+  LET(la inst. isdir(inst)
+      (la _. nospace(inst)(nospace(vm))(FF)
+         (la _. at(vm)(len(vm))(C0)("/")(isfile(vm))(FF)
+            (la _. isfile(compiler)(la _. ok(read_file(compiler)))(la _. err(concat("no compiler at ")(compiler)))(""))
+            (la _. err("cfg: the vm must be an absolute path to a file (the self-test runs in staging/)"))(""))
+         (la _. err("the installation and vm paths may not contain spaces (execv splits on spaces)"))(""))
+      (la _. err(concat(inst)(" is not a directory")))(""))(la precheck.
+  # deploy(inst)(repo)(index)(ients)(root)(force): plan, stage + test all, commit all
+  LET(la inst. la repo. la index. la ients. la root. la force.
+    bind(precheck(inst))(la cbytes.
+    bind(visit(la k. k(repo)(index)(names(ients)))(cons(root)(nil))(nil)(force)(nil))(la items.
+    items(la _. ok(nil))(la h0. la t0. (la S. exists(S)
+      (la _. err(concat(S)(" exists: an earlier install was interrupted")))
+      (la _. bind(each(la it. exists(path(pkgdir(inst)(iname(it)))(iver(it)))
+                (la _. err(concat(path(pkgdir(inst)(iname(it)))(iver(it)))(" already exists")))
+                (la _. ok(""))(""))(items))(la _.
+        str_eq(mkdir(S)("493"))("0")
+          (la _. (la get. (la r. r(la m. (la _. err(m))(unstage(S)(items)))(la _. commit(inst)(S)(ients)(items)))
+                   (each(stage1(S)(get)(cbytes))(items)))
+                 (la d. any(la it. str_eq(iname(it))(d))(items)
+                    (la _. fold(la acc. la it. str_eq(iname(it))(d)(la _. ok(irec(it)))(la _. acc)(""))(err(d))(items))
+                    (la _. instrec(inst)(d))("")))
+          (la _. err(concat("cannot create ")(S)))("")))(""))
+      (path(inst)("staging"))))))(la deploy.
+
+  # ── the operations ──────────────────────────────────────────────────
+  LET(la repo. la K. la arc. bind(unpack(arc))(la rec. (la ip. (la sp.
+       bind(exists(ip)(TT)(exists(sp))(la _. vindex(repo)(K))(la _. ok(nil))(""))(la es.
+       any(samenv(entry(rname(rec))(rver(rec))("")))(es)
+         (la _. err(concat(nv(rname(rec))(rver(rec)))(" is already in the repository")))
+         (la _. (la id. (la nidx.
+              bind(ensure(repo))(la _. bind(ensure(path(repo)("pkg")))(la _.
+              bind(atomic(path(repo)("pkg"))(id)(arc))(la _.
+              bind(atomic(repo)("index")(nidx))(la _.
+              bind(atomic(repo)("index.sig")(hex(hmac(K)(nidx))))(la _. ok(id)))))))
+            (showentries(append(es)(cons(entry(rname(rec))(rver(rec))(id))(nil)))))
+          (hex(sha256(arc))))("")))
+     (path(repo)("index.sig")))(path(repo)("index"))))(la publish.
+  LET(la inst. la repo. la K. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
+      (la _. err(concat(name)(" is already installed (update installs a newer version)")))
+      (la _. bind(vindex(repo)(K))(la index. deploy(inst)(repo)(index)(ients)(name)(FF)))("")))(la install.
+  LET(la inst. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
+      (la _. bind(mapr(la e. bind(readx(path(path(pkgdir(inst)(ename(e)))(ever(e)))(".archive")))(la a.
+                  bind(unpack(a))(la r. ok(la k. k(e)(r)))))(ients))(la prs.
+          (la needers. needers
+              (la _. (la mine.
+                  bind(atomic(inst)("installed")(showentries(filter(la e. str_eq(ename(e))(name)(FF)(TT))(ients))))(la _.
+                  (la _. bind(each(la pr. pr(la e. la r. wipe(path(pkgdir(inst)(name))(ever(e)))
+                                   (cons(".archive")(map(fname)(rfiles(r))))))(mine))(la _.
+                         str_eq(rmdir(pkgdir(inst)(name)))("0")(la _. ok(name))
+                           (la _. err(concat("cannot remove ")(pkgdir(inst)(name))))("")))
+                  (unlink(path(path(inst)("current"))(name)))))
+                (filter(la pr. pr(la e. la r. str_eq(ename(e))(name)))(prs)))
+              (la h. la t. err(concat(name)(concat(" is needed by ")(join(", ")(needers))))))
+          (map(la pr. pr(la e. la r. nv(ename(e))(ever(e))))
+             (filter(la pr. pr(la e. la r. str_eq(ename(e))(name)(FF)(member(name)(rdeps(r)))))(prs)))))
+      (la _. err(concat(name)(" is not installed")))("")))(la remove.
+  LET(la inst. la repo. la K. bind(readinst(inst))(la ients. bind(vindex(repo)(K))(la index.
+      bind(mapr(la n. bind(curver(inst)(n))(la cur. ok(newest(index)(n)(la m. nil)(la e.
+              vlt(cur)(ever(e))(la _. cons(la k. k(n)(cur)(ever(e)))(nil))(la _. nil)("")))))(names(ients)))(la ls.
+        ok(fold(append)(nil)(ls))))))(la advise.
+  LET(la inst. la repo. la K. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
+      (la _. bind(curver(inst)(name))(la cur. bind(vindex(repo)(K))(la index. bind(newest(index)(name))(la e.
+          vlt(cur)(ever(e))
+            (la _. any(samenv(e))(ients)
+               (la _. bind(lookup(ients)(name)(ever(e)))(la ie. str_eq(eid(ie))(eid(e))
+                   (la _. bind(atomic(path(inst)("current"))(name)(ever(e)))(la _. ok(cons(nv(name)(ever(e)))(nil))))
+                   (la _. err(concat(nv(name)(ever(e)))(": the installed copy is not the repository's")))("")))
+               (la _. deploy(inst)(repo)(index)(ients)(name)(TT))(""))
+            (la _. ok(nil))("")))))
+      (la _. err(concat(name)(" is not installed")))("")))(la update.
+  LET(la inst. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
+      (la _. bind(curver(inst)(name))(la cur.
+          (la older. older(la _. err(concat(nv(name)(cur))(" has no earlier version installed")))
+             (la h. la t. (la prev. bind(atomic(path(inst)("current"))(name)(prev))(la _. ok(prev)))
+                (fold(la b. la v. vlt(b)(v)(la _. v)(la _. b)(""))(h)(t))))
+          (filter(la v. vlt(v)(cur))(map(ever)(filter(la e. str_eq(ename(e))(name))(ients))))))
+      (la _. err(concat(name)(" is not installed")))("")))(la rollback.
+  LET(la inst. (la r. r(la m. error(concat("logospkg: list: ")(m)))(la x. x))
+      (bind(readinst(inst))(la ients.
+          mapr(la n. bind(curver(inst)(n))(la v. lookup(ients)(n)(v)))(names(ients)))))(la list.
+
+    la s. s(pack)(unpack)(publish)(install)(remove)(advise)(update)(rollback)(list)
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )(0)(1)(2)(4)(5)(10)(32)(45)(46)(48)(57)(64)(65)(90)(95)(97)(102)(122)(129)(16384)(32768)(61440)))
