@@ -1,0 +1,61 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_termfont.la — the terminal font: all of printable ASCII.
+#
+#  theourgia_font.la covers A–Z, 0–9 and space, which is enough for a label
+#  but not for a terminal, whose text is mostly lowercase and punctuation. This
+#  module carries 96 glyphs, codes 32..127: the 95 printable ASCII characters
+#  plus, at 127 (DEL, which has no glyph of its own), a solid block that the
+#  terminal draws as its cursor.
+#
+#  SOURCE. The bitmaps are font8x8_basic by Daniel Hepper (public domain),
+#  itself from the public-domain IBM VGA fonts. theourgia_font.la's 37 glyphs
+#  come from the same table; 35 are identical and two were redrawn in LogOS
+#  (a plain T without serifs, a wider 7). Those two LogOS forms are kept here,
+#  so text drawn with either font looks the same.
+#
+#  LAYOUT. Glyph g is the character with code 32+g. Each glyph is 8 row bytes,
+#  top row first; bit 0 of a row byte is the LEFTMOST pixel, as in
+#  theourgia_font.la. The table is 96 × 8 = 768 bytes.
+#
+#  ENCODING. A string literal cannot hold the table directly: the rows contain
+#  NUL bytes, and the VM's program stream ends a string literal at NUL. So
+#  TF_HEX spells each byte as two letters, 'A'+(high nibble) then 'A'+(low
+#  nibble) (1536 letters), and TF_DECODE turns it back into the 768 raw bytes.
+#
+#  PERFORMANCE. A glyph is re-evaluated every time it is named, and on the
+#  SECD VM naming a builtin scans the whole program. So TF_DECODE is meant to
+#  be called ONCE at startup, with the builtins it needs passed in, and its
+#  result passed on as a value. It is a balanced divide-and-conquer over the
+#  768 bytes (no O(n^2) concatenation).
+#
+#  Pure Lingua Adamica: TF_DECODE gives the same bytes on the C host and the
+#  native VM. gate_wm_termfont.sh checks the decoded table against the
+#  expected one, and the 37 shared glyphs against theourgia_font.la.
+# ═══════════════════════════════════════════════════════════════════
+
+export TF_HEX TF_GLYPHS TF_DECODE
+
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+glyph TF_GLYPHS = 96
+
+# TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)
+#          (sub)(mul)(div)(int_eq)(hex) -> the raw table (768 bytes for TF_HEX).
+# nib(i) is the value of letter i; byte(j) is raw byte j; span(lo)(hi) joins
+# bytes lo..hi-1 by halving, so every byte is copied O(log n) times.
+glyph TF_DECODE = la str_at. la ord. la str_to_int. la str_len. la chr. la int_to_str. la concat.
+    la add. la sub. la mul. la div. la int_eq. la hex.
+  (la C1. la C2. la C16. la C65.
+    (la nib.
+      (la byte.
+        (Z(la span. la lo. la hi.
+            int_eq(sub(hi)(lo))(C1)
+              (la _. byte(lo))
+              (la _. (la mid. concat(span(lo)(mid))(span(mid)(hi)))(div(add(lo)(hi))(C2)))
+              (C1)))
+          (0)(div(str_to_int(str_len(hex)))(C2)))
+      (la j. chr(int_to_str(add(mul(nib(mul(j)(C2)))(C16))(nib(add(mul(j)(C2))(C1)))))))
+    (la i. sub(str_to_int(ord(str_at(hex)(i))))(C65)))
+  (1)(2)(16)(65)
+
+glyph TF_HEX = "AAAAAAAAAAAAAAAABIDMDMBIBIAABIAADGDGAAAAAAAAAAAADGDGHPDGHPDGDGAAAMDOADBODABPAMAAAAGDDDBIAMGGGDAABMDGBMGODLDDGOAAAGAGADAAAAAAAAAABIAMAGAGAGAMBIAAAGAMBIBIBIAMAGAAAAGGDMPPDMGGAAAAAAAMAMDPAMAMAAAAAAAAAAAAAAAMAMAGAAAAAADPAAAAAAAAAAAAAAAAAAAMAMAAGADABIAMAGADABAADOGDHDHLGPGHDOAAAMAOAMAMAMAMDPAABODDDABMAGDDDPAABODDDABMDADDBOAADIDMDGDDHPDAHIAADPADBPDADADDBOAABMAGADBPDDDDBOAAHPDDDABIAMAMAMAABODDDDBODDDDBOAABODDDDDODABIAOAAAAAMAMAAAAAMAMAAAAAMAMAAAAAMAMAGBIAMAGADAGAMBIAAAAAADPAAAADPAAAAAGAMBIDABIAMAGAABODDDABIAMAAAMAADOGDHLHLHLADBOAAAMBODDDDDPDDDDAADPGGGGDOGGGGDPAADMGGADADADGGDMAABPDGGGGGGGDGBPAAHPEGBGBOBGEGHPAAHPEGBGBOBGAGAPAADMGGADADHDGGHMAADDDDDDDPDDDDDDAABOAMAMAMAMAMBOAAHIDADADADDDDBOAAGHGGDGBODGGGGHAAAPAGAGAGEGGGHPAAGDHHHPHPGLGDGDAAGDGHGPHLHDGDGDAABMDGGDGDGDDGBMAADPGGGGDOAGAGAPAABODDDDDDDLBODIAADPGGGGDODGGGGHAABODDAHAODIDDBOAADPAMAMAMAMAMAMAADDDDDDDDDDDDDPAADDDDDDDDDDBOAMAAGDGDGDGLHPHHGDAAGDGDDGBMBMDGGDAADDDDDDBOAMAMBOAAHPGDDBBIEMGGHPAABOAGAGAGAGAGBOAAADAGAMBIDAGAEAAABOBIBIBIBIBIBOAAAIBMDGGDAAAAAAAAAAAAAAAAAAAAAAPPAMAMBIAAAAAAAAAAAAAABODADODDGOAAAHAGAGDOGGGGDLAAAAAABODDADDDBOAADIDADADODDDDGOAAAAAABODDDPADBOAABMDGAGAPAGAGAPAAAAAAGODDDDDODABPAHAGDGGOGGGGGHAAAMAAAOAMAMAMBOAADAAADADADADDDDBOAHAGGGDGBODGGHAAAOAMAMAMAMAMBOAAAAAADDHPHPGLGDAAAAAABPDDDDDDDDAAAAAABODDDDDDBOAAAAAADLGGGGDOAGAPAAAAGODDDDDODAHIAAAADLGOGGAGAPAAAAAADOADBODABPAAAIAMDOAMAMCMBIAAAAAADDDDDDDDGOAAAAAADDDDDDBOAMAAAAAAGDGLHPHPDGAAAAAAGDDGBMDGGDAAAAAADDDDDDDODABPAAAADPBJAMCGDPAADIAMAMAHAMAMDIAABIBIBIAABIBIBIAAAHAMAMDIAMAMAHAAGODLAAAAAAAAAAAAPPPPPPPPPPPPPPPP"
