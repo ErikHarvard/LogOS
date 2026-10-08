@@ -1,0 +1,524 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logosh.la — the shell of the Stage 10 terminals: parsing, builtins,
+#  PATH search, and starting real programs (Theourgia Stage 10).
+#
+#  Every window of the tiling window manager is a terminal, and every terminal
+#  runs this shell. It takes one line at a time (the terminal's line editor
+#  hands it over on Enter), runs a builtin in-process, or starts a real program
+#  whose stdout and stderr come back through a pipe that the WM's single poll
+#  loop reads, so a running command never freezes the screen.
+#
+#  TWO KITS (WM_DESIGN.md "logosh.la"; kit style, builtins as parameters).
+#
+#  SHELL_PURE_KIT(concat)(str_at)(str_len)(str_eq)(str_to_int)(add)(sub)(div)
+#                (lt)(int_eq)
+#    host and VM. Returns the record   la sel. sel(parse)(normpath)
+#      parse(line)          Scott list of words. Words are split on spaces and
+#                           tabs (runs of them; leading and trailing ones are
+#                           ignored). "..." groups: spaces and tabs inside are
+#                           kept and the quotes are dropped, so a"b c"d is the
+#                           one word ab cd, and "" is an empty word. A
+#                           backslash escapes the next character, inside quotes
+#                           too (\" \\ \ ); a trailing backslash is a literal
+#                           backslash; an unterminated quote runs to the end.
+#      normpath(cwd)(path)  the absolute path: a path starting with / replaces
+#                           cwd, any other is appended to it; empty segments
+#                           (repeated /) and . are dropped, .. removes the
+#                           segment before it, and .. at / stays at /. cwd is
+#                           resolved the same way (a relative cwd hangs off /).
+#
+#  SHELL_KIT(concat)(str_at)(str_len)(str_eq)(ord)(str_to_int)(int_to_str)
+#           (add)(sub)(mul)(div)(mod)(lt)(int_eq)
+#           (read_file)(stat)(mkdir)(rmdir)(unlink)(rename)(getpid)
+#           (pipe)(fork)(dup2)(open)(close)(execv)(exit)(sigprocmask)
+#           (waitpid)(kill)(poll)
+#    VM only (it takes the VM's process builtins, so it is never constructed
+#    on the host). Returns the record
+#      la sel. sel(new)(prompt)(run)(finish)(interrupt)(hangup)
+#      new(cwd)        shell state; cwd is normalised (normpath from /)
+#      prompt(sh)      "logos:" ++ cwd ++ "$ ", e.g. "logos:/home/user$ "
+#      run(sh)(line)   la k. k(sh')(output)(action). output is "" or text
+#                      ending in \n (error messages too: the terminal has one
+#                      stream). action, Scott-encoded:
+#                        la none. la clear. la exit. la job. none   (etc.)
+#                      with job(pid)(rfd) for a started program.
+#      finish(sh)(pid) waits for the job and reaps it: la k. k(sh')(text),
+#                      text "" on exit 0, "[exit N]\n", or "[signal N]\n".
+#      interrupt(pid)  SIGINT; returns kill's answer ("0" or "-errno")
+#      hangup(pid)     SIGTERM, then SIGCONT (so a stopped job dies too), for
+#                      closing a window; returns the SIGTERM answer
+#
+#  SHARED VALUES. The shell state is the record  la k. k(cwd)(status), so the
+#  WM reads the directory for a title bar as  sh(la c. la s. c). status is the
+#  last command's: 0 for a builtin that succeeded (clear and exit too), 1 for
+#  one that failed or a program run refused, 126 not executable, 127 not
+#  found, N for [exit N], 128+N for [signal N]; an empty line and a started
+#  job leave it unchanged until finish. pid and rfd are DECIMAL STRINGS (what
+#  fork and pipe return; what read, poll, kill take).
+#
+#  HOW THE WM USES A JOB. run starts the program and returns job(pid)(rfd)
+#  without reading anything. The WM polls rfd with its other fds, reads it
+#  (read(rfd)(n)) until read returns "" (EOF: the program and everything it
+#  started have closed the pipe), CLOSES rfd itself (finish is not given it),
+#  and then calls finish(sh)(pid), which blocks until the program has exited.
+#  interrupt and hangup may be called at any time before finish. Several jobs
+#  may run at once (one per window); each has its own pipe.
+#
+#  BUILTINS. help, echo, cd [DIR] (no DIR: /), pwd, cat FILE..., mkdir DIR...,
+#  rmdir DIR..., rm FILE..., mv SRC DST (into DST if it is a directory), pid
+#  (the WM's own pid), word (I AM THAT I AM), clear, exit. Errors read
+#  "logosh: CMD: ARG: no such file or directory" (errno named for the common
+#  ones, "error N" otherwise). cd is checked with stat; the shell keeps its own
+#  working directory because the VM has no chdir. The builtin cat reads only
+#  regular files up to 1 MiB (read_file runs inside the WM, so a FIFO or
+#  /dev/zero would freeze it); /bin/cat streams anything through the pipe.
+#
+#  PROGRAMS. Any other word is a program: a word containing / is a path,
+#  relative to the working directory; otherwise it is looked up in /bin,
+#  /usr/bin, /usr/local/bin, /sbin, /usr/sbin with stat (a regular file with an
+#  execute bit). Not found: "logosh: NAME: command not found". The parent does
+#  pipe + fork; the child runs ONLY this fixed sequence and never returns into
+#  the WM's code:
+#      sigprocmask(SETMASK, {})       a WM that blocks signals for a signalfd
+#                                     would otherwise pass SIGINT/SIGTERM
+#                                     blocked to every job
+#      open /dev/null; dup2 -> 0      stdin is /dev/null (close 0 if no /dev)
+#      dup2(wfd) -> 1, 2              stdout and stderr into the pipe
+#      close 3..255                   the WM's fds (DRM, evdev, other jobs'
+#                                     pipes) do not leak into the program
+#      execv("/usr/bin/env")("-C <cwd> <path> <args...>")
+#      exit 127                       only if execv failed
+#  then the parent closes wfd. env -C runs the program in the shell's working
+#  directory; env replaces itself with the program, so pid is the program.
+#
+#  WAITING. The VM's waitpid returns WEXITSTATUS only (measured: a child killed
+#  by SIGTERM reports 0, as exit 0 does), so finish reads the zombie's
+#  /proc/<pid>/stat first: its last field is the raw wait status. It polls that
+#  file (poll("")(ms), backing off 1..64 ms) until the state is Z, takes the
+#  status, then reaps with waitpid. Without /proc, or for a pid that is not
+#  this process's child, it falls back to waitpid (and a signal shows as exit
+#  0); a pid of 0 or less is never waited for.
+#
+#  SAFETY. Every path handed to a VM builtin is shorter than 4096 bytes (the
+#  VM halts the whole process on a longer one: here that would be the WM);
+#  execv's argument string stays under 2048 bytes and 200 words (its limits).
+#  interrupt and hangup refuse a pid that is not a positive decimal ("-3") or
+#  is the WM's own ("-1"): kill(0) or kill(-1) would signal the WM's process
+#  group or every process.
+#
+#  WHERE THIS DEPARTS FROM WM_DESIGN.md (all measured on the VM):
+#    - The design's execv("/usr/bin/env")("env -C <cwd> <path> <args...>")
+#      passes "-C <cwd> ..." instead: the VM's execv already supplies argv[0]
+#      (the path) and the string is argv[1..] (execv("/bin/echo")("a b c")
+#      prints "a b c"), so a leading "env" would make env run env.
+#    - The design says waitpid returns the raw wait status; this VM's returns
+#      WEXITSTATUS, hence /proc above.
+#    - Additions the design leaves open: the sigprocmask reset and the fd
+#      closing in the child, the cat limits, the refusals below, the guards
+#      above, the state record, and decimal-string pid/rfd.
+#
+#  PERFORMANCE (WM_DESIGN.md "How fast the VM is"). Kit style: builtins and
+#  integer constants are parameters bound once while a kit is built, Z is bound
+#  once as a local, and every function is let-bound, so after a kit returns no
+#  operation names a glyph or a builtin (a gdb trap on the VM's glyph-table
+#  lookup counts the same names for 1 and 3 rounds of every operation).
+#  Booleans are applied to thunks and a dummy; strings are built with a
+#  balanced join. Measured on the VM (a loaded 4-CPU machine): parse of a
+#  28-byte line 0.44 ms, normpath 0.38 ms, run of echo 0.24 ms, pwd 0.06 ms,
+#  cd 0.41 ms, cat of a small file 0.53 ms, a PATH miss in all five
+#  directories 0.40 ms; a whole /bin/true job (run, read to EOF, close,
+#  finish) 21 ms, nearly all of it fork, the two execs and the exit. All of it
+#  runs once per Enter, not per frame.
+#
+#  OUT OF SCOPE (honestly). No pipes between commands, redirection, globbing,
+#  variables, ~, single quotes (a ' is an ordinary character), job control or
+#  background jobs, rm -r. execv splits its argument string on spaces, so a
+#  program cannot be given an empty argument or one containing a space, nor
+#  be started while the working directory's name has a space: run refuses
+#  those with a message rather than splitting them silently. A program path
+#  containing = is refused too (env would take it for an assignment). Jobs get
+#  an empty environment (the VM's execv passes none). Signals reach the job's
+#  process only, not programs it started (no process groups), and a job that
+#  ignores SIGTERM survives hangup. A job inherits IGNORED signal dispositions
+#  from the WM (the VM cannot reset them), so start the WM in the foreground.
+#
+#  gate_wm_shell.sh: parse and normpath against hand-derived answers and a
+#  Python model (host and VM), and a VM driver that runs a scripted session of
+#  every builtin and program case through run/finish/interrupt/hangup.
+# ═══════════════════════════════════════════════════════════════════
+
+export SHELL_PURE_KIT SHELL_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la f. f(v)
+
+# SH_CORE(builtins)(k): the pure layer both kits share. It builds the helpers
+# once and passes them on:
+#   k(C0)(C1)(C2)(TT)(FF)(NIL)(CONS)(REV)(JOIN)(LEN)(SUBSTR)(FINDCH)(SEGS)
+#    (PARSE)(NORM)
+glyph SH_CORE = la concat. la str_at. la str_len. la str_eq. la str_to_int.
+    la add. la sub. la div. la lt. la int_eq. la k.
+  LET(Z)(la Y.
+  LET(0)(la C0. LET(1)(la C1. LET(2)(la C2.
+  LET(la t. la f. t)(la TT.
+  LET(la t. la f. f)(la FF.
+  LET(la n. la c. n(n))(la NIL.
+  LET(la h. la tl. la n. la c. c(h)(tl))(la CONS.
+  LET(Y(la go. la l. la acc. l(la _. acc)(la h. la tl. go(tl)(CONS(h)(acc)))))(la REVA.
+  LET(la l. REVA(l)(NIL))(la REV.
+  # JOIN: balanced concatenation (neighbours paired until one string is left),
+  # so each byte is copied O(log n) times.
+  LET(Y(la pairs. la l. l(la _. NIL)(la a. la tl.
+        tl(la _. CONS(a)(NIL))(la b. la t2. CONS(concat(a)(b))(pairs(t2))))))(la PAIRS.
+  LET(Y(la join. la l. l(la _. "")(la a. la tl.
+        tl(la _. a)(la b. la t2. join(PAIRS(l))))))(la JOIN.
+  LET(la s. str_to_int(str_len(s)))(la LEN.
+  # SUBSTR(s)(lo)(hi): bytes lo..hi-1 of s, joined by halving.
+  LET(la s. Y(la sp. la lo. la hi.
+        lt(lo)(hi)
+          (la _. int_eq(sub(hi)(lo))(C1)
+             (la _. str_at(s)(lo))
+             (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(div(add(lo)(hi))(C2)))(C0))
+          (la _. "")(C0)))(la SUBSTR.
+  # FINDCH(s)(c)(i): the first index >= i holding byte c, else the length of s.
+  LET(la s. la c. (la n. Y(la go. la i.
+        lt(i)(n)
+          (la _. str_eq(str_at(s)(i))(c)(la _. i)(la _. go(add(i)(C1)))(C0))
+          (la _. n)(C0)))(LEN(s)))(la FINDCH.
+  # SEGS(s): the non-empty segments of s between slashes, in order.
+  LET(la s. (la n. (la push. Y(la go. la i. la lo. la acc.
+          lt(i)(n)
+            (la _. str_eq(str_at(s)(i))("/")
+                (la _. go(add(i)(C1))(add(i)(C1))(push(lo)(i)(acc)))
+                (la _. go(add(i)(C1))(lo)(acc))(C0))
+            (la _. REV(push(lo)(n)(acc)))(C0))(C0)(C0)(NIL))
+        (la lo. la hi. la acc. lt(lo)(hi)(la _. CONS(SUBSTR(s)(lo)(hi))(acc))(la _. acc)(C0)))
+      (LEN(s)))(la SEGS.
+  # RESOLVE(stack)(segs): the stack holds a directory's segments, last first;
+  # . is dropped, .. pops (and stays put at /), anything else is pushed.
+  LET(Y(la res. la st. la l. l(la _. st)(la h. la tl.
+        str_eq(h)(".")
+          (la _. res(st)(tl))
+          (la _. str_eq(h)("..")
+              (la _. res(st(la _. NIL)(la a. la b. b))(tl))
+              (la _. res(CONS(h)(st))(tl))(C0))(C0))))(la RESOLVE.
+  LET(la st. st(la _. "/")(la h. la tl.
+        JOIN(Y(la go. la s. la acc. s(la _. acc)(la a. la b. go(b)(CONS("/")(CONS(a)(acc)))))(st)(NIL))))(la BUILD.
+  LET(la cwd. la path.
+        BUILD(RESOLVE(str_eq(str_at(path)(C0))("/")
+                        (la _. NIL)
+                        (la _. RESOLVE(NIL)(SEGS(cwd)))(C0))
+                     (SEGS(path))))(la NORM.
+  # PARSE: one left-to-right scan. q = inside quotes; has = a word is open (a
+  # word can be empty: ""); cur = its characters, last first; ws = the words,
+  # last first.
+  LET(la c. str_eq(c)(" ")(TT)(str_eq(c)("\t")))(la ISSEP.
+  LET(la has. la cur. la ws. has(la _. CONS(JOIN(REV(cur)))(ws))(la _. ws)(C0))(la ENDW.
+  LET(la line. (la n. Y(la go. la i. la q. la has. la cur. la ws.
+        lt(i)(n)
+          (la _. (la c. (la i1.
+              str_eq(c)("\\")
+                (la _. lt(i1)(n)
+                    (la _. go(add(i1)(C1))(q)(TT)(CONS(str_at(line)(i1))(cur))(ws))
+                    (la _. go(i1)(q)(TT)(CONS(c)(cur))(ws))(C0))
+                (la _. str_eq(c)("\"")
+                    (la _. go(i1)(q(FF)(TT))(TT)(cur)(ws))
+                    (la _. q(TT)(ISSEP(c)(FF)(TT))
+                        (la _. go(i1)(q)(TT)(CONS(c)(cur))(ws))
+                        (la _. go(i1)(FF)(FF)(NIL)(ENDW(has)(cur)(ws)))(C0))(C0))(C0))
+              (add(i)(C1)))(str_at(line)(i)))
+          (la _. REV(ENDW(has)(cur)(ws)))(C0))
+        (C0)(FF)(FF)(NIL)(NIL))(LEN(line)))(la PARSE.
+  k(C0)(C1)(C2)(TT)(FF)(NIL)(CONS)(REV)(JOIN)(LEN)(SUBSTR)(FINDCH)(SEGS)(PARSE)(NORM)
+  ))))))))))))))))))))))
+
+glyph SHELL_PURE_KIT = la concat. la str_at. la str_len. la str_eq. la str_to_int.
+    la add. la sub. la div. la lt. la int_eq.
+  SH_CORE(concat)(str_at)(str_len)(str_eq)(str_to_int)(add)(sub)(div)(lt)(int_eq)
+    (la C0. la C1. la C2. la TT. la FF. la NIL. la CONS. la REV. la JOIN. la LEN.
+     la SUBSTR. la FINDCH. la SEGS. la PARSE. la NORM.
+       la sel. sel(PARSE)(NORM))
+
+glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to_int. la int_to_str.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq.
+    la read_file. la stat. la mkdir. la rmdir. la unlink. la rename. la getpid.
+    la pipe. la fork. la dup2. la open. la close. la execv. la exit. la sigprocmask.
+    la waitpid. la kill. la poll.
+  SH_CORE(concat)(str_at)(str_len)(str_eq)(str_to_int)(add)(sub)(div)(lt)(int_eq)
+  (la C0. la C1. la C2. la TT. la FF. la NIL. la CONS. la REV. la JOIN. la LEN.
+   la SUBSTR. la FINDCH. la SEGS. la PARSE. la NORM.
+  LET(Z)(la Y.
+  LET(3)(la C3. LET(4)(la C4. LET(8)(la C8. LET(9)(la C9. LET(10)(la C10.
+  LET(16)(la C16. LET(36)(la C36. LET(48)(la C48. LET(49)(la C49. LET(50)(la C50.
+  LET(64)(la C64. LET(126)(la C126. LET(127)(la C127. LET(128)(la C128.
+  LET(200)(la C200. LET(256)(la C256. LET(2048)(la C2048. LET(4096)(la C4096.
+  LET(1048576)(la CMAXCAT.
+  LET(sub(0)(1))(la CM1.
+
+  # ── small tools ──
+  LET(la a. la b. b)(la SEQ.
+  LET(la a. la b. la k. k(a)(b))(la PAIR.
+  LET(la s. la c. lt(FINDCH(s)(c)(C0))(LEN(s)))(la HAS.
+  LET(Y(la cnt. la l. l(la _. C0)(la h. la tl. add(C1)(cnt(tl)))))(la COUNT.
+  LET(Y(la map. la f. la l. l(la _. NIL)(la h. la tl. CONS(f(h))(map(f)(tl)))))(la MAP.
+  LET(Y(la any. la p. la l. l(la _. FF)(la h. la tl. p(h)(la _. TT)(la _. any(p)(tl))(C0))))(la ANY.
+  # SPACED(l): the words of l with " " between them (JOIN it for one string).
+  LET(Y(la go. la l. l(la _. NIL)(la h. la tl.
+        CONS(h)(tl(la _. NIL)(la a. la b. CONS(" ")(go(tl)))))))(la SPACED.
+  # LASTOF(l)(d): the last element of l, d if l is empty.
+  LET(Y(la last. la l. la d. l(la _. d)(la h. la tl. last(tl)(h))))(la LASTOF.
+  # NUM(s): a non-empty all-digit string as an int, else -1. (str_to_int halts
+  # the whole VM on a malformed string; NUM is for text the shell did not make.)
+  LET(la s. (la n. int_eq(n)(C0)
+        (la _. CM1)
+        (la _. Y(la go. la i. la acc.
+            lt(i)(n)
+              (la _. (la d. lt(d)(C0)(TT)(lt(C9)(d))
+                  (la _. CM1)
+                  (la _. go(add(i)(C1))(add(mul(acc)(C10))(d)))(C0))
+                (sub(str_to_int(ord(str_at(s)(i))))(C48)))
+              (la _. acc)(C0))(C0)(C0))(C0))(LEN(s)))(la NUM.
+  # LASTCH(s)(c): the last index of byte c in s, else -1.
+  LET(la s. la c. Y(la go. la i.
+        lt(i)(C0)
+          (la _. CM1)
+          (la _. str_eq(str_at(s)(i))(c)(la _. i)(la _. go(sub(i)(C1)))(C0))(C0))
+      (sub(LEN(s))(C1)))(la LASTCH.
+  # TOKEN(s)(p)(k): field k of a space-separated line, field 0 starting at p;
+  # a field ends at a space or a newline; "" past the end.
+  LET(la s. la p. la k. (la n. (la fend.
+        Y(la go. la i. la j.
+          int_eq(j)(k)
+            (la _. SUBSTR(s)(i)(fend(i)))
+            (la _. lt(i)(n)(la _. go(add(fend(i))(C1))(add(j)(C1)))(la _. "")(C0))(C0))(p)(C0))
+      (Y(la fe. la i.
+          lt(i)(n)
+            (la _. (la c. str_eq(c)(" ")(TT)(str_eq(c)("\n"))(la _. i)(la _. fe(add(i)(C1)))(C0))(str_at(s)(i)))
+            (la _. n)(C0))))(LEN(s)))(la TOKEN.
+
+  # ── errors ──
+  LET(CONS(PAIR(1)("operation not permitted"))
+     (CONS(PAIR(2)("no such file or directory"))
+     (CONS(PAIR(5)("input/output error"))
+     (CONS(PAIR(13)("permission denied"))
+     (CONS(PAIR(16)("device or resource busy"))
+     (CONS(PAIR(17)("file exists"))
+     (CONS(PAIR(18)("cannot move across file systems"))
+     (CONS(PAIR(20)("not a directory"))
+     (CONS(PAIR(21)("is a directory"))
+     (CONS(PAIR(22)("invalid argument"))
+     (CONS(PAIR(28)("no space left on device"))
+     (CONS(PAIR(30)("read-only file system"))
+     (CONS(PAIR(36)("file name too long"))
+     (CONS(PAIR(39)("directory not empty"))
+     (CONS(PAIR(40)("too many levels of symbolic links"))(NIL))))))))))))))))(la ERRTAB.
+  LET(Y(la find. la e. la l. l(la _. concat("error ")(int_to_str(e)))
+        (la h. la tl. h(la n. la m. int_eq(n)(e)(la _. m)(la _. find(e)(tl))(C0)))))(la ERRFIND.
+  LET(la e. ERRFIND(e)(ERRTAB))(la ERRMSG.
+  LET(la r. sub(C0)(str_to_int(r)))(la ERRNO.
+  LET(la cmd. la msg. concat("logosh: ")(concat(cmd)(concat(": ")(concat(msg)("\n")))))(la ERR2.
+  LET(la cmd. la arg. la msg. ERR2(cmd)(concat(arg)(concat(": ")(msg))))(la ERR3.
+
+  # ── stat ──
+  # STATX(p)(onerr)(onok): onok(mode)(size), or onerr(errno). A path of 4096
+  # bytes or more is refused here (ENAMETOOLONG): the VM halts on one.
+  LET(la p. la onerr. la onok.
+        lt(LEN(p))(C4096)
+          (la _. (la r. str_eq(str_at(r)(C0))("-")
+              (la _. onerr(ERRNO(r)))
+              (la _. (la sp. onok(str_to_int(SUBSTR(r)(C0)(sp)))(str_to_int(SUBSTR(r)(add(sp)(C1))(LEN(r)))))
+                     (FINDCH(r)(" ")(C0)))(C0))(stat(p)))
+          (la _. onerr(C36))(C0))(la STATX.
+  # FTYPE: S_IFMT / 4096 — 8 regular file, 4 directory.
+  LET(la m. mod(div(m)(C4096))(C16))(la FTYPE.
+  LET(la m. lt(C0)(add(mod(m)(C2))(add(mod(div(m)(C8))(C2))(mod(div(m)(C64))(C2)))))(la XBIT.
+  LET(la m. int_eq(FTYPE(m))(C8)(XBIT(m))(FF))(la ISEXEC.
+
+  # ── shell state, results, actions ──
+  LET(la c. la s. la k. k(c)(s))(la SH.
+  LET(la sh. sh(la c. la s. c))(la CWD.
+  LET(la sh. la s. sh(la c. la o. SH(c)(s)))(la SETST.
+  LET(la sh. la out. la act. la k. k(sh)(out)(act))(la RES.
+  LET(la n. la c. la e. la j. n)(la ANONE.
+  LET(la n. la c. la e. la j. c)(la ACLEAR.
+  LET(la n. la c. la e. la j. e)(la AEXIT.
+  LET(la pid. la rfd. la n. la c. la e. la j. j(pid)(rfd))(la AJOB.
+  LET(la sh. la out. la st. RES(SETST(sh)(st))(out)(ANONE))(la SAY.
+  LET(la t. la k. k(TT)(t))(la GOOD.
+  LET(la t. la k. k(FF)(t))(la BAD.
+
+  # ── builtins ──
+  # EACH(cmd)(f)(sh)(args): f(path)(arg) for each operand in order, each
+  # returning GOOD(text) or BAD(text); the texts are joined, status 1 if any
+  # was bad.
+  LET(la cmd. la f. la sh. la args.
+        args(la _. SAY(sh)(ERR2(cmd)("missing operand"))(C1))
+            (la h. la tl. (la rs.
+                SAY(sh)(JOIN(MAP(la r. r(la ok. la t. t))(rs)))
+                   (ANY(la r. r(la ok. la t. ok(FF)(TT)))(rs)(C1)(C0)))
+              (MAP(la a. f(NORM(CWD(sh))(a))(a))(args))))(la EACH.
+  # PCALL(cmd)(call)(p)(a): call(p) is a filesystem builtin returning "0" or
+  # "-errno".
+  LET(la cmd. la call. la p. la a.
+        lt(LEN(p))(C4096)
+          (la _. (la r. str_eq(r)("0")
+              (la _. GOOD(""))
+              (la _. BAD(ERR3(cmd)(a)(ERRMSG(ERRNO(r)))))(C0))(call(p)))
+          (la _. BAD(ERR3(cmd)(a)(ERRMSG(C36))))(C0))(la PCALL.
+  LET(la p. la a. STATX(p)
+        (la e. BAD(ERR3("cat")(a)(ERRMSG(e))))
+        (la m. la sz. int_eq(FTYPE(m))(C8)
+            (la _. lt(CMAXCAT)(sz)
+                (la _. BAD(ERR3("cat")(a)("too large for the builtin cat (use /bin/cat)")))
+                (la _. (la d. (la n. int_eq(n)(C0)
+                        (la _. lt(C0)(sz)(la _. BAD(ERR3("cat")(a)("cannot read")))(la _. GOOD(""))(C0))
+                        (la _. GOOD(str_eq(str_at(d)(sub(n)(C1)))("\n")(la _. d)(la _. concat(d)("\n"))(C0)))(C0))
+                      (LEN(d)))(read_file(p)))(C0))
+            (la _. BAD(ERR3("cat")(a)(int_eq(FTYPE(m))(C4)("is a directory")("not a regular file"))))(C0)))(la CAT1.
+  LET(la sh. la args. args
+        (la _. RES(SH("/")(C0))("")(ANONE))
+        (la a. la rest. rest
+            (la _. (la p. STATX(p)
+                (la e. SAY(sh)(ERR3("cd")(a)(ERRMSG(e)))(C1))
+                (la m. la sz. int_eq(FTYPE(m))(C4)
+                    (la _. RES(SH(p)(C0))("")(ANONE))
+                    (la _. SAY(sh)(ERR3("cd")(a)("not a directory"))(C1))(C0)))(NORM(CWD(sh))(a)))
+            (la b. la r2. SAY(sh)(ERR2("cd")("too many arguments"))(C1))))(la B_CD.
+  # INTO(dir)(base): dir/base, for mv into an existing directory.
+  LET(la d. la base. str_eq(base)("")
+        (la _. d)
+        (la _. str_eq(d)("/")(la _. concat("/")(base))(la _. concat(d)(concat("/")(base)))(C0))(C0))(la INTO.
+  LET(la sh. la args. (la usage.
+        args(la _. usage)(la a. la r1. r1(la _. usage)(la b. la r2. r2
+          (la _. (la src. la dst0.
+              (la dst. lt(LEN(src))(C4096)(lt(LEN(dst))(C4096))(FF)
+                  (la _. (la r. str_eq(r)("0")
+                        (la _. SAY(sh)("")(C0))
+                        (la _. SAY(sh)(ERR3("mv")(a)(ERRMSG(ERRNO(r))))(C1))(C0))(rename(src)(dst)))
+                  (la _. SAY(sh)(ERR3("mv")(a)(ERRMSG(C36)))(C1))(C0))
+              (STATX(dst0)(la e. dst0)(la m. la sz. int_eq(FTYPE(m))(C4)
+                  (la _. INTO(dst0)(LASTOF(SEGS(src))("")))(la _. dst0)(C0))))
+            (NORM(CWD(sh))(a))(NORM(CWD(sh))(b)))
+          (la c. la r3. usage))))
+      (SAY(sh)(ERR2("mv")("usage: mv SOURCE DEST"))(C1)))(la B_MV.
+  LET(la sh. la args. SAY(sh)(concat(JOIN(SPACED(args)))("\n"))(C0))(la B_ECHO.
+  LET(la sh. la args. SAY(sh)(concat(CWD(sh))("\n"))(C0))(la B_PWD.
+  LET(la sh. la args. SAY(sh)("logosh builtins:\n  help           this list\n  echo WORDS     print the words\n  cd [DIR]       change directory (no DIR: /)\n  pwd            print the working directory\n  cat FILE...    print files (regular, up to 1 MiB)\n  mkdir DIR...   make directories\n  rmdir DIR...   remove empty directories\n  rm FILE...     remove files\n  mv SRC DST     rename, or move into a directory\n  pid            the window manager's process id\n  word           speak the Word\n  clear          clear the terminal\n  exit           close the terminal\nOther words run programs: a path containing /, or a name\nfound in /bin /usr/bin /usr/local/bin /sbin /usr/sbin.\n")(C0))(la B_HELP.
+  LET(la sh. la args. SAY(sh)("I AM THAT I AM\n")(C0))(la B_WORD.
+  LET(la sh. la args. SAY(sh)(concat(getpid("!"))("\n"))(C0))(la B_PID.
+  LET(la sh. la args. RES(SETST(sh)(C0))("")(ACLEAR))(la B_CLEAR.
+  LET(la sh. la args. RES(SETST(sh)(C0))("")(AEXIT))(la B_EXIT.
+  LET(EACH("cat")(CAT1))(la B_CAT.
+  LET(EACH("mkdir")(PCALL("mkdir")(la p. mkdir(p)("493"))))(la B_MKDIR.
+  LET(EACH("rmdir")(PCALL("rmdir")(la p. rmdir(p))))(la B_RMDIR.
+  LET(EACH("rm")(PCALL("rm")(la p. unlink(p))))(la B_RM.
+  LET(CONS(PAIR("help")(B_HELP))(CONS(PAIR("echo")(B_ECHO))(CONS(PAIR("cd")(B_CD))
+     (CONS(PAIR("pwd")(B_PWD))(CONS(PAIR("cat")(B_CAT))(CONS(PAIR("mkdir")(B_MKDIR))
+     (CONS(PAIR("rmdir")(B_RMDIR))(CONS(PAIR("rm")(B_RM))(CONS(PAIR("mv")(B_MV))
+     (CONS(PAIR("pid")(B_PID))(CONS(PAIR("word")(B_WORD))(CONS(PAIR("clear")(B_CLEAR))
+     (CONS(PAIR("exit")(B_EXIT))(NIL))))))))))))))(la BUILTINS.
+  # BFIND(name)(table)(none)(some): some(handler), or none(C0).
+  LET(Y(la find. la name. la l. la none. la some. l(la _. none(C0))(la h. la tl.
+        h(la nm. la f. str_eq(nm)(name)(la _. some(f))(la _. find(name)(tl)(none)(some))(C0)))))(la BFIND.
+
+  # ── programs ──
+  LET(CONS("/bin")(CONS("/usr/bin")(CONS("/usr/local/bin")(CONS("/sbin")(CONS("/usr/sbin")(NIL))))))(la PATHDIRS.
+  # LOOKUP(name)(dirs): the first dir/name that is a regular file with an
+  # execute bit, else "".
+  LET(Y(la look. la name. la l. l(la _. "")(la d. la tl.
+        (la p. STATX(p)(la e. look(name)(tl))(la m. la sz. ISEXEC(m)(la _. p)(la _. look(name)(tl))(C0)))
+        (concat(d)(concat("/")(name))))))(la LOOKUP.
+  # The child, after fork: this fixed sequence and nothing else (see header).
+  LET(Y(la go. la i. lt(i)(C256)(la _. (la _. go(add(i)(C1)))(close(int_to_str(i))))(la _. C0)(C0)))(la CLOSEFROM.
+  LET(la w. la argstr.
+        SEQ(sigprocmask("2")("0"))(
+        SEQ((la n. lt(str_to_int(n))(C0)(la _. close("0"))(la _. dup2(n)("0"))(C0))(open("/dev/null")("0")))(
+        SEQ(dup2(w)("1"))(
+        SEQ(dup2(w)("2"))(
+        SEQ(CLOSEFROM(C3))(
+        SEQ(execv("/usr/bin/env")(argstr))(
+        exit("127"))))))))(la CHILD.
+  # START(sh)(name)(argstr): pipe + fork; the parent keeps the read end.
+  LET(la sh. la name. la argstr. (la pr. (la sp.
+        lt(sp)(LEN(pr))
+          (la _. (la r. la w. (la pid. (la np.
+                int_eq(np)(C0)
+                  (la _. CHILD(w)(argstr))
+                  (la _. lt(np)(C0)
+                      (la _. SEQ(close(r))(SEQ(close(w))
+                               (SAY(sh)(ERR2(name)(concat("fork failed: ")(ERRMSG(sub(C0)(np)))))(C1))))
+                      (la _. SEQ(close(w))(RES(sh)("")(AJOB(pid)(r))))(C0))(C0))
+              (str_to_int(pid)))(fork("!")))
+            (SUBSTR(pr)(C0)(sp))(SUBSTR(pr)(add(sp)(C1))(LEN(pr))))
+          (la _. SAY(sh)(ERR2(name)("pipe failed"))(C1))(C0))
+      (FINDCH(pr)(" ")(C0)))(pipe("!")))(la START.
+  LET(la w. str_eq(w)("")(TT)(HAS(w)(" ")))(la BADWORD.
+  # SPAWN(sh)(name)(path)(args): the execv-limit checks, then START with
+  # "-C <cwd> <path> <args...>".
+  LET(la sh. la name. la p. la args.
+        HAS(CWD(sh))(" ")
+          (la _. SAY(sh)(ERR2(name)("cannot start a program in a directory whose name has a space (execv limit)"))(C1))
+          (la _. HAS(p)("=")
+            (la _. SAY(sh)(ERR2(name)("a program path cannot contain = (env limit)"))(C1))
+            (la _. ANY(BADWORD)(CONS(p)(args))
+              (la _. SAY(sh)(ERR2(name)("an argument cannot be empty or contain a space (execv limit)"))(C1))
+              (la _. (la words. (la argstr.
+                  lt(LEN(argstr))(C2048)(lt(COUNT(words))(C200))(FF)
+                    (la _. START(sh)(name)(argstr))
+                    (la _. SAY(sh)(ERR2(name)("command line too long"))(C1))(C0))
+                  (JOIN(SPACED(words))))
+                (CONS("-C")(CONS(CWD(sh))(CONS(p)(args)))))(C0))(C0))(C0))(la SPAWN.
+  LET(la sh. la name. la args.
+        HAS(name)("/")
+          (la _. (la p. STATX(p)
+              (la e. SAY(sh)(ERR2(name)(ERRMSG(e)))(int_eq(e)(C2)(C127)(C126)))
+              (la m. la sz. int_eq(FTYPE(m))(C8)
+                  (la _. XBIT(m)
+                      (la _. SPAWN(sh)(name)(p)(args))
+                      (la _. SAY(sh)(ERR2(name)("permission denied"))(C126))(C0))
+                  (la _. SAY(sh)(ERR2(name)(int_eq(FTYPE(m))(C4)("is a directory")("not a regular file")))(C126))(C0)))
+            (NORM(CWD(sh))(name)))
+          (la _. (la p. str_eq(p)("")
+              (la _. SAY(sh)(ERR2(name)("command not found"))(C127))
+              (la _. SPAWN(sh)(name)(p)(args))(C0))(LOOKUP(name)(PATHDIRS)))(C0))(la EXTERNAL.
+  LET(la sh. la line. PARSE(line)
+        (la _. RES(sh)("")(ANONE))
+        (la name. la args. BFIND(name)(BUILTINS)
+            (la _. EXTERNAL(sh)(name)(args))
+            (la f. f(sh)(args))))(la RUN.
+
+  # ── waiting ──
+  # WAITRAW(pid): the raw wait status. Polls /proc/<pid>/stat (backing off
+  # 1..64 ms) until the process is a zombie, takes the status (the last field,
+  # number 52, i.e. field 49 after the state), then reaps it with waitpid. No
+  # /proc entry, or not this process's child: waitpid's WEXITSTATUS * 256.
+  LET(la pid. (la path. (la me. Y(la wait. la ms.
+        (la s. int_eq(LEN(s))(C0)
+            (la _. mul(str_to_int(waitpid(pid)))(C256))
+            (la _. (la p. (la state.
+                int_eq(NUM(TOKEN(s)(p)(C1)))(me)
+                  (la _. str_eq(state)("Z")(TT)(str_eq(state)("X"))
+                      (la _. (la raw. SEQ(waitpid(pid))(raw))(NUM(TOKEN(s)(p)(C49))))
+                      (la _. (la _. wait(lt(ms)(C50)(add(ms)(ms))(ms)))(poll("")(int_to_str(ms))))(C0))
+                  (la _. mul(str_to_int(waitpid(pid)))(C256))(C0))
+              (TOKEN(s)(p)(C0)))(add(LASTCH(s)(")"))(C2)))(C0))
+        (read_file(path)))(C1))(NUM(getpid("!"))))(concat("/proc/")(concat(pid)("/stat"))))(la WAITRAW.
+  LET(la sh. la pid. (la raw. (la sig.
+        int_eq(sig)(C0)
+          (la _. (la code. la k. k(SETST(sh)(code))
+                    (int_eq(code)(C0)(la _. "")(la _. concat("[exit ")(concat(int_to_str(code))("]\n")))(C0)))
+                 (mod(div(raw)(C256))(C256)))
+          (la _. la k. k(SETST(sh)(add(C128)(sig)))(concat("[signal ")(concat(int_to_str(sig))("]\n"))))(C0))
+      (mod(raw)(C128)))
+    ((la n. lt(C0)(n)(la _. (la r. lt(r)(C0)(C0)(r))(WAITRAW(pid)))(la _. C0)(C0))(NUM(pid))))(la FINISH.
+  # SIGNAL(pid)(sig): kill, but never pid <= 0 (the WM's group, or every
+  # process) and never the WM itself.
+  LET(la pid. la sig. (la n. lt(C0)(n)
+        (la _. int_eq(n)(NUM(getpid("!")))(la _. "-1")(la _. kill(pid)(sig))(C0))
+        (la _. "-3")(C0))(NUM(pid)))(la SIGNAL.
+  LET(la pid. SIGNAL(pid)("2"))(la INTERRUPT.
+  LET(la pid. (la r. SEQ(SIGNAL(pid)("18"))(r))(SIGNAL(pid)("15")))(la HANGUP.
+  LET(la cwd. SH(NORM("/")(cwd))(C0))(la NEW.
+  LET(la sh. concat("logos:")(concat(CWD(sh))("$ ")))(la PROMPT.
+  la sel. sel(NEW)(PROMPT)(RUN)(FINISH)(INTERRUPT)(HANGUP)
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
