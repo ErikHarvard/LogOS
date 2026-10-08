@@ -52,7 +52,7 @@
 #  its last rendered tile, keyed by its rectangle, focus and ver.
 # ═══════════════════════════════════════════════════════════════════
 
-export WM_BUILD WM_NIL WM_CONS WM_LISTS WM_SPLIT
+export WM_BUILD WM_NIL WM_CONS WM_LISTS WM_SPLIT WM_JOIN WM_FOLD WM_WINS WM_TILE WM_CORE WM_FRAME WM_LOOP
 
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LET = la v. la k. k(v)
