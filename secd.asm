@@ -4292,7 +4292,7 @@ cu_tail_len    equ $ - cu_tail
 ; may mention on a path it does not take (checkunbound). A builtin added to an
 ; engine must be added here, or the VM refuses to load a program that uses it.
 anybi:         db "accept",0,"add",0,"band",0,"bind",0,"bnot",0,"bor",0,"bshl",0,"bshr",0
-               db "bxor",0,"chmod",0,"chr",0,"clock_gettime",0,"close",0,"concat",0
+               db "bxor",0,"chan_recv",0,"chan_send",0,"chmod",0,"chr",0,"clock_gettime",0,"close",0,"concat",0
                db "connect",0,"copy_self",0,"div",0,"drm_mode",0,"dup2",0,"error",0
                db "exec_at",0,"execv",0,"execve",0,"exit",0,"fill",0,"fork",0,"getpid",0
                db "inb",0,"inl",0,"int_eq",0,"int_to_str",0,"inw",0,"kill",0,"listen",0

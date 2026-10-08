@@ -1675,7 +1675,7 @@ on every engine, so all three accept and reject the same programs (native
 `native_codegen3` rejects at compile time; the host checks after parsing; the VM
 checks when it loads the stream). Every glyph reachable from `MAIN` is checked
 (an unused glyph is not), and a name is bound if it is a lambda parameter in
-scope, a glyph, or a builtin of **any** engine (82 names), so a program that
+scope, a glyph, or a builtin of **any** engine (84 names), so a program that
 mentions a VM-only builtin on a path it does not take still loads on the host.
 Otherwise `host: unbound variable '<name>'`, rc 1, and nothing the program would
 print is printed (`gate_unbound_load.sh`). A builtin of another engine that is

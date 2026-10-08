@@ -1044,7 +1044,8 @@ static void do_import(const char *path) {
  * so a program that mentions a VM-only builtin (ipc_demo.la) still loads. */
 static int is_other_engine_builtin(const char *name) {
     static const char *const names[] = {   /* the VM's and native's, less host's */
-        "accept", "bind", "chmod", "clock_gettime", "close", "connect",
+        "accept", "bind", "chan_recv", "chan_send", "chmod", "clock_gettime",
+        "close", "connect",
         "drm_mode", "dup2", "exec_at", "execv", "execve", "exit", "fill",
         "fork", "getpid", "inb", "inl", "inw", "kill", "listen", "lseek",
         "memcpy", "mkdir", "mount", "open", "outb", "outl", "outw", "peek",
