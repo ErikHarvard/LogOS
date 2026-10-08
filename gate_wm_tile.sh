@@ -12,7 +12,7 @@
 #   1. KNOWN ANSWERS (VM and host). A table of expressions with their expected
 #      results worked out by hand from the contract: the insert/remove/swap/
 #      resize/toggle shapes, the layout formula including truncation at odd
-#      sizes, a gap larger than the area, negative w and gap, the neighbour
+#      sizes, a gap larger than the area, negative w, h and gap, the neighbour
 #      rules (nearest beats more overlap, more overlap beats leaf order, zero
 #      overlap is not a neighbour, ties go to leaf order), resize clamping,
 #      removing the last window, and every operation on an id that is not in
@@ -24,8 +24,9 @@
 #      clamps, toggle, neighbour in all four directions and a bad one, next,
 #      has) over up to 10 windows, drained to EMPTY twice. An LA program
 #      applies the same sequence; after every step it prints the query answer,
-#      show(t), count, leaves and the layout in four areas (odd sizes, gap
-#      larger than the area, gap 0, negative width). Compared line by line.
+#      show(t), count, leaves and the layout in five areas (odd sizes, gap
+#      larger than the area, gap 0, negative width, negative height). Compared
+#      line by line.
 #      The model also counts how often the sequence reaches each case (both
 #      clamps, a neighbour tie, each direction found and none, absent ids,
 #      the last window removed, ...); the gate fails if any count is zero, so
@@ -80,6 +81,11 @@ LAY(t6)(0)(0)(100)(50)(2) => 1:0,0,49,50 2:51,0,23,24 5:51,26,23,24 3:76,0,24,50
 LAY(toggle(t3)(1))(0)(0)(100)(50)(2) => 1:0,0,100,24 2:0,26,100,11 3:0,39,100,11
 LAY(t3)(0)(0)(5)(4)(20) => 1:0,0,0,4 2:5,0,0,0 3:5,4,0,0
 LAY(t1)(10)(10)(sub(0)(5))(40)(3) => 1:10,10,0,40
+LAY(t1)(10)(10)(40)(sub(0)(5))(3) => 1:10,10,40,0
+LAY(t2)(0)(0)(10)(sub(0)(5))(2) => 1:0,0,4,0 2:6,0,4,0
+LAY(t3)(0)(0)(10)(sub(0)(5))(2) => 1:0,0,4,0 2:6,0,4,0 3:6,0,4,0
+LAY(toggle(t2)(1))(3)(4)(10)(sub(0)(5))(2) => 1:3,4,10,0 2:3,4,10,0
+LAY(t3)(5)(5)(sub(0)(1))(sub(0)(1))(sub(0)(1)) => 1:5,5,0,0 2:5,5,0,0 3:5,5,0,0
 LAY(t2)(0)(0)(30)(10)(sub(0)(4)) => 1:0,0,15,10 2:15,0,15,10
 LAY(t1)(7)(8)(9)(10)(11) => 1:7,8,9,10
 LAY(empty)(0)(0)(100)(50)(2) =>
@@ -350,7 +356,8 @@ def neighbour(t, i, d, area):
         if best is None or (dist, -ov) < best[0]: best = ((dist, -ov), ci)
     return i if best is None else best[1]
 
-AREAS = [(3, 5, 1001, 767, 7), (0, 0, 13, 9, 20), (0, 2, 257, 131, 0), (10, 10, -5, 40, 3)]
+AREAS = [(3, 5, 1001, 767, 7), (0, 0, 13, 9, 20), (0, 2, 257, 131, 0), (10, 10, -5, 40, 3),
+         (4, 6, 50, -7, 2)]
 NB_AREAS = [AREAS[0], AREAS[2]]
 
 def fmt_rects(rs): return " ".join("%d:%d,%d,%d,%d" % r for r in rs)
@@ -584,11 +591,12 @@ glyph LA_A = la t. la lay. JR(lay(t)(3)(5)(1001)(767)(7))
 glyph LA_B = la t. la lay. JR(lay(t)(0)(0)(13)(9)(20))
 glyph LA_C = la t. la lay. JR(lay(t)(0)(2)(257)(131)(0))
 glyph LA_D = la t. la lay. JR(lay(t)(10)(10)(sub(0)(5))(40)(3))
+glyph LA_E = la t. la lay. JR(lay(t)(4)(6)(50)(sub(0)(7))(2))
 glyph LINE = la ans. la t. la lay. la lv. la ct. la sh.
     concat(ans)(concat("|")(concat(sh(t))(concat("|")(concat(int_to_str(ct(t)))
       (concat("|")(concat(JL(lv(t)))(concat("|")(concat(LA_A(t)(lay))
       (concat("|")(concat(LA_B(t)(lay))(concat("|")(concat(LA_C(t)(lay))
-      (concat("|")(LA_D(t)(lay)))))))))))))))
+      (concat("|")(concat(LA_D(t)(lay))(concat("|")(LA_E(t)(lay)))))))))))))))))
 
 # one operation: DO_x(t)(q)(ops) = PAIR(answer)(PAIR(tree)(next position))
 glyph NB_A = la t. la id. la d. la nb. nb(t)(id)(d)(3)(5)(1001)(767)(7)
