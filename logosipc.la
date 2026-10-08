@@ -32,7 +32,7 @@
 #  empty recv, but partial-send retry and reconnection are NOT yet handled).
 #  Honest limit: pathname sockets only (no abstract namespace).
 #
-#  Used as a module: `import("logosipc.la")` brings the six exported
+#  Used as a module: `import("logosipc.la")` brings the nine exported
 #  glyphs into scope; the helpers below stay private to the module.
 # ═══════════════════════════════════════════════════════════════════
 
