@@ -18,8 +18,9 @@ of its two colours makes a glyph, and its background is kept too.
 Usage: wm_ocr.py FRAME.bin W H PITCH SCALE [termfont.la]
 Prints JSON: a list of tiles, each {x, y, w, h, focused, title, rows, kind,
 bg}; kind is "term" or "app", bg the text area's background colour. An app
-tile also has theme ("light", "dark" or "?") and hl: [row, text] for every
-run of cells whose background is not the tile's, i.e. the focused element.
+tile also has theme ("light", "dark" or "?"), zoom (1 or 2: the text scale it
+is drawn at, relative to SCALE) and hl: [row, text] for every run of cells
+whose background is not the tile's, i.e. the focused element.
 In a terminal the cursor (glyph 127, a solid block) reads as '_'; a cell that
 matches no glyph reads as '~'.
 """
@@ -163,8 +164,18 @@ def ocr(fr, glyphs, scale):
             else:
                 tile["kind"] = "app"
                 tile["theme"] = APP_THEMES.get(bg, "?")
-                tile["rows"], tile["hl"] = read_cells_multi(fr, glyphs, x + BW + PAD, y + BW + cw + 4 + PAD,
-                                                            ccols, nrows, scale, bg)
+                # an app may ask to be drawn at twice the text scale (its zoom):
+                # read it both ways and keep the reading that recognises more
+                best = None
+                for z in (1, 2):
+                    if ccols // z < 1 or nrows // z < 1:
+                        continue
+                    rows, hl = read_cells_multi(fr, glyphs, x + BW + PAD, y + BW + cw + 4 + PAD,
+                                                ccols // z, nrows // z, scale * z, bg)
+                    score = sum(ch not in " ~" for r in rows for ch in r) - 4 * sum(r.count("~") for r in rows)
+                    if best is None or score > best[0]:
+                        best = (score, z, rows, hl)
+                _, tile["zoom"], tile["rows"], tile["hl"] = best
         out.append(tile)
     return out
 

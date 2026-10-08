@@ -125,7 +125,7 @@ glyph MAIN = (la L. (la TL. (la T.
   T(la t_new. la t_write. la t_flush. la t_key. la t_back. la t_kill. la t_submit. la t_prev. la t_next. la t_clear. la t_prompt. la t_rows. la t_keychar.
   LK_KIT(B)(L)(la s. s(0)(0)(0)(0)(0)(0)(0)(0))(1)(la s. s(0)(0)(0)(0))(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
   WM_CORE(B)(L)(X)(TL)(T)(SHSTUB)(WM_WINS(B)(L))
-    (la s. s(key)(focusables)(SETTINGS_APP(B)(L)(nodes)(la init. la view. la update. la theme. la s. s(init)(view)(update)(theme)("Settings")))
+    (la s. s(key)(focusables)(SETTINGS_APP(B)(L)(nodes)(la init. la view. la update. la theme. la zoom. la s. s(init)(view)(update)(theme)("Settings")(zoom)))
        (la n. la s. s(la k. k(LOGIN_APP(B)(L)(nodes)(SESS))(la t. la f. f))))
     (la s. s(960)(600)(6)("/home"))
    (la empty. la open_win. la handle. la on_output. la job_fds. la shutdown. la welcome.
@@ -136,12 +136,12 @@ glyph MAIN = (la L. (la TL. (la T.
      (la st. la n. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         (la _. (la _. st)(Z(la each. la ws. ws(la _. "")(la w. la rest. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               (la _. (la _. each(rest))(app(la _. PRINTALL(t_rows(term)(40)(4)(job(la _. la t. la f. t)(la p. la r. la c. la t. la f. f))))
-                                          (la a. a(la lkapp. la ast. la afocus. lkapp(la i. la v. la u. la th. la ttl.
+                                          (la a. a(la lkapp. la ast. la afocus. lkapp(la i. la v. la u. la th. la ttl. la z.
                                              (la _. PRINTALL(a11y(v(ast))(afocus)))(print(concat("    theme ")(th(ast)("dark")("light")))))))))
               (print(concat("  window ")(concat(int_to_str(id))(concat(" ver ")(int_to_str(ver)))))))))(wins)))
         ((la _. lock(la _. print("snap: no lock screen"))(la l. l(la login. la lw. la showing.
            showing(la _. lw(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
-                      app(la _. "")(la a. a(la lkapp. la ast. la af. lkapp(la i. la v. la u. la th. la ttl.
+                      app(la _. "")(la a. a(la lkapp. la ast. la af. lkapp(la i. la v. la u. la th. la ttl. la z.
                          (la _. PRINTALL(a11y(v(ast))(af)))(print(concat("  LOCKED, focus ")(af))))))))
                   (la _. "")("!"))))
         (print(concat("snap ")(concat(int_to_str(n))(concat(": tree ")(concat(tl_show(tree))(concat(" focus ")(int_to_str(focus))))))))))))))))

@@ -62,7 +62,8 @@
 #        (in cells) it was drawn at; at any other width it starts again
 #  app = la n. la s. n(n)  (a terminal)   |   la n. la s. s(a), a LogosKit app:
 #        a = la k. k(lkapp)(state)(focus), lkapp = la s. s(init)(view)(update)
-#        (theme)(title) (an app window's term and sh are unused)
+#        (theme)(title)(zoom): zoom(state) is the text scale the app asks to be
+#        drawn at, 1 or 2 (an app window's term and sh are unused)
 #  job = la n. la j. n(n)  (no command)   |   la n. la j. j(pid)(rfd)(cmd)
 #  mask: held modifiers, bit 1 LSHIFT, 2 RSHIFT, 4 LCTRL, 8 RCTRL, 16 LALT,
 #  32 RALT, 64 LMETA, 128 RMETA. ver counts a window's changes; tkey/trows cache
@@ -161,9 +162,10 @@ glyph WM_WINS = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. l
 #   with its caches updated. R, T, SH are the render, terminal and shell
 #   records. pal = la s. s(border_f)(border_u)(bar_f)(bar_u)(termbg)(st_text)
 #   (st_bar_f)(st_bar_u): four border/bar pixels, the terminal background, and
-#   the three text styles. ui = la s. s(lk_light)(lk_dark)(bg_light)(bg_dark):
-#   two LogosKit kits (LK_KIT records) and their background pixels; an app
-#   window is drawn with the one its own state's theme picks.
+#   the three text styles. ui = la s. s(lk_light)(lk_dark)(lk_light2)(lk_dark2)
+#   (bg_light)(bg_dark): LogosKit kits (LK_KIT records) at the text scale and
+#   at twice it, and the two background pixels; an app window is drawn with
+#   the kit its own state's theme and zoom pick.
 # A tile, top to bottom: BW border rows; the title bar (2 rows, one text row of
 # 8*scale, 2 rows); PAD rows; the terminal's (or the app's) text rows; filler; PAD rows; BW
 # border rows. Every scanline is border | PAD | text | filler | border. A tile
@@ -179,7 +181,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
     la t_prev. la t_next. la t_clear. la t_prompt. la t_rows. la t_keychar.
   SH(la sh_new. la sh_prompt. la sh_run. la sh_finish. la sh_int. la sh_hup.
   pal(la border_f. la border_u. la bar_f. la bar_u. la termbg. la st_text. la st_bar_f. la st_bar_u.
-  ui(la lk_light. la lk_dark. la bg_light. la bg_dark.
+  ui(la lk_light. la lk_dark. la lk_light2. la lk_dark2. la bg_light. la bg_dark.
   (la C0. la C1. la C2. la C4. la C8. la BW. la PAD. la TRUE. la FALSE.
     LET(mul(C8)(scale))(la cw.
     # each(left)(right)(band): the band's scanlines, each framed left ++ s ++ right
@@ -200,7 +202,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
     LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         app(la _. job(la _. concat(" ")(concat(int_to_str(id))(concat("  ")(sh_prompt(sh)))))
                      (la pid. la rfd. la cmd. concat(" ")(concat(int_to_str(id))(concat("  [running] ")(cmd)))))
-           (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
+           (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle. la azoom.
                # the lock screen's window (id 0) has no number
                lt(C0)(id)(la _. concat(" ")(concat(int_to_str(id))(concat("  ")(atitle))))(la _. concat(" ")(atitle))(C0))))))(la title.
     LET(la w. la focused. la tw. la th. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
@@ -238,10 +240,21 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
               (la _. bands(st_text)(bc(la bcols. la cache. int_eq(bcols)(ccols)(la _. cache)(la _. nil)(C0)))
                          (t_rows(term)(ccols)(nrows)(job(la _. TRUE)(la p. la r. la c. FALSE)))(ccols)
                        (la blist. la bc2. k(blist)(la k3. k3(ccols)(bc2))(termbg)))
-              (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
-                  # render gives one flat list of scanlines: the text area's single band
-                  theme(ast)(lk_dark)(lk_light)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
-                    k(cons(render(fit(nrows)(paint(view(ast))(afocus)))(ccols))(nil))(bc)(theme(ast)(bg_dark)(bg_light))))))))(C0))(C0))
+              (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle. la azoom.
+                  # render gives one flat list of scanlines: the text area's single band.
+                  # At zoom 2 (and room for at least 2x2 cells) the app is drawn with
+                  # the kits at twice the text scale, in half the cells each way,
+                  # and padded out to the text area with its background.
+                  (la z2. (la zc. la zr. la bgc.
+                    theme(ast)(z2(lk_dark2)(lk_dark))(z2(lk_light2)(lk_light))
+                      (la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
+                        (la sl. k(cons(z2(la _. append(map(la l. concat(l)(run(mul(sub(ccols)(mul(C2)(zc)))(cw))(bgc)))(sl))
+                                                    (nrep(mul(sub(nrows)(mul(C2)(zr)))(cw))(run(mul(ccols)(cw))(bgc))))
+                                         (la _. sl)(C0))(nil))(bc)(bgc))
+                        (render(fit(zr)(paint(view(ast))(afocus)))(zc))))
+                    (z2(la _. div(ccols)(C2))(la _. ccols)(C0))(z2(la _. div(nrows)(C2))(la _. nrows)(C0))
+                    (theme(ast)(bg_dark)(bg_light)))
+                  (int_eq(azoom(ast))(C2)(lt(C1)(ccols)(lt(C1)(nrows))(FALSE))(FALSE)))))))(C0))(C0))
         (focused(la _. border_f)(la _. border_u)(C0))
         (focused(la _. bar_f)(la _. bar_u)(C0))
         (focused(la _. st_bar_f)(la _. st_bar_u)(C0)))))(la draw.
@@ -292,10 +305,10 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     LET(56)(la K_LAL. LET(100)(la K_RAL. LET(125)(la K_LME. LET(126)(la K_RME.
     LET(sub(sw)(mul(C2)(gap)))(la aw. LET(sub(sh0)(mul(C2)(gap)))(la ah.
     # lock_win(login)(lgst): the lock screen's window (id 0), its focus on the
-    # login view's first focusable element. A LogosKit app has five fields, so
-    # the login record's done and lock are left out of the window's copy.
+    # login view's first focusable element. The window holds an ordinary app
+    # record (zoom 1); the login record's done and lock are used from lock.
     LET(la login. la lgst. login(la lg_init. la lg_view. la lg_update. la lg_theme. la lg_title. la lg_done. la lg_lock.
-        mkapp(C0)(la k. k(la s. s(lg_init)(lg_view)(lg_update)(lg_theme)(lg_title))(lgst)
+        mkapp(C0)(la k. k(la s. s(lg_init)(lg_view)(lg_update)(lg_theme)(lg_title)(la st. C1))(lgst)
                          (lk_focusables(lg_view(lgst))(la _. "")(la h. la t. h)))))(la lock_win.
     LET(lockui(la _. la n. la s. n(n))
               (la lu. lu(la login. la start. login(la i. la v. la u. la th. la ti. la d. la l.
@@ -328,7 +341,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     # open_app(st)(lkapp): a new window holding a LogosKit app, its focus on the
     # app's first focusable element
     LET(la st. la lkapp. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
-        lkapp(la init. la view. la update. la theme. la atitle.
+        lkapp(la init. la view. la update. la theme. la atitle. la azoom.
           (la _. mkst(tl_insert(tree)(focus)(nid)(auto_dir(tree)(focus)))(nid)
                      (cons(mkapp(nid)(la k. k(lkapp)(init)(lk_focusables(view(init))(la _. "")(la h. la t. h))))(wins))
                      (add(nid)(C1))(mask)(quit)(TRUE)(lock))
@@ -367,7 +380,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     # focus move and/or a message, and the app's update folds the message into
     # its state; the window is then redrawn from the new state.
     LET(la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
-        app(la _. la n. la s. n(n))(la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
+        app(la _. la n. la s. n(n))(la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle. la azoom.
           lk_key(view(ast))(afocus)(code)(shift)(t_keychar(code)(shift))(la focus2. la msgopt.
             msgopt
               (la _. str_eq(focus2)(afocus)(la _. la n. la s. n(n))
@@ -611,19 +624,23 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
   (0)(la t. la f. t)(la t. la f. f)))))))
 
 # ── Wiring ────────────────────────────────────────────────────────────────
-# WM_BUILD(B)(X)(TL)(T)(R)(SH)(UI)(cfg)(io): build every part once, open the
+# WM_BUILD(B)(X)(TL)(T)(RK)(SH)(UI)(cfg)(io): build every part once, open the
 # first window with the welcome text, and run the loop until the WM exits. TL,
-# T, R, SH are the records of TILE_KIT, TERM_KIT, RENDER_KIT and SHELL_KIT; UI =
+# T, SH are the records of TILE_KIT, TERM_KIT and SHELL_KIT; RK is RENDER_KIT
+# with everything but the scale applied (RK(scale) is its record: the WM uses
+# it at the text scale and, for an app's zoom, at twice it); UI =
 # la s. s(LK_KIT)(SETTINGS_APP)(lockcfg): the LogosKit constructor and the
 # settings app (logoskit.la, lk_settings.la), built here in a light and a dark
 # palette, and the lock screen: lockcfg is la n. la s. n(n) (none) or
 # la n. la s. s(la k. k(LOGIN_APP)(sess)(start_locked)), with LOGIN_APP from
 # lk_login.la and sess the session layer's la s. s(login)(lock)(unlock).
 # cfg = la s. s(sw)(sh)(pitch)(scale)(cwd0); io as for WM_LOOP.
-glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la UI. la cfg. la io.
+glyph WM_BUILD = la B. la X. la TL. la T. la RK. la SH. la UI. la cfg. la io.
   cfg(la sw. la sh0. la pitch. la scale. la cwd0.
   UI(la lk_kit. la settings_app. la lockcfg.
+  (la R. la R2.
   R(la px. la run. la style. la band. la bands. la solid. la join. la compose.
+  R2(la px2. la run2. la style2. la band2. la bands2. la solid2. la join2. la compose2.
     LET(6)(la GAP.
     LET(WM_LISTS(B))(la L.
     LET(la s. s(WM_JOIN(B)(L))(WM_SPLIT(B)(L)))(la J.
@@ -644,9 +661,14 @@ glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la UI. la cfg. la io.
                                      (style(px(120)(70)(10))(bg_l))(style(px(110)(110)(120))(bg_l))))(la lk_light.
     LET(lk_kit(B)(L)(R)(scale)(la s. s(style(px(214)(214)(200))(bg_d))(style(px(24)(18)(8))(gold))
                                      (style(gold)(bg_d))(style(px(130)(130)(150))(bg_d))))(la lk_dark.
+    # the same two palettes at twice the text scale, for an app's zoom
+    LET(lk_kit(B)(L)(R2)(mul(2)(scale))(la s. s(style2(px(30)(30)(40))(bg_l))(style2(px(250)(250)(250))(px(52)(90)(160)))
+                                     (style2(px(120)(70)(10))(bg_l))(style2(px(110)(110)(120))(bg_l))))(la lk_light2.
+    LET(lk_kit(B)(L)(R2)(mul(2)(scale))(la s. s(style2(px(214)(214)(200))(bg_d))(style2(px(24)(18)(8))(gold))
+                                     (style2(gold)(bg_d))(style2(px(130)(130)(150))(bg_d))))(la lk_dark2.
     LET(lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
-          settings_app(B)(L)(nodes)(la init. la view. la update. la theme.
-            la s. s(init)(view)(update)(theme)("Settings"))))(la settings.
+          settings_app(B)(L)(nodes)(la init. la view. la update. la theme. la zoom.
+            la s. s(init)(view)(update)(theme)("Settings")(zoom))))(la settings.
     LET(lockcfg(la _. la n. la s. n(n))
                (la lc. lc(la login_app. la sess. la start.
                   lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
@@ -657,7 +679,7 @@ glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la UI. la cfg. la io.
     LET((la h. lt(h)(sub(sh0)(mul(2)(GAP)))(la _. h)(la _. sub(sh0)(mul(2)(GAP)))("!"))(add(mul(10)(cw))(16)))(la lockh.
     LET(WM_TILE(B)(L)(R)(T)(SH)(scale)
           (la s. s(gold)(grey)(gold)(bar_u)(termbg)(st_text)(st_bar_f)(st_bar_u))
-          (la s. s(lk_light)(lk_dark)(bg_l)(bg_d)))(la tile.
+          (la s. s(lk_light)(lk_dark)(lk_light2)(lk_dark2)(bg_l)(bg_d)))(la tile.
     LET(WM_CORE(B)(L)(X)(TL)(T)(SH)(W)
           (lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render. la s. s(key)(focusables)(settings)(lockui)))
           (la s. s(sw)(sh0)(GAP)(cwd0)))(la core.
@@ -666,4 +688,4 @@ glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la UI. la cfg. la io.
       core(la empty. la open_win. la handle. la on_output. la job_fds. la shutdown. la welcome.
         # a WM that starts locked opens its first terminal when it unlocks
         run(lockcfg(la _. welcome(open_win(empty)))
-                   (la lc. lc(la a. la b. la start. start(la _. empty)(la _. welcome(open_win(empty)))("!"))))))))))))))))))))))))))))))))))
+                   (la lc. lc(la a. la b. la start. start(la _. empty)(la _. welcome(open_win(empty)))("!"))))))))))))))))))))))))))))))))))))(RK(scale))(RK(mul(2)(scale)))))

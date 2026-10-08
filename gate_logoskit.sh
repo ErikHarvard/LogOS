@@ -137,7 +137,7 @@ glyph PRINTALL = Z(la self. la l. l(la _. "")(la h. la t. (la _. self(t))(print(
 # a user session: a list of (code, shift, ch) key presses
 glyph K = la code. la shift. la ch. la k. k(code)(shift)(ch)
 glyph MAIN = (la L. LK_KIT(B)(L)(RSTUB)(1)(PAL)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
-  SETTINGS_APP(B)(L)(nodes)(la init. la view. la update. la theme.
+  SETTINGS_APP(B)(L)(nodes)(la init. la view. la update. la theme. la zoom.
    L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
     # run(keys)(state)(focus): apply each key, print the a11y after it
     (Z(la run. la keys. la st. la focus.
@@ -146,7 +146,7 @@ glyph MAIN = (la L. LK_KIT(B)(L)(RSTUB)(1)(PAL)(la nodes. la measure. la paint. 
               key(view(st))(focus)(code)(shift)(ch)(la focus2. la m.
                 (la st2.
                    (la _. (la _. run(rest)(st2)(focus2))(PRINTALL(a11y(view(st2))(focus2))))
-                   (print(concat("-- key ")(concat(int_to_str(code))(concat(" -> focus ")(concat(focus2)(concat(", theme ")(theme(st2)("dark")("light")))))))))
+                   (print(concat("-- key ")(concat(int_to_str(code))(concat(" -> focus ")(concat(focus2)(concat(", theme ")(concat(theme(st2)("dark")("light"))(concat(", zoom ")(int_to_str(zoom(st2))))))))))))
                 (m(la _. st)(la mm. update(st)(mm))))))))
      (cons(K(15)(la t. la f. f)(""))           # Tab: name -> dark
      (cons(K(57)(la t. la f. f)(" "))          # Space: dark on
@@ -163,7 +163,7 @@ glyph MAIN = (la L. LK_KIT(B)(L)(RSTUB)(1)(PAL)(la nodes. la measure. la paint. 
        (nil)))))))))))))
      (init)("name")))))(WM_LISTS(B))
 LAEOF
-EXPECT_APP='-- key 15 -> focus dark, theme light
+EXPECT_APP='-- key 15 -> focus dark, theme light, zoom 1
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereign
@@ -172,7 +172,7 @@ panel LogosKit settings
   button Save
   button Reset
   text: Saved 0 times
--- key 57 -> focus dark, theme dark
+-- key 57 -> focus dark, theme dark, zoom 1
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereign
@@ -181,7 +181,7 @@ panel LogosKit settings
   button Save
   button Reset
   text: Saved 0 times
--- key 15 -> focus name, theme dark
+-- key 15 -> focus name, theme dark, zoom 1
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereign, focused
@@ -190,7 +190,7 @@ panel LogosKit settings
   button Save
   button Reset
   text: Saved 0 times
--- key 45 -> focus name, theme dark
+-- key 45 -> focus name, theme dark, zoom 1
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereignx, focused
@@ -199,7 +199,7 @@ panel LogosKit settings
   button Save
   button Reset
   text: Saved 0 times
--- key 15 -> focus dark, theme dark
+-- key 15 -> focus dark, theme dark, zoom 1
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereignx
@@ -208,7 +208,7 @@ panel LogosKit settings
   button Save
   button Reset
   text: Saved 0 times
--- key 15 -> focus scale, theme dark
+-- key 15 -> focus scale, theme dark, zoom 1
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereignx
@@ -217,7 +217,7 @@ panel LogosKit settings
   button Save
   button Reset
   text: Saved 0 times
--- key 108 -> focus scale, theme dark
+-- key 108 -> focus scale, theme dark, zoom 2
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereignx
@@ -226,7 +226,7 @@ panel LogosKit settings
   button Save
   button Reset
   text: Saved 0 times
--- key 15 -> focus save, theme dark
+-- key 15 -> focus save, theme dark, zoom 2
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereignx
@@ -235,7 +235,7 @@ panel LogosKit settings
   button Save, focused
   button Reset
   text: Saved 0 times
--- key 28 -> focus save, theme dark
+-- key 28 -> focus save, theme dark, zoom 2
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereignx
@@ -244,7 +244,7 @@ panel LogosKit settings
   button Save, focused
   button Reset
   text: Saved 1 time
--- key 28 -> focus save, theme dark
+-- key 28 -> focus save, theme dark, zoom 2
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereignx
@@ -253,7 +253,7 @@ panel LogosKit settings
   button Save, focused
   button Reset
   text: Saved 2 times
--- key 15 -> focus reset, theme dark
+-- key 15 -> focus reset, theme dark, zoom 2
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereignx
@@ -262,7 +262,7 @@ panel LogosKit settings
   button Save
   button Reset, focused
   text: Saved 2 times
--- key 28 -> focus reset, theme light
+-- key 28 -> focus reset, theme light, zoom 1
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.
   text field Name: sovereign

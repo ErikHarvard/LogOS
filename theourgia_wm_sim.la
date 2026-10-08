@@ -77,7 +77,7 @@ glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC.
       WM_BUILD(B)(X)
         (TILE_KIT(add)(sub)(mul)(div)(lt)(int_eq)(concat)(int_to_str))
         (TERM_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq))
-        (RENDER_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(lt)(band)(str_eq)(error)(TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(TF_HEX))(SCALE))
+        ((la font. la sc. RENDER_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(lt)(band)(str_eq)(error)(font)(sc))(TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(TF_HEX)))
         (SHELL_KIT(concat)(str_at)(str_len)(str_eq)(ord)(str_to_int)(int_to_str)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
           (read_file)(stat)(mkdir)(rmdir)(unlink)(rename)(getpid)(pipe)(fork)(dup2)(open)(close)(execv)(exit)(sigprocmask)(waitpid)(kill)(poll))
         (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. s(la k. k(LOGIN_APP)(SIM_SESS)(la t. la f. f))))

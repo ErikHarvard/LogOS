@@ -8,13 +8,16 @@
 #  with the palette its own state selects, so flipping "Dark theme" redraws
 #  the panel that holds the switch in the other theme.
 #
-#  SETTINGS_APP(B)(L)(nodes) -> la s. s(init)(view)(update)(theme)
+#  SETTINGS_APP(B)(L)(nodes) -> la s. s(init)(view)(update)(theme)(zoom)
 #    state  = la k. k(name)(dark)(scale)(saves)
 #             name a string, dark a Church boolean, scale 0 or 1 (text scale
 #             1 or 2), saves how many times Save was pressed
 #    view(state)          the element tree
 #    update(state)(msg)   the next state (an unknown message changes nothing)
 #    theme(state)         TRUE when the panel is to be drawn dark
+#    zoom(state)          the text scale the panel is to be drawn at: 1 or 2
+#  The window manager draws the panel with theme and zoom, so both settings
+#  change the panel that holds them.
 #  nodes is LogosKit's constructor record. Messages are LogosKit's:
 #  la k. k(id)(kind)(payload).
 # ═══════════════════════════════════════════════════════════════════
@@ -46,7 +49,9 @@ glyph SETTINGS_APP = la B. la L. la nodes.
           str_eq(id)("save")(la _. mk(name)(dark)(scale)(add(saves)(C1)))(la _.
           str_eq(id)("reset")(la _. init)(la _. st)(C0))(C0))(C0))(C0))(C0))))
         # theme
-        (la st. st(la name. la dark. la scale. la saves. dark)))
+        (la st. st(la name. la dark. la scale. la saves. dark))
+        # zoom
+        (la st. st(la name. la dark. la scale. la saves. add(scale)(C1))))
       (mk("sovereign")(FALSE)(C0)(C0)))
     (la name. la dark. la scale. la saves. la k. k(name)(dark)(scale)(saves)))
   (0)(1)(la t. la f. t)(la t. la f. f))))
