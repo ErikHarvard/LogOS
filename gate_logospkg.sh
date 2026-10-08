@@ -14,10 +14,13 @@
 #               with the repository untouched
 #    install    dependencies first in topological order (shown by the log the
 #               self-tests themselves append to, on a diamond), every file
-#               byte-identical; and REFUSED, with the installation tree
-#               unchanged, for: self-test output one byte off (after its
+#               byte-identical, the NEWEST version by dotted-decimal order
+#               (published 1.9, 1.10, 1.2); and REFUSED, with the installation
+#               tree unchanged, for: self-test output one byte off (after its
 #               dependency's test passed, so the dependency is not installed
-#               either), a test that does not compile, a test that exits 3,
+#               either; and again on an EMPTY installation, which stays
+#               empty), output longer than .expected, output shorter, a test
+#               that does not compile, a test that exits 3,
 #               a dependency cycle, a missing dependency, a file clash, a
 #               tampered archive (id mismatch), a signed index entry naming
 #               another package's archive, a tampered index, a tampered or
@@ -28,8 +31,12 @@
 #               versions of alpha removed
 #    advise     reports alpha 1.0 -> 1.1 and changes nothing
 #    update     installs 1.1 (its self-test runs), keeps 1.0; a package then
-#               installed sees the CURRENT alpha beside its test
-#    rollback   back to 1.0; none earlier is an error; update rolls forward
+#               installed sees the CURRENT alpha beside its test; rr 1.0 ->
+#               1.1 -> 1.2; refused, unchanged, when an index line was added
+#               without re-signing (an attacker's genuine-looking rr 9.0)
+#    rollback   back to 1.0; none earlier is an error; update rolls forward;
+#               with three versions, 1.2 -> 1.1 -> 1.0 (the previous, not
+#               the lowest), then update rolls forward to 1.2
 #    list       the installed packages with their current versions and ids
 #  SELF-APPLICATION. logospkg.la itself is packaged (1.0 = the module under
 #  test, 1.1 one comment newer, 1.2 with a real bug: unpack accepts trailing
@@ -278,6 +285,17 @@ def gen(D, module):
     simple("clash", "1.0", "c", extra={"alpha.la": 'export ALPHA\nglyph ALPHA = "not alpha"\n'})
     for n in ("cyca", "cycb", "orphan", "delta"):
         simple(n, "1.0", n)
+    # output longer / shorter than .expected (both refused: equality, not a prefix match)
+    simple("long", "1.0", None, expected="hi\n",
+           main='glyph MAIN = SEQ(LOG("long 1.0\\n"))(SEQ(print("hi"))(print("EXTRA")))\n')
+    simple("short", "1.0", "hi", expected="hi\nmore\n")
+    # versions published out of order (1.9, 1.10, 1.2), and four versions of rr
+    # (9.0 is an attacker's, planted with an unsigned index line)
+    for ver in ("1.9", "1.10", "1.2"):
+        simple("vv", ver, "vv " + ver)
+    for ver in ("1.0", "1.1", "1.2"):
+        simple("rr", ver, "rr " + ver)
+    simple("rr", "9.0", "rr 9.0", extra={"evil.txt": "attacker\n"})
     # the package manager as a package
     src = open(module, "rb").read()
     test = r'''import("logospkg.la")
@@ -456,8 +474,10 @@ packed=""
 pk alpha 1.0 -; pk alpha 1.1 -; pk beta 1.0 alpha; pk gamma 1.0 beta,alpha; pk epsilon 1.0 gamma
 pk okdep 1.0 -; pk bad 1.0 okdep; pk nocompile 1.0 -; pk exit3 1.0 -; pk clash 1.0 alpha
 pk cyca 1.0 cycb; pk cycb 1.0 cyca; pk orphan 1.0 nosuch; pk delta 1.0 -
+pk long 1.0 -; pk short 1.0 -; pk vv 1.9 -; pk vv 1.10 -; pk vv 1.2 -
+pk rr 1.0 -; pk rr 1.1 -; pk rr 1.2 -; pk rr 9.0 -
 pk logospkg 1.0 -; pk logospkg 1.1 -; pk logospkg 1.2 -
-[ "$(echo $packed | wc -w)" = 17 ] && pass "pack: 17 archives, each byte-identical to the format (incl. logospkg.la's own, $(stat -c %s arc/logospkg-1.0) bytes)"
+[ "$(echo $packed | wc -w)" = 26 ] && pass "pack: 26 archives, each byte-identical to the format (incl. logospkg.la's own, $(stat -c %s arc/logospkg-1.0) bytes)"
 s unpack arc/gamma-1.0 out
 expect "unpack: gamma's header fields and file list" \
   "ok name=gamma version=1.0 deps=beta,alpha test=gamma_test.la files=blob.bin:$(stat -c %s src/gamma-1.0/blob.bin),empty.txt:0,gamma.la:$(stat -c %s src/gamma-1.0/gamma.la),gamma_test.la:$(stat -c %s src/gamma-1.0/gamma_test.la),gamma_test.la.expected:$(stat -c %s src/gamma-1.0/gamma_test.la.expected)"
@@ -472,12 +492,12 @@ nbad=$(echo "$R" | grep -c ": err unpack: "); nall=$(echo $BADS | wc -w)
 
 # ── 2. publish ─────────────────────────────────────────────────────────
 pubok=1; : > index.want
-for p in alpha-1.0 beta-1.0 gamma-1.0 epsilon-1.0 okdep-1.0 bad-1.0 nocompile-1.0 exit3-1.0 clash-1.0 cyca-1.0 cycb-1.0 orphan-1.0 delta-1.0; do
+for p in alpha-1.0 beta-1.0 gamma-1.0 epsilon-1.0 okdep-1.0 bad-1.0 long-1.0 short-1.0 nocompile-1.0 exit3-1.0 clash-1.0 cyca-1.0 cycb-1.0 orphan-1.0 delta-1.0; do
     s publish repo key.bin "arc/$p"; id=$(O sha "arc/$p")
     [ "$R" = "ok $id" ] && cmp -s "arc/$p" "repo/pkg/$id" || { pubok=0; fail "publish $p" "want: ok $id" "got:  $R"; }
     echo "${p%-*} ${p##*-} $id" >> index.want
 done
-[ "$pubok" = 1 ] && pass "publish: 13 archives, each id = hashlib sha256 of the archive, stored as pkg/<id>"
+[ "$pubok" = 1 ] && pass "publish: 15 archives, each id = hashlib sha256 of the archive, stored as pkg/<id>"
 cmp -s repo/index index.want && [ "$(cat repo/index.sig)" = "$(O hmac key.bin repo/index)" ] \
     && pass "publish: the index lists every package and index.sig = HMAC(K_repo, index)" \
     || fail "publish: index or signature wrong" "$(diff index.want repo/index | head -3)"
@@ -523,6 +543,15 @@ refuse "install refused: self-test output differs by ONE byte; the installation 
 [ "$(cat testlog)" = "$(printf 'okdep 1.0\nbad 1.0')" ] \
     && pass "install refused: ... although its dependency okdep passed its own test first, okdep is not installed" \
     || fail "install refused: bad's log" "$(cat testlog)"
+refuse "install refused: a self-test that prints the expected output and then more" \
+       "err long 1.0: self-test output differs from long_test.la.expected" pkgcfg install inst repo key.bin long
+refuse "install refused: a self-test that prints only the start of the expected output" \
+       "err short 1.0: self-test output differs from short_test.la.expected" pkgcfg install inst repo key.bin short
+mkdir inst5
+st "$T" pkgcfg install inst5 repo key.bin bad
+if [ "$R" = "err bad 1.0: self-test output differs from bad_test.la.expected" ] && [ -z "$(O snap inst5)" ]; then
+    pass "install refused on an EMPTY installation: it stays empty (no pkgs/, current/ or installed made before the tests)"
+else fail "install refused on an empty installation" "$R" "$(O snap inst5 | head -4)"; fi
 : > testlog
 refuse "install refused: a self-test that does not compile" \
        "err nocompile 1.0: self-test did not compile (status 1)" pkgcfg install inst repo key.bin nocompile
@@ -608,6 +637,38 @@ s remove inst alpha
     && pass "remove alpha: both installed versions gone; installed is empty" || fail "remove alpha" "$R"
 s list inst
 expect "list: empty" "ok "
+
+# ── 5b. version order, a three-version rollback, update's signature check ─
+refuse_in() {   # refuse_in INST LABEL WANT [cfg] WORDS...: as refuse, for the installation INST
+    local d=$1 label=$2 want=$3; shift 3
+    O snap "$d" > "$d.snap"
+    st "$T" "$@"
+    if [ "$R" = "$want" ] && O snap "$d" | cmp -s - "$d.snap"; then pass "$label"
+    else fail "$label" "want: $want" "got:  $R" "$(O snap "$d" | diff "$d.snap" - | head -4)"; fi
+}
+for v in 1.9 1.10 1.2; do
+    s publish repo4 key.bin "arc/vv-$v"; [ "$R" = "ok $(O sha "arc/vv-$v")" ] || fail "publish vv $v" "$R"
+done
+mkdir inst4
+s install inst4 repo4 key.bin vv
+expect "install: the newest version by dotted-decimal order (published 1.9, 1.10, 1.2: neither the last line nor the string maximum)" "ok vv 1.10"
+s publish repo4 key.bin arc/rr-1.0; s install inst4 repo4 key.bin rr; a=$R
+s publish repo4 key.bin arc/rr-1.1; s update inst4 repo4 key.bin rr; b=$R
+s publish repo4 key.bin arc/rr-1.2; s update inst4 repo4 key.bin rr; c=$R
+[ "$a|$b|$c" = "ok rr 1.0|ok rr 1.1|ok rr 1.2" ] && [ "$(cat inst4/current/rr)" = 1.2 ] \
+    && pass "update: rr 1.0 -> 1.1 -> 1.2, all three versions kept in pkgs/" || fail "update rr twice" "$a|$b|$c"
+s rollback inst4 rr; a="$R $(cat inst4/current/rr)"; s rollback inst4 rr; b="$R $(cat inst4/current/rr)"
+[ "$a|$b" = "ok 1.1 1.1|ok 1.0 1.0" ] && pass "rollback: 1.2 -> 1.1 -> 1.0, each time to the previous version (not the lowest)" \
+                                  || fail "rollback with three versions" "$a|$b"
+refuse_in inst4 "rollback refused: rr 1.0 has no earlier version" "err rr 1.0 has no earlier version installed" pkgcfg rollback inst4 rr
+s update inst4 repo4 key.bin rr
+[ "$R" = "ok rr 1.2" ] && [ "$(cat inst4/current/rr)" = 1.2 ] \
+    && pass "update after two rollbacks: current/rr rolls forward to the newest, 1.2" || fail "roll forward to 1.2" "$R"
+# an attacker plants rr 9.0 (a well-formed archive under its true id) and lists it without re-signing
+cp repo4/index repo4.index.save; id9=$(O sha arc/rr-9.0); cp arc/rr-9.0 "repo4/pkg/$id9"; echo "rr 9.0 $id9" >> repo4/index
+refuse_in inst4 "update refused: an index line added without re-signing (its archive is well formed and matches its id)" \
+       "err the repository index fails its signature" pkgcfg update inst4 repo4 key.bin rr
+cp repo4.index.save repo4/index; rm "repo4/pkg/$id9"
 
 # ── 6. self-application: logospkg installs and updates itself ──────────
 mkdir inst2
