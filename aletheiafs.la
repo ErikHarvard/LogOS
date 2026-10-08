@@ -1,0 +1,622 @@
+# ═══════════════════════════════════════════════════════════════════
+#  aletheiafs.la — AletheiaFS, the sovereign filesystem (Citrinitas G1):
+#  sealed, versioned, mirrored, self-repairing Logos-objects in a directory.
+#
+#  Codex: "there are no files. Every persistent data entity is a
+#  Logos-object … its own identity, encryption, semantics, history, and
+#  access policy … self-describing, auto-repairing, recursively sealed …
+#  ephemeral-capable." OS_LAYERS_DESIGN.md ("aletheiafs.la") is the contract
+#  this module implements; where it leaves a choice open, the choice is
+#  stated below.
+#
+#  ── WHAT IT GIVES ───────────────────────────────────────────────────
+#  FS_KIT(…P…)(…effects…)(crypt)(random)
+#     = la s. s(open)(put)(get)(update)(history)(version)(find)(verify)
+#              (remove)(ephemeral)(close)
+#  P, the pure builtins, in this order:
+#      str_at ord str_len str_to_int int_to_str chr concat str_eq
+#      add sub mul div mod lt int_eq
+#  then the effects, in this order:
+#      stat read_file write_file rename unlink mkdir rmdir pipe open close
+#      read write
+#  `crypt` is the crypt record (crypt_ref.la: CRYPT_REF today, CRYPT_FAST as
+#  a drop-in); `random(n)` is the VM's random builtin (n a decimal string),
+#  passed in so that a test can make it fail.
+#
+#  ── THE STORE ───────────────────────────────────────────────────────
+#  A host directory, root:
+#      obj/<id>/<n>      version n of object id, one sealed blob
+#      mirror/<id>/<n>   the same bytes, written second
+#      obj/<id>/head     the newest n, as a decimal; mirror/<id>/head too
+#      obj/index/…       the index, itself an object (see SELF-APPLICATION)
+#  An id is 32 lowercase hex characters, hex of random(16). Each object has
+#  its own key, K_O = hkdf(id)(K_M)("aletheia/object")(32); the index's is
+#  K_I = hkdf("")(K_M)("aletheia/index")(32). Version n of id is
+#      seal(K)(n as 12 little-endian bytes)(id ++ "|" ++ n)(plaintext)
+#      plaintext = "n=<n>\ntags=<t1,t2,…>\nowner=<owner>\nprev=<p>\nlen=<L>\n"
+#                  ++ content (L bytes)
+#  with p = "none" for n = 1, else hex(sha256(the sealed blob of n-1)). A
+#  version is never written twice: its nonce is n, so sealing different
+#  bytes under the same n would reuse a nonce; a write to an n that exists
+#  in either copy is refused. Every write is atomic: <path>.tmp, checked by
+#  stat to hold exactly the bytes, then renamed onto <path>.
+#  A head is only a hint. The newest version is found by starting from the
+#  primary head (or, if that names a version present in neither copy, the
+#  mirror's) and probing upward while version n+1 exists in either copy, so
+#  a lost, damaged or stale head (a crash between a version and its head)
+#  still finds every version.
+#  Tags are non-empty, with no comma and no byte below 32 or 127; an owner
+#  has no byte below 32 or 127 (it may be empty). Content is any bytes.
+#
+#  ── THE OPERATIONS ──────────────────────────────────────────────────
+#  Results are la err. la ok. …; lists are Scott lists; n is a native int.
+#      open(root)(K_M)(guard)          a handle. It creates root, root/obj and
+#          root/mirror (mode 0700) if needed, derives K_I and opens the
+#          ephemeral session. The contract says a handle, not a result, so a
+#          failure (K_M not 32 bytes, a directory that cannot be created)
+#          gives a handle on which every operation is err("open: …").
+#      put(fs)(tok)(content)(tags)(owner)        ok(id)
+#      get(fs)(tok)(id)          ok(la k. k(content)(tags)(owner)(n)), newest
+#      update(fs)(tok)(id)(content)    ok(n): a new version with the tags and
+#          owner of the one before, prev its sealed blob's hash
+#      history(fs)(tok)(id)      ok(list 1..n) once every version opens and
+#          every prev link matches; err("chain broken at i") at the first
+#          version i that does not open or whose link does not match
+#      version(fs)(tok)(id)(i)   ok(content of version i)
+#      find(fs)(tok)(tag)        ok(the ids whose newest version has tag, in
+#          the order they were put)
+#      verify(fs)                ok(la k. k(checked)(repaired)(lost))
+#      remove(fs)(tok)(id)       ok(id): every file of the object, then its
+#          index line (the contract's "ok" carries the id)
+#      ephemeral(fs)(content)    ok(la s. s(read)), read(_) -> ok(content)
+#      close(fs)                 ok(root)
+#  Errors, each a string: "denied: <res> <op>", "bad id", "bad tag", "bad
+#  owner", "no such object", "no such version", "lost: version <n>" (neither
+#  copy authenticates), "malformed version <n>" (it authenticates but its
+#  header is not exactly the five lines above, or its n or len is wrong),
+#  "index: …", "chain broken at <i>", "version <n> exists", "write failed:
+#  <path>", "cannot create <path>", "cannot remove <path>", "random failed",
+#  "id collision", "ephemeral: session closed", "ephemeral: no session: …".
+#
+#  ── ACCESS POLICY ───────────────────────────────────────────────────
+#  guard(tok)(res)(op) is a Church boolean (logossec's verify, partially
+#  applied, in real use). put asks (obj, w); get, history and version ask
+#  (obj/<id>, r); update and remove (obj/<id>, w); find (obj, r). Each asks
+#  exactly once, after the id is checked to be well formed (so the guard is
+#  never asked about obj/../x) and before anything is read: a refused
+#  caller cannot even learn whether an object exists. verify, ephemeral and
+#  close take no token in the contract, so the guard is not asked: verify
+#  returns only counts and writes back only bytes that already authenticate;
+#  ephemeral objects never reach the store.
+#
+#  ── AUTO-REPAIR ─────────────────────────────────────────────────────
+#  Reading a version opens the primary; if it does not authenticate (or is
+#  missing) the mirror is opened, and if that authenticates it is returned
+#  and written over the primary. verify walks every version of the index
+#  and then of every object the newest readable index lists: a version whose
+#  primary authenticates and whose mirror is the same bytes is checked; if
+#  the mirror differs it is rewritten from the primary (repaired); if only
+#  the mirror authenticates the primary is rewritten from it (repaired); if
+#  neither does, both are left as they are (lost). verify also recreates a
+#  missing object directory and rewrites a head that does not name the
+#  newest version. A wrong K_M authenticates nothing, so it repairs nothing:
+#  it reports every index version lost and changes no file.
+#
+#  ── EPHEMERAL OBJECTS ───────────────────────────────────────────────
+#  Codex: "Temporary files exist only in encrypted RAM, never touch disk,
+#  and are scrubbed on session end." open makes a session: a pipe holding a
+#  fresh 32-byte session key (random), reopened through /proc/self/fd with
+#  O_CLOEXEC so that no program a child execs inherits it. ephemeral seals
+#  the content in memory under that key (a random 12-byte nonce) and returns
+#  a handle holding only the sealed bytes; its read takes the key from the
+#  pipe (and puts it back) to open them. close replaces the key in the pipe
+#  with "closed", so every ephemeral object of that session can no longer be
+#  opened, and no new one can be made. The pipe's two descriptors stay open
+#  for the life of the process (closing them would let a later file reuse
+#  their numbers under an old handle).
+#
+#  ── SELF-APPLICATION ────────────────────────────────────────────────
+#  The filesystem's own index is a sealed object stored by the filesystem:
+#  the object "index" (a name no object id can take), sealed under K_I,
+#  versioned with the same header (tags=index, owner=aletheiafs) and prev
+#  chain, mirrored, found by the same probe and repaired by the same reads
+#  and the same verify. Its content is one line "<id> <t1,t2,…>" per object
+#  in put order; every put and remove is a new version of it. find reads the
+#  tags there: update keeps an object's tags, so its newest version has
+#  exactly the tags it was put with.
+#
+#  ── PERFORMANCE ─────────────────────────────────────────────────────
+#  Kit style (WM_DESIGN.md, "How fast the VM is"): every builtin and every
+#  integer constant is a parameter, the functions are LET-bound once when
+#  the kit is built (FS_BASE, FS_STORE, then FS_KIT), booleans are applied to
+#  thunks, and every join is balanced; after startup no name reaches the
+#  VM's glyph table from this module. The cost is the cryptography: every
+#  object operation derives K_O (one HKDF, two HMACs); put and remove also
+#  open the index and seal a new version of it; update and history hash
+#  sealed versions. MEASURED on the VM (a 4-core machine shared with other
+#  jobs, load 8-11):
+#    CRYPT_FAST (logoscrypt.la), 256-byte content, timed inside the program
+#    with the monotonic clock: every operation 10-50 ms (open 23-32, put
+#    34-51, get 32-35, update 30-47, history of 2 versions 23-42, version
+#    16-33, find 10-23, verify 42-44, ephemeral 20-22, its read 10-24,
+#    close 8-21, remove 22-51), most of it file work and the timer itself.
+#    CRYPT_REF, 64-byte content, wall time through the gate's driver
+#    (whose hex coding adds about a second): open 226-331 s, put 342 s,
+#    get 324 s, update 233 s, history of 2 versions 179 s, version 194 s,
+#    find 19 s, verify of the index and one object 303 s, ephemeral 6 s,
+#    its read 7 s, close 0.1 s, remove 52 s, a refused get 0.9 s.
+#    An HKDF is most of each: CRYPT_REF names its builtins, and each name
+#    walks the whole ~160 KB program (95 s for one HKDF on a quieter
+#    machine in a 133 KB program).
+#  CRYPT_REF's sha256 is wrong for message lengths of 55 mod 64 (see
+#  logoscrypt.la); a prev link over a sealed blob of such a length then
+#  differs from FIPS. CRYPT_FAST is right there.
+#
+#  ── HONEST SCOPE ────────────────────────────────────────────────────
+#  One writer at a time: there is no lock, and two processes writing one
+#  store can race (the never-overwrite check makes the loser fail, not
+#  corrupt, in the common case). There is no journal: a put whose object
+#  cannot be written removes it again, but a write that fails part-way
+#  through an update, or through the index after its object, can leave the
+#  new version in one copy only (verify completes it; its number is never
+#  reused, because its nonce is); a remove whose index write fails has
+#  already deleted the files (remove again finishes it). A head is not authenticated: someone who
+#  deletes the newest versions from both copies and rolls both heads back
+#  truncates an object undetectably (the index does not record each
+#  object's newest n). What is on disk is sealed, but not hidden: the ids,
+#  the number and sizes of versions, and when they were written are
+#  visible. There is no directory listing in the VM, so objects are found
+#  through the index; an object whose index line is lost is still readable
+#  by id but not found or verified. Old versions are kept forever (no
+#  compaction). Repair needs one good copy; there is no erasure coding. The
+#  handle holds K_M and K_I as strings, and the VM cannot erase memory: a
+#  dropped key stays in the heap until the collector reuses its space, and
+#  "scrubbed" means unreachable, not overwritten. A forked child (before
+#  exec) shares the session pipe, so it can read the session key and its
+#  ephemeral reads race the parent's. The session needs /proc mounted; when
+#  it cannot be set up, ephemeral says why and the store works without it.
+#  Engines: the VM only (stat, mkdir, rename, unlink, pipe, open, random).
+# ═══════════════════════════════════════════════════════════════════
+
+export FS_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# ── FS_BASE: the pure helpers ──────────────────────────────────────────
+# FS_BASE(…P…)(k) hands k, in this order:
+#   T F nil cons OK ERR BIND DO len slice find split joinb joinsep map filter
+#   member isnat idok tagsok ownerok le12 C0 C1 C2 C12 C16 C32
+# Results are la err. la ok. …; BIND(r)(f) is f(v) on ok(v) and r's error
+# otherwise. DO(e)(k) evaluates e, then k(e): effects in order, top down.
+# Positions are native ints; a string is scanned by index with str_at, and
+# every join is balanced, so nothing here is quadratic in the data.
+glyph FS_BASE = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq.
+  (la C0. la C1. la C2. la C12. la C16. la C18. la C32. la C44. la C48. la C57. la C97. la C102. la C127. la C256.
+  LET(la t. la f. t)(la T.
+  LET(la t. la f. f)(la F.
+  LET(la n. la c. n(n))(la nil.
+  LET(la h. la t. la n. la c. c(h)(t))(la cons.
+  LET(la v. la e. la o. o(v))(la OK.
+  LET(la m. la e. la o. e(m))(la ERR.
+  LET(la r. la f. r(la m. la e. la o. e(m))(f))(la BIND.
+  LET(la a. la f. f(a))(la DO.
+  LET(la s. str_to_int(str_len(s)))(la len.
+  LET(la c. str_to_int(ord(c)))(la ordi.
+  # slice(s)(i)(j): bytes i..j-1, joined by halves
+  LET(Z(la slice. la s. la i. la j.
+      lt(add(i)(C1))(j)
+        (la _. (la m. concat(slice(s)(i)(m))(slice(s)(m)(j)))(add(i)(div(sub(j)(i))(C2))))
+        (la _. lt(i)(j)(la _. str_at(s)(i))(la _. "")(C0))(C0)))(la slice.
+  # find(s)(n)(c)(i): the first index >= i holding the byte c, or n (= len s)
+  LET(Z(la find. la s. la n. la c. la i.
+      lt(i)(n)(la _. str_eq(str_at(s)(i))(c)(la _. i)(la _. find(s)(n)(c)(add(i)(C1)))(C0))
+        (la _. n)(C0)))(la find.
+  # split(s)(c): the fields ended by c ("" -> nil, "a,b" -> a b, "a," -> a)
+  LET(Z(la go. la s. la n. la c. la i.
+      lt(i)(n)(la _. (la j. cons(slice(s)(i)(j))(go(s)(n)(c)(add(j)(C1))))(find(s)(n)(c)(i)))
+        (la _. nil)(C0)))(la splitgo.
+  LET(la s. la c. splitgo(s)(len(s))(c)(C0))(la split.
+  LET(Z(la cnt. la l. l(la _. C0)(la h. la t. add(C1)(cnt(t)))))(la count.
+  # jn(l)(n)(k): k(the first n strings of l joined)(the rest), by halves
+  LET(Z(la jn. la l. la n.
+      lt(n)(C2)
+        (la _. int_eq(n)(C1)
+            (la _. l(la _. la k. k("")(nil))(la h. la t. la k. k(h)(t)))
+            (la _. la k. k("")(l))(C0))
+        (la _. (la h. jn(l)(h)(la a. la r. jn(r)(sub(n)(h))(la b. la r2. la k. k(concat(a)(b))(r2))))
+               (div(n)(C2)))(C0)))(la jn.
+  LET(la l. jn(l)(count(l))(la s. la r. s))(la joinb.
+  LET(Z(la go. la l. la sep. l(la _. nil)(la h. la t.
+      t(la _. cons(h)(nil))(la h2. la t2. cons(h)(cons(sep)(go(t)(sep)))))))(la interl.
+  LET(la l. la sep. joinb(interl(l)(sep)))(la joinsep.
+  LET(Z(la map. la f. la l. l(la _. nil)(la h. la t. cons(f(h))(map(f)(t)))))(la map.
+  LET(Z(la filt. la p. la l. l(la _. nil)(la h. la t.
+      p(h)(la _. cons(h)(filt(p)(t)))(la _. filt(p)(t))(C0))))(la filter.
+  LET(Z(la mem. la x. la l. l(la _. F)(la h. la t. str_eq(h)(x)(la _. T)(la _. mem(x)(t))(C0))))(la member.
+  LET(Z(la go. la p. la s. la n. la i.
+      lt(i)(n)(la _. p(str_at(s)(i))(la _. go(p)(s)(n)(add(i)(C1)))(la _. F)(C0))(la _. T)(C0)))(la allc0.
+  LET(la p. la s. allc0(p)(s)(len(s))(C0))(la allc.
+  LET(la c. (la o. lt(o)(C48)(F)(lt(C57)(o)(F)(T)))(ordi(c)))(la digit.
+  LET(la c. (la o. lt(o)(C48)(F)(lt(C57)(o)(lt(o)(C97)(F)(lt(C102)(o)(F)(T)))(T)))(ordi(c)))(la hexc.
+  LET(la c. (la o. lt(o)(C32)(F)(int_eq(o)(C127)(F)(T)))(ordi(c)))(la plainc.
+  LET(la c. int_eq(ordi(c))(C44)(F)(plainc(c)))(la tagc.
+  # isnat(s): a canonical decimal of 1..18 digits (no sign, no leading zero)
+  LET(la s. (la n. lt(C0)(n)
+        (la _. lt(C18)(n)(la _. F)
+            (la _. allc(digit)(s)(la _. str_eq(int_to_str(str_to_int(s)))(s))(la _. F)(C0))(C0))
+        (la _. F)(C0))(len(s)))(la isnat.
+  LET(la s. int_eq(len(s))(C32)(la _. allc(hexc)(s))(la _. F)(C0))(la idok.
+  LET(la t. lt(C0)(len(t))(la _. allc(tagc)(t))(la _. F)(C0))(la tagok.
+  LET(Z(la go. la l. l(la _. T)(la h. la t. tagok(h)(la _. go(t))(la _. F)(C0))))(la tagsok.
+  LET(la o. allc(plainc)(o))(la ownerok.
+  # le12(n): n as 12 little-endian bytes (the version's nonce)
+  LET(Z(la go. la n. la k. int_eq(k)(C0)(la _. "")
+      (la _. concat(chr(int_to_str(mod(n)(C256))))(go(div(n)(C256))(sub(k)(C1))))(C0)))(la lebytes.
+  LET(la n. lebytes(n)(C12))(la le12.
+    la k. k(T)(F)(nil)(cons)(OK)(ERR)(BIND)(DO)(len)(slice)(find)(split)(joinb)(joinsep)(map)(filter)
+          (member)(isnat)(idok)(tagsok)(ownerok)(le12)(C0)(C1)(C2)(C12)(C16)(C32)
+  ))))))))))))))))))))))))))))))))))))
+  (str_to_int("0"))(str_to_int("1"))(str_to_int("2"))(str_to_int("12"))(str_to_int("16"))
+  (str_to_int("18"))(str_to_int("32"))(str_to_int("44"))(str_to_int("48"))(str_to_int("57"))
+  (str_to_int("97"))(str_to_int("102"))(str_to_int("127"))(str_to_int("256"))
+
+# ── FS_STORE: files, versions, the index ───────────────────────────────
+# FS_STORE(…)(crypt)(base)(k) hands k, in this order:
+#   exists rd awrite mkd pdir mdir latest readver writever parse
+#   readidx writeidx lines lineid linetags walk fixheads delobj
+# A version file is read only after stat says it is a regular file (on
+# this VM read_file of a missing file returns "", on a later one it halts).
+glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
+    la add. la sub. la div. la mod. la lt. la int_eq.
+    la stat. la read_file. la write_file. la rename. la unlink. la mkdir. la rmdir.
+    la crypt. la base.
+  base(la T. la F. la nil. la cons. la OK. la ERR. la BIND. la DO. la len. la slice. la find. la split.
+       la joinb. la joinsep. la map. la filter. la member. la isnat. la idok. la tagsok. la ownerok. la le12.
+       la C0. la C1. la C2. la C12. la C16. la C32.
+  crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
+  (la C4. la C8. la C4096.
+  LET(la st. str_eq(str_at(st)(C0))("-"))(la sterr.
+  LET(la st. (la n. (la sp. str_to_int(slice(st)(C0)(sp)))(find(st)(n)(" ")(C0)))(len(st)))(la stmode.
+  LET(la st. (la n. (la sp. str_to_int(slice(st)(add(sp)(C1))(n)))(find(st)(n)(" ")(C0)))(len(st)))(la stsize.
+  # kind(p): 0 when p does not exist, else st_mode's type nibble (4 dir, 8 file)
+  LET(la p. (la st. sterr(st)(la _. C0)(la _. mod(div(stmode(st))(C4096))(C16))(C0))(stat(p)))(la kind.
+  LET(la p. lt(C0)(kind(p)))(la exists.
+  LET(la p. int_eq(kind(p))(C4))(la isdir.
+  LET(la p. int_eq(kind(p))(C8)(la _. read_file(p))(la _. "")(C0))(la rd.
+  # fsize(p): the size of the regular file p, or -1
+  LET(la p. (la st. sterr(st)(la _. sub(C0)(C1))
+      (la _. int_eq(mod(div(stmode(st))(C4096))(C16))(C8)(la _. stsize(st))(la _. sub(C0)(C1))(C0))(C0))
+      (stat(p)))(la fsize.
+  # awrite(p)(data): write p.tmp, check that it holds exactly data, rename it
+  # onto p (atomic); on any failure the temporary is removed and it is an err
+  LET(la p. la data. (la tmp. (la fail.
+        DO(write_file(tmp)(data))(la _.
+          int_eq(fsize(tmp))(len(data))
+            (la _. str_eq(rename(tmp)(p))("0")(la _. OK(p))(la _. fail(C0))(C0))
+            (la _. fail(C0))(C0)))
+      (la _. DO(unlink(tmp))(la _. ERR(concat("write failed: ")(p)))))
+    (concat(p)(".tmp")))(la awrite.
+  LET(la p. DO(mkdir(p)("448"))(la _. isdir(p)(la _. OK(p))(la _. ERR(concat("cannot create ")(p)))(C0)))(la mkd.
+  LET(la root. la id. concat(concat(root)("/obj/"))(id))(la pdir.
+  LET(la root. la id. concat(concat(root)("/mirror/"))(id))(la mdir.
+  LET(la d. la n. concat(concat(d)("/"))(int_to_str(n)))(la vpath.
+  LET(la id. la n. concat(concat(id)("|"))(int_to_str(n)))(la aad.
+  LET(la K. la id. la n. la blob. aopen(K)(le12(n))(aad(id)(n))(blob))(la vopen.
+  LET(la P. la M. la n. exists(vpath(P)(n))(la _. T)(la _. exists(vpath(M)(n)))(C0))(la vexists.
+  LET(la d. (la s. isnat(s)(la _. str_to_int(s))(la _. C0)(C0))(rd(concat(d)("/head"))))(la readhead.
+  LET(la P. la M. la h. lt(C0)(h)(la _. vexists(P)(M)(h))(la _. F)(C0))(la hvalid.
+  LET(Z(la up. la P. la M. la n. vexists(P)(M)(add(n)(C1))(la _. up(P)(M)(add(n)(C1)))(la _. n)(C0)))(la probe.
+  # latest(P)(M): the newest version present in either copy. A head is only
+  # a starting point: one naming a version present in neither copy is
+  # ignored, and versions written after it (a crash before the head was
+  # updated) are found by probing upward. 0 = no such object.
+  LET(la P. la M. (la hp. hvalid(P)(M)(hp)(la _. probe(P)(M)(hp))
+        (la _. (la hm. probe(P)(M)(hvalid(P)(M)(hm)(hm)(C0)))(readhead(M)))(C0))(readhead(P)))(la latest.
+  # readver(K)(P)(M)(id)(n): ok(la k. k(sealed blob)(plaintext)). The
+  # primary is opened; if it does not authenticate, the mirror is, and a
+  # mirror that does is written back over the primary (auto-repair).
+  LET(la K. la P. la M. la id. la n. (la pp. (la p.
+      vopen(K)(id)(n)(p)
+        (la _. (la m. vopen(K)(id)(n)(m)
+              (la _. ERR(concat("lost: version ")(int_to_str(n))))
+              (la pt. DO(awrite(pp)(m))(la _. OK(la k. k(m)(pt)))))
+            (rd(vpath(M)(n))))
+        (la pt. OK(la k. k(p)(pt))))
+    (rd(pp)))(vpath(P)(n)))(la readver.
+  # the plaintext of a version: its header, then the content
+  LET(la ns. la tagstr. la owner. la prev. la content.
+      concat(joinb(cons("n=")(cons(ns)(cons("\ntags=")(cons(tagstr)(cons("\nowner=")(cons(owner)
+        (cons("\nprev=")(cons(prev)(cons("\nlen=")(cons(int_to_str(len(content)))(cons("\n")(nil)))))))))))))
+        (content))(la mkhdr.
+  # fld(pt)(n)(bad)(key)(pos)(k): key at pos, then a value up to a newline:
+  # k(value)(the position after the newline); bad otherwise
+  LET(la pt. la n. la bad. la key. la pos. la k. (la e. (la j.
+        str_eq(slice(pt)(pos)(e))(key)
+          (la _. lt(j)(n)(la _. k(slice(pt)(e)(j))(add(j)(C1)))(la _. bad)(C0))
+          (la _. bad)(C0))
+      (find(pt)(n)("\n")(e)))(add(pos)(len(key))))(la fld.
+  # parse(pt)(vn): ok(la k. k(tags)(owner)(prev)(content)) when pt is a
+  # well-formed version vn (exactly the five header lines, in order, n= and
+  # len= right, every tag and the owner well formed); err otherwise
+  LET(la pt. la vn. (la n. (la bad.
+      fld(pt)(n)(bad)("n=")(C0)(la nv. la p1.
+      fld(pt)(n)(bad)("tags=")(p1)(la tv. la p2.
+      fld(pt)(n)(bad)("owner=")(p2)(la ov. la p3.
+      fld(pt)(n)(bad)("prev=")(p3)(la pv. la p4.
+      fld(pt)(n)(bad)("len=")(p4)(la lv. la p5.
+        (la tags. (la body.
+          str_eq(nv)(int_to_str(vn))(la _. isnat(lv)(la _. int_eq(str_to_int(lv))(len(body))
+              (la _. tagsok(tags)(la _. ownerok(ov)(la _. OK(la k. k(tags)(ov)(pv)(body)))(la _. bad)(C0))
+                  (la _. bad)(C0))
+              (la _. bad)(C0))(la _. bad)(C0))(la _. bad)(C0))
+          (slice(pt)(p5)(n)))(split(tv)(","))))))))
+      (ERR(concat("malformed version ")(int_to_str(vn)))))(len(pt)))(la parse.
+  # writever(K)(P)(M)(id)(n)(tagstr)(owner)(prev)(content): seal version n
+  # and write it to both copies, then both heads. A version is never
+  # overwritten (its nonce is n: a second sealing under it would reuse it).
+  LET(la K. la P. la M. la id. la n. la tagstr. la owner. la prev. la content.
+    vexists(P)(M)(n)
+      (la _. ERR(concat(concat("version ")(int_to_str(n)))(" exists")))
+      (la _. (la ns. (la blob.
+          BIND(awrite(vpath(P)(n))(blob))(la _.
+          BIND(awrite(vpath(M)(n))(blob))(la _.
+          BIND(awrite(concat(P)("/head"))(ns))(la _.
+          BIND(awrite(concat(M)("/head"))(ns))(la _. OK(n))))))
+        (seal(K)(le12(n))(aad(id)(n))(mkhdr(ns)(tagstr)(owner)(prev)(content))))(int_to_str(n)))(C0))(la writever.
+  # the index: the object "index", sealed under K_I, one line "<id> <tags>"
+  # per object. readidx -> ok(la k. k(n)(content)(sealed blob)), n = 0 for a
+  # store with no index yet
+  LET(la root. la KI. (la P. (la M. (la n.
+        lt(C0)(n)
+          (la _. readver(KI)(P)(M)("index")(n)
+                   (la m. ERR(concat("index: ")(m)))
+                   (la v. v(la blob. la pt. parse(pt)(n)
+                        (la m. ERR(concat("index: ")(m)))
+                        (la h. h(la tags. la owner. la prev. la body. OK(la k. k(n)(body)(blob)))))))
+          (la _. OK(la k. k(C0)("")("")))(C0))
+      (latest(P)(M)))(mdir(root)("index")))(pdir(root)("index")))(la readidx.
+  LET(la root. la KI. la n. la blob. la content. (la P. (la M.
+        BIND(mkd(P))(la _. BIND(mkd(M))(la _.
+          writever(KI)(P)(M)("index")(add(n)(C1))("index")("aletheiafs")
+            (int_eq(n)(C0)(la _. "none")(la _. hex(sha256(blob)))(C0))(content))))
+      (mdir(root)("index")))(pdir(root)("index")))(la writeidx.
+  LET(la content. split(content)("\n"))(la lines.
+  LET(la line. slice(line)(C0)(C32))(la lineid.
+  LET(la line. split(slice(line)(add(C32)(C1))(len(line)))(","))(la linetags.
+  # vcheck(K)(P)(M)(id)(i): ok(0) both copies good, ok(1) one rewritten
+  # from the other, ok(2) neither authenticates (lost)
+  LET(la K. la P. la M. la id. la i. (la pp. (la mp. (la p. (la m.
+      vopen(K)(id)(i)(p)
+        (la _. vopen(K)(id)(i)(m)
+            (la _. OK(C2))
+            (la pt. BIND(awrite(pp)(m))(la _. OK(C1))))
+        (la pt. str_eq(m)(p)(la _. OK(C0))(la _. BIND(awrite(mp)(p))(la _. OK(C1)))(C0)))
+      (rd(mp)))(rd(pp)))(vpath(M)(i)))(vpath(P)(i)))(la vcheck.
+  # walk(K)(P)(M)(id)(i)(n)(c)(r)(l): vcheck versions i..n, counting
+  LET(Z(la walk. la K. la P. la M. la id. la i. la n. la c. la r. la l.
+    lt(n)(i)(la _. OK(la k. k(c)(r)(l)))(la _.
+      BIND(vcheck(K)(P)(M)(id)(i))(la st.
+        walk(K)(P)(M)(id)(add(i)(C1))(n)(add(c)(C1))(int_eq(st)(C1)(add(r)(C1))(r))(int_eq(st)(C2)(add(l)(C1))(l))))
+      (C0)))(la walk.
+  # fixheads(P)(M)(n): both heads say n
+  LET(la P. la M. la n. (la ns. (la fix. BIND(fix(P))(la _. fix(M)))
+        (la d. str_eq(rd(concat(d)("/head")))(ns)(la _. OK(ns))(la _. awrite(concat(d)("/head"))(ns))(C0)))
+      (int_to_str(n)))(la fixheads.
+  # delobj(P)(M)(n): unlink versions 1..n (and any .tmp up to n+1), both
+  # heads, then remove both directories; a directory already gone is fine
+  LET(Z(la del. la P. la M. la i. la n. lt(n)(i)(la _. C0)(la _.
+      DO(unlink(vpath(P)(i)))(la _. DO(unlink(concat(vpath(P)(i))(".tmp")))(la _.
+      DO(unlink(vpath(M)(i)))(la _. DO(unlink(concat(vpath(M)(i))(".tmp")))(la _.
+        del(P)(M)(add(i)(C1))(n))))))(C0)))(la delv.
+  LET(la d. DO(unlink(concat(d)("/head")))(la _. DO(unlink(concat(d)("/head.tmp")))(la _.
+      (la r. str_eq(r)("0")(la _. OK(d))(la _. str_eq(r)("-2")(la _. OK(d))(la _. ERR(concat("cannot remove ")(d)))(C0))(C0))
+      (rmdir(d)))))(la deld.
+  LET(la P. la M. la n. DO(delv(P)(M)(C1)(add(n)(C1)))(la _. BIND(deld(P))(la _. deld(M))))(la delobj.
+    la k. k(exists)(rd)(awrite)(mkd)(pdir)(mdir)(latest)(readver)(writever)(parse)
+          (readidx)(writeidx)(lines)(lineid)(linetags)(walk)(fixheads)(delobj)
+  )))))))))))))))))))))))))))))))))))))
+  (str_to_int("4"))(str_to_int("8"))(str_to_int("4096"))))
+
+# ── FS_KIT: the filesystem ─────────────────────────────────────────────
+glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq.
+    la stat. la read_file. la write_file. la rename. la unlink. la mkdir. la rmdir.
+    la pipe. la sysopen. la sysclose. la read. la write.
+    la crypt. la random.
+  (la base.
+  base(la T. la F. la nil. la cons. la OK. la ERR. la BIND. la DO. la len. la slice. la find. la split.
+       la joinb. la joinsep. la map. la filter. la member. la isnat. la idok. la tagsok. la ownerok. la le12.
+       la C0. la C1. la C2. la C12. la C16. la C32.
+  FS_STORE(str_at)(str_to_int)(int_to_str)(concat)(str_eq)(add)(sub)(div)(mod)(lt)(int_eq)
+          (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(crypt)(base)
+  (la exists. la rd. la awrite. la mkd. la pdir. la mdir. la latest. la readver. la writever. la parse.
+   la readidx. la writeidx. la lines. la lineid. la linetags. la walk. la fixheads. la delobj.
+  crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
+  LET(la id. la km. hkdf(id)(km)("aletheia/object")(C32))(la okey.
+  # session(_): ok(la k. k(rfd)(wfd)), a pipe holding the ephemeral session
+  # key, reopened close-on-exec through /proc/self/fd so that no program a
+  # child execs inherits it
+  LET(la _. (la pr.
+      str_eq(str_at(pr)(C0))("-")
+        (la _. ERR("pipe failed"))
+        (la _. (la n. (la sp. (la r0. (la w0.
+            (la r1. (la w1.
+                DO(sysclose(r0))(la _. DO(sysclose(w0))(la _.
+                  (la fail.
+                    str_eq(str_at(r1)(C0))("-")(la _. fail(C0))(la _.
+                    str_eq(str_at(w1)(C0))("-")(la _. fail(C0))(la _.
+                      (la ke. int_eq(len(ke))(C32)
+                          (la _. str_eq(write(w1)(ke))("32")(la _. OK(la k. k(r1)(w1)))(la _. fail(C0))(C0))
+                          (la _. fail(C0))(C0))
+                      (random("32")))(C0))(C0))
+                  (la _. DO(sysclose(r1))(la _. DO(sysclose(w1))(la _. ERR("cannot set up the session pipe")))))))
+              (sysopen(concat("/proc/self/fd/")(w0))("524289")))
+            (sysopen(concat("/proc/self/fd/")(r0))("524288")))
+          (slice(pr)(add(sp)(C1))(n)))(slice(pr)(C0)(sp)))(find(pr)(n)(" ")(C0)))(len(pr)))(C0))
+    (pipe("!")))(la session.
+  # skey(rfd)(wfd): the session key, read from the pipe and put back
+  # ("closed" once the session is closed)
+  LET(la rfd. la wfd. (la s. DO(write(wfd)(s))(la _. s))(read(rfd)("64")))(la skey.
+  # a handle: la k. k(bad)(root)(K_M)(K_I)(guard)(rfd)(wfd)(session error)
+  LET(la root. la km. la guard.
+    (int_eq(len(km))(C32)
+      (la _. BIND(mkd(root))(la _. BIND(mkd(concat(root)("/obj")))(la _. BIND(mkd(concat(root)("/mirror")))(la _.
+          (la ki. session(C0)
+              (la m. OK(la k. k("")(root)(km)(ki)(guard)("")("")(concat("ephemeral: no session: ")(m))))
+              (la s. s(la r. la w. OK(la k. k("")(root)(km)(ki)(guard)(r)(w)("")))))
+          (hkdf("")(km)("aletheia/index")(C32))))))
+      (la _. ERR("K_M must be 32 bytes"))(C0))
+    (la m. la k. k(concat("open: ")(m))(root)("")("")(guard)("")("")(m))(la h. h))(la fopen.
+  # withobj(fs)(tok)(id)(op)(k): the handle is good, id is an object id, and
+  # the guard grants op on obj/<id>: k(root)(K_M)(K_I)(primary dir)(mirror dir)
+  LET(la fs. la tok. la id. la op. la k.
+    fs(la bad. la root. la km. la ki. la guard. la rfd. la wfd. la serr.
+      str_eq(bad)("")
+        (la _. idok(id)
+            (la _. (la res. guard(tok)(res)(op)
+                (la _. k(root)(km)(ki)(pdir(root)(id))(mdir(root)(id)))
+                (la _. ERR(concat(concat(concat("denied: ")(res))(" "))(op)))(C0))(concat("obj/")(id)))
+            (la _. ERR("bad id"))(C0))
+        (la _. ERR(bad))(C0)))(la withobj.
+  # withstore(fs)(tok)(op)(k): the guard grants op on obj: k(root)(K_M)(K_I)
+  LET(la fs. la tok. la op. la k.
+    fs(la bad. la root. la km. la ki. la guard. la rfd. la wfd. la serr.
+      str_eq(bad)("")
+        (la _. guard(tok)("obj")(op)(la _. k(root)(km)(ki))(la _. ERR(concat("denied: obj ")(op)))(C0))
+        (la _. ERR(bad))(C0)))(la withstore.
+  LET(la n. la k. lt(C0)(n)(la _. k(n))(la _. ERR("no such object"))(C0))(la present.
+  # put(fs)(tok)(content)(tags)(owner) -> ok(id)
+  LET(la fs. la tok. la content. la tags. la owner.
+    withstore(fs)(tok)("w")(la root. la km. la ki.
+      tagsok(tags)
+        (la _. ownerok(owner)
+          (la _. BIND(readidx(root)(ki))(la ix. ix(la ni. la icont. la iblob.
+              (la rb. int_eq(len(rb))(C16)
+                  (la _. (la id. (la P. (la M. (la tagstr.
+                        exists(P)(la _. ERR("id collision"))(la _. exists(M)(la _. ERR("id collision"))(la _.
+                        BIND(mkd(P))(la _. BIND(mkd(M))(la _.
+                        writever(okey(id)(km))(P)(M)(id)(C1)(tagstr)(owner)("none")(content)
+                          (la m. DO(delobj(P)(M)(C1))(la _. ERR(m)))
+                          (la _. BIND(writeidx(root)(ki)(ni)(iblob)
+                                   (concat(icont)(concat(concat(concat(id)(" "))(tagstr))("\n"))))(la _.
+                            OK(id))))))(C0))(C0))
+                      (joinsep(tags)(",")))(mdir(root)(id)))(pdir(root)(id)))(hex(rb)))
+                  (la _. ERR("random failed"))(C0))
+              (random("16")))))
+          (la _. ERR("bad owner"))(C0))
+        (la _. ERR("bad tag"))(C0)))(la put.
+  # get(fs)(tok)(id) -> ok(la k. k(content)(tags)(owner)(n)), the newest version
+  LET(la fs. la tok. la id.
+    withobj(fs)(tok)(id)("r")(la root. la km. la ki. la P. la M.
+      (la n. present(n)(la n.
+          BIND(readver(okey(id)(km))(P)(M)(id)(n))(la v. v(la blob. la pt.
+            BIND(parse(pt)(n))(la h. h(la tags. la owner. la prev. la body.
+              OK(la k. k(body)(tags)(owner)(n))))))))
+      (latest(P)(M))))(la get.
+  # update(fs)(tok)(id)(content) -> ok(n), the new version, with the tags and
+  # owner of the one before and prev = hex sha256 of its sealed blob
+  LET(la fs. la tok. la id. la content.
+    withobj(fs)(tok)(id)("w")(la root. la km. la ki. la P. la M.
+      (la n. present(n)(la n. (la K.
+          BIND(readver(K)(P)(M)(id)(n))(la v. v(la blob. la pt.
+            BIND(parse(pt)(n))(la h. h(la tags. la owner. la prev. la body.
+              writever(K)(P)(M)(id)(add(n)(C1))(joinsep(tags)(","))(owner)(hex(sha256(blob)))(content))))))
+        (okey(id)(km))))
+      (latest(P)(M))))(la update.
+  # hist: versions i..n, each authenticated and its prev link checked
+  LET(Z(la hist. la K. la P. la M. la id. la n. la i. la pblob.
+    lt(n)(i)
+      (la _. OK(nil))
+      (la _. (la broken.
+         readver(K)(P)(M)(id)(i)(la _. broken)(la v. v(la blob. la pt.
+           parse(pt)(i)(la _. broken)(la h. h(la tags. la owner. la prev. la body.
+             str_eq(prev)(int_eq(i)(C1)(la _. "none")(la _. hex(sha256(pblob)))(C0))
+               (la _. BIND(hist(K)(P)(M)(id)(n)(add(i)(C1))(blob))(la rest. OK(cons(i)(rest))))
+               (la _. broken)(C0))))))
+        (ERR(concat("chain broken at ")(int_to_str(i)))))(C0)))(la hist.
+  # history(fs)(tok)(id) -> ok(list 1..n) | err("chain broken at i")
+  LET(la fs. la tok. la id.
+    withobj(fs)(tok)(id)("r")(la root. la km. la ki. la P. la M.
+      (la n. present(n)(la n. hist(okey(id)(km))(P)(M)(id)(n)(C1)("")))(latest(P)(M))))(la history.
+  # version(fs)(tok)(id)(i) -> ok(content of version i)
+  LET(la fs. la tok. la id. la i.
+    withobj(fs)(tok)(id)("r")(la root. la km. la ki. la P. la M.
+      (la n. present(n)(la n.
+          lt(C0)(i)(la _. lt(n)(i)(la _. ERR("no such version"))(la _.
+              BIND(readver(okey(id)(km))(P)(M)(id)(i))(la v. v(la blob. la pt.
+                BIND(parse(pt)(i))(la h. h(la tags. la owner. la prev. la body. OK(body))))))(C0))
+            (la _. ERR("no such version"))(C0)))
+      (latest(P)(M))))(la version.
+  # find(fs)(tok)(tag) -> ok(the ids, in index order, whose tags hold tag)
+  LET(la fs. la tok. la tag.
+    withstore(fs)(tok)("r")(la root. la km. la ki.
+      tagsok(cons(tag)(nil))
+        (la _. BIND(readidx(root)(ki))(la ix. ix(la ni. la icont. la iblob.
+            OK(map(lineid)(filter(la line. member(tag)(linetags(line)))(lines(icont)))))))
+        (la _. ERR("bad tag"))(C0)))(la find.
+  # remove(fs)(tok)(id) -> ok(id): the files go first, then the index line
+  LET(la fs. la tok. la id.
+    withobj(fs)(tok)(id)("w")(la root. la km. la ki. la P. la M.
+      BIND(readidx(root)(ki))(la ix. ix(la ni. la icont. la iblob. (la ls.
+        member(id)(map(lineid)(ls))
+          (la _. BIND(delobj(P)(M)(latest(P)(M)))(la _.
+                 BIND(writeidx(root)(ki)(ni)(iblob)
+                        (joinb(map(la l. concat(l)("\n"))(filter(la l. str_eq(lineid(l))(id)(F)(T))(ls)))))(la _.
+                   OK(id))))
+          (la _. ERR("no such object"))(C0))
+        (lines(icont))))))(la remove.
+  # objwalk(getk)(P)(M)(id)(n)(c)(r)(l): vcheck versions 1..n and fix the
+  # heads; getk is a thunk so that no key is derived for an empty object
+  LET(la getk. la P. la M. la id. la n. la c. la r. la l.
+    lt(C0)(n)
+      (la _. BIND(mkd(P))(la _. BIND(mkd(M))(la _.
+          BIND(walk(getk(C0))(P)(M)(id)(C1)(n)(c)(r)(l))(la w.
+          BIND(fixheads(P)(M)(n))(la _. OK(w))))))
+      (la _. OK(la k. k(c)(r)(l)))(C0))(la objwalk.
+  LET(Z(la wo. la root. la km. la ids. la c. la r. la l.
+     ids(la _. OK(la k. k(c)(r)(l)))(la id. la rest.
+       (la P. (la M.
+          BIND(objwalk(la _. okey(id)(km))(P)(M)(id)(latest(P)(M))(c)(r)(l))(la w. w(la c2. la r2. la l2.
+            wo(root)(km)(rest)(c2)(r2)(l2))))
+       (mdir(root)(id)))(pdir(root)(id)))))(la walkobjs.
+  # verify(fs) -> ok(la k. k(checked)(repaired)(lost)): every version of the
+  # index, then of every object the newest readable index lists
+  LET(la fs. fs(la bad. la root. la km. la ki. la guard. la rfd. la wfd. la serr.
+    str_eq(bad)("")
+      (la _. (la P. (la M.
+          BIND(objwalk(la _. ki)(P)(M)("index")(latest(P)(M))(C0)(C0)(C0))(la w. w(la c. la r. la l.
+            readidx(root)(ki)
+              (la _. OK(la k. k(c)(r)(l)))
+              (la ix. ix(la ni. la icont. la iblob.
+                  walkobjs(root)(km)(filter(idok)(map(lineid)(lines(icont))))(c)(r)(l))))))
+        (mdir(root)("index")))(pdir(root)("index")))
+      (la _. ERR(bad))(C0)))(la verify.
+  # ephemeral(fs)(content) -> ok(la s. s(read)), read(_) -> ok(content) while
+  # the session is open; the content is sealed in memory under the session key
+  LET(la fs. la content. fs(la bad. la root. la km. la ki. la guard. la rfd. la wfd. la serr.
+    str_eq(bad)("")
+      (la _. str_eq(rfd)("")
+        (la _. ERR(serr))
+        (la _. (la k. int_eq(len(k))(C32)
+          (la _. (la nonce. int_eq(len(nonce))(C12)
+              (la _. (la sealed. OK(la s. s(la _. (la k2. int_eq(len(k2))(C32)
+                      (la _. aopen(k2)(nonce)("aletheia/ephemeral")(sealed)
+                               (la _. ERR("ephemeral: cannot open"))(la pt. OK(pt)))
+                      (la _. ERR("ephemeral: session closed"))(C0))(skey(rfd)(wfd)))))
+                  (seal(k)(nonce)("aletheia/ephemeral")(content)))
+              (la _. ERR("random failed"))(C0))(random("12")))
+          (la _. ERR("ephemeral: session closed"))(C0))(skey(rfd)(wfd)))(C0))
+      (la _. ERR(bad))(C0)))(la ephemeral.
+  # close(fs) -> ok(root): the session key is replaced by "closed"; every
+  # ephemeral object of the session can no longer be opened
+  LET(la fs. fs(la bad. la root. la km. la ki. la guard. la rfd. la wfd. la serr.
+    str_eq(bad)("")
+      (la _. str_eq(rfd)("")
+         (la _. OK(root))
+         (la _. DO(read(rfd)("64"))(la _. DO(write(wfd)("closed"))(la _. OK(root))))(C0))
+      (la _. ERR(bad))(C0)))(la fclose.
+    la s. s(fopen)(put)(get)(update)(history)(version)(find)(verify)(remove)(ephemeral)(fclose)
+  ))))))))))))))))))))))))
+  (FS_BASE(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq))

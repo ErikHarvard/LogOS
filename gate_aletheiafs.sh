@@ -1,0 +1,571 @@
+#!/usr/bin/env bash
+# gate_aletheiafs.sh — AletheiaFS (aletheiafs.la, FS_KIT) against an
+# independent model of its on-disk format, on the native VM.
+#
+# WHAT IT GUARDS. A filesystem that seals and repairs itself fails quietly: a
+# wrong nonce or key still round-trips through its own code, a repair that
+# copies the wrong way still returns content, a guard that is never asked
+# still lets the caller through. So nothing here checks AletheiaFS against
+# itself. The oracle is Python written from OS_LAYERS_DESIGN.md alone
+# (ChaCha20-Poly1305 per RFC 8439 and HKDF per RFC 5869, in plain Python,
+# first checked against the RFC 8439 2.8.2 and RFC 5869 case 3 vectors): it
+# recomputes every sealed version and every index version the module must
+# have written and compares the files on disk byte for byte, and it writes
+# a whole store of its own that the module must read. Each shard drives ONE
+# session of a driver program (compiled once) over stdin/stdout, and
+# tampers with the store between operations:
+#   A  round trips: binary content (bytes 0..255), tags and owner; versions
+#      1 and 2 and their prev link; history; version out of range; find by
+#      tag; remove (files gone, index line gone); every version and every
+#      index version is the oracle's sealed blob, in both copies, and both
+#      heads hold n. SELF-APPLICATION: the index is itself a sealed,
+#      versioned, mirrored object of the store.
+#   B  auto-repair, on a store the oracle wrote: a tampered newest primary,
+#      with both heads damaged, is read intact (the newest version is still
+#      found) and rewritten on disk; verify then repairs a deleted primary, a
+#      tampered mirror and a tampered primary of the INDEX, while an object
+#      whose two copies are both tampered is reported lost and left as it
+#      is: the report is exactly checked/repaired/lost = 5 3 1, the repaired
+#      files are the oracle's bytes again, a head naming a missing version is
+#      rewritten, and get of the lost object is an error that carries no
+#      bytes.
+#   C  a store written entirely by the oracle (index and an object of three
+#      versions whose third has a wrong prev link): find, get and version 2
+#      read it, history reports "chain broken at 3"; a token that grants
+#      only obj/<id> r reads but cannot update, put, find or remove; a put
+#      extends the oracle's index chain byte for byte; a WRONG K_M reads
+#      nothing (get, find, put and remove fail; verify reports every index
+#      version lost) and changes no file.
+#   D  a denying guard blocks put/get/update/history/version/find/remove,
+#      each asking exactly one question; a short K_M or an uncreatable root
+#      gives a handle on which everything fails; bad ids, tags and owners, a
+#      failing random and an id collision are refused before anything is
+#      written; ephemeral
+#      objects round-trip (bytes 0..255) without a single file appearing,
+#      their session pipe is close-on-exec, and close drops that session's
+#      objects (and only that session's).
+# Every operation's guard questions are checked exactly (resource and op).
+# COST. With CRYPT_REF on the VM one HKDF takes 95 s or more (CRYPT_REF
+# names its builtins, and each name walks the ~160 KB program), and every
+# object operation derives its key; the gate needs 20 of them, at most 7 in
+# one shard, and the four shards run in parallel: about 15 minutes on a
+# quiet 4-core machine, far longer on a busy one (at load 15-25 an HKDF took
+# 10-25 minutes, and a shard up to two hours). Each shard's VM grows to about
+# 1.4 GB (its two 768 MiB heap halves), so FS_PARALLEL (default 4) caps how
+# many shards run at once, longest first, for a machine short of memory.
+# FS_SHARD_TIMEOUT (default 14400 s) bounds each shard, FS_CMD_TIMEOUT
+# (default 7200 s) each operation.
+# ISOLATION: private temp dir (gate_wm_common.sh); everything is written
+# under it.
+set -uo pipefail
+. "$(dirname "$0")/gate_wm_common.sh"
+ok=1
+: "${FS_SHARD_TIMEOUT:=14400}"
+: "${FS_CMD_TIMEOUT:=7200}"
+: "${FS_PARALLEL:=4}"
+wm_setup aletheiafs.la crypt_ref.la sha256.la hmac.la hkdf.la aead.la chacha20.la poly1305.la
+
+# ── the driver: one command per stdin line, one "= ok …"/"= err …" line back ──
+# A command is "word slot field…" with every field hex-encoded; the policy
+# guard prints each question ("guard tok res op") before answering it.
+cat > "$T/drv.la" <<'LAEOF'
+import("crypt_ref.la")
+import("aletheiafs.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph NIL = la n. la c. n(n)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph PAIR = la a. la b. la k. k(a)(b)
+glyph LEN = la s. str_to_int(str_len(s))
+glyph HV = la c. (la n. lt(n)(58)(la _. sub(n)(48))(la _. sub(n)(87))("!"))(str_to_int(ord(c)))
+glyph UNHEX = la s. Z(la self. la i. la n.
+    lt(i)(n)(la _. concat(chr(int_to_str(add(mul(HV(str_at(s)(i)))(16))(HV(str_at(s)(add(i)(1)))))))
+                        (self(add(i)(2))(n)))(la _. "")("!"))(0)(LEN(s))
+glyph HD = la n. str_at("0123456789abcdef")(n)
+glyph HEXE = la s. Z(la self. la i. la n.
+    lt(i)(n)(la _. (la b. concat(concat(HD(div(b)(16)))(HD(mod(b)(16))))(self(add(i)(1))(n)))(str_to_int(ord(str_at(s)(i)))))
+      (la _. "")("!"))(0)(LEN(s))
+glyph SUB = Z(la self. la s. la i. la j. lt(i)(j)(la _. concat(str_at(s)(i))(self(s)(add(i)(1))(j)))(la _. "")("!"))
+glyph FIND = la s. la c. Z(la go. la i. la n. lt(i)(n)(la _. str_eq(str_at(s)(i))(c)(la _. i)(la _. go(add(i)(1))(n))("!"))(la _. n)("!"))(0)(LEN(s))
+glyph SPLIT = la s. la c. (la n. Z(la go. la i. la j.
+    lt(j)(n)(la _. str_eq(str_at(s)(j))(c)(la _. CONS(SUB(s)(i)(j))(go(add(j)(1))(add(j)(1))))(la _. go(i)(add(j)(1)))("!"))
+            (la _. CONS(SUB(s)(i)(n))(NIL))("!"))(0)(0))(LEN(s))
+glyph NTH = Z(la self. la l. la i. l(la _. "")(la h. la t. int_eq(i)(0)(la _. h)(la _. self(t)(sub(i)(1)))("!")))
+glyph MAPL = Z(la self. la f. la l. l(la _. NIL)(la h. la t. CONS(f(h))(self(f)(t))))
+glyph JOINC = Z(la self. la l. l(la _. "")(la h. la t. t(la _. h)(la h2. la t2. concat(h)(concat(",")(self(t))))))
+glyph MEMBER = Z(la self. la x. la l. l(la _. la t. la f. f)(la h. la t. str_eq(h)(x)(la _. la t. la f. t)(la _. self(x)(t))("!")))
+glyph LOOKUP = Z(la self. la k. la l. l(la _. la s. s("missing"))(la h. la t. h(la a. la b. str_eq(a)(k)(la _. b)(la _. self(k)(t))("!"))))
+glyph TAGS = la s. str_eq(s)("")(la _. NIL)(la _. SPLIT(s)(","))("!")
+glyph POLICY = la tok. la res. la op.
+  (la _. str_eq(tok)("*")(la _. la t. la f. t)(la _. MEMBER(concat(concat(res)(":"))(op))(SPLIT(tok)(",")))("!"))
+  (print(concat("guard ")(concat(tok)(concat(" ")(concat(res)(concat(" ")(op)))))))
+glyph DENY = la tok. la res. la op.
+  (la _. la t. la f. f)(print(concat("guard-deny ")(concat(tok)(concat(" ")(concat(res)(concat(" ")(op)))))))
+glyph RND = la n. str_eq(str_at(stat("badrandom"))(0))("-")
+  (la _. str_eq(str_at(stat("fixedrandom"))(0))("-")(la _. random(n))(la _. read_file("fixedrandom"))("!"))
+  (la _. "")("!")
+glyph RES = la r. la f. r(la m. concat("= err ")(m))(la v. concat("= ok ")(f(v)))
+glyph STEP = la fs. la slots. la ephs. la w. la k.
+  fs(la fopen. la put. la get. la update. la history. la version. la find. la verify. la remove. la ephemeral. la fclose.
+  (la cmd. la s1. la a2. la a3. la a4. la a5. (la h.
+    str_eq(cmd)("open")(la _. k("= ok")(CONS(PAIR(s1)(fopen(a2)(a3)(str_eq(a4)("deny")(DENY)(POLICY))))(slots))(ephs))(la _.
+    str_eq(cmd)("put")(la _. k(RES(put(h)(a2)(a3)(TAGS(a4))(a5))(la id. id))(slots)(ephs))(la _.
+    str_eq(cmd)("get")(la _. k(RES(get(h)(a2)(a3))(la r. r(la c. la t. la o. la n.
+        concat(HEXE(c))(concat(" ")(concat(HEXE(JOINC(t)))(concat(" ")(concat(HEXE(o))(concat(" ")(int_to_str(n))))))))))
+        (slots)(ephs))(la _.
+    str_eq(cmd)("update")(la _. k(RES(update(h)(a2)(a3)(a4))(la n. int_to_str(n)))(slots)(ephs))(la _.
+    str_eq(cmd)("history")(la _. k(RES(history(h)(a2)(a3))(la l. JOINC(MAPL(int_to_str)(l))))(slots)(ephs))(la _.
+    str_eq(cmd)("version")(la _. k(RES(version(h)(a2)(a3)(str_to_int(a4)))(la c. HEXE(c)))(slots)(ephs))(la _.
+    str_eq(cmd)("find")(la _. k(RES(find(h)(a2)(a3))(la l. JOINC(l)))(slots)(ephs))(la _.
+    str_eq(cmd)("verify")(la _. k(RES(verify(h))(la r. r(la c. la rp. la l.
+        concat(int_to_str(c))(concat(" ")(concat(int_to_str(rp))(concat(" ")(int_to_str(l))))))))(slots)(ephs))(la _.
+    str_eq(cmd)("remove")(la _. k(RES(remove(h)(a2)(a3))(la id. id))(slots)(ephs))(la _.
+    str_eq(cmd)("eph")(la _. ephemeral(h)(a3)(la m. k(concat("= err ")(m))(slots)(ephs))
+                                            (la eh. k("= ok")(slots)(CONS(PAIR(a2)(eh))(ephs))))(la _.
+    str_eq(cmd)("eread")(la _. k(LOOKUP(s1)(ephs)(la rd. RES(rd("!"))(la c. HEXE(c))))(slots)(ephs))(la _.
+    str_eq(cmd)("close")(la _. k(RES(fclose(h))(la r. r))(slots)(ephs))(la _.
+    k(concat("= err unknown command ")(cmd))(slots)(ephs))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))
+    (LOOKUP(s1)(slots)))
+  (NTH(w)(0))(NTH(w)(1))(UNHEX(NTH(w)(2)))(UNHEX(NTH(w)(3)))(UNHEX(NTH(w)(4)))(UNHEX(NTH(w)(5))))
+glyph READLINE = Z(la self. la buf. la k. (la i.
+    lt(i)(LEN(buf))
+      (la _. k(SUB(buf)(0)(i))(SUB(buf)(add(i)(1))(LEN(buf))))
+      (la _. (la more. str_eq(more)("")(la _. k("quit")(""))(la _. self(concat(buf)(more))(k))("!"))(read("0")("65536")))("!"))
+  (FIND(buf)("\n")))
+glyph LOOP = Z(la loop. la fs. la slots. la ephs. la buf.
+  READLINE(buf)(la line. la rest. (la w.
+    str_eq(NTH(w)(0))("quit")(la _. "bye")(la _.
+      STEP(fs)(slots)(ephs)(w)(la out. la slots2. la ephs2. (la _. loop(fs)(slots2)(ephs2)(rest))(print(out))))("!"))
+  (SPLIT(line)(" "))))
+glyph MAIN = (la fs. LOOP(fs)(NIL)(NIL)(""))
+  (FS_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
+         (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(pipe)(open)(close)(read)(write)
+         (CRYPT_REF)(RND))
+LAEOF
+
+# ── the oracle and the four shards ──────────────────────────────────────────
+cat > "$T/fsgate.py" <<'PYEOF'
+import hashlib, hmac, os, select, shutil, struct, subprocess, sys, time
+
+def _rotl(v, c): return ((v << c) & 0xffffffff) | (v >> (32 - c))
+def _qr(s, a, b, c, d):
+    s[a] = (s[a] + s[b]) & 0xffffffff; s[d] = _rotl(s[d] ^ s[a], 16)
+    s[c] = (s[c] + s[d]) & 0xffffffff; s[b] = _rotl(s[b] ^ s[c], 12)
+    s[a] = (s[a] + s[b]) & 0xffffffff; s[d] = _rotl(s[d] ^ s[a], 8)
+    s[c] = (s[c] + s[d]) & 0xffffffff; s[b] = _rotl(s[b] ^ s[c], 7)
+def chacha_block(key, counter, nonce):
+    st = list(struct.unpack('<4I', b'expand 32-byte k')) + list(struct.unpack('<8I', key)) \
+         + [counter] + list(struct.unpack('<3I', nonce))
+    w = st[:]
+    for _ in range(10):
+        _qr(w, 0, 4, 8, 12); _qr(w, 1, 5, 9, 13); _qr(w, 2, 6, 10, 14); _qr(w, 3, 7, 11, 15)
+        _qr(w, 0, 5, 10, 15); _qr(w, 1, 6, 11, 12); _qr(w, 2, 7, 8, 13); _qr(w, 3, 4, 9, 14)
+    return struct.pack('<16I', *[(w[i] + st[i]) & 0xffffffff for i in range(16)])
+def chacha_xor(key, counter, nonce, data):
+    out = bytearray()
+    for i in range(0, len(data), 64):
+        out += bytes(a ^ b for a, b in zip(data[i:i + 64], chacha_block(key, counter + i // 64, nonce)))
+    return bytes(out)
+def poly1305(key, msg):
+    r = int.from_bytes(key[:16], 'little') & 0x0ffffffc0ffffffc0ffffffc0fffffff
+    s = int.from_bytes(key[16:], 'little'); p = (1 << 130) - 5; acc = 0
+    for i in range(0, len(msg), 16):
+        acc = (acc + int.from_bytes(msg[i:i + 16] + b'\x01', 'little')) * r % p
+    return ((acc + s) & ((1 << 128) - 1)).to_bytes(16, 'little')
+def _pad16(b): return b'' if len(b) % 16 == 0 else b'\x00' * (16 - len(b) % 16)
+def _mac(key, nonce, aad, ct):
+    return poly1305(chacha_block(key, 0, nonce)[:32],
+                    aad + _pad16(aad) + ct + _pad16(ct) + struct.pack('<QQ', len(aad), len(ct)))
+def seal(key, nonce, aad, pt):
+    ct = chacha_xor(key, 1, nonce, pt); return ct + _mac(key, nonce, aad, ct)
+def aopen(key, nonce, aad, sealed):
+    if len(sealed) < 16: return None
+    ct, tag = sealed[:-16], sealed[-16:]
+    return chacha_xor(key, 1, nonce, ct) if hmac.compare_digest(_mac(key, nonce, aad, ct), tag) else None
+def hkdf(salt, ikm, info, n):
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest(); out, t, i = b'', b'', 1
+    while len(out) < n:
+        t = hmac.new(prk, t + info + bytes([i]), hashlib.sha256).digest(); out += t; i += 1
+    return out[:n]
+def selftest():
+    key = bytes(range(0x80, 0xa0)); nonce = bytes.fromhex('070000004041424344454647')
+    aad = bytes.fromhex('50515253c0c1c2c3c4c5c6c7')
+    pt = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it."
+    want = bytes.fromhex(
+        'd31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b'
+        '1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc'
+        '3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691')
+    return seal(key, nonce, aad, pt) == want and aopen(key, nonce, aad, want) == pt \
+        and aopen(key, nonce, aad, bytes([want[0] ^ 1]) + want[1:]) is None \
+        and hkdf(b'', b'\x0b' * 22, b'', 42).hex() == \
+            '8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8'
+
+# ── the format, from OS_LAYERS_DESIGN.md ─────────────────────────────────────
+def k_obj(km, oid): return hkdf(oid.encode(), km, b'aletheia/object', 32)
+def k_idx(km): return hkdf(b'', km, b'aletheia/index', 32)
+def key_of(km, oid): return k_idx(km) if oid == 'index' else k_obj(km, oid)
+def nonce_of(n): return n.to_bytes(12, 'little')
+def aad_of(oid, n): return ('%s|%d' % (oid, n)).encode()
+def plain(n, tags, owner, prev, content):
+    return b'n=%d\ntags=%s\nowner=%s\nprev=%s\nlen=%d\n' % (n, b','.join(tags), owner, prev, len(content)) + content
+def chain(km, oid, versions, tags, owner, links=None):
+    """the sealed blobs of versions 1..n; links[i] overrides version i+1's prev"""
+    out, prev, k = [], b'none', key_of(km, oid)
+    for i, c in enumerate(versions, 1):
+        p = links[i - 1] if links and links[i - 1] is not None else prev
+        b = seal(k, nonce_of(i), aad_of(oid, i), plain(i, tags, owner, p, c))
+        if len(b) % 64 == 55:   # CRYPT_REF's sha256 pads these lengths wrongly
+            raise SystemExit('gate design: a %d-byte blob hits CRYPT_REF sha256 at 55 mod 64' % len(b))
+        out.append(b); prev = hashlib.sha256(b).hexdigest().encode()
+    return out
+IDX_TAGS, IDX_OWNER = [b'index'], b'aletheiafs'
+def line(oid, tags): return ('%s %s\n' % (oid, tags)).encode()
+
+def rd(p):
+    try: return open(p, 'rb').read()
+    except OSError: return None
+def wr(p, b):
+    os.makedirs(os.path.dirname(p), exist_ok=True); open(p, 'wb').write(b)
+def flip(p, i):
+    b = bytearray(open(p, 'rb').read()); b[i % len(b)] ^= 0x01; open(p, 'wb').write(bytes(b))
+def snap(*dirs):
+    out = {}
+    for d in dirs:
+        for r, ds, fs in os.walk(d):
+            for x in ds: out[os.path.join(r, x)] = 'dir'
+            for x in fs:
+                if x not in ('drv.err', 'session.log'): out[os.path.join(r, x)] = rd(os.path.join(r, x))
+    return out
+def disk(root, km, oid, versions, tags, owner, links=None):
+    """'' when obj/ and mirror/ hold exactly the oracle's blobs and both heads say n"""
+    exp = chain(km, oid, versions, tags, owner, links)
+    for side in ('obj', 'mirror'):
+        for i, b in enumerate(exp, 1):
+            got = rd(os.path.join(root, side, oid, str(i)))
+            if got != b: return '%s/%s/%d differs (%s)' % (side, oid, i, 'missing' if got is None else '%d bytes' % len(got))
+        if rd(os.path.join(root, side, oid, 'head')) != str(len(exp)).encode():
+            return '%s/%s/head is %r' % (side, oid, rd(os.path.join(root, side, oid, 'head')))
+        extra = set(os.listdir(os.path.join(root, side, oid))) - set(['head'] + [str(i) for i in range(1, len(exp) + 1)])
+        if extra: return '%s/%s holds %s' % (side, oid, sorted(extra))
+    return ''
+def write_store(root, km, oid, versions, tags, owner, links=None):
+    for side in ('obj', 'mirror'):
+        for i, b in enumerate(chain(km, oid, versions, tags, owner, links), 1):
+            wr(os.path.join(root, side, oid, str(i)), b)
+        wr(os.path.join(root, side, oid, 'head'), str(len(versions)).encode())
+
+class Session:
+    def __init__(self, cwd, log):
+        self.err = open(os.path.join(cwd, 'drv.err'), 'wb'); self.cwd = cwd
+        self.p = subprocess.Popen(['./logos_secd'], cwd=cwd, stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, stderr=self.err)
+        self.buf = b''; self.log = log; self.times = []
+    def _line(self, deadline):
+        while b'\n' not in self.buf:
+            left = deadline - time.time()
+            if left <= 0: raise TimeoutError('the driver took longer than FS_CMD_TIMEOUT')
+            r, _, _ = select.select([self.p.stdout], [], [], left)
+            if not r: continue
+            chunk = os.read(self.p.stdout.fileno(), 65536)
+            if not chunk: raise EOFError('the driver exited: ' + open(os.path.join(self.cwd, 'drv.err'), 'rb').read()[-300:].decode('latin-1'))
+            self.buf += chunk
+        l, self.buf = self.buf.split(b'\n', 1)
+        return l.decode('latin-1')
+    def cmd(self, word, slot='-', *fields):
+        enc = [f.hex() if isinstance(f, bytes) else f.encode().hex() for f in fields]
+        t0 = time.time()
+        self.p.stdin.write((' '.join([word, slot] + enc) + '\n').encode()); self.p.stdin.flush()
+        guards, deadline = [], t0 + float(os.environ.get('FS_CMD_TIMEOUT', '3600'))
+        while True:
+            l = self._line(deadline)
+            if l.startswith('= '):
+                dt = time.time() - t0; self.times.append((word, dt, l.startswith('= ok')))
+                self.log.write('%-8s %7.1fs  %s\n' % (word, dt, l[:120])); self.log.flush()
+                return guards, l[2:]
+            guards.append(l)
+    def quit(self):
+        try:
+            self.p.stdin.write(b'quit\n'); self.p.stdin.flush(); self.p.wait(60)
+        except Exception:
+            self.p.kill(); self.p.wait()
+        return self.p.returncode
+
+OUT = []
+def check(label, cond, detail=''):
+    OUT.append(('PASS  ' if cond else 'FAIL  ') + 'aletheiafs: ' + label + ('' if cond else '  [' + str(detail)[:300] + ']'))
+def G(tok, res, op): return ['guard %s %s %s' % (tok, res, op)]
+def isid(r): return r.startswith('ok ') and len(r) == 35 and all(c in '0123456789abcdef' for c in r[3:])
+def getok(content, tags, owner, n): return 'ok %s %s %s %d' % (content.hex(), b','.join(tags).hex(), owner.hex(), n)
+
+# ── A: round trips, versions, history, find, remove, the index object ───────
+def shard_a(d, s):
+    root = os.path.join(d, 'store'); km = bytes(range(100, 132))
+    g, r = s.cmd('open', 'a', root, km, 'policy')
+    check('A open creates the store (obj/ and mirror/)', r == 'ok' and g == [] and os.path.isdir(root + '/obj') and os.path.isdir(root + '/mirror'), r)
+    P1, T1, O1 = bytes(range(256)), [b'alpha', b'beta'], b'alice'
+    g, r = s.cmd('put', 'a', '*', P1, 'alpha,beta', 'alice')
+    check('A put -> ok(id), a 32-character lowercase hex id', isid(r), r)
+    check('A put asks the guard exactly for obj w', g == G('*', 'obj', 'w'), g)
+    id1 = r[3:]; V1 = [P1]
+    check('A put writes version 1 to obj/ and mirror/, each byte for byte the oracle\'s sealed blob '
+          '(K_O = hkdf(id)(K_M)("aletheia/object"), nonce 1 as 12 LE bytes, AAD id|1, the n/tags/owner/prev/len header)',
+          disk(root, km, id1, V1, T1, O1) == '', disk(root, km, id1, V1, T1, O1))
+    IX = [line(id1, 'alpha,beta')]
+    check('A SELF-APPLICATION: the index is a sealed object of the store, version 1 under hkdf("")(K_M)("aletheia/index"), '
+          'mirrored, listing the new id with its tags', disk(root, km, 'index', [IX[0]], IDX_TAGS, IDX_OWNER) == '',
+          disk(root, km, 'index', [IX[0]], IDX_TAGS, IDX_OWNER))
+    g, r = s.cmd('get', 'a', '*', id1)
+    check('A get round-trips binary content (bytes 0..255), tags, owner and n = 1', r == getok(P1, T1, O1, 1), r[:120])
+    check('A get asks the guard exactly for obj/<id> r', g == G('*', 'obj/' + id1, 'r'), g)
+    g, r = s.cmd('update', 'a', '*', id1, b'second version')
+    check('A update -> ok(2), asking for obj/<id> w', r == 'ok 2' and g == G('*', 'obj/' + id1, 'w'), (r, g))
+    V1 = [P1, b'second version']
+    check('A version 2 keeps the tags and owner and chains prev = hex sha256 of version 1\'s sealed blob, '
+          'in both copies, heads 2', disk(root, km, id1, V1, T1, O1) == '', disk(root, km, id1, V1, T1, O1))
+    g, r = s.cmd('history', 'a', '*', id1)
+    check('A history -> ok(1,2), asking for obj/<id> r', r == 'ok 1,2' and g == G('*', 'obj/' + id1, 'r'), (r, g))
+    rs = [s.cmd('version', 'a', '*', id1, n) for n in ('3', '0')]
+    check('A version 3 and version 0 -> no such version (asking for obj/<id> r)',
+          rs == [(G('*', 'obj/' + id1, 'r'), 'err no such version')] * 2, rs)
+    P2, T2, O2 = b'hello\n', [b'beta'], b'bob'
+    g, r = s.cmd('put', 'a', '*', P2, 'beta', 'bob'); id2 = r[3:]
+    IX.append(IX[0] + line(id2, 'beta'))
+    check('A a second put appends to the index: index version 2 chains to version 1, byte for byte',
+          isid(r) and disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER) == '' and disk(root, km, id2, [P2], T2, O2) == '',
+          (r, disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER)))
+    f = [s.cmd('find', 'a', '*', t) for t in ('beta', 'alpha', 'gamma')]
+    check('A find by tag -> the ids whose newest version has it, in index order (beta: both, alpha: one, gamma: none)',
+          [x[1] for x in f] == ['ok %s,%s' % (id1, id2), 'ok ' + id1, 'ok '], [x[1] for x in f])
+    check('A find asks the guard exactly for obj r', all(x[0] == G('*', 'obj', 'r') for x in f), [x[0] for x in f])
+    g, r = s.cmd('remove', 'a', '*', id1)
+    IX.append(line(id2, 'beta'))
+    check('A remove -> ok(id), asking for obj/<id> w; obj/<id> and mirror/<id> are gone',
+          r == 'ok ' + id1 and g == G('*', 'obj/' + id1, 'w') and not os.path.exists(root + '/obj/' + id1)
+          and not os.path.exists(root + '/mirror/' + id1), (r, g))
+    check('A remove writes index version 3 without the line, chained; the other object is untouched',
+          disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER) == '' and disk(root, km, id2, [P2], T2, O2) == '',
+          disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER))
+    rs = [s.cmd('get', 'a', '*', id1)[1], s.cmd('history', 'a', '*', id1)[1], s.cmd('remove', 'a', '*', id1)[1],
+          s.cmd('find', 'a', '*', 'beta')[1]]
+    check('A after remove: get, history and remove -> no such object; find beta -> only the other id',
+          rs == ['err no such object'] * 3 + ['ok ' + id2], rs)
+
+# ── B: auto-repair on read and verify ───────────────────────────────────────
+def shard_b(d, s):
+    root = os.path.join(d, 'store'); km = bytes(range(140, 172))
+    # the store comes from the oracle: two objects (2 versions and 1), two index versions
+    id1, id2 = os.urandom(16).hex(), os.urandom(16).hex()
+    Q, TQ, OQ = [b'repair me: version one', b'repair me: version two'], [b'r1'], b'carol'
+    R, TR, OR = [b'the other object'], [b'r2'], b'dave'
+    IX = [line(id1, 'r1')]; IX.append(IX[0] + line(id2, 'r2'))
+    write_store(root, km, id1, Q, TQ, OQ); write_store(root, km, id2, R, TR, OR)
+    write_store(root, km, 'index', IX, IDX_TAGS, IDX_OWNER)
+    s.cmd('open', 'b', root, km, 'policy')
+    P = lambda side, oid, n: os.path.join(root, side, oid, str(n))
+    flip(P('obj', id1, 2), 7)
+    wr(os.path.join(root, 'obj', id1, 'head'), b'1'); os.unlink(os.path.join(root, 'mirror', id1, 'head'))
+    g, r = s.cmd('get', 'b', '*', id1)
+    exp = chain(km, id1, Q, TQ, OQ)
+    check('B a tampered newest primary, with obj/<id>/head left at 1 (as after a crash before the head was written) '
+          'and mirror/<id>/head deleted: get still finds version 2 and returns it intact', r == getok(Q[1], TQ, OQ, 2), r)
+    check('B ... and get rewrote the primary on disk with the authenticated mirror (auto-repair)',
+          rd(P('obj', id1, 2)) == exp[1], len(rd(P('obj', id1, 2)) or b''))
+    os.unlink(P('obj', id1, 1))                    # a deleted primary
+    flip(P('mirror', id1, 2), 3)                   # a tampered mirror
+    flip(P('obj', 'index', 2), 20)                 # a tampered primary of the INDEX
+    flip(P('obj', id2, 1), 9); flip(P('mirror', id2, 1), 30)   # id2: both copies tampered
+    wr(os.path.join(root, 'obj', id1, 'head'), b'7')            # a head naming no version (the mirror's is gone)
+    bad2 = (rd(P('obj', id2, 1)), rd(P('mirror', id2, 1)))
+    g, r = s.cmd('verify', 'b')
+    check('B verify -> checked 5 (2 index + 2 + 1), repaired 3, lost 1, asking the guard nothing',
+          r == 'ok 5 3 1' and g == [], (r, g))
+    check('B verify rebuilt the deleted primary and the tampered mirror (each from the other copy) and the INDEX\'s '
+          'tampered primary (self-application: the index is repaired like any object), with the oracle\'s bytes; '
+          'both heads say 2 again',
+          disk(root, km, id1, Q, TQ, OQ) == '' and disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER) == '',
+          disk(root, km, id1, Q, TQ, OQ) + disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER))
+    check('B verify left both copies of the lost version exactly as they were (nothing is repaired from nothing)',
+          (rd(P('obj', id2, 1)), rd(P('mirror', id2, 1))) == bad2)
+    g, r = s.cmd('get', 'b', '*', id2)
+    check('B get of the lost object is an error and carries no bytes', r == 'err lost: version 1', r)
+
+# ── C: an oracle-written store; grants; a wrong K_M ─────────────────────────
+def shard_c(d, s):
+    root = os.path.join(d, 'store'); km = bytes(range(180, 212)); kw = bytes(range(181, 213))
+    id3 = os.urandom(16).hex()
+    V = [b'written by the oracle, v1', b'written by the oracle, v2', b'v3 links to v1, not v2']
+    b1 = chain(km, id3, V[:1], [b'oracle'], b'python')[0]
+    links = [None, None, hashlib.sha256(b1).hexdigest().encode()]
+    write_store(root, km, id3, V, [b'oracle'], b'python', links)
+    IX = [line(id3, 'oracle')]
+    write_store(root, km, 'index', IX, IDX_TAGS, IDX_OWNER)
+    s.cmd('open', 'c', root, km, 'policy')
+    rtok = 'obj/%s:r' % id3
+    g, r = s.cmd('find', 'c', 'obj:r', 'oracle')
+    check('C find reads an index the oracle wrote', r == 'ok ' + id3 and g == G('obj:r', 'obj', 'r'), (r, g))
+    g, r = s.cmd('get', 'c', rtok, id3)
+    check('C get reads an object the oracle wrote (the format agrees both ways), with a token granting only obj/<id> r',
+          r == getok(V[2], [b'oracle'], b'python', 3) and g == G(rtok, 'obj/' + id3, 'r'), (r, g))
+    g, r = s.cmd('history', 'c', rtok, id3)
+    check('C history -> chain broken at 3 (version 3\'s prev is the hash of version 1, not of version 2)',
+          r == 'err chain broken at 3', r)
+    g, r = s.cmd('version', 'c', rtok, id3, '2')
+    check('C version 2 of the oracle\'s object', r == 'ok ' + V[1].hex(), r)
+    before = snap(root)
+    rs = [s.cmd('update', 'c', rtok, id3, b'x'), s.cmd('put', 'c', rtok, b'x', 't', 'o'),
+          s.cmd('find', 'c', rtok, 'oracle'), s.cmd('remove', 'c', rtok, id3)]
+    check('C that token cannot update, put, find or remove: each is denied, naming the resource and op it asked for',
+          [x[1] for x in rs] == ['err denied: obj/%s w' % id3, 'err denied: obj w', 'err denied: obj r', 'err denied: obj/%s w' % id3]
+          and [x[0] for x in rs] == [G(rtok, 'obj/' + id3, 'w'), G(rtok, 'obj', 'w'), G(rtok, 'obj', 'r'), G(rtok, 'obj/' + id3, 'w')],
+          rs)
+    check('C ... and the refused operations changed nothing on disk', snap(root) == before)
+    g, r = s.cmd('put', 'c', 'obj:w', b'added by LogOS', 'oracle', 'erin'); id4 = r[3:]
+    IX.append(IX[0] + line(id4, 'oracle'))
+    check('C a put into the oracle\'s store extends the oracle\'s index chain byte for byte',
+          isid(r) and disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER) == ''
+          and disk(root, km, id4, [b'added by LogOS'], [b'oracle'], b'erin') == '',
+          (r, disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER)))
+    before = snap(root)
+    s.cmd('open', 'w', root, kw, 'policy')
+    rs = [s.cmd('get', 'w', '*', id3)[1], s.cmd('find', 'w', '*', 'oracle')[1],
+          s.cmd('put', 'w', '*', b'x', 't', 'o')[1], s.cmd('remove', 'w', '*', id3)[1], s.cmd('verify', 'w')[1]]
+    check('C a wrong K_M reads nothing: get, find, put and remove fail; verify reports both index versions lost',
+          rs == ['err lost: version 3', 'err index: lost: version 2',
+                 'err index: lost: version 2', 'err index: lost: version 2', 'ok 2 0 2'], rs)
+    check('C ... and with the wrong K_M not one file was written, changed or removed', snap(root) == before)
+
+# ── D: a denying guard, bad handles, bad input, ephemeral objects ───────────
+def shard_d(d, s):
+    root = os.path.join(d, 'store'); km = bytes(range(220, 252))
+    idd = os.urandom(16).hex()
+    write_store(root, km, idd, [b'guarded'], [b'g'], b'o')
+    write_store(root, km, 'index', [line(idd, 'g')], IDX_TAGS, IDX_OWNER)
+    before = snap(root)
+    s.cmd('open', 'd', root, km, 'deny')
+    rs = [s.cmd('put', 'd', 'T', b'x', 'g', 'o'), s.cmd('get', 'd', 'T', idd), s.cmd('update', 'd', 'T', idd, b'x'),
+          s.cmd('history', 'd', 'T', idd), s.cmd('version', 'd', 'T', idd, '1'), s.cmd('find', 'd', 'T', 'g'),
+          s.cmd('remove', 'd', 'T', idd)]
+    want = [('obj', 'w'), ('obj/' + idd, 'r'), ('obj/' + idd, 'w'), ('obj/' + idd, 'r'), ('obj/' + idd, 'r'),
+            ('obj', 'r'), ('obj/' + idd, 'w')]
+    check('D a denying guard blocks put, get, update, history, version, find and remove, each asked exactly once',
+          [x[1] for x in rs] == ['err denied: %s %s' % w for w in want]
+          and [x[0] for x in rs] == [['guard-deny T %s %s' % w] for w in want], rs)
+    check('D ... and nothing on disk changed', snap(root) == before)
+    short = os.path.join(d, 'short')
+    s.cmd('open', 's', short, bytes(31), 'policy')
+    rs = [s.cmd('put', 's', '*', b'x', 'g', 'o'), s.cmd('get', 's', '*', idd), s.cmd('find', 's', '*', 'g'),
+          s.cmd('verify', 's'), s.cmd('eph', 's', 'e0', b'x'), s.cmd('close', 's')]
+    check('D a 31-byte K_M gives a handle on which every operation fails, without asking the guard',
+          all(x == ([], 'err open: K_M must be 32 bytes') for x in rs), rs)
+    s.cmd('open', 'n', '/nonexistent-aletheiafs/x', km, 'policy')
+    r = s.cmd('get', 'n', '*', idd)
+    check('D an uncreatable root gives a handle whose operations fail', r == ([], 'err open: cannot create /nonexistent-aletheiafs/x'), r)
+    root2 = os.path.join(d, 'store2')
+    s.cmd('open', 'p', root2, km, 'policy')
+    empty = snap(root2)
+    rs = [s.cmd('get', 'p', '*', b'../../etc/passwd'), s.cmd('get', 'p', '*', idd.upper()), s.cmd('get', 'p', '*', idd[:31]),
+          s.cmd('get', 'p', '*', '../' + idd[3:]), s.cmd('history', 'p', '*', 'index'), s.cmd('remove', 'p', '*', '')]
+    check('D ids that are not 32 lowercase hex characters (a path, upper case, 31 characters, a 32-character "../" path, '
+          'the index\'s own name, nothing) are refused before the guard is asked',
+          all(x == ([], 'err bad id') for x in rs), rs)
+    rs = [s.cmd('put', 'p', '*', b'x', 'a,,b', 'o')[1], s.cmd('put', 'p', '*', b'x', 'a\nb', 'o')[1],
+          s.cmd('put', 'p', '*', b'x', 'a', 'o\nwner')[1], s.cmd('find', 'p', '*', 'a,b')[1]]
+    check('D an empty tag, a tag with a newline, an owner with a newline and a find for "a,b" are refused',
+          rs == ['err bad tag', 'err bad tag', 'err bad owner', 'err bad tag'], rs)
+    wr(os.path.join(d, 'badrandom'), b'')
+    r = s.cmd('put', 'p', '*', b'x', 'a', 'o')[1]
+    os.unlink(os.path.join(d, 'badrandom'))
+    check('D when random returns nothing, put fails closed ("random failed")', r == 'err random failed', r)
+    R = os.urandom(16); rid = R.hex(); wr(os.path.join(d, 'fixedrandom'), R)
+    os.makedirs(os.path.join(root2, 'obj', rid)); r1 = s.cmd('put', 'p', '*', b'x', 'a', 'o')[1]
+    os.rmdir(os.path.join(root2, 'obj', rid))
+    os.makedirs(os.path.join(root2, 'mirror', rid)); r2 = s.cmd('put', 'p', '*', b'x', 'a', 'o')[1]
+    os.rmdir(os.path.join(root2, 'mirror', rid)); os.unlink(os.path.join(d, 'fixedrandom'))
+    check('D a new id that already names a primary or a mirror directory is refused ("id collision")',
+          r1 == r2 == 'err id collision', (r1, r2))
+    check('D ... and none of the refused puts wrote anything', snap(root2) == empty)
+    tree = snap(d)
+    E1, E2 = bytes(range(256)), b'a second session'
+    rs = [s.cmd('eph', 'p', 'e1', E1)[1], s.cmd('eph', 'd', 'e2', E2)[1], s.cmd('eread', 'e1')[1], s.cmd('eread', 'e2')[1]]
+    check('D ephemeral objects round-trip (bytes 0..255), on two sessions', rs == ['ok', 'ok', 'ok ' + E1.hex(), 'ok ' + E2.hex()], rs)
+    check('D ... and not one file appeared or changed anywhere (the store, the second store, the working directory)',
+          snap(d) == tree, sorted(set(snap(d)) ^ set(tree)))
+    pid = s.p.pid; pipes = []
+    for fd in os.listdir('/proc/%d/fd' % pid):
+        try:
+            if int(fd) > 2 and os.readlink('/proc/%d/fd/%s' % (pid, fd)).startswith('pipe:'):
+                fl = [l for l in open('/proc/%d/fdinfo/%s' % (pid, fd)) if l.startswith('flags:')][0]
+                pipes.append(int(fl.split()[1], 8) & 0o2000000 != 0)
+        except OSError:
+            pass
+    check('D each session\'s key pipe is close-on-exec (two open sessions: four pipe ends, all O_CLOEXEC)',
+          pipes == [True] * 4, pipes)
+    rs = [s.cmd('close', 'p')[1], s.cmd('eread', 'e1')[1], s.cmd('eph', 'p', 'e3', b'x')[1], s.cmd('eread', 'e2')[1],
+          s.cmd('close', 'p')[1], s.cmd('close', 'd')[1], s.cmd('eread', 'e2')[1]]
+    check('D close drops that session\'s ephemeral objects (and makes new ones impossible), not another session\'s',
+          rs == ['ok ' + root2, 'err ephemeral: session closed', 'err ephemeral: session closed', 'ok ' + E2.hex(),
+                 'ok ' + root2, 'ok ' + root, 'err ephemeral: session closed'], rs)
+
+if __name__ == '__main__':
+    which, d = sys.argv[1], sys.argv[2]
+    if which == 'selftest':
+        print('PASS  aletheiafs: the oracle reproduces RFC 8439 2.8.2 (seal, open, a flipped bit refused) and RFC 5869 case 3'
+              if selftest() else 'FAIL  aletheiafs: the oracle does not reproduce its RFC vectors'); sys.exit(0)
+    log = open(os.path.join(d, 'session.log'), 'w')
+    s = Session(d, log)
+    try:
+        {'A': shard_a, 'B': shard_b, 'C': shard_c, 'D': shard_d}[which](d, s)
+        rc = s.quit()
+        err = open(os.path.join(d, 'drv.err'), 'rb').read()
+        check('%s the driver ran to the end: exit 0, nothing on stderr' % which, rc == 0 and err == b'', (rc, err[-200:]))
+    except (EOFError, TimeoutError, OSError, SystemExit) as e:
+        check('%s the session ran to the end' % which, False, e); s.p.kill()
+    with open(os.path.join(d, 'result.txt'), 'w') as f:
+        f.write(''.join(l + '\n' for l in OUT))
+    with open(os.path.join(d, 'times.txt'), 'w') as f:
+        f.write(''.join('%s %.1f\n' % (w, t) for w, t, good in s.times if good))
+PYEOF
+
+r=$(python3 "$T/fsgate.py" selftest "$T"); echo "$r"; case "$r" in PASS*) ;; *) ok=0 ;; esac
+
+# compile the driver once
+cp "$T/drv.la" "$T/logos_source.la"; cp "$T/compiler.bin" "$T/logos_program.bin"
+s=$(date +%s)
+( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/dce" ) || { echo "FAIL  aletheiafs: the driver did not compile"; tail -3 "$T/dce"; exit 1; }
+COMPILE_S=$(( $(date +%s) - s ))
+
+# longest first, at most FS_PARALLEL at a time
+running=0
+for sh in C A B D; do
+    if [ "$running" -ge "$FS_PARALLEL" ]; then wait -n; running=$((running - 1)); fi
+    mkdir -p "$T/s$sh"
+    ( cd "$T/s$sh" && cp "$T/logos_secd" "$T/logos_program.bin" . \
+      && s=$(date +%s) && FS_CMD_TIMEOUT=$FS_CMD_TIMEOUT timeout "$FS_SHARD_TIMEOUT" python3 "$T/fsgate.py" "$sh" "$T/s$sh"; \
+      echo $? > rc; echo $(( $(date +%s) - s )) > secs ) &
+    running=$((running + 1))
+done
+wait
+
+for sh in A B C D; do
+    d="$T/s$sh"
+    if [ -s "$d/result.txt" ]; then cat "$d/result.txt"; grep -q '^FAIL' "$d/result.txt" && ok=0
+    else echo "FAIL  aletheiafs: shard $sh produced no results (rc $(cat "$d/rc" 2>/dev/null); 124 = FS_SHARD_TIMEOUT)"; ok=0; fi
+done
+
+# measured times (wall, per operation as the harness saw it, including the driver's hex coding)
+python3 - "$T" "$COMPILE_S" <<'PYEOF'
+import sys, os
+T, cs = sys.argv[1], sys.argv[2]
+ts = {}
+for sh in 'ABCD':
+    try:
+        for l in open(os.path.join(T, 's' + sh, 'times.txt')):
+            w, t = l.split(); ts.setdefault(w, []).append(float(t))
+    except OSError: pass
+secs = ' '.join('%s %ss' % (sh, open(os.path.join(T, 's' + sh, 'secs')).read().strip()) for sh in 'ABCD'
+                if os.path.exists(os.path.join(T, 's' + sh, 'secs')))
+print('TIME  driver compile %ss; shards (parallel): %s' % (cs, secs))
+print('TIME  per operation (CRYPT_REF), median wall time of the calls that returned ok, as the harness saw them: ' + ', '.join(
+    '%s %.0fs' % (w, sorted(v)[len(v) // 2]) for w, v in sorted(ts.items()) if w in
+    ('open', 'put', 'get', 'update', 'history', 'version', 'find', 'verify', 'remove', 'eph', 'eread', 'close')))
+PYEOF
+[ "$ok" = 1 ] || exit 1
