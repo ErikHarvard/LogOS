@@ -42,7 +42,14 @@
 #      an administrator that revokes its own id can revoke nothing more.
 #   4. stub crypt (VM, no HMAC: every signature is 64 zeros): attenuate's
 #      result is a token string that verify and attenuate take as they are,
-#      and a malformed attenuation is no token, which verify refuses.
+#      and a malformed attenuation is no token, which verify refuses; and a
+#      write under a token for exactly one file changes that file and nothing
+#      else — a link planted at path.tmp is not followed (the file it points
+#      to, outside the grant, is untouched) and a file already at path.tmp is
+#      not overwritten (both refused, -EEXIST), path.tmp itself is outside the
+#      grant, a file with nothing at its .tmp is written and rewritten, and a
+#      failed rename or a missing directory is an error that leaves no
+#      staging file.
 #
 # COST. Every acceptance and every signature failure costs (caveats + 1)
 # HMACs, and with CRYPT_REF on the VM one HMAC takes about a minute of CPU
@@ -194,12 +201,22 @@ printf host > "$T/pure_part.txt"
   echo "$hrc" > "$T/pure_host.rc"; echo $(( $(date +%s) - s )) > "$T/pure_host.secs" ) &
 HOSTJOB=$!
 
-# ── 4. stub crypt (VM): attenuate as a consumer of the contract uses it ───
+# ── 4. stub crypt (VM): attenuate's result; the guard's staging file ──────
 # A stub crypt record whose hmac returns its message and whose hex is always
 # 64 zeros: every signature is 64 zeros, so a token is accepted exactly when
 # its caveats hold and the cases cost no HMAC. What is checked here is not the
-# cryptography (sections 2 and 3 check that against Python) but the shape of
-# the results: attenuate gives a bare token string that verify takes as it is.
+# cryptography (sections 2 and 3 check that against Python) but what the code
+# around it does: (a) attenuate gives a bare token string that verify takes
+# as it is; (b) a write under a token for EXACTLY one file changes that file
+# and nothing else: fs<path>.tmp is not within fs<path>, so whatever is
+# already at path.tmp (a file, or a link planted to point outside the grant)
+# must be left alone, and the write refused. The fixtures are in $ST.
+ST="$T/st"
+mkdir -p "$ST/data/adir" "$ST/other"
+printf '%s' "$ST" > "$T/stub_dir.txt"
+printf 'victim original\n' > "$ST/other/victim.txt"
+ln -s "$ST/other/victim.txt" "$ST/data/notes.tmp"
+printf "someone else's\n" > "$ST/data/stale.tmp"
 cat > "$T/stub.la" <<'LAEOF'
 import("logossec.la")
 glyph NIL = la n. la c. n(n)
@@ -212,6 +229,13 @@ glyph R = la r. r(la m. concat("err ")(m))(la v. concat("ok ")(v))
 glyph BR = la t. concat("token [")(concat(t)("]"))
 glyph KIT = la bx. SEC_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)
     (add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bx)(STUB)
+glyph GUARD = la sec. GUARD_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)
+    (add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)
+    (stat)(read_file)(open)(write)(close)(rename)(unlink)(fork)(execv)(exit)(clock_gettime)(la n. "-1")(sec)(KEY)
+glyph D = read_file("stub_dir.txt")
+# a token for exactly the file D ++ p
+glyph EXACT = la mint. la p. mint(KEY)("ex")(CONS(concat("res=fs")(concat(D)(p)))(NIL))(la m. concat("mint failed: ")(m))(la t. t)
+glyph WR = la gwrite. la mint. la tp. la p. la data. print(R(gwrite(EXACT(mint)(tp))(concat(D)(p))(data)))
 glyph MAIN = KIT(bxor)(la mint. la attenuate. la verify. la within. la confine.
   mint(KEY)("st")(CONS("res=obj")(NIL))(la m. print(concat("mint failed: ")(m)))(la t0.
   SEQ(print(BR(attenuate(t0)("ops=r"))))
@@ -222,7 +246,15 @@ glyph MAIN = KIT(bxor)(la mint. la attenuate. la verify. la within. la confine.
   (SEQ(print(R(verify(KEY)(NIL)(attenuate(t0)("ops=r"))("obj/1")("w")(0))))
   (SEQ(print(R(verify(KEY)(NIL)(attenuate(attenuate(t0)("ops=r"))("res=obj/1"))("obj/2")("r")(0))))
   (SEQ(print(R(verify(KEY)(NIL)(attenuate(t0)("nokey"))("obj/1")("r")(0))))
-  (print("end")))))))))))
+  (GUARD(KIT(bxor))(la gread. la gwrite. la gspawn. la gconnect. la grevoke. la grevoked.
+  SEQ(WR(gwrite)(mint)("/data/notes")("/data/notes")("PWNED\n"))
+  (SEQ(WR(gwrite)(mint)("/data/stale")("/data/stale")("clobbered\n"))
+  (SEQ(WR(gwrite)(mint)("/data/notes")("/data/notes.tmp")("direct\n"))
+  (SEQ(WR(gwrite)(mint)("/data/plain")("/data/plain")("fresh\n"))
+  (SEQ(WR(gwrite)(mint)("/data/plain")("/data/plain")(concat("second")(concat(chr("0"))("bytes"))))
+  (SEQ(WR(gwrite)(mint)("/data/adir")("/data/adir")("x"))
+  (SEQ(WR(gwrite)(mint)("/nodir/x")("/nodir/x")("x"))
+  (print("end")))))))))))))))))))
 LAEOF
 Z64=0000000000000000000000000000000000000000000000000000000000000000
 cat > "$T/stub_expect.txt" <<EOF
@@ -234,10 +266,29 @@ verify takes attenuate's result as it is: granted within it	ok st
 verify takes attenuate's result as it is: the added ops=r refuses w	err caveat not met: ops=r
 attenuate of attenuate's result: the second caveat holds too	err caveat not met: res=obj/1
 verify of a malformed attenuation refuses it (fails closed)	err malformed token: no signature
+exact grant: a link planted at notes.tmp is not followed, the write is refused	err write: cannot create the staging file $ST/data/notes.tmp: -17
+exact grant: a file already at stale.tmp is not overwritten, the write is refused	err write: cannot create the staging file $ST/data/stale.tmp: -17
+exact grant for notes: notes.tmp itself is outside it	err write denied: caveat not met: res=fs$ST/data/notes
+exact grant: a file with nothing at its .tmp is written	ok $ST/data/plain
+exact grant: and written again (an existing file replaced)	ok $ST/data/plain
+a failed rename (onto a directory) is reported	err write: rename failed: -21
+a missing directory: the staging file cannot be created	err write: cannot create the staging file $ST/nodir/x.tmp: -2
 EOF
 s=$(date +%s); wm_vm stub.la "$T/stub_vm.txt"; STUB_VM_S=$(( $(date +%s) - s ))
 if [ "$vrc" = 0 ]; then check "$T/stub_expect.txt" "$T/stub_vm.txt" "stub (VM)"
 else fail "stub (VM): rc=$vrc"; check "$T/stub_expect.txt" "$T/stub_vm.txt" "stub (VM)"; tail -n 3 "$T/vce" "$T/vre" 2>/dev/null; fi
+# what the exact-grant writes did (and did not do) to the disk
+if [ "$(cat "$ST/other/victim.txt" 2>/dev/null)" = "victim original" ] && [ -L "$ST/data/notes.tmp" ] \
+   && [ "$(readlink "$ST/data/notes.tmp")" = "$ST/other/victim.txt" ] && [ ! -e "$ST/data/notes" ] && [ ! -L "$ST/data/notes" ]; then
+    pass "stub guard: the file the planted link points to is untouched, the link is still there, notes was not created"
+else fail "stub guard: the planted link was followed or moved: victim=[$(cat "$ST/other/victim.txt")] notes=$(ls -l "$ST/data/notes" 2>&1)"; fi
+if [ "$(cat "$ST/data/stale.tmp" 2>/dev/null)" = "someone else's" ] && [ ! -e "$ST/data/stale" ]; then
+    pass "stub guard: the file already at stale.tmp is untouched and stale was not created"
+else fail "stub guard: the file at stale.tmp was overwritten or moved"; fi
+if [ "$(od -An -c "$ST/data/plain" 2>/dev/null | tr -s ' ')" = "$(printf 'second\000bytes' | od -An -c | tr -s ' ')" ] \
+   && [ ! -e "$ST/data/plain.tmp" ] && [ ! -e "$ST/data/adir.tmp" ] && [ -d "$ST/data/adir" ] && [ ! -e "$ST/data/notes.tmp.tmp" ]; then
+    pass "stub guard: plain holds exactly the second write's bytes; no staging file left (the failed rename removed its own)"
+else fail "stub guard: plain is wrong or a staging file was left: $(ls -a "$ST/data" | tr '\n' ' ')"; fi
 
 # ── 2 and 3. tokens and the guard: one driver, four shards ────────────────
 # The driver reads cases.txt: one operation per line, the command word and
@@ -269,7 +320,7 @@ glyph RES = la r. r(la m. concat("err ")(m))(la v. concat("ok ")(v))
 glyph PAIR = la a. la b. la k. k(a)(b)
 glyph GUARD = la sec. la K. GUARD_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)
     (add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)
-    (stat)(read_file)(write_file)(rename)(unlink)(fork)(execv)(exit)(clock_gettime)(CONNECT)(sec)(K)
+    (stat)(read_file)(open)(write)(close)(rename)(unlink)(fork)(execv)(exit)(clock_gettime)(CONNECT)(sec)(K)
 # one operation: la k. k(output line)(the guard after it)
 glyph OP = la sec. la hex. la cmd. la a. la g.
   sec(la mint. la attenuate. la verify. la within. la confine.

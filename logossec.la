@@ -17,7 +17,8 @@
 #      str_at ord str_len str_to_int int_to_str chr concat str_eq
 #      add sub mul div lt int_eq band bor bxor
 #  then GUARD_KIT's effects, in this order:
-#      stat read_file write_file rename unlink fork execv exit clock_gettime
+#      stat read_file open write close rename unlink fork execv exit
+#      clock_gettime
 #      CONNECT      (logosipc.la's client CONNECT, handed in, see below)
 #  `crypt` is the crypt record (crypt_ref.la: CRYPT_REF today, CRYPT_FAST as
 #  a drop-in); only its hmac and hex are used. `sec` is a SEC_KIT record.
@@ -84,9 +85,7 @@
 #  and acts only on ok; each returns a result:
 #      read(tok)(path)          fs<path> r   ok(contents)   (a regular file)
 #      write(tok)(path)(data)   fs<path> w   ok(path)       atomic: path.tmp,
-#                                            then rename; the temporary is
-#                                            the write's own staging file,
-#                                            removed if the rename fails
+#                                            then rename (see below)
 #      spawn(tok)(path)(args)   fs<path> x   ok(pid)        fork + execv
 #                                            (args includes argv[0]); the
 #                                            child exits 127 if execv fails
@@ -98,6 +97,14 @@
 #  path must be absolute; the resource is "fs" ++ path, so it is checked
 #  lexically, segment by segment, before anything touches the disk. A channel
 #  name containing "/" is refused (it would name a different socket).
+#  A write's token covers path, and path.tmp is not within path, so the write
+#  never opens anything already at path.tmp: it creates the staging file
+#  afresh (O_CREAT|O_EXCL, which also refuses a symbolic link planted there),
+#  writes it, and renames it onto path; if the write is short or the rename
+#  fails, it removes its own staging file. The only existing object a write
+#  changes is path. A name already at path.tmp (an interrupted write's
+#  leftover, or anyone's file or link) makes the write fail with "write:
+#  cannot create the staging file path.tmp: -17" until it is removed.
 #  SELF-APPLICATION: the security policy — the revocation list — is itself a
 #  resource the model protects (sec/policy, op a): changing it takes a token
 #  for it, and an administrator who revokes its own id can no longer revoke.
@@ -435,7 +442,7 @@ glyph SEC_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la 
 # ── GUARD_KIT: the reference monitor ───────────────────────────────────
 glyph GUARD_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
     la add. la sub. la mul. la div. la lt. la int_eq. la band. la bor. la bxor.
-    la stat. la read_file. la write_file. la rename. la unlink. la fork. la execv. la exit. la clock_gettime.
+    la stat. la read_file. la open. la write. la close. la rename. la unlink. la fork. la execv. la exit. la clock_gettime.
     la ipc_connect. la sec. la K.
   sec(la mint. la attenuate. la verify. la within. la confine.
   SEC_STR(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)
@@ -461,13 +468,25 @@ glyph GUARD_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. l
         (la who. isreg(smode(stat(path)))
            (la _. okr(read_file(path)))
            (la _. err(concat("read: not a regular file: ")(path)))(C0))))(la gread.
+  # The staging file path.tmp is created afresh: open flags 193 =
+  # O_WRONLY|O_CREAT|O_EXCL, which fails on any existing name, a symbolic link
+  # included, so the write never opens what is already there. The token covers
+  # path, not path.tmp, and the only existing object a write changes is path.
   LET(la rl. la tok. la path. la data.
       fsres(path)(err)(la r. check(rl)(tok)(r)("w")
         (la m. err(concat("write denied: ")(m)))
-        (la who. (la tmp. (la _. (la rc. str_eq(rc)("0")
-              (la _. okr(path))
-              (la _. (la _. err(concat("write: rename failed: ")(rc)))(unlink(tmp)))(C0))
-            (rename(tmp)(path)))(write_file(tmp)(data)))(concat(path)(".tmp")))))(la gwrite.
+        (la who. (la tmp. (la fd.
+            str_eq(str_at(fd)(C0))("-")
+              (la _. err(concat("write: cannot create the staging file ")(concat(tmp)(concat(": ")(fd)))))
+              (la _. (la wr. (la _.
+                  str_eq(wr)(str_len(data))
+                    (la _. (la rc. str_eq(rc)("0")
+                        (la _. okr(path))
+                        (la _. (la _. err(concat("write: rename failed: ")(rc)))(unlink(tmp)))(C0))
+                      (rename(tmp)(path)))
+                    (la _. (la _. err(concat("write: short write: ")(wr)))(unlink(tmp)))(C0))
+                (close(fd)))(write(fd)(data)))(C0))
+          (open(tmp)("193")))(concat(path)(".tmp")))))(la gwrite.
   LET(la rl. la tok. la path. la args.
       fsres(path)(err)(la r. check(rl)(tok)(r)("x")
         (la m. err(concat("spawn denied: ")(m)))
