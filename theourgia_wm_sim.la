@@ -16,6 +16,9 @@
 #  4*W bytes, B G R 0 per pixel); wm_shot.py turns it into a PNG and wm_ocr.py
 #  reads its text back.
 #
+#  LOCK SCREEN: MOD+Esc locks; the session layer behind it is SIM_SESS below, a
+#  stand-in (user adam, passphrase logos), not logossession.la.
+#
 #  DETERMINISM: input is read one event at a time and only while no command is
 #  running, so "type ls, press Enter, take a frame" always shows ls's output.
 #  The run ends when the events are exhausted and nothing is running, or on
@@ -34,6 +37,7 @@ import("theourgia_wm.la")
 import("theourgia_termfont.la")
 import("logoskit.la")
 import("lk_settings.la")
+import("lk_login.la")
 
 glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
                 (add)(sub)(mul)(div)(mod)(lt)(int_eq)(band)(bor)
@@ -47,6 +51,14 @@ glyph CFG = la k. (la words. words(la _. error("wm_sim: wm_sim.cfg is empty"))
     (la w3. la r3. r3(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w4. la r4. k(str_to_int(w0))(str_to_int(w1))(str_to_int(w2))(w3)(w4)))))))
   (WM_SPLIT(B)(WM_LISTS(B))(STRIP_NL(read_file("wm_sim.cfg"))))
+# The lock screen's session layer, a stand-in until logossession.la is wired
+# in: one user, adam, passphrase logos; a session is "S:<name>" and a locked
+# one "L:S:<name>". It exists so a headless session can lock and unlock; it
+# holds no keys and protects nothing.
+glyph SIM_SESS = la s. s
+  (la name. la pass. str_eq(name)("adam")(la _. str_eq(pass)("logos")(la _. la e. la o. o(concat("S:")(name)))(la _. la e. la o. e("no"))("!"))(la _. la e. la o. e("no"))("!"))
+  (la sn. concat("L:")(sn))
+  (la l. la pass. str_eq(pass)("logos")(la _. la e. la o. o(str_tail(str_tail(l))))(la _. la e. la o. e("no"))("!"))
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph STRIP_NL = Z(la self. la s.
     str_eq(s)("")(la _. "")(la _.
@@ -61,7 +73,7 @@ glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS.
         (TERM_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq))
         (@RENDER_KIT@(TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(TF_HEX))(SCALE))
         (@SHELL_KIT@)
-        (la s. s(LK_KIT)(SETTINGS_APP))
+        (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. s(la k. k(LOGIN_APP)(SIM_SESS)(la t. la f. f))))
         (la s. s(W)(H)(mul(W)(4))(SCALE)(CWD))
         (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))("24")(la t. la f. t)))
     (print(concat("wm: headless ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))

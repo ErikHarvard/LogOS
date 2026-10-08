@@ -21,12 +21,17 @@
 #    MOD+- / MOD+=    shrink / grow the focused window by 5%
 #    MOD+Tab          focus the next window   MOD+c  interrupt its command
 #    MOD+s            open the settings panel (a LogosKit app, logoskit.la)
+#    MOD+Esc          lock the screen (when the WM has a session layer)
 #    MOD+Shift+e      exit
 #  Anything else types into the focused window. In a terminal, Enter runs the line,
 #  Backspace, Up/Down walk the history, Ctrl+U kills the line, Ctrl+L clears.
 #  In an app window, LogosKit takes the key: Tab / Shift+Tab move the focus, and
 #  Enter, Space, Up/Down, Backspace and typed characters become the app's
 #  messages (logoskit.la).
+#  While the screen is locked, every key goes to the login panel (lk_login.la)
+#  and nothing else, MOD bindings included, until it unlocks. That is not a
+#  boundary against the VT itself: under a live VT, Ctrl+C still ends the
+#  whole session (below), which is the emergency exit.
 #  While a window's command runs, its keys are ignored except MOD+c and Ctrl+C
 #  (both interrupt it). Under a live VT, Ctrl+C never gets here: the VT turns it
 #  into SIGINT for the whole session, which is the emergency exit.
@@ -48,7 +53,10 @@
 #  with `some(x)` for cons. Booleans are applied to two thunks and a dummy.
 #
 #  ── STATE ───────────────────────────────────────────────────────────
-#  st  = la k. k(tree)(focus)(wins)(nextid)(mask)(quit)(dirty)
+#  st  = la k. k(tree)(focus)(wins)(nextid)(mask)(quit)(dirty)(lock)
+#  lock = la n. la s. n(n)  (no lock screen)  |  la n. la s. s(la k. k(login)
+#         (lw)(showing)): the login app's record, the window (id 0) that holds
+#         it, and whether the screen is locked now
 #  win = la k. k(id)(term)(sh)(job)(bcache)(tkey)(trows)(ver)(app)
 #  app = la n. la s. n(n)  (a terminal)   |   la n. la s. s(a), a LogosKit app:
 #        a = la k. k(lkapp)(state)(focus), lkapp = la s. s(init)(view)(update)
@@ -189,7 +197,8 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
         app(la _. job(la _. concat(" ")(concat(int_to_str(id))(concat("  ")(sh_prompt(sh)))))
                      (la pid. la rfd. la cmd. concat(" ")(concat(int_to_str(id))(concat("  [running] ")(cmd)))))
            (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
-               concat(" ")(concat(int_to_str(id))(concat("  ")(atitle))))))))(la title.
+               # the lock screen's window (id 0) has no number
+               lt(C0)(id)(la _. concat(" ")(concat(int_to_str(id))(concat("  ")(atitle))))(la _. concat(" ")(atitle))(C0))))))(la title.
     LET(la w. la focused. la tw. la th. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         concat(int_to_str(tw))(concat("x")(concat(int_to_str(th))
           (concat(focused(la _. "f")(la _. "u")(C0))(int_to_str(ver)))))))(la tkey.
@@ -240,9 +249,13 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
 #   -> la s. s(empty)(open_win)(handle)(on_output)(job_fds)(shutdown)(welcome)
 # cfg = la s. s(sw)(sh)(gap)(cwd0): the screen size in pixels, the gap between
 # tiles (and around them), and the directory new shells start in.
-# ui = la s. s(lk_key)(lk_focusables)(settings): LogosKit's key and focusables
-# (from an LK_KIT record) and the settings app MOD+s opens (la s. s(init)(view)
-# (update)(theme)(title)).
+# ui = la s. s(lk_key)(lk_focusables)(settings)(lockui): LogosKit's key and
+# focusables (from an LK_KIT record), the settings app MOD+s opens (la s.
+# s(init)(view)(update)(theme)(title)), and the lock screen: lockui is
+# la n. la s. n(n) (none: MOD+Esc does nothing) or la n. la s. s(la k.
+# k(login)(start_locked)), login being LOGIN_APP's record (lk_login.la). When
+# start_locked is TRUE the WM starts locked; whenever it unlocks with no
+# windows, it opens the first terminal with the welcome text.
 # handle(snap)(st)(type)(code)(value) folds one input event; snap(st)(n) is
 # called for a type-85 record (the headless WM's "write frame n").
 glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
@@ -256,7 +269,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     la t_prev. la t_next. la t_clear. la t_prompt. la t_rows. la t_keychar.
   SH(la sh_new. la sh_prompt. la sh_run. la sh_finish. la sh_int. la sh_hup.
   W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
-  ui(la lk_key. la lk_focusables. la settings.
+  ui(la lk_key. la lk_focusables. la settings. la lockui.
   cfg(la sw. la sh0. la gap. la cwd0.
   (la C0. la C1. la C2. la C3. la C12. la C50. la C85. la C240. la C255. la TRUE. la FALSE.
     LET(la a. la b. b)(la seq.
@@ -264,59 +277,68 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     LET(la n. la j. n(n))(la NOJOB.
     LET(sub(C0)(C50))(la NEG50.
     # key codes
-    LET(28)(la K_ENTER. LET(14)(la K_BS. LET(15)(la K_TAB. LET(16)(la K_Q. LET(18)(la K_E.
+    LET(28)(la K_ENTER. LET(14)(la K_BS. LET(15)(la K_TAB. LET(16)(la K_Q. LET(18)(la K_E. LET(1)(la K_ESC.
     LET(20)(la K_T. LET(22)(la K_U. LET(46)(la K_C. LET(35)(la K_H. LET(36)(la K_J. LET(31)(la K_S.
     LET(37)(la K_K. LET(38)(la K_L. LET(12)(la K_MINUS. LET(13)(la K_EQUAL.
     LET(103)(la K_UP. LET(108)(la K_DOWN. LET(105)(la K_LEFT. LET(106)(la K_RIGHT.
     LET(42)(la K_LSH. LET(54)(la K_RSH. LET(29)(la K_LCT. LET(97)(la K_RCT.
     LET(56)(la K_LAL. LET(100)(la K_RAL. LET(125)(la K_LME. LET(126)(la K_RME.
     LET(sub(sw)(mul(C2)(gap)))(la aw. LET(sub(sh0)(mul(C2)(gap)))(la ah.
-    LET(la k. k(tl_empty)(C0)(nil)(C1)(C0)(FALSE)(TRUE))(la empty.
-    LET(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        la k. k(tree)(focus)(wins)(nid)(mask)(quit)(dirty))(la mkst.
+    # lock_win(login)(lgst): the lock screen's window (id 0), its focus on the
+    # login view's first focusable element. A LogosKit app has five fields, so
+    # the login record's done and lock are left out of the window's copy.
+    LET(la login. la lgst. login(la lg_init. la lg_view. la lg_update. la lg_theme. la lg_title. la lg_done. la lg_lock.
+        mkapp(C0)(la k. k(la s. s(lg_init)(lg_view)(lg_update)(lg_theme)(lg_title))(lgst)
+                         (lk_focusables(lg_view(lgst))(la _. "")(la h. la t. h)))))(la lock_win.
+    LET(lockui(la _. la n. la s. n(n))
+              (la lu. lu(la login. la start. login(la i. la v. la u. la th. la ti. la d. la l.
+                 la n. la s. s(la k. k(login)(lock_win(login)(i))(start))))))(la lock0.
+    LET(la k. k(tl_empty)(C0)(nil)(C1)(C0)(FALSE)(TRUE)(lock0))(la empty.
+    LET(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
+        la k. k(tree)(focus)(wins)(nid)(mask)(quit)(dirty)(lock))(la mkst.
     LET(la tree. tl_layout(tree)(gap)(gap)(aw)(ah)(gap))(la layout.
     LET(la tree. la id. la d. tl_nb(tree)(id)(d)(gap)(gap)(aw)(ah)(gap))(la nb.
     # the focused window's longer side decides how a new window splits it
     LET(la tree. la focus.
         find(la r. r(la id. la x. la y. la w. la h. int_eq(id)(focus)))(layout(tree))
           (la _. C0)(la r. r(la id. la x. la y. la w. la h. lt(w)(h)(la _. C1)(la _. C0)(C0))))(la auto_dir.
-    LET(la st. la t. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        mkst(t)(focus)(wins)(nid)(mask)(quit)(TRUE)))(la settree.
-    LET(la st. la f. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        mkst(tree)(f)(wins)(nid)(mask)(quit)(TRUE)))(la setfocus.
+    LET(la st. la t. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
+        mkst(t)(focus)(wins)(nid)(mask)(quit)(TRUE)(lock)))(la settree.
+    LET(la st. la f. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
+        mkst(tree)(f)(wins)(nid)(mask)(quit)(TRUE)(lock)))(la setfocus.
     # put(st)(w): store window w (bumping its version) and mark the frame dirty
-    LET(la st. la w. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        mkst(tree)(focus)(put_win(wins)(touch(w)))(nid)(mask)(quit)(TRUE)))(la put.
+    LET(la st. la w. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
+        mkst(tree)(focus)(put_win(wins)(touch(w)))(nid)(mask)(quit)(TRUE)(lock)))(la put.
     LET(la st. la w. la term2. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         put(st)(la k. k(id)(term2)(sh)(job)(bc)(tk)(tr)(ver)(app))))(la set_term.
-    LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         (la sh. (la term.
             (la _. mkst(tl_insert(tree)(focus)(nid)(auto_dir(tree)(focus)))(nid)
-                       (cons(mkwin(nid)(term)(sh))(wins))(add(nid)(C1))(mask)(quit)(TRUE))
+                       (cons(mkwin(nid)(term)(sh))(wins))(add(nid)(C1))(mask)(quit)(TRUE)(lock))
             (print(concat("wm: open window ")(int_to_str(nid)))))
           (t_new(sh_prompt(sh))))
         (sh_new(cwd0))))(la open_win.
     # open_app(st)(lkapp): a new window holding a LogosKit app, its focus on the
     # app's first focusable element
-    LET(la st. la lkapp. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. la lkapp. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         lkapp(la init. la view. la update. la theme. la atitle.
           (la _. mkst(tl_insert(tree)(focus)(nid)(auto_dir(tree)(focus)))(nid)
                      (cons(mkapp(nid)(la k. k(lkapp)(init)(lk_focusables(view(init))(la _. "")(la h. la t. h))))(wins))
-                     (add(nid)(C1))(mask)(quit)(TRUE))
+                     (add(nid)(C1))(mask)(quit)(TRUE)(lock))
           (print(concat("wm: open window ")(concat(int_to_str(nid))(concat(" (")(concat(atitle)(")")))))))))(la open_app.
-    LET(la st. la id. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. la id. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         find_win(wins)(id)(la _. st)(la w. w(la wid. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
           (la _. (la _.
               mkst(tl_remove(tree)(id))
                   (int_eq(id)(focus)
                      (la _. lt(C1)(tl_count(tree))(la _. tl_next(tree)(id))(la _. C0)(C0))
                      (la _. focus)(C0))
-                  (del_win(wins)(id))(nid)(mask)(quit)(TRUE))
+                  (del_win(wins)(id))(nid)(mask)(quit)(TRUE)(lock))
             (print(concat("wm: close window ")(int_to_str(id)))))
           (job(la _. C0)(la pid. la rfd. la cmd.
               seq(sh_hup(pid))(seq(close(rfd))(sh_finish(sh)(pid)))))))))(la close_win.
     # with_focus(st)(f): f(w) for the focused window w, or st when there is none
-    LET(la st. la f. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. la f. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         find_win(wins)(focus)(la _. st)(f)))(la with_focus.
     LET(la st. with_focus(st)(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         job(la _. st)(la pid. la rfd. la cmd. seq(sh_int(pid))(st)))))(la interrupt.
@@ -332,16 +354,18 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
                 (la pid. la rfd. put(st)(la k. k(id)(term3)(sh2)(la n. la j. j(pid)(rfd)(line))(bc)(tk)(tr)(ver)(app))))
             (t_write(term2)(out))))
           (print(concat("wm: [")(concat(int_to_str(id))(concat("] $ ")(line))))))))(la submit.
-    # app_key(st)(w)(code)(shift): a key for an app window. LogosKit turns it into
-    # a focus move and/or a message; the app's update folds the message into
-    # its state, and the window (its version bumped) is redrawn from the new state.
-    LET(la st. la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
-        app(la _. st)(la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
+    # app_step(w)(code)(shift): a key for an app window, as an option of the
+    # changed window (none when nothing changed). LogosKit turns the key into a
+    # focus move and/or a message, and the app's update folds the message into
+    # its state; the window is then redrawn from the new state.
+    LET(la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
+        app(la _. la n. la s. n(n))(la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
           lk_key(view(ast))(afocus)(code)(shift)(t_keychar(code)(shift))(la focus2. la msgopt.
             msgopt
-              (la _. str_eq(focus2)(afocus)(la _. st)
-                       (la _. put(st)(la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(la n. la s. s(la k2. k2(lkapp)(ast)(focus2)))))(C0))
-              (la m. put(st)(la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(la n. la s. s(la k2. k2(lkapp)(update(ast)(m))(focus2)))))))))))(la app_key.
+              (la _. str_eq(focus2)(afocus)(la _. la n. la s. n(n))
+                       (la _. la n. la s. s(la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(la n2. la s2. s2(la k2. k2(lkapp)(ast)(focus2)))))(C0))
+              (la m. la n. la s. s(la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(la n2. la s2. s2(la k2. k2(lkapp)(update(ast)(m))(focus2)))))))))))(la app_step.
+    LET(la st. la w. la code. la shift. app_step(w)(code)(shift)(la _. st)(la w2. put(st)(w2)))(la app_key.
     LET(la st. la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         int_eq(code)(K_ENTER)(la _. submit(st)(w))(la _.
         int_eq(code)(K_BS)(la _. set_term(st)(w)(t_back(term)))(la _.
@@ -358,6 +382,41 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
              (la pid. la rfd. la cmd.
                 ctrl(la _. int_eq(code)(K_C)(la _. seq(sh_int(pid))(st))(la _. st)(C0))(la _. st)(C0)))
              (la a. app_key(st)(w)(code)(shift)))))(la typing.
+    LET(la st. with_focus(st)(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
+        set_term(st)(w)(t_write(term)(concat(
+          "LogOS - the Theourgia tiling window manager, written in Lingua Adamica.\n")(concat(
+          "  MOD+Enter  new terminal      MOD+q        close the window\n")(concat(
+          "  MOD+arrows move the focus    MOD+Shift+arrows  swap windows\n")(concat(
+          "  MOD+t      split direction   MOD+- MOD+=  shrink / grow\n")(concat(
+          "  MOD+Tab    next window       MOD+c        interrupt the command\n")(concat(
+          "  MOD+s      settings panel    MOD+Esc      lock the screen\n")(concat(
+          "  MOD+Shift+e  exit            (MOD is Super or Alt)\n")(
+          "Type help for the shell's commands.\n"))))))))))))(la welcome.
+    # lock_now(st): MOD+Esc. The login app's own lock keeps the user's name and
+    # locks the session; the screen then shows only the login panel.
+    LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
+        lock(la _. st)(la l. l(la login. la lw. la showing.
+          lw(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
+            app(la _. st)(la a. a(la lkapp. la ast. la af.
+              login(la i. la v. la u. la th. la ti. la done. la lk.
+                (la _. mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)
+                          (la n. la s. s(la k. k(login)(touch(lock_win(login)(lk(ast))))(TRUE))))
+                (print("wm: locked"))))))))))(la lock_now.
+    # lock_key(st)(code)(shift): while locked, every key goes to the login panel;
+    # once the login app reports done, the screen unlocks (and, with no windows
+    # yet, the first terminal opens with the welcome text)
+    LET(la st. la code. la shift. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
+        lock(la _. st)(la l. l(la login. la lw. la showing.
+          app_step(lw)(code)(shift)(la _. st)(la lw2.
+            lw2(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
+              app(la _. st)(la a. a(la lkapp. la ast. la af.
+                login(la i. la v. la u. la th. la ti. la done. la lk.
+                  done(ast)
+                    (la _. (la _. (la st2. wins(la _. welcome(open_win(st2)))(la h. la t. st2))
+                                  (mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(la n. la s. s(la k. k(login)(touch(lw2))(FALSE)))))
+                           (print("wm: unlocked")))
+                    (la _. mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(la n. la s. s(la k. k(login)(touch(lw2))(TRUE))))
+                    (C0))))))))))(la lock_key.
     # dirkey(code)(not_a_direction)(direction d): Left/h 0, Right/l 1, Up/k 2, Down/j 3
     LET(la code. la nd. la yd.
         int_eq(code)(K_LEFT)(la _. yd(C0))(la _. int_eq(code)(K_H)(la _. yd(C0))(la _.
@@ -365,7 +424,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
         int_eq(code)(K_UP)(la _. yd(C2))(la _. int_eq(code)(K_K)(la _. yd(C2))(la _.
         int_eq(code)(K_DOWN)(la _. yd(C3))(la _. int_eq(code)(K_J)(la _. yd(C3))(la _.
           nd(C0))(C0))(C0))(C0))(C0))(C0))(C0))(C0))(C0))(la dirkey.
-    LET(la st. la code. la shift. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. la code. la shift. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         int_eq(code)(K_ENTER)(la _. open_win(st))(la _.
         int_eq(code)(K_Q)(la _. tl_has(tree)(focus)(la _. close_win(st)(focus))(la _. st)(C0))(la _.
         dirkey(code)
@@ -376,8 +435,9 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
             int_eq(code)(K_TAB)(la _. setfocus(st)(tl_next(tree)(focus)))(la _.
             int_eq(code)(K_C)(la _. interrupt(st))(la _.
             int_eq(code)(K_S)(la _. open_app(st)(settings))(la _.
-            int_eq(code)(K_E)(la _. shift(la _. mkst(tree)(focus)(wins)(nid)(mask)(TRUE)(dirty))(la _. st)(C0))
-              (la _. st)(C0))(C0))(C0))(C0))(C0))(C0))(C0))
+            int_eq(code)(K_ESC)(la _. lock_now(st))(la _.
+            int_eq(code)(K_E)(la _. shift(la _. mkst(tree)(focus)(wins)(nid)(mask)(TRUE)(dirty)(lock))(la _. st)(C0))
+              (la _. st)(C0))(C0))(C0))(C0))(C0))(C0))(C0))(C0))
           (la d. (la n. shift
                      (la _. int_eq(n)(focus)(la _. st)(la _. settree(st)(tl_swap(tree)(focus)(n)))(C0))
                      (la _. setfocus(st)(n))(C0))
@@ -398,29 +458,32 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
         int_eq(code)(K_LAL)(la _. B16)(la _. int_eq(code)(K_RAL)(la _. B32)(la _.
         int_eq(code)(K_LME)(la _. B64)(la _. int_eq(code)(K_RME)(la _. B128)(la _.
           C0)(C0))(C0))(C0))(C0))(C0))(C0))(C0))(C0))(la modbit.
-    LET(la st. la code. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. la code. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         (la shift. la ctrl. la modk.
-            modk(la _. binding(st)(code)(shift))(la _. typing(st)(code)(shift)(ctrl))(C0))
+            lock(la _. modk(la _. binding(st)(code)(shift))(la _. typing(st)(code)(shift)(ctrl))(C0))
+                (la l. l(la login. la lw. la showing. showing
+                   (la _. lock_key(st)(code)(shift))
+                   (la _. modk(la _. binding(st)(code)(shift))(la _. typing(st)(code)(shift)(ctrl))(C0))(C0))))
         (nz(band(mask)(C3)))(nz(band(mask)(C12)))(nz(band(mask)(C240)))))(la press.
     LET(la st. la code. la value.
         (la bit. int_eq(bit)(C0)
             (la _. int_eq(value)(C0)(la _. st)(la _. press(st)(code))(C0))
-            (la _. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+            (la _. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
                 mkst(tree)(focus)(wins)(nid)
                     (int_eq(value)(C1)(la _. bor(mask)(bit))
                        (la _. int_eq(value)(C0)(la _. band(mask)(sub(C255)(bit)))(la _. mask)(C0))(C0))
-                    (quit)(dirty)))(C0))
+                    (quit)(dirty)(lock)))(C0))
         (modbit(code)))(la key_event.
     LET(la snap. la st. la type. la code. la value.
         int_eq(type)(C1)(la _. key_event(st)(code)(value))
           (la _. int_eq(type)(C85)(la _. snap(st)(code))(la _. st)(C0))(C0))(la handle.
     LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         job(la _. FALSE)(la p. la r. la c. TRUE)))(la has_job.
-    LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         map(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               job(la _. "")(la p. la r. la c. r)))(filter(has_job)(wins))))(la job_fds.
     # a job's output: append it; at end of file reap the job and show the prompt
-    LET(la st. la fd. la chunk. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. la fd. la chunk. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         find(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
                 job(la _. FALSE)(la p. la r. la c. str_eq(r)(fd))))(wins)
           (la _. st)
@@ -434,26 +497,18 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
                       (close(rfd)))
                   (la _. put(st)(la k. k(id)(t_write(term)(chunk))(sh)(job)(bc)(tk)(tr)(ver)(app)))
                   (C0))))))(la on_output.
-    LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+    LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         map(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               job(la _. C0)(la pid. la rfd. la cmd. seq(sh_hup(pid))(seq(close(rfd))(sh_finish(sh)(pid))))))(wins)))(la shutdown.
-    LET(la st. with_focus(st)(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
-        set_term(st)(w)(t_write(term)(concat(
-          "LogOS - the Theourgia tiling window manager, written in Lingua Adamica.\n")(concat(
-          "  MOD+Enter  new terminal      MOD+q        close the window\n")(concat(
-          "  MOD+arrows move the focus    MOD+Shift+arrows  swap windows\n")(concat(
-          "  MOD+t      split direction   MOD+- MOD+=  shrink / grow\n")(concat(
-          "  MOD+Tab    next window       MOD+c        interrupt the command\n")(concat(
-          "  MOD+s      settings panel    MOD+Shift+e  exit  (MOD: Super/Alt)\n")(
-          "Type help for the shell's commands.\n")))))))))))(la welcome.
       la s. s(empty)(open_win)(handle)(on_output)(job_fds)(shutdown)(welcome)
-    ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+    ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   (0)(1)(2)(3)(12)(50)(85)(240)(255)(la t. la f. t)(la t. la f. f))))))))))
 
 # ── The frame: layout, tiles, compose ─────────────────────────────────────
 # WM_FRAME(B)(L)(R)(TL)(W)(tile)(cfg) -> frame(st) -> la k. k(bytes)(st')
-# cfg = la s. s(sw)(sh)(pitch)(gap)(desk). st' carries the windows' refreshed
-# tile caches and dirty = FALSE.
+# cfg = la s. s(sw)(sh)(pitch)(gap)(desk)(lockw)(lockh). st' carries the
+# windows' refreshed tile caches and dirty = FALSE. While the screen is locked
+# the frame is the desktop with the lock window alone, lockw x lockh, centred.
 glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
   B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
@@ -462,8 +517,8 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
   TL(la tl_empty. la tl_insert. la tl_remove. la tl_layout. la tl_nb. la tl_swap.
      la tl_resize. la tl_toggle. la tl_leaves. la tl_next. la tl_has. la tl_count. la tl_show.
   W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
-  cfg(la sw. la sh0. la pitch. la gap. la desk.
-  (la C2. la FALSE.
+  cfg(la sw. la sh0. la pitch. la gap. la desk. la lockw. la lockh.
+  (la C2. la TRUE. la FALSE.
     LET(sub(sw)(mul(C2)(gap)))(la aw. LET(sub(sh0)(mul(C2)(gap)))(la ah.
     # go(focus)(rects)(tiles)(wins) -> la k. k(tiles)(wins'), one tile per rectangle
     LET(Z(la go. la focus. la rects. la tiles. la wins.
@@ -473,11 +528,17 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
                    (la _. go(focus)(rest)(tiles)(wins))
                    (la win. tile(int_eq(id)(focus))(win)(w)(h)(la rows. la win2.
                        go(focus)(rest)(cons(la k. k(x)(y)(w)(h)(rows))(tiles))(put_win(wins)(win2))))))))(la go.
-      la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
-        go(focus)(tl_layout(tree)(gap)(gap)(aw)(ah)(gap))(nil)(wins)(la tiles. la wins2.
+      la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
+        (la normal. lock(normal)(la l. l(la login. la lw. la showing. showing
+            (la _. tile(TRUE)(lw)(lockw)(lockh)(la rows. la lw2.
+                la k. k(compose(sw)(sh0)(pitch)(desk)
+                          (cons(la k3. k3(div(sub(sw)(lockw))(C2))(div(sub(sh0)(lockh))(C2))(lockw)(lockh)(rows))(nil)))
+                       (la k2. k2(tree)(focus)(wins)(nid)(mask)(quit)(FALSE)(la n. la s. s(la k4. k4(login)(lw2)(showing))))))
+            (normal)(FALSE))))
+        (la _. go(focus)(tl_layout(tree)(gap)(gap)(aw)(ah)(gap))(nil)(wins)(la tiles. la wins2.
           la k. k(compose(sw)(sh0)(pitch)(desk)(tiles))
-                 (la k2. k2(tree)(focus)(wins2)(nid)(mask)(quit)(FALSE))))))))
-  (2)(la t. la f. f)))))))
+                 (la k2. k2(tree)(focus)(wins2)(nid)(mask)(quit)(FALSE)(lock)))))))))
+  (2)(la t. la f. t)(la t. la f. f)))))))
 
 # ── The loop ──────────────────────────────────────────────────────────────
 # WM_LOOP(B)(L)(X)(J)(fold)(core)(frame)(io) -> run(st): loop until the WM exits
@@ -515,7 +576,7 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
         ready(la _. la k. k(st)(done))
              (la fd. la rest. one(st)(done)(fd)(la st2. la done2. each(st2)(done2)(rest)))))(la each.
     LET(Z(la loop. la st. la done.
-        st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+        st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
           quit
             (la _. (la _. (la _. st)(print("wm: exit")))(shutdown(st)))
             (la _. (la jobs.
@@ -525,7 +586,7 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
                           (la ready.
                               each(st)(done)(ready)(la st2. la done2.
                                  sim(la _. loop(st2)(done2))
-                                    (la _. st2(la t. la f. la w. la n. la m. la q. la dirty2.
+                                    (la _. st2(la t. la f. la w. la n. la m. la q. la dirty2. la lk.
                                          dirty2(la _. frame(st2)(la bytes. la st3.
                                                     (la _. loop(st3)(done2))(display(bytes))))
                                                (la _. loop(st2)(done2))(C0)))(C0)))
@@ -542,12 +603,15 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
 # WM_BUILD(B)(X)(TL)(T)(R)(SH)(UI)(cfg)(io): build every part once, open the
 # first window with the welcome text, and run the loop until the WM exits. TL,
 # T, R, SH are the records of TILE_KIT, TERM_KIT, RENDER_KIT and SHELL_KIT; UI =
-# la s. s(LK_KIT)(SETTINGS_APP), the LogosKit constructor and the settings app
-# (logoskit.la, lk_settings.la), built here in a light and a dark palette.
+# la s. s(LK_KIT)(SETTINGS_APP)(lockcfg): the LogosKit constructor and the
+# settings app (logoskit.la, lk_settings.la), built here in a light and a dark
+# palette, and the lock screen: lockcfg is la n. la s. n(n) (none) or
+# la n. la s. s(la k. k(LOGIN_APP)(sess)(start_locked)), with LOGIN_APP from
+# lk_login.la and sess the session layer's la s. s(login)(lock)(unlock).
 # cfg = la s. s(sw)(sh)(pitch)(scale)(cwd0); io as for WM_LOOP.
 glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la UI. la cfg. la io.
   cfg(la sw. la sh0. la pitch. la scale. la cwd0.
-  UI(la lk_kit. la settings_app.
+  UI(la lk_kit. la settings_app. la lockcfg.
   R(la px. la run. la style. la band. la bands. la solid. la join. la compose.
     LET(6)(la GAP.
     LET(WM_LISTS(B))(la L.
@@ -572,13 +636,23 @@ glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la UI. la cfg. la io.
     LET(lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
           settings_app(B)(L)(nodes)(la init. la view. la update. la theme.
             la s. s(init)(view)(update)(theme)("Settings"))))(la settings.
+    LET(lockcfg(la _. la n. la s. n(n))
+               (la lc. lc(la login_app. la sess. la start.
+                  lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
+                    la n. la s. s(la k. k(login_app(B)(L)(nodes)(sess))(start))))))(la lockui.
+    # the lock window: 44 columns by 9 rows of text, at most the screen
+    LET(mul(8)(scale))(la cw.
+    LET((la w. lt(w)(sub(sw)(mul(2)(GAP)))(la _. w)(la _. sub(sw)(mul(2)(GAP)))("!"))(add(mul(44)(cw))(12)))(la lockw.
+    LET((la h. lt(h)(sub(sh0)(mul(2)(GAP)))(la _. h)(la _. sub(sh0)(mul(2)(GAP)))("!"))(add(mul(10)(cw))(16)))(la lockh.
     LET(WM_TILE(B)(L)(R)(T)(SH)(scale)
           (la s. s(gold)(grey)(gold)(bar_u)(termbg)(st_text)(st_bar_f)(st_bar_u))
           (la s. s(lk_light)(lk_dark)(bg_l)(bg_d)))(la tile.
     LET(WM_CORE(B)(L)(X)(TL)(T)(SH)(W)
-          (lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render. la s. s(key)(focusables)(settings)))
+          (lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render. la s. s(key)(focusables)(settings)(lockui)))
           (la s. s(sw)(sh0)(GAP)(cwd0)))(la core.
-    LET(WM_FRAME(B)(L)(R)(TL)(W)(tile)(la s. s(sw)(sh0)(pitch)(GAP)(desk)))(la frame.
+    LET(WM_FRAME(B)(L)(R)(TL)(W)(tile)(la s. s(sw)(sh0)(pitch)(GAP)(desk)(lockw)(lockh)))(la frame.
     LET(WM_LOOP(B)(L)(X)(J)(fold)(core)(frame)(io))(la run.
       core(la empty. la open_win. la handle. la on_output. la job_fds. la shutdown. la welcome.
-        run(welcome(open_win(empty)))))))))))))))))))))))))))))
+        # a WM that starts locked opens its first terminal when it unlocks
+        run(lockcfg(la _. welcome(open_win(empty)))
+                   (la lc. lc(la a. la b. la start. start(la _. empty)(la _. welcome(open_win(empty)))("!"))))))))))))))))))))))))))))))))))

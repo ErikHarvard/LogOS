@@ -20,6 +20,9 @@
 #   11  MOD+s: LogosKit's settings panel in window 4, light, focus on Name
 #   12  typing edits the field; Tab+Space turns on the dark theme, and the
 #       panel holding the switch is redrawn dark (LogosKit drawing itself)
+#   13  MOD+Esc: the screen is locked — only the login panel, centred
+#   14  logging in (the simulator's stand-in session: adam / logos) unlocks,
+#       and the two windows are back as they were
 # and that MOD+Shift+e ends the session cleanly (rc 0, "wm: exit").
 # DETERMINISM: the session is run twice; every frame must be byte-identical.
 #
@@ -31,7 +34,7 @@ set -uo pipefail
 ok=1
 
 wm_setup theourgia_tile.la theourgia_term.la theourgia_render.la logosh.la \
-         theourgia_wm.la theourgia_termfont.la logoskit.la lk_settings.la theourgia_wm_sim.la \
+         theourgia_wm.la theourgia_termfont.la logoskit.la lk_settings.la lk_login.la theourgia_wm_sim.la \
          wm_script.py wm_ocr.py
 W=960; H=600; SCALE=1
 mkdir -p "$T/home/sub"
@@ -65,6 +68,12 @@ type x
 key TAB
 key SPACE
 snap 12
+mod ESC
+snap 13
+type adam
+key TAB
+type logos\n
+snap 14
 mod Shift+E
 EOF
 python3 "$T/wm_script.py" "$T/session.txt" "$T/events.bin" || { echo "FAIL  session: wm_script.py"; exit 1; }
@@ -158,6 +167,19 @@ check("12 the dark theme switch redraws its own panel dark; the field kept the t
       len(app) == 1 and app[0]["theme"] == "dark" and any("Name: [sovereignx" in r for r in app[0]["rows"])
       and any(h.strip() == "[x] Dark theme" for _, h in app[0]["hl"]),
       json.dumps(s)[:1200])
+before = s
+s = shot(13)
+check("13 MOD+Esc: only the login panel, centred, focused on User",
+      len(s) == 1 and s[0].get("kind") == "app" and s[0]["title"].startswith(" Log in")
+      and abs((s[0]["x"] + s[0]["w"] / 2) - W / 2) <= 1 and abs((s[0]["y"] + s[0]["h"] / 2) - H / 2) <= 1
+      and any("Log in to LogOS." in r for r in s[0]["rows"])
+      and any(h.strip().startswith("[") and "User" not in h for _, h in s[0]["hl"])
+      and any("User: [" in r for r in s[0]["rows"]),
+      json.dumps(s)[:1200])
+s = shot(14)
+check("14 logging in unlocks: the two windows are back as they were",
+      len(s) == 2 and [t["title"] for t in sorted(s, key=lambda t: t["x"])] == [t["title"] for t in sorted(before, key=lambda t: t["x"])],
+      json.dumps(s)[:1200])
 sys.exit(bad)
 PYEOF
 
@@ -165,7 +187,7 @@ run_session "$T/run2"
 same=1
 for f in "$T"/run1/wm_shot_*.bin; do cmp -s "$f" "$T/run2/$(basename "$f")" || same=0; done
 n=$(ls "$T"/run1/wm_shot_*.bin 2>/dev/null | wc -l)
-if [ "$vrc" = 0 ] && [ "$same" = 1 ] && [ "$n" = 12 ]; then
+if [ "$vrc" = 0 ] && [ "$same" = 1 ] && [ "$n" = 14 ]; then
     echo "PASS  session: a second run gives byte-identical frames ($n frames)"
 else
     echo "FAIL  session: second run rc=$vrc, identical=$same, frames=$n"; ok=0

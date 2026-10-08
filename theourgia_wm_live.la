@@ -85,7 +85,7 @@ glyph MAIN =
                   (TERM_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq))
                   (@RENDER_KIT@(TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(TF_HEX))(SCALE_FOR(W)))
                   (@SHELL_KIT@)
-                  (la s. s(LK_KIT)(SETTINGS_APP))
+                  (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. n(n)))
                   (la s. s(W)(H)(P)(SCALE_FOR(W))(cwd))
                   (la s. s(la bytes. present(bytes))(WM_CONS(fd)(WM_NIL))("2400")(FALSE)))
               (print(concat("wm: live ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))
