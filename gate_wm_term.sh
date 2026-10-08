@@ -40,7 +40,9 @@
 #   7. the C host runs groups 2, 5 and a small mixed script and must match
 #      the model and the VM byte for byte.
 #   8. performance on the VM (see the end): linear long lines, rows cost
-#      independent of history length, and a loose per-byte bound.
+#      independent of history length (with exactly 500 stored lines, where
+#      rows walks the stored list itself, and with 999) and of how many
+#      stored lines would wrap, and a loose per-byte bound.
 #
 # ISOLATION: a private temporary directory (gate_wm_common.sh); touches no
 # tracked file. About 3 min, most of it the host runs and the toolchain build.
@@ -410,25 +412,38 @@ MIXED = ('REP(64)(concat("total 48 drwxr-xr-x  2 user user 4096 Oct  8 16:36 ")'
          '(concat("-rw-r--r--\\t1 root root 10642 compiler.bin caf")(concat(chr("195"))(concat(chr("169"))'
          '(concat(chr("13"))(concat(NL)'
          '(concat("the quick brown fox jumps over the lazy dog, again and again!!")(NL))))))))))))))')
-timings = ['print(concat("bytes mixed ")(str_len(mixed)))']
-timings += ['TIME("mixed")(la _. write(new("$ "))(mixed))'] * 3
+timings = ['print(concat("bytes mixed ")(str_len(mixed)))', 'print(concat("bytes ctl ")(str_len(ctl)))']
+timings += ['TIME("walk")(la _. WALK(C10000))', 'TIME("nowalk")(la _. NOWALK(C10000))'] * 3
+timings += ['TIME("mixed")(la _. write(new("$ "))(mixed))', 'TIME("ctl")(la _. write(new("$ "))(ctl))'] * 3
 timings += ['TIME("line16k")(la _. write(new("$ "))(l16))', 'TIME("line64k")(la _. write(new("$ "))(l64))'] * 3
-timings += ['TIME("rows40")(la _. rows(t40)(C80)(C40)(TRUE))', 'TIME("rows999")(la _. rows(t999)(C80)(C40)(TRUE))'] * 4
-timings += ['TIME("rows500wrapped")(la _. rows(t200)(C80)(C40)(FALSE))'] * 2
+timings += ['TIME("rows40")(la _. rows(t40)(C80)(C40)(TRUE))', 'TIME("rows500")(la _. rows(t500)(C80)(C40)(TRUE))',
+            'TIME("rows999")(la _. rows(t999)(C80)(C40)(TRUE))'] * 4
+timings += ['TIME("wrap14")(la _. rows(t14w)(C80)(C40)(FALSE))', 'TIME("wrap500")(la _. rows(t500w)(C80)(C40)(FALSE))'] * 3
 body = lets([("mixed", MIXED),
+             ("ctl", 'REP(4096)(concat(chr("9"))(concat(chr("13"))(concat(chr("7"))(chr("1")))))'),
              ("l16", 'REP(16384)("x")'),
              ("l64", 'REP(65536)("x")'),
              ("t40", 'write(new("$ "))(REP(40)(concat(REP(60)("v"))(NL)))'),
+             ("t500", 'write(new("$ "))(REP(500)(concat(REP(60)("v"))(NL)))'),
              ("t999", 'write(new("$ "))(REP(999)(concat(REP(60)("v"))(NL)))'),
-             ("t200", 'write(new("$ "))(REP(500)(concat(REP(200)("w"))(NL)))')], seq(timings))
+             ("t14w", 'write(new("$ "))(REP(14)(concat(REP(200)("w"))(NL)))'),
+             ("t500w", 'write(new("$ "))(REP(500)(concat(REP(200)("w"))(NL)))')], seq(timings))
 REP = ('la n. la s. (la r. r(r)(n))(la r. la n. int_eq(n)(C0)(la _. "")'
        '(la _. (la h. int_eq(mod(n)(C2))(C0)(concat(h)(h))(concat(s)(concat(h)(h))))(r(r)(div(n)(C2))))(C0))')
+# WALK(k): a loop of k turns, each naming str_head, a builtin that is not a
+# parameter here, so each turn walks the whole glyph table once (WM_DESIGN.md
+# rule 1); NOWALK(k): the same loop without it. Their difference is the cost
+# of one walk in this program, the yardstick for the per-byte bounds.
+WALK = ('la k. (la r. r(r)(k))(la r. la k. int_eq(k)(C0)(la _. C0)'
+        '(la _. (la _. r(r)(sub(k)(C1)))(str_head))(C0))')
+NOWALK = ('la k. (la r. r(r)(k))(la r. la k. int_eq(k)(C0)(la _. C0)'
+          '(la _. (la _. r(r)(sub(k)(C1)))(C1))(C0))')
 TIME = ('la label. la f. (la a. (la v. (la b. SEQ(print(concat(label)(concat(" ")(concat(a)(concat(" ")(b))))))(v))'
         '(CPU(C0)))(f(C0)))(CPU(C0))')
-body = lets([("C0", "0"), ("C2", "2"), ("C40", "40"), ("C80", "80"),
+body = lets([("C0", "0"), ("C1", "1"), ("C2", "2"), ("C40", "40"), ("C80", "80"), ("C10000", "10000"),
              ("TRUE", "la t. la f. t"), ("FALSE", "la t. la f. f"), ("SEQ", "la a. la b. b"),
              ("NL", 'chr("10")'), ("ESC", 'chr("27")'), ("CPU", 'la _. clock_gettime("2")'),
-             ("REP", REP), ("TIME", TIME)], body)
+             ("REP", REP), ("WALK", WALK), ("NOWALK", NOWALK), ("TIME", TIME)], body)
 B = "str_at ord str_to_int str_len chr concat str_eq add sub mul div mod lt int_eq print clock_gettime".split()
 kit = ("TERM_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)"
        "(la new. la write. la flush. la key. la back. la kill_line. la submit. la hist_prev. la hist_next."
@@ -491,43 +506,64 @@ for g in t_host t_edit t_keys; do
 done
 
 # Performance, on the VM, in process CPU time. Absolute times on a shared
-# machine vary several-fold, so the checks are RATIOS taken in one run, plus
-# one loose absolute bound:
+# machine vary several-fold, so every check is a RATIO of two times taken in
+# the same run:
+#   - THE YARDSTICK W: the cost of one glyph-table walk in this very program
+#     (a loop naming a builtin that is not a parameter, minus the same loop
+#     without; ~10 us here, and more in a bigger program). Kit-style code
+#     never walks after startup (WM_DESIGN.md rule 1), so: mixed output
+#     (text, tabs, colour CSIs, UTF-8) and a 16 KB printable line must cost
+#     under W/2 a byte (they run at ~0.15 W; one walk per printable byte
+#     makes it more than W), and bytes that are all control bytes (\t \r and
+#     two ignored C0 controls) under W (they run at ~0.5 W);
 #   - a 64 KB line without a newline costs ~4x a 16 KB one (linear; the
 #     64-byte segments keep it from being quadratic, which would be ~16x);
-#   - rows over 999 stored lines costs about what it costs over 40 (it visits
-#     only the lines its n rows need; walking the history would be ~25x);
-#   - mixed output stays under 30 us/byte (it runs at ~2; one glyph-table
-#     walk per byte would cost tens of us).
+#   - rows(80)(40) over 500 and over 999 stored 60-byte lines costs about
+#     what it costs over 40 (it visits only the lines its n rows need;
+#     walking the history would be 12x and more). 500 is the case that
+#     matters: rows trims a list of more than 500 lines to its first n before
+#     walking it, so the 999 case alone would not show a walk;
+#   - 40 wrapped rows (200-byte lines, three rows each) cost about the same
+#     over 500 stored lines as over 14 (only the lines the 40 rows come from
+#     are cut into rows; wrapping the whole history would be ~35x).
 wm_vm t_perf.la "$T/perf.txt"
-perf=$(python3 - "$T/perf.txt" <<'PYEOF'
+python3 - "$T/perf.txt" "$vrc" >"$T/perf.res" <<'PYEOF'
 import sys
 best = {}
-nbytes = None
+nbytes = {}
 for line in open(sys.argv[1]):
     f = line.split()
-    if f[:2] == ["bytes", "mixed"]:
-        nbytes = int(f[2]); continue
+    if len(f) == 3 and f[0] == "bytes":
+        nbytes[f[1]] = int(f[2]); continue
     if len(f) == 5:
         us = ((int(f[3]) - int(f[1])) * 10**9 + int(f[4]) - int(f[2])) / 1000.0
         best[f[0]] = min(best.get(f[0], us), us)
-need = ["mixed", "line16k", "line64k", "rows40", "rows999", "rows500wrapped"]
-if nbytes is None or any(k not in best for k in need):
-    print("bad"); sys.exit()
-per = best["mixed"] / nbytes
+need = ["walk", "nowalk", "mixed", "ctl", "line16k", "line64k", "rows40", "rows500", "rows999", "wrap14", "wrap500"]
+missing = [k for k in need if k not in best] + [k for k in ("mixed", "ctl") if k not in nbytes]
+if sys.argv[2] != "0" or missing:
+    print("FAIL  term (VM perf): the timing program: rc=%s, missing %s" % (sys.argv[2], " ".join(missing) or "-"))
+    sys.exit()
+def check(ok, text):
+    print(("PASS" if ok else "FAIL") + "  term (VM perf): " + text)
+W = (best["walk"] - best["nowalk"]) / 10000
+per = best["mixed"] / nbytes["mixed"]
+p16 = best["line16k"] / 16384
+pc = best["ctl"] / nbytes["ctl"]
 lr = best["line64k"] / best["line16k"]
-rr = best["rows999"] / best["rows40"]
-ok = per < 30 and lr < 8 and rr < 5
-print("%s %.2f %d %.1f %.0f %.2f %.0f %.0f" % ("ok" if ok else "bad", per, nbytes, lr, best["rows40"], rr,
-      best["rows999"], best["rows500wrapped"]))
+check(per < W / 2 and p16 < W / 2 and pc < W and lr < 8,
+      "write: one glyph-table walk W = %.1f us; per byte: mixed output %.2f us (%d bytes), a 16 KB line %.2f,\n"
+      "      control bytes %.2f (bounds W/2, W/2, W); 64K/16K line %.1fx (linear; bound 8)"
+      % (W, per, nbytes["mixed"], p16, pc, lr))
+r500 = best["rows500"] / best["rows40"]
+r999 = best["rows999"] / best["rows40"]
+rw = best["wrap500"] / best["wrap14"]
+check(r500 < 4 and r999 < 4 and rw < 3,
+      "rows 80x40: %.0f us over 40 stored lines, %.0f over 500, %.0f over 999 (ratios %.2f, %.2f; bound 4);\n"
+      "      40 wrapped rows: %.0f us over 14 stored lines, %.0f over 500 (ratio %.2f; bound 3)"
+      % (best["rows40"], best["rows500"], best["rows999"], r500, r999, best["wrap14"], best["wrap500"], rw))
 PYEOF
-)
-set -- $perf
-if [ "$vrc" = 0 ] && [ "${1:-}" = ok ]; then
-    echo "PASS  term (VM perf): write $2 us/byte over $3 bytes of mixed output; 64K/16K line $4x (linear);"
-    echo "      rows 80x40: $5 us over 40 lines, $7 us over 999 (ratio $6); 40 wrapped rows $8 us"
-else
-    echo "FAIL  term (VM perf): rc=$vrc result: ${perf:-none} (us/byte, bytes, line ratio, rows40 us, rows ratio, ...)"; ok=0
-fi
+cat "$T/perf.res"
+grep -q '^PASS' "$T/perf.res" || { echo "FAIL  term (VM perf): no result"; ok=0; }
+! grep -q '^FAIL' "$T/perf.res" || ok=0
 
 [ "$ok" = 1 ] || exit 1
