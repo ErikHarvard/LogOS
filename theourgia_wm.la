@@ -20,9 +20,13 @@
 #    MOD+t            the focused window's split: side by side <-> stacked
 #    MOD+- / MOD+=    shrink / grow the focused window by 5%
 #    MOD+Tab          focus the next window   MOD+c  interrupt its command
+#    MOD+s            open the settings panel (a LogosKit app, logoskit.la)
 #    MOD+Shift+e      exit
-#  Anything else types into the focused terminal: Enter runs the line,
+#  Anything else types into the focused window. In a terminal, Enter runs the line,
 #  Backspace, Up/Down walk the history, Ctrl+U kills the line, Ctrl+L clears.
+#  In an app window, LogosKit takes the key: Tab / Shift+Tab move the focus, and
+#  Enter, Space, Up/Down, Backspace and typed characters become the app's
+#  messages (logoskit.la).
 #  While a window's command runs, its keys are ignored except MOD+c and Ctrl+C
 #  (both interrupt it). Under a live VT, Ctrl+C never gets here: the VT turns it
 #  into SIGINT for the whole session, which is the emergency exit.
@@ -45,7 +49,10 @@
 #
 #  ── STATE ───────────────────────────────────────────────────────────
 #  st  = la k. k(tree)(focus)(wins)(nextid)(mask)(quit)(dirty)
-#  win = la k. k(id)(term)(sh)(job)(bcache)(tkey)(trows)(ver)
+#  win = la k. k(id)(term)(sh)(job)(bcache)(tkey)(trows)(ver)(app)
+#  app = la n. la s. n(n)  (a terminal)   |   la n. la s. s(a), a LogosKit app:
+#        a = la k. k(lkapp)(state)(focus), lkapp = la s. s(init)(view)(update)
+#        (theme)(title) (an app window's term and sh are unused)
 #  job = la n. la j. n(n)  (no command)   |   la n. la j. j(pid)(rfd)(cmd)
 #  mask: held modifiers, bit 1 LSHIFT, 2 RSHIFT, 4 LCTRL, 8 RCTRL, 16 LALT,
 #  32 RALT, 64 LMETA, 128 RMETA. ver counts a window's changes; tkey/trows cache
@@ -125,7 +132,7 @@ glyph WM_WINS = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. l
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
     (la C0. la C1. la nojob.
       LET(la id. la term. la sh. la k. k(id)(term)(sh)(nojob)(nil)("")(nil)(C0)(la n. la s. n(n)))(la mkwin.
-      LET(la id. la term. la sh. la app. la k. k(id)(term)(sh)(nojob)(nil)("")(nil)(C0)(la n. la s. s(app)))(la mkapp.
+      LET(la id. la app. la k. k(id)("")("")(nojob)(nil)("")(nil)(C0)(la n. la s. s(app)))(la mkapp.
       LET(la w. w(la id. la a. la b. la c. la d. la e. la f. la g. la h. id))(la win_id.
       LET(la wins. la id. find(la w. int_eq(win_id(w))(id))(wins))(la find_win.
       LET(la wins. la w. (la id. map(la v. int_eq(win_id(v))(id)(la _. w)(la _. v)(C0))(wins))(win_id(w)))(la put_win.
@@ -137,19 +144,21 @@ glyph WM_WINS = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. l
 
 
 # ── Tile rendering ───────────────────────────────────────────────────────
-# WM_TILE(B)(L)(R)(T)(SH)(scale)(pal) -> tile(focused)(w)(tw)(th)
+# WM_TILE(B)(L)(R)(T)(SH)(scale)(pal)(ui) -> tile(focused)(w)(tw)(th)
 #   -> la k. k(rows)(w'): the tile's th scanlines of 4*tw bytes, and the window
 #   with its caches updated. R, T, SH are the render, terminal and shell
 #   records. pal = la s. s(border_f)(border_u)(bar_f)(bar_u)(termbg)(st_text)
 #   (st_bar_f)(st_bar_u): four border/bar pixels, the terminal background, and
-#   the three text styles.
+#   the three text styles. ui = la s. s(lk_light)(lk_dark)(bg_light)(bg_dark):
+#   two LogosKit kits (LK_KIT records) and their background pixels; an app
+#   window is drawn with the one its own state's theme picks.
 # A tile, top to bottom: BW border rows; the title bar (2 rows, one text row of
-# 8*scale, 2 rows); PAD rows; the terminal's text rows; filler; PAD rows; BW
+# 8*scale, 2 rows); PAD rows; the terminal's (or the app's) text rows; filler; PAD rows; BW
 # border rows. Every scanline is border | PAD | text | filler | border. A tile
 # too small for one row of text is drawn as a plain block of its border colour.
 # The finished rows are cached in the window under a key made of the size, the
 # focus and the window's version, so an unchanged window costs nothing.
-glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal.
+glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
   B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
@@ -158,6 +167,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal.
     la t_prev. la t_next. la t_clear. la t_prompt. la t_rows. la t_keychar.
   SH(la sh_new. la sh_prompt. la sh_run. la sh_finish. la sh_int. la sh_hup.
   pal(la border_f. la border_u. la bar_f. la bar_u. la termbg. la st_text. la st_bar_f. la st_bar_u.
+  ui(la lk_light. la lk_dark. la bg_light. la bg_dark.
   (la C0. la C1. la C2. la C4. la C8. la BW. la PAD. la TRUE. la FALSE.
     LET(mul(C8)(scale))(la cw.
     # each(left)(right)(band): the band's scanlines, each framed left ++ s ++ right
@@ -171,9 +181,15 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal.
             la s. s(iw)(div(iw)(cw))(div(sub(iw)(mul(C2)(PAD)))(cw))(div(avail)(cw))(mod(avail)(cw)))
           (sub(sub(sub(th)(mul(C2)(BW)))(add(cw)(C4)))(mul(C2)(PAD))))
         (sub(tw)(mul(C2)(BW))))(la geom.
+    # fit(n)(rows): exactly n rows of an app's paint, cut or padded with empty rows
+    LET(Z(la fit. la n. la rows. lt(C0)(n)
+        (la _. rows(la _. cons(nil)(fit(sub(n)(C1))(nil)))(la r. la rest. cons(r)(fit(sub(n)(C1))(rest))))
+        (la _. nil)(C0)))(la fit.
     LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
-        job(la _. concat(" ")(concat(int_to_str(id))(concat("  ")(sh_prompt(sh)))))
-           (la pid. la rfd. la cmd. concat(" ")(concat(int_to_str(id))(concat("  [running] ")(cmd))))))(la title.
+        app(la _. job(la _. concat(" ")(concat(int_to_str(id))(concat("  ")(sh_prompt(sh)))))
+                     (la pid. la rfd. la cmd. concat(" ")(concat(int_to_str(id))(concat("  [running] ")(cmd)))))
+           (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
+               concat(" ")(concat(int_to_str(id))(concat("  ")(atitle))))))))(la title.
     LET(la w. la focused. la tw. la th. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         concat(int_to_str(tw))(concat("x")(concat(int_to_str(th))
           (concat(focused(la _. "f")(la _. "u")(C0))(int_to_str(ver)))))))(la tkey.
@@ -184,8 +200,8 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal.
         (la bcol. la barc. la bst.
           lt(nrows)(C1)(la _. la k. k(solid(tw)(th)(bcol))(w))(la _.
           lt(ccols)(C1)(la _. la k. k(solid(tw)(th)(bcol))(w))(la _.
-            (la texts.
-              bands(st_text)(bc)(texts)(ccols)(la blist. la bc2.
+            # body(k): k(the text area's scanlines)(the band cache to keep)(its background)
+            (la body. body(la blist. la bc2. la bgc.
                 (la brow. la barrow. la padrow. la tl. la tr2. la cl. la cr.
                   (la rows. la k. k(rows)(la k2. k2(id)(term)(sh)(job)(bc2)(k0)(rows)(ver)(app)))
                   (append(nrep(BW)(brow))
@@ -199,29 +215,37 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal.
                          (nrep(BW)(brow)))))))))))
                 (run(tw)(bcol))
                 (concat(run(BW)(bcol))(concat(run(iw)(barc))(run(BW)(bcol))))
-                (concat(run(BW)(bcol))(concat(run(iw)(termbg))(run(BW)(bcol))))
+                (concat(run(BW)(bcol))(concat(run(iw)(bgc))(run(BW)(bcol))))
                 (run(BW)(bcol))
                 (concat(run(sub(iw)(mul(tcols)(cw)))(barc))(run(BW)(bcol)))
-                (concat(run(BW)(bcol))(run(PAD)(termbg)))
-                (concat(run(sub(sub(iw)(PAD))(mul(ccols)(cw)))(termbg))(run(BW)(bcol)))))
-            (t_rows(term)(ccols)(nrows)(job(la _. TRUE)(la p. la r. la c. FALSE))))(C0))(C0))
+                (concat(run(BW)(bcol))(run(PAD)(bgc)))
+                (concat(run(sub(sub(iw)(PAD))(mul(ccols)(cw)))(bgc))(run(BW)(bcol)))))
+            (la k. app
+              (la _. bands(st_text)(bc)(t_rows(term)(ccols)(nrows)(job(la _. TRUE)(la p. la r. la c. FALSE)))(ccols)
+                       (la blist. la bc2. k(blist)(bc2)(termbg)))
+              (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
+                  theme(ast)(lk_dark)(lk_light)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
+                    k(render(fit(nrows)(paint(view(ast))(afocus)))(ccols))(bc)(theme(ast)(bg_dark)(bg_light))))))))(C0))(C0))
         (focused(la _. border_f)(la _. border_u)(C0))
         (focused(la _. bar_f)(la _. bar_u)(C0))
         (focused(la _. st_bar_f)(la _. st_bar_u)(C0)))))(la draw.
       la focused. la w. la tw. la th.
         (la k0. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
             str_eq(k0)(tk)(la _. la k. k(tr)(w))(la _. draw(focused)(w)(tw)(th)(k0))(C0)))
-        (tkey(w)(focused)(tw)(th))))))))))
-  (0)(1)(2)(4)(8)(2)(4)(la t. la f. t)(la t. la f. f)))))))
+        (tkey(w)(focused)(tw)(th)))))))))))
+  (0)(1)(2)(4)(8)(2)(4)(la t. la f. t)(la t. la f. f))))))))
 
 # ── The core: state, key events, jobs ─────────────────────────────────────
-# WM_CORE(B)(L)(X)(TL)(T)(SH)(W)(cfg)
+# WM_CORE(B)(L)(X)(TL)(T)(SH)(W)(ui)(cfg)
 #   -> la s. s(empty)(open_win)(handle)(on_output)(job_fds)(shutdown)(welcome)
 # cfg = la s. s(sw)(sh)(gap)(cwd0): the screen size in pixels, the gap between
 # tiles (and around them), and the directory new shells start in.
+# ui = la s. s(lk_key)(lk_focusables)(settings): LogosKit's key and focusables
+# (from an LK_KIT record) and the settings app MOD+s opens (la s. s(init)(view)
+# (update)(theme)(title)).
 # handle(snap)(st)(type)(code)(value) folds one input event; snap(st)(n) is
 # called for a type-85 record (the headless WM's "write frame n").
-glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
+glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
   B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
@@ -232,6 +256,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
     la t_prev. la t_next. la t_clear. la t_prompt. la t_rows. la t_keychar.
   SH(la sh_new. la sh_prompt. la sh_run. la sh_finish. la sh_int. la sh_hup.
   W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
+  ui(la lk_key. la lk_focusables. la settings.
   cfg(la sw. la sh0. la gap. la cwd0.
   (la C0. la C1. la C2. la C3. la C12. la C50. la C85. la C240. la C255. la TRUE. la FALSE.
     LET(la a. la b. b)(la seq.
@@ -240,7 +265,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
     LET(sub(C0)(C50))(la NEG50.
     # key codes
     LET(28)(la K_ENTER. LET(14)(la K_BS. LET(15)(la K_TAB. LET(16)(la K_Q. LET(18)(la K_E.
-    LET(20)(la K_T. LET(22)(la K_U. LET(46)(la K_C. LET(35)(la K_H. LET(36)(la K_J.
+    LET(20)(la K_T. LET(22)(la K_U. LET(46)(la K_C. LET(35)(la K_H. LET(36)(la K_J. LET(31)(la K_S.
     LET(37)(la K_K. LET(38)(la K_L. LET(12)(la K_MINUS. LET(13)(la K_EQUAL.
     LET(103)(la K_UP. LET(108)(la K_DOWN. LET(105)(la K_LEFT. LET(106)(la K_RIGHT.
     LET(42)(la K_LSH. LET(54)(la K_RSH. LET(29)(la K_LCT. LET(97)(la K_RCT.
@@ -271,6 +296,14 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
             (print(concat("wm: open window ")(int_to_str(nid)))))
           (t_new(sh_prompt(sh))))
         (sh_new(cwd0))))(la open_win.
+    # open_app(st)(lkapp): a new window holding a LogosKit app, its focus on the
+    # app's first focusable element
+    LET(la st. la lkapp. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
+        lkapp(la init. la view. la update. la theme. la atitle.
+          (la _. mkst(tl_insert(tree)(focus)(nid)(auto_dir(tree)(focus)))(nid)
+                     (cons(mkapp(nid)(la k. k(lkapp)(init)(lk_focusables(view(init))(la _. "")(la h. la t. h))))(wins))
+                     (add(nid)(C1))(mask)(quit)(TRUE))
+          (print(concat("wm: open window ")(concat(int_to_str(nid))(concat(" (")(concat(atitle)(")")))))))))(la open_app.
     LET(la st. la id. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty.
         find_win(wins)(id)(la _. st)(la w. w(la wid. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
           (la _. (la _.
@@ -299,6 +332,16 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
                 (la pid. la rfd. put(st)(la k. k(id)(term3)(sh2)(la n. la j. j(pid)(rfd)(line))(bc)(tk)(tr)(ver)(app))))
             (t_write(term2)(out))))
           (print(concat("wm: [")(concat(int_to_str(id))(concat("] $ ")(line))))))))(la submit.
+    # app_key(st)(w)(code)(shift): a key for an app window. LogosKit turns it into
+    # a focus move and/or a message; the app's update folds the message into
+    # its state, and the window (its version bumped) is redrawn from the new state.
+    LET(la st. la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
+        app(la _. st)(la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
+          lk_key(view(ast))(afocus)(code)(shift)(t_keychar(code)(shift))(la focus2. la msgopt.
+            msgopt
+              (la _. str_eq(focus2)(afocus)(la _. st)
+                       (la _. put(st)(la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(la n. la s. s(la k2. k2(lkapp)(ast)(focus2)))))(C0))
+              (la m. put(st)(la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(la n. la s. s(la k2. k2(lkapp)(update(ast)(m))(focus2)))))))))))(la app_key.
     LET(la st. la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         int_eq(code)(K_ENTER)(la _. submit(st)(w))(la _.
         int_eq(code)(K_BS)(la _. set_term(st)(w)(t_back(term)))(la _.
@@ -308,12 +351,13 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
           (t_keychar(code)(shift)))(C0))(C0))(C0))(C0)))(la edit.
     LET(la st. la code. la shift. la ctrl. with_focus(st)(la w.
         w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
-          job(la _.
+          app(la _. job(la _.
                 ctrl(la _. int_eq(code)(K_L)(la _. set_term(st)(w)(t_clear(term)))(la _.
                            int_eq(code)(K_U)(la _. set_term(st)(w)(t_kill(term)))(la _. st)(C0))(C0))
                     (la _. edit(st)(w)(code)(shift))(C0))
              (la pid. la rfd. la cmd.
-                ctrl(la _. int_eq(code)(K_C)(la _. seq(sh_int(pid))(st))(la _. st)(C0))(la _. st)(C0)))))(la typing.
+                ctrl(la _. int_eq(code)(K_C)(la _. seq(sh_int(pid))(st))(la _. st)(C0))(la _. st)(C0)))
+             (la a. app_key(st)(w)(code)(shift)))))(la typing.
     # dirkey(code)(not_a_direction)(direction d): Left/h 0, Right/l 1, Up/k 2, Down/j 3
     LET(la code. la nd. la yd.
         int_eq(code)(K_LEFT)(la _. yd(C0))(la _. int_eq(code)(K_H)(la _. yd(C0))(la _.
@@ -331,8 +375,9 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
             int_eq(code)(K_EQUAL)(la _. settree(st)(tl_resize(tree)(focus)(C50)))(la _.
             int_eq(code)(K_TAB)(la _. setfocus(st)(tl_next(tree)(focus)))(la _.
             int_eq(code)(K_C)(la _. interrupt(st))(la _.
+            int_eq(code)(K_S)(la _. open_app(st)(settings))(la _.
             int_eq(code)(K_E)(la _. shift(la _. mkst(tree)(focus)(wins)(nid)(mask)(TRUE)(dirty))(la _. st)(C0))
-              (la _. st)(C0))(C0))(C0))(C0))(C0))(C0))
+              (la _. st)(C0))(C0))(C0))(C0))(C0))(C0))(C0))
           (la d. (la n. shift
                      (la _. int_eq(n)(focus)(la _. st)(la _. settree(st)(tl_swap(tree)(focus)(n)))(C0))
                      (la _. setfocus(st)(n))(C0))
@@ -399,11 +444,11 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la cfg.
           "  MOD+arrows move the focus    MOD+Shift+arrows  swap windows\n")(concat(
           "  MOD+t      split direction   MOD+- MOD+=  shrink / grow\n")(concat(
           "  MOD+Tab    next window       MOD+c        interrupt the command\n")(concat(
-          "  MOD+Shift+e  exit            (MOD is Super or Alt)\n")(
+          "  MOD+s      settings panel    MOD+Shift+e  exit  (MOD: Super/Alt)\n")(
           "Type help for the shell's commands.\n")))))))))))(la welcome.
       la s. s(empty)(open_win)(handle)(on_output)(job_fds)(shutdown)(welcome)
-    )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
-  (0)(1)(2)(3)(12)(50)(85)(240)(255)(la t. la f. t)(la t. la f. f)))))))))
+    ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  (0)(1)(2)(3)(12)(50)(85)(240)(255)(la t. la f. t)(la t. la f. f))))))))))
 
 # ── The frame: layout, tiles, compose ─────────────────────────────────────
 # WM_FRAME(B)(L)(R)(TL)(W)(tile)(cfg) -> frame(st) -> la k. k(bytes)(st')
@@ -494,12 +539,15 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
   (0)(la t. la f. t)(la t. la f. f)))))))
 
 # ── Wiring ────────────────────────────────────────────────────────────────
-# WM_BUILD(B)(X)(TL)(T)(R)(SH)(cfg)(io): build every part once, open the first
-# window with the welcome text, and run the loop until the WM exits. TL, T, R,
-# SH are the records of TILE_KIT, TERM_KIT, RENDER_KIT and SHELL_KIT.
+# WM_BUILD(B)(X)(TL)(T)(R)(SH)(UI)(cfg)(io): build every part once, open the
+# first window with the welcome text, and run the loop until the WM exits. TL,
+# T, R, SH are the records of TILE_KIT, TERM_KIT, RENDER_KIT and SHELL_KIT; UI =
+# la s. s(LK_KIT)(SETTINGS_APP), the LogosKit constructor and the settings app
+# (logoskit.la, lk_settings.la), built here in a light and a dark palette.
 # cfg = la s. s(sw)(sh)(pitch)(scale)(cwd0); io as for WM_LOOP.
-glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la cfg. la io.
+glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la UI. la cfg. la io.
   cfg(la sw. la sh0. la pitch. la scale. la cwd0.
+  UI(la lk_kit. la settings_app.
   R(la px. la run. la style. la band. la bands. la solid. la join. la compose.
     LET(6)(la GAP.
     LET(WM_LISTS(B))(la L.
@@ -514,10 +562,23 @@ glyph WM_BUILD = la B. la X. la TL. la T. la R. la SH. la cfg. la io.
     LET(style(px(214)(214)(200))(termbg))(la st_text.
     LET(style(px(24)(18)(8))(gold))(la st_bar_f.
     LET(style(px(170)(170)(186))(bar_u))(la st_bar_u.
+    # LogosKit's two palettes: normal, focused, title, dim
+    LET(px(236)(232)(220))(la bg_l.
+    LET(px(18)(18)(28))(la bg_d.
+    LET(lk_kit(B)(L)(R)(scale)(la s. s(style(px(30)(30)(40))(bg_l))(style(px(250)(250)(250))(px(52)(90)(160)))
+                                     (style(px(120)(70)(10))(bg_l))(style(px(110)(110)(120))(bg_l))))(la lk_light.
+    LET(lk_kit(B)(L)(R)(scale)(la s. s(style(px(214)(214)(200))(bg_d))(style(px(24)(18)(8))(gold))
+                                     (style(gold)(bg_d))(style(px(130)(130)(150))(bg_d))))(la lk_dark.
+    LET(lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
+          settings_app(B)(L)(nodes)(la init. la view. la update. la theme.
+            la s. s(init)(view)(update)(theme)("Settings"))))(la settings.
     LET(WM_TILE(B)(L)(R)(T)(SH)(scale)
-          (la s. s(gold)(grey)(gold)(bar_u)(termbg)(st_text)(st_bar_f)(st_bar_u)))(la tile.
-    LET(WM_CORE(B)(L)(X)(TL)(T)(SH)(W)(la s. s(sw)(sh0)(GAP)(cwd0)))(la core.
+          (la s. s(gold)(grey)(gold)(bar_u)(termbg)(st_text)(st_bar_f)(st_bar_u))
+          (la s. s(lk_light)(lk_dark)(bg_l)(bg_d)))(la tile.
+    LET(WM_CORE(B)(L)(X)(TL)(T)(SH)(W)
+          (lk_light(la nodes. la measure. la paint. la a11y. la focusables. la key. la render. la s. s(key)(focusables)(settings)))
+          (la s. s(sw)(sh0)(GAP)(cwd0)))(la core.
     LET(WM_FRAME(B)(L)(R)(TL)(W)(tile)(la s. s(sw)(sh0)(pitch)(GAP)(desk)))(la frame.
     LET(WM_LOOP(B)(L)(X)(J)(fold)(core)(frame)(io))(la run.
       core(la empty. la open_win. la handle. la on_output. la job_fds. la shutdown. la welcome.
-        run(welcome(open_win(empty)))))))))))))))))))))))
+        run(welcome(open_win(empty)))))))))))))))))))))))))))))
