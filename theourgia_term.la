@@ -1,0 +1,428 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_term.la — the terminal model of Theourgia Stage 10: output
+#  bytes to lines, the line editor and its history, soft wrap, the keymap.
+#
+#  WHAT. A terminal is a value (a record, below). TERM_KIT builds the
+#  operations on it (WM_DESIGN.md, "theourgia_term.la"):
+#
+#    new(prompt)                an empty terminal
+#    write(t)(bytes)            feed program output (rules below)
+#    flush(t)                   end the partial line if it is non-empty
+#    key(t)(ch)                 append ch to the input line
+#    back(t)                    drop the input line's last character
+#    kill_line(t)               empty the input line
+#    submit(t)                  la k. k(line)(t'): see below
+#    hist_prev(t), hist_next(t) walk history into the input line
+#    clear(t)                   drop all output
+#    set_prompt(t)(p)           change the prompt
+#    rows(t)(cols)(n)(idle)     the last n display rows, soft-wrapped
+#    keychar(code)(shift)       evdev key code -> US-layout character
+#
+#  WHY. The window manager draws each window from rows(...) every frame and
+#  feeds write(...) every byte a running command prints, so these two are the
+#  hot paths; the rest run once per key press.
+#
+#  HOW IT IS USED. Build the kit ONCE at startup and destructure it once:
+#
+#    TERM_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(concat)(str_eq)
+#            (add)(sub)(mul)(div)(mod)(lt)(int_eq)
+#      (la new. la write. la flush. la key. la back. la kill_line. la submit.
+#       la hist_prev. la hist_next. la clear. la set_prompt. la rows. la keychar.
+#         ...)
+#
+#  The record's fields come IN THAT ORDER: new write flush key back kill_line
+#  submit hist_prev hist_next clear set_prompt rows keychar. Booleans are
+#  Church (TRUE = la t. la f. t): rows' idle and keychar's shift take one.
+#  Lists are Scott (NIL = la n. la c. n(n), CONS(h)(t) = la n. la c. c(h)(t)):
+#  rows returns one.
+#
+#  OUTPUT (write). Bytes are taken one at a time:
+#    32..126          appended to the partial line
+#    10 (\n)          ends the partial line (it becomes a completed line)
+#    13 (\r)          ignored
+#    9 (\t)           spaces up to the next multiple of 8 (always at least one)
+#    8 (\b)           drops the partial line's last character, if any
+#    27 [ ... F       CSI: skipped up to and including the final byte F,
+#                     0x40..0x7E
+#    27 X             any other escape: ESC and the one byte X skipped
+#    >= 0xC0          a UTF-8 lead byte: shown as one '?'
+#    0x80..0xBF       UTF-8 continuation bytes: dropped
+#    other controls and 127: ignored
+#  The escape state survives between calls, so a chunk may end in the middle
+#  of a sequence (a lone ESC, or a CSI cut in two).
+#
+#  SUBMIT. submit(t) first ends a non-empty partial output line (so the echo
+#  starts a line of its own), then appends prompt + input as an output line,
+#  empties the input, records the input in history (an empty input is not
+#  recorded) and stops any history walk. It returns la k. k(input)(t').
+#
+#  HISTORY. hist_prev replaces the input with the next older entry (no change
+#  at the oldest); hist_next with the next newer one, and stepping past the
+#  newest restores the line that was being typed when the walk began (no
+#  change when not walking). Editing a recalled line edits the input only; the
+#  history entry is not changed.
+#
+#  CLEAR drops the completed lines and the partial line; input, prompt,
+#  history and the escape state are kept.
+#
+#  ROWS. The logical lines are the completed lines (oldest first) and then a
+#  last line: prompt + input + the cursor chr(127) when idle is TRUE, the
+#  partial output line otherwise (even when it is empty). A line of length
+#  L > 0 takes ceil(L/cols) rows, cut every cols bytes; an empty line takes
+#  one row. rows returns the last n rows, top to bottom, exactly n strings,
+#  with "" rows at the top when there are fewer. Only the lines those n rows
+#  come from are visited, so the cost is O(n) rows, not O(history). cols < 1
+#  is taken as 1; n < 1 gives NIL.
+#
+#  KEYCHAR. The US layout: KEY_1..KEY_0, MINUS, EQUAL, Q..P, LEFTBRACE,
+#  RIGHTBRACE, A..L, SEMICOLON, APOSTROPHE, GRAVE, BACKSLASH, Z..M, COMMA, DOT,
+#  SLASH and SPACE type their character, shift giving the shifted symbol or
+#  the capital. Every other code — ESC, BACKSPACE, TAB, ENTER, the modifiers,
+#  arrows, keypad, function keys — gives "". The KEY_* glyphs exported below
+#  are the codes the window manager binds; they are plain constants, read once
+#  at startup.
+#
+#  RECORD. A terminal is la k. k(R)(E)(I)(Pr)(H)(J)(V), and R, the output,
+#  is la k. k(L)(N)(S)(C)(K):
+#    L  completed lines, newest first        N  how many are stored
+#    S  the partial line's full 64-byte segments, newest first
+#    C  the partial line's tail (fewer than 64 bytes)
+#    K  the partial line's length (= 64·|S| + |C|)
+#    E  escape state: 0 none, 1 after ESC, 2 inside CSI
+#    I  input line   Pr  prompt   H  history, newest first
+#    J  history walk: 0 not walking, j >= 1 showing entry j-1 of H
+#    V  the line saved when the walk began
+#  Callers treat it as opaque. At most 500 completed lines are kept. To keep
+#  the cap O(1) per line, the list is trimmed to the newest 500 only when it
+#  reaches 1000; rows never looks past the newest 500, so the observable
+#  history is exactly the last 500 lines. The partial line is kept in 64-byte
+#  segments so a long line without a newline costs O(n log n), not O(n^2).
+#
+#  PERFORMANCE. Kit style throughout (WM_DESIGN.md): the builtins are kit
+#  parameters, the constants are computed once when the kit is built, every
+#  helper is let-bound inside the kit, loops recurse by self-application
+#  (g(g)) rather than Z, and booleans are applied directly to thunks. Nothing
+#  names a glyph or a builtin after startup (checked with the gdb trap). The
+#  costs that remain were measured on the VM and shaped the code:
+#    - a VM operation costs ~25 ns, so the per-byte loop for printable runs
+#      (RUNP) is a two-parameter loop doing the least work per byte: one
+#      bounds-and-class test (a 256-entry class string) and one append;
+#    - CLOSE rescans a lambda's body (~2-3 ns a byte) once per curried
+#      parameter, so write's per-byte steps take (o)(i)(R) only, with the
+#      per-call values (the bytes, their length, the exit) applied once per
+#      write call, and control bytes are pure R -> R' steps chosen as VALUES
+#      (no thunks); a run that ends at '\n' ends the line directly;
+#    - a name lookup walks the environment newest binding first (~2.4 ns a
+#      cell), so each group of hot code is preceded by a block re-binding
+#      the names it uses, least used first.
+#  On the VM: mixed output (text, tabs, colour CSIs, UTF-8) ~1.6-1.9 us a
+#  byte, printable runs ~1.4, a bare control byte ~5; rows(80)(40) over 500
+#  stored short lines ~0.1 ms, 40 wrapped rows ~2 ms (slicing a row costs per
+#  byte: there is no substring builtin). gate_wm_term.sh measures these.
+#
+#  OUT OF SCOPE, honestly: cursor movement and the rest of VT100 (CSI is
+#  skipped, not obeyed), colour, a cursor inside the input line (editing is at
+#  its end only), Caps Lock and non-US layouts, wide characters (a UTF-8
+#  character is one '?'), and history size limits (history grows by one entry
+#  per non-empty submitted line).
+#
+#  Pure Lingua Adamica: the same results on the C host and the native VM.
+# ═══════════════════════════════════════════════════════════════════
+
+export TERM_KIT KEY_ESC KEY_BACKSPACE KEY_TAB KEY_ENTER KEY_UP KEY_DOWN KEY_LEFT KEY_RIGHT KEY_LEFTSHIFT KEY_RIGHTSHIFT KEY_LEFTCTRL KEY_RIGHTCTRL KEY_LEFTALT KEY_RIGHTALT KEY_LEFTMETA KEY_RIGHTMETA KEY_Q KEY_T KEY_C KEY_E KEY_H KEY_J KEY_K KEY_L KEY_MINUS KEY_EQUAL
+
+# ── Key codes (linux/input-event-codes.h) ──
+glyph KEY_ESC        = 1
+glyph KEY_MINUS      = 12
+glyph KEY_EQUAL      = 13
+glyph KEY_BACKSPACE  = 14
+glyph KEY_TAB        = 15
+glyph KEY_Q          = 16
+glyph KEY_E          = 18
+glyph KEY_T          = 20
+glyph KEY_ENTER      = 28
+glyph KEY_LEFTCTRL   = 29
+glyph KEY_H          = 35
+glyph KEY_J          = 36
+glyph KEY_K          = 37
+glyph KEY_L          = 38
+glyph KEY_LEFTSHIFT  = 42
+glyph KEY_C          = 46
+glyph KEY_RIGHTSHIFT = 54
+glyph KEY_LEFTALT    = 56
+glyph KEY_RIGHTCTRL  = 97
+glyph KEY_RIGHTALT   = 100
+glyph KEY_UP         = 103
+glyph KEY_LEFT       = 105
+glyph KEY_RIGHT      = 106
+glyph KEY_DOWN       = 108
+glyph KEY_LEFTMETA   = 125
+glyph KEY_RIGHTMETA  = 126
+
+# ── The kit ──
+# LET(v)(la name. rest) binds name to v for rest; it is itself bound once, as
+# the kit's first act, so not even LET is looked up in the glyph table.
+glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq.
+ (la LET.
+  # constants, computed once
+  LET(0)(la K0. LET(1)(la K1. LET(2)(la K2. LET(3)(la K3. LET(4)(la K4. LET(5)(la K5.
+  LET(6)(la K6. LET(7)(la K7. LET(8)(la K8. LET(9)(la K9. LET(10)(la K10. LET(27)(la K27.
+  LET(63)(la K63. LET(64)(la K64. LET(91)(la K91. LET(127)(la K127. LET(192)(la K192.
+  LET(500)(la CAP. LET(1000)(la CAP2.
+  LET(K0)(la D.
+  LET(la t. la f. f)(la FF.
+  # The per-byte code's builtins get one-letter names (short bodies to rescan).
+  # A name is found by walking the environment newest binding first, so each
+  # group of hot code below is preceded by a block that RE-BINDS the names it
+  # uses, least used first: every lookup then ends within a few cells. The
+  # blocks run once, when the kit is built.
+  LET(str_at)(la A. LET(str_eq)(la W.
+  # CLS: byte b's class, 'p' for printable (32..126), 'n' for the rest
+  LET("nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnpppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn")(la CLS.
+  LET(la b. W(A(CLS)(b))("p"))(la isp.
+  LET(K127)(la K127. LET(K4)(la K4. LET(K3)(la K3. LET(K64)(la K64. LET(K2)(la K2. LET(K0)(la K0. LET(D)(la D.
+  LET(FF)(la FF. LET(K1)(la K1. LET(lt)(la T. LET(concat)(la P. LET(add)(la U.
+  LET(ord)(la O. LET(str_to_int)(la Y. LET(A)(la A. LET(int_eq)(la Q.
+
+  # RUNP(s)(X)(m) is a loop g; g(g)(i)(c) appends the printable bytes of s
+  # from i on to c, stopping at the first other byte or at index m, and then
+  # calls X(j)(c') with the index it stopped at. (At i = m the byte read is
+  # ignored; str_at past the end is "", whose ord is "0".) RUNP(s) is applied
+  # once per write call.
+  LET(la s. la X. la m. la g. la i. la c.
+      (la h. Q(i)(m)(FF)(isp(Y(O(h))))(la _. g(g)(U(i)(K1))(P(c)(h)))(la _. X(i)(c))(D))(A(s)(i)))(la RUNP.
+
+  # CSIL(k)(s)(n) is a loop g; g(g)(i) skips CSI bytes of s from i on. At the
+  # final byte (0x40..0x7E) it calls k(index after it)(0); at the end of s,
+  # k(n)(2), the CSI still open.
+  LET(la k. la s. la n. la g. la i.
+      Q(i)(n)(la _. k(i)(K2))
+        (la _. (la b. T(b)(K64)(la _. g(g)(U(i)(K1)))
+                        (la _. T(b)(K127)(la _. k(U(i)(K1))(K0))(la _. g(g)(U(i)(K1)))(D))
+                        (D))
+               (Y(O(A(s)(i)))))
+        (D))(la CSIL.
+
+  # ── lists and strings ──
+  LET(la n. la c. n(n))(la NIL.
+  LET(la h. la t. la n. la c. c(h)(t))(la CONS.
+  LET(la s. Y(str_len(s)))(la LEN.
+  # SLICE(s)(lo)(hi): bytes lo..hi-1 of s ("" if hi <= lo). Up to 64 bytes
+  # are copied by a loop, four a step while it can; longer ranges are halved
+  # first, so the cost stays O(n log n).
+  LET(la s. la lo. la hi.
+      (la sp. sp(sp)(lo)(hi))
+      (la sp. la a. la b.
+         T(U(a)(K64))(b)
+           (la _. (la m. P(sp(sp)(a)(m))(sp(sp)(m)(b)))(div(U(a)(b))(K2)))
+           (la _. (la g. g(g)(a)(""))
+                  (la g. la i. la c.
+                     T(U(i)(K3))(b)
+                       (la _. g(g)(U(i)(K4))
+                                (P(c)(P(P(A(s)(i))(A(s)(U(i)(K1))))(P(A(s)(U(i)(K2)))(A(s)(U(i)(K3)))))))
+                       (la _. T(i)(b)(la _. g(g)(U(i)(K1))(P(c)(A(s)(i))))(la _. c)(D))
+                       (D)))
+           (D)))(la SLICE.
+  LET(la l. (la r. r(r)(l)(NIL))
+            (la r. la l. la acc. l(la _. acc)(la h. la t. r(r)(t)(CONS(h)(acc)))))(la REV.
+  # JOIN(l): the strings of l concatenated, merged pairwise (balanced)
+  LET(la mp. la l. l(la _. NIL)(la a. la t. t(la _. CONS(a)(NIL))(la b. la u. CONS(P(a)(b))(mp(mp)(u)))))(la MP.
+  LET(la l. (la j. j(j)(l))
+            (la j. la l. l(la _. "")(la a. la t. t(la _. a)(la _. la _. j(j)(MP(MP)(l))))))(la JOIN.
+  # TAKE(l)(m): the first m elements of l
+  LET(la l. la m. (la tk. tk(tk)(l)(m))
+      (la tk. la l. la m. Q(m)(K0)(la _. NIL)
+          (la _. l(la _. NIL)(la h. la t. CONS(h)(tk(tk)(t)(sub(m)(K1)))))(D)))(la TAKE.
+  # NTH(l)(j)(none)(some): some(element j of l), or none(D) if l is shorter
+  LET(la l. la j. la no. la so. (la r. r(r)(l)(j))
+      (la r. la l. la j. l(la _. no(D))(la h. la t. Q(j)(K0)(la _. so(h))(la _. r(r)(t)(sub(j)(K1)))(D))))(la NTH.
+
+  # ── the write path (re-bind block, then the helpers it uses) ──
+  LET(sub)(la sub. LET(mod)(la mod. LET(K192)(la K192. LET(K91)(la K91. LET(K63)(la K63.
+  LET(K27)(la K27. LET(K10)(la K10. LET(K9)(la K9. LET(K8)(la K8. LET(CAP)(la CAP.
+  LET(CAP2)(la CAP2. LET(CSIL)(la CSIL. LET(RUNP)(la RUNP. LET(JOIN)(la JOIN.
+  LET(REV)(la REV. LET(SLICE)(la SLICE. LET(TAKE)(la TAKE. LET(CONS)(la CONS.
+  LET(NIL)(la NIL. LET(isp)(la isp. LET(FF)(la FF. LET(T)(la T. LET(P)(la P.
+  LET(K64)(la K64. LET(K2)(la K2. LET(K0)(la K0. LET(D)(la D. LET(U)(la U. LET(K1)(la K1.
+  LET(Y)(la Y. LET(O)(la O. LET(A)(la A. LET(Q)(la Q.
+  # ── the output record R = la k. k(L)(N)(S)(C)(K) ──
+  LET(la L. la N. la S. la C. la K. la k. k(L)(N)(S)(C)(K))(la MK5.
+  LET(MK5(NIL)(K0)(NIL)("")(K0))(la R0.
+  LET(la L. la N. la S. la C. la K. C)(la gC.
+  LET(la L. la N. la S. la C. la K. K)(la gK.
+  # PL(S)(C): the partial line as one string
+  LET(la S. la C. S(la _. C)(la _. la _. P(JOIN(REV(S)))(C)))(la PL.
+  # PUSH(x)(L)(N)(k): k(L')(N') with x added as the newest line. The list is
+  # trimmed to the newest CAP when it reaches CAP2, so the cap costs O(1) a line.
+  LET(la x. la L. la N. la k. (la M. Q(M)(CAP2)(la _. k(TAKE(CONS(x)(L))(CAP))(CAP))(la _. k(CONS(x)(L))(M))(D))(U(N)(K1)))(la PUSH.
+  # SEG(S)(c)(K)(k): after an append made the length K, move a full tail into
+  # the segments: k(S')(C')
+  LET(la S. la c. la K. la k. Q(mod(K)(K64))(K0)(la _. k(CONS(c)(S))(""))(la _. k(S)(c))(D))(la SEG.
+  # ADV(R)(c)(d): R with the tail replaced by c, which is d bytes longer
+  LET(la R. la c. la d. R(la L. la N. la S. la C. la K.
+        (la K2. SEG(S)(c)(K2)(la S2. la C2. MK5(L)(N)(S2)(C2)(K2)))(U(K)(d))))(la ADV.
+  # BK(S)(C)(K)(k): drop the partial line's last byte: k(S')(C')(K')
+  LET(la S. la C. la K. la k.
+      Q(K)(K0)(la _. k(S)(C)(K))
+        (la _. (la r. Q(r)(K0)
+                  (la _. S(la _. k(S)(C)(K))(la h. la t. k(t)(SLICE(h)(K0)(K63))(sub(K)(K1))))
+                  (la _. k(S)(SLICE(C)(K0)(sub(r)(K1)))(sub(K)(K1)))
+                  (D))
+               (mod(K)(K64)))
+        (D))(la BK.
+  # SP(m): m spaces, 1 <= m <= 8
+  LET(la m. Q(m)(K1)(" ")(Q(m)(K2)("  ")(Q(m)(K3)("   ")(Q(m)(K4)("    ")
+            (Q(m)(K5)("     ")(Q(m)(K6)("      ")(Q(m)(K7)("       ")("        "))))))))(la SP.
+
+  # re-bind what the per-byte steps use most
+  LET(SP)(la SP. LET(BK)(la BK. LET(SEG)(la SEG. LET(ADV)(la ADV. LET(PUSH)(la PUSH.
+  LET(PL)(la PL. LET(MK5)(la MK5. LET(gC)(la gC. LET(gK)(la gK. LET(NIL)(la NIL.
+  LET(K0)(la K0. LET(D)(la D. LET(U)(la U. LET(K1)(la K1. LET(Y)(la Y. LET(O)(la O.
+  LET(A)(la A. LET(Q)(la Q.
+  # ── write: the control bytes, as pure R -> R' steps ──
+  LET(la R. R(la L. la N. la S. la C. la K.
+        PUSH(PL(S)(C))(L)(N)(la L2. la N2. MK5(L2)(N2)(NIL)("")(K0))))(la NLR.
+  LET(la R. R(la L. la N. la S. la C. la K. (la m. ADV(R)(P(C)(SP(m)))(m))(sub(K8)(mod(K)(K8)))))(la TABR.
+  LET(la R. R(la L. la N. la S. la C. la K. BK(S)(C)(K)(MK5(L)(N))))(la BSR.
+  LET(la R. R(la L. la N. la S. la C. la K. ADV(R)(P(C)("?"))(K1)))(la QMR.
+  LET(la R. R)(la IDR.
+  # re-bind what the dispatch and the loops use
+  LET(sub)(la sub. LET(mod)(la mod. LET(K192)(la K192. LET(K91)(la K91. LET(K9)(la K9.
+  LET(K8)(la K8. LET(K2)(la K2. LET(K64)(la K64. LET(K27)(la K27. LET(K10)(la K10.
+  LET(CSIL)(la CSIL. LET(RUNP)(la RUNP. LET(PUSH)(la PUSH. LET(PL)(la PL. LET(MK5)(la MK5.
+  LET(ADV)(la ADV. LET(NLR)(la NLR. LET(gC)(la gC. LET(gK)(la gK. LET(isp)(la isp.
+  LET(NIL)(la NIL. LET(T)(la T. LET(FF)(la FF. LET(K0)(la K0. LET(D)(la D. LET(U)(la U.
+  LET(K1)(la K1. LET(Y)(la Y. LET(O)(la O. LET(A)(la A. LET(Q)(la Q.
+  # CSEL(b): the step for control byte b (not printable, not ESC)
+  LET(la b. Q(b)(K10)(NLR)(Q(b)(K9)(TABR)(Q(b)(K8)(BSR)(T(b)(K192)(IDR)(QMR)))))(la CSEL.
+
+  # ── write: the loops ──
+  # A step has the shape h(o)(i)(R): o is the outer loop, i the index of the
+  # byte that chose the step, R the output record. The per-call values (the
+  # bytes s, their length n, the exit ret) are applied to the steps ONCE per
+  # write call, so a step's CLOSE rescans cover only its last three
+  # parameters' small body.
+  #
+  # RUNS(s)(rp)(n): the step for a printable byte (rp is RUNP(s)): run RUNP
+  # over the bytes, at most to the end of the current 64-byte segment. A run
+  # that stops at a '\n' ends the line at once (the common case); anything
+  # else goes back to the outer loop.
+  LET(la s. la rp. la n. la o. la i. la R.
+      (la g. g(g)(i)(R(gC)))
+      (rp(la j. la c. Q(Y(O(A(s)(j))))(K10)
+                        (la _. R(la L. la N. la S. la C. la K.
+                                 PUSH(PL(S)(c))(L)(N)(la L2. la N2. o(o)(U(j)(K1))(MK5(L2)(N2)(NIL)("")(K0)))))
+                        (la _. o(o)(j)(ADV(R)(c)(sub(j)(i))))
+                        (D))
+         ((la m. T(m)(n)(m)(n))(U(i)(sub(K64)(mod(R(gK))(K64)))))))(la RUNS.
+  # CSIS(s)(n)(ret)(o)(i)(R): skip a CSI whose parameter bytes start at i
+  LET(la s. la n. la ret. la o. la i. la R.
+      (la g. g(g)(i))(CSIL(la j. la e. Q(e)(K0)(la _. o(o)(j)(R))(la _. ret(R)(K2))(D))(s)(n)))(la CSIS.
+  # ESC1(s)(n)(ret)(cs)(o)(i)(R): the step for an ESC at index i (cs is
+  # CSIS(s)(n)(ret)). At the end of s the escape stays open (state 1).
+  LET(la s. la n. la ret. la cs. la o. la i. la R.
+      (la j. Q(j)(n)(la _. ret(R)(K1))
+               (la _. Q(Y(O(A(s)(j))))(K91)(la _. cs(o)(U(j)(K1))(R))(la _. o(o)(U(j)(K1))(R))(D))
+               (D))
+      (U(i)(K1)))(la ESC1.
+  # CTL(b): the step for control byte b (not printable, not ESC)
+  LET(la b. la o. la i. la R. o(o)(U(i)(K1))(CSEL(b)(R)))(la CTL.
+  # NLS: the step for a '\n' that does not end a run (an empty line)
+  LET(la o. la i. la R. o(o)(U(i)(K1))(NLR(R)))(la NLS.
+  # HSEL(rs)(e1)(b): the step for byte b, chosen as a value (no thunks)
+  LET(la rs. la e1. la b. isp(b)(rs)(Q(b)(K10)(NLS)(Q(b)(K27)(e1)(CTL(b)))))(la HSEL.
+  # WO(s)(n)(ret)(hs) is the outer loop o: o(o)(i)(R) processes s from i on
+  # and ends with ret(R')(E').
+  LET(la s. la n. la ret. la hs. la o. la i. la R.
+      Q(i)(n)(la _. ret(R)(K0))(la _. hs(Y(O(A(s)(i))))(o)(i)(R))(D))(la WO.
+
+  # ── rows (re-bind block) ──
+  LET(mul)(la mul. LET(div)(la div. LET(sub)(la sub. LET(CAP)(la CAP. LET(TAKE)(la TAKE. LET(LEN)(la LEN.
+  LET(SLICE)(la SLICE. LET(NIL)(la NIL. LET(CONS)(la CONS. LET(T)(la T. LET(U)(la U.
+  LET(K1)(la K1. LET(K0)(la K0. LET(D)(la D. LET(Q)(la Q.
+  # MULTI(x)(len)(w)(k)(acc)(cont): x is longer than w (len = |x|); put its
+  # last min(rows of x, k) rows in front of acc (k >= 1); cont(acc')(k').
+  LET(la x. la len. la w. la k. la acc. la cont.
+      (la e. e(e)(sub(div(sub(U(len)(w))(K1))(w))(K1))(k)(acc))
+      (la e. la j. la k. la acc.
+         Q(k)(K0)(la _. cont(acc)(k))
+           (la _. T(j)(K0)(la _. cont(acc)(k))
+              (la _. e(e)(sub(j)(K1))(sub(k)(K1))
+                       (CONS(SLICE(x)(mul(j)(w))((la hi. T(hi)(len)(hi)(len))(mul(U(j)(K1))(w))))(acc)))
+              (D))
+           (D)))(la MULTI.
+  # PADR(acc)(k): k "" rows in front of acc
+  LET(la acc. la k. (la p. p(p)(acc)(k))
+      (la p. la acc. la k. T(K0)(k)(la _. p(p)(CONS("")(acc))(sub(k)(K1)))(la _. acc)(D)))(la PADR.
+  # ROWS(w)(last)(L)(N)(n): the last logical line, then the lines of L newest
+  # first, each giving one row or more, until n rows are filled; so at most
+  # n lines are visited. Only between trims are more than CAP lines stored,
+  # and then only the newest CAP are visible.
+  LET(la w. la last. la L. la N. la n.
+      T(n)(K1)(la _. NIL)
+        (la _. (la d. d(d)(CONS(last)(T(CAP)(N)(la _. TAKE(L)(T(n)(CAP)(n)(CAP)))(la _. L)(D)))(NIL)(n))
+               (la d. la l. la acc. la k.
+                  Q(k)(K0)(la _. acc)
+                    (la _. l(la _. PADR(acc)(k))
+                            (la h. la t. (la m. T(w)(m)
+                                  (la _. MULTI(h)(m)(w)(k)(acc)(la a2. la k2. d(d)(t)(a2)(k2)))
+                                  (la _. d(d)(t)(CONS(h)(acc))(sub(k)(K1)))
+                                  (D))
+                               (LEN(h))))
+                    (D)))
+        (D))(la ROWS.
+
+  # ── the terminal record T = la k. k(R)(E)(I)(Pr)(H)(J)(V) and its operations ──
+  LET(la R. la E. la I. la Pr. la H. la J. la V. la k. k(R)(E)(I)(Pr)(H)(J)(V))(la MK.
+  LET(chr("127"))(la CUR.
+  LET(la p. MK(R0)(K0)("")(p)(NIL)(K0)(""))(la NEW.
+  LET(la t. la s. t(la R. la E. la I. la Pr. la H. la J. la V.
+        (la n. (la ret. (la cs. (la e1. (la o.
+                   Q(E)(K0)(la _. o(o)(K0)(R))
+                     (la _. Q(E)(K1)(la _. e1(o)(sub(K0)(K1))(R))(la _. cs(o)(K0)(R))(D))
+                     (D))
+                 (WO(s)(n)(ret)(HSEL(RUNS(s)(RUNP(s))(n))(e1))))
+                 (ESC1(s)(n)(ret)(cs)))
+                 (CSIS(s)(n)(ret)))
+               (la R2. la E2. MK(R2)(E2)(I)(Pr)(H)(J)(V)))
+        (LEN(s))))(la WRITE.
+  LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V.
+        Q(R(gK))(K0)(la _. t)(la _. MK(NLR(R))(E)(I)(Pr)(H)(J)(V))(D)))(la FLUSH.
+  LET(la t. la ch. t(la R. la E. la I. la Pr. la H. la J. la V. MK(R)(E)(P(I)(ch))(Pr)(H)(J)(V)))(la KEY.
+  LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V.
+        MK(R)(E)(SLICE(I)(K0)(sub(LEN(I))(K1)))(Pr)(H)(J)(V)))(la BACK.
+  LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V. MK(R)(E)("")(Pr)(H)(J)(V)))(la KILL.
+  LET(la t. FLUSH(t)(la R. la E. la I. la Pr. la H. la J. la V.
+        R(la L. la N. la S. la C. la K.
+          PUSH(P(Pr)(I))(L)(N)(la L2. la N2. la k.
+            k(I)(MK(MK5(L2)(N2)(S)(C)(K))(E)("")(Pr)(W(I)("")(H)(CONS(I)(H)))(K0)(""))))))(la SUBMIT.
+  LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V.
+        NTH(H)(J)(la _. t)(la e. MK(R)(E)(e)(Pr)(H)(U(J)(K1))(Q(J)(K0)(I)(V)))))(la HPREV.
+  LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V.
+        Q(J)(K0)(la _. t)
+          (la _. Q(J)(K1)
+             (la _. MK(R)(E)(V)(Pr)(H)(K0)(V))
+             (la _. NTH(H)(sub(J)(K2))(la _. t)(la e. MK(R)(E)(e)(Pr)(H)(sub(J)(K1))(V)))
+             (D))
+          (D)))(la HNEXT.
+  LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V. MK(R0)(E)(I)(Pr)(H)(J)(V)))(la CLEAR.
+  LET(la t. la p. t(la R. la E. la I. la Pr. la H. la J. la V. MK(R)(E)(I)(p)(H)(J)(V)))(la SETP.
+  LET(la t. la cols. la n. la idle. t(la R. la E. la I. la Pr. la H. la J. la V.
+        R(la L. la N. la S. la C. la K.
+          ROWS(T(cols)(K1)(K1)(cols))
+              (idle(la _. P(P(Pr)(I))(CUR))(la _. PL(S)(C))(D))
+              (L)(N)(n))))(la ROWSOP.
+  # keychar: KPL is the unshifted character of codes 0..57, KSH the shifted
+  # one; '#' in KPL (a character no unshifted key types) marks a code that
+  # types nothing, and str_at is "" past the end and for a negative code.
+  LET("##1234567890-=##qwertyuiop[]##asdfghjkl;'`#\\zxcvbnm,./### ")(la KPL.
+  LET("##!@#$%^&*()_+##QWERTYUIOP{}##ASDFGHJKL:\"~#|ZXCVBNM<>?### ")(la KSH.
+  LET(la code. la sh. (la p. W(p)("")(la _. "")
+                         (la _. W(p)("#")(la _. "")(la _. sh(la _. A(KSH)(code))(la _. p)(D))(D))
+                         (D))
+                      (A(KPL)(code)))(la KEYCHAR.
+
+  la sel. sel(NEW)(WRITE)(FLUSH)(KEY)(BACK)(KILL)(SUBMIT)(HPREV)(HNEXT)(CLEAR)(SETP)(ROWSOP)(KEYCHAR)
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+ (la v. la f. f(v))
