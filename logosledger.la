@@ -17,7 +17,9 @@
 #
 #  It serves typed logosipc requests on the channel `ledger`
 #  (/tmp/logosipc-ledger); the reply's type is the first word below:
-#      append <text>  -> ok <n>        the new entry's number (text: one line)
+#      append <text>  -> ok <n>        the new entry's number (text: one line;
+#                                      refused unless the file ends at the
+#                                      ledger's own last entry)
 #      verify         -> ok <n>        every entry well-formed, numbered in
 #                                      order, and every link and the head match
 #                     -> broken <i>    the first entry that does not hold
@@ -49,13 +51,27 @@
 #  As logostime.la: poll on the socket and a signalfd; SIGTERM/SIGINT remove
 #  the socket and exit 0; SIGPIPE is blocked; a client silent for 2 s is
 #  dropped. A ledger file with no head file is refused at startup (fail
-#  closed: an unanchored ledger is not extended). Also refused at startup,
-#  loudly (exit 1, the reason on stderr), rather than run unreachable: a live
-#  server already answering on the channel (two ledgers must not share one
-#  name, or one file), and a channel path that cannot be taken (bind or listen
-#  fails, e.g. a directory there, or another user's file in the sticky /tmp);
-#  LG_LISTEN does the socket + bind + listen itself and checks each result,
-#  since logosipc.la's CHANNEL does not. VM only.
+#  closed: an unanchored ledger is not extended), unless all it holds is one
+#  first entry cut off before its head (see STOPPED MID-APPEND). Also refused
+#  at startup, loudly (exit 1, the reason on stderr), rather than run
+#  unreachable: a live server already answering on the channel (two ledgers
+#  must not share one name, or one file), and a channel path that cannot be
+#  taken (bind or listen fails, e.g. a directory there, or another user's file
+#  in the sticky /tmp); LG_LISTEN does the socket + bind + listen itself and
+#  checks each result, since logosipc.la's CHANNEL does not. VM only.
+#
+#  STOPPED MID-APPEND. The manager's stop (and restart, and shutdown) sends
+#  SIGTERM, waits 3 s, then SIGKILLs; the ledger reads its signalfd only
+#  between requests, and an append spends ~17 s in sha256. So append hashes the
+#  new line FIRST and only then writes the line and the head: a SIGKILL during
+#  the hash leaves the file and the head as they were (the entry is absent; the
+#  client gets no reply). Only a death in the few syscalls between the line and
+#  the head leaves one entry the head does not cover; load finds it at the next
+#  start — exactly one entry past the head's count, numbered n+1, linked to the
+#  head's hash — and anchors it (prints "anchored entry <n+1>"). And append
+#  writes nothing unless the file ends at the ledger's own entry n, so a file
+#  that is not the one the ledger holds is never extended (no second entry
+#  numbered n+1, no "ok" for a chain that verify rejects).
 #
 #  STYLE. LG_KIT(B)(X)(crypt) holds everything that walks the file's bytes,
 #  in kit style (builtins as parameters); the request loop is per request.
@@ -64,8 +80,10 @@
 #  but someone able to rewrite the file, every later link and the head file
 #  while the service is down could forge a consistent ledger (a keyed chain,
 #  hmac under a key the service holds, is the next step; the Codex's "signed"
-#  needs a key). No fsync: a crash between the line and the head leaves a
-#  ledger that verify reports broken (fail closed). One request at a time.
+#  needs a key). Anchoring a cut-off append at startup means that someone able
+#  to write the file while the service is down can add one well-linked entry
+#  without touching the head — within that same unkeyed limit. No fsync: a
+#  power loss can still lose or tear the last write. One request at a time.
 # ═══════════════════════════════════════════════════════════════════
 
 import("logosipc.la")
@@ -78,7 +96,8 @@ glyph LET = la v. la k. k(v)
 #   B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
 #               (add)(sub)(div)(lt)(int_eq)
 #   X = la s. s(open)(close)(write)(read_file)(stat)(rename)(clock_gettime)(error)
-#   load(_)           -> la k. k(n)(head), from glyphledger.head
+#   load(_)           -> la k. k(n)(head), from glyphledger.head (anchoring a
+#                        cut-off append first)
 #   append(n)(h)(txt) -> la k. k(reply type)(reply body)(n')(h')
 #   verify(n)(h)      -> la k. k(reply type)(reply body)
 #   tail(k)           -> la k. k(reply type)(reply body)
@@ -149,49 +168,91 @@ glyph LG_KIT = la B. la X. la crypt.
     LET(la e. fields(e)(la _. "")(la f. f(la num. la sec. la link. la text. link)))(la linkof.
     LET(la e. hex(sha256(e)))(la H.
     LET(la k. la n. la r. r(k)(int_to_str(n)))(la answer.
-    # load(_): (n, head) from the head file; no head is fine only for an empty ledger
+    # readledger(_): the ledger file's bytes ("" when there is none)
+    LET(la _. str_eq(str_at(stat(LEDGER))(C0))("-")(la _. "")(la _. read_file(LEDGER))(C0))(la readledger.
+    # lastof(h)(t): the last element of the list cons(h)(t)
+    LET(Z(la lastof. la h. la t. t(la _. h)(la h2. la t2. lastof(h2)(t2))))(la lastof.
+    # endsat(n): does the file end at entry n (its last line numbered n; no
+    # line at all for n = 0)? append extends only the file the ledger holds
+    LET(la n. lines(readledger(C0))(la _. int_eq(n)(C0))
+        (la h. la t. fields(lastof(h)(t))(la _. FALSE)
+                       (la f. f(la num. la sec. la link. la text. str_eq(num)(int_to_str(n))))))(la endsat.
+    # anchor(n1)(h1)(yes)(no): replace the head with "n1 h1" atomically
+    # (head.tmp, then rename); yes(_) when done, no(why) when not
+    LET(la n1. la h1. la yes. la no. (la tfd.
+        digits(tfd)
+          (la _. (la w2. (la _. (la rr.
+                  str_eq(rr)("0")(la _. yes(C0))(la _. no("logosledger: the head was not replaced"))(C0))
+                (rename(HEADTMP)(HEAD)))(close(tfd)))
+              (write(tfd)(concat(int_to_str(n1))(concat(" ")(h1)))))
+          (la _. no("logosledger: cannot write the head"))(C0))
+      (open(HEADTMP)("577")))(la anchor.
+    # headfile(_): la k. k(n)(hash)(present) from glyphledger.head (0, zeros,
+    # FALSE when there is none); a malformed head is a loud error
     LET(la _.
         str_eq(str_at(stat(HEAD))(C0))("-")
-          (la _. (la st. str_eq(str_at(st)(C0))("-")(la _. la k. k(C0)(ZEROS))
-                   (la _. (la sp. str_eq(slice(st)(add(sp)(C1))(len(st)))("0")
-                             (la _. la k. k(C0)(ZEROS))
-                             (la _. error("logosledger: glyphledger.txt has no glyphledger.head; refusing an unanchored ledger"))(C0))
-                          (index(st)(len(st))(C0)(" ")))(C0))
-                 (stat(LEDGER)))
+          (la _. la k. k(C0)(ZEROS)(FALSE))
           (la _. (la hc. (la sp.
                     lt(sp)(C0)(la _. error("logosledger: glyphledger.head is malformed"))(la _.
                       (la a. la b. digits(a)(hex64(b))(FALSE)
-                          (la _. la k. k(str_to_int(a))(b))
+                          (la _. la k. k(str_to_int(a))(b)(TRUE))
                           (la _. error("logosledger: glyphledger.head is malformed"))(C0))
                       (slice(hc)(C0)(sp))(slice(hc)(add(sp)(C1))(len(hc))))(C0))
                    (index(hc)(len(hc))(C0)(" ")))
-                 (read_file(HEAD)))(C0))(la load.
-    # append(n)(h)(text): write entry n+1, then the head (atomically)
+                 (read_file(HEAD)))(C0))(la headfile.
+    # load(_): (n, head) from the head file, then the file against it. Exactly
+    # one entry more than the head counts, numbered n+1 and linked to the
+    # head's hash, is an append cut off between its line and its head (killed
+    # in those few syscalls): it is anchored now, so the ledger starts whole.
+    # Otherwise no head is fine only for an empty ledger.
+    LET(la _. headfile(C0)(la n0. la h0. la present.
+        (la ls. (la m. (la keep.
+            int_eq(m)(add(n0)(C1))
+              (la _. ls(la _. keep(C0))(la e. la r. (la last.
+                  wellformed(add(n0)(C1))(last)(str_eq(linkof(last))(h0))(FALSE)
+                    (la _. (la n1. (la h1.
+                        anchor(n1)(h1)
+                          (la _. (la _. la k. k(n1)(h1))
+                                 (write("1")(concat("logosledger: anchored entry ")
+                                    (concat(int_to_str(n1))(", written before its head (an append that was cut off)\n")))))
+                          (la why. error(why)))
+                      (H(last)))(add(n0)(C1)))
+                    (la _. keep(C0))(C0))
+                 (lastof(e)(r))))
+              (la _. keep(C0))(C0))
+            (la _. present(la _. la k. k(n0)(h0))
+                     (la _. int_eq(m)(C0)(la _. la k. k(C0)(ZEROS))
+                       (la _. error("logosledger: glyphledger.txt has no glyphledger.head; refusing an unanchored ledger"))(C0))(C0)))
+          (llen(ls)))
+        (lines(readledger(C0)))))(la load.
+    # append(n)(h)(text): entry n+1 is HASHED FIRST, then its line is written
+    # and the head replaced. The hash is the slow part (~17 s under CRYPT_REF),
+    # and a stop's SIGKILL (3 s after its SIGTERM, which waits in the signalfd
+    # meanwhile) lands in it, before anything is written: an interrupted
+    # append leaves no trace. The few syscalls between the line and the head
+    # are covered by load. Nothing is written unless the file ends at entry n:
+    # the ledger never extends a file that is not the one it holds.
     LET(la n. la h. la text.
         every(la c. int_eq(c)(C10)(FALSE)(TRUE))(text)(C0)(len(text))
-          (la _. (la n1. (la ts. (la line. (la fd.
-              digits(fd)
-                (la _. (la w. (la _.
-                    str_eq(w)(int_to_str(add(len(line))(C1)))
-                      (la _. (la h1. (la tfd.
-                          digits(tfd)
-                            (la _. (la w2. (la _. (la rr.
-                                str_eq(rr)("0")
-                                  (la _. la k. k("ok")(int_to_str(n1))(n1)(h1))
-                                  (la _. la k. k("err")("logosledger: the head was not replaced")(n1)(h1))(C0))
-                                (rename(HEADTMP)(HEAD)))(close(tfd)))
-                              (write(tfd)(concat(int_to_str(n1))(concat(" ")(h1)))))
-                            (la _. la k. k("err")("logosledger: cannot write the head")(n1)(h1))(C0))
-                        (open(HEADTMP)("577")))
-                        (H(line)))
-                      (la _. la k. k("err")("logosledger: the entry was not written")(n)(h))(C0))
-                  (close(fd)))
-                  (write(fd)(concat(line)("\n"))))
-                (la _. la k. k("err")("logosledger: cannot open glyphledger.txt")(n)(h))(C0))
-              (open(LEDGER)("1089")))
-              (concat(int_to_str(n1))(concat("|")(concat(ts)(concat("|")(concat(h)(concat("|")(text))))))))
-              ((la t. slice(t)(C0)(index(t)(len(t))(C0)(" ")))(clock_gettime("0"))))
-              (add(n)(C1)))
+          (la _. endsat(n)
+            (la _. (la n1. (la ts. (la line. (la h1. (la fd.
+                digits(fd)
+                  (la _. (la w. (la _.
+                      str_eq(w)(int_to_str(add(len(line))(C1)))
+                        (la _. anchor(n1)(h1)
+                                 (la _. la k. k("ok")(int_to_str(n1))(n1)(h1))
+                                 (la why. la k. k("err")(why)(n1)(h1)))
+                        (la _. la k. k("err")("logosledger: the entry was not written")(n)(h))(C0))
+                    (close(fd)))
+                    (write(fd)(concat(line)("\n"))))
+                  (la _. la k. k("err")("logosledger: cannot open glyphledger.txt")(n)(h))(C0))
+                (open(LEDGER)("1089")))
+                (H(line)))
+                (concat(int_to_str(n1))(concat("|")(concat(ts)(concat("|")(concat(h)(concat("|")(text))))))))
+                ((la t. slice(t)(C0)(index(t)(len(t))(C0)(" ")))(clock_gettime("0"))))
+                (add(n)(C1)))
+            (la _. la k. k("err")(concat("logosledger: glyphledger.txt does not end at entry ")
+                                   (concat(int_to_str(n))("; not extending it")))(n)(h))(C0))
           (la _. la k. k("err")("logosledger: an entry is one line")(n)(h))(C0))(la append.
     # verify(hn)(hh): the file against the chain and the head (n, hash)
     LET(la hn. la hh.
@@ -226,16 +287,16 @@ glyph LG_KIT = la B. la X. la crypt.
                      (la e. la r. str_eq(linkof(e))(hj))))
           (answer("ok"))(answer("broken")))
           (llen(ls)))
-        (lines(str_eq(str_at(stat(LEDGER))(C0))("-")(la _. "")(la _. read_file(LEDGER))(C0))))(la verify.
+        (lines(readledger(C0))))(la verify.
     # tail(k): the last k entries
     LET(la k. digits(k)
         (la _. (la ls. (la m. (la kk.
             la r. r("ok")(joinnl(ldrop(sub(m)(kk))(ls))(kk)))
             (lt(m)(str_to_int(k))(la _. m)(la _. str_to_int(k))(C0)))
             (llen(ls)))
-          (lines(str_eq(str_at(stat(LEDGER))(C0))("-")(la _. "")(la _. read_file(LEDGER))(C0))))
+          (lines(readledger(C0))))
         (la _. la r. r("err")("logosledger: tail needs a count"))(C0))(la tail.
-      la s. s(load)(append)(verify)(tail)))))))))))))))))))))))))))))
+      la s. s(load)(append)(verify)(tail))))))))))))))))))))))))))))))))))
   (0)(1)(2)(10)(48)(57)(64)(97)(102)(la t. la f. t)(la t. la f. f)
   (la n. la c. n(n))(la h. la t. la n. la c. c(h)(t)))))
 

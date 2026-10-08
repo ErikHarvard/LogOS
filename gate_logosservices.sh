@@ -28,10 +28,13 @@
 #            failed after 5 restarts; a run of 10 s or more ends the row;
 #            time answers now and mono; stop/start/restart; ledger append,
 #            verify, tail and `broken <i>` after the gate edits the file (a
-#            text field, a link field, a deleted last entry); the ledger
-#            survives a restart; `restart logosservices` re-executes the
-#            manager in place; shutdown ends every process with rc 0 and
-#            removes the sockets.
+#            text field, a link field, a deleted last entry); append refuses
+#            a file that does not end at its entry n; a stop during an
+#            append (SIGKILLed mid-hash) leaves file and head unchanged, and
+#            an entry written without its head is anchored at the next
+#            start; the ledger survives a restart; `restart logosservices`
+#            re-executes the manager in place; shutdown ends every process
+#            with rc 0 and removes the sockets.
 # ISOLATION: a private temp dir (gate_wm_common.sh); the manager's channel is
 # named after this shell's pid. The services' channels are the contract's
 # fixed `time` and `ledger` (/tmp/logosipc-time, /tmp/logosipc-ledger), so two
@@ -347,6 +350,9 @@ del lines[2]
 open(sys.argv[2], "w").write("\n".join(lines))
 PYEOF
     lreq verify "" v4
+    cp "$R/glyphledger.txt" "$LC/v4.txt"
+    lreq append "past the end" ag
+    cmp -s "$R/glyphledger.txt" "$LC/v4.txt" && : > "$LC/ag_same"
     cp "$LC/orig.txt" "$R/glyphledger.txt"
     lreq append "two
 lines" an
@@ -471,15 +477,49 @@ check "$([ "$(rv v2)" = "broken 2" ] && [ "$(rv v3)" = "broken 3" ] && [ "$(rv v
     "$(rv v2) | $(rv v3) | $(rv v4)"
 check "$([ "$(rv an)" = "err logosledger: an entry is one line" ] && [ "$(rv tk)" = "err logosledger: tail needs a count" ] && echo 1)" \
     "ledger: a two-line entry and a non-numeric tail are refused" "$(rv an) | $(rv tk)"
+check "$([ "$(rv ag)" = "err logosledger: glyphledger.txt does not end at entry 3; not extending it" ] && [ -e "$LC/ag_same" ] && echo 1)" \
+    "ledger: append refuses a file that does not end at its entry n (entry 3 deleted) and writes nothing" "$(rv ag)"
+
+# a stop during an append: the manager's SIGTERM waits in the ledger's
+# signalfd and its SIGKILL 3 s later lands in the append's sha256 (~17 s under
+# CRYPT_REF), which runs BEFORE anything is written, so the entry is absent and
+# file and head unchanged
+cp "$R/glyphledger.txt" "$LC/pre.txt"; cp "$R/glyphledger.head" "$LC/pre.head"
+( req "$T/lc2" ledger append "cut off"; printf '%s' "$ANS" > "$T/lc2.r" ) &
+AJ=$!
+sleep 2
+req "$C" "$CHAN" stop ledger; a="$ANS"
+wait "$AJ"
+check "$([ "$a" = "ok stopped ledger" ] && [ "$(cat "$T/lc2.r")" = noreply ] && grep -q " stopped ledger 9$" "$LOG" \
+         && cmp -s "$LC/pre.txt" "$R/glyphledger.txt" && cmp -s "$LC/pre.head" "$R/glyphledger.head" && echo 1)" \
+    "ledger: stop during an append (SIGKILLed mid-hash): no reply, and the file and the head are unchanged" \
+    "stop=$a client=$(cat "$T/lc2.r") log=$(grep " stopped ledger" "$LOG" | tail -1) file=$(tail -1 "$R/glyphledger.txt") head=$(cat "$R/glyphledger.head")"
+# a death in the few syscalls between the line and the head, simulated: the
+# line that append writes (entry n+1, linked to the head's hash) without its
+# head. The next start anchors it, and the ledger is whole (hashlib)
+python3 - "$R/glyphledger.txt" "$R/glyphledger.head" <<'PYEOF'
+import sys, time
+n, h = open(sys.argv[2]).read().split()
+open(sys.argv[1], "a").write(f"{int(n) + 1}|{int(time.time())}|{h}|cut off before its head\n")
+PYEOF
+req "$C" "$CHAN" start ledger; a="$ANS"
+for _ in $(seq 1 50); do req "$C" ledger tail 1; [ "$RRC" = 0 ] && break; sleep 0.2; done
+check "$([ "${a% *}" = "ok started ledger" ] && grep -q "^logosledger: anchored entry 4, written before its head" "$R/logs/ledger.log" \
+         && [ "$ANS" = "ok $(tail -1 "$R/glyphledger.txt")" ] \
+         && python3 "$T/oracle.py" "$R/glyphledger.txt" "$R/glyphledger.head" "$((TSTART - 2))" "$(( $(date +%s) + 2 ))" \
+                    boot alpha "omega|pipe" "cut off before its head" && echo 1)" \
+    "ledger: an entry written without its head (a death between the two) is anchored at the next start (hashlib)" \
+    "start=$a tail=$ANS log=$(tail -2 "$R/logs/ledger.log" | tr '\n' '|') head=$(cat "$R/glyphledger.head")"
 
 # the ledger survives a restart: the new process continues the chain
+req "$C" "$CHAN" status ""; LPID=$(field ledger 3)
 req "$C" "$CHAN" restart ledger; a="$ANS"; NLPID=$(echo "$a" | awk '{print $4}')
 for _ in $(seq 1 50); do req "$C" ledger tail 1; [ "$RRC" = 0 ] && break; sleep 0.1; done
 req "$C" ledger append "after restart"; b="$ANS"
-check "$([ "$a" = "ok restarted ledger $NLPID" ] && [ "$NLPID" != "$LPID" ] && ! kill -0 "$LPID" 2>/dev/null && [ "$b" = "ok 4" ] \
+check "$([ "$a" = "ok restarted ledger $NLPID" ] && [ "$NLPID" != "$LPID" ] && ! kill -0 "$LPID" 2>/dev/null && [ "$b" = "ok 5" ] \
          && python3 "$T/oracle.py" "$R/glyphledger.txt" "$R/glyphledger.head" "$((TSTART - 2))" "$(( $(date +%s) + 2 ))" \
-                    boot alpha "omega|pipe" "after restart" && echo 1)" \
-    "restart ledger: a new process continues the chain (ok 4, linked by hashlib)" "restart=$a append=$b"
+                    boot alpha "omega|pipe" "cut off before its head" "after restart" && echo 1)" \
+    "restart ledger: a new process continues the chain (ok 5, linked by hashlib)" "restart=$a append=$b"
 
 # self-application: the manager restarts itself in place
 req "$C" "$CHAN" status ""; TPID2=$(field time 3)
