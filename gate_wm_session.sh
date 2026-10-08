@@ -17,6 +17,9 @@
 #    8  MOD+q closes the focused window; the other fills the screen
 #    9  `exit` in the last shell closes it: an empty desktop
 #   10  MOD+Enter again (window 3) and a command that does not exist
+#   11  MOD+s: LogosKit's settings panel in window 4, light, focus on Name
+#   12  typing edits the field; Tab+Space turns on the dark theme, and the
+#       panel holding the switch is redrawn dark (LogosKit drawing itself)
 # and that MOD+Shift+e ends the session cleanly (rc 0, "wm: exit").
 # DETERMINISM: the session is run twice; every frame must be byte-identical.
 #
@@ -28,7 +31,8 @@ set -uo pipefail
 ok=1
 
 wm_setup theourgia_tile.la theourgia_term.la theourgia_render.la logosh.la \
-         theourgia_wm.la theourgia_termfont.la theourgia_wm_sim.la wm_script.py wm_ocr.py
+         theourgia_wm.la theourgia_termfont.la logoskit.la lk_settings.la theourgia_wm_sim.la \
+         wm_script.py wm_ocr.py
 W=960; H=600; SCALE=1
 mkdir -p "$T/home/sub"
 echo "$W $H $SCALE $T/home events.bin" > "$T/wm_sim.cfg"
@@ -55,6 +59,12 @@ snap 9
 mod Enter
 type nosuchcommand\n
 snap 10
+mod s
+snap 11
+type x
+key TAB
+key SPACE
+snap 12
 mod Shift+E
 EOF
 python3 "$T/wm_script.py" "$T/session.txt" "$T/events.bin" || { echo "FAIL  session: wm_script.py"; exit 1; }
@@ -134,6 +144,20 @@ s = shot(10)
 check("10 MOD+Enter again opens window 3; a missing command says so",
       len(s) == 1 and s[0]["title"].startswith(" 3  ")
       and "logosh: nosuchcommand: command not found" in s[0]["rows"], json.dumps(s)[:800])
+s = shot(11)
+app = [t for t in s if t.get("kind") == "app"]
+check("11 MOD+s: the settings panel in window 4, light, focused on the Name field",
+      len(s) == 2 and len(app) == 1 and app[0]["focused"] and app[0]["title"].startswith(" 4  Settings")
+      and app[0]["theme"] == "light" and any("LogosKit settings" in r for r in app[0]["rows"])
+      and any("Name: [sovereign" in r for r in app[0]["rows"])
+      and any(h.strip().startswith("[sovereign") for _, h in app[0]["hl"]),
+      json.dumps(s)[:1200])
+s = shot(12)
+app = [t for t in s if t.get("kind") == "app"]
+check("12 the dark theme switch redraws its own panel dark; the field kept the typed x",
+      len(app) == 1 and app[0]["theme"] == "dark" and any("Name: [sovereignx" in r for r in app[0]["rows"])
+      and any(h.strip() == "[x] Dark theme" for _, h in app[0]["hl"]),
+      json.dumps(s)[:1200])
 sys.exit(bad)
 PYEOF
 
@@ -141,7 +165,7 @@ run_session "$T/run2"
 same=1
 for f in "$T"/run1/wm_shot_*.bin; do cmp -s "$f" "$T/run2/$(basename "$f")" || same=0; done
 n=$(ls "$T"/run1/wm_shot_*.bin 2>/dev/null | wc -l)
-if [ "$vrc" = 0 ] && [ "$same" = 1 ] && [ "$n" = 10 ]; then
+if [ "$vrc" = 0 ] && [ "$same" = 1 ] && [ "$n" = 12 ]; then
     echo "PASS  session: a second run gives byte-identical frames ($n frames)"
 else
     echo "FAIL  session: second run rc=$vrc, identical=$same, frames=$n"; ok=0

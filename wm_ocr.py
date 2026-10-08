@@ -10,10 +10,18 @@ A tile (theourgia_wm.la, WM_TILE): BW=2 border rows/columns in the border
 colour (gold when focused, grey otherwise), then a title bar of 2 + 8*scale + 2
 rows, PAD=4 rows/columns of terminal background, the text rows, filler.
 
+A tile whose text area has the terminal background is a terminal: its text is
+read in the terminal's one text colour. Any other tile is a LogosKit app
+(MOD+s): its text comes in several styles, so each cell is read in whichever
+of its two colours makes a glyph, and its background is kept too.
+
 Usage: wm_ocr.py FRAME.bin W H PITCH SCALE [termfont.la]
-Prints JSON: a list of tiles, each {x, y, w, h, focused, title, rows}.
-The cursor (glyph 127, a solid block) reads as '_'; a cell that matches no
-glyph reads as '~'.
+Prints JSON: a list of tiles, each {x, y, w, h, focused, title, rows, kind,
+bg}; kind is "term" or "app", bg the text area's background colour. An app
+tile also has theme ("light", "dark" or "?") and hl: [row, text] for every
+run of cells whose background is not the tile's, i.e. the focused element.
+In a terminal the cursor (glyph 127, a solid block) reads as '_'; a cell that
+matches no glyph reads as '~'.
 """
 import json
 import os
@@ -26,6 +34,8 @@ GREY = (52, 52, 72)
 TEXT_FG = (214, 214, 200)
 BAR_F_FG = (24, 18, 8)
 BAR_U_FG = (170, 170, 186)
+TERM_BG = (10, 10, 16)
+APP_THEMES = {(236, 232, 220): "light", (18, 18, 28): "dark"}
 BW, PAD = 2, 4
 
 
@@ -67,6 +77,49 @@ def read_cells(fr, glyphs, x0, y0, ncols, nrows, scale, fg):
     return rows
 
 
+def read_cells_multi(fr, glyphs, x0, y0, ncols, nrows, scale, bg):
+    """Read cells drawn in several styles. Returns (rows, hl): the text, and for
+    each row the runs of cells whose background is not bg."""
+    cw = 8 * scale
+    rows, hl = [], []
+    for r in range(nrows):
+        line, marks = [], []
+        for c in range(ncols):
+            pts = [[fr.px(x0 + c * cw + gx * scale, y0 + r * cw + gy * scale) for gx in range(8)] for gy in range(8)]
+            count = {}
+            for row in pts:
+                for p in row:
+                    count[p] = count.get(p, 0) + 1
+            if len(count) == 1:
+                line.append(" "); marks.append(next(iter(count)) != bg); continue
+            if len(count) > 2:
+                line.append("~"); marks.append(False); continue
+            # the background is tried first as the commoner colour, then as bg
+            order = sorted(count, key=lambda col: (col != bg, -count[col]))
+            got = None
+            for cbg in order:
+                fg = [col for col in count if col != cbg][0]
+                key = tuple(sum(1 << gx for gx in range(8) if pts[gy][gx] == fg) for gy in range(8))
+                if key in glyphs and key != (255,) * 8:
+                    got = (glyphs[key], cbg); break
+            if got is None:
+                line.append("~"); marks.append(False)
+            else:
+                line.append(got[0]); marks.append(got[1] != bg)
+        rows.append("".join(line).rstrip())
+        c = 0
+        while c < ncols:
+            if marks[c]:
+                e = c
+                while e < ncols and marks[e]:
+                    e += 1
+                hl.append([r, "".join(line[c:e])])
+                c = e
+            else:
+                c += 1
+    return rows, hl
+
+
 def find_tiles(fr):
     tiles = []
     for y in range(fr.h):
@@ -101,8 +154,17 @@ def ocr(fr, glyphs, scale):
         if nrows >= 1 and ccols >= 1:
             tile["title"] = read_cells(fr, glyphs, x + BW, y + BW + 2, tcols, 1, scale,
                                        BAR_F_FG if focused else BAR_U_FG)[0]
-            tile["rows"] = read_cells(fr, glyphs, x + BW + PAD, y + BW + cw + 4 + PAD,
-                                      ccols, nrows, scale, TEXT_FG)
+            bg = fr.px(x + BW, y + BW + cw + 4)
+            tile["bg"] = list(bg)
+            if bg == TERM_BG:
+                tile["kind"] = "term"
+                tile["rows"] = read_cells(fr, glyphs, x + BW + PAD, y + BW + cw + 4 + PAD,
+                                          ccols, nrows, scale, TEXT_FG)
+            else:
+                tile["kind"] = "app"
+                tile["theme"] = APP_THEMES.get(bg, "?")
+                tile["rows"], tile["hl"] = read_cells_multi(fr, glyphs, x + BW + PAD, y + BW + cw + 4 + PAD,
+                                                            ccols, nrows, scale, bg)
         out.append(tile)
     return out
 
