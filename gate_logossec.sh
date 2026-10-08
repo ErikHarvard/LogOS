@@ -40,7 +40,11 @@
 #      needs a token for sec/policy with op a, a revoked token is then refused,
 #      and — the SELF-APPLICATION of the guard — the policy protects itself:
 #      an administrator that revokes its own id can revoke nothing more.
-#   4. stub crypt (VM, no HMAC: every signature is 64 zeros): attenuate's
+#   4. stub crypt (VM, no HMAC: every signature is 64 zeros): the signature
+#      compare has no early exit — it is handed a bxor that writes an x per
+#      call, and must XOR all 64 byte pairs whether the signatures agree or
+#      differ in the first, the last or every digit (a functional oracle
+#      cannot see this: str_eq gives the same verdicts); attenuate's
 #      result is a token string that verify and attenuate take as they are,
 #      and a malformed attenuation is no token, which verify refuses; and a
 #      write under a token for exactly one file changes that file and nothing
@@ -201,16 +205,18 @@ printf host > "$T/pure_part.txt"
   echo "$hrc" > "$T/pure_host.rc"; echo $(( $(date +%s) - s )) > "$T/pure_host.secs" ) &
 HOSTJOB=$!
 
-# ── 4. stub crypt (VM): attenuate's result; the guard's staging file ──────
+# ── 4. stub crypt (VM): the compare, attenuate's result, the staging file ─
 # A stub crypt record whose hmac returns its message and whose hex is always
 # 64 zeros: every signature is 64 zeros, so a token is accepted exactly when
 # its caveats hold and the cases cost no HMAC. What is checked here is not the
 # cryptography (sections 2 and 3 check that against Python) but what the code
-# around it does: (a) attenuate gives a bare token string that verify takes
-# as it is; (b) a write under a token for EXACTLY one file changes that file
-# and nothing else: fs<path>.tmp is not within fs<path>, so whatever is
-# already at path.tmp (a file, or a link planted to point outside the grant)
-# must be left alone, and the write refused. The fixtures are in $ST.
+# around it does: (a) verify compares the signature without an early exit,
+# observed by counting the kit's bxor calls (XC); (b) attenuate gives a bare
+# token string that verify takes as it is; (c) a write under a token for
+# EXACTLY one file changes that file and nothing else: fs<path>.tmp is not
+# within fs<path>, so whatever is already at path.tmp (a file, or a link
+# planted to point outside the grant) must be left alone, and the write
+# refused. The fixtures are in $ST.
 ST="$T/st"
 mkdir -p "$ST/data/adir" "$ST/other"
 printf '%s' "$ST" > "$T/stub_dir.txt"
@@ -236,7 +242,16 @@ glyph D = read_file("stub_dir.txt")
 # a token for exactly the file D ++ p
 glyph EXACT = la mint. la p. mint(KEY)("ex")(CONS(concat("res=fs")(concat(D)(p)))(NIL))(la m. concat("mint failed: ")(m))(la t. t)
 glyph WR = la gwrite. la mint. la tp. la p. la data. print(R(gwrite(EXACT(mint)(tp))(concat(D)(p))(data)))
-glyph MAIN = KIT(bxor)(la mint. la attenuate. la verify. la within. la confine.
+# XC is bxor that also writes one x to stdout, so the line verify's result is
+# printed on starts with one x per byte pair the signature compare XORs
+glyph XC = la a. la b. (la r. (la _. r)(write("1")("x")))(bxor(a)(b))
+glyph CT = la verify. la sh. print(R(verify(KEY)(NIL)(concat("ct|")(sh))("obj/1")("r")(0)))
+glyph MAIN = KIT(XC)(la xmint. la xattenuate. la xverify. la xwithin. la xconfine.
+  SEQ(CT(xverify)("0000000000000000000000000000000000000000000000000000000000000000"))
+  (SEQ(CT(xverify)("1000000000000000000000000000000000000000000000000000000000000000"))
+  (SEQ(CT(xverify)("0000000000000000000000000000000000000000000000000000000000000001"))
+  (SEQ(CT(xverify)("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))
+  (KIT(bxor)(la mint. la attenuate. la verify. la within. la confine.
   mint(KEY)("st")(CONS("res=obj")(NIL))(la m. print(concat("mint failed: ")(m)))(la t0.
   SEQ(print(BR(attenuate(t0)("ops=r"))))
   (SEQ(print(BR(attenuate(t0)("nokey"))))
@@ -254,10 +269,15 @@ glyph MAIN = KIT(bxor)(la mint. la attenuate. la verify. la within. la confine.
   (SEQ(WR(gwrite)(mint)("/data/plain")("/data/plain")(concat("second")(concat(chr("0"))("bytes"))))
   (SEQ(WR(gwrite)(mint)("/data/adir")("/data/adir")("x"))
   (SEQ(WR(gwrite)(mint)("/nodir/x")("/nodir/x")("x"))
-  (print("end")))))))))))))))))))
+  (print("end"))))))))))))))))))))))))
 LAEOF
 Z64=0000000000000000000000000000000000000000000000000000000000000000
+X64=$(printf 'x%.0s' $(seq 64))
 cat > "$T/stub_expect.txt" <<EOF
+constant time: an equal signature is compared over all 64 hex digits	${X64}ok ct
+constant time: a difference in the first digit does not stop the compare	${X64}err bad signature
+constant time: a difference in the last digit is compared the same way	${X64}err bad signature
+constant time: a signature differing everywhere is compared the same way	${X64}err bad signature
 attenuate returns the bare token string	token [st|res=obj|ops=r|$Z64]
 attenuate with a malformed caveat gives no token	token []
 attenuate of a malformed token gives no token	token []

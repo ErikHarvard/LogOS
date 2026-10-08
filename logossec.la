@@ -62,8 +62,15 @@
 #      token itself (evaluating them reveals nothing) and cost no HMAC, so a
 #      request the token's own caveats refuse is denied cheaply; the
 #      revocation list is the guard's private state, so it is consulted only
-#      for a genuine token. `now` is a native int.
-#  within(res)(prefix)           res == prefix, or res starts with prefix/ ;
+#      for a genuine token. `now` is a native int. The compare XORs every one
+#      of the 64 byte pairs through the kit's own bxor parameter, so the work
+#      it does can be observed: gate_logossec.sh hands in a bxor that counts
+#      its calls and requires 64 whether the signatures agree or differ in
+#      the first, the last or every digit (str_eq, or a loop that stops at
+#      the first difference, fails it). Only the LA-level loop is checked:
+#      the HMAC under it and the VM's integer builtins are not audited for
+#      constant time.
+#  within(res)(prefix)          res == prefix, or res starts with prefix/ ;
 #      and FALSE for any res with an empty, "." or ".." segment or a control
 #      byte (< 32 or 127). So "obj2" is not within "obj", and a prefix with
 #      a trailing slash ("obj/") contains nothing, since no well-formed res
