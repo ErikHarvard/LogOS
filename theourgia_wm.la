@@ -58,6 +58,8 @@
 #         (lw)(showing)): the login app's record, the window (id 0) that holds
 #         it, and whether the screen is locked now
 #  win = la k. k(id)(term)(sh)(job)(bcache)(tkey)(trows)(ver)(app)
+#  bcache = la k. k(cols)(cache): the renderer's band cache and the width
+#        (in cells) it was drawn at; at any other width it starts again
 #  app = la n. la s. n(n)  (a terminal)   |   la n. la s. s(a), a LogosKit app:
 #        a = la k. k(lkapp)(state)(focus), lkapp = la s. s(init)(view)(update)
 #        (theme)(title) (an app window's term and sh are unused)
@@ -139,8 +141,10 @@ glyph WM_WINS = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. l
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
     (la C0. la C1. la nojob.
-      LET(la id. la term. la sh. la k. k(id)(term)(sh)(nojob)(nil)("")(nil)(C0)(la n. la s. n(n)))(la mkwin.
-      LET(la id. la app. la k. k(id)("")("")(nojob)(nil)("")(nil)(C0)(la n. la s. s(app)))(la mkapp.
+      # bc, the band cache, is la k. k(cols)(cache): the renderer's cache is only
+      # good for the width it was drawn at
+      LET(la id. la term. la sh. la k. k(id)(term)(sh)(nojob)(la k. k(C0)(nil))("")(nil)(C0)(la n. la s. n(n)))(la mkwin.
+      LET(la id. la app. la k. k(id)("")("")(nojob)(la k. k(C0)(nil))("")(nil)(C0)(la n. la s. s(app)))(la mkapp.
       LET(la w. w(la id. la a. la b. la c. la d. la e. la f. la g. la h. id))(la win_id.
       LET(la wins. la id. find(la w. int_eq(win_id(w))(id))(wins))(la find_win.
       LET(la wins. la w. (la id. map(la v. int_eq(win_id(v))(id)(la _. w)(la _. v)(C0))(wins))(win_id(w)))(la put_win.
@@ -209,7 +213,8 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
         (la bcol. la barc. la bst.
           lt(nrows)(C1)(la _. la k. k(solid(tw)(th)(bcol))(w))(la _.
           lt(ccols)(C1)(la _. la k. k(solid(tw)(th)(bcol))(w))(la _.
-            # body(k): k(the text area's scanlines)(the band cache to keep)(its background)
+            # body(k): k(the text area's bands, each a list of scanlines)(the band
+            # cache to keep)(its background)
             (la body. body(la blist. la bc2. la bgc.
                 (la brow. la barrow. la padrow. la tl. la tr2. la cl. la cr.
                   (la rows. la k. k(rows)(la k2. k2(id)(term)(sh)(job)(bc2)(k0)(rows)(ver)(app)))
@@ -230,11 +235,13 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
                 (concat(run(BW)(bcol))(run(PAD)(bgc)))
                 (concat(run(sub(sub(iw)(PAD))(mul(ccols)(cw)))(bgc))(run(BW)(bcol)))))
             (la k. app
-              (la _. bands(st_text)(bc)(t_rows(term)(ccols)(nrows)(job(la _. TRUE)(la p. la r. la c. FALSE)))(ccols)
-                       (la blist. la bc2. k(blist)(bc2)(termbg)))
+              (la _. bands(st_text)(bc(la bcols. la cache. int_eq(bcols)(ccols)(la _. cache)(la _. nil)(C0)))
+                         (t_rows(term)(ccols)(nrows)(job(la _. TRUE)(la p. la r. la c. FALSE)))(ccols)
+                       (la blist. la bc2. k(blist)(la k3. k3(ccols)(bc2))(termbg)))
               (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle.
+                  # render gives one flat list of scanlines: the text area's single band
                   theme(ast)(lk_dark)(lk_light)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
-                    k(render(fit(nrows)(paint(view(ast))(afocus)))(ccols))(bc)(theme(ast)(bg_dark)(bg_light))))))))(C0))(C0))
+                    k(cons(render(fit(nrows)(paint(view(ast))(afocus)))(ccols))(nil))(bc)(theme(ast)(bg_dark)(bg_light))))))))(C0))(C0))
         (focused(la _. border_f)(la _. border_u)(C0))
         (focused(la _. bar_f)(la _. bar_u)(C0))
         (focused(la _. st_bar_f)(la _. st_bar_u)(C0)))))(la draw.
