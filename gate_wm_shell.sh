@@ -60,7 +60,10 @@
 #   2b. In a pid namespace (unshare; SKIP if there is none), where kill(-1)
 #      reaches only the namespace: interrupt and hangup of "4294967295" and
 #      "18446744073709551615" (pid -1 to the kernel) are refused, and the kept
-#      /bin/sleep 30 they would have killed is still there to hang up.
+#      /bin/sleep 30 they would have killed is still there to hang up. Then a
+#      pid namespace that still sees the outer /proc (no --mount-proc): there
+#      /proc/<job pid> is some other process, so finish must fall back to
+#      waitpid (/bin/echo hi, /bin/false -> [exit 1]) instead of polling it.
 #   3. The filesystem afterwards: what the session made and removed in $T.
 #   4. Measured VM timings (INFO, not pass/fail).
 #
@@ -795,11 +798,15 @@ else
     # against a pid the kernel reads as -1 is tested only inside a pid
     # namespace, where -1 reaches nothing but the namespace's own processes: a
     # kept /bin/sleep 30 must still be alive for @fghup to hang it up.
+    # Then the same namespace without its own /proc: the driver is pid 2 and
+    # its first job pid 3 there, while /proc still shows the outer namespace,
+    # where pid 3 is a kernel thread whose parent is pid 2 (kthreadd). A
+    # finish that trusted that /proc waited for it to become a zombie forever.
     NS=""
     if unshare -pf --mount-proc true 2>/dev/null; then NS="unshare -pf"
     elif unshare -rpf --mount-proc true 2>/dev/null; then NS="unshare -rpf"; fi
     if [ -z "$NS" ]; then
-        echo "SKIP  shell: no pid namespaces here (unshare -pf / -rpf): the pid -1 check did not run"
+        echo "SKIP  shell: no pid namespaces here (unshare -pf / -rpf): the pid -1 and outer-/proc checks did not run"
     else
         mkdir "$T/nsk"
         cp "$T/logos_secd" "$T/nsk/"; cp "$T/drv.bin" "$T/nsk/logos_program.bin"
@@ -814,6 +821,19 @@ else
             pass "pid namespace (VM): interrupt and hangup refuse \"4294967295\" (the kernel's pid -1): -3, and the kept job is still there to hang up"
         else
             fail "pid namespace (VM): driver rc=$nrc; $res"
+        fi
+        mkdir "$T/nsp"
+        cp "$T/logos_secd" "$T/nsp/"; cp "$T/drv.bin" "$T/nsp/logos_program.bin"
+        printf '%s\n' '/bin/echo hi' '/bin/false' '/bin/true' > "$T/nsp/script.txt"
+        printf '%s\n' 'logos:/$ /bin/echo hi' 'hi' 'logos:/$ /bin/false' '[exit 1]' '? 1' \
+            'logos:/$ /bin/true' '<end>' > "$T/nsp.expect"
+        nrc=$($NS python3 "$T/rundrv.py" "$T/nsp" 60)
+        res=$(python3 "$T/cmpout.py" "$T/nsp/session.out" "$T/nsp.expect")
+        nme=$(sed -n 's/^#me //p' "$T/nsp/session.out")
+        if [ "$nrc" = 0 ] && [ "$res" = OK ]; then
+            pass "pid namespace, outer /proc (VM): finish falls back to waitpid ([exit 1]; the WM was pid ${nme:-?} there)"
+        else
+            fail "pid namespace, outer /proc (VM): driver rc=$nrc; $res"
         fi
     fi
 fi
