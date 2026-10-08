@@ -704,9 +704,9 @@ sent) and `recv(fd)(maxbytes)` (`recvfrom`, → the bytes as a binary-safe strin
 clamped to 64 MiB like `read`). fds cross as decimal strings; every call except
 `recv` returns `-errno` as a decimal string on failure (e.g. `connect` to a dead
 path → `-2`) rather than halting, so a program can **recognise** a dead peer;
-`recv` returns `""` on error or end of stream — but a
-non-string fd/path/data argument halts loudly with `secd: argument is not a
-string`, like the other guarded builtins. A minimal server binds + listens
+`recv` returns `""` on error or end of stream — but a non-string fd/path/data
+argument halts loudly with `secd: <builtin>: argument is not a string`, like
+the other guarded builtins. A minimal server binds + listens
 **before** `fork`ing so the child's `connect` can't race ahead of `accept`;
 `build.sh` runs exactly that client→server message pass on the native VM,
 plus the two failure paths. *Honest limits:* AF_UNIX only (no IP/TCP yet),

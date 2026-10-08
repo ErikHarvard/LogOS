@@ -6439,7 +6439,8 @@ say "Sockets: socket/bind/listen/accept/connect/send/recv (AF_UNIX, native VM)"
 # (client) connects and sends one message, the parent (server) accepts, recvs,
 # and reaps. Then two failure paths: a connect to a path with no listener must
 # return a negative errno (not crash), and a non-string fd must halt loudly
-# (secd: argument is not a string), matching the loud-on-bad-input discipline.
+# (secd: <builtin>: argument is not a string), matching the loud-on-bad-input
+# discipline.
 SOCKP="/tmp/logos_sock_test.$$"
 rm -f "$SOCKP"
 cat > /tmp/t_socket.la <<LAEOF
