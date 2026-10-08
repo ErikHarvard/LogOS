@@ -1,0 +1,69 @@
+# ═══════════════════════════════════════════════════════════════════
+#  crypt_ref.la — the reference crypt record, from the RFC-verified modules.
+#
+#  The OS layers above the kernel (the filesystem, the security model, the
+#  session and package managers) all need the same five cryptographic
+#  operations. Each of them takes those operations as ONE record, `crypt`,
+#  instead of importing the modules themselves, so the implementation behind
+#  the record can change without touching them:
+#
+#      crypt = la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)
+#        sha256(msg)                   32 raw bytes                 (FIPS 180-4)
+#        hmac(key)(msg)                32 raw bytes, HMAC-SHA256    (RFC 2104)
+#        hkdf(salt)(ikm)(info)(len)    len raw bytes, HKDF-SHA256   (RFC 5869)
+#        seal(key)(nonce)(aad)(pt)     ciphertext ++ 16-byte tag    (RFC 8439)
+#        open(key)(nonce)(aad)(sealed) option: la none. la some. ...
+#                                      none(none) on a bad tag, some(pt)
+#        hex(raw)                      lowercase hex
+#  key is 32 raw bytes, nonce 12 raw bytes (ChaCha20-Poly1305).
+#
+#  CRYPT_REF builds that record from sha256.la, hmac.la, hkdf.la and aead.la,
+#  whose known-answer gates (gate_sha256.sh, gate_crypto.sh) establish they are
+#  right. It is the REFERENCE: correct, and slow on the VM (about 11 s to hash
+#  1 KB, 3 s to encrypt it), because those modules name their builtins and
+#  glyphs on every step. A faster record with the same contract is checked
+#  against this one.
+#
+#  open never releases unauthenticated bytes: it calls aead.la's DECRYPT, which
+#  verifies the tag before decrypting and returns nothing on a mismatch. A
+#  sealed string shorter than a tag is refused the same way.
+# ═══════════════════════════════════════════════════════════════════
+
+import("sha256.la")
+import("hmac.la")
+import("hkdf.la")
+import("aead.la")
+
+export CRYPT_REF
+
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LEN = la s. str_to_int(str_len(s))
+glyph TAKE = Z(la self. la n. la s.
+    int_eq(n)(0)(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s))))("!"))
+glyph DROP = Z(la self. la n. la s.
+    int_eq(n)(0)(la _. s)(la _. self(sub(n)(1))(str_tail(s)))("!"))
+glyph HEXD = la n. str_at("0123456789abcdef")(n)
+glyph HEX = Z(la self. la s.
+    str_eq(s)("")(la _. "")(la _.
+      (la b. concat(concat(HEXD(div(b)(16)))(HEXD(mod(b)(16))))(self(str_tail(s))))
+      (str_to_int(ord(str_head(s)))))("!"))
+
+# aead.la's TAGOF and DECRYPT speak the tag as 32 HEX characters; the record's
+# contract is a raw 16-byte tag, so SEAL converts on the way out and OPEN on the
+# way in.
+glyph FROMHEX = Z(la self. la s.
+    str_eq(s)("")(la _. "")(la _.
+      (la hv. concat(chr(int_to_str(add(mul(hv(str_head(s)))(16))(hv(str_head(str_tail(s)))))))
+                    (self(str_tail(str_tail(s)))))
+      (la c. (la n. lt(n)(58)(la _. sub(n)(48))(la _. sub(n)(87))("!"))(str_to_int(ord(c)))))("!"))
+glyph SEAL = la key. la nonce. la aad. la pt.
+    (la ct. concat(ct)(FROMHEX(TAGOF(key)(nonce)(aad)(ct))))(ENCRYPT(key)(nonce)(pt))
+glyph OPEN = la key. la nonce. la aad. la sealed.
+    (la n. lt(n)(16)
+      (la _. la none. la some. none(none))
+      (la _. DECRYPT(key)(nonce)(aad)(TAKE(sub(n)(16))(sealed))(HEX(DROP(sub(n)(16))(sealed)))
+               (la pt. la none. la some. some(pt))
+               (la why. la none. la some. none(none)))("!"))
+    (LEN(sealed))
+
+glyph CRYPT_REF = la s. s(SHA256_RAW)(HMAC_RAW)(HKDF)(SEAL)(OPEN)(HEX)
