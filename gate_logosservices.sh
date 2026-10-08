@@ -11,7 +11,10 @@
 # Python's CLOCK_MONOTONIC), Python's hashlib for every ledger link, and the
 # manager's own timestamped log for the restart gaps.
 #   errors   a dependency cycle and a missing dependency are refused loudly
-#            (rc 1, the message) before anything starts
+#            (rc 1, the message) before anything starts; so is a channel
+#            path that cannot be bound (a directory there), for the manager,
+#            time and ledger alike, and time and ledger refuse a channel
+#            another live server holds (which keeps its path)
 #   signals  SIGTERM to the manager stops everything, rc 0, nothing left;
 #            `stop logosservices` does the same through the channel
 #   main     ten services (one is listed before the service it depends on):
@@ -39,7 +42,9 @@ R="$T/run"; mkdir -p "$R"
 CHAN="svc$$"
 cleanup() {
     pkill -KILL -f "$R/" 2>/dev/null
+    [ -n "${SQ:-}" ] && kill "$SQ" 2>/dev/null
     rm -f "/tmp/logosipc-$CHAN" "/tmp/logosipc-${CHAN}b" "/tmp/logosipc-${CHAN}c"
+    rmdir "/tmp/logosipc-${CHAN}d" /tmp/logosipc-time /tmp/logosipc-ledger 2>/dev/null
     rm -rf "$T"
 }
 trap cleanup EXIT
@@ -100,7 +105,7 @@ glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
                  (add)(sub)(mul)(div)(mod)(lt)(int_eq)(bshl)
 glyph X = la s. s(fork)(execv)(dup2)(pipe)(open)(close)(read)(write)(poll)(kill)
                  (waitpid)(clock_gettime)(getpid)(sigprocmask)(signalfd)(socket)
-                 (connect)(unlink)(read_file)(stat)(mkdir)(exit)(error)
+                 (bind)(listen)(connect)(unlink)(read_file)(stat)(mkdir)(exit)(error)
 glyph P = la f. concat(read_file("mgr.dir"))(concat("/")(f))
 glyph MAINSET =
   CONS(SVC("ledger")(P("logosledger"))("logosledger")(CONS("time")(CONS("logosservices")(NIL)))("on-failure"))(
@@ -126,7 +131,8 @@ glyph MAIN = (la mode. la chan. SVC_KIT(B)(X)(la manager.
     str_eq(mode)("main")(la _. manager(MAINSET)(chan)("logs"))(la _.
     str_eq(mode)("term")(la _. manager(TIMESET)(chan)("logs2"))(la _.
     str_eq(mode)("cycle")(la _. manager(CYCLESET)(chan)("logs3"))(la _.
-      manager(MISSINGSET)(chan)("logs4"))("!"))("!"))("!")))
+    str_eq(mode)("badchan")(la _. manager(TIMESET)(chan)("logs6"))(la _.
+      manager(MISSINGSET)(chan)("logs4"))("!"))("!"))("!"))("!")))
   (read_file("mgr.mode"))(read_file("mgr.chan"))
 LAEOF
 
@@ -178,6 +184,18 @@ wait_exit() {
     if kill -0 "$1" 2>/dev/null; then WRC=124; else wait "$1"; WRC=$?; fi
 }
 left() { pgrep -af "$R/" | grep -v pgrep; }
+# alone PROG -> ARC, AERR: a service run by itself (not under the manager), 10 s at most
+alone() {
+    mkdir -p "$T/alone"
+    ( cd "$T/alone" && timeout 10 "$R/$1" ) > "$T/alone/out" 2> "$T/alone/err"; ARC=$?
+    AERR=$(cat "$T/alone/err")
+}
+# squat PATH -> SQ: another live server listening at PATH (until killed)
+squat() {
+    python3 -c 'import socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(4); time.sleep(60)' "$1" & SQ=$!
+    for _ in $(seq 1 50); do [ -S "$1" ] && return 0; sleep 0.1; done; return 1
+}
 field() { echo "$ANS" | sed 's/^ok //' | awk -v n="$1" -v f="$2" '$1 == n { print $f }'; }
 
 # ── errors before anything starts ──────────────────────────────────────────
@@ -190,6 +208,32 @@ for m in cycle missing; do
         "a $m is a loud error before anything starts (rc 1, \"$want\", no log dir, no process)" \
         "rc=$erc stderr=$(head -c 200 "$T/mgr_$m.err") dir=$(ls -d "$R/$dir" 2>/dev/null) left=$(left)"
 done
+
+# a channel whose path cannot be taken: a loud error, never a running manager
+# or service that nobody can reach (bind fails on a directory: EADDRINUSE)
+mkdir "/tmp/logosipc-${CHAN}d"
+printf badchan > "$R/mgr.mode"; printf '%s' "${CHAN}d" > "$R/mgr.chan"
+( cd "$R" && timeout 10 "$R/logosservices" ) > "$T/mgr_badchan.out" 2> "$T/mgr_badchan.err"; erc=$?
+rmdir "/tmp/logosipc-${CHAN}d"
+want="logosservices: cannot listen on the channel ${CHAN}d (bind -98)"
+check "$([ "$erc" = 1 ] && [ "$(cat "$T/mgr_badchan.err")" = "$want" ] && [ -z "$(left)" ] \
+         && ! grep -q " start " "$R/logs6/logosservices.log" && echo 1)" \
+    "a channel path the manager cannot bind is a loud error before any service starts (rc 1, \"$want\")" \
+    "rc=$erc stderr=$(head -c 200 "$T/mgr_badchan.err") left=$(left) log=$(tr '\n' '|' < "$R/logs6/logosservices.log")"
+pkill -KILL -f "$R/" 2>/dev/null
+for pc in logostime:time logosledger:ledger; do
+    prog=${pc%%:*}; ch=${pc##*:}; p="/tmp/logosipc-$ch"
+    mkdir "$p"; alone "$prog"; rmdir "$p"
+    check "$([ "$ARC" = 1 ] && [ "$AERR" = "$prog: cannot listen on the channel $ch (bind -98)" ] && echo 1)" \
+        "$ch: a channel path it cannot bind (a directory there) is a loud error (rc 1, the bind error)" "rc=$ARC stderr=$AERR"
+    if squat "$p"; then
+        alone "$prog"; [ -S "$p" ] && kept=1 || kept=0; kill "$SQ"; wait "$SQ" 2>/dev/null; SQ=; rm -f "$p"
+        check "$([ "$ARC" = 1 ] && [ "$AERR" = "$prog: the channel $ch is already served" ] && [ "$kept" = 1 ] && echo 1)" \
+            "$ch: a channel another live server holds is refused loudly (rc 1), and that server keeps its path" \
+            "rc=$ARC stderr=$AERR path kept=$kept"
+    else fail "$ch: the gate's own listener did not come up"; fi
+done
+pkill -KILL -f "$R/" 2>/dev/null
 
 # ── SIGTERM, and `stop logosservices` ──────────────────────────────────────
 start_mgr term "${CHAN}b"

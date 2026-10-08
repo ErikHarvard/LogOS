@@ -93,7 +93,7 @@
 #                (add)(sub)(mul)(div)(mod)(lt)(int_eq)(bshl)
 #    X = la s. s(fork)(execv)(dup2)(pipe)(open)(close)(read)(write)(poll)(kill)
 #                (waitpid)(clock_gettime)(getpid)(sigprocmask)(signalfd)(socket)
-#                (connect)(unlink)(read_file)(stat)(mkdir)(exit)(error)
+#                (bind)(listen)(connect)(unlink)(read_file)(stat)(mkdir)(exit)(error)
 #  VM only: fork, execv, pipe, poll, sockets and signals exist only there.
 #
 #  HONEST SCOPE. A service's own children are not tracked: no process groups or
@@ -101,7 +101,8 @@
 #  is no readiness protocol — dependency order is start order. One control
 #  request is served at a time, read with one recv (a request is a few bytes;
 #  a client silent for 2 s is dropped). A second manager is refused a channel
-#  that a live manager already serves.
+#  that a live manager already serves, and a channel whose path cannot be taken
+#  (bind or listen fails) is a loud error before anything starts.
 # ═══════════════════════════════════════════════════════════════════
 
 import("logosipc.la")
@@ -198,10 +199,10 @@ glyph SV_CORE = la B. la X. la L. la T. la ipc.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
   X(la fork. la execv. la dup2. la pipe. la open. la close. la read. la write. la poll.
     la kill. la waitpid. la clock_gettime. la getpid. la sigprocmask. la signalfd. la socket.
-    la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
+    la sbind. la slisten. la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
   L(la nil. la cons. la map. la filter. la find. la all. la len. la rev.
   T(la slice. la words. la joinsp. la joinnl. la member. la digits. la okname. la nth.
-  ipc(la CHANNEL. la ACCEPT. la SEND. la RECV. la MSG_TYPE. la MSG_BODY.
+  ipc(la ACCEPT. la SEND. la RECV. la MSG_TYPE. la MSG_BODY.
   (la C0. la C1. la C2. la C3. la C4. la C9. la C17. la C30. la C49. la C256. la C1000. la C1000000.
    la TRUE. la FALSE.
     LET("logosservices")(la MGR.
@@ -326,19 +327,26 @@ glyph SV_CORE = la B. la X. la L. la T. la ipc.
       (read_file("/proc/self/cmdline")))(la selfpath.
     LET(la fd. la what. digits(fd)(la _. fd)
         (la _. error(concat("logosservices: cannot open ")(concat(what)(concat(" (")(concat(fd)(")"))))))(C0))(la must.
-    # listen(channel)(sock): refuse a channel a live server answers on, then
-    # CHANNEL it and check the socket exists
+    # listen(channel)(sock): refuse a channel a live server answers on; then
+    # remove a stale path and socket + bind + listen, each result checked: a
+    # path that cannot be taken (a directory there, another user's file in the
+    # sticky /tmp) is a loud error, never a manager nobody can reach. (logosipc's
+    # CHANNEL does not check these results, so the manager does this itself.)
+    LET(la why. la e. error(concat("logosservices: cannot listen on the channel ")(why(e))))(la nolisten.
     LET(la channel. la sock. (la probe. (la r. (la _.
           str_eq(r)("0")
             (la _. error(concat("logosservices: the channel ")(concat(channel)(" is already served"))))
-            (la _. (la lfd. str_eq(str_at(stat(sock))(C0))("-")
-                      (la _. error(concat("logosservices: cannot listen on the channel ")(channel)))
-                      (la _. lfd)(C0))
-                   (CHANNEL(channel)))(C0))
+            (la _. (la _. (la s. (la b.
+                str_eq(b)("0")
+                  (la _. (la l. str_eq(l)("0")(la _. s)
+                           (la _. nolisten(la e. concat(channel)(concat(" (listen ")(concat(e)(")"))))(l))(C0))
+                         (slisten(s)))
+                  (la _. nolisten(la e. concat(channel)(concat(" (bind ")(concat(e)(")"))))(b))(C0))
+              (sbind(s)(sock)))(socket("!")))(unlink(sock)))(C0))
           (close(probe)))(connect(probe)(sock)))(socket("!")))(la listen.
       la s. s(now)(mk)(dname)(rname)(rstate)(rpid)(rrfd)(dead)(drain)(closeall)(child)(topo)(waitdead)(must)(listen)
              (selfpath)
-    ))))))))))))))))))))))))
+    )))))))))))))))))))))))))
   (0)(1)(2)(3)(4)(9)(17)(30)(49)(256)(1000)(1000000)(la t. la f. t)(la t. la f. f))))))
 
 # ── The running manager ───────────────────────────────────────────────────
@@ -349,10 +357,10 @@ glyph SV_RUN = la B. la X. la L. la T. la ipc. la core.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
   X(la fork. la execv. la dup2. la pipe. la open. la close. la read. la write. la poll.
     la kill. la waitpid. la clock_gettime. la getpid. la sigprocmask. la signalfd. la socket.
-    la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
+    la sbind. la slisten. la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
   L(la nil. la cons. la map. la filter. la find. la all. la len. la rev.
   T(la slice. la words. la joinsp. la joinnl. la member. la digits. la okname. la nth.
-  ipc(la CHANNEL. la ACCEPT. la SEND. la RECV. la MSG_TYPE. la MSG_BODY.
+  ipc(la ACCEPT. la SEND. la RECV. la MSG_TYPE. la MSG_BODY.
   core(la now. la mk. la dname. la rname. la rstate. la rpid. la rrfd. la dead. la drain.
        la closeall. la child. la topo. la waitdead. la must. la listen. la selfpath.
   (la C0. la C1. la C2. la C3. la C5. la C1000. la STABLE. la TRUE. la FALSE.
@@ -514,7 +522,7 @@ glyph SV_MGR = la B. la X. la L. la T. la ipc.
       la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bshl.
     X(la fork. la execv. la dup2. la pipe. la open. la close. la read. la write. la poll.
       la kill. la waitpid. la clock_gettime. la getpid. la sigprocmask. la signalfd. la socket.
-      la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
+      la sbind. la slisten. la connect. la unlink. la read_file. la stat. la mkdir. la exit. la error.
     T(la slice. la words. la joinsp. la joinnl. la member. la digits. la okname. la nth.
     core(la now. la mk. la dname. la rname. la rstate. la rpid. la rrfd. la dead. la drain.
          la closeall. la child. la topo. la waitdead. la must. la listen. la selfpath.
@@ -543,6 +551,6 @@ glyph SV_MGR = la B. la X. la L. la T. la ipc.
 
 # SVC_KIT(B)(X) -> la s. s(manager): every part built once, here.
 glyph SVC_KIT = la B. la X.
-  (la L. (la T. SV_MGR(B)(X)(L)(T)(la s. s(CHANNEL)(ACCEPT)(SEND)(RECV)(MSG_TYPE)(MSG_BODY)))
+  (la L. (la T. SV_MGR(B)(X)(L)(T)(la s. s(ACCEPT)(SEND)(RECV)(MSG_TYPE)(MSG_BODY)))
          (SV_TEXT(B)(L)))
   (SV_LISTS(B))

@@ -49,7 +49,13 @@
 #  As logostime.la: poll on the socket and a signalfd; SIGTERM/SIGINT remove
 #  the socket and exit 0; SIGPIPE is blocked; a client silent for 2 s is
 #  dropped. A ledger file with no head file is refused at startup (fail
-#  closed: an unanchored ledger is not extended). VM only.
+#  closed: an unanchored ledger is not extended). Also refused at startup,
+#  loudly (exit 1, the reason on stderr), rather than run unreachable: a live
+#  server already answering on the channel (two ledgers must not share one
+#  name, or one file), and a channel path that cannot be taken (bind or listen
+#  fails, e.g. a directory there, or another user's file in the sticky /tmp);
+#  LG_LISTEN does the socket + bind + listen itself and checks each result,
+#  since logosipc.la's CHANNEL does not. VM only.
 #
 #  STYLE. LG_KIT(B)(X)(crypt) holds everything that walks the file's bytes,
 #  in kit style (builtins as parameters); the request loop is per request.
@@ -267,16 +273,29 @@ glyph LG_LOOP = la K. la lfd. la fds. Z(la loop. la n. la h.
                  str_eq(str_head(ready))("-")(la _. loop(n)(h))(la _. LG_STOP("!"))("!"))("!"))("!"))
     (poll(fds)("-1")))
 
+# LG_LISTEN(_): the listening fd on the channel, or a loud halt. A probe
+# connect that succeeds means a live server holds the channel; otherwise the
+# stale path is removed and socket + bind + listen run, each result checked.
+glyph LG_LISTEN = la _. (la probe. (la r. (la _.
+    str_eq(r)("0")
+      (la _. error(concat("logosledger: the channel ")(concat(LG_CHAN)(" is already served"))))
+      (la _. (la _. (la s. (la b.
+          str_eq(b)("0")
+            (la _. (la l. str_eq(l)("0")(la _. s)
+                     (la _. error(concat("logosledger: cannot listen on the channel ledger (listen ")(concat(l)(")"))))("!"))
+                   (listen(s)))
+            (la _. error(concat("logosledger: cannot listen on the channel ledger (bind ")(concat(b)(")"))))("!"))
+        (bind(s)(LG_SOCK)))(socket("!")))(unlink(LG_SOCK)))("!"))
+  (close(probe)))(connect(probe)(LG_SOCK)))(socket("!"))
+
 glyph MAIN =
   (la K. K(la load. la append. la verify. la tail.
     (la _. (la sfd. (la lfd.
-        str_eq(str_head(stat(LG_SOCK)))("-")
-          (la _. error("logosledger: cannot listen on the channel ledger"))
-          (la _. load("!")(la n. la h.
-                   (la _. LG_LOOP(K)(lfd)(concat(lfd)(concat(" ")(sfd)))(n)(h))
-                   (print(concat("logosledger: serving append, verify and tail on the channel ledger; entries: ")
-                                (int_to_str(n))))))("!"))
-      (CHANNEL(LG_CHAN)))(signalfd(LG_SIGS)))
+        load("!")(la n. la h.
+          (la _. LG_LOOP(K)(lfd)(concat(lfd)(concat(" ")(sfd)))(n)(h))
+          (print(concat("logosledger: serving append, verify and tail on the channel ledger; entries: ")
+                       (int_to_str(n))))))
+      (LG_LISTEN("!")))(signalfd(LG_SIGS)))
     (sigprocmask("0")(LG_BLOCK))))
   (LG_KIT(la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
                  (add)(sub)(div)(lt)(int_eq))

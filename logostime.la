@@ -27,6 +27,13 @@
 #  that connects but sends nothing for 2 s is dropped. VM only (socket, poll,
 #  clock_gettime and the signal builtins exist only there).
 #
+#  STARTUP FAILS LOUDLY (exit 1, the reason on stderr) rather than run
+#  unreachable: when a live server already answers on the channel (a second
+#  LogosTime must not take over the first one's name), or when the channel's
+#  path cannot be taken — bind or listen fails, e.g. a directory there, or
+#  another user's file in the sticky /tmp. (logosipc.la's CHANNEL does not check
+#  those results, so TIME_LISTEN does the socket + bind + listen itself.)
+#
 #  HONEST SCOPE. This serves the host's clocks; it does not discipline them
 #  (no NTP, no drift correction). One connection is served at a time. A request
 #  is read with one recv, which is enough for these few-byte messages.
@@ -73,11 +80,24 @@ glyph TIME_LOOP = la lfd. la fds. Z(la loop. la _.
           TIME_STOP("!"))("!"))("!"))("!"))
     (poll(fds)("-1")))("!")
 
+# TIME_LISTEN(_): the listening fd on the channel, or a loud halt. A probe
+# connect that succeeds means a live server holds the channel; otherwise the
+# stale path is removed and socket + bind + listen run, each result checked.
+glyph TIME_LISTEN = la _. (la probe. (la r. (la _.
+    str_eq(r)("0")
+      (la _. error(concat("logostime: the channel ")(concat(TIME_CHAN)(" is already served"))))
+      (la _. (la _. (la s. (la b.
+          str_eq(b)("0")
+            (la _. (la l. str_eq(l)("0")(la _. s)
+                     (la _. error(concat("logostime: cannot listen on the channel time (listen ")(concat(l)(")"))))("!"))
+                   (listen(s)))
+            (la _. error(concat("logostime: cannot listen on the channel time (bind ")(concat(b)(")"))))("!"))
+        (bind(s)(TIME_SOCK)))(socket("!")))(unlink(TIME_SOCK)))("!"))
+  (close(probe)))(connect(probe)(TIME_SOCK)))(socket("!"))
+
 glyph MAIN =
     (la _. (la sfd. (la lfd.
-        str_eq(str_head(stat(TIME_SOCK)))("-")
-          (la _. error("logostime: cannot listen on the channel time"))
-          (la _. (la _. TIME_LOOP(lfd)(concat(lfd)(concat(" ")(sfd))))
-                 (print(concat("logostime: serving now and mono on the channel ")(TIME_CHAN))))("!"))
-      (CHANNEL(TIME_CHAN)))(signalfd(TIME_SIGS)))
+        (la _. TIME_LOOP(lfd)(concat(lfd)(concat(" ")(sfd))))
+        (print(concat("logostime: serving now and mono on the channel ")(TIME_CHAN))))
+      (TIME_LISTEN("!")))(signalfd(TIME_SIGS)))
     (sigprocmask("0")(TIME_BLOCK))
