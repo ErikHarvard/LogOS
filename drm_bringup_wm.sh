@@ -15,6 +15,8 @@
 #          MOD+t            side-by-side <-> stacked
 #          MOD+- / MOD+=    shrink / grow      MOD+Tab           next window
 #          MOD+c            interrupt the focused window's command
+#          MOD+s            the settings panel (LogosKit; Tab moves, Space
+#                           toggles; "Dark theme" redraws the panel dark)
 #          MOD+q            close the window   MOD+Shift+e       exit
 #        MOD is Super or Alt.
 #     4. Ctrl+C also stops it at once (the VT delivers SIGINT); the greeter
