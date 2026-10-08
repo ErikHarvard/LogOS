@@ -29,7 +29,8 @@
 #            time answers now and mono; stop/start/restart; ledger append,
 #            verify, tail and `broken <i>` after the gate edits the file (a
 #            text field, a link field, a deleted last entry, the newest
-#            entry's text, which only the head covers); append refuses
+#            entry's text, which only the head covers, a newline put into a
+#            text field, which splits the entry's line); append refuses
 #            a file that does not end at its entry n; a stop during an
 #            append (SIGKILLed mid-hash) leaves file and head unchanged, and
 #            an entry written without its head is anchored at the next
@@ -39,8 +40,9 @@
 # ISOLATION: a private temp dir (gate_wm_common.sh); the manager's channel is
 # named after this shell's pid. The services' channels are the contract's
 # fixed `time` and `ledger` (/tmp/logosipc-time, /tmp/logosipc-ledger), so two
-# runs of this gate must not overlap. VM only; about 6 minutes, most of it
-# the ledger's sha256 (CRYPT_REF: ~18 s per entry) and compiling it.
+# runs of this gate must not overlap. VM only; about 10 minutes (16 on a
+# loaded machine), most of it the ledger's sha256 (CRYPT_REF: ~17 s per entry,
+# about 25 of them) and compiling it.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
@@ -362,6 +364,14 @@ f = lines[2].split("|", 3); f[3] = "omega|pipX"; lines[2] = "|".join(f)
 open(sys.argv[2], "w").write("\n".join(lines))
 PYEOF
     lreq verify "" v5
+    # a newline put into entry 2's text: its line ends early, "pha" is no entry
+    python3 - "$LC/orig.txt" "$R/glyphledger.txt" <<'PYEOF'
+import sys
+lines = open(sys.argv[1]).read().split("\n")
+f = lines[1].split("|", 3); f[3] = "al\npha"; lines[1] = "|".join(f)
+open(sys.argv[2], "w").write("\n".join(lines))
+PYEOF
+    lreq verify "" v6
     cp "$LC/orig.txt" "$R/glyphledger.txt"
     lreq append "two
 lines" an
@@ -486,6 +496,8 @@ check "$([ "$(rv v2)" = "broken 2" ] && [ "$(rv v3)" = "broken 3" ] && [ "$(rv v
     "$(rv v2) | $(rv v3) | $(rv v4)"
 check "$([ "$(rv v5)" = "broken 3" ] && echo 1)" \
     "ledger: verify reports an edited NEWEST entry (text of entry 3, caught only by the head) -> broken 3" "$(rv v5)"
+check "$([ "$(rv v6)" = "broken 2" ] && echo 1)" \
+    "ledger: an edit that puts a newline into entry 2's text is reported at its own number -> broken 2" "$(rv v6)"
 check "$([ "$(rv an)" = "err logosledger: an entry is one line" ] && [ "$(rv tk)" = "err logosledger: tail needs a count" ] && echo 1)" \
     "ledger: a two-line entry and a non-numeric tail are refused" "$(rv an) | $(rv tk)"
 check "$([ "$(rv ag)" = "err logosledger: glyphledger.txt does not end at entry 3; not extending it" ] && [ -e "$LC/ag_same" ] && echo 1)" \

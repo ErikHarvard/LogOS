@@ -32,10 +32,16 @@
 #  entry i+1, or the head for the newest. A changed line breaks the link INTO
 #  it only if its own link field changed, but always the link OUT of it; so
 #  when the link out of i fails, i+1 is blamed instead of i only if i+1 is
-#  itself malformed or its own outgoing link fails too. One edited entry is
-#  thus reported at its own number, whichever field was edited. Entries
-#  missing at the end (n below the head's count) report the first missing
-#  number; entries the head does not cover report the first such one.
+#  itself malformed or its own outgoing link fails too. A newline put into an
+#  entry's text splits it: the entry's line ends early and the rest is a line
+#  that is no entry at all (a fragment). So when the line after i is not entry
+#  i+1, the later lines are searched for entry i+1, skipping such fragments;
+#  if it is found, does not link to i's line as it now is, and its own link
+#  out holds, i is blamed (otherwise i+1 is, as before). One edited entry is
+#  thus reported at its own number, whichever field was edited and whether
+#  or not the edit put a newline into it. Entries missing at the end (n below
+#  the head's count) report the first missing number; entries the head does
+#  not cover report the first such one.
 #
 #  WHY. The Codex names the GlyphLedger the system's signed event log: what
 #  happened, in order, such that a record cannot be quietly changed after the
@@ -254,6 +260,10 @@ glyph LG_KIT = la B. la X. la crypt.
             (la _. la k. k("err")(concat("logosledger: glyphledger.txt does not end at entry ")
                                    (concat(int_to_str(n))("; not extending it")))(n)(h))(C0))
           (la _. la k. k("err")("logosledger: an entry is one line")(n)(h))(C0))(la append.
+    # seek(j)(l)(no)(yes): the first line of l that is a well-formed entry j,
+    # as yes(it)(the lines after it), skipping the lines before it; no(_) if none
+    LET(Z(la seek. la j. la l. la no. la yes.
+        l(la _. no(C0))(la e. la r. wellformed(j)(e)(la _. yes(e)(r))(la _. seek(j)(r)(no)(yes))(C0))))(la seek.
     # verify(hn)(hh): the file against the chain and the head (n, hash)
     LET(la hn. la hh.
         (la ls. (la m.
@@ -275,7 +285,11 @@ glyph LG_KIT = la B. la X. la crypt.
                                          (la _. walk(add(i)(C1))(nxt)(rest2))
                                          (la _. (la j. wellformed(j)(nxt)
                                                   (la _. attested(j)(rest2)(H(nxt))(la _. broken(i))(la _. broken(j))(C0))
-                                                  (la _. broken(j))(C0))
+                                                  # nxt is no entry j: a fragment of i if entry j
+                                                  # follows, linked from what i was, not from i now
+                                                  (la _. seek(j)(rest2)(la _. broken(j))
+                                                           (la e. la r. str_eq(linkof(e))(h)(la _. broken(j))
+                                                              (la _. attested(j)(r)(H(e))(la _. broken(i))(la _. broken(j))(C0))(C0)))(C0))
                                                 (add(i)(C1)))(C0))(C0)))
                         (H(cur)))
                       (la _. broken(i))(C0))
@@ -296,7 +310,7 @@ glyph LG_KIT = la B. la X. la crypt.
             (llen(ls)))
           (lines(readledger(C0))))
         (la _. la r. r("err")("logosledger: tail needs a count"))(C0))(la tail.
-      la s. s(load)(append)(verify)(tail))))))))))))))))))))))))))))))))))
+      la s. s(load)(append)(verify)(tail)))))))))))))))))))))))))))))))))))
   (0)(1)(2)(10)(48)(57)(64)(97)(102)(la t. la f. t)(la t. la f. f)
   (la n. la c. n(n))(la h. la t. la n. la c. c(h)(t)))))
 
