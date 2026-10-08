@@ -86,6 +86,8 @@ glyph LOGIN_APP = la B. la L. la nodes. la sess.
     LET(la st. TRUE)(la theme.
     LET(la st. st(la name. la pass. la phase. la note. phase(la _. FALSE)(la l. FALSE)(la s. TRUE)))(la done.
     LET(la st. st(la name. la pass. la phase. la note.
-        phase(la _. st)(la l. st)(la s. mk(name)("")(LOCKED(s_lock(s)))("Locked."))))(la lock.
+        # in every phase the passphrase is forgotten; an open session is locked
+        phase(la _. mk(name)("")(phase)(note))(la l. mk(name)("")(phase)(note))
+             (la s. mk(name)("")(LOCKED(s_lock(s)))("Locked."))))(la lock.
       la s. s(init)(view)(update)(theme)("Log in")(done)(lock)))))))))))))))))
   (0)(1)(la t. la f. t)(la t. la f. f)))))

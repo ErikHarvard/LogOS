@@ -16,7 +16,10 @@
 #   - a wrong passphrase is refused again; logoz, Backspace, s unlocks, and the
 #     session that comes back is the one the stub's unlock made from the
 #     locked one (S:adam);
-#   - the passphrase never appears in anything the screen draws or says.
+#   - the passphrase never appears in anything the screen draws or says;
+#   - lock forgets a passphrase being typed before the first login too: after
+#     adam, Tab, "logo", lock, then "s" and Enter must not log in (with the
+#     passphrase kept, "logo" + "s" would).
 #
 # ISOLATION: private temp dir (gate_wm_common.sh). About 2 minutes.
 set -uo pipefail
@@ -128,5 +131,38 @@ if [ "$vrc" = 0 ] && ! grep -qE 'logos|lugos|logoz|Passphrase: [^*,]' "$T/out.tx
     echo "PASS  lk_login (VM): no passphrase typed in the session appears in what the screen draws or says"
 else
     echo "FAIL  lk_login (VM): a passphrase appears in the screen's description"; grep -nE 'logos|lugos|logoz' "$T/out.txt" | head -5; ok=0
+fi
+
+# lock in the fresh phase, with a passphrase half typed
+{ sed -n '1,/^glyph APPENDK/p' "$T/t.la"; cat <<'LAEOF'
+glyph KEYS3 = APPENDK(TYPE("adam"))(WM_CONS(K(15)(NOS)(""))(TYPE("logo")))
+glyph KEYS4 = APPENDK(TYPE("s"))(WM_CONS(K(28)(NOS)(""))(WM_NIL))
+glyph MAIN = (la L. LK_KIT(B)(L)(RSTUB)(1)(PAL)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
+  LOGIN_APP(B)(L)(nodes)(SESS)(la init. la view. la update. la theme. la title. la done. la lock.
+    (la show. (la run.
+      (la st1. (la _. (la st2. (la _. (la st3. show("after s, Enter")(st3)("pass"))(run(KEYS4)(st2)("pass")))
+                                 (show("after lock")(st2)("pass")))
+                       (lock(st1)))
+               (show("typed")(st1)("pass")))
+      (run(KEYS3)(init)("user")))
+     (Z(la run. la keys. la st. la focus.
+        keys(la _. st)
+            (la kk. la rest. kk(la code. la shift. la ch.
+               key(view(st))(focus)(code)(shift)(ch)(la focus2. la m.
+                 (la st2. run(rest)(st2)(focus2))
+                 (m(la _. st)(la mm. update(st)(mm)))))))))
+    (la label. la st. la focus.
+       (la _. (la _. st)(PRINTALL(a11y(view(st))(focus))))
+       (print(concat("-- ")(concat(label)(concat(": done=")(done(st)("yes")("no"))))))))))(WM_LISTS(B))
+LAEOF
+} > "$T/t2.la"
+wm_vm t2.la "$T/out2.txt"
+after_lock=$(sed -n '/^-- after lock/,/^-- /p' "$T/out2.txt")
+if [ "$vrc" = 0 ] && grep -q 'Passphrase: \*\*\*\*, focused' "$T/out2.txt" \
+   && echo "$after_lock" | grep -q 'text field Passphrase: , focused' \
+   && grep -qx -- '-- after s, Enter: done=no' "$T/out2.txt" && ! grep -q 'Welcome' "$T/out2.txt"; then
+    echo "PASS  lk_login (VM): lock before the first login forgets the half-typed passphrase (logo, lock, s + Enter stays out)"
+else
+    echo "FAIL  lk_login (VM): lock before the first login: rc=$vrc"; head -30 "$T/out2.txt"; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
 [ "$ok" = 1 ] || exit 1
