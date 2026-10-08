@@ -1,0 +1,262 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_tile.la — the tiling layout: a binary split tree (Stage 10).
+#
+#  A tiling window manager never places a window by hand: the screen is cut in
+#  two, each half is cut again, and every window is one leaf of that tree. This
+#  module is the tree and every operation the window manager performs on it:
+#  open a window beside the focused one, close one, find the neighbour in a
+#  direction, swap two windows, move a split, turn a split, and compute where
+#  every window goes. It knows nothing about terminals or pixels; ids are just
+#  positive integers.
+#
+#  THE TREE. EMPTY (no windows) | LEAF(id) | SPLIT(dir)(ratio)(first)(second).
+#  dir 0 = side by side (first on the left), 1 = stacked (first on top); ratio
+#  is the first child's share in permille. Scott-encoded, three cases:
+#      t(la _. if_empty)(la id. if_leaf)(la dir. la ratio. la a. la b. if_split)
+#  The window manager does not need to look inside: every use goes through the
+#  kit's operations, and show(t) prints the canonical text form, for example
+#  E, L1, H500(L1,V500(L2,L3))  (H = side by side, V = stacked).
+#
+#  USE. TILE_KIT(add)(sub)(mul)(div)(lt)(int_eq)(concat)(int_to_str) returns
+#  the record (destructure it positionally, in THIS order):
+#      la sel. sel(empty)(insert)(remove)(layout)(neighbour)(swap)(resize)
+#                 (toggle)(leaves)(next)(has)(count)(show)
+#  The operations, as WM_DESIGN.md specifies them:
+#    empty                         the empty tree
+#    insert(t)(focus)(id)(dir)     split leaf focus into
+#                                  SPLIT(dir)(500)(LEAF focus)(LEAF id);
+#                                  on EMPTY, LEAF id
+#    remove(t)(id)                 drop leaf id; its sibling takes the parent's
+#                                  place; the last leaf leaves EMPTY
+#    layout(t)(x)(y)(w)(h)(gap)    Scott list of la k. k(id)(x)(y)(w)(h), leaves
+#                                  in order (see LAYOUT below for the formula)
+#    neighbour(t)(id)(d)(x)(y)(w)(h)(gap)
+#                                  the window next to id in direction d (0 left,
+#                                  1 right, 2 up, 3 down) in that layout, or id
+#    swap(t)(a)(b)                 exchange the ids of leaves a and b
+#    resize(t)(id)(delta)          grow id's share of its parent split by delta
+#                                  permille (negative shrinks), the split's
+#                                  ratio clamped to [100, 900]
+#    toggle(t)(id)                 flip the dir of id's parent split
+#    leaves(t)                     Scott list of the ids, in order
+#    next(t)(id)                   the leaf after id, wrapping around
+#    has(t)(id)                    Church boolean
+#    count(t)                      number of leaves
+#    show(t)                       canonical text
+#
+#  WHAT THE CONTRACT LEAVES OPEN, DEFINED HERE (the gate checks each one):
+#    - An id that is not in the tree never corrupts it: insert with an absent
+#      focus (on a non-empty tree), remove/resize/toggle of an absent id, and
+#      swap where either id is absent all return the tree UNCHANGED; next and
+#      neighbour of an absent id return that id. On EMPTY, insert ignores focus.
+#    - insert keeps ids unique: an id already in the tree, or an id that is not
+#      positive, leaves the tree unchanged.
+#    - insert's dir: 0 is side by side, ANY other value is stacked (stored as 1),
+#      so show is always H or V.
+#    - resize/toggle of a leaf with no parent split (a lone LEAF, or EMPTY) is
+#      unchanged. A second child's share is 1000 - ratio, so growing it by delta
+#      lowers ratio by delta; the clamp [100, 900] is symmetric, so either share
+#      stays in [100, 900].
+#    - swap(t)(a)(a) is unchanged; next of the only leaf is that leaf.
+#    - layout clamps negative w, h, gap to 0 first. At a side-by-side split of
+#      width w the gap actually used is g = min(gap, w), so w1 = (w-g)*ratio/1000
+#      (truncating), w2 = w-g-w1, second at x+w1+g: with gap <= w this is
+#      exactly the contract's formula; with gap > w both children get width 0
+#      and the second sits at the right edge, so no size goes negative and every
+#      rectangle stays inside the area. Stacked splits do the same on h. So the
+#      leaves and the gap strips always tile the area exactly.
+#    - neighbour: R = id's rectangle. A candidate C (another leaf) must lie
+#      wholly past R's edge in direction d (left: C.x+C.w <= R.x; right:
+#      C.x >= R.x+R.w; up: C.y+C.h <= R.y; down: C.y >= R.y+R.h) and overlap R
+#      by MORE than zero on the other axis. Nearest (the gap between the two
+#      facing edges) wins, then the larger overlap, then the earlier leaf. A d
+#      outside 0..3 has no candidates, so it returns id.
+#
+#  PERFORMANCE (WM_DESIGN.md "How fast the VM is"). Kit style: the builtins are
+#  parameters, the constants are bound once when the kit is built, every
+#  function is let-bound (LET and Z are named only while the kit is being
+#  built), so after TILE_KIT returns, no operation names a glyph or a builtin.
+#  Booleans are applied straight to values or to thunks and a dummy. Every
+#  operation is one to three linear walks of the tree (insert = has + rebuild,
+#  neighbour = layout + find + scan), and the trees are small (a screen holds
+#  tens of windows, not thousands). Measured on the VM with 10 windows in the
+#  deepest shape: layout 0.14 ms, neighbour 0.34 ms, insert+remove 0.12 ms,
+#  swap 0.09 ms, show 0.04 ms, the rest under 0.06 ms; with 30 windows layout
+#  0.38 ms and neighbour 0.86 ms. A gdb trap on the VM's glyph-table lookup
+#  counts the same names for 1 and 5 rounds of every operation: only the
+#  kit's own construction reaches the table.
+#
+#  Pure Lingua Adamica: byte-identical on the C host and the native VM. The
+#  host is much slower here (tens of ms an operation: its substitution copies
+#  the kit's closures at every step), which is fine for tests, not for a WM.
+#  gate_wm_tile.sh checks it against an independent Python model of the same
+#  tree over a few hundred seeded random operations, hand-derived known
+#  answers, and the layout invariants (disjoint, inside the area, an exact
+#  tiling with the gaps, unique ids, count = length of leaves).
+#
+#  OUT OF SCOPE (honestly): no minimum window size (a split simply truncates;
+#  at a tiny area windows get width or height 0), no floating windows, no
+#  tabbed or stacked containers, and resize moves only the IMMEDIATE parent
+#  split (i3 would look further up for a split in the matching direction).
+# ═══════════════════════════════════════════════════════════════════
+
+export TILE_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la f. f(v)
+
+glyph TILE_KIT = la add. la sub. la mul. la div. la lt. la int_eq. la concat. la int_to_str.
+  LET(0)(la C0. LET(1)(la C1. LET(2)(la C2. LET(3)(la C3.
+  LET(100)(la C100. LET(500)(la C500. LET(900)(la C900. LET(1000)(la C1000.
+
+  # ── encodings: Church booleans, Scott lists, the three tree cases ──
+  LET(la t. la f. t)(la TT.
+  LET(la t. la f. f)(la FF.
+  LET(la n. la c. n(n))(la NIL.
+  LET(la h. la tl. la n. la c. c(h)(tl))(la CONS.
+  LET(la e. la l. la s. e(e))(la EMPTY.
+  LET(la id. la e. la l. la s. l(id))(la LEAF.
+  LET(la d. la r. la a. la b. la e. la l. la s. s(d)(r)(a)(b))(la SPLIT.
+  LET(la a. la b. lt(a)(b)(a)(b))(la MIN.
+  LET(la a. la b. lt(a)(b)(b)(a))(la MAX.
+  LET(la v. lt(v)(C100)(C100)(lt(C900)(v)(C900)(v)))(la CLAMP.
+  LET(la dir. int_eq(dir)(C0)(C0)(C1))(la NORMD.
+  LET(la n. la id. n(la _. FF)(la i. int_eq(i)(id))(la d. la r. la a. la b. FF))(la ISLEAF.
+
+  # ── queries ──
+  LET(Z(la has. la t. la id.
+        t(la _. FF)
+         (la i. int_eq(i)(id))
+         (la d. la r. la a. la b. has(a)(id)(la _. TT)(la _. has(b)(id))(C0))))(la HAS.
+  LET(Z(la count. la t.
+        t(la _. C0)(la i. C1)(la d. la r. la a. la b. add(count(a))(count(b)))))(la COUNT.
+  LET(Z(la go. la t. la acc.
+        t(la _. acc)(la i. CONS(i)(acc))(la d. la r. la a. la b. go(a)(go(b)(acc)))))(la LVS.
+  LET(la t. LVS(t)(NIL))(la LEAVES.
+  LET(Z(la show. la t.
+        t(la _. "E")
+         (la i. concat("L")(int_to_str(i)))
+         (la d. la r. la a. la b.
+            concat(int_eq(d)(C0)("H")("V"))
+              (concat(int_to_str(r))
+                (concat("(")(concat(show(a))(concat(",")(concat(show(b))(")")))))))))(la SHOW.
+  # NX(first)(id)(l): the element after id in l, first if id is last, id if absent.
+  LET(Z(la nx. la first. la id. la l.
+        l(la _. id)
+         (la h. la tl. int_eq(h)(id)
+             (la _. tl(la _. first)(la h2. la t2. h2))
+             (la _. nx(first)(id)(tl))(C0))))(la NX.
+  LET(la t. la id. (la l. l(la _. id)(la h. la tl. NX(h)(id)(l)))(LEAVES(t)))(la NEXT.
+
+  # ── edits ──
+  # MAPL(f)(t): t with every leaf n (id i) replaced by f(i)(n).
+  LET(Z(la m. la f. la t.
+        t(la _. t)(la i. f(i)(t))(la d. la r. la a. la b. SPLIT(d)(r)(m(f)(a))(m(f)(b)))))(la MAPL.
+  LET(la t. la focus. la id. la dir.
+        lt(C0)(id)
+          (la _. HAS(t)(id)
+             (la _. t)
+             (la _. (la ins. t(la _. LEAF(id))(la i. ins(C0))(la d. la r. la a. la b. ins(C0)))
+                      (la _. MAPL(la i. la n. int_eq(i)(focus)(la _. SPLIT(NORMD(dir))(C500)(n)(LEAF(id)))
+                                                            (la _. n)(C0))(t)))
+             (C0))
+          (la _. t)(C0))(la INSERT.
+  # RM(id)(t): a leaf child equal to id is replaced by its sibling; the root
+  # leaf id becomes EMPTY. Ids are unique, so at most one leaf matches.
+  LET(Z(la rm. la id. la t.
+        t(la _. t)
+         (la i. int_eq(i)(id)(EMPTY)(t))
+         (la d. la r. la a. la b.
+            ISLEAF(a)(id)(la _. b)
+              (la _. ISLEAF(b)(id)(la _. a)(la _. SPLIT(d)(r)(rm(id)(a))(rm(id)(b)))(C0))(C0))))(la RM.
+  LET(la t. la id. RM(id)(t))(la REMOVE.
+  LET(la t. la a. la b.
+        HAS(t)(a)
+          (la _. HAS(t)(b)
+             (la _. MAPL(la i. la n. int_eq(i)(a)(LEAF(b))(int_eq(i)(b)(LEAF(a))(n)))(t))
+             (la _. t)(C0))
+          (la _. t)(C0))(la SWAP.
+  # ATP(fa)(fb)(id)(t): the split whose FIRST child is leaf id becomes
+  # fa(d)(r)(a)(b), the one whose SECOND child is leaf id becomes fb(d)(r)(a)(b).
+  LET(Z(la ap. la fa. la fb. la id. la t.
+        t(la _. t)(la i. t)
+         (la d. la r. la a. la b.
+            ISLEAF(a)(id)(la _. fa(d)(r)(a)(b))
+              (la _. ISLEAF(b)(id)(la _. fb(d)(r)(a)(b))
+                 (la _. SPLIT(d)(r)(ap(fa)(fb)(id)(a))(ap(fa)(fb)(id)(b)))(C0))(C0))))(la ATP.
+  LET(la t. la id. la delta.
+        ATP(la d. la r. la a. la b. SPLIT(d)(CLAMP(add(r)(delta)))(a)(b))
+           (la d. la r. la a. la b. SPLIT(d)(CLAMP(sub(r)(delta)))(a)(b))(id)(t))(la RESIZE.
+  LET(la t. la id.
+        (la flip. ATP(flip)(flip)(id)(t))
+          (la d. la r. la a. la b. SPLIT(int_eq(d)(C0)(C1)(C0))(r)(a)(b)))(la TOGGLE.
+
+  # ── layout ──
+  # LAY(gap)(t)(x)(y)(w)(h)(acc): t's rectangles consed in front of acc.
+  LET(Z(la go. la gap. la t. la x. la y. la w. la h. la acc.
+        t(la _. acc)
+         (la i. CONS(la k. k(i)(x)(y)(w)(h))(acc))
+         (la d. la r. la a. la b.
+            int_eq(d)(C0)
+              (la _. (la g. (la av. (la w1.
+                        go(gap)(a)(x)(y)(w1)(h)(go(gap)(b)(add(x)(add(w1)(g)))(y)(sub(av)(w1))(h)(acc)))
+                      (div(mul(av)(r))(C1000)))(sub(w)(g)))(MIN(gap)(w)))
+              (la _. (la g. (la av. (la h1.
+                        go(gap)(a)(x)(y)(w)(h1)(go(gap)(b)(x)(add(y)(add(h1)(g)))(w)(sub(av)(h1))(acc)))
+                      (div(mul(av)(r))(C1000)))(sub(h)(g)))(MIN(gap)(h)))(C0))))(la LAY.
+  LET(la t. la x. la y. la w. la h. la gap.
+        LAY(MAX(C0)(gap))(t)(x)(y)(MAX(C0)(w))(MAX(C0)(h))(NIL))(la LAYOUT.
+
+  # ── neighbour ──
+  # FINDR(id)(l): la n. la s. … — s(rect) for id's rectangle in l, else n(n).
+  LET(Z(la fd. la id. la l.
+        l(la _. la n. la s. n(n))
+         (la c. la tl. c(la i. la x. la y. la w. la h.
+            int_eq(i)(id)(la _. la n. la s. s(c))(la _. fd(id)(tl))(C0)))))(la FINDR.
+  # NBDIR(d)(rx)(ry)(rw)(rh): la n. la s. … — s(dist)(overlap) for direction d,
+  # n(n) if d is not 0..3. dist(c) < 0 means c is not wholly past the edge.
+  LET(la dir. la rx. la ry. la rw. la rh.
+        (la ovx. la ovy.
+          int_eq(dir)(C0)
+            (la _. la n. la s. s(la c. c(la i. la x. la y. la w. la h. sub(rx)(add(x)(w))))(ovy))
+            (la _. int_eq(dir)(C1)
+              (la _. la n. la s. s(la c. c(la i. la x. la y. la w. la h. sub(x)(add(rx)(rw))))(ovy))
+              (la _. int_eq(dir)(C2)
+                (la _. la n. la s. s(la c. c(la i. la x. la y. la w. la h. sub(ry)(add(y)(h))))(ovx))
+                (la _. int_eq(dir)(C3)
+                  (la _. la n. la s. s(la c. c(la i. la x. la y. la w. la h. sub(y)(add(ry)(rh))))(ovx))
+                  (la _. la n. la s. n(n))(C0))(C0))(C0))(C0))
+        (la c. c(la i. la x. la y. la w. la h. sub(MIN(add(rx)(rw))(add(x)(w)))(MAX(rx)(x))))
+        (la c. c(la i. la x. la y. la w. la h. sub(MIN(add(ry)(rh))(add(y)(h)))(MAX(ry)(y)))))(la NBDIR.
+  # BETTER(found)(dd)(ov)(bd)(bo): does (dd, ov) beat the best so far (bd, bo)?
+  LET(la found. la dd. la ov. la bd. la bo.
+        found(la _. lt(dd)(bd)(la _. TT)(la _. int_eq(dd)(bd)(la _. lt(bo)(ov))(la _. FF)(C0))(C0))
+             (la _. TT)(C0))(la BETTER.
+  # SCAN(id)(dist)(ovl)(l)(found)(bi)(bd)(bo): the best candidate's id, or bi.
+  LET(Z(la sc. la id. la dist. la ovl. la l. la found. la bi. la bd. la bo.
+        l(la _. bi)
+         (la c. la tl.
+            c(la ci. la cx. la cy. la cw. la ch.
+              (la skip.
+                int_eq(ci)(id)
+                  (la _. skip(C0))
+                  (la _. (la dd. lt(dd)(C0)
+                      (la _. skip(C0))
+                      (la _. (la ov. lt(C0)(ov)
+                          (la _. BETTER(found)(dd)(ov)(bd)(bo)
+                                   (la _. sc(id)(dist)(ovl)(tl)(TT)(ci)(dd)(ov))
+                                   (la _. skip(C0))(C0))
+                          (la _. skip(C0))(C0))(ovl(c)))(C0))(dist(c)))(C0))
+              (la _. sc(id)(dist)(ovl)(tl)(found)(bi)(bd)(bo))))))(la SCAN.
+  LET(la t. la id. la dir. la x. la y. la w. la h. la gap.
+        (la l. FINDR(id)(l)
+            (la _. id)
+            (la rr. rr(la ri. la rx. la ry. la rw. la rh.
+                NBDIR(dir)(rx)(ry)(rw)(rh)
+                  (la _. id)
+                  (la dist. la ovl. SCAN(id)(dist)(ovl)(l)(FF)(id)(C0)(C0)))))
+          (LAYOUT(t)(x)(y)(w)(h)(gap)))(la NEIGHBOUR.
+
+  la sel. sel(EMPTY)(INSERT)(REMOVE)(LAYOUT)(NEIGHBOUR)(SWAP)(RESIZE)(TOGGLE)
+             (LEAVES)(NEXT)(HAS)(COUNT)(SHOW)
+  ))))))))))))))))))))))))))))))))))))))))))
