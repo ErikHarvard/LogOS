@@ -70,13 +70,32 @@
 #  its last rendered tile, keyed by its rectangle, focus and ver.
 # ═══════════════════════════════════════════════════════════════════
 
-export WM_BUILD WM_NIL WM_CONS WM_LISTS WM_SPLIT WM_JOIN WM_FOLD WM_WINS WM_TILE WM_CORE WM_FRAME WM_LOOP
+export WM_BUILD WM_NIL WM_CONS WM_MK WM_LISTS WM_SPLIT WM_JOIN WM_FOLD WM_WINS WM_TILE WM_CORE WM_FRAME WM_LOOP
 
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LET = la v. la k. k(v)
 
 glyph WM_NIL  = la n. la c. n(n)
 glyph WM_CONS = la h. la t. la n. la c. c(h)(t)
+
+# ── Constructors for every long-lived record ──────────────────────────────
+# On the VM a closure keeps its WHOLE environment alive, not just the names it
+# uses. A record built inline inside a lambda that has the older record in
+# scope (w(la id. ... la k. k(id)...)) therefore keeps the older record, which
+# keeps the one before it: every version of every window and of the state
+# stayed alive, and the WM ran out of heap after a few hundred frames. So every
+# record that is STORED (a window, its band cache pair, an app value, a job, an
+# option, the state) is built only through these constructors. A glyph runs in
+# an empty environment, so they capture nothing but their own fields; each kit
+# binds them once at startup with WM_MK(la mkw. la pair. la triple. la some.
+# la mkjob. la mkst8. ...).
+glyph WM_MK = la s. s
+  (la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app. la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(app))
+  (la a. la b. la k. k(a)(b))
+  (la a. la b. la c. la k. k(a)(b)(c))
+  (la x. la n. la y. y(x))
+  (la pid. la rfd. la cmd. la n. la j. j(pid)(rfd)(cmd))
+  (la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock. la k. k(tree)(focus)(wins)(nid)(mask)(quit)(dirty)(lock))
 
 # ── List helpers (Scott lists) ─────────────────────────────────────────
 glyph WM_LISTS = la B. B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
@@ -141,19 +160,21 @@ glyph WM_FOLD = la B. B(la str_at. la ord. la str_to_int. la int_to_str. la conc
 glyph WM_WINS = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
+  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8.
     (la C0. la C1. la nojob.
       # bc, the band cache, is la k. k(cols)(cache): the renderer's cache is only
-      # good for the width it was drawn at
-      LET(la id. la term. la sh. la k. k(id)(term)(sh)(nojob)(la k. k(C0)(nil))("")(nil)(C0)(la n. la s. n(n)))(la mkwin.
-      LET(la id. la app. la k. k(id)("")("")(nojob)(la k. k(C0)(nil))("")(nil)(C0)(la n. la s. s(app)))(la mkapp.
+      # good for the width it was drawn at. (nojob also serves as the empty app
+      # option: both are la n. la x. n(n).)
+      LET(la id. la term. la sh. mkw(id)(term)(sh)(nojob)(pair(C0)(nil))("")(nil)(C0)(nojob))(la mkwin.
+      LET(la id. la app. mkw(id)("")("")(nojob)(pair(C0)(nil))("")(nil)(C0)(some(app)))(la mkapp.
       LET(la w. w(la id. la a. la b. la c. la d. la e. la f. la g. la h. id))(la win_id.
       LET(la wins. la id. find(la w. int_eq(win_id(w))(id))(wins))(la find_win.
       LET(la wins. la w. (la id. map(la v. int_eq(win_id(v))(id)(la _. w)(la _. v)(C0))(wins))(win_id(w)))(la put_win.
       LET(la wins. la id. filter(la v. int_eq(win_id(v))(id)(la _. la t. la f. f)(la _. la t. la f. t)(C0))(wins))(la del_win.
       LET(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
-              la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(add(ver)(C1))(app)))(la touch.
+              mkw(id)(term)(sh)(job)(bc)(tk)(tr)(add(ver)(C1))(app)))(la touch.
         la s. s(mkwin)(win_id)(find_win)(put_win)(del_win)(touch)(mkapp)))))))))
-    (0)(1)(la n. la j. n(n))))
+    (0)(1)(la n. la j. n(n)))))
 
 
 # ── Tile rendering ───────────────────────────────────────────────────────
@@ -182,6 +203,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
   SH(la sh_new. la sh_prompt. la sh_run. la sh_finish. la sh_int. la sh_hup.
   pal(la border_f. la border_u. la bar_f. la bar_u. la termbg. la st_text. la st_bar_f. la st_bar_u.
   ui(la lk_light. la lk_dark. la lk_light2. la lk_dark2. la bg_light. la bg_dark.
+  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8.
   (la C0. la C1. la C2. la C4. la C8. la BW. la PAD. la TRUE. la FALSE.
     LET(mul(C8)(scale))(la cw.
     # each(left)(right)(band): the band's scanlines, each framed left ++ s ++ right
@@ -219,7 +241,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
             # cache to keep)(its background)
             (la body. body(la blist. la bc2. la bgc.
                 (la brow. la barrow. la padrow. la tl. la tr2. la cl. la cr.
-                  (la rows. la k. k(rows)(la k2. k2(id)(term)(sh)(job)(bc2)(k0)(rows)(ver)(app)))
+                  (la rows. la k. k(rows)(mkw(id)(term)(sh)(job)(bc2)(k0)(rows)(ver)(app)))
                   (append(nrep(BW)(brow))
                   (append(nrep(C2)(barrow))
                   (append(frame(tl)(tr2)(cons(band(bst)(title(w))(tcols))(nil)))
@@ -239,7 +261,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
             (la k. app
               (la _. bands(st_text)(bc(la bcols. la cache. int_eq(bcols)(ccols)(la _. cache)(la _. nil)(C0)))
                          (t_rows(term)(ccols)(nrows)(job(la _. TRUE)(la p. la r. la c. FALSE)))(ccols)
-                       (la blist. la bc2. k(blist)(la k3. k3(ccols)(bc2))(termbg)))
+                       (la blist. la bc2. k(blist)(pair(ccols)(bc2))(termbg)))
               (la a. a(la lkapp. la ast. la afocus. lkapp(la init. la view. la update. la theme. la atitle. la azoom.
                   # render gives one flat list of scanlines: the text area's single band.
                   # At zoom 2 (and room for at least 2x2 cells) the app is drawn with
@@ -262,7 +284,7 @@ glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
         (la k0. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
             str_eq(k0)(tk)(la _. la k. k(tr)(w))(la _. draw(focused)(w)(tw)(th)(k0))(C0)))
         (tkey(w)(focused)(tw)(th)))))))))))
-  (0)(1)(2)(4)(8)(2)(4)(la t. la f. t)(la t. la f. f))))))))
+  (0)(1)(2)(4)(8)(2)(4)(la t. la f. t)(la t. la f. f)))))))))
 
 # ── The core: state, key events, jobs ─────────────────────────────────────
 # WM_CORE(B)(L)(X)(TL)(T)(SH)(W)(ui)(cfg)
@@ -291,6 +313,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
   W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
   ui(la lk_key. la lk_focusables. la settings. la lockui.
   cfg(la sw. la sh0. la gap. la cwd0.
+  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8.
   (la C0. la C1. la C2. la C3. la C12. la C50. la C85. la C240. la C255. la TRUE. la FALSE.
     LET(la a. la b. b)(la seq.
     LET(la x. int_eq(x)(C0)(FALSE)(TRUE))(la nz.
@@ -308,7 +331,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     # login view's first focusable element. The window holds an ordinary app
     # record (zoom 1); the login record's done and lock are used from lock.
     LET(la login. la lgst. login(la lg_init. la lg_view. la lg_update. la lg_theme. la lg_title. la lg_done. la lg_lock.
-        mkapp(C0)(la k. k(la s. s(lg_init)(lg_view)(lg_update)(lg_theme)(lg_title)(la st. C1))(lgst)
+        mkapp(C0)(triple(la s. s(lg_init)(lg_view)(lg_update)(lg_theme)(lg_title)(la st. C1))(lgst)
                          (lk_focusables(lg_view(lgst))(la _. "")(la h. la t. h)))))(la lock_win.
     LET(lockui(la _. la n. la s. n(n))
               (la lu. lu(la login. la start. login(la i. la v. la u. la th. la ti. la d. la l.
@@ -330,7 +353,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     LET(la st. la w. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         mkst(tree)(focus)(put_win(wins)(touch(w)))(nid)(mask)(quit)(TRUE)(lock)))(la put.
     LET(la st. la w. la term2. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
-        put(st)(la k. k(id)(term2)(sh)(job)(bc)(tk)(tr)(ver)(app))))(la set_term.
+        put(st)(mkw(id)(term2)(sh)(job)(bc)(tk)(tr)(ver)(app))))(la set_term.
     LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         (la sh. (la term.
             (la _. mkst(tl_insert(tree)(focus)(nid)(auto_dir(tree)(focus)))(nid)
@@ -343,7 +366,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     LET(la st. la lkapp. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         lkapp(la init. la view. la update. la theme. la atitle. la azoom.
           (la _. mkst(tl_insert(tree)(focus)(nid)(auto_dir(tree)(focus)))(nid)
-                     (cons(mkapp(nid)(la k. k(lkapp)(init)(lk_focusables(view(init))(la _. "")(la h. la t. h))))(wins))
+                     (cons(mkapp(nid)(triple(lkapp)(init)(lk_focusables(view(init))(la _. "")(la h. la t. h))))(wins))
                      (add(nid)(C1))(mask)(quit)(TRUE)(lock))
           (print(concat("wm: open window ")(concat(int_to_str(nid))(concat(" (")(concat(atitle)(")")))))))))(la open_app.
     LET(la st. la id. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
@@ -368,10 +391,10 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
           (la _. sh_run(sh)(line)(la sh2. la out. la action.
             (la term3.
               action
-                (la _. put(st)(la k. k(id)(t_prompt(term3)(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
-                (la _. put(st)(la k. k(id)(t_prompt(t_clear(term3))(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
+                (la _. put(st)(mkw(id)(t_prompt(term3)(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
+                (la _. put(st)(mkw(id)(t_prompt(t_clear(term3))(sh_prompt(sh2)))(sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
                 (la _. close_win(st)(id))
-                (la pid. la rfd. la _. put(st)(la k. k(id)(term3)(sh2)(la n. la j. j(pid)(rfd)(line))(bc)(tk)(tr)(ver)(app)))
+                (la pid. la rfd. la _. put(st)(mkw(id)(term3)(sh2)(mkjob(pid)(rfd)(line))(bc)(tk)(tr)(ver)(app)))
                 (C0))
             (t_write(term2)(out))))
           (print(concat("wm: [")(concat(int_to_str(id))(concat("] $ ")(line))))))))(la submit.
@@ -384,8 +407,8 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
           lk_key(view(ast))(afocus)(code)(shift)(t_keychar(code)(shift))(la focus2. la msgopt.
             msgopt
               (la _. str_eq(focus2)(afocus)(la _. la n. la s. n(n))
-                       (la _. la n. la s. s(la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(la n2. la s2. s2(la k2. k2(lkapp)(ast)(focus2)))))(C0))
-              (la m. la n. la s. s(la k. k(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(la n2. la s2. s2(la k2. k2(lkapp)(update(ast)(m))(focus2)))))))))))(la app_step.
+                       (la _. some(mkw(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(some(triple(lkapp)(ast)(focus2)))))(C0))
+              (la m. some(mkw(id)(term)(sh)(job)(bc)(tk)(tr)(ver)(some(triple(lkapp)(update(ast)(m))(focus2)))))))))))(la app_step.
     LET(la st. la w. la code. la shift. app_step(w)(code)(shift)(la _. st)(la w2. put(st)(w2)))(la app_key.
     LET(la st. la w. la code. la shift. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         int_eq(code)(K_ENTER)(la _. submit(st)(w))(la _.
@@ -422,7 +445,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
             app(la _. st)(la a. a(la lkapp. la ast. la af.
               login(la i. la v. la u. la th. la ti. la done. la lk.
                 (la _. mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)
-                          (la n. la s. s(la k. k(login)(touch(lock_win(login)(lk(ast))))(TRUE))))
+                          (some(triple(login)(touch(lock_win(login)(lk(ast))))(TRUE))))
                 (print("wm: locked"))))))))))(la lock_now.
     # lock_key(st)(code)(shift): while locked, every key goes to the login panel;
     # once the login app reports done, the screen unlocks (and, with no windows
@@ -435,9 +458,9 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
                 login(la i. la v. la u. la th. la ti. la done. la lk.
                   done(ast)
                     (la _. (la _. (la st2. wins(la _. welcome(open_win(st2)))(la h. la t. st2))
-                                  (mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(la n. la s. s(la k. k(login)(touch(lw2))(FALSE)))))
+                                  (mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(some(triple(login)(touch(lw2))(FALSE)))))
                            (print("wm: unlocked")))
-                    (la _. mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(la n. la s. s(la k. k(login)(touch(lw2))(TRUE))))
+                    (la _. mkst(tree)(focus)(wins)(nid)(mask)(quit)(TRUE)(some(triple(login)(touch(lw2))(TRUE))))
                     (C0))))))))))(la lock_key.
     # dirkey(code)(not_a_direction)(direction d): Left/h 0, Right/l 1, Up/k 2, Down/j 3
     LET(la code. la nd. la yd.
@@ -515,18 +538,18 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
               job(la _. st)(la pid. la rfd. la cmd.
                 str_eq(chunk)("")
                   (la _. (la _. sh_finish(sh)(pid)(la sh2. la text.
-                        (la _. put(st)(la k. k(id)(t_prompt(t_write(t_flush(term))(text))(sh_prompt(sh2)))
+                        (la _. put(st)(mkw(id)(t_prompt(t_write(t_flush(term))(text))(sh_prompt(sh2)))
                                               (sh2)(NOJOB)(bc)(tk)(tr)(ver)(app)))
                         (print(concat("wm: [")(concat(int_to_str(id))("] done"))))))
                       (close(rfd)))
-                  (la _. put(st)(la k. k(id)(t_write(term)(chunk))(sh)(job)(bc)(tk)(tr)(ver)(app)))
+                  (la _. put(st)(mkw(id)(t_write(term)(chunk))(sh)(job)(bc)(tk)(tr)(ver)(app)))
                   (C0))))))(la on_output.
     LET(la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         map(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               job(la _. C0)(la pid. la rfd. la cmd. seq(sh_hup(pid))(seq(close(rfd))(sh_finish(sh)(pid))))))(wins)))(la shutdown.
       la s. s(empty)(open_win)(handle)(on_output)(job_fds)(shutdown)(welcome)
     ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
-  (0)(1)(2)(3)(12)(50)(85)(240)(255)(la t. la f. t)(la t. la f. f))))))))))
+  (0)(1)(2)(3)(12)(50)(85)(240)(255)(la t. la f. t)(la t. la f. f)))))))))))
 
 # ── The frame: layout, tiles, compose ─────────────────────────────────────
 # WM_FRAME(B)(L)(R)(TL)(W)(tile)(cfg) -> frame(st) -> la k. k(bytes)(st')
@@ -542,6 +565,7 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
      la tl_resize. la tl_toggle. la tl_leaves. la tl_next. la tl_has. la tl_count. la tl_show.
   W(la mkwin. la win_id. la find_win. la put_win. la del_win. la touch. la mkapp.
   cfg(la sw. la sh0. la pitch. la gap. la desk. la lockw. la lockh.
+  WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8.
   (la C2. la TRUE. la FALSE.
     LET(sub(sw)(mul(C2)(gap)))(la aw. LET(sub(sh0)(mul(C2)(gap)))(la ah.
     # go(focus)(rects)(tiles)(wins) -> la k. k(tiles)(wins'), one tile per rectangle
@@ -557,12 +581,12 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
             (la _. tile(TRUE)(lw)(lockw)(lockh)(la rows. la lw2.
                 la k. k(compose(sw)(sh0)(pitch)(desk)
                           (cons(la k3. k3(div(sub(sw)(lockw))(C2))(div(sub(sh0)(lockh))(C2))(lockw)(lockh)(rows))(nil)))
-                       (la k2. k2(tree)(focus)(wins)(nid)(mask)(quit)(FALSE)(la n. la s. s(la k4. k4(login)(lw2)(showing))))))
+                       (mkst8(tree)(focus)(wins)(nid)(mask)(quit)(FALSE)(some(triple(login)(lw2)(showing))))))
             (normal)(FALSE))))
         (la _. go(focus)(tl_layout(tree)(gap)(gap)(aw)(ah)(gap))(nil)(wins)(la tiles. la wins2.
           la k. k(compose(sw)(sh0)(pitch)(desk)(tiles))
-                 (la k2. k2(tree)(focus)(wins2)(nid)(mask)(quit)(FALSE)(lock)))))))))
-  (2)(la t. la f. t)(la t. la f. f)))))))
+                 (mkst8(tree)(focus)(wins2)(nid)(mask)(quit)(FALSE)(lock)))))))))
+  (2)(la t. la f. t)(la t. la f. f))))))))
 
 # ── The loop ──────────────────────────────────────────────────────────────
 # WM_LOOP(B)(L)(X)(J)(fold)(core)(frame)(io) -> run(st): loop until the WM exits
