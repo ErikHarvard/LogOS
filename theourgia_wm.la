@@ -437,7 +437,9 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
           "  MOD+arrows move the focus    MOD+Shift+arrows  swap windows\n")(concat(
           "  MOD+t      split direction   MOD+- MOD+=  shrink / grow\n")(concat(
           "  MOD+Tab    next window       MOD+c        interrupt the command\n")(concat(
-          "  MOD+s      settings panel    MOD+Esc      lock the screen\n")(concat(
+          # MOD+Esc is offered only when there is a lock screen to go to
+          lockui(la _. "  MOD+s      settings panel\n")
+                (la _. "  MOD+s      settings panel    MOD+Esc      lock the screen\n"))(concat(
           "  MOD+Shift+e  exit            (MOD is Super or Alt)\n")(
           "Type help for the shell's commands.\n"))))))))))))(la welcome.
     # lock_now(st): MOD+Esc. The login app's own lock keeps the user's name and
