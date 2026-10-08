@@ -1,0 +1,493 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logossec.la — the Γ-Security model (Citrinitas layer 9): capability
+#  tokens, the within rule, static confinement, and a reference monitor.
+#
+#  Codex: "Capability-based security … Every organ holds capabilities
+#  (tokens) specifying exactly what it can access. No ambient authority. No
+#  root user. The sovereign's Γ-seal is the root of all capability
+#  delegation." OS_LAYERS_DESIGN.md ("logossec.la") is the contract this
+#  module implements; where it leaves a choice open, the choice is stated
+#  below.
+#
+#  ── WHAT IT GIVES ───────────────────────────────────────────────────
+#  SEC_KIT(…P…)(crypt) = la s. s(mint)(attenuate)(verify)(within)(confine)
+#  GUARD_KIT(…P…)(…effects…)(sec)(K_root)
+#               = la s. s(read)(write)(spawn)(connect)(revoke)(revoked)
+#  P, the pure builtins, in this order (the same for both kits):
+#      str_at ord str_len str_to_int int_to_str chr concat str_eq
+#      add sub mul div lt int_eq band bor bxor
+#  then GUARD_KIT's effects, in this order:
+#      stat read_file write_file rename unlink fork execv exit clock_gettime
+#      CONNECT      (logosipc.la's client CONNECT, handed in, see below)
+#  `crypt` is the crypt record (crypt_ref.la: CRYPT_REF today, CRYPT_FAST as
+#  a drop-in); only its hmac and hex are used. `sec` is a SEC_KIT record.
+#
+#  ── TOKENS ──────────────────────────────────────────────────────────
+#      token = id "|" caveat1 "|" … "|" caveatN "|" hex(sig)
+#      sig0 = hmac(K_root)(id)      sig_i = hmac(sig_{i-1})(caveat_i)
+#  This is the macaroon construction: anyone holding a token can add a
+#  caveat (re-keying the chain with the old signature, which the token
+#  carries), and nobody can remove or reorder one, because that needs a
+#  signature earlier in the chain, and HMAC does not run backwards. id is
+#  1–64 of [A-Za-z0-9_.-]; a caveat is key=value with a non-empty key and
+#  no "|" or newline. Caveats, each of which must hold for a request
+#  (res, op, now):
+#      res=<prefix>   res is within <prefix>
+#      ops=<letters>  op is one of the letters (r w x c a)
+#      until=<secs>   now <= secs (1–18 decimal digits, else it fails)
+#      anything else  never: an unknown caveat fails closed
+#  A token with no caveats grants everything; only K_root's holder mints.
+#
+#  mint(K_root)(id)(caveats)     ok(token) | err   (caveats: a Scott list)
+#  attenuate(token)(caveat)      ok(token') | err  — the contract says "the
+#                                token with one more caveat"; it is a result
+#                                like mint's so that a malformed token or
+#                                caveat yields no token at all
+#  verify(K_root)(revoked)(token)(res)(op)(now)    ok(id) | err(reason)
+#      checks, in order: K_root is at least 16 bytes ("bad root key"; a short
+#      root key is refused rather than trusted), res is a well-formed
+#      resource ("bad resource"), op is one of r w x c a ("bad op"), the token
+#      parses ("malformed token: …"), every caveat holds ("caveat not met: c",
+#      "unknown caveat: c", "malformed caveat: c"), the recomputed signature
+#      equals the presented one — compared over all 64 hex characters with
+#      the differences OR-ed together, so the time taken does not depend on
+#      where they differ ("bad signature") — and the id is not in `revoked`,
+#      a Scott list of ids ("revoked: id"). Everything must pass, so the order
+#      only decides which reason a request with several faults reports. The
+#      caveats come before the signature because they are written in the
+#      token itself (evaluating them reveals nothing) and cost no HMAC, so a
+#      request the token's own caveats refuse is denied cheaply; the
+#      revocation list is the guard's private state, so it is consulted only
+#      for a genuine token. `now` is a native int.
+#  within(res)(prefix)           res == prefix, or res starts with prefix/ ;
+#      and FALSE for any res with an empty, "." or ".." segment or a control
+#      byte (< 32 or 127). So "obj2" is not within "obj", and a prefix with
+#      a trailing slash ("obj/") contains nothing, since no well-formed res
+#      equals it or starts with "obj//". (Control bytes are refused in
+#      addition to the contract's segments, so no path can hide a NUL.)
+#  confine(src)(granted)         ok(src) | err("confine: not granted: a b")
+#      No ambient authority, checked statically. src is parsed as ONE module
+#      (an import is refused; export lines are allowed and ignored) with the
+#      grammar codegen.la compiles, and every name used in every glyph must
+#      be a lambda parameter in scope, a glyph src defines, or in `granted`
+#      (a Scott list). An integer literal n compiles to str_to_int("n"), so
+#      it counts as a use of str_to_int — confine reports what the compiled
+#      program would reach, nothing less. A program that passes reaches the
+#      outside world only through what it is handed. A parse error is an err.
+#
+#  ── THE REFERENCE MONITOR ───────────────────────────────────────────
+#  GUARD_KIT returns guarded operations (VM). Each verifies its token first,
+#  for the resource and op below, with `now` read from the realtime clock,
+#  and acts only on ok; each returns a result:
+#      read(tok)(path)          fs<path> r   ok(contents)   (a regular file)
+#      write(tok)(path)(data)   fs<path> w   ok(path)       atomic: path.tmp,
+#                                            then rename; the temporary is
+#                                            the write's own staging file,
+#                                            removed if the rename fails
+#      spawn(tok)(path)(args)   fs<path> x   ok(pid)        fork + execv
+#                                            (args includes argv[0]); the
+#                                            child exits 127 if execv fails
+#      connect(tok)(name)       ipc/<name> c ok(fd)         logosipc CONNECT
+#      revoke(tok)(id)          sec/policy a ok(guard')     id added to the
+#                                            revocation list
+#      revoked                  the guard's revocation list (a Scott list)
+#  pid and fd are decimal strings, as the syscall builtins speak them. A
+#  path must be absolute; the resource is "fs" ++ path, so it is checked
+#  lexically, segment by segment, before anything touches the disk. A channel
+#  name containing "/" is refused (it would name a different socket).
+#  SELF-APPLICATION: the security policy — the revocation list — is itself a
+#  resource the model protects (sec/policy, op a): changing it takes a token
+#  for it, and an administrator who revokes its own id can no longer revoke.
+#  And the module confines itself: confine(logossec.la)(nil) is ok. It
+#  imports nothing and names no builtin and no outside glyph — every power it
+#  exercises is a parameter, handed in by whoever builds the kit (which is
+#  also why CONNECT is passed in rather than imported).
+#
+#  ── HOW IT RELATES TO logoscap.la ───────────────────────────────────
+#  logoscap.la's Morris sealer/unsealer is the in-process capability: the
+#  authority is a closure, unforgeable because a λ-term cannot be inspected,
+#  but it cannot leave the process. A token is the same idea serialised: the
+#  authority is a string that crosses IPC and disk, unforgeable because of
+#  HMAC rather than closure opacity, and attenuable by anyone (macaroon
+#  caveats) where a sealer/unsealer pair attenuates only by handing out one
+#  half. A sealed logoscap box can carry a token; a token can carry no box.
+#
+#  ── PERFORMANCE ─────────────────────────────────────────────────────
+#  Kit style (WM_DESIGN.md, "How fast the VM is"): every builtin and every
+#  integer constant is a parameter, the functions are LET-bound once when the
+#  kit is built, and booleans are applied to thunks; after startup no name
+#  reaches the VM's glyph table. A mint or a successful verify costs
+#  (caveats + 1) HMACs, an attenuate one, a refusal by a caveat none. With
+#  CRYPT_REF on the VM an HMAC takes about a minute (CRYPT_REF names its
+#  builtins, and each name walks the whole ~155 KB compiled program); the
+#  token logic around it takes milliseconds, and confining this 32 KB module
+#  about half a second. CRYPT_FAST will remove nearly all of the cost.
+#
+#  ── HONEST SCOPE ────────────────────────────────────────────────────
+#  This is enforcement in the library and at load (confine): a program that
+#  is not confined can still call builtins directly; kernel-level enforcement
+#  belongs to LogosKernel. The guard checks paths lexically and does not
+#  resolve symbolic links, so a link inside a granted subtree extends the
+#  grant to wherever it points. A spawned program runs with the guard
+#  process's own OS authority (confine it first). connect cannot tell a
+#  missing server from a live one (logosipc CONNECT does not report it): a
+#  send on the fd then fails with -errno. The revocation list lives in the
+#  guard value; persisting it is the caller's. K_root is a symmetric key:
+#  whoever verifies can also mint (no public-key signatures in LA yet).
+#  Engines: SEC_KIT is pure Lingua Adamica, the same on the C host and the
+#  VM, but the host's substitution makes it impractical there beyond within
+#  (building the kit takes about two minutes, an HMAC under CRYPT_REF about
+#  160 s), so it is tested on the VM and within also on the host. GUARD_KIT
+#  is VM-only (stat, fork, execv, sockets).
+# ═══════════════════════════════════════════════════════════════════
+
+export SEC_KIT GUARD_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# ── SEC_STR: the shared string helpers ─────────────────────────────────
+# SEC_STR(…P…)(k) hands k, in this order:
+#   T F nil cons len ordi slice find rfind split member allc starts cteq
+#   idok hexchar hexval digit segok within C0 C1 C2 C5 C16 C18 C32 C64
+# Positions are native ints; a string is scanned by index with str_at
+# (str_tail copies, so a scan with it would be quadratic).
+glyph SEC_STR = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la lt. la int_eq. la band. la bor. la bxor.
+  (la C0. la C1. la C2. la C5. la C16. la C18. la C32. la C45. la C46. la C48. la C57. la C64.
+   la C65. la C87. la C90. la C95. la C97. la C102. la C122. la C127.
+  LET(la t. la f. t)(la T.
+  LET(la t. la f. f)(la F.
+  LET(la n. la c. n(n))(la nil.
+  LET(la h. la t. la n. la c. c(h)(t))(la cons.
+  LET(la s. str_to_int(str_len(s)))(la len.
+  LET(la c. str_to_int(ord(c)))(la ordi.
+  LET(la o. la lo. la hi. lt(o)(lo)(F)(lt(hi)(o)(F)(T)))(la inr.
+  # slice(s)(i)(j): bytes i..j-1, joined by halves (O(n log n), never O(n^2))
+  LET(Z(la slice. la s. la i. la j.
+      lt(add(i)(C1))(j)
+        (la _. (la m. concat(slice(s)(i)(m))(slice(s)(m)(j)))(add(i)(div(sub(j)(i))(C2))))
+        (la _. lt(i)(j)(la _. str_at(s)(i))(la _. "")(C0))(C0)))(la slice.
+  # find(s)(n)(c)(i): the first index >= i holding c, or n (= len s)
+  LET(Z(la find. la s. la n. la c. la i.
+      lt(i)(n)(la _. str_eq(str_at(s)(i))(c)(la _. i)(la _. find(s)(n)(c)(add(i)(C1)))(C0))
+        (la _. n)(C0)))(la find.
+  # rfind(s)(c)(i): the last index < i holding c, or -1
+  LET(Z(la rfind. la s. la c. la i.
+      lt(C0)(i)(la _. (la j. str_eq(str_at(s)(j))(c)(la _. j)(la _. rfind(s)(c)(j))(C0))(sub(i)(C1)))
+        (la _. sub(C0)(C1))(C0)))(la rfind.
+  # split(s)(c): the fields between the c's, a Scott list (never empty)
+  LET(Z(la go. la s. la n. la c. la i. (la j.
+        cons(slice(s)(i)(j))(lt(j)(n)(la _. go(s)(n)(c)(add(j)(C1)))(la _. nil)(C0)))(find(s)(n)(c)(i))))(la splitgo.
+  LET(la s. la c. splitgo(s)(len(s))(c)(C0))(la split.
+  LET(Z(la mem. la x. la l. l(la _. F)(la h. la t. str_eq(h)(x)(la _. T)(la _. mem(x)(t))(C0))))(la member.
+  LET(Z(la go. la p. la s. la n. la i.
+      lt(i)(n)(la _. p(str_at(s)(i))(la _. go(p)(s)(n)(add(i)(C1)))(la _. F)(C0))(la _. T)(C0)))(la allc0.
+  LET(la p. la s. allc0(p)(s)(len(s))(C0))(la allc.
+  LET(la s. la p. (la lp. lt(len(s))(lp)(la _. F)(la _. str_eq(slice(s)(C0)(lp))(p))(C0))(len(p)))(la starts.
+  # cteq: equal-length strings compared with every byte's difference OR-ed
+  # in, so there is no early exit; a length mismatch is public and fails
+  LET(Z(la xacc. la a. la b. la n. la i. la acc.
+      lt(i)(n)(la _. xacc(a)(b)(n)(add(i)(C1))(bor(acc)(bxor(ordi(str_at(a)(i)))(ordi(str_at(b)(i))))))
+        (la _. acc)(C0)))(la xacc.
+  LET(la a. la b. (la n. int_eq(n)(len(b))(la _. int_eq(xacc(a)(b)(n)(C0)(C0))(C0))(la _. F)(C0))(len(a)))(la cteq.
+  LET(la c. (la o. inr(o)(C48)(C57)(T)(inr(o)(C65)(C90)(T)(inr(o)(C97)(C122)(T)
+      (int_eq(o)(C95)(T)(int_eq(o)(C45)(T)(int_eq(o)(C46)))))))(ordi(c)))(la idchar.
+  LET(la id. (la n. lt(C0)(n)(la _. lt(C64)(n)(la _. F)(la _. allc(idchar)(id))(C0))(la _. F)(C0))(len(id)))(la idok.
+  LET(la c. (la o. inr(o)(C48)(C57)(T)(inr(o)(C97)(C102)))(ordi(c)))(la hexchar.
+  LET(la c. (la o. lt(C57)(o)(la _. sub(o)(C87))(la _. sub(o)(C48))(C0))(ordi(c)))(la hexval.
+  LET(la c. inr(ordi(c))(C48)(C57))(la digit.
+  LET(la c. (la o. lt(o)(C32)(F)(int_eq(o)(C127)(F)(T)))(ordi(c)))(la plain.
+  LET(Z(la segs. la l. l(la _. T)(la h. la t.
+      str_eq(h)("")(la _. F)(la _. str_eq(h)(".")(la _. F)(la _. str_eq(h)("..")(la _. F)(la _. segs(t))(C0))(C0))(C0))))(la segs.
+  LET(la r. allc(plain)(r)(la _. segs(split(r)("/")))(la _. F)(C0))(la segok.
+  LET(la r. la p. segok(r)(la _. str_eq(r)(p)(T)(starts(r)(concat(p)("/"))))(la _. F)(C0))(la within.
+    la k. k(T)(F)(nil)(cons)(len)(ordi)(slice)(find)(rfind)(split)(member)(allc)(starts)(cteq)
+          (idok)(hexchar)(hexval)(digit)(segok)(within)(C0)(C1)(C2)(C5)(C16)(C18)(C32)(C64)
+  ))))))))))))))))))))))))))))
+  (str_to_int("0"))(str_to_int("1"))(str_to_int("2"))(str_to_int("5"))(str_to_int("16"))
+  (str_to_int("18"))(str_to_int("32"))(str_to_int("45"))(str_to_int("46"))(str_to_int("48"))
+  (str_to_int("57"))(str_to_int("64"))(str_to_int("65"))(str_to_int("87"))(str_to_int("90"))
+  (str_to_int("95"))(str_to_int("97"))(str_to_int("102"))(str_to_int("122"))(str_to_int("127"))
+
+# ── SEC_CONFINE: the static no-ambient-authority check ─────────────────
+# SEC_CONFINE(…P…) = confine. It carries its own small parser rather than
+# importing parser.la: parser.la has no export line, so importing it would
+# make every one of its glyphs a renamed private (nothing would be visible),
+# and its lexer reads `12` as a name where codegen.la reads an integer. This
+# one follows codegen.la's lexer and grammar exactly (whitespace is space,
+# tab, newline; # comments; ( ) . = and " are special; a run of digits is an
+# integer, desugared as codegen does; every other byte is a name byte), works
+# by index, and builds the same Scott AST as parser.la:
+#   var(n) = la v. la l. la a. la s. v(n)   lam(p)(b) = … l(p)(b)
+#   app(f)(x) = … a(f)(x)                    str(t) = … s(t)
+# A token is la k. k(type)(text)(next); a parse is la e. la o. o(ast)(pos)
+# or e(message).
+glyph SEC_CONFINE = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la lt. la int_eq. la band. la bor. la bxor.
+  SEC_STR(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)
+  (la T. la F. la nil. la cons. la len. la ordi. la slice. la find. la rfind. la split. la member. la allc.
+   la starts. la cteq. la idok. la hexchar. la hexval. la digit. la segok. la within.
+   la C0. la C1. la C2. la C5. la C16. la C18. la C32. la C64.
+  LET(la c. str_eq(c)(" ")(T)(str_eq(c)("\n")(T)(str_eq(c)("\t"))))(la isws.
+  LET(la c. isws(c)(F)(str_eq(c)("(")(F)(str_eq(c)(")")(F)(str_eq(c)(".")(F)(str_eq(c)("=")(F)
+      (str_eq(c)("\"")(F)(str_eq(c)("#")(F)(T))))))))(la identc.
+  # skip whitespace and comments: the first position of the next token
+  LET(Z(la skip. la s. la n. la i.
+      lt(i)(n)(la _. (la c.
+          isws(c)(la _. skip(s)(n)(add(i)(C1)))(la _.
+            str_eq(c)("#")(la _. skip(s)(n)(add(find(s)(n)("\n")(i))(C1)))(la _. i)(C0))(C0))
+        (str_at(s)(i)))(la _. i)(C0)))(la skip.
+  # scan(p)(s)(n)(i): the first index >= i whose byte fails p
+  LET(Z(la scan. la p. la s. la n. la i.
+      lt(i)(n)(la _. p(str_at(s)(i))(la _. scan(p)(s)(n)(add(i)(C1)))(la _. i)(C0))(la _. i)(C0)))(la scan.
+  # strend(s)(n)(i): the closing quote of a string whose body starts at i
+  # (a backslash escapes the next byte); n or more when unterminated
+  LET(Z(la strend. la s. la n. la i.
+      lt(i)(n)(la _. (la c. str_eq(c)("\"")(la _. i)(la _. strend(s)(n)(add(i)(str_eq(c)("\\")(C2)(C1))))(C0))
+        (str_at(s)(i)))(la _. n)(C0)))(la strend.
+  LET(la w. str_eq(w)("glyph")("glyph")(str_eq(w)("la")("la")(str_eq(w)("import")("import")
+      (str_eq(w)("export")("export")("id")))))(la kw.
+  LET(la s. la n. la i0. (la i.
+      lt(i)(n)
+        (la _. (la c.
+          str_eq(c)("(")(la _. la k. k("(")("")(add(i)(C1)))(la _.
+          str_eq(c)(")")(la _. la k. k(")")("")(add(i)(C1)))(la _.
+          str_eq(c)(".")(la _. la k. k(".")("")(add(i)(C1)))(la _.
+          str_eq(c)("=")(la _. la k. k("=")("")(add(i)(C1)))(la _.
+          str_eq(c)("\"")(la _. (la j. lt(j)(n)
+                (la _. la k. k("str")(slice(s)(add(i)(C1))(j))(add(j)(C1)))
+                (la _. la k. k("bad")("")(i))(C0))(strend(s)(n)(add(i)(C1))))(la _.
+          digit(c)(la _. (la j. la k. k("int")(slice(s)(i)(j))(j))(scan(digit)(s)(n)(i)))(la _.
+          (la j. (la w. la k. k(kw(w))(w)(j))(slice(s)(i)(j)))(scan(identc)(s)(n)(i)))
+          (C0))(C0))(C0))(C0))(C0))(C0))
+          (str_at(s)(i)))
+        (la _. la k. k("eof")("")(i))(C0))
+    (skip(s)(n)(i0)))(la tok.
+  LET(la nm. la v. la l. la a. la x. v(nm))(la avar.
+  LET(la p. la b. la v. la l. la a. la x. l(p)(b))(la alam.
+  LET(la f. la g. la v. la l. la a. la x. a(f)(g))(la aapp.
+  LET(la t. la v. la l. la a. la x. x(t))(la astr.
+  LET(la m. la e. la o. e(m))(la perr.
+  LET(la x. la p. la e. la o. o(x)(p))(la pok.
+  LET(la i. la what. perr(concat("confine: parse error at byte ")(concat(int_to_str(i))(concat(": expected ")(what)))))(la pfail.
+  # expr := la NAME . expr | primary ( '(' expr ')' )*
+  # primary := NAME | STRING | INT | '(' expr ')'
+  # ptail and pprim take pexpr as their first argument (the three are
+  # mutually recursive), so all three are built once, here.
+  LET(Z(la ptail. la pexpr. la s. la n. la acc. la j.
+      tok(s)(n)(j)(la ty. la tx. la nx.
+        str_eq(ty)("(")
+          (la _. pexpr(s)(n)(nx)(perr)(la a. la p.
+              tok(s)(n)(p)(la ty2. la tx2. la nx2.
+                str_eq(ty2)(")")(la _. ptail(pexpr)(s)(n)(aapp(acc)(a))(nx2))(la _. pfail(p)(")"))(C0))))
+          (la _. pok(acc)(j))(C0))))(la ptail.
+  LET(la pexpr. la s. la n. la j. tok(s)(n)(j)(la ty. la tx. la nx.
+      str_eq(ty)("id")(la _. pok(avar(tx))(nx))(la _.
+      str_eq(ty)("str")(la _. pok(astr(tx))(nx))(la _.
+      str_eq(ty)("int")(la _. pok(aapp(avar("str_to_int"))(astr(tx)))(nx))(la _.
+      str_eq(ty)("(")(la _. pexpr(s)(n)(nx)(perr)(la a. la p.
+           tok(s)(n)(p)(la ty2. la tx2. la nx2.
+             str_eq(ty2)(")")(la _. pok(a)(nx2))(la _. pfail(p)(")"))(C0))))(la _.
+      str_eq(ty)("bad")(la _. pfail(nx)("a closing quote"))(la _.
+      pfail(j)("an expression"))(C0))(C0))(C0))(C0))(C0)))(la pprim.
+  LET(Z(la pexpr. la s. la n. la i.
+      tok(s)(n)(i)(la ty. la tx. la nx.
+        str_eq(ty)("la")
+          (la _. tok(s)(n)(nx)(la ty2. la tx2. la nx2.
+             str_eq(ty2)("id")
+               (la _. tok(s)(n)(nx2)(la ty3. la tx3. la nx3.
+                  str_eq(ty3)(".")
+                    (la _. pexpr(s)(n)(nx3)(perr)(la b. la p. pok(alam(tx2)(b))(p)))
+                    (la _. pfail(nx2)("."))(C0)))
+               (la _. pfail(nx)("a parameter name"))(C0)))
+          (la _. pprim(pexpr)(s)(n)(i)(perr)(ptail(pexpr)(s)(n)))(C0))))(la pexpr.
+  LET(Z(la skipids. la s. la n. la j.
+      tok(s)(n)(j)(la ty. la tx. la nx. str_eq(ty)("id")(la _. skipids(s)(n)(nx))(la _. j)(C0))))(la skipids.
+  # program := ( glyph NAME = expr | export NAME* )*   ; import is refused
+  # → pok(glyphs, newest first: la k. k(name)(ast))
+  LET(Z(la pprog. la s. la n. la i. la acc.
+    tok(s)(n)(i)(la ty. la tx. la nx.
+      str_eq(ty)("eof")(la _. pok(acc)(nx))(la _.
+      str_eq(ty)("glyph")(la _. tok(s)(n)(nx)(la ty2. la tx2. la nx2.
+          str_eq(ty2)("id")
+            (la _. tok(s)(n)(nx2)(la ty3. la tx3. la nx3.
+               str_eq(ty3)("=")
+                 (la _. pexpr(s)(n)(nx3)(perr)(la b. la p. pprog(s)(n)(p)(cons(la k. k(tx2)(b))(acc))))
+                 (la _. pfail(nx2)("="))(C0)))
+            (la _. pfail(nx)("a glyph name"))(C0)))(la _.
+      str_eq(ty)("import")(la _. perr("confine: import is not allowed (one module, no imports)"))(la _.
+      str_eq(ty)("export")(la _. pprog(s)(n)(skipids(s)(n)(nx))(acc))(la _.
+      pfail(i)("glyph or export"))(C0))(C0))(C0))(C0))))(la pprog.
+  # fv(node)(bound)(acc): acc with every free name of node consed on
+  LET(Z(la fv. la node. la bound. la acc.
+      node(la nm. member(nm)(bound)(la _. acc)(la _. cons(nm)(acc))(C0))
+          (la p. la b. fv(b)(cons(p)(bound))(acc))
+          (la f. la g. fv(g)(bound)(fv(f)(bound)(acc)))
+          (la t. acc)))(la fv.
+  LET(Z(la rev. la l. la acc. l(la _. acc)(la h. la t. rev(t)(cons(h)(acc)))))(la rev.
+  LET(Z(la used. la gs. la acc. gs(la _. acc)(la g. la t. used(t)(g(la nm. la b. fv(b)(nil)(acc))))))(la used.
+  LET(Z(la gnames. la gs. gs(la _. nil)(la g. la t. cons(g(la nm. la b. nm))(gnames(t)))))(la gnames.
+  # the used names that are neither defined nor granted, first use first, once each
+  LET(Z(la offend. la l. la defs. la granted. la seen.
+      l(la _. nil)(la h. la t.
+        member(h)(defs)(T)(member(h)(granted)(T)(member(h)(seen)))
+          (la _. offend(t)(defs)(granted)(seen))
+          (la _. cons(h)(offend(t)(defs)(granted)(cons(h)(seen))))(C0))))(la offend.
+  LET(Z(la unwords. la l. l(la _. "")(la h. la t. t(la _. h)(la h2. la t2. concat(h)(concat(" ")(unwords(t)))))))(la unwords.
+    la src. la granted. pprog(src)(len(src))(C0)(nil)
+      (la m. la e. la o. e(m))
+      (la gs. la p. (la gsrc. (la bad.
+          bad(la _. la e. la o. o(src))
+             (la h. la t. la e. la o. e(concat("confine: not granted: ")(unwords(bad)))))
+        (offend(rev(used(gsrc)(nil))(nil))(gnames(gsrc))(granted)(nil)))
+       (rev(gs)(nil)))
+  ))))))))))))))))))))))))))
+
+# ── SEC_KIT ────────────────────────────────────────────────────────────
+glyph SEC_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la lt. la int_eq. la band. la bor. la bxor. la crypt.
+  crypt(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+  SEC_STR(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)
+  (la T. la F. la nil. la cons. la len. la ordi. la slice. la find. la rfind. la split. la member. la allc.
+   la starts. la cteq. la idok. la hexchar. la hexval. la digit. la segok. la within.
+   la C0. la C1. la C2. la C5. la C16. la C18. la C32. la C64.
+  LET(la m. la e. la o. e(m))(la err.
+  LET(la v. la e. la o. o(v))(la okr.
+  LET(la k. lt(len(k))(C16)(F)(T))(la keyok.
+  # key=value: an "=" after a non-empty key, and no "|" or newline
+  LET(la c. (la n. (la q. lt(C0)(q)(la _. lt(q)(n)
+        (la _. int_eq(find(c)(n)("|")(C0))(n)(int_eq(find(c)(n)("\n")(C0))(n))(F))
+        (la _. F)(C0))(la _. F)(C0))(find(c)(n)("=")(C0)))(len(c)))(la cavok.
+  # the first malformed caveat of a list, as an option
+  LET(Z(la firstbad. la l. l(la _. la none. la some. none(none))
+      (la h. la t. cavok(h)(la _. firstbad(t))(la _. la none. la some. some(h))(C0))))(la firstbad.
+  LET(Z(la bars. la l. l(la _. "")(la h. la t. concat("|")(concat(h)(bars(t))))))(la bars.
+  LET(Z(la chain. la s. la l. l(la _. s)(la h. la t. chain(hmac(s)(h))(t))))(la chain.
+  # 64 hex characters -> the 32 raw bytes, joined by halves
+  LET(Z(la fh. la h. la i. la j.
+      lt(add(i)(C1))(j)
+        (la _. (la m. concat(fh(h)(i)(m))(fh(h)(m)(j)))(add(i)(div(sub(j)(i))(C2))))
+        (la _. (la p. chr(int_to_str(add(mul(hexval(str_at(h)(p)))(C16))(hexval(str_at(h)(add(p)(C1)))))))
+               (add(i)(i)))(C0)))(la fh.
+  LET(la h. fh(h)(C0)(C32))(la fromhex.
+  LET(la sh. int_eq(len(sh))(C64)(allc(hexchar)(sh))(F))(la sigok.
+  # parse(tok) -> ok(la k. k(id)(caveats)(sighex)(everything before "|sighex")) | err
+  LET(la tok. (la n. (la b.
+      lt(b)(C0)
+        (la _. err("malformed token: no signature"))
+        (la _. (la pre. (la sh. split(pre)("|")(la _. err("malformed token"))(la id. la cavs.
+             idok(id)
+               (la _. firstbad(cavs)
+                  (la _. sigok(sh)(la _. okr(la k. k(id)(cavs)(sh)(pre)))
+                                  (la _. err("malformed token: bad signature encoding"))(C0))
+                  (la c. err(concat("malformed token: bad caveat: ")(c))))
+               (la _. err("malformed token: bad id"))(C0)))
+          (slice(tok)(add(b)(C1))(n)))(slice(tok)(C0)(b)))(C0))
+    (rfind(tok)("|")(n)))(len(tok)))(la parse.
+  LET(la K. la id. la cavs.
+      keyok(K)
+        (la _. idok(id)
+           (la _. firstbad(cavs)
+              (la _. okr(concat(id)(concat(bars(cavs))(concat("|")(hex(chain(hmac(K)(id))(cavs)))))))
+              (la c. err(concat("mint: bad caveat: ")(c))))
+           (la _. err(concat("mint: bad id: ")(id)))(C0))
+        (la _. err("mint: bad root key"))(C0))(la mint.
+  LET(la tok. la c.
+      parse(tok)(err)(la p. p(la id. la cavs. la sh. la pre.
+        cavok(c)
+          (la _. okr(concat(pre)(concat("|")(concat(c)(concat("|")(hex(hmac(fromhex(sh))(c))))))))
+          (la _. err(concat("attenuate: bad caveat: ")(c)))(C0))))(la attenuate.
+  LET(la v. (la n. lt(C0)(n)(la _. lt(C18)(n)(la _. F)(la _. allc(digit)(v))(C0))(la _. F)(C0))(len(v)))(la numok.
+  # holds(c)(res)(op)(now) -> ok | err(reason); res and op are already well formed
+  LET(la c. la res. la op. la now.
+      (la n. (la q. (la key. (la val.
+          str_eq(key)("res")(la _. within(res)(val)(la _. okr(c))(la _. err(concat("caveat not met: ")(c)))(C0))(la _.
+          str_eq(key)("ops")(la _. lt(find(val)(len(val))(op)(C0))(len(val))
+                                   (la _. okr(c))(la _. err(concat("caveat not met: ")(c)))(C0))(la _.
+          str_eq(key)("until")(la _. numok(val)
+                                   (la _. lt(str_to_int(val))(now)(la _. err(concat("caveat not met: ")(c)))(la _. okr(c))(C0))
+                                   (la _. err(concat("malformed caveat: ")(c)))(C0))(la _.
+          err(concat("unknown caveat: ")(c)))(C0))(C0))(C0))
+        (slice(c)(add(q)(C1))(n)))(slice(c)(C0)(q)))(find(c)(n)("=")(C0)))(len(c)))(la holds.
+  LET(Z(la allhold. la l. la res. la op. la now.
+      l(la _. okr(T))(la h. la t. holds(h)(res)(op)(now)(err)(la _. allhold(t)(res)(op)(now)))))(la allhold.
+  LET(la op. int_eq(len(op))(C1)(lt(find("rwxca")(C5)(op)(C0))(C5))(F))(la opok.
+  LET(la K. la revoked. la tok. la res. la op. la now.
+      keyok(K)(la _. segok(res)(la _. opok(op)(la _.
+        parse(tok)(err)(la p. p(la id. la cavs. la sh. la pre.
+          allhold(cavs)(res)(op)(now)(err)(la _.
+            cteq(hex(chain(hmac(K)(id))(cavs)))(sh)
+              (la _. member(id)(revoked)(la _. err(concat("revoked: ")(id)))(la _. okr(id))(C0))
+              (la _. err("bad signature"))(C0)))))
+        (la _. err(concat("bad op: ")(op)))(C0))
+        (la _. err(concat("bad resource: ")(res)))(C0))
+        (la _. err("bad root key"))(C0))(la verify.
+  LET(SEC_CONFINE(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor))(la confine.
+    la s. s(mint)(attenuate)(verify)(within)(confine)
+  )))))))))))))))))))))
+
+# ── GUARD_KIT: the reference monitor ───────────────────────────────────
+glyph GUARD_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la lt. la int_eq. la band. la bor. la bxor.
+    la stat. la read_file. la write_file. la rename. la unlink. la fork. la execv. la exit. la clock_gettime.
+    la ipc_connect. la sec. la K.
+  sec(la mint. la attenuate. la verify. la within. la confine.
+  SEC_STR(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)
+  (la T. la F. la nil. la cons. la len. la ordi. la slice. la find. la rfind. la split. la member. la allc.
+   la starts. la cteq. la idok. la hexchar. la hexval. la digit. la segok. la within0.
+   la C0. la C1. la C2. la C5. la C16. la C18. la C32. la C64.
+  (la C73. la C32768. la C61440.
+  LET(la m. la e. la o. e(m))(la err.
+  LET(la v. la e. la o. o(v))(la okr.
+  # unix seconds now, from clock_gettime(CLOCK_REALTIME) = "<sec> <nsec>"
+  LET(la _. (la t. str_to_int(slice(t)(C0)(find(t)(len(t))(" ")(C0))))(clock_gettime("0")))(la now.
+  LET(la rl. la tok. la res. la op. verify(K)(rl)(tok)(res)(op)(now("!")))(la check.
+  LET(la path. str_eq(str_at(path)(C0))("/")
+      (la _. okr(concat("fs")(path)))(la _. err(concat("not an absolute path: ")(path)))(C0))(la fsres.
+  # stat(path) = "<mode> <size>" or "-errno"; mode -1 when it failed
+  LET(la st. str_eq(str_at(st)(C0))("-")(la _. sub(C0)(C1))
+      (la _. str_to_int(slice(st)(C0)(find(st)(len(st))(" ")(C0))))(C0))(la smode.
+  LET(la m. lt(m)(C0)(F)(int_eq(band(m)(C61440))(C32768)))(la isreg.
+  LET(la m. isreg(m)(lt(C0)(band(m)(C73)))(F))(la isexe.
+  LET(la rl. la tok. la path.
+      fsres(path)(err)(la r. check(rl)(tok)(r)("r")
+        (la m. err(concat("read denied: ")(m)))
+        (la who. isreg(smode(stat(path)))
+           (la _. okr(read_file(path)))
+           (la _. err(concat("read: not a regular file: ")(path)))(C0))))(la gread.
+  LET(la rl. la tok. la path. la data.
+      fsres(path)(err)(la r. check(rl)(tok)(r)("w")
+        (la m. err(concat("write denied: ")(m)))
+        (la who. (la tmp. (la _. (la rc. str_eq(rc)("0")
+              (la _. okr(path))
+              (la _. (la _. err(concat("write: rename failed: ")(rc)))(unlink(tmp)))(C0))
+            (rename(tmp)(path)))(write_file(tmp)(data)))(concat(path)(".tmp")))))(la gwrite.
+  LET(la rl. la tok. la path. la args.
+      fsres(path)(err)(la r. check(rl)(tok)(r)("x")
+        (la m. err(concat("spawn denied: ")(m)))
+        (la who. isexe(smode(stat(path)))
+           (la _. (la pid. str_eq(pid)("0")
+                (la _. (la _. exit("127"))(execv(path)(args)))
+                (la _. str_eq(str_at(pid)(C0))("-")
+                         (la _. err(concat("spawn: fork failed: ")(pid)))(la _. okr(pid))(C0))(C0))
+              (fork("!")))
+           (la _. err(concat("spawn: not an executable file: ")(path)))(C0))))(la gspawn.
+  LET(la rl. la tok. la name.
+      lt(find(name)(len(name))("/")(C0))(len(name))
+        (la _. err(concat("connect: bad channel name: ")(name)))
+        (la _. check(rl)(tok)(concat("ipc/")(name))("c")
+           (la m. err(concat("connect denied: ")(m)))
+           (la who. okr(ipc_connect(name))))(C0))(la gconnect.
+  # the guard for revocation list rl; revoke rebuilds it with one id more
+  LET(Z(la mk. la rl. la s.
+      s(gread(rl))(gwrite(rl))(gspawn(rl))(gconnect(rl))
+       (la tok. la id. idok(id)
+          (la _. check(rl)(tok)("sec/policy")("a")
+             (la m. err(concat("revoke denied: ")(m)))
+             (la who. okr(mk(cons(id)(rl)))))
+          (la _. err(concat("revoke: bad id: ")(id)))(C0))
+       (rl)))(la mk.
+    mk(nil)
+  ))))))))))))))
+  (str_to_int("73"))(str_to_int("32768"))(str_to_int("61440"))))
