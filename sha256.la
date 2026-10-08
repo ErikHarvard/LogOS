@@ -82,7 +82,8 @@ glyph BE64  = la n.
 # An earlier version subtracted 1 here and produced 63-byte blocks -- and the
 # EMPTY-string vector STILL passed, because the byte it dropped was a zero of the
 # length field. One test vector would have shipped this bug.
-glyph PADLEN = la l. (la r. IF(lt(r)(56))(la _. sub(56)(r))(la _. sub(120)(r)))(mod(add(l)(1))(64))
+# r = 56 (L = 55 mod 64) takes no zero bytes: the length field fills the block.
+glyph PADLEN = la l. (la r. IF(lt(r)(57))(la _. sub(56)(r))(la _. sub(120)(r)))(mod(add(l)(1))(64))
 glyph PAD = la s. (la l.
     concat(concat(s)(concat(CHRI(128))(ZPAD(PADLEN(l)))))(BE64(mul(l)(8))))
   (SLEN(s))
