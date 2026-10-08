@@ -13,6 +13,9 @@
 #   print. The gate generates LA programs from those scripts (each step
 #   threads the terminal value; observations print one display row per line
 #   as [row], submit prints S:<line>), runs them, and compares byte for byte.
+#   The rest of a script is always in tail position, (la t. rest)(step) and
+#   (la _. rest)(observation), never an argument, so the C host runs a long
+#   script in bounded memory.
 #
 #   1. write: every rule of the byte table (printable 32..126; \n; \r; \t at
 #      columns 0,1,3,7,8,15,60,63,64,70 and after a tab; \b at line start and
@@ -37,15 +40,18 @@
 #   5. keychar for every code 0..130 and 200, 255, 1000, -1, -57, shift off
 #      and on, against a Python US-layout table; the KEY_* constants.
 #   6. a seeded 260-step random script mixing all operations.
-#   7. the C host runs groups 2, 5 and a small mixed script and must match
-#      the model and the VM byte for byte.
+#   7. the C host runs groups 2, 3, 5, the first 40 steps of 6 and a small
+#      mixed script (every group with WM_TERM_HOST_ALL=1) and must match the
+#      model and the VM byte for byte; and 100 cheap observations must run
+#      on the host within a 256 MB address space (bounded memory).
 #   8. performance on the VM (see the end): linear long lines, rows cost
 #      independent of history length (with exactly 500 stored lines, where
 #      rows walks the stored list itself, and with 999) and of how many
 #      stored lines would wrap, and a loose per-byte bound.
 #
 # ISOLATION: a private temporary directory (gate_wm_common.sh); touches no
-# tracked file. About 3 min, most of it the host runs and the toolchain build.
+# tracked file. About 6 min on a quiet machine, most of it the host runs and
+# the toolchain build.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
@@ -186,11 +192,10 @@ def num(k):
     return str(k) if k >= 0 else "sub(0)(%d)" % -k
 
 PRELUDE = '''import("theourgia_term.la")
-glyph SEQ = la a. la b. b
 glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
 # SHOWROWS(l): print each row as [row], one per line
-glyph SHOWROWS = la l. (la r. r(r)(l))(la r. la l. l(la _. "")(la h. la t. SEQ(print(concat("[")(concat(h)("]"))))(r(r)(t))))
+glyph SHOWROWS = la l. (la r. r(r)(l))(la r. la l. l(la _. "")(la h. la t. (la _. r(r)(t))(print(concat("[")(concat(h)("]"))))))
 glyph MAIN = TERM_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
   (la new. la write. la flush. la key. la back. la kill_line. la submit.
    la hist_prev. la hist_next. la clear. la set_prompt. la rows. la keychar.
@@ -226,12 +231,12 @@ def program(script):
         elif kind == "submit":
             line = term.submit()
             exp += b"S:" + line + b"\n"
-            code.append('submit(t)(la line. la t. SEQ(print(concat("S:")(line)))(@REST@))')
+            code.append('submit(t)(la line. la t. (la _. @REST@)(print(concat("S:")(line))))')
         elif kind == "rows":
             _, cols, n, idle = op
             for r in term.rows(cols, n, idle):
                 exp += b"[" + r + b"]\n"
-            code.append("SEQ(SHOWROWS(rows(t)(%s)(%s)(%s)))(@REST@)" % (num(cols), num(n), boolean(idle)))
+            code.append("(la _. @REST@)(SHOWROWS(rows(t)(%s)(%s)(%s)))" % (num(cols), num(n), boolean(idle)))
         elif kind == "view":
             # rows enough for every line since the last mark, plus one more
             _, cols, idle = op
@@ -241,11 +246,11 @@ def program(script):
             n = sum(max(1, -(-len(x) // w_)) for x in seen) + 1
             for r in term.rows(cols, n, idle):
                 exp += b"[" + r + b"]\n"
-            code.append("SEQ(SHOWROWS(rows(t)(%s)(%s)(%s)))(@REST@)" % (num(cols), num(n), boolean(idle)))
+            code.append("(la _. @REST@)(SHOWROWS(rows(t)(%s)(%s)(%s)))" % (num(cols), num(n), boolean(idle)))
         elif kind == "mark":
             markpos = len(term.lines)
             exp += op[1] + b"\n"
-            code.append("SEQ(print(" + lit(op[1]) + "))(@REST@)")
+            code.append("(la _. @REST@)(print(" + lit(op[1]) + "))")
         else:
             raise SystemExit("bad op %r" % (op,))
     exp += b"END\n"
@@ -371,6 +376,9 @@ for step in range(260):
     else:
         rs.append(("rows", rnd.randint(1, 50), rnd.randint(0, 14), rnd.random() < 0.5))
 emit("t_random", rs)
+emit("t_rand40", rs[:41])     # its first 40 steps, sized for the C host
+# host memory: many cheap observations (see the host checks below)
+emit("t_hmem", [("new", b"$ ")] + [("key", b"x"), ("rows", 10, 1, True)] * 100)
 
 # ── 6. keychar over every code 0..130 (and a few beyond), and the KEY_* constants ──
 codes = list(range(0, 131)) + [200, 255, 1000, -1, -57]
@@ -378,14 +386,14 @@ kc = []
 expk = bytearray()
 for k in codes:
     p, s = KEYS.get(k, (b"", b""))
-    kc.append('SEQ(print(concat(keychar(%s)(FALSE))(concat("|")(keychar(%s)(TRUE)))))' % (num(k), num(k)))
+    kc.append('print(concat(keychar(%s)(FALSE))(concat("|")(keychar(%s)(TRUE))))' % (num(k), num(k)))
     expk += p + b"|" + s + b"\n"
 for name, v in KEYCONST.items():
-    kc.append('SEQ(print(concat("%s=")(int_to_str(%s))))' % (name, name))
+    kc.append('print(concat("%s=")(int_to_str(%s)))' % (name, name))
     expk += b"%s=%d\n" % (name.encode(), v)
 body = 'print("END")'
 for x in reversed(kc):
-    body = x + "(" + body + ")"
+    body = "(la _. %s)(%s)" % (body, x)
 open(OUT + "/t_keys.la", "w").write(PRELUDE + "     " + body + ")\n")
 open(OUT + "/t_keys.exp", "wb").write(bytes(expk) + b"END\n")
 
@@ -493,9 +501,16 @@ vmcheck t_cap    "the 500-line cap at 499/500/501/999/1000/1001/1203 lines"
 vmcheck t_keys   "keychar over codes -57..1000 against the US table; the KEY_* constants"
 vmcheck t_random "a seeded 260-step random script against the model"
 
-# The C host runs the same programs; it is a substitution interpreter and
-# write's loops are slow there, so it runs the three smaller groups (~1 min).
-for g in t_host t_edit t_keys; do
+# The C host runs the same programs. It is a substitution interpreter that
+# copies a closure's body on every application, and the kit's closures are
+# large, so each write costs it about a second: by default it runs the groups
+# that fit (~4 min of CPU): t_host, t_edit, t_keys, t_rows, and t_rand40 (the
+# first 40 steps of t_random). WM_TERM_HOST_ALL=1 runs every group on the
+# host (t_write takes ~15 min of CPU there and t_random more than 16: raise
+# WM_HOST_TIMEOUT, in seconds, to suit).
+hostgroups="t_host t_edit t_keys t_rows t_rand40"
+[ "${WM_TERM_HOST_ALL:-}" = 1 ] && hostgroups="$hostgroups t_write t_cap t_random"
+for g in $hostgroups; do
     wm_host "$g.la" "$T/$g.host"
     [ -f "$T/$g.vm" ] || wm_vm "$g.la" "$T/$g.vm"
     if [ "$hrc" = 0 ] && cmp -s "$T/$g.host" "$T/$g.exp" && cmp -s "$T/$g.host" "$T/$g.vm"; then
@@ -504,6 +519,21 @@ for g in t_host t_edit t_keys; do
         echo "FAIL  term (host): $g: rc=$hrc $(head -c 160 "$T/hre") $(firstdiff "$T/$g.exp" "$T/$g.host")"; ok=0
     fi
 done
+
+# Host memory. A long script must run on the C host in bounded memory: the
+# harness keeps the rest of the script in tail position. t_hmem is 100 cheap
+# observations (a key, then a one-row rows), run under a 256 MB address-space
+# limit; it needs ~45 MB. (With the rest of the script passed as an argument,
+# SEQ(observation)(rest), every observation nested a C frame, the host's
+# conservative GC kept every earlier state alive, and this run needed ~800 MB;
+# the full t_random was killed at 2.4 GB.)
+hmrc=0
+( cd "$T" && ulimit -v 262144 && timeout "$WM_HOST_TIMEOUT" ./tiny_host t_hmem.la >"$T/t_hmem.host" 2>"$T/hmre" ) || hmrc=$?
+if [ "$hmrc" = 0 ] && cmp -s "$T/t_hmem.host" "$T/t_hmem.exp"; then
+    echo "PASS  term (host): t_hmem, 100 observations, gives the model's output within a 256 MB address space"
+else
+    echo "FAIL  term (host): t_hmem: rc=$hmrc $(head -c 160 "$T/hmre") $(firstdiff "$T/t_hmem.exp" "$T/t_hmem.host")"; ok=0
+fi
 
 # Performance, on the VM, in process CPU time. Absolute times on a shared
 # machine vary several-fold, so every check is a RATIO of two times taken in
