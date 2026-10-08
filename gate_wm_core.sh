@@ -24,7 +24,10 @@
 #    15    MOD+Enter while locked opens nothing; adam / logos unlocks
 #    16    MOD+Esc again: "Locked: adam", only the passphrase asked; a wrong
 #          one is refused
-#    17    the right one unlocks; MOD+Shift+e quits
+#    17    the right one unlocks
+#    18    locked again: MOD+q and Ctrl+U type nothing into the panel
+#    19    unlocked; in the settings panel Ctrl+U types nothing either;
+#          MOD+q closes it and MOD+Shift+e quits
 #
 # ISOLATION: private temp dir (gate_wm_common.sh). About a minute.
 set -uo pipefail
@@ -76,6 +79,15 @@ type lugos\n
 snap 16
 type logos\n
 snap 17
+mod ESC
+mod q
+ctrl u
+snap 18
+type logos\n
+mod s
+ctrl u
+snap 19
+mod q
 mod Shift+E
 EOF
 python3 "$T/wm_script.py" "$T/session.txt" "$T/events.bin" || { echo "FAIL  wm core: wm_script.py"; exit 1; }
@@ -311,10 +323,42 @@ snap 17: tree L3 focus 3
     ||
     ||
     |logos:/home$ |
+wm: locked
+snap 18: tree L3 focus 3
+  LOCKED, focus pass
+    |panel LogOS|
+    |  text: Locked: adam|
+    |  text field Passphrase: , focused|
+    |  button Unlock|
+    |  text: Locked.|
+  window 3 ver 0
+    ||
+    ||
+    ||
+    |logos:/home$ |
+wm: unlocked
+wm: open window 5 (Settings)
+snap 19: tree H500(L3,L5) focus 5
+  window 5 ver 0
+    theme light
+    |panel LogosKit settings|
+    |  text: This panel is drawn by LogosKit itself.|
+    |  text field Name: sovereign, focused|
+    |  check box Dark theme: not checked|
+    |  list, item 1 of 2: Text scale 1|
+    |  button Save|
+    |  button Reset|
+    |  text: Saved 0 times|
+  window 3 ver 0
+    ||
+    ||
+    ||
+    |logos:/home$ |
+wm: close window 5
 final: quit=yes'
 wm_vm core.la "$T/out.txt"
 if [ "$vrc" = 0 ] && [ "$(cat "$T/out.txt")" = "$EXPECT" ]; then
-    echo "PASS  wm core (VM): 17 snapshots of a session: windows, focus, swap, toggle, close, exit, the settings app, lock and unlock"
+    echo "PASS  wm core (VM): 19 snapshots of a session: windows, focus, swap, toggle, close, exit, the settings app, lock and unlock, Ctrl/MOD keys ignored by the lock screen and apps"
 else
     echo "FAIL  wm core (VM): rc=$vrc"; diff <(echo "$EXPECT") "$T/out.txt" | head -30; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi

@@ -389,7 +389,8 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
                     (la _. edit(st)(w)(code)(shift))(C0))
              (la pid. la rfd. la cmd.
                 ctrl(la _. int_eq(code)(K_C)(la _. seq(sh_int(pid))(st))(la _. st)(C0))(la _. st)(C0)))
-             (la a. app_key(st)(w)(code)(shift)))))(la typing.
+             # an app takes plain keys only: Ctrl+letter does not type the letter
+             (la a. ctrl(la _. st)(la _. app_key(st)(w)(code)(shift))(C0)))))(la typing.
     LET(la st. with_focus(st)(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
         set_term(st)(w)(t_write(term)(concat(
           "LogOS - the Theourgia tiling window manager, written in Lingua Adamica.\n")(concat(
@@ -469,8 +470,10 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     LET(la st. la code. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
         (la shift. la ctrl. la modk.
             lock(la _. modk(la _. binding(st)(code)(shift))(la _. typing(st)(code)(shift)(ctrl))(C0))
+                # locked: a key with Ctrl or MOD held means nothing (it must not type
+                # its letter into the login panel)
                 (la l. l(la login. la lw. la showing. showing
-                   (la _. lock_key(st)(code)(shift))
+                   (la _. modk(la _. st)(la _. ctrl(la _. st)(la _. lock_key(st)(code)(shift))(C0))(C0))
                    (la _. modk(la _. binding(st)(code)(shift))(la _. typing(st)(code)(shift)(ctrl))(C0))(C0))))
         (nz(band(mask)(C3)))(nz(band(mask)(C12)))(nz(band(mask)(C240)))))(la press.
     LET(la st. la code. la value.
