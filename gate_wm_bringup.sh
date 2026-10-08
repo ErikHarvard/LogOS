@@ -10,6 +10,8 @@
 #   1  Ctrl+Z does not suspend the session: the VM keeps running, the shell
 #      does not get the terminal back with the greeter stopped; a Ctrl+C after
 #      it still restarts the greeter
+#   2  a second Ctrl+C pressed while the first one's cleanup runs does not
+#      abort it: the greeter is restarted (tried at 0, 10, 20, 30 and 40 ms)
 # Nothing here touches the real greeter, GPU or input devices.
 #
 # ISOLATION: a private temporary directory and mount namespace. Needs
@@ -113,6 +115,13 @@ check("1 Ctrl+Z does not suspend the session (the VM keeps running)",
 os.write(fd, b"\x03"); time.sleep(3.0)
 check("1 a Ctrl+C after it ends the session and restarts the greeter", calls() == GREETER, f"systemctl calls: {calls()}")
 stop(pid, fd)
+
+# 2 a second Ctrl+C during the first one's cleanup
+for gap in (0.0, 0.01, 0.02, 0.03, 0.04):
+    pid, fd = spawn(); start(fd)
+    os.write(fd, b"\x03"); time.sleep(gap); os.write(fd, b"\x03"); time.sleep(3.0)
+    check(f"2 two Ctrl+C {int(gap * 1000)} ms apart: the greeter is restarted", calls() == GREETER, f"systemctl calls: {calls()}")
+    stop(pid, fd)
 
 sys.exit(bad)
 PYEOF

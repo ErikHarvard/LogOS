@@ -77,6 +77,11 @@ flush_tty() {
   [ -n "$saved_stty" ] && stty "$saved_stty" 2>/dev/null
 }
 restore() {
+  # nothing may interrupt the restore: a second Ctrl+C here used to run the
+  # INT trap's exit inside it and skip restarting the greeter
+  trap '' INT TERM HUP TSTP
+  [ -n "${restored:-}" ] && return
+  restored=1
   flush_tty
   echo "== restarting $GREETER (you'll get the login screen back) =="
   sudo systemctl start "$GREETER" 2>/dev/null
