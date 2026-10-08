@@ -35,9 +35,13 @@
 #      never ends), only fds 0-2 open in the child (the driver holds extra
 #      fds), the execv-limit refusals (an argument with a space, an empty
 #      argument, a directory name with a space, = in a program path),
-#      interrupt and hangup of /bin/sleep 30 ([signal 2], [signal 15]) even
-#      though the driver BLOCKS SIGINT and SIGTERM in itself, as a WM with a
-#      signalfd would, and finish returning promptly after each.
+#      an empty line and a line of spaces (no command, the last status kept:
+#      "? 1" again after /bin/false), interrupt and hangup of /bin/sleep 30
+#      ([signal 2], [signal 15]) even though the driver BLOCKS SIGINT and
+#      SIGTERM in itself, as a WM with a signalfd would, hangup of a job that
+#      has stopped itself (stopme.sh: the SIGTERM stays pending until hangup's
+#      SIGCONT, then its trap exits 7), and finish returning promptly after
+#      each.
 #      Then what a WM with several windows does: a job kept running (slow.sh,
 #      which sleeps 2 s holding its pipe) while a second job starts and
 #      finishes, then the first is read and finished; a kept /bin/sleep 30
@@ -231,6 +235,9 @@ printf '#!/bin/sh\nexit 3\n' > "$W/exit3.sh"; chmod 755 "$W/exit3.sh"
 printf '#!/bin/sh\necho no\n' > "$W/noexec.sh"; chmod 644 "$W/noexec.sh"
 printf '#!/bin/sh\necho eq\n' > "$W/a=b.sh"; chmod 755 "$W/a=b.sh"
 printf '#!/bin/sh\necho a\nsleep 2\necho b\n' > "$W/slow.sh"; chmod 755 "$W/slow.sh"
+# A job that stops itself: hangup's SIGTERM stays pending until its SIGCONT.
+printf '#!/bin/sh\ntrap "echo got TERM; exit 7" TERM\nkill -STOP $$\necho continued\nsleep 30\n' \
+    > "$W/stopme.sh"; chmod 755 "$W/stopme.sh"
 
 # The oracle for the one message logosh does not write itself: run the same
 # command from bash, the way logosh starts it (empty environment, env -C).
@@ -245,6 +252,7 @@ LONGY=$(printf 'y%.0s' $(seq 5000))
 export W ls_err ls_st seq_n LONGX MANYA LONGY
 
 sed -e "s|@W@|$W|g" -e "s|@LONGX@|$LONGX|g" -e "s|@MANYA@|$MANYA|g" -e "s|@LONGY@|$LONGY|g" \
+    -e 's|^@SPACES@$|   |' \
     > "$T/script.txt" <<'EOF'
 cd @W@
 pwd
@@ -298,6 +306,8 @@ clear
 nosuchcmd
 ls -d .
 /bin/false
+
+@SPACES@
 /bin/true
 ./script.sh
 @W@/script.sh
@@ -321,6 +331,7 @@ pwd
 cd ..
 @int /bin/sleep 30
 @hup /bin/sleep 30
+@hup ./stopme.sh
 @bg ./slow.sh
 /bin/echo B
 @fg
@@ -455,6 +466,10 @@ logos:@W@$ ls -d .
 logos:@W@$ /bin/false
 [exit 1]
 ? 1
+logos:@W@$@SP@
+? 1
+logos:@W@$@SP@@SP@@SP@@SP@
+? 1
 logos:@W@$ /bin/true
 logos:@W@$ ./script.sh
 script ran
@@ -510,6 +525,10 @@ logos:@W@$ /bin/sleep 30
 logos:@W@$ /bin/sleep 30
 [signal 15]
 ? 143
+logos:@W@$ ./stopme.sh
+got TERM
+[exit 7]
+? 7
 logos:@W@$ ./slow.sh
 <bg>
 logos:@W@$ /bin/echo B
@@ -683,6 +702,7 @@ exp = open(sys.argv[2]).read()
 for k, v in (('@W@', 'W'), ('@LS_ERR@', 'ls_err'), ('@LS_ST@', 'ls_st'), ('@SEQN@', 'seq_n'),
              ('@LONGX@', 'LONGX'), ('@MANYA@', 'MANYA'), ('@LONGY@', 'LONGY')):
     exp = exp.replace(k, os.environ[v].strip())
+exp = exp.replace('@SP@', ' ')         # a trailing space, spelled out
 exp = exp.split('\n')
 me = [l[4:] for l in out if l.startswith('#me ')]
 act = [l for l in out if not l.startswith('#')]
@@ -714,8 +734,8 @@ PYEOF
     fi
     slow=$(awk '$1=="#ms" && ($2=="int" || $2=="hup" || $2=="fghup") && ($3 > 3000000 || $5 > 1000000) {print}' "$T/session.out")
     nsig=$(awk '$1=="#ms" && ($2=="int" || $2=="hup" || $2=="fghup")' "$T/session.out" | wc -l)
-    if [ "$nsig" = 3 ] && [ -z "$slow" ]; then
-        pass "session (VM): interrupt, hangup, and hangup of a kept job end /bin/sleep 30 promptly (under 3 s, finish under 1 s)"
+    if [ "$nsig" = 4 ] && [ -z "$slow" ]; then
+        pass "session (VM): interrupt, hangup, hangup of a stopped job and of a kept job all end promptly (under 3 s, finish under 1 s)"
     else
         fail "session (VM): interrupt/hangup timings: $nsig lines; slow: $slow"
     fi
