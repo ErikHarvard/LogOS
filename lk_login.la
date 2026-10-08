@@ -1,0 +1,91 @@
+# ═══════════════════════════════════════════════════════════════════
+#  lk_login.la — the login and lock screen, a LogosKit app.
+#
+#  LogosSession (Citrinitas layer 11) owns the user's keys: login derives the
+#  Γ-seal from the passphrase, lock drops it, unlock derives it again. This is
+#  the screen in front of those three calls, written as an ordinary LogosKit
+#  program (init, view, update), so what it shows, what it SAYS (its
+#  accessible description) and what each key does all come from one element
+#  tree. The window manager shows it full screen while the session is locked
+#  (theourgia_wm.la), and keys reach nothing else until it reports done.
+#
+#  LOGIN_APP(B)(L)(nodes)(sess)
+#      -> la s. s(init)(view)(update)(theme)(title)(done)(lock)
+#    sess = la s. s(login)(lock)(unlock), the session layer's three calls:
+#      login(name)(pass)    result: la err. la ok. err(why) | ok(session)
+#      lock(session)        a locked session (no keys)
+#      unlock(locked)(pass) result, as login
+#    state = la k. k(name)(pass)(phase)(note)
+#      phase = la fresh. la locked. la open.  fresh(fresh) before the first
+#              login | locked(locked session) | open(session)
+#      note  the line under the button ("Wrong passphrase.", "Locked.", ...)
+#    done(state)  TRUE once a session is open: the WM then lets the user in
+#    lock(state)  the state the WM shows when it locks: the session is
+#                 locked, the passphrase forgotten, the name kept
+#  The theme is always dark (the WM's own colours).
+#
+#  THE PASSPHRASE IS NEVER DRAWN OR SPOKEN. The field shows one '*' per
+#  character, and LogosKit's edit message carries the DISPLAYED value, so the
+#  update rebuilds the real passphrase from it: a longer value appends its
+#  last character, a shorter one drops the last character. The accessible
+#  description therefore reads "Passphrase: ****" too. The passphrase lives
+#  only in the state, and is cleared after every attempt and on lock.
+# ═══════════════════════════════════════════════════════════════════
+
+export LOGIN_APP
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+glyph LOGIN_APP = la B. la L. la nodes. la sess.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
+  L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
+  nodes(la TEXT. la BUTTON. la FIELD. la TOGGLE. la LIST. la ROW. la COL. la PANEL. la SPACE.
+  sess(la s_login. la s_lock. la s_unlock.
+  (la C0. la C1. la TRUE. la FALSE.
+    LET(la fresh. la locked. la open. fresh(fresh))(la FRESH.
+    LET(la l. la fresh. la locked. la open. locked(l))(la LOCKED.
+    LET(la x. la fresh. la locked. la open. open(x))(la OPEN.
+    LET(la name. la pass. la phase. la note. la k. k(name)(pass)(phase)(note))(la mk.
+    LET(la s. str_to_int(str_len(s)))(la slen.
+    LET(Z(la stars. la n. lt(C0)(n)(la _. concat("*")(stars(sub(n)(C1))))(la _. "")(C0)))(la stars.
+    LET(Z(la last. la s. str_eq(str_tail(s))("")(la _. s)(la _. last(str_tail(s)))(C0)))(la last.
+    LET(Z(la droplast. la s. str_eq(str_tail(s))("")(la _. "")(la _. concat(str_head(s))(droplast(str_tail(s))))(C0)))(la droplast.
+    LET(mk("")("")(FRESH)(""))(la init.
+    # attempt(st): log in (fresh) or unlock (locked) with the typed passphrase;
+    # either way the passphrase is forgotten
+    LET(la st. st(la name. la pass. la phase. la note.
+        phase(la _. s_login(name)(pass)
+                     (la why. mk(name)("")(FRESH)("Wrong user or passphrase."))
+                     (la s. mk(name)("")(OPEN(s))("")))
+             (la l. s_unlock(l)(pass)
+                     (la why. mk(name)("")(LOCKED(l))("Wrong passphrase."))
+                     (la s. mk(name)("")(OPEN(s))("")))
+             (la s. st)))(la attempt.
+    LET(la st. la msg. st(la name. la pass. la phase. la note. msg(la id. la kind. la pay.
+        str_eq(id)("user")(la _. str_eq(kind)("edit")(la _. mk(pay)(pass)(phase)(note))(la _. st)(C0))(la _.
+        str_eq(id)("pass")(la _. str_eq(kind)("edit")
+              (la _. mk(name)(lt(slen(pass))(slen(pay))(la _. concat(pass)(last(pay)))(la _. droplast(pass))(C0))(phase)(note))
+              (la _. attempt(st))(C0))(la _.
+        str_eq(id)("go")(la _. attempt(st))(la _. st)(C0))(C0))(C0))))(la update.
+    LET(la st. st(la name. la pass. la phase. la note.
+        phase
+          (la _. PANEL("LogOS")(COL(
+              cons(TEXT("Log in to LogOS."))(
+              cons(FIELD("user")("User")(name))(
+              cons(FIELD("pass")("Passphrase")(stars(slen(pass))))(
+              cons(BUTTON("go")("Log in"))(
+              cons(TEXT(note))(nil))))))))
+          (la l. PANEL("LogOS")(COL(
+              cons(TEXT(concat("Locked: ")(name)))(
+              cons(FIELD("pass")("Passphrase")(stars(slen(pass))))(
+              cons(BUTTON("go")("Unlock"))(
+              cons(TEXT(note))(nil)))))))
+          (la s. PANEL("LogOS")(TEXT(concat("Welcome, ")(name))))))(la view.
+    LET(la st. TRUE)(la theme.
+    LET(la st. st(la name. la pass. la phase. la note. phase(la _. FALSE)(la l. FALSE)(la s. TRUE)))(la done.
+    LET(la st. st(la name. la pass. la phase. la note.
+        phase(la _. st)(la l. st)(la s. mk(name)("")(LOCKED(s_lock(s)))("Locked."))))(la lock.
+      la s. s(init)(view)(update)(theme)("Log in")(done)(lock)))))))))))))))))
+  (0)(1)(la t. la f. t)(la t. la f. f)))))
