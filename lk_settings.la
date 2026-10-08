@@ -1,0 +1,52 @@
+# ═══════════════════════════════════════════════════════════════════
+#  lk_settings.la — LogosKit's own settings panel, drawn by LogosKit.
+#
+#  The Codex's self-application test for layer 10: "LogosKit renders itself
+#  (the UI toolkit's settings panel is rendered by the UI toolkit)." This is
+#  that panel, as an ordinary LogosKit program (init, view, update): the theme
+#  it edits is the theme it is drawn in. The window manager draws the panel
+#  with the palette its own state selects, so flipping "Dark theme" redraws
+#  the panel that holds the switch in the other theme.
+#
+#  SETTINGS_APP(B)(L)(nodes) -> la s. s(init)(view)(update)(theme)
+#    state  = la k. k(name)(dark)(scale)(saves)
+#             name a string, dark a Church boolean, scale 0 or 1 (text scale
+#             1 or 2), saves how many times Save was pressed
+#    view(state)          the element tree
+#    update(state)(msg)   the next state (an unknown message changes nothing)
+#    theme(state)         TRUE when the panel is to be drawn dark
+#  nodes is LogosKit's constructor record. Messages are LogosKit's:
+#  la k. k(id)(kind)(payload).
+# ═══════════════════════════════════════════════════════════════════
+
+export SETTINGS_APP
+
+glyph SETTINGS_APP = la B. la L. la nodes.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
+  L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
+  nodes(la TEXT. la BUTTON. la FIELD. la TOGGLE. la LIST. la ROW. la COL. la PANEL. la SPACE.
+  (la C0. la C1. la TRUE. la FALSE.
+    (la mk. (la init.
+      la s. s(init)
+        # view
+        (la st. st(la name. la dark. la scale. la saves.
+          PANEL("LogosKit settings")(COL(
+            cons(TEXT("This panel is drawn by LogosKit itself."))(
+            cons(FIELD("name")("Name")(name))(
+            cons(TOGGLE("dark")("Dark theme")(dark))(
+            cons(LIST("scale")(cons("Text scale 1")(cons("Text scale 2")(nil)))(scale))(
+            cons(ROW(cons(BUTTON("save")("Save"))(cons(BUTTON("reset")("Reset"))(nil))))(
+            cons(TEXT(concat("Saved ")(concat(int_to_str(saves))(" times"))))(nil))))))))))
+        # update
+        (la st. la msg. st(la name. la dark. la scale. la saves. msg(la id. la kind. la pay.
+          str_eq(id)("name")(la _. str_eq(kind)("edit")(la _. mk(pay)(dark)(scale)(saves))(la _. st)(C0))(la _.
+          str_eq(id)("dark")(la _. mk(name)(str_eq(pay)("1"))(scale)(saves))(la _.
+          str_eq(id)("scale")(la _. mk(name)(dark)(str_to_int(pay))(saves))(la _.
+          str_eq(id)("save")(la _. mk(name)(dark)(scale)(add(saves)(C1)))(la _.
+          str_eq(id)("reset")(la _. init)(la _. st)(C0))(C0))(C0))(C0))(C0))))
+        # theme
+        (la st. st(la name. la dark. la scale. la saves. dark)))
+      (mk("sovereign")(FALSE)(C0)(C0)))
+    (la name. la dark. la scale. la saves. la k. k(name)(dark)(scale)(saves)))
+  (0)(1)(la t. la f. t)(la t. la f. f))))

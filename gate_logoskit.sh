@@ -23,7 +23,7 @@
 # Rendering to pixels goes through theourgia_render.la and is checked by the
 # WM's gates through OCR.
 #
-# ISOLATION: private temp dir (gate_wm_common.sh). About 1 minute.
+# ISOLATION: private temp dir (gate_wm_common.sh). About 2 minutes.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
@@ -117,4 +117,166 @@ if [ "$vrc" = 0 ] && [ "$(cat "$T/out.txt")" = "$EXPECT" ]; then
 else
     echo "FAIL  logoskit (VM): rc=$vrc"; diff <(echo "$EXPECT") "$T/out.txt" | head -20; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
+
+# ── the self-application: LogosKit's own settings panel (lk_settings.la) ──
+# Keys go through the kit (key -> message), the app's update makes the next
+# state, the view is regenerated from it, and the a11y of each new view is
+# checked: Tab/Shift+Tab focus, Space turning the theme dark (the theme the
+# panel is drawn in), typing, list selection, Save counted twice, Reset back to
+# the initial state (and the light theme).
+wm_setup lk_settings.la
+cat > "$T/app.la" <<'LAEOF'
+import("theourgia_wm.la")
+import("logoskit.la")
+import("lk_settings.la")
+glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)(add)(sub)(mul)(div)(mod)(lt)(int_eq)(band)(bor)
+glyph RSTUB = la s. s(la r. la g. la b. "")(la n. la x. "")(la f. la b. "")(la st. la t. la c. WM_NIL)(la a. la b. la c. la d. "")(la w. la h. la p. WM_NIL)(la l. "")(la a. la b. la c. la d. la e. "")
+glyph PAL = la s. s("n")("f")("t")("d")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph PRINTALL = Z(la self. la l. l(la _. "")(la h. la t. (la _. self(t))(print(h))))
+# a user session: a list of (code, shift, ch) key presses
+glyph K = la code. la shift. la ch. la k. k(code)(shift)(ch)
+glyph MAIN = (la L. LK_KIT(B)(L)(RSTUB)(1)(PAL)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
+  SETTINGS_APP(B)(L)(nodes)(la init. la view. la update. la theme.
+   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
+    # run(keys)(state)(focus): apply each key, print the a11y after it
+    (Z(la run. la keys. la st. la focus.
+       keys(la _. print("end"))
+           (la kk. la rest. kk(la code. la shift. la ch.
+              key(view(st))(focus)(code)(shift)(ch)(la focus2. la m.
+                (la st2.
+                   (la _. (la _. run(rest)(st2)(focus2))(PRINTALL(a11y(view(st2))(focus2))))
+                   (print(concat("-- key ")(concat(int_to_str(code))(concat(" -> focus ")(concat(focus2)(concat(", theme ")(theme(st2)("dark")("light")))))))))
+                (m(la _. st)(la mm. update(st)(mm))))))))
+     (cons(K(15)(la t. la f. f)(""))           # Tab: name -> dark
+     (cons(K(57)(la t. la f. f)(" "))          # Space: dark on
+     (cons(K(15)(la t. la f. t)(""))           # Shift+Tab: back to name
+     (cons(K(45)(la t. la f. f)("x"))          # type x
+     (cons(K(15)(la t. la f. f)(""))           # Tab: dark
+     (cons(K(15)(la t. la f. f)(""))           # Tab: scale
+     (cons(K(108)(la t. la f. f)(""))          # Down: scale 2
+     (cons(K(15)(la t. la f. f)(""))           # Tab: save
+     (cons(K(28)(la t. la f. f)(""))           # Enter: save
+     (cons(K(28)(la t. la f. f)(""))           # Enter: save
+     (cons(K(15)(la t. la f. f)(""))           # Tab: reset
+     (cons(K(28)(la t. la f. f)(""))           # Enter: reset
+       (nil)))))))))))))
+     (init)("name")))))(WM_LISTS(B))
+LAEOF
+EXPECT_APP='-- key 15 -> focus dark, theme light
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereign
+  check box Dark theme: not checked, focused
+  list, item 1 of 2: Text scale 1
+  button Save
+  button Reset
+  text: Saved 0 times
+-- key 57 -> focus dark, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereign
+  check box Dark theme: checked, focused
+  list, item 1 of 2: Text scale 1
+  button Save
+  button Reset
+  text: Saved 0 times
+-- key 15 -> focus name, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereign, focused
+  check box Dark theme: checked
+  list, item 1 of 2: Text scale 1
+  button Save
+  button Reset
+  text: Saved 0 times
+-- key 45 -> focus name, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereignx, focused
+  check box Dark theme: checked
+  list, item 1 of 2: Text scale 1
+  button Save
+  button Reset
+  text: Saved 0 times
+-- key 15 -> focus dark, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereignx
+  check box Dark theme: checked, focused
+  list, item 1 of 2: Text scale 1
+  button Save
+  button Reset
+  text: Saved 0 times
+-- key 15 -> focus scale, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereignx
+  check box Dark theme: checked
+  list, item 1 of 2: Text scale 1, focused
+  button Save
+  button Reset
+  text: Saved 0 times
+-- key 108 -> focus scale, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereignx
+  check box Dark theme: checked
+  list, item 2 of 2: Text scale 2, focused
+  button Save
+  button Reset
+  text: Saved 0 times
+-- key 15 -> focus save, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereignx
+  check box Dark theme: checked
+  list, item 2 of 2: Text scale 2
+  button Save, focused
+  button Reset
+  text: Saved 0 times
+-- key 28 -> focus save, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereignx
+  check box Dark theme: checked
+  list, item 2 of 2: Text scale 2
+  button Save, focused
+  button Reset
+  text: Saved 1 times
+-- key 28 -> focus save, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereignx
+  check box Dark theme: checked
+  list, item 2 of 2: Text scale 2
+  button Save, focused
+  button Reset
+  text: Saved 2 times
+-- key 15 -> focus reset, theme dark
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereignx
+  check box Dark theme: checked
+  list, item 2 of 2: Text scale 2
+  button Save
+  button Reset, focused
+  text: Saved 2 times
+-- key 28 -> focus reset, theme light
+panel LogosKit settings
+  text: This panel is drawn by LogosKit itself.
+  text field Name: sovereign
+  check box Dark theme: not checked
+  list, item 1 of 2: Text scale 1
+  button Save
+  button Reset, focused
+  text: Saved 0 times
+end'
+wm_vm app.la "$T/app_out.txt"
+if [ "$vrc" = 0 ] && [ "$(cat "$T/app_out.txt")" = "$EXPECT_APP" ]; then
+    echo "PASS  logoskit (VM): the settings panel drawn by LogosKit follows every key: focus, theme, edit, select, save, reset"
+else
+    echo "FAIL  logoskit (VM): settings app rc=$vrc"; diff <(echo "$EXPECT_APP") "$T/app_out.txt" | head -20; ok=0
+fi
+
 [ "$ok" = 1 ] || exit 1
