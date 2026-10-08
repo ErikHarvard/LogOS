@@ -652,6 +652,11 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
                   channel 0 from compiled Lingua Adamica + exit 33. All K6a/b/c/c2 gates
                   still PASS (the K6b entry re-gate is byte-neutral — a preprocessor
                   rename). Proves LA `send`/`recv` drive the kernel IPC channel.
+                  *(Renamed 2026-10-08 to `chan_send(chan)(msg)` / `chan_recv(chan)`, by
+                  ruling: bare `send`/`recv` are the VM's AF_UNIX sockets, so on native
+                  they are now another engine's builtins and halt "not supported on this
+                  engine". Same runtime code (`RT_SEND`/`RT_RECV`); the kernel programs
+                  `ipc_kernel.la`, `ipc2.la` and `ipc_proc.la` use the new names.)*
             - [x] **K6c.3b — TWO LA tasks exchange a typed message — DONE + gated
                   (2026-07-14). ★ THE K6c MILESTONE.** `ipc2.la` (one LA image compiled
                   by native_codegen3) `spawn`s two runtime tasks: **A** `ENCODE`s the
@@ -2420,7 +2425,8 @@ irreducibly machine-level; the TOOL that assembles it need not be foreign.)*
       — the kernel IPC service (`K6C t7 IAM`: a typed message send/recv'd across the
       boundary); **K6c.2** — two ring-3 tasks + a real kernel context switch (`B got
       IAM` **AND** `A got YOU` — full save/restore); **K6c.3a** — a compiled LA
-      process does IPC (`K6C3 IPC OK`, `ipc_kernel.la`'s `send(0)`/`recv(0)`);
+      process does IPC (`K6C3 IPC OK`, `ipc_kernel.la`'s `send(0)`/`recv(0)`, now
+      `chan_send(0)`/`chan_recv(0)`);
       **K6c.3b MILESTONE** — two ring-3 LA tasks exchange a **typed** message (`B rx
       type=greet` **AND** `B rx body=HELLO`, `ENCODE`d greet/HELLO decoded by the
       peer). ★ Rather than six more lambda layers, this introduced a **parameterised

@@ -313,8 +313,8 @@ glyph LOOKUP_GLYPH = Z(la self. la nm. la table.
     IF(IS_CONS(table))(la _. IF(str_eq(nm)(FST(HD(table))))(la _. SOME(SND(HD(table))))(la _. self(nm)(TL(table))))(la _. NONE))
 
 # ── builtins ───────────────────────────────────────────────────────
-glyph IS_BUILTIN1 = la nm. OR(str_eq(nm)("bnot"))(OR(str_eq(nm)("print"))(OR(str_eq(nm)("int_to_str"))(OR(str_eq(nm)("str_to_int"))(OR(str_eq(nm)("str_head"))(OR(str_eq(nm)("str_tail"))(OR(str_eq(nm)("chr"))(OR(str_eq(nm)("ord"))(OR(str_eq(nm)("str_len"))(OR(str_eq(nm)("error"))(OR(str_eq(nm)("read_file"))(OR(str_eq(nm)("peek"))(OR(str_eq(nm)("set_cr3"))(OR(str_eq(nm)("exec_at"))(OR(str_eq(nm)("copy_self"))(OR(str_eq(nm)("spawn"))(OR(str_eq(nm)("yield"))(OR(str_eq(nm)("recv"))(OR(str_eq(nm)("inb"))(OR(str_eq(nm)("inl"))(str_eq(nm)("inw")))))))))))))))))))))
-glyph IS_BUILTIN2 = la nm. OR(str_eq(nm)("band"))(OR(str_eq(nm)("bor"))(OR(str_eq(nm)("bxor"))(OR(str_eq(nm)("bshl"))(OR(str_eq(nm)("bshr"))(OR(str_eq(nm)("add"))(OR(str_eq(nm)("sub"))(OR(str_eq(nm)("mul"))(OR(str_eq(nm)("div"))(OR(str_eq(nm)("mod"))(OR(str_eq(nm)("int_eq"))(OR(str_eq(nm)("lt"))(OR(str_eq(nm)("str_eq"))(OR(str_eq(nm)("concat"))(OR(str_eq(nm)("write_exec"))(OR(str_eq(nm)("write_file"))(OR(str_eq(nm)("poke"))(OR(str_eq(nm)("send"))(OR(str_eq(nm)("outb"))(OR(str_eq(nm)("outl"))(str_eq(nm)("outw")))))))))))))))))))))
+glyph IS_BUILTIN1 = la nm. OR(str_eq(nm)("bnot"))(OR(str_eq(nm)("print"))(OR(str_eq(nm)("int_to_str"))(OR(str_eq(nm)("str_to_int"))(OR(str_eq(nm)("str_head"))(OR(str_eq(nm)("str_tail"))(OR(str_eq(nm)("chr"))(OR(str_eq(nm)("ord"))(OR(str_eq(nm)("str_len"))(OR(str_eq(nm)("error"))(OR(str_eq(nm)("read_file"))(OR(str_eq(nm)("peek"))(OR(str_eq(nm)("set_cr3"))(OR(str_eq(nm)("exec_at"))(OR(str_eq(nm)("copy_self"))(OR(str_eq(nm)("spawn"))(OR(str_eq(nm)("yield"))(OR(str_eq(nm)("chan_recv"))(OR(str_eq(nm)("inb"))(OR(str_eq(nm)("inl"))(str_eq(nm)("inw")))))))))))))))))))))
+glyph IS_BUILTIN2 = la nm. OR(str_eq(nm)("band"))(OR(str_eq(nm)("bor"))(OR(str_eq(nm)("bxor"))(OR(str_eq(nm)("bshl"))(OR(str_eq(nm)("bshr"))(OR(str_eq(nm)("add"))(OR(str_eq(nm)("sub"))(OR(str_eq(nm)("mul"))(OR(str_eq(nm)("div"))(OR(str_eq(nm)("mod"))(OR(str_eq(nm)("int_eq"))(OR(str_eq(nm)("lt"))(OR(str_eq(nm)("str_eq"))(OR(str_eq(nm)("concat"))(OR(str_eq(nm)("write_exec"))(OR(str_eq(nm)("write_file"))(OR(str_eq(nm)("poke"))(OR(str_eq(nm)("chan_send"))(OR(str_eq(nm)("outb"))(OR(str_eq(nm)("outl"))(str_eq(nm)("outw")))))))))))))))))))))
 # HAL.4b: the FIRST ternary builtins — the bulk framebuffer primitives.
 # fill(dst)(count)(value) lays `count` 32-bit dwords (a pixel at 32bpp) and
 # memcpy(dst)(src)(len) blits `len` bytes, each ONE `rep` instead of a poke +
@@ -329,7 +329,7 @@ glyph STR_MEM = Z(la self. la x. la lst. IF(IS_CONS(lst))(la _. IF(str_eq(x)(HD(
 # it is on host and the VM, so a program that only mentions it on a branch never
 # taken compiles. Reaching it halts with "native: <name>: not supported on this
 # engine" (exit 1), as host and the VM halt on reaching a builtin they lack.
-glyph OTHER_ENGINE_BUILTINS = CONS("accept")(CONS("bind")(CONS("chmod")(CONS("clock_gettime")(CONS("close")(CONS("connect")(CONS("drm_mode")(CONS("dup2")(CONS("execv")(CONS("execve")(CONS("exit")(CONS("fork")(CONS("getpid")(CONS("kill")(CONS("listen")(CONS("lseek")(CONS("mkdir")(CONS("mount")(CONS("open")(CONS("pipe")(CONS("poll")(CONS("present")(CONS("random")(CONS("read")(CONS("reap")(CONS("reapnb")(CONS("rename")(CONS("rmdir")(CONS("signalfd")(CONS("sigprocmask")(CONS("sleep")(CONS("socket")(CONS("stat")(CONS("str_at")(CONS("typeof")(CONS("unlink")(CONS("waitpid")(CONS("write")(NIL))))))))))))))))))))))))))))))))))))))
+glyph OTHER_ENGINE_BUILTINS = CONS("accept")(CONS("bind")(CONS("chmod")(CONS("clock_gettime")(CONS("close")(CONS("connect")(CONS("drm_mode")(CONS("dup2")(CONS("execv")(CONS("execve")(CONS("exit")(CONS("fork")(CONS("getpid")(CONS("kill")(CONS("listen")(CONS("lseek")(CONS("mkdir")(CONS("mount")(CONS("open")(CONS("pipe")(CONS("poll")(CONS("present")(CONS("random")(CONS("read")(CONS("reap")(CONS("reapnb")(CONS("recv")(CONS("rename")(CONS("rmdir")(CONS("send")(CONS("signalfd")(CONS("sigprocmask")(CONS("sleep")(CONS("socket")(CONS("stat")(CONS("str_at")(CONS("typeof")(CONS("unlink")(CONS("waitpid")(CONS("write")(NIL))))))))))))))))))))))))))))))))))))))))
 
 # ── glyph inlining (produce one closed lambda term over builtins) ──
 # A name resolves in scope, then the glyph table, then the builtins: the order
@@ -609,7 +609,7 @@ glyph RT_BIN = la nm.
     IF(str_eq(nm)("concat"))(la _. RT_CONCAT)(la _.
     IF(str_eq(nm)("write_file"))(la _. RT_WRITE_FILE)(la _.
     IF(str_eq(nm)("poke"))(la _. RT_POKE)(la _.
-    IF(str_eq(nm)("send"))(la _. RT_SEND)(la _.
+    IF(str_eq(nm)("chan_send"))(la _. RT_SEND)(la _.
     IF(str_eq(nm)("outb"))(la _. RT_OUTB)(la _.
     IF(str_eq(nm)("outl"))(la _. RT_OUTL)(la _.
     IF(str_eq(nm)("outw"))(la _. RT_OUTW)(la _.
@@ -635,7 +635,7 @@ glyph RT_UN = la nm.
     IF(str_eq(nm)("exec_at"))(la _. RT_EXEC_AT)(la _.
     IF(str_eq(nm)("spawn"))(la _. RT_SPAWN)(la _.
     IF(str_eq(nm)("yield"))(la _. RT_YIELD)(la _.
-    IF(str_eq(nm)("recv"))(la _. RT_RECV)(la _.
+    IF(str_eq(nm)("chan_recv"))(la _. RT_RECV)(la _.
     IF(str_eq(nm)("inb"))(la _. RT_INB)(la _.
     IF(str_eq(nm)("inl"))(la _. RT_INL)(la _.
     IF(str_eq(nm)("inw"))(la _. RT_INW)(la _.
