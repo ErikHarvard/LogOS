@@ -243,7 +243,7 @@ panel LogosKit settings
   list, item 2 of 2: Text scale 2
   button Save, focused
   button Reset
-  text: Saved 1 times
+  text: Saved 1 time
 -- key 28 -> focus save, theme dark
 panel LogosKit settings
   text: This panel is drawn by LogosKit itself.

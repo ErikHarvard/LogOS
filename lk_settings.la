@@ -37,7 +37,7 @@ glyph SETTINGS_APP = la B. la L. la nodes.
             cons(TOGGLE("dark")("Dark theme")(dark))(
             cons(LIST("scale")(cons("Text scale 1")(cons("Text scale 2")(nil)))(scale))(
             cons(ROW(cons(BUTTON("save")("Save"))(cons(BUTTON("reset")("Reset"))(nil))))(
-            cons(TEXT(concat("Saved ")(concat(int_to_str(saves))(" times"))))(nil))))))))))
+            cons(TEXT(concat("Saved ")(concat(int_to_str(saves))(int_eq(saves)(C1)(la _. " time")(la _. " times")(C0)))))(nil))))))))))
         # update
         (la st. la msg. st(la name. la dark. la scale. la saves. msg(la id. la kind. la pay.
           str_eq(id)("name")(la _. str_eq(kind)("edit")(la _. mk(pay)(dark)(scale)(saves))(la _. st)(C0))(la _.

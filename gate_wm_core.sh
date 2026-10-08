@@ -257,7 +257,7 @@ snap 12: tree H500(L3,L4) focus 4
     |  list, item 2 of 2: Text scale 2|
     |  button Save, focused|
     |  button Reset|
-    |  text: Saved 1 times|
+    |  text: Saved 1 time|
   window 3 ver 0
     ||
     ||
