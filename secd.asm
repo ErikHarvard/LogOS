@@ -2954,8 +2954,9 @@ _start:
 ; LogosIPC bus can route over a real socket instead of a single pipe. Integers
 ; (fds) cross the LA boundary as decimal STRs (desc_atoi/push_dec), and a
 ; bind/connect path is a binary-safe STR copied into a sockaddr_un built in
-; pathbuf. All return -errno (as a decimal STR) on failure rather than halting,
-; so a program can recognise and handle a dead peer.
+; pathbuf. All but recv return -errno (as a decimal STR) on failure rather than
+; halting, so a program can recognise and handle a dead peer; recv returns ""
+; on error or end of stream.
 .bi_socket:                      ; socket("!") → fd of a fresh AF_UNIX stream socket
     mov     rax, 41              ; socket
     mov     rdi, 1               ; AF_UNIX
