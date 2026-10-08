@@ -95,7 +95,9 @@ echo "== stopping $GREETER to free the GPU =="
 sudo systemctl stop "$GREETER" 2>/dev/null
 sleep 2
 
-LOGF="/tmp/logos_wm_$(date +%s).log"
+# The log holds every command typed in the WM: readable by its owner only,
+# under a name nobody else can have created first.
+LOGF="$(umask 077; mktemp /tmp/logos_wm_XXXXXXXX.log)" || { echo "cannot create the log"; exit 1; }
 echo
 echo "== LIVE: the LogOS tiling window manager =="
 echo "   log -> $LOGF   (MOD+Shift+e or Ctrl+C to stop)"

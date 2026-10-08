@@ -12,6 +12,8 @@
 #      it still restarts the greeter
 #   2  a second Ctrl+C pressed while the first one's cleanup runs does not
 #      abort it: the greeter is restarted (tried at 0, 10, 20, 30 and 40 ms)
+#   3  the session log, which holds every command typed in the WM, is
+#      readable by its owner only
 # Nothing here touches the real greeter, GPU or input devices.
 #
 # ISOLATION: a private temporary directory and mount namespace. Needs
@@ -123,6 +125,13 @@ for gap in (0.0, 0.01, 0.02, 0.03, 0.04):
     check(f"2 two Ctrl+C {int(gap * 1000)} ms apart: the greeter is restarted", calls() == GREETER, f"systemctl calls: {calls()}")
     stop(pid, fd)
 
+# 3 the session log's mode
+pid, fd = spawn(); start(fd)
+logs = glob.glob(f"{B}/faketmp/logos_wm_*.log")
+modes = [oct(os.stat(p).st_mode & 0o777) for p in logs]
+check("3 the session log is readable by its owner only (0600)", len(logs) == 1 and modes == ["0o600"], f"logs {logs} modes {modes}")
+os.write(fd, b"\x03"); time.sleep(2.0)
+stop(pid, fd)
 sys.exit(bad)
 PYEOF
 rc=$?
