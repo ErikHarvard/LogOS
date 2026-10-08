@@ -30,6 +30,10 @@
 #               already installed
 #    remove     refused while needed; then each package and finally both
 #               versions of alpha removed
+#    lock       while staging/ exists remove, rollback and update refuse too;
+#               a remove started by another process DURING an install (from
+#               inside the install's own self-test) is refused, and the
+#               installation stays consistent
 #    advise     reports alpha 1.0 -> 1.1 and changes nothing
 #    update     installs 1.1 (its self-test runs), keeps 1.0; a package then
 #               installed sees the CURRENT alpha beside its test; rr 1.0 ->
@@ -299,6 +303,15 @@ def gen(D, module):
     simple("rr", "9.0", "rr 9.0", extra={"evil.txt": "attacker\n"})
     # upa 1.1 needs upb, and the INSTALLED upb 1.0 needs upa: updating upa would close a cycle
     simple("upa", "1.0", "upa 1.0"); simple("upb", "1.0", "upb"); simple("upa", "1.1", "upa 1.1")
+    # a second process removes xr WHILE yr (which needs xr) is being installed:
+    # yr's own self-test runs the gate's driver (D/drv2) on the same installation
+    simple("xr", "1.0", "x", extra={"xr.la": 'export XR\nglyph XR = "xr"\n'})
+    simple("yr", "1.0", None, expected="xr\n", imports='import("xr.la")\n',
+           main=('glyph MAIN = SEQ(LOG("yr 1.0\\n"))(SEQ(write_file("%s/drv2/step.txt")("pkgcfg remove %s/inst7 xr"))\n'
+                 '  ((la pid. str_eq(pid)("0")\n'
+                 '     (la _. (la fd. SEQ(dup2(fd)("1"))(SEQ(execv("/usr/bin/env")("env -C %s/drv2 %s/logos_secd"))(exit("127"))))\n'
+                 '            (open("%s/drv2/out.txt")("577")))\n'
+                 '     (la _. SEQ(waitpid(pid))(print(XR)))("!"))(fork("!"))))\n') % (D, D, D, D, D))
     # the package manager as a package
     src = open(module, "rb").read()
     test = r'''import("logospkg.la")
@@ -478,9 +491,9 @@ pk alpha 1.0 -; pk alpha 1.1 -; pk beta 1.0 alpha; pk gamma 1.0 beta,alpha; pk e
 pk okdep 1.0 -; pk bad 1.0 okdep; pk nocompile 1.0 -; pk exit3 1.0 -; pk clash 1.0 alpha
 pk cyca 1.0 cycb; pk cycb 1.0 cyca; pk orphan 1.0 nosuch; pk delta 1.0 -
 pk long 1.0 -; pk short 1.0 -; pk vv 1.9 -; pk vv 1.10 -; pk vv 1.2 -
-pk rr 1.0 -; pk rr 1.1 -; pk rr 1.2 -; pk rr 9.0 -; pk upa 1.0 -; pk upb 1.0 upa; pk upa 1.1 upb
+pk rr 1.0 -; pk rr 1.1 -; pk rr 1.2 -; pk rr 9.0 -; pk upa 1.0 -; pk upb 1.0 upa; pk upa 1.1 upb; pk xr 1.0 -; pk yr 1.0 xr
 pk logospkg 1.0 -; pk logospkg 1.1 -; pk logospkg 1.2 -
-[ "$(echo $packed | wc -w)" = 29 ] && pass "pack: 29 archives, each byte-identical to the format (incl. logospkg.la's own, $(stat -c %s arc/logospkg-1.0) bytes)"
+[ "$(echo $packed | wc -w)" = 31 ] && pass "pack: 31 archives, each byte-identical to the format (incl. logospkg.la's own, $(stat -c %s arc/logospkg-1.0) bytes)"
 s unpack arc/gamma-1.0 out
 expect "unpack: gamma's header fields and file list" \
   "ok name=gamma version=1.0 deps=beta,alpha test=gamma_test.la files=blob.bin:$(stat -c %s src/gamma-1.0/blob.bin),empty.txt:0,gamma.la:$(stat -c %s src/gamma-1.0/gamma.la),gamma_test.la:$(stat -c %s src/gamma-1.0/gamma_test.la),gamma_test.la.expected:$(stat -c %s src/gamma-1.0/gamma_test.la.expected)"
@@ -596,8 +609,8 @@ refuse "install refused: a relative vm path" \
        "err cfg: the vm must be an absolute path to a file (the self-test runs in staging/)" pkgcfg_rel install inst repo key.bin okdep
 refuse "install refused: no compiler.bin" "err no compiler at $T/nosuch.bin" pkgcfg_nocomp install inst repo key.bin okdep
 mkdir inst/staging; O snap inst > inst.snap
-refuse "install refused: staging/ left by an interrupted install" \
-       "err inst/staging exists: an earlier install was interrupted" pkgcfg install inst repo key.bin okdep
+refuse "install refused: staging/ (the lock) left by an interrupted operation" \
+       "err inst/staging exists: another logospkg operation is running, or one was interrupted" pkgcfg install inst repo key.bin okdep
 rmdir inst/staging; O snap inst > inst.snap
 
 # ── 5. list, remove, advise, update, rollback ──────────────────────────
@@ -681,6 +694,24 @@ refuse_in inst3 "update refused: upa 1.1 needs upb, whose installed version need
        "err dependency cycle: upa -> upb -> upa" pkgcfg update inst3 repo4 key.bin upa
 s remove inst3 upb; a=$R; s remove inst3 upa; b=$R
 [ "$a|$b" = "ok upb|ok upa" ] && pass "remove: ... so both stay removable (upb, then upa)" || fail "remove after the refused update" "$a|$b"
+# the lock: while staging/ exists, nothing that changes the installation runs
+s rollback inst4 rr; [ "$R" = "ok 1.1" ] || fail "rollback rr to 1.1" "$R"
+mkdir inst4/staging
+LOCKED="err inst4/staging exists: another logospkg operation is running, or one was interrupted"
+refuse_in inst4 "remove refused while staging/ (the lock) exists" "$LOCKED" pkgcfg remove inst4 vv
+refuse_in inst4 "rollback refused while the lock exists" "$LOCKED" pkgcfg rollback inst4 rr
+refuse_in inst4 "update (rolling current/ forward) refused while the lock exists" "$LOCKED" pkgcfg update inst4 repo4 key.bin rr
+rmdir inst4/staging
+s update inst4 repo4 key.bin rr; [ "$R" = "ok rr 1.2" ] || fail "update rr after the lock is gone" "$R"
+# a real race: yr's self-test, run by install, starts a second logospkg that removes xr
+s publish repo4 key.bin arc/xr-1.0; s publish repo4 key.bin arc/yr-1.0
+mkdir inst7 drv2; cp pkgdrv.bin drv2/logos_program.bin; cp pkgcfg.txt drv2/
+s install inst7 repo4 key.bin xr; [ "$R" = "ok xr 1.0" ] || fail "install xr" "$R"
+s install inst7 repo4 key.bin yr; a=$R; b=$(cat drv2/out.txt); s list inst7; c=$R
+if [ "$a" = "ok yr 1.0" ] && [ "$b" = "err $T/inst7/staging exists: another logospkg operation is running, or one was interrupted" ] \
+   && [ "$c" = "ok xr 1.0 $(O sha arc/xr-1.0);yr 1.0 $(O sha arc/yr-1.0)" ] && [ -f inst7/pkgs/xr/1.0/xr.la ] && [ "$(cat inst7/current/xr)" = 1.0 ]; then
+    pass "a remove of xr started DURING the install of yr (which needs it) is refused by the lock; both stay installed and list is consistent"
+else fail "remove during an install" "install: $a" "remove: $b" "list: $c"; fi
 
 # ── 6. self-application: logospkg installs and updates itself ──────────
 mkdir inst2

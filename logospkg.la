@@ -67,6 +67,12 @@
 #                           installation, which only a crash or a hand can make)
 #
 #  ── INSTALL, STEP BY STEP ────────────────────────────────────────────
+#  0. THE LOCK. Every operation that changes the installation (install,
+#     update, remove, rollback) first creates staging/ inside it (mkdir is
+#     atomic, so one process holds it at a time), reads `installed` only
+#     then, and removes staging/ when it is done. Meanwhile any other such
+#     operation is refused: "staging exists: another logospkg operation is
+#     running, or one was interrupted".
 #  1. The index signature verifies; the plan is built depth-first from the
 #     newest version of each missing package: each archive is read, its sha256
 #     compared with its id, unpacked, and its dependencies planned before it. A
@@ -75,10 +81,10 @@
 #     its installed versions are walked as well, so a cycle that would close
 #     through an installed package (update yy 1.1 needing xx, whose installed
 #     version needs yy) is refused too: remove could never break it.
-#  2. staging/ is created inside the installation. Each planned package is
-#     unpacked into staging/pkg-<name>, and its SELF-TEST is run: its files and
-#     the files of all its dependencies (planned or installed; not their own
-#     self-tests) are written to staging/test-<name> with compiler.bin as
+#  2. Each planned package is unpacked into staging/pkg-<name>, and its
+#     SELF-TEST is run: its files and the files of all its dependencies
+#     (planned or installed; not their own self-tests) are written to
+#     staging/test-<name> with compiler.bin as
 #     logos_program.bin and the test as logos_source.la; then twice
 #     fork + dup2 (stdout and stderr to files, stdin /dev/null) + execv of
 #     `env -C <that dir> <vm>`: the first run compiles the test, the second
@@ -87,8 +93,8 @@
 #  3. Only when EVERY planned package passed: the staged directories are
 #     renamed into pkgs/, `installed` is rewritten and each current/<name> is
 #     written (each file through a temporary and rename, so each switch is
-#     atomic), and staging/ is removed. On any failure the staged files are
-#     unlinked and staging/ removed: the installation is exactly as it was.
+#     atomic), and the lock is released. On any failure the staged files are
+#     unlinked and the lock released: the installation is exactly as it was.
 #
 #  ── STYLE ────────────────────────────────────────────────────────────
 #  Kit style (WM_DESIGN.md, "How fast the VM is"): every builtin is a
@@ -110,6 +116,12 @@
 #  - A self-test may only write files it is told about: anything else it
 #    creates in its directory stops that directory being removed, and the
 #    install then fails naming staging/.
+#  - The lock covers the installation only. list and advise take none, so
+#    during another operation's commit they can see it half done (list then
+#    halts). publish does not lock the repository: two publishes at the same
+#    moment can lose one index line (each re-signs the index it read). A crash
+#    leaves staging/ behind, and every later change is refused until a person
+#    removes it.
 #  - On this branch's VM waitpid returns WEXITSTATUS, so a self-test killed by
 #    a signal reads as status 0; its stdout must still match exactly. There is
 #    no time limit: a self-test that never ends holds the install.
@@ -458,8 +470,8 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
              (la _. selftest(path(S)(concat("test-")(name)))(rec)(fs)(cbytes))(""))
           (append(rfiles(rec))(payload(drecs))))))))
       (path(S)(concat("pkg-")(name)))))(la stage1.
-  # unstage(S)(items): remove every staged file and S itself
-  LET(la S. la items. (la _. rmdir(S))
+  # unstage(S)(items): remove every staged file (S itself goes with the lock)
+  LET(la S. la items. (la _. "")
       (map(la it. it(la n. la v. la i. la rec. la a.
           wipe(path(S)(concat("pkg-")(n)))(cons(".archive")(map(fname)(rfiles(rec))))))(items)))(la unstage.
   LET(la inst. la S. la ients. la items.
@@ -470,7 +482,7 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
              (pkgdir(inst)(n))))(items))(la _.
       bind(atomic(inst)("installed")(showentries(append(ients)(map(ientry)(items)))))(la _.
       bind(each(la it. atomic(path(inst)("current"))(iname(it))(iver(it)))(items))(la _.
-      (la _. ok(map(la it. nv(iname(it))(iver(it)))(items)))(rmdir(S))))))))(la commit.
+      ok(map(la it. nv(iname(it))(iver(it)))(items))))))))(la commit.
   # precheck(inst): ok(compiler.bin's bytes) when a self-test can be run at all
   LET(la inst. isdir(inst)
       (la _. nospace(inst)(nospace(vm))(FF)
@@ -479,24 +491,36 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
             (la _. err("cfg: the vm must be an absolute path to a file (the self-test runs in staging/)"))(""))
          (la _. err("the installation and vm paths may not contain spaces (execv splits on spaces)"))(""))
       (la _. err(concat(inst)(" is not a directory")))(""))(la precheck.
-  # deploy(inst)(repo)(index)(ients)(root)(force): plan, stage + test all, commit all
-  LET(la inst. la repo. la index. la ients. la root. la force.
+  # locked(inst)(f): f(S) while holding the installation's lock, the directory
+  # S = inst/staging. mkdir is atomic, so one operation holds it at a time;
+  # every operation that changes the installation reads it only under the
+  # lock, and S is removed afterwards (it must be empty again by then).
+  LET(la inst. la f. isdir(inst)
+      (la _. (la S. (la mk. str_eq(mk)("0")
+          (la _. (la r. str_eq(rmdir(S))("0")(la _. r)
+                (la _. (la tail. r(la m. err(concat(m)(concat("; and ")(tail))))(la v. err(concat("done, but ")(tail))))
+                       (concat(S)(" could not be removed (something was left in it): the installation stays locked")))(""))
+              (f(S)))
+          (la _. exists(S)
+              (la _. err(concat(S)(" exists: another logospkg operation is running, or one was interrupted")))
+              (la _. err(concat("cannot create ")(S)))(""))(""))
+        (mkdir(S)("493")))(path(inst)("staging")))
+      (la _. err(concat(inst)(" is not a directory")))(""))(la locked.
+  # deploy(inst)(S)(repo)(index)(ients)(root)(force), under the lock S: plan,
+  # stage + test all, commit all
+  LET(la inst. la S. la repo. la index. la ients. la root. la force.
     bind(precheck(inst))(la cbytes.
     bind(irecs(inst)(ients))(la irs.
     bind(visit(la k. k(repo)(index)(names(ients))(ideps(irs)))(cons(root)(nil))(nil)(force)(la q. q(nil)(nil)))(la st.
-    st(la items. la seen. items(la _. ok(nil))(la h0. la t0. (la S. exists(S)
-      (la _. err(concat(S)(" exists: an earlier install was interrupted")))
-      (la _. bind(each(la it. exists(path(pkgdir(inst)(iname(it)))(iver(it)))
+    st(la items. la seen. items(la _. ok(nil))(la h0. la t0.
+      bind(each(la it. exists(path(pkgdir(inst)(iname(it)))(iver(it)))
                 (la _. err(concat(path(pkgdir(inst)(iname(it)))(iver(it)))(" already exists")))
                 (la _. ok(""))(""))(items))(la _.
-        str_eq(mkdir(S)("493"))("0")
-          (la _. (la get. (la r. r(la m. (la _. err(m))(unstage(S)(items)))(la _. commit(inst)(S)(ients)(items)))
-                   (each(stage1(S)(get)(cbytes))(items)))
-                 (la d. any(la it. str_eq(iname(it))(d))(items)
-                    (la _. fold(la acc. la it. str_eq(iname(it))(d)(la _. ok(irec(it)))(la _. acc)(""))(err(d))(items))
-                    (la _. instrec(inst)(d))("")))
-          (la _. err(concat("cannot create ")(S)))("")))(""))
-      (path(inst)("staging"))))))))(la deploy.
+        (la get. (la r. r(la m. (la _. err(m))(unstage(S)(items)))(la _. commit(inst)(S)(ients)(items)))
+                 (each(stage1(S)(get)(cbytes))(items)))
+          (la d. any(la it. str_eq(iname(it))(d))(items)
+             (la _. fold(la acc. la it. str_eq(iname(it))(d)(la _. ok(irec(it)))(la _. acc)(""))(err(d))(items))
+             (la _. instrec(inst)(d))("")))))))))(la deploy.
 
   # ── the operations ──────────────────────────────────────────────────
   LET(la repo. la K. la arc. bind(unpack(arc))(la rec. (la ip. (la sp.
@@ -511,10 +535,10 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
             (showentries(append(es)(cons(entry(rname(rec))(rver(rec))(id))(nil)))))
           (hex(sha256(arc))))("")))
      (path(repo)("index.sig")))(path(repo)("index"))))(la publish.
-  LET(la inst. la repo. la K. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
+  LET(la inst. la repo. la K. la name. locked(inst)(la S. bind(readinst(inst))(la ients. member(name)(names(ients))
       (la _. err(concat(name)(" is already installed (update installs a newer version)")))
-      (la _. bind(vindex(repo)(K))(la index. deploy(inst)(repo)(index)(ients)(name)(FF)))("")))(la install.
-  LET(la inst. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
+      (la _. bind(vindex(repo)(K))(la index. deploy(inst)(S)(repo)(index)(ients)(name)(FF)))(""))))(la install.
+  LET(la inst. la name. locked(inst)(la S. bind(readinst(inst))(la ients. member(name)(names(ients))
       (la _. bind(irecs(inst)(ients))(la prs.
           (la needers. needers
               (la _. (la mine.
@@ -528,32 +552,32 @@ glyph PKG_KIT = la concat. la str_len. la str_at. la str_eq. la ord. la str_to_i
               (la h. la t. err(concat(name)(concat(" is needed by ")(join(", ")(needers))))))
           (map(la pr. pr(la e. la r. nv(ename(e))(ever(e))))
              (filter(la pr. pr(la e. la r. str_eq(ename(e))(name)(FF)(member(name)(rdeps(r)))))(prs)))))
-      (la _. err(concat(name)(" is not installed")))("")))(la remove.
+      (la _. err(concat(name)(" is not installed")))(""))))(la remove.
   LET(la inst. la repo. la K. bind(readinst(inst))(la ients. bind(vindex(repo)(K))(la index.
       bind(mapr(la n. bind(curver(inst)(n))(la cur. ok(newest(index)(n)(la m. nil)(la e.
               vlt(cur)(ever(e))(la _. cons(la k. k(n)(cur)(ever(e)))(nil))(la _. nil)("")))))(names(ients)))(la ls.
         ok(fold(append)(nil)(ls))))))(la advise.
-  LET(la inst. la repo. la K. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
+  LET(la inst. la repo. la K. la name. locked(inst)(la S. bind(readinst(inst))(la ients. member(name)(names(ients))
       (la _. bind(curver(inst)(name))(la cur. bind(vindex(repo)(K))(la index. bind(newest(index)(name))(la e.
           vlt(cur)(ever(e))
             (la _. any(samenv(e))(ients)
                (la _. bind(lookup(ients)(name)(ever(e)))(la ie. str_eq(eid(ie))(eid(e))
                    (la _. bind(atomic(path(inst)("current"))(name)(ever(e)))(la _. ok(cons(nv(name)(ever(e)))(nil))))
                    (la _. err(concat(nv(name)(ever(e)))(": the installed copy is not the repository's")))("")))
-               (la _. deploy(inst)(repo)(index)(ients)(name)(TT))(""))
+               (la _. deploy(inst)(S)(repo)(index)(ients)(name)(TT))(""))
             (la _. ok(nil))("")))))
-      (la _. err(concat(name)(" is not installed")))("")))(la update.
-  LET(la inst. la name. bind(readinst(inst))(la ients. member(name)(names(ients))
+      (la _. err(concat(name)(" is not installed")))(""))))(la update.
+  LET(la inst. la name. locked(inst)(la S. bind(readinst(inst))(la ients. member(name)(names(ients))
       (la _. bind(curver(inst)(name))(la cur.
           (la older. older(la _. err(concat(nv(name)(cur))(" has no earlier version installed")))
              (la h. la t. (la prev. bind(atomic(path(inst)("current"))(name)(prev))(la _. ok(prev)))
                 (fold(la b. la v. vlt(b)(v)(la _. v)(la _. b)(""))(h)(t))))
           (filter(la v. vlt(v)(cur))(map(ever)(filter(la e. str_eq(ename(e))(name))(ients))))))
-      (la _. err(concat(name)(" is not installed")))("")))(la rollback.
+      (la _. err(concat(name)(" is not installed")))(""))))(la rollback.
   LET(la inst. (la r. r(la m. error(concat("logospkg: list: ")(m)))(la x. x))
       (bind(readinst(inst))(la ients.
           mapr(la n. bind(curver(inst)(n))(la v. lookup(ients)(n)(v)))(names(ients)))))(la list.
 
     la s. s(pack)(unpack)(publish)(install)(remove)(advise)(update)(rollback)(list)
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   )(0)(1)(2)(4)(5)(10)(32)(45)(46)(48)(57)(64)(65)(90)(95)(97)(102)(122)(129)(16384)(32768)(61440)))
