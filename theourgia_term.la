@@ -114,11 +114,19 @@
 #      (no thunks); a run that ends at '\n' ends the line directly;
 #    - a name lookup walks the environment newest binding first (~2.4 ns a
 #      cell), so each group of hot code is preceded by a block re-binding
-#      the names it uses, least used first.
+#      the names it uses, least used first;
+#    - '\b' would cost a slice of up to 63 bytes each if taken one at a
+#      time (there is no substring builtin), so a run of '\b' is counted and
+#      dropped at once (DROP: whole segments popped, one slice), and a '\b'
+#      right after a printable run cancels the run's last byte as the run
+#      ends (RBS), slicing nothing.
 #  On the VM: mixed output (text, tabs, colour CSIs, UTF-8) ~1.6-1.9 us a
-#  byte, printable runs ~1.4, a bare control byte ~5; rows(80)(40) over 500
-#  stored short lines ~0.1 ms, 40 wrapped rows ~2 ms (slicing a row costs per
-#  byte: there is no substring builtin). gate_wm_term.sh measures these.
+#  byte, printable runs ~1.4, a bare control byte ~5, the start of a
+#  printable run ~7; a '\b' in a run of them ~0.8; overstrike (_\bA) ~5 a
+#  byte, the cost of its two-byte runs; rows(80)(40) over 500 stored short
+#  lines ~0.1 ms, 40 wrapped rows ~2 ms (slicing a row costs per byte).
+#  gate_wm_term.sh measures these against the cost of one glyph-table walk
+#  in the same program (~10 us).
 #
 #  OUT OF SCOPE, honestly: cursor movement and the rest of VT100 (CSI is
 #  skipped, not obeyed), colour, a cursor inside the input line (editing is at
@@ -168,7 +176,7 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
   # constants, computed once
   LET(0)(la K0. LET(1)(la K1. LET(2)(la K2. LET(3)(la K3. LET(4)(la K4. LET(5)(la K5.
   LET(6)(la K6. LET(7)(la K7. LET(8)(la K8. LET(9)(la K9. LET(10)(la K10. LET(27)(la K27.
-  LET(63)(la K63. LET(64)(la K64. LET(91)(la K91. LET(127)(la K127. LET(192)(la K192.
+  LET(64)(la K64. LET(91)(la K91. LET(127)(la K127. LET(192)(la K192.
   LET(500)(la CAP. LET(1000)(la CAP2.
   LET(K0)(la D.
   LET(la t. la f. f)(la FF.
@@ -239,7 +247,7 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
       (la r. la l. la j. l(la _. no(D))(la h. la t. Q(j)(K0)(la _. so(h))(la _. r(r)(t)(sub(j)(K1)))(D))))(la NTH.
 
   # ── the write path (re-bind block, then the helpers it uses) ──
-  LET(sub)(la sub. LET(mod)(la mod. LET(K192)(la K192. LET(K91)(la K91. LET(K63)(la K63.
+  LET(sub)(la sub. LET(mod)(la mod. LET(K192)(la K192. LET(K91)(la K91.
   LET(K27)(la K27. LET(K10)(la K10. LET(K9)(la K9. LET(K8)(la K8. LET(CAP)(la CAP.
   LET(CAP2)(la CAP2. LET(CSIL)(la CSIL. LET(RUNP)(la RUNP. LET(JOIN)(la JOIN.
   LET(REV)(la REV. LET(SLICE)(la SLICE. LET(TAKE)(la TAKE. LET(CONS)(la CONS.
@@ -262,21 +270,30 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
   # ADV(R)(c)(d): R with the tail replaced by c, which is d bytes longer
   LET(la R. la c. la d. R(la L. la N. la S. la C. la K.
         (la K2. SEG(S)(c)(K2)(la S2. la C2. MK5(L)(N)(S2)(C2)(K2)))(U(K)(d))))(la ADV.
-  # BK(S)(C)(K)(k): drop the partial line's last byte: k(S')(C')(K')
-  LET(la S. la C. la K. la k.
-      Q(K)(K0)(la _. k(S)(C)(K))
-        (la _. (la r. Q(r)(K0)
-                  (la _. S(la _. k(S)(C)(K))(la h. la t. k(t)(SLICE(h)(K0)(K63))(sub(K)(K1))))
-                  (la _. k(S)(SLICE(C)(K0)(sub(r)(K1)))(sub(K)(K1)))
+  # DROP(R)(k): R with the partial line's last k bytes dropped (k >= 1; all
+  # of it when k >= K). Whole segments are popped and at most one string is
+  # sliced (the tail, or the segment the new end falls in), so a run of k
+  # '\b' costs one slice, not k.
+  LET(la R. la k. R(la L. la N. la S. la C. la K.
+      T(k)(K)
+        (la _. (la r. T(r)(k)
+                  (la _. (la g. g(g)(S)(sub(k)(r)))
+                         (la g. la S. la x. S(la _. MK5(L)(N)(NIL)("")(K0))
+                            (la h. la t. T(x)(K64)
+                               (la _. MK5(L)(N)(t)(SLICE(h)(K0)(sub(K64)(x)))(sub(K)(k)))
+                               (la _. Q(x)(K64)(la _. MK5(L)(N)(t)("")(sub(K)(k)))(la _. g(g)(t)(sub(x)(K64)))(D))
+                               (D))))
+                  (la _. MK5(L)(N)(S)(SLICE(C)(K0)(sub(r)(k)))(sub(K)(k)))
                   (D))
                (mod(K)(K64)))
-        (D))(la BK.
+        (la _. MK5(L)(N)(NIL)("")(K0))
+        (D)))(la DROP.
   # SP(m): m spaces, 1 <= m <= 8
   LET(la m. Q(m)(K1)(" ")(Q(m)(K2)("  ")(Q(m)(K3)("   ")(Q(m)(K4)("    ")
             (Q(m)(K5)("     ")(Q(m)(K6)("      ")(Q(m)(K7)("       ")("        "))))))))(la SP.
 
   # re-bind what the per-byte steps use most
-  LET(SP)(la SP. LET(BK)(la BK. LET(SEG)(la SEG. LET(ADV)(la ADV. LET(PUSH)(la PUSH.
+  LET(SP)(la SP. LET(SEG)(la SEG. LET(ADV)(la ADV. LET(PUSH)(la PUSH.
   LET(PL)(la PL. LET(MK5)(la MK5. LET(gC)(la gC. LET(gK)(la gK. LET(NIL)(la NIL.
   LET(K0)(la K0. LET(D)(la D. LET(U)(la U. LET(K1)(la K1. LET(Y)(la Y. LET(O)(la O.
   LET(A)(la A. LET(Q)(la Q.
@@ -284,18 +301,17 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
   LET(la R. R(la L. la N. la S. la C. la K.
         PUSH(PL(S)(C))(L)(N)(la L2. la N2. MK5(L2)(N2)(NIL)("")(K0))))(la NLR.
   LET(la R. R(la L. la N. la S. la C. la K. (la m. ADV(R)(P(C)(SP(m)))(m))(sub(K8)(mod(K)(K8)))))(la TABR.
-  LET(la R. R(la L. la N. la S. la C. la K. BK(S)(C)(K)(MK5(L)(N))))(la BSR.
   LET(la R. R(la L. la N. la S. la C. la K. ADV(R)(P(C)("?"))(K1)))(la QMR.
   LET(la R. R)(la IDR.
   # re-bind what the dispatch and the loops use
-  LET(sub)(la sub. LET(mod)(la mod. LET(K192)(la K192. LET(K91)(la K91. LET(K9)(la K9.
+  LET(DROP)(la DROP. LET(P)(la P. LET(sub)(la sub. LET(mod)(la mod. LET(K192)(la K192. LET(K91)(la K91. LET(K9)(la K9.
   LET(K8)(la K8. LET(K2)(la K2. LET(K64)(la K64. LET(K27)(la K27. LET(K10)(la K10.
   LET(CSIL)(la CSIL. LET(RUNP)(la RUNP. LET(PUSH)(la PUSH. LET(PL)(la PL. LET(MK5)(la MK5.
   LET(ADV)(la ADV. LET(NLR)(la NLR. LET(gC)(la gC. LET(gK)(la gK. LET(isp)(la isp.
   LET(NIL)(la NIL. LET(T)(la T. LET(FF)(la FF. LET(K0)(la K0. LET(D)(la D. LET(U)(la U.
   LET(K1)(la K1. LET(Y)(la Y. LET(O)(la O. LET(A)(la A. LET(Q)(la Q.
-  # CSEL(b): the step for control byte b (not printable, not ESC)
-  LET(la b. Q(b)(K10)(NLR)(Q(b)(K9)(TABR)(Q(b)(K8)(BSR)(T(b)(K192)(IDR)(QMR)))))(la CSEL.
+  # CSEL(b): the step for control byte b (not printable, not ESC, not '\b')
+  LET(la b. Q(b)(K10)(NLR)(Q(b)(K9)(TABR)(T(b)(K192)(IDR)(QMR))))(la CSEL.
 
   # ── write: the loops ──
   # A step has the shape h(o)(i)(R): o is the outer loop, i the index of the
@@ -304,17 +320,29 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
   # write call, so a step's CLOSE rescans cover only its last three
   # parameters' small body.
   #
+  # RBS(s)(rp)(o)(i)(j)(R): a run of printable bytes from i stopped at a '\b'
+  # at j (j > i). The '\b' drops the run's own last byte, so the run is
+  # taken without it, and the outer loop goes on after the '\b': a one-byte
+  # run leaves R as it was (x\b, spinners), a two-byte run appends its first
+  # byte (overstrike, _\bA_\bB: the run A_ gives A), a longer one is redone
+  # to j-1. Nothing is sliced.
+  LET(la s. la rp. la o. la i. la j. la R.
+      (la L. Q(L)(K1)(la _. o(o)(U(j)(K1))(R))
+        (la _. Q(L)(K2)(la _. o(o)(U(j)(K1))(ADV(R)(P(R(gC))(A(s)(i)))(K1)))
+          (la _. (la g. g(g)(i)(R(gC)))(rp(la e. la c. o(o)(U(j)(K1))(ADV(R)(c)(sub(e)(i))))(sub(j)(K1))))
+          (D))
+        (D))(sub(j)(i)))(la RBS.
   # RUNS(s)(rp)(n): the step for a printable byte (rp is RUNP(s)): run RUNP
   # over the bytes, at most to the end of the current 64-byte segment. A run
-  # that stops at a '\n' ends the line at once (the common case); anything
-  # else goes back to the outer loop.
+  # that stops at a '\n' ends the line at once (the common case), one that
+  # stops at a '\b' goes to RBS; anything else goes back to the outer loop.
   LET(la s. la rp. la n. la o. la i. la R.
       (la g. g(g)(i)(R(gC)))
-      (rp(la j. la c. Q(Y(O(A(s)(j))))(K10)
+      (rp(la j. la c. (la b. Q(b)(K10)
                         (la _. R(la L. la N. la S. la C. la K.
                                  PUSH(PL(S)(c))(L)(N)(la L2. la N2. o(o)(U(j)(K1))(MK5(L2)(N2)(NIL)("")(K0)))))
-                        (la _. o(o)(j)(ADV(R)(c)(sub(j)(i))))
-                        (D))
+                        (la _. Q(b)(K8)(la _. RBS(s)(rp)(o)(i)(j)(R))(la _. o(o)(j)(ADV(R)(c)(sub(j)(i))))(D))
+                        (D))(Y(O(A(s)(j)))))
          ((la m. T(m)(n)(m)(n))(U(i)(sub(K64)(mod(R(gK))(K64)))))))(la RUNS.
   # CSIS(s)(n)(ret)(o)(i)(R): skip a CSI whose parameter bytes start at i
   LET(la s. la n. la ret. la o. la i. la R.
@@ -330,8 +358,14 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
   LET(la b. la o. la i. la R. o(o)(U(i)(K1))(CSEL(b)(R)))(la CTL.
   # NLS: the step for a '\n' that does not end a run (an empty line)
   LET(la o. la i. la R. o(o)(U(i)(K1))(NLR(R)))(la NLS.
-  # HSEL(rs)(e1)(b): the step for byte b, chosen as a value (no thunks)
-  LET(la rs. la e1. la b. isp(b)(rs)(Q(b)(K10)(NLS)(Q(b)(K27)(e1)(CTL(b)))))(la HSEL.
+  # BSS(s)(o)(i)(R): the step for a '\b' that does not end a run: the run of
+  # '\b' bytes from i is counted and dropped at once (str_at past the end is
+  # "", ord "0", so the count stops there too)
+  LET(la s. la o. la i. la R.
+      (la g. g(g)(U(i)(K1)))
+      (la g. la j. Q(Y(O(A(s)(j))))(K8)(la _. g(g)(U(j)(K1)))(la _. o(o)(j)(DROP(R)(sub(j)(i))))(D)))(la BSS.
+  # HSEL(rs)(e1)(bs)(b): the step for byte b, chosen as a value (no thunks)
+  LET(la rs. la e1. la bs. la b. isp(b)(rs)(Q(b)(K10)(NLS)(Q(b)(K27)(e1)(Q(b)(K8)(bs)(CTL(b))))))(la HSEL.
   # WO(s)(n)(ret)(hs) is the outer loop o: o(o)(i)(R) processes s from i on
   # and ends with ret(R')(E').
   LET(la s. la n. la ret. la hs. la o. la i. la R.
@@ -382,7 +416,7 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
                    Q(E)(K0)(la _. o(o)(K0)(R))
                      (la _. Q(E)(K1)(la _. e1(o)(sub(K0)(K1))(R))(la _. cs(o)(K0)(R))(D))
                      (D))
-                 (WO(s)(n)(ret)(HSEL(RUNS(s)(RUNP(s))(n))(e1))))
+                 (WO(s)(n)(ret)(HSEL(RUNS(s)(RUNP(s))(n))(e1)(BSS(s)))))
                  (ESC1(s)(n)(ret)(cs)))
                  (CSIS(s)(n)(ret)))
                (la R2. la E2. MK(R2)(E2)(I)(Pr)(H)(J)(V)))

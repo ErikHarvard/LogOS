@@ -40,6 +40,13 @@
 #   5. keychar for every code 0..130 and 200, 255, 1000, -1, -57, shift off
 #      and on, against a Python US-layout table; the KEY_* constants.
 #   6. a seeded 260-step random script mixing all operations.
+#   6b. backspace (t_bs): a run then k backspaces in the same write (k less
+#      than, equal to and more than the run) with the run starting at
+#      segment offsets 0, 1, 2, 62, 63 and runs of 63/64/65 bytes; backspaces
+#      in a write of their own (within the tail, to its start, across one to
+#      three 64-byte segments, the whole line and more); after a tab, a UTF-8
+#      '?', a CSI and ESC+byte; overstrike and spinners; and a seeded
+#      150-write random script of runs, backspace runs and line ends.
 #   7. the C host runs groups 2, 3, 5, the first 40 steps of 6 and a small
 #      mixed script (every group with WM_TERM_HOST_ALL=1) and must match the
 #      model and the VM byte for byte; and 100 cheap observations must run
@@ -376,6 +383,42 @@ for step in range(260):
     else:
         rs.append(("rows", rnd.randint(1, 50), rnd.randint(0, 14), rnd.random() < 0.5))
 emit("t_random", rs)
+
+# ── 5b. backspace: the run paths and the backspace-run path, at segment edges ──
+def pat(n, start=0):
+    """n distinct-looking printable bytes, so a wrong drop shows"""
+    return bytes(48 + (start + k) % 75 for k in range(n))
+b = [("new", b"$ ")]
+b += [("mark", b"run then backspaces")]
+for off in (0, 1, 2, 62, 63):
+    for run, k in [(1, 1), (2, 1), (3, 1), (2, 2), (2, 3), (5, 2), (63, 1), (64, 1), (64, 2), (65, 1), (65, 66)]:
+        if off:
+            b += [("write", pat(off, 40))]
+        b += [("write", pat(run) + b"\x08" * k + b"|\n")]
+b += [V(80)]
+b += [("mark", b"backspace runs of their own")]
+for pre in (5, 64, 70, 128, 200):
+    for k in (1, 4, 5, 6, 63, 64, 65, 128, 129, 199, 200, 201, 500):
+        b += [("write", pat(pre)), ("write", b"\x08" * k), ("write", b"|\n")]
+b += [V(220)]
+b += [("mark", b"after other bytes"), ("write", b"ab\tc\x08\x08\x08|\n"), ("write", b"ab" + "é".encode() + b"\x08|\n"),
+      ("write", b"ab" + ESC + b"[1m\x08|\n"), ("write", b"ab" + ESC + b"7\x08|\n"), ("write", b"\t\x08\x08|\n"),
+      ("write", b"ab" + ESC), ("write", b"[0m\x08|\n"), ("write", b"abc\x08"), ("write", b"\x08d\x08|\n"), V(40)]
+b += [("mark", b"overstrike and spinners"), ("write", b"".join(b"_\x08" + bytes([65 + k % 26]) for k in range(70)) + b"\n"),
+      ("write", b"".join(bytes([65 + k % 26, 8, 65 + k % 26]) for k in range(70)) + b"\n"),
+      ("write", b"wait |\x08/\x08-\x08\\\x08|\x08done\n"), ("write", b"45%\x08\x08\x0846%\x08\x08\x08100%\n"), V(80)]
+b += [("mark", b"partial lines"), ("write", pat(130)), R(200, 1), ("write", b"\x08" * 3), R(200, 1),
+      ("write", pat(3) + b"\x08" * 70), R(200, 1), ("write", b"\x08" * 70), R(200, 1), ("flush",), R(200, 2)]
+rb = random.Random(8)
+bpal = [b"a", b"ab", b"abc", pat(63), pat(64, 7), pat(65, 9), b"\x08", b"\x08\x08", b"\x08" * 5, b"\x08" * 63,
+        b"\x08" * 64, b"\x08" * 65, b"\x08" * 130, b"_\x08A", b"\t", "é".encode(), ESC + b"[1m", b"\n", b"\n"]
+b += [("mark", b"random")]
+for step in range(150):
+    b.append(("write", b"".join(rb.choice(bpal) for _ in range(rb.randint(1, 4)))))
+    if step % 3 == 2:
+        b.append(R(rb.choice([7, 64, 100, 200]), rb.randint(1, 6)))
+b += [("flush",), V(200)]
+emit("t_bs", b)
 emit("t_rand40", rs[:41])     # its first 40 steps, sized for the C host
 # host memory: many cheap observations (see the host checks below)
 emit("t_hmem", [("new", b"$ ")] + [("key", b"x"), ("rows", 10, 1, True)] * 100)
@@ -426,6 +469,9 @@ timings += ['TIME("mixed")(la _. write(new("$ "))(mixed))', 'TIME("ctl")(la _. w
 timings += ['TIME("line16k")(la _. write(new("$ "))(l16))', 'TIME("line64k")(la _. write(new("$ "))(l64))'] * 3
 timings += ['TIME("rows40")(la _. rows(t40)(C80)(C40)(TRUE))', 'TIME("rows500")(la _. rows(t500)(C80)(C40)(TRUE))',
             'TIME("rows999")(la _. rows(t999)(C80)(C40)(TRUE))'] * 4
+timings += ['TIME("bsrun")(la _. write(p16)(b16))', 'TIME("xbs")(la _. write(t63)(xbs))',
+            'TIME("xcr")(la _. write(new("$ "))(xcr))', 'TIME("ovst")(la _. write(new("$ "))(ovst))',
+            'TIME("plain")(la _. write(new("$ "))(plain))'] * 3
 timings += ['TIME("wrap14")(la _. rows(t14w)(C80)(C40)(FALSE))', 'TIME("wrap500")(la _. rows(t500w)(C80)(C40)(FALSE))'] * 3
 body = lets([("mixed", MIXED),
              ("ctl", 'REP(4096)(concat(chr("9"))(concat(chr("13"))(concat(chr("7"))(chr("1")))))'),
@@ -434,6 +480,13 @@ body = lets([("mixed", MIXED),
              ("t40", 'write(new("$ "))(REP(40)(concat(REP(60)("v"))(NL)))'),
              ("t500", 'write(new("$ "))(REP(500)(concat(REP(60)("v"))(NL)))'),
              ("t999", 'write(new("$ "))(REP(999)(concat(REP(60)("v"))(NL)))'),
+             ("p16", 'write(new("$ "))(REP(16384)("p"))'),
+             ("b16", 'REP(16384)(chr("8"))'),
+             ("t63", 'write(new("$ "))(REP(63)("y"))'),
+             ("xbs", 'REP(8192)(concat("x")(chr("8")))'),
+             ("xcr", 'REP(8192)(concat("x")(chr("13")))'),
+             ("ovst", 'REP(200)(concat(REP(20)(concat("_")(concat(chr("8"))("A"))))(NL))'),
+             ("plain", 'REP(200)(concat(REP(20)("_xA"))(NL))'),
              ("t14w", 'write(new("$ "))(REP(14)(concat(REP(200)("w"))(NL)))'),
              ("t500w", 'write(new("$ "))(REP(500)(concat(REP(200)("w"))(NL)))')], seq(timings))
 REP = ('la n. la s. (la r. r(r)(n))(la r. la n. int_eq(n)(C0)(la _. "")'
@@ -500,6 +553,7 @@ vmcheck t_rows   "rows: wrap at cols, exact-width lines, empty lines, padding, i
 vmcheck t_cap    "the 500-line cap at 499/500/501/999/1000/1001/1203 lines"
 vmcheck t_keys   "keychar over codes -57..1000 against the US table; the KEY_* constants"
 vmcheck t_random "a seeded 260-step random script against the model"
+vmcheck t_bs     "\\b: a run then backspaces at segment offsets 0/1/2/62/63, backspace runs across segments and past the line, after \\t/UTF-8/CSI/ESC, overstrike, spinners, a 150-write random script"
 
 # The C host runs the same programs. It is a substitution interpreter that
 # copies a closure's body on every application, and the kit's closures are
@@ -509,7 +563,7 @@ vmcheck t_random "a seeded 260-step random script against the model"
 # host (t_write takes ~15 min of CPU there and t_random more than 16: raise
 # WM_HOST_TIMEOUT, in seconds, to suit).
 hostgroups="t_host t_edit t_keys t_rows t_rand40"
-[ "${WM_TERM_HOST_ALL:-}" = 1 ] && hostgroups="$hostgroups t_write t_cap t_random"
+[ "${WM_TERM_HOST_ALL:-}" = 1 ] && hostgroups="$hostgroups t_write t_cap t_random t_bs"
 for g in $hostgroups; do
     wm_host "$g.la" "$T/$g.host"
     [ -f "$T/$g.vm" ] || wm_vm "$g.la" "$T/$g.vm"
@@ -546,6 +600,13 @@ fi
 #     under W/2 a byte (they run at ~0.15 W; one walk per printable byte
 #     makes it more than W), and bytes that are all control bytes (\t \r and
 #     two ignored C0 controls) under W (they run at ~0.5 W);
+#   - backspace: 16384 '\b' on a 16384-byte partial line cost under W/4
+#     each (a run of them is counted and dropped with one slice; ~0.1 W);
+#     "x\b" repeated where each x completes a 64-byte segment costs under 2x
+#     "x\r" repeated (the run's last byte and the '\b' cancel; re-slicing
+#     the segment per '\b' is ~4x); and overstrike (_\bA) under 6x the same
+#     bytes of plain text (~3.5x: every overstruck character starts a new
+#     two-byte printable run);
 #   - a 64 KB line without a newline costs ~4x a 16 KB one (linear; the
 #     64-byte segments keep it from being quadratic, which would be ~16x);
 #   - rows(80)(40) over 500 and over 999 stored 60-byte lines costs about
@@ -568,7 +629,8 @@ for line in open(sys.argv[1]):
     if len(f) == 5:
         us = ((int(f[3]) - int(f[1])) * 10**9 + int(f[4]) - int(f[2])) / 1000.0
         best[f[0]] = min(best.get(f[0], us), us)
-need = ["walk", "nowalk", "mixed", "ctl", "line16k", "line64k", "rows40", "rows500", "rows999", "wrap14", "wrap500"]
+need = ["walk", "nowalk", "mixed", "ctl", "line16k", "line64k", "bsrun", "xbs", "xcr", "ovst", "plain",
+        "rows40", "rows500", "rows999", "wrap14", "wrap500"]
 missing = [k for k in need if k not in best] + [k for k in ("mixed", "ctl") if k not in nbytes]
 if sys.argv[2] != "0" or missing:
     print("FAIL  term (VM perf): the timing program: rc=%s, missing %s" % (sys.argv[2], " ".join(missing) or "-"))
@@ -584,6 +646,13 @@ check(per < W / 2 and p16 < W / 2 and pc < W and lr < 8,
       "write: one glyph-table walk W = %.1f us; per byte: mixed output %.2f us (%d bytes), a 16 KB line %.2f,\n"
       "      control bytes %.2f (bounds W/2, W/2, W); 64K/16K line %.1fx (linear; bound 8)"
       % (W, per, nbytes["mixed"], p16, pc, lr))
+bs = best["bsrun"] / 16384
+xr = best["xbs"] / best["xcr"]
+orat = best["ovst"] / best["plain"]
+check(bs < W / 4 and xr < 2 and orat < 6,
+      "backspace: %.2f us each in a run of 16384 (bound W/4); x\\b at a segment edge %.1f us a pair, %.2fx x\\r\n"
+      "      (bound 2); overstrike %.2f us a byte, %.1fx plain text (bound 6)"
+      % (bs, best["xbs"] / 8192, xr, best["ovst"] / 12200, orat))
 r500 = best["rows500"] / best["rows40"]
 r999 = best["rows999"] / best["rows40"]
 rw = best["wrap500"] / best["wrap14"]
