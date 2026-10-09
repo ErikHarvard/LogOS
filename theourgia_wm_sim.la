@@ -49,14 +49,22 @@ glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
                 (add)(sub)(mul)(div)(mod)(lt)(int_eq)(band)(bor)
 glyph X = la s. s(poll)(read)(close)(print)(write_file)(exit)
 
-# the five words of wm_sim.cfg (a trailing newline is dropped)
+# the words of wm_sim.cfg (newlines and carriage returns are dropped). A bad value stops the run
+# at once with a message: SCALE must be 1 or more, and a sixth word, if any,
+# must be exactly async.
 glyph CFG = la k. (la words. words(la _. error("wm_sim: wm_sim.cfg is empty"))
     (la w0. la r0. r0(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w1. la r1. r1(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w2. la r2. r2(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w3. la r3. r3(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
-    (la w4. la r4. k(str_to_int(w0))(str_to_int(w1))(str_to_int(w2))(w3)(w4)
-       (r4(la _. la t. la f. t)(la w5. la r5. str_eq(w5)("async")(la t. la f. f)(la t. la f. t)))))))))
+    (la w4. la r4.
+      (la scale. lt(scale)(1)
+        (la _. error(concat("wm_sim: SCALE must be 1 or more, not ")(w2)))
+        (la _. k(str_to_int(w0))(str_to_int(w1))(scale)(w3)(w4)
+          (r4(la _. la t. la f. t)(la w5. la r5. str_eq(w5)("async")
+             (la _. r5(la _. la t. la f. f)(la w6. la r6. error("wm_sim: wm_sim.cfg has words after async")))
+             (la _. error(concat("wm_sim: the sixth word of wm_sim.cfg must be async (or absent), not ")(w5)))("!"))))("!"))
+      (str_to_int(w2))))))))
   (WM_SPLIT(B)(WM_LISTS(B))(STRIP_NL(read_file("wm_sim.cfg"))))
 # The lock screen's session layer, a stand-in until logossession.la is wired
 # in: one user, adam, passphrase logos; a session is "S:<name>" and a locked
@@ -69,8 +77,21 @@ glyph SIM_SESS = la s. s
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph STRIP_NL = Z(la self. la s.
     str_eq(s)("")(la _. "")(la _.
-      (la c. str_eq(c)("\n")(la _. self(str_tail(s)))(la _. concat(c)(self(str_tail(s))))("!"))
+      (la c. str_eq(c)("\n")(la t. la f. t)(str_eq(c)(chr("13")))(la _. self(str_tail(s)))(la _. concat(c)(self(str_tail(s))))("!"))
       (str_head(s)))("!"))
+
+# the events file: a missing one or a directory stops the run with a message
+# (an unchecked "-2" from open would be polled as fd 2, forever)
+glyph OPEN_EVENTS = la path. (la st.
+    str_eq(str_head(st))("-")
+      (la _. error(concat("wm_sim: cannot open the events file ")(concat(path)(concat(" (stat -> ")(concat(st)(")"))))))
+      (la _. int_eq(mod(div(str_to_int(WM_SPLIT(B)(WM_LISTS(B))(st)(la _. "0")(la h. la t. h)))(4096))(16))(4)
+         (la _. error(concat("wm_sim: the events file ")(concat(path)(" is a directory"))))
+         (la _. (la fd. str_eq(str_head(fd))("-")
+                  (la _. error(concat("wm_sim: cannot open the events file ")(concat(path)(concat(" (open -> ")(concat(fd)(")"))))))
+                  (la _. fd)("!"))
+                (open(path)("0")))("!"))("!"))
+  (stat(path))
 
 glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC.
   (la fd.
@@ -86,4 +107,4 @@ glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC.
         (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))(SYNC("24")("2400"))(SYNC)))
     (print(concat("wm: headless ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))
         (concat(" scale ")(concat(int_to_str(SCALE))(concat(", events from ")(EVENTS))))))))))
-  (open(EVENTS)("0")))
+  (OPEN_EVENTS(EVENTS)))
