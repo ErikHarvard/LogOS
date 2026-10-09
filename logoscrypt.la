@@ -16,9 +16,8 @@
 #  crypt_ref.la's CRYPT_REF builds that record from the RFC-verified modules
 #  (sha256.la, hmac.la, hkdf.la, chacha20.la, poly1305.la, aead.la). It is
 #  the reference, and slow on the VM. CRYPT_FAST has the same contract and is
-#  a drop-in for it, with one exception where the reference is wrong (WHERE
-#  IT IS NOT CRYPT_REF'S TWIN, below). gate_logoscrypt.sh checks it against
-#  the published answers, an independent oracle, and CRYPT_REF itself.
+#  a drop-in for it. gate_logoscrypt.sh checks it against the published
+#  answers, an independent oracle, and CRYPT_REF itself.
 #
 #  MEASURED on the VM, timed inside the program by gate_logoscrypt.sh on a
 #  loaded 4-core machine: sha256 of 1 KB 8 ms (CRYPT_REF 258 s, 31784x), of
@@ -79,12 +78,11 @@
 #  host on a small program); the host is far too slow for anything but tiny
 #  inputs (about a minute for sha256, HMAC, HKDF and one short seal).
 #
-#  WHERE IT IS NOT CRYPT_REF'S TWIN. CRYPT_REF's sha256 is wrong for message
-#  lengths of 55 (mod 64): sha256.la's PADLEN pads them with 64 zero bytes,
-#  where FIPS 180-4 pads none (L + 1 + 0 + 8 = 64), so it hashes one block too
-#  many. CRYPT_FAST follows FIPS (hashlib agrees); the two records give
-#  different sha256 -- and so HMAC and HKDF -- results at those lengths only.
-#  gate_logoscrypt.sh names the reference's digest there exactly.
+#  CRYPT_REF'S TWIN, AT EVERY LENGTH. While this record was built, its gate
+#  found that CRYPT_REF's sha256 was wrong for message lengths of 55 (mod 64):
+#  sha256.la's PADLEN padded them with 64 zero bytes where FIPS 180-4 pads
+#  none. sha256.la is fixed (gate_sha256_padding.sh), and the two records now
+#  agree there as everywhere; gate_logoscrypt.sh requires it.
 #
 #  HONESTLY OUT OF SCOPE
 #   - Constant time. The tag comparison has no early exit, and ChaCha20 and

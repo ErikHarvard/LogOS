@@ -25,12 +25,9 @@
 #   5. equality with CRYPT_REF itself: sha256 at 0 1 55 56 63 64 65 119 120
 #      bytes, HMAC with 65- and 129-byte keys, HKDF at every length 1..96,
 #      seal of 0 1 63 64 65 300 bytes byte-equal, and each record opening the
-#      other's sealed strings. KNOWN REFERENCE DEFECT: CRYPT_REF's sha256 is
-#      wrong for lengths 55 (mod 64) -- sha256.la's PADLEN pads them with 64
-#      zero bytes where FIPS 180-4 pads none -- so at 55 and 119 the gate
-#      requires the reference's digest to be exactly that mis-padding (the
-#      oracle computes it) and CRYPT_FAST's to be FIPS's (part 2), and says so;
-#      once sha256.la is fixed those two lengths simply compare equal;
+#      other's sealed strings. Every length must compare equal, 55 and 119
+#      included: sha256.la mis-padded lengths 55 (mod 64) until it was fixed
+#      (gate_sha256_padding.sh guards that fix);
 #   6. speed: CRYPT_FAST against CRYPT_REF for sha256 and seal of 1 KB (and the
 #      fast record on 10 KB), timed inside the programs with clock_gettime;
 #      PASS needs a factor of at least 50 on both. LOGOSCRYPT_REF_10K=1 also
@@ -99,39 +96,6 @@ def open_(key, nonce, aad, sd):
     return chacha_xor(key, 1, nonce, ct)
 # byte i of gen(n, seed) is (i*7 + seed) mod 256 -- GEN in the LA programs
 def gen(n, seed): return bytes((i * 7 + seed) % 256 for i in range(n))
-# SHA-256 over an explicitly padded message, to name a known defect of the
-# reference exactly: sha256.la's PADLEN takes 64 zero bytes where FIPS 180-4
-# takes none, when (L + 1) mod 64 = 56, i.e. L = 55 (mod 64).
-_K = [int(x, 16) for x in """428a2f98 71374491 b5c0fbcf e9b5dba5 3956c25b 59f111f1 923f82a4 ab1c5ed5
-d807aa98 12835b01 243185be 550c7dc3 72be5d74 80deb1fe 9bdc06a7 c19bf174 e49b69c1 efbe4786 0fc19dc6
-240ca1cc 2de92c6f 4a7484aa 5cb0a9dc 76f988da 983e5152 a831c66d b00327c8 bf597fc7 c6e00bf3 d5a79147
-06ca6351 14292967 27b70a85 2e1b2138 4d2c6dfc 53380d13 650a7354 766a0abb 81c2c92e 92722c85 a2bfe8a1
-a81a664b c24b8b70 c76c51a3 d192e819 d6990624 f40e3585 106aa070 19a4c116 1e376c08 2748774c 34b0bcb5
-391c0cb3 4ed8aa4a 5b9cca4f 682e6ff3 748f82ee 78a5636f 84c87814 8cc70208 90befffa a4506ceb bef9a3f7
-c67178f2""".split()]
-def _sha_blocks(padded):
-    rotr = lambda x, n: ((x >> n) | (x << (32 - n))) & M
-    H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
-    for o in range(0, len(padded), 64):
-        w = list(struct.unpack(">16I", padded[o:o + 64]))
-        for t in range(16, 64):
-            w.append((w[t-16] + (rotr(w[t-15], 7) ^ rotr(w[t-15], 18) ^ (w[t-15] >> 3)) + w[t-7]
-                      + (rotr(w[t-2], 17) ^ rotr(w[t-2], 19) ^ (w[t-2] >> 10))) & M)
-        a, b, c, d, e, f, g_, h = H
-        for t in range(64):
-            t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g_)) + _K[t] + w[t]) & M
-            t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) & M
-            h, g_, f, e, d, c, b, a = g_, f, e, (d + t1) & M, c, b, a, (t1 + t2) & M
-        H = [(x + y) & M for x, y in zip(H, [a, b, c, d, e, f, g_, h])]
-    return b"".join(struct.pack(">I", x) for x in H)
-def _pad(m, k): return m + b"\x80" + b"\0" * k + struct.pack(">Q", 8 * len(m))
-def sha256_lapad(m):
-    r = (len(m) + 1) % 64
-    return _sha_blocks(_pad(m, 56 - r if r < 56 else 120 - r))
-for _n in (0, 1, 55, 56, 64, 119, 200):  # the transcription itself, against hashlib
-    _m = bytes(range(_n % 256)) * (_n // 256 + 1)
-    _m = _m[:_n]
-    assert _sha_blocks(_pad(_m, (55 - len(_m)) % 64)) == sha256(_m)
 g = gen
 SEALN = [0, 1, 15, 16, 17, 63, 64, 65, 127, 128, 129, 300, 1000]
 if __name__ == "__main__" and sys.argv[1] == "sweep":
@@ -167,9 +131,6 @@ if __name__ == "__main__" and sys.argv[1] == "engines":
     print("sha256 " + sha256(b"abc").hex()); print("hmac " + hmac(b"Jefe", b"what do ya want for nothing?").hex())
     print("seal " + sd.hex()); print("open hey"); print("tamper none")
     print("hkdf " + hkdf(b"", b"ikm", b"info", 40).hex()); print("end")
-if __name__ == "__main__" and sys.argv[1] == "lapad":
-    for n in [0, 1, 55, 56, 63, 64, 65, 119, 120]:
-        print("sha %d %s %s" % (n, sha256(g(n, 3)).hex(), sha256_lapad(g(n, 3)).hex()))
 if __name__ == "__main__" and sys.argv[1] == "timing":
     k1, k10, key, nonce = g(1024, 0), g(10240, 0), g(32, 1), g(12, 2)
     print("sha256-1KB " + sha256(sha256(k1)).hex())
@@ -489,28 +450,11 @@ wm_vm tfast.la "$T/tfast.out"
 
 # ── 5 and 6b: the CRYPT_REF programs, one after another ───────────────────
 for p in eq_aead eq_hkdf eq_sha tref; do vm_ref "r_$p" "$p.la"; done
-# CRYPT_REF's sha256 is wrong where L = 55 (mod 64): sha256.la's PADLEN pads
-# those with 64 zero bytes, FIPS 180-4 with none (CRYPT_FAST is the oracle's
-# there; part 2). Such a line is accepted only at those lengths and only when
-# the reference's digest is exactly that mis-padding; it then reads EQ.
-( cd "$T" && python3 oracle.py lapad ) > "$T/lapad.txt"
-if [ -f "$T/r_eq_sha/out.txt" ]; then
-    while read -r w n rest; do
-        [ "$w" = sha ] || continue
-        case "$rest" in "NE "*)
-            want=$(awk -v n="$n" '$2 == n {print $4}' "$T/lapad.txt")
-            if [ $((n % 64)) = 55 ] && [ "${rest#NE }" = "$want" ]; then
-                echo "NOTE  CRYPT_REF's sha256 of $n bytes is the digest of sha256.la's padding (64 zero bytes too many; FIPS 180-4 pads none), not FIPS's; CRYPT_FAST gives FIPS's"
-                sed -i "s/^sha $n NE .*/sha $n EQ/" "$T/r_eq_sha/out.txt"
-            fi;;
-        esac
-    done < "$T/r_eq_sha/out.txt"
-fi
 for p in eq_sha eq_hkdf eq_aead; do
     d="$T/r_$p"; rc=$(cat "$d/rc" 2>/dev/null || echo none)
     neq=$(grep -c ' EQ$' "$d/out.txt" 2>/dev/null); nsame=$(grep -c ' same$' "$d/out.txt" 2>/dev/null)
     nbad=$(grep -cv -e ' EQ$' -e ' same$' -e '^end$' "$d/out.txt" 2>/dev/null)
-    case $p in eq_sha) want="11 0" what="sha256 at 0 1 55 56 63 64 65 119 120 bytes (at 55 and 119 the reference's known padding defect, named exactly) and HMAC with 65- and 129-byte keys";;
+    case $p in eq_sha) want="11 0" what="sha256 at 0 1 55 56 63 64 65 119 120 bytes and HMAC with 65- and 129-byte keys";;
                eq_hkdf) want="96 0" what="HKDF (empty salt) at every length 1..96";;
                eq_aead) want="6 12" what="seal of 0 1 63 64 65 300 bytes byte-equal, and each record opens the other's";; esac
     if [ "$rc" = 0 ] && [ "$neq $nsame" = "$want" ] && [ "$nbad" = 0 ] && [ "$(tail -1 "$d/out.txt")" = end ]; then
