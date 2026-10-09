@@ -65,9 +65,11 @@ cp "$SRC" logos_source.la
 echo "   VM=$(stat -c%s logos_secd)B  program=$(stat -c%s logos_program.bin)B"
 if [ "${DRYRUN:-0}" = "1" ]; then echo "DRYRUN: built and compiled; not taking the screen."; exit 0; fi
 
-kbline="$(grep -iB8 'Handlers=.*event' /proc/bus/input/devices 2>/dev/null \
-          | grep -i 'Name=.*keyboard' | head -1 | sed 's/^N: Name=//')"
-echo "   keyboard the VM should auto-detect: ${kbline:-<none found: the VM will halt loudly>}"
+# The VM picks the keyboard itself (wm_livestart.la's KBD_KIT: the first device
+# whose name has "keyboard" and whose handlers have kbd and an event); the log's
+# first line names it. This script used to guess with a different rule and could
+# announce another device than the one the VM opened.
+echo "   keyboard: chosen by the VM; the log's first line names /dev/input/eventN"
 
 saved_stty="$(stty -g 2>/dev/null || true)"
 flush_tty() {

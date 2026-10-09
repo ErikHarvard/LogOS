@@ -1,0 +1,66 @@
+# ═══════════════════════════════════════════════════════════════════
+#  wm_livestart.la — what the live WM decides before it takes the screen.
+#
+#  theourgia_wm_live.la needs to know, before it starts, which
+#  /dev/input/eventN is the keyboard. It is decided here, by a small kit that
+#  takes every builtin it uses as a parameter (WM_DESIGN.md's kit style: a name looked up while a
+#  loop runs walks the whole program on the VM, which made the old detector
+#  cost about 3 ms per byte of the device list).
+#
+#  KBD_KIT(Z)(str_at)(str_len)(ord)(str_to_int)(add)(sub)(lt)(int_eq)(concat)
+#    -> kbd(text) : the N of the keyboard's /dev/input/eventN, as a decimal
+#       string, or "" when there is none.
+#    text is /proc/bus/input/devices: blocks of lines separated by blank
+#    lines, one block per device. A block is the keyboard when its
+#    "N: Name=" line contains "keyboard" in any case and its "H: Handlers="
+#    line names kbd and an event<N>; the first such block wins. Only that
+#    block's own lines are read, so a device without an event handler, or a
+#    mouse after it, is never taken for the keyboard.
+#
+#  It is pure: gate_wm_livestart.sh checks it on the C host and the VM.
+# ═══════════════════════════════════════════════════════════════════
+
+export KBD_KIT
+
+glyph KBD_KIT = la Z. la str_at. la str_len. la ord. la str_to_int. la add. la sub. la lt. la int_eq. la concat.
+  (la C0. la C1. la C10. la C32. la C48. la C57. la C65. la C90. la TRUE. la FALSE.
+   (la text. (la n.
+    # o(i): the byte at i (0..n-1) as a number; lc(i) the same, lower-cased
+    (la o. (la lc.
+    # at(i)(p): does p occur at i, compared lower-cased (p is lower case)
+    (la at. (la nl.
+    # has(i)(e)(p): p occurs somewhere in [i, e)
+    (la has. (la evnum.
+    Z(la block. la i. la kb. la kbd. la ev.
+        lt(i)(n)
+          (la _. (la e. int_eq(e)(i)
+              # a blank line ends the block
+              (la _. kb(la _. kbd(la _. int_eq(str_to_int(str_len(ev)))(C0)(la _. block(add(e)(C1))(FALSE)(FALSE)(""))(la _. ev)(C0))
+                                 (la _. block(add(e)(C1))(FALSE)(FALSE)(""))(C0))
+                       (la _. block(add(e)(C1))(FALSE)(FALSE)(""))(C0))
+              (la _. at(i)("n: name=")
+                  (la _. block(add(e)(C1))(has(i)(e)("keyboard"))(kbd)(ev))
+                  (la _. at(i)("h: handlers=")
+                     (la _. block(add(e)(C1))(kb)(has(i)(e)("kbd"))(evnum(i)(e)))
+                     (la _. block(add(e)(C1))(kb)(kbd)(ev))(C0))(C0))(C0))
+            (nl(i)))
+          # the end of the text ends the last block
+          (la _. kb(la _. kbd(la _. ev)(la _. "")(C0))(la _. "")(C0))(C0))(C0)(FALSE)(FALSE)(""))
+    # evnum(i)(e): the digits after the first "event" in [i, e), or ""
+    (la i. la e. Z(la find. la j. lt(add(j)(4))(e)
+        (la _. at(j)("event")
+            (la _. Z(la digits. la k. la acc. lt(k)(e)
+                (la _. (la c. lt(c)(C48)(la _. acc)(la _. lt(C57)(c)(la _. acc)(la _. digits(add(k)(C1))(concat(acc)(str_at(text)(k))))(C0))(C0))(o(k)))
+                (la _. acc)(C0))(add(j)(5))(""))
+            (la _. find(add(j)(C1)))(C0))
+        (la _. "")(C0))(i)))
+    (la i. la e. la p. (la m. Z(la go. la j. lt(sub(e)(m))(j)(la _. FALSE)(la _. at(j)(p)(la _. TRUE)(la _. go(add(j)(C1)))(C0))(C0))(i))(str_to_int(str_len(p)))))
+    # nl(i): the index of the next newline at or after i, or n
+    (Z(la nl. la i. lt(i)(n)(la _. int_eq(o(i))(C10)(la _. i)(la _. nl(add(i)(C1)))(C0))(la _. n)(C0))))
+    (la i. la p. (la m. lt(n)(add(i)(m))(la _. FALSE)(la _.
+        Z(la go. la j. lt(j)(m)(la _. int_eq(lc(add(i)(j)))(str_to_int(ord(str_at(p)(j))))(la _. go(add(j)(C1)))(la _. FALSE)(C0))(la _. TRUE)(C0))(C0))(C0))
+      (str_to_int(str_len(p)))))
+    (la i. (la c. lt(c)(C65)(la _. c)(la _. lt(C90)(c)(la _. c)(la _. add(c)(C32))(C0))(C0))(o(i))))
+    (la i. str_to_int(ord(str_at(text)(i)))))
+    (str_to_int(str_len(text)))))
+  (0)(1)(10)(32)(48)(57)(65)(90)(la t. la f. t)(la t. la f. f)

@@ -11,8 +11,9 @@
 #  Needs a BARE VT (DRM master) and read access to /dev/input, so it runs as
 #  root; launch it with drm_bringup_wm.sh, which builds it, frees the GPU,
 #  restores the greeter afterwards and flushes the keystrokes the VT buffered.
-#  The keyboard is auto-detected by name in /proc/bus/input/devices, as in the
-#  Stage 9 capstone. New shells start in the directory named by logos_wm.cwd
+#  The keyboard is found in /proc/bus/input/devices by wm_livestart.la's
+#  KBD_KIT: the first device whose name contains "keyboard" (any case) and
+#  whose handlers have kbd and an eventN. New shells start in the directory named by logos_wm.cwd
 #  (drm_bringup_wm.sh writes it; "/" if the file is empty). The text scale is
 #  chosen from the screen width: 1 below 1920 pixels, 2 up to 3839, 4 above.
 #
@@ -28,6 +29,7 @@ import("theourgia_wm.la")
 import("theourgia_termfont.la")
 import("logoskit.la")
 import("lk_settings.la")
+import("wm_livestart.la")
 
 glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
                 (add)(sub)(mul)(div)(mod)(lt)(int_eq)(band)(bor)
@@ -38,28 +40,9 @@ glyph TRUE  = la t. la f. t
 glyph FALSE = la t. la f. f
 glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph IF    = la c. la t. la f. c(t)(f)("!")
-glyph STARTSW = Z(la self. la s. la p.
-    IF(str_eq(p)(""))(la _. TRUE)(la _.
-    IF(str_eq(s)(""))(la _. FALSE)(la _.
-    IF(str_eq(str_head(s))(str_head(p)))
-        (la _. self(str_tail(s))(str_tail(p)))
-        (la _. FALSE))))
-glyph DROP = Z(la self. la n. la s.
-    IF(int_eq(n)(0))(la _. s)(la _. self(sub(n)(1))(str_tail(s))))
-glyph AFTER = Z(la self. la hay. la needle.
-    IF(str_eq(hay)(""))(la _. "")(la _.
-    IF(STARTSW(hay)(needle))(la _. DROP(str_to_int(str_len(needle)))(hay))(la _.
-    self(str_tail(hay))(needle))))
-glyph IS_DIGIT = la c. (la o.
-    IF(lt(o)(48))(la _. FALSE)(la _.
-    IF(lt(57)(o))(la _. FALSE)(la _. TRUE)))(str_to_int(ord(c)))
-glyph TAKE_DIGITS = Z(la self. la s.
-    IF(str_eq(s)(""))(la _. "")(la _.
-    IF(IS_DIGIT(str_head(s)))(la _. concat(str_head(s))(self(str_tail(s))))(la _. "")))
-glyph DETECT1 = la devs. la nm.
-    (la aft. IF(str_eq(aft)(""))(la _. "")
-        (la _. TAKE_DIGITS(AFTER(aft)("event"))))(AFTER(devs)(nm))
-glyph DETECT = la devs. (la x. IF(str_eq(x)(""))(la _. DETECT1(devs)("Keyboard"))(la _. x))(DETECT1(devs)("keyboard"))
+# the keyboard: wm_livestart.la's KBD_KIT (one device block at a time; kit
+# style, so the scan costs microseconds a byte, not milliseconds)
+glyph DETECT = KBD_KIT(Z)(str_at)(str_len)(ord)(str_to_int)(add)(sub)(lt)(int_eq)(concat)
 glyph OPEN_OR_DIE = la path.
     (la fd. IF(str_eq(str_head(fd))("-"))(la _.
         error(concat(concat("wm: cannot open ")(path))
@@ -74,7 +57,7 @@ glyph SCALE_FOR = la w. IF(lt(w)(1920))(la _. 1)(la _. IF(lt(w)(3840))(la _. 2)(
 glyph MAIN =
   (la kbd.
     IF(str_eq(kbd)(""))
-      (la _. error("wm: no keyboard found (no Name with 'keyboard'/'Keyboard' in /proc/bus/input/devices)"))
+      (la _. error("wm: no keyboard found (no device in /proc/bus/input/devices whose name has 'keyboard' and whose handlers have kbd and an event)"))
       (la _. (la fd. (la cwd.
           (la dims. dims(la _. error("wm: drm_mode returned nothing"))(la w0. la r0. r0(la _. error("wm: bad drm_mode reply"))
                 (la w1. la r1. r1(la _. error("wm: bad drm_mode reply"))(la w2. la r2.
