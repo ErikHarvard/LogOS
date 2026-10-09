@@ -68,10 +68,14 @@
 #  rmdir DIR..., rm FILE..., mv SRC DST (into DST if it is a directory), pid
 #  (the WM's own pid), word (I AM THAT I AM), clear, exit. Errors read
 #  "logosh: CMD: ARG: no such file or directory" (errno named for the common
-#  ones, "error N" otherwise). cd is checked with stat; the shell keeps its own
-#  working directory because the VM has no chdir. The builtin cat reads only
-#  regular files up to 1 MiB (read_file runs inside the WM, so a FIFO or
-#  /dev/zero would freeze it); /bin/cat streams anything through the pipe.
+#  ones, "error N" otherwise). An operand that ends in /, /. or /.. keeps its
+#  trailing / on the way to the kernel (normpath drops it), so it must name a
+#  directory: rm f/ and mv f nodir/ fail with "not a directory", as in
+#  coreutils, and so does a program path ./prog/. cd is checked with stat; the
+#  shell keeps its own working directory because the VM has no chdir. The
+#  builtin cat reads only regular files up to 1 MiB (read_file runs inside the
+#  WM, so a FIFO or /dev/zero would freeze it); /bin/cat streams anything
+#  through the pipe.
 #
 #  PROGRAMS. Any other word is a program: a word containing / is a path,
 #  relative to the working directory; otherwise it is looked up in /bin,
@@ -293,6 +297,15 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
   # takes the low 32 bits as a signed pid_t: 4294967296 would be pid 0 (the
   # WM's process group) and 4294967295 pid -1 (every process). 1 .. 2^31-1.
   LET(la s. (la n. lt(C0)(n)(lt(n)(CPIDLIM))(FF)(la _. n)(la _. CM1)(C0))(NUM(s)))(la PIDNUM.
+  # SPATH(cwd)(a): the path a builtin hands the kernel for operand a: normpath,
+  # plus the trailing / that normpath drops when a ends in /, /. or /.. (or is
+  # . or ..). Such a path must name a directory, so rm f/ and mv f nodir/ fail
+  # with "not a directory" instead of removing f or renaming it to a FILE nodir.
+  LET(la cwd. la a. (la p. (la l.
+        str_eq(str_at(a)(sub(LEN(a))(C1)))("/")(TT)(str_eq(l)(".")(TT)(str_eq(l)("..")))
+          (la _. str_eq(p)("/")(la _. p)(la _. concat(p)("/"))(C0))
+          (la _. p)(C0))
+      (LASTOF(SEGS(a))("")))(NORM(cwd)(a)))(la SPATH.
   # LASTCH(s)(c): the last index of byte c in s, else -1.
   LET(la s. la c. Y(la go. la i.
         lt(i)(C0)
@@ -371,7 +384,7 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
             (la h. la tl. (la rs.
                 SAY(sh)(JOIN(MAP(la r. r(la ok. la t. t))(rs)))
                    (ANY(la r. r(la ok. la t. ok(FF)(TT)))(rs)(C1)(C0)))
-              (MAP(la a. f(NORM(CWD(sh))(a))(a))(args))))(la EACH.
+              (MAP(la a. f(SPATH(CWD(sh))(a))(a))(args))))(la EACH.
   # PCALL(cmd)(call)(p)(a): call(p) is a filesystem builtin returning "0" or
   # "-errno".
   LET(la cmd. la call. la p. la a.
@@ -399,10 +412,11 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
                     (la _. RES(SH(p)(C0))("")(ANONE))
                     (la _. SAY(sh)(ERR3("cd")(a)("not a directory"))(C1))(C0)))(NORM(CWD(sh))(a)))
             (la b. la r2. SAY(sh)(ERR2("cd")("too many arguments"))(C1))))(la B_CD.
-  # INTO(dir)(base): dir/base, for mv into an existing directory.
+  # INTO(dir)(base): dir/base, for mv into an existing directory (dir may end
+  # in / already: / itself, or a SPATH).
   LET(la d. la base. str_eq(base)("")
         (la _. d)
-        (la _. str_eq(d)("/")(la _. concat("/")(base))(la _. concat(d)(concat("/")(base)))(C0))(C0))(la INTO.
+        (la _. str_eq(str_at(d)(sub(LEN(d))(C1)))("/")(la _. concat(d)(base))(la _. concat(d)(concat("/")(base)))(C0))(C0))(la INTO.
   LET(la sh. la args. (la usage.
         args(la _. usage)(la a. la r1. r1(la _. usage)(la b. la r2. r2
           (la _. (la src. la dst0.
@@ -413,7 +427,7 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
                   (la _. SAY(sh)(ERR3("mv")(a)(ERRMSG(C36)))(C1))(C0))
               (STATX(dst0)(la e. dst0)(la m. la sz. int_eq(FTYPE(m))(C4)
                   (la _. INTO(dst0)(LASTOF(SEGS(src))("")))(la _. dst0)(C0))))
-            (NORM(CWD(sh))(a))(NORM(CWD(sh))(b)))
+            (SPATH(CWD(sh))(a))(SPATH(CWD(sh))(b)))
           (la c. la r3. usage))))
       (SAY(sh)(ERR2("mv")("usage: mv SOURCE DEST"))(C1)))(la B_MV.
   LET(la sh. la args. SAY(sh)(concat(JOIN(SPACED(args)))("\n"))(C0))(la B_ECHO.
@@ -492,7 +506,7 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
                       (la _. SPAWN(sh)(name)(p)(args))
                       (la _. SAY(sh)(ERR2(name)("permission denied"))(C126))(C0))
                   (la _. SAY(sh)(ERR2(name)(int_eq(FTYPE(m))(C4)("is a directory")("not a regular file")))(C126))(C0)))
-            (NORM(CWD(sh))(name)))
+            (SPATH(CWD(sh))(name)))
           (la _. (la p. str_eq(p)("")
               (la _. SAY(sh)(ERR2(name)("command not found"))(C127))
               (la _. SPAWN(sh)(name)(p)(args))(C0))(LOOKUP(name)(PATHDIRS)))(C0))(la EXTERNAL.
@@ -546,4 +560,4 @@ glyph SHELL_KIT = la concat. la str_at. la str_len. la str_eq. la ord. la str_to
   LET(la cwd. SH(NORM("/")(cwd))(C0))(la NEW.
   LET(la sh. concat("logos:")(concat(CWD(sh))("$ ")))(la PROMPT.
   la sel. sel(NEW)(PROMPT)(RUN)(FINISH)(INTERRUPT)(HANGUP)
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

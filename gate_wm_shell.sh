@@ -26,7 +26,11 @@
 #      newline, a directory, a FIFO — refused, not read, so the WM cannot
 #      freeze — a file over the 1 MiB limit), mkdir/rmdir/rm/mv round trips,
 #      pid = the WM's own pid, word, help (non-empty and mentions cd), clear
-#      and exit actions, a program found on PATH, paths with / (relative and
+#      and exit actions, a trailing / (or /.) that must name a directory (mv
+#      x.txt nodir/, rm y.txt/, rm y.txt/., cat y.txt/ and ./y.txt/ fail with
+#      "not a directory" and change nothing; mkdir dd/, mv dd ee/, mv x.txt
+#      ee/, mv ee/x.txt ./ and rmdir ee/ work), a program found on PATH, paths
+#      with / (relative and
 #      absolute), a missing command, a non-executable file, a directory, exit
 #      statuses ([exit 1], [exit 3], nothing for 0), stderr captured (the text
 #      of ls's error comes from running the same command from bash), the cwd
@@ -69,7 +73,8 @@
 #      /proc/<pid>/stat from a reader that may not ptrace them: id -u prints
 #      0 (setuid works here), false -> [exit 1], expr a + 1 -> its message and
 #      [exit 2] (from bash), expr 1 + 2 -> 3, and /bin/false as a control.
-#   3. The filesystem afterwards: what the session made and removed in $T.
+#   3. The filesystem afterwards: what the session made and removed in $T,
+#      and ts/ unchanged by the refused trailing-slash commands.
 #   4. Measured VM timings (INFO, not pass/fail).
 #
 # The host cannot run SHELL_KIT (fork, execv and the rest are VM builtins), so
@@ -241,7 +246,8 @@ fi
 
 # ── 2. a scripted session on the VM ─────────────────────────────────────────
 W="$T/w"
-mkdir -p "$W/sub3" "$W/sp ace"
+mkdir -p "$W/sub3" "$W/sp ace" "$W/ts"
+printf 'x\n' > "$W/ts/x.txt"; printf 'y\n' > "$W/ts/y.txt"
 printf 'line one\nline two\n' > "$W/f.txt"
 printf 'no newline' > "$W/noeol.txt"
 : > "$W/empty.txt"
@@ -318,6 +324,23 @@ rmdir sub
 rmdir sub
 mkdir d1 d2 keep
 rmdir d1 nosuch d2
+cd ts
+mv x.txt nodir/
+cat nodir
+cat x.txt
+rm y.txt/
+rm y.txt/.
+cat y.txt/
+cat y.txt
+./y.txt/
+mkdir dd/
+mv dd ee/
+mv x.txt ee/
+cat ee/x.txt
+mv ee/x.txt ./
+rmdir ee/
+rmdir dd
+cd ..
 clear
 /bin/echo hello
 nosuchcmd
@@ -473,6 +496,40 @@ logos:@W@$ mkdir d1 d2 keep
 logos:@W@$ rmdir d1 nosuch d2
 logosh: rmdir: nosuch: no such file or directory
 ? 1
+logos:@W@$ cd ts
+logos:@W@/ts$ mv x.txt nodir/
+logosh: mv: x.txt: not a directory
+? 1
+logos:@W@/ts$ cat nodir
+logosh: cat: nodir: no such file or directory
+? 1
+logos:@W@/ts$ cat x.txt
+x
+logos:@W@/ts$ rm y.txt/
+logosh: rm: y.txt/: not a directory
+? 1
+logos:@W@/ts$ rm y.txt/.
+logosh: rm: y.txt/.: not a directory
+? 1
+logos:@W@/ts$ cat y.txt/
+logosh: cat: y.txt/: not a directory
+? 1
+logos:@W@/ts$ cat y.txt
+y
+logos:@W@/ts$ ./y.txt/
+logosh: ./y.txt/: not a directory
+? 126
+logos:@W@/ts$ mkdir dd/
+logos:@W@/ts$ mv dd ee/
+logos:@W@/ts$ mv x.txt ee/
+logos:@W@/ts$ cat ee/x.txt
+x
+logos:@W@/ts$ mv ee/x.txt ./
+logos:@W@/ts$ rmdir ee/
+logos:@W@/ts$ rmdir dd
+logosh: rmdir: dd: no such file or directory
+? 1
+logos:@W@/ts$ cd ..
 logos:@W@$ clear
 <clear>
 logos:@W@$ /bin/echo hello
@@ -886,10 +943,11 @@ fi
 
 # ── 3. the filesystem afterwards ────────────────────────────────────────────
 if [ -d "$W/keep" ] && [ ! -e "$W/sub" ] && [ ! -e "$W/d1" ] && [ ! -e "$W/d2" ] \
-   && [ ! -e "$W/f.txt" ] && [ ! -e "$W/g.txt" ] && [ -f "$W/noeol.txt" ]; then
-    pass "filesystem: keep/ made; sub/, d1/, d2/ removed; f.txt moved round and removed"
+   && [ ! -e "$W/f.txt" ] && [ ! -e "$W/g.txt" ] && [ -f "$W/noeol.txt" ] \
+   && [ "$(ls -A "$W/ts" | tr '\n' ' ')" = "x.txt y.txt " ]; then
+    pass "filesystem: keep/ made; sub/, d1/, d2/ removed; f.txt moved round and removed; ts/ holds just x.txt and y.txt"
 else
-    fail "filesystem: unexpected state in $W: $(ls -A "$W" | tr '\n' ' ')"
+    fail "filesystem: unexpected state in $W: $(ls -A "$W" | tr '\n' ' '); ts/: $(ls -A "$W/ts" | tr '\n' ' ')"
 fi
 
 # ── 4. timings (VM) ─────────────────────────────────────────────────────────
