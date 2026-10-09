@@ -1,9 +1,10 @@
 # ═══════════════════════════════════════════════════════════════════
 #  wm_livestart.la — what the live WM decides before it takes the screen.
 #
-#  theourgia_wm_live.la needs to know, before it starts, which
-#  /dev/input/eventN is the keyboard. It is decided here, by a small kit that
-#  takes every builtin it uses as a parameter (WM_DESIGN.md's kit style: a name looked up while a
+#  theourgia_wm_live.la needs two facts from text files before it starts:
+#  which /dev/input/eventN is the keyboard, and which directory new shells
+#  start in. Both are decided here, by two small kits that take every builtin
+#  they use as a parameter (WM_DESIGN.md's kit style: a name looked up while a
 #  loop runs walks the whole program on the VM, which made the old detector
 #  cost about 3 ms per byte of the device list).
 #
@@ -17,10 +18,17 @@
 #    block's own lines are read, so a device without an event handler, or a
 #    mouse after it, is never taken for the keyboard.
 #
-#  It is pure: gate_wm_livestart.sh checks it on the C host and the VM.
+#  CWD_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)
+#         (int_eq)(div)(mod)(chr)(stat)
+#    -> cwd(text) : the directory new shells start in, from logos_wm.cwd: its
+#       first line without spaces, tabs or carriage returns at either end; "/"
+#       when that is empty or stat does not report a directory.
+#
+#  Both are pure but for stat, which the caller passes (a stub on the host).
+#  gate_wm_livestart.sh checks them on the C host and the VM.
 # ═══════════════════════════════════════════════════════════════════
 
-export KBD_KIT
+export KBD_KIT CWD_KIT
 
 glyph KBD_KIT = la Z. la str_at. la str_len. la ord. la str_to_int. la add. la sub. la lt. la int_eq. la concat.
   (la C0. la C1. la C10. la C32. la C48. la C57. la C65. la C90. la TRUE. la FALSE.
@@ -64,3 +72,34 @@ glyph KBD_KIT = la Z. la str_at. la str_len. la ord. la str_to_int. la add. la s
     (la i. str_to_int(ord(str_at(text)(i)))))
     (str_to_int(str_len(text)))))
   (0)(1)(10)(32)(48)(57)(65)(90)(la t. la f. t)(la t. la f. f)
+
+glyph CWD_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la stat.
+  (la C0. la C1. la C2. la C4. la C16. la C4096. la CR. la TRUE.
+   (la seg. (la blank.
+     la text. (la n.
+       (la e. (la a. (la b.
+          (la c. int_eq(str_to_int(str_len(c)))(C0)
+              (la _. "/")
+              (la _. (la st. str_eq(str_at(st)(C0))("-")
+                  (la _. "/")
+                  # stat's answer is "<mode> <size>": a directory has type 4 (S_IFDIR)
+                  (la _. (la mode. int_eq(mod(div(mode)(C4096))(C16))(C4)(la _. c)(la _. "/")(C0))
+                         (str_to_int(seg(st)(C0)(Z(la sp. la k. lt(k)(str_to_int(str_len(st)))
+                             (la _. str_eq(str_at(st)(k))(" ")(la _. k)(la _. sp(add(k)(C1)))(C0))(la _. k)(C0))(C0)))))(C0))
+                (stat(c)))(C0))
+          (seg(text)(a)(b)))
+        # b: the end of the line without its trailing blanks
+        (Z(la r. la j. lt(a)(j)(la _. blank(str_at(text)(sub(j)(C1)))(la _. r(sub(j)(C1)))(la _. j)(C0))(la _. j)(C0))(e)))
+        # a: the first character that is not blank
+        (Z(la l. la i. lt(i)(e)(la _. blank(str_at(text)(i))(la _. l(add(i)(C1)))(la _. i)(C0))(la _. e)(C0))(C0)))
+       # e: the end of the first line
+       (Z(la f. la i. lt(i)(n)(la _. str_eq(str_at(text)(i))("\n")(la _. i)(la _. f(add(i)(C1)))(C0))(la _. n)(C0))(C0)))
+     (str_to_int(str_len(text))))
+   # blank(c): a space, a tab or a carriage return
+   (la c. str_eq(c)(" ")(TRUE)(str_eq(c)("\t")(TRUE)(str_eq(c)(CR)))))
+   # seg(s)(i)(j): bytes i..j-1 of s, joined by halves
+   (Z(la seg. la s. la i. la j. lt(i)(j)
+        (la _. int_eq(add(i)(C1))(j)(la _. str_at(s)(i))
+                 (la _. (la m. concat(seg(s)(i)(m))(seg(s)(m)(j)))(div(add(i)(j))(C2)))(C0))
+        (la _. "")(C0))))
+  (0)(1)(2)(4)(16)(4096)(chr("13"))(la t. la f. t)

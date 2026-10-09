@@ -11,7 +11,11 @@
 #   2  speed: a 12 KB list with the keyboard last is scanned on the VM in well
 #      under a second of CPU (the old detector named builtins per byte:
 #      about 3 ms a byte, over a minute for this list)
-#   3  the real live entry, compiled, in a private mount namespace with that
+#   3  the directory new shells start in, from logos_wm.cwd (host with a
+#      stub stat, VM with the real one): its first line only, without spaces,
+#      tabs or a carriage return at either end; "/" for an empty or blank
+#      file, a missing directory, or a file that is not a directory
+#   4  the real live entry, compiled, in a private mount namespace with that
 #      kind of list bound over /proc/bus/input/devices and a /dev holding only
 #      /dev/input/event3: it opens the keyboard (event3, not the mouse's
 #      event5) and gets as far as drm_mode, where it halts loudly as it must
@@ -81,6 +85,39 @@ else
     echo "FAIL  wm livestart: 2 the timing program did not compile: $(tail -2 "$T/vce")"; ok=0
 fi
 
+# 3 the cwd
+cat > "$T/cwd.la" <<LAEOF
+import("wm_livestart.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+STATDEF
+glyph CWD = CWD_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(ST)
+glyph CR = chr("13")
+glyph SHOW = la n. la t. print(concat(n)(concat("=")(CWD(t))))
+glyph MAIN = (la _. (la _. (la _. (la _. (la _. (la _. SHOW("empty")(""))
+  (SHOW("file")("/etc/passwd\n")))
+  (SHOW("missing")("/nonexistent\n")))
+  (SHOW("cr")(concat("/tmp")(concat(CR)("\n")))))
+  (SHOW("trail")(concat(" \t/tmp  ")(concat(CR)("\n")))))
+  (SHOW("blank")("   \n")))
+  (SHOW("lines")("/tmp\n/home\n"))
+LAEOF
+sed 's|^STATDEF$|glyph ST = la p. str_eq(p)("/tmp")("16877 4096")(str_eq(p)("/etc/passwd")("33188 1000")("-2"))|' "$T/cwd.la" > "$T/cwd_host.la"
+sed 's|^STATDEF$|glyph ST = la p. stat(p)|' "$T/cwd.la" > "$T/cwd_vm.la"
+CWDEXPECT='lines=/tmp
+blank=/
+trail=/tmp
+cr=/tmp
+missing=/
+file=/
+empty=/'
+wm_host cwd_host.la "$T/cwdh.txt"
+wm_vm cwd_vm.la "$T/cwdv.txt"
+if [ "$hrc" = 0 ] && [ "$vrc" = 0 ] && [ "$(cat "$T/cwdh.txt")" = "$CWDEXPECT" ] && [ "$(cat "$T/cwdv.txt")" = "$CWDEXPECT" ]; then
+    echo "PASS  wm livestart: 3 the cwd: first line, trimmed (spaces, tabs, a carriage return), \"/\" when blank, missing or not a directory; host = VM"
+else
+    echo "FAIL  wm livestart: 3 the cwd: host rc=$hrc VM rc=$vrc"; echo "      host: $(tr '\n' ' ' < "$T/cwdh.txt")"; echo "      VM:   $(tr '\n' ' ' < "$T/cwdv.txt")"; ok=0
+fi
+
 if unshare -m true 2>/dev/null; then
     cp "$T/compiler.bin" "$T/logos_program.bin"; cp "$T/theourgia_wm_live.la" "$T/logos_source.la"
     if ( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/vce" ); then
@@ -90,14 +127,14 @@ if unshare -m true 2>/dev/null; then
             mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
             && mkdir /dev/input && : > /dev/input/event3 && exec ./logos_secd" >"$T/live.out" 2>"$T/live.err" ) || lrc=$?
         if [ "$lrc" = 1 ] && ! grep -q "cannot open" "$T/live.err" && grep -qi "drm" "$T/live.err"; then
-            echo "PASS  wm livestart: 3 the live entry opens the keyboard (event3, not the mouse) and halts at drm_mode with no GPU: $(head -c 120 "$T/live.err")"
+            echo "PASS  wm livestart: 4 the live entry opens the keyboard (event3, not the mouse) and halts at drm_mode with no GPU: $(head -c 120 "$T/live.err")"
         else
-            echo "FAIL  wm livestart: 3 the live entry: rc=$lrc"; echo "      stderr: $(head -c 300 "$T/live.err")"; echo "      stdout: $(head -c 200 "$T/live.out")"; ok=0
+            echo "FAIL  wm livestart: 4 the live entry: rc=$lrc"; echo "      stderr: $(head -c 300 "$T/live.err")"; echo "      stdout: $(head -c 200 "$T/live.out")"; ok=0
         fi
     else
-        echo "FAIL  wm livestart: 3 theourgia_wm_live.la did not compile: $(tail -2 "$T/vce")"; ok=0
+        echo "FAIL  wm livestart: 4 theourgia_wm_live.la did not compile: $(tail -2 "$T/vce")"; ok=0
     fi
 else
-    echo "NOTE  wm livestart: 3 skipped (unshare -m is not available)"
+    echo "NOTE  wm livestart: 4 skipped (unshare -m is not available)"
 fi
 if [ "$ok" = 1 ]; then echo "ALL PASS  gate_wm_livestart"; else echo "GATE FAILED  gate_wm_livestart"; exit 1; fi

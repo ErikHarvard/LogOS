@@ -13,8 +13,9 @@
 #  restores the greeter afterwards and flushes the keystrokes the VT buffered.
 #  The keyboard is found in /proc/bus/input/devices by wm_livestart.la's
 #  KBD_KIT: the first device whose name contains "keyboard" (any case) and
-#  whose handlers have kbd and an eventN. New shells start in the directory named by logos_wm.cwd
-#  (drm_bringup_wm.sh writes it; "/" if the file is empty). The text scale is
+#  whose handlers have kbd and an eventN. New shells start in the directory
+#  named by logos_wm.cwd (drm_bringup_wm.sh writes it): its first line,
+#  trimmed, or "/" when that is empty or names no directory. The text scale is
 #  chosen from the screen width: 1 below 1920 pixels, 2 up to 3839, 4 above.
 #
 #  Keys: see theourgia_wm.la. MOD+Shift+e exits; so does Ctrl+C (the VT turns
@@ -48,10 +49,9 @@ glyph OPEN_OR_DIE = la path.
         error(concat(concat("wm: cannot open ")(path))
             (concat(" (open -> ")(concat(fd)("): need read permission on /dev/input; run as root")))))
     (la _. fd))(open(path)("0"))
-glyph STRIP_NL = Z(la self. la s.
-    IF(str_eq(s)(""))(la _. "")(la _.
-      (la c. IF(str_eq(c)("\n"))(la _. self(str_tail(s)))(la _. concat(c)(self(str_tail(s)))))
-      (str_head(s))))
+# the directory new shells start in: wm_livestart.la's CWD_KIT (the first line
+# of logos_wm.cwd, trimmed; "/" when that is empty or not a directory)
+glyph CWD = CWD_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(stat)
 glyph SCALE_FOR = la w. IF(lt(w)(1920))(la _. 1)(la _. IF(lt(w)(3840))(la _. 2)(la _. 4))
 
 glyph MAIN =
@@ -76,6 +76,6 @@ glyph MAIN =
                   (concat(", keyboard /dev/input/event")(kbd))))))))
             (str_to_int(w0))(str_to_int(w1))(str_to_int(w2))))))
           (WM_SPLIT(B)(WM_LISTS(B))(drm_mode("!"))))
-        ((la c. IF(str_eq(c)(""))(la _. "/")(la _. c))(STRIP_NL(read_file("logos_wm.cwd")))))
+        (CWD(read_file("logos_wm.cwd"))))
         (OPEN_OR_DIE(concat("/dev/input/event")(kbd)))))
   (DETECT(read_file("/proc/bus/input/devices")))
