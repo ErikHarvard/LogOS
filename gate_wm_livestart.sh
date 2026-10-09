@@ -20,8 +20,10 @@
 #      /dev/input/event3: it opens the keyboard (event3, not the mouse's
 #      event5) and gets as far as drm_mode, where it halts loudly as it must
 #      with no GPU (rc 1, a drm message)
+#   5  the same, with no /dev/input/event3 at all: it halts saying there is no
+#      such device (not that it needs root, which it already is)
 #
-# ISOLATION: a private temporary directory (gate_wm_common.sh); check 3 needs
+# ISOLATION: a private temporary directory (gate_wm_common.sh); checks 4-5 need
 # unshare -m (root) and is skipped with a NOTE without it. A few minutes,
 # mostly compiling the live WM on the VM.
 set -uo pipefail
@@ -130,6 +132,15 @@ if unshare -m true 2>/dev/null; then
             echo "PASS  wm livestart: 4 the live entry opens the keyboard (event3, not the mouse) and halts at drm_mode with no GPU: $(head -c 120 "$T/live.err")"
         else
             echo "FAIL  wm livestart: 4 the live entry: rc=$lrc"; echo "      stderr: $(head -c 300 "$T/live.err")"; echo "      stdout: $(head -c 200 "$T/live.out")"; ok=0
+        fi
+        lrc=0
+        ( cd "$T" && timeout 120 unshare -m --propagation private sh -c "
+            mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
+            && mkdir /dev/input && exec ./logos_secd" >"$T/live2.out" 2>"$T/live2.err" ) || lrc=$?
+        if [ "$lrc" = 1 ] && grep -q "event3 (open -> -2): no such device" "$T/live2.err" && ! grep -q "run as root" "$T/live2.err"; then
+            echo "PASS  wm livestart: 5 no device node: it says so ($(head -c 120 "$T/live2.err"))"
+        else
+            echo "FAIL  wm livestart: 5 no device node: rc=$lrc; stderr: $(head -c 300 "$T/live2.err")"; ok=0
         fi
     else
         echo "FAIL  wm livestart: 4 theourgia_wm_live.la did not compile: $(tail -2 "$T/vce")"; ok=0

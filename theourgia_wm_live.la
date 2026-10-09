@@ -47,7 +47,10 @@ glyph DETECT = KBD_KIT(Z)(str_at)(str_len)(ord)(str_to_int)(add)(sub)(lt)(int_eq
 glyph OPEN_OR_DIE = la path.
     (la fd. IF(str_eq(str_head(fd))("-"))(la _.
         error(concat(concat("wm: cannot open ")(path))
-            (concat(" (open -> ")(concat(fd)("): need read permission on /dev/input; run as root")))))
+            (concat(" (open -> ")(concat(fd)(concat("): ")(
+              IF(str_eq(fd)("-2"))(la _. "no such device: the keyboard found in /proc/bus/input/devices has no node in /dev/input")
+                (la _. IF(str_eq(fd)("-13"))(la _. "need read permission on /dev/input; run as root")
+                         (la _. "the keyboard's device cannot be read"))))))))
     (la _. fd))(open(path)("0"))
 # the directory new shells start in: wm_livestart.la's CWD_KIT (the first line
 # of logos_wm.cwd, trimmed; "/" when that is empty or not a directory)
