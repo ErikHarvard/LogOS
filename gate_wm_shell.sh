@@ -85,11 +85,12 @@
 # stdin, and kills its process group on a timeout so no job outlives a failure.
 #
 # ISOLATION: a private temporary directory (gate_wm_common.sh); touches no
-# tracked file. Measured: 281 s on a 4-CPU machine at load 13 (other jobs
-# running), 100 s of it without the toolchain build (LOGOS_WM_TOOLS). Most of
-# the rest is the host's part of check 1 (about a second an operation there)
-# and the VM compiles; the session itself takes ~10 s, mostly its deliberate
-# sleeps.
+# tracked file (2c makes $T traversable, mode 711, for uid 65534). Measured:
+# 347 s on a 4-CPU machine at load 20 (other jobs running), the toolchain
+# build included (LOGOS_WM_TOOLS skips it). Most of it is the build, the
+# host's part of check 1 (about a second an operation there) and the VM
+# compiles; the session takes ~10 s, mostly its deliberate sleeps, and the
+# runs of 2b and 2c about a second each.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
