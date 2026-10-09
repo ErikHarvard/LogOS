@@ -1,0 +1,361 @@
+# ═══════════════════════════════════════════════════════════════════
+#  x25519.la — X25519_KIT: RFC 7748 X25519 Diffie-Hellman (NET_DESIGN.md 1).
+#
+#  WHAT. The one public-key primitive LogosNet needs: Curve25519's
+#  x-coordinate scalar multiplication, the function X25519 of RFC 7748
+#  section 5, and its two uses in section 6.1.
+#
+#      X25519_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
+#                (error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#        -> la s. s(scalarmult)(public)(shared)
+#
+#    scalarmult(k)(u)  k and u are 32-byte strings; the result is the 32-byte
+#                      u-coordinate of k * u. k is clamped (k[0] &= 248,
+#                      k[31] &= 127, k[31] |= 64); u is read little-endian
+#                      with its top bit masked, and a non-canonical u >= p is
+#                      accepted as the RFC requires; the result is fully
+#                      reduced mod p = 2^255 - 19. Any other length halts:
+#                      "x25519: scalarmult: key and point must be 32 bytes".
+#    public(sk)        scalarmult(sk)(9): the public key of sk.
+#    shared(sk)(pk)    an option, la none. la some. ...: none(none) when the
+#                      result is all zero (pk of small order, RFC 7748 6.1),
+#                      some(secret) otherwise.
+#
+#  The constructor takes the same builtins as logoscrypt.la's CRYPT_FAST, in
+#  the same order.
+#
+#  HOW IT IS USED. Build the record ONCE at startup and pass it on as a value:
+#      import("x25519.la")
+#      ... X25519_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)
+#                    (str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)
+#                    (bxor)(bshl)(bshr)
+#            (la scalarmult. la public. la shared. ...)
+#
+#  THE FIELD. An element of GF(p) is a record of ten limbs la k. k(f0)..(f9)
+#  in radix 2^25.5, as in ref10: limb i is weighted 2^w(i), w(i) = ceil(25.5 i)
+#  = 0 26 51 77 102 128 153 179 204 230, and is 26 bits wide for even i, 25
+#  for odd. Limbs are NON-NEGATIVE native integers: the VM's bshr is a
+#  logical shift, so a carry is a plain shift and mask, and a difference
+#  x - y is computed as x + 2p - y.
+#
+#  WHY EVERY INTERMEDIATE FITS A SIGNED 64-BIT INTEGER (gate_x25519.sh
+#  recomputes these numbers, and runs the kernels on operands at the limits).
+#   - "Carried" is what the carry chain returns: limbs below 2^26 (even) and
+#     2^25 (odd), except that limb 1 may exceed 2^25 - 1 by at most 1711.
+#   - The ladder multiplies only three classes of operand: carried; a sum of
+#     two carried elements (limbs below twice the carried bound); and a
+#     difference x + 2p - y of two carried elements (limbs below the carried
+#     bound plus 2p's limb, about 3 x 2^26 and 3 x 2^25). A difference never
+#     goes negative: every carried limb is at most 2p's (2^27-38, then
+#     2^26-2 for odd limbs, 2^27-2 for even).
+#   - Column k of a product is the sum of f_i g_j over i+j = k plus 19 times
+#     the sum over i+j = k+10, each term doubled when i and j are both odd
+#     (2^w(i) 2^w(j) = 2 * 2^w(i+j) then; 2^255 = 19 mod p). Its largest
+#     value, for two differences, is 5.046e18 = 2^62.13 < 2^63 = 9.223e18;
+#     difference x sum gives 2^61.55, sum x sum 2^60.96, carried x carried
+#     2^58.96. A kernel adds non-negative terms, so every partial sum and
+#     every scaled group is below its column.
+#   - The carry chain (t1 = h1 + h0>>26, t2 = h2 + t1>>25, ..., t9 = h9 +
+#     t8>>26, u0 = (h0 & M26) + 19 (t9>>25), limb 1 = (t1 & M25) + u0>>26)
+#     stays below 2^62.13 + 2^37; with the column bounds above, u0>>26 is at
+#     most 1711, which is where the carried bound of limb 1 comes from.
+#   - T = AA + 121665 E (E a difference) has limbs below 2^44.5, and is
+#     carried before it is multiplied.
+#   - A carried element is below 2^255 + 2^37 < 2p, so the final reduction
+#     is one conditional subtraction of p, done without a branch: q = 1 iff
+#     v >= p is the carry out of v + 19, then v + 19q with bit 255 dropped.
+#
+#  THE LADDER (RFC 7748 section 5). 255 steps, bit 254 down to bit 0, with
+#  the same operations for every bit: nothing branches on a key bit. The RFC
+#  swaps (x2,z2) and (x3,z3) when the bit changes, then doubles slot 2 and
+#  adds the two slots. Here the swap is an arithmetic SELECT of the slot to
+#  double, (f & ~m) | (g & m) limb by limb, with m = 0 or -1 from
+#  c = k[t+1] xor k[t] (k[255] = 0), exactly the RFC's swap bit. The
+#  differential addition (x3 = (DA+CB)^2, z3 = x1 (DA-CB)^2) needs no swap:
+#  exchanging the two slots exchanges DA and CB, which only changes the sign
+#  of DA-CB, and that is squared. After bit 0 the result's slot is selected
+#  with k[0] (the RFC's final cswap), and x2 * z2^(p-2) (ref10's chain:
+#  254 squarings and 11 multiplications) is fully reduced and encoded.
+#  a24 = 121665, in z2 = E (AA + a24 E).
+#
+#  WHY IT IS FAST. On the SECD VM (WM_DESIGN.md "How fast the VM is",
+#  confirmed here): every name bound over a body costs one more scan of that
+#  body (CLOSE scans what it closes, about a nanosecond a byte); looking a
+#  name up walks the environment cell by cell (about 3.5 ns a cell); naming
+#  a glyph or a builtin walks the program. So:
+#   - the field operations are straight-line kernels (the generated section
+#     below), glyphs whose parameters are the builtins and constants they
+#     use, applied once when the kit is built, with one-letter names so the
+#     scanned text is short;
+#   - in the 10x10 multiplication the first operand's limbs arrive as the
+#     partial applications mul(f_i) (X25519_TOPA), so each of its 100
+#     products is a single application f_i(g_j), and add, used 90 times, is
+#     its LAST parameter, the first name a lookup finds (likewise mul and
+#     add in the squaring, and the select masks in the select);
+#   - sums, differences and selects are lazy records: their limbs are
+#     computed when the next kernel reads them;
+#   - constants are parameters; booleans are applied to thunks.
+#
+#  THE GENERATED SECTION. X25519_MULC, X25519_SQC, X25519_CARRY, X25519_TOPA,
+#  X25519_L2, X25519_SQSEL, X25519_SEL and X25519_ETK are written by
+#  x25519_gen.la, a Lingua Adamica program committed beside this file;
+#  gate_x25519.sh regenerates them and requires the same bytes.
+#
+#  MEASURED on the VM, CPU time inside the program (gate_x25519.sh), on a
+#  4-core machine at load average 8 to 16: one scalarmult, public or shared
+#  about 0.10 s of CPU (0.26 to 0.30 s of wall time at that load); one ladder
+#  step about 0.4 ms; within it a multiplication about 37 us and a squaring
+#  about 23 us, each including its 8 us carry. Building the kit takes about
+#  1 ms. The C host needs about two minutes for one scalarmult.
+#
+#  ENGINES. Pure Lingua Adamica over the int and bitwise builtins, so the C
+#  host gives the same bytes (the gate runs one scalarmult there), some
+#  hundreds of times more slowly; the VM is the engine.
+#
+#  HONESTLY OUT OF SCOPE
+#   - Constant time. No branch depends on a secret bit and the zero test in
+#     shared has no early exit, but the VM interprets and allocates: no
+#     timing claim is made about this engine.
+#   - Validation beyond RFC 7748 6.1's all-zero check (X25519 needs none).
+#   - Signatures (Ed25519): NET_DESIGN.md, "Out of scope now".
+# ═══════════════════════════════════════════════════════════════════
+
+export X25519_KIT
+
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# ── the field kernels ───────────────────────────────────────────────────
+# MULC(u t w K)(a..j)(A..J)(p): the product's ten columns to K (the carry);
+#   a..j are mul(f_i), A..J the second operand's limbs, u t w = x2 x19 x38.
+# SQC(u q t w o K)(a..j)(m)(p): the square's columns to K; u q t w o = x2 x4
+#   x19 x38 x76.
+# CARRY(p r n m t S s)(h0..h9): the carried record (r = bshr, n m the 26- and
+#   25-bit masks, t = x19, S s = 26 25).
+# TOPA(m)(X)(K): K applied to mul(x_i) for X's limbs.
+# L2(p s Q O R)(a..j)(A..J)(K): K(a+A)(a-A+2p), both lazy records.
+# SQSEL(z m p)(a..j)(A..J)(o n y): the square of the select, through z.
+# SEL(a..j)(A..J)(o n y): the select as a lazy record; o = bor.
+# ETK(p s v m Q O R K z)(a..j)(A..J): z(E)(K(T)), E = a - A + 2p as mul
+#   partials, T = a + 121665 E (v = x121665) through the carry K.
+# >>> generated by x25519_gen.la (do not edit by hand)
+glyph X25519_MULC = la u. la t. la w. la K.
+    la a. la b. la c. la d. la e. la f. la g. la h. la i. la j.
+    la A. la B. la C. la D. la E. la F. la G. la H. la I. la J. la p. K
+  (p(p(a(A))(t(p(p(p(c(I))(e(G)))(g(E)))(i(C)))))(w(p(p(p(p(b(J))(d(H)))(f(F)))(h(D)))(j(B)))))
+  (p(p(a(B))(b(A)))(t(p(p(p(p(p(p(p(c(J))(d(I)))(e(H)))(f(G)))(g(F)))(h(E)))(i(D)))(j(C)))))
+  (p(p(p(p(a(C))(c(A)))(u(b(B))))(t(p(p(e(I))(g(G)))(i(E)))))(w(p(p(p(d(J))(f(H)))(h(F)))(j(D)))))
+  (p(p(p(p(a(D))(b(C)))(c(B)))(d(A)))(t(p(p(p(p(p(e(J))(f(I)))(g(H)))(h(G)))(i(F)))(j(E)))))
+  (p(p(p(p(p(a(E))(c(C)))(e(A)))(u(p(b(D))(d(B)))))(t(p(g(I))(i(G)))))(w(p(p(f(J))(h(H)))(j(F)))))
+  (p(p(p(p(p(p(a(F))(b(E)))(c(D)))(d(C)))(e(B)))(f(A)))(t(p(p(p(g(J))(h(I)))(i(H)))(j(G)))))
+  (p(p(p(p(p(p(a(G))(c(E)))(e(C)))(g(A)))(u(p(p(b(F))(d(D)))(f(B)))))(t(i(I))))(w(p(h(J))(j(H)))))
+  (p(p(p(p(p(p(p(p(a(H))(b(G)))(c(F)))(d(E)))(e(D)))(f(C)))(g(B)))(h(A)))(t(p(i(J))(j(I)))))
+  (p(p(p(p(p(p(a(I))(c(G)))(e(E)))(g(C)))(i(A)))(u(p(p(p(b(H))(d(F)))(f(D)))(h(B)))))(w(j(J))))
+  (p(p(p(p(p(p(p(p(p(a(J))(b(I)))(c(H)))(d(G)))(e(F)))(f(E)))(g(D)))(h(C)))(i(B)))(j(A)))
+glyph X25519_SQC = la u. la q. la t. la w. la o. la K.
+    la a. la b. la c. la d. la e. la f. la g. la h. la i. la j. la m. la p. K
+  (p(p(m(a)(a))(w(p(p(m(c)(i))(m(e)(g)))(m(f)(f)))))(o(p(m(b)(j))(m(d)(h)))))
+  (p(u(m(a)(b)))(w(p(p(p(m(c)(j))(m(d)(i)))(m(e)(h)))(m(f)(g)))))
+  (p(p(p(u(p(m(a)(c))(m(b)(b))))(t(m(g)(g))))(w(m(e)(i))))(o(p(m(d)(j))(m(f)(h)))))
+  (p(u(p(m(a)(d))(m(b)(c))))(w(p(p(m(e)(j))(m(f)(i)))(m(g)(h)))))
+  (p(p(p(p(m(c)(c))(u(m(a)(e))))(q(m(b)(d))))(w(p(m(g)(i))(m(h)(h)))))(o(m(f)(j))))
+  (p(u(p(p(m(a)(f))(m(b)(e)))(m(c)(d))))(w(p(m(g)(j))(m(h)(i)))))
+  (p(p(p(u(p(p(m(a)(g))(m(c)(e)))(m(d)(d))))(q(m(b)(f))))(t(m(i)(i))))(o(m(h)(j))))
+  (p(u(p(p(p(m(a)(h))(m(b)(g)))(m(c)(f)))(m(d)(e))))(w(m(i)(j))))
+  (p(p(p(m(e)(e))(u(p(m(a)(i))(m(c)(g)))))(q(p(m(b)(h))(m(d)(f)))))(w(m(j)(j))))
+  (u(p(p(p(p(m(a)(j))(m(b)(i)))(m(c)(h)))(m(d)(g)))(m(e)(f))))
+glyph X25519_CARRY = la p. la r. la n. la m. la t. la S. la s.
+    la a. la b. la c. la d. la e. la f. la g. la h. la i. la j.
+  (la B. (la C. (la D. (la E. (la F. (la G. (la H. (la I. (la J. (la A.
+    la k. k(n(A))(p(m(B))(r(A)(S)))(n(C))(m(D))(n(E))(m(F))(n(G))(m(H))(n(I))(m(J)))
+    (p(n(a))(t(r(J)(s)))))
+    (p(j)(r(I)(S))))
+    (p(i)(r(H)(s))))
+    (p(h)(r(G)(S))))
+    (p(g)(r(F)(s))))
+    (p(f)(r(E)(S))))
+    (p(e)(r(D)(s))))
+    (p(d)(r(C)(S))))
+    (p(c)(r(B)(s))))
+  (p(b)(r(a)(S)))
+glyph X25519_TOPA = la m. la X. la K.
+  X(la a. la b. la c. la d. la e. la f. la g. la h. la i. la j. K(m(a))(m(b))(m(c))(m(d))(m(e))(m(f))(m(g))(m(h))(m(i))(m(j)))
+glyph X25519_L2 = la p. la s. la Q. la O. la R.
+    la a. la b. la c. la d. la e. la f. la g. la h. la i. la j.
+    la A. la B. la C. la D. la E. la F. la G. la H. la I. la J. la K.
+  K(la k. k(p(a)(A))(p(b)(B))(p(c)(C))(p(d)(D))(p(e)(E))
+           (p(f)(F))(p(g)(G))(p(h)(H))(p(i)(I))(p(j)(J)))
+   (la k. k(s(p(a)(Q))(A))(s(p(b)(O))(B))(s(p(c)(R))(C))(s(p(d)(O))(D))(s(p(e)(R))(E))
+           (s(p(f)(O))(F))(s(p(g)(R))(G))(s(p(h)(O))(H))(s(p(i)(R))(I))(s(p(j)(O))(J)))
+glyph X25519_SQSEL = la z. la m. la p.
+    la a. la b. la c. la d. la e. la f. la g. la h. la i. la j.
+    la A. la B. la C. la D. la E. la F. la G. la H. la I. la J. la o. la n. la y.
+  z(o(n(a))(y(A)))(o(n(b))(y(B)))(o(n(c))(y(C)))(o(n(d))(y(D)))(o(n(e))(y(E)))
+   (o(n(f))(y(F)))(o(n(g))(y(G)))(o(n(h))(y(H)))(o(n(i))(y(I)))(o(n(j))(y(J)))(m)(p)
+glyph X25519_SEL =
+    la a. la b. la c. la d. la e. la f. la g. la h. la i. la j.
+    la A. la B. la C. la D. la E. la F. la G. la H. la I. la J. la o. la n. la y.
+  la k. k(o(n(a))(y(A)))(o(n(b))(y(B)))(o(n(c))(y(C)))(o(n(d))(y(D)))(o(n(e))(y(E)))
+       (o(n(f))(y(F)))(o(n(g))(y(G)))(o(n(h))(y(H)))(o(n(i))(y(I)))(o(n(j))(y(J)))
+glyph X25519_ETK = la p. la s. la v. la m. la Q. la O. la R. la K. la z.
+    la a. la b. la c. la d. la e. la f. la g. la h. la i. la j.
+    la A. la B. la C. la D. la E. la F. la G. la H. la I. la J.
+  z(la k. k(m(s(p(a)(Q))(A)))(m(s(p(b)(O))(B)))(m(s(p(c)(R))(C)))(m(s(p(d)(O))(D)))(m(s(p(e)(R))(E)))
+         (m(s(p(f)(O))(F)))(m(s(p(g)(R))(G)))(m(s(p(h)(O))(H)))(m(s(p(i)(R))(I)))(m(s(p(j)(O))(J))))
+   (K(p(a)(v(s(p(a)(Q))(A))))(p(b)(v(s(p(b)(O))(B))))(p(c)(v(s(p(c)(R))(C))))(p(d)(v(s(p(d)(O))(D))))(p(e)(v(s(p(e)(R))(E))))
+     (p(f)(v(s(p(f)(O))(F))))(p(g)(v(s(p(g)(R))(G))))(p(h)(v(s(p(h)(O))(H))))(p(i)(v(s(p(i)(R))(I))))(p(j)(v(s(p(j)(O))(J)))))
+# <<< end of generated section
+
+# ── the ladder step ────────────────────────────────────────────────────
+# One step of the Montgomery ladder. st = la k. k(X)(Z)(U)(W): slot 2 is
+# (X, Z) (the point the previous step doubled), slot 3 is (U, W); ny =
+# la k. k(n)(y), n = band(~m) and y = band(m) for this bit's select mask m.
+#   A = X+Z, B = X-Z, C = U+W, D = U-W                         (l2, lazy)
+#   AA = sel(A,C)^2, BB = sel(B,D)^2: the slot to double         (sqsel)
+#   DA = D*A, CB = C*B; P = DA+CB, M = DA-CB                    (mulc, l2)
+#   the new slot 2 = (AA*BB, E*(AA + a24 E)), E = AA-BB         (mulc, etk)
+#   the new slot 3 = (P^2, x1 M^2)                               (sqc, mulx)
+# The differential addition is symmetric in the two slots, so only the
+# doubling needs the select. The new state's four fields are computed when
+# the next step reads them (each is read once).
+glyph X25519_STEP = la l2. la sqsel. la topa. la mulc. la etk. la sqc. la add. la mul. la bor. la mulx. la ny. la st.
+  ny(la n. la y. st(la X. la Z. la U. la W.
+    Z(X(l2))(la A. la B.
+    W(U(l2))(la C. la D.
+    (la AA. la BB. la DA. la CB.
+       CB(DA(l2))(la P. la M.
+         la k. k(BB(topa(AA)(mulc))(add))(BB(AA(etk)))(P(sqc)(mul)(add))(M(sqc)(mul)(add)(mulx)(add))))
+    (C(A(sqsel))(bor)(n)(y))(D(B(sqsel))(bor)(n)(y))(A(topa(D)(mulc))(add))(B(topa(C)(mulc))(add))))))
+
+# ── the kit ────────────────────────────────────────────────────────────
+# X25519_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
+#           (add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#   -> la s. s(scalarmult)(public)(shared)
+# Everything below the parameter list runs once, when the record is built:
+# the constants, the kernels applied to their builtins, the helpers.
+glyph X25519_KIT = la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la error.
+    la add. la sub. la mul. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+ (la C0. la C1. la C2. la C3. la C4. la C5. la C6. la C7. la C8. la C9. la C10. la C12. la C16. la C19. la C20.
+  la C22. la C24. la C25. la C26. la C28. la C31. la C32. la C38. la C50. la C64. la C76. la C100. la C127.
+  la C248. la C255. la M25. la M26. la Q2. la O2. la R2. la A24.
+  LET(Z)(la fix.
+  # the kernels; Q2 O2 R2 are 2p's limbs (limb 0, odd limbs, even limbs >= 2)
+  LET(X25519_CARRY(add)(bshr)(band(M26))(band(M25))(mul(C19))(C26)(C25))(la carry.
+  LET(X25519_MULC(mul(C2))(mul(C19))(mul(C38))(carry))(la mulc.
+  LET(X25519_SQC(mul(C2))(mul(C4))(mul(C19))(mul(C38))(mul(C76))(carry))(la sqc.
+  LET(X25519_TOPA(mul))(la topa.
+  LET(X25519_L2(add)(sub)(Q2)(O2)(R2))(la l2.
+  LET(X25519_SQSEL(sqc)(mul)(add))(la sqsel.
+  LET(X25519_SEL)(la sel.
+  LET(X25519_ETK(add)(sub)(mul(A24))(mul)(Q2)(O2)(R2)(carry)(la E. la T. T(E(mulc))(add)))(la etk.
+  LET(X25519_STEP(l2)(sqsel)(topa)(mulc)(etk)(sqc)(add)(mul)(bor))(la step.
+  # field multiplication and squaring of records, both carried
+  LET(la F. la G. G(topa(F)(mulc))(add))(la fmul.
+  LET(la F. F(sqc)(mul)(add))(la sq.
+  LET(la n. la F. fix(la go. la n. la F. int_eq(n)(C0)(la _. F)(la _. go(sub(n)(C1))(sq(F)))(C0))(n)(F))(la sqn.
+  # z^(p-2) = z^(2^255 - 21): ref10's chain, 254 squarings and 11 multiplications
+  LET(la z. (la z2. (la z9. (la z11. (la a5. (la a10. (la a20. (la a40. (la a50. (la a100. (la a200. (la a250.
+                 fmul(sqn(C5)(a250))(z11))
+               (fmul(sqn(C50)(a200))(a50)))
+               (fmul(sqn(C100)(a100))(a100)))
+               (fmul(sqn(C50)(a50))(a50)))
+               (fmul(sqn(C10)(a40))(a10)))
+               (fmul(sqn(C20)(a20))(a20)))
+               (fmul(sqn(C10)(a10))(a10)))
+               (fmul(sqn(C5)(a5))(a5)))
+               (fmul(sq(z11))(z9)))
+               (fmul(z9)(z2)))
+               (fmul(z)(sq(sq(z2)))))
+             (sq(z)))(la inv.
+  LET(la n. chr(int_to_str(n)))(la T.
+  LET(la s. str_to_int(str_len(s)))(la len.
+  # u (32 bytes) -> limbs: limb k is bits w(k)..w(k+1)-1 of the little-endian
+  # number, read from the 32-bit word at byte w(k)/8 (w(k) mod 8 plus the
+  # width never exceeds 32); limb 9 stops at bit 254, so bit 255 is masked
+  LET(la s. (la sa. (la b. (la w.
+       la k. k(band(w(C0))(M26))(band(bshr(w(C3))(C2))(M25))(band(bshr(w(C6))(C3))(M26))
+              (band(bshr(w(C9))(C5))(M25))(band(bshr(w(C12))(C6))(M26))(band(w(C16))(M25))
+              (band(bshr(w(C19))(C1))(M26))(band(bshr(w(C22))(C3))(M25))(band(bshr(w(C25))(C4))(M26))
+              (band(bshr(w(C28))(C6))(M25)))
+     (la o. bor(bor(b(o))(bshl(b(add(o)(C1)))(C8)))(bor(bshl(b(add(o)(C2)))(C16))(bshl(b(add(o)(C3)))(C24)))))
+     (la i. str_to_int(ord(sa(i)))))
+     (str_at(s)))(la decode.
+  # the scalar: byte i clamped (k[0] & 248, k[31] & 127 | 64, by index, not
+  # by value), bit t, and per step the select pair la k. k(band(c-1))(band(-c))
+  # for c = bit(t+1) xor bit(t), t = 254 first; with the pair for bit 0,
+  # which selects the result: la k. k(pairs)(pair0)
+  LET(la s. (la sa. (la cb. (la bit. (la pr.
+       (la ms. la k. k(ms)(pr(bit(C0))))
+       (fix(la go. la t. la acc.
+           lt(t)(C255)
+             (la _. go(add(t)(C1))((la h. la n. la c. c(h)(acc))(pr(bxor(bit(add(t)(C1)))(bit(t))))))
+             (la _. acc)
+             (C0))
+         (C0)(la n. la c. n(n))))
+     (la c. la k. k(band(sub(c)(C1)))(band(sub(C0)(c)))))
+     (la t. band(bshr(cb(bshr(t)(C3)))(band(t)(C7)))(C1)))
+     (la i. bor(band(str_to_int(ord(sa(i))))(int_eq(i)(C0)(C248)(int_eq(i)(C31)(C127)(C255))))(int_eq(i)(C31)(C64)(C0))))
+     (str_at(s)))(la scalar.
+  # full reduction of a carried element (below 2^255 + 2^37 < 2p): q = 1 iff
+  # v >= p, found as the carry out of v + 19; then v + 19q with bit 255 dropped
+  LET(la R. R(la a. la b. la c. la d. la e. la f. la g. la h. la i. la j.
+       (la q. (la A. (la B. (la C. (la D. (la E. (la F. (la G. (la H. (la I. (la J.
+              la k. k(band(A)(M26))(band(B)(M25))(band(C)(M26))(band(D)(M25))(band(E)(M26))
+                     (band(F)(M25))(band(G)(M26))(band(H)(M25))(band(I)(M26))(band(J)(M25)))
+              (add(j)(bshr(I)(C26))))
+              (add(i)(bshr(H)(C25))))
+              (add(h)(bshr(G)(C26))))
+              (add(g)(bshr(F)(C25))))
+              (add(f)(bshr(E)(C26))))
+              (add(e)(bshr(D)(C25))))
+              (add(d)(bshr(C)(C26))))
+              (add(c)(bshr(B)(C25))))
+              (add(b)(bshr(A)(C26))))
+              (add(a)(mul(C19)(q))))
+       (bshr(add(j)(bshr(add(i)(bshr(add(h)(bshr(add(g)(bshr(add(f)(bshr(add(e)(bshr(add(d)(bshr(add(c)(bshr(add(b)(
+          bshr(add(a)(C19))(C26)))(C25)))(C26)))(C25)))(C26)))(C25)))(C26)))(C25)))(C26)))(C25))))(la freduce.
+  # exact limbs -> 32 bytes little-endian: limbs go into a bit accumulator
+  # (at most 33 bits wide), whole bytes come out
+  LET(la R. R(la a. la b. la c. la d. la e. la f. la g. la h. la i. la j.
+       fix(la go. la ls. la acc. la nb.
+          lt(nb)(C8)
+            (la _. ls(la _. T(acc))
+                     (la l. la rest. l(la v. la wd. go(rest)(bor(acc)(bshl(v)(nb)))(add(nb)(wd)))))
+            (la _. concat(T(band(acc)(C255)))(go(ls)(bshr(acc)(C8))(sub(nb)(C8))))
+            (C0))
+        ((la P. la Cn. Cn(P(a)(C26))(Cn(P(b)(C25))(Cn(P(c)(C26))(Cn(P(d)(C25))(Cn(P(e)(C26))
+              (Cn(P(f)(C25))(Cn(P(g)(C26))(Cn(P(h)(C25))(Cn(P(i)(C26))(Cn(P(j)(C25))(la n. la c. n(n))))))))))))
+           (la x. la y. la k. k(x)(y))(la h. la t. la n. la c. c(h)(t)))
+        (C0)(C0)))(la encode.
+  LET(la k. k(C0)(C0)(C0)(C0)(C0)(C0)(C0)(C0)(C0)(C0))(la ZERO.
+  LET(la k. k(C1)(C0)(C0)(C0)(C0)(C0)(C0)(C0)(C0)(C0))(la ONE.
+  LET(fix(la go. la n. int_eq(n)(C0)(la _. "")(la _. concat(T(C0))(go(sub(n)(C1))))(C0)))(la zeros.
+  # scalarmult: slot 2 starts at (1, 0), slot 3 at (u, 1); x1 * Y is the
+  # multiplication with x1's partials applied once (mulx)
+  LET(la k. la u.
+     int_eq(len(k))(C32)(la _. int_eq(len(u))(C32)(la _.
+       (la X1. scalar(k)(la ms. la y0.
+          (la stp.
+             (fix(la go. la ys. la st. ys(la _. st)(la y. la rest. go(rest)(stp(y)(st)))))
+               (ms)(la k. k(ONE)(ZERO)(X1)(ONE))
+               (la X. la Z. la U. la W.
+                  (la x2. la z2. encode(freduce(fmul(x2)(inv(z2)))))
+                  (y0(la n. la y. U(X(sel))(bor)(n)(y)))(y0(la n. la y. W(Z(sel))(bor)(n)(y)))))
+          (step(topa(X1)(mulc)))))
+       (decode(u)))
+     (la _. error("x25519: scalarmult: key and point must be 32 bytes"))(C0))
+     (la _. error("x25519: scalarmult: key and point must be 32 bytes"))(C0))(la scalarmult.
+  LET(concat(T(C9))(zeros(C31)))(la nine.
+  LET(la sk. scalarmult(sk)(nine))(la public.
+  # shared: none when the result is all zero; its bytes are OR-ed together
+  # (no early exit) rather than compared
+  LET(la sk. la pk. (la r. (la sa.
+         int_eq(fix(la go. la i. la acc. lt(i)(C32)(la _. go(add(i)(C1))(bor(acc)(str_to_int(ord(sa(i))))))(la _. acc)(C0))
+                   (C0)(C0))(C0)
+           (la _. la none. la some. none(none))(la _. la none. la some. some(r))(C0))
+       (str_at(r)))
+     (scalarmult(sk)(pk)))(la shared.
+    la s. s(scalarmult)(public)(shared)
+  ))))))))))))))))))))))))))))
+ (0)(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)(12)(16)(19)(20)(22)(24)(25)(26)(28)(31)(32)(38)(50)(64)(76)(100)(127)
+ (248)(255)(33554431)(67108863)(134217690)(67108862)(134217726)(121665)
