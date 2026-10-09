@@ -167,22 +167,31 @@ KEYCONST = dict(KEY_ESC=1, KEY_MINUS=12, KEY_EQUAL=13, KEY_BACKSPACE=14, KEY_TAB
 
 # ── LA code generation ──
 def lit(b):
-    """an LA expression whose value is the byte string b"""
+    """an LA expression whose value is the byte string b: printable bytes,
+    \\n and \\t inside string literals; a run of four or more of one other
+    byte as RPT(k)(chr("x")); any other byte as chr("x")"""
     pieces = []
     run = bytearray()
-    for x in b:
-        if 32 <= x <= 126:
-            run.append(x)
-        else:
-            if run:
-                pieces.append(bytes(run)); run = bytearray()
-            pieces.append(x)
+    i = 0
+    while i < len(b):
+        x = b[i]
+        if 32 <= x <= 126 or x in (9, 10):
+            run.append(x); i += 1
+            continue
+        if run:
+            pieces.append(bytes(run)); run = bytearray()
+        j = i
+        while j < len(b) and b[j] == x:
+            j += 1
+        k = j - i if j - i >= 4 else 1
+        pieces.append((x, k)); i += k
     if run:
         pieces.append(bytes(run))
     def one(p):
-        if isinstance(p, int):
-            return 'chr("%d")' % p
-        return '"' + p.decode().replace("\\", "\\\\").replace('"', '\\"') + '"'
+        if isinstance(p, tuple):
+            return 'RPT(%d)(chr("%d"))' % (p[1], p[0]) if p[1] > 1 else 'chr("%d")' % p[0]
+        return '"' + (p.decode().replace("\\", "\\\\").replace('"', '\\"')
+                      .replace("\n", "\\n").replace("\t", "\\t")) + '"'
     def bal(ps):
         if not ps:
             return '""'
@@ -201,6 +210,8 @@ def num(k):
 PRELUDE = '''import("theourgia_term.la")
 glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
+# RPT(n)(s): n copies of s (doubling)
+glyph RPT = la n. la s. (la r. r(r)(n))(la r. la n. int_eq(n)(0)(la _. "")(la _. (la h. int_eq(mod(n)(2))(0)(concat(h)(h))(concat(s)(concat(h)(h))))(r(r)(div(n)(2))))(0))
 # SHOWROWS(l): print each row as [row], one per line
 glyph SHOWROWS = la l. (la r. r(r)(l))(la r. la l. l(la _. "")(la h. la t. (la _. r(r)(t))(print(concat("[")(concat(h)("]"))))))
 glyph MAIN = TERM_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
