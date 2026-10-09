@@ -45,7 +45,8 @@
 #      SIGTERM in itself, as a WM with a signalfd would, hangup of a job that
 #      has stopped itself (stopme.sh: the SIGTERM stays pending until hangup's
 #      SIGCONT, then its trap exits 7), and finish returning promptly after
-#      each.
+#      each; exited, which never waits, says F while /bin/sleep 30 runs and T
+#      once it has been hung up and has ended.
 #      Then what a WM with several windows does: a job kept running (slow.sh,
 #      which sleeps 2 s holding its pipe) while a second job starts and
 #      finishes, then the first is read and finished; a kept /bin/sleep 30
@@ -372,6 +373,7 @@ pwd
 cd ..
 @int /bin/sleep 30
 @hup /bin/sleep 30
+@exited /bin/sleep 30
 @hup ./stopme.sh
 @bg ./slow.sh
 /bin/echo B
@@ -602,6 +604,10 @@ logos:@W@$ /bin/sleep 30
 logos:@W@$ /bin/sleep 30
 [signal 15]
 ? 143
+logos:@W@$ /bin/sleep 30
+<exited F T>
+[signal 15]
+? 143
 logos:@W@$ ./stopme.sh
 got TERM
 [exit 7]
@@ -676,8 +682,9 @@ glyph SPLITNL = la s. (la n. Z(la go. la i. la lo.
 glyph JOINSP = la l. l(la _. "")(la h. la t. t(la _. h)(la a. la b. concat(h)(concat(" ")(JOINSP(t)))))
 glyph BR = la s. concat("[")(concat(s)("]"))
 # "@MODE CMD": MODE is int / hup (run CMD, wait 300 ms, interrupt / hang it
-# up), bg (start CMD, keep the job), count (report only the byte count of its
-# output); "@fg" / "@fghup" finish the newest kept job (hanging it up first);
+# up), exited (run CMD, print exited(pid), hang it up, wait 300 ms, print
+# exited(pid) again), bg (start CMD, keep the job), count (report only the
+# byte count of its output); "@fg" / "@fghup" finish the newest kept job (hanging it up first);
 # "@sigcheck" prints the signal guards' answers; "@kill PID" prints what
 # interrupt(PID) and hangup(PID) return. Any other line is a command.
 glyph MODE = la line. str_eq(str_at(line)(0))("@")(la _. SUB(line)(1)(FINDSP(line)(0)))(la _. "job")("!")
@@ -691,7 +698,7 @@ glyph MSLINE = la mode. la t0. la t2. la t3. la cmd.
     print(concat("#ms ")(concat(mode)(concat(" ")(concat(int_to_str(sub(t3)(t0)))
       (concat(" finish ")(concat(int_to_str(sub(t3)(t2)))(concat(" ")(cmd))))))))
 glyph MAIN =
-  (la PK. la K. PK(la parse. la norm. K(la new. la prompt. la run. la finish. la interrupt. la hangup.
+  (la PK. la K. PK(la parse. la norm. K(la new. la prompt. la run. la finish. la interrupt. la hangup. la exited.
     (la now.
     # REAP(sh)(pid)(rfd)(mode)(cmd)(t0)(k): drain (or count), close, finish,
     # print the text and the status, then k(sh').
@@ -731,13 +738,18 @@ glyph MAIN =
                      (la _. SEQ(print("<clear>"))(SEQ(STATUS(sh2))(loop(sh2)(bg)(rest))))
                      (la _. SEQ(print("<exit>"))(SEQ(STATUS(sh2))(loop(sh2)(bg)(rest))))
                      (la pid. la rfd. la _.
+                        str_eq(mode)("exited")
+                          (la _. SEQ(print(concat("<exited ")(concat(exited(pid)("T")("F"))
+                                   (concat(" ")(concat(SEQ(hangup(pid))(SEQ(poll("")("300"))(exited(pid)("T")("F"))))(">"))))))
+                                 (REAP(sh2)(pid)(rfd)(mode)(cmd)(t0)(la sh3. loop(sh3)(bg)(rest))))
+                          (la _.
                         str_eq(mode)("bg")
                           (la _. SEQ(print("<bg>"))(loop(sh2)(CONS(la k. k(pid)(rfd)(cmd))(bg))(rest)))
                           (la _.
                             SEQ(str_eq(mode)("int")
                                   (la _. SEQ(poll("")("300"))(interrupt(pid)))
                                   (la _. str_eq(mode)("hup")(la _. SEQ(poll("")("300"))(hangup(pid)))(la _. "")("!"))("!"))(
-                            REAP(sh2)(pid)(rfd)(mode)(cmd)(t0)(la sh3. loop(sh3)(bg)(rest))))("!"))
+                            REAP(sh2)(pid)(rfd)(mode)(cmd)(t0)(la sh3. loop(sh3)(bg)(rest))))("!"))("!"))
                      ("!"))))(now("!"))))(now("!"))))("!"))("!"))("!"))
           (MODE(line))(CMDOF(line))))
       (new("/"))(NIL)(SPLITNL(read_file("script.txt")))))))

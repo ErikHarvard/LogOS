@@ -14,6 +14,13 @@
 #          program in another (Enter): the new program's pipe takes the closed
 #          one's fd number, which poll had just reported ready; the WM must
 #          not then block reading the new, empty pipe
+#   closeout  a program that closes its output and keeps running: its window
+#          stays "[running]" and the WM keeps serving keys meanwhile; when the
+#          program ends, the window shows the prompt again
+#   noterm a program that ignores SIGTERM: MOD+q closes its window at once and
+#          the WM goes on; MOD+Shift+e exits within a few seconds (the program,
+#          which refused to end, is left running and said so: logosh accepts
+#          that a job ignoring SIGTERM survives hangup)
 # Each scenario runs in its own directory with a fresh WM; its log lines are
 # time-stamped by the driver. The bounds are generous (the fixed WM needs a
 # fraction of them), but this is a timing test on a shared machine.
@@ -113,6 +120,43 @@ check("fdreuse: window 2 alone, its program shown running",
       s2 is not None and len(s2) == 1 and "[running] /bin/sh quiet.sh" in s2[0]["title"], str(s2)[:400])
 rc = r.end()
 check("fdreuse: the WM exits 0 on MOD+Shift+e", rc == 0 and "wm: exit" in r.log(), f"rc={rc}; log tail {r.log()[-300:]!r}")
+
+# closeout: output closed, process alive
+r = Run("closeout", {"quiet.sh": "echo going quiet\nexec >/dev/null 2>&1\nsleep 6\n"})
+r.send("snap 1"); r.wait("wm: snap 1", timeout=60)
+r.send("type /bin/sh quiet.sh\\n"); r.wait("$ /bin/sh quiet.sh"); time.sleep(1.5)
+r.send("mod Enter"); opened = r.wait("open window 2", timeout=15)
+r.send("mod Left"); r.send("snap 2"); d2 = r.wait("wm: snap 2", timeout=15)
+s2 = r.shot(2)
+check(f"closeout: MOD+Enter while the quiet program runs is handled at once ({opened} s)",
+      opened is not None and opened < 3, f"open window 2 after {opened} s; log {r.log()[-300:]!r}")
+w1 = [t for t in (s2 or []) if t["title"].startswith(" 1  ")]
+check("closeout: its window still shows the program running", d2 is not None and len(w1) == 1 and "[running] /bin/sh quiet.sh" in w1[0]["title"],
+      str(s2)[:500])
+done = r.wait("wm: [1] done", timeout=20); time.sleep(0.5)
+r.send("snap 3"); r.wait("wm: snap 3", timeout=15)
+s3 = r.shot(3); w1 = [t for t in (s3 or []) if t["title"].startswith(" 1  ")]
+check("closeout: when it ends, the window shows the prompt again",
+      done is not None and len(w1) == 1 and "[running]" not in w1[0]["title"] and "going quiet" in w1[0]["rows"]
+      and w1[0]["rows"][-1].endswith("$ _"), str(s3)[:500])
+rc = r.end()
+check("closeout: the WM exits 0 on MOD+Shift+e", rc == 0 and "wm: exit" in r.log(), f"rc={rc}; log tail {r.log()[-300:]!r}")
+
+# noterm: a program that ignores SIGTERM
+r = Run("noterm", {"noterm.sh": "trap '' TERM\necho ignoring TERM\nwhile :; do /bin/sleep 1; done\n"})
+r.send("snap 1"); r.wait("wm: snap 1", timeout=60)
+r.send("type /bin/sh noterm.sh\\n"); r.wait("$ /bin/sh noterm.sh"); time.sleep(1.5)
+pids = subprocess.run(["pgrep", "-f", "/bin/sh noterm.sh"], capture_output=True, text=True).stdout.split()
+r.send("mod q"); closed = r.wait("close window 1", timeout=15)
+check(f"noterm: MOD+q closes the window at once ({closed} s)", closed is not None and closed < 3, f"log {r.log()[-300:]!r}")
+r.send("mod Enter"); r.send("type echo still here\\n"); alive = r.wait("$ echo still here", timeout=15)
+check(f"noterm: the WM goes on: a new window runs a command ({alive} s)", alive is not None and alive < 3, f"log {r.log()[-300:]!r}")
+t0 = time.time(); rc = r.end(timeout=30); took = round(time.time() - t0, 1)
+check(f"noterm: MOD+Shift+e exits within 10 s ({took} s, rc {rc})", rc == 0 and took < 10 and "wm: exit" in r.log(),
+      f"rc={rc} after {took} s; log tail {r.log()[-300:]!r}")
+left = r.log().split("wm: left running:")[1].split("\n")[0].split() if "wm: left running:" in r.log() else []
+check(f"noterm: the WM says which program it left running ({left})", pids != [] and left == pids, f"pids {pids}; log tail {r.log()[-200:]!r}")
+for p in pids: subprocess.run(["kill", "-9", p])
 sys.exit(bad)
 PYEOF
 if [ "$ok" = 1 ]; then echo "ALL PASS  gate_wm_freeze"; else echo "GATE FAILED  gate_wm_freeze"; exit 1; fi

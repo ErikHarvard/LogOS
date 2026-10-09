@@ -112,7 +112,7 @@ glyph SHSTUB = la s. s(la cwd. cwd)(la sh. concat("logos:")(concat(sh)("$ ")))
       str_eq(line)("clear")(la _. k(sh)("")(la n. la c. la e. la j. c))(la _.
       STARTS(line)("cd ")(la _. k(DROPN(3)(line))("")(la n. la c. la e. la j. n))(la _.
       k(sh)(concat("stub: ")(concat(line)("\n")))(la n. la c. la e. la j. n))("!"))("!"))("!"))("!"))
-   (la sh. la pid. la k. k(sh)(""))(la pid. pid)(la pid. pid)
+   (la sh. la pid. la k. k(sh)(""))(la pid. pid)(la pid. pid)(la pid. la t. la f. t)
 glyph OK  = la x. la err. la ok. ok(x)
 glyph ERR = la x. la err. la ok. err(x)
 glyph SESS = la s. s
@@ -128,7 +128,7 @@ glyph MAIN = (la L. (la TL. (la T.
     (la s. s(key)(focusables)(SETTINGS_APP(B)(L)(nodes)(la init. la view. la update. la theme. la zoom. la s. s(init)(view)(update)(theme)("Settings")(zoom)))
        (la n. la s. s(la k. k(LOGIN_APP(B)(L)(nodes)(SESS))(la t. la f. f))))
     (la s. s(960)(600)(6)("/home"))
-   (la empty. la open_win. la handle. la on_output. la job_fds. la shutdown. la welcome.
+   (la empty. la open_win. la handle. la on_output. la job_fds. la shutdown. la welcome. la reap. la pending.
      (la snap.
         (la st. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
             print(concat("final: quit=")(quit("yes")("no")))))
