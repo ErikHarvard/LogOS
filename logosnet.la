@@ -156,6 +156,17 @@
 #                        itself. err unknown <dest> / err too long / err usage
 #      quit              ok, then it closes everything, removes its two
 #                        socket files and returns
+#      listen <tag>      ok, and the connection stays open: from then on
+#                        each DATA opened here whose text begins with <tag>
+#                        and a space is passed on it as one frame
+#                        "<from> <text>" (from: the sender's NodeID) instead
+#                        of being logged as recv; with several listeners of
+#                        a tag the latest gets it; a listener that cannot
+#                        take a frame (it closed) is closed and that DATA
+#                        logged as recv; anything else it sends is ignored.
+#                        This is how a service runs beside a node in its own
+#                        process (logostorrent.la).
+#                        err usage: listen <tag>
 #  It logs on stdout: "net: up <id>", "net: link <id>" and "net: unlink <id>"
 #  (the first link to a peer and the last), "net: recv <from> <text>" (from
 #  the sender's static key in the Noise_X message; bytes of text outside
@@ -178,7 +189,8 @@
 #     is dropped instead of the process.
 #
 #  HONEST LIMITS. Sends are blocking: a peer that stops reading while its
-#  socket buffer is full stalls the node (no write queue). A control client
+#  socket buffer is full stalls the node (no write queue), and so does a
+#  listener (listen) that stops reading. A control client
 #  that connects and never sends a whole frame keeps its connection open (no
 #  timeout on control connections; the control socket is the node owner's,
 #  under its own file permissions). Without signatures
@@ -555,14 +567,15 @@ glyph NET_KIT = la B. la X. la crypt. la xk.
 #   state la k. k(links)(dir)(seen)(seq)(ctls)(tick)(quit)
 #   seen  la k. k(cur)(old)(n)   the DATA msgids remembered: cur holds the
 #         newest n (at most 4096), old the 4096 before them
-#   ctl   la k. k(fd)(buf)(done) a control connection
+#   ctl   la k. k(fd)(buf)(done)(tag) a control connection; tag is "",
+#         or the tag it listens for (listen)
 glyph NODE_MK = la s. s
   (la fd. la phase. la hs. la tx. la rx. la buf. la peer. la expect. la t0.
      la k. k(fd)(phase)(hs)(tx)(rx)(buf)(peer)(expect)(t0))
   (la id. la pub. la path. la seq. la seen. la k. k(id)(pub)(path)(seq)(seen))
   (la links. la dir. la seen. la seq. la ctls. la tick. la quit. la k. k(links)(dir)(seen)(seq)(ctls)(tick)(quit))
   (la cur. la old. la n. la k. k(cur)(old)(n))
-  (la fd. la buf. la done. la k. k(fd)(buf)(done))
+  (la fd. la buf. la done. la tag. la k. k(fd)(buf)(done)(tag))
   (la a. la b. la k. k(a)(b))
 
 # NODE_LISTS(B) -> la s. s(map)(filter)(find)(any)(count)(append)(foldl)
@@ -741,6 +754,20 @@ glyph NODE = la B. la X. la crypt. la net. la cfgtext.
                   (la _. st)(C0))(C0))
                  (hex(slice(pt)(C1)(C17)))(slice(pt)(C17)(C49))(rdbe64(pt)(C49))(slice(pt)(C57)(n)))(C0))
         (len(pt))))(la onpres.
+    LET(la ctls. la fd. map(la c. c(la f. la b. la dn. la tg. str_eq(f)(fd)(la _. mkctl(f)(b)(TRUE)(tg))(la _. c)(C0)))(ctls))(la ctldone.
+    # deliver(st)(from)(text): a DATA opened here goes to the latest listener
+    # whose tag, then a space, starts its text (one frame "<from> <text>"),
+    # else it is logged as recv; a listener that cannot take it is closed and
+    # the DATA logged as recv
+    LET(la st. la from. la text. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        (la logged. find(la c. c(la f. la b. la dn. la tg. str_eq(tg)("")(la _. FALSE)
+               (la _. dn(la _. FALSE)(la _. (la p. (la m. lt(len(text))(m)(la _. FALSE)(la _. str_eq(slice(text)(C0)(m))(p))(C0))
+                                                  (len(p)))(concat(tg)(" ")))(C0))(C0)))(ctls)
+          (la _. logged(st))
+          (la c. c(la f. la b. la dn. la tg. (la fm.
+             int_eq(str_to_int(send(f)(fm)))(len(fm))(la _. st)(la _. logged(withctls(st)(ctldone(ctls)(f))))(C0))
+            (frame(concat(from)(concat(" ")(text)))))))
+        (la s2. seq(log(concat("recv ")(concat(from)(concat(" ")(sanitize(text))))))(s2))))(la deliver.
     # route(st)(fd)(mid)(ttl)(dest)(blob): deliver a DATA addressed here, or
     # flood it on with this ttl (dropped at 0)
     LET(la st. la fd. la mid. la ttl. la dest. la blob. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
@@ -748,8 +775,7 @@ glyph NODE = la B. la X. la crypt. la net. la cfgtext.
           (la _. read_message(XRESP)(blob)
                    (la _. seq(log(concat("drop blob ")(hex(mid))))(st))
                    (la r. r(la text. la hs2. done(hs2)(la _. seq(log(concat("drop blob ")(hex(mid))))(st))
-                      (la d. d(la tx. la rx. la rs. la h.
-                         seq(log(concat("recv ")(concat(node_id(rs))(concat(" ")(sanitize(text))))))(st))))))
+                      (la d. d(la tx. la rx. la rs. la h. deliver(st)(node_id(rs))(text))))))
           (la _. lt(ttl)(C1)
                    (la _. seq(log(concat("drop ttl ")(hex(mid))))(st))
                    (la _. withlinks(st)(flood(links)(fd)(concat(concat("D")(mid))(concat(T(ttl))(concat(dest)(blob))))))(C0))
@@ -822,8 +848,7 @@ glyph NODE = la B. la X. la crypt. la net. la cfgtext.
                             (frames)))))(C0))
         (recv(fd)("65536"))))(la onlink.
     # ── the control channel ──
-    LET(la ctls. la fd. map(la c. c(la f. la b. la dn. str_eq(f)(fd)(la _. mkctl(f)(b)(TRUE))(la _. c)(C0)))(ctls))(la ctldone.
-    LET(la ctls. la c2. c2(la fd. la b2. la d2. map(la c. c(la f. la b. la dn. str_eq(f)(fd)(la _. c2)(la _. c)(C0)))(ctls)))(la ctlset.
+    LET(la ctls. la c2. c2(la fd. la b2. la d2. la t2. map(la c. c(la f. la b. la dn. la tg. str_eq(f)(fd)(la _. c2)(la _. c)(C0)))(ctls)))(la ctlset.
     LET(la e. e(la id. la pub. la path. la q. la s.
           concat(id)(concat(" ")(concat(hex(pub))(concat(" ")(concat(path)(concat(" ")(concat(int_to_str(q))(concat(" ")(int_to_str(s)))))))))))(la entline.
     # sendcmd(st)(line)(k): "send <dest> <text>" -> k(reply)(st')
@@ -853,18 +878,28 @@ glyph NODE = la B. la X. la crypt. la net. la cfgtext.
           str_eq(cmd)("directory")(la _. k(concat("ok")(joinnl(map(entline)(rev(dir)))))(st))(la _.
           str_eq(cmd)("quit")(la _. k("ok")(mkst(links)(dir)(seen)(sq)(ctls)(tick)(TRUE)))(la _.
           str_eq(cmd)("send")(la _. sendcmd(st)(line)(k))(la _.
-          k(concat("err unknown command ")(cmd))(st))(C0))(C0))(C0))(C0))(C0))))(la command.
+          str_eq(cmd)("listen")(la _. k("err usage: listen <tag>")(st))(la _.
+          k(concat("err unknown command ")(cmd))(st))(C0))(C0))(C0))(C0))(C0))(C0))))(la command.
+    # listening(cmd): some(tag) when cmd is exactly "listen <tag>"
+    LET(la cmd. words(cmd)(la _. la none. la some. none(none))(la w. la r.
+          r(la _. la none. la some. none(none))(la tag. la r2.
+            str_eq(w)("listen")(r2(la _. la none. la some. some(tag))(la x. la y. la none. la some. none(none)))
+              (la none. la some. none(none)))))(la listening.
     # onctl(st)(fd)(c): control connection fd is readable: one framed command,
-    # one framed reply, then the connection is closed
+    # one framed reply, then the connection is closed; after "listen <tag>"
+    # it stays open (its tag set) and what else it sends is ignored
     LET(la st. la fd. la c. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
         (la chunk. str_eq(chunk)("")
            (la _. withctls(st)(ctldone(ctls)(fd)))
-           (la _. c(la f. la b. la dn. deframe(b)(chunk)(la frames. la b2.
+           (la _. c(la f. la b. la dn. la tg. str_eq(tg)("")(la _. deframe(b)(chunk)(la frames. la b2.
                     frames(la _. broken(b2)(la _. withctls(st)(ctldone(ctls)(fd)))
-                                           (la _. withctls(st)(ctlset(ctls)(mkctl(fd)(b2)(FALSE))))(C0))
-                          (la cmd. la rest. command(st)(cmd)(la reply. la st2.
-                             seq(send(fd)(frame(reply)))(st2(la l2. la d2. la s2. la q2. la c2. la t2. la u2.
-                                withctls(st2)(ctldone(c2)(fd)))))))))(C0))
+                                           (la _. withctls(st)(ctlset(ctls)(mkctl(fd)(b2)(FALSE)(""))))(C0))
+                          (la cmd. la rest. listening(cmd)
+                             (la _. command(st)(cmd)(la reply. la st2.
+                                seq(send(fd)(frame(reply)))(st2(la l2. la d2. la s2. la q2. la c2. la t2. la u2.
+                                   withctls(st2)(ctldone(c2)(fd))))))
+                             (la tag. seq(send(fd)(frame("ok")))(withctls(st)(ctlset(ctls)(mkctl(fd)("")(FALSE)(tag))))))))
+                 (la _. st)(C0)))(C0))
         (recv(fd)("65536"))))(la onctl.
     # ── a pass of the loop ──
     LET(la st. (la nfd. lt(str_to_int(nfd))(C0)(la _. st)
@@ -873,14 +908,14 @@ glyph NODE = la B. la X. la crypt. la net. la cfgtext.
         (accept(lfd)))(la acceptlink.
     LET(la st. (la nfd. lt(str_to_int(nfd))(C0)(la _. st)
           (la _. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
-                    withctls(st)(cons(mkctl(nfd)("")(FALSE))(ctls))))(C0))
+                    withctls(st)(cons(mkctl(nfd)("")(FALSE)(""))(ctls))))(C0))
         (accept(cfd)))(la acceptctl.
     LET(la st. la fd.
         str_eq(fd)(lfd)(la _. acceptlink(st))
           (la _. str_eq(fd)(cfd)(la _. acceptctl(st))
              (la _. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
                        findl(links)(fd)
-                         (la _. find(la c. c(la f. la b. la dn. str_eq(f)(fd)))(ctls)(la _. st)(la c. onctl(st)(fd)(c)))
+                         (la _. find(la c. c(la f. la b. la dn. la tg. str_eq(f)(fd)))(ctls)(la _. st)(la c. onctl(st)(fd)(c)))
                          (la l. onlink(st)(fd)(l))))(C0))(C0))(la service.
     # sweep(st): close the dead links (an unlink line when the last link to a
     # peer goes) and the finished control connections
@@ -895,11 +930,11 @@ glyph NODE = la B. la X. la crypt. la net. la cfgtext.
                                             (la _. seq(upto(live)(peer)(la _. C0)(la _. log(concat("unlink ")(peer)))(C0))(cons(peer)(z)))(C0))(C0))))
                                 (nil)(dead))(
                       mkst(live)(dir)(seen)(sq)
-                          (filter(la c. c(la f. la b. la dn. dn(la _. seq(close(f))(FALSE))(la _. TRUE)(C0)))(ctls))
+                          (filter(la c. c(la f. la b. la dn. la tg. dn(la _. seq(close(f))(FALSE))(la _. TRUE)(C0)))(ctls))
                           (tick)(quit)))
                    (filter(isdead)(links))(filter(la l. isdead(l)(FALSE)(TRUE))(links)))
             (la _. st)(C0))
-        (any(isdead)(links))(any(la c. c(la f. la b. la dn. dn))(ctls))))(la sweep.
+        (any(isdead)(links))(any(la c. c(la f. la b. la dn. la tg. dn))(ctls))))(la sweep.
     # tick(st): every T: presence on every link, handshakes that took too
     # long dropped, and repair: with fewer than K links, dial the seeds and
     # the directory entries in reach it has no link to
@@ -935,10 +970,10 @@ glyph NODE = la B. la X. la crypt. la net. la cfgtext.
         (now(C0))))(la dotick.
     LET(la st. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
         foldl(la acc. la x. concat(acc)(concat(" ")(x)))(concat(lfd)(concat(" ")(cfd)))
-             (append(map(lfdof)(filter(la l. isdead(l)(FALSE)(TRUE))(links)))(map(la c. c(la f. la b. la dn. f))(ctls)))))(la fdlist.
+             (append(map(lfdof)(filter(la l. isdead(l)(FALSE)(TRUE))(links)))(map(la c. c(la f. la b. la dn. la tg. f))(ctls)))))(la fdlist.
     LET(la st. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
         seq(foldl(la z. la l. seq(close(lfdof(l)))(z))(C0)(links))(
-        seq(foldl(la z. la c. c(la f. la b. la dn. seq(close(f))(z)))(C0)(ctls))(
+        seq(foldl(la z. la c. c(la f. la b. la dn. la tg. seq(close(f))(z)))(C0)(ctls))(
         seq(close(lfd))(seq(close(cfd))(seq(unlink(mypath))(seq(unlink(ctlpath))(log(concat("down ")(myid))))))))))(la shutdown.
     LET(Z(la loop. la st. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
         quit(la _. shutdown(st))
@@ -949,7 +984,7 @@ glyph NODE = la B. la X. la crypt. la net. la cfgtext.
                    (now(C0)))(C0))))(la loop.
       seq(log(concat("up ")(myid)))(
       loop(mkst(nil)(nil)(mkseen(nil)(nil)(C0))(realms(C0))(nil)(sub(now(C0))(Tms))(FALSE)))
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   (0)(1)(2)(4)(5)(16)(17)(18)(32)(34)(35)(37)(38)(49)(57)(58)(1000)(1000000)(4096)(4294967295)(15000)(65389)
   (la t. la f. t)(la t. la f. f)(NET_NIL)(NET_CONS))))))
   (NET_BYTES(B))(NODE_LISTS(B))))))
