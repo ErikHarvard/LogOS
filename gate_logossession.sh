@@ -62,6 +62,26 @@
 #      first shows the scan finds garbage not yet collected (the passphrase
 #      and stretch right after adduser), so "found nothing" means overwritten.
 #      The VM grows to about 1.5 GB here (both heap halves).
+# MUTANTS. Each of these one-line changes to logossession.la fails the gate
+# (measured against this gate, each run kept with the commit that added
+# this list); the failing checks:
+#   the verifier compared with itself       A: the first login with a wrong
+#                                           passphrase gets in (5 more in A, S)
+#   lock gives back the open session        A: the locked value reads; M: the
+#                                           keys stay in memory (7 in all)
+#   lock's record built inline, not by      M only: K_U, K_M, the index key,
+#     mklocked (the same in every other     K_cap and the root token stay in
+#     respect, but the closure keeps the    memory after lock
+#     open session's environment alive)
+#   K_M from "" instead of K_U              A: a copied object opens in the
+#                                           other user's store, and the
+#                                           oracle's K_M opens nothing (7)
+#   K_cap from "" instead of K_U            A: each session's token verifies
+#                                           under the other's root (13 in A)
+#   the adapter's err -> TRUE               A: refusals grant, tokens and
+#                                           stores cross users (4)
+#   resume keeps a fresh record             S: the resumed session is a new
+#                                           one (4)
 # ISOLATION: private temp dir (gate_wm_common.sh); everything is written
 # under it. SESSION_SHARDS (default "P A S M") names the shards to run, one at
 # a time; SESSION_CMD_TIMEOUT (default 1800 s) bounds each operation and
@@ -585,13 +605,20 @@ def shard_a(d, s):
     idb = r[3:] if r.startswith('ok ') else ''
     check('A bob\'s object opens under bob\'s K_M, not alice\'s',
           body(version_pt(hpath('bob'), KB['km'], idb, 1)) == b"bob's secret" and version_pt(hpath('bob'), KA['km'], idb, 1) is None, r)
-    rs = [G(TA, 'obj', 'r', 'b'), G(atten(TA, 'ops=r'), 'obj', 'r', 'b'), G(TB, 'obj', 'r', 'a'), G(TB, 'obj', 'r', 'b'),
-          G(TA, 'obj', 'r', 'a')]
-    check('A tokens are isolated both ways: alice\'s tokens (and their attenuations) do not verify under bob\'s '
-          'capability root, nor bob\'s under alice\'s; each verifies under its own', rs == ['ok F', 'ok F', 'ok F', 'ok T', 'ok T'], rs)
+    # the sessions' own tokens (from state) as well as the oracle's, so that
+    # this holds whatever the module derived
+    SA, SB = st[1], (stb[1] if isinstance(stb, tuple) else '')
+    rs = [G(TA, 'obj', 'r', 'b'), G(atten(TA, 'ops=r'), 'obj', 'r', 'b'), G(TB, 'obj', 'r', 'a'),
+          G(SA, 'obj', 'r', 'b'), G(SB, 'obj', 'r', 'a'), G(atten(SA, 'ops=r'), 'obj', 'r', 'b'),
+          G(SA, 'obj', 'r', 'a'), G(SB, 'obj', 'r', 'b')]
+    check('A tokens are isolated both ways: alice\'s tokens (her session\'s own, the oracle\'s, an attenuation) do not '
+          'verify under bob\'s capability root, nor bob\'s under alice\'s; each session\'s verifies under its own',
+          rs == ['ok F'] * 6 + ['ok T'] * 2, rs)
     rs = [s.cmd('get', 'b', TA, ida), s.cmd('put', 'b', TA, b'x', 't'), s.cmd('get', 'a', TB, idb), s.cmd('put', 'a', TB, b'x', 't')]
     check('A ... and the stores refuse the other user\'s token', rs == ['err denied: obj/%s r' % ida, 'err denied: obj w',
           'err denied: obj/%s r' % idb, 'err denied: obj w'], rs)
+    if not (ida and idb):
+        check('A objects are isolated both ways (no objects to copy: a put failed)', False, (ida, idb)); return
     for src, dst, oid in (('alice', 'bob', ida), ('bob', 'alice', idb)):
         for side in ('obj', 'mirror'):
             shutil.copytree(os.path.join(hpath(src), side, oid), os.path.join(hpath(dst), side, oid))

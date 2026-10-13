@@ -157,9 +157,10 @@
 #  MEASURED on the VM with CRYPT_FAST, timed inside the gate's driver (a
 #  4-core machine, load about 1): PBKDF2 of 1000 iterations 1.35-1.9 s;
 #  adduser 1.7 s, login 1.35 s, unlock 1.44 s, resume 1.4 s; suspend 24
-#  ms; lock, state, logout 4-6 ms; a guard question 7 ms. With CRYPT_REF an HMAC takes about a minute on
-#  the VM, so a login would take most of a day: CRYPT_REF meets the
-#  contract but is not usable here.
+#  ms; lock, state, logout 4-6 ms; a guard question 7 ms. The gate builds
+#  the kit with CRYPT_FAST only: CRYPT_REF has the same contract, but an
+#  HMAC with it takes about a minute on the VM, so even a login with
+#  iter=1 would take a quarter of an hour, and with 1000 most of a day.
 #
 #  ── HONEST SCOPE ────────────────────────────────────────────────────
 #  1000 iterations is what the VM affords for a login of a second or two;
