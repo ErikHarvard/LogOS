@@ -752,17 +752,24 @@ def shard_e(d, s):
     rs = [s.cmd('open', 'q', root, kq, 'policy')[1]]
     new = dict((fd, fl) for fd, fl in pipe_fds(s.p.pid).items() if fd not in pipes0)
     rfd = [fd for fd, fl in new.items() if fl & 3 == 0]; wfd = [fd for fd, fl in new.items() if fl & 3 == 1]
-    SK = b''
-    if len(rfd) == len(wfd) == 1:
-        fr = os.open('/proc/%d/fd/%d' % (s.p.pid, rfd[0]), os.O_RDONLY | os.O_NONBLOCK); SK = os.read(fr, 64); os.close(fr)
-        fw = os.open('/proc/%d/fd/%d' % (s.p.pid, wfd[0]), os.O_WRONLY); os.write(fw, SK); os.close(fw)
-    rs += [s.cmd('eph', 'q', 'ex', X)[1], s.cmd('eread', 'ex')[1],
-           s.cmd('close', 'q')[1], s.cmd('eread', 'ex')[1], s.cmd('churn', '4000')[1]]
+    def peek():   # what the session pipe holds, put back as it was
+        if len(rfd) != 1 or len(wfd) != 1: return b''
+        fr = os.open('/proc/%d/fd/%d' % (s.p.pid, rfd[0]), os.O_RDONLY | os.O_NONBLOCK)
+        try: got = os.read(fr, 64)
+        except BlockingIOError: got = b''
+        os.close(fr)
+        fw = os.open('/proc/%d/fd/%d' % (s.p.pid, wfd[0]), os.O_WRONLY); os.write(fw, got); os.close(fw)
+        return got
+    SK = peek()
+    rs += [s.cmd('eph', 'q', 'ex', X)[1], s.cmd('eread', 'ex')[1], s.cmd('close', 'q')[1]]
+    after = peek()
+    rs += [s.cmd('eread', 'ex')[1], s.cmd('churn', '4000')[1]]
     found = mem_has(s.p.pid, [X, kq, SK or b'(no key)'])
     check('E once its session is closed and the heap collected, an ephemeral object\'s plaintext is nowhere in the '
           'process, though its handle is still held; the store handle\'s K_M (live) is found',
           rs == ['ok', 'ok', 'ok ' + X.hex(), 'ok ' + root, 'err ephemeral: session closed', 'ok churned']
           and X not in found and kq in found, (rs[3:], 'plaintext found' if X in found else '', 'K_M found' if kq in found else 'K_M not found'))
+    check('E close takes the session key out of its pipe: the pipe then holds exactly "closed"', after == b'closed', after)
     check('E ... and the session key (read from its pipe before close) is nowhere in the process either, though the '
           'store handle that opened the session is still held',
           len(SK) == 32 and SK not in found, (len(SK), 'session key found' if SK in found else ''))
