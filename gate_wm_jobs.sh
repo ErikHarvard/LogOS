@@ -14,6 +14,9 @@
 #      program; the other window keeps the focus
 #   6  a program keeps running while the screen is locked (MOD+Esc), and its
 #      output is in its window after unlocking
+#   7  an input record cut across two FIFO writes is not lost: a typed command
+#      arrives in four writes cut 1, 12 and 23 bytes into a record (a reader
+#      gets whatever bytes are there, not whole records), and still runs
 # and that the WM exits 0 on MOD+Shift+e with none of its programs left
 # running. The pauses are generous (programs here take milliseconds to
 # start), but it is a timing test on a shared machine.
@@ -63,6 +66,15 @@ send("type /bin/sh late.sh\\n", 0.3)
 send("mod ESC", 2.5)
 send("type adam\nkey TAB\ntype logos\\n", 1.0)
 send("snap 6", 0.5)
+# 7: the bytes of one typed command, written in pieces cut inside records
+cmd = ws.compile_script(["type echo split ok\\n"])
+cuts = [24 * 2 + 1, 24 * 7 + 12, 24 * 12 + 23, len(cmd)]
+assert cuts[2] < len(cmd)
+prev = 0
+for c in cuts:
+    fifo.write(cmd[prev:c]); prev = c; time.sleep(0.4)
+time.sleep(1.0)
+send("snap 7", 0.5)
 send("mod Shift+E", 0.0)
 fifo.close()
 try:
@@ -98,6 +110,10 @@ check("5 MOD+q closes the window whose program runs; window 2 is left, focused",
 s = shot(6)
 check("6 a program kept running while the screen was locked; its output is there after unlocking",
       s and len(s) == 1 and "late output" in rows(s[0]) and "wm: locked" in log and "wm: unlocked" in log, str(s)[:600])
+s = shot(7)
+check("7 a record cut across FIFO writes (at bytes 1, 12, 23) is kept: the command typed in pieces runs",
+      s and len(s) == 1 and "split ok" in rows(s[0])
+      and any(r.endswith("$ echo split ok") for r in rows(s[0])), str(s)[:600])
 left = subprocess.run(["pgrep", "-f", "sleep 37"], capture_output=True, text=True).stdout.split()
 check("none of the WM's programs is left running", not left, f"left: {left}")
 for p in left:
