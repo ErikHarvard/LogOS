@@ -54,7 +54,9 @@
 #      objects (and only that session's).
 #   E  repair and failure paths, each on a store of its own: with the newest
 #      index version lost in both copies, verify still walks the objects the
-#      newest readable index version lists and repairs them.
+#      newest readable index version lists and repairs them; a put whose
+#      index version reaches neither copy leaves no trace of its object, one
+#      that reaches the primary keeps it and verify completes the index.
 # Every operation's guard questions are checked exactly (resource and op).
 # COST. With CRYPT_FAST an operation takes milliseconds and shards A-E a few
 # seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
@@ -567,6 +569,34 @@ def shard_e(d, s):
     check('E ... it rebuilt that object\'s tampered primary with the oracle\'s bytes, and left the lost index version as it was',
           disk(root, km, ida, QA, [b'a'], b'o') == '' and (rd(V(root, 'obj', 'index', 2)), rd(V(root, 'mirror', 'index', 2))) == lost,
           disk(root, km, ida, QA, [b'a'], b'o'))
+    # a put whose new index version reaches neither copy leaves nothing of
+    # the object behind; one whose index version reaches the primary keeps
+    # it (the index lists it) and verify completes the index
+    root = os.path.join(d, 'noidx')
+    s.cmd('open', 'n', root, km, 'policy')
+    os.makedirs(os.path.join(root, 'obj', 'index', '1.tmp'))   # index version 1 cannot be written
+    R = os.urandom(16); rid = R.hex(); wr(os.path.join(d, 'fixedrandom'), R)
+    g, r = s.cmd('put', 'n', '*', b'never listed', 't', 'o')
+    os.unlink(os.path.join(d, 'fixedrandom')); os.rmdir(os.path.join(root, 'obj', 'index', '1.tmp'))
+    left = sorted(p for p, v in snap(root).items() if v != 'dir')
+    check('E a put whose index version cannot be written fails ("write failed: <that version>") and leaves nothing of '
+          'the object behind: no obj/<id>, no mirror/<id>, not one file in the store',
+          r == 'err write failed: %s/obj/index/1' % root and not os.path.exists(os.path.join(root, 'obj', rid))
+          and not os.path.exists(os.path.join(root, 'mirror', rid)) and left == [], (r, left))
+    root = os.path.join(d, 'halfidx')
+    s.cmd('open', 'h', root, km, 'policy')
+    os.makedirs(os.path.join(root, 'mirror', 'index', '1.tmp'))  # only the index's mirror cannot be written
+    R = os.urandom(16); rid = R.hex(); wr(os.path.join(d, 'fixedrandom'), R)
+    g, r = s.cmd('put', 'h', '*', b'listed by the primary', 't', 'o')
+    os.unlink(os.path.join(d, 'fixedrandom')); os.rmdir(os.path.join(root, 'mirror', 'index', '1.tmp'))
+    IXH = [line(rid, 't')]
+    check('E a put whose index version reaches the primary but not the mirror fails, and keeps the object it lists',
+          r == 'err write failed: %s/mirror/index/1' % root and disk(root, km, rid, [b'listed by the primary'], [b't'], b'o') == ''
+          and rd(os.path.join(root, 'obj', 'index', '1')) == chain(km, 'index', IXH, IDX_TAGS, IDX_OWNER)[0],
+          (r, disk(root, km, rid, [b'listed by the primary'], [b't'], b'o')))
+    g, r = s.cmd('verify', 'h')
+    check('E ... and verify completes the index (checked 2, repaired 1, lost 0)',
+          r == 'ok 2 1 0' and disk(root, km, 'index', IXH, IDX_TAGS, IDX_OWNER) == '', (r, disk(root, km, 'index', IXH, IDX_TAGS, IDX_OWNER)))
 
 if __name__ == '__main__':
     which, d = sys.argv[1], sys.argv[2]

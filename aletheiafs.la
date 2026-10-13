@@ -156,9 +156,10 @@
 #  One writer at a time: there is no lock, and two processes writing one
 #  store can race (the never-overwrite check makes the loser fail, not
 #  corrupt, in the common case). There is no journal: a put whose object
-#  cannot be written removes it again, but a write that fails part-way
-#  through an update, or through the index after its object, can leave the
-#  new version in one copy only (verify completes it; its number is never
+#  cannot be written, or whose new index version reaches neither copy,
+#  removes the object again, but a write that fails part-way through an
+#  update, or through the index after its object, can leave the new
+#  version in one copy only (verify completes it; its number is never
 #  reused, because its nonce is); a remove whose index write fails has
 #  already deleted the files (remove again finishes it). A head is not authenticated: someone who
 #  deletes the newest versions from both copies and rolls both heads back
@@ -499,9 +500,14 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
                         BIND(mkd(P))(la _. BIND(mkd(M))(la _.
                         writever(okey(id)(km))(P)(M)(id)(C1)(tagstr)(owner)("none")(content)
                           (la m. DO(delobj(P)(M)(C1))(la _. ERR(m)))
-                          (la _. BIND(writeidx(root)(ki)(ni)(iblob)
-                                   (concat(icont)(concat(concat(concat(id)(" "))(tagstr))("\n"))))(la _.
-                            OK(id))))))(C0))(C0))
+                          (la _. writeidx(root)(ki)(ni)(iblob)
+                                   (concat(icont)(concat(concat(concat(id)(" "))(tagstr))("\n")))
+                            # an index version that reached neither copy lists nothing: the
+                            # object would be left behind unlisted, so it is removed again
+                            (la m. lt(ni)(latest(pdir(root)("index"))(mdir(root)("index")))
+                                (la _. ERR(m))
+                                (la _. DO(delobj(P)(M)(C1))(la _. ERR(m)))(C0))
+                            (la _. OK(id))))))(C0))(C0))
                       (joinsep(tags)(",")))(mdir(root)(id)))(pdir(root)(id)))(hex(rb)))
                   (la _. ERR("random failed"))(C0))
               (random("16")))))
