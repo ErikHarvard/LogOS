@@ -17,8 +17,9 @@
 #      HMAC with keys of 0..200 bytes across the 64-byte block; HKDF at every
 #      length 1..96 with an empty and a non-empty salt, and at 0 and 8160;
 #      seal/open of 0..1000 bytes with 0..17 bytes of aad; hex of all 256 bytes;
-#   3. failure paths: a flipped bit in the first or last ciphertext byte or
-#      tag byte, in the aad, a wrong key or nonce, a sealed string cut short or
+#   3. failure paths: a flipped bit in the first or last ciphertext byte, in
+#      each of the 16 tag bytes (so a comparison that skips a tag word is
+#      caught), in the aad, a wrong key or nonce, a sealed string cut short or
 #      lengthened, an empty, 15-byte or all-zero 16-byte one: each opens to
 #      none; a key that is not 32 bytes, a nonce that is not 12, and an hkdf
 #      length outside 0..8160 each halt loudly (rc 1, the message, no output);
@@ -389,11 +390,18 @@ fi
 
 # ── 3a. tampering opens to none ────────────────────────────────────────────
 mkprog tamper.la <<'LAEOF'
-# each case: (label, thunk returning what open gives) for one sealed message;
-# the ciphertext cases only where there is a ciphertext byte
+# each case: (label, thunk returning what open gives) for one sealed message.
+# TAGCASES: bit j mod 8 of tag byte j, for every j in 0..15, so that a tag
+# comparison that leaves out any byte, or any of the four words, releases on
+# one of them; the ciphertext cases only where there is a ciphertext byte
+glyph TAGCASES = la open. la key. la nonce. la aad. la sd. la L. la rest.
+  Z(la go. la j. lt(j)(16)
+      (la _. C(P(concat(concat(concat("tag-byte")(int_to_str(j)))("-bit"))(int_to_str(mod(j)(8))))
+               (la _. open(key)(nonce)(aad)(FLIP(sd)(add(sub(L)(16))(j))(mod(j)(8)))))
+              (go(add(j)(1))))
+      (la _. rest)("!"))(0)
 glyph CASES = la open. la key. la nonce. la aad. la sd. la L. la n.
-  C(P("tag-first-bit0")(la _. open(key)(nonce)(aad)(FLIP(sd)(sub(L)(16))(0))))
-  (C(P("tag-last-bit7")(la _. open(key)(nonce)(aad)(FLIP(sd)(sub(L)(1))(7))))
+  TAGCASES(open)(key)(nonce)(aad)(sd)(L)
   (C(P("truncated")(la _. open(key)(nonce)(aad)(SUB(sd)(0)(sub(L)(1)))))
   (C(P("extended")(la _. open(key)(nonce)(aad)(concat(sd)("x"))))
   (C(P("aad-empty")(la _. open(key)(nonce)("")(sd)))
@@ -402,7 +410,7 @@ glyph CASES = la open. la key. la nonce. la aad. la sd. la L. la n.
   (C(P("wrong-key")(la _. open(GEN(32)(9))(nonce)(aad)(sd)))
   (lt(n)(1)(la _. NIL)(la _.
      C(P("ct-first-bit0")(la _. open(key)(nonce)(aad)(FLIP(sd)(0)(0))))
-     (C(P("ct-last-bit7")(la _. open(key)(nonce)(aad)(FLIP(sd)(sub(L)(17))(7))))(NIL)))("!")))))))))
+     (C(P("ct-last-bit7")(la _. open(key)(nonce)(aad)(FLIP(sd)(sub(L)(17))(7))))(NIL)))("!"))))))))
 glyph SHOWR = la what. la n. la r.
   print(concat(concat(concat(concat(what)(" "))(int_to_str(n)))(" "))(r(la _. "none")(la p. "RELEASED")))
 glyph MAIN = FAST(la sha256. la hmac. la hkdf. la seal. la open. la hex.
@@ -421,12 +429,14 @@ glyph MAIN = FAST(la sha256. la hmac. la hkdf. la seal. la open. la hex.
     (print("end")))
 LAEOF
 wm_vm tamper.la "$T/tamper.out"
+# 16 tag cases x 5 messages, 6 others x 5, 2 ciphertext cases x 4, and 3
 nnone=$(grep -c ' none$' "$T/tamper.out"); nsame=$(grep -c '^control .* same$' "$T/tamper.out")
+ntag=$(grep -c '^tag-byte[0-9]*-bit[0-7] .* none$' "$T/tamper.out")
 nbad=$(grep -cv -e ' none$' -e '^control .* same$' -e '^end$' "$T/tamper.out")
-if [ "$vrc" = 0 ] && [ "$nnone" = 51 ] && [ "$nsame" = 5 ] && [ "$nbad" = 0 ] && [ "$(tail -1 "$T/tamper.out")" = end ]; then
-    echo "PASS  logoscrypt tampering (VM): a flipped bit in the ciphertext, the tag or the aad, a wrong key or nonce, a cut or lengthened, empty, 15-byte or zero-tag string: all $nnone open to none; the $nsame untouched controls open"
+if [ "$vrc" = 0 ] && [ "$nnone" = 121 ] && [ "$ntag" = 80 ] && [ "$nsame" = 5 ] && [ "$nbad" = 0 ] && [ "$(tail -1 "$T/tamper.out")" = end ]; then
+    echo "PASS  logoscrypt tampering (VM): a flipped bit in the ciphertext, in each of the 16 tag bytes ($ntag cases) or in the aad, a wrong key or nonce, a cut or lengthened, empty, 15-byte or zero-tag string: all $nnone open to none; the $nsame untouched controls open"
 else
-    echo "FAIL  logoscrypt tampering (VM): rc=$vrc none=$nnone controls=$nsame other=$nbad"; grep -v -e ' none$' -e '^control .* same$' "$T/tamper.out" | head -5; ok=0
+    echo "FAIL  logoscrypt tampering (VM): rc=$vrc none=$nnone (want 121) tag-byte none=$ntag (want 80) controls=$nsame other=$nbad"; grep -v -e ' none$' -e '^control .* same$' "$T/tamper.out" | head -5; ok=0
 fi
 
 # ── 3b. misuse halts loudly ────────────────────────────────────────────────
