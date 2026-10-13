@@ -1,7 +1,8 @@
 # ═══════════════════════════════════════════════════════════════════
 #  logosnet.la — LogosNet, the sovereign mesh layer (NET_DESIGN.md 2).
 #
-#  WHAT. NET_KIT(B)(X)(crypt)(xk) returns the record
+#  WHAT. Two constructors: NET_KIT, the protocol (below), and NODE, a node
+#  running it (THE NODE, further down). NET_KIT(B)(X)(crypt)(xk) returns
 #
 #      la s. s(frame)(deframe)(broken)
 #             (keypair)(xx_init)(xx_resp)(x_init)(x_resp)
@@ -101,10 +102,93 @@
 #                         mode 0600 (no access for group or others)" (or "must
 #                         hold 32 bytes", "is not a regular file").
 #
+#  THE NODE. NODE(B)(X)(crypt)(net)(cfg) runs one node as a process until it
+#  is told to quit; net is NET_KIT's record, cfg the text of its config file.
+#
+#    netdir <dir>      where its address is, <dir>/<NodeID>.sock (default .)
+#    key <path>        its key file (default <netdir>/node.key; see identity)
+#    ctl <path>        its control socket (default <netdir>/<NodeID>.ctl)
+#    seed <path>       a node to dial, <dir>/<NodeID>.sock (any number of lines)
+#    reach <id> ...    the NodeIDs it can dial: its range, as a radio's would
+#                      be (any number of lines; without one, every node)
+#    period <s>        T, in seconds (default 5)
+#    links <n>         K, the links it keeps at least (default 2)
+#
+#  One poll waits on the listening socket, every link, the control socket and
+#  every control connection; each pass services what is ready, then sweeps
+#  out the dead links; the recursive call is in tail position (WM_LOOP's
+#  shape), and every record it keeps is built by a NODE_MK constructor. A
+#  link is a stream socket that runs the XX handshake (the dialler is the
+#  initiator), then carries frames of transport messages. A dialled link must
+#  reach the NodeID its address names: a static key whose hash is another id
+#  is refused ("net: drop impostor <expected> <got>"). Mesh messages:
+#      PRESENCE  "P" ++ id (16 bytes) ++ pub (32) ++ seq (8, big-endian) ++ path
+#      DATA      "D" ++ msgid (16) ++ ttl (1 byte) ++ dest (16) ++ blob
+#  PRESENCE goes out on link-up (with every directory entry's, so a newcomer
+#  learns the mesh at once) and every T seconds on every link; it is flooded
+#  on when it is new, deduplicated by (id, seq): the directory keeps the
+#  highest seq of each id and a presence is new only above it. An entry is
+#  refused ("net: drop presence <id>") when id is not node_id(pub) or the
+#  path is not <dir>/<id>.sock. DATA is flooded to every link but the one it
+#  came from; its msgid (16 random bytes) is remembered (the last 4096 at
+#  least: two generations of 4096) and a repeat is dropped; the origin sends
+#  ttl 16, each hop decrements it and drops it at 0; only dest opens blob, a
+#  Noise_X message to dest's static key; a blob that does not open is dropped
+#  ("net: drop blob <msgid>") and nothing of it released. A relay never opens
+#  or logs a blob. Every T seconds (the poll timeout) a node with fewer than K
+#  peers dials, until it has K, its seeds and then the directory entries in
+#  its reach it has no link to; a handshake not finished within 15 s, a link
+#  that reads EOF, fails to send, or brings a frame that does not deframe or
+#  decrypt, is dropped.
+#
+#  THE CONTROL CHANNEL is an AF_UNIX stream socket (chosen over a FIFO: each
+#  command gets its own reply on its own connection). A client connects and
+#  sends ONE command as one frame (frame(), above); the node answers with one
+#  frame and closes the connection. A reply is "ok", lines after it each
+#  after a "\n", or "err <reason>":
+#      id                ok\n<NodeID>
+#      peers             ok, then one line per peer it has a link to
+#      directory         ok, then "<id> <pub hex> <path> <seq> <last seen>"
+#                        per entry (last seen in seconds of the realtime clock)
+#      send <dest> <text>  ok\n<msgid>: text, at most 65389 bytes (so the DATA
+#                        fits one 65535-byte transport message), sealed to
+#                        dest with Noise_X and flooded; dest may be the node
+#                        itself. err unknown <dest> / err too long / err usage
+#      quit              ok, then it closes everything, removes its two
+#                        socket files and returns
+#  It logs on stdout: "net: up <id>", "net: link <id>" and "net: unlink <id>"
+#  (the first link to a peer and the last), "net: recv <from> <text>" (from
+#  the sender's static key in the Noise_X message; bytes of text outside
+#  32..126 shown as ?), "net: drop <reason>" (dup, ttl, blob, presence,
+#  impostor, handshake, transport, frame, timeout, malformed, self), and
+#  "net: down <id>" when it quits.
+#
+#  CHOICES WHERE THE CONTRACT WAS OPEN.
+#   - seq is the realtime clock in milliseconds (one more than the last when
+#     the clock has not moved), so a restarted node's presence is newer than
+#     the ones the mesh remembers from before.
+#   - reach: one machine's AF_UNIX sockets can all reach each other, so the
+#     shape of a mesh (a line whose bridge can partition it) is the nodes'
+#     reach; repair dials only inside it.
+#   - Several links to one peer (two nodes dialling each other at once) are
+#     all kept: flooding deduplicates; link and unlink lines are per peer.
+#   - At startup a node refuses an address a live node answers on ("logosnet:
+#     node: <path> is held by a live node"), and removes a stale socket file.
+#   - SIGPIPE is blocked, so a send to a dead peer returns -EPIPE and the link
+#     is dropped instead of the process.
+#
+#  HONEST LIMITS. Sends are blocking: a peer that stops reading while its
+#  socket buffer is full stalls the node (no write queue). Without signatures
+#  (NET_DESIGN.md, out of scope) a PRESENCE is only checked for id = hash(pub)
+#  and its path's form, so a forger can repeat a real node's presence with a
+#  higher seq and freeze its directory entry (not take it over: the handshake
+#  still needs the key). IP transport is out of scope (the VM has AF_UNIX
+#  only); the node's sockets are the only transport-specific part.
+#
 #  STYLE. Kit style (WM_DESIGN.md, "How fast the VM is"): the builtins arrive
 #  in the records B and X and are destructured once when the kit is built;
 #  every helper is let-bound inside a sub-kit (NET_BYTES, NET_FRAMES,
-#  NET_NOISE), so running code finds every name in its environment and never
+#  NET_NOISE, NET_ID, NODE_LISTS, NODE_TEXT, NODE), so running code finds every name in its environment and never
 #  walks the glyph table. Booleans are applied to two thunks and a dummy;
 #  constants are parameters; strings are cut by balanced halving over str_at
 #  (O(n log n)), never by a left fold. Every record that outlives a call (a
@@ -114,7 +198,7 @@
 #  keep every earlier one (and every plaintext) alive (theourgia_wm.la).
 # ═══════════════════════════════════════════════════════════════════
 
-export NET_KIT NET_NIL NET_CONS
+export NET_KIT NODE NET_NIL NET_CONS
 
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LET = la v. la k. k(v)
@@ -455,3 +539,414 @@ glyph NET_KIT = la B. la X. la crypt. la xk.
               (write_message)(read_message)(done)(encrypt)(decrypt)(prologue)
               (node_id)(verify_id)(identity)))))
   (NET_BYTES(B))
+
+# ── The node: constructors, lists, text ─────────────────────────────────
+# NODE_MK(la mklink. la mkent. la mkst. la mkseen. la mkctl. la mkpair.)
+#   link  la k. k(fd)(phase)(hs)(tx)(rx)(buf)(peer)(expect)(t0)
+#         phase 0 handshake (hs the handshake state), 1 up (tx/rx the cipher
+#         states, peer its NodeID), 2 dead (closed at the end of the pass);
+#         buf the deframe buffer; expect the NodeID a dialled link must
+#         reach ("" for an accepted one); t0 when it started (monotonic ms)
+#   entry la k. k(id)(pub)(path)(seq)(seen)   a directory entry; seen in
+#         seconds of the realtime clock
+#   state la k. k(links)(dir)(seen)(seq)(ctls)(tick)(quit)
+#   seen  la k. k(cur)(old)(n)   the DATA msgids remembered: cur holds the
+#         newest n (at most 4096), old the 4096 before them
+#   ctl   la k. k(fd)(buf)(done) a control connection
+glyph NODE_MK = la s. s
+  (la fd. la phase. la hs. la tx. la rx. la buf. la peer. la expect. la t0.
+     la k. k(fd)(phase)(hs)(tx)(rx)(buf)(peer)(expect)(t0))
+  (la id. la pub. la path. la seq. la seen. la k. k(id)(pub)(path)(seq)(seen))
+  (la links. la dir. la seen. la seq. la ctls. la tick. la quit. la k. k(links)(dir)(seen)(seq)(ctls)(tick)(quit))
+  (la cur. la old. la n. la k. k(cur)(old)(n))
+  (la fd. la buf. la done. la k. k(fd)(buf)(done))
+  (la a. la b. la k. k(a)(b))
+
+# NODE_LISTS(B) -> la s. s(map)(filter)(find)(any)(count)(append)(foldl)
+glyph NODE_LISTS = la B.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  (la C0. la C1. la TRUE. la FALSE. la nil. la cons.
+    LET(Z(la map. la f. la l. l(la _. nil)(la h. la t. cons(f(h))(map(f)(t)))))(la map.
+    LET(Z(la filter. la p. la l.
+        l(la _. nil)(la h. la t. p(h)(la _. cons(h)(filter(p)(t)))(la _. filter(p)(t))(C0))))(la filter.
+    LET(Z(la find. la p. la l.
+        l(la _. la none. la some. none(none))
+         (la h. la t. p(h)(la _. la none. la some. some(h))(la _. find(p)(t))(C0))))(la find.
+    LET(Z(la any. la p. la l. l(la _. FALSE)(la h. la t. p(h)(la _. TRUE)(la _. any(p)(t))(C0))))(la any.
+    LET(Z(la count. la l. l(la _. C0)(la h. la t. add(C1)(count(t)))))(la count.
+    LET(Z(la app. la a. la b. a(la _. b)(la h. la t. cons(h)(app(t)(b)))))(la append.
+    LET(Z(la foldl. la f. la z. la l. l(la _. z)(la h. la t. foldl(f)(f(z)(h))(t))))(la foldl.
+      la s. s(map)(filter)(find)(any)(count)(append)(foldl)))))))))
+  (0)(1)(la t. la f. t)(la t. la f. f)(NET_NIL)(NET_CONS))
+
+# NODE_TEXT(B)(BY)(LS) -> la s. s(split)(words)(endswith)(sanitize)(joinnl)
+#   split(s)(c)    the fields of s between the one-byte separator c
+#   words(s)       the non-empty space-separated words of s
+#   endswith(s)(t) Church boolean
+#   sanitize(s)    s with every byte outside 32..126 shown as ?
+#   joinnl(l)      "\n" ++ x for each x of l, joined
+glyph NODE_TEXT = la B. la BY. la LS.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  BY(la len. la span. la T. la slice. la byte. la rdbe32. la be32. la le64. la rev. la zeros.
+  LS(la map. la filter. la find. la any. la count. la append. la foldl.
+  (la C0. la C1. la C32. la C126. la TRUE. la FALSE. la nil. la cons.
+    LET(la s. la c. (la n. Z(la go. la i. la st. la acc.
+        lt(i)(n)
+          (la _. str_eq(str_at(s)(i))(c)
+                   (la _. go(add(i)(C1))(add(i)(C1))(cons(slice(s)(st)(i))(acc)))
+                   (la _. go(add(i)(C1))(st)(acc))(C0))
+          (la _. rev(cons(slice(s)(st)(n))(acc)))(C0))(C0)(C0)(nil))
+        (len(s)))(la split.
+    LET(la s. filter(la w. str_eq(w)("")(la _. FALSE)(la _. TRUE)(C0))(split(s)(" ")))(la words.
+    LET(la s. la t. (la n. la m. lt(n)(m)(la _. FALSE)(la _. str_eq(slice(s)(sub(n)(m))(n))(t))(C0))
+                    (len(s))(len(t)))(la endswith.
+    LET(la s. span(la i. (la b. lt(b)(C32)(la _. "?")(la _. lt(C126)(b)(la _. "?")(la _. str_at(s)(i))(C0))(C0))
+                         (byte(s)(i)))(C0)(len(s)))(la sanitize.
+    LET(Z(la jn. la l. l(la _. "")(la h. la t. concat(concat("\n")(h))(jn(t)))))(la joinnl.
+      la s. s(split)(words)(endswith)(sanitize)(joinnl)))))))
+  (0)(1)(32)(126)(la t. la f. t)(la t. la f. f)(NET_NIL)(NET_CONS))))
+
+# ── The node ─────────────────────────────────────────────────────────────
+glyph NODE = la B. la X. la crypt. la net. la cfgtext.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  X(la socket. la bind. la listen. la accept. la connect. la send. la recv. la close. la unlink. la poll.
+    la random. la clock_gettime. la print. la read_file. la write_file. la chmod. la stat. la mkdir. la rmdir.
+    la rename. la sigprocmask.
+  crypt(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+  net(la frame. la deframe. la broken. la keypair. la xx_init. la xx_resp. la x_init. la x_resp.
+      la write_message. la read_message. la done. la encrypt. la decrypt. la prologue.
+      la node_id. la verify_id. la identity.
+  (la BY. la LS. BY(la len. la span. la T. la slice. la byte. la rdbe32. la be32. la le64. la rev. la zeros.
+   LS(la map. la filter. la find. la any. la count. la append. la foldl.
+   NODE_TEXT(B)(BY)(LS)(la split. la words. la endswith. la sanitize. la joinnl.
+   NODE_MK(la mklink. la mkent. la mkst. la mkseen. la mkctl. la mkpair.
+  (la C0. la C1. la C2. la C4. la C5. la C16. la C17. la C18. la C32. la C34. la C35. la C37. la C38. la C49. la C57. la C58.
+   la C1000. la C1000000. la C4096. la M32. la HSTO. la MAXTEXT. la TRUE. la FALSE. la nil. la cons.
+    LET(la a. la b. b)(la seq.
+    LET(la s. print(concat("net: ")(s)))(la log.
+    LET(la what. error(concat("logosnet: node: ")(what)))(la die.
+    LET(la a. la b. lt(a)(b)(la _. b)(la _. a)(C0))(la max.
+    # clock(id): that clock in milliseconds
+    LET(la id. words(clock_gettime(id))(la _. C0)(la a. la r. r(la _. mul(str_to_int(a))(C1000))
+          (la b. la r2. add(mul(str_to_int(a))(C1000))(div(str_to_int(b))(C1000000)))))(la clock.
+    LET(la _. clock("1"))(la now.
+    LET(la _. clock("0"))(la realms.
+    # ── the configuration ──
+    LET(map(words)(split(cfgtext)("\n")))(la cl.
+    LET(la key. filter(la ws. ws(la _. FALSE)(la h. la t. str_eq(h)(key)))(cl))(la cfgall.
+    LET(la ws. ws(la _. "")(la h. la t. t(la _. "")(la v. la r. v)))(la second.
+    LET(la key. la dflt. cfgall(key)(la _. dflt)(la ws. la rest. (la v. str_eq(v)("")(la _. dflt)(la _. v)(C0))(second(ws))))(la cfg1.
+    LET(cfg1("netdir")("."))(la netdir.
+    LET(cfg1("key")(concat(netdir)("/node.key")))(la keypath.
+    LET(mul(str_to_int(cfg1("period")("5")))(C1000))(la Tms.
+    LET(str_to_int(cfg1("links")("2")))(la K.
+    LET(map(second)(cfgall("seed")))(la seeds.
+    LET(foldl(la acc. la ws. append(ws(la _. nil)(la h. la t. t))(acc))(nil)(cfgall("reach")))(la reach.
+    LET(int_eq(count(cfgall("reach")))(C0))(la reachall.
+    # pathid(path): the NodeID an address <dir>/<id>.sock names, or "" when
+    # the path is not of that form
+    LET(la path. (la n. lt(n)(C37)(la _. "")
+          (la _. (la id. endswith(path)(concat(id)(".sock"))
+                           (la _. int_eq(n)(C37)(TRUE)(str_eq(str_at(path)(sub(n)(C38)))("/"))
+                                    (la _. id)(la _. "")(C0))
+                           (la _. "")(C0))
+                 (slice(path)(sub(n)(C37))(sub(n)(C5))))(C0))
+        (len(path)))(la pathid.
+    LET(la _. map(la p. (la id. str_eq(id)("")(la _. die(concat("seed ")(concat(p)(" is not <dir>/<NodeID>.sock"))))
+                                  (la _. mkpair(id)(p))(C0))(pathid(p)))(seeds))(la seedpairs.
+    # ── identity and the two listening sockets ──
+    identity(keypath)(la kp. la myid. kp(la sk. la mypub.
+    LET(slice(sha256(mypub))(C0)(C16))(la myraw.
+    LET(concat(netdir)(concat("/")(concat(myid)(".sock"))))(la mypath.
+    LET(cfg1("ctl")(concat(netdir)(concat("/")(concat(myid)(".ctl")))))(la ctlpath.
+    # listenat(path): a listening socket on path, refusing a path a live
+    # server holds; a stale socket file is removed first
+    LET(la path. (la c. (la r. seq(close(c))(
+          str_eq(r)("0")
+            (la _. die(concat(path)(" is held by a live node")))
+            (la _. seq(unlink(path))((la s. (la rb.
+                       str_eq(rb)("0")
+                         (la _. (la rl. str_eq(rl)("0")(la _. s)(la _. die(concat("cannot listen on ")(path)))(C0))(listen(s)))
+                         (la _. die(concat("cannot bind ")(concat(path)(concat(": ")(rb)))))(C0))
+                     (bind(s)(path)))(socket("!"))))(C0)))
+        (connect(c)(path)))(socket("!")))(la listenat.
+    LET(seedpairs(C0))(la seedl.
+    LET(seq(sigprocmask("0")("4096"))(listenat(mypath)))(la lfd.
+    LET(listenat(ctlpath))(la cfd.
+    LET(x_resp(kp))(la XRESP.
+    # ── records ──
+    LET(la st. la links. st(la l. la d. la s. la q. la c. la t. la u. mkst(links)(d)(s)(q)(c)(t)(u)))(la withlinks.
+    LET(la st. la ctls. st(la l. la d. la s. la q. la c. la t. la u. mkst(l)(d)(s)(q)(ctls)(t)(u)))(la withctls.
+    LET(la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0. fd))(la lfdof.
+    LET(la links. la fd. find(la l. str_eq(lfdof(l))(fd))(links))(la findl.
+    LET(la links. la l2. (la fd. map(la l. str_eq(lfdof(l))(fd)(la _. l2)(la _. l)(C0))(links))(lfdof(l2)))(la setl.
+    LET(la links. la fd. map(la l. l(la fd2. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          str_eq(fd2)(fd)(la _. mklink(fd2)(C2)(hs)(tx)(rx)(buf)(peer)(ex)(t0))(la _. l)(C0)))(links))(la kill.
+    # is there an established link to id
+    LET(la links. la id. any(la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          int_eq(ph)(C1)(la _. str_eq(peer)(id))(la _. FALSE)(C0)))(links))(la upto.
+    # a link to id up or being set up
+    LET(la links. la id. any(la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          int_eq(ph)(C1)(la _. str_eq(peer)(id))(la _. int_eq(ph)(C0)(la _. str_eq(ex)(id))(la _. FALSE)(C0))(C0)))(links))(la linkedto.
+    LET(la links. foldl(la acc. la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          int_eq(ph)(C1)(la _. any(la x. str_eq(x)(peer))(acc)(la _. acc)(la _. cons(peer)(acc))(C0))(la _. acc)(C0)))
+        (nil)(links))(la peers.
+    # links up or being set up, counted by peer (an accepted handshake as one)
+    LET(la links. count(foldl(la acc. la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          (la key. str_eq(key)("")(la _. acc)(la _. any(la x. str_eq(x)(key))(acc)(la _. acc)(la _. cons(key)(acc))(C0))(C0))
+          (int_eq(ph)(C1)(la _. peer)(la _. int_eq(ph)(C0)(la _. str_eq(ex)("")(la _. concat("fd")(fd))(la _. ex)(C0))(la _. "")(C0))(C0))))
+        (nil)(links)))(la nlinks.
+    LET(la dir. la id. find(la e. e(la i. la p. la pa. la q. la s. str_eq(i)(id)))(dir))(la findd.
+    LET(la dir. la e2. e2(la id. la p2. la pa2. la q2. la s2.
+          findd(dir)(id)(la _. cons(e2)(dir))
+            (la old. map(la e. e(la i. la p. la pa. la q. la s. str_eq(i)(id)(la _. e2)(la _. e)(C0)))(dir))))(la setd.
+    LET(la sn. la m. sn(la cur. la old. la n. any(la x. str_eq(x)(m))(cur)(TRUE)(any(la x. str_eq(x)(m))(old))))(la hasseen.
+    LET(la sn. la m. sn(la cur. la old. la n.
+          lt(n)(C4096)(la _. mkseen(cons(m)(cur))(old)(add(n)(C1)))(la _. mkseen(cons(m)(nil))(cur)(C1))(C0)))(la addseen.
+    # ── messages ──
+    # PRESENCE = "P" ++ id (16) ++ pub (32) ++ seq (8, big-endian) ++ path
+    # DATA     = "D" ++ msgid (16) ++ ttl (1) ++ dest (16) ++ blob
+    LET(la n. concat(be32(bshr(n)(C32)))(be32(band(n)(M32))))(la be64.
+    LET(la s. la o. add(bshl(rdbe32(s)(o))(C32))(rdbe32(s)(add(o)(C4))))(la rdbe64.
+    LET(la pub. slice(sha256(pub))(C0)(C16))(la rawid.
+    LET(la raw. la pub. la q. la path. concat(concat("P")(raw))(concat(concat(pub)(be64(q)))(path)))(la presmsg.
+    LET(la e. e(la id. la pub. la path. la q. la s. presmsg(rawid(pub))(pub)(q)(path)))(la entpres.
+    # sendlink(l)(pt): pt sent on l, transport-encrypted and framed; a failed
+    # send marks the link dead
+    LET(la l. la pt. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          encrypt(tx)(pt)(la ct. la tx2. (la f. (la r.
+              int_eq(str_to_int(r))(len(f))
+                (la _. mklink(fd)(ph)(hs)(tx2)(rx)(buf)(peer)(ex)(t0))
+                (la _. mklink(fd)(C2)(hs)(tx2)(rx)(buf)(peer)(ex)(t0))(C0))
+            (send(fd)(f)))(frame(ct)))))(la sendlink.
+    # flood(links)(except)(pt): pt on every link that is up, but the one it came from
+    LET(la links. la except. la pt. map(la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          int_eq(ph)(C1)(la _. str_eq(fd)(except)(la _. l)(la _. sendlink(l)(pt))(C0))(la _. l)(C0)))(links))(la flood.
+    # onpres(st)(fd)(pt): a PRESENCE that came on link fd
+    LET(la st. la fd. la pt. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        (la n. lt(n)(C58)(la _. seq(log("drop malformed presence"))(st))
+          (la _. (la id. la pub. la psq. la path.
+              str_eq(id)(myid)(la _. st)
+                (la _. findd(dir)(id)(la _. TRUE)(la e. e(la i. la p. la pa. la q. la s. lt(q)(psq)))
+                  (la _. verify_id(id)(pub)(str_eq(pathid(path))(id))(FALSE)
+                     (la _. mkst(flood(links)(fd)(pt))(setd(dir)(mkent(id)(pub)(path)(psq)(div(realms(C0))(C1000))))
+                                (seen)(sq)(ctls)(tick)(quit))
+                     (la _. seq(log(concat("drop presence ")(id)))(st))(C0))
+                  (la _. st)(C0))(C0))
+                 (hex(slice(pt)(C1)(C17)))(slice(pt)(C17)(C49))(rdbe64(pt)(C49))(slice(pt)(C57)(n)))(C0))
+        (len(pt))))(la onpres.
+    # route(st)(fd)(mid)(ttl)(dest)(blob): deliver a DATA addressed here, or
+    # flood it on with this ttl (dropped at 0)
+    LET(la st. la fd. la mid. la ttl. la dest. la blob. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        str_eq(dest)(myraw)
+          (la _. read_message(XRESP)(blob)
+                   (la _. seq(log(concat("drop blob ")(hex(mid))))(st))
+                   (la r. r(la text. la hs2. done(hs2)(la _. seq(log(concat("drop blob ")(hex(mid))))(st))
+                      (la d. d(la tx. la rx. la rs. la h.
+                         seq(log(concat("recv ")(concat(node_id(rs))(concat(" ")(sanitize(text))))))(st))))))
+          (la _. lt(ttl)(C1)
+                   (la _. seq(log(concat("drop ttl ")(hex(mid))))(st))
+                   (la _. withlinks(st)(flood(links)(fd)(concat(concat("D")(mid))(concat(T(ttl))(concat(dest)(blob))))))(C0))
+          (C0)))(la route.
+    LET(la st. la sn. st(la l. la d. la s. la q. la c. la t. la u. mkst(l)(d)(sn)(q)(c)(t)(u)))(la withseen.
+    # ondata(st)(fd)(pt): a DATA that came on link fd
+    LET(la st. la fd. la pt. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        (la n. lt(n)(C35)(la _. seq(log("drop malformed data"))(st))
+          (la _. (la mid. hasseen(seen)(mid)
+                    (la _. seq(log(concat("drop dup ")(hex(mid))))(st))
+                    (la _. route(withseen(st)(addseen(seen)(mid)))(fd)(mid)(sub(byte(pt)(C17))(C1))
+                                (slice(pt)(C18)(C34))(slice(pt)(C34)(n)))(C0))
+                 (slice(pt)(C1)(C17)))(C0))
+        (len(pt))))(la ondata.
+    LET(la st. la fd. la pt. (la t. str_eq(t)("P")(la _. onpres(st)(fd)(pt))
+          (la _. str_eq(t)("D")(la _. ondata(st)(fd)(pt))(la _. seq(log("drop malformed"))(st))(C0))(C0))
+        (str_at(pt)(C0)))(la onmsg.
+    # establish(st)(l)(d): the handshake on l is finished (d from done)
+    LET(la st. la l. la d. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        d(la tx. la rx. la rs. la h. l(la fd. la ph. la hs. la tx0. la rx0. la buf. la peer0. la ex. la t0.
+          (la peer.
+            str_eq(peer)(myid)
+              (la _. seq(log("drop self"))(withlinks(st)(kill(links)(fd))))
+              (la _. str_eq(ex)("")(TRUE)(str_eq(ex)(peer))
+                 (la _. seq(upto(links)(peer)(la _. C0)(la _. log(concat("link ")(peer)))(C0))(
+                        withlinks(st)(setl(links)(
+                          foldl(la lk. la e. sendlink(lk)(entpres(e)))
+                               (sendlink(mklink(fd)(C1)("")(tx)(rx)(buf)(peer)(ex)(t0))(presmsg(myraw)(mypub)(sq)(mypath)))
+                               (dir)))))
+                 (la _. seq(log(concat("drop impostor ")(concat(ex)(concat(" ")(peer)))))(withlinks(st)(kill(links)(fd))))
+                 (C0))
+              (C0))
+          (node_id(rs))))))(la establish.
+    # hsframe(st)(l)(f): a handshake message on l
+    LET(la st. la l. la f. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          read_message(hs)(f)
+            (la _. seq(log(concat("drop handshake ")(str_eq(ex)("")(la _. "inbound")(la _. ex)(C0))))(withlinks(st)(kill(links)(fd))))
+            (la r. r(la pl. la hs1.
+               done(hs1)
+                 (la _. write_message(hs1)("")(la m. la hs2. (la fm. (la sr.
+                          int_eq(str_to_int(sr))(len(fm))
+                            (la _. (la l2. done(hs2)(la _. withlinks(st)(setl(links)(l2)))(la d2. establish(st)(l2)(d2)))
+                                   (mklink(fd)(C0)(hs2)(tx)(rx)(buf)(peer)(ex)(t0)))
+                            (la _. withlinks(st)(kill(links)(fd)))(C0))
+                        (send(fd)(fm)))(frame(m))))
+                 (la d. establish(st)(l)(d)))))))(la hsframe.
+    # onframe(st)(fd)(f): one frame that came on link fd
+    LET(la st. la fd. la f. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        findl(links)(fd)(la _. st)(la l. l(la fd_. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          int_eq(ph)(C0)(la _. hsframe(st)(l)(f))
+            (la _. int_eq(ph)(C1)
+                     (la _. decrypt(rx)(f)
+                              (la _. seq(log(concat("drop transport ")(peer)))(withlinks(st)(kill(links)(fd))))
+                              (la r. r(la pt. la rx2.
+                                 onmsg(withlinks(st)(setl(links)(mklink(fd)(ph)(hs)(tx)(rx2)(buf)(peer)(ex)(t0))))(fd)(pt))))
+                     (la _. st)(C0))(C0)))))(la onframe.
+    # onlink(st)(fd)(l): link fd is readable
+    LET(la st. la fd. la l. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        (la chunk. str_eq(chunk)("")
+           (la _. withlinks(st)(kill(links)(fd)))
+           (la _. l(la fd_. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+                    deframe(buf)(chunk)(la frames. la buf2.
+                      (la st2. broken(buf2)
+                                 (la _. seq(log(concat("drop frame ")(peer)))(st2(la l2. la d. la s. la q. la c. la t. la u.
+                                          withlinks(st2)(kill(l2)(fd)))))
+                                 (la _. st2)(C0))
+                      (foldl(la s. la fr. onframe(s)(fd)(fr))
+                            (withlinks(st)(setl(links)(mklink(fd)(ph)(hs)(tx)(rx)(buf2)(peer)(ex)(t0))))
+                            (frames)))))(C0))
+        (recv(fd)("65536"))))(la onlink.
+    # ── the control channel ──
+    LET(la ctls. la fd. map(la c. c(la f. la b. la dn. str_eq(f)(fd)(la _. mkctl(f)(b)(TRUE))(la _. c)(C0)))(ctls))(la ctldone.
+    LET(la ctls. la c2. c2(la fd. la b2. la d2. map(la c. c(la f. la b. la dn. str_eq(f)(fd)(la _. c2)(la _. c)(C0)))(ctls)))(la ctlset.
+    LET(la e. e(la id. la pub. la path. la q. la s.
+          concat(id)(concat(" ")(concat(hex(pub))(concat(" ")(concat(path)(concat(" ")(concat(int_to_str(q))(concat(" ")(int_to_str(s)))))))))))(la entline.
+    # sendcmd(st)(line)(k): "send <dest> <text>" -> k(reply)(st')
+    LET(la st. la line. la k. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        (la n. lt(n)(C37)(la _. k("err usage: send <dest> <text>")(st))
+          (la _. int_eq(n)(C37)(TRUE)(str_eq(str_at(line)(C37))(" "))
+             (la _. (la dest. la text.
+                (la go. str_eq(dest)(myid)(la _. go(mypub))
+                          (la _. findd(dir)(dest)(la _. k(concat("err unknown ")(dest))(st))
+                                   (la e. e(la i. la p. la pa. la q. la s. go(p))))(C0))
+                (la pub. lt(MAXTEXT)(len(text))
+                   (la _. k("err too long")(st))
+                   (la _. x_init(kp)(keypair(random("32")))(pub)
+                            (la _. k("err bad key")(st))
+                            (la hs. write_message(hs)(text)(la blob. la hs2. (la mid.
+                               k(concat("ok\n")(hex(mid)))
+                                (route(withseen(st)(addseen(seen)(mid)))("")(mid)(C16)(rawid(pub))(blob)))
+                              (random("16")))))(C0)))
+               (slice(line)(C5)(C37))(int_eq(n)(C37)(la _. "")(la _. slice(line)(C38)(n))(C0)))
+             (la _. k("err usage: send <dest> <text>")(st))(C0))(C0))
+        (len(line))))(la sendcmd.
+    # command(st)(line)(k): k(reply)(st')
+    LET(la st. la line. la k. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        words(line)(la _. k("err empty command")(st))(la cmd. la args.
+          str_eq(cmd)("id")(la _. k(concat("ok\n")(myid))(st))(la _.
+          str_eq(cmd)("peers")(la _. k(concat("ok")(joinnl(rev(peers(links)))))(st))(la _.
+          str_eq(cmd)("directory")(la _. k(concat("ok")(joinnl(map(entline)(rev(dir)))))(st))(la _.
+          str_eq(cmd)("quit")(la _. k("ok")(mkst(links)(dir)(seen)(sq)(ctls)(tick)(TRUE)))(la _.
+          str_eq(cmd)("send")(la _. sendcmd(st)(line)(k))(la _.
+          k(concat("err unknown command ")(cmd))(st))(C0))(C0))(C0))(C0))(C0))))(la command.
+    # onctl(st)(fd)(c): control connection fd is readable: one framed command,
+    # one framed reply, then the connection is closed
+    LET(la st. la fd. la c. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        (la chunk. str_eq(chunk)("")
+           (la _. withctls(st)(ctldone(ctls)(fd)))
+           (la _. c(la f. la b. la dn. deframe(b)(chunk)(la frames. la b2.
+                    frames(la _. broken(b2)(la _. withctls(st)(ctldone(ctls)(fd)))
+                                           (la _. withctls(st)(ctlset(ctls)(mkctl(fd)(b2)(FALSE))))(C0))
+                          (la cmd. la rest. command(st)(cmd)(la reply. la st2.
+                             seq(send(fd)(frame(reply)))(st2(la l2. la d2. la s2. la q2. la c2. la t2. la u2.
+                                withctls(st2)(ctldone(c2)(fd)))))))))(C0))
+        (recv(fd)("65536"))))(la onctl.
+    # ── a pass of the loop ──
+    LET(la st. (la nfd. lt(str_to_int(nfd))(C0)(la _. st)
+          (la _. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+                    withlinks(st)(cons(mklink(nfd)(C0)(xx_resp(kp)(keypair(random("32"))))("")("")("")("")("")(now(C0)))(links))))(C0))
+        (accept(lfd)))(la acceptlink.
+    LET(la st. (la nfd. lt(str_to_int(nfd))(C0)(la _. st)
+          (la _. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+                    withctls(st)(cons(mkctl(nfd)("")(FALSE))(ctls))))(C0))
+        (accept(cfd)))(la acceptctl.
+    LET(la st. la fd.
+        str_eq(fd)(lfd)(la _. acceptlink(st))
+          (la _. str_eq(fd)(cfd)(la _. acceptctl(st))
+             (la _. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+                       findl(links)(fd)
+                         (la _. find(la c. c(la f. la b. la dn. str_eq(f)(fd)))(ctls)(la _. st)(la c. onctl(st)(fd)(c)))
+                         (la l. onlink(st)(fd)(l))))(C0))(C0))(la service.
+    # sweep(st): close the dead links (an unlink line when the last link to a
+    # peer goes) and the finished control connections
+    LET(la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0. int_eq(ph)(C2)))(la isdead.
+    LET(la st. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        (la anydead. la anydone.
+          anydead(TRUE)(anydone)
+            (la _. (la dead. la live.
+                      seq(foldl(la z. la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+                                 seq(close(fd))(str_eq(peer)("")(la _. z)
+                                   (la _. any(la x. str_eq(x)(peer))(z)(la _. z)
+                                            (la _. seq(upto(live)(peer)(la _. C0)(la _. log(concat("unlink ")(peer)))(C0))(cons(peer)(z)))(C0))(C0))))
+                                (nil)(dead))(
+                      mkst(live)(dir)(seen)(sq)
+                          (filter(la c. c(la f. la b. la dn. dn(la _. seq(close(f))(FALSE))(la _. TRUE)(C0)))(ctls))
+                          (tick)(quit)))
+                   (filter(isdead)(links))(filter(la l. isdead(l)(FALSE)(TRUE))(links)))
+            (la _. st)(C0))
+        (any(isdead)(links))(any(la c. c(la f. la b. la dn. dn))(ctls))))(la sweep.
+    # tick(st): every T: presence on every link, handshakes that took too
+    # long dropped, and repair: with fewer than K links, dial the seeds and
+    # the directory entries in reach it has no link to
+    LET(la path. la id. la none. la some. (la s. (la r.
+          str_eq(r)("0")
+            (la _. write_message(xx_init(kp)(keypair(random("32"))))("")(la m. la hs. (la fm. (la sr.
+                     int_eq(str_to_int(sr))(len(fm))
+                       (la _. some(mklink(s)(C0)(hs)("")("")("")("")(id)(now(C0))))
+                       (la _. seq(close(s))(none(C0)))(C0))
+                   (send(s)(fm)))(frame(m))))
+            (la _. seq(close(s))(none(C0)))(C0))
+        (connect(s)(path)))(socket("!")))(la dial.
+    LET(la id. str_eq(id)(myid)(FALSE)(reachall(TRUE)(any(la x. str_eq(x)(id))(reach))))(la inreach.
+    LET(Z(la dm. la cands. la have. la links.
+        cands(la _. links)(la c. la rest. lt(have)(K)
+          (la _. c(la id. la path.
+                   inreach(id)(linkedto(links)(id)(FALSE)(TRUE))(FALSE)
+                     (la _. dial(path)(id)(la _. dm(rest)(have)(links))(la l. dm(rest)(add(have)(C1))(cons(l)(links))))
+                     (la _. dm(rest)(have)(links))(C0)))
+          (la _. links)(C0))))(la dialmany.
+    LET(la links. la t. map(la l. l(la fd. la ph. la hs. la tx. la rx. la buf. la peer. la ex. la t0.
+          int_eq(ph)(C0)(la _. lt(HSTO)(sub(t)(t0))
+                                 (la _. seq(log(concat("drop timeout ")(str_eq(ex)("")(la _. "inbound")(la _. ex)(C0))))
+                                           (mklink(fd)(C2)(hs)(tx)(rx)(buf)(peer)(ex)(t0)))
+                                 (la _. l)(C0))(la _. l)(C0)))(links))(la expire.
+    LET(la st. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        (la t. (la sq2. (la links2.
+            mkst(dialmany(append(seedl)(map(la e. e(la id. la pub. la path. la q. la s. mkpair(id)(path)))(dir)))
+                         (nlinks(links2))(links2))
+                (dir)(seen)(sq2)(ctls)(t)(quit))
+            (expire(flood(links)("")(presmsg(myraw)(mypub)(sq2)(mypath)))(t)))
+          (max(add(sq)(C1))(realms(C0))))
+        (now(C0))))(la dotick.
+    LET(la st. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        foldl(la acc. la x. concat(acc)(concat(" ")(x)))(concat(lfd)(concat(" ")(cfd)))
+             (append(map(lfdof)(filter(la l. isdead(l)(FALSE)(TRUE))(links)))(map(la c. c(la f. la b. la dn. f))(ctls)))))(la fdlist.
+    LET(la st. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        seq(foldl(la z. la l. seq(close(lfdof(l)))(z))(C0)(links))(
+        seq(foldl(la z. la c. c(la f. la b. la dn. seq(close(f))(z)))(C0)(ctls))(
+        seq(close(lfd))(seq(close(cfd))(seq(unlink(mypath))(seq(unlink(ctlpath))(log(concat("down ")(myid))))))))))(la shutdown.
+    LET(Z(la loop. la st. st(la links. la dir. la seen. la sq. la ctls. la tick. la quit.
+        quit(la _. shutdown(st))
+            (la _. (la t. lt(t)(add(tick)(Tms))
+                      (la _. (la ready. loop(sweep(foldl(service)(st)(ready))))
+                             (words(poll(fdlist(st))(int_to_str(sub(add(tick)(Tms))(t))))))
+                      (la _. loop(sweep(dotick(st))))(C0))
+                   (now(C0)))(C0))))(la loop.
+      seq(log(concat("up ")(myid)))(
+      loop(mkst(nil)(nil)(mkseen(nil)(nil)(C0))(realms(C0))(nil)(sub(now(C0))(Tms))(FALSE)))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  (0)(1)(2)(4)(5)(16)(17)(18)(32)(34)(35)(37)(38)(49)(57)(58)(1000)(1000000)(4096)(4294967295)(15000)(65389)
+  (la t. la f. t)(la t. la f. f)(NET_NIL)(NET_CONS))))))
+  (NET_BYTES(B))(NODE_LISTS(B))))))

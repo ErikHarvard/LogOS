@@ -21,7 +21,17 @@
 #      hex of sha256(pub)[:16], recomputed by Python from the key file with
 #      its own X25519; verify_id; key files others can read, of the wrong
 #      size, or not regular files, are refused loudly.
-# ISOLATION: a private temp dir (gate_wm_common.sh; mktemp honours TMPDIR).
+#   4. the node (NODE), VM processes in $T/net driven from Python
+#      (meshlib.py), checked against the gate's own key files, X25519 and
+#      hashlib, and against the gate's own Python node (pynode.py: its own
+#      Noise, framing and mesh messages): NodeIDs; links; the control
+#      channel (id, peers, directory, send, quit, its errors); delivery once,
+#      to itself too; the longest text; a live address refused to a second
+#      node; a live XX handshake and presence with the Python node; ttl 16 at
+#      the origin, dropped at 0; the 4096-msgid dedup window; malformed input
+#      drops the link and never the node.
+# ISOLATION: a private temp dir (gate_wm_common.sh; mktemp honours TMPDIR):
+# every socket is in it; every node process is killed on every exit path.
 # VM only (the C host is far too slow for the crypto underneath).
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
@@ -32,6 +42,15 @@ check() { if [ "$1" = 1 ]; then pass "$2"; else fail "$2"; [ -n "${3:-}" ] && ec
 command -v python3 >/dev/null || { echo "FAIL  logosnet: python3 (the oracle) is not installed"; exit 1; }
 wm_setup logosnet.la logoscrypt.la x25519.la
 G0=$(date +%s)
+# Every node the Python driver starts is a VM process with $T/logos_secd as
+# argv[0] and its pid in $T/node.pids; they are killed on every exit path.
+cleanup() {
+    for p in $(cat "$T/node.pids" 2>/dev/null); do kill -9 "$p" 2>/dev/null; done
+    pkill -KILL -f "$T/logos_secd " 2>/dev/null
+    rm -rf "$T"
+}
+trap cleanup EXIT
+trap 'exit 2' INT TERM HUP
 
 # vm_compile PROG.la BIN: compile on the VM into $T/BIN; a failure ends the gate
 vm_compile() {
@@ -485,6 +504,395 @@ if mode == "broken":
           "brk5 0 broken T tail %d" % (4 + big + 4 + 5))
 PYEOF
 
+cat > "$T/meshlib.py" <<'PYEOF'
+# meshlib.py — drives LogosNet nodes (VM processes) for the gate.
+# Every node runs with its working directory at the net directory NET, so
+# socket paths stay short (./<id>.sock); its log is NET/<name>.log.
+import os, sys, time, socket, struct, subprocess, signal, hashlib, re
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import noiseref as N
+
+class Mesh:
+    def __init__(s, net, vm, prog, pidfile=None):
+        s.net, s.vm, s.prog, s.pidfile = net, vm, prog, pidfile   # prog: the compiled node stream
+        s.procs, s.keys = {}, {}
+        os.makedirs(net, exist_ok=True)
+        if not os.path.exists(os.path.join(net, "logos_program.bin")):
+            open(os.path.join(net, "logos_program.bin"), "wb").write(open(prog, "rb").read())
+    def key(s, name, sk=None):
+        """a key file NET/<name>.key (mode 0600) the gate made itself, and the
+        NodeID it must give: hex of sha256(X25519 public)[:16]"""
+        sk = sk or os.urandom(32)
+        p = os.path.join(s.net, name + ".key")
+        if os.path.exists(p): os.remove(p)
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600); os.write(fd, sk); os.close(fd)
+        pub = N.x_pub(sk)
+        nid = hashlib.sha256(pub).digest()[:16].hex()
+        s.keys[name] = (sk, pub, nid)
+        return nid
+    def id(s, name): return s.keys[name][2]
+    def path(s, name): return "./%s.sock" % s.id(name)
+    def start(s, name, seeds=(), reach=None, period=1, links=2, extra="", keyname=None):
+        cfg = ["netdir .", "key %s.key" % (keyname or name), "ctl %s.ctl" % name,
+               "period %d" % period, "links %d" % links]
+        cfg += ["seed %s" % s.path(x) for x in seeds]
+        if reach is not None: cfg.append("reach " + " ".join(s.id(x) for x in reach))
+        cfg.append(extra)
+        open(os.path.join(s.net, name + ".cfg"), "w").write("\n".join(cfg) + "\n")
+        log = open(os.path.join(s.net, name + ".log"), "ab")
+        s.procs[name] = subprocess.Popen([os.path.abspath(s.vm), name + ".cfg"], cwd=s.net,
+                                         stdout=log, stderr=subprocess.STDOUT)
+        log.close()
+        if s.pidfile: open(s.pidfile, "a").write("%d\n" % s.procs[name].pid)
+    def log(s, name):
+        try: return open(os.path.join(s.net, name + ".log"), encoding="utf-8", errors="replace").read()
+        except FileNotFoundError: return ""
+    def wait(s, name, pattern, timeout=60, count=1):
+        """wait until NET/<name>.log has `count` lines matching the regex"""
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            if len(re.findall(pattern, s.log(name), re.M)) >= count: return True
+            p = s.procs.get(name)
+            if p is not None and p.poll() is not None and len(re.findall(pattern, s.log(name), re.M)) < count:
+                return False
+            time.sleep(0.2)
+        return False
+    def ctl(s, name, line, timeout=60):
+        c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.settimeout(timeout)
+        cwd = os.getcwd(); os.chdir(s.net)
+        try: c.connect(name + ".ctl")
+        finally: os.chdir(cwd)
+        data = line.encode()
+        c.sendall(struct.pack(">I", len(data)) + data)
+        buf = b""
+        while True:
+            d = c.recv(65536)
+            if not d: break
+            buf += d
+            if len(buf) >= 4 and len(buf) >= 4 + struct.unpack(">I", buf[:4])[0]: break
+        c.close()
+        if len(buf) < 4: return None
+        return buf[4:4 + struct.unpack(">I", buf[:4])[0]].decode("utf-8", "replace")
+    def kill(s, name, sig=signal.SIGKILL):
+        p = s.procs.pop(name, None)
+        if p is not None and p.poll() is None:
+            p.send_signal(sig); p.wait()
+    def rc(s, name, timeout=30):
+        """the exit status of a node that is expected to end by itself"""
+        p = s.procs.get(name)
+        try: return p.wait(timeout)
+        except subprocess.TimeoutExpired: return None
+    def stop_all(s):
+        for n in list(s.procs): s.kill(n)
+PYEOF
+cat > "$T/pynode.py" <<'PYEOF'
+# pynode.py — a LogosNet node in Python, independent of the LA: the gate's own
+# Noise (noiseref.py) for the XX links, its own framing and mesh messages.
+# It relays like a node, and the gate can make it misbehave: flip a byte of
+# every DATA blob it relays, inject raw DATA, or send a forged PRESENCE.
+import os, socket, struct, threading, select, time, hashlib
+import noiseref as N
+PRO = b"LogosNet/1"
+def frame(p): return struct.pack(">I", len(p)) + p
+def rawid(pub): return hashlib.sha256(pub).digest()[:16]
+def presence(raw, pub, seq, path): return b"P" + raw + pub + struct.pack(">Q", seq) + path
+def data(msgid, ttl, dest, blob): return b"D" + msgid + bytes([ttl]) + dest + blob
+
+class Link:
+    def __init__(s, sock, hs, expect=None):
+        s.sock, s.hs, s.expect, s.buf = sock, hs, expect, b""
+        s.tx = s.rx = s.peer = None
+    def up(s): return s.tx is not None
+
+class PyNode:
+    """net: the net directory; bind: the path to listen on (default ./<id>.sock)"""
+    def __init__(s, net, sk=None, bind=None, flip=False, announce=True):
+        s.net, s.sk = net, sk or os.urandom(32)
+        s.pub = N.x_pub(s.sk); s.raw = rawid(s.pub); s.id = s.raw.hex()
+        s.path = (bind or "./%s.sock" % s.id)
+        s.flip, s.announce = flip, announce
+        s.links, s.seenp, s.seend, s.events = [], {}, set(), []
+        s.lock = threading.RLock(); s.stop = False
+        cwd = os.getcwd(); os.chdir(net)
+        try:
+            if os.path.exists(s.path): os.remove(s.path)
+            s.lsock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.lsock.bind(s.path); s.lsock.listen(16)
+        finally: os.chdir(cwd)
+        s.thread = threading.Thread(target=s._loop, daemon=True); s.thread.start()
+    def ev(s, *e):
+        with s.lock: s.events.append(e)
+    def has(s, *e):
+        with s.lock: return e in s.events
+    def wait(s, *e, timeout=60):
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            if s.has(*e): return True
+            time.sleep(0.1)
+        return False
+    def dial(s, path, expect=None):
+        c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        cwd = os.getcwd(); os.chdir(s.net)
+        try: c.connect(path)
+        finally: os.chdir(cwd)
+        hs = N.HS("XX", True, PRO, s.sk, os.urandom(32))
+        L = Link(c, hs, expect)
+        with s.lock:
+            c.sendall(frame(hs.write(b""))); s.links.append(L)
+        return L
+    def send(s, L, pt):
+        with s.lock:
+            try: L.sock.sendall(frame(L.tx.enc(b"", pt)))
+            except OSError: s._drop(L)
+    def flood(s, pt, but=None):
+        with s.lock:
+            for L in list(s.links):
+                if L.up() and L is not but: s.send(L, pt)
+    def presence_msg(s, seq=None):
+        return presence(s.raw, s.pub, seq or int(time.time() * 1000), s.path.encode())
+    def _drop(s, L):
+        if L in s.links:
+            s.links.remove(L)
+            try: L.sock.close()
+            except OSError: pass
+            s.ev("unlink", L.peer)
+    def _loop(s):
+        while not s.stop:
+            with s.lock: socks = [s.lsock] + [L.sock for L in s.links]
+            try: r, _, _ = select.select(socks, [], [], 0.1)
+            except (OSError, ValueError): continue
+            for so in r:
+                with s.lock:
+                    if so is s.lsock:
+                        c, _ = s.lsock.accept()
+                        s.links.append(Link(c, N.HS("XX", False, PRO, s.sk, os.urandom(32))))
+                        continue
+                    L = next((x for x in s.links if x.sock is so), None)
+                    if L is None: continue
+                    try: d = so.recv(65536)
+                    except OSError: d = b""
+                    if not d: s._drop(L); continue
+                    L.buf += d
+                    while len(L.buf) >= 4 and len(L.buf) >= 4 + struct.unpack(">I", L.buf[:4])[0]:
+                        n = struct.unpack(">I", L.buf[:4])[0]; f = L.buf[4:4 + n]; L.buf = L.buf[4 + n:]
+                        if L in s.links: s._frame(L, f)
+    def _frame(s, L, f):
+        if not L.up():
+            try:
+                L.hs.read(f)
+                if L.hs.msgs: L.sock.sendall(frame(L.hs.write(b"")))
+            except (N.Bad, ValueError):
+                s.ev("drop", "handshake"); s._drop(L); return
+            if not L.hs.msgs:
+                L.tx, L.rx = L.hs.split(); L.peer = rawid(L.hs.rs).hex()
+                if L.expect and L.expect != L.peer: s.ev("impostor", L.expect, L.peer); s._drop(L); return
+                s.ev("link", L.peer)
+                if s.announce: s.send(L, s.presence_msg())
+            return
+        try: pt = L.rx.dec(b"", f)
+        except N.Bad: s.ev("drop", "transport"); s._drop(L); return
+        if pt[:1] == b"P" and len(pt) >= 58:
+            pid, seq = pt[1:17].hex(), struct.unpack(">Q", pt[49:57])[0]
+            if pid == s.id or s.seenp.get(pid, -1) >= seq: return
+            s.seenp[pid] = seq; s.ev("presence", pid); s.flood(pt, but=L)
+        elif pt[:1] == b"D" and len(pt) >= 35:
+            mid, ttl, dest, blob = pt[1:17], pt[17], pt[18:34], pt[34:]
+            if mid in s.seend: return
+            s.seend.add(mid); s.ev("data", mid.hex()); s.ev("ttl", mid.hex(), ttl)
+            if dest == s.raw: return
+            if ttl - 1 < 1: return
+            if s.flip: blob = blob[:-1] + bytes([blob[-1] ^ 1]); s.ev("flipped", mid.hex())
+            s.flood(data(mid, ttl - 1, dest, blob), but=L)
+    def close(s):
+        s.stop = True; s.thread.join(2)
+        with s.lock:
+            for L in list(s.links):
+                try: L.sock.close()
+                except OSError: pass
+            s.links = []
+            s.lsock.close()
+        cwd = os.getcwd(); os.chdir(s.net)
+        try:
+            if os.path.exists(s.path): os.remove(s.path)
+        finally: os.chdir(cwd)
+PYEOF
+cat > "$T/meshtests.py" <<'PYEOF'
+# meshtests.py TEST — the gate's node tests: VM nodes driven from Python,
+# checked against the gate's own key files, X25519 and hashlib, and its own
+# Python node (pynode.py). Prints PASS/FAIL lines; exits 1 on a FAIL.
+import os, sys, time, re, signal, struct, shutil, atexit
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from meshlib import Mesh
+from pynode import PyNode, data, presence, frame
+T = os.path.dirname(os.path.abspath(__file__))
+NET = os.path.join(T, "net")
+FAILS = 0
+
+def check(ok, what, detail=""):
+    global FAILS
+    print(("PASS  logosnet: " if ok else "FAIL  logosnet: ") + what, flush=True)
+    if not ok:
+        FAILS += 1
+        if detail: print("      " + str(detail)[:700].replace("\n", " | "), flush=True)
+
+MESHES, PYS = [], []
+def cleanup():
+    for p in PYS:
+        try: p.close()
+        except Exception: pass
+    for m in MESHES: m.stop_all()
+atexit.register(cleanup)
+for sg in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    signal.signal(sg, lambda *a: sys.exit(2))
+
+def fresh():
+    cleanup(); PYS.clear()
+    shutil.rmtree(NET, ignore_errors=True)
+    m = Mesh(NET, os.path.join(T, "logos_secd"), os.path.join(T, "node.bin"), os.path.join(T, "node.pids"))
+    MESHES.append(m); return m
+def py(**kw):
+    p = PyNode(NET, **kw); PYS.append(p); return p
+def count(m, name, pat): return len(re.findall(pat, m.log(name), re.M))
+def tail(m, *names): return " || ".join("%s: %s" % (n, m.log(n)[-300:]) for n in names)
+def okid(reply):
+    """the msgid a successful send replies with"""
+    return reply[3:] if reply and reply.startswith("ok\n") and re.fullmatch(r"[0-9a-f]{32}", reply[3:]) else None
+
+def t_basics():
+    m = fresh()
+    a, b = m.key("A"), m.key("B")
+    m.start("B"); m.start("A", seeds=["B"])
+    check(m.wait("A", r"^net: up %s$" % a) and m.wait("B", r"^net: up %s$" % b),
+          "net: up <id>: the NodeID is the hex of sha256(public key)[:16] of the node's key file (the gate's own X25519 and hashlib)",
+          tail(m, "A", "B"))
+    check(m.wait("A", r"^net: link %s$" % b) and m.wait("B", r"^net: link %s$" % a),
+          "an XX link: net: link <id> on both sides, each naming the other", tail(m, "A", "B"))
+    time.sleep(1.5)
+    rid, rpeers, rdir = m.ctl("A", "id"), m.ctl("A", "peers"), m.ctl("A", "directory")
+    dl = (rdir or "").split("\n")
+    ent = dl[1].split(" ") if len(dl) == 2 else []
+    good = (rid == "ok\n" + a and rpeers == "ok\n" + b and dl[0] == "ok" and len(ent) == 5 and ent[0] == b
+            and ent[1] == m.keys["B"][1].hex() and ent[2] == m.path("B") and int(ent[3]) > 1700000000000)
+    check(good, "control: id, peers, directory (the peer's id, its public key, its address, a realtime-ms seq)",
+          "%r %r %r" % (rid, rpeers, rdir))
+    text = "hello mesh " + os.urandom(6).hex()
+    mid = okid(m.ctl("A", "send %s %s" % (b, text)))
+    got = m.wait("B", r"^net: recv %s %s$" % (a, text))
+    time.sleep(1)
+    check(mid is not None and got and count(m, "B", r"^net: recv ") == 1,
+          "DATA from A to B: delivered once, from A's id, with its text", tail(m, "B"))
+    selfmid = okid(m.ctl("A", "send %s talking to myself" % a))
+    check(selfmid is not None and m.wait("A", r"^net: recv %s talking to myself$" % a),
+          "a node can send to itself (self-communication)", tail(m, "A"))
+    m.ctl("A", "send %s tab\there\x01end" % b)
+    check(m.wait("B", r"^net: recv %s tab\?here\?end$" % a),
+          "a received text's bytes outside 32..126 are logged as ?", tail(m, "B"))
+    big = "x" * 65389
+    bigok = okid(m.ctl("A", "send %s %s" % (b, big)))
+    toolong = m.ctl("A", "send %s %s" % (b, big + "x"))
+    check(bigok is not None and m.wait("B", r"^net: recv %s x{65389}$" % a) and toolong == "err too long",
+          "the longest text (65389 bytes: one 65535-byte transport message) is delivered; one byte more is refused by send",
+          "%r %r" % (bigok, (toolong or "")[:40]))
+    replies = [m.ctl("A", c) for c in ("send %s x" % ("0" * 32), "bogus", "send short", "")]
+    check(replies == ["err unknown " + "0" * 32, "err unknown command bogus", "err usage: send <dest> <text>",
+                      "err empty command"],
+          "control errors: an unknown destination, an unknown command, a malformed send, an empty line", replies)
+    q = m.ctl("B", "quit")
+    rc = m.rc("B")
+    check(q == "ok" and rc == 0 and m.wait("B", r"^net: down %s$" % b) and m.wait("A", r"^net: unlink %s$" % b)
+          and not os.path.exists(os.path.join(NET, m.path("B"))) and not os.path.exists(os.path.join(NET, "B.ctl")),
+          "quit: net: down, exit 0, both socket files removed; the peer logs net: unlink", "%r rc %r %s" % (q, rc, tail(m, "A", "B")))
+
+def t_livepath():
+    m = fresh()
+    a = m.key("A")
+    m.start("A"); m.wait("A", r"^net: up ")
+    m.start("A2", keyname="A")
+    rc = m.rc("A2")
+    check(rc == 1 and count(m, "A2", r"^logosnet: node: \./%s\.sock is held by a live node$" % a) == 1
+          and m.ctl("A", "id") == "ok\n" + a,
+          "a second node with the same key is refused the live node's address (rc 1, loud), and the first keeps running",
+          "rc %r %s" % (rc, tail(m, "A2")))
+
+def t_interop():
+    m = fresh()
+    a, b = m.key("A"), m.key("B")
+    m.start("B", links=1); m.start("A", seeds=["B"], links=1)
+    m.wait("A", r"^net: link %s$" % b)
+    P = py()
+    L = P.dial(m.path("A"), expect=a)
+    check(P.wait("link", a) and m.wait("A", r"^net: link %s$" % P.id),
+          "the gate's Python node and a VM node complete a live XX handshake over AF_UNIX (each sees the other's id)",
+          tail(m, "A"))
+    time.sleep(1.5)
+    d = m.ctl("A", "directory") or ""
+    check(P.wait("presence", b, timeout=15) and ("%s %s" % (P.id, P.pub.hex())) in d,
+          "presence both ways: the Python node learns B through A, A records the Python node's id and public key", d)
+    mid = okid(m.ctl("A", "send %s via-p" % b))
+    check(mid is not None and P.wait("ttl", mid, 16),
+          "a DATA leaves its origin with ttl 16 (seen by the Python neighbour)", P.events[-5:])
+    m1, m2 = os.urandom(16), os.urandom(16)
+    P.send(L, data(m1, 1, os.urandom(16), os.urandom(120)))
+    P.send(L, data(m2, 2, os.urandom(16), os.urandom(120)))
+    ok1 = m.wait("A", r"^net: drop ttl %s$" % m1.hex()) and m.wait("B", r"^net: drop ttl %s$" % m2.hex())
+    time.sleep(1)
+    check(ok1 and m1.hex() not in m.log("B"),
+          "ttl: a DATA arriving with ttl 1 is dropped at 0 and not forwarded; with ttl 2 it is forwarded once", tail(m, "A", "B"))
+    M = os.urandom(16)
+    P.send(L, data(M, 1, os.urandom(16), b"x" * 100))
+    for i in range(4095): P.send(L, data(os.urandom(16), 1, os.urandom(16), b"x" * 100))
+    P.send(L, data(M, 1, os.urandom(16), b"x" * 100))
+    check(m.wait("A", r"^net: drop dup %s$" % M.hex(), timeout=600) and count(m, "A", r"^net: drop ttl %s$" % M.hex()) == 1,
+          "dedup: a msgid seen 4096 messages ago is still dropped as a duplicate", tail(m, "A"))
+    # malformed input on a link: an oversize frame header, a transport frame that does not open, a bad handshake
+    with P.lock: L.sock.sendall(struct.pack(">I", 2 << 20) + b"junk")
+    okf = m.wait("A", r"^net: drop frame %s$" % P.id) and m.wait("A", r"^net: unlink %s$" % P.id)
+    L2 = P.dial(m.path("A"), expect=a); P.wait("link", a)
+    time.sleep(0.5)
+    with P.lock: L2.sock.sendall(frame(os.urandom(40)))
+    okt = m.wait("A", r"^net: drop transport %s$" % P.id)
+    import socket as S
+    c = S.socket(S.AF_UNIX, S.SOCK_STREAM); cwd = os.getcwd(); os.chdir(NET); c.connect(m.path("A")); os.chdir(cwd)
+    c.sendall(frame(b"too short")); okh = m.wait("A", r"^net: drop handshake inbound$"); c.close()
+    check(okf and okt and okh and m.ctl("A", "id") == "ok\n" + a,
+          "malformed input drops the link, never the node: a frame header above 1 MiB, a transport frame that does not open, a short handshake message",
+          tail(m, "A"))
+
+TESTS = {"basics": t_basics, "livepath": t_livepath, "interop": t_interop}
+if __name__ == "__main__":
+    for name in sys.argv[1:]:
+        try: TESTS[name]()
+        except Exception as e:
+            check(False, "%s: the test itself failed: %r" % (name, e))
+    cleanup()
+    sys.exit(1 if FAILS else 0)
+PYEOF
+
+# node.la: one LogosNet node; its config file is argv[1] (from /proc/self/cmdline)
+cat > "$T/node.la" <<'LAEOF'
+import("logosnet.la")
+import("logoscrypt.la")
+import("x25519.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(str_eq)(error)
+                 (add)(sub)(mul)(div)(mod)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+glyph X = la s. s(socket)(bind)(listen)(accept)(connect)(send)(recv)(close)(unlink)(poll)
+                 (random)(clock_gettime)(print)(read_file)(write_file)(chmod)(stat)(mkdir)
+                 (rmdir)(rename)(sigprocmask)
+glyph CRYPT = CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
+    (add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+glyph XK = X25519_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
+    (add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+# ARG1(cmdline): the second NUL-terminated field of /proc/self/cmdline (argv[1])
+glyph ARG1 = la cl. Z(la go. la i. la start. la seen.
+    lt(i)(str_to_int(str_len(cl)))
+      (la _. str_eq(str_at(cl)(i))(chr("0"))
+               (la _. int_eq(seen)(1)(la _. Z(la cut. la j. la acc. lt(j)(i)(la _. cut(add(j)(1))(concat(acc)(str_at(cl)(j))))(la _. acc)("!"))(start)(""))
+                                      (la _. go(add(i)(1))(add(i)(1))(add(seen)(1)))("!"))
+               (la _. go(add(i)(1))(start)(seen))("!"))
+      (la _. error("node: usage: logos_secd <config file>"))("!"))(0)(0)(0)
+glyph MAIN = (la crypt. NODE(B)(X)(crypt)(NET_KIT(B)(X)(crypt)(XK))(read_file(ARG1(read_file("/proc/self/cmdline")))))(CRYPT)
+LAEOF
+
 # ── the LA test program: one compiled program, dispatching on mode.txt ──
 cat > "$T/t.la" <<'LAEOF'
 import("logosnet.la")
@@ -812,6 +1220,7 @@ LAEOF
 echo "      compiling the test program on the VM ..."
 tc0=$(date +%s)
 vm_compile t.la t.bin
+vm_compile node.la node.bin
 echo "      (compiled in $(( $(date +%s) - tc0 )) s)"
 
 # ── 1. frames ──────────────────────────────────────────────────────────
@@ -894,6 +1303,17 @@ for kc in "k3.key:must be mode 0600 (group/other may read)" "k8.key:must be mode
     check "$([ "$vrc" = 1 ] && [ ! -s "$T/idhalt.out" ] && grep -q "^logosnet: identity: key file $kf $want" "$T/vre" && echo 1)" \
         "identity refuses $kf: ${kc#*:} (rc $vrc: $(head -c 100 "$T/vre"))"
 done
+
+# ── 4. the node ────────────────────────────────────────────────────────
+# mesh TEST...: the Python driver's tests (meshtests.py) and their PASS/FAIL lines
+mesh() {
+    ( cd "$T" && timeout 1800 python3 meshtests.py "$@" ) > "$T/mesh.out" 2>&1
+    local rc=$?
+    cat "$T/mesh.out"
+    grep -q '^FAIL' "$T/mesh.out" && ok=0
+    [ "$rc" = 0 ] || { grep -q '^FAIL' "$T/mesh.out" || echo "FAIL  logosnet: meshtests.py $* ended with rc $rc"; ok=0; }
+}
+mesh basics livepath interop
 
 echo "      (gate ran $(( $(date +%s) - G0 )) s)"
 if [ "$ok" = 1 ]; then echo "PASS  logosnet: all checks"; exit 0; else echo "FAIL  logosnet: some checks failed"; exit 1; fi
