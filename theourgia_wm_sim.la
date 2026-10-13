@@ -8,7 +8,7 @@
 #  session runs, and is checked, with no VT, no GPU and no keyboard.
 #
 #  CONFIGURATION: wm_sim.cfg, one line, "W H SCALE CWD EVENTS [async]":
-#    W H     the frame size in pixels (the pitch is 4*W)
+#    W H     the frame size in pixels (the pitch is 4*W), each at least 12
 #    SCALE   the text scale (a character cell is 8*SCALE pixels square)
 #    CWD     the directory new shells start in
 #    EVENTS  the event file; wm_script.py writes one from a readable script
@@ -50,21 +50,27 @@ glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
 glyph X = la s. s(poll)(read)(close)(print)(write_file)(exit)
 
 # the words of wm_sim.cfg (newlines and carriage returns are dropped). A bad value stops the run
-# at once with a message: SCALE must be 1 or more, and a sixth word, if any,
-# must be exactly async.
+# at once with a message: W and H must be at least 12, SCALE 1 or more, and a
+# sixth word, if any, must be exactly async. 12 is the smallest screen the WM
+# can lay out: it leaves a 6-pixel gap (GAP in WM_BUILD) on every side, so a
+# narrower or shorter screen has a negative tile area (the tiles started off
+# the screen, or compose refused the lock window, which is at most W - 12 wide).
 glyph CFG = la k. (la words. words(la _. error("wm_sim: wm_sim.cfg is empty"))
     (la w0. la r0. r0(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w1. la r1. r1(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w2. la r2. r2(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
     (la w3. la r3. r3(la _. error("wm_sim: wm_sim.cfg needs W H SCALE CWD EVENTS"))
-    (la w4. la r4.
+    (la w4. la r4. (la W. la H. (la tiny. lt(W)(12)(tiny)(la _. lt(H)(12)(tiny)(la _.
       (la scale. lt(scale)(1)
         (la _. error(concat("wm_sim: SCALE must be 1 or more, not ")(w2)))
-        (la _. k(str_to_int(w0))(str_to_int(w1))(scale)(w3)(w4)
+        (la _. k(W)(H)(scale)(w3)(w4)
           (r4(la _. la t. la f. t)(la w5. la r5. str_eq(w5)("async")
              (la _. r5(la _. la t. la f. f)(la w6. la r6. error("wm_sim: wm_sim.cfg has words after async")))
              (la _. error(concat("wm_sim: the sixth word of wm_sim.cfg must be async (or absent), not ")(w5)))("!"))))("!"))
-      (str_to_int(w2))))))))
+      (str_to_int(w2)))("!"))("!"))
+      (la _. error(concat("wm_sim: W and H must be at least 12 (the WM leaves a 6-pixel gap on every side), not ")
+                     (concat(w0)(concat("x")(w1))))))
+      (str_to_int(w0))(str_to_int(w1))))))))
   (WM_SPLIT(B)(WM_LISTS(B))(STRIP_NL(read_file("wm_sim.cfg"))))
 # The lock screen's session layer, a stand-in until logossession.la is wired
 # in: one user, adam, passphrase logos; a session is "S:<name>" and a locked

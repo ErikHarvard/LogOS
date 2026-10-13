@@ -12,6 +12,14 @@
 #   word6    a sixth word that is not async -> rc 1, "async"
 #   crlf     the line ends in \r\n         -> runs (rc 0), the \r is not part of
 #                                             the EVENTS name
+#   tinyw    W 11                          -> rc 1, "at least 12"
+#   tinyh    H 5                           -> rc 1, "at least 12"
+#   zero     W and H 0                     -> rc 1, "at least 12"
+#   min      12 x 12, the smallest screen  -> runs (rc 0): a frame, a second
+#            with room for the WM's two       window, the lock screen
+#            6-pixel gaps each way
+#            (a smaller screen ran with zero-width tiles, or halted in compose
+#            on its first frame or when it locked)
 # Each case has 30 s; the bad ones must fail within a few.
 #
 # ISOLATION: a private temporary directory (gate_wm_common.sh). VM only. A few
@@ -32,17 +40,24 @@ import importlib.util, os, shutil, subprocess, sys, time
 T = sys.argv[1]
 spec = importlib.util.spec_from_file_location("wm_script", f"{T}/wm_script.py"); ws = importlib.util.module_from_spec(spec); spec.loader.exec_module(ws)
 EV = ws.compile_script(["snap 1", "mod Shift+E"])
+# min: a frame, a second window, then the lock screen (which takes every key,
+# so the run ends when the events do)
+EVMIN = ws.compile_script(["snap 1", "mod Enter", "snap 2", "mod ESC", "snap 3"])
 CASES = [("missing", "640 400 1 / nosuch.bin\n", "cannot open"),
          ("dir", "640 400 1 / home\n", "is a directory"),
          ("scale0", "640 400 0 / events.bin\n", "SCALE"),
          ("scaleneg", "640 400 -1 / events.bin\n", "SCALE"),
          ("word6", "640 400 1 / events.bin Async\n", "async"),
-         ("crlf", "640 400 1 / events.bin\r\n", None)]
+         ("crlf", "640 400 1 / events.bin\r\n", None),
+         ("tinyw", "11 400 1 / events.bin\n", "at least 12"),
+         ("tinyh", "640 5 1 / events.bin\n", "at least 12"),
+         ("zero", "0 0 1 / events.bin\n", "at least 12"),
+         ("min", "12 12 1 / events.bin\n", None)]
 bad = 0
 for name, cfg, want in CASES:
     d = f"{T}/case_{name}"; os.makedirs(f"{d}/home")
     shutil.copy(f"{T}/logos_secd", d); shutil.copy(f"{T}/wm.bin", f"{d}/logos_program.bin")
-    open(f"{d}/events.bin", "wb").write(EV)
+    open(f"{d}/events.bin", "wb").write(EVMIN if name == "min" else EV)
     open(f"{d}/wm_sim.cfg", "w", newline="").write(cfg)
     t0 = time.time()
     try:
@@ -51,7 +66,10 @@ for name, cfg, want in CASES:
     except subprocess.TimeoutExpired as e:
         rc, out, err = "timeout", (e.stdout or b"").decode(errors="replace"), (e.stderr or b"").decode(errors="replace")
     dt = round(time.time() - t0, 1)
-    if want is None:
+    if name == "min":
+        good = rc == 0 and all(f"wm: snap {n}" in out for n in (1, 2, 3)) and "wm: locked" in out
+        what = "12 x 12 runs: a frame, a second window, the lock screen (rc 0, three frames)"
+    elif want is None:
         good = rc == 0 and "wm: snap 1" in out and "wm: exit" in out
         what = "a \\r\\n line is read as the same configuration (rc 0, the frame written)"
     else:
