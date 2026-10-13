@@ -66,8 +66,9 @@
 #      object whose mirror directory is already gone; a
 #      wrong K_M's verify changes no file even where heads are stale, the
 #      right one fixes them and rebuilds a missing mirror directory; an
-#      ephemeral object's plaintext is not kept in memory by its handle (the
-#      driver's memory is scanned after close and a collection).
+#      ephemeral object's plaintext is not kept in memory by its handle, nor
+#      the session key by the store handle (the driver's memory is scanned
+#      after close and a collection).
 # Every operation's guard questions are checked exactly (resource and op).
 # COST. With CRYPT_FAST an operation takes milliseconds and shards A-E a few
 # seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
@@ -276,6 +277,16 @@ def snap(*dirs):
             for x in ds: out[os.path.join(r, x)] = 'dir'
             for x in fs:
                 if x not in ('drv.err', 'session.log'): out[os.path.join(r, x)] = rd(os.path.join(r, x))
+    return out
+def pipe_fds(pid):
+    """the pipe fds above 2 of process pid, with their open flags"""
+    out = {}
+    for fd in os.listdir('/proc/%d/fd' % pid):
+        try:
+            if int(fd) > 2 and os.readlink('/proc/%d/fd/%s' % (pid, fd)).startswith('pipe:'):
+                out[int(fd)] = int([l for l in open('/proc/%d/fdinfo/%s' % (pid, fd)) if l.startswith('flags:')][0].split()[1], 8)
+        except OSError:
+            pass
     return out
 def mem_has(pid, needles):
     """the needles that occur anywhere in the readable memory of process pid"""
@@ -733,14 +744,28 @@ def shard_e(d, s):
     # closed and the heap has been collected, its plaintext is nowhere in the
     # process although its handle is still held, while the store handle's
     # K_M, which is meant to stay live, is found (so the scan sees live data)
+    # The session key is read out of the new session's pipe (and put back)
+    # through /proc, so that it too can be looked for: once the session is
+    # closed it must be unreachable, though the store handle is still held.
     root, kq, X = os.path.join(d, 'eph'), os.urandom(32), os.urandom(64)
-    rs = [s.cmd('open', 'q', root, kq, 'policy')[1], s.cmd('eph', 'q', 'ex', X)[1], s.cmd('eread', 'ex')[1],
-          s.cmd('close', 'q')[1], s.cmd('eread', 'ex')[1], s.cmd('churn', '4000')[1]]
-    found = mem_has(s.p.pid, [X, kq])
+    pipes0 = pipe_fds(s.p.pid)
+    rs = [s.cmd('open', 'q', root, kq, 'policy')[1]]
+    new = dict((fd, fl) for fd, fl in pipe_fds(s.p.pid).items() if fd not in pipes0)
+    rfd = [fd for fd, fl in new.items() if fl & 3 == 0]; wfd = [fd for fd, fl in new.items() if fl & 3 == 1]
+    SK = b''
+    if len(rfd) == len(wfd) == 1:
+        fr = os.open('/proc/%d/fd/%d' % (s.p.pid, rfd[0]), os.O_RDONLY | os.O_NONBLOCK); SK = os.read(fr, 64); os.close(fr)
+        fw = os.open('/proc/%d/fd/%d' % (s.p.pid, wfd[0]), os.O_WRONLY); os.write(fw, SK); os.close(fw)
+    rs += [s.cmd('eph', 'q', 'ex', X)[1], s.cmd('eread', 'ex')[1],
+           s.cmd('close', 'q')[1], s.cmd('eread', 'ex')[1], s.cmd('churn', '4000')[1]]
+    found = mem_has(s.p.pid, [X, kq, SK or b'(no key)'])
     check('E once its session is closed and the heap collected, an ephemeral object\'s plaintext is nowhere in the '
           'process, though its handle is still held; the store handle\'s K_M (live) is found',
           rs == ['ok', 'ok', 'ok ' + X.hex(), 'ok ' + root, 'err ephemeral: session closed', 'ok churned']
-          and found == set([kq]), (rs[3:], 'plaintext found' if X in found else '', 'K_M found' if kq in found else 'K_M not found'))
+          and X not in found and kq in found, (rs[3:], 'plaintext found' if X in found else '', 'K_M found' if kq in found else 'K_M not found'))
+    check('E ... and the session key (read from its pipe before close) is nowhere in the process either, though the '
+          'store handle that opened the session is still held',
+          len(SK) == 32 and SK not in found, (len(SK), 'session key found' if SK in found else ''))
 
 if __name__ == '__main__':
     which, d = sys.argv[1], sys.argv[2]

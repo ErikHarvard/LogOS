@@ -438,6 +438,11 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
    la readidx. la writeidx. la lines. la lineid. la linetags. la walk. la fixheads. la delobj.
   crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
   LET(la id. la km. hkdf(id)(km)("aletheia/object")(C32))(la okey.
+  # spair(rfd)(wfd): the session record. A constructor of its own because
+  # on the VM a closure keeps its whole environment alive: built inside
+  # session, the record (and so every store handle) kept the session key
+  # reachable, after close too
+  LET(la r. la w. la k. k(r)(w))(la spair.
   # session(_): ok(la k. k(rfd)(wfd)), a pipe holding the ephemeral session
   # key, reopened close-on-exec through /proc/self/fd so that no program a
   # child execs inherits it
@@ -451,7 +456,7 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
                     str_eq(str_at(r1)(C0))("-")(la _. fail(C0))(la _.
                     str_eq(str_at(w1)(C0))("-")(la _. fail(C0))(la _.
                       (la ke. int_eq(len(ke))(C32)
-                          (la _. str_eq(write(w1)(ke))("32")(la _. OK(la k. k(r1)(w1)))(la _. fail(C0))(C0))
+                          (la _. str_eq(write(w1)(ke))("32")(la _. OK(spair(r1)(w1)))(la _. fail(C0))(C0))
                           (la _. fail(C0))(C0))
                       (random("32")))(C0))(C0))
                   (la _. DO(sysclose(r1))(la _. DO(sysclose(w1))(la _. ERR("cannot set up the session pipe")))))))
@@ -640,5 +645,5 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
          (la _. DO(read(rfd)("64"))(la _. DO(write(wfd)("closed"))(la _. OK(root))))(C0))
       (la _. ERR(bad))(C0)))(la fclose.
     la s. s(fopen)(put)(get)(update)(history)(version)(find)(verify)(remove)(ephemeral)(fclose)
-  ))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))
   (FS_BASE(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq))
