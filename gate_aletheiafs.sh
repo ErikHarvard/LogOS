@@ -56,7 +56,9 @@
 #      index version lost in both copies, verify still walks the objects the
 #      newest readable index version lists and repairs them; a put whose
 #      index version reaches neither copy leaves no trace of its object, one
-#      that reaches the primary keeps it and verify completes the index.
+#      that reaches the primary keeps it and verify completes the index; an
+#      ephemeral object's plaintext is not kept in memory by its handle (the
+#      driver's memory is scanned after close and a collection).
 # Every operation's guard questions are checked exactly (resource and op).
 # COST. With CRYPT_FAST an operation takes milliseconds and shards A-E a few
 # seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
@@ -122,6 +124,12 @@ glyph DENY = la tok. la res. la op.
 glyph RND = la n. str_eq(str_at(stat("badrandom"))(0))("-")
   (la _. str_eq(str_at(stat("fixedrandom"))(0))("-")(la _. random(n))(la _. read_file("fixedrandom"))("!"))
   (la _. "")("!")
+# CHURN(n): allocate n MiB that die at once, so that the heap is collected
+# several times over (each semispace is 768 MiB) and what is not live is
+# overwritten
+glyph DOUBLE = Z(la self. la n. la s. int_eq(n)(0)(la _. s)(la _. self(sub(n)(1))(concat(s)(s)))("!"))
+glyph CHURN = la n. (la big. Z(la go. la i. la acc.
+    lt(i)(n)(la _. go(add(i)(1))(str_len(concat(big)(int_to_str(i)))))(la _. "churned")("!"))(0)("0"))(DOUBLE(20)("x"))
 glyph RES = la r. la f. r(la m. concat("= err ")(m))(la v. concat("= ok ")(f(v)))
 glyph STEP = la fs. la slots. la ephs. la w. la k.
   fs(la fopen. la put. la get. la update. la history. la version. la find. la verify. la remove. la ephemeral. la fclose.
@@ -142,7 +150,8 @@ glyph STEP = la fs. la slots. la ephs. la w. la k.
                                             (la eh. k("= ok")(slots)(CONS(PAIR(a2)(eh))(ephs))))(la _.
     str_eq(cmd)("eread")(la _. k(LOOKUP(s1)(ephs)(la rd. RES(rd("!"))(la c. HEXE(c))))(slots)(ephs))(la _.
     str_eq(cmd)("close")(la _. k(RES(fclose(h))(la r. r))(slots)(ephs))(la _.
-    k(concat("= err unknown command ")(cmd))(slots)(ephs))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))
+    str_eq(cmd)("churn")(la _. k(concat("= ok ")(CHURN(str_to_int(s1))))(slots)(ephs))(la _.
+    k(concat("= err unknown command ")(cmd))(slots)(ephs))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))("!"))
     (LOOKUP(s1)(slots)))
   (NTH(w)(0))(NTH(w)(1))(UNHEX(NTH(w)(2)))(UNHEX(NTH(w)(3)))(UNHEX(NTH(w)(4)))(UNHEX(NTH(w)(5))))
 glyph READLINE = Z(la self. la buf. la k. (la i.
@@ -259,6 +268,23 @@ def snap(*dirs):
             for x in fs:
                 if x not in ('drv.err', 'session.log'): out[os.path.join(r, x)] = rd(os.path.join(r, x))
     return out
+def mem_has(pid, needles):
+    """the needles that occur anywhere in the readable memory of process pid"""
+    found, keep = set(), max(len(x) for x in needles) - 1
+    with open('/proc/%d/mem' % pid, 'rb', 0) as m:
+        for l in open('/proc/%d/maps' % pid):
+            f = l.split()
+            if not f[1].startswith('r'): continue
+            a, b = (int(x, 16) for x in f[0].split('-'))
+            tail = b''
+            while a < b:
+                try:
+                    m.seek(a); chunk = tail + m.read(min(b - a, 1 << 26))
+                except (OSError, OverflowError):
+                    break
+                found |= set(x for x in needles if x in chunk)
+                tail, a = chunk[-keep:], a + (1 << 26)
+    return found
 def disk(root, km, oid, versions, tags, owner, links=None):
     """'' when obj/ and mirror/ hold exactly the oracle's blobs and both heads say n"""
     exp = chain(km, oid, versions, tags, owner, links)
@@ -597,6 +623,18 @@ def shard_e(d, s):
     g, r = s.cmd('verify', 'h')
     check('E ... and verify completes the index (checked 2, repaired 1, lost 0)',
           r == 'ok 2 1 0' and disk(root, km, 'index', IXH, IDX_TAGS, IDX_OWNER) == '', (r, disk(root, km, 'index', IXH, IDX_TAGS, IDX_OWNER)))
+    # an ephemeral object lives in memory only sealed: once its session is
+    # closed and the heap has been collected, its plaintext is nowhere in the
+    # process although its handle is still held, while the store handle's
+    # K_M, which is meant to stay live, is found (so the scan sees live data)
+    root, kq, X = os.path.join(d, 'eph'), os.urandom(32), os.urandom(64)
+    rs = [s.cmd('open', 'q', root, kq, 'policy')[1], s.cmd('eph', 'q', 'ex', X)[1], s.cmd('eread', 'ex')[1],
+          s.cmd('close', 'q')[1], s.cmd('eread', 'ex')[1], s.cmd('churn', '4000')[1]]
+    found = mem_has(s.p.pid, [X, kq])
+    check('E once its session is closed and the heap collected, an ephemeral object\'s plaintext is nowhere in the '
+          'process, though its handle is still held; the store handle\'s K_M (live) is found',
+          rs == ['ok', 'ok', 'ok ' + X.hex(), 'ok ' + root, 'err ephemeral: session closed', 'ok churned']
+          and found == set([kq]), (rs[3:], 'plaintext found' if X in found else '', 'K_M found' if kq in found else 'K_M not found'))
 
 if __name__ == '__main__':
     which, d = sys.argv[1], sys.argv[2]

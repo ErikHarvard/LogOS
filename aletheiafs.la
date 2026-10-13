@@ -460,6 +460,14 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
   # skey(rfd)(wfd): the session key, read from the pipe and put back
   # ("closed" once the session is closed)
   LET(la rfd. la wfd. (la s. DO(write(wfd)(s))(la _. s))(read(rfd)("64")))(la skey.
+  # mkeph(rfd)(wfd)(nonce)(sealed): an ephemeral object's handle. It has a
+  # constructor of its own because on the VM a closure keeps its whole
+  # environment alive: built inside ephemeral, the handle kept the plaintext
+  # and the session key reachable for as long as the handle lived
+  LET(la rfd. la wfd. la nonce. la sealed. la s. s(la _. (la k2. int_eq(len(k2))(C32)
+        (la _. aopen(k2)(nonce)("aletheia/ephemeral")(sealed)
+                 (la _. ERR("ephemeral: cannot open"))(la pt. OK(pt)))
+        (la _. ERR("ephemeral: session closed"))(C0))(skey(rfd)(wfd))))(la mkeph.
   # a handle: la k. k(bad)(root)(K_M)(K_I)(guard)(rfd)(wfd)(session error)
   LET(la root. la km. la guard.
     (int_eq(len(km))(C32)
@@ -613,10 +621,7 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
         (la _. ERR(serr))
         (la _. (la k. int_eq(len(k))(C32)
           (la _. (la nonce. int_eq(len(nonce))(C12)
-              (la _. (la sealed. OK(la s. s(la _. (la k2. int_eq(len(k2))(C32)
-                      (la _. aopen(k2)(nonce)("aletheia/ephemeral")(sealed)
-                               (la _. ERR("ephemeral: cannot open"))(la pt. OK(pt)))
-                      (la _. ERR("ephemeral: session closed"))(C0))(skey(rfd)(wfd)))))
+              (la _. (la sealed. OK(mkeph(rfd)(wfd)(nonce)(sealed)))
                   (seal(k)(nonce)("aletheia/ephemeral")(content)))
               (la _. ERR("random failed"))(C0))(random("12")))
           (la _. ERR("ephemeral: session closed"))(C0))(skey(rfd)(wfd)))(C0))
@@ -630,5 +635,5 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
          (la _. DO(read(rfd)("64"))(la _. DO(write(wfd)("closed"))(la _. OK(root))))(C0))
       (la _. ERR(bad))(C0)))(la fclose.
     la s. s(fopen)(put)(get)(update)(history)(version)(find)(verify)(remove)(ephemeral)(fclose)
-  )))))))))))))))))))))))))
+  ))))))))))))))))))))))))))
   (FS_BASE(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq))
