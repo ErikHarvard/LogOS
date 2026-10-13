@@ -122,9 +122,8 @@ honestly in the distance.
 ## Phase II — Citrinitas: The Operating System
 
 *The thirteen-layer strong-definition OS, built in and as Lingua Adamica.
-Status: layers 1-3, 5, 6, 9, 10, 12 and 13 have a working, gated
-realisation; 4 (the HAL), 7 (audio) and 8 (input) are partial; 11 (the session
-manager) is not built. Most layers run on the native VM only, and what each
+Status: layers 1-3, 5, 6 and 9-13 have a working, gated realisation; 4 (the
+HAL), 7 (audio) and 8 (input) are partial. Most layers run on the native VM only, and what each
 one does not yet do is said beside it.*
 
 - [x] 1. Bootloader — **sovereign, COMPLETE (K7, 2026-07-15)**: LogOS boots itself
@@ -954,11 +953,12 @@ one does not yet do is said beside it.*
       (init, view, update) and everything perceived — painted cells, the
       accessible description, what each key does — is derived from one element
       tree; `lk_settings.la` and `lk_login.la` are its first apps, inside the WM.)*
-- [ ] 11. Session manager *(not built. What exists is its front end:
-      `lk_login.la`, the login and lock screen, which takes the session layer
-      (login/lock/unlock) as a parameter. `logossession.la` itself — users,
-      keys, sessions — is not written; the headless WM uses a documented
-      stand-in, and the live WM has no lock screen until it lands.)*
+- [x] 11. Session manager *(`logossession.la`: users with PBKDF2 verifiers, the
+      Γ-seal K_U and everything derived from it, lock that drops the keys,
+      suspend/resume of the WM's state as a sealed AletheiaFS object, two users
+      isolated both ways; `lk_login.la` is its front end. Not yet wired into the
+      WM's lock screen: the headless WM still uses its documented stand-in and
+      the live WM has no lock screen. 1000 PBKDF2 iterations; VM only.)*
 - [x] 12. Package & update system *(`logospkg.la`: content-addressed archives,
       an HMAC-signed index, installs gated on each package's own self-test,
       atomic switch, update and rollback, the Advisory Update Protocol; it has
