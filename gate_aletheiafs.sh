@@ -62,7 +62,8 @@
 #      history refuses a version 1 whose prev is not "none", and a chain
 #      through a version it cannot read (lost, or not a version); an authentic
 #      version whose header has the wrong n= or len= is refused; remove
-#      takes a crashed write's .tmp files with the object; a
+#      takes a crashed write's .tmp files with the object, and removes an
+#      object whose mirror directory is already gone; a
 #      wrong K_M's verify changes no file even where heads are stale, the
 #      right one fixes them and rebuilds a missing mirror directory; an
 #      ephemeral object's plaintext is not kept in memory by its handle (the
@@ -689,6 +690,16 @@ def shard_e(d, s):
     check('E remove of an object that has a crashed write\'s leftovers (a version\'s .tmp, the heads\' .tmp) removes them '
           'with it', r == 'ok ' + idr and not os.path.exists(os.path.join(root, 'obj', idr))
           and not os.path.exists(os.path.join(root, 'mirror', idr)), r)
+    # remove of an object one of whose copies is already gone (its whole
+    # mirror directory lost) still removes it, and its index line
+    root = os.path.join(d, 'halfgone')
+    idq = os.urandom(16).hex()
+    write_store(root, km, idq, [b'only the primary is left'], [b'q'], b'o'); write_store(root, km, 'index', [line(idq, 'q')], IDX_TAGS, IDX_OWNER)
+    shutil.rmtree(os.path.join(root, 'mirror', idq))
+    s.cmd('open', 'k', root, km, 'policy')
+    rs = [s.cmd('remove', 'k', '*', idq)[1], s.cmd('find', 'k', '*', 'q')[1]]
+    check('E remove of an object whose mirror directory is already gone -> ok(id), the primary is gone and find no longer '
+          'lists it', rs == ['ok ' + idq, 'ok '] and not os.path.exists(os.path.join(root, 'obj', idq)), rs)
     # a version that authenticates but whose header is not the format (n=
     # not its number, len= not its content's length) is refused, not read
     root = os.path.join(d, 'badhdr')
