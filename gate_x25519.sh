@@ -11,6 +11,17 @@
 #      two shared secrets that are valid but have a zero byte, the first and
 #      the last (so a zero test that reads only some of the bytes refuses
 #      one of them);
+#   1b. no branch on a key bit (NET_DESIGN 1: "the same operations for every
+#      bit, no branch on a key bit"): x25519.la is confined -- logossec.la's
+#      confine accepts it with nothing granted, so every builtin it reaches is
+#      a kit parameter -- and the kit is built with lt and int_eq (the only
+#      parameters that make a boolean, so the only way its code can branch)
+#      replaced by versions that print their arguments: every comparison a
+#      scalarmult makes must have the same arguments for three keys with
+#      different swap patterns (all zero, all ones, 0x5a..) and three points.
+#      A swap that branched on a key bit would compare a key-derived value;
+#      a builtin named directly instead of taken as a parameter is refused
+#      by confine;
 #   2. shared refuses the all-zero result: u = 0 and u = 1 (RFC 7748 6.1),
 #      and the other small-order encodings (the two points of order 8, p-1,
 #      p, p+1, and u = 0 with the top bit set) -- each gives none, and
@@ -42,7 +53,7 @@
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
-wm_setup x25519.la x25519_gen.la
+wm_setup x25519.la x25519_gen.la logossec.la
 command -v python3 >/dev/null || { echo "FAIL  x25519: python3 (the oracle) is not installed"; exit 1; }
 
 # A VM process killed by SIGKILL (rc 137) was killed from outside -- on a busy
@@ -382,6 +393,71 @@ if [ "$irc" = 0 ] && [ "$(cat "$T/iter.all" "$T/iter.out")" = "$EXPECT" ]; then
     echo "PASS  x25519 iteration test (VM): RFC 7748 5.2, k = u = 9, after 1 and after 1000 iterations"
 else
     echo "FAIL  x25519 iteration test (VM): rc=$irc"; diff <(echo "$EXPECT") <(cat "$T/iter.all" "$T/iter.out") | head -6; tail -3 "$T/vre"; ok=0
+fi
+
+# ── 1b. no branch on a key bit ───────────────────────────────────────────
+cat > "$T/cf.la" <<'LAEOF'
+import("logossec.la")
+glyph NIL = la n. la c. n(n)
+# a stub crypt record: confine never touches it
+glyph STUB = la s. s(la m. m)(la k. la m. m)(la a. a)(la a. a)(la a. a)(la x. x)
+glyph MAIN = SEC_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)(STUB)
+ (la mint. la attenuate. la verify. la within. la confine.
+   print(confine(read_file("x25519.la"))(NIL)(la m. concat("err ")(m))(la v. "ok")))
+LAEOF
+cat > "$T/tr.la" <<'LAEOF'
+import("x25519.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph SEQ = la a. la b. b
+glyph SPAN = la f. la a. la b. (Z(la sp. la lo. la hi.
+    lt(add(lo)(1))(hi)
+      (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(div(add(lo)(hi))(2)))
+      (la _. lt(lo)(hi)(la _. f(lo))(la _. "")("!"))
+      ("!")))(a)(b)
+glyph FROMHEX = la s. SPAN(la i. (la hv. chr(int_to_str(add(mul(hv(str_at(s)(mul(i)(2))))(16))(hv(str_at(s)(add(mul(i)(2))(1)))))))
+                           (la c. (la n. lt(n)(58)(la _. sub(n)(48))(la _. sub(n)(87))("!"))(str_to_int(ord(c)))))(0)(div(str_to_int(str_len(s)))(2))
+# W(tag)(f): f, printing "tag a b" for every comparison f(a)(b) it is asked for
+glyph W = la tag. la f. la a. la b. SEQ(print(concat(tag)(concat(int_to_str(a))(concat(" ")(int_to_str(b))))))(f(a)(b))
+glyph RUN = la sm. la n. la k. la u. SEQ(print(concat("key ")(n)))(sm(FROMHEX(k))(FROMHEX(u)))
+glyph MAIN = X25519_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
+    (add)(sub)(mul)(W("lt ")(lt))(W("eq ")(int_eq))(band)(bor)(bxor)(bshl)(bshr)
+ (la sm. la pub. la sh.
+   SEQ(SEQ(SEQ(
+     RUN(sm)("1")("0000000000000000000000000000000000000000000000000000000000000000")
+                 ("0900000000000000000000000000000000000000000000000000000000000000"))
+     (RUN(sm)("2")("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+                  ("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")))
+     (RUN(sm)("3")("5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a")
+                  ("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")))
+     (print("end")))
+LAEOF
+vm_compile cf.la cf.bin; vm_run cf.bin - "$T/cf.out"; cfrc=$vrc
+vm_compile tr.la tr.bin; vm_run tr.bin - "$T/tr.out"; trrc=$vrc
+if tv=$(python3 - "$T/tr.out" <<'PYEOF'
+import sys
+lines = open(sys.argv[1]).read().split("\n")
+assert lines[-1] == "" and lines[-2] == "end", "no end line"
+runs, cur = {}, None
+for l in lines[:-2]:
+    if l.startswith("key "): cur = l[4:]; runs[cur] = []
+    elif l.startswith(("lt ", "eq ")):
+        if cur: runs[cur].append(l)        # (before the first key: building the kit)
+    else: raise SystemExit("unexpected line %r" % l[:60])
+assert sorted(runs) == ["1", "2", "3"], "missing runs"
+t = runs["1"]
+assert len(t) > 255, "too few comparisons"
+for k in ("2", "3"):
+    if runs[k] != t:
+        i = next((i for i, (a, b) in enumerate(zip(t, runs[k])) if a != b), min(len(t), len(runs[k])))
+        raise SystemExit("key %s compares differently from key 1 at comparison %d: %r vs %r"
+                         % (k, i, t[i] if i < len(t) else None, runs[k][i] if i < len(runs[k]) else None))
+print("%d comparisons (%d lt, %d int_eq)" % (len(t), sum(l.startswith("lt") for l in t), sum(l.startswith("eq") for l in t)))
+PYEOF
+); then trok=1; else trok=0; fi
+if [ "$cfrc" = 0 ] && [ "$(cat "$T/cf.out")" = ok ] && [ "$trrc" = 0 ] && [ "$trok" = 1 ]; then
+    echo "PASS  x25519 no branch on a key bit (VM): confine(x25519.la)(nil) is ok (every builtin it reaches is a kit parameter), and every comparison a scalarmult makes, $tv, has the same arguments for keys all zero, all ones and 0x5a.. (the only booleans its code can branch on)"
+else
+    echo "FAIL  x25519 no branch on a key bit (VM): confine rc=$cfrc '$(head -c 160 "$T/cf.out")'; trace rc=$trrc: ${tv:-}"; tail -2 "$T/vre"; ok=0
 fi
 
 # ── 2. shared refuses the all-zero result ────────────────────────────────
