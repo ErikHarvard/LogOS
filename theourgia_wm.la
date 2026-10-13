@@ -192,8 +192,12 @@ glyph WM_WINS = la B. la L. B(la str_at. la ord. la str_to_int. la int_to_str. l
 #   the kit its own state's theme and zoom pick.
 # A tile, top to bottom: BW border rows; the title bar (2 rows, one text row of
 # 8*scale, 2 rows); PAD rows; the terminal's (or the app's) text rows; filler; PAD rows; BW
-# border rows. Every scanline is border | PAD | text | filler | border. A tile
-# too small for one row of text is drawn as a plain block of its border colour.
+# border rows. A text-area scanline is border | PAD | text | filler | border
+# (the filler is PAD or more, so the text sits inset on both sides); a title
+# scanline is border | title | filler | border, the title starting at the inner
+# edge with no PAD; the bar, filler and PAD rows are border | one colour |
+# border. A tile too small for one row of text is drawn as a plain block of
+# its border colour.
 # The finished rows are cached in the window under a key made of the size, the
 # focus and the window's version, so an unchanged window costs nothing.
 glyph WM_TILE = la B. la L. la R. la T. la SH. la scale. la pal. la ui.
