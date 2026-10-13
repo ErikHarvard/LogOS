@@ -16,6 +16,11 @@
 #      through the handshake and six transport messages; flipped bytes and a
 #      replay are refused; the 65535-byte limit both ways; an all-zero DH
 #      ends the handshake; out-of-turn use halts.
+#   3. identity: a created key file is 32 bytes, mode 0600 (made so before
+#      it holds the key), reloaded rather than regenerated; NodeIDs are the
+#      hex of sha256(pub)[:16], recomputed by Python from the key file with
+#      its own X25519; verify_id; key files others can read, of the wrong
+#      size, or not regular files, are refused loudly.
 # ISOLATION: a private temp dir (gate_wm_common.sh; mktemp honours TMPDIR).
 # VM only (the C host is far too slow for the crypto underneath).
 set -uo pipefail
@@ -321,6 +326,45 @@ if mode == "cmp":
         if g is None: print(name, "missing"); continue
         i = next((i for i in range(max(len(g), len(e[name]))) if i >= len(g) or i >= len(e[name]) or g[i] != e[name][i]), 0)
         print(name, "differ at line %d: expected %r got %r" % (i + 1, (e[name] + [""])[min(i, len(e[name]))][:90], (g + [""])[min(i, len(g))][:90]))
+if mode == "identprep":
+    import noiseref as N, stat as ST, shutil
+    alice = bytes.fromhex("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")  # RFC 7748 6.1
+    open("alice.pub", "wb").write(alice)
+    aid = __import__("hashlib").sha256(alice).digest()[:16].hex()
+    open("aliceid.txt", "w").write(aid); open("aliceID.txt", "w").write(aid.upper())
+    for f in ("k1.key", "k2.key", "k3.key", "k4.key", "k6.key", "k7.key"):
+        if os.path.exists(f): os.remove(f)
+    shutil.rmtree("k1.key.new", ignore_errors=True); shutil.rmtree("k5.key", ignore_errors=True)
+    os.mkdir("k1.key.new"); open("k1.key.new/key", "wb").write(b"stale")    # an interrupted creation
+    k2 = os.urandom(32); open("k2.key", "wb").write(k2); os.chmod("k2.key", 0o600)
+    open("k3.key", "wb").write(os.urandom(32)); os.chmod("k3.key", 0o644)
+    open("k4.key", "wb").write(os.urandom(31)); os.chmod("k4.key", 0o600)
+    os.mkdir("k5.key"); os.chmod("k5.key", 0o700)
+    open("k8.key", "wb").write(os.urandom(32)); os.chmod("k8.key", 0o640)
+if mode == "identcheck":
+    import noiseref as N, hashlib
+    got = dict(l.split(" ", 1) for l in open("ident.out").read().split("\n") if " " in l)
+    nid = lambda pub: hashlib.sha256(pub).digest()[:16].hex()
+    bad = []
+    k1 = open("k1.key", "rb").read()
+    st = os.stat("k1.key")
+    if (st.st_mode & 0o777) != 0o600: bad.append("k1.key mode %o" % (st.st_mode & 0o777))
+    if len(k1) != 32: bad.append("k1.key holds %d bytes" % len(k1))
+    if os.path.exists("k1.key.new"): bad.append("k1.key.new left behind")
+    if got.get("pub") != N.x_pub(k1).hex(): bad.append("pub is not X25519(key file)")
+    if got.get("id") != nid(N.x_pub(k1)): bad.append("id is not sha256(pub)[:16]")
+    if got.get("id2") != got.get("id"): bad.append("the second identity() regenerated the key")
+    if got.get("id3") != nid(N.x_pub(open("k2.key", "rb").read())): bad.append("id3 (a given key file)")
+    for k in ("k6.key", "k7.key"):
+        if not os.path.exists(k) or os.stat(k).st_mode & 0o777 != 0o600: bad.append(k + " missing or not 0600")
+    if got.get("id6") != nid(N.x_pub(open("k6.key", "rb").read())): bad.append("id6")
+    if got.get("id6") == got.get("id7") or got.get("id6") == got.get("id"): bad.append("two fresh keys gave one id")
+    alice = open("alice.pub", "rb").read()
+    if got.get("kat") != nid(alice) or got.get("kat") != "%s" % hashlib.sha256(alice).hexdigest()[:32]: bad.append("kat")
+    want = {"v1": "T", "v2": "T", "v3": "F", "v4": "F", "v5": "F", "v6": "F"}
+    for k, v in want.items():
+        if got.get(k) != v: bad.append("%s = %s, not %s" % (k, got.get(k), v))
+    print("ok" if not bad else "; ".join(bad))
 if mode == "noise":
     # Two vector sets for the LA, every expected line computed by noiseref:
     # cc_ = the cacophony vectors (prologue "John Galt"); ln_ = random static
@@ -511,8 +555,12 @@ glyph DISPATCH = Z(la go. la mode. la l. l(la _. print(concat("unknown mode ")(m
     (la h. la t. h(la name. la f. str_eq(name)(mode)(la _. f("!"))(la _. go(mode)(t))("!"))))
 # NETV(net)(f): the record NET_KIT returns, as the fields these tests use
 glyph NETV = la net. la f. net(la frame. la deframe. la broken. la keypair. la xx_init. la xx_resp. la x_init. la x_resp.
-    la write_message. la read_message. la done. la encrypt. la decrypt. la prologue.
+    la write_message. la read_message. la done. la encrypt. la decrypt. la prologue. la node_id. la verify_id. la identity.
   f(frame)(deframe)(broken)(keypair)(xx_init)(xx_resp)(x_init)(x_resp)(write_message)(read_message)(done)(encrypt)(decrypt)(prologue))
+# NETI(net)(f): the identity fields
+glyph NETI = la net. la f. net(la frame. la deframe. la broken. la keypair. la xx_init. la xx_resp. la x_init. la x_resp.
+    la write_message. la read_message. la done. la encrypt. la decrypt. la prologue. la node_id. la verify_id. la identity.
+  f(node_id)(verify_id)(identity))
 glyph FRAMES = la tk. la net. tk(la len. la ssub. la words. la join. la map. la rev. la app. la count. la rep. la showl. la feed.
   NETV(net)(la frame. la deframe. la broken. la keypair. la xx_init. la xx_resp. la x_init. la x_resp.
     la write_message. la read_message. la done. la encrypt. la decrypt. la prologue.
@@ -718,6 +766,32 @@ glyph LOW = la tk. la crypt. la net. tk(la len. la ssub. la words. la join. la m
 glyph TURN = la net. NETV(net)(la frame. la deframe. la broken. la keypair. la xx_init. la xx_resp. la x_init. la x_resp.
     la write_message. la read_message. la done. la encrypt. la decrypt. la prologue.
     read_message(xx_init(keypair(RF("si.bin")))(keypair(RF("ei.bin"))))(RF("m1.bin"))(la _. print("turn: none"))(la r. print("turn: some")))
+# ── identity tests ──
+glyph IDENT = la crypt. la net. NETI(net)(la node_id. la verify_id. la identity.
+  crypt(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+  (la AP. la AID.
+  identity("k1.key")(la kp. la id. kp(la sk. la pub.
+  identity("k1.key")(la kp2. la id2.
+  identity("k2.key")(la kp3. la id3.
+  identity("k6.key")(la kp6. la id6.
+  identity("k7.key")(la kp7. la id7.
+    SEQ(print(concat("id ")(id)))(
+    SEQ(print(concat("pub ")(hex(pub))))(
+    SEQ(print(concat("id2 ")(id2)))(
+    SEQ(print(concat("id3 ")(id3)))(
+    SEQ(print(concat("id6 ")(id6)))(
+    SEQ(print(concat("id7 ")(id7)))(
+    SEQ(print(concat("kat ")(node_id(AP))))(
+    SEQ(print(concat("v1 ")(BOOL(verify_id(id)(pub)))))(
+    SEQ(print(concat("v2 ")(BOOL(verify_id(AID)(AP)))))(
+    SEQ(print(concat("v3 ")(BOOL(verify_id(id)(AP)))))(
+    SEQ(print(concat("v4 ")(BOOL(verify_id(AID)(pub)))))(
+    SEQ(print(concat("v5 ")(BOOL(verify_id(read_file("aliceID.txt"))(AP)))))(
+    SEQ(print(concat("v6 ")(BOOL(verify_id(id)(concat(pub)("x"))))))(
+    print("end")))))))))))))))))))))
+  (read_file("alice.pub"))(read_file("aliceid.txt"))))
+glyph IDHALT = la net. NETI(net)(la node_id. la verify_id. la identity.
+  identity(read_file("idpath.txt"))(la kp. la id. print(concat("loaded ")(id))))
 glyph MAIN = (la crypt. (la tk. la net. DISPATCH(read_file("mode.txt"))(
     CONS(PR("frames")(la _. FRAMES(tk)(net)))(
     CONS(PR("frame_big")(la _. FRAMEBIG(tk)(net)))(
@@ -729,7 +803,9 @@ glyph MAIN = (la crypt. (la tk. la net. DISPATCH(read_file("mode.txt"))(
     CONS(PR("lime")(la _. LIME(tk)(net)))(
     CONS(PR("low")(la _. LOW(tk)(crypt)(net)))(
     CONS(PR("turn")(la _. TURN(net)))(
-    NIL))))))))))))
+    CONS(PR("ident")(la _. IDENT(crypt)(net)))(
+    CONS(PR("idhalt")(la _. IDHALT(net)))(
+    NIL))))))))))))))
   (TK)(NET_KIT(B)(X)(crypt)(XK)))(CRYPT)
 LAEOF
 
@@ -802,6 +878,22 @@ check "$([ "$vrc" = 0 ] && cmp -s "$T/low.exp" "$T/low.out" && echo 1)" \
 vm_run t.bin turn "$T/turn.out"
 check "$([ "$vrc" = 1 ] && [ ! -s "$T/turn.out" ] && grep -q "^logosnet: read_message: it is this side's turn to write" "$T/vre" && echo 1)" \
     "read_message out of turn halts (rc $vrc: $(head -c 70 "$T/vre"))"
+
+# ── 3. identity ────────────────────────────────────────────────────────
+( cd "$T" && python3 oracle.py identprep )
+vm_run t.bin ident "$T/ident.out"
+( cd "$T" && python3 oracle.py identcheck ) > "$T/ident.cmp"
+check "$([ "$vrc" = 0 ] && [ "$(cat "$T/ident.cmp")" = ok ] && echo 1)" \
+    "identity: a fresh key file is 32 random bytes, mode 0600, created past a stale <path>.new; reloaded, not regenerated; ids are the hex of sha256(pub)[:16] (the oracle's X25519 and hashlib, RFC 7748 Alice's key as a known answer); verify_id accepts only the matching lowercase id and a 32-byte key" \
+    "rc $vrc; $(cat "$T/ident.cmp"); $(tail -c 200 "$T/vre")"
+for kc in "k3.key:must be mode 0600 (group/other may read)" "k8.key:must be mode 0600 (group may read)" \
+          "k4.key:must hold 32 bytes" "k5.key:is not a regular file"; do
+    kf=${kc%%:*}; want=${kc#*:}; want=${want%% (*}
+    printf '%s' "$kf" > "$T/idpath.txt"
+    vm_run t.bin idhalt "$T/idhalt.out"
+    check "$([ "$vrc" = 1 ] && [ ! -s "$T/idhalt.out" ] && grep -q "^logosnet: identity: key file $kf $want" "$T/vre" && echo 1)" \
+        "identity refuses $kf: ${kc#*:} (rc $vrc: $(head -c 100 "$T/vre"))"
+done
 
 echo "      (gate ran $(( $(date +%s) - G0 )) s)"
 if [ "$ok" = 1 ]; then echo "PASS  logosnet: all checks"; exit 0; else echo "FAIL  logosnet: some checks failed"; exit 1; fi

@@ -6,6 +6,7 @@
 #      la s. s(frame)(deframe)(broken)
 #             (keypair)(xx_init)(xx_resp)(x_init)(x_resp)
 #             (write_message)(read_message)(done)(encrypt)(decrypt)(prologue)
+#             (node_id)(verify_id)(identity)
 #
 #  B, X, crypt and xk are the builtins and kits it is built from:
 #    B     = la s. s(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
@@ -80,6 +81,25 @@
 #  writes), the DHs a read performs are checked where they happen, and x_init
 #  checks rs. write_message therefore never meets a zero DH; if it did, it
 #  would halt ("logosnet: write_message: a DH result is all zero").
+#
+#  IDENTITY. A node's static key pair is self-assigned: a 32-byte private key
+#  from random("32"), kept in a key file.
+#    node_id(pub)         the NodeID: lowercase hex of the first 16 bytes of
+#                         sha256(pub) (32 characters).
+#    verify_id(id)(pub)   TRUE when id is node_id(pub) (FALSE for a pub that is
+#                         not 32 bytes): anyone holding the public key checks it.
+#    identity(path)       la k. k(keypair)(id): the node's static key pair and
+#                         NodeID. An absent key file is created: the key is
+#                         written inside a fresh private directory <path>.new
+#                         (mode 0700), the file made 0600 before it holds the
+#                         key, then renamed to path, so no other user could
+#                         open it in between (a <path>.new left by an
+#                         interrupted creation is removed first). An existing
+#                         file is read only when it is a regular file of 32
+#                         bytes that no group or other user can access; else
+#                         it halts, "logosnet: identity: key file <path> must be
+#                         mode 0600 (no access for group or others)" (or "must
+#                         hold 32 bytes", "is not a regular file").
 #
 #  STYLE. Kit style (WM_DESIGN.md, "How fast the VM is"): the builtins arrive
 #  in the records B and X and are destructured once when the kit is built;
@@ -363,12 +383,75 @@ glyph NET_NOISE = la B. la BY. la crypt. la xk. la MK.
              (encrypt)(decrypt)(prologue))))))))))))))))))))))))))))
   (0)(1)(2)(3)(4)(5)(32)(48)(65519)(65535)(la t. la f. t)(la t. la f. f)(NET_NIL)(NET_CONS))))))
 
+# ── Identity ─────────────────────────────────────────────────────────────
+# NET_ID(B)(X)(BY)(crypt)(keypair) -> la s. s(node_id)(verify_id)(identity)
+glyph NET_ID = la B. la X. la BY. la crypt. la keypair.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  X(la socket. la bind. la listen. la accept. la connect. la send. la recv. la close. la unlink. la poll.
+    la random. la clock_gettime. la print. la read_file. la write_file. la chmod. la stat. la mkdir. la rmdir.
+    la rename. la sigprocmask.
+  BY(la len. la span. la T. la slice. la byte. la rdbe32. la be32. la le64. la rev. la zeros.
+  crypt(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+  (la C0. la C1. la C16. la C32. la C63. la C61440. la C32768. la FALSE.
+    LET(la a. la b. b)(la seq.
+    LET(la pub. hex(slice(sha256(pub))(C0)(C16)))(la node_id.
+    LET(la id. la pub. int_eq(len(pub))(C32)(la _. str_eq(id)(node_id(pub)))(la _. FALSE)(C0))(la verify_id.
+    LET(la what. error(concat("logosnet: identity: ")(what)))(la die.
+    # stat's answer "<st_mode> <st_size>" as two integers: k(mode)(size)
+    LET(la st. la k. (la n. Z(la go. la i.
+          lt(i)(n)
+            (la _. str_eq(str_at(st)(i))(" ")
+                     (la _. k(str_to_int(slice(st)(C0)(i)))(str_to_int(slice(st)(add(i)(C1))(n))))
+                     (la _. go(add(i)(C1)))(C0))
+            (la _. die(concat("cannot read the answer of stat: ")(st)))(C0))(C0))
+        (len(st)))(la stat2.
+    # loaded(sk): la k. k(keypair)(id)
+    LET(la sk. (la kp. kp(la s. la pub. la k. k(kp)(node_id(pub))))(keypair(sk)))(la loaded.
+    LET(Z(la identity. la path.
+        (la st.
+          str_eq(str_at(st)(C0))("-")
+            (la _. str_eq(st)("-2")
+                     # absent: a fresh key, written inside a private (0700)
+                     # directory, made 0600 before it holds the key, then
+                     # renamed into place
+                     (la _. (la d. (la f. (la sk.
+                               int_eq(len(sk))(C32)
+                                 (la _. seq(unlink(f))(seq(rmdir(d))(
+                                          (la r. str_eq(r)("0")
+                                             (la _. seq(write_file(f)(""))(seq(chmod(f)("384"))(seq(write_file(f)(sk))(
+                                                      (la r2. str_eq(r2)("0")
+                                                         (la _. seq(rmdir(d))(identity(path)))
+                                                         (la _. die(concat("cannot rename ")(concat(f)(concat(": ")(r2)))))(C0))
+                                                      (rename(f)(path))))))
+                                             (la _. die(concat("cannot create ")(concat(d)(concat(": ")(r)))))(C0))
+                                          (mkdir(d)("448")))))
+                                 (la _. die("random gave too few bytes"))(C0))
+                             (random("32")))
+                           (concat(d)("/key")))
+                         (concat(path)(".new")))
+                     (la _. die(concat("cannot stat ")(concat(path)(concat(": ")(st)))))(C0))
+            (la _. stat2(st)(la mode. la size.
+                     int_eq(band(mode)(C61440))(C32768)
+                       (la _. int_eq(band(mode)(C63))(C0)
+                                (la _. int_eq(size)(C32)
+                                         (la _. loaded(read_file(path)))
+                                         (la _. die(concat("key file ")(concat(path)(" must hold 32 bytes"))))(C0))
+                                (la _. die(concat("key file ")(concat(path)(" must be mode 0600 (no access for group or others)"))))(C0))
+                       (la _. die(concat("key file ")(concat(path)(" is not a regular file"))))(C0)))
+            (C0))
+        (stat(path))))(la identity.
+      la s. s(node_id)(verify_id)(identity)))))))))
+  (0)(1)(16)(32)(63)(61440)(32768)(la t. la f. f)))))
+
 # ── The kit ──────────────────────────────────────────────────────────────
 glyph NET_KIT = la B. la X. la crypt. la xk.
   (la BY. NET_FRAMES(B)(BY)(la frame. la deframe. la broken.
      NET_NOISE(B)(BY)(crypt)(xk)(NET_MK)(la keypair. la xx_init. la xx_resp. la x_init. la x_resp.
          la write_message. la read_message. la done. la encrypt. la decrypt. la prologue.
+     NET_ID(B)(X)(BY)(crypt)(keypair)(la node_id. la verify_id. la identity.
        la s. s(frame)(deframe)(broken)
               (keypair)(xx_init)(xx_resp)(x_init)(x_resp)
-              (write_message)(read_message)(done)(encrypt)(decrypt)(prologue))))
+              (write_message)(read_message)(done)(encrypt)(decrypt)(prologue)
+              (node_id)(verify_id)(identity)))))
   (NET_BYTES(B))
