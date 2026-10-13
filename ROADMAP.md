@@ -956,9 +956,10 @@ one does not yet do is said beside it.*
 - [x] 11. Session manager *(`logossession.la`: users with PBKDF2 verifiers, the
       Γ-seal K_U and everything derived from it, lock that drops the keys,
       suspend/resume of the WM's state as a sealed AletheiaFS object, two users
-      isolated both ways; `lk_login.la` is its front end. Not yet wired into the
-      WM's lock screen: the headless WM still uses its documented stand-in and
-      the live WM has no lock screen. 1000 PBKDF2 iterations; VM only.)*
+      isolated both ways; `lk_login.la` is its front end, and the headless WM's
+      lock screen runs on it (`theourgia_wm_simsess.la`). The live WM has no
+      lock screen yet: where its users live is not decided. 1000 PBKDF2
+      iterations; VM only.)*
 - [x] 12. Package & update system *(`logospkg.la`: content-addressed archives,
       an HMAC-signed index, installs gated on each package's own self-test,
       atomic switch, update and rollback, the Advisory Update Protocol; it has
