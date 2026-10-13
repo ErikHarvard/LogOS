@@ -53,7 +53,7 @@ if [ "$vrc" != 0 ]; then
     echo "FAIL  wm keys: the headless WM rc=$vrc"; tail -3 "$T/vce" "$T/vre"; tail -5 "$T/log.txt"; exit 1
 fi
 # the same WM without a lock screen
-sed 's/(la n. la s. s(la k. k(LOGIN_APP)(SIM_SESS)(la t. la f. f)))/(la n. la s. n(n))/' \
+sed 's/(la n. la s. s(la k. k(LOGIN_APP)(SESS)(la t. la f. f)))/(la n. la s. n(n))/' \
     "$T/theourgia_wm_sim.la" > "$T/wm_nolock.la"
 grep -q 'SETTINGS_APP)(la n. la s. n(n)))' "$T/wm_nolock.la" || { echo "FAIL  wm keys: could not remove the sim's lock layer"; exit 1; }
 mkdir -p "$T/withlock" && mv "$T"/wm_shot_*.bin "$T/withlock/"

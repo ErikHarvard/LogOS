@@ -7,7 +7,7 @@
 #  screen is a frame file written whenever the input asks for one. So a whole
 #  session runs, and is checked, with no VT, no GPU and no keyboard.
 #
-#  CONFIGURATION: wm_sim.cfg, one line, "W H SCALE CWD EVENTS [async]":
+#  CONFIGURATION: wm_sim.cfg, one line, "W H SCALE CWD EVENTS [async] [users=DIR]":
 #    W H     the frame size in pixels (the pitch is 4*W), each at least 12
 #    SCALE   the text scale (a character cell is 8*SCALE pixels square)
 #    CWD     the directory new shells start in
@@ -18,12 +18,19 @@
 #            only on request. For a test that drives the WM through a FIFO
 #            with real timing, e.g. MOD+c or MOD+q while a program runs; such a
 #            session is only as deterministic as its timing.
+#    users=DIR  optional: the lock screen logs in through LogosSession
+#            (logossession.la) over the users in DIR. This entry refuses it;
+#            theourgia_wm_simsess.la, the same WM with the real session layer
+#            built in, requires it. Without it the lock screen uses SIM_SESS.
 #  A record of type 85 and code N writes frame N to wm_shot_N.bin (H rows of
 #  4*W bytes, B G R 0 per pixel); wm_shot.py turns it into a PNG and wm_ocr.py
 #  reads its text back.
 #
 #  LOCK SCREEN: MOD+Esc locks; the session layer behind it is SIM_SESS below, a
-#  stand-in (user adam, passphrase logos), not logossession.la.
+#  stand-in (user adam, passphrase logos), or LogosSession itself when the WM
+#  is run as theourgia_wm_simsess.la. SIM_MAIN(layer) is the whole run, with
+#  layer(users) choosing the session layer from the users=DIR option ("" when
+#  it is absent); it is exported for theourgia_wm_simsess.la.
 #
 #  DETERMINISM: input is read one event at a time and only while no command is
 #  running, so "type ls, press Enter, take a frame" always shows ls's output.
@@ -49,9 +56,11 @@ glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
                 (add)(sub)(mul)(div)(mod)(lt)(int_eq)(band)(bor)
 glyph X = la s. s(poll)(read)(close)(print)(write_file)(exit)
 
+export SIM_MAIN SIM_SESS
+
 # the words of wm_sim.cfg (newlines and carriage returns are dropped). A bad value stops the run
-# at once with a message: W and H must be at least 12, SCALE 1 or more, and a
-# sixth word, if any, must be exactly async. 12 is the smallest screen the WM
+# at once with a message: W and H must be at least 12, SCALE 1 or more, and each
+# word after EVENTS must be async or users=DIR, each at most once. 12 is the smallest screen the WM
 # can lay out: it leaves a 6-pixel gap (GAP in WM_BUILD) on every side, so a
 # narrower or shorter screen has a negative tile area (the tiles started off
 # the screen, or compose refused the lock window, which is at most W - 12 wide).
@@ -63,17 +72,33 @@ glyph CFG = la k. (la words. words(la _. error("wm_sim: wm_sim.cfg is empty"))
     (la w4. la r4. (la W. la H. (la tiny. lt(W)(12)(tiny)(la _. lt(H)(12)(tiny)(la _.
       (la scale. lt(scale)(1)
         (la _. error(concat("wm_sim: SCALE must be 1 or more, not ")(w2)))
-        (la _. k(W)(H)(scale)(w3)(w4)
-          (r4(la _. la t. la f. t)(la w5. la r5. str_eq(w5)("async")
-             (la _. r5(la _. la t. la f. f)(la w6. la r6. error("wm_sim: wm_sim.cfg has words after async")))
-             (la _. error(concat("wm_sim: the sixth word of wm_sim.cfg must be async (or absent), not ")(w5)))("!"))))("!"))
+        (la _. OPTS(r4)(la t. la f. t)("")(k(W)(H)(scale)(w3)(w4)))("!"))
       (str_to_int(w2)))("!"))("!"))
       (la _. error(concat("wm_sim: W and H must be at least 12 (the WM leaves a 6-pixel gap on every side), not ")
                      (concat(w0)(concat("x")(w1))))))
       (str_to_int(w0))(str_to_int(w1))))))))
   (WM_SPLIT(B)(WM_LISTS(B))(STRIP_NL(read_file("wm_sim.cfg"))))
-# The lock screen's session layer, a stand-in until logossession.la is wired
-# in: one user, adam, passphrase logos; a session is "S:<name>" and a locked
+# OPTS(words)(sync)(users)(k): k(sync)(users) after the words that follow
+# EVENTS: async (sync becomes FALSE) and users=DIR, each at most once
+glyph OPTS = Z(la self. la r. la sync. la users. la k.
+  r(la _. k(sync)(users))
+   (la w. la rest.
+     str_eq(w)("async")
+       (la _. sync(la _. self(rest)(la t. la f. f)(users)(k))
+                  (la _. error("wm_sim: async is given twice in wm_sim.cfg"))("!"))
+       (la _. str_eq(TAKEN(6)(w))("users=")
+          (la _. (la dir. str_eq(dir)("")
+                    (la _. error("wm_sim: users= needs a directory"))
+                    (la _. str_eq(users)("")
+                              (la _. self(rest)(sync)(dir)(k))
+                              (la _. error("wm_sim: users= is given twice in wm_sim.cfg"))("!"))("!"))
+                 (DROPN(6)(w)))
+          (la _. error(concat("wm_sim: a word after EVENTS in wm_sim.cfg must be async or users=DIR, not ")(w)))("!"))("!")))
+glyph TAKEN = Z(la self. la n. la s. int_eq(n)(0)(la _. "")
+  (la _. str_eq(s)("")(la _. "")(la _. concat(str_head(s))(self(sub(n)(1))(str_tail(s))))("!"))("!"))
+glyph DROPN = Z(la self. la n. la s. int_eq(n)(0)(la _. s)(la _. self(sub(n)(1))(str_tail(s)))("!"))
+# The lock screen's session layer, a stand-in for logossession.la (which
+# theourgia_wm_simsess.la uses instead): one user, adam, passphrase logos; a session is "S:<name>" and a locked
 # one "L:S:<name>". It exists so a headless session can lock and unlock; it
 # holds no keys and protects nothing.
 glyph SIM_SESS = la s. s
@@ -99,7 +124,8 @@ glyph OPEN_EVENTS = la path. (la st.
                 (open(path)("0")))("!"))("!"))
   (stat(path))
 
-glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC.
+# SIM_MAIN(layer): the headless WM, with layer(users) as its session layer
+glyph SIM_MAIN = la LAYER. CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC. la USERS. (la SESS.
   (la fd.
     (la _.
       WM_BUILD(B)(X)
@@ -108,9 +134,14 @@ glyph MAIN = CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC.
         ((la font. la sc. RENDER_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(lt)(band)(str_eq)(error)(font)(sc))(TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(TF_HEX)))
         (SHELL_KIT(concat)(str_at)(str_len)(str_eq)(ord)(str_to_int)(int_to_str)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
           (read_file)(stat)(mkdir)(rmdir)(unlink)(rename)(getpid)(pipe)(fork)(dup2)(open)(close)(execv)(exit)(sigprocmask)(waitpid)(kill)(poll))
-        (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. s(la k. k(LOGIN_APP)(SIM_SESS)(la t. la f. f))))
+        (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. s(la k. k(LOGIN_APP)(SESS)(la t. la f. f))))
         (la s. s(W)(H)(mul(W)(4))(SCALE)(CWD))
         (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))(SYNC("24")("2400"))(SYNC)))
     (print(concat("wm: headless ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))
-        (concat(" scale ")(concat(int_to_str(SCALE))(concat(", events from ")(EVENTS))))))))))
+        (concat(" scale ")(concat(int_to_str(SCALE))(concat(", events from ")(concat(EVENTS)
+        (str_eq(USERS)("")(la _. "")(la _. concat(", users in ")(USERS))("!"))))))))))))
   (OPEN_EVENTS(EVENTS)))
+  (LAYER(USERS)))
+
+glyph MAIN = SIM_MAIN(la users. str_eq(users)("")(la _. SIM_SESS)
+  (la _. error("wm_sim: users= needs the real session layer: run theourgia_wm_simsess.la"))("!"))

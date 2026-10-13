@@ -10,6 +10,11 @@
 #   scale0   SCALE 0                       -> rc 1, "SCALE"
 #   scaleneg SCALE -1                      -> rc 1, "SCALE"
 #   word6    a sixth word that is not async -> rc 1, "async"
+#   async2   async given twice             -> rc 1, "twice"
+#   usersnil users= with no directory      -> rc 1, "needs a directory"
+#   users2   users= given twice            -> rc 1, "twice"
+#   stubusers users=DIR to this entry (the stand-in session layer)
+#                                          -> rc 1, naming theourgia_wm_simsess.la
 #   crlf     the line ends in \r\n         -> runs (rc 0), the \r is not part of
 #                                             the EVENTS name
 #   tinyw    W 11                          -> rc 1, "at least 12"
@@ -56,6 +61,10 @@ CASES = [("missing", "640 400 1 / nosuch.bin\n", "cannot open"),
          ("scale0", "640 400 0 / events.bin\n", "SCALE"),
          ("scaleneg", "640 400 -1 / events.bin\n", "SCALE"),
          ("word6", "640 400 1 / events.bin Async\n", "async"),
+         ("async2", "640 400 1 / events.bin async async\n", "twice"),
+         ("usersnil", "640 400 1 / events.bin users=\n", "needs a directory"),
+         ("users2", "640 400 1 / events.bin users=/a async users=/b\n", "twice"),
+         ("stubusers", "640 400 1 / events.bin users=/tmp\n", "theourgia_wm_simsess.la"),
          ("crlf", "640 400 1 / events.bin\r\n", None),
          ("tinyw", "11 400 1 / events.bin\n", "at least 12"),
          ("tinyh", "640 5 1 / events.bin\n", "at least 12"),

@@ -1,0 +1,44 @@
+# ═══════════════════════════════════════════════════════════════════
+#  theourgia_wm_simsess.la — the headless tiling WM with LogosSession behind
+#  its lock screen.
+#
+#  theourgia_wm_sim.la runs the WM headless with SIM_SESS, a stand-in session
+#  layer. This entry is the same run (SIM_MAIN, imported from it) with the
+#  real one: the login and lock screen (lk_login.la) calls LogosSession's
+#  login, lock and unlock (logossession.la), built on CRYPT_FAST
+#  (logoscrypt.la), logossec.la and AletheiaFS (aletheiafs.la). So unlocking
+#  the screen stretches the passphrase with PBKDF2, derives the user's Γ-seal
+#  and opens the user's store, and locking drops every key derived from it.
+#
+#  CONFIGURATION: wm_sim.cfg as for theourgia_wm_sim.la, and users=DIR is
+#  required: DIR is LogosSession's root (DIR/users/<name>, DIR/home/<name>).
+#  Users are made with LogosSession's adduser (gate_wm_simsess.sh makes one);
+#  this entry only logs them in.
+#
+#  It is a separate entry, not an option of theourgia_wm_sim.la, so that the
+#  WM gates which do not need the session layer do not compile it.
+# ═══════════════════════════════════════════════════════════════════
+
+import("theourgia_wm_sim.la")
+import("logoscrypt.la")
+import("logossec.la")
+import("aletheiafs.la")
+import("logossession.la")
+
+# REAL_SESS(root): la s. s(login)(lock)(unlock), LogosSession's three calls in
+# the shape lk_login.la takes (login(name)(pass), lock(session),
+# unlock(locked)(pass)), over the users in root
+glyph REAL_SESS = la root. (la cr. (la sec. (la fk.
+    SESSION_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
+               (bor)(bxor)(error)(stat)(read_file)(open)(write)(close)(rename)(unlink)(mkdir)(chmod)(clock_gettime)
+               (cr)(sec)(fk)(random)
+      (la adduser. la login. la lock. la unlock. la suspend. la resume. la state. la logout.
+         la s. s(login(root))(lock)(unlock)))
+    (FS_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
+           (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(pipe)(open)(close)(read)(write)(cr)(random)))
+  (SEC_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)(cr)))
+  (CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr))
+
+glyph MAIN = SIM_MAIN(la users. str_eq(users)("")
+  (la _. error("wm_simsess: wm_sim.cfg needs users=DIR, the directory of LogosSession's users"))
+  (la _. REAL_SESS(users))("!"))
