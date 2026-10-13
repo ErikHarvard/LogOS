@@ -30,6 +30,21 @@
 #      node; a live XX handshake and presence with the Python node; ttl 16 at
 #      the origin, dropped at 0; the 4096-msgid dedup window; malformed input
 #      drops the link and never the node.
+#   5. topologies (the contract's list): in a line A-B-C, A learns C through
+#      presence (it was configured with B only), reaches C through B, and
+#      B's log never holds the payload; a node joining later is learned and
+#      reached over three hops; killing the only bridge partitions the line
+#      and restarting it repairs the path; in a ring of five every ordered
+#      pair delivers exactly once, and with one node killed every remaining
+#      pair still does; a relay that flips a byte of a DATA blob (the gate's
+#      Python node) gets it dropped at the destination; an impostor with its
+#      own key is refused both as a PRESENCE for another node's id and at that
+#      node's address.
+# MUTATION. One-line mutants of logosnet.la fail this gate (the evidence is
+# in the commit messages): the handshake's es with the roles swapped, the
+# nonce halves swapped, HKDF's second info byte, an accepted all-zero DH; a
+# NodeID from the wrong bytes, a key-file mode check that ignores others;
+# forwarding at ttl 0; releasing a blob that does not open; no dedup.
 # ISOLATION: a private temp dir (gate_wm_common.sh; mktemp honours TMPDIR):
 # every socket is in it; every node process is killed on every exit path.
 # VM only (the C host is far too slow for the crypto underneath).
@@ -558,10 +573,18 @@ class Mesh:
             time.sleep(0.2)
         return False
     def ctl(s, name, line, timeout=60):
-        c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.settimeout(timeout)
-        cwd = os.getcwd(); os.chdir(s.net)
-        try: c.connect(name + ".ctl")
-        finally: os.chdir(cwd)
+        """one control command and its reply; None when the node never answers
+        (a node just started is given 10 s to open its control socket)"""
+        t0 = time.time()
+        while True:
+            c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.settimeout(timeout)
+            cwd = os.getcwd(); os.chdir(s.net)
+            try: c.connect(name + ".ctl"); break
+            except (FileNotFoundError, ConnectionRefusedError):
+                c.close()
+                if time.time() - t0 > 10: return None
+                time.sleep(0.2)
+            finally: os.chdir(cwd)
         data = line.encode()
         c.sendall(struct.pack(">I", len(data)) + data)
         buf = b""
@@ -858,6 +881,151 @@ def t_interop():
           tail(m, "A"))
 
 TESTS = {"basics": t_basics, "livepath": t_livepath, "interop": t_interop}
+
+def knows(m, name, other_id, timeout=30):
+    """wait until node `name` has other_id in its directory"""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        d = m.ctl(name, "directory") or ""
+        if any(l.split(" ")[0] == other_id for l in d.split("\n")[1:]): return True
+        time.sleep(0.5)
+    return False
+def peers(m, name):
+    r = m.ctl(name, "peers") or ""
+    return set(r.split("\n")[1:]) if r.startswith("ok") else None
+def wait_peers(m, name, want, timeout=60):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if peers(m, name) == set(want): return True
+        time.sleep(0.5)
+    return False
+
+def t_line():
+    m = fresh()
+    a, b, c, d = m.key("A"), m.key("B"), m.key("C"), m.key("D")
+    m.start("B", reach=["A", "C"])
+    m.start("A", seeds=["B"], reach=["B"])
+    m.start("C", seeds=["B"], reach=["B", "D"])
+    up = wait_peers(m, "B", [a, c]) and wait_peers(m, "A", [b]) and wait_peers(m, "C", [b])
+    learned = knows(m, "A", c) and knows(m, "C", a)
+    check(up and learned and open(os.path.join(NET, "A.cfg")).read().count("seed ") == 1,
+          "a node learns of a node it was never told about through presence: in the line A-B-C, A (configured with B only) learns C",
+          tail(m, "A", "B", "C"))
+    secret = "payload-" + os.urandom(12).hex()
+    mid = okid(m.ctl("A", "send %s %s" % (c, secret)))
+    got = m.wait("C", r"^net: recv %s %s$" % (a, secret))
+    time.sleep(1)
+    check(mid is not None and got and secret not in m.log("B") and count(m, "B", r"^net: recv ") == 0,
+          "line A-B-C: A reaches C through B, and B's log never contains the payload", tail(m, "B", "C"))
+    # a late joiner, linked only to C: learned by A through presence, reached over three hops
+    m.start("D", seeds=["C"], reach=["C"])
+    learned = knows(m, "A", d, timeout=40)
+    late = "late-" + os.urandom(8).hex()
+    mid = okid(m.ctl("A", "send %s %s" % (d, late))) if learned else None
+    check(learned and mid is not None and m.wait("D", r"^net: recv %s %s$" % (a, late)),
+          "a node that joins later (D, linked only to C) is learned by A through presence and reached over three hops",
+          tail(m, "A", "D"))
+    m.kill("D")
+    # partition: kill the only bridge
+    m.kill("B")
+    cut = m.wait("A", r"^net: unlink %s$" % b) and m.wait("C", r"^net: unlink %s$" % b)
+    lost = "partitioned-" + os.urandom(8).hex()
+    r = m.ctl("A", "send %s %s" % (c, lost))
+    time.sleep(8)
+    check(cut and okid(r) is not None and lost not in m.log("C") and peers(m, "A") == set(),
+          "partition: with the bridge B killed, A cannot reach C (the send is accepted, nothing arrives) and A has no peer",
+          "%r %s" % (r, tail(m, "A", "C")))
+    m.start("B", reach=["A", "C"])
+    back = wait_peers(m, "A", [b]) and wait_peers(m, "C", [b]) and m.wait("A", r"^net: link %s$" % b, count=2)
+    again = "repaired-" + os.urandom(8).hex()
+    mid = okid(m.ctl("A", "send %s %s" % (c, again))) if back else None
+    ok2 = mid is not None and m.wait("C", r"^net: recv %s %s$" % (a, again))
+    time.sleep(2)
+    check(ok2 and lost not in m.log("C"),
+          "repair: restarting the bridge with its key file brings the links back (A and C redial it) and A reaches C again",
+          tail(m, "A", "B", "C"))
+
+def t_ring():
+    m = fresh()
+    names = ["N0", "N1", "N2", "N3", "N4"]
+    ids = {n: m.key(n) for n in names}
+    for i, n in enumerate(names):
+        m.start(n, seeds=[names[(i + 1) % 5]], reach=[names[(i + 1) % 5], names[(i - 1) % 5]])
+    ring = all(wait_peers(m, n, [ids[names[(i + 1) % 5]], ids[names[(i - 1) % 5]]]) for i, n in enumerate(names))
+    known = all(knows(m, n, ids[o]) for n in names for o in names if o != n)
+    check(ring and known, "a ring of five: each node linked to exactly its two neighbours, every node in every directory",
+          {n: peers(m, n) for n in names})
+    def all_pairs(alive, tag):
+        sent = {}
+        for x in alive:
+            for y in alive:
+                if x != y:
+                    t = "%s-%s-%s-%s" % (tag, x, y, os.urandom(4).hex())
+                    sent[(x, y)] = (t, okid(m.ctl(x, "send %s %s" % (ids[y], t))))
+        missing = [k for k, (t, mid) in sent.items()
+                   if mid is None or not m.wait(k[1], r"^net: recv %s %s$" % (ids[k[0]], t), timeout=120)]
+        time.sleep(2)
+        twice = [k for k, (t, mid) in sent.items() if count(m, k[1], r"^net: recv %s %s$" % (ids[k[0]], t)) != 1]
+        return missing, twice
+    missing, twice = all_pairs(names, "r")
+    dups = sum(count(m, n, r"^net: drop dup ") for n in names)
+    check(not missing and not twice and dups > 0,
+          "ring of five: every ordered pair (20) delivers exactly once; the copies coming round the other way are dropped as duplicates (%d)" % dups,
+          "missing %s twice %s" % (missing, twice))
+    m.kill("N2")
+    cut = m.wait("N1", r"^net: unlink %s$" % ids["N2"]) and m.wait("N3", r"^net: unlink %s$" % ids["N2"])
+    alive = ["N0", "N1", "N3", "N4"]
+    missing, twice = all_pairs(alive, "k")
+    check(cut and not missing and not twice,
+          "ring of five with one node killed: every remaining ordered pair (12) still delivers, exactly once",
+          "missing %s twice %s" % (missing, twice))
+
+def t_flip():
+    m = fresh()
+    a, c = m.key("A"), m.key("C")
+    P = py()                               # the Python relay between them
+    m.keys["P"] = (P.sk, P.pub, P.id)
+    m.start("A", seeds=["P"], reach=["P"]); m.start("C", seeds=["P"], reach=["P"])
+    up = P.wait("link", a) and P.wait("link", c) and knows(m, "A", c) and knows(m, "C", a)
+    clean = "clean-" + os.urandom(8).hex()
+    mid0 = okid(m.ctl("A", "send %s %s" % (c, clean)))
+    ok0 = up and mid0 is not None and m.wait("C", r"^net: recv %s %s$" % (a, clean))
+    P.flip = True
+    bad = "tampered-" + os.urandom(8).hex()
+    mid = okid(m.ctl("A", "send %s %s" % (c, bad)))
+    dropped = mid is not None and m.wait("C", r"^net: drop blob %s$" % mid)
+    time.sleep(2)
+    check(ok0 and dropped and P.has("flipped", mid) and bad not in m.log("C"),
+          "a relay that flips a byte of a DATA blob (the gate's Python node between A and C) gets it dropped at the destination; the same relay, honest, delivers",
+          tail(m, "A", "C"))
+
+def t_impostor():
+    m = fresh()
+    a, c = m.key("A"), m.key("C")
+    m.start("C"); m.start("A", seeds=["C"])
+    up = m.wait("A", r"^net: link %s$" % c) and knows(m, "A", c)
+    # 1. a forged PRESENCE: C's id with the impostor's own key, a newer seq
+    I = py()
+    L = I.dial(m.path("A"), expect=a)
+    I.wait("link", a)
+    craw = bytes.fromhex(c)
+    I.send(L, presence(craw, I.pub, int(time.time() * 1000) + 10 ** 9, ("./%s.sock" % c).encode()))
+    forged = m.wait("A", r"^net: drop presence %s$" % c)
+    d = m.ctl("A", "directory") or ""
+    entry = next((l.split(" ") for l in d.split("\n")[1:] if l.startswith(c)), None)
+    check(up and forged and entry is not None and entry[1] == m.keys["C"][1].hex(),
+          "an impostor's PRESENCE claiming C's id with its own key is refused, and A's entry for C keeps C's key", d)
+    # 2. the impostor takes C's address: A's repair dials it and refuses the key it finds there
+    m.kill("C")
+    gone = m.wait("A", r"^net: unlink %s$" % c)
+    I2 = py(bind="./%s.sock" % c, announce=False)
+    refused = m.wait("A", r"^net: drop impostor %s %s$" % (c, I2.id), timeout=30)
+    time.sleep(2)
+    check(gone and refused and count(m, "A", r"^net: link %s$" % c) == 1 and c not in (peers(m, "A") or set()),
+          "an impostor listening at C's address with its own key is refused by A's handshake (net: drop impostor <C> <its id>), never linked as C",
+          tail(m, "A"))
+
+TESTS.update({"line": t_line, "ring": t_ring, "flip": t_flip, "impostor": t_impostor})
 if __name__ == "__main__":
     for name in sys.argv[1:]:
         try: TESTS[name]()
@@ -1314,6 +1482,9 @@ mesh() {
     [ "$rc" = 0 ] || { grep -q '^FAIL' "$T/mesh.out" || echo "FAIL  logosnet: meshtests.py $* ended with rc $rc"; ok=0; }
 }
 mesh basics livepath interop
+
+# ── 5. topologies ──────────────────────────────────────────────────────
+mesh line ring flip impostor
 
 echo "      (gate ran $(( $(date +%s) - G0 )) s)"
 if [ "$ok" = 1 ]; then echo "PASS  logosnet: all checks"; exit 0; else echo "FAIL  logosnet: some checks failed"; exit 1; fi

@@ -178,7 +178,10 @@
 #     is dropped instead of the process.
 #
 #  HONEST LIMITS. Sends are blocking: a peer that stops reading while its
-#  socket buffer is full stalls the node (no write queue). Without signatures
+#  socket buffer is full stalls the node (no write queue). A control client
+#  that connects and never sends a whole frame keeps its connection open (no
+#  timeout on control connections; the control socket is the node owner's,
+#  under its own file permissions). Without signatures
 #  (NET_DESIGN.md, out of scope) a PRESENCE is only checked for id = hash(pub)
 #  and its path's form, so a forger can repeat a real node's presence with a
 #  higher seq and freeze its directory entry (not take it over: the handshake
