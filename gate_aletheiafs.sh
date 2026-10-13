@@ -13,7 +13,15 @@
 # have written and compares the files on disk byte for byte, and it writes
 # a whole store of its own that the module must read. Each shard drives ONE
 # session of a driver program (compiled once) over stdin/stdout, and
-# tampers with the store between operations:
+# tampers with the store between operations.
+# THE CRYPT RECORD. Shards A-D build the kit with CRYPT_FAST (logoscrypt.la,
+# the documented drop-in for CRYPT_REF, gated by gate_logoscrypt.sh against
+# CRYPT_REF itself), so every operation costs milliseconds and the gate can
+# afford to probe every clause. Shard R builds the SAME driver with CRYPT_REF
+# and does one round trip (put, then get) whose files the oracle checks byte
+# for byte, so the module is still shown to work with the reference record.
+#   R  CRYPT_REF: open, put (binary content), get; version 1 and index
+#      version 1 are the oracle's sealed blobs in both copies.
 #   A  round trips: binary content (bytes 0..255), tags and owner; versions
 #      1 and 2 and their prev link; history; version out of range; find by
 #      tag; remove (files gone, index line gone); every version and every
@@ -45,16 +53,20 @@
 #      their session pipe is close-on-exec, and close drops that session's
 #      objects (and only that session's).
 # Every operation's guard questions are checked exactly (resource and op).
-# COST. With CRYPT_REF on the VM one HKDF takes 95 s or more (CRYPT_REF
-# names its builtins, and each name walks the ~160 KB program), and every
-# object operation derives its key; the gate needs 20 of them, at most 7 in
-# one shard, and the four shards run in parallel: about 15 minutes on a
-# quiet 4-core machine, far longer on a busy one (at load 15-25 an HKDF took
-# 10-25 minutes, and a shard up to two hours). Each shard's VM grows to about
-# 1.4 GB (its two 768 MiB heap halves), so FS_PARALLEL (default 4) caps how
-# many shards run at once, longest first, for a machine short of memory.
-# FS_SHARD_TIMEOUT (default 14400 s) bounds each shard, FS_CMD_TIMEOUT
-# (default 7200 s) each operation.
+# COST. With CRYPT_FAST an operation takes milliseconds and shards A-D a few
+# seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
+# its builtins, and each name walks the program), and every object operation
+# derives its key: shard R needs three (open, put, get), about 10 minutes on a
+# loaded 4-core machine, and it starts first, alongside the others. Its VM
+# grows to about 1.4 GB (its two 768 MiB heap halves), so FS_PARALLEL
+# (default 4) caps how many shards run at once, longest first, for a machine
+# short of memory. FS_SHARDS (default "R C A B D") names the shards to run;
+# leaving R out skips the CRYPT_REF round trip (a development shortcut; a
+# plain run always includes it). FS_SHARD_TIMEOUT (default 14400 s) bounds
+# each shard, FS_CMD_TIMEOUT (default 7200 s) each operation.
+# CRYPT_REF's sha256 is wrong for message lengths of 55 mod 64 (see
+# logoscrypt.la); shard R's oracle refuses to build such a blob, and every
+# length R uses avoids it.
 # ISOLATION: private temp dir (gate_wm_common.sh); everything is written
 # under it.
 set -uo pipefail
@@ -63,13 +75,15 @@ ok=1
 : "${FS_SHARD_TIMEOUT:=14400}"
 : "${FS_CMD_TIMEOUT:=7200}"
 : "${FS_PARALLEL:=4}"
-wm_setup aletheiafs.la crypt_ref.la sha256.la hmac.la hkdf.la aead.la chacha20.la poly1305.la
+: "${FS_SHARDS:=R C A B D}"
+wm_setup aletheiafs.la logoscrypt.la crypt_ref.la sha256.la hmac.la hkdf.la aead.la chacha20.la poly1305.la
 
 # ── the driver: one command per stdin line, one "= ok …"/"= err …" line back ──
 # A command is "word slot field…" with every field hex-encoded; the policy
 # guard prints each question ("guard tok res op") before answering it.
-cat > "$T/drv.la" <<'LAEOF'
-import("crypt_ref.la")
+# @IMPORT@ and @CRYPT@ are filled in twice below: CRYPT_FAST and CRYPT_REF.
+cat > "$T/drv.tpl" <<'LAEOF'
+@IMPORT@
 import("aletheiafs.la")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph NIL = la n. la c. n(n)
@@ -139,8 +153,12 @@ glyph LOOP = Z(la loop. la fs. la slots. la ephs. la buf.
 glyph MAIN = (la fs. LOOP(fs)(NIL)(NIL)(""))
   (FS_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
          (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(pipe)(open)(close)(read)(write)
-         (CRYPT_REF)(RND))
+         (@CRYPT@)(RND))
 LAEOF
+sed -e 's/@IMPORT@/import("logoscrypt.la")/' \
+    -e 's/@CRYPT@/CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)/' \
+    "$T/drv.tpl" > "$T/drv_fast.la"
+sed -e 's/@IMPORT@/import("crypt_ref.la")/' -e 's/@CRYPT@/CRYPT_REF/' "$T/drv.tpl" > "$T/drv_ref.la"
 
 # ── the oracle and the four shards ──────────────────────────────────────────
 cat > "$T/fsgate.py" <<'PYEOF'
@@ -213,10 +231,11 @@ def chain(km, oid, versions, tags, owner, links=None):
     for i, c in enumerate(versions, 1):
         p = links[i - 1] if links and links[i - 1] is not None else prev
         b = seal(k, nonce_of(i), aad_of(oid, i), plain(i, tags, owner, p, c))
-        if len(b) % 64 == 55:   # CRYPT_REF's sha256 pads these lengths wrongly
+        if REF and len(b) % 64 == 55:   # CRYPT_REF's sha256 pads these lengths wrongly
             raise SystemExit('gate design: a %d-byte blob hits CRYPT_REF sha256 at 55 mod 64' % len(b))
         out.append(b); prev = hashlib.sha256(b).hexdigest().encode()
     return out
+REF = False   # True in shard R, whose driver runs CRYPT_REF
 IDX_TAGS, IDX_OWNER = [b'index'], b'aletheiafs'
 def line(oid, tags): return ('%s %s\n' % (oid, tags)).encode()
 
@@ -295,6 +314,24 @@ def check(label, cond, detail=''):
 def G(tok, res, op): return ['guard %s %s %s' % (tok, res, op)]
 def isid(r): return r.startswith('ok ') and len(r) == 35 and all(c in '0123456789abcdef' for c in r[3:])
 def getok(content, tags, owner, n): return 'ok %s %s %s %d' % (content.hex(), b','.join(tags).hex(), owner.hex(), n)
+
+# ── R: one round trip with CRYPT_REF, checked byte for byte ─────────────────
+def shard_r(d, s):
+    global REF
+    REF = True
+    root = os.path.join(d, 'store'); km = bytes(range(60, 92))
+    g, r = s.cmd('open', 'r', root, km, 'policy')
+    check('R (CRYPT_REF) open creates the store', r == 'ok' and os.path.isdir(root + '/obj') and os.path.isdir(root + '/mirror'), r)
+    C, T, O = bytes(range(256)), [b'ref', b'record'], b'crypt_ref'
+    g, r = s.cmd('put', 'r', '*', C, 'ref,record', 'crypt_ref')
+    check('R (CRYPT_REF) put -> ok(id), asking for obj w', isid(r) and g == G('*', 'obj', 'w'), (r, g))
+    oid = r[3:]
+    check('R (CRYPT_REF) version 1 and index version 1 are the oracle\'s sealed blobs in both copies, heads 1',
+          disk(root, km, oid, [C], T, O) == '' and disk(root, km, 'index', [line(oid, 'ref,record')], IDX_TAGS, IDX_OWNER) == '',
+          disk(root, km, oid, [C], T, O) + disk(root, km, 'index', [line(oid, 'ref,record')], IDX_TAGS, IDX_OWNER))
+    g, r = s.cmd('get', 'r', '*', oid)
+    check('R (CRYPT_REF) get round-trips the content (bytes 0..255), tags, owner and n = 1',
+          r == getok(C, T, O, 1) and g == G('*', 'obj/' + oid, 'r'), (r[:120], g))
 
 # ── A: round trips, versions, history, find, remove, the index object ───────
 def shard_a(d, s):
@@ -513,7 +550,7 @@ if __name__ == '__main__':
     log = open(os.path.join(d, 'session.log'), 'w')
     s = Session(d, log)
     try:
-        {'A': shard_a, 'B': shard_b, 'C': shard_c, 'D': shard_d}[which](d, s)
+        {'R': shard_r, 'A': shard_a, 'B': shard_b, 'C': shard_c, 'D': shard_d}[which](d, s)
         rc = s.quit()
         err = open(os.path.join(d, 'drv.err'), 'rb').read()
         check('%s the driver ran to the end: exit 0, nothing on stderr' % which, rc == 0 and err == b'', (rc, err[-200:]))
@@ -527,25 +564,33 @@ PYEOF
 
 r=$(python3 "$T/fsgate.py" selftest "$T"); echo "$r"; case "$r" in PASS*) ;; *) ok=0 ;; esac
 
-# compile the driver once
-cp "$T/drv.la" "$T/logos_source.la"; cp "$T/compiler.bin" "$T/logos_program.bin"
-s=$(date +%s)
-( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/dce" ) || { echo "FAIL  aletheiafs: the driver did not compile"; tail -3 "$T/dce"; exit 1; }
-COMPILE_S=$(( $(date +%s) - s ))
+# compile each driver once: CRYPT_FAST always, CRYPT_REF when shard R runs
+compile() {  # compile SRC.la OUT.bin
+    cp "$T/$1" "$T/logos_source.la"; cp "$T/compiler.bin" "$T/logos_program.bin"
+    ( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/dce" ) \
+        || { echo "FAIL  aletheiafs: the driver $1 did not compile"; tail -3 "$T/dce"; exit 1; }
+    cp "$T/logos_program.bin" "$T/$2"
+}
+s=$(date +%s); compile drv_fast.la prog_fast.bin; COMPILE_S="fast $(( $(date +%s) - s ))s"
+case " $FS_SHARDS " in *" R "*)
+    s=$(date +%s); compile drv_ref.la prog_ref.bin; COMPILE_S="$COMPILE_S, ref $(( $(date +%s) - s ))s" ;;
+esac
 
 # longest first, at most FS_PARALLEL at a time
 running=0
-for sh in C A B D; do
+for sh in $FS_SHARDS; do
     if [ "$running" -ge "$FS_PARALLEL" ]; then wait -n; running=$((running - 1)); fi
+    prog=prog_fast.bin; [ "$sh" = R ] && prog=prog_ref.bin
     mkdir -p "$T/s$sh"
-    ( cd "$T/s$sh" && cp "$T/logos_secd" "$T/logos_program.bin" . \
+    ( cd "$T/s$sh" && cp "$T/logos_secd" . && cp "$T/$prog" logos_program.bin \
       && s=$(date +%s) && FS_CMD_TIMEOUT=$FS_CMD_TIMEOUT timeout "$FS_SHARD_TIMEOUT" python3 "$T/fsgate.py" "$sh" "$T/s$sh"; \
       echo $? > rc; echo $(( $(date +%s) - s )) > secs ) &
     running=$((running + 1))
 done
 wait
 
-for sh in A B C D; do
+for sh in R A B C D; do
+    case " $FS_SHARDS " in *" $sh "*) ;; *) continue ;; esac
     d="$T/s$sh"
     if [ -s "$d/result.txt" ]; then cat "$d/result.txt"; grep -q '^FAIL' "$d/result.txt" && ok=0
     else echo "FAIL  aletheiafs: shard $sh produced no results (rc $(cat "$d/rc" 2>/dev/null); 124 = FS_SHARD_TIMEOUT)"; ok=0; fi
@@ -555,17 +600,21 @@ done
 python3 - "$T" "$COMPILE_S" <<'PYEOF'
 import sys, os
 T, cs = sys.argv[1], sys.argv[2]
-ts = {}
-for sh in 'ABCD':
-    try:
-        for l in open(os.path.join(T, 's' + sh, 'times.txt')):
-            w, t = l.split(); ts.setdefault(w, []).append(float(t))
-    except OSError: pass
-secs = ' '.join('%s %ss' % (sh, open(os.path.join(T, 's' + sh, 'secs')).read().strip()) for sh in 'ABCD'
+def times(shards):
+    ts = {}
+    for sh in shards:
+        try:
+            for l in open(os.path.join(T, 's' + sh, 'times.txt')):
+                w, t = l.split(); ts.setdefault(w, []).append(float(t))
+        except OSError: pass
+    return ', '.join('%s %.2fs' % (w, sorted(v)[len(v) // 2]) for w, v in sorted(ts.items()) if w in
+                     ('open', 'put', 'get', 'update', 'history', 'version', 'find', 'verify', 'remove', 'eph', 'eread', 'close'))
+secs = ' '.join('%s %ss' % (sh, open(os.path.join(T, 's' + sh, 'secs')).read().strip()) for sh in 'RABCD'
                 if os.path.exists(os.path.join(T, 's' + sh, 'secs')))
-print('TIME  driver compile %ss; shards (parallel): %s' % (cs, secs))
-print('TIME  per operation (CRYPT_REF), median wall time of the calls that returned ok, as the harness saw them: ' + ', '.join(
-    '%s %.0fs' % (w, sorted(v)[len(v) // 2]) for w, v in sorted(ts.items()) if w in
-    ('open', 'put', 'get', 'update', 'history', 'version', 'find', 'verify', 'remove', 'eph', 'eread', 'close')))
+print('TIME  driver compile %s; shards (parallel): %s' % (cs, secs))
+print('TIME  per operation, median wall time of the calls that returned ok, as the harness saw them (with the driver\'s hex coding):')
+print('TIME    CRYPT_FAST (A-D): ' + times('ABCD'))
+if os.path.exists(os.path.join(T, 'sR', 'times.txt')):
+    print('TIME    CRYPT_REF (R): ' + times('R'))
 PYEOF
 [ "$ok" = 1 ] || exit 1
