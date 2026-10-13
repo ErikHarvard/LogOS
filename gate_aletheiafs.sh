@@ -58,7 +58,8 @@
 #      index version reaches neither copy leaves no trace of its object, one
 #      that reaches the primary keeps it and verify completes the index; a
 #      repair on read whose write fails (rename onto a directory, no space)
-#      returns the content, leaves no .tmp and keeps the old primary; a
+#      returns the content, leaves no .tmp and keeps the old primary;
+#      history refuses a version 1 whose prev is not "none"; a
 #      wrong K_M's verify changes no file even where heads are stale, the
 #      right one fixes them and rebuilds a missing mirror directory; an
 #      ephemeral object's plaintext is not kept in memory by its handle (the
@@ -647,6 +648,14 @@ def shard_e(d, s):
           and lg == lf == ['1', 'head'] and os.path.isdir(V(root, 'obj', idg, 1))
           and not os.path.islink(V(root, 'obj', idf, 1)) and rd(V(root, 'obj', idf, 1)) == bad,
           (rs, lg, lf, os.path.islink(V(root, 'obj', idf, 1))))
+    # history checks version 1's link too: its prev must be "none"
+    root = os.path.join(d, 'v1prev')
+    idp = os.urandom(16).hex()
+    write_store(root, km, idp, [b'version 1 links to something', b'version 2'], [b'p'], b'o',
+                [hashlib.sha256(b'no such version').hexdigest().encode(), None])
+    s.cmd('open', 'p', root, km, 'policy')
+    g, r = s.cmd('history', 'p', '*', idp)
+    check('E history -> chain broken at 1 when version 1\'s prev is a hash, not "none"', r == 'err chain broken at 1', r)
     # a wrong K_M authenticates nothing, so verify changes no file, even on a
     # store whose index heads are stale (as after a crash before a head write)
     root = os.path.join(d, 'staleheads')
