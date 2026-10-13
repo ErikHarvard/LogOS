@@ -31,13 +31,16 @@
 #      empty pieces), and compose: tiles in any order at odd offsets with the
 #      background in the gaps, a tile on each screen edge, pitch > 4*W, blank
 #      spans between stacked tiles, no tiles, H = 0, zero-width and
-#      zero-height tiles (one at the same x as a real tile, given after it),
+#      zero-height tiles (one at the same x as a real tile, given after it;
+#      one of each strictly inside a real tile: a tile of zero area draws
+#      nothing and overlaps nothing),
 #      three and five tiles in one row, text tiles, and 24 seeded random
 #      layouts of up to six non-overlapping tiles.
 #   4. VM: each contract violation halts with rc 1 and the module's message,
 #      printing nothing: overlapping tiles, a tile off the screen (right,
 #      bottom, negative x), a rows list shorter or longer than h, a row that is
-#      not 4*w bytes, pitch < 4*W, a line longer than 4095 characters.
+#      not 4*w bytes, pitch < 4*W, a line longer than 4095 characters; and the
+#      same three row checks for a zero-width tile inside another tile.
 #   5. host: px, run, join, solid and compose (small) give the same bytes on
 #      the C host and the VM, both equal to the model.
 #   6. VM, complexity (ratios within one run, best of 3, so a loaded machine
@@ -212,6 +215,9 @@ COMPOSE_CASES = [
     # a zero-width tile at the same x as a real one, given after it, and one on the right edge
     ("zerow_tie", 7, 5, 28, CBG, [(4, 0, 3, 4, "g", 1), (4, 0, 0, 4, "s", (1, 1, 1)), (0, 0, 4, 4, "g", 2),
                                   (7, 1, 0, 3, "s", (2, 2, 2))]),
+    # zero-area tiles strictly inside a real tile, on its rows: they draw nothing
+    ("zerow_inside", 12, 8, 48, CBG, [(0, 0, 8, 6, "g", 1), (3, 1, 0, 2, "s", (1, 1, 1)), (9, 2, 3, 3, "g", 2)]),
+    ("zeroh_inside", 12, 8, 48, CBG, [(0, 0, 8, 6, "g", 1), (3, 2, 4, 0, "s", (1, 1, 1))]),
 ]
 
 # seeded random cases (the same every run): bands of random bytes and lengths,
@@ -268,6 +274,10 @@ ERR_CASES = [  # (id, LA expression evaluated by MAIN, expected message fragment
     ("width", 'compose(10)(10)(40)(BGP)(CONS(TL(0)(0)(3)(2)(solid(2)(2)(P1)))(NIL))', "not 4*w bytes"),
     ("pitch", 'compose(10)(10)(39)(BGP)(NIL)', "pitch is less than 4*W"),
     ("line", 'join(band1(st)(run(4096)("a"))(5000))', "longer than 4095"),
+    # a zero-width tile inside another still has its rows checked
+    ("zw_width", 'compose(10)(10)(40)(BGP)(CONS(TL(0)(0)(6)(4)(solid(6)(4)(P1)))(CONS(TL(2)(1)(0)(2)(solid(1)(2)(P1)))(NIL)))', "not 4*w bytes"),
+    ("zw_more", 'compose(10)(10)(40)(BGP)(CONS(TL(0)(0)(6)(4)(solid(6)(4)(P1)))(CONS(TL(2)(1)(0)(2)(solid(0)(3)(P1)))(NIL)))', "more rows"),
+    ("zw_fewer", 'compose(10)(10)(40)(BGP)(CONS(TL(0)(0)(6)(4)(solid(6)(4)(P1)))(CONS(TL(2)(1)(0)(2)(solid(0)(1)(P1)))(NIL)))', "fewer rows"),
 ]
 
 # the style-free operations, small enough for the C host: (file, LA expression, expected bytes)
@@ -510,7 +520,7 @@ if ( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/vce" ); t
         fi
     done < <(python3 -I "$T/rtgen.py" errcases "$T/theourgia_termfont.la" "$T")
     if [ -z "$bad" ] && [ "$n" -gt 0 ]; then
-        echo "PASS  render (VM): $n contract violations halt loudly (overlap, off screen x/y/negative, rows short/long, row width, pitch, line > 4095)"
+        echo "PASS  render (VM): $n contract violations halt loudly (overlap, off screen x/y/negative, rows short/long, row width, pitch, line > 4095; a zero-width tile's rows)"
     else
         echo "FAIL  render (VM): violations that did not halt loudly:$bad"; ok=0
     fi

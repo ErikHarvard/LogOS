@@ -50,9 +50,10 @@
 #      h negative, x+w > W, y+h > H), two tiles overlapping, a rows list
 #      shorter or longer than h (a tile of height 0 must have no rows), or a
 #      row that is not 4*w bytes; also when pitch < 4*W. H <= 0 gives "".
-#    - Tiles may come in any order: compose sorts them by x, and at the same
-#      x the narrower first, so a zero-width tile where another tile starts is
-#      fine (one strictly inside another tile on its rows counts as overlap).
+#    - Tiles may come in any order: compose sorts them by x. A tile of zero
+#      width or zero height draws nothing and overlaps nothing, wherever it
+#      lies on the screen (its rows are still checked: exactly h of them, each
+#      empty), as WM_DESIGN.md's "tiles do not overlap" means.
 #    - band with cols <= 0 gives 8*scale empty scanlines. A line longer than
 #      4095 characters halts (no screen is that wide).
 #    - join of NIL is "".
@@ -484,6 +485,24 @@ glyph RENDER_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la int_
         (la t. t(la x. la y. la w. la h. la rows. ad(mu(x)(CX))(w))))
       (lt)(add)(mul)(CONS)(NIL)(D)(1048576))(la SORT.
 
+  # ZROWS(rows)(h)(t): t, after checking a zero-width tile's rows: exactly h
+  # of them, each empty
+  LET((la si. la sl. la ie. la sb. la C0. la C1. la D. la EW. la EF. la EM. la rows. la h. la t.
+        Z(la self. la l. la n.
+          l(la _. ie(n)(C0)(la _. t)(EF)(D))
+           (la r. la rest. ie(si(sl(r)))(C0)(la _. ie(n)(C0)(EM)(la _. self(rest)(sb(n)(C1)))(D))(EW)(D)))(rows)(h))
+      (str_to_int)(str_len)(int_eq)(sub)(C0)(C1)(D)
+      (la _. error("render: compose: a tile row is not 4*w bytes"))
+      (la _. error("render: compose: a tile has fewer rows than its height"))
+      (la _. error("render: compose: a tile has more rows than its height")))(la ZROWS.
+
+  # KEEP(tiles): the tiles of non-zero width and height; the others draw
+  # nothing, and OKT has checked them
+  LET((la lt. la C0. la CONS. la NIL. la D.
+        Z(la self. la l. l(la _. NIL)(la t. la r. t(la x. la y. la w. la h. la rows.
+           lt(C0)(w)(la _. lt(C0)(h)(la _. CONS(t)(self(r)))(la _. self(r))(D))(la _. self(r))(D)))))
+      (lt)(C0)(CONS)(NIL)(D))(la KEEP.
+
   # UNITF(A)(w4): the unit function r -> r A, after checking r is w4 bytes
   LET((la si. la sl. la ie. la cc. la C0. la D. la ERRW. la A. la w4.
         (la F. la r. ie(si(sl(r)))(w4)(la _. F(r))(ERRW)(D))
@@ -583,19 +602,19 @@ glyph RENDER_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la int_
                                  (D))
                               (add(ty)(h)))
                        (D)))))(ts)))
-            (SORT(MAP(OKT)(tiles))))
+            (SORT(KEEP(MAP(OKT)(tiles)))))
           (la t. t(la x. la y. la w. la h. la rows.
              (la BAD.
                lt(x)(C0)(BAD)(la _. lt(y)(C0)(BAD)(la _. lt(w)(C0)(BAD)(la _. lt(h)(C0)(BAD)(la _.
                lt(W)(add(x)(w))(BAD)(la _. lt(H)(add(y)(h))(BAD)(la _.
                int_eq(h)(C0)(la _. rows(la _. t)(la _. la _. error("render: compose: a tile has more rows than its height")))
-                            (la _. t)(D))(D))(D))(D))(D))(D))(D))
+                            (la _. int_eq(w)(C0)(la _. ZROWS(rows)(h)(t))(la _. t)(D))(D))(D))(D))(D))(D))(D))(D))
              (la _. error("render: compose: a tile lies outside the screen")))))
         (concat(run(W)(bg))(zpad)))(run(zp)(Z0)))
         (D))
     (sub(pitch)(mul(W)(C4))))(la compose.
 
   la sel. sel(px)(run)(style)(tband)(bands)(solid)(join)(compose)
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
  (la d. la f. f(d))
  (la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v))))
