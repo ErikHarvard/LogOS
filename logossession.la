@@ -1,0 +1,77 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logossession.la — LogosSession, the session manager (Citrinitas
+#  layer 11). OS_LAYERS_DESIGN.md ("logossession.la") is the contract.
+#
+#  This first part is the passphrase stretch the contract names:
+#  PBKDF2-HMAC-SHA256 (RFC 8018 5.2), written over the crypt record's hmac
+#  (crypt_ref.la's contract: CRYPT_REF, or CRYPT_FAST as a drop-in).
+#      PBKDF2_KIT(…P…)(crypt) = pbkdf2
+#      pbkdf2(pass)(salt)(iter)(dklen)   dklen raw bytes
+#  P, in this order: str_at ord str_to_int int_to_str chr concat add sub mul
+#  div mod lt int_eq bxor error. iter below 1 or dklen outside 1..8160 halts
+#  loudly (error). Kit style (WM_DESIGN.md, "How fast the VM is"): every
+#  builtin and constant is a parameter, the loop is a tail call, and after
+#  the kit is built nothing names a glyph or a builtin. Each iteration is
+#  one crypt hmac (the record has no precomputed-key HMAC, so the key
+#  schedule is redone every time) and a XOR over eight 32-bit words.
+#  MEASURED with CRYPT_FAST on the VM (4-core machine, load about 1): 1000
+#  iterations 1.94 s. gate_logossession.sh checks it against the published
+#  answers and hashlib.pbkdf2_hmac.
+#  Engines: pure Lingua Adamica; tested on the VM (the host is far too slow
+#  for any useful iteration count).
+# ═══════════════════════════════════════════════════════════════════
+
+export PBKDF2_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# ── PBKDF2_KIT: PBKDF2-HMAC-SHA256 (RFC 8018 5.2) over crypt's hmac ─────
+# PBKDF2_KIT(…P…)(crypt) = pbkdf2, pbkdf2(pass)(salt)(iter)(dklen) -> dklen
+# raw bytes: block i is U1 ^ … ^ Uiter, U1 = hmac(pass)(salt ++ INT(i)),
+# Uj = hmac(pass)(U(j-1)), INT(i) the 4-byte big-endian block number. The
+# XOR runs over eight 32-bit words, built by mk8 (a constructor of its own:
+# an accumulator built inline would keep every earlier one alive). iter must
+# be at least 1 and dklen 1..8160, else it halts loudly.
+glyph PBKDF2_KIT = la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bxor. la error. la crypt.
+  crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
+  (la C0. la C1. la C2. la C3. la C4. la C8. la C12. la C16. la C20. la C24. la C28. la C31. la C32.
+   la C256. la C65536. la C16777216. la C8160.
+  LET(Z)(la fix.
+  LET(la c. str_to_int(ord(c)))(la b.
+  LET(mul(C256))(la u.
+  LET(la n. chr(int_to_str(n)))(la B8.
+  LET(la a. la b. la c. la d. la e. la f. la g. la h. la k. k(a)(b)(c)(d)(e)(f)(g)(h))(la mk8.
+  # the big-endian 32-bit word at byte o of the string that sa reads
+  LET(la sa. la o. add(u(add(u(add(u(b(sa(o))))(b(sa(add(o)(C1))))))(b(sa(add(o)(C2))))))(b(sa(add(o)(C3)))))(la rbe.
+  LET(la s. (la sa. mk8(rbe(sa)(C0))(rbe(sa)(C4))(rbe(sa)(C8))(rbe(sa)(C12))
+                       (rbe(sa)(C16))(rbe(sa)(C20))(rbe(sa)(C24))(rbe(sa)(C28)))(str_at(s)))(la words.
+  LET(la A. la W. A(la a0. la a1. la a2. la a3. la a4. la a5. la a6. la a7.
+      W(la b0. la b1. la b2. la b3. la b4. la b5. la b6. la b7.
+        mk8(bxor(a0)(b0))(bxor(a1)(b1))(bxor(a2)(b2))(bxor(a3)(b3))
+           (bxor(a4)(b4))(bxor(a5)(b5))(bxor(a6)(b6))(bxor(a7)(b7)))))(la xor8.
+  LET(la w. concat(concat(B8(div(w)(C16777216)))(B8(mod(div(w)(C65536))(C256))))
+                  (concat(B8(mod(div(w)(C256))(C256)))(B8(mod(w)(C256)))))(la wbe.
+  LET(la A. A(la a0. la a1. la a2. la a3. la a4. la a5. la a6. la a7.
+      concat(concat(concat(wbe(a0))(wbe(a1)))(concat(wbe(a2))(wbe(a3))))
+            (concat(concat(wbe(a4))(wbe(a5)))(concat(wbe(a6))(wbe(a7))))))(la out.
+  # block(prf)(salt)(iter)(i): T_i, 32 bytes; the loop is a tail call
+  LET(la prf. la salt. la c. la i. (la u1.
+      out(fix(la go. la j. la uj. la A.
+          lt(j)(c)(la _. (la un. go(add(j)(C1))(un)(xor8(A)(words(un))))(prf(uj)))(la _. A)(C0))
+        (C1)(u1)(words(u1))))
+    (prf(concat(salt)(wbe(i)))))(la block.
+  # the first n bytes of s
+  LET(la s. la n. fix(la go. la i. lt(i)(n)(la _. concat(str_at(s)(i))(go(add(i)(C1))))(la _. "")(C0))(C0))(la take.
+  LET(la pass. la salt. la c. la L.
+      lt(c)(C1)(la _. error("logossession: pbkdf2: iter must be at least 1"))(la _.
+      lt(L)(C1)(la _. error("logossession: pbkdf2: dklen must be 1..8160"))(la _.
+      lt(C8160)(L)(la _. error("logossession: pbkdf2: dklen must be 1..8160"))(la _.
+        (la prf. (la n.
+            take(fix(la go. la i. lt(n)(i)(la _. "")(la _. concat(block(prf)(salt)(c)(i))(go(add(i)(C1))))(C0))(C1))(L))
+          (div(add(L)(C31))(C32)))
+        (hmac(pass)))(C0))(C0))(C0))(la pbkdf2.
+    pbkdf2
+  ))))))))))))))
+  (0)(1)(2)(3)(4)(8)(12)(16)(20)(24)(28)(31)(32)(256)(65536)(16777216)(8160))
