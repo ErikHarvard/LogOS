@@ -1005,6 +1005,10 @@ hardware-level work and a mature network. Honestly years out.*
       is now under active construction, not deferred.
 - [ ] Network sovereignty / AegisNet — torrent-native, self-distributing,
       layered-encryption mix network
+  - [x] LogosNet, the mesh beneath it (*2026-10-13*): `logosnet.la` — Noise XX/X over
+        X25519 and ChaCha20-Poly1305, self-assigned NodeIDs, flooded presence and DATA,
+        self-repair, over AF_UNIX on one machine (`gate_logosnet.sh`, 55 checks). Not yet:
+        IP transport (a VM builtin), onion routing (AegisNet itself), signatures.
 - [ ] **Sovereign communications — SMS/voice over a controlled number, IPFS-backed,
       with a companion device.** *Added 2026-09-06.* A LogOS machine sends and
       receives SMS and calls through a programmable number (a VoIP endpoint, no
@@ -1014,8 +1018,9 @@ hardware-level work and a mature network. Honestly years out.*
       **Sits above AegisNet**, on the NIC send/receive stack (HAL.5) and on
       AletheiaFS for persistence. Shape: LogOS networking → encrypted tunnel →
       provider API → PSTN.
-      **Prerequisites, none of them met:** TCP/IP does not exist (HAL.5b sent one
-      ARP); AegisNet does not exist; AletheiaFS does not exist. This is not
+      **Prerequisites:** TCP/IP does not exist (HAL.5b sent one ARP); AegisNet does
+      not exist (LogosNet, its mesh, does, over AF_UNIX only); AletheiaFS exists over a
+      host directory since 2026-10-13. This is not
       startable and is filed to be *tracked*, not scheduled.
       **★ THE SEAM, and it must be stated in the item rather than discovered
       later:** a programmable number is rented from a commercial carrier. That
