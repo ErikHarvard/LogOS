@@ -68,7 +68,8 @@
 #      right one fixes them and rebuilds a missing mirror directory; an
 #      ephemeral object's plaintext is not kept in memory by its handle, nor
 #      the session key by the store handle (the driver's memory is scanned
-#      after close and a collection); a root with a NUL byte is refused.
+#      after close and a collection), and with random failing ephemeral
+#      fails closed; a root with a NUL byte is refused.
 # Every operation's guard questions are checked exactly (resource and op).
 # COST. With CRYPT_FAST an operation takes milliseconds and shards A-E a few
 # seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
@@ -773,6 +774,13 @@ def shard_e(d, s):
     check('E ... and the session key (read from its pipe before close) is nowhere in the process either, though the '
           'store handle that opened the session is still held',
           len(SK) == 32 and SK not in found, (len(SK), 'session key found' if SK in found else ''))
+    # with random failing, ephemeral fails closed instead of sealing under a
+    # nonce that is not random (the same one every time)
+    s.cmd('open', 'v', os.path.join(d, 'ephrand'), km, 'policy')
+    wr(os.path.join(d, 'badrandom'), b'')
+    rs = [s.cmd('eph', 'v', 'ev1', b'first')[1], s.cmd('eph', 'v', 'ev2', b'second')[1]]
+    os.unlink(os.path.join(d, 'badrandom'))
+    check('E when random returns nothing, ephemeral fails closed ("random failed")', rs == ['err random failed'] * 2, rs)
     # a root with a NUL byte in it names a different directory to every
     # syscall (the path ends at the NUL): open must refuse it, not open the
     # truncated directory and then loop forever probing versions that all
