@@ -36,6 +36,10 @@
 #      exactly cols bytes is one row, empty lines one row, "" padding when
 #      history is short, the idle cursor line vs the busy partial line (both
 #      wrapping), n = 0 / negative / 1 / larger than the content, cols < 1.
+#   3b. busy rows over a long partial line (t_busy): 63, 64, 65, 129 and 640
+#      bytes (across 64-byte segment edges), at 1, 7, 64 and 80 columns, with
+#      n showing only its last rows, all of it, or it and the lines above;
+#      n <= 0 and cols < 1.
 #   4. the 500-line cap at 499, 500, 501, 999, 1000, 1001, 1203 lines (the
 #      module trims lazily at 1000; the visible history must be exactly the
 #      newest 500 throughout), and submit/clear at the cap.
@@ -56,7 +60,8 @@
 #   8. performance on the VM (see the end): linear long lines, rows cost
 #      independent of history length (with exactly 500 stored lines, where
 #      rows walks the stored list itself, and with 999) and of how many
-#      stored lines would wrap, and a loose per-byte bound.
+#      stored lines would wrap, and of a busy partial line's length, and a
+#      loose per-byte bound.
 #
 # ISOLATION: a private temporary directory (gate_wm_common.sh); touches no
 # tracked file. About 6 min on a quiet machine, most of it the host runs and
@@ -362,6 +367,20 @@ r += [("mark", b"busy partial"), ("write", b"p" * 23), R(10, 4, False), R(10, 4,
 r += [("mark", b"exact"), ("new", b"#"), ("write", b"1234\n12345\n"), R(5, 5, False), R(4, 5, False)]
 emit("t_rows", r)
 
+# ── 3b. busy rows over a long partial line (VM; the host with HOST_ALL) ──
+# A partial line that grows across 64-byte segment edges, each byte telling
+# its position, viewed at widths and heights that show only its last rows,
+# all of it, or it and the lines above.
+PAT = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+b = [("new", b"$ "), ("write", b"above1\nabove2\n")]
+grown = 0
+for L in (63, 64, 65, 129, 640):
+    b += [("mark", b"busy %d" % L), ("write", bytes(PAT[(grown + i) % 62] for i in range(L - grown)))]
+    grown = L
+    b += [R(1, 3, False), R(7, 2, False), R(64, 2, False), R(80, 100, False)]
+b += [("mark", b"busy n"), R(10, 0, False), R(10, -3, False), R(10, 70, False), R(0, 3, False)]
+emit("t_busy", b)
+
 # ── 4. the 500-line cap, across the trim points ──
 c = [("new", b"$ ")]
 written = 0
@@ -490,6 +509,7 @@ timings += ['TIME("bsrun")(la _. write(p16)(b16))', 'TIME("xbs")(la _. write(t63
             'TIME("xcr")(la _. write(new("$ "))(xcr))', 'TIME("ovst")(la _. write(new("$ "))(ovst))',
             'TIME("plain")(la _. write(new("$ "))(plain))'] * 3
 timings += ['TIME("wrap14")(la _. rows(t14w)(C80)(C40)(FALSE))', 'TIME("wrap500")(la _. rows(t500w)(C80)(C40)(FALSE))'] * 3
+timings += ['TIME("pl4k")(la _. rows(p4k)(C80)(C40)(FALSE))', 'TIME("pl1m")(la _. rows(p1m)(C80)(C40)(FALSE))'] * 3
 body = lets([("mixed", MIXED),
              ("ctl", 'REP(4096)(concat(chr("9"))(concat(chr("13"))(concat(chr("7"))(chr("1")))))'),
              ("l16", 'REP(16384)("x")'),
@@ -505,7 +525,9 @@ body = lets([("mixed", MIXED),
              ("ovst", 'REP(200)(concat(REP(20)(concat("_")(concat(chr("8"))("A"))))(NL))'),
              ("plain", 'REP(200)(concat(REP(20)("_xA"))(NL))'),
              ("t14w", 'write(new("$ "))(REP(14)(concat(REP(200)("w"))(NL)))'),
-             ("t500w", 'write(new("$ "))(REP(500)(concat(REP(200)("w"))(NL)))')], seq(timings))
+             ("t500w", 'write(new("$ "))(REP(500)(concat(REP(200)("w"))(NL)))'),
+             ("p4k", 'write(new("$ "))(REP(4096)("q"))'),
+             ("p1m", 'write(new("$ "))(REP(16)(l64))')], seq(timings))
 REP = ('la n. la s. (la r. r(r)(n))(la r. la n. int_eq(n)(C0)(la _. "")'
        '(la _. (la h. int_eq(mod(n)(C2))(C0)(concat(h)(h))(concat(s)(concat(h)(h))))(r(r)(div(n)(C2))))(C0))')
 # WALK(k): a loop of k turns, each naming str_head, a builtin that is not a
@@ -567,6 +589,7 @@ vmcheck() {
 vmcheck t_write  "write: printable, \\n, \\r, \\t at many columns, \\b (line start, segment edges), CSI (whole, split, cut at ESC), ESC+byte, UTF-8, controls, 127; flush"
 vmcheck t_edit   "key/back/kill_line, submit's echo and result, history past both ends, clear, set_prompt"
 vmcheck t_rows   "rows: wrap at cols, exact-width lines, empty lines, padding, idle vs busy, n and cols edge cases"
+vmcheck t_busy   "busy rows over a partial line of 63/64/65/129/640 bytes (segment edges), at 1/7/64/80 columns, only its last rows or all of it, n <= 0"
 vmcheck t_cap    "the 500-line cap at 499/500/501/999/1000/1001/1203 lines"
 vmcheck t_keys   "keychar over codes -57..1000 against the US table; the KEY_* constants"
 vmcheck t_random "a seeded 260-step random script against the model"
@@ -580,7 +603,7 @@ vmcheck t_bs     "\\b: a run then backspaces at segment offsets 0/1/2/62/63, bac
 # host (t_write takes ~15 min of CPU there and t_random more than 16: raise
 # WM_HOST_TIMEOUT, in seconds, to suit).
 hostgroups="t_host t_edit t_keys t_rows t_rand40"
-[ "${WM_TERM_HOST_ALL:-}" = 1 ] && hostgroups="$hostgroups t_write t_cap t_random t_bs"
+[ "${WM_TERM_HOST_ALL:-}" = 1 ] && hostgroups="$hostgroups t_write t_cap t_random t_bs t_busy"
 for g in $hostgroups; do
     wm_host "$g.la" "$T/$g.host"
     [ -f "$T/$g.vm" ] || wm_vm "$g.la" "$T/$g.vm"
@@ -633,7 +656,11 @@ fi
 #     walking it, so the 999 case alone would not show a walk;
 #   - 40 wrapped rows (200-byte lines, three rows each) cost about the same
 #     over 500 stored lines as over 14 (only the lines the 40 rows come from
-#     are cut into rows; wrapping the whole history would be ~35x).
+#     are cut into rows; wrapping the whole history would be ~35x);
+#   - busy rows(80)(40) over a 1 MB partial line costs about what it costs
+#     over a 4 KB one (only the bytes its 40 rows show are joined; joining
+#     the whole line every frame cost about 33 ns a byte of the line, ~15x
+#     here, and O(L^2) over the growth of a line printed without a newline).
 wm_vm t_perf.la "$T/perf.txt"
 python3 - "$T/perf.txt" "$vrc" >"$T/perf.res" <<'PYEOF'
 import sys
@@ -647,7 +674,7 @@ for line in open(sys.argv[1]):
         us = ((int(f[3]) - int(f[1])) * 10**9 + int(f[4]) - int(f[2])) / 1000.0
         best[f[0]] = min(best.get(f[0], us), us)
 need = ["walk", "nowalk", "mixed", "ctl", "line16k", "line64k", "bsrun", "xbs", "xcr", "ovst", "plain",
-        "rows40", "rows500", "rows999", "wrap14", "wrap500"]
+        "rows40", "rows500", "rows999", "wrap14", "wrap500", "pl4k", "pl1m"]
 missing = [k for k in need if k not in best] + [k for k in ("mixed", "ctl") if k not in nbytes]
 if sys.argv[2] != "0" or missing:
     print("FAIL  term (VM perf): the timing program: rc=%s, missing %s" % (sys.argv[2], " ".join(missing) or "-"))
@@ -677,6 +704,10 @@ check(r500 < 4 and r999 < 4 and rw < 3,
       "rows 80x40: %.0f us over 40 stored lines, %.0f over 500, %.0f over 999 (ratios %.2f, %.2f; bound 4);\n"
       "      40 wrapped rows: %.0f us over 14 stored lines, %.0f over 500 (ratio %.2f; bound 3)"
       % (best["rows40"], best["rows500"], best["rows999"], r500, r999, best["wrap14"], best["wrap500"], rw))
+pr = best["pl1m"] / best["pl4k"]
+check(pr < 3,
+      "busy rows 80x40 over a partial line: %.0f us over 4 KB, %.0f over 1 MB (ratio %.2f; bound 3)"
+      % (best["pl4k"], best["pl1m"], pr))
 PYEOF
 cat "$T/perf.res"
 grep -q '^PASS' "$T/perf.res" || { echo "FAIL  term (VM perf): no result"; ok=0; }

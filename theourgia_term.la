@@ -407,6 +407,28 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
                                (LEN(h))))
                     (D)))
         (D))(la ROWS.
+  # PLT(S)(C)(m): the last m bytes of the partial line (segments S, newest
+  # first, each 64 bytes, then the tail C); "" when m <= 0. Only the segments
+  # those bytes lie in are visited and joined, so a busy rows over a long
+  # partial line costs O(n * cols), not O(the line). Only the piece the cut
+  # falls inside is sliced (SLICE copies byte by byte); a whole segment, or
+  # the whole tail, is taken as it is.
+  LET(la S. la C. la m.
+      (la c. T(m)(c)
+         (la _. SLICE(C)(sub(c)(m))(c))
+         (la _. Q(m)(c)(la _. C)
+           (la _. (la g. g(g)(S)(sub(m)(c))(NIL))
+                  (la g. la S. la r. la acc. S(la _. P(JOIN(acc))(C))
+                     (la h. la t. T(r)(K64)
+                        (la _. P(JOIN(CONS(SLICE(h)(sub(K64)(r))(K64))(acc)))(C))
+                        (la _. Q(r)(K64)
+                           (la _. P(JOIN(CONS(h)(acc)))(C))
+                           (la _. g(g)(t)(sub(r)(K64))(CONS(h)(acc)))
+                           (D))
+                        (D))))
+           (D))
+         (D))
+      (LEN(C)))(la PLT.
 
   # ── the terminal record T = la k. k(R)(E)(I)(Pr)(H)(J)(V) and its operations ──
   LET(la R. la E. la I. la Pr. la H. la J. la V. la k. k(R)(E)(I)(Pr)(H)(J)(V))(la MK.
@@ -445,10 +467,16 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
   LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V. MK(R0)(E)(I)(Pr)(H)(J)(V)))(la CLEAR.
   LET(la t. la p. t(la R. la E. la I. la Pr. la H. la J. la V. MK(R)(E)(I)(p)(H)(J)(V)))(la SETP.
   LET(la t. la cols. la n. la idle. t(la R. la E. la I. la Pr. la H. la J. la V.
-        R(la L. la N. la S. la C. la K.
-          ROWS(T(cols)(K1)(K1)(cols))
-              (idle(la _. P(P(Pr)(I))(CUR))(la _. PL(S)(C))(D))
-              (L)(N)(n))))(la ROWSOP.
+        R(la L. la N. la S. la C. la K. (la w.
+          ROWS(w)
+              # busy: the partial line takes R = ceil(K/w) rows; only its last
+              # min(n, R) can show, the bytes from (R - min(n, R)) * w on
+              (idle(la _. P(P(Pr)(I))(CUR))
+                   (la _. (la RR. (la r. PLT(S)(C)(sub(K)(mul(sub(RR)(r))(w))))(T(n)(RR)(n)(RR)))
+                          (div(sub(U(K)(w))(K1))(w)))
+                   (D))
+              (L)(N)(n))
+          (T(cols)(K1)(K1)(cols)))))(la ROWSOP.
   # keychar: KPL is the unshifted character of codes 0..57, KSH the shifted
   # one; '#' in KPL (a character no unshifted key types) marks a code that
   # types nothing, and str_at is "" past the end and for a negative code.
@@ -460,5 +488,5 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
                       (A(KPL)(code)))(la KEYCHAR.
 
   la sel. sel(NEW)(WRITE)(FLUSH)(KEY)(BACK)(KILL)(SUBMIT)(HPREV)(HNEXT)(CLEAR)(SETP)(ROWSOP)(KEYCHAR)
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
  (la v. la f. f(v))
