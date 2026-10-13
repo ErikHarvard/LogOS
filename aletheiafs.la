@@ -161,12 +161,19 @@
 #  cannot be written, or whose new index version reaches neither copy,
 #  removes the object again, but a write that fails part-way through an
 #  update, or through the index after its object, can leave the new
-#  version in one copy only (verify completes it; its number is never
-#  reused, because its nonce is); a remove whose index write fails has
-#  already deleted the files (remove again finishes it). A head is not authenticated: someone who
-#  deletes the newest versions from both copies and rolls both heads back
-#  truncates an object undetectably (the index does not record each
-#  object's newest n). What is on disk is sealed, but not hidden: the ids,
+#  version in one copy only (verify completes it); a remove whose index
+#  write fails has already deleted the files (remove again finishes it).
+#  A head is not authenticated: someone who deletes the newest versions
+#  from both copies and rolls both heads back truncates an object
+#  undetectably (the index does not record each object's newest n).
+#  KNOWN WEAKNESS: a version number can be sealed twice. The nonce is the
+#  version number (the contract fixes it), so after such a rollback, or a
+#  crash that left only <n>.tmp, or a failed write that is retried, the
+#  next update seals version n again under the same key and nonce, and the
+#  two blobs give away the XOR of the two plaintexts (reproduced: the first
+#  plaintext recovered). Closing it needs an authenticated count of each
+#  object's versions, or numbers that a crash burns rather than reuses: a
+#  design decision the contract does not make, so it is not made here. What is on disk is sealed, but not hidden: the ids,
 #  the number and sizes of versions, and when they were written are
 #  visible. There is no directory listing in the VM, so objects are found
 #  through the index; an object whose index line is lost is still readable
