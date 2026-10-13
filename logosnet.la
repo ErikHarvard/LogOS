@@ -1,0 +1,126 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logosnet.la — LogosNet, the sovereign mesh layer (NET_DESIGN.md 2).
+#
+#  WHAT. NET_KIT(B)(X)(crypt)(xk) returns the record
+#
+#      la s. s(frame)(deframe)(broken)
+#
+#  B, X, crypt and xk are the builtins and kits it is built from:
+#    B     = la s. s(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
+#                    (str_eq)(error)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
+#                    (band)(bor)(bxor)(bshl)(bshr)
+#    X     = la s. s(socket)(bind)(listen)(accept)(connect)(send)(recv)(close)
+#                    (unlink)(poll)(random)(clock_gettime)(print)(read_file)
+#                    (write_file)(chmod)(stat)(mkdir)(rmdir)(rename)(sigprocmask)
+#    crypt = la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)   (CRYPT_FAST)
+#    xk    = la s. s(scalarmult)(public)(shared)            (X25519_KIT)
+#  Options are la none. la some. ... (none(none) / some(x)); booleans are
+#  Church booleans; lists are Scott lists (NET_NIL, NET_CONS).
+#
+#  FRAMES.
+#    frame(p)            4-byte big-endian length ++ p. p is at most 1 MiB
+#                        (1048576 bytes); a longer one halts:
+#                        "logosnet: frame: payload longer than 1 MiB".
+#    deframe(buf)(chunk) la k. k(payloads)(buf'): payloads is a Scott list of
+#                        the complete frames in buf ++ chunk, in order; buf' is
+#                        what is left, the start of the next frame.
+#    broken(buf')        a declared length above 1 MiB is a protocol error:
+#                        deframe stops at that header and leaves it at the
+#                        head of buf', and broken(buf') is TRUE. The caller
+#                        treats the link as broken.
+#
+#  STYLE. Kit style (WM_DESIGN.md, "How fast the VM is"): the builtins arrive
+#  in the records B and X and are destructured once when the kit is built;
+#  every helper is let-bound inside a sub-kit (NET_BYTES, NET_FRAMES), so
+#  running code finds every name in its environment and never walks the glyph
+#  table. Booleans are applied to two thunks and a dummy; constants are
+#  parameters; strings are cut by balanced halving over str_at (O(n log n)),
+#  never by a left fold.
+# ═══════════════════════════════════════════════════════════════════
+
+export NET_KIT NET_NIL NET_CONS
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+glyph NET_NIL  = la n. la c. n(n)
+glyph NET_CONS = la h. la t. la n. la c. c(h)(t)
+
+# ── Bytes ────────────────────────────────────────────────────────────────
+# NET_BYTES(B) -> la s. s(len)(span)(T)(slice)(byte)(rdbe32)(be32)(le64)(rev)(zeros)
+#   span(f)(lo)(hi)  f(lo) ++ ... ++ f(hi-1), joined by halving; "" if lo >= hi
+#   T(b)             the one-byte string of b (0..255), from a table built once
+#   slice(s)(lo)(hi) bytes lo..hi-1 of s
+#   byte(s)(o)       the value of byte o of s (0 past the end)
+#   rdbe32(s)(o)     the big-endian 32-bit integer at offset o
+#   be32(n) le64(n)  n as 4 big-endian / 8 little-endian bytes
+#   rev(l)           a Scott list reversed;  zeros(n)  n zero bytes
+glyph NET_BYTES = la B.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  (la C0. la C1. la C2. la C3. la C8. la C16. la C24. la C32. la C40. la C48. la C56. la C255. la C256.
+   la nil. la cons.
+    LET(la s. str_to_int(str_len(s)))(la len.
+    LET(Z(la span. la f. la lo. la hi.
+        lt(add(lo)(C1))(hi)
+          (la _. (la mid. concat(span(f)(lo)(mid))(span(f)(mid)(hi)))(bshr(add(lo)(hi))(C1)))
+          (la _. lt(lo)(hi)(la _. f(lo))(la _. "")(C0))
+          (C0)))(la span.
+    LET(span(la i. chr(int_to_str(i)))(C0)(C256))(la T256.
+    LET(str_at(T256))(la T.
+    LET(la s. la lo. la hi. span(str_at(s))(lo)(hi))(la slice.
+    LET(la s. la o. str_to_int(ord(str_at(s)(o))))(la byte.
+    LET(la s. la o.
+        add(mul(add(mul(add(mul(byte(s)(o))(C256))(byte(s)(add(o)(C1))))(C256))(byte(s)(add(o)(C2))))(C256))
+           (byte(s)(add(o)(C3))))(la rdbe32.
+    LET(la n. concat(concat(T(band(bshr(n)(C24))(C255)))(T(band(bshr(n)(C16))(C255))))
+                    (concat(T(band(bshr(n)(C8))(C255)))(T(band(n)(C255)))))(la be32.
+    LET(la n. concat(concat(concat(T(band(n)(C255)))(T(band(bshr(n)(C8))(C255))))
+                           (concat(T(band(bshr(n)(C16))(C255)))(T(band(bshr(n)(C24))(C255)))))
+                    (concat(concat(T(band(bshr(n)(C32))(C255)))(T(band(bshr(n)(C40))(C255))))
+                           (concat(T(band(bshr(n)(C48))(C255)))(T(band(bshr(n)(C56))(C255))))))(la le64.
+    LET(Z(la rev. la acc. la l. l(la _. acc)(la h. la t. rev(cons(h)(acc))(t))))(la revacc.
+    LET(la n. span(la i. T(C0))(C0)(n))(la zeros.
+      la s. s(len)(span)(T)(slice)(byte)(rdbe32)(be32)(le64)(revacc(nil))(zeros)))))))))))))
+  (0)(1)(2)(3)(8)(16)(24)(32)(40)(48)(56)(255)(256)(NET_NIL)(NET_CONS))
+
+# ── Frames ───────────────────────────────────────────────────────────────
+# NET_FRAMES(B)(BY) -> la s. s(frame)(deframe)(broken)   (the header says what)
+glyph NET_FRAMES = la B. la BY.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  BY(la len. la span. la T. la slice. la byte. la rdbe32. la be32. la le64. la rev. la zeros.
+  (la C0. la C4. la C1M. la TRUE. la FALSE. la nil. la cons.
+    LET(la p. (la L. lt(C1M)(L)
+                 (la _. error("logosnet: frame: payload longer than 1 MiB"))
+                 (la _. concat(be32(L))(p))
+                 (C0))
+              (len(p)))(la frame.
+    # dfgo(s)(n)(pos)(acc): the frames of s from pos on; stops at an
+    # incomplete frame or at a header declaring more than 1 MiB
+    LET(la acc. la t. la k. k(rev(acc))(t))(la dfdone.
+    LET(la s. la pos. la n. int_eq(pos)(C0)(la _. s)(la _. slice(s)(pos)(n))(C0))(la dftail.
+    LET(Z(la go. la s. la n. la pos. la acc.
+        (la rest.
+          lt(rest)(C4)
+            (la _. dfdone(acc)(dftail(s)(pos)(n)))
+            (la _. (la L.
+                      lt(C1M)(L)(TRUE)(lt(sub(rest)(C4))(L))
+                        (la _. dfdone(acc)(dftail(s)(pos)(n)))
+                        (la _. (la e. go(s)(n)(e)(cons(slice(s)(add(pos)(C4))(e))(acc)))
+                               (add(add(pos)(C4))(L)))
+                        (C0))
+                   (rdbe32(s)(pos)))
+            (C0))
+        (sub(n)(pos))))(la dfgo.
+    LET(la buf. la chunk.
+        (la s. dfgo(s)(len(s))(C0)(nil))
+        (str_eq(buf)("")(la _. chunk)(la _. concat(buf)(chunk))(C0)))(la deframe.
+    LET(la buf. lt(len(buf))(C4)(la _. FALSE)(la _. lt(C1M)(rdbe32(buf)(C0)))(C0))(la broken.
+      la s. s(frame)(deframe)(broken))))))))
+  (0)(4)(1048576)(la t. la f. t)(la t. la f. f)(NET_NIL)(NET_CONS)))
+
+# ── The kit ──────────────────────────────────────────────────────────────
+glyph NET_KIT = la B. la X. la crypt. la xk.
+  NET_FRAMES(B)(NET_BYTES(B))(la frame. la deframe. la broken.
+    la s. s(frame)(deframe)(broken))
