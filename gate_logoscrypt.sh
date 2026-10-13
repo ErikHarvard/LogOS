@@ -6,7 +6,11 @@
 #   1. the published answers gate_crypt_ref.sh checks, from the same program
 #      with CRYPT_FAST in place of CRYPT_REF: sha256("abc"), RFC 4231 HMAC
 #      case 2, RFC 5869 HKDF case 3 (no salt), the RFC 8439 2.8.2 seal and
-#      open, a flipped bit and a short string releasing nothing;
+#      open, a flipped bit and a short string releasing nothing; and a seal
+#      whose Poly1305 accumulator is exactly p, the one way to reach the final
+#      reduction's subtraction of p (random inputs reach it with probability
+#      about 2^-128), its tag confirmed by the oracle and, when it is
+#      installed, by the cryptography package;
 #   2. an independent oracle (stdlib hashlib/hmac, and RFC 8439 transcribed
 #      in Python below; nothing derived from the LA code) on inputs generated
 #      the same way inside LA: sha256 at every length 0..130 and 1000, 4096;
@@ -76,13 +80,15 @@ def chacha_xor(key, ctr, nonce, data):
         ks = chacha_block(key, ctr + j // 64, nonce)
         out += bytes(a ^ b for a, b in zip(data[j:j + 64], ks))
     return bytes(out)
-def poly1305(key, msg):
+def poly1305_acc(key, msg):  # the accumulator, mod p, before s is added
     r = int.from_bytes(key[:16], "little") & 0x0ffffffc0ffffffc0ffffffc0fffffff
-    s = int.from_bytes(key[16:], "little")
     p, a = (1 << 130) - 5, 0
     for j in range(0, len(msg), 16):
         a = (a + int.from_bytes(msg[j:j + 16] + b"\x01", "little")) * r % p
-    return ((a + s) % (1 << 128)).to_bytes(16, "little")
+    return a
+def poly1305(key, msg):
+    s = int.from_bytes(key[16:], "little")
+    return ((poly1305_acc(key, msg) + s) % (1 << 128)).to_bytes(16, "little")
 def _mac(aad, ct):
     pad = lambda x: b"\0" * (-len(x) % 16)
     return aad + pad(aad) + ct + pad(ct) + struct.pack("<QQ", len(aad), len(ct))
@@ -137,6 +143,20 @@ if __name__ == "__main__" and sys.argv[1] == "timing":
     print("sha256-10KB " + sha256(sha256(k10)).hex())
     print("seal-1KB " + sha256(seal(key, nonce, b"", k1)).hex())
     print("seal-10KB " + sha256(seal(key, nonce, b"", k10)).hex())
+if __name__ == "__main__" and sys.argv[1] == "pedge":
+    key, nonce, aad = (bytes.fromhex(x) for x in sys.argv[2:5])
+    sd = seal(key, nonce, aad, b"")
+    print("acc-mod-p %d" % poly1305_acc(chacha_block(key, 0, nonce)[:32], _mac(aad, b"")))
+    print("seal " + sd.hex())
+    print("open [%s]" % open_(key, nonce, aad, sd).decode())
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+    except ImportError:
+        print("package absent")
+    else:
+        pk = ChaCha20Poly1305(key)
+        same = pk.encrypt(nonce, b"", aad) == sd and pk.decrypt(nonce, sd, aad) == b""
+        print("package " + ("same" if same else "DIFFERENT"))
 PYEOF
 command -v python3 >/dev/null || { echo "FAIL  logoscrypt: python3 (the oracle) is not installed"; exit 1; }
 
@@ -285,6 +305,47 @@ if [ "$vrc" = 0 ] && [ "$(cat "$T/ka.out")" = "$EXPECT" ]; then
     echo "PASS  logoscrypt known answers (VM): sha256, HMAC, HKDF, seal and open give the published answers; a flipped bit and a short string release nothing"
 else
     echo "FAIL  logoscrypt known answers (VM): rc=$vrc"; diff <(echo "$EXPECT") "$T/ka.out" | head -10; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
+fi
+
+# ── 1b. Poly1305's final reduction subtracts p ─────────────────────────────
+# The last step keeps h - p only when h >= p, a branch random inputs reach
+# with probability about 2^-128. This vector (empty plaintext) is built so the
+# accumulator is exactly p in CRYPT_FAST's 26-bit limbs: the oracle sees it as
+# 0 mod p, so the tag is s itself. A final step that never subtracts p seals
+# p + s = s - 5 (mod 2^128), f75f6595... The oracle, and the cryptography
+# package when it is installed, must give this tag too.
+PE_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+PE_NONCE=6465666768696a6b6c6d6e6f
+PE_AAD=f5b165224a58b791df6af1d8303e61cdf21d0d1286a563823d0e8131d9d1ec08
+PE_TAG=fc5f6595c01a760a1c71190f136603df
+mkprog pedge.la <<LAEOF
+glyph FROMHEX = Z(la self. la s.
+    str_eq(s)("")(la _. "")(la _.
+      (la hv. concat(chr(int_to_str(add(mul(hv(str_head(s)))(16))(hv(str_head(str_tail(s)))))))
+                    (self(str_tail(str_tail(s)))))
+      (la c. (la n. lt(n)(58)(la _. sub(n)(48))(la _. sub(n)(87))("!"))(str_to_int(ord(c)))))("!"))
+# seal gives the tag; open of the known sealed string (the tag) gives the
+# empty plaintext back
+glyph MAIN = FAST(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+  (la key. la nonce. la aad.
+     SEQ(SEQ(print(concat("seal ")(hex(seal(key)(nonce)(aad)("")))))
+            (print(concat("open ")(open(key)(nonce)(aad)(FROMHEX("$PE_TAG"))(la _. "none")(la p. concat(concat("[")(p))("]"))))))
+        (print("end")))
+  (FROMHEX("$PE_KEY"))(FROMHEX("$PE_NONCE"))(FROMHEX("$PE_AAD")))
+LAEOF
+( cd "$T" && python3 oracle.py pedge "$PE_KEY" "$PE_NONCE" "$PE_AAD" ) > "$T/pedge.ora"
+wm_vm pedge.la "$T/pedge.out"
+pe_pkg=$(sed -n 's/^package //p' "$T/pedge.ora")
+if [ "$(head -3 "$T/pedge.ora")" = "acc-mod-p 0
+seal $PE_TAG
+open []" ] && { [ "$pe_pkg" = same ] || [ "$pe_pkg" = absent ]; } \
+   && [ "$vrc" = 0 ] && [ "$(cat "$T/pedge.out")" = "seal $PE_TAG
+open []
+end" ]; then
+    case $pe_pkg in same) pe_by="the oracle and the cryptography package";; *) pe_by="the oracle (the cryptography package is not installed)";; esac
+    echo "PASS  logoscrypt Poly1305 h = p (VM): a seal whose accumulator is exactly p (0 mod p) takes the final subtraction: seal gives tag $PE_TAG, as $pe_by give it, and open of that tag gives the empty plaintext back"
+else
+    echo "FAIL  logoscrypt Poly1305 h = p (VM): rc=$vrc, want tag $PE_TAG"; sed 's/^/      oracle: /' "$T/pedge.ora"; sed 's/^/      vm: /' "$T/pedge.out"; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
 
 # ── 2. the oracle sweep ──────────────────────────────────────────────────
