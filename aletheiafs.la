@@ -98,9 +98,10 @@
 #  the mirror differs it is rewritten from the primary (repaired); if only
 #  the mirror authenticates the primary is rewritten from it (repaired); if
 #  neither does, both are left as they are (lost). verify also recreates a
-#  missing object directory and rewrites a head that does not name the
-#  newest version. A wrong K_M authenticates nothing, so it repairs nothing:
-#  it reports every index version lost and changes no file.
+#  missing object directory it repairs into and, for an object one of whose
+#  versions authenticates, rewrites a head that does not name the newest
+#  version. A wrong K_M authenticates nothing, so it repairs nothing: it
+#  reports every index version lost and changes no file.
 #
 #  ── EPHEMERAL OBJECTS ───────────────────────────────────────────────
 #  Codex: "Temporary files exist only in encrypted RAM, never touch disk,
@@ -387,13 +388,14 @@ glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
   LET(la line. slice(line)(C0)(C32))(la lineid.
   LET(la line. split(slice(line)(add(C32)(C1))(len(line)))(","))(la linetags.
   # vcheck(K)(P)(M)(id)(i): ok(0) both copies good, ok(1) one rewritten
-  # from the other, ok(2) neither authenticates (lost)
+  # from the other (its directory made first if it is missing), ok(2)
+  # neither authenticates (lost)
   LET(la K. la P. la M. la id. la i. (la pp. (la mp. (la p. (la m.
       vopen(K)(id)(i)(p)
         (la _. vopen(K)(id)(i)(m)
             (la _. OK(C2))
-            (la pt. BIND(awrite(pp)(m))(la _. OK(C1))))
-        (la pt. str_eq(m)(p)(la _. OK(C0))(la _. BIND(awrite(mp)(p))(la _. OK(C1)))(C0)))
+            (la pt. BIND(mkd(P))(la _. BIND(awrite(pp)(m))(la _. OK(C1)))))
+        (la pt. str_eq(m)(p)(la _. OK(C0))(la _. BIND(mkd(M))(la _. BIND(awrite(mp)(p))(la _. OK(C1))))(C0)))
       (rd(mp)))(rd(pp)))(vpath(M)(i)))(vpath(P)(i)))(la vcheck.
   # walk(K)(P)(M)(id)(i)(n)(c)(r)(l): vcheck versions i..n, counting
   LET(Z(la walk. la K. la P. la M. la id. la i. la n. la c. la r. la l.
@@ -582,12 +584,15 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
           (la _. ERR("no such object"))(C0))
         (lines(icont))))))(la remove.
   # objwalk(getk)(P)(M)(id)(n)(c)(r)(l): vcheck versions 1..n and fix the
-  # heads; getk is a thunk so that no key is derived for an empty object
+  # heads; getk is a thunk so that no key is derived for an empty object.
+  # The heads are fixed only when some version authenticates: under a wrong
+  # K_M nothing does, and verify must change no file
   LET(la getk. la P. la M. la id. la n. la c. la r. la l.
     lt(C0)(n)
-      (la _. BIND(mkd(P))(la _. BIND(mkd(M))(la _.
-          BIND(walk(getk(C0))(P)(M)(id)(C1)(n)(c)(r)(l))(la w.
-          BIND(fixheads(P)(M)(n))(la _. OK(w))))))
+      (la _. BIND(walk(getk(C0))(P)(M)(id)(C1)(n)(c)(r)(l))(la w. w(la c2. la r2. la l2.
+          lt(sub(l2)(l))(n)
+            (la _. BIND(fixheads(P)(M)(n))(la _. OK(w)))
+            (la _. OK(w))(C0))))
       (la _. OK(la k. k(c)(r)(l)))(C0))(la objwalk.
   LET(Z(la wo. la root. la km. la ids. la c. la r. la l.
      ids(la _. OK(la k. k(c)(r)(l)))(la id. la rest.

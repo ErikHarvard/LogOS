@@ -56,7 +56,9 @@
 #      index version lost in both copies, verify still walks the objects the
 #      newest readable index version lists and repairs them; a put whose
 #      index version reaches neither copy leaves no trace of its object, one
-#      that reaches the primary keeps it and verify completes the index; an
+#      that reaches the primary keeps it and verify completes the index; a
+#      wrong K_M's verify changes no file even where heads are stale, the
+#      right one fixes them and rebuilds a missing mirror directory; an
 #      ephemeral object's plaintext is not kept in memory by its handle (the
 #      driver's memory is scanned after close and a collection).
 # Every operation's guard questions are checked exactly (resource and op).
@@ -623,6 +625,25 @@ def shard_e(d, s):
     g, r = s.cmd('verify', 'h')
     check('E ... and verify completes the index (checked 2, repaired 1, lost 0)',
           r == 'ok 2 1 0' and disk(root, km, 'index', IXH, IDX_TAGS, IDX_OWNER) == '', (r, disk(root, km, 'index', IXH, IDX_TAGS, IDX_OWNER)))
+    # a wrong K_M authenticates nothing, so verify changes no file, even on a
+    # store whose index heads are stale (as after a crash before a head write)
+    root = os.path.join(d, 'staleheads')
+    ids = os.urandom(16).hex()
+    IXS = [line(ids, 's')] * 2
+    write_store(root, km, ids, [b'one'], [b's'], b'o'); write_store(root, km, 'index', IXS, IDX_TAGS, IDX_OWNER)
+    wr(os.path.join(root, 'obj', 'index', 'head'), b'1'); os.unlink(os.path.join(root, 'mirror', 'index', 'head'))
+    before = snap(root)
+    s.cmd('open', 'x', root, bytes(range(31, 63)), 'policy')
+    g, r = s.cmd('verify', 'x')
+    check('E with a wrong K_M, verify of a store whose index heads are stale reports both index versions lost and '
+          'changes no file', r == 'ok 2 0 2' and snap(root) == before, (r, sorted(set(snap(root).items()) ^ set(before.items()))))
+    shutil.rmtree(os.path.join(root, 'mirror', ids))
+    s.cmd('open', 'y', root, km, 'policy')
+    g, r = s.cmd('verify', 'y')
+    check('E ... while with the right K_M, verify of that store fixes both index heads and rebuilds the object\'s whole '
+          'missing mirror directory (checked 3, repaired 1, lost 0)',
+          r == 'ok 3 1 0' and disk(root, km, 'index', IXS, IDX_TAGS, IDX_OWNER) == '' and disk(root, km, ids, [b'one'], [b's'], b'o') == '',
+          (r, disk(root, km, 'index', IXS, IDX_TAGS, IDX_OWNER) + disk(root, km, ids, [b'one'], [b's'], b'o')))
     # an ephemeral object lives in memory only sealed: once its session is
     # closed and the heap has been collected, its plaintext is nowhere in the
     # process although its handle is still held, while the store handle's
