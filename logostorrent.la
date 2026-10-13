@@ -4,7 +4,7 @@
 #
 #  WHAT. TORRENT_KIT(B)(X)(crypt)(net) returns
 #
-#      la s. s(manifest)(root)(parse)
+#      la s. s(manifest)(root)(parse)(service)
 #
 #  B, X, crypt and net are the builtins and kits it is built from:
 #    B     = la s. s(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
@@ -14,10 +14,8 @@
 #                    (unlink)(poll)(random)(clock_gettime)(print)(read_file)
 #                    (open)(read)(write)(lseek)(rename)(stat)(sigprocmask)
 #    crypt = la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)   (CRYPT_FAST)
-#    net   = NET_KIT's record (logosnet.la)
-#  X and net are for the torrent service, which runs beside a LogosNet node
-#  and is not part of this module yet; manifest, root and parse use B and
-#  crypt only.
+#    net   = NET_KIT's record (logosnet.la); the service uses its frame,
+#            deframe and broken, nothing else
 #  Options are la none. la some. ... (none(none) / some(x)); booleans are
 #  Church booleans; lists are Scott lists.
 #
@@ -38,12 +36,149 @@
 #                       first hash. none for anything else, never a halt (a
 #                       manifest comes from the network).
 #
+#  THE SERVICE. service(cfg) runs the torrent service of one LogosNet node as
+#  its own process, beside the node, until it is told to quit or its node
+#  goes; cfg is the text of its config file:
+#
+#    node <path>       the node's control socket (required)
+#    ctl <path>        the service's own control socket (default <node>.tor)
+#    chunk <bytes>     the chunk size seed uses (default 16384)
+#    find <s>          a fetch that makes no progress for this long fails
+#                      (default 30)
+#    chunktime <s>     a GET not answered within this is asked of another
+#                      peer (default 10)
+#    window <n>        the GETs one peer may have outstanding (default 2)
+#
+#  HOW IT ATTACHES TO THE NODE. Through the node's control channel only
+#  (logosnet.la): at startup it asks the node's id, then sends "listen TOR1"
+#  on a second connection and keeps it: the node passes on it every DATA
+#  for this node whose text begins with "TOR1 ", as one frame "<from>
+#  <text>", from being the sender's NodeID (proved by the Noise_X message).
+#  It sends with the node's "send <dest> <text>" (one connection per message)
+#  and learns the mesh from "directory". When the node closes the listening
+#  connection (it quit or died), the service ends too.
+#
+#  THE WIRE. Every message is the text of one LogosNet DATA (sealed to its
+#  destination, so only it reads it and it knows who sent it):
+#      TOR1 WANT <root>             do you have this file?
+#      TOR1 HAVE <root>             I do (the answer to a WANT)
+#      TOR1 GET <root> <i>          send me chunk i (decimal), or the manifest (i = m)
+#      TOR1 CHUNK <root> <i> <bytes>  chunk i (or the manifest), raw to the end
+#  A message that is none of these is dropped and logged ("drop malformed").
+#
+#  ITS CONTROL CHANNEL is an AF_UNIX stream socket like the node's: a client
+#  connects and sends ONE command as one frame; the answer is one frame,
+#  "ok" (lines after it each after a "\n") or "err <reason>", then the
+#  connection is closed:
+#      seed <path> [<c>]  ok\n<root>: the file is read, its manifest made with
+#                        chunk size c (default: the config's), and from then
+#                        on WANTs for its root are answered and its chunks
+#                        served, read from <path> at the time of each GET.
+#                        err cannot stat <path> / err not a regular file:
+#                        <path> / err cannot read <path> / err too many
+#                        chunks: the manifest must fit one message / err usage
+#      fetch <root> <out>  answered when the fetch ends: ok\n<out> when the
+#                        file is in place, else err not found <root> (no
+#                        node answered the WANT), err no manifest <root> (none
+#                        of those that did gave a manifest whose hash is the
+#                        root), err stalled at <k>/<n> <root>, err bad
+#                        manifest <root> (the root names a manifest that is
+#                        not well formed), err cannot write <out>, err the
+#                        assembled file does not match the root; at once:
+#                        err already fetching <root> / err usage. A client
+#                        that closes its connection before the answer does
+#                        not stop the fetch.
+#      seeds             ok, then "<root> <length> <path>" per seed
+#      fetches           ok, then "<root> <k>/<n> <out>" per fetch (n is ?
+#                        until the manifest is in)
+#      quit              ok, then it closes everything and removes its socket
+#
+#  A FETCH. fetch sends WANT to every node in its node's directory (not to
+#  itself); each HAVE adds its sender to the fetch's peers. The manifest is
+#  fetched first, from one peer at a time, and is taken only when its sha256
+#  is the root; a peer whose manifest is not is refused (never asked again
+#  by this fetch). Then the chunks: each GET goes to the usable peer with the
+#  fewest GETs outstanding, fewer than window, so the chunks are spread over
+#  every peer that has the file; a chunk is taken only when its length is
+#  the manifest's and its sha256 the manifest's line for it; a peer that
+#  sends a chunk that is not is refused, and every chunk it had outstanding
+#  is asked of another peer. A good chunk is taken from anyone (the content
+#  is what is checked). When every chunk is in, the file is put together,
+#  checked whole (its manifest, made again from the assembled bytes, must
+#  hash to the root), written to a fresh <out>.<16 random hex>.part opened
+#  O_CREAT|O_EXCL, and renamed onto <out>: <out> is either absent, as it
+#  was, or the whole verified file, never part of one; a failed write
+#  removes the .part file. The finished file is then seeded from <out>.
+#
+#  It logs on stdout: "torrent: up <id>", "torrent: seed <root> <path>",
+#  "torrent: fetch <root> <out>", "torrent: want <root> <n>" (WANT sent to n
+#  nodes), "torrent: have <root> <peer>", "torrent: offer <root> <peer>" (a
+#  HAVE sent), "torrent: get <root> <i> <peer>", "torrent: serve <root> <i>
+#  <peer>", "torrent: manifest <root> <peer>", "torrent: chunk <root> <i>
+#  <peer>", "torrent: drop manifest <root> <peer>", "torrent: drop chunk
+#  <root> <i> <peer>", "torrent: timeout <root> <i> <peer>", "torrent: done
+#  <root> <out>", "torrent: fail <root> <reason>", "torrent: drop malformed
+#  ...", "torrent: send failed <dest> <reply>", "torrent: cannot read
+#  <path>", "torrent: the node closed its connection" and "torrent: down
+#  <id>" (i is m for the manifest).
+#
+#  CHOICES WHERE THE CONTRACT WAS OPEN.
+#   - The service is a process of its own beside its node, attached through
+#     the node's control channel (above): LogosNet stays a transport and
+#     gained one command, listen, rather than a service hook in its loop.
+#   - WANT is sent to each directory entry in turn: LogosNet's DATA has one
+#     destination, so "floods" means every node the mesh has told us of.
+#     WANT is sent again every chunktime while the fetch has no usable peer.
+#   - Spreading: a GET goes to the usable peer with the fewest outstanding
+#     (ties: the earliest HAVE), at most window per peer; so a faster peer
+#     is asked more often. Order: chunks waiting to be asked again first,
+#     then the next never-asked chunk.
+#   - A GET not answered within chunktime: its chunk is asked again and its
+#     peer is benched (not asked while another peer is usable; when none is,
+#     every benched peer is usable again). A benched peer that delivers a
+#     good chunk is usable again. A peer that sends bad data (a manifest
+#     that is not the root's, a chunk that is not the manifest's) is refused
+#     for the rest of the fetch.
+#   - A fetch fails when nothing useful (a new peer, the manifest, a good
+#     chunk) has happened for find seconds: "not found" when no node ever
+#     answered, else "no manifest" or "stalled".
+#   - Partial chunks live in the service's memory (a binary trie keyed by
+#     chunk index, which also joins them balanced); nothing is written
+#     before the whole file is checked, so a fetch that fails or is killed
+#     leaves no file behind (and cannot be resumed).
+#   - Outstanding requests are bounded in bytes: across all fetches, at most
+#     96 KiB of answers (a chunk's size plus 1 KiB of overhead each, a
+#     manifest 64 KiB plus that overhead) may be on their way, but one
+#     request is always allowed. The node passes answers on a socket whose buffer
+#     (about 208 KiB) must never fill while this service waits for the
+#     node's reply to a send (see the deadlock note below).
+#   - A seeder does not check a chunk before serving it: it serves what is
+#     on disk at the time of the GET (open, lseek, read), and the fetcher
+#     checks. A file changed after seed is served changed, and refused.
+#   - fetch sends no WANT to its own node, so a root this service seeds is
+#     still fetched from other nodes.
+#
+#  HONEST LIMITS. The manifest travels in one DATA, so a file has at most
+#  about a thousand chunks (the manifest at most 65280 bytes; with 64 KiB
+#  chunks, about 63 MiB, near read_file's 64 MiB). Every chunk is hashed
+#  twice by the fetcher (on arrival and in the whole check) and once by the
+#  seeder at seed time; CRYPT_FAST's sha256 runs about 8 ms per KiB on the
+#  VM. Sends to the node are blocking round trips: the service waits for the
+#  node's reply to each send while answers queue on its listening
+#  connection; the byte bound above keeps that queue below the socket
+#  buffer, but GETs from many other fetchers at once are not bounded (each
+#  is about 120 bytes, so it takes over a thousand). There is no resume, no
+#  rate limit on serving, and a seeder answers any node that asks (the
+#  mesh is the access boundary; LogosNet has no capabilities yet).
+#
 #  STYLE. Kit style (WM_DESIGN.md, "How fast the VM is"): the builtins arrive
 #  in records and are destructured once; every helper is let-bound inside a
-#  sub-kit (TOR_LISTS, TOR_BYTES, TOR_MAN), so running code never walks the
-#  glyph table. Booleans are applied to two thunks and a dummy; constants
-#  are parameters; strings are cut by balanced halving. Every stored record
-#  is built by a TOR_MK constructor, so it holds its fields and nothing else.
+#  sub-kit (TOR_LISTS, TOR_BYTES, TOR_MAN, TOR_TRIE, TOR_SERVICE), so running
+#  code never walks the glyph table. Booleans are applied to two thunks and a
+#  dummy; constants are parameters; strings are cut by balanced halving. Every
+#  record the service stores (a seed, a fetch, its schedule and peers, a
+#  request, a trie node, a control connection, the state) is built by a TOR_MK
+#  constructor, so it holds its fields and nothing else.
 # ═══════════════════════════════════════════════════════════════════
 
 export TORRENT_KIT
@@ -225,9 +360,497 @@ glyph TOR_MAN = la B. la BY. la crypt.
       la s. s(manifest)(root)(parse)(hashat)(clen)))))))))
   (0)(1)(6)(64)(65)(65280)(la t. la f. t)(la t. la f. f)))))
 
+# ── The chunk store: a binary trie keyed by chunk index ──────────────────
+# TOR_TRIE(B) -> la s. s(TE)(depth)(put)(get)(flat)
+#   TE the empty trie; depth(n) the levels for n keys (0 for n <= 1);
+#   put(t)(d)(i)(v); get(t)(d)(i) an option; flat(t) the values in key
+#   order, concatenated (balanced, since the keys fill the trie from 0)
+glyph TOR_TRIE = la B.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  TOR_MK(la mkseed. la mkpeer. la mkask. la mkinfo. la mksched. la mkfetch. la mkctl. la mkst. la leaf. la node. la mkpair.
+  (la C0. la C1.
+    LET(la e. la lf. la nd. e(e))(la TE.
+    LET(la n. Z(la go. la d. lt(bshl(C1)(d))(n)(la _. go(add(d)(C1)))(la _. d)(C0))(C0))(la depth.
+    LET(Z(la put. la t. la d. la i. la v.
+        int_eq(d)(C0)
+          (la _. leaf(v))
+          (la _. (la d1. t(la _. mkpair(TE)(TE))(la v0. mkpair(TE)(TE))(la l. la r. mkpair(l)(r))(la l. la r.
+                   int_eq(band(bshr(i)(d1))(C1))(C0)
+                     (la _. node(put(l)(d1)(i)(v))(r))
+                     (la _. node(l)(put(r)(d1)(i)(v)))(C0)))
+                 (sub(d)(C1)))
+          (C0)))(la put.
+    LET(Z(la get. la t. la d. la i.
+        t(la _. la none. la some. none(none))
+         (la v. int_eq(d)(C0)(la _. la none. la some. some(v))(la _. la none. la some. none(none))(C0))
+         (la l. la r. int_eq(d)(C0)(la _. la none. la some. none(none))
+            (la _. (la d1. int_eq(band(bshr(i)(d1))(C1))(C0)(la _. get(l)(d1)(i))(la _. get(r)(d1)(i))(C0))(sub(d)(C1)))(C0))))(la get.
+    LET(Z(la flat. la t. t(la _. "")(la v. v)(la l. la r. concat(flat(l))(flat(r)))))(la flat.
+      la s. s(TE)(depth)(put)(get)(flat)))))))
+  (0)(1)))
+
+# ── The service ──────────────────────────────────────────────────────────
+# TOR_SERVICE(B)(X)(crypt)(net)(LS)(BY)(MAN)(TR)(cfg): the header says what.
+glyph TOR_SERVICE = la B. la X. la crypt. la net. la LS. la BY. la MAN. la TR. la cfgtext.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  X(la socket. la bind. la listen. la accept. la connect. la send. la recv. la close. la unlink. la poll.
+    la random. la clock_gettime. la print. la read_file. la open. la read. la write. la lseek. la rename. la stat.
+    la sigprocmask.
+  crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
+  net(la frame. la deframe. la broken. la keypair. la xx_init. la xx_resp. la x_init. la x_resp.
+      la write_message. la read_message. la done. la encrypt. la decrypt. la prologue.
+      la node_id. la verify_id. la identity.
+  LS(la map. la filter. la find. la any. la count. la foldl. la rev. la append. la join.
+  BY(la len. la span. la slice. la byte. la ishex. la allof. la dec. la scan. la words. la split. la startswith.
+  MAN(la manifest. la rootof. la parse. la hashat. la clen.
+  TR(la TE. la depth. la put. la get. la flat.
+  TOR_MK(la mkseed. la mkpeer. la mkask. la mkinfo. la mksched. la mkfetch. la mkctl. la mkst. la leaf. la node. la mkpair.
+  (la C0. la C1. la C2. la C3. la C32. la C35. la C38. la C42. la C43. la C44. la C64. la C106. la C107. la C108. la C109.
+   la C1000. la C1000000. la C61440. la C32768. la Cm1. la MAXCHUNK. la MAXMAN. la BUDGET. la OVER. la MANCOST.
+   la TRUE. la FALSE. la nil. la cons.
+    LET(la a. la b. b)(la seq.
+    LET(la s. print(concat("torrent: ")(s)))(la log.
+    LET(la what. error(concat("logostorrent: service: ")(what)))(la die.
+    LET(la none. la some. none(none))(la NONE.
+    LET(la x. la none. la some. some(x))(la SOME.
+    LET(la a. la b. concat(a)(concat(" ")(b)))(la sp.
+    LET(la i. lt(i)(C0)(la _. "m")(la _. int_to_str(i))(C0))(la istr.
+    LET(mkinfo("")(C0)(C0)(C0)(C0))(la EMPTYINFO.
+    # ── the configuration ──
+    LET(map(words)(split(cfgtext)("\n")))(la cl.
+    LET(la key. filter(la ws. ws(la _. FALSE)(la h. la t. str_eq(h)(key)))(cl))(la cfgall.
+    LET(la ws. ws(la _. "")(la h. la t. t(la _. "")(la v. la r. v)))(la second.
+    LET(la key. la dflt. cfgall(key)(la _. dflt)(la ws. la rest. (la v. str_eq(v)("")(la _. dflt)(la _. v)(C0))(second(ws))))(la cfg1.
+    LET((la p. str_eq(p)("")(la _. die("the config names no node (node <path>)"))(la _. p)(C0))(cfg1("node")("")))(la nodectl.
+    LET(cfg1("ctl")(concat(nodectl)(".tor")))(la ctlpath.
+    LET((la c. lt(c)(C1)(TRUE)(lt(MAXCHUNK)(c))(la _. die("chunk must be 1..65280"))(la _. c)(C0))
+        (str_to_int(cfg1("chunk")("16384"))))(la DCHUNK.
+    LET(mul(str_to_int(cfg1("find")("30")))(C1000))(la FIND.
+    LET(mul(str_to_int(cfg1("chunktime")("10")))(C1000))(la CT.
+    LET(str_to_int(cfg1("window")("2")))(la W.
+    # clock(id): that clock in milliseconds
+    LET(la id. words(clock_gettime(id))(la _. C0)(la a. la r. r(la _. mul(str_to_int(a))(C1000))
+          (la b. la r2. add(mul(str_to_int(a))(C1000))(div(str_to_int(b))(C1000000)))))(la clock.
+    LET(la _. clock("1"))(la now.
+    # ── the node ──
+    # rframe(s)(buf)(k): read s until a whole frame: k(payload)(what came
+    # after it, framed again); k("")("") at EOF or on a broken frame
+    LET(Z(la rf. la s. la buf. la k. (la chunk. str_eq(chunk)("")(la _. k("")(""))
+          (la _. deframe(buf)(chunk)(la ps. la b2.
+                   ps(la _. broken(b2)(la _. k("")(""))(la _. rf(s)(b2)(k))(C0))
+                     (la p. la rest. k(p)(concat(join(map(frame)(rest)))(b2)))))(C0))
+        (recv(s)("65536"))))(la rframe.
+    # ask(line): one command to the node and its reply ("" when it does not answer)
+    LET(la line. (la s. (la r. str_eq(r)("0")
+          (la _. seq(send(s)(frame(line)))(rframe(s)("")(la rep. la rest. seq(close(s))(rep))))
+          (la _. seq(close(s))(""))(C0))
+        (connect(s)(nodectl)))(socket("!")))(la ask.
+    # post(dest)(text): text sent to dest as one LogosNet DATA, by the node
+    LET(la dest. la text. (la rep. startswith(rep)("ok")(la _. TRUE)
+            (la _. seq(log(concat("send failed ")(sp(dest)(rep))))(FALSE))(C0))
+        (ask(concat("send ")(sp(dest)(text)))))(la post.
+    LET(sigprocmask("0")("4096"))(la masked.
+    LET((la rep. (la n. startswith(rep)("ok\n")(la _. int_eq(n)(C35))(la _. FALSE)(C0)
+                          (la _. slice(rep)(C3)(C35))
+                          (la _. die(concat("cannot reach the node at ")(nodectl)))(C0))
+                 (len(rep)))
+        (ask("id")))(la myid.
+    # the listening connection: la k. k(fd)(what came after the "ok")
+    LET((la s. (la r. str_eq(r)("0")
+          (la _. seq(send(s)(frame("listen TOR1")))(rframe(s)("")(la rep. la rest.
+                   str_eq(rep)("ok")(la _. mkpair(s)(rest))(la _. die(concat("the node refused listen: ")(rep)))(C0))))
+          (la _. die(concat("cannot reach the node at ")(nodectl)))(C0))
+        (connect(s)(nodectl)))(socket("!")))(la lis.
+    LET(lis(la a. la b. a))(la lfd.
+    LET(lis(la a. la b. b))(la lbuf0.
+    # listenat(path): a listening socket on path, refusing a path a live
+    # server holds; a stale socket file is removed first
+    LET(la path. (la c. (la r. seq(close(c))(
+          str_eq(r)("0")
+            (la _. die(concat(path)(" is held by a live service")))
+            (la _. seq(unlink(path))((la s. (la rb.
+                       str_eq(rb)("0")
+                         (la _. (la rl. str_eq(rl)("0")(la _. s)(la _. die(concat("cannot listen on ")(path)))(C0))(listen(s)))
+                         (la _. die(concat("cannot bind ")(concat(path)(concat(": ")(rb)))))(C0))
+                     (bind(s)(path)))(socket("!"))))(C0)))
+        (connect(c)(path)))(socket("!")))(la listenat.
+    LET(listenat(ctlpath))(la cfd.
+    # ── records ──
+    LET(la sd. sd(la root. la path. la m. la flen. la csize. la n. root))(la seedroot.
+    LET(la f. f(la root. la out. la info. la sc. root))(la fetchroot.
+    LET(la l. la root. find(la sd. str_eq(seedroot(sd))(root))(l))(la finds.
+    LET(la l. la root. find(la f. str_eq(fetchroot(f))(root))(l))(la findf.
+    LET(la l. la sd. cons(sd)(filter(la x. str_eq(seedroot(x))(seedroot(sd))(FALSE)(TRUE))(l)))(la addseed.
+    LET(la st. la root. la sc. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        mkst(seeds)(map(la f. f(la r. la o. la i. la s. str_eq(r)(root)(la _. mkfetch(r)(o)(i)(sc))(la _. f)(C0)))(fetches))
+            (ctls)(lbuf)(quit)))(la setsched.
+    LET(la st. la f2. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        (la root. mkst(seeds)(map(la f. str_eq(fetchroot(f))(root)(la _. f2)(la _. f)(C0))(fetches))(ctls)(lbuf)(quit))
+        (fetchroot(f2))))(la setfetch.
+    LET(la st. la ctls. st(la s. la f. la c. la l. la q. mkst(s)(f)(ctls)(l)(q)))(la withctls.
+    LET(la ctls. la fd. map(la c. c(la f. la b. la dn. la w. str_eq(f)(fd)(la _. mkctl(f)(b)(TRUE)(w))(la _. c)(C0)))(ctls))(la ctldone.
+    LET(la ctls. la fd. la b2. map(la c. c(la f. la b. la dn. la w. str_eq(f)(fd)(la _. mkctl(f)(b2)(dn)(w))(la _. c)(C0)))(ctls))(la ctlbuf.
+    LET(la ctls. la fd. la root. map(la c. c(la f. la b. la dn. la w. str_eq(f)(fd)(la _. mkctl(f)(b)(dn)(root))(la _. c)(C0)))(ctls))(la ctlwait.
+    # ── a fetch's peers (state 0 usable, 1 benched, 2 refused) and requests ──
+    LET(la peers. la id. la s. map(la q. q(la qid. la qs. str_eq(qid)(id)(la _. mkpeer(qid)(s))(la _. q)(C0)))(peers))(la setstate.
+    LET(la peers. la id. map(la q. q(la qid. la qs.
+          str_eq(qid)(id)(int_eq(qs)(C1))(FALSE)(la _. mkpeer(qid)(C0))(la _. q)(C0)))(peers))(la unbench.
+    LET(la peers. la id. any(la q. q(la qid. la qs. str_eq(qid)(id)))(peers))(la haspeer.
+    LET(la peers. any(la q. q(la qid. la qs. int_eq(qs)(C0)))(peers))(la anyusable.
+    # refuse(sc)(id): id refused; what it had outstanding asked again
+    LET(la sc. la id. sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+        mksched(haspeer(peers)(id)(la _. setstate(peers)(id)(C2))(la _. append(peers)(cons(mkpeer(id)(C2))(nil)))(C0))
+               (filter(la a. a(la i. la p. la dl. str_eq(p)(id)(FALSE)(TRUE)))(asked))
+               (cursor)
+               (foldl(la re. la a. a(la i. la p. la dl.
+                        str_eq(p)(id)(lt(i)(C0)(FALSE)(TRUE))(FALSE)(la _. cons(i)(re))(la _. re)(C0)))(retry)(asked))
+               (store)(got)(last)(nw)))(la refuse.
+    # expire(root)(t)(sc): the GETs past their deadline dropped, each peer
+    # benched (if it was usable), each chunk asked again
+    LET(la root. la t. la sc. sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+        (la late. late(la _. sc)(la h. la tl.
+           foldl(la s2. la a. a(la i. la p. la dl.
+                   seq(log(sp("timeout")(sp(root)(sp(istr(i))(p)))))
+                      (s2(la pe. la as. la cu. la re. la stx. la g. la ls. la nw2.
+                         mksched(map(la q. q(la qid. la qs. str_eq(qid)(p)(int_eq(qs)(C0))(FALSE)(la _. mkpeer(qid)(C1))(la _. q)(C0)))(pe))
+                                (as)(cu)(lt(i)(C0)(la _. re)(la _. cons(i)(re))(C0))(stx)(g)(ls)(nw2)))))
+             (mksched(peers)(filter(la a. a(la i. la p. la dl. lt(dl)(t)(FALSE)(TRUE)))(asked))(cursor)(retry)(store)(got)(last)(nw))
+             (late)))
+        (filter(la a. a(la i. la p. la dl. lt(dl)(t)))(asked))))(la expire.
+    # revive(sc): with no usable peer, every benched one is usable again
+    LET(la sc. sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+        anyusable(peers)(la _. sc)
+          (la _. mksched(map(la q. q(la qid. la qs. int_eq(qs)(C1)(la _. mkpeer(qid)(C0))(la _. q)(C0)))(peers))
+                        (asked)(cursor)(retry)(store)(got)(last)(nw))(C0)))(la revive.
+    # the byte budget: what the answers to the outstanding requests may take
+    LET(la a. la csize. a(la i. la p. la dl. lt(i)(C0)(la _. MANCOST)(la _. add(csize)(OVER))(C0)))(la cost.
+    LET(la st. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        foldl(la acc. la f. f(la root. la out. la info. la sc. info(la m. la flen. la csize. la n. la h0.
+                sc(la peers. la asked. la cu. la re. la stx. la g. la ls. la nw.
+                  foldl(la a2. la a. sub(a2)(cost(a)(csize)))(acc)(asked)))))(BUDGET)(fetches)))(la budget0.
+    LET(la bud. la c. lt(bud)(c)(la _. int_eq(bud)(BUDGET))(la _. TRUE)(C0))(la allowed.
+    # pick(peers)(asked): option of the usable peer with the fewest GETs
+    # outstanding, fewer than W (the earliest of equals)
+    LET(la peers. la asked.
+        foldl(la best. la q. q(la id. la s. int_eq(s)(C0)
+                (la _. (la o. lt(o)(W)
+                          (la _. best(la _. SOME(mkpair(id)(o)))
+                                     (la b. b(la bid. la bo. lt(o)(bo)(la _. SOME(mkpair(id)(o)))(la _. best)(C0))))
+                          (la _. best)(C0))
+                       (count(filter(la a. a(la i. la p. la dl. str_eq(p)(id)))(asked))))
+                (la _. best)(C0)))
+             (NONE)(peers)
+          (la _. NONE)(la b. b(la id. la o. SOME(id))))(la pick.
+    LET(la root. la i. la p. seq(log(sp("get")(sp(root)(sp(istr(i))(p)))))(post(p)(concat("TOR1 GET ")(sp(root)(istr(i))))))(la getreq.
+    # askman(root)(t)(sc)(bud)(k): the manifest asked of the first usable
+    # peer, unless it is asked already: k(sc')(bud')
+    LET(la root. la t. la sc. la bud. la k. sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+        any(la a. a(la i. la p. la dl. lt(i)(C0)))(asked)
+          (la _. k(sc)(bud))
+          (la _. allowed(bud)(MANCOST)
+                   (la _. find(la q. q(la qid. la qs. int_eq(qs)(C0)))(peers)
+                            (la _. k(sc)(bud))
+                            (la q. q(la p. la qs.
+                               (la _. k(mksched(peers)(cons(mkask(Cm1)(p)(add(t)(CT)))(asked))(cursor)(retry)(store)(got)(last)(nw))
+                                       (sub(bud)(MANCOST)))
+                               (getreq(root)(Cm1)(p)))))
+                   (la _. k(sc)(bud))(C0))(C0)))(la askman.
+    # assign(root)(info)(t)(sc)(bud)(k): GETs sent while a chunk waits, a
+    # usable peer has room and the budget allows: k(sc')(bud'). A chunk to
+    # ask again goes first (skipped when it is in or asked already), then
+    # the next never asked.
+    LET(la root. la info. la t. info(la m. la flen. la csize. la n. la h0. (la d. (la c.
+      Z(la go. la sc. la bud. la k. sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+        allowed(bud)(c)
+          (la _. pick(peers)(asked)(la _. k(sc)(bud))(la p.
+                   retry(la _. lt(cursor)(n)
+                                 (la _. (la _. go(mksched(peers)(cons(mkask(cursor)(p)(add(t)(CT)))(asked))(add(cursor)(C1))(retry)(store)(got)(last)(nw))
+                                                 (sub(bud)(c))(k))
+                                        (getreq(root)(cursor)(p)))
+                                 (la _. k(sc)(bud))(C0))
+                        (la i. la rest. (la skip.
+                            get(store)(d)(i)
+                              (la _. any(la a. a(la j. la q. la dl. int_eq(j)(i)))(asked)
+                                       (la _. skip(C0))
+                                       (la _. (la _. go(mksched(peers)(cons(mkask(i)(p)(add(t)(CT)))(asked))(cursor)(rest)(store)(got)(last)(nw))
+                                                       (sub(bud)(c))(k))
+                                              (getreq(root)(i)(p)))(C0))
+                              (la v. skip(C0)))
+                          (la _. go(mksched(peers)(asked)(cursor)(rest)(store)(got)(last)(nw))(bud)(k)))))
+          (la _. k(sc)(bud))(C0))))
+      (add(csize)(OVER)))(depth(n))))(la assign.
+    # want(root): WANT sent to every directory entry but this node: how many
+    LET(la root. (la rep. startswith(rep)("ok")
+          (la _. (la ids. (la _. count(ids))(foldl(la z. la id. post(id)(concat("TOR1 WANT ")(root)))(TRUE)(ids)))
+                 (filter(la id. int_eq(len(id))(C32)(la _. str_eq(id)(myid)(FALSE)(TRUE))(la _. FALSE)(C0))
+                        (map(la ln. slice(ln)(C0)(scan(ln)(C0)(len(ln))(" ")))(split(rep)("\n")))))
+          (la _. C0)(C0))
+        (ask("directory")))(la want.
+    LET(la root. (la k. seq(log(sp("want")(sp(root)(int_to_str(k)))))(k))(want(root)))(la wantlog.
+    # rewant(root)(t)(sc): WANT again when the fetch has no usable peer and
+    # chunktime has passed since the last
+    LET(la root. la t. la sc. sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+        anyusable(peers)(TRUE)(lt(t)(nw))
+          (la _. sc)
+          (la _. (la k. mksched(peers)(asked)(cursor)(retry)(store)(got)(last)(add(now(C0))(CT)))(wantlog(root)))(C0)))(la rewant.
+    # ── the end of a fetch ──
+    # writeout(out)(data): data written to a fresh <out>.<random>.part, then
+    # renamed onto out: TRUE when it is in place (the .part removed otherwise)
+    LET(la out. concat(out)(concat(".")(concat(hex(random("8")))(".part"))))(la partname.
+    LET(la out. la data. (la tmp. (la fd. lt(str_to_int(fd))(C0)
+            (la _. FALSE)
+            (la _. (la w. seq(close(fd))(
+                      int_eq(str_to_int(w))(len(data))
+                        (la _. str_eq(rename(tmp)(out))("0")(la _. TRUE)(la _. seq(unlink(tmp))(FALSE))(C0))
+                        (la _. seq(unlink(tmp))(FALSE))(C0)))
+                   (write(fd)(data)))(C0))
+          (open(tmp)("193")))(partname(out)))(la writeout.
+    # finish(st)(root)(reply)(line)(sdo): the fetch of root ends: removed, its
+    # waiting client answered, line logged; sdo an option of a seed to add
+    LET(la st. la root. la reply. la line. la sdo. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        seq(log(line))(
+          mkst(sdo(la _. seeds)(la sd. addseed(seeds)(sd)))
+              (filter(la f. str_eq(fetchroot(f))(root)(FALSE)(TRUE))(fetches))
+              (find(la c. c(la f. la b. la dn. la w. dn(FALSE)(str_eq(w)(root))))(ctls)
+                 (la _. ctls)
+                 (la c. c(la f. la b. la dn. la w. seq(send(f)(frame(reply)))(ctldone(ctls)(f)))))
+              (lbuf)(quit))))(la finish.
+    # complete(st)(root)(out)(info)(store): every chunk is in: the file put
+    # together, checked whole, written; seeded from out when it is in place
+    LET(la st. la root. la out. la info. la store. info(la m. la flen. la csize. la n. la h0.
+        (la data. str_eq(rootof(manifest(data)(csize)))(root)
+           (la _. writeout(out)(data)
+                    (la _. finish(st)(root)(concat("ok\n")(out))(sp("done")(sp(root)(out)))(SOME(mkseed(root)(out)(m)(flen)(csize)(n))))
+                    (la _. finish(st)(root)(concat("err cannot write ")(out))(sp("fail")(sp(root)(concat("cannot write ")(out))))(NONE))(C0))
+           (la _. finish(st)(root)("err the assembled file does not match the root")
+                         (sp("fail")(sp(root)("the assembled file does not match the root")))(NONE))(C0))
+        (flat(store))))(la complete.
+    # step(st)(root)(t)(bud)(k): one fetch moved on: k(st')(bud')
+    LET(la st. la root. la t. la bud. la k. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+      findf(fetches)(root)(la _. k(st)(bud))(la f. f(la r. la out. la info. la sc0.
+        (la sc. info(la m. la flen. la csize. la n. la h0.
+           sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+             str_eq(m)("")(FALSE)(int_eq(got)(n))
+               (la _. k(complete(st)(root)(out)(info)(store))(bud))
+               (la _. lt(add(last)(FIND))(t)
+                  (la _. (la why. k(finish(st)(root)(concat("err ")(sp(why)(root)))(sp("fail")(sp(root)(why)))(NONE))(bud))
+                         (any(la q. TRUE)(peers)
+                            (la _. str_eq(m)("")(la _. "no manifest")
+                                     (la _. concat("stalled at ")(concat(int_to_str(got))(concat("/")(int_to_str(n)))))(C0))
+                            (la _. "not found")(C0)))
+                  (la _. (la go. str_eq(m)("")(la _. askman(root)(t)(sc)(bud)(go))(la _. assign(root)(info)(t)(sc)(bud)(go))(C0))
+                         (la sc2. la bud2. k(setsched(st)(root)(rewant(root)(t)(sc2)))(bud2)))
+                  (C0))(C0))))
+        (revive(expire(root)(t)(sc0)))))))(la step.
+    # pump(st)(t): every fetch moved on, under one byte budget
+    LET(la st. la t. foldl(la acc. la r. acc(la s. la b. step(s)(r)(t)(b)(la s2. la b2. mkpair(s2)(b2))))
+                         (mkpair(st)(budget0(st)))
+                         (st(la sd. la fe. la c. la lb. la q. map(fetchroot)(fe)))
+                   (la s. la b. s))(la pump.
+    # ── messages ──
+    LET(la st. la from. la root. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        finds(seeds)(root)(la _. st)
+          (la sd. seq(post(from)(concat("TOR1 HAVE ")(root)))(seq(log(sp("offer")(sp(root)(from))))(st)))))(la onwant.
+    LET(la st. la from. la root. la t. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        findf(fetches)(root)(la _. st)(la f. f(la r. la out. la info. la sc.
+          sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+            haspeer(peers)(from)
+              (la _. st)
+              (la _. seq(log(sp("have")(sp(root)(from))))
+                        (setsched(st)(root)(mksched(append(peers)(cons(mkpeer(from)(C0))(nil)))(asked)(cursor)(retry)(store)(got)(t)(nw))))
+              (C0))))))(la onhave.
+    # readchunk(path)(off)(n): option of n bytes of the file at path from off
+    LET(la path. la off. la n. (la fd. lt(str_to_int(fd))(C0)(la _. NONE)
+          (la _. (la _. (la bs. seq(close(fd))(SOME(bs)))(read(fd)(int_to_str(n))))(lseek(fd)(int_to_str(off))))(C0))
+        (open(path)("0")))(la readchunk.
+    LET(la st. la from. la root. la is. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        finds(seeds)(root)(la _. st)(la sd. sd(la r. la path. la m. la flen. la csize. la n.
+          (la serve. str_eq(is)("m")
+            (la _. serve(m))
+            (la _. dec(is)(la _. seq(log(sp("drop malformed get")(from)))(st))
+                     (la i. lt(i)(n)
+                        (la _. readchunk(path)(mul(i)(csize))
+                                 (lt(add(i)(C1))(n)(la _. csize)(la _. sub(flen)(mul(sub(n)(C1))(csize)))(C0))
+                                 (la _. seq(log(sp("cannot read")(path)))(st))
+                                 (la bs. serve(bs)))
+                        (la _. seq(log(sp("drop malformed get")(from)))(st))(C0)))(C0))
+          (la bs. seq(post(from)(concat("TOR1 CHUNK ")(sp(root)(sp(is)(bs)))))(seq(log(sp("serve")(sp(root)(sp(is)(from)))))(st)))))))(la onget.
+    # the two checks a fetch rests on, one line each
+    LET(la root. la m. str_eq(rootof(m))(root))(la manok.
+    LET(la info. la i. la bs. int_eq(len(bs))(clen(info)(i))(la _. str_eq(hex(sha256(bs)))(hashat(info)(i)))(la _. FALSE)(C0))(la chunkok.
+    LET(la st. la from. la root. la is. la bs. la t. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+      findf(fetches)(root)(la _. st)(la f. f(la r. la out. la info. la sc. info(la m. la flen. la csize. la n. la h0.
+        sc(la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+          (la bad. str_eq(is)("m")
+            (la _. str_eq(m)("")
+               (la _. manok(root)(bs)
+                        (la _. parse(bs)
+                                 (la _. finish(st)(root)(concat("err bad manifest ")(root))(sp("fail")(sp(root)("bad manifest")))(NONE))
+                                 (la inf. seq(log(sp("manifest")(sp(root)(from))))
+                                            (setfetch(st)(mkfetch(root)(out)(inf)
+                                               (mksched(unbench(peers)(from))(filter(la a. a(la i. la p. la dl. lt(i)(C0)(FALSE)(TRUE)))(asked))
+                                                       (cursor)(retry)(store)(got)(t)(nw))))))
+                        (la _. seq(log(sp("drop manifest")(sp(root)(from))))(setsched(st)(root)(refuse(sc)(from))))(C0))
+               (la _. st)(C0))
+            (la _. str_eq(m)("")(la _. st)
+               (la _. dec(is)(la _. bad(C0))
+                        (la i. lt(i)(n)
+                           (la _. get(store)(depth(n))(i)
+                                    (la _. chunkok(info)(i)(bs)
+                                             (la _. seq(log(sp("chunk")(sp(root)(sp(is)(from)))))
+                                                       (setsched(st)(root)(mksched(unbench(peers)(from))
+                                                          (filter(la a. a(la j. la p. la dl. int_eq(j)(i)(FALSE)(TRUE)))(asked))
+                                                          (cursor)(retry)(put(store)(depth(n))(i)(bs))(add(got)(C1))(t)(nw))))
+                                             (la _. seq(log(sp("drop chunk")(sp(root)(sp(is)(from)))))
+                                                       (setsched(st)(root)(refuse(sc)(from))))(C0))
+                                    (la v. st))
+                           (la _. bad(C0))(C0)))(C0))(C0))
+          (la _. seq(log(sp("drop malformed chunk")(from)))(st))))))))(la onchunk.
+    # onmsg(st)(p)(t): one frame from the node, "<from> TOR1 ..."
+    LET(la st. la p. la t. (la n. (la bad.
+        lt(n)(C107)(la _. bad(C0))
+          (la _. (la from. str_eq(slice(p)(C32)(C38))(" TOR1 ")
+              (la _. (la at.
+                  at(C38)("WANT ")(int_eq(n)(C107))(FALSE)
+                    (la _. onwant(st)(from)(slice(p)(C43)(C107)))
+                    (la _. at(C38)("HAVE ")(int_eq(n)(C107))(FALSE)
+                      (la _. onhave(st)(from)(slice(p)(C43)(C107))(t))
+                      (la _. at(C38)("GET ")(lt(C107)(n)(la _. str_eq(str_at(p)(C106))(" "))(la _. FALSE)(C0))(FALSE)
+                         (la _. onget(st)(from)(slice(p)(C42)(C106))(slice(p)(C107)(n)))
+                         (la _. at(C38)("CHUNK ")(lt(C109)(n)(la _. str_eq(str_at(p)(C108))(" "))(la _. FALSE)(C0))(FALSE)
+                            (la _. (la j. lt(j)(n)
+                                      (la _. onchunk(st)(from)(slice(p)(C44)(C108))(slice(p)(C109)(j))(slice(p)(add(j)(C1))(n))(t))
+                                      (la _. bad(C0))(C0))
+                                   (scan(p)(C109)(n)(" ")))
+                            (la _. bad(C0))(C0))(C0))(C0))(C0))
+                 (la o. la w. str_eq(slice(p)(o)(add(o)(len(w))))(w)))
+              (la _. bad(C0))(C0))
+            (slice(p)(C0)(C32)))(C0))
+      (la _. seq(log(sp("drop malformed")(slice(p)(C0)(C32))))(st)))
+      (len(p)))(la onmsg.
+    # ── the control channel ──
+    LET(la sd. sd(la root. la path. la m. la flen. la csize. la n. sp(root)(sp(int_to_str(flen))(path))))(la seedline.
+    LET(la f. f(la root. la out. la info. la sc. info(la m. la flen. la csize. la n. la h0.
+        sc(la peers. la asked. la cu. la re. la stx. la got. la ls. la nw.
+          sp(root)(sp(concat(int_to_str(got))(concat("/")(str_eq(m)("")(la _. "?")(la _. int_to_str(n))(C0))))(out))))))(la fetchline.
+    LET(la l. join(map(la x. concat("\n")(x))(l)))(la joinnl.
+    # stat2(sv)(k): stat's answer "<st_mode> <st_size>" as k(mode)(size)
+    LET(la sv. la k. (la i. k(str_to_int(slice(sv)(C0)(i)))(str_to_int(slice(sv)(add(i)(C1))(len(sv)))))
+                     (scan(sv)(C0)(len(sv))(" ")))(la stat2.
+    LET(la st. la sd. st(la seeds. la fetches. la ctls. la lbuf. la quit. mkst(addseed(seeds)(sd))(fetches)(ctls)(lbuf)(quit)))(la addseedst.
+    # seedfile(st)(path)(c)(k): the file at path seeded with chunk size c: k(reply)(st')
+    LET(la st. la path. la c. la k. (la sv.
+        str_eq(str_at(sv)(C0))("-")
+          (la _. k(sp("err cannot stat")(path))(st))
+          (la _. stat2(sv)(la mode. la size.
+                   int_eq(band(mode)(C61440))(C32768)
+                     (la _. (la data. int_eq(len(data))(size)
+                              (la _. (la m. lt(MAXMAN)(len(m))
+                                        (la _. k("err too many chunks: the manifest must fit one message")(st))
+                                        (la _. (la r. (la sd. seq(log(sp("seed")(sp(r)(path))))(k(concat("ok\n")(r))(addseedst(st)(sd))))
+                                                      (mkseed(r)(path)(m)(len(data))(c)(div(add(len(data))(sub(c)(C1)))(c))))
+                                               (rootof(m)))
+                                        (C0))
+                                     (manifest(data)(c)))
+                              (la _. k(sp("err cannot read")(path))(st))
+                              (C0))
+                            (read_file(path)))
+                     (la _. k(concat("err not a regular file: ")(path))(st))
+                     (C0)))
+          (C0))
+        (stat(path)))(la seedfile.
+    # seedcmd(st)(args)(k): "seed <path> [<c>]"
+    LET(la st. la args. la k. (la usage.
+        args(la _. usage(C0))(la path. la r.
+          (la go. r(la _. go(DCHUNK))(la cw. la r2. r2(la _. dec(cw)(la _. usage(C0))(la c. go(c)))(la x. la y. usage(C0))))
+          (la c. lt(c)(C1)(TRUE)(lt(MAXCHUNK)(c))(la _. usage(C0))(la _. seedfile(st)(path)(c)(k))(C0))))
+      (la _. k("err usage: seed <path> [<chunk>]")(st)))(la seedcmd.
+    # startfetch(st)(fd)(root)(out)(t)(k): a fetch of root into out begins;
+    # no reply now: the fetch answers the connection fd when it ends
+    LET(la st. la fd. la root. la out. la t. la k. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        findf(fetches)(root)
+          (la _. (la nw. k("")(mkst(seeds)(cons(mkfetch(root)(out)(EMPTYINFO)(mksched(nil)(nil)(C0)(nil)(TE)(C0)(t)(nw)))(fetches))
+                                   (ctlwait(ctls)(fd)(root))(lbuf)(quit)))
+                 (seq(log(sp("fetch")(sp(root)(out))))(seq(wantlog(root))(add(now(C0))(CT)))))
+          (la f. k(concat("err already fetching ")(root))(st))))(la startfetch.
+    # fetchcmd(st)(fd)(args)(t)(k): "fetch <root> <out>"
+    LET(la st. la fd. la args. la t. la k. (la usage.
+        args(la _. usage(C0))(la root. la r. r(la _. usage(C0))(la out. la r2. r2
+          (la _. int_eq(len(root))(C64)(la _. allof(ishex)(root)(C0)(C64))(la _. FALSE)(C0)
+                   (la _. startfetch(st)(fd)(root)(out)(t)(k))
+                   (la _. usage(C0))
+                   (C0))
+          (la x. la y. usage(C0)))))
+      (la _. k("err usage: fetch <root> <out>")(st)))(la fetchcmd.
+    # command(st)(fd)(line)(t)(k): k(reply)(st'); reply "" when a fetch will answer
+    LET(la st. la fd. la line. la t. la k. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        words(line)(la _. k("err empty command")(st))(la cmd. la args.
+          str_eq(cmd)("seed")(la _. seedcmd(st)(args)(k))(la _.
+          str_eq(cmd)("fetch")(la _. fetchcmd(st)(fd)(args)(t)(k))(la _.
+          str_eq(cmd)("seeds")(la _. k(concat("ok")(joinnl(map(seedline)(rev(seeds)))))(st))(la _.
+          str_eq(cmd)("fetches")(la _. k(concat("ok")(joinnl(map(fetchline)(rev(fetches)))))(st))(la _.
+          str_eq(cmd)("quit")(la _. k("ok")(mkst(seeds)(fetches)(ctls)(lbuf)(TRUE)))(la _.
+          k(concat("err unknown command ")(cmd))(st))(C0))(C0))(C0))(C0))(C0))))(la command.
+    # onctl(st)(fd)(c): control connection fd is readable: one framed command,
+    # one framed reply (now, or when its fetch ends), then it is closed
+    LET(la st. la fd. la c. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        (la chunk. str_eq(chunk)("")
+           (la _. withctls(st)(ctldone(ctls)(fd)))
+           (la _. c(la f. la b. la dn. la w. str_eq(w)("")
+              (la _. deframe(b)(chunk)(la frames. la b2.
+                   frames(la _. broken(b2)(la _. withctls(st)(ctldone(ctls)(fd)))
+                                          (la _. withctls(st)(ctlbuf(ctls)(fd)(b2)))(C0))
+                         (la cmd. la rest. command(st)(fd)(cmd)(now(C0))(la reply. la st2.
+                            str_eq(reply)("")(la _. st2)
+                              (la _. seq(send(fd)(frame(reply)))(st2(la sd. la fe. la c2. la lb. la q. withctls(st2)(ctldone(c2)(fd)))))
+                              (C0)))))
+              (la _. st)(C0)))(C0))
+        (recv(fd)("65536"))))(la onctl.
+    # ── a pass of the loop ──
+    LET(la st. (la nfd. lt(str_to_int(nfd))(C0)(la _. st)
+          (la _. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+                    mkst(seeds)(fetches)(cons(mkctl(nfd)("")(FALSE)(""))(ctls))(lbuf)(quit)))(C0))
+        (accept(cfd)))(la acceptctl.
+    # onlisten(st): the node passed frames (or closed the connection: the end)
+    LET(la st. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        (la chunk. str_eq(chunk)("")
+           (la _. seq(log("the node closed its connection"))(mkst(seeds)(fetches)(ctls)(lbuf)(TRUE)))
+           (la _. deframe(lbuf)(chunk)(la ps. la b2.
+                    broken(b2)(la _. die("a broken frame from the node"))
+                      (la _. foldl(la s. la p. onmsg(s)(p)(now(C0)))(mkst(seeds)(fetches)(ctls)(b2)(quit))(ps))(C0)))(C0))
+        (recv(lfd)("65536"))))(la onlisten.
+    LET(la st. la fd.
+        str_eq(fd)(lfd)(la _. onlisten(st))
+          (la _. str_eq(fd)(cfd)(la _. acceptctl(st))
+             (la _. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+                       find(la c. c(la f. la b. la dn. la w. str_eq(f)(fd)))(ctls)(la _. st)(la c. onctl(st)(fd)(c))))(C0))(C0))(la service.
+    LET(la st. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        any(la c. c(la f. la b. la dn. la w. dn))(ctls)
+          (la _. mkst(seeds)(fetches)(filter(la c. c(la f. la b. la dn. la w. dn(la _. seq(close(f))(FALSE))(la _. TRUE)(C0)))(ctls))(lbuf)(quit))
+          (la _. st)(C0)))(la sweep.
+    LET(la st. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        foldl(la acc. la c. c(la f. la b. la dn. la w. concat(acc)(concat(" ")(f))))(concat(lfd)(concat(" ")(cfd)))(ctls)))(la fdlist.
+    LET(la st. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        seq(foldl(la z. la c. c(la f. la b. la dn. la w. seq(close(f))(z)))(C0)(ctls))(
+        seq(close(lfd))(seq(close(cfd))(seq(unlink(ctlpath))(log(concat("down ")(myid))))))))(la shutdown.
+    LET(Z(la loop. la st. st(la seeds. la fetches. la ctls. la lbuf. la quit.
+        quit(la _. shutdown(st))
+            (la _. (la ready. loop(sweep(pump(foldl(service)(st)(ready))(now(C0)))))
+                   (words(poll(fdlist(st))("250"))))(C0))))(la loop.
+      seq(log(concat("up ")(myid)))(
+        deframe("")(lbuf0)(la ps. la b2.
+          loop(foldl(la s. la p. onmsg(s)(p)(now(C0)))(mkst(nil)(nil)(nil)(b2)(FALSE))(ps))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  (0)(1)(2)(3)(32)(35)(38)(42)(43)(44)(64)(106)(107)(108)(109)(1000)(1000000)(61440)(32768)(sub(0)(1))
+  (65280)(65280)(98304)(1024)(66560)(la t. la f. t)(la t. la f. f)(TOR_NIL)(TOR_CONS))))))))))
+
 # ── The kit ──────────────────────────────────────────────────────────────
 glyph TORRENT_KIT = la B. la X. la crypt. la net.
-  (la LS. (la BY. TOR_MAN(B)(BY)(crypt)(la manifest. la root. la parse. la hashat. la clen.
-       la s. s(manifest)(root)(parse)))
+  (la LS. (la BY. (la MANR. MANR(la manifest. la root. la parse. la hashat. la clen.
+       la s. s(manifest)(root)(parse)
+              (la cfg. TOR_SERVICE(B)(X)(crypt)(net)(LS)(BY)(MANR)(TOR_TRIE(B))(cfg))))
+     (TOR_MAN(B)(BY)(crypt)))
     (TOR_BYTES(B)(LS)))
   (TOR_LISTS(B))
