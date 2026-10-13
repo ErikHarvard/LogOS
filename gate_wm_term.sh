@@ -24,7 +24,9 @@
 #      right after ESC and after ESC [, swallowing bytes >= 0x80 and \n; ESC +
 #      one byte; UTF-8 2/3/4-byte characters, stray continuation bytes, leads
 #      0xC0/0xDF/0xFF; C0 controls and 127 ignored), long partial lines, and
-#      flush (non-empty, empty, emptied by \b).
+#      flush (non-empty, empty, emptied by \b, and after output that ended
+#      inside ESC or a CSI: flush forgets the unfinished sequence, so what is
+#      written next, the WM's "[exit N]" or the next program's output, shows).
 #   2. the editor: key (incl. ""), back (incl. on empty), kill_line; submit's
 #      echo and result (empty input; an unfinished output line ended first);
 #      hist_prev/hist_next past both ends, restoring the typed line, editing
@@ -114,6 +116,7 @@ class Term:
         if self.partial:
             self.lines.append(bytes(self.partial))
             self.partial = bytearray()
+        self.esc = 0
 
     def submit(self):
         self.flush()
@@ -321,6 +324,9 @@ w += [("mark", b"segments"), ("write", b"s" * 63), R(80, 1), ("write", b"S"), R(
 w += [("mark", b"flush"), ("write", b"partial"), R(40, 2), ("flush",), R(40, 2), ("flush",), R(40, 2),
       ("write", b"abc\x08\x08\x08"), ("flush",), R(40, 2), ("write", b"z\n"), ("flush",), R(40, 2),
       ("write", b"x" * 64), ("flush",), R(40, 3)]
+w += [("mark", b"flush-esc"), ("write", b"partial\x1b"), ("flush",), ("write", b"[exit 1]\n"), R(40, 3),
+      ("write", b"red\x1b[31"), ("flush",), ("write", b"123 zebra\n"), R(40, 3),
+      ("write", b"\x1b"), ("flush",), ("write", b"[x\n"), R(40, 2)]
 emit("t_write", w)
 
 # ── 2. the line editor, submit, history, clear, set_prompt ──

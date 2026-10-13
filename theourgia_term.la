@@ -7,7 +7,8 @@
 #
 #    new(prompt)                an empty terminal
 #    write(t)(bytes)            feed program output (rules below)
-#    flush(t)                   end the partial line if it is non-empty
+#    flush(t)                   end the partial line if it is non-empty, and
+#                               forget an unfinished escape sequence
 #    key(t)(ch)                 append ch to the input line
 #    back(t)                    drop the input line's last character
 #    kill_line(t)               empty the input line
@@ -422,7 +423,8 @@ glyph TERM_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la concat
                (la R2. la E2. MK(R2)(E2)(I)(Pr)(H)(J)(V)))
         (LEN(s))))(la WRITE.
   LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V.
-        Q(R(gK))(K0)(la _. t)(la _. MK(NLR(R))(E)(I)(Pr)(H)(J)(V))(D)))(la FLUSH.
+        Q(R(gK))(K0)(la _. Q(E)(K0)(la _. t)(la _. MK(R)(K0)(I)(Pr)(H)(J)(V))(D))
+                    (la _. MK(NLR(R))(K0)(I)(Pr)(H)(J)(V))(D)))(la FLUSH.
   LET(la t. la ch. t(la R. la E. la I. la Pr. la H. la J. la V. MK(R)(E)(P(I)(ch))(Pr)(H)(J)(V)))(la KEY.
   LET(la t. t(la R. la E. la I. la Pr. la H. la J. la V.
         MK(R)(E)(SLICE(I)(K0)(sub(LEN(I))(K1)))(Pr)(H)(J)(V)))(la BACK.
