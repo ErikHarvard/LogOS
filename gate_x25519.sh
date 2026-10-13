@@ -7,7 +7,10 @@
 #      its generator;
 #   1. known answers: RFC 7748 5.2's two test vectors, 5.2's iteration test
 #      after 1 iteration (k = u = 9) and after 1000, and 6.1's Alice and Bob:
-#      both public keys and the shared secret, computed from each side;
+#      both public keys and the shared secret, computed from each side; and
+#      two shared secrets that are valid but have a zero byte, the first and
+#      the last (so a zero test that reads only some of the bytes refuses
+#      one of them);
 #   2. shared refuses the all-zero result: u = 0 and u = 1 (RFC 7748 6.1),
 #      and the other small-order encodings (the two points of order 8, p-1,
 #      p, p+1, and u = 0 with the top bit set) -- each gives none, and
@@ -104,6 +107,14 @@ assert x25519(H("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0
 assert x25519(NINE, NINE).hex() == "422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079"
 assert x25519(H("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"), NINE).hex() \
     == "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"
+# the zero-byte witnesses of section 1: valid secrets whose first or last
+# byte is zero (sha256("lead0-811") and a key found by search, each against
+# the public key of sha256("peer"))
+PEER = H("90aa6cfdd4b720c2e9a78a09ce3bdee1591874030c1b11dcb91eb093ed8a1810")
+assert x25519(H("145272bd75eccf81448b51058a4152f0c9b3185c87815597da48a2d95de22a78"), PEER).hex() \
+    == "00619bd8ceed1cd035c8fc054c879ae01cd692577b5b0fee875d149bb94e8332"
+assert x25519(H("58f00a7cd53f2f0177dc26e5f1bb80d699fb2d719404032a9f2b94cf389c03b1"), PEER).hex() \
+    == "40d2ade315793be747c1283d8122e2c18529f55662fa0cb32d81f89d50c77f00"
 def hexopt(r): return "none" if r == bytes(32) else r.hex()
 mode = sys.argv[1]
 if mode == "bulk":            # random and edge (k, u); writes cases.bin, prints the expected lines
@@ -272,7 +283,7 @@ glyph REPORT = la name. la f. TIMED(f)(la c. la w. la r. P4(concat("time ")(name
 glyph ITERS = la sm. Z(la go. la n. la k. la u. int_eq(n)(0)(la _. concat(k)(u))(la _. go(sub(n)(1))(sm(k)(u))(k))("!"))
 glyph KAT = la sm. la pub. la sh.
   (la A. la B.
-    SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+    SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
       print(concat("v1 ")(HEX(sm(FROMHEX("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"))
                                (FROMHEX("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c"))))))
       (print(concat("v2 ")(HEX(sm(FROMHEX("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d"))
@@ -282,9 +293,12 @@ glyph KAT = la sm. la pub. la sh.
       (print(concat("bob-public ")(HEX(pub(B))))))
       (print(concat("alice-shared ")(OPT(sh(A)(FROMHEX("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f")))))))
       (print(concat("bob-shared ")(OPT(sh(B)(FROMHEX("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")))))))
+      (print(concat("zero-first ")(OPT(sh(FROMHEX("145272bd75eccf81448b51058a4152f0c9b3185c87815597da48a2d95de22a78"))(PEER))))))
+      (print(concat("zero-last ")(OPT(sh(FROMHEX("58f00a7cd53f2f0177dc26e5f1bb80d699fb2d719404032a9f2b94cf389c03b1"))(PEER))))))
       (print("end")))
   (FROMHEX("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"))
   (FROMHEX("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb"))
+glyph PEER = FROMHEX("90aa6cfdd4b720c2e9a78a09ce3bdee1591874030c1b11dcb91eb093ed8a1810")
 glyph K31 = "0123456789abcdef0123456789abcde"
 glyph K32 = "0123456789abcdef0123456789abcdef"
 glyph K33 = "0123456789abcdef0123456789abcdefg"
@@ -344,9 +358,11 @@ alice-public 8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
 bob-public de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f
 alice-shared 4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742
 bob-shared 4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742
+zero-first 00619bd8ceed1cd035c8fc054c879ae01cd692577b5b0fee875d149bb94e8332
+zero-last 40d2ade315793be747c1283d8122e2c18529f55662fa0cb32d81f89d50c77f00
 end"
 if [ "$vrc" = 0 ] && [ "$(cat "$T/kat.out")" = "$EXPECT" ]; then
-    echo "PASS  x25519 known answers (VM): RFC 7748 5.2 both vectors and the iteration test after 1 iteration; 6.1 Alice's and Bob's public keys and the shared secret from both sides"
+    echo "PASS  x25519 known answers (VM): RFC 7748 5.2 both vectors and the iteration test after 1 iteration; 6.1 Alice's and Bob's public keys and the shared secret from both sides; shared keeps a valid secret whose first byte, or last byte, is zero"
 else
     echo "FAIL  x25519 known answers (VM): rc=$vrc"; diff <(echo "$EXPECT") "$T/kat.out" | head -10; tail -3 "$T/vre"; ok=0
 fi
