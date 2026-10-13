@@ -188,7 +188,12 @@
 #  version number is sealed a second time under the same key and nonce.
 #  The VM cannot erase memory: a dropped key stays in the heap until the
 #  collector reuses its space, and "drops the keys" means unreachable, not
-#  overwritten.
+#  overwritten. gate_logossession.sh checks that once the heap has been
+#  collected over, after lock, suspend or logout, neither the passphrase,
+#  the stretch, K_U, K_M, the index key, K_cap nor the root token is
+#  anywhere in the process's memory, and that an open session never keeps
+#  the passphrase or the stretch. What is outside the process is not
+#  covered: the kernel's pipe buffer that carried the passphrase in, swap.
 #  Engines: the VM only (stat, open, rename, mkdir, chmod, clock_gettime,
 #  random, and AletheiaFS itself). PBKDF2_KIT is pure Lingua Adamica, but
 #  the host is far too slow for any useful iteration count.

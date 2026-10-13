@@ -52,14 +52,24 @@
 #      user with nothing suspended, eight saved sessions the oracle seals
 #      correctly but that name another user or are malformed, and two
 #      objects with the tag (so does suspend).
+#   M  what the process holds, read through /proc/<pid>/mem after the
+#      driver has allocated 4 GB of garbage (each 768 MiB semispace is
+#      collected and overwritten several times): an open session holds its
+#      keys (K_U, K_M, the index key, K_cap, the root token: the scan sees
+#      live data) but never the passphrase (raw or in hex) or the stretch;
+#      after LOCK, after suspend and after LOGOUT none of them is anywhere
+#      in the process; after unlock and resume the keys are back. A control
+#      first shows the scan finds garbage not yet collected (the passphrase
+#      and stretch right after adduser), so "found nothing" means overwritten.
+#      The VM grows to about 1.5 GB here (both heap halves).
 # ISOLATION: private temp dir (gate_wm_common.sh); everything is written
-# under it. SESSION_SHARDS (default "P A S") names the shards to run, one at
+# under it. SESSION_SHARDS (default "P A S M") names the shards to run, one at
 # a time; SESSION_CMD_TIMEOUT (default 1800 s) bounds each operation and
 # SESSION_SHARD_TIMEOUT (default 7200 s) each shard.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
-: "${SESSION_SHARDS:=P A S}"
+: "${SESSION_SHARDS:=P A S M}"
 : "${SESSION_CMD_TIMEOUT:=1800}"
 : "${SESSION_SHARD_TIMEOUT:=7200}"
 wm_setup logossession.la logoscrypt.la logossec.la aletheiafs.la
@@ -705,7 +715,73 @@ def shard_s(d, s):
           'be a guess); the session stays open', rs == ['ok ', 'err suspend: more than one saved session', True,
           'err resume: more than one saved session'], rs)
 
-SHARDS = {'P': shard_p, 'A': shard_a, 'S': shard_s}
+# ── M: what the process holds after lock and after logout ───────────────────
+def mem_has(pid, needles):
+    """the needles that occur anywhere in the readable memory of process pid"""
+    found, keep = set(), max(len(x) for x in needles) - 1
+    with open('/proc/%d/mem' % pid, 'rb', 0) as m:
+        for l in open('/proc/%d/maps' % pid):
+            f = l.split()
+            if not f[1].startswith('r'): continue
+            a, b = (int(x, 16) for x in f[0].split('-'))
+            tail = b''
+            while a < b:
+                try:
+                    m.seek(a); chunk = tail + m.read(min(b - a, 1 << 26))
+                except (OSError, OverflowError):
+                    break
+                found |= set(x for x in needles if x in chunk)
+                tail, a = chunk[-keep:], a + (1 << 26)
+    return found
+def shard_m(d, s):
+    root = os.path.join(d, 'sys')
+    PM = b'memory check ' + os.urandom(12).hex().encode()
+    r = s.cmd('adduser', '-', root, 'mem', PM)
+    mr = RECRE.match(rd(os.path.join(root, 'users', 'mem')) or b'')
+    if r != 'ok mem' or mr is None: check('M adduser', False, r); return
+    K = keys(PM, bytes.fromhex(mr.group(2).decode()), 1000)
+    TM = token(K['kc'], 'mem')
+    names = {PM: 'the passphrase', PM.hex().encode(): 'the passphrase in hex', K['st']: 'the stretch',
+             K['ku']: 'K_U', K['km']: 'K_M', K['ki']: 'the index key', K['kc']: 'K_cap',
+             TM.rsplit('|', 1)[1].encode(): 'the root token'}
+    held = set([K['ku'], K['km'], K['ki'], K['kc'], TM.rsplit('|', 1)[1].encode()])   # by an open session
+    never = set([PM, PM.hex().encode(), K['st']])                                       # by anything, once an operation returns
+    def scan():
+        r = s.cmd('churn', '4000')
+        return r, mem_has(s.p.pid, list(names))
+    def show(f): return sorted(names[x] for x in f)
+    f0 = mem_has(s.p.pid, [PM, K['st']])
+    check('M the scan sees what has not been collected yet: right after adduser the passphrase and the stretch, '
+          'garbage by then, are still in the heap (so finding nothing later means the collector overwrote them)',
+          f0 == set([PM, K['st']]), show(f0))
+    rs = [s.cmd('login', 'm', root, 'mem', PM)]
+    st = s.state('m')
+    r, f = scan()
+    check('M an open session, after a collection: its keys are in the process (K_U, K_M, the index key, K_cap, the '
+          'root token: so the scan sees live data), and neither the passphrase (raw or in hex) nor the stretch is',
+          rs == ['ok'] and isinstance(st, tuple) and st[1] == TM and r == 'ok churned' and f == held, (rs, r, show(f)))
+    rs = [s.cmd('lock', 'm')]
+    r, f = scan()
+    check('M LOCK DROPS THE KEYS: after lock and a collection, none of the passphrase, the stretch, K_U, K_M, the index '
+          'key, K_cap or the root token is anywhere in the process (read through /proc/<pid>/mem), though the locked '
+          'session is still held', rs == ['ok'] and r == 'ok churned' and f == set(), show(f))
+    rs = [s.cmd('unlock', 'm', PM)]
+    r, f = scan()
+    check('M after unlock the keys are back (the session holds them again), still never the passphrase or the stretch',
+          rs == ['ok'] and f == held, (rs, show(f)))
+    rs = [s.cmd('suspend', 'm', b'windows=1\n')]
+    r, f = scan()
+    check('M suspend locks too: after it and a collection none of them is in the process', rs == ['ok'] and f == set(), (rs, show(f)))
+    rs = [s.cmd('resume', 'n', root, 'mem', PM), s.cmd('drop', 'm')]
+    r, f = scan()
+    check('M a resumed session holds the keys again, never the passphrase or the stretch',
+          rs == ['ok ' + b'windows=1\n'.hex(), 'ok'] and f == held, (rs, show(f)))
+    rs = [s.cmd('logout', 'n')]
+    r, f = scan()
+    check('M AFTER LOGOUT and a collection, none of the passphrase, the stretch, K_U, K_M, the index key, K_cap or the '
+          'root token is anywhere in the process', rs == ['ok mem'] and f == set(), (rs, show(f)))
+
+SHARDS = {'P': shard_p, 'A': shard_a, 'S': shard_s, 'M': shard_m}
 
 if __name__ == '__main__':
     which, d = sys.argv[1], sys.argv[2]
