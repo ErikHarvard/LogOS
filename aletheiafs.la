@@ -581,16 +581,22 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
           BIND(objwalk(la _. okey(id)(km))(P)(M)(id)(latest(P)(M))(c)(r)(l))(la w. w(la c2. la r2. la l2.
             wo(root)(km)(rest)(c2)(r2)(l2))))
        (mdir(root)(id)))(pdir(root)(id)))))(la walkobjs.
+  # idxback(KI)(P)(M)(j): the content of the newest index version at or
+  # below j that authenticates and is well formed, or "" when none is (a
+  # lost newest version must not hide the objects an older one lists)
+  LET(Z(la back. la KI. la P. la M. la j.
+      lt(C0)(j)
+        (la _. (la older. readver(KI)(P)(M)("index")(j)(older)(la v. v(la blob. la pt.
+                  parse(pt)(j)(older)(la h. h(la tags. la owner. la prev. la body. body)))))
+               (la _. back(KI)(P)(M)(sub(j)(C1))))
+        (la _. "")(C0)))(la idxback.
   # verify(fs) -> ok(la k. k(checked)(repaired)(lost)): every version of the
   # index, then of every object the newest readable index lists
   LET(la fs. fs(la bad. la root. la km. la ki. la guard. la rfd. la wfd. la serr.
     str_eq(bad)("")
       (la _. (la P. (la M.
           BIND(objwalk(la _. ki)(P)(M)("index")(latest(P)(M))(C0)(C0)(C0))(la w. w(la c. la r. la l.
-            readidx(root)(ki)
-              (la _. OK(la k. k(c)(r)(l)))
-              (la ix. ix(la ni. la icont. la iblob.
-                  walkobjs(root)(km)(filter(idok)(map(lineid)(lines(icont))))(c)(r)(l))))))
+            walkobjs(root)(km)(filter(idok)(map(lineid)(lines(idxback(ki)(P)(M)(latest(P)(M))))))(c)(r)(l))))
         (mdir(root)("index")))(pdir(root)("index")))
       (la _. ERR(bad))(C0)))(la verify.
   # ephemeral(fs)(content) -> ok(la s. s(read)), read(_) -> ok(content) while
@@ -618,5 +624,5 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
          (la _. DO(read(rfd)("64"))(la _. DO(write(wfd)("closed"))(la _. OK(root))))(C0))
       (la _. ERR(bad))(C0)))(la fclose.
     la s. s(fopen)(put)(get)(update)(history)(version)(find)(verify)(remove)(ephemeral)(fclose)
-  ))))))))))))))))))))))))
+  )))))))))))))))))))))))))
   (FS_BASE(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq))

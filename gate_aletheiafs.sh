@@ -14,7 +14,7 @@
 # a whole store of its own that the module must read. Each shard drives ONE
 # session of a driver program (compiled once) over stdin/stdout, and
 # tampers with the store between operations.
-# THE CRYPT RECORD. Shards A-D build the kit with CRYPT_FAST (logoscrypt.la,
+# THE CRYPT RECORD. Shards A-E build the kit with CRYPT_FAST (logoscrypt.la,
 # the documented drop-in for CRYPT_REF, gated by gate_logoscrypt.sh against
 # CRYPT_REF itself), so every operation costs milliseconds and the gate can
 # afford to probe every clause. Shard R builds the SAME driver with CRYPT_REF
@@ -52,15 +52,18 @@
 #      objects round-trip (bytes 0..255) without a single file appearing,
 #      their session pipe is close-on-exec, and close drops that session's
 #      objects (and only that session's).
+#   E  repair and failure paths, each on a store of its own: with the newest
+#      index version lost in both copies, verify still walks the objects the
+#      newest readable index version lists and repairs them.
 # Every operation's guard questions are checked exactly (resource and op).
-# COST. With CRYPT_FAST an operation takes milliseconds and shards A-D a few
+# COST. With CRYPT_FAST an operation takes milliseconds and shards A-E a few
 # seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
 # its builtins, and each name walks the program), and every object operation
 # derives its key: shard R needs three (open, put, get), about 10 minutes on a
 # loaded 4-core machine, and it starts first, alongside the others. Its VM
 # grows to about 1.4 GB (its two 768 MiB heap halves), so FS_PARALLEL
 # (default 4) caps how many shards run at once, longest first, for a machine
-# short of memory. FS_SHARDS (default "R C A B D") names the shards to run;
+# short of memory. FS_SHARDS (default "R C A B D E") names the shards to run;
 # leaving R out skips the CRYPT_REF round trip (a development shortcut; a
 # plain run always includes it). FS_SHARD_TIMEOUT (default 14400 s) bounds
 # each shard, FS_CMD_TIMEOUT (default 7200 s) each operation.
@@ -75,7 +78,7 @@ ok=1
 : "${FS_SHARD_TIMEOUT:=14400}"
 : "${FS_CMD_TIMEOUT:=7200}"
 : "${FS_PARALLEL:=4}"
-: "${FS_SHARDS:=R C A B D}"
+: "${FS_SHARDS:=R C A B D E}"
 wm_setup aletheiafs.la logoscrypt.la crypt_ref.la sha256.la hmac.la hkdf.la aead.la chacha20.la poly1305.la
 
 # ── the driver: one command per stdin line, one "= ok …"/"= err …" line back ──
@@ -542,6 +545,29 @@ def shard_d(d, s):
           rs == ['ok ' + root2, 'err ephemeral: session closed', 'err ephemeral: session closed', 'ok ' + E2.hex(),
                  'ok ' + root2, 'ok ' + root, 'err ephemeral: session closed'], rs)
 
+# ── E: repair and failure paths, each on a store of its own ────────────────
+def shard_e(d, s):
+    km = bytes(range(30, 62))
+    V = lambda root, side, oid, n: os.path.join(root, side, oid, str(n))
+    # the newest index version lost in both copies: verify still walks the
+    # objects that the newest READABLE index version lists
+    root = os.path.join(d, 'lostidx')
+    ida, idb = os.urandom(16).hex(), os.urandom(16).hex()
+    QA, QB = [b'listed by both index versions'], [b'listed only by the lost one']
+    IX = [line(ida, 'a')]; IX.append(IX[0] + line(idb, 'b'))
+    write_store(root, km, ida, QA, [b'a'], b'o'); write_store(root, km, idb, QB, [b'b'], b'o')
+    write_store(root, km, 'index', IX, IDX_TAGS, IDX_OWNER)
+    flip(V(root, 'obj', 'index', 2), 5); flip(V(root, 'mirror', 'index', 2), 9)
+    flip(V(root, 'obj', ida, 1), 11)
+    lost = (rd(V(root, 'obj', 'index', 2)), rd(V(root, 'mirror', 'index', 2)))
+    s.cmd('open', 'i', root, km, 'policy')
+    g, r = s.cmd('verify', 'i')
+    check('E with the newest index version lost in both copies, verify still walks every object the newest READABLE index '
+          'version lists: checked 3 (2 index + 1), repaired 1, lost 1', r == 'ok 3 1 1', r)
+    check('E ... it rebuilt that object\'s tampered primary with the oracle\'s bytes, and left the lost index version as it was',
+          disk(root, km, ida, QA, [b'a'], b'o') == '' and (rd(V(root, 'obj', 'index', 2)), rd(V(root, 'mirror', 'index', 2))) == lost,
+          disk(root, km, ida, QA, [b'a'], b'o'))
+
 if __name__ == '__main__':
     which, d = sys.argv[1], sys.argv[2]
     if which == 'selftest':
@@ -550,7 +576,7 @@ if __name__ == '__main__':
     log = open(os.path.join(d, 'session.log'), 'w')
     s = Session(d, log)
     try:
-        {'R': shard_r, 'A': shard_a, 'B': shard_b, 'C': shard_c, 'D': shard_d}[which](d, s)
+        {'R': shard_r, 'A': shard_a, 'B': shard_b, 'C': shard_c, 'D': shard_d, 'E': shard_e}[which](d, s)
         rc = s.quit()
         err = open(os.path.join(d, 'drv.err'), 'rb').read()
         check('%s the driver ran to the end: exit 0, nothing on stderr' % which, rc == 0 and err == b'', (rc, err[-200:]))
@@ -589,7 +615,7 @@ for sh in $FS_SHARDS; do
 done
 wait
 
-for sh in R A B C D; do
+for sh in R A B C D E; do
     case " $FS_SHARDS " in *" $sh "*) ;; *) continue ;; esac
     d="$T/s$sh"
     if [ -s "$d/result.txt" ]; then cat "$d/result.txt"; grep -q '^FAIL' "$d/result.txt" && ok=0
@@ -609,11 +635,11 @@ def times(shards):
         except OSError: pass
     return ', '.join('%s %.2fs' % (w, sorted(v)[len(v) // 2]) for w, v in sorted(ts.items()) if w in
                      ('open', 'put', 'get', 'update', 'history', 'version', 'find', 'verify', 'remove', 'eph', 'eread', 'close'))
-secs = ' '.join('%s %ss' % (sh, open(os.path.join(T, 's' + sh, 'secs')).read().strip()) for sh in 'RABCD'
+secs = ' '.join('%s %ss' % (sh, open(os.path.join(T, 's' + sh, 'secs')).read().strip()) for sh in 'RABCDE'
                 if os.path.exists(os.path.join(T, 's' + sh, 'secs')))
 print('TIME  driver compile %s; shards (parallel): %s' % (cs, secs))
 print('TIME  per operation, median wall time of the calls that returned ok, as the harness saw them (with the driver\'s hex coding):')
-print('TIME    CRYPT_FAST (A-D): ' + times('ABCD'))
+print('TIME    CRYPT_FAST (A-E): ' + times('ABCDE'))
 if os.path.exists(os.path.join(T, 'sR', 'times.txt')):
     print('TIME    CRYPT_REF (R): ' + times('R'))
 PYEOF
