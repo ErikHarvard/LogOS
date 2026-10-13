@@ -1010,6 +1010,9 @@ hardware-level work and a mature network. Honestly years out.*
         X25519 and ChaCha20-Poly1305, self-assigned NodeIDs, flooded presence and DATA,
         self-repair, over AF_UNIX on one machine (`gate_logosnet.sh`, 55 checks). Not yet:
         IP transport (a VM builtin), onion routing (AegisNet itself), signatures.
+  - [x] LogosTorrent over it (*2026-10-13*): `logostorrent.la` — content-addressed files
+        (a manifest of chunk hashes, its hash the root) fetched from every seeder, bad chunks
+        and lying manifests refused, written atomically (`gate_logostorrent.sh`, 30 checks).
 - [ ] **Sovereign communications — SMS/voice over a controlled number, IPFS-backed,
       with a companion device.** *Added 2026-09-06.* A LogOS machine sends and
       receives SMS and calls through a programmable number (a VoIP endpoint, no
