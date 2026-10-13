@@ -20,6 +20,14 @@
 #            6-pixel gaps each way
 #            (a smaller screen ran with zero-width tiles, or halted in compose
 #            on its first frame or when it locked)
+#   unreadable  EVENTS opens but every read of it fails (/proc/self/mem at
+#            offset 0: EIO)        -> rc 0 within a few seconds, "input
+#            finished" on stdout. The VM's read turns every error into "", so
+#            the WM's loop takes a failing input device for the end of its
+#            input: it stops polling that fd (it must never be polled again,
+#            or a device that keeps reporting ready would spin the loop) and
+#            ends once nothing runs. This is the same WM_LOOP the live WM runs,
+#            which cannot be reached there without a GPU.
 # Each case has 30 s; the bad ones must fail within a few.
 #
 # ISOLATION: a private temporary directory (gate_wm_common.sh). VM only. A few
@@ -52,7 +60,8 @@ CASES = [("missing", "640 400 1 / nosuch.bin\n", "cannot open"),
          ("tinyw", "11 400 1 / events.bin\n", "at least 12"),
          ("tinyh", "640 5 1 / events.bin\n", "at least 12"),
          ("zero", "0 0 1 / events.bin\n", "at least 12"),
-         ("min", "12 12 1 / events.bin\n", None)]
+         ("min", "12 12 1 / events.bin\n", None),
+         ("unreadable", "640 400 1 / /proc/self/mem\n", None)]
 bad = 0
 for name, cfg, want in CASES:
     d = f"{T}/case_{name}"; os.makedirs(f"{d}/home")
@@ -69,6 +78,9 @@ for name, cfg, want in CASES:
     if name == "min":
         good = rc == 0 and all(f"wm: snap {n}" in out for n in (1, 2, 3)) and "wm: locked" in out
         what = "12 x 12 runs: a frame, a second window, the lock screen (rc 0, three frames)"
+    elif name == "unreadable":
+        good = rc == 0 and "wm: input finished and nothing is running" in out and dt < 15
+        what = "an input device whose reads fail ends the input: no spin (rc 0, 'input finished', at once)"
     elif want is None:
         good = rc == 0 and "wm: snap 1" in out and "wm: exit" in out
         what = "a \\r\\n line is read as the same configuration (rc 0, the frame written)"
