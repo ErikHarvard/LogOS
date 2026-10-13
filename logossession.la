@@ -1,27 +1,165 @@
 # ═══════════════════════════════════════════════════════════════════
 #  logossession.la — LogosSession, the session manager (Citrinitas
-#  layer 11). OS_LAYERS_DESIGN.md ("logossession.la") is the contract.
+#  layer 11): login with a Γ-seal, screen lock, suspend/resume, and the
+#  isolation of one sovereign from another.
 #
-#  This first part is the passphrase stretch the contract names:
-#  PBKDF2-HMAC-SHA256 (RFC 8018 5.2), written over the crypt record's hmac
-#  (crypt_ref.la's contract: CRYPT_REF, or CRYPT_FAST as a drop-in).
-#      PBKDF2_KIT(…P…)(crypt) = pbkdf2
-#      pbkdf2(pass)(salt)(iter)(dklen)   dklen raw bytes
-#  P, in this order: str_at ord str_to_int int_to_str chr concat add sub mul
-#  div mod lt int_eq bxor error. iter below 1 or dklen outside 1..8160 halts
-#  loudly (error). Kit style (WM_DESIGN.md, "How fast the VM is"): every
-#  builtin and constant is a parameter, the loop is a tail call, and after
-#  the kit is built nothing names a glyph or a builtin. Each iteration is
-#  one crypt hmac (the record has no precomputed-key HMAC, so the key
-#  schedule is redone every time) and a XOR over eight 32-bit words.
-#  MEASURED with CRYPT_FAST on the VM (4-core machine, load about 1): 1000
-#  iterations 1.94 s. gate_logossession.sh checks it against the published
-#  answers and hashlib.pbkdf2_hmac.
-#  Engines: pure Lingua Adamica; tested on the VM (the host is far too slow
-#  for any useful iteration count).
+#  Codex: "Manages login (Γ-seal authentication), session state, screen
+#  lock, suspend/resume, multi-sovereign isolation"; "LogosSession manages
+#  itself (the session manager's session is the managed session)."
+#  OS_LAYERS_DESIGN.md ("logossession.la") is the contract this module
+#  implements; where it leaves a choice open, the choice is stated below.
+#
+#  ── WHAT IT GIVES ───────────────────────────────────────────────────
+#  SESSION_KIT(…P…)(…effects…)(crypt)(sec)(fs)(random)
+#     = la s. s(adduser)(login)(lock)(unlock)(suspend)(resume)(state)(logout)
+#  P, the pure builtins, in this order:
+#      str_at ord str_len str_to_int int_to_str chr concat str_eq
+#      add sub mul div mod lt int_eq bor bxor error
+#  then the effects, in this order:
+#      stat read_file open write close rename unlink mkdir chmod
+#      clock_gettime
+#  `crypt` is the crypt record (crypt_ref.la's contract; CRYPT_FAST,
+#  logoscrypt.la, in practice: see PERFORMANCE), `sec` a SEC_KIT record
+#  (logossec.la), `fs` an FS_KIT record (aletheiafs.la) built with the same
+#  crypt record, `random(n)` the VM's random builtin (passed in, so that a
+#  test can make it fail).
+#  PBKDF2_KIT(…)(crypt) = pbkdf2 is exported too: the stretch, on its own,
+#  for its known-answer gate (SESSION_KIT builds its own from it).
+#
+#  ── USERS ───────────────────────────────────────────────────────────
+#  A user is the file <root>/users/<name>, mode 0600 in a directory of mode
+#  0700, holding exactly
+#      logos-user 1\nname=<name>\nsalt=<32 hex>\niter=<n>\nverifier=<64 hex>\n
+#  salt = random(16), stretch = pbkdf2(pass)(salt)(iter)(32), verifier =
+#  hmac(stretch)("logos/verifier"): never the passphrase, never a key.
+#  adduser writes iter = 1000 (ITER, chosen so that a login on the VM takes
+#  one to two seconds, see PERFORMANCE); login uses the count the record
+#  holds, which must be 1..10^7 (MAXITER: a larger one would hang a login).
+#  A name is 1-32 bytes of [a-z0-9_-], so it is one path segment (never . or
+#  ..) and a valid logossec token id; a passphrase is any non-empty bytes.
+#  The user's AletheiaFS store is <root>/home/<name>.
+#
+#  ── THE KEYS ────────────────────────────────────────────────────────
+#  Everything derives from the Γ-seal, as the contract fixes:
+#      K_U   = hkdf(salt)(stretch)("logos/gamma")(32)
+#      K_M   = hkdf("")(K_U)("aletheia/master")(32)   the store's master key
+#      K_cap = hkdf("")(K_U)("gamma/root")(32)        the capability root
+#      root token = mint(K_cap)(name)(nil)
+#  The root token has no caveats: it grants everything K_cap governs, which
+#  is exactly this user's own resources (another user's root is another
+#  key). Its holder narrows it with logossec's attenuate to delegate.
+#
+#  ── THE OPERATIONS ──────────────────────────────────────────────────
+#  Results are la err. la ok. …; a session is an opaque value.
+#      adduser(root)(name)(pass)  ok(name). Creates root, root/users and
+#          root/home (mode 0700) when they are missing, and writes the
+#          record atomically: <record>.tmp is created afresh (O_EXCL, so a
+#          leftover is never opened or reused), made 0600 before a byte is
+#          written, then renamed. Refuses, writing nothing: a bad root, a
+#          bad name, an empty passphrase, a user that exists, a home that
+#          exists (a store sealed under someone else's K_M would never open),
+#          a leftover .tmp, a failing random.
+#      login(root)(name)(pass)    ok(session): the clock is read, the record
+#          checked, the passphrase stretched and the verifier compared
+#          (every byte, no early exit), the keys derived, the store opened
+#          and probed (a find, so a store that does not open under K_M is an
+#          error now, not at the first read), and the session manager's
+#          record of the session made: a fresh 16-byte session id, the
+#          user, the login time, the number of suspends (0).
+#      lock(session)              the locked session (a value, as the
+#          contract says; locking a locked session gives it back).
+#      unlock(locked)(pass)       ok(the session again): the keys derived
+#          again from the passphrase and the user record as it is now, the
+#          store reopened, the same record of the session.
+#      suspend(session)(state), resume(root)(name)(pass): not built yet;
+#          each returns an err. The next step adds them.
+#      state(session)             ok(la k. k(name)(store)(token)(guard)(record))
+#          for an open session, err for a locked one. The contract names
+#          this operation and leaves it open; it is the session's view for
+#          its holder: the user's name, the AletheiaFS handle on the user's
+#          store (opened under K_M with the guard below), the root token,
+#          the guard itself, and the session manager's record of the session
+#          as text ("session=<32 hex>\nuser=<name>\nsince=<unix seconds>\n
+#          suspends=<n>\n"). K_U itself is not handed out: the session keeps
+#          it, and the view carries what derives from it.
+#      logout(session)            ok(name): the store's ephemeral session is
+#          closed (so every ephemeral object it made can no longer be
+#          opened) and nothing of the session is kept.
+#  Errors, each prefixed with the operation ("login: …"): "bad root", "bad
+#  name", "empty passphrase", "the user exists", "<home> already exists",
+#  "cannot create <path>", "write failed: <path>", "random failed", "no
+#  clock", "wrong user or passphrase" (a missing user and a wrong
+#  passphrase look alike), "bad user record", "home: <AletheiaFS error>",
+#  "the session is locked", "the session is not locked".
+#
+#  ── THE GUARD ADAPTER ───────────────────────────────────────────────
+#  The contract opens AletheiaFS with "logossec's verify, partially
+#  applied" as its guard, but FS_KIT asks guard(tok)(res)(op) for a Church
+#  boolean, while verify takes now last and returns ok/err. vguard (below)
+#  is where they meet: vguard(K_cap) = la tok. la res. la op. the realtime
+#  clock read (an unreadable clock: FALSE), then
+#      verify(K_cap)(nil)(tok)(res)(op)(now)(la m. FALSE)(la id. TRUE)
+#  so only ok grants, and every refusal verify can give is FALSE. The
+#  revocation list is empty (see HONEST SCOPE).
+#
+#  ── WHAT A SESSION HOLDS, AND LOCK ──────────────────────────────────
+#  An open session holds the name, the root, K_U, the store handle (which
+#  holds K_M and the index key), the root token, the guard (which holds
+#  K_cap) and the record. A locked one holds only the name, the root and
+#  the record: no key and nothing derived from one. Every value that holds
+#  a key, and every value an operation hands back, is built by its own
+#  constructor (mkopen, mklocked, mkrec, mkview, mkpair, mkuser, vguard),
+#  bound when the kit is built and before any secret exists, because on
+#  the VM a closure keeps its whole environment alive: a value written
+#  inline inside an operation would keep that operation's passphrase,
+#  stretch and keys reachable for as long as the value lives (aletheiafs.la's
+#  spair and mkeph are the same pattern). The passphrase and the stretch
+#  are held by nothing once an operation returns.
+#
+#  ── PERFORMANCE ─────────────────────────────────────────────────────
+#  Kit style (WM_DESIGN.md, "How fast the VM is"): every builtin and every
+#  integer constant is a parameter, the functions are LET-bound once when
+#  the kit is built, booleans are applied to thunks; after startup no name
+#  reaches the VM's glyph table from this module. The cost is PBKDF2: each
+#  iteration is one crypt hmac (the record has no precomputed-key HMAC, so
+#  the key schedule is redone every time) and a XOR over eight 32-bit words.
+#  MEASURED on the VM with CRYPT_FAST, timed inside the gate's driver (a
+#  4-core machine, load about 1): PBKDF2 of 1000 iterations 1.35-1.9 s;
+#  adduser 1.7 s, login 1.35 s, unlock 1.44 s; lock, state, logout 4-6 ms;
+#  a guard question 7 ms. With CRYPT_REF an HMAC takes about a minute on
+#  the VM, so a login would take most of a day: CRYPT_REF meets the
+#  contract but is not usable here.
+#
+#  ── HONEST SCOPE ────────────────────────────────────────────────────
+#  1000 iterations is what the VM affords for a login of a second or two;
+#  current advice for PBKDF2-HMAC-SHA256 is hundreds of thousands, so a
+#  stolen record (salt and verifier) is far cheaper to attack offline than
+#  that advice intends. The count lives in the record, so a faster crypt
+#  record can raise it for new users without breaking old ones.
+#  The user record is not authenticated (no key exists before login):
+#  whoever can write <root>/users can replace a record with one for a
+#  passphrase they know and log in, but the K_U they get is not the user's,
+#  so they cannot open the user's objects (the home probe fails).
+#  A missing user answers at once and a wrong passphrase after the stretch:
+#  the two messages are the same, the times are not.
+#  One adduser per name at a time: two at once can both find the name free.
+#  No revocation: the root token, and every token attenuated from it, stays
+#  valid for as long as the user's passphrase and salt do (K_cap is derived
+#  from them); bound a delegated token with until=. Revocation needs a
+#  persistent revocation list, which logossec leaves to its caller.
+#  Every login and unlock opens the store anew, and AletheiaFS keeps each
+#  open store's ephemeral-session pipe (two descriptors) for the life of
+#  the process, so a process that logs in or unlocks many times runs out
+#  of descriptors (about 500 times at the usual limit of 1024).
+#  The VM cannot erase memory: a dropped key stays in the heap until the
+#  collector reuses its space, and "drops the keys" means unreachable, not
+#  overwritten.
+#  Engines: the VM only (stat, open, rename, mkdir, chmod, clock_gettime,
+#  random, and AletheiaFS itself). PBKDF2_KIT is pure Lingua Adamica, but
+#  the host is far too slow for any useful iteration count.
 # ═══════════════════════════════════════════════════════════════════
 
-export PBKDF2_KIT
+export SESSION_KIT PBKDF2_KIT
 
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LET = la v. la k. k(v)
@@ -75,3 +213,245 @@ glyph PBKDF2_KIT = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
     pbkdf2
   ))))))))))))))
   (0)(1)(2)(3)(4)(8)(12)(16)(20)(24)(28)(31)(32)(256)(65536)(16777216)(8160))
+
+# ── SES_BASE: the pure helpers ─────────────────────────────────────────
+# SES_BASE(…P…)(k) hands k, in this order:
+#   T F nil cons OK ERR BIND DO len slice find isnat hexok nameok rootok
+#   cteq fromhex fld C0 C1 C16 C32
+# Results are la err. la ok. …; BIND(r)(f) is f(v) on ok(v) and r's error
+# otherwise; DO(e)(k) evaluates e, then k(e). Positions are native ints; a
+# string is scanned by index with str_at, and slices are joined by halves.
+glyph SES_BASE = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la lt. la int_eq. la bor. la bxor.
+  (la C0. la C1. la C2. la C16. la C18. la C32. la C45. la C48. la C57. la C87. la C95. la C97. la C102. la C122.
+  LET(la t. la f. t)(la T.
+  LET(la t. la f. f)(la F.
+  LET(la n. la c. n(n))(la nil.
+  LET(la h. la t. la n. la c. c(h)(t))(la cons.
+  LET(la v. la e. la o. o(v))(la OK.
+  LET(la m. la e. la o. e(m))(la ERR.
+  LET(la r. la f. r(ERR)(f))(la BIND.
+  LET(la a. la f. f(a))(la DO.
+  LET(la s. str_to_int(str_len(s)))(la len.
+  LET(la c. str_to_int(ord(c)))(la ordi.
+  # slice(s)(i)(j): bytes i..j-1, joined by halves
+  LET(Z(la slice. la s. la i. la j.
+      lt(add(i)(C1))(j)
+        (la _. (la m. concat(slice(s)(i)(m))(slice(s)(m)(j)))(add(i)(div(sub(j)(i))(C2))))
+        (la _. lt(i)(j)(la _. str_at(s)(i))(la _. "")(C0))(C0)))(la slice.
+  # find(s)(n)(c)(i): the first index >= i holding the byte c, or n (= len s)
+  LET(Z(la find. la s. la n. la c. la i.
+      lt(i)(n)(la _. str_eq(str_at(s)(i))(c)(la _. i)(la _. find(s)(n)(c)(add(i)(C1)))(C0))
+        (la _. n)(C0)))(la find.
+  LET(Z(la go. la p. la s. la n. la i.
+      lt(i)(n)(la _. p(str_at(s)(i))(la _. go(p)(s)(n)(add(i)(C1)))(la _. F)(C0))(la _. T)(C0)))(la allc0.
+  LET(la p. la s. allc0(p)(s)(len(s))(C0))(la allc.
+  LET(la o. la lo. la hi. lt(o)(lo)(F)(lt(hi)(o)(F)(T)))(la inr.
+  LET(la c. inr(ordi(c))(C48)(C57))(la digit.
+  LET(la c. (la o. inr(o)(C48)(C57)(T)(inr(o)(C97)(C102)))(ordi(c)))(la hexc.
+  LET(la c. (la o. inr(o)(C48)(C57)(T)(inr(o)(C97)(C122)(T)(int_eq(o)(C95)(T)(int_eq(o)(C45)))))(ordi(c)))(la namec.
+  # isnat(s): a canonical decimal of 1..18 digits (no sign, no leading zero)
+  LET(la s. (la n. lt(C0)(n)
+        (la _. lt(C18)(n)(la _. F)
+            (la _. allc(digit)(s)(la _. str_eq(int_to_str(str_to_int(s)))(s))(la _. F)(C0))(C0))
+        (la _. F)(C0))(len(s)))(la isnat.
+  # hexok(s)(n): s is exactly n lowercase hex digits
+  LET(la s. la n. int_eq(len(s))(n)(la _. allc(hexc)(s))(la _. F)(C0))(la hexok.
+  # a user name: 1-32 bytes of [a-z0-9_-] (a path segment that cannot be . or ..)
+  LET(la s. (la n. lt(C0)(n)(la _. lt(C32)(n)(la _. F)(la _. allc(namec)(s))(C0))(la _. F)(C0))(len(s)))(la nameok.
+  LET(chr("0"))(la NUL.
+  # a root: non-empty, with no NUL byte (every syscall would see it cut short)
+  LET(la s. (la n. lt(C0)(n)(la _. int_eq(find(s)(n)(NUL)(C0))(n))(la _. F)(C0))(len(s)))(la rootok.
+  # cteq(a)(b): equal-length strings compared with every byte's difference
+  # OR-ed in, so there is no early exit; a length mismatch is public and fails
+  LET(Z(la xacc. la a. la b. la n. la i. la acc.
+      lt(i)(n)(la _. xacc(a)(b)(n)(add(i)(C1))(bor(acc)(bxor(ordi(str_at(a)(i)))(ordi(str_at(b)(i))))))
+        (la _. acc)(C0)))(la xacc.
+  LET(la a. la b. (la n. int_eq(n)(len(b))(la _. int_eq(xacc(a)(b)(n)(C0)(C0))(C0))(la _. F)(C0))(len(a)))(la cteq.
+  # fromhex(h): the bytes a lowercase hex string (checked by hexok) denotes
+  LET(la c. (la o. lt(C57)(o)(la _. sub(o)(C87))(la _. sub(o)(C48))(C0))(ordi(c)))(la hexval.
+  LET(Z(la fh. la h. la i. la j.
+      lt(add(i)(C1))(j)
+        (la _. (la m. concat(fh(h)(i)(m))(fh(h)(m)(j)))(add(i)(div(sub(j)(i))(C2))))
+        (la _. lt(i)(j)
+                 (la _. (la p. chr(int_to_str(add(mul(hexval(str_at(h)(p)))(C16))(hexval(str_at(h)(add(p)(C1)))))))(add(i)(i)))
+                 (la _. "")(C0))(C0)))(la fh.
+  LET(la h. fh(h)(C0)(div(len(h))(C2)))(la fromhex.
+  # fld(s)(n)(bad)(key)(pos)(k): key at pos, then a value up to a newline:
+  # k(value)(the position after the newline); bad otherwise
+  LET(la s. la n. la bad. la key. la pos. la k. (la e. (la j.
+        str_eq(slice(s)(pos)(e))(key)
+          (la _. lt(j)(n)(la _. k(slice(s)(e)(j))(add(j)(C1)))(la _. bad)(C0))
+          (la _. bad)(C0))
+      (find(s)(n)("\n")(e)))(add(pos)(len(key))))(la fld.
+    la k. k(T)(F)(nil)(cons)(OK)(ERR)(BIND)(DO)(len)(slice)(find)(isnat)(hexok)(nameok)(rootok)(cteq)(fromhex)(fld)
+          (C0)(C1)(C16)(C32)
+  ))))))))))))))))))))))))))))))
+  (0)(1)(2)(16)(18)(32)(45)(48)(57)(87)(95)(97)(102)(122)
+
+# ── SESSION_KIT: the session manager ───────────────────────────────────
+glyph SESSION_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la bor. la bxor. la error.
+    la stat. la read_file. la open. la write. la close. la rename. la unlink. la mkdir. la chmod. la clock_gettime.
+    la crypt. la sec. la fs. la random.
+  SES_BASE(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(bor)(bxor)
+  (la T. la F. la nil. la cons. la OK. la ERR. la BIND. la DO. la len. la slice. la find. la isnat. la hexok. la nameok.
+   la rootok. la cteq. la fromhex. la fld. la C0. la C1. la C16. la C32.
+  crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
+  sec(la mint. la attenuate. la verify. la within. la confine.
+  fs(la fopen. la fput. la fget. la fupdate. la fhistory. la fversion. la ffind. la fverify. la fremove. la fephemeral. la fclose.
+  (la ITER. la MAXITER. la C4. la C8. la C13. la C64. la C4096.
+  LET(PBKDF2_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(add)(sub)(mul)(div)(mod)(lt)(int_eq)(bxor)(error)(crypt))(la pbkdf2.
+  # ── the constructors. Every value that holds a key, and every value an
+  # operation hands back, is built by one of these, bound here, when the
+  # kit is built and before any secret exists. On the VM a closure keeps
+  # its whole environment alive: a record written inline inside an
+  # operation would keep that operation's passphrase, stretch and keys
+  # reachable for as long as the record lives.
+  # An open session: o(name)(root)(K_U)(home store)(root token)(guard)(record)
+  LET(la name. la root. la ku. la h. la tok. la g. la rec. la o. la l. o(name)(root)(ku)(h)(tok)(g)(rec))(la mkopen.
+  # A locked session: l(name)(root)(record); no key and nothing derived from one
+  LET(la name. la root. la rec. la o. la l. l(name)(root)(rec))(la mklocked.
+  # The session manager's record of a session
+  LET(la sid. la user. la since. la susp. la k. k(sid)(user)(since)(susp))(la mkrec.
+  LET(la name. la h. la tok. la g. la rec. la k. k(name)(h)(tok)(g)(rec))(la mkview.
+  LET(la a. la b. la k. k(a)(b))(la mkpair.
+  LET(la salt. la iter. la ver. la k. k(salt)(iter)(ver))(la mkuser.
+  # now(_): ok(unix seconds) from the realtime clock; err when it cannot be read
+  LET(la _. (la t. (la sp. (la s. isnat(s)(la _. OK(str_to_int(s)))(la _. ERR("no clock"))(C0))(slice(t)(C0)(sp)))
+        (find(t)(len(t))(" ")(C0)))(clock_gettime("0")))(la now.
+  # ── THE GUARD ADAPTER. vguard(K_cap) is the guard the user's AletheiaFS
+  # store is opened with: guard(tok)(res)(op), a Church boolean, as FS_KIT
+  # asks. It is logossec's verify, partially applied to the user's
+  # capability root and an empty revocation list, with now read from the
+  # realtime clock at every question: ok(id) -> TRUE, err(reason) -> FALSE,
+  # and a clock that cannot be read -> FALSE. Nothing else grants.
+  LET(la kc. la tok. la res. la op.
+      now(C0)(la m. F)(la t. verify(kc)(nil)(tok)(res)(op)(t)(la m. F)(la id. T)))(la vguard.
+  # ── files. kind(p): 0 when p does not exist, else st_mode's type nibble
+  LET(la p. (la st. str_eq(str_at(st)(C0))("-")(la _. C0)
+        (la _. mod(div(str_to_int(slice(st)(C0)(find(st)(len(st))(" ")(C0))))(C4096))(C16))(C0))(stat(p)))(la kind.
+  LET(la p. lt(C0)(kind(p)))(la exists.
+  LET(la p. int_eq(kind(p))(C4))(la isdir.
+  LET(la p. int_eq(kind(p))(C8))(la isreg.
+  LET(la p. DO(mkdir(p)("448"))(la _. isdir(p)(la _. OK(p))(la _. ERR(concat("cannot create ")(p)))(C0)))(la mkd.
+  # awrite(p)(data): data into p.tmp, created afresh (O_WRONLY|O_CREAT|O_EXCL|
+  # O_CLOEXEC, so nothing already there is opened) and made 0600 before a
+  # byte is written, then renamed onto p; on a failure the temporary goes
+  LET(la p. la data. (la tmp. (la fd.
+      str_eq(str_at(fd)(C0))("-")
+        (la _. ERR(concat("cannot create ")(tmp)))
+        (la _. (la fail.
+            str_eq(chmod(tmp)("384"))("0")
+              (la _. (la wr. DO(close(fd))(la _.
+                    str_eq(wr)(str_len(data))
+                      (la _. str_eq(rename(tmp)(p))("0")(la _. OK(p))(la _. fail(C0))(C0))
+                      (la _. fail(C0))(C0)))
+                 (write(fd)(data)))
+              (la _. DO(close(fd))(la _. fail(C0)))(C0))
+          (la _. DO(unlink(tmp))(la _. ERR(concat("write failed: ")(p)))))(C0))
+    (open(tmp)("524481")))(concat(p)(".tmp")))(la awrite.
+  LET(la root. la name. concat(concat(root)("/users/"))(name))(la upath.
+  LET(la root. la name. concat(concat(root)("/home/"))(name))(la hpath.
+  # the user record: never the passphrase, never a key
+  LET(la name. la salth. la iter. la verh.
+      concat(concat(concat("logos-user 1\nname=")(name))(concat("\nsalt=")(salth)))
+            (concat(concat(concat("\niter=")(int_to_str(iter)))(concat("\nverifier=")(verh)))("\n")))(la userrec.
+  # readuser(root)(name): ok(mkuser(salt)(iter)(verifier)), salt and verifier
+  # raw, when <root>/users/<name> is a regular file holding exactly a user
+  # record for name with 1 <= iter <= MAXITER; err("no such user") or
+  # err("bad user record") otherwise
+  LET(la root. la name. (la p.
+      isreg(p)
+        (la _. (la s. (la n. (la bad.
+            str_eq(slice(s)(C0)(C13))("logos-user 1\n")
+              (la _. fld(s)(n)(bad)("name=")(C13)(la nm. la p1.
+                     fld(s)(n)(bad)("salt=")(p1)(la sh. la p2.
+                     fld(s)(n)(bad)("iter=")(p2)(la it. la p3.
+                     fld(s)(n)(bad)("verifier=")(p3)(la vh. la p4.
+                       int_eq(p4)(n)(la _. str_eq(nm)(name)(la _. hexok(sh)(C32)(la _. hexok(vh)(C64)(la _. isnat(it)
+                         (la _. (la c. lt(C0)(c)
+                              (la _. lt(MAXITER)(c)(la _. bad)(la _. OK(mkuser(fromhex(sh))(c)(fromhex(vh))))(C0))
+                              (la _. bad)(C0))(str_to_int(it)))
+                         (la _. bad)(C0))(la _. bad)(C0))(la _. bad)(C0))(la _. bad)(C0))(la _. bad)(C0))))))
+              (la _. bad)(C0))
+          (ERR("bad user record")))(len(s)))(read_file(p)))
+        (la _. ERR("no such user"))(C0))
+    (upath(root)(name)))(la readuser.
+  LET(la r. r(la sid. la user. la since. la susp.
+      concat(concat(concat("session=")(sid))(concat("\nuser=")(user)))
+            (concat(concat("\nsince=")(int_to_str(since)))(concat(concat("\nsuspends=")(int_to_str(susp)))("\n")))))(la showrec.
+  # enter(root)(name)(pass)(who)(k): the clock read, the user record read
+  # and checked, the passphrase stretched and verified, the keys derived and
+  # the home store opened: k(now)(K_U)(home store)(root token)(guard)(ids of
+  # the store's objects tagged logos-session); otherwise err(who ++ reason).
+  # The clock comes first: without it the guard denies everything, so the
+  # home store could not be opened anyway
+  LET(la root. la name. la pass. la who. la k.
+    (la fail. now(C0)(la m. fail("no clock"))(la t.
+      rootok(root)
+        (la _. nameok(name)
+          (la _. readuser(root)(name)
+             (la m. str_eq(m)("no such user")(la _. fail("wrong user or passphrase"))(la _. fail(m))(C0))
+             (la u. u(la salt. la iter. la ver.
+               (la st. cteq(hmac(st)("logos/verifier"))(ver)
+                  (la _. (la ku. (la km. (la kc.
+                       mint(kc)(name)(nil)(la m. fail(m))(la tok. (la g. (la h.
+                           ffind(h)(tok)("logos-session")
+                             (la m. DO(fclose(h))(la _. fail(concat("home: ")(m))))
+                             (la ids. k(t)(ku)(h)(tok)(g)(ids)))
+                         (fopen(hpath(root)(name))(km)(g)))(vguard(kc))))
+                     (hkdf("")(ku)("gamma/root")(C32)))
+                    (hkdf("")(ku)("aletheia/master")(C32)))
+                   (hkdf(salt)(st)("logos/gamma")(C32)))
+                  (la _. fail("wrong user or passphrase"))(C0))
+               (pbkdf2(pass)(salt)(iter)(C32)))))
+          (la _. fail("bad name"))(C0))
+        (la _. fail("bad root"))(C0)))
+    (la m. ERR(concat(who)(m))))(la enter.
+  # ── the operations ──
+  # adduser(root)(name)(pass) -> ok(name)
+  LET(la root. la name. la pass.
+    (rootok(root)(la _. nameok(name)(la _. lt(C0)(len(pass))(la _.
+        (la up. (la hp.
+            BIND(mkd(root))(la _. BIND(mkd(concat(root)("/users")))(la _. BIND(mkd(concat(root)("/home")))(la _.
+              exists(up)(la _. ERR("the user exists"))(la _.
+              exists(hp)(la _. ERR(concat(hp)(" already exists")))(la _.
+                (la salt. int_eq(len(salt))(C16)
+                   (la _. (la st. awrite(up)(userrec(name)(hex(salt))(ITER)(hex(hmac(st)("logos/verifier")))))
+                          (pbkdf2(pass)(salt)(ITER)(C32)))
+                   (la _. ERR("random failed"))(C0))
+                (random("16")))(C0))(C0)))))
+          (hpath(root)(name)))(upath(root)(name)))
+        (la _. ERR("empty passphrase"))(C0))
+        (la _. ERR("bad name"))(C0))
+        (la _. ERR("bad root"))(C0))
+     (la m. ERR(concat("adduser: ")(m)))(la _. OK(name)))(la adduser.
+  # login(root)(name)(pass) -> ok(session)
+  LET(la root. la name. la pass.
+    enter(root)(name)(pass)("login: ")(la t. la ku. la h. la tok. la g. la ids.
+      (la rb. int_eq(len(rb))(C16)
+         (la _. OK(mkopen(name)(root)(ku)(h)(tok)(g)(mkrec(hex(rb))(name)(t)(C0))))
+         (la _. DO(fclose(h))(la _. ERR("login: random failed")))(C0))
+      (random("16"))))(la login.
+  # lock(session) -> the locked session: the store's ephemeral session is
+  # closed and only the name, the root and the record are kept
+  LET(la s. s(la name. la root. la ku. la h. la tok. la g. la rec. DO(fclose(h))(la _. mklocked(name)(root)(rec)))
+             (la name. la root. la rec. s))(la lock.
+  # unlock(locked)(pass) -> ok(the session again: the same record, the keys
+  # derived again from the passphrase)
+  LET(la s. la pass.
+    s(la name. la root. la ku. la h. la tok. la g. la rec. ERR("unlock: the session is not locked"))
+     (la name. la root. la rec. enter(root)(name)(pass)("unlock: ")(la t. la ku. la h. la tok. la g. la ids.
+        OK(mkopen(name)(root)(ku)(h)(tok)(g)(rec)))))(la unlock.
+  LET(la s. la st. ERR("suspend: not built yet"))(la suspend.
+  LET(la root. la name. la pass. ERR("resume: not built yet"))(la resume.
+  # state(session) -> ok(la k. k(name)(home store)(root token)(guard)(record))
+  LET(la s. s(la name. la root. la ku. la h. la tok. la g. la rec. OK(mkview(name)(h)(tok)(g)(showrec(rec))))
+             (la name. la root. la rec. ERR("state: the session is locked")))(la state.
+  # logout(session) -> ok(name)
+  LET(la s. s(la name. la root. la ku. la h. la tok. la g. la rec. DO(fclose(h))(la _. OK(name)))
+             (la name. la root. la rec. OK(name)))(la logout.
+    la s. s(adduser)(login)(lock)(unlock)(suspend)(resume)(state)(logout)
+  ))))))))))))))))))))))))))))))
+  (1000)(10000000)(4)(8)(13)(64)(4096)))))
