@@ -37,7 +37,10 @@
 #  WHY IT IS FAST. On the SECD VM (WM_DESIGN.md, "How fast the VM is"):
 #   - naming a builtin or a glyph walks the program, so no hot code names
 #     one: every function below is a glyph whose PARAMETERS are the builtins,
-#     constants and helpers it uses, applied once when CRYPT_FAST is built;
+#     constants and helpers it uses, applied once when CRYPT_FAST is built.
+#     That includes Z: CRYPT_FAST names it once and hands it to every loop
+#     as fix, so an operation costs the same wherever the module sits in the
+#     program (gate_logoscrypt.sh times it with 1 MB of program in front);
 #   - an application of a builtin costs ~50 ns, but a let (la x. REST)(e)
 #     costs ~200 ns, because CLOSE scans REST, and a curried function of n
 #     arguments scans its body n-1 times. So the hot functions are small,
@@ -115,9 +118,10 @@ glyph WR_BE = la concat. la s. la C8. la C16. la C24. la n. la T. la w.
 glyph WR_LE = la concat. la s. la C8. la C16. la C24. la n. la T. la w.
   concat(concat(T(n(w)))(T(n(s(w)(C8)))))(concat(T(n(s(w)(C16))))(T(s(w)(C24))))
 
-# span(f)(lo)(hi): f(lo) ++ ... ++ f(hi-1), joined by halving; "" when lo >= hi
-glyph SPAN = la concat. la add. la sub. la lt. la bshr. la C0. la C1. la f.
-  Z(la sp. la lo. la hi.
+# span(f)(lo)(hi): f(lo) ++ ... ++ f(hi-1), joined by halving; "" when lo >= hi.
+# fix is Z, bound once in CRYPT_FAST (so are the fix parameters below).
+glyph SPAN = la concat. la add. la sub. la lt. la bshr. la C0. la C1. la fix. la f.
+  fix(la sp. la lo. la hi.
     lt(add(lo)(C1))(hi)
       (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(bshr(add(lo)(hi))(C1)))
       (la _. lt(lo)(hi)(la _. f(lo))(la _. "")(C0))
@@ -157,15 +161,15 @@ glyph SHA_NEXTQ = la nw. la h1.
     (la X. la Y. (la Z. la W. la s. s(X)(Y)(Z)(W))(nw(X)(h)(d)(c))(nw(Y)(i)(q1(h1))(d)))
     (nw(k)(f)(b)(a))(nw(l)(g)(c)(b)))))
 # the 16 quads of the schedule as a Scott list: 12 steps, then the last window
-glyph SHA_SCHED = la nx. la sub. la ie. la C1. la C0. la nil. la cons.
-  Z(la go. la n. la q0. la q1. la q2. la q3.
+glyph SHA_SCHED = la nx. la sub. la ie. la C1. la C0. la nil. la cons. la fix.
+  fix(la go. la n. la q0. la q1. la q2. la q3.
      cons(q0)(ie(n)(C0)
                (la _. cons(q1)(cons(q2)(cons(q3)(nil))))
                (la _. go(sub(n)(C1))(q1)(q2)(q3)(nx(q0)(q1)(q2)(q3)))
                (C0)))
 # the 64 rounds, four per step, over the schedule quads and the K quads
-glyph SHA_ROUNDS = la p. la R.
-  Z(la go. la st. la ql. la kl.
+glyph SHA_ROUNDS = la p. la R. la fix.
+  fix(la go. la st. la ql. la kl.
      ql(la _. st)(la q. la qt. kl(la _. st)(la K. la kt.
        go(q(la a. la b. la c. la d. K(la e. la f. la g. la h.
             R(R(R(R(st)(p(e)(a)))(p(f)(b)))(p(g)(c)))(p(h)(d)))))
@@ -308,10 +312,10 @@ glyph P_FINAL = la C0. la C5. la C6. la C8. la C12. la C14. la C18. la C20. la C
 # to 16: whole blocks read directly; the last partial block's words are masked
 # to the bytes that belong to the segment, because in `open` the bytes after
 # the ciphertext are the tag, not zeros.
-glyph P_SEG = la rle. la lt. la add. la sub. la mul. la bshl. la band. la M32. la C0. la C1. la C4. la C8. la C12. la C15. la C16.
+glyph P_SEG = la rle. la lt. la add. la sub. la mul. la bshl. la band. la M32. la C0. la C1. la C4. la C8. la C12. la C15. la C16. la fix.
    la abs. la sa. la L. la h.
   (la mw.
-    Z(la go. la h. la o.
+    fix(la go. la h. la o.
       lt(add(o)(C15))(L)
         (la _. go(abs(h)(rle(sa)(o))(rle(sa)(add(o)(C4)))(rle(sa)(add(o)(C8)))(rle(sa)(add(o)(C12))))(add(o)(C16)))
         (la _. lt(o)(L)
@@ -353,6 +357,9 @@ glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
     la add. la sub. la mul. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
  (la C0. la C1. la C4. la C5. la C6. la C8. la C12. la C14. la C16. la C18. la C20. la C26.
   la C31. la C32. la C56. la C60. la C63. la C64. la C768. la C2_31. la C8160. la M32.
+  # Z, named here once: the loops below take it as fix, so no operation
+  # names a glyph (each such name would walk the program)
+  LET(Z)(la fix.
   LET(band(M32))(la m.
   LET(mul(4294967297))(la r.
   LET(band(255))(la n8.
@@ -360,7 +367,7 @@ glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
   LET(la n. la c. n(n))(la nil.
   LET(la h. la t. la n. la c. c(h)(t))(la cons.
   LET(la s. str_to_int(str_len(s)))(la len.
-  LET(SPAN(concat)(add)(sub)(lt)(bshr)(C0)(C1))(la span.
+  LET(SPAN(concat)(add)(sub)(lt)(bshr)(C0)(C1)(fix))(la span.
   # T: byte n as a one-byte string, through the table of all 256 bytes
   LET(str_at(span(la i. chr(int_to_str(i)))(C0)(256)))(la T.
   LET(RD_BE(ord)(str_to_int)(add)(C1)(2)(3)(mul(256)))(la rbe.
@@ -382,10 +389,10 @@ glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
   LET(SHA_SIG(r)(bxor)(m)(bshr)(7)(C18)(3))(la s0.
   LET(SHA_SIG(r)(bxor)(m)(bshr)(17)(19)(10))(la s1.
   LET(SHA_ROUND(S0)(S1)(SHA_CH(bxor)(band))(SHA_MAJ(bor)(band))(add))(la R.
-  LET(SHA_ROUNDS(add)(R))(la rounds.
+  LET(SHA_ROUNDS(add)(R)(fix))(la rounds.
   LET(la a. la b. la c. la d. la s. s(a)(b)(c)(d))(la Q.
   LET(SHA_SCHED(SHA_NEXTQ(SHA_NW(s0)(s1)(add))(la a. la b. la c. la d. a))
-                (sub)(int_eq)(C1)(C0)(nil)(cons)(C12))(la sched.
+                (sub)(int_eq)(C1)(C0)(nil)(cons)(fix)(C12))(la sched.
   LET(SHA_ADD8(add)(m))(la add8.
   LET(SHA_MKBLK(Q)(C0)(C4)(C8)(C12)(C16)(C20)(24)(28)(C32)(36)(40)(44)(48)(52))(la mk.
   LET(SHA_K(str_to_int)(Q)(nil)(cons))(la K.
@@ -400,7 +407,7 @@ glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
        la H. la pre. la msg.
         (la sa. la L.
           (la g.
-            Z(la go. la H. la o.
+            fix(la go. la H. la o.
                lt(add(o)(C63))(L)
                  (la _. go(compress(H)(mk(g(o))(g(o)(C56))(g(o)(C60))))(add(o)(C64)))
                  (la _. (la rem. la bits.
@@ -457,7 +464,7 @@ glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
     lt(C8160)(L)(la _. error("logoscrypt: hkdf: len must be 0..8160"))(la _.
     int_eq(L)(C0)(la _. "")(la _.
       (la hk. la N.
-         Z(la go. la prev. la i.
+         fix(la go. la prev. la i.
             (la t. int_eq(i)(N)
                      (la _. take(sub(L)(mul(C32)(sub(N)(C1))))(t))
                      (la _. concat(t)(go(t)(add(i)(C1))))
@@ -474,7 +481,7 @@ glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
   LET(CC_XOR64(concat)(bxor)(wle)(C0)(C4)(C8)(C12)(C16)(C20)(24)(28)(C32)(36)(40)(44)(48)(52)(C56)(C60))(la x64.
   LET(P_ABS(C26)(C6)(C20)(C12)(C14)(C18)(C8)(16777216)(mul(C5))(n26)(bor)(bshl)(bshr)(add)(mul))(la pabs.
   LET(P_FINAL(C0)(C5)(C6)(C8)(C12)(C14)(C18)(C20)(C32)(67108864)(C26)(lt)(sub)(mul(C5))(bor)(bshl)(m)(n26)(bshr)(add))(la pfin.
-  LET(P_SEG(rle)(lt)(add)(sub)(mul)(bshl)(band)(M32)(C0)(C1)(C4)(C8)(C12)(15)(C16))(la pseg.
+  LET(P_SEG(rle)(lt)(add)(sub)(mul)(bshl)(band)(M32)(C0)(C1)(C4)(C8)(C12)(15)(C16)(fix))(la pseg.
   LET(la k. k(C0)(C0)(C0)(C0)(C0))(la HZ.
   # setup(who)(key)(nonce)(F): F gets this message's block function bf,
   # bf(counter)(f) -> f(x0)..(x15). A key that is not 32 bytes or a nonce that
@@ -546,5 +553,5 @@ glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
        (str_at(sealed))(len(sealed))))(la open.
 
     la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))
  (0)(1)(4)(5)(6)(8)(12)(14)(16)(18)(20)(26)(31)(32)(56)(60)(63)(64)(768)(2147483648)(8160)(4294967295)

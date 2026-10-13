@@ -36,7 +36,14 @@
 #   6. speed: CRYPT_FAST against CRYPT_REF for sha256 and seal of 1 KB (and the
 #      fast record on 10 KB), timed inside the programs with clock_gettime;
 #      PASS needs a factor of at least 50 on both. LOGOSCRYPT_REF_10K=1 also
-#      times CRYPT_REF on 10 KB (about 30 minutes on a loaded machine).
+#      times CRYPT_REF on 10 KB (about 30 minutes on a loaded machine);
+#   7. position: an operation costs the same wherever the module sits in the
+#      program. The VM walks the program to resolve a name, so a record that
+#      named a glyph or a builtin at run time would slow down with every
+#      module imported before it; one timing program runs as it is and with a
+#      1 MB glyph in front of the module, and each of sha256, HMAC, HKDF, seal
+#      and open of a short message must take at most LOGOSCRYPT_POS_BOUND
+#      percent (default 150) of its time without the glyph.
 # ISOLATION: private temp dir (gate_wm_common.sh). VM, plus one small host
 # program. CRYPT_REF is slow by design: part 5 and the reference timing take
 # most of the run (the whole gate took 32 to 47 minutes on a 4-core machine
@@ -144,6 +151,12 @@ if __name__ == "__main__" and sys.argv[1] == "timing":
     print("sha256-10KB " + sha256(sha256(k10)).hex())
     print("seal-1KB " + sha256(seal(key, nonce, b"", k1)).hex())
     print("seal-10KB " + sha256(seal(key, nonce, b"", k10)).hex())
+if __name__ == "__main__" and sys.argv[1] == "pos":
+    key, nonce, msg = g(32, 1), g(12, 2), b"attack at dawn"
+    for op, r in [("sha256", sha256(msg)), ("hmac", hmac(key, msg)), ("hkdf", hkdf(b"", key, msg, 42)),
+                  ("seal", seal(key, nonce, b"", msg)), ("open", msg)]:
+        print(op, sha256(r).hex())
+    print("end")
 if __name__ == "__main__" and sys.argv[1] == "pedge":
     key, nonce, aad = (bytes.fromhex(x) for x in sys.argv[2:5])
     sd = seal(key, nonce, aad, b"")
@@ -558,5 +571,73 @@ if [ "$vrc" = 0 ] && [ "$rc" = 0 ] && [ "$tbad" = 0 ] && [ -n "$f1" ] && [ -n "$
     echo "PASS  logoscrypt speed (VM): CRYPT_FAST is $((r1 / f1))x CRYPT_REF on sha256 of 1 KB and $((r2 / f2))x on seal of 1 KB (at least 50x), every timed result the oracle's"
 else
     echo "FAIL  logoscrypt speed (VM): fast rc=$vrc ref rc=$rc wrong=$tbad sha256 ${f1:-?}/${r1:-?} us seal ${f2:-?}/${r2:-?} us"; tail -3 "$d/err.txt" 2>/dev/null; ok=0
+fi
+
+# ── 7. an operation costs the same wherever the module sits ────────────────
+# On the VM, naming a glyph or a builtin walks the program from its start, so
+# code that names one at run time gets slower the more program sits in front
+# of it. CRYPT_FAST names none once it is built (Z included: it is named once,
+# at construction). One timing program, compiled once, runs as it is and with
+# a 1 MB glyph placed in front of the module in the compiled stream, three
+# times each, alternating. Each operation is timed inside the program, best of
+# 15, with clock_gettime bound to a parameter before the first clock read, so
+# nothing between two reads names a glyph or a builtin; per operation the
+# least time with the glyph in front must be within LOGOSCRYPT_POS_BOUND
+# percent (default 150) of the least time without it, and every result the
+# oracle's. (While CRYPT_FAST still named Z in its loops, seal and open of a
+# short message took two to four times as long with the glyph in front, and
+# sha256 about 1.7 times.)
+: "${LOGOSCRYPT_POS_BOUND:=150}"
+mkprog pos.la <<'LAEOF'
+glyph NS = la s. TSPLIT(s)("")(la a. la b. add(mul(str_to_int(a))(1000000000))(str_to_int(b)))
+glyph KTIME = la cg. la f. (la t0. (la r. (la t1. la k. k(t0)(t1)(r))(cg("1")))(f("!")))(cg("1"))
+glyph PBEST = Z(la go. la n. la cg. la f. la best. la res.
+  int_eq(n)(0)(la _. la k. k(best)(res))
+    (la _. KTIME(cg)(f)(la t0. la t1. la r.
+             (la d. go(sub(n)(1))(cg)(f)(lt(d)(best)(la _. d)(la _. best)("!"))(r))(sub(NS(t1))(NS(t0)))))
+    ("!"))
+glyph MAIN = FAST(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+  (la cg. la key. la nonce. la msg.
+    (la sd. (la run.
+       SEQ(SEQ(SEQ(SEQ(SEQ(run("sha256")(la _. sha256(msg)))
+                          (run("hmac")(la _. hmac(key)(msg))))
+                      (run("hkdf")(la _. hkdf("")(key)(msg)(42))))
+                  (run("seal")(la _. seal(key)(nonce)("")(msg))))
+              (run("open")(la _. open(key)(nonce)("")(sd)(la _. "none")(la p. p))))
+          (print("end")))
+      (la label. la f. PBEST(15)(cg)(f)(999999999999999)("")(la ns. la r.
+         print(concat(concat(concat(concat(label)(" "))(int_to_str(ns)))(" "))(hex(sha256(r)))))))
+    (seal(key)(nonce)("")(msg)))
+  (clock_gettime)(GEN(32)(1))(GEN(12)(2))("attack at dawn"))
+LAEOF
+( cd "$T" && python3 oracle.py pos ) > "$T/pos.exp"
+wm_vm pos.la "$T/pos_plain1.out"; prc=$vrc
+if [ "$prc" = 0 ]; then
+    cp "$T/logos_program.bin" "$T/pos.bin"
+    python3 -c "import sys; d=open(sys.argv[1],'rb').read(); open(sys.argv[2],'wb').write(b'FILLER\x00\x01'+b'a'*1048576+b'\x00\x05'+d)" "$T/pos.bin" "$T/pos_fill.bin"
+    posrun() {  # posrun STREAM OUT
+        cp "$1" "$T/logos_program.bin"
+        ( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd > "$2" 2>"$T/vre" ) || prc=$?
+    }
+    posrun "$T/pos_fill.bin" "$T/pos_fill1.out"
+    for i in 2 3; do posrun "$T/pos.bin" "$T/pos_plain$i.out"; posrun "$T/pos_fill.bin" "$T/pos_fill$i.out"; done
+fi
+pbad=0
+for f in "$T"/pos_plain[123].out "$T"/pos_fill[123].out; do
+    [ "$(awk 'NF == 3 {print $1, $3} NF == 1 {print}' "$f" 2>/dev/null)" = "$(cat "$T/pos.exp")" ] || pbad=1
+done
+least() { cat "$T"/pos_$1[123].out 2>/dev/null | awk -v op="$2" '$1 == op && (m == "" || $2 < m) {m = $2} END {print m}'; }
+pslow=0; plines=""
+for op in sha256 hmac hkdf seal open; do
+    a=$(least plain $op); b=$(least fill $op)
+    if [ -n "$a" ] && [ -n "$b" ] && [ "$a" -gt 0 ]; then
+        plines="$plines $op $((a / 1000))/$((b / 1000)) us ($((b * 100 / a))%)"
+        [ $((b * 100)) -le $((a * LOGOSCRYPT_POS_BOUND)) ] || pslow=1
+    else pslow=1; fi
+done
+if [ "$prc" = 0 ] && [ "$pbad" = 0 ] && [ "$pslow" = 0 ]; then
+    echo "PASS  logoscrypt position (VM): with a 1 MB glyph in front of the module every operation takes at most ${LOGOSCRYPT_POS_BOUND}% of its time without it, every result the oracle's; without/with:$plines"
+else
+    echo "FAIL  logoscrypt position (VM): rc=$prc wrong=$pbad over-${LOGOSCRYPT_POS_BOUND}%=$pslow; without/with:$plines"; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
 [ "$ok" = 1 ] || exit 1
