@@ -61,6 +61,8 @@ host program, applied to itself, reproduces itself.
 | `logosh.la`          | Theourgia Stage 10 shell, the one every WM terminal runs. `SHELL_PURE_KIT` (host and VM): `parse` (words, quotes, backslash escapes) and `normpath`. `SHELL_KIT` (VM only — it takes the process builtins): `new/prompt/run/finish/interrupt/hangup`. Builtins `help echo cd pwd cat mkdir rmdir rm mv pid word clear exit`; anything else is searched on PATH and started with `pipe`+`fork`+`dup2`+`execv`, stdout and stderr into one pipe that the WM's poll loop reads, so a running command never freezes the screen. `run` returns `la k. k(sh')(output)(action)`, the action Scott-encoded as the bare selected branch (`la n. la c. la e. la j. n`), `job(pid)(rfd)` for a program. `gate_wm_shell.sh`: an 89-line session transcript, interrupt/hangup of `/bin/sleep 30`, two jobs at once. |
 | `theourgia_wm.la`    | **Theourgia Stage 10 — the tiling window manager**: the state, the key bindings, the windows' jobs, the tile renderer, and the ONE poll loop over the keyboard and every running command's pipe. Windows are terminals (`theourgia_term.la` + `logosh.la`) or LogosKit apps (`logoskit.la`); they are leaves of the split tree (`theourgia_tile.la`); frames are composed by `theourgia_render.la`. MOD (Super or Alt) +Enter new terminal, +q close, +arrows/hjkl focus, +Shift+arrows swap, +t split direction, +-/= resize, +Tab next, +c interrupt, **+s the settings panel**, **+Esc lock**, +Shift+e exit. The lock screen (`lk_login.la` in front of a session layer passed in by the caller) takes every key until it unlocks and is drawn alone, centred. Each tile is cached under (size, focus, version) and each terminal's text bands under their width, so an unchanged window costs nothing. Kit style throughout: every function takes its builtins/constants as parameters and `WM_BUILD` applies them once, because on the VM a named builtin scans the program and a named glyph re-runs (WM_DESIGN.md). Every record the WM stores (a window, the state, a job, the lock record) is built through the `WM_MK` constructors, because on the VM a closure keeps its whole environment alive and a record built inline next to its previous version kept every version alive (the heap ran out after 87 frames at 1080p). `gate_wm_core.sh` folds a 19-snapshot session through the real `WM_CORE` (real tile and term, stub shell and session); `gate_wm_session.sh` runs the whole headless WM (15 frames read back as text, twice, byte-identical); `gate_wm_jobs.sh` drives it with real timing (keys pressed while programs run); `gate_wm_leak.sh` runs 491 frames at 1920×1080 through every path that stores a record; `gate_wm_freeze.sh` checks that a flooding program and an fd number reused within one poll pass do not freeze the keyboard; `gate_wm_keys.sh` covers held keys (autorepeat, the Enter that unlocks) and the welcome text. |
 | `theourgia_wm_sim.la` / `theourgia_wm_live.la` / `drm_bringup_wm.sh` | The WM's two entry points, the same `WM_BUILD` and loop. **Headless** (`_sim`): the keyboard is a file of 24-byte evdev records (`wm_script.py` writes one from a readable script) and a type-85 record writes frame N to `wm_shot_N.bin`; input is read one event at a time and only while no command runs, so a session is deterministic; with `async` in its config line it reads input whenever it arrives and up to 100 events at a time, as the live WM does, for gates that drive it through a FIFO with real timing; the lock screen uses `SIM_SESS`, a documented stand-in (adam / logos) until `logossession.la` is wired in. **Live** (`_live`, VM-only, manual): the keyboard auto-detected from `/proc/bus/input/devices`, frames through `drm_mode`/`present`, text scale 1/2/4 by screen width, no lock screen yet. Launch from a bare VT with `drm_bringup_wm.sh` (greeter stop/restore trap; tty echo off and the tty's input flushed on every exit, so keys typed into the WM never reach the login shell). |
+| `wm_livestart.la`    | What the live WM decides before it takes the screen, as two kits (kit style: the old detector named builtins per byte and cost about 3 ms a byte of the device list). `KBD_KIT(...)` → the N of the keyboard's `/dev/input/eventN` from `/proc/bus/input/devices`: the first block whose `N: Name=` contains "keyboard" in any case and whose `H: Handlers=` names `kbd` and an `event<N>`, reading only that block's own lines, so a device with no event handler, or a mouse after it, is never taken for the keyboard; `""` when there is none. `CWD_KIT(...)(stat)` → the directory new shells start in: the first line of `logos_wm.cwd` without spaces, tabs or carriage returns at either end, `/` when that is empty or `stat` does not report a directory. Pure but for `stat`, which the caller passes (a stub on the host); `gate_wm_livestart.sh`. |
+| `gate_wm_live.sh` / `gate_wm_fieldcost.sh` / `gate_wm_bringup.sh` / `gate_wm_livestart.sh` / `gate_wm_simcfg.sh` | The WM gates the `theourgia_wm.la` row does not name, each in a private temporary directory. **live** (VM): the live loop's shape emulated headless (a copy of the sim whose io record is exactly the live one, `present` writing a file): the first frame is presented before any key, a typed line is presented without a frame request, MOD+Shift+e ends it. **fieldcost** (VM): a keystroke in a LogosKit field (the settings panel's Name, the lock screen's passphrase) costs what a keystroke in a terminal costs, however long the field is. **bringup** (pty, private mount namespace, stub `sudo`/`systemctl`/VM): `drm_bringup_wm.sh` cannot be suspended by Ctrl+Z with the greeter stopped, a second Ctrl+C during cleanup still restarts the greeter, and the session log (every command typed in the WM) is mode 0600. **livestart** (host and VM): `KBD_KIT` and `CWD_KIT` on synthetic inputs, host = VM; a 12 KB device list scanned in under a second of VM CPU; the compiled live entry in a private mount namespace with a synthetic device list opens the keyboard (not the mouse) and halts loudly at `drm_mode` with no GPU, and with no device node says so. **simcfg** (VM): the headless WM refuses a bad `wm_sim.cfg` loudly (a missing or directory events file, SCALE below 1, a sixth word that is not `async`, W or H below 12), reads a `\r\n` line as the same configuration, runs 12×12 through a second window and the lock screen, and ends at once (rc 0, "input finished"), without spinning, when every read of its input device fails. |
 | `wm_script.py` / `wm_shot.py` / `wm_ocr.py` | The headless WM's tools: a session script → evdev records (`type`, `key`, `ctrl`, `mod`, `snap N`, and raw `down`/`repeat N`/`up` for held keys); a frame → PNG; and a frame → TEXT (`wm_ocr.py` finds each tile by its border colour and matches every character cell against the font: terminal tiles in their one text colour, LogosKit app tiles cell by cell in whichever of the cell's two colours makes a glyph, reporting the theme and the highlighted, i.e. focused, runs). The WM gates read every frame back this way. |
 | `logoskit.la`        | **LogosKit — the UI framework (Citrinitas layer 10)**, under the Codex's ontoglyphic law *Meaning ≡ Structure ≡ State*: a program is (init, view, update), its view a pure function from state to an element tree (TEXT/BUTTON/FIELD/TOGGLE/LIST/ROW/COL/PANEL/SPACE), and everything perceived is derived from that one tree by the same walk — the painted cells (`paint`, rendered by `theourgia_render.la`, runs cut at the window's edge), the **accessible description** (`a11y`: each element's role, label, state and focus — so nothing can be on screen without being described, the accessibility invariant made structural), and what each key does (`key`: Tab/Shift+Tab focus; Enter/Space/Up/Down/Backspace/typing become messages). `LK_KIT(B)(L)(R)(scale)(pal)`; `gate_logoskit.sh`. |
 | `lk_settings.la` / `lk_login.la` | Two LogosKit apps. **`lk_settings.la`** — LogosKit's own settings panel drawn by LogosKit (the Codex's layer-10 self-application): the theme it edits is the theme and text scale it is drawn in, so turning on "Dark theme" redraws the panel holding the switch dark, and "Text scale 2" redraws it at twice the text size (`SETTINGS_APP`, whose record carries `theme` and `zoom`; MOD+s in the WM). **`lk_login.la`** — the login and lock screen in front of LogosSession's login/lock/unlock, taken as a parameter (`LOGIN_APP(B)(L)(nodes)(sess)`); the passphrase is never drawn or spoken (one `*` per character, rebuilt from LogosKit's edit messages) and is forgotten after every attempt; `done`/`lock` tell the WM when to let the user in and what to show when it locks. `gate_lk_login.sh` drives a whole login/lock/unlock session and checks no passphrase appears in anything the screen draws or says. |
@@ -1138,6 +1140,168 @@ The compositor is built in stages, each independently runnable and checked by
   stays O(screen), exactly as the Stage 7 live renderer does), then `present`s it
   and holds until Ctrl+C. Run from a bare VT via `drm_bringup_text.sh` (frees the
   GPU, restores the greeter on exit), like the other live capstones.
+
+- **Stage 10 — the tiling window manager (`theourgia_wm.la` and its modules).**
+  Stages 1-9 built the organs one by one — surfaces, scanout, input, a poll
+  loop, text, a movable window. Stage 10 is the first program a person would
+  actually USE: a **tiling window manager whose windows are terminals running
+  a shell**, plus LogosKit apps, all in Lingua Adamica and run by the native
+  VM. It is six modules with one contract (`WM_DESIGN.md`) and one record
+  order per kit: the split-tree layout (`theourgia_tile.la`), the terminal
+  model (`theourgia_term.la`), the text-band renderer and frame compositor
+  (`theourgia_render.la`), the shell (`logosh.la`), the font
+  (`theourgia_termfont.la`) and the WM itself (`theourgia_wm.la`), which joins
+  them: the state, the key bindings, the windows' jobs, the tile renderer, and
+  the ONE poll loop that waits on the keyboard and every running command's
+  pipe at once, so a running program never freezes the screen.
+
+  *Why kit style.* On the SECD VM, naming a builtin scans the whole program and
+  naming a glyph re-runs its definition (measured: 11.4 µs a loop iteration
+  with names, 0.74 µs with everything a parameter and Church booleans applied
+  directly). So every function of the WM and its modules is a glyph whose
+  PARAMETERS are the builtins, constants and other functions it uses;
+  `WM_BUILD` applies them all once at startup, and after that the running code
+  finds every name in its environment. Tiles are cached under (size, focus,
+  version) and each terminal's text bands under their width, so an unchanged
+  window costs nothing. And because a VM closure keeps its whole environment
+  alive, every record the WM stores is built by a constructor bound once
+  (`WM_MK`), never inline beside its previous version.
+
+  *How it was debugged — with no screen.* The WM runs the same `WM_BUILD` and
+  loop in two entry points. `theourgia_wm_sim.la` replaces the keyboard with a
+  file (or, in its `async` mode, a FIFO) of evdev records (`wm_script.py`
+  writes them from a readable script, raw press/repeat/release included) and
+  the screen with frame files written on request; `wm_ocr.py` reads every frame
+  back as TEXT by matching each character cell against the font (terminal
+  tiles in their text colour, LogosKit tiles cell by cell, with the theme and
+  the focused element). So a whole session — real shells, real child
+  processes, real pixels — is checked as text. Then adversarial agents attacked
+  it through five lenses (keys, jobs, render, apps, robustness) and every
+  finding was reproduced independently before it was fixed. The gates:
+  - `gate_wm_core.sh` — 19 snapshots of `WM_CORE`'s state with the real tile
+    and term modules (windows, focus, swap, toggle, close, the settings app,
+    lock and unlock, keys a locked screen must ignore);
+  - `gate_wm_session.sh` — the whole headless WM, 15 frames read back, run
+    twice for byte-identical frames;
+  - `gate_wm_jobs.sh` — the async mode through a FIFO with real timing: MOD+c
+    and MOD+q on a running program, a program printing while the screen is
+    locked, a command whose evdev records arrive cut across FIFO writes, no
+    program left behind;
+  - `gate_wm_freeze.sh` — a running program never freezes the WM: a flooding
+    program, an fd number reused within one poll pass, a program that closes
+    its output and runs on, a program that ignores SIGTERM (MOD+q and
+    MOD+Shift+e still answer at once);
+  - `gate_wm_leak.sh` — 491 frames at 1920×1080 through every path that stores
+    a record (the heap stays bounded);
+  - `gate_wm_keys.sh` — held keys (autorepeat; the Enter that unlocks the
+    screen does not reach the terminal) and the welcome text;
+  - `gate_wm_fieldcost.sh` — a keystroke in a LogosKit field costs the same
+    however long the field is;
+  - `gate_wm_live.sh` — the live loop's shape emulated headless (the first
+    frame is presented before any key);
+  - `gate_wm_livestart.sh` — the live entry's keyboard detection and working
+    directory, and the compiled live entry itself in a private mount
+    namespace with a synthetic device list (it opens the keyboard and halts
+    at `drm_mode`, as it must with no GPU);
+  - `gate_wm_simcfg.sh` — the headless WM refuses a bad configuration loudly
+    (a missing or directory events file, a bad SCALE or sixth word, a screen
+    smaller than 12×12), reads a `\r\n` line as the same configuration, runs
+    the smallest screen it accepts, and ends at once, without spinning, when
+    every read of its input device fails;
+  - `gate_wm_bringup.sh` — the launcher in a pty with stub `sudo`/`systemctl`
+    (Ctrl+Z, a double Ctrl+C, the session log's mode);
+  - and each module's own gate (`gate_wm_tile.sh`, `gate_wm_term.sh`,
+    `gate_wm_render.sh`, `gate_wm_shell.sh`, `gate_wm_termfont.sh`,
+    `gate_logoskit.sh`, `gate_lk_login.sh`).
+
+  Bugs this found and fixed, each shown failing first:
+  - every window and state version kept the previous one alive (the heap ran
+    out after 87 frames at 1080p);
+  - a program that closed its output, or ignored SIGTERM when its window was
+    closed or the WM exited, froze the whole WM until it ended (forever for a
+    daemon);
+  - an fd number reused within one poll pass made the WM block reading an
+    empty pipe;
+  - a window's band cache was reused at a new width (the compositor refused
+    the frame);
+  - LogosKit's scanlines were handed to the tile frame as bands (a crash on
+    the first app frame);
+  - logosh's actions were taken in the wrong Scott shape;
+  - the live entry point never compiled (one paren too many) and showed
+    nothing until the first key;
+  - the live keyboard detection could open the mouse and cost about 3 ms a
+    byte of the device list;
+  - the shells' directory file was not trimmed;
+  - MOD and Ctrl combinations were typed as letters into the lock screen;
+  - the Enter that unlocks leaked its autorepeats into the terminal;
+  - the welcome text offered a lock screen the live WM does not have;
+  - the login screen kept a half-typed passphrase across a lock;
+  - LogosKit field edits named builtins per character;
+  - the launcher could be suspended by Ctrl+Z with the greeter stopped, a
+    second Ctrl+C skipped restoring the greeter, and its log of typed
+    commands was world-readable;
+  - the headless WM spun forever on a missing events file;
+  - "Saved 1 times";
+  - a program whose output ended inside an escape sequence left the terminal
+    in it, so the WM's `[exit N]` line and the next prompt were eaten;
+  - in the async mode an evdev record cut across two reads was lost, and the
+    rest of that read decoded out of step (a FIFO hands over whatever bytes
+    are there; each input fd now keeps its unfinished record);
+  - a screen smaller than 12×12 (the two 6-pixel gaps) halted the compositor
+    on its first frame or when it locked; the headless entry now refuses it;
+  - a busy terminal over a long unfinished line (output with no newline)
+    joined the whole line on every frame, O(the line) each time and
+    O(L²) over its growth; it now joins only the bytes its rows show.
+
+  *Live.* `theourgia_wm_live.la` is the same WM with the keyboard read from
+  evdev (found by `wm_livestart.la`'s `KBD_KIT`) and frames sent with
+  `drm_mode`/`present`. Launch it from a bare VT with `drm_bringup_wm.sh`,
+  which:
+  - frees the GPU and restores the greeter on every exit;
+  - turns tty echo and the suspend key off;
+  - flushes the tty's input, so keys typed into the WM never reach the login
+    shell;
+  - writes the session log mode 0600.
+
+  It compiles and runs on the VM here as far as `drm_mode`, with a synthetic
+  device list. It has not been run on real hardware from this environment.
+
+  *Honest limits.*
+  - Speed. At 1920×1080 (text scale 2) a frame costs about 0.2 s even when
+    every tile is cached, because the VM's `concat` copies byte by byte and
+    `present` needs the whole 8 MB frame as one string. Typing is usable but
+    visibly laggy; input arriving during a frame is folded into the next one,
+    never lost. A `rep movsb` `concat` in the VM would remove most of it.
+  - Starting a program gets slower once the VM's two 768 MiB semispaces are
+    resident (fork copies them: about 11 ms becomes about 200 ms). Freeing
+    the from-space after a collection, or a vfork-style spawn builtin, would
+    fix it.
+  - The VM's `execv` takes its arguments as one space-separated string, so a
+    program argument cannot contain a space.
+  - The VM has no `setsid`/`setpgid`. A job is therefore not its own process
+    group:
+    - MOD+c and MOD+q reach only the job's own pid, so a script's children
+      are not interrupted and outlive the window;
+    - every job keeps the VT as its controlling terminal.
+  - A program that ignores SIGTERM is left running when its window closes or
+    the WM exits, and the WM names it (logosh accepts that such a job survives
+    hangup; killing it is a policy decision).
+  - Under a live VT, Ctrl+C ends the whole session (the emergency exit), so
+    the lock screen is not a boundary against someone at the keyboard.
+  - The live WM has no lock screen until `logossession.la` is wired in. The
+    headless WM uses a documented stand-in session.
+  - A flood of output (`yes`) is interruptible in about two seconds, and the
+    terminal keeps its last 500 lines.
+  - The VM's `read` turns every error into `""`, so a failing input device
+    looks like the end of the input: the WM stops reading it (it never polls
+    it again, so a device that keeps reporting ready cannot spin the loop) and
+    ends once nothing runs (`gate_wm_simcfg.sh`, "unreadable"). A live WM that
+    loses its only keyboard while a program runs therefore keeps serving that
+    program with no keyboard until it ends; whether it should instead end its
+    programs and exit, or look for a keyboard again, is not decided.
+
+  The VM-side changes named above are recorded, not made: `secd.asm` is the
+  substrate, not Lingua Adamica.
 
 ### The nine primitives (`primitives.la`) and compile-time typing (`specpipe.la`)
 

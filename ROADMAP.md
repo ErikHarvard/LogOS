@@ -122,7 +122,10 @@ honestly in the distance.
 ## Phase II — Citrinitas: The Operating System
 
 *The thirteen-layer strong-definition OS, built in and as Lingua Adamica.
-Status: barely begun — this is the larger road ahead (a year-plus of work).*
+Status: layers 1-3, 5, 6, 9, 10, 12 and 13 have a working, gated
+realisation; 4 (the HAL), 7 (audio) and 8 (input) are partial; 11 (the session
+manager) is not built. Most layers run on the native VM only, and what each
+one does not yet do is said beside it.*
 
 - [x] 1. Bootloader — **sovereign, COMPLETE (K7, 2026-07-15)**: LogOS boots itself
       off a raw disk, no GRUB / no multiboot loader / no QEMU `-kernel`.
@@ -929,15 +932,42 @@ Status: barely begun — this is the larger road ahead (a year-plus of work).*
             compositor) now has an *interactive* metal realisation; a movable TEXT
             window (a terminal) is the next compositor step.
 - [x] 5. Inter-process communication (`logosipc.la`, typed IPC)
-- [~] 6. Display protocol & compositor *(`theourgia.la` — interactive window
-      with text proven on hardware)*
+- [x] 6. Display protocol & compositor *(`theourgia.la` Stages 1-9 — surfaces,
+      DRM/KMS scanout, input, poll, text, a movable text window — proven on
+      hardware; Stage 10, the tiling window manager `theourgia_wm.la`: terminals
+      running `logosh.la` and LogosKit apps as the leaves of a split tree, one
+      poll loop over the keyboard and every running program's pipe, verified
+      headless by the WM gates (frames read back as text). The live entry
+      `theourgia_wm_live.la` compiles and runs here as far as `drm_mode`; it has
+      not been run on real hardware from this environment.)*
 - [~] 7. Audio system *(phonym path exists; full audio stack pending)*
 - [~] 8. Input system *(evdev/keyboard path proven)*
-- [ ] 9. Permission & security model
-- [ ] 10. User interface framework
-- [ ] 11. Session manager
-- [ ] 12. Package & update system
-- [ ] 13. System services
+- [x] 9. Permission & security model *(`logossec.la`: HMAC-chained capability
+      tokens (macaroons) with attenuation, the within rule, static confinement
+      (`confine`, no ambient authority checked at load; it confines itself) and
+      a reference monitor for files, processes and IPC; `logoscap.la` for the
+      in-process Morris sealer. Enforcement is in the library and at load: an
+      unconfined program can still call builtins directly (kernel-level
+      enforcement belongs to LogosKernel), and the root key is symmetric until
+      a signature scheme lands.)*
+- [x] 10. User interface framework *(`logoskit.la`, LogosKit: a program is
+      (init, view, update) and everything perceived — painted cells, the
+      accessible description, what each key does — is derived from one element
+      tree; `lk_settings.la` and `lk_login.la` are its first apps, inside the WM.)*
+- [ ] 11. Session manager *(not built. What exists is its front end:
+      `lk_login.la`, the login and lock screen, which takes the session layer
+      (login/lock/unlock) as a parameter. `logossession.la` itself — users,
+      keys, sessions — is not written; the headless WM uses a documented
+      stand-in, and the live WM has no lock screen until it lands.)*
+- [x] 12. Package & update system *(`logospkg.la`: content-addressed archives,
+      an HMAC-signed index, installs gated on each package's own self-test,
+      atomic switch, update and rollback, the Advisory Update Protocol; it has
+      updated itself 1.0 → 1.1. The index key is symmetric until a signature
+      scheme lands. VM only.)*
+- [x] 13. System services *(`logosservices.la` — the supervisor: dependency
+      order, logs, restart policy with backoff, typed logosipc control, and it
+      manages itself; `logostime.la` and `logosledger.la`, the hash-chained
+      GlyphLedger. VM only.)*
 - [ ] LogosMentor — local reasoning engine
   - [x] Symbolic reasoning core (AATC, three laws, α=1 coherence) — in Lingua Adamica
     *(`aatc.la` (`aatc_spec.la`): the AATC criterion — the four conditions
