@@ -59,7 +59,8 @@
 #      that reaches the primary keeps it and verify completes the index; a
 #      repair on read whose write fails (rename onto a directory, no space)
 #      returns the content, leaves no .tmp and keeps the old primary;
-#      history refuses a version 1 whose prev is not "none"; an authentic
+#      history refuses a version 1 whose prev is not "none", and a chain
+#      through a version it cannot read (lost, or not a version); an authentic
 #      version whose header has the wrong n= or len= is refused; a
 #      wrong K_M's verify changes no file even where heads are stale, the
 #      right one fixes them and rebuilds a missing mirror directory; an
@@ -663,6 +664,18 @@ def shard_e(d, s):
     s.cmd('open', 'p', root, km, 'policy')
     g, r = s.cmd('history', 'p', '*', idp)
     check('E history -> chain broken at 1 when version 1\'s prev is a hash, not "none"', r == 'err chain broken at 1', r)
+    # history cannot vouch for a chain through a version it cannot read: a
+    # version lost in both copies, or one that authenticates but does not
+    # parse, breaks the chain there (it does not end the list early)
+    root = os.path.join(d, 'histgap')
+    idx2, idy2 = os.urandom(16).hex(), os.urandom(16).hex()
+    write_store(root, km, idx2, [b'one', b'two, lost', b'three'], [b'h'], b'o')
+    flip(V(root, 'obj', idx2, 2), 6); flip(V(root, 'mirror', idx2, 2), 7)
+    write_raw(root, km, idy2, [plain(1, [b'h'], b'o', b'none', b'one'), b'not a header'])
+    s.cmd('open', 'g', root, km, 'policy')
+    rs = [s.cmd('history', 'g', '*', idx2)[1], s.cmd('history', 'g', '*', idy2)[1]]
+    check('E history -> chain broken at 2 when version 2 is lost in both copies, and when it authenticates but is '
+          'not a version', rs == ['err chain broken at 2'] * 2, rs)
     # a version that authenticates but whose header is not the format (n=
     # not its number, len= not its content's length) is refused, not read
     root = os.path.join(d, 'badhdr')
