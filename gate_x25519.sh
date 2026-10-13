@@ -38,8 +38,10 @@
 #      uses (carried, sum, difference + 2p, the select, the E/T kernel) and on
 #      random operands inside them; each result is checked mod p against
 #      Python and its limbs against the carried bound;
-#   5. a key or point that is not 32 bytes halts loudly (rc 1, the message,
-#      nothing on stdout), through scalarmult, public and shared;
+#   5. a key or point that is not 32 bytes halts loudly (rc 1, nothing on
+#      stdout), with the operation's own name as NET_DESIGN's shared rule
+#      asks (<module>: <operation>: <reason>): scalarmult's, public's and
+#      shared's;
 #   6. the C host gives the same bytes (RFC 7748 5.2 vector 1);
 #   7. timing: CPU and wall time per scalarmult, public and shared on the VM,
 #      measured inside the program (clock_gettime 2 and 1), best of 3.
@@ -347,7 +349,9 @@ glyph MAIN = X25519_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_le
   (C(PR("halt-empty")(la _. SEQ(sm("")(""))(print("NOT REACHED"))))
   (C(PR("halt-public31")(la _. SEQ(pub(K31))(print("NOT REACHED"))))
   (C(PR("halt-shared33")(la _. SEQ(sh(K32)(K33))(print("NOT REACHED"))))
-  (NIL)))))))))))))))
+  (C(PR("halt-public33")(la _. SEQ(pub(K33))(print("NOT REACHED"))))
+  (C(PR("halt-sharedkey31")(la _. SEQ(sh(K31)(K32))(print("NOT REACHED"))))
+  (NIL)))))))))))))))))
 LAEOF
 vm_compile t.la t.bin
 
@@ -528,12 +532,16 @@ fi
 
 # ── 5. a wrong length halts loudly ─────────────────────────────────────────
 MSG="x25519: scalarmult: key and point must be 32 bytes"
-for m in halt-key31 halt-key33 halt-point31 halt-point33 halt-empty halt-public31 halt-shared33; do
+PMSG="x25519: public: key must be 32 bytes"
+SMSG="x25519: shared: key and point must be 32 bytes"
+for c in "halt-key31|$MSG" "halt-key33|$MSG" "halt-point31|$MSG" "halt-point33|$MSG" "halt-empty|$MSG" \
+         "halt-public31|$PMSG" "halt-public33|$PMSG" "halt-shared33|$SMSG" "halt-sharedkey31|$SMSG"; do
+    m=${c%%|*}; want=${c#*|}
     vm_run t.bin "$m" "$T/halt.out"
-    if [ "$vrc" = 1 ] && grep -qxF "$MSG" "$T/vre" && [ ! -s "$T/halt.out" ]; then :
-    else echo "FAIL  x25519 misuse (VM): $m: rc=$vrc stdout=$(head -c 80 "$T/halt.out") stderr=$(head -c 120 "$T/vre")"; ok=0; hbad=1; fi
+    if [ "$vrc" = 1 ] && grep -qxF "$want" "$T/vre" && [ ! -s "$T/halt.out" ]; then :
+    else echo "FAIL  x25519 misuse (VM): $m: rc=$vrc stdout=$(head -c 80 "$T/halt.out") stderr=$(head -c 120 "$T/vre") (want '$want')"; ok=0; hbad=1; fi
 done
-[ -z "${hbad:-}" ] && echo "PASS  x25519 misuse (VM): a 31- or 33-byte key, a 31- or 33-byte point, empty strings, through scalarmult, public and shared: each halts with '$MSG', rc 1, nothing on stdout"
+[ -z "${hbad:-}" ] && echo "PASS  x25519 misuse (VM): a 31- or 33-byte key or point, empty strings: scalarmult halts with '$MSG', public with '$PMSG', shared with '$SMSG'; rc 1, nothing on stdout"
 
 # ── 6. the C host gives the same bytes ─────────────────────────────────────
 cat > "$T/host.la" <<'LAEOF'

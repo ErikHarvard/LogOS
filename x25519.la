@@ -16,10 +16,16 @@
 #                      accepted as the RFC requires; the result is fully
 #                      reduced mod p = 2^255 - 19. Any other length halts:
 #                      "x25519: scalarmult: key and point must be 32 bytes".
-#    public(sk)        scalarmult(sk)(9): the public key of sk.
+#    public(sk)        scalarmult(sk)(9): the public key of sk. A key that
+#                      is not 32 bytes halts: "x25519: public: key must be
+#                      32 bytes".
 #    shared(sk)(pk)    an option, la none. la some. ...: none(none) when the
 #                      result is all zero (pk of small order, RFC 7748 6.1),
-#                      some(secret) otherwise.
+#                      some(secret) otherwise. A key or point that is not 32
+#                      bytes halts: "x25519: shared: key and point must be 32
+#                      bytes".
+#  Each halt names its own operation, as NET_DESIGN.md's shared rule asks
+#  (<module>: <operation>: <reason>).
 #
 #  The constructor takes the same builtins as logoscrypt.la's CRYPT_FAST, in
 #  the same order.
@@ -346,15 +352,19 @@ glyph X25519_KIT = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
      (la _. error("x25519: scalarmult: key and point must be 32 bytes"))(C0))
      (la _. error("x25519: scalarmult: key and point must be 32 bytes"))(C0))(la scalarmult.
   LET(concat(T(C9))(zeros(C31)))(la nine.
-  LET(la sk. scalarmult(sk)(nine))(la public.
+  LET(la sk. int_eq(len(sk))(C32)(la _. scalarmult(sk)(nine))
+               (la _. error("x25519: public: key must be 32 bytes"))(C0))(la public.
   # shared: none when the result is all zero; its bytes are OR-ed together
   # (no early exit) rather than compared
-  LET(la sk. la pk. (la r. (la sa.
+  LET(la sk. la pk. int_eq(len(sk))(C32)(la _. int_eq(len(pk))(C32)(la _.
+     (la r. (la sa.
          int_eq(fix(la go. la i. la acc. lt(i)(C32)(la _. go(add(i)(C1))(bor(acc)(str_to_int(ord(sa(i))))))(la _. acc)(C0))
                    (C0)(C0))(C0)
            (la _. la none. la some. none(none))(la _. la none. la some. some(r))(C0))
        (str_at(r)))
-     (scalarmult(sk)(pk)))(la shared.
+     (scalarmult(sk)(pk)))
+     (la _. error("x25519: shared: key and point must be 32 bytes"))(C0))
+     (la _. error("x25519: shared: key and point must be 32 bytes"))(C0))(la shared.
     la s. s(scalarmult)(public)(shared)
   ))))))))))))))))))))))))))))
  (0)(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)(12)(16)(19)(20)(22)(24)(25)(26)(28)(31)(32)(38)(50)(64)(76)(100)(127)
