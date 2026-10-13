@@ -42,7 +42,10 @@
 #      the C host and the VM, both equal to the model.
 #   6. VM, complexity (ratios within one run, best of 3, so a loaded machine
 #      cannot fail them): join of 1080 rows of 7680 bytes costs at most 15x
-#      join of 135 (balanced, about 11x; an appending left fold is 19x). band and bands are not
+#      join of 135 (balanced, about 11x; an appending left fold is 19x); bands
+#      of 268 texts that all miss (a cache of 268 other texts, 2 columns, so
+#      drawing costs little) at most 7x bands of 67 against 67 others (each
+#      lookup scanning the cache made it 12x), and the same for all hits. band and bands are not
 #      run on the host: building a style draws all 96 glyphs, and the host's
 #      substitution interpreter copies the kit's closures at every step; a
 #      style at scale 1 ran 11 minutes there and was killed out of memory.
@@ -546,13 +549,28 @@ glyph MIN = la a. la b. lt(a)(b)(a)(b)
 glyph TIME = la name. la f. Z(la go. la n. la best. int_eq(n)(0)
     (la _. print(concat("time ")(concat(name)(concat(" ")(int_to_str(best))))))
     (la _. (la t0. (la r. (la t1. go(sub(n)(1))(MIN(best)(sub(t1)(t0))))(NOW("!")))(f("!")))(NOW("!")))("!"))(3)(999999999999)
+glyph NIL = la n. la c. n(n)
+glyph CONS = la h. la t. la n. la c. c(h)(t)
+glyph RANGE = Z(la self. la i. la n. int_eq(i)(n)(la _. NIL)(la _. CONS(i)(self(add(i)(1))(n)))(0))
+glyph MAP = Z(la self. la f. la l. l(la _. NIL)(la h. la t. CONS(f(h))(self(f)(t))))
+# TEXTS(tag)(n): "<tag>0" .. "<tag>n-1"
+glyph TEXTS = la tag. la n. MAP(la i. concat(tag)(int_to_str(i)))(RANGE(0)(n))
 glyph MAIN = KIT(FONT)(1)(la px. la run. la style. la band. la bands. la solid. la join. la compose.
-  (la r135. la r1080.
-    SEQ(SEQ(
-      TIME("join135")(la _. join(r135)))
-      (TIME("join1080")(la _. join(r1080))))
-      (print("end")))
-  (solid(1920)(135)(px(1)(2)(3)))(solid(1920)(1080)(px(1)(2)(3))))
+  (la r135. la r1080. la st.
+    (la CACHE. (la o67. la o268. la h67. la h268. la t67. la t268.
+      SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+        TIME("join135")(la _. join(r135)))
+        (TIME("join1080")(la _. join(r1080))))
+        (TIME("miss67")(la _. bands(st)(o67)(t67)(2))))
+        (TIME("miss268")(la _. bands(st)(o268)(t268)(2))))
+        (TIME("hit67")(la _. bands(st)(h67)(t67)(2))))
+        (TIME("hit268")(la _. bands(st)(h268)(t268)(2))))
+        (print("end")))
+      (CACHE(TEXTS("other line ")(67)))(CACHE(TEXTS("other line ")(268)))
+      (CACHE(TEXTS("text line ")(67)))(CACHE(TEXTS("text line ")(268)))
+      (TEXTS("text line ")(67))(TEXTS("text line ")(268)))
+    (la ts. bands(st)(NIL)(ts)(2)(la bl. la c. c)))
+  (solid(1920)(135)(px(1)(2)(3)))(solid(1920)(1080)(px(1)(2)(3)))(style(px(250)(200)(10))(px(5)(60)(120))))
 LAEOF
 wm_vm rtperf.la "$T/rtperf.out"
 if pv=$(python3 -I - "$T/rtperf.out" <<'PYEOF'
@@ -561,10 +579,12 @@ t = {}
 for l in open(sys.argv[1]):
     w = l.split()
     if len(w) == 3 and w[0] == "time": t[w[1]] = max(1, int(w[2]))
-assert {"join135", "join1080"} <= set(t), "missing timings: %r" % t
-r = t["join1080"] / t["join135"]
-print("join: %d us for 135 rows of 7680 bytes, %d for 1080 (ratio %.2f; bound 15)" % (t["join135"], t["join1080"], r))
-sys.exit(0 if r < 15 else 1)
+assert {"join135", "join1080", "miss67", "miss268", "hit67", "hit268"} <= set(t), "missing timings: %r" % t
+r = t["join1080"] / t["join135"]; rm = t["miss268"] / t["miss67"]; rh = t["hit268"] / t["hit67"]
+print("join: %d us for 135 rows of 7680 bytes, %d for 1080 (ratio %.2f; bound 15); bands, all misses: %d us for 67 texts,"
+      " %d for 268 (ratio %.2f; bound 7); all hits: %d, %d (ratio %.2f; bound 7)"
+      % (t["join135"], t["join1080"], r, t["miss67"], t["miss268"], rm, t["hit67"], t["hit268"], rh))
+sys.exit(0 if r < 15 and rm < 7 and rh < 7 else 1)
 PYEOF
 ); then
     echo "PASS  render (VM perf): $pv"

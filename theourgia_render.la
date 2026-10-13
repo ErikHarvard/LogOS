@@ -291,30 +291,87 @@ glyph RENDER_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la int_
       (S0)(S1)(S2)(S3)(S4)(S5)(S6)(S7))(la tband.
 
   # ── bands: one band per text, reusing a cache ────────────────────
-  # FIND(t)(l): la n. la s. n(D) when no entry of l has text t, else
-  # s(that entry's band)(the entries after it).
-  LET((la seq. la D. la t.
-        Z(la self. la l.
-          l(la _. la n. la s. n(D))
-           (la h. la tl. h(la ht. la hb. seq(t)(ht)(la _. la n. la s. s(hb)(tl))(la _. self(tl))(D)))))
-      (str_eq)(D))(la FIND.
+  # The cache is the previous call's list of PAIR(text)(band), in order.
+  # PTR is where the last hit left off: a text equal to its head takes that
+  # band, so an unchanged or scrolled window costs one comparison a line.
+  # Any other text is looked up in an INDEX of the cache, built at the first
+  # such text (once a call): a binary trie of depth 8 over the low bits of
+  # KEY(text), made of CONS (a node) and NIL (nothing there), whose depth-0
+  # buckets hold la q. q(text)(band)(rest), rest being where PTR resumes. A
+  # text found nowhere is drawn and added to the index (so a text repeated
+  # within one call is drawn once). A frame whose lines all changed costs
+  # O(m + n) lookups, not O(n * m) scans of the cache.
+  #
+  # KEY(t): 13 len + b0 + 3 b(len/4) + 5 b(len/2) + 7 b(3 len/4) + 11 b(len-1)
+  # (the sampled bytes; 0 for ""). Texts that collide only share a bucket.
+  LET((la si. la sl. la od. la sa. la ad. la mu. la dv. la sb. la lt. la D.
+        la C0. la C1. la C2. la C3. la C4. la C5. la C7. la C11. la C13. la t.
+        (la n. lt(n)(C1)
+           (la _. C0)
+           (la _. (la b. ad(ad(ad(ad(ad(mu(n)(C13))(b(C0)))(mu(b(dv(n)(C4)))(C3)))(mu(b(dv(n)(C2)))(C5)))
+                            (mu(b(dv(mu(n)(C3))(C4)))(C7)))
+                         (mu(b(sb(n)(C1)))(C11)))
+                  (la i. si(od(sa(t)(i)))))
+           (D))
+        (si(sl(t))))
+      (str_to_int)(str_len)(ord)(str_at)(add)(mul)(div)(sub)(lt)(D)
+      (C0)(C1)(C2)(C3)(C4)(C5)(C7)(11)(13))(la KEY.
+  # IXINS(tr)(k)(d)(e): tr with entry e in the bucket that k's low d bits name
+  LET((la ie. la bd. la dv. la sb. la CONS. la NIL. la C0. la C1. la C2. la D.
+        Z(la ins. la tr. la k. la d. la e.
+          ie(d)(C0)
+            (la _. CONS(e)(tr))
+            (la _. (la k2. la d2.
+                     tr(la _. ie(bd(k)(C1))(C0)
+                                (la _. CONS(ins(NIL)(k2)(d2)(e))(NIL))
+                                (la _. CONS(NIL)(ins(NIL)(k2)(d2)(e)))
+                                (D))
+                       (la l. la r. ie(bd(k)(C1))(C0)
+                                (la _. CONS(ins(l)(k2)(d2)(e))(r))
+                                (la _. CONS(l)(ins(r)(k2)(d2)(e)))
+                                (D)))
+                   (dv(k)(C2))(sb(d)(C1)))
+            (D)))
+      (int_eq)(band)(div)(sub)(CONS)(NIL)(C0)(C1)(C2)(D))(la IXINS.
+  # IXLOOK(tr)(k)(d)(t): la n. la s. n(D), or s(band)(rest) of the first entry
+  # with text t in k's bucket
+  LET((la ie. la bd. la dv. la sb. la seq. la C0. la C1. la C2. la D.
+        (la SCAN. Z(la look. la tr. la k. la d. la t.
+          ie(d)(C0)
+            (la _. SCAN(t)(tr))
+            (la _. tr(la _. la n. la s. n(D))
+                     (la l. la r. ie(bd(k)(C1))(C0)
+                        (la _. look(l)(dv(k)(C2))(sb(d)(C1))(t))
+                        (la _. look(r)(dv(k)(C2))(sb(d)(C1))(t))
+                        (D)))
+            (D)))
+        (la t. Z(la scan. la b. b(la _. la n. la s. n(D))
+                  (la e. la more. e(la et. la eb. la er. seq(et)(t)(la _. la n. la s. s(eb)(er))(la _. scan(more))(D))))))
+      (int_eq)(band)(div)(sub)(str_eq)(C0)(C1)(C2)(D))(la IXLOOK.
+  # IXBUILD(cache): the index of the cache, built from its end, so the first
+  # of two entries with one text is the one found
+  LET((la NIL. la C8. Z(la self. la l. l(la _. NIL)
+        (la e. la r. e(la et. la eb. IXINS(self(r))(KEY(et))(C8)(la q. q(et)(eb)(r)))))) (NIL)(C8))(la IXBUILD.
 
-  LET(la st. la cache. la texts. la cols.
+  LET((la seq. la D. la C8. la st. la cache. la texts. la cols.
     (la BAND.
-      Z(la self. la ts. la ptr. la fresh.
+      Z(la self. la ts. la ptr. la ix.
         ts(la _. PAIR(NIL)(NIL))
           (la t. la rest.
-             (FIND(t)(ptr)
-                (la _. FIND(t)(cache)
-                   (la _. FIND(t)(fresh)
-                      (la _. (la b. TRIPLE(b)(ptr)(CONS(PAIR(t)(b))(fresh)))(BAND(t)))
-                      (la b. la r. TRIPLE(b)(ptr)(fresh)))
-                   (la b. la r. TRIPLE(b)(r)(fresh)))
-                (la b. la r. TRIPLE(b)(r)(fresh)))
-             (la b. la p2. la f2.
-                self(rest)(p2)(f2)(la bs. la cs. PAIR(CONS(b)(bs))(CONS(PAIR(t)(b))(cs))))))
-        (texts)(cache)(NIL))
-    (la t. tband(st)(t)(cols)))(la bands.
+             # step: la k. k(band)(ptr')(ix'); ix is la none. la some. ...,
+             # none until the index is built
+             (la miss.
+                ptr(miss)(la h. la pt. h(la ht. la hb. seq(ht)(t)(la _. la k. k(hb)(pt)(ix))(miss)(D))))
+             (la _. (la tr. (la key.
+                       IXLOOK(tr)(key)(C8)(t)
+                         (la _. (la b. la k. k(b)(ptr)(la n. la s. s(IXINS(tr)(key)(C8)(la q. q(t)(b)(ptr)))))(BAND(t)))
+                         (la b. la r. la k. k(b)(r)(la n. la s. s(tr))))
+                     (KEY(t)))
+                    (ix(la _. IXBUILD(cache))(la tr. tr)))
+             (la b. la p2. la ix2.
+                self(rest)(p2)(ix2)(la bs. la cs. PAIR(CONS(b)(bs))(CONS(PAIR(t)(b))(cs))))))
+        (texts)(cache)(la n. la s. n(D)))
+    (la t. tband(st)(t)(cols))) (str_eq)(D)(C8))(la bands.
 
   # ── compose ──────────────────────────────────────────────────────
   # The frame is joined by a PLAN built from the tile geometry alone (no row
@@ -539,6 +596,6 @@ glyph RENDER_KIT = la str_at. la ord. la str_to_int. la str_len. la chr. la int_
     (sub(pitch)(mul(W)(C4))))(la compose.
 
   la sel. sel(px)(run)(style)(tband)(bands)(solid)(join)(compose)
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
  (la d. la f. f(d))
  (la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v))))
