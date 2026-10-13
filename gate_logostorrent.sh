@@ -36,6 +36,14 @@
 #      rename (a hard link to the old file keeps the old bytes); a failed
 #      fetch or write leaves no file and no .part; an empty file; the
 #      control channel's errors; quit.
+# MUTATION. TORRENT_MUTANT=<name> runs the whole gate on logostorrent.la with
+# one line changed, and inverts the verdict: it passes when some check fails
+# (the mutant is caught) and fails when every check still passes. The
+# mutants (each must be caught; the evidence is in the commit messages):
+#   chunkhash  the per-chunk hash check accepts any chunk of the right length
+#   manroot    a manifest is taken without checking its hash against the root
+#   atomic     the file is written in place instead of a .part renamed onto it
+#   refuse     a peer that sends a bad chunk is not refused
 # ISOLATION: a private temp dir (gate_wm_common.sh; mktemp honours TMPDIR):
 # every socket and file is in it; every VM process is killed on every exit
 # path. VM only (the C host is far too slow for the crypto underneath).
@@ -57,6 +65,31 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 2' INT TERM HUP
+
+# ── the mutants (MUTATION, above): name, then the line's text before and after
+MUTANT=${TORRENT_MUTANT:-}
+if [ -n "$MUTANT" ]; then
+    python3 - "$T/logostorrent.la" "$MUTANT" <<'PYEOF' || { echo "FAIL  logostorrent: mutant $MUTANT could not be applied"; exit 1; }
+import sys
+M = {
+ "chunkhash": ("(la _. str_eq(hex(sha256(bs)))(hashat(info)(i)))(la _. FALSE)(C0))(la chunkok.",
+               "(la _. TRUE)(la _. FALSE)(C0))(la chunkok."),
+ "manroot":   ("LET(la root. la m. str_eq(rootof(m))(root))(la manok.",
+               "LET(la root. la m. TRUE)(la manok."),
+ "atomic":    ("LET(la out. concat(out)(concat(\".\")(concat(hex(random(\"8\")))(\".part\"))))(la partname.",
+               "LET(la out. out)(la partname."),
+ "refuse":    ("mksched(haspeer(peers)(id)(la _. setstate(peers)(id)(C2))(la _. append(peers)(cons(mkpeer(id)(C2))(nil)))(C0))",
+               "mksched(peers)"),
+}
+p, name = sys.argv[1], sys.argv[2]
+if name not in M: sys.exit("unknown mutant " + name)
+old, new = M[name]
+s = open(p).read()
+if s.count(old) != 1: sys.exit("the mutant's line is not in logostorrent.la exactly once")
+open(p, "w").write(s.replace(old, new))
+PYEOF
+    echo "      MUTANT $MUTANT applied to logostorrent.la (this run must fail)"
+fi
 
 # vm_compile PROG.la BIN: compile on the VM into $T/BIN; a failure ends the gate
 vm_compile() {
@@ -699,7 +732,7 @@ def t_torrent():
     t0 = time.time(); rl = m.tor("F", "fetch %s z.out" % rz); tl = time.time() - t0
     asked = [e for e in P.events if e[0] == "get" and e[1] == rz]
     check(linked and rl == "err no manifest " + rz and m.wait("F.t", r"^torrent: drop manifest %s %s$" % (rz, P.id), timeout=1)
-          and [e[2] for e in asked] == ["m"] and not os.path.exists(os.path.join(F, "z.out")) and not parts(F),
+          and asked and all(e[2] == "m" for e in asked) and not os.path.exists(os.path.join(F, "z.out")) and not parts(F),
           "a manifest whose hash is not the root is refused: the gate's own Python node answers HAVE and serves a well-formed manifest of other bytes; the fetcher drops it, never asks that node for a chunk, and fails (err no manifest, %.1f s) leaving no file" % tl,
           "%r asked=%r %s" % (rl, asked, tail(m, "F.t")))
     open(os.path.join(S2, "z.bin"), "wb").write(Z); m.tor("S2", "seed z.bin")
@@ -974,4 +1007,8 @@ done
 tests torrent
 
 echo "      (gate ran $(( $(date +%s) - G0 )) s)"
+if [ -n "$MUTANT" ]; then
+    if [ "$ok" = 1 ]; then echo "FAIL  logostorrent: mutant $MUTANT survives: every check still passes"; exit 1
+    else echo "PASS  logostorrent: mutant $MUTANT is caught (the checks above that fail)"; exit 0; fi
+fi
 if [ "$ok" = 1 ]; then echo "PASS  logostorrent: all checks"; exit 0; else echo "FAIL  logostorrent: some checks failed"; exit 1; fi

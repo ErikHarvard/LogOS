@@ -677,7 +677,8 @@ glyph TOR_SERVICE = la B. la X. la crypt. la net. la LS. la BY. la MAN. la TR. l
                                  (la bs. serve(bs)))
                         (la _. seq(log(sp("drop malformed get")(from)))(st))(C0)))(C0))
           (la bs. seq(post(from)(concat("TOR1 CHUNK ")(sp(root)(sp(is)(bs)))))(seq(log(sp("serve")(sp(root)(sp(is)(from)))))(st)))))))(la onget.
-    # the two checks a fetch rests on, one line each
+    # the two checks a fetch rests on, one line each (gate_logostorrent.sh
+    # mutates each: TORRENT_MUTANT=chunkhash, manroot)
     LET(la root. la m. str_eq(rootof(m))(root))(la manok.
     LET(la info. la i. la bs. int_eq(len(bs))(clen(info)(i))(la _. str_eq(hex(sha256(bs)))(hashat(info)(i)))(la _. FALSE)(C0))(la chunkok.
     LET(la st. la from. la root. la is. la bs. la t. st(la seeds. la fetches. la ctls. la lbuf. la quit.
