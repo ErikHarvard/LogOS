@@ -71,8 +71,21 @@
 #      unlock(locked)(pass)       ok(the session again): the keys derived
 #          again from the passphrase and the user record as it is now, the
 #          store reopened, the same record of the session.
-#      suspend(session)(state), resume(root)(name)(pass): not built yet;
-#          each returns an err. The next step adds them.
+#      suspend(session)(state)    ok(the locked session): state (any bytes:
+#          the WM's windows, layout, working directories) is sealed into the
+#          user's own store together with the session manager's record of
+#          the session (see SELF-APPLICATION), and the session is locked as
+#          lock does. The contract says it returns the locked session; it
+#          returns it as a result, because the store can fail, and a state
+#          that was not saved must not look saved: on err nothing is locked
+#          and the caller still holds the open session. A locked session
+#          cannot be suspended (its keys are gone).
+#      resume(root)(name)(pass)   ok(la k. k(session)(state)): a login whose
+#          session is the saved one: the record and the state come back from
+#          the store. err("nothing suspended") when the user has no saved
+#          session (rather than an empty state, which a saved session can
+#          also hold). The saved session stays in the store (a later resume
+#          gives it again, until the next suspend replaces it).
 #      state(session)             ok(la k. k(name)(store)(token)(guard)(record))
 #          for an open session, err for a locked one. The contract names
 #          this operation and leaves it open; it is the session's view for
@@ -90,7 +103,25 @@
 #  "cannot create <path>", "write failed: <path>", "random failed", "no
 #  clock", "wrong user or passphrase" (a missing user and a wrong
 #  passphrase look alike), "bad user record", "home: <AletheiaFS error>",
-#  "the session is locked", "the session is not locked".
+#  "the session is locked", "the session is not locked", "nothing
+#  suspended", "more than one saved session", "malformed saved session",
+#  "the saved session is not <name>'s".
+#
+#  ── SELF-APPLICATION ────────────────────────────────────────────────
+#  "The session manager's session is the managed session": the session
+#  manager's own record of a session is part of the state it saves and
+#  restores. The record is
+#      session=<32 hex>\nuser=<name>\nsince=<unix seconds>\nsuspends=<n>\n
+#  (a random id made at login, the user, the login time, how many times it
+#  has been suspended). suspend counts itself into the record and seals
+#      logos-session 1\n<record>state=<length of state>\n<state>
+#  as the user's one AletheiaFS object tagged logos-session (put the first
+#  time, a new version after that, so the store keeps the chain), owner
+#  <name>. resume reads it back and parses it strictly (the header, every
+#  field, the user must be <name>, the length exact), and the session it
+#  returns carries the restored record: the same id and login time as the
+#  session that was suspended, not a new one. Two objects with the tag are
+#  refused by both (choosing one would be a guess).
 #
 #  ── THE GUARD ADAPTER ───────────────────────────────────────────────
 #  The contract opens AletheiaFS with "logossec's verify, partially
@@ -125,8 +156,8 @@
 #  the key schedule is redone every time) and a XOR over eight 32-bit words.
 #  MEASURED on the VM with CRYPT_FAST, timed inside the gate's driver (a
 #  4-core machine, load about 1): PBKDF2 of 1000 iterations 1.35-1.9 s;
-#  adduser 1.7 s, login 1.35 s, unlock 1.44 s; lock, state, logout 4-6 ms;
-#  a guard question 7 ms. With CRYPT_REF an HMAC takes about a minute on
+#  adduser 1.7 s, login 1.35 s, unlock 1.44 s, resume 1.4 s; suspend 24
+#  ms; lock, state, logout 4-6 ms; a guard question 7 ms. With CRYPT_REF an HMAC takes about a minute on
 #  the VM, so a login would take most of a day: CRYPT_REF meets the
 #  contract but is not usable here.
 #
@@ -151,6 +182,10 @@
 #  open store's ephemeral-session pipe (two descriptors) for the life of
 #  the process, so a process that logs in or unlocks many times runs out
 #  of descriptors (about 500 times at the usual limit of 1024).
+#  suspend writes a new version of the saved-session object, so it shares
+#  AletheiaFS's known weakness (aletheiafs.la, HONEST SCOPE): after a
+#  rollback of both copies or a crash that left only <n>.tmp, the next
+#  version number is sealed a second time under the same key and nonce.
 #  The VM cannot erase memory: a dropped key stays in the heap until the
 #  collector reuses its space, and "drops the keys" means unreachable, not
 #  overwritten.
@@ -381,6 +416,27 @@ glyph SESSION_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str.
   LET(la r. r(la sid. la user. la since. la susp.
       concat(concat(concat("session=")(sid))(concat("\nuser=")(user)))
             (concat(concat("\nsince=")(int_to_str(since)))(concat(concat("\nsuspends=")(int_to_str(susp)))("\n")))))(la showrec.
+  # the saved session: "logos-session 1\n", the record, "state=<length>\n",
+  # then the state's bytes
+  LET(la rec. la st. concat(concat("logos-session 1\n")(showrec(rec)))(concat(concat("state=")(str_len(st)))(concat("\n")(st))))(la saved.
+  # parsesaved(s)(name): ok(mkpair(record)(state)) when s is exactly a saved
+  # session of name's; err otherwise
+  LET(la s. la name. (la n. (la bad.
+      str_eq(slice(s)(C0)(C16))("logos-session 1\n")
+        (la _. fld(s)(n)(bad)("session=")(C16)(la sid. la p1.
+               fld(s)(n)(bad)("user=")(p1)(la user. la p2.
+               fld(s)(n)(bad)("since=")(p2)(la since. la p3.
+               fld(s)(n)(bad)("suspends=")(p3)(la susp. la p4.
+               fld(s)(n)(bad)("state=")(p4)(la sl. la p5.
+                 hexok(sid)(C32)(la _. isnat(since)(la _. isnat(susp)(la _. isnat(sl)(la _.
+                   int_eq(str_to_int(sl))(sub(n)(p5))
+                     (la _. str_eq(user)(name)
+                        (la _. OK(mkpair(mkrec(sid)(user)(str_to_int(since))(str_to_int(susp)))(slice(s)(p5)(n))))
+                        (la _. ERR(concat(concat("the saved session is not ")(name))("'s")))(C0))
+                     (la _. bad)(C0))
+                 (la _. bad)(C0))(la _. bad)(C0))(la _. bad)(C0))(la _. bad)(C0)))))))
+        (la _. bad)(C0))
+    (ERR("malformed saved session")))(len(s)))(la parsesaved.
   # enter(root)(name)(pass)(who)(k): the clock read, the user record read
   # and checked, the passphrase stretched and verified, the keys derived and
   # the home store opened: k(now)(K_U)(home store)(root token)(guard)(ids of
@@ -444,8 +500,33 @@ glyph SESSION_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str.
     s(la name. la root. la ku. la h. la tok. la g. la rec. ERR("unlock: the session is not locked"))
      (la name. la root. la rec. enter(root)(name)(pass)("unlock: ")(la t. la ku. la h. la tok. la g. la ids.
         OK(mkopen(name)(root)(ku)(h)(tok)(g)(rec)))))(la unlock.
-  LET(la s. la st. ERR("suspend: not built yet"))(la suspend.
-  LET(la root. la name. la pass. ERR("resume: not built yet"))(la resume.
+  # suspend(session)(state) -> ok(the locked session). The saved session is
+  # the session manager's record (its suspends one more) and then the
+  # state, sealed as the store's one object tagged logos-session: put the
+  # first time, a new version of it after that
+  LET(la s. la state.
+    s(la name. la root. la ku. la h. la tok. la g. la rec.
+        rec(la sid. la user. la since. la susp.
+          (la rec2.
+            BIND(ffind(h)(tok)("logos-session"))(la ids.
+              ids(la _. fput(h)(tok)(saved(rec2)(state))(cons("logos-session")(nil))(name))
+                 (la id. la rest. rest(la _. fupdate(h)(tok)(id)(saved(rec2)(state)))
+                                      (la i2. la r2. ERR("more than one saved session"))))
+              (la m. ERR(concat("suspend: ")(m)))
+              (la _. DO(fclose(h))(la _. OK(mklocked(name)(root)(rec2)))))
+          (mkrec(sid)(user)(since)(add(susp)(C1)))))
+     (la name. la root. la rec. ERR("suspend: the session is locked")))(la suspend.
+  # resume(root)(name)(pass) -> ok(la k. k(session)(state)): a login whose
+  # session is the saved one, its record restored from the store
+  LET(la root. la name. la pass.
+    enter(root)(name)(pass)("resume: ")(la t. la ku. la h. la tok. la g. la ids.
+      (la fail.
+        ids(la _. fail("nothing suspended"))(la id. la rest.
+          rest(la _. fget(h)(tok)(id)(la m. fail(m))(la r. r(la content. la tags. la owner. la n.
+                 parsesaved(content)(name)(la m. fail(m))(la p. p(la rec. la st.
+                   OK(mkpair(mkopen(name)(root)(ku)(h)(tok)(g)(rec))(st)))))))
+              (la i2. la r2. fail("more than one saved session"))))
+      (la m. DO(fclose(h))(la _. ERR(concat("resume: ")(m))))))(la resume.
   # state(session) -> ok(la k. k(name)(home store)(root token)(guard)(record))
   LET(la s. s(la name. la root. la ku. la h. la tok. la g. la rec. OK(mkview(name)(h)(tok)(g)(showrec(rec))))
              (la name. la root. la rec. ERR("state: the session is locked")))(la state.
@@ -453,5 +534,5 @@ glyph SESSION_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str.
   LET(la s. s(la name. la root. la ku. la h. la tok. la g. la rec. DO(fclose(h))(la _. OK(name)))
              (la name. la root. la rec. OK(name)))(la logout.
     la s. s(adduser)(login)(lock)(unlock)(suspend)(resume)(state)(logout)
-  ))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))
   (1000)(10000000)(4)(8)(13)(64)(4096)))))

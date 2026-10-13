@@ -41,14 +41,25 @@
 #      keys, neither's tokens verify under the other's capability root (as a
 #      guard question and as a refused store operation), and neither can
 #      open the other's objects even when they are copied into its store.
+#   S  suspend and resume, and SELF-APPLICATION: suspend stores the state as
+#      one sealed object of the user's own store (the oracle opens it with
+#      the K_M it derives) holding the session manager's own record of the
+#      session (id, user, since, suspends) and then the state byte for byte,
+#      nothing of either on disk in the clear, and returns a locked
+#      session; resume returns the state and a session whose record is the
+#      restored one (the same id and since, unlike a fresh login); a second
+#      suspend is version 2, chained; resume refuses a wrong passphrase, a
+#      user with nothing suspended, eight saved sessions the oracle seals
+#      correctly but that name another user or are malformed, and two
+#      objects with the tag (so does suspend).
 # ISOLATION: private temp dir (gate_wm_common.sh); everything is written
-# under it. SESSION_SHARDS (default "P A") names the shards to run, one at
+# under it. SESSION_SHARDS (default "P A S") names the shards to run, one at
 # a time; SESSION_CMD_TIMEOUT (default 1800 s) bounds each operation and
 # SESSION_SHARD_TIMEOUT (default 7200 s) each shard.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
-: "${SESSION_SHARDS:=P A}"
+: "${SESSION_SHARDS:=P A S}"
 : "${SESSION_CMD_TIMEOUT:=1800}"
 : "${SESSION_SHARD_TIMEOUT:=7200}"
 wm_setup logossession.la logoscrypt.la logossec.la aletheiafs.la
@@ -585,7 +596,116 @@ def shard_a(d, s):
     check('A logout -> ok(name), closing the session\'s ephemeral objects; a locked session logs out too',
           rs == ['ok', 'ok alice', 'err ephemeral: session closed', 'err state: the session is locked', 'ok', 'ok bob'], rs)
 
-SHARDS = {'P': shard_p, 'A': shard_a}
+# ── S: suspend, resume, and the session manager's record of the session ─────
+def store_ids(home, km, tag):
+    """the ids the store's newest index version lists with tag, read with the oracle's K_M"""
+    h = rd(os.path.join(home, 'obj', 'index', 'head'))
+    b = body(version_pt(home, km, 'index', int(h))) if h else None
+    if b is None: return None
+    return [l.split(b' ', 1)[0].decode() for l in b.split(b'\n') if l and tag in l.split(b' ', 1)[1].split(b',')]
+def header(pt):
+    return dict(l.split(b'=', 1) for l in pt.split(b'\n', 5)[:5]) if pt else {}
+def append_version(home, km, oid, content, tags=b'logos-session', owner=b'dave'):
+    """the oracle seals version n+1 of oid itself, exactly as the AletheiaFS format says"""
+    n = int(rd(os.path.join(home, 'obj', oid, 'head')))
+    prev = hashlib.sha256(rd(os.path.join(home, 'obj', oid, str(n)))).hexdigest().encode()
+    pt = b'n=%d\ntags=%s\nowner=%s\nprev=%s\nlen=%d\n' % (n + 1, tags, owner, prev, len(content)) + content
+    blob = seal(k_obj(km, oid), nonce_of(n + 1), aad_of(oid, n + 1), pt)
+    for side in ('obj', 'mirror'):
+        wr(os.path.join(home, side, oid, str(n + 1)), blob); wr(os.path.join(home, side, oid, 'head'), str(n + 1).encode())
+def saved(rec, st): return b'logos-session 1\n' + rec + b'state=%d\n' % len(st) + st
+def files_under(top):
+    for r, ds, fs in os.walk(top):
+        for f in fs: yield os.path.join(r, f)
+def shard_s(d, s):
+    root = os.path.join(d, 'sys'); hpath = lambda n: os.path.join(root, 'home', n)
+    PD = b'dave ' + os.urandom(6).hex().encode(); home = hpath('dave')
+    s.cmd('adduser', '-', root, 'dave', PD)
+    mr = RECRE.match(rd(os.path.join(root, 'users', 'dave')) or b'')
+    if mr is None: check('S adduser', False); return
+    KD = keys(PD, bytes.fromhex(mr.group(2).decode()), 1000); TD = token(KD['kc'], 'dave')
+    s.cmd('login', 'd', root, 'dave', PD)
+    st0 = s.state('d')
+    m0 = SRECRE.match(st0[2]) if isinstance(st0, tuple) else None
+    if m0 is None: check('S login', False, st0); return
+    sid0, since0 = m0.group(1), m0.group(3)
+    R = lambda n, sid=sid0, since=since0: b'session=%s\nuser=dave\nsince=%s\nsuspends=%d\n' % (sid, since, n)
+    WM = b'windows=2\nlayout=H500(L1,L2)\ncwd=/home/dave\n' + bytes(range(256)) * 4
+    r = s.cmd('suspend', 'd', WM)
+    check('S suspend -> ok(the locked session): the value it gives holds no view',
+          r == 'ok' and s.state('d') == 'err state: the session is locked', (r, s.state('d')))
+    ids = store_ids(home, KD['km'], b'logos-session')
+    check('S the state is stored as ONE sealed object of the user\'s own store, tagged logos-session (the store\'s '
+          'index, opened with the oracle\'s K_M, lists it)', ids is not None and len(ids) == 1, ids)
+    if not ids: return
+    oid = ids[0]
+    pt1 = version_pt(home, KD['km'], oid, 1)
+    check('S SELF-APPLICATION: the sealed object holds the session manager\'s own record of the session (its id, the '
+          'user, since, and its suspends, now 1) and then the state, byte for byte; owner dave',
+          body(pt1) == saved(R(1), WM) and header(pt1).get(b'owner') == b'dave' and header(pt1).get(b'tags') == b'logos-session',
+          (body(pt1) or b'')[:200])
+    clear = [f for f in files_under(root) if WM[:40] in rd(f) or R(1) in rd(f)]
+    check('S ... and neither the state nor the record is anywhere on disk in the clear', clear == [], clear)
+    r = s.cmd('unlock', 'd', PD)
+    check('S the locked session suspend gave unlocks to the same session, its record counting the suspend',
+          r == 'ok' and s.state('d') == ('dave', TD, R(1)), (r, s.state('d')))
+    s.cmd('logout', 'd')
+    r = s.cmd('resume', 'e', root, 'dave', PD)
+    check('S resume(root)(name)(pass) -> ok(session, state): the state exactly as it was suspended', r == 'ok ' + WM.hex(), r[:80])
+    check('S SELF-APPLICATION: the resumed session IS the suspended one: its record is restored from the store (the same '
+          'session id and since, 1 suspend) and it holds the user\'s keys (the root token)', s.state('e') == ('dave', TD, R(1)), s.state('e'))
+    r = s.cmd('login', 'f', root, 'dave', PD)
+    stf = s.state('f'); mf = SRECRE.match(stf[2]) if isinstance(stf, tuple) else None
+    check('S ... whereas a plain login is a new session: a new id, 0 suspends',
+          r == 'ok' and mf is not None and mf.group(1) != sid0 and mf.group(4) == b'0', stf)
+    s.cmd('logout', 'f')
+    WM2 = b'second state\n'
+    r = s.cmd('suspend', 'e', WM2)
+    pt2 = version_pt(home, KD['km'], oid, 2)
+    check('S suspending again writes version 2 of the same object (chained to version 1), its record counting 2, '
+          'and the index still lists one session object',
+          r == 'ok' and body(pt2) == saved(R(2), WM2)
+          and header(pt2).get(b'prev') == hashlib.sha256(rd(os.path.join(home, 'obj', oid, '1'))).hexdigest().encode()
+          and store_ids(home, KD['km'], b'logos-session') == [oid], (r, (body(pt2) or b'')[:200]))
+    r = s.cmd('resume', 'g', root, 'dave', PD)
+    check('S resume gives the newest state and record', r == 'ok ' + WM2.hex() and s.state('g') == ('dave', TD, R(2)), (r, s.state('g')))
+    rs = [s.cmd('lock', 'g'), s.cmd('suspend', 'g', b'x'), s.cmd('resume', 'x', root, 'dave', PD + b'?'), s.state('x')]
+    check('S suspend of a locked session is refused; resume with a wrong passphrase is refused and gives no session',
+          rs == ['ok', 'err suspend: the session is locked', 'err resume: wrong user or passphrase',
+                 'err state: the session is locked'], rs)
+    PE = b'erin pass'
+    s.cmd('adduser', '-', root, 'erin', PE)
+    rs = [s.cmd('resume', 'h', root, 'erin', PE), s.state('h')]
+    check('S resume of a user who never suspended -> "nothing suspended", and no session',
+          rs == ['err resume: nothing suspended', 'err state: the session is locked'], rs)
+    # fail closed: saved sessions sealed properly (by the oracle) but not this user's, or not well formed
+    rs = []
+    for content in (saved(R(2).replace(b'user=dave', b'user=mallory'), b'x'),
+                    saved(R(2), b'short')[:-1], saved(R(2), b'x') + b'y',
+                    b'logos-session 2\n' + R(2) + b'state=1\nx',
+                    saved(R(2, sid=sid0.upper()), b'x'), saved(R(2, since=b'01'), b'x'),
+                    saved(R(2), b'x').replace(b'suspends=2\n', b''), b''):
+        append_version(home, KD['km'], oid, content)
+        rs.append(s.cmd('resume', 'h', root, 'dave', PD))
+    check('S resume refuses a saved session, sealed under the right key, that names another user, has a state shorter '
+          'or longer than its length, another header, a bad session id, a since with a leading zero, no suspends '
+          'line, or nothing at all; no session is made',
+          rs == ["err resume: the saved session is not dave's"] + ['err resume: malformed saved session'] * 7
+          and s.state('h') == 'err state: the session is locked', rs)
+    WM3 = b'third'
+    rs = [s.cmd('login', 'i', root, 'dave', PD)]
+    sti = s.state('i'); mi = SRECRE.match(sti[2]) if isinstance(sti, tuple) else None
+    rs += [s.cmd('suspend', 'i', WM3), s.cmd('resume', 'j', root, 'dave', PD)]
+    check('S the next suspend writes a well-formed version again, and resume restores that session (its own id, 1 suspend)',
+          rs == ['ok', 'ok', 'ok ' + WM3.hex()] and mi is not None
+          and s.state('j') == ('dave', TD, R(1, sid=mi.group(1), since=mi.group(3))), (rs, s.state('j')))
+    rs = [s.cmd('put', 'j', TD, b'decoy', 'logos-session')[:3], s.cmd('suspend', 'j', b'x'), isinstance(s.state('j'), tuple),
+          s.cmd('resume', 'k', root, 'dave', PD)]
+    check('S a second object tagged logos-session makes suspend and resume refuse (which one is the saved session would '
+          'be a guess); the session stays open', rs == ['ok ', 'err suspend: more than one saved session', True,
+          'err resume: more than one saved session'], rs)
+
+SHARDS = {'P': shard_p, 'A': shard_a, 'S': shard_s}
 
 if __name__ == '__main__':
     which, d = sys.argv[1], sys.argv[2]
