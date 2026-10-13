@@ -12,7 +12,8 @@
 # recomputes every sealed version and every index version the module must
 # have written and compares the files on disk byte for byte, and it writes
 # a whole store of its own that the module must read. Each shard drives ONE
-# session of a driver program (compiled once) over stdin/stdout, and
+# session of a driver program (compiled once per crypt record) over
+# stdin/stdout, and
 # tampers with the store between operations.
 # THE CRYPT RECORD. Shards A-E build the kit with CRYPT_FAST (logoscrypt.la,
 # the documented drop-in for CRYPT_REF, gated by gate_logoscrypt.sh against
@@ -76,7 +77,9 @@
 # its builtins, and each name walks the program), and every object operation
 # derives its key: shard R needs three (open, put, get), about 10 minutes on a
 # loaded 4-core machine, and it starts first, alongside the others. Its VM
-# grows to about 1.4 GB (its two 768 MiB heap halves), so FS_PARALLEL
+# grows to about 1.4 GB (its two 768 MiB heap halves), as does shard E's
+# (whose memory check allocates 4 GB of garbage to collect the heap over
+# several times, a few seconds), so FS_PARALLEL
 # (default 4) caps how many shards run at once, longest first, for a machine
 # short of memory. FS_SHARDS (default "R C A B D E") names the shards to run;
 # leaving R out skips the CRYPT_REF round trip (a development shortcut; a
