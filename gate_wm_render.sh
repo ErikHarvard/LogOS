@@ -17,8 +17,10 @@
 #      (truncated), shorter (padded), empty, one character, bytes outside
 #      32..127 (drawn as '?'), cols 0 and negative, line lengths 1..300 around
 #      every power of two the band's block decomposition uses, and 12 seeded
-#      random lines of random bytes; the shape of each band (8*scale scanlines
-#      of cols*8*scale pixels) as well as its bytes.
+#      random lines of random bytes; at scale 1, lines of 511 to 4095
+#      characters around the widest blocks (1024 and 2048), up to the longest
+#      line the module draws; the shape of each band (8*scale scanlines of
+#      cols*8*scale pixels) as well as its bytes.
 #   2. VM: bands with a cache: a first call from NIL, then a call whose cache
 #      also holds a PLANTED entry ("delta" with a fake band) and an unused one
 #      ("omega"): hits come back byte-identical, the planted fake comes back
@@ -230,7 +232,12 @@ def _random_cases():
 RANDOM_BANDS, RANDOM_COMPOSE = _random_cases()
 SCALES = (1, 2, 3)                       # scale 3 runs a subset of the band cases
 SCALE3 = ("all", "short", "empty", "bad", "n13", "p63", "trunc")
-def band_cases(sc): return [c for c in BAND_CASES if sc < 3 or c[0] in SCALE3]
+# long lines, at scale 1 only (a 4095-character band is 1 MB there): around
+# the 1024- and 2048-character blocks and up to the 4095-character limit
+LONG_BANDS = [("L%d" % n, CYC(n, n), n) for n in (511, 512, 1023, 1024, 2047, 2048, 2049, 3001, 4095)] \
+           + [("L4000p", CYC(4000, 1), 4095)]
+def band_cases(sc):
+    return [c for c in BAND_CASES if sc < 3 or c[0] in SCALE3] + (LONG_BANDS if sc == 1 else [])
 BAND_CASES += RANDOM_BANDS
 COMPOSE_CASES += RANDOM_COMPOSE
 
@@ -403,7 +410,7 @@ def check(font, outdir):
             got, shape = rd("band_%d_%s.bin" % (sc, name)), rd("band_%d_%s.shape" % (sc, name))
             wshape = "".join("%d," % len(x) for x in want).encode()
             if got != b"".join(want) or shape != wshape: bad.append("%s@%d" % (name, sc))
-    report("band (scale 1, 2 and 3: every printable char, truncation, padding, empty, bytes outside 32..127, cols<=0, block sizes)", bad, tot)
+    report("band (scale 1, 2 and 3: every printable char, truncation, padding, empty, bytes outside 32..127, cols<=0, block sizes; lines of 511..4095 at scale 1)", bad, tot)
     # bands
     bad, tot = [], 0
     def wantband(t): return b"".join(band(font, 2, fg, bg, t, BCOLS))
