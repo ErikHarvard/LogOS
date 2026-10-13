@@ -39,7 +39,10 @@
 #      bottom, negative x), a rows list shorter or longer than h, a row that is
 #      not 4*w bytes, pitch < 4*W, a line longer than 4095 characters.
 #   5. host: px, run, join, solid and compose (small) give the same bytes on
-#      the C host and the VM, both equal to the model. band and bands are not
+#      the C host and the VM, both equal to the model.
+#   6. VM, complexity (ratios within one run, best of 3, so a loaded machine
+#      cannot fail them): join of 1080 rows of 7680 bytes costs at most 15x
+#      join of 135 (balanced, about 11x; an appending left fold is 19x). band and bands are not
 #      run on the host: building a style draws all 96 glyphs, and the host's
 #      substitution interpreter copies the kit's closures at every step; a
 #      style at scale 1 ran 11 minutes there and was killed out of memory.
@@ -49,8 +52,8 @@
 # toolchain build (~35 s) and three VM compiles of the test programs (~45, 15
 # and 6 s); the runs take ~10 s.
 #
-# PERFORMANCE (measured, not gated: the shared test machines are too noisy for
-# a timing gate). Process CPU time on the native VM (clock_gettime 2), scale 2:
+# PERFORMANCE (measured; only the ratios of section 6 are gated, because the
+# shared test machines are too noisy for absolute bounds). Process CPU time on the native VM (clock_gettime 2), scale 2:
 #   style(fg)(bg)                                     3.9 ms   (27M instructions)
 #   band, one 120-character line                       1.6 ms   (9.4M)
 #   bands, 67 lines of 120 columns, all misses        90 ms     (575M, 1.3 ms a line)
@@ -526,6 +529,47 @@ if [ "$hrc" = 0 ] && [ "$vrc" = 0 ] && [ "$hbad" = "-" ] && [ "$vbad" = "-" ] \
     echo "PASS  render (host): px, run, join, solid and compose give the same bytes on the C host and the VM, and both match the model"
 else
     echo "FAIL  render (host): host rc=$hrc vm rc=$vrc, differing from the model: host [$hbad] vm [$vbad]"; ok=0
+fi
+
+# 6. complexity: ratios of timings taken in one run (best of 3 each)
+cat > "$T/rtperf.la" <<'LAEOF'
+import("theourgia_render.la")
+import("theourgia_termfont.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph SEQ = la a. la b. b
+glyph KIT = la font. la scale. RENDER_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(lt)(band)(str_eq)(error)(font)(scale)
+glyph FONT = TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(TF_HEX)
+glyph TSPLIT = Z(la go. la s. la acc. str_eq(str_head(s))(" ")(la _. la k. k(acc)(str_tail(s)))(la _. go(str_tail(s))(concat(acc)(str_head(s))))("!"))
+glyph NOW = la u. TSPLIT(clock_gettime("2"))("")(la a. la b. add(mul(str_to_int(a))(1000000))(div(str_to_int(b))(1000)))
+glyph MIN = la a. la b. lt(a)(b)(a)(b)
+# TIME(name)(f): "time <name> <us>", the best of 3 runs of f
+glyph TIME = la name. la f. Z(la go. la n. la best. int_eq(n)(0)
+    (la _. print(concat("time ")(concat(name)(concat(" ")(int_to_str(best))))))
+    (la _. (la t0. (la r. (la t1. go(sub(n)(1))(MIN(best)(sub(t1)(t0))))(NOW("!")))(f("!")))(NOW("!")))("!"))(3)(999999999999)
+glyph MAIN = KIT(FONT)(1)(la px. la run. la style. la band. la bands. la solid. la join. la compose.
+  (la r135. la r1080.
+    SEQ(SEQ(
+      TIME("join135")(la _. join(r135)))
+      (TIME("join1080")(la _. join(r1080))))
+      (print("end")))
+  (solid(1920)(135)(px(1)(2)(3)))(solid(1920)(1080)(px(1)(2)(3))))
+LAEOF
+wm_vm rtperf.la "$T/rtperf.out"
+if pv=$(python3 -I - "$T/rtperf.out" <<'PYEOF'
+import sys
+t = {}
+for l in open(sys.argv[1]):
+    w = l.split()
+    if len(w) == 3 and w[0] == "time": t[w[1]] = max(1, int(w[2]))
+assert {"join135", "join1080"} <= set(t), "missing timings: %r" % t
+r = t["join1080"] / t["join135"]
+print("join: %d us for 135 rows of 7680 bytes, %d for 1080 (ratio %.2f; bound 15)" % (t["join135"], t["join1080"], r))
+sys.exit(0 if r < 15 else 1)
+PYEOF
+); then
+    echo "PASS  render (VM perf): $pv"
+else
+    echo "FAIL  render (VM perf): rc=$vrc ${pv:-$(head -c 200 "$T/vre" 2>/dev/null)}"; ok=0
 fi
 
 [ "$ok" = 1 ] || exit 1
