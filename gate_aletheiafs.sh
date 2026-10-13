@@ -59,7 +59,8 @@
 #      that reaches the primary keeps it and verify completes the index; a
 #      repair on read whose write fails (rename onto a directory, no space)
 #      returns the content, leaves no .tmp and keeps the old primary;
-#      history refuses a version 1 whose prev is not "none"; a
+#      history refuses a version 1 whose prev is not "none"; an authentic
+#      version whose header has the wrong n= or len= is refused; a
 #      wrong K_M's verify changes no file even where heads are stale, the
 #      right one fixes them and rebuilds a missing mirror directory; an
 #      ephemeral object's plaintext is not kept in memory by its handle (the
@@ -302,6 +303,12 @@ def disk(root, km, oid, versions, tags, owner, links=None):
         extra = set(os.listdir(os.path.join(root, side, oid))) - set(['head'] + [str(i) for i in range(1, len(exp) + 1)])
         if extra: return '%s/%s holds %s' % (side, oid, sorted(extra))
     return ''
+def write_raw(root, km, oid, pts):
+    """an object whose version i is pts[i-1] sealed as the format says (nonce, AAD, key), whatever pts holds"""
+    for side in ('obj', 'mirror'):
+        for i, pt in enumerate(pts, 1):
+            wr(os.path.join(root, side, oid, str(i)), seal(key_of(km, oid), nonce_of(i), aad_of(oid, i), pt))
+        wr(os.path.join(root, side, oid, 'head'), str(len(pts)).encode())
 def write_store(root, km, oid, versions, tags, owner, links=None):
     for side in ('obj', 'mirror'):
         for i, b in enumerate(chain(km, oid, versions, tags, owner, links), 1):
@@ -656,6 +663,16 @@ def shard_e(d, s):
     s.cmd('open', 'p', root, km, 'policy')
     g, r = s.cmd('history', 'p', '*', idp)
     check('E history -> chain broken at 1 when version 1\'s prev is a hash, not "none"', r == 'err chain broken at 1', r)
+    # a version that authenticates but whose header is not the format (n=
+    # not its number, len= not its content's length) is refused, not read
+    root = os.path.join(d, 'badhdr')
+    idn, idl = os.urandom(16).hex(), os.urandom(16).hex()
+    write_raw(root, km, idn, [plain(2, [b't'], b'o', b'none', b'content')])
+    write_raw(root, km, idl, [b'n=1\ntags=t\nowner=o\nprev=none\nlen=3\ncontent'])
+    s.cmd('open', 'm', root, km, 'policy')
+    rs = [s.cmd('get', 'm', '*', idn)[1], s.cmd('get', 'm', '*', idl)[1]]
+    check('E an authentic version whose header says n=2 for version 1, or len=3 for 7 bytes of content, is refused '
+          '("malformed version 1")', rs == ['err malformed version 1'] * 2, rs)
     # a wrong K_M authenticates nothing, so verify changes no file, even on a
     # store whose index heads are stale (as after a crash before a head write)
     root = os.path.join(d, 'staleheads')
