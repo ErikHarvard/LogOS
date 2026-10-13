@@ -53,8 +53,9 @@
 #      open(root)(K_M)(guard)          a handle. It creates root, root/obj and
 #          root/mirror (mode 0700) if needed, derives K_I and opens the
 #          ephemeral session. The contract says a handle, not a result, so a
-#          failure (K_M not 32 bytes, a directory that cannot be created)
-#          gives a handle on which every operation is err("open: …").
+#          failure (a root with a NUL byte, K_M not 32 bytes, a directory
+#          that cannot be created) gives a handle on which every operation
+#          is err("open: …").
 #      put(fs)(tok)(content)(tags)(owner)        ok(id)
 #      get(fs)(tok)(id)          ok(la k. k(content)(tags)(owner)(n)), newest
 #      update(fs)(tok)(id)(content)    ok(n): a new version with the tags and
@@ -475,15 +476,19 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
         (la _. aopen(k2)(nonce)("aletheia/ephemeral")(sealed)
                  (la _. ERR("ephemeral: cannot open"))(la pt. OK(pt)))
         (la _. ERR("ephemeral: session closed"))(C0))(skey(rfd)(wfd))))(la mkeph.
-  # a handle: la k. k(bad)(root)(K_M)(K_I)(guard)(rfd)(wfd)(session error)
+  # a handle: la k. k(bad)(root)(K_M)(K_I)(guard)(rfd)(wfd)(session error).
+  # A root with a NUL byte is refused: every syscall would see the path cut
+  # at the NUL, a different directory, where every version "exists"
   LET(la root. la km. la guard.
-    (int_eq(len(km))(C32)
+    (lt(find(root)(len(root))(chr("0"))(C0))(len(root))
+     (la _. ERR("root has a NUL byte"))
+     (la _. int_eq(len(km))(C32)
       (la _. BIND(mkd(root))(la _. BIND(mkd(concat(root)("/obj")))(la _. BIND(mkd(concat(root)("/mirror")))(la _.
           (la ki. session(C0)
               (la m. OK(la k. k("")(root)(km)(ki)(guard)("")("")(concat("ephemeral: no session: ")(m))))
               (la s. s(la r. la w. OK(la k. k("")(root)(km)(ki)(guard)(r)(w)("")))))
           (hkdf("")(km)("aletheia/index")(C32))))))
-      (la _. ERR("K_M must be 32 bytes"))(C0))
+      (la _. ERR("K_M must be 32 bytes"))(C0))(C0))
     (la m. la k. k(concat("open: ")(m))(root)("")("")(guard)("")("")(m))(la h. h))(la fopen.
   # withobj(fs)(tok)(id)(op)(k): the handle is good, id is an object id, and
   # the guard grants op on obj/<id>: k(root)(K_M)(K_I)(primary dir)(mirror dir)
