@@ -61,7 +61,8 @@
 #      returns the content, leaves no .tmp and keeps the old primary;
 #      history refuses a version 1 whose prev is not "none", and a chain
 #      through a version it cannot read (lost, or not a version); an authentic
-#      version whose header has the wrong n= or len= is refused; a
+#      version whose header has the wrong n= or len= is refused; remove
+#      takes a crashed write's .tmp files with the object; a
 #      wrong K_M's verify changes no file even where heads are stale, the
 #      right one fixes them and rebuilds a missing mirror directory; an
 #      ephemeral object's plaintext is not kept in memory by its handle (the
@@ -676,6 +677,18 @@ def shard_e(d, s):
     rs = [s.cmd('history', 'g', '*', idx2)[1], s.cmd('history', 'g', '*', idy2)[1]]
     check('E history -> chain broken at 2 when version 2 is lost in both copies, and when it authenticates but is '
           'not a version', rs == ['err chain broken at 2'] * 2, rs)
+    # remove takes a crashed write's leftovers with the object: the .tmp of
+    # the version after the newest, and the heads' .tmp, in both copies
+    root = os.path.join(d, 'leftovers')
+    idr = os.urandom(16).hex()
+    write_store(root, km, idr, [b'one', b'two'], [b'r'], b'o'); write_store(root, km, 'index', [line(idr, 'r')], IDX_TAGS, IDX_OWNER)
+    for side in ('obj', 'mirror'):
+        wr(V(root, side, idr, 3) + '.tmp', b'half a version'); wr(os.path.join(root, side, idr, 'head.tmp'), b'3')
+    s.cmd('open', 'l', root, km, 'policy')
+    g, r = s.cmd('remove', 'l', '*', idr)
+    check('E remove of an object that has a crashed write\'s leftovers (a version\'s .tmp, the heads\' .tmp) removes them '
+          'with it', r == 'ok ' + idr and not os.path.exists(os.path.join(root, 'obj', idr))
+          and not os.path.exists(os.path.join(root, 'mirror', idr)), r)
     # a version that authenticates but whose header is not the format (n=
     # not its number, len= not its content's length) is refused, not read
     root = os.path.join(d, 'badhdr')
