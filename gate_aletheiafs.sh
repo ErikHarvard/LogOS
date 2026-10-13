@@ -57,6 +57,8 @@
 #      newest readable index version lists and repairs them; a put whose
 #      index version reaches neither copy leaves no trace of its object, one
 #      that reaches the primary keeps it and verify completes the index; a
+#      repair on read whose write fails (rename onto a directory, no space)
+#      returns the content, leaves no .tmp and keeps the old primary; a
 #      wrong K_M's verify changes no file even where heads are stale, the
 #      right one fixes them and rebuilds a missing mirror directory; an
 #      ephemeral object's plaintext is not kept in memory by its handle (the
@@ -605,7 +607,7 @@ def shard_e(d, s):
     os.makedirs(os.path.join(root, 'obj', 'index', '1.tmp'))   # index version 1 cannot be written
     R = os.urandom(16); rid = R.hex(); wr(os.path.join(d, 'fixedrandom'), R)
     g, r = s.cmd('put', 'n', '*', b'never listed', 't', 'o')
-    os.unlink(os.path.join(d, 'fixedrandom')); os.rmdir(os.path.join(root, 'obj', 'index', '1.tmp'))
+    os.unlink(os.path.join(d, 'fixedrandom')); shutil.rmtree(os.path.join(root, 'obj', 'index', '1.tmp'), True)
     left = sorted(p for p, v in snap(root).items() if v != 'dir')
     check('E a put whose index version cannot be written fails ("write failed: <that version>") and leaves nothing of '
           'the object behind: no obj/<id>, no mirror/<id>, not one file in the store',
@@ -616,7 +618,7 @@ def shard_e(d, s):
     os.makedirs(os.path.join(root, 'mirror', 'index', '1.tmp'))  # only the index's mirror cannot be written
     R = os.urandom(16); rid = R.hex(); wr(os.path.join(d, 'fixedrandom'), R)
     g, r = s.cmd('put', 'h', '*', b'listed by the primary', 't', 'o')
-    os.unlink(os.path.join(d, 'fixedrandom')); os.rmdir(os.path.join(root, 'mirror', 'index', '1.tmp'))
+    os.unlink(os.path.join(d, 'fixedrandom')); shutil.rmtree(os.path.join(root, 'mirror', 'index', '1.tmp'), True)
     IXH = [line(rid, 't')]
     check('E a put whose index version reaches the primary but not the mirror fails, and keeps the object it lists',
           r == 'err write failed: %s/mirror/index/1' % root and disk(root, km, rid, [b'listed by the primary'], [b't'], b'o') == ''
@@ -625,6 +627,26 @@ def shard_e(d, s):
     g, r = s.cmd('verify', 'h')
     check('E ... and verify completes the index (checked 2, repaired 1, lost 0)',
           r == 'ok 2 1 0' and disk(root, km, 'index', IXH, IDX_TAGS, IDX_OWNER) == '', (r, disk(root, km, 'index', IXH, IDX_TAGS, IDX_OWNER)))
+    # a repair on read whose write fails still returns the authenticated
+    # content and leaves nothing behind: no .tmp, and the primary is not
+    # replaced. One object's primary path is a directory (the rename fails);
+    # the other's primary is tampered and its .tmp is /dev/full (the write
+    # runs out of space)
+    root = os.path.join(d, 'badwrite')
+    idg, idf = os.urandom(16).hex(), os.urandom(16).hex()
+    write_store(root, km, idg, [b'the rename fails'], [b'g'], b'o'); write_store(root, km, idf, [b'the disk is full'], [b'f'], b'o')
+    os.unlink(V(root, 'obj', idg, 1)); os.mkdir(V(root, 'obj', idg, 1))
+    flip(V(root, 'obj', idf, 1), 4); bad = rd(V(root, 'obj', idf, 1))
+    os.symlink('/dev/full', V(root, 'obj', idf, 1) + '.tmp')
+    s.cmd('open', 'w', root, km, 'policy')
+    rs = [s.cmd('get', 'w', '*', idg)[1], s.cmd('get', 'w', '*', idf)[1]]
+    lg, lf = sorted(os.listdir(os.path.join(root, 'obj', idg))), sorted(os.listdir(os.path.join(root, 'obj', idf)))
+    check('E a repair on read whose write fails (a rename onto a directory; a write out of space) still returns the '
+          'mirror\'s content, leaves no .tmp behind and does not replace the primary',
+          rs == [getok(b'the rename fails', [b'g'], b'o', 1), getok(b'the disk is full', [b'f'], b'o', 1)]
+          and lg == lf == ['1', 'head'] and os.path.isdir(V(root, 'obj', idg, 1))
+          and not os.path.islink(V(root, 'obj', idf, 1)) and rd(V(root, 'obj', idf, 1)) == bad,
+          (rs, lg, lf, os.path.islink(V(root, 'obj', idf, 1))))
     # a wrong K_M authenticates nothing, so verify changes no file, even on a
     # store whose index heads are stale (as after a crash before a head write)
     root = os.path.join(d, 'staleheads')
