@@ -1,0 +1,233 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logostorrent.la — LogosTorrent, content-addressed sharing over the
+#  LogosNet mesh (NET_DESIGN.md 3; the codex's meta-torrenting).
+#
+#  WHAT. TORRENT_KIT(B)(X)(crypt)(net) returns
+#
+#      la s. s(manifest)(root)(parse)
+#
+#  B, X, crypt and net are the builtins and kits it is built from:
+#    B     = la s. s(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
+#                    (str_eq)(error)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
+#                    (band)(bor)(bxor)(bshl)(bshr)            (logosnet.la's B)
+#    X     = la s. s(socket)(bind)(listen)(accept)(connect)(send)(recv)(close)
+#                    (unlink)(poll)(random)(clock_gettime)(print)(read_file)
+#                    (open)(read)(write)(lseek)(rename)(stat)(sigprocmask)
+#    crypt = la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)   (CRYPT_FAST)
+#    net   = NET_KIT's record (logosnet.la)
+#  X and net are for the torrent service, which runs beside a LogosNet node
+#  and is not part of this module yet; manifest, root and parse use B and
+#  crypt only.
+#  Options are la none. la some. ... (none(none) / some(x)); booleans are
+#  Church booleans; lists are Scott lists.
+#
+#  THE MANIFEST. A file is cut into chunks of c bytes (the last one shorter);
+#    manifest(data)(c)  "LTOR1\n" ++ length ++ "\n" ++ c ++ "\n" ++ the lowercase
+#                       hex sha256 of each chunk, one per line (each line ends
+#                       with "\n"); length and c in decimal. An empty file has
+#                       no chunk lines. c must be 1..65280 (so a chunk fits
+#                       one LogosNet DATA); another halts: "logostorrent:
+#                       manifest: the chunk size must be 1..65280 bytes".
+#    root(m)            the lowercase hex sha256 of a manifest m: the file's
+#                       name on the mesh (64 characters).
+#    parse(m)           option of la k. k(m)(length)(c)(n)(h0): m is a
+#                       well-formed manifest (the magic, two canonical
+#                       decimals, 1 <= c <= 65280, exactly n = ceil(length/c)
+#                       lines of 64 lowercase hex digits and nothing after
+#                       them); n is the chunk count and h0 the offset of the
+#                       first hash. none for anything else, never a halt (a
+#                       manifest comes from the network).
+#
+#  STYLE. Kit style (WM_DESIGN.md, "How fast the VM is"): the builtins arrive
+#  in records and are destructured once; every helper is let-bound inside a
+#  sub-kit (TOR_LISTS, TOR_BYTES, TOR_MAN), so running code never walks the
+#  glyph table. Booleans are applied to two thunks and a dummy; constants
+#  are parameters; strings are cut by balanced halving. Every stored record
+#  is built by a TOR_MK constructor, so it holds its fields and nothing else.
+# ═══════════════════════════════════════════════════════════════════
+
+export TORRENT_KIT
+
+glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+glyph TOR_NIL  = la n. la c. n(n)
+glyph TOR_CONS = la h. la t. la n. la c. c(h)(t)
+
+# ── Constructors for every stored record ─────────────────────────────────
+# TOR_MK(la mkseed. la mkpeer. la mkask. la mkinfo. la mksched. la mkfetch.
+#        la mkctl. la mkst. la leaf. la node. la mkpair.)
+#   seed   la k. k(root)(path)(man)(flen)(csize)(n)
+#   peer   la k. k(id)(state)        state 0 usable, 1 benched, 2 refused
+#   ask    la k. k(i)(peer)(dl)      a GET outstanding: chunk i (-1: the
+#                                    manifest), asked of peer, deadline dl
+#   info   la k. k(man)(flen)(csize)(n)(h0)   a fetch's manifest ("" before)
+#   sched  la k. k(peers)(asked)(cursor)(retry)(store)(got)(last)(nw)
+#          cursor: the next chunk never asked; retry: chunks to ask again;
+#          store: the trie of chunks in; got: how many; last: when the
+#          fetch last made progress; nw: when WANT may be sent again (ms)
+#   fetch  la k. k(root)(out)(info)(sched)
+#   ctl    la k. k(fd)(buf)(done)(wait)   wait: the root whose fetch will
+#                                         answer this connection, or ""
+#   st     la k. k(seeds)(fetches)(ctls)(lbuf)(quit)
+#   leaf / node: the trie (la e. la lf. la nd. ...)
+glyph TOR_MK = la s. s
+  (la root. la path. la man. la flen. la csize. la n. la k. k(root)(path)(man)(flen)(csize)(n))
+  (la id. la state. la k. k(id)(state))
+  (la i. la peer. la dl. la k. k(i)(peer)(dl))
+  (la man. la flen. la csize. la n. la h0. la k. k(man)(flen)(csize)(n)(h0))
+  (la peers. la asked. la cursor. la retry. la store. la got. la last. la nw.
+     la k. k(peers)(asked)(cursor)(retry)(store)(got)(last)(nw))
+  (la root. la out. la info. la sched. la k. k(root)(out)(info)(sched))
+  (la fd. la buf. la done. la wait. la k. k(fd)(buf)(done)(wait))
+  (la seeds. la fetches. la ctls. la lbuf. la quit. la k. k(seeds)(fetches)(ctls)(lbuf)(quit))
+  (la v. la e. la lf. la nd. lf(v))
+  (la l. la r. la e. la lf. la nd. nd(l)(r))
+  (la a. la b. la k. k(a)(b))
+
+# ── Lists ────────────────────────────────────────────────────────────────
+# TOR_LISTS(B) -> la s. s(map)(filter)(find)(any)(count)(foldl)(rev)(append)(join)
+#   join(l)  the strings of l concatenated, by halving
+glyph TOR_LISTS = la B.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  (la C0. la C1. la TRUE. la FALSE. la nil. la cons.
+    LET(Z(la map. la f. la l. l(la _. nil)(la h. la t. cons(f(h))(map(f)(t)))))(la map.
+    LET(Z(la filter. la p. la l.
+        l(la _. nil)(la h. la t. p(h)(la _. cons(h)(filter(p)(t)))(la _. filter(p)(t))(C0))))(la filter.
+    LET(Z(la find. la p. la l.
+        l(la _. la none. la some. none(none))
+         (la h. la t. p(h)(la _. la none. la some. some(h))(la _. find(p)(t))(C0))))(la find.
+    LET(Z(la any. la p. la l. l(la _. FALSE)(la h. la t. p(h)(la _. TRUE)(la _. any(p)(t))(C0))))(la any.
+    LET(Z(la count. la l. l(la _. C0)(la h. la t. add(C1)(count(t)))))(la count.
+    LET(Z(la foldl. la f. la z. la l. l(la _. z)(la h. la t. foldl(f)(f(z)(h))(t))))(la foldl.
+    LET(foldl(la acc. la x. cons(x)(acc))(nil))(la rev.
+    LET(Z(la app. la a. la b. a(la _. b)(la h. la t. cons(h)(app(t)(b)))))(la append.
+    # half(n)(l)(k): k(the first n of l)(the rest)
+    LET(Z(la half. la n. la l. la k. int_eq(n)(C0)(la _. k(nil)(l))
+        (la _. l(la _. k(nil)(nil))(la h. la t. half(sub(n)(C1))(t)(la a. la b. k(cons(h)(a))(b))))(C0)))(la half.
+    LET(Z(la join. la l. (la n. lt(n)(add(C1)(C1))
+        (la _. l(la _. "")(la h. la t. h))
+        (la _. half(bshr(n)(C1))(l)(la a. la b. concat(join(a))(join(b))))(C0))(count(l))))(la join.
+      la s. s(map)(filter)(find)(any)(count)(foldl)(rev)(append)(join))))))))))))
+  (0)(1)(la t. la f. t)(la t. la f. f)(TOR_NIL)(TOR_CONS))
+
+# ── Bytes and text ───────────────────────────────────────────────────────
+# TOR_BYTES(B)(LS) -> la s. s(len)(span)(slice)(byte)(ishex)(allof)(dec)(scan)
+#                         (words)(split)(startswith)
+#   span(f)(lo)(hi)  f(lo) ++ ... ++ f(hi-1), by halving
+#   slice(s)(lo)(hi) bytes lo..hi-1 of s
+#   byte(s)(o)       the value of byte o of s
+#   ishex(b)         b is the value of 0-9 or a-f
+#   allof(p)(s)(lo)(hi)  p holds of every byte value of s in lo..hi-1
+#   dec(s)           option of the integer s spells: 1..12 decimal digits,
+#                    no leading zero but "0" itself
+#   scan(s)(i)(hi)(c)  the first index in i..hi-1 of the one-byte string c, or hi
+#   words(s)         the non-empty space-separated words of s
+#   split(s)(c)      the fields of s between the one-byte separator c
+#   startswith(s)(t) Church boolean
+glyph TOR_BYTES = la B. la LS.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  LS(la map. la filter. la find. la any. la count. la foldl. la rev. la append. la join.
+  (la C0. la C1. la C12. la C47. la C48. la C58. la C96. la C103. la TRUE. la FALSE. la nil. la cons.
+    LET(la s. str_to_int(str_len(s)))(la len.
+    LET(Z(la span. la f. la lo. la hi.
+        lt(add(lo)(C1))(hi)
+          (la _. (la mid. concat(span(f)(lo)(mid))(span(f)(mid)(hi)))(bshr(add(lo)(hi))(C1)))
+          (la _. lt(lo)(hi)(la _. f(lo))(la _. "")(C0))
+          (C0)))(la span.
+    LET(la s. la lo. la hi. span(str_at(s))(lo)(hi))(la slice.
+    LET(la s. la o. str_to_int(ord(str_at(s)(o))))(la byte.
+    LET(la b. lt(C47)(b)(la _. lt(b)(C58))(la _. FALSE)(C0))(la isdig.
+    LET(la b. isdig(b)(TRUE)(lt(C96)(b)(la _. lt(b)(C103))(la _. FALSE)(C0)))(la ishex.
+    LET(Z(la allof. la p. la s. la i. la hi.
+        lt(i)(hi)(la _. p(byte(s)(i))(la _. allof(p)(s)(add(i)(C1))(hi))(la _. FALSE)(C0))(la _. TRUE)(C0)))(la allof.
+    LET(la s. (la n.
+        lt(C0)(n)(la _. lt(n)(C12)(TRUE)(int_eq(n)(C12)))(la _. FALSE)(C0)
+          (la _. allof(isdig)(s)(C0)(n)
+                   (la _. int_eq(byte(s)(C0))(C48)(la _. int_eq(n)(C1))(la _. TRUE)(C0)
+                            (la _. la none. la some. some(str_to_int(s)))
+                            (la _. la none. la some. none(none))(C0))
+                   (la _. la none. la some. none(none))(C0))
+          (la _. la none. la some. none(none))(C0))
+      (len(s)))(la dec.
+    LET(Z(la scan. la s. la i. la hi. la c.
+        lt(i)(hi)(la _. str_eq(str_at(s)(i))(c)(la _. i)(la _. scan(s)(add(i)(C1))(hi)(c))(C0))(la _. hi)(C0)))(la scan.
+    LET(la s. la c. (la n. Z(la go. la i. la st. la acc.
+        lt(i)(n)
+          (la _. str_eq(str_at(s)(i))(c)
+                   (la _. go(add(i)(C1))(add(i)(C1))(cons(slice(s)(st)(i))(acc)))
+                   (la _. go(add(i)(C1))(st)(acc))(C0))
+          (la _. rev(cons(slice(s)(st)(n))(acc)))(C0))(C0)(C0)(nil))
+        (len(s)))(la split.
+    LET(la s. filter(la w. str_eq(w)("")(la _. FALSE)(la _. TRUE)(C0))(split(s)(" ")))(la words.
+    LET(la s. la t. (la n. la m. lt(n)(m)(la _. FALSE)(la _. str_eq(slice(s)(C0)(m))(t))(C0))
+                    (len(s))(len(t)))(la startswith.
+      la s. s(len)(span)(slice)(byte)(ishex)(allof)(dec)(scan)(words)(split)(startswith))))))))))))))
+  (0)(1)(12)(47)(48)(58)(96)(103)(la t. la f. t)(la t. la f. f)(TOR_NIL)(TOR_CONS)))
+
+# ── The manifest ─────────────────────────────────────────────────────────
+# TOR_MAN(B)(BY)(crypt) -> la s. s(manifest)(root)(parse)(hashat)(clen)
+#   (the header says what the first three do)
+#   hashat(info)(i)  the hex sha256 the manifest gives chunk i
+#   clen(info)(i)    the length chunk i must have
+glyph TOR_MAN = la B. la BY. la crypt.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  BY(la len. la span. la slice. la byte. la ishex. la allof. la dec. la scan. la words. la split. la startswith.
+  crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
+  TOR_MK(la mkseed. la mkpeer. la mkask. la mkinfo. la mksched. la mkfetch. la mkctl. la mkst. la leaf. la node. la mkpair.
+  (la C0. la C1. la C6. la C64. la C65. la MAXCHUNK. la TRUE. la FALSE.
+    LET(la a. la b. lt(a)(b)(la _. a)(la _. b)(C0))(la min.
+    LET(la data. la c.
+        lt(c)(C1)(TRUE)(lt(MAXCHUNK)(c))
+          (la _. error("logostorrent: manifest: the chunk size must be 1..65280 bytes"))
+          (la _. (la L. (la n.
+                    concat(concat(concat("LTOR1\n")(int_to_str(L)))(concat(concat("\n")(int_to_str(c)))("\n")))
+                          (span(la i. concat(hex(sha256(slice(data)(mul(i)(c))(min(mul(add(i)(C1))(c))(L)))))("\n"))(C0)(n)))
+                 (div(add(L)(sub(c)(C1)))(c)))
+               (len(data)))
+          (C0))(la manifest.
+    LET(la m. hex(sha256(m)))(la root.
+    # linesok(m)(h0)(n): n lines of 64 lowercase hex digits from h0 on
+    LET(la m. la h0. Z(la go. la i. la n.
+        lt(i)(n)
+          (la _. (la o. allof(ishex)(m)(o)(add(o)(C64))
+                          (la _. str_eq(str_at(m)(add(o)(C64)))("\n")(la _. go(add(i)(C1))(n))(la _. FALSE)(C0))
+                          (la _. FALSE)(C0))
+                 (add(h0)(mul(i)(C65))))
+          (la _. TRUE)(C0))(C0))(la linesok.
+    LET(la m. (la L. (la NONE.
+        lt(L)(C6)(TRUE)(str_eq(slice(m)(C0)(C6))("LTOR1\n")(FALSE)(TRUE))
+          (la _. NONE)
+          (la _. (la p1. dec(slice(m)(C6)(p1))(la _. NONE)(la flen.
+                   (la p2. dec(slice(m)(add(p1)(C1))(p2))(la _. NONE)(la csize.
+                      lt(csize)(C1)(TRUE)(lt(MAXCHUNK)(csize))
+                        (la _. NONE)
+                        (la _. (la h0. (la n.
+                                  int_eq(L)(add(h0)(mul(n)(C65)))
+                                    (la _. linesok(m)(h0)(n)
+                                             (la _. la none. la some. some(mkinfo(m)(flen)(csize)(n)(h0)))
+                                             (la _. NONE)(C0))
+                                    (la _. NONE)(C0))
+                                (div(add(flen)(sub(csize)(C1)))(csize)))
+                               (add(p2)(C1)))(C0)))
+                   (scan(m)(add(p1)(C1))(L)("\n"))))
+                 (scan(m)(C6)(L)("\n")))
+          (C0))
+        (la none. la some. none(none)))
+      (len(m)))(la parse.
+    LET(la info. la i. info(la m. la flen. la csize. la n. la h0.
+        (la o. slice(m)(o)(add(o)(C64)))(add(h0)(mul(i)(C65)))))(la hashat.
+    LET(la info. la i. info(la m. la flen. la csize. la n. la h0.
+        lt(add(i)(C1))(n)(la _. csize)(la _. sub(flen)(mul(sub(n)(C1))(csize)))(C0)))(la clen.
+      la s. s(manifest)(root)(parse)(hashat)(clen)))))))))
+  (0)(1)(6)(64)(65)(65280)(la t. la f. t)(la t. la f. f)))))
+
+# ── The kit ──────────────────────────────────────────────────────────────
+glyph TORRENT_KIT = la B. la X. la crypt. la net.
+  (la LS. (la BY. TOR_MAN(B)(BY)(crypt)(la manifest. la root. la parse. la hashat. la clen.
+       la s. s(manifest)(root)(parse)))
+    (TOR_BYTES(B)(LS)))
+  (TOR_LISTS(B))
