@@ -4,6 +4,8 @@
 #  WHAT. NET_KIT(B)(X)(crypt)(xk) returns the record
 #
 #      la s. s(frame)(deframe)(broken)
+#             (keypair)(xx_init)(xx_resp)(x_init)(x_resp)
+#             (write_message)(read_message)(done)(encrypt)(decrypt)(prologue)
 #
 #  B, X, crypt and xk are the builtins and kits it is built from:
 #    B     = la s. s(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
@@ -29,13 +31,67 @@
 #                        head of buf', and broken(buf') is TRUE. The caller
 #                        treats the link as broken.
 #
+#  NOISE. Noise_XX_25519_ChaChaPoly_SHA256 and Noise_X_25519_ChaChaPoly_SHA256
+#  exactly as in the Noise Protocol Framework, revision 34, with the prologue
+#  "LogosNet/1". DH is X25519 (xk), the cipher ChaChaPoly (crypt's seal/open,
+#  a raw 16-byte tag; the nonce is 4 zero bytes ++ the 64-bit little-endian
+#  counter), the hash SHA-256, and HKDF is Noise's own (HMAC-SHA256, two
+#  outputs: temp = HMAC(ck, ikm), o1 = HMAC(temp, 0x01), o2 = HMAC(temp, o1 ++
+#  0x02)), built on crypt's hmac. Patterns:
+#      XX:  -> e   <- e, ee, s, es   -> s, se
+#      X:   <- s (pre-message)   -> e, es, s, ss
+#    keypair(sk)          la k. k(sk)(public(sk)): a key pair from a 32-byte
+#                         private key (the one scalarmult it costs, once).
+#    xx_init(s)(e)        the XX initiator's handshake state, from its static
+#                         and ephemeral key pairs; xx_resp(s)(e) the responder's.
+#    x_init(s)(e)(rs)     option: the X initiator's state towards the
+#                         responder's static public key rs; none when rs is of
+#                         small order (its DH result is all zero, below).
+#    x_resp(s)            the X responder's state (it has no ephemeral).
+#    write_message(hs)(payload)  la k. k(message)(hs').
+#    read_message(hs)(message)   option of la k. k(payload)(hs'): none when the
+#                         message is malformed, longer than 65535 bytes, does
+#                         not decrypt, or gives an all-zero DH.
+#    done(hs)             option: some(la k. k(tx)(rx)(rs)(h)) once the last
+#                         message is written or read: this side's sending and
+#                         receiving cipher states (Noise's Split, initiator
+#                         sends with the first), the remote static public key
+#                         and the handshake hash; none before.
+#    encrypt(cs)(pt)      la k. k(ct)(cs'), ct = pt ++ 16-byte tag.
+#    decrypt(cs)(ct)      option of la k. k(pt)(cs'); none when it does not
+#                         open (nothing of it is released) or is longer than
+#                         65535 bytes.
+#    prologue(p)          la s. s(xx_init)(xx_resp)(x_init)(x_resp) with the
+#                         prologue p instead of "LogosNet/1" (for published
+#                         test vectors; the mesh always uses LogosNet/1).
+#  Noise's 65535-byte message limit holds: write_message halts when the
+#  message would be longer ("logosnet: write_message: message longer than
+#  65535 bytes"), encrypt when pt is longer than 65519 bytes ("logosnet:
+#  encrypt: message longer than 65535 bytes"). Calling write_message or
+#  read_message out of turn, or after the last message, halts too.
+#
+#  CHOICE: AN ALL-ZERO DH. X25519 gives 32 zero bytes for a public key of
+#  small order; xk's shared returns none then. Noise allows an implementation
+#  to treat that as an error, and this one does: the handshake fails. With a
+#  clamped scalar the result is zero exactly when the remote key is of small
+#  order, whichever of our keys it meets, so every remote key is checked the
+#  moment it arrives: read_message computes DH(e, re) as soon as it reads re
+#  (the XX responder holds its e already, and uses that DH for ee when it
+#  writes), the DHs a read performs are checked where they happen, and x_init
+#  checks rs. write_message therefore never meets a zero DH; if it did, it
+#  would halt ("logosnet: write_message: a DH result is all zero").
+#
 #  STYLE. Kit style (WM_DESIGN.md, "How fast the VM is"): the builtins arrive
 #  in the records B and X and are destructured once when the kit is built;
-#  every helper is let-bound inside a sub-kit (NET_BYTES, NET_FRAMES), so
-#  running code finds every name in its environment and never walks the glyph
-#  table. Booleans are applied to two thunks and a dummy; constants are
-#  parameters; strings are cut by balanced halving over str_at (O(n log n)),
-#  never by a left fold.
+#  every helper is let-bound inside a sub-kit (NET_BYTES, NET_FRAMES,
+#  NET_NOISE), so running code finds every name in its environment and never
+#  walks the glyph table. Booleans are applied to two thunks and a dummy;
+#  constants are parameters; strings are cut by balanced halving over str_at
+#  (O(n log n)), never by a left fold. Every record that outlives a call (a
+#  cipher state, a handshake state and its parts) is built by a constructor
+#  from NET_MK, so it holds its fields and nothing else: on the VM a closure
+#  keeps its whole environment alive, and a cipher state built inline would
+#  keep every earlier one (and every plaintext) alive (theourgia_wm.la).
 # ═══════════════════════════════════════════════════════════════════
 
 export NET_KIT NET_NIL NET_CONS
@@ -45,6 +101,26 @@ glyph LET = la v. la k. k(v)
 
 glyph NET_NIL  = la n. la c. n(n)
 glyph NET_CONS = la h. la t. la n. la c. c(h)(t)
+
+# ── Constructors for every stored record ─────────────────────────────────
+# NET_MK(la mkpair. la mkcs. la mksym. la mkkeys. la mkhs. ...)
+#   pair  la k. k(a)(b)                      (a key pair: private, public)
+#   cs    la k. k(key)(n)                    (a cipher state)
+#   sym   la k. k(ck)(h)(key)(n)             (Noise's SymmetricState)
+#   keys  la k. k(init)(s)(spub)(e)(epub)(rs)(re)(eedh)(esdh)
+#         init: TRUE for the initiator; s/e private keys, spub/epub their
+#         publics ("" when absent); rs/re the remote keys ("" until known);
+#         eedh = DH(e, re) and esdh = DH(e, rs), computed early (see the
+#         header), "" until then
+#   hs    la k. k(keys)(sym)(msgs)(turn)     msgs: the message patterns left;
+#         turn: TRUE when this side writes next
+glyph NET_MK = la s. s
+  (la a. la b. la k. k(a)(b))
+  (la key. la n. la k. k(key)(n))
+  (la ck. la h. la key. la n. la k. k(ck)(h)(key)(n))
+  (la init. la s. la spub. la e. la epub. la rs. la re. la eedh. la esdh.
+     la k. k(init)(s)(spub)(e)(epub)(rs)(re)(eedh)(esdh))
+  (la keys. la sym. la msgs. la turn. la k. k(keys)(sym)(msgs)(turn))
 
 # ── Bytes ────────────────────────────────────────────────────────────────
 # NET_BYTES(B) -> la s. s(len)(span)(T)(slice)(byte)(rdbe32)(be32)(le64)(rev)(zeros)
@@ -120,7 +196,179 @@ glyph NET_FRAMES = la B. la BY.
       la s. s(frame)(deframe)(broken))))))))
   (0)(4)(1048576)(la t. la f. t)(la t. la f. f)(NET_NIL)(NET_CONS)))
 
+# ── Noise ────────────────────────────────────────────────────────────────
+# NET_NOISE(B)(BY)(crypt)(xk)(MK) -> la s. s(keypair)(xx_init)(xx_resp)(x_init)
+#     (x_resp)(write_message)(read_message)(done)(encrypt)(decrypt)(prologue)
+# Tokens are small integers: e 0, s 1, ee 2, es 3, se 4, ss 5; a pattern is a
+# Scott list of messages, a message a Scott list of tokens.
+glyph NET_NOISE = la B. la BY. la crypt. la xk. la MK.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la str_eq. la error.
+    la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+  BY(la len. la span. la T. la slice. la byte. la rdbe32. la be32. la le64. la rev. la zeros.
+  crypt(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+  xk(la scalarmult. la public. la shared.
+  MK(la mkpair. la mkcs. la mksym. la mkkeys. la mkhs.
+  (la C0. la C1. la C2. la C3. la C4. la C5. la C32. la C48. la C65519. la C65535.
+   la TRUE. la FALSE. la nil. la cons.
+    LET(la none. la some. none(none))(la NONE.
+    LET(zeros(C4))(la Z4.
+    LET(la n. concat(Z4)(le64(n)))(la nonce.
+    # Noise's HKDF with two outputs: k(o1)(o2)
+    LET(la ck. la ikm. la k. (la tk. (la o1. k(o1)(hmac(tk)(concat(o1)(T(C2)))))(hmac(tk)(T(C1))))
+                             (hmac(ck)(ikm)))(la hkdf2.
+    # ── SymmetricState ──
+    LET(la sym. la data. sym(la ck. la h. la key. la n. mksym(ck)(sha256(concat(h)(data)))(key)(n)))(la mixhash.
+    LET(la sym. la ikm. sym(la ck. la h. la key. la n. hkdf2(ck)(ikm)(la ck2. la tk. mksym(ck2)(h)(tk)(C0))))(la mixkey.
+    # enchash(sym)(pt)(k): k(ct)(sym')
+    LET(la sym. la pt. la k. sym(la ck. la h. la key. la n.
+        str_eq(key)("")
+          (la _. k(pt)(mksym(ck)(sha256(concat(h)(pt)))(key)(n)))
+          (la _. (la ct. k(ct)(mksym(ck)(sha256(concat(h)(ct)))(key)(add(n)(C1)))) (seal(key)(nonce(n))(h)(pt)))
+          (C0)))(la enchash.
+    # dechash(sym)(ct): option of la k. k(pt)(sym')
+    LET(la sym. la ct. sym(la ck. la h. la key. la n.
+        str_eq(key)("")
+          (la _. la none. la some. some(la k. k(ct)(mksym(ck)(sha256(concat(h)(ct)))(key)(n))))
+          (la _. open(key)(nonce(n))(h)(ct)
+                   (la _. NONE)
+                   (la pt. la none. la some. some(la k. k(pt)(mksym(ck)(sha256(concat(h)(ct)))(key)(add(n)(C1))))))
+          (C0)))(la dechash.
+    LET(la sym. la k. sym(la ck. la h. la key. la n. hkdf2(ck)("")(la a. la b. k(mkcs(a)(C0))(mkcs(b)(C0)))))(la split.
+    # initsym(name): h = name padded with zeros to 32 bytes (or hashed when
+    # longer), ck = h, no key
+    LET(la name. (la L. (la h0. mksym(h0)(h0)("")(C0))
+                    (lt(C32)(L)(la _. sha256(name))
+                       (la _. int_eq(L)(C32)(la _. name)(la _. concat(name)(zeros(sub(C32)(L))))(C0))(C0)))
+                 (len(name)))(la initsym.
+    # ── DH ──
+    # dhpair(keys)(tok)(k): k(private)(public) for a DH token, by role
+    LET(la keys. la tok. la k. keys(la init. la s. la spub. la e. la epub. la rs. la re. la eedh. la esdh.
+        int_eq(tok)(C2)(la _. k(e)(re))(la _.
+        int_eq(tok)(C3)(la _. init(la _. k(e)(rs))(la _. k(s)(re))(C0))(la _.
+        int_eq(tok)(C4)(la _. init(la _. k(s)(re))(la _. k(e)(rs))(C0))(la _.
+        k(s)(rs))(C0))(C0))(C0)))(la dhpair.
+    # dhr(keys)(tok): option of the DH value, from the early DHs when they
+    # cover the token (ee: eedh; es on the initiator's side: esdh)
+    LET(la keys. la tok. keys(la init. la s. la spub. la e. la epub. la rs. la re. la eedh. la esdh.
+        (la c. str_eq(c)("")
+                 (la _. dhpair(keys)(tok)(la a. la b. shared(a)(b)))
+                 (la _. la none. la some. some(c))(C0))
+        (int_eq(tok)(C2)(la _. eedh)
+           (la _. int_eq(tok)(C3)(la _. init(la _. esdh)(la _. "")(C0))(la _. "")(C0))(C0))))(la dhr.
+    LET(la keys. la tok. dhr(keys)(tok)(la _. error("logosnet: write_message: a DH result is all zero"))(la x. x))(la dhw.
+    # ── messages ──
+    # wtoks(toks)(keys)(sym)(out)(k): k(keys')(sym')(out')
+    LET(Z(la wt. la toks. la keys. la sym. la out. la k.
+        toks(la _. k(keys)(sym)(out))
+            (la tok. la rest.
+              int_eq(tok)(C0)
+                (la _. keys(la init. la s. la spub. la e. la epub. la rs. la re. la eedh. la esdh.
+                          wt(rest)(keys)(mixhash(sym)(epub))(concat(out)(epub))(k)))
+                (la _. int_eq(tok)(C1)
+                   (la _. keys(la init. la s. la spub. la e. la epub. la rs. la re. la eedh. la esdh.
+                            enchash(sym)(spub)(la ct. la sym2. wt(rest)(keys)(sym2)(concat(out)(ct))(k))))
+                   (la _. wt(rest)(keys)(mixkey(sym)(dhw(keys)(tok)))(out)(k))
+                   (C0))
+                (C0))))(la wtoks.
+    # rtoks(toks)(keys)(sym)(msg)(n)(pos): option of la k. k(keys')(sym')(pos')
+    LET(Z(la rt. la toks. la keys. la sym. la msg. la n. la pos.
+        toks(la _. la none. la some. some(la k. k(keys)(sym)(pos)))
+            (la tok. la rest.
+              int_eq(tok)(C0)
+                (la _. lt(n)(add(pos)(C32))(la _. NONE)
+                   (la _. (la re. keys(la init. la s. la spub. la e. la epub. la rs. la re0. la eedh. la esdh.
+                             str_eq(e)("")
+                               (la _. rt(rest)(mkkeys(init)(s)(spub)(e)(epub)(rs)(re)(eedh)(esdh))
+                                        (mixhash(sym)(re))(msg)(n)(add(pos)(C32)))
+                               (la _. shared(e)(re)(la _. NONE)
+                                        (la dh. rt(rest)(mkkeys(init)(s)(spub)(e)(epub)(rs)(re)(dh)(esdh))
+                                                  (mixhash(sym)(re))(msg)(n)(add(pos)(C32))))
+                               (C0)))
+                          (slice(msg)(pos)(add(pos)(C32))))
+                   (C0))
+                (la _. int_eq(tok)(C1)
+                   (la _. sym(la ck. la h. la key. la cn.
+                            (la L. lt(n)(add(pos)(L))(la _. NONE)
+                               (la _. dechash(sym)(slice(msg)(pos)(add(pos)(L)))(la _. NONE)(la r. r(la pt. la sym2.
+                                        keys(la init. la s. la spub. la e. la epub. la rs. la re. la eedh. la esdh.
+                                          rt(rest)(mkkeys(init)(s)(spub)(e)(epub)(pt)(re)(eedh)(esdh))
+                                            (sym2)(msg)(n)(add(pos)(L))))))
+                               (C0))
+                            (str_eq(key)("")(la _. C32)(la _. C48)(C0))))
+                   (la _. dhr(keys)(tok)(la _. NONE)(la dh. rt(rest)(keys)(mixkey(sym)(dh))(msg)(n)(pos)))
+                   (C0))
+                (C0))))(la rtoks.
+    LET(la hs. la payload. hs(la keys. la sym. la msgs. la turn.
+        turn
+          (la _. msgs(la _. error("logosnet: write_message: the handshake is finished"))
+                     (la toks. la rest. wtoks(toks)(keys)(sym)("")(la keys2. la sym2. la out.
+                        enchash(sym2)(payload)(la ct. la sym3.
+                          (la msg. lt(C65535)(len(msg))
+                                     (la _. error("logosnet: write_message: message longer than 65535 bytes"))
+                                     (la _. la k. k(msg)(mkhs(keys2)(sym3)(rest)(FALSE)))
+                                     (C0))
+                          (concat(out)(ct))))))
+          (la _. error("logosnet: write_message: it is the other side's turn to write"))
+          (C0)))(la write_message.
+    LET(la hs. la msg. hs(la keys. la sym. la msgs. la turn.
+        turn
+          (la _. error("logosnet: read_message: it is this side's turn to write"))
+          (la _. msgs(la _. error("logosnet: read_message: the handshake is finished"))
+                     (la toks. la rest. (la n. lt(C65535)(n)(la _. NONE)
+                        (la _. rtoks(toks)(keys)(sym)(msg)(n)(C0)(la _. NONE)(la r. r(la keys2. la sym2. la pos.
+                                 dechash(sym2)(slice(msg)(pos)(n))(la _. NONE)(la r2. r2(la pt. la sym3.
+                                   la none. la some. some(la k. k(pt)(mkhs(keys2)(sym3)(rest)(TRUE))))))))
+                        (C0))
+                      (len(msg))))
+          (C0)))(la read_message.
+    LET(la hs. hs(la keys. la sym. la msgs. la turn.
+        msgs(la _. keys(la init. la s. la spub. la e. la epub. la rs. la re. la eedh. la esdh.
+                  split(sym)(la c1. la c2. sym(la ck. la h. la key. la n.
+                    la none. la some. some(init(la _. la k. k(c1)(c2)(rs)(h))(la _. la k. k(c2)(c1)(rs)(h))(C0))))))
+            (la t. la r. NONE)))(la done.
+    # ── transport ──
+    LET(la cs. la pt. cs(la key. la n.
+        lt(C65519)(len(pt))
+          (la _. error("logosnet: encrypt: message longer than 65535 bytes"))
+          (la _. la k. k(seal(key)(nonce(n))("")(pt))(mkcs(key)(add(n)(C1))))
+          (C0)))(la encrypt.
+    LET(la cs. la ct. cs(la key. la n.
+        lt(C65535)(len(ct))
+          (la _. NONE)
+          (la _. open(key)(nonce(n))("")(ct)(la _. NONE)
+                   (la pt. la none. la some. some(la k. k(pt)(mkcs(key)(add(n)(C1))))))
+          (C0)))(la decrypt.
+    # ── the patterns and the initial states ──
+    LET(la a. la b. cons(a)(b))(la c.
+    LET(c(c(C0)(nil))(c(c(C0)(c(C2)(c(C1)(c(C3)(nil)))))(c(c(C1)(c(C4)(nil)))(nil))))(la XXM.
+    LET(c(c(C0)(c(C3)(c(C1)(c(C5)(nil)))))(nil))(la XM.
+    LET(la sk. mkpair(sk)(public(sk)))(la keypair.
+    LET(la p.
+        (la sxx. la sx.
+          la s. s
+            (la sk. la ek. sk(la s. la spub. ek(la e. la epub.
+                mkhs(mkkeys(TRUE)(s)(spub)(e)(epub)("")("")("")(""))(sxx)(XXM)(TRUE))))
+            (la sk. la ek. sk(la s. la spub. ek(la e. la epub.
+                mkhs(mkkeys(FALSE)(s)(spub)(e)(epub)("")("")("")(""))(sxx)(XXM)(FALSE))))
+            (la sk. la ek. la rs. sk(la s. la spub. ek(la e. la epub.
+                shared(e)(rs)(la _. NONE)
+                  (la dh. la none. la some.
+                     some(mkhs(mkkeys(TRUE)(s)(spub)(e)(epub)(rs)("")("")(dh))(mixhash(sx)(rs))(XM)(TRUE))))))
+            (la sk. sk(la s. la spub.
+                mkhs(mkkeys(FALSE)(s)(spub)("")("")("")("")("")(""))(mixhash(sx)(spub))(XM)(FALSE))))
+        (mixhash(initsym("Noise_XX_25519_ChaChaPoly_SHA256"))(p))
+        (mixhash(initsym("Noise_X_25519_ChaChaPoly_SHA256"))(p)))(la prologue.
+    prologue("LogosNet/1")(la xx_init. la xx_resp. la x_init. la x_resp.
+      la s. s(keypair)(xx_init)(xx_resp)(x_init)(x_resp)(write_message)(read_message)(done)
+             (encrypt)(decrypt)(prologue))))))))))))))))))))))))))))
+  (0)(1)(2)(3)(4)(5)(32)(48)(65519)(65535)(la t. la f. t)(la t. la f. f)(NET_NIL)(NET_CONS))))))
+
 # ── The kit ──────────────────────────────────────────────────────────────
 glyph NET_KIT = la B. la X. la crypt. la xk.
-  NET_FRAMES(B)(NET_BYTES(B))(la frame. la deframe. la broken.
-    la s. s(frame)(deframe)(broken))
+  (la BY. NET_FRAMES(B)(BY)(la frame. la deframe. la broken.
+     NET_NOISE(B)(BY)(crypt)(xk)(NET_MK)(la keypair. la xx_init. la xx_resp. la x_init. la x_resp.
+         la write_message. la read_message. la done. la encrypt. la decrypt. la prologue.
+       la s. s(frame)(deframe)(broken)
+              (keypair)(xx_init)(xx_resp)(x_init)(x_resp)
+              (write_message)(read_message)(done)(encrypt)(decrypt)(prologue))))
+  (NET_BYTES(B))
