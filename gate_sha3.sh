@@ -73,7 +73,8 @@
 # ISOLATION: private temp dir (gate_wm_common.sh). The VM test program is
 # compiled once and run per arm with mode.txt naming the arm; the two C host
 # runs (about 15 s and 9 s on their own) start first and run beside the VM
-# arms; the whole gate took 35 to 37 s of wall time on a 4-core machine.
+# arms; the whole gate takes about 35 s of wall time on a 4-core machine
+# (34 to 37 s in five runs).
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1

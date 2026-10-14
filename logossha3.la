@@ -121,14 +121,14 @@
 #  SECD VM is its engine, and the C host gives the same bytes, slowly.
 #
 #  MEASURED on the VM, CPU time inside the program (gate_sha3.sh's timing
-#  arm, best of 5; 16 runs of it on a 4-core machine at load 1 to 3, some
+#  arm, best of 5; 17 runs of it on a 4-core machine at load 1 to 3, some
 #  beside a second gate). Indicative, not bounds; typical value, then the
 #  spread seen: one Keccak-f permutation 1.2 ms (1.1 to 1.8; SHAKE128 of
 #  the empty message to 0 bytes: one padded block absorbed and permuted), a
 #  further squeeze block 1.2 ms (1.0 to 1.4); SHA3-512 of 0 bytes 1.2 ms
 #  (1.1 to 1.6), of 1 KB 17 ms (15 to 22), of 10 KB 160 ms (148 to 168;
 #  one permutation per 72 bytes). Building the record took 0.8 to 1.0 ms
-#  in the gate's test program (its timing line, three runs). The C host is
+#  in the gate's test program (its timing line, four runs). The C host is
 #  far slower: the gate's host run (the kit and nine permutations) took
 #  15 s on its own.
 #
