@@ -33,6 +33,9 @@
 #      yet), in the setup and then locked: one '*' per character in its
 #      description (the other checks look only after an Enter, which empties
 #      the fields)
+#   7  the button submits: with the right input, Tab to the button and Enter
+#      calls adduser and login once each and the user is in (in check 1 the
+#      button is pressed only when the note it would give is already shown)
 #
 # ISOLATION: private temp dir (gate_wm_common.sh). A few minutes.
 set -uo pipefail
@@ -425,5 +428,26 @@ if [ "$vrc" = 0 ] && [ "$(cat "$T/out6.txt")" = "$EXPECT6" ] && ! grep -qE 's3cr
     echo "PASS  lk_firstuser (VM): 6 the passphrase fields while they hold typed text (no Enter yet), in the setup and locked, show one '*' per character in the screen's description"
 else
     echo "FAIL  lk_firstuser (VM): 6 the passphrase fields while they hold typed text: rc=$vrc"; diff <(echo "$EXPECT6") "$T/out6.txt" | head -20; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
+fi
+# 7 the button submits the right input
+{ cat "$T/t.la"; cat <<'LAEOF'
+glyph SESSREC = FIRST
+glyph KEYS1 = SEQK(KL(TYPE("adam"))(KL(ENTER)(KL(TYPE("s3cret-one"))(KL(ENTER)(KL(TYPE("s3cret-one"))(KL(TAB)(KL(ENTER)(WM_NIL))))))))
+glyph BODY = la show. la run. la init. la lock. la view.
+  run(KEYS1)(init)("name")(la s1. la f1. s1)
+LAEOF
+cat "$T/driver.la"; } > "$T/t7.la"
+EXPECT7="title Log in, dark
+$ENTER1
+adduser adam 10
+login adam 10
+-- enter: done=yes focus=make
+panel LogOS
+  text: Welcome, adam"
+wm_vm t7.la "$T/out7.txt"
+if [ "$vrc" = 0 ] && [ "$(cat "$T/out7.txt")" = "$EXPECT7" ]; then
+    echo "PASS  lk_firstuser (VM): 7 Enter on the button with the right input calls adduser then login once each, and the user is in"
+else
+    echo "FAIL  lk_firstuser (VM): 7 the button: rc=$vrc"; diff <(echo "$EXPECT7") "$T/out7.txt" | head -20; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
 if [ "$ok" = 1 ]; then echo "ALL PASS  gate_lk_firstuser"; else echo "GATE FAILED  gate_lk_firstuser"; exit 1; fi
