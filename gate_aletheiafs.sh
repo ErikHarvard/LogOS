@@ -43,7 +43,10 @@
 #      is: the report is exactly checked/repaired/lost = 5 3 1, the repaired
 #      files are the oracle's bytes again, a head naming a missing version is
 #      rewritten, and get of the lost object is an error that carries no
-#      bytes.
+#      bytes; then a read that repairs a tampered primary hands on the
+#      authentic stored file: history over a tampered version 1, an update
+#      over a tampered newest primary and a put over a tampered newest index
+#      primary each link prev to the mirror's bytes, as the oracle does.
 #   C  a store written entirely by the oracle (index and an object of three
 #      versions whose third has a wrong prev link): find, get and version 2
 #      read it, history reports "chain broken at 3"; a token that grants
@@ -561,6 +564,31 @@ def shard_b(d, s):
           (rd(P('obj', id2, 1)), rd(P('mirror', id2, 1))) == bad2)
     g, r = s.cmd('get', 'b', '*', id2)
     check('B get of the lost object is an error and carries no bytes', r == 'err lost: version 1', r)
+    # a read that repairs a primary hands on the mirror's stored file (the
+    # one that authenticated), and what follows hashes that: history checks
+    # version 2's prev against the mirror's version 1, an update chains its
+    # prev to the mirror's newest version, a put chains the new index
+    # version to the mirror's newest index version. Each read finds its
+    # primary tampered first
+    flip(P('obj', id1, 1), 6)
+    rh = s.cmd('history', 'b', '*', id1)[1]
+    check('B history over a version 1 whose primary is tampered (repaired from the mirror on the way) -> ok(1,2): '
+          'version 2\'s link is checked against the authentic stored file, and the primary is the oracle\'s again',
+          rh == 'ok 1,2' and rd(P('obj', id1, 1)) == exp[0], (rh, rd(P('obj', id1, 1)) == exp[0]))
+    flip(P('obj', id1, 2), 8)
+    V3 = Q + [b'repair me: version three']
+    ru, rh = s.cmd('update', 'b', '*', id1, V3[2])[1], s.cmd('history', 'b', '*', id1)[1]
+    check('B an update over a tampered newest primary (repaired from the mirror on the way) -> ok(3), whose prev is the '
+          'hash of the authentic version 2: history -> ok(1,2,3), and every version in both copies is the oracle\'s',
+          ru == 'ok 3' and rh == 'ok 1,2,3' and disk(root, km, id1, V3, TQ, OQ) == '', (ru, rh, disk(root, km, id1, V3, TQ, OQ)))
+    flip(P('obj', 'index', 2), 11)
+    rp = s.cmd('put', 'b', '*', b'put after a repair', 'r3', 'erin')[1]; id3 = rp[3:]
+    IX.append(IX[1] + line(id3, 'r3'))
+    check('B a put over a tampered newest INDEX primary (repaired from the mirror on the way) chains index version 3 to '
+          'the authentic index version 2: the index, in both copies, is the oracle\'s',
+          isid(rp) and disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER) == ''
+          and disk(root, km, id3, [b'put after a repair'], [b'r3'], b'erin') == '',
+          (rp, disk(root, km, 'index', IX, IDX_TAGS, IDX_OWNER)))
 
 # ── C: an oracle-written store; grants; a wrong K_M ─────────────────────────
 def shard_c(d, s):
