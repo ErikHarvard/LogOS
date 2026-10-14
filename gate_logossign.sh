@@ -31,6 +31,10 @@
 #      builtin's output cannot show how keygen uses it); a ctx of exactly 255
 #      bytes signed (byte for byte with the model) and verified; and the full
 #      arm's sign-then-hash-then-verify command once (on a hedged toy record);
+#   2b. a gate-only record, SLH_WIDE (h - h' = 35), signed byte for byte
+#      with the model under tree addresses of 2^32 or more (layers 0 to 2):
+#      the toy's idx_tree has 4 bits and the default arms sign nothing at 128s,
+#      so a sign-only error in the tree address's high word is caught here;
 #   3. 128s: keyGen KATs (tcId 1 and 10; all 10 in the full arm); every sigVer
 #      record (2 accept, 13 reject); the model's own fresh signatures (a
 #      deterministic one, and a hedged one over a random message with a random
@@ -373,6 +377,32 @@ elif cmd == "kitstyle":
     assert not bad, "glyphs named at run time: " + " ".join(bad)
     print("ok %d %d %s" % (len(glyphs), seen[0], ",".join(sorted(glyphs))))
 
+elif cmd == "widecmds":
+    # WIDE, a record for the gate only (n=16 h=36 d=36 h'=1 a=3 k=4 lg_w=4 m=8):
+    # h - h' = 35, so idx_tree has 35 bits and the tree address of layer j is
+    # idx_tree >> j. The message is the first whose idx_tree is at least 2^34,
+    # so layers 0, 1 and 2 are signed under tree addresses of 2^32 or more (the
+    # toy's idx_tree has 4 bits, and the default arms sign nothing at 128s).
+    out_c, out_e = sys.argv[2:4]
+    s = M.SLHDSA(M.Params("WIDE", "SHA2", n=16, h=36, d=36, hp=1, a=3, k=4, lg_w=4, m=8, cat=1))
+    sks, skp, pks = bytes(range(0x70, 0x80)), bytes(range(0x80, 0x90)), bytes(range(0x90, 0xa0))
+    sk, pk = s.slh_keygen_internal(sks, skp, pks)
+    for i in range(64):
+        msg = b"wide message %d" % i
+        _, it, il = s._split_digest(s.H_msg(s.PRF_msg(skp, pks, msg), pks, pk[16:], msg))
+        if it >> 2 >= 1 << 32: break
+    else: raise AssertionError("no message with idx_tree >= 2^34")
+    sig = s.slh_sign_internal(msg, sk)
+    assert s.slh_verify_internal(msg, sig, pk)
+    bad = flip(sig, s.layout()["ht"][1]["wots"][0] + 3, 0x01)
+    assert not s.slh_verify_internal(msg, bad, pk)
+    write(out_c, ["params wide", "kg wkg %s %s %s" % (sks.hex(), skp.hex(), pks.hex()),
+                  "si wsi %s %s -" % (msg.hex(), sk.hex()),
+                  "vi wvi %s %s %s" % (msg.hex(), sig.hex(), pk.hex()),
+                  "vi wvbad %s %s %s" % (msg.hex(), bad.hex(), pk.hex())])
+    write(out_e, ["kg wkg %s %s" % (sk.hex(), pk.hex()), "si wsi %s" % sig.hex(), "vi wvi 1", "vi wvbad 0", "end"])
+    print("%d %d" % (it, it.bit_length()))
+
 elif cmd == "katcmds":
     # KAT records as driver commands: SEL is a comma list of kgN / sv / sgN
     src, sel, out_c, out_e = sys.argv[2:6]
@@ -471,7 +501,9 @@ import("logoscrypt.la")
 import("logossign.la")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LET = la v. la k. k(v)
-# DRV reads cmds.txt (first line "params toy" or "params 128s"), runs each
+# SLH_WIDE: a record for the gate only, whose tree addresses pass 2^32
+glyph SLH_WIDE = la s. s("16")("36")("36")("1")("3")("4")("4")("8")
+# DRV reads cmds.txt (first line "params toy", "params wide" or "params 128s"), runs each
 # command, and prints one result line and one "#T id microseconds" line per
 # command. Fields are lowercase hex, "-" for empty.
 #   kg ID SKSEED SKPRF PKSEED   -> kg ID SK PK            keygen_internal
@@ -516,7 +548,7 @@ glyph DRV = la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. 
                  (la _. q)("!"))(i)))(la word.
  word(0)(la w0. la i0. word(i0)(la pname. la i1.
  SIGN_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
-   (crypt)(pkit)(str_eq(pname)("toy")(la _. SLH_TOY)(la _. SLH_128S)("!"))
+   (crypt)(pkit)(str_eq(pname)("toy")(la _. SLH_TOY)(la _. str_eq(pname)("wide")(la _. SLH_WIDE)(la _. SLH_128S)("!"))("!"))
  (la kgi. la sgi. la vfi. la sgp. la vfp. la kg.
  LET(la b. b(la _. "1")(la _. "0")("!"))(la b2s.
  LET(la sk. la pk. concat(concat(hex(sk))(" "))(hex(pk)))(la pair.
@@ -698,6 +730,8 @@ else
 fi
 
 run_in toy drv.bin toy.cmds "$LOGOSSIGN_TIMEOUT"
+WIDE_IT=$(cd "$T" && python3 -I oracle.py widecmds wide.cmds wide.exp) || { echo "FAIL  logossign: the WIDE commands"; exit 1; }
+run_in wide drv.bin wide.cmds "$LOGOSSIGN_TIMEOUT"
 wait "$negs_pid"
 [ "$(cat "$T/negs.rc")" = 0 ] || { echo "FAIL  logossign: the model's negative controls: $(tail -3 "$T/negs.out")"; exit 1; }
 cat "$T/sv.cmds" > "$T/v128.cmds"; tail -n +2 "$T/neg.cmds" >> "$T/v128.cmds"
@@ -717,6 +751,14 @@ if [ "$(rc_of toy)" = 0 ] && [ "$(cd "$T" && python3 -I oracle.py krcheck kr.got
     echo "PASS  logossign keygen(random), the VM's random builtin (VM): two key pairs, each the model's key pair for the seeds its sk holds, those three seeds pairwise different, signing and verifying, and the two different"
 else
     echo "FAIL  logossign keygen(random), the VM's random builtin (VM): $(cd "$T" && python3 -I oracle.py krcheck kr.got 2>&1 | tail -1)"; ok=0
+fi
+
+# the WIDE record: tree addresses of 2^32 or more in sign
+results wide > "$T/wide.got"
+if [ "$(rc_of wide)" = 0 ] && cmp -s "$T/wide.got" "$T/wide.exp"; then
+    echo "PASS  logossign wide tree addresses (VM): under SLH_WIDE, a gate-only record with h - h' = 35 (n=16 h=36 d=36 h'=1 a=3 k=4), a message whose idx_tree is ${WIDE_IT% *} (${WIDE_IT#* } bits), so layers 0 to 2 sign under tree addresses of 2^32 or more: keygen_internal and sign_internal byte for byte with the model, the signature TRUE and with a flipped bit at layer 1 FALSE ($(us_of wide wsi | awk '{printf "%d", $1 / 1000}') ms to sign)"
+else
+    echo "FAIL  logossign wide tree addresses (VM): rc=$(rc_of wide)"; diff "$T/wide.exp" "$T/wide.got" | cut -c1-160 | head -6; tail -3 "$T/wide/err"; ok=0
 fi
 
 # 128s sigVer and the negative controls
