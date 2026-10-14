@@ -15,15 +15,27 @@
 #      stub stat, VM with the real one): its first line only, without spaces,
 #      tabs or a carriage return at either end; "/" for an empty or blank
 #      file, a missing directory, or a file that is not a directory
-#   4  the real live entry, compiled, in a private mount namespace with that
+#   4  the users directory, from logos_wm.users, on the C host and the VM with
+#      the same stub stat and mkdir (identical answers): its first line,
+#      trimmed as the cwd is; /var/lib/logos when the file is missing or its
+#      first line is blank; a missing directory made with mode 0700 (448),
+#      one level; a FIRST RUN exactly when DIR/users does not exist (a
+#      directory that exists without users/ is a first run, one with users/
+#      is not); and three loud halts, each naming the path: a regular file,
+#      a missing parent, a stat error other than "does not exist"
+#   5  the same with the VM's real stat and mkdir in the gate's directory: a
+#      missing directory is created with mode 700 and is a first run, an
+#      existing one with users/ is not, an empty existing one is; a regular
+#      file and a missing parent halt naming the path, creating nothing
+#   6  the real live entry, compiled, in a private mount namespace with that
 #      kind of list bound over /proc/bus/input/devices and a /dev holding only
 #      /dev/input/event3: it opens the keyboard (event3, not the mouse's
 #      event5) and gets as far as drm_mode, where it halts loudly as it must
 #      with no GPU (rc 1, a drm message)
-#   5  the same, with no /dev/input/event3 at all: it halts saying there is no
+#   7  the same, with no /dev/input/event3 at all: it halts saying there is no
 #      such device (not that it needs root, which it already is)
 #
-# ISOLATION: a private temporary directory (gate_wm_common.sh); checks 4-5 need
+# ISOLATION: a private temporary directory (gate_wm_common.sh); checks 6-7 need
 # unshare -m (root) and is skipped with a NOTE without it. A few minutes,
 # mostly compiling the live WM on the VM.
 set -uo pipefail
@@ -120,6 +132,87 @@ else
     echo "FAIL  wm livestart: 3 the cwd: host rc=$hrc VM rc=$vrc"; echo "      host: $(tr '\n' ' ' < "$T/cwdh.txt")"; echo "      VM:   $(tr '\n' ' ' < "$T/cwdv.txt")"; ok=0
 fi
 
+# 4 the users directory with a stub stat and mkdir, host = VM
+cat > "$T/users.la" <<'LAEOF'
+import("wm_livestart.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+# the stub world: /srv/l has users/, /srv/e is an empty directory, /srv/f a
+# regular file, /srv/acc cannot be stat'ed; everything else does not exist.
+# mkdir prints what it is asked and fails (no such parent) under /nope only.
+glyph ST = la p. str_eq(p)("/srv/l")("16877 4096")(str_eq(p)("/srv/l/users")("16832 4096")(
+  str_eq(p)("/srv/e")("16877 4096")(str_eq(p)("/srv/f")("33188 10")(str_eq(p)("/srv/acc")("-13")("-2")))))
+glyph MK = la p. la m. (la _. str_eq(p)("/nope/x")("-2")("0"))(print(concat("  mkdir ")(concat(p)(concat(" ")(m)))))
+glyph USERS = USERS_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(error)(ST)(MK)
+glyph CR = chr("13")
+glyph SHOW = la n. la t. USERS(t)(la d. la f. print(concat(n)(concat(": dir=")(concat(d)(concat(" first=")(f("yes")("no")))))))
+glyph MAIN = (la _. (la _. (la _. (la _. (la _. SHOW("new")("/srv/new\n"))
+  (SHOW("trim")(concat(" \t/srv/e  ")(concat(CR)("\n/srv/l\n")))))
+  (SHOW("crlf")(concat("/srv/l")(concat(CR)("\n")))))
+  (SHOW("blank")("  \t \n/srv/l\n")))
+  (SHOW("missing")("")))
+  ("")
+LAEOF
+USERSEXPECT='  mkdir /var/lib/logos 448
+missing: dir=/var/lib/logos first=yes
+  mkdir /var/lib/logos 448
+blank: dir=/var/lib/logos first=yes
+crlf: dir=/srv/l first=no
+trim: dir=/srv/e first=yes
+  mkdir /srv/new 448
+new: dir=/srv/new first=yes'
+wm_host users.la "$T/usersh.txt"; uh=$hrc; cp "$T/usersh.txt" "$T/usersh0.txt"
+wm_vm users.la "$T/usersv.txt"; uv=$vrc
+halts=""
+# each halts with nothing printed but, for /nope/x, the stub's own mkdir line
+for c in "f|/srv/f|is not a directory|" "x|/nope/x|mkdir -> -2|  mkdir /nope/x 448" "acc|/srv/acc|stat -> -13|"; do
+    IFS='|' read -r tag path why out <<< "$c"
+    sed "s|^glyph MAIN = .*|glyph MAIN = SHOW(\"$tag\")(\"$path\\\\n\")|; /^  (SHOW\\|^  (\"\")/d" "$T/users.la" > "$T/users_$tag.la"
+    wm_host "users_$tag.la" "$T/uh_$tag.txt"; hm=$(cat "$T/hre")
+    wm_vm "users_$tag.la" "$T/uv_$tag.txt"; vm=$(cat "$T/vre" 2>/dev/null)
+    if [ "$hrc" = 1 ] && [ "$vrc" = 1 ] && [ "$(cat "$T/uh_$tag.txt")" = "$out" ] && [ "$(cat "$T/uv_$tag.txt")" = "$out" ] \
+       && [[ "$hm" == *"$path"*"$why"* ]] && [[ "$vm" == *"$path"*"$why"* ]]; then
+        halts="$halts $tag"
+    else
+        echo "      $tag: host rc=$hrc '$hm'; VM rc=$vrc '$vm'"
+    fi
+done
+if [ "$uh" = 0 ] && [ "$uv" = 0 ] && [ "$(cat "$T/usersh0.txt")" = "$USERSEXPECT" ] && [ "$(cat "$T/usersv.txt")" = "$USERSEXPECT" ] \
+   && [ "$halts" = " f x acc" ]; then
+    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff DIR/users is absent; a file, a missing parent and a stat error halt naming the path; host = VM"
+else
+    echo "FAIL  wm livestart: 4 the users directory: host rc=$uh VM rc=$uv, halts:$halts"
+    echo "      host: $(tr '\n' '|' < "$T/usersh0.txt")"; echo "      VM:   $(tr '\n' '|' < "$T/usersv.txt")"; ok=0
+fi
+
+# 5 the users directory with the VM's real stat and mkdir
+mkdir -p "$T/ud/has/users" "$T/ud/empty"; : > "$T/ud/file"
+cat > "$T/usersreal.la" <<LAEOF
+import("wm_livestart.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph USERS = USERS_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(error)(stat)(mkdir)
+glyph SHOW = la n. la t. USERS(t)(la d. la f. print(concat(n)(concat(": dir=")(concat(d)(concat(" first=")(f("yes")("no")))))))
+glyph MAIN = (la _. (la _. SHOW("empty")("$T/ud/empty\\n"))(SHOW("has")("$T/ud/has\\n")))(SHOW("new")("$T/ud/new\\n"))
+LAEOF
+wm_vm usersreal.la "$T/usersr.txt"; ur=$vrc
+REALEXPECT="new: dir=$T/ud/new first=yes
+has: dir=$T/ud/has first=no
+empty: dir=$T/ud/empty first=yes"
+rhalts=""
+for c in "file|$T/ud/file|is not a directory" "x|$T/ud/nope/x|mkdir -> -2"; do
+    IFS='|' read -r tag path why <<< "$c"
+    sed "s|^glyph MAIN = .*|glyph MAIN = SHOW(\"$tag\")(\"$path\")|" "$T/usersreal.la" > "$T/usersreal_$tag.la"
+    wm_vm "usersreal_$tag.la" "$T/ur_$tag.txt"; vm=$(cat "$T/vre" 2>/dev/null)
+    if [ "$vrc" = 1 ] && [ ! -s "$T/ur_$tag.txt" ] && [[ "$vm" == *"$path"*"$why"* ]]; then rhalts="$rhalts $tag"
+    else echo "      $tag: VM rc=$vrc '$vm'"; fi
+done
+if [ "$ur" = 0 ] && [ "$(cat "$T/usersr.txt")" = "$REALEXPECT" ] && [ -d "$T/ud/new" ] && [ "$(stat -c %a "$T/ud/new")" = 700 ] \
+   && [ "$rhalts" = " file x" ] && [ -f "$T/ud/file" ] && [ ! -e "$T/ud/nope" ]; then
+    echo "PASS  wm livestart: 5 the users directory on the VM's filesystem: a missing one made mode 700 (a first run), one with users/ not a first run, an empty one a first run; a file and a missing parent halt, naming the path"
+else
+    echo "FAIL  wm livestart: 5 the users directory on the VM: rc=$ur, halts:$rhalts, new: $(stat -c %a "$T/ud/new" 2>&1)"
+    echo "      $(tr '\n' '|' < "$T/usersr.txt") $(head -c 200 "$T/vre" 2>/dev/null)"; ok=0
+fi
+
 if unshare -m true 2>/dev/null; then
     cp "$T/compiler.bin" "$T/logos_program.bin"; cp "$T/theourgia_wm_live.la" "$T/logos_source.la"
     if ( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/vce" ); then
@@ -129,23 +222,23 @@ if unshare -m true 2>/dev/null; then
             mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
             && mkdir /dev/input && : > /dev/input/event3 && exec ./logos_secd" >"$T/live.out" 2>"$T/live.err" ) || lrc=$?
         if [ "$lrc" = 1 ] && ! grep -q "cannot open" "$T/live.err" && grep -qi "drm" "$T/live.err"; then
-            echo "PASS  wm livestart: 4 the live entry opens the keyboard (event3, not the mouse) and halts at drm_mode with no GPU: $(head -c 120 "$T/live.err")"
+            echo "PASS  wm livestart: 6 the live entry opens the keyboard (event3, not the mouse) and halts at drm_mode with no GPU: $(head -c 120 "$T/live.err")"
         else
-            echo "FAIL  wm livestart: 4 the live entry: rc=$lrc"; echo "      stderr: $(head -c 300 "$T/live.err")"; echo "      stdout: $(head -c 200 "$T/live.out")"; ok=0
+            echo "FAIL  wm livestart: 6 the live entry: rc=$lrc"; echo "      stderr: $(head -c 300 "$T/live.err")"; echo "      stdout: $(head -c 200 "$T/live.out")"; ok=0
         fi
         lrc=0
         ( cd "$T" && timeout 120 unshare -m --propagation private sh -c "
             mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
             && mkdir /dev/input && exec ./logos_secd" >"$T/live2.out" 2>"$T/live2.err" ) || lrc=$?
         if [ "$lrc" = 1 ] && grep -q "event3 (open -> -2): no such device" "$T/live2.err" && ! grep -q "run as root" "$T/live2.err"; then
-            echo "PASS  wm livestart: 5 no device node: it says so ($(head -c 120 "$T/live2.err"))"
+            echo "PASS  wm livestart: 7 no device node: it says so ($(head -c 120 "$T/live2.err"))"
         else
-            echo "FAIL  wm livestart: 5 no device node: rc=$lrc; stderr: $(head -c 300 "$T/live2.err")"; ok=0
+            echo "FAIL  wm livestart: 7 no device node: rc=$lrc; stderr: $(head -c 300 "$T/live2.err")"; ok=0
         fi
     else
-        echo "FAIL  wm livestart: 4 theourgia_wm_live.la did not compile: $(tail -2 "$T/vce")"; ok=0
+        echo "FAIL  wm livestart: 6 theourgia_wm_live.la did not compile: $(tail -2 "$T/vce")"; ok=0
     fi
 else
-    echo "NOTE  wm livestart: 4 skipped (unshare -m is not available)"
+    echo "NOTE  wm livestart: 6-7 skipped (unshare -m is not available)"
 fi
 if [ "$ok" = 1 ]; then echo "ALL PASS  gate_wm_livestart"; else echo "GATE FAILED  gate_wm_livestart"; exit 1; fi
