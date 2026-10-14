@@ -354,3 +354,6 @@ vm_seed
 # nothing in the tree; it is working state, not source.
 .asmgate_local/
 .obligations/
+
+# The per-machine Claude Code settings are local by name; they were tracked by mistake (roadmap rev10 Phase 9, 2026-09-28).
+.claude/settings.local.json
