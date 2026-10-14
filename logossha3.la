@@ -1,0 +1,356 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logossha3.la — SHA3_KIT: SHA3-256, SHA3-512, SHAKE128 and SHAKE256
+#  (FIPS 202), over the permutation Keccak-f[1600].
+#
+#  WHAT. The Genesis Sequence's PrimeKey is SHA3-512 (CODEX_AUTOPOIETICUS.tex,
+#  "PrimeKey Generation"), and the post-quantum schemes the codex names after
+#  it (Kyber, Dilithium) expand their matrices and masks with SHAKE. This
+#  module gives the four functions as one kit:
+#
+#      SHA3_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
+#              (error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#        -> la s. s(sha3_256)(sha3_512)(shake128)(shake256)
+#
+#    sha3_256(msg)          32 raw bytes                  (FIPS 202 6.1)
+#    sha3_512(msg)          64 raw bytes                  (FIPS 202 6.1)
+#    shake128(msg)(outlen)  outlen raw bytes, outlen >= 0 (FIPS 202 6.2)
+#    shake256(msg)(outlen)  outlen raw bytes, outlen >= 0 (FIPS 202 6.2)
+#
+#  msg is any binary-safe string; outlen a native integer. An output longer
+#  than the rate is squeezed in several blocks, the permutation applied
+#  between them. A negative outlen halts loudly:
+#      "logossha3: shake128: the output length must not be negative"
+#  (shake256 likewise). The constructor takes CRYPT_FAST's builtins in
+#  CRYPT_FAST's order (logoscrypt.la).
+#
+#  HOW IT IS USED. Build the record ONCE at startup and pass it on as a value:
+#      import("logossha3.la")
+#      ... SHA3_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
+#                  (error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#            (la sha3_256. la sha3_512. la shake128. la shake256. ...)
+#
+#  THE SPONGE (FIPS 202 4, 5.1, 6). The state is 25 lanes of 64 bits,
+#  A[x,y] for x, y in 0..4; byte i of a block goes to lane i div 8 (lane
+#  index x + 5y), little-endian within the lane. A block of r bytes (the
+#  rate) is XOR-ed into the first r/8 lanes, then Keccak-f[1600] is applied.
+#  The message is padded with pad10*1 after the domain bits: the byte after
+#  the message is 0x06 for SHA3 (the suffix 01, then pad's first 1) and 0x1F
+#  for SHAKE (suffix 1111, then the 1), and the last byte of the last block
+#  has 0x80 OR-ed in; when the message leaves one byte of room the two land
+#  in the same byte (0x86, 0x9F). A message of L bytes is floor(L / r) whole
+#  blocks and one padded block. The output is the first bytes of the state,
+#  lane by lane; past r bytes the permutation is applied and r more read.
+#      SHA3-256  r = 136   SHA3-512  r = 72   SHAKE128  r = 168
+#      SHAKE256  r = 136
+#  Every rate is a whole number of lanes, so 0x80 is always the top byte of
+#  lane r/8 - 1.
+#
+#  KECCAK-f[1600] (FIPS 202 3.2, 3.3): 24 rounds of
+#      theta  C[x] = A[x,0] ^ ... ^ A[x,4];  D[x] = C[x-1] ^ rot(C[x+1], 1);
+#             A[x,y] ^= D[x]
+#      rho    lane (x,y) rotated left by r[x,y]
+#      pi     B[y, 2x+3y] = rotated A[x,y]
+#      chi    A[x,y] = B[x,y] ^ (~B[x+1,y] & B[x+2,y])
+#      iota   A[0,0] ^= RC[round]
+#  The offsets and the 24 round constants are FIPS 202's (3.2.2, 3.2.5); the
+#  gate recomputes both from the standard's formulas (the triangular numbers
+#  of Algorithm 2, the LFSR of Algorithm 5).
+#
+#  HOW THE ROUND IS ARRANGED. The state is a record of five ROWS (fixed y),
+#  each a record of five lanes, la k. k(A[0,y])..(A[4,y]). Theta is the XOR
+#  of the five rows (four row-XORs), then D from that, then each row XOR D.
+#  Rho, pi and chi go output row by output row: output row y' takes, from
+#  each input row x' (x' = 0..4), the lane at position (x' + 3y') mod 5,
+#  rotates it by its offset, and applies chi to the five; iota rides on output
+#  row 0. So a round is six small kernels:
+#      K_RX     row XOR row          (theta's parity, and XOR-ing in D)
+#      K_D      D from the parity    (theta)
+#      K_PI     the gather of pi     (25 lanes, the only place all are bound)
+#      K_ROW(0) one output row: its five rotations, then chi (row 0: iota)
+#      K_CHI(0) chi on five lanes (K_CHI0 also XORs the round constant)
+#      K_ROUND  theta, then the gather
+#  and K_PERM runs K_ROUND over the list of the 24 round constants. Nothing
+#  is unrolled across rounds, so there is no generated section: the round
+#  is written once, by hand, and the offsets are the 24 rotation closures
+#  the kit builds (rot(44), rot(43), ...), one per lane.
+#
+#  WHY IT IS FAST. On the SECD VM (WM_DESIGN.md "How fast the VM is"):
+#  naming a builtin or a glyph walks the program, CLOSE scans the body it
+#  closes once per bound name, and a lookup walks the environment cell by
+#  cell. So every kernel is a glyph whose parameters are the builtins,
+#  constants and kernels it uses, applied once when the kit is built; each
+#  binds few names over a short body (the 25-lane gather is the one wide
+#  binding, and its body is just the five row kernels applied to the lanes
+#  they take); a rotation is a closure built
+#  once per offset, with its constants in its own short environment; records
+#  are built by one constructor, K_MK5, so a record holds its five fields and
+#  nothing of the environment it was built in; booleans are applied to thunks.
+#
+#  ONE LANE, ONE INTEGER (and why the two engines agree). A lane is one
+#  native 64-bit integer. Lanes are only ever combined with band, bor, bxor
+#  and with shifts whose count is in 1..63; nothing adds, subtracts or
+#  multiplies a lane, and no shift loses a bit:
+#    - a rotation left by n is (v & (2^(64-n) - 1)) << n  |  v >> (64-n):
+#      the mask clears the n bits a left shift would push out first, so the
+#      shifted value fits in 64 bits; the mask itself is (-1) >> n;
+#    - bshr is a LOGICAL shift on both engines (tiny_host.c: "LOGICAL shift
+#      right -- zero-fill, never arithmetic"; secd.asm: shr);
+#    - a lane read from bytes is (hi << 32) | lo with hi, lo below 2^32, and
+#      bytes are read as (v >> 8k) & 255;
+#    - NOT is v ^ (-1) (-1 is built as 0 - 1), and bit 63 alone (the 0x80 of
+#      the padding, and RC's top bit) is 1 << 63;
+#    - the round constants are written as their low 32 bits, OR-ed with
+#      1 << 63 when their top half is 0x80000000 (it is 0 or that, for every
+#      one), so no literal is 2^63 or more (it would not fit a signed 64-bit
+#      integer).
+#  A lane with bit 63 set is a negative integer to both engines, and band,
+#  bor, bxor, bshl and bshr act on its 64 bits the same way on both: the C
+#  host computes every one of them in unsigned long (tiny_host.c), the VM
+#  with the x86-64 instruction of that name. The only integer arithmetic is
+#  on byte offsets, lengths and byte values, all far below 2^63.
+#  gate_sha3.sh checks the C host against the VM, and both against hashlib.
+#
+#  ENGINES. Pure Lingua Adamica over the int and bitwise builtins: the native
+#  SECD VM is its engine, and the C host gives the same bytes, slowly.
+#
+#  MEASURED on the VM, CPU time inside the program (gate_sha3.sh, best of 5,
+#  a 4-core machine at load 1 to 3): one Keccak-f permutation about 1.2 ms
+#  (SHAKE128 of the empty message to 0 bytes: one padded block absorbed and
+#  permuted), a further squeeze block about 1.2 ms; SHA3-512 of 0 bytes
+#  about 1.2 ms, of 1 KB 16 to 18 ms, of 10 KB 154 to 168 ms (one permutation
+#  per 72 bytes). Building the record takes about 1.3 ms. The C host is far
+#  slower: gate_sha3.sh's host arm (the kit and nine permutations) takes
+#  about 18 s.
+#
+#  HONESTLY OUT OF SCOPE
+#   - Constant time. Nothing branches on the message's or the state's bytes
+#     (only on lengths), but the VM interprets and allocates: no timing claim
+#     is made about this engine.
+#   - SHA3-224, SHA3-384, cSHAKE, KMAC, TupleHash (SP 800-185) and inputs
+#     that are not whole bytes (FIPS 202 allows any bit length).
+#   - Incremental (streaming) hashing: the message is one string, the output
+#     one string.
+# ═══════════════════════════════════════════════════════════════════
+
+export SHA3_KIT
+
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# ── records, bytes, strings ────────────────────────────────────────────
+# K_MK5: the one record constructor. Rows and states are built through it,
+# so a record keeps its five fields and nothing else alive.
+glyph K_MK5 = la a. la b. la c. la d. la e. la k. k(a)(b)(c)(d)(e)
+
+# span(f)(lo)(hi): f(lo) ++ ... ++ f(hi-1), joined by halving; "" when lo >= hi
+glyph K_SPAN = la concat. la add. la lt. la bshr. la C0. la C1. la fix. la f.
+  fix(la sp. la lo. la hi.
+    lt(add(lo)(C1))(hi)
+      (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(bshr(add(lo)(hi))(C1)))
+      (la _. lt(lo)(hi)(la _. f(lo))(la _. "")(C0))
+      (C0))
+
+# the little-endian 32-bit word at byte offset o of the string sa reads
+# (sa = str_at(s); a byte past the end is "" and reads as 0); u = mul(256)
+glyph K_RD32 = la ord. la si. la p. la C1. la C2. la C3. la u. la sa. la o.
+  p(si(ord(sa(o))))(u(p(si(ord(sa(p(o)(C1)))))(u(p(si(ord(sa(p(o)(C2)))))(u(si(ord(sa(p(o)(C3))))))))))
+# the little-endian lane at byte offset i: (hi << 32) | lo
+glyph K_RL = la o. la l. la p. la C4. la C32. la w. la sa. la i.
+  o(l(w(sa)(p(i)(C4)))(C32))(w(sa)(i))
+# a lane as 8 bytes, little-endian; T = str_at(the 256-byte table), n = band(255)
+glyph K_W64 = la c. la r. la n. la T. la A. la B. la C. la D. la E. la F. la G. la v.
+  c(c(c(T(n(v)))(T(n(r(v)(A)))))(c(T(n(r(v)(B))))(T(n(r(v)(C))))))
+   (c(c(T(n(r(v)(D))))(T(n(r(v)(E)))))(c(T(n(r(v)(F))))(T(r(v)(G)))))
+# a row's five lanes as 40 bytes
+glyph K_WROW = la c. la w. la R. R(la a. la b. la x. la d. la e. c(c(w(a))(w(b)))(c(w(x))(c(w(d))(w(e)))))
+
+# ── Keccak-f[1600] ─────────────────────────────────────────────────────
+# rotation left by N (1..63) as a closure: o = bor, l = bshl, r = bshr,
+# m = band(2^K - 1), K = 64 - N
+glyph K_ROT = la o. la l. la r. la m. la N. la K. la v. o(l(m(v))(N))(r(v)(K))
+# row XOR row, lane by lane (x = bxor, M = K_MK5)
+glyph K_RX = la x. la M. la P. la Q.
+  P(la a. la b. la c. la d. la e. Q(la f. la g. la h. la i. la j. M(x(a)(f))(x(b)(g))(x(c)(h))(x(d)(i))(x(e)(j))))
+# theta: D[x] = C[x-1] ^ rot(C[x+1], 1) from the parity row C; t = rot(1)
+glyph K_D = la x. la M. la t. la C.
+  C(la a. la b. la c. la d. la e. M(x(e)(t(b)))(x(a)(t(c)))(x(b)(t(d)))(x(c)(t(e)))(x(d)(t(a))))
+# chi on one row: out[i] = in[i] ^ (~in[i+1] & in[i+2]); y = band, n = bxor(-1).
+# K_CHI0, for output row 0, also XORs the round constant w into lane 0 (iota).
+glyph K_CHI = la x. la y. la n. la M. la a. la b. la c. la d. la e.
+  M(x(a)(y(n(b))(c)))(x(b)(y(n(c))(d)))(x(c)(y(n(d))(e)))(x(d)(y(n(e))(a)))(x(e)(y(n(a))(b)))
+glyph K_CHI0 = la x. la y. la n. la M. la w. la a. la b. la c. la d. la e.
+  M(x(x(a)(y(n(b))(c)))(w))(x(b)(y(n(c))(d)))(x(c)(y(n(d))(e)))(x(d)(y(n(e))(a)))(x(e)(y(n(a))(b)))
+# one output row of rho + pi + chi: the five lanes it gathers, each rotated
+# by its own offset (A..E, rotation closures), then chi (h). Output row 0's
+# first lane, A[0,0], has offset 0 and is not rotated.
+glyph K_ROW = la h. la A. la B. la C. la D. la E. la p. la q. la r. la s. la t. h(A(p))(B(q))(C(r))(D(s))(E(t))
+glyph K_ROW0 = la h. la B. la C. la D. la E. la w. la p. la q. la r. la s. la t. h(w)(p)(B(q))(C(r))(D(s))(E(t))
+# pi: output row y' takes from input row x' the lane at position (x' + 3y')
+# mod 5. Input rows E0..E4 (after theta); O P Q S U build output rows 0..4.
+#   y'=0: E0[0] E1[1] E2[2] E3[3] E4[4]     y'=1: E0[3] E1[4] E2[0] E3[1] E4[2]
+#   y'=2: E0[1] E1[2] E2[3] E3[4] E4[0]     y'=3: E0[4] E1[0] E2[1] E3[2] E4[3]
+#   y'=4: E0[2] E1[3] E2[4] E3[0] E4[1]
+glyph K_PI = la M. la O. la P. la Q. la S. la U. la w. la E0. la E1. la E2. la E3. la E4.
+  E0(la a. la b. la c. la d. la e. E1(la f. la g. la h. la i. la j. E2(la k. la l. la m. la n. la o.
+  E3(la p. la q. la r. la s. la t. E4(la u. la v. la W. la X. la y.
+    M(O(w)(a)(g)(m)(s)(y))(P(d)(j)(k)(q)(W))(Q(b)(h)(n)(t)(u))(S(e)(f)(l)(r)(X))(U(c)(i)(o)(p)(v)))))))
+# one round on the state s (five rows) with round constant w
+glyph K_ROUND = la rx. la dk. la pi. la w. la s.
+  s(la a. la b. la c. la d. la e.
+    (la D. pi(w)(rx(a)(D))(rx(b)(D))(rx(c)(D))(rx(d)(D))(rx(e)(D)))
+    (dk(rx(rx(rx(rx(a)(b))(c))(d))(e))))
+# the permutation: a round for each constant of the list RC, in order
+glyph K_PERM = la fix. la rnd. la RC.
+  (la loop. la s. loop(s)(RC))
+  (fix(la go. la s. la l. l(la _. s)(la w. la t. go(rnd(w)(s))(t))))
+
+# ── the sponge ─────────────────────────────────────────────────────────
+# XOR one block into the state s: g(k) is the block's lane at byte offset k
+# (A.. are the offsets 0, 8, ...); 9 lanes (r = 72), 17 (136), 21 (168).
+# X = row XOR, W = K_MK5, z = 0.
+glyph K_XB9 = la X. la W. la z. la A. la B. la C. la D. la E. la F. la G. la H. la I. la s. la g.
+  s(la a. la b. la c. la d. la e.
+    W(X(a)(W(g(A))(g(B))(g(C))(g(D))(g(E))))(X(b)(W(g(F))(g(G))(g(H))(g(I))(z)))(c)(d)(e))
+glyph K_XB17 = la X. la W. la z. la A. la B. la C. la D. la E. la F. la G. la H. la I. la J. la K. la L. la M.
+    la N. la O. la P. la Q. la s. la g.
+  s(la a. la b. la c. la d. la e.
+    W(X(a)(W(g(A))(g(B))(g(C))(g(D))(g(E))))(X(b)(W(g(F))(g(G))(g(H))(g(I))(g(J))))
+     (X(c)(W(g(K))(g(L))(g(M))(g(N))(g(O))))(X(d)(W(g(P))(g(Q))(z)(z)(z)))(e))
+glyph K_XB21 = la X. la W. la z. la A. la B. la C. la D. la E. la F. la G. la H. la I. la J. la K. la L. la M.
+    la N. la O. la P. la Q. la R. la S. la T. la U. la s. la g.
+  s(la a. la b. la c. la d. la e.
+    W(X(a)(W(g(A))(g(B))(g(C))(g(D))(g(E))))(X(b)(W(g(F))(g(G))(g(H))(g(I))(g(J))))
+     (X(c)(W(g(K))(g(L))(g(M))(g(N))(g(O))))(X(d)(W(g(P))(g(Q))(g(R))(g(S))(g(T))))(X(e)(W(g(U))(z)(z)(z)(z))))
+# absorb(xb)(R)(R1)(LAST)(dom)(msg): the state after msg, padded, has been
+# absorbed at rate R (R1 = R - 1, LAST = R - 8, the offset of the block's
+# last lane); dom is the domain byte (6 or 31). Whole blocks are read
+# straight from the string; the last block reads past the end of msg (as
+# zeros), with dom XOR-ed into the byte just after msg and 0x80 (TOP, bit 63)
+# into the top byte of the last lane.
+glyph K_ABSORB = la fix. la lt. la add. la sub. la mul. la int_eq. la bxor. la bshl. la band. la str_at. la len.
+    la rl. la perm. la C0. la C7. la C8. la TOP. la st0. la xb. la R. la R1. la LAST. la dom. la msg.
+  (la sa. la L.
+    fix(la go. la s. la o.
+      lt(add(o)(R1))(L)
+        (la _. go(perm(xb(s)(la k. rl(sa)(add(o)(k)))))(add(o)(R)))
+        (la _. (la j. (la dk. la dv.
+                  perm(xb(s)(la k. bxor(bxor(rl(sa)(add(o)(k)))(int_eq(k)(dk)(la _. dv)(la _. C0)(C0)))
+                                        (int_eq(k)(LAST)(la _. TOP)(la _. C0)(C0)))))
+                (sub(j)(band(j)(C7)))(bshl(dom)(mul(band(j)(C7))(C8))))
+              (sub(L)(o)))
+        (C0))
+      (st0)(C0))
+  (str_at(msg))(len(msg))
+
+# ── the kit ────────────────────────────────────────────────────────────
+# SHA3_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
+#         (add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#   -> la s. s(sha3_256)(sha3_512)(shake128)(shake256)
+# Everything below the parameter list runs once, when the record is built:
+# the constants, the byte table, the rotations, the kernels applied to their
+# builtins. An integer literal is str_to_int("..."), so the parameter of that
+# name makes each one an environment lookup, and every one of them is
+# evaluated here, never in a function the record holds.
+glyph SHA3_KIT = la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la error.
+    la add. la sub. la mul. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+ (la C0. la C1. la C4. la C6. la C7. la C8. la C16. la C24. la C31. la C32. la C40. la C48. la C56. la C63.
+  la C64. la C72. la C128. la C136. la C160. la C168.
+  LET(Z)(la fix.
+  LET(sub(C0)(C1))(la NEG1.
+  # bit 63 alone: the padding's final 0x80 (the top byte of a lane) and RC's top bit
+  LET(bshl(C1)(C63))(la TOP.
+  LET(la n. la c. n(n))(la nil.
+  LET(la h. la t. la n. la c. c(h)(t))(la cons.
+  LET(la s. str_to_int(str_len(s)))(la len.
+  LET(K_SPAN(concat)(add)(lt)(bshr)(C0)(C1)(fix))(la span.
+  # T: byte n as a one-byte string, through the table of all 256 bytes
+  LET(str_at(span(la i. chr(int_to_str(i)))(C0)(256)))(la T.
+  # take(k)(s): the first k bytes of s
+  LET(la k. la s. span(str_at(s))(C0)(k))(la take.
+  LET(K_MK5)(la M.
+  LET(K_RL(bor)(bshl)(add)(C4)(C32)(K_RD32(ord)(str_to_int)(add)(C1)(2)(3)(mul(256))))(la rl.
+  LET(K_W64(concat)(bshr)(band(255))(T)(C8)(C16)(C24)(C32)(C40)(C48)(C56))(la w64.
+  LET(K_WROW(concat)(w64))(la wrow.
+
+  # ── the permutation ──
+  # rot(N): rotation left by N, its mask (-1) >> N = 2^(64-N) - 1 and its
+  # right shift 64 - N fixed in the closure
+  LET(K_ROT(bor)(bshl)(bshr))(la rotk.
+  LET(la N. rotk(band(bshr(NEG1)(N)))(N)(sub(C64)(N)))(la rot.
+  LET(K_RX(bxor)(M))(la rx.
+  LET(K_D(bxor)(M)(rot(C1)))(la dk.
+  LET(bxor(NEG1))(la not.
+  LET(K_CHI(bxor)(band)(not)(M))(la chi.
+  LET(K_CHI0(bxor)(band)(not)(M))(la chi0.
+  # the rho offsets of the five lanes each output row gathers (FIPS 202
+  # 3.2.2's r[x,y] of the input lane (x, y) = ((x' + 3y') mod 5, x'))
+  LET(K_PI(M)
+        (K_ROW0(chi0)(rot(44))(rot(43))(rot(21))(rot(14)))
+        (K_ROW(chi)(rot(28))(rot(20))(rot(3))(rot(45))(rot(61)))
+        (K_ROW(chi)(rot(1))(rot(6))(rot(25))(rot(8))(rot(18)))
+        (K_ROW(chi)(rot(27))(rot(36))(rot(10))(rot(15))(rot(56)))
+        (K_ROW(chi)(rot(62))(rot(55))(rot(39))(rot(41))(rot(2))))(la pi.
+  LET(K_ROUND(rx)(dk)(pi))(la rnd.
+  # the 24 round constants RC[0..23] (FIPS 202 3.2.5), in round order: the
+  # low 32 bits, with TOP OR-ed in where the high 32 bits are 0x80000000
+  LET(cons(1)(cons(32898)(cons(bor(TOP)(32906))(cons(bor(TOP)(2147516416))(cons(32907)(cons(2147483649)(
+      cons(bor(TOP)(2147516545))(cons(bor(TOP)(32777))(cons(138)(cons(136)(cons(2147516425)(cons(2147483658)(
+      cons(2147516555)(cons(bor(TOP)(139))(cons(bor(TOP)(32905))(cons(bor(TOP)(32771))(cons(bor(TOP)(32770))(
+      cons(bor(TOP)(128))(cons(32778)(cons(bor(TOP)(2147483658))(cons(bor(TOP)(2147516545))(cons(bor(TOP)(32896))(
+      cons(2147483649)(cons(bor(TOP)(2147516424))(nil)))))))))))))))))))))))))(la RC.
+  LET(K_PERM(fix)(rnd)(RC))(la perm.
+
+  # ── the sponge ──
+  LET(M(C0)(C0)(C0)(C0)(C0))(la zrow.
+  LET(M(zrow)(zrow)(zrow)(zrow)(zrow))(la st0.
+  LET(K_XB9(rx)(M)(C0)(C0)(C8)(C16)(C24)(C32)(C40)(C48)(C56)(C64))(la xb9.
+  LET(K_XB17(rx)(M)(C0)(C0)(C8)(C16)(C24)(C32)(C40)(C48)(C56)(C64)(C72)(80)(88)(96)(104)(112)(120)(C128))(la xb17.
+  LET(K_XB21(rx)(M)(C0)(C0)(C8)(C16)(C24)(C32)(C40)(C48)(C56)(C64)(C72)(80)(88)(96)(104)(112)(120)(C128)
+             (C136)(144)(152)(C160))(la xb21.
+  LET(K_ABSORB(fix)(lt)(add)(sub)(mul)(int_eq)(bxor)(bshl)(band)(str_at)(len)(rl)(perm)(C0)(C7)(C8)(TOP)(st0))(la absorb.
+  # the four sponges: rate, rate - 1, the last lane's offset, the domain byte
+  LET(absorb(xb17)(C136)(135)(C128)(C6))(la ab256.
+  LET(absorb(xb9)(C72)(71)(C64)(C6))(la ab512.
+  LET(absorb(xb21)(C168)(167)(C160)(C31))(la abk128.
+  LET(absorb(xb17)(C136)(135)(C128)(C31))(la abk256.
+
+  # ── output ──
+  # the first 32 bytes (lanes 0..3), the first 64 (lanes 0..7), and a whole
+  # block of 168 bytes (21 lanes) or 136 (17)
+  LET(la s. s(la a. la b. la x. la d. la e.
+        a(la p. la q. la r. la t. la u. concat(concat(w64(p))(w64(q)))(concat(w64(r))(w64(t))))))(la out32.
+  LET(la s. s(la a. la b. la x. la d. la e.
+        concat(wrow(a))(b(la p. la q. la r. la t. la u. concat(concat(w64(p))(w64(q)))(w64(r))))))(la out64.
+  LET(la s. s(la a. la b. la x. la d. la e.
+        concat(concat(wrow(a))(wrow(b)))(concat(concat(wrow(x))(wrow(d)))(e(la p. la q. la r. la t. la u. w64(p))))))(la blk168.
+  LET(la s. s(la a. la b. la x. la d. la e.
+        concat(concat(wrow(a))(wrow(b)))(concat(wrow(x))(d(la p. la q. la r. la t. la u. concat(w64(p))(w64(q)))))))(la blk136.
+  # a list of strings joined by rounds of pairwise concatenation (each round
+  # copies every byte once), so a long output costs n log n, not n^2
+  LET(fix(la pr. la l. l(la _. nil)(la a. la t. t(la _. cons(a)(nil))(la b. la u. cons(concat(a)(b))(pr(u))))))(la pairs.
+  LET(fix(la go. la l. l(la _. "")(la a. la t. t(la _. a)(la b. la u. go(pairs(l))))))(la join.
+  # shake(who)(ab)(blk)(R)(msg)(n): n bytes; a block of R bytes from the
+  # state, then the permutation and the next, the last block cut to what
+  # remains. msg is absorbed whatever n is; for n = 0 nothing is read out.
+  LET(la who. la ab. la blk. la R. la msg. la n.
+     lt(n)(C0)
+       (la _. error(concat(who)(": the output length must not be negative")))
+       (la _. (la s0. lt(C0)(n)
+                 (la _. join(fix(la go. la s. la m.
+                           lt(R)(m)
+                             (la _. cons(blk(s))(go(perm(s))(sub(m)(R))))
+                             (la _. cons(lt(m)(R)(la _. take(m)(blk(s)))(la _. blk(s))(C0))(nil))
+                             (C0))
+                         (s0)(n)))
+                 (la _. "")
+                 (C0))
+              (ab(msg)))
+       (C0))(la shake.
+
+  LET(la msg. out32(ab256(msg)))(la sha3_256.
+  LET(la msg. out64(ab512(msg)))(la sha3_512.
+  LET(shake("logossha3: shake128")(abk128)(blk168)(C168))(la shake128.
+  LET(shake("logossha3: shake256")(abk256)(blk136)(C136))(la shake256.
+    la s. s(sha3_256)(sha3_512)(shake128)(shake256)
+  ))))))))))))))))))))))))))))))))))))))))))))))
+ (0)(1)(4)(6)(7)(8)(16)(24)(31)(32)(40)(48)(56)(63)(64)(72)(128)(136)(160)(168)
