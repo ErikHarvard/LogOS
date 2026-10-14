@@ -1,0 +1,113 @@
+# ═══════════════════════════════════════════════════════════════════
+#  lk_firstuser.la — the first-run screen, a LogosKit app: it makes the
+#  first user, and from then on it is the login screen.
+#
+#  When the WM starts and no user has ever been made in its users directory
+#  (wm_livestart.la's USERS_KIT: DIR/users does not exist), there is nobody
+#  to log in as. This screen asks for a Name, a Passphrase and the
+#  Passphrase again, makes the user with LogosSession's adduser, logs the
+#  user in, and the WM lets them in. It is ONE app with two phases: it
+#  starts in the setup phase on a first run, and once the user exists its
+#  state IS the login screen's (lk_login.la), so locking afterwards shows the
+#  ordinary login screen with the new user's name kept. When it is not a
+#  first run it starts as the login screen and never shows the setup.
+#
+#  FIRSTUSER_APP(B)(L)(nodes)(fsess)
+#      -> la s. s(init)(view)(update)(theme)(title)(done)(lock)
+#    the same record as LOGIN_APP's, so the WM's lock screen takes it as it
+#    takes the login screen (theourgia_wm.la's lockui is unchanged).
+#    fsess = la s. s(first)(adduser)(sess)
+#      first                TRUE on a first run (USERS_KIT's first)
+#      adduser(name)(pass)  la err. la ok. err(why) | ok(name): LogosSession's
+#                           adduser over the users directory
+#      sess                 la s. s(login)(lock)(unlock), as LOGIN_APP takes it
+#    state = la setup. la login. setup(name)(pass)(again)(note) | login(ls),
+#      ls a state of LOGIN_APP's (lk_login.la's LOGIN_KIT)
+#    done, lock, view and update in the login phase are the login screen's;
+#    in the setup phase done is FALSE and lock forgets both passphrases.
+#
+#  KEYS: Tab / Shift+Tab move between the three fields and the button; Enter
+#  in Name or Passphrase moves to the next field (LogosKit's form rule);
+#  Enter in Passphrase again, or on the button, submits. A submission is
+#  refused, with a note under the button, the name kept and BOTH
+#  passphrases forgotten, when: the name is empty ("Enter a name."); the
+#  passphrases differ ("The passphrases differ."); the passphrase is empty
+#  ("Enter a passphrase."); adduser refuses (its own reason, e.g.
+#  "adduser: bad name": a name is 1-32 bytes of [a-z0-9_-], LogosSession's
+#  rule, and only adduser applies it). Otherwise adduser is called, then
+#  login with the same name and passphrase, and the state becomes the login
+#  screen's open session: the WM lets the user in. Should login fail after
+#  adduser made the user, the state becomes the login screen before its
+#  first login, with the name and login's reason (the user exists now, so
+#  the setup would only be refused again); the WM keeps the focus it had,
+#  which that view does not have, so Tab is needed to reach its fields.
+#
+#  THE PASSPHRASES ARE NEVER DRAWN OR SPOKEN, as in lk_login.la (whose
+#  pedit and stars this uses): each field shows one '*' per character and
+#  its accessible description reads the same. Both live only in the setup
+#  state, built by its own constructor (mks), and are forgotten after every
+#  attempt, on success (the login state holds no passphrase) and on lock.
+#  The theme is always dark and the title is the login screen's, "Log in".
+# ═══════════════════════════════════════════════════════════════════
+
+import("lk_login.la")
+
+export FIRSTUSER_APP
+
+glyph LET = la v. la k. k(v)
+
+glyph FIRSTUSER_APP = la B. la L. la nodes. la fsess.
+  B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
+    la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
+  L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
+  nodes(la TEXT. la BUTTON. la FIELD. la TOGGLE. la LIST. la ROW. la COL. la PANEL. la SPACE.
+  fsess(la first. la s_adduser. la sess.
+  sess(la s_login. la s_lock. la s_unlock.
+  LOGIN_KIT(B)(L)(nodes)(sess)(la lapp. la opened. la refused. la pedit. la stars.
+  lapp(la l_init. la l_view. la l_update. la l_theme. la l_title. la l_done. la l_lock.
+  (la C0. la TRUE. la FALSE.
+    # the two phases, each built by its own constructor, bound here before any
+    # passphrase exists (on the VM a closure keeps its whole environment)
+    LET(la name. la pass. la again. la note. la setup. la login. setup(name)(pass)(again)(note))(la mks.
+    LET(la ls. la setup. la login. login(ls))(la mkl.
+    LET(la s. str_to_int(str_len(s)))(la slen.
+    LET(first(la _. mks("")("")("")(""))(la _. mkl(l_init))(C0))(la init.
+    # attempt(name)(pass)(again): make the user and log in, or refuse; either
+    # way the state that comes back holds neither passphrase
+    LET(la name. la pass. la again.
+        (la refuse.
+          str_eq(name)("")(la _. refuse("Enter a name."))(la _.
+          str_eq(pass)(again)
+            (la _. str_eq(pass)("")(la _. refuse("Enter a passphrase."))
+                     (la _. s_adduser(name)(pass)
+                              (la why. refuse(why))
+                              (la n. s_login(name)(pass)
+                                       (la why. mkl(refused(name)(why)))
+                                       (la x. mkl(opened(name)(x)))))(C0))
+            (la _. refuse("The passphrases differ."))(C0))(C0))
+        (la note. mks(name)("")("")(note)))(la attempt.
+    LET(la st. la msg. st
+        (la name. la pass. la again. la note. msg(la id. la kind. la pay.
+          str_eq(id)("name")(la _. str_eq(kind)("edit")(la _. mks(pay)(pass)(again)(note))(la _. st)(C0))(la _.
+          str_eq(id)("pass")(la _. str_eq(kind)("edit")(la _. mks(name)(pedit(pass)(pay))(again)(note))(la _. st)(C0))(la _.
+          str_eq(id)("again")(la _. str_eq(kind)("edit")
+                                      (la _. mks(name)(pass)(pedit(again)(pay))(note))
+                                      (la _. attempt(name)(pass)(again))(C0))(la _.
+          str_eq(id)("make")(la _. attempt(name)(pass)(again))(la _. st)(C0))(C0))(C0))(C0)))
+        (la ls. mkl(l_update(ls)(msg))))(la update.
+    LET(la st. st
+        (la name. la pass. la again. la note. PANEL("LogOS")(COL(
+            cons(TEXT("Welcome. Make the first user."))(
+            cons(FIELD("name")("Name")(name))(
+            cons(FIELD("pass")("Passphrase")(stars(slen(pass))))(
+            cons(FIELD("again")("Passphrase again")(stars(slen(again))))(
+            cons(BUTTON("make")("Make the user"))(
+            cons(TEXT(note))(nil)))))))))
+        (la ls. l_view(ls)))(la view.
+    LET(la st. TRUE)(la theme.
+    LET(la st. st(la name. la pass. la again. la note. FALSE)(la ls. l_done(ls)))(la done.
+    # lock: the setup forgets both passphrases (the name and note kept); the
+    # login screen locks as it does
+    LET(la st. st(la name. la pass. la again. la note. mks(name)("")("")(note))(la ls. mkl(l_lock(ls))))(la lock.
+      la s. s(init)(view)(update)(theme)(l_title)(done)(lock))))))))))))
+  (0)(la t. la f. t)(la t. la f. f))))))))
