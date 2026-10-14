@@ -47,6 +47,16 @@
 #  (An argument that is not a string at all is a programming error the VM
 #  halts on; Lingua Adamica has no type test.)
 #
+#  THE INTERNAL INTERFACES ARE FOR TESTING. keygen_internal, sign_internal
+#  and verify_internal are in the record for the known-answer tests; FIPS 205
+#  (Section 9) says that, other than for testing, the internal key generation
+#  and signing interfaces should not be offered to applications, which use
+#  keygen, sign and verify. Under one key the two kinds of signature are
+#  interchangeable: a pure signature of (M, ctx) IS an internal signature of
+#  M' = 00 ++ toByte(|ctx|, 1) ++ ctx ++ M. So whoever can have chosen
+#  messages signed by sign_internal can obtain a pure signature of any
+#  (M, ctx) with |ctx| <= 255, and a pure signature verifies internally.
+#
 #  BYTE FORMATS (FIPS 205 Section 9, the standard's own encodings):
 #    sk  = SK.seed ++ SK.prf ++ PK.seed ++ PK.root      64 bytes
 #    pk  = PK.seed ++ PK.root                           32 bytes
