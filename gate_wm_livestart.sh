@@ -23,7 +23,10 @@
 #      directory that exists without users/ is a first run; one with users/
 #      a directory, a regular file, or not stat-able (-13) is not); and three
 #      loud halts, each naming the path: a regular file, a missing parent, a
-#      stat error other than "does not exist"
+#      stat error other than "does not exist"; and, in a second stub world
+#      where /var/lib/logos already has users/, no logos_wm.users (or a blank
+#      line) is the default directory and NOT a first run: the live WM's
+#      usual second boot
 #   5  the same with the VM's real stat and mkdir in the gate's directory: a
 #      missing directory is created with mode 700 and is a first run, an
 #      existing one with users/ is not, an empty existing one is; a regular
@@ -41,7 +44,8 @@
 #   9  logos_wm.users naming a regular file: it halts naming the file and
 #      never reaches drm_mode (a loud failure leaves no taken screen)
 #   10 no logos_wm.users at all, with a tmpfs over /var/lib in the namespace:
-#      it makes /var/lib/logos, mode 700, and halts at drm_mode
+#      it makes /var/lib/logos, mode 700, and halts at drm_mode; started again
+#      once /var/lib/logos/users exists, it is not a first run
 # Every run of the live entry is given a users directory in the gate's own
 # directory (or a tmpfs), so the gate never makes /var/lib/logos on the host.
 #
@@ -194,12 +198,28 @@ for c in "f|/srv/f|is not a directory|" "x|/nope/x|mkdir -> -2|  mkdir /nope/x 4
         echo "      $tag: host rc=$hrc '$hm'; VM rc=$vrc '$vm'"
     fi
 done
+# the second stub world: the default directory already has users/
+cat > "$T/users_def.la" <<'LAEOF'
+import("wm_livestart.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph ST = la p. str_eq(p)("/var/lib/logos")("16832 4096")(str_eq(p)("/var/lib/logos/users")("16832 4096")("-2"))
+glyph MK = la p. la m. (la _. "0")(print(concat("  mkdir ")(concat(p)(concat(" ")(m)))))
+glyph USERS = USERS_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(error)(ST)(MK)
+glyph SHOW = la n. la t. USERS(t)(la d. la f. print(concat(n)(concat(": dir=")(concat(d)(concat(" first=")(f("yes")("no")))))))
+glyph MAIN = (la _. SHOW("blank")("  \t \n"))(SHOW("missing")(""))
+LAEOF
+DEFEXPECT='missing: dir=/var/lib/logos first=no
+blank: dir=/var/lib/logos first=no'
+wm_host users_def.la "$T/udh.txt"; udh=$hrc
+wm_vm users_def.la "$T/udv.txt"; udv=$vrc
 if [ "$uh" = 0 ] && [ "$uv" = 0 ] && [ "$(cat "$T/usersh0.txt")" = "$USERSEXPECT" ] && [ "$(cat "$T/usersv.txt")" = "$USERSEXPECT" ] \
-   && [ "$halts" = " f x acc" ]; then
-    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff stat(DIR/users) is -2 (users/ a file or -13 is not); a file, a missing parent and a stat error halt naming the path; host = VM"
+   && [ "$halts" = " f x acc" ] && [ "$udh" = 0 ] && [ "$udv" = 0 ] && [ "$(cat "$T/udh.txt")" = "$DEFEXPECT" ] \
+   && [ "$(cat "$T/udv.txt")" = "$DEFEXPECT" ]; then
+    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff stat(DIR/users) is -2 (users/ a file or -13 is not); a file, a missing parent and a stat error halt naming the path; the default directory with users/ is not a first run; host = VM"
 else
     echo "FAIL  wm livestart: 4 the users directory: host rc=$uh VM rc=$uv, halts:$halts"
-    echo "      host: $(tr '\n' '|' < "$T/usersh0.txt")"; echo "      VM:   $(tr '\n' '|' < "$T/usersv.txt")"; ok=0
+    echo "      host: $(tr '\n' '|' < "$T/usersh0.txt")"; echo "      VM:   $(tr '\n' '|' < "$T/usersv.txt")"
+    echo "      default with users/: host rc=$udh $(tr '\n' '|' < "$T/udh.txt"); VM rc=$udv $(tr '\n' '|' < "$T/udv.txt")"; ok=0
 fi
 
 # 5 the users directory with the VM's real stat and mkdir
@@ -275,13 +295,17 @@ if unshare -m true 2>/dev/null; then
         ( cd "$T" && timeout 120 unshare -m --propagation private sh -c "
             mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
             && mkdir /dev/input && : > /dev/input/event3 && mount -t tmpfs none /var/lib \
-            && { ./logos_secd; echo \"rc=\$?\" > '$T/live4.rc'; stat -c %a /var/lib/logos > '$T/live4.mode' 2>&1; }" \
+            && { ./logos_secd; echo \"rc=\$?\" > '$T/live4.rc'; stat -c %a /var/lib/logos > '$T/live4.mode' 2>&1; } \
+            && mkdir /var/lib/logos/users && { ./logos_secd >'$T/live5.out' 2>'$T/live5.err'; echo \"rc=\$?\" > '$T/live5.rc'; }" \
             >"$T/live4.out" 2>"$T/live4.err" ) || lrc=$?
         if [ "$(cat "$T/live4.rc" 2>/dev/null)" = rc=1 ] && [ "$(cat "$T/live4.mode" 2>/dev/null)" = 700 ] \
-           && grep -qxF "wm: users in /var/lib/logos, a first run" "$T/live4.out" && grep -qi "drm" "$T/live4.err"; then
-            echo "PASS  wm livestart: 10 with no logos_wm.users it makes /var/lib/logos (mode 700, in the namespace's tmpfs) and halts at drm_mode"
+           && grep -qxF "wm: users in /var/lib/logos, a first run" "$T/live4.out" && grep -qi "drm" "$T/live4.err" \
+           && [ "$(cat "$T/live5.rc" 2>/dev/null)" = rc=1 ] && grep -qxF "wm: users in /var/lib/logos" "$T/live5.out" \
+           && ! grep -q "first run" "$T/live5.out" && grep -qi "drm" "$T/live5.err"; then
+            echo "PASS  wm livestart: 10 with no logos_wm.users it makes /var/lib/logos (mode 700, in the namespace's tmpfs) and halts at drm_mode; once /var/lib/logos/users exists it is not a first run"
         else
-            echo "FAIL  wm livestart: 10 no logos_wm.users: $(cat "$T/live4.rc" 2>&1) mode $(cat "$T/live4.mode" 2>&1); stdout: $(head -c 200 "$T/live4.out"); stderr: $(head -c 200 "$T/live4.err")"; ok=0
+            echo "FAIL  wm livestart: 10 no logos_wm.users: $(cat "$T/live4.rc" 2>&1) mode $(cat "$T/live4.mode" 2>&1); stdout: $(head -c 200 "$T/live4.out"); stderr: $(head -c 200 "$T/live4.err")"
+            echo "      second boot: $(cat "$T/live5.rc" 2>&1); stdout: $(head -c 200 "$T/live5.out" 2>&1); stderr: $(head -c 200 "$T/live5.err" 2>&1)"; ok=0
         fi
     else
         echo "FAIL  wm livestart: 6 theourgia_wm_live.la did not compile: $(tail -2 "$T/vce")"; ok=0
