@@ -15,7 +15,8 @@
 #   1. known answers, from literal hex below (where each comes from is
 #      written beside it): the empty message and "abc" for all four
 #      functions, SHAKE at 32 and 64 bytes; and NIST's 1600-bit message (200
-#      bytes of 0xA3, two blocks at every rate) for all four;
+#      bytes of 0xA3: two absorbed blocks at rates 136 and 168, three at
+#      SHA3-512's 72) for all four;
 #   2. hashlib as the oracle on random messages of every length 0..3r+1 for
 #      each function (r = 136, 72, 168, 136; SHAKE128 at 32 bytes out,
 #      SHAKE256 at 64), the boundaries r-1, r, r+1 and 2r-1 called out; the
