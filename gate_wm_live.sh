@@ -14,10 +14,15 @@
 #      and it is the lock screen: on a first run (an empty users directory)
 #      the first-run screen, not a terminal
 #   2  making the first user there presents the welcome terminal without a
-#      frame request, and a typed line is presented without one too; no
-#      passphrase reaches the log
-#   3  MOD+Shift+e ends it cleanly
-#   4  started again over the same users directory, the first frame
+#      frame request, and a typed line is presented without one too
+#   3  keys typed while the lock screen's attempt runs (seconds of PBKDF2,
+#      the lock screen still drawn) were meant for it and never reach the
+#      terminal: the passphrase typed again with Enter 0.5 s after the first
+#      user's submitting Enter, and again 0.3 s after an unlock's, is in no
+#      presented frame and not in the log (the session log, live); a line
+#      typed once the unlocked screen is shown still runs
+#   4  MOD+Shift+e ends it cleanly
+#   5  started again over the same users directory, the first frame
 #      presented is the login screen (neither the first-run screen nor a
 #      terminal)
 # The live entry point itself needs a bare VT and is run by hand
@@ -70,6 +75,15 @@ def wait(wm, tag, pattern, n=1, timeout=30.0):
         if wm.poll() is not None: return None
         time.sleep(0.05)
     return None
+def wait_after(wm, tag, marker, pattern, timeout=30.0):
+    """wait for pattern in the log after the last marker"""
+    t = time.time()
+    while time.time() - t < timeout:
+        l = log(tag)
+        if marker in l and pattern in l[l.rindex(marker):]: return True
+        if wm.poll() is not None: return False
+        time.sleep(0.05)
+    return False
 def frame():
     try: return ocr.ocr(ocr.Frame(open("live_frame.bin", "rb").read(), 640, 400, 2560), glyphs, 1)
     except OSError: return None
@@ -87,26 +101,47 @@ check(f"1 the first frame is presented at startup, before any key ({first} s), a
       first is not None and lockscreen(s) and has(s, "Welcome. Make the first user.") and "wm: open window" not in log("first"),
       f"present after {first} s; frame {str(s)[:300]}; log {log('first')[-300:]!r}")
 fifo.write(ws.compile_script([f"type adam\\n{PASS}\\n{PASS}\\n"]))
-got = wait(wm, "first", "wm: unlocked", timeout=90); time.sleep(1.0)
+# 0.5 s later, while adduser and login run, the passphrase is typed again
+time.sleep(0.5); fifo.write(ws.compile_script([f"type {PASS}\\n"]))
+got = wait(wm, "first", "wm: unlocked", timeout=90)
+shown = wait_after(wm, "first", "wm: unlocked", "wm: present"); time.sleep(1.0)
 s = frame()
 n = log("first").count("wm: present")
 fifo.write(ws.compile_script(["type echo hi\\n"]))
 got2 = wait(wm, "first", "wm: [1] $ echo hi", timeout=20); time.sleep(1.0)
 s2 = frame()
-check("2 making the first user presents the welcome terminal, and a typed line is presented, neither on request; no passphrase in the log",
-      got is not None and s and len(s) == 1 and s[0].get("kind") == "term" and has(s, "Theourgia tiling window manager")
-      and got2 is not None and log("first").count("wm: present") > n and s2 and "hi" in [r.strip() for r in s2[0]["rows"]]
-      and PASS not in log("first") and PASS not in open("first.err").read(),
+check("2 making the first user presents the welcome terminal, and a typed line is presented, neither on request",
+      got is not None and shown and s and len(s) == 1 and s[0].get("kind") == "term" and has(s, "Theourgia tiling window manager")
+      and got2 is not None and log("first").count("wm: present") > n and s2 and "hi" in [r.strip() for r in s2[0]["rows"]],
       f"unlocked after {got} s; frame {str(s)[:300]}; then {str(s2)[:200]}; log {log('first')[-300:]!r}")
+# lock, unlock, and the passphrase typed again 0.3 s after the unlocking Enter
+fifo.write(ws.compile_script(["mod ESC"]))
+locked = wait(wm, "first", "wm: locked") and wait_after(wm, "first", "wm: locked", "wm: present"); time.sleep(0.5)
+fifo.write(ws.compile_script([f"type {PASS}\\n"]))
+time.sleep(0.3); fifo.write(ws.compile_script([f"type {PASS}\\n"]))
+got3 = wait(wm, "first", "wm: unlocked", 2, timeout=60)
+shown3 = wait_after(wm, "first", "wm: unlocked", "wm: present"); time.sleep(1.0)
+s3 = frame()
+fifo.write(ws.compile_script(["type echo two\\n"]))
+got4 = wait(wm, "first", "wm: [1] $ echo two", timeout=20); time.sleep(1.0)
+s4 = frame()
+def rows_with(fr, text): return [r for t in (fr or []) for r in t["rows"] if text in r]
+check("3 the passphrase typed again while the attempt ran (after the first user's Enter, and after an unlock's) is in no frame and not in the log; a line typed afterwards runs",
+      got is not None and shown and locked and got3 is not None and shown3 and got4 is not None
+      and s3 and len(s3) == 1 and s3[0].get("kind") == "term" and s4 and "two" in [r.strip() for r in s4[0]["rows"]]
+      and not any(rows_with(f, PASS) or rows_with(f, PASS[1:]) for f in (s, s2, s3, s4))
+      and PASS not in log("first") and PASS not in open("first.err").read(),
+      f"after the first user: {rows_with(s, PASS[1:])}; after the unlock: {rows_with(s3, PASS[1:])}; "
+      f"log lines: {[l for l in log('first').splitlines() if PASS in l]}; locked {locked} got3 {got3} shown3 {shown3} got4 {got4}")
 fifo.write(ws.compile_script(["mod Shift+E"])); fifo.close()
 try: rc = wm.wait(timeout=60)
 except subprocess.TimeoutExpired:
     wm.kill(); rc = "timeout"
-check("3 MOD+Shift+e ends it cleanly", rc == 0 and "wm: exit" in log("first"), f"rc={rc}; {log('first')[-200:]!r}")
+check("4 MOD+Shift+e ends it cleanly", rc == 0 and "wm: exit" in log("first"), f"rc={rc}; {log('first')[-200:]!r}")
 wm, fifo = start("again")
 first = wait(wm, "again", "wm: present", 1, timeout=60)
 s = frame()
-check(f"4 started again over the same users, the first frame presented ({first} s) is the login screen",
+check(f"5 started again over the same users, the first frame presented ({first} s) is the login screen",
       first is not None and lockscreen(s) and has(s, "Log in to LogOS.") and not has(s, "Make the first user"),
       f"present after {first} s; frame {str(s)[:300]}; log {log('again')[-300:]!r}")
 fifo.close(); wm.terminate()

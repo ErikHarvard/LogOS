@@ -56,9 +56,11 @@
 #  st  = la k. k(tree)(focus)(wins)(nextid)(mask)(quit)(dirty)(lock)
 #  lock = la n. la s. n(n)  (no lock screen)  |  la n. la s. s(la k. k(login)
 #         (lw)(showing)(held)): the login app's record, the window (id 0) that
-#         holds it, whether the screen is locked now, and the code of the key
-#         that unlocked it while that key is still held (0 = none): its
-#         autorepeats belong to the login panel's keystroke and are dropped
+#         holds it, whether the screen is locked now, and held: the code of
+#         the key that unlocked it while that key is still held (0 = none),
+#         whose autorepeats belong to the login panel's keystroke and are
+#         dropped, plus 4096 (DRAIN) while the keys typed before the unlocked
+#         screen was shown are being discarded (WM_LOOP, live only)
 #  win = la k. k(id)(term)(sh)(job)(bcache)(tkey)(trows)(ver)(app)
 #  bcache = la k. k(cols)(cache): the renderer's band cache and the width
 #        (in cells) it was drawn at; at any other width it starts again
@@ -324,6 +326,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
   (la C0. la C1. la C2. la C3. la C12. la C50. la C85. la C240. la C255. la TRUE. la FALSE.
     LET(la a. la b. b)(la seq.
     LET(la x. int_eq(x)(C0)(FALSE)(TRUE))(la nz.
+    LET(4095)(la C4095. LET(4096)(la DRAIN.
     LET(la n. la j. n(n))(la NOJOB.
     LET(sub(C0)(C50))(la NEG50.
     # key codes
@@ -532,15 +535,20 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
     # moves to the next field or submits, which a held key must do only once
     # (held, it hopped over the fields and submitted again with the
     # passphrases already forgotten, hiding why the first attempt was refused).
+    # While held has DRAIN (set by the live loop at an unlock, cleared once the
+    # input that came before the unlocked screen was shown has been read),
+    # every key but a modifier is dropped: it was typed for the lock screen.
     LET(la st. la code. la value.
         (la bit. int_eq(bit)(C0)
             (la _. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
                 (la ordinary. lock(ordinary)(la l. l(la login. la lw. la showing. la held.
-                    int_eq(held)(code)
-                      (la _. int_eq(value)(C2)(la _. st)
-                         (la _. (la st2. int_eq(value)(C0)(la _. st2)(la _. press(st2)(code))(C0))
-                                (mkst(tree)(focus)(wins)(nid)(mask)(quit)(dirty)(some(quad(login)(lw)(showing)(C0)))))(C0))
-                      (ordinary)(C0))))
+                    (la hk. la drain.
+                      int_eq(hk)(code)
+                        (la _. int_eq(value)(C2)(la _. st)
+                           (la _. (la st2. int_eq(value)(C0)(la _. st2)(la _. drain(la _. st2)(la _. press(st2)(code))(C0))(C0))
+                                  (mkst(tree)(focus)(wins)(nid)(mask)(quit)(dirty)(some(quad(login)(lw)(showing)(band(held)(DRAIN))))))(C0))
+                        (la _. drain(la _. st)(ordinary)(C0))(C0))
+                    (band(held)(C4095))(nz(band(held)(DRAIN))))))
                 (la _. int_eq(value)(C0)(la _. st)
                          (la _. int_eq(value)(C2)(int_eq(code)(K_ENTER)(lock(la _. FALSE)(la l. l(la a. la b. la shw. la h. shw)))(FALSE))(FALSE)
                                   (la _. st)(la _. press(st)(code))(C0))(C0))))
@@ -623,7 +631,7 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
         (map(la w. w(la id. la term. la sh. la job. la bc. la tk. la tr. la ver. la app.
               job(la _. C0)(la pid. la rfd. la cmd. seq(sh_hup(pid))(str_eq(rfd)("")(la _. C0)(la _. close(rfd))(C0)))))(wins))))(la shutdown.
       la s. s(empty)(open_win)(handle)(on_output)(job_fds)(shutdown)(welcome)(reap)(pending)
-    )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+    )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   (0)(1)(2)(3)(12)(50)(85)(240)(255)(la t. la f. t)(la t. la f. f)))))))))))
 
 # ── The frame: layout, tiles, compose ─────────────────────────────────────
@@ -674,6 +682,15 @@ glyph WM_FRAME = la B. la L. la R. la TL. la W. la tile. la cfg.
 # whatever is ready, and (live) present a new frame if anything changed. Live,
 # the first frame is presented before the first poll. The
 # recursive call is in tail position, so the VM's TCO keeps the dump bounded.
+# TYPE-AHEAD AT AN UNLOCK (live only): a login or a first user takes seconds
+# (PBKDF2) with the lock screen still drawn, and keys typed meanwhile (a
+# passphrase typed again, thinking the Enter was lost) were meant for it. So
+# when an event unlocks the screen, the lock record's held gets DRAIN: the
+# core drops every key but a modifier from then on, the rest of that read
+# included; after the unlocked frame is presented the loop polls only the
+# input, without waiting, and reads whatever is there (dropped the same way)
+# until nothing is, then clears DRAIN. The headless WM's sync mode reads one
+# event at a time from a script, in which every event comes after the last.
 glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
   B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
@@ -684,10 +701,22 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
   io(la display. la infds. la insize. la sim.
   WM_MK(la mkw. la pair. la triple. la some. la mkjob. la mkst8. la quad.
   (la C0. la C1. la C24. la TRUE. la FALSE.
+    LET(4095)(la C4095. LET(4096)(la DRAIN.
     LET(la st. la n. frame(st)(la bytes. la st2.
         (la _. (la _. st2)(print(concat("wm: snap ")(int_to_str(n)))))
         (write_file(concat("wm_shot_")(concat(int_to_str(n))(".bin")))(bytes))))(la snap.
-    LET(handle(snap))(la h.
+    LET(la st. st(la t. la f. la w. la n. la m. la q. la d. la lock. lock(la _. FALSE)(la l. l(la a. la b. la shw. la hd. shw))))(la showing.
+    LET(la st. st(la t. la f. la w. la n. la m. la q. la d. la lock.
+        lock(la _. FALSE)(la l. l(la a. la b. la shw. la hd. int_eq(band(hd)(DRAIN))(C0)(FALSE)(TRUE)))))(la draining.
+    # setdrain(on)(st): st with DRAIN set (on TRUE) or cleared in held
+    LET(la on. la st. st(la t. la f. la w. la n. la m. la q. la d. la lock.
+        lock(la _. st)(la l. l(la a. la b. la shw. la hd.
+          mkst8(t)(f)(w)(n)(m)(q)(d)(some(quad(a)(b)(shw)(on(la _. bor(hd)(DRAIN))(la _. band(hd)(C4095))(C0))))))))(la setdrain.
+    # h folds one event; live, an event that unlocks the screen sets DRAIN
+    LET(sim(la _. handle(snap))
+           (la _. la st. la type. la code. la value.
+              (la st2. showing(st)(la _. showing(st2)(la _. st2)(la _. setdrain(TRUE)(st2))(C0))(la _. st2)(C0))
+              (handle(snap)(st)(type)(code)(value)))(C0))(la h.
     LET(la fd. find(la x. str_eq(x)(fd))(infds)(la _. FALSE)(la x. TRUE))(la is_input.
     # A read of an input fd returns whatever bytes are there, which need not be
     # whole 24-byte records (a FIFO written in pieces). carry holds, for each
@@ -726,28 +755,34 @@ glyph WM_LOOP = la B. la L. la X. la J. la fold. la core. la frame. la io.
         st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
           quit
             (la _. (la _. (la _. st)(print("wm: exit")))(shutdown(st)))
-            (la _. (la jobs. (la busy.
+            (la _. (la dr. (la jobs. (la busy.
                 (la fds.
-                    (la go. fds(la _. busy(go)(la _. (la _. st)(print("wm: input finished and nothing is running")))(C0))
+                    (la go. fds(la _. dr(la _. loop(setdrain(FALSE)(st))(done)(carry))
+                                        (la _. busy(go)(la _. (la _. st)(print("wm: input finished and nothing is running")))(C0))(C0))
                                (la f1. la frest. go(C0)))
-                    (la _. (la ready.
-                              each(st)(done)(carry)(order(ready))(la st2. la done2. la carry2.
+                    (la _. (la ready. (la service.
+                              # draining: nothing more to read clears DRAIN
+                              dr(la _. ready(la _. loop(setdrain(FALSE)(st))(done)(carry))(la r1. la rr. service(C0)))(service)(C0))
+                            (la _. each(st)(done)(carry)(order(ready))(la st2. la done2. la carry2.
                                  sim(la _. loop(st2)(done2)(carry2))
                                     (la _. st2(la t. la f. la w. la n. la m. la q. la dirty2. la lk.
                                          dirty2(la _. frame(st2)(la bytes. la st3.
                                                     (la _. loop(st3)(done2)(carry2))(display(bytes))))
-                                               (la _. loop(st2)(done2)(carry2))(C0)))(C0)))
-                          (split(poll(join(fds))(busy(la _. "100")(la _. "-1")(C0))))))
-                  (append(done(la _. nil)
+                                               (la _. loop(st2)(done2)(carry2))(C0)))(C0))))
+                          (split(poll(join(fds))(dr(la _. "0")(la _. busy(la _. "100")(la _. "-1")(C0))(C0))))))
+                  # draining polls only the input, and does not wait
+                  (dr(la _. done(la _. nil)(la _. infds)(C0))
+                     (la _. append(done(la _. nil)
                               (la _. sim(la _. jobs(la _. busy(la _. nil)(la _. infds)(C0))(la a. la b. nil))(la _. infds)(C0))(C0))
-                         (jobs)))
+                         (jobs))(C0)))
                (pending(st)))
                (job_fds(st)))
+               (draining(st)))
             (C0)))(reap(st0))))(la loop.
       # live, the first frame (the welcome terminal) is presented before the
       # first poll, which blocks until a key or a program's output arrives
       la st. sim(la _. loop(st)(FALSE)(nil))
-                (la _. frame(st)(la bytes. la st2. (la _. loop(st2)(FALSE)(nil))(display(bytes))))(C0)))))))))))
+                (la _. frame(st)(la bytes. la st2. (la _. loop(st2)(FALSE)(nil))(display(bytes))))(C0))))))))))))))))
   (0)(1)(24)(la t. la f. t)(la t. la f. f))))))))
 
 # ── Wiring ────────────────────────────────────────────────────────────────
