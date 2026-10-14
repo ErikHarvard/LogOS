@@ -53,7 +53,8 @@
 #      ctxs of 256, 257 and 300 bytes on the valid signature;
 #      a truncated, an extended and an empty signature; a 31- and a 33-byte pk;
 #   5. misuse halts loudly (rc 1, the message, no output): a ctx of 256 bytes,
-#      a 63- or 65-byte sk, a 15- or 17-byte addrnd, a 15-byte seed;
+#      a 63- or 65-byte sk, a 15- or 17-byte addrnd, a 15- or 17-byte SK.seed,
+#      SK.prf or PK.seed;
 #   5b. kit style, statically: every reference to a glyph in logossign.la is
 #      in SIGN_KIT and evaluated while the kit is built, none inside a function
 #      the kit returns (a parse of the module in oracle.py; the position arm
@@ -856,7 +857,14 @@ misuse "sign_internal with a 63-byte sk" "logossign: sign: sk must be 64 bytes" 
 misuse "sign with a 65-byte sk" "logossign: sign: sk must be 64 bytes" "sp m 6d - ${TSK}00 -"
 misuse "sign with a 15-byte addrnd" "logossign: sign: addrnd must be empty or 16 bytes" "sp m 6d - $TSK a0a1a2a3a4a5a6a7a8a9aaabacadae"
 misuse "sign_internal with a 17-byte addrnd" "logossign: sign: addrnd must be empty or 16 bytes" "si m 6d $TSK a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0"
-misuse "keygen_internal with a 15-byte SK.seed" "logossign: keygen: SK.seed, SK.prf and PK.seed must be 16 bytes each" "kg m 000102030405060708090a0b0c0d0e 101112131415161718191a1b1c1d1e1f 202122232425262728292a2b2c2d2e2f"
+KGM="logossign: keygen: SK.seed, SK.prf and PK.seed must be 16 bytes each"
+S0=000102030405060708090a0b0c0d0e0f; S1=101112131415161718191a1b1c1d1e1f; S2=202122232425262728292a2b2c2d2e2f
+misuse "keygen_internal with a 15-byte SK.seed" "$KGM" "kg m ${S0:0:30} $S1 $S2"
+misuse "keygen_internal with a 17-byte SK.seed" "$KGM" "kg m ${S0}ff $S1 $S2"
+misuse "keygen_internal with a 15-byte SK.prf" "$KGM" "kg m $S0 ${S1:0:30} $S2"
+misuse "keygen_internal with a 17-byte SK.prf" "$KGM" "kg m $S0 ${S1}ff $S2"
+misuse "keygen_internal with a 15-byte PK.seed" "$KGM" "kg m $S0 $S1 ${S2:0:30}"
+misuse "keygen_internal with a 17-byte PK.seed" "$KGM" "kg m $S0 $S1 ${S2}ff"
 
 # ── 6. confine ────────────────────────────────────────────────────────────
 mkdir -p "$T/cf" && cp "$T/logossign.la" "$T/cf/"
