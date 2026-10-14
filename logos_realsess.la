@@ -1,0 +1,39 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logos_realsess.la — the WM's real session layer: LogosSession
+#  (logossession.la) behind the lock screen.
+#
+#  REAL_SESS(root) = la s. s(login)(lock)(unlock)(adduser)
+#    LogosSession's calls over the users in root (root/users/<name>,
+#    root/home/<name>), in the shapes the lock screen's apps take:
+#      login(name)(pass)     result la err. la ok. err(why) | ok(session)
+#      lock(session)         the locked session (no keys)
+#      unlock(locked)(pass)  result, as login
+#      adduser(name)(pass)   result, ok(name): the user record root/users/
+#                            <name> (mode 0600) and root/users and root/home
+#                            made when missing (logossession.la)
+#    built on CRYPT_FAST (logoscrypt.la), logossec.la and AletheiaFS
+#    (aletheiafs.la). The kits are built once, when REAL_SESS(root) is
+#    applied; no key exists until a login.
+#
+#  This is the one place the WM's entries build it: the headless WM with
+#  LogosSession (theourgia_wm_simsess.la) imports it, so what the gates check
+#  is the code the live WM runs.
+# ═══════════════════════════════════════════════════════════════════
+
+import("logoscrypt.la")
+import("logossec.la")
+import("aletheiafs.la")
+import("logossession.la")
+
+export REAL_SESS
+
+glyph REAL_SESS = la root. (la cr. (la sec. (la fk.
+    SESSION_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
+               (bor)(bxor)(error)(stat)(read_file)(open)(write)(close)(rename)(unlink)(mkdir)(chmod)(clock_gettime)
+               (cr)(sec)(fk)(random)
+      (la adduser. la login. la lock. la unlock. la suspend. la resume. la state. la logout.
+         la s. s(login(root))(lock)(unlock)(adduser(root))))
+    (FS_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
+           (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(pipe)(open)(close)(read)(write)(cr)(random)))
+  (SEC_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(lt)(int_eq)(band)(bor)(bxor)(cr)))
+  (CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr))

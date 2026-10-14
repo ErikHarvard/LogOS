@@ -33,7 +33,7 @@ set -uo pipefail
 ok=1
 wm_setup theourgia_tile.la theourgia_term.la theourgia_render.la logosh.la \
          theourgia_wm.la theourgia_termfont.la logoskit.la lk_settings.la lk_login.la theourgia_wm_sim.la \
-         theourgia_wm_simsess.la logoscrypt.la logossec.la aletheiafs.la logossession.la \
+         theourgia_wm_simsess.la logos_realsess.la logoscrypt.la logossec.la aletheiafs.la logossession.la \
          wm_script.py wm_ocr.py
 PASS_OK='s3cret-pass'
 mkdir -p "$T/home"
