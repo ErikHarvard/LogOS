@@ -78,7 +78,7 @@ glyph FIN = la n. la x. AND(NOT(lt(x)(0)))(lt(x)(n))
 # Vec n A — a list of exactly n elements, each of type A. Length depends
 # on the value n (checked with native LENGTH', the integer-valued length).
 glyph VEC = la n. la A. la xs.
-    AND(int_eq(LEN(xs))(n))(ALL(A)(xs))
+    IF(IS_LIST(xs))(la _. AND(int_eq(LEN(xs))(n))(ALL(A)(xs)))(la _. FALSE)
 ```
 
 The **dependent function type (Π)** generalises `A ▷ B`: the result type
@@ -154,8 +154,12 @@ What it does NOT solve (named, not hidden):
   against a given type. There is no Hindley–Milner reconstruction.
 - **Decidability/termination.** The language is Turing-complete (via `Z`),
   so an arbitrary predicate-type may not terminate. Admit only **total**
-  predicates as types; structural/integer-bounded predicates are total by
-  construction.
+  predicates as types. Structural/integer-bounded predicates are total on
+  ints, strings and well-formed Church data because each one asks a value
+  what it is (`typeof`) before taking it apart: `PROD`/`SUM` reject a
+  non-function and `VEC` rejects anything whose spine is not CONS/NIL
+  (`IS_LIST`) with FALSE, not a crash (audit-2 #42). An arbitrary closure
+  passed where a PAIR is expected can still fault inside its own body.
 - **Sampled vs. universal.** A spec checks sample points; a type asserts a
   universal. The gap is the same one META_DEBUG_SPEC names: a wrong/weak
   type passes while the value misbehaves off-sample. Strengthening a type

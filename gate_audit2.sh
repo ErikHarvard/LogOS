@@ -258,6 +258,37 @@ case_phonym_unknown() {
     else fail "phonym control: rc=$rc out=[$(printf '%s' "$out" | head -c 200)] (want 12160/0)"; fi
 }
 
+# ── #42 metadebug: PROD/SUM/VEC judge a wrong-shaped value instead of crashing ─
+# PROD/SUM/VEC destructured the checked value (FST(p), v(l)(r), IS_NIL(xs))
+# before asking what it is, so an int or string was applied as a function and
+# TYPECHECK halted 'attempt to apply a non-function' instead of "type error".
+# Fixed: a typeof guard on the value (and on each list cell for VEC) first.
+# Each probe is its own program, so one crash cannot hide the next. Control:
+# the well-typed values still check, and metadebug.la's own run is unchanged
+# (ALL_SPECCED: T with the new negative spec cases). Host only: typeof (#83).
+md_probe() {   # md_probe <MAIN expr> -> MDOUT MDRC
+    sed '/^glyph MAIN =/,$d' metadebug.la > t_md.la; echo "glyph MAIN = $1" >> t_md.la
+    MDRC=0; MDOUT=$(timeout 60 ./tiny_host t_md.la 2>&1) || MDRC=$?
+}
+case_typesys_shape() {
+    local e want bad=0
+    for e in 'PROD(IS_INT)(IS_STR))(42)' 'PROD(IS_INT)(IS_STR))("s")' 'SUM(IS_INT)(IS_STR))(42)' \
+             'SUM(IS_INT)(IS_STR))("s")' 'VEC(2)(IS_INT))("x")' 'VEC(2)(IS_INT))(42)' 'VEC(2)(IS_INT))(CONS(1)(5))' \
+             'PROD(IS_INT)(IS_STR))(PAIR(42)("hi"))' 'SUM(IS_INT)(IS_STR))(RIGHT("hi"))' 'VEC(3)(IS_INT))(V3)'; do
+        case "$e" in *'"hi"))'|*'(V3)') want=well-typed;; *) want="type error";; esac
+        md_probe "print(TYPECHECK($e)"
+        if [ "$MDRC" = 0 ] && [ "$MDOUT" = "$want" ]; then :
+        else fail "metadebug TYPECHECK($e: rc=$MDRC got [$MDOUT] want [$want]"; bad=$((bad+1)); fi
+    done
+    [ "$bad" = 0 ] && pass "metadebug PROD/SUM/VEC: 7 wrong-shaped values judged 'type error', 3 well-typed controls unchanged"
+    local out rc=0; out=$(timeout 300 ./tiny_host metadebug.la 2>&1) || rc=$?
+    local l miss=""; for l in 'ALL_SPECCED: T' 'T2_prod: T' 'T2_sum: T' 'T3_vec_ok: T' 'T3_vec_bad: F' 'T3_pi: T' 'T4_bad: type error' 'T5_int: T' 'T5_self: T'; do
+        grep -qxF "$l" <<< "$out" || miss="$miss [$l]"; done
+    if [ "$rc" = 0 ] && [ -z "$miss" ]; then
+        pass "metadebug (control): own run rc 0, ALL_SPECCED: T, T2/T3/T4/T5 lines unchanged"
+    else fail "metadebug own run: rc=$rc missing:$miss"; fi
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -356,6 +387,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip compose_edges tofb_pitch phonym_unknown}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip compose_edges tofb_pitch phonym_unknown typesys_shape}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }

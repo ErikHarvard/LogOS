@@ -154,11 +154,12 @@ glyph SPEC_TABLE =
     CONS(PAIR("REFINE")(SPEC_REFINE))(
     CONS(PAIR("REC")(SPEC_REC))(
     CONS(PAIR("FIN")(SPEC_FIN))(
+    CONS(PAIR("IS_LIST")(SPEC_ISLIST))(
     CONS(PAIR("VEC")(SPEC_VEC))(
     CONS(PAIR("PI_SUCC")(SPEC_PISUCC))(
     CONS(PAIR("TYPECHECK")(SPEC_TYPECHECK))(
     CONS(PAIR("IS_TYPE")(SPEC_ISTYPE))(
-    NIL))))))))))))))))))))))))))))))))
+    NIL)))))))))))))))))))))))))))))))))
 
 glyph GET_SPEC = la name. LIST_FIND(name)(SPEC_TABLE)
 
@@ -225,11 +226,12 @@ glyph GLYPH_REGISTRY =
     CONS(PAIR("REFINE")(REFINE))(
     CONS(PAIR("REC")(REC))(
     CONS(PAIR("FIN")(FIN))(
+    CONS(PAIR("IS_LIST")(IS_LIST))(
     CONS(PAIR("VEC")(VEC))(
     CONS(PAIR("PI_SUCC")(PI_SUCC))(
     CONS(PAIR("TYPECHECK")(TYPECHECK))(
     CONS(PAIR("IS_TYPE")(IS_TYPE))(
-    NIL))))))))))))))))))))))))))))))))
+    NIL)))))))))))))))))))))))))))))))))
 
 # ── Phase 4: META_DEBUG — DEBUG applied to the debugging glyphs ───────
 # The "meta" level collapses into the object level by self-application.
@@ -267,8 +269,10 @@ glyph LEFT  = la a. la l. la r. l(a)
 glyph RIGHT = la b. la l. la r. r(b)
 glyph POS   = la n. lt(0)(n)
 
-glyph PROD   = la A. la B. la p. AND(A(FST(p)))(B(SND(p)))
-glyph SUM    = la A. la B. la v. v(la a. A(a))(la b. B(b))
+# PROD/SUM ask whether the value is a function before taking it apart: an
+# int or string is not a PAIR/LEFT/RIGHT, so it is FALSE, not a crash.
+glyph PROD   = la A. la B. la p. IF(IS_FUN(p))(la _. AND(A(FST(p)))(B(SND(p))))(la _. FALSE)
+glyph SUM    = la A. la B. la v. IF(IS_FUN(v))(la _. v(la a. A(a))(la b. B(b)))(la _. FALSE)
 glyph ARROW  = la A. la B. la x. la f. AND(A(x))(B(f(x)))
 glyph REFINE = la A. la P. la x. AND(A(x))(P(x))
 glyph REC    = la F. Z(F)
@@ -277,8 +281,8 @@ glyph REC    = la F. Z(F)
 glyph ILF     = la self. la v. IF(IS_NIL(v))(la _. TRUE)(la _. AND(IS_INT(HEAD(v)))(self(TAIL(v))))
 glyph INTLIST = REC(ILF)
 
-glyph SPEC_PROD   = CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(PAIR(42)("hi"))))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(PAIR("x")("hi"))))("F"))(NIL))
-glyph SPEC_SUM    = CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(LEFT(42))))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(LEFT("x"))))("F"))(NIL))
+glyph SPEC_PROD   = CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(PAIR(42)("hi"))))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(PAIR("x")("hi"))))("F"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(42)))("F"))(NIL)))
+glyph SPEC_SUM    = CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(LEFT(42))))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(LEFT("x"))))("F"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(42)))("F"))(NIL)))
 glyph SPEC_ARROW  = CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_STR)(42)(int_to_str)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(IS_INT)(42)(int_to_str)))("F"))(NIL))
 glyph SPEC_REFINE = CONS(TC(la g. BOOL_STR(g(IS_INT)(POS)(5)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_INT)(POS)(0)))("F"))(NIL))
 glyph SPEC_REC    = CONS(TC(la g. BOOL_STR(g(ILF)(CONS(1)(NIL))))("T"))(CONS(TC(la g. BOOL_STR(g(ILF)(CONS("x")(NIL))))("F"))(NIL))
@@ -290,14 +294,18 @@ glyph SPEC_REC    = CONS(TC(la g. BOOL_STR(g(ILF)(CONS(1)(NIL))))("T"))(CONS(TC(
 # Int, checked on a witness xs (the codomain type mentions the argument).
 glyph LEN     = Z(la self. la lst. IF(IS_NIL(lst))(la _. 0)(la _. add(1)(self(TAIL(lst)))))
 glyph FIN     = la n. la x. AND(NOT(lt(x)(0)))(lt(x)(n))
-glyph VEC     = la n. la A. la xs. AND(int_eq(LEN(xs))(n))(ALL(A)(xs))
+# IS_LIST walks the spine with a typeof guard on every cell, so VEC never
+# hands LEN/ALL an int or string where a CONS/NIL was expected.
+glyph IS_LIST = Z(la self. la v. IF(IS_FUN(v))(la _. IF(IS_FUN(FST(v)))(la _. IF(IS_NIL(v))(la _. TRUE)(la _. (la c. IF(IS_FUN(c))(la _. self(SND(c)))(la _. FALSE))(SND(v))))(la _. FALSE))(la _. FALSE))
+glyph VEC     = la n. la A. la xs. IF(IS_LIST(xs))(la _. AND(int_eq(LEN(xs))(n))(ALL(A)(xs)))(la _. FALSE)
 glyph PI_SUCC = la n. la f. la xs. AND(VEC(n)(IS_INT)(xs))(VEC(add(n)(1))(IS_INT)(f(xs)))
 
 glyph V3    = CONS(1)(CONS(2)(CONS(3)(NIL)))
 glyph PREP0 = la xs. CONS(0)(xs)
 
 glyph SPEC_FIN    = CONS(TC(la g. BOOL_STR(g(5)(3)))("T"))(CONS(TC(la g. BOOL_STR(g(5)(7)))("F"))(NIL))
-glyph SPEC_VEC    = CONS(TC(la g. BOOL_STR(g(3)(IS_INT)(V3)))("T"))(CONS(TC(la g. BOOL_STR(g(2)(IS_INT)(V3)))("F"))(NIL))
+glyph SPEC_ISLIST = CONS(TC(la g. BOOL_STR(g(V3)))("T"))(CONS(TC(la g. BOOL_STR(g(NIL)))("T"))(CONS(TC(la g. BOOL_STR(g(42)))("F"))(CONS(TC(la g. BOOL_STR(g(CONS(1)(5))))("F"))(NIL))))
+glyph SPEC_VEC    = CONS(TC(la g. BOOL_STR(g(3)(IS_INT)(V3)))("T"))(CONS(TC(la g. BOOL_STR(g(2)(IS_INT)(V3)))("F"))(CONS(TC(la g. BOOL_STR(g(2)(IS_INT)("x")))("F"))(NIL)))
 glyph SPEC_PISUCC = CONS(TC(la g. BOOL_STR(g(3)(PREP0)(V3)))("T"))(CONS(TC(la g. BOOL_STR(g(3)(ID)(V3)))("F"))(NIL))
 
 # ── Type System Phase T4: TYPECHECK = the autological check ───────────
