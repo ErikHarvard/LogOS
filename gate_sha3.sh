@@ -5,10 +5,13 @@
 # WHAT IT GUARDS:
 #   0. the tables, statically: the 24 round constants written in
 #      logossha3.la are the ones FIPS 202 Algorithm 5 (the LFSR rc(t)) and
-#      Algorithm 6 give, and the rotation offsets of the five output rows are
-#      FIPS 202 3.2.2's r[x,y] (the triangular numbers (t+1)(t+2)/2 mod 64
-#      along the walk (x,y) -> (y, 2x+3y)), taken at the input lane each
-#      output position gathers, ((x' + 3y') mod 5, x'); theta's rotation is 1;
+#      Algorithm 6 give; rho and pi are read by evaluating the module's own
+#      pi (K_PI over the K_ROW/K_ROW0 builders SHA3_KIT gives it) on
+#      symbolic lanes, and each output position (x', y') must hold the input
+#      lane (x, y) = ((x' + 3y') mod 5, x') rotated by FIPS 202 3.2.2's
+#      r[x,y] (the triangular numbers (t+1)(t+2)/2 mod 64 along the walk
+#      (x,y) -> (y, 2x+3y)), A[0,0] unrotated, each output row handed to chi
+#      (row 0 to chi0 with the round constant); theta's rotation is 1;
 #   1. known answers, from literal hex below (where each comes from is
 #      written beside it): the empty message and "abc" for all four
 #      functions, SHAKE at 32 and 64 bytes; and NIST's 1600-bit message (200
@@ -81,8 +84,61 @@ vm_run() {  # vm_run BIN MODE OUT: run the compiled BIN with mode.txt = MODE; se
 
 # ── the oracle ─────────────────────────────────────────────────────────
 cat > "$T/oracle.py" <<'PYEOF'
-import hashlib, os, random, re, sys
+import functools, hashlib, os, random, re, sys
 RATE = {"s256": 136, "s512": 72, "k128": 168, "k256": 136}
+# a parse of an LA module (no imports): glyph name -> AST, the AST nodes
+# ("var", name), ("str", s), ("int", digits), ("lam", x, body), ("app", f, a)
+def parse_module(src):
+    i, n, toks = 0, len(src), []
+    idc = lambda c: c.isalnum() or c == "_" or ord(c) >= 0x80
+    while i < n:
+        c = src[i]
+        if c.isspace(): i += 1; continue
+        if c == "#":
+            while i < n and src[i] != "\n": i += 1
+            continue
+        if c in "().=": toks.append((c, None)); i += 1; continue
+        if c == '"':
+            j = i + 1
+            while j < n and src[j] != '"': j += 2 if src[j] == "\\" else 1
+            if j >= n: raise SyntaxError("unterminated string")
+            toks.append(("str", src[i + 1:j])); i = j + 1; continue
+        if c.isdigit():
+            j = i
+            while j < n and src[j].isdigit(): j += 1
+            toks.append(("int", src[i:j])); i = j; continue
+        if idc(c):
+            j = i
+            while j < n and idc(src[j]): j += 1
+            w = src[i:j]
+            toks.append((w, None) if w in ("glyph", "la", "import", "export") else ("id", w)); i = j; continue
+        raise SyntaxError("unexpected character %r" % c)
+    pos = [0]
+    def peek(): return toks[pos[0]][0] if pos[0] < len(toks) else None
+    def take(k):
+        if peek() != k: raise SyntaxError("expected %s, got %s at token %d" % (k, peek(), pos[0]))
+        v = toks[pos[0]][1]; pos[0] += 1; return v
+    def expr():
+        if peek() == "la":
+            take("la"); x = take("id"); take(".")
+            return ("lam", x, expr())
+        k = peek()
+        if k == "id": e = ("var", take("id"))
+        elif k in ("str", "int"): e = (k, take(k))
+        elif k == "(": take("("); e = expr(); take(")")
+        else: raise SyntaxError("unexpected %s at token %d" % (k, pos[0]))
+        while peek() == "(":
+            take("("); a = expr(); take(")"); e = ("app", e, a)
+        return e
+    glyphs = {}
+    while peek() is not None:
+        if peek() == "glyph":
+            take("glyph"); g = take("id"); take("="); glyphs[g] = expr()
+        elif peek() == "export":
+            take("export")
+            while peek() == "id": take("id")
+        else: raise SyntaxError("unexpected top-level %s (a kit module imports nothing)" % peek())
+    return glyphs
 SWEEPOUT = {"k128": 32, "k256": 64}
 def H(tag, m, L=None):
     if tag == "s256": return hashlib.sha3_256(m).digest()
@@ -174,12 +230,75 @@ elif cmd == "tables":
     assert len(got_rc) == 24, "%d round constants, want 24" % len(got_rc)
     assert got_rc == RC, "round constants differ from FIPS 202 Algorithm 6: %s" % next(
         "RC[%d] = %#018x, want %#018x" % (i, g, w) for i, (g, w) in enumerate(zip(got_rc, RC)) if g != w)
-    j0, j1 = src.find("LET(K_PI(M)"), src.find("(la pi.")
-    assert 0 <= j0 < j1, "no K_PI construction"
-    rows = re.findall(r"K_ROW(0?)\(chi0?\)((?:\(rot\(\d+\)\))+)", src[j0:j1])
-    got_rows = [([0] if z else []) + [int(v) for v in re.findall(r"rot\((\d+)\)", rs)] for z, rs in rows]
-    assert [z for z, _ in rows] == ["0", "", "", "", ""], "row 0 must be K_ROW0 (iota), rows 1..4 K_ROW"
-    assert got_rows == want_rows, "rho offsets %r, want FIPS 202 3.2.2's %r" % (got_rows, want_rows)
+    # rho and pi, by evaluating the module's own code on symbols: the value
+    # SHA3_KIT gives pi (K_PI applied to its five output-row builders, each a
+    # K_ROW or K_ROW0 of chi and its rotations), applied to the round
+    # constant w and five rows of named lanes A[x,y]. M, chi, chi0 and rot
+    # stay symbols, so the result reads M(row 0)..(row 4), row y' being
+    # chi(..) of its five lanes (chi0(w)(..) for row 0) and each lane
+    # rot(N)(A[x,y]) or A[x,y] itself. Output position (x', y') must hold
+    # B[x', y'] = rot(r[x,y])(A[x,y]) with (x, y) = ((x' + 3y') mod 5, x')
+    # (pi: B[y, 2x+3y] = A[x,y] rotated by rho), A[0,0] unrotated.
+    G = parse_module(src)
+    class Clo:
+        def __init__(c, x, body, env): c.x, c.body, c.env = x, body, env
+    def ev(e, env):
+        if e[0] == "var":
+            if e[1] in env: return env[e[1]]
+            if e[1] in G: return ev(G[e[1]], {})
+            return ("sym", e[1])
+        if e[0] == "int": return int(e[1])
+        if e[0] == "str": return ("strlit", e[1])
+        if e[0] == "lam": return Clo(e[1], e[2], env)
+        return ap(ev(e[1], env), ev(e[2], env))
+    def ap(f, a):
+        if isinstance(f, Clo): env = dict(f.env); env[f.x] = a; return ev(f.body, env)
+        if callable(f): return f(a)
+        return ("ap", f, a)
+    def spine(t):
+        args = []
+        while isinstance(t, tuple) and t[0] == "ap": args.append(t[2]); t = t[1]
+        return t, args[::-1]
+    def show(t):
+        if isinstance(t, tuple) and t[0] == "lane": return "A[%d,%d]" % t[1:]
+        if isinstance(t, tuple) and t[0] == "sym": return t[1]
+        if isinstance(t, tuple) and t[0] == "ap": return show(t[1]) + "(" + show(t[2]) + ")"
+        return repr(t)
+    def find_let(e, name):  # the value of the LET(value)(la name. ...) in e
+        todo = [e]
+        while todo:
+            t = todo.pop()
+            if t[0] == "app":
+                if t[1][0] == "app" and t[1][1] == ("var", "LET") and t[2][0] == "lam" and t[2][1] == name: return t[1][2]
+                todo += [t[1], t[2]]
+            elif t[0] == "lam": todo.append(t[2])
+    assert "SHA3_KIT" in G and "K_PI" in G, "no SHA3_KIT or K_PI"
+    piv = find_let(G["SHA3_KIT"], "pi")
+    assert piv is not None, "no LET(...)(la pi. ...) in SHA3_KIT"
+    lane = lambda x, y: ("lane", x, y)
+    row = lambda y: (lambda k: functools.reduce(ap, [lane(x, y) for x in range(5)], k))
+    out = functools.reduce(ap, [("sym", "w")] + [row(y) for y in range(5)],
+                           ev(piv, {v: ("sym", v) for v in ("M", "chi", "chi0", "rot")}))
+    head, rows = spine(out)
+    assert head == ("sym", "M") and len(rows) == 5, "pi's result is not M of five rows: %s" % show(out)[:200]
+    got_rows = []
+    for yp, rw in enumerate(rows):
+        h, xs = spine(rw)
+        if yp == 0:
+            assert h == ("sym", "chi0") and len(xs) == 6 and xs[0] == ("sym", "w"), \
+                "output row 0 is not chi0(w) of five lanes: %s" % show(rw)
+            xs = xs[1:]
+        else:
+            assert h == ("sym", "chi") and len(xs) == 5, "output row %d is not chi of five lanes: %s" % (yp, show(rw))
+        offs = []
+        for xp, t in enumerate(xs):
+            x, y = (xp + 3 * yp) % 5, xp
+            want = lane(x, y) if r[x][y] == 0 else ("ap", ("ap", ("sym", "rot"), r[x][y]), lane(x, y))
+            assert t == want, "output row %d position %d is %s, want %s (FIPS 202 3.2.2 r[%d,%d] = %d at the lane pi gathers)" % (
+                yp, xp, show(t), show(want), x, y, r[x][y])
+            offs.append(r[x][y])
+        got_rows.append(offs)
+    assert got_rows == want_rows
     assert "LET(K_D(bxor)(M)(rot(C1)))" in src, "theta's rotation is not rot(C1)"
     print("ok RC[0..23] = %#x .. %#x; rows %s" % (RC[0], RC[23], " ".join("/".join(map(str, w)) for w in want_rows)))
 elif cmd == "kitstyle":
@@ -189,57 +308,7 @@ elif cmd == "kitstyle":
     # the continuation of a LET, or an applied lambda), never inside a lambda
     # the kit returns or passes as a value; every other glyph names none.
     src, kit = open(sys.argv[2], encoding="utf-8").read(), sys.argv[3]
-    def lex(src):
-        i, n, out = 0, len(src), []
-        idc = lambda c: c.isalnum() or c == "_" or ord(c) >= 0x80
-        while i < n:
-            c = src[i]
-            if c.isspace(): i += 1; continue
-            if c == "#":
-                while i < n and src[i] != "\n": i += 1
-                continue
-            if c in "().=": out.append((c, None)); i += 1; continue
-            if c == '"':
-                j = i + 1
-                while j < n and src[j] != '"': j += 2 if src[j] == "\\" else 1
-                if j >= n: raise SyntaxError("unterminated string")
-                out.append(("str", src[i + 1:j])); i = j + 1; continue
-            if c.isdigit():
-                j = i
-                while j < n and src[j].isdigit(): j += 1
-                out.append(("int", src[i:j])); i = j; continue
-            if idc(c):
-                j = i
-                while j < n and idc(src[j]): j += 1
-                w = src[i:j]
-                out.append((w, None) if w in ("glyph", "la", "import", "export") else ("id", w)); i = j; continue
-            raise SyntaxError("unexpected character %r" % c)
-        return out
-    toks, pos = lex(src), [0]
-    def peek(): return toks[pos[0]][0] if pos[0] < len(toks) else None
-    def take(k):
-        if peek() != k: raise SyntaxError("expected %s, got %s at token %d" % (k, peek(), pos[0]))
-        v = toks[pos[0]][1]; pos[0] += 1; return v
-    def expr():
-        if peek() == "la":
-            take("la"); x = take("id"); take(".")
-            return ("lam", x, expr())
-        k = peek()
-        if k == "id": e = ("var", take("id"))
-        elif k in ("str", "int"): e = (k, take(k))
-        elif k == "(": take("("); e = expr(); take(")")
-        else: raise SyntaxError("unexpected %s at token %d" % (k, pos[0]))
-        while peek() == "(":
-            take("("); a = expr(); take(")"); e = ("app", e, a)
-        return e
-    glyphs = {}
-    while peek() is not None:
-        if peek() == "glyph":
-            take("glyph"); g = take("id"); take("="); glyphs[g] = expr()
-        elif peek() == "export":
-            take("export")
-            while peek() == "id": take("id")
-        else: raise SyntaxError("unexpected top-level %s (a kit module imports nothing)" % peek())
+    glyphs = parse_module(src)
     def lams(e, k=None):
         xs = []
         while e[0] == "lam" and (k is None or len(xs) < k): xs.append(e[1]); e = e[2]
@@ -403,7 +472,7 @@ fi
 # ── 0. the tables, statically ──────────────────────────────────────────────
 tres=$(cd "$T" && python3 -I oracle.py tables logossha3.la 2>&1 | tail -1)
 if [ "${tres%% *}" = ok ]; then
-    echo "PASS  sha3 tables (static): the round constants in logossha3.la are FIPS 202 Algorithm 6's (from the LFSR of Algorithm 5), the rho offsets of each output row are 3.2.2's r[x,y] at the lane it gathers, theta rotates by 1: ${tres#ok }"
+    echo "PASS  sha3 tables (static): the round constants in logossha3.la are FIPS 202 Algorithm 6's (from the LFSR of Algorithm 5); the module's pi, evaluated on symbolic lanes, puts at each output position (x', y') the input lane ((x' + 3y') mod 5, x') rotated by 3.2.2's r[x,y], each row into chi (row 0 into chi0 with the round constant); theta rotates by 1: ${tres#ok }"
 else
     echo "FAIL  sha3 tables (static): $tres"; ok=0
 fi
