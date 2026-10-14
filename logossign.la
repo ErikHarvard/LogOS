@@ -33,6 +33,13 @@
 #        e.g. random("16")). An sk that is not 64 bytes, or another addrnd
 #        length, halts: "logossign: sign: sk must be 64 bytes",
 #        "logossign: sign: addrnd must be empty or 16 bytes".
+#        A CALLER THAT DRAWS addrnd MUST CHECK IT GOT 16 BYTES. The VM's
+#        random builtin returns "" when getrandom fails, and "" is the
+#        deterministic variant: sign(...)(random("16")) unchecked then
+#        signs deterministically, with no message and no halt (FIPS 205
+#        Alg. 22 returns an error there). The signature is still valid; what
+#        is lost is hedging's protection against fault and side-channel
+#        attacks. keygen(random) halts on the same failure.
 #    verify_internal(M)(sig)(pk)                          Alg. 20
 #    sign(M)(ctx)(sk)(addrnd)                             Alg. 22, pure
 #        sign_internal of M' = toByte(0,1) ++ toByte(|ctx|,1) ++ ctx ++ M.
