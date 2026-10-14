@@ -1389,7 +1389,8 @@ and **crypto agility** below. Original finding:
       SHA3-512, SHAKE128 and SHAKE256 in LA (one Keccak-f[1600] permutation about 1.2 ms on the
       VM, SHA3-512 of 10 KB about 0.16 s); `gate_sha3.sh` checks the tables against FIPS 202's
       formulas, known answers, hashlib at every message length to 3r+1 and SHAKE outputs over
-      several blocks, host = VM, confinement, kit style and position. Nothing uses it yet.
+      several blocks, host = VM, confinement, kit style, position, and that the LA code's
+      comparisons do not depend on the bytes. Nothing uses it yet.
       Argon2id and BLAKE3 are not built; PBKDF2 and HKDF stand in until they are.*
 - [ ] **★ CSPRNG and an entropy source ON THE METAL.** The `random` builtin is Linux
       `getrandom(2)`. **The bare-metal kernel — K1–K7, the actual sovereign artifact — has no
