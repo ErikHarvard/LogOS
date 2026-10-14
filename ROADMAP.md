@@ -937,8 +937,9 @@ one does not yet do is said beside it.*
       running `logosh.la` and LogosKit apps as the leaves of a split tree, one
       poll loop over the keyboard and every running program's pipe, verified
       headless by the WM gates (frames read back as text). The live entry
-      `theourgia_wm_live.la` compiles and runs here as far as `drm_mode`; it has
-      not been run on real hardware from this environment.)*
+      `theourgia_wm_live.la`, which starts locked on LogosSession, compiles
+      and runs here as far as `drm_mode`; it has not been run on real hardware
+      from this environment.)*
 - [~] 7. Audio system *(phonym path exists; full audio stack pending)*
 - [~] 8. Input system *(evdev/keyboard path proven)*
 - [x] 9. Permission & security model *(`logossec.la`: HMAC-chained capability
@@ -957,9 +958,12 @@ one does not yet do is said beside it.*
 - [x] 11. Session manager *(`logossession.la`: users with PBKDF2 verifiers, the
       Γ-seal K_U and everything derived from it, lock that drops the keys,
       suspend/resume of the WM's state as a sealed AletheiaFS object, two users
-      isolated both ways; `lk_login.la` is its front end, and the headless WM's
-      lock screen runs on it (`theourgia_wm_simsess.la`). The live WM has no
-      lock screen yet: where its users live is not decided. 1000 PBKDF2
+      isolated both ways; `lk_login.la` is its front end and `lk_firstuser.la`
+      makes the first user; the live WM's lock screen runs on it over the
+      users directory named by `logos_wm.users` (`/var/lib/logos` by
+      default), starting locked, and `theourgia_wm_simsess.la` takes the same
+      path headless. Ctrl+C on the VT still ends the session, so the lock
+      screen is no boundary against someone at the keyboard. 1000 PBKDF2
       iterations; VM only.)*
 - [x] 12. Package & update system *(`logospkg.la`: content-addressed archives,
       an HMAC-signed index, installs gated on each package's own self-test,

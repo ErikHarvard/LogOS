@@ -9,7 +9,11 @@
 #   RUN THIS FROM A BARE VT, NOT FROM THE DESKTOP:
 #     1. Ctrl+Alt+F3, log in
 #     2. cd ~/logos && ./drm_bringup_wm.sh
-#     3. one terminal fills the screen; type `help`, then try:
+#     3. the WM starts LOCKED. The first time (no user made yet in its users
+#        directory, /var/lib/logos unless logos_wm.users names another) it
+#        asks for a Name and a passphrase, twice, and makes you that user;
+#        after that it asks you to log in. Then one terminal fills the
+#        screen; type `help`, then try:
 #          MOD+Enter        new terminal (splits the focused one)
 #          MOD+arrows/hjkl  move focus        MOD+Shift+arrows  swap windows
 #          MOD+t            side-by-side <-> stacked
@@ -18,9 +22,11 @@
 #          MOD+s            the settings panel (LogosKit; Tab moves, Space
 #                           toggles; "Dark theme" redraws the panel dark)
 #          MOD+q            close the window   MOD+Shift+e       exit
+#          MOD+Esc          lock the screen (the login screen comes back)
 #        MOD is Super or Alt.
-#     4. Ctrl+C also stops it at once (the VT delivers SIGINT); the greeter
-#        comes back automatically.
+#     4. Ctrl+C also stops it at once (the VT delivers SIGINT), locked or
+#        not, so the lock screen is no boundary against someone at the
+#        keyboard; the greeter comes back automatically.
 #
 # KEYSTROKES AND THE VT. The VM reads the keyboard from evdev, but the VT's own
 # tty still receives every key and buffers it. Without care, a command typed
