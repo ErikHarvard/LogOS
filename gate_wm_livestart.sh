@@ -46,18 +46,27 @@
 #   10 no logos_wm.users at all, with a tmpfs over /var/lib in the namespace:
 #      it makes /var/lib/logos, mode 700, and halts at drm_mode; started again
 #      once /var/lib/logos/users exists, it is not a first run
+#   11 the live entry past drm_mode: a copy of theourgia_wm_live.la with only
+#      its two screen calls replaced (drm_mode answers 640x400, present
+#      writes the frame to a file and logs it), run in the namespace with
+#      /dev/input/event3 a FIFO the gate types into: the first frame it
+#      presents, before any key, is the first-run screen (the lock screen
+#      the live entry hands WM_BUILD, not a terminal); making the first user
+#      presents the welcome terminal, which offers MOD+Esc; MOD+Esc presents
+#      the login screen with the user's name
 # Every run of the live entry is given a users directory in the gate's own
 # directory (or a tmpfs), so the gate never makes /var/lib/logos on the host.
 #
-# ISOLATION: a private temporary directory (gate_wm_common.sh); checks 6-10
+# ISOLATION: a private temporary directory (gate_wm_common.sh); checks 6-11
 # need unshare -m (root) and are skipped with a NOTE without it. A few
-# minutes, mostly compiling the live WM on the VM.
+# minutes, mostly compiling the live WM (twice) on the VM.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
 wm_setup wm_livestart.la theourgia_tile.la theourgia_term.la theourgia_render.la logosh.la \
          theourgia_wm.la theourgia_termfont.la logoskit.la lk_settings.la theourgia_wm_live.la \
-         lk_login.la lk_firstuser.la logos_realsess.la logoscrypt.la logossec.la aletheiafs.la logossession.la
+         lk_login.la lk_firstuser.la logos_realsess.la logoscrypt.la logossec.la aletheiafs.la logossession.la \
+         wm_script.py wm_ocr.py
 
 python3 - "$T" <<'PYEOF'
 import sys
@@ -307,10 +316,83 @@ if unshare -m true 2>/dev/null; then
             echo "FAIL  wm livestart: 10 no logos_wm.users: $(cat "$T/live4.rc" 2>&1) mode $(cat "$T/live4.mode" 2>&1); stdout: $(head -c 200 "$T/live4.out"); stderr: $(head -c 200 "$T/live4.err")"
             echo "      second boot: $(cat "$T/live5.rc" 2>&1); stdout: $(head -c 200 "$T/live5.out" 2>&1); stderr: $(head -c 200 "$T/live5.err" 2>&1)"; ok=0
         fi
+        # 11 the live entry past drm_mode, its two screen calls replaced
+        DRM='          (WM_SPLIT(B)(WM_LISTS(B))(drm_mode("!"))))'
+        PRESENT='                  (la s. s(la bytes. present(bytes))(WM_CONS(fd)(WM_NIL))("2400")(FALSE)))'
+        if [ "$(grep -cxF "$DRM" "$T/theourgia_wm_live.la")" = 1 ] && [ "$(grep -cxF "$PRESENT" "$T/theourgia_wm_live.la")" = 1 ]; then
+            python3 - "$T/theourgia_wm_live.la" "$T/live_emu.la" "$DRM" "$PRESENT" <<'PYEOF2'
+import sys
+src, dst, drm, present = sys.argv[1:5]
+s = open(src).read()
+s = s.replace(drm + "\n", drm.replace('drm_mode("!")', '"640 400 2560"') + "\n")
+s = s.replace(present + "\n", present.replace("present(bytes)",
+      '(la _. print(concat("wm: present ")(str_len(bytes))))(write_file("live_frame.bin")(bytes))') + "\n")
+open(dst, "w").write(s)
+PYEOF2
+            cp "$T/compiler.bin" "$T/logos_program.bin"; cp "$T/live_emu.la" "$T/logos_source.la"
+            if ( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/vce" ); then
+                echo "$T/lu2" > "$T/logos_wm.users"
+                python3 - "$T" <<'PYEOF2' || ok=0
+import importlib.util, os, subprocess, sys, time
+T = sys.argv[1]; os.chdir(T)
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, f"{T}/{name}.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+ws, ocr = load("wm_script"), load("wm_ocr")
+glyphs = ocr.load_font(f"{T}/theourgia_termfont.la")
+os.mkfifo("kbd.fifo")
+PASS = "s3cret-emu"
+wm = subprocess.Popen(["timeout", "180", "unshare", "-m", "--propagation", "private", "sh", "-c",
+    f"mount --bind '{T}/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev && mkdir /dev/input "
+    f"&& ln -s '{T}/kbd.fifo' /dev/input/event3 && exec ./logos_secd"],
+    stdout=open("emu.log", "w"), stderr=open("emu.err", "w"))
+kbd = open("kbd.fifo", "wb", buffering=0)
+def log(): return open("emu.log", errors="replace").read()
+def wait(pattern, n=1, timeout=60.0):
+    t = time.time()
+    while time.time() - t < timeout:
+        if log().count(pattern) >= n: return True
+        if wm.poll() is not None: return False
+        time.sleep(0.05)
+    return False
+def frame():
+    try: return ocr.ocr(ocr.Frame(open("live_frame.bin", "rb").read(), 640, 400, 2560), glyphs, 1)
+    except OSError: return None
+def rows(s): return [r for t in (s or []) for r in t["rows"] if r.strip()]
+def app(s): return bool(s) and len(s) == 1 and s[0].get("kind") == "app" and s[0]["title"].startswith(" Log in")
+ok1 = wait("wm: present"); s1 = frame(); n1 = log().count("wm: present")
+kbd.write(ws.compile_script([f"type adam\\n{PASS}\\n{PASS}\\n"]))
+ok2 = wait("wm: unlocked", timeout=90) and wait("wm: present", n1 + 1); time.sleep(1.0); s2 = frame(); n2 = log().count("wm: present")
+kbd.write(ws.compile_script(["mod ESC"]))
+ok3 = wait("wm: locked") and wait("wm: present", n2 + 1); time.sleep(1.0); s3 = frame()
+wm.terminate()
+try: wm.wait(timeout=30)
+except subprocess.TimeoutExpired: wm.kill()
+good = (ok1 and app(s1) and any("Welcome. Make the first user." in r for r in rows(s1))
+        and f"wm: users in {T}/lu2, a first run" in log()
+        and ok2 and s2 and len(s2) == 1 and s2[0].get("kind") == "term"
+        and any("MOD+Esc" in r and "lock the screen" in r for r in rows(s2))
+        and ok3 and app(s3) and any("Locked: adam" in r for r in rows(s3))
+        and PASS not in log() and PASS not in open("emu.err").read())
+if good:
+    print("PASS  wm livestart: 11 the live entry past drm_mode (screen calls stubbed): its first frame is the first-run screen, the new user gets the welcome terminal offering MOD+Esc, and MOD+Esc presents the login screen")
+else:
+    print("FAIL  wm livestart: 11 the live entry past drm_mode")
+    for name, s in (("first frame", s1), ("after the first user", s2), ("after MOD+Esc", s3)):
+        print(f"      {name}: {rows(s)[:9]}")
+    print(f"      log: {log()[-400:]!r}; stderr: {open('emu.err').read()[-300:]!r}")
+    sys.exit(1)
+PYEOF2
+            else
+                echo "FAIL  wm livestart: 11 the emulated live entry did not compile: $(tail -2 "$T/vce")"; ok=0
+            fi
+        else
+            echo "FAIL  wm livestart: 11 theourgia_wm_live.la's drm_mode or present call is not where this gate expects it"; ok=0
+        fi
     else
         echo "FAIL  wm livestart: 6 theourgia_wm_live.la did not compile: $(tail -2 "$T/vce")"; ok=0
     fi
 else
-    echo "NOTE  wm livestart: 6-10 skipped (unshare -m is not available)"
+    echo "NOTE  wm livestart: 6-11 skipped (unshare -m is not available)"
 fi
 if [ "$ok" = 1 ]; then echo "ALL PASS  gate_wm_livestart"; else echo "GATE FAILED  gate_wm_livestart"; exit 1; fi
