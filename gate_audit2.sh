@@ -192,6 +192,34 @@ PYEOF
     if [ "$same" = 5 ]; then pass "theourgia (control): 5/5 in-bounds scenes byte-identical to HEAD (theourgia, fb, session, text, mux_session)"
     else fail "theourgia (control): differs from HEAD:$diff_list"; fi
 }
+# Each edge as its OWN program: in compose_clip the unclipped tree halts at the
+# left edge (c1) before the right/top scenes run, so those two never showed a
+# red of their own. Same dst/src as above; expected rows derived by hand:
+# right (2,0) → 1 1 2 / 1 1 1 (the 3 falls off) · top (0,-1) → 3 1 1 / 1 1 1
+# (the 2 falls off). Unclipped: right lengthens row 0, top shifts the source.
+case_compose_edges() {
+    local e want got rc out
+    for e in "right:SH:2:0:1 1 2 1 1 1" "top:SV:0:sub(0)(1):3 1 1 1 1 1"; do
+        IFS=: read -r name src ox oy want <<< "$e"
+        cat > "t_edge_$name.la" <<LAEOF
+import("theourgia.la")
+glyph P   = la n. PX(n)(n)(n)
+glyph D   = SOLID(3)(2)(P(1))
+glyph SH  = COMPOSE(SOLID(2)(1)(P(2)))(SOLID(1)(1)(P(3)))(1)(0)
+glyph SV  = COMPOSE(SOLID(1)(2)(P(2)))(SOLID(1)(1)(P(3)))(0)(1)
+glyph MAIN = write_file("e_$name.ppm")(PPM(COMPOSE(D)($src)($ox)($oy)))
+LAEOF
+        rm -f "e_$name.ppm"; rc=0; out=$(timeout 300 ./tiny_host "t_edge_$name.la" 2>&1) || rc=$?
+        got=$(python3 -c '
+import sys
+b=open(sys.argv[1],"rb").read(); h=b"P6\n3 2\n255\n"
+if not b.startswith(h): print("badhdr:%r"%b[:16])
+elif len(b)-len(h)!=18: print("len%d:%s"%(len(b)-len(h)," ".join(str(x) for x in b[len(h)::3])))
+else: print(" ".join(str(x) for x in b[len(h)::3]))' "e_$name.ppm" 2>&1 | tail -1)
+        if [ "$rc" = 0 ] && [ "$got" = "$want" ]; then pass "theourgia COMPOSE clips the $name edge alone: [$got]"
+        else fail "theourgia COMPOSE $name edge: rc=$rc got [$got] want [$want] out=[$(printf '%s' "$out" | head -c 120)]"; fi
+    done
+}
 
 # ── #76 theourgia TO_FB: a surface wider than the pitch halts loudly ──────────
 # FB_ROW pads with ZEROS(pitch - w*4); REPEAT stopped only at 0, so w*4 > pitch
@@ -328,6 +356,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip tofb_pitch phonym_unknown}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip compose_edges tofb_pitch phonym_unknown}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
