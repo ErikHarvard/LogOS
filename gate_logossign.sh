@@ -22,7 +22,13 @@
 #      flipped bits in R, FORS, WOTS+ at two layers, an auth path, the last
 #      byte; wrong message, pk seed, pk root, ctx; truncated, extended) FALSE;
 #      keygen(random) twice from the VM's random builtin, each a key pair the
-#      model derives from its seeds, the two different; a ctx of exactly 255
+#      model derives from the seeds its sk holds, those three seeds pairwise
+#      different, the two keys different; keygen(random) with a stub random
+#      that prints every request and returns known bytes: exactly one call,
+#      random("48"), the sk starting with those 48 bytes, the key pair the
+#      model's keygen_internal(r[0:16], r[16:32], r[32:48]), and a draw of 47,
+#      49 or 0 bytes halting with its message after that one call (the real
+#      builtin's output cannot show how keygen uses it); a ctx of exactly 255
 #      bytes signed (byte for byte with the model) and verified; and the full
 #      arm's sign-then-hash-then-verify command once (on a hedged toy record);
 #   3. 128s: keyGen KATs (tcId 1 and 10; all 10 in the full arm); every sigVer
@@ -224,17 +230,38 @@ elif cmd == "rootcheck":
     print("ok")
 
 elif cmd == "krcheck":
-    # two keys from keygen(random): each the model's key pair for its seeds, the two different
+    # two keys from keygen(random) with the VM's random builtin: each the model's
+    # key pair for the seeds its sk holds, the three seeds pairwise different
+    # (a keygen that reused a draw, publishing SK.seed as PK.seed, would still be
+    # the model's pair for those seeds), the two keys different
     s = M.get("TOY-SHA2")
     got = [l.split() for l in open(sys.argv[2]) if l.startswith("kr ")]
     assert len(got) == 2, "want two kr lines"
     for _, kid, sk, pk in got:
         sk, pk = h2b(sk), h2b(pk)
         assert len(sk) == 64 and len(pk) == 32, "lengths"
+        assert len({sk[0:16], sk[16:32], sk[32:48]}) == 3, "%s: SK.seed, SK.prf and PK.seed not pairwise different" % kid
         assert s.slh_keygen_internal(sk[0:16], sk[16:32], sk[32:48]) == (sk, pk), "not the model's key pair"
         sig = s.slh_sign(b"keygen(random)", b"", sk)
         assert s.slh_verify(b"keygen(random)", sig, b"", pk), "does not sign"
     assert got[0][2] != got[1][2], "the two keys are equal"
+    print("ok")
+
+elif cmd == "kgrcheck":
+    # keygen(random) with the stub random that returned the 48 bytes R (hex):
+    # exactly one request, "48"; sk = R ++ PK.root; the model's key pair for
+    # (R[0:16], R[16:32], R[32:48])
+    s = M.get("TOY-SHA2")
+    r = h2b(sys.argv[2])
+    lines = open(sys.argv[3]).read().split("\n")
+    assert lines[-1] == "", "no final newline"
+    lines = lines[:-1]
+    assert len(lines) == 3 and lines[0] == "random 48" and lines[2] == "end", "want 'random 48', one key, 'end': %r" % lines[:4]
+    f = lines[1].split()
+    assert len(f) == 3 and f[0] == "kr", "not a key line"
+    sk, pk = h2b(f[1]), h2b(f[2])
+    assert sk[0:48] == r, "the sk does not start with the 48 bytes drawn (SK.seed, SK.prf, PK.seed in order)"
+    assert s.slh_keygen_internal(r[0:16], r[16:32], r[32:48]) == (sk, pk), "not the model's keygen_internal(r[0:16], r[16:32], r[32:48])"
     print("ok")
 
 elif cmd == "katcmds":
@@ -428,6 +455,35 @@ glyph MAIN = SEC_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(
    print(confine(read_file("logossign.la"))(NIL)(la m. concat("err ")(m))(la v. "ok")))
 LAEOF
 
+# ── keygen(random) with a stub random ─────────────────────────────────────
+# The stub prints "random N" for every request N and returns the bytes whose
+# hex is the first word of cmds.txt ("-" for none).
+cat > "$T/kgr.la" <<'LAEOF'
+import("logoscrypt.la")
+import("logossign.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph SEQ = la a. la b. b
+glyph SPAN = la f. la a. la b. (Z(la sp. la lo. la hi.
+    lt(add(lo)(1))(hi)
+      (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(div(add(lo)(hi))(2)))
+      (la _. lt(lo)(hi)(la _. f(lo))(la _. "")("!"))
+      ("!")))(a)(b)
+glyph FROMHEX = la s. SPAN(la i. (la hv. chr(int_to_str(add(mul(hv(str_at(s)(mul(i)(2))))(16))(hv(str_at(s)(add(mul(i)(2))(1)))))))
+                           (la c. (la n. lt(n)(58)(la _. sub(n)(48))(la _. sub(n)(87))("!"))(str_to_int(ord(c)))))(0)(div(str_to_int(str_len(s)))(2))
+glyph WORD1 = la s. SPAN(la i. str_at(s)(i))(0)(sub(str_to_int(str_len(s)))(1))
+glyph MAIN =
+ (la crypt. la pkit. la r.
+  crypt(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+  SIGN_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)(crypt)(pkit)(SLH_TOY)
+  (la kgi. la sgi. la vfi. la sgp. la vfp. la kg.
+    SEQ(kg(la nreq. SEQ(print(concat("random ")(nreq)))(r))
+          (la sk. la pk. print(concat(concat(concat("kr ")(hex(sk)))(" "))(hex(pk)))))
+       (print("end")))))
+ (CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr))
+ (SHA256_PREFIX_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr))
+ ((la w. str_eq(w)("-")(la _. "")(la _. FROMHEX(w))("!"))(WORD1(read_file("cmds.txt"))))
+LAEOF
+
 # ── 1. the oracle ─────────────────────────────────────────────────────────
 ( cd "$T" && python3 -I oracle.py kat slhdsa_kat_128s.txt > kat_oracle.out 2>&1; echo $? > kat_oracle.rc ) &
 kat_pid=$!
@@ -487,6 +543,7 @@ KG_DEFAULT="kg1,kg10"
 # ── compile ───────────────────────────────────────────────────────────────
 vm_compile drv.la drv.bin
 vm_compile cf.la cf.bin
+vm_compile kgr.la kgr.bin
 
 # the oracle's verdict on the KAT file comes before any VM result is judged
 wait "$kat_pid"
@@ -502,6 +559,26 @@ printf 'unused\n' > "$T/none.cmds"
 # lane A: the 128s keyGen KATs; lane B: the toy runs, then the 128s verifies
 run_in kg drv.bin kg.cmds "$LOGOSSIGN_TIMEOUT" &
 lane_a=$!
+
+# keygen(random) with the stub random: 48 fresh bytes, then 47, 49 and none
+KGR=$(python3 -c "import os; print(os.urandom(48).hex())")
+printf '%s\n' "$KGR" > "$T/kgr48.cmds"; printf '%s\n' "${KGR:0:94}" > "$T/kgr47.cmds"
+printf '%sff\n' "$KGR" > "$T/kgr49.cmds"; printf -- '-\n' > "$T/kgr0.cmds"
+run_in kgr48 kgr.bin kgr48.cmds "$WM_VM_TIMEOUT"
+kgres=$(cd "$T" && python3 -I oracle.py kgrcheck "$KGR" kgr48/out 2>&1 | tail -1)
+kgbad=""
+for x in 47 49 0; do
+    run_in "kgr$x" kgr.bin "kgr$x.cmds" "$WM_VM_TIMEOUT"
+    { [ "$(rc_of "kgr$x")" = 1 ] && [ "$(cat "$T/kgr$x/out")" = "random 48" ] \
+      && [ "$(cat "$T/kgr$x/err")" = "logossign: keygen: random must give exactly 48 bytes" ]; } \
+      || kgbad="$kgbad $x bytes: rc=$(rc_of "kgr$x") stdout='$(head -c 120 "$T/kgr$x/out" | tr '\n' '|')' stderr='$(head -c 120 "$T/kgr$x/err")';"
+done
+if [ "$(rc_of kgr48)" = 0 ] && [ "$kgres" = ok ] && [ -z "$kgbad" ]; then
+    echo "PASS  logossign keygen(random), a stub random (VM): exactly one call, random(\"48\"); the sk starts with the 48 bytes it returned and the key pair is the model's keygen_internal(r[0:16], r[16:32], r[32:48]); a draw of 47, 49 or 0 bytes halts with 'logossign: keygen: random must give exactly 48 bytes' after that one call"
+else
+    echo "FAIL  logossign keygen(random), a stub random (VM): rc=$(rc_of kgr48) $kgres;$kgbad"; tail -2 "$T/kgr48/err"; ok=0
+fi
+
 run_in toy drv.bin toy.cmds "$LOGOSSIGN_TIMEOUT"
 wait "$negs_pid"
 [ "$(cat "$T/negs.rc")" = 0 ] || { echo "FAIL  logossign: the model's negative controls: $(tail -3 "$T/negs.out")"; exit 1; }
@@ -519,9 +596,9 @@ else
 fi
 results toy | grep '^kr ' > "$T/kr.got"
 if [ "$(rc_of toy)" = 0 ] && [ "$(cd "$T" && python3 -I oracle.py krcheck kr.got 2>&1)" = ok ]; then
-    echo "PASS  logossign keygen(random) (VM): two key pairs from one random(\"48\") draw each, both the model's key pair for their seeds, signing and verifying, and different"
+    echo "PASS  logossign keygen(random), the VM's random builtin (VM): two key pairs, each the model's key pair for the seeds its sk holds, those three seeds pairwise different, signing and verifying, and the two different"
 else
-    echo "FAIL  logossign keygen(random) (VM): $(cd "$T" && python3 -I oracle.py krcheck kr.got 2>&1 | tail -1)"; ok=0
+    echo "FAIL  logossign keygen(random), the VM's random builtin (VM): $(cd "$T" && python3 -I oracle.py krcheck kr.got 2>&1 | tail -1)"; ok=0
 fi
 
 # 128s sigVer and the negative controls
