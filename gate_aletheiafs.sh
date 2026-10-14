@@ -56,7 +56,9 @@
 #      gives a handle on which everything fails; bad ids, tags and owners, a
 #      failing random and an id collision are refused before anything is
 #      written; the nonce a version is sealed under is the 12 bytes random
-#      gives for it, and a random giving 11, 13 or 0 bytes for a nonce
+#      gives for it (put's object and index version 1, then an update's
+#      object version 2, a put's index version 2 and a remove's index
+#      version 3), and a random giving 11, 13 or 0 bytes for a nonce
 #      refuses put and update with nothing written; ephemeral
 #      objects round-trip (bytes 0..255) without a single file appearing,
 #      their session pipe is close-on-exec, and close drops that session's
@@ -101,8 +103,10 @@
 #      fails after its bytes left the process (its .tmp written in full, the
 #      rename refused by the driver) and is retried; (d) 40 updates and three
 #      index versions: every stored file opens under the nonce at its start,
-#      and all 44 nonces are distinct. Against the format with the version
-#      number as the nonce, all four fail.
+#      and all 44 nonces are distinct; (e)-(g) the rollback, the crash and
+#      the retry of (a)-(c) again for index version 2 (the retry a put whose
+#      index write fails). Against the format with the version number as the
+#      nonce, all seven fail.
 # Every operation's guard questions are checked exactly (resource and op).
 # COST. With CRYPT_FAST an operation takes milliseconds and shards A-E a few
 # seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
@@ -175,10 +179,12 @@ glyph RND = la n. HAS("badrandom")(la _. "")(la _.
     str_eq(n)("16")(la _. HAS("fixedrandom")(la _. read_file("fixedrandom"))(la _. random(n))("!"))(la _.
     str_eq(n)("12")(la _. HAS("noncerandom")(la _. read_file("noncerandom"))(la _. random(n))("!"))
       (la _. random(n))("!"))("!"))("!")
-# REN(a)(b): rename(a)(b); but while ./failrename exists, the bytes of a are
-# copied to ./failedwrite and the rename is refused (-5, EIO) without
-# renaming: a write that fails after its bytes have left the process
-glyph REN = la a. la b. HAS("failrename")(la _. (la _. "-5")(write_file("failedwrite")(read_file(a))))
+# REN(a)(b): rename(a)(b); but while ./failrename exists and holds a, the
+# bytes of a are copied to ./failedwrite and the rename is refused (-5, EIO)
+# without renaming: a write that fails after its bytes have left the process
+glyph REN = la a. la b. HAS("failrename")
+    (la _. str_eq(read_file("failrename"))(a)(la _. (la _. "-5")(write_file("failedwrite")(read_file(a))))
+             (la _. rename(a)(b))("!"))
     (la _. rename(a)(b))("!")
 # UNL(p): unlink(p); but while ./keepnames exists, nothing is unlinked (-1):
 # a name planted at a staging path is still there when the write opens it,
@@ -690,6 +696,27 @@ def shard_d(d, s):
           isid(r) and heads == [NZ] * 4 and disk(root3, km, idz, [b'sealed under the nonce the gate chose'], [b'z'], b'o') == ''
           and disk(root3, km, 'index', [line(idz, 'z')], IDX_TAGS, IDX_OWNER) == '',
           (r, [h.hex() for h in heads], disk(root3, km, idz, [b'sealed under the nonce the gate chose'], [b'z'], b'o')))
+    # and so is every later version: an update (object version 2), a put
+    # (index version 2) and a remove (index version 3), each with random
+    # giving 12 bytes the gate chose
+    NV, rs = [os.urandom(12) for _ in range(3)], []
+    for nz, op in zip(NV, ('update', 'put', 'remove')):
+        wr(os.path.join(d, 'noncerandom'), nz)
+        rs.append(s.cmd('update', 'r', '*', idz, b'version 2, under the second nonce the gate chose')[1] if op == 'update' else
+                  s.cmd('put', 'r', '*', b'put under the third', 'y', 'o')[1] if op == 'put' else
+                  s.cmd('remove', 'r', '*', rs[1][3:])[1])
+        os.unlink(os.path.join(d, 'noncerandom'))
+    idy = rs[1][3:]
+    heads = [(rd(os.path.join(root3, side, o, str(n))) or b'')[:12] for o, n in ((idz, 2), ('index', 2), ('index', 3))
+             for side in ('obj', 'mirror')]
+    IXZ = [line(idz, 'z')]; IXZ += [IXZ[0] + line(idy, 'y'), IXZ[0]]
+    dz = (disk(root3, km, idz, [b'sealed under the nonce the gate chose', b'version 2, under the second nonce the gate chose'],
+               [b'z'], b'o') + disk(root3, km, 'index', IXZ, IDX_TAGS, IDX_OWNER))
+    check('D ... and so is every later version\'s: an update\'s object version 2, a put\'s index version 2 and a remove\'s '
+          'index version 3 start, in both copies, with the 12 bytes random gave for each, and are the oracle\'s stored '
+          'files under them',
+          rs[0] == 'ok 2' and isid(rs[1]) and rs[2] == 'ok ' + idy and heads == [NV[0]] * 2 + [NV[1]] * 2 + [NV[2]] * 2
+          and dz == '', (rs, [h.hex() for h in heads], dz))
     before3, rs = snap(root3), []
     for bad in (os.urandom(11), os.urandom(13), b''):
         wr(os.path.join(d, 'noncerandom'), bad)
@@ -1055,15 +1082,15 @@ def shard_n(d, s):
           'crashed write (in neither copy, at offset 0 or 12)',
           isid(r0) and r1 == 'ok 2' and r2 == 'ok 2' and r3 == getok(CB, TN, ON, 2) and not hits,
           ('keystream reused: ' + ' '.join(hits)) if hits else (r0, r1, r2, r3[:80]))
-    # (c) a failed write that is retried. While ./failrename exists the
-    # driver's rename copies the staging file to ./failedwrite and refuses
-    # the rename (EIO): version 2's first write fails after its bytes have
-    # left the process (written in full to obj/<id>/2.tmp), and the update
-    # fails. The retry with other content must not reuse the failed write's
-    # keystream. (No privilege needed.)
+    # (c) a failed write that is retried. While ./failrename names
+    # obj/<id>/2.tmp the driver's rename of it copies it to ./failedwrite
+    # and is refused (EIO): version 2's first write fails after its bytes
+    # have left the process (written in full to obj/<id>/2.tmp), and the
+    # update fails. The retry with other content must not reuse the failed
+    # write's keystream. (No privilege needed.)
     root = os.path.join(d, 'retry'); s.cmd('open', 'c', root, km, 'policy')
     r0 = s.cmd('put', 'c', '*', C1, 'n', 'nonce')[1]; oid = r0[3:]
-    wr(os.path.join(d, 'failrename'), b'')
+    wr(os.path.join(d, 'failrename'), (VP(root, 'obj', oid, 2) + '.tmp').encode())
     r1 = s.cmd('update', 'c', '*', oid, CA)[1]
     os.unlink(os.path.join(d, 'failrename'))
     failed, pa = rd(os.path.join(d, 'failedwrite')), pt(root, oid, 2, CA)
@@ -1098,6 +1125,53 @@ def shard_n(d, s):
           and not unopened and len(set(nonces)) == len(nonces) == 44,
           ('%d of %d stored files do not open under a nonce stored at their start: %s' % (len(unopened), len(files), ' '.join(unopened[:4])))
           if unopened else ('%d distinct nonces of %d' % (len(set(nonces)), len(nonces)), r0, rs[-1:], rp, rr))
+    # (e)-(g) the same three for the INDEX, whose versions every put and
+    # remove seal under K_I: index version 2 is sealed a second time after a
+    # rollback of both copies and both index heads, after a crash that left
+    # only obj/index/2.tmp and mirror/index/2.tmp, and after a put whose
+    # index write failed once its bytes had left the process. The oracle
+    # knows both index plaintexts (the lines of the objects listed, prev the
+    # hash of index version 1's stored file), so it tells keystream reuse as
+    # in (a)-(c)
+    def ipt(root, ids):
+        prev = hashlib.sha256(rd(VP(root, 'obj', 'index', 1)) or b'').hexdigest().encode()
+        return plain(2, IDX_TAGS, IDX_OWNER, prev, b''.join(line(i, 'n') for i in ids))
+    for case, how in (('e', 'ROLLBACK'), ('f', 'CRASH'), ('g', 'RETRY')):
+        root = os.path.join(d, 'index-' + how.lower()); s.cmd('open', case, root, km, 'policy')
+        ra = s.cmd('put', case, '*', C1, 'n', 'nonce')[1]; ida = ra[3:]
+        R = os.urandom(16); idb = R.hex(); wr(os.path.join(d, 'fixedrandom'), R)
+        if how == 'RETRY':
+            if os.path.exists(os.path.join(d, 'failedwrite')): os.unlink(os.path.join(d, 'failedwrite'))
+            wr(os.path.join(d, 'failrename'), (VP(root, 'obj', 'index', 2) + '.tmp').encode())
+        rb = s.cmd('put', case, '*', CA, 'n', 'nonce')[1]
+        os.unlink(os.path.join(d, 'fixedrandom'))
+        pa = ipt(root, [ida, idb])
+        if how == 'RETRY':
+            os.unlink(os.path.join(d, 'failrename'))
+            old = {'obj': rd(os.path.join(d, 'failedwrite'))}
+            want = (rb == 'err write failed: ' + VP(root, 'obj', 'index', 2) and not os.path.exists(os.path.join(root, 'obj', idb))
+                    and not os.path.lexists(VP(root, 'obj', 'index', 2) + '.tmp'))
+        else:
+            old, want = both(root, 'index', 2), rb == 'ok ' + idb
+            for side in SIDES:
+                if os.path.exists(VP(root, side, 'index', 2)):
+                    if how == 'ROLLBACK': os.unlink(VP(root, side, 'index', 2))
+                    else: os.rename(VP(root, side, 'index', 2), VP(root, side, 'index', 2) + '.tmp')
+                wr(os.path.join(root, side, 'index', 'head'), b'1')
+        rc = s.cmd('put', case, '*', CB, 'n', 'nonce')[1]; idc = rc[3:]
+        new, pb = both(root, 'index', 2), ipt(root, [ida, idc])
+        rf = s.cmd('find', case, '*', 'n')[1]
+        hits = ['%s@%d' % (side, o) for side in old for o in reuse(old[side], new[side], pa, pb)] if old.get('obj') \
+               else ['(index version 2 was never written)']
+        check('N (%s) INDEX %s: %s, a put seals index version 2 again, but not under the same keystream (at offset 0 '
+              'or 12)' % (case, how, {'ROLLBACK': 'after index version 2 was deleted from both copies and both index '
+                                                  'heads rolled back to 1',
+                                     'CRASH': 'with index version 2 left only as 2.tmp in both copies and both index '
+                                              'heads at 1 (a crash before the renames)',
+                                     'RETRY': 'after a put whose index version 2 was written in full to its .tmp and '
+                                              'then refused at the rename ("write failed", the object removed again)'}[how]),
+              isid(ra) and want and isid(rc) and rf == 'ok %s,%s' % (ida, idc) and not hits,
+              ('keystream reused: ' + ' '.join(hits)) if hits and '@' in hits[0] else (hits, ra, rb, rc, rf))
 
 if __name__ == '__main__':
     which, d = sys.argv[1], sys.argv[2]
