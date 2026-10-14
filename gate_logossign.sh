@@ -22,7 +22,9 @@
 #      flipped bits in R, FORS, WOTS+ at two layers, an auth path, the last
 #      byte; wrong message, pk seed, pk root, ctx; truncated, extended) FALSE;
 #      keygen(random) twice from the VM's random builtin, each a key pair the
-#      model derives from its seeds, the two different;
+#      model derives from its seeds, the two different; a ctx of exactly 255
+#      bytes signed (byte for byte with the model) and verified; and the full
+#      arm's sign-then-hash-then-verify command once (on a hedged toy record);
 #   3. 128s: keyGen KATs (tcId 1 and 10; all 10 in the full arm); every sigVer
 #      record (2 accept, 13 reject); the model's own fresh signatures (a
 #      deterministic one, and a hedged one over a random message with a random
@@ -39,7 +41,11 @@
 #      a truncated, an extended and an empty signature; a 31- and a 33-byte pk;
 #   5. misuse halts loudly (rc 1, the message, no output): a ctx of 256 bytes,
 #      a 63- or 65-byte sk, a 15- or 17-byte addrnd, a 15-byte seed;
-#   6. confine(logossign.la)(nil) is ok (logossec.la's static confinement);
+#   6. the root comparison, white box: SIGN_KIT handed a bxor that prints its
+#      arguments makes exactly 16 calls per verify, the byte pairs (computed
+#      root, PK.root) in order (a compare that skips a byte of PK.root cannot
+#      be seen from outside, since PK.root also feeds H_msg); and
+#      confine(logossign.la)(nil) is ok (logossec.la's static confinement);
 #   7. position: a toy verify with a 1 MB glyph in front of the module takes
 #      at most LOGOSSIGN_POS_BOUND percent (default 150) of its time without;
 #   8. the C host gives the VM's answers on one toy verify (TRUE) and two
@@ -161,6 +167,17 @@ elif cmd == "toycmds":
             kind, where, iface, ctx, pk, msg, sig = r[2:9]
             if iface == "pure": cmds.append("vp %s %s %s %s %s" % (kind, msg, sig, ctx, pk)); exp.append("vp %s 0" % kind)
             else: cmds.append("vi %s %s %s %s" % (kind, msg, sig, pk)); exp.append("vi %s 0" % kind)
+    # the full arm's sph command (sign, sha256 of the signature, verify of it), once, on the toy
+    r = [x for x in recs if x[0] == "sign" and x[2] == "pure-hedged"][0]
+    cmds.append("sph sph1 %s %s %s %s %s" % (r[5], r[3], keys[r[1]][0], r[4], keys[r[1]][1]))
+    exp.append("sph sph1 %s 1" % hashlib.sha256(h2b(r[6])).hexdigest())
+    # the ctx boundary: a ctx of exactly 255 bytes is signed and verifies (the model's signature)
+    s = M.get("TOY-SHA2")
+    c255, m33, (sk0, pk0) = bytes((3 * j + 2) % 256 for j in range(255)), h2b(r[5]) + b"boundary", keys["0"]
+    sg = s.slh_sign(m33, c255, h2b(sk0))
+    assert s.slh_verify(m33, sg, c255, h2b(pk0))
+    cmds.append("sp ctx255-s %s %s %s -" % (hx(m33), hx(c255), sk0)); exp.append("sp ctx255-s %s" % hx(sg))
+    cmds.append("vp ctx255-v %s %s %s %s" % (hx(m33), hx(sg), hx(c255), pk0)); exp.append("vp ctx255-v 1")
     # the keygens last: their times are then not taken while the Python oracle starts
     cmds += kcmds; exp += kexp
     if "R" in sel:
@@ -175,6 +192,36 @@ elif cmd == "hostprog":
     pk = [l.split() for l in open(src) if l.startswith("keygen 0 ")][0][6]
     t = open(tmpl).read().replace("@M@", r[5]).replace("@SIG@", r[6]).replace("@PK@", pk)
     open(out, "w").write(t)
+
+elif cmd == "rootprog":
+    # the root-comparison program: key 0's pure deterministic signature of the
+    # 33-byte message, under its pk and under the pk with PK.root's last byte flipped
+    src, tmpl, out = sys.argv[2:5]
+    recs = [l.split() for l in open(src) if l.startswith("sign 0 pure-det 637478")]
+    r = [x for x in recs if len(x[5]) == 66][0]
+    pk = [l.split() for l in open(src) if l.startswith("keygen 0 ")][0][6]
+    t = open(tmpl).read().replace("@M@", r[5]).replace("@SIG@", r[6]).replace("@PK@", pk)
+    t = t.replace("@PKBAD@", hx(flip(h2b(pk), 31, 0x01)))
+    open(out, "w").write(t)
+
+elif cmd == "rootcheck":
+    # every bxor SIGN_KIT made during each verify: exactly the 16 byte pairs of
+    # (computed root, PK.root), in order; for the valid signature they agree
+    src, got = sys.argv[2:4]
+    pk = h2b([l.split() for l in open(src) if l.startswith("keygen 0 ")][0][6])
+    bad = flip(pk, 31, 0x01)
+    lines = open(got).read().split("\n")
+    assert lines[-1] == "" and lines[-2] == "end", "no end line"
+    i = lines.index("valid"); j = lines.index("wrong-root")
+    v, w = lines[i + 1:j], lines[j + 1:-2]
+    assert v[-1] == "1" and w[-1] == "0", "verdicts %r %r" % (v[-1:], w[-1:])
+    v = [x.split() for x in v[:-1]]; w = [x.split() for x in w[:-1]]
+    assert len(v) == 16 and len(w) == 16, "%d and %d bxor calls, want 16 each" % (len(v), len(w))
+    assert all(x[0] == "x" for x in v + w)
+    assert [int(x[2]) for x in v] == list(pk[16:32]) and [int(x[1]) for x in v] == list(pk[16:32]), "valid: not (root, PK.root)"
+    assert [int(x[2]) for x in w] == list(bad[16:32]), "wrong root: the second operands are not PK.root's bytes"
+    assert any(x[1] != x[2] for x in w)
+    print("ok")
 
 elif cmd == "krcheck":
     # two keys from keygen(random): each the model's key pair for its seeds, the two different
@@ -441,6 +488,16 @@ KG_DEFAULT="kg1,kg10"
 vm_compile drv.la drv.bin
 vm_compile cf.la cf.bin
 
+# the oracle's verdict on the KAT file comes before any VM result is judged
+wait "$kat_pid"
+if [ "$(cat "$T/kat_oracle.rc")" = 0 ] && [ "$(head -1 "$T/kat_oracle.out")" = "records 35 keyGen 10 sigGen 10 sigVer 15 failed 0" ]; then
+    echo "PASS  logossign oracle: slhdsa_model.py reproduces all 35 records of slhdsa_kat_128s.txt (10 keyGen, 10 sigGen by the signature's sha256, 15 sigVer)"
+else
+    echo "FAIL  logossign oracle: $(head -c 400 "$T/kat_oracle.out")"; exit 1
+fi
+
+printf 'unused\n' > "$T/none.cmds"
+
 # ── 2-4: two lanes of VM runs ─────────────────────────────────────────────
 # lane A: the 128s keyGen KATs; lane B: the toy runs, then the 128s verifies
 run_in kg drv.bin kg.cmds "$LOGOSSIGN_TIMEOUT" &
@@ -452,11 +509,11 @@ cat "$T/sv.cmds" > "$T/v128.cmds"; tail -n +2 "$T/neg.cmds" >> "$T/v128.cmds"
 run_in v128 drv.bin v128.cmds "$LOGOSSIGN_TIMEOUT"
 
 # toy
-results toy | grep -v '^kr ' > "$T/toy.got"
+results toy | grep -v '^kr ' | awk '{if ($1 == "sph") print $1, $2, $3, $4; else print}' > "$T/toy.got"
 if [ "$(rc_of toy)" = 0 ] && cmp -s "$T/toy.got" "$T/toy.exp"; then
     nk=$(grep -c '^kg ' "$T/toy.exp"); ns=$(grep -c '^s[ip] ' "$T/toy.exp")
     nv=$(grep -c '^v[ip] .*-v[0-9]* 1$' "$T/toy.exp"); nr=$(grep -c ' 0$' "$T/toy.exp")
-    echo "PASS  logossign toy (VM): $nk keygens and $ns signatures (internal deterministic, pure deterministic with ctx 'ctx' and with an empty ctx, pure hedged) byte for byte with the model; $nv verifies TRUE; $nr reject records FALSE"
+    echo "PASS  logossign toy (VM): $nk keygens and $ns signatures (internal deterministic, pure deterministic with ctx 'ctx' and with an empty ctx, pure hedged) byte for byte with the model; $nv verifies TRUE; $nr reject records FALSE; a 255-byte ctx signed and verified; the full arm's sign-hash-verify command once"
 else
     echo "FAIL  logossign toy (VM): rc=$(rc_of toy)"; diff "$T/toy.exp" "$T/toy.got" | cut -c1-160 | head -8; tail -3 "$T/toy/err"; ok=0
 fi
@@ -480,6 +537,52 @@ else
     echo "FAIL  logossign 128s verify (VM): rc=$(rc_of v128)"; diff "$T/v128.exp" "$T/v128.got" | cut -c1-160 | head -8; tail -3 "$T/v128/err"; ok=0
 fi
 
+# ── 4b. the root comparison, white box ─────────────────────────────────────
+# A comparison that skips a byte of PK.root cannot be caught from outside:
+# PK.root also goes into H_msg, so a wrong root changes every byte of the
+# computed one. So SIGN_KIT is handed a bxor that prints its arguments (the
+# eq16 loop is its only use in a verify; CRYPT_FAST keeps the real one): each
+# verify must make exactly 16 calls, the byte pairs (computed root, PK.root)
+# in order, equal for the valid signature (gate_logossec.sh audits its
+# signature compare the same way).
+cat > "$T/rootcmp.tmpl" <<'LAEOF'
+import("logoscrypt.la")
+import("logossign.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph SEQ = la a. la b. b
+glyph SPAN = la f. la a. la b. (Z(la sp. la lo. la hi.
+    lt(add(lo)(1))(hi)
+      (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(div(add(lo)(hi))(2)))
+      (la _. lt(lo)(hi)(la _. f(lo))(la _. "")("!"))
+      ("!")))(a)(b)
+glyph FROMHEX = la s. SPAN(la i. (la hv. chr(int_to_str(add(mul(hv(str_at(s)(mul(i)(2))))(16))(hv(str_at(s)(add(mul(i)(2))(1)))))))
+                           (la c. (la n. lt(n)(58)(la _. sub(n)(48))(la _. sub(n)(87))("!"))(str_to_int(ord(c)))))(0)(div(str_to_int(str_len(s)))(2))
+glyph B = la b. b(la _. "1")(la _. "0")("!")
+# W(f): f, printing "x a b" for every call f(a)(b)
+glyph W = la f. la a. la b. SEQ(print(concat("x ")(concat(int_to_str(a))(concat(" ")(int_to_str(b))))))(f(a)(b))
+glyph MAIN =
+ (la crypt. la pkit.
+  SIGN_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(W(bxor))(bshl)(bshr)(crypt)(pkit)(SLH_TOY)
+  (la kgi. la sgi. la vfi. la sgp. la vfp. la kg.
+    (la m. la sig. la pk. la pkbad.
+      SEQ(SEQ(SEQ(SEQ(print("valid"))(print(B(vfp(m)(sig)("ctx")(pk)))))
+                 (print("wrong-root")))
+             (print(B(vfp(m)(sig)("ctx")(pkbad)))))
+         (print("end")))
+    (FROMHEX("@M@"))(FROMHEX("@SIG@"))(FROMHEX("@PK@"))(FROMHEX("@PKBAD@"))))
+ (CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr))
+ (SHA256_PREFIX_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr))
+LAEOF
+( cd "$T" && python3 -I oracle.py rootprog toy_vectors.txt rootcmp.tmpl rootcmp.la ) || { echo "FAIL  logossign: root program"; exit 1; }
+vm_compile rootcmp.la rootcmp.bin
+run_in rootcmp rootcmp.bin none.cmds "$WM_VM_TIMEOUT"
+rcres=$(cd "$T" && python3 -I oracle.py rootcheck toy_vectors.txt rootcmp/out 2>&1 | tail -1)
+if [ "$(rc_of rootcmp)" = 0 ] && [ "$rcres" = ok ]; then
+    echo "PASS  logossign root comparison (VM): each verify XORs exactly the 16 byte pairs (computed root, PK.root) in order, all equal for a valid toy signature, PK.root's bytes on the right for a wrong root (TRUE, FALSE)"
+else
+    echo "FAIL  logossign root comparison (VM): rc=$(rc_of rootcmp) $rcres"; tail -2 "$T/rootcmp/err"; ok=0
+fi
+
 # ── 5. misuse halts loudly ────────────────────────────────────────────────
 TSK=$(awk '$1 == "keygen" && $2 == 0 {print $6}' "$T/toy_vectors.txt")
 misuse() {  # misuse LABEL MESSAGE COMMAND
@@ -500,7 +603,6 @@ misuse "sign_internal with a 17-byte addrnd" "logossign: sign: addrnd must be em
 misuse "keygen_internal with a 15-byte SK.seed" "logossign: keygen: SK.seed, SK.prf and PK.seed must be 16 bytes each" "kg m 000102030405060708090a0b0c0d0e 101112131415161718191a1b1c1d1e1f 202122232425262728292a2b2c2d2e2f"
 
 # ── 6. confine ────────────────────────────────────────────────────────────
-printf 'unused\n' > "$T/none.cmds"
 mkdir -p "$T/cf" && cp "$T/logossign.la" "$T/cf/"
 run_in cf cf.bin none.cmds "$WM_VM_TIMEOUT"
 if [ "$(rc_of cf)" = 0 ] && [ "$(cat "$T/cf/out")" = ok ]; then
@@ -515,13 +617,6 @@ if [ "$(rc_of kg)" = 0 ] && cmp -s "$T/kg.got" "$T/kg.exp"; then
     echo "PASS  logossign 128s keyGen (VM): KAT tcId $(grep '^kg ' "$T/kg.exp" | awk '{print substr($2, 3)}' | tr '\n' ' ')gives the NIST sk and pk byte for byte$( [ "$FULL" = 1 ] || echo " (all 10 in the full arm)")"
 else
     echo "FAIL  logossign 128s keyGen (VM): rc=$(rc_of kg)"; diff "$T/kg.exp" "$T/kg.got" | cut -c1-160 | head -6; tail -3 "$T/kg/err"; ok=0
-fi
-
-wait "$kat_pid"
-if [ "$(cat "$T/kat_oracle.rc")" = 0 ] && [ "$(head -1 "$T/kat_oracle.out")" = "records 35 keyGen 10 sigGen 10 sigVer 15 failed 0" ]; then
-    echo "PASS  logossign oracle: slhdsa_model.py reproduces all 35 records of slhdsa_kat_128s.txt (10 keyGen, 10 sigGen by the signature's sha256, 15 sigVer)"
-else
-    echo "FAIL  logossign oracle: $(head -c 400 "$T/kat_oracle.out")"; ok=0
 fi
 
 # ── 7. position ───────────────────────────────────────────────────────────
