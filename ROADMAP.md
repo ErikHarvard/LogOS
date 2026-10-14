@@ -947,8 +947,9 @@ one does not yet do is said beside it.*
       a reference monitor for files, processes and IPC; `logoscap.la` for the
       in-process Morris sealer. Enforcement is in the library and at load: an
       unconfined program can still call builtins directly (kernel-level
-      enforcement belongs to LogosKernel), and the root key is symmetric until
-      a signature scheme lands.)*
+      enforcement belongs to LogosKernel), and the root key is symmetric
+      (HMAC): a signature scheme now exists (SLH-DSA, `logossign.la`), and
+      moving logossec to it is a separate decision, not made.)*
 - [x] 10. User interface framework *(`logoskit.la`, LogosKit: a program is
       (init, view, update) and everything perceived — painted cells, the
       accessible description, what each key does — is derived from one element

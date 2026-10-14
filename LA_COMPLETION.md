@@ -1160,10 +1160,15 @@ registers. `trimono.la` now gates all three. What remains:
   this is the only one that is unbuildable from inside. If cross-species is ever
   descoped, this seal must be descoped explicitly, in writing, not by silence.
 
-- `[ ]` **A signature scheme.** No public-key primitive exists. **The single
-  unlock for the whole record/law layer**: signed updates, identity, contracts,
-  non-repudiable records, the Eternal Library. Everything in the Logocracy layer
-  waits on this one primitive.
+- `[✓]` **A signature scheme** (2026-10-14). `logossign.la`: SLH-DSA-SHA2-128s,
+  FIPS 205's stateless hash-based signature (the codex's SPHINCS+), checked
+  against NIST's ACVP known answers by `gate_logossign.sh`. (`x25519.la` was
+  already a public-key primitive, for key agreement only.) It was named as **the
+  single unlock for the whole record/law layer**: signed updates, identity,
+  contracts, non-repudiable records, the Eternal Library. The primitive exists;
+  nothing in that layer uses it yet (logospkg still signs its index with HMAC,
+  logossec's root key is symmetric, LogosNet carries no signatures), and moving
+  each to it is a separate decision, not made.
 - `[ ]` **Entropy on the metal** — no RDRAND/RDSEED builtin, no jitter
   collector, no seed file, while full-disk encryption must derive keys at boot
   before any disk read. A DRBG does not close this.
