@@ -963,8 +963,9 @@ one does not yet do is said beside it.*
 - [x] 12. Package & update system *(`logospkg.la`: content-addressed archives,
       an HMAC-signed index, installs gated on each package's own self-test,
       atomic switch, update and rollback, the Advisory Update Protocol; it has
-      updated itself 1.0 → 1.1. The index key is symmetric until a signature
-      scheme lands. VM only.)*
+      updated itself 1.0 → 1.1. The index key is symmetric (HMAC): a signature
+      scheme now exists (SLH-DSA, `logossign.la`), and switching the index to it
+      is a separate decision, not made. VM only.)*
 - [x] 13. System services *(`logosservices.la` — the supervisor: dependency
       order, logs, restart policy with backoff, typed logosipc control, and it
       manages itself; `logostime.la` and `logosledger.la`, the hash-chained
@@ -1357,8 +1358,9 @@ Audited against the stated goal — one coherent system replacing Tails/Qubes + 
 ProtonMail + Searx + Invidious + VeraCrypt + Mullvad, with encryption as the medium.
 
 **★★ G1 — ~~NO PATH FROM "ONE HASH" TO "THE OS IS ENCRYPTION"~~ — HALF CLOSED 2026-08-22.**
-The AEAD, KDF and MAC now exist and are RFC-verified on two engines. What remains of G1 is
-**entropy on the metal** and **crypto agility** below, plus a signature scheme. Original finding:
+The AEAD, KDF and MAC now exist and are RFC-verified on two engines, and since 2026-10-14 a
+public-key signature scheme too (SLH-DSA, below). What remains of G1 is **entropy on the metal**
+and **crypto agility** below. Original finding:
 `sha256.la` is one hash. **B1** is key *management*. Between them, nothing is tracked:
 
 - [x] **AEAD cipher** — ChaCha20-Poly1305 or AES-GCM. Every app-layer item added above assumes one.
@@ -1366,10 +1368,17 @@ The AEAD, KDF and MAC now exist and are RFC-verified on two engines. What remain
       decrypt round-trip, and a forged tag differing in ONE BIT that releases no plaintext.
       Built on `chacha20.la` (§2.3.2 + A.1 #1) and `poly1305.la` (§2.5.2 + A.3 #5/#6/#7, the
       vectors written to break partial reduction). All host==VM byte-identical.*
-- [~] **KDF / MAC / signature scheme** — HKDF, and a signature primitive for updates and identity.
+- [x] **KDF / MAC / signature scheme** — HKDF, and a signature primitive for updates and identity.
       *KDF and MAC DONE 2026-08-22 — `hkdf.la` (RFC 5869 TC1/TC3), `hmac.la` (RFC 4231 TC1/TC2),
-      `poly1305.la` one-time MAC; all host==VM. **No signature scheme yet** — still the blocker
-      for signed updates and identity, and the remaining half of this item.*
+      `poly1305.la` one-time MAC; all host==VM. **Signature scheme DONE 2026-10-14 —
+      `logossign.la`, SLH-DSA-SHA2-128s (FIPS 205, the codex's SPHINCS+)**: stateless and
+      hash-based (security from SHA-256 alone; no signer state to persist, and the VM has no
+      fsync); checked by `gate_logossign.sh` against an independent Python model and NIST
+      ACVP known answers (keyGen and sigVer in the default arms, two sigGen cases in its full
+      arm, `LOGOSSIGN_FULL=1`). On the VM a 128s keygen takes about 2
+      minutes, a signature about 14, a verify about 1 s. Nothing uses it yet: logospkg still
+      signs its index with HMAC (item 12 above) and LogosNet carries no signatures; switching
+      either is a separate decision. No constant-time claim on the interpreting VM.*
 - [ ] **★ CSPRNG and an entropy source ON THE METAL.** The `random` builtin is Linux
       `getrandom(2)`. **The bare-metal kernel — K1–K7, the actual sovereign artifact — has no
       entropy source whatsoever**: no RDRAND/RDSEED builtin, no jitter collector, no seed file.
@@ -1382,7 +1391,8 @@ The AEAD, KDF and MAC now exist and are RFC-verified on two engines. What remain
       (FIPS 203/204/205); Signal ships PQXDH; TLS ships hybrid KEMs. Harvest-now-decrypt-later
       attacks seizure-survivability directly, and **B1's design is classical throughout**. What is
       needed now is not implementations but a decision: hybrid KEM for transport, PQ or hash-based
-      signatures for updates.
+      signatures for updates. (A hash-based signature now exists, SLH-DSA in `logossign.la`; what
+      signs updates is still that decision.)
 - [ ] **G3 — Authenticity for a self-distributing OS.** **B5** means *anyone can seed the image*.
       "Sovereign updates" tracks user *consent*, not cryptographic *authenticity*: no signed images,
       no anti-rollback, no binary transparency, and no way for two sovereigns to **verify each

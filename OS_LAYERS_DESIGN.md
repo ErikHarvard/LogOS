@@ -235,8 +235,9 @@ package manager is a package managed by the package manager)."*
   stdout. Its **id** is `hex(sha256(archive))`.
 - **A repository** is a directory: `pkg/<id>` archives; `index` with lines
   `name version id`; `index.sig` = `hex(hmac(K_repo)(index))`. (A symmetric
-  repository key is the honest limit today: there are no public-key signatures
-  in LA yet.)
+  repository key is the honest limit today. Public-key signatures now exist in
+  LA, SLH-DSA-SHA2-128s in `logossign.la`; switching the index to them is a
+  separate decision, not made here.)
 - **An installation** is a directory: `pkgs/<name>/<version>/…files`,
   `current/<name>` (the active version), `installed` (lines `name version id`).
 
