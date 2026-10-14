@@ -32,7 +32,9 @@
 #
 #    4. Supervise via the signalfd. The loop blocks on read(sigfd) — one
 #       128-byte signalfd_siginfo per signal — and dispatches on the signal
-#       number (ssi_signo, the first byte):
+#       number (ssi_signo, the first byte). A signalfd that cannot be made,
+#       or a read that yields anything but a whole record, halts init loudly
+#       (it cannot supervise blind):
 #         · SIGCHLD (17): drain EVERY ready child with the non-blocking
 #           reapnb (pending SIGCHLDs coalesce, so one signal may stand for
 #           several deaths); if the session shell was among them, respawn it
@@ -73,6 +75,16 @@ glyph STOP_DRAIN = la pid. IF(str_eq(pid)("0"))(la _. "Y")(la _. IF(IS_NEG(pid))
 glyph BACKOFF    = "1"
 glyph BACKOFF_MS = "1000"
 
+# SIGREAD(sigfd) — read one signalfd_siginfo. The VM's raw read maps EVERY
+# error (EBADF, EIO, …) to "", and ord("") is "0" — which is not SIGTERM, so an
+# unchecked failure would be dispatched as SIGCHLD and the loop would spin at
+# 100% CPU with no blocking point. Anything but a whole 128-byte record means
+# the signalfd is gone: init cannot supervise without it, so it halts loudly.
+glyph SIGREAD = la sigfd. (la si. IF(str_eq(str_len(si))("128"))
+        (la _. si)
+        (la _. error(concat("logosinit: signalfd read failed (got ")(concat(str_len(si))(" bytes, not one 128-byte siginfo)")))))
+    (read(sigfd)("128"))
+
 # FORK_WAIT(sigfd) — fork just failed, so there is no shell and no SIGCHLD will
 # ever arrive to wake the loop. Wait up to BACKOFF on the signalfd itself, so a
 # SIGTERM is still honoured while forks keep failing (SHUTDOWN("0"): no shell to
@@ -83,7 +95,7 @@ glyph FORK_WAIT = la sigfd.
         (la _. (la si. IF(str_eq(ord(str_head(si)))(SIGTERM))
                 (la _. SHUTDOWN("0"))
                 (la _. DRAIN("0")))
-            (read(sigfd)("128"))))
+            (SIGREAD(sigfd))))
     (poll(sigfd)(BACKOFF_MS))
 
 # SPAWN(sigfd) — fork the session shell; the parent returns the shell's pid. The
@@ -135,11 +147,14 @@ glyph SUPERVISE = la sigfd. Z(la self. la shell.
                 (la wasshell.
                     self(IF(str_eq(wasshell)("1"))(la _. RESPAWN(sigfd))(la _. shell)))
                 (DRAIN(shell))))
-    (read(sigfd)("128")))
+    (SIGREAD(sigfd)))
 
 glyph MAIN =
     SEQ(mount("/proc")("proc"))(
     SEQ(mount("/sys")("sysfs"))(
     SEQ(sigprocmask("0")(SIGMASK))(
     SEQ(print("LogOS sovereign session initialized."))(
-    (la sigfd. SUPERVISE(sigfd)(SPAWN(sigfd)))(signalfd(SIGMASK))))))
+    (la sigfd. IF(IS_NEG(sigfd))
+        (la _. error(concat("logosinit: signalfd failed (")(concat(sigfd)(") — cannot supervise"))))
+        (la _. SUPERVISE(sigfd)(SPAWN(sigfd))))
+    (signalfd(SIGMASK))))))

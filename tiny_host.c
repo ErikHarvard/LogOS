@@ -411,6 +411,7 @@ static void do_import(const char *path);   /* defined after slurp_file/subst */
 
 /* program := ( 'glyph' IDENT '=' expr | 'import' '(' STRING ')' | 'export' IDENT* )* */
 static void parse_program(void) {
+    check_stack();
     while (curtok != T_EOF) {
         if (curtok == T_IMPORT) {
             advance();
@@ -957,11 +958,51 @@ static void mangle_privates(size_t start, size_t end,
     }
 }
 
+/* The chain of files being parsed right now (the program, then each import in
+ * progress), as canonical paths — and as written, for the diagnostic. A path
+ * that recurs on this chain is an import cycle: without the check, do_import →
+ * parse_program → do_import recursed off the C stack (SIGSEGV, no diagnostic)
+ * or filled the glyph table ('too many glyphs'). A module imported twice from
+ * different importers (a diamond) is not on the chain twice, so it is allowed. */
+#define MAX_IMPORT_DEPTH 256
+static char       *import_canon[MAX_IMPORT_DEPTH];  /* realpath, or NULL if it failed */
+static const char *import_shown[MAX_IMPORT_DEPTH];  /* as written; borrowed — the caller's
+                                                       string outlives its chain entry */
+static size_t      import_depth = 0;
+
+#define IMPORT_KEY(i) (import_canon[i] ? import_canon[i] : import_shown[i])
+
+static void import_push(const char *path) {
+    if (import_depth == MAX_IMPORT_DEPTH) {
+        fprintf(stderr, "import: nesting deeper than %d modules\n", MAX_IMPORT_DEPTH);
+        exit(1);
+    }
+    import_canon[import_depth] = realpath(path, NULL);  /* NULL: slurp_file reports it */
+    import_shown[import_depth] = path;
+    const char *key = IMPORT_KEY(import_depth);
+    for (size_t i = 0; i < import_depth; i++) {
+        if (strcmp(IMPORT_KEY(i), key) == 0) {
+            fprintf(stderr, "import cycle: ");
+            for (size_t j = i; j < import_depth; j++) fprintf(stderr, "%s -> ", import_shown[j]);
+            fprintf(stderr, "%s\n", path);
+            exit(1);
+        }
+    }
+    import_depth++;
+}
+
+static void import_pop(void) {
+    import_depth--;
+    free(import_canon[import_depth]);
+}
+
 /* import("path"): parse the module at `path` and merge its EXPORTED glyphs into
  * the current table. The module is parsed with its own export set and its own
  * (saved/restored) lexer state, so nested imports work; its private glyphs are
  * then isolated by mangle_privates. */
 static void do_import(const char *path) {
+    check_stack();
+    import_push(path);
     /* save the importer's lexer state — we re-point the lexer at the module */
     const char *sP = P; Tok st = curtok; char *ss = curstr;
     size_t sl = curlen; long si = curint;
@@ -983,6 +1024,7 @@ static void do_import(const char *path) {
     cur_nexports = saved_n;
     memcpy(cur_exports, saved_exp, saved_n * sizeof *cur_exports);
     P = sP; curtok = st; curstr = ss; curlen = sl; curint = si;
+    import_pop();
 }
 
 /* --------------------------------------------------------------- main --- */
@@ -1000,6 +1042,7 @@ int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "kernel.la";
 
     char *src = slurp_file(path, NULL);   /* source is text; NUL-terminated walk is fine */
+    import_push(path);                    /* the program is the root of the import chain */
     P = src;
     advance();
     parse_program();

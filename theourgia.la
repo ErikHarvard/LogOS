@@ -48,12 +48,16 @@ glyph LIST_HD  = la lst. FST(SND(lst))
 glyph LIST_TL  = la lst. SND(SND(lst))
 
 # ── Byte helpers (binary-safe substring) ──
-glyph TAKE = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
-    concat(str_head(s))(self(sub(n)(1))(str_tail(s)))))
-glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
-    self(sub(n)(1))(str_tail(s))))
-glyph REPEAT = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. "")(la _.
+# Total on every n: a count below 1 takes/repeats nothing and drops nothing, and
+# TAKE/DROP stop at the end of s — a negative count must not recurse forever.
+glyph TAKE = Z(la self. la n. la s. IF(lt(n)(1))(la _. "")(la _. IF(str_eq(s)(""))(la _. "")(la _.
+    concat(str_head(s))(self(sub(n)(1))(str_tail(s))))))
+glyph DROP = Z(la self. la n. la s. IF(lt(n)(1))(la _. s)(la _. IF(str_eq(s)(""))(la _. "")(la _.
+    self(sub(n)(1))(str_tail(s)))))
+glyph REPEAT = Z(la self. la n. la s. IF(lt(n)(1))(la _. "")(la _.
     concat(s)(self(sub(n)(1))(s))))
+glyph IMAX = la a. la b. IF(lt(a)(b))(la _. b)(la _. a)
+glyph IMIN = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
 
 # ── Colors & surfaces ──
 glyph PX = la r. la g. la b. concat(chr(int_to_str(r)))(concat(chr(int_to_str(g)))(chr(int_to_str(b))))
@@ -71,7 +75,8 @@ glyph SOLID = la w. la h. la px. SURF(w)(h)(MK_ROWS(h)(REPEAT(w)(px)))
 
 # ── Composition (the compositor's core operation) ──
 # SPLICE(drow)(ox3)(srow)(sw3) — overwrite sw3 bytes of dst row at byte
-# offset ox3 with the src row (clipping is assumed within bounds for now).
+# offset ox3 with the src row. COMPOSE clips first, so the splice always lies
+# within the dst row and every row keeps its w*3 bytes.
 glyph SPLICE = la drow. la ox3. la srow. la sw3.
     concat(TAKE(ox3)(drow))(concat(srow)(DROP(add(ox3)(sw3))(drow)))
 
@@ -87,8 +92,29 @@ glyph COMPOSE_ROWS = Z(la self. la drows. la srows. la i. la oy. la ox3. la sw3.
                 CONS(drow)(self(LIST_TL(drows))(srows)(add(i)(1))(oy)(ox3)(sw3))))
         (LIST_HD(drows)))
     (la _. NIL))
+# DROP_ROWS(n)(rows) — rows without its first n; SLICE_ROWS(sx3)(w3)(rows) —
+# each row cut to w3 bytes starting at byte sx3.
+glyph DROP_ROWS = Z(la self. la n. la rows. IF(lt(n)(1))(la _. rows)(la _.
+    IF(IS_CONS(rows))(la _. self(sub(n)(1))(LIST_TL(rows)))(la _. NIL)))
+glyph SLICE_ROWS = Z(la self. la sx3. la w3. la rows. IF(IS_CONS(rows))(la _.
+    CONS(TAKE(w3)(DROP(sx3)(LIST_HD(rows))))(self(sx3)(w3)(LIST_TL(rows))))(la _. NIL))
+# COMPOSE clips src to dst: the visible part starts at (sx0,sy0) in src and at
+# (max(ox,0),max(oy,0)) in dst, and is vw pixels wide; rows past dst's bottom
+# are never reached. Nothing visible → dst unchanged. Off-surface offsets on
+# either side therefore clip, instead of recursing forever (ox<0), shifting the
+# source (oy<0), or lengthening rows and skewing the raster (right overhang).
+# A src that already fits takes the unchanged path (no slicing).
 glyph COMPOSE = la dst. la src. la ox. la oy.
-    SURF(S_W(dst))(S_H(dst))(COMPOSE_ROWS(S_ROWS(dst))(S_ROWS(src))(0)(oy)(mul(ox)(3))(mul(S_W(src))(3)))
+    (la sx0. la sy0. (la vw. la vh.
+        IF(lt(vw)(1))(la _. dst)(la _. IF(lt(vh)(1))(la _. dst)(la _.
+        SURF(S_W(dst))(S_H(dst))(COMPOSE_ROWS(S_ROWS(dst))
+            (IF(AND(int_eq(sx0)(0))(int_eq(vw)(S_W(src))))
+                (la _. DROP_ROWS(sy0)(S_ROWS(src)))
+                (la _. SLICE_ROWS(mul(sx0)(3))(mul(vw)(3))(DROP_ROWS(sy0)(S_ROWS(src)))))
+            (0)(IMAX(0)(oy))(mul(IMAX(0)(ox))(3))(mul(vw)(3))))))
+      (IMIN(sub(S_W(src))(sx0))(sub(S_W(dst))(IMAX(0)(ox))))
+      (IMIN(sub(S_H(src))(sy0))(sub(S_H(dst))(IMAX(0)(oy)))))
+    (IMAX(0)(sub(0)(ox)))(IMAX(0)(sub(0)(oy)))
 
 # ── Scanout (Stage 1: to a PPM P6 raster) ──
 glyph FLATTEN = Z(la self. la rows. IF(IS_CONS(rows))(la _.
