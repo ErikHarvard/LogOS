@@ -34,10 +34,15 @@
 #       naming the part before it: every syscall would see the path cut
 #       there, so the WM would make and use another directory than the one
 #       named, and LogosSession refuses such a root (its rootok) only at the
-#       first login, with the screen taken. When stat says dir does not exist
-#       (-2) it is made with mode 0700, one level (a missing parent halts,
-#       naming the path); when it exists and is not a directory, or stat
-#       fails otherwise, the run halts naming it. first is TRUE exactly when
+#       first login, with the screen taken. So does a dir of more than 3993
+#       bytes: LogosSession and AletheiaFS name files up to 102 bytes below
+#       it (/home/<name, at most 32>/mirror/<object id, 32>/<version, at
+#       most 19 digits>.tmp), and the VM halts on a path of 4096 bytes or
+#       more, which would stop the WM at the first login, after the user's
+#       record was written (so at every login after it too). When stat says
+#       dir does not exist (-2) it is made with mode 0700, one level (a
+#       missing parent halts, naming the path); when it exists and is not a
+#       directory, or stat fails otherwise, the run halts naming it. first is TRUE exactly when
 #       stat(dir/users) is -2 (ENOENT): LogosSession's adduser makes
 #       dir/users, so no user has ever been made there. The corner: an
 #       adduser that failed after making users/ leaves it empty, and the
@@ -137,7 +142,7 @@ glyph CWD_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int
 
 glyph USERS_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la error. la stat. la mkdir.
   LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(la line. la isdir. la seg.
-  (la C0. la C1. la DEFAULT. la MODE. la NUL.
+  (la C0. la C1. la DEFAULT. la MODE. la NUL. la MAXLEN.
     (la fits. (la ensure.
       la text. (la l.
           (la d. (la first. la k. k(d)(first))
@@ -158,12 +163,15 @@ glyph USERS_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_i
                     (la _. error(concat("wm: the users directory ")(concat(dir)(" is not a directory"))))(C0))(C0))(C0))
       (stat(dir))))
     # fits(dir): dir, unless it holds a NUL byte, which halts naming the
-    # part before it
+    # part before it, or is longer than MAXLEN bytes, which halts naming it
     (la dir. (la n.
         (la i. lt(i)(n)
            (la _. error(concat("wm: the users directory named in logos_wm.users has a NUL byte after ")
                           (concat(seg(dir)(C0)(i))(" (no path can hold one)"))))
-           (la _. dir)(C0))
+           (la _. lt(MAXLEN)(n)
+              (la _. error(concat("wm: the users directory ")(concat(dir)(concat(" is too long (")(concat(str_len(dir))(
+                     " bytes; at most 3993, so that every file LogosSession makes under it fits the VM's 4096-byte path limit)"))))))
+              (la _. dir)(C0))(C0))
         (Z(la f. la j. lt(j)(n)(la _. str_eq(str_at(dir)(j))(NUL)(la _. j)(la _. f(add(j)(C1)))(C0))(la _. n)(C0))(C0)))
       (str_to_int(str_len(dir)))))
-  (0)(1)("/var/lib/logos")("448")(chr("0")))
+  (0)(1)("/var/lib/logos")("448")(chr("0"))(3993))

@@ -21,10 +21,12 @@
 #      first line is blank; a missing directory made with mode 0700 (448),
 #      one level; a FIRST RUN exactly when stat(DIR/users) is -2 (a
 #      directory that exists without users/ is a first run; one with users/
-#      a directory, a regular file, or not stat-able (-13) is not); and four
+#      a directory, a regular file, or not stat-able (-13) is not); and five
 #      loud halts, each naming the path: a regular file, a missing parent, a
 #      stat error other than "does not exist", a line holding a NUL byte
-#      (named up to the NUL; nothing is made); and, in a second stub world
+#      (named up to the NUL; nothing is made), a directory of 3994 bytes (the
+#      longest taken is 3993: LogosSession's files under it must fit the
+#      VM's 4096-byte path limit; nothing is made); and, in a second stub world
 #      where /var/lib/logos already has users/, no logos_wm.users (or a blank
 #      line) is the default directory and NOT a first run: the live WM's
 #      usual second boot
@@ -236,10 +238,36 @@ if [ "$hrc" = 1 ] && [ "$vrc" = 1 ] && [ ! -s "$T/uh_nul.txt" ] && [ ! -s "$T/uv
 else
     echo "      nul: host rc=$hrc '$hm' out '$(cat "$T/uh_nul.txt")'; VM rc=$vrc '$vm' out '$(cat "$T/uv_nul.txt")'"
 fi
+# the longest directory taken (3993 bytes) and one byte more
+cat > "$T/users_long.la" <<'LAEOF'
+import("wm_livestart.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph ST = la p. "-2"
+glyph MK = la p. la m. (la _. "0")(print(concat("  mkdir, ")(concat(str_len(p))(" bytes"))))
+glyph USERS = USERS_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(error)(ST)(MK)
+glyph REP = Z(la r. la n. la s. int_eq(n)(0)(la _. "")(la _. concat(s)(r(sub(n)(1))(s)))("!"))
+glyph SHOW = la n. la t. USERS(t)(la d. la f. print(concat(n)(concat(": ")(concat(str_len(d))(concat(" bytes first=")(f("yes")("no")))))))
+glyph MAIN = SHOW("longest")(concat("/srv/")(REP(3988)("d")))
+LAEOF
+sed 's|^glyph MAIN = .*|glyph MAIN = SHOW("long")(concat("/srv/")(REP(3989)("d")))|' "$T/users_long.la" > "$T/users_long2.la"
+wm_host users_long.la "$T/ulh.txt"; ulh=$hrc
+wm_vm users_long.la "$T/ulv.txt"; ulv=$vrc
+wm_host users_long2.la "$T/ul2h.txt"; hm=$(cat "$T/hre")
+wm_vm users_long2.la "$T/ul2v.txt"; vm=$(cat "$T/vre" 2>/dev/null)
+LONGEXPECT='  mkdir, 3993 bytes
+longest: 3993 bytes first=yes'
+if [ "$ulh" = 0 ] && [ "$ulv" = 0 ] && [ "$(cat "$T/ulh.txt")" = "$LONGEXPECT" ] && [ "$(cat "$T/ulv.txt")" = "$LONGEXPECT" ] \
+   && [ "$hrc" = 1 ] && [ "$vrc" = 1 ] && [ ! -s "$T/ul2h.txt" ] && [ ! -s "$T/ul2v.txt" ] \
+   && [[ "$hm" == *"wm: the users directory /srv/ddd"*"d is too long (3994 bytes; at most 3993"* ]] \
+   && [[ "$vm" == *"wm: the users directory /srv/ddd"*"d is too long (3994 bytes; at most 3993"* ]]; then
+    halts="$halts long"
+else
+    echo "      long: 3993 bytes host rc=$ulh '$(cat "$T/ulh.txt")' VM rc=$ulv '$(cat "$T/ulv.txt")'; 3994 bytes host rc=$hrc '$(head -c 80 "$T/ul2h.txt")' '${hm:0:60}...${hm: -90}'; VM rc=$vrc '$(head -c 80 "$T/ul2v.txt")' '${vm:0:60}...${vm: -90}'"
+fi
 if [ "$uh" = 0 ] && [ "$uv" = 0 ] && [ "$(cat "$T/usersh0.txt")" = "$USERSEXPECT" ] && [ "$(cat "$T/usersv.txt")" = "$USERSEXPECT" ] \
-   && [ "$halts" = " f x acc nul" ] && [ "$udh" = 0 ] && [ "$udv" = 0 ] && [ "$(cat "$T/udh.txt")" = "$DEFEXPECT" ] \
+   && [ "$halts" = " f x acc nul long" ] && [ "$udh" = 0 ] && [ "$udv" = 0 ] && [ "$(cat "$T/udh.txt")" = "$DEFEXPECT" ] \
    && [ "$(cat "$T/udv.txt")" = "$DEFEXPECT" ]; then
-    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff stat(DIR/users) is -2 (users/ a file or -13 is not); a file, a missing parent, a stat error and a NUL byte halt naming the path; the default directory with users/ is not a first run; host = VM"
+    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff stat(DIR/users) is -2 (users/ a file or -13 is not); a file, a missing parent, a stat error, a NUL byte and a directory over 3993 bytes halt naming the path; the default directory with users/ is not a first run; host = VM"
 else
     echo "FAIL  wm livestart: 4 the users directory: host rc=$uh VM rc=$uv, halts:$halts"
     echo "      host: $(tr '\n' '|' < "$T/usersh0.txt")"; echo "      VM:   $(tr '\n' '|' < "$T/usersv.txt")"
