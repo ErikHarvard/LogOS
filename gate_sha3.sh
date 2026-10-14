@@ -28,8 +28,12 @@
 #      stdout), for SHAKE128 and SHAKE256;
 #   5. the C host gives the VM's bytes, and hashlib's, on a small set (SHA3-256
 #      of "abc" and of 136 bytes, SHA3-512 of "" and of 71 bytes, SHAKE128 of
-#      "abc" to 170 bytes, SHAKE256 of 200 x 0xA3 to 64 bytes); SHA3_HOST=0
-#      skips it (reported as not run);
+#      "abc" to 170 bytes, SHAKE256 of 200 x 0xA3 to 64 bytes); and on the
+#      host an output length that is not an integer (the string "32", the
+#      VM syscall builtins' convention) halts loudly ("lt: first argument is
+#      not an integer", rc 1, nothing on stdout). The VM does not detect it
+#      (its int builtins do not check tags; logossha3.la's header), so that
+#      half is not run. SHA3_HOST=0 skips the arm (reported as not run);
 #   6. confine(logossha3.la)(nil) is ok (logossec.la's static confinement:
 #      every name the module uses is a parameter or its own glyph);
 #   7. kit style, statically: every reference to a glyph in logossha3.la is
@@ -511,6 +515,8 @@ glyph POS = la s2. la s5. la k1. la k2. la hex.
   (clock_gettime)("attack at dawn")(32)(64)
 glyph NEG128 = la s2. la s5. la k1. la k2. la hex. SEQ(k1("abc")(sub(0)(1)))(print("NOT REACHED"))
 glyph NEG256 = la s2. la s5. la k1. la k2. la hex. SEQ(k2("abc")(sub(0)(1)))(print("NOT REACHED"))
+# an output length given as a decimal string (host only: the VM does not detect it)
+glyph STROUT = la s2. la s5. la k1. la k2. la hex. SEQ(k1("abc")("32"))(print("NOT REACHED"))
 # the comparisons: a second kit whose lt and int_eq print their arguments;
 # each case prints CASE, then the hash runs (its BR lines), then OUT
 glyph BRDO = la t2. la t5. la u1. la u2. la tag. la m.
@@ -537,7 +543,7 @@ glyph MAIN = SHA3_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
  (la s2. la s5. la k1. la k2.
    (la hex. DISPATCH(read_file("mode.txt"))
       (C(PR("kat")(KAT))(C(PR("sweep")(SWEEP))(C(PR("outlen")(OUTLEN))(C(PR("host")(HOST))
-      (C(PR("time")(TIME))(C(PR("pos")(POS))(C(PR("neg128")(NEG128))(C(PR("neg256")(NEG256))(C(PR("branches")(BRANCHES))(NIL))))))))))
+      (C(PR("time")(TIME))(C(PR("pos")(POS))(C(PR("neg128")(NEG128))(C(PR("neg256")(NEG256))(C(PR("branches")(BRANCHES))(C(PR("strout")(STROUT))(NIL)))))))))))
       (la f. f(s2)(s5)(k1)(k2)(hex)))
    (HEXKIT(str_at)(ord)(str_to_int)(concat)(str_len)(add)(lt)(bshr)(band)(Z)))
 LAEOF
@@ -547,7 +553,9 @@ LAEOF
 if [ "$SHA3_HOST" = 1 ]; then
     mkdir -p "$T/host"; cp -r "$T/tiny_host" "$T/logossha3.la" "$T/t.la" "$T/m" "$T/host/"
     printf host > "$T/host/mode.txt"
-    ( cd "$T/host" && { timeout "$WM_HOST_TIMEOUT" ./tiny_host t.la > host.out 2> host.err; echo $? > host.rc; } ) &
+    ( cd "$T/host" && { timeout "$WM_HOST_TIMEOUT" ./tiny_host t.la > host.out 2> host.err; echo $? > host.rc
+                        printf strout > mode.txt
+                        timeout "$WM_HOST_TIMEOUT" ./tiny_host t.la > strout.out 2> strout.err; echo $? > strout.rc; } ) &
     host_pid=$!
 fi
 
@@ -727,6 +735,12 @@ if [ "$SHA3_HOST" = 1 ]; then
         echo "PASS  sha3 engines: the C host and the VM give the same bytes, hashlib's, for SHA3-256 of \"abc\" and of 136 bytes, SHA3-512 of \"\" and of 71 bytes, SHAKE128 of \"abc\" to 170 bytes and SHAKE256 of 200 x 0xA3 to 64 bytes"
     else
         echo "FAIL  sha3 engines: host rc=$hrc vm rc=$vrc"; diff "$T/host.exp" "$T/host/host.out" | head -4; diff "$T/host.exp" "$T/host.vm" | head -4; tail -2 "$T/host/host.err"; ok=0
+    fi
+    src2=$(cat "$T/host/strout.rc" 2>/dev/null || echo none); smsg="lt: first argument is not an integer"
+    if [ "$src2" = 1 ] && grep -qxF "$smsg" "$T/host/strout.err" && [ ! -s "$T/host/strout.out" ]; then
+        echo "PASS  sha3 misuse (host): shake128 with the output length given as the string \"32\" halts on the C host with '$smsg' (the VM does not detect it: logossha3.la's header)"
+    else
+        echo "FAIL  sha3 misuse (host): shake128(\"abc\")(\"32\"): rc=$src2 stdout=$(head -c 80 "$T/host/strout.out" 2>/dev/null) stderr=$(head -c 120 "$T/host/strout.err" 2>/dev/null)"; ok=0
     fi
 else
     echo "NOTE  sha3 engines: not run (SHA3_HOST=0)"

@@ -20,8 +20,15 @@
 #  than the rate is squeezed in several blocks, the permutation applied
 #  between them. A negative outlen halts loudly:
 #      "logossha3: shake128: the output length must not be negative"
-#  (shake256 likewise). The constructor takes CRYPT_FAST's builtins in
-#  CRYPT_FAST's order (logoscrypt.la).
+#  (shake256 likewise). outlen must be a native integer: the C host halts
+#  loudly on anything else ("lt: first argument is not an integer"), but
+#  the VM's integer builtins do not check what they are given, so there a
+#  decimal string such as "32" (the convention of the VM's syscall
+#  builtins: random("32"), read(fd)("24")) is NOT detected: it is compared
+#  as the string's address and the squeeze runs on for that many bytes. The
+#  module has no way to tell the two apart on the VM (no type test). The
+#  constructor takes CRYPT_FAST's builtins in CRYPT_FAST's order
+#  (logoscrypt.la).
 #
 #  HOW IT IS USED. Build the record ONCE at startup and pass it on as a value:
 #      import("logossha3.la")
