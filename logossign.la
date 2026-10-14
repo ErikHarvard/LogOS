@@ -26,7 +26,9 @@
 #        "logossign: keygen: SK.seed, SK.prf and PK.seed must be 16 bytes each".
 #    keygen(random)                                       Alg. 21
 #        draws the three seeds as ONE call random("48") of the builtin passed
-#        in, then keygen_internal. Fewer than 48 bytes halts.
+#        in, then keygen_internal. A draw of any other length than 48 bytes
+#        (fewer, as from a failed getrandom, or more) halts: "logossign:
+#        keygen: random must give exactly 48 bytes".
 #    sign_internal(M)(sk)(addrnd)                         Alg. 19
 #        addrnd "" is the deterministic variant (opt_rand = PK.seed); else it
 #        must be exactly 16 bytes (the hedged variant: the caller draws it,
@@ -471,7 +473,7 @@ glyph SIGN_KIT = la str_at. la ord. la str_to_int. la int_to_str. la chr. la con
      (len(ctx)))(la verify.
   # keygen(random): Alg. 21, the three seeds from one draw of 48 bytes
   LET(la random. (la r.
-       need(int_eq(len(r))(C48))("logossign: keygen: random gave fewer than 48 bytes")(la _.
+       need(int_eq(len(r))(C48))("logossign: keygen: random must give exactly 48 bytes")(la _.
          (la ra. keygen_internal(sl16(ra)(C0))(sl16(ra)(C16))(sl16(ra)(C32)))(str_at(r))))
      (random(int_to_str(C48))))(la keygen.
     la s. s(keygen_internal)(sign_internal)(verify_internal)(sign)(verify)(keygen)
