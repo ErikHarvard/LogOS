@@ -35,12 +35,16 @@
 #      in SHA3_KIT and evaluated while the kit is built (a LET's value or
 #      continuation, an applied lambda), none inside a function the kit
 #      returns (a parse of the module, as gate_logossign.sh does);
-#   8. position: one timing program runs as it is and with a 1 MB glyph in
-#      front of the module in its compiled stream, three times each,
-#      alternating; each of sha3_512, sha3_256, shake128 and shake256 of a
-#      short message must take at most SHA3_POS_BOUND percent (default 150) of
-#      its least time without the glyph (a name resolved at run time would
-#      walk the megabyte);
+#   8. position: one timing program runs as it is and with a glyph of
+#      SHA3_POS_MB megabytes (default 4; the stream must stay under the VM's
+#      5 MiB) in front of the module in its compiled stream, three times each,
+#      alternating. A call that names one builtin (str_len) measures what ONE
+#      name resolved at run time costs there (it walks the glyph: about 1.3 ms
+#      at 4 MB, against about 1.2 ms for a whole sha3_512); each of sha3_512,
+#      sha3_256, shake128 and shake256 of a short message may take at most
+#      SHA3_POS_FRAC percent (default 50) of that walk more than its least
+#      time without the glyph, so a single name resolved at run time on every
+#      call fails the arm (and confine or kit style say which name);
 #   9. timing lines (INFO, CPU time inside the program, best of 5): one
 #      Keccak-f permutation (SHAKE128 of the empty message to 0 bytes: one
 #      padded block absorbed, one permutation, nothing squeezed), ten more
@@ -55,7 +59,8 @@ set -uo pipefail
 ok=1
 wm_setup logossha3.la logossec.la
 command -v python3 >/dev/null || { echo "FAIL  sha3: python3 (the oracle) is not installed"; exit 1; }
-: "${SHA3_POS_BOUND:=150}"
+: "${SHA3_POS_MB:=4}"
+: "${SHA3_POS_FRAC:=50}"
 : "${SHA3_HOST:=1}"
 : "${SHA3_SEED:=$(python3 -c 'import os; print(int.from_bytes(os.urandom(4), "big"))')}"
 
@@ -201,6 +206,7 @@ elif cmd == "time":
     print("end")
 elif cmd == "pos":
     m = b"attack at dawn"
+    print("walk " + m.hex())
     print("sha3_512 " + hashlib.sha3_512(m).hexdigest()); print("sha3_256 " + hashlib.sha3_256(m).hexdigest())
     print("shake128 " + hashlib.shake_128(m).hexdigest(32)); print("shake256 " + hashlib.shake_256(m).hexdigest(64))
     print("end")
@@ -434,11 +440,15 @@ glyph TIME = la s2. la s5. la k1. la k2. la hex.
     (la label. la f. PBEST(5)(cg)(f)(999999999999999)("")(la ns. la r.
        print(SP(SP(label)(int_to_str(div(ns)(1000))))(hex(r))))))
   (clock_gettime)(read_file("m/t1k"))(read_file("m/t10k"))(0)(168)(1848)
+# position: "walk" names one builtin (str_len) between the clock reads on
+# purpose, so it costs one walk of the program: what a single name resolved
+# at run time would add to a call
 glyph POS = la s2. la s5. la k1. la k2. la hex.
   (la cg. la m. la L32. la L64.
     (la run.
-      SEQ(SEQ(SEQ(SEQ(
-        run("sha3_512")(la _. s5(m)))
+      SEQ(SEQ(SEQ(SEQ(SEQ(
+        run("walk")(la _. (la x. m)(str_len(m))))
+        (run("sha3_512")(la _. s5(m))))
         (run("sha3_256")(la _. s2(m))))
         (run("shake128")(la _. k1(m)(L32))))
         (run("shake256")(la _. k2(m)(L64))))
@@ -576,7 +586,7 @@ fi
 
 # ── 8. position ───────────────────────────────────────────────────────────
 ( cd "$T" && python3 oracle.py pos ) > "$T/pos.exp"
-python3 -c "import sys; d=open(sys.argv[1],'rb').read(); open(sys.argv[2],'wb').write(b'FILLER\x00\x01'+b'a'*1048576+b'\x00\x05'+d)" "$T/t.bin" "$T/tfill.bin"
+python3 -c "import sys; d=open(sys.argv[1],'rb').read(); open(sys.argv[2],'wb').write(b'FILLER\x00\x01'+b'a'*(int(sys.argv[3])*1048576)+b'\x00\x05'+d)" "$T/t.bin" "$T/tfill.bin" "$SHA3_POS_MB"
 prc=0
 for i in 1 2 3; do
     vm_run t.bin pos "$T/pos_plain$i.out"; [ "$vrc" = 0 ] || prc=$vrc
@@ -587,18 +597,22 @@ for f in "$T"/pos_plain[123].out "$T"/pos_fill[123].out; do
     [ "$(awk 'NF == 3 {print $1, $3} NF == 1 {print}' "$f" 2>/dev/null)" = "$(cat "$T/pos.exp")" ] || pbad=1
 done
 least() { cat "$T"/pos_$1[123].out 2>/dev/null | awk -v op="$2" '$1 == op && (m == "" || $2 < m) {m = $2} END {print m}'; }
-pslow=0; plines=""
+# W: one walk of the glyph (ns), from the call that names str_len
+wa=$(least plain walk); wb=$(least fill walk); W=0; pslow=0; plines=""
+if [ -n "$wa" ] && [ -n "$wb" ] && [ "$wb" -gt "$wa" ]; then W=$((wb - wa)); else pslow=1; fi
 for op in sha3_512 sha3_256 shake128 shake256; do
     a=$(least plain $op); b=$(least fill $op)
     if [ -n "$a" ] && [ -n "$b" ] && [ "$a" -gt 0 ]; then
-        plines="$plines $op $((a / 1000))/$((b / 1000)) us ($((b * 100 / a))%)"
-        [ $((b * 100)) -le $((a * SHA3_POS_BOUND)) ] || pslow=1
+        d=$(((b - a) / 1000)); [ "$d" -ge 0 ] && d="+$d"
+        plines="$plines $op $((a / 1000))/$((b / 1000)) us ($d us, $((b * 100 / a))%)"
+        [ $(((b - a) * 100)) -le $((W * SHA3_POS_FRAC)) ] || pslow=1
     else pslow=1; fi
 done
+wline="one name resolved at run time (a call naming str_len) costs $((W / 1000)) us there ($((${wa:-0} / 1000)) us without the glyph, $((${wb:-0} / 1000)) us with)"
 if [ "$prc" = 0 ] && [ "$pbad" = 0 ] && [ "$pslow" = 0 ]; then
-    echo "PASS  sha3 position (VM): with a 1 MB glyph in front of the module each function of a 14-byte message takes at most ${SHA3_POS_BOUND}% of its CPU time without it, every result hashlib's; without/with:$plines"
+    echo "PASS  sha3 position (VM): with a ${SHA3_POS_MB} MB glyph in front of the module $wline, and each function of a 14-byte message takes at most ${SHA3_POS_FRAC}% of that more than without the glyph, every result hashlib's; without/with:$plines"
 else
-    echo "FAIL  sha3 position (VM): rc=$prc wrong=$pbad over-${SHA3_POS_BOUND}%=$pslow; without/with:$plines"; tail -3 "$T/vre"; ok=0
+    echo "FAIL  sha3 position (VM): rc=$prc wrong=$pbad over-${SHA3_POS_FRAC}%-of-a-walk=$pslow; with a ${SHA3_POS_MB} MB glyph $wline; without/with:$plines"; tail -3 "$T/vre"; ok=0
 fi
 
 # ── 9. timing ─────────────────────────────────────────────────────────────
