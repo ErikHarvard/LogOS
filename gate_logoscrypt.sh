@@ -43,7 +43,17 @@
 #      module imported before it; one timing program runs as it is and with a
 #      1 MB glyph in front of the module, and each of sha256, HMAC, HKDF, seal
 #      and open of a short message must take at most LOGOSCRYPT_POS_BOUND
-#      percent (default 150) of its time without the glyph.
+#      percent (default 150) of its time without the glyph;
+#   8. SHA256_PREFIX_KIT, the second kit of logoscrypt.la: prefixed(prefix)(msg)
+#      equals hashlib's sha256(prefix ++ msg) for prefixes of 0, 64 and 128
+#      bytes and every message length 0..130 (55, 56, 63, 64, 119 and 120,
+#      where the padding changes shape, among them); a prefix whose length is
+#      not a multiple of 64 (1, 63, 65 bytes) halts loudly; the C host gives
+#      the same bytes (in the engines program); prefixed is timed in the
+#      position program (7) like the record's operations; and the hash under
+#      SLH-DSA's F, SHA-256(PK.seed ++ toByte(0, 48) ++ ADRSc ++ M), is timed
+#      by the literal formula and through the kit (PASS needs at most 75% of
+#      the literal time).
 # ISOLATION: private temp dir (gate_wm_common.sh). VM, plus one small host
 # program. CRYPT_REF is slow by design: part 5 and the reference timing take
 # most of the run (the whole gate took 32 to 47 minutes on a 4-core machine
@@ -144,7 +154,8 @@ if __name__ == "__main__" and sys.argv[1] == "engines":
     sd = seal(k, n, b"ad", b"hey")
     print("sha256 " + sha256(b"abc").hex()); print("hmac " + hmac(b"Jefe", b"what do ya want for nothing?").hex())
     print("seal " + sd.hex()); print("open hey"); print("tamper none")
-    print("hkdf " + hkdf(b"", b"ikm", b"info", 40).hex()); print("end")
+    print("hkdf " + hkdf(b"", b"ikm", b"info", 40).hex())
+    print("prefixed " + sha256(gen(64, 1) + b"abc").hex()); print("end")
 if __name__ == "__main__" and sys.argv[1] == "timing":
     k1, k10, key, nonce = g(1024, 0), g(10240, 0), g(32, 1), g(12, 2)
     print("sha256-1KB " + sha256(sha256(k1)).hex())
@@ -154,9 +165,17 @@ if __name__ == "__main__" and sys.argv[1] == "timing":
 if __name__ == "__main__" and sys.argv[1] == "pos":
     key, nonce, msg = g(32, 1), g(12, 2), b"attack at dawn"
     for op, r in [("sha256", sha256(msg)), ("hmac", hmac(key, msg)), ("hkdf", hkdf(b"", key, msg, 42)),
-                  ("seal", seal(key, nonce, b"", msg)), ("open", msg)]:
+                  ("seal", seal(key, nonce, b"", msg)), ("open", msg), ("prefixed", sha256(gen(64, 3) + msg))]:
         print(op, sha256(r).hex())
     print("end")
+if __name__ == "__main__" and sys.argv[1] == "prefix":
+    for p in (0, 64, 128):
+        for n in range(131):
+            print("pfx %d %d %s" % (p, n, sha256(gen(p, 9) + gen(n, p + n)).hex()))
+    print("end")
+if __name__ == "__main__" and sys.argv[1] == "ftime":
+    # F of SLH-DSA-SHA2 (n = 16): PK.seed ++ 48 zero bytes, then ADRSc (22) ++ M (16)
+    print("F " + sha256(sha256(gen(16, 4) + bytes(48) + gen(38, 5))).hex())
 if __name__ == "__main__" and sys.argv[1] == "pedge":
     key, nonce, aad = (bytes.fromhex(x) for x in sys.argv[2:5])
     sd = seal(key, nonce, aad, b"")
@@ -201,6 +220,8 @@ glyph UPTO = Z(la go. la a. la b. lt(a)(b)(la _. C(a)(go(add(a)(1))(b)))(la _. N
 glyph SHOW = la tag. la n. la s. print(concat(concat(concat(tag)(int_to_str(n)))(" "))(s))
 glyph EQ = la tag. la x. la y. print(concat(tag)(str_eq(x)(y)(la _. " EQ")(la _. " NE")("!")))
 glyph FAST = la k. CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
+  (add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)(k)
+glyph PREFIX = la k. SHA256_PREFIX_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
   (add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)(k)
 # in-program timing: BEST(n)(f) -> la k. k(least microseconds of n runs)(result)
 glyph TSPLIT = Z(la go. la s. la acc. str_eq(str_head(s))(" ")(la _. la k. k(acc)(str_tail(s)))(la _. go(str_tail(s))(concat(acc)(str_head(s))))("!"))
@@ -499,24 +520,91 @@ fi
 # ── 4b. the C host gives the same bytes (a small program: the host is slow) ──
 mkprog engines.la <<'LAEOF'
 glyph MAIN = FAST(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+ PREFIX(la prefixed.
   (la k. la n. (la sd.
-     SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(print(concat("sha256 ")(hex(sha256("abc")))))
+     SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(print(concat("sha256 ")(hex(sha256("abc")))))
                             (print(concat("hmac ")(hex(hmac("Jefe")("what do ya want for nothing?"))))))
                         (print(concat("seal ")(hex(sd)))))
                     (print(concat("open ")(open(k)(n)("ad")(sd)(la _. "none")(la p. p)))))
                 (print(concat("tamper ")(open(k)(n)("ad")(FLIP(sd)(0)(0))(la _. "none")(la p. p)))))
             (print(concat("hkdf ")(hex(hkdf("")("ikm")("info")(40))))))
+            (print(concat("prefixed ")(hex(prefixed(GEN(64)(1))("abc"))))))
         (print("end")))
      (seal(k)(n)("ad")("hey")))
-   ("0123456789abcdef0123456789abcdef")("0123456789ab"))
+   ("0123456789abcdef0123456789abcdef")("0123456789ab")))
 LAEOF
 ( cd "$T" && python3 oracle.py engines ) > "$T/engines.exp"
 wm_vm engines.la "$T/engines.vm"
 wm_host engines.la "$T/engines.host"
 if [ "$vrc" = 0 ] && [ "$hrc" = 0 ] && cmp -s "$T/engines.vm" "$T/engines.exp" && cmp -s "$T/engines.host" "$T/engines.exp"; then
-    echo "PASS  logoscrypt engines: the C host and the VM give the oracle's bytes for sha256, HMAC, seal, open (and a tampered open), HKDF"
+    echo "PASS  logoscrypt engines: the C host and the VM give the oracle's bytes for sha256, HMAC, seal, open (and a tampered open), HKDF, and SHA256_PREFIX_KIT's prefixed"
 else
     echo "FAIL  logoscrypt engines: vm rc=$vrc host rc=$hrc"; diff "$T/engines.exp" "$T/engines.host" | head -5; diff "$T/engines.exp" "$T/engines.vm" | head -5; tail -2 "$T/hre" 2>/dev/null; ok=0
+fi
+
+# ── 8. SHA256_PREFIX_KIT: sha256 after a prefix compressed once ─────────────
+mkprog prefix.la <<'LAEOF'
+glyph MAIN = FAST(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+ PREFIX(la prefixed.
+  SEQ(FOR(C(0)(C(64)(C(128)(NIL))))(la p.
+        (la f. FOR(UPTO(0)(131))(la n.
+            print(concat(concat(concat(concat(concat("pfx ")(int_to_str(p)))(" "))(int_to_str(n)))(" "))
+                        (hex(f(GEN(n)(add(p)(n))))))))
+        (prefixed(GEN(p)(9)))))
+     (print("end"))))
+LAEOF
+wm_vm prefix.la "$T/prefix.out"
+( cd "$T" && python3 oracle.py prefix ) > "$T/prefix.exp"
+if [ "$vrc" = 0 ] && cmp -s "$T/prefix.out" "$T/prefix.exp"; then
+    echo "PASS  logoscrypt prefix kit (VM): prefixed(prefix)(msg) = sha256(prefix ++ msg) for prefixes of 0, 64 and 128 bytes and every message length 0..130: $(($(wc -l < "$T/prefix.exp") - 1)) digests equal to hashlib's"
+else
+    echo "FAIL  logoscrypt prefix kit (VM): rc=$vrc"; diff "$T/prefix.exp" "$T/prefix.out" | head -6; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
+fi
+pmisuse() {  # pmisuse LENGTH: a prefix of LENGTH bytes halts loudly
+    mkprog pmisuse.la <<LAEOF
+glyph MAIN = PREFIX(la prefixed. SEQ(prefixed(GEN($1)(0)))(print("NOT REACHED")))
+LAEOF
+    wm_vm pmisuse.la "$T/pmisuse.out"
+    if [ "$vrc" = 1 ] && grep -qxF "logoscrypt: prefixed: the prefix length must be a multiple of 64" "$T/vre" && [ ! -s "$T/pmisuse.out" ]; then
+        echo "PASS  logoscrypt prefix kit misuse (VM): a $1-byte prefix halts with 'logoscrypt: prefixed: the prefix length must be a multiple of 64'"
+    else
+        echo "FAIL  logoscrypt prefix kit misuse (VM): a $1-byte prefix: rc=$vrc stdout=$(head -c 80 "$T/pmisuse.out") stderr=$(head -c 120 "$T/vre")"; ok=0
+    fi
+}
+for L in 1 63 65; do pmisuse "$L"; done
+# The hash under SLH-DSA's F (logossign.la; F truncates it to 16 bytes, at
+# the same cost either way): the literal formula hashes PK.seed's block on
+# every call, the kit only ADRSc ++ M (38 bytes, one block). Timed as the
+# position program times, best of 25, nothing named between the clock reads.
+mkprog ftime.la <<'LAEOF'
+glyph NS = la s. TSPLIT(s)("")(la a. la b. add(mul(str_to_int(a))(1000000000))(str_to_int(b)))
+glyph KTIME = la cg. la f. (la t0. (la r. (la t1. la k. k(t0)(t1)(r))(cg("1")))(f("!")))(cg("1"))
+glyph PBEST = Z(la go. la n. la cg. la f. la best. la res.
+  int_eq(n)(0)(la _. la k. k(best)(res))
+    (la _. KTIME(cg)(f)(la t0. la t1. la r.
+             (la d. go(sub(n)(1))(cg)(f)(lt(d)(best)(la _. d)(la _. best)("!"))(r))(sub(NS(t1))(NS(t0)))))
+    ("!"))
+glyph ZEROS = Z(la go. la i. int_eq(i)(0)(la _. "")(la _. concat(chr("0"))(go(sub(i)(1))))("!"))
+glyph MAIN = FAST(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+ PREFIX(la prefixed.
+  (la cg. la pad. la x.
+    (la pf. (la run.
+        SEQ(SEQ(run("literal")(la _. sha256(concat(pad)(x))))
+               (run("prefix")(la _. pf(x))))
+           (print("end")))
+      (la label. la f. PBEST(25)(cg)(f)(999999999999999)("")(la ns. la r.
+         print(concat(concat(concat(concat(label)(" "))(int_to_str(div(ns)(1000))))(" us "))(hex(sha256(r)))))))
+    (prefixed(pad)))
+  (clock_gettime)(concat(GEN(16)(4))(ZEROS(48)))(GEN(38)(5))))
+LAEOF
+wm_vm ftime.la "$T/ftime.out"
+( cd "$T" && python3 oracle.py ftime ) > "$T/ftime.exp"
+fl=$(awk '$1 == "literal" {print $2}' "$T/ftime.out"); fp=$(awk '$1 == "prefix" {print $2}' "$T/ftime.out")
+fd=$(awk '$1 == "literal" || $1 == "prefix" {print $4}' "$T/ftime.out" | sort -u)
+if [ "$vrc" = 0 ] && [ -n "$fl" ] && [ -n "$fp" ] && [ "F $fd" = "$(cat "$T/ftime.exp")" ] && [ $((fp * 100)) -le $((fl * 75)) ]; then
+    echo "PASS  logoscrypt prefix kit speed (VM): the hash under SLH-DSA's F, sha256(PK.seed ++ 48 zero bytes ++ ADRSc ++ M) with 38 bytes after the prefix, takes $fp us through the kit and $fl us by the literal formula ($((fp * 100 / fl))%), both giving the oracle's bytes"
+else
+    echo "FAIL  logoscrypt prefix kit speed (VM): rc=$vrc literal=${fl:-?} us prefix=${fp:-?} us digests=$(echo $fd)"; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
 
 # ── 6a. the fast timings ──────────────────────────────────────────────────
@@ -597,18 +685,20 @@ glyph PBEST = Z(la go. la n. la cg. la f. la best. la res.
              (la d. go(sub(n)(1))(cg)(f)(lt(d)(best)(la _. d)(la _. best)("!"))(r))(sub(NS(t1))(NS(t0)))))
     ("!"))
 glyph MAIN = FAST(la sha256. la hmac. la hkdf. la seal. la open. la hex.
-  (la cg. la key. la nonce. la msg.
+ PREFIX(la prefixed.
+  (la cg. la key. la nonce. la msg. la pf.
     (la sd. (la run.
-       SEQ(SEQ(SEQ(SEQ(SEQ(run("sha256")(la _. sha256(msg)))
+       SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(run("sha256")(la _. sha256(msg)))
                           (run("hmac")(la _. hmac(key)(msg))))
                       (run("hkdf")(la _. hkdf("")(key)(msg)(42))))
                   (run("seal")(la _. seal(key)(nonce)("")(msg))))
               (run("open")(la _. open(key)(nonce)("")(sd)(la _. "none")(la p. p))))
+              (run("prefixed")(la _. pf(msg))))
           (print("end")))
       (la label. la f. PBEST(15)(cg)(f)(999999999999999)("")(la ns. la r.
          print(concat(concat(concat(concat(label)(" "))(int_to_str(ns)))(" "))(hex(sha256(r)))))))
     (seal(key)(nonce)("")(msg)))
-  (clock_gettime)(GEN(32)(1))(GEN(12)(2))("attack at dawn"))
+  (clock_gettime)(GEN(32)(1))(GEN(12)(2))("attack at dawn")(prefixed(GEN(64)(3)))))
 LAEOF
 ( cd "$T" && python3 oracle.py pos ) > "$T/pos.exp"
 wm_vm pos.la "$T/pos_plain1.out"; prc=$vrc
@@ -628,7 +718,7 @@ for f in "$T"/pos_plain[123].out "$T"/pos_fill[123].out; do
 done
 least() { cat "$T"/pos_$1[123].out 2>/dev/null | awk -v op="$2" '$1 == op && (m == "" || $2 < m) {m = $2} END {print m}'; }
 pslow=0; plines=""
-for op in sha256 hmac hkdf seal open; do
+for op in sha256 hmac hkdf seal open prefixed; do
     a=$(least plain $op); b=$(least fill $op)
     if [ -n "$a" ] && [ -n "$b" ] && [ "$a" -gt 0 ]; then
         plines="$plines $op $((a / 1000))/$((b / 1000)) us ($((b * 100 / a))%)"

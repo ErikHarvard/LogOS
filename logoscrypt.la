@@ -34,6 +34,16 @@
 #
 #  and pass the record on as a value, exactly as CRYPT_REF is passed.
 #
+#  A SECOND KIT, SHA256_PREFIX_KIT, built with the same builtins in the same
+#  order, gives prefixed(prefix)(msg) = sha256(prefix ++ msg): the prefix (a
+#  whole number of 64-byte blocks) is compressed once, into a midstate, and
+#  the function returned absorbs only msg. logossign.la's tweakable hashes
+#  start with a fixed block (PK.seed, zero-padded), so each costs one
+#  compression instead of two: measured on the VM, the hash under SLH-DSA's
+#  F (38 bytes after the 64-byte prefix) 486 us through the kit, 962 us by
+#  the literal formula. It is defined at the end of this file; CRYPT_FAST and
+#  its contract are unchanged by it.
+#
 #  WHY IT IS FAST. On the SECD VM (WM_DESIGN.md, "How fast the VM is"):
 #   - naming a builtin or a glyph walks the program, so no hot code names
 #     one: every function below is a glyph whose PARAMETERS are the builtins,
@@ -100,7 +110,7 @@
 #     internally hkdf reuses one HMAC key schedule for all its blocks.
 # ═══════════════════════════════════════════════════════════════════
 
-export CRYPT_FAST
+export CRYPT_FAST SHA256_PREFIX_KIT
 
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 
@@ -555,3 +565,108 @@ glyph CRYPT_FAST = la str_at. la ord. la str_to_int. la int_to_str. la chr. la c
     la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)
   )))))))))))))))))))))))))))))))))))))))))))))))))))))
  (0)(1)(4)(5)(6)(8)(12)(14)(16)(18)(20)(26)(31)(32)(56)(60)(63)(64)(768)(2147483648)(8160)(4294967295)
+
+# ── SHA256_PREFIX_KIT: SHA-256 after a fixed prefix (a midstate) ─────────
+# SHA256_PREFIX_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
+#                  (error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#   -> la s. s(prefixed)
+#
+#   prefixed(prefix)(msg) = sha256(prefix ++ msg), 32 raw bytes.
+#
+# prefix must be a whole number of 64-byte blocks (0 included). Applying
+# prefixed to it compresses those blocks ONCE, into a midstate; the function
+# it returns absorbs only msg (with the bit length counting the prefix), so
+# a caller that hashes many messages after one prefix pays for the prefix
+# once. A prefix of any other length is a caller's error and halts:
+# "logoscrypt: prefixed: the prefix length must be a multiple of 64". The
+# midstate is the same value sha256 reaches after those blocks, by the
+# definition of a Merkle-Damgard hash (FIPS 180-4 6.2.2: each block updates
+# H from the previous H), so the digest is sha256(prefix ++ msg) exactly;
+# gate_logoscrypt.sh checks it against hashlib for prefixes of 0, 64 and 128
+# bytes and messages of 0..130 bytes.
+#
+# Why: SLH-DSA's F, H, T_l and PRF over SHA-256 (FIPS 205 11.2.1) all hash
+# PK.seed ++ toByte(0, 64 - n) ++ ADRSc ++ M, whose first block depends only
+# on PK.seed; logossign.la hashes it once per key. Measured on the VM: see
+# logossign.la's header.
+#
+# The SHA-256 core is the one CRYPT_FAST uses (the same glyphs, applied the
+# same way); CRYPT_FAST itself is unchanged. The record is built once, like
+# CRYPT_FAST, and names nothing at run time (fix is Z, named once here).
+glyph SHA256_PREFIX_KIT = la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la error.
+    la add. la sub. la mul. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+ (la C0. la C1. la C4. la C6. la C8. la C12. la C16. la C18. la C32. la C56. la C60. la C63. la C64. la M32.
+  LET(Z)(la fix.
+  LET(band(M32))(la m.
+  LET(mul(4294967297))(la r.
+  LET(band(255))(la n8.
+  LET(la n. la c. n(n))(la nil.
+  LET(la h. la t. la n. la c. c(h)(t))(la cons.
+  LET(la s. str_to_int(str_len(s)))(la len.
+  LET(SPAN(concat)(add)(sub)(lt)(bshr)(C0)(C1)(fix))(la span.
+  LET(str_at(span(la i. chr(int_to_str(i)))(C0)(256)))(la T.
+  LET(RD_BE(ord)(str_to_int)(add)(C1)(2)(3)(mul(256)))(la rbe.
+  LET(WR_BE(concat)(bshr)(C8)(C16)(24)(n8)(T))(la wbe.
+  LET(SHA_SIGMA(r)(bxor)(m)(bshr)(2)(13)(22))(la S0.
+  LET(SHA_SIGMA(r)(bxor)(m)(bshr)(C6)(11)(25))(la S1.
+  LET(SHA_SIG(r)(bxor)(m)(bshr)(7)(C18)(3))(la s0.
+  LET(SHA_SIG(r)(bxor)(m)(bshr)(17)(19)(10))(la s1.
+  LET(SHA_ROUND(S0)(S1)(SHA_CH(bxor)(band))(SHA_MAJ(bor)(band))(add))(la R.
+  LET(SHA_ROUNDS(add)(R)(fix))(la rounds.
+  LET(la a. la b. la c. la d. la s. s(a)(b)(c)(d))(la Q.
+  LET(SHA_SCHED(SHA_NEXTQ(SHA_NW(s0)(s1)(add))(la a. la b. la c. la d. a))
+                (sub)(int_eq)(C1)(C0)(nil)(cons)(fix)(C12))(la sched.
+  LET(SHA_ADD8(add)(m))(la add8.
+  LET(SHA_MKBLK(Q)(C0)(C4)(C8)(C12)(C16)(20)(24)(28)(C32)(36)(40)(44)(48)(52))(la mk.
+  LET(SHA_K(str_to_int)(Q)(nil)(cons))(la K.
+  LET(la H. la blk. add8(H)(rounds(H)(blk(sched))(K)))(la compress.
+  LET((la a. la b. la c. la d. la e. la f. la g. la h. la k. k(a)(b)(c)(d)(e)(f)(g)(h))
+        (1779033703)(3144134277)(1013904242)(2773480762)(1359893119)(2600822924)(528734635)(1541459225))(la H0.
+  # hfrom(H)(pre)(msg), exactly as in CRYPT_FAST: absorb msg into the state
+  # H, pre bytes having gone before it, padding included
+  LET((la C3. la C24. la C128.
+       la H. la pre. la msg.
+        (la sa. la L.
+          (la g.
+            fix(la go. la H. la o.
+               lt(add(o)(C63))(L)
+                 (la _. go(compress(H)(mk(g(o))(g(o)(C56))(g(o)(C60))))(add(o)(C64)))
+                 (la _. (la rem. la bits.
+                    (la gt.
+                       lt(rem)(C56)
+                         (la _. compress(H)(mk(gt)(bshr(bits)(C32))(band(bits)(M32))))
+                         (la _. compress(compress(H)(mk(gt)(gt(C56))(gt(C60))))
+                                        (mk(la i. C0)(bshr(bits)(C32))(band(bits)(M32))))
+                         (C0))
+                    (la i. bor(g(o)(i))
+                              (int_eq(i)(sub(rem)(band(rem)(C3)))
+                                (la _. bshl(C128)(sub(C24)(mul(C8)(band(rem)(C3)))))
+                                (la _. C0)
+                                (C0))))
+                  (sub(L)(o))(mul(add(pre)(L))(C8)))
+                 (C0))
+             (H)(C0))
+          (la o. la i. rbe(sa)(add(o)(i))))
+        (str_at(msg))(len(msg)))
+      (3)(24)(128))(la hfrom.
+  LET(la D. D(la a. la b. la c. la d. la e. la f. la g. la h.
+        concat(concat(concat(wbe(a))(wbe(b)))(concat(wbe(c))(wbe(d))))
+              (concat(concat(wbe(e))(wbe(f)))(concat(wbe(g))(wbe(h))))))(la out32.
+  # prefixed: the prefix's whole blocks compressed once, then a function of msg
+  LET(la prefix.
+     (la L. int_eq(band(L)(C63))(C0)
+        (la _. (la sa. (la H. la msg. out32(hfrom(H)(L)(msg)))
+                 (fix(la go. la H. la o.
+                     lt(o)(L)
+                       (la _. go(compress(H)(mk(la i. rbe(sa)(add(o)(i)))(rbe(sa)(add(o)(C56)))(rbe(sa)(add(o)(C60)))))
+                                (add(o)(C64)))
+                       (la _. H)
+                       (C0))
+                   (H0)(C0)))
+               (str_at(prefix)))
+        (la _. error("logoscrypt: prefixed: the prefix length must be a multiple of 64"))
+        (C0))
+     (len(prefix)))(la prefixed.
+    la s. s(prefixed)
+  ))))))))))))))))))))))))))))
+ (0)(1)(4)(6)(8)(12)(16)(18)(32)(56)(60)(63)(64)(4294967295)
