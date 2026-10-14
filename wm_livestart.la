@@ -30,7 +30,11 @@
 #    -> users(text) = la k. k(dir)(first) : LogosSession's root for the lock
 #       screen, from logos_wm.users (the VM's read_file gives "" for a
 #       missing file): its first line, trimmed exactly as CWD_KIT trims, or
-#       /var/lib/logos when that is empty. When stat says dir does not exist
+#       /var/lib/logos when that is empty. A line holding a NUL byte halts,
+#       naming the part before it: every syscall would see the path cut
+#       there, so the WM would make and use another directory than the one
+#       named, and LogosSession refuses such a root (its rootok) only at the
+#       first login, with the screen taken. When stat says dir does not exist
 #       (-2) it is made with mode 0700, one level (a missing parent halts,
 #       naming the path); when it exists and is not a directory, or stat
 #       fails otherwise, the run halts naming it. first is TRUE exactly when
@@ -91,12 +95,13 @@ glyph KBD_KIT = la Z. la str_at. la str_len. la ord. la str_to_int. la add. la s
   (0)(1)(10)(32)(48)(57)(65)(90)(la t. la f. t)(la t. la f. f)
 
 # LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)
-#        (int_eq)(div)(mod)(chr)(k) -> k(line)(isdir), what CWD_KIT and
+#        (int_eq)(div)(mod)(chr)(k) -> k(line)(isdir)(seg), what CWD_KIT and
 # USERS_KIT share, so both read their file the same way:
 #   line(text)  the first line of text without spaces, tabs or carriage
 #               returns at either end
 #   isdir(st)   stat's answer "<mode> <size>" is a directory's (S_IFDIR, type
 #               4); an "-errno" is not
+#   seg(s)(i)(j) bytes i..j-1 of s
 glyph LS_BASE = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la k.
   (la C0. la C1. la C2. la C4. la C16. la C4096. la CR. la TRUE. la FALSE.
    (la seg. (la blank.
@@ -115,7 +120,8 @@ glyph LS_BASE = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int
           (la _. FALSE)
           (la _. (la mode. int_eq(mod(div(mode)(C4096))(C16))(C4))
                  (str_to_int(seg(st)(C0)(Z(la sp. la m. lt(m)(str_to_int(str_len(st)))
-                     (la _. str_eq(str_at(st)(m))(" ")(la _. m)(la _. sp(add(m)(C1)))(C0))(la _. m)(C0))(C0)))))(C0)))
+                     (la _. str_eq(str_at(st)(m))(" ")(la _. m)(la _. sp(add(m)(C1)))(C0))(la _. m)(C0))(C0)))))(C0))
+      (seg))
    # blank(c): a space, a tab or a carriage return
    (la c. str_eq(c)(" ")(TRUE)(str_eq(c)("\t")(TRUE)(str_eq(c)(CR)))))
    # seg(s)(i)(j): bytes i..j-1 of s, joined by halves
@@ -126,18 +132,18 @@ glyph LS_BASE = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int
   (0)(1)(2)(4)(16)(4096)(chr("13"))(la t. la f. t)(la t. la f. f)
 
 glyph CWD_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la stat.
-  LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(la line. la isdir.
+  LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(la line. la isdir. la seg.
     la text. (la c. str_eq(c)("")(la _. "/")(la _. isdir(stat(c))(la _. c)(la _. "/")("!"))("!"))(line(text)))
 
 glyph USERS_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la error. la stat. la mkdir.
-  LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(la line. la isdir.
-  (la C0. la DEFAULT. la MODE.
-    (la ensure.
+  LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(la line. la isdir. la seg.
+  (la C0. la C1. la DEFAULT. la MODE. la NUL.
+    (la fits. (la ensure.
       la text. (la l.
           (la d. (la first. la k. k(d)(first))
                  # a first run: adduser has never made DIR/users
                  (str_eq(stat(concat(d)("/users")))("-2")))
-          (ensure(str_eq(l)("")(la _. DEFAULT)(la _. l)(C0))))
+          (ensure(fits(str_eq(l)("")(la _. DEFAULT)(la _. l)(C0)))))
         (line(text)))
     # ensure(dir): dir, made (mode 0700, one level) when it does not exist;
     # anything else that is not a directory halts, naming it
@@ -151,4 +157,13 @@ glyph USERS_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_i
            (la _. isdir(st)(la _. dir)
                     (la _. error(concat("wm: the users directory ")(concat(dir)(" is not a directory"))))(C0))(C0))(C0))
       (stat(dir))))
-  (0)("/var/lib/logos")("448"))
+    # fits(dir): dir, unless it holds a NUL byte, which halts naming the
+    # part before it
+    (la dir. (la n.
+        (la i. lt(i)(n)
+           (la _. error(concat("wm: the users directory named in logos_wm.users has a NUL byte after ")
+                          (concat(seg(dir)(C0)(i))(" (no path can hold one)"))))
+           (la _. dir)(C0))
+        (Z(la f. la j. lt(j)(n)(la _. str_eq(str_at(dir)(j))(NUL)(la _. j)(la _. f(add(j)(C1)))(C0))(la _. n)(C0))(C0)))
+      (str_to_int(str_len(dir)))))
+  (0)(1)("/var/lib/logos")("448")(chr("0")))

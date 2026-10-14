@@ -21,9 +21,10 @@
 #      first line is blank; a missing directory made with mode 0700 (448),
 #      one level; a FIRST RUN exactly when stat(DIR/users) is -2 (a
 #      directory that exists without users/ is a first run; one with users/
-#      a directory, a regular file, or not stat-able (-13) is not); and three
+#      a directory, a regular file, or not stat-able (-13) is not); and four
 #      loud halts, each naming the path: a regular file, a missing parent, a
-#      stat error other than "does not exist"; and, in a second stub world
+#      stat error other than "does not exist", a line holding a NUL byte
+#      (named up to the NUL; nothing is made); and, in a second stub world
 #      where /var/lib/logos already has users/, no logos_wm.users (or a blank
 #      line) is the default directory and NOT a first run: the live WM's
 #      usual second boot
@@ -41,8 +42,9 @@
 #   8  check 6's run had logos_wm.users naming a directory that did not
 #      exist: before drm_mode the live entry made it, mode 700, and said it
 #      was a first run (so its lock screen is the first-run screen)
-#   9  logos_wm.users naming a regular file: it halts naming the file and
-#      never reaches drm_mode (a loud failure leaves no taken screen)
+#   9  logos_wm.users naming a regular file, or holding a NUL byte: it halts
+#      naming the path and never reaches drm_mode (a loud failure leaves no
+#      taken screen); for the NUL, nothing is made at the path cut there
 #   10 no logos_wm.users at all, with a tmpfs over /var/lib in the namespace:
 #      it makes /var/lib/logos, mode 700, and halts at drm_mode; started again
 #      once /var/lib/logos/users exists, it is not a first run
@@ -221,10 +223,23 @@ DEFEXPECT='missing: dir=/var/lib/logos first=no
 blank: dir=/var/lib/logos first=no'
 wm_host users_def.la "$T/udh.txt"; udh=$hrc
 wm_vm users_def.la "$T/udv.txt"; udv=$vrc
+# a NUL byte in the line: every syscall would see the path cut there
+sed '/^glyph MAIN = /,$d' "$T/users.la" > "$T/users_nul.la"
+cat >> "$T/users_nul.la" <<'LAEOF'
+glyph MAIN = SHOW("nul")(concat("/srv/nu")(concat(chr("0"))("l\n")))
+LAEOF
+wm_host users_nul.la "$T/uh_nul.txt"; hm=$(cat "$T/hre")
+wm_vm users_nul.la "$T/uv_nul.txt"; vm=$(cat "$T/vre" 2>/dev/null)
+if [ "$hrc" = 1 ] && [ "$vrc" = 1 ] && [ ! -s "$T/uh_nul.txt" ] && [ ! -s "$T/uv_nul.txt" ] \
+   && [[ "$hm" == *"NUL byte after /srv/nu ("* ]] && [[ "$vm" == *"NUL byte after /srv/nu ("* ]]; then
+    halts="$halts nul"
+else
+    echo "      nul: host rc=$hrc '$hm' out '$(cat "$T/uh_nul.txt")'; VM rc=$vrc '$vm' out '$(cat "$T/uv_nul.txt")'"
+fi
 if [ "$uh" = 0 ] && [ "$uv" = 0 ] && [ "$(cat "$T/usersh0.txt")" = "$USERSEXPECT" ] && [ "$(cat "$T/usersv.txt")" = "$USERSEXPECT" ] \
-   && [ "$halts" = " f x acc" ] && [ "$udh" = 0 ] && [ "$udv" = 0 ] && [ "$(cat "$T/udh.txt")" = "$DEFEXPECT" ] \
+   && [ "$halts" = " f x acc nul" ] && [ "$udh" = 0 ] && [ "$udv" = 0 ] && [ "$(cat "$T/udh.txt")" = "$DEFEXPECT" ] \
    && [ "$(cat "$T/udv.txt")" = "$DEFEXPECT" ]; then
-    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff stat(DIR/users) is -2 (users/ a file or -13 is not); a file, a missing parent and a stat error halt naming the path; the default directory with users/ is not a first run; host = VM"
+    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff stat(DIR/users) is -2 (users/ a file or -13 is not); a file, a missing parent, a stat error and a NUL byte halt naming the path; the default directory with users/ is not a first run; host = VM"
 else
     echo "FAIL  wm livestart: 4 the users directory: host rc=$uh VM rc=$uv, halts:$halts"
     echo "      host: $(tr '\n' '|' < "$T/usersh0.txt")"; echo "      VM:   $(tr '\n' '|' < "$T/usersv.txt")"
@@ -298,6 +313,17 @@ if unshare -m true 2>/dev/null; then
             echo "PASS  wm livestart: 9 logos_wm.users naming a file: it halts naming it, before drm_mode ($(head -c 120 "$T/live3.err"))"
         else
             echo "FAIL  wm livestart: 9 a users file: rc=$lrc; stderr: $(head -c 300 "$T/live3.err")"; ok=0
+        fi
+        printf '%s\0tail\n' "$T/unul" > "$T/logos_wm.users"
+        lrc=0
+        ( cd "$T" && timeout 120 unshare -m --propagation private sh -c "
+            mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
+            && mkdir /dev/input && : > /dev/input/event3 && exec ./logos_secd" >"$T/live3n.out" 2>"$T/live3n.err" ) || lrc=$?
+        if [ "$lrc" = 1 ] && grep -qF "NUL byte after $T/unul (" "$T/live3n.err" && ! grep -qi "drm" "$T/live3n.err" "$T/live3n.out" \
+           && [ ! -e "$T/unul" ]; then
+            echo "PASS  wm livestart: 9 logos_wm.users holding a NUL byte: it halts naming the path before it, makes nothing there, and never reaches drm_mode"
+        else
+            echo "FAIL  wm livestart: 9 a NUL in logos_wm.users: rc=$lrc; made: $(ls -d "$T/unul" 2>&1); stdout: $(cat -v "$T/live3n.out" | head -c 200); stderr: $(head -c 300 "$T/live3n.err")"; ok=0
         fi
         rm -f "$T/logos_wm.users"
         lrc=0
