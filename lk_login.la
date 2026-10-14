@@ -23,6 +23,10 @@
 #    lock(state)  the state the WM shows when it locks: the session is
 #                 locked, the passphrase forgotten, the name kept
 #  The theme is always dark (the WM's own colours).
+#  KEYS: Tab / Shift+Tab move between User, Passphrase and the button; Enter
+#  in the User field moves the focus to the Passphrase field (LogosKit's form
+#  rule: Enter in a field followed by another field moves on, logoskit.la);
+#  Enter in the Passphrase field, or on the button, logs in or unlocks.
 #
 #  THE PASSPHRASE IS NEVER DRAWN OR SPOKEN. The field shows one '*' per
 #  character, and LogosKit's edit message carries the DISPLAYED value, so the

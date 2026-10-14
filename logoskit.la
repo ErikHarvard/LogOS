@@ -16,14 +16,20 @@
 #      is no separate annotation to forget.
 #    - what a key does (key): Tab / Shift+Tab move the focus through the
 #      focusable elements in tree order; Enter, Space, Up/Down, Backspace and
-#      typed characters become MESSAGES for the program's update function.
+#      typed characters become MESSAGES for the program's update function,
+#      except Enter in a field whose next focusable element is another field,
+#      which moves the focus there (a form: Enter goes to the next field, and
+#      submits from the last).
 #  A program is therefore (init, view, update), as in the Elm architecture,
 #  and the toolkit holds no state of its own besides the focus.
 #
 #  ── ELEMENTS ────────────────────────────────────────────────────────
 #    TEXT(s)                       a label
 #    BUTTON(id)(label)             focusable; Enter or Space -> press
-#    FIELD(id)(label)(value)       focusable text field; typing -> edit
+#    FIELD(id)(label)(value)       focusable text field; typing -> edit;
+#                                  Enter -> submit, or, when the next
+#                                  focusable element is a field, the focus
+#                                  moves to it and no message is made
 #    TOGGLE(id)(label)(on)         focusable check box; Enter/Space -> toggle
 #    LIST(id)(items)(sel)          focusable list; Up/Down -> select
 #    ROW(children) / COL(children) layout: side by side (one cell apart) /
@@ -32,7 +38,8 @@
 #    SPACE(w)(h)                   empty cells
 #  ids are strings. A message is la k. k(id)(kind)(payload) with kind
 #  "press", "toggle" (payload "1"/"0", the NEW value), "select" (the new
-#  index), "edit" (the new value) or "submit" (Enter in a field: its value).
+#  index), "edit" (the new value) or "submit" (Enter in a field that is not
+#  followed by another field: its value).
 #
 #  ── USE ─────────────────────────────────────────────────────────────
 #  LK_KIT(B)(L)(R)(scale)(pal) -> la s. s(nodes)(measure)(paint)(a11y)
@@ -187,6 +194,18 @@ glyph LK_KIT = la B. la L. la R. la scale. la pal.
                  (la _. go(t)(h))(C0)))(ids)("")))
         (focusables(el)))(la step_focus.
     LET(la id. la kind. la payload. la k. k(id)(kind)(payload))(la msg.
+    # nextfield(el)(focus): the next focusable element after focus, as an
+    # option of its id, when it is a field (none when it is not, or focus is
+    # the last focusable)
+    LET(la e. e(la s. FALSE)(la i. la l. FALSE)(la i. la l. la v. TRUE)(la i. la l. la o. FALSE)
+               (la i. la it. la s. FALSE)(la cs. FALSE)(la cs. FALSE)(la t. la c. FALSE)(la w. la h. FALSE))(la isfield.
+    LET(la el. la focus.
+        Z(la go. la l. l(la _. la none. la some. none(none))
+            (la h. la t. str_eq(h)(focus)
+               (la _. t(la _. la none. la some. none(none))
+                       (la n. la r. byid(el)(n)(la _. la none. la some. none(none))
+                          (la e. isfield(e)(la _. la none. la some. some(n))(la _. la none. la some. none(none))(C0))))
+               (la _. go(t))(C0)))(focusables(el)))(la nextfield.
     # ── keys ── codes: TAB 15, ENTER 28, SPACE 57, BACKSPACE 14, UP 103, DOWN 108
     LET(15)(la K_TAB. LET(28)(la K_ENTER. LET(57)(la K_SPACE. LET(14)(la K_BS. LET(103)(la K_UP. LET(108)(la K_DOWN.
     LET(la el. la focus. la code. la shift. la ch.
@@ -197,7 +216,9 @@ glyph LK_KIT = la B. la L. la R. la scale. la pal.
              (la id. la lab. int_eq(code)(K_ENTER)(la _. la k. k(focus)(some(msg(id)("press")(""))))(la _.
                               int_eq(code)(K_SPACE)(la _. la k. k(focus)(some(msg(id)("press")(""))))(la _. la k. k(focus)(none))(C0))(C0))
              (la id. la lab. la v.
-                int_eq(code)(K_ENTER)(la _. la k. k(focus)(some(msg(id)("submit")(v))))(la _.
+                int_eq(code)(K_ENTER)(la _. nextfield(el)(focus)
+                    (la _. la k. k(focus)(some(msg(id)("submit")(v))))
+                    (la n. la k. k(n)(none)))(la _.
                 int_eq(code)(K_BS)(la _. la k. k(focus)(some(msg(id)("edit")(
                     (la n. lt(C0)(n)(la _. seg(v)(C0)(sub(n)(C1)))(la _. "")(C0))(slen(v))))))(la _.
                 str_eq(ch)("")(la _. la k. k(focus)(none))(la _. la k. k(focus)(some(msg(id)("edit")(concat(v)(ch)))))(C0))(C0))(C0))
@@ -235,5 +256,5 @@ glyph LK_KIT = la B. la L. la R. la scale. la pal.
         Z(la go. la l. l(la _. nil)(la r. la rest. append(render_row(r)(cols))(go(rest))))(rows))(la render.
       la s. s(la k. k(LK_TEXT)(LK_BUTTON)(LK_FIELD)(LK_TOGGLE)(LK_LIST)(LK_ROW)(LK_COL)(LK_PANEL)(LK_SPACE))
              (measure)(paint)(a11y)(focusables)(key)(render)
-    )))))))))))))))))))))))))))))))
+    )))))))))))))))))))))))))))))))))
   (0)(1)(2)(3)(4)(12)(la t. la f. t)(la t. la f. f)))))
