@@ -20,6 +20,10 @@
 #   - the message each key makes: typing and Backspace in a field (edit),
 #     Enter in a field (submit), Space on a check box (toggle to the NEW value),
 #     Up/Down on a list clamped at both ends (select), Enter on a button (press).
+#   - Enter in a form: in a field whose next focusable element is another
+#     field, Enter moves the focus there and sends nothing; in the last field
+#     of a run of fields (the next is a button) or in the last focusable of
+#     all, it sends submit and keeps the focus.
 # Rendering to pixels goes through theourgia_render.la and is checked by the
 # WM's gates through OCR.
 #
@@ -116,6 +120,36 @@ if [ "$vrc" = 0 ] && [ "$(cat "$T/out.txt")" = "$EXPECT" ]; then
     echo "PASS  logoskit (VM): measure, paint (text and styles), a11y, focus order and every key's message are the expected ones"
 else
     echo "FAIL  logoskit (VM): rc=$vrc"; diff <(echo "$EXPECT") "$T/out.txt" | head -20; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
+fi
+
+# ── Enter in a form: a field followed by a field moves the focus on ──
+{ sed -n '1,/^glyph PRINTALL/p' "$T/t.la"; cat <<'LAEOF'
+# SHOWK(label)(r): r is key's la k. k(focus')(msg option)
+glyph SHOWK = la label. la r. r(la f2. la m. print(concat(label)(concat(": focus=")(concat(f2)(concat(" msg=")
+  (m(la _. "none")(la mm. mm(la id. la kind. la pay. concat(id)(concat("/")(concat(kind)(concat("/")(pay))))))))))))
+glyph MAIN = (la L. LK_KIT(B)(L)(RSTUB)(1)(PAL)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
+  nodes(la TEXT. la BUTTON. la FIELD. la TOGGLE. la LIST. la ROW. la COL. la PANEL. la SPACE.
+  L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
+    (la form. la tail.
+      SEQ(SHOWK("enter in a")(key(form)("a")(28)(la t. la f. f)("")))(
+      SEQ(SHOWK("enter in b")(key(form)("b")(28)(la t. la f. f)("")))(
+      SEQ(SHOWK("enter on go")(key(form)("go")(28)(la t. la f. f)("")))(
+      SEQ(SHOWK("enter in c, the last focusable")(key(tail)("c")(28)(la t. la f. f)("")))(
+          SHOWK("tab from a")(key(form)("a")(15)(la t. la f. f)("")))))))
+    (PANEL("form")(COL(cons(FIELD("a")("A")("1"))(cons(FIELD("b")("B")("2"))(cons(BUTTON("go")("Go"))(nil))))))
+    (COL(cons(BUTTON("go")("Go"))(cons(FIELD("c")("C")("3"))(nil))))))))(WM_LISTS(B))
+LAEOF
+} > "$T/form.la"
+EXPECT_FORM='enter in a: focus=b msg=none
+enter in b: focus=b msg=b/submit/2
+enter on go: focus=go msg=go/press/
+enter in c, the last focusable: focus=c msg=c/submit/3
+tab from a: focus=b msg=none'
+wm_vm form.la "$T/form_out.txt"
+if [ "$vrc" = 0 ] && [ "$(cat "$T/form_out.txt")" = "$EXPECT_FORM" ]; then
+    echo "PASS  logoskit (VM): Enter in a field followed by a field moves the focus to it (no message); in the last field it submits"
+else
+    echo "FAIL  logoskit (VM): Enter in a form: rc=$vrc"; diff <(echo "$EXPECT_FORM") "$T/form_out.txt" | head -20; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
 
 # ── the self-application: LogosKit's own settings panel (lk_settings.la) ──

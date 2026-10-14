@@ -20,6 +20,9 @@
 #   - lock forgets a passphrase being typed before the first login too: after
 #     adam, Tab, "logo", lock, then "s" and Enter must not log in (with the
 #     passphrase kept, "logo" + "s" would).
+#   - Enter in the User field moves the focus to the Passphrase field and
+#     attempts nothing: adam, Enter, logos, Enter logs in (were Enter to stay
+#     in the User field, "logos" would be typed after "adam" there).
 #
 # ISOLATION: private temp dir (gate_wm_common.sh). About 2 minutes.
 set -uo pipefail
@@ -164,5 +167,44 @@ if [ "$vrc" = 0 ] && grep -q 'Passphrase: \*\*\*\*, focused' "$T/out2.txt" \
     echo "PASS  lk_login (VM): lock before the first login forgets the half-typed passphrase (logo, lock, s + Enter stays out)"
 else
     echo "FAIL  lk_login (VM): lock before the first login: rc=$vrc"; head -30 "$T/out2.txt"; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
+fi
+
+# Enter in the User field: the focus moves to the Passphrase field
+{ sed -n '1,/^glyph APPENDK/p' "$T/t.la"; cat <<'LAEOF'
+glyph KEYS5 = APPENDK(TYPE("adam"))(WM_CONS(K(28)(NOS)(""))(WM_NIL))
+glyph KEYS6 = APPENDK(TYPE("logos"))(WM_CONS(K(28)(NOS)(""))(WM_NIL))
+glyph MAIN = (la L. LK_KIT(B)(L)(RSTUB)(1)(PAL)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
+  LOGIN_APP(B)(L)(nodes)(SESS)(la init. la view. la update. la theme. la title. la done. la lock.
+    (la show. (la run.
+      run(KEYS5)(init)("user")(la st1. la f1. (la _.
+        run(KEYS6)(st1)(f1)(la st2. la f2. show("after logos, Enter")(st2)(f2)))
+        (show("after adam, Enter")(st1)(f1))))
+     # run(keys)(state)(focus)(k) -> k(the final state)(the final focus)
+     (Z(la run. la keys. la st. la focus. la k.
+        keys(la _. k(st)(focus))
+            (la kk. la rest. kk(la code. la shift. la ch.
+               key(view(st))(focus)(code)(shift)(ch)(la focus2. la m.
+                 (la st2. run(rest)(st2)(focus2)(k))
+                 (m(la _. st)(la mm. update(st)(mm)))))))))
+    (la label. la st. la focus.
+       (la _. (la _. st)(PRINTALL(a11y(view(st))(focus))))
+       (print(concat("-- ")(concat(label)(concat(": done=")(done(st)("yes")("no"))))))))))(WM_LISTS(B))
+LAEOF
+} > "$T/t3.la"
+EXPECT3='-- after adam, Enter: done=no
+panel LogOS
+  text: Log in to LogOS.
+  text field User: adam
+  text field Passphrase: , focused
+  button Log in
+  text: 
+-- after logos, Enter: done=yes
+panel LogOS
+  text: Welcome, adam'
+wm_vm t3.la "$T/out3.txt"
+if [ "$vrc" = 0 ] && [ "$(cat "$T/out3.txt")" = "$EXPECT3" ]; then
+    echo "PASS  lk_login (VM): Enter in the User field moves the focus to the Passphrase field and attempts nothing (adam, Enter, logos, Enter logs in)"
+else
+    echo "FAIL  lk_login (VM): Enter in the User field: rc=$vrc"; diff <(echo "$EXPECT3") "$T/out3.txt" | head -20; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
 [ "$ok" = 1 ] || exit 1
