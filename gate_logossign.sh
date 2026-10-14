@@ -62,7 +62,11 @@
 #   6. the root comparison, white box: SIGN_KIT handed a bxor that prints its
 #      arguments makes exactly 16 calls per verify, the byte pairs (computed
 #      root, PK.root) in order (a compare that skips a byte of PK.root cannot
-#      be seen from outside, since PK.root also feeds H_msg); and
+#      be seen from outside, since PK.root also feeds H_msg); with a bxor that
+#      flips the result of the one pair k (the key's root bytes all differ,
+#      so a byte value names its position), the valid signature verifies
+#      FALSE for each k from 0 to 15 (a compare that kept only some XORs makes
+#      the same 16 calls); and
 #      confine(logossign.la)(nil) is ok (logossec.la's static confinement);
 #   7. position: a toy verify with a 1 MB glyph in front of the module takes
 #      at most LOGOSSIGN_POS_BOUND percent (default 150) of its time without;
@@ -240,6 +244,22 @@ elif cmd == "rootcheck":
     assert [int(x[2]) for x in w] == list(bad[16:32]), "wrong root: the second operands are not PK.root's bytes"
     assert any(x[1] != x[2] for x in w)
     print("ok")
+
+elif cmd == "injprog":
+    # the injection program: a toy key whose PK.root has 16 different bytes
+    # (so a byte value names its position), and its pure signature (ctx "ctx")
+    tmpl, out = sys.argv[2:4]
+    s = M.get("TOY-SHA2")
+    for i in range(1000):
+        sd = hashlib.sha256(b"logossign root injection %d" % i).digest() + hashlib.sha256(b"seeds %d" % i).digest()
+        sk, pk = s.slh_keygen_internal(sd[0:16], sd[16:32], sd[32:48])
+        if len(set(pk[16:32])) == 16: break
+    else: raise AssertionError("no key with 16 different root bytes")
+    msg = b"logossign: a difference in any byte of the root"
+    sig = s.slh_sign(msg, b"ctx", sk)
+    assert s.slh_verify(msg, sig, b"ctx", pk)
+    t = open(tmpl).read().replace("@M@", msg.hex()).replace("@SIG@", sig.hex()).replace("@PK@", pk.hex())
+    open(out, "w").write(t)
 
 elif cmd == "krcheck":
     # two keys from keygen(random) with the VM's random builtin: each the model's
@@ -838,6 +858,55 @@ if [ "$(rc_of rootcmp)" = 0 ] && [ "$rcres" = ok ]; then
     echo "PASS  logossign root comparison (VM): each verify XORs exactly the 16 byte pairs (computed root, PK.root) in order, all equal for a valid toy signature, PK.root's bytes on the right for a wrong root (TRUE, FALSE)"
 else
     echo "FAIL  logossign root comparison (VM): rc=$(rc_of rootcmp) $rcres"; tail -2 "$T/rootcmp/err"; ok=0
+fi
+
+# ── 4c. the root comparison decides on every byte ─────────────────────────
+# The arm above shows WHICH pairs the comparison XORs, not that every pair
+# counts: a compare that kept only the last XOR (acc dropped) makes the same
+# 16 calls. Here SIGN_KIT is handed INJ(bxor)(r_k): bxor, except that the call
+# whose second operand is r_k, PK.root's byte k, has its result's low bit
+# flipped, a difference in byte k alone. The key's root bytes are pairwise
+# different, so r_k picks out pair k; the valid signature must then verify
+# FALSE for every k (and TRUE with the plain bxor).
+cat > "$T/rootinj.tmpl" <<'LAEOF'
+import("logoscrypt.la")
+import("logossign.la")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph SEQ = la a. la b. b
+glyph SPAN = la f. la a. la b. (Z(la sp. la lo. la hi.
+    lt(add(lo)(1))(hi)
+      (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(div(add(lo)(hi))(2)))
+      (la _. lt(lo)(hi)(la _. f(lo))(la _. "")("!"))
+      ("!")))(a)(b)
+glyph FROMHEX = la s. SPAN(la i. (la hv. chr(int_to_str(add(mul(hv(str_at(s)(mul(i)(2))))(16))(hv(str_at(s)(add(mul(i)(2))(1)))))))
+                           (la c. (la n. lt(n)(58)(la _. sub(n)(48))(la _. sub(n)(87))("!"))(str_to_int(ord(c)))))(0)(div(str_to_int(str_len(s)))(2))
+glyph B = la b. b(la _. "1")(la _. "0")("!")
+# INJ(f)(rk): f, but a call f(a)(rk) gives f(a)(rk) with its low bit flipped
+glyph INJ = la f. la rk. la a. la b. int_eq(b)(rk)(la _. bxor(f(a)(b))(1))(la _. f(a)(b))("!")
+glyph MAIN =
+ (la crypt. la pkit. la m. la sig. la pk.
+   (la v.
+     SEQ(SEQ(print(concat("valid ")(B(v(bxor)))))
+            (Z(la go. la k. lt(k)(16)
+                 (la _. SEQ(print(concat(concat(concat("inj ")(int_to_str(k)))(" "))
+                                        (B(v(INJ(bxor)(str_to_int(ord(str_at(pk)(add(16)(k))))))))))
+                           (go(add(k)(1))))
+                 (la _. "")("!"))(0)))
+        (print("end")))
+   (la bx. SIGN_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bx)(bshl)(bshr)(crypt)(pkit)(SLH_TOY)
+             (la kgi. la sgi. la vfi. la sgp. la vfp. la kg. vfp(m)(sig)("ctx")(pk))))
+ (CRYPT_FAST(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr))
+ (SHA256_PREFIX_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr))
+ (FROMHEX("@M@"))(FROMHEX("@SIG@"))(FROMHEX("@PK@"))
+LAEOF
+( cd "$T" && python3 -I oracle.py injprog rootinj.tmpl rootinj.la ) || { echo "FAIL  logossign: injection program"; exit 1; }
+vm_compile rootinj.la rootinj.bin
+run_in rootinj rootinj.bin none.cmds "$WM_VM_TIMEOUT"
+injexp=$(printf 'valid 1\n'; for k in $(seq 0 15); do printf 'inj %d 0\n' "$k"; done; printf 'end')
+if [ "$(rc_of rootinj)" = 0 ] && [ "$(cat "$T/rootinj/out")" = "$injexp" ]; then
+    echo "PASS  logossign root comparison decides on every byte (VM): with a bxor that flips the result for one pair k of (computed root, PK.root), a valid toy signature verifies FALSE for each k from 0 to 15, TRUE with the plain bxor"
+else
+    echo "FAIL  logossign root comparison decides on every byte (VM): rc=$(rc_of rootinj) $(grep -v ' 0$' "$T/rootinj/out" | tr '\n' ' ' | head -c 300)"; tail -2 "$T/rootinj/err"; ok=0
 fi
 
 # ── 5. misuse halts loudly ────────────────────────────────────────────────
