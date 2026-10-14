@@ -41,8 +41,9 @@
 #    verify(M)(sig)(ctx)(pk)                              Alg. 24, pure
 #  verify and verify_internal return a Church boolean, la t. la f. t or
 #  la t. la f. f. They are TOTAL over strings: a signature or a public key of
-#  the wrong length, a ctx over 255 bytes, any bytes at all in the right
-#  lengths, give FALSE and never halt (signatures arrive from the network).
+#  the wrong length, or a ctx over 255 bytes, gives FALSE; any bytes of the
+#  right lengths give TRUE or FALSE; none of them halts (signatures arrive
+#  from the network).
 #  (An argument that is not a string at all is a programming error the VM
 #  halts on; Lingua Adamica has no type test.)
 #
@@ -83,9 +84,9 @@
 #  lines 1-7, base-16 digits and the checksum shifted left by 4), chain,
 #  wpk, wsign, wpkfs (Alg. 5-8), xnode, xsign, xpkfs (Alg. 9-11), htsign,
 #  htverify (Alg. 12-13), fidx (base_2b, Alg. 4), fnode, fsign, fpkfs
-#  (Alg. 14-17), then Alg. 18-24. slhdsa_model.py, an independent Python
-#  transcription checked against every non-preHash NIST ACVP case, is the
-#  gate's oracle.
+#  (Alg. 14-17), then Alg. 18-22 and 24 (Alg. 23, HashSLH-DSA's signing,
+#  is out of scope). slhdsa_model.py, an independent Python transcription
+#  checked against every non-preHash NIST ACVP case, is the gate's oracle.
 #
 #  KIT STYLE (WM_DESIGN.md). Every builtin and constant is a parameter,
 #  bound once when the kit is built; Z is named once, there, and handed to
