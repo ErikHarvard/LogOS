@@ -158,8 +158,9 @@ glyph SPEC_TABLE =
     CONS(PAIR("VEC")(SPEC_VEC))(
     CONS(PAIR("PI_SUCC")(SPEC_PISUCC))(
     CONS(PAIR("TYPECHECK")(SPEC_TYPECHECK))(
+    CONS(PAIR("IS_BOOL")(SPEC_ISBOOL))(
     CONS(PAIR("IS_TYPE")(SPEC_ISTYPE))(
-    NIL)))))))))))))))))))))))))))))))))
+    NIL))))))))))))))))))))))))))))))))))
 
 glyph GET_SPEC = la name. LIST_FIND(name)(SPEC_TABLE)
 
@@ -230,8 +231,9 @@ glyph GLYPH_REGISTRY =
     CONS(PAIR("VEC")(VEC))(
     CONS(PAIR("PI_SUCC")(PI_SUCC))(
     CONS(PAIR("TYPECHECK")(TYPECHECK))(
+    CONS(PAIR("IS_BOOL")(IS_BOOL))(
     CONS(PAIR("IS_TYPE")(IS_TYPE))(
-    NIL)))))))))))))))))))))))))))))))))
+    NIL))))))))))))))))))))))))))))))))))
 
 # ── Phase 4: META_DEBUG — DEBUG applied to the debugging glyphs ───────
 # The "meta" level collapses into the object level by self-application.
@@ -325,10 +327,16 @@ glyph SPEC_TYPECHECK = CONS(TC(la g. g(IS_INT)(42))("well-typed"))(CONS(TC(la g.
 # Total only on the well-founded fragment (the witness must be valid for A:
 # here IS_INT, valid for the typeof-based predicates and IS_TYPE itself —
 # not for FIN/VEC, which expect an int/list and would diverge on a function).
+# IS_BOOL recognises a Church bool by asking typeof at each step of b("T")("F")
+# — never by handing b IF's "!" forcing token, which let a 3-ary closure pass
+# and crashed on a non-bool. A closure that faults inside its own body on a
+# string argument still faults (LA has no catch).
 glyph OR      = la a. la b. a(TRUE)(b)
-glyph IS_TYPE = la A. (la s. OR(str_eq(s)("T"))(str_eq(s)("F")))(BOOL_STR(A(IS_INT)))
+glyph IS_BOOL = la b. IF(IS_FUN(b))(la _. (la r. IF(IS_FUN(r))(la _. (la s. IF(IS_STR(s))(la _. OR(str_eq(s)("T"))(str_eq(s)("F")))(la _. FALSE))(r("F")))(la _. FALSE))(b("T")))(la _. FALSE)
+glyph IS_TYPE = la A. IS_BOOL(A(IS_INT))
 
-glyph SPEC_ISTYPE = CONS(TC(la g. BOOL_STR(g(IS_INT)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_TYPE)))("T"))(CONS(TC(la g. BOOL_STR(g(ID)))("F"))(NIL)))
+glyph SPEC_ISBOOL = CONS(TC(la g. BOOL_STR(g(TRUE)))("T"))(CONS(TC(la g. BOOL_STR(g(FALSE)))("T"))(CONS(TC(la g. BOOL_STR(g("T")))("F"))(CONS(TC(la g. BOOL_STR(g(la t. la f. la x. "T")))("F"))(NIL))))
+glyph SPEC_ISTYPE = CONS(TC(la g. BOOL_STR(g(IS_INT)))("T"))(CONS(TC(la g. BOOL_STR(g(IS_TYPE)))("T"))(CONS(TC(la g. BOOL_STR(g(ID)))("F"))(CONS(TC(la g. BOOL_STR(g(la A. la x. TRUE)))("F"))(CONS(TC(la g. BOOL_STR(g(la A. "T")))("F"))(NIL)))))
 
 # ── Deliberately broken glyphs (DEBUG must catch these) ───────────────
 glyph BAD_ID         = la x. "WRONG"

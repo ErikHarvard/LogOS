@@ -122,7 +122,10 @@ applied to itself where meaningful, yields a type (`REC` is the `↻` case).
 spec. *Autological:* `TYPECHECK` has a type and type-checks itself.
 
 **Phase T5 — The type-of-types (`↻`, the meta-collapse).**
-`IS_TYPE(A)` — A is a type iff it is a total predicate. `IS_TYPE(IS_TYPE)`
+`IS_TYPE(A)` — A is a type iff it is a total predicate; operationally,
+A applied to the witness `IS_INT` yields a Church bool, recognised by
+`IS_BOOL` (`typeof` at each step of `b("T")("F")`, so a non-bool is FALSE,
+not a crash — audit-2 #43). One witness is sampled. `IS_TYPE(IS_TYPE)`
 must hold (restricted to the well-founded fragment — see Honest Scope).
 This is the `C(C)=C` closure for the type system, the analogue of
 `META_DEBUG`.

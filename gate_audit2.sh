@@ -289,6 +289,31 @@ case_typesys_shape() {
     else fail "metadebug own run: rc=$rc missing:$miss"; fi
 }
 
+# ── #43 metadebug: IS_TYPE decides "is A(w) a Church bool" without crashing ───
+# IS_TYPE fed A(IS_INT) to BOOL_STR, i.e. applied it to two thunks and IF's "!"
+# forcing token. A non-bool crashed there (la x. TRUE → str_eq on a closure;
+# "T" → applied as a function) or was judged a type because "!" filled a third
+# argument slot (la t. la f. la x. "T" → T). IS_TYPE(ID) = F only because "!"
+# happens to be a string. Fixed: IS_BOOL asks typeof at each step of b("T")("F")
+# and wants the string "T" or "F". Controls: IS_INT, IS_TYPE are types; ID is
+# not; la A. A("s") is a type on its one witness (the documented one-sample
+# design, unchanged). metadebug.la's own run unchanged. Host only: typeof (#83).
+case_typesys_istype() {
+    local e want bad=0
+    for e in 'la A. la x. TRUE:F' 'la A. "T":F' 'la A. la t. la f. la x. "T":F' \
+             'IS_INT:T' 'IS_TYPE:T' 'ID:F' 'la A. A("s"):T'; do
+        want=${e##*:}; e=${e%:*}
+        md_probe "print(BOOL_STR(IS_TYPE($e)))"
+        if [ "$MDRC" = 0 ] && [ "$MDOUT" = "$want" ]; then :
+        else fail "metadebug IS_TYPE($e): rc=$MDRC got [$MDOUT] want [$want]"; bad=$((bad+1)); fi
+    done
+    [ "$bad" = 0 ] && pass "metadebug IS_TYPE: 3 non-bool results judged F without crashing; 4 controls unchanged"
+    local l miss="" out rc=0; out=$(timeout 300 ./tiny_host metadebug.la 2>&1) || rc=$?
+    for l in 'ALL_SPECCED: T' 'T4_self: well-typed' 'T5_int: T' 'T5_self: T'; do grep -qxF "$l" <<< "$out" || miss="$miss [$l]"; done
+    if [ "$rc" = 0 ] && [ -z "$miss" ]; then pass "metadebug (control): own run rc 0, ALL_SPECCED: T, T5 lines unchanged"
+    else fail "metadebug own run: rc=$rc missing:$miss"; fi
+}
+
 # ── #17 VM: a write/send to a dead peer returns -EPIPE instead of killing the VM ──
 # Unfixed: SIGPIPE's default action kills the VM (rc 141) before the builtin can
 # return -32, so no program can recognise a dead peer. Fixed: -32, execution
@@ -387,6 +412,6 @@ case_nc3_readdir() {     # #12: read_file on a directory halts loudly instead of
     else fail "native_codegen3 read_file(dir): rc=$NRC stderr=[$NERR]"; fi
 }
 
-CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip compose_edges tofb_pitch phonym_unknown typesys_shape}"
+CASES="${*:-logosinit_forkfail logosinit_sigfd sigpipe tail_loops pollhup nc3_shadow nc3_error_int nc3_readdir strutil_empty import_cycle compose_clip compose_edges tofb_pitch phonym_unknown typesys_shape typesys_istype}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2: all passed"; exit 0; } || { echo "gate_audit2: $FAILS failed"; exit 1; }
