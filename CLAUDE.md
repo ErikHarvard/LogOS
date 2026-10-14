@@ -1703,6 +1703,20 @@ Practically:
 - If you cannot identify the bug, read the relevant codex in `codices/` to
   verify what the specification actually requires.
 
+### Standing rules (the LogOS Roadmap from 2026-09-27, revision 10; written here 2026-09-28)
+
+These apply to every item of that roadmap and to every fix in this tree:
+
+- A test or PASS line is not admitted until it has been seen red.
+- Tests and their mutants are written before the implementation, from the spec.
+- Every check needs one relatum the author did not produce: a mutant, an
+  independent oracle, machine-read codex text, or random input. Host == VM
+  byte-identity is a consistency check, not a correctness proof.
+- Completion and verdict are reported as two separate facts.
+- Rulings are made with verbatim citations, never from summaries.
+- Nothing commits beside a held lease. Push is human-only.
+- Fix by class, not by finding.
+
 ## Extending
 
 - New built-ins: add to `is_builtin` and `apply_builtin` in `tiny_host.c`.
