@@ -1,12 +1,13 @@
 # ═══════════════════════════════════════════════════════════════════
 #  wm_livestart.la — what the live WM decides before it takes the screen.
 #
-#  theourgia_wm_live.la needs two facts from text files before it starts:
-#  which /dev/input/eventN is the keyboard, and which directory new shells
-#  start in. Both are decided here, by two small kits that take every builtin
-#  they use as a parameter (WM_DESIGN.md's kit style: a name looked up while a
-#  loop runs walks the whole program on the VM, which made the old detector
-#  cost about 3 ms per byte of the device list).
+#  theourgia_wm_live.la needs three facts from text files before it takes
+#  the screen: which /dev/input/eventN is the keyboard, which directory new
+#  shells start in, and where its users live. All three are decided here, by
+#  small kits that take every builtin they use as a parameter (WM_DESIGN.md's
+#  kit style: a name looked up while a loop runs walks the whole program on
+#  the VM, which made the old detector cost about 3 ms per byte of the device
+#  list).
 #
 #  KBD_KIT(Z)(str_at)(str_len)(ord)(str_to_int)(add)(sub)(lt)(int_eq)(concat)
 #    -> kbd(text) : the N of the keyboard's /dev/input/eventN, as a decimal
@@ -24,11 +25,27 @@
 #       first line without spaces, tabs or carriage returns at either end; "/"
 #       when that is empty or stat does not report a directory.
 #
-#  Both are pure but for stat, which the caller passes (a stub on the host).
+#  USERS_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)
+#           (int_eq)(div)(mod)(chr)(error)(stat)(mkdir)
+#    -> users(text) = la k. k(dir)(first) : LogosSession's root for the lock
+#       screen, from logos_wm.users (the VM's read_file gives "" for a
+#       missing file): its first line, trimmed exactly as CWD_KIT trims, or
+#       /var/lib/logos when that is empty. When stat says dir does not exist
+#       (-2) it is made with mode 0700, one level (a missing parent halts,
+#       naming the path); when it exists and is not a directory, or stat
+#       fails otherwise, the run halts naming it. first is TRUE exactly when
+#       stat(dir/users) is -2 (ENOENT): LogosSession's adduser makes
+#       dir/users, so no user has ever been made there. The corner: an
+#       adduser that failed after making users/ leaves it empty, and the
+#       login screen then shows with no user able to log in; the VM has no
+#       getdents, so an empty directory cannot be told from a full one.
+#
+#  CWD_KIT and USERS_KIT read their file with the same LS_BASE. The kits are
+#  pure but for stat and mkdir, which the caller passes (stubs on the host).
 #  gate_wm_livestart.sh checks them on the C host and the VM.
 # ═══════════════════════════════════════════════════════════════════
 
-export KBD_KIT CWD_KIT
+export KBD_KIT CWD_KIT USERS_KIT
 
 glyph KBD_KIT = la Z. la str_at. la str_len. la ord. la str_to_int. la add. la sub. la lt. la int_eq. la concat.
   (la C0. la C1. la C10. la C32. la C48. la C57. la C65. la C90. la TRUE. la FALSE.
@@ -73,28 +90,32 @@ glyph KBD_KIT = la Z. la str_at. la str_len. la ord. la str_to_int. la add. la s
     (str_to_int(str_len(text)))))
   (0)(1)(10)(32)(48)(57)(65)(90)(la t. la f. t)(la t. la f. f)
 
-glyph CWD_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la stat.
-  (la C0. la C1. la C2. la C4. la C16. la C4096. la CR. la TRUE.
+# LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)
+#        (int_eq)(div)(mod)(chr)(k) -> k(line)(isdir), what CWD_KIT and
+# USERS_KIT share, so both read their file the same way:
+#   line(text)  the first line of text without spaces, tabs or carriage
+#               returns at either end
+#   isdir(st)   stat's answer "<mode> <size>" is a directory's (S_IFDIR, type
+#               4); an "-errno" is not
+glyph LS_BASE = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la k.
+  (la C0. la C1. la C2. la C4. la C16. la C4096. la CR. la TRUE. la FALSE.
    (la seg. (la blank.
-     la text. (la n.
-       (la e. (la a. (la b.
-          (la c. int_eq(str_to_int(str_len(c)))(C0)
-              (la _. "/")
-              (la _. (la st. str_eq(str_at(st)(C0))("-")
-                  (la _. "/")
-                  # stat's answer is "<mode> <size>": a directory has type 4 (S_IFDIR)
-                  (la _. (la mode. int_eq(mod(div(mode)(C4096))(C16))(C4)(la _. c)(la _. "/")(C0))
-                         (str_to_int(seg(st)(C0)(Z(la sp. la k. lt(k)(str_to_int(str_len(st)))
-                             (la _. str_eq(str_at(st)(k))(" ")(la _. k)(la _. sp(add(k)(C1)))(C0))(la _. k)(C0))(C0)))))(C0))
-                (stat(c)))(C0))
-          (seg(text)(a)(b)))
-        # b: the end of the line without its trailing blanks
-        (Z(la r. la j. lt(a)(j)(la _. blank(str_at(text)(sub(j)(C1)))(la _. r(sub(j)(C1)))(la _. j)(C0))(la _. j)(C0))(e)))
-        # a: the first character that is not blank
-        (Z(la l. la i. lt(i)(e)(la _. blank(str_at(text)(i))(la _. l(add(i)(C1)))(la _. i)(C0))(la _. e)(C0))(C0)))
-       # e: the end of the first line
-       (Z(la f. la i. lt(i)(n)(la _. str_eq(str_at(text)(i))("\n")(la _. i)(la _. f(add(i)(C1)))(C0))(la _. n)(C0))(C0)))
-     (str_to_int(str_len(text))))
+     k(la text. (la n.
+         (la e. (la a.
+            # the end of the line without its trailing blanks
+            (la b. seg(text)(a)(b))
+            (Z(la r. la j. lt(a)(j)(la _. blank(str_at(text)(sub(j)(C1)))(la _. r(sub(j)(C1)))(la _. j)(C0))(la _. j)(C0))(e)))
+          # a: the first character that is not blank
+          (Z(la l. la i. lt(i)(e)(la _. blank(str_at(text)(i))(la _. l(add(i)(C1)))(la _. i)(C0))(la _. e)(C0))(C0)))
+         # e: the end of the first line
+         (Z(la f. la i. lt(i)(n)(la _. str_eq(str_at(text)(i))("\n")(la _. i)(la _. f(add(i)(C1)))(C0))(la _. n)(C0))(C0)))
+       (str_to_int(str_len(text))))
+      # stat's answer is "<mode> <size>": a directory has type 4 (S_IFDIR)
+      (la st. str_eq(str_at(st)(C0))("-")
+          (la _. FALSE)
+          (la _. (la mode. int_eq(mod(div(mode)(C4096))(C16))(C4))
+                 (str_to_int(seg(st)(C0)(Z(la sp. la m. lt(m)(str_to_int(str_len(st)))
+                     (la _. str_eq(str_at(st)(m))(" ")(la _. m)(la _. sp(add(m)(C1)))(C0))(la _. m)(C0))(C0)))))(C0)))
    # blank(c): a space, a tab or a carriage return
    (la c. str_eq(c)(" ")(TRUE)(str_eq(c)("\t")(TRUE)(str_eq(c)(CR)))))
    # seg(s)(i)(j): bytes i..j-1 of s, joined by halves
@@ -102,4 +123,32 @@ glyph CWD_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int
         (la _. int_eq(add(i)(C1))(j)(la _. str_at(s)(i))
                  (la _. (la m. concat(seg(s)(i)(m))(seg(s)(m)(j)))(div(add(i)(j))(C2)))(C0))
         (la _. "")(C0))))
-  (0)(1)(2)(4)(16)(4096)(chr("13"))(la t. la f. t)
+  (0)(1)(2)(4)(16)(4096)(chr("13"))(la t. la f. t)(la t. la f. f)
+
+glyph CWD_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la stat.
+  LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(la line. la isdir.
+    la text. (la c. str_eq(c)("")(la _. "/")(la _. isdir(stat(c))(la _. c)(la _. "/")("!"))("!"))(line(text)))
+
+glyph USERS_KIT = la Z. la str_at. la str_len. la str_eq. la concat. la str_to_int. la add. la sub. la lt. la int_eq. la div. la mod. la chr. la error. la stat. la mkdir.
+  LS_BASE(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(la line. la isdir.
+  (la C0. la DEFAULT. la MODE.
+    (la ensure.
+      la text. (la l.
+          (la d. (la first. la k. k(d)(first))
+                 # a first run: adduser has never made DIR/users
+                 (str_eq(stat(concat(d)("/users")))("-2")))
+          (ensure(str_eq(l)("")(la _. DEFAULT)(la _. l)(C0))))
+        (line(text)))
+    # ensure(dir): dir, made (mode 0700, one level) when it does not exist;
+    # anything else that is not a directory halts, naming it
+    (la dir. (la st. str_eq(st)("-2")
+        (la _. (la r. str_eq(r)("0")(la _. dir)
+                  (la _. error(concat("wm: cannot create the users directory ")(concat(dir)(concat(" (mkdir -> ")(concat(r)(
+                      str_eq(r)("-2")(la _. "): its parent does not exist")(la _. ")")(C0)))))))(C0))
+               (mkdir(dir)(MODE)))
+        (la _. str_eq(str_at(st)(C0))("-")
+           (la _. error(concat("wm: cannot use the users directory ")(concat(dir)(concat(" (stat -> ")(concat(st)(")"))))))
+           (la _. isdir(st)(la _. dir)
+                    (la _. error(concat("wm: the users directory ")(concat(dir)(" is not a directory"))))(C0))(C0))(C0))
+      (stat(dir))))
+  (0)("/var/lib/logos")("448"))
