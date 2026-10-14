@@ -34,14 +34,24 @@
 #  last character, a shorter one drops the last character. The accessible
 #  description therefore reads "Passphrase: ****" too. The passphrase lives
 #  only in the state, and is cleared after every attempt and on lock.
+#
+#  LOGIN_KIT(B)(L)(nodes)(sess) -> la s. s(app)(opened)(refused)(pedit)(stars)
+#    what lk_firstuser.la builds on: app is LOGIN_APP's record; opened(name)
+#    (session) is the state after a login (as attempt makes it), refused(name)
+#    (note) the state before the first login with that name and note, both
+#    with no passphrase; pedit and stars are the passphrase field's editing
+#    and display (one '*' per character). LOGIN_APP is LOGIN_KIT's app.
 # ═══════════════════════════════════════════════════════════════════
 
-export LOGIN_APP
+export LOGIN_APP LOGIN_KIT
 
 glyph Z   = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LET = la v. la k. k(v)
 
 glyph LOGIN_APP = la B. la L. la nodes. la sess.
+  LOGIN_KIT(B)(L)(nodes)(sess)(la app. la opened. la refused. la pedit. la stars. app)
+
+glyph LOGIN_KIT = la B. la L. la nodes. la sess.
   B(la str_at. la ord. la str_to_int. la int_to_str. la concat. la str_eq.
     la str_len. la add. la sub. la mul. la div. la mod. la lt. la int_eq. la band. la bor.
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
@@ -65,6 +75,10 @@ glyph LOGIN_APP = la B. la L. la nodes. la sess.
     LET(la s. (la n. lt(C0)(n)(la _. str_at(s)(sub(n)(C1)))(la _. "")(C0))(slen(s)))(la last.
     LET(la s. (la n. lt(C0)(n)(la _. seg(s)(C0)(sub(n)(C1)))(la _. "")(C0))(slen(s)))(la droplast.
     LET(mk("")("")(FRESH)(""))(la init.
+    # pedit(secret)(shown): the secret after an edit of its field, which
+    # shows one '*' per character: a longer shown value appends its last
+    # character, a shorter one drops the last
+    LET(la pass. la pay. lt(slen(pass))(slen(pay))(la _. concat(pass)(last(pay)))(la _. droplast(pass))(C0))(la pedit.
     # attempt(st): log in (fresh) or unlock (locked) with the typed passphrase;
     # either way the passphrase is forgotten
     LET(la st. st(la name. la pass. la phase. la note.
@@ -78,7 +92,7 @@ glyph LOGIN_APP = la B. la L. la nodes. la sess.
     LET(la st. la msg. st(la name. la pass. la phase. la note. msg(la id. la kind. la pay.
         str_eq(id)("user")(la _. str_eq(kind)("edit")(la _. mk(pay)(pass)(phase)(note))(la _. st)(C0))(la _.
         str_eq(id)("pass")(la _. str_eq(kind)("edit")
-              (la _. mk(name)(lt(slen(pass))(slen(pay))(la _. concat(pass)(last(pay)))(la _. droplast(pass))(C0))(phase)(note))
+              (la _. mk(name)(pedit(pass)(pay))(phase)(note))
               (la _. attempt(st))(C0))(la _.
         str_eq(id)("go")(la _. attempt(st))(la _. st)(C0))(C0))(C0))))(la update.
     LET(la st. st(la name. la pass. la phase. la note.
@@ -101,5 +115,8 @@ glyph LOGIN_APP = la B. la L. la nodes. la sess.
         # in every phase the passphrase is forgotten; an open session is locked
         phase(la _. mk(name)("")(phase)(note))(la l. mk(name)("")(phase)(note))
              (la s. mk(name)("")(LOCKED(s_lock(s)))("Locked."))))(la lock.
-      la s. s(init)(view)(update)(theme)("Log in")(done)(lock)))))))))))))))))))
+      la s. s(la s. s(init)(view)(update)(theme)("Log in")(done)(lock))
+             (la name. la x. mk(name)("")(OPEN(x))(""))
+             (la name. la note. mk(name)("")(FRESH)(note))
+             (pedit)(stars))))))))))))))))))))
   (0)(1)(la t. la f. t)(la t. la f. f)))))
