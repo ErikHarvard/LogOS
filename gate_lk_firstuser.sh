@@ -29,6 +29,10 @@
 #   5  adduser refusing an existing name is shown with its reason; a login
 #      that fails after adduser made the user shows the login screen with
 #      the name and the reason
+#   6  the screen while both passphrase fields hold typed text (no Enter
+#      yet), in the setup and then locked: one '*' per character in its
+#      description (the other checks look only after an Enter, which empties
+#      the fields)
 #
 # ISOLATION: private temp dir (gate_wm_common.sh). A few minutes.
 set -uo pipefail
@@ -363,5 +367,63 @@ if [ "$vrc" = 0 ] && grep -qx 'adduser taken 10' "$T/out5.txt" && grep -qx '  te
     echo "PASS  lk_firstuser (VM): 5 adduser's refusal of an existing name shown with its reason; a login failing after adduser shows the login screen with the name and the reason"
 else
     echo "FAIL  lk_firstuser (VM): 5 rc=$vrc taken='$taken'"; tail -12 "$T/out5.txt"; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
+fi
+# 6 the passphrase fields while they hold typed text: in the setup, then
+# locked (every other check looks only after an Enter, which empties them)
+{ cat "$T/t.la"; cat <<'LAEOF'
+glyph SESSREC = FIRST
+glyph KEYS1 = SEQK(KL(TYPE("adam"))(KL(ENTER)(KL(TYPE("s3cret-one"))(KL(ENTER)(KL(TYPE("s3cret-two"))(WM_NIL))))))
+glyph KEYS2 = SEQK(KL(TYPE("adam"))(KL(ENTER)(KL(TYPE("s3cret-one"))(KL(ENTER)(KL(TYPE("s3cret-one"))(KL(ENTER)(WM_NIL)))))))
+glyph KEYS3 = TYPE("nope-nope")
+glyph BODY = la show. la run. la init. la lock. la view.
+  run(KEYS1)(init)("name")(la s1. la f1.
+    (la _. run(KEYS2)(init)("name")(la s2. la f2.
+             (la l2. run(KEYS3)(l2)("pass")(la s3. la f3. show("typed when locked")(s3)(f3)))(lock(s2))))
+    (show("typed")(s1)(f1)))
+LAEOF
+cat "$T/driver.la"; } > "$T/t6.la"
+ENTER1='-- enter: done=no focus=pass
+panel LogOS
+  text: Welcome. Make the first user.
+  text field Name: adam
+  text field Passphrase: , focused
+  text field Passphrase again: 
+  button Make the user
+  text: 
+-- enter: done=no focus=again
+panel LogOS
+  text: Welcome. Make the first user.
+  text field Name: adam
+  text field Passphrase: **********
+  text field Passphrase again: , focused
+  button Make the user
+  text: '
+EXPECT6="title Log in, dark
+$ENTER1
+-- typed: done=no focus=again
+panel LogOS
+  text: Welcome. Make the first user.
+  text field Name: adam
+  text field Passphrase: **********
+  text field Passphrase again: **********, focused
+  button Make the user
+  text: 
+$ENTER1
+adduser adam 10
+login adam 10
+-- enter: done=yes focus=again
+panel LogOS
+  text: Welcome, adam
+-- typed when locked: done=no focus=pass
+panel LogOS
+  text: Locked: adam
+  text field Passphrase: *********, focused
+  button Unlock
+  text: Locked."
+wm_vm t6.la "$T/out6.txt"
+if [ "$vrc" = 0 ] && [ "$(cat "$T/out6.txt")" = "$EXPECT6" ] && ! grep -qE 's3cret|nope-nope' "$T/out6.txt"; then
+    echo "PASS  lk_firstuser (VM): 6 the passphrase fields while they hold typed text (no Enter yet), in the setup and locked, show one '*' per character in the screen's description"
+else
+    echo "FAIL  lk_firstuser (VM): 6 the passphrase fields while they hold typed text: rc=$vrc"; diff <(echo "$EXPECT6") "$T/out6.txt" | head -20; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
 if [ "$ok" = 1 ]; then echo "ALL PASS  gate_lk_firstuser"; else echo "GATE FAILED  gate_lk_firstuser"; exit 1; fi

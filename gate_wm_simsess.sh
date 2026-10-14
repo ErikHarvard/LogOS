@@ -35,11 +35,15 @@
 #      13  an unknown user is refused like a wrong passphrase ("Wrong user
 #          or passphrase."), and so is a wrong passphrase
 #      14  the right one logs in: the welcome terminal
-#   15 no passphrase typed (right or wrong) appears in any frame of either
-#      run, nor in the WM's stdout or stderr
-#   16 users=DIR a regular file, or under a missing directory: the WM halts
+#   15 a frame taken while the first-run screen's two passphrase fields hold
+#      typed text (no Enter yet), and one while the login screen's does:
+#      one '*' per character (every other frame comes after an Enter, which
+#      empties them)
+#   16 no passphrase typed (right or wrong) appears in any frame of either
+#      run, those two included, nor in the WM's stdout or stderr
+#   17 users=DIR a regular file, or under a missing directory: the WM halts
 #      at once (rc 1) naming the path, and draws nothing
-#   17 theourgia_wm_simsess.la without users=DIR stops at once with a
+#   18 theourgia_wm_simsess.la without users=DIR stops at once with a
 #      message, and theourgia_wm_sim.la (the stand-in) refuses users=DIR
 # LogosSession's own gate (gate_logossession.sh) checks the cryptography and
 # that lock leaves no key in memory; this gate checks the WM drives it.
@@ -84,7 +88,9 @@ type adam
 key ENTER
 type one-pass-1
 key ENTER
-type two-pass-2\\n
+type two-pass-2
+snap 11
+key ENTER
 snap 3
 key ENTER
 snap 4
@@ -141,7 +147,9 @@ key BACKSPACE
 key BACKSPACE
 type adam
 key ENTER
-type wrong-pass\\n
+type wrong-pass
+snap 6
+key ENTER
 snap 4
 type $PASS_OK\\n
 snap 5
@@ -231,8 +239,16 @@ check("13 an unknown user (eve) and a wrong passphrase are both refused: 'Wrong 
 s = shot("again", 5)
 check("14 the right passphrase logs in: the welcome terminal",
       term(s) and any("Theourgia tiling window manager" in r for r in rows(s)) and log2.count("wm: unlocked") == 1, det(s))
+# the frames taken while the passphrase fields hold typed text
+def stars(s, label, n):
+    r = field(s, label)
+    return r is not None and r.split(label + ": [", 1)[1].startswith("*" * n + " " * (12 - n) + "]")
+s = shot("first", 11); s2 = shot("again", 6)
+check("15 while the passphrase fields hold typed text (no Enter yet) they show one '*' per character: both of the first-run screen's, and the login screen's",
+      panel(s) and has(s, "Make the first user") and stars(s, "Passphrase", 10) and stars(s, "Passphrase again", 10)
+      and panel(s2) and has(s2, "Log in to LogOS.") and stars(s2, "Passphrase", 10), det(s) + " " + det(s2))
 leak = []
-for run, n in [("first", k) for k in range(1, 11)] + [("again", k) for k in range(1, 6)]:
+for run, n in [("first", k) for k in range(1, 12)] + [("again", k) for k in range(1, 7)]:
     s = shot(run, n)
     if s is None: leak.append(f"{run} frame {n} missing"); continue
     text = json.dumps(s)
@@ -241,11 +257,11 @@ for run, n in [("first", k) for k in range(1, 11)] + [("again", k) for k in rang
 for name, text in (("first stdout", log1), ("first stderr", err1), ("again stdout", log2), ("again stderr", err2)):
     for p in (good, "one-pass-1", "two-pass-2", "nope-nope", "wrong-pass"):
         if p in text: leak.append(f"{p} in {name}")
-check("15 no passphrase typed (right or wrong) appears in any of the 15 frames, nor in the WM's stdout or stderr", not leak, ", ".join(leak))
+check("16 no passphrase typed (right or wrong) appears in any of the 17 frames, nor in the WM's stdout or stderr", not leak, ", ".join(leak))
 sys.exit(bad)
 PYEOF
 
-# 16. a users= path that is not a directory, or under a missing one
+# 17. a users= path that is not a directory, or under a missing one
 : > "$T/plainfile"; rm -f "$T"/wm_shot_*.bin
 printf 'snap 1\n' | python3 "$T/wm_script.py" - "$T/events.bin" || { echo "FAIL  wm simsess: wm_script.py"; exit 1; }
 echo "960 600 1 $T/home events.bin users=$T/plainfile" > "$T/wm_sim.cfg"
@@ -255,12 +271,12 @@ mrc=0; ( cd "$T" && timeout 60 ./logos_secd >"$T/miss.log" 2>"$T/miss.err" ) || 
 if [ "$frc" = 1 ] && grep -qF "$T/plainfile is not a directory" "$T/file.err" && [ "$mrc" = 1 ] \
    && grep -qF "$T/nodir/users (mkdir -> -2)" "$T/miss.err" && [ ! -e "$T/nodir" ] && [ -f "$T/plainfile" ] \
    && ! ls "$T"/wm_shot_*.bin >/dev/null 2>&1 && ! grep -q "wm: headless" "$T/file.log" "$T/miss.log"; then
-    echo "PASS  wm simsess: 16 users=DIR a regular file, or under a missing directory, halts at once naming it, before the WM starts: $(head -c 100 "$T/file.err")"
+    echo "PASS  wm simsess: 17 users=DIR a regular file, or under a missing directory, halts at once naming it, before the WM starts: $(head -c 100 "$T/file.err")"
 else
-    echo "FAIL  wm simsess: 16 file rc=$frc '$(head -c 200 "$T/file.err")'; missing parent rc=$mrc '$(head -c 200 "$T/miss.err")'"; ok=0
+    echo "FAIL  wm simsess: 17 file rc=$frc '$(head -c 200 "$T/file.err")'; missing parent rc=$mrc '$(head -c 200 "$T/miss.err")'"; ok=0
 fi
 
-# 17. the two entries refuse the wrong configuration
+# 18. the two entries refuse the wrong configuration
 echo "960 600 1 $T/home events.bin" > "$T/wm_sim.cfg"
 rc=0; ( cd "$T" && timeout 60 ./logos_secd >/dev/null 2>"$T/nousers.err" ) || rc=$?
 cp "$T/compiler.bin" "$T/logos_program.bin"; cp "$T/theourgia_wm_sim.la" "$T/logos_source.la"
@@ -269,9 +285,9 @@ cp "$T/compiler.bin" "$T/logos_program.bin"; cp "$T/theourgia_wm_sim.la" "$T/log
 echo "960 600 1 $T/home events.bin users=$T/users" > "$T/wm_sim.cfg"
 rc2=0; ( cd "$T" && timeout 60 ./logos_secd >/dev/null 2>"$T/stub.err" ) || rc2=$?
 if [ "$rc" = 1 ] && grep -q "needs users=DIR" "$T/nousers.err" && [ "$rc2" = 1 ] && grep -q "theourgia_wm_simsess.la" "$T/stub.err"; then
-    echo "PASS  wm simsess: 17 without users=DIR the real-session entry stops at once (rc 1, says so); the stand-in entry refuses users=DIR (rc 1, names the other)"
+    echo "PASS  wm simsess: 18 without users=DIR the real-session entry stops at once (rc 1, says so); the stand-in entry refuses users=DIR (rc 1, names the other)"
 else
-    echo "FAIL  wm simsess: 17 rc=$rc '$(head -c 150 "$T/nousers.err")'; stand-in rc=$rc2 '$(head -c 150 "$T/stub.err")'"; ok=0
+    echo "FAIL  wm simsess: 18 rc=$rc '$(head -c 150 "$T/nousers.err")'; stand-in rc=$rc2 '$(head -c 150 "$T/stub.err")'"; ok=0
 fi
 
 if [ "$ok" = 1 ]; then echo "ALL PASS  gate_wm_simsess"; else echo "GATE FAILED  gate_wm_simsess"; exit 1; fi
