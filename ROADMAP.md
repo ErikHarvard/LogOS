@@ -1059,9 +1059,10 @@ was checked in context to confirm it is a **build intention**, not philosophical
 - [x] **Sovereign encrypted filesystem (AletheiaFS / SigilVault).** *First realisation landed
       (2026-10-13): `aletheiafs.la`, FS_KIT, on the native VM over a host directory: sealed,
       versioned, mirrored, self-repairing objects, the guard on every operation, ephemeral
-      objects, the index as an object of its own; `gate_aletheiafs.sh`, 84 checks. Since
+      objects, the index as an object of its own; `gate_aletheiafs.sh`, 93 checks. Since
       2026-10-14 (the user's decision) every version is sealed under a fresh random nonce stored
-      in front of it, so no rollback, crash or retried write can reuse a nonce. Not yet: on the
+      in front of it, so no rollback, crash or retried write can reuse a nonce, and a write
+      never goes through a link planted at its staging name. Not yet: on the
       raw-disk HAL (it uses the host's files), distribution across peers, and an authenticated
       version count (a rollback of both copies can still truncate an object undetectably).*
       The thirteen OS subsystems list
