@@ -47,6 +47,10 @@
 #      a truncated, an extended and an empty signature; a 31- and a 33-byte pk;
 #   5. misuse halts loudly (rc 1, the message, no output): a ctx of 256 bytes,
 #      a 63- or 65-byte sk, a 15- or 17-byte addrnd, a 15-byte seed;
+#   5b. kit style, statically: every reference to a glyph in logossign.la is
+#      in SIGN_KIT and evaluated while the kit is built, none inside a function
+#      the kit returns (a parse of the module in oracle.py; the position arm
+#      below is too coarse to see one name per WOTS+ chain or FORS leaf);
 #   6. the root comparison, white box: SIGN_KIT handed a bxor that prints its
 #      arguments makes exactly 16 calls per verify, the byte pairs (computed
 #      root, PK.root) in order (a compare that skips a byte of PK.root cannot
@@ -263,6 +267,111 @@ elif cmd == "kgrcheck":
     assert sk[0:48] == r, "the sk does not start with the 48 bytes drawn (SK.seed, SK.prf, PK.seed in order)"
     assert s.slh_keygen_internal(r[0:16], r[16:32], r[32:48]) == (sk, pk), "not the model's keygen_internal(r[0:16], r[16:32], r[32:48])"
     print("ok")
+
+elif cmd == "kitstyle":
+    # Kit style, statically: no glyph is named at run time. On the VM a named
+    # glyph walks the program, so a name inside a function the kit returns
+    # costs more the more program sits in front of the module; the position
+    # arm times only a toy verify, too coarse to see one name per WOTS+ chain
+    # or per FORS leaf. Every reference to a glyph must be in KIT's body and
+    # evaluated while the kit is built: under its parameters, in the value or
+    # the continuation of a LET, the continuation of a record parameter
+    # (crypt, pkit, P) or of need, or an applied lambda, and never inside a
+    # lambda the kit returns or passes as a value. (confine already shows the
+    # module names no builtin: every free name is a parameter or a glyph.)
+    src, kit = open(sys.argv[2], encoding="utf-8").read(), sys.argv[3]
+    def lex(src):
+        i, n, out = 0, len(src), []
+        idc = lambda c: c.isalnum() or c == "_" or ord(c) >= 0x80
+        while i < n:
+            c = src[i]
+            if c.isspace(): i += 1; continue
+            if c == "#":
+                while i < n and src[i] != "\n": i += 1
+                continue
+            if c in "().=": out.append((c, None)); i += 1; continue
+            if c == '"':
+                j = i + 1
+                while j < n and src[j] != '"': j += 2 if src[j] == "\\" else 1
+                if j >= n: raise SyntaxError("unterminated string")
+                out.append(("str", src[i + 1:j])); i = j + 1; continue
+            if c.isdigit():
+                j = i
+                while j < n and src[j].isdigit(): j += 1
+                out.append(("int", src[i:j])); i = j; continue
+            if idc(c):
+                j = i
+                while j < n and idc(src[j]): j += 1
+                w = src[i:j]
+                out.append((w, None) if w in ("glyph", "la", "import", "export") else ("id", w)); i = j; continue
+            raise SyntaxError("unexpected character %r" % c)
+        return out
+    toks, pos = lex(src), [0]
+    def peek(): return toks[pos[0]][0] if pos[0] < len(toks) else None
+    def take(k):
+        if peek() != k: raise SyntaxError("expected %s, got %s at token %d" % (k, peek(), pos[0]))
+        v = toks[pos[0]][1]; pos[0] += 1; return v
+    def expr():
+        if peek() == "la":
+            take("la"); x = take("id"); take(".")
+            return ("lam", x, expr())
+        k = peek()
+        if k == "id": e = ("var", take("id"))
+        elif k in ("str", "int"): e = (k, take(k))
+        elif k == "(": take("("); e = expr(); take(")")
+        else: raise SyntaxError("unexpected %s at token %d" % (k, pos[0]))
+        while peek() == "(":
+            take("("); a = expr(); take(")"); e = ("app", e, a)
+        return e
+    glyphs = {}
+    while peek() is not None:
+        if peek() == "glyph":
+            take("glyph"); g = take("id"); take("="); glyphs[g] = expr()
+        elif peek() == "export":
+            take("export")
+            while peek() == "id": take("id")
+        else: raise SyntaxError("unexpected top-level %s (a kit module imports nothing)" % peek())
+    def lams(e, k=None):
+        # the leading binders of e, at most k of them
+        xs = []
+        while e[0] == "lam" and (k is None or len(xs) < k): xs.append(e[1]); e = e[2]
+        return xs, e
+    # how many binders of its continuation each of these applies at once
+    ARITY = {"LET": 1, "need": 1, "crypt": 6, "pkit": 1, "P": 8}
+    bad, seen = [], [0]
+    def walk(e, bound, now):
+        if e[0] == "var":
+            if e[1] in glyphs and e[1] not in bound:
+                if now: seen[0] += 1
+                else: bad.append(e[1])
+            return
+        if e[0] in ("str", "int"): return
+        if e[0] == "lam": walk(e[2], bound | {e[1]}, False); return
+        head, args = e, []
+        while head[0] == "app": args.append(head[2]); head = head[1]
+        args.reverse()
+        run = None  # the argument whose lambda is applied while the kit is built
+        if now:
+            hn = head[1] if head[0] == "var" else None
+            if hn == "LET" and hn not in bound and len(args) == 2: run = 1
+            elif hn == "need" and hn in bound and len(args) == 3: run = 2
+            elif hn in ("crypt", "pkit", "P") and hn in bound and len(args) == 1: run = 0
+            elif head[0] == "lam":
+                xs, body = lams(head, len(args))
+                if len(xs) == len(args):
+                    for a in args: walk(a, bound, True)
+                    walk(body, bound | set(xs), True); return
+        walk(head, bound, now)
+        for j, a in enumerate(args):
+            xs, body = lams(a, ARITY.get(head[1]) if j == run else 0)
+            if j == run and len(xs) == ARITY[head[1]]: walk(body, bound | set(xs), True)
+            else: walk(a, bound, now)
+    for g, e in glyphs.items():
+        if g == kit: xs, body = lams(e); walk(body, set(xs), True)
+        else: walk(e, set(), False)
+    assert kit in glyphs, "no glyph " + kit
+    assert not bad, "glyphs named at run time: " + " ".join(bad)
+    print("ok %d %d %s" % (len(glyphs), seen[0], ",".join(sorted(glyphs))))
 
 elif cmd == "katcmds":
     # KAT records as driver commands: SEL is a comma list of kgN / sv / sgN
@@ -494,6 +603,15 @@ else
     echo "FAIL  logossign oracle: make_toy_vectors.py: $(head -c 300 "$T/toygen.out")"; exit 1
 fi
 ( cd "$T" && python3 -I oracle.py toycmds toy_vectors.txt ksvrR toy.cmds toy.exp ) || { echo "FAIL  logossign: toy commands"; exit 1; }
+
+# ── kit style, statically ─────────────────────────────────────────────────
+ksres=$(cd "$T" && python3 -I oracle.py kitstyle logossign.la SIGN_KIT 2>&1 | tail -1)
+read -r ksw ksn ksr _ <<< "$ksres"
+if [ "$ksw" = ok ]; then
+    echo "PASS  logossign kit style (static): no glyph is named at run time: all $ksr references to the module's $ksn glyphs are in SIGN_KIT and evaluated while the kit is built (a LET's value or continuation, a record's or need's continuation, an applied lambda), none inside a function the kit returns"
+else
+    echo "FAIL  logossign kit style (static): $ksres"; ok=0
+fi
 
 # ── 8 (started now, checked at the end): the C host ────────────────────────
 # One toy verify on the C host (key 0's pure deterministic signature of the
