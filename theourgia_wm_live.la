@@ -24,14 +24,17 @@
 #  headless (gate_wm_simsess.sh). The users directory is the first line of
 #  logos_wm.users, trimmed, or /var/lib/logos when the file is missing or
 #  that line is blank (wm_livestart.la's USERS_KIT); it is made, mode 0700,
-#  when it does not exist, and anything there that is not a directory
-#  stops the WM with a message. When no user has ever been made there
+#  when it does not exist, and anything there that is not a directory, a
+#  line holding a NUL byte, or a directory over 3993 bytes (too long for
+#  the files LogosSession makes under it) stops the WM with a message. When no user has ever been made there
 #  (DIR/users does not exist) the WM starts at the first-run screen, which
 #  makes the first user with LogosSession's adduser and logs in; otherwise
 #  at the login screen. MOD+Esc locks. The keyboard, the cwd and the users
 #  are all settled BEFORE drm_mode, so a loud failure never leaves a taken
-#  screen. The lock screen is not a boundary against someone at the
-#  keyboard: Ctrl+C still ends the whole session (below).
+#  screen. Keys typed while a login is checked (seconds, the lock screen
+#  still drawn) are dropped once it unlocks, not typed into the terminal
+#  (theourgia_wm.la's WM_LOOP). The lock screen is not a boundary against
+#  someone at the keyboard: Ctrl+C still ends the whole session (below).
 #
 #  Keys: see theourgia_wm.la. MOD+Shift+e exits; so does Ctrl+C (the VT turns
 #  it into SIGINT for the whole session).

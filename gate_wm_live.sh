@@ -26,7 +26,8 @@
 #      presented is the login screen (neither the first-run screen nor a
 #      terminal)
 # The live entry point itself needs a bare VT and is run by hand
-# (drm_bringup_wm.sh); gate_wm_livestart.sh runs it as far as drm_mode.
+# (drm_bringup_wm.sh); gate_wm_livestart.sh runs it as far as drm_mode, and
+# past it with its two screen calls replaced (its check 11).
 #
 # ISOLATION: a private temporary directory (gate_wm_common.sh). VM only. A few
 # minutes, mostly compiling the WM with the session layer on the VM.

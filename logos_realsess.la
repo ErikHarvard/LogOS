@@ -21,7 +21,8 @@
 #    locked). text names the users directory as logos_wm.users does:
 #    wm_livestart.la's USERS_KIT takes its first line (trimmed;
 #    /var/lib/logos when blank), makes it 0700 when it is missing, halts
-#    loudly on anything that is not a directory, and says whether this is a
+#    loudly on anything that is not a directory (and on a line holding a NUL
+#    byte or naming a directory over 3993 bytes), and says whether this is a
 #    first run (DIR/users missing). The app is lk_firstuser.la's: the
 #    first-run screen on a first run, the login screen otherwise, with
 #    fsess = la s. s(first)(adduser)(la s. s(login)(lock)(unlock)) over

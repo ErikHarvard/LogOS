@@ -35,7 +35,12 @@
 # the session and FLUSHES the tty's pending input on every exit path, before
 # your shell can read it. It also turns the tty's suspend key off for the
 # session: Ctrl+Z would stop the VM and this script with the greeter stopped,
-# skip the restore, and hand later keystrokes to the login shell.
+# skip the restore, and hand later keystrokes to the login shell. Until that
+# flush the buffer holds everything typed in the session, the lock screen's
+# name and passphrases included, and the WM's programs keep this VT as their
+# controlling terminal: a program run in a WM terminal that reads /dev/tty
+# (sudo, ssh, passwd, less) reads those keys. Keep that in mind until the VM
+# can grab the keyboard (CLAUDE.md, Stage 10's honest limits).
 #
 #   DRYRUN=1 ./drm_bringup_wm.sh   build and compile only (safe from anywhere)
 set -u
