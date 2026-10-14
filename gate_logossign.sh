@@ -46,8 +46,11 @@
 #      a wrong and an empty ctx; the pure signature as an internal one; the
 #      length-byte forgery, both ways a ctx of 256 bytes could be encoded if
 #      the 255 limit were not enforced (sign(c256 ++ M, ctx "") as (M, ctx
-#      c256), and sign_internal(00 ++ c256 ++ M) the same way; the two
-#      forgeries' genuine forms verify TRUE, so FALSE comes from the ctx rule);
+#      c256), and sign_internal(00 ++ c256 ++ M) the same way), and the same
+#      two for ctx lengths 257 and 300 (|ctx| mod 256 as the length byte, and
+#      no length byte), so a limit enforced only at 256 fails; every
+#      forgery's genuine form verifies TRUE, so FALSE comes from the ctx rule;
+#      ctxs of 256, 257 and 300 bytes on the valid signature;
 #      a truncated, an extended and an empty signature; a 31- and a 33-byte pk;
 #   5. misuse halts loudly (rc 1, the message, no output): a ctx of 256 bytes,
 #      a 63- or 65-byte sk, a 15- or 17-byte addrnd, a 15-byte seed;
@@ -454,6 +457,12 @@ elif cmd == "negs":
     c256 = bytes((5 * j + 1) % 256 for j in range(256))
     forge1 = s.slh_sign(c256 + msg, b"", sk)                 # M' = 00 00 c256 M: toByte(256, 1) taken mod 256
     forge2 = s.slh_sign_internal(b"\x00" + c256 + msg, sk)   # M' = 00 c256 M: toByte(256, 1) as no byte
+    # the same two forgeries for ctx lengths 257 and 300 (a limit enforced only at 256)
+    c257 = bytes((5 * j + 2) % 256 for j in range(257)); c300 = bytes((5 * j + 3) % 256 for j in range(300))
+    f257a = s.slh_sign(c257[1:] + msg, c257[:1], sk)          # M' = 00 01 c257 M: 257 mod 256
+    f257b = s.slh_sign_internal(b"\x00" + c257 + msg, sk)    # M' = 00 c257 M
+    f300a = s.slh_sign(c300[44:] + msg, c300[:44], sk)        # M' = 00 2c c300 M: 300 mod 256 = 44
+    f300b = s.slh_sign_internal(b"\x00" + c300 + msg, sk)    # M' = 00 c300 M
     cases = [  # (id, iface, msg, sig, ctx, pk, expected)
         ("fresh-det", "p", msg, base, ctx, pk, 1),
         ("fresh-hedged", "p", rmsg, hedged, b"", pk, 1),
@@ -475,6 +484,16 @@ elif cmd == "negs":
         ("forge-nobyte-genuine", "i", b"\x00" + c256 + msg, forge2, b"", pk, 1),
         ("forge-nobyte", "p", msg, forge2, c256, pk, 0),
         ("ctx256", "p", msg, base, c256, pk, 0),
+        ("forge257-mod256-genuine", "p", c257[1:] + msg, f257a, c257[:1], pk, 1),
+        ("forge257-mod256", "p", msg, f257a, c257, pk, 0),
+        ("forge257-nobyte-genuine", "i", b"\x00" + c257 + msg, f257b, b"", pk, 1),
+        ("forge257-nobyte", "p", msg, f257b, c257, pk, 0),
+        ("ctx257", "p", msg, base, c257, pk, 0),
+        ("forge300-mod256-genuine", "p", c300[44:] + msg, f300a, c300[:44], pk, 1),
+        ("forge300-mod256", "p", msg, f300a, c300, pk, 0),
+        ("forge300-nobyte-genuine", "i", b"\x00" + c300 + msg, f300b, b"", pk, 1),
+        ("forge300-nobyte", "p", msg, f300b, c300, pk, 0),
+        ("ctx300", "p", msg, base, c300, pk, 0),
         ("truncated", "p", msg, base[:-1], ctx, pk, 0),
         ("extended", "p", msg, base + b"\x00", ctx, pk, 0),
         ("empty_sig", "p", msg, b"", ctx, pk, 0),
@@ -683,7 +702,7 @@ if [ "$LOGOSSIGN_HOST" = 1 ]; then
     ( cd "$T/hostw" && { timeout "$LOGOSSIGN_HOST_TIMEOUT" ./tiny_host hostv.la > out 2> err; echo $? > rc; date +%s > end; } ) &
     host_pid=$!
 fi
-# the model's 128s signatures for the negative controls (four signatures, about 20 s of Python)
+# the model's 128s signatures for the negative controls (eight signatures, about 40 s of Python)
 ( cd "$T" && python3 -I oracle.py negs neg.cmds neg.exp neg.list > negs.out 2>&1; echo $? > negs.rc ) &
 negs_pid=$!
 KG_DEFAULT="kg1,kg10"
@@ -769,7 +788,7 @@ if [ "$(rc_of v128)" = 0 ] && cmp -s "$T/v128.got" "$T/v128.exp"; then
     echo "PASS  logossign 128s sigVer (VM): all $((na + nj)) KAT records ($na accept, $nj reject: modified R, SIG_FORS, SIG_HT, message; too small, too large), the NIST verdict on each"
     echo "PASS  logossign 128s fresh signatures (VM): the model's deterministic signature and its hedged one over a random message with a random addrnd (new every run) verify TRUE"
     nn=$(grep -vc -e '^fresh' -e 'genuine' "$T/neg.list")
-    echo "PASS  logossign 128s negative controls (VM): all $nn FALSE, none halting: $(grep -v -e '^fresh' -e genuine "$T/neg.list" | awk '{print $1}' | tr '\n' ' ')(the two forgeries' genuine forms verify TRUE)"
+    echo "PASS  logossign 128s negative controls (VM): all $nn FALSE, none halting: $(grep -v -e '^fresh' -e genuine "$T/neg.list" | awk '{print $1}' | tr '\n' ' ')(the forgeries' genuine forms verify TRUE)"
 else
     echo "FAIL  logossign 128s verify (VM): rc=$(rc_of v128)"; diff "$T/v128.exp" "$T/v128.got" | cut -c1-160 | head -8; tail -3 "$T/v128/err"; ok=0
 fi
