@@ -23,7 +23,8 @@
 #   - Enter in a form: in a field whose next focusable element is another
 #     field, Enter moves the focus there and sends nothing; in the last field
 #     of a run of fields (the next is a button) or in the last focusable of
-#     all, it sends submit and keeps the focus.
+#     all, it sends submit and keeps the focus; a form of fields only submits
+#     from its last field (the focus does not wrap round to the first).
 # Rendering to pixels goes through theourgia_render.la and is checked by the
 # WM's gates through OCR.
 #
@@ -130,24 +131,27 @@ glyph SHOWK = la label. la r. r(la f2. la m. print(concat(label)(concat(": focus
 glyph MAIN = (la L. LK_KIT(B)(L)(RSTUB)(1)(PAL)(la nodes. la measure. la paint. la a11y. la focusables. la key. la render.
   nodes(la TEXT. la BUTTON. la FIELD. la TOGGLE. la LIST. la ROW. la COL. la PANEL. la SPACE.
   L(la nil. la cons. la map. la filter. la find. la append. la nrep. la len.
-    (la form. la tail.
+    (la form. la tail. la two.
       SEQ(SHOWK("enter in a")(key(form)("a")(28)(la t. la f. f)("")))(
       SEQ(SHOWK("enter in b")(key(form)("b")(28)(la t. la f. f)("")))(
       SEQ(SHOWK("enter on go")(key(form)("go")(28)(la t. la f. f)("")))(
       SEQ(SHOWK("enter in c, the last focusable")(key(tail)("c")(28)(la t. la f. f)("")))(
-          SHOWK("tab from a")(key(form)("a")(15)(la t. la f. f)("")))))))
+      SEQ(SHOWK("enter in e, the last focusable, after field d")(key(two)("e")(28)(la t. la f. f)("")))(
+          SHOWK("tab from a")(key(form)("a")(15)(la t. la f. f)(""))))))))
     (PANEL("form")(COL(cons(FIELD("a")("A")("1"))(cons(FIELD("b")("B")("2"))(cons(BUTTON("go")("Go"))(nil))))))
-    (COL(cons(BUTTON("go")("Go"))(cons(FIELD("c")("C")("3"))(nil))))))))(WM_LISTS(B))
+    (COL(cons(BUTTON("go")("Go"))(cons(FIELD("c")("C")("3"))(nil))))
+    (COL(cons(FIELD("d")("D")("4"))(cons(FIELD("e")("E")("5"))(nil))))))))(WM_LISTS(B))
 LAEOF
 } > "$T/form.la"
 EXPECT_FORM='enter in a: focus=b msg=none
 enter in b: focus=b msg=b/submit/2
 enter on go: focus=go msg=go/press/
 enter in c, the last focusable: focus=c msg=c/submit/3
+enter in e, the last focusable, after field d: focus=e msg=e/submit/5
 tab from a: focus=b msg=none'
 wm_vm form.la "$T/form_out.txt"
 if [ "$vrc" = 0 ] && [ "$(cat "$T/form_out.txt")" = "$EXPECT_FORM" ]; then
-    echo "PASS  logoskit (VM): Enter in a field followed by a field moves the focus to it (no message); in the last field it submits"
+    echo "PASS  logoskit (VM): Enter in a field followed by a field moves the focus to it (no message); in the last field it submits, also when every focusable is a field"
 else
     echo "FAIL  logoskit (VM): Enter in a form: rc=$vrc"; diff <(echo "$EXPECT_FORM") "$T/form_out.txt" | head -20; tail -3 "$T/vce" "$T/vre" 2>/dev/null; ok=0
 fi
