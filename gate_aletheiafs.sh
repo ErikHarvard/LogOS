@@ -84,10 +84,12 @@
 #      (the version number as the nonce, not stored) reads as lost, never
 #      as content, and verify changes none of it; a root with a NUL byte is
 #      refused.
-#   N  no keystream is ever used twice, by an oracle that does not depend
-#      on the layout: it knows the plaintexts it makes the module seal, so
-#      two stored files of one version that XOR, at offset 0 or 12, to the
-#      XOR of their plaintexts were sealed under one key and nonce. (a) a
+#   N  no keystream is ever used twice, by an oracle that does not need
+#      the nonce: it knows the plaintexts it makes the module seal, so two
+#      stored files of one version that XOR, where the sealed bytes start at
+#      offset 0 (the nonce not stored) or 12 (a 12-byte nonce in front), to
+#      the XOR of their plaintexts were sealed under one key and nonce (only
+#      those two offsets are tried; (d) and shard D pin the layout). (a) a
 #      rollback of both copies and both heads, then an update; (b) a crash
 #      that left only 2.tmp in both copies, then an update; (c) a write that
 #      fails after its bytes left the process (its .tmp a FIFO the gate
@@ -920,11 +922,13 @@ def shard_e(d, s):
 
 # ── N: no two sealings of a version share a keystream ──────────────────────
 # The oracle knows every plaintext it makes the module seal (the header and
-# the content), so it can tell keystream reuse without knowing the layout:
+# the content), so it can tell keystream reuse without knowing the nonce:
 # two stored files sealed under one key and one nonce XOR, over the sealed
-# bytes, to the XOR of their plaintexts. Both places the sealed bytes can
-# start are tried, offset 0 (the nonce not stored) and offset 12 (a 12-byte
-# nonce in front); equality at either is reuse.
+# bytes, to the XOR of their plaintexts. Two places the sealed bytes can
+# start are tried, offset 0 (the nonce not stored, the old format) and
+# offset 12 (a 12-byte nonce in front, the format now); equality at either
+# is reuse. Only those two: a layout with the sealed bytes anywhere else
+# would not be seen here, and it is (d) and shard D that pin the layout.
 def xor(a, b): return bytes(x ^ y for x, y in zip(a, b))
 def reuse(fa, fb, pa, pb):
     """the offsets (0, 12) at which the stored files fa and fb XOR to the XOR of the plaintexts pa and pb"""
