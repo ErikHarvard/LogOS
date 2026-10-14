@@ -50,7 +50,11 @@
 #      Keccak-f permutation (SHAKE128 of the empty message to 0 bytes: one
 #      padded block absorbed, one permutation, nothing squeezed), ten more
 #      squeeze blocks (SHAKE128 to 1848 bytes against 168), and SHA3-512 of
-#      0, 1 KB and 10 KB, every timed result checked against hashlib.
+#      0, 1 KB and 10 KB, every timed result checked against hashlib; and the
+#      permutation line must have timed a permutation: at least half a
+#      squeeze block (no output byte shows whether a 0-byte SHAKE absorbed
+#      its message, so a SHAKE that skipped it would report one that never
+#      ran).
 # ISOLATION: private temp dir (gate_wm_common.sh). The VM test program is
 # compiled once and run per arm with mode.txt naming the arm; the C host run
 # (about 20 s) starts first and runs beside the VM arms; the whole
@@ -626,9 +630,13 @@ while read -r op us dig; do
 done < "$T/time.out"
 tus() { awk -v k="$1" '$1 == k {print $2}' "$T/time.out"; }
 if [ "$trc" = 0 ] && [ "$tbad" = 0 ] && [ "$(tail -1 "$T/time.out")" = end ] && [ -n "$(tus sha3_512-10KB)" ]; then
-    s1=$(tus squeeze1); s11=$(tus squeeze11)
-    echo "INFO  sha3 timing (VM, CPU time, best of 5): one Keccak-f permutation (shake128 of 0 bytes to 0: one padded block, one permutation) $(tus perm) us; a squeeze block (permutation + 168 bytes out) $(((s11 - s1) / 10)) us; sha3_512 of 0 bytes $(tus sha3_512-0) us, of 1 KB $(tus sha3_512-1KB) us, of 10 KB $(tus sha3_512-10KB) us"
-    echo "PASS  sha3 timing (VM): every timed result is hashlib's"
+    s1=$(tus squeeze1); s11=$(tus squeeze11); sq=$(((s11 - s1) / 10)); pm=$(tus perm)
+    echo "INFO  sha3 timing (VM, CPU time, best of 5): one Keccak-f permutation (shake128 of 0 bytes to 0: one padded block, one permutation) $pm us; a squeeze block (permutation + 168 bytes out) $sq us; sha3_512 of 0 bytes $(tus sha3_512-0) us, of 1 KB $(tus sha3_512-1KB) us, of 10 KB $(tus sha3_512-10KB) us"
+    if [ $((pm * 2)) -ge "$sq" ]; then
+        echo "PASS  sha3 timing (VM): every timed result is hashlib's, and the permutation line timed one (shake128 of \"\" to 0 bytes took $pm us, at least half a squeeze block's $sq us)"
+    else
+        echo "FAIL  sha3 timing (VM): shake128 of \"\" to 0 bytes took $pm us, under half a squeeze block ($sq us): it did not absorb and permute its padded block"; ok=0
+    fi
 else
     echo "FAIL  sha3 timing (VM): rc=$trc wrong=$tbad"; tail -3 "$T/vre"; ok=0
 fi
