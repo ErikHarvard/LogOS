@@ -183,10 +183,9 @@
 #  open store's ephemeral-session pipe (two descriptors) for the life of
 #  the process, so a process that logs in or unlocks many times runs out
 #  of descriptors (about 500 times at the usual limit of 1024).
-#  suspend writes a new version of the saved-session object, so it shares
-#  AletheiaFS's known weakness (aletheiafs.la, HONEST SCOPE): after a
-#  rollback of both copies or a crash that left only <n>.tmp, the next
-#  version number is sealed a second time under the same key and nonce.
+#  suspend writes a new version of the saved-session object; AletheiaFS
+#  seals every version under a fresh random nonce, so a rollback of the
+#  store or a crash in the middle of a suspend cannot make it reuse one.
 #  The VM cannot erase memory: a dropped key stays in the heap until the
 #  collector reuses its space, and "drops the keys" means unreachable, not
 #  overwritten. gate_logossession.sh checks that once the heap has been

@@ -1059,10 +1059,12 @@ was checked in context to confirm it is a **build intention**, not philosophical
 - [x] **Sovereign encrypted filesystem (AletheiaFS / SigilVault).** *First realisation landed
       (2026-10-13): `aletheiafs.la`, FS_KIT, on the native VM over a host directory: sealed,
       versioned, mirrored, self-repairing objects, the guard on every operation, ephemeral
-      objects, the index as an object of its own; `gate_aletheiafs.sh`, 74 checks. Not yet: on
-      the raw-disk HAL (it uses the host's files), distribution across peers, and an
-      authenticated version count (a rollback or a crash can reuse a nonce: a design decision,
-      see the module header).* The thirteen OS subsystems list
+      objects, the index as an object of its own; `gate_aletheiafs.sh`, 84 checks. Since
+      2026-10-14 (the user's decision) every version is sealed under a fresh random nonce stored
+      in front of it, so no rollback, crash or retried write can reuse a nonce. Not yet: on the
+      raw-disk HAL (it uses the host's files), distribution across peers, and an authenticated
+      version count (a rollback of both copies can still truncate an object undetectably).*
+      The thirteen OS subsystems list
       boot, kernel, init, HAL, IPC, display, audio, input, security, UI, session, package, services
       — **and no filesystem.** `HAL.3`/`HAL.3b` give raw ATA sector read/write and nothing above
       them. `CODEX AUTOPOIETICUS.tex:2699`: *"AletheiaFS — Sovereign encrypted filesystem.

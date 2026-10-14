@@ -136,12 +136,26 @@ deterministic).
 - **Recursive sealing**: each object has its own key,
   `K_O = hkdf(id)(K_M)("aletheia/object")(32)`; the index of ids is sealed
   under `hkdf("")(K_M)("aletheia/index")(32)`.
-- **Versions** are numbered from 1. Version `n` of object `id` is one sealed
-  blob: nonce = `n` as 12 little-endian bytes, AAD = `id ++ "|" ++ n`,
+- **Versions** are numbered from 1. Version `n` of object `id` is one stored
+  file: `nonce ++ seal(K_O)(nonce)(id ++ "|" ++ n)(plaintext)`, where the
+  nonce is 12 bytes drawn from `random(12)` for that one sealing, and
   plaintext = a header (`n=`, `tags=` comma-separated, `owner=`, `prev=` hex
-  sha256 of version n-1's sealed blob or `none`, `len=`) and then the
-  content. It is written twice, `obj/<id>/<n>` and `mirror/<id>/<n>`; `obj/<id>/head`
-  holds the latest `n`.
+  sha256 of version n-1's whole stored file, its nonce included, or `none`,
+  `len=`) and then the content. Reading splits the first 12 bytes off and
+  opens the rest under them; a stored file shorter than 12 + 16 bytes fails
+  authentication like any other damaged copy, so the mirror repairs it. A
+  `random` that does not return exactly 12 bytes refuses the write before
+  anything is written. Every index version is sealed the same way. It is
+  written twice, `obj/<id>/<n>` and `mirror/<id>/<n>`; `obj/<id>/head` holds
+  the latest `n`.
+  *The nonce clause is the user's decision of 2026-10-14.* It used to be `n`
+  as 12 little-endian bytes, not stored: after a rollback of both copies and
+  both heads, a crash that left only `<n>.tmp`, or a retried failed write,
+  the next update sealed version `n` again under the same key and nonce, and
+  the two files gave away the XOR of the two plaintexts. A random nonce
+  depends on no durable state, so no rollback, crash or retry can reuse one.
+  There were no deployed stores, so there is no migration; a store in the
+  old format fails authentication (it reads as lost), it is never misread.
 - **Access policy**: every operation asks `guard(tok)(…)`: `put` needs `obj`
   with `w`; `get`/`history`/`version` need `obj/<id>` with `r`;
   `update`/`remove` need `obj/<id>` with `w`; `find` needs `obj` with `r`.
@@ -162,7 +176,9 @@ Gate: round trips; version chain and history; a tampered primary repaired from
 the mirror (the file changed on disk, the report says repaired, the content
 is intact); both copies tampered → `lost` and `get` is an error (no bytes);
 a deleted primary repaired; a wrong `K_M` cannot read anything; a stub guard
-that denies blocks every operation; ephemeral objects leave no files.
+that denies blocks every operation; ephemeral objects leave no files; no two
+sealings of one version share a keystream after a rollback, a crash or a
+retried write, and every stored nonce is distinct.
 **Self-application**: the filesystem's own index is a sealed object stored by
 the filesystem.
 
