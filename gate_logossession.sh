@@ -298,7 +298,6 @@ def aead_selftest():
         and aopen(key, nonce, aad, bytes([want[0] ^ 1]) + want[1:]) is None
 def k_obj(km, oid): return hkdf(oid.encode(), km, b'aletheia/object', 32)
 def k_of(km, oid): return hkdf(b'', km, b'aletheia/index', 32) if oid == 'index' else k_obj(km, oid)
-def nonce_of(n): return n.to_bytes(12, 'little')
 def aad_of(oid, n): return ('%s|%d' % (oid, n)).encode()
 def rd(p):
     try: return open(p, 'rb').read()
@@ -306,8 +305,10 @@ def rd(p):
 def wr(p, b):
     os.makedirs(os.path.dirname(p), exist_ok=True); open(p, 'wb').write(b)
 def version_pt(home, km, oid, n):
-    """version n of object oid in the store at home, opened with K_M km (None if it does not open)"""
-    return aopen(k_of(km, oid), nonce_of(n), aad_of(oid, n), rd(os.path.join(home, 'obj', oid, str(n))))
+    """version n of object oid in the store at home, opened with K_M km (None if it does not open). A stored
+    version is the 12-byte nonce it was sealed under, then the sealed bytes"""
+    f = rd(os.path.join(home, 'obj', oid, str(n)))
+    return aopen(k_of(km, oid), f[:12], aad_of(oid, n), f[12:]) if f is not None and len(f) >= 28 else None
 def body(pt):
     """the content of a version's plaintext (after its five header lines)"""
     if pt is None: return None
@@ -643,11 +644,13 @@ def store_ids(home, km, tag):
 def header(pt):
     return dict(l.split(b'=', 1) for l in pt.split(b'\n', 5)[:5]) if pt else {}
 def append_version(home, km, oid, content, tags=b'logos-session', owner=b'dave'):
-    """the oracle seals version n+1 of oid itself, exactly as the AletheiaFS format says"""
+    """the oracle seals version n+1 of oid itself, exactly as the AletheiaFS format says: a random 12-byte nonce,
+    then the plaintext sealed under it; prev the hash of the whole stored file of version n"""
     n = int(rd(os.path.join(home, 'obj', oid, 'head')))
     prev = hashlib.sha256(rd(os.path.join(home, 'obj', oid, str(n)))).hexdigest().encode()
     pt = b'n=%d\ntags=%s\nowner=%s\nprev=%s\nlen=%d\n' % (n + 1, tags, owner, prev, len(content)) + content
-    blob = seal(k_obj(km, oid), nonce_of(n + 1), aad_of(oid, n + 1), pt)
+    nonce = os.urandom(12)
+    blob = nonce + seal(k_obj(km, oid), nonce, aad_of(oid, n + 1), pt)
     for side in ('obj', 'mirror'):
         wr(os.path.join(home, side, oid, str(n + 1)), blob); wr(os.path.join(home, side, oid, 'head'), str(n + 1).encode())
 def saved(rec, st): return b'logos-session 1\n' + rec + b'state=%d\n' % len(st) + st

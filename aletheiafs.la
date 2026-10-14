@@ -25,21 +25,42 @@
 #
 #  ── THE STORE ───────────────────────────────────────────────────────
 #  A host directory, root:
-#      obj/<id>/<n>      version n of object id, one sealed blob
+#      obj/<id>/<n>      version n of object id, one stored file
 #      mirror/<id>/<n>   the same bytes, written second
 #      obj/<id>/head     the newest n, as a decimal; mirror/<id>/head too
 #      obj/index/…       the index, itself an object (see SELF-APPLICATION)
 #  An id is 32 lowercase hex characters, hex of random(16). Each object has
 #  its own key, K_O = hkdf(id)(K_M)("aletheia/object")(32); the index's is
-#  K_I = hkdf("")(K_M)("aletheia/index")(32). Version n of id is
-#      seal(K)(n as 12 little-endian bytes)(id ++ "|" ++ n)(plaintext)
+#  K_I = hkdf("")(K_M)("aletheia/index")(32). The stored file of version n
+#  of id is
+#      nonce ++ seal(K)(nonce)(id ++ "|" ++ n)(plaintext)
+#      nonce     = random(12), drawn afresh for this one sealing
 #      plaintext = "n=<n>\ntags=<t1,t2,…>\nowner=<owner>\nprev=<p>\nlen=<L>\n"
 #                  ++ content (L bytes)
-#  with p = "none" for n = 1, else hex(sha256(the sealed blob of n-1)). A
-#  version is never written twice: its nonce is n, so sealing different
-#  bytes under the same n would reuse a nonce; a write to an n that exists
-#  in either copy is refused. Every write is atomic: <path>.tmp, checked by
-#  stat to hold exactly the bytes, then renamed onto <path>.
+#  with p = "none" for n = 1, else hex(sha256(the whole stored file of n-1,
+#  its nonce included)). Reading cuts the first 12 bytes off and opens the
+#  rest under them; a file shorter than 12 + 16 bytes (a nonce and a tag)
+#  does not authenticate, like any other damaged copy, so the mirror
+#  repairs it (open is never asked to take a nonce that is not 12 bytes).
+#  WHY THE NONCE IS RANDOM. A nonce that is a function of durable state
+#  repeats when that state is rolled back or lost. When it was the version
+#  number, a rollback of both copies and both heads, a crash that left only
+#  <n>.tmp, or a failed write that was retried sealed version n a second
+#  time under the same key and nonce, and the two files gave away the XOR
+#  of the two plaintexts (gate_aletheiafs.sh, shard N, reproduces all three
+#  against that format). A nonce drawn from random(12) for every sealing,
+#  of an object version or an index version, depends on no durable state,
+#  so no rollback, crash or retry can repeat it: s sealings under one key
+#  share a nonce with probability about s^2 / 2^97. A random that does not
+#  give exactly 12 bytes refuses the write before anything is written
+#  ("random failed"). The cost is 12 bytes a version. A store written in
+#  the old format (the version number as the nonce, nothing stored before
+#  the sealed bytes) does not authenticate: every version of it reads as
+#  lost, never as content. There is no migration.
+#  A version is never written twice: a write to an n that exists in either
+#  copy is refused, so the history only grows. Every write is atomic:
+#  <path>.tmp, checked by stat to hold exactly the bytes, then renamed onto
+#  <path>.
 #  A head is only a hint. The newest version is found by starting from the
 #  primary head (or, if that names a version present in neither copy, the
 #  mirror's) and probing upward while version n+1 exists in either copy, so
@@ -59,7 +80,7 @@
 #      put(fs)(tok)(content)(tags)(owner)        ok(id)
 #      get(fs)(tok)(id)          ok(la k. k(content)(tags)(owner)(n)), newest
 #      update(fs)(tok)(id)(content)    ok(n): a new version with the tags and
-#          owner of the one before, prev its sealed blob's hash
+#          owner of the one before, prev the hash of its stored file
 #      history(fs)(tok)(id)      ok(list 1..n) once every version opens and
 #          every prev link matches; err("chain broken at i") at the first
 #          version i that does not open or whose link does not match
@@ -135,8 +156,9 @@
 #  VM's glyph table from this module. The cost is the cryptography: every
 #  object operation derives K_O (one HKDF, two HMACs); put and remove also
 #  open the index and seal a new version of it; update and history hash
-#  sealed versions. MEASURED on the VM (a 4-core machine shared with other
-#  jobs, load 8-11):
+#  stored versions. MEASURED on the VM (a 4-core machine shared with other
+#  jobs, load 8-11), before the nonce was stored (reading now also cuts the
+#  nonce off each file, a slice by halves of the file):
 #    CRYPT_FAST (logoscrypt.la), 256-byte content, timed inside the program
 #    with the monotonic clock: every operation 10-50 ms (open 23-32, put
 #    34-51, get 32-35, update 30-47, history of 2 versions 23-42, version
@@ -151,7 +173,7 @@
 #    walks the whole ~160 KB program (95 s for one HKDF on a quieter
 #    machine in a 133 KB program).
 #  CRYPT_REF's sha256 is wrong for message lengths of 55 mod 64 (see
-#  logoscrypt.la); a prev link over a sealed blob of such a length then
+#  logoscrypt.la); a prev link over a stored file of such a length then
 #  differs from FIPS. CRYPT_FAST is right there.
 #
 #  ── HONEST SCOPE ────────────────────────────────────────────────────
@@ -165,15 +187,11 @@
 #  write fails has already deleted the files (remove again finishes it).
 #  A head is not authenticated: someone who deletes the newest versions
 #  from both copies and rolls both heads back truncates an object
-#  undetectably (the index does not record each object's newest n).
-#  KNOWN WEAKNESS: a version number can be sealed twice. The nonce is the
-#  version number (the contract fixes it), so after such a rollback, or a
-#  crash that left only <n>.tmp, or a failed write that is retried, the
-#  next update seals version n again under the same key and nonce, and the
-#  two blobs give away the XOR of the two plaintexts (reproduced: the first
-#  plaintext recovered). Closing it needs an authenticated count of each
-#  object's versions, or numbers that a crash burns rather than reuses: a
-#  design decision the contract does not make, so it is not made here. What is on disk is sealed, but not hidden: the ids,
+#  undetectably (the index does not record each object's newest n); the
+#  versions written after such a rollback are sealed under fresh nonces,
+#  so the rollback reveals nothing of their plaintexts. The nonces are only
+#  as unpredictable and unrepeated as random (the VM's getrandom). What is
+#  on disk is sealed, but not hidden: the ids,
 #  the number and sizes of versions, and when they were written are
 #  visible. There is no directory listing in the VM, so objects are found
 #  through the index; an object whose index line is lost is still readable
@@ -196,14 +214,14 @@ glyph LET = la v. la k. k(v)
 # ── FS_BASE: the pure helpers ──────────────────────────────────────────
 # FS_BASE(…P…)(k) hands k, in this order:
 #   T F nil cons OK ERR BIND DO len slice find split joinb joinsep map filter
-#   member isnat idok tagsok ownerok le12 C0 C1 C2 C12 C16 C32
+#   member isnat idok tagsok ownerok C0 C1 C2 C12 C16 C32
 # Results are la err. la ok. …; BIND(r)(f) is f(v) on ok(v) and r's error
 # otherwise. DO(e)(k) evaluates e, then k(e): effects in order, top down.
 # Positions are native ints; a string is scanned by index with str_at, and
 # every join is balanced, so nothing here is quadratic in the data.
 glyph FS_BASE = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
     la add. la sub. la mul. la div. la mod. la lt. la int_eq.
-  (la C0. la C1. la C2. la C12. la C16. la C18. la C32. la C44. la C48. la C57. la C97. la C102. la C127. la C256.
+  (la C0. la C1. la C2. la C12. la C16. la C18. la C32. la C44. la C48. la C57. la C97. la C102. la C127.
   LET(la t. la f. t)(la T.
   LET(la t. la f. f)(la F.
   LET(la n. la c. n(n))(la nil.
@@ -261,32 +279,28 @@ glyph FS_BASE = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la 
   LET(la t. lt(C0)(len(t))(la _. allc(tagc)(t))(la _. F)(C0))(la tagok.
   LET(Z(la go. la l. l(la _. T)(la h. la t. tagok(h)(la _. go(t))(la _. F)(C0))))(la tagsok.
   LET(la o. allc(plainc)(o))(la ownerok.
-  # le12(n): n as 12 little-endian bytes (the version's nonce)
-  LET(Z(la go. la n. la k. int_eq(k)(C0)(la _. "")
-      (la _. concat(chr(int_to_str(mod(n)(C256))))(go(div(n)(C256))(sub(k)(C1))))(C0)))(la lebytes.
-  LET(la n. lebytes(n)(C12))(la le12.
     la k. k(T)(F)(nil)(cons)(OK)(ERR)(BIND)(DO)(len)(slice)(find)(split)(joinb)(joinsep)(map)(filter)
-          (member)(isnat)(idok)(tagsok)(ownerok)(le12)(C0)(C1)(C2)(C12)(C16)(C32)
-  ))))))))))))))))))))))))))))))))))))
+          (member)(isnat)(idok)(tagsok)(ownerok)(C0)(C1)(C2)(C12)(C16)(C32)
+  ))))))))))))))))))))))))))))))))))
   (str_to_int("0"))(str_to_int("1"))(str_to_int("2"))(str_to_int("12"))(str_to_int("16"))
   (str_to_int("18"))(str_to_int("32"))(str_to_int("44"))(str_to_int("48"))(str_to_int("57"))
-  (str_to_int("97"))(str_to_int("102"))(str_to_int("127"))(str_to_int("256"))
+  (str_to_int("97"))(str_to_int("102"))(str_to_int("127"))
 
 # ── FS_STORE: files, versions, the index ───────────────────────────────
-# FS_STORE(…)(crypt)(base)(k) hands k, in this order:
+# FS_STORE(…)(crypt)(random)(base)(k) hands k, in this order:
 #   exists rd awrite mkd pdir mdir latest readver writever parse
-#   readidx writeidx lines lineid linetags walk fixheads delobj
+#   readidx writeidx lines lineid linetags walk fixheads delobj plink
 # A version file is read only after stat says it is a regular file (on
 # this VM read_file of a missing file returns "", on a later one it halts).
 glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
     la add. la sub. la div. la mod. la lt. la int_eq.
     la stat. la read_file. la write_file. la rename. la unlink. la mkdir. la rmdir.
-    la crypt. la base.
+    la crypt. la random. la base.
   base(la T. la F. la nil. la cons. la OK. la ERR. la BIND. la DO. la len. la slice. la find. la split.
-       la joinb. la joinsep. la map. la filter. la member. la isnat. la idok. la tagsok. la ownerok. la le12.
+       la joinb. la joinsep. la map. la filter. la member. la isnat. la idok. la tagsok. la ownerok.
        la C0. la C1. la C2. la C12. la C16. la C32.
   crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
-  (la C4. la C8. la C4096.
+  (la C4. la C8. la C28. la C4096.
   LET(la st. str_eq(str_at(st)(C0))("-"))(la sterr.
   LET(la st. (la n. (la sp. str_to_int(slice(st)(C0)(sp)))(find(st)(n)(" ")(C0)))(len(st)))(la stmode.
   LET(la st. (la n. (la sp. str_to_int(slice(st)(add(sp)(C1))(n)))(find(st)(n)(" ")(C0)))(len(st)))(la stsize.
@@ -313,7 +327,15 @@ glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
   LET(la root. la id. concat(concat(root)("/mirror/"))(id))(la mdir.
   LET(la d. la n. concat(concat(d)("/"))(int_to_str(n)))(la vpath.
   LET(la id. la n. concat(concat(id)("|"))(int_to_str(n)))(la aad.
-  LET(la K. la id. la n. la blob. aopen(K)(le12(n))(aad(id)(n))(blob))(la vopen.
+  # vopen(K)(id)(n)(f): a stored file is the 12-byte nonce it was sealed
+  # under, then the sealed bytes (at least the 16-byte tag); they are opened
+  # under that nonce. A file too short to hold both does not authenticate
+  # (and open is never handed a nonce that is not 12 bytes)
+  LET(la K. la id. la n. la f. (la L. lt(L)(C28)
+      (la _. ERR("too short"))
+      (la _. aopen(K)(slice(f)(C0)(C12))(aad(id)(n))(slice(f)(C12)(L)))(C0))(len(f)))(la vopen.
+  # plink(f): the prev link to the stored file f, its nonce included
+  LET(la f. hex(sha256(f)))(la plink.
   LET(la P. la M. la n. exists(vpath(P)(n))(la _. T)(la _. exists(vpath(M)(n)))(C0))(la vexists.
   LET(la d. (la s. isnat(s)(la _. str_to_int(s))(la _. C0)(C0))(rd(concat(d)("/head"))))(la readhead.
   LET(la P. la M. la h. lt(C0)(h)(la _. vexists(P)(M)(h))(la _. F)(C0))(la hvalid.
@@ -324,7 +346,7 @@ glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
   # updated) are found by probing upward. 0 = no such object.
   LET(la P. la M. (la hp. hvalid(P)(M)(hp)(la _. probe(P)(M)(hp))
         (la _. (la hm. probe(P)(M)(hvalid(P)(M)(hm)(hm)(C0)))(readhead(M)))(C0))(readhead(P)))(la latest.
-  # readver(K)(P)(M)(id)(n): ok(la k. k(sealed blob)(plaintext)). The
+  # readver(K)(P)(M)(id)(n): ok(la k. k(stored file)(plaintext)). The
   # primary is opened; if it does not authenticate, the mirror is, and a
   # mirror that does is written back over the primary (auto-repair).
   LET(la K. la P. la M. la id. la n. (la pp. (la p.
@@ -364,19 +386,24 @@ glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
           (slice(pt)(p5)(n)))(split(tv)(","))))))))
       (ERR(concat("malformed version ")(int_to_str(vn)))))(len(pt)))(la parse.
   # writever(K)(P)(M)(id)(n)(tagstr)(owner)(prev)(content): seal version n
-  # and write it to both copies, then both heads. A version is never
-  # overwritten (its nonce is n: a second sealing under it would reuse it).
+  # under a nonce drawn from random for this sealing alone, write nonce ++
+  # sealed to both copies, then both heads. A version that exists in either
+  # copy is never overwritten (the history only grows); a random that does
+  # not give exactly 12 bytes refuses the write before anything is written.
   LET(la K. la P. la M. la id. la n. la tagstr. la owner. la prev. la content.
     vexists(P)(M)(n)
       (la _. ERR(concat(concat("version ")(int_to_str(n)))(" exists")))
-      (la _. (la ns. (la blob.
-          BIND(awrite(vpath(P)(n))(blob))(la _.
-          BIND(awrite(vpath(M)(n))(blob))(la _.
-          BIND(awrite(concat(P)("/head"))(ns))(la _.
-          BIND(awrite(concat(M)("/head"))(ns))(la _. OK(n))))))
-        (seal(K)(le12(n))(aad(id)(n))(mkhdr(ns)(tagstr)(owner)(prev)(content))))(int_to_str(n)))(C0))(la writever.
+      (la _. (la ns. (la nonce. int_eq(len(nonce))(C12)
+          (la _. (la blob.
+              BIND(awrite(vpath(P)(n))(blob))(la _.
+              BIND(awrite(vpath(M)(n))(blob))(la _.
+              BIND(awrite(concat(P)("/head"))(ns))(la _.
+              BIND(awrite(concat(M)("/head"))(ns))(la _. OK(n))))))
+            (concat(nonce)(seal(K)(nonce)(aad(id)(n))(mkhdr(ns)(tagstr)(owner)(prev)(content)))))
+          (la _. ERR("random failed"))(C0))
+        (random("12")))(int_to_str(n)))(C0))(la writever.
   # the index: the object "index", sealed under K_I, one line "<id> <tags>"
-  # per object. readidx -> ok(la k. k(n)(content)(sealed blob)), n = 0 for a
+  # per object. readidx -> ok(la k. k(n)(content)(stored file)), n = 0 for a
   # store with no index yet
   LET(la root. la KI. (la P. (la M. (la n.
         lt(C0)(n)
@@ -390,7 +417,7 @@ glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
   LET(la root. la KI. la n. la blob. la content. (la P. (la M.
         BIND(mkd(P))(la _. BIND(mkd(M))(la _.
           writever(KI)(P)(M)("index")(add(n)(C1))("index")("aletheiafs")
-            (int_eq(n)(C0)(la _. "none")(la _. hex(sha256(blob)))(C0))(content))))
+            (int_eq(n)(C0)(la _. "none")(la _. plink(blob))(C0))(content))))
       (mdir(root)("index")))(pdir(root)("index")))(la writeidx.
   LET(la content. split(content)("\n"))(la lines.
   LET(la line. slice(line)(C0)(C32))(la lineid.
@@ -426,9 +453,9 @@ glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
       (rmdir(d)))))(la deld.
   LET(la P. la M. la n. DO(delv(P)(M)(C1)(add(n)(C1)))(la _. BIND(deld(P))(la _. deld(M))))(la delobj.
     la k. k(exists)(rd)(awrite)(mkd)(pdir)(mdir)(latest)(readver)(writever)(parse)
-          (readidx)(writeidx)(lines)(lineid)(linetags)(walk)(fixheads)(delobj)
-  )))))))))))))))))))))))))))))))))))))
-  (str_to_int("4"))(str_to_int("8"))(str_to_int("4096"))))
+          (readidx)(writeidx)(lines)(lineid)(linetags)(walk)(fixheads)(delobj)(plink)
+  ))))))))))))))))))))))))))))))))))))))
+  (str_to_int("4"))(str_to_int("8"))(str_to_int("28"))(str_to_int("4096"))))
 
 # ── FS_KIT: the filesystem ─────────────────────────────────────────────
 glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la chr. la concat. la str_eq.
@@ -438,12 +465,12 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
     la crypt. la random.
   (la base.
   base(la T. la F. la nil. la cons. la OK. la ERR. la BIND. la DO. la len. la slice. la find. la split.
-       la joinb. la joinsep. la map. la filter. la member. la isnat. la idok. la tagsok. la ownerok. la le12.
+       la joinb. la joinsep. la map. la filter. la member. la isnat. la idok. la tagsok. la ownerok.
        la C0. la C1. la C2. la C12. la C16. la C32.
   FS_STORE(str_at)(str_to_int)(int_to_str)(concat)(str_eq)(add)(sub)(div)(mod)(lt)(int_eq)
-          (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(crypt)(base)
+          (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(crypt)(random)(base)
   (la exists. la rd. la awrite. la mkd. la pdir. la mdir. la latest. la readver. la writever. la parse.
-   la readidx. la writeidx. la lines. la lineid. la linetags. la walk. la fixheads. la delobj.
+   la readidx. la writeidx. la lines. la lineid. la linetags. la walk. la fixheads. la delobj. la plink.
   crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.
   LET(la id. la km. hkdf(id)(km)("aletheia/object")(C32))(la okey.
   # spair(rfd)(wfd): the session record. A constructor of its own because
@@ -549,13 +576,13 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
               OK(la k. k(body)(tags)(owner)(n))))))))
       (latest(P)(M))))(la get.
   # update(fs)(tok)(id)(content) -> ok(n), the new version, with the tags and
-  # owner of the one before and prev = hex sha256 of its sealed blob
+  # owner of the one before and prev = hex sha256 of its whole stored file
   LET(la fs. la tok. la id. la content.
     withobj(fs)(tok)(id)("w")(la root. la km. la ki. la P. la M.
       (la n. present(n)(la n. (la K.
           BIND(readver(K)(P)(M)(id)(n))(la v. v(la blob. la pt.
             BIND(parse(pt)(n))(la h. h(la tags. la owner. la prev. la body.
-              writever(K)(P)(M)(id)(add(n)(C1))(joinsep(tags)(","))(owner)(hex(sha256(blob)))(content))))))
+              writever(K)(P)(M)(id)(add(n)(C1))(joinsep(tags)(","))(owner)(plink(blob))(content))))))
         (okey(id)(km))))
       (latest(P)(M))))(la update.
   # hist: versions i..n, each authenticated and its prev link checked
@@ -565,7 +592,7 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
       (la _. (la broken.
          readver(K)(P)(M)(id)(i)(la _. broken)(la v. v(la blob. la pt.
            parse(pt)(i)(la _. broken)(la h. h(la tags. la owner. la prev. la body.
-             str_eq(prev)(int_eq(i)(C1)(la _. "none")(la _. hex(sha256(pblob)))(C0))
+             str_eq(prev)(int_eq(i)(C1)(la _. "none")(la _. plink(pblob))(C0))
                (la _. BIND(hist(K)(P)(M)(id)(n)(add(i)(C1))(blob))(la rest. OK(cons(i)(rest))))
                (la _. broken)(C0))))))
         (ERR(concat("chain broken at ")(int_to_str(i)))))(C0)))(la hist.

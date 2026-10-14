@@ -9,9 +9,14 @@
 # itself. The oracle is Python written from OS_LAYERS_DESIGN.md alone
 # (ChaCha20-Poly1305 per RFC 8439 and HKDF per RFC 5869, in plain Python,
 # first checked against the RFC 8439 2.8.2 and RFC 5869 case 3 vectors): it
-# recomputes every sealed version and every index version the module must
-# have written and compares the files on disk byte for byte, and it writes
-# a whole store of its own that the module must read. Each shard drives ONE
+# recomputes every version and every index version the module must have
+# written and compares the files on disk byte for byte, and it writes a
+# whole store of its own that the module must read. A stored version is a
+# random 12-byte nonce, then the bytes sealed under it, so the oracle reads
+# the nonce out of each file and recomputes the ciphertext and the tag under
+# it independently (the mirror must be the same bytes, and no two versions
+# of an object may share a nonce); the stores it writes use os.urandom
+# nonces. Each shard drives ONE
 # session of a driver program (compiled once per crypt record) over
 # stdin/stdout, and
 # tampers with the store between operations.
@@ -22,13 +27,14 @@
 # and does one round trip (put, then get) whose files the oracle checks byte
 # for byte, so the module is still shown to work with the reference record.
 #   R  CRYPT_REF: open, put (binary content), get; version 1 and index
-#      version 1 are the oracle's sealed blobs in both copies.
+#      version 1 are the oracle's stored files in both copies.
 #   A  round trips: binary content (bytes 0..255), tags and owner; versions
-#      1 and 2 and their prev link; history; version out of range; find by
-#      tag; remove (files gone, index line gone); every version and every
-#      index version is the oracle's sealed blob, in both copies, and both
-#      heads hold n. SELF-APPLICATION: the index is itself a sealed,
-#      versioned, mirrored object of the store.
+#      1 and 2 and their prev link (the hash of the whole stored file,
+#      nonce included); history; version out of range; find by tag; remove
+#      (files gone, index line gone); every version and every index version
+#      is the oracle's stored file, in both copies, and both heads hold n.
+#      SELF-APPLICATION: the index is itself a sealed, versioned, mirrored
+#      object of the store.
 #   B  auto-repair, on a store the oracle wrote: a tampered newest primary,
 #      with both heads damaged, is read intact (the newest version is still
 #      found) and rewritten on disk; verify then repairs a deleted primary, a
@@ -49,7 +55,9 @@
 #      each asking exactly one question; a short K_M or an uncreatable root
 #      gives a handle on which everything fails; bad ids, tags and owners, a
 #      failing random and an id collision are refused before anything is
-#      written; ephemeral
+#      written; the nonce a version is sealed under is the 12 bytes random
+#      gives for it, and a random giving 11, 13 or 0 bytes for a nonce
+#      refuses put and update with nothing written; ephemeral
 #      objects round-trip (bytes 0..255) without a single file appearing,
 #      their session pipe is close-on-exec, and close drops that session's
 #      objects (and only that session's).
@@ -70,7 +78,23 @@
 #      ephemeral object's plaintext is not kept in memory by its handle, nor
 #      the session key by the store handle (the driver's memory is scanned
 #      after close and a collection), and with random failing ephemeral
-#      fails closed; a root with a NUL byte is refused.
+#      fails closed; a stored file shorter than a nonce and a tag (27 or 5
+#      bytes), or one whose nonce is flipped, is repaired from the mirror,
+#      and is lost when both copies are short; a store in the old format
+#      (the version number as the nonce, not stored) reads as lost, never
+#      as content, and verify changes none of it; a root with a NUL byte is
+#      refused.
+#   N  no keystream is ever used twice, by an oracle that does not depend
+#      on the layout: it knows the plaintexts it makes the module seal, so
+#      two stored files of one version that XOR, at offset 0 or 12, to the
+#      XOR of their plaintexts were sealed under one key and nonce. (a) a
+#      rollback of both copies and both heads, then an update; (b) a crash
+#      that left only 2.tmp in both copies, then an update; (c) a write that
+#      fails after its bytes left the process (its .tmp a FIFO the gate
+#      reads) and is retried; (d) 40 updates and three index versions: every
+#      stored file opens under the nonce at its start, and all 44 nonces are
+#      distinct. Against the format with the version number as the nonce,
+#      all four fail.
 # Every operation's guard questions are checked exactly (resource and op).
 # COST. With CRYPT_FAST an operation takes milliseconds and shards A-E a few
 # seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
@@ -81,13 +105,13 @@
 # (whose memory check allocates 4 GB of garbage to collect the heap over
 # several times, a few seconds), so FS_PARALLEL
 # (default 4) caps how many shards run at once, longest first, for a machine
-# short of memory. FS_SHARDS (default "R C A B D E") names the shards to run;
+# short of memory. FS_SHARDS (default "R C A B D E N") names the shards to run;
 # leaving R out skips the CRYPT_REF round trip (a development shortcut; a
 # plain run always includes it). FS_SHARD_TIMEOUT (default 14400 s) bounds
 # each shard, FS_CMD_TIMEOUT (default 7200 s) each operation.
 # CRYPT_REF's sha256 is wrong for message lengths of 55 mod 64 (see
-# logoscrypt.la); shard R's oracle refuses to build such a blob, and every
-# length R uses avoids it.
+# logoscrypt.la); shard R's oracle refuses to build a stored file of such a
+# length, and every length R uses avoids it.
 # ISOLATION: private temp dir (gate_wm_common.sh); everything is written
 # under it.
 set -uo pipefail
@@ -96,7 +120,7 @@ ok=1
 : "${FS_SHARD_TIMEOUT:=14400}"
 : "${FS_CMD_TIMEOUT:=7200}"
 : "${FS_PARALLEL:=4}"
-: "${FS_SHARDS:=R C A B D E}"
+: "${FS_SHARDS:=R C A B D E N}"
 wm_setup aletheiafs.la logoscrypt.la crypt_ref.la sha256.la hmac.la hkdf.la aead.la chacha20.la poly1305.la
 
 # ── the driver: one command per stdin line, one "= ok …"/"= err …" line back ──
@@ -135,9 +159,14 @@ glyph POLICY = la tok. la res. la op.
   (print(concat("guard ")(concat(tok)(concat(" ")(concat(res)(concat(" ")(op)))))))
 glyph DENY = la tok. la res. la op.
   (la _. la t. la f. f)(print(concat("guard-deny ")(concat(tok)(concat(" ")(concat(res)(concat(" ")(op)))))))
-glyph RND = la n. str_eq(str_at(stat("badrandom"))(0))("-")
-  (la _. str_eq(str_at(stat("fixedrandom"))(0))("-")(la _. random(n))(la _. read_file("fixedrandom"))("!"))
-  (la _. "")("!")
+# RND(n): random(n); but "" while ./badrandom exists, the bytes of
+# ./fixedrandom for an id (n = 16) while it exists, and the bytes of
+# ./noncerandom for a nonce (n = 12) while it exists
+glyph HAS = la p. str_eq(str_at(stat(p))(0))("-")(la _. la t. la f. f)(la _. la t. la f. t)("!")
+glyph RND = la n. HAS("badrandom")(la _. "")(la _.
+    str_eq(n)("16")(la _. HAS("fixedrandom")(la _. read_file("fixedrandom"))(la _. random(n))("!"))(la _.
+    str_eq(n)("12")(la _. HAS("noncerandom")(la _. read_file("noncerandom"))(la _. random(n))("!"))
+      (la _. random(n))("!"))("!"))("!")
 # CHURN(n): allocate n MiB that die at once, so that the heap is collected
 # several times over (each semispace is 768 MiB) and what is not live is
 # overwritten
@@ -188,9 +217,9 @@ sed -e 's/@IMPORT@/import("logoscrypt.la")/' \
     "$T/drv.tpl" > "$T/drv_fast.la"
 sed -e 's/@IMPORT@/import("crypt_ref.la")/' -e 's/@CRYPT@/CRYPT_REF/' "$T/drv.tpl" > "$T/drv_ref.la"
 
-# ── the oracle and the four shards ──────────────────────────────────────────
+# ── the oracle and the shards ───────────────────────────────────────────────
 cat > "$T/fsgate.py" <<'PYEOF'
-import hashlib, hmac, os, select, shutil, struct, subprocess, sys, time
+import hashlib, hmac, os, select, shutil, struct, subprocess, sys, threading, time
 
 def _rotl(v, c): return ((v << c) & 0xffffffff) | (v >> (32 - c))
 def _qr(s, a, b, c, d):
@@ -249,20 +278,32 @@ def selftest():
 def k_obj(km, oid): return hkdf(oid.encode(), km, b'aletheia/object', 32)
 def k_idx(km): return hkdf(b'', km, b'aletheia/index', 32)
 def key_of(km, oid): return k_idx(km) if oid == 'index' else k_obj(km, oid)
-def nonce_of(n): return n.to_bytes(12, 'little')
 def aad_of(oid, n): return ('%s|%d' % (oid, n)).encode()
 def plain(n, tags, owner, prev, content):
     return b'n=%d\ntags=%s\nowner=%s\nprev=%s\nlen=%d\n' % (n, b','.join(tags), owner, prev, len(content)) + content
-def chain(km, oid, versions, tags, owner, links=None):
-    """the sealed blobs of versions 1..n; links[i] overrides version i+1's prev"""
+def chain(km, oid, versions, tags, owner, links=None, nonces=None):
+    """the stored files of versions 1..n: each the 12-byte nonce (nonces[i-1], or a fresh os.urandom(12)), then
+    the plaintext sealed under it; prev is the hash of the whole stored file before; links[i] overrides version
+    i+1's prev"""
     out, prev, k = [], b'none', key_of(km, oid)
     for i, c in enumerate(versions, 1):
         p = links[i - 1] if links and links[i - 1] is not None else prev
-        b = seal(k, nonce_of(i), aad_of(oid, i), plain(i, tags, owner, p, c))
-        if REF and len(b) % 64 == 55:   # CRYPT_REF's sha256 pads these lengths wrongly
-            raise SystemExit('gate design: a %d-byte blob hits CRYPT_REF sha256 at 55 mod 64' % len(b))
-        out.append(b); prev = hashlib.sha256(b).hexdigest().encode()
+        nonce = nonces[i - 1] if nonces else os.urandom(12)
+        f = nonce + seal(k, nonce, aad_of(oid, i), plain(i, tags, owner, p, c))
+        if REF and len(f) % 64 == 55:   # CRYPT_REF's sha256 pads these lengths wrongly
+            raise SystemExit('gate design: a %d-byte stored file hits CRYPT_REF sha256 at 55 mod 64' % len(f))
+        out.append(f); prev = hashlib.sha256(f).hexdigest().encode()
     return out
+def old_nonce(n): return n.to_bytes(12, 'little')
+def write_old(root, km, oid, versions, tags, owner):
+    """an object in the format before the nonce was stored: version n sealed under n as 12 little-endian bytes,
+    the sealed bytes alone in the file, prev the hash of the file before"""
+    prev = b'none'
+    for i, c in enumerate(versions, 1):
+        b = seal(key_of(km, oid), old_nonce(i), aad_of(oid, i), plain(i, tags, owner, prev, c))
+        for side in ('obj', 'mirror'): wr(os.path.join(root, side, oid, str(i)), b)
+        prev = hashlib.sha256(b).hexdigest().encode()
+    for side in ('obj', 'mirror'): wr(os.path.join(root, side, oid, 'head'), str(len(versions)).encode())
 REF = False   # True in shard R, whose driver runs CRYPT_REF
 IDX_TAGS, IDX_OWNER = [b'index'], b'aletheiafs'
 def line(oid, tags): return ('%s %s\n' % (oid, tags)).encode()
@@ -273,7 +314,8 @@ def rd(p):
 def wr(p, b):
     os.makedirs(os.path.dirname(p), exist_ok=True); open(p, 'wb').write(b)
 def flip(p, i):
-    b = bytearray(open(p, 'rb').read()); b[i % len(b)] ^= 0x01; open(p, 'wb').write(bytes(b))
+    """flip byte i of the sealed bytes of a stored version (after its 12-byte nonce)"""
+    b = bytearray(open(p, 'rb').read()); b[(12 + i) % len(b)] ^= 0x01; open(p, 'wb').write(bytes(b))
 def snap(*dirs):
     out = {}
     for d in dirs:
@@ -310,8 +352,14 @@ def mem_has(pid, needles):
                 tail, a = chunk[-keep:], a + (1 << 26)
     return found
 def disk(root, km, oid, versions, tags, owner, links=None):
-    """'' when obj/ and mirror/ hold exactly the oracle's blobs and both heads say n"""
-    exp = chain(km, oid, versions, tags, owner, links)
+    """'' when obj/ and mirror/ hold exactly the oracle's stored files and both heads say n. Each version's
+    nonce is read out of its primary, the file is recomputed under it (ciphertext and tag), and both copies
+    must be those bytes; no two versions may share a nonce"""
+    got = [rd(os.path.join(root, 'obj', oid, str(i))) for i in range(1, len(versions) + 1)]
+    for i, g in enumerate(got, 1):
+        if g is None or len(g) < 28: return 'obj/%s/%d is %s' % (oid, i, 'missing' if g is None else '%d bytes' % len(g))
+    if len(set(g[:12] for g in got)) != len(got): return '%s: two versions share a nonce' % oid
+    exp = chain(km, oid, versions, tags, owner, links, [g[:12] for g in got])
     for side in ('obj', 'mirror'):
         for i, b in enumerate(exp, 1):
             got = rd(os.path.join(root, side, oid, str(i)))
@@ -322,16 +370,20 @@ def disk(root, km, oid, versions, tags, owner, links=None):
         if extra: return '%s/%s holds %s' % (side, oid, sorted(extra))
     return ''
 def write_raw(root, km, oid, pts):
-    """an object whose version i is pts[i-1] sealed as the format says (nonce, AAD, key), whatever pts holds"""
+    """an object whose version i is pts[i-1] sealed as the format says (a random nonce stored in front, AAD,
+    key), whatever pts holds"""
+    for i, pt in enumerate(pts, 1):
+        nonce = os.urandom(12); f = nonce + seal(key_of(km, oid), nonce, aad_of(oid, i), pt)
+        for side in ('obj', 'mirror'): wr(os.path.join(root, side, oid, str(i)), f)
+    for side in ('obj', 'mirror'): wr(os.path.join(root, side, oid, 'head'), str(len(pts)).encode())
+def write_store(root, km, oid, versions, tags, owner, links=None, nonces=None):
+    """the oracle's own object, the same stored files in both copies; returns them"""
+    files = chain(km, oid, versions, tags, owner, links, nonces)
     for side in ('obj', 'mirror'):
-        for i, pt in enumerate(pts, 1):
-            wr(os.path.join(root, side, oid, str(i)), seal(key_of(km, oid), nonce_of(i), aad_of(oid, i), pt))
-        wr(os.path.join(root, side, oid, 'head'), str(len(pts)).encode())
-def write_store(root, km, oid, versions, tags, owner, links=None):
-    for side in ('obj', 'mirror'):
-        for i, b in enumerate(chain(km, oid, versions, tags, owner, links), 1):
-            wr(os.path.join(root, side, oid, str(i)), b)
+        for i, f in enumerate(files, 1):
+            wr(os.path.join(root, side, oid, str(i)), f)
         wr(os.path.join(root, side, oid, 'head'), str(len(versions)).encode())
+    return files
 
 class Session:
     def __init__(self, cwd, log):
@@ -387,7 +439,7 @@ def shard_r(d, s):
     g, r = s.cmd('put', 'r', '*', C, 'ref,record', 'crypt_ref')
     check('R (CRYPT_REF) put -> ok(id), asking for obj w', isid(r) and g == G('*', 'obj', 'w'), (r, g))
     oid = r[3:]
-    check('R (CRYPT_REF) version 1 and index version 1 are the oracle\'s sealed blobs in both copies, heads 1',
+    check('R (CRYPT_REF) version 1 and index version 1 are the oracle\'s stored files in both copies, heads 1',
           disk(root, km, oid, [C], T, O) == '' and disk(root, km, 'index', [line(oid, 'ref,record')], IDX_TAGS, IDX_OWNER) == '',
           disk(root, km, oid, [C], T, O) + disk(root, km, 'index', [line(oid, 'ref,record')], IDX_TAGS, IDX_OWNER))
     g, r = s.cmd('get', 'r', '*', oid)
@@ -404,8 +456,9 @@ def shard_a(d, s):
     check('A put -> ok(id), a 32-character lowercase hex id', isid(r), r)
     check('A put asks the guard exactly for obj w', g == G('*', 'obj', 'w'), g)
     id1 = r[3:]; V1 = [P1]
-    check('A put writes version 1 to obj/ and mirror/, each byte for byte the oracle\'s sealed blob '
-          '(K_O = hkdf(id)(K_M)("aletheia/object"), nonce 1 as 12 LE bytes, AAD id|1, the n/tags/owner/prev/len header)',
+    check('A put writes version 1 to obj/ and mirror/, each byte for byte the oracle\'s stored file '
+          '(a 12-byte nonce, then the bytes sealed under it with K_O = hkdf(id)(K_M)("aletheia/object") and AAD id|1, '
+          'the n/tags/owner/prev/len header; the oracle recomputes ciphertext and tag under the nonce it reads)',
           disk(root, km, id1, V1, T1, O1) == '', disk(root, km, id1, V1, T1, O1))
     IX = [line(id1, 'alpha,beta')]
     check('A SELF-APPLICATION: the index is a sealed object of the store, version 1 under hkdf("")(K_M)("aletheia/index"), '
@@ -417,8 +470,9 @@ def shard_a(d, s):
     g, r = s.cmd('update', 'a', '*', id1, b'second version')
     check('A update -> ok(2), asking for obj/<id> w', r == 'ok 2' and g == G('*', 'obj/' + id1, 'w'), (r, g))
     V1 = [P1, b'second version']
-    check('A version 2 keeps the tags and owner and chains prev = hex sha256 of version 1\'s sealed blob, '
-          'in both copies, heads 2', disk(root, km, id1, V1, T1, O1) == '', disk(root, km, id1, V1, T1, O1))
+    check('A version 2 keeps the tags and owner and chains prev = hex sha256 of version 1\'s whole stored file '
+          '(its nonce included), under a nonce of its own, in both copies, heads 2',
+          disk(root, km, id1, V1, T1, O1) == '', disk(root, km, id1, V1, T1, O1))
     g, r = s.cmd('history', 'a', '*', id1)
     check('A history -> ok(1,2), asking for obj/<id> r', r == 'ok 1,2' and g == G('*', 'obj/' + id1, 'r'), (r, g))
     rs = [s.cmd('version', 'a', '*', id1, n) for n in ('3', '0')]
@@ -455,14 +509,13 @@ def shard_b(d, s):
     Q, TQ, OQ = [b'repair me: version one', b'repair me: version two'], [b'r1'], b'carol'
     R, TR, OR = [b'the other object'], [b'r2'], b'dave'
     IX = [line(id1, 'r1')]; IX.append(IX[0] + line(id2, 'r2'))
-    write_store(root, km, id1, Q, TQ, OQ); write_store(root, km, id2, R, TR, OR)
+    exp = write_store(root, km, id1, Q, TQ, OQ); write_store(root, km, id2, R, TR, OR)
     write_store(root, km, 'index', IX, IDX_TAGS, IDX_OWNER)
     s.cmd('open', 'b', root, km, 'policy')
     P = lambda side, oid, n: os.path.join(root, side, oid, str(n))
     flip(P('obj', id1, 2), 7)
     wr(os.path.join(root, 'obj', id1, 'head'), b'1'); os.unlink(os.path.join(root, 'mirror', id1, 'head'))
     g, r = s.cmd('get', 'b', '*', id1)
-    exp = chain(km, id1, Q, TQ, OQ)
     check('B a tampered newest primary, with obj/<id>/head left at 1 (as after a crash before the head was written) '
           'and mirror/<id>/head deleted: get still finds version 2 and returns it intact', r == getok(Q[1], TQ, OQ, 2), r)
     check('B ... and get rewrote the primary on disk with the authenticated mirror (auto-repair)',
@@ -491,9 +544,10 @@ def shard_c(d, s):
     root = os.path.join(d, 'store'); km = bytes(range(180, 212)); kw = bytes(range(181, 213))
     id3 = os.urandom(16).hex()
     V = [b'written by the oracle, v1', b'written by the oracle, v2', b'v3 links to v1, not v2']
-    b1 = chain(km, id3, V[:1], [b'oracle'], b'python')[0]
+    N3 = [os.urandom(12) for _ in V]   # chosen first, so that version 3 can link to the stored version 1
+    b1 = chain(km, id3, V[:1], [b'oracle'], b'python', None, N3[:1])[0]
     links = [None, None, hashlib.sha256(b1).hexdigest().encode()]
-    write_store(root, km, id3, V, [b'oracle'], b'python', links)
+    write_store(root, km, id3, V, [b'oracle'], b'python', links, N3)
     IX = [line(id3, 'oracle')]
     write_store(root, km, 'index', IX, IDX_TAGS, IDX_OWNER)
     s.cmd('open', 'c', root, km, 'policy')
@@ -602,6 +656,31 @@ def shard_d(d, s):
     check('D close drops that session\'s ephemeral objects (and makes new ones impossible), not another session\'s',
           rs == ['ok ' + root2, 'err ephemeral: session closed', 'err ephemeral: session closed', 'ok ' + E2.hex(),
                  'ok ' + root2, 'ok ' + root, 'err ephemeral: session closed'], rs)
+    # the nonce is random's: with random giving 12 bytes the gate chose for a
+    # nonce, put's object version and its index version start with them and
+    # are sealed under them; with random giving 11, 13 or 0 bytes for a
+    # nonce, put and update are refused and nothing is written. (Last in the
+    # shard, after the pipe check: this opens a third session.)
+    root3, NZ = os.path.join(d, 'store3'), os.urandom(12)
+    s.cmd('open', 'r', root3, km, 'policy')
+    wr(os.path.join(d, 'noncerandom'), NZ)
+    r = s.cmd('put', 'r', '*', b'sealed under the nonce the gate chose', 'z', 'o')[1]; idz = r[3:]
+    os.unlink(os.path.join(d, 'noncerandom'))
+    heads = [(rd(os.path.join(root3, side, o, '1')) or b'')[:12] for o in (idz, 'index') for side in ('obj', 'mirror')]
+    check('D the nonce a version is sealed under is the 12 bytes random gives for it: with random giving 12 bytes the '
+          'gate chose, the object version and the index version put writes start with them, in both copies, and are '
+          'the oracle\'s stored files under them',
+          isid(r) and heads == [NZ] * 4 and disk(root3, km, idz, [b'sealed under the nonce the gate chose'], [b'z'], b'o') == ''
+          and disk(root3, km, 'index', [line(idz, 'z')], IDX_TAGS, IDX_OWNER) == '',
+          (r, [h.hex() for h in heads], disk(root3, km, idz, [b'sealed under the nonce the gate chose'], [b'z'], b'o')))
+    before3, rs = snap(root3), []
+    for bad in (os.urandom(11), os.urandom(13), b''):
+        wr(os.path.join(d, 'noncerandom'), bad)
+        rs += [s.cmd('put', 'r', '*', b'x', 'z', 'o')[1], s.cmd('update', 'r', '*', idz, b'x')[1]]
+        os.unlink(os.path.join(d, 'noncerandom'))
+    check('D a random that gives 11, 13 or 0 bytes for a nonce refuses put and update ("random failed"), and not one '
+          'file or directory is left written', rs == ['err random failed'] * 6 and snap(root3) == before3,
+          (rs, sorted(set(snap(root3)) ^ set(before3))))
 
 # ── E: repair and failure paths, each on a store of its own ────────────────
 def shard_e(d, s):
@@ -646,9 +725,10 @@ def shard_e(d, s):
     g, r = s.cmd('put', 'h', '*', b'listed by the primary', 't', 'o')
     os.unlink(os.path.join(d, 'fixedrandom')); shutil.rmtree(os.path.join(root, 'mirror', 'index', '1.tmp'), True)
     IXH = [line(rid, 't')]
+    ix1 = rd(os.path.join(root, 'obj', 'index', '1')) or b''
     check('E a put whose index version reaches the primary but not the mirror fails, and keeps the object it lists',
           r == 'err write failed: %s/mirror/index/1' % root and disk(root, km, rid, [b'listed by the primary'], [b't'], b'o') == ''
-          and rd(os.path.join(root, 'obj', 'index', '1')) == chain(km, 'index', IXH, IDX_TAGS, IDX_OWNER)[0],
+          and len(ix1) >= 28 and ix1 == chain(km, 'index', IXH, IDX_TAGS, IDX_OWNER, None, [ix1[:12]])[0],
           (r, disk(root, km, rid, [b'listed by the primary'], [b't'], b'o')))
     g, r = s.cmd('verify', 'h')
     check('E ... and verify completes the index (checked 2, repaired 1, lost 0)',
@@ -744,6 +824,44 @@ def shard_e(d, s):
           'missing mirror directory (checked 3, repaired 1, lost 0)',
           r == 'ok 3 1 0' and disk(root, km, 'index', IXS, IDX_TAGS, IDX_OWNER) == '' and disk(root, km, ids, [b'one'], [b's'], b'o') == '',
           (r, disk(root, km, 'index', IXS, IDX_TAGS, IDX_OWNER) + disk(root, km, ids, [b'one'], [b's'], b'o')))
+    # a stored file too short to hold a nonce and a tag (12 + 16 bytes) does
+    # not authenticate, like any damaged copy: get repairs it from the mirror
+    # (and nothing halts on a nonce cut short); so does a file whose nonce is
+    # flipped (the sealed bytes intact); with both copies short the version
+    # is lost and both are left as they are
+    root = os.path.join(d, 'short')
+    i27, i5, inon, iboth = [os.urandom(16).hex() for _ in range(4)]
+    SC = lambda oid: b'short files: ' + oid.encode()
+    files = dict((oid, write_store(root, km, oid, [SC(oid)], [b's'], b'o')) for oid in (i27, i5, inon, iboth))
+    def cut(side, oid, n): open(V(root, side, oid, 1), 'wb').write(files[oid][0][:n])
+    cut('obj', i27, 27); cut('obj', i5, 5); cut('obj', iboth, 27); cut('mirror', iboth, 11)
+    b = bytearray(files[inon][0]); b[0] ^= 0x01; open(V(root, 'obj', inon, 1), 'wb').write(bytes(b))
+    s.cmd('open', 'o', root, km, 'policy')
+    rs = [s.cmd('get', 'o', '*', oid)[1] for oid in (i27, i5, inon, iboth)]
+    check('E a primary cut to 27 bytes (one short of a nonce and a tag), one cut to 5 (shorter than a nonce) and one '
+          'whose first nonce byte is flipped do not authenticate: get returns each from its mirror and rewrites the '
+          'primary with the oracle\'s bytes',
+          rs[:3] == [getok(SC(oid), [b's'], b'o', 1) for oid in (i27, i5, inon)]
+          and all(rd(V(root, 'obj', oid, 1)) == files[oid][0] for oid in (i27, i5, inon)), rs[:3])
+    check('E ... and with both copies short (27 and 11 bytes) get is "lost: version 1", both left as they were',
+          rs[3] == 'err lost: version 1' and rd(V(root, 'obj', iboth, 1)) == files[iboth][0][:27]
+          and rd(V(root, 'mirror', iboth, 1)) == files[iboth][0][:11], rs[3])
+    # a store in the format before the nonce was stored (version n sealed
+    # under n as 12 little-endian bytes, the sealed bytes alone in the file)
+    # is not misread: every version is lost, and verify changes nothing
+    root = os.path.join(d, 'oldformat')
+    ido = os.urandom(16).hex()
+    write_old(root, km, ido, [b'old format, version 1', b'old format, version 2'], [b'old'], b'o')
+    write_old(root, km, 'index', [line(ido, 'old')], IDX_TAGS, IDX_OWNER)
+    before = snap(root)
+    s.cmd('open', 'f', root, km, 'policy')
+    rs = [s.cmd('get', 'f', '*', ido)[1], s.cmd('version', 'f', '*', ido, '1')[1], s.cmd('history', 'f', '*', ido)[1],
+          s.cmd('find', 'f', '*', 'old')[1], s.cmd('update', 'f', '*', ido, b'x')[1], s.cmd('verify', 'f')[1]]
+    check('E a store in the old format (the version number as the nonce, nothing stored before the sealed bytes) reads '
+          'as lost, never as content: get, version 1, history, find and update fail, verify reports its index version '
+          'lost (checked 1, repaired 0, lost 1), and not one file changed',
+          rs == ['err lost: version 2', 'err lost: version 1', 'err chain broken at 1', 'err index: lost: version 1',
+                 'err lost: version 2', 'ok 1 0 1'] and snap(root) == before, rs)
     # an ephemeral object lives in memory only sealed: once its session is
     # closed and the heap has been collected, its plaintext is nowhere in the
     # process although its handle is still held, while the store handle's
@@ -800,6 +918,125 @@ def shard_e(d, s):
           rs == ['ok', 'err open: root has a NUL byte', 'err open: root has a NUL byte']
           and not os.path.exists(os.path.join(d, 'wanted')), (rs, os.path.exists(os.path.join(d, 'wanted'))))
 
+# ── N: no two sealings of a version share a keystream ──────────────────────
+# The oracle knows every plaintext it makes the module seal (the header and
+# the content), so it can tell keystream reuse without knowing the layout:
+# two stored files sealed under one key and one nonce XOR, over the sealed
+# bytes, to the XOR of their plaintexts. Both places the sealed bytes can
+# start are tried, offset 0 (the nonce not stored) and offset 12 (a 12-byte
+# nonce in front); equality at either is reuse.
+def xor(a, b): return bytes(x ^ y for x, y in zip(a, b))
+def reuse(fa, fb, pa, pb):
+    """the offsets (0, 12) at which the stored files fa and fb XOR to the XOR of the plaintexts pa and pb"""
+    L = min(len(pa), len(pb)); want = xor(pa[:L], pb[:L])
+    return [o for o in (0, 12) if fa is not None and fb is not None and len(fa) >= o + L and len(fb) >= o + L
+            and xor(fa[o:o + L], fb[o:o + L]) == want]
+def shard_n(d, s):
+    km = bytes(range(70, 102)); TN, ON = [b'n'], b'nonce'
+    VP = lambda root, side, oid, n: os.path.join(root, side, oid, str(n))
+    SIDES = ('obj', 'mirror')
+    def pt(root, oid, n, content):
+        """version n's plaintext; its prev is the hash of version n-1's stored file, as it is on disk"""
+        prev = b'none' if n == 1 else hashlib.sha256(rd(VP(root, 'obj', oid, n - 1)) or b'').hexdigest().encode()
+        return plain(n, TN, ON, prev, content)
+    def both(root, oid, n): return dict((side, rd(VP(root, side, oid, n))) for side in SIDES)
+    C1 = b'version one, never touched: ' + bytes(range(32, 96))
+    CA = b'the first version 2, sealed and then undone: ' + bytes(range(96, 160))
+    CB = b'the second version 2, sealed after that, with ' + bytes(range(160, 224))
+    # (a) a rollback of both copies and both heads
+    root = os.path.join(d, 'rollback'); s.cmd('open', 'a', root, km, 'policy')
+    r0 = s.cmd('put', 'a', '*', C1, 'n', 'nonce')[1]; oid = r0[3:]
+    r1 = s.cmd('update', 'a', '*', oid, CA)[1]
+    old, pa = both(root, oid, 2), pt(root, oid, 2, CA)
+    for side in SIDES:
+        if os.path.exists(VP(root, side, oid, 2)): os.unlink(VP(root, side, oid, 2))
+        wr(os.path.join(root, side, oid, 'head'), b'1')
+    r2 = s.cmd('update', 'a', '*', oid, CB)[1]
+    new, pb = both(root, oid, 2), pt(root, oid, 2, CB)
+    r3 = s.cmd('get', 'a', '*', oid)[1]
+    hits = ['%s@%d' % (side, o) for side in SIDES for o in reuse(old[side], new[side], pa, pb)]
+    check('N (a) ROLLBACK: after put, update to version 2, both copies of version 2 deleted and both heads rolled back '
+          'to 1, an update with other content seals version 2 again, but not under the same keystream (in neither '
+          'copy do the old and new version 2 XOR to the XOR of their plaintexts, at offset 0 or 12)',
+          isid(r0) and r1 == 'ok 2' and r2 == 'ok 2' and r3 == getok(CB, TN, ON, 2) and not hits,
+          ('keystream reused: ' + ' '.join(hits)) if hits else (r0, r1, r2, r3[:80]))
+    # (b) a crash that left only <n>.tmp in both copies, the heads not yet written
+    root = os.path.join(d, 'crash'); s.cmd('open', 'b', root, km, 'policy')
+    r0 = s.cmd('put', 'b', '*', C1, 'n', 'nonce')[1]; oid = r0[3:]
+    r1 = s.cmd('update', 'b', '*', oid, CA)[1]
+    old, pa = both(root, oid, 2), pt(root, oid, 2, CA)
+    for side in SIDES:
+        if os.path.exists(VP(root, side, oid, 2)): os.rename(VP(root, side, oid, 2), VP(root, side, oid, 2) + '.tmp')
+        wr(os.path.join(root, side, oid, 'head'), b'1')
+    r2 = s.cmd('update', 'b', '*', oid, CB)[1]
+    new, pb = both(root, oid, 2), pt(root, oid, 2, CB)
+    r3 = s.cmd('get', 'b', '*', oid)[1]
+    hits = ['%s@%d' % (side, o) for side in SIDES for o in reuse(old[side], new[side], pa, pb)]
+    check('N (b) CRASH: with version 2 left only as 2.tmp in both copies and both heads at 1 (a crash before the '
+          'renames), an update with other content seals version 2 again, but not under the same keystream as the '
+          'crashed write (in neither copy, at offset 0 or 12)',
+          isid(r0) and r1 == 'ok 2' and r2 == 'ok 2' and r3 == getok(CB, TN, ON, 2) and not hits,
+          ('keystream reused: ' + ' '.join(hits)) if hits else (r0, r1, r2, r3[:80]))
+    # (c) a failed write that is retried. obj/<id>/2.tmp is a symlink to a
+    # FIFO that the gate reads: the module's write goes through it to the
+    # gate (its bytes have left the process, as on a disk that filled up
+    # after the write), its size check then sees a FIFO and refuses it, and
+    # the update fails. The retry with other content must not reuse the
+    # failed write's keystream. (No privilege needed.)
+    root = os.path.join(d, 'retry'); s.cmd('open', 'c', root, km, 'policy')
+    r0 = s.cmd('put', 'c', '*', C1, 'n', 'nonce')[1]; oid = r0[3:]
+    fifo, tmp = os.path.join(d, 'retry.fifo'), VP(root, 'obj', oid, 2) + '.tmp'
+    os.mkfifo(fifo); os.symlink(fifo, tmp); got = []
+    def drain():
+        f = os.open(fifo, os.O_RDONLY); buf = b''
+        while True:
+            c = os.read(f, 65536)
+            if not c: break
+            buf += c
+        os.close(f); got.append(buf)
+    th = threading.Thread(target=drain, daemon=True); th.start()
+    try:
+        r1 = s.cmd('update', 'c', '*', oid, CA, limit=120)[1]
+    except TimeoutError:
+        r1 = '(the driver hung)'
+    th.join(10)
+    if not got:   # release the reader if nothing ever opened the FIFO
+        try: os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError: pass
+    pa = pt(root, oid, 2, CA)
+    if os.path.lexists(tmp): os.unlink(tmp)
+    os.unlink(fifo)
+    r2 = s.cmd('update', 'c', '*', oid, CB)[1]
+    new, pb = rd(VP(root, 'obj', oid, 2)), pt(root, oid, 2, CB)
+    r3 = s.cmd('get', 'c', '*', oid)[1]
+    hits = (['@%d' % o for o in reuse(got[0], new, pa, pb)] if got and got[0] else ['(nothing came through the FIFO)'])
+    check('N (c) RETRY: version 2\'s first write fails after its bytes have left the process (its .tmp is a FIFO the '
+          'gate reads, so the size check refuses it: "write failed"), and the update is retried with other content: '
+          'the failed write and the new version 2 were not sealed under the same keystream (at offset 0 or 12)',
+          isid(r0) and r1 == 'err write failed: ' + VP(root, 'obj', oid, 2) and r2 == 'ok 2'
+          and r3 == getok(CB, TN, ON, 2) and not hits,
+          ('keystream reused: ' + ' '.join(hits)) if hits and hits[0].startswith('@') else (hits, r0, r1, r2, r3[:80]))
+    # (d) 40 updates of one object, and the index versions of a put and a
+    # remove: every stored file is a nonce, then the bytes sealed under it,
+    # and no nonce occurs twice
+    root = os.path.join(d, 'many'); s.cmd('open', 'd', root, km, 'policy')
+    r0 = s.cmd('put', 'd', '*', C1, 'n', 'nonce')[1]; oid = r0[3:]
+    rs = [s.cmd('update', 'd', '*', oid, b'update %02d: ' % i + bytes(range(i, i + 40)))[1] for i in range(40)]
+    rp = s.cmd('put', 'd', '*', b'a second object', 'n', 'nonce')[1]; oid2 = rp[3:]
+    rr = s.cmd('remove', 'd', '*', oid2)[1]
+    files = [(o, n, side, rd(VP(root, side, o, n))) for o, top in ((oid, 41), ('index', 3))
+             for n in range(1, top + 1) for side in SIDES]
+    unopened = ['%s/%s/%d' % (side, o[:6], n) for o, n, side, f in files
+                if f is None or len(f) < 28 or aopen(key_of(km, o), f[:12], aad_of(o, n), f[12:]) is None]
+    nonces = [f[:12] for o, n, side, f in files if side == 'obj' and f is not None]
+    check('N (d) 40 updates of one object, and the index versions of a put and a remove: every stored file of every '
+          'version (41 object and 3 index versions, both copies) opens under the 12-byte nonce stored at its start, '
+          'and the 44 nonces are all distinct',
+          isid(r0) and rs == ['ok %d' % i for i in range(2, 42)] and isid(rp) and rr == 'ok ' + oid2
+          and not unopened and len(set(nonces)) == len(nonces) == 44,
+          ('%d of %d stored files do not open under a nonce stored at their start: %s' % (len(unopened), len(files), ' '.join(unopened[:4])))
+          if unopened else ('%d distinct nonces of %d' % (len(set(nonces)), len(nonces)), r0, rs[-1:], rp, rr))
+
 if __name__ == '__main__':
     which, d = sys.argv[1], sys.argv[2]
     if which == 'selftest':
@@ -808,7 +1045,7 @@ if __name__ == '__main__':
     log = open(os.path.join(d, 'session.log'), 'w')
     s = Session(d, log)
     try:
-        {'R': shard_r, 'A': shard_a, 'B': shard_b, 'C': shard_c, 'D': shard_d, 'E': shard_e}[which](d, s)
+        {'R': shard_r, 'A': shard_a, 'B': shard_b, 'C': shard_c, 'D': shard_d, 'E': shard_e, 'N': shard_n}[which](d, s)
         rc = s.quit()
         err = open(os.path.join(d, 'drv.err'), 'rb').read()
         check('%s the driver ran to the end: exit 0, nothing on stderr' % which, rc == 0 and err == b'', (rc, err[-200:]))
@@ -847,7 +1084,7 @@ for sh in $FS_SHARDS; do
 done
 wait
 
-for sh in R A B C D E; do
+for sh in R A B C D E N; do
     case " $FS_SHARDS " in *" $sh "*) ;; *) continue ;; esac
     d="$T/s$sh"
     if [ -s "$d/result.txt" ]; then cat "$d/result.txt"; grep -q '^FAIL' "$d/result.txt" && ok=0
@@ -867,11 +1104,11 @@ def times(shards):
         except OSError: pass
     return ', '.join('%s %.2fs' % (w, sorted(v)[len(v) // 2]) for w, v in sorted(ts.items()) if w in
                      ('open', 'put', 'get', 'update', 'history', 'version', 'find', 'verify', 'remove', 'eph', 'eread', 'close'))
-secs = ' '.join('%s %ss' % (sh, open(os.path.join(T, 's' + sh, 'secs')).read().strip()) for sh in 'RABCDE'
+secs = ' '.join('%s %ss' % (sh, open(os.path.join(T, 's' + sh, 'secs')).read().strip()) for sh in 'RABCDEN'
                 if os.path.exists(os.path.join(T, 's' + sh, 'secs')))
 print('TIME  driver compile %s; shards (parallel): %s' % (cs, secs))
 print('TIME  per operation, median wall time of the calls that returned ok, as the harness saw them (with the driver\'s hex coding):')
-print('TIME    CRYPT_FAST (A-E): ' + times('ABCDE'))
+print('TIME    CRYPT_FAST (A-E, N): ' + times('ABCDEN'))
 if os.path.exists(os.path.join(T, 'sR', 'times.txt')):
     print('TIME    CRYPT_REF (R): ' + times('R'))
 PYEOF
