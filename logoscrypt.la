@@ -39,10 +39,12 @@
 #  whole number of 64-byte blocks) is compressed once, into a midstate, and
 #  the function returned absorbs only msg. logossign.la's tweakable hashes
 #  start with a fixed block (PK.seed, zero-padded), so each costs one
-#  compression instead of two: measured on the VM, the hash under SLH-DSA's
-#  F (38 bytes after the 64-byte prefix) 486 us through the kit, 962 us by
-#  the literal formula. It is defined at the end of this file; CRYPT_FAST and
-#  its contract are unchanged by it.
+#  compression fewer than the literal formula: F, H and PRF (X of 16 or 32
+#  bytes) one instead of two, T_l more (at SLH-DSA-SHA2-128s, 10 instead of
+#  11 for a WOTS+ public key, 4 instead of 5 for the FORS roots). Measured on
+#  the VM, the hash under SLH-DSA's F (38 bytes after the 64-byte prefix)
+#  486 us through the kit, 962 us by the literal formula. It is defined at
+#  the end of this file; CRYPT_FAST and its contract are unchanged by it.
 #
 #  WHY IT IS FAST. On the SECD VM (WM_DESIGN.md, "How fast the VM is"):
 #   - naming a builtin or a glyph walks the program, so no hot code names
