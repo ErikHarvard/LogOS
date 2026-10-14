@@ -34,15 +34,25 @@
 #      with no GPU (rc 1, a drm message)
 #   7  the same, with no /dev/input/event3 at all: it halts saying there is no
 #      such device (not that it needs root, which it already is)
+#   8  check 6's run had logos_wm.users naming a directory that did not
+#      exist: before drm_mode the live entry made it, mode 700, and said it
+#      was a first run (so its lock screen is the first-run screen)
+#   9  logos_wm.users naming a regular file: it halts naming the file and
+#      never reaches drm_mode (a loud failure leaves no taken screen)
+#   10 no logos_wm.users at all, with a tmpfs over /var/lib in the namespace:
+#      it makes /var/lib/logos, mode 700, and halts at drm_mode
+# Every run of the live entry is given a users directory in the gate's own
+# directory (or a tmpfs), so the gate never makes /var/lib/logos on the host.
 #
-# ISOLATION: a private temporary directory (gate_wm_common.sh); checks 6-7 need
-# unshare -m (root) and is skipped with a NOTE without it. A few minutes,
-# mostly compiling the live WM on the VM.
+# ISOLATION: a private temporary directory (gate_wm_common.sh); checks 6-10
+# need unshare -m (root) and are skipped with a NOTE without it. A few
+# minutes, mostly compiling the live WM on the VM.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
 wm_setup wm_livestart.la theourgia_tile.la theourgia_term.la theourgia_render.la logosh.la \
-         theourgia_wm.la theourgia_termfont.la logoskit.la lk_settings.la theourgia_wm_live.la
+         theourgia_wm.la theourgia_termfont.la logoskit.la lk_settings.la theourgia_wm_live.la \
+         lk_login.la lk_firstuser.la logos_realsess.la logoscrypt.la logossec.la aletheiafs.la logossession.la
 
 python3 - "$T" <<'PYEOF'
 import sys
@@ -217,6 +227,7 @@ if unshare -m true 2>/dev/null; then
     cp "$T/compiler.bin" "$T/logos_program.bin"; cp "$T/theourgia_wm_live.la" "$T/logos_source.la"
     if ( cd "$T" && timeout "$WM_VM_TIMEOUT" ./logos_secd >/dev/null 2>"$T/vce" ); then
         echo / > "$T/logos_wm.cwd"
+        echo "$T/lu" > "$T/logos_wm.users"
         lrc=0
         ( cd "$T" && timeout 120 unshare -m --propagation private sh -c "
             mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
@@ -235,10 +246,39 @@ if unshare -m true 2>/dev/null; then
         else
             echo "FAIL  wm livestart: 7 no device node: rc=$lrc; stderr: $(head -c 300 "$T/live2.err")"; ok=0
         fi
+        if [ -d "$T/lu" ] && [ "$(stat -c %a "$T/lu")" = 700 ] && grep -qxF "wm: users in $T/lu, a first run" "$T/live.out" \
+           && grep -qi "drm" "$T/live.err"; then
+            echo "PASS  wm livestart: 8 before drm_mode the live entry made the users directory from logos_wm.users (mode 700) and called it a first run"
+        else
+            echo "FAIL  wm livestart: 8 the users directory: $(stat -c %a "$T/lu" 2>&1); stdout: $(head -c 300 "$T/live.out")"; ok=0
+        fi
+        : > "$T/ufile"; echo "$T/ufile" > "$T/logos_wm.users"
+        lrc=0
+        ( cd "$T" && timeout 120 unshare -m --propagation private sh -c "
+            mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
+            && mkdir /dev/input && : > /dev/input/event3 && exec ./logos_secd" >"$T/live3.out" 2>"$T/live3.err" ) || lrc=$?
+        if [ "$lrc" = 1 ] && grep -qF "$T/ufile is not a directory" "$T/live3.err" && ! grep -qi "drm" "$T/live3.err" "$T/live3.out"; then
+            echo "PASS  wm livestart: 9 logos_wm.users naming a file: it halts naming it, before drm_mode ($(head -c 120 "$T/live3.err"))"
+        else
+            echo "FAIL  wm livestart: 9 a users file: rc=$lrc; stderr: $(head -c 300 "$T/live3.err")"; ok=0
+        fi
+        rm -f "$T/logos_wm.users"
+        lrc=0
+        ( cd "$T" && timeout 120 unshare -m --propagation private sh -c "
+            mount --bind '$T/devices.txt' /proc/bus/input/devices && mount -t tmpfs none /dev \
+            && mkdir /dev/input && : > /dev/input/event3 && mount -t tmpfs none /var/lib \
+            && { ./logos_secd; echo \"rc=\$?\" > '$T/live4.rc'; stat -c %a /var/lib/logos > '$T/live4.mode' 2>&1; }" \
+            >"$T/live4.out" 2>"$T/live4.err" ) || lrc=$?
+        if [ "$(cat "$T/live4.rc" 2>/dev/null)" = rc=1 ] && [ "$(cat "$T/live4.mode" 2>/dev/null)" = 700 ] \
+           && grep -qxF "wm: users in /var/lib/logos, a first run" "$T/live4.out" && grep -qi "drm" "$T/live4.err"; then
+            echo "PASS  wm livestart: 10 with no logos_wm.users it makes /var/lib/logos (mode 700, in the namespace's tmpfs) and halts at drm_mode"
+        else
+            echo "FAIL  wm livestart: 10 no logos_wm.users: $(cat "$T/live4.rc" 2>&1) mode $(cat "$T/live4.mode" 2>&1); stdout: $(head -c 200 "$T/live4.out"); stderr: $(head -c 200 "$T/live4.err")"; ok=0
+        fi
     else
         echo "FAIL  wm livestart: 6 theourgia_wm_live.la did not compile: $(tail -2 "$T/vce")"; ok=0
     fi
 else
-    echo "NOTE  wm livestart: 6-7 skipped (unshare -m is not available)"
+    echo "NOTE  wm livestart: 6-10 skipped (unshare -m is not available)"
 fi
 if [ "$ok" = 1 ]; then echo "ALL PASS  gate_wm_livestart"; else echo "GATE FAILED  gate_wm_livestart"; exit 1; fi
