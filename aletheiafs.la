@@ -19,6 +19,8 @@
 #  then the effects, in this order:
 #      stat read_file write_file rename unlink mkdir rmdir pipe open close
 #      read write
+#  (write_file is no longer used: every write creates its staging file with
+#  open, see below; it keeps its place so that no caller changes.)
 #  `crypt` is the crypt record (crypt_ref.la: CRYPT_REF today, CRYPT_FAST as
 #  a drop-in); `random(n)` is the VM's random builtin (n a decimal string),
 #  passed in so that a test can make it fail.
@@ -58,9 +60,11 @@
 #  the sealed bytes) does not authenticate: every version of it reads as
 #  lost, never as content. There is no migration.
 #  A version is never written twice: a write to an n that exists in either
-#  copy is refused, so the history only grows. Every write is atomic:
-#  <path>.tmp, checked by stat to hold exactly the bytes, then renamed onto
-#  <path>.
+#  copy is refused, so the history only grows. Every write is atomic: a
+#  staging file <path>.tmp, created afresh (O_CREAT|O_EXCL, after unlinking
+#  whatever name is there: a symbolic link planted at <path>.tmp is removed,
+#  never written through), written, checked to hold exactly the bytes, then
+#  renamed onto <path>. So a write changes no existing file but <path>.
 #  A head is only a hint. The newest version is found by starting from the
 #  primary head (or, if that names a version present in neither copy, the
 #  mirror's) and probing upward while version n+1 exists in either copy, so
@@ -191,9 +195,15 @@
 #  versions written after such a rollback are sealed under fresh nonces,
 #  so the rollback reveals nothing of their plaintexts. The nonces are only
 #  as unpredictable and unrepeated as random (the VM's getrandom). What is
-#  on disk is sealed, but not hidden: the ids,
-#  the number and sizes of versions, and when they were written are
-#  visible. There is no directory listing in the VM, so objects are found
+#  on disk is sealed, but not hidden: the ids, the number and sizes of
+#  versions, and when they were written are visible. The store's own
+#  directories are taken as they are: the VM's stat follows a symbolic link
+#  and it has no lstat, so someone who can replace obj/<id> (or obj, mirror
+#  or the root) by a link to a directory outside the store makes reads,
+#  writes and remove act there, on the names the store uses (<n>, <n>.tmp,
+#  head, head.tmp); a link at a version's or a head's own name is replaced
+#  by the rename, not written through, and one at a staging name is
+#  removed. There is no directory listing in the VM, so objects are found
 #  through the index; an object whose index line is lost is still readable
 #  by id but not found or verified. Old versions are kept forever (no
 #  compaction). Repair needs one good copy; there is no erasure coding. The
@@ -294,7 +304,7 @@ glyph FS_BASE = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la 
 # this VM read_file of a missing file returns "", on a later one it halts).
 glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
     la add. la sub. la div. la mod. la lt. la int_eq.
-    la stat. la read_file. la write_file. la rename. la unlink. la mkdir. la rmdir.
+    la stat. la read_file. la rename. la unlink. la mkdir. la rmdir. la sysopen. la sysclose. la write.
     la crypt. la random. la base.
   base(la T. la F. la nil. la cons. la OK. la ERR. la BIND. la DO. la len. la slice. la find. la split.
        la joinb. la joinsep. la map. la filter. la member. la isnat. la idok. la tagsok. la ownerok.
@@ -314,12 +324,30 @@ glyph FS_STORE = la str_at. la str_to_int. la int_to_str. la concat. la str_eq.
       (la _. int_eq(mod(div(stmode(st))(C4096))(C16))(C8)(la _. stsize(st))(la _. sub(C0)(C1))(C0))(C0))
       (stat(p)))(la fsize.
   # awrite(p)(data): write p.tmp, check that it holds exactly data, rename it
-  # onto p (atomic); on any failure the temporary is removed and it is an err
+  # onto p (atomic); on any failure the temporary is removed and it is an err.
+  # The staging file is created afresh, open flags 193 = O_WRONLY|O_CREAT|
+  # O_EXCL, which fails on any name already there, a symbolic link or a FIFO
+  # included, so a write never opens what it finds at p.tmp. Whatever is there
+  # (a crashed write's leftover, or anything planted) is unlinked first, which
+  # removes a link and does not follow it; a name that is back by the time of
+  # the open makes the write fail. So the only existing name a write changes
+  # is p, and that by rename (a link at p is replaced, not written through).
+  # The write must report every byte, close must succeed, and stat must then
+  # see exactly that many bytes in a regular file.
   LET(la p. la data. (la tmp. (la fail.
-        DO(write_file(tmp)(data))(la _.
-          int_eq(fsize(tmp))(len(data))
-            (la _. str_eq(rename(tmp)(p))("0")(la _. OK(p))(la _. fail(C0))(C0))
-            (la _. fail(C0))(C0)))
+        DO(unlink(tmp))(la _. (la fd.
+          str_eq(str_at(fd)(C0))("-")
+            (la _. fail(C0))
+            (la _. (la w. (la c.
+                str_eq(w)(int_to_str(len(data)))
+                  (la _. str_eq(c)("0")
+                      (la _. int_eq(fsize(tmp))(len(data))
+                          (la _. str_eq(rename(tmp)(p))("0")(la _. OK(p))(la _. fail(C0))(C0))
+                          (la _. fail(C0))(C0))
+                      (la _. fail(C0))(C0))
+                  (la _. fail(C0))(C0))
+              (sysclose(fd)))(write(fd)(data)))(C0))
+          (sysopen(tmp)("193"))))
       (la _. DO(unlink(tmp))(la _. ERR(concat("write failed: ")(p)))))
     (concat(p)(".tmp")))(la awrite.
   LET(la p. DO(mkdir(p)("448"))(la _. isdir(p)(la _. OK(p))(la _. ERR(concat("cannot create ")(p)))(C0)))(la mkd.
@@ -468,7 +496,7 @@ glyph FS_KIT = la str_at. la ord. la str_len. la str_to_int. la int_to_str. la c
        la joinb. la joinsep. la map. la filter. la member. la isnat. la idok. la tagsok. la ownerok.
        la C0. la C1. la C2. la C12. la C16. la C32.
   FS_STORE(str_at)(str_to_int)(int_to_str)(concat)(str_eq)(add)(sub)(div)(mod)(lt)(int_eq)
-          (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(crypt)(random)(base)
+          (stat)(read_file)(rename)(unlink)(mkdir)(rmdir)(sysopen)(sysclose)(write)(crypt)(random)(base)
   (la exists. la rd. la awrite. la mkd. la pdir. la mdir. la latest. la readver. la writever. la parse.
    la readidx. la writeidx. la lines. la lineid. la linetags. la walk. la fixheads. la delobj. la plink.
   crypt(la sha256. la hmac. la hkdf. la seal. la aopen. la hex.

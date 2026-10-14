@@ -66,14 +66,20 @@
 #      newest readable index version lists and repairs them; a put whose
 #      index version reaches neither copy leaves no trace of its object, one
 #      that reaches the primary keeps it and verify completes the index; a
-#      repair on read whose write fails (rename onto a directory, no space)
-#      returns the content, leaves no .tmp and keeps the old primary;
+#      repair on read whose write fails (rename onto a directory, a write
+#      cut short by the file-size limit) returns the content, leaves no .tmp
+#      and keeps the old primary;
+#      a symbolic link to a file outside the store planted at every staging
+#      name an update, a put, a repair on read and verify write is removed,
+#      never written through (no file outside changes), and with the link
+#      still there when the staging file is opened (the driver's unlink
+#      keeping every name) the write is refused;
 #      history refuses a version 1 whose prev is not "none", and a chain
 #      through a version it cannot read (lost, or not a version); an authentic
 #      version whose header has the wrong n= or len= is refused; remove
 #      takes a crashed write's .tmp files with the object, and removes an
-#      object whose mirror directory is already gone; a
-#      wrong K_M's verify changes no file even where heads are stale, the
+#      object whose mirror directory is already gone; a wrong K_M's verify
+#      changes no file even where heads are stale, the
 #      right one fixes them and rebuilds a missing mirror directory; an
 #      ephemeral object's plaintext is not kept in memory by its handle, nor
 #      the session key by the store handle (the driver's memory is scanned
@@ -92,11 +98,11 @@
 #      those two offsets are tried; (d) and shard D pin the layout). (a) a
 #      rollback of both copies and both heads, then an update; (b) a crash
 #      that left only 2.tmp in both copies, then an update; (c) a write that
-#      fails after its bytes left the process (its .tmp a FIFO the gate
-#      reads) and is retried; (d) 40 updates and three index versions: every
-#      stored file opens under the nonce at its start, and all 44 nonces are
-#      distinct. Against the format with the version number as the nonce,
-#      all four fail.
+#      fails after its bytes left the process (its .tmp written in full, the
+#      rename refused by the driver) and is retried; (d) 40 updates and three
+#      index versions: every stored file opens under the nonce at its start,
+#      and all 44 nonces are distinct. Against the format with the version
+#      number as the nonce, all four fail.
 # Every operation's guard questions are checked exactly (resource and op).
 # COST. With CRYPT_FAST an operation takes milliseconds and shards A-E a few
 # seconds each. With CRYPT_REF one HKDF takes 95 s or more (CRYPT_REF names
@@ -169,6 +175,15 @@ glyph RND = la n. HAS("badrandom")(la _. "")(la _.
     str_eq(n)("16")(la _. HAS("fixedrandom")(la _. read_file("fixedrandom"))(la _. random(n))("!"))(la _.
     str_eq(n)("12")(la _. HAS("noncerandom")(la _. read_file("noncerandom"))(la _. random(n))("!"))
       (la _. random(n))("!"))("!"))("!")
+# REN(a)(b): rename(a)(b); but while ./failrename exists, the bytes of a are
+# copied to ./failedwrite and the rename is refused (-5, EIO) without
+# renaming: a write that fails after its bytes have left the process
+glyph REN = la a. la b. HAS("failrename")(la _. (la _. "-5")(write_file("failedwrite")(read_file(a))))
+    (la _. rename(a)(b))("!")
+# UNL(p): unlink(p); but while ./keepnames exists, nothing is unlinked (-1):
+# a name planted at a staging path is still there when the write opens it,
+# as if it had been planted again between the unlink and the open
+glyph UNL = la p. HAS("keepnames")(la _. "-1")(la _. unlink(p))("!")
 # CHURN(n): allocate n MiB that die at once, so that the heap is collected
 # several times over (each semispace is 768 MiB) and what is not live is
 # overwritten
@@ -211,7 +226,7 @@ glyph LOOP = Z(la loop. la fs. la slots. la ephs. la buf.
   (SPLIT(line)(" "))))
 glyph MAIN = (la fs. LOOP(fs)(NIL)(NIL)(""))
   (FS_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
-         (stat)(read_file)(write_file)(rename)(unlink)(mkdir)(rmdir)(pipe)(open)(close)(read)(write)
+         (stat)(read_file)(write_file)(REN)(UNL)(mkdir)(rmdir)(pipe)(open)(close)(read)(write)
          (@CRYPT@)(RND))
 LAEOF
 sed -e 's/@IMPORT@/import("logoscrypt.la")/' \
@@ -221,7 +236,7 @@ sed -e 's/@IMPORT@/import("crypt_ref.la")/' -e 's/@CRYPT@/CRYPT_REF/' "$T/drv.tp
 
 # ── the oracle and the shards ───────────────────────────────────────────────
 cat > "$T/fsgate.py" <<'PYEOF'
-import hashlib, hmac, os, select, shutil, struct, subprocess, sys, threading, time
+import hashlib, hmac, os, resource, select, shutil, struct, subprocess, sys, time
 
 def _rotl(v, c): return ((v << c) & 0xffffffff) | (v >> (32 - c))
 def _qr(s, a, b, c, d):
@@ -738,23 +753,82 @@ def shard_e(d, s):
     # a repair on read whose write fails still returns the authenticated
     # content and leaves nothing behind: no .tmp, and the primary is not
     # replaced. One object's primary path is a directory (the rename fails);
-    # the other's primary is tampered and its .tmp is /dev/full (the write
-    # runs out of space)
+    # the other's primary is tampered and the driver's file-size limit
+    # (RLIMIT_FSIZE, lowered to 20 bytes for that one get) cuts the write of
+    # its repair short, as a disk that fills up would
     root = os.path.join(d, 'badwrite')
     idg, idf = os.urandom(16).hex(), os.urandom(16).hex()
     write_store(root, km, idg, [b'the rename fails'], [b'g'], b'o'); write_store(root, km, idf, [b'the disk is full'], [b'f'], b'o')
     os.unlink(V(root, 'obj', idg, 1)); os.mkdir(V(root, 'obj', idg, 1))
     flip(V(root, 'obj', idf, 1), 4); bad = rd(V(root, 'obj', idf, 1))
-    os.symlink('/dev/full', V(root, 'obj', idf, 1) + '.tmp')
     s.cmd('open', 'w', root, km, 'policy')
-    rs = [s.cmd('get', 'w', '*', idg)[1], s.cmd('get', 'w', '*', idf)[1]]
+    rs = [s.cmd('get', 'w', '*', idg)[1]]
+    lim = resource.prlimit(s.p.pid, resource.RLIMIT_FSIZE)
+    resource.prlimit(s.p.pid, resource.RLIMIT_FSIZE, (20, lim[1]))
+    try:
+        rs.append(s.cmd('get', 'w', '*', idf)[1])
+    finally:
+        resource.prlimit(s.p.pid, resource.RLIMIT_FSIZE, lim)
     lg, lf = sorted(os.listdir(os.path.join(root, 'obj', idg))), sorted(os.listdir(os.path.join(root, 'obj', idf)))
-    check('E a repair on read whose write fails (a rename onto a directory; a write out of space) still returns the '
-          'mirror\'s content, leaves no .tmp behind and does not replace the primary',
+    check('E a repair on read whose write fails (a rename onto a directory; a write cut short by the file-size limit) '
+          'still returns the mirror\'s content, leaves no .tmp behind and does not replace the primary',
           rs == [getok(b'the rename fails', [b'g'], b'o', 1), getok(b'the disk is full', [b'f'], b'o', 1)]
-          and lg == lf == ['1', 'head'] and os.path.isdir(V(root, 'obj', idg, 1))
-          and not os.path.islink(V(root, 'obj', idf, 1)) and rd(V(root, 'obj', idf, 1)) == bad,
-          (rs, lg, lf, os.path.islink(V(root, 'obj', idf, 1))))
+          and lg == lf == ['1', 'head'] and os.path.isdir(V(root, 'obj', idg, 1)) and rd(V(root, 'obj', idf, 1)) == bad,
+          (rs, lg, lf))
+    # a write never goes through a name it finds at a staging path: every
+    # .tmp that an update (its versions and its heads), a put (its index
+    # version and heads), a repair on read and verify's repairs write is
+    # planted as a symbolic link to a file outside the store. Each operation
+    # succeeds, the links are gone (removed, not followed), every file
+    # outside is as it was, and the store holds the oracle's files. With the
+    # driver's unlink keeping every name (./keepnames: as if the link were
+    # planted again between the unlink and the open), the write is refused
+    # and still writes nothing outside
+    root, out = os.path.join(d, 'links'), os.path.join(d, 'outside')
+    victims = {}
+    def plant(path, name):
+        victims[name] = os.path.join(out, name); wr(victims[name], b'outside the store: ' + name.encode() + b'\n')
+        os.symlink(victims[name], path)
+    s.cmd('open', 'L', root, km, 'policy')
+    rs = [s.cmd('put', 'L', '*', b'linked, version 1', 'l', 'o')[1]]; idl = rs[0][3:]
+    for side in ('obj', 'mirror'):
+        plant(V(root, side, idl, 2) + '.tmp', side + '-version'); plant(os.path.join(root, side, idl, 'head.tmp'), side + '-head')
+        plant(V(root, side, 'index', 2) + '.tmp', side + '-index'); plant(os.path.join(root, side, 'index', 'head.tmp'), side + '-indexhead')
+    rs += [s.cmd('update', 'L', '*', idl, b'linked, version 2')[1], s.cmd('put', 'L', '*', b'another', 'l', 'o')[1]]
+    idm = rs[2][3:]
+    def flipif(p, i):   # (a module that failed the update or the put above left nothing to flip)
+        if os.path.isfile(p): flip(p, i)
+    flipif(V(root, 'obj', idl, 2), 3); plant(V(root, 'obj', idl, 2) + '.tmp', 'get-repair')
+    rs.append(s.cmd('get', 'L', '*', idl)[1])
+    if os.path.lexists(V(root, 'obj', idl, 1)): os.unlink(V(root, 'obj', idl, 1))
+    plant(V(root, 'obj', idl, 1) + '.tmp', 'verify-primary')
+    flipif(V(root, 'mirror', idm, 1), 5)
+    if os.path.isdir(os.path.join(root, 'mirror', idm)): plant(V(root, 'mirror', idm, 1) + '.tmp', 'verify-mirror')
+    rs.append(s.cmd('verify', 'L')[1])
+    links = sorted(os.path.join(r, x) for r, ds, fs in os.walk(root) for x in ds + fs if os.path.islink(os.path.join(r, x)))
+    changed = sorted(n for n, p in victims.items() if rd(p) != b'outside the store: ' + n.encode() + b'\n')
+    IXL = [line(idl, 'l')]; IXL.append(IXL[0] + line(idm, 'l'))
+    dk = (disk(root, km, idl, [b'linked, version 1', b'linked, version 2'], [b'l'], b'o')
+          + disk(root, km, idm, [b'another'], [b'l'], b'o') + disk(root, km, 'index', IXL, IDX_TAGS, IDX_OWNER))
+    check('E a symbolic link to a file outside the store planted at every staging name an update, a put, a repair on '
+          'read and verify write (versions, heads, the index): each succeeds, no file outside changes, no link is left '
+          'in the store, and the store holds the oracle\'s files',
+          isid(rs[0]) and rs[1] == 'ok 2' and isid(rs[2]) and rs[3] == getok(b'linked, version 2', [b'l'], b'o', 2)
+          and rs[4] == 'ok 5 2 0' and not changed and not links and dk == '', (rs, changed, links, dk))
+    plant(V(root, 'obj', idl, 3) + '.tmp', 'replanted')
+    wr(os.path.join(d, 'keepnames'), b'')
+    r1 = s.cmd('update', 'L', '*', idl, b'linked, version 3')[1]
+    os.unlink(os.path.join(d, 'keepnames'))
+    gone = not os.path.lexists(V(root, 'obj', idl, 3)) and not os.path.lexists(V(root, 'mirror', idl, 3))
+    r2 = s.cmd('update', 'L', '*', idl, b'linked, version 3')[1]
+    check('E ... and with that link still there when the write opens its staging file (the driver\'s unlink keeping '
+          'every name), the update is refused ("write failed"), writes no version and nothing outside; once the name '
+          'can be unlinked, the update succeeds and the file outside is still as it was',
+          r1 == 'err write failed: ' + V(root, 'obj', idl, 3) and gone and r2 == 'ok 3'
+          and rd(victims['replanted']) == b'outside the store: replanted\n'
+          and disk(root, km, idl, [b'linked, version 1', b'linked, version 2', b'linked, version 3'], [b'l'], b'o') == '',
+          (r1, gone, r2, 'the file outside is %s' % ('as it was' if rd(victims['replanted']) == b'outside the store: replanted\n'
+                                                       else 'overwritten (%d bytes)' % len(rd(victims['replanted']) or b''))))
     # history checks version 1's link too: its prev must be "none"
     root = os.path.join(d, 'v1prev')
     idp = os.urandom(16).hex()
@@ -981,45 +1055,29 @@ def shard_n(d, s):
           'crashed write (in neither copy, at offset 0 or 12)',
           isid(r0) and r1 == 'ok 2' and r2 == 'ok 2' and r3 == getok(CB, TN, ON, 2) and not hits,
           ('keystream reused: ' + ' '.join(hits)) if hits else (r0, r1, r2, r3[:80]))
-    # (c) a failed write that is retried. obj/<id>/2.tmp is a symlink to a
-    # FIFO that the gate reads: the module's write goes through it to the
-    # gate (its bytes have left the process, as on a disk that filled up
-    # after the write), its size check then sees a FIFO and refuses it, and
-    # the update fails. The retry with other content must not reuse the
-    # failed write's keystream. (No privilege needed.)
+    # (c) a failed write that is retried. While ./failrename exists the
+    # driver's rename copies the staging file to ./failedwrite and refuses
+    # the rename (EIO): version 2's first write fails after its bytes have
+    # left the process (written in full to obj/<id>/2.tmp), and the update
+    # fails. The retry with other content must not reuse the failed write's
+    # keystream. (No privilege needed.)
     root = os.path.join(d, 'retry'); s.cmd('open', 'c', root, km, 'policy')
     r0 = s.cmd('put', 'c', '*', C1, 'n', 'nonce')[1]; oid = r0[3:]
-    fifo, tmp = os.path.join(d, 'retry.fifo'), VP(root, 'obj', oid, 2) + '.tmp'
-    os.mkfifo(fifo); os.symlink(fifo, tmp); got = []
-    def drain():
-        f = os.open(fifo, os.O_RDONLY); buf = b''
-        while True:
-            c = os.read(f, 65536)
-            if not c: break
-            buf += c
-        os.close(f); got.append(buf)
-    th = threading.Thread(target=drain, daemon=True); th.start()
-    try:
-        r1 = s.cmd('update', 'c', '*', oid, CA, limit=120)[1]
-    except TimeoutError:
-        r1 = '(the driver hung)'
-    th.join(10)
-    if not got:   # release the reader if nothing ever opened the FIFO
-        try: os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
-        except OSError: pass
-    pa = pt(root, oid, 2, CA)
-    if os.path.lexists(tmp): os.unlink(tmp)
-    os.unlink(fifo)
+    wr(os.path.join(d, 'failrename'), b'')
+    r1 = s.cmd('update', 'c', '*', oid, CA)[1]
+    os.unlink(os.path.join(d, 'failrename'))
+    failed, pa = rd(os.path.join(d, 'failedwrite')), pt(root, oid, 2, CA)
+    left = [x for x in ('obj', 'mirror') if os.path.lexists(VP(root, x, oid, 2)) or os.path.lexists(VP(root, x, oid, 2) + '.tmp')]
     r2 = s.cmd('update', 'c', '*', oid, CB)[1]
     new, pb = rd(VP(root, 'obj', oid, 2)), pt(root, oid, 2, CB)
     r3 = s.cmd('get', 'c', '*', oid)[1]
-    hits = (['@%d' % o for o in reuse(got[0], new, pa, pb)] if got and got[0] else ['(nothing came through the FIFO)'])
-    check('N (c) RETRY: version 2\'s first write fails after its bytes have left the process (its .tmp is a FIFO the '
-          'gate reads, so the size check refuses it: "write failed"), and the update is retried with other content: '
-          'the failed write and the new version 2 were not sealed under the same keystream (at offset 0 or 12)',
-          isid(r0) and r1 == 'err write failed: ' + VP(root, 'obj', oid, 2) and r2 == 'ok 2'
+    hits = ['@%d' % o for o in reuse(failed, new, pa, pb)] if failed else ['(nothing was written)']
+    check('N (c) RETRY: version 2\'s first write fails after its bytes have left the process (its .tmp written in full, '
+          'then the rename refused: "write failed", no .tmp left), and the update is retried with other content: the '
+          'failed write and the new version 2 were not sealed under the same keystream (at offset 0 or 12)',
+          isid(r0) and r1 == 'err write failed: ' + VP(root, 'obj', oid, 2) and not left and r2 == 'ok 2'
           and r3 == getok(CB, TN, ON, 2) and not hits,
-          ('keystream reused: ' + ' '.join(hits)) if hits and hits[0].startswith('@') else (hits, r0, r1, r2, r3[:80]))
+          ('keystream reused: ' + ' '.join(hits)) if hits and hits[0].startswith('@') else (hits, left, r0, r1, r2, r3[:80]))
     # (d) 40 updates of one object, and the index versions of a put and a
     # remove: every stored file is a nonce, then the bytes sealed under it,
     # and no nonce occurs twice
