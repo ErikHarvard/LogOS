@@ -19,10 +19,11 @@
 #      the same stub stat and mkdir (identical answers): its first line,
 #      trimmed as the cwd is; /var/lib/logos when the file is missing or its
 #      first line is blank; a missing directory made with mode 0700 (448),
-#      one level; a FIRST RUN exactly when DIR/users does not exist (a
-#      directory that exists without users/ is a first run, one with users/
-#      is not); and three loud halts, each naming the path: a regular file,
-#      a missing parent, a stat error other than "does not exist"
+#      one level; a FIRST RUN exactly when stat(DIR/users) is -2 (a
+#      directory that exists without users/ is a first run; one with users/
+#      a directory, a regular file, or not stat-able (-13) is not); and three
+#      loud halts, each naming the path: a regular file, a missing parent, a
+#      stat error other than "does not exist"
 #   5  the same with the VM's real stat and mkdir in the gate's directory: a
 #      missing directory is created with mode 700 and is a first run, an
 #      existing one with users/ is not, an empty existing one is; a regular
@@ -147,15 +148,20 @@ cat > "$T/users.la" <<'LAEOF'
 import("wm_livestart.la")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 # the stub world: /srv/l has users/, /srv/e is an empty directory, /srv/f a
-# regular file, /srv/acc cannot be stat'ed; everything else does not exist.
+# regular file, /srv/acc cannot be stat'ed; /srv/uf's users is a regular file
+# and /srv/ua's cannot be stat'ed; everything else does not exist.
 # mkdir prints what it is asked and fails (no such parent) under /nope only.
 glyph ST = la p. str_eq(p)("/srv/l")("16877 4096")(str_eq(p)("/srv/l/users")("16832 4096")(
-  str_eq(p)("/srv/e")("16877 4096")(str_eq(p)("/srv/f")("33188 10")(str_eq(p)("/srv/acc")("-13")("-2")))))
+  str_eq(p)("/srv/e")("16877 4096")(str_eq(p)("/srv/f")("33188 10")(str_eq(p)("/srv/acc")("-13")(
+  str_eq(p)("/srv/uf")("16877 4096")(str_eq(p)("/srv/uf/users")("33188 0")(
+  str_eq(p)("/srv/ua")("16877 4096")(str_eq(p)("/srv/ua/users")("-13")("-2")))))))))
 glyph MK = la p. la m. (la _. str_eq(p)("/nope/x")("-2")("0"))(print(concat("  mkdir ")(concat(p)(concat(" ")(m)))))
 glyph USERS = USERS_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(error)(ST)(MK)
 glyph CR = chr("13")
 glyph SHOW = la n. la t. USERS(t)(la d. la f. print(concat(n)(concat(": dir=")(concat(d)(concat(" first=")(f("yes")("no")))))))
-glyph MAIN = (la _. (la _. (la _. (la _. (la _. SHOW("new")("/srv/new\n"))
+glyph MAIN = (la _. (la _. (la _. (la _. (la _. (la _. (la _. SHOW("new")("/srv/new\n"))
+  (SHOW("uacc")("/srv/ua\n")))
+  (SHOW("ufile")("/srv/uf\n")))
   (SHOW("trim")(concat(" \t/srv/e  ")(concat(CR)("\n/srv/l\n")))))
   (SHOW("crlf")(concat("/srv/l")(concat(CR)("\n")))))
   (SHOW("blank")("  \t \n/srv/l\n")))
@@ -168,6 +174,8 @@ missing: dir=/var/lib/logos first=yes
 blank: dir=/var/lib/logos first=yes
 crlf: dir=/srv/l first=no
 trim: dir=/srv/e first=yes
+ufile: dir=/srv/uf first=no
+uacc: dir=/srv/ua first=no
   mkdir /srv/new 448
 new: dir=/srv/new first=yes'
 wm_host users.la "$T/usersh.txt"; uh=$hrc; cp "$T/usersh.txt" "$T/usersh0.txt"
@@ -188,7 +196,7 @@ for c in "f|/srv/f|is not a directory|" "x|/nope/x|mkdir -> -2|  mkdir /nope/x 4
 done
 if [ "$uh" = 0 ] && [ "$uv" = 0 ] && [ "$(cat "$T/usersh0.txt")" = "$USERSEXPECT" ] && [ "$(cat "$T/usersv.txt")" = "$USERSEXPECT" ] \
    && [ "$halts" = " f x acc" ]; then
-    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff DIR/users is absent; a file, a missing parent and a stat error halt naming the path; host = VM"
+    echo "PASS  wm livestart: 4 the users directory: first line trimmed, /var/lib/logos when missing or blank, made 0700 when missing, first run iff stat(DIR/users) is -2 (users/ a file or -13 is not); a file, a missing parent and a stat error halt naming the path; host = VM"
 else
     echo "FAIL  wm livestart: 4 the users directory: host rc=$uh VM rc=$uv, halts:$halts"
     echo "      host: $(tr '\n' '|' < "$T/usersh0.txt")"; echo "      VM:   $(tr '\n' '|' < "$T/usersv.txt")"; ok=0
