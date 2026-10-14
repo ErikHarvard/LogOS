@@ -54,7 +54,17 @@
 #      permutation line must have timed a permutation: at least half a
 #      squeeze block (no output byte shows whether a 0-byte SHAKE absorbed
 #      its message, so a SHAKE that skipped it would report one that never
-#      ran).
+#      ran);
+#  10. the comparisons, as gate_x25519.sh checks its ladder: a second kit is
+#      built with an lt and an int_eq that print their arguments (the only
+#      builtins of the kit that give a boolean, so every branch the LA code
+#      takes goes through them), and each function hashes messages of one
+#      length with four contents (seeded random, all 0x00, all 0xFF, all
+#      0x80), at lengths r-1 and r (and 200 for SHA3-512, SHAKE to 200
+#      bytes): every content must give the same comparisons with the same
+#      arguments, and every digest hashlib's. This is the LA code's part
+#      only: the engines' ord and str_to_int loop once per decimal digit of
+#      a byte, and an output byte indexes a table (logossha3.la's header).
 # ISOLATION: private temp dir (gate_wm_common.sh). The VM test program is
 # compiled once and run per arm with mode.txt naming the arm; the C host run
 # (about 20 s) starts first and runs beside the VM arms; the whole
@@ -150,6 +160,9 @@ def parse_module(src):
         else: raise SyntaxError("unexpected top-level %s (a kit module imports nothing)" % peek())
     return glyphs
 SWEEPOUT = {"k128": 32, "k256": 64}
+BRCASES = [("s256", 135), ("s256", 136), ("s512", 71), ("s512", 72), ("s512", 200),
+           ("k128", 167), ("k128", 168), ("k256", 135), ("k256", 136)]
+BRCONT = ["rnd", "00", "ff", "80"]
 def H(tag, m, L=None):
     if tag == "s256": return hashlib.sha3_256(m).digest()
     if tag == "s512": return hashlib.sha3_512(m).digest()
@@ -169,6 +182,41 @@ if cmd == "data":
         for n in range(3 * r + 2):
             open("m/%s_%d" % (tag, n), "wb").write(rnd.randbytes(n))
     open("m/t1k", "wb").write(rnd.randbytes(1024)); open("m/t10k", "wb").write(rnd.randbytes(10240))
+    # the comparisons arm: m/br_<tag>_<content>_<n>, one length, four contents
+    for tag, n in BRCASES:
+        for c in BRCONT:
+            open("m/br_%s_%s_%d" % (tag, c, n), "wb").write(rnd.randbytes(n) if c == "rnd" else bytes.fromhex(c) * n)
+elif cmd == "branches":
+    # CASE <tag> <n> <content>, then the BR lines (every lt and int_eq of
+    # that hash, with its arguments), then OUT <hex>; the kit build's own
+    # comparisons come before the first CASE
+    got, cur, out = {}, None, {}
+    lines = open(sys.argv[2]).read().split("\n")
+    for l in lines:
+        if l.startswith("CASE "):
+            _, tag, n, c = l.split(" "); cur = (tag, int(n), c); got[cur] = []
+        elif l.startswith("BR ") and cur is not None: got[cur].append(l)
+        elif l.startswith("OUT ") and cur is not None: out[cur] = l[4:]; cur = None
+    assert "end" in lines, "no end line"
+    groups = []
+    for tag, n in BRCASES:
+        ts = []
+        for c in BRCONT:
+            k = (tag, n, c)
+            assert k in got, "no case %s %d %s" % k
+            m = open("m/br_%s_%s_%d" % (tag, c, n), "rb").read()
+            want = H(tag, m, 200).hex()
+            assert out.get(k) == want, "%s of %d bytes of %s: %s, hashlib %s" % (tag, n, c, (out.get(k) or "none")[:32], want[:32])
+            ts.append(got[k])
+        assert ts[0], "%s %d: no comparisons recorded" % (tag, n)
+        for c, t in zip(BRCONT, ts):
+            if t != ts[0]:
+                i = next((i for i, (a, b) in enumerate(zip(ts[0], t)) if a != b), min(len(t), len(ts[0])))
+                raise AssertionError("%s of %d bytes: %s and %s make different comparisons: call %d is %r for %s, %r for %s (%d and %d calls)"
+                                     % (tag, n, BRCONT[0], c, i, (ts[0][i:i + 1] or ["none"])[0], BRCONT[0],
+                                        (t[i:i + 1] or ["none"])[0], c, len(ts[0]), len(t)))
+        groups.append("%s %d: %d" % (tag, n, len(ts[0])))
+    print("ok " + ", ".join(groups))
 elif cmd == "sweep":
     for tag in ("s256", "s512", "k128", "k256"):
         for n in range(3 * RATE[tag] + 2): print(tag, n, H(tag, msg(tag, n)).hex())
@@ -463,6 +511,25 @@ glyph POS = la s2. la s5. la k1. la k2. la hex.
   (clock_gettime)("attack at dawn")(32)(64)
 glyph NEG128 = la s2. la s5. la k1. la k2. la hex. SEQ(k1("abc")(sub(0)(1)))(print("NOT REACHED"))
 glyph NEG256 = la s2. la s5. la k1. la k2. la hex. SEQ(k2("abc")(sub(0)(1)))(print("NOT REACHED"))
+# the comparisons: a second kit whose lt and int_eq print their arguments;
+# each case prints CASE, then the hash runs (its BR lines), then OUT
+glyph BRDO = la t2. la t5. la u1. la u2. la tag. la m.
+  str_eq(tag)("s256")(la _. t2(m))(la _. str_eq(tag)("s512")(la _. t5(m))(la _.
+  str_eq(tag)("k128")(la _. u1(m)(200))(la _. u2(m)(200))("!"))("!"))("!")
+glyph BRMSG = la tag. la c. la n. read_file(concat("m/br_")(concat(tag)(concat("_")(concat(c)(concat("_")(int_to_str(n)))))))
+glyph BRONE = la hex. la t2. la t5. la u1. la u2. la tag. la n. la c.
+  SEQ(print(SP(SP(SP("CASE")(tag))(int_to_str(n)))(c)))
+     (print(SP("OUT")(hex(BRDO(t2)(t5)(u1)(u2)(tag)(BRMSG(tag)(c)(n))))))
+glyph BRANCHES = la s2. la s5. la k1. la k2. la hex.
+  SHA3_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)
+    (la a. la b. SEQ(print(concat("BR lt ")(SP(int_to_str(a))(int_to_str(b)))))(lt(a)(b)))
+    (la a. la b. SEQ(print(concat("BR eq ")(SP(int_to_str(a))(int_to_str(b)))))(int_eq(a)(b)))
+    (band)(bor)(bxor)(bshl)(bshr)
+   (la t2. la t5. la u1. la u2.
+     SEQ(FOR(C(PR("s256")(135))(C(PR("s256")(136))(C(PR("s512")(71))(C(PR("s512")(72))(C(PR("s512")(200))
+             (C(PR("k128")(167))(C(PR("k128")(168))(C(PR("k256")(135))(C(PR("k256")(136))(NIL))))))))))
+           (la p. p(la tag. la n. FOR(C("rnd")(C("00")(C("ff")(C("80")(NIL)))))(BRONE(hex)(t2)(t5)(u1)(u2)(tag)(n)))))
+        (print("end")))
 glyph DISPATCH = Z(la go. la mode. la l. la args. l(la _. print(concat("unknown mode ")(mode)))
     (la h. la t. h(la name. la f. str_eq(name)(mode)(la _. args(f))(la _. go(mode)(t)(args))("!"))))
 glyph MAIN = SHA3_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
@@ -470,7 +537,7 @@ glyph MAIN = SHA3_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
  (la s2. la s5. la k1. la k2.
    (la hex. DISPATCH(read_file("mode.txt"))
       (C(PR("kat")(KAT))(C(PR("sweep")(SWEEP))(C(PR("outlen")(OUTLEN))(C(PR("host")(HOST))
-      (C(PR("time")(TIME))(C(PR("pos")(POS))(C(PR("neg128")(NEG128))(C(PR("neg256")(NEG256))(NIL)))))))))
+      (C(PR("time")(TIME))(C(PR("pos")(POS))(C(PR("neg128")(NEG128))(C(PR("neg256")(NEG256))(C(PR("branches")(BRANCHES))(NIL))))))))))
       (la f. f(s2)(s5)(k1)(k2)(hex)))
    (HEXKIT(str_at)(ord)(str_to_int)(concat)(str_len)(add)(lt)(bshr)(band)(Z)))
 LAEOF
@@ -571,6 +638,15 @@ for k in 128 256; do
         echo "FAIL  sha3 misuse (VM): shake$k(-1): rc=$vrc stdout=$(head -c 80 "$T/neg.out") stderr=$(head -c 120 "$T/vre")"; ok=0
     fi
 done
+
+# ── 10. the comparisons do not depend on the bytes ─────────────────────────
+vm_run t.bin branches "$T/br.out"
+bres=$(cd "$T" && python3 oracle.py branches br.out 2>&1 | tail -1)
+if [ "$vrc" = 0 ] && [ "${bres%% *}" = ok ]; then
+    echo "PASS  sha3 comparisons (VM): a kit built with an lt and an int_eq that print their arguments makes the same comparisons, with the same arguments, for messages of one length whatever their bytes (seeded random, all 0x00, all 0xFF, all 0x80), every digest hashlib's; calls per hash: ${bres#ok }"
+else
+    echo "FAIL  sha3 comparisons (VM): rc=$vrc seed=$SHA3_SEED: $bres"; tail -3 "$T/vre"; ok=0
+fi
 
 # ── 6. confine ────────────────────────────────────────────────────────────
 cat > "$T/cf.la" <<'LAEOF'

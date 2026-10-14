@@ -123,9 +123,16 @@
 #  permutations) takes about 18 s.
 #
 #  HONESTLY OUT OF SCOPE
-#   - Constant time. Nothing branches on the message's or the state's bytes
-#     (only on lengths), but the VM interprets and allocates: no timing claim
-#     is made about this engine.
+#   - Constant time. The LA code branches only on lengths and counters,
+#     never on the message's or the state's bytes: every lt and int_eq it
+#     makes has the same arguments for any two messages of one length
+#     (gate_sha3.sh's comparisons arm). The engines under it do depend on
+#     byte values: each message byte is read as ord's decimal string of 1
+#     to 3 digits and parsed back by str_to_int, and both loop once per
+#     digit (and allocate by length) on the C host and the VM; and each
+#     output byte (for SHA3-512 the PrimeKey itself) is an index into a
+#     256-entry table of one-byte strings (T, through str_at). The VM also
+#     interprets and allocates: no timing claim is made about either engine.
 #   - SHA3-224, SHA3-384, cSHAKE, KMAC, TupleHash (SP 800-185) and inputs
 #     that are not whole bytes (FIPS 202 allows any bit length).
 #   - Incremental (streaming) hashing: the message is one string, the output
