@@ -13,9 +13,18 @@
 set -e
 cd "$(dirname "$0")"
 ok=1
+finished=0
 
-command -v nasm >/dev/null 2>&1    || { echo "SKIP  link.la gate: nasm absent"; exit 0; }
-command -v readelf >/dev/null 2>&1 || { echo "SKIP  link.la gate: readelf absent"; exit 0; }
+# ★ TRAP ADDED (ENTELECHEIA, 2026-09-18, hexis errexit-gate-silent-verdict), mirroring the proven pattern
+#   in gate_link_script.sh (:29) — the check's own cited negative control. This file sets errexit with no
+#   safety net: a bare `nasm` (:20-21) or `ld` (:80) with no `||` guard would die SILENTLY under `set -e`
+#   with no verdict line at all — the same invisible-death shape that killed the 2026-09-17 full audit at
+#   gate_link_reloc.sh:453. `finished=1` is set only where the file already ends cleanly (the two early
+#   SKIPs, or the real end), matching the sibling's convention exactly.
+trap 'rc=$?; if [ "$finished" != 1 ]; then echo "link.la gate ABORTED (rc=$rc) — the assertions after this point never ran"; [ "$rc" = 0 ] && exit 1; fi; exit $rc' EXIT
+
+command -v nasm >/dev/null 2>&1    || { echo "SKIP  link.la gate: nasm absent"; finished=1; exit 0; }
+command -v readelf >/dev/null 2>&1 || { echo "SKIP  link.la gate: readelf absent"; finished=1; exit 0; }
 
 nasm -f elf64 link_test_a.asm -o link_test_a.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
@@ -101,5 +110,6 @@ echo "$NOUT" | grep -q "not an ELF object" \
     || { echo "FAIL  link.la: refused the non-ELF but not with the ELF diagnostic"; ok=0; }
 
 rm -f link_in.o gate_real.o gate_real.c
+finished=1
 [ "$ok" = 1 ] && echo "PASS  link.la: reader agrees with readelf ($NOBJ objects$([ -n "$REAL_OBJ" ] && echo ", incl. a real gcc object"), both relocation kinds, 2 negative gates)"
 [ "$ok" = 1 ]

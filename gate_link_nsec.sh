@@ -18,10 +18,16 @@
 set -e
 cd "$(dirname "$0")"
 ok=1
+finished=0
 
-command -v nasm    >/dev/null 2>&1 || { echo "SKIP  link_nsec gate: nasm absent";    exit 0; }
-command -v ld       >/dev/null 2>&1 || { echo "SKIP  link_nsec gate: ld absent";      exit 0; }
-command -v readelf >/dev/null 2>&1 || { echo "SKIP  link_nsec gate: readelf absent"; exit 0; }
+# ★ TRAP ADDED (ENTELECHEIA, 2026-09-18, hexis errexit-gate-silent-verdict) — same pattern as
+#   gate_link_script.sh (:29) — closing this file's own silent-death gap (a bare `nasm` at :26 or `ld` at
+#   :29, no `||` guard, would die with no verdict line under `set -e`).
+trap 'rc=$?; if [ "$finished" != 1 ]; then echo "link_nsec gate ABORTED (rc=$rc) — the assertions after this point never ran"; [ "$rc" = 0 ] && exit 1; fi; exit $rc' EXIT
+
+command -v nasm    >/dev/null 2>&1 || { echo "SKIP  link_nsec gate: nasm absent";    finished=1; exit 0; }
+command -v ld       >/dev/null 2>&1 || { echo "SKIP  link_nsec gate: ld absent";      finished=1; exit 0; }
+command -v readelf >/dev/null 2>&1 || { echo "SKIP  link_nsec gate: readelf absent"; finished=1; exit 0; }
 
 nasm -f elf64 link_test_nsec.asm -o link_test_nsec.o
 
@@ -75,4 +81,5 @@ else
     fi
 fi
 
+finished=1
 [ "$ok" = 1 ] && echo "link_nsec gate GREEN" || { echo "link_nsec gate RED"; exit 1; }
