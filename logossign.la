@@ -1,0 +1,462 @@
+# ═══════════════════════════════════════════════════════════════════
+#  logossign.la — SIGN_KIT: SLH-DSA-SHA2-128s, FIPS 205 stateless
+#  hash-based signatures (the codex's SPHINCS+: CODEX_AUTOPOIETICUS.tex,
+#  "Dilithium3 and SPHINCS+ for digital signatures").
+#
+#  WHY THIS SCHEME. SLH-DSA is stateless: a signer keeps no index between
+#  signatures, so nothing has to reach the disk before a signature may be
+#  released (this VM has no fsync). Its security rests on SHA-256 alone.
+#
+#  THE KIT. Built once, with the builtins in CRYPT_FAST's order:
+#
+#      SIGN_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)
+#              (error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#              (crypt)(prefix_kit)(P)
+#        -> la s. s(keygen_internal)(sign_internal)(verify_internal)
+#                  (sign)(verify)(keygen)
+#
+#    crypt       a crypt record, la s. s(sha256)(hmac)(hkdf)(seal)(open)(hex)
+#                (logoscrypt.la's CRYPT_FAST; CRYPT_REF works, slowly). Only
+#                sha256 and hmac are used.
+#    prefix_kit  logoscrypt.la's SHA256_PREFIX_KIT record, la s. s(prefixed).
+#    P           SLH_128S, or SLH_TOY (below).
+#
+#    keygen_internal(SK.seed)(SK.prf)(PK.seed)            FIPS 205 Alg. 18
+#        -> la k. k(sk)(pk). Each seed must be 16 bytes, else a halt:
+#        "logossign: keygen: SK.seed, SK.prf and PK.seed must be 16 bytes each".
+#    keygen(random)                                       Alg. 21
+#        draws the three seeds as ONE call random("48") of the builtin passed
+#        in, then keygen_internal. Fewer than 48 bytes halts.
+#    sign_internal(M)(sk)(addrnd)                         Alg. 19
+#        addrnd "" is the deterministic variant (opt_rand = PK.seed); else it
+#        must be exactly 16 bytes (the hedged variant: the caller draws it,
+#        e.g. random("16")). An sk that is not 64 bytes, or another addrnd
+#        length, halts: "logossign: sign: sk must be 64 bytes",
+#        "logossign: sign: addrnd must be empty or 16 bytes".
+#    verify_internal(M)(sig)(pk)                          Alg. 20
+#    sign(M)(ctx)(sk)(addrnd)                             Alg. 22, pure
+#        sign_internal of M' = toByte(0,1) ++ toByte(|ctx|,1) ++ ctx ++ M.
+#        A ctx over 255 bytes halts: "logossign: sign: ctx must be at most
+#        255 bytes".
+#    verify(M)(sig)(ctx)(pk)                              Alg. 24, pure
+#  verify and verify_internal return a Church boolean, la t. la f. t or
+#  la t. la f. f. They are TOTAL over strings: a signature or a public key of
+#  the wrong length, a ctx over 255 bytes, any bytes at all in the right
+#  lengths, give FALSE and never halt (signatures arrive from the network).
+#  (An argument that is not a string at all is a programming error the VM
+#  halts on; Lingua Adamica has no type test.)
+#
+#  BYTE FORMATS (FIPS 205 Section 9, the standard's own encodings):
+#    sk  = SK.seed ++ SK.prf ++ PK.seed ++ PK.root      64 bytes
+#    pk  = PK.seed ++ PK.root                           32 bytes
+#    sig = R ++ SIG_FORS ++ SIG_HT        (1 + k(1+a) + h + d*len) * 16 bytes:
+#          7856 for SLH_128S, 2048 for SLH_TOY. R is 16 bytes; SIG_FORS is k
+#          trees of (secret leaf ++ a auth nodes); SIG_HT is d layers of
+#          (35 WOTS+ chain values ++ h' auth nodes), layer 0 first.
+#
+#  THE PARAMETER RECORDS, la s. s(n)(h)(d)(h')(a)(k)(lg_w)(m), every field
+#  a decimal string (an integer literal would compile to a call of
+#  str_to_int, and this module names no builtin):
+#    SLH_128S  16 63 7 9 12 14 4 30   FIPS 205 Table 2, SLH-DSA-SHA2-128s
+#    SLH_TOY   16  6 3 2  3  4 4  4   a CODE-PATH WITNESS for the gate (every
+#              algorithm runs, in seconds): NOT a security claim, and not for
+#              use.
+#  The kit checks a record when it is built and halts on one it does not
+#  support: n must be 16 and lg_w 4 (security category 1, where every hash
+#  is SHA-256, FIPS 205 11.2.1: so len = 35), h = d h', m the sum of the
+#  digest's three parts, and the ranges the integers below rely on (h' 1..30,
+#  h - h' at most 56, a 1..20, k 1..64).
+#
+#  THE HASHES (FIPS 205 11.2.1). F, H, T_l and PRF are one function,
+#  Trunc_16(SHA-256(PK.seed ++ toByte(0, 48) ++ ADRSc ++ X)); its first
+#  64 bytes depend only on PK.seed, so tweak(PK.seed) compresses them once
+#  (SHA256_PREFIX_KIT) and every call costs one compression for X of 16 or
+#  32 bytes. PRF_msg = Trunc_16(HMAC-SHA-256(SK.prf, opt_rand ++ M)); H_msg =
+#  MGF1-SHA-256(R ++ PK.seed ++ SHA-256(R ++ PK.seed ++ PK.root ++ M), m).
+#  ADRSc (22 bytes: layer, the tree address's low 8 bytes, type, key pair,
+#  chain or height, hash or index) is never built from a 32-byte ADRS: each
+#  function builds the bytes that are constant for its tree and key pair
+#  once, and in the WOTS+ chain (Alg. 5), where F runs about 2 million times
+#  per 128s signature, ADRSc is the chain's first 21 bytes ++ one byte.
+#
+#  THE ALGORITHMS are transcribed from FIPS 205 in its order: wdig (Alg. 7/8
+#  lines 1-7, base-16 digits and the checksum shifted left by 4), chain,
+#  wpk, wsign, wpkfs (Alg. 5-8), xnode, xsign, xpkfs (Alg. 9-11), htsign,
+#  htverify (Alg. 12-13), fidx (base_2b, Alg. 4), fnode, fsign, fpkfs
+#  (Alg. 14-17), then Alg. 18-24. slhdsa_model.py, an independent Python
+#  transcription checked against every non-preHash NIST ACVP case, is the
+#  gate's oracle.
+#
+#  KIT STYLE (WM_DESIGN.md). Every builtin and constant is a parameter,
+#  bound once when the kit is built; Z is named once, there, and handed to
+#  every loop as fix; booleans are applied to thunks; strings are joined by
+#  halving. After construction nothing names a glyph or a builtin, so an
+#  operation costs the same wherever the module sits in the program
+#  (gate_logossign.sh times a verify with 1 MB of program in front). The key
+#  pair is built by its own constructor (mkpair), so its closure keeps only
+#  sk and pk alive. confine(logossign.la)(nil) is ok: the module imports
+#  nothing and reaches the world only through its parameters.
+#
+#  MEASURED on the VM, wall time on a 4-core machine with two or three other
+#  programs running (gate_logossign.sh and its driver's timing lines):
+#  SLH_128S keygen 116 s (KAT tcId 1), sign 862 s (KAT tcId 276, internal,
+#  deterministic, the verify of the result included), verify about 1 s;
+#  SLH_TOY keygen 1.1 s, sign 2.6 s, verify 0.36 s (means over the toy
+#  vectors). One tweakable hash costs about 0.4 to 0.5 ms, nearly all of it
+#  the one SHA-256 compression; a 128s signature makes 2,185,912 of them
+#  (slhdsa_model.py's counts), a keygen 287,743, a verify 2,354. The C host
+#  needs about 15 minutes for one toy verify.
+#
+#  HONESTLY OUT OF SCOPE
+#   - Constant time, or any side-channel claim: the VM interprets and
+#     allocates. Secrets are not erased (the VM cannot erase memory; a
+#     string no longer reachable is merely collected).
+#   - HashSLH-DSA (the preHash interface), the SHAKE family, and the other
+#     parameter sets (only SLH_128S and SLH_TOY are exported; category 3 and
+#     5 need SHA-512).
+#   - Speed: a 128s signature takes minutes of VM time. Key storage and
+#     distribution are the caller's (logospkg still signs its index with
+#     HMAC; switching it is a separate decision).
+# ═══════════════════════════════════════════════════════════════════
+
+export SIGN_KIT SLH_128S SLH_TOY
+
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph LET = la v. la k. k(v)
+
+# The parameter records (FIPS 205 Table 2), la s. s(n)(h)(d)(h')(a)(k)(lg_w)(m),
+# every field a decimal STRING: an integer literal compiles to a call of
+# str_to_int, and this module names no builtin (confine(logossign.la)(nil)).
+# SLH_TOY is a code-path witness for the gate, NOT a security claim.
+glyph SLH_128S = la s. s("16")("63")("7")("9")("12")("14")("4")("30")
+glyph SLH_TOY = la s. s("16")("6")("3")("2")("3")("4")("4")("4")
+
+# span(f)(lo)(hi): f(lo) ++ ... ++ f(hi-1), joined by halving; "" when lo >= hi
+glyph SG_SPAN = la concat. la add. la lt. la bshr. la C0. la C1. la fix. la f.
+  fix(la sp. la lo. la hi.
+    lt(add(lo)(C1))(hi)
+      (la _. (la mid. concat(sp(lo)(mid))(sp(mid)(hi)))(bshr(add(lo)(hi))(C1)))
+      (la _. lt(lo)(hi)(la _. f(lo))(la _. "")(C0))
+      (C0))
+
+# cat16(a): a(0) ++ a(1) ++ ... ++ a(15), unrolled (n = 16 bytes)
+glyph SG_CAT16 = la concat. la C0. la C1. la C2. la C3. la C4. la C5. la C6. la C7.
+    la C8. la C9. la C10. la C11. la C12. la C13. la C14. la C15. la a.
+  concat(concat(concat(concat(a(C0))(a(C1)))(concat(a(C2))(a(C3))))
+               (concat(concat(a(C4))(a(C5)))(concat(a(C6))(a(C7)))))
+        (concat(concat(concat(a(C8))(a(C9)))(concat(a(C10))(a(C11))))
+               (concat(concat(a(C12))(a(C13)))(concat(a(C14))(a(C15)))))
+
+# SIGN_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)
+#         (add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl)(bshr)
+#         (crypt)(prefix_kit)(P)
+#   -> la s. s(keygen_internal)(sign_internal)(verify_internal)(sign)(verify)(keygen)
+glyph SIGN_KIT = la str_at. la ord. la str_to_int. la int_to_str. la chr. la concat. la str_len. la error.
+    la add. la sub. la mul. la lt. la int_eq. la band. la bor. la bxor. la bshl. la bshr.
+    la crypt. la pkit. la P.
+ crypt(la sha256. la hmac. la hkdf. la seal. la open. la hex.
+ pkit(la prefixed.
+ P(la Pn. la Ph. la Pd. la Php. la Pa. la Pk. la Plgw. la Pm.
+ (la C0. la C1. la C2. la C3. la C4. la C5. la C6. la C7. la C8. la C9. la C10. la C11. la C12.
+  la C13. la C14. la C15. la C16. la C24. la C30. la C31. la C32. la C35. la C48. la C255. la M32.
+  LET(Z)(la fix.
+  LET(la t. la f. f)(la FALSE.
+  LET(la s. str_to_int(str_len(s)))(la len.
+  LET(SG_SPAN(concat)(add)(lt)(bshr)(C0)(C1)(fix))(la span.
+  LET(SG_CAT16(concat)(C0)(C1)(C2)(C3)(C4)(C5)(C6)(C7)(C8)(C9)(C10)(C11)(C12)(C13)(C14)(C15))(la cat16.
+  # T(b): byte b as a one-byte string, through a table of all 256 bytes
+  LET(str_at(span(la i. chr(int_to_str(i)))(C0)(256)))(la T.
+  # toByte(v, 4) and toByte(v, 8), big-endian (FIPS 205 Alg. 3)
+  LET(la v. concat(concat(T(band(bshr(v)(C24))(C255)))(T(band(bshr(v)(C16))(C255))))
+                  (concat(T(band(bshr(v)(C8))(C255)))(T(band(v)(C255)))))(la e4.
+  LET(la v. concat(e4(bshr(v)(C32)))(e4(band(v)(M32))))(la e8.
+  # t16(s): the first 16 bytes of s; sl16(sa)(o): the 16 bytes at offset o of
+  # the string sa = str_at(s) reads; slice(sa)(o)(L): L bytes at o
+  LET(la s. cat16(str_at(s)))(la t16.
+  LET(la sa. la o. cat16(la i. sa(add(o)(i))))(la sl16.
+  LET(la sa. la o. la L. span(la i. sa(add(o)(i)))(C0)(L))(la slice.
+  # rdint(sa)(o)(L): toInt of the L bytes at offset o, big-endian (Alg. 2)
+  LET(la sa. la o. la L.
+     fix(la go. la i. la acc.
+        lt(i)(L)(la _. go(add(i)(C1))(bor(bshl(acc)(C8))(str_to_int(ord(sa(add(o)(i)))))))(la _. acc)(C0))
+     (C0)(C0))(la rdint.
+  LET(span(la i. T(C0))(C0)(C48))(la Z48.
+  LET(span(la i. T(C0))(C0)(C3))(la Z3.
+  LET(span(la i. T(C0))(C0)(C4))(la Z4.
+  LET(span(la i. T(C0))(C0)(C8))(la Z8.
+  # a record holding a secret gets its own constructor (WM_DESIGN.md): the
+  # key pair's closure keeps only sk and pk alive
+  LET(la sk. la pk. la k. k(sk)(pk))(la mkpair.
+  # need(c)(msg)(k): k(C0) when c holds, else a loud halt
+  LET(la c. la msg. la k. c(la _. k(C0))(la _. error(msg))(C0))(la need.
+
+  # ── the parameter record ──
+  LET(str_to_int(Pn))(la n.
+  LET(str_to_int(Ph))(la h.
+  LET(str_to_int(Pd))(la d.
+  LET(str_to_int(Php))(la hp.
+  LET(str_to_int(Pa))(la a.
+  LET(str_to_int(Pk))(la k.
+  LET(str_to_int(Plgw))(la lgw.
+  LET(str_to_int(Pm))(la m.
+  # md, idx_tree and idx_leaf byte counts (Alg. 19 lines 7-9)
+  LET(bshr(add(mul(k)(a))(C7))(C3))(la MDB.
+  LET(bshr(add(sub(h)(hp))(C7))(C3))(la TB.
+  LET(bshr(add(hp)(C7))(C3))(la LB.
+  need(int_eq(n)(C16))("logossign: parameters: n must be 16 (SHA2, security category 1)")(la _.
+  need(int_eq(lgw)(C4))("logossign: parameters: lg_w must be 4")(la _.
+  need(int_eq(h)(mul(d)(hp)))("logossign: parameters: h must be d * h'")(la _.
+  need(int_eq(m)(add(add(MDB)(TB))(LB)))("logossign: parameters: m must be ceil(k a / 8) + ceil((h - h') / 8) + ceil(h' / 8)")(la _.
+  need(lt(C0)(hp)(la _. lt(hp)(31))(la _. FALSE)(C0))("logossign: parameters: h' must be 1..30")(la _.
+  need(lt(sub(h)(hp))(57))("logossign: parameters: h - h' must be at most 56")(la _.
+  need(lt(C0)(a)(la _. lt(a)(21))(la _. FALSE)(C0))("logossign: parameters: a must be 1..20")(la _.
+  need(lt(C0)(k)(la _. lt(k)(65))(la _. FALSE)(C0))("logossign: parameters: k must be 1..64")(la _.
+  # len1 = 32, len2 = 3, len = 35 follow from n = 16, lg_w = 4 (Section 5)
+  LET(sub(bshl(C1)(sub(h)(hp)))(C1))(la TM.
+  LET(sub(bshl(C1)(hp))(C1))(la HPM.
+  LET(sub(bshl(C1)(a))(C1))(la AM.
+  LET(mul(add(hp)(C35))(C16))(la STEP.
+  LET(add(C16)(mul(mul(k)(add(a)(C1)))(C16)))(la HTOFF.
+  LET(mul(add(add(add(C1)(mul(k)(add(C1)(a))))(h))(mul(d)(C35)))(C16))(la SIGB.
+
+  # ── the tweakable hash (FIPS 205 11.2.1) ──
+  # F, H, T_l and PRF are all Trunc_16(SHA-256(PK.seed ++ toByte(0, 48) ++
+  # ADRSc ++ X)). tweak(PK.seed) compresses the first block once and returns
+  # th(ADRSc)(X).
+  LET(la pks. (la pre. la ad. la x. t16(pre(concat(ad)(x))))(prefixed(concat(pks)(Z48))))(la tweak.
+  # ADRSc's first 9 bytes, the layer byte and the tree address (8 bytes)
+  LET(la layer. la tree. concat(T(layer))(e8(tree)))(la ltr.
+  # eq16(x)(y): two 16-byte strings equal, every byte compared
+  LET(la x. la y. (la xa. la ya.
+       int_eq(fix(la go. la i. la acc.
+                lt(i)(C16)(la _. go(add(i)(C1))(bor(acc)(bxor(str_to_int(ord(xa(i))))(str_to_int(ord(ya(i)))))))
+                         (la _. acc)(C0))(C0)(C0))(C0))
+     (str_at(x))(str_at(y)))(la eq16.
+
+  # ── WOTS+ (Section 5) ──
+  # chain(th)(p)(x)(i)(e): Alg. 5, x hashed at hash addresses i..e-1. p is the
+  # first 21 bytes of ADRSc (tree, type WOTS_HASH, key pair, chain address
+  # and the hash address's three high bytes, zero since it is below 16):
+  # ADRSc = p ++ byte j.
+  LET(la th. la p. fix(la go. la x. la j. la e.
+        lt(j)(e)(la _. go(th(concat(p)(T(j)))(x))(add(j)(C1))(e))(la _. x)(C0)))(la chain.
+  # wdig(M): the 35 base-16 digits of the 16-byte M and its checksum
+  # (Alg. 7/8 lines 1-7), as a function of the chain index c
+  LET(la M. (la sa.
+     (la cs.
+        la c. lt(c)(C32)
+          (la _. (la b. int_eq(band(c)(C1))(C0)(la _. bshr(b)(C4))(la _. band(b)(C15))(C0))
+                 (str_to_int(ord(sa(bshr(c)(C1))))))
+          (la _. band(bshr(cs)(sub(C12)(mul(C4)(sub(c)(C32)))))(C15))
+          (C0))
+     # csum << ((8 - ((len2 * lg_w) mod 8)) mod 8) = csum << 4, as 2 bytes
+     (bshl(fix(la go. la i. la acc.
+              lt(i)(C16)
+                (la _. (la b. go(add(i)(C1))(add(acc)(sub(C30)(add(bshr(b)(C4))(band(b)(C15))))))
+                       (str_to_int(ord(sa(i)))))
+                (la _. acc)(C0))(C0)(C0))(C4)))
+   (str_at(M)))(la wdig.
+  # wpk(th)(sks)(tr)(kp): Alg. 6, the WOTS+ public key of key pair kp in the
+  # XMSS tree tr (= ltr(layer)(tree))
+  LET(la th. la sks. la tr. la kp.
+     (la k4. (la b0. la b5.
+        th(concat(concat(tr)(T(C1)))(concat(k4)(Z8)))
+          (span(la c. (la c4. chain(th)(concat(concat(b0)(c4))(Z3))
+                                   (th(concat(concat(b5)(c4))(Z4))(sks))(C0)(C15))
+                      (e4(c)))(C0)(C35)))
+       (concat(concat(tr)(T(C0)))(k4))(concat(concat(tr)(T(C5)))(k4)))
+     (e4(kp)))(la wpk.
+  # wsign(th)(sks)(tr)(kp)(M): Alg. 7
+  LET(la th. la sks. la tr. la kp. la M.
+     (la dg. (la k4. (la b0. la b5.
+        span(la c. (la c4. chain(th)(concat(concat(b0)(c4))(Z3))
+                                (th(concat(concat(b5)(c4))(Z4))(sks))(C0)(dg(c)))
+                   (e4(c)))(C0)(C35))
+       (concat(concat(tr)(T(C0)))(k4))(concat(concat(tr)(T(C5)))(k4)))
+       (e4(kp)))
+     (wdig(M)))(la wsign.
+  # wpkfs(th)(tr)(kp)(sa)(off)(M): Alg. 8, the signature at offset off of sa
+  LET(la th. la tr. la kp. la sa. la off. la M.
+     (la dg. (la k4. (la b0.
+        th(concat(concat(tr)(T(C1)))(concat(k4)(Z8)))
+          (span(la c. chain(th)(concat(concat(b0)(e4(c)))(Z3))
+                            (sl16(sa)(add(off)(mul(c)(C16))))(dg(c))(C15))(C0)(C35)))
+       (concat(concat(tr)(T(C0)))(k4)))
+       (e4(kp)))
+     (wdig(M)))(la wpkfs.
+
+  # ── XMSS (Section 6) ──
+  # xnode(th)(sks)(tr)(i)(z): Alg. 9
+  LET(la th. la sks. la tr. (la b2. fix(la node. la i. la z.
+       int_eq(z)(C0)
+         (la _. wpk(th)(sks)(tr)(i))
+         (la _. th(concat(b2)(concat(e4(z))(e4(i))))
+                  (concat(node(bshl(i)(C1))(sub(z)(C1)))(node(add(bshl(i)(C1))(C1))(sub(z)(C1)))))
+         (C0)))
+     (concat(concat(tr)(T(C2)))(Z4)))(la xnode.
+  # xsign(th)(sks)(tr)(idx)(M): Alg. 10, the WOTS+ signature then the
+  # authentication path
+  LET(la th. la sks. la tr. la idx. la M.
+     (la nd. concat(wsign(th)(sks)(tr)(idx)(M))
+                   (span(la j. nd(bxor(bshr(idx)(j))(C1))(j))(C0)(hp)))
+     (xnode(th)(sks)(tr)))(la xsign.
+  # xpkfs(th)(tr)(idx)(sa)(off)(M): Alg. 11
+  LET(la th. la tr. la idx. la sa. la off. la M.
+     (la b2. fix(la go. la nd. la j.
+         lt(j)(hp)
+           (la _. (la au. la ad.
+                    go(int_eq(band(bshr(idx)(j))(C1))(C0)
+                         (la _. th(ad)(concat(nd)(au)))
+                         (la _. th(ad)(concat(au)(nd)))(C0))
+                      (add(j)(C1)))
+                  (sl16(sa)(add(off)(mul(add(C35)(j))(C16))))
+                  (concat(b2)(concat(e4(add(j)(C1)))(e4(bshr(idx)(add(j)(C1)))))))
+           (la _. nd)(C0))
+       (wpkfs(th)(tr)(idx)(sa)(off)(M))(C0))
+     (concat(concat(tr)(T(C2)))(Z4)))(la xpkfs.
+
+  # ── the hypertree (Section 7) ──
+  # htsign(th)(sks)(M)(it)(il): Alg. 12
+  LET(la th. la sks. la M. la it. la il.
+     (la tr. (la s0.
+        fix(la go. la j. la root. la it. la acc.
+            lt(j)(d)
+              (la _. (la il. la it. (la tr. (la s.
+                         go(add(j)(C1))
+                           (lt(add(j)(C1))(d)(la _. xpkfs(th)(tr)(il)(str_at(s))(C0)(root))(la _. root)(C0))
+                           (it)(concat(acc)(s)))
+                       (xsign(th)(sks)(tr)(il)(root)))
+                     (ltr(j)(it)))
+                     (band(it)(HPM))(bshr(it)(hp)))
+              (la _. acc)(C0))
+          (C1)(xpkfs(th)(tr)(il)(str_at(s0))(C0)(M))(it)(s0))
+       (xsign(th)(sks)(tr)(il)(M)))
+     (ltr(C0)(it)))(la htsign.
+  # htverify(th)(M)(sa)(off)(it)(il)(pkr): Alg. 13
+  LET(la th. la M. la sa. la off. la it. la il. la pkr.
+     fix(la go. la j. la nd. la it. la il.
+        lt(j)(d)
+          (la _. (la il2. la it2.
+                   go(add(j)(C1))(xpkfs(th)(ltr(j)(it2))(il2)(sa)(add(off)(mul(j)(STEP)))(nd))(it2)(il2))
+                 (band(it)(HPM))(bshr(it)(hp)))
+          (la _. eq16(nd)(pkr))(C0))
+      (C1)(xpkfs(th)(ltr(C0)(it))(il)(sa)(off)(M))(it)(il))(la htverify.
+
+  # ── FORS (Section 8) ──
+  # fidx(dsa)(i): base_2b(md, a, k)[i] (Alg. 4), bits i*a .. i*a+a-1 of md
+  LET(la dsa. la i. (la p. (la b0. la nb.
+         band(bshr(rdint(dsa)(b0)(nb))(sub(sub(mul(nb)(C8))(band(p)(C7)))(a)))(AM))
+       (bshr(p)(C3))(bshr(add(add(band(p)(C7))(a))(C7))(C3)))
+     (mul(i)(a)))(la fidx.
+  # fnode(th)(sks)(tr)(k4)(i)(z): Alg. 15 (with Alg. 14 for the leaves)
+  LET(la th. la sks. la tr. la k4.
+     (la b3. la b6. fix(la node. la i. la z.
+        int_eq(z)(C0)
+          (la _. (la i4. th(concat(b3)(concat(Z4)(i4)))(th(concat(b6)(concat(Z4)(i4)))(sks)))(e4(i)))
+          (la _. th(concat(b3)(concat(e4(z))(e4(i))))
+                   (concat(node(bshl(i)(C1))(sub(z)(C1)))(node(add(bshl(i)(C1))(C1))(sub(z)(C1)))))
+          (C0)))
+     (concat(concat(tr)(T(C3)))(k4))(concat(concat(tr)(T(C6)))(k4)))(la fnode.
+  # fsign(th)(sks)(tr)(kp)(dsa): Alg. 16, md read from dsa
+  LET(la th. la sks. la tr. la kp. la dsa.
+     (la k4. (la nd. la b6.
+        span(la i. (la id. (la base.
+              concat(th(concat(b6)(concat(Z4)(e4(add(base)(id)))))(sks))
+                    (span(la j. nd(add(bshl(i)(sub(a)(j)))(bxor(bshr(id)(j))(C1)))(j))(C0)(a)))
+              (bshl(i)(a)))
+            (fidx(dsa)(i)))(C0)(k))
+       (fnode(th)(sks)(tr)(k4))(concat(concat(tr)(T(C6)))(k4)))
+     (e4(kp)))(la fsign.
+  # fpkfs(th)(tr)(kp)(sa)(off)(dsa): Alg. 17, the FORS signature at offset off
+  LET(la th. la tr. la kp. la sa. la off. la dsa.
+     (la k4. (la b3.
+        th(concat(concat(tr)(T(C4)))(concat(k4)(Z8)))
+          (span(la i. (la id. (la base. la gi.
+                  fix(la go. la nd. la j.
+                     lt(j)(a)
+                       (la _. (la au. la ad.
+                                go(int_eq(band(bshr(id)(j))(C1))(C0)
+                                     (la _. th(ad)(concat(nd)(au)))
+                                     (la _. th(ad)(concat(au)(nd)))(C0))
+                                  (add(j)(C1)))
+                              (sl16(sa)(add(base)(mul(add(j)(C1))(C16))))
+                              (concat(b3)(concat(e4(add(j)(C1)))(e4(bshr(gi)(add(j)(C1)))))))
+                       (la _. nd)(C0))
+                    (th(concat(b3)(concat(Z4)(e4(gi))))(sl16(sa)(base)))(C0))
+                (add(off)(mul(mul(i)(add(a)(C1)))(C16)))(add(bshl(i)(a))(id)))
+              (fidx(dsa)(i)))(C0)(k)))
+       (concat(concat(tr)(T(C3)))(k4)))
+     (e4(kp)))(la fpkfs.
+
+  # ── the message hashes (FIPS 205 11.2.1) ──
+  # H_msg(R, PK.seed, PK.root, M) = MGF1-SHA-256(R ++ PK.seed ++
+  #   SHA-256(R ++ PK.seed ++ PK.root ++ M), m); MGF1 counters 0, 1, ...
+  LET(la R. la pks. la pkr. la M.
+     (la seed. slice(str_at(span(la c. sha256(concat(seed)(e4(c))))(C0)(bshr(add(m)(C31))(C5))))(C0)(m))
+     (concat(concat(R)(pks))(sha256(concat(concat(R)(pks))(concat(pkr)(M))))))(la hmsg.
+
+  # ── SLH-DSA (Section 9 and 10) ──
+  # keygen_internal(sks)(skp)(pks): Alg. 18 -> la k. k(sk)(pk)
+  LET(la sks. la skp. la pks.
+     need(int_eq(bor(bor(bxor(len(sks))(C16))(bxor(len(skp))(C16)))(bxor(len(pks))(C16)))(C0))
+         ("logossign: keygen: SK.seed, SK.prf and PK.seed must be 16 bytes each")(la _.
+       (la root. mkpair(concat(concat(sks)(skp))(concat(pks)(root)))(concat(pks)(root)))
+       (xnode(tweak(pks))(sks)(ltr(sub(d)(C1))(C0))(C0)(hp))))(la keygen_internal.
+  # sign_internal(M)(sk)(addrnd): Alg. 19; addrnd "" is the deterministic
+  # variant (opt_rand = PK.seed), else exactly 16 bytes
+  LET(la M. la sk. la addrnd.
+     need(int_eq(len(sk))(mul(C4)(C16)))("logossign: sign: sk must be 64 bytes")(la _.
+     (la ska. (la sks. la skp. la pks. la pkr.
+        (la opt. (la th. (la R. (la dsa.
+            (la it. la il. (la tr. (la sf.
+                concat(concat(R)(sf))
+                      (htsign(th)(sks)(fpkfs(th)(tr)(il)(str_at(sf))(C0)(dsa))(it)(il)))
+              (fsign(th)(sks)(tr)(il)(dsa)))
+              (ltr(C0)(it)))
+            (band(rdint(dsa)(MDB)(TB))(TM))(band(rdint(dsa)(add(MDB)(TB))(LB))(HPM)))
+          (str_at(hmsg(R)(pks)(pkr)(M))))
+          (t16(hmac(skp)(concat(opt)(M)))))
+          (tweak(pks)))
+        (int_eq(len(addrnd))(C0)
+           (la _. pks)
+           (la _. int_eq(len(addrnd))(C16)(la _. addrnd)
+                    (la _. error("logossign: sign: addrnd must be empty or 16 bytes"))(C0))
+           (C0)))
+      (sl16(ska)(C0))(sl16(ska)(C16))(sl16(ska)(C32))(sl16(ska)(C48)))
+     (str_at(sk))))(la sign_internal.
+  # verify_internal(M)(sig)(pk): Alg. 20, TOTAL over strings: a pk or a
+  # signature of the wrong length is FALSE
+  LET(la M. la sig. la pk.
+     int_eq(len(pk))(C32)
+       (la _. int_eq(len(sig))(SIGB)
+          (la _. (la pka. la sa. (la pks. la pkr. (la th. (la dsa.
+                    (la it. la il.
+                       htverify(th)(fpkfs(th)(ltr(C0)(it))(il)(sa)(C16)(dsa))(sa)(HTOFF)(it)(il)(pkr))
+                    (band(rdint(dsa)(MDB)(TB))(TM))(band(rdint(dsa)(add(MDB)(TB))(LB))(HPM)))
+                  (str_at(hmsg(sl16(sa)(C0))(pks)(pkr)(M))))
+                  (tweak(pks)))
+                 (sl16(pka)(C0))(sl16(pka)(C16)))
+              (str_at(pk))(str_at(sig)))
+          (la _. FALSE)(C0))
+       (la _. FALSE)(C0))(la verify_internal.
+  # sign(M)(ctx)(sk)(addrnd): Alg. 22, M' = toByte(0,1) ++ toByte(|ctx|,1) ++ ctx ++ M
+  LET(la M. la ctx. la sk. la addrnd. (la lc.
+       need(lt(lc)(256))("logossign: sign: ctx must be at most 255 bytes")(la _.
+         sign_internal(concat(concat(T(C0))(T(lc)))(concat(ctx)(M)))(sk)(addrnd)))
+     (len(ctx)))(la sign.
+  # verify(M)(sig)(ctx)(pk): Alg. 24, TOTAL: a ctx over 255 bytes is FALSE
+  LET(la M. la sig. la ctx. la pk. (la lc.
+       lt(C255)(lc)
+         (la _. FALSE)
+         (la _. verify_internal(concat(concat(T(C0))(T(lc)))(concat(ctx)(M)))(sig)(pk))
+         (C0))
+     (len(ctx)))(la verify.
+  # keygen(random): Alg. 21, the three seeds from one draw of 48 bytes
+  LET(la random. (la r.
+       need(int_eq(len(r))(C48))("logossign: keygen: random gave fewer than 48 bytes")(la _.
+         (la ra. keygen_internal(sl16(ra)(C0))(sl16(ra)(C16))(sl16(ra)(C32)))(str_at(r))))
+     (random(int_to_str(C48))))(la keygen.
+    la s. s(keygen_internal)(sign_internal)(verify_internal)(sign)(verify)(keygen)
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+ (0)(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)(11)(12)(13)(14)(15)(16)(24)(30)(31)(32)(35)(48)(255)(4294967295)
+ )))
