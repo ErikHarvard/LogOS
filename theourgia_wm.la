@@ -527,7 +527,11 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
         (nz(band(mask)(C3)))(nz(band(mask)(C12)))(nz(band(mask)(C240)))))(la press.
     # key_event(st)(code)(value): value 1 is a press, 2 an autorepeat, 0 a release.
     # The repeats of the key that unlocked the screen are dropped: that key was
-    # pressed for the login panel. Its release, or a new press, ends that.
+    # pressed for the login panel. Its release, or a new press, ends that. While
+    # the lock screen shows, an autorepeat of Enter is dropped too: Enter there
+    # moves to the next field or submits, which a held key must do only once
+    # (held, it hopped over the fields and submitted again with the
+    # passphrases already forgotten, hiding why the first attempt was refused).
     LET(la st. la code. la value.
         (la bit. int_eq(bit)(C0)
             (la _. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
@@ -537,7 +541,9 @@ glyph WM_CORE = la B. la L. la X. la TL. la T. la SH. la W. la ui. la cfg.
                          (la _. (la st2. int_eq(value)(C0)(la _. st2)(la _. press(st2)(code))(C0))
                                 (mkst(tree)(focus)(wins)(nid)(mask)(quit)(dirty)(some(quad(login)(lw)(showing)(C0)))))(C0))
                       (ordinary)(C0))))
-                (la _. int_eq(value)(C0)(la _. st)(la _. press(st)(code))(C0))))
+                (la _. int_eq(value)(C0)(la _. st)
+                         (la _. int_eq(value)(C2)(int_eq(code)(K_ENTER)(lock(la _. FALSE)(la l. l(la a. la b. la shw. la h. shw)))(FALSE))(FALSE)
+                                  (la _. st)(la _. press(st)(code))(C0))(C0))))
             (la _. st(la tree. la focus. la wins. la nid. la mask. la quit. la dirty. la lock.
                 mkst(tree)(focus)(wins)(nid)
                     (int_eq(value)(C1)(la _. bor(mask)(bit))

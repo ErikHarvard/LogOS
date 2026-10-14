@@ -19,7 +19,9 @@
 #      3   an empty name is refused ("Enter a name."), both passphrases gone
 #      4   mismatched passphrases are refused, the name kept
 #      5   empty passphrases are refused
-#      6   a name LogosSession refuses is refused with its reason
+#      6   a name LogosSession refuses is refused with its reason, submitted
+#          with a held Enter (press, autorepeat, release): the repeat does not
+#          submit again and replace the reason
 #      7   the right input makes the user (record mode 0600, holding the
 #          passphrase neither raw nor in hex) and logs in: the terminal
 #          opens with the welcome text, which offers MOD+Esc; the user's
@@ -31,7 +33,8 @@
 #   B  the same directory again (users/ exists now):
 #      11  it starts at the login screen, not the first-run screen
 #      12  Enter in the User field moves the focus to the Passphrase field
-#          (read back from the frame's focused run)
+#          (read back from the frame's focused run); held (press, two
+#          autorepeats, release) it moves once and submits nothing
 #      13  an unknown user is refused like a wrong passphrase ("Wrong user
 #          or passphrase."), and so is a wrong passphrase
 #      14  the right one logs in: the welcome terminal
@@ -104,7 +107,10 @@ type eve.x
 key ENTER
 type $PASS_OK
 key ENTER
-type $PASS_OK\\n
+type $PASS_OK
+down ENTER
+repeat ENTER 1
+up ENTER
 snap 5
 key TAB
 key TAB
@@ -136,7 +142,9 @@ umode=$(stat -c %a "$T/users" 2>/dev/null)
 cat > "$T/again.txt" <<EOF
 snap 1
 type eve
-key ENTER
+down ENTER
+repeat ENTER 2
+up ENTER
 snap 2
 type $PASS_OK\\n
 snap 3
@@ -201,7 +209,7 @@ check("4 mismatched passphrases are refused ('The passphrases differ.'), the nam
 s = shot("first", 4)
 check("5 empty passphrases are refused ('Enter a passphrase.')", panel(s) and has(s, "Enter a passphrase."), det(s))
 s = shot("first", 5)
-check("6 a name LogosSession refuses is refused with its own reason ('adduser: bad name'), the name kept",
+check("6 a name LogosSession refuses is refused with its own reason ('adduser: bad name'), the name kept, though the submitting Enter was held",
       panel(s) and has(s, "adduser: bad name") and has(s, "Name: [eve.x") and blank_pw(s), det(s))
 s = shot("first", 6)
 rec = f"{T}/users/users/adam"
@@ -230,8 +238,9 @@ check("11 with users/ there it starts at the login screen, not the first-run scr
       panel(s) and has(s, "Log in to LogOS.") and not has(s, "Make the first user")
       and (focus_row(s) or "").lstrip("| ").startswith("User: ["), det(s))
 s = shot("again", 2)
-check("12 Enter in the User field moves the focus to the Passphrase field",
-      panel(s) and has(s, "User: [eve") and (focus_row(s) or "").lstrip("| ").startswith("Passphrase: ["), det(s))
+check("12 Enter in the User field moves the focus to the Passphrase field; held, it moves once and submits nothing",
+      panel(s) and has(s, "User: [eve") and (focus_row(s) or "").lstrip("| ").startswith("Passphrase: [")
+      and not has(s, "Wrong user"), det(s))
 s3, s4 = shot("again", 3), shot("again", 4)
 check("13 an unknown user (eve) and a wrong passphrase are both refused: 'Wrong user or passphrase.'",
       panel(s3) and has(s3, "Wrong user or passphrase.") and panel(s4) and has(s4, "Wrong user or passphrase.")
