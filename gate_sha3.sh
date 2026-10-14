@@ -50,11 +50,12 @@
 #      SHA3_POS_FRAC percent (default 50) of that walk more than its least
 #      time without the glyph, so a single name resolved at run time on every
 #      call fails the arm (and confine or kit style say which name);
-#   9. timing lines (INFO, CPU time inside the program, best of 5): one
-#      Keccak-f permutation (SHAKE128 of the empty message to 0 bytes: one
-#      padded block absorbed, one permutation, nothing squeezed), ten more
-#      squeeze blocks (SHAKE128 to 1848 bytes against 168), and SHA3-512 of
-#      0, 1 KB and 10 KB, every timed result checked against hashlib; and the
+#   9. timing lines (INFO, CPU time inside the program, best of 5): building
+#      the kit (SHA3_KIT applied to its last builtin), one Keccak-f
+#      permutation (SHAKE128 of the empty message to 0 bytes: one padded
+#      block absorbed, one permutation, nothing squeezed), ten more squeeze
+#      blocks (SHAKE128 to 1848 bytes against 168), and SHA3-512 of 0, 1 KB
+#      and 10 KB, every timed result checked against hashlib; and the
 #      permutation line must have timed a permutation: at least half a
 #      squeeze block (no output byte shows whether a 0-byte SHAKE absorbed
 #      its message, so a SHAKE that skipped it would report one that never
@@ -70,9 +71,9 @@
 #      only: the engines' ord and str_to_int loop once per decimal digit of
 #      a byte, and an output byte indexes a table (logossha3.la's header).
 # ISOLATION: private temp dir (gate_wm_common.sh). The VM test program is
-# compiled once and run per arm with mode.txt naming the arm; the C host run
-# (about 20 s) starts first and runs beside the VM arms; the whole
-# gate took about 23 s of wall time on a 4-core machine.
+# compiled once and run per arm with mode.txt naming the arm; the two C host
+# runs (about 15 s and 9 s on their own) start first and run beside the VM
+# arms; the whole gate took 35 to 37 s of wall time on a 4-core machine.
 set -uo pipefail
 . "$(dirname "$0")/gate_wm_common.sh"
 ok=1
@@ -254,6 +255,7 @@ elif cmd == "host":
     print("end")
 elif cmd == "time":
     m1, m10 = open("m/t1k", "rb").read(), open("m/t10k", "rb").read()
+    print("kit ")
     print("perm " + hashlib.shake_128(b"").hexdigest(0))
     print("squeeze1 " + hashlib.shake_128(b"").hexdigest(168))
     print("squeeze11 " + hashlib.shake_128(b"").hexdigest(1848))
@@ -483,11 +485,14 @@ glyph PBEST = Z(la go. la n. la cg. la f. la best. la res.
     (la _. KTIME(cg)(f)(la t0. la t1. la r.
              (la d. go(sub(n)(1))(cg)(f)(lt(d)(best)(la _. d)(la _. best)("!"))(r))(sub(NS(t1))(NS(t0)))))
     ("!"))
+# "kit" builds a record: K17 is SHA3_KIT applied to its first 17 builtins
+# (a closure), so applying it to the 18th, bshr, runs the whole construction
 glyph TIME = la s2. la s5. la k1. la k2. la hex.
-  (la cg. la m1. la m10. la L0. la L1. la L11.
+  (la cg. la m1. la m10. la L0. la L1. la L11. la K17. la B. la nop.
     (la run.
-      SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
-        run("perm")(la _. k1("")(L0)))
+      SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(SEQ(
+        run("kit")(la _. K17(B)(nop)))
+        (run("perm")(la _. k1("")(L0))))
         (run("squeeze1")(la _. k1("")(L1))))
         (run("squeeze11")(la _. k1("")(L11))))
         (run("sha3_512-0")(la _. s5(""))))
@@ -497,6 +502,8 @@ glyph TIME = la s2. la s5. la k1. la k2. la hex.
     (la label. la f. PBEST(5)(cg)(f)(999999999999999)("")(la ns. la r.
        print(SP(SP(label)(int_to_str(div(ns)(1000))))(hex(r))))))
   (clock_gettime)(read_file("m/t1k"))(read_file("m/t10k"))(0)(168)(1848)
+  (SHA3_KIT(str_at)(ord)(str_to_int)(int_to_str)(chr)(concat)(str_len)(error)(add)(sub)(mul)(lt)(int_eq)(band)(bor)(bxor)(bshl))
+  (bshr)(la a. la b. la c. la d. "")
 # position: "walk" names one builtin (str_len) between the clock reads on
 # purpose, so it costs one walk of the program: what a single name resolved
 # at run time would add to a call
@@ -715,7 +722,7 @@ done < "$T/time.out"
 tus() { awk -v k="$1" '$1 == k {print $2}' "$T/time.out"; }
 if [ "$trc" = 0 ] && [ "$tbad" = 0 ] && [ "$(tail -1 "$T/time.out")" = end ] && [ -n "$(tus sha3_512-10KB)" ]; then
     s1=$(tus squeeze1); s11=$(tus squeeze11); sq=$(((s11 - s1) / 10)); pm=$(tus perm)
-    echo "INFO  sha3 timing (VM, CPU time, best of 5): one Keccak-f permutation (shake128 of 0 bytes to 0: one padded block, one permutation) $pm us; a squeeze block (permutation + 168 bytes out) $sq us; sha3_512 of 0 bytes $(tus sha3_512-0) us, of 1 KB $(tus sha3_512-1KB) us, of 10 KB $(tus sha3_512-10KB) us"
+    echo "INFO  sha3 timing (VM, CPU time, best of 5): building the kit $(tus kit) us; one Keccak-f permutation (shake128 of 0 bytes to 0: one padded block, one permutation) $pm us; a squeeze block (permutation + 168 bytes out) $sq us; sha3_512 of 0 bytes $(tus sha3_512-0) us, of 1 KB $(tus sha3_512-1KB) us, of 10 KB $(tus sha3_512-10KB) us"
     if [ $((pm * 2)) -ge "$sq" ]; then
         echo "PASS  sha3 timing (VM): every timed result is hashlib's, and the permutation line timed one (shake128 of \"\" to 0 bytes took $pm us, at least half a squeeze block's $sq us)"
     else
