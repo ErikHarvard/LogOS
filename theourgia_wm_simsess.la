@@ -1,28 +1,34 @@
 # ═══════════════════════════════════════════════════════════════════
 #  theourgia_wm_simsess.la — the headless tiling WM with LogosSession behind
-#  its lock screen.
+#  its lock screen, on the path the live WM takes.
 #
 #  theourgia_wm_sim.la runs the WM headless with SIM_SESS, a stand-in session
-#  layer. This entry is the same run (SIM_MAIN, imported from it) with the
-#  real one: the login and lock screen (lk_login.la) calls LogosSession's
-#  login, lock and unlock (logossession.la), built on CRYPT_FAST
-#  (logoscrypt.la), logossec.la and AletheiaFS (aletheiafs.la) by
-#  logos_realsess.la's REAL_SESS, the WM's one session layer. So unlocking
-#  the screen stretches the passphrase with PBKDF2, derives the user's Γ-seal
-#  and opens the user's store, and locking drops every key derived from it.
+#  layer. This entry is the same run (SIM_RUN, imported from it) with the
+#  lock screen the live WM has (theourgia_wm_live.la), built by the same
+#  code, logos_realsess.la's REAL_LOCK: the users directory through
+#  wm_livestart.la's USERS_KIT (made 0700 when missing; a first run when
+#  DIR/users does not exist), LogosSession's login, lock, unlock and adduser
+#  over it (logossession.la, on CRYPT_FAST, logossec.la and AletheiaFS), and
+#  lk_firstuser.la's app. The WM starts LOCKED: at the first-run screen on a
+#  first run, at the login screen otherwise. So making the first user runs
+#  LogosSession's adduser, unlocking the screen stretches the passphrase with
+#  PBKDF2, derives the user's Γ-seal and opens the user's store, and locking
+#  drops every key derived from it.
 #
 #  CONFIGURATION: wm_sim.cfg as for theourgia_wm_sim.la, and users=DIR is
-#  required: DIR is LogosSession's root (DIR/users/<name>, DIR/home/<name>).
-#  Users are made with LogosSession's adduser (gate_wm_simsess.sh makes one);
-#  this entry only logs them in.
+#  required: DIR is LogosSession's root (DIR/users/<name>, DIR/home/<name>),
+#  read as the live WM reads the first line of logos_wm.users. A DIR that is
+#  a regular file, or whose parent is missing, stops the run before anything
+#  is drawn.
 #
 #  It is a separate entry, not an option of theourgia_wm_sim.la, so that the
 #  WM gates which do not need the session layer do not compile it.
+#  gate_wm_simsess.sh drives it.
 # ═══════════════════════════════════════════════════════════════════
 
 import("theourgia_wm_sim.la")
 import("logos_realsess.la")
 
-glyph MAIN = SIM_MAIN(la users. str_eq(users)("")
+glyph MAIN = SIM_RUN(la users. str_eq(users)("")
   (la _. error("wm_simsess: wm_sim.cfg needs users=DIR, the directory of LogosSession's users"))
-  (la _. REAL_SESS(users)(la login. la lock. la unlock. la adduser. la s. s(login)(lock)(unlock)))("!"))
+  (la _. SIM_UI(REAL_LOCK(users)))("!"))

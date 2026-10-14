@@ -28,9 +28,12 @@
 #
 #  LOCK SCREEN: MOD+Esc locks; the session layer behind it is SIM_SESS below, a
 #  stand-in (user adam, passphrase logos), or LogosSession itself when the WM
-#  is run as theourgia_wm_simsess.la. SIM_MAIN(layer) is the whole run, with
-#  layer(users) choosing the session layer from the users=DIR option ("" when
-#  it is absent); it is exported for theourgia_wm_simsess.la.
+#  is run as theourgia_wm_simsess.la (which starts locked, as the live WM
+#  does). SIM_RUN(ui) is the whole run, with ui(users) giving WM_BUILD's UI
+#  record (and so the lock screen) from the users=DIR option ("" when it is
+#  absent); SIM_MAIN(layer) is SIM_RUN with the login screen over layer(users),
+#  unlocked at the start. SIM_RUN and SIM_UI are exported for
+#  theourgia_wm_simsess.la.
 #
 #  DETERMINISM: input is read one event at a time and only while no command is
 #  running, so "type ls, press Enter, take a frame" always shows ls's output.
@@ -56,7 +59,7 @@ glyph B = la s. s(str_at)(ord)(str_to_int)(int_to_str)(concat)(str_eq)(str_len)
                 (add)(sub)(mul)(div)(mod)(lt)(int_eq)(band)(bor)
 glyph X = la s. s(poll)(read)(close)(print)(write_file)(exit)
 
-export SIM_MAIN SIM_SESS
+export SIM_MAIN SIM_RUN SIM_UI SIM_SESS
 
 # the words of wm_sim.cfg (newlines and carriage returns are dropped). A bad value stops the run
 # at once with a message: W and H must be at least 12, SCALE 1 or more, and each
@@ -124,8 +127,11 @@ glyph OPEN_EVENTS = la path. (la st.
                 (open(path)("0")))("!"))("!"))
   (stat(path))
 
-# SIM_MAIN(layer): the headless WM, with layer(users) as its session layer
-glyph SIM_MAIN = la LAYER. CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC. la USERS. (la SESS.
+# SIM_RUN(ui): the headless WM, with ui(users) as WM_BUILD's UI record
+# (la s. s(LK_KIT)(SETTINGS_APP)(lockcfg)); users is the users=DIR word ("" when
+# it is absent), and ui(users) runs before the events file is opened or
+# anything is drawn, so a lock screen that cannot be built stops the run first
+glyph SIM_RUN = la UI. CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC. la USERS. (la UIREC.
   (la fd.
     (la _.
       WM_BUILD(B)(X)
@@ -134,13 +140,23 @@ glyph SIM_MAIN = la LAYER. CFG(la W. la H. la SCALE. la CWD. la EVENTS. la SYNC.
         ((la font. la sc. RENDER_KIT(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(lt)(band)(str_eq)(error)(font)(sc))(TF_DECODE(str_at)(ord)(str_to_int)(str_len)(chr)(int_to_str)(concat)(add)(sub)(mul)(div)(int_eq)(TF_HEX)))
         (SHELL_KIT(concat)(str_at)(str_len)(str_eq)(ord)(str_to_int)(int_to_str)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
           (read_file)(stat)(mkdir)(rmdir)(unlink)(rename)(getpid)(pipe)(fork)(dup2)(open)(close)(execv)(exit)(sigprocmask)(waitpid)(kill)(poll))
-        (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. s(la k. k(LOGIN_APP)(SESS)(la t. la f. f))))
+        (UIREC)
         (la s. s(W)(H)(mul(W)(4))(SCALE)(CWD))
         (la s. s(la bytes. bytes)(WM_CONS(fd)(WM_NIL))(SYNC("24")("2400"))(SYNC)))
     (print(concat("wm: headless ")(concat(int_to_str(W))(concat("x")(concat(int_to_str(H))
         (concat(" scale ")(concat(int_to_str(SCALE))(concat(", events from ")(concat(EVENTS)
         (str_eq(USERS)("")(la _. "")(la _. concat(", users in ")(USERS))("!"))))))))))))
   (OPEN_EVENTS(EVENTS)))
+  (UI(USERS)))
+
+# SIM_UI(lockcfg): WM_BUILD's UI record with that lock screen, LogosKit and the
+# settings panel (for theourgia_wm_simsess.la, which does not see LK_KIT)
+glyph SIM_UI = la lockcfg. la s. s(LK_KIT)(SETTINGS_APP)(lockcfg)
+
+# SIM_MAIN(layer): the headless WM, with layer(users) as the login screen's
+# session layer, the WM starting unlocked
+glyph SIM_MAIN = la LAYER. SIM_RUN(la USERS. (la SESS.
+        (la s. s(LK_KIT)(SETTINGS_APP)(la n. la s. s(la k. k(LOGIN_APP)(SESS)(la t. la f. f)))))
   (LAYER(USERS)))
 
 glyph MAIN = SIM_MAIN(la users. str_eq(users)("")(la _. SIM_SESS)

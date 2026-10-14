@@ -15,17 +15,43 @@
 #    (aletheiafs.la). The kits are built once, when REAL_SESS(root) is
 #    applied; no key exists until a login.
 #
-#  This is the one place the WM's entries build it: the headless WM with
-#  LogosSession (theourgia_wm_simsess.la) imports it, so what the gates check
-#  is the code the live WM runs.
+#  REAL_LOCK(text) = la n. la s. s(la k. k(FIRSTUSER_APP)(fsess)(TRUE))
+#    the lock screen of the live WM and of theourgia_wm_simsess.la, in the
+#    shape WM_BUILD takes (theourgia_wm.la's lockcfg; TRUE: the WM starts
+#    locked). text names the users directory as logos_wm.users does:
+#    wm_livestart.la's USERS_KIT takes its first line (trimmed;
+#    /var/lib/logos when blank), makes it 0700 when it is missing, halts
+#    loudly on anything that is not a directory, and says whether this is a
+#    first run (DIR/users missing). The app is lk_firstuser.la's: the
+#    first-run screen on a first run, the login screen otherwise, with
+#    fsess = la s. s(first)(adduser)(la s. s(login)(lock)(unlock)) over
+#    REAL_SESS(DIR). It prints "wm: users in DIR" (", a first run" after it
+#    on a first run). Everything it does happens when it is applied, so an
+#    entry applies it before it takes the screen.
+#
+#  This is the one place the WM's entries build it: the live WM
+#  (theourgia_wm_live.la) and the headless WM with LogosSession
+#  (theourgia_wm_simsess.la) both import it, so what the gates check is the
+#  code the live WM runs.
 # ═══════════════════════════════════════════════════════════════════
 
 import("logoscrypt.la")
 import("logossec.la")
 import("aletheiafs.la")
 import("logossession.la")
+import("wm_livestart.la")
+import("lk_firstuser.la")
 
-export REAL_SESS
+export REAL_SESS REAL_LOCK
+
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+
+glyph REAL_LOCK = la text.
+  USERS_KIT(Z)(str_at)(str_len)(str_eq)(concat)(str_to_int)(add)(sub)(lt)(int_eq)(div)(mod)(chr)(error)(stat)(mkdir)(text)
+    (la dir. la first. (la _.
+        REAL_SESS(dir)(la login. la lock. la unlock. la adduser.
+          la n. la s. s(la k. k(FIRSTUSER_APP)(la s. s(first)(adduser)(la s. s(login)(lock)(unlock)))(la t. la f. t))))
+      (print(concat("wm: users in ")(concat(dir)(first(", a first run")(""))))))
 
 glyph REAL_SESS = la root. (la cr. (la sec. (la fk.
     SESSION_KIT(str_at)(ord)(str_len)(str_to_int)(int_to_str)(chr)(concat)(str_eq)(add)(sub)(mul)(div)(mod)(lt)(int_eq)
