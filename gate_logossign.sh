@@ -66,8 +66,8 @@
 #      flips the result of the one pair k (the key's root bytes all differ,
 #      so a byte value names its position), the valid signature verifies
 #      FALSE for each k from 0 to 15 (a compare that kept only some XORs makes
-#      the same 16 calls); and
-#      confine(logossign.la)(nil) is ok (logossec.la's static confinement);
+#      the same 16 calls); and confine(logossign.la)(nil) is ok (logossec.la's
+#      static confinement);
 #   7. position: a toy verify with a 1 MB glyph in front of the module takes
 #      at most LOGOSSIGN_POS_BOUND percent (default 150) of its time without;
 #   8. the C host gives the VM's answers on one toy verify (TRUE) and two
