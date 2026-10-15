@@ -62,6 +62,27 @@ chk_metadebug_unspecced() {
     else fail "metadebug #41: real metadebug not green — $(grep -E 'ALL_SPECCED|META_DEBUG:' md_real.out | tr '\n' '|')"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced}"
+# ── #135 specpipe: an entry with no tests is UNTESTED, not PASS ───────────────
+# Mutant: a spec entry whose implementation is wrong and whose test list is NIL.
+# Unfixed, META_DEBUG prints "BROKEN: PASS" and "every glyph passed its spec".
+chk_specpipe_untested() {
+    cat > t_untested_spec.la <<'LA'
+import("specpipe.la")
+glyph S = CONS(TRIPLE("GOOD")(DEF("Int -> Int")("la x. x")(la x. x))(CONS(PAIR(la g. int_to_str(g(7)))("7"))(NIL)))(
+          CONS(TRIPLE("BROKEN")(DEF("Int -> Int")("la x. \"WRONG\"")(la x. "WRONG"))(NIL))(NIL))
+glyph MAIN = print(DEPLOY(S)("t_untested_mod.la"))
+LA
+    sed -e 's/("evdev.la")/("t_evdev_real.la")/' evdev_spec.la > t_evdev_real_spec.la
+    timeout 120 ./tiny_host t_untested_spec.la > un_mut.out 2>&1
+    timeout 120 ./tiny_host t_evdev_real_spec.la > un_real.out 2>&1
+    if ! has un_mut.out "  BROKEN: UNTESTED" || grep -q 'every glyph passed its spec' un_mut.out; then
+        fail "specpipe #135: untested entry reported as verified — $(grep -E '^  (GOOD|BROKEN): |^RESULT' un_mut.out | tr '\n' '|')"
+    elif has un_real.out "  OPEN_INPUT: UNTESTED" && has un_real.out "  EV_TYPE: PASS" \
+         && has un_real.out "RESULT: module VERIFIED — every TESTED glyph passed its spec; 3 glyph(s) UNTESTED (no test cases)"; then
+        pass "specpipe #135: NIL-test entries print UNTESTED and the RESULT counts them; evdev's tested decoders still PASS"
+    else fail "specpipe #135: evdev report wrong — $(grep -E '^  (OPEN_INPUT|EV_TYPE): |^RESULT' un_real.out | tr '\n' '|')"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }
