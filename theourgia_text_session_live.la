@@ -127,8 +127,10 @@ glyph NUL  = BYTE(0)
 glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
 glyph REPEAT = Z(la self. la n. la s.
     IF(int_eq(n)(0))(la _. "")(la _. concat(s)(self(sub(n)(1))(s))))
+# Total: a count below 1 is "" — with C-truncating div/mod a negative n used to
+# give |n| copies (audit2 #139), lengthening rows past the pitch.
 glyph REPEAT2 = Z(la self. la n. la s.
-    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(lt(n)(1))(la _. "")(la _.
     IF(int_eq(mod(n)(2))(0))
         (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
         (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
@@ -205,22 +207,28 @@ glyph FRAME_TW = la w. la h. la pitch. la x0. la y0.
     (concat(REPEAT2(sub(WINH)(add(INSET_Y)(FH)))(RECT_ROW(w)(pitch)(x0)(WINW)(BG_BLUE)(WIN_RED)))
            (REPEAT2(sub(h)(add(y0)(WINH)))(SOLID_ROW(w)(pitch)(BG_BLUE))))))
 
-# RENDER w/h/pitch from dims, clamp the scene (x,y), build the frame.
+# RENDER w/h/pitch from dims, clamp the scene (x,y), build the frame. A panel
+# smaller than the window halts loudly (audit2 #139): the clamp cannot place it.
+glyph NOFIT = la w. la h. error(concat("text-session: the window is ")(concat(int_to_str(WINW))(concat("x")(concat(int_to_str(WINH))(concat(" px and does not fit a ")(concat(int_to_str(w))(concat("x")(concat(int_to_str(h))(" panel")))))))))
 glyph RENDER_FRAME = la dims. la x. la y.
     (la w. (la h. (la pitch.
+    IF(lt(w)(WINW))(la _. NOFIT(w)(h))(la _. IF(lt(h)(WINH))(la _. NOFIT(w)(h))(la _.
         FRAME_TW(w)(h)(pitch)
             (CLAMP(0)(sub(w)(WINW))(x))
-            (CLAMP(0)(sub(h)(WINH))(y)))
+            (CLAMP(0)(sub(h)(WINH))(y)))))
       (D_P(dims)))(D_H(dims)))(D_W(dims))
 
 # ── A generic rectangle frame, used ONLY for the startup test pattern ──
-glyph FRAME = la w. la h. la pitch. la rx. la ry. la rw. la rh. la bg. la fg.
-    (la x0. (la y0.
+# A rectangle larger than the screen is clipped to it (rw ≤ w, rh ≤ h) before
+# the margins are computed, so every row is w pixels and there are h rows.
+glyph FRAME = la w. la h. la pitch. la rx. la ry. la rw0. la rh0. la bg. la fg.
+    (la rw. la rh. (la x0. (la y0.
         concat(REPEAT2(y0)(SOLID_ROW(w)(pitch)(bg)))
         (concat(REPEAT2(rh)(RECT_ROW(w)(pitch)(x0)(rw)(bg)(fg)))
                (REPEAT2(sub(h)(add(y0)(rh)))(SOLID_ROW(w)(pitch)(bg)))))
      (CLAMP(0)(sub(h)(rh))(ry)))
-     (CLAMP(0)(sub(w)(rw))(rx))
+     (CLAMP(0)(sub(w)(rw))(rx)))
+    (MINI(rw0)(w))(MINI(rh0)(h))
 
 # ── Startup TEST PATTERN: drawn unconditionally to prove the render path ──
 # A green field with a centred magenta box, held 2s, BEFORE any input. If this

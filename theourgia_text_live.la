@@ -61,8 +61,10 @@ glyph D_P = la dims. str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))
 glyph BYTE = la n. chr(int_to_str(n))
 glyph NUL  = BYTE(0)
 glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
+# Total: a count below 1 is "" — with C-truncating div/mod a negative n used to
+# give |n| copies (audit2 #139), lengthening rows past the pitch.
 glyph REPEAT2 = Z(la self. la n. la s.
-    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(lt(n)(1))(la _. "")(la _.
     IF(int_eq(mod(n)(2))(0))
         (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
         (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
@@ -113,12 +115,16 @@ glyph TEXT_BAND = Z(la self. la w. la pitch. la gr.
 
 # FRAME_TEXT w h pitch → the full-screen image: top desktop, upper window band,
 # the FH text rows, lower window band, bottom desktop.
+# A panel that does not reach the window's far corner (WX+WW, WY+WH) cannot hold
+# the scene: halt loudly (audit2 #139) instead of emitting an over-long frame.
+glyph NOFIT = la w. la h. error(concat("text: the window reaches ")(concat(int_to_str(add(WX)(WW)))(concat("x")(concat(int_to_str(add(WY)(WH)))(concat(" px and does not fit a ")(concat(int_to_str(w))(concat("x")(concat(int_to_str(h))(" panel")))))))))
 glyph FRAME_TEXT = la w. la h. la pitch.
+    IF(lt(w)(add(WX)(WW)))(la _. NOFIT(w)(h))(la _. IF(lt(h)(add(WY)(WH)))(la _. NOFIT(w)(h))(la _.
     concat(REPEAT2(WY)(SOLID_ROW(w)(pitch)(BG_BLUE)))
     (concat(REPEAT2(sub(TY)(WY))(RECT_ROW(w)(pitch)(WX)(WW)(BG_BLUE)(WIN_RED)))
     (concat(TEXT_BAND(w)(pitch)(0))
     (concat(REPEAT2(sub(add(WY)(WH))(add(TY)(FH)))(RECT_ROW(w)(pitch)(WX)(WW)(BG_BLUE)(WIN_RED)))
-           (REPEAT2(sub(h)(add(WY)(WH)))(SOLID_ROW(w)(pitch)(BG_BLUE))))))
+           (REPEAT2(sub(h)(add(WY)(WH)))(SOLID_ROW(w)(pitch)(BG_BLUE))))))))
 
 # ── Hold the image on screen (tail loop → bounded dump under TCO); Ctrl+C ends it ──
 glyph HOLD = Z(la self. la _. (la _. self("!"))(sleep("1")))

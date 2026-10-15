@@ -107,8 +107,10 @@ glyph NUL  = BYTE(0)
 glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
 glyph REPEAT = Z(la self. la n. la s.
     IF(int_eq(n)(0))(la _. "")(la _. concat(s)(self(sub(n)(1))(s))))
+# Total: a count below 1 is "" — with C-truncating div/mod a negative n used to
+# give |n| copies (audit2 #139), lengthening rows past the pitch.
 glyph REPEAT2 = Z(la self. la n. la s.
-    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(lt(n)(1))(la _. "")(la _.
     IF(int_eq(mod(n)(2))(0))
         (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
         (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
@@ -129,13 +131,16 @@ glyph CLAMP = la lo. la hi. la v. MAXI(lo)(MINI(hi)(v))
 
 # FRAME w h pitch rx ry rw rh bg fg → a full-screen XRGB8888 image (height·pitch
 # bytes) of background bg with an rw×rh rectangle of fg at (rx,ry), clamped on.
-glyph FRAME = la w. la h. la pitch. la rx. la ry. la rw. la rh. la bg. la fg.
-    (la x0. (la y0.
+# A rectangle larger than the screen is clipped to it (rw ≤ w, rh ≤ h) before
+# the margins are computed, so every row is w pixels and there are h rows.
+glyph FRAME = la w. la h. la pitch. la rx. la ry. la rw0. la rh0. la bg. la fg.
+    (la rw. la rh. (la x0. (la y0.
         concat(REPEAT2(y0)(SOLID_ROW(w)(pitch)(bg)))
         (concat(REPEAT2(rh)(RECT_ROW(w)(pitch)(x0)(rw)(bg)(fg)))
                (REPEAT2(sub(h)(add(y0)(rh)))(SOLID_ROW(w)(pitch)(bg)))))
      (CLAMP(0)(sub(h)(rh))(ry)))
-     (CLAMP(0)(sub(w)(rw))(rx))
+     (CLAMP(0)(sub(w)(rw))(rx)))
+    (MINI(rw0)(w))(MINI(rh0)(h))
 
 # ── Scene constants ──
 glyph BG_BLUE = BGRX(140)(40)(20)    # blue-ish desktop

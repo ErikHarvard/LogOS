@@ -53,8 +53,10 @@ glyph D_P = la dims. str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))
 glyph BYTE = la n. chr(int_to_str(n))
 glyph NUL  = BYTE(0)
 glyph BGRX = la b. la g. la r. concat(BYTE(b))(concat(BYTE(g))(concat(BYTE(r))(NUL)))
+# Total: a count below 1 is "" — with C-truncating div/mod a negative n used to
+# give |n| copies (audit2 #139), lengthening rows past the pitch.
 glyph REPEAT2 = Z(la self. la n. la s.
-    IF(int_eq(n)(0))(la _. "")(la _.
+    IF(lt(n)(1))(la _. "")(la _.
     IF(int_eq(mod(n)(2))(0))
         (la _. (la h. concat(h)(h))(self(div(n)(2))(s)))
         (la _. concat(s)((la h. concat(h)(h))(self(div(n)(2))(s))))))
@@ -83,13 +85,17 @@ glyph SIGBAND = Z(la self. la sig. la w. la pitch. la ox. la r.
     IF(int_eq(r)(SZ))(la _. "")(la _.
         concat(REPEAT2(SCALE)(SIGROW(sig)(w)(pitch)(ox)(r)))
               (self(sig)(w)(pitch)(ox)(add(r)(1)))))
+# A panel smaller than the DSZ×DSZ sigil cannot hold it: halt loudly (audit2
+# #139) — the negative margins used to emit an over-long frame, cut off by present.
+glyph NOFIT = la w. la h. error(concat("sigil: the sigil is ")(concat(int_to_str(DSZ))(concat("x")(concat(int_to_str(DSZ))(concat(" px and does not fit a ")(concat(int_to_str(w))(concat("x")(concat(int_to_str(h))(" panel")))))))))
 glyph FRAME = la sig. la w. la h. la pitch.
+    IF(lt(w)(DSZ))(la _. NOFIT(w)(h))(la _. IF(lt(h)(DSZ))(la _. NOFIT(w)(h))(la _.
     (la ox. (la oy.
         concat(REPEAT2(oy)(SOLID_ROW(w)(pitch)(BG)))
         (concat(SIGBAND(sig)(w)(pitch)(ox)(0))
                (REPEAT2(sub(h)(add(oy)(DSZ)))(SOLID_ROW(w)(pitch)(BG)))))
      (div(sub(h)(DSZ))(2)))
-     (div(sub(w)(DSZ))(2))
+     (div(sub(w)(DSZ))(2))))
 
 # ── The three sigils: two parents, then the sealed compound ──
 glyph S_LOVE  = SIGIL(PRIM("LOVE"))
