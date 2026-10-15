@@ -3196,7 +3196,7 @@ printf 'glyph MAIN = print(write_exec("/tmp/c3_we_out")(concat("A")(concat(chr("
 ./tiny_host native_codegen3.la >/dev/null 2>/tmp/c3.err || { echo "FAIL  native_codegen3: compile error on [write_exec]: $(head -1 /tmp/c3.err)"; ok=0; }
 rm -f /tmp/c3_we_out /tmp/c3_we_host /tmp/c3_we_native
 ./tiny_host native_input.la > /tmp/c3_we_hstdout 2>/dev/null; cp /tmp/c3_we_out /tmp/c3_we_host; hmode=$(stat -c '%a' /tmp/c3_we_out)
-./native_codegen3_out  > /tmp/c3_we_nstdout 2>/dev/null; cp /tmp/c3_we_out /tmp/c3_we_native; nmode=$(stat -c '%a' /tmp/c3_we_out)
+vmrun ./native_codegen3_out  > /tmp/c3_we_nstdout 2>/dev/null; cp /tmp/c3_we_out /tmp/c3_we_native; nmode=$(stat -c '%a' /tmp/c3_we_out)
 { cmp -s /tmp/c3_we_nstdout /tmp/c3_we_hstdout && cmp -s /tmp/c3_we_native /tmp/c3_we_host \
   && [ "$nmode" = "755" ] && [ "$hmode" = "755" ] && [ "$(wc -c < /tmp/c3_we_native)" = "5" ]; } \
   || { echo "FAIL  native_codegen3: write_exec not faithful (stdout/file/mode native vs host; nmode=$nmode hmode=$hmode size=$(wc -c < /tmp/c3_we_native))"; ok=0; }
@@ -5193,13 +5193,13 @@ ONFCON="$(./tiny_host /tmp/t_onfcon.la 2>/dev/null || true)"; rm -f /tmp/t_onfco
 OCLR="$(printf '%s\n' "$ONFCON" | sed -n 's/^CLR=//p')"; OCRL="$(printf '%s\n' "$ONFCON" | sed -n 's/^CRL=//p')"
 { [ -n "$OCLR" ] && [ "$OCLR" = "$OCRL" ]; }                          || { echo "FAIL  onf: ⊕ operand order changes the feature record -- ontoconjunction is co-presence, symmetric (LA.tex:2854)"; ok=0; }
 ./tiny_host secd.la >/dev/null 2>&1
-cp onf.la logos_source.la; ./tiny_host codegen.la >/dev/null 2>&1; ./logos_secd > onf_vm.out 2>/dev/null
+cp onf.la logos_source.la; ./tiny_host codegen.la >/dev/null 2>&1; vmrun ./logos_secd > onf_vm.out 2>/dev/null
 cmp -s onf_host.out onf_vm.out                                       || { echo "FAIL  onf: native feature extraction != host"; ok=0; }
 # (b) topoderive.la DSIGIL render — host==VM byte-identical (imports sigil.la + onf.la)
 rm -f td_host.out td_vm.out logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 ./tiny_host topoderive.la > td_host.out 2>/dev/null
-cp topoderive.la logos_source.la; ./tiny_host codegen.la >/dev/null 2>&1; ./logos_secd > td_vm.out 2>/dev/null
+cp topoderive.la logos_source.la; ./tiny_host codegen.la >/dev/null 2>&1; vmrun ./logos_secd > td_vm.out 2>/dev/null
 cmp -s td_host.out td_vm.out                                         || { echo "FAIL  topoderive: native DSIGIL render != host"; ok=0; }
 # (c) DSIGIL injectivity + canonicality + directionality (host-only render compare)
 cat > /tmp/t_dsig.la <<'LAEOF'
