@@ -1433,9 +1433,12 @@ say "Autonomous self-improving loop (autoloop.la — generate→verify→iterate
 # whole module. Bounded, with three clear terminations: goal met, step budget
 # exhausted, or a verification failure (LOUD HALT via `error`, nonzero exit). We
 # assert all three on the host. (host==VM was verified byte-identical — both the
-# loop trace AND the generated mathutil.la — but isn't re-run each build: codegen of
-# a specpipe-importer is ~160s; like the DRM/live capstones, it is host-checked here
-# with manual VM confirmation.)
+# loop trace AND the generated mathutil.la — but is NOT re-run each build. The
+# cost is not the reason: ~160-200s is the HOST codegen (`./tiny_host codegen.la`)
+# of a specpipe-importer, while compiling autoloop.la with compiler.bin on the
+# native VM takes ~9s and gives the same stream (audit2 #30). The check is simply
+# not wired: compiler.bin is first seeded in the self-hosting stage further down.
+# Until it is, autoloop's host==VM agreement is UNVERIFIED by this build.)
 ok=1
 # (1) SUCCESS — a 4-step math-utilities goal runs autonomously to completion + deploy.
 rm -f mathutil.la
@@ -1493,8 +1496,11 @@ say "Bounded self-repair (selfrepair.la — an organ corrupted, detected, regene
 # The corruption is deliberately a WRONG CONSTANT (3 -> 4), not a truncation: the
 # file still parses and still defines its namesake, so aatc's structural
 # SENSE_FILE would call it healthy. Only the byte-exact criterion catches it.
-# (host-only here, like autoloop above: selfrepair.la imports specpipe.la and
-# codegen of a specpipe-importer is ~160s; host==VM is a manual confirmation.)
+# (host-only here, like autoloop above: selfrepair.la imports specpipe.la, and
+# its host==VM check is not wired — ~160s is the HOST codegen; the compiler.bin
+# compile on the VM (seconds for autoloop) is unused because compiler.bin is
+# seeded later (audit2 #30).
+# Its host==VM agreement is UNVERIFIED by this build.)
 ok=1
 rm -f organ.la
 SR="$(./tiny_host selfrepair.la 2>/dev/null)"; SRC_RC=$?
