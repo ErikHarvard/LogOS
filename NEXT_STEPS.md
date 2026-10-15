@@ -39,11 +39,16 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    asserts it (host + VM). *Caveat now CLOSED:* the full objective derivation (geometry
    computed from a canonical structure, not a fixed table) was what rode on **item 7** — now
    built. `topoderive.la`'s deep renderer canonicalizes the concept (CANONIQ) *before*
-   deriving its picture, and the item-7 build stage proves the property directly: feature
-   extraction is order-independent for commutative concepts (`build.sh:1901`, ⊗LR==⊗RL),
-   `DSIGIL` is canonical (`build.sh:1933`, commutative ⊕ order can't change the form) yet
-   still directional (`build.sh:1934`, ▷ order does change it). Both renderers — surface and
-   deep — now yield one form per concept regardless of operand order. **Item 1 fully built.**
+   deriving its picture, and the item-7 build stage proves the property directly. *(Since
+   corrected: ⊗ is NON-commutative, `LINGUA_ADAMICA.tex:2837`, so ⊗(L,R) and ⊗(R,L) are two
+   concepts and only ⊕ operands are sorted — `CANONIQ` in `sigil.la`.)* The item-7 stage of
+   build.sh now asserts, in its `onf`/`topoderive` checks (find them by their FAIL text): ⊗
+   operand order DOES change the ONF feature record ("ontosynthesis extracted as
+   commutative"); ⊕ order does not ("ontoconjunction is co-presence, symmetric"); `DSIGIL`
+   is canonical under ⊕ order ("not canonical (commutative ⊕ order changes form)") yet
+   still directional ("directional ▷ wrongly order-independent"). Both renderers — surface
+   and deep — yield one form per concept: ⊕ order never changes it, ⊗ and ▷ order do,
+   because those orders name different concepts. **Item 1 fully built.**
 
 2. **Ontosemantics is tautological via the laws of thought as reality's metalogical
    ontosyntax — the ontological algorithm of the language.** *Status:* **built (operative).**
@@ -231,7 +236,8 @@ sign would no longer BE the referent. The test only ever observes; it never stip
 > **STATUS: DONE.** Committed `3baf018`, tagged `verified-2026-06-17-3baf018`, branch
 > `native-backend-stage3a` pushed to origin. Full audit **132 PASS / 0 FAIL, EXIT=0**, Stage-3a line
 > present & passing. ROADMAP flipped (Stage 3 `[~]`, `3a [x]`, `3b [ ]`). The commit holds
-> `native_codegen3.la` (= codegen2 + TCO + 768 MB heap) + build.sh Stage-3a section + `.gitignore` +
+> `native_codegen3.la` (= codegen2 + TCO + 768 MB heap at that commit; the heap is now
+> 16 GiB, `HEAP_SIZE` at native_codegen3.la:540) + build.sh Stage-3a section + `.gitignore` +
 > ROADMAP + NEXT_STEPS. (Build note: the deep-geometry/`cob.la` codegen was the slow step — ~13 min on
 > a single 100%-CPU compile, healthy not hung; full build ~40+ min. Be patient there.)
 > The mechanism + gate detail below is retained as the historical record.
@@ -640,7 +646,7 @@ WHAT'S ALREADY TRUE (by construction / verified in pieces):
   (`eval.la` interprets `kernel.la`), Albedo Stage 4 (compiler+VM regenerate themselves
   byte-identically), `copy_self`.
 
-WHAT THE CERTIFICATION ADDS (a dedicated `heterology_audit.la` / build stage):
+WHAT THE CERTIFICATION ADDS (a dedicated `heterology_audit.la` — not yet written — / build stage):
 - Enumerate the full CONCEPT inventory (9 primitives, 5 modes, 𝔑, κ, 𝓡, the 8 self-relations,
   all derived concepts in every module) and assert `AUTO_OK` for EACH — one global sweep, no
   exceptions, so "no heterology anywhere" is certified, not just per-module.
