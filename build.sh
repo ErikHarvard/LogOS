@@ -1955,7 +1955,7 @@ printf '%s\n' "$SD" | grep -q "IF (arity 3)"  || { echo "FAIL  selfdoc: IF shoul
 printf '%s\n' "$SD" | grep -q "DOC (arity 1)" || { echo "FAIL  selfdoc: DOC should be arity 1"; ok=0; }
 printf '%s\n' "$SD" | grep -q "AND (arity 2)" || { echo "FAIL  selfdoc: AND should be arity 2"; ok=0; }
 # (3) THE INVENTORY IS COMPLETE — count matches the file's actual glyph count.
-NG=$(grep -c '^glyph ' selfdoc.la)
+NG=$(grep -c '^glyph ' selfdoc.la || true)
 printf '%s\n' "$SD" | grep -q "$NG glyphs, read from the form itself" \
   || { echo "FAIL  selfdoc: inventory count != the $NG glyphs actually in the file"; ok=0; }
 # (4) DEPENDENCIES are real: DOC is built out of the pieces it names.
@@ -3349,7 +3349,8 @@ case "$BYTE_CHILD" in new_logos_gen1_pid*.bin) : ;; *) echo "FAIL  byte-vm: kern
 # desugar n -> str_to_int("n"), and dispatch the int builtins. Must match the C
 # host — this closes the last cross-engine integer gap (all five engines agree).
 printf 'glyph SEQ = la a. la b. b\nglyph IF = la c. la t. la f. c(t)(f)("!")\nglyph MAIN = SEQ(print(int_to_str(add(mul(6)(7))(sub(10)(8)))))(SEQ(print(int_to_str(div(17)(5))))(print(IF(lt(3)(5))(la _. "yes")(la _. "no"))))\n' > /tmp/bcint.la
-BCM=$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1)
+BCM=$(grep -n '^glyph MAIN' bytecode.la | tail -1 | cut -d: -f1 || true)
+[ -n "$BCM" ] || { echo "FAIL  bcint: could not locate bytecode.la's MAIN"; ok=0; }
 head -$((BCM-1)) bytecode.la > /tmp/bc_rb.la
 printf 'glyph MAIN = RUN_BYTES_PROGRAM(PARSE_PROGRAM(read_file("/tmp/bcint.la")))\n' >> /tmp/bc_rb.la
 head -$((BCM-1)) bytecode.la > /tmp/bc_sm.la
@@ -3408,6 +3409,8 @@ if command -v nasm >/dev/null 2>&1; then
     nasm -f bin nativert.asm -o /tmp/nativert_ref 2>/dev/null
     cmp -s logos_nativert /tmp/nativert_ref || { echo "FAIL  nativert: LA-emitted bytes differ from nasm -f bin nativert.asm"; ok=0; }
     rm -f /tmp/nativert_ref
+else
+    echo "SKIP  nativert byte-identity: nasm not installed"
 fi
 # native == host: the carved runtime's output is byte-identical to print("I AM THAT I AM")
 chmod +x logos_nativert 2>/dev/null
@@ -3445,6 +3448,8 @@ if command -v nasm >/dev/null 2>&1; then
     dd if=native_codegen_out of=/tmp/ncrt_emb bs=1 skip=120 count=1313 2>/dev/null
     cmp -s /tmp/ncrt_emb /tmp/ncrt_ref || { echo "FAIL  native_codegen: embedded runtime differs from nasm -f bin native_codegen_rt.asm"; ok=0; }
     rm -f /tmp/ncrt_ref /tmp/ncrt_emb
+else
+    echo "SKIP  native_codegen embedded-runtime byte-identity: nasm not installed"
 fi
 # native==host across a spread of Stage-1 programs (the b_τ ≡ f_τ gate)
 ncheck () {
@@ -3500,6 +3505,8 @@ if command -v nasm >/dev/null 2>&1; then
     dd if=native_codegen2_out of=/tmp/nc2rt_emb bs=1 skip=120 count=1111 2>/dev/null
     cmp -s /tmp/nc2rt_emb /tmp/nc2rt_ref || { echo "FAIL  native_codegen2: embedded runtime differs from nasm -f bin native_codegen2_rt.asm"; ok=0; }
     rm -f /tmp/nc2rt_ref /tmp/nc2rt_emb
+else
+    echo "SKIP  native_codegen2 embedded-runtime byte-identity: nasm not installed"
 fi
 # native==host across lambda/closure programs (the b_τ ≡ f_τ gate)
 n2check () {  # $1 = whole program (multi-line) ; $2 = label
@@ -3571,6 +3578,8 @@ if command -v nasm >/dev/null 2>&1; then
     dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=$(stat -c%s /tmp/c3rt_ref) 2>/dev/null
     cmp -s /tmp/c3rt_emb /tmp/c3rt_ref || { echo "FAIL  native_codegen3: embedded runtime differs from nasm native_codegen3_rt.asm"; ok=0; }
     rm -f /tmp/c3rt_ref /tmp/c3rt_emb
+else
+    echo "SKIP  native_codegen3 embedded-runtime byte-identity: nasm not installed"
 fi
 # native==host (b_τ ≡ f_τ): TCO must PRESERVE semantics on every program shape.
 c3check () {  # $1 = whole program ; $2 = label ; expects native==host, rc 0
@@ -3888,13 +3897,14 @@ fi
 #    must also halt non-zero. Valid string use must be unaffected.
 say "Native backend freeze-day fix #2: non-STR argument loud-halt (no SIGSEGV)"
 c2ok=1
-for c2p in 'str_len(add(1)(2))' 'ord(add(1)(2))' 'chr(add(1)(2))' 'str_to_int(add(1)(2))' 'str_head(add(1)(2))' 'str_tail(add(1)(2))' 'concat(add(1)(2))("x")' 'concat("x")(add(1)(2))' 'read_file(add(1)(2))'; do
+for c2p in 'str_len(add(1)(2))' 'ord(add(1)(2))' 'chr(add(1)(2))' 'str_to_int(add(1)(2))' 'str_head(add(1)(2))' 'str_tail(add(1)(2))' 'concat(add(1)(2))("x")' 'concat("x")(add(1)(2))' 'read_file(add(1)(2))' \
+           'str_eq(add(1)(2))("x")' 'str_eq("x")(add(1)(2))' 'write_exec(add(1)(2))("x")' 'write_exec("x")(add(1)(2))'; do
     printf 'glyph MAIN = print(%s)\n' "$c2p" > native_input.la
     ncg3 || { echo "FAIL  native_codegen3 #2: compile '$c2p'"; c2ok=0; }
     nrc=0; nout=$(timeout 30 ./native_codegen3_out 2>/dev/null) || nrc=$?
     hrc=0; ./tiny_host native_input.la >/dev/null 2>&1 || hrc=$?
-    { [ "$nrc" != "0" ] && [ "$nrc" != "139" ] && [ -z "$nout" ] && [ "$hrc" != "0" ]; } \
-      || { echo "FAIL  native_codegen3 #2: '$c2p' (native_rc=$nrc out='$nout' host_rc=$hrc; want native non-zero non-139 empty, host non-zero)"; c2ok=0; }
+    { [ "$nrc" = "1" ] && [ -z "$nout" ] && [ "$hrc" != "0" ]; } \
+      || { echo "FAIL  native_codegen3 #2: '$c2p' (native_rc=$nrc out='$nout' host_rc=$hrc; want native rc EXACTLY 1, empty, host non-zero)"; c2ok=0; }
 done
 # valid string use is UNAFFECTED (the guard rejects only non-STR values)
 printf 'glyph MAIN = print(str_len("Lingua Adamica"))\n' > native_input.la
@@ -3902,7 +3912,7 @@ ncg3
 { [ "$(./native_codegen3_out)" = "14" ] && [ "$(./tiny_host native_input.la)" = "14" ]; } \
   || { echo "FAIL  native_codegen3 #2: guard broke a valid str_len"; c2ok=0; }
 if [ "$c2ok" -eq 1 ]; then
-    echo "PASS  native backend freeze-day fix #2: a non-STR argument to a string builtin (str_len/ord/chr/str_to_int/str_head/str_tail/read_file + both positions of concat/str_eq/write_exec) now HALTS LOUDLY (rt_not_string, exit 1, 'native: argument is not a string') instead of dereferencing the value as a [len][ptr] descriptor and SIGSEGV'ing — native exit matches the host's clean rc 1 (was rc 139) on 9 non-STR repros across unary + both binary arg positions; valid string ops unaffected (str_len(\"Lingua Adamica\")=14 native==host). The C host and SECD VM already guarded this; the native codegen3 runtime now does too."
+    echo "PASS  native backend freeze-day fix #2: a non-STR argument to a string builtin (str_len/ord/chr/str_to_int/str_head/str_tail/read_file + both positions of concat/str_eq/write_exec) now HALTS LOUDLY (rt_not_string, exit 1, 'native: argument is not a string') instead of dereferencing the value as a [len][ptr] descriptor and SIGSEGV'ing — native exit matches the host's clean rc 1 (was rc 139) on 13 non-STR repros across unary + both binary arg positions (incl. str_eq/write_exec); valid string ops unaffected (str_len(\"Lingua Adamica\")=14 native==host). The C host and SECD VM already guarded this; the native codegen3 runtime now does too."
 else
     exit 1
 fi
@@ -4219,7 +4229,7 @@ POKE_SRC=kernel/paging_poke_smoke.la
 if [ ! -f "$POKE_SRC" ]; then
     echo "SKIP  poke smoke: $POKE_SRC absent"
 else
-    PK_VAL=$(grep -oE 'poke\([0-9]+\)\([0-9]+\)' "$POKE_SRC" | head -1 | sed 's/.*)(\([0-9]*\))/\1/')
+    PK_VAL=$(grep -oE 'poke\([0-9]+\)\([0-9]+\)' "$POKE_SRC" | head -1 | sed 's/.*)(\([0-9]*\))/\1/' || true)
     if [ -z "$PK_VAL" ]; then
         echo "FAIL  poke smoke: could not read the poked byte out of $POKE_SRC — refusing to"
         echo "      judge the output against a value that did not parse"
@@ -4371,10 +4381,11 @@ cp logos_program.bin compiler.bin
 ok=1
 cp vm_seed runner; chmod +x runner                        # a differently-named VM to run with
 # (1) compiler reproduces itself
-cp codegen.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1
-cmp -s logos_program.bin compiler.bin \
-    || { echo "FAIL  Stage4: native self-compilation of codegen.la differs from the seed"; ok=0; }
+rm -f logos_program.bin
+cp codegen.la logos_source.la
+rrc=0; ./runner >/dev/null 2>&1 || rrc=$?
+{ [ "$rrc" = 0 ] && [ -f logos_program.bin ] && cmp -s logos_program.bin compiler.bin; } \
+    || { echo "FAIL  Stage4: native self-compilation of codegen.la differs from the seed (runner rc=$rrc)"; ok=0; }
 # (2) VM reproduces itself: native-compile secd.la, then run it to emit the VM
 cp secd.la logos_source.la; cp compiler.bin logos_program.bin
 ./runner >/dev/null 2>&1                                  # logos_program.bin := secd.la stream
@@ -5931,7 +5942,7 @@ check_phonsem () {  # $1 = engine label, $2 = output file
     #   SEPARATION. Alignment (identity, 1.0 by nature) and instantiation fidelity
     #   (measured, <1.0) must stay in different registers; collapsing them is the
     #   category error the ATT discipline exists to prevent.
-    ALINE=$(grep -F "phonsem ontophonosemantic alignment" "$2" | head -1)
+    ALINE=$(grep -F "phonsem ontophonosemantic alignment" "$2" | head -1 || true)
     [ -n "$ALINE" ] || { echo "FAIL  phonsem($1): the alignment line is ABSENT — the identity register is not reported at all"; ok=0; }
     case "$ALINE" in
       *"= 1.0 by nature"*) : ;;
@@ -6051,9 +6062,9 @@ say "Formant single-source guard: psc/phonsem formants track phonym's synthesis 
 # phonym's ACTUAL triples and asserts psc + phonsem carry the same ordered formants — so
 # phonym.la is the single source of truth (the one goertzel.la measures against).
 ok=1
-LOVE=$(grep 'sub(i)(1440)' phonym.la | grep -oE 'VSAMP\([0-9]+\)\([0-9]+\)\([0-9]+\)' | grep -oE '[0-9]+' | tr '\n' ' ')
+LOVE=$(grep 'sub(i)(1440)' phonym.la | grep -oE 'VSAMP\([0-9]+\)\([0-9]+\)\([0-9]+\)' | grep -oE '[0-9]+' | tr '\n' ' ' || true)
 LF1=$(echo $LOVE|awk '{print $1}'); LF2=$(echo $LOVE|awk '{print $2}'); LF3=$(echo $LOVE|awk '{print $3}')
-REC=$(grep -oE 'VSAMP\(270\)\([0-9]+\)\([0-9]+\)' phonym.la | grep -oE '[0-9]+' | tr '\n' ' ')
+REC=$(grep -oE 'VSAMP\(270\)\([0-9]+\)\([0-9]+\)' phonym.la | grep -oE '[0-9]+' | tr '\n' ' ' || true)
 RF1=$(echo $REC|awk '{print $1}'); RF2=$(echo $REC|awk '{print $2}'); RF3=$(echo $REC|awk '{print $3}')
 [ -n "$LF3" ] && [ -n "$RF3" ] || { echo "FAIL  formant-guard: could not extract phonym's formant triples"; ok=0; }
 grep -q "LCONS($LF1)(LCONS($LF2)(LCONS($LF3)" psc.la                        || { echo "FAIL  formant-guard: psc.la LOVE_F drifted from phonym ($LF1/$LF2/$LF3)"; ok=0; }
@@ -6263,7 +6274,7 @@ say "LA arc item 5 — L3: the grammar parsing ITSELF (grammar_l3.la)"
 #   unconditionally would produce an identical accept. Prefixing an `eq` token starts
 #   the stream with `=`, which no production can begin.
 ok=1
-L3LN=$(grep -n '^glyph ' grammar.la | sed -n '17p' | cut -d: -f1)
+L3LN=$(grep -n '^glyph ' grammar.la | sed -n '17p' | cut -d: -f1 || true)
 [ -n "$L3LN" ] || { echo "FAIL  item5 L3: could not locate the 17th glyph definition in grammar.la — the subject slice is undefined"; ok=0; }
 head -$((L3LN-1)) grammar.la > l3_subject.la
 [ -s l3_subject.la ] || { echo "FAIL  item5 L3: subject slice is empty — the self-parse below would assert nothing"; ok=0; }
@@ -7119,10 +7130,12 @@ LAEOF
 OUT="$(nrun /tmp/t_proc.la)"
 printf '%s\n' "$OUT" | grep -qxF "child exit code: 42" || { echo "FAIL  syscalls: fork/exit/waitpid"; ok=0; }
 printf '%s\n' "$OUT" | grep -qxF "init done"           || { echo "FAIL  syscalls: parent continuation"; ok=0; }
-# execve: child becomes /bin/true (exit 0), parent reaps.
+# execve: child becomes /bin/true (exit 0), parent reaps. A FAILED execve must not
+# read the same as a successful one — exit 99 if execve returns instead of replacing the image.
 cat > /tmp/t_exec.la <<'LAEOF'
+glyph SEQ = la a. la b. b
 glyph IF = la c. la t. la f. c(t)(f)("!")
-glyph MAIN = (la pid. IF(str_eq(pid)("0"))(la _. execve("/bin/true"))(la _. print(concat("exec child status: ")(waitpid(pid)))))(fork("!"))
+glyph MAIN = (la pid. IF(str_eq(pid)("0"))(la _. SEQ(execve("/bin/true"))(exit("99")))(la _. print(concat("exec child status: ")(waitpid(pid)))))(fork("!"))
 LAEOF
 OUT="$(nrun /tmp/t_exec.la)"
 printf '%s\n' "$OUT" | grep -qxF "exec child status: 0" || { echo "FAIL  syscalls: execve/waitpid"; ok=0; }
