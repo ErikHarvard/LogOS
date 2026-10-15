@@ -6397,10 +6397,18 @@ cp logos_program.bin compiler.bin
 cp logos_secd runner; chmod +x runner
 ok=1
 nrun () {   # $1 = .la source file → native stdout
+    # Called inside $(…), where errexit is off (audit2 #105). The compile step goes
+    # through vmrun: its FAIL line reaches the build's stdout on fd 3 (not the
+    # capture) and its exit 1 ends the substitution, so the assignment stops the
+    # build. The run step names a non-zero exit the same way but RETURNS it: a
+    # plain assignment still stops the build, and a `|| true` site (reap, reapnb,
+    # GC) still reaches its own FAIL check with the captured output.
     cp "$1" logos_source.la
     cp compiler.bin logos_program.bin
-    ./runner >/dev/null 2>&1
-    ./runner 2>/dev/null
+    vmrun ./runner >/dev/null 2>&1
+    local rc=0; ./runner 2>/dev/null || rc=$?
+    [ "$rc" = 0 ] || echo "FAIL  build.sh:$LINENO: './runner' exited $rc (nrun $1)" >&3
+    return "$rc"
 }
 # fork / exit / waitpid: child exits 42, parent reaps it.
 cat > /tmp/t_proc.la <<'LAEOF'
@@ -6767,7 +6775,7 @@ glyph MAIN = SEQ(TOP("!"))(DRAIN(0))
 LAEOF
 if unshare -rpf --mount-proc true >/dev/null 2>&1; then
     cp /tmp/t_orphan.la logos_source.la; cp compiler.bin logos_program.bin
-    ./runner >/dev/null 2>&1                          # compile (not as PID 1)
+    vmrun ./runner >/dev/null 2>&1                          # compile (not as PID 1)
     OUT="$(unshare -rpf --mount-proc ./runner 2>/dev/null || true)"
     printf '%s\n' "$OUT" | grep -qxF "reaped 2" \
         && echo "PASS  PID 1 reaps an orphaned grandchild via reparenting: 2 reaps" \
@@ -7009,7 +7017,7 @@ fi
 guard_compile() {                                # $1 = MAIN body → compile to stream
     printf 'glyph MAIN = %s\n' "$1" > logos_source.la
     cp compiler.bin logos_program.bin
-    ./runner >/dev/null 2>&1
+    vmrun ./runner >/dev/null 2>&1
 }
 gok=1
 guard_loud() {                                   # $1 = label, $2 = MAIN body
@@ -7109,7 +7117,7 @@ fi
 vmguard () {   # $1 = label   $2 = MAIN expr   $3 = expected 'secd:' string
     printf 'glyph MAIN = %s\n' "$2" > logos_source.la
     cp compiler.bin logos_program.bin
-    ./runner >/dev/null 2>&1                        # native-compile the broken program
+    vmrun ./runner >/dev/null 2>&1                        # native-compile the broken program
     grc=0; GERR="$(./runner 2>&1 1>/dev/null)" || grc=$?
     if [ "$grc" -ne 0 ] && printf '%s\n' "$GERR" | grep -qF "$3"; then
         echo "PASS  guard: $1 halts loudly (rc $grc, '$3')"

@@ -240,6 +240,44 @@ chk_drm_nonasm() {
     else fail "drm #113:$res"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm}"
+# ── #105 (remainder): the VM steps inside nrun / guard_compile ────────────────
+# nrun runs in $(…), where bash drops errexit: a dead compile step was ignored and
+# a dead run step ended the build through the assignment, with no FAIL line.
+# vmrun, nrun and guard_compile are extracted from build.sh and run under its
+# `set -euo pipefail` with a stub runner. Mutants: the compile step dies of
+# SIGSEGV (stops); the run step dies at a plain site (stops) and at a `|| true`
+# site (runs on to that site's own check); guard_compile's step dies in the main
+# shell (stops). Each must print the FAIL line. Real: a good runner's output
+# reaches the capture.
+chk_bare_vm_helpers() {
+    { grep -E '^exec 3>&1$|^vmrun\(\) \{' "$REPO/build.sh"
+      awk '/^nrun \(\) \{/,/^\}/' "$REPO/build.sh"
+      awk '/^guard_compile\(\) \{/,/^\}/' "$REPO/build.sh"; } > helpers_blk.sh
+    grep -q '^nrun ' helpers_blk.sh && grep -q '^guard_compile' helpers_blk.sh \
+        || { fail "bare #105h: cannot extract nrun/guard_compile from build.sh"; return; }
+    mkdir -p d105h; : > d105h/compiler.bin; : > d105h/t.la
+    printf '#!/bin/bash\nkill -SEGV $$\n' > d105h/seg
+    printf '#!/bin/bash\nn=$(cat cnt 2>/dev/null || echo 0); n=$((n+1)); echo $n > cnt\n[ $n -ge 2 ] && kill -SEGV $$\necho native out\n' > d105h/runseg
+    printf '#!/bin/bash\necho native out\n' > d105h/okvm
+    chmod +x d105h/seg d105h/runseg d105h/okvm
+    h105() { cp "d105h/$1" d105h/runner; rm -f d105h/cnt
+             (cd d105h && timeout 30 bash -c "set -euo pipefail; . ../helpers_blk.sh; $2" 2>&1); }
+    local o rc bad="" F="^FAIL  build.sh:[0-9]*: './runner' exited 139"
+    o=$(h105 seg 'OUT="$(nrun t.la)"; echo reached'); rc=$?
+    { [ "$rc" != 0 ] && grep -q "$F" <<< "$o" && ! grep -q reached <<< "$o"; } || bad+=" compile-dies(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    o=$(h105 runseg 'OUT="$(nrun t.la)"; echo reached'); rc=$?
+    { [ "$rc" != 0 ] && grep -q "$F" <<< "$o" && ! grep -q reached <<< "$o"; } || bad+=" run-dies(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    o=$(h105 runseg 'OUT="$(nrun t.la 2>/dev/null || true)"; echo reached'); rc=$?
+    { [ "$rc" = 0 ] && grep -q "$F" <<< "$o" && grep -q reached <<< "$o"; } || bad+=" or-true-site(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    o=$(h105 seg 'guard_compile "print(1)"; echo reached'); rc=$?
+    { [ "$rc" != 0 ] && grep -q "$F" <<< "$o" && ! grep -q reached <<< "$o"; } || bad+=" guard_compile-dies(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    if [ -n "$bad" ]; then fail "bare #105h: a dead VM step in a helper left no FAIL line:$bad"; return; fi
+    o=$(h105 okvm 'OUT="$(nrun t.la)"; guard_compile "print(1)"; echo "reached [$OUT]"'); rc=$?
+    if [ "$rc" = 0 ] && [ "$o" = "reached [native out]" ]; then
+        pass "bare #105h: nrun (in \$(…), strict and || true sites) and guard_compile print 'FAIL … exited 139' when the VM dies; a good runner's output reaches the capture"
+    else fail "bare #105h: good runner not green (rc=$rc, out=[$(tr '\n' '|' <<< "$o")])"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }
