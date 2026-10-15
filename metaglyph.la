@@ -143,11 +143,19 @@ glyph OP_DET  = NOT(str_eq(NU_APP)(NN_APP))                          # ν* actio
 # all five modes and κ, so no meta-polysemy. Idempotence 𝓡(𝓡) ≡ 𝓡 is the declared
 # fixed-point rewrite ↻(𝓡) → 𝓡 (the evaluator applied to itself yields itself — the
 # tautological collapse, as ↻(BEING) → SELF is for Being).
+# ⚠ HOW IT IS CHECKED HERE (audit2 #116): IDEMP_R is a PRIVATE one-entry string
+# rewrite, '↻(▷(DEPTH,RECOGNITION))' → '▷(DEPTH,RECOGNITION)' — a hand copy of the
+# one case in canon.la's REWRITE_MC (canon.la:89) — not canon.la's NORMK, which this
+# file neither imports nor reimplements (its CANON has no rewrites). R_IDEM therefore
+# checks that this declared literal rule fires on its one literal input and that its
+# right side equals CANON(EVAL_R); it would answer NO the moment EVAL_R changed, only
+# because the literal stops matching. It witnesses the declaration, not a computed
+# fixed point of the language's rewrite system.
 glyph EVAL_R   = DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))             # 𝓡 = ▷(DEPTH,RECOGNITION)
 glyph R_GLYPH  = GLYPHOF(EVAL_R)
-glyph IDEMP_R  = la s. IF(str_eq(s)("↻(▷(DEPTH,RECOGNITION))"))(la _. "▷(DEPTH,RECOGNITION)")(la _. s)
-glyph R_OF_R   = IDEMP_R(REN(MCOLLAPSE(R_GLYPH)))                    # 𝓡(𝓡) normalized → 𝓡
-glyph R_IDEM   = str_eq(R_OF_R)(CANON(EVAL_R))                       # 𝓡(𝓡) ≡ 𝓡 ?
+glyph IDEMP_R  = la s. IF(str_eq(s)("↻(▷(DEPTH,RECOGNITION))"))(la _. "▷(DEPTH,RECOGNITION)")(la _. s)   # private literal copy of canon.la:89's case
+glyph R_OF_R   = IDEMP_R(REN(MCOLLAPSE(R_GLYPH)))                    # 𝓡(𝓡) under the declared literal rule
+glyph R_IDEM   = str_eq(R_OF_R)(CANON(EVAL_R))                       # does the declared rule map 𝓡(𝓡) to 𝓡 ?
 glyph R_NEQ_K  = NOT(str_eq(CANON(EVAL_R))(CANON(KAPPA)))            # 𝓡 ≠ κ   (meta-monosemy)
 glyph R_NEQ_CONT = NOT(str_eq(CANON(EVAL_R))(CANON(MODE_CONT)))     # 𝓡 ≠ ⊂   (meta-monosemy)
 glyph YN = la b. IF(b)(la _. "YES")(la _. "NO")
@@ -201,8 +209,9 @@ glyph OP_COMP  = SYN(PRIM("BECOMING"))(PRIM("FORM"))        # γ compose      (3
 glyph OP_RECOG = MC(PRIM("RECOGNITION"))                    # ρ recognize    (4)  ≡ SR_ABOUT
 glyph OP_INTEG = SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))     # 𝔄 integrate    (5)  ≡ COMPASSION
 
-# canon.la is not importable (no export line), so SR_ABOUT is re-stated here the
-# same way metalogic_spec re-inlines the κ machinery. If canon.la's definition
+# SR_ABOUT is re-stated here rather than imported (this note originally said canon.la
+# had no export line; it now has one, canon.la:100 — the re-statement stays because
+# this file defines its own same-named κ machinery). If canon.la's definition
 # ever changed, the positive identity assertion below goes RED — which is the
 # point: the identity is gated, not assumed.
 glyph SR_ABOUT_HERE = MC(PRIM("RECOGNITION"))
