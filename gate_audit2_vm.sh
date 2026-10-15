@@ -136,8 +136,30 @@ LAEOF
     else fail "VM: dup2 control — rc=$RC out=[$OUT] (want pipe:[]|)"; fi
 }
 
+# ── #40 LogosIPC CHANNEL: a failed bind/listen halts instead of "listening" ────
+# CHANNEL discarded unlink/bind/listen results and returned the socket anyway, so
+# when the rendezvous path could not be cleared (another uid's socket in sticky
+# /tmp — the squat vector; here, as one uid: a DIRECTORY at the path, which
+# unlink cannot remove) bind failed EADDRINUSE silently and the server "listened"
+# on an unbound socket while clients reached whoever held the name.
+# Unfixed: chan=<fd>, after, rc 0. Fixed: loud halt naming bind's -errno (-98).
+case_vm_ipc_bind() {
+    local nm="gate40-$$-$RANDOM" d
+    d="/tmp/logosipc-$nm"; mkdir "$d" || { fail "vm_ipc_bind: cannot create $d"; return; }
+    printf 'import("logosipc.la")\nglyph SEQ2 = la a. la b. b\nglyph MAIN = SEQ2(print(concat("chan=")(CHANNEL("%s"))))(print("after"))\n' "$nm" > t_ipc.la
+    vmrun t_ipc.la; rmdir "$d"
+    if [ "$RC" = 1 ] && [ "$OUT" = "logosipc: CHANNEL $nm: bind failed (-98) — name taken; refusing to listen on an unbound socket|" ]; then pass "logosipc: CHANNEL halts loudly when bind fails (EADDRINUSE)"
+    else fail "logosipc: CHANNEL on a taken name — rc=$RC out=[$OUT]"; fi
+    # control: a free name still yields a listening fd
+    nm="gate40ok-$$-$RANDOM"
+    printf 'import("logosipc.la")\nglyph SEQ2 = la a. la b. b\nglyph MAIN = SEQ2(print(concat("chan=")(CHANNEL("%s"))))(print("after"))\n' "$nm" > t_ipcok.la
+    vmrun t_ipcok.la; rm -f "/tmp/logosipc-$nm"
+    if [ "$RC" = 0 ] && [[ "$OUT" =~ ^chan=[0-9]+\|after\|$ ]]; then pass "logosipc: CHANNEL on a free name still listens ($OUT)"
+    else fail "logosipc: CHANNEL control — rc=$RC out=[$OUT]"; fi
+}
+
 #CASES-BELOW
 
-CASES="${*:-vm_writefail vm_errno vm_mint vm_tco_comment vm_cloexec}"
+CASES="${*:-vm_writefail vm_errno vm_mint vm_tco_comment vm_cloexec vm_ipc_bind}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_vm: all passed"; exit 0; } || { echo "gate_audit2_vm: $FAILS failed"; exit 1; }

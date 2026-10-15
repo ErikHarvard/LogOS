@@ -60,10 +60,20 @@ glyph SOCKPATH = la name. concat("/tmp/logosipc-")(name)
 # idiom): an AF_UNIX name persists after its socket closes, so a stale entry
 # from a prior server would make bind fail — unlink clears it (a missing path
 # is the goal, so its -ENOENT is ignored). The server is then self-cleaning;
-# no external `rm` needed.
+# no external `rm` needed. bind and listen are CHECKED (audit2 #40): if the path
+# could not be cleared — another uid's socket in sticky /tmp, which unlink cannot
+# remove — bind fails EADDRINUSE, and returning the socket anyway would leave the
+# server "listening" on nothing while clients reach whoever holds the name. So
+# CHANNEL halts loudly instead. (Still open: the predictable /tmp path itself —
+# a private 0700 rendezvous directory needs a ruling on where it lives.)
+glyph CHAN_FAIL = la name. la what. la r.
+    error(concat("logosipc: CHANNEL ")(concat(name)(concat(": ")(concat(what)(concat(" failed (")(concat(r)(") — name taken; refusing to listen on an unbound socket")))))))
 glyph CHANNEL  = la name. (la path.
     SEQ(unlink(path))(
-    (la s. SEQ(bind(s)(path))(SEQ(listen(s))(s)))(socket("!")))
+    (la s. (la b. IF(str_eq(b)("0"))
+        (la _. (la l. IF(str_eq(l)("0"))(la _. s)(la _. CHAN_FAIL(name)("listen")(l)))(listen(s)))
+        (la _. CHAN_FAIL(name)("bind")(b)))
+      (bind(s)(path)))(socket("!")))
   )(SOCKPATH(name))
 glyph ACCEPT   = la chan. accept(chan)
 glyph CONNECT  = la name. (la s. SEQ(connect(s)(SOCKPATH(name)))(s))(socket("!"))
