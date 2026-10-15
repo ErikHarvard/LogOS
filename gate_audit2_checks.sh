@@ -216,6 +216,30 @@ chk_bare_vm() {
     else fail "bare #105: good VM step not green (rc=$rrc, out=[$(tr '\n' '|' <<< "$ro")])"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm}"
+# ── #113 drm_bringup*.sh: the VM is emitted without nasm; nasm is a drift guard
+# Each script's build block (from "building" to `chmod +x logos_secd`) is run
+# alone. The planted defect is the environment: no nasm on PATH. Unfixed, all six
+# stop with "nasm failed". Real: with nasm present the drift guard passes.
+chk_drm_nonasm() {
+    mkdir -p d113/nonasm d113/withnasm
+    local t f out rc res="" bad=0
+    for t in cmp rm stat cp chmod cat; do ln -sf "$(command -v $t)" d113/nonasm/$t; ln -sf "$(command -v $t)" d113/withnasm/$t; done
+    if command -v nasm >/dev/null 2>&1; then ln -sf "$(command -v nasm)" d113/withnasm/nasm; fi
+    for f in "$REPO"/drm_bringup*.sh; do
+        awk '/^echo "== building/{p=1} p{print} p&&/^chmod \+x logos_secd/{exit}' "$f" > d113/blk.sh
+        grep -q 'logos_secd' d113/blk.sh || { res="$res $(basename "$f"):no-block"; bad=1; continue; }
+        rm -f d113/logos_secd; cp tiny_host secd.la secd.asm d113/ 2>/dev/null; cp "$REPO/secd.asm" d113/ 2>/dev/null
+        out=$(cd d113 && timeout 120 env PATH="$PWD/nonasm" /bin/bash ./blk.sh 2>&1); rc=$?
+        if [ "$rc" != 0 ] || [ ! -s d113/logos_secd ]; then res="$res $(basename "$f"):no-nasm rc=$rc[$(tr '\n' '|' <<< "$out")]"; bad=1; continue; fi
+        if [ -e d113/withnasm/nasm ]; then
+            out=$(cd d113 && timeout 120 env PATH="$PWD/withnasm" /bin/bash ./blk.sh 2>&1); rc=$?
+            [ "$rc" = 0 ] || { res="$res $(basename "$f"):with-nasm rc=$rc[$(tr '\n' '|' <<< "$out")]"; bad=1; }
+        fi
+    done
+    if [ $bad = 0 ]; then pass "drm #113: all six drm_bringup scripts emit the VM with tiny_host when nasm is absent; nasm drift guard green where present"
+    else fail "drm #113:$res"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }
