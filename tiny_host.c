@@ -626,14 +626,26 @@ static char *slurp_file(const char *path, size_t *out_len) {
     long len = ftell(f);
     /* freeze-day #12: a non-seekable file (pipe/FIFO/char device) makes fseek/ftell
        fail with len = -1, after which malloc((size_t)-1 + 1) = malloc(0) and
-       fread(SIZE_MAX) overflows the buffer. Halt loudly instead — and the native
-       backend's rt_read_file guards the same lseek failure, so both engines reject
-       a non-seekable read_file identically (exit 1) rather than corrupting memory. */
+       fread(SIZE_MAX) overflowed the buffer. Halt loudly instead -- matching
+       native_codegen3's rt_read_file, which guards the same lseek failure (build.sh
+       freeze-day #12 checks the two agree). The SECD VM does NOT: its read_file
+       is a plain read() and returns a pipe's bytes (audit2 #84, open: which engine
+       is right is a ruling, not a fix). */
     if (len < 0) { fprintf(stderr, "read_file: '%s' is not a seekable file\n", path); exit(1); }
     fseek(f, 0, SEEK_SET);
-    char *buf = malloc((size_t)len + 1);
+    /* ftell is only a size HINT: procfs files report 0 yet have content
+       (audit2 #84 -- read_file("/proc/self/stat") returned ""). Read to EOF. */
+    size_t cap = (size_t)len + 1, got = 0;
+    char *buf = malloc(cap + 1);
     if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
-    size_t got = fread(buf, 1, (size_t)len, f);
+    for (;;) {
+        got += fread(buf + got, 1, cap - got, f);
+        if (got < cap) break;                  /* EOF or error */
+        cap *= 2;
+        buf = realloc(buf, cap + 1);
+        if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
+    }
+    if (ferror(f)) { fprintf(stderr, "read_file: cannot read '%s': ", path); perror(NULL); exit(1); }
     buf[got] = '\0';
     fclose(f);
     if (out_len) *out_len = got;

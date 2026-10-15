@@ -84,6 +84,16 @@ PY
     else fail "host_lexlit: 4x literals cost x${3:-?} (${1}s -> ${2:-?}s) — quadratic (want < x8)"; fi
 }
 
-CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit}"
+# ── #84 read_file of a size-0 /proc file returned "" ────────────────────────
+case_host_procread() {
+    printf 'glyph MAIN = print(concat("[")(concat(read_file("/proc/self/stat"))("]")))\n' > proc.la
+    local got; got=$(timeout 5 ./tiny_host proc.la 2>&1 | head -c 200)
+    case "$got" in
+        "["[0-9]*" (tiny_host) "*) pass "host_procread: /proc/self/stat read in full ('$(printf '%s' "$got" | cut -c1-30)…')" ;;
+        *) fail "host_procread: got '$got'" ;;
+    esac
+}
+
+CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit host_procread}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_host: all passed"; exit 0; } || { echo "gate_audit2_host: $FAILS failed"; exit 1; }
