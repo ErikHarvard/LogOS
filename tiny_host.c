@@ -892,7 +892,23 @@ static Node *eval(Node *e) {
 
         case N_VAR: {
             Node *g = lookup_glyph(e->s);
-            if (g)                  return eval(g);
+            if (g) {
+                /* A glyph whose body is a bare name of another glyph is a
+                 * tail jump; a chain of them that never leaves the table is a
+                 * cycle (`glyph A = A`) that would spin forever with no stack
+                 * growth. Any such chain revisits a glyph within nglyphs hops. */
+                size_t hops = 0;
+                while (g->t == N_VAR) {
+                    Node *h = lookup_glyph(g->s);
+                    if (!h) break;
+                    if (++hops > nglyphs) {
+                        fprintf(stderr, "eval error: glyph cycle through '%s'\n", e->s);
+                        exit(1);
+                    }
+                    g = h;
+                }
+                return eval(g);
+            }
             if (is_builtin(e->s))   return e;   /* builtin used as a value */
             fprintf(stderr, "eval error: unbound variable '%s'\n", e->s);
             exit(1);
