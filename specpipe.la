@@ -216,10 +216,26 @@ glyph TYPE_LINE = la src. la e.
 glyph TYPECHECK = la spec. la src. CAT(MAP(TYPE_LINE(src))(spec))
 glyph TYPES_OK  = la spec. la src. ALL(TYPE_CHECK_OK(src))(spec)
 
-# ── DEPLOY: generate, TYPE-CHECK, then (only if well-typed) write, re-read,
-#    verify — spec → verified module in one call. A type error rejects the
-#    module: the .la file is never written. ───────────────────────────────
+# ── DUPLICATE NAMES: every engine binds a name to its FIRST definition, so a
+#    second entry with the same ENAME is dead code in the written module while
+#    its tests still counted toward VERIFIED (audit2 #72). DEPLOY rejects it.
+glyph NAME_IN = Z(la self. la x. la lst. lst(FALSE)(la h. la t. IF(str_eq(h)(x))(la _. TRUE)(la _. self(x)(t))))
+glyph DUP_NAMES = la spec.
+    Z(la self. la seen. la lst.
+        lst("")(la h. la t. (la n. IF(NAME_IN(n)(seen))
+                                     (la _. concat(n)(concat(" ")(self(seen)(t))))
+                                     (la _. self(CONS(n)(seen))(t)))(ENAME(h))))
+     (NIL)(spec)
+
+# ── DEPLOY: reject duplicate names, generate, TYPE-CHECK, then (only if
+#    well-typed) write, re-read, verify — spec → verified module in one call.
+#    A type error rejects the module: the .la file is never written. ─────────
 glyph DEPLOY = la spec. la path.
+    (la dups. IF(str_eq(dups)(""))
+        (la _. DEPLOY_CHECKED(spec)(path))
+        (la _. concat("RESULT: module REJECTED — duplicate glyph name(s): ")(concat(dups)(concat("(the first definition shadows the rest, so their tests verify dead code); ")(concat(path)(" not written\n"))))))
+    (DUP_NAMES(spec))
+glyph DEPLOY_CHECKED = la spec. la path.
     (la src.
       (la tcreport.
         IF(TYPES_OK(spec)(src))

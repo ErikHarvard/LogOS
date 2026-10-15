@@ -83,6 +83,27 @@ LA
     else fail "specpipe #135: evdev report wrong — $(grep -E '^  (OPEN_INPUT|EV_TYPE): |^RESULT' un_real.out | tr '\n' '|')"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested}"
+# ── #72 specpipe DEPLOY: a duplicate glyph name is rejected ───────────────────
+# Mutant (the audit's): two entries named IDT with different bodies and tests.
+# Unfixed, both are "IDT: PASS", both are written, the module is VERIFIED, and
+# the host runs only the first — the second's tests verified dead code.
+chk_specpipe_dup() {
+    cat > t_dup_spec.la <<'LA'
+import("specpipe.la")
+glyph S = CONS(TRIPLE("IDT")(DEF(":: a -> a")("la x. x")(la x. x))(CONS(PAIR(la g. g("x"))("x"))(NIL)))(
+          CONS(TRIPLE("IDT")(DEF(":: a -> a")("la x. \"A\"")(la x. "A"))(CONS(PAIR(la g. g("x"))("A"))(NIL)))(NIL))
+glyph MAIN = print(DEPLOY(S)("t_dup_mod.la"))
+LA
+    rm -f t_dup_mod.la
+    timeout 120 ./tiny_host t_dup_spec.la > dup_mut.out 2>&1
+    sed 's/("math_generated.la")/("t_math_real.la")/' specpipe.la > t_sp_real.la
+    timeout 120 ./tiny_host t_sp_real.la > dup_real.out 2>&1
+    if ! grep -q '^RESULT: module REJECTED — duplicate glyph name(s): IDT ' dup_mut.out || [ -e t_dup_mod.la ]; then
+        fail "specpipe #72: duplicate IDT not rejected — $(grep -E '^  IDT: |^RESULT' dup_mut.out | tr '\n' '|')$( [ -e t_dup_mod.la ] && echo ' (module written)')"
+    elif grep -q 'module VERIFIED' dup_real.out && has dup_real.out "  MULTIPLY: PASS"; then pass "specpipe #72: DEPLOY rejects a duplicate glyph name (nothing written); MATH_SPEC still VERIFIED"
+    else fail "specpipe #72: MATH_SPEC not verified — $(grep '^RESULT' dup_real.out)"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }
