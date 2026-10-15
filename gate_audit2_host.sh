@@ -49,6 +49,17 @@ case_host_caps() {
     else fail "host_caps: got '$a' / '$b'"; fi
 }
 
-CASES="${*:-host_selfref host_order host_caps}"
+# ── #143 lexer/parser diagnostics carry file and line ───────────────────────
+case_host_diag() {
+    printf 'export G\nglyph G = (concat("a")("b")\n' > badmod.la
+    printf 'import("badmod.la")\nglyph MAIN = print(G)\n' > badapp.la
+    printf 'glyph A = "a"\nglyph B = $\nglyph MAIN = print(A)\n' > badlex.la
+    timeout 5 ./tiny_host badapp.la > d1.out 2>&1; timeout 5 ./tiny_host badlex.la > d2.out 2>&1
+    if grep -q '^badmod.la:3: parse error' d1.out && grep -q '^badlex.la:2: lex error' d2.out; then
+        pass "host_diag: diagnostics name file:line (imported module and main file)"
+    else fail "host_diag: got '$(oneline d1.out)' / '$(oneline d2.out)'"; fi
+}
+
+CASES="${*:-host_selfref host_order host_caps host_diag}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_host: all passed"; exit 0; } || { echo "gate_audit2_host: $FAILS failed"; exit 1; }

@@ -185,6 +185,9 @@ static Tok         curtok;   /* current token kind */
 static char       *curstr;   /* text for T_IDENT / T_STR */
 static size_t      curlen;   /* byte length of T_STR */
 static long        curint;   /* value for T_INT */
+static const char *src_file = "?";  /* file being lexed, for diagnostics */
+static int         src_line = 1;    /* line of P */
+static int         tok_line = 1;    /* line the current token starts on */
 
 /* Identifier characters: ASCII alnum, underscore, and any UTF-8 byte (so
  * Lingua Adamica glyphs like ∃ are first-class names). */
@@ -195,10 +198,11 @@ static int is_ident_char(unsigned char c) {
 static void lex(void) {
     /* skip whitespace and '#' line comments */
     for (;;) {
-        while (*P && isspace((unsigned char)*P)) P++;
+        while (*P && isspace((unsigned char)*P)) { if (*P == '\n') src_line++; P++; }
         if (*P == '#') { while (*P && *P != '\n') P++; continue; }
         break;
     }
+    tok_line = src_line;
 
     if (*P == '\0') { curtok = T_EOF; return; }
 
@@ -213,6 +217,7 @@ static void lex(void) {
             size_t i = 0;
             while (*P && *P != '"') {
                 char c = *P++;
+                if (c == '\n') src_line++;
                 if (c == '\\' && *P) {        /* simple escapes */
                     char e = *P++;
                     switch (e) {
@@ -226,7 +231,7 @@ static void lex(void) {
                 buf[i++] = c;
             }
             if (*P == '"') P++;
-            else { fprintf(stderr, "lex error: unterminated string\n"); exit(1); }
+            else { fprintf(stderr, "%s:%d: lex error: unterminated string\n", src_file, tok_line); exit(1); }
             buf[i] = '\0';
             curstr = buf;
             curlen = i;
@@ -248,7 +253,7 @@ static void lex(void) {
             if (v > (unsigned long long)LONG_MAX) overflow = 1;
             P++;
         }
-        if (overflow) { fprintf(stderr, "lex error: integer literal exceeds LONG_MAX\n"); exit(1); }
+        if (overflow) { fprintf(stderr, "%s:%d: lex error: integer literal exceeds LONG_MAX\n", src_file, tok_line); exit(1); }
         curint = (long)v;
         curtok = T_INT;
         return;
@@ -269,15 +274,15 @@ static void lex(void) {
         return;
     }
 
-    fprintf(stderr, "lex error: unexpected character '%c' (0x%02x)\n",
-            *P, (unsigned char)*P);
+    fprintf(stderr, "%s:%d: lex error: unexpected character '%c' (0x%02x)\n",
+            src_file, tok_line, *P, (unsigned char)*P);
     exit(1);
 }
 
 static void advance(void) { lex(); }
 
 static void expect(Tok t, const char *what) {
-    if (curtok != t) { fprintf(stderr, "parse error: expected %s\n", what); exit(1); }
+    if (curtok != t) { fprintf(stderr, "%s:%d: parse error: expected %s\n", src_file, tok_line, what); exit(1); }
 }
 
 /* -------------------------------------------------------------- parser -- */
@@ -291,7 +296,7 @@ static Node *parse_primary(void) {
     if (curtok == T_STR)   { Node *n = mkstrn(curstr, curlen); advance(); return n; }
     if (curtok == T_INT)   { Node *n = mkint(curint); advance(); return n; }
     if (curtok == T_LP)    { advance(); Node *e = parse_expr(); expect(T_RP, "')'"); advance(); return e; }
-    fprintf(stderr, "parse error: expected a variable, string, or '('\n");
+    fprintf(stderr, "%s:%d: parse error: expected a variable, string, or '('\n", src_file, tok_line);
     exit(1);
 }
 
@@ -1032,13 +1037,14 @@ static void do_import(const char *path) {
     /* save the importer's lexer state — we re-point the lexer at the module */
     const char *sP = P; Tok st = curtok; char *ss = curstr;
     size_t sl = curlen; long si = curint;
+    const char *sf = src_file; int sline = src_line, stl = tok_line;
     /* save the importer's export set; the module collects its own */
     char **saved_exp = cur_exports; size_t saved_n = cur_nexports, saved_cap = cur_export_cap;
     cur_exports = NULL; cur_nexports = 0; cur_export_cap = 0;
 
     size_t start = nglyphs;
     char *modsrc = slurp_file(path, NULL);
-    P = modsrc;
+    P = modsrc; src_file = path; src_line = 1;
     advance();
     parse_program();                       /* appends module glyphs; fills cur_exports */
     mangle_privates(start, nglyphs, cur_exports, cur_nexports);
@@ -1049,6 +1055,7 @@ static void do_import(const char *path) {
     /* restore importer state */
     cur_exports = saved_exp; cur_nexports = saved_n; cur_export_cap = saved_cap;
     P = sP; curtok = st; curstr = ss; curlen = sl; curint = si;
+    src_file = sf; src_line = sline; tok_line = stl;
     import_pop();
 }
 
@@ -1068,7 +1075,7 @@ int main(int argc, char **argv) {
 
     char *src = slurp_file(path, NULL);   /* source is text; NUL-terminated walk is fine */
     import_push(path);                    /* the program is the root of the import chain */
-    P = src;
+    P = src; src_file = path;
     advance();
     parse_program();
 
