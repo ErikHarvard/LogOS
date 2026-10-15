@@ -83,6 +83,27 @@ LA
     else fail "specpipe #135: evdev report wrong — $(grep -E '^  (OPEN_INPUT|EV_TYPE): |^RESULT' un_real.out | tr '\n' '|')"; fi
 }
 
+# ── #106 build.sh check_sigil: RELATION's H+V symmetry is asserted ────────────
+# The check_sigil block is extracted from build.sh and run on the host render.
+# Mutant: RELATION's lower point moved off the mirror axis (DISK at col 26, not
+# 27), so the double arc is no longer H-symmetric. Unfixed, check_sigil has no
+# RELATION line: the mutant render passes it.
+chk_sigil_relation() {
+    awk '/^block \(\) \{/{p=1} p{print} p&&/^check_sigil \(\) \{/{c=1} c&&/^}$/{exit}' "$REPO/build.sh" > sigil_fns.sh
+    grep -q '^check_sigil ()' sigil_fns.sh || { fail "sigil #106: cannot extract check_sigil from build.sh"; return; }
+    sed 's/OR(DISK(16)(5)(2)(r)(c))(OR(DISK(16)(27)(2)(r)(c))/OR(DISK(16)(5)(2)(r)(c))(OR(DISK(16)(26)(2)(r)(c))/' sigil.la > t_sigil_mut.la
+    cmp -s sigil.la t_sigil_mut.la && { fail "sigil #106: mutant not planted"; return; }
+    timeout 120 ./tiny_host t_sigil_mut.la > sig_mut.txt 2>/dev/null
+    timeout 120 ./tiny_host sigil.la > sig_real.txt 2>/dev/null
+    local mo ro
+    mo=$(bash -c 'ok=1; . ./sigil_fns.sh; check_sigil "C host" sig_mut.txt; echo "ok=$ok"' 2>&1)
+    ro=$(bash -c 'ok=1; . ./sigil_fns.sh; check_sigil "C host" sig_real.txt; echo "ok=$ok"' 2>&1)
+    if ! grep -q 'FAIL  sigil(C host): RELATION' <<< "$mo" || ! grep -qx 'ok=0' <<< "$mo"; then
+        fail "sigil #106: asymmetric RELATION not caught — $(tr '\n' '|' <<< "$mo")"
+    elif [ "$ro" = "ok=1" ]; then pass "sigil #106: check_sigil asserts RELATION H+V — mutant FAILs, real render passes"
+    else fail "sigil #106: real render not green — $(tr '\n' '|' <<< "$ro")"; fi
+}
+
 # ── #72 specpipe DEPLOY: a duplicate glyph name is rejected ───────────────────
 # Mutant (the audit's): two entries named IDT with different bodies and tests.
 # Unfixed, both are "IDT: PASS", both are written, the module is VERIFIED, and
@@ -104,6 +125,6 @@ LA
     else fail "specpipe #72: MATH_SPEC not verified — $(grep '^RESULT' dup_real.out)"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup}"
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

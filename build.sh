@@ -5061,11 +5061,12 @@ check_sigil () {  # $1 = engine label, $2 = output file
     #   have broken the gate; asserting presence separately fixes all seven.
     #   Red path exercised before shipping: absent label -> RED, all present -> GREEN,
     #   and line 4492's behaviour verified unchanged.
-    for SIGL in "g4 SELF" "g2 RECOGNITION" "g6 VOID" "g3 LOVE" "g8 FORM" "g7 BECOMING" "DERIVED Truth"; do
+    for SIGL in "g4 SELF" "g2 RECOGNITION" "g5 RELATION" "g6 VOID" "g3 LOVE" "g8 FORM" "g7 BECOMING" "DERIVED Truth"; do
         [ -n "$(block "$SIGL" "$2")" ] || { echo "FAIL  sigil($1): block '$SIGL' absent — a symmetry predicate over an empty block returns TRUE, so every symmetry assertion below would be vacuous"; ok=0; }
     done
     HSYM "g4 SELF" "$2"        &&   VSYM "g4 SELF" "$2"        || { echo "FAIL  sigil($1): SELF not a centred lemniscate (expect H+V symmetric)"; ok=0; }
     HSYM "g2 RECOGNITION" "$2" &&   VSYM "g2 RECOGNITION" "$2" || { echo "FAIL  sigil($1): RECOGNITION eye not mutual (expect H+V symmetric)"; ok=0; }
+    HSYM "g5 RELATION" "$2"    &&   VSYM "g5 RELATION" "$2"    || { echo "FAIL  sigil($1): RELATION double arc not symmetric (expect H+V symmetric)"; ok=0; }
     HSYM "g6 VOID" "$2"        && ! VSYM "g6 VOID" "$2"        || { echo "FAIL  sigil($1): VOID gap not at the crown (expect H symmetric, NOT V)"; ok=0; }
     HSYM "g3 LOVE" "$2"        && ! VSYM "g3 LOVE" "$2"        || { echo "FAIL  sigil($1): LOVE flame not upright (expect H symmetric, NOT V)"; ok=0; }
     HSYM "g8 FORM" "$2"        && ! VSYM "g8 FORM" "$2"        || { echo "FAIL  sigil($1): FORM apex not up (expect H symmetric, NOT V)"; ok=0; }
