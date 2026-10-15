@@ -70,9 +70,13 @@ typedef struct Node {
 static Node    **gc_all  = NULL;          /* registry of every allocated node */
 static size_t    gc_n    = 0, gc_cap = 0;
 static size_t    gc_next = 250000;        /* collect when the registry reaches this */
-#define GC_MIN_THRESHOLD 250000            /* floor for the adaptive threshold (memory/CPU knob;
-                                            * GC cost is negligible vs the workload, so a low
-                                            * floor just keeps the working set tight) */
+#define GC_MIN_THRESHOLD 250000            /* floor for the adaptive threshold (a memory knob,
+                                            * not a CPU one: with gc_next = 2*live each
+                                            * collection walks every registered node, so GC
+                                            * cost tracks allocation volume, ~1/3-1/2 of host
+                                            * runtime on allocation-heavy programs, whatever
+                                            * the floor; a low floor keeps the working set
+                                            * tight -- audit2 #82) */
 static uintptr_t gc_stack_base = 0;       /* highest stack address (set in main) */
 static uintptr_t stack_floor = 0;         /* recursion guard: bail below this address */
 
