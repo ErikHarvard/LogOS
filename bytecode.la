@@ -128,8 +128,18 @@ glyph RENAME_FREE = Z(la self. la node. la old. la new.
         (la f. la a. AST_APP(self(f)(old)(new))(self(a)(old)(new)))
         (la val. AST_STR(val)))
 
+# audit2 #114: NOT the lexer's IS_IDENT_CHAR, which accepts '/', '-', ';' … —
+# the C host's identifier alphabet is only [A-Za-z0-9_], so a mangled name that
+# kept '/' (any subdirectory import) was a host lex error once unparsed. Now an
+# alphanumeric byte passes through and EVERY other byte, '_' included, escapes
+# to "_<ord>_" — the same injective rule native_codegen3.la uses (freeze-day #7),
+# so "sub/m.la", "sub.m.la" and "sub_m.la" no longer collide either.
+glyph SAN_ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+glyph SAN_HAS = Z(la self. la c. la s. IF(str_eq(s)(""))(la _. FALSE)(la _.
+    IF(str_eq(str_head(s))(c))(la _. TRUE)(la _. self(c)(str_tail(s)))))
 glyph SANITIZE = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _.
-    concat(IF(IS_IDENT_CHAR(str_head(s)))(la _. str_head(s))(la _. "_"))(self(str_tail(s)))))
+    concat(IF(SAN_HAS(str_head(s))(SAN_ALNUM))(la _. str_head(s))(la _.
+        concat("_")(concat(ord(str_head(s)))("_"))))(self(str_tail(s)))))
 
 glyph MANGLE = la path. la name. concat("__mod_")(concat(SANITIZE(path))(concat("__")(name)))
 
