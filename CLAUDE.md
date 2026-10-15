@@ -225,7 +225,11 @@ references to it). The `import` arm reads the module with the `read_file`
 builtin (present on the host *and* the VM) and recurses.
 
 Mangling is **path-derived and deterministic**: a private `g` of module `p`
-becomes `__mod_<sanitize p>__g` (every non-identifier char of the path → `_`).
+becomes `__mod_<sanitize p>__g`. The escape is injective: an alphanumeric byte of
+the path is kept and every other byte — `_` included — becomes `_<ord>_`, so
+`fz/m-1.la` gives `__mod_fz_47_m_45_1_46_la__g` (the rule `native_codegen3.la` uses;
+the mangled name is a plain `[A-Za-z0-9_]` identifier the C host can lex, and
+`sub/m.la`, `sub.m.la` and `sub_m.la` no longer collide).
 Unlike the C host's mutable per-import counter, the name depends only on
 `(path, glyph)`, so it is **reproducible across engines** and across runs.
 (Mangled names are private and never observed, so byte-identity with the C
@@ -652,6 +656,27 @@ lets the system generate a *native* vessel from source.
 
 ### LogosInit & process supervision (`logosinit.la`)
 
+**VM builtin ids** (the authoritative table is `secd.asm`'s header): 0–33 the core
+and process builtins (`print` … `str_len`), 34 `drm_mode`, 35 `present`,
+36 `clock_gettime`, 37–43 the AF_UNIX socket layer (`socket`, `bind`, `listen`,
+`accept`, `connect`, `send`, `recv`), 44 `unlink`, 45 `random`, 46–51 the filesystem
+layer (`mkdir`, `rmdir`, `rename`, `stat`, `chmod`, `lseek`), 52–56 `kill`,
+`sigprocmask`, `signalfd`, `getpid`, `reapnb`, 57 `poll`, 58 `dup2`, 59 `execv`,
+60–66 `band`, `bor`, `bxor`, `bshl`, `bshr`, `bnot`, `str_at`. Every syscall builtin
+returns its result or `-errno` as a decimal string — `pipe` and `clock_gettime`
+included (a pipe under EMFILE gives `-24`, a bad clockid `-22`); `read`, `recv` and
+`random` return `""` on error instead (audit2 #70). `clock_gettime(clockid)` returns
+`"<sec> <nsec>"` (clockid `0` = REALTIME wall clock, `1` = MONOTONIC).
+
+**File descriptors and exec.** Every fd the VM itself creates is **close-on-exec**:
+`socket` (`SOCK_CLOEXEC`), `accept` (`accept4` with `SOCK_CLOEXEC`), `pipe`
+(`pipe2(O_CLOEXEC)`), `signalfd` (`SFD_CLOEXEC`) and the DRM card `drm_mode` opens
+(`O_CLOEXEC`). Such fds are shared across `fork` and closed at `execve`, so an
+exec'd program never inherits init's signalfd, a server's listening socket or the
+DRM master fd. To hand a fd to an exec'd program, `dup2` it onto the target number
+(a `dup2` target is never close-on-exec). `open(path)(flags)` passes the caller's
+flags verbatim, so `O_CLOEXEC` (524288) is opt-in there.
+
 The native VM lowers a set of **process/syscall builtins** (VM-only — they have
 no meaning under the C host, which runs the other engines): `mount(target)(fstype)`,
 `fork("!")` (→ child pid in the parent, `"0"` in the child), `execve(path)`
@@ -660,7 +685,7 @@ failure), `waitpid(pid)` (→ that child's exit *status*), `exit(code)`,
 `write(fd)(s)`, `read(fd)(maxbytes)` (raw `read(2)`, blocks for data, returns
 the bytes as a binary-safe string; `maxbytes` clamped to 64 MiB), `open(path)(flags)`,
 `close(fd)`, `pipe("!")` (→ `"<rfd> <wfd>"`, the read and write fds of a fresh
-pipe as a space-separated string — both inherited across `fork`), and
+pipe as a space-separated string — both shared across `fork`, closed at `execve`), and
 `unlink(path)` (remove a filesystem name → `0`, or `-errno` such as `-2` =
 `-ENOENT` when absent — the companion to `bind`, letting an AF_UNIX server
 self-clean its stale rendezvous path via the canonical `unlink; bind`), and
@@ -695,7 +720,7 @@ machine cannot host an *asynchronous* handler, so signals use the **synchronous,
 fd-based** model: `sigprocmask(how)(mask)` (rt_sigprocmask, 14) blocks/unblocks a
 signal set (`how` 0/1/2 = BLOCK/UNBLOCK/SETMASK; `mask` a 64-bit sigset as a
 decimal — bit `signo-1` selects a signal, built in `pathbuf`), then
-`signalfd(mask)` (signalfd4, 289, fd −1 / flags 0) returns an fd from which the
+`signalfd(mask)` (signalfd4, 289, fd −1 / flags `SFD_CLOEXEC`) returns an fd from which the
 existing `read(fd)("128")` drains one 128-byte `signalfd_siginfo` per pending
 signal (`ssi_signo` is the first u32, little-endian, so `ord(str_head(·))` is the
 signal number for `signo < 256`). `kill(pid)(sig)` (62) sends, and `getpid("!")`
@@ -723,7 +748,7 @@ string`, like the other guarded builtins. A minimal server binds + listens
 `build.sh` runs exactly that client→server message pass on the native VM,
 plus the two failure paths. *Honest limits:* AF_UNIX only (no IP/TCP yet),
 pathname sockets only (no abstract namespace, so a stale socket file must be
-unlinked before re-`bind` — the VM has no `unlink` builtin yet), and no
+unlinked before re-`bind`, which the `unlink` builtin above does), and no
 partial-send/EINTR retry loop.
 
 It also lowers **`poll(fds)(timeout)`** (poll, 7) — the **fd-multiplexing**
@@ -942,8 +967,10 @@ The compositor is built in stages, each independently runnable and checked by
   VM builtins put real pixels on a real screen with no host and no userspace
   graphics stack:
 
-  - `drm_mode("!")` — opens `/dev/dri/card0`, enumerates the connected
-    connector and its preferred mode (`GETRESOURCES` → `GETCONNECTOR` →
+  - `drm_mode("!")` — tries `/dev/dri/card0` … `card7` in turn (a card that fails to
+    open, fails `GETRESOURCES` or has no connected connector with a mode is closed and
+    the next tried; if none works it reports the most informative failure), enumerates
+    the connected connector and its preferred mode (`GETRESOURCES` → `GETCONNECTOR` →
     `GETENCODER`), allocates and maps a 32-bpp (XRGB8888, depth 24) dumb
     framebuffer (`CREATE_DUMB` → `ADDFB` → `MAP_DUMB` → `mmap`), and points the
     CRTC at it (`SETCRTC`). Returns `"<width> <height> <pitch>"` (decimal,
