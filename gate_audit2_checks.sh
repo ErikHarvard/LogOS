@@ -164,6 +164,27 @@ LA
     else fail "specpipe #72: MATH_SPEC not verified — $(grep '^RESULT' dup_real.out)"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain}"
+# ── #105 build.sh: a bare VM step that exits non-zero prints a FAIL line ──────
+# The vmrun helper (if any) and the sigil stage's bare VM line are extracted from
+# build.sh and run under its `set -euo pipefail`. The planted defect is a VM that
+# dies of SIGSEGV. Unfixed, the script just ends — rc 139, not one FAIL line.
+chk_bare_vm() {
+    { grep -E '^exec 3>&1$|^vmrun\(\) \{' "$REPO/build.sh"
+      grep -E '^(vmrun )?\./logos_secd > sigil_vm\.txt 2>/dev/null$' "$REPO/build.sh"; echo 'echo reached'; } > bare_blk.sh
+    grep -q 'sigil_vm.txt' bare_blk.sh || { fail "bare #105: cannot extract the sigil VM line from build.sh"; return; }
+    mkdir -p d105
+    printf '#!/bin/bash\necho "secd: boom" >&2; kill -SEGV $$\n' > d105/seg; printf '#!/bin/bash\necho rendered\n' > d105/okvm
+    chmod +x d105/seg d105/okvm
+    local mo ro mrc rrc
+    cp d105/seg d105/logos_secd;  mo=$(cd d105 && timeout 30 bash -c 'set -euo pipefail; . ../bare_blk.sh' 2>&1); mrc=$?
+    cp d105/okvm d105/logos_secd; ro=$(cd d105 && timeout 30 bash -c 'set -euo pipefail; . ../bare_blk.sh' 2>&1); rrc=$?
+    if [ "$mrc" = 0 ] || ! grep -q "^FAIL  build.sh:[0-9]*: './logos_secd' exited 139" <<< "$mo"; then
+        fail "bare #105: SIGSEGV in a bare VM step left no FAIL line (rc=$mrc, out=[$(tr '\n' '|' <<< "$mo")])"
+    elif [ "$rrc" = 0 ] && [ "$ro" = reached ] && [ "$(cat d105/sigil_vm.txt)" = rendered ]; then
+        pass "bare #105: a VM step that dies prints 'FAIL … exited 139' and stops the build; a good step runs on, output redirect intact"
+    else fail "bare #105: good VM step not green (rc=$rrc, out=[$(tr '\n' '|' <<< "$ro")])"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain bare_vm}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

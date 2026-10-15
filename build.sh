@@ -10,6 +10,14 @@ cd "$(dirname "$0")"
 
 say() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 
+# vmrun CMD… — a bare VM / native-binary step. Under `set -e` a non-zero exit
+# (a loud VM halt with stderr discarded, a SIGSEGV) used to end the build right
+# there with NO FAIL line. vmrun names the step and its exit status first, on the
+# build's own stdout (fd 3: a redirection on the call covers the function body),
+# then stops the build as before (audit2 #105).
+exec 3>&1
+vmrun() { local rc=0; "$@" || rc=$?; [ "$rc" = 0 ] || { echo "FAIL  build.sh:${BASH_LINENO[0]}: '$*' exited $rc" >&3; exit 1; }; }
+
 # Run a host on kernel.la. Captures stdout in RUN_OUT and the replicated
 # child's path (parsed from copy_self's stderr line) in RUN_CHILD.
 run_host() {
@@ -1186,7 +1194,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp ladder.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > .ladder_vm.out 2>&1
+vmrun ./logos_secd > .ladder_vm.out 2>&1
 cmp -s <(printf '%s\n' "$LADOUT") .ladder_vm.out || { echo "FAIL  ladder: native VM render != C host render"; ok=0; }
 rm -f .ladder_vm.out logos_secd logos_program.bin logos_source.la
 # ★ R-A — ⊗(A,A) ≡ A HOLDS FOR THE ARCHĒ ALONE (Erik's ruling 2026-08-24), gated in
@@ -3274,13 +3282,13 @@ elif [ -z "$SH_AVAIL" ] || [ "$SH_AVAIL" -lt 12000 ]; then
 else
     cp "$SH_REF" /tmp/sh_cc; chmod +x /tmp/sh_cc
     cp native_codegen3.la native_input.la; rm -f native_codegen3_out
-    /tmp/sh_cc >/dev/null 2>&1
+    vmrun /tmp/sh_cc >/dev/null 2>&1
     if [ ! -f native_codegen3_out ] || ! cmp -s native_codegen3_out "$SH_REF"; then
         echo "FAIL  native_codegen3 Stage 4: $SH_REF is NOT a fixed point of native_codegen3.la — stale reference image; regenerate it after the source change (STAGE4_STATUS.md)"; exit 1
     fi
     cp kernel.la native_input.la; rm -f native_codegen3_out
-    /tmp/sh_cc >/dev/null 2>&1
-    ./native_codegen3_out >/tmp/sh_kn 2>/dev/null
+    vmrun /tmp/sh_cc >/dev/null 2>&1
+    vmrun ./native_codegen3_out >/tmp/sh_kn 2>/dev/null
     ./tiny_host kernel.la >/tmp/sh_kh 2>/dev/null
     cmp -s /tmp/sh_kn /tmp/sh_kh || { echo "FAIL  native_codegen3 Stage 4: reference image's kernel.la output != host"; exit 1; }
     echo "PASS  native backend Stage 4: self-hosting fixed point — $SH_REF compiling native_codegen3.la reproduces ITSELF byte-identically (∃(∃)≡∃, no C host / no SECD interp in the loop), and compiles kernel.la native==host"
@@ -3848,20 +3856,20 @@ ok=1
 cp vm_seed runner; chmod +x runner                        # a differently-named VM to run with
 # (1) compiler reproduces itself
 cp codegen.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1
+vmrun ./runner >/dev/null 2>&1
 cmp -s logos_program.bin compiler.bin \
     || { echo "FAIL  Stage4: native self-compilation of codegen.la differs from the seed"; ok=0; }
 # (2) VM reproduces itself: native-compile secd.la, then run it to emit the VM
 cp secd.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1                                  # logos_program.bin := secd.la stream
+vmrun ./runner >/dev/null 2>&1                                  # logos_program.bin := secd.la stream
 rm -f logos_secd
-./runner >/dev/null 2>&1                                  # run secd.la stream -> emit logos_secd
+vmrun ./runner >/dev/null 2>&1                                  # run secd.la stream -> emit logos_secd
 { [ -f logos_secd ] && cmp -s logos_secd vm_seed; } \
     || { echo "FAIL  Stage4: native-regenerated VM differs from the seed"; ok=0; }
 # (3) the regenerated VM runs kernel.la
 cp logos_secd vm2; chmod +x vm2
 cp kernel.la logos_source.la; cp compiler.bin logos_program.bin
-./vm2 >/dev/null 2>&1                                      # native-compile kernel.la
+vmrun ./vm2 >/dev/null 2>&1                                      # native-compile kernel.la
 KOUT="$(./vm2 2>/dev/null)"
 printf '%s\n' "$KOUT" | grep -qx "I AM THAT I AM" \
     || { echo "FAIL  Stage4: regenerated VM did not run kernel.la (got '$KOUT')"; ok=0; }
@@ -3947,12 +3955,12 @@ ok=1
 # native-compile the target program -> its stream -> logos_embed.bin
 printf 'glyph MAIN = print(concat("native ")("bundler"))\n' > logos_source.la
 cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1
+vmrun ./runner >/dev/null 2>&1
 cp logos_program.bin logos_embed.bin
 # native-compile bundle.la, then run it on the VM to perform the bundling
 cp bundle.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1                         # logos_program.bin := bundle.la stream
-./runner >/dev/null 2>&1                          # RUN bundle.la on the VM -> logos_app
+vmrun ./runner >/dev/null 2>&1                         # logos_program.bin := bundle.la stream
+vmrun ./runner >/dev/null 2>&1                          # RUN bundle.la on the VM -> logos_app
 rm -f logos_program.bin logos_embed.bin logos_source.la
 NOUT="$(./logos_app 2>/dev/null)"
 [ "$NOUT" = "native bundler" ] || { echo "FAIL  Stage5(native): bundled output [$NOUT]"; ok=0; }
@@ -4039,7 +4047,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp theourgia.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd >/dev/null 2>&1
+vmrun ./logos_secd >/dev/null 2>&1
 check_canvas "native VM"
 cmp -s canvas.ppm /tmp/canvas_host.ppm || { echo "FAIL  theourgia: native raster != C host raster"; ok=0; }
 rm -f canvas.ppm /tmp/canvas_host.ppm logos_secd logos_program.bin logos_source.la
@@ -4079,7 +4087,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp theourgia_fb.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd >/dev/null 2>&1
+vmrun ./logos_secd >/dev/null 2>&1
 check_fb "native VM"
 cmp -s framebuffer.bin /tmp/fb_host.bin || { echo "FAIL  theourgia_fb: native framebuffer != C host framebuffer"; ok=0; }
 rm -f framebuffer.bin /tmp/fb_host.bin logos_secd logos_program.bin logos_source.la
@@ -4313,7 +4321,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp theourgia_text.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd >/dev/null 2>&1
+vmrun ./logos_secd >/dev/null 2>&1
 check_text "native VM"
 cmp -s text.ppm /tmp/text_host.ppm || { echo "FAIL  theourgia_text: native raster != C host raster"; ok=0; }
 rm -f text.ppm /tmp/text_host.ppm logos_secd logos_program.bin logos_source.la
@@ -5097,7 +5105,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp sigil.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > sigil_vm.txt 2>/dev/null
+vmrun ./logos_secd > sigil_vm.txt 2>/dev/null
 check_sigil "native VM" sigil_vm.txt
 cmp -s sigil_host.txt sigil_vm.txt || { echo "FAIL  sigil: native render != C host render"; ok=0; }
 rm -f sigil_host.txt sigil_vm.txt logos_secd logos_program.bin logos_source.la
@@ -5268,7 +5276,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp cob.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > cob_vm.out 2>/dev/null
+vmrun ./logos_secd > cob_vm.out 2>/dev/null
 check_cob "native VM" cob_vm.out
 cmp -s cob_host.out cob_vm.out || { echo "FAIL  cob: native render != C host render"; ok=0; }
 rm -f cob_host.out cob_vm.out logos_secd logos_program.bin logos_source.la
@@ -5322,7 +5330,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp phonsem.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > phonsem_vm.out 2>/dev/null
+vmrun ./logos_secd > phonsem_vm.out 2>/dev/null
 check_phonsem "native VM" phonsem_vm.out
 cmp -s phonsem_host.out phonsem_vm.out || { echo "FAIL  phonsem: native output != C host output"; ok=0; }
 rm -f phonsem_host.out phonsem_vm.out logos_secd logos_program.bin logos_source.la
@@ -5369,7 +5377,7 @@ rm -f logos_secd logos_program.bin logos_source.la phonyms.wav
 ./tiny_host secd.la >/dev/null 2>&1
 cp phonym.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > phonym_vm.out 2>/dev/null
+vmrun ./logos_secd > phonym_vm.out 2>/dev/null
 check_phonym "native VM" phonym_vm.out
 cmp -s phonyms.wav /tmp/phonyms_host.wav || { echo "FAIL  phonym: native waveform != C host waveform"; ok=0; }
 cmp -s phonym_host.out phonym_vm.out     || { echo "FAIL  phonym: native PSC* witnesses != C host witnesses"; ok=0; }
@@ -5940,7 +5948,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp metaglyph.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > meta_vm.out 2>/dev/null
+vmrun ./logos_secd > meta_vm.out 2>/dev/null
 check_meta "native VM" meta_vm.out
 cmp -s meta_host.out meta_vm.out || { echo "FAIL  metaglyph: native witnesses != C host witnesses"; ok=0; }
 rm -f meta_host.out meta_vm.out logos_secd logos_program.bin logos_source.la
@@ -5984,7 +5992,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp archroot.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > arch_vm.out 2>/dev/null
+vmrun ./logos_secd > arch_vm.out 2>/dev/null
 check_arch "native VM" arch_vm.out
 cmp -s arch_host.out arch_vm.out || { echo "FAIL  archroot: native derivation != C host derivation"; ok=0; }
 rm -f arch_host.out arch_vm.out logos_secd logos_program.bin logos_source.la
@@ -6034,7 +6042,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp archderive.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > arcd_vm.out 2>&1
+vmrun ./logos_secd > arcd_vm.out 2>&1
 check_arcd "native VM" arcd_vm.out
 cmp -s arcd_host.out arcd_vm.out || { echo "FAIL  archderive: native attempt != C host attempt"; ok=0; }
 rm -f arcd_host.out arcd_vm.out logos_secd logos_program.bin logos_source.la
@@ -6134,7 +6142,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp dyadseed.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > dyad_vm.out 2>&1
+vmrun ./logos_secd > dyad_vm.out 2>&1
 check_dyad "native VM" dyad_vm.out
 cmp -s dyad_host.out dyad_vm.out || { echo "FAIL  dyadseed: the native reduction differs from the host's"; ok=0; }
 rm -f dyad_host.out dyad_vm.out logos_secd logos_program.bin logos_source.la
@@ -6310,7 +6318,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp mono_combined.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > mono_vm.out 2>/dev/null
+vmrun ./logos_secd > mono_vm.out 2>/dev/null
 check_mono "native VM" mono_vm.out
 cmp -s mono_host.out mono_vm.out || { echo "FAIL  monosemy: native verdicts != C host verdicts"; ok=0; }
 rm -f mono_host.out mono_vm.out logos_secd logos_program.bin logos_source.la mono_combined.la
@@ -6362,7 +6370,7 @@ rm -f logos_secd logos_program.bin logos_source.la
 ./tiny_host secd.la >/dev/null 2>&1
 cp seal_test.la logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1
-./logos_secd > seal_vm.out 2>/dev/null
+vmrun ./logos_secd > seal_vm.out 2>/dev/null
 check_seal "native VM" seal_vm.out
 cmp -s seal_host.out seal_vm.out || { echo "FAIL  seal: native witnesses != C host witnesses"; ok=0; }
 rm -f seal_host.out seal_vm.out logos_secd logos_program.bin logos_source.la
@@ -6774,7 +6782,7 @@ fi
 #        rather than inferred from a timeout return code.)
 ok=1
 cp logosinit.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1
+vmrun ./runner >/dev/null 2>&1
 # 3a — explicit SIGTERM -> clean exit 0 + shutdown announce
 { echo 'echo LOGOS_SHELL_OK'; sleep 3; } | ./runner >/tmp/logos_initout 2>/dev/null &
 rpid=$!
@@ -6864,7 +6872,7 @@ glyph MAIN = (la srv.
     (CHANNEL("init"))
 LAEOF
 cp /tmp/t_ipc.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1                 # native-compile the inlined program
+vmrun ./runner >/dev/null 2>&1                 # native-compile the inlined program
 IPCOUT="$(./runner 2>/dev/null)"
 rm -f /tmp/t_ipc.la /tmp/logosipc-init
 ok=1
@@ -6916,7 +6924,7 @@ glyph LOOP = Z(la self. la n.
 glyph MAIN = print(LOOP(3000000))
 LAEOF
 cp /tmp/t_stack.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1                       # compile
+vmrun ./runner >/dev/null 2>&1                       # compile
 src=0
 SOUT="$(./runner 2>/tmp/t_stack.err)" || src=$?
 SERR="$(cat /tmp/t_stack.err)"
@@ -6944,7 +6952,7 @@ glyph LOOP = Z(la self. la n.
 glyph MAIN = print(LOOP(5000000))
 LAEOF
 cp /tmp/t_tco.la logos_source.la; cp compiler.bin logos_program.bin
-./runner >/dev/null 2>&1                       # compile
+vmrun ./runner >/dev/null 2>&1                       # compile
 TCOUT="$(./runner 2>/dev/null)"
 rm -f /tmp/t_tco.la
 if [ "$TCOUT" = "supervised" ]; then
