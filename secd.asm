@@ -1701,13 +1701,21 @@ _start:
 ; loudly via .drm_fail (no display is touched). All scratch lives in drmbuf, a
 ; 64 KiB zero-fill region above the program buffer.
 .bi_drmmode:
-    mov     rax, 2                    ; open("/dev/dri/card0", O_RDWR|O_CLOEXEC)
+    ; Try /dev/dri/card0 .. card7 in turn (audit2 #130): with simpledrm handoff a
+    ; machine often has only card1, and on hybrid GPUs card0 may drive no
+    ; display. A card that fails to open, fails GETRESOURCES or has no connected
+    ; connector with a mode is closed and the next one tried; if none works, the
+    ; most informative failure is reported (a card that opened beats ENOENT).
+    mov     byte [drm_card + 13], '0'
+    mov     qword [drm_lastfail], 0
+.dm_try:
+    mov     rax, 2                    ; open("/dev/dri/cardN", O_RDWR|O_CLOEXEC)
     mov     rdi, drm_card
     mov     rsi, 0x80002              ; the DRM master fd never leaks into a child
     xor     rdx, rdx
     syscall
     test    rax, rax
-    js      .fail_open
+    js      .dm_open_next
     mov     [drm_fd], rax
     mov     rdi, rax                  ; best-effort SET_MASTER (ignore result)
     mov     rax, 16
@@ -1737,7 +1745,7 @@ _start:
     mov     rdx, drm_res
     syscall
     test    rax, rax
-    js      .fail_getres
+    js      .dm_getres_next
     mov     r9d, [drm_res + 40]       ; actual connector count
     cmp     r9d, 32
     jbe     .dm_cnt_ok
@@ -1746,7 +1754,7 @@ _start:
     xor     r8, r8                    ; connector index
 .dm_conn_loop:
     cmp     r8d, r9d
-    jae     .drm_fail_noconn          ; no connected connector with a mode → fail
+    jae     .dm_noconn_next           ; no connected connector with a mode → next card
     mov     rdi, drm_conn
     xor     eax, eax
     mov     ecx, 10
@@ -1970,6 +1978,30 @@ _start:
 ; "secd: drm <CALL> failed: <rc>\n" and exit(1). Two non-ioctl conditions (no
 ; connected display; present before drm_mode) take their own plain messages.
 ; All registers are fair game here — this path always exits.
+.dm_open_next:                        ; open failed (rax = -errno): remember it only
+    cmp     qword [drm_lastfail], 0   ; if no card has opened yet
+    jne     .dm_advance
+    mov     [drm_lastrc], rax
+    mov     qword [drm_lastfail], .fail_open
+    jmp     .dm_advance
+.dm_getres_next:                      ; GETRESOURCES failed on an open card
+    mov     [drm_lastrc], rax
+    mov     qword [drm_lastfail], .fail_getres
+    jmp     .dm_close_next
+.dm_noconn_next:                      ; opened, but nothing connected
+    mov     qword [drm_lastfail], .drm_fail_noconn
+.dm_close_next:
+    mov     rax, 3                    ; close this card's fd
+    mov     rdi, [drm_fd]
+    syscall
+.dm_advance:
+    cmp     byte [drm_card + 13], '7'
+    jae     .dm_giveup
+    inc     byte [drm_card + 13]
+    jmp     .dm_try
+.dm_giveup:                           ; no card worked: report the best failure
+    mov     rax, [drm_lastrc]
+    jmp     [drm_lastfail]
 .fail_open:
     mov     rsi, dn_open
     mov     edx, dn_open_len
@@ -3946,7 +3978,7 @@ drm_pfx:           db "secd: drm "
 drm_pfx_len        equ $ - drm_pfx
 drm_failed:        db " failed: "
 drm_failed_len     equ $ - drm_failed
-dn_open:           db "open card0"
+dn_open:           db "open /dev/dri/card0..7"
 dn_open_len        equ $ - dn_open
 dn_getres:         db "GETRESOURCES"
 dn_getres_len      equ $ - dn_getres
@@ -3976,6 +4008,8 @@ drm_pitch:     dq 0             ; bytes per row
 drm_w:         dq 0              ; mode width  (pixels)
 drm_h:         dq 0              ; mode height (pixels)
 drm_crtcid:    dq 0             ; chosen CRTC id
+drm_lastfail:  dq 0             ; drm_mode card scan: failure handler to report
+drm_lastrc:    dq 0             ;   ... and its -errno
 
 ; The operand and dump stacks scale with NON-tail recursion depth. A tail call
 ; (an APPLY immediately followed by RET, see .apply_clo) reuses the caller's

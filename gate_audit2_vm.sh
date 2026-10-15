@@ -96,8 +96,27 @@ case_vm_sanitize() {
     else fail "greetapp import: VM rc=$RC [$OUT] vs host [$h]"; fi
 }
 
+# ── #130 drm_mode: not only /dev/dri/card0 ─────────────────────────────────────
+# drm_mode opened /dev/dri/card0 unconditionally; on a card1-only machine
+# (simpledrm handoff) it failed "open card0 failed: -2" without trying card1.
+# Hardware-free check: a user+mount namespace puts a tmpfs over /dev/dri holding
+# only card1, a REGULAR file — so a VM that reaches card1 gets past open and
+# fails at GETRESOURCES (-25 ENOTTY). Unfixed: the open failure (-2). Real
+# scanout on a card1-only machine stays UNWITNESSED here (no such hardware).
+case_vm_drm_card() {
+    unshare -rm true 2>/dev/null || { fail "vm_drm_card: unshare -rm unavailable (cannot test)"; return; }
+    printf 'glyph MAIN = print(drm_mode("!"))\n' > t_drm.la
+    vmc t_drm.la || { fail "vm_drm_card: codegen"; return; }
+    local out; out=$(timeout 20 unshare -rm sh -c 'mount -t tmpfs none /dev/dri && : > /dev/dri/card1 && exec ./logos_secd' </dev/null 2>&1 | tr '\n' '|')
+    if [ "$out" = "secd: drm GETRESOURCES failed: -25|" ]; then pass "VM: drm_mode skips a missing card0 and reaches card1"
+    else fail "VM: drm_mode with only card1 present — out=[$out] (want GETRESOURCES -25 on card1)"; fi
+    out=$(timeout 20 unshare -rm sh -c 'mount -t tmpfs none /dev/dri && exec ./logos_secd' </dev/null 2>&1 | tr '\n' '|')
+    if [ "$out" = "secd: drm open /dev/dri/card0..7 failed: -2|" ]; then pass "VM: drm_mode with no card at all fails loudly (-2)"
+    else fail "VM: drm_mode with no card — out=[$out]"; fi
+}
+
 #CASES-BELOW
 
-CASES="${*:-vm_cloexec vm_tco_comment vm_sanitize}"
+CASES="${*:-vm_cloexec vm_tco_comment vm_sanitize vm_drm_card}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_vm: all passed"; exit 0; } || { echo "gate_audit2_vm: $FAILS failed"; exit 1; }
