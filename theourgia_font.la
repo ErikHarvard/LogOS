@@ -20,7 +20,7 @@
 #  C host and the native VM.
 # ═══════════════════════════════════════════════════════════════════
 
-export GLYPH_ROW BIT FW FH
+export GLYPH_ROW GLYPH_ROW_IN FONTDATA BIT FW FH
 
 # ── Foundations ──
 glyph TRUE  = la t. la f. t
@@ -62,10 +62,15 @@ glyph GLYPH_INDEX = la c. INDEXOF(INDEX)(c)(0)
 # GLYPH_ROW(c)(r) — row-byte r of character c, pulled out of the packed font.
 # A row outside 0..FH-1 is blank (0): unbounded, it read the neighbouring
 # glyph's bytes (H row 8 = row 0 of I) — audit2 #137.
-glyph GLYPH_ROW = la c. la r.
+# GLYPH_ROW_IN(font)(c)(r) is the same lookup in an already-decoded font: a
+# glyph is re-evaluated on every reference, so GLYPH_ROW re-decodes all 296
+# tokens of FONTDATA per call. A renderer doing many lookups binds FONTDATA ONCE
+# and passes it here (audit2 #77) — same bytes, one decode per frame.
+glyph GLYPH_ROW_IN = la font. la c. la r.
     IF(lt(r)(0))(la _. 0)(la _. IF(lt(r)(FH))
-        (la _. ORDI(BYTE_AT(FONTDATA)(add(mul(GLYPH_INDEX(c))(8))(r))))
+        (la _. ORDI(BYTE_AT(font)(add(mul(GLYPH_INDEX(c))(8))(r))))
         (la _. 0))
+glyph GLYPH_ROW = la c. la r. GLYPH_ROW_IN(FONTDATA)(c)(r)
 
 # ── Bit test ──
 glyph POW2 = Z(la self. la k. IF(int_eq(k)(0))(la _. 1)(la _. mul(2)(self(sub(k)(1)))))
