@@ -107,6 +107,11 @@ glyph LAW_IDENTITY = la g. AUTO_OK(g)
 # ── LAW OF NON-CONTRADICTION → type-lock (INHABITS) ────────────────────────────
 # A term cannot both inhabit and not-inhabit a type. An arity term carries its
 # declared and its body arity; INHABITS decides, and already has a FALSE case.
+# ⚠ MIRROR, NOT WIRING (audit2 #118): INHABITS restates specpipe's arity judgement
+# int_eq(TARITY(ty))(BARITY(...)) (specpipe.la:189) as a parallel glyph. specpipe.la
+# never references INHABITS / NC_TYPECHECK / metalogic, and this module imports
+# nothing from specpipe at run time, so DEPLOY's rejection of a type-contradiction
+# would behave identically if metalogic.la did not exist.
 glyph ATERM      = la d. la b. la f. f(d)(b)
 glyph DECL_ARITY = la t. t(la d. la b. d)
 glyph BODY_ARITY = la t. t(la d. la b. b)
@@ -114,6 +119,8 @@ glyph INHABITS   = la dec. la bod. int_eq(dec)(bod)
 glyph LAW_NONCONTRADICTION = la term. INHABITS(DECL_ARITY(term))(BODY_ARITY(term))
 # The old ¬(INHABITS ∧ ¬INHABITS) stays as the META-statement — itself a
 # tautology, correctly — but the LAW now returns the INHABITS verdict directly.
+# NC_TYPECHECK is TRUE for EVERY pair of integers (both its tests expect "T"): it
+# states the law, it cannot detect anything.
 glyph NC_TYPECHECK = la dec. la bod. NOT(AND(INHABITS(dec)(bod))(NOT(INHABITS(dec)(bod))))
 
 # ── LAW OF EXCLUDED MIDDLE → total verdict / well-formedness ───────────────────
