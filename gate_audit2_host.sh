@@ -105,6 +105,33 @@ case_host_importcwd() {
     else fail "host_importcwd: got '$(oneline ic.out)'"; fi
 }
 
-CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit host_procread host_importcwd}"
+# ── #80 non-tail recursion depth capped at ~50k by the 8 MiB C stack ─────────
+# Unfixed: SUM(100000) (Z-combinator, non-tail) halts with the C stack guard,
+# rc 1, while the VM prints the sum. Fixed: eval runs on a 256 MiB lazily-
+# committed thread stack, so it prints 100000*100001/2 (python-derived, not
+# captured). The guard must still halt LOUDLY (rc 1 + 'C stack guard', not
+# SIGSEGV 139) on nesting deep enough to exhaust even that stack: 60M nested
+# parens (~0.6 s, ~1.2 GB). SUM(100000) costs ~10 s and ~2.5 GB RSS.
+case_host_deeprec() {
+    cat > deep.la <<'LA'
+glyph TRUE = la t. la f. t
+glyph FALSE = la t. la f. f
+glyph IF = la c. la t. la f. c(t)(f)("!")
+glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph SUM = Z(la self. la n. IF(int_eq(n)(0))(la _. 0)(la _. add(n)(self(sub(n)(1)))))
+glyph MAIN = print(int_to_str(SUM(100000)))
+LA
+    python3 -c "import sys;N=60000000;sys.stdout.write('glyph MAIN = print('+'('*N+'\"x\"'+')'*N+')\n')" > nest.la
+    local want got rc rc2
+    want=$(python3 -c 'print(100000*100001//2)')
+    rc=0; got=$(timeout 60 ./tiny_host deep.la 2>&1) || rc=$?
+    rc2=0; timeout 60 ./tiny_host nest.la > nest.out 2>&1 || rc2=$?
+    if [ "$rc" = 0 ] && [ "$got" = "$want" ] && [ "$rc2" = 1 ] && grep -q 'C stack guard' nest.out; then
+        pass "host_deeprec: SUM(100000) non-tail = $want; 60M-deep nesting still halts loudly (rc 1)"
+    else fail "host_deeprec: SUM(100000) rc=$rc got '$(printf '%s' "$got" | tr '\n' '|' | cut -c1-120)' (want $want); nest rc=$rc2 '$(oneline nest.out)'"; fi
+    rm -f nest.la
+}
+
+CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit host_procread host_importcwd host_deeprec}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_host: all passed"; exit 0; } || { echo "gate_audit2_host: $FAILS failed"; exit 1; }

@@ -41,6 +41,8 @@
 #include <stdint.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
+#include <pthread.h>
 #include <unistd.h>
 
 /* ------------------------------------------------------------------ AST -- */
@@ -77,16 +79,21 @@ static uintptr_t gc_stack_base = 0;       /* highest stack address (set in main)
 static uintptr_t stack_floor = 0;         /* recursion guard: bail below this address */
 
 /* The parser, eval, subst, occurs_free and copy_node recurse on expression
- * depth; a pathologically nested program would otherwise overrun the C stack
- * and SIGSEGV. check_stack() compares the current frame against a floor set
- * 512 KB below the real RLIMIT_STACK, so deep nesting halts loudly instead of
- * faulting. It only fires within that last 512 KB — anything that fits in the
- * stack today still runs, so legitimate (incl. self-hosting) recursion is
- * unaffected; only input that would have crashed is rejected. */
+ * depth AND on run-time (non-tail) recursion depth; a pathologically deep
+ * program would otherwise overrun the C stack and SIGSEGV. check_stack()
+ * compares the current frame against a floor set 512 KB above the bottom of
+ * the stack the interpreter runs on, so deep recursion halts loudly instead of
+ * faulting. That stack is a 256 MiB mmap'd thread stack (see main: lazily
+ * committed, so a shallow program touches only what it uses), which lifts the
+ * host's non-tail ceiling from ~50k frames (8 MiB default stack) to ~1.5M —
+ * past the VM's ~1M-frame dump guard (audit2 #80). If the big stack cannot be
+ * mapped, the host falls back to the process stack, floor 512 KB below
+ * RLIMIT_STACK, as before. */
 static void check_stack(void) {
     char probe;
     if (stack_floor && (uintptr_t)&probe < stack_floor) {
-        fprintf(stderr, "error: expression nesting too deep (C stack guard)\n");
+        fprintf(stderr, "error: recursion too deep — expression nesting or non-tail "
+                        "evaluation depth (host C stack guard)\n");
         exit(1);
     }
 }
@@ -1089,18 +1096,12 @@ static void do_import(const char *path) {
 
 /* --------------------------------------------------------------- main --- */
 
-int main(int argc, char **argv) {
-    gc_stack_base = (uintptr_t)&argc;   /* highest app-stack address; roots live below it */
-    {                                   /* arm the recursion guard 512 KB below RLIMIT_STACK */
-        struct rlimit rl;
-        size_t usable = 8u * 1024 * 1024;   /* default-stack fallback */
-        if (getrlimit(RLIMIT_STACK, &rl) == 0 &&
-            rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur >= 1024u * 1024)
-            usable = (size_t)rl.rlim_cur;
-        stack_floor = gc_stack_base - (usable - 512u * 1024);
-    }
-    const char *path = argc > 1 ? argv[1] : "kernel.la";
-
+/* The whole interpreter (parse + eval) runs here, on whatever stack main
+ * chose; gc_stack_base and stack_floor describe that stack. */
+static const char *run_path;
+static void *run_program(void *unused) {
+    (void)unused;
+    const char *path = run_path;
     char *src = slurp_file(path, NULL);   /* source is text; NUL-terminated walk is fine */
     import_push(path);                    /* the program is the root of the import chain */
     P = src; src_file = path;
@@ -1108,8 +1109,53 @@ int main(int argc, char **argv) {
     parse_program();
 
     Node *main_glyph = lookup_glyph("MAIN");
-    if (!main_glyph) { fprintf(stderr, "no MAIN glyph found in %s\n", path); return 1; }
+    if (!main_glyph) { fprintf(stderr, "no MAIN glyph found in %s\n", path); exit(1); }
 
     eval(main_glyph);
+    return NULL;
+}
+
+static void *run_on_big_stack(void *unused) {
+    char top;
+    gc_stack_base = (uintptr_t)&top;      /* highest frame of the interpreter's stack */
+    return run_program(unused);
+}
+
+#define HOST_STACK_BYTES ((size_t)1 << 28)   /* 256 MiB, reserved not committed: a runaway recursion halts at ~1.5M frames (heap ~26 KB/frame) instead of exhausting RAM */
+#define HOST_STACK_GUARD ((size_t)64 * 1024) /* PROT_NONE page(s) below it */
+
+int main(int argc, char **argv) {
+    run_path = argc > 1 ? argv[1] : "kernel.la";
+
+    /* Preferred: a 256 MiB thread stack. MAP_NORESERVE + anonymous pages are
+     * committed only when touched, so this costs nothing until the program
+     * recurses; the PROT_NONE guard below it turns a guard miss into SIGSEGV
+     * rather than silent corruption, and check_stack halts 512 KB above it. */
+    void *stk = mmap(NULL, HOST_STACK_BYTES, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_STACK, -1, 0);
+    if (stk != MAP_FAILED) {
+        pthread_attr_t at; pthread_t th;
+        mprotect(stk, HOST_STACK_GUARD, PROT_NONE);
+        stack_floor = (uintptr_t)stk + HOST_STACK_GUARD + 512u * 1024;
+        if (pthread_attr_init(&at) == 0 &&
+            pthread_attr_setstack(&at, stk, HOST_STACK_BYTES) == 0 &&
+            pthread_create(&th, &at, run_on_big_stack, NULL) == 0) {
+            pthread_join(th, NULL);
+            return 0;
+        }
+        munmap(stk, HOST_STACK_BYTES);
+    }
+
+    /* Fallback: the process stack, guard armed 512 KB below RLIMIT_STACK. */
+    gc_stack_base = (uintptr_t)&argc;   /* highest app-stack address; roots live below it */
+    {
+        struct rlimit rl;
+        size_t usable = 8u * 1024 * 1024;   /* default-stack fallback */
+        if (getrlimit(RLIMIT_STACK, &rl) == 0 &&
+            rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur >= 1024u * 1024)
+            usable = (size_t)rl.rlim_cur;
+        stack_floor = gc_stack_base - (usable - 512u * 1024);
+    }
+    run_program(NULL);
     return 0;
 }
