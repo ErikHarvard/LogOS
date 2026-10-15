@@ -102,8 +102,13 @@ glyph RENDER = la st. PPM(RENDER_SURFACE(st))
 # ── Synthetic key events for the test (the 24-byte struct input_event) ──
 glyph BYTE = la n. chr(int_to_str(n))
 glyph LE16 = la n. concat(BYTE(mod(n)(256)))(BYTE(div(n)(256)))
-glyph REPEAT = Z(la self. la n. la s. IF(lt(n)(1))(la _. "")(la _.
-    concat(s)(self(sub(n)(1))(s))))
+# REPEAT n s → n copies of s (a count below 1 is ""), built by DOUBLING: the
+# copies made total O(n·|s|). The old concat(s)(self(n-1)(s)) chain copied the
+# growing tail at every step — O(n²·|s|), ~29 MB per 7680-byte blank row (audit2 #75).
+glyph REPEAT = Z(la self. la n. la s.
+    IF(lt(n)(1))(la _. "")(la _.
+    (la h. IF(int_eq(mod(n)(2))(0))(la _. concat(h)(h))(la _. concat(s)(concat(h)(h))))
+    (self(div(n)(2))(s))))
 glyph ZEROS16 = REPEAT(16)(BYTE(0))
 glyph LE32_ONE = concat(BYTE(1))(REPEAT(3)(BYTE(0)))
 glyph KEY_PRESS_EVENT = la code.
@@ -112,31 +117,61 @@ glyph KEY_PRESS_EVENT = la code.
 # ── Framebuffer bridge (Stage 3): composed RGB surface → XRGB8888 image ──
 # (restated locally — theourgia_fb.la does not export TO_FB; pure generation, so
 # it stays byte-identical host/VM. Used only by the VM-only LIVE loop.)
-glyph DROP = Z(la self. la n. la s. IF(int_eq(n)(0))(la _. s)(la _.
-    self(sub(n)(1))(str_tail(s))))
 glyph NUL   = BYTE(0)
 glyph ZEROS = la n. REPEAT(n)(NUL)
-glyph RGB_TO_BGRX = Z(la self. la s.
-    IF(str_eq(s)(""))(la _. "")(la _.
-        concat
-          (concat(str_head(DROP(2)(s)))
-                 (concat(str_head(DROP(1)(s)))
-                        (concat(str_head(s))(NUL))))
-          (self(DROP(3)(s)))))
-glyph FB_ROW = la srow. la pitch. la sw.
-    concat(RGB_TO_BGRX(srow))(ZEROS(sub(pitch)(mul(sw)(4))))
-glyph BUILD = Z(la self. la rows. la r. la screen_h. la pitch. la sw.
-    IF(lt(r)(screen_h))(la _.
-        concat
-          (IF(IS_CONS(rows))(la _. FB_ROW(LIST_HD(rows))(pitch)(sw))
-                            (la _. ZEROS(pitch)))
-          (self(IF(IS_CONS(rows))(la _. LIST_TL(rows))(la _. rows))
-                (add(r)(1))(screen_h)(pitch)(sw)))
-    (la _. ""))
+# ── RGB row → XRGB8888 row ──
+# A surface row is w*3 bytes, R,G,B per pixel. XRGB8888 little-endian wants the
+# bytes B,G,R,X (X = 0) per pixel, so each triple R,G,B is re-emitted reversed
+# with a trailing NUL: 3 bytes in, 4 bytes out. The row is built by HALVING the
+# pixel range and reading bytes with str_at (O(1)): O(w log w) per row. The old
+# walk did three DROPs (str_tail copies) per pixel and concatenated each pixel
+# onto the converted rest of the row — O(w²) per row (audit2 #75).
+glyph PX_BGRX = la s. la i.
+    concat(str_at(s)(add(i)(2)))(concat(str_at(s)(add(i)(1)))(concat(str_at(s)(i))(NUL)))
+glyph CONV_GO = Z(la self. la s. la lo. la n.
+    IF(lt(n)(2))
+        (la _. IF(lt(n)(1))(la _. "")(la _. PX_BGRX(s)(mul(lo)(3))))
+        (la _. (la h. concat(self(s)(lo)(h))(self(s)(add(lo)(h))(sub(n)(h))))(div(n)(2))))
+glyph RGB_TO_BGRX = la s. CONV_GO(s)(0)(div(str_to_int(str_len(s)))(3))
+# ── TO_FB(surface)(screen_h)(pitch) → a screen_h*pitch XRGB8888 image ──
+# The first v = min(screen_h, surface rows) screen rows are the converted surface
+# rows, each zero-padded from sw*4 bytes up to the pitch (the slack a real
+# scanline carries beyond the visible pixels); the remaining screen_h − v rows
+# are blank (pitch zero bytes), so a small scene sits letterboxed at the top of a
+# larger screen. A surface taller than screen_h is clipped to its top screen_h
+# rows. A surface wider than the pitch holds (w*4 > pitch) cannot be laid out:
+# TO_FB halts loudly (the pad count would be negative — REPEAT used to recurse
+# on it forever).
+# Cost O(screen): the pad and the blank row are each built ONCE (by doubling),
+# the blank block by one doubling REPEAT, and the converted rows are joined
+# pairwise (CAT_ALL, O(bytes·log v)). The old BUILD rebuilt ZEROS(pitch) for
+# every blank row with the linear REPEAT and concatenated each row onto the
+# growing rest of the frame: one 1080x7680 frame did not finish in 10 minutes,
+# so the Stage 7 LIVE loop (TO_FB per frame) could not render (audit2 #75).
+glyph MINI = la a. la b. IF(lt(a)(b))(la _. a)(la _. b)
+glyph LLEN = Z(la self. la l. IF(IS_CONS(l))(la _. add(1)(self(LIST_TL(l))))(la _. 0))
+glyph FB_ROWS = Z(la self. la rows. la k. la pad.
+    IF(lt(k)(1))(la _. NIL)(la _.
+    IF(IS_CONS(rows))
+        (la _. CONS(concat(RGB_TO_BGRX(LIST_HD(rows)))(pad))(self(LIST_TL(rows))(sub(k)(1))(pad)))
+        (la _. NIL)))
+glyph CAT_PAIRS = Z(la self. la l.
+    IF(IS_CONS(l))(la _.
+        IF(IS_CONS(LIST_TL(l)))
+            (la _. CONS(concat(LIST_HD(l))(LIST_HD(LIST_TL(l))))(self(LIST_TL(LIST_TL(l)))))
+            (la _. l))
+    (la _. l))
+glyph CAT_ALL = Z(la self. la l.
+    IF(IS_CONS(l))
+        (la _. IF(IS_CONS(LIST_TL(l)))(la _. self(CAT_PAIRS(l)))(la _. LIST_HD(l)))
+        (la _. ""))
 glyph TO_FB = la surf. la screen_h. la pitch.
     IF(lt(pitch)(mul(S_W(surf))(4)))
         (la _. error(concat("TO_FB: surface is ")(concat(int_to_str(S_W(surf)))(concat(" px wide = ")(concat(int_to_str(mul(S_W(surf))(4)))(concat(" bytes, more than the pitch of ")(concat(int_to_str(pitch))(" bytes"))))))))
-        (la _. BUILD(S_ROWS(surf))(0)(screen_h)(pitch)(S_W(surf)))
+        (la _. (la v.
+            concat(CAT_ALL(FB_ROWS(S_ROWS(surf))(v)(ZEROS(sub(pitch)(mul(S_W(surf))(4))))))
+                  (REPEAT(sub(screen_h)(v))(ZEROS(pitch))))
+            (MINI(screen_h)(LLEN(S_ROWS(surf)))))
 
 # ── The LIVE multiplexed session (VM-only: drm_mode/present/poll/read) ──
 # drm_mode returns "<w> <h> <pitch>" (SPLIT it for the height + pitch TO_FB and
