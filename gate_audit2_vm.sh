@@ -90,8 +90,19 @@ case_vm_mint() {
     else fail "logoscap MINT control: rc=$rc out=[$(echo "$out" | tr '\n' '|')]"; fi
 }
 
+# ── #131 secd.asm: no stale "no tail-call optimisation" claim ──────────────────
+# The VM HAS tail calls (.apply_clo: APPLY followed by RET reuses the frame;
+# gate_audit2.sh tail_loops runs 5M iterations), but the stack-sizing comment
+# said "this SECD machine does no tail-call optimisation". Source check.
+case_vm_tco_comment() {
+    if grep -n 'does no tail-call optimisation\|Without tail-call optimisation' "$REPO/secd.asm" > tco.hits; then
+        fail "secd.asm still denies its own TCO: $(tr '\n' '|' < tco.hits)"
+    elif grep -q 'tail call' "$REPO/secd.asm"; then pass "secd.asm comments describe the TCO rule instead of denying it"
+    else fail "secd.asm: no TCO description found (proved-looked check)"; fi
+}
+
 #CASES-BELOW
 
-CASES="${*:-vm_writefail vm_errno vm_mint}"
+CASES="${*:-vm_writefail vm_errno vm_mint vm_tco_comment}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_vm: all passed"; exit 0; } || { echo "gate_audit2_vm: $FAILS failed"; exit 1; }
