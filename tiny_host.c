@@ -745,6 +745,10 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         if (v->t == N_STR)      { fwrite(v->s, 1, v->len, stdout); putchar('\n'); }
         else if (v->t == N_INT) { printf("%ld\n", v->i); }
         else                    fprintf(stderr, "print: argument is not a string or integer\n");
+        /* stdout is block-buffered under a pipe and stderr is not: flush so a
+         * later diagnostic (error, a halt) lands AFTER this line in a merged
+         * stream, in program order -- as the VM's direct write(2)s do. */
+        fflush(stdout);
         return v;
     }
     if (strcmp(name, "copy_self") == 0) {

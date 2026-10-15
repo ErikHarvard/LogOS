@@ -30,6 +30,14 @@ case_host_selfref() {
     [ $ok = 1 ] && pass "host_selfref: glyph A = A and a two-glyph cycle halt loudly (rc 1), no hang"
 }
 
-CASES="${*:-host_selfref}"
+# ── #146 print then error: merged stream must keep program order ────────────
+case_host_order() {
+    printf 'glyph MAIN = (la _. error("ERR"))(print("OUT"))\n' > ord.la
+    local got; got=$(timeout 5 ./tiny_host ord.la 2>&1 | cat | tr '\n' '|')
+    if [ "$got" = "OUT|ERR|" ]; then pass "host_order: print before error appears first in a 2>&1 pipe"
+    else fail "host_order: merged stream out of program order — got: $got"; fi
+}
+
+CASES="${*:-host_selfref host_order}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_host: all passed"; exit 0; } || { echo "gate_audit2_host: $FAILS failed"; exit 1; }
