@@ -1,7 +1,7 @@
 # Stage 4 (full native self-hosting) — ACHIEVED 2026-06-26
 
 native_codegen3 (an x86-64 compiler written in Lingua Adamica) compiles its OWN
-576-line source into a byte-identical native binary, with NO C host and NO
+source (576 lines then; 889 now) into a byte-identical native binary, with NO C host and NO
 interpreter in the self-host loop. ∃(∃) ≡ ∃ at the compiler level.
 
 ## What was fixed to get here (all in native_codegen3.la)
@@ -9,14 +9,18 @@ interpreter in the self-host loop. ∃(∃) ≡ ∃ at the compiler level.
    recursion → single Z fixpoint + threaded `pexpr`). Commit 61c4125.
 2. `{PARSE_MODULE↔PARSE_MOD_LOOP}` import-branch `PARSE_MODULE(`→`self(`. 61c4125.
    (INLINE produces one closed term → can only represent Z-recursion, not named.)
-3. `HEAP_SIZE` 1.5 GiB → 16 GiB (line 415) + memsz tracks it (line 561). The
+3. `HEAP_SIZE` 1.5 GiB → 16 GiB (`glyph HEAP_SIZE`, native_codegen3.la:540 now) + the
+   ELF `memsz` tracks it (computed from `HEAP_SIZE` + `WL_SIZE` + `BITMAP_SIZE` in the
+   image builder, native_codegen3.la:874 now). The
    self-inline working set is ~9.7 GB (peak RSS), so 1.5 GB exhausted. Pure
    source literal — no asm/dq-probe.
 
 ## The convergence (the actual result)
 - CC0 = tiny_host(source) — the ONE-TIME seed. Took **11h28m** under tiny_host's
   naive interpreter (the irreducible bootstrap origin, like every self-hoster).
-  Preserved as `native_codegen3_cc0_seed.bin`.
+  It was kept locally as `native_codegen3_cc0_seed.bin`, which is NOT in the repository
+  (`.gitignore`'s `*.bin` covers it; only `native_codegen3_selfhost.bin` is un-ignored), so
+  a new seed comes from the clean recipe below.
 - Native compile is **~5000× faster**: CC0 (heap-patched to 16 GiB) compiled the
   full source in **7.9 s**.
 - Heap-size change propagates over one generation: CC0(1.5G)→CC1→**CC2**.
@@ -41,16 +45,24 @@ avoid re-seeding mid-session; CC2 == the CC0' a clean re-seed yields.
 - **build.sh Stage 4 guard:** the committed reference image
   `native_codegen3_selfhost.bin` (un-gitignored) must, compiling native_codegen3.la,
   reproduce ITSELF byte-identically (the fixed point) and compile kernel.la
-  native==host. Runs in seconds (gated on ~12 GiB free; skips with a NOTE otherwise).
+  native==host. One self-compile per run (~6 min, measured 2026-07-16 per
+  `regen_selfhost.sh`'s header). Gated on `free` reporting ≥ 12000 MiB available; skips
+  with a NOTE otherwise. That gate is below what the image needs: its LOAD segment maps
+  MemSiz 0x4140e8f20 (~16.3 GiB), so a machine with 12–16 GiB passes the gate and can
+  still fail to exec the image (audit2 Finding 0: SIGSEGV before the first instruction on a
+  15 GiB box, kernel log "__vm_enough_memory … not enough memory").
   It doubles as a drift guard: a source change without regenerating the image fails it.
 - **Regenerating the image after a native_codegen3.la / native_codegen3_rt.asm change:**
-  `./regen_selfhost.sh` then `git add native_codegen3_selfhost.bin`. Fast — the
-  current image (16 GiB heap) bootstraps its successor; the ~11h tiny_host seed is
+  `./regen_selfhost.sh` then `git add native_codegen3_selfhost.bin`. ~25–40 min (its
+  header; two self-compiles per iteration) — the current image (16 GiB heap) bootstraps
+  its successor; the ~11h tiny_host seed is
   only the one-time genesis. (Heap/RT changes propagate over one generation, so the
   script iterates to convergence.)
 
 ## Honest scope
 - The FIRST seed still needs tiny_host (or patch_heap.py) — the bootstrap origin.
-  Thereafter the committed image regenerates itself in seconds.
-- HEAP_SIZE = 16 GiB is generous (working set ~9.7 GB); lazily mapped, fine on
-  this 188 GB box. A blob exceeding the heap loud-halts (rc73), not a crash.
+  Thereafter the committed image regenerates itself (~25–40 min, `regen_selfhost.sh`).
+- HEAP_SIZE = 16 GiB is generous (working set ~9.7 GB) and lazily mapped, but the
+  whole ~16.3 GiB mapping must be granted at exec, so running the image needs about
+  that much RAM + swap under the kernel's default overcommit heuristic (it was built
+  on a 188 GB box). A blob exceeding the heap loud-halts (rc73), not a crash.

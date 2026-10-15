@@ -1,11 +1,17 @@
 # GRAMMAR_DIVERGENCE.md — the formal grammar vs. the host parser
 
 A line-by-line comparison of the **formal grammar** in `LINGUA ADAMICA`
-(Codex, `~/Downloads/CODICIES/LINGUA ADAMICA.tex` — not in this repo) against
+(Codex, `LINGUA_ADAMICA.tex` at the repo root) against
 the grammar actually implemented by `tiny_host.c` (`parse_expr`, `parse_app`,
 `parse_primary`, `parse_program`). It lists every place the implementation
 diverges from the specification: missing primitives, unsupported combination
 modes, and syntax differences.
+
+*Written 2026-06-02 about the host parser.* What it says about `tiny_host.c`'s
+grammar still holds. Two things have changed outside the parser since: `primitives.la`
+defines all nine primitive concepts as typed glyphs (ordinary glyphs, still not grammar
+primitives), and `sigil.la` / `phonym.la` render sigils and synthesise phonyms as library
+modules. Items 1 and 7 below are annotated accordingly.
 
 This is an audit document (`b_τ ≡ f_τ`): the host does not *claim* to implement
 the spec's grammar — it implements a substrate on which that grammar is encoded
@@ -51,7 +57,9 @@ These differ in *kind*, not merely in detail.
    absent. `∃` works only because `kernel.la` *defines* it
    (`glyph ∃ = la self. self`); the parser treats `∃` as an ordinary UTF-8
    identifier, not a typed Being-primitive. Recognition / Love / Relation / Void
-   / Becoming / Form / Depth appear nowhere.
+   / Becoming / Form / Depth are not in the grammar either. (When this was
+   written they appeared nowhere; `primitives.la` now defines all nine as
+   ordinary glyphs, which the parser treats like any other identifier.)
 2. **A different primitive basis entirely.** The host's real primitives are
    string literals, integer literals, and built-in functions (`print`, `concat`,
    `read_file`, `str_eq`, `chr`, the arithmetic and syscall builtins, …) — I/O
@@ -90,8 +98,10 @@ These differ in *kind*, not merely in detail.
 
 7. **Text vs. sigils/phonyms.** Spec glyphs are sigils with visual forms and
    phonyms (nine base sounds in a 3-D phonetic space). The host uses ASCII/UTF-8
-   source text (`la x.`, `f(x)`, names like `∃`/`SELF`). No sigil rendering, no
-   phonyms, no ontographic structure — `∃` is just bytes in an identifier.
+   source text (`la x.`, `f(x)`, names like `∃`/`SELF`). The grammar has no sigil
+   or phonym forms and no ontographic structure — `∃` is just bytes in an
+   identifier. (Sigil rendering and phonym synthesis now exist as library
+   modules, `sigil.la` and `phonym.la`, outside the grammar.)
 8. **Literals outside the formal grammar.** `parse_primary` accepts STRING and
    INT literals. The spec has no string-literal production at all, and a number
    would be Form (g₈) generated from Void + Becoming — so both literal forms are
