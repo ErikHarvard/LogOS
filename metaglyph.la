@@ -205,7 +205,7 @@ glyph YN = la b. IF(b)(la _. "YES")(la _. "NO")
 
 glyph OP_DIFF  = DIR(PRIM("VOID"))(PRIM("RELATION"))        # ∂ differentiate (1)
 glyph OP_BOUND = CONT(PRIM("FORM"))(PRIM("DEPTH"))          # δ bound        (2)
-glyph OP_COMP  = SYN(PRIM("BECOMING"))(PRIM("FORM"))        # γ compose      (3)
+glyph OP_COMP  = SYN(PRIM("BECOMING"))(PRIM("FORM"))        # γ compress     (3)  (SoN:91; was glossed "compose")
 glyph OP_RECOG = MC(PRIM("RECOGNITION"))                    # ρ recognize    (4)  ≡ SR_ABOUT
 glyph OP_INTEG = SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))     # 𝔄 integrate    (5)  ≡ COMPASSION
 

@@ -41,9 +41,12 @@ glyph FIND_SA = Z(la self. la p. la eager. la node. node (la n. 0) (la q. la b. 
 glyph SWC = Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. MAXn(self(f))(self(a))) (la s. 0))
 glyph VERDICT = la node. (la s. IFc(int_eq(s)(2))(la _. "ILL")(la _. IFc(int_eq(s)(1))(la _. "UNKNOWN")(la _. "WF")))(SWC(node))
 
-# ── operator-order checker (Grammar of Composition): the five operators form a
-# strict dependency chain ∂(1)→δ(2)→γ(3)→ρ(4)→𝔄(5) (differentiate, bound,
-# compose, recognize, integrate) — each needs the previous as input, so a later
+# ── operator-order checker: the five operators form a strict dependency chain
+# ∂(1)→δ(2)→γ(3)→ρ(4)→𝔄(5) — "The five operators: differentiate, bound, compress,
+# recognize, integrate" (The Science of Naming.tex:91; γ is COMPRESS, not
+# "compose" — audit2 #136). The codex's own prerequisite sentences (SoN:200):
+# "You cannot define before you differentiate. You cannot name before you bound.
+# You cannot understand before you recognize." Each needs the previous as input, so a later
 # operator must nest OUTSIDE an earlier one (ranks non-increasing root→leaf). A
 # descendant whose rank EXCEEDS its ancestor's = an out-of-order composition: an
 # operator applied before its prerequisite. The canonical case is 𝔄 (integrate,
