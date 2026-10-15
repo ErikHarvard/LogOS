@@ -66,8 +66,32 @@ case_vm_errno() {
     else fail "VM: pipe/clock_gettime failure values — out=[$out] (want pipe=-24|clock=-22|)"; fi
 }
 
+# ── #115 logoscap MINT: an entropy failure must not brand the EMPTY secret ─────
+# `random` yields "" when getrandom fails (#70, deliberately not changed here),
+# and BRAND("") makes box("") — a probe anyone can supply — open every box.
+# random is shadowed to the failure value ("") and to a short read (31 bytes).
+# Unfixed: MINT brands it and the forged probe opens the box (rc 0). Fixed: MINT
+# halts loudly naming the byte count; the real 32-byte path is unchanged.
+mint_case() {   # <label> <random shadow> <expected stderr fragment>
+    { echo "$2"; sed '/^glyph MAIN/,$d' logoscap.la
+      echo 'glyph MAIN = (la realm. (la box. SEQ(SHOW_OPEN("authorized = ")(CAP_RECV(GRANT_RECV(realm))(box))(la w. MSG_TYPE(w)))(SHOW_OPEN("forged probe = ")(box(""))(la w. concat("FORGED-OPEN ")(MSG_TYPE(w)))))(CAP_SEND(GRANT_SEND(realm))("ping")("hello")))(MINT("!"))'; } > t_mint.la
+    local rc=0 out; out=$(timeout 60 ./tiny_host t_mint.la 2>&1) || rc=$?
+    if [ "$rc" != 0 ] && echo "$out" | grep -qF "$3" && ! echo "$out" | grep -q FORGED-OPEN; then pass "logoscap MINT ($1): halts loudly (rc $rc), nothing branded"
+    else fail "logoscap MINT ($1): rc=$rc out=[$(echo "$out" | tr '\n' '|')]"; fi
+}
+case_vm_mint() {
+    mint_case 'random -> ""' 'glyph random = la n. ""' 'logoscap: MINT got 0 bytes of entropy, not 32'
+    mint_case 'random -> 31 bytes' 'glyph random = la n. "0123456789012345678901234567890"' 'logoscap: MINT got 31 bytes of entropy, not 32'
+    # control: a full 32-byte nonce still brands a working realm, forged probe denied
+    { echo 'glyph random = la n. "01234567890123456789012345678901"'; sed '/^glyph MAIN/,$d' logoscap.la
+      echo 'glyph MAIN = (la realm. (la box. SEQ(SHOW_OPEN("authorized = ")(CAP_RECV(GRANT_RECV(realm))(box))(la w. MSG_TYPE(w)))(SHOW_OPEN("forged probe = ")(box(""))(la w. concat("FORGED-OPEN ")(MSG_TYPE(w)))))(CAP_SEND(GRANT_SEND(realm))("ping")("hello")))(MINT("!"))'; } > t_mintok.la
+    local rc=0 out; out=$(timeout 60 ./tiny_host t_mintok.la 2>&1) || rc=$?
+    if [ "$rc" = 0 ] && [ "$out" = "$(printf 'authorized = ping\nforged probe = denied')" ]; then pass "logoscap MINT control: a 32-byte nonce brands a working realm"
+    else fail "logoscap MINT control: rc=$rc out=[$(echo "$out" | tr '\n' '|')]"; fi
+}
+
 #CASES-BELOW
 
-CASES="${*:-vm_writefail vm_errno}"
+CASES="${*:-vm_writefail vm_errno vm_mint}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_vm: all passed"; exit 0; } || { echo "gate_audit2_vm: $FAILS failed"; exit 1; }

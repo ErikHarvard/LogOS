@@ -71,7 +71,13 @@ glyph GRANT_RECV = la realm. SND(realm)
 # MINT is VM-only (`random` is a VM syscall builtin), so a real realm mints its
 # authority with MINT on the native VM. Two MINTs yield independent nonces (2^256
 # apart), so distinct realms cannot read each other's boxes.
-glyph MINT = la _. BRAND(random("32"))
+# The nonce is CHECKED, not trusted: `random` yields "" on a getrandom error (and
+# could yield fewer bytes), and BRAND("") would make box("") — a probe anyone can
+# supply — open every box. So MINT halts loudly unless it got all 32 bytes.
+glyph MINT = la _. (la n. IF(str_eq(str_len(n))("32"))
+        (la _. BRAND(n))
+        (la _. error(concat("logoscap: MINT got ")(concat(str_len(n))(" bytes of entropy, not 32 — refusing to brand a guessable secret")))))
+    (random("32"))
 
 # ── Capability-gated typed messaging ──
 # CAP_SEND: only a holder of the send capability can mint a sealed typed message.
