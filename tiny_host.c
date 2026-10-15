@@ -364,10 +364,62 @@ static void add_glyph(const char *name, Node *body) {
     nglyphs++;
 }
 
+/* Name -> table-index hash over the glyph table (audit2 #81). eval's N_VAR
+ * arm looks a name up BEFORE testing builtins (so a glyph shadows a builtin),
+ * so a linear strcmp scan made every builtin reference cost O(nglyphs).
+ * The index keeps the scan's semantics exactly: each slot holds the index of
+ * the FIRST glyph with that name (a later duplicate is never entered), so
+ * first-binding-wins order is unchanged; bodies are read from glyphs[] at
+ * lookup time, so mangle_privates' body rewrites need no index update; a
+ * rename (mangle_privates) marks the index dirty and the next lookup rebuilds
+ * it. This indexes NAMES only — a glyph's body is still re-evaluated at every
+ * reference, as on every engine (no memoisation). */
+static size_t *gidx = NULL;               /* open addressing; slot = glyph index + 1, 0 = empty */
+static size_t gidx_cap = 0;               /* power of two, kept >= 2 * nglyphs */
+static size_t gidx_n = 0;                 /* glyphs[0 .. gidx_n) are entered */
+static int    gidx_dirty = 0;             /* a name changed: rebuild before use */
+
+static size_t gname_hash(const char *s) { /* FNV-1a */
+    size_t h = 1469598103934665603ULL;
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211ULL; }
+    return h;
+}
+
+static void gidx_enter(size_t gi) {       /* enter glyph gi unless its name is already bound */
+    size_t mask = gidx_cap - 1, i = gname_hash(glyphs[gi].name) & mask;
+    for (;;) {
+        size_t e = gidx[i];
+        if (!e) { gidx[i] = gi + 1; return; }
+        if (strcmp(glyphs[e - 1].name, glyphs[gi].name) == 0) return;  /* first wins */
+        i = (i + 1) & mask;
+    }
+}
+
+static void gidx_sync(void) {
+    if (gidx_dirty || gidx_cap < 2 * nglyphs + 2) {   /* (re)build from scratch, in table order */
+        size_t cap = gidx_cap ? gidx_cap : 2048;
+        while (cap < 2 * nglyphs + 2) cap <<= 1;
+        if (cap != gidx_cap) {
+            free(gidx);
+            gidx = malloc(cap * sizeof *gidx);
+            if (!gidx) { fprintf(stderr, "out of memory\n"); exit(1); }
+            gidx_cap = cap;
+        }
+        memset(gidx, 0, gidx_cap * sizeof *gidx);
+        gidx_n = 0; gidx_dirty = 0;
+    }
+    for (; gidx_n < nglyphs; gidx_n++) gidx_enter(gidx_n);   /* appended glyphs, in order */
+}
+
 static Node *lookup_glyph(const char *name) {
-    for (size_t i = 0; i < nglyphs; i++)
-        if (strcmp(glyphs[i].name, name) == 0) return glyphs[i].body;
-    return NULL;
+    gidx_sync();
+    size_t mask = gidx_cap - 1, i = gname_hash(name) & mask;
+    for (;;) {
+        size_t e = gidx[i];
+        if (!e) return NULL;
+        if (strcmp(glyphs[e - 1].name, name) == 0) return glyphs[e - 1].body;
+        i = (i + 1) & mask;
+    }
 }
 
 /* The collector (forward-declared up by new_node). Defined here, after the
@@ -1012,6 +1064,7 @@ static void mangle_privates(size_t start, size_t end,
             glyphs[j].body = subst(glyphs[j].body, glyphs[i].name, ref);
         free(glyphs[i].name);
         glyphs[i].name = strdup(mangled);
+        gidx_dirty = 1;                                             /* name index is stale */
     }
 }
 

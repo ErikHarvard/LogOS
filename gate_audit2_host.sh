@@ -132,6 +132,43 @@ LA
     rm -f nest.la
 }
 
-CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit host_procread host_importcwd host_deeprec}"
+# ── #81 glyph lookup: hash index must keep the linear scan's semantics ──────
+# A NON-REGRESSION guard for the #81 fix (lookup was a front-to-back strcmp
+# scan; now a name -> first-index hash). It passes on the unfixed tree too, by
+# design: the speedup is witnessed by a separate timing script (bench_81_lookup.sh, beside the
+# audit-2 work notes), kept out of the gate.
+# Expected values follow from the rules, not from a run: the FIRST binding of a
+# name wins (an import's glyphs precede the importer's, so a local redefinition
+# of an imported name does not shadow it — build.sh relies on this); a glyph
+# shadows a builtin of the same name; a module's private glyph is invisible to
+# the importer and does not collide with the importer's own glyph of that name;
+# first-binding-wins survives the index growing past its initial size.
+case_host_lookup() {
+    printf 'export X SHOW\nglyph P = "mod-private"\nglyph X = "mod-X"\nglyph SHOW = P\n' > lkmod.la
+    cat > lk1.la <<'LA'
+import("lkmod.la")
+glyph X = "main-X"
+glyph P = "main-P"
+glyph D = "first"
+glyph D = "second"
+glyph concat = la a. la b. "shadowed"
+glyph SEQ = la a. la b. b
+glyph MAIN = SEQ(print(X))(SEQ(print(SHOW))(SEQ(print(P))(SEQ(print(D))(print(concat("a")("b"))))))
+LA
+    printf 'import("lkmod.la")\nglyph MAIN = print(P)\n' > lk2.la
+    { for i in $(seq 1 5000); do echo "glyph G$i = \"g$i\""; done
+      echo 'glyph G1 = "late"'; echo 'glyph G4999 = "late"'
+      echo 'glyph MAIN = (la _. print(G4999))(print(G1))'; } > lk3.la
+    local a b c rc
+    a=$(timeout 10 ./tiny_host lk1.la 2>&1 | tr '\n' '|')
+    rc=0; b=$(timeout 10 ./tiny_host lk2.la 2>&1) || rc=$?
+    c=$(timeout 10 ./tiny_host lk3.la 2>&1 | tr '\n' '|')
+    if [ "$a" = "mod-X|mod-private|main-P|first|shadowed|" ] && [ "$rc" = 1 ] \
+       && printf '%s' "$b" | grep -q "unbound variable 'P'" && [ "$c" = "g1|g4999|" ]; then
+        pass "host_lookup: first-binding-wins, builtin shadowing, import privacy, 5000-glyph table"
+    else fail "host_lookup: lk1 '$a' / lk2 rc=$rc '$b' / lk3 '$c'"; fi
+}
+
+CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit host_procread host_importcwd host_deeprec host_lookup}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_host: all passed"; exit 0; } || { echo "gate_audit2_host: $FAILS failed"; exit 1; }
