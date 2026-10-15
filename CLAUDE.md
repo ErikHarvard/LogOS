@@ -286,10 +286,11 @@ byte-identical to `tiny_host`).
 - **Effects pass through to the host.** `APPLY_BI`/`APPLY_BI2` bridge the meta
   level to the host: the object program's `print`, `copy_self`, `read_file`,
   etc. call the host's real built-ins, so meta-evaluated effects are genuine.
-  *Known limitation:* `eval.la`'s builtin tables cover the set `kernel.la` (and
-  `eval.la` itself) needs — `print`, `copy_self`, `read_file`, `write_file`,
-  `concat`, `str_head`, `str_tail`, `str_eq`, and the native integers — but
-  **not** `chr` / `ord` / `write_exec` / `error` (which the C host does
+  *Known limitation (shared by `bytecode.la`'s `RUN_BYTES` and `RUN_SM`):*
+  `eval.la`'s builtin tables cover the set `kernel.la` (and `eval.la` itself)
+  needs — `print`, `copy_self`, `read_file`, `write_file`, `concat`,
+  `str_head`, `str_tail`, `str_eq`, and the native integers — but **not**
+  `chr` / `ord` / `write_exec` / `error` / `typeof` (which the C host does
   implement). Meta-evaluating a program that calls one of those yields an
   `eval: unbound variable` error rather than performing the operation — a
   divergence from the C host, harmless for the kernel and the self-reconstruction
@@ -397,7 +398,11 @@ lowered one level — where that walks AST nodes, this walks bytes:
   `SKIP_FIELD`) advances past one expression's bytes without evaluating, so the
   closure captures the body tail and the lambda returns the correct `rest`.
 - Effects pass through to the host exactly as in `eval.la` (`APPLY_BI` /
-  `APPLY_BI2`); `str_eq`'s Church booleans become `BYTE_TRUE` / `BYTE_FALSE` —
+  `APPLY_BI2`), **with the same gap**: `RUN_BYTES` and `RUN_SM` (one shared
+  builtin table) lack `chr` / `ord` / `write_exec` / `error` / `typeof`, so a
+  program using one halts with `vm: unbound variable: <name>` /
+  `sm: unbound variable: <name>`. build.sh (the chr/ord CROSS-ENGINE SCOPE gate)
+  asserts this distribution. `str_eq`'s Church booleans become `BYTE_TRUE` / `BYTE_FALSE` —
   closures whose bodies are *byte instructions*, so branch selection runs under
   the VM.
 
@@ -1749,8 +1754,13 @@ Practically:
   (`GC_MIN_THRESHOLD`), marking from the glyph table plus a conservative scan of
   the C stack + a `setjmp` register dump; values are acyclic trees so nothing is
   missed structurally, and GC-at-an-ordinary-call-boundary makes the scan
-  ABI-safe. GC overhead is negligible (raising the threshold 8× left `build.sh`
-  wall-time unchanged). The SECD VM (`secd.asm`) now has its own **copying
+  ABI-safe. GC is **not** negligible: it is roughly a third to a half of host
+  wall-time on allocation-heavy programs (measured 33–45% on codegen of
+  ladder/seal_test/str_at_test and a 100k-step Z loop), mostly the per-node
+  `free()` sweep. The threshold cannot reduce it — with `gc_next = 2*live` each
+  collection walks every registered node, so the cost tracks allocation volume —
+  which is why raising `GC_MIN_THRESHOLD` 8× left `build.sh` wall-time unchanged.
+  The SECD VM (`secd.asm`) now has its own **copying
   garbage collector**, so it too gives bounded memory: the heap is two equal
   semispaces, allocation bumps `r15` inside the active half, and when `r15`
   comes within `margin` (65 MiB, covering `read_file`'s 64 MiB single read) of
