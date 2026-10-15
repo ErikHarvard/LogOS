@@ -38,6 +38,17 @@ case_host_order() {
     else fail "host_order: merged stream out of program order — got: $got"; fi
 }
 
-CASES="${*:-host_selfref host_order}"
+# ── #144 glyph table (1024) and export list (256) caps ──────────────────────
+case_host_caps() {
+    { for i in $(seq 1 3000); do echo "glyph G$i = \"g$i\""; done; echo 'glyph MAIN = print(G3000)'; } > caps1.la
+    { printf 'export'; for i in $(seq 1 400); do printf ' E%d' $i; done; echo
+      for i in $(seq 1 400); do echo "glyph E$i = \"e$i\""; done; } > capsmod.la
+    printf 'import("capsmod.la")\nglyph MAIN = print(concat(E1)(E400))\n' > caps2.la
+    local a b; a=$(timeout 20 ./tiny_host caps1.la 2>&1); b=$(timeout 20 ./tiny_host caps2.la 2>&1)
+    if [ "$a" = "g3000" ] && [ "$b" = "e1e400" ]; then pass "host_caps: 3000 glyphs and 400 exports load"
+    else fail "host_caps: got '$a' / '$b'"; fi
+}
+
+CASES="${*:-host_selfref host_order host_caps}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_host: all passed"; exit 0; } || { echo "gate_audit2_host: $FAILS failed"; exit 1; }

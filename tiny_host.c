@@ -329,12 +329,16 @@ static Node *parse_expr(void) {
 
 typedef struct { char *name; Node *body; } Glyph;
 
-static Glyph  glyphs[1024];
-static size_t nglyphs = 0;
+/* Grown on demand: the merged table (every transitive import included) has no
+ * fixed cap, as the .la engines and the VM have none. */
+static Glyph *glyphs = NULL;
+static size_t nglyphs = 0, glyph_cap = 0;
 
 static void add_glyph(const char *name, Node *body) {
-    if (nglyphs >= sizeof glyphs / sizeof glyphs[0]) {
-        fprintf(stderr, "too many glyphs\n"); exit(1);
+    if (nglyphs == glyph_cap) {
+        glyph_cap = glyph_cap ? glyph_cap * 2 : 1024;
+        glyphs = realloc(glyphs, glyph_cap * sizeof *glyphs);
+        if (!glyphs) { fprintf(stderr, "out of memory\n"); exit(1); }
     }
     glyphs[nglyphs].name = strdup(name);
     glyphs[nglyphs].body = body;
@@ -397,12 +401,14 @@ static void gc(void) {
  * glyphs a module makes visible to importers; everything else is private and,
  * at import time, alpha-renamed to a unique name so it neither leaks into the
  * importer's namespace nor collides with the importer's own glyphs. */
-static char  *cur_exports[256];
-static size_t cur_nexports = 0;
+static char **cur_exports = NULL;            /* grown on demand, no fixed cap */
+static size_t cur_nexports = 0, cur_export_cap = 0;
 
 static void add_export(const char *name) {
-    if (cur_nexports >= sizeof cur_exports / sizeof cur_exports[0]) {
-        fprintf(stderr, "too many exports\n"); exit(1);
+    if (cur_nexports == cur_export_cap) {
+        cur_export_cap = cur_export_cap ? cur_export_cap * 2 : 256;
+        cur_exports = realloc(cur_exports, cur_export_cap * sizeof *cur_exports);
+        if (!cur_exports) { fprintf(stderr, "out of memory\n"); exit(1); }
     }
     cur_exports[cur_nexports++] = strdup(name);
 }
@@ -1027,9 +1033,8 @@ static void do_import(const char *path) {
     const char *sP = P; Tok st = curtok; char *ss = curstr;
     size_t sl = curlen; long si = curint;
     /* save the importer's export set; the module collects its own */
-    char  *saved_exp[256]; size_t saved_n = cur_nexports;
-    memcpy(saved_exp, cur_exports, saved_n * sizeof *cur_exports);
-    cur_nexports = 0;
+    char **saved_exp = cur_exports; size_t saved_n = cur_nexports, saved_cap = cur_export_cap;
+    cur_exports = NULL; cur_nexports = 0; cur_export_cap = 0;
 
     size_t start = nglyphs;
     char *modsrc = slurp_file(path, NULL);
@@ -1039,10 +1044,10 @@ static void do_import(const char *path) {
     mangle_privates(start, nglyphs, cur_exports, cur_nexports);
 
     for (size_t i = 0; i < cur_nexports; i++) free(cur_exports[i]);
+    free(cur_exports);
     free(modsrc);
     /* restore importer state */
-    cur_nexports = saved_n;
-    memcpy(cur_exports, saved_exp, saved_n * sizeof *cur_exports);
+    cur_exports = saved_exp; cur_nexports = saved_n; cur_export_cap = saved_cap;
     P = sP; curtok = st; curstr = ss; curlen = sl; curint = si;
     import_pop();
 }
