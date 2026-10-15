@@ -14,9 +14,31 @@
 #
 #      GENERATE(spec)      -> .la source text for the whole module (a string)
 #      META_DEBUG(spec)    -> per-glyph PASS/FAIL report (runs each glyph's tests)
-#      DEPLOY(spec)(path)  -> write_file the source, re-read it, verify it, and
-#                             return a deployment report — spec to a written,
-#                             verified module in one call.
+#      DEPLOY(spec)(path)  -> write_file the source, re-read it to confirm the
+#                             write landed byte-for-byte, and return a deployment
+#                             report — spec to a written module in one call.
+#
+#  ⚠ WHAT "VERIFIED" ACTUALLY MEANS (bug-audit finding H3, 2026-09-26). Every
+#  test case runs against EIMPL — the `val` argument to DEF — never against
+#  ESRC (the `src` argument) as it will be parsed back out of the file DEPLOY
+#  writes. The two are independently hand-supplied by the spec author and
+#  nothing here checks they denote the same computation: DEF(sig)(src)(val)
+#  can be given a `src` and `val` that disagree, and DEPLOY still reports
+#  VERIFIED while writing the disagreeing `src` to disk. Reproducer:
+#  TRIPLE("ID")(DEF(":: a -> a")("la x. \"WRONG\"")(la x. x))(test ID("k")=="k")
+#  reports PASS and would write "glyph ID = la x. \"WRONG\"".
+#  Closing this for real needs EIMPL derived FROM ESRC — parsed and evaluated —
+#  which needs eval.la's self-hosted evaluator in scope. That evaluator's
+#  values are VAL_*-wrapped (VAL_CLO/VAL_STR/VAL_INT, see eval.la), not
+#  directly host-appliable the way every existing test-case PROBE in every
+#  SPEC file currently assumes (e.g. `la g. int_to_str(g(2)(3))` applies `g`
+#  as a raw host closure) — so a real fix touches every probe in every SPEC
+#  file, not only DEF's construction site, and several existing SRC_* strings
+#  reference OTHER spec entries by name (e.g. primitives_spec.la's SRC_REC =
+#  "la x. RELATION(x)(x)", SRC_LOVE, SRC_SELF, SRC_DEPTHZ), so evaluating one
+#  entry's ESRC in isolation is not enough either — it needs the whole
+#  module's glyph table in scope, in declaration order. Sized as a ROADMAP
+#  row (eval.la integration + a probe-compatibility bridge), not fixed here.
 # ═══════════════════════════════════════════════════════════════════════
 
 # The pipeline API + the constructors a spec author needs, exported so other
@@ -222,13 +244,13 @@ glyph DEPLOY = la spec. la path.
                        (CONS(concat("deployed -> ")(concat(path)("\n")))
                        (CONS(concat("META_DEBUG (test cases run on each generated glyph):\n")(META_DEBUG(spec)))
                        (CONS(concat("on-disk file == generated source: ")(concat(BOOL_STR(str_eq(ondisk)(src)))("\n")))
-                       (CONS("RESULT: module VERIFIED — every glyph passed its spec\n")
+                       (CONS("RESULT: module VERIFIED — every glyph's supplied EIMPL passed its tests (ESRC, the written source, is not independently re-checked against EIMPL — see header)\n")
                        (NIL)))))))
                    (read_file(path))))
               (la _.
                 CAT(CONS(concat("TYPECHECK (compile-time, on the generated source):\n")(tcreport))
                    (CONS(concat("META_DEBUG (test cases run on each generated glyph):\n")(META_DEBUG(spec)))
-                   (CONS(concat("RESULT: module REJECTED — verification failed (a glyph did not pass its spec); ")(concat(path)(" not written\n")))
+                   (CONS(concat("RESULT: module REJECTED — verification failed (a glyph's supplied EIMPL did not pass its tests); ")(concat(path)(" not written\n")))
                    (NIL))))))
           (la _.
             CAT(CONS(concat("TYPECHECK (compile-time, on the generated source):\n")(tcreport))
