@@ -502,7 +502,11 @@ glyph RUN_BYTES = Z(la self. la s. la env. la gl.
 # glyph table (name->bytes). EXEC runs MAIN's bytes against it.
 glyph COMPILE = la gl. MAP_GLYPHS(EMIT)(gl)
 glyph EXEC    = la bytes. la glb. FST(RUN_BYTES(bytes)(NIL)(glb))
-glyph RUN_BYTES_PROGRAM = la gl_ast. (la glb. EXEC(R_VAL(LIST_FIND("MAIN")(glb)))(glb))(COMPILE(gl_ast))
+# A program with no MAIN halts with the engine's own diagnostic (as eval.la's
+# RUN does), not R_VAL(NONE) — which applied "" and surfaced as the host's
+# generic "attempt to apply a non-function" (audit2 #109).
+glyph FIND_MAIN = la who. la tbl. (la r. IF(IS_SOME(r))(la _. R_VAL(r))(la _. error(concat(who)(": no glyph: MAIN"))))(LIST_FIND("MAIN")(tbl))
+glyph RUN_BYTES_PROGRAM = la gl_ast. (la glb. EXEC(FIND_MAIN("vm")(glb))(glb))(COMPILE(gl_ast))
 
 # ═══════════════════════════════════════════════════════════════════
 #  A real stack machine (S, E, C, D)
@@ -608,7 +612,7 @@ glyph RUN_SM = la gl0. la code0.
 
 # COMPILE_PROGRAM — compile a parsed program (name->AST) to name->code.
 glyph COMPILE_PROGRAM = la gl. MAP_GLYPHS(COMPILE_EXPR)(gl)
-glyph RUN_SM_PROGRAM = la gl_ast. (la glc. RUN_SM(glc)(R_VAL(LIST_FIND("MAIN")(glc))))(COMPILE_PROGRAM(gl_ast))
+glyph RUN_SM_PROGRAM = la gl_ast. (la glc. RUN_SM(glc)(FIND_MAIN("sm")(glc)))(COMPILE_PROGRAM(gl_ast))
 
 # ── Tests ───────────────────────────────────────────────────────────
 

@@ -124,6 +124,25 @@ chk_depth_div() {
     else fail "depth #103: real DEPTH not green — $(tr '\n' '|' <<< "$ro")"; fi
 }
 
+# ── #109 bytecode.la: a program without MAIN names the cause on RUN_BYTES/RUN_SM
+# The planted defect is the program: no MAIN glyph. Unfixed, R_VAL(NONE) applies
+# "" and the host reports a generic "attempt to apply a non-function".
+chk_bytecode_nomain() {
+    printf 'glyph A = print("A evaluated")\n' > t_nomain.la
+    printf 'glyph MAIN = print("main ran")\n' > t_main.la
+    local eng fn out rc ok=1 msg=""
+    for eng in vm:RUN_BYTES_PROGRAM sm:RUN_SM_PROGRAM; do
+        fn=${eng#*:}; eng=${eng%%:*}
+        { sed '/^glyph MAIN/,$d' bytecode.la; printf 'glyph MAIN = %s(PARSE_PROGRAM(read_file("prog.la")))\n' "$fn"; } > t_drv.la
+        cp t_nomain.la prog.la; out=$(timeout 120 ./tiny_host t_drv.la 2>&1); rc=$?
+        if [ "$rc" = 0 ] || ! grep -qF "$eng: no glyph: MAIN" <<< "$out"; then ok=0; msg="$msg $fn(no MAIN): rc=$rc [$(tr '\n' '|' <<< "$out")]"; fi
+        cp t_main.la prog.la; out=$(timeout 120 ./tiny_host t_drv.la 2>&1); rc=$?
+        if [ "$rc" != 0 ] || ! grep -qx 'main ran' <<< "$out"; then ok=2; msg="$msg $fn(real): rc=$rc [$(tr '\n' '|' <<< "$out")]"; fi
+    done
+    if [ $ok = 1 ]; then pass "bytecode #109: missing MAIN halts with 'vm/sm: no glyph: MAIN'; a real MAIN still runs on both"
+    else fail "bytecode #109:$msg"; fi
+}
+
 # ── #72 specpipe DEPLOY: a duplicate glyph name is rejected ───────────────────
 # Mutant (the audit's): two entries named IDT with different bodies and tests.
 # Unfixed, both are "IDT: PASS", both are written, the module is VERIFIED, and
@@ -145,6 +164,6 @@ LA
     else fail "specpipe #72: MATH_SPEC not verified — $(grep '^RESULT' dup_real.out)"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div}"
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }
