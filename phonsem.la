@@ -11,9 +11,14 @@
 #  d_𝒪(A,B) — ontological distance from onf.la's ONF features: L1 over
 #             (cyc,dep,cont,br,sym) + leaf-set symmetric-difference.
 #  d_𝒫(A,B) — ACOUSTIC distance: a Chamfer (nearest-peak) metric in Hz
-#             over each concept's DERIVED Θ_P formant-peak set (the
-#             constituent vowel formants superposed over the canonical
-#             decomposition — the audio analogue of the placed sigil).
+#             over each concept's Θ_P formant-peak set: the deduped union of
+#             its LEAVES' hand-tabulated formants (NMFMT). ⚠ It is MODE-BLIND
+#             and NOT derived from phonym.la's audio (audit2 #65): PKRAW maps
+#             ⊗ ⊕ ▷ ⊂ alike to list-append and ↻ to its operand, so SYN/CON/
+#             DIR/CONT(L,R) and MC(SYN(L,R)) — distinct concepts that phonym.la
+#             renders as different waveforms — get ONE Θ_P (PDIST = 0); and the
+#             onset values are standard centroids, not measured from the
+#             synthesized onsets.
 #  Concordance — over every unordered pair of concept-pairs, does the
 #             ordering of d_𝒪 agree with the ordering of d_𝒫? (Kendall
 #             numerator; integer, no float.) Reported as a percentage.
@@ -28,7 +33,9 @@
 #  alignment (that is 1.0, in the ≡ register, established by construction); it is
 #  INSTANTIATION FIDELITY — how faithfully the derived Θ_P realises that 1.0
 #  alignment in synthesized form. The identity register is checked separately and
-#  structurally (canonicity + injectivity of Θ_P), as ATT demands, not as a
+#  structurally (canonicity + injectivity of Θ_P OVER THE CONCEPT SET CL — CL has no
+#  two concepts with the same leaf multiset, so this cannot exercise mode-
+#  injectivity, which Θ_P does not have; see d_𝒫 above), as ATT demands, not as a
 #  correspondence statistic. The residual below 1.0 is structure the current
 #  formant-only metric does not capture (onset/energy axis) — work remaining, not
 #  a shortfall in the alignment. (The don't-impose discipline still holds for
@@ -97,8 +104,10 @@ glyph NMFMT = la nm.
     IF(str_eq(nm)("FORM"))       (la _. LCONS(3500)(LCONS(700)(LCONS(1100)(LCONS(2540)(LNIL)))))(la _.
                                   LCONS(2200)(LCONS(500)(LCONS(800)(LCONS(2830)(LNIL)))))))))))) # DEPTH /dɔ/: /d/ onset 2200
 
-# ── Θ_P of a concept: superpose every constituent's formants over the
-#    CANONICAL decomposition, then dedup (the derived phonym's signature) ──
+# ── Θ_P of a concept: the deduped union of every LEAF's NMFMT formants over the
+#    CANONICAL decomposition. The mode at each node is ignored (all four binary
+#    modes append, ↻ passes its operand through) — a leaf-multiset signature, not
+#    the rendered phonym's spectrum (audit2 #65). ──
 glyph PKRAW = Z(la self. la node.
     node
         (la nm. NMFMT(nm))

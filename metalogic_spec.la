@@ -38,7 +38,12 @@
 #  ── THE TWO RELATIONS, NEVER CONFLATED (retained) ──────────────────────
 #  ≡ TRIBAR — ONTOLOGICAL IDENTITY over a being's self-grounded FORM (∃(∃) ≡ ∃).
 #  = YIELDS — COMPUTATIONAL EQUALITY over evaluated VALUE. They disagree:
-#  add(2,3) = 5 yet add(2,3) ≢ 5; TRIBAR ⟹ YIELDS but YIELDS ⇏ TRIBAR.
+#  add(2,3) = 5 yet add(2,3) ≢ 5: YIELDS ⇏ TRIBAR (witnessed). The converse
+#  TRIBAR ⟹ YIELDS is NOT a theorem of this module (audit2 #117): TERM is a free
+#  constructor and TRIBAR ignores VAL, so TERM("B")("1") ≡ TERM("B")("2") while
+#  they yield different values. It holds exactly for TERMs written so that VAL is
+#  a function of GROUND(FORM) — a well-formedness condition on how TERMs are
+#  built, not enforced here (build.sh checks it only on the diagonal a ≡ a).
 #
 #  ── κ MACHINERY IS INLINED, NOT IMPORTED ───────────────────────────────
 #  canon.la has no `export` line and nothing import()s it; modules that walk
@@ -65,7 +70,8 @@ glyph IMPLIES = la a. la b. OR(NOT(a))(b)
 glyph ZC = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 
 # A TERM carries both projections of a being: its FORM (intension — the being's
-# self-disclosure) and its VAL (extension — what it evaluates to).
+# self-disclosure) and its VAL (extension — what it evaluates to). TERM is a FREE
+# constructor: nothing ties val to form (see the ≡ ⟹ = note in the header).
 glyph TERM = la form. la val. la f. f(form)(val)
 glyph FORM = la t. t(la form. la val. form)
 glyph VAL  = la t. t(la form. la val. val)
@@ -101,6 +107,11 @@ glyph LAW_IDENTITY = la g. AUTO_OK(g)
 # ── LAW OF NON-CONTRADICTION → type-lock (INHABITS) ────────────────────────────
 # A term cannot both inhabit and not-inhabit a type. An arity term carries its
 # declared and its body arity; INHABITS decides, and already has a FALSE case.
+# ⚠ MIRROR, NOT WIRING (audit2 #118): INHABITS restates specpipe's arity judgement
+# int_eq(TARITY(ty))(BARITY(...)) (specpipe.la:189) as a parallel glyph. specpipe.la
+# never references INHABITS / NC_TYPECHECK / metalogic, and this module imports
+# nothing from specpipe at run time, so DEPLOY's rejection of a type-contradiction
+# would behave identically if metalogic.la did not exist.
 glyph ATERM      = la d. la b. la f. f(d)(b)
 glyph DECL_ARITY = la t. t(la d. la b. d)
 glyph BODY_ARITY = la t. t(la d. la b. b)
@@ -108,6 +119,8 @@ glyph INHABITS   = la dec. la bod. int_eq(dec)(bod)
 glyph LAW_NONCONTRADICTION = la term. INHABITS(DECL_ARITY(term))(BODY_ARITY(term))
 # The old ¬(INHABITS ∧ ¬INHABITS) stays as the META-statement — itself a
 # tautology, correctly — but the LAW now returns the INHABITS verdict directly.
+# NC_TYPECHECK is TRUE for EVERY pair of integers (both its tests expect "T"): it
+# states the law, it cannot detect anything.
 glyph NC_TYPECHECK = la dec. la bod. NOT(AND(INHABITS(dec)(bod))(NOT(INHABITS(dec)(bod))))
 
 # ── LAW OF EXCLUDED MIDDLE → total verdict / well-formedness ───────────────────

@@ -6,10 +6,20 @@
 #  in actual audio (the ⊗ blend SYNP renders both parents over one max-length
 #  window and SUMS them — superposition, not averaging).
 #
-#  THE THEOREM (LINGUA_ADAMICA.tex: Θ idempotent invariant operator §6282; the
-#  Topological Phonetic Space §2567; PSC* I(e)≅I(Ω) §4365): when two phonyms
-#  neologistically compress via ⊗, the compound preserves the TOPOLOGICAL
-#  INVARIANTS — the formant peak-sets — of BOTH constituents. Θ_P extracts a
+#  THE PROPERTY (the project's own — NOT the codex's I(e)≅I(Ω) theorem): when
+#  two phonyms neologistically compress via ⊗, the compound's formant peak-set
+#  contains the formant peak-sets of BOTH constituents.
+#  ⚠ What this is not (audit2 #125). The codex's invariant structure I(Ω)
+#  (LINGUA_ADAMICA.tex:4362, Def. "Invariant Structure") is "rhythmic pattern,
+#  contour shape, repetition structure, interval relations, segmentation,
+#  intensity profile, and recursion markers" — formant peaks are not on that list,
+#  and the codex's blend (:4230, Step 1 "Spectral interpolation") is "a weighted
+#  average of the parent spectra", which this module explicitly does not use. So
+#  Θ_P below is a project-chosen spectral signature and this module does not
+#  formalise the PSC theorem at :4378 (I(PSC(Ω,S)) ≅ I(Ω)). What IS borrowed from
+#  the codex: Θ's idempotence (Thm. "Ultimate Topological Fixed Point", :6284-6290),
+#  which holds for any Θ. (Section refs formerly given here as §6282/§2567/§4365
+#  are line numbers of LINGUA_ADAMICA.tex.) Θ_P extracts a
 #  phonym's invariant signature (its distinct formant peaks); the ⊗ compound's
 #  signature is the (deduped) UNION of the parents' (superposition keeps both
 #  spectra, unlike averaging which smears them to a midpoint), so each parent's

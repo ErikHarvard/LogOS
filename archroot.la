@@ -13,7 +13,8 @@
 #     "One act. Three faces. No remainder." These map to BEING · RELATION · DEPTH.
 #   • The operator chain ∂→δ→γ→ρ→𝔄 (B&B:803,2107) is a PROCESS (how Being unfolds),
 #       NOT a catalogue that generates the nine. So it is NOT forced onto glyphs;
-#       only ρ (recognition = reflexive relation) genuinely fits a glyph (RECOGNITION).
+#       ρ (recognition = reflexive relation) fits a glyph (RECOGNITION). That the
+#       OTHER four do not is asserted here, not tested (RHO_FITS below is DV_REC).
 #
 #  THE RESULT (verified below by reduction, the definitions are primitives.la
 #  verbatim): 3 of 9 DERIVE — SELF⟵BEING (∃(∃), via self-application DEPTH),
@@ -88,8 +89,10 @@ glyph AT_BEC   = str_eq(BECOMING(ZERO)(MARK)(""))("|")
 glyph ATOMS_OK = AND(AND(AND(AT_BEING)(AT_REL))(AND(AT_DEPTH)(AT_VOID)))(AND(AT_FORM)(AT_BEC))
 
 # ═══ THE SEALING — contained, recoverable etymology ═════════════════
-# Decomposition algebra (same Scott nodes canon/metaglyph walk): ⊗ synthesis, ↻
-# metacursion (self-application), ⊕ shared-boundary.
+# Decomposition algebra — a LOCAL 4-way Scott encoding (PRIM/SYN/CON/MC: ⊗
+# synthesis, ↻ metacursion, ⊕ shared-boundary), NOT the 6-way nodes canon.la /
+# metaglyph.la walk (which add ▷ and ⊂). An etymology built here must not be
+# handed to another module's CANON: the case positions differ (audit2 #101).
 glyph PRIM = la nm. la fp. la fs. la fc. la fm. fp(nm)
 glyph SYN  = la a. la b. la fp. la fs. la fc. la fm. fs(a)(b)
 glyph CON  = la a. la b. la fp. la fs. la fc. la fm. fc(a)(b)
@@ -109,17 +112,36 @@ glyph SEAL = la et. MONO(CANON(et))(et)
 glyph SEAL_SELF = SEAL(MC(PRIM("∃")))
 glyph SEAL_REC  = SEAL(MC(PRIM("Relation")))
 glyph SEAL_LOVE = SEAL(CON(SYN(PRIM("a"))(PRIM("b")))(SYN(PRIM("b"))(PRIM("a"))))
-# the root meta-Ren names itself — autological: ren IS the canon of its own etym.
+# the root meta-Ren: a DECLARED name '∃(∃)≡∃' over the etymology ↻(∃). It is NOT
+# RECOV-sealed — CANON(↻(∃)) is '↻(∃)', not its ren — so by this file's own Sealing
+# criterion it is not autological, and SEALS_OK leaves it out. L1 reports this
+# computed fact (audit2 #101); whether the root should be sealed differently is a
+# ruling.
 glyph SEAL_ARCHE = MONO("∃(∃)≡∃")(MC(PRIM("∃")))
 # Sealing property: each sealed form's etymology is RECOVERABLE (ren = canon(etym)).
 glyph RECOV = la g. str_eq(REN(g))(CANON(ETYM(g)))
 glyph SEALS_OK = AND(AND(RECOV(SEAL_SELF))(RECOV(SEAL_REC)))(RECOV(SEAL_LOVE))
 
-# ═══ operator-chain honesty: only ρ genuinely fits a glyph ═══════════
+# ═══ operator-chain honesty: ρ fits a glyph ═══════════════════════════
+# RHO_FITS re-reads DV_REC (ρ = the reflexive relation = RECOGNITION). Nothing tests
+# that ∂ / δ / γ / 𝔄 do NOT fit a glyph — "fits a glyph" has no definition here to
+# test them against — so the report no longer says "only".
 glyph RHO_FITS = DV_REC
 
+# ═══ the VERDICT, computed from the derivation checks (audit2 #101) ══════
+# Formerly a print literal; now counted from DV_SELF / DV_REC / DV_LOVE, so a failing
+# derivation changes the verdict. The six B&B-faces/further atoms are not derivation-
+# tested at all here (NOT YET ATTEMPTED), so they are always listed as underived.
+glyph C01    = la b. IF(b)(la _. 1)(la _. 0)
+glyph JOINC  = la a. la b. IF(str_eq(a)(""))(la _. b)(la _. IF(str_eq(b)(""))(la _. a)(la _. concat(a)(concat(", ")(b))))
+glyph IFN    = la b. la nm. IF(b)(la _. nm)(la _. "")
+glyph IFNOT  = la b. la nm. IF(b)(la _. "")(la _. nm)
+glyph NDER   = add(C01(DV_SELF))(add(C01(DV_REC))(C01(DV_LOVE)))
+glyph DERIVED   = JOINC(IFN(DV_SELF)("SELF"))(JOINC(IFN(DV_REC)("RECOGNITION"))(IFN(DV_LOVE)("LOVE")))
+glyph UNDERIVED = JOINC(JOINC(IFNOT(DV_SELF)("SELF"))(JOINC(IFNOT(DV_REC)("RECOGNITION"))(IFNOT(DV_LOVE)("LOVE"))))("BEING, RELATION, DEPTH, VOID, FORM, BECOMING")
+
 # ═══ REPORT ═════════════════════════════════════════════════════════
-glyph L1  = print(concat("ROOT  ∃(∃)≡∃  (I AM THAT I AM) — the meta-Word/meta-Ren; autological seal names itself = ")(REN(SEAL_ARCHE)))
+glyph L1  = print(concat("ROOT  ∃(∃)≡∃  (I AM THAT I AM) — the meta-Word/meta-Ren; declared name = ")(concat(REN(SEAL_ARCHE))(concat(", etymology canon = ")(concat(CANON(ETYM(SEAL_ARCHE)))(concat(", name recoverable from etymology (RECOV) ? ")(YN(RECOV(SEAL_ARCHE))))))))
 glyph L2  = print(concat("root identity ∃(∃) ≡ ∃ holds ? ")(YN(ARCHE_OK)))
 glyph L3  = print("-- DERIVATIONS from the root, verified by reduction --")
 glyph L4  = print(concat("SELF        <- BEING     (self-application ∃(∃); SELF=DEPTH(BEING)=BEING)  derives? ")(concat(YN(DV_SELF))(concat("  seal ")(REN(SEAL_SELF)))))
@@ -129,6 +151,6 @@ glyph L7  = print("-- CO-PRIMITIVE atoms (irreducible; none forced into the chai
 glyph L8  = print(concat("BEING  RELATION  DEPTH   = B&B's three faces (Being/Structure/Self-Application)  autology? ")(YN(AND(AT_BEING)(AND(AT_REL)(AT_DEPTH)))))
 glyph L9  = print(concat("VOID   FORM      BECOMING = further atoms (no derivation in corpus or code)       autology? ")(YN(AND(AT_VOID)(AND(AT_FORM)(AT_BEC)))))
 glyph L10 = print(concat("etymology contained & recoverable from each sealed derived glyph ? ")(YN(SEALS_OK)))
-glyph L11 = print(concat("operator chain d->b->g->rho->A : process not catalogue; only rho fits a glyph (RECOGNITION) ? ")(YN(RHO_FITS)))
-glyph L12 = print("VERDICT: 3 of 9 derive (SELF, RECOGNITION, LOVE); 6 UNDERIVED (BEING, RELATION, DEPTH, VOID, FORM, BECOMING) = THE GAP, not a result: derivation from the root is NOT YET ATTEMPTED for these six. The chain does NOT generate the nine.")
+glyph L11 = print(concat("operator chain d->b->g->rho->A : process not catalogue; rho fits a glyph (RECOGNITION; = DV_REC, the other four not tested) ? ")(YN(RHO_FITS)))
+glyph L12 = print(concat("VERDICT: ")(concat(int_to_str(NDER))(concat(" of 9 derive (")(concat(DERIVED)(concat("); ")(concat(int_to_str(sub(9)(NDER)))(concat(" UNDERIVED (")(concat(UNDERIVED)(") = THE GAP, not a result: derivation from the root is NOT YET ATTEMPTED for these six. The chain does NOT generate the nine.")))))))))
 glyph MAIN = SEQ(L1)(SEQ(L2)(SEQ(L3)(SEQ(L4)(SEQ(L5)(SEQ(L6)(SEQ(L7)(SEQ(L8)(SEQ(L9)(SEQ(L10)(SEQ(L11)(L12)))))))))))

@@ -97,9 +97,15 @@ glyph K_OF_K   = MCOLLAPSE(GLYPHOF(KAPPA))                           # κ(κ)
 # every primitive slot of a sub-template, preserving the mode skeleton; APPLYOP
 # pours operand a down the left sub-template and b down the right (unary top ↻ takes
 # only a). MKOP lifts any sealed operator-glyph into the binary combinator it names.
-# The result is an ordinary decomposition node — CANON / SIGIL / PHONYM all walk it —
-# whose action is fixed by the operator's name (α=1: the whole etymology, not just
-# the top symbol, determines what the operator does). Pure node-building ⇒ host==VM.
+# The result is an ordinary decomposition node — CANON / SIGIL / PHONYM all walk it.
+# ⚠ WHAT FIXES THE ACTION (audit2 #45): the operator's MODE SKELETON only. Every
+# primitive leaf is a hole, so the leaves that distinguish one operator from another
+# (LOVE/RELATION/SELF in ν*) contribute nothing: ⊗(▷(DEPTH,FORM),↻(BEING)) — a
+# different glyph under κ — acts exactly as ν* does, ⊗(▷(A,A),↻(B)). The name does
+# NOT determine the action injectively; two operators act differently only if their
+# skeletons differ. And MKOP on a bare PRIMITIVE glyph returns that primitive,
+# silently dropping both operands (APPLYOP's leaf case). Whether leaves should act
+# is an open ruling. Pure node-building ⇒ host==VM.
 glyph SHAPE = Z(la self. la sub. la x.
     sub
         (la nm. x)
@@ -116,7 +122,7 @@ glyph APPLYOP = la etym. la a. la b.
         (la l. la r. DIR(SHAPE(l)(a))(SHAPE(r)(b)))
         (la l. la r. CONT(SHAPE(l)(a))(SHAPE(r)(b)))
         (la l. MC(SHAPE(l)(a)))
-glyph MKOP    = la g. APPLYOP(ETYM(g))                               # operator-glyph → combinator
+glyph MKOP    = la g. APPLYOP(ETYM(g))                               # operator-glyph → combinator (a leaf glyph ignores its operands)
 
 glyph OPA     = PRIM("A")
 glyph OPB     = PRIM("B")
@@ -126,7 +132,7 @@ glyph NU_APP  = CANON(NU_OP(OPA)(OPB))                               # ⊗(▷(A
 glyph NN_APP  = CANON(NN_OP(OPA)(OPB))                               # ⊗(▷(A,A),▷(B,B))
 glyph PLAIN_S = CANON(SYN(OPA)(OPB))                                 # ⊗(A,B) — plain ⊗
 glyph NU_NEW  = NOT(str_eq(NU_APP)(PLAIN_S))                         # ν* ≢ plain ⊗ (a genuinely new mode)
-glyph OP_DET  = NOT(str_eq(NU_APP)(NN_APP))                          # ν* action ≠ 𝔑(𝔑) action (name fixes action)
+glyph OP_DET  = NOT(str_eq(NU_APP)(NN_APP))                          # ν* action ≠ 𝔑(𝔑) action — their SKELETONS differ (leaves play no part)
 
 # ── The EVALUATOR / runtime 𝓡 as a glyph (installing meta-monosemy) ──
 # The spec asserts the evaluator is itself a glyph, the runtime 𝓡, with 𝓡(𝓡) ≡ 𝓡
@@ -137,11 +143,19 @@ glyph OP_DET  = NOT(str_eq(NU_APP)(NN_APP))                          # ν* actio
 # all five modes and κ, so no meta-polysemy. Idempotence 𝓡(𝓡) ≡ 𝓡 is the declared
 # fixed-point rewrite ↻(𝓡) → 𝓡 (the evaluator applied to itself yields itself — the
 # tautological collapse, as ↻(BEING) → SELF is for Being).
+# ⚠ HOW IT IS CHECKED HERE (audit2 #116): IDEMP_R is a PRIVATE one-entry string
+# rewrite, '↻(▷(DEPTH,RECOGNITION))' → '▷(DEPTH,RECOGNITION)' — a hand copy of the
+# one case in canon.la's REWRITE_MC (canon.la:89) — not canon.la's NORMK, which this
+# file neither imports nor reimplements (its CANON has no rewrites). R_IDEM therefore
+# checks that this declared literal rule fires on its one literal input and that its
+# right side equals CANON(EVAL_R); it would answer NO the moment EVAL_R changed, only
+# because the literal stops matching. It witnesses the declaration, not a computed
+# fixed point of the language's rewrite system.
 glyph EVAL_R   = DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))             # 𝓡 = ▷(DEPTH,RECOGNITION)
 glyph R_GLYPH  = GLYPHOF(EVAL_R)
-glyph IDEMP_R  = la s. IF(str_eq(s)("↻(▷(DEPTH,RECOGNITION))"))(la _. "▷(DEPTH,RECOGNITION)")(la _. s)
-glyph R_OF_R   = IDEMP_R(REN(MCOLLAPSE(R_GLYPH)))                    # 𝓡(𝓡) normalized → 𝓡
-glyph R_IDEM   = str_eq(R_OF_R)(CANON(EVAL_R))                       # 𝓡(𝓡) ≡ 𝓡 ?
+glyph IDEMP_R  = la s. IF(str_eq(s)("↻(▷(DEPTH,RECOGNITION))"))(la _. "▷(DEPTH,RECOGNITION)")(la _. s)   # private literal copy of canon.la:89's case
+glyph R_OF_R   = IDEMP_R(REN(MCOLLAPSE(R_GLYPH)))                    # 𝓡(𝓡) under the declared literal rule
+glyph R_IDEM   = str_eq(R_OF_R)(CANON(EVAL_R))                       # does the declared rule map 𝓡(𝓡) to 𝓡 ?
 glyph R_NEQ_K  = NOT(str_eq(CANON(EVAL_R))(CANON(KAPPA)))            # 𝓡 ≠ κ   (meta-monosemy)
 glyph R_NEQ_CONT = NOT(str_eq(CANON(EVAL_R))(CANON(MODE_CONT)))     # 𝓡 ≠ ⊂   (meta-monosemy)
 glyph YN = la b. IF(b)(la _. "YES")(la _. "NO")
@@ -191,12 +205,13 @@ glyph YN = la b. IF(b)(la _. "YES")(la _. "NO")
 
 glyph OP_DIFF  = DIR(PRIM("VOID"))(PRIM("RELATION"))        # ∂ differentiate (1)
 glyph OP_BOUND = CONT(PRIM("FORM"))(PRIM("DEPTH"))          # δ bound        (2)
-glyph OP_COMP  = SYN(PRIM("BECOMING"))(PRIM("FORM"))        # γ compose      (3)
+glyph OP_COMP  = SYN(PRIM("BECOMING"))(PRIM("FORM"))        # γ compress     (3)  (SoN:91; was glossed "compose")
 glyph OP_RECOG = MC(PRIM("RECOGNITION"))                    # ρ recognize    (4)  ≡ SR_ABOUT
 glyph OP_INTEG = SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))     # 𝔄 integrate    (5)  ≡ COMPASSION
 
-# canon.la is not importable (no export line), so SR_ABOUT is re-stated here the
-# same way metalogic_spec re-inlines the κ machinery. If canon.la's definition
+# SR_ABOUT is re-stated here rather than imported (this note originally said canon.la
+# had no export line; it now has one, canon.la:100 — the re-statement stays because
+# this file defines its own same-named κ machinery). If canon.la's definition
 # ever changed, the positive identity assertion below goes RED — which is the
 # point: the identity is gated, not assumed.
 glyph SR_ABOUT_HERE = MC(PRIM("RECOGNITION"))
@@ -266,7 +281,7 @@ glyph MAIN =
     SEQ(print(concat("ν*·apply(A,B)   = ")(NU_APP)))(
     SEQ(print(concat("𝔑(𝔑)·apply(A,B) = ")(NN_APP)))(
     SEQ(print(concat("ν* is a NEW mode (≢ plain ⊗) ? ")(YN(NU_NEW))))(
-    SEQ(print(concat("minted op's action fixed by its name ? ")(YN(OP_DET))))(
+    SEQ(print(concat("ν* action ≠ 𝔑(𝔑) action (different mode skeletons) ? ")(YN(OP_DET))))(
     # ── the evaluator/runtime 𝓡 now a glyph too — meta-monosemy closed ──
     SEQ(print(concat("𝓡 EVAL    = ")(CANON(EVAL_R))))(
     SEQ(print(concat("𝓡(𝓡) ≡ 𝓡 ? ")(YN(R_IDEM))))(
