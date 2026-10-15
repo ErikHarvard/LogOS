@@ -36,6 +36,15 @@
 ;            a real build: fork, dup2 stdout->a file, execv "./tiny_host"
 ;            "kernel.la", waitpid, then read_file the captured output.)
 ;            34 drm_mode 35 present   (DRM/KMS dumb-buffer scanout; VM-only)
+;            36 clock_gettime(clockid) → "<sec> <nsec>"
+;            37 socket 38 bind 39 listen 40 accept 41 connect 42 send
+;            43 recv   (AF_UNIX stream sockets)
+;            44 unlink 45 random 46 mkdir 47 rmdir 48 rename 49 stat
+;            50 chmod 51 lseek 52 kill 53 sigprocmask 54 signalfd
+;            55 getpid 56 reapnb 57 poll
+;            60 band 61 bor 62 bxor 63 bshl 64 bshr 65 bnot 66 str_at
+;            Syscall builtins return the result or -errno as a decimal STR
+;            (read/recv/random return "" on error — see audit2 #70).
 ;
 ;  Build:  nasm -f bin secd.asm -o secd
 ; ═══════════════════════════════════════════════════════════════════
@@ -373,8 +382,9 @@ _start:
 .nogc:
     ; Stack-overflow guard. The operand stack S [ostack, dstack) and the dump
     ; D [dstack, pathbuf) each grow at most one 16-byte frame per dispatched
-    ; instruction and are NOT garbage-collected. Without tail-call optimisation
-    ; a deep recursion would otherwise overrun them into the adjacent buffers,
+    ; instruction and are NOT garbage-collected. A tail call (APPLY then RET —
+    ; see .apply_clo) pushes no dump frame, but any non-tail recursion still
+    ; grows them one frame per level and would otherwise overrun them into the adjacent buffers,
     ; the GC worklist and the heap — silent corruption (a too-deep program would
     ; exit 0 with the wrong result). So halt loudly the moment either pointer
     ; comes within stackmargin of its region end, exactly as the heap does.
@@ -1700,13 +1710,21 @@ _start:
 ; loudly via .drm_fail (no display is touched). All scratch lives in drmbuf, a
 ; 64 KiB zero-fill region above the program buffer.
 .bi_drmmode:
-    mov     rax, 2                    ; open("/dev/dri/card0", O_RDWR)
+    ; Try /dev/dri/card0 .. card7 in turn (audit2 #130): with simpledrm handoff a
+    ; machine often has only card1, and on hybrid GPUs card0 may drive no
+    ; display. A card that fails to open, fails GETRESOURCES or has no connected
+    ; connector with a mode is closed and the next one tried; if none works, the
+    ; most informative failure is reported (a card that opened beats ENOENT).
+    mov     byte [drm_card + 13], '0'
+    mov     qword [drm_lastfail], 0
+.dm_try:
+    mov     rax, 2                    ; open("/dev/dri/cardN", O_RDWR|O_CLOEXEC)
     mov     rdi, drm_card
-    mov     rsi, 2
+    mov     rsi, 0x80002              ; the DRM master fd never leaks into a child
     xor     rdx, rdx
     syscall
     test    rax, rax
-    js      .fail_open
+    js      .dm_open_next
     mov     [drm_fd], rax
     mov     rdi, rax                  ; best-effort SET_MASTER (ignore result)
     mov     rax, 16
@@ -1736,7 +1754,7 @@ _start:
     mov     rdx, drm_res
     syscall
     test    rax, rax
-    js      .fail_getres
+    js      .dm_getres_next
     mov     r9d, [drm_res + 40]       ; actual connector count
     cmp     r9d, 32
     jbe     .dm_cnt_ok
@@ -1745,7 +1763,7 @@ _start:
     xor     r8, r8                    ; connector index
 .dm_conn_loop:
     cmp     r8d, r9d
-    jae     .drm_fail_noconn          ; no connected connector with a mode → fail
+    jae     .dm_noconn_next           ; no connected connector with a mode → next card
     mov     rdi, drm_conn
     xor     eax, eax
     mov     ecx, 10
@@ -1969,6 +1987,30 @@ _start:
 ; "secd: drm <CALL> failed: <rc>\n" and exit(1). Two non-ioctl conditions (no
 ; connected display; present before drm_mode) take their own plain messages.
 ; All registers are fair game here — this path always exits.
+.dm_open_next:                        ; open failed (rax = -errno): remember it only
+    cmp     qword [drm_lastfail], 0   ; if no card has opened yet
+    jne     .dm_advance
+    mov     [drm_lastrc], rax
+    mov     qword [drm_lastfail], .fail_open
+    jmp     .dm_advance
+.dm_getres_next:                      ; GETRESOURCES failed on an open card
+    mov     [drm_lastrc], rax
+    mov     qword [drm_lastfail], .fail_getres
+    jmp     .dm_close_next
+.dm_noconn_next:                      ; opened, but nothing connected
+    mov     qword [drm_lastfail], .drm_fail_noconn
+.dm_close_next:
+    mov     rax, 3                    ; close this card's fd
+    mov     rdi, [drm_fd]
+    syscall
+.dm_advance:
+    cmp     byte [drm_card + 13], '7'
+    jae     .dm_giveup
+    inc     byte [drm_card + 13]
+    jmp     .dm_try
+.dm_giveup:                           ; no card worked: report the best failure
+    mov     rax, [drm_lastrc]
+    jmp     [drm_lastfail]
 .fail_open:
     mov     rsi, dn_open
     mov     edx, dn_open_len
@@ -2204,17 +2246,16 @@ _start:
     mov     rsi, 577
     mov     rdx, 420
     syscall
+    mov     rsi, wfopenmsg ; a failed open halts loudly (exit 1), as on the
+    mov     rdx, wfopenmsg_len   ; host — never "succeeds" by returning the content
     test    rax, rax
-    js      .wf_done
+    js      .wio_fail
     mov     r10, rax
-    mov     rsi, [r9+8]
-    mov     rdx, [r9]
-    mov     rax, 1
-    mov     rdi, r10
-    syscall
-    mov     rax, 3
-    mov     rdi, r10
-    syscall
+    call    wio_all              ; write every byte; -errno or 0 → halt
+    mov     rsi, wfwritemsg
+    mov     rdx, wfwritemsg_len
+    test    rax, rax
+    js      .wio_fail
 .wf_done:
     mov     [r12], r8
     mov     [r12+8], r9
@@ -2247,17 +2288,16 @@ _start:
     mov     rsi, 577
     mov     rdx, 493             ; 0755
     syscall
+    mov     rsi, weopenmsg ; failed open → halt loudly (see .bi_writefile2)
+    mov     rdx, weopenmsg_len
     test    rax, rax
-    js      .we_done
+    js      .wio_fail
     mov     r10, rax
-    mov     rsi, [r9+8]
-    mov     rdx, [r9]
-    mov     rax, 1
-    mov     rdi, r10
-    syscall
-    mov     rax, 3
-    mov     rdi, r10
-    syscall
+    call    wio_all
+    mov     rsi, wewritemsg
+    mov     rdx, wewritemsg_len
+    test    rax, rax
+    js      .wio_fail
     mov     rax, 90              ; chmod 0755
     mov     rdi, pathbuf
     mov     rsi, 493
@@ -2517,13 +2557,15 @@ _start:
     syscall
 
 .bi_pipe:                        ; pipe("!") → "<rfd> <wfd>" (two decimal fds)
-    ; pipe(fds): fds[0]=read end, fds[1]=write end. Both inherited across fork,
-    ; so a parent creates the channel once, forks, and the child writes the end
+    ; pipe(fds): fds[0]=read end, fds[1]=write end. Both inherited across fork
+    ; (but close-on-exec: an execve'd image sees them only via dup2, whose
+    ; target fd is never CLOEXEC), so a parent creates the channel once, forks, and the child writes the end
     ; the parent reads. The two fds are returned as one space-separated string;
     ; the IPC layer splits it. fds land in pathbuf (scratch), then are formatted
     ; into a heap string.
     mov     rdi, pathbuf
-    mov     rax, 22              ; pipe(fds)
+    mov     rsi, 0x80000         ; O_CLOEXEC: kept across fork, closed by execve
+    mov     rax, 293             ; pipe2(fds, O_CLOEXEC)
     syscall
     test    rax, rax
     js      .pipe_fail
@@ -2545,9 +2587,8 @@ _start:
     add     r12, 16
     add     r15, 16
     jmp     .loop
-.pipe_fail:
-    mov     rax, -1              ; "-1" on failure
-    call    push_dec
+.pipe_fail:                       ; -errno (e.g. -24 EMFILE), like every other
+    call    push_dec             ; syscall builtin
     jmp     .loop
 
 .bi_clockgettime:                ; clock_gettime(clockid) → "<sec> <nsec>"
@@ -2585,8 +2626,7 @@ _start:
     add     r12, 16
     add     r15, 16
     jmp     .loop
-.clockgettime_fail:
-    mov     rax, -1              ; "-1" on failure (e.g. bad clockid)
+.clockgettime_fail:              ; -errno (e.g. -22 EINVAL for a bad clockid)
     call    push_dec
     jmp     .loop
 
@@ -2646,11 +2686,14 @@ _start:
 ; (fds) cross the LA boundary as decimal STRs (desc_atoi/push_dec), and a
 ; bind/connect path is a binary-safe STR copied into a sockaddr_un built in
 ; pathbuf. All return -errno (as a decimal STR) on failure rather than halting,
-; so a program can recognise and handle a dead peer.
+; so a program can recognise and handle a dead peer. Every fd the VM creates
+; (socket, accept, pipe, signalfd, the DRM card) is close-on-exec: fork keeps
+; it, execve drops it; dup2 is the explicit way to hand a fd to a new image.
+; open() passes the caller's flags verbatim (O_CLOEXEC = 524288 is opt-in).
 .bi_socket:                      ; socket("!") → fd of a fresh AF_UNIX stream socket
     mov     rax, 41              ; socket
     mov     rdi, 1               ; AF_UNIX
-    mov     rsi, 1               ; SOCK_STREAM
+    mov     rsi, 0x80001         ; SOCK_STREAM | SOCK_CLOEXEC (no leak across execve)
     xor     rdx, rdx             ; protocol 0
     syscall
     call    push_dec             ; fd, or -errno
@@ -2676,7 +2719,8 @@ _start:
     mov     rdi, rax             ; listening fd
     xor     rsi, rsi             ; addr = NULL (caller's identity not needed)
     xor     rdx, rdx             ; addrlen = NULL
-    mov     rax, 43              ; accept
+    mov     r10, 0x80000         ; SOCK_CLOEXEC: the connection is not inherited by execve
+    mov     rax, 288             ; accept4
     syscall
     call    push_dec             ; new per-connection fd, or -errno
     jmp     .loop
@@ -3226,8 +3270,8 @@ _start:
     mov     rdi, -1              ; fd = -1 → create a new signalfd
     mov     rsi, pathbuf         ; &mask
     mov     rdx, 8               ; sizemask
-    xor     r10, r10             ; flags = 0
-    mov     rax, 289             ; signalfd4
+    mov     r10, 0x80000         ; flags = SFD_CLOEXEC: an execve'd child (e.g.
+    mov     rax, 289             ; signalfd4 — logosinit's shell) never inherits it
     syscall
     call    push_dec             ; fd, or -errno
     jmp     .loop
@@ -3525,6 +3569,28 @@ _start:
     mov     rdi, 2               ; stderr
     mov     rsi, pathmsg
     mov     rdx, pathmsg_len
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
+.wio_fail:                       ; write_file/write_exec could not open or write
+    push    rdx                  ; rsi/rdx = "secd: write_X: cannot open|write "
+    push    rsi
+    mov     rax, 1
+    mov     rdi, 2               ; stderr: the message ...
+    pop     rsi
+    pop     rdx
+    syscall
+    mov     rax, 1               ; ... the path (rbp = path desc) ...
+    mov     rdi, 2
+    mov     rsi, pathbuf
+    mov     rdx, [rbp]
+    syscall
+    mov     rax, 1               ; ... and a newline, then exit 1 like the host
+    mov     rdi, 2
+    mov     rsi, newline
+    mov     rdx, 1
     syscall
     mov     rax, 60
     mov     rdi, 1
@@ -3831,6 +3897,36 @@ gc_scan:
 .sc_ret:
     ret
 
+; wio_all — write content r9 (STRDESC) to fd r10 in full, then close it.
+; Loops on short writes. Returns rax = 0 on success, or a negative value when a
+; write returned -errno or 0 (no progress) or close failed. Clobbers rax, rcx,
+; rdx, rsi, rdi, r11.
+wio_all:
+    mov     rsi, [r9+8]
+    mov     rdx, [r9]
+.wa_loop:
+    test    rdx, rdx
+    jz      .wa_close
+    mov     rax, 1
+    mov     rdi, r10
+    syscall                      ; rsi, rdx survive the syscall
+    test    rax, rax
+    jle     .wa_err
+    add     rsi, rax
+    sub     rdx, rax
+    jmp     .wa_loop
+.wa_err:
+    mov     rax, 3               ; close the fd, report failure
+    mov     rdi, r10
+    syscall
+    mov     rax, -1
+    ret
+.wa_close:
+    mov     rax, 3
+    mov     rdi, r10
+    syscall                      ; a failing close (deferred write error) is a failure too
+    ret
+
 ; ── read-only data ──
 heapmsg:       db "secd: heap exhausted", 10
 heapmsg_len    equ $ - heapmsg
@@ -3854,6 +3950,14 @@ strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "secd: not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+wfopenmsg:     db "secd: write_file: cannot open "
+wfopenmsg_len  equ $ - wfopenmsg
+wfwritemsg:    db "secd: write_file: cannot write "
+wfwritemsg_len equ $ - wfwritemsg
+weopenmsg:     db "secd: write_exec: cannot open "
+weopenmsg_len  equ $ - weopenmsg
+wewritemsg:    db "secd: write_exec: cannot write "
+wewritemsg_len equ $ - wewritemsg
 pollmsg:       db "secd: too many poll fds", 10
 pollmsg_len    equ $ - pollmsg
 bootstrap:     db 2, "MAIN", 0, 0
@@ -3939,7 +4043,7 @@ drm_pfx:           db "secd: drm "
 drm_pfx_len        equ $ - drm_pfx
 drm_failed:        db " failed: "
 drm_failed_len     equ $ - drm_failed
-dn_open:           db "open card0"
+dn_open:           db "open /dev/dri/card0..7"
 dn_open_len        equ $ - dn_open
 dn_getres:         db "GETRESOURCES"
 dn_getres_len      equ $ - dn_getres
@@ -3969,11 +4073,16 @@ drm_pitch:     dq 0             ; bytes per row
 drm_w:         dq 0              ; mode width  (pixels)
 drm_h:         dq 0              ; mode height (pixels)
 drm_crtcid:    dq 0             ; chosen CRTC id
+drm_lastfail:  dq 0             ; drm_mode card scan: failure handler to report
+drm_lastrc:    dq 0             ;   ... and its -errno
 
-; The operand and dump stacks scale with recursion depth — this SECD machine
-; does no tail-call optimisation, so a deep (even tail-) recursion such as
-; BYTES walking the VM's own ~14 KB image consumes one frame per step. 16 MiB
-; each (~1M frames) gives generous headroom; all regions are lazily mapped.
+; The operand and dump stacks scale with NON-tail recursion depth. A tail call
+; (an APPLY immediately followed by RET, see .apply_clo) reuses the caller's
+; dump frame, so a tail-recursive loop runs in bounded depth indefinitely; a
+; call in argument position — e.g. the second argument of SEQ, or a recursion
+; whose result is then passed to concat — is NOT a tail call and consumes one
+; frame per step. 16 MiB each (~1M frames) gives generous headroom; all regions
+; are lazily mapped.
 filesize equ $ - $$
 ostack   equ $$ + filesize
 ; progembed: where bundle.la appends the program stream (file offset filesize).
