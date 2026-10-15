@@ -44,6 +44,68 @@ case_mod_font_bounds() {
     done
 }
 
-CASES="${*:-mod_font_bounds}"
+# ── #77 text session: the font is decoded once per frame, not per lookup ──────
+# A glyph is re-evaluated on every reference, so GLYPH_ROW re-decoded all 296
+# tokens of FONTDATA on each of the 112 lookups a frame makes (14 chars x 8
+# rows) — ~95% of the frame. Fixed: FRAME_TW binds FONTDATA once and threads it
+# through GLYPH_ROW_IN. The frame must be byte-identical to a raster derived
+# here independently: python decodes FONTDATA's decimal string itself and lays
+# out the 160x48 panel (pitch 640) = the window exactly: rows 0-19 and 28-47 all
+# WIN_RED (40,40,210,0); text rows 20-27 = 24 red | 14 chars x 8 px (bit c of the
+# row byte, bit 0 leftmost: set → 255,255,255,0, else red) | 24 red. Plus a time
+# bound: one frame on the host in under FONT_BOUND s (default 25; measured on
+# this branch's box: base ~70 s, fixed ~5 s — see the commit).
+case_mod_font_hoist() {
+    nomain theourgia_text_session_live.la t_fh.la 'glyph MAIN = write_file("fh.bin")(RENDER_FRAME(CONS("160")(CONS("48")(CONS("640")(NIL))))(0)(0))'
+    rm -f fh.bin; local t0 t1 secs
+    t0=$(date +%s.%N); run t_fh.la 600; t1=$(date +%s.%N)
+    secs=$(python3 -c "print(round($t1-$t0,1))")
+    local r; r=$(python3 - "$REPO/theourgia_font.la" <<'PYEOF'
+import re,sys
+src=open(sys.argv[1]).read()
+toks=[int(t) for t in re.search(r'glyph FONTDATA = BYTES\("([0-9 ]+)"\)',src).group(1).split()]
+idx=" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+red=bytes([40,40,210,0]); wht=bytes([255,255,255,0])
+txt="I AM THAT I AM"
+out=red*160*20
+for gr in range(8):
+    row=red*24
+    for ch in txt:
+        b=toks[idx.index(ch)*8+gr]
+        row+=b''.join(wht if (b>>c)&1 else red for c in range(8))
+    out+=row+red*24
+out+=red*160*20
+try: got=open('fh.bin','rb').read()
+except Exception: got=b''
+print('OK' if got==out else 'DIFF len %d want %d'%(len(got),len(out)))
+PYEOF
+)
+    if [ "$RC" = 0 ] && [ "$r" = OK ]; then pass "text session frame byte-identical to the independently derived 160x48 raster (${secs}s)"
+    else fail "text session frame: rc=$RC $r out=[$(printf '%s' "$OUT" | head -c 100)]"; fi
+    if [ "$RC" = 0 ] && python3 -c "import sys; sys.exit(0 if $secs < ${FONT_BOUND:-25} else 1)"; then pass "text session: one frame in ${secs}s (< ${FONT_BOUND:-25}s)"
+    else fail "text session: one frame took ${secs}s (bound ${FONT_BOUND:-25}s) — font decoded per lookup?"; fi
+}
+
+# ── #34 cob: beat ii's pixel witness is inked by the loop, not by the arms ────
+# B2 probed the centre (16,16), but LOOPS_N's RING(16)(16)(5)(1) inks only
+# 16 < d² ≤ 25, never the centre; ARM 0/1 (SEGs through (16,16)) ink it for any
+# concept with a branch. So the witness was YES for the cycle-free control
+# NOCYC = ▷(RECOGNITION,⊗(VOID,BEING)) (feat 0/2/0/2: no ↻). The probe evaluates
+# cob.la's OWN beat-ii pixel line with COB replaced by NOCYC: it must say NO,
+# and stay YES for COB. Derived: (19,20) has d² = 3²+4² = 25 (on the radius-5
+# loop), lies on none of the six arms (rows/cols 16, the anti-diagonal r+c = 32),
+# and COB's depth-3 rings have radii 14,11,8 — only the loop can ink it.
+case_mod_cob_witness() {
+    local wl; wl=$(grep -E '^glyph B2_[A-Z]*PX *=' cob.la | head -1)
+    local wn=${wl#glyph }; wn=${wn%% *}
+    nomain cob.la t_cob.la "glyph NOCYC = DIR(PRIM(\"RECOGNITION\"))(SYN(PRIM(\"VOID\"))(PRIM(\"BEING\")))"
+    printf '%s\n' "$(sed "s/^glyph $wn/glyph W_NOCYC/; s/DSIGIL(COB)/DSIGIL(NOCYC)/" <<< "$wl")" \
+        "glyph MAIN = print(concat(\"NOCYC \")(concat(YN(W_NOCYC))(concat(\" COB \")(YN($wn)))))" >> t_cob.la
+    run t_cob.la 300
+    if [ "$RC" = 0 ] && [ "$OUT" = "NOCYC NO COB YES" ]; then pass "cob beat ii: the loop witness ($wn) is NO for the cycle-free control, YES for COB"
+    else fail "cob beat-ii witness $wn: rc=$RC out=[$(printf '%s' "$OUT" | head -c 120)] want [NOCYC NO COB YES]"; fi
+}
+
+CASES="${*:-mod_font_bounds mod_font_hoist mod_cob_witness}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_modules: all passed"; exit 0; } || { echo "gate_audit2_modules: $FAILS failed"; exit 1; }
