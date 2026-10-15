@@ -164,6 +164,37 @@ LA
     else fail "specpipe #72: MATH_SPEC not verified — $(grep '^RESULT' dup_real.out)"; fi
 }
 
+# ── #104 build.sh ncheck/n2check: the host run is bounded and its rc checked ──
+# ncheck and n2check are extracted from build.sh and run under build.sh's own
+# `set -euo pipefail`. The planted defect is a host that prints the right bytes
+# and then exits 3, or then hangs. Unfixed: the exit-3 host aborts the script
+# with NO FAIL line (set -e), and the hanging host hangs the stage.
+chk_ncheck_hostrc() {
+    awk '/^ncheck \(\) \{/{p=1} p{print} p&&/^}$/{exit}' "$REPO/build.sh" > nc_fns.sh
+    awk '/^n2check \(\) \{/{p=1} p{print} p&&/^}$/{exit}' "$REPO/build.sh" >> nc_fns.sh
+    grep -q '^n2check ()' nc_fns.sh || { fail "ncheck #104: cannot extract ncheck/n2check from build.sh"; return; }
+    mkdir -p d104 && cp ./*.la d104/ && cp nc_fns.sh d104/
+    local mode out res=""
+    for mode in exit3 hang real; do
+        cat > d104/tiny_host <<SH
+#!/bin/bash
+if [ "\$1" = native_input.la ] && [ $mode != real ]; then "$W/tiny_host" "\$@"; [ $mode = exit3 ] && exit 3; exec sleep 1000; fi
+exec "$W/tiny_host" "\$@"
+SH
+        chmod +x d104/tiny_host
+        out=$(cd d104 && MODE=$mode timeout 100 bash -c 'set -euo pipefail; ok=1; . ./nc_fns.sh
+              ncheck "print(42)"; [ "$MODE" = hang ] || n2check "glyph MAIN = print((la x. x)(42))" "identity lambda"; echo "ok=$ok"' 2>&1); local rc=$?
+        res="$res [$mode rc=$rc: $(tr '\n' '|' <<< "$out")]"
+        case $mode in
+          exit3) grep -q 'FAIL  native_codegen: host run of \[print(42)\] exited 3' <<< "$out" \
+                 && grep -q 'FAIL  native_codegen2: host run of \[identity lambda\] exited 3' <<< "$out" && grep -qx 'ok=0' <<< "$out" || { fail "ncheck #104: host exit 3 not reported —$res"; return; } ;;
+          hang)  grep -q 'host run of \[print(42)\] exited 124' <<< "$out" && grep -qx 'ok=0' <<< "$out" || { fail "ncheck #104: hanging host not bounded —$res"; return; } ;;
+          real)  [ "$rc" = 0 ] && [ "$out" = "ok=1" ] || { fail "ncheck #104: real host not green —$res"; return; } ;;
+        esac
+    done
+    pass "ncheck #104: host exit status checked and bounded — exit-3 and hanging hosts give FAIL lines, the real host passes"
+}
+
 # ── #105 build.sh: a bare VM step that exits non-zero prints a FAIL line ──────
 # The vmrun helper (if any) and the sigil stage's bare VM line are extracted from
 # build.sh and run under its `set -euo pipefail`. The planted defect is a VM that
@@ -185,6 +216,6 @@ chk_bare_vm() {
     else fail "bare #105: good VM step not green (rc=$rrc, out=[$(tr '\n' '|' <<< "$ro")])"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain bare_vm}"
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

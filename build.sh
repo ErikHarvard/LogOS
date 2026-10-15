@@ -3005,10 +3005,14 @@ fi
 ncheck () {
     printf 'glyph MAIN = %s\n' "$1" > native_input.la
     ./tiny_host native_codegen.la >/dev/null 2>/tmp/nc_err || { echo "FAIL  native_codegen: compile error on [$1]: $(head -1 /tmp/nc_err)"; ok=0; return; }
-    ./native_codegen_out > /tmp/nc_native.out 2>/dev/null; nrc=$?
-    ./tiny_host native_input.la > /tmp/nc_host.out 2>/dev/null
+    # Both runs are bounded and their exit status is captured (a bare non-zero
+    # exit used to abort the whole build under set -e with no FAIL line, and a
+    # looping host hung it): the host must exit 0 too (audit2 #104).
+    nrc=0; timeout 30 ./native_codegen_out > /tmp/nc_native.out 2>/dev/null || nrc=$?
+    hrc=0; timeout 60 ./tiny_host native_input.la > /tmp/nc_host.out 2>/dev/null || hrc=$?
     cmp -s /tmp/nc_native.out /tmp/nc_host.out || { echo "FAIL  native_codegen: native != host on [$1] (native='$(cat /tmp/nc_native.out)' host='$(cat /tmp/nc_host.out)')"; ok=0; }
     [ "$nrc" = "0" ] || { echo "FAIL  native_codegen: emitted binary for [$1] exited $nrc"; ok=0; }
+    [ "$hrc" = "0" ] || { echo "FAIL  native_codegen: host run of [$1] exited $hrc (124 = timeout)"; ok=0; }
 }
 ncheck 'print(42)'
 ncheck 'print(add(2)(3))'
@@ -3060,10 +3064,11 @@ fi
 n2check () {  # $1 = whole program (multi-line) ; $2 = label
     printf '%s\n' "$1" > native_input.la
     ./tiny_host native_codegen2.la >/dev/null 2>/tmp/n2.err || { echo "FAIL  native_codegen2: compile error on [$2]: $(head -1 /tmp/n2.err)"; ok=0; return; }
-    ./native_codegen2_out > /tmp/n2_native.out 2>/dev/null; nrc=$?
-    ./tiny_host native_input.la > /tmp/n2_host.out 2>/dev/null
+    nrc=0; timeout 30 ./native_codegen2_out > /tmp/n2_native.out 2>/dev/null || nrc=$?
+    hrc=0; timeout 60 ./tiny_host native_input.la > /tmp/n2_host.out 2>/dev/null || hrc=$?
     cmp -s /tmp/n2_native.out /tmp/n2_host.out || { echo "FAIL  native_codegen2: native != host on [$2]"; ok=0; }
     [ "$nrc" = "0" ] || { echo "FAIL  native_codegen2: emitted binary for [$2] exited $nrc"; ok=0; }
+    [ "$hrc" = "0" ] || { echo "FAIL  native_codegen2: host run of [$2] exited $hrc (124 = timeout)"; ok=0; }
 }
 n2check 'glyph MAIN = print((la x. x)(42))' 'identity lambda'
 n2check 'glyph ADDER = la x. la y. add(x)(y)
