@@ -36,7 +36,9 @@ to Lingua Adamica, not imported.
 within category. The spec's theorem `g_C ⊂ g_E` (every concept is a region
 of Being) is the top type: every well-formed value `⊂ τ_E`.
 
-The five type constructors are the five modes of combination:
+The five type constructors are named after the five modes of combination. The
+pairing is this project's, not the codex's, and for `⊕` it is inverted (note
+below the table):
 
 | Constructor      | Mode                   | Meaning                                   |
 | ---------------- | ---------------------- | ----------------------------------------- |
@@ -45,6 +47,14 @@ The five type constructors are the five modes of combination:
 | Function `A ▷ B` | Ontodirection (`▷`)    | maps A to B; A acting toward B (the arrow)|
 | Refinement `A⊂P` | Ontocontainment (`⊂`)  | `{x : A \| P(x)}` — A constrained by P    |
 | Recursive `↻A`   | Metacursion (`↻`)      | a type defined by self-reference (`Depth` g₉, `τ_↻`) |
+
+**The Sum row does not match `⊕`.** The codex defines Ontoconjunction as "the
+*co-presence* of A and B without fusion" (`LINGUA_ADAMICA.tex:2849`; also :2817)
+and as commutative (:2852): both are present — "and". A tagged union holds exactly
+one of A or B. The codex's lexicon builds "Or" as `g₅ ⊕ g₆`, Relation with Void,
+"one-or-absent" (:5183), not as bare `⊕`. `metadebug.la`'s `SUM` (:277) implements
+the tagged union; which mode, if any, it corresponds to is an open question for the
+author.
 
 **Type-checking self-applies (`↻`):** the checker has a type and must
 inhabit it. `META_DEBUG` already demonstrates this — the type-of-types is
