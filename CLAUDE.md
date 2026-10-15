@@ -1226,11 +1226,12 @@ Scott-encoded (six-way: one leaf case + five mode cases).
 deterministic, unique data structure (a normalized prefix-notation string, e.g.
 `⊂(↻(DEPTH),⊗(BEING,FORM))`) describing the glyph's composition. It does **not**
 render visually — that awaits Theourgia, which will parse this spec into a sigil;
-κ produces the formal description rendering consumes. v1 is **order-preserving**
-(no mode-equivalences assumed — declaring ⊗/⊕ commutative is a v2) and renders
-primitives by **glyph name** (the nine phonyms in 3-D phonetic space await
-`LINGUA ADAMICA.tex`, which is referenced by `GRAMMAR_DIVERGENCE.md` but is **not
-in this repo**).
+κ produces the formal description rendering consumes. κ (`CANON`) is
+**order-preserving** — mode equivalences are applied only by `NORMK` — and renders
+primitives by **glyph name**. The codex is in the repo (`LINGUA_ADAMICA.tex`, at the
+root; its line numbers are what the `.la` headers cite), and the nine phonyms it
+specifies (§"The Nine Primitive Phonyms", `LINGUA_ADAMICA.tex:5055`) are synthesised
+by `phonym.la`, not by κ.
 
 **The Law of Identity is the triple bar, not equality.** `IS(a)(b) ≡
 str_eq(κ(a))(κ(b))`: A **IS** B iff they canonicalize to the *same glyph*. Two
@@ -1279,7 +1280,7 @@ trusted). The generated module runs **byte-identically on the C host and the
 native VM** (the UTF-8 sigils ⊗⊕▷⊂↻ round-trip through codegen → SECD). *Honest
 scope:* this is the canonical-*spec* + etymology layer (generation), not rendering
 (Theourgia) and not yet a `Seal`/monosemy enforcement layer; commutative-mode
-normalization and the true phonyms await `LINGUA ADAMICA.tex`. Lossless etymology
+normalization is `NORMK`'s job, not κ's, and the phonyms are `phonym.la`'s. Lossless etymology
 retention means a deep Ren's *string* still grows with retained depth
 (information-theoretic floor); "deeper not larger" holds at the **structural**
 level — always one monoglyph, growth in depth not coupling-breadth.

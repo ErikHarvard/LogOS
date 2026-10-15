@@ -34,10 +34,10 @@
 #  metacursion ↻(KAPPA) = κ(κ) canonicalizes to a definite spec, and
 #  KAPPA ≡ KAPPA. ∃(∃) ≡ ∃ for κ.
 #
-#  v1 scope (locked with the author): canonical form is ORDER-PRESERVING
-#  (no mode-equivalences assumed — declaring ⊗/⊕ commutative is a v2 once
-#  LINGUA ADAMICA.tex is in the repo); primitives render by glyph NAME, not
-#  phonym (the nine phonyms in 3-D phonetic space await that same file).
+#  v1 scope (locked with the author): CANON (κ) is ORDER-PRESERVING — mode
+#  equivalences are applied only by NORMK below; primitives render by glyph
+#  NAME, not phonym. (LINGUA_ADAMICA.tex is now in the repo root; the nine
+#  phonyms it specifies are synthesised by phonym.la, not here.)
 #
 #  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY
 #  writes canon.la, type-checks the generated source, and META_DEBUG

@@ -1,7 +1,7 @@
 # GRAMMAR_DIVERGENCE.md — the formal grammar vs. the host parser
 
 A line-by-line comparison of the **formal grammar** in `LINGUA ADAMICA`
-(Codex, `~/Downloads/CODICIES/LINGUA ADAMICA.tex` — not in this repo) against
+(Codex, `LINGUA_ADAMICA.tex` at the repo root) against
 the grammar actually implemented by `tiny_host.c` (`parse_expr`, `parse_app`,
 `parse_primary`, `parse_program`). It lists every place the implementation
 diverges from the specification: missing primitives, unsupported combination
