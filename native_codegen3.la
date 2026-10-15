@@ -112,8 +112,11 @@ glyph STR_HAS = Z(la self. la c. la s.
     IF(str_eq(s)(""))(la _. FALSE)(la _.
     IF(str_eq(c)(str_head(s)))(la _. TRUE)(la _. self(c)(str_tail(s)))))
 glyph IS_DIGIT = la c. STR_HAS(c)("0123456789")
-glyph IS_DELIM = la c. STR_HAS(c)(" \n\t()=#.\"")
-glyph IS_SPACE = la c. OR(str_eq(c)(" "))(OR(str_eq(c)("\n"))(str_eq(c)("\t")))
+# audit2 #53: \r \f \v (13 12 11) are whitespace, as the host's isspace() has
+# them -- a CRLF source or a form feed lexed them as name characters.
+glyph IS_CTL_SPACE = la c. OR(str_eq(c)(chr("13")))(OR(str_eq(c)(chr("12")))(str_eq(c)(chr("11"))))
+glyph IS_DELIM = la c. OR(STR_HAS(c)(" \n\t()=#.\""))(IS_CTL_SPACE(c))
+glyph IS_SPACE = la c. OR(str_eq(c)(" "))(OR(str_eq(c)("\n"))(OR(str_eq(c)("\t"))(IS_CTL_SPACE(c))))
 glyph MKTOK  = la ty. la v. PAIR(ty)(v)
 glyph T_TYPE = FST
 glyph T_VAL  = SND
