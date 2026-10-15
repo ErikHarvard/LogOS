@@ -428,8 +428,11 @@ glyph RENDER   = la phon. BUILD(SND(phon))(0)(FST(phon))
 glyph PSC_STAR = la node. PAIR(WAVE(RENDER(PHONYM(node))))(SPEC(node))
 
 # ── MAIN: speak the nine primitives, then phonyms GENERATED from structure ──
-# Audio: nine primitives + three derived (fusion, reduplication, framing). The
-# witnesses for all five operator modes are printed (the structural certificate).
+# Audio: 15 segments — the nine primitives, three derived (⊗ fusion, ↻
+# reduplication, ⊂ framing), then the ⊗ and ↻ modes spoken as phonyms
+# (▷(LOVE,RELATION), ↻(SELF)) and the evaluator 𝓡 (▷(DEPTH,RECOGNITION)). MAIN
+# prints eight witness lines (the five PSC* operator-mode specs, then the three
+# spoken 𝓜/𝓡 specs) — the structural certificate.
 glyph SAY = la node. concat(RENDER(PHONYM(node)))(GAP)
 glyph CORPUS =
     concat(SAY(PRIM("BEING")))(concat(SAY(PRIM("RECOGNITION")))(
@@ -437,7 +440,7 @@ glyph CORPUS =
     concat(SAY(PRIM("RELATION")))(concat(SAY(PRIM("VOID")))(
     concat(SAY(PRIM("BECOMING")))(concat(SAY(PRIM("FORM")))(
     concat(SAY(PRIM("DEPTH")))(
-    concat(SAY(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))(     # Compassion  /luʃi/
+    concat(SAY(SYN(PRIM("LOVE"))(PRIM("RECOGNITION"))))(     # Compassion  /lu/+/ʃi/ superimposed, one window
     concat(SAY(MC(PRIM("RECOGNITION"))))(                    # Truth       /ʃiʃi/
     concat(SAY(CONT(PRIM("RECOGNITION"))(PRIM("BEING"))))(   # Rec ⊂ Being /ɑʃiɑ/
     # ── 𝓜 ⊂ 𝒜 — the combination MODES + the EVALUATOR 𝓡 themselves SPOKEN ──
