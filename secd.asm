@@ -373,8 +373,9 @@ _start:
 .nogc:
     ; Stack-overflow guard. The operand stack S [ostack, dstack) and the dump
     ; D [dstack, pathbuf) each grow at most one 16-byte frame per dispatched
-    ; instruction and are NOT garbage-collected. Without tail-call optimisation
-    ; a deep recursion would otherwise overrun them into the adjacent buffers,
+    ; instruction and are NOT garbage-collected. A tail call (APPLY then RET —
+    ; see .apply_clo) pushes no dump frame, but any non-tail recursion still
+    ; grows them one frame per level and would otherwise overrun them into the adjacent buffers,
     ; the GC worklist and the heap — silent corruption (a too-deep program would
     ; exit 0 with the wrong result). So halt loudly the moment either pointer
     ; comes within stackmargin of its region end, exactly as the heap does.
@@ -3976,10 +3977,13 @@ drm_w:         dq 0              ; mode width  (pixels)
 drm_h:         dq 0              ; mode height (pixels)
 drm_crtcid:    dq 0             ; chosen CRTC id
 
-; The operand and dump stacks scale with recursion depth — this SECD machine
-; does no tail-call optimisation, so a deep (even tail-) recursion such as
-; BYTES walking the VM's own ~14 KB image consumes one frame per step. 16 MiB
-; each (~1M frames) gives generous headroom; all regions are lazily mapped.
+; The operand and dump stacks scale with NON-tail recursion depth. A tail call
+; (an APPLY immediately followed by RET, see .apply_clo) reuses the caller's
+; dump frame, so a tail-recursive loop runs in bounded depth indefinitely; a
+; call in argument position — e.g. the second argument of SEQ, or a recursion
+; whose result is then passed to concat — is NOT a tail call and consumes one
+; frame per step. 16 MiB each (~1M frames) gives generous headroom; all regions
+; are lazily mapped.
 filesize equ $ - $$
 ostack   equ $$ + filesize
 ; progembed: where bundle.la appends the program stream (file offset filesize).
