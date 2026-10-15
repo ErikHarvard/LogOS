@@ -2791,7 +2791,7 @@ depends on recording what was found, not what was hoped.
 - **Two-register discipline.** *Alignment* (sign ≡ referent) is 1.0 by nature
   (Alignment Theory of Truth — identity, not correspondence). *Instantiation
   fidelity* — how faithfully the rendered form/sound captures that alignment —
-  is measured: ~0.863 visual (offline, not recomputed by any code in the repo), ~0.73 phonetic. The gap is the lawful cost of
+  is measured: ~0.863 visual (offline, not recomputed by any code in the repo), 0.67 phonetic (`phonsem.la`, asserted by build.sh). The gap is the lawful cost of
   compressing rich structure into finite, complexity-one forms (the third
   operator, γ). Exact at the ontological roots; bounded at the composites.
 

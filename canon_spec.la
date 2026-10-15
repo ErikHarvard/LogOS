@@ -189,7 +189,7 @@ glyph NIS = la a. la b. str_eq(NORMK(a))(NORMK(b))
 #        quantity. That is IS_ALPHA1 below, and it is a BOOLEAN on purpose.
 #      · INSTANTIATION FIDELITY: how faithfully a low-dimensional derived FORM (a
 #        sigil, a phonym) realises that alignment. **MEASURED, sub-1.0, bounded** —
-#        visual ≈0.863, phonetic 0.71. Real, and it is NOT α.
+#        visual ≈0.863, phonetic 0.67. Real, and it is NOT α.
 #
 #    ★ THE CATEGORY ERROR THIS FORBIDS: reporting a fidelity number as though it were
 #    α. It would read as "the sign is 86% the referent", which is not a weaker version

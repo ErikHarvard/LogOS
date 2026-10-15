@@ -9,7 +9,7 @@ ATT note in `NEXT_STEPS.md` items 7–8):
 - **Instantiation fidelity**: how faithfully the *derived* form realises that 1.0
   alignment. **Measured, sub-1.0, bounded.** This document characterises it.
 
-Current figures: **visual ≈ 0.863** (offline, §1e — not computed by any code in the repo), **phonetic = 0.71** (this build, `phonsem.la`, onset axis on — §4; was 0.73 vowel-only, but that had a collision: §1d/§4).
+Current figures: **visual ≈ 0.863** (offline, §1e — not computed by any code in the repo), **phonetic = 0.67** (this build, `phonsem.la`, onset axis on, asserted by `build.sh` as `67 pct [concordant 211 / discordant 103]`; was 0.73 vowel-only, which had a collision — §1d/§4 — then 0.71 with the onset axis, then 0.67 after VOID's nucleus was corrected to BEING's /ɑ/ — §4).
 
 ---
 
@@ -63,8 +63,9 @@ distance-pairs. Over every unordered pair of distance-pairs `{i,j} ⊆ P`:
 ```
 fidelity = #concordant / (#concordant + #discordant)          (non-tied comparisons)
 ```
-This build (`|C| = 8`, onset axis on): `224 / (224 + 90) = 0.71` (the remaining 64 of
-C(28,2)=378 pair-of-pairs are ties; vowel-only was 0.73 but non-injective — §4). φ is never imposed; "does it correlate" is asked, not stipulated.
+This build (`|C| = 8`, onset axis on): `211 / (211 + 103) = 0.67` (the remaining 64 of
+C(28,2)=378 pair-of-pairs are ties; vowel-only was 0.73 but non-injective, onset-on 0.71
+before the VOID nucleus fix — §4). φ is never imposed; "does it correlate" is asked, not stipulated.
 
 ### 1d. Distinction preservation (injectivity) — the complementary view
 A **collapsed distinction** is two distinct concepts with the same form: `Θ_P(A) = Θ_P(B)`
@@ -117,7 +118,7 @@ a finite `B` is exactly what makes the form a *compression* and exactly what cap
 are the same fact seen from two sides. `F → 1` is bought only by `B → ∞` (losslessness),
 which is the negation of complexity-one. Hence the asymptote is **lawful, not a defect.**
 
-**Honest scope of the climb (§3–4).** The *current* 0.71 concordance / 1.0 injectivity sit **far
+**Honest scope of the climb (§3–4).** The *current* 0.67 concordance / 1.0 injectivity sit **far
 below** this ceiling — `|C| = 8 ≪ 2^B`, so no pigeonhole collision is forced. The collisions we see are
 **encoding-inadequacy** collisions (the metric drops a real distinguishing axis), not the
 fundamental bound. So fidelity can be **legitimately raised toward 1.0** on the working
@@ -147,7 +148,7 @@ the step where fidelity is spent.**
   form holds, so `γ` compresses lossily *by dimension*. **The residual lives here**, concentrated
   in the composites, where the Sealing works hardest.
 
-So the aggregate 0.863 / 0.73 is the **average of near-1.0 roots and lossier composites** — and
+So the aggregate 0.863 / 0.67 is the **average of near-1.0 roots and lossier composites** — and
 the bound is the *signature of the `1→2→compress` step* (recognition taking bounded form), not a
 foreign defect. This both **confirms** the asymptote and **locates** it: the language is exact
 where the glyph is the form and asymptotic where the form is a projection. (Testable prediction,
@@ -178,7 +179,7 @@ one budget (a phonym is still one gesture; we spend its existing parameters bett
   compositional complexity — primitive↔primitive vs composite↔composite — and report fidelity
   *per stratum*, not just the aggregate. Prediction (from §2a): root distinctions approach exact
   (≈1.0) once each primitive's form is its own; the residual concentrates in the composites where
-  `γ` works hardest. This turns the single 0.73 into a *located* curve, and confirms the bound is
+  `γ` works hardest. This turns the single 0.67 into a *located* curve, and confirms the bound is
   the signature of the `1→2→compress` step rather than uniform noise.
   **Honest reading of the result:** the finding is the *pattern* (roots high, composites lower),
   not a literal 1.0 at the root. Even a root glyph on a finite raster / finite phonym carries tiny
@@ -215,6 +216,9 @@ phonetic centroids for the noise/burst onsets: /ʃ/≈2800, /m/≈250, /h/≈400
 | set-injectivity (distinction preservation, §1d) | 7/8 (Beauty≡BecForm) | **8/8 — collision closed** |
 | Kendall concordance (proximity fidelity, §1c) | 0.73 (230/81) | **0.71 (224/90)** |
 
+*Later (6d5fff4):* VOID's nucleus was corrected to BEING's /ɑ/ (700,1100,2540); injectivity
+stayed 8/8 and concordance fell to **0.67 (211/103)**, the figure `build.sh` asserts now.
+
 **Honest reading — the two fidelity notions diverge, and that is the finding.** The onset fix
 **closes the collision** (the clean defect: two distinct concepts no longer share one phonym —
 8/8 injective, root-distinct in sound). But the aggregate **concordance dips 2 points** (0.73 →
@@ -227,8 +231,8 @@ is the more foundational property (a language where Beauty and Becoming-Form are
 sound is defective regardless of concordance). The 2-point cost is **located, not gamed**: it is
 lever **L3** (budget reallocation — weight the vowel-nucleus axis above the onset axis in the
 Chamfer so onsets disambiguate without dominating the ordering), deferred and *not* tuned here, per
-the guardrail (no metric redefinition to recover the number). Net: **distinction fidelity 1.0;
-proximity fidelity 0.71**, both honest, the residual now located on the weighting/onset axis.
+the guardrail (no metric redefinition to recover the number). Net (at the onset fix): **distinction fidelity 1.0;
+proximity fidelity 0.71** (0.67 after the later VOID-nucleus fix), both honest, the residual now located on the weighting/onset axis.
 
 ---
 
