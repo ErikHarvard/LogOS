@@ -386,10 +386,10 @@ input run from a bare VT.
 | `logosinit.la`, `logosipc.la`, `logoscap.la`, `theourgia*.la` | The OS layers |
 | `codices/published/`           | The published philosophical works behind the system |
 | `build.sh`                     | The autological criterion |
-| `ROADMAP.md`, `CLAUDE.md`      | Roadmap and a detailed engineering map of every module |
+| `ROADMAP.md`, `CLAUDE.md`      | Roadmap and a detailed engineering map of the main modules |
 
 `CLAUDE.md` is the deepest technical reference — a module-by-module description of
-the entire system.
+the main modules (its Layout table names the files it does not cover).
 
 ---
 
