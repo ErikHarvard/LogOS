@@ -271,10 +271,18 @@ chk_bare_vm_helpers() {
     { [ "$rc" = 0 ] && grep -q "$F" <<< "$o" && grep -q reached <<< "$o"; } || bad+=" or-true-site(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
     o=$(h105 seg 'guard_compile "print(1)"; echo reached'); rc=$?
     { [ "$rc" != 0 ] && grep -q "$F" <<< "$o" && ! grep -q reached <<< "$o"; } || bad+=" guard_compile-dies(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    # Shape scan, derived from the build.sh text: a ./runner that STARTS a statement
+    # (line start, or after ; && {) on a line that neither handles its status (||)
+    # nor backgrounds it (&) is bare. $(…) captures never match: ( is not a start.
+    local bare
+    bare=$(awk '{ l=$0; sub(/[[:space:]]+#.*$/, "", l) }
+        l ~ /^[[:space:]]*#/ { next }
+        l ~ /(^|;|&&|\{)[[:space:]]*\.\/runner([[:space:]]|$)/ && l !~ /\|\|/ && l !~ /&[[:space:]]*$/ { printf " %d", NR }' "$REPO/build.sh")
+    [ -z "$bare" ] || bad+=" bare ./runner statements at build.sh lines:$bare"
     if [ -n "$bad" ]; then fail "bare #105h: a dead VM step in a helper left no FAIL line:$bad"; return; fi
     o=$(h105 okvm 'OUT="$(nrun t.la)"; guard_compile "print(1)"; echo "reached [$OUT]"'); rc=$?
     if [ "$rc" = 0 ] && [ "$o" = "reached [native out]" ]; then
-        pass "bare #105h: nrun (in \$(…), strict and || true sites) and guard_compile print 'FAIL … exited 139' when the VM dies; a good runner's output reaches the capture"
+        pass "bare #105h: nrun (in \$(…), strict and || true sites) and guard_compile print 'FAIL … exited 139' when the VM dies; a good runner's output reaches the capture; no bare ./runner statement left in build.sh"
     else fail "bare #105h: good runner not green (rc=$rc, out=[$(tr '\n' '|' <<< "$o")])"; fi
 }
 

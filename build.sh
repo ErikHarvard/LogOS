@@ -6509,7 +6509,7 @@ case "$CF" in -[0-9]*) : ;; *) echo "FAIL  sockets: connect to dead path not neg
 cat > /tmp/t_sockbad.la <<'LAEOF'
 glyph MAIN = send(5)("data")
 LAEOF
-cp /tmp/t_sockbad.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+cp /tmp/t_sockbad.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 brc=0; BERR="$(./runner 2>&1 1>/dev/null)" || brc=$?
 [ "$brc" -ne 0 ] || { echo "FAIL  sockets: non-string fd did not halt nonzero"; ok=0; }
 printf '%s' "$BERR" | grep -q 'argument is not a string' || { echo "FAIL  sockets: non-string fd not loud ($BERR)"; ok=0; }
@@ -6587,7 +6587,7 @@ printf '%s\n' "$T0" | grep -qxF "signo=10"       || { echo "FAIL  tier0: signalf
 cat > /tmp/t_tier0bad.la <<'LAEOF'
 glyph MAIN = stat(5)
 LAEOF
-cp /tmp/t_tier0bad.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+cp /tmp/t_tier0bad.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 trc=0; TERR="$(./runner 2>&1 1>/dev/null)" || trc=$?
 [ "$trc" -ne 0 ] || { echo "FAIL  tier0: non-string path to stat did not halt nonzero"; ok=0; }
 printf '%s' "$TERR" | grep -q 'argument is not a string' || { echo "FAIL  tier0: non-string path not loud ($TERR)"; ok=0; }
@@ -6643,7 +6643,7 @@ ok=1
 [ "$(printf '%s\n' "$RND" | sed -n 4p)" = "EMPTY" ] || { echo "FAIL  random: random(0) not empty ($RND)"; ok=0; }
 # non-string arg → loud halt
 printf 'glyph MAIN = random(5)\n' > /tmp/t_randbad.la
-cp /tmp/t_randbad.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+cp /tmp/t_randbad.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 brc=0; BERR="$(./runner 2>&1 1>/dev/null)" || brc=$?
 [ "$brc" -ne 0 ] || { echo "FAIL  random: non-string arg did not halt nonzero"; ok=0; }
 printf '%s' "$BERR" | grep -q 'argument is not a string' || { echo "FAIL  random: non-string arg not loud ($BERR)"; ok=0; }
@@ -6695,7 +6695,7 @@ RLINE="$(printf '%s\n' "$PL" | sed -n 's/^ready=//p')"
 case "$RLINE" in *" "*) echo "FAIL  poll: ready set has >1 fd ($PL)"; ok=0 ;; "") echo "FAIL  poll: ready set empty after signal ($PL)"; ok=0 ;; esac
 # loud-on-bad-input: a non-string fds list halts loudly, nonzero exit.
 printf 'glyph MAIN = poll(5)("0")\n' > /tmp/t_pollbad.la
-cp /tmp/t_pollbad.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+cp /tmp/t_pollbad.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 prc=0; PERR="$(./runner 2>&1 1>/dev/null)" || prc=$?
 [ "$prc" -ne 0 ] || { echo "FAIL  poll: non-string fds arg did not halt nonzero"; ok=0; }
 printf '%s' "$PERR" | grep -q 'argument is not a string' || { echo "FAIL  poll: non-string fds arg not loud ($PERR)"; ok=0; }
@@ -6826,7 +6826,7 @@ cat > /tmp/t_sleep.la <<'LAEOF'
 glyph SEQ = la a. la b. b
 glyph MAIN = SEQ(sleep("1"))(print("awake"))
 LAEOF
-cp /tmp/t_sleep.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+cp /tmp/t_sleep.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 t0=$(date +%s); SLP="$(./runner 2>/dev/null)"; t1=$(date +%s)
 rm -f /tmp/t_sleep.la
 if [ "$SLP" = "awake" ] && [ "$((t1 - t0))" -ge 1 ]; then
@@ -6843,7 +6843,7 @@ fi
 printf '#!/bin/sh\nprintf t >> /tmp/logos_ticks\n' > /tmp/tick.sh; chmod +x /tmp/tick.sh
 rm -f /tmp/logos_ticks
 sed 's#/bin/sh#/tmp/tick.sh#' logosinit.la > /tmp/t_flap.la
-cp /tmp/t_flap.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+cp /tmp/t_flap.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 timeout 4 ./runner >/dev/null 2>&1 || true
 TICKS=$(wc -c </tmp/logos_ticks 2>/dev/null || echo 0)
 rm -f /tmp/tick.sh /tmp/logos_ticks /tmp/t_flap.la
@@ -6979,7 +6979,7 @@ fi
 # 4096-byte buffer; an over-long path must halt with "secd: path too long"
 # rather than overrunning the buffer into fsbuf / the GC worklist.
 python3 -c "open('/tmp/t_path.la','w').write('glyph MAIN = read_file(\"/'+('a'*5000)+'\")\n')"
-cp /tmp/t_path.la logos_source.la; cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1
+cp /tmp/t_path.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 prc=0; PERR="$(./runner 2>&1 1>/dev/null)" || prc=$?
 rm -f /tmp/t_path.la
 if [ "$prc" -ne 0 ] && printf '%s\n' "$PERR" | grep -qF "secd: path too long"; then
@@ -7148,7 +7148,7 @@ fi
 # malformed program: a truncated/unbalanced stream is caught during execution, not
 # walked into the zero-fill tail / unmapped memory (which would SIGSEGV).
 printf 'glyph MAIN = print("hi")\n' > logos_source.la
-cp compiler.bin logos_program.bin; ./runner >/dev/null 2>&1          # compile → valid stream
+cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1          # compile → valid stream
 gsz=$(wc -c < logos_program.bin); head -c $((gsz-3)) logos_program.bin > /tmp/t_guard.bin
 cp /tmp/t_guard.bin logos_program.bin; rm -f /tmp/t_guard.bin
 grc=0; GERR="$(./runner 2>&1 1>/dev/null)" || grc=$?
