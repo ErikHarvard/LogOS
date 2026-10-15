@@ -188,6 +188,50 @@ case_mod_input_detect() {
     done
 }
 
-CASES="${*:-mod_repeat2 mod_font_bounds mod_font_hoist mod_cob_witness mod_input_detect}"
+# ── #75 TO_FB renders a panel-sized frame in O(screen) ────────────────────────
+# REPEAT was a linear concat chain (O(n²) bytes copied), ZEROS(pitch) was
+# rebuilt for every blank row, each row was concatenated onto the growing rest
+# of the frame, and RGB_TO_BGRX did three DROPs per pixel: TO_FB(SCENE) into a
+# 1080x7680 screen did not finish in 10 minutes (the audit's measurement), so
+# theourgia_mux_session.la's LIVE (TO_FB per frame) could not render. Fixed:
+# doubling REPEAT, pad/blank row built once, rows joined pairwise, RGB_TO_BGRX
+# by halving with str_at. The 1080x7680 frame must arrive within FB_BOUND s
+# (default 20; fixed ~1 s) AND equal the image derived here in python from the
+# scene's description alone: 32x24 desktop (0,0,128); red (200,30,30) 10x8 at
+# x=4,y=4; [fb only] green (30,200,30) 6x6 at x=18,y=12 — each pixel written
+# B,G,R,0, each row zero-padded to the pitch, rows 24..1079 all zero.
+# Control (passes either way): RGB_TO_BGRX of 5 pixels with bytes 1..15 =
+# 3 2 1 0 6 5 4 0 9 8 7 0 12 11 10 0 15 14 13 0 (an odd count: uneven halves).
+case_mod_tofb_fast() {
+    local spec f surf wins want got
+    for spec in "theourgia_fb.la|SCENE|g" "theourgia_mux_session.la|RENDER_SURFACE(PAIR(4)(4))|-"; do
+        IFS='|' read -r f surf wins <<< "$spec"
+        nomain "$f" t_tf.la "glyph MAIN = write_file(\"tf.bin\")(TO_FB($surf)(1080)(7680))"
+        rm -f tf.bin; run t_tf.la "${FB_BOUND:-20}"
+        got=$(python3 - "$wins" <<'PYEOF2'
+import sys
+img=[[(0,0,128)]*32 for _ in range(24)]
+wins=[(4,4,10,8,(200,30,30))]+([(18,12,6,6,(30,200,30))] if sys.argv[1]=='g' else [])
+for (x,y,w,h,c) in wins:
+    for r in range(y,y+h):
+        for cc in range(x,x+w): img[r][cc]=c
+out=b''.join(b''.join(bytes([b,g,rr,0]) for (rr,g,b) in img[r])+bytes(7680-128) for r in range(24))+bytes(7680*(1080-24))
+try: data=open('tf.bin','rb').read()
+except Exception: data=b''
+print('OK' if data==out else 'DIFF len %d want %d'%(len(data),len(out)))
+PYEOF2
+)
+        if [ "$RC" = 0 ] && [ "$got" = OK ]; then pass "$f: TO_FB 1080x7680 frame within ${FB_BOUND:-20}s, equal to the python-derived image"
+        else fail "$f TO_FB 1080x7680: rc=$RC (124 = over ${FB_BOUND:-20}s) $got out=[$(printf '%s' "$OUT" | head -c 100)]"; fi
+        nomain "$f" t_tc.la 'glyph JS = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _. concat(int_to_str(str_to_int(ord(str_head(s)))))(concat(" ")(self(str_tail(s))))))
+glyph B15 = Z(la self. la i. IF(lt(15)(i))(la _. "")(la _. concat(BYTE(i))(self(add(i)(1)))))
+glyph MAIN = print(JS(RGB_TO_BGRX(B15(1))))'
+        run t_tc.la 60
+        if [ "$RC" = 0 ] && [ "$OUT" = "3 2 1 0 6 5 4 0 9 8 7 0 12 11 10 0 15 14 13 0 " ]; then pass "$f (control): RGB_TO_BGRX of 5 pixels reverses each triple + NUL"
+        else fail "$f RGB_TO_BGRX control: rc=$RC out=[$(printf '%s' "$OUT" | head -c 100)]"; fi
+    done
+}
+
+CASES="${*:-mod_repeat2 mod_font_bounds mod_font_hoist mod_cob_witness mod_input_detect mod_tofb_fast}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_modules: all passed"; exit 0; } || { echo "gate_audit2_modules: $FAILS failed"; exit 1; }
