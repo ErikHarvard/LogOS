@@ -24,7 +24,7 @@ glyph IS_VAR = la p. la node. node (la n. str_eq(n)(p)) (la _. la _. FALSE) (la 
 # FIND_SA : max self-app severity of bound var p (trusted)
 glyph FIND_SA = Z(la self. la p. la eager. la node. node (la n. 0) (la q. la b. IFc(str_eq(q)(p))(la _. 0)(la _. self(p)(FALSE)(b))) (la f. la a. MAXn(IFc(AND(IS_VAR(p)(f))(IS_VAR(p)(a)))(la _. eager(2)(1))(la _. 0))(MAXn(self(p)(eager)(f))(self(p)(eager)(a)))) (la s. 0))
 # SWC : static well-foundedness classifier: 0=WF 1=UNKNOWN 2=ILL (trusted)
-glyph SWC = Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. MAXn(self(f))(self(a))) (la s. 0))
+glyph SWC = Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. f (la vn. MAXn(self(f))(self(a))) (la p. la b. (la sev. IFc(int_eq(sev)(2))(la _. IFc(int_eq(self(a))(2))(la _. MAXn(2)(MAXn(self(b))(self(a))))(la _. MAXn(1)(MAXn(self(b))(self(a))))) (la _. MAXn(sev)(MAXn(self(b))(self(a)))))(FIND_SA(p)(TRUE)(b))) (la ff. la aa. MAXn(self(f))(self(a))) (la s. MAXn(self(f))(self(a)))) (la s. 0))
 # VERDICT : human-readable SWC verdict (trusted)
 glyph VERDICT = la node. (la s. IFc(int_eq(s)(2))(la _. "ILL")(la _. IFc(int_eq(s)(1))(la _. "UNKNOWN")(la _. "WF")))(SWC(node))
 # ORc : Church or (trusted)

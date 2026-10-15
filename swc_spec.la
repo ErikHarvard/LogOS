@@ -15,13 +15,31 @@
 #                  evaluation, where the existing resource guards (stack overflow
 #                  / heap exhausted / timeout) catch any actual divergence.
 #
-#  HALTING-PROBLEM BOUNDARY (honest): well-foundedness is undecidable in general,
-#  so NO checker can be complete. This one is CONSERVATIVE and SOUND in both
-#  directions of what it claims: it refuses only what it can PROVE ill-founded
-#  (an eager bound-variable self-application is genuinely Ω-divergent under CBV)
-#  and accepts only what it can PROVE well-founded (no self-application at all).
-#  Everything else is reported UNKNOWN — never silently mis-accepted or
-#  mis-refused. The UNKNOWN class is the irreducible halting-problem residue.
+#  HALTING-PROBLEM BOUNDARY (honest, NARROWED 2026-09-26 per the General's ruling on the
+#  external bug audit — Option A): well-foundedness is undecidable in general, so NO checker
+#  can be complete, and this one decides LESS than "sound in both directions of what it
+#  claims" used to say. What it actually proves:
+#    ILL only when a LAMBDA's own bound-variable self-application is either (i) unapplied at
+#      all (a bare `la g. g(g)` value, e.g. DEPTH), or (ii) applied to an argument that is
+#      ITSELF provably self-applying by this same test — the true Ω-loop shape
+#      `(la x. x(x))(la x. x(x))`.
+#    UNKNOWN, not ILL, when a lambda whose body eagerly self-applies its own parameter is
+#      applied to an argument NOT provably self-applying — e.g. `(la x. x(x))(la y. y)`,
+#      which terminates (substitutes to `(la y.y)(la y.y)`), but which the OLD, unnarrowed
+#      form of this checker refused as ILL from syntax alone, with no notion of what the
+#      lambda was actually applied to. That was a genuine false refusal; this is the fix.
+#  Two classes of divergence remain OUTSIDE this checker's claim by design, not by oversight:
+#    - self-application reached only AFTER a β-reduction (e.g. `WP = la x. (la y.
+#      x(y))(x)`; `WP(WP)` diverges, but no syntactic `x(x)` ever appears in `WP`'s own
+#      source — this needs value-flow analysis, out of scope for a syntactic front-end filter);
+#    - self-application reached through a FREE GLYPH reference rather than a local `la`
+#      binder (e.g. `DEPTH(DEPTH)`, where `DEPTH = la g. g(g)` is itself a separately-defined
+#      glyph — `FIND_SA` is invoked only from this checker's own LAM case, keyed to that
+#      lambda's bound parameter, and structurally never sees a free name at all; resolving
+#      free glyph references before classifying is a real fix, ROADMAP item, not done here).
+#  Everything this checker does NOT decide is reported UNKNOWN, and UNKNOWN is deferred to
+#  the runtime resource guards (stack overflow / heap exhausted / timeout) — never silently
+#  mis-accepted or mis-refused WITHIN the narrower claim actually being made above.
 #
 #  All glyphs carry prose signatures (trusted) — they are recursive/encoded; the
 #  arrow-arity checker is demonstrated on canon.la. Byte-identical on host + VM.
@@ -38,7 +56,13 @@ glyph AST_APP = la f. la a. la fv. la fl. la fa. la fs. fa(f)(a)
 glyph AST_STR = la s. la fv. la fl. la fa. la fs. fs(s)
 glyph IS_VAR = la p. la node. node (la n. str_eq(n)(p)) (la _. la _. FALSE) (la _. la _. FALSE) (la _. FALSE)
 glyph FIND_SA = Z(la self. la p. la eager. la node. node (la n. 0) (la q. la b. IFc(str_eq(q)(p))(la _. 0)(la _. self(p)(FALSE)(b))) (la f. la a. MAXn(IFc(AND(IS_VAR(p)(f))(IS_VAR(p)(a)))(la _. eager(2)(1))(la _. 0))(MAXn(self(p)(eager)(f))(self(p)(eager)(a)))) (la s. 0))
-glyph SWC = Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. MAXn(self(f))(self(a))) (la s. 0))
+# SWC's APP case, NARROWED: applying a literal `la p. b` whose own body eagerly
+# self-applies `p` (FIND_SA severity 2) no longer inherits ILL automatically — only when
+# the ARGUMENT is itself provably self-applying (self(a) also reads 2) does the true
+# Ω-loop shape stay ILL; otherwise this application's contribution downgrades to
+# UNKNOWN (1), still MAXn'd against whatever self(b)/self(a) find nested deeper. f not
+# syntactically a LAM (a VAR/APP/STR in function position) is unchanged from before.
+glyph SWC = Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. f (la vn. MAXn(self(f))(self(a))) (la p. la b. (la sev. IFc(int_eq(sev)(2))(la _. IFc(int_eq(self(a))(2))(la _. MAXn(2)(MAXn(self(b))(self(a))))(la _. MAXn(1)(MAXn(self(b))(self(a))))) (la _. MAXn(sev)(MAXn(self(b))(self(a)))))(FIND_SA(p)(TRUE)(b))) (la ff. la aa. MAXn(self(f))(self(a))) (la s. MAXn(self(f))(self(a)))) (la s. 0))
 glyph VERDICT = la node. (la s. IFc(int_eq(s)(2))(la _. "ILL")(la _. IFc(int_eq(s)(1))(la _. "UNKNOWN")(la _. "WF")))(SWC(node))
 
 # ── operator-order checker (Grammar of Composition): the five operators form a
@@ -69,7 +93,7 @@ glyph SRC_AAPP = "la f. la a. la fv. la fl. la fa. la fs. fa(f)(a)"
 glyph SRC_ASTR = "la s. la fv. la fl. la fa. la fs. fs(s)"
 glyph SRC_ISVAR = "la p. la node. node (la n. str_eq(n)(p)) (la _. la _. FALSE) (la _. la _. FALSE) (la _. FALSE)"
 glyph SRC_FINDSA = "Z(la self. la p. la eager. la node. node (la n. 0) (la q. la b. IFc(str_eq(q)(p))(la _. 0)(la _. self(p)(FALSE)(b))) (la f. la a. MAXn(IFc(AND(IS_VAR(p)(f))(IS_VAR(p)(a)))(la _. eager(2)(1))(la _. 0))(MAXn(self(p)(eager)(f))(self(p)(eager)(a)))) (la s. 0))"
-glyph SRC_SWC = "Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. MAXn(self(f))(self(a))) (la s. 0))"
+glyph SRC_SWC = "Z(la self. la node. node (la n. 0) (la p. la b. MAXn(FIND_SA(p)(TRUE)(b))(self(b))) (la f. la a. f (la vn. MAXn(self(f))(self(a))) (la p. la b. (la sev. IFc(int_eq(sev)(2))(la _. IFc(int_eq(self(a))(2))(la _. MAXn(2)(MAXn(self(b))(self(a))))(la _. MAXn(1)(MAXn(self(b))(self(a))))) (la _. MAXn(sev)(MAXn(self(b))(self(a)))))(FIND_SA(p)(TRUE)(b))) (la ff. la aa. MAXn(self(f))(self(a))) (la s. MAXn(self(f))(self(a)))) (la s. 0))"
 glyph SRC_VERDICT = "la node. (la s. IFc(int_eq(s)(2))(la _. \"ILL\")(la _. IFc(int_eq(s)(1))(la _. \"UNKNOWN\")(la _. \"WF\")))(SWC(node))"
 glyph SRC_ORc = "la a. la b. a(TRUE)(b)"
 glyph SRC_OATOM = "la n. la fa. la fo. fa(n)"

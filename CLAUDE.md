@@ -1632,16 +1632,24 @@ descending root→leaf) is `WELL-ORDERED`; `build.sh` checks both verdicts on bo
 engines. (This is decidable — a finite rank comparison — so it has no UNKNOWN
 class, unlike the ill-foundedness check.)
 
-**HALTING-PROBLEM BOUNDARY (documented honestly):** well-foundedness/termination is
-**undecidable**, so *no* checker can be complete — there is an irreducible middle.
-This checker is **conservative and sound in both directions of what it claims**: it
-refuses *only* what it can prove ill-founded and accepts *only* what it can prove
-well-founded; **everything else is reported `UNKNOWN`, never silently
-mis-classified.** `UNKNOWN` is exactly the halting residue (e.g. `Z` and any
-fix-pointed recursion live there — honestly, since `Z(la self. self)` *does*
-diverge). So the SWC is a sound *front-end filter*, not a totality oracle: it
-removes the obvious Ω-class constructions the spec calls ill-founded, and defers
-the undecidable remainder to the dynamic resource guards. Built spec-first
+**HALTING-PROBLEM BOUNDARY (documented honestly, NARROWED 2026-09-26 — an external audit
+found the prior wording overclaimed; the General ruled Option A):** well-foundedness/
+termination is **undecidable**, so *no* checker can be complete — there is an irreducible
+middle. This checker is narrower than "sound in both directions of what it claims" used to
+say: it reports **ILL** only for a lambda whose own bound-variable self-application is either
+unapplied (a bare `la g. g(g)` value, e.g. `DEPTH`) or applied to an argument that is itself
+provably self-applying — the true Ω-loop shape `(la x. x(x))(la x. x(x))`. A lambda of that
+same eager-self-application SHAPE applied to something ELSE — e.g. `(la x. x(x))(la y. y)`,
+which terminates — used to be refused as ILL from syntax alone; it now reads **UNKNOWN**,
+correctly. Two divergence classes stay OUTSIDE this checker's claim **by design**, stated
+here rather than silently assumed away: self-application reached only after a β-reduction
+(no syntactic `x(x)` ever appears, e.g. `WP = la x. (la y. x(y))(x)`; `WP(WP)` diverges), and
+self-application reached through a free glyph reference rather than a local binder (e.g.
+`DEPTH(DEPTH)` — resolving glyph references before classifying is a real fix, tracked as a
+roadmap item, not yet built). Within this narrower claim, everything else is reported
+`UNKNOWN`, never silently mis-classified — `UNKNOWN` is exactly the halting residue (e.g. `Z`
+and any fix-pointed recursion live there — honestly, since `Z(la self. self)` *does*
+diverge), deferred to the dynamic resource guards. Built spec-first
 (`swc_spec.la` → `swc.la`), `META_DEBUG`-verified, byte-identical host/VM.
 
 ### Evaluation

@@ -3185,6 +3185,8 @@ glyph TD = AST_LAM("g")(AST_APP(AST_VAR("g"))(AST_VAR("g")))
 glyph TS = AST_LAM("x")(AST_APP(AST_VAR("f"))(AST_VAR("x")))
 glyph TZ = AST_LAM("f")(AST_APP(AST_LAM("x")(AST_APP(AST_VAR("f"))(AST_LAM("v")(AST_APP(AST_APP(AST_VAR("x"))(AST_VAR("x")))(AST_VAR("v"))))))(AST_STR("z")))
 glyph WW = AST_LAM("x")(AST_APP(AST_VAR("x"))(AST_VAR("x")))
+glyph ID2 = AST_LAM("y")(AST_VAR("y"))
+glyph CASE1 = AST_APP(WW)(ID2)
 glyph BAD = OOP(2)(OATOM("x"))(OOP(5)(OATOM("a"))(OATOM("b")))
 glyph GOOD = OOP(5)(OOP(2)(OATOM("a"))(OATOM("b")))(OATOM("c"))
 glyph V1 = VERDICT(TD)
@@ -3193,9 +3195,10 @@ glyph V3 = VERDICT(TZ)
 glyph V4 = VERDICT(AST_APP(WW)(WW))
 glyph V5 = ORDER(BAD)
 glyph V6 = ORDER(GOOD)
-glyph MAIN = print(concat(V1)(concat("|")(concat(V2)(concat("|")(concat(V3)(concat("|")(concat(V4)(concat("|")(concat(V5)(concat("|")(V6)))))))))))
+glyph V7 = VERDICT(CASE1)
+glyph MAIN = print(concat(V1)(concat("|")(concat(V2)(concat("|")(concat(V3)(concat("|")(concat(V4)(concat("|")(concat(V5)(concat("|")(concat(V6)(concat("|")(V7)))))))))))))
 LA
-SWC_EXPECT="ILL|WF|UNKNOWN|ILL|ORDER-VIOLATION|WELL-ORDERED"
+SWC_EXPECT="ILL|WF|UNKNOWN|ILL|ORDER-VIOLATION|WELL-ORDERED|UNKNOWN"
 SWH="$(./tiny_host /tmp/swctest.la 2>/dev/null)"
 [ "$SWH" = "$SWC_EXPECT" ] || { echo "FAIL  swc: witness wrong on host"; printf 'got: %s\n' "$SWH"; ok=0; }
 rm -f logos_secd logos_program.bin logos_source.la
