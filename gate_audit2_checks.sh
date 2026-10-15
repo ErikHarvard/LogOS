@@ -104,6 +104,26 @@ chk_sigil_relation() {
     else fail "sigil #106: real render not green — $(tr '\n' '|' <<< "$ro")"; fi
 }
 
+# ── #103 build.sh: the DEPTH(DEPTH) divergence check runs the deployed DEPTH ──
+# The divergence block is extracted from build.sh (fixed /tmp path rewritten to
+# the temp dir) and run on host + VM. Mutant: primitives.la's DEPTH terminates
+# (la g. g). Unfixed, the block tests an inline `la g. g(g)` and stays green.
+chk_depth_div() {
+    awk '/^# DEPTH autology is non-termination/{p=1} p{print} p&&/^rm -f \/tmp\/depthdiv.la/{exit}' "$REPO/build.sh" \
+        | sed 's#/tmp/depthdiv.la#depthdiv.la#g' > depth_blk.sh
+    grep -q 'timeout 4 ./logos_secd' depth_blk.sh || { fail "depth #103: cannot extract the block from build.sh"; return; }
+    cp primitives.la primitives.real.la
+    sed 's/^glyph DEPTH = la g. g(g)$/glyph DEPTH = la g. g/' primitives.real.la > primitives.mut.la
+    cmp -s primitives.real.la primitives.mut.la && { fail "depth #103: mutant not planted"; return; }
+    local mo ro
+    cp primitives.mut.la primitives.la;  mo=$(bash -c 'ok=1; . ./depth_blk.sh; echo "ok=$ok"' 2>&1)
+    cp primitives.real.la primitives.la; ro=$(bash -c 'ok=1; . ./depth_blk.sh; echo "ok=$ok"' 2>&1)
+    if ! grep -q 'FAIL  primitives: DEPTH(DEPTH) did not diverge on host' <<< "$mo" || ! grep -qx 'ok=0' <<< "$mo"; then
+        fail "depth #103: terminating DEPTH not caught — $(tr '\n' '|' <<< "$mo")"
+    elif [ "$ro" = "ok=1" ]; then pass "depth #103: divergence check runs the deployed primitives.la — terminating DEPTH FAILs, real DEPTH diverges on host+VM"
+    else fail "depth #103: real DEPTH not green — $(tr '\n' '|' <<< "$ro")"; fi
+}
+
 # ── #72 specpipe DEPLOY: a duplicate glyph name is rejected ───────────────────
 # Mutant (the audit's): two entries named IDT with different bodies and tests.
 # Unfixed, both are "IDT: PASS", both are written, the module is VERIFIED, and
@@ -125,6 +145,6 @@ LA
     else fail "specpipe #72: MATH_SPEC not verified — $(grep '^RESULT' dup_real.out)"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation}"
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

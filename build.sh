@@ -1097,7 +1097,10 @@ PRV="$(./logos_secd 2>/dev/null)"
 rm -f /tmp/primtest.la logos_secd logos_program.bin logos_source.la
 # DEPTH autology is non-termination (Ω). Assert DEPTH(DEPTH) never returns on
 # either engine: under `timeout` it must be killed (exit 124), not complete.
-printf 'glyph DEPTH = la g. g(g)\nglyph MAIN = DEPTH(DEPTH)\n' > /tmp/depthdiv.la
+# The program is the DEPLOYED primitives.la plus a MAIN, so the check is about
+# the shipped DEPTH — an inline `la g. g(g)` copy proved only that the engines
+# loop on Ω, and stayed green whatever primitives_spec.la's DEPTH became (audit2 #103).
+{ cat primitives.la; printf 'glyph MAIN = DEPTH(DEPTH)\n'; } > /tmp/depthdiv.la
 # timeout KILLING the divergence (rc 124) is the success signal — capture it via
 # `|| drc=$?` so `set -e` does not treat the expected non-zero exit as a failure.
 drc=0; timeout 4 ./tiny_host /tmp/depthdiv.la >/dev/null 2>&1 || drc=$?
