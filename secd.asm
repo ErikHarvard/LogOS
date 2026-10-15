@@ -66,9 +66,10 @@ phdr:
     dq 0x400000
     dq 0x400000
     dq filesize
-    dq drmbuf - $$ + drmsize     ; p_memsz: map through progbuf + 5 MiB (progbuf
-                                 ; is the program-stream buffer) plus the 64 KiB
-                                 ; DRM scratch above it; the rest is lazy.
+    dq skipmemo - $$ + skipmemo_size ; p_memsz: map through progbuf + 5 MiB
+                                 ; (progbuf is the program-stream buffer), the
+                                 ; 64 KiB DRM scratch and the skipbody memo above
+                                 ; it; the rest is lazy.
                                  ; Tied to progbuf, not a fixed constant, so the
                                  ; segment tracks progbuf when the layout below
                                  ; shifts — a hardcoded size once left progbuf
@@ -95,7 +96,26 @@ strcmp:
     ret
 
 ; ── skipbody: r10 → body start; advance past the matching RET. ──
+; Memoised (audit2 #68): the program region is written once at load and never
+; again, so a body's end is a pure function of its start. skipmemo holds one
+; u32 per program byte: 0 = not yet scanned, else (end - progbuf). A hit is O(1);
+; only the first scan of each body walks it. Without this, every CLOSE (each
+; Z-recursive call re-creates `la n. <whole body>`) and every glyph-table skip
+; paid a byte scan of the whole body. A scan that runs off the program halts
+; via .badstream before anything is stored. Clobbers rax, rcx (as before).
 skipbody:
+    mov     rax, r10
+    sub     rax, progbuf
+    cmp     rax, progcap         ; outside [progbuf, progend) → plain scan (the
+    jae     .scan                ; scan's own bound check halts loudly)
+    mov     eax, [skipmemo + rax*4]
+    test    eax, eax
+    jz      .scan
+    add     rax, progbuf         ; hit: r10 = end
+    mov     r10, rax
+    ret
+.scan:
+    push    r10                  ; body start, for the memo store
     mov     rcx, 1
 .sb:
     cmp     r10, progend         ; scanned past the mapped program (unbalanced/
@@ -132,6 +152,14 @@ skipbody:
     dec     rcx
     test    rcx, rcx
     jnz     .sb
+    pop     rcx                  ; body start
+    sub     rcx, progbuf
+    cmp     rcx, progcap         ; start outside the program region → no memo
+    jae     .done
+    mov     rax, r10
+    sub     rax, progbuf         ; end - progbuf: >= 1, never the 0 "unscanned" mark
+    mov     [skipmemo + rcx*4], eax
+.done:
     ret
 
 ; ── desc_atoi(rdi = STR descriptor) → rax (signed integer) ──
@@ -4023,6 +4051,10 @@ drm_crtc     equ drmbuf + 5120       ; drm_mode_crtc (104, embeds the modeinfo)
 drm_connid   equ drmbuf + 5224       ; the single connector id passed to SETCRTC (u32)
 drm_dirty    equ drmbuf + 5232       ; drm_mode_fb_dirty_cmd (24) for DIRTYFB flush
 drmsize  equ 0x10000                 ; 64 KiB
+; skipbody memo (audit2 #68): one u32 per program byte, indexed by
+; (body start - progbuf); lazily mapped zero-fill, so only touched pages cost.
+skipmemo      equ drmbuf + drmsize
+skipmemo_size equ progcap * 4        ; 20 MiB
 margin   equ 0x4100000               ; 65 MiB: covers the largest single allocation
                                      ; (read_file's 64 MiB read + descriptor); the
                                      ; dispatch loop collects this far before a
