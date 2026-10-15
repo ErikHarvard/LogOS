@@ -2204,17 +2204,16 @@ _start:
     mov     rsi, 577
     mov     rdx, 420
     syscall
+    mov     rsi, wfopenmsg ; a failed open halts loudly (exit 1), as on the
+    mov     rdx, wfopenmsg_len   ; host — never "succeeds" by returning the content
     test    rax, rax
-    js      .wf_done
+    js      .wio_fail
     mov     r10, rax
-    mov     rsi, [r9+8]
-    mov     rdx, [r9]
-    mov     rax, 1
-    mov     rdi, r10
-    syscall
-    mov     rax, 3
-    mov     rdi, r10
-    syscall
+    call    wio_all              ; write every byte; -errno or 0 → halt
+    mov     rsi, wfwritemsg
+    mov     rdx, wfwritemsg_len
+    test    rax, rax
+    js      .wio_fail
 .wf_done:
     mov     [r12], r8
     mov     [r12+8], r9
@@ -2247,17 +2246,16 @@ _start:
     mov     rsi, 577
     mov     rdx, 493             ; 0755
     syscall
+    mov     rsi, weopenmsg ; failed open → halt loudly (see .bi_writefile2)
+    mov     rdx, weopenmsg_len
     test    rax, rax
-    js      .we_done
+    js      .wio_fail
     mov     r10, rax
-    mov     rsi, [r9+8]
-    mov     rdx, [r9]
-    mov     rax, 1
-    mov     rdi, r10
-    syscall
-    mov     rax, 3
-    mov     rdi, r10
-    syscall
+    call    wio_all
+    mov     rsi, wewritemsg
+    mov     rdx, wewritemsg_len
+    test    rax, rax
+    js      .wio_fail
     mov     rax, 90              ; chmod 0755
     mov     rdi, pathbuf
     mov     rsi, 493
@@ -3530,6 +3528,28 @@ _start:
     mov     rdi, 1
     syscall
 
+.wio_fail:                       ; write_file/write_exec could not open or write
+    push    rdx                  ; rsi/rdx = "secd: write_X: cannot open|write "
+    push    rsi
+    mov     rax, 1
+    mov     rdi, 2               ; stderr: the message ...
+    pop     rsi
+    pop     rdx
+    syscall
+    mov     rax, 1               ; ... the path (rbp = path desc) ...
+    mov     rdi, 2
+    mov     rsi, pathbuf
+    mov     rdx, [rbp]
+    syscall
+    mov     rax, 1               ; ... and a newline, then exit 1 like the host
+    mov     rdi, 2
+    mov     rsi, newline
+    mov     rdx, 1
+    syscall
+    mov     rax, 60
+    mov     rdi, 1
+    syscall
+
 .poll_toomany:                   ; more poll fds than the pollfd buffer (pathbuf) holds
     mov     rax, 1
     mov     rdi, 2               ; stderr
@@ -3831,6 +3851,36 @@ gc_scan:
 .sc_ret:
     ret
 
+; wio_all — write content r9 (STRDESC) to fd r10 in full, then close it.
+; Loops on short writes. Returns rax = 0 on success, or a negative value when a
+; write returned -errno or 0 (no progress) or close failed. Clobbers rax, rcx,
+; rdx, rsi, rdi, r11.
+wio_all:
+    mov     rsi, [r9+8]
+    mov     rdx, [r9]
+.wa_loop:
+    test    rdx, rdx
+    jz      .wa_close
+    mov     rax, 1
+    mov     rdi, r10
+    syscall                      ; rsi, rdx survive the syscall
+    test    rax, rax
+    jle     .wa_err
+    add     rsi, rax
+    sub     rdx, rax
+    jmp     .wa_loop
+.wa_err:
+    mov     rax, 3               ; close the fd, report failure
+    mov     rdi, r10
+    syscall
+    mov     rax, -1
+    ret
+.wa_close:
+    mov     rax, 3
+    mov     rdi, r10
+    syscall                      ; a failing close (deferred write error) is a failure too
+    ret
+
 ; ── read-only data ──
 heapmsg:       db "secd: heap exhausted", 10
 heapmsg_len    equ $ - heapmsg
@@ -3854,6 +3904,14 @@ strtypemsg:    db "secd: argument is not a string", 10
 strtypemsg_len equ $ - strtypemsg
 notintmsg:     db "secd: not a decimal integer", 10
 notintmsg_len  equ $ - notintmsg
+wfopenmsg:     db "secd: write_file: cannot open "
+wfopenmsg_len  equ $ - wfopenmsg
+wfwritemsg:    db "secd: write_file: cannot write "
+wfwritemsg_len equ $ - wfwritemsg
+weopenmsg:     db "secd: write_exec: cannot open "
+weopenmsg_len  equ $ - weopenmsg
+wewritemsg:    db "secd: write_exec: cannot write "
+wewritemsg_len equ $ - wewritemsg
 pollmsg:       db "secd: too many poll fds", 10
 pollmsg_len    equ $ - pollmsg
 bootstrap:     db 2, "MAIN", 0, 0

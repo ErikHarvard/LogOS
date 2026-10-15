@@ -628,8 +628,10 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         if (arg2->t != N_STR) { fprintf(stderr, "write_file: content is not a string\n"); exit(1); }
         FILE *f = fopen(arg1->s, "wb");
         if (!f) { fprintf(stderr, "write_file: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
-        fwrite(arg2->s, 1, arg2->len, f);
-        fclose(f);
+        /* a short write or a failing close (ENOSPC, EIO) halts too — never a silent success */
+        if (fwrite(arg2->s, 1, arg2->len, f) != arg2->len || fclose(f) != 0) {
+            fprintf(stderr, "write_file: cannot write '%s': ", arg1->s); perror(NULL); exit(1);
+        }
         return arg2;
     }
     if (strcmp(name, "write_exec") == 0) {
@@ -640,8 +642,10 @@ static Node *apply_builtin2(const char *name, Node *arg1, Node *arg2) {
         if (arg2->t != N_STR) { fprintf(stderr, "write_exec: content is not a string\n"); exit(1); }
         FILE *f = fopen(arg1->s, "wb");
         if (!f) { fprintf(stderr, "write_exec: cannot open '%s': ", arg1->s); perror(NULL); exit(1); }
-        fwrite(arg2->s, 1, arg2->len, f);
-        fclose(f);
+        /* a short write or a failing close (ENOSPC, EIO) halts too — never a silent success */
+        if (fwrite(arg2->s, 1, arg2->len, f) != arg2->len || fclose(f) != 0) {
+            fprintf(stderr, "write_exec: cannot write '%s': ", arg1->s); perror(NULL); exit(1);
+        }
         chmod(arg1->s, 0755);
         return arg2;
     }
