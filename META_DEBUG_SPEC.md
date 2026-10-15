@@ -24,7 +24,19 @@ language as it actually exists, and are applied in `metadebug.la`:
 3. **Single file.** There is no module system yet, and `DEBUG` must see all
    glyphs in one glyph table, so the whole system lives in `metadebug.la`.
 
-## Current State (read tiny_host.c, eval.la, build.sh to verify)
+## State when this guide was written (2026-06-02) — historical
+
+> **Out of date; kept as the record of where Phase 0 started.** Since then:
+> the module system exists (`import` / `export`, e.g. `stdlib.la` exports
+> `MAP`/`FILTER`/`ALL`/`LIST_FIND`); the host has many more built-ins (among
+> them `chr`, `ord`, `str_len`, `str_at`, `write_exec`, `error`, `typeof` and the
+> native integer and bitwise operators); `eval.la` has 87 glyphs
+> (`grep -c '^glyph ' eval.la`); `build.sh` has 144 `say` stages and 189 `PASS`
+> lines; `metadebug.la` carries the standard-library glyphs and the type layer
+> (`HAS_TYPE`, `TYPECHECK`, `IS_TYPE`); `specpipe.la` pairs each glyph with its
+> tests. Item 3 of the notes above ("no module system yet") is history too:
+> `metadebug.la` stays single-file so `DEBUG` sees one glyph table. Read
+> `tiny_host.c`, `eval.la` and `build.sh` for the current state.
 
 The system currently has:
 - Built-ins: print, copy_self, read_file, write_file, concat, str_head, str_tail, str_eq
