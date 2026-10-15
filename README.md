@@ -355,8 +355,11 @@ vocabulary — the linguistic analogue of `∃(∃) ≡ ∃`.
 
 `build.sh` is the autological criterion. It succeeds only if the kernel speaks
 the Word (`I AM THAT I AM`), replicates byte-identically, every engine agrees,
-each spec-generated module passes its own tests on host *and* native VM, and the
-native compiler reproduces itself. On a clean, green tree it tags the commit
+each spec-generated module passes its own tests on host *and* native VM, and —
+where the Stage 4 check runs — the native compiler reproduces itself. That check
+needs the committed compiler image and at least 12000 MiB available; otherwise
+`build.sh` prints a NOTE and carries on, so a green build does not by itself mean
+the fixed point was checked. On a clean, green tree it tags the commit
 `verified-<date>-<sha>` as a rollback point.
 
 > **Note:** the full suite is thorough and slow (on the order of a couple of
