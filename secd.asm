@@ -1710,9 +1710,9 @@ _start:
 ; loudly via .drm_fail (no display is touched). All scratch lives in drmbuf, a
 ; 64 KiB zero-fill region above the program buffer.
 .bi_drmmode:
-    mov     rax, 2                    ; open("/dev/dri/card0", O_RDWR)
+    mov     rax, 2                    ; open("/dev/dri/card0", O_RDWR|O_CLOEXEC)
     mov     rdi, drm_card
-    mov     rsi, 2
+    mov     rsi, 0x80002              ; the DRM master fd never leaks into a child
     xor     rdx, rdx
     syscall
     test    rax, rax
@@ -2525,13 +2525,15 @@ _start:
     syscall
 
 .bi_pipe:                        ; pipe("!") → "<rfd> <wfd>" (two decimal fds)
-    ; pipe(fds): fds[0]=read end, fds[1]=write end. Both inherited across fork,
-    ; so a parent creates the channel once, forks, and the child writes the end
+    ; pipe(fds): fds[0]=read end, fds[1]=write end. Both inherited across fork
+    ; (but close-on-exec: an execve'd image sees them only via dup2, whose
+    ; target fd is never CLOEXEC), so a parent creates the channel once, forks, and the child writes the end
     ; the parent reads. The two fds are returned as one space-separated string;
     ; the IPC layer splits it. fds land in pathbuf (scratch), then are formatted
     ; into a heap string.
     mov     rdi, pathbuf
-    mov     rax, 22              ; pipe(fds)
+    mov     rsi, 0x80000         ; O_CLOEXEC: kept across fork, closed by execve
+    mov     rax, 293             ; pipe2(fds, O_CLOEXEC)
     syscall
     test    rax, rax
     js      .pipe_fail
@@ -2652,11 +2654,14 @@ _start:
 ; (fds) cross the LA boundary as decimal STRs (desc_atoi/push_dec), and a
 ; bind/connect path is a binary-safe STR copied into a sockaddr_un built in
 ; pathbuf. All return -errno (as a decimal STR) on failure rather than halting,
-; so a program can recognise and handle a dead peer.
+; so a program can recognise and handle a dead peer. Every fd the VM creates
+; (socket, accept, pipe, signalfd, the DRM card) is close-on-exec: fork keeps
+; it, execve drops it; dup2 is the explicit way to hand a fd to a new image.
+; open() passes the caller's flags verbatim (O_CLOEXEC = 524288 is opt-in).
 .bi_socket:                      ; socket("!") → fd of a fresh AF_UNIX stream socket
     mov     rax, 41              ; socket
     mov     rdi, 1               ; AF_UNIX
-    mov     rsi, 1               ; SOCK_STREAM
+    mov     rsi, 0x80001         ; SOCK_STREAM | SOCK_CLOEXEC (no leak across execve)
     xor     rdx, rdx             ; protocol 0
     syscall
     call    push_dec             ; fd, or -errno
@@ -2682,7 +2687,8 @@ _start:
     mov     rdi, rax             ; listening fd
     xor     rsi, rsi             ; addr = NULL (caller's identity not needed)
     xor     rdx, rdx             ; addrlen = NULL
-    mov     rax, 43              ; accept
+    mov     r10, 0x80000         ; SOCK_CLOEXEC: the connection is not inherited by execve
+    mov     rax, 288             ; accept4
     syscall
     call    push_dec             ; new per-connection fd, or -errno
     jmp     .loop
@@ -3232,8 +3238,8 @@ _start:
     mov     rdi, -1              ; fd = -1 → create a new signalfd
     mov     rsi, pathbuf         ; &mask
     mov     rdx, 8               ; sizemask
-    xor     r10, r10             ; flags = 0
-    mov     rax, 289             ; signalfd4
+    mov     r10, 0x80000         ; flags = SFD_CLOEXEC: an execve'd child (e.g.
+    mov     rax, 289             ; signalfd4 — logosinit's shell) never inherits it
     syscall
     call    push_dec             ; fd, or -errno
     jmp     .loop

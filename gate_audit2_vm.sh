@@ -101,8 +101,43 @@ case_vm_tco_comment() {
     else fail "secd.asm: no TCO description found (proved-looked check)"; fi
 }
 
+# ── #129 VM-created fds are close-on-exec ─────────────────────────────────────
+# signalfd / socket / pipe / accept fds leaked into every execve'd child (a
+# shell spawned by logosinit inherited init's signalfd; an IPC worker inherited
+# the listening socket). The child lists its own fds by target. Unfixed: the
+# listing shows anon_inode:[signalfd], socket:, pipe:. Fixed: none of them.
+# dup2 still hands a child a fd on purpose (dup2's target is never CLOEXEC).
+case_vm_cloexec() {
+    printf '#!/bin/sh\nfor f in /proc/$$/fd/*; do readlink "$f"; done | grep -E "signalfd|socket:|pipe:" | sed "s/[0-9]*]$/]/" | sort -u | tr "\\n" " "; echo END\n' > showfds.sh
+    chmod +x showfds.sh
+    cat > t_cloexec.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph P = "gate_cloexec.sock"
+glyph MAIN = (la sfd. (la srv. SEQ(unlink(P))(SEQ(bind(srv)(P))(SEQ(listen(srv))(
+  (la cli. SEQ(connect(cli)(P))((la conn. (la pp. (la pid.
+     IF(str_eq(pid)("0"))(la _. SEQ(execve("./showfds.sh"))(exit("127")))
+       (la _. SEQ(waitpid(pid))(unlink(P))))(fork("!")))(pipe("!")))(accept(srv))))(socket("!"))))))(socket("!")))(signalfd("1024"))
+LAEOF
+    vmrun t_cloexec.la
+    if [ "$RC" = 0 ] && [ "$OUT" = "END|" ]; then pass "VM: signalfd/socket/accept/pipe fds are not inherited across execve"
+    else fail "VM: fds leak into an execve'd child — rc=$RC child sees [$OUT] (want END| only)"; fi
+    # control: dup2 onto a low fd still hands the child that fd (pipe -> fd 5)
+    printf '#!/bin/sh\nreadlink /proc/$$/fd/5 | sed "s/[0-9]*]$/]/"\n' > showfd5.sh; chmod +x showfd5.sh
+    cat > t_dup2.la <<'LAEOF'
+glyph SEQ = la a. la b. b
+glyph IF  = la c. la t. la f. c(t)(f)("!")
+glyph MAIN = (la pp. SEQ(dup2(str_head(pp))("5"))((la pid.
+     IF(str_eq(pid)("0"))(la _. SEQ(execve("./showfd5.sh"))(exit("127")))
+       (la _. waitpid(pid)))(fork("!"))))(pipe("!"))
+LAEOF
+    vmrun t_dup2.la
+    if [ "$RC" = 0 ] && [ "$OUT" = "pipe:[]|" ]; then pass "VM: dup2 still passes a chosen fd to an execve'd child"
+    else fail "VM: dup2 control — rc=$RC out=[$OUT] (want pipe:[]|)"; fi
+}
+
 #CASES-BELOW
 
-CASES="${*:-vm_writefail vm_errno vm_mint vm_tco_comment}"
+CASES="${*:-vm_writefail vm_errno vm_mint vm_tco_comment vm_cloexec}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_vm: all passed"; exit 0; } || { echo "gate_audit2_vm: $FAILS failed"; exit 1; }
