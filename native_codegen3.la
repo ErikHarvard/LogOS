@@ -418,13 +418,17 @@ glyph BETA = Z(la self. la node.
 # ── string-literal collection + pool (after runtime; LITERAL_BASE fixed) ──
 glyph IS_INT_LIT = la node. AND(str_eq(NODE_TAG(node))("APP"))(AND(str_eq(NODE_TAG(APP_F(node)))("VAR"))(AND(str_eq(VAR_NM(APP_F(node)))("str_to_int"))(str_eq(NODE_TAG(APP_A(node)))("STR"))))
 glyph APPEND = Z(la self. la xs. la ys. IF(IS_CONS(xs))(la _. CONS(HD(xs))(self(TL(xs))(ys)))(la _. ys))
-glyph COLLECT = Z(la self. la node.
+# audit2 #110: accumulate onto a tail instead of APPEND(self(f))(self(a)), which
+# re-copied the function side's list at every level of an application chain.
+# Same literals, same order.
+glyph COLLECT_ACC = Z(la self. la node. la k.
     (la tag.
-        IF(str_eq(tag)("STR"))(la _. CONS(STR_V(node))(NIL))(la _.
-        IF(str_eq(tag)("LAM"))(la _. self(LAM_B(node)))(la _.
-        IF(str_eq(tag)("APP"))(la _. IF(IS_INT_LIT(node))(la _. NIL)(la _. APPEND(self(APP_F(node)))(self(APP_A(node)))))(la _.
-        NIL))))
+        IF(str_eq(tag)("STR"))(la _. CONS(STR_V(node))(k))(la _.
+        IF(str_eq(tag)("LAM"))(la _. self(LAM_B(node))(k))(la _.
+        IF(str_eq(tag)("APP"))(la _. IF(IS_INT_LIT(node))(la _. k)(la _. self(APP_F(node))(self(APP_A(node))(k))))(la _.
+        k))))
     (NODE_TAG(node)))
+glyph COLLECT = la node. COLLECT_ACC(node)(NIL)
 glyph FOLDL = Z(la self. la f. la acc. la lst. IF(IS_CONS(lst))(la _. self(f)(f(acc)(HD(lst)))(TL(lst)))(la _. acc))
 glyph HAS_KEY = Z(la self. la k. la map. IF(IS_CONS(map))(la _. IF(str_eq(k)(FST(HD(map))))(la _. TRUE)(la _. self(k)(TL(map))))(la _. FALSE))
 glyph LOOKUP = Z(la self. la k. la map. IF(IS_CONS(map))(la _. IF(str_eq(k)(FST(HD(map))))(la _. SND(HD(map)))(la _. self(k)(TL(map))))(la _. error(concat("native_codegen3: literal not in pool: ")(k))))
