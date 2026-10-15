@@ -49,6 +49,19 @@ chk_psc_syndur() {
     else fail "psc #126: real spec not verified — $(grep -E '^  SYN_DUR: |^RESULT' psc_real.out | tr '\n' '|')"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur}"
+# ── #41 metadebug: a registry name missing from SPEC_TABLE is not autological ─
+# Mutant (the audit's): MAP's registry entry renamed MAPX and broken (returns NIL).
+# Unfixed, GET_SPEC("MAPX") = NIL and ALL over NIL is TRUE: ALL_SPECCED: T.
+chk_metadebug_unspecced() {
+    sed 's/CONS(PAIR("MAP")(MAP))(/CONS(PAIR("MAPX")(la f. la l. NIL))(/' metadebug.la > t_md_mut.la
+    grep -q 'PAIR("MAPX")' t_md_mut.la || { fail "metadebug #41: mutant not planted"; return; }
+    timeout 120 ./tiny_host t_md_mut.la > md_mut.out 2>&1
+    timeout 120 ./tiny_host metadebug.la > md_real.out 2>&1
+    if ! has md_mut.out "ALL_SPECCED: F"; then fail "metadebug #41: unspecced MAPX not caught — $(grep ALL_SPECCED md_mut.out)"
+    elif has md_real.out "ALL_SPECCED: T" && has md_real.out "META_DEBUG: T"; then pass "metadebug #41: an unspecced registry name fails ALL_SPECCED; real registry still T"
+    else fail "metadebug #41: real metadebug not green — $(grep -E 'ALL_SPECCED|META_DEBUG:' md_real.out | tr '\n' '|')"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }
