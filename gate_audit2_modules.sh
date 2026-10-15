@@ -106,6 +106,38 @@ case_mod_cob_witness() {
     else fail "cob beat-ii witness $wn: rc=$RC out=[$(printf '%s' "$OUT" | head -c 120)] want [NOCYC NO COB YES]"; fi
 }
 
-CASES="${*:-mod_font_bounds mod_font_hoist mod_cob_witness}"
+# ── #140 input auto-detection: Name line, case-folded, eventN of the same block ─
+# DETECT was a case-sensitive substring hunt over all of /proc/bus/input/devices
+# for 'keyboard'/'Keyboard' (then 'Mouse'/'mouse'), taking the next "event"
+# anywhere after. Fixed: match each block's `N: Name=` line case-folded, take the
+# eventN from that block's `H: Handlers=` line, and never pick the keyboard's own
+# eventN as the mouse. The probe points PROCDEV at three hand-written device
+# lists and prints KBD_DIGITS|MOU_DIGITS for each. Expected, read off the lists:
+#   A: touchpad (Handlers=mouse0 event7) + "SINO WEALTH USB KEYBOARD" event5
+#      → 5|   (keyboard by case-folded Name; no Name contains "mouse")
+#      unfixed: |7  (no keyboard → "no keyboard found"; mouse from Handlers=mouse0)
+#   B: "Logitech Wireless Keyboard Mouse Combo" event3 + "USB Optical Mouse" event9
+#      → 3|9  unfixed: 3|3 (the combo is both — event3 opened twice)
+#   C: "AT Translated Set 2 keyboard" event2 alone → 2|  (control: same both ways)
+case_mod_input_detect() {
+    printf 'I: Bus=0011 Vendor=0002 Product=0007 Version=01b1\nN: Name="SynPS/2 Synaptics TouchPad"\nP: Phys=isa0060/serio1/input0\nH: Handlers=mouse0 event7\nB: EV=b\n\nI: Bus=0003 Vendor=258a Product=002a Version=0110\nN: Name="SINO WEALTH USB KEYBOARD"\nH: Handlers=sysrq kbd event5 leds\nB: EV=120013\n' > devA
+    printf 'I: Bus=0003\nN: Name="Logitech Wireless Keyboard Mouse Combo"\nH: Handlers=sysrq kbd mouse1 event3\n\nI: Bus=0003\nN: Name="USB Optical Mouse"\nH: Handlers=mouse2 event9\n' > devB
+    printf 'I: Bus=0011\nN: Name="AT Translated Set 2 keyboard"\nH: Handlers=sysrq kbd event2 leds\n' > devC
+    local f d got
+    for f in theourgia_mux_session_live.la theourgia_text_session_live.la; do
+        got=""
+        for d in devA devB devC; do
+            nomain "$f" t_id.la 'glyph MAIN = print(concat(KBD_DIGITS)(concat("|")(MOU_DIGITS)))'
+            sed -i "s|read_file(\"/proc/bus/input/devices\")|read_file(\"$d\")|" t_id.la
+            run t_id.la 60
+            [ "$RC" = 0 ] || OUT="rc$RC:$(printf '%s' "$OUT" | head -c 60)"
+            got="$got $OUT"
+        done
+        if [ "$got" = " 5| 3|9 2|" ]; then pass "$f: keyboard/mouse detected per block, case-folded, no shared eventN (5| 3|9 2|)"
+        else fail "$f input detection: got [${got# }] want [5| 3|9 2|]"; fi
+    done
+}
+
+CASES="${*:-mod_font_bounds mod_font_hoist mod_cob_witness mod_input_detect}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_modules: all passed"; exit 0; } || { echo "gate_audit2_modules: $FAILS failed"; exit 1; }
