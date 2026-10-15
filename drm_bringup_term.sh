@@ -59,11 +59,17 @@ cp "$SRC" logos_source.la
 echo "   VM=$(stat -c%s logos_secd)B  stream=$(stat -c%s logos_program.bin)B"
 
 # ── Preview which keyboard the VM will pick ────────────────────────────────
-# The VM auto-detects from /proc/bus/input/devices (first Name with
-# 'keyboard'/'Keyboard', then the first eventN in its Handlers). It prints its
-# own choice at startup too; this is just a heads-up before we take the screen.
-kbline="$(grep -iB8 'Handlers=.*event' /proc/bus/input/devices 2>/dev/null \
-          | grep -i 'Name=.*keyboard' | head -1 | sed 's/^N: Name=//')"
+# The VM auto-detects from /proc/bus/input/devices: the first device block whose
+# `N: Name=` line contains 'keyboard' in ANY case and whose own `H: Handlers=`
+# line has an eventN (audit2 #140). This preview applies exactly that rule, per
+# block (the old `grep -iB8` could attribute a neighbouring block's Name, and its
+# -i matched names the case-sensitive VM then rejected). The VM prints its own
+# choice at startup too; this is just a heads-up before we take the screen.
+kbline="$(awk 'BEGIN{RS="";FS="\n"} {n="";e=""
+            for(i=1;i<=NF;i++){ if($i ~ /^N: Name=/) n=substr($i,9)
+              if($i ~ /^H: Handlers=/ && match($i,/event[0-9]+/)) e=substr($i,RSTART,RLENGTH) }
+            if(index(tolower(n),"keyboard") && e!=""){ print n" ("e")"; exit } }' \
+          /proc/bus/input/devices 2>/dev/null)"
 echo "   keyboard the VM should auto-detect: ${kbline:-<none found — VM will halt loudly>}"
 
 # ── Arm the restore trap BEFORE stopping anything ──────────────────────────
