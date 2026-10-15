@@ -36,6 +36,19 @@ chk_glyphdag_intern() {
     else fail "glyphdag #37: real spec not verified — $(grep -E '^  INTERN[BU]: |^RESULT' gd_real.out | tr '\n' '|')"; fi
 }
 
-CASES="${*:-glyphdag_intern}"
+# ── #126 psc_spec: SYN_DUR's second test must discriminate ────────────────────
+# Mutant: SYN_DUR = "the second argument" (equals max on (6560,6720) only).
+# Unfixed, test 2 is lt(g(a)(b))(a+b), true for max/min/either/mean: PASS.
+chk_psc_syndur() {
+    sed -e 's/(SRC_SYNDUR)(SYN_DUR)/(SRC_SYNDUR)(la da. la db. db)/' -e 's/("psc.la")/("t_psc_mut.la")/' psc_spec.la > t_psc_mut_spec.la
+    sed -e 's/("psc.la")/("t_psc_real.la")/' psc_spec.la > t_psc_real_spec.la
+    timeout 120 ./tiny_host t_psc_mut_spec.la > psc_mut.out 2>&1
+    timeout 120 ./tiny_host t_psc_real_spec.la > psc_real.out 2>&1
+    if ! has psc_mut.out "  SYN_DUR: FAIL"; then fail "psc #126: SYN_DUR=second-arg mutant not caught — $(grep -E '^  SYN_DUR: |^RESULT' psc_mut.out | tr '\n' '|')"
+    elif has psc_real.out "  SYN_DUR: PASS" && grep -q 'module VERIFIED' psc_real.out; then pass "psc #126: SYN_DUR tests reject a non-max implementation; real SYN_DUR PASSes"
+    else fail "psc #126: real spec not verified — $(grep -E '^  SYN_DUR: |^RESULT' psc_real.out | tr '\n' '|')"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }
