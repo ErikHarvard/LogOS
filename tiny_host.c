@@ -213,7 +213,14 @@ static void lex(void) {
         case '=': P++; curtok = T_EQ;  return;
         case '"': {
             P++;
-            char  *buf = malloc(strlen(P) + 1);
+            /* size the buffer to this literal (scan to the closing quote),
+             * not to the rest of the source: strlen(P) per literal made a file
+             * of L literals cost O(L x n) to lex. */
+            size_t cap = 0;
+            for (const char *q = P; *q && *q != '"'; q++, cap++)
+                if (*q == '\\' && q[1]) q++;
+            char  *buf = malloc(cap + 1);
+            if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
             size_t i = 0;
             while (*P && *P != '"') {
                 char c = *P++;

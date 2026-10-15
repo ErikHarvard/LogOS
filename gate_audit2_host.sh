@@ -60,6 +60,30 @@ case_host_diag() {
     else fail "host_diag: got '$(oneline d1.out)' / '$(oneline d2.out)'"; fi
 }
 
-CASES="${*:-host_selfref host_order host_caps host_diag}"
+# ── #142 lexer malloc(strlen(rest of source)) per string literal ────────────
+# Lex cost of 100k vs 400k string literals: quadratic before (x16 for 4x the
+# literals), linear after (x4). The gate takes the ratio, not a wall-clock bound.
+case_host_lexlit() {
+    local K
+    for K in 100000 400000; do
+        python3 -c "import sys; K=$K; sys.stdout.write('glyph BIG = la f. f' + ''.join('(\"s%d\")' % i for i in range(K)) + '\nglyph MAIN = print(\"parsed\")\n')" > lexlit$K.la
+    done
+    local r; r=$(python3 - <<'PY'
+import subprocess, time
+t = {}
+for K in (100000, 400000):
+    s = time.perf_counter()
+    out = subprocess.run(["timeout", "120", "./tiny_host", "lexlit%d.la" % K], capture_output=True, text=True).stdout
+    t[K] = time.perf_counter() - s
+    if out.strip() != "parsed": print("BADOUT %d %r" % (K, out[:80])); raise SystemExit
+print("%.2f %.2f %.1f" % (t[100000], t[400000], t[400000] / t[100000]))
+PY
+)
+    set -- $r
+    if [ "$1" != BADOUT ] && awk -v x="$3" 'BEGIN{exit !(x < 8)}'; then pass "host_lexlit: 4x literals cost x$3 (${1}s -> ${2}s) — linear"
+    else fail "host_lexlit: 4x literals cost x${3:-?} (${1}s -> ${2:-?}s) — quadratic (want < x8)"; fi
+}
+
+CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_host: all passed"; exit 0; } || { echo "gate_audit2_host: $FAILS failed"; exit 1; }
