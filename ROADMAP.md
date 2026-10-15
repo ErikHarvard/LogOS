@@ -1868,7 +1868,15 @@ Audited against the stated goal — one coherent system replacing Tails/Qubes + 
 ProtonMail + Searx + Invidious + VeraCrypt + Mullvad, with encryption as the medium.
 
 **★★ G1 — ~~NO PATH FROM "ONE HASH" TO "THE OS IS ENCRYPTION"~~ — HALF CLOSED 2026-08-22.**
-The AEAD, KDF and MAC now exist and are RFC-verified on two engines. What remains of G1 is
+The AEAD, KDF and MAC now exist and are RFC-verified on two engines, **on their published vectors
+only — and those vectors never reach input length 55 (mod 64)**, where `sha256.la`'s `PADLEN`
+(`sha256.la:85`, `lt(r)(56)`) pads wrongly: `SHA256` of 55 `a` bytes gives `8dae2213…`, not
+`9f4390f8…` (WITNESSED on kernel-k1's `sha256.la` through `tiny_host` by METANOĒ, 2026-10-15; LOIPON's
+`gate_sha256` run of 2026-10-14 found the same two lengths, 55 and 119, of fourteen). `hmac`/`hkdf`/
+`hmacdrbg` inherit it for any hash input of that length; LOIPON's sentinel census (track-e, 2026-10-14)
+found no gate-executed program reaching it, which is a statement about those gates, not about the code. The
+one-line fix (`lt(r)(57)`) is cloud `3a3d738`, awaiting the General's cherry-pick; not applied here.
+What remains of G1 is
 **entropy on the metal** and **crypto agility** below, plus a signature scheme. Original finding:
 `sha256.la` is one hash. **B1** is key *management*. Between them, nothing is tracked:
 
