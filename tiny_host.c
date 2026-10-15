@@ -1052,6 +1052,15 @@ static void import_pop(void) {
  * then isolated by mangle_privates. */
 static void do_import(const char *path) {
     check_stack();
+    /* The path is taken as written, so a relative one resolves against the
+     * process's current directory, NOT the importing file's -- as on every
+     * .la engine (they read_file the literal path). Say so when it fails. */
+    if (access(path, R_OK) != 0) {
+        fprintf(stderr, "import: cannot open '%s' imported by '%s' (import paths "
+                "resolve against the current directory, not the importer's): ",
+                path, src_file);
+        perror(NULL); exit(1);
+    }
     import_push(path);
     /* save the importer's lexer state — we re-point the lexer at the module */
     const char *sP = P; Tok st = curtok; char *ss = curstr;

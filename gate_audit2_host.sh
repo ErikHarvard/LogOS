@@ -94,6 +94,17 @@ case_host_procread() {
     esac
 }
 
-CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit host_procread}"
+# ── #148 imports resolve against the cwd — the failure must say so ──────────
+case_host_importcwd() {
+    mkdir -p sub
+    printf 'export Q\nglyph Q = "q"\n' > sub/qmod.la
+    printf 'import("qmod.la")\nglyph MAIN = print(Q)\n' > sub/qapp.la
+    timeout 5 ./tiny_host sub/qapp.la > ic.out 2>&1
+    if grep -q "imported by 'sub/qapp.la'" ic.out && grep -q 'current directory' ic.out; then
+        pass "host_importcwd: a failed import names its importer and the cwd rule"
+    else fail "host_importcwd: got '$(oneline ic.out)'"; fi
+}
+
+CASES="${*:-host_selfref host_order host_caps host_diag host_lexlit host_procread host_importcwd}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_host: all passed"; exit 0; } || { echo "gate_audit2_host: $FAILS failed"; exit 1; }

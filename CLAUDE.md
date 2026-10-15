@@ -158,6 +158,14 @@ export NAME1 NAME2 ...        # names this file makes visible to importers
 import("other.la")            # merge other.la's EXPORTED glyphs into this file
 ```
 
+An import path is used **as written**: a relative path resolves against the
+process's **current directory**, not the importing file's directory, on every
+engine (the C host and the `.la` parsers all `read_file` the literal string).
+So programs that import are run from the directory that holds their modules —
+the repo root for everything here; `./tiny_host sub/app.la` cannot find a
+`sub/m.la` imported as `"m.la"` (the host's diagnostic names the importer and
+this rule).
+
 `import("m.la")` parses `m.la` (recursively — nested imports work, each with its
 own export set and saved/restored lexer state) and merges its **exported**
 glyphs into the importing table under their plain names. The module's
