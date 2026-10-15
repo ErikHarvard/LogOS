@@ -82,8 +82,9 @@ glyph KAPPA  = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))
 # evaluating eval.la — realised by the fixed-point rewrite ↻(𝓡)→𝓡 (see REWRITE_MC).
 glyph REVAL  = DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))
 
-# ── The eight self-relations of the Logos (Being & Becoming): the Logos to / about
-# / as / for / by / through / with / from itself. Each is a MODE OF SELF-RELATION,
+# ── The eight self-relations of the Logos (enumerated in Logoscribeologiae, "The
+# Octad of Autological Completion" — not in this repo; Being & Becoming has no such
+# list): the Logos to / about / as / for / by / through / with / from itself. Each is a MODE OF SELF-RELATION,
 # the reflexive turn ↻ of the concept that anchors its computational capability,
 # and a metacursive FIXED POINT — SELFREL(SELFREL) ≡ SELFREL (Criterion 7: the
 # self-addressing address yields the address) — realised by the ↻(SR)→SR rewrite in

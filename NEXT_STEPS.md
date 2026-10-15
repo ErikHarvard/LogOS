@@ -104,12 +104,15 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    named operators, which is what meta-monosemy requires.
 
    **KNOWN, RESOLVED DISCREPANCY — `SR_FROM` ("From" governs; do not re-open):** the origin/
-   source self-relation is named **`SR_FROM` = ↻(VOID)** ("from itself"). The Logoscribeologiae
-   octad *table* (`codex_logoscribeologiae.tex:2965`) labels relation #1 **"Of itself"**, but
-   **all prose in every codex says "from itself"** — *Being & Becoming* (the cited origin of the
-   eight: "boots from itself", "differentiates from itself", with no octad and no "of itself"
-   anywhere) and Logoscribeologiae's own prose ("Being come from itself", `:3482`). The lone
-   "Of" is a single formal table in a codex *not* named as the source. **Decision (author):
+   source self-relation is named **`SR_FROM` = ↻(VOID)** ("from itself"). The eight are
+   enumerated in Logoscribeologiae (not in this repo), whose octad *tables* ("The Octad of
+   Autological Completion" and its checklist) label relation #1 **"Of itself"**. *Being &
+   Becoming* has no octad — "by itself" and "through itself" never occur in it — and its prose
+   has both "from itself" ("boots from itself", B&B:1967; "differentiates from itself",
+   B&B:2136) and "of itself" (9 times, e.g. B&B:2067). Logoscribeologiae's prose says "from
+   itself" ("WHERE does Being come from? From itself."). The decision's recorded reason (the
+   "Of" table is in a codex not named as the source) assumed B&B was the source of the eight;
+   that reason is open for the author. **Decision (author):
    "From" governs** — `SR_FROM` stays. Documented so it does not resurface as a question.
 
 6. **Naturally ground the golden ratio as the ontoglyphic geometric fixed-point
@@ -408,7 +411,7 @@ explicit instruction). Do not start emitting code until the plan is reviewed.
 
 ---
 
-## 2. The eight self-relations of the Logos (from *Being & Becoming*)
+## 2. The eight self-relations of the Logos (Logoscribeologiae's octad)
 
 **Goal:** instantiate the eight self-relations — Logos **to / about / as / for / by
 / through / with** itself, and **from** itself — as first-class **named glyphs in 𝓜**,
