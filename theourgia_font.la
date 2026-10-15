@@ -60,12 +60,22 @@ glyph INDEXOF = Z(la self. la s. la c. la i.
     IF(str_eq(str_head(s))(c))(la _. i)(la _. self(str_tail(s))(c)(add(i)(1)))))
 glyph GLYPH_INDEX = la c. INDEXOF(INDEX)(c)(0)
 # GLYPH_ROW(c)(r) — row-byte r of character c, pulled out of the packed font.
-glyph GLYPH_ROW = la c. la r. ORDI(BYTE_AT(FONTDATA)(add(mul(GLYPH_INDEX(c))(8))(r)))
+# A row outside 0..FH-1 is blank (0): unbounded, it read the neighbouring
+# glyph's bytes (H row 8 = row 0 of I) — audit2 #137.
+glyph GLYPH_ROW = la c. la r.
+    IF(lt(r)(0))(la _. 0)(la _. IF(lt(r)(FH))
+        (la _. ORDI(BYTE_AT(FONTDATA)(add(mul(GLYPH_INDEX(c))(8))(r))))
+        (la _. 0))
 
 # ── Bit test ──
 glyph POW2 = Z(la self. la k. IF(int_eq(k)(0))(la _. 1)(la _. mul(2)(self(sub(k)(1)))))
-# BIT(rowbyte)(col) → is column `col` (0 = leftmost) of this row set?
-glyph BIT = la b. la col. int_eq(mod(div(b)(POW2(col)))(2))(1)
+# BIT(rowbyte)(col) → is column `col` (0 = leftmost) of this row set? A column
+# outside 0..FW-1 is unset: POW2(64) overflows to 0 (div by zero) and a negative
+# col never reached POW2's base case — audit2 #137.
+glyph BIT = la b. la col.
+    IF(lt(col)(0))(la _. FALSE)(la _. IF(lt(col)(FW))
+        (la _. int_eq(mod(div(b)(POW2(col)))(2))(1))
+        (la _. FALSE))
 
 # ── Screen-free self-test: print 'H' row bytes (proves the packed lookup) ──
 glyph SHOW_ROWS = Z(la self. la c. la r.
