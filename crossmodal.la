@@ -4,8 +4,9 @@
 #  ── THE GAP THIS CLOSES ───────────────────────────────────────────────────
 #  sigil.la derives a concept's FORM from its ONF structure. phonym/phonsem
 #  derive the same concept's SOUND from the same ONF structure. build.sh
-#  measures each against the ontology separately — d_𝒪↔d_𝒱 at 0.863 (item 7)
-#  and d_𝒪↔d_𝒫 (item 8) — but NOTHING has ever measured the two modalities
+#  measures sound against the ontology (d_𝒪↔d_𝒫, item 8, phonsem.la); the
+#  visual d_𝒪↔d_𝒱 0.863 (item 7) was measured offline and no code here
+#  recomputes it — but NOTHING has ever measured the two modalities
 #  against EACH OTHER. Two independent derivations from one source have never
 #  been checked for mutual agreement.
 #

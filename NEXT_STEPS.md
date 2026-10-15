@@ -145,7 +145,8 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    inconsistent; no two-term recurrence — metacursion is x²=x; accepted, see #6). (b)
    **Flower of Life does NOT emerge** (concentric rings + arms + corner-marks, not a hexagonal
    packing lattice; not imposed). (c) **`d_𝒪↔d_𝒫` proximity** — feature-distance vs rendered-form
-   Hamming-distance score **0.863**. **METRIC INTERPRETATION (ATT — corrected, read this):** the
+   Hamming-distance score **0.863** (measured offline, FIDELITY.md §1e — no code in the repo
+   computes it and build.sh does not check it, so it is not reproducible here). **METRIC INTERPRETATION (ATT — corrected, read this):** the
    0.863 is **NOT** a measure of ontosemantic alignment. Under B&B's Alignment Theory of Truth,
    at α=1 sign and referent are not *corresponded across a gap* (correlation is a correspondence-
    style statistic) but **identical** — tautological self-recognition — so **alignment = 1.0 BY

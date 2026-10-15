@@ -9,7 +9,7 @@ ATT note in `NEXT_STEPS.md` items 7–8):
 - **Instantiation fidelity**: how faithfully the *derived* form realises that 1.0
   alignment. **Measured, sub-1.0, bounded.** This document characterises it.
 
-Current figures: **visual ≈ 0.863**, **phonetic = 0.71** (this build, `phonsem.la`, onset axis on — §4; was 0.73 vowel-only, but that had a collision: §1d/§4).
+Current figures: **visual ≈ 0.863** (offline, §1e — not computed by any code in the repo), **phonetic = 0.71** (this build, `phonsem.la`, onset axis on — §4; was 0.73 vowel-only, but that had a collision: §1d/§4).
 
 ---
 
@@ -77,7 +77,9 @@ the two views genuinely diverge here.
 ### 1e. Visual analogue (item 7, 0.863)
 Identical construction with `d_form` = Hamming distance between the 32×32 1-bit rendered
 sigils (`topoderive.la`'s `DSIGIL`) in place of `d_𝒫`; `d_𝒪` unchanged. (Computed offline
-for item 7; the phonetic case 1a–1c is the in-build, reproducible reference here.)
+for item 7: no `.la`, `.sh`, `.py` or `.c` file in the repository computes it and `build.sh` does
+not check it, so it cannot be reproduced from the repo or catch a regression. The phonetic case
+1a–1c is the in-build, reproducible reference here.)
 
 ---
 
