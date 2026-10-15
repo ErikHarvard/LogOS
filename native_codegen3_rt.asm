@@ -725,7 +725,9 @@ false_inner:
     ret
 
 ; ── slot 23: rt_init -> build canonical TRUE/FALSE values (empty env) ──
-rt_init:
+;   (audit2 #60: called from the `rt_init` wrapper at EOF, which lowers the
+;   7 MiB stack guard below when RLIMIT_STACK leaves less room.)
+rt_init_body:
     ; GCfix metal-safety: enable the object-start bitmap ONLY at ring 3 (Linux
     ; userspace self-host). At ring 0 (the metal kernel image) the 16 GiB-high
     ; bitmap base is unmapped, so leave BITMAP_BASE=0 (bitmap disabled = old
@@ -2326,3 +2328,89 @@ classidx:
     mov     rax, 60
     mov     rdi, 73
     syscall
+
+; ── audit2 #60: rt_init — the stack guard follows the real stack limit ──
+;   The body sets STACK_LIMIT = STACK_BASE - 7 MiB, which assumes an 8 MiB
+;   stack. Under a smaller RLIMIT_STACK (ulimit -s, containers, LimitSTACK) or a
+;   large argv/env block the OS fault came first: raw SIGSEGV rc 139 instead of
+;   "native: stack overflow" rc 134. On the Linux path only (metal keeps the
+;   body's value and its heap clamp), after the body:
+;     used = top of the stack mapping - STACK_BASE. The top is found from
+;            auxv AT_EXECFN: exec copies the filename to end 9 bytes below the
+;            mapping's page-aligned end, so top = roundup(NUL + 9, 4096).
+;            No AT_EXECFN: assume the worst exec allows, rlim/4 + 64 KiB.
+;     room = rlim_cur - used
+;     span = room - 512 KiB headroom (room > 1 MiB), else room / 2;
+;            STACK_LIMIT is lowered to STACK_BASE - span only when span < 7 MiB.
+;   RLIM_INFINITY or a failed getrlimit keeps 7 MiB, and so does any limit that
+;   leaves >= 7.5 MiB of room — the default 8 MiB stack is unchanged, so the
+;   overflow depth stays the same on every box that has one.
+rt_init:
+rt_init_rlimit:
+    call    rt_init_body
+    cmp     byte [rel METAL_FLAG], 0
+    jnz     .done
+    mov     ax, cs
+    and     ax, 3
+    jz      .done               ; ring 0 = metal: keep the body's guard + clamp
+    sub     rsp, 16
+    mov     rax, 97             ; getrlimit(RLIMIT_STACK, rsp)
+    mov     rdi, 3
+    mov     rsi, rsp
+    syscall
+    mov     r8, [rsp]           ; rlim_cur
+    add     rsp, 16
+    test    rax, rax
+    js      .done
+    cmp     r8, -1              ; RLIM_INFINITY
+    je      .done
+    mov     rsi, [STACK_BASE]   ; = initial rsp -> argc
+    mov     rcx, [rsi]
+    lea     rsi, [rsi + rcx*8 + 16] ; skip argc, argv[], NULL -> envp[0]
+.env:
+    mov     rax, [rsi]
+    add     rsi, 8
+    test    rax, rax
+    jnz     .env                ; rsi -> auxv
+.aux:
+    mov     rax, [rsi]
+    test    rax, rax
+    jz      .noexecfn           ; AT_NULL
+    cmp     rax, 31             ; AT_EXECFN
+    je      .execfn
+    add     rsi, 16
+    jmp     .aux
+.execfn:
+    mov     rdi, [rsi + 8]
+.sl:
+    cmp     byte [rdi], 0
+    je      .sle
+    inc     rdi
+    jmp     .sl
+.sle:
+    add     rdi, 9 + 4095
+    and     rdi, -4096          ; rdi = top of the stack mapping
+    sub     rdi, [STACK_BASE]   ; used
+    jmp     .room
+.noexecfn:
+    mov     rdi, r8
+    shr     rdi, 2
+    add     rdi, 0x10000        ; used <= rlim/4 + 64 KiB
+.room:
+    mov     rcx, r8
+    sub     rcx, rdi            ; room = rlim_cur - used
+    jbe     .done               ; nonsense (no room): leave the body's value
+    cmp     rcx, 0x100000
+    ja      .big
+    shr     rcx, 1              ; tiny stack: fire half-way
+    jmp     .set
+.big:
+    sub     rcx, 0x80000        ; 512 KiB headroom below the guard
+    cmp     rcx, 0x700000
+    jae     .done               ; >= 7 MiB usable: unchanged
+.set:
+    mov     rax, [STACK_BASE]
+    sub     rax, rcx
+    mov     [STACK_LIMIT], rax
+.done:
+    ret
