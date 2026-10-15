@@ -38,7 +38,12 @@
 #  ── THE TWO RELATIONS, NEVER CONFLATED (retained) ──────────────────────
 #  ≡ TRIBAR — ONTOLOGICAL IDENTITY over a being's self-grounded FORM (∃(∃) ≡ ∃).
 #  = YIELDS — COMPUTATIONAL EQUALITY over evaluated VALUE. They disagree:
-#  add(2,3) = 5 yet add(2,3) ≢ 5; TRIBAR ⟹ YIELDS but YIELDS ⇏ TRIBAR.
+#  add(2,3) = 5 yet add(2,3) ≢ 5: YIELDS ⇏ TRIBAR (witnessed). The converse
+#  TRIBAR ⟹ YIELDS is NOT a theorem of this module (audit2 #117): TERM is a free
+#  constructor and TRIBAR ignores VAL, so TERM("B")("1") ≡ TERM("B")("2") while
+#  they yield different values. It holds exactly for TERMs written so that VAL is
+#  a function of GROUND(FORM) — a well-formedness condition on how TERMs are
+#  built, not enforced here (build.sh checks it only on the diagonal a ≡ a).
 #
 #  ── κ MACHINERY IS INLINED, NOT IMPORTED ───────────────────────────────
 #  canon.la has no `export` line and nothing import()s it; modules that walk
@@ -65,7 +70,8 @@ glyph IMPLIES = la a. la b. OR(NOT(a))(b)
 glyph ZC = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 
 # A TERM carries both projections of a being: its FORM (intension — the being's
-# self-disclosure) and its VAL (extension — what it evaluates to).
+# self-disclosure) and its VAL (extension — what it evaluates to). TERM is a FREE
+# constructor: nothing ties val to form (see the ≡ ⟹ = note in the header).
 glyph TERM = la form. la val. la f. f(form)(val)
 glyph FORM = la t. t(la form. la val. form)
 glyph VAL  = la t. t(la form. la val. val)
