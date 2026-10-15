@@ -71,8 +71,33 @@ case_vm_tco_comment() {
     else fail "secd.asm: no TCO description found (proved-looked check)"; fi
 }
 
+# ── #114 SANITIZE: mangled module names use only host-lexable bytes ───────────
+# SANITIZE (eval.la, bytecode.la, parser.la, codegen.la) kept every byte the .la
+# lexer calls an identifier char, so "fz/m-1.la" mangled to __mod_fz/m-1_la__g —
+# a lex error on the C host (identifiers are [A-Za-z0-9_]) once unparsed.
+# Unfixed: __mod_fz/m-1_la__g in all four. Fixed: the injective escape
+# __mod_fz_47_m_45_1_46_la__g (native_codegen3.la's rule), and the C host
+# lexes it.
+case_vm_sanitize() {
+    local f want='__mod_fz_47_m_45_1_46_la__g' out rc
+    for f in eval.la bytecode.la parser.la codegen.la; do
+        { sed '/^glyph MAIN/,$d' "$f"; echo 'glyph MAIN = print(MANGLE("fz/m-1.la")("g"))'; } > t_san.la
+        rc=0; out=$(timeout 120 ./tiny_host t_san.la 2>&1) || rc=$?
+        if [ "$rc" = 0 ] && [ "$out" = "$want" ]; then pass "$f: MANGLE(fz/m-1.la) = $want"
+        else fail "$f: MANGLE(fz/m-1.la) — rc=$rc out=[$out] (want $want)"; fi
+    done
+    printf 'glyph %s = "lexed"\nglyph MAIN = print(%s)\n' "$want" "$want" > t_lex.la
+    rc=0; out=$(timeout 20 ./tiny_host t_lex.la 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ "$out" = lexed ] && pass "host lexes the mangled name" || fail "host cannot lex $want: rc=$rc [$out]"
+    # control: a real import still runs on the VM (codegen.la's mangling) as on the host
+    local h; h=$(timeout 60 ./tiny_host greetapp.la 2>&1)
+    vmrun greetapp.la
+    if [ "$RC" = 0 ] && [ "$OUT" = "$h|" ]; then pass "greetapp import: VM == host ($h)"
+    else fail "greetapp import: VM rc=$RC [$OUT] vs host [$h]"; fi
+}
+
 #CASES-BELOW
 
-CASES="${*:-vm_cloexec vm_tco_comment}"
+CASES="${*:-vm_cloexec vm_tco_comment vm_sanitize}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_vm: all passed"; exit 0; } || { echo "gate_audit2_vm: $FAILS failed"; exit 1; }
