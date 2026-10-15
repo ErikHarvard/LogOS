@@ -53,8 +53,21 @@ case_vm_writefail() {
     else fail "VM: write_file control — rc=$RC out=[$OUT]"; fi
 }
 
+# ── #128 VM pipe/clock_gettime return -errno like every other syscall builtin ──
+# Unfixed: .pipe_fail / .clockgettime_fail hard-code "-1", discarding errno.
+# pipe under `ulimit -n 4` (fds 0-2 open → no room for two more) must be -24
+# (EMFILE); clock_gettime with a bad clockid must be -22 (EINVAL).
+case_vm_errno() {
+    printf 'glyph SEQ = la a. la b. b\nglyph MAIN = SEQ(print(concat("pipe=")(pipe("!"))))(print(concat("clock=")(clock_gettime("99"))))\n' > t_errno.la
+    vmc t_errno.la || { fail "vm_errno: codegen"; return; }
+    # run with ONLY fds 0-2 open (close whatever the harness inherited) and room for one more
+    local out; out=$(timeout 20 bash -c 'exec </dev/null 2>&1; for f in /proc/$$/fd/*; do n=${f##*/}; [ "$n" -gt 2 ] && eval "exec $n>&-" 2>/dev/null; done; ulimit -n 4; exec ./logos_secd' | tr '\n' '|')
+    if [ "$out" = "pipe=-24|clock=-22|" ]; then pass "VM: pipe/clock_gettime failures return -errno (-24, -22)"
+    else fail "VM: pipe/clock_gettime failure values — out=[$out] (want pipe=-24|clock=-22|)"; fi
+}
+
 #CASES-BELOW
 
-CASES="${*:-vm_writefail}"
+CASES="${*:-vm_writefail vm_errno}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_vm: all passed"; exit 0; } || { echo "gate_audit2_vm: $FAILS failed"; exit 1; }

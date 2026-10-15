@@ -6414,7 +6414,7 @@ say "Clock: clock_gettime VM builtin (a time source for logging/scheduling)"
 # clock_gettime(clockid) → "<sec> <nsec>": 0=CLOCK_REALTIME (wall clock),
 # 1=CLOCK_MONOTONIC. Closes the "no time source" Tier-0 gap. Non-deterministic,
 # so we assert SHAPE + magnitude (epoch seconds after 2023) rather than a fixed
-# value, plus that a bad clockid fails loudly as -1 (not a SIGSEGV).
+# value, plus that a bad clockid fails loudly as -errno -22 (not a SIGSEGV).
 cat > /tmp/t_clock.la <<'LAEOF'
 glyph SEQ = la a. la b. b
 glyph MAIN = SEQ(print(clock_gettime("0")))(print(clock_gettime("99")))
@@ -6424,10 +6424,10 @@ ok=1
 printf '%s\n' "$CK" | sed -n 1p | grep -qE '^[0-9]+ [0-9]+$' || { echo "FAIL  clock: realtime not '<sec> <nsec>' ($CK)"; ok=0; }
 CKSEC="$(printf '%s\n' "$CK" | sed -n 1p | cut -d' ' -f1)"
 { [ "${CKSEC:-0}" -gt 1700000000 ] 2>/dev/null; } || { echo "FAIL  clock: epoch seconds implausible ($CKSEC)"; ok=0; }
-[ "$(printf '%s\n' "$CK" | sed -n 2p)" = "-1" ] || { echo "FAIL  clock: bad clockid did not return -1"; ok=0; }
+[ "$(printf '%s\n' "$CK" | sed -n 2p)" = "-22" ] || { echo "FAIL  clock: bad clockid did not return -22 (EINVAL)"; ok=0; }
 rm -f /tmp/t_clock.la
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  clock_gettime: realtime '<sec> <nsec>' (epoch > 2023); bad clockid -> -1, loud (native VM)"
+    echo "PASS  clock_gettime: realtime '<sec> <nsec>' (epoch > 2023); bad clockid -> -22, loud (native VM)"
 else
     exit 1
 fi

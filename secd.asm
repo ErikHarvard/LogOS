@@ -36,6 +36,15 @@
 ;            a real build: fork, dup2 stdout->a file, execv "./tiny_host"
 ;            "kernel.la", waitpid, then read_file the captured output.)
 ;            34 drm_mode 35 present   (DRM/KMS dumb-buffer scanout; VM-only)
+;            36 clock_gettime(clockid) → "<sec> <nsec>"
+;            37 socket 38 bind 39 listen 40 accept 41 connect 42 send
+;            43 recv   (AF_UNIX stream sockets)
+;            44 unlink 45 random 46 mkdir 47 rmdir 48 rename 49 stat
+;            50 chmod 51 lseek 52 kill 53 sigprocmask 54 signalfd
+;            55 getpid 56 reapnb 57 poll
+;            60 band 61 bor 62 bxor 63 bshl 64 bshr 65 bnot 66 str_at
+;            Syscall builtins return the result or -errno as a decimal STR
+;            (read/recv/random return "" on error — see audit2 #70).
 ;
 ;  Build:  nasm -f bin secd.asm -o secd
 ; ═══════════════════════════════════════════════════════════════════
@@ -2543,9 +2552,8 @@ _start:
     add     r12, 16
     add     r15, 16
     jmp     .loop
-.pipe_fail:
-    mov     rax, -1              ; "-1" on failure
-    call    push_dec
+.pipe_fail:                       ; -errno (e.g. -24 EMFILE), like every other
+    call    push_dec             ; syscall builtin
     jmp     .loop
 
 .bi_clockgettime:                ; clock_gettime(clockid) → "<sec> <nsec>"
@@ -2583,8 +2591,7 @@ _start:
     add     r12, 16
     add     r15, 16
     jmp     .loop
-.clockgettime_fail:
-    mov     rax, -1              ; "-1" on failure (e.g. bad clockid)
+.clockgettime_fail:              ; -errno (e.g. -22 EINVAL for a bad clockid)
     call    push_dec
     jmp     .loop
 
