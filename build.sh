@@ -4092,7 +4092,7 @@ say "Theourgia: DRM/KMS scanout builtins (Stage 2, native VM)"
 # theourgia_drm.la). We only run this when a graphical session is active — i.e.
 # a compositor holds master, so the test cannot seize a bare VT's display.
 if [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ]; then
-    if [ -e /dev/dri/card0 ]; then
+    if ls /dev/dri/card[0-7] >/dev/null 2>&1; then   # drm_mode tries card0..card7 (audit2 #130)
         rm -f logos_secd logos_program.bin logos_source.la
         ./tiny_host secd.la >/dev/null 2>&1
         cp theourgia_drm.la logos_source.la
@@ -4115,7 +4115,7 @@ if [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ]; then
             exit 1
         fi
     else
-        echo "SKIP  theourgia drm: no /dev/dri/card0"
+        echo "SKIP  theourgia drm: no /dev/dri/card0..7"
     fi
 else
     echo "SKIP  theourgia drm: no graphical session (won't seize a bare VT's display)"
