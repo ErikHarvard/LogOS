@@ -115,7 +115,7 @@ glyph SPEC_FIND      = CONS(TC(la g. g("y")(ASSOC))("Y"))(NIL)
 glyph SPEC_LENGTH    = CONS(TC(la g. NUM_BARS(g(L3)))("|||"))(NIL)
 glyph SPEC_VONE      = CONS(TC(la g. g("d")(ID)(PAIR(la f. f("ok"))("ok")))("PASS"))(CONS(TC(la g. g("d")(ID)(PAIR(la f. f("x"))("y")))("FAIL: d expected y got x"))(NIL))
 glyph SPEC_VALL      = CONS(TC(la g. LIST_STR(MAP(SND)(g("d")(ID)(CONS(PAIR(la f. f("ok"))("ok"))(NIL)))))("PASS"))(CONS(TC(la g. LIST_STR(MAP(SND)(g("d")(ID)(CONS(PAIR(la f. f("ok"))("y"))(NIL)))))("FAIL: d expected y got ok"))(NIL))
-glyph SPEC_ISAUTO    = CONS(TC(la g. BOOL_STR(g("ID")(ID)))("T"))(CONS(TC(la g. BOOL_STR(g("ID")(BAD_ID)))("F"))(NIL))
+glyph SPEC_ISAUTO    = CONS(TC(la g. BOOL_STR(g("ID")(ID)))("T"))(CONS(TC(la g. BOOL_STR(g("ID")(BAD_ID)))("F"))(CONS(TC(la g. BOOL_STR(g("ZZZ")(ID)))("F"))(NIL)))
 glyph SPEC_DEBUG     = CONS(TC(la g. TRI_STATUS(HEAD(g(CONS(PAIR("ID")(ID))(NIL)))))("PASS"))(CONS(TC(la g. TRI_STATUS(HEAD(g(CONS(PAIR("ID")(BAD_ID))(NIL)))))("FAIL"))(NIL))
 
 # Native-integer builtins (Form g_8, tau_Q; arithmetic is Ontodirection >).
@@ -178,10 +178,14 @@ glyph VERIFY_ONE = la name. la glyph_fn. la test_case.
 glyph VERIFY_ALL = la name. la glyph_fn. la specs.
     MAP(la tc. PAIR(tc)(VERIFY_ONE(name)(glyph_fn)(tc)))(specs)
 
-# Does a glyph pass ALL of its specs? (No spec -> vacuously TRUE.)
+# Does a glyph pass ALL of its specs? No spec -> FALSE: GET_SPEC is keyed by
+# NAME, so a registry entry whose name is missing from SPEC_TABLE (a typo, or an
+# entry added to one list only) would otherwise run zero tests and pass — ALL
+# over NIL is TRUE (audit2 #41). An unspecced glyph is not autological.
 glyph IS_AUTOLOGICAL = la name. la glyph_fn.
-    ALL(la result. str_eq(SND(result))("PASS"))
-        (VERIFY_ALL(name)(glyph_fn)(GET_SPEC(name)))
+    (la spec. IF(IS_NIL(spec))(la _. FALSE)(la _.
+        ALL(la result. str_eq(SND(result))("PASS"))
+            (VERIFY_ALL(name)(glyph_fn)(spec))))(GET_SPEC(name))
 
 # Verify a list of PAIR(name)(glyph_fn); list of TRIPLE(name)(status)(detail).
 glyph DEBUG = la glyph_list.

@@ -129,7 +129,7 @@ glyph PSC_SPEC =
            (TC(la g. g(DEPTH_F)(SYN_INV(LOVE_F)(REC_F))("T")("F"))("F"))))(        # a non-constituent is NOT preserved (real, not trivial)
   CONS(E("SYN_DUR")("⊗ duration: compressed to max(parents), not sum (trusted)")(SRC_SYNDUR)(SYN_DUR)(
         T2L(TC(la g. int_to_str(g(6560)(6720)))("6720"))                          # |Compassion| = max(|Love|,|Recognition|)
-           (TC(la g. lt(g(6560)(6720))(add(6560)(6720))("compressed")("no"))("compressed"))))(  # max < sum: genuine compression
+           (TC(la g. int_to_str(g(6720)(6560)))("6720"))))(                           # order-swapped: still the longer parent (rejects "second argument", min, mean)
   CONS(E("LOVE_F")("Love /u/ formant signature 300,870,2240 (trusted)")(SRC_LOVEF)(LOVE_F)(
         T1L(TC(la g. LREN(g))("300,870,2240,"))))(
   CONS(E("REC_F")("Recognition /i/ formant signature 270,2300,3000 (trusted)")(SRC_RECF)(REC_F)(

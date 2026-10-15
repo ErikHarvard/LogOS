@@ -48,7 +48,14 @@ fi
 
 echo "== building host, VM, and the $SRC stream =="
 [ -x ./tiny_host ] || cc -O2 -o tiny_host tiny_host.c || { echo "tiny_host build failed"; exit 1; }
-nasm -f bin secd.asm -o logos_secd || { echo "nasm failed"; exit 1; }
+# The VM is emitted by secd.la (it embeds the byte-identical VM); nasm is only
+# the drift guard, as in build.sh — a box without nasm still runs (audit2 #113).
+./tiny_host secd.la >/dev/null 2>&1 && [ -s logos_secd ] || { echo "VM emit (./tiny_host secd.la) failed"; exit 1; }
+if command -v nasm >/dev/null 2>&1; then
+  nasm -f bin secd.asm -o logos_secd.nasm && cmp -s logos_secd logos_secd.nasm \
+    || { echo "secd.la's VM differs from nasm -f bin secd.asm (drift)"; rm -f logos_secd.nasm; exit 1; }
+  rm -f logos_secd.nasm
+fi
 chmod +x logos_secd
 cp "$SRC" logos_source.la
 ./tiny_host codegen.la >/dev/null 2>&1 || { echo "codegen failed"; exit 1; }
