@@ -10,7 +10,7 @@ set -u
 REPO=$(cd "$(dirname "$0")" && pwd)
 W=$(mktemp -d "${TMPDIR:-/tmp}/gate_audit2_rem.XXXXXX")
 trap 'rm -rf "$W"' EXIT
-cd "$W"
+cd "$W" || { echo "FAIL  gate: cannot cd to $W"; exit 1; }
 gcc -O2 -o tiny_host "$REPO/tiny_host.c" || { echo "FAIL  gate: cannot build tiny_host"; exit 1; }
 cp "$REPO"/*.la .
 FAILS=0
