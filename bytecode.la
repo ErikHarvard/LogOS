@@ -540,13 +540,17 @@ glyph I_CLOSE = la p. la code.   la ps. la pv. la cl. la ap. cl(p)(code)
 glyph I_APPLY =                  la ps. la pv. la cl. la ap. ap(NIL)
 
 # COMPILE_EXPR(ast) — linearise an AST into a postfix instruction list.
-glyph COMPILE_EXPR = Z(la self. la node.
+# COMPILE_ACC(ast)(k) emits ast's code in front of the tail k (audit2 #110: the
+# APPEND form re-copied the function side's code at every level of an
+# application chain, quadratic in its length). Same instructions, same order.
+glyph COMPILE_ACC = Z(la self. la node. la k.
     node
-        (la name. CONS(I_PUSHV(name))(NIL))
-        (la p. la b. CONS(I_CLOSE(p)(self(b)))(NIL))
-        (la f. la a. APPEND(self(f))(APPEND(self(a))(CONS(I_APPLY)(NIL))))
-        (la val. CONS(I_PUSHS(val))(NIL))
+        (la name. CONS(I_PUSHV(name))(k))
+        (la p. la b. CONS(I_CLOSE(p)(self(b)(NIL)))(k))
+        (la f. la a. self(f)(self(a)(CONS(I_APPLY)(k))))
+        (la val. CONS(I_PUSHS(val))(k))
 )
+glyph COMPILE_EXPR = la node. COMPILE_ACC(node)(NIL)
 
 # Church booleans for the machine: closures whose bodies are PRE-COMPILED
 # instruction lists, written out as literals. These are exactly what
