@@ -329,6 +329,45 @@ SH
     else fail "gc #1: real collector not green (rc=$rrc, out=[$(tr '\n' '|' <<< "$ro")])"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap}"
+# ── #31 (remainder) build.sh Stage 4 gate + regen_selfhost.sh ─────────────────
+# The Stage 4 block (and its helpers) is extracted from build.sh and run under
+# `set -euo pipefail` in a staged directory: SH_MEMINFO/SH_OVERCOMMIT describe the
+# box, the reference image is a fixture. Mutants (the planted defects):
+#  A  a 16 GiB box (MemTotal 16095000 kB, no swap, mode 0) and an image whose
+#     PT_LOAD p_memsz is 17.5 GB (the committed image's own header). Unfixed: the
+#     free-memory gate admits it and the exec fails. Fixed: NOTE skipped, naming p_memsz.
+#  C  an image that exits 0 and writes nothing. Unfixed: "stale reference image".
+#     Fixed: "wrote no native_codegen3_out".
+#  D  regen_selfhost.sh with an image that dies of SIGSEGV. Unfixed: no message.
+# Control B: on a roomy box the same header-only image IS admitted, and its exec
+# failure is reported as an exec failure ("exited"), never as "stale".
+chk_stage4_gate() {
+    { grep -E '^exec 3>&1$|^vmrun\(\) \{' "$REPO/build.sh"; echo 'say() { :; }'
+      awk '/^elf_load_memsz\(\) \{/,/^\}/' "$REPO/build.sh"; awk '/^sh_room\(\) \{/,/^\}/' "$REPO/build.sh"
+      awk '/^say "Native backend Stage 4/{p=1} p{print} p&&/^fi$/{exit}' "$REPO/build.sh"; } | sed 's#/tmp/sh_#./sh_#g' > s4_blk.sh
+    grep -q 'SH_REF=native_codegen3_selfhost.bin' s4_blk.sh || { fail "stage4 #31: cannot extract the Stage 4 block from build.sh"; return; }
+    mkdir -p d31; cp s4_blk.sh native_codegen3.la kernel.la d31/; echo 0 > d31/oc
+    printf 'MemTotal:       16095000 kB\nMemAvailable:   15645000 kB\nSwapTotal:             0 kB\nCommitLimit:     8047500 kB\nCommitted_AS:    1000000 kB\n' > d31/small
+    printf 'MemTotal:      197269000 kB\nMemAvailable:  160000000 kB\nSwapTotal:             0 kB\nCommitLimit:    98634500 kB\nCommitted_AS:    1000000 kB\n' > d31/big
+    head -c 4096 "$REPO/native_codegen3_selfhost.bin" > d31/hdr.bin
+    printf 'int main(void){return 0;}\n' > d31/t0.c; gcc -o d31/t0 d31/t0.c || { fail "stage4 #31: cannot build the exit-0 fixture"; return; }
+    s4() { cp "d31/$1" d31/native_codegen3_selfhost.bin; chmod +x d31/native_codegen3_selfhost.bin
+           (cd d31 && SH_MEMINFO="$PWD/$2" SH_OVERCOMMIT="$PWD/oc" timeout 30 bash -c 'set -euo pipefail; . ./s4_blk.sh; echo reached' 2>&1); }
+    local o rc bad=""
+    o=$(s4 hdr.bin small); rc=$?
+    { [ "$rc" = 0 ] && grep -q '^NOTE  Stage 4 self-host check skipped: .*p_memsz' <<< "$o" && ! grep -q FAIL <<< "$o"; } || bad+=" A-small-box(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    o=$(s4 hdr.bin big); rc=$?
+    { [ "$rc" != 0 ] && grep -q "^FAIL  build.sh:[0-9]*: './sh_cc' exited 139" <<< "$o" && ! grep -q 'stale reference image' <<< "$o"; } || bad+=" B-control(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    o=$(s4 t0 big); rc=$?
+    { [ "$rc" != 0 ] && grep -q 'wrote no native_codegen3_out' <<< "$o" && ! grep -q 'stale reference image' <<< "$o"; } || bad+=" C-no-output(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    mkdir -p d31r; cp "$REPO/regen_selfhost.sh" d31r/; : > d31r/native_codegen3.la
+    printf '#!/bin/bash\nkill -SEGV $$\n' > d31r/native_codegen3_selfhost.bin; chmod +x d31r/native_codegen3_selfhost.bin
+    o=$(timeout 30 bash d31r/regen_selfhost.sh 2>&1); rc=$?
+    { [ "$rc" != 0 ] && grep -q '^regen_selfhost: iter 1 .* exited 139' <<< "$o"; } || bad+=" D-regen(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    if [ -z "$bad" ]; then pass "stage4 #31: the gate skips an image this box cannot map (p_memsz), exec failure and no-output are not reported as 'stale', regen_selfhost.sh names a dead run"
+    else fail "stage4 #31:$bad"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap stage4_gate}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

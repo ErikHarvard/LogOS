@@ -3279,18 +3279,55 @@ rm -f native_codegen3_out native_input.la /tmp/c3_native.out /tmp/c3_host.out /t
 # genesis, not run here. The reference image is regenerated after any
 # native_codegen3.la / native_codegen3_rt.asm change (recipe in STAGE4_STATUS.md), so
 # a stale image fails this check — it doubles as a drift guard binding image to source.
+# ★ GATE ON WHAT THE IMAGE NEEDS (audit2 #31). The old gate looked only at free
+# memory (>= 12000 MiB), but the kernel refuses the exec when the image's PT_LOAD
+# p_memsz exceeds what the overcommit policy allows (mode 0: RAM+swap; dmesg
+# "__vm_enough_memory … not enough memory"). On a 12–16 GiB box the check ran, the
+# exec died rc 139, and the build said "stale reference image". sh_room names the
+# reason the image cannot be mapped here (empty = it can); the exec's own rc is
+# reported by vmrun, and "no output" is told apart from "output differs".
+# SH_MEMINFO / SH_OVERCOMMIT exist so gate_audit2_checks.sh can stage a small box.
+elf_load_memsz() {   # total PT_LOAD p_memsz of the ELF64 file $1, in bytes ("" if not ELF64)
+    local f="$1" phoff phent phnum i off sum=0
+    [ "$(od -An -tx1 -N5 "$f" 2>/dev/null | tr -d ' \n')" = 7f454c4602 ] || return 0
+    phoff=$(od -An -tu8 -j32 -N8 "$f" | tr -d ' \n'); phent=$(od -An -tu2 -j54 -N2 "$f" | tr -d ' \n')
+    phnum=$(od -An -tu2 -j56 -N2 "$f" | tr -d ' \n')
+    for ((i = 0; i < phnum; i++)); do
+        off=$((phoff + i * phent))
+        [ "$(od -An -tu4 -j"$off" -N4 "$f" | tr -d ' \n')" = 1 ] \
+            && sum=$((sum + $(od -An -tu8 -j$((off + 40)) -N8 "$f" | tr -d ' \n')))
+    done
+    echo "$sum"
+}
+sh_room() {          # sh_room <image> -> prints why it cannot be mapped here; nothing if it can
+    local need oc mi have
+    need=$(elf_load_memsz "$1")
+    [ -n "$need" ] || { echo "$1 is not an ELF64 image"; return 0; }
+    oc=$(cat "${SH_OVERCOMMIT:-/proc/sys/vm/overcommit_memory}" 2>/dev/null) || oc=0
+    mi="${SH_MEMINFO:-/proc/meminfo}"
+    case "$oc" in
+      1) return 0 ;;     # always overcommit: any size maps
+      2) have=$(awk '/^CommitLimit:/{l=$2} /^Committed_AS:/{c=$2} END{print (l-c)*1024}' "$mi") ;;
+      *) have=$(awk '/^MemTotal:/{t=$2} /^SwapTotal:/{s=$2} END{print (t+s)*1024}' "$mi") ;;
+    esac
+    [ "$need" -le "${have:-0}" ] || echo "$1 maps $need bytes (PT_LOAD p_memsz) but overcommit mode $oc allows $have here, so the kernel would refuse the exec"
+}
 say "Native backend Stage 4: self-hosting fixed point (native_codegen3 reproduces itself, native==host)"
 SH_REF=native_codegen3_selfhost.bin
 SH_AVAIL=$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')
+SH_WHY=""; [ ! -x "$SH_REF" ] || SH_WHY=$(sh_room "$SH_REF")
 if [ ! -x "$SH_REF" ]; then
     echo "NOTE  Stage 4 self-host check skipped: $SH_REF not present (regenerate it — STAGE4_STATUS.md)"
+elif [ -n "$SH_WHY" ]; then
+    echo "NOTE  Stage 4 self-host check skipped: $SH_WHY (not a verdict on the image)"
 elif [ -z "$SH_AVAIL" ] || [ "$SH_AVAIL" -lt 12000 ]; then
     echo "NOTE  Stage 4 self-host check skipped: needs ~10 GiB free for the self-compile; available=${SH_AVAIL:-?} MiB"
 else
     cp "$SH_REF" /tmp/sh_cc; chmod +x /tmp/sh_cc
     cp native_codegen3.la native_input.la; rm -f native_codegen3_out
     vmrun /tmp/sh_cc >/dev/null 2>&1
-    if [ ! -f native_codegen3_out ] || ! cmp -s native_codegen3_out "$SH_REF"; then
+    [ -f native_codegen3_out ] || { echo "FAIL  native_codegen3 Stage 4: $SH_REF ran (rc 0) but wrote no native_codegen3_out — a broken image or source error, not a stale image"; exit 1; }
+    if ! cmp -s native_codegen3_out "$SH_REF"; then
         echo "FAIL  native_codegen3 Stage 4: $SH_REF is NOT a fixed point of native_codegen3.la — stale reference image; regenerate it after the source change (STAGE4_STATUS.md)"; exit 1
     fi
     cp kernel.la native_input.la; rm -f native_codegen3_out
