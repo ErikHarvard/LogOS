@@ -287,6 +287,48 @@ chk_bare_vm_helpers() {
     else fail "bare #105h: good runner not green (rc=$rc, out=[$(tr '\n' '|' <<< "$o")])"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers}"
+# ── #1 (remainder) build.sh Stage 3b: blob churn (b) and freeze-day #1 (c) need a GC
+# Blocks (b)+(c) and ncg3 are extracted from build.sh and run under its
+# `set -euo pipefail`, with a tiny_host wrapper that compiles for real (once per
+# compiler+program, cached) and, for the mutant, patches the emitted rt_gc to
+# reclaim NOTHING (it only re-arms the GC budget, so allocation just bumps).
+# Unfixed, both run at the 16 GiB HEAP_SIZE, where ~6 GB / ~3.4 GB fit un-collected:
+# the mutant passes. Fixed: they compile at 256 MiB, the mutant halts 'heap
+# exhausted' rc 73 -> FAIL lines; the real collector passes both.
+chk_gc_smallheap() {
+    { awk '/^ncg3 \(\) \{/,/^\}/' "$REPO/build.sh"
+      awk '/^NC3_HEAP=|^# \(b\) blob reclamation/{p=1} p{print} p&&/^rm -f c3_big.txt/{exit}' "$REPO/build.sh"; } \
+        | sed 's#/tmp/c3#c3#g' > gc_blk.sh
+    grep -q '^ncg3 ()' gc_blk.sh && grep -q 'freeze-day #1' gc_blk.sh || { fail "gc #1: cannot extract ncg3 / blocks (b)(c) from build.sh"; return; }
+    local nga; nga=$(sed -n 's/^glyph NEXT_GC_ADDR *= *\([0-9]*\)$/\1/p' native_codegen3.la)
+    [ -n "$nga" ] || { fail "gc #1: NEXT_GC_ADDR not found in native_codegen3.la"; return; }
+    # mov qword [NEXT_GC], 0x400000 ; ret
+    local pat; pat=$(printf '\\x48\\xc7\\x04\\x25\\x%02x\\x%02x\\x%02x\\x%02x\\x00\\x00\\x40\\x00\\xc3' \
+        $((nga & 255)) $((nga >> 8 & 255)) $((nga >> 16 & 255)) $((nga >> 24 & 255)))
+    mkdir -p d1/cache; cp ./*.la d1/; cp gc_blk.sh d1/
+    cat > d1/tiny_host <<SH
+#!/bin/bash
+[ "\$1" = native_input.la ] && exec "$W/tiny_host" "\$@"
+k=\$(cat "\$1" native_input.la | md5sum | cut -c1-32)
+if [ ! -f "cache/\$k" ]; then "$W/tiny_host" "\$@" || exit \$?; cp native_codegen3_out "cache/\$k"; fi
+cp "cache/\$k" native_codegen3_out
+if [ "\$MODE" = mut ]; then   # rt_gc's first three instructions save rax/rbx/rcx to REGDUMP
+    off=\$(od -An -v -tx1 native_codegen3_out | tr -d ' \n' | grep -ob '48890425........48891c25........48890c25' | cut -d: -f1)
+    [ -n "\$off" ] && [ \$((off % 2)) = 0 ] && [ \$(wc -w <<< "\$off") = 1 ] || { echo "rt_gc signature not found once" >&2; exit 99; }
+    printf '$pat' | dd of=native_codegen3_out bs=1 seek=\$((off / 2)) conv=notrunc status=none
+fi
+SH
+    chmod +x d1/tiny_host
+    local mo ro mrc rrc
+    mo=$(cd d1 && MODE=mut timeout 200 bash -c 'set -euo pipefail; ok=1; . ./gc_blk.sh; echo "ok=$ok"' 2>&1); mrc=$?
+    ro=$(cd d1 && MODE=real timeout 200 bash -c 'set -euo pipefail; ok=1; . ./gc_blk.sh; echo "ok=$ok"' 2>&1); rrc=$?
+    if ! grep -q '^FAIL  native_codegen3 Stage 3b: blob-churn' <<< "$mo" || ! grep -q '^FAIL  native_codegen3 freeze-day #1' <<< "$mo" || ! grep -qx 'ok=0' <<< "$mo"; then
+        fail "gc #1: a collector that reclaims nothing passed (b)/(c) (rc=$mrc, out=[$(tr '\n' '|' <<< "$mo")])"
+    elif [ "$rrc" = 0 ] && [ "$ro" = "ok=1" ] && [ ! -e d1/nc3_heap.la ]; then
+        pass "gc #1: blob churn (b) and freeze-day #1 (c) run in a 256 MiB heap — a no-reclaim rt_gc FAILs both (heap exhausted), the real GC passes"
+    else fail "gc #1: real collector not green (rc=$rrc, out=[$(tr '\n' '|' <<< "$ro")])"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

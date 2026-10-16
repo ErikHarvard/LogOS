@@ -41,9 +41,11 @@ run_host() {
 # a wrapper that hid real failures would be far worse than the fragility it
 # guards against. And the retry is ANNOUNCED, so a build that needed one is
 # visibly different from a build that did not.
+# Optional $1 = the compiler source (default native_codegen3.la); Stage 3b passes
+# a small-heap copy of it (nc3_heap) so its GC workloads cannot fit un-collected.
 ncg3 () {
-    local rc
-    ./tiny_host native_codegen3.la >/dev/null 2>&1; rc=$?
+    local rc nc="${1:-native_codegen3.la}"
+    ./tiny_host "$nc" >/dev/null 2>&1; rc=$?
     # ★ RETRY ONLY 137/143 — SIGKILL and SIGTERM, the signals an EXTERNAL killer
     # sends. Not every rc>=128: SIGSEGV/SIGBUS/SIGILL mean the compiler itself
     # broke on its input, which is deterministic, so retrying would mask a real
@@ -51,7 +53,7 @@ ncg3 () {
     # rc>=128 and could not tell those apart.)
     if [ "$rc" = "137" ] || [ "$rc" = "143" ]; then
         echo "NOTE  native_codegen3 compile killed by signal $((rc-128)) — retrying once"
-        ./tiny_host native_codegen3.la >/dev/null 2>&1; rc=$?
+        ./tiny_host "$nc" >/dev/null 2>&1; rc=$?
         if [ "$rc" = "137" ] || [ "$rc" = "143" ]; then
             echo "FAIL  native_codegen3 compile killed by signal $((rc-128)) TWICE — not transient"
         else
@@ -3331,9 +3333,23 @@ glyph MAIN = print(COUNT(10000000)(0))\n' > native_input.la
 ncg3 || { echo "FAIL  native_codegen3 Stage 3b: compile 24B GC-churn"; ok=0; }
 rc=0; timeout 300 ./native_codegen3_out > /tmp/c3gc.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3gc.out)" = "10000000" ]; } || { echo "FAIL  native_codegen3 Stage 3b: 24B tail N=10,000,000 not bounded (rc=$rc out=$(cat /tmp/c3gc.out))"; ok=0; }
+# ★ (b) and (c) are compiled with nc3_heap: native_codegen3.la with HEAP_SIZE
+#   lowered to 256 MiB (audit2 #1, remainder). At the committed 16 GiB heap both
+#   workloads FIT UN-COLLECTED — (b) allocates ~6 GB, (c) ~3.4 GB (each 5 MiB read
+#   is an 8 MiB class blob) — so a collector that reclaims nothing passed them.
+#   MEASURED 2026-10-15 with rt_gc patched to reclaim nothing (it only re-arms the
+#   budget): at 16 GiB (c) printed 'done' rc 0; at 256 MiB (b) and (c) halt
+#   'native: heap exhausted' rc 73. 256 MiB is >=13x below either workload, so
+#   completing here is impossible without reclamation. The real collector
+#   completes both in < 1 s. The sed anchor is checked: if HEAP_SIZE's line moves
+#   the copy would silently keep 16 GiB, so a miss is a FAIL, not a quiet pass.
+NC3_HEAP=268435456
+sed "s/^glyph HEAP_SIZE          = [0-9]*\$/glyph HEAP_SIZE          = $NC3_HEAP/" native_codegen3.la > nc3_heap.la
+grep -qx "glyph HEAP_SIZE          = $NC3_HEAP" nc3_heap.la \
+    || { echo "FAIL  native_codegen3 Stage 3b: cannot lower HEAP_SIZE for (b)/(c) — the 'glyph HEAP_SIZE' line in native_codegen3.la moved; (b)/(c) would run un-collected"; rm -f nc3_heap.la; exit 1; }
 # (b) blob reclamation: a tail loop that builds + discards strings each iter; a
-#     256-char literal materialised + concatenated is ~2 KB of blobs/iter, so
-#     N=2,000,000 churns ~4 GB of blobs that must run in the 1.5 GB heap.
+#     256-char literal materialised + concatenated is ~3 KB of blobs/iter, so
+#     N=2,000,000 churns ~6 GB of blobs that must run in the 256 MiB nc3_heap.
 LIT=$(printf 'x%.0s' $(seq 1 256))
 printf 'glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
@@ -3341,9 +3357,9 @@ glyph IF = la c. la t. la f. c(t)(f)(0)
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph CHURN = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la s. self(sub(n)(1)))(concat("%s")("%s"))))
 glyph MAIN = print(CHURN(2000000))\n' "$LIT" "$LIT" > native_input.la
-ncg3 || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
+ncg3 nc3_heap.la || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
 rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
-{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 not bounded (rc=$rc out=$(cat /tmp/c3bc.out))"; ok=0; }
+{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 did not complete in the 256 MiB heap (rc=$rc out=$(cat /tmp/c3bc.out); rc 73 = heap exhausted: blobs not reclaimed)"; ok=0; }
 # (c) FREEZE-DAY FIX #1 — large-blob GC sweep must not corrupt REGDUMP. A >4 MB
 #     read_file/concat blob has classidx >= 22; the sweep re-buckets it via
 #     FREEBLOB[classidx]. FREEBLOB was sized 22 (idx 0..21), so a >4 MB dead blob
@@ -3352,17 +3368,18 @@ rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
 #     bug since 3b). FREEBLOB is now 32 entries (idx 5..30 cover every blob the 1.5 GB
 #     heap can hold). This tail-discards a 5 MB file (classidx 23) in a loop so the GC
 #     repeatedly sweeps a large DEAD blob; it must complete 'done' and match the host
-#     byte-for-byte (no corruption, no crash).
+#     byte-for-byte (no corruption, no crash). Compiled with nc3_heap (256 MiB): 400
+#     reads = ~3.4 GB, so the sweep this regression needs MUST happen.
 head -c 5242880 < /dev/zero | tr '\0' a > c3_big.txt
 printf 'glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LOOP = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la _. self(sub(n)(1)))(read_file("c3_big.txt"))))
 glyph MAIN = print(LOOP(400))\n' > native_input.la
-ncg3 || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
+ncg3 nc3_heap.la || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
 rc=0; timeout 200 ./native_codegen3_out > /tmp/c3big.out 2>/dev/null || rc=$?
 ./tiny_host native_input.la > /tmp/c3big.host 2>/dev/null
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3big.out)" = "done" ] && cmp -s /tmp/c3big.out /tmp/c3big.host; } || { echo "FAIL  native_codegen3 freeze-day #1: >4 MB blob GC sweep corrupts/diverges (rc=$rc native='$(cat /tmp/c3big.out)' host='$(cat /tmp/c3big.host)')"; ok=0; }
-rm -f c3_big.txt /tmp/c3big.out /tmp/c3big.host
+rm -f c3_big.txt /tmp/c3big.out /tmp/c3big.host nc3_heap.la
 # (a') BOUNDED MEMORY — the assertion (a) cannot make. Peak RSS at 16x the
 #      allocation must not grow: a leak whose trigger tracks the bump frontier
 #      rather than allocation volume makes peak RSS ~ sqrt(allocations), which
@@ -3382,7 +3399,7 @@ if [ "$ok" -eq 1 ]; then
 fi
 rm -f .gcp
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~0.8 GB of dead 24B objects) COMPLETES in the 16 GiB heap (live set ~25/pass via the FREE24 free-list); (a') peak RSS is BOUNDED — 16x the allocation grows it <150% (was ~sqrt(allocations) when the GC trigger tracked the frontier not the volume). (b) blob reclamation: a blob-churn loop at N=2,000,000 COMPLETES in the 16 GiB heap (result 'done'). Bounded peak RSS (a') and the blob loop (b) are impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, dead blob swept every GC) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
+    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~0.8 GB of dead 24B objects) COMPLETES in the 16 GiB heap (live set ~25/pass via the FREE24 free-list); (a') peak RSS is BOUNDED — 16x the allocation grows it <150% (was ~sqrt(allocations) when the GC trigger tracked the frontier not the volume). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~6 GB of blobs) COMPLETES in a 256 MiB heap (result 'done'). Bounded peak RSS (a') and the blob loop (b) are impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, ~3.4 GB through a 256 MiB heap, so dead blobs ARE swept) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
 else
     exit 1
 fi
