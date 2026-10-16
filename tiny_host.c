@@ -41,6 +41,8 @@
 #include <stdint.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
+#include <pthread.h>
 #include <unistd.h>
 
 /* ------------------------------------------------------------------ AST -- */
@@ -77,16 +79,21 @@ static uintptr_t gc_stack_base = 0;       /* highest stack address (set in main)
 static uintptr_t stack_floor = 0;         /* recursion guard: bail below this address */
 
 /* The parser, eval, subst, occurs_free and copy_node recurse on expression
- * depth; a pathologically nested program would otherwise overrun the C stack
- * and SIGSEGV. check_stack() compares the current frame against a floor set
- * 512 KB below the real RLIMIT_STACK, so deep nesting halts loudly instead of
- * faulting. It only fires within that last 512 KB — anything that fits in the
- * stack today still runs, so legitimate (incl. self-hosting) recursion is
- * unaffected; only input that would have crashed is rejected. */
+ * depth AND on run-time (non-tail) recursion depth; a pathologically deep
+ * program would otherwise overrun the C stack and SIGSEGV. check_stack()
+ * compares the current frame against a floor set 512 KB above the bottom of
+ * the stack the interpreter runs on, so deep recursion halts loudly instead of
+ * faulting. That stack is a 256 MiB mmap'd thread stack (see main: lazily
+ * committed, so a shallow program touches only what it uses), which lifts the
+ * host's non-tail ceiling from ~50k frames (8 MiB default stack) to ~1.5M —
+ * past the VM's ~1M-frame dump guard (audit2 #80). If the big stack cannot be
+ * mapped, the host falls back to the process stack, floor 512 KB below
+ * RLIMIT_STACK, as before. */
 static void check_stack(void) {
     char probe;
     if (stack_floor && (uintptr_t)&probe < stack_floor) {
-        fprintf(stderr, "error: expression nesting too deep (C stack guard)\n");
+        fprintf(stderr, "error: recursion too deep — expression nesting or non-tail "
+                        "evaluation depth (host C stack guard)\n");
         exit(1);
     }
 }
@@ -185,6 +192,9 @@ static Tok         curtok;   /* current token kind */
 static char       *curstr;   /* text for T_IDENT / T_STR */
 static size_t      curlen;   /* byte length of T_STR */
 static long        curint;   /* value for T_INT */
+static const char *src_file = "?";  /* file being lexed, for diagnostics */
+static int         src_line = 1;    /* line of P */
+static int         tok_line = 1;    /* line the current token starts on */
 
 /* Identifier characters: ASCII alnum, underscore, and any UTF-8 byte (so
  * Lingua Adamica glyphs like ∃ are first-class names). */
@@ -195,10 +205,11 @@ static int is_ident_char(unsigned char c) {
 static void lex(void) {
     /* skip whitespace and '#' line comments */
     for (;;) {
-        while (*P && isspace((unsigned char)*P)) P++;
+        while (*P && isspace((unsigned char)*P)) { if (*P == '\n') src_line++; P++; }
         if (*P == '#') { while (*P && *P != '\n') P++; continue; }
         break;
     }
+    tok_line = src_line;
 
     if (*P == '\0') { curtok = T_EOF; return; }
 
@@ -209,10 +220,18 @@ static void lex(void) {
         case '=': P++; curtok = T_EQ;  return;
         case '"': {
             P++;
-            char  *buf = malloc(strlen(P) + 1);
+            /* size the buffer to this literal (scan to the closing quote),
+             * not to the rest of the source: strlen(P) per literal made a file
+             * of L literals cost O(L x n) to lex. */
+            size_t cap = 0;
+            for (const char *q = P; *q && *q != '"'; q++, cap++)
+                if (*q == '\\' && q[1]) q++;
+            char  *buf = malloc(cap + 1);
+            if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
             size_t i = 0;
             while (*P && *P != '"') {
                 char c = *P++;
+                if (c == '\n') src_line++;
                 if (c == '\\' && *P) {        /* simple escapes */
                     char e = *P++;
                     switch (e) {
@@ -226,7 +245,7 @@ static void lex(void) {
                 buf[i++] = c;
             }
             if (*P == '"') P++;
-            else { fprintf(stderr, "lex error: unterminated string\n"); exit(1); }
+            else { fprintf(stderr, "%s:%d: lex error: unterminated string\n", src_file, tok_line); exit(1); }
             buf[i] = '\0';
             curstr = buf;
             curlen = i;
@@ -248,7 +267,7 @@ static void lex(void) {
             if (v > (unsigned long long)LONG_MAX) overflow = 1;
             P++;
         }
-        if (overflow) { fprintf(stderr, "lex error: integer literal exceeds LONG_MAX\n"); exit(1); }
+        if (overflow) { fprintf(stderr, "%s:%d: lex error: integer literal exceeds LONG_MAX\n", src_file, tok_line); exit(1); }
         curint = (long)v;
         curtok = T_INT;
         return;
@@ -269,15 +288,15 @@ static void lex(void) {
         return;
     }
 
-    fprintf(stderr, "lex error: unexpected character '%c' (0x%02x)\n",
-            *P, (unsigned char)*P);
+    fprintf(stderr, "%s:%d: lex error: unexpected character '%c' (0x%02x)\n",
+            src_file, tok_line, *P, (unsigned char)*P);
     exit(1);
 }
 
 static void advance(void) { lex(); }
 
 static void expect(Tok t, const char *what) {
-    if (curtok != t) { fprintf(stderr, "parse error: expected %s\n", what); exit(1); }
+    if (curtok != t) { fprintf(stderr, "%s:%d: parse error: expected %s\n", src_file, tok_line, what); exit(1); }
 }
 
 /* -------------------------------------------------------------- parser -- */
@@ -291,7 +310,7 @@ static Node *parse_primary(void) {
     if (curtok == T_STR)   { Node *n = mkstrn(curstr, curlen); advance(); return n; }
     if (curtok == T_INT)   { Node *n = mkint(curint); advance(); return n; }
     if (curtok == T_LP)    { advance(); Node *e = parse_expr(); expect(T_RP, "')'"); advance(); return e; }
-    fprintf(stderr, "parse error: expected a variable, string, or '('\n");
+    fprintf(stderr, "%s:%d: parse error: expected a variable, string, or '('\n", src_file, tok_line);
     exit(1);
 }
 
@@ -329,22 +348,78 @@ static Node *parse_expr(void) {
 
 typedef struct { char *name; Node *body; } Glyph;
 
-static Glyph  glyphs[1024];
-static size_t nglyphs = 0;
+/* Grown on demand: the merged table (every transitive import included) has no
+ * fixed cap, as the .la engines and the VM have none. */
+static Glyph *glyphs = NULL;
+static size_t nglyphs = 0, glyph_cap = 0;
 
 static void add_glyph(const char *name, Node *body) {
-    if (nglyphs >= sizeof glyphs / sizeof glyphs[0]) {
-        fprintf(stderr, "too many glyphs\n"); exit(1);
+    if (nglyphs == glyph_cap) {
+        glyph_cap = glyph_cap ? glyph_cap * 2 : 1024;
+        glyphs = realloc(glyphs, glyph_cap * sizeof *glyphs);
+        if (!glyphs) { fprintf(stderr, "out of memory\n"); exit(1); }
     }
     glyphs[nglyphs].name = strdup(name);
     glyphs[nglyphs].body = body;
     nglyphs++;
 }
 
+/* Name -> table-index hash over the glyph table (audit2 #81). eval's N_VAR
+ * arm looks a name up BEFORE testing builtins (so a glyph shadows a builtin),
+ * so a linear strcmp scan made every builtin reference cost O(nglyphs).
+ * The index keeps the scan's semantics exactly: each slot holds the index of
+ * the FIRST glyph with that name (a later duplicate is never entered), so
+ * first-binding-wins order is unchanged; bodies are read from glyphs[] at
+ * lookup time, so mangle_privates' body rewrites need no index update; a
+ * rename (mangle_privates) marks the index dirty and the next lookup rebuilds
+ * it. This indexes NAMES only — a glyph's body is still re-evaluated at every
+ * reference, as on every engine (no memoisation). */
+static size_t *gidx = NULL;               /* open addressing; slot = glyph index + 1, 0 = empty */
+static size_t gidx_cap = 0;               /* power of two, kept >= 2 * nglyphs */
+static size_t gidx_n = 0;                 /* glyphs[0 .. gidx_n) are entered */
+static int    gidx_dirty = 0;             /* a name changed: rebuild before use */
+
+static size_t gname_hash(const char *s) { /* FNV-1a */
+    size_t h = 1469598103934665603ULL;
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211ULL; }
+    return h;
+}
+
+static void gidx_enter(size_t gi) {       /* enter glyph gi unless its name is already bound */
+    size_t mask = gidx_cap - 1, i = gname_hash(glyphs[gi].name) & mask;
+    for (;;) {
+        size_t e = gidx[i];
+        if (!e) { gidx[i] = gi + 1; return; }
+        if (strcmp(glyphs[e - 1].name, glyphs[gi].name) == 0) return;  /* first wins */
+        i = (i + 1) & mask;
+    }
+}
+
+static void gidx_sync(void) {
+    if (gidx_dirty || gidx_cap < 2 * nglyphs + 2) {   /* (re)build from scratch, in table order */
+        size_t cap = gidx_cap ? gidx_cap : 2048;
+        while (cap < 2 * nglyphs + 2) cap <<= 1;
+        if (cap != gidx_cap) {
+            free(gidx);
+            gidx = malloc(cap * sizeof *gidx);
+            if (!gidx) { fprintf(stderr, "out of memory\n"); exit(1); }
+            gidx_cap = cap;
+        }
+        memset(gidx, 0, gidx_cap * sizeof *gidx);
+        gidx_n = 0; gidx_dirty = 0;
+    }
+    for (; gidx_n < nglyphs; gidx_n++) gidx_enter(gidx_n);   /* appended glyphs, in order */
+}
+
 static Node *lookup_glyph(const char *name) {
-    for (size_t i = 0; i < nglyphs; i++)
-        if (strcmp(glyphs[i].name, name) == 0) return glyphs[i].body;
-    return NULL;
+    gidx_sync();
+    size_t mask = gidx_cap - 1, i = gname_hash(name) & mask;
+    for (;;) {
+        size_t e = gidx[i];
+        if (!e) return NULL;
+        if (strcmp(glyphs[e - 1].name, name) == 0) return glyphs[e - 1].body;
+        i = (i + 1) & mask;
+    }
 }
 
 /* The collector (forward-declared up by new_node). Defined here, after the
@@ -397,12 +472,14 @@ static void gc(void) {
  * glyphs a module makes visible to importers; everything else is private and,
  * at import time, alpha-renamed to a unique name so it neither leaks into the
  * importer's namespace nor collides with the importer's own glyphs. */
-static char  *cur_exports[256];
-static size_t cur_nexports = 0;
+static char **cur_exports = NULL;            /* grown on demand, no fixed cap */
+static size_t cur_nexports = 0, cur_export_cap = 0;
 
 static void add_export(const char *name) {
-    if (cur_nexports >= sizeof cur_exports / sizeof cur_exports[0]) {
-        fprintf(stderr, "too many exports\n"); exit(1);
+    if (cur_nexports == cur_export_cap) {
+        cur_export_cap = cur_export_cap ? cur_export_cap * 2 : 256;
+        cur_exports = realloc(cur_exports, cur_export_cap * sizeof *cur_exports);
+        if (!cur_exports) { fprintf(stderr, "out of memory\n"); exit(1); }
     }
     cur_exports[cur_nexports++] = strdup(name);
 }
@@ -608,14 +685,26 @@ static char *slurp_file(const char *path, size_t *out_len) {
     long len = ftell(f);
     /* freeze-day #12: a non-seekable file (pipe/FIFO/char device) makes fseek/ftell
        fail with len = -1, after which malloc((size_t)-1 + 1) = malloc(0) and
-       fread(SIZE_MAX) overflows the buffer. Halt loudly instead — and the native
-       backend's rt_read_file guards the same lseek failure, so both engines reject
-       a non-seekable read_file identically (exit 1) rather than corrupting memory. */
+       fread(SIZE_MAX) overflowed the buffer. Halt loudly instead -- matching
+       native_codegen3's rt_read_file, which guards the same lseek failure (build.sh
+       freeze-day #12 checks the two agree). The SECD VM does NOT: its read_file
+       is a plain read() and returns a pipe's bytes (audit2 #84, open: which engine
+       is right is a ruling, not a fix). */
     if (len < 0) { fprintf(stderr, "read_file: '%s' is not a seekable file\n", path); exit(1); }
     fseek(f, 0, SEEK_SET);
-    char *buf = malloc((size_t)len + 1);
+    /* ftell is only a size HINT: procfs files report 0 yet have content
+       (audit2 #84 -- read_file("/proc/self/stat") returned ""). Read to EOF. */
+    size_t cap = (size_t)len + 1, got = 0;
+    char *buf = malloc(cap + 1);
     if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
-    size_t got = fread(buf, 1, (size_t)len, f);
+    for (;;) {
+        got += fread(buf + got, 1, cap - got, f);
+        if (got < cap) break;                  /* EOF or error */
+        cap *= 2;
+        buf = realloc(buf, cap + 1);
+        if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
+    }
+    if (ferror(f)) { fprintf(stderr, "read_file: cannot read '%s': ", path); perror(NULL); exit(1); }
     buf[got] = '\0';
     fclose(f);
     if (out_len) *out_len = got;
@@ -745,6 +834,10 @@ static Node *apply_builtin(const char *name, Node *argexpr) {
         if (v->t == N_STR)      { fwrite(v->s, 1, v->len, stdout); putchar('\n'); }
         else if (v->t == N_INT) { printf("%ld\n", v->i); }
         else                    fprintf(stderr, "print: argument is not a string or integer\n");
+        /* stdout is block-buffered under a pipe and stderr is not: flush so a
+         * later diagnostic (error, a halt) lands AFTER this line in a merged
+         * stream, in program order -- as the VM's direct write(2)s do. */
+        fflush(stdout);
         return v;
     }
     if (strcmp(name, "copy_self") == 0) {
@@ -892,7 +985,23 @@ static Node *eval(Node *e) {
 
         case N_VAR: {
             Node *g = lookup_glyph(e->s);
-            if (g)                  return eval(g);
+            if (g) {
+                /* A glyph whose body is a bare name of another glyph is a
+                 * tail jump; a chain of them that never leaves the table is a
+                 * cycle (`glyph A = A`) that would spin forever with no stack
+                 * growth. Any such chain revisits a glyph within nglyphs hops. */
+                size_t hops = 0;
+                while (g->t == N_VAR) {
+                    Node *h = lookup_glyph(g->s);
+                    if (!h) break;
+                    if (++hops > nglyphs) {
+                        fprintf(stderr, "eval error: glyph cycle through '%s'\n", e->s);
+                        exit(1);
+                    }
+                    g = h;
+                }
+                return eval(g);
+            }
             if (is_builtin(e->s))   return e;   /* builtin used as a value */
             fprintf(stderr, "eval error: unbound variable '%s'\n", e->s);
             exit(1);
@@ -955,6 +1064,7 @@ static void mangle_privates(size_t start, size_t end,
             glyphs[j].body = subst(glyphs[j].body, glyphs[i].name, ref);
         free(glyphs[i].name);
         glyphs[i].name = strdup(mangled);
+        gidx_dirty = 1;                                             /* name index is stale */
     }
 }
 
@@ -1002,36 +1112,96 @@ static void import_pop(void) {
  * then isolated by mangle_privates. */
 static void do_import(const char *path) {
     check_stack();
+    /* The path is taken as written, so a relative one resolves against the
+     * process's current directory, NOT the importing file's -- as on every
+     * .la engine (they read_file the literal path). Say so when it fails. */
+    if (access(path, R_OK) != 0) {
+        fprintf(stderr, "import: cannot open '%s' imported by '%s' (import paths "
+                "resolve against the current directory, not the importer's): ",
+                path, src_file);
+        perror(NULL); exit(1);
+    }
     import_push(path);
     /* save the importer's lexer state — we re-point the lexer at the module */
     const char *sP = P; Tok st = curtok; char *ss = curstr;
     size_t sl = curlen; long si = curint;
+    const char *sf = src_file; int sline = src_line, stl = tok_line;
     /* save the importer's export set; the module collects its own */
-    char  *saved_exp[256]; size_t saved_n = cur_nexports;
-    memcpy(saved_exp, cur_exports, saved_n * sizeof *cur_exports);
-    cur_nexports = 0;
+    char **saved_exp = cur_exports; size_t saved_n = cur_nexports, saved_cap = cur_export_cap;
+    cur_exports = NULL; cur_nexports = 0; cur_export_cap = 0;
 
     size_t start = nglyphs;
     char *modsrc = slurp_file(path, NULL);
-    P = modsrc;
+    P = modsrc; src_file = path; src_line = 1;
     advance();
     parse_program();                       /* appends module glyphs; fills cur_exports */
     mangle_privates(start, nglyphs, cur_exports, cur_nexports);
 
     for (size_t i = 0; i < cur_nexports; i++) free(cur_exports[i]);
+    free(cur_exports);
     free(modsrc);
     /* restore importer state */
-    cur_nexports = saved_n;
-    memcpy(cur_exports, saved_exp, saved_n * sizeof *cur_exports);
+    cur_exports = saved_exp; cur_nexports = saved_n; cur_export_cap = saved_cap;
     P = sP; curtok = st; curstr = ss; curlen = sl; curint = si;
+    src_file = sf; src_line = sline; tok_line = stl;
     import_pop();
 }
 
 /* --------------------------------------------------------------- main --- */
 
+/* The whole interpreter (parse + eval) runs here, on whatever stack main
+ * chose; gc_stack_base and stack_floor describe that stack. */
+static const char *run_path;
+static void *run_program(void *unused) {
+    (void)unused;
+    const char *path = run_path;
+    char *src = slurp_file(path, NULL);   /* source is text; NUL-terminated walk is fine */
+    import_push(path);                    /* the program is the root of the import chain */
+    P = src; src_file = path;
+    advance();
+    parse_program();
+
+    Node *main_glyph = lookup_glyph("MAIN");
+    if (!main_glyph) { fprintf(stderr, "no MAIN glyph found in %s\n", path); exit(1); }
+
+    eval(main_glyph);
+    return NULL;
+}
+
+static void *run_on_big_stack(void *unused) {
+    char top;
+    gc_stack_base = (uintptr_t)&top;      /* highest frame of the interpreter's stack */
+    return run_program(unused);
+}
+
+#define HOST_STACK_BYTES ((size_t)1 << 28)   /* 256 MiB, reserved not committed: a runaway recursion halts at ~1.5M frames (heap ~26 KB/frame) instead of exhausting RAM */
+#define HOST_STACK_GUARD ((size_t)64 * 1024) /* PROT_NONE page(s) below it */
+
 int main(int argc, char **argv) {
+    run_path = argc > 1 ? argv[1] : "kernel.la";
+
+    /* Preferred: a 256 MiB thread stack. MAP_NORESERVE + anonymous pages are
+     * committed only when touched, so this costs nothing until the program
+     * recurses; the PROT_NONE guard below it turns a guard miss into SIGSEGV
+     * rather than silent corruption, and check_stack halts 512 KB above it. */
+    void *stk = mmap(NULL, HOST_STACK_BYTES, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_STACK, -1, 0);
+    if (stk != MAP_FAILED) {
+        pthread_attr_t at; pthread_t th;
+        mprotect(stk, HOST_STACK_GUARD, PROT_NONE);
+        stack_floor = (uintptr_t)stk + HOST_STACK_GUARD + 512u * 1024;
+        if (pthread_attr_init(&at) == 0 &&
+            pthread_attr_setstack(&at, stk, HOST_STACK_BYTES) == 0 &&
+            pthread_create(&th, &at, run_on_big_stack, NULL) == 0) {
+            pthread_join(th, NULL);
+            return 0;
+        }
+        munmap(stk, HOST_STACK_BYTES);
+    }
+
+    /* Fallback: the process stack, guard armed 512 KB below RLIMIT_STACK. */
     gc_stack_base = (uintptr_t)&argc;   /* highest app-stack address; roots live below it */
-    {                                   /* arm the recursion guard 512 KB below RLIMIT_STACK */
+    {
         struct rlimit rl;
         size_t usable = 8u * 1024 * 1024;   /* default-stack fallback */
         if (getrlimit(RLIMIT_STACK, &rl) == 0 &&
@@ -1039,17 +1209,6 @@ int main(int argc, char **argv) {
             usable = (size_t)rl.rlim_cur;
         stack_floor = gc_stack_base - (usable - 512u * 1024);
     }
-    const char *path = argc > 1 ? argv[1] : "kernel.la";
-
-    char *src = slurp_file(path, NULL);   /* source is text; NUL-terminated walk is fine */
-    import_push(path);                    /* the program is the root of the import chain */
-    P = src;
-    advance();
-    parse_program();
-
-    Node *main_glyph = lookup_glyph("MAIN");
-    if (!main_glyph) { fprintf(stderr, "no MAIN glyph found in %s\n", path); return 1; }
-
-    eval(main_glyph);
+    run_program(NULL);
     return 0;
 }
