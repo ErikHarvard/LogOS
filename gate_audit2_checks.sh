@@ -441,6 +441,20 @@ chk_python3_dep() {
     else fail "python3 #107:$bad"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap stage4_gate gitignore_scratch python3_dep}"
+# ── #122 (remainder) stale Stage-3a runtime claims in build.sh and the nc3 header
+# A text check (the defect is prose): build.sh must not say codegen3 runs on
+# native_codegen2_rt.asm "REUSED unchanged" or that its heap is an un-GC'd bump,
+# nor that Stage 4 "runs in seconds"; native_codegen3.la's header must open with
+# the current-state note. Unfixed: build.sh has 4 such lines and no note.
+chk_nc3_stale_text() {
+    local hits note
+    hits=$(grep -nE "native_codegen2_rt\.asm (is )?REUSED|heap still un-GC'd|This runs in seconds|576-line" "$REPO/build.sh" | cut -d: -f1 | tr '\n' ' ')
+    note=$(sed -n 2p "$REPO/native_codegen3.la")
+    if [ -n "$hits" ]; then fail "nc3 text #122: build.sh still states the Stage-3a runtime/heap/timing as current at lines: $hits"
+    elif [[ "$note" != *"CURRENT STATE (audit2 #122)"* ]]; then fail "nc3 text #122: native_codegen3.la's header does not open with the current-state note (line 2: $note)"
+    else pass "nc3 text #122: build.sh's Stage-3a/4 text names native_codegen3_rt.asm and the GC'd heap; the nc3 header opens with the current state"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap stage4_gate gitignore_scratch python3_dep nc3_stale_text}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

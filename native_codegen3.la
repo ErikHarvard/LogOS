@@ -1,4 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════
+#  ★ CURRENT STATE (audit2 #122): the header below is the Stage-3a history. Now:
+#  own runtime native_codegen3_rt.asm (GC, stack guard), import/export, chr/ord/
+#  str_len, read_file, copy_self; self-hosts (Stage 4). build.sh is the authority.
 #  native_codegen3.la — Native x86-64 backend, STAGE 3a: TCO. Compiles a
 #  multi-glyph LA program (lambdas, application, variables, the Stage-1
 #  builtins) DIRECTLY to an x86-64 ELF that runs on the carved Stage-2
@@ -40,9 +43,6 @@
 #  (import/export) and chr/ord/str_len are not handled here.
 #
 #  INPUT : native_input.la   OUTPUT : native_codegen3_out (0755 ELF64).
-#  Additive: secd.asm / nativert.asm / native_codegen_rt.asm / native_codegen2*
-#  all UNTOUCHED. A build.sh drift guard checks the embedded runtime == nasm
-#  native_codegen2_rt.asm (3a reuses the Stage-2 runtime verbatim).
 # ═══════════════════════════════════════════════════════════════════
 
 # ── Church / list / pair / option core ─────────────────────────────

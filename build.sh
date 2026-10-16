@@ -3144,11 +3144,10 @@ say "Native backend Stage 3a: TCO — tail recursion runs in bounded native stac
 # Stage 3a = native_codegen2.la + TAIL-CALL OPTIMISATION. A general application in
 # TAIL position emits `pop rbx; jmp rt_apply` instead of `call rt_apply`, so the
 # callee's ret returns straight to OUR caller and a tail-recursive loop runs in
-# BOUNDED native stack. CODEGEN-ONLY change: rt_apply already tail-jumps, so the
-# runtime native_codegen2_rt.asm is REUSED UNCHANGED (drift-guarded below); only the
-# emitted call site differs. The emitted heap is enlarged (memsz only, lazily mapped)
-# so the CPU stack — not the un-GC'd bump heap — is the binding constraint, making TCO
-# observable. Additive: native_codegen2.la + all asm runtimes UNTOUCHED.
+# BOUNDED native stack. When 3a landed it was codegen-only (it reused
+# native_codegen2_rt.asm); since 3b the runtime is native_codegen3_rt.asm (object
+# headers, mark-sweep GC, stack guard), drift-guarded below (audit2 #122). The
+# heap is GC'd; the 3a differential below is about native STACK depth.
 rm -f native_codegen3_out native_input.la
 ok=1
 # Drift guard: the embedded runtime equals nasm -f bin native_codegen3_rt.asm
@@ -3294,7 +3293,7 @@ rc=0; NTERR=$(timeout 120 ./native_codegen3_out 2>&1 >/dev/null) || rc=$?
 # SIGSEGV (rc 139, the pre-3b.4 behaviour).
 { [ "$rc" != "0" ] && [ "$rc" != "139" ] && printf '%s' "$NTERR" | grep -qF "native: stack overflow"; } || { echo "FAIL  native_codegen3: non-tail N=1,000,000 did not halt cleanly via the stack guard (rc=$rc err='$NTERR'; want non-zero, not 139/SIGSEGV, + 'native: stack overflow')"; ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3a: native_codegen3.la adds TCO (tail-position general apply -> pop rbx; jmp rt_apply; runtime native_codegen2_rt.asm REUSED unchanged, drift-guarded); semantics preserved native==host on lambdas/closures/currying + non-tail (FACT(5)=120, REVERSE=edcba) + moderate tail recursion; HEADLINE differential at N=1,000,000 (same compiler/heap/depth) — the TAIL loop COMPLETES in bounded native stack while the matched NON-TAIL recursion halts LOUDLY via the 3b.4 native stack guard (each lambda body checks rsp vs STACK_LIMIT=STACK_BASE-7MiB; below it jumps to rt_stack_overflow -> 'native: stack overflow', exit 134 — a clean diagnostic, NOT a raw SIGSEGV); honest limits: heap still un-GC'd bump (tail loop ultimately heap-bounded until 3b GC); native_codegen2.la + all asm runtimes UNTOUCHED"
+    echo "PASS  native backend Stage 3a: native_codegen3.la adds TCO (tail-position general apply -> pop rbx; jmp rt_apply; runtime native_codegen3_rt.asm, drift-guarded); semantics preserved native==host on lambdas/closures/currying + non-tail (FACT(5)=120, REVERSE=edcba) + moderate tail recursion; HEADLINE differential at N=1,000,000 (same compiler/heap/depth) — the TAIL loop COMPLETES in bounded native stack while the matched NON-TAIL recursion halts LOUDLY via the 3b.4 native stack guard (each lambda body checks rsp vs STACK_LIMIT=STACK_BASE-7MiB; below it jumps to rt_stack_overflow -> 'native: stack overflow', exit 134 — a clean diagnostic, NOT a raw SIGSEGV); the heap is collected by the 3b GC (see Stage 3b)"
 else
     exit 1
 fi
@@ -3302,9 +3301,10 @@ rm -f native_codegen3_out native_input.la /tmp/c3_native.out /tmp/c3_host.out /t
 
 # ── Stage 4: native self-hosting fixed point ──────────────────────────────────
 # The self-hosted compiler image (native_codegen3_selfhost.bin, committed as the
-# reference) compiling native_codegen3.la's OWN 576-line source must reproduce
+# reference) compiling native_codegen3.la's OWN source must reproduce
 # ITSELF byte-for-byte — the fixed point ∃(∃) ≡ ∃ at the compiler level — and must
-# compile kernel.la native==host. This runs in seconds: the reference image (16 GiB
+# compile kernel.la native==host. It takes minutes (each self-compile is ~6 min,
+# per regen_selfhost.sh), not seconds: the reference image (16 GiB
 # heap) bootstraps the next image natively; the ~11h tiny_host seed is the one-time
 # genesis, not run here. The reference image is regenerated after any
 # native_codegen3.la / native_codegen3_rt.asm change (recipe in STAGE4_STATUS.md), so
