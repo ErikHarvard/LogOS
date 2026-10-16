@@ -20,7 +20,9 @@ a declaration of what a glyph must do. They are the same act:
 | type-checking          | `IS_AUTOLOGICAL(name)(glyph)`     | the Law of Admission     |
 | the checker is typed   | `META_DEBUG` (checker checks self)| `C(C) = C` (test iv)     |
 
-So **the type-checker already exists**: it is `IS_AUTOLOGICAL`. What this
+So **the type-checker already exists**: it is `IS_AUTOLOGICAL`. (That is the
+design thesis. As built, `TYPECHECK` is a separate predicate check and does not
+call `IS_AUTOLOGICAL`; see Phase T4.) What this
 document adds is (a) types as first-class predicates, (b) the five type
 constructors as the five modes of combination, and (c) *dependent* types,
 made concrete and checkable by the native integers just added.
@@ -76,7 +78,7 @@ just added make the index concrete and checkable. Canonical examples:
 glyph FIN = la n. la x. AND(NOT(lt(x)(0)))(lt(x)(n))
 
 # Vec n A — a list of exactly n elements, each of type A. Length depends
-# on the value n (checked with native LENGTH', the integer-valued length).
+# on the value n (checked with LEN, the integer-valued list length).
 glyph VEC = la n. la A. la xs.
     IF(IS_LIST(xs))(la _. AND(int_eq(LEN(xs))(n))(ALL(A)(xs)))(la _. FALSE)
 ```
@@ -102,8 +104,8 @@ Implement only after review; each phase mirrors META_DEBUG_SPEC's
 discipline (add to build.sh, confirm prior tests pass, never skip ahead).
 
 **Phase T1 — Types as predicates (Refinement, `⊂`).**
-`HAS_TYPE(A)(x) = A(x)`; base types `IS_INT`, `IS_STR`-via-affordance,
-`IS_BOOL`. Verify: `HAS_TYPE(IS_INT)(42) = TRUE`, `HAS_TYPE(IS_INT)("x") =
+`HAS_TYPE(A)(x) = A(x)`; base types `IS_INT` and `IS_STR` (both ask
+`typeof`), and `IS_BOOL` (T5 below). Verify: `HAS_TYPE(IS_INT)(42) = TRUE`, `HAS_TYPE(IS_INT)("x") =
 FALSE`. *Autological:* `IS_INT` is itself a glyph with a spec; it must pass.
 
 **Phase T2 — The five type constructors (the five modes).**
@@ -113,13 +115,20 @@ applied to itself where meaningful, yields a type (`REC` is the `↻` case).
 
 **Phase T3 — Dependent types (native integers).**
 `FIN`, `VEC`, and one Π-type example. Verify `HAS_TYPE(FIN(5))(3)=TRUE`,
-`HAS_TYPE(FIN(5))(7)=FALSE`, `HAS_TYPE(VEC(3)(IS_STR))(["a","b","c"])=TRUE`.
+`HAS_TYPE(FIN(5))(7)=FALSE`. As built, build.sh checks `VEC(3)(IS_INT)(V3)=T`
+and `VEC(2)(IS_INT)(V3)=F` with `V3 = [1,2,3]`; a `VEC` over `IS_STR` is not
+tested.
 *Autological:* the index arithmetic is the already-autological integer ops.
 
 **Phase T4 — TYPECHECK = autological check.**
 `TYPECHECK(A)(x)` returns `"well-typed"` or a typed error, reusing
-`VERIFY_ONE`'s shape. Fold types into `SPEC_TABLE`: a glyph's type is its
-spec. *Autological:* `TYPECHECK` has a type and type-checks itself.
+`VERIFY_ONE`'s shape. *Autological:* `TYPECHECK` has a type and type-checks
+itself. **As built (not done):** `TYPECHECK` is `IF(A(x))("well-typed")("type
+error")` and never consults `SPEC_TABLE` or `IS_AUTOLOGICAL`; types were not
+folded into `SPEC_TABLE` (it holds sample probes only), and no check compares
+`TYPECHECK` with `IS_AUTOLOGICAL`. build.sh asserts three literal cases:
+`TYPECHECK(IS_INT)(42)`, `TYPECHECK(IS_INT)("x")`, and
+`TYPECHECK(IS_FUN)(TYPECHECK)`.
 
 **Phase T5 — The type-of-types (`↻`, the meta-collapse).**
 `IS_TYPE(A)` — A is a type iff it is a total predicate; operationally,
@@ -137,14 +146,15 @@ This is the `C(C)=C` closure for the type system, the analogue of
 | T1 | "HAS_TYPE accepts inhabitants, rejects non-inhabitants" |
 | T2 | "PROD/SUM/ARROW/REFINE/REC build correct types" |
 | T3 | "FIN/VEC dependent types check against integer indices" |
-| T4 | "TYPECHECK agrees with IS_AUTOLOGICAL on the spec table" |
+| T4 | "TYPECHECK accepts 42 : IS_INT, rejects "x" : IS_INT, and TYPECHECK : IS_FUN" (the planned "TYPECHECK agrees with IS_AUTOLOGICAL on the spec table" was never built) |
 | T5 | "IS_TYPE(IS_TYPE) = TRUE (type-of-types closure)" |
 
 ## Honest Scope
 
 What this design buys:
 - A type discipline with **zero new criterion**: type-checking IS the
-  autological check already implemented.
+  autological check already implemented (the design goal; T4 as built does not
+  yet route `TYPECHECK` through `IS_AUTOLOGICAL`).
 - Dependent types grounded in the native integers, not a separate kernel.
 - Every constructor justified by a mode of combination.
 
@@ -187,5 +197,6 @@ non-admission now.
 Implement T1→T5 in order, after the user approves this design. Each phase
 adds a build.sh assertion and must leave all prior assertions green. The
 type of every new glyph is its spec-table entry (the standing rule from
-META_DEBUG_SPEC applies). Types live in metadebug.la (one glyph table) until
-a module system exists.
+META_DEBUG_SPEC applies). Types live in metadebug.la (one glyph table). A
+module system now exists on every engine, but metadebug.la exports nothing,
+so the types are not importable yet.

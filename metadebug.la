@@ -1,9 +1,9 @@
 # ═════════════════════════════════════════════════════════════════════
 #  metadebug.la — Self-Verifying LogOS (META_DEBUG_SPEC.md)
 #
-#  The meta-debugging architecture, built one phase at a time. Lingua
-#  Adamica has no module system yet, so the whole system lives in this
-#  single file: the standard library, the spec table, and the DEBUG /
+#  The meta-debugging architecture, built one phase at a time. Written
+#  before Lingua Adamica had a module system (it has one now, but this file
+#  exports nothing), so the whole system lives in this single file: the standard library, the spec table, and the DEBUG /
 #  META_DEBUG machinery share one glyph table, so the debugger can see
 #  every glyph it verifies.
 #

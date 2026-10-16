@@ -865,7 +865,7 @@ if [ "$ok" -eq 1 ]; then
     echo "PASS  Type System T1: HAS_TYPE accepts inhabitants, rejects non-inhabitants (types as predicates)"
     echo "PASS  Type System T2: PROD/SUM/ARROW/REFINE/REC build correct types (the five modes); all autological"
     echo "PASS  Type System T3: dependent types FIN n / VEC n A / Pi-type check against integer indices; all autological"
-    echo "PASS  Type System T4: TYPECHECK is the autological check and type-checks itself (well-typed)"
+    echo "PASS  Type System T4: TYPECHECK judges 42/\"x\" against IS_INT and type-checks itself (well-typed); it does not consult SPEC_TABLE/IS_AUTOLOGICAL"
     echo "PASS  Type System T5: IS_TYPE is the type-of-types; IS_TYPE(IS_TYPE)=T closes C(C)=C (well-founded fragment)"
 else
     printf '%s\n' "$OUT"
