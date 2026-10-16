@@ -177,7 +177,8 @@ and the agreement between them (`b_τ ≡ f_τ`, "back-end equals front-end") is
 core invariant the build suite enforces:
 
 1. **The C host** (`tiny_host.c`) — a small reference interpreter. The *only* C
-   in the system; the physics on which everything else stands.
+   the system builds or runs (`archive/` keeps C from the initial commit that
+   nothing builds); the physics on which everything else stands.
 2. **`eval.la`** — a self-hosted evaluator: lexer, parser, and closure-based
    evaluator written in Lingua Adamica. The language interprets itself.
 3. **`RUN_BYTES`** (`bytecode.la`) — a VM executing a flat byte-instruction
@@ -380,7 +381,8 @@ from a bare VT.
 
 | File / area                    | Role |
 | ------------------------------ | ---- |
-| `tiny_host.c`                  | The C host — the only C in the system |
+| `tiny_host.c`                  | The C host — the only C the system builds or runs |
+| `archive/`                     | Files from the initial commit (9d8ed60: C, Python, asm, two `.la` compilers); nothing builds, runs or references them |
 | `kernel.la`                    | The kernel; defines `MAIN`, speaks the Word, replicates |
 | `parser.la`, `eval.la`         | Self-hosted lexer/parser and evaluator |
 | `bytecode.la`                  | `EMIT` / `RUN_BYTES` / `RUN_SM` |
