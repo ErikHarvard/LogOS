@@ -55,8 +55,29 @@ LA
     done
 }
 
+# ── #59 native: applying a non-function exits with the host's code ───────────
+# print("a")("b") prints "a", then applies the STRING "a" to "b". The expected
+# rc is not written here: it is the C host's own rc on the same program
+# (tiny_host.c: "eval error: attempt to apply a non-function", exit 1), and
+# stdout must match too. Unfixed: native_codegen3_rt.asm rt_apply .bad was
+# exit(70). One host compile with native_codegen3.la (~25 s). The emitted binary
+# carries native_codegen3.la's HEAP_SIZE in p_memsz; if the box cannot map it the
+# exec fails (rc 139, no output) — SKIP, not PASS.
+case_nc3_nonfn_rc() {
+    printf 'glyph MAIN = print("a")("b")\n' > t_nonfn.la
+    local hout hrc=0 nout nrc=0
+    hout=$(timeout 20 ./tiny_host t_nonfn.la 2>/dev/null) || hrc=$?
+    cp t_nonfn.la native_input.la; rm -f native_codegen3_out
+    timeout 900 ./tiny_host native_codegen3.la >/dev/null 2>nc3.err || { fail "nc3 non-function: compile failed: $(tail -c 200 nc3.err)"; return; }
+    nout=$(timeout 30 ./native_codegen3_out 2>/dev/null) || nrc=$?
+    if [ "$nrc" = 139 ] && [ -z "$nout" ]; then echo "SKIP  nc3_nonfn_rc: native binary cannot exec here (p_memsz > RAM+swap)"
+    elif [ "$hrc" != 0 ] && [ "$nrc" = "$hrc" ] && [ "$nout" = "$hout" ]; then
+        pass "native_codegen3: applying a non-function exits $nrc, the host's rc (stdout [$nout] == host)"
+    else fail "native_codegen3 non-function: native rc=$nrc out=[$nout] vs host rc=$hrc out=[$hout]"; fi
+}
+
 #CASES-BELOW
 
-CASES="${*:-mangle_once}"
+CASES="${*:-mangle_once nc3_nonfn_rc}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_remainders: all passed"; exit 0; } || { echo "gate_audit2_remainders: $FAILS failed"; exit 1; }
