@@ -76,8 +76,41 @@ case_nc3_nonfn_rc() {
     else fail "native_codegen3 non-function: native rc=$nrc out=[$nout] vs host rc=$hrc out=[$hout]"; fi
 }
 
+# ── #102 autopoiesis: a medium with a trailing newline is read, not halted on ─
+# autopoiesis.la with the fork/execve step replaced by print("BEGET") (so it
+# runs on the host and needs no bundle), run on the C host and on the native VM
+# (codegen.la). Medium "0\n" (what `echo 0 >` writes) — expected, from the
+# program text: "LogOS autopoiesis — generation 0: I AM THAT I AM", "BEGET",
+# rc 0, and the medium rewritten to "1". Medium "3\r\n" (CRLF editor, at the
+# cap) — expected: the generation-3 line, then "LogOS autopoiesis — lineage
+# complete (generation cap reached)", rc 0. Unfixed: the Word is printed across
+# two lines, then str_to_int halts rc 1. Control (passes before and after):
+# a LEADING space " 0" is still malformed and halts non-zero.
+case_autopoiesis_medium() {
+    sed 's/BEGET(copy_self("!"))/print("BEGET")/' autopoiesis.la > t_ap.la
+    grep -q 'print("BEGET")' t_ap.la || { fail "autopoiesis: could not stub BEGET (source changed?)"; return; }
+    ./tiny_host secd.la >/dev/null 2>&1 || { fail "autopoiesis: cannot emit logos_secd"; return; }
+    cp t_ap.la logos_source.la; timeout 120 ./tiny_host codegen.la >/dev/null 2>&1 || { fail "autopoiesis: codegen"; return; }
+    local W0='LogOS autopoiesis — generation 0: I AM THAT I AM' W3='LogOS autopoiesis — generation 3: I AM THAT I AM'
+    local DONE='LogOS autopoiesis — lineage complete (generation cap reached)'
+    local eng out rc
+    for eng in host vm; do
+        run_ap() { if [ "$eng" = host ]; then timeout 20 ./tiny_host t_ap.la; else timeout 20 ./logos_secd; fi; }
+        printf '0\n' > autopoiesis.gen; rc=0; out=$(run_ap 2>&1) || rc=$?
+        if [ "$rc" = 0 ] && [ "$out" = "$W0"$'\n'BEGET ] && [ "$(cat autopoiesis.gen)" = 1 ]; then
+            pass "autopoiesis ($eng): medium \"0\\n\" read as generation 0, bequeaths 1"
+        else fail "autopoiesis ($eng): medium \"0\\n\" — rc=$rc out=[$(tr '\n' '|' <<< "$out")] medium=[$(cat autopoiesis.gen)]"; fi
+        printf '3\r\n' > autopoiesis.gen; rc=0; out=$(run_ap 2>&1) || rc=$?
+        if [ "$rc" = 0 ] && [ "$out" = "$W3"$'\n'"$DONE" ]; then pass "autopoiesis ($eng): medium \"3\\r\\n\" reaches the cap cleanly"
+        else fail "autopoiesis ($eng): medium \"3\\r\\n\" — rc=$rc out=[$(tr '\n' '|' <<< "$out")]"; fi
+        printf ' 0' > autopoiesis.gen; rc=0; out=$(run_ap 2>&1) || rc=$?
+        if [ "$rc" != 0 ]; then pass "autopoiesis ($eng): control — a leading-space medium still halts (rc $rc)"
+        else fail "autopoiesis ($eng): control — leading-space medium accepted: [$(tr '\n' '|' <<< "$out")]"; fi
+    done
+}
+
 #CASES-BELOW
 
-CASES="${*:-mangle_once nc3_nonfn_rc}"
+CASES="${*:-mangle_once nc3_nonfn_rc autopoiesis_medium}"
 for c in $CASES; do "case_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_remainders: all passed"; exit 0; } || { echo "gate_audit2_remainders: $FAILS failed"; exit 1; }

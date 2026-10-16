@@ -18,7 +18,8 @@
 #       child execve that vessel, so the child *becomes* the next generation;
 #       the parent awaits the whole descendant lineage, then rests.
 #
-#  There is NO recursion combinator here. The "loop" is the process lineage
+#  No recursion combinator drives the lineage (the one Z below only trims the
+#  medium's trailing whitespace). The "loop" is the process lineage
 #  itself: each generation is a live process that the previous one begat and
 #  ran. (Honest ≡/= discipline — metalogic.la: each generation is BYTE-IDENTICAL
 #  to its successor via copy_self, a genuine ≡ — ∃(∃) ≡ ∃ holds PER GENERATION;
@@ -43,6 +44,18 @@ glyph IF   = la c. la t. la f. c(t)(f)("!")
 glyph WORD = "I AM THAT I AM"
 glyph CAP  = "3"                 # last generation that begets; the lineage runs 0..CAP
 
+# RTRIM(s) — s without trailing whitespace (space, tab, CR, LF). The medium is
+# read raw and str_to_int is strict, so a medium written the natural way
+# (`echo 0 > autopoiesis.gen`, an editor: "0\n") spoke a two-line Word and then
+# halted "not a decimal integer" (audit2 #102). Leading or inner bytes are left
+# alone, so a genuinely malformed medium still halts loudly in str_to_int.
+glyph TRUE  = la t. la f. t
+glyph Z     = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
+glyph IS_WS = la c. str_eq(c)(" ")(TRUE)(str_eq(c)("\t")(TRUE)(str_eq(c)(chr("13"))(TRUE)(str_eq(c)("\n"))))
+glyph RTRIM = Z(la self. la s. IF(str_eq(s)(""))(la _. "")(la _.
+    (la h. (la r. IF(str_eq(r)(""))(la _. IF(IS_WS(h))(la _. "")(la _. h))(la _. concat(h)(r)))
+        (self(str_tail(s))))(str_head(s))))
+
 # SPEAK(g) — this generation announces itself speaking the Word.
 glyph SPEAK = la g.
     print(concat(concat("LogOS autopoiesis — generation ")(g))(concat(": ")(WORD)))
@@ -57,7 +70,8 @@ glyph BEGET = la succ.
         (la _. SEQ(waitpid(pid))(exit("0"))))
     (fork("!"))
 
-# MAIN — the autopoietic act. Read my generation from the medium, speak, and
+# MAIN — the autopoietic act. Read my generation from the medium (trailing
+# whitespace trimmed), speak, and
 # (until the cap) bequeath the next generation and run my own successor.
 glyph MAIN = (la g.
     SEQ(SPEAK(g))
@@ -67,4 +81,4 @@ glyph MAIN = (la g.
                   (BEGET(copy_self("!"))))
            (la _.
                print("LogOS autopoiesis — lineage complete (generation cap reached)"))))
-  (read_file("autopoiesis.gen"))
+  (RTRIM(read_file("autopoiesis.gen")))
