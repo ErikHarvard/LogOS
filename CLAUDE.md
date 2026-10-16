@@ -656,16 +656,18 @@ lets the system generate a *native* vessel from source.
 
 ### LogosInit & process supervision (`logosinit.la`)
 
-**VM builtin ids** (the authoritative table is `secd.asm`'s header): 0–33 the core
+**VM builtin ids** (the authoritative list is `secd.asm`'s builtin name table and
+dispatch; its header comment lists only 0–35, 58 and 59 until audit2 #128 lands): 0–33 the core
 and process builtins (`print` … `str_len`), 34 `drm_mode`, 35 `present`,
 36 `clock_gettime`, 37–43 the AF_UNIX socket layer (`socket`, `bind`, `listen`,
 `accept`, `connect`, `send`, `recv`), 44 `unlink`, 45 `random`, 46–51 the filesystem
 layer (`mkdir`, `rmdir`, `rename`, `stat`, `chmod`, `lseek`), 52–56 `kill`,
 `sigprocmask`, `signalfd`, `getpid`, `reapnb`, 57 `poll`, 58 `dup2`, 59 `execv`,
-60–66 `band`, `bor`, `bxor`, `bshl`, `bshr`, `bnot`, `str_at`. Every syscall builtin
-returns its result or `-errno` as a decimal string — `pipe` and `clock_gettime`
-included (a pipe under EMFILE gives `-24`, a bad clockid `-22`); `read`, `recv` and
-`random` return `""` on error instead (audit2 #70). `clock_gettime(clockid)` returns
+60–66 `band`, `bor`, `bxor`, `bshl`, `bshr`, `bnot`, `str_at`. Syscall builtins
+return their result or `-errno` as a decimal string, except `pipe` and
+`clock_gettime`, which return `-1` on any failure (audit2 #128 would make them
+`-errno`; it is held for the errors ruling E3); `read`, `recv` and `random` return
+`""` on error instead (audit2 #70). `clock_gettime(clockid)` returns
 `"<sec> <nsec>"` (clockid `0` = REALTIME wall clock, `1` = MONOTONIC).
 
 **File descriptors and exec.** Every fd the VM itself creates is **close-on-exec**:
