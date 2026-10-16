@@ -368,6 +368,48 @@ chk_stage4_gate() {
     else fail "stage4 #31:$bad"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap stage4_gate}"
+# ── #87 (remainder) build.sh scratch outputs: ignored, and removed on any exit ──
+# (a) The outputs are DERIVED from build.sh's text (redirection, -o, cp/mv and tee
+#     targets, minus comments, absolute paths and $VARs), never pasted: each one
+#     that git does not track must be matched by .gitignore (checked in a scratch
+#     repo holding only $REPO/.gitignore). Unfixed: 40 such outputs are unignored.
+#     NOT_FILES are this scan's known false matches — each sits inside a quoted
+#     string or an awk program (">0", ">ok!", "formants>50x-control", ">2-parent"
+#     ...); a real new output is still caught, a new false match fails loudly.
+# (b) build.sh's EXIT trap is extracted and run under `set -euo pipefail` with
+#     every name in BUILD_SCRATCH planted; a stage then exits 1. Unfixed (no
+#     trap): the files stay. Fixed: all removed, and a "stopped with rc=1" line.
+chk_gitignore_scratch() {
+    local NOT_FILES=' +)$e( 0 1 4 2023 ok 2-parent 50x-control ' f bad="" miss="" trk
+    command -v git >/dev/null || { echo "SKIP  gitignore #87: git not installed"; return; }
+    trk=$(git -C "$REPO" ls-files 2>/dev/null) || { fail "gitignore #87: $REPO is not a git checkout"; return; }
+    rm -rf d87; mkdir d87; git -C d87 init -q; cp "$REPO/.gitignore" d87/
+    sed 's/[[:space:]]#.*$//' "$REPO/build.sh" | grep -v '^[[:space:]]*#' > b87.txt
+    { grep -oE '(^|[^0-9&<>-])[12]?>>?[[:space:]]*[A-Za-z0-9_.][A-Za-z0-9_./-]*' b87.txt | sed -E 's/.*>[[:space:]]*//'
+      grep -oE '(^|[[:space:]])-o[[:space:]]+[A-Za-z0-9_.][A-Za-z0-9_./-]*' b87.txt | awk '{print $2}'
+      grep -oE '(^|[;&|{(]|then|do)[[:space:]]*(cp|mv)( -[a-z]+)? [^;&|]*' b87.txt | awk '{print $NF}'
+      grep -oE 'tee( -a)? [A-Za-z0-9_.][A-Za-z0-9_./-]*' b87.txt | awk '{print $NF}'
+    } | grep -vE '^(/|\$|&|\.$|\.\.)|>' | sed 's#^\./##' | sort -u > cand87.txt
+    [ "$(wc -l < cand87.txt)" -gt 50 ] || { fail "gitignore #87: the output scan found only $(wc -l < cand87.txt) names — the scan is broken, not the tree"; return; }
+    while IFS= read -r f; do
+        case "$NOT_FILES" in *" $f "*) continue ;; esac
+        grep -qxF -- "$f" <<< "$trk" && continue
+        git -C d87 check-ignore -q --no-index -- "$f" || miss+=" $f"
+    done < cand87.txt
+    [ -z "$miss" ] || bad+=" unignored build.sh outputs:$miss"
+    awk '/^BUILD_SCRATCH="/,/"$/' "$REPO/build.sh" > trap87.sh
+    awk '/^build_exit\(\) \{/,/^\}/' "$REPO/build.sh" >> trap87.sh; grep -E '^trap build_exit EXIT$' "$REPO/build.sh" >> trap87.sh
+    local names o
+    names=$(bash -c '. ./trap87.sh 2>/dev/null; trap - EXIT; echo $BUILD_SCRATCH')
+    [ -n "$names" ] || names="c3_big.txt sigil_vm.txt td_vm.out vm2 logos_kernel_app"   # unfixed: plant the audit's own examples
+    mkdir -p d87t; (cd d87t && for f in $names; do : > "$f"; done)
+    o=$(cd d87t && timeout 20 bash -c 'set -euo pipefail; exec 3>&1; . ../trap87.sh; false' 2>&1)
+    left=$(cd d87t && ls -A); [ -z "$left" ] || bad+=" after a failed stage these remain: $(tr '\n' ' ' <<< "$left")"
+    grep -q '^build.sh: stopped with rc=1' <<< "$o" || bad+=" no 'stopped with rc=1' line [$(tr '\n' '|' <<< "$o")]"
+    if [ -z "$bad" ]; then pass "gitignore #87: every untracked output build.sh writes ($(wc -l < cand87.txt) names scanned) is ignored; a failed stage leaves none of the $(wc -w <<< "$names") scratch files behind"
+    else fail "gitignore #87:$bad"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap stage4_gate gitignore_scratch}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

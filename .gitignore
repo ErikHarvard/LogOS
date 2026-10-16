@@ -201,3 +201,57 @@ vm_seed
 # Track A's local asm-gate scratch (per-test .out captures). Referenced by
 # nothing in the tree; it is working state, not source.
 .asmgate_local/
+# ── build.sh scratch outputs (audit2 #87) ─────────────────────────────────
+# Each is written into the repo dir by a build.sh stage (or a module a stage
+# runs) and removed at that stage's end on success. A failed stage left them
+# untracked and unignored, so the next green run's `git status --porcelain`
+# auto-tag check saw a dirty tree. List MEASURED from build.sh at 60dea85+ by
+# scanning its redirection / -o / cp / mv / tee targets and the write_file
+# targets of the modules it runs, then keeping those `git check-ignore` missed.
+# build.sh's EXIT trap removes the same list (BUILD_SCRATCH).
+/acl_host.out
+/arcd_host.out
+/arcd_vm.out
+/arch_host.out
+/arch_vm.out
+/c3_big.txt
+/cob_host.out
+/cob_vm.out
+/dyad_host.out
+/dyad_vm.out
+/fdm9.la
+/fdmA.la
+/fdmA_la
+/.gcp
+/.l3_parserlib.la
+/.l3_run.la
+/.ladder_vm.out
+/logos_kernel_app
+/meta_host.out
+/meta_vm.out
+/mono_combined.la
+/mono_host.out
+/mono_vm.out
+/nc3_heap.la
+/obsc.out
+/onf_host.out
+/onf_vm.out
+/phonsem_vm.out
+/phonym_host.out
+/phonym_vm.out
+/.prop_ill.la
+/.prop_ok.la
+/.rt_run.la
+/seal_host.out
+/seal_vm.out
+/sigil_host.txt
+/sigil_vm.txt
+/td_host.out
+/td_vm.out
+/vm2
+# written by selfext2/2b/4/6.la when gate_selfext*.sh runs them in the repo dir
+/sx2_child.la
+/sx2_parent.la
+/sx4_organ.la
+/sx6_organ.la
+/.sx2b_gen

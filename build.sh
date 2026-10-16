@@ -18,6 +18,27 @@ say() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 exec 3>&1
 vmrun() { local rc=0; "$@" || rc=$?; [ "$rc" = 0 ] || { echo "FAIL  build.sh:${BASH_LINENO[0]}: '$*' exited $rc" >&3; exit 1; }; }
 
+# ── scratch outputs: removed on ANY exit (audit2 #87) ──
+# Every stage below rm -f's its own scratch at its end — on SUCCESS. A stage that
+# exits 1 (or dies under set -e) left them behind as untracked files, and the next
+# green run's auto-tag check (`git status --porcelain`) then refused to tag. The
+# same list is in .gitignore; this trap also tidies the tree. Literal names only.
+BUILD_SCRATCH="acl_host.out arcd_host.out arcd_vm.out arch_host.out arch_vm.out
+ c3_big.txt cob_host.out cob_vm.out dyad_host.out dyad_vm.out fdm9.la fdmA.la fdmA_la
+ .gcp .l3_parserlib.la .l3_run.la .ladder_vm.out logos_kernel_app meta_host.out
+ meta_vm.out mono_combined.la mono_host.out mono_vm.out nc3_heap.la obsc.out
+ onf_host.out onf_vm.out phonsem_host.out phonsem_vm.out phonym_host.out phonym_vm.out
+ .prop_ill.la .prop_ok.la .rt_run.la seal_host.out seal_vm.out sigil_host.txt
+ sigil_vm.txt td_host.out td_vm.out typed_bad.la typed_badtype.la vm2 vm_seed
+ sx2_child.la sx2_parent.la sx4_organ.la sx6_organ.la .sx2b_gen"
+build_exit() {
+    local rc=$?
+    # shellcheck disable=SC2086  # word-splitting the literal list is intended
+    rm -f -- $BUILD_SCRATCH
+    [ "$rc" = 0 ] || echo "build.sh: stopped with rc=$rc (scratch outputs removed)" >&3
+}
+trap build_exit EXIT
+
 # Run a host on kernel.la. Captures stdout in RUN_OUT and the replicated
 # child's path (parsed from copy_self's stderr line) in RUN_CHILD.
 run_host() {
