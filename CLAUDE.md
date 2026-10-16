@@ -1813,10 +1813,12 @@ or deep non-tail evaluation halts with `error: recursion too deep — expression
 nesting or non-tail evaluation depth (host C stack guard)`, armed 512 KB above
 the bottom of the stack the interpreter runs on, so it fires only where the C
 stack (parser / `eval` / `subst` / `occurs_free` / `copy_node`) would otherwise
-overflow. That stack is a 1 GiB lazily-committed mmap'd thread stack (audit2
+overflow. That stack is a 256 MiB lazily-committed mmap'd thread stack (audit2
 #80): the host's non-tail ceiling was ~50k frames on the 8 MiB default stack,
-1/20 of the VM's ~1M-frame dump; it is now several million frames (SUM(100000)
-runs on both). If the 1 GiB map fails, the host falls back to the process stack
+1/20 of the VM's ~1M-frame dump; it is now ~1.5M frames (SUM(100000) runs on
+both). 256 MiB, not more: a runaway recursion costs ~26 KB of heap per frame, so
+a bigger stack would let it exhaust RAM before the guard fires. If the 256 MiB
+map fails, the host falls back to the process stack
 with the guard 512 KB below `RLIMIT_STACK`, and the old ~50k ceiling returns.
 These join the pre-existing `secd: heap exhausted` / `secd: stack overflow` /
 `secd: path too long` guards, so no engine now fails silently on bad input.
