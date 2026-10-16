@@ -88,12 +88,17 @@ glyph B1_ARMS = GE1(FT_BR(FCOB))
 glyph B1_VOID = HAS(FT_LV(FCOB))("VOID")
 glyph BEAT1   = AND(B1_ARMS)(B1_VOID)
 # (ii) recognition-collapse / the Return: a central closed LOOP is drawn
-#      (cycles ≥ 1, witnessed by the centre pixel) AND the ↻(BEING)→SELF collapse
-#      mechanism is real and operative (the control canonicalizes to SELF).
+#      (cycles ≥ 1, witnessed by a pixel ONLY the loop inks) AND the ↻(BEING)→SELF
+#      collapse mechanism is real and operative (the control canonicalizes to SELF).
+#      The witness is (19,20): d² = 3²+4² = 25, on LOOPS_N's radius-5 ring, off all
+#      six arm directions (row 16, col 16, the anti-diagonal r+c = 32) and off COB's
+#      depth-3 rings (radii 14,11,8). The centre (16,16) it replaced is never inked by
+#      the ring (16 < d² ≤ 25) but by ARM 0/1 for any branching concept, so it was
+#      YES for the cycle-free ▷(RECOGNITION,⊗(VOID,BEING)) too (audit2 #34).
 glyph B2_LOOP     = GE1(FT_CYC(FCOB))
-glyph B2_CENTREPX = SIG_AT(DSIGIL(COB))(16)(16)
+glyph B2_LOOPPX   = SIG_AT(DSIGIL(COB))(19)(20)
 glyph B2_COLLAPSE = str_eq(CANON(CANONIQ(DEG)))("SELF")
-glyph BEAT2       = AND(B2_LOOP)(AND(B2_CENTREPX)(B2_COLLAPSE))
+glyph BEAT2       = AND(B2_LOOP)(AND(B2_LOOPPX)(B2_COLLAPSE))
 # (iii) preserved distinction: the 3 constituents survive the Return as distinct
 #       leaf-marks; the render is INJECTIVE (Void-cycle ≠ Form-cycle); and the
 #       control proves the test discriminates (the bare return erases to 1 leaf).

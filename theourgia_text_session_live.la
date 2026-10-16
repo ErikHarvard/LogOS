@@ -42,7 +42,7 @@
 # ═══════════════════════════════════════════════════════════════════
 
 import("theourgia_input.la")    # EV_TYPE EV_CODE EV_VALUE EV_* IS_KEY_PRESS/RELEASE
-import("theourgia_font.la")     # GLYPH_ROW BIT FW FH — just the font, not Stage 1
+import("theourgia_font.la")     # GLYPH_ROW_IN FONTDATA BIT FW FH — just the font, not Stage 1
 
 # ── Foundations (Church lists; the imports' same-named privates are isolated) ──
 glyph SEQ     = la a. la b. b
@@ -167,10 +167,13 @@ glyph START_POS = PAIR(200)(200)
 glyph CPX = Z(la self. la col. la rb.
     IF(int_eq(col)(FW))(la _. "")(la _.
         concat(IF(BIT(rb)(col))(la _. FG_WHT)(la _. WIN_RED))(self(add(col)(1))(rb))))
-glyph GLYPH_PIXELS = la c. la gr. CPX(0)(GLYPH_ROW(c)(gr))
-glyph TEXT_PIXELS = Z(la self. la s. la gr.
+# `font` is FONTDATA decoded ONCE per frame (FRAME_TW binds it) and threaded
+# down: GLYPH_ROW re-decoded the whole font on each of the 112 lookups a frame
+# makes, ~95% of a frame's cost (audit2 #77).
+glyph GLYPH_PIXELS = la font. la c. la gr. CPX(0)(GLYPH_ROW_IN(font)(c)(gr))
+glyph TEXT_PIXELS = Z(la self. la font. la s. la gr.
     IF(str_eq(s)(""))(la _. "")(la _.
-        concat(GLYPH_PIXELS(str_head(s))(gr))(self(str_tail(s))(gr))))
+        concat(GLYPH_PIXELS(font)(str_head(s))(gr))(self(font)(str_tail(s))(gr))))
 
 # ── drm_mode returns "<w> <h> <pitch>"; pull each as an int ──
 glyph D_W = la dims. str_to_int(LIST_HD(dims))
@@ -184,16 +187,16 @@ glyph D_P = la dims. str_to_int(LIST_HD(LIST_TL(LIST_TL(dims))))
 # row is: desktop-left | window-left-pad | glyph pixels | window-right-pad |
 # desktop-right. All counts but the two desktop margins are independent of x0,
 # so the clamp on (x0,y0) keeps every REPEAT2 count non-negative.
-glyph TBROW = la w. la pitch. la x0. la gr.
+glyph TBROW = la font. la w. la pitch. la x0. la gr.
     concat(REPEAT2(x0)(BG_BLUE))
     (concat(REPEAT2(INSET_X)(WIN_RED))
-    (concat(TEXT_PIXELS(TXT)(gr))
+    (concat(TEXT_PIXELS(font)(TXT)(gr))
     (concat(REPEAT2(sub(WINW)(add(INSET_X)(TPXW)))(WIN_RED))
     (concat(REPEAT2(sub(w)(add(x0)(WINW)))(BG_BLUE))
            (PAD(w)(pitch))))))
-glyph TEXT_BAND = Z(la self. la w. la pitch. la x0. la gr.
+glyph TEXT_BAND = Z(la self. la font. la w. la pitch. la x0. la gr.
     IF(int_eq(gr)(FH))(la _. "")(la _.
-        concat(TBROW(w)(pitch)(x0)(gr))(self(w)(pitch)(x0)(add(gr)(1)))))
+        concat(TBROW(font)(w)(pitch)(x0)(gr))(self(font)(w)(pitch)(x0)(add(gr)(1)))))
 
 # FRAME_TW w h pitch x0 y0 → the full-screen XRGB8888 image: a blue desktop with
 # the red window (and its white text) at (x0,y0). x0,y0 must already be clamped
@@ -201,7 +204,7 @@ glyph TEXT_BAND = Z(la self. la w. la pitch. la x0. la gr.
 glyph FRAME_TW = la w. la h. la pitch. la x0. la y0.
     concat(REPEAT2(y0)(SOLID_ROW(w)(pitch)(BG_BLUE)))
     (concat(REPEAT2(INSET_Y)(RECT_ROW(w)(pitch)(x0)(WINW)(BG_BLUE)(WIN_RED)))
-    (concat(TEXT_BAND(w)(pitch)(x0)(0))
+    (concat(TEXT_BAND(FONTDATA)(w)(pitch)(x0)(0))
     (concat(REPEAT2(sub(WINH)(add(INSET_Y)(FH)))(RECT_ROW(w)(pitch)(x0)(WINW)(BG_BLUE)(WIN_RED)))
            (REPEAT2(sub(h)(add(y0)(WINH)))(SOLID_ROW(w)(pitch)(BG_BLUE))))))
 
@@ -281,14 +284,53 @@ glyph IS_DIGIT = la c. (la o.
 glyph TAKE_DIGITS = Z(la self. la s.
     IF(str_eq(s)(""))(la _. "")(la _.
     IF(IS_DIGIT(str_head(s)))(la _. concat(str_head(s))(self(str_tail(s))))(la _. "")))
+# ── Detection by device BLOCK, case-folded (audit2 #140) ──
+# /proc/bus/input/devices is blank-line-separated blocks, each with an
+# `N: Name="..."` line and, later, an `H: Handlers=... eventN ...` line. A device
+# is matched on its NAME line only, case-folded (generic USB keyboards often
+# report "USB KEYBOARD"), and its eventN comes from the Handlers line of the SAME
+# block. The old DETECT was a case-sensitive, unanchored substring hunt over the
+# whole text trying 'keyboard'/'Keyboard': an all-caps name was missed (while the
+# bringup scripts' `grep -i` preview announced it), 'mouse' hit the first
+# `Handlers=mouseN` line, and a keyboard whose Name contains 'Mouse' was picked
+# as the mouse too — its eventN opened twice, every arrow press applied twice.
+# The mouse search now skips the keyboard's eventN.
+glyph LOWER_CH = la c. (la o.
+    IF(lt(o)(65))(la _. c)(la _. IF(lt(90)(o))(la _. c)(la _. chr(int_to_str(add(o)(32))))))
+    (str_to_int(ord(c)))
+glyph LOWER = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _. concat(LOWER_CH(str_head(s)))(self(str_tail(s)))))
+glyph CONTAINS = Z(la self. la hay. la needle.
+    IF(STARTSW(hay)(needle))(la _. TRUE)(la _.
+    IF(str_eq(hay)(""))(la _. FALSE)(la _. self(str_tail(hay))(needle))))
+glyph LINE_HD = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(str_eq(str_head(s))("\n"))(la _. "")(la _. concat(str_head(s))(self(str_tail(s))))))
+glyph LINE_TL = Z(la self. la s.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    IF(str_eq(str_head(s))("\n"))(la _. str_tail(s))(la _. self(str_tail(s)))))
+# DEV_SCAN text want skip hit — walk the lines; `hit` = the current block's Name
+# (case-folded) contains `want`. The first hit block whose Handlers eventN is
+# non-empty and not `skip` gives its digits; "" if none.
+glyph DEV_SCAN = Z(la self. la s. la want. la skip. la hit.
+    IF(str_eq(s)(""))(la _. "")(la _.
+    (la line. la rest.
+        IF(str_eq(line)(""))(la _. self(rest)(want)(skip)(FALSE))(la _.
+        IF(STARTSW(line)("N: Name="))
+            (la _. self(rest)(want)(skip)(CONTAINS(LOWER(DROP(8)(line)))(want)))(la _.
+        IF(hit)(la _.
+            IF(STARTSW(line)("H: Handlers="))(la _.
+                (la d. IF(str_eq(d)(""))(la _. self(rest)(want)(skip)(FALSE))(la _.
+                       IF(str_eq(d)(skip))(la _. self(rest)(want)(skip)(FALSE))(la _. d)))
+                (TAKE_DIGITS(AFTER(line)("event"))))
+            (la _. self(rest)(want)(skip)(hit)))
+        (la _. self(rest)(want)(skip)(hit)))))
+    (LINE_HD(s))(LINE_TL(s))))
+glyph KBD_IN = la text. DEV_SCAN(text)("keyboard")("")(FALSE)
+glyph MOU_IN = la text. la kbd. DEV_SCAN(text)("mouse")(kbd)(FALSE)
 glyph PROCDEV = read_file("/proc/bus/input/devices")
-glyph DETECT1 = la nm.
-    (la aft. IF(str_eq(aft)(""))(la _. "")
-        (la _. TAKE_DIGITS(AFTER(aft)("event"))))(AFTER(PROCDEV)(nm))
-glyph DETECT = la a. la b.
-    (la x. IF(str_eq(x)(""))(la _. DETECT1(b))(la _. x))(DETECT1(a))
-glyph KBD_DIGITS = DETECT("keyboard")("Keyboard")
-glyph MOU_DIGITS = DETECT("Mouse")("mouse")
+glyph KBD_DIGITS = KBD_IN(PROCDEV)
+glyph MOU_DIGITS = MOU_IN(PROCDEV)(KBD_DIGITS)
 glyph DEVPATH = la d. concat("/dev/input/event")(d)
 
 # ── Live session MAIN: detect + open devices, take the screen, multiplex ──
@@ -305,7 +347,7 @@ glyph BUILD_FDS = la kbd.
 glyph MAIN =
     SEQ(print("text-session: auto-detecting input from /proc/bus/input/devices"))(
     IF(str_eq(KBD_DIGITS)(""))
-        (la _. error("text-session: no keyboard found (no Name with 'keyboard'/'Keyboard' in /proc/bus/input/devices)"))
+        (la _. error("text-session: no keyboard found (no device Name containing 'keyboard', any case, with an eventN handler in /proc/bus/input/devices)"))
         (la _.
             SEQ(print(concat("text-session: keyboard = ")(DEVPATH(KBD_DIGITS))))(
             (la kbd. (la fds. (la dims.
