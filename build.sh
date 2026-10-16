@@ -10,6 +10,15 @@ cd "$(dirname "$0")"
 
 say() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 
+# ── required tools, named up front (audit2 #107) ──
+# python3 and nasm are used unguarded further down (gate_selfext2b_safety.py,
+# derive_consts.py, the rtconsts/kernel gates): a missing one used to end the build
+# deep inside an unrelated stage — under set -e with no FAIL line, or as a
+# misleading stage FAIL. README's Requirements lists the same set.
+for t in gcc nasm python3 timeout od cmp awk sed; do
+    command -v "$t" >/dev/null 2>&1 || { echo "FAIL  build.sh needs '$t' on PATH (see README: Requirements)"; exit 1; }
+done
+
 # vmrun CMD… — a bare VM / native-binary step. Under `set -e` a non-zero exit
 # (a loud VM halt with stderr discarded, a SIGSEGV) used to end the build right
 # there with NO FAIL line. vmrun names the step and its exit status first, on the
@@ -7053,7 +7062,8 @@ fi
 # read_file/write_file/write_exec/open/mount/execve copy the path into a fixed
 # 4096-byte buffer; an over-long path must halt with "secd: path too long"
 # rather than overrunning the buffer into fsbuf / the GC worklist.
-python3 -c "open('/tmp/t_path.la','w').write('glyph MAIN = read_file(\"/'+('a'*5000)+'\")\n')"
+# Plain shell, not python3 (audit2 #107): the same bytes, one dependency fewer.
+printf 'glyph MAIN = read_file("/%s")\n' "$(head -c 5000 /dev/zero | tr '\0' a)" > /tmp/t_path.la
 cp /tmp/t_path.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 prc=0; PERR="$(./runner 2>&1 1>/dev/null)" || prc=$?
 rm -f /tmp/t_path.la

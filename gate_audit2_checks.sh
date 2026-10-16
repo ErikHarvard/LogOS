@@ -410,6 +410,37 @@ chk_gitignore_scratch() {
     else fail "gitignore #87:$bad"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap stage4_gate gitignore_scratch}"
+# ── #107 (remainder) build.sh's python3 dependency is named, the t_path step needs none
+# The planted defect is the environment: a PATH with every tool build.sh needs
+# except python3. (a) build.sh's required-tools loop, extracted and run there,
+# must FAIL naming python3 (unfixed: there is no loop, nothing is said); with
+# python3 present it passes. (b) the path-length stage's generator line, run
+# there, must still write the 5028-byte over-long-path program (unfixed: it is
+# `python3 -c`, which is not found). (c) README's Requirements names python3.
+chk_python3_dep() {
+    mkdir -p d107/nopy d107/withpy; local t bad="" o rc
+    for t in gcc nasm timeout od cmp awk sed head tr printf cat bash; do
+        command -v "$t" >/dev/null 2>&1 || continue
+        ln -sf "$(command -v $t)" d107/nopy/$t; ln -sf "$(command -v $t)" d107/withpy/$t; done
+    command -v python3 >/dev/null 2>&1 && ln -sf "$(command -v python3)" d107/withpy/python3
+    awk '/^for t in .*python3.*; do$/{p=1} p{print} p&&/^done$/{exit}' "$REPO/build.sh" > d107/tools.sh
+    o=$(cd d107 && env PATH="$PWD/nopy" /bin/bash -c 'set -euo pipefail; . ./tools.sh; echo reached' 2>&1); rc=$?
+    { [ "$rc" != 0 ] && grep -q "^FAIL  build.sh needs 'python3' on PATH" <<< "$o"; } || bad+=" no-python3 not named (rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    if [ -e d107/withpy/python3 ] && [ -e d107/withpy/nasm ]; then
+        o=$(cd d107 && env PATH="$PWD/withpy" /bin/bash -c 'set -euo pipefail; . ./tools.sh; echo reached' 2>&1)
+        [ "$o" = reached ] || bad+=" full PATH not green ([$(tr '\n' '|' <<< "$o")])"
+    fi
+    grep -E "^(python3 -c|printf ).*/tmp/t_path\.la" "$REPO/build.sh" | sed 's#/tmp/t_path\.la#t_path.la#' > d107/tpath.sh
+    [ -s d107/tpath.sh ] || { fail "python3 #107: cannot extract the t_path generator from build.sh"; return; }
+    rm -f d107/t_path.la; o=$(cd d107 && env PATH="$PWD/nopy" /bin/bash ./tpath.sh 2>&1)
+    { [ "$(stat -c%s d107/t_path.la 2>/dev/null)" = 5028 ] && grep -qx 'glyph MAIN = read_file("/a\{5000\}")' d107/t_path.la; } \
+        || bad+=" t_path generator needs python3 or wrote the wrong program ([$(tr '\n' '|' <<< "$o")])"
+    grep -A2 '^Requirements:' "$REPO/README.md" | grep -q python3 \
+        || bad+=" README Requirements omits python3"
+    if [ -z "$bad" ]; then pass "python3 #107: a box without python3 gets a FAIL naming it before any stage; the t_path program is written by shell; README lists python3"
+    else fail "python3 #107:$bad"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap stage4_gate gitignore_scratch python3_dep}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

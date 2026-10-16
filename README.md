@@ -363,9 +363,16 @@ native compiler reproduces itself. On a clean, green tree it tags the commit
 > hours), because every module is compiled through `codegen` to the native VM and
 > checked for host/VM byte-identity. This is expected, not a hang.
 
-Requirements: a C compiler and `nasm` (for assembling the native VM from source;
-the assembled bytes are also committed and drift-checked). DRM scanout and live
-input run from a bare VT.
+Requirements: `gcc`, `nasm` (drift checks and the runtime-constant / kernel
+gates assemble from source; the assembled bytes are also committed), `python3`
+(several gates and checkers are Python), and GNU coreutils/`awk`/`sed`
+(`timeout`, `od`, `cmp`, …). `build.sh` checks for these first and names a
+missing one. Optional: `qemu-system-x86_64` (the boot gates skip without it) and
+`git` (auto-checkpoint tags). Memory: the native backend's binaries currently
+reserve their ~16 GiB heap in the ELF `p_memsz`, so under the default overcommit
+policy they need RAM+swap above that to exec; `build.sh` Stage 4 skips (with a
+NOTE) on a machine that cannot map its image. DRM scanout and live input run
+from a bare VT.
 
 ---
 
