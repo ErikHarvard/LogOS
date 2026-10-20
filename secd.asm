@@ -277,6 +277,18 @@ fmt_int_buf:
     ret
 
 _start:
+    ; SIGPIPE -> SIG_IGN. With the default disposition a write/send to a pipe or
+    ; socket whose reader has gone kills the whole VM (rc 141) before the builtin
+    ; can return -EPIPE — the "-errno so a program can recognise a dead peer"
+    ; contract fails for exactly the dead-peer case. Ignored, write/send return
+    ; -32 like every other syscall error. (.bi_execve restores SIG_DFL for the
+    ; new image, since SIG_IGN would otherwise be inherited across execve.)
+    mov     rax, 13              ; rt_sigaction(SIGPIPE, &sigpipe_ign, NULL, 8)
+    mov     rdi, 13
+    mov     rsi, sigpipe_ign
+    xor     rdx, rdx
+    mov     r10, 8
+    syscall
     ; Self-contained binary? The bundler (bundle.la) appends the program stream
     ; at file offset `filesize` — virtual address `progembed` — and patches
     ; p_filesz so it is mapped. Its first byte is a glyph name (nonzero). When
@@ -2386,6 +2398,12 @@ _start:
     jmp     .ex_cp
 .ex_d:
     mov     byte [rdi], 0
+    mov     rax, 13              ; the new image gets the DEFAULT SIGPIPE, not the
+    mov     rdi, 13              ; VM's SIG_IGN (which execve would otherwise keep)
+    mov     rsi, sigpipe_dfl
+    xor     rdx, rdx
+    mov     r10, 8
+    syscall
     mov     rax, pathbuf         ; argv = [pathbuf, NULL]
     mov     [r15], rax
     mov     qword [r15+8], 0
@@ -2397,6 +2415,14 @@ _start:
     mov     rdi, pathbuf
     mov     rax, 59
     syscall
+    push    rax                  ; execve failed and we are still the VM:
+    mov     rax, 13              ; re-ignore SIGPIPE before continuing
+    mov     rdi, 13
+    mov     rsi, sigpipe_ign
+    xor     rdx, rdx
+    mov     r10, 8
+    syscall
+    pop     rax
     call    push_dec             ; only returns on failure: -errno
     jmp     .loop
 
@@ -2738,7 +2764,7 @@ _start:
     mov     rdi, r11             ; sendto(fd, buf, len, 0, NULL, 0)
     mov     rsi, [r9+8]          ; data ptr
     mov     rdx, [r9]            ; data len
-    xor     r10, r10             ; flags = 0
+    mov     r10, 0x4000          ; flags = MSG_NOSIGNAL: a dead peer is -EPIPE, not a SIGPIPE
     xor     r8, r8               ; dest_addr = NULL (connected socket)
     xor     r9, r9               ; addrlen = 0
     mov     rax, 44              ; sendto
@@ -3832,6 +3858,9 @@ pollmsg:       db "secd: too many poll fds", 10
 pollmsg_len    equ $ - pollmsg
 bootstrap:     db 2, "MAIN", 0, 0
 fname:         db "logos_program.bin", 0
+; struct kernel_sigaction {handler, flags, restorer, mask} for rt_sigaction(SIGPIPE)
+sigpipe_ign:   dq 1, 0, 0, 0     ; SIG_IGN
+sigpipe_dfl:   dq 0, 0, 0, 0     ; SIG_DFL
 proc_self_exe: db "/proc/self/exe", 0
 cs_target:     db "new_logos_secd.bin", 0
 cs_msg:        db "copy_self: replicated -> new_logos_secd.bin", 10

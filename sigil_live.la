@@ -102,7 +102,7 @@ glyph FRAME = la w. la h. la pitch.
      (div(sub(w)(DSZ))(2))
 
 # ── Hold the image on screen (tail loop → bounded dump under TCO); Ctrl+C ends it ──
-glyph HOLD = Z(la self. la _. SEQ(sleep("1"))(self("!")))
+glyph HOLD = Z(la self. la _. (la _. self("!"))(sleep("1")))
 
 # ── MAIN: take the screen, present the Being sigil, hold ──
 glyph MAIN =

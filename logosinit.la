@@ -27,6 +27,8 @@
 #       (so the shell starts with a clean mask, not init's) and
 #       execve("/bin/sh") so the child *becomes* the shell. If execve fails
 #       the child exits 127 rather than continuing as a duplicate init.
+#       If fork itself fails (-errno) there is no shell: init says so and
+#       retries after BACKOFF, still answering SIGTERM meanwhile.
 #
 #    4. Supervise via the signalfd. The loop blocks on read(sigfd) — one
 #       128-byte signalfd_siginfo per signal — and dispatches on the signal
@@ -65,20 +67,42 @@ glyph IS_NEG = la s. str_eq(str_head(s))("-")
 # "0" (children exist, none ready) or a negative -errno (no children at all).
 glyph STOP_DRAIN = la pid. IF(str_eq(pid)("0"))(la _. "Y")(la _. IF(IS_NEG(pid))(la _. "Y")(la _. "N"))
 
-# SPAWN — fork the session shell; the parent returns the shell's pid. The
-# child unblocks the signals init blocked, so the shell does not inherit a
-# masked SIGTERM/SIGCHLD, then becomes /bin/sh.
-glyph SPAWN = la _.
-    (la pid. IF(str_eq(pid)("0"))
-        (la _. SEQ(sigprocmask("1")(SIGMASK))(SEQ(execve("/bin/sh"))(exit("127"))))
-        (la _. pid))
-    (fork("!"))
-
 # Respawn throttle. A shell that dies immediately would otherwise be re-forked
 # in a tight loop — a fork-storm. BACKOFF seconds of sleep before each respawn
 # rate-limits the flapping to at most one shell per BACKOFF.
-glyph BACKOFF = "1"
-glyph RESPAWN = la _. SEQ(sleep(BACKOFF))(SPAWN("!"))
+glyph BACKOFF    = "1"
+glyph BACKOFF_MS = "1000"
+
+# FORK_WAIT(sigfd) — fork just failed, so there is no shell and no SIGCHLD will
+# ever arrive to wake the loop. Wait up to BACKOFF on the signalfd itself, so a
+# SIGTERM is still honoured while forks keep failing (SHUTDOWN("0"): no shell to
+# signal); a SIGCHLD (an orphan) is drained; a timeout just returns to retry.
+glyph FORK_WAIT = la sigfd.
+    (la ready. IF(str_eq(ready)(""))
+        (la _. "retry")
+        (la _. (la si. IF(str_eq(ord(str_head(si)))(SIGTERM))
+                (la _. SHUTDOWN("0"))
+                (la _. DRAIN("0")))
+            (read(sigfd)("128"))))
+    (poll(sigfd)(BACKOFF_MS))
+
+# SPAWN(sigfd) — fork the session shell; the parent returns the shell's pid. The
+# child unblocks the signals init blocked, so the shell does not inherit a
+# masked SIGTERM/SIGCHLD, then becomes /bin/sh. fork() returns -errno on failure
+# (EAGAIN/ENOMEM under pid or memory pressure): that is NOT a pid — DRAIN could
+# never match it and SHUTDOWN's kill() would signal process GROUP N — so report
+# it and retry after BACKOFF. SPAWN only ever returns a real, positive pid.
+glyph SPAWN = la sigfd. Z(la self. la _.
+    (la pid. IF(str_eq(pid)("0"))
+        (la _. SEQ(sigprocmask("1")(SIGMASK))(SEQ(execve("/bin/sh"))(exit("127"))))
+        (la _. IF(IS_NEG(pid))
+            (la _. (la w. self("!"))
+                (SEQ(print(concat("logosinit: fork failed (")(concat(pid)(") — retrying"))))
+                    (FORK_WAIT(sigfd))))
+            (la _. pid)))
+    (fork("!")))("!")
+
+glyph RESPAWN = la sigfd. SEQ(sleep(BACKOFF))(SPAWN(sigfd))
 
 # DRAIN(shell) — collect every child that is ready right now (SIGCHLDs coalesce,
 # so a single signal may cover several deaths). Returns "1" if the session shell
@@ -92,10 +116,12 @@ glyph DRAIN = la shell.
         (reapnb("!")))("0")
 
 # SHUTDOWN(shell) — the clean SIGTERM path: announce, terminate the session
-# shell, and exit 0. The one way out of the supervision loop.
+# shell, and exit 0. The one way out of the supervision loop. shell is "0" when
+# no shell exists (fork has been failing): kill() is then skipped — kill(0, …)
+# would signal init's own process group, and a negative pid a whole group.
 glyph SHUTDOWN = la shell.
     SEQ(print("LogOS received SIGTERM — terminating session."))(
-    SEQ(kill(shell)(SIGTERM))(
+    SEQ(IF(str_eq(shell)("0"))(la _. "0")(la _. IF(IS_NEG(shell))(la _. "0")(la _. kill(shell)(SIGTERM))))(
     exit("0")))
 
 # SUPERVISE(sigfd)(shell) — never returns except through SHUTDOWN. Block on the
@@ -107,7 +133,7 @@ glyph SUPERVISE = la sigfd. Z(la self. la shell.
             (la _. SHUTDOWN(shell))
             (la _.
                 (la wasshell.
-                    self(IF(str_eq(wasshell)("1"))(la _. RESPAWN("!"))(la _. shell)))
+                    self(IF(str_eq(wasshell)("1"))(la _. RESPAWN(sigfd))(la _. shell)))
                 (DRAIN(shell))))
     (read(sigfd)("128")))
 
@@ -116,4 +142,4 @@ glyph MAIN =
     SEQ(mount("/sys")("sysfs"))(
     SEQ(sigprocmask("0")(SIGMASK))(
     SEQ(print("LogOS sovereign session initialized."))(
-    (la sigfd. SUPERVISE(sigfd)(SPAWN("!")))(signalfd(SIGMASK))))))
+    (la sigfd. SUPERVISE(sigfd)(SPAWN(sigfd)))(signalfd(SIGMASK))))))

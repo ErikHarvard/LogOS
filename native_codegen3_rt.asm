@@ -133,7 +133,9 @@ alloc24:
 
 ; ── classidx(rdi=blob body len) -> r8=classidx(>=5), r9=classsize(=1<<r8) ──
 ;   T=8+len rounded UP to a power of 2 >= 32. Clobbers rax,rcx,rdx.
-classidx:
+;   (audit2 #12: callers enter through the clamped `classidx` appended at EOF,
+;   which rejects a length whose class would index past FREEBLOB[47].)
+classidx_raw:
     lea     rax, [rdi+8]        ; T = 8 + len
     cmp     rax, 32
     jae     .ge
@@ -1185,7 +1187,9 @@ rt_chr:
 ;   f_τ with both other engines (msg bytes + newline to fd 2, exit code 1).
 ;   Appended after rt_chr / before the data area, so the 3c.1 routine addresses
 ;   and every RT_* entry stay UNCHANGED; only the data globals shift.
-rt_error:
+;   (audit2 #11: RT_ERROR now points at the tag-checking `rt_error` appended at
+;   EOF; this body is its STR case.)
+rt_error_str:
     mov     rcx, [rax+8]        ; descriptor body
     mov     rsi, [rcx+8]        ; msg bytes
     mov     rdx, [rcx]          ; msg length
@@ -1373,7 +1377,7 @@ rt_write_file:
 ;   r12=fd, r13=size(=len), r14=blob body (GC root across the read). Loud halt on
 ;   open failure, matching the host (the SECD VM returns "" instead — we follow the
 ;   host so native==host on the c3 gate). The capstone kernel's SOURCE needs this.
-rt_read_file:
+rt_read_file_body:              ; audit2 #12: entered from the `rt_read_file` wrapper at EOF
     cmp     qword [rax], 0      ; freeze-day #2: path arg must be STR (tag 0), else loud halt
     jne     rt_not_string
     mov     rcx, [rax+8]        ; path descriptor body
@@ -2224,3 +2228,101 @@ rt_memcpy:
     rep     movsb
     mov     rax, r10            ; -> the byte count actually copied
     jmp     rt_box_int          ; -> boxed INT
+
+; ── audit2 #11: rt_error(v) — the tag check error() lacked ──────────────────
+;   error() is the loud-halt primitive, yet it read [rax+8] as a STR descriptor
+;   whatever the tag: error(5) dereferenced address 5+8 and died SIGSEGV (rc
+;   139) with no message. The host prints an INT's decimal, and
+;   "(non-string error message)" for anything else, then exits 1; this matches
+;   it. Appended at EOF so every existing RT_* / data address is unchanged; only
+;   RT_ERROR (now this entry), LITERAL_BASE and RTLEN move.
+rt_error:
+    cmp     qword [rax], 0      ; STR -> the original body
+    je      rt_error_str
+    cmp     qword [rax], 4      ; INT -> its decimal, as the host prints it
+    jne     .nonstr
+    call    rt_int_to_str       ; boxed INT -> boxed STR (tag already checked)
+    jmp     rt_error_str
+.nonstr:
+    mov     rax, 1
+    mov     rdi, 2              ; stderr
+    mov     rsi, errnonstr
+    mov     rdx, errnonstrlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (match the host)
+    syscall
+errnonstr:    db "(non-string error message)", 10
+errnonstrlen: equ $ - errnonstr
+
+; ── audit2 #12: rt_read_file(path) — refuse a directory before sizing it ────
+;   open(O_RDONLY) succeeds on a directory and lseek(fd,0,SEEK_END) returns
+;   LONG_MAX on ext4/tmpfs, so the body sized a LONG_MAX blob: classidx wrapped,
+;   FREEBLOB was read out of bounds and the program died SIGSEGV with no
+;   message. stat() first; a directory halts loudly (rc 1, as the host does).
+;   Anything else — including a stat failure, which the body reports as
+;   "cannot open" — falls through to the unchanged body.
+rt_read_file:
+    cmp     qword [rax], 0      ; path must be STR (tag 0); the body re-checks
+    jne     rt_not_string
+    mov     rcx, [rax+8]        ; path descriptor body
+    mov     rdx, [rcx]          ; path length
+    mov     rsi, [rcx+8]        ; path bytes
+    cmp     rdx, 4095
+    jae     rt_read_file_body   ; the body reports "path too long"
+    xor     rcx, rcx
+.cp:
+    cmp     rcx, rdx
+    jae     .cpd
+    mov     r8b, [rsi+rcx]
+    mov     [pathbuf+rcx], r8b
+    inc     rcx
+    jmp     .cp
+.cpd:
+    mov     byte [pathbuf+rcx], 0
+    push    rax                 ; the path box, for the body
+    sub     rsp, 144            ; struct stat
+    mov     rax, 4              ; stat(pathbuf, rsp)
+    mov     rdi, pathbuf
+    mov     rsi, rsp
+    syscall
+    test    rax, rax
+    js      .go                 ; cannot stat -> let the body's open() report it
+    mov     ecx, [rsp+24]       ; st_mode
+    and     ecx, 0xF000         ; S_IFMT
+    cmp     ecx, 0x4000         ; S_IFDIR
+    je      .isdir
+.go:
+    add     rsp, 144
+    pop     rax
+    jmp     rt_read_file_body
+.isdir:
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, rfdir
+    mov     rdx, rfdirlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 1              ; exit 1 (the host halts rc 1 too)
+    syscall
+rfdir:    db "native: read_file: is a directory", 10
+rfdirlen: equ $ - rfdir
+
+; ── audit2 #12: classidx(rdi=len) — the upper clamp freeze-day #1 asked for ──
+;   FREEBLOB has 48 entries (classes 0..47, T <= 2^47). A larger request
+;   (len > 2^47 - 8) made bsr return 63 and alloc_blob read FREEBLOB[64] — the
+;   message strings after the array — as a free-list link. Any such request now
+;   halts loudly as heap exhaustion (rc 73, like alloc_blob's own halt), for
+;   every caller (concat, make_str, read_file). Clobbers rax (as before).
+classidx:
+    mov     rax, (1 << 47) - 8
+    cmp     rdi, rax
+    jbe     classidx_raw
+    mov     rax, 1
+    mov     rdi, 2
+    mov     rsi, gcexh
+    mov     rdx, gcexhlen
+    syscall
+    mov     rax, 60
+    mov     rdi, 73
+    syscall
