@@ -10,10 +10,16 @@
 set -e
 cd "$(dirname "$0")"
 ok=1
+finished=0
 
-command -v nasm >/dev/null 2>&1 || { echo "SKIP  link_layout gate: nasm absent"; exit 0; }
-command -v ld   >/dev/null 2>&1 || { echo "SKIP  link_layout gate: ld absent"; exit 0; }
-command -v nm   >/dev/null 2>&1 || { echo "SKIP  link_layout gate: nm absent"; exit 0; }
+# ★ TRAP ADDED (ENTELECHEIA, 2026-09-18, hexis errexit-gate-silent-verdict) — same pattern as
+#   gate_link_script.sh (:29) and gate_link.sh, closing this file's own silent-death gap (a bare `nasm` at
+#   :18-19 or `ld` at :20, no `||` guard, would die with no verdict line under `set -e`).
+trap 'rc=$?; if [ "$finished" != 1 ]; then echo "link_layout gate ABORTED (rc=$rc) — the assertions after this point never ran"; [ "$rc" = 0 ] && exit 1; fi; exit $rc' EXIT
+
+command -v nasm >/dev/null 2>&1 || { echo "SKIP  link_layout gate: nasm absent"; finished=1; exit 0; }
+command -v ld   >/dev/null 2>&1 || { echo "SKIP  link_layout gate: ld absent"; finished=1; exit 0; }
+command -v nm   >/dev/null 2>&1 || { echo "SKIP  link_layout gate: nm absent"; finished=1; exit 0; }
 
 nasm -f elf64 link_test_a.asm -o link_test_a.o
 nasm -f elf64 link_test_b.asm -o link_test_b.o
@@ -63,5 +69,6 @@ else
 fi
 
 rm -f link_in1.o link_in2.o
+finished=1
 [ "$ok" = 1 ] && echo "PASS  link_layout.la: layout + cross-object resolution agree with ld (3 addresses, 1 negative gate)"
 [ "$ok" = 1 ]

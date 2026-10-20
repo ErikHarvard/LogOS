@@ -29,7 +29,30 @@ cross-track request to track A, and it would make the chain LA end to end.
 | `link_test_abs.asm` | `R_X86_64_32` — a 32-bit absolute (`mov esi, msg`). |
 | `link_test_s32.asm` | entry for the `32S` case; links against a **real gcc** object and exits 30 = `table[2]`. |
 | `link_test_start.asm` | entry for the mixed asm + C link; exits 43 = `compute(21)`. |
-| `link_test_odd.asm` | `.weird`, `SHF_ALLOC` — a section the layout must REFUSE. |
+
+> ⚠ **HONEST COVERAGE NOTE, 2026-09-17 — the three rows above (`abs`, `s32`, `start`) claimed coverage that was NOT
+> being obtained, and the correction is worth more than the fix.** `gate_link_reloc.sh` assembled 8 fixture objects and
+> consumed 12: **`link_test_abs.o`, `link_test_s32.o`, `link_test_start.o` and `link_test_odd.o` had no producing `nasm`
+> line anywhere in the repo.** Their `.asm` are all tracked; their `.o` are git-ignored build products, so in a worktree
+> they survived as **2026-07-18** leftovers and this gate passed for two months, while in the clean checkout an audit
+> runs they were ABSENT. Fixed by `aea9d81` (four `nasm` lines + a fixture precondition that names a missing fixture
+> instead of dying silently under `set -e`).
+>
+> **What that cost, stated per site rather than in aggregate, because the sites differ in KIND:**
+> - `abs` (:426) and `s32` (:433) reach `ld` through `cmp_text_against_ld`, whose `ld … || { echo "SKIP …"; return 0; }`
+>   turns a **missing input** into *"ld could not link the pair"* — which reads as a tool limitation. So the
+>   `R_X86_64_32` and `R_X86_64_32S` byte-identity assertions **had never once run in a clean checkout.** They are the
+>   assertions whose own comment (`:424`) says why they exist: *"a wrong base address reads four plausible bytes and the
+>   program exits CLEANLY with the wrong number; byte-identity catches that, 'it ran' would not."* For two months the
+>   guard against a clean-looking wrong answer was producing a clean-looking non-answer.
+> - `odd` (:453) was an unguarded `cp`: under `set -e` it exited with **no FAIL line**, which is what killed the
+>   2026-09-17 full audit at 117 PASS / 0 FAIL — a false green at the verdict layer, caught only by the runner's rc file.
+> - `start` has 13 sites, the first unguarded one a bare `ld` at **:495** — 42 lines past `odd`, i.e. the next abort.
+>
+> **First real execution: 2026-09-17, rc=0, 278 s, PASS 2 / FAIL 0 / SKIP 0** on a fresh `git archive` checkout with no
+> leftover `.o`, running the committed bytes (`69cba7a9791d4c6f`). The two SKIPs became real assertions and they PASS —
+> the gate's own PASS line now names `32/32S` among the relocation types it proves byte-identical to `ld`.
+| `link_test_odd.asm` | `.weird`, `SHF_ALLOC` read-only — a section the layout must **PLACE BY ITS FLAGS**, into the R segment. ⚠ **Corrected 2026-09-17: this row previously described the layout as REJECTING such a section — retired behaviour, documented as current. The retracted wording is deliberately not reproduced here, so a scan for it cannot match this corrected row.** The old default layout refused any allocatable section it could not name; it now groups allocatable sections by PERMISSION (RX/R/RW) as `ld` does, so `.weird` is placed, not refused (`gate_link_reloc.sh:472` and its assertion at `:495`). The refusal MECHANISM is not lost, it moved to where it is still correct: with an explicit `--script`, a section no segment names is still refused (`gate_link_script`, `.note.mine`), and by-flags placement is proven end to end in `gate_link_nsec` (`.mydata`, RW). |
 | `link_test_plt.asm` | same as A but `wrt ..plt`, so nasm emits PLT32 — what real toolchains actually produce. |
 | `link_test_dup.asm` | defines BOTH `_start` and `greet`, so linking it against B is a duplicate and *nothing else*. |
 | `link_test_script.ld` | a real linker script, base **0x500000** — deliberately not the built-in 0x401000, so a default-address image cannot pass by accident. |
@@ -1800,3 +1823,113 @@ the opposite: why the stub's control is silent is NOT diagnosed. The comment, th
 message and the fixture's header now say only what was measured (a QEMU timeout, empty
 serial) and point here. Corrected on track-b the same evening, in comment and message text
 only.
+
+## RECONSTRUCTED 2026-09-25 from the 09-18 board posts (BOARD.md :236/:253/:273/:284) after the original was lost to `git checkout -- .`; not the original text
+
+★ **This section is a reconstruction, not a recovery.** The four documenting follow-up notes
+originally written into this file on 2026-09-18, alongside the hardening pass they describe
+below, were destroyed on 2026-09-25 by an in-worktree `git checkout -- .` run for an unrelated
+reason (resetting gitignored scratch build artifacts, which that command does not affect at
+all — its only real effect was reverting every held tracked file to `HEAD`). The four
+`gate_link*.sh` scripts were recovered byte-exact from pre-incident backups, independently
+verified against the sha256(first16) pins the 09-18 board posts themselves recorded
+(`gate_link.sh` `3451a0ebf95c98a5`, `gate_link_layout.sh` `b29d6cd23c0149bc`,
+`gate_link_nsec.sh` `d0a8f1c5162d2dfc`, `gate_link_reloc.sh` `b7675b556a367084` — all four
+match). This file had no such backup and no such pin; its four notes are rebuilt here from
+`~/logos-coord/BOARD.md`'s own condensed record of them, plus today's verified red-test
+results. The incident is recorded in full on `~/logos-status.md`, 2026-09-25, ENTELECHEIA.
+
+**Note 1 (originally 18 lines, BOARD.md :236, 09-18 11:56)** — the first documenting note,
+placed after the 09-17 honest-coverage section above: `gate_link_reloc.sh` gained **8 bare
+`ld … 2>/dev/null` sites given `|| echo "SKIP …: ld could not link the pair"`** — one call per
+fixture pair (`R_X86_64_32 byte-identity` via `cmp_text_against_ld`'s first call site,
+`gcc-object link`, `-ffunction-sections link`, `weak-only link`, `weak+strong link`,
+`undefined-weak link`, `GOTPCRELX link`, `--gc-sections link`), plus a ninth already covered by
+`cmp_text_against_ld`'s own guard for its second call site (`R_X86_64_32S`). Each of these `ld`
+calls previously had **no `||` guard**, so a genuine link failure would die silently under
+`set -e` with no diagnostic — the invisible-death shape `aea9d81` had already fixed one call
+earlier in the same chain (the unguarded `cp link_test_odd.o` that killed the 2026-09-17 full
+audit). This closed the narrower, rarer sibling of that class: `ld` itself refusing a
+well-formed pair, not a missing input file.
+
+**Note 2 (13 more lines, cumulative +31, BOARD.md :253, 09-18 ~12:30)** — two further fixes,
+bundled into one note: (1) `nseg=$(readelf … | grep -c '^  LOAD')` gained `|| true`
+(hexis `set-e-pipeline-assignment`) — a 0-`LOAD` `link_out` (a regression, not the normal case)
+made the `grep -c` exit 1 and the assignment die silently under `set -e`, one line above where
+the next line already turns `nseg=0` into a named `FAIL`; the fix is letting execution reach
+that line. (2) **the general form of the same silent-death class**: `gate_link_reloc.sh` set
+`errexit` with no `trap … EXIT` safety net for any *other* unguarded line in its ~1000 lines.
+Fixed by mirroring `gate_link_script.sh:29`'s proven pattern exactly — a `finished=0` flag near
+the top, `trap 'rc=$?; if [ "$finished" != 1 ]; then echo "gate_link_reloc gate ABORTED
+(rc=$rc) — the assertions after this point never ran"; [ "$rc" = 0 ] && exit 1; fi; exit $rc'
+EXIT`, and `finished=1` set only where the file already ends cleanly (the early tool-absent
+SKIPs, and the real end).
+
+**Note 3 (BOARD.md :273, 09-18 ~15:15, cumulative 63 insertions / 12 deletions)** — the
+narrower presence-check gap: `w_ref.o`/`w_cw.o`/`w_strong.o`, `gxd.o`, and `gg1.o`/`gg3.o` were
+each consumed on faith (only one "discriminator" fixture per block was presence-checked, not
+every fixture the block's `ld`/`cp` lines actually touch). Widened the weak-symbol block's
+guard to check all four fixtures, and the GOTPCRELX block's guard to check `gxd.o` alongside
+`gx.o`. `gg1.o`/`gg3.o` needed real structure, not a widened condition — they had **no**
+presence check at all — so this added a named `SKIP  real-.got link: gg1.o or gg3.o was not
+produced` plus a new nested `if`/`fi` wrapping the `ld`/`cp` that consume them, with the `fi`
+placed before the block's existing `rm -f gg1.o gg3.o` cleanup (deliberately left outside the
+new `if` so it still runs either way).
+
+**Note 4 (BOARD.md :284, 09-18 17:15, "fourth follow-up note")** — the same
+`errexit-gate-silent-verdict` fix (note 2's pattern) applied to `gate_link_reloc.sh`'s three
+siblings, after a `hexis check` sweep across the whole 8-file `gate_link*.sh` exclusive grant
+found the identical gap in all three: `gate_link.sh` (+14/−2), `gate_link_layout.sh` (+13/−3),
+`gate_link_nsec.sh` (+13/−3) each gained the `finished`+`trap … EXIT` pair, mirroring
+`gate_link_script.sh:29`. `gate_link_e2e.sh`, `gate_link_hiaddr.sh`, `gate_link_kernel.sh` did
+not flag — already safe, left untouched.
+
+**All of the above sat static-verified only (`sh -n`/`bash -n`, `hexis check` clean) for a
+week**, held because the gate lock was in continuous use by the 09-18 audit and its shadow
+build. **First actual gate-run: 2026-09-25**, on the recovered/pin-verified bytes above.
+Still-green (before any red-test), all four, `rc=0`: `gate_link_reloc.sh` PASS,
+`gate_link.sh` PASS, `gate_link_layout.sh` PASS, `gate_link_nsec.sh` PASS.
+
+**The file-wide EXIT trap, red-tested in all four** (a scratch copy with one `nasm` input path
+renamed to a nonexistent file — an unguarded, bare failure with no `||` — the tracked file
+itself untouched): each printed its own `"<gate> gate ABORTED (rc=1) — the assertions after
+this point never ran"` and exited 1. `gate_link_reloc.sh` additionally exercised its own
+separate `aea9d81` missing-producer precondition first, as designed, then the trap on top of
+it.
+
+**All 8 SKIP-with-reason sites in `gate_link_reloc.sh`, red-tested by REASON string, not rc**
+(each tested by corrupting in place exactly the one fixture its `ld` call needs, in a full run
+of the real file content, so `ld` genuinely fails on a malformed object rather than a missing
+one):
+
+| site | REASON asserted | rc |
+|---|---|---|
+| `cmp_text_against_ld`, first call (`R_X86_64_32`) | `SKIP  R_X86_64_32 byte-identity: ld could not link the pair` | 0 (`return 0` inside the function) |
+| gcc-object link | `SKIP  gcc-object link: ld could not link the pair` | 1 (downstream assertions catch it, by design) |
+| -ffunction-sections link | `SKIP  -ffunction-sections link: ld could not link the pair` | 1 |
+| weak-only link | `SKIP  weak-only link: ld could not link the pair` | 1 |
+| weak+strong link | `SKIP  weak+strong link: ld could not link the pair` | 1 |
+| undefined-weak link | `SKIP  undefined-weak link: ld could not link the pair` | 1 |
+| GOTPCRELX link | `SKIP  GOTPCRELX link: ld could not link the pair` | 1 |
+| real-.got link | `SKIP  real-.got link: ld could not link the trio` | 0 |
+
+Every reason string above matches its source line exactly. The rc column varies by design
+(some sites `return 0` out of a helper function cleanly; others fall through to the block's own
+downstream `FAIL` assertions a few lines later, which is the file's own documented trade-off,
+not a defect this red-test found) — which is exactly why REASON was the thing to assert, not rc.
+
+**The class from today's incident was already sealed, and had been for a week.**
+`~/logos-hexis.sh`'s `whole-tree-restore` check (sealed 2026-09-18) already matches exactly the
+line that caused this incident — verified directly: `git checkout -- .` fires it, rc 0. So the
+mistake here is not a missing check; it is the standing, documented bound on every hexis check:
+**it scans shipped scripts, not the ad-hoc commands a session types interactively**, and this
+incident's `git checkout -- .` was typed inside a throwaway loop, never committed anywhere
+`hexis check` would ever read it. A first draft of this section named a new check,
+`checkout-dot-in-held-tree`, before checking for prior art — `whole-tree-restore` was found
+only afterward, and the duplicate was removed rather than shipped. METANOĒ's shape
+(*"an operation acts on what it NAMES, not on what I changed"*) still applies to the incident
+itself: `git checkout -- .` names every tracked path in the tree, including ones held for a
+reason that has nothing to do with the command's actual purpose. The mechanism that would have
+helped is not a new pattern but the existing rule stated precisely: before any git verb that
+rewrites the working tree — typed ad hoc or shipped — check `logos-hold.sh paths <worktree>` is
+empty first, or name the exact paths the command should touch.

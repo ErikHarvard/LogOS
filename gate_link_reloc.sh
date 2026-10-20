@@ -15,9 +15,21 @@
 set -e
 cd "$(dirname "$0")"
 ok=1
+finished=0
+
+# ★ TRAP ADDED (ENTELECHEIA, 2026-09-18, hexis errexit-gate-silent-verdict), mirroring gate_link_script.sh's
+#   proven pattern (:29) — its NEGATIVE CONTROL, cited by the check as the corrected form. This file sets
+#   errexit but until now had no safety net: ANY unguarded line dying under `set -e` — not just the grep-fed
+#   assignment class fixed above, but the next `cp` of a missing fixture, a failed `cd`, any command with no
+#   `||` guard, anywhere in this 1000-line file — exited SILENTLY with NO verdict line at all, which is
+#   exactly what killed the 2026-09-17 full audit at :453 (0 FAIL lines in 237, caught only by the runner's
+#   rc file). `finished=1` is set only where the file already ends cleanly (an early SKIP, or the real end);
+#   a deliberate mid-file `FAIL … exit 1` still leaves `finished=0`, so the trap prints one EXTRA line there
+#   — redundant, not wrong, and the same trade `gate_link_script.sh` already made.
+trap 'rc=$?; if [ "$finished" != 1 ]; then echo "gate_link_reloc gate ABORTED (rc=$rc) — the assertions after this point never ran"; [ "$rc" = 0 ] && exit 1; fi; exit $rc' EXIT
 
 for t in nasm ld objcopy; do
-    command -v $t >/dev/null 2>&1 || { echo "SKIP  link_reloc gate: $t absent"; exit 0; }
+    command -v $t >/dev/null 2>&1 || { echo "SKIP  link_reloc gate: $t absent"; finished=1; exit 0; }
 done
 
 
@@ -278,7 +290,11 @@ rm -f link_out
 if ROUT=$(timeout 240 ./tiny_host link_reloc.la 2>&1); then RRC=0; else RRC=$?; fi
 [ "$RRC" -eq 0 ] || { echo "FAIL  link_reloc.la: could not link the 3-section fixture: $ROUT"; ok=0; }
 if [ -x link_out ]; then
-    nseg=$(readelf -l --wide link_out 2>/dev/null | grep -c '^  LOAD')
+    # ★ `|| true` ADDED (ENTELECHEIA, 2026-09-18, hexis set-e-pipeline-assignment) — a 0-LOAD link_out (a
+    #   regression, not the expected case) made `grep -c` exit 1 and this assignment die under `set -e` (:15)
+    #   with NO FAIL line printed; the very next line already turns nseg=0 into a named FAIL, so the fix is
+    #   letting it REACH that line rather than restructuring anything.
+    nseg=$(readelf -l --wide link_out 2>/dev/null | grep -c '^  LOAD' || true)
     [ "$nseg" = "3" ] || { echo "FAIL  link_reloc.la: expected 3 PT_LOADs for .text/.rodata/.data, got $nseg"; ok=0; }
     readelf -l --wide link_out 2>/dev/null | grep -q 'LOAD.*RW ' \
         || { echo "FAIL  link_reloc.la: no writable segment emitted for .data"; ok=0; }
@@ -520,7 +536,21 @@ int helper(int x) { return x * 2; }
 C2
     if [ -f gate_g1.o ] && [ -f gate_g2.o ]; then
         GCC_RAN=yes
-        ld -o link_ref_gcc link_test_start.o gate_g1.o gate_g2.o 2>/dev/null
+        # ★ `|| echo SKIP` ADDED (ENTELECHEIA, 2026-09-18) — a static audit of every bare cp/ld line in
+        #   this file, ordered after aea9d81's fixture-precondition fix. This ld, and its seven siblings
+        #   below (gate_fs / w_ref_a / w_ref_b / wu_ref / gx_ref / gg_ref / link_ref_gc), each redirect
+        #   stderr to /dev/null with NO `||` guard: a real link failure would die under `set -e` (:15) at
+        #   this exact line with NO diagnostic — the same invisible-death shape aea9d81 fixed for the bare
+        #   `cp link_test_odd.o` that killed the 2026-09-17 full audit, one call earlier in the chain. Their
+        #   .o INPUTS are not the missing-producer case aea9d81 fixed (each is compiled a few lines above,
+        #   guarded by its own `-f X.o [&& readelf pattern]` check before use), so this converts a rarer,
+        #   narrower failure — ld itself refusing a well-formed pair — from silent to a printed SKIP line,
+        #   matching the convention `cmp_text_against_ld` (:37) already uses. NOT restructured to skip the
+        #   rest of each block cleanly (that needs wrapping ~10-15 lines per site in a new `if`, changing
+        #   control flow this audit did not verify by running); on the rare path this fires, the block's
+        #   own downstream FAIL assertions still catch the mismatch, loudly, a few lines later.
+        ld -o link_ref_gcc link_test_start.o gate_g1.o gate_g2.o 2>/dev/null \
+            || echo "SKIP  gcc-object link: ld could not link the pair"
         if ./link_ref_gcc; then LDRC=0; else LDRC=$?; fi
         cp link_test_start.o link_in1.o
         cp gate_g1.o link_in2.o
@@ -655,7 +685,8 @@ CFS
     if [ -f gate_fs.o ]; then
         # Prove the fixture actually splits — else it would silently prove nothing.
         if readelf -SW gate_fs.o | grep -q '\.text\.compute'; then
-            ld -o link_ref_fs link_test_start.o gate_fs.o 2>/dev/null
+            ld -o link_ref_fs link_test_start.o gate_fs.o 2>/dev/null \
+                || echo "SKIP  -ffunction-sections link: ld could not link the pair"
             if ./link_ref_fs; then LDFRC=0; else LDFRC=$?; fi
             cp link_test_start.o link_in1.o
             cp gate_fs.o          link_in2.o
@@ -709,9 +740,16 @@ CWC
     gcc -c -O0 -x c - -o w_strong.o 2>/dev/null <<'CWS'
 int helper(int x){return x*2;}
 CWS
-    if [ -f w_weak.o ] && readelf -sW w_weak.o | grep -q 'WEAK.* helper'; then
+    # ★ GUARD WIDENED (ENTELECHEIA, 2026-09-18) — only w_weak.o was presence-checked; w_ref.o/w_cw.o/
+    #   w_strong.o were consumed on faith. If any of THEIR gcc compiles silently failed (unguarded under
+    #   set -e, same class as the others), the block would die at whichever cp/ld touched the missing one,
+    #   past this check, with no clean diagnosis. All four are simple, deterministic heredocs, so this
+    #   should never fire — but "should never" is exactly what the odd.o incident (09-17) was too.
+    if [ -f w_ref.o ] && [ -f w_weak.o ] && [ -f w_cw.o ] && [ -f w_strong.o ] \
+        && readelf -sW w_weak.o | grep -q 'WEAK.* helper'; then
         # A. weak fallback (no strong def anywhere)
-        ld -o w_ref_a link_test_start.o w_ref.o w_weak.o 2>/dev/null
+        ld -o w_ref_a link_test_start.o w_ref.o w_weak.o 2>/dev/null \
+            || echo "SKIP  weak-only link: ld could not link the pair"
         if ./w_ref_a; then LDA=0; else LDA=$?; fi
         cp link_test_start.o link_in1.o; cp w_ref.o link_in2.o; cp w_weak.o link_in3.o
         printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt; rm -f link_out
@@ -722,7 +760,8 @@ CWS
             [ "$OA" = "$LDA" ] || { echo "FAIL  weak-only link exited $OA, ld exits $LDA"; ok=0; }
         else echo "FAIL  weak-only: no executable emitted"; ok=0; fi
         # B. a strong def overrides the weak one, even the weak object's own ref
-        ld -o w_ref_b link_test_start.o w_cw.o w_strong.o 2>/dev/null
+        ld -o w_ref_b link_test_start.o w_cw.o w_strong.o 2>/dev/null \
+            || echo "SKIP  weak+strong link: ld could not link the pair"
         if ./w_ref_b; then LDB=0; else LDB=$?; fi
         cp w_cw.o link_in2.o; cp w_strong.o link_in3.o
         printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt; rm -f link_out
@@ -755,7 +794,8 @@ extern int opt(int) __attribute__((weak));
 int compute(int x){ return (&opt) ? opt(x) : x*2+1; }
 CWU
     if [ -f wu.o ] && readelf -sW wu.o | grep -q 'WEAK.* opt$'; then
-        ld -o wu_ref link_test_start.o wu.o 2>/dev/null
+        ld -o wu_ref link_test_start.o wu.o 2>/dev/null \
+            || echo "SKIP  undefined-weak link: ld could not link the pair"
         if ./wu_ref; then LDU=0; else LDU=$?; fi
         cp link_test_start.o link_in1.o; cp wu.o link_in2.o
         printf 'link_in1.o\nlink_in2.o\n' > link_inputs.txt; rm -f link_out
@@ -796,8 +836,10 @@ CGX
     gcc -c -O0 -x c - -o gxd.o 2>/dev/null <<'CGXD'
 int extfn(int x){ return x*2; }
 CGXD
-    if [ -f gx.o ] && readelf -rW gx.o | grep -q 'GOTPCREL'; then
-        ld -o gx_ref link_test_start.o gx.o gxd.o 2>/dev/null
+    # ★ GUARD WIDENED (ENTELECHEIA, 2026-09-18) — gxd.o was consumed on faith; only gx.o was checked.
+    if [ -f gx.o ] && [ -f gxd.o ] && readelf -rW gx.o | grep -q 'GOTPCREL'; then
+        ld -o gx_ref link_test_start.o gx.o gxd.o 2>/dev/null \
+            || echo "SKIP  GOTPCRELX link: ld could not link the pair"
         if ./gx_ref; then LDX=0; else LDX=$?; fi
         cp link_test_start.o link_in1.o; cp gx.o link_in2.o; cp gxd.o link_in3.o
         printf 'link_in1.o\nlink_in2.o\nlink_in3.o\n' > link_inputs.txt; rm -f link_out
@@ -857,7 +899,13 @@ gcc -c gg2.s -o gg2.o 2>/dev/null
 if [ -f gg2.o ] && readelf -rW gg2.o | grep -q 'GOT64'; then
     gcc -c gg1.s -o gg1.o 2>/dev/null
     gcc -c gg3.s -o gg3.o 2>/dev/null
-    ld -static --no-pie -e _start -o gg_ref gg1.o gg2.o gg3.o 2>/dev/null
+    # ★ GUARD ADDED (ENTELECHEIA, 2026-09-18) — gg1.o/gg3.o were consumed on faith, no -f check at all
+    #   (unlike every other block's discriminator fixture). SKIP loudly rather than reach `ld`/`cp` on a
+    #   file that never got produced.
+    [ -f gg1.o ] && [ -f gg3.o ] || { echo "SKIP  real-.got link: gg1.o or gg3.o was not produced"; }
+    if [ -f gg1.o ] && [ -f gg3.o ]; then
+    ld -static --no-pie -e _start -o gg_ref gg1.o gg2.o gg3.o 2>/dev/null \
+        || echo "SKIP  real-.got link: ld could not link the trio"
     #   set -e: ./gg_ref exits 41 BY DESIGN, so capture via if/else — a bare
     #   `./gg_ref; LDGX=$?` would abort the whole script at the non-zero exit.
     if ./gg_ref >/dev/null 2>&1; then LDGX=0; else LDGX=$?; fi
@@ -874,6 +922,7 @@ if [ -f gg2.o ] && readelf -rW gg2.o | grep -q 'GOT64'; then
         rm -f link_in1.o link_in2.o link_in3.o link_inputs.txt gg_ref
     else
         echo "NOTE  link_reloc.la: ld relaxed the GOT64 fixture (kept no .got) — real-.got check skipped"
+    fi
     fi
     rm -f gg1.o gg3.o
 else
@@ -901,7 +950,8 @@ int helper(int x){return x*2;}
 int dead_never_called(int x){return x*999+12345;}
 CGC
     if [ -f gate_gc.o ] && readelf -SW gate_gc.o | grep -q '\.text\.dead_never_called'; then
-        ld --gc-sections -o link_ref_gc link_test_start.o gate_gc.o -e _start 2>/dev/null
+        ld --gc-sections -o link_ref_gc link_test_start.o gate_gc.o -e _start 2>/dev/null \
+            || echo "SKIP  --gc-sections link: ld could not link the pair"
         if ./link_ref_gc; then LDGRC=0; else LDGRC=$?; fi
         LDGCSZ=$(readelf -lW link_ref_gc | awk '/LOAD/ && $7=="R" && $8=="E"{print $5; exit}')
         cp link_test_start.o link_in1.o
@@ -996,5 +1046,6 @@ else
 fi
 
 rm -f link_in1.o link_in2.o link_inputs.txt
+finished=1
 [ "$ok" = 1 ] && echo "PASS  link_reloc.la: relocations byte-identical to ld, AND THE LINKED PROGRAM RUNS (3 objects$([ "$GCC_RAN" = yes ] && echo " incl. REAL GCC OUTPUT"), PC32 + PLT32 + 64 + 32/32S + GOTPCRELX(mov->lea relax) + REAL .got SYNTHESIS (GOT64/GOTPC32 via .quad sym@GOT, non-relaxable, RUNS == ld), WEAK symbols (strong overrides weak; weak resolves when no strong; undefined weak -> 0), 5 sections incl. .bss and a writable segment + .eh_frame MERGED byte-identical to ld (deduped CIE, FDEs relocated to point at .text), -ffunction-sections .text.*/.data.* merged into output sections, --gc-sections drops unreferenced sections (== ld --gc-sections), W^X, page-aligned, 3 negative gates, .rela.data patched and ASSERTED BY OUTPUT not exit status)"
 [ "$ok" = 1 ]
