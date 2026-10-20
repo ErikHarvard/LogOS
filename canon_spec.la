@@ -34,10 +34,10 @@
 #  metacursion ↻(KAPPA) = κ(κ) canonicalizes to a definite spec, and
 #  KAPPA ≡ KAPPA. ∃(∃) ≡ ∃ for κ.
 #
-#  v1 scope (locked with the author): canonical form is ORDER-PRESERVING
-#  (no mode-equivalences assumed — declaring ⊗/⊕ commutative is a v2 once
-#  LINGUA ADAMICA.tex is in the repo); primitives render by glyph NAME, not
-#  phonym (the nine phonyms in 3-D phonetic space await that same file).
+#  v1 scope (locked with the author): CANON (κ) is ORDER-PRESERVING — mode
+#  equivalences are applied only by NORMK below; primitives render by glyph
+#  NAME, not phonym. (LINGUA_ADAMICA.tex is now in the repo root; the nine
+#  phonyms it specifies are synthesised by phonym.la, not here.)
 #
 #  This is NOT hand-written module source: it is a SPECIFICATION. DEPLOY
 #  writes canon.la, type-checks the generated source, and META_DEBUG
@@ -82,8 +82,9 @@ glyph KAPPA  = DIR(PRIM("RECOGNITION"))(PRIM("FORM"))
 # evaluating eval.la — realised by the fixed-point rewrite ↻(𝓡)→𝓡 (see REWRITE_MC).
 glyph REVAL  = DIR(PRIM("DEPTH"))(PRIM("RECOGNITION"))
 
-# ── The eight self-relations of the Logos (Being & Becoming): the Logos to / about
-# / as / for / by / through / with / from itself. Each is a MODE OF SELF-RELATION,
+# ── The eight self-relations of the Logos (enumerated in Logoscribeologiae, "The
+# Octad of Autological Completion" — not in this repo; Being & Becoming has no such
+# list): the Logos to / about / as / for / by / through / with / from itself. Each is a MODE OF SELF-RELATION,
 # the reflexive turn ↻ of the concept that anchors its computational capability,
 # and a metacursive FIXED POINT — SELFREL(SELFREL) ≡ SELFREL (Criterion 7: the
 # self-addressing address yields the address) — realised by the ↻(SR)→SR rewrite in
@@ -188,7 +189,7 @@ glyph NIS = la a. la b. str_eq(NORMK(a))(NORMK(b))
 #        quantity. That is IS_ALPHA1 below, and it is a BOOLEAN on purpose.
 #      · INSTANTIATION FIDELITY: how faithfully a low-dimensional derived FORM (a
 #        sigil, a phonym) realises that alignment. **MEASURED, sub-1.0, bounded** —
-#        visual ≈0.863, phonetic 0.71. Real, and it is NOT α.
+#        visual ≈0.863, phonetic 0.67. Real, and it is NOT α.
 #
 #    ★ THE CATEGORY ERROR THIS FORBIDS: reporting a fidelity number as though it were
 #    α. It would read as "the sign is 86% the referent", which is not a weaker version

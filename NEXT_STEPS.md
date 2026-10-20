@@ -39,11 +39,16 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    asserts it (host + VM). *Caveat now CLOSED:* the full objective derivation (geometry
    computed from a canonical structure, not a fixed table) was what rode on **item 7** — now
    built. `topoderive.la`'s deep renderer canonicalizes the concept (CANONIQ) *before*
-   deriving its picture, and the item-7 build stage proves the property directly: feature
-   extraction is order-independent for commutative concepts (`build.sh:1901`, ⊗LR==⊗RL),
-   `DSIGIL` is canonical (`build.sh:1933`, commutative ⊕ order can't change the form) yet
-   still directional (`build.sh:1934`, ▷ order does change it). Both renderers — surface and
-   deep — now yield one form per concept regardless of operand order. **Item 1 fully built.**
+   deriving its picture, and the item-7 build stage proves the property directly. *(Since
+   corrected: ⊗ is NON-commutative, `LINGUA_ADAMICA.tex:2837`, so ⊗(L,R) and ⊗(R,L) are two
+   concepts and only ⊕ operands are sorted — `CANONIQ` in `sigil.la`.)* The item-7 stage of
+   build.sh now asserts, in its `onf`/`topoderive` checks (find them by their FAIL text): ⊗
+   operand order DOES change the ONF feature record ("ontosynthesis extracted as
+   commutative"); ⊕ order does not ("ontoconjunction is co-presence, symmetric"); `DSIGIL`
+   is canonical under ⊕ order ("not canonical (commutative ⊕ order changes form)") yet
+   still directional ("directional ▷ wrongly order-independent"). Both renderers — surface
+   and deep — yield one form per concept: ⊕ order never changes it, ⊗ and ▷ order do,
+   because those orders name different concepts. **Item 1 fully built.**
 
 2. **Ontosemantics is tautological via the laws of thought as reality's metalogical
    ontosyntax — the ontological algorithm of the language.** *Status:* **built (operative).**
@@ -104,12 +109,15 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    named operators, which is what meta-monosemy requires.
 
    **KNOWN, RESOLVED DISCREPANCY — `SR_FROM` ("From" governs; do not re-open):** the origin/
-   source self-relation is named **`SR_FROM` = ↻(VOID)** ("from itself"). The Logoscribeologiae
-   octad *table* (`codex_logoscribeologiae.tex:2965`) labels relation #1 **"Of itself"**, but
-   **all prose in every codex says "from itself"** — *Being & Becoming* (the cited origin of the
-   eight: "boots from itself", "differentiates from itself", with no octad and no "of itself"
-   anywhere) and Logoscribeologiae's own prose ("Being come from itself", `:3482`). The lone
-   "Of" is a single formal table in a codex *not* named as the source. **Decision (author):
+   source self-relation is named **`SR_FROM` = ↻(VOID)** ("from itself"). The eight are
+   enumerated in Logoscribeologiae (not in this repo), whose octad *tables* ("The Octad of
+   Autological Completion" and its checklist) label relation #1 **"Of itself"**. *Being &
+   Becoming* has no octad — "by itself" and "through itself" never occur in it — and its prose
+   has both "from itself" ("boots from itself", B&B:1967; "differentiates from itself",
+   B&B:2136) and "of itself" (9 times, e.g. B&B:2067). Logoscribeologiae's prose says "from
+   itself" ("WHERE does Being come from? From itself."). The decision's recorded reason (the
+   "Of" table is in a codex not named as the source) assumed B&B was the source of the eight;
+   that reason is open for the author. **Decision (author):
    "From" governs** — `SR_FROM` stays. Documented so it does not resurface as a question.
 
 6. **Naturally ground the golden ratio as the ontoglyphic geometric fixed-point
@@ -142,7 +150,8 @@ sign would no longer BE the referent. The test only ever observes; it never stip
    inconsistent; no two-term recurrence — metacursion is x²=x; accepted, see #6). (b)
    **Flower of Life does NOT emerge** (concentric rings + arms + corner-marks, not a hexagonal
    packing lattice; not imposed). (c) **`d_𝒪↔d_𝒫` proximity** — feature-distance vs rendered-form
-   Hamming-distance score **0.863**. **METRIC INTERPRETATION (ATT — corrected, read this):** the
+   Hamming-distance score **0.863** (measured offline, FIDELITY.md §1e — no code in the repo
+   computes it and build.sh does not check it, so it is not reproducible here). **METRIC INTERPRETATION (ATT — corrected, read this):** the
    0.863 is **NOT** a measure of ontosemantic alignment. Under B&B's Alignment Theory of Truth,
    at α=1 sign and referent are not *corresponded across a gap* (correlation is a correspondence-
    style statistic) but **identical** — tautological self-recognition — so **alignment = 1.0 BY
@@ -227,7 +236,8 @@ sign would no longer BE the referent. The test only ever observes; it never stip
 > **STATUS: DONE.** Committed `3baf018`, tagged `verified-2026-06-17-3baf018`, branch
 > `native-backend-stage3a` pushed to origin. Full audit **132 PASS / 0 FAIL, EXIT=0**, Stage-3a line
 > present & passing. ROADMAP flipped (Stage 3 `[~]`, `3a [x]`, `3b [ ]`). The commit holds
-> `native_codegen3.la` (= codegen2 + TCO + 768 MB heap) + build.sh Stage-3a section + `.gitignore` +
+> `native_codegen3.la` (= codegen2 + TCO + 768 MB heap at that commit; the heap is now
+> 16 GiB, `HEAP_SIZE` at native_codegen3.la:540) + build.sh Stage-3a section + `.gitignore` +
 > ROADMAP + NEXT_STEPS. (Build note: the deep-geometry/`cob.la` codegen was the slow step — ~13 min on
 > a single 100%-CPU compile, healthy not hung; full build ~40+ min. Be patient there.)
 > The mechanism + gate detail below is retained as the historical record.
@@ -408,7 +418,7 @@ explicit instruction). Do not start emitting code until the plan is reviewed.
 
 ---
 
-## 2. The eight self-relations of the Logos (from *Being & Becoming*)
+## 2. The eight self-relations of the Logos (Logoscribeologiae's octad)
 
 **Goal:** instantiate the eight self-relations — Logos **to / about / as / for / by
 / through / with** itself, and **from** itself — as first-class **named glyphs in 𝓜**,
@@ -636,7 +646,7 @@ WHAT'S ALREADY TRUE (by construction / verified in pieces):
   (`eval.la` interprets `kernel.la`), Albedo Stage 4 (compiler+VM regenerate themselves
   byte-identically), `copy_self`.
 
-WHAT THE CERTIFICATION ADDS (a dedicated `heterology_audit.la` / build stage):
+WHAT THE CERTIFICATION ADDS (a dedicated `heterology_audit.la` — not yet written — / build stage):
 - Enumerate the full CONCEPT inventory (9 primitives, 5 modes, 𝔑, κ, 𝓡, the 8 self-relations,
   all derived concepts in every module) and assert `AUTO_OK` for EACH — one global sweep, no
   exceptions, so "no heterology anywhere" is certified, not just per-module.

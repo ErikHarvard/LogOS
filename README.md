@@ -355,8 +355,11 @@ vocabulary — the linguistic analogue of `∃(∃) ≡ ∃`.
 
 `build.sh` is the autological criterion. It succeeds only if the kernel speaks
 the Word (`I AM THAT I AM`), replicates byte-identically, every engine agrees,
-each spec-generated module passes its own tests on host *and* native VM, and the
-native compiler reproduces itself. On a clean, green tree it tags the commit
+each spec-generated module passes its own tests on host *and* native VM, and —
+where the Stage 4 check runs — the native compiler reproduces itself. That check
+needs the committed compiler image and at least 12000 MiB available; otherwise
+`build.sh` prints a NOTE and carries on, so a green build does not by itself mean
+the fixed point was checked. On a clean, green tree it tags the commit
 `verified-<date>-<sha>` as a rollback point.
 
 > **Note:** the full suite is thorough and slow (on the order of a couple of
@@ -386,10 +389,10 @@ input run from a bare VT.
 | `logosinit.la`, `logosipc.la`, `logoscap.la`, `theourgia*.la` | The OS layers |
 | `codices/published/`           | The published philosophical works behind the system |
 | `build.sh`                     | The autological criterion |
-| `ROADMAP.md`, `CLAUDE.md`      | Roadmap and a detailed engineering map of every module |
+| `ROADMAP.md`, `CLAUDE.md`      | Roadmap and a detailed engineering map of the main modules |
 
 `CLAUDE.md` is the deepest technical reference — a module-by-module description of
-the entire system.
+the main modules (its Layout table names the files it does not cover).
 
 ---
 
