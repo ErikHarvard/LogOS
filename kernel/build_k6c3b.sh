@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # LogOS kernel K6c.3b slice — build the ring-3 two-LA-task typed-IPC probe ELF.
-#   ipc2.la --(native_codegen3, with the new send/recv builtins)--> the LA
+#   ipc2.la --(native_codegen3, with its chan_send/chan_recv builtins)--> the LA
 #     image @0x400000, incbin'd into the kernel ELF exactly as K6b does.
 #   boot.asm -dK6C3: same ring-3 LA-image entry as K6b (LA_RING3_IMAGE — user-map
 #     the low 1 GiB, set METAL_FLAG, TSS, iretq to LA_ENTRY at CPL 3) PLUS the IPC
 #     channel layer (%ifdef IPC: k6c_chans + the send/recv syscall dispatch). The
-#     LA image's send(0)(msg)/recv(0) lower to SYS_SEND(0x300)/SYS_RECV(0x301),
+#     LA image's chan_send(0)(msg)/chan_recv(0) lower to SYS_SEND(0x300)/SYS_RECV(0x301),
 #     which the kernel services against channel 0 and sysrets back to ring 3.
 # Separate output (kernel_k6c3b.elf); every other kernel ELF stays byte-identical.
 #

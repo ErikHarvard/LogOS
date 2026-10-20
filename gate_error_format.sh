@@ -11,14 +11,16 @@
 # error names its engine AND its builtin; engine-level errors (heap exhausted,
 # unbound variable, malformed program, ...) are "<engine>: <message>".
 #
-# WHAT IT RUNS. Three faulty programs, each on all three engines, stderr matched
+# WHAT IT RUNS. Four faulty programs, each on all three engines, stderr matched
 # EXACTLY (not a substring — a stray prefix or a lost builtin name fails):
 #   str_len(5)             -> <e>: str_len: argument is not a string
 #   mod(5)(<computed 0>)   -> <e>: mod: division by zero
 #   chr(<computed "300">)  -> host adds the value; VM/native: value out of byte range 0..255
+#   read_file(<missing>)   -> <e>: read_file: cannot open '<path>' (host adds strerror);
+#                             native used to say only "cannot open file"
 # (divisor and chr argument are computed so no engine can constant-fold them.)
 #
-# ISOLATION: private mktemp dir; touches no tracked file. Needs gcc. ~90 s (the
+# ISOLATION: private mktemp dir; touches no tracked file. Needs gcc. ~2 min (the
 # native backend compiles each program through tiny_host).
 set -eu
 ROOT=$(cd "$(dirname "$0")" && pwd)
@@ -65,5 +67,9 @@ case_ "chr 300" 'print(chr(concat("3")("00")))' \
     "host: chr: value 300 out of byte range 0..255" \
     "secd: chr: value out of byte range 0..255" \
     "native: chr: value out of byte range 0..255"
+case_ "read_file missing" 'print(read_file("/nonexistent/logos_gate"))' \
+    "host: read_file: cannot open '/nonexistent/logos_gate': No such file or directory" \
+    "secd: read_file: cannot open '/nonexistent/logos_gate'" \
+    "native: read_file: cannot open '/nonexistent/logos_gate'"
 
 [ "$ok" = 1 ] || exit 1
