@@ -158,6 +158,14 @@ export NAME1 NAME2 ...        # names this file makes visible to importers
 import("other.la")            # merge other.la's EXPORTED glyphs into this file
 ```
 
+An import path is used **as written**: a relative path resolves against the
+process's **current directory**, not the importing file's directory, on every
+engine (the C host and the `.la` parsers all `read_file` the literal string).
+So programs that import are run from the directory that holds their modules —
+the repo root for everything here; `./tiny_host sub/app.la` cannot find a
+`sub/m.la` imported as `"m.la"` (the host's diagnostic names the importer and
+this rule).
+
 `import("m.la")` parses `m.la` (recursively — nested imports work, each with its
 own export set and saved/restored lexer state) and merges its **exported**
 glyphs into the importing table under their plain names. The module's
@@ -1801,10 +1809,17 @@ emits:
   deref it; `present`/the string builtins were already guarded.)
 
 The C host gained the matching guard for its own recursion: deeply-nested input
-halts with `error: expression nesting too deep (C stack guard)`, armed 512 KB
-below `RLIMIT_STACK` so it fires only where the C stack (parser / `eval` /
-`subst` / `occurs_free` / `copy_node`) would otherwise overflow — every
-legitimate program, including the deep self-hosting recursion, is untouched.
+or deep non-tail evaluation halts with `error: recursion too deep — expression
+nesting or non-tail evaluation depth (host C stack guard)`, armed 512 KB above
+the bottom of the stack the interpreter runs on, so it fires only where the C
+stack (parser / `eval` / `subst` / `occurs_free` / `copy_node`) would otherwise
+overflow. That stack is a 256 MiB lazily-committed mmap'd thread stack (audit2
+#80): the host's non-tail ceiling was ~50k frames on the 8 MiB default stack,
+1/20 of the VM's ~1M-frame dump; it is now ~1.5M frames (SUM(100000) runs on
+both). 256 MiB, not more: a runaway recursion costs ~26 KB of heap per frame, so
+a bigger stack would let it exhaust RAM before the guard fires. If the 256 MiB
+map fails, the host falls back to the process stack
+with the guard 512 KB below `RLIMIT_STACK`, and the old ~50k ceiling returns.
 These join the pre-existing `secd: heap exhausted` / `secd: stack overflow` /
 `secd: path too long` guards, so no engine now fails silently on bad input.
 `build.sh` **regression-tests the VM guard set directly** (each feeds a broken
