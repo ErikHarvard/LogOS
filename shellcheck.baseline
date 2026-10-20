@@ -1,0 +1,99 @@
+# shellcheck.baseline — the findings `shellcheck -f gcc *.sh kernel/*.sh` (ShellCheck 0.9.0)
+# reported on kernel-k1 @ 9df29b0 (93 findings). gate_shellcheck.sh fails only on a finding
+# NOT listed here. Key: <file>|<SCcode>|<source line, whitespace-collapsed> — not the line
+# number, so editing elsewhere in a file does not churn the baseline. A repeated key
+# is listed once per occurrence. Fixing a baselined finding needs no edit here (the
+# gate reports it as fixed); deleting its line afterwards tightens the baseline.
+build.sh|SC2015|! HSYM "g7 BECOMING" "$2" && ! VSYM "g7 BECOMING" "$2" || { echo "FAIL sigil($1): BECOMING spiral not chiral (expect neither H nor V symmetric)"; ok=0; }
+build.sh|SC2015|&& echo "PASS PID 1 reaps an orphaned grandchild via reparenting: 2 reaps" \
+build.sh|SC2015|&& echo "PASS reap(-1) drains direct children: forked 3, reaped 3, then ECHILD" \
+build.sh|SC2015|HSYM "g2 RECOGNITION" "$2" && VSYM "g2 RECOGNITION" "$2" || { echo "FAIL sigil($1): RECOGNITION eye not mutual (expect H+V symmetric)"; ok=0; }
+build.sh|SC2015|HSYM "g3 LOVE" "$2" && ! VSYM "g3 LOVE" "$2" || { echo "FAIL sigil($1): LOVE flame not upright (expect H symmetric, NOT V)"; ok=0; }
+build.sh|SC2015|HSYM "g4 SELF" "$2" && VSYM "g4 SELF" "$2" || { echo "FAIL sigil($1): SELF not a centred lemniscate (expect H+V symmetric)"; ok=0; }
+build.sh|SC2015|HSYM "g6 VOID" "$2" && ! VSYM "g6 VOID" "$2" || { echo "FAIL sigil($1): VOID gap not at the crown (expect H symmetric, NOT V)"; ok=0; }
+build.sh|SC2015|HSYM "g8 FORM" "$2" && ! VSYM "g8 FORM" "$2" || { echo "FAIL sigil($1): FORM apex not up (expect H symmetric, NOT V)"; ok=0; }
+build.sh|SC2015|[ "$NAT_INT" = "$HOST_INT" ] && [ "$NAT_INT" = "$(printf '44\n3\nyes')" ] \
+build.sh|SC2015|[ "$RTC_IN" -ge 40 ] && [ "$RTC_EX" -ge 1 ] \
+build.sh|SC2015|[ -f "$SIB_A" ] && [ -f "$SIB_B" ] || { echo "FAIL a sibling file is missing"; ok=0; }
+build.sh|SC2015|[ -n "$BYTE_CHILD" ] && [ -f "$BYTE_CHILD" ] && cmp -s tiny_host "$BYTE_CHILD" \
+build.sh|SC2015|[ -n "$EVAL_CHILD" ] && [ -f "$EVAL_CHILD" ] && cmp -s tiny_host "$EVAL_CHILD" \
+build.sh|SC2015|[ -n "$LF3" ] && [ -n "$RF3" ] || { echo "FAIL formant-guard: could not extract phonym's formant triples"; ok=0; }
+build.sh|SC2015|[ -n "$SECD_EXPECT" ] && [ "$SECD_EXPECT" -gt 1024 ] \
+build.sh|SC2046|dd if=native_codegen3_out of=/tmp/c3rt_emb bs=1 skip=120 count=$(stat -c%s /tmp/c3rt_ref) 2>/dev/null
+build.sh|SC2086|LF1=$(echo $LOVE|awk '{print $1}'); LF2=$(echo $LOVE|awk '{print $2}'); LF3=$(echo $LOVE|awk '{print $3}')
+build.sh|SC2086|LF1=$(echo $LOVE|awk '{print $1}'); LF2=$(echo $LOVE|awk '{print $2}'); LF3=$(echo $LOVE|awk '{print $3}')
+build.sh|SC2086|LF1=$(echo $LOVE|awk '{print $1}'); LF2=$(echo $LOVE|awk '{print $2}'); LF3=$(echo $LOVE|awk '{print $3}')
+build.sh|SC2086|RF1=$(echo $REC|awk '{print $1}'); RF2=$(echo $REC|awk '{print $2}'); RF3=$(echo $REC|awk '{print $3}')
+build.sh|SC2086|RF1=$(echo $REC|awk '{print $1}'); RF2=$(echo $REC|awk '{print $2}'); RF3=$(echo $REC|awk '{print $3}')
+build.sh|SC2086|RF1=$(echo $REC|awk '{print $1}'); RF2=$(echo $REC|awk '{print $2}'); RF3=$(echo $REC|awk '{print $3}')
+drm_bringup_term.sh|SC2024|sudo ./logos_secd >"$LOGF" 2>&1
+freeze_q1_diff.sh|SC2034|out=$(run_engine 900 ./tiny_host "$W/b_${TAG}_$eng.la")
+gate_bootelf.sh|SC2015|&& echo " ok relocations identical ($(readelf -rW boot_ref.o | awk '/R_X86/' | wc -l) relocs)" \
+gate_bootelf.sh|SC2015|&& echo " ok symbols identical ($(readelf -sW boot_ref.o | awk 'NR>3&&NF' | wc -l) entries)" \
+gate_bootelf.sh|SC2015|[ -n "$OURS" ] && [ -n "$DIR" ] || die "usage: $0 <ours.o> <bootsrc-dir>"
+gate_claimindex.sh|SC2001|[ -z "$MISSING" ] || { echo "FAIL claimindex: unbuilt item(s) not indexed in $X:"; echo "$MISSING" | sed 's/^/ /'; exit 1; }
+gate_claimindex.sh|SC2016|grep '`\[ \]`' "$C" | grep -v 'Status key:' | norm_keys | sed 's/ *$//' | sort -u > "$CKEYS"
+gate_claimindex.sh|SC2016|grep -oE '^\| [0-9]+ \| `[^`]+`' "$X" | sed 's/.*`\(.*\)`/\1/' | sort -u > "$XKEYS"
+gate_claimindex.sh|SC2016|grep -oE '^\| [0-9]+ \| `[^`]+`' "$X" | sed 's/.*`\(.*\)`/\1/' | sort -u > "$XKEYS"
+gate_claimindex.sh|SC2016|sed 's/`\[[ ~x✓!]\]`//g' | tr 'A-Z' 'a-z' \
+gate_claimindex.sh|SC2018|sed 's/`\[[ ~x✓!]\]`//g' | tr 'A-Z' 'a-z' \
+gate_claimindex.sh|SC2019|sed 's/`\[[ ~x✓!]\]`//g' | tr 'A-Z' 'a-z' \
+gate_crypto.sh|SC2164|cd "$(dirname "$0")"
+gate_ratchet.sh|SC2015|[ -f sx2_parent.la ] && [ -f sx2_child.la ] \
+gate_sha256.sh|SC2164|cd "$(dirname "$0")"
+kernel/build_k7b.sh|SC2086|-D BOOTMEMSZ=$BOOT_MSZ \
+kernel/build_k7b.sh|SC2086|-D BOOTMEMSZ=$BOOT_MSZ \
+kernel/build_k7b.sh|SC2086|-D BOOT_LBA=$BOOT_LBA -D BOOT_SECTORS=$BOOT_SECTORS \
+kernel/build_k7b.sh|SC2086|-D BOOT_LBA=0 -D BOOT_SECTORS=$BOOT_SECTORS \
+kernel/build_k7b.sh|SC2086|-D LA_LBA=$LA_LBA -D LA_SECTORS=$LA_SECTORS \
+kernel/build_k7b.sh|SC2086|-D LA_LBA=0 -D LA_SECTORS=$LA_SECTORS \
+kernel/build_k7b.sh|SC2086|-D STAGE2_LBA=$STAGE2_LBA -D STAGE2_SECTORS=$STAGE2_SECTORS
+kernel/build_k7b.sh|SC2162|read BOOT_OFF BOOT_FSZ BOOT_MSZ < <(read_seg $((BOOTPHYS)))
+kernel/build_k7b.sh|SC2162|read LA_OFF LA_FSZ LA_MSZ < <(read_seg $((LAPHYS)))
+kernel/gate_comp_session.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_comp_term.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal1.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal2.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal2b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal3.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal3b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal4.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal4b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal4c.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal5.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hal5b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hh1.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hh1b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hh2.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hh2b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_hh2c.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k1.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k2.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k3a.sh|SC1102|( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL K3a: compile of pmm.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or pmm.la is at fault"; exit 1; }
+kernel/gate_k3a.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k3a.sh|SC2211|( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL K3a: compile of pmm.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or pmm.la is at fault"; exit 1; }
+kernel/gate_k3b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k4a.sh|SC1102|( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL K4a: compile of paging.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or paging.la is at fault"; exit 1; }
+kernel/gate_k4a.sh|SC1102|( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL K4a: compile of paging_wxfail.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or paging_wxfail.la is at fault"; exit 1; }
+kernel/gate_k4a.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k4a.sh|SC2211|( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL K4a: compile of paging.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or paging.la is at fault"; exit 1; }
+kernel/gate_k4a.sh|SC2211|( if [ -x native_codegen3_selfhost.bin ]; then cp native_codegen3_selfhost.bin /tmp/_ncc$$ && chmod +x /tmp/_ncc$$ && /tmp/_ncc$$; rc=$?; rm -f /tmp/_ncc$$; exit $rc; else ./tiny_host native_codegen3.la; fi; ) >/dev/null 2>&1 || { echo "FAIL K4a: compile of paging_wxfail.la ended rc=$? — rc>=128 means the process was KILLED (signal $((\$?-128))), NOT that native_codegen3 or paging_wxfail.la is at fault"; exit 1; }
+kernel/gate_k4b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k4b_cr3.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k4c_heap.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k4c_nx.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k4c_wx.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k5a.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k5b1.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k5b1b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k5b2.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k6a.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k6b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k6c.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k6c2.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k6c3.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k6c3b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k7a.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_k7b.sh|SC2164|cd "$(dirname "$0")/.."
+kernel/gate_with_ok.sh|SC2164|cd "$(dirname "$0")/.."
+stage4_seed_capture.sh|SC2164|cd ~/logos

@@ -38,8 +38,9 @@ Verdicts:
 import re, os, subprocess, sys, shutil, time
 
 REPO = os.path.dirname(os.path.abspath(__file__))
+# host diagnostics are 'host: <message>' (uniform wording); 'eval error:'/'error:' were the old forms
 CRASH = ('parse error', 'unbound variable', 'attempt to apply a non-function',
-         'eval error', 'no MAIN glyph', 'error:')
+         'eval error', 'no MAIN glyph', 'error:', 'nesting too deep')
 
 # (module, mutant-name, find, replace, why-this-mutation-is-semantic [, gate-command])
 # ★ The optional 6th field is the command whose output carries the verdict.
