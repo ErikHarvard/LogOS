@@ -1138,7 +1138,7 @@ through the spec pipeline (`SPEC → GENERATE → DEPLOY → META_DEBUG`, regene
 
 - `RELATION = la a. la b. la f. f(a)(b)` — the bare two-place link;
 - `RECOGNITION = la x. RELATION(x)(x)` — the reflexive relation, `T ≡ R`;
-- `LOVE` — `RELATION` symmetrised (reciprocity);
+- `LOVE` — the codex's UNARY generator `Love(x) ≡ (x, new(x))`, built as `la x. RELATION(x)(BECOMING(x))` (E2, ruled 2026-09-08, `14-MASTER-LIST.md:387`; landed `735f744`; the symmetrisation is ⊕'s own denotation, `denote.la` `D_CON`);
 - `SELF = BEING(BEING)` — `∃(∃) ≡ ∃`, a genuine fixed point;
 - `VOID = la a. la b. b` — the empty selector; `VOID(VOID) = ID` (ex nihilo);
 - `BECOMING = la n. la f. la x. f(n(f)(x))` — the successor; `BECOMING(VOID) = ONE`;

@@ -982,8 +982,9 @@ registers. `trimono.la` now gates all three. What remains:
     glyphic round trip is untouched, so the honest statement is not "the
     trimodal identity fails" but that the phonetic register carries strictly
     less recoverable structure, on a named input class.
-- `[!]` **⊕-associativity is phonetically invisible — MEASURED 2026-09-05, and
-  the "declared equivalence" option is FORECLOSED BY THE PAPER. NEEDS ERIK.**
+- `[~]` **⊕-associativity is phonetically invisible — MEASURED 2026-09-05, and
+  the "declared equivalence" option is FORECLOSED BY THE PAPER. RULED 2026-09-08
+  (E6, see the ruling note at the end of this item); the Ledger rows are STILL OPEN.**
   The claim of identical PCM is CORRECT, and exactly so:
 
       ⊕(⊕(BEING,VOID),FORM) vs ⊕(BEING,⊕(VOID,FORM))
@@ -1012,6 +1013,23 @@ registers. `trimono.la` now gates all three. What remains:
     register, on every ⊕ compound of depth ≥ 2.
   Unlike ⊕/VOID this is **not obviously irreducible** — a depth cue is
   constructible — so it should not be closed by witnessing without trying.
+  ★ **RULED — appended 2026-10-15; the text above is what was true on 2026-09-05
+  and is left standing.** The "NEEDS ERIK" was answered, in two steps:
+  · `5faf433` (2026-09-06) took the second option — "witness it as a bound" —
+    `phonassoc.la` + a `build.sh` gate (`lenL=lenR=21040 firstdiff=-1`, with the
+    ⊕(A,B)-vs-⊕(B,A) control), "recorded as a bound BY RULING, not by acoustics".
+  · E6, Erik 2026-09-08 (`~/logos-general/14-MASTER-LIST.md:411`): *"bound it,
+    don't claim it. Split the registers. ⊕-associativity is `[W]` in the glyphic
+    register (non-associative, witnessed), `[B]` in the phonetic register
+    (grouping destroyed by fixed-gap rendering for that input class)."* Build
+    consequence, in the ruling's words: *"the Ledger row becomes TWO rows,
+    register-qualified. Do NOT loosen the glyphic claim, and do NOT declare the
+    bracketings equivalent."*
+  ⚠ **STILL OPEN:** the two register-qualified Ledger rows are written in no
+  file of this repo (the Ledger is the white paper's; `LA_PAPER_ADDITIONS_3.md` §8
+  carries only the ⊕/VOID `[B]` row). Checked 2026-10-15 against kernel-k1
+  `9ecf5a7` and track-b `b3b7d02`; whether the split was made in the paper itself
+  is unverified from here.
 - `[~]` **⊗ vs ▷ — the premise was WRONG and a DEAD BRANCH was the real defect.
   Half fixed 2026-09-05.** The item said "⊗ has no temporal signature either".
   ★ **It has one.** Read off the synthesis: `SYNP` divides by `(7 + (i/64) mod 2)`
