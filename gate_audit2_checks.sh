@@ -287,6 +287,174 @@ chk_bare_vm_helpers() {
     else fail "bare #105h: good runner not green (rc=$rc, out=[$(tr '\n' '|' <<< "$o")])"; fi
 }
 
-CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers}"
+# ── #1 (remainder) build.sh Stage 3b: blob churn (b) and freeze-day #1 (c) need a GC
+# Blocks (b)+(c) and ncg3 are extracted from build.sh and run under its
+# `set -euo pipefail`, with a tiny_host wrapper that compiles for real (once per
+# compiler+program, cached) and, for the mutant, patches the emitted rt_gc to
+# reclaim NOTHING (it only re-arms the GC budget, so allocation just bumps).
+# Unfixed, both run at the 16 GiB HEAP_SIZE, where ~6 GB / ~3.4 GB fit un-collected:
+# the mutant passes. Fixed: they compile at 256 MiB, the mutant halts 'heap
+# exhausted' rc 73 -> FAIL lines; the real collector passes both.
+chk_gc_smallheap() {
+    { awk '/^ncg3 \(\) \{/,/^\}/' "$REPO/build.sh"
+      awk '/^NC3_HEAP=|^# \(b\) blob reclamation/{p=1} p{print} p&&/^rm -f c3_big.txt/{exit}' "$REPO/build.sh"; } \
+        | sed 's#/tmp/c3#c3#g' > gc_blk.sh
+    grep -q '^ncg3 ()' gc_blk.sh && grep -q 'freeze-day #1' gc_blk.sh || { fail "gc #1: cannot extract ncg3 / blocks (b)(c) from build.sh"; return; }
+    local nga; nga=$(sed -n 's/^glyph NEXT_GC_ADDR *= *\([0-9]*\)$/\1/p' native_codegen3.la)
+    [ -n "$nga" ] || { fail "gc #1: NEXT_GC_ADDR not found in native_codegen3.la"; return; }
+    # mov qword [NEXT_GC], 0x400000 ; ret
+    local pat; pat=$(printf '\\x48\\xc7\\x04\\x25\\x%02x\\x%02x\\x%02x\\x%02x\\x00\\x00\\x40\\x00\\xc3' \
+        $((nga & 255)) $((nga >> 8 & 255)) $((nga >> 16 & 255)) $((nga >> 24 & 255)))
+    mkdir -p d1/cache; cp ./*.la d1/; cp gc_blk.sh d1/
+    cat > d1/tiny_host <<SH
+#!/bin/bash
+[ "\$1" = native_input.la ] && exec "$W/tiny_host" "\$@"
+k=\$(cat "\$1" native_input.la | md5sum | cut -c1-32)
+if [ ! -f "cache/\$k" ]; then "$W/tiny_host" "\$@" || exit \$?; cp native_codegen3_out "cache/\$k"; fi
+cp "cache/\$k" native_codegen3_out
+if [ "\$MODE" = mut ]; then   # rt_gc's first three instructions save rax/rbx/rcx to REGDUMP
+    off=\$(od -An -v -tx1 native_codegen3_out | tr -d ' \n' | grep -ob '48890425........48891c25........48890c25' | cut -d: -f1)
+    [ -n "\$off" ] && [ \$((off % 2)) = 0 ] && [ \$(wc -w <<< "\$off") = 1 ] || { echo "rt_gc signature not found once" >&2; exit 99; }
+    printf '$pat' | dd of=native_codegen3_out bs=1 seek=\$((off / 2)) conv=notrunc status=none
+fi
+SH
+    chmod +x d1/tiny_host
+    local mo ro mrc rrc
+    mo=$(cd d1 && MODE=mut timeout 200 bash -c 'set -euo pipefail; ok=1; . ./gc_blk.sh; echo "ok=$ok"' 2>&1); mrc=$?
+    ro=$(cd d1 && MODE=real timeout 200 bash -c 'set -euo pipefail; ok=1; . ./gc_blk.sh; echo "ok=$ok"' 2>&1); rrc=$?
+    if ! grep -q '^FAIL  native_codegen3 Stage 3b: blob-churn' <<< "$mo" || ! grep -q '^FAIL  native_codegen3 freeze-day #1' <<< "$mo" || ! grep -qx 'ok=0' <<< "$mo"; then
+        fail "gc #1: a collector that reclaims nothing passed (b)/(c) (rc=$mrc, out=[$(tr '\n' '|' <<< "$mo")])"
+    elif [ "$rrc" = 0 ] && [ "$ro" = "ok=1" ] && [ ! -e d1/nc3_heap.la ]; then
+        pass "gc #1: blob churn (b) and freeze-day #1 (c) run in a 256 MiB heap — a no-reclaim rt_gc FAILs both (heap exhausted), the real GC passes"
+    else fail "gc #1: real collector not green (rc=$rrc, out=[$(tr '\n' '|' <<< "$ro")])"; fi
+}
+
+# ── #31 (remainder) build.sh Stage 4 gate + regen_selfhost.sh ─────────────────
+# The Stage 4 block (and its helpers) is extracted from build.sh and run under
+# `set -euo pipefail` in a staged directory: SH_MEMINFO/SH_OVERCOMMIT describe the
+# box, the reference image is a fixture. Mutants (the planted defects):
+#  A  a 16 GiB box (MemTotal 16095000 kB, no swap, mode 0) and an image whose
+#     PT_LOAD p_memsz is 17.5 GB (the committed image's own header). Unfixed: the
+#     free-memory gate admits it and the exec fails. Fixed: NOTE skipped, naming p_memsz.
+#  C  an image that exits 0 and writes nothing. Unfixed: "stale reference image".
+#     Fixed: "wrote no native_codegen3_out".
+#  D  regen_selfhost.sh with an image that dies of SIGSEGV. Unfixed: no message.
+# Control B: on a roomy box the same header-only image IS admitted, and its exec
+# failure is reported as an exec failure ("exited"), never as "stale".
+chk_stage4_gate() {
+    { grep -E '^exec 3>&1$|^vmrun\(\) \{' "$REPO/build.sh"; echo 'say() { :; }'
+      awk '/^elf_load_memsz\(\) \{/,/^\}/' "$REPO/build.sh"; awk '/^sh_room\(\) \{/,/^\}/' "$REPO/build.sh"
+      awk '/^say "Native backend Stage 4/{p=1} p{print} p&&/^fi$/{exit}' "$REPO/build.sh"; } | sed 's#/tmp/sh_#./sh_#g' > s4_blk.sh
+    grep -q 'SH_REF=native_codegen3_selfhost.bin' s4_blk.sh || { fail "stage4 #31: cannot extract the Stage 4 block from build.sh"; return; }
+    mkdir -p d31; cp s4_blk.sh native_codegen3.la kernel.la d31/; echo 0 > d31/oc
+    printf 'MemTotal:       16095000 kB\nMemAvailable:   15645000 kB\nSwapTotal:             0 kB\nCommitLimit:     8047500 kB\nCommitted_AS:    1000000 kB\n' > d31/small
+    printf 'MemTotal:      197269000 kB\nMemAvailable:  160000000 kB\nSwapTotal:             0 kB\nCommitLimit:    98634500 kB\nCommitted_AS:    1000000 kB\n' > d31/big
+    head -c 4096 "$REPO/native_codegen3_selfhost.bin" > d31/hdr.bin
+    printf 'int main(void){return 0;}\n' > d31/t0.c; gcc -o d31/t0 d31/t0.c || { fail "stage4 #31: cannot build the exit-0 fixture"; return; }
+    s4() { cp "d31/$1" d31/native_codegen3_selfhost.bin; chmod +x d31/native_codegen3_selfhost.bin
+           (cd d31 && SH_MEMINFO="$PWD/$2" SH_OVERCOMMIT="$PWD/oc" timeout 30 bash -c 'set -euo pipefail; . ./s4_blk.sh; echo reached' 2>&1); }
+    local o rc bad=""
+    o=$(s4 hdr.bin small); rc=$?
+    { [ "$rc" = 0 ] && grep -q '^NOTE  Stage 4 self-host check skipped: .*p_memsz' <<< "$o" && ! grep -q FAIL <<< "$o"; } || bad+=" A-small-box(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    o=$(s4 hdr.bin big); rc=$?
+    { [ "$rc" != 0 ] && grep -q "^FAIL  build.sh:[0-9]*: './sh_cc' exited 139" <<< "$o" && ! grep -q 'stale reference image' <<< "$o"; } || bad+=" B-control(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    o=$(s4 t0 big); rc=$?
+    { [ "$rc" != 0 ] && grep -q 'wrote no native_codegen3_out' <<< "$o" && ! grep -q 'stale reference image' <<< "$o"; } || bad+=" C-no-output(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    mkdir -p d31r; cp "$REPO/regen_selfhost.sh" d31r/; : > d31r/native_codegen3.la
+    printf '#!/bin/bash\nkill -SEGV $$\n' > d31r/native_codegen3_selfhost.bin; chmod +x d31r/native_codegen3_selfhost.bin
+    o=$(timeout 30 bash d31r/regen_selfhost.sh 2>&1); rc=$?
+    { [ "$rc" != 0 ] && grep -q '^regen_selfhost: iter 1 .* exited 139' <<< "$o"; } || bad+=" D-regen(rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    if [ -z "$bad" ]; then pass "stage4 #31: the gate skips an image this box cannot map (p_memsz), exec failure and no-output are not reported as 'stale', regen_selfhost.sh names a dead run"
+    else fail "stage4 #31:$bad"; fi
+}
+
+# ── #87 (remainder) build.sh scratch outputs: ignored, and removed on any exit ──
+# (a) The outputs are DERIVED from build.sh's text (redirection, -o, cp/mv and tee
+#     targets, minus comments, absolute paths and $VARs), never pasted: each one
+#     that git does not track must be matched by .gitignore (checked in a scratch
+#     repo holding only $REPO/.gitignore). Unfixed: 40 such outputs are unignored.
+#     NOT_FILES are this scan's known false matches — each sits inside a quoted
+#     string or an awk program (">0", ">ok!", "formants>50x-control", ">2-parent"
+#     ...); a real new output is still caught, a new false match fails loudly.
+# (b) build.sh's EXIT trap is extracted and run under `set -euo pipefail` with
+#     every name in BUILD_SCRATCH planted; a stage then exits 1. Unfixed (no
+#     trap): the files stay. Fixed: all removed, and a "stopped with rc=1" line.
+chk_gitignore_scratch() {
+    local NOT_FILES=' +)$e( 0 1 4 2023 ok 2-parent 50x-control ' f bad="" miss="" trk
+    command -v git >/dev/null || { echo "SKIP  gitignore #87: git not installed"; return; }
+    trk=$(git -C "$REPO" ls-files 2>/dev/null) || { fail "gitignore #87: $REPO is not a git checkout"; return; }
+    rm -rf d87; mkdir d87; git -C d87 init -q; cp "$REPO/.gitignore" d87/
+    sed 's/[[:space:]]#.*$//' "$REPO/build.sh" | grep -v '^[[:space:]]*#' > b87.txt
+    { grep -oE '(^|[^0-9&<>-])[12]?>>?[[:space:]]*[A-Za-z0-9_.][A-Za-z0-9_./-]*' b87.txt | sed -E 's/.*>[[:space:]]*//'
+      grep -oE '(^|[[:space:]])-o[[:space:]]+[A-Za-z0-9_.][A-Za-z0-9_./-]*' b87.txt | awk '{print $2}'
+      grep -oE '(^|[;&|{(]|then|do)[[:space:]]*(cp|mv)( -[a-z]+)? [^;&|]*' b87.txt | awk '{print $NF}'
+      grep -oE 'tee( -a)? [A-Za-z0-9_.][A-Za-z0-9_./-]*' b87.txt | awk '{print $NF}'
+    } | grep -vE '^(/|\$|&|\.$|\.\.)|>' | sed 's#^\./##' | sort -u > cand87.txt
+    [ "$(wc -l < cand87.txt)" -gt 50 ] || { fail "gitignore #87: the output scan found only $(wc -l < cand87.txt) names — the scan is broken, not the tree"; return; }
+    while IFS= read -r f; do
+        case "$NOT_FILES" in *" $f "*) continue ;; esac
+        grep -qxF -- "$f" <<< "$trk" && continue
+        git -C d87 check-ignore -q --no-index -- "$f" || miss+=" $f"
+    done < cand87.txt
+    [ -z "$miss" ] || bad+=" unignored build.sh outputs:$miss"
+    awk '/^BUILD_SCRATCH="/,/"$/' "$REPO/build.sh" > trap87.sh
+    awk '/^build_exit\(\) \{/,/^\}/' "$REPO/build.sh" >> trap87.sh; grep -E '^trap build_exit EXIT$' "$REPO/build.sh" >> trap87.sh
+    local names o
+    names=$(bash -c '. ./trap87.sh 2>/dev/null; trap - EXIT; echo $BUILD_SCRATCH')
+    [ -n "$names" ] || names="c3_big.txt sigil_vm.txt td_vm.out vm2 logos_kernel_app"   # unfixed: plant the audit's own examples
+    mkdir -p d87t; (cd d87t && for f in $names; do : > "$f"; done)
+    o=$(cd d87t && timeout 20 bash -c 'set -euo pipefail; exec 3>&1; . ../trap87.sh; false' 2>&1)
+    left=$(cd d87t && ls -A); [ -z "$left" ] || bad+=" after a failed stage these remain: $(tr '\n' ' ' <<< "$left")"
+    grep -q '^build.sh: stopped with rc=1' <<< "$o" || bad+=" no 'stopped with rc=1' line [$(tr '\n' '|' <<< "$o")]"
+    if [ -z "$bad" ]; then pass "gitignore #87: every untracked output build.sh writes ($(wc -l < cand87.txt) names scanned) is ignored; a failed stage leaves none of the $(wc -w <<< "$names") scratch files behind"
+    else fail "gitignore #87:$bad"; fi
+}
+
+# ── #107 (remainder) build.sh's python3 dependency is named, the t_path step needs none
+# The planted defect is the environment: a PATH with every tool build.sh needs
+# except python3. (a) build.sh's required-tools loop, extracted and run there,
+# must FAIL naming python3 (unfixed: there is no loop, nothing is said); with
+# python3 present it passes. (b) the path-length stage's generator line, run
+# there, must still write the 5028-byte over-long-path program (unfixed: it is
+# `python3 -c`, which is not found). (c) README's Requirements names python3.
+chk_python3_dep() {
+    mkdir -p d107/nopy d107/withpy; local t bad="" o rc
+    for t in gcc nasm timeout od cmp awk sed head tr printf cat bash; do
+        command -v "$t" >/dev/null 2>&1 || continue
+        ln -sf "$(command -v $t)" d107/nopy/$t; ln -sf "$(command -v $t)" d107/withpy/$t; done
+    command -v python3 >/dev/null 2>&1 && ln -sf "$(command -v python3)" d107/withpy/python3
+    awk '/^for t in .*python3.*; do$/{p=1} p{print} p&&/^done$/{exit}' "$REPO/build.sh" > d107/tools.sh
+    o=$(cd d107 && env PATH="$PWD/nopy" /bin/bash -c 'set -euo pipefail; . ./tools.sh; echo reached' 2>&1); rc=$?
+    { [ "$rc" != 0 ] && grep -q "^FAIL  build.sh needs 'python3' on PATH" <<< "$o"; } || bad+=" no-python3 not named (rc=$rc,[$(tr '\n' '|' <<< "$o")])"
+    if [ -e d107/withpy/python3 ] && [ -e d107/withpy/nasm ]; then
+        o=$(cd d107 && env PATH="$PWD/withpy" /bin/bash -c 'set -euo pipefail; . ./tools.sh; echo reached' 2>&1)
+        [ "$o" = reached ] || bad+=" full PATH not green ([$(tr '\n' '|' <<< "$o")])"
+    fi
+    grep -E "^(python3 -c|printf ).*/tmp/t_path\.la" "$REPO/build.sh" | sed 's#/tmp/t_path\.la#t_path.la#' > d107/tpath.sh
+    [ -s d107/tpath.sh ] || { fail "python3 #107: cannot extract the t_path generator from build.sh"; return; }
+    rm -f d107/t_path.la; o=$(cd d107 && env PATH="$PWD/nopy" /bin/bash ./tpath.sh 2>&1)
+    { [ "$(stat -c%s d107/t_path.la 2>/dev/null)" = 5028 ] && grep -qx 'glyph MAIN = read_file("/a\{5000\}")' d107/t_path.la; } \
+        || bad+=" t_path generator needs python3 or wrote the wrong program ([$(tr '\n' '|' <<< "$o")])"
+    grep -A2 '^Requirements:' "$REPO/README.md" | grep -q python3 \
+        || bad+=" README Requirements omits python3"
+    if [ -z "$bad" ]; then pass "python3 #107: a box without python3 gets a FAIL naming it before any stage; the t_path program is written by shell; README lists python3"
+    else fail "python3 #107:$bad"; fi
+}
+
+# ── #122 (remainder) stale Stage-3a runtime claims in build.sh and the nc3 header
+# A text check (the defect is prose): build.sh must not say codegen3 runs on
+# native_codegen2_rt.asm "REUSED unchanged" or that its heap is an un-GC'd bump,
+# nor that Stage 4 "runs in seconds"; native_codegen3.la's header must open with
+# the current-state note. Unfixed: build.sh has 4 such lines and no note.
+chk_nc3_stale_text() {
+    local hits note
+    hits=$(grep -nE "native_codegen2_rt\.asm (is )?REUSED|heap still un-GC'd|This runs in seconds|576-line" "$REPO/build.sh" | cut -d: -f1 | tr '\n' ' ')
+    note=$(sed -n 2p "$REPO/native_codegen3.la")
+    if [ -n "$hits" ]; then fail "nc3 text #122: build.sh still states the Stage-3a runtime/heap/timing as current at lines: $hits"
+    elif [[ "$note" != *"CURRENT STATE (audit2 #122)"* ]]; then fail "nc3 text #122: native_codegen3.la's header does not open with the current-state note (line 2: $note)"
+    else pass "nc3 text #122: build.sh's Stage-3a/4 text names native_codegen3_rt.asm and the GC'd heap; the nc3 header opens with the current state"; fi
+}
+
+CASES="${*:-glyphdag_intern psc_syndur metadebug_unspecced specpipe_untested specpipe_dup sigil_relation depth_div bytecode_nomain ncheck_hostrc bare_vm drm_nonasm bare_vm_helpers gc_smallheap stage4_gate gitignore_scratch python3_dep nc3_stale_text}"
 for c in $CASES; do "chk_$c"; done
 [ "$FAILS" -eq 0 ] && { echo "gate_audit2_checks: all passed"; exit 0; } || { echo "gate_audit2_checks: $FAILS failed"; exit 1; }

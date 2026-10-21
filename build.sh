@@ -10,6 +10,15 @@ cd "$(dirname "$0")"
 
 say() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 
+# ── required tools, named up front (audit2 #107) ──
+# python3 and nasm are used unguarded further down (gate_selfext2b_safety.py,
+# derive_consts.py, the rtconsts/kernel gates): a missing one used to end the build
+# deep inside an unrelated stage — under set -e with no FAIL line, or as a
+# misleading stage FAIL. README's Requirements lists the same set.
+for t in gcc nasm python3 timeout od cmp awk sed; do
+    command -v "$t" >/dev/null 2>&1 || { echo "FAIL  build.sh needs '$t' on PATH (see README: Requirements)"; exit 1; }
+done
+
 # vmrun CMD… — a bare VM / native-binary step. Under `set -e` a non-zero exit
 # (a loud VM halt with stderr discarded, a SIGSEGV) used to end the build right
 # there with NO FAIL line. vmrun names the step and its exit status first, on the
@@ -17,6 +26,27 @@ say() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 # then stops the build as before (audit2 #105).
 exec 3>&1
 vmrun() { local rc=0; "$@" || rc=$?; [ "$rc" = 0 ] || { echo "FAIL  build.sh:${BASH_LINENO[0]}: '$*' exited $rc" >&3; exit 1; }; }
+
+# ── scratch outputs: removed on ANY exit (audit2 #87) ──
+# Every stage below rm -f's its own scratch at its end — on SUCCESS. A stage that
+# exits 1 (or dies under set -e) left them behind as untracked files, and the next
+# green run's auto-tag check (`git status --porcelain`) then refused to tag. The
+# same list is in .gitignore; this trap also tidies the tree. Literal names only.
+BUILD_SCRATCH="acl_host.out arcd_host.out arcd_vm.out arch_host.out arch_vm.out
+ c3_big.txt cob_host.out cob_vm.out dyad_host.out dyad_vm.out fdm9.la fdmA.la fdmA_la
+ .gcp .l3_parserlib.la .l3_run.la .ladder_vm.out logos_kernel_app meta_host.out
+ meta_vm.out mono_combined.la mono_host.out mono_vm.out nc3_heap.la obsc.out
+ onf_host.out onf_vm.out phonsem_host.out phonsem_vm.out phonym_host.out phonym_vm.out
+ .prop_ill.la .prop_ok.la .rt_run.la seal_host.out seal_vm.out sigil_host.txt
+ sigil_vm.txt td_host.out td_vm.out typed_bad.la typed_badtype.la vm2 vm_seed
+ sx2_child.la sx2_parent.la sx4_organ.la sx6_organ.la .sx2b_gen"
+build_exit() {
+    local rc=$?
+    # shellcheck disable=SC2086  # word-splitting the literal list is intended
+    rm -f -- $BUILD_SCRATCH
+    [ "$rc" = 0 ] || echo "build.sh: stopped with rc=$rc (scratch outputs removed)" >&3
+}
+trap build_exit EXIT
 
 # Run a host on kernel.la. Captures stdout in RUN_OUT and the replicated
 # child's path (parsed from copy_self's stderr line) in RUN_CHILD.
@@ -41,9 +71,11 @@ run_host() {
 # a wrapper that hid real failures would be far worse than the fragility it
 # guards against. And the retry is ANNOUNCED, so a build that needed one is
 # visibly different from a build that did not.
+# Optional $1 = the compiler source (default native_codegen3.la); Stage 3b passes
+# a small-heap copy of it (nc3_heap) so its GC workloads cannot fit un-collected.
 ncg3 () {
-    local rc
-    ./tiny_host native_codegen3.la >/dev/null 2>&1; rc=$?
+    local rc nc="${1:-native_codegen3.la}"
+    ./tiny_host "$nc" >/dev/null 2>&1; rc=$?
     # ★ RETRY ONLY 137/143 — SIGKILL and SIGTERM, the signals an EXTERNAL killer
     # sends. Not every rc>=128: SIGSEGV/SIGBUS/SIGILL mean the compiler itself
     # broke on its input, which is deterministic, so retrying would mask a real
@@ -51,7 +83,7 @@ ncg3 () {
     # rc>=128 and could not tell those apart.)
     if [ "$rc" = "137" ] || [ "$rc" = "143" ]; then
         echo "NOTE  native_codegen3 compile killed by signal $((rc-128)) — retrying once"
-        ./tiny_host native_codegen3.la >/dev/null 2>&1; rc=$?
+        ./tiny_host "$nc" >/dev/null 2>&1; rc=$?
         if [ "$rc" = "137" ] || [ "$rc" = "143" ]; then
             echo "FAIL  native_codegen3 compile killed by signal $((rc-128)) TWICE — not transient"
         else
@@ -3112,11 +3144,10 @@ say "Native backend Stage 3a: TCO — tail recursion runs in bounded native stac
 # Stage 3a = native_codegen2.la + TAIL-CALL OPTIMISATION. A general application in
 # TAIL position emits `pop rbx; jmp rt_apply` instead of `call rt_apply`, so the
 # callee's ret returns straight to OUR caller and a tail-recursive loop runs in
-# BOUNDED native stack. CODEGEN-ONLY change: rt_apply already tail-jumps, so the
-# runtime native_codegen2_rt.asm is REUSED UNCHANGED (drift-guarded below); only the
-# emitted call site differs. The emitted heap is enlarged (memsz only, lazily mapped)
-# so the CPU stack — not the un-GC'd bump heap — is the binding constraint, making TCO
-# observable. Additive: native_codegen2.la + all asm runtimes UNTOUCHED.
+# BOUNDED native stack. When 3a landed it was codegen-only (it reused
+# native_codegen2_rt.asm); since 3b the runtime is native_codegen3_rt.asm (object
+# headers, mark-sweep GC, stack guard), drift-guarded below (audit2 #122). The
+# heap is GC'd; the 3a differential below is about native STACK depth.
 rm -f native_codegen3_out native_input.la
 ok=1
 # Drift guard: the embedded runtime equals nasm -f bin native_codegen3_rt.asm
@@ -3262,7 +3293,7 @@ rc=0; NTERR=$(timeout 120 ./native_codegen3_out 2>&1 >/dev/null) || rc=$?
 # SIGSEGV (rc 139, the pre-3b.4 behaviour).
 { [ "$rc" != "0" ] && [ "$rc" != "139" ] && printf '%s' "$NTERR" | grep -qF "native: stack overflow"; } || { echo "FAIL  native_codegen3: non-tail N=1,000,000 did not halt cleanly via the stack guard (rc=$rc err='$NTERR'; want non-zero, not 139/SIGSEGV, + 'native: stack overflow')"; ok=0; }
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3a: native_codegen3.la adds TCO (tail-position general apply -> pop rbx; jmp rt_apply; runtime native_codegen2_rt.asm REUSED unchanged, drift-guarded); semantics preserved native==host on lambdas/closures/currying + non-tail (FACT(5)=120, REVERSE=edcba) + moderate tail recursion; HEADLINE differential at N=1,000,000 (same compiler/heap/depth) — the TAIL loop COMPLETES in bounded native stack while the matched NON-TAIL recursion halts LOUDLY via the 3b.4 native stack guard (each lambda body checks rsp vs STACK_LIMIT=STACK_BASE-7MiB; below it jumps to rt_stack_overflow -> 'native: stack overflow', exit 134 — a clean diagnostic, NOT a raw SIGSEGV); honest limits: heap still un-GC'd bump (tail loop ultimately heap-bounded until 3b GC); native_codegen2.la + all asm runtimes UNTOUCHED"
+    echo "PASS  native backend Stage 3a: native_codegen3.la adds TCO (tail-position general apply -> pop rbx; jmp rt_apply; runtime native_codegen3_rt.asm, drift-guarded); semantics preserved native==host on lambdas/closures/currying + non-tail (FACT(5)=120, REVERSE=edcba) + moderate tail recursion; HEADLINE differential at N=1,000,000 (same compiler/heap/depth) — the TAIL loop COMPLETES in bounded native stack while the matched NON-TAIL recursion halts LOUDLY via the 3b.4 native stack guard (each lambda body checks rsp vs STACK_LIMIT=STACK_BASE-7MiB; below it jumps to rt_stack_overflow -> 'native: stack overflow', exit 134 — a clean diagnostic, NOT a raw SIGSEGV); the heap is collected by the 3b GC (see Stage 3b)"
 else
     exit 1
 fi
@@ -3270,25 +3301,63 @@ rm -f native_codegen3_out native_input.la /tmp/c3_native.out /tmp/c3_host.out /t
 
 # ── Stage 4: native self-hosting fixed point ──────────────────────────────────
 # The self-hosted compiler image (native_codegen3_selfhost.bin, committed as the
-# reference) compiling native_codegen3.la's OWN 576-line source must reproduce
+# reference) compiling native_codegen3.la's OWN source must reproduce
 # ITSELF byte-for-byte — the fixed point ∃(∃) ≡ ∃ at the compiler level — and must
-# compile kernel.la native==host. This runs in seconds: the reference image (16 GiB
+# compile kernel.la native==host. It takes minutes (each self-compile is ~6 min,
+# per regen_selfhost.sh), not seconds: the reference image (16 GiB
 # heap) bootstraps the next image natively; the ~11h tiny_host seed is the one-time
 # genesis, not run here. The reference image is regenerated after any
 # native_codegen3.la / native_codegen3_rt.asm change (recipe in STAGE4_STATUS.md), so
 # a stale image fails this check — it doubles as a drift guard binding image to source.
+# ★ GATE ON WHAT THE IMAGE NEEDS (audit2 #31). The old gate looked only at free
+# memory (>= 12000 MiB), but the kernel refuses the exec when the image's PT_LOAD
+# p_memsz exceeds what the overcommit policy allows (mode 0: RAM+swap; dmesg
+# "__vm_enough_memory … not enough memory"). On a 12–16 GiB box the check ran, the
+# exec died rc 139, and the build said "stale reference image". sh_room names the
+# reason the image cannot be mapped here (empty = it can); the exec's own rc is
+# reported by vmrun, and "no output" is told apart from "output differs".
+# SH_MEMINFO / SH_OVERCOMMIT exist so gate_audit2_checks.sh can stage a small box.
+elf_load_memsz() {   # total PT_LOAD p_memsz of the ELF64 file $1, in bytes ("" if not ELF64)
+    local f="$1" phoff phent phnum i off sum=0
+    [ "$(od -An -tx1 -N5 "$f" 2>/dev/null | tr -d ' \n')" = 7f454c4602 ] || return 0
+    phoff=$(od -An -tu8 -j32 -N8 "$f" | tr -d ' \n'); phent=$(od -An -tu2 -j54 -N2 "$f" | tr -d ' \n')
+    phnum=$(od -An -tu2 -j56 -N2 "$f" | tr -d ' \n')
+    for ((i = 0; i < phnum; i++)); do
+        off=$((phoff + i * phent))
+        [ "$(od -An -tu4 -j"$off" -N4 "$f" | tr -d ' \n')" = 1 ] \
+            && sum=$((sum + $(od -An -tu8 -j$((off + 40)) -N8 "$f" | tr -d ' \n')))
+    done
+    echo "$sum"
+}
+sh_room() {          # sh_room <image> -> prints why it cannot be mapped here; nothing if it can
+    local need oc mi have
+    need=$(elf_load_memsz "$1")
+    [ -n "$need" ] || { echo "$1 is not an ELF64 image"; return 0; }
+    oc=$(cat "${SH_OVERCOMMIT:-/proc/sys/vm/overcommit_memory}" 2>/dev/null) || oc=0
+    mi="${SH_MEMINFO:-/proc/meminfo}"
+    case "$oc" in
+      1) return 0 ;;     # always overcommit: any size maps
+      2) have=$(awk '/^CommitLimit:/{l=$2} /^Committed_AS:/{c=$2} END{print (l-c)*1024}' "$mi") ;;
+      *) have=$(awk '/^MemTotal:/{t=$2} /^SwapTotal:/{s=$2} END{print (t+s)*1024}' "$mi") ;;
+    esac
+    [ "$need" -le "${have:-0}" ] || echo "$1 maps $need bytes (PT_LOAD p_memsz) but overcommit mode $oc allows $have here, so the kernel would refuse the exec"
+}
 say "Native backend Stage 4: self-hosting fixed point (native_codegen3 reproduces itself, native==host)"
 SH_REF=native_codegen3_selfhost.bin
 SH_AVAIL=$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')
+SH_WHY=""; [ ! -x "$SH_REF" ] || SH_WHY=$(sh_room "$SH_REF")
 if [ ! -x "$SH_REF" ]; then
     echo "NOTE  Stage 4 self-host check skipped: $SH_REF not present (regenerate it — STAGE4_STATUS.md)"
+elif [ -n "$SH_WHY" ]; then
+    echo "NOTE  Stage 4 self-host check skipped: $SH_WHY (not a verdict on the image)"
 elif [ -z "$SH_AVAIL" ] || [ "$SH_AVAIL" -lt 12000 ]; then
     echo "NOTE  Stage 4 self-host check skipped: needs ~10 GiB free for the self-compile; available=${SH_AVAIL:-?} MiB"
 else
     cp "$SH_REF" /tmp/sh_cc; chmod +x /tmp/sh_cc
     cp native_codegen3.la native_input.la; rm -f native_codegen3_out
     vmrun /tmp/sh_cc >/dev/null 2>&1
-    if [ ! -f native_codegen3_out ] || ! cmp -s native_codegen3_out "$SH_REF"; then
+    [ -f native_codegen3_out ] || { echo "FAIL  native_codegen3 Stage 4: $SH_REF ran (rc 0) but wrote no native_codegen3_out — a broken image or source error, not a stale image"; exit 1; }
+    if ! cmp -s native_codegen3_out "$SH_REF"; then
         echo "FAIL  native_codegen3 Stage 4: $SH_REF is NOT a fixed point of native_codegen3.la — stale reference image; regenerate it after the source change (STAGE4_STATUS.md)"; exit 1
     fi
     cp kernel.la native_input.la; rm -f native_codegen3_out
@@ -3331,9 +3400,23 @@ glyph MAIN = print(COUNT(10000000)(0))\n' > native_input.la
 ncg3 || { echo "FAIL  native_codegen3 Stage 3b: compile 24B GC-churn"; ok=0; }
 rc=0; timeout 300 ./native_codegen3_out > /tmp/c3gc.out 2>/dev/null || rc=$?
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3gc.out)" = "10000000" ]; } || { echo "FAIL  native_codegen3 Stage 3b: 24B tail N=10,000,000 not bounded (rc=$rc out=$(cat /tmp/c3gc.out))"; ok=0; }
+# ★ (b) and (c) are compiled with nc3_heap: native_codegen3.la with HEAP_SIZE
+#   lowered to 256 MiB (audit2 #1, remainder). At the committed 16 GiB heap both
+#   workloads FIT UN-COLLECTED — (b) allocates ~6 GB, (c) ~3.4 GB (each 5 MiB read
+#   is an 8 MiB class blob) — so a collector that reclaims nothing passed them.
+#   MEASURED 2026-10-15 with rt_gc patched to reclaim nothing (it only re-arms the
+#   budget): at 16 GiB (c) printed 'done' rc 0; at 256 MiB (b) and (c) halt
+#   'native: heap exhausted' rc 73. 256 MiB is >=13x below either workload, so
+#   completing here is impossible without reclamation. The real collector
+#   completes both in < 1 s. The sed anchor is checked: if HEAP_SIZE's line moves
+#   the copy would silently keep 16 GiB, so a miss is a FAIL, not a quiet pass.
+NC3_HEAP=268435456
+sed "s/^glyph HEAP_SIZE          = [0-9]*\$/glyph HEAP_SIZE          = $NC3_HEAP/" native_codegen3.la > nc3_heap.la
+grep -qx "glyph HEAP_SIZE          = $NC3_HEAP" nc3_heap.la \
+    || { echo "FAIL  native_codegen3 Stage 3b: cannot lower HEAP_SIZE for (b)/(c) — the 'glyph HEAP_SIZE' line in native_codegen3.la moved; (b)/(c) would run un-collected"; rm -f nc3_heap.la; exit 1; }
 # (b) blob reclamation: a tail loop that builds + discards strings each iter; a
-#     256-char literal materialised + concatenated is ~2 KB of blobs/iter, so
-#     N=2,000,000 churns ~4 GB of blobs that must run in the 1.5 GB heap.
+#     256-char literal materialised + concatenated is ~3 KB of blobs/iter, so
+#     N=2,000,000 churns ~6 GB of blobs that must run in the 256 MiB nc3_heap.
 LIT=$(printf 'x%.0s' $(seq 1 256))
 printf 'glyph TRUE = la t. la f. t
 glyph FALSE = la t. la f. f
@@ -3341,9 +3424,9 @@ glyph IF = la c. la t. la f. c(t)(f)(0)
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph CHURN = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la s. self(sub(n)(1)))(concat("%s")("%s"))))
 glyph MAIN = print(CHURN(2000000))\n' "$LIT" "$LIT" > native_input.la
-ncg3 || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
+ncg3 nc3_heap.la || { echo "FAIL  native_codegen3 Stage 3b: compile blob-churn"; ok=0; }
 rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
-{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 not bounded (rc=$rc out=$(cat /tmp/c3bc.out))"; ok=0; }
+{ [ "$rc" = "0" ] && [ "$(cat /tmp/c3bc.out)" = "done" ]; } || { echo "FAIL  native_codegen3 Stage 3b: blob-churn N=2,000,000 did not complete in the 256 MiB heap (rc=$rc out=$(cat /tmp/c3bc.out); rc 73 = heap exhausted: blobs not reclaimed)"; ok=0; }
 # (c) FREEZE-DAY FIX #1 — large-blob GC sweep must not corrupt REGDUMP. A >4 MB
 #     read_file/concat blob has classidx >= 22; the sweep re-buckets it via
 #     FREEBLOB[classidx]. FREEBLOB was sized 22 (idx 0..21), so a >4 MB dead blob
@@ -3352,17 +3435,18 @@ rc=0; timeout 400 ./native_codegen3_out > /tmp/c3bc.out 2>/dev/null || rc=$?
 #     bug since 3b). FREEBLOB is now 32 entries (idx 5..30 cover every blob the 1.5 GB
 #     heap can hold). This tail-discards a 5 MB file (classidx 23) in a loop so the GC
 #     repeatedly sweeps a large DEAD blob; it must complete 'done' and match the host
-#     byte-for-byte (no corruption, no crash).
+#     byte-for-byte (no corruption, no crash). Compiled with nc3_heap (256 MiB): 400
+#     reads = ~3.4 GB, so the sweep this regression needs MUST happen.
 head -c 5242880 < /dev/zero | tr '\0' a > c3_big.txt
 printf 'glyph IF = la c. la t. la f. c(t)(f)("!")
 glyph Z = la f. (la x. f(la v. x(x)(v)))(la x. f(la v. x(x)(v)))
 glyph LOOP = Z(la self. la n. IF(int_eq(n)(0))(la _. "done")(la _. (la _. self(sub(n)(1)))(read_file("c3_big.txt"))))
 glyph MAIN = print(LOOP(400))\n' > native_input.la
-ncg3 || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
+ncg3 nc3_heap.la || { echo "FAIL  native_codegen3 freeze-day #1: compile large-blob sweep"; ok=0; }
 rc=0; timeout 200 ./native_codegen3_out > /tmp/c3big.out 2>/dev/null || rc=$?
 ./tiny_host native_input.la > /tmp/c3big.host 2>/dev/null
 { [ "$rc" = "0" ] && [ "$(cat /tmp/c3big.out)" = "done" ] && cmp -s /tmp/c3big.out /tmp/c3big.host; } || { echo "FAIL  native_codegen3 freeze-day #1: >4 MB blob GC sweep corrupts/diverges (rc=$rc native='$(cat /tmp/c3big.out)' host='$(cat /tmp/c3big.host)')"; ok=0; }
-rm -f c3_big.txt /tmp/c3big.out /tmp/c3big.host
+rm -f c3_big.txt /tmp/c3big.out /tmp/c3big.host nc3_heap.la
 # (a') BOUNDED MEMORY — the assertion (a) cannot make. Peak RSS at 16x the
 #      allocation must not grow: a leak whose trigger tracks the bump frontier
 #      rather than allocation volume makes peak RSS ~ sqrt(allocations), which
@@ -3382,7 +3466,7 @@ if [ "$ok" -eq 1 ]; then
 fi
 rm -f .gcp
 if [ "$ok" -eq 1 ]; then
-    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~0.8 GB of dead 24B objects) COMPLETES in the 16 GiB heap (live set ~25/pass via the FREE24 free-list); (a') peak RSS is BOUNDED — 16x the allocation grows it <150% (was ~sqrt(allocations) when the GC trigger tracked the frontier not the volume). (b) blob reclamation: a blob-churn loop at N=2,000,000 COMPLETES in the 16 GiB heap (result 'done'). Bounded peak RSS (a') and the blob loop (b) are impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, dead blob swept every GC) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
+    echo "PASS  native backend Stage 3b: conservative mark-sweep GC — bounded memory. (a) 24-byte reclamation: an int-forced tail loop at N=10,000,000 (~0.8 GB of dead 24B objects) COMPLETES in the 16 GiB heap (live set ~25/pass via the FREE24 free-list); (a') peak RSS is BOUNDED — 16x the allocation grows it <150% (was ~sqrt(allocations) when the GC trigger tracked the frontier not the volume). (b) blob reclamation: a blob-churn loop at N=2,000,000 (~6 GB of blobs) COMPLETES in a 256 MiB heap (result 'done'). Bounded peak RSS (a') and the blob loop (b) are impossible without reclamation; roots = all GP regs + TRUEVAL/FALSEVAL + stack, swept cells re-collected via a kind-6 FREE header (no double-free), frontier-exact heap walk. (c) 3b.4 native stack guard COMPLETE: a deep non-tail recursion halts loudly ('native: stack overflow', exit 134) via the per-lambda rsp-vs-STACK_LIMIT check rather than a raw SIGSEGV (asserted in the Stage-3a non-tail differential). (d) FREEZE-DAY FIX #1: a >4 MB read_file blob (classidx >= 22) is now swept into the enlarged 32-entry FREEBLOB without overflowing the adjacent REGDUMP — a 5 MB tail-discard churn (classidx 23, ~3.4 GB through a 256 MiB heap, so dead blobs ARE swept) completes 'done' native==host, where the 22-entry array corrupted the saved registers (wrong output then SIGSEGV). Stage 3b (GC) is now complete"
 else
     exit 1
 fi
@@ -6978,7 +7062,8 @@ fi
 # read_file/write_file/write_exec/open/mount/execve copy the path into a fixed
 # 4096-byte buffer; an over-long path must halt with "secd: path too long"
 # rather than overrunning the buffer into fsbuf / the GC worklist.
-python3 -c "open('/tmp/t_path.la','w').write('glyph MAIN = read_file(\"/'+('a'*5000)+'\")\n')"
+# Plain shell, not python3 (audit2 #107): the same bytes, one dependency fewer.
+printf 'glyph MAIN = read_file("/%s")\n' "$(head -c 5000 /dev/zero | tr '\0' a)" > /tmp/t_path.la
 cp /tmp/t_path.la logos_source.la; cp compiler.bin logos_program.bin; vmrun ./runner >/dev/null 2>&1
 prc=0; PERR="$(./runner 2>&1 1>/dev/null)" || prc=$?
 rm -f /tmp/t_path.la

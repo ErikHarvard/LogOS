@@ -177,7 +177,8 @@ and the agreement between them (`b_τ ≡ f_τ`, "back-end equals front-end") is
 core invariant the build suite enforces:
 
 1. **The C host** (`tiny_host.c`) — a small reference interpreter. The *only* C
-   in the system; the physics on which everything else stands.
+   the system builds or runs (`archive/` keeps C from the initial commit that
+   nothing builds); the physics on which everything else stands.
 2. **`eval.la`** — a self-hosted evaluator: lexer, parser, and closure-based
    evaluator written in Lingua Adamica. The language interprets itself.
 3. **`RUN_BYTES`** (`bytecode.la`) — a VM executing a flat byte-instruction
@@ -363,9 +364,16 @@ native compiler reproduces itself. On a clean, green tree it tags the commit
 > hours), because every module is compiled through `codegen` to the native VM and
 > checked for host/VM byte-identity. This is expected, not a hang.
 
-Requirements: a C compiler and `nasm` (for assembling the native VM from source;
-the assembled bytes are also committed and drift-checked). DRM scanout and live
-input run from a bare VT.
+Requirements: `gcc`, `nasm` (drift checks and the runtime-constant / kernel
+gates assemble from source; the assembled bytes are also committed), `python3`
+(several gates and checkers are Python), and GNU coreutils/`awk`/`sed`
+(`timeout`, `od`, `cmp`, …). `build.sh` checks for these first and names a
+missing one. Optional: `qemu-system-x86_64` (the boot gates skip without it) and
+`git` (auto-checkpoint tags). Memory: the native backend's binaries currently
+reserve their ~16 GiB heap in the ELF `p_memsz`, so under the default overcommit
+policy they need RAM+swap above that to exec; `build.sh` Stage 4 skips (with a
+NOTE) on a machine that cannot map its image. DRM scanout and live input run
+from a bare VT.
 
 ---
 
@@ -373,7 +381,8 @@ input run from a bare VT.
 
 | File / area                    | Role |
 | ------------------------------ | ---- |
-| `tiny_host.c`                  | The C host — the only C in the system |
+| `tiny_host.c`                  | The C host — the only C the system builds or runs |
+| `archive/`                     | Files from the initial commit (9d8ed60: C, Python, asm, two `.la` compilers); nothing builds, runs or references them |
 | `kernel.la`                    | The kernel; defines `MAIN`, speaks the Word, replicates |
 | `parser.la`, `eval.la`         | Self-hosted lexer/parser and evaluator |
 | `bytecode.la`                  | `EMIT` / `RUN_BYTES` / `RUN_SM` |
