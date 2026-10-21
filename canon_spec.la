@@ -28,6 +28,15 @@
 #      Excluded middle  LAW_EM(a)(b)  ≡ TRUE    (A≡B) ∨ ¬(A≡B)
 #  Excluded middle GENUINELY holds: κ is total, so canonical identity is
 #  DECIDABLE — there is no third truth value.
+#  WHAT THEIR TESTS CAN DETECT (audit2 #112). LAW_NC and LAW_EM are
+#  propositional tautologies: they are TRUE for ANY relation that returns a
+#  Church boolean — a constant-TRUE or constant-FALSE IS passes them too. Their
+#  META_DEBUG cases therefore check only that IS returns a Church boolean on
+#  those operands (a non-boolean IS makes them halt); they say nothing about
+#  whether IS is the RIGHT relation. LAW_ID is reflexivity, which holds here
+#  because κ is a function and str_eq is reflexive; its cases DO go red for a
+#  non-reflexive IS (e.g. one comparing κ(a) with κ(b)+"'"). The content of IS
+#  is tested by IS's own cases (BEING ≢ VOID, two builds of one glyph ≡).
 #
 #  κ(κ) is well-defined: κ has a canonical self-decomposition KAPPA (κ is
 #  RECOGNITION acting on FORM, ▷); κ(KAPPA) yields a definite spec, the
@@ -67,6 +76,8 @@ glyph CANON = Z(la self. la node. node (la nm. nm) (la a. la b. concat("⊗(")(c
 glyph IS   = la a. la b. str_eq(CANON(a))(CANON(b))
 
 # The three laws of thought, as theorems over IS (each ≡ TRUE for all inputs).
+# LAW_NC / LAW_EM hold for ANY Church-boolean relation, so their tests cannot
+# catch a wrong IS (see the header); LAW_ID's can (reflexivity).
 glyph LAW_ID = la a. IS(a)(a)
 glyph LAW_NC = la a. la b. NOT(AND(IS(a)(b))(NOT(IS(a)(b))))
 glyph LAW_EM = la a. la b. OR(IS(a)(b))(NOT(IS(a)(b)))
@@ -323,6 +334,8 @@ glyph CANON_SPEC =
   CONS(E("LAW_ID")(":: a -> b")(SRC_LAWID)(LAW_ID)(
         T2L(TC(la g. g(PRIM("LOVE"))("T")("F"))("T"))
            (TC(la g. g(CONT(MC(PRIM("DEPTH")))(PRIM("FORM")))("T")("F"))("T"))))(
+  # LAW_NC / LAW_EM: tautologies — these cases pass for any Church-boolean IS
+  # (constant TRUE/FALSE included); they only fail by halting on a non-boolean.
   CONS(E("LAW_NC")(":: a -> b -> c")(SRC_LAWNC)(LAW_NC)(
         T2L(TC(la g. g(PRIM("BEING"))(PRIM("VOID"))("T")("F"))("T"))
            (TC(la g. g(PRIM("BEING"))(PRIM("BEING"))("T")("F"))("T"))))(

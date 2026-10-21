@@ -285,9 +285,9 @@ rt_apply:
     mov     [rax+16], rdx       ; parent
     lea     rdi, [rax+8]        ; env body
     jmp     [rcx]               ; tail into body; its ret returns to our caller
-.bad:
-    mov     rax, 60
-    mov     rdi, 70             ; exit 70 = applied a non-function
+.bad:                           ; applied a non-function: exit 1, the host's code
+    mov     rax, 60             ;   (audit2 #59; was a distinctive 70). Same-size
+    mov     rdi, 1              ;   imm, so no later runtime address moves.
     syscall
 
 ; ── slot 4: rt_print(rax=value) -> writes value + newline; preserves rax ──

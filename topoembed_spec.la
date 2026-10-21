@@ -12,9 +12,12 @@
 #  recoverable. Θ_V (VINV) is a glyph's visual invariant signature = its mode
 #  symbol + the set of constituent primitives (its ONF leaves). PRESERVES_V is
 #  set-containment: each parent's primitives survive in the compound. MODE_REC:
-#  distinct modes over the same operands give distinct invariants (⊗ ≠ ⊕), so the
-#  combining mode is recoverable from the form — the piece the lossy pixel-overlay
-#  lacked. Honest floor (1-bit raster / acoustic-entropy analog): recoverability
+#  distinct modes over the same operands give distinct invariants (⊗ ≠ ⊕) — the
+#  piece the lossy pixel-overlay lacked. What MODE_REC actually checks (audit2
+#  #112): VINV reads the ROOT constructor through MODESYM, a constant per
+#  constructor, so MODE_REC is TRUE for every a, b by construction; its tests go
+#  red only if MODESYM stops distinguishing ⊗ from ⊕. It does not recover a mode
+#  from a RENDERED sigil, nor from a nested position. Honest floor (1-bit raster / acoustic-entropy analog): recoverability
 #  is up to the declared invariant (mode + leaf-set), not arbitrary bitmap
 #  inversion; a non-constituent's primitive is NOT contained (real, not trivial).
 # ═══════════════════════════════════════════════════════════════════════
@@ -41,7 +44,8 @@ glyph MODESYM = la node. node (la nm. "") (la a. la b. "⊗") (la a. la b. "⊕"
 glyph VINV = la node. concat(MODESYM(node))(concat(":")(LEAVES(node)))
 # PRESERVES_V — does the compound's form preserve this parent primitive?
 glyph PRESERVES_V = la name. la node. CONTAINS(concat(name)(","))(LEAVES(node))
-# MODE_REC — is the mode recoverable? distinct modes over same operands ⇒ distinct invariant
+# MODE_REC — VINV records distinct root-mode symbols for ⊗ and ⊕ over the same
+# operands (constant TRUE in a, b; it checks MODESYM, not a rendered form)
 glyph MODE_REC = la a. la b. NOT(str_eq(VINV(SYN(a)(b)))(VINV(CON(a)(b))))
 
 # ── source strings for the GENERATED module ──
@@ -114,7 +118,7 @@ glyph TE_SPEC =
         T3L(TC(la g. g("LOVE")(COMPASSION)("T")("F"))("T"))             # Love's form survives in Compassion
            (TC(la g. g("RECOGNITION")(COMPASSION)("T")("F"))("T"))      # Recognition's form survives in Compassion
            (TC(la g. g("BEING")(COMPASSION)("T")("F"))("F"))))(         # a non-constituent does NOT (real, not trivial)
-  CONS(E("MODE_REC")("is the combining mode recoverable from the form? (trusted)")(SRC_MODEREC)(MODE_REC)(
+  CONS(E("MODE_REC")("does VINV give ⊗ and ⊕ distinct root-mode symbols? constant in a,b (trusted)")(SRC_MODEREC)(MODE_REC)(
         T1L(TC(la g. g(PRIM("LOVE"))(PRIM("RECOGNITION"))("T")("F"))("T"))))(  # ⊗ ≠ ⊕ over same operands → mode recoverable
   NIL)))))))))))))))))))
 

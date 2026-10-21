@@ -302,20 +302,35 @@ glyph PRIVATE_NAMES = Z(la self. la table. la exports.
         (la nm. IF(STR_MEMBER(nm)(exports))(la _. self(LIST_TL(table))(exports))(la _. CONS(nm)(self(LIST_TL(table))(exports))))(FST(LIST_HD(table)))
     )(la _. NIL))
 
-glyph MANGLE_BODY = Z(la self. la ast. la privs. la path.
-    IF(IS_CONS(privs))(la _.
-        (la p. self(RENAME_FREE(ast)(p)(MANGLE(path)(p)))(LIST_TL(privs))(path))(LIST_HD(privs))
-    )(la _. ast))
+# audit2 #35 (remainder): rename every private in ONE walk per body, with the
+# module's SANITIZEd prefix computed ONCE (MANGLE_MODULE) — codegen.la's
+# RENAME_ALL ported here. The old MANGLE_BODY folded RENAME_FREE over the
+# private list (one full rebuild of the body per private) and called MANGLE —
+# hence SANITIZE(path) — per (body, private). Each var still does an O(privs)
+# membership scan; the win is one traversal + one allocation round per body and
+# no per-var SANITIZE. A binder whose param is a private removes it from the
+# active set for its body (RENAME_FREE's stop-under-shadowing rule).
+# Simultaneous rename equals the old sequential fold because every mangled name
+# is fresh (__mod_…), so no rename can manufacture another private's occurrence.
+# (RENAME_FREE above is kept as the single-name form; nothing calls it now.)
+glyph MANGLE_PRE = la pre. la name. concat("__mod_")(concat(pre)(concat("__")(name)))
+glyph LIST_REMOVE = Z(la self. la x. la lst. IF(IS_CONS(lst))(la _. IF(str_eq(x)(LIST_HD(lst)))(la _. self(x)(LIST_TL(lst)))(la _. CONS(LIST_HD(lst))(self(x)(LIST_TL(lst)))))(la _. NIL))
+glyph RENAME_ALL = Z(la self. la node. la privs. la pre.
+    node
+        (la name. IF(STR_MEMBER(name)(privs))(la _. AST_VAR(MANGLE_PRE(pre)(name)))(la _. AST_VAR(name)))
+        (la p. la b. AST_LAM(p)(self(b)(IF(STR_MEMBER(p)(privs))(la _. LIST_REMOVE(p)(privs))(la _. privs))(pre)))
+        (la f. la a. AST_APP(self(f)(privs)(pre))(self(a)(privs)(pre)))
+        (la val. AST_STR(val)))
 
-glyph MANGLE_MAP = Z(la self. la table. la exports. la privs. la path.
+glyph MANGLE_MAP = Z(la self. la table. la exports. la privs. la pre.
     IF(IS_CONS(table))(la _.
         (la entry. (la nm. (la ast.
-            CONS(PAIR(IF(STR_MEMBER(nm)(exports))(la _. nm)(la _. MANGLE(path)(nm)))(MANGLE_BODY(ast)(privs)(path)))(self(LIST_TL(table))(exports)(privs)(path))
+            CONS(PAIR(IF(STR_MEMBER(nm)(exports))(la _. nm)(la _. MANGLE_PRE(pre)(nm)))(RENAME_ALL(ast)(privs)(pre)))(self(LIST_TL(table))(exports)(privs)(pre))
         )(SND(entry)))(FST(entry)))(LIST_HD(table))
     )(la _. NIL))
 
 glyph MANGLE_MODULE = la table. la exports. la path.
-    (la _. MANGLE_MAP(table)(exports)(PRIVATE_NAMES(table)(exports))(path))(CHECK_EXPORTS(exports)(table))
+    (la _. MANGLE_MAP(table)(exports)(PRIVATE_NAMES(table)(exports))(SANITIZE(path)))(CHECK_EXPORTS(exports)(table))
 
 glyph PARSE_IMPORT = la s. (la tr. (la tok. (la rest.
     IF(str_eq(TOK_TYPE(tok))("lp"))(la _.

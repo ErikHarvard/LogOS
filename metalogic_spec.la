@@ -322,6 +322,11 @@ glyph METALOGIC_SPEC =
   CONS(E("LAW_EXCLUDED_MIDDLE")(":: a -> b")(SRC_LAWEM)(LAW_EXCLUDED_MIDDLE)(
         T2L(TC(la g. g(ADD23)("T")("F"))("T"))
            (TC(la g. g(EMPTY)("T")("F"))("F"))))(
+  # NC_TYPECHECK is the META-statement ¬(INHABITS ∧ ¬INHABITS): a tautology, so
+  # both cases are T whether or not dec inhabits bod (2/2 and 2/1 alike). These
+  # cases carry no information about INHABITS beyond "returns a Church boolean";
+  # the falsifiable NC test is LAW_NONCONTRADICTION's ATERM(2)(1) = F above
+  # (audit2 #112).
   CONS(E("NC_TYPECHECK")(":: a -> b -> c")(SRC_NCTC)(NC_TYPECHECK)(
         T2L(TC(la g. g(2)(2)("T")("F"))("T"))
            (TC(la g. g(2)(1)("T")("F"))("T"))))(

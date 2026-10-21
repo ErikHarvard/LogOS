@@ -1,0 +1,116 @@
+#!/bin/bash
+# gate_audit2_remainders.sh — regression gates for the REMAINING halves of the
+# LogOS_bug_audit_2.md findings that earlier batches only partly fixed (#35 #59
+# #102). Each case FAILS on the unfixed tree (a24a719) and PASSES with its fix;
+# every expected value is derived by hand in the case's comment, not captured
+# from a run. Runs in a private temp dir; needs gcc only. Not wired into
+# build.sh — one line to hook it in.
+#   usage: ./gate_audit2_remainders.sh [case ...]     (no args = every case)
+set -u
+REPO=$(cd "$(dirname "$0")" && pwd)
+W=$(mktemp -d "${TMPDIR:-/tmp}/gate_audit2_rem.XXXXXX")
+trap 'rm -rf "$W"' EXIT
+cd "$W" || { echo "FAIL  gate: cannot cd to $W"; exit 1; }
+gcc -O2 -o tiny_host "$REPO/tiny_host.c" || { echo "FAIL  gate: cannot build tiny_host"; exit 1; }
+cp "$REPO"/*.la .
+FAILS=0
+pass() { echo "PASS  $*"; }
+fail() { echo "FAIL  $*"; FAILS=$((FAILS+1)); }
+
+# ── #35 import mangling: SANITIZE once per module, one rename walk per body ───
+# MANGLE_MODULE is called on a hand-built module in each of the four .la
+# parsers, with SANITIZE wrapped to print "SAN" per call. Module "mod" (an
+# alphanumeric path, so the expected names hold under the pre- AND post-#114
+# SANITIZE rule), table [A = la x. PA(x)(B)(la PA. PA(B)) ; PA = B ; B = "s"],
+# exports [A], so the privates are PA and B.
+#   Expected table (by hand): PA and B renamed everywhere free; the inner
+#   `la PA.` shadows PA (left alone) but NOT B (still renamed); the private KEYS
+#   are mangled, the exported key is not:
+#     A=(la x. __mod_mod__PA(x)(__mod_mod__B)((la PA. PA(__mod_mod__B))));
+#     __mod_mod__PA=__mod_mod__B;__mod_mod__B="s";
+#   Expected SANITIZE calls: 1 (once per module). Unfixed: eval/bytecode/parser
+#   fold RENAME_FREE once per private (MANGLE_BODY) and call MANGLE per
+#   (body, private) — 3 bodies x 2 privates + 2 private keys = 8 calls; codegen's
+#   RENAME_ALL calls MANGLE per renamed variable — 4 free private refs + 2 keys = 6.
+case_mangle_once() {
+    local f out rc san tab
+    local want='A=(la x. __mod_mod__PA(x)(__mod_mod__B)((la PA. PA(__mod_mod__B))));__mod_mod__PA=__mod_mod__B;__mod_mod__B="s";'
+    for f in eval.la bytecode.la parser.la codegen.la; do
+        { sed -e '/^glyph MAIN/,$d' -e 's/^glyph SANITIZE = /glyph SANITIZE0 = /' "$f"
+          cat <<'LA'
+glyph SANITIZE = la s. (la _. SANITIZE0(s))(print("SAN"))
+glyph SHOWA = Z(la self. la n. n (la v. v) (la p. la b. concat("(la ")(concat(p)(concat(". ")(concat(self(b))(")"))))) (la g. la a. concat(self(g))(concat("(")(concat(self(a))(")")))) (la s. concat("\"")(concat(s)("\""))))
+glyph SHOWT = Z(la self. la t. IF(IS_CONS(t))(la _. concat(FST(LIST_HD(t)))(concat("=")(concat(SHOWA(SND(LIST_HD(t))))(concat(";")(self(LIST_TL(t)))))))(la _. ""))
+glyph T_TABLE = CONS(PAIR("A")(AST_LAM("x")(AST_APP(AST_APP(AST_APP(AST_VAR("PA"))(AST_VAR("x")))(AST_VAR("B")))(AST_LAM("PA")(AST_APP(AST_VAR("PA"))(AST_VAR("B")))))))(CONS(PAIR("PA")(AST_VAR("B")))(CONS(PAIR("B")(AST_STR("s")))(NIL)))
+glyph MAIN = print(SHOWT(MANGLE_MODULE(T_TABLE)(CONS("A")(NIL))("mod")))
+LA
+        } > t_mangle.la
+        rc=0; out=$(timeout 60 ./tiny_host t_mangle.la 2>&1) || rc=$?
+        san=$(grep -cx SAN <<< "$out"); tab=$(tail -1 <<< "$out")
+        if [ "$rc" = 0 ] && [ "$san" = 1 ] && [ "$tab" = "$want" ]; then
+            pass "$f: MANGLE_MODULE renames in one walk, SANITIZE once per module (table unchanged)"
+        else
+            fail "$f: rc=$rc SANITIZE calls=$san (want 1) table=[$tab]"
+        fi
+    done
+}
+
+# ── #59 native: applying a non-function exits with the host's code ───────────
+# print("a")("b") prints "a", then applies the STRING "a" to "b". The expected
+# rc is not written here: it is the C host's own rc on the same program
+# (tiny_host.c: "eval error: attempt to apply a non-function", exit 1), and
+# stdout must match too. Unfixed: native_codegen3_rt.asm rt_apply .bad was
+# exit(70). One host compile with native_codegen3.la (~25 s). The emitted binary
+# carries native_codegen3.la's HEAP_SIZE in p_memsz; if the box cannot map it the
+# exec fails (rc 139, no output) — SKIP, not PASS.
+case_nc3_nonfn_rc() {
+    printf 'glyph MAIN = print("a")("b")\n' > t_nonfn.la
+    local hout hrc=0 nout nrc=0
+    hout=$(timeout 20 ./tiny_host t_nonfn.la 2>/dev/null) || hrc=$?
+    cp t_nonfn.la native_input.la; rm -f native_codegen3_out
+    timeout 900 ./tiny_host native_codegen3.la >/dev/null 2>nc3.err || { fail "nc3 non-function: compile failed: $(tail -c 200 nc3.err)"; return; }
+    nout=$(timeout 30 ./native_codegen3_out 2>/dev/null) || nrc=$?
+    if [ "$nrc" = 139 ] && [ -z "$nout" ]; then echo "SKIP  nc3_nonfn_rc: native binary cannot exec here (p_memsz > RAM+swap)"
+    elif [ "$hrc" != 0 ] && [ "$nrc" = "$hrc" ] && [ "$nout" = "$hout" ]; then
+        pass "native_codegen3: applying a non-function exits $nrc, the host's rc (stdout [$nout] == host)"
+    else fail "native_codegen3 non-function: native rc=$nrc out=[$nout] vs host rc=$hrc out=[$hout]"; fi
+}
+
+# ── #102 autopoiesis: a medium with a trailing newline is read, not halted on ─
+# autopoiesis.la with the fork/execve step replaced by print("BEGET") (so it
+# runs on the host and needs no bundle), run on the C host and on the native VM
+# (codegen.la). Medium "0\n" (what `echo 0 >` writes) — expected, from the
+# program text: "LogOS autopoiesis — generation 0: I AM THAT I AM", "BEGET",
+# rc 0, and the medium rewritten to "1". Medium "3\r\n" (CRLF editor, at the
+# cap) — expected: the generation-3 line, then "LogOS autopoiesis — lineage
+# complete (generation cap reached)", rc 0. Unfixed: the Word is printed across
+# two lines, then str_to_int halts rc 1. Control (passes before and after):
+# a LEADING space " 0" is still malformed and halts non-zero.
+case_autopoiesis_medium() {
+    sed 's/BEGET(copy_self("!"))/print("BEGET")/' autopoiesis.la > t_ap.la
+    grep -q 'print("BEGET")' t_ap.la || { fail "autopoiesis: could not stub BEGET (source changed?)"; return; }
+    ./tiny_host secd.la >/dev/null 2>&1 || { fail "autopoiesis: cannot emit logos_secd"; return; }
+    cp t_ap.la logos_source.la; timeout 120 ./tiny_host codegen.la >/dev/null 2>&1 || { fail "autopoiesis: codegen"; return; }
+    local W0='LogOS autopoiesis — generation 0: I AM THAT I AM' W3='LogOS autopoiesis — generation 3: I AM THAT I AM'
+    local DONE='LogOS autopoiesis — lineage complete (generation cap reached)'
+    local eng out rc
+    for eng in host vm; do
+        run_ap() { if [ "$eng" = host ]; then timeout 20 ./tiny_host t_ap.la; else timeout 20 ./logos_secd; fi; }
+        printf '0\n' > autopoiesis.gen; rc=0; out=$(run_ap 2>&1) || rc=$?
+        if [ "$rc" = 0 ] && [ "$out" = "$W0"$'\n'BEGET ] && [ "$(cat autopoiesis.gen)" = 1 ]; then
+            pass "autopoiesis ($eng): medium \"0\\n\" read as generation 0, bequeaths 1"
+        else fail "autopoiesis ($eng): medium \"0\\n\" — rc=$rc out=[$(tr '\n' '|' <<< "$out")] medium=[$(cat autopoiesis.gen)]"; fi
+        printf '3\r\n' > autopoiesis.gen; rc=0; out=$(run_ap 2>&1) || rc=$?
+        if [ "$rc" = 0 ] && [ "$out" = "$W3"$'\n'"$DONE" ]; then pass "autopoiesis ($eng): medium \"3\\r\\n\" reaches the cap cleanly"
+        else fail "autopoiesis ($eng): medium \"3\\r\\n\" — rc=$rc out=[$(tr '\n' '|' <<< "$out")]"; fi
+        printf ' 0' > autopoiesis.gen; rc=0; out=$(run_ap 2>&1) || rc=$?
+        if [ "$rc" != 0 ]; then pass "autopoiesis ($eng): control — a leading-space medium still halts (rc $rc)"
+        else fail "autopoiesis ($eng): control — leading-space medium accepted: [$(tr '\n' '|' <<< "$out")]"; fi
+    done
+}
+
+#CASES-BELOW
+
+CASES="${*:-mangle_once nc3_nonfn_rc autopoiesis_medium}"
+for c in $CASES; do "case_$c"; done
+[ "$FAILS" -eq 0 ] && { echo "gate_audit2_remainders: all passed"; exit 0; } || { echo "gate_audit2_remainders: $FAILS failed"; exit 1; }
